@@ -1,6 +1,7 @@
 /* nuade adapter replayer (design doc section 4): bridges nuade's
- * NuadePlayer vtable to the Selecta replayer hooks. M0b links only the
- * protracker4 player (the selecta_nuade library). */
+ * NuadePlayer vtable to the Selecta replayer hooks. One plugin fronts every
+ * player compiled into selecta_nuade (the registry walk): probe asks them
+ * all, open binds the song to the one that recognises it. */
 #include "shim.h"
 
 #include <selecta/plugin.h>
@@ -8,8 +9,9 @@
 
 #include <string.h>
 
-#define NUADE_PLAYER_ID "protracker4"
 #define META_LEN 128u
+#define MESSAGE_LEN 512u
+#define LIST_LEN 4096u
 
 typedef struct nuade_state {
     const sel_host* host;
@@ -20,33 +22,58 @@ typedef struct nuade_state {
     char title[META_LEN];
     char author[META_LEN];
     char format[META_LEN];
-    sel_tag meta[6];
+    char message[MESSAGE_LEN];
+    uint32_t channels;
+    uint32_t subsongs;
+    uint32_t instruments;
+    uintptr_t size;
+    sel_tag meta[10];
 } nuade_state;
 
-static const NuadePlayer* player(void) {
-    return nuade_player_find(NUADE_PLAYER_ID);
+/* A player this adapter can drive: tick players only. Self-rendering
+ * players would need a RENDER-kind adapter. */
+static int usable(const NuadePlayer* p) {
+    return p != NULL && p->probe != NULL && p->tick != NULL;
+}
+
+/* Asks every usable player. A player that is sure wins at once; otherwise
+ * the first unsure one. Returns the SEL_PROBE_* verdict and the player. */
+static int probe_all(const uint8_t* data, size_t size, const char* name, const NuadePlayer** found) {
+    uint32_t i, n = nuade_player_count();
+    int verdict = SEL_PROBE_NO;
+    *found = NULL;
+    for (i = 0; i < n; i++) {
+        const NuadePlayer* p = nuade_player_get(i);
+        if (!usable(p)) {
+            continue;
+        }
+        switch (p->probe(data, size, name)) {
+        case NuadeProbe_Supported:
+            *found = p;
+            return SEL_PROBE_YES;
+        case NuadeProbe_Unsure:
+            if (verdict == SEL_PROBE_NO) {
+                verdict = SEL_PROBE_UNSURE;
+                *found = p;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    return verdict;
 }
 
 static int rp_probe(const uint8_t* data, size_t size, const char* name) {
-    const NuadePlayer* p = player();
-    if (p == NULL || p->probe == NULL) {
-        return SEL_PROBE_NO;
-    }
-    switch (p->probe(data, size, name)) {
-    case NuadeProbe_Supported:
-        return SEL_PROBE_YES;
-    case NuadeProbe_Unsure:
-        return SEL_PROBE_UNSURE;
-    default:
-        return SEL_PROBE_NO;
-    }
+    const NuadePlayer* p;
+    return probe_all(data, size, name, &p);
 }
 
 static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_info* info) {
-    const NuadePlayer* p = player();
+    const NuadePlayer* p;
     nuade_state* s;
     NuadePlayerOpenResult r;
-    if (p == NULL) {
+    if (probe_all(src->data, src->size, src->path, &p) == SEL_PROBE_NO) {
         return NULL;
     }
     s = (nuade_state*)host->mem_alloc(host, sizeof *s, SEL_MEM_FAST);
@@ -65,7 +92,15 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
         host->mem_free(host, s);
         return NULL;
     }
+    if (r.info.voice_count > SEL_NUADE_MAX_VOICES) {
+        p->close(r.user_data);
+        host->mem_free(host, s);
+        return NULL;
+    }
     s->pdata = r.user_data;
+    s->channels = r.info.display_voices != 0u ? r.info.display_voices : r.info.voice_count;
+    s->subsongs = r.info.subsong_count;
+    s->size = (uintptr_t)src->size;
     info->voice_count = r.info.voice_count;
     info->subsong_count = r.info.subsong_count;
     info->default_subsong = r.info.default_subsong;
@@ -96,26 +131,45 @@ static void rp_tick(void* state, sel_tick_result* out) {
                  ((r.flags & NuadeTick_Ended) ? SEL_TICK_ENDED : 0u);
 }
 
-static void copy_meta(char* dst, const char* value) {
-    strncpy(dst, value, META_LEN - 1u);
-    dst[META_LEN - 1u] = '\0';
+static void copy_str(char* dst, size_t cap, const char* value) {
+    strncpy(dst, value, cap - 1u);
+    dst[cap - 1u] = '\0';
 }
 
 static void set_tag(void* ctx, const char* key, const char* value) {
     nuade_state* s = (nuade_state*)ctx;
     if (strcmp(key, NUADE_META_TITLE) == 0) {
-        copy_meta(s->title, value);
+        copy_str(s->title, sizeof s->title, value);
     } else if (strcmp(key, NUADE_META_ARTIST) == 0) {
-        copy_meta(s->author, value);
+        copy_str(s->author, sizeof s->author, value);
     } else if (strcmp(key, NUADE_META_FORMAT) == 0) {
-        copy_meta(s->format, value);
+        copy_str(s->format, sizeof s->format, value);
+    } else if (strcmp(key, NUADE_META_MESSAGE) == 0) {
+        copy_str(s->message, sizeof s->message, value);
     }
 }
 
 static void add_instrument(void* ctx, uint32_t index, const char* name) {
-    (void)ctx;
+    nuade_state* s = (nuade_state*)ctx;
     (void)index;
     (void)name;
+    s->instruments++;
+}
+
+static void add_str(nuade_state* s, uint32_t* n, uint32_t tag, const char* value) {
+    if (value[0] != '\0') {
+        s->meta[*n].tag = tag;
+        s->meta[*n].value = (uintptr_t)value;
+        (*n)++;
+    }
+}
+
+static void add_int(nuade_state* s, uint32_t* n, uint32_t tag, uintptr_t value) {
+    if (value != 0u) {
+        s->meta[*n].tag = tag;
+        s->meta[*n].value = value;
+        (*n)++;
+    }
 }
 
 static const sel_tag* rp_metadata(void* state) {
@@ -125,15 +179,24 @@ static const sel_tag* rp_metadata(void* state) {
     sink.ctx = s;
     sink.set_tag = set_tag;
     sink.add_instrument = add_instrument;
+    s->title[0] = s->author[0] = s->format[0] = s->message[0] = '\0';
+    s->instruments = 0;
     if (s->player->metadata != NULL) {
         s->player->metadata(s->pdata, &sink);
     }
-    s->meta[n].tag = SEL_META_TITLE;
-    s->meta[n++].value = (uintptr_t)s->title;
-    s->meta[n].tag = SEL_META_AUTHOR;
-    s->meta[n++].value = (uintptr_t)s->author;
-    s->meta[n].tag = SEL_META_FORMAT;
-    s->meta[n++].value = (uintptr_t)s->format;
+    if (s->format[0] == '\0') {
+        copy_str(s->format, sizeof s->format, s->player->name);
+    }
+    /* Only what the player reported. nuade has no pattern or sample count
+     * and no song length at player level, so those tags are absent. */
+    add_str(s, &n, SEL_META_TITLE, s->title);
+    add_str(s, &n, SEL_META_AUTHOR, s->author);
+    add_str(s, &n, SEL_META_FORMAT, s->format);
+    add_str(s, &n, SEL_META_MESSAGE, s->message);
+    add_int(s, &n, SEL_META_CHANNELS, s->channels);
+    add_int(s, &n, SEL_META_SUBSONGS, s->subsongs);
+    add_int(s, &n, SEL_META_INSTRUMENTS, s->instruments);
+    add_int(s, &n, SEL_META_SIZE, s->size);
     s->meta[n].tag = SEL_TAG_END;
     s->meta[n].value = 0;
     return s->meta;
@@ -143,22 +206,80 @@ static const sel_tag* rp_metadata(void* state) {
  * constant expression in C99. */
 static sel_tag g_hooks[14];
 static sel_tag g_desc[5];
+/* Built by the registry walk at entry: every usable player's id, and the
+ * union of their extensions. A list that would overflow its buffer fails the
+ * entry instead of truncating. */
+static char g_formats[LIST_LEN];
+static char g_extensions[LIST_LEN];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
     t->tag = tag;
     t->value = value;
 }
 
+static int has_token(const char* list, const char* tok, size_t len) {
+    const char* q = list;
+    while (*q != '\0') {
+        const char* e = strchr(q, ',');
+        size_t l = e != NULL ? (size_t)(e - q) : strlen(q);
+        if (l == len && strncmp(q, tok, len) == 0) {
+            return 1;
+        }
+        q += l + (e != NULL ? 1u : 0u);
+    }
+    return 0;
+}
+
+static int append_token(char* list, const char* tok, size_t len) {
+    size_t used = strlen(list);
+    if (len == 0u || has_token(list, tok, len)) {
+        return 1;
+    }
+    if (used + (used != 0u ? 1u : 0u) + len + 1u > LIST_LEN) {
+        return 0;
+    }
+    if (used != 0u) {
+        list[used++] = ',';
+    }
+    memcpy(list + used, tok, len);
+    list[used + len] = '\0';
+    return 1;
+}
+
+static int build_lists(void) {
+    uint32_t i, n = nuade_player_count();
+    g_formats[0] = g_extensions[0] = '\0';
+    for (i = 0; i < n; i++) {
+        const NuadePlayer* p = nuade_player_get(i);
+        const char* q;
+        if (!usable(p)) {
+            continue;
+        }
+        if (!append_token(g_formats, p->id, strlen(p->id))) {
+            return 0;
+        }
+        q = p->extensions != NULL ? p->extensions : "";
+        while (*q != '\0') {
+            const char* e = strchr(q, ',');
+            size_t l = e != NULL ? (size_t)(e - q) : strlen(q);
+            if (!append_token(g_extensions, q, l)) {
+                return 0;
+            }
+            q += l + (e != NULL ? 1u : 0u);
+        }
+    }
+    return 1;
+}
+
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
-    const NuadePlayer* p = player();
-    if (host_api < 1u || p == NULL) {
+    if (host_api < 1u || !build_lists()) {
         return NULL;
     }
-    set(&g_hooks[0], SEL_RP_NAME, (uintptr_t) "nuade.protracker4");
+    set(&g_hooks[0], SEL_RP_NAME, (uintptr_t) "nuade");
     set(&g_hooks[1], SEL_RP_VERSION, 0x00010000);
     set(&g_hooks[2], SEL_RP_KIND, SEL_RP_KIND_VOICE);
-    set(&g_hooks[3], SEL_RP_EXTENSIONS, (uintptr_t)p->extensions);
-    set(&g_hooks[4], SEL_RP_FORMATS, (uintptr_t)p->name);
+    set(&g_hooks[3], SEL_RP_EXTENSIONS, (uintptr_t)g_extensions);
+    set(&g_hooks[4], SEL_RP_FORMATS, (uintptr_t)g_formats);
     set(&g_hooks[5], SEL_RP_MAX_VOICES, SEL_NUADE_MAX_VOICES);
     set(&g_hooks[6], SEL_RP_PROBE, SEL_TAG_FN(rp_probe));
     set(&g_hooks[7], SEL_RP_OPEN, SEL_TAG_FN(rp_open));

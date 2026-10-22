@@ -190,7 +190,7 @@ Tests T19 to T27 are defined in the plan's finish-line table. A row is ticked on
 | I50 | [ ] | 2 | queue.c, QUEUE_ADD/REMOVE/CLEAR/PLAY_NEXT, NEXT/PREV, auto-advance, QUEUE_CHANGED | T20 green, ratchet 48 |
 | I51 | [ ] | 2 | SEEK restart-and-skip, SEEKED, render --seek-ms | T21 nuade half green, ratchet 47 |
 | I52 | [ ] | 2 | sel_state song/queue/view fields; T18 over queue.o | T18, T6 green |
-| I53 | [ ] | 3 | nuade metadata tags; glob of all 121 players; T23 red then green; design doc player count | T23 green |
+| I53 | [x] | 3 | nuade metadata tags; glob of all 121 players; T23 red then green; design doc player count | T23 green |
 | I54 | [ ] | 3 | libopenmpt submodule at libopenmpt-0.8.4 (commit 327204eaa2c27bd1acbb571babe68f279c85238b, resolved with gh api 2026-10-23); cmake/openmpt_sources.cmake; selecta_openmpt builds | host build green |
 | I55 | [ ] | 3 | gen_testmod --format mk; openmpt adapter; T22 red then counters green; hash committed after listening check | T22 green |
 | I56 | [ ] | 3 | RP_SEEK in engine; T21 openmpt half; T26 extended | T21, T26 green |
@@ -229,7 +229,7 @@ Protocol additions from M1d are already in design doc section 3 (not a decision,
 - amiga-roundtrip flake (M0b phase 1, 2026-10-22): cause found and fixed. Two vamos instances started together collide on the per-user temp volume `~/.vamos/volumes/ram` ("temp volume volume path already exists"). All vamos tests now share `RESOURCE_LOCK vamos`, and an `amiga-build` ctest fixture rebuilds build/amiga first so a host ctest never runs a stale 68k binary.
 - clang-format and clang-tidy are not installed on this machine, so the format and lint rows of the Commands table do not run here.
 - nuade licence notices (2026-10-23): pokeynoise/pn_waves.c, davidhanney/dh_data.c and majortom/mt_data.c say their Eagleplayer data is not covered by nuade's MIT licence. The user says the whole package is by one author under one licence, so all 121 players are built. The file text still says otherwise; worth asking the author to update those notices before a public release.
-- nuade count: design doc section 5 says 119 nuade formats, the tree has 121 players. I53 reconciles it from the registry.
+- nuade count: design doc section 5 says 119 nuade formats, the tree has 121 players. I53 reconciled it from the registry: 121, design doc fixed.
 - Linker warning `ignoring duplicate libraries: libsel_plugin_nuade.a, libselecta_nuade.a` comes from a deliberate static-library cycle (plugins/replayers/nuade/CMakeLists.txt:43-47). Fixed by I46.
 
 ## Facts gathered

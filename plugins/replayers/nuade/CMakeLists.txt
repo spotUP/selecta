@@ -1,12 +1,13 @@
 # selecta_nuade: the nuade framework (third_party/nuade, pinned submodule) with
-# only the players M0b needs. Built as C11 with nuade's own warning set; the
+# every player under players/*/nuade_player.cmake (NUADE_PLAYERS=all, a
+# configure-time glob; no exclusion list). Built as C11 with nuade's own warning set; the
 # project-wide -Werror -pedantic flags are for Selecta code, not vendored code.
 # Not linked: nuade_mixer.c, nuade_song.c, nuade_io_default.c (Selecta supplies
 # the mixer, the song source and the I/O; see design doc section 4).
 # Also built for the 68k cross target (C11 on gcc 6.5, Phase 5).
 
 set(NUADE_DIR "${PROJECT_SOURCE_DIR}/third_party/nuade")
-set(NUADE_PLAYERS "protracker4")
+set(NUADE_PLAYERS "all")
 include("${NUADE_DIR}/cmake/nuade_players.cmake")
 
 add_library(selecta_nuade STATIC

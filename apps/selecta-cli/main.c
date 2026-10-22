@@ -24,6 +24,7 @@ static int usage(FILE* to) {
           "  script <file>              feed command lines to the engine, print events\n"
           "  abi [voices]               print sel_host (or sel_voices) size and field offsets\n"
           "  plugins [--lint]           list plugins; --lint counts bad descriptor tags\n"
+          "  plugins --formats <id>     list the formats (player ids) a plugin reports\n"
           "  play-null --rate <hz> --frames <n>  pump the null output, print counters\n"
           "  play <song> --output <id> --seconds <n>  play through a real output, print counters\n"
           "  render <song> --output <wav> --seconds <n> --rate <hz> --resample <name>\n"
