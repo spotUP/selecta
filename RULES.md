@@ -2,6 +2,7 @@
 
 The global rules (`~/.claude/CLAUDE.md`) apply; this file adds the project's. Design: `thoughts/shared/plans/2026-10-22-architecture-design.md`. Research: `thoughts/shared/research/`.
 
+0. **Plans and the ledger live in the repo and never go stale (most important rule).** Every plan is a file under `thoughts/shared/plans/` with `status: draft | approved | in-progress | done | abandoned` in its frontmatter and a checklist of row IDs. Every task is a row in `thoughts/spot/todos.md` (committed, the only ledger) with an ID: R research, D design, A ABI, S sources, P playlists, M modern, F features, L ledger, I implementation. Status changes in the same step that earns it: tick the row when its artifact exists and its check has run, flip the plan status when its last row closes, never "at the end". Each reply names the IDs ticked since the last reply and the running `done/total`. Nothing is started that is not a row; nothing is reported done that is not ticked. An open row or plan with no next step is a defect, like a failing test. **Definition of done: every plan is `done` (all rows ticked, every row's test run and green) or `abandoned` with a reason.** Before `/clear`, a handoff or a "finished" report: reconcile `grep -c '\[ \]' thoughts/spot/todos.md` against the `status:` line of every plan file and write both numbers in the reply.
 1. **Engine is headless and is the single source of truth.** UIs render `sel_engine_state()` and send commands; no playback logic, no derived state in a UI, viz or protocol module. New behaviour goes into `src/engine/` or `src/library/`, never a frontend.
 2. **One definition per concept.** Commands and events exist only in `include/selecta/commands.def` and `events.def` (X-macros feed the enums, the remote codec and the docs). Voices exist only as `sel_voices`. Metadata only as `SEL_META_*` tag lists reported by the replayer (no fixed sink struct). A second copy of any of these is a defect.
 3. **Plugins see `include/selecta/` and nothing else.** Replayers, outputs, viz and UI plugins compile alone against the SDK headers and the `sel_host` table. OS headers only under `plugins/*/<os>/` and `src/core/<os>/`. Plugin descriptors are tag lists (`sel_tag` arrays ending in `SEL_TAG_END`, design doc section 10): a plugin declares only what it implements, the host queries by tag and skips unknown tags. The `sel_host` table is a versioned struct whose fields are appended, never reordered.
@@ -10,11 +11,9 @@ The global rules (`~/.claude/CLAUDE.md`) apply; this file adds the project's. De
 6. **Golden WAVs are the oracle.** Every replayer plugin ships a song and a hash in `tests/golden/`; `selecta-cli render` must reproduce it on desktop and under the 68k build. A playback change updates the hash and says why in the commit.
 7. **Text UI assumes xterm-256color + UTF-8** and nothing Amiga-specific; on the Amiga it runs inside UP-Term (`~/Code/UP-Term/vtcon`). Capabilities it may use: research doc `2026-10-22_upterm-text-ui-capabilities.md`.
 8. **Icons and labels:** text UI uses ASCII and Unicode box/block glyphs only, no emoji; GUI UIs use the project's SVG/bitmap icon set under `art/` (to be created with the first GUI).
-9. **Ledger discipline.** Every task list lives in `thoughts/spot/todos.md` with IDs (R research, D design, A ABI, S sources, P playlists, M modern, F features, L ledger). Each reply names the IDs ticked since the last reply and the running count `done/total`. Nothing is started that is not in the ledger; nothing is reported done that is not ticked.
-
 ## Commands
 
-Toolchains: desktop clang/gcc + CMake + Ninja; Amiga bebbo amiga-gcc at `/opt/amiga` (CMake toolchain file `cmake/amiga-68020.cmake`), vasm for `.s`. Test rig: UP-Term's FS-UAE rig (`~/Code/UP-Term/vtcon/tools/rig/`).
+Toolchains: desktop clang/gcc + CMake + Ninja; Amiga bebbo amiga-gcc at `~/opt/amiga` (`/opt/amiga` holds only binutils; the toolchain file `cmake/amiga-68020.cmake` searches `$AMIGA_GCC_ROOT`, `~/opt/amiga`, `/opt/amiga`), vasm for `.s`. Test rig: UP-Term's FS-UAE rig (`~/Code/UP-Term/vtcon/tools/rig/`).
 
 | Task | Command |
 |------|---------|

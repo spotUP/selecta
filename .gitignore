@@ -1,3 +1,4 @@
-thoughts/spot/
+thoughts/spot/*
+!thoughts/spot/todos.md
 thoughts/searchable/
 build/
