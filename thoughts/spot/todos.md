@@ -100,7 +100,7 @@ Session 2026-10-22 (2). Finish line: RULES.md rule 0 (plans and ledger never sta
 | D7 | [x] | Decision: Lua runtime + ARexx bridge | section 16 |
 | D8 | [x] | Decision: theme tokens + skin loader | section 16 |
 | D9 | [x] | DEViLBOX server work list | Found section below, section 10 |
-| SP1 | [ ] | Research: real Spotify playback through an open-source client (librespot and others), sonnet agent | thoughts/shared/research/2026-10-22_spotify-open-source-client.md |
+| SP1 | [x] | Research: real Spotify playback through an open-source client (librespot and others), sonnet agent | thoughts/shared/research/2026-10-22_spotify-open-source-client.md |
 
 ## Repo
 
@@ -135,7 +135,7 @@ Tests T1 to T9 are defined in the plan's finish-line table. A row is ticked only
 | I16 | [x] | 5 | plugins/outputs/null/null.c; selecta-cli play-null | T4 green |
 | I17 | [x] | 5 | sdk-isolation as ctest T7 | T7 green |
 | I18 | [x] | 5 | count_malloc shim and no_alloc.sh | no-alloc green |
-| I19 | [ ] | 6 | Full 68k build green (-Werror, 32-bit uintptr_t, big-endian) | build/amiga complete |
+| I19 | [x] | 6 | Full 68k build green (-Werror, 32-bit uintptr_t, big-endian) | build/amiga complete |
 | I20 | [ ] | 6 | tests/amiga/run_vamos.cmake; sel_host.m68k.txt golden | T9 green |
 | I21 | [ ] | 7 | ratchet number committed, T8 green; ci.yml host jobs; Amiga CI image to verify | T8 green, workflow file |
 | I22 | [ ] | 7 | RULES.md Commands table updated, README, validation doc, plan status done | counts reconciled in reply |
