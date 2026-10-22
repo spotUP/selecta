@@ -112,7 +112,7 @@ Session 2026-10-22 (2). Finish line: RULES.md rule 0 (plans and ledger never sta
 | R6 | [x] | First commit, named files, no attribution | git log |
 | R7 | [x] | next-session.md start prompt | thoughts/spot/next-session.md |
 
-## Implementation (plan: thoughts/shared/plans/2026-10-22-m0-skeleton.md, status: in-progress)
+## Implementation (plan: thoughts/shared/plans/2026-10-22-m0-skeleton.md, status: done)
 
 Tests T1 to T9 are defined in the plan's finish-line table. A row is ticked only when its proof column is green in `ctest --test-dir build/host`.
 
@@ -141,9 +141,40 @@ Tests T1 to T9 are defined in the plan's finish-line table. A row is ticked only
 | I21 | [x] | 7 | ratchet number committed, T8 green; ci.yml host jobs; Amiga CI image to verify | T8 green, workflow file |
 | I22 | [x] | 7 | RULES.md Commands table updated, README, validation doc, plan status done | counts reconciled in reply |
 
+## Implementation M0b (plan: thoughts/shared/plans/2026-10-22-m0b-replay.md, status: draft, awaiting approval)
+
+Tests T10 to T18 are defined in the plan's finish-line table. A row is ticked only when its proof column is green.
+
+| ID | Status | Phase | Task | Proof |
+|----|--------|-------|------|-------|
+| I23 | [ ] | 1 | tags.def: SEL_MACHINE_*, SEL_RP_*, SEL_MIX_* rows | T2, T5 green |
+| I24 | [ ] | 1 | T10, T11 written and RED | ctest failures |
+| I25 | [ ] | 1 | machine.h, machine.c, machine_desktop.c, machine_amiga.c, selecta-cli machine | T10 green |
+| I26 | [ ] | 2 | voices.h, mixer.h; T12 with vectors.h written and RED | ctest failure |
+| I27 | [ ] | 2 | mixer.c, resample.c (NONE, LINEAR, CUBIC), voices.c | T12 green for three resamplers |
+| I28 | [ ] | 2 | gen_sinc_table.c + SINC resampler; machine-based default | T12 green all four |
+| I29 | [ ] | 2 | abi prints sel_voices; goldens x86_64, arm64 | T6 green |
+| I30 | [ ] | 3 | submodule third_party/nuade @ 111c965; patches README; selecta_nuade C11 target, NUADE_PLAYERS=protracker4 | host build green |
+| I31 | [ ] | 3 | replayer.h; adapter.c, voices_shim.c, io_shim.c | T5 green, plugins=3 |
+| I32 | [ ] | 3 | scheduler.c; engine OPEN, SUBSONG, SONG_OPENED, SONG_ENDED, POSITION; ratchet 54 | T3, T8 green |
+| I33 | [ ] | 3 | gen_testmod.c + pinned mod hash; wav.c; selecta-cli render; T13, T17 RED then counters green | T13 counters, T17 green |
+| I34 | [ ] | 3 | four golden hashes committed after listening check; T7 third-party include rule | T13 green (4 ctests), T7 green |
+| I35 | [ ] | 4 | nuade_ab.c written and run | T15 runs |
+| I36 | [ ] | 4 | A/B correlation >= 0.98, value recorded | T15 green |
+| I37 | [ ] | 5 | full 68k build incl. selecta_nuade C11 | build/amiga green |
+| I38 | [ ] | 5 | run_vamos machine + render cases; sel_voices.m68k.txt golden | T11, T14 green |
+| I39 | [ ] | 5 | tests/lint/no_float.cmake over 68k engine, mixer, wav, null objects | T18 green |
+| I40 | [ ] | 6 | coreaudio.c, selecta-cli play, T16 RED then green | T16 green |
+| I41 | [ ] | 6 | audio thread assertion in sel_engine_render (debug) | T16 green in Debug |
+| I42 | [ ] | 7 | RULES.md Commands, README, validation doc | counts reconciled |
+| I43 | [ ] | 7 | plan status done, ledger reconciled | grep count matches |
+| I44 | [ ] | - | Amiga CI image (from M0a I21): find and verify a bebbo toolchain container, add CI job | CI job green |
+
 ## Open decisions
 
 Round 5 picks decided 2026-10-22 (AskUserQuestion, two calls): in = F19, F20, F21, F23, F24, F25, F29, F30, F31, F33 to F41, F43 to F46, F48, F49; restored into scope = F50 multi-zone sync, F51 server transcoding, F52 multi-user/multi-library; not picked = F32 CD audio, F42 rippers, F47 device sync; still out = Atmos, mpd client messaging, Tidal/Qobuz. Recorded in design doc sections 1a and 16. Open: none.
+
+- [ ] D-M2-1: nuade's voice API is float/double, so a nuade player ticking under a CIA interrupt on a 68020 without FPU runs soft-float in the interrupt (rule 4). Options for M2: tick in a high-priority task, upstream an integer voice API to emoon/nuade, or require an FPU for Paula-direct nuade. Source: thoughts/shared/research/2026-10-23_nuade-adapter.md. Not blocking M0b.
 
 Protocol additions from M1d are already in design doc section 3 (not a decision, engine protocol detail).
 
