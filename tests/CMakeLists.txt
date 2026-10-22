@@ -245,6 +245,11 @@ if(NOT SEL_AMIGA)
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DMOD=${SEL_MKMOD}"
       "-DOUT_DIR=${SEL_RENDER_OUT}" -DRESAMPLE=linear -DTAG=openmpt -DEXACT=0
       "-DPATH_RE=seek_path=native"
+      # Straight-through render of selecta-test-mk.mod at frame 220500 reports order 0 row 41
+      # (speed 6, tempo 125: 5292 frames per row, row 41 spans 216972..222263; measured with
+      # tests/m1 script OPEN/PLAY/@render 220500/@position). libopenmpt's set_position_seconds
+      # lands on the first row boundary at or after the target, row 42 (frame 222264).
+      "-DPOS_LINE=seek_position order=0 row=42 pattern=0"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/seek_render.cmake")
   # I56: RP_POSITION in POSITION events and the snapshot.
   add_test(NAME position-openmpt

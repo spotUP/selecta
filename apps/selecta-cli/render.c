@@ -118,6 +118,11 @@ int sel_cli_render(int argc, char** argv) {
         msg.args[0].v.s = seek_ms;
         sel_engine_send(e, &msg);
         sel_engine_pump(e, render_sink, &ctx);
+        {
+            const sel_rp_position* pp = &sel_engine_state(e)->song.pattern_pos;
+            printf("seek_position order=%u row=%u pattern=%u\n", (unsigned)pp->order, (unsigned)pp->row,
+                   (unsigned)pp->pattern);
+        }
     }
 
     out = o.open(&host, (uint32_t)rate, 2);
