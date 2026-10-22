@@ -2,3 +2,6 @@ thoughts/spot/*
 !thoughts/spot/todos.md
 thoughts/searchable/
 build/
+
+# Claude Code agent worktrees
+.claude/worktrees/
