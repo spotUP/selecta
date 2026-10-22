@@ -183,4 +183,5 @@ Everything listed under M1.2 and M1.3 above; `sel_source` and SQLite (M3); openm
 
 ## Deviations
 
-None yet.
+- I46: T27b `link-warnings` runs `tests/link_warnings.cmake` (new, next to `ratchet.cmake`; the file layout list did not name it) and is `RUN_SERIAL` because it deletes and relinks `selecta-cli`. The shim split also adds `sel_sdkcheck_nuade_shim` under `sdk-isolation`, so T7 still covers `voices_shim.c` and `io_shim.c` now that they left `sel_add_plugin`.
+- I45: `ui.h` hook typedefs take `void* state` and `const sel_message*` (UI_ON_EVENT); the plan fixed only `sel_ui_open_args` and the UI_WAIT return codes.
