@@ -129,6 +129,34 @@ if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
   set_tests_properties(amiga-machine PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos)
 endif()
 
+# T14: the T13 render on the 68k binary under vamos must be byte-identical to
+# the host render (the mixer is integer-only). The linear resampler is the
+# named test; the other three run too because the render takes under a
+# second each. vamos holds ~1 MiB of RAM by default; the render streams the
+# WAV from small buffers and fits, so no vamos memory option is passed.
+# Also the m68k sel_voices layout golden (32-bit pointers, big-endian).
+if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
+  foreach(res none linear cubic sinc)
+    if(res STREQUAL "linear")
+      set(test_name render-golden-amiga)
+    else()
+      set(test_name render-golden-amiga-${res})
+    endif()
+    add_test(NAME ${test_name}
+      COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DHOST_CLI=${SEL_CLI}"
+        "-DAMIGA_CLI=${SEL_AMIGA_CLI}" "-DMOD=${SEL_TESTMOD}" "-DROOT=${PROJECT_SOURCE_DIR}"
+        "-DOUT_DIR=${SEL_RENDER_OUT}" -DRESAMPLE=${res}
+        "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/golden/nuade/selecta-test.${res}.sha256"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_render.cmake")
+    set_tests_properties(${test_name} PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos)
+  endforeach()
+  add_test(NAME amiga-voices-layout
+    COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DAMIGA_CLI=${SEL_AMIGA_CLI}"
+            "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/abi/sel_voices.m68k.txt"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_voices.cmake")
+  set_tests_properties(amiga-voices-layout PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos)
+endif()
+
 # T12: mixer unit test (period step, resampler vectors, clipping, loop and
 # queue semantics). Groups are listed so a resampler lands in the gate with
 # the row that implements it.
