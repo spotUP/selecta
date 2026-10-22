@@ -9,7 +9,7 @@ foreach(v VAMOS HOST_CLI AMIGA_CLI GOLDEN)
 endforeach()
 
 function(run_amiga out_var)
-  execute_process(COMMAND "${VAMOS}" -C 68020 -- "${AMIGA_CLI}" ${ARGN}
+  execute_process(COMMAND "${VAMOS}" -C 68020 -m 8192 -- "${AMIGA_CLI}" ${ARGN}
     OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
   if(NOT rc EQUAL 0)
     message(FATAL_ERROR "vamos ${ARGN}: exit ${rc}\n${err}")

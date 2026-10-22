@@ -145,11 +145,11 @@ add_test(NAME machine-probe
           -P "${CMAKE_CURRENT_SOURCE_DIR}/machine.cmake")
 
 # T11: the same probe on the 68k binary under vamos -C 68020. vamos's
-# AvailMem defaults (measured 2026-10-22 by running `selecta-cli machine`; vamos 68020
-# profile, no -m or -H options): CHIP_RAM and FAST_RAM below, in bytes.
+# AvailMem with -m 8192 (measured 2026-10-23 by running `selecta-cli machine`; vamos 68020
+# profile; the 121-player image needs more than the 1 MiB default): CHIP_RAM and FAST_RAM, bytes.
 if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
   set(SEL_VAMOS_CHIP_RAM 0) # vamos has no chip/fast split: AvailMem(MEMF_CHIP) is 0
-  set(SEL_VAMOS_FAST_RAM 1044480) # 1020 KiB: vamos default RAM less its own use
+  set(SEL_VAMOS_FAST_RAM 8384512) # 8188 KiB: vamos -m 8192 RAM less its own use
   add_test(NAME amiga-machine
     COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DAMIGA_CLI=${SEL_AMIGA_CLI}" -DPLATFORM=amiga
             "-DTAGS_DEF=${PROJECT_SOURCE_DIR}/include/selecta/tags.def"
@@ -163,7 +163,7 @@ endif()
 # the host render (the mixer is integer-only). The linear resampler is the
 # named test; the other three run too because the render takes under a
 # second each. vamos holds ~1 MiB of RAM by default; the render streams the
-# WAV from small buffers and fits, so no vamos memory option is passed.
+# WAV from small buffers and fits, and every vamos call passes -m 8192 because the 121-player image is 1.85 MB.
 # Also the m68k sel_voices layout golden (32-bit pointers, big-endian).
 if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
   foreach(res none linear cubic sinc)
@@ -220,3 +220,9 @@ add_test(NAME seek-render
   COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DMOD=${SEL_TESTMOD}"
     "-DOUT_DIR=${SEL_RENDER_OUT}" -DRESAMPLE=linear
     -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/seek_render.cmake")
+
+# T23: the nuade adapter lists every player in third_party/nuade/players.
+add_test(NAME nuade-players
+  COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}"
+    "-DNUADE_DIR=${PROJECT_SOURCE_DIR}/third_party/nuade"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/nuade_players.cmake")
