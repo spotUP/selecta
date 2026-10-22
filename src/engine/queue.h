@@ -5,16 +5,11 @@
 #ifndef SELECTA_ENGINE_QUEUE_H
 #define SELECTA_ENGINE_QUEUE_H
 
+#include <selecta/engine.h> /* sel_queue_entry */
 #include <selecta/host.h>
 #include <stdint.h>
 
 #define SEL_QUEUE_NONE 0xFFFFFFFFu
-
-typedef struct sel_queue_entry {
-    uint32_t id;
-    uint32_t subsong_plus1; /* 0: the replayer's default subsong */
-    uint32_t path_offset;   /* into the text arena */
-} sel_queue_entry;
 
 typedef struct sel_queue {
     sel_queue_entry* entries;

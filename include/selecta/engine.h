@@ -8,6 +8,8 @@
 
 #include <selecta/host.h>
 #include <selecta/protocol.h>
+#include <selecta/replayer.h>
+#include <selecta/tags.h>
 
 SEL_EXTERN_C_BEGIN
 
@@ -35,11 +37,37 @@ typedef enum sel_option_id {
 #define SEL_OPTION_VALUE_MAX 64
 #define SEL_OUTPUT_NAME_MAX 32
 
+/* One play-queue entry. The path is `queue_text + path_offset` of the snapshot. */
+typedef struct sel_queue_entry {
+    uint32_t id;
+    uint32_t subsong_plus1; /* 0: the replayer's default subsong */
+    uint32_t path_offset;   /* into the text arena */
+} sel_queue_entry;
+
+typedef struct sel_view_state sel_view_state; /* defined with the view model (M1.1 phase 4) */
+
+typedef struct sel_song_state {
+    uint32_t queue_id; /* 0 = opened outside the queue */
+    uint32_t subsong, subsong_count;
+    uint32_t duration_ms; /* 0 = unknown */
+    uint32_t position_ms;
+    sel_rp_position pattern_pos; /* zeros when not reported */
+    const sel_tag* meta;         /* SEL_META_* list, valid until next pump */
+    const char* path;            /* NULL when no song is open; valid until next pump */
+} sel_song_state;
+
+/* The snapshot front ends render. Fields are only appended. Everything below
+ * `options` is refreshed at the end of every sel_engine_pump. */
 typedef struct sel_state {
     sel_play_state play;
     int32_t volume; /* 0..100 */
     char output[SEL_OUTPUT_NAME_MAX];
     char options[SEL_OPTION_COUNT][SEL_OPTION_VALUE_MAX];
+    sel_song_state song;
+    const sel_queue_entry* queue;
+    const char* queue_text; /* path arena the entries' path_offset points into */
+    uint32_t queue_count, queue_playing, queue_version; /* queue_playing: id, 0 = none */
+    const sel_view_state* view; /* NULL until the view model exists */
 } sel_state;
 
 typedef struct sel_engine_config {
@@ -104,14 +132,6 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out);
 void sel_engine_mark_audio_thread(sel_engine* e);
 uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames);
 uint32_t sel_engine_render_calls(const sel_engine* e);
-
-/* Read-only queue view for front ends and tests (the snapshot fields of
- * SNAPSHOT_QUEUE will fold these in). playing_id is 0 when no queue entry
- * is playing. sel_engine_queue_id_at returns 0 past the end. */
-uint32_t sel_engine_queue_version(const sel_engine* e);
-uint32_t sel_engine_queue_count(const sel_engine* e);
-uint32_t sel_engine_queue_playing_id(const sel_engine* e);
-uint32_t sel_engine_queue_id_at(const sel_engine* e, uint32_t index);
 
 /* 1 when the engine answers this verb with real behaviour, 0 when it
  * replies ERROR not_implemented. The ratchet (T8) counts the zeros. */

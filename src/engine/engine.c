@@ -965,6 +965,27 @@ int sel_engine_send(sel_engine* e, const sel_message* cmd) {
     return sel_spsc_push(&e->cmd_q, cmd);
 }
 
+/* Pump thread: copies the song and queue facts into the snapshot. */
+static void refresh_snapshot(sel_engine* e) {
+    const sel_slot* sl = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
+    sel_song_state* song = &e->state.song;
+    memset(song, 0, sizeof *song);
+    if (sl != NULL && sl->rp_state != NULL) {
+        song->queue_id = e->q_playing;
+        song->subsong = sl->subsong;
+        song->subsong_count = sl->rp_info.subsong_count;
+        song->position_ms = (uint32_t)((uint64_t)sl->song_frames * 1000u / e->rate);
+        song->meta = sl->rp_metadata ? sl->rp_metadata(sl->rp_state) : NULL;
+        song->duration_ms = (uint32_t)sel_tag_find(song->meta, SEL_META_DURATION_MS, 0);
+        song->path = sl->path;
+    }
+    e->state.queue = e->queue.entries;
+    e->state.queue_text = e->queue.text;
+    e->state.queue_count = e->queue.count;
+    e->state.queue_playing = e->q_playing;
+    e->state.queue_version = e->queue.version;
+}
+
 uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
     sel_message m;
     uint32_t delivered = 0;
@@ -997,6 +1018,7 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
             emit_position(e, sl);
         }
     }
+    refresh_snapshot(e);
     while (sel_spsc_pop(&e->evt_q, &m)) {
         if (sink) {
             sink(ctx, &m);
@@ -1089,22 +1111,6 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
         memset(stereo + (size_t)done * 2u, 0, (size_t)(frames - done) * 2u * sizeof(int16_t));
     }
     return frames;
-}
-
-uint32_t sel_engine_queue_version(const sel_engine* e) {
-    return e->queue.version;
-}
-
-uint32_t sel_engine_queue_count(const sel_engine* e) {
-    return e->queue.count;
-}
-
-uint32_t sel_engine_queue_playing_id(const sel_engine* e) {
-    return e->q_playing;
-}
-
-uint32_t sel_engine_queue_id_at(const sel_engine* e, uint32_t index) {
-    return index < e->queue.count ? e->queue.entries[index].id : 0;
 }
 
 uint32_t sel_engine_render_calls(const sel_engine* e) {

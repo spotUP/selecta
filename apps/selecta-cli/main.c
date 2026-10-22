@@ -289,10 +289,10 @@ static void script_directive(sel_engine* e, const char* line) {
     script_sink sink = {0, 0};
     if (strcmp(line, "@queue") == 0) {
         uint32_t i;
-        printf("QUEUE version=%u playing=%u ids=", (unsigned)sel_engine_queue_version(e),
-               (unsigned)sel_engine_queue_playing_id(e));
-        for (i = 0; i < sel_engine_queue_count(e); i++) {
-            printf(i ? ",%u" : "%u", (unsigned)sel_engine_queue_id_at(e, i));
+        const sel_state* st = sel_engine_state(e);
+        printf("QUEUE version=%u playing=%u ids=", (unsigned)st->queue_version, (unsigned)st->queue_playing);
+        for (i = 0; i < st->queue_count; i++) {
+            printf(i ? ",%u" : "%u", (unsigned)st->queue[i].id);
         }
         printf("\n");
     } else if (sscanf(line, "@render %lu", &n) == 1) {

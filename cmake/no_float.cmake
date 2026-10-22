@@ -18,9 +18,9 @@ file(GLOB_RECURSE objs
   "${BUILD_DIR}/plugins/CMakeFiles/sel_plugin_wav.dir/*.obj"
   "${BUILD_DIR}/plugins/CMakeFiles/sel_plugin_null.dir/*.obj")
 list(LENGTH objs nobjs)
-# engine (engine, voices, spsc, scheduler) + mixer (mixer, resample) + wav + null
-if(NOT nobjs EQUAL 8)
-  message(FATAL_ERROR "expected 8 objects (4 engine, 2 mixer, wav, null), found ${nobjs}:\n${objs}")
+# engine (engine, queue, voices, spsc, scheduler) + mixer (mixer, resample) + wav + null
+if(NOT nobjs EQUAL 9)
+  message(FATAL_ERROR "expected 9 objects (5 engine, 2 mixer, wav, null), found ${nobjs}:\n${objs}")
 endif()
 
 set(bad "")
