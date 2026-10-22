@@ -74,6 +74,7 @@ foreach(res none linear cubic sinc)
 endforeach()
 
 add_subdirectory(m0)
+add_subdirectory(nuade_ab)
 
 # T5 negative path: a second tree with a broken descriptor must fail lint.
 add_test(NAME registry-tags-negative
