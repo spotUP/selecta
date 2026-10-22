@@ -20,11 +20,11 @@ sel_cli_test(protocol-reflection-events   "events"   "-DLINES=${SEL_COUNT_EVT}")
 sel_cli_test(protocol-reflection-tagtypes "tagtypes" "-DLINES=${SEL_COUNT_META}")
 
 # T5: the registry walked every descriptor and found only known tags.
-# null, wav, nuade, openmpt (host only), plus coreaudio on macOS; the negative tree adds one bad plugin.
+# null, wav, nuade, openmpt and the text UI (host only), plus coreaudio on macOS; the negative tree adds one bad plugin.
 if(APPLE)
-  set(SEL_EXPECT_PLUGINS 5)
+  set(SEL_EXPECT_PLUGINS 6)
 else()
-  set(SEL_EXPECT_PLUGINS 4)
+  set(SEL_EXPECT_PLUGINS 5)
 endif()
 math(EXPR SEL_EXPECT_BAD_PLUGINS "${SEL_EXPECT_PLUGINS} + 1")
 sel_cli_test(registry-tags "plugins --lint" "-DEXPECT=plugins=${SEL_EXPECT_PLUGINS} unknown_tags=0 duplicate_tags=0")
@@ -241,6 +241,17 @@ if(NOT SEL_AMIGA)
   add_executable(grid_test grid/grid_test.c)
   target_link_libraries(grid_test PRIVATE selecta_textui)
   add_test(NAME grid-unit COMMAND grid_test)
+endif()
+
+# T19: the M1.1 reachability test. The real shell and text UI, driven by a key
+# file through the same key decoder as a terminal: browse, play, info panel.
+if(NOT SEL_AMIGA)
+  add_test(NAME selecta-browse-play
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DMOD=${SEL_MKMOD}"
+      "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m1/browse_play.keys"
+      "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m1/browse_play.screen"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/browse_play"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/browse_play.cmake")
 endif()
 
 # T20: queue edits, ids, NEXT/PREV and auto-advance through the engine
