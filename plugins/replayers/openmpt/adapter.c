@@ -46,6 +46,10 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     if (mod == NULL) {
         return NULL;
     }
+    /* libopenmpt dithers integer output from a randomly seeded generator by
+       default, so two renders of one song differ by up to 2 LSB. Golden WAVs
+       need byte-identical output: turn dither off. */
+    openmpt_module_ctl_set_integer(mod, "dither", 0);
     s = (openmpt_state*)host->mem_alloc(host, sizeof *s, SEL_MEM_FAST);
     if (s == NULL) {
         openmpt_module_destroy(mod);
