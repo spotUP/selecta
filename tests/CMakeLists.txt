@@ -197,3 +197,20 @@ endif()
 add_executable(mixer_test mixer/mixer_test.c)
 target_link_libraries(mixer_test PRIVATE selecta_core)
 add_test(NAME mixer-unit COMMAND mixer_test period none linear cubic sinc default clip loop)
+
+# T20: queue edits, ids, NEXT/PREV and auto-advance through the engine
+# dispatch. The script names songs relative to the generated songs directory.
+add_test(NAME queue-engine
+  COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}"
+    "-DARGS=script ${CMAKE_CURRENT_SOURCE_DIR}/m1/queue.sel"
+    "-DEXPECT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/m1/queue.expected"
+    -P "${SEL_EXPECT}")
+set_tests_properties(queue-engine PROPERTIES
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/songs")
+
+# T21 (nuade half): a 5000 ms seek renders the second half of the golden
+# render. The openmpt half is added with the openmpt adapter (row I55).
+add_test(NAME seek-render
+  COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DMOD=${SEL_TESTMOD}"
+    "-DOUT_DIR=${SEL_RENDER_OUT}" -DRESAMPLE=linear
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/seek_render.cmake")
