@@ -1,0 +1,34 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  host:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ninja (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Install ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+      - name: Configure
+        run: cmake -S . -B build/host -G Ninja
+      - name: Build
+        run: cmake --build build/host
+      - name: Lint
+        run: cmake --build build/host --target lint
+      - name: Test
+        run: ctest --test-dir build/host --output-on-failure
+
+  # TODO I21: needs a verified bebbo toolchain image (m68k-amigaos-gcc 6.5
+  # plus vamos). Not added until an image is verified; the local
+  # cross-build and the amiga-roundtrip ctest (T9) are the gate meanwhile.
