@@ -7,8 +7,14 @@ add_library(selecta_core STATIC
   host/mem.c
   host/log.c
   engine/spsc.c
-  engine/engine.c)
+  engine/engine.c
+  engine/voices.c)
 target_include_directories(selecta_core PUBLIC ${PROJECT_SOURCE_DIR}/include)
+
+# Fixed-point mixer and resamplers (no float, no allocation).
+add_library(selecta_mixer STATIC mixer/mixer.c mixer/resample.c)
+target_include_directories(selecta_mixer PUBLIC ${PROJECT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/mixer)
+target_link_libraries(selecta_core PUBLIC selecta_mixer)
 
 # One clock source and one machine probe per platform. OS headers live only
 # under src/core/<os>/ (RULES.md rule 3): C clock() plus sysctl (macOS) or

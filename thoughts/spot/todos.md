@@ -150,7 +150,7 @@ Tests T10 to T18 are defined in the plan's finish-line table. A row is ticked on
 | I23 | [x] | 1 | tags.def: SEL_MACHINE_*, SEL_RP_*, SEL_MIX_* rows | T2, T5 green |
 | I24 | [x] | 1 | T10, T11 written and RED | ctest failures |
 | I25 | [x] | 1 | machine.h, machine.c, <os>/machine.c, selecta-cli machine | T10 green |
-| I26 | [ ] | 2 | voices.h, mixer.h; T12 with vectors.h written and RED | ctest failure |
+| I26 | [x] | 2 | voices.h, mixer.h; T12 with vectors.h written and RED | ctest failure |
 | I27 | [ ] | 2 | mixer.c, resample.c (NONE, LINEAR, CUBIC), voices.c | T12 green for three resamplers |
 | I28 | [ ] | 2 | gen_sinc_table.c + SINC resampler; machine-based default | T12 green all four |
 | I29 | [ ] | 2 | abi prints sel_voices; goldens x86_64, arm64 | T6 green |

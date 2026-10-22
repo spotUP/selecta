@@ -85,3 +85,10 @@ if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
             -DEXPECT_CHIP_RAM=${SEL_VAMOS_CHIP_RAM} -DEXPECT_FAST_RAM=${SEL_VAMOS_FAST_RAM}
             -P "${CMAKE_CURRENT_SOURCE_DIR}/machine.cmake")
 endif()
+
+# T12: mixer unit test (period step, resampler vectors, clipping, loop and
+# queue semantics). Groups are listed so a resampler lands in the gate with
+# the row that implements it.
+add_executable(mixer_test mixer/mixer_test.c)
+target_link_libraries(mixer_test PRIVATE selecta_core)
+add_test(NAME mixer-unit COMMAND mixer_test period none linear cubic clip loop)
