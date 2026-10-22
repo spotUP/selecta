@@ -100,6 +100,7 @@ Session 2026-10-22 (2). Finish line: RULES.md rule 0 (plans and ledger never sta
 | D7 | [x] | Decision: Lua runtime + ARexx bridge | section 16 |
 | D8 | [x] | Decision: theme tokens + skin loader | section 16 |
 | D9 | [x] | DEViLBOX server work list | Found section below, section 10 |
+| SP1 | [ ] | Research: real Spotify playback through an open-source client (librespot and others), sonnet agent | thoughts/shared/research/2026-10-22_spotify-open-source-client.md |
 
 ## Repo
 
@@ -129,11 +130,11 @@ Tests T1 to T9 are defined in the plan's finish-line table. A row is ticked only
 | I11 | [x] | 4 | engine.h and engine.c: state, SPSC queues, dispatch X-macro, implemented set, not_implemented path, BEGIN/END batch | T3 green |
 | I12 | [x] | 4 | selecta-cli script; tests/m0/basic.sel and basic.expected | T3 green |
 | I13 | [x] | 4 | selecta-cli commands --unimplemented; T8 written RED | ratchet list printed |
-| I14 | [ ] | 5 | host.h sel_host struct; src/core mem.c log.c clock.c; selecta-cli abi | T6 goldens x86_64 and arm64 committed, green |
-| I15 | [ ] | 5 | plugin.h, output.h, registry.c, generated registry_list.c, tag lint, bad-plugin negative build | T5 green both ways |
-| I16 | [ ] | 5 | plugins/outputs/null/null.c; selecta-cli play-null | T4 green |
-| I17 | [ ] | 5 | sdk-isolation as ctest T7 | T7 green |
-| I18 | [ ] | 5 | count_malloc shim and no_alloc.sh | no-alloc green |
+| I14 | [x] | 5 | host.h sel_host struct; src/core mem.c log.c clock.c; selecta-cli abi | T6 goldens x86_64 and arm64 committed, green |
+| I15 | [x] | 5 | plugin.h, output.h, registry.c, generated registry_list.c, tag lint, bad-plugin negative build | T5 green both ways |
+| I16 | [x] | 5 | plugins/outputs/null/null.c; selecta-cli play-null | T4 green |
+| I17 | [x] | 5 | sdk-isolation as ctest T7 | T7 green |
+| I18 | [x] | 5 | count_malloc shim and no_alloc.sh | no-alloc green |
 | I19 | [ ] | 6 | Full 68k build green (-Werror, 32-bit uintptr_t, big-endian) | build/amiga complete |
 | I20 | [ ] | 6 | tests/amiga/run_vamos.cmake; sel_host.m68k.txt golden | T9 green |
 | I21 | [ ] | 7 | ratchet number committed, T8 green; ci.yml host jobs; Amiga CI image to verify | T8 green, workflow file |

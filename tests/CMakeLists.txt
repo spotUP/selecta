@@ -42,3 +42,13 @@ add_test(NAME ratchet
     -P "${CMAKE_CURRENT_SOURCE_DIR}/ratchet.cmake")
 
 add_subdirectory(m0)
+
+# T5 negative path: a second tree with a broken descriptor must fail lint.
+add_test(NAME registry-tags-negative
+  COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}"
+    "-DBIN=${PROJECT_BINARY_DIR}/host-bad" "-DGEN=${CMAKE_GENERATOR}"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/m0/bad_plugin.cmake")
+
+# T7: every plugin compiles with include/ as its only project include path.
+add_test(NAME sdk-isolation
+  COMMAND "${CMAKE_COMMAND}" --build "${PROJECT_BINARY_DIR}" --target sdk-isolation)

@@ -29,6 +29,7 @@ include(cmake/selecta_lint.cmake)
 
 add_subdirectory(src)
 add_subdirectory(plugins)
+include(cmake/selecta_registry.cmake)
 add_subdirectory(apps)
 
 if(SEL_BUILD_TESTS)
