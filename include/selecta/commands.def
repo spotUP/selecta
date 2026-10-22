@@ -1,0 +1,90 @@
+/* Command table: SEL_CMD(id, args). Design doc section 3, first set plus
+ * the protocol additions. Generates sel_cmd_id, the text codec tables,
+ * COMMANDS reflection and the ratchet of unimplemented verbs.
+ *
+ * args is the argument signature: one letter per argument.
+ *   s  string (quoted on the wire when it holds a space or a quote)
+ *   i  signed 32-bit; a leading + or - is kept as the relative flag
+ *   u  unsigned 32-bit
+ *   t  tag list, {NAME=value,...} on the wire, names from tags.def
+ *   ?  the previous argument is optional (only at the end)
+ *   *  the previous argument repeats to the end of the line
+ * The wire form is one line: VERB arg arg ... (design doc section 8). */
+
+/* transport */
+SEL_CMD(OPEN,            "s")
+SEL_CMD(PLAY,            "")
+SEL_CMD(PAUSE,           "")
+SEL_CMD(PAUSE_PLAYBACK,  "s")
+SEL_CMD(STOP,            "")
+SEL_CMD(NEXT,            "")
+SEL_CMD(PREV,            "")
+SEL_CMD(NEXT_ALBUM,      "")
+SEL_CMD(PREV_ALBUM,      "")
+SEL_CMD(SUBSONG,         "u")
+SEL_CMD(SEEK,            "s")
+SEL_CMD(VOLUME,          "i")
+SEL_CMD(MUTE,            "us")
+SEL_CMD(SOLO,            "u")
+SEL_CMD(PITCH,           "i")
+SEL_CMD(TEMPO,           "i")
+SEL_CMD(REPEAT,          "s")
+SEL_CMD(OUTPUT,          "s")
+SEL_CMD(OPTION,          "ss")
+SEL_CMD(SLEEP_TIMER,     "u")
+
+/* queue */
+SEL_CMD(QUEUE_ADD,       "s")
+SEL_CMD(QUEUE_ADD_QUERY, "s")
+SEL_CMD(QUEUE_REMOVE,    "u")
+SEL_CMD(QUEUE_CLEAR,     "")
+SEL_CMD(QUEUE_PLAY_NEXT, "s")
+SEL_CMD(QUEUE_MOVE,      "uu")
+SEL_CMD(QUEUE_SWAP,      "uu")
+SEL_CMD(QUEUE_SHUFFLE,   "s?")
+SEL_CMD(QUEUE_CHANGES,   "u")
+SEL_CMD(SNAPSHOT_QUEUE,  "uu?")
+SEL_CMD(PLAY_QUERY,      "s")
+SEL_CMD(RESHUFFLE,       "")
+SEL_CMD(SHUFFLE,         "s?")
+SEL_CMD(SCOPE,           "s")
+SEL_CMD(UNDO,            "")
+SEL_CMD(REDO,            "")
+
+/* playlists and library */
+SEL_CMD(PLAYLIST_LOAD,   "s")
+SEL_CMD(PLAYLIST_SAVE,   "s")
+SEL_CMD(PLAYLIST_PUBLISH, "s")
+SEL_CMD(LIBRARY_BROWSE,  "s")
+SEL_CMD(LIBRARY_SEARCH,  "s")
+SEL_CMD(LIBRARY_FETCH,   "s")
+SEL_CMD(RATE,            "u")
+SEL_CMD(VOTE,            "s?")
+SEL_CMD(CUE_SET,         "u")
+SEL_CMD(CUE_GOTO,        "u")
+SEL_CMD(STICKER_SET,     "sss")
+SEL_CMD(STICKER_GET,     "ss")
+SEL_CMD(STICKER_DEL,     "ss")
+SEL_CMD(STICKER_LIST,    "s")
+SEL_CMD(PREF_GET,        "s")
+SEL_CMD(PREF_SET,        "ss")
+
+/* view model and shell */
+SEL_CMD(VIEW_STYLE,      "s")
+SEL_CMD(VIEW_GROUP,      "s")
+SEL_CMD(VIEW_EXPAND,     "u")
+SEL_CMD(VIEW_COLLAPSE,   "u")
+SEL_CMD(VIEW_DRILL,      "us")
+SEL_CMD(UI_SWITCH,       "s")
+
+/* protocol */
+SEL_CMD(BEGIN,           "")
+SEL_CMD(END,             "")
+SEL_CMD(COMMANDS,        "")
+SEL_CMD(EVENTS,          "")
+SEL_CMD(TAGTYPES,        "")
+SEL_CMD(IDLE,            "s*")
+SEL_CMD(AUTH,            "s")
+SEL_CMD(DEVICE_LIST,     "")
+SEL_CMD(DEVICE_TRANSFER, "u")
+SEL_CMD(DEVICE_FOLLOW,   "u?")

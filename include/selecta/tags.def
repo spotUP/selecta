@@ -1,0 +1,58 @@
+/* Tag table: SEL_TAG(namespace, name, value, type). One row per tag; this
+ * file generates the enum in tags.h, the name and type table in
+ * src/core/tag.c, the TAGTYPES reflection and the tag lint.
+ *
+ * Namespace blocks (design doc section 10), reserved, never renumbered:
+ *   PLUGIN  0x0100  descriptor tags returned by sel_plugin_entry
+ *   RP      0x1000  replayer            (M0b)
+ *   OUT     0x2000  output
+ *   DSP     0x3000  dsp                 (M1)
+ *   VIZ     0x4000  visualizer          (M1)
+ *   UI      0x5000  ui                  (M1)
+ *   CONV    0x6000  converter           (M3)
+ *   SRC     0x7000  source              (M1)
+ *   META    0x8000  metadata values
+ *   MACHINE 0x9000  machine probe       (M0b)
+ *   HOSTQ   0xA000  host queries
+ * Control tags 0 END, 1 MORE, 2 SKIP and the SEL_TAG_USER bit 0x80000000
+ * live in tags.h. Types: INT (value is a number), STR (value is a
+ * const char*), PTR (value is a function or object pointer), LIST (value
+ * is a const sel_tag*). */
+
+SEL_TAG(PLUGIN, KIND,          0x0100, INT)
+SEL_TAG(PLUGIN, ID,            0x0101, STR)
+SEL_TAG(PLUGIN, VERSION,       0x0102, INT)
+SEL_TAG(PLUGIN, TAGS,          0x0103, LIST)
+
+SEL_TAG(OUT, NAME,             0x2000, STR)
+SEL_TAG(OUT, SINK,             0x2001, INT)
+SEL_TAG(OUT, RATES,            0x2002, STR)
+SEL_TAG(OUT, CHANNELS,         0x2003, INT)
+SEL_TAG(OUT, LATENCY_MS,       0x2004, INT)
+SEL_TAG(OUT, OPEN,             0x2005, PTR)
+SEL_TAG(OUT, CLOSE,            0x2006, PTR)
+SEL_TAG(OUT, SET_SOURCE,       0x2007, PTR)
+SEL_TAG(OUT, VOICES,           0x2008, PTR)
+SEL_TAG(OUT, PUMP,             0x2009, PTR)
+SEL_TAG(OUT, STATS,            0x200A, PTR)
+SEL_TAG(OUT, STAT_FRAMES,      0x200B, INT)
+SEL_TAG(OUT, DIRECT_VOLUME,    0x200C, INT)
+SEL_TAG(OUT, HEADPHONES,       0x200D, INT)
+
+SEL_TAG(META, TITLE,           0x8000, STR)
+SEL_TAG(META, AUTHOR,          0x8001, STR)
+SEL_TAG(META, FORMAT,          0x8002, STR)
+SEL_TAG(META, CHANNELS,        0x8003, INT)
+SEL_TAG(META, PATTERNS,        0x8004, INT)
+SEL_TAG(META, INSTRUMENTS,     0x8005, INT)
+SEL_TAG(META, SAMPLES,         0x8006, INT)
+SEL_TAG(META, SUBSONGS,        0x8007, INT)
+SEL_TAG(META, DURATION_MS,     0x8008, INT)
+SEL_TAG(META, MESSAGE,         0x8009, STR)
+SEL_TAG(META, SIZE,            0x800A, INT)
+SEL_TAG(META, YEAR,            0x800B, INT)
+SEL_TAG(META, RELEASE,         0x800C, STR)
+SEL_TAG(META, SID_MODEL,       0x800D, INT)
+SEL_TAG(META, STIL,            0x800E, STR)
+
+SEL_TAG(HOSTQ, API_VERSION,    0xA000, INT)

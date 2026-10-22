@@ -119,10 +119,10 @@ Tests T1 to T9 are defined in the plan's finish-line table. A row is ticked only
 | I1 | [x] | 1 | Root CMakeLists, cmake/selecta_plugin.cmake, cmake/selecta_defs.cmake, .clang-format, selecta-cli version | host build; `selecta-cli version` prints `selecta-cli 0.0.1 api 1` |
 | I2 | [x] | 1 | cmake/amiga-68020.cmake with root search (`$AMIGA_GCC_ROOT`, `~/opt/amiga`, `/opt/amiga`), `-mcrt=nix20`; 68k build of selecta-cli version | vamos prints version line |
 | I3 | [x] | 1 | lint, format, sdk-isolation targets (clang tools optional, -Werror always) | targets exist and run |
-| I4 | [ ] | 2 | tags.def with reserved namespace blocks and M0a rows; tags.h; src/core/tag.c | compiles on both toolchains |
-| I5 | [ ] | 2 | commands.def and events.def full first set; design doc BEGIN/END one-line fix | counts read by CMake |
-| I6 | [ ] | 2 | protocol.h: enums, names, args, sel_message, codec API, SEL_MAX_ARGS static assert | compiles |
-| I7 | [ ] | 2 | Tests T1, T2, T5, T6 written and RED | ctest shows 4 failures |
+| I4 | [x] | 2 | tags.def with reserved namespace blocks and M0a rows; tags.h; src/core/tag.c | compiles on both toolchains |
+| I5 | [x] | 2 | commands.def and events.def full first set; design doc BEGIN/END one-line fix | counts read by CMake |
+| I6 | [x] | 2 | protocol.h: enums, names, args, sel_message, codec API, SEL_MAX_ARGS static assert | compiles |
+| I7 | [x] | 2 | Tests T1, T2, T5, T6 written and RED | ctest shows 4 failures |
 | I8 | [ ] | 3 | src/protocol/codec.c encode/decode, tag-list argument codec | T1 green |
 | I9 | [ ] | 3 | selecta-cli commands, events, tagtypes, roundtrip | T2 green |
 | I10 | [ ] | 3 | T3 and T4 written and RED | ctest shows failures |

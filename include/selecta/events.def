@@ -1,0 +1,22 @@
+/* Event table: SEL_EVT(id, args). Design doc section 3, first set plus
+ * the protocol additions. Same signature letters as commands.def. */
+
+SEL_EVT(STATE,           "s")
+SEL_EVT(SONG_OPENED,     "t")
+SEL_EVT(SONG_ENDED,      "")
+SEL_EVT(POSITION,        "uuuu")
+SEL_EVT(VOICE,           "ut")
+SEL_EVT(VOLUME,          "i")
+SEL_EVT(OUTPUT_CHANGED,  "s")
+SEL_EVT(OPTIONS_CHANGED, "ss")
+SEL_EVT(PREFS_CHANGED,   "ss")
+SEL_EVT(QUEUE_CHANGED,   "u")
+SEL_EVT(QUEUE_HISTORY,   "uu")
+SEL_EVT(LIBRARY_RESULT,  "t")
+SEL_EVT(VIEW_CHANGED,    "st")
+SEL_EVT(VIEW_ROWS,       "t")
+SEL_EVT(SEEKED,          "u")
+SEL_EVT(SCROBBLE_DUE,    "")
+SEL_EVT(ALBUMART,        "ut")
+SEL_EVT(ERROR,           "ss?")
+SEL_EVT(LOG,             "s")
