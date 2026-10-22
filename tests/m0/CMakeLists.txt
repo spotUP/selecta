@@ -9,4 +9,9 @@ if(APPLE)
   add_test(NAME no-alloc
     COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/no_alloc.sh"
       $<TARGET_FILE:selecta-cli> $<TARGET_FILE:count_malloc>)
+  # T17: the same window around the render loop of the real engine and wav output.
+  add_test(NAME no-alloc-render
+    COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/no_alloc.sh"
+      $<TARGET_FILE:selecta-cli> $<TARGET_FILE:count_malloc>
+      "${SEL_TESTMOD}" "${SEL_RENDER_OUT}/no-alloc.wav")
 endif()

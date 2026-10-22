@@ -20,7 +20,7 @@ sel_cli_test(protocol-reflection-events   "events"   "-DLINES=${SEL_COUNT_EVT}")
 sel_cli_test(protocol-reflection-tagtypes "tagtypes" "-DLINES=${SEL_COUNT_META}")
 
 # T5: the registry walked every descriptor and found only known tags.
-sel_cli_test(registry-tags "plugins --lint" "-DEXPECT=plugins=2 unknown_tags=0 duplicate_tags=0")
+sel_cli_test(registry-tags "plugins --lint" "-DEXPECT=plugins=3 unknown_tags=0 duplicate_tags=0")
 
 # T6: sel_host layout golden per architecture.
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" SEL_ARCH)
@@ -41,6 +41,30 @@ add_test(NAME ratchet
   COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}"
     "-DRATCHET=${CMAKE_CURRENT_SOURCE_DIR}/ratchet/unimplemented.txt"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/ratchet.cmake")
+
+# T13: render the generated test module, four resamplers. The module comes
+# from tools/gen_testmod.c (host build tool); hashes pinned per resampler in
+# tests/golden/nuade/ once the linear render has been listened to. A missing
+# hash file skips the comparison and prints the computed value.
+set(SEL_TESTMOD "${CMAKE_CURRENT_BINARY_DIR}/songs/selecta-test.mod")
+set(SEL_RENDER_OUT "${CMAKE_CURRENT_BINARY_DIR}/out")
+add_test(NAME testmod-sha
+  COMMAND "${CMAKE_COMMAND}" "-DMOD=${SEL_TESTMOD}"
+    "-DPINNED=${CMAKE_CURRENT_SOURCE_DIR}/songs/selecta-test.mod.sha256"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/testmod_sha.cmake")
+foreach(res none linear cubic sinc)
+  if(res STREQUAL "linear")
+    set(test_name render-golden-host)
+  else()
+    set(test_name render-golden-host-${res})
+  endif()
+  add_test(NAME ${test_name}
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DMOD=${SEL_TESTMOD}"
+      "-DOUT=${SEL_RENDER_OUT}/selecta-test.${res}.wav" "-DRESAMPLE=${res}"
+      "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/golden/nuade/selecta-test.${res}.sha256"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/render_check.cmake")
+  set_tests_properties(${test_name} PROPERTIES SKIP_REGULAR_EXPRESSION "golden hash absent")
+endforeach()
 
 add_subdirectory(m0)
 

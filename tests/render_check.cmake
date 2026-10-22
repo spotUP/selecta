@@ -1,0 +1,36 @@
+# T13: render the test module through selecta-cli and check the counters,
+# the WAV header and size, and (when committed) the golden SHA-256.
+# Variables: CLI MOD OUT RESAMPLE GOLDEN
+get_filename_component(out_dir "${OUT}" DIRECTORY)
+file(MAKE_DIRECTORY "${out_dir}")
+file(REMOVE "${OUT}")
+execute_process(
+  COMMAND "${CLI}" render "${MOD}" --output "${OUT}" --seconds 10 --rate 44100 --resample ${RESAMPLE}
+  OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "render exited ${rc}\nstdout:\n${out}\nstderr:\n${err}")
+endif()
+string(REGEX REPLACE "\n$" "" out "${out}")
+if(NOT out MATCHES "^ticks=500 voice_ops=[1-9][0-9]* mixed_frames=441000$")
+  message(FATAL_ERROR "render counters wrong:\n${out}")
+endif()
+file(SIZE "${OUT}" size)
+if(NOT size EQUAL 1764044)
+  message(FATAL_ERROR "WAV size ${size}, expected 1764044")
+endif()
+# RIFF, size 1764036, WAVE, fmt 16, PCM, 2 ch, 44100 Hz, 176400 B/s, align 4, 16 bit, data 1764000.
+set(want "52494646c4ea1a0057415645666d7420100000000100020044ac000010b102000400100064617461a0ea1a00")
+file(READ "${OUT}" header LIMIT 44 HEX)
+if(NOT header STREQUAL want)
+  message(FATAL_ERROR "WAV header wrong:\n${header}\nexpected:\n${want}")
+endif()
+file(SHA256 "${OUT}" hash)
+if(GOLDEN AND EXISTS "${GOLDEN}")
+  file(READ "${GOLDEN}" pinned)
+  string(SUBSTRING "${pinned}" 0 64 pinned)
+  if(NOT hash STREQUAL pinned)
+    message(FATAL_ERROR "SHA-256 ${hash} differs from ${GOLDEN} (${pinned})")
+  endif()
+else()
+  message(STATUS "golden hash absent: ${GOLDEN} (computed ${hash})")
+endif()
