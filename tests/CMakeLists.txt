@@ -80,7 +80,13 @@ add_custom_command(OUTPUT "${SEL_MKMOD}"
   COMMAND gen_testmod --format mk "${SEL_MKMOD}"
   DEPENDS gen_testmod
   COMMENT "Generating selecta-test-mk.mod")
-add_custom_target(testmod ALL DEPENDS "${SEL_TESTMOD}" "${SEL_SHORTMOD}" "${SEL_MKMOD}")
+set(SEL_BREAKMOD "${CMAKE_CURRENT_BINARY_DIR}/songs/selecta-break-mk.mod")
+add_custom_command(OUTPUT "${SEL_BREAKMOD}"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/songs"
+  COMMAND gen_testmod --break --format mk "${SEL_BREAKMOD}"
+  DEPENDS gen_testmod
+  COMMENT "Generating selecta-break-mk.mod")
+add_custom_target(testmod ALL DEPENDS "${SEL_TESTMOD}" "${SEL_SHORTMOD}" "${SEL_MKMOD}" "${SEL_BREAKMOD}")
 add_test(NAME testmod-sha
   COMMAND "${CMAKE_COMMAND}" "-DMOD=${SEL_TESTMOD}"
     "-DPINNED=${CMAKE_CURRENT_SOURCE_DIR}/songs/selecta-test.mod.sha256"
@@ -254,6 +260,15 @@ if(NOT SEL_AMIGA)
       # Row 41 comes from a straight-through render of selecta-test-mk.mod at frame 220500
       # (tests/m1 script OPEN/PLAY/@render 220500/@position); the seek must land on it.
       "-DPOS_LINE=seek_position order=0 row=41 pattern=0"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/seek_render.cmake")
+  # I56: seek into the last row before a Dxx break; the row before order 1 row 0 is row 15.
+  add_test(NAME seek-render-openmpt-break
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DMOD=${SEL_BREAKMOD}"
+      "-DOUT_DIR=${SEL_RENDER_OUT}" -DRESAMPLE=linear -DTAG=openmpt-break -DEXACT=0
+      "-DPATH_RE=seek_path=native" -DSEEK_MS=1850 -DSEEKED_FRAMES=81585
+      # Row 15 of order 0 comes from a straight-through render of selecta-break-mk.mod at frame
+      # 81585 (tests/m1/position-break.sel: OPEN, @render 81585, @position); the seek must land on it.
+      "-DPOS_LINE=seek_position order=0 row=15 pattern=0"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/seek_render.cmake")
   # I56: RP_POSITION in POSITION events and the snapshot.
   add_test(NAME position-openmpt

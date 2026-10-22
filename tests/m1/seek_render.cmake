@@ -1,11 +1,16 @@
 # T21 (both halves): render 5 s after a 5000 ms seek and compare with the
 # second half of the unseeked 10 s render, byte for byte.
 # Variables: CLI MOD OUT_DIR RESAMPLE PATH_RE (seek_path line regex) TAG (file name tag)
+# SEEK_MS (default 5000) and SEEKED_FRAMES (default 220500): the seek target and the SEEKED event.
 # POS_LINE (optional): exact 'seek_position order=O row=R pattern=P' line the seeked render
 # must print (RP_POSITION right after the seek).
 # EXACT (default 1): byte-for-byte comparison with the unseeked render. 0 for a
 # native seek (libopenmpt re-enters the song with fresh channel state, so only
 # the size and a non-silent body are checked; see the plan's Deviations, I56).
+if(NOT DEFINED SEEK_MS)
+  set(SEEK_MS 5000)
+  set(SEEKED_FRAMES 220500)
+endif()
 file(MAKE_DIRECTORY "${OUT_DIR}")
 set(full "${OUT_DIR}/seek-full-${TAG}.wav")
 set(seeked "${OUT_DIR}/seek-5000-${TAG}.wav")
@@ -17,7 +22,7 @@ if(NOT rc EQUAL 0)
   message(FATAL_ERROR "full render exited ${rc}\n${out}\n${err}")
 endif()
 execute_process(
-  COMMAND "${CLI}" render "${MOD}" --output "${seeked}" --seek-ms 5000 --seconds 5 --rate 44100
+  COMMAND "${CLI}" render "${MOD}" --output "${seeked}" --seek-ms ${SEEK_MS} --seconds 5 --rate 44100
           --resample ${RESAMPLE}
   RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err)
 if(NOT rc EQUAL 0)
@@ -26,8 +31,8 @@ endif()
 if(NOT out MATCHES "${PATH_RE}")
   message(FATAL_ERROR "seek path line missing, expected '${PATH_RE}':\n${out}")
 endif()
-if(NOT "${out}\n${err}" MATCHES "SEEKED 220500")
-  message(FATAL_ERROR "event 'SEEKED 220500' missing:\n${out}\n${err}")
+if(NOT "${out}\n${err}" MATCHES "SEEKED ${SEEKED_FRAMES}")
+  message(FATAL_ERROR "event 'SEEKED ${SEEKED_FRAMES}' missing:\n${out}\n${err}")
 endif()
 if(DEFINED POS_LINE AND NOT out MATCHES "(^|\n)${POS_LINE}\n")
   message(FATAL_ERROR "seek position line '${POS_LINE}' missing:\n${out}")

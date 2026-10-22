@@ -1,0 +1,6 @@
+# Source of the expected position in seek-render-openmpt-break: straight-through render of the
+# Dxx break module to frame 81585 (1850 ms). Working directory: build/host/tests/songs.
+OPEN selecta-break-mk.mod
+PLAY
+@render 81585
+@position

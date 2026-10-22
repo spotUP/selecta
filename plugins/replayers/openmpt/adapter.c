@@ -105,17 +105,22 @@ static int rp_seek(void* state, uint32_t ms) {
     openmpt_state* s = (openmpt_state*)state;
     double target = (double)ms / 1000.0;
     double at = openmpt_module_set_position_seconds(s->mod, target);
-    if (at > target) {
-        int32_t order = openmpt_module_get_current_order(s->mod);
-        int32_t row = openmpt_module_get_current_row(s->mod);
-        if (row > 0) {
-            row--;
-        } else if (order > 0) {
-            order--;
-            row = openmpt_module_get_pattern_num_rows(
-                      s->mod, openmpt_module_get_order_pattern(s->mod, order)) - 1;
+    /* libopenmpt snaps the request up to a row boundary. Ask for earlier times until the
+     * reported landing time is at or before the target; the rest is rendered and discarded.
+     * Only positions libopenmpt reports are used, so pattern breaks, jumps and delays
+     * cannot misplace the landing. Each step doubles the back-off, so the loop ends at 0. */
+    double back = 0.0;
+    while (at > target) {
+        double req;
+        back = back == 0.0 ? at - target : back * 2.0;
+        req = target - back;
+        if (req < 0.0) {
+            req = 0.0;
         }
-        at = openmpt_module_set_position_order_row(s->mod, order, row);
+        at = openmpt_module_set_position_seconds(s->mod, req);
+        if (req == 0.0) {
+            break;
+        }
     }
     if (at < target && s->rate != 0u) {
         double lead = (target - at) * (double)s->rate;

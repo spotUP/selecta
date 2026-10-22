@@ -23,7 +23,11 @@
  * alone, plain "M.K." header, no IFF wrapper), the same musical content. The
  * protracker4 replayer rejects it; libopenmpt plays it (plan T22).
  *
- * usage: gen_testmod [--short] [--format mk] <output.mod> */
+ * With --break (use with --format mk) pattern 0 carries a D00 pattern break at row 15, so
+ * order 1 starts after 16 rows and the row before order 1 row 0 is row 15, not row 63
+ * (the openmpt seek regression test).
+ *
+ * usage: gen_testmod [--short] [--break] [--format mk] <output.mod> */
 #include <stdio.h>
 #include <string.h>
 
@@ -41,6 +45,7 @@ typedef struct sample_def {
     unsigned volume;
 } sample_def;
 
+static int g_break = 0;
 static const char* g_title = "selecta test";
 static unsigned g_song_length = PATTERNS;
 static sample_def g_samples[4];
@@ -149,6 +154,9 @@ static void make_patterns(void) {
     cell(3, 16, 0, 0, 0, 0x0, 0x47);
     cell(3, 32, 0, 0, 0, 0xF, 4);
     cell(3, 48, 0, 0, 0, 0xF, 6);
+    if (g_break) {
+        cell(0, 15, 2, 0, 0, 0xD, 0x00); /* break to row 0 of the next order */
+    }
 }
 
 static void put_name(FILE* f, const char* s, unsigned width) {
@@ -258,6 +266,11 @@ int main(int argc, char** argv) {
             g_song_length = 1;
             argv++;
             argc--;
+        } else if (strcmp(argv[1], "--break") == 0) {
+            g_title = "selecta break";
+            g_break = 1;
+            argv++;
+            argc--;
         } else if (argc >= 3 && strcmp(argv[1], "--format") == 0 && strcmp(argv[2], "mk") == 0) {
             bare = 1;
             argv += 2;
@@ -267,7 +280,7 @@ int main(int argc, char** argv) {
         }
     }
     if (argc != 2) {
-        fputs("usage: gen_testmod [--short] [--format mk] <output.mod>\n", stderr);
+        fputs("usage: gen_testmod [--short] [--break] [--format mk] <output.mod>\n", stderr);
         return 2;
     }
     make_samples();
