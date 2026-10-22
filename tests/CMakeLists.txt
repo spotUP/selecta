@@ -49,6 +49,13 @@ add_test(NAME ratchet
     "-DRATCHET=${CMAKE_CURRENT_SOURCE_DIR}/ratchet/unimplemented.txt"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/ratchet.cmake")
 
+# T27b: a forced relink of selecta-cli must not warn about duplicate libraries.
+# Serial: it deletes the binary the other CLI tests run.
+add_test(NAME link-warnings
+  COMMAND "${CMAKE_COMMAND}" "-DBUILD_DIR=${PROJECT_BINARY_DIR}" "-DCLI=${SEL_CLI}"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/link_warnings.cmake")
+set_tests_properties(link-warnings PROPERTIES RUN_SERIAL TRUE)
+
 # T13: render the generated test module, four resamplers. The module comes
 # from tools/gen_testmod.c (host build tool); hashes pinned per resampler in
 # tests/golden/nuade/ once the linear render has been listened to. A missing

@@ -38,10 +38,30 @@ endif()
 
 # The adapter sees include/selecta plus nuade's public headers, nothing else
 # (T7: the sdk-isolation target compiles it with exactly those two paths).
-sel_add_plugin(nuade 1 adapter.c voices_shim.c io_shim.c
+sel_add_plugin(nuade 1 adapter.c
   THIRD_PARTY_INCLUDES "${NUADE_DIR}/include")
+
+# The players call nuade_voice_* and nuade_player*, defined in the shim. The
+# shim is a third static target so the link graph is a DAG: plugin ->
+# selecta_nuade -> sel_nuade_shim. It calls sel_voices through the pointer
+# table it receives, never back into the plugin. Same include rule as the
+# adapter, checked by sel_sdkcheck_nuade_shim under sdk-isolation (T7).
+set(SEL_NUADE_SHIM_SOURCES voices_shim.c io_shim.c)
+add_library(sel_nuade_shim STATIC ${SEL_NUADE_SHIM_SOURCES})
+target_include_directories(sel_nuade_shim PRIVATE
+  "${PROJECT_SOURCE_DIR}/include" "${NUADE_DIR}/include")
+add_library(sel_sdkcheck_nuade_shim OBJECT EXCLUDE_FROM_ALL ${SEL_NUADE_SHIM_SOURCES})
+set_target_properties(sel_sdkcheck_nuade_shim PROPERTIES INCLUDE_DIRECTORIES "")
+target_include_directories(sel_sdkcheck_nuade_shim PRIVATE
+  "${PROJECT_SOURCE_DIR}/include" "${NUADE_DIR}/include")
+add_dependencies(sdk-isolation sel_sdkcheck_nuade_shim)
+target_link_libraries(selecta_nuade PUBLIC sel_nuade_shim)
 target_link_libraries(sel_plugin_nuade PUBLIC selecta_nuade)
-# The players call nuade_voice_* defined in voices_shim.c: a static-library
-# cycle. GNU ld (68k) resolves archives in order, so list the pair twice.
-set_property(TARGET sel_plugin_nuade PROPERTY LINK_INTERFACE_MULTIPLICITY 3)
-target_link_libraries(selecta_nuade PUBLIC sel_plugin_nuade)
+
+# T27: the nuade link graph must be a DAG (plugin -> selecta_nuade ->
+# sel_nuade_shim). selecta_nuade linking back into the plugin is the cycle
+# that needed LINK_INTERFACE_MULTIPLICITY and made the host link warn.
+get_target_property(_nuade_links selecta_nuade LINK_LIBRARIES)
+if(_nuade_links AND "sel_plugin_nuade" IN_LIST _nuade_links)
+  message(FATAL_ERROR "T27: selecta_nuade links sel_plugin_nuade; the nuade link graph has a cycle")
+endif()
