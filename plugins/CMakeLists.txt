@@ -21,3 +21,10 @@ add_subdirectory(replayers/nuade)
 if(NOT SEL_AMIGA)
   add_subdirectory(replayers/openmpt)
 endif()
+
+# Text UI building blocks (plan M1.1 phase 5): cell grid, keys, theme and the
+# POSIX terminal device. Plain library for the shell; the UI plugin entry
+# (text_ui.c, row I60) joins it. Desktop only until M2.
+if(NOT SEL_AMIGA)
+  add_subdirectory(ui/text)
+endif()
