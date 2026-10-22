@@ -153,7 +153,7 @@ Tests T10 to T18 are defined in the plan's finish-line table. A row is ticked on
 | I26 | [x] | 2 | voices.h, mixer.h; T12 with vectors.h written and RED | ctest failure |
 | I27 | [x] | 2 | mixer.c, resample.c (NONE, LINEAR, CUBIC), voices.c | T12 green for three resamplers |
 | I28 | [x] | 2 | gen_sinc_table.c + SINC resampler; machine-based default | T12 green all four |
-| I29 | [ ] | 2 | abi prints sel_voices; goldens x86_64, arm64 | T6 green |
+| I29 | [x] | 2 | abi prints sel_voices; goldens x86_64, arm64 | T6 green |
 | I30 | [ ] | 3 | submodule third_party/nuade @ 111c965; patches README; selecta_nuade C11 target, NUADE_PLAYERS=protracker4 | host build green |
 | I31 | [ ] | 3 | replayer.h; adapter.c, voices_shim.c, io_shim.c | T5 green, plugins=3 |
 | I32 | [ ] | 3 | scheduler.c; engine OPEN, SUBSONG, SONG_OPENED, SONG_ENDED, POSITION; ratchet 54 | T3, T8 green |

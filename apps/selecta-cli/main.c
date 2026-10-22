@@ -21,7 +21,7 @@ static int usage(FILE* to) {
           "  roundtrip                  encode and decode every table row\n"
           "  commands --unimplemented   list verbs the engine answers not_implemented\n"
           "  script <file>              feed command lines to the engine, print events\n"
-          "  abi                        print sel_host size and field offsets\n"
+          "  abi [voices]               print sel_host (or sel_voices) size and field offsets\n"
           "  plugins [--lint]           list plugins; --lint counts bad descriptor tags\n"
           "  play-null --rate <hz> --frames <n>  pump the null output, print counters\n"
           "  machine                    probe the machine, print the sel_machine tags\n",
@@ -321,7 +321,7 @@ int main(int argc, char** argv) {
         return cmd_roundtrip();
     }
     if (strcmp(cmd, "abi") == 0) {
-        return sel_cli_abi();
+        return sel_cli_abi(argc > 2 ? argv[2] : NULL);
     }
     if (strcmp(cmd, "plugins") == 0) {
         return sel_cli_plugins(argc - 2, argv + 2);

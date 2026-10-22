@@ -25,6 +25,7 @@ sel_cli_test(registry-tags "plugins --lint" "-DEXPECT=plugins=1 unknown_tags=0 d
 # T6: sel_host layout golden per architecture.
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" SEL_ARCH)
 sel_cli_test(abi-host-layout "abi" "-DEXPECT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/abi/sel_host.${SEL_ARCH}.txt")
+sel_cli_test(abi-voices-layout "abi voices" "-DEXPECT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/abi/sel_voices.${SEL_ARCH}.txt")
 
 # T3: the engine runs a script through the real dispatch and emits the
 # expected events, including batch deferral, unknown and unimplemented verbs.

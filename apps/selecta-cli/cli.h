@@ -3,7 +3,7 @@
 #define SELECTA_CLI_H
 
 /* T6: prints `sel_host size=<n>` then `<field> offset=<n>` per field. */
-int sel_cli_abi(void);
+int sel_cli_abi(const char* what);
 
 /* T4: `play-null --rate <hz> --frames <n>`; prints
  * `pulled=<n> render_calls=<k> rate=<r>`. Writes SEL_ALLOC_FREEZE to
