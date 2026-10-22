@@ -28,7 +28,7 @@ Session 2026-10-22 (2). Finish line: RULES.md rule 0 (plans and ledger never sta
 | F14 | [x] | Format coverage union bbmp + HippoPlayer | thoughts/shared/research/2026-10-22_format-coverage.md |
 | R8 | [x] | M1 replayer reach: which nuade player (if any) reads plain M.K. .mod, nuade player float use and licences, libopenmpt as a desktop adapter, cause of duplicate-nuade linker warning (sonnet agent) | thoughts/shared/research/2026-10-23_m1-replayer-reach.md |
 | R9 | [x] | M1 codebase gap: engine commands, state, events and what a UI shell needs (sonnet agent) | thoughts/shared/research/2026-10-23_m1-codebase-gap.md |
-| R10 | [ ] | Inventory of HippoPlayer-68k native players (code/pl/) against the format coverage doc: per format, the native player, CPU it needs, output path (Paula voices or mixed), and the proposed Amiga owner; mark XM on 68020-68040 as a gap | thoughts/shared/research/ (new doc), coverage doc owner column |
+| R10 | [x] | Inventory of HippoPlayer-68k native players (code/pl/) against the format coverage doc: per format, the native player, CPU it needs, output path (Paula voices or mixed), and the proposed Amiga owner; mark XM on 68020-68040 as a gap | thoughts/shared/research/ (new doc), coverage doc owner column |
 
 ## Design (doc: thoughts/shared/plans/2026-10-22-architecture-design.md)
 
