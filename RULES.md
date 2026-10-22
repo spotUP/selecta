@@ -21,10 +21,13 @@ Toolchains: desktop clang/gcc + CMake + Ninja; Amiga bebbo amiga-gcc at `~/opt/a
 | Build (Amiga 68020) | `cmake -S . -B build/amiga -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/amiga-68020.cmake && cmake --build build/amiga` |
 | Type/static check | `cmake --build build/host --target lint` (clang-tidy + `-Werror` build; the SDK lint checks plugins compile against `include/selecta/` alone) |
 | Format | `cmake --build build/host --target format` (clang-format, `.clang-format` at root) |
-| Test, one suite | `ctest --test-dir build/host -R <name> --output-on-failure` |
-| Test, CI (all) | `ctest --test-dir build/host --output-on-failure` |
-| Golden render for one replayer | `build/host/apps/selecta-cli/selecta-cli render <song> --output <wav>`; compare with `tests/golden/<plugin>/<song>.sha256` |
-| Run text UI (local) | `build/host/apps/selecta/selecta` in a terminal (LOCAL; on the Amiga: `Selecta` in an UP-Term window) |
+| Test, one suite | `nice -n 19 ctest --test-dir build/host -R <name> --output-on-failure` |
+| Test, CI (all) | `nice -n 19 ctest --test-dir build/host -j2 --output-on-failure` |
+| Test, Amiga under vamos | build `build/amiga` first, reconfigure `build/host`, then `ctest --test-dir build/host -R amiga-roundtrip` |
+| List / lint plugins | `build/host/apps/selecta-cli/selecta-cli plugins --lint` |
+| Pump the null output | `build/host/apps/selecta-cli/selecta-cli play-null --rate 44100 --frames 4410` |
+| Golden render for one replayer (not yet implemented, M0b) | `build/host/apps/selecta-cli/selecta-cli render <song> --output <wav>`; compare with `tests/golden/<plugin>/<song>.sha256` |
+| Run text UI (local, not yet implemented) | `build/host/apps/selecta/selecta` in a terminal (LOCAL; on the Amiga: `Selecta` in an UP-Term window) |
 | Stop / cleanup | `rm -rf build/host build/amiga` |
 
-Not yet implemented: every command above is the contract for M0 (see the design doc, section 14). Update this table in the same commit that makes a command real.
+Every row is real after M0a except the two marked not yet implemented. `lint` and `format` print an install hint when clang-tidy or clang-format is missing. Update this table in the same commit that makes a command real.
