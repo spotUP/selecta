@@ -3,10 +3,7 @@
 # project-wide -Werror -pedantic flags are for Selecta code, not vendored code.
 # Not linked: nuade_mixer.c, nuade_song.c, nuade_io_default.c (Selecta supplies
 # the mixer, the song source and the I/O; see design doc section 4).
-# Amiga cross build: Phase 5 (D-M2-1) ports the adapter; nothing is built here.
-if(SEL_AMIGA)
-  return()
-endif()
+# Also built for the 68k cross target (C11 on gcc 6.5, Phase 5).
 
 set(NUADE_DIR "${PROJECT_SOURCE_DIR}/third_party/nuade")
 set(NUADE_PLAYERS "protracker4")
@@ -29,7 +26,13 @@ target_include_directories(selecta_nuade
 set_target_properties(selecta_nuade PROPERTIES
   C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF
   COMPILE_OPTIONS "-Wall;-Wextra")
-if(UNIX)
+# libnix <string.h> declares concat(); nuade_path.c has a static one. Renamed
+# per source file on the 68k build (our build file, no change to nuade).
+if(SEL_AMIGA)
+  set_source_files_properties("${NUADE_DIR}/src/nuade_path.c"
+    PROPERTIES COMPILE_OPTIONS "-include;${PROJECT_SOURCE_DIR}/cmake/amiga_nuade_path.h")
+endif()
+if(UNIX OR SEL_AMIGA)
   target_link_libraries(selecta_nuade PUBLIC m)
 endif()
 
@@ -38,3 +41,7 @@ endif()
 sel_add_plugin(nuade 1 adapter.c voices_shim.c io_shim.c
   THIRD_PARTY_INCLUDES "${NUADE_DIR}/include")
 target_link_libraries(sel_plugin_nuade PUBLIC selecta_nuade)
+# The players call nuade_voice_* defined in voices_shim.c: a static-library
+# cycle. GNU ld (68k) resolves archives in order, so list the pair twice.
+set_property(TARGET sel_plugin_nuade PROPERTY LINK_INTERFACE_MULTIPLICITY 3)
+target_link_libraries(selecta_nuade PUBLIC sel_plugin_nuade)

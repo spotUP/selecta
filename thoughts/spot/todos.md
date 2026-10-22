@@ -161,7 +161,7 @@ Tests T10 to T18 are defined in the plan's finish-line table. A row is ticked on
 | I34 | [ ] | 3 | four golden hashes committed after listening check; T7 third-party include rule | T13 green (4 ctests), T7 green |
 | I35 | [x] | 4 | nuade_ab.c written and run | T15 runs |
 | I36 | [x] | 4 | A/B correlation >= 0.98, value recorded | T15 green |
-| I37 | [ ] | 5 | full 68k build incl. selecta_nuade C11 | build/amiga green |
+| I37 | [x] | 5 | full 68k build incl. selecta_nuade C11 | build/amiga green |
 | I38 | [ ] | 5 | run_vamos machine + render cases; sel_voices.m68k.txt golden | T11, T14 green |
 | I39 | [ ] | 5 | tests/lint/no_float.cmake over 68k engine, mixer, wav, null objects | T18 green |
 | I40 | [ ] | 6 | coreaudio.c, selecta-cli play, T16 RED then green | T16 green |
