@@ -162,7 +162,7 @@ Tests T10 to T18 are defined in the plan's finish-line table. A row is ticked on
 | I35 | [x] | 4 | nuade_ab.c written and run | T15 runs |
 | I36 | [x] | 4 | A/B correlation >= 0.98, value recorded | T15 green |
 | I37 | [x] | 5 | full 68k build incl. selecta_nuade C11 | build/amiga green |
-| I38 | [ ] | 5 | run_vamos machine + render cases; sel_voices.m68k.txt golden | T11, T14 green |
+| I38 | [x] | 5 | run_vamos machine + render cases; sel_voices.m68k.txt golden | T11, T14 green |
 | I39 | [ ] | 5 | tests/lint/no_float.cmake over 68k engine, mixer, wav, null objects | T18 green |
 | I40 | [ ] | 6 | coreaudio.c, selecta-cli play, T16 RED then green | T16 green |
 | I41 | [ ] | 6 | audio thread assertion in sel_engine_render (debug) | T16 green in Debug |

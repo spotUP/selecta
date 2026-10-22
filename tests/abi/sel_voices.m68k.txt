@@ -1,0 +1,12 @@
+sel_voices size=44
+size offset=0
+play offset=4
+queue offset=8
+stop offset=12
+set_pitch_hz offset=16
+set_period offset=20
+set_volume offset=24
+set_pan offset=28
+is_playing offset=32
+get_state offset=36
+ctx offset=40
