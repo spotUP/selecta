@@ -52,3 +52,14 @@ add_test(NAME registry-tags-negative
 # T7: every plugin compiles with include/ as its only project include path.
 add_test(NAME sdk-isolation
   COMMAND "${CMAKE_COMMAND}" --build "${PROJECT_BINARY_DIR}" --target sdk-isolation)
+
+# T9: the 68k build runs under vamos and agrees with the host. Registered
+# only when vamos is installed and build/amiga holds a selecta-cli.
+find_program(SEL_VAMOS vamos)
+set(SEL_AMIGA_CLI "${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta-cli/selecta-cli")
+if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
+  add_test(NAME amiga-roundtrip
+    COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DHOST_CLI=${SEL_CLI}"
+            "-DAMIGA_CLI=${SEL_AMIGA_CLI}" "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/abi/sel_host.m68k.txt"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_vamos.cmake")
+endif()

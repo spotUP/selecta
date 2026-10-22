@@ -136,7 +136,7 @@ Tests T1 to T9 are defined in the plan's finish-line table. A row is ticked only
 | I17 | [x] | 5 | sdk-isolation as ctest T7 | T7 green |
 | I18 | [x] | 5 | count_malloc shim and no_alloc.sh | no-alloc green |
 | I19 | [x] | 6 | Full 68k build green (-Werror, 32-bit uintptr_t, big-endian) | build/amiga complete |
-| I20 | [ ] | 6 | tests/amiga/run_vamos.cmake; sel_host.m68k.txt golden | T9 green |
+| I20 | [x] | 6 | tests/amiga/run_vamos.cmake; sel_host.m68k.txt golden | T9 green |
 | I21 | [ ] | 7 | ratchet number committed, T8 green; ci.yml host jobs; Amiga CI image to verify | T8 green, workflow file |
 | I22 | [ ] | 7 | RULES.md Commands table updated, README, validation doc, plan status done | counts reconciled in reply |
 
