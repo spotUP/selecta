@@ -1,6 +1,6 @@
 ---
 date: 2026-10-22
-topic: Selecta — multi-format music player, architecture design (draft v2)
+topic: Selecta, multi-format music player, architecture design (draft v2)
 tags: [design, architecture, amiga, portable-c, plugins, nuade, eagleplayer, sources, playlists, tags]
 status: draft
 ---
@@ -99,6 +99,33 @@ Every row is a feature Johan picked on 2026-10-22 (AskUserQuestion rounds 1 to 4
 | Library | Per-song `wrong` flag with note (sounds-wrong.txt, `selecta-cli wrong`) and `skip` flag, both query keys (F28) | library + cli | text | M3 | B |
 | Playback | Streaming MP3/Ogg from URLs and pipes (`PIPE:` on Amiga); M3U URL-only import quirk honoured (section 17) | engine + stream decoder plugins + local source | text | M3 | H |
 | Library | Companion/archive songs inside collection archives (bbmp "not prepared"): archives browse as folders in every source, not only `local` | library sources + F8 decrunch | text | M3b | B |
+| Library | Synced lyrics: LRC files, tracker song message shown as lyrics, DEViLBOX lyrics endpoint (F19) | library + UI plugins | text | M3 | - |
+| Library | Sonic similarity vectors from the analysis render, shared via DEViLBOX by song hash; feeds radio and smart shuffle (F20) | analysis path (F6) + library + DEViLBOX | text (fetch), desktop (compute) | M5 | - |
+| Remote | Persisted cross-device play queue resumed on another device (F21, completes F4 hand-off) | engine + library + DEViLBOX | text | M5 | - |
+| Playback | Smart shuffle: queue seeded by the current list plus similar songs from F20 and DEViLBOX genre (F23) | engine + library | text | M5 | - |
+| Library | Stats screen: library totals, play time, top formats and artists per period (F24) | library SQL views + UI plugins | text | M3 | - |
+| Integration | Offline scrobble queue with batch flush, last.fm and ListenBrainz (F25) | scrobble plugin | text | M5 | - |
+| Playback | Analysis-driven smart fade and MixRamp overlap points, computed on desktop, shared via DEViLBOX like loudness (F29, extends F1) | engine + analysis path + DEViLBOX | text (fetch) | M5 | - |
+| Queue | Reshuffle, play scope (library / playlist / album only), next and previous album (F30) | engine, section 9c | text | M1 | - |
+| Output | Direct (bit-perfect) volume flag on output plugins; per-output enable and independent output partitions (F31) | output plugins + engine routing | text | M5 | - |
+| Library | Aminet, Modules.pl and AMP as `sel_source` modules (F33) | library sources | text | M3b | H |
+| Library | Smart downloads: cache prefetch policy driven by history and smart playlists (F34) | library cache | text | M3 | - |
+| Library | Podcasts: RSS feeds as a source with per-episode state (F35) | library source + stream decoder plugins | text | M5 | - |
+| Output | Stream-to-disk recording of radio and streams (F36, F6 record path) | record sink | text | M3 | - |
+| Social | Blend: DEViLBOX builds a shared playlist from several users' histories (F37, server work D9) | DEViLBOX + library | text | M5 | - |
+| Visuals | Signal path display (replayer > DSP chain > output) and fullscreen visual mode (F38) | engine state + UI plugins | text (path), planar (fullscreen) | M4 | - |
+| Output | Advanced DSP: parametric EQ, upsampling, convolution, upmix as chain plugins (F39, extends F6) | DSP plugins | RTG / desktop (float; hidden by `sel_machine`) | M5 | - |
+| Social | Hosted public share pages on DEViLBOX for song, playlist and position (F40, extends F4; server work D9) | DEViLBOX | text | M5 | - |
+| Library | Network storage discovery (SMB/NFS mounts, neighbours) as local-source roots (F41) | local source + core/<os> | text | M5 | - |
+| Files | Clipboard URL watch: a copied song URL offers to play (F43) | desktop UI plugins | desktop | M5 | - |
+| Metadata | Batch tag editing, fingerprint tagging (AcoustID/MusicBrainz, mp3/stream only), Demozoo lookup, last.fm/MusicBrainz artist info (F44) | library + metadata lookup plugins | text | M5 | - |
+| UI | Vi-style command mode with completion; run an external command on the selection (F45) | text UI | text | M1 | - |
+| Integration | OpenSubsonic server API served by the engine, so any Subsonic client is a Selecta remote (F46) | remote server, section 8 | text | M5 | - |
+| UI | Configurable columns, title-format strings and status-line format (F48) | view model (section 9b) + UIs | text | M1 | - |
+| UI | Command palette, help overlay, undo/redo of queue edits (F49) | engine queue history + UIs | text | M1 | - |
+| Output | Multi-zone sync: grouped outputs with synced clocks (F50, restored into scope) | engine routing + network outputs | desktop | M5+ | - |
+| Remote | Server transcoding to MP3/Opus for remote clients (F51, restored into scope) | remote server + encoder plugins | desktop | M5+ | - |
+| Library | Multi-user accounts and multiple libraries on one engine (F52, restored into scope) | library + remote server | text | M5+ | - |
 
 ## 2. Layering
 
@@ -172,6 +199,11 @@ Threading model (one design, two realities)
 - Desktop: an audio thread (output callback) pulls frames from the engine's render path; the UI thread calls `sel_engine_pump()`. Commands go UI -> engine through an SPSC queue, events engine -> UI through another. No locks in the render path, no allocation after `start`.
 - Amiga: the audio callback is an interrupt (CIA timer tick for voice players, AHI's player hook for mixed output). Single core, so the same SPSC queues work with `volatile` and interrupt disable only around queue head/tail publication. `sel_engine_pump()` runs from the main loop (Wait on signals).
 
+- **Queue scope and album navigation (F30).** `RESHUFFLE` re-randomises the remaining queue order with the current seed policy, `SCOPE library|playlist|album` limits what next, previous and shuffle may pick from, and `NEXT_ALBUM` and `PREV_ALBUM` jump to the first song of the adjacent album in the current scope. All four are plain commands in `commands.def` and change only engine queue state, which UIs render from the snapshot. Section 9c holds the queue semantics they act on.
+- **Queue undo and redo (F49).** Every queue edit (add, remove, move, clear, reshuffle) pushes an inverse record onto a fixed-size history ring allocated at start. `UNDO` and `REDO` pop and replay it, and the event `QUEUE_HISTORY` carries the undo and redo depths so a UI can grey out its entries. Playback position is never part of the history, only the list.
+- **Smart shuffle (F23).** `SHUFFLE smart` seeds the queue from the current list and then interleaves songs ranked by the F20 similarity vectors and the DEViLBOX genre list. The ranking itself is integer distance over fixed-size vectors fetched by the library, so the engine side only consumes an ordered candidate list and never computes similarity. On machines without vectors or network it falls back to ordinary shuffle and reports so in the reply.
+- **Smart fade and MixRamp (F29).** The engine applies overlap points (fade-out start and fade-in end per song) that the library fetched from the analysis cache or DEViLBOX, and starts the next song early so the ramps meet. The fade curve is a 16.16 fixed-point gain table with no float on the audio path. The analysis that finds the points runs on the desktop tier only; other machines just consume the stored values and fall back to the plain crossfade (F1) when none exist.
+
 ## 4. Replayer plugin SDK
 
 Modelled on nuade's `NuadePlayer` (file `include/nuade/player.h`), which is the cleanest replayer contract available: probe, open, start, then either `tick` (voice-driven) or `render_raw` (self-rendering), plus read-only display hooks. We define our own ABI with that shape and bridge nuade through one adapter plugin. Reason: nuade is "very early" and may change its ABI; our SDK must stay stable for third-party authors; the same ABI must also host libopenmpt, gme, sid, bbmp's helpers, stream decoders and native 68k players.
@@ -241,6 +273,11 @@ Hardware audio outputs (F26, HippoPlayer parity): output plugins for external ch
 
 Format coverage rule: every format HippoPlayer or bbmp plays has a Selecta plugin owner in `2026-10-22_format-coverage.md` (F14, 445 formats). Owner classes, each one adapter plugin wrapping one upstream library (rule 5, adapt never fork): **nuade** (119 Amiga formats, M1), **openmpt** (63 trackers), **gme** (14 console), **sidplayfp** (4 SID), **stream decoders** (mp3/ogg/flac/wav for radio stations and audio files), **native UADE** (Amiga only, 17 formats nuade skips, M4), and the classes the F14 count showed missing from v1 of this doc: **zxtune** (41: ZX Spectrum trackers, DS/PSF/PS2/Saturn/Dreamcast/N64 sound formats, HivelyTracker), **adplug** (40 Ad Lib/OPL formats), **libvgm** (8 VGM/S98 variants), **libkss** (7 MSX), **libxmp** (6 trackers openmpt lacks), **furnace** (4), **protrekkr** (4), **sndh** (Atari ST, 1), and about 30 single-format C helpers that bbmp ships under `csrc/` (soundclub, fxm, synder, buz, ym, pxtone, organya, goattracker, musicline, ... ) wrapped one plugin each from the same source. Milestones: nuade + openmpt + gme + sidplayfp + streams at M1/M2; zxtune, adplug, libvgm, libkss, libxmp at M2b; furnace, protrekkr, sndh and the bbmp helper set at M3c. 22 formats bbmp lists but cannot play (Renoise, Tunefish, ...) stay listed with owner "none" and are a tracked gap, as in bbmp. A format in the catalogue with no owner is a defect, not a gap. Coverage counts are re-derived from the doc's table with the grep commands it records, never retyped.
 
+- **Direct volume and output partitions (F31).** An output plugin may set `SEL_OUT_DIRECT_VOLUME` to declare that it passes samples bit-exact, and the engine then bypasses software volume, DSP and normalisation for that output and routes volume to the device when it has a control. Each output also has an enable flag, and a partition table says which outputs play which stream, so two outputs can carry two independent streams. The routing table is plain engine state set by commands and shown in the snapshot.
+- **Stream recording (F36).** A record sink attaches to a stream source (radio, podcast, network stream) and writes the incoming bytes or the decoded audio to disk, split per song when the stream carries metadata changes. It is the same record path as F6, so the file naming, tag writing and format options are shared and only the tap point differs. On machines without a writable big disk the sink is hidden.
+- **Advanced DSP chain (F39).** Parametric EQ, upsampling, convolution and upmix are chain plugins with `SEL_DSP_PARAMS` lists like any other DSP, so every UI generates their panels without special code. Plugins that need float or long filters are marked in their tag list and `sel_machine` hides them where float is slow, while a fixed-point variant is offered where one exists. The chain order is user-editable and persisted in the profile.
+- **Multi-zone sync (F50).** Outputs can be grouped into a zone that shares one clock: the group master renders once and each member output receives the stream with a per-output delay. Drift between device clocks is measured against the master and corrected by integer-ratio resampling nudges, never by dropping blocks. This is desktop tier and scheduled for M5+, with network outputs as the usual members.
+
 ## 6. Visualizers
 
 Split data from drawing. The engine produces taps: per-voice scope buffers, VU, spectrum bands (FFT when float is fast, integer band filters otherwise), note/instrument per voice (nuade `viz.h` already defines these), tracker cells, chip registers (`SEL_RP_CHIP_REGS`). A viz plugin consumes taps and draws into an abstract surface the UI hands it:
@@ -277,13 +314,36 @@ Theming (D8): every UI reads design tokens (colours, spacing, font roles) from a
 
 Amiga OS integration (F27, HippoPlayer parity): the Amiga UI plugins open on a public screen chosen by setting (`PUBSCREEN`, default Workbench) or on their own screen; iconify to a Workbench AppIcon (drop a file on it = `QUEUE_ADD`); AppWindow drag and drop; ToolTypes and CLI arguments map 1:1 to the same commands and options as every other UI (one parser in `src/core/amiga/`); task priority of the player process is a setting; file requesters use asl (reqtools not needed on 2.0+). Stored programs on function keys F1 to F10 are user key bindings (F11), not a separate mechanism.
 
+- **Signal path display and fullscreen visual mode (F38).** The engine snapshot exposes the active chain as data (replayer, each DSP plugin, the output, with rates and bit depths), and a UI renders it as a line or diagram. Fullscreen visual mode hands the whole surface to a visualizer plugin with the UI chrome hidden and any key restoring it. The text path display works on every tier, the fullscreen mode needs a planar or better surface.
+- **Clipboard URL watch (F43).** Desktop UI plugins poll the system clipboard on focus and, when it holds a song or stream URL the source registry can resolve, offer to play or queue it. The prompt is a normal UI action that sends `QUEUE_ADD` or `PLAY`, and the feature can be switched off in settings. The clipboard access lives in `src/core/<os>/` so the UI code stays portable.
+- **Vi-style command mode (F45).** The text UI opens a command line on `:` with completion drawn from the `COMMANDS` reflection output, so every typed command maps 1:1 to a protocol command and nothing is UI-private. A second form runs an external program on the current selection, passing the song paths as arguments, in the same spirit as the song-change hook. History is kept in the UI profile.
+- **Configurable columns and title formats (F48).** Columns, title-format strings and the status-line format are user settings, but the strings are resolved in the view model (section 9b), which turns a song and a format into display text. UIs receive ready rows and column widths and do no formatting of their own. Defaults come from the active view style, and a bad format string falls back to the default with a warning.
+- **Command palette and help overlay (F49).** A fuzzy-search palette lists every entry from the `COMMANDS` reflection output with its current key binding, so new commands appear without UI changes. The help overlay renders the same list grouped by area. Queue undo and redo (section 3) are reachable from both.
+
 ## 8. Headless and remote
 
 Headless = library + CLI. `apps/selecta-cli` plays, probes, renders to WAV/FLAC, computes loudness, and talks the protocol to a running engine (scripting and tests) with no UI. `src/protocol/` exposes the same commands/events as newline-delimited text over a socket or pipe (bsdsocket.library on Amiga). Any external GUI, a web page, or a phone talks to it; the shell's in-process UIs do not go through it (no IPC cost on 68k). On top of the same protocol: an HTTP/JSON API with a web remote page served by the engine (party mode voting queue lives here), an MCP server (desktop), device hand-off (a second Selecta instance takes over the queue and position, Connect style), and per-OS integration plugins (MPRIS, macOS Now Playing, Windows SMTC, Discord rich presence) that are protocol clients in-process.
 
 Device hand-off (F4, Spotify Connect model): every running engine announces itself on the LAN (mDNS `_selecta._tcp` on desktop, a UDP beacon on the Amiga stack) and lists the others as **devices**. `DEVICE_LIST`, `DEVICE_TRANSFER <id>` move playback: the source engine sends `SNAPSHOT_QUEUE` (queue with ids, cursor, position, options) to the target over the remote protocol, the target resolves song keys through its own sources and cache, starts at the same position, and the source stops. A UI connected to engine A keeps showing A's state unless it follows the transfer (`DEVICE_FOLLOW`). Hand-off needs no server; DEViLBOX is only involved when a song key is not reachable from the target (it fetches through the mirror). Party-queue relay (F9) and the web remote (F4) ride the same protocol and the same device list.
 
+- **Persisted cross-device queue (F21).** The queue is stored by the library and mirrored to DEViLBOX under the user's account, so another device can fetch it and resume at the saved position. This completes the F4 hand-off for the case where the first device is off. Writes are batched on queue change and on pause, and a device that finds a newer remote copy asks before replacing its own.
+- **Offline scrobble queue (F25).** The scrobble plugin appends each due scrobble (from the `SCROBBLE_DUE` event) to a persistent queue and flushes it in batches to last.fm and ListenBrainz when the network is up. Failed batches stay queued with their original timestamps and retry with back-off, and a size cap drops the oldest entries with a warning.
+- **Blend (F37).** DEViLBOX builds a shared playlist from the histories of several users who opt in, weighted so each contributes a fair share. The engine side is only a client that requests the result and plays it as a normal playlist. The server work is ledger item D9.
+- **Hosted share pages (F40).** DEViLBOX hosts a public page for a song, a playlist or a song with a position, and the engine asks it for a link through the remote API. The page plays through the DEViLBOX web player and needs no account to view. The server work is ledger item D9, and the engine shares only keys and hashes, never local paths.
+- **OpenSubsonic server API (F46).** The remote server also speaks the OpenSubsonic REST API, so any Subsonic client can browse the library and control playback. Each endpoint maps to the same commands and events as the native protocol, with no state of its own, and authentication reuses the token model. Endpoints that have no Selecta meaning return the documented not-supported reply.
+- **Server transcoding (F51).** For remote clients that cannot decode a tracker format, the server renders the song and encodes it to MP3 or Opus through encoder plugins and streams the result. Encoding runs on the desktop tier only, scheduled for M5+, and the encoder is a plugin so licensing stays isolated. Results can be cached by song hash and bitrate.
+
 ## 9. Library: sources, catalogue, cache
+
+- **Synced lyrics (F19).** Lyrics come from LRC files next to the song, from the tracker song message shown as plain lyrics, or from the DEViLBOX lyrics endpoint by song hash. The library parses LRC into timed lines and the view model hands the current line to UIs on a position tick. Songs without lyrics simply show nothing.
+- **Sonic similarity vectors (F20).** The analysis render (F6) produces a small fixed-size integer vector per song, computed on desktop and shared through DEViLBOX by song hash so other machines only fetch it. The vectors feed radio mode and smart shuffle (F23). Nothing in the engine computes them at play time.
+- **Stats screen (F24).** Library totals, play time and top formats and artists per period are SQL views over the history tables, and a UI renders the query results through the view model. No counters are kept outside the database, so the numbers always match the history.
+- **Aminet, Modules.pl and AMP sources (F33).** Each is a `sel_source` module with the same interface as the bbmp sources, covering browse, search and fetch into the cache. This is part of HippoPlayer and bbmp parity, and each source is its own plugin so a machine loads only the ones it uses.
+- **Smart downloads (F34).** The cache prefetch policy uses play history and smart playlists to decide which remote songs to fetch ahead of time, within the cache budget and respecting kept and liked songs. Prefetch runs at low priority and pauses on metered or slow links, and users can turn it off.
+- **Podcasts (F35).** An RSS feed is a source whose items are episodes, each with its own state (new, played, position, downloaded). Stream decoder plugins handle the enclosure formats, and refresh runs on a timer or on request. Episode position is saved on pause so playback resumes where it stopped.
+- **Network storage discovery (F41).** SMB and NFS shares and neighbouring hosts are found through code in `src/core/<os>/` and offered as roots for the `local` source. A found share is mounted or accessed through the OS and then scanned like any folder. Credentials are kept in the profile, never in the library DB.
+- **Tag tools and metadata lookup (F44).** Batch tag edit, AcoustID fingerprinting (only for mp3 and stream files, where audio tags are meaningful), Demozoo lookup for tracker songs, and last.fm and MusicBrainz artist info are all metadata lookup plugins behind one interface. Results are proposals that the user accepts, and accepted values go into the library DB, with file tag writes only where the format allows.
+- **Multi-user accounts and libraries (F52).** One engine can hold several accounts, each with its own library DB, queue, history and settings, selected at login on the remote server. The library layer takes an account handle instead of a global, so no code assumes a single library. Scheduled for M5+.
 
 ### 9.1 Sources
 
@@ -449,6 +509,8 @@ Runtime machine scaling (decision 2026-10-22; Johan: "we shall not let amiga/020
 - M4 Amiga UIs and native players: GadTools, MUI with RTG and planar layouts, `LoadSeg` loader, UADE-native HW replayer plugin (lifted out of UpRough), viz plugins on bitmap surfaces, chip register panels, ARexx port, OS file integration.
 - M5 Remote protocol server, HTTP/JSON API + web remote + party queue, device hand-off, MCP, SDL desktop UI with grid and cover flow, GPU visualizers, DSP chain, network outputs, more replayers (openmpt, gme, sid, bbmp helpers, stream decoders), radio stations, converters, integration plugins (MPRIS, Now Playing, SMTC, Discord), Lua, skins, BPM detect.
 
+Round 5 picks (section 1a rows F19 to F52) land in the milestone each row names; M5+ marks desktop-tier features scheduled after M5.
+
 ## 15. Risks
 
 - 68000 and floating point: nuade's voice API is `double pitch_hz` and its mixer is float. Paula-direct avoids the mixer; period conversion happens once per note. Software-mixed output uses our fixed-point mixer; nuade's float mixer stays in the adapter for A/B only.
@@ -480,6 +542,7 @@ Decided 2026-10-22 (Johan, AskUserQuestion):
 - D8 Theming = design tokens in a theme file for every UI, bitmap skin loader in the SDL UI later. Why: no hardcoded colours, Winamp/AmigaAMP skins are a known want.
 - Parity with HippoPlayer and bbmp is a v1 goal; nothing of theirs is out of scope. Format coverage = union of both.
 - Feature picks rounds 1 to 4 recorded in section 1a. Out of scope: two-deck DJ mode. Also out of scope: HippoPlayer keyfile/registration (Selecta is MIT, there is nothing to unlock).
+- Feature picks round 5 (2026-10-22, from the feature catalogue Unhomed list): F19 to F21, F23 to F25, F29 to F31, F33 to F41, F43 to F46, F48 and F49 are in (rows in section 1a). Restored into scope: multi-zone sync (F50), server transcoding (F51), multi-user / multi-library (F52), all at M5+ on the desktop tier. Not picked: CD audio (F32), rippers (F42), device sync (F47). Still out: Atmos, mpd-style client messaging, Tidal/Qobuz paid sources. Why: Johan picked them; the design is not capped by the Amiga baseline, each scales or hides by `sel_machine`.
 
 ## 17. Playlist formats and the hippoplayer.se server
 
