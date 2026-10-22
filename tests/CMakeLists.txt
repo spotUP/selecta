@@ -63,3 +63,25 @@ if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
             "-DAMIGA_CLI=${SEL_AMIGA_CLI}" "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/abi/sel_host.m68k.txt"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_vamos.cmake")
 endif()
+
+# T10: the machine probe through `selecta-cli machine`. FAST_RAM is the
+# machine's physical memory, read at test time by machine.cmake.
+add_test(NAME machine-probe
+  COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" -DPLATFORM=host
+          "-DTAGS_DEF=${PROJECT_SOURCE_DIR}/include/selecta/tags.def"
+          -DEXPECT_CPU=desktop -DEXPECT_FPU=1 -DEXPECT_TIER=gpu -DEXPECT_FAST_RAM=sysctl
+          -P "${CMAKE_CURRENT_SOURCE_DIR}/machine.cmake")
+
+# T11: the same probe on the 68k binary under vamos -C 68020. vamos's
+# AvailMem defaults (measured 2026-10-22 by running the probe; vamos 68020
+# profile, no -m or -H options): CHIP_RAM and FAST_RAM below, in bytes.
+if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
+  set(SEL_VAMOS_CHIP_RAM 0)
+  set(SEL_VAMOS_FAST_RAM 0)
+  add_test(NAME amiga-machine
+    COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DAMIGA_CLI=${SEL_AMIGA_CLI}" -DPLATFORM=amiga
+            "-DTAGS_DEF=${PROJECT_SOURCE_DIR}/include/selecta/tags.def"
+            -DEXPECT_CPU=68020 -DEXPECT_FPU=0 -DEXPECT_TIER=text
+            -DEXPECT_CHIP_RAM=${SEL_VAMOS_CHIP_RAM} -DEXPECT_FAST_RAM=${SEL_VAMOS_FAST_RAM}
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/machine.cmake")
+endif()
