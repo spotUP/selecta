@@ -141,7 +141,7 @@ Tests T1 to T9 are defined in the plan's finish-line table. A row is ticked only
 | I21 | [x] | 7 | ratchet number committed, T8 green; ci.yml host jobs; Amiga CI image to verify | T8 green, workflow file |
 | I22 | [x] | 7 | RULES.md Commands table updated, README, validation doc, plan status done | counts reconciled in reply |
 
-## Implementation M0b (plan: thoughts/shared/plans/2026-10-22-m0b-replay.md, status: draft, awaiting approval)
+## Implementation M0b (plan: thoughts/shared/plans/2026-10-22-m0b-replay.md, status: in-progress, approved 2026-10-22)
 
 Tests T10 to T18 are defined in the plan's finish-line table. A row is ticked only when its proof column is green.
 
