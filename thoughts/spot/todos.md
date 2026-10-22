@@ -110,15 +110,15 @@ Session 2026-10-22 (2). Finish line: RULES.md rule 0 (plans and ledger never sta
 | R6 | [x] | First commit, named files, no attribution | git log |
 | R7 | [x] | next-session.md start prompt | thoughts/spot/next-session.md |
 
-## Implementation (plan: thoughts/shared/plans/2026-10-22-m0-skeleton.md, status: approved)
+## Implementation (plan: thoughts/shared/plans/2026-10-22-m0-skeleton.md, status: in-progress)
 
 Tests T1 to T9 are defined in the plan's finish-line table. A row is ticked only when its proof column is green in `ctest --test-dir build/host`.
 
 | ID | Status | Phase | Task | Proof |
 |----|--------|-------|------|-------|
-| I1 | [ ] | 1 | Root CMakeLists, cmake/selecta_plugin.cmake, cmake/selecta_defs.cmake, .clang-format, selecta-cli version | host build; `selecta-cli version` prints `selecta-cli 0.0.1 api 1` |
-| I2 | [ ] | 1 | cmake/amiga-68020.cmake with root search (`$AMIGA_GCC_ROOT`, `~/opt/amiga`, `/opt/amiga`), `-mcrt=nix20`; 68k build of selecta-cli version | vamos prints version line |
-| I3 | [ ] | 1 | lint, format, sdk-isolation targets (clang tools optional, -Werror always) | targets exist and run |
+| I1 | [x] | 1 | Root CMakeLists, cmake/selecta_plugin.cmake, cmake/selecta_defs.cmake, .clang-format, selecta-cli version | host build; `selecta-cli version` prints `selecta-cli 0.0.1 api 1` |
+| I2 | [x] | 1 | cmake/amiga-68020.cmake with root search (`$AMIGA_GCC_ROOT`, `~/opt/amiga`, `/opt/amiga`), `-mcrt=nix20`; 68k build of selecta-cli version | vamos prints version line |
+| I3 | [x] | 1 | lint, format, sdk-isolation targets (clang tools optional, -Werror always) | targets exist and run |
 | I4 | [ ] | 2 | tags.def with reserved namespace blocks and M0a rows; tags.h; src/core/tag.c | compiles on both toolchains |
 | I5 | [ ] | 2 | commands.def and events.def full first set; design doc BEGIN/END one-line fix | counts read by CMake |
 | I6 | [ ] | 2 | protocol.h: enums, names, args, sel_message, codec API, SEL_MAX_ARGS static assert | compiles |
