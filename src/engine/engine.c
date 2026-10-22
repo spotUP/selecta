@@ -18,6 +18,7 @@
 #include <selecta/tags.h>
 
 #include "mixer.h"
+#include "queue.h"
 #include "scheduler.h"
 #include "spsc.h"
 #include "thread.h"
@@ -41,11 +42,23 @@
     X(BEGIN)                                                                                  \
     X(END)                                                                                    \
     X(OPEN)                                                                                   \
-    X(SUBSONG)
+    X(SUBSONG)                                                                                \
+    X(NEXT)                                                                                   \
+    X(PREV)                                                                                   \
+    X(QUEUE_ADD)                                                                              \
+    X(QUEUE_REMOVE)                                                                           \
+    X(QUEUE_CLEAR)                                                                            \
+    X(QUEUE_PLAY_NEXT)
 
 #define SEL_SLOT_COUNT 2u
 #define SEL_SLOT_NONE 0xFFFFFFFFu
 #define SEL_SUBSONG_DEFAULT 0xFFFFFFFFu
+/* kinds of song change, shared by begin_song and the deferred request */
+#define SEL_BEGIN_OPEN 1u    /* new song: SONG_OPENED */
+#define SEL_BEGIN_SUBSONG 2u /* other subsong of the open file: no event */
+#define SEL_BEGIN_RESTART 3u /* same song from the start: SEEKED 0 */
+/* PREV inside the first three seconds goes to the previous entry, later restarts */
+#define SEL_PREV_RESTART_MS 3000u
 #define SEL_SWAP_RING_DEPTH 4u
 /* ids of the internal ring messages (not commands, not in commands.def) */
 #define SEL_RING_SWAP 1u
@@ -79,6 +92,7 @@ typedef struct sel_slot {
     uint32_t pos_emitted; /* whole seconds last reported */
     uint32_t last_tick;   /* the current tick carries SEL_TICK_ENDED */
     uint32_t ended;       /* set by render, reported by the next pump */
+    uint32_t reported;    /* pump side: SONG_ENDED was emitted for this song */
 } sel_slot;
 
 struct sel_engine {
@@ -109,6 +123,10 @@ struct sel_engine {
     uint32_t deferred_subsong;
     char deferred_path[SEL_DEFERRED_PATH_MAX];
     char subsong_path[SEL_DEFERRED_PATH_MAX];
+    sel_queue queue;
+    uint32_t q_playing; /* id of the playing queue entry, 0: none */
+    uint32_t q_hint;    /* position NEXT and PLAY start from while q_playing is 0 */
+    uint32_t song_over; /* the open song ended or the queue ran out: PLAY restarts the queue */
 };
 
 static const char* const k_option_names[] = {
@@ -281,11 +299,6 @@ static void set_play(sel_engine* e, sel_play_state s) {
     }
 }
 
-static void cmd_PLAY(sel_engine* e, const sel_message* m) {
-    (void)m;
-    set_play(e, SEL_PLAYING);
-}
-
 static void cmd_PAUSE(sel_engine* e, const sel_message* m) {
     (void)m;
     if (e->state.play == SEL_PLAYING) {
@@ -413,6 +426,7 @@ static void close_slot(sel_engine* e, sel_slot* sl) {
     }
     sl->frames_left = 0;
     sl->ended = 0;
+    sl->reported = 0;
     sl->last_tick = 0;
     sl->busy = 0;
 }
@@ -426,6 +440,7 @@ static int start_subsong(sel_engine* e, sel_slot* sl, uint32_t subsong) {
     sl->song_frames = 0;
     sl->pos_emitted = 0;
     sl->ended = 0;
+    sl->reported = 0;
     sl->last_tick = 0;
     sl->subsong = subsong;
     return sl->rp_start(sl->rp_state, subsong, e->rate, sel_mixer_voices(&sl->mixer));
@@ -586,58 +601,184 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     return 1;
 }
 
-/* One OPEN (is_open) or SUBSONG request. Both slots busy means the audio thread
- * has not yet returned the old one: the request waits for the next pump. */
-static void begin_song(sel_engine* e, uint32_t is_open, const char* path, uint32_t subsong) {
+/* One song change (SEL_BEGIN_*). Both slots busy means the audio thread has
+ * not yet returned the old one: the request waits for the next pump. Returns
+ * 0 when the song could not be started (an ERROR was reported). */
+static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t subsong) {
     uint32_t idx;
     sel_message ev;
+    const char* detail = kind == SEL_BEGIN_OPEN ? path : kind == SEL_BEGIN_SUBSONG ? "SUBSONG" : "PREV";
     reclaim_slots(e);
     if (!find_free_slot(e, &idx)) {
         size_t n = strlen(path);
         if (n >= SEL_DEFERRED_PATH_MAX) {
-            sel_engine_report_error(e, "open_failed", is_open ? path : "SUBSONG");
-            return;
+            sel_engine_report_error(e, "open_failed", detail);
+            return 0;
         }
         memcpy(e->deferred_path, path, n + 1u);
-        e->deferred = is_open ? 1u : 2u;
+        e->deferred = kind;
         e->deferred_subsong = subsong;
-        return;
+        e->song_over = 0;
+        return 1;
     }
     e->deferred = 0;
-    if (!prepare_slot(e, idx, path, subsong, is_open ? path : "SUBSONG")) {
-        return;
+    if (!prepare_slot(e, idx, path, subsong, detail)) {
+        return 0;
     }
     e->cur = idx;
-    if (is_open) {
+    e->song_over = 0;
+    if (kind == SEL_BEGIN_OPEN) {
         evt_init(&ev, SEL_EVT_SONG_OPENED);
         evt_tags(&ev, e->slot[idx].rp_metadata ? e->slot[idx].rp_metadata(e->slot[idx].rp_state) : NULL);
         emit(e, &ev);
+    } else if (kind == SEL_BEGIN_RESTART) {
+        evt_init(&ev, SEL_EVT_SEEKED);
+        evt_uint(&ev, 0);
+        emit(e, &ev);
     }
     emit_position(e, &e->slot[idx]);
+    return 1;
 }
 
 static void cmd_OPEN(sel_engine* e, const sel_message* m) {
-    begin_song(e, 1u, m->args[0].v.s, SEL_SUBSONG_DEFAULT);
+    e->q_playing = 0;
+    begin_song(e, SEL_BEGIN_OPEN, m->args[0].v.s, SEL_SUBSONG_DEFAULT);
+}
+
+/* Starts the open song's file again in the idle slot: SUBSONG (n) or
+ * PREV's restart. The path lives in the slot that reclaim may close, so it
+ * is copied first. 0: no song open. */
+static int reopen_current(sel_engine* e, uint32_t kind, uint32_t subsong, const char* who) {
+    sel_slot* cur = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
+    if (cur == NULL || cur->rp_state == NULL) {
+        sel_engine_report_error(e, "no_song", who);
+        return 0;
+    }
+    if (strlen(cur->path) >= SEL_DEFERRED_PATH_MAX) {
+        sel_engine_report_error(e, "start_failed", who);
+        return 0;
+    }
+    memcpy(e->subsong_path, cur->path, strlen(cur->path) + 1u);
+    return begin_song(e, kind, e->subsong_path, subsong == SEL_SUBSONG_DEFAULT ? cur->subsong : subsong);
 }
 
 static void cmd_SUBSONG(sel_engine* e, const sel_message* m) {
     uint32_t n = m->args[0].v.u;
     sel_slot* cur = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
-    if (cur == NULL || cur->rp_state == NULL) {
-        sel_engine_report_error(e, "no_song", "SUBSONG");
-        return;
-    }
-    if (n >= cur->rp_info.subsong_count) {
+    if (cur != NULL && cur->rp_state != NULL && n >= cur->rp_info.subsong_count) {
         sel_engine_report_error(e, "range", "SUBSONG");
         return;
     }
-    /* the path lives in the slot that may be closed by reclaim: copy it first */
-    if (strlen(cur->path) >= SEL_DEFERRED_PATH_MAX) {
-        sel_engine_report_error(e, "start_failed", "SUBSONG");
+    reopen_current(e, SEL_BEGIN_SUBSONG, n, "SUBSONG");
+}
+
+/* ---- queue ----------------------------------------------------------- */
+
+static void emit_queue_changed(sel_engine* e) {
+    sel_message m;
+    evt_init(&m, SEL_EVT_QUEUE_CHANGED);
+    evt_uint(&m, e->queue.version);
+    emit(e, &m);
+}
+
+/* Plays the entry at `idx` through the one song-change path. A stopped
+ * transport starts; paused stays paused. 0: the entry could not start. */
+static int queue_start(sel_engine* e, uint32_t idx) {
+    e->q_playing = e->queue.entries[idx].id;
+    e->q_hint = idx;
+    if (!begin_song(e, SEL_BEGIN_OPEN, sel_queue_path(&e->queue, idx), SEL_SUBSONG_DEFAULT)) {
+        e->q_playing = 0;
+        return 0;
+    }
+    if (e->state.play == SEL_STOPPED) {
+        set_play(e, SEL_PLAYING);
+    }
+    return 1;
+}
+
+/* The queue ran out: the transport stops and the next NEXT or PLAY starts over. */
+static void queue_finish(sel_engine* e) {
+    e->q_playing = 0;
+    e->q_hint = 0;
+    e->song_over = 1;
+    set_play(e, SEL_STOPPED);
+}
+
+static void cmd_PLAY(sel_engine* e, const sel_message* m) {
+    (void)m;
+    if (e->q_playing == 0 && e->queue.count > 0 && (e->cur == SEL_SLOT_NONE || e->song_over)) {
+        queue_start(e, e->q_hint < e->queue.count ? e->q_hint : 0);
         return;
     }
-    memcpy(e->subsong_path, cur->path, strlen(cur->path) + 1u);
-    begin_song(e, 0u, e->subsong_path, n);
+    set_play(e, SEL_PLAYING);
+}
+
+static void cmd_NEXT(sel_engine* e, const sel_message* m) {
+    uint32_t idx = e->q_playing ? sel_queue_index_of(&e->queue, e->q_playing) + 1u : e->q_hint;
+    (void)m;
+    if (idx >= e->queue.count) {
+        queue_finish(e);
+        return;
+    }
+    queue_start(e, idx);
+}
+
+static void cmd_PREV(sel_engine* e, const sel_message* m) {
+    const sel_slot* cur = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
+    uint32_t idx = e->q_playing ? sel_queue_index_of(&e->queue, e->q_playing) : 0;
+    (void)m;
+    if (cur == NULL || cur->rp_state == NULL) {
+        sel_engine_report_error(e, "no_song", "PREV");
+        return;
+    }
+    if (idx == 0 || (uint64_t)cur->song_frames * 1000u / e->rate >= SEL_PREV_RESTART_MS) {
+        reopen_current(e, SEL_BEGIN_RESTART, SEL_SUBSONG_DEFAULT, "PREV");
+        return;
+    }
+    queue_start(e, idx - 1u);
+}
+
+static void queue_insert(sel_engine* e, uint32_t at, const char* path, const char* who) {
+    uint32_t id;
+    if (!sel_queue_insert(&e->queue, at, path, &id)) {
+        sel_engine_report_error(e, "queue_full", who);
+        return;
+    }
+    emit_queue_changed(e);
+}
+
+static void cmd_QUEUE_ADD(sel_engine* e, const sel_message* m) {
+    queue_insert(e, e->queue.count, m->args[0].v.s, "QUEUE_ADD");
+}
+
+static void cmd_QUEUE_PLAY_NEXT(sel_engine* e, const sel_message* m) {
+    uint32_t at = e->q_playing ? sel_queue_index_of(&e->queue, e->q_playing) + 1u : e->q_hint;
+    queue_insert(e, at, m->args[0].v.s, "QUEUE_PLAY_NEXT");
+}
+
+static void cmd_QUEUE_REMOVE(sel_engine* e, const sel_message* m) {
+    uint32_t id = m->args[0].v.u;
+    uint32_t at = sel_queue_remove(&e->queue, id);
+    if (at == SEL_QUEUE_NONE) {
+        sel_engine_report_error(e, "range", "QUEUE_REMOVE");
+        return;
+    }
+    if (id == e->q_playing) {
+        /* the song keeps playing; the entry now at this position is next */
+        e->q_playing = 0;
+        e->q_hint = at;
+    } else if (e->q_playing == 0 && at < e->q_hint) {
+        e->q_hint--;
+    }
+    emit_queue_changed(e);
+}
+
+static void cmd_QUEUE_CLEAR(sel_engine* e, const sel_message* m) {
+    (void)m;
+    sel_queue_clear(&e->queue);
+    e->q_playing = 0;
+    e->q_hint = 0;
+    emit_queue_changed(e);
 }
 
 static void cmd_not_implemented(sel_engine* e, const sel_message* m) {
@@ -675,6 +816,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     sel_engine* e = host->mem_alloc(host, sizeof *e, SEL_MEM_FAST);
     uint32_t cmd_depth = cfg && cfg->cmd_queue_depth ? cfg->cmd_queue_depth : 64;
     uint32_t evt_depth = cfg && cfg->evt_queue_depth ? cfg->evt_queue_depth : 256;
+    uint32_t queue_cap, queue_text;
     if (e == NULL) {
         return NULL;
     }
@@ -687,13 +829,22 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         e->registry_count = cfg->registry_count;
         e->registry_get = cfg->registry_get;
     }
+    sel_queue_default_sizes(cfg ? (uint32_t)sel_tag_find(cfg->machine, SEL_MACHINE_FAST_RAM, 0) : 0, &queue_cap,
+                            &queue_text);
+    if (cfg && cfg->queue_capacity) {
+        queue_cap = cfg->queue_capacity;
+    }
+    if (cfg && cfg->queue_text_bytes) {
+        queue_text = cfg->queue_text_bytes;
+    }
     copy_str(e->state.output, SEL_OUTPUT_NAME_MAX, "null");
     e->cur = SEL_SLOT_NONE;
     e->audio_slot = SEL_SLOT_NONE;
     e->act = SEL_SLOT_NONE;
     if (!sel_spsc_init(&e->cmd_q, host, cmd_depth) || !sel_spsc_init(&e->evt_q, host, evt_depth) ||
         !sel_spsc_init(&e->swap_q, host, SEL_SWAP_RING_DEPTH) ||
-        !sel_spsc_init(&e->ret_q, host, SEL_SWAP_RING_DEPTH)) {
+        !sel_spsc_init(&e->ret_q, host, SEL_SWAP_RING_DEPTH) ||
+        !sel_queue_init(&e->queue, host, queue_cap, queue_text)) {
         sel_engine_destroy(e);
         return NULL;
     }
@@ -715,6 +866,7 @@ void sel_engine_destroy(sel_engine* e) {
         sel_spsc_free(&e->evt_q, e->host);
         sel_spsc_free(&e->swap_q, e->host);
         sel_spsc_free(&e->ret_q, e->host);
+        sel_queue_free(&e->queue, e->host);
         e->host->mem_free(e->host, e);
     }
 }
@@ -735,18 +887,24 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
     }
     reclaim_slots(e);
     if (e->deferred) {
-        begin_song(e, e->deferred == 1u, e->deferred_path, e->deferred_subsong);
+        begin_song(e, e->deferred, e->deferred_path, e->deferred_subsong);
     }
     if (e->cur != SEL_SLOT_NONE) {
         sel_slot* sl = &e->slot[e->cur];
-        if (sl->ended) {
+        int advanced = 0;
+        if (sl->ended && !sl->reported) {
             sel_message ev;
-            sl->ended = 0;
+            uint32_t next = e->q_playing ? sel_queue_index_of(&e->queue, e->q_playing) + 1u : SEL_QUEUE_NONE;
+            sl->reported = 1;
             evt_init(&ev, SEL_EVT_SONG_ENDED);
             emit(e, &ev);
-            set_play(e, SEL_STOPPED);
+            if (next < e->queue.count && queue_start(e, next)) {
+                advanced = 1;
+            } else {
+                queue_finish(e);
+            }
         }
-        if (sl->rp_state != NULL && sl->song_frames / e->rate != sl->pos_emitted) {
+        if (!advanced && sl->rp_state != NULL && sl->song_frames / e->rate != sl->pos_emitted) {
             emit_position(e, sl);
         }
     }
@@ -813,7 +971,9 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
                 sl->rp_tick(sl->rp_state, &r);
                 sl->ticks++;
                 sl->frames_left = sel_scheduler_frames(&sl->sched, r.length);
-                if (r.flags & SEL_TICK_ENDED) {
+                /* A looping song ends after its first pass (repeat count 1, as the
+                 * nuade core does); REPEAT will make this configurable. */
+                if (r.flags & (SEL_TICK_ENDED | SEL_TICK_LOOPED)) {
                     sl->last_tick = 1;
                 }
             }
@@ -838,6 +998,22 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
         memset(stereo + (size_t)done * 2u, 0, (size_t)(frames - done) * 2u * sizeof(int16_t));
     }
     return frames;
+}
+
+uint32_t sel_engine_queue_version(const sel_engine* e) {
+    return e->queue.version;
+}
+
+uint32_t sel_engine_queue_count(const sel_engine* e) {
+    return e->queue.count;
+}
+
+uint32_t sel_engine_queue_playing_id(const sel_engine* e) {
+    return e->q_playing;
+}
+
+uint32_t sel_engine_queue_id_at(const sel_engine* e, uint32_t index) {
+    return index < e->queue.count ? e->queue.entries[index].id : 0;
 }
 
 uint32_t sel_engine_render_calls(const sel_engine* e) {

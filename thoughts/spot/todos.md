@@ -189,7 +189,7 @@ Tests T19 to T27 are defined in the plan's finish-line table. A row is ticked on
 | I47 | [x] | 1 | 68k build after the link change | build/amiga green, T14 green |
 | I48 | [x] | 2 | T20 and T21 (nuade half) written and red | ctest failures |
 | I49 | [x] | 2 | two replayer slots, SWAP through the SPSC, close on pump thread | T13, T14, T17 green |
-| I50 | [ ] | 2 | queue.c, QUEUE_ADD/REMOVE/CLEAR/PLAY_NEXT, NEXT/PREV, auto-advance, QUEUE_CHANGED | T20 green, ratchet 48 |
+| I50 | [x] | 2 | queue.c, QUEUE_ADD/REMOVE/CLEAR/PLAY_NEXT, NEXT/PREV, auto-advance, QUEUE_CHANGED | T20 green, ratchet 48 |
 | I51 | [ ] | 2 | SEEK restart-and-skip, SEEKED, render --seek-ms | T21 nuade half green, ratchet 47 |
 | I52 | [ ] | 2 | sel_state song/queue/view fields; T18 over queue.o | T18, T6 green |
 | I53 | [ ] | 3 | nuade metadata tags; glob of all 121 players; T23 red then green; design doc player count | T23 green |

@@ -68,7 +68,13 @@ add_custom_command(OUTPUT "${SEL_TESTMOD}"
   COMMAND gen_testmod "${SEL_TESTMOD}"
   DEPENDS gen_testmod
   COMMENT "Generating selecta-test.mod")
-add_custom_target(testmod ALL DEPENDS "${SEL_TESTMOD}")
+set(SEL_SHORTMOD "${CMAKE_CURRENT_BINARY_DIR}/songs/selecta-short.mod")
+add_custom_command(OUTPUT "${SEL_SHORTMOD}"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/songs"
+  COMMAND gen_testmod --short "${SEL_SHORTMOD}"
+  DEPENDS gen_testmod
+  COMMENT "Generating selecta-short.mod")
+add_custom_target(testmod ALL DEPENDS "${SEL_TESTMOD}" "${SEL_SHORTMOD}")
 add_test(NAME testmod-sha
   COMMAND "${CMAKE_COMMAND}" "-DMOD=${SEL_TESTMOD}"
     "-DPINNED=${CMAKE_CURRENT_SOURCE_DIR}/songs/selecta-test.mod.sha256"

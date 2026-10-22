@@ -50,6 +50,13 @@ typedef struct sel_engine_config {
      * OPEN answers ERROR no_replayer. */
     uint32_t (*registry_count)(void);
     const sel_tag* (*registry_get)(uint32_t index);
+    /* Queue sizes, allocated once in sel_engine_create. 0: scaled from the
+     * SEL_MACHINE_FAST_RAM tag of `machine` (the list sel_machine_probe
+     * returns; the front end probes, the engine does not), or the smallest
+     * defaults when `machine` is NULL. */
+    uint32_t queue_capacity;
+    uint32_t queue_text_bytes;
+    const sel_tag* machine;
 } sel_engine_config;
 
 typedef struct sel_engine sel_engine;
@@ -95,6 +102,14 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out);
 void sel_engine_mark_audio_thread(sel_engine* e);
 uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames);
 uint32_t sel_engine_render_calls(const sel_engine* e);
+
+/* Read-only queue view for front ends and tests (the snapshot fields of
+ * SNAPSHOT_QUEUE will fold these in). playing_id is 0 when no queue entry
+ * is playing. sel_engine_queue_id_at returns 0 past the end. */
+uint32_t sel_engine_queue_version(const sel_engine* e);
+uint32_t sel_engine_queue_count(const sel_engine* e);
+uint32_t sel_engine_queue_playing_id(const sel_engine* e);
+uint32_t sel_engine_queue_id_at(const sel_engine* e, uint32_t index);
 
 /* 1 when the engine answers this verb with real behaviour, 0 when it
  * replies ERROR not_implemented. The ratchet (T8) counts the zeros. */

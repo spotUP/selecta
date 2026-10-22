@@ -3,6 +3,7 @@
  * front end makes. */
 #include <selecta/api.h>
 #include <selecta/engine.h>
+#include <selecta/machine.h>
 #include <selecta/protocol.h>
 #include <selecta/registry.h>
 #include <selecta/tags.h>
@@ -248,6 +249,70 @@ static void print_event(void* ctx, const sel_message* evt) {
     printf("%s\n", line);
 }
 
+/* Script directives (lines starting with '@') are not protocol verbs; they let
+ * a script observe and drive what a front end and an audio thread would:
+ *   @queue              QUEUE version=V playing=ID ids=a,b,c
+ *   @render N           render N frames on this thread, then pump and print
+ *   @render_until_end   render until SONG_ENDED is pumped; POSITION events
+ *                       before it are not printed (their count depends on
+ *                       the song length) */
+#define SCRIPT_RENDER_CHUNK 4096u
+#define SCRIPT_RENDER_LIMIT 100000u
+
+typedef struct script_sink {
+    int quiet_position; /* drop POSITION until SONG_ENDED */
+    int ended;
+} script_sink;
+
+static void script_event(void* ctx, const sel_message* evt) {
+    script_sink* s = ctx;
+    if (s->quiet_position && !s->ended && evt->id == SEL_EVT_POSITION) {
+        return;
+    }
+    if (evt->id == SEL_EVT_SONG_ENDED) {
+        s->ended = 1;
+    }
+    print_event(NULL, evt);
+}
+
+static void script_render(sel_engine* e, uint32_t frames) {
+    static int16_t buf[SCRIPT_RENDER_CHUNK * 2u];
+    while (frames > 0) {
+        uint32_t n = frames < SCRIPT_RENDER_CHUNK ? frames : SCRIPT_RENDER_CHUNK;
+        sel_engine_render(e, buf, n);
+        frames -= n;
+    }
+}
+
+static void script_directive(sel_engine* e, const char* line) {
+    unsigned long n = 0;
+    script_sink sink = {0, 0};
+    if (strcmp(line, "@queue") == 0) {
+        uint32_t i;
+        printf("QUEUE version=%u playing=%u ids=", (unsigned)sel_engine_queue_version(e),
+               (unsigned)sel_engine_queue_playing_id(e));
+        for (i = 0; i < sel_engine_queue_count(e); i++) {
+            printf(i ? ",%u" : "%u", (unsigned)sel_engine_queue_id_at(e, i));
+        }
+        printf("\n");
+    } else if (sscanf(line, "@render %lu", &n) == 1) {
+        script_render(e, (uint32_t)n);
+        sel_engine_pump(e, script_event, &sink);
+    } else if (strcmp(line, "@render_until_end") == 0) {
+        uint32_t i;
+        sink.quiet_position = 1;
+        for (i = 0; i < SCRIPT_RENDER_LIMIT && !sink.ended; i++) {
+            script_render(e, SCRIPT_RENDER_CHUNK);
+            sel_engine_pump(e, script_event, &sink);
+        }
+        if (!sink.ended) {
+            printf("ERROR script_timeout @render_until_end\n");
+        }
+    } else {
+        fprintf(stderr, "selecta-cli: unknown directive %s\n", line);
+    }
+}
+
 /* T3: every line of the file goes through codec, queue, dispatch and back
  * out as events. One pump per line so the decode pool can be reused. */
 static int cmd_script(const char* path) {
@@ -265,6 +330,7 @@ static int cmd_script(const char* path) {
     sel_registry_init(sel_host_default());
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;
+    cfg.machine = sel_machine_probe(sel_host_default());
     e = sel_engine_create(sel_host_default(), &cfg);
     if (e == NULL) {
         fclose(f);
@@ -276,6 +342,10 @@ static int cmd_script(const char* path) {
         int err;
         line[strcspn(line, "\r\n")] = '\0';
         if (line[0] == '\0' || line[0] == '#') {
+            continue;
+        }
+        if (line[0] == '@') {
+            script_directive(e, line);
             continue;
         }
         err = sel_codec_decode(line, SEL_MSG_CMD, &m, pool, sizeof pool);

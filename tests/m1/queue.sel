@@ -1,6 +1,7 @@
 # T20 queue-engine: queue edits, ids, NEXT, PREV and auto-advance through the
 # real dispatch. Run with the working directory set to build/host/tests/songs.
-# Script-only directives (apps/selecta-cli, not protocol verbs):
+# A one-frame render between song changes lets the audio side take the
+# published slot, as a running audio thread would. Script-only directives (apps/selecta-cli, not protocol verbs):
 #   @queue              print the snapshot: QUEUE version=V playing=ID ids=a,b,c
 #   @render N           render N frames on the audio side, then pump and print
 #   @render_until_end   render until SONG_ENDED is pumped; POSITION is not printed
@@ -25,14 +26,18 @@ PREV
 @render 220500
 PREV
 @queue
+@render 1
 NEXT
+@render 1
 NEXT
+@render 1
 NEXT
+@render 1
 NEXT
 @queue
 QUEUE_CLEAR
-QUEUE_ADD selecta-test.mod
-QUEUE_ADD selecta-test.mod
+QUEUE_ADD selecta-short.mod
+QUEUE_ADD selecta-short.mod
 @queue
 PLAY
 @render_until_end

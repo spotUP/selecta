@@ -14,7 +14,12 @@
  * sample data. Chunk sizes include the 8 header bytes, as that replayer
  * steps from chunk to chunk by them.
  *
- * usage: gen_testmod <output.mod> */
+ * With --short the order list holds only the first pattern and the title is
+ * "selecta short": one pass of about eight seconds, after which the order
+ * list wraps and the replayer reports a loop (the queue tests need a song
+ * that ends). The default output is unchanged.
+ *
+ * usage: gen_testmod [--short] <output.mod> */
 #include <stdio.h>
 #include <string.h>
 
@@ -32,6 +37,8 @@ typedef struct sample_def {
     unsigned volume;
 } sample_def;
 
+static const char* g_title = "selecta test";
+static unsigned g_song_length = PATTERNS;
 static sample_def g_samples[4];
 static unsigned char g_patterns[PATTERNS][PATTERN_BYTES];
 
@@ -188,13 +195,13 @@ static int write_mod(const char* path) {
     put_zeros(f, VERS_BYTES - 8u);
     fwrite("INFO", 1, 4, f);
     put_long(f, INFO_BYTES);
-    put_name(f, "selecta test", 32);
+    put_name(f, g_title, 32);
     put_zeros(f, 8);
     put_word(f, 125); /* start tempo */
     put_word(f, 0);   /* flags: Fxx always sets the speed */
     fwrite("PTDT", 1, 4, f);
     put_long(f, ptdt_bytes);
-    put_name(f, "selecta test", 20);
+    put_name(f, g_title, 20);
     for (i = 0; i < SAMPLES; i++) {
         if (i < 4) {
             const sample_def* s = &g_samples[i];
@@ -215,7 +222,7 @@ static int write_mod(const char* path) {
             put_word(f, 1);
         }
     }
-    fputc(PATTERNS, f); /* song length */
+    fputc((int)g_song_length, f); /* song length */
     fputc(127, f);      /* restart */
     for (i = 0; i < 128; i++) {
         fputc(i < PATTERNS ? (int)i : 0, f);
@@ -231,8 +238,14 @@ static int write_mod(const char* path) {
 }
 
 int main(int argc, char** argv) {
+    if (argc == 3 && strcmp(argv[1], "--short") == 0) {
+        g_title = "selecta short";
+        g_song_length = 1;
+        argv++;
+        argc--;
+    }
     if (argc != 2) {
-        fputs("usage: gen_testmod <output.mod>\n", stderr);
+        fputs("usage: gen_testmod [--short] <output.mod>\n", stderr);
         return 2;
     }
     make_samples();
