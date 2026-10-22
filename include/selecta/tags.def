@@ -14,6 +14,7 @@
  *   META    0x8000  metadata values
  *   MACHINE 0x9000  machine probe       (M0b)
  *   HOSTQ   0xA000  host queries
+ *   MIX     0xB000  mixer configuration (M0b)
  * Control tags 0 END, 1 MORE, 2 SKIP and the SEL_TAG_USER bit 0x80000000
  * live in tags.h. Types: INT (value is a number), STR (value is a
  * const char*), PTR (value is a function or object pointer), LIST (value
@@ -23,6 +24,21 @@ SEL_TAG(PLUGIN, KIND,          0x0100, INT)
 SEL_TAG(PLUGIN, ID,            0x0101, STR)
 SEL_TAG(PLUGIN, VERSION,       0x0102, INT)
 SEL_TAG(PLUGIN, TAGS,          0x0103, LIST)
+
+SEL_TAG(RP, NAME,              0x1000, STR)
+SEL_TAG(RP, VERSION,           0x1001, INT)
+SEL_TAG(RP, KIND,              0x1002, INT)
+SEL_TAG(RP, EXTENSIONS,        0x1003, STR)
+SEL_TAG(RP, FORMATS,           0x1004, STR)
+SEL_TAG(RP, MAX_VOICES,        0x1005, INT)
+SEL_TAG(RP, NEEDS_CHIPMEM,     0x1006, INT)
+SEL_TAG(RP, PROBE,             0x1007, PTR)
+SEL_TAG(RP, OPEN,              0x1008, PTR)
+SEL_TAG(RP, CLOSE,             0x1009, PTR)
+SEL_TAG(RP, START,             0x100A, PTR)
+SEL_TAG(RP, TICK,              0x100B, PTR)
+SEL_TAG(RP, METADATA,          0x100C, PTR)
+SEL_TAG(RP, FLAGS,             0x100D, INT)
 
 SEL_TAG(OUT, NAME,             0x2000, STR)
 SEL_TAG(OUT, SINK,             0x2001, INT)
@@ -55,4 +71,24 @@ SEL_TAG(META, RELEASE,         0x800C, STR)
 SEL_TAG(META, SID_MODEL,       0x800D, INT)
 SEL_TAG(META, STIL,            0x800E, STR)
 
+/* Machine probe (design doc section 12). CPU and TIER values are the
+ * sel_cpu and sel_tier enums in machine.h; RAM sizes are bytes; speeds are
+ * integer loop counts per second (see machine.h); GFX, AUDIO, NET and DISK
+ * are strings, "unknown" until their probes exist. */
+SEL_TAG(MACHINE, CPU,          0x9000, INT)
+SEL_TAG(MACHINE, CPU_SPEED,    0x9001, INT)
+SEL_TAG(MACHINE, FPU,          0x9002, INT)
+SEL_TAG(MACHINE, FPU_SPEED,    0x9003, INT)
+SEL_TAG(MACHINE, FAST_RAM,     0x9004, INT)
+SEL_TAG(MACHINE, CHIP_RAM,     0x9005, INT)
+SEL_TAG(MACHINE, GFX,          0x9006, STR)
+SEL_TAG(MACHINE, AUDIO,        0x9007, STR)
+SEL_TAG(MACHINE, NET,          0x9008, STR)
+SEL_TAG(MACHINE, DISK,         0x9009, STR)
+SEL_TAG(MACHINE, TIER,         0x900A, INT)
+
 SEL_TAG(HOSTQ, API_VERSION,    0xA000, INT)
+
+/* Mixer configuration. The resampler values (none, linear, cubic, sinc)
+ * are enum constants in the mixer header, not tags. */
+SEL_TAG(MIX, RESAMPLE,         0xB000, INT)

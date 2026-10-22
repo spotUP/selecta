@@ -147,7 +147,7 @@ Tests T10 to T18 are defined in the plan's finish-line table. A row is ticked on
 
 | ID | Status | Phase | Task | Proof |
 |----|--------|-------|------|-------|
-| I23 | [ ] | 1 | tags.def: SEL_MACHINE_*, SEL_RP_*, SEL_MIX_* rows | T2, T5 green |
+| I23 | [x] | 1 | tags.def: SEL_MACHINE_*, SEL_RP_*, SEL_MIX_* rows | T2, T5 green |
 | I24 | [ ] | 1 | T10, T11 written and RED | ctest failures |
 | I25 | [ ] | 1 | machine.h, machine.c, machine_desktop.c, machine_amiga.c, selecta-cli machine | T10 green |
 | I26 | [ ] | 2 | voices.h, mixer.h; T12 with vectors.h written and RED | ctest failure |
