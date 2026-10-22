@@ -58,11 +58,20 @@ add_test(NAME sdk-isolation
 # only when vamos is installed and build/amiga holds a selecta-cli.
 find_program(SEL_VAMOS vamos)
 set(SEL_AMIGA_CLI "${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta-cli/selecta-cli")
+# Every vamos test runs the binary in build/amiga, which the host build does
+# not produce. The amiga-build fixture rebuilds it first so a host ctest never
+# runs a stale 68k binary. vamos keeps one temp RAM: volume per user
+# (~/.vamos/volumes/ram) and fails "temp volume volume path already exists"
+# when two instances start at once, so all vamos tests share the vamos lock.
 if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
+  add_test(NAME amiga-build
+    COMMAND "${CMAKE_COMMAND}" --build "${PROJECT_SOURCE_DIR}/build/amiga" --parallel 2)
+  set_tests_properties(amiga-build PROPERTIES FIXTURES_SETUP amiga_cli)
   add_test(NAME amiga-roundtrip
     COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DHOST_CLI=${SEL_CLI}"
             "-DAMIGA_CLI=${SEL_AMIGA_CLI}" "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/abi/sel_host.m68k.txt"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_vamos.cmake")
+  set_tests_properties(amiga-roundtrip PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos)
 endif()
 
 # T10: the machine probe through `selecta-cli machine`. FAST_RAM is the
@@ -85,6 +94,7 @@ if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
             -DEXPECT_CPU=68020 -DEXPECT_FPU=0 -DEXPECT_TIER=text
             -DEXPECT_CHIP_RAM=${SEL_VAMOS_CHIP_RAM} -DEXPECT_FAST_RAM=${SEL_VAMOS_FAST_RAM}
             -P "${CMAKE_CURRENT_SOURCE_DIR}/machine.cmake")
+  set_tests_properties(amiga-machine PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos)
 endif()
 
 # T12: mixer unit test (period step, resampler vectors, clipping, loop and
