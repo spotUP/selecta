@@ -89,6 +89,10 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out);
 
 /* Fills `frames` stereo frames: the open song's mix while PLAYING, else
  * silence. Counts calls. Never allocates. */
+/* Marks the calling thread as the audio thread (call it from the output's
+ * pull callback on its first run). Debug builds then assert that
+ * sel_engine_render runs only there and send/pump/destroy never do. */
+void sel_engine_mark_audio_thread(sel_engine* e);
 uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames);
 uint32_t sel_engine_render_calls(const sel_engine* e);
 

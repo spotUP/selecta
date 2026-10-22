@@ -13,6 +13,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Runs on the output's audio thread: the first call marks it. */
+static uint32_t audio_pull(void* ctx, int16_t* stereo, uint32_t frames) {
+    static int marked;
+    if (!marked) {
+        sel_engine_mark_audio_thread((sel_engine*)ctx);
+        marked = 1;
+    }
+    return sel_cli_engine_pull(ctx, stereo, frames);
+}
+
 int sel_cli_play(int argc, char** argv) {
     const sel_host* host = sel_host_default();
     sel_cli_output o;
@@ -60,7 +70,7 @@ int sel_cli_play(int argc, char** argv) {
         fputs("play: no output device\n", stderr);
         return 77;
     }
-    o.set_source(out, sel_cli_engine_pull, e);
+    o.set_source(out, audio_pull, e);
 
     total = (uint32_t)(seconds * rate);
     while (played < total) {

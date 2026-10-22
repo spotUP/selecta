@@ -11,6 +11,7 @@
 #include "mixer.h"
 #include "scheduler.h"
 #include "spsc.h"
+#include "thread.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -50,6 +51,7 @@ struct sel_engine {
     uint32_t in_batch;
     uint32_t pending;
     uint32_t render_calls;
+    SEL_THREAD_FIELDS
     uint32_t error_slot;
     char error_detail[8][SEL_ERROR_DETAIL_MAX];
     uint32_t log_slot;
@@ -578,8 +580,13 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     return e;
 }
 
+void sel_engine_mark_audio_thread(sel_engine* e) {
+    SEL_THREAD_MARK_AUDIO(e);
+}
+
 void sel_engine_destroy(sel_engine* e) {
     if (e) {
+        SEL_THREAD_NOT_AUDIO(e);
         close_song(e);
         sel_spsc_free(&e->cmd_q, e->host);
         sel_spsc_free(&e->evt_q, e->host);
@@ -588,12 +595,14 @@ void sel_engine_destroy(sel_engine* e) {
 }
 
 int sel_engine_send(sel_engine* e, const sel_message* cmd) {
+    SEL_THREAD_NOT_AUDIO(e);
     return sel_spsc_push(&e->cmd_q, cmd);
 }
 
 uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
     sel_message m;
     uint32_t delivered = 0;
+    SEL_THREAD_NOT_AUDIO(e);
     while (sel_spsc_pop(&e->cmd_q, &m)) {
         if (m.kind == SEL_MSG_CMD && m.id < SEL_CMD_COUNT) {
             dispatch(e, &m);
@@ -641,6 +650,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
  * command side only, keeping the event queue single-producer). */
 uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
     uint32_t done = 0;
+    SEL_THREAD_AUDIO(e);
     e->render_calls++;
     if (stereo == NULL || frames == 0) {
         return frames;
