@@ -205,7 +205,7 @@ Tests T19 to T27 are defined in the plan's finish-line table. A row is ticked on
 | I59 | [x] | 5 | T25 red; grid.c, keys.c, theme.c, posix/term.c | T25 green |
 | I60 | [x] | 5 | text_ui.c; apps/selecta shell; T19 red then green | T19 green (I60 commit) |
 | I61 | [ ] | 5 | real-terminal check on macOS (plan Verification, manual 1); only the user ticks it | user confirms |
-| I62 | [x] | 6 | RULES.md Commands, README, design doc sections 3/5/14/16, validation doc, plan status done | counts reconciled: ctest 48, ratchet 45, no_float 12, nuade 121; commit HASH |
+| I62 | [x] | 6 | RULES.md Commands, README, design doc sections 3/5/14/16, validation doc, plan status done | counts reconciled: ctest 48, ratchet 45, no_float 12, nuade 121; commit 18d24f4 |
 
 ## Open decisions
 
