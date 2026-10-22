@@ -1,0 +1,12 @@
+sel_host size=44
+size offset=0
+api_version offset=4
+mem_alloc offset=8
+mem_free offset=12
+read offset=16
+log offset=20
+clock_ms offset=24
+voices offset=28
+config_get offset=32
+query offset=36
+ctx offset=40
