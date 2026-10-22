@@ -45,6 +45,15 @@ All of them require Spotify Premium (librespot README, go-librespot README, spot
 
 Not feasible natively. Spotify needs TLS 1.2+ with modern ciphers, a Rust/Go client, Vorbis/AAC-class decoding, and OAuth; none fits a 68020 (reasoning from the architecture, no Amiga source consulted). Only viable route: proxy from a host. A desktop or Pi runs the sidecar and serves decoded PCM (or a lower-rate stream) over the network to an Amiga source plugin that is just a TCP/pipe PCM reader; the Amiga then needs only raw sample playback. That is a separate, optional Amiga feature, and it is Premium-account-on-a-host, not standalone.
 
+## Decision (2026-10-22, Johan)
+
+Offer two Amiga routes, both feeding the same Selecta PCM source plugin:
+
+- **Slow Amigas (stock 68020/68030):** network proxy. A desktop or Pi runs the sidecar and streams PCM to the Amiga.
+- **Fast Amigas (68060, Vampire, PiStorm):** a native port of cspot (C++ Spotify Connect client built for the ESP32, Tremor integer Vorbis, mbedTLS, nanopb). Feasibility is unverified: C++ standard versus bebbo gcc 6.5, licence, maintenance and measured Tremor decode speed on 68k are open. Row SP2 researches it.
+
+The correction to the verdict above: the "no client fits" reasoning missed cspot. TLS is not the blocker (AmiSSL and mbedTLS exist); CPU for Vorbis decoding is.
+
 ## Recommendation
 
 Take shape (b): a Spotify source plugin in the desktop tier that supervises go-librespot over its pipe and REST/WebSocket API, with librespot as a swappable fallback. Main risk: Spotify closes private playback endpoints without notice (10 Aug 2026 outage, issue #1737 open for weeks), so the feature can be dead for weeks with only upstream able to fix it, plus ToS and account-ban exposure. Mitigate by labelling it experimental, sidecar pinned and updatable independently of the player, and a hard failure path that does not affect other sources. Rough size: about 2 to 3 weeks for the desktop plugin (process supervision, pipe-to-PCM stream, control mapping, login UI, tests via a fake sidecar); Amiga network proxy about 1 more week on top (estimates, unverified).

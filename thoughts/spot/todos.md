@@ -101,6 +101,7 @@ Session 2026-10-22 (2). Finish line: RULES.md rule 0 (plans and ledger never sta
 | D8 | [x] | Decision: theme tokens + skin loader | section 16 |
 | D9 | [x] | DEViLBOX server work list | Found section below, section 10 |
 | SP1 | [x] | Research: real Spotify playback through an open-source client (librespot and others), sonnet agent | thoughts/shared/research/2026-10-22_spotify-open-source-client.md |
+| SP2 | [ ] | Research: cspot native port for fast Amigas (C++ standard vs bebbo gcc 6.5, licence, maintenance, Tremor speed on 68k, porting surface), sonnet agent | thoughts/shared/research/2026-10-22_cspot-amiga-port.md |
 
 ## Repo
 
