@@ -27,8 +27,11 @@ Toolchains: desktop clang/gcc + CMake + Ninja; Amiga bebbo amiga-gcc at `~/opt/a
 | List / lint plugins | `build/host/apps/selecta-cli/selecta-cli plugins --lint` |
 | Probe the machine (prints sel_machine tags) | `build/host/apps/selecta-cli/selecta-cli machine` |
 | Pump the null output | `build/host/apps/selecta-cli/selecta-cli play-null --rate 44100 --frames 4410` |
-| Golden render for one replayer (not yet implemented, M0b) | `build/host/apps/selecta-cli/selecta-cli render <song> --output <wav>`; compare with `tests/golden/<plugin>/<song>.sha256` |
+| Render a song to a WAV (golden oracle; prints `ticks= voice_ops= mixed_frames=`) | `build/host/apps/selecta-cli/selecta-cli render build/host/tests/songs/selecta-test.mod --output <wav> --seconds 10 --rate 44100 --resample linear` (resamplers: none, linear, cubic, sinc); compare with `tests/golden/<plugin>/<song>.<resampler>.sha256` (hashes not yet committed, row I34) |
+| Play through the Mac's default output (LOCAL; prints `callbacks= frames=`) | `build/host/apps/selecta-cli/selecta-cli play build/host/tests/songs/selecta-test.mod --output coreaudio --seconds 10` |
+| Test, 68k render, probe and no-float under vamos | build `build/amiga`, reconfigure `build/host`, then `nice -n 19 ctest --test-dir build/host -R 'amiga|no-float' -j2` (vamos tests share one lock and run one at a time) |
+| Test, audio-thread assertion (Debug only) | `nice -n 19 ctest --test-dir build/host -R thread-assert --output-on-failure` |
 | Run text UI (local, not yet implemented) | `build/host/apps/selecta/selecta` in a terminal (LOCAL; on the Amiga: `Selecta` in an UP-Term window) |
 | Stop / cleanup | `rm -rf build/host build/amiga` |
 
-Every row is real after M0a except the two marked not yet implemented. `lint` and `format` print an install hint when clang-tidy or clang-format is missing. Update this table in the same commit that makes a command real.
+Every row is real after M0b except the text UI row marked not yet implemented. `lint` and `format` print an install hint when clang-tidy or clang-format is missing. Update this table in the same commit that makes a command real.

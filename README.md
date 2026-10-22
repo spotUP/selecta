@@ -19,4 +19,11 @@ cmake -S . -B build/amiga -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/amiga-68020.cmak
 cmake --build build/amiga
 ```
 
-With `vamos` installed, reconfigure `build/host` after the Amiga build and the `amiga-roundtrip` test runs the 68k binary. Full command list: `RULES.md`.
+With `vamos` installed, reconfigure `build/host` after the Amiga build and the `amiga-roundtrip` test runs the 68k binary. Render a song to a WAV and play it on the Mac:
+
+```sh
+build/host/apps/selecta-cli/selecta-cli render build/host/tests/songs/selecta-test.mod --output out.wav --seconds 10 --rate 44100 --resample linear
+build/host/apps/selecta-cli/selecta-cli play build/host/tests/songs/selecta-test.mod --output coreaudio --seconds 10
+```
+
+Full command list: `RULES.md`.
