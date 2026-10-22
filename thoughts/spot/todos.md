@@ -182,7 +182,7 @@ Tests T19 to T27 are defined in the plan's finish-line table. A row is ticked on
 
 | ID | Status | Phase | Task | Proof |
 |----|--------|-------|------|-------|
-| I45 | [ ] | 1 | tags.def RP_RENDER/SEEK/POSITION and UI_* rows; ui.h; replayer.h typedefs | T2, T5 green |
+| I45 | [x] | 1 | tags.def RP_RENDER/SEEK/POSITION and UI_* rows; ui.h; replayer.h typedefs | T2, T5 green |
 | I46 | [ ] | 1 | T27 written and red; sel_nuade_shim split; nuade CMakeLists lines 46-47 removed | T27, T27b green; T13 hash unchanged |
 | I47 | [ ] | 1 | 68k build after the link change | build/amiga green, T14 green |
 | I48 | [ ] | 2 | T20 and T21 (nuade half) written and red | ctest failures |

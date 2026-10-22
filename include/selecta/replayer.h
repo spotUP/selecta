@@ -46,6 +46,18 @@ typedef void (*sel_rp_tick_fn)(void* state, sel_tick_result* out);              
 /* RP_METADATA: SEL_META_* tags, valid until close. */
 typedef const sel_tag* (*sel_rp_metadata_fn)(void* state);
 
+/* RP_RENDER (RENDER kind only; RP_START gets voices = NULL): interleaved
+ * stereo int16 at the rate given to RP_START; returns frames written, less
+ * than `frames` only at song end. */
+typedef uint32_t (*sel_rp_render_fn)(void* state, int16_t* out, uint32_t frames);
+/* RP_SEEK: optional. Returns 1 when the replayer seeked natively. */
+typedef int (*sel_rp_seek_fn)(void* state, uint32_t ms);
+/* RP_POSITION: optional. Fills order/row/pattern; 0 = not reported. */
+typedef struct sel_rp_position {
+    uint32_t order, row, pattern;
+} sel_rp_position;
+typedef int (*sel_rp_position_fn)(void* state, sel_rp_position* out);
+
 SEL_EXTERN_C_END
 
 #endif /* SELECTA_REPLAYER_H */
