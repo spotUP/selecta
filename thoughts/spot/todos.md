@@ -158,7 +158,7 @@ Tests T10 to T18 are defined in the plan's finish-line table. A row is ticked on
 | I31 | [x] | 3 | replayer.h; adapter.c, voices_shim.c, io_shim.c | T5 green, plugins=3 |
 | I32 | [x] | 3 | scheduler.c; engine OPEN, SUBSONG, SONG_OPENED, SONG_ENDED, POSITION; ratchet 54 | T3, T8 green |
 | I33 | [x] | 3 | gen_testmod.c + pinned mod hash; wav.c; selecta-cli render; T13, T17 RED then counters green | T13 counters, T17 green |
-| I34 | [ ] | 3 | four golden hashes committed after listening check; T7 third-party include rule | T13 green (4 ctests), T7 green |
+| I34 | [x] | 3 | four golden hashes committed after listening check; T7 third-party include rule | T13 green (4 ctests), T7 green |
 | I35 | [x] | 4 | nuade_ab.c written and run | T15 runs |
 | I36 | [x] | 4 | A/B correlation >= 0.98, value recorded | T15 green |
 | I37 | [x] | 5 | full 68k build incl. selecta_nuade C11 | build/amiga green |
