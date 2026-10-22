@@ -157,6 +157,16 @@ if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
   set_tests_properties(amiga-voices-layout PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos)
 endif()
 
+# T18: rule 4 from the 68k object files. Needs the cross toolchain's nm and a
+# built build/amiga (the amiga-build fixture rebuilds it first).
+find_program(SEL_AMIGA_NM m68k-amigaos-nm HINTS "$ENV{HOME}/opt/amiga/bin" /opt/amiga/bin)
+if(SEL_AMIGA_NM AND EXISTS "${SEL_AMIGA_CLI}")
+  add_test(NAME no-float-engine
+    COMMAND "${CMAKE_COMMAND}" "-DNM=${SEL_AMIGA_NM}" "-DBUILD_DIR=${PROJECT_SOURCE_DIR}/build/amiga"
+            -P "${PROJECT_SOURCE_DIR}/cmake/no_float.cmake")
+  set_tests_properties(no-float-engine PROPERTIES FIXTURES_REQUIRED amiga_cli)
+endif()
+
 # T12: mixer unit test (period step, resampler vectors, clipping, loop and
 # queue semantics). Groups are listed so a resampler lands in the gate with
 # the row that implements it.
