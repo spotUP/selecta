@@ -41,6 +41,7 @@ typedef struct tui {
     size_t key_at;
     int use_keys_file;
     uint32_t wait_left; /* ms of a `wait` line still to burn */
+    uint32_t turn_mark; /* host clock at the previous keys-file step */
     const char* dump_path;
     int dirty;
     int info;
@@ -247,6 +248,18 @@ static int tui_next_line(tui* u, char* line, size_t cap) {
     return 0;
 }
 
+/* How long the shell turn before this step lasted. timeout_ms is UI_WAIT's
+ * block budget, not elapsed time: a clockless shell passes its turn length and
+ * file mode stands in for that block, so the turn lasted exactly timeout_ms
+ * (deterministic). A device-paced shell passes 0 and the turn is read from the
+ * host clock. */
+static uint32_t tui_turn_ms(tui* u, uint32_t timeout_ms) {
+    uint32_t now = u->host->clock_ms(u->host);
+    uint32_t turn = timeout_ms > 0 ? timeout_ms : now - u->turn_mark;
+    u->turn_mark = now;
+    return turn;
+}
+
 /* One step of the keys file: a key (returns 1), a wait (0) or the end (-1). */
 static int tui_file_step(tui* u, uint32_t timeout_ms) {
     char line[64];
@@ -254,7 +267,8 @@ static int tui_file_step(tui* u, uint32_t timeout_ms) {
     const char* bytes = NULL;
     size_t i;
     if (u->wait_left > 0) {
-        u->wait_left = u->wait_left > timeout_ms ? u->wait_left - timeout_ms : 0;
+        uint32_t turn = tui_turn_ms(u, timeout_ms);
+        u->wait_left = u->wait_left > turn ? u->wait_left - turn : 0;
         return 0;
     }
     if (!tui_next_line(u, line, sizeof line)) {
@@ -262,6 +276,7 @@ static int tui_file_step(tui* u, uint32_t timeout_ms) {
     }
     if (strncmp(line, "wait ", 5) == 0) {
         u->wait_left = (uint32_t)strtoul(line + 5, NULL, 10);
+        u->turn_mark = u->host->clock_ms(u->host);
         return 0;
     }
     for (i = 0; i < sizeof k_tokens / sizeof k_tokens[0]; i++) {
