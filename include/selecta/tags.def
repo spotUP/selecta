@@ -68,6 +68,11 @@ SEL_TAG(UI, VIEW_STYLES,       0x5005, INT)
 SEL_TAG(UI, NEEDS_RTG,         0x5006, INT)
 SEL_TAG(UI, HOTKEYS,           0x5007, PTR)
 SEL_TAG(UI, STATS,             0x5008, PTR)
+/* VIEW_CHANGED / VIEW_ROWS: where the view window stands. */
+SEL_TAG(UI, ROW_COUNT,         0x5009, INT)
+SEL_TAG(UI, CURSOR,            0x500A, INT)
+SEL_TAG(UI, WINDOW_START,      0x500B, INT)
+SEL_TAG(UI, WINDOW_ROWS,       0x500C, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)

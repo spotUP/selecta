@@ -92,7 +92,7 @@ typedef struct sel_state {
     const sel_queue_entry* queue;
     const char* queue_text; /* path arena the entries' path_offset points into */
     uint32_t queue_count, queue_playing, queue_version; /* queue_playing: id, 0 = none */
-    const sel_view_state* view; /* NULL until the view model exists */
+    const sel_view_state* view; /* the view model, valid until the next pump */
 } sel_state;
 
 typedef struct sel_engine_config {

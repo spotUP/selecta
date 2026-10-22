@@ -228,8 +228,6 @@ add_test(NAME mixer-unit COMMAND mixer_test period none linear cubic sinc defaul
 add_executable(view_test view/view_test.c)
 target_link_libraries(view_test PRIVATE selecta_core selecta_registry)
 add_test(NAME view-unit COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs")
-# Red by design until the view model lands (row I58 removes this line).
-set_tests_properties(view-unit PROPERTIES WILL_FAIL TRUE)
 
 # T20: queue edits, ids, NEXT/PREV and auto-advance through the engine
 # dispatch. The script names songs relative to the generated songs directory.

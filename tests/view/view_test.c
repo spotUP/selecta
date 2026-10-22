@@ -183,6 +183,7 @@ static void test_activate(void) {
 static void test_activate_file(const char* songs) {
     char cmd[PATH_MAX];
     uint32_t i, found = 0;
+    run("QUEUE_CLEAR");
     snprintf(cmd, sizeof cmd, "LIBRARY_BROWSE %s", songs);
     run(cmd);
     run("VIEW_SHOW browse");

@@ -20,6 +20,7 @@
 #include "mixer.h"
 #include "queue.h"
 #include "local.h"
+#include "view.h"
 #include "scheduler.h"
 #include "spsc.h"
 #include "thread.h"
@@ -51,7 +52,12 @@
     X(QUEUE_REMOVE)                                                                           \
     X(QUEUE_CLEAR)                                                                            \
     X(QUEUE_PLAY_NEXT)                                                                        \
-    X(LIBRARY_BROWSE)
+    X(LIBRARY_BROWSE)                                                                         \
+    X(VIEW_SHOW)                                                                              \
+    X(VIEW_CURSOR)                                                                            \
+    X(VIEW_ACTIVATE)                                                                          \
+    X(VIEW_WINDOW)                                                                            \
+    X(VIEW_STYLE)
 
 #define SEL_SLOT_COUNT 2u
 #define SEL_SLOT_NONE 0xFFFFFFFFu
@@ -143,6 +149,9 @@ struct sel_engine {
     uint32_t lib_slot;
     sel_tag lib_tags[4][3];                  /* LIBRARY_RESULT tags, a ring like error_detail */
     char lib_path[4][SEL_BROWSE_PATH_MAX];
+    sel_view view;
+    sel_tag view_tags[4][5]; /* VIEW_CHANGED / VIEW_ROWS tags, a ring */
+    uint32_t view_slot;
 };
 
 static const char* const k_option_names[] = {
@@ -952,6 +961,129 @@ static void cmd_LIBRARY_BROWSE(sel_engine* e, const sel_message* m) {
     browse_to(e, m->args[0].v.s, "LIBRARY_BROWSE");
 }
 
+/* ---- view ------------------------------------------------------------ */
+
+static void view_src(const sel_engine* e, sel_view_src* s) {
+    s->queue = &e->queue;
+    s->browse = &e->browse;
+    s->playing = e->q_playing;
+}
+
+/* VIEW_ROWS carries the window position only; the rows are read from the
+ * snapshot view. VIEW_CHANGED adds the style name. */
+static void emit_view(sel_engine* e, sel_evt_id id) {
+    sel_message m;
+    sel_tag* t = e->view_tags[e->view_slot++ & 3u];
+    const sel_view_state* v = &e->view.pub;
+    t[0].tag = SEL_UI_ROW_COUNT;
+    t[0].value = v->row_count;
+    t[1].tag = SEL_UI_CURSOR;
+    t[1].value = v->cursor;
+    t[2].tag = SEL_UI_WINDOW_START;
+    t[2].value = v->window_start;
+    t[3].tag = SEL_UI_WINDOW_ROWS;
+    t[3].value = v->window_rows;
+    t[4].tag = SEL_TAG_END;
+    t[4].value = 0;
+    evt_init(&m, id);
+    if (id == SEL_EVT_VIEW_CHANGED) {
+        evt_str(&m, "regular");
+    }
+    evt_tags(&m, t);
+    emit(e, &m);
+}
+
+/* Pump thread, after the snapshot: tells the front end what moved. */
+static void view_sync(sel_engine* e) {
+    sel_view_src s;
+    int structure;
+    view_src(e, &s);
+    if (sel_view_changed(&e->view, &s, &structure)) {
+        emit_view(e, structure ? SEL_EVT_VIEW_CHANGED : SEL_EVT_VIEW_ROWS);
+        if (structure) {
+            emit_view(e, SEL_EVT_VIEW_ROWS);
+        }
+    }
+}
+
+static void cmd_VIEW_SHOW(sel_engine* e, const sel_message* m) {
+    sel_view_src s;
+    view_src(e, &s);
+    e->view.active = 1;
+    if (!sel_view_show(&e->view, &s, m->args[0].v.s)) {
+        sel_engine_report_error(e, "unknown_view", m->args[0].v.s);
+    }
+}
+
+static void cmd_VIEW_CURSOR(sel_engine* e, const sel_message* m) {
+    sel_view_src s;
+    view_src(e, &s);
+    e->view.active = 1;
+    if (!sel_view_cursor(&e->view, &s, m->args[0].v.s)) {
+        sel_engine_report_error(e, "range", "VIEW_CURSOR");
+    }
+}
+
+static void cmd_VIEW_WINDOW(sel_engine* e, const sel_message* m) {
+    sel_view_src s;
+    view_src(e, &s);
+    e->view.active = 1;
+    if (!sel_view_window(&e->view, &s, m->args[0].v.u)) {
+        sel_engine_report_error(e, "range", "VIEW_WINDOW");
+    }
+}
+
+static void cmd_VIEW_STYLE(sel_engine* e, const sel_message* m) {
+    if (strcmp(m->args[0].v.s, "regular") != 0) {
+        sel_engine_report_error(e, "unsupported_style", m->args[0].v.s);
+        return;
+    }
+    e->view.active = 1;
+    e->view.force_changed = 1;
+}
+
+/* Enter a directory, play a file, or start a queue entry. */
+static void cmd_VIEW_ACTIVATE(sel_engine* e, const sel_message* m) {
+    sel_view_src s;
+    sel_view_state* v = &e->view.pub;
+    uint32_t at;
+    (void)m;
+    e->view.active = 1;
+    view_src(e, &s);
+    sel_view_refresh(&e->view, &s);
+    if (v->row_count == 0) {
+        return;
+    }
+    at = v->cursor;
+    if (v->source == SEL_VIEW_QUEUE) {
+        queue_start(e, at);
+        return;
+    }
+    {
+        char path[SEL_BROWSE_PATH_MAX];
+        char leaf[256];
+        const char* name = sel_browse_name(&e->browse, at);
+        int up = strcmp(name, "..") == 0;
+        copy_str(leaf, sizeof leaf, sel_browse_basename(e->browse.path));
+        if (!sel_browse_join(path, sizeof path, e->browse.path, name)) {
+            sel_engine_report_error(e, "browse_failed", "VIEW_ACTIVATE");
+            return;
+        }
+        if (e->browse.entries[at].is_dir) {
+            if (browse_to(e, path, "VIEW_ACTIVATE")) {
+                uint32_t found = up ? sel_browse_find(&e->browse, leaf) : 0;
+                e->view.land = found < e->browse.count ? found : 0;
+            }
+        } else {
+            uint32_t before = e->queue.count;
+            queue_insert(e, before, path, "VIEW_ACTIVATE");
+            if (e->queue.count > before) {
+                queue_start(e, before);
+            }
+        }
+    }
+}
+
 static void cmd_not_implemented(sel_engine* e, const sel_message* m) {
     sel_engine_report_error(e, "not_implemented", sel_cmd_name(m->id));
 }
@@ -1017,7 +1149,8 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         !sel_spsc_init(&e->ret_q, host, SEL_SWAP_RING_DEPTH) ||
         !sel_queue_init(&e->queue, host, queue_cap, queue_text) ||
         !sel_browse_init(&e->browse, host, cfg && cfg->browse_entries ? cfg->browse_entries : queue_cap,
-                         cfg && cfg->browse_text_bytes ? cfg->browse_text_bytes : queue_text)) {
+                         cfg && cfg->browse_text_bytes ? cfg->browse_text_bytes : queue_text) ||
+        !sel_view_init(&e->view, host, SEL_VIEW_WINDOW_MAX)) {
         sel_engine_destroy(e);
         return NULL;
     }
@@ -1041,6 +1174,7 @@ void sel_engine_destroy(sel_engine* e) {
         sel_spsc_free(&e->ret_q, e->host);
         sel_queue_free(&e->queue, e->host);
         sel_browse_free(&e->browse, e->host);
+        sel_view_free(&e->view, e->host);
         e->host->mem_free(e->host, e);
     }
 }
@@ -1054,6 +1188,7 @@ int sel_engine_send(sel_engine* e, const sel_message* cmd) {
 static void refresh_snapshot(sel_engine* e) {
     const sel_slot* sl = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
     sel_song_state* song = &e->state.song;
+    e->state.view = &e->view.pub;
     memset(song, 0, sizeof *song);
     if (sl != NULL && sl->rp_state != NULL) {
         song->queue_id = e->q_playing;
@@ -1104,6 +1239,7 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
         }
     }
     refresh_snapshot(e);
+    view_sync(e);
     while (sel_spsc_pop(&e->evt_q, &m)) {
         if (sink) {
             sink(ctx, &m);

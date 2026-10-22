@@ -9,6 +9,7 @@ add_library(selecta_core STATIC
   engine/spsc.c
   engine/engine.c
   engine/queue.c
+  engine/view.c
   engine/voices.c
   engine/scheduler.c)
 target_include_directories(selecta_core PUBLIC ${PROJECT_SOURCE_DIR}/include)

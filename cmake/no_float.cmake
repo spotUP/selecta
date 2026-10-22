@@ -19,10 +19,10 @@ file(GLOB_RECURSE objs
   "${BUILD_DIR}/plugins/CMakeFiles/sel_plugin_null.dir/*.obj"
   "${BUILD_DIR}/src/library/CMakeFiles/selecta_library.dir/*.obj")
 list(LENGTH objs nobjs)
-# engine (engine, queue, voices, spsc, scheduler) + mixer (mixer, resample) + wav + null
+# engine (engine, queue, view, voices, spsc, scheduler) + mixer (mixer, resample) + wav + null
 # + library (local, dir)
-if(NOT nobjs EQUAL 11)
-  message(FATAL_ERROR "expected 11 objects (5 engine, 2 mixer, wav, null, 2 library), found ${nobjs}:\n${objs}")
+if(NOT nobjs EQUAL 12)
+  message(FATAL_ERROR "expected 12 objects (6 engine, 2 mixer, wav, null, 2 library), found ${nobjs}:\n${objs}")
 endif()
 
 set(bad "")
