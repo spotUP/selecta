@@ -11,7 +11,9 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 # Rule 1 of RULES.md: C99, every warning an error, no VLAs or alloca.
-add_compile_options(-Wall -Wextra -Werror -pedantic -Wvla -Wshadow -Wstrict-prototypes)
+# C only: the one C++ target (selecta_openmpt, vendored libopenmpt) must not
+# inherit these.
+add_compile_options("$<$<COMPILE_LANGUAGE:C>:-Wall;-Wextra;-Werror;-pedantic;-Wvla;-Wshadow;-Wstrict-prototypes>")
 
 # Tests run host binaries; a cross build cannot run them. T9 drives the
 # Amiga binary from the host build directory instead.
