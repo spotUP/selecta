@@ -40,3 +40,5 @@ add_test(NAME ratchet
   COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}"
     "-DRATCHET=${CMAKE_CURRENT_SOURCE_DIR}/ratchet/unimplemented.txt"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/ratchet.cmake")
+
+add_subdirectory(m0)

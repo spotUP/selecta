@@ -6,6 +6,8 @@
 #include <selecta/protocol.h>
 #include <selecta/tags.h>
 
+#include "cli.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,7 +20,10 @@ static int usage(FILE* to) {
           "  tagtypes                   list metadata tags and their types\n"
           "  roundtrip                  encode and decode every table row\n"
           "  commands --unimplemented   list verbs the engine answers not_implemented\n"
-          "  script <file>              feed command lines to the engine, print events\n",
+          "  script <file>              feed command lines to the engine, print events\n"
+          "  abi                        print sel_host size and field offsets\n"
+          "  plugins [--lint]           list plugins; --lint counts bad descriptor tags\n"
+          "  play-null --rate <hz> --frames <n>  pump the null output, print counters\n",
           to);
     return to == stdout ? 0 : 2;
 }
@@ -313,6 +318,15 @@ int main(int argc, char** argv) {
     }
     if (strcmp(cmd, "roundtrip") == 0) {
         return cmd_roundtrip();
+    }
+    if (strcmp(cmd, "abi") == 0) {
+        return sel_cli_abi();
+    }
+    if (strcmp(cmd, "plugins") == 0) {
+        return sel_cli_plugins(argc - 2, argv + 2);
+    }
+    if (strcmp(cmd, "play-null") == 0) {
+        return sel_cli_play_null(argc - 2, argv + 2);
     }
     fprintf(stderr, "selecta-cli: unknown command %s\n", cmd);
     return usage(stderr);
