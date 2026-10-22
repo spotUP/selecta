@@ -153,6 +153,7 @@ typedef struct sel_engine_stats {
     uint32_t rendered_frames;        /* frames RP_RENDER produced (RENDER kind) */
     uint32_t seek_path;           /* last SEEK: 0 none, 1 native (RP_SEEK), 2 restart-and-skip */
     uint32_t seek_skipped_frames; /* frames the last restart-and-skip ran through */
+    uint32_t songs_opened;        /* songs started by OPEN or the queue (T19) */
 } sel_engine_stats;
 void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out);
 

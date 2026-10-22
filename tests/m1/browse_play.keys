@@ -1,0 +1,12 @@
+# T19 selecta-browse-play. One key per line; `wait <ms>` advances the shell
+# loop (20 ms a turn) without a key. Start directory holds one directory,
+# `songs`, which holds selecta-test-mk.mod.
+# Row 0 is "..", row 1 is the directory songs.
+Down
+Enter
+# Inside songs: row 0 is "..", row 1 is the song.
+Down
+Enter
+wait 2000
+i
+q

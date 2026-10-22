@@ -143,6 +143,7 @@ struct sel_engine {
     uint32_t deferred_seek; /* target ms of a deferred SEL_BEGIN_SEEK */
     uint32_t seek_path;     /* SEL_SEEK_PATH_*: how the last SEEK got there */
     uint32_t seek_skipped;  /* frames the last restart-and-skip ran through */
+    uint32_t songs_opened;  /* OPEN-kind song starts that succeeded (not seeks, restarts, subsongs) */
     char deferred_path[SEL_DEFERRED_PATH_MAX];
     char subsong_path[SEL_DEFERRED_PATH_MAX];
     sel_queue queue;
@@ -758,6 +759,7 @@ static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t s
     e->cur = idx;
     e->song_over = 0;
     if (kind == SEL_BEGIN_OPEN) {
+        e->songs_opened++;
         evt_init(&ev, SEL_EVT_SONG_OPENED);
         evt_tags(&ev, e->slot[idx].rp_metadata ? e->slot[idx].rp_metadata(e->slot[idx].rp_state) : NULL);
         emit(e, &ev);
@@ -1309,6 +1311,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->rendered_frames = sl ? sl->rendered_frames : 0;
     out->seek_path = e->seek_path;
     out->seek_skipped_frames = e->seek_skipped;
+    out->songs_opened = e->songs_opened;
 }
 
 /* Mixes the open song: the scheduler turns each tick's length into frames,
