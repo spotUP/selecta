@@ -1,24 +1,11 @@
-/* Desktop machine probe: physical memory from the OS, everything else is
- * fixed (an FPU is always present, the GPU tier is assumed until a UI
+/* Linux machine probe: physical memory from /proc/meminfo, everything else
+ * is fixed (an FPU is always present, the GPU tier is assumed until a UI
  * probes the display). */
 #include "machine_internal.h"
 
-#if defined(__APPLE__)
-#include <sys/sysctl.h>
-#include <sys/types.h>
-#else
 #include <stdio.h>
-#endif
 
 static uintptr_t physical_memory(void) {
-#if defined(__APPLE__)
-    uint64_t bytes = 0;
-    size_t len = sizeof(bytes);
-    if (sysctlbyname("hw.memsize", &bytes, &len, NULL, 0) != 0) {
-        return 0;
-    }
-    return (uintptr_t)bytes;
-#else
     char line[128];
     unsigned long kb = 0;
     FILE* f = fopen("/proc/meminfo", "r");
@@ -32,7 +19,6 @@ static uintptr_t physical_memory(void) {
     }
     fclose(f);
     return (uintptr_t)kb * 1024u;
-#endif
 }
 
 void sel_machine_probe_platform(sel_machine_raw* raw) {

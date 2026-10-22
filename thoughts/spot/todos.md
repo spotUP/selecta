@@ -149,7 +149,7 @@ Tests T10 to T18 are defined in the plan's finish-line table. A row is ticked on
 |----|--------|-------|------|-------|
 | I23 | [x] | 1 | tags.def: SEL_MACHINE_*, SEL_RP_*, SEL_MIX_* rows | T2, T5 green |
 | I24 | [x] | 1 | T10, T11 written and RED | ctest failures |
-| I25 | [x] | 1 | machine.h, machine.c, machine_desktop.c, machine_amiga.c, selecta-cli machine | T10 green |
+| I25 | [x] | 1 | machine.h, machine.c, <os>/machine.c, selecta-cli machine | T10 green |
 | I26 | [ ] | 2 | voices.h, mixer.h; T12 with vectors.h written and RED | ctest failure |
 | I27 | [ ] | 2 | mixer.c, resample.c (NONE, LINEAR, CUBIC), voices.c | T12 green for three resamplers |
 | I28 | [ ] | 2 | gen_sinc_table.c + SINC resampler; machine-based default | T12 green all four |
@@ -194,6 +194,8 @@ Protocol additions from M1d are already in design doc section 3 (not a decision,
 - F13a HippoPlayer parity NEW rows (25, see research doc "NEW" list): alarm (F6), stored programs on F1-F10 (F11 hotkeys), module comment file (unverified), LhA/LZX/Zip/gzip + XPK/PowerPacker/XFD (F8), UHCBIN network transport (section 9 Amiga transport), PUBSCREEN / own screen (unverified) / iconify / AppIcon / task priority (section 7 Amiga UI plugin), AHI indicator in infobox, hardware outputs MHI MP3, AmiGUS, Trinity, SIDBlaster, USBSID-Pico, ZorroSID (section 5/6 `SEL_OUT_*` plugins, new F ID), HippoPlayer.group location, ToolType parsing (unverified), pipe-based streaming names, reqtools requesters, keyfile/registration (out of scope), optional S:HippoPlayer.PS3M, Kickstart 1.2+/68000 baseline (runtime tier). Gaps: hotkey line numbers approximate (~30 off); ToolType set unverified; prefs read from gadget files only.
 
 - F13b bbmp parity NEW rows (4, see research doc "NEW" list): songs inside collection archives and MP3/Ogg/FLAC in collections (bbmp "not prepared"; covered by F8 archives + F7 stream decoders, map in 1a); "!" key "this sounds wrong" flag with note dialog and sounds-wrong.txt plus `bbmp wrong` CLI (candidate F22); testers guide / tester-reporting workflow (docs, out of design scope). Unverified in doc: channel-scope data source, tui/guard.py purpose, log file, snapshot.py, licence note (bbmp GPL-3.0 versus Selecta MIT: adapters must not copy bbmp code, only ideas; C helpers under csrc/ need licence check before vendoring). Agent did not read docs/replayers.md body, tui/browse.py, lists.py, settings_tab.py in detail.
+- amiga-roundtrip failed once in a `-j2` ctest run right after a reconfigure (M0b phase 1, 2026-10-22); later runs pass. Cause not found. Watch for it; if it repeats, chase it before relying on Amiga ctest in CI.
+- clang-format and clang-tidy are not installed on this machine, so the format and lint rows of the Commands table do not run here.
 
 ## Facts gathered
 

@@ -12,7 +12,7 @@ typedef struct sel_machine_raw {
     sel_tier tier;
 } sel_machine_raw;
 
-/* Implemented by machine_desktop.c or machine_amiga.c. */
+/* Implemented once per platform in src/core/<os>/machine.c. */
 void sel_machine_probe_platform(sel_machine_raw* raw);
 
 #endif
