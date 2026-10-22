@@ -44,7 +44,32 @@ typedef struct sel_queue_entry {
     uint32_t path_offset;   /* into the text arena */
 } sel_queue_entry;
 
-typedef struct sel_view_state sel_view_state; /* defined with the view model (M1.1 phase 4) */
+/* The view model (design doc section 9b), regular style: one flat list over
+ * the queue or the browse listing, a cursor and the visible window. */
+typedef enum sel_view_source { SEL_VIEW_QUEUE = 0, SEL_VIEW_BROWSE = 1 } sel_view_source;
+typedef enum sel_row_kind { SEL_ROW_DIR = 0, SEL_ROW_FILE, SEL_ROW_QUEUE } sel_row_kind;
+
+typedef struct sel_view_row {
+    uint32_t kind;  /* sel_row_kind */
+    uint32_t id;    /* queue entry id (SEL_ROW_QUEUE), else the index in the listing */
+    uint32_t depth; /* 0 in the regular style */
+    const char* text;
+} sel_view_row;
+
+/* rows[0..row_n) are the visible window: listing indices window_start and up.
+ * Row and path pointers are valid until the next pump. */
+typedef struct sel_view_state {
+    uint32_t source;       /* sel_view_source */
+    uint32_t style;        /* 0: regular */
+    uint32_t row_count;    /* rows in the whole list */
+    uint32_t cursor;       /* index into the whole list */
+    uint32_t cursor_id;    /* id of the cursor row (see sel_view_row.id) */
+    uint32_t window_start; /* index of rows[0] */
+    uint32_t window_rows;  /* requested window height */
+    uint32_t row_n;        /* rows[] entries filled */
+    const sel_view_row* rows;
+    const char* browse_path; /* directory the browse listing shows */
+} sel_view_state;
 
 typedef struct sel_song_state {
     uint32_t queue_id; /* 0 = opened outside the queue */
@@ -84,6 +109,9 @@ typedef struct sel_engine_config {
      * defaults when `machine` is NULL. */
     uint32_t queue_capacity;
     uint32_t queue_text_bytes;
+    /* Browse buffer (LIBRARY_BROWSE), allocated once; 0: same as the queue. */
+    uint32_t browse_entries;
+    uint32_t browse_text_bytes;
     const sel_tag* machine;
 } sel_engine_config;
 

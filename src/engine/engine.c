@@ -19,6 +19,7 @@
 
 #include "mixer.h"
 #include "queue.h"
+#include "local.h"
 #include "scheduler.h"
 #include "spsc.h"
 #include "thread.h"
@@ -49,7 +50,8 @@
     X(QUEUE_ADD)                                                                              \
     X(QUEUE_REMOVE)                                                                           \
     X(QUEUE_CLEAR)                                                                            \
-    X(QUEUE_PLAY_NEXT)
+    X(QUEUE_PLAY_NEXT)                                                                        \
+    X(LIBRARY_BROWSE)
 
 #define SEL_SLOT_COUNT 2u
 #define SEL_SLOT_NONE 0xFFFFFFFFu
@@ -137,6 +139,10 @@ struct sel_engine {
     uint32_t q_playing; /* id of the playing queue entry, 0: none */
     uint32_t q_hint;    /* position NEXT and PLAY start from while q_playing is 0 */
     uint32_t song_over; /* the open song ended or the queue ran out: PLAY restarts the queue */
+    sel_browse browse;  /* the listing LIBRARY_BROWSE fills */
+    uint32_t lib_slot;
+    sel_tag lib_tags[4][3];                  /* LIBRARY_RESULT tags, a ring like error_detail */
+    char lib_path[4][SEL_BROWSE_PATH_MAX];
 };
 
 static const char* const k_option_names[] = {
@@ -908,6 +914,44 @@ static void cmd_QUEUE_CLEAR(sel_engine* e, const sel_message* m) {
     emit_queue_changed(e);
 }
 
+/* ---- library --------------------------------------------------------- */
+
+static void emit_library_result(sel_engine* e) {
+    sel_message m;
+    uint32_t slot = e->lib_slot++ & 3u;
+    sel_tag* t = e->lib_tags[slot];
+    memcpy(e->lib_path[slot], e->browse.path, strlen(e->browse.path) + 1u);
+    t[0].tag = SEL_SRC_PATH;
+    t[0].value = (uintptr_t)e->lib_path[slot];
+    t[1].tag = SEL_SRC_COUNT;
+    t[1].value = e->browse.count;
+    t[2].tag = SEL_TAG_END;
+    t[2].value = 0;
+    evt_init(&m, SEL_EVT_LIBRARY_RESULT);
+    evt_tags(&m, t);
+    emit(e, &m);
+}
+
+/* Lists `path` into the browse buffer and reports it. 0: the directory
+ * could not be read (ERROR browse_failed). */
+static int browse_to(sel_engine* e, const char* path, const char* who) {
+    if (!sel_browse_list(&e->browse, path)) {
+        sel_engine_report_error(e, "browse_failed", who);
+        return 0;
+    }
+    if (e->browse.truncated) {
+        char n[16];
+        snprintf(n, sizeof n, "%u", (unsigned)e->browse.truncated);
+        emit_log(e, "browse_truncated", n);
+    }
+    emit_library_result(e);
+    return 1;
+}
+
+static void cmd_LIBRARY_BROWSE(sel_engine* e, const sel_message* m) {
+    browse_to(e, m->args[0].v.s, "LIBRARY_BROWSE");
+}
+
 static void cmd_not_implemented(sel_engine* e, const sel_message* m) {
     sel_engine_report_error(e, "not_implemented", sel_cmd_name(m->id));
 }
@@ -971,7 +1015,9 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     if (!sel_spsc_init(&e->cmd_q, host, cmd_depth) || !sel_spsc_init(&e->evt_q, host, evt_depth) ||
         !sel_spsc_init(&e->swap_q, host, SEL_SWAP_RING_DEPTH) ||
         !sel_spsc_init(&e->ret_q, host, SEL_SWAP_RING_DEPTH) ||
-        !sel_queue_init(&e->queue, host, queue_cap, queue_text)) {
+        !sel_queue_init(&e->queue, host, queue_cap, queue_text) ||
+        !sel_browse_init(&e->browse, host, cfg && cfg->browse_entries ? cfg->browse_entries : queue_cap,
+                         cfg && cfg->browse_text_bytes ? cfg->browse_text_bytes : queue_text)) {
         sel_engine_destroy(e);
         return NULL;
     }
@@ -994,6 +1040,7 @@ void sel_engine_destroy(sel_engine* e) {
         sel_spsc_free(&e->swap_q, e->host);
         sel_spsc_free(&e->ret_q, e->host);
         sel_queue_free(&e->queue, e->host);
+        sel_browse_free(&e->browse, e->host);
         e->host->mem_free(e->host, e);
     }
 }

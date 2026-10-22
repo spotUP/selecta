@@ -1,6 +1,6 @@
 # T18: rule 4 (no floating point in the engine) checked from the 68k object
 # files, not from the source. Runs m68k-amigaos-nm over the objects of the
-# engine (src/engine), the mixer, the wav output and the null output, and
+# engine (src/engine), the mixer, the library, the wav output and the null output, and
 # fails when any of them references a soft-float runtime routine.
 # Inputs: -DNM (m68k-amigaos-nm) -DBUILD_DIR (the 68k build tree)
 foreach(v NM BUILD_DIR)
@@ -16,11 +16,13 @@ file(GLOB_RECURSE objs
   "${BUILD_DIR}/src/CMakeFiles/selecta_core.dir/engine/*.obj"
   "${BUILD_DIR}/src/CMakeFiles/selecta_mixer.dir/mixer/*.obj"
   "${BUILD_DIR}/plugins/CMakeFiles/sel_plugin_wav.dir/*.obj"
-  "${BUILD_DIR}/plugins/CMakeFiles/sel_plugin_null.dir/*.obj")
+  "${BUILD_DIR}/plugins/CMakeFiles/sel_plugin_null.dir/*.obj"
+  "${BUILD_DIR}/src/library/CMakeFiles/selecta_library.dir/*.obj")
 list(LENGTH objs nobjs)
 # engine (engine, queue, voices, spsc, scheduler) + mixer (mixer, resample) + wav + null
-if(NOT nobjs EQUAL 9)
-  message(FATAL_ERROR "expected 9 objects (5 engine, 2 mixer, wav, null), found ${nobjs}:\n${objs}")
+# + library (local, dir)
+if(NOT nobjs EQUAL 11)
+  message(FATAL_ERROR "expected 11 objects (5 engine, 2 mixer, wav, null, 2 library), found ${nobjs}:\n${objs}")
 endif()
 
 set(bad "")
@@ -40,4 +42,4 @@ endforeach()
 if(bad)
   message(FATAL_ERROR "floating point in the engine (rule 4):\n${bad}")
 endif()
-message(STATUS "[OK] no soft-float references in ${nobjs} engine, mixer, wav and null objects")
+message(STATUS "[OK] no soft-float references in ${nobjs} engine, mixer, wav, null and library objects")

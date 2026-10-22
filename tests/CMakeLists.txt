@@ -223,6 +223,14 @@ add_executable(mixer_test mixer/mixer_test.c)
 target_link_libraries(mixer_test PRIVATE selecta_core)
 add_test(NAME mixer-unit COMMAND mixer_test period none linear cubic sinc default clip loop)
 
+# T24: browse listing and view model through the engine command queue and
+# snapshot. The temp tree is created inside the generated songs directory.
+add_executable(view_test view/view_test.c)
+target_link_libraries(view_test PRIVATE selecta_core selecta_registry)
+add_test(NAME view-unit COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs")
+# Red by design until the view model lands (row I58 removes this line).
+set_tests_properties(view-unit PROPERTIES WILL_FAIL TRUE)
+
 # T20: queue edits, ids, NEXT/PREV and auto-advance through the engine
 # dispatch. The script names songs relative to the generated songs directory.
 add_test(NAME queue-engine
