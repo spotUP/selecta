@@ -6,3 +6,6 @@ STATE stopped
 ERROR unknown_command FOO
 ERROR not_implemented SEEK
 VOLUME 20
+ERROR no_song SUBSONG
+ERROR open_failed /nonexistent/none.mod
+ERROR no_replayer /dev/null

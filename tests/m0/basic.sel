@@ -9,3 +9,6 @@ BEGIN
 VOLUME 10
 VOLUME 20
 END
+SUBSONG 0
+OPEN /nonexistent/none.mod
+OPEN /dev/null
