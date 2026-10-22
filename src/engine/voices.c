@@ -4,6 +4,7 @@
 
 static sel_mixer_voice* voice_at(const sel_voices* api, uint32_t voice) {
     sel_mixer* m = (sel_mixer*)api->ctx;
+    m->voice_ops++;
     return voice < m->voice_count ? &m->voices[voice] : NULL;
 }
 

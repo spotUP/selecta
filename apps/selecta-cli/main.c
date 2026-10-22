@@ -4,6 +4,7 @@
 #include <selecta/api.h>
 #include <selecta/engine.h>
 #include <selecta/protocol.h>
+#include <selecta/registry.h>
 #include <selecta/tags.h>
 
 #include "cli.h"
@@ -251,12 +252,17 @@ static int cmd_script(const char* path) {
     char pool[2048];
     char verb[64];
     FILE* f = fopen(path, "r");
+    sel_engine_config cfg;
     sel_engine* e;
+    memset(&cfg, 0, sizeof cfg);
     if (f == NULL) {
         fprintf(stderr, "selecta-cli: cannot open %s\n", path);
         return 1;
     }
-    e = sel_engine_create(sel_host_default(), NULL);
+    sel_registry_init(sel_host_default());
+    cfg.registry_count = sel_registry_count;
+    cfg.registry_get = sel_registry_get;
+    e = sel_engine_create(sel_host_default(), &cfg);
     if (e == NULL) {
         fclose(f);
         fprintf(stderr, "selecta-cli: engine allocation failed\n");

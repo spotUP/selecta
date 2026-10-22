@@ -4,6 +4,12 @@
  * ratchet test. */
 #include <selecta/engine.h>
 
+#include <selecta/plugin.h>
+#include <selecta/replayer.h>
+#include <selecta/tags.h>
+
+#include "mixer.h"
+#include "scheduler.h"
 #include "spsc.h"
 
 #include <stdio.h>
@@ -23,7 +29,9 @@
     X(EVENTS)                                                                                 \
     X(TAGTYPES)                                                                               \
     X(BEGIN)                                                                                  \
-    X(END)
+    X(END)                                                                                    \
+    X(OPEN)                                                                                   \
+    X(SUBSONG)
 
 #define SEL_ERROR_DETAIL_MAX 64
 #define SEL_LOG_LINE_MAX 96
@@ -46,6 +54,27 @@ struct sel_engine {
     char error_detail[8][SEL_ERROR_DETAIL_MAX];
     uint32_t log_slot;
     char log_line[8][SEL_LOG_LINE_MAX];
+    uint32_t (*registry_count)(void);
+    const sel_tag* (*registry_get)(uint32_t index);
+    /* open song (rp_state != NULL) */
+    uint32_t rate;
+    uint32_t resampler;
+    void* rp_state;
+    sel_rp_close_fn rp_close;
+    sel_rp_start_fn rp_start;
+    sel_rp_tick_fn rp_tick;
+    sel_rp_metadata_fn rp_metadata;
+    sel_rp_info rp_info;
+    uint8_t* song_data;
+    uint32_t subsong;
+    sel_mixer mixer;
+    sel_scheduler sched;
+    uint32_t frames_left; /* frames of the current tick still to mix */
+    uint32_t ticks;
+    uint32_t song_frames;  /* frames mixed since the subsong started */
+    uint32_t pos_emitted;  /* whole seconds last reported */
+    uint32_t last_tick;    /* the current tick carries SEL_TICK_ENDED */
+    uint32_t ended;        /* set by render, reported by the next pump */
 };
 
 static const char* const k_option_names[] = {
@@ -88,6 +117,18 @@ static void evt_int(sel_message* m, int32_t v) {
     sel_arg* a = &m->args[m->argc++];
     a->type = SEL_ARG_INT;
     a->v.i = v;
+}
+
+static void evt_uint(sel_message* m, uint32_t v) {
+    sel_arg* a = &m->args[m->argc++];
+    a->type = SEL_ARG_UINT;
+    a->v.u = v;
+}
+
+static void evt_tags(sel_message* m, const sel_tag* t) {
+    sel_arg* a = &m->args[m->argc++];
+    a->type = SEL_ARG_TAGS;
+    a->v.t = t;
 }
 
 static void emit(sel_engine* e, const sel_message* m) {
@@ -308,6 +349,180 @@ static void cmd_END(sel_engine* e, const sel_message* m) {
     flush_pending(e);
 }
 
+/* ---- songs ----------------------------------------------------------- */
+
+static void emit_position(sel_engine* e) {
+    sel_message m;
+    uint32_t seconds = e->song_frames / e->rate;
+    evt_init(&m, SEL_EVT_POSITION);
+    evt_uint(&m, e->subsong);
+    evt_uint(&m, e->ticks);
+    evt_uint(&m, seconds);
+    evt_uint(&m, e->song_frames);
+    e->pos_emitted = seconds;
+    emit(e, &m);
+}
+
+static void close_song(sel_engine* e) {
+    if (e->rp_state != NULL) {
+        e->rp_close(e->rp_state);
+        e->rp_state = NULL;
+    }
+    if (e->song_data != NULL) {
+        e->host->mem_free(e->host, e->song_data);
+        e->song_data = NULL;
+    }
+    e->frames_left = 0;
+    e->ended = 0;
+    e->last_tick = 0;
+}
+
+/* Fresh mixer and scheduler, then the replayer's start. */
+static int start_subsong(sel_engine* e, uint32_t subsong) {
+    sel_mixer_init(&e->mixer, e->rate, e->rp_info.voice_count, e->resampler);
+    sel_scheduler_init(&e->sched, e->rp_info.timebase_hz, e->rate);
+    e->frames_left = 0;
+    e->ticks = 0;
+    e->song_frames = 0;
+    e->ended = 0;
+    e->last_tick = 0;
+    e->subsong = subsong;
+    return e->rp_start(e->rp_state, subsong, e->rate, sel_mixer_voices(&e->mixer));
+}
+
+/* Reads the whole file into host memory; NULL when it cannot be read. */
+static uint8_t* read_song(sel_engine* e, const char* path, size_t* size) {
+    FILE* f = fopen(path, "rb");
+    long len;
+    uint8_t* buf;
+    if (f == NULL) {
+        return NULL;
+    }
+    if (fseek(f, 0, SEEK_END) != 0 || (len = ftell(f)) < 0 || fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    buf = e->host->mem_alloc(e->host, (size_t)len + 1u, SEL_MEM_FAST);
+    if (buf == NULL || fread(buf, 1, (size_t)len, f) != (size_t)len) {
+        if (buf != NULL) {
+            e->host->mem_free(e->host, buf);
+        }
+        fclose(f);
+        return NULL;
+    }
+    fclose(f);
+    *size = (size_t)len;
+    return buf;
+}
+
+/* The replayer hook list that claims the data: first YES, else first UNSURE. */
+static const sel_tag* find_replayer(const sel_engine* e, const uint8_t* data, size_t size,
+                                    const char* path) {
+    const sel_tag* best = NULL;
+    uint32_t i, n;
+    if (e->registry_count == NULL || e->registry_get == NULL) {
+        return NULL;
+    }
+    n = e->registry_count();
+    for (i = 0; i < n; i++) {
+        const sel_tag* desc = e->registry_get(i);
+        const sel_tag* hooks;
+        sel_rp_probe_fn probe;
+        int r;
+        if (sel_tag_find(desc, SEL_PLUGIN_KIND, 0) != SEL_PLUGIN_KIND_REPLAYER) {
+            continue;
+        }
+        hooks = (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0);
+        probe = hooks ? (sel_rp_probe_fn)sel_tag_find(hooks, SEL_RP_PROBE, 0) : NULL;
+        if (probe == NULL) {
+            continue;
+        }
+        r = probe(data, size, path);
+        if (r == SEL_PROBE_YES) {
+            return hooks;
+        }
+        if (r == SEL_PROBE_UNSURE && best == NULL) {
+            best = hooks;
+        }
+    }
+    return best;
+}
+
+static void cmd_OPEN(sel_engine* e, const sel_message* m) {
+    const char* path = m->args[0].v.s;
+    sel_song_source src;
+    const sel_tag* hooks;
+    sel_rp_open_fn open;
+    size_t size = 0;
+    uint8_t* data;
+    sel_message ev;
+
+    close_song(e);
+    data = read_song(e, path, &size);
+    if (data == NULL) {
+        sel_engine_report_error(e, "open_failed", path);
+        return;
+    }
+    hooks = size ? find_replayer(e, data, size, path) : NULL;
+    if (hooks == NULL) {
+        e->host->mem_free(e->host, data);
+        sel_engine_report_error(e, "no_replayer", path);
+        return;
+    }
+    if (sel_tag_find(hooks, SEL_RP_KIND, 0) != SEL_RP_KIND_VOICE) {
+        e->host->mem_free(e->host, data);
+        sel_engine_report_error(e, "unsupported_kind", path);
+        return;
+    }
+    open = (sel_rp_open_fn)sel_tag_find(hooks, SEL_RP_OPEN, 0);
+    e->rp_close = (sel_rp_close_fn)sel_tag_find(hooks, SEL_RP_CLOSE, 0);
+    e->rp_start = (sel_rp_start_fn)sel_tag_find(hooks, SEL_RP_START, 0);
+    e->rp_tick = (sel_rp_tick_fn)sel_tag_find(hooks, SEL_RP_TICK, 0);
+    e->rp_metadata = (sel_rp_metadata_fn)sel_tag_find(hooks, SEL_RP_METADATA, 0);
+    if (!open || !e->rp_close || !e->rp_start || !e->rp_tick) {
+        e->host->mem_free(e->host, data);
+        sel_engine_report_error(e, "replayer_incomplete", path);
+        return;
+    }
+    src.data = data;
+    src.size = size;
+    src.path = path;
+    memset(&e->rp_info, 0, sizeof e->rp_info);
+    e->rp_state = open(&src, e->host, &e->rp_info);
+    if (e->rp_state == NULL) {
+        e->host->mem_free(e->host, data);
+        sel_engine_report_error(e, "open_failed", path);
+        return;
+    }
+    e->song_data = data; /* the replayer reads it until close */
+    if (!start_subsong(e, e->rp_info.default_subsong)) {
+        close_song(e);
+        sel_engine_report_error(e, "start_failed", path);
+        return;
+    }
+    evt_init(&ev, SEL_EVT_SONG_OPENED);
+    evt_tags(&ev, e->rp_metadata ? e->rp_metadata(e->rp_state) : NULL);
+    emit(e, &ev);
+    emit_position(e);
+}
+
+static void cmd_SUBSONG(sel_engine* e, const sel_message* m) {
+    uint32_t n = m->args[0].v.u;
+    if (e->rp_state == NULL) {
+        sel_engine_report_error(e, "no_song", "SUBSONG");
+        return;
+    }
+    if (n >= e->rp_info.subsong_count) {
+        sel_engine_report_error(e, "range", "SUBSONG");
+        return;
+    }
+    if (!start_subsong(e, n)) {
+        sel_engine_report_error(e, "start_failed", "SUBSONG");
+        return;
+    }
+    emit_position(e);
+}
+
 static void cmd_not_implemented(sel_engine* e, const sel_message* m) {
     sel_engine_report_error(e, "not_implemented", sel_cmd_name(m->id));
 }
@@ -349,6 +564,12 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     memset(e, 0, sizeof *e);
     e->host = host;
     e->state.volume = 100;
+    e->rate = 44100;
+    e->resampler = SEL_MIX_RESAMPLE_LINEAR;
+    if (cfg) {
+        e->registry_count = cfg->registry_count;
+        e->registry_get = cfg->registry_get;
+    }
     copy_str(e->state.output, SEL_OUTPUT_NAME_MAX, "null");
     if (!sel_spsc_init(&e->cmd_q, host, cmd_depth) || !sel_spsc_init(&e->evt_q, host, evt_depth)) {
         sel_engine_destroy(e);
@@ -359,6 +580,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
 
 void sel_engine_destroy(sel_engine* e) {
     if (e) {
+        close_song(e);
         sel_spsc_free(&e->cmd_q, e->host);
         sel_spsc_free(&e->evt_q, e->host);
         e->host->mem_free(e->host, e);
@@ -377,6 +599,16 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
             dispatch(e, &m);
         }
     }
+    if (e->ended) {
+        sel_message ev;
+        e->ended = 0;
+        evt_init(&ev, SEL_EVT_SONG_ENDED);
+        emit(e, &ev);
+        set_play(e, SEL_STOPPED);
+    }
+    if (e->rp_state != NULL && e->song_frames / e->rate != e->pos_emitted) {
+        emit_position(e);
+    }
     while (sel_spsc_pop(&e->evt_q, &m)) {
         if (sink) {
             sink(ctx, &m);
@@ -390,10 +622,60 @@ const sel_state* sel_engine_state(const sel_engine* e) {
     return &e->state;
 }
 
+void sel_engine_set_mix(sel_engine* e, uint32_t rate, uint32_t resampler) {
+    if (rate) {
+        e->rate = rate;
+    }
+    e->resampler = resampler;
+}
+
+void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
+    out->ticks = e->ticks;
+    out->voice_ops = e->mixer.voice_ops;
+    out->mixed_frames = e->mixer.mixed_frames;
+}
+
+/* Mixes the open song: the scheduler turns each tick's length into frames,
+ * the mixer fills them. The tick that reports ENDED plays out, then the
+ * song is flagged ended for the next pump (events are produced on the
+ * command side only, keeping the event queue single-producer). */
 uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
+    uint32_t done = 0;
     e->render_calls++;
-    if (stereo && frames) {
-        memset(stereo, 0, (size_t)frames * 2u * sizeof(int16_t));
+    if (stereo == NULL || frames == 0) {
+        return frames;
+    }
+    if (e->rp_state != NULL && e->state.play == SEL_PLAYING) {
+        while (done < frames && !e->ended) {
+            uint32_t n;
+            if (e->frames_left == 0) {
+                sel_tick_result r;
+                e->rp_tick(e->rp_state, &r);
+                e->ticks++;
+                e->frames_left = sel_scheduler_frames(&e->sched, r.length);
+                if (r.flags & SEL_TICK_ENDED) {
+                    e->last_tick = 1;
+                }
+            }
+            n = frames - done < e->frames_left ? frames - done : e->frames_left;
+            sel_mixer_mix(&e->mixer, stereo + (size_t)done * 2u, n);
+            e->frames_left -= n;
+            e->song_frames += n;
+            done += n;
+            if (e->frames_left == 0 && e->last_tick) {
+                e->last_tick = 0;
+                e->ended = 1;
+            }
+        }
+        if (e->state.volume != 100) {
+            uint32_t i;
+            for (i = 0; i < done * 2u; i++) {
+                stereo[i] = (int16_t)(((int32_t)stereo[i] * e->state.volume) / 100);
+            }
+        }
+    }
+    if (done < frames) {
+        memset(stereo + (size_t)done * 2u, 0, (size_t)(frames - done) * 2u * sizeof(int16_t));
     }
     return frames;
 }

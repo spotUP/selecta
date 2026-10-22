@@ -45,6 +45,11 @@ typedef struct sel_state {
 typedef struct sel_engine_config {
     uint32_t cmd_queue_depth; /* 0: default 64 */
     uint32_t evt_queue_depth; /* 0: default 256 */
+    /* Plugin enumeration (sel_registry_count / sel_registry_get). The engine
+     * core does not link the registry; the front end hands these in. NULL:
+     * OPEN answers ERROR no_replayer. */
+    uint32_t (*registry_count)(void);
+    const sel_tag* (*registry_get)(uint32_t index);
 } sel_engine_config;
 
 typedef struct sel_engine sel_engine;
@@ -71,7 +76,19 @@ const sel_state* sel_engine_state(const sel_engine* e);
 const char* sel_play_state_name(sel_play_state s);
 const char* sel_option_name(sel_option_id id);
 
-/* Fills `frames` stereo frames. Silence in M0a; counts calls. */
+/* Sample rate and resampler (a SEL_MIX_RESAMPLE_* value) used by the next
+ * OPEN. Rate 0 keeps 44100. Defaults: 44100 Hz, linear. */
+void sel_engine_set_mix(sel_engine* e, uint32_t rate, uint32_t resampler);
+
+typedef struct sel_engine_stats {
+    uint32_t ticks;        /* replayer ticks run */
+    uint32_t voice_ops;    /* calls through the voices API */
+    uint32_t mixed_frames; /* frames mixed */
+} sel_engine_stats;
+void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out);
+
+/* Fills `frames` stereo frames: the open song's mix while PLAYING, else
+ * silence. Counts calls. Never allocates. */
 uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames);
 uint32_t sel_engine_render_calls(const sel_engine* e);
 

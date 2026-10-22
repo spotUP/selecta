@@ -65,6 +65,7 @@ static int settle(sel_mixer_voice* v) {
 void sel_mixer_mix(sel_mixer* m, int16_t* stereo, uint32_t frames) {
     int32_t acc[MIX_CHUNK * 2];
     uint32_t done = 0;
+    m->mixed_frames += frames;
     while (done < frames) {
         uint32_t n = frames - done;
         uint32_t i, k;
