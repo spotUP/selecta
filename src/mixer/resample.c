@@ -3,6 +3,8 @@
  * frame 0 before the start. */
 #include "mixer.h"
 
+#include "sinc_table.h"
+
 static int32_t tap(const sel_sample* s, uint32_t i) {
     uint32_t end = s->loop_length != 0 ? s->loop_start + s->loop_length : s->length;
     if (i >= end) {
@@ -37,14 +39,18 @@ int32_t sel_resample(const sel_sample* s, uint32_t pos, uint32_t frac, uint32_t 
         int32_t w3 = (t3 - t2) / 2;
         return (w0 * tap_rel(s, pos, -1) + w1 * tap(s, pos) + w2 * tap_rel(s, pos, 1) + w3 * tap_rel(s, pos, 2)) >> 15;
     }
+    case SEL_MIX_RESAMPLE_SINC: {
+        const int32_t* row = sel_resample_sinc_row(frac >> 8);
+        int32_t sum = 0;
+        int32_t k;
+        for (k = 0; k < 8; k++) sum += row[k] * tap_rel(s, pos, k - 3);
+        return sum >> 15;
+    }
     default:
         return tap(s, pos);
     }
 }
 
 const int32_t* sel_resample_sinc_row(uint32_t phase) {
-    /* I28 replaces this with the generated table. */
-    static const int32_t zero_row[8] = {0};
-    (void)phase;
-    return zero_row;
+    return sel_sinc_table[phase & 255u];
 }

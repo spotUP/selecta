@@ -1,11 +1,13 @@
 /* T12 mixer-unit: period step, resampler vectors, clipping and the
  * loop / queue semantics of nuade_mixer.c settle(). Behaviour is tested where
  * it lives; the reachability test of the whole engine is T13.
- * Usage: mixer_test [group...]   groups: period none linear cubic sinc clip loop
+ * Usage: mixer_test [group...]   groups: period none linear cubic sinc default clip loop
  * With no argument every group runs. */
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
+#include <selecta/machine.h>
 
 #include "mixer.h"
 #include "vectors.h"
@@ -296,12 +298,30 @@ static void test_loop(void) {
     }
 }
 
+static void test_default(void) {
+    sel_tag desktop[] = {{SEL_MACHINE_CPU, SEL_CPU_DESKTOP}, {SEL_MACHINE_FPU, 1}, {SEL_TAG_END, 0}};
+    sel_tag c68020[] = {{SEL_MACHINE_CPU, SEL_CPU_68020}, {SEL_MACHINE_FPU, 0}, {SEL_TAG_END, 0}};
+    sel_tag c68030f[] = {{SEL_MACHINE_CPU, SEL_CPU_68030}, {SEL_MACHINE_FPU, 1}, {SEL_TAG_END, 0}};
+    sel_tag c68040[] = {{SEL_MACHINE_CPU, SEL_CPU_68040}, {SEL_MACHINE_FPU, 1}, {SEL_TAG_END, 0}};
+    sel_tag c68060[] = {{SEL_MACHINE_CPU, SEL_CPU_68060}, {SEL_MACHINE_FPU, 1}, {SEL_TAG_END, 0}};
+    sel_tag c68040lc[] = {{SEL_MACHINE_CPU, SEL_CPU_68040}, {SEL_MACHINE_FPU, 0}, {SEL_TAG_END, 0}};
+    sel_tag none[] = {{SEL_TAG_END, 0}};
+    CHECK(sel_mixer_default_resampler(desktop) == SEL_MIX_RESAMPLE_SINC, "desktop -> sinc");
+    CHECK(sel_mixer_default_resampler(c68020) == SEL_MIX_RESAMPLE_LINEAR, "68020 -> linear");
+    CHECK(sel_mixer_default_resampler(c68030f) == SEL_MIX_RESAMPLE_LINEAR, "68030 -> linear");
+    CHECK(sel_mixer_default_resampler(c68040) == SEL_MIX_RESAMPLE_CUBIC, "68040 -> cubic");
+    CHECK(sel_mixer_default_resampler(c68060) == SEL_MIX_RESAMPLE_CUBIC, "68060 -> cubic");
+    CHECK(sel_mixer_default_resampler(c68040lc) == SEL_MIX_RESAMPLE_LINEAR, "68040 without FPU -> linear");
+    CHECK(sel_mixer_default_resampler(none) == SEL_MIX_RESAMPLE_LINEAR, "unknown machine -> linear");
+}
+
 int main(int argc, char** argv) {
     if (wanted(argc, argv, "period")) test_period();
     if (wanted(argc, argv, "none")) test_none();
     if (wanted(argc, argv, "linear")) test_linear();
     if (wanted(argc, argv, "cubic")) test_cubic();
     if (wanted(argc, argv, "sinc")) test_sinc();
+    if (wanted(argc, argv, "default")) test_default();
     if (wanted(argc, argv, "clip")) test_clip();
     if (wanted(argc, argv, "loop")) test_loop();
     printf("mixer_test failures=%d\n", failures);

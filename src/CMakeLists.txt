@@ -12,8 +12,24 @@ add_library(selecta_core STATIC
 target_include_directories(selecta_core PUBLIC ${PROJECT_SOURCE_DIR}/include)
 
 # Fixed-point mixer and resamplers (no float, no allocation).
-add_library(selecta_mixer STATIC mixer/mixer.c mixer/resample.c)
+# The SINC table is generated at build time by a host tool (float and libm
+# live only there); the Amiga cross build runs the host compiler for it.
+if(SEL_AMIGA)
+  find_program(SEL_HOST_CC NAMES cc clang gcc REQUIRED)
+else()
+  set(SEL_HOST_CC "${CMAKE_C_COMPILER}")
+endif()
+set(SEL_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+add_custom_command(
+  OUTPUT "${SEL_GEN_DIR}/sinc_table.h"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${SEL_GEN_DIR}"
+  COMMAND "${SEL_HOST_CC}" -O1 -o "${SEL_GEN_DIR}/gen_sinc_table" "${PROJECT_SOURCE_DIR}/tools/gen_sinc_table.c" -lm
+  COMMAND "${SEL_GEN_DIR}/gen_sinc_table" > "${SEL_GEN_DIR}/sinc_table.h"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/gen_sinc_table.c"
+  VERBATIM)
+add_library(selecta_mixer STATIC mixer/mixer.c mixer/resample.c "${SEL_GEN_DIR}/sinc_table.h")
 target_include_directories(selecta_mixer PUBLIC ${PROJECT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/mixer)
+target_include_directories(selecta_mixer PRIVATE "${SEL_GEN_DIR}")
 target_link_libraries(selecta_core PUBLIC selecta_mixer)
 
 # One clock source and one machine probe per platform. OS headers live only

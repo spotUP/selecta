@@ -91,4 +91,4 @@ endif()
 # the row that implements it.
 add_executable(mixer_test mixer/mixer_test.c)
 target_link_libraries(mixer_test PRIVATE selecta_core)
-add_test(NAME mixer-unit COMMAND mixer_test period none linear cubic clip loop)
+add_test(NAME mixer-unit COMMAND mixer_test period none linear cubic sinc default clip loop)
