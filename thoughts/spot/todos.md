@@ -182,7 +182,7 @@ Tests T10 to T18 are defined in the plan's finish-line table. A row is ticked on
 | I43 | [x] | 7 | plan status done, ledger reconciled | grep count matches |
 | I44 | [ ] | - | Amiga CI image (from M0a I21): find and verify a bebbo toolchain container, add CI job | CI job green |
 
-## Implementation M1.1 (plan: thoughts/shared/plans/2026-10-23-m1-1-text-ui-queue.md, status: approved 2026-10-23)
+## Implementation M1.1 (plan: thoughts/shared/plans/2026-10-23-m1-1-text-ui-queue.md, status: in-progress 2026-10-23, open: I61)
 
 Tests T19 to T27 are defined in the plan's finish-line table. A row is ticked only when its proof column is green.
 
@@ -205,7 +205,7 @@ Tests T19 to T27 are defined in the plan's finish-line table. A row is ticked on
 | I59 | [x] | 5 | T25 red; grid.c, keys.c, theme.c, posix/term.c | T25 green |
 | I60 | [x] | 5 | text_ui.c; apps/selecta shell; T19 red then green | T19 green (I60 commit) |
 | I61 | [ ] | 5 | real-terminal check on macOS (plan Verification, manual 1); only the user ticks it | user confirms |
-| I62 | [ ] | 6 | RULES.md Commands, README, design doc sections 3/5/14/16, validation doc, plan status done | counts reconciled |
+| I62 | [x] | 6 | RULES.md Commands, README, design doc sections 3/5/14/16, validation doc, plan status done | counts reconciled: ctest 48, ratchet 45, no_float 12, nuade 121; commit HASH |
 
 ## Open decisions
 

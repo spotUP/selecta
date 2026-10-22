@@ -2,9 +2,11 @@
 date: 2026-10-23
 topic: M1.1 implementation plan: text UI shell, queue, browse, seek, module info, libopenmpt adapter, all nuade players
 tags: [plan, m1, text-ui, queue, openmpt, nuade]
-status: approved
+status: in-progress
 rows: I45 to I62 in thoughts/spot/todos.md
 ---
+
+> Status 2026-10-23: rows I45 to I60 and I62 done; the plan stays `in-progress` only for I61 (manual real-terminal check, user). When the user ticks I61 the status becomes `done`. The automated finish line (T19 to T27, T8) is green; see `2026-10-23-m1-1-text-ui-queue.validation.md`.
 
 # M1.1: text UI shell, queue, local browse, seek, module info, libopenmpt, nuade players
 
@@ -24,7 +26,7 @@ M1.2 and M1.3 get their own plan files when M1.1 is done; ledger row L4 tracks w
 
 | ID | Test (ctest name) | Entry point | Sentinel (proves new code ran) | Spec number asserted |
 |----|-------------------|-------------|--------------------------------|----------------------|
-| T19 | `selecta-browse-play` (the M1.1 reachability test) | `selecta --output null --keys tests/m1/browse_play.keys --screen-dump <tmp>.txt` | on exit the shell prints `ui_waits=W flushes=F keys=K` (shell and grid counters) and `songs_opened=S queue_version=Q` (engine counters) | keys browse into `build/host/tests/songs/`, move to `selecta-test-mk.mod`, press Enter, wait 2000 ms, press `i`, quit. `S=1`; `K` equals the key count of the keys file (CMake counts it); last dumped screen equals `tests/m1/browse_play.screen` (header shows `Playing`, title `selecta-test`, `00:02 / 00:10`; info panel shows `Format`, `Channels 4`, `Patterns`, `Samples`); `Q=1` |
+| T19 | `selecta-browse-play` (the M1.1 reachability test) | `selecta --output null --keys tests/m1/browse_play.keys --screen-dump <tmp>.txt` | on exit the shell prints `ui_waits=W flushes=F keys=K` (shell and grid counters) and `songs_opened=S queue_version=Q` (engine counters) | keys browse into `build/host/tests/songs/`, move to `selecta-test-mk.mod`, press Enter, wait 2000 ms, press `i`, quit. `S=1`; `K` equals the key count of the keys file (CMake counts it); last dumped screen equals `tests/m1/browse_play.screen` (header shows `Playing`, title `selecta test`, `00:02 / 00:30`; info panel shows `Format`, `Channels 4`, `Patterns`, `Samples`); `Q=1` |
 | T20 | `queue-engine` | `selecta-cli script tests/m1/queue.sel` | `.expected` lines carry the `QUEUE_CHANGED` versions | ids are 1, 2, 3 in add order and never reused after `QUEUE_REMOVE 2`; `QUEUE_PLAY_NEXT` inserts after the playing entry; `NEXT` past the end emits `STATE stopped`; `PREV` within the first 3000 ms of a song goes to the previous entry, after it restarts the song; SONG_ENDED auto-advances and emits `SONG_OPENED` for entry 2; every edit raises the version by exactly 1 |
 | T21 | `seek-render` | `selecta-cli render <song> --seek-ms 5000 --seconds 5` for the nuade song and the openmpt song | prints `seek_path=native` (openmpt) or `seek_path=skip skipped_frames=220500` (nuade) | the 5 s WAV after the seek equals bytes 882000 onward of the 10 s golden render (same resampler), byte for byte, for both replayers; `SEEKED 220500` in the event log |
 | T22 | `render-golden-openmpt` | `selecta-cli render build/host/tests/songs/selecta-test-mk.mod --output <tmp>.wav --seconds 10 --rate 44100` | prints `replayer=openmpt render_calls=R rendered_frames=441000` | `rendered_frames=441000`; WAV data chunk 1764000 bytes; SHA-256 equals `tests/golden/openmpt/selecta-test-mk.sha256` (committed only after the listening check, row I55) |

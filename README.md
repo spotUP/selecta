@@ -26,4 +26,12 @@ build/host/apps/selecta-cli/selecta-cli render build/host/tests/songs/selecta-te
 build/host/apps/selecta-cli/selecta-cli play build/host/tests/songs/selecta-test.mod --output coreaudio --seconds 10
 ```
 
+## Text UI
+
+```sh
+build/host/apps/selecta/selecta --start-dir ~/Music/mods
+```
+
+The browser lists the folder; Up/Down move, Enter opens a directory or plays a song, Left/Right seek, `n` plays the next queued song, `i` shows the module info, `q` quits and restores the terminal. `--output null` plays silently (used by the tests). Needs an xterm-256color terminal with UTF-8.
+
 Full command list: `RULES.md`.
