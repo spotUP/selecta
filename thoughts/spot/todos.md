@@ -166,8 +166,8 @@ Tests T10 to T18 are defined in the plan's finish-line table. A row is ticked on
 | I39 | [x] | 5 | cmake/no_float.cmake over 68k engine, mixer, wav, null objects | T18 green |
 | I40 | [x] | 6 | coreaudio.c, selecta-cli play, T16 RED then green | T16 green |
 | I41 | [x] | 6 | audio thread assertion in sel_engine_render (debug) | T16 green in Debug |
-| I42 | [ ] | 7 | RULES.md Commands, README, validation doc | counts reconciled |
-| I43 | [ ] | 7 | plan status done, ledger reconciled | grep count matches |
+| I42 | [x] | 7 | RULES.md Commands, README, validation doc | counts reconciled |
+| I43 | [x] | 7 | plan status done, ledger reconciled | grep count matches |
 | I44 | [ ] | - | Amiga CI image (from M0a I21): find and verify a bebbo toolchain container, add CI job | CI job green |
 
 ## Open decisions
