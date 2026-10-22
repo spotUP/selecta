@@ -45,6 +45,7 @@
     X(SUBSONG)                                                                                \
     X(NEXT)                                                                                   \
     X(PREV)                                                                                   \
+    X(SEEK)                                                                                   \
     X(QUEUE_ADD)                                                                              \
     X(QUEUE_REMOVE)                                                                           \
     X(QUEUE_CLEAR)                                                                            \
@@ -57,9 +58,11 @@
 #define SEL_BEGIN_OPEN 1u    /* new song: SONG_OPENED */
 #define SEL_BEGIN_SUBSONG 2u /* other subsong of the open file: no event */
 #define SEL_BEGIN_RESTART 3u /* same song from the start: SEEKED 0 */
+#define SEL_BEGIN_SEEK 4u    /* same song, restart-and-skip to a frame: SEEKED frame */
 /* PREV inside the first three seconds goes to the previous entry, later restarts */
 #define SEL_PREV_RESTART_MS 3000u
 #define SEL_SWAP_RING_DEPTH 4u
+#define SEL_SEEK_PATH_SKIP 2u
 /* ids of the internal ring messages (not commands, not in commands.def) */
 #define SEL_RING_SWAP 1u
 #define SEL_RING_RETURN 2u
@@ -121,6 +124,9 @@ struct sel_engine {
     /* an OPEN or SUBSONG that found both slots busy, retried by the next pump */
     uint32_t deferred;
     uint32_t deferred_subsong;
+    uint32_t deferred_seek; /* target frame of a deferred SEL_BEGIN_SEEK */
+    uint32_t seek_path;     /* SEL_SEEK_PATH_*: how the last SEEK got there */
+    uint32_t seek_skipped;  /* frames the last restart-and-skip ran through */
     char deferred_path[SEL_DEFERRED_PATH_MAX];
     char subsong_path[SEL_DEFERRED_PATH_MAX];
     sel_queue queue;
@@ -526,11 +532,39 @@ static int find_free_slot(const sel_engine* e, uint32_t* idx) {
     return 0;
 }
 
+/* Restart-and-skip (design: Seek): the fresh instance runs its ticks through the
+ * scheduler without mixing until `target` frames have passed. The voice path is
+ * deterministic, so the voices end up where a full render would have left them.
+ * Pump thread; the slot is not yet published. Returns the frames skipped. */
+static uint32_t skip_frames(sel_slot* sl, uint32_t target) {
+    while (sl->song_frames < target && !sl->ended) {
+        uint32_t n;
+        if (sl->frames_left == 0) {
+            sel_tick_result r;
+            sl->rp_tick(sl->rp_state, &r);
+            sl->ticks++;
+            sl->frames_left = sel_scheduler_frames(&sl->sched, r.length);
+            if (r.flags & (SEL_TICK_ENDED | SEL_TICK_LOOPED)) {
+                sl->last_tick = 1;
+            }
+        }
+        n = target - sl->song_frames < sl->frames_left ? target - sl->song_frames : sl->frames_left;
+        sel_mixer_advance(&sl->mixer, n);
+        sl->frames_left -= n;
+        sl->song_frames += n;
+        if (sl->frames_left == 0 && sl->last_tick) {
+            sl->last_tick = 0;
+            sl->ended = 1;
+        }
+    }
+    return sl->song_frames;
+}
+
 /* Prepares the idle slot `idx` with the song at `path` (all allocation, file
  * read, RP_OPEN and RP_START happen here) and publishes it through the swap
  * ring. On failure the slot stays free and the error is reported. */
 static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t subsong,
-                        const char* err_detail) {
+                        uint32_t skip_to, const char* err_detail) {
     sel_slot* sl = &e->slot[idx];
     sel_song_source src;
     const sel_tag* hooks;
@@ -586,6 +620,10 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
         sel_engine_report_error(e, "start_failed", err_detail);
         return 0;
     }
+    if (skip_to > 0) {
+        e->seek_skipped = skip_frames(sl, skip_to);
+        e->seek_path = SEL_SEEK_PATH_SKIP;
+    }
     sl->busy = 1;
     memset(&sw, 0, sizeof sw);
     sw.kind = SEL_MSG_CMD;
@@ -604,10 +642,13 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
 /* One song change (SEL_BEGIN_*). Both slots busy means the audio thread has
  * not yet returned the old one: the request waits for the next pump. Returns
  * 0 when the song could not be started (an ERROR was reported). */
-static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t subsong) {
+static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t subsong, uint32_t seek_to) {
     uint32_t idx;
     sel_message ev;
-    const char* detail = kind == SEL_BEGIN_OPEN ? path : kind == SEL_BEGIN_SUBSONG ? "SUBSONG" : "PREV";
+    const char* detail = kind == SEL_BEGIN_OPEN     ? path
+                         : kind == SEL_BEGIN_SUBSONG ? "SUBSONG"
+                         : kind == SEL_BEGIN_SEEK    ? "SEEK"
+                                                     : "PREV";
     reclaim_slots(e);
     if (!find_free_slot(e, &idx)) {
         size_t n = strlen(path);
@@ -618,11 +659,12 @@ static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t s
         memcpy(e->deferred_path, path, n + 1u);
         e->deferred = kind;
         e->deferred_subsong = subsong;
+        e->deferred_seek = seek_to;
         e->song_over = 0;
         return 1;
     }
     e->deferred = 0;
-    if (!prepare_slot(e, idx, path, subsong, detail)) {
+    if (!prepare_slot(e, idx, path, subsong, kind == SEL_BEGIN_SEEK ? seek_to : 0, detail)) {
         return 0;
     }
     e->cur = idx;
@@ -635,6 +677,10 @@ static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t s
         evt_init(&ev, SEL_EVT_SEEKED);
         evt_uint(&ev, 0);
         emit(e, &ev);
+    } else if (kind == SEL_BEGIN_SEEK) {
+        evt_init(&ev, SEL_EVT_SEEKED);
+        evt_uint(&ev, e->slot[idx].song_frames);
+        emit(e, &ev);
     }
     emit_position(e, &e->slot[idx]);
     return 1;
@@ -642,13 +688,13 @@ static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t s
 
 static void cmd_OPEN(sel_engine* e, const sel_message* m) {
     e->q_playing = 0;
-    begin_song(e, SEL_BEGIN_OPEN, m->args[0].v.s, SEL_SUBSONG_DEFAULT);
+    begin_song(e, SEL_BEGIN_OPEN, m->args[0].v.s, SEL_SUBSONG_DEFAULT, 0);
 }
 
 /* Starts the open song's file again in the idle slot: SUBSONG (n) or
  * PREV's restart. The path lives in the slot that reclaim may close, so it
  * is copied first. 0: no song open. */
-static int reopen_current(sel_engine* e, uint32_t kind, uint32_t subsong, const char* who) {
+static int reopen_current(sel_engine* e, uint32_t kind, uint32_t subsong, uint32_t seek_to, const char* who) {
     sel_slot* cur = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
     if (cur == NULL || cur->rp_state == NULL) {
         sel_engine_report_error(e, "no_song", who);
@@ -659,7 +705,8 @@ static int reopen_current(sel_engine* e, uint32_t kind, uint32_t subsong, const 
         return 0;
     }
     memcpy(e->subsong_path, cur->path, strlen(cur->path) + 1u);
-    return begin_song(e, kind, e->subsong_path, subsong == SEL_SUBSONG_DEFAULT ? cur->subsong : subsong);
+    return begin_song(e, kind, e->subsong_path, subsong == SEL_SUBSONG_DEFAULT ? cur->subsong : subsong,
+                      seek_to);
 }
 
 static void cmd_SUBSONG(sel_engine* e, const sel_message* m) {
@@ -669,7 +716,49 @@ static void cmd_SUBSONG(sel_engine* e, const sel_message* m) {
         sel_engine_report_error(e, "range", "SUBSONG");
         return;
     }
-    reopen_current(e, SEL_BEGIN_SUBSONG, n, "SUBSONG");
+    reopen_current(e, SEL_BEGIN_SUBSONG, n, 0, "SUBSONG");
+}
+
+/* SEEK "ms" | "+ms" | "-ms": absolute or relative to the playing position,
+ * clamped at 0. The target is converted to a frame once, here. */
+static void cmd_SEEK(sel_engine* e, const sel_message* m) {
+    const char* a = m->args[0].v.s;
+    const sel_slot* cur = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
+    int64_t ms = 0;
+    int rel = 0, neg = 0;
+    uint32_t frame;
+    if (cur == NULL || cur->rp_state == NULL) {
+        sel_engine_report_error(e, "no_song", "SEEK");
+        return;
+    }
+    if (a != NULL && (*a == '+' || *a == '-')) {
+        rel = 1;
+        neg = *a == '-';
+        a++;
+    }
+    if (a == NULL || *a == '\0') {
+        sel_engine_report_error(e, "range", "SEEK");
+        return;
+    }
+    for (; *a != '\0'; a++) {
+        if (*a < '0' || *a > '9' || ms > 4000000000000LL) {
+            sel_engine_report_error(e, "range", "SEEK");
+            return;
+        }
+        ms = ms * 10 + (*a - '0');
+    }
+    if (rel) {
+        int64_t now = (int64_t)((uint64_t)cur->song_frames * 1000u / e->rate);
+        ms = neg ? now - ms : now + ms;
+        if (ms < 0) {
+            ms = 0;
+        }
+    }
+    if (ms > 4000000) { /* far beyond any song; keeps ms * rate inside 32 bits */
+        ms = 4000000;
+    }
+    frame = (uint32_t)((uint64_t)ms * e->rate / 1000u);
+    reopen_current(e, SEL_BEGIN_SEEK, SEL_SUBSONG_DEFAULT, frame, "SEEK");
 }
 
 /* ---- queue ----------------------------------------------------------- */
@@ -686,7 +775,7 @@ static void emit_queue_changed(sel_engine* e) {
 static int queue_start(sel_engine* e, uint32_t idx) {
     e->q_playing = e->queue.entries[idx].id;
     e->q_hint = idx;
-    if (!begin_song(e, SEL_BEGIN_OPEN, sel_queue_path(&e->queue, idx), SEL_SUBSONG_DEFAULT)) {
+    if (!begin_song(e, SEL_BEGIN_OPEN, sel_queue_path(&e->queue, idx), SEL_SUBSONG_DEFAULT, 0)) {
         e->q_playing = 0;
         return 0;
     }
@@ -732,7 +821,7 @@ static void cmd_PREV(sel_engine* e, const sel_message* m) {
         return;
     }
     if (idx == 0 || (uint64_t)cur->song_frames * 1000u / e->rate >= SEL_PREV_RESTART_MS) {
-        reopen_current(e, SEL_BEGIN_RESTART, SEL_SUBSONG_DEFAULT, "PREV");
+        reopen_current(e, SEL_BEGIN_RESTART, SEL_SUBSONG_DEFAULT, 0, "PREV");
         return;
     }
     queue_start(e, idx - 1u);
@@ -887,7 +976,7 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
     }
     reclaim_slots(e);
     if (e->deferred) {
-        begin_song(e, e->deferred, e->deferred_path, e->deferred_subsong);
+        begin_song(e, e->deferred, e->deferred_path, e->deferred_subsong, e->deferred_seek);
     }
     if (e->cur != SEL_SLOT_NONE) {
         sel_slot* sl = &e->slot[e->cur];
@@ -933,6 +1022,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->ticks = sl ? sl->ticks : 0;
     out->voice_ops = sl ? sl->mixer.voice_ops : 0;
     out->mixed_frames = sl ? sl->mixer.mixed_frames : 0;
+    out->seek_path = e->seek_path;
+    out->seek_skipped_frames = e->seek_skipped;
 }
 
 /* Mixes the open song: the scheduler turns each tick's length into frames,

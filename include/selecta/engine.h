@@ -91,6 +91,8 @@ typedef struct sel_engine_stats {
     uint32_t ticks;        /* replayer ticks run */
     uint32_t voice_ops;    /* calls through the voices API */
     uint32_t mixed_frames; /* frames mixed */
+    uint32_t seek_path;           /* last SEEK: 0 none, 1 native (RP_SEEK), 2 restart-and-skip */
+    uint32_t seek_skipped_frames; /* frames the last restart-and-skip ran through */
 } sel_engine_stats;
 void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out);
 

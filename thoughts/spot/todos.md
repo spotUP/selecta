@@ -190,7 +190,7 @@ Tests T19 to T27 are defined in the plan's finish-line table. A row is ticked on
 | I48 | [x] | 2 | T20 and T21 (nuade half) written and red | ctest failures |
 | I49 | [x] | 2 | two replayer slots, SWAP through the SPSC, close on pump thread | T13, T14, T17 green |
 | I50 | [x] | 2 | queue.c, QUEUE_ADD/REMOVE/CLEAR/PLAY_NEXT, NEXT/PREV, auto-advance, QUEUE_CHANGED | T20 green, ratchet 48 |
-| I51 | [ ] | 2 | SEEK restart-and-skip, SEEKED, render --seek-ms | T21 nuade half green, ratchet 47 |
+| I51 | [x] | 2 | SEEK restart-and-skip, SEEKED, render --seek-ms | T21 nuade half green, ratchet 47 |
 | I52 | [ ] | 2 | sel_state song/queue/view fields; T18 over queue.o | T18, T6 green |
 | I53 | [ ] | 3 | nuade metadata tags; glob of all 121 players; T23 red then green; design doc player count | T23 green |
 | I54 | [x] | 3 | libopenmpt submodule at libopenmpt-0.8.4 (commit 327204eaa2c27bd1acbb571babe68f279c85238b, resolved with gh api 2026-10-23); cmake/openmpt_sources.cmake; selecta_openmpt builds | host build green |

@@ -4,7 +4,7 @@ STATE playing
 STATE paused
 STATE stopped
 ERROR unknown_command FOO
-ERROR not_implemented SEEK
+ERROR no_song SEEK
 VOLUME 20
 ERROR no_song SUBSONG
 ERROR open_failed /nonexistent/none.mod

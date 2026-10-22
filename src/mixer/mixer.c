@@ -95,3 +95,19 @@ void sel_mixer_mix(sel_mixer* m, int16_t* stereo, uint32_t frames) {
         done += n;
     }
 }
+
+void sel_mixer_advance(sel_mixer* m, uint32_t frames) {
+    uint32_t k;
+    for (k = 0; k < m->voice_count; k++) {
+        sel_mixer_voice* v = &m->voices[k];
+        uint32_t i;
+        /* the same position arithmetic as sel_mixer_mix, without resampling */
+        for (i = 0; i < frames && v->playing; i++) {
+            uint32_t phase;
+            if (!settle(v)) break;
+            phase = v->frac + v->step;
+            v->position += phase >> 16;
+            v->frac = phase & 0xFFFFu;
+        }
+    }
+}

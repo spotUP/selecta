@@ -33,6 +33,8 @@ static void render_sink(void* ctx, const sel_message* evt) {
     if (evt->id == SEL_EVT_ERROR) {
         fprintf(stderr, "render: error %s %s\n", evt->args[0].v.s, evt->argc > 1 ? evt->args[1].v.s : "");
         c->failed = 1;
+    } else if (evt->id == SEL_EVT_SEEKED) {
+        printf("SEEKED %u\n", (unsigned)evt->args[0].v.u);
     }
 }
 
@@ -55,6 +57,7 @@ int sel_cli_render(int argc, char** argv) {
     sel_cli_output o;
     const char* song = NULL;
     const char* wav = NULL;
+    const char* seek_ms = NULL;
     unsigned long rate = 44100, seconds = 10;
     uint32_t resampler = SEL_MIX_RESAMPLE_LINEAR;
     sel_engine* e;
@@ -72,6 +75,8 @@ int sel_cli_render(int argc, char** argv) {
             wav = argv[i + 1];
         } else if (strcmp(argv[i], "--seconds") == 0) {
             seconds = strtoul(argv[i + 1], NULL, 10);
+        } else if (strcmp(argv[i], "--seek-ms") == 0) {
+            seek_ms = argv[i + 1];
         } else if (strcmp(argv[i], "--rate") == 0) {
             rate = strtoul(argv[i + 1], NULL, 10);
         } else if (strcmp(argv[i], "--resample") == 0) {
@@ -103,6 +108,18 @@ int sel_cli_render(int argc, char** argv) {
         return 1;
     }
 
+    if (seek_ms != NULL) {
+        sel_message msg;
+        memset(&msg, 0, sizeof msg);
+        msg.kind = SEL_MSG_CMD;
+        msg.id = SEL_CMD_SEEK;
+        msg.argc = 1;
+        msg.args[0].type = SEL_ARG_STR;
+        msg.args[0].v.s = seek_ms;
+        sel_engine_send(e, &msg);
+        sel_engine_pump(e, render_sink, &ctx);
+    }
+
     out = o.open(&host, (uint32_t)rate, 2);
     if (out == NULL) {
         sel_engine_destroy(e);
@@ -131,6 +148,10 @@ int sel_cli_render(int argc, char** argv) {
 
     sel_engine_pump(e, render_sink, &ctx);
     sel_engine_stats_get(e, &stats);
+    if (seek_ms != NULL) {
+        printf("seek_path=%s skipped_frames=%u\n", stats.seek_path == 1u ? "native" : "skip",
+               (unsigned)stats.seek_skipped_frames);
+    }
     printf("ticks=%u voice_ops=%u mixed_frames=%u\n", (unsigned)stats.ticks, (unsigned)stats.voice_ops,
            (unsigned)stats.mixed_frames);
     o.close(out);

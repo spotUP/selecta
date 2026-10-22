@@ -53,6 +53,10 @@ const sel_voices* sel_mixer_voices(sel_mixer* m);
 /* Overwrites `stereo` (interleaved L/R int16) with `frames` mixed frames. */
 void sel_mixer_mix(sel_mixer* m, int16_t* stereo, uint32_t frames);
 
+/* Moves every voice `frames` frames on exactly as sel_mixer_mix would, but
+ * produces no samples (restart-and-skip seek). Does not count mixed_frames. */
+void sel_mixer_advance(sel_mixer* m, uint32_t frames);
+
 /* 16.16 source step for a Paula period or a 24.8 pitch at output `rate`. */
 uint32_t sel_mixer_period_step(uint32_t period, uint32_t rate);
 uint32_t sel_mixer_hz_step(uint32_t hz_q8, uint32_t rate);
