@@ -1,3 +1,6 @@
 [submodule "third_party/nuade"]
 	path = third_party/nuade
 	url = https://github.com/emoon/nuade
+[submodule "third_party/libopenmpt"]
+	path = third_party/libopenmpt
+	url = https://github.com/OpenMPT/openmpt

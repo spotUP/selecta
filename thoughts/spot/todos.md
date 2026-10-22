@@ -191,7 +191,7 @@ Tests T19 to T27 are defined in the plan's finish-line table. A row is ticked on
 | I51 | [ ] | 2 | SEEK restart-and-skip, SEEKED, render --seek-ms | T21 nuade half green, ratchet 47 |
 | I52 | [ ] | 2 | sel_state song/queue/view fields; T18 over queue.o | T18, T6 green |
 | I53 | [ ] | 3 | nuade metadata tags; glob of all 121 players; T23 red then green; design doc player count | T23 green |
-| I54 | [ ] | 3 | libopenmpt submodule at libopenmpt-0.8.4 (commit 327204eaa2c27bd1acbb571babe68f279c85238b, resolved with gh api 2026-10-23); cmake/openmpt_sources.cmake; selecta_openmpt builds | host build green |
+| I54 | [x] | 3 | libopenmpt submodule at libopenmpt-0.8.4 (commit 327204eaa2c27bd1acbb571babe68f279c85238b, resolved with gh api 2026-10-23); cmake/openmpt_sources.cmake; selecta_openmpt builds | host build green |
 | I55 | [ ] | 3 | gen_testmod --format mk; openmpt adapter; T22 red then counters green; hash committed after listening check | T22 green |
 | I56 | [ ] | 3 | RP_SEEK in engine; T21 openmpt half; T26 extended | T21, T26 green |
 | I57 | [ ] | 4 | T24 red; selecta_library, dir.c, LIBRARY_BROWSE, LIBRARY_RESULT | ratchet 46 |

@@ -16,3 +16,8 @@ if(SEL_TEST_BAD_PLUGIN)
 endif()
 
 add_subdirectory(replayers/nuade)
+
+# libopenmpt is C++17 and desktop only (plan M1.1, no 68k build of it).
+if(NOT SEL_AMIGA)
+  add_subdirectory(replayers/openmpt)
+endif()
