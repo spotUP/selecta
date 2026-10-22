@@ -20,7 +20,7 @@ sel_cli_test(protocol-reflection-events   "events"   "-DLINES=${SEL_COUNT_EVT}")
 sel_cli_test(protocol-reflection-tagtypes "tagtypes" "-DLINES=${SEL_COUNT_META}")
 
 # T5: the registry walked every descriptor and found only known tags.
-sel_cli_test(registry-tags "plugins --lint" "-DEXPECT=plugins=1 unknown_tags=0 duplicate_tags=0")
+sel_cli_test(registry-tags "plugins --lint" "-DEXPECT=plugins=2 unknown_tags=0 duplicate_tags=0")
 
 # T6: sel_host layout golden per architecture.
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" SEL_ARCH)

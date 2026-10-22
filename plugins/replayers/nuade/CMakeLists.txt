@@ -32,3 +32,9 @@ set_target_properties(selecta_nuade PROPERTIES
 if(UNIX)
   target_link_libraries(selecta_nuade PUBLIC m)
 endif()
+
+# The adapter sees include/selecta plus nuade's public headers, nothing else
+# (T7: the sdk-isolation target compiles it with exactly those two paths).
+sel_add_plugin(nuade 1 adapter.c voices_shim.c io_shim.c
+  THIRD_PARTY_INCLUDES "${NUADE_DIR}/include")
+target_link_libraries(sel_plugin_nuade PUBLIC selecta_nuade)
