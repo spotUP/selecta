@@ -20,11 +20,11 @@ sel_cli_test(protocol-reflection-events   "events"   "-DLINES=${SEL_COUNT_EVT}")
 sel_cli_test(protocol-reflection-tagtypes "tagtypes" "-DLINES=${SEL_COUNT_META}")
 
 # T5: the registry walked every descriptor and found only known tags.
-# null, wav, nuade, plus coreaudio on macOS; the negative tree adds one bad plugin.
+# null, wav, nuade, openmpt (host only), plus coreaudio on macOS; the negative tree adds one bad plugin.
 if(APPLE)
-  set(SEL_EXPECT_PLUGINS 4)
+  set(SEL_EXPECT_PLUGINS 5)
 else()
-  set(SEL_EXPECT_PLUGINS 3)
+  set(SEL_EXPECT_PLUGINS 4)
 endif()
 math(EXPR SEL_EXPECT_BAD_PLUGINS "${SEL_EXPECT_PLUGINS} + 1")
 sel_cli_test(registry-tags "plugins --lint" "-DEXPECT=plugins=${SEL_EXPECT_PLUGINS} unknown_tags=0 duplicate_tags=0")
@@ -74,7 +74,13 @@ add_custom_command(OUTPUT "${SEL_SHORTMOD}"
   COMMAND gen_testmod --short "${SEL_SHORTMOD}"
   DEPENDS gen_testmod
   COMMENT "Generating selecta-short.mod")
-add_custom_target(testmod ALL DEPENDS "${SEL_TESTMOD}" "${SEL_SHORTMOD}")
+set(SEL_MKMOD "${CMAKE_CURRENT_BINARY_DIR}/songs/selecta-test-mk.mod")
+add_custom_command(OUTPUT "${SEL_MKMOD}"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/songs"
+  COMMAND gen_testmod --format mk "${SEL_MKMOD}"
+  DEPENDS gen_testmod
+  COMMENT "Generating selecta-test-mk.mod")
+add_custom_target(testmod ALL DEPENDS "${SEL_TESTMOD}" "${SEL_SHORTMOD}" "${SEL_MKMOD}")
 add_test(NAME testmod-sha
   COMMAND "${CMAKE_COMMAND}" "-DMOD=${SEL_TESTMOD}"
     "-DPINNED=${CMAKE_CURRENT_SOURCE_DIR}/songs/selecta-test.mod.sha256"
@@ -92,6 +98,19 @@ foreach(res none linear cubic sinc)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/render_check.cmake")
   set_tests_properties(${test_name} PROPERTIES SKIP_REGULAR_EXPRESSION "golden hash absent")
 endforeach()
+
+# T22: the plain M.K. module goes through libopenmpt (not nuade, whose
+# protracker4 needs the IFF wrapper). Counters and size now; the SHA-256 is
+# compared once tests/golden/openmpt/selecta-test-mk.sha256 exists (committed
+# only after the listening check, row I55).
+if(NOT SEL_AMIGA)
+  add_test(NAME render-golden-openmpt
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DMOD=${SEL_MKMOD}"
+      "-DOUT=${SEL_RENDER_OUT}/selecta-test-mk.openmpt.wav"
+      "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/golden/openmpt/selecta-test-mk.sha256"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/render_openmpt.cmake")
+  set_tests_properties(render-golden-openmpt PROPERTIES SKIP_REGULAR_EXPRESSION "golden hash absent")
+endif()
 
 # T16: real playback through the default output device (macOS only). Exit
 # code 77 from the CLI (no output device) skips the test.

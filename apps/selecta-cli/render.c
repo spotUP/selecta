@@ -152,8 +152,13 @@ int sel_cli_render(int argc, char** argv) {
         printf("seek_path=%s skipped_frames=%u\n", stats.seek_path == 1u ? "native" : "skip",
                (unsigned)stats.seek_skipped_frames);
     }
-    printf("ticks=%u voice_ops=%u mixed_frames=%u\n", (unsigned)stats.ticks, (unsigned)stats.voice_ops,
-           (unsigned)stats.mixed_frames);
+    if (stats.render_kind) {
+        printf("replayer=%s render_calls=%u rendered_frames=%u\n", stats.replayer, (unsigned)stats.replayer_render_calls,
+               (unsigned)stats.rendered_frames);
+    } else {
+        printf("ticks=%u voice_ops=%u mixed_frames=%u\n", (unsigned)stats.ticks, (unsigned)stats.voice_ops,
+               (unsigned)stats.mixed_frames);
+    }
     o.close(out);
     sel_engine_destroy(e);
     return ctx.failed || pumped != total;

@@ -23,3 +23,13 @@ target_compile_definitions(selecta_openmpt PRIVATE LIBOPENMPT_BUILD)
 target_compile_options(selecta_openmpt PRIVATE -Wall -fvisibility=hidden)
 set_target_properties(selecta_openmpt PROPERTIES
   CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+
+# The adapter (C99, Selecta warning set) sees include/selecta plus libopenmpt's
+# public header directory, nothing else (T7). sdk-isolation compiles it with
+# exactly those two paths.
+sel_add_plugin(openmpt 1 adapter.c THIRD_PARTY_INCLUDES "${OPENMPT_DIR}")
+target_link_libraries(sel_plugin_openmpt PUBLIC selecta_openmpt)
+
+# The apps link as C (the project language); the C++ runtime that libopenmpt
+# needs is added explicitly from the toolchain's implicit C++ link libraries.
+target_link_libraries(selecta_openmpt PUBLIC ${CMAKE_CXX_IMPLICIT_LINK_LIBRARIES})

@@ -83,6 +83,10 @@ typedef struct sel_slot {
     sel_rp_start_fn rp_start;
     sel_rp_tick_fn rp_tick;
     sel_rp_metadata_fn rp_metadata;
+    sel_rp_render_fn rp_render; /* RENDER kind: the replayer mixes, rp_tick is NULL */
+    const char* rp_name;
+    uint32_t rp_render_calls;
+    uint32_t rendered_frames; /* frames the RENDER replayer produced this subsong */
     sel_rp_info rp_info;
     uint8_t* song_data;
     char* path; /* kept for SUBSONG, which reopens the file in the idle slot */
@@ -439,6 +443,19 @@ static void close_slot(sel_engine* e, sel_slot* sl) {
 
 /* Fresh mixer and scheduler, then the replayer's start. */
 static int start_subsong(sel_engine* e, sel_slot* sl, uint32_t subsong) {
+    sl->rp_render_calls = 0;
+    sl->rendered_frames = 0;
+    if (sl->rp_render != NULL) {
+        sl->frames_left = 0;
+        sl->ticks = 0;
+        sl->song_frames = 0;
+        sl->pos_emitted = 0;
+        sl->ended = 0;
+        sl->reported = 0;
+        sl->last_tick = 0;
+        sl->subsong = subsong;
+        return sl->rp_start(sl->rp_state, subsong, e->rate, NULL);
+    }
     sel_mixer_init(&sl->mixer, e->rate, sl->rp_info.voice_count, e->resampler);
     sel_scheduler_init(&sl->sched, sl->rp_info.timebase_hz, e->rate);
     sl->frames_left = 0;
@@ -537,6 +554,20 @@ static int find_free_slot(const sel_engine* e, uint32_t* idx) {
  * deterministic, so the voices end up where a full render would have left them.
  * Pump thread; the slot is not yet published. Returns the frames skipped. */
 static uint32_t skip_frames(sel_slot* sl, uint32_t target) {
+    if (sl->rp_render != NULL) {
+        /* A RENDER replayer has no voices to advance: render and discard
+         * until RP_SEEK takes over this path (row I56). */
+        int16_t scratch[512u * 2u];
+        while (sl->song_frames < target && !sl->ended) {
+            uint32_t want = target - sl->song_frames < 512u ? target - sl->song_frames : 512u;
+            uint32_t got = sl->rp_render(sl->rp_state, scratch, want);
+            sl->song_frames += got;
+            if (got < want) {
+                sl->ended = 1;
+            }
+        }
+        return sl->song_frames;
+    }
     while (sl->song_frames < target && !sl->ended) {
         uint32_t n;
         if (sl->frames_left == 0) {
@@ -572,6 +603,7 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     size_t size = 0;
     uint8_t* data;
     sel_message sw;
+    uintptr_t kind;
 
     data = read_song(e, path, &size);
     if (data == NULL) {
@@ -584,7 +616,8 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
         sel_engine_report_error(e, "no_replayer", err_detail);
         return 0;
     }
-    if (sel_tag_find(hooks, SEL_RP_KIND, 0) != SEL_RP_KIND_VOICE) {
+    kind = sel_tag_find(hooks, SEL_RP_KIND, 0);
+    if (kind != SEL_RP_KIND_VOICE && kind != SEL_RP_KIND_RENDER) {
         e->host->mem_free(e->host, data);
         sel_engine_report_error(e, "unsupported_kind", err_detail);
         return 0;
@@ -594,7 +627,12 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     sl->rp_start = (sel_rp_start_fn)sel_tag_find(hooks, SEL_RP_START, 0);
     sl->rp_tick = (sel_rp_tick_fn)sel_tag_find(hooks, SEL_RP_TICK, 0);
     sl->rp_metadata = (sel_rp_metadata_fn)sel_tag_find(hooks, SEL_RP_METADATA, 0);
-    if (!open || !sl->rp_close || !sl->rp_start || !sl->rp_tick) {
+    sl->rp_render = kind == SEL_RP_KIND_RENDER ? (sel_rp_render_fn)sel_tag_find(hooks, SEL_RP_RENDER, 0) : NULL;
+    sl->rp_name = (const char*)sel_tag_find(hooks, SEL_RP_NAME, 0);
+    if (kind == SEL_RP_KIND_RENDER) {
+        sl->rp_tick = NULL;
+    }
+    if (!open || !sl->rp_close || !sl->rp_start || (kind == SEL_RP_KIND_VOICE ? !sl->rp_tick : !sl->rp_render)) {
         e->host->mem_free(e->host, data);
         sel_engine_report_error(e, "replayer_incomplete", err_detail);
         return 0;
@@ -1044,6 +1082,10 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->ticks = sl ? sl->ticks : 0;
     out->voice_ops = sl ? sl->mixer.voice_ops : 0;
     out->mixed_frames = sl ? sl->mixer.mixed_frames : 0;
+    out->replayer = sl ? sl->rp_name : NULL;
+    out->render_kind = sl ? (sl->rp_render != NULL) : 0;
+    out->replayer_render_calls = sl ? sl->rp_render_calls : 0;
+    out->rendered_frames = sl ? sl->rendered_frames : 0;
     out->seek_path = e->seek_path;
     out->seek_skipped_frames = e->seek_skipped;
 }
@@ -1077,7 +1119,18 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
     }
     sl = e->act < SEL_SLOT_COUNT ? &e->slot[e->act] : NULL;
     if (sl != NULL && e->state.play == SEL_PLAYING) {
-        while (done < frames && !sl->ended) {
+        while (sl->rp_render != NULL && done < frames && !sl->ended) {
+            uint32_t want = frames - done;
+            uint32_t got = sl->rp_render(sl->rp_state, stereo + (size_t)done * 2u, want);
+            sl->rp_render_calls++;
+            sl->rendered_frames += got;
+            sl->song_frames += got;
+            done += got;
+            if (got < want) { /* short read: the song ended */
+                sl->ended = 1;
+            }
+        }
+        while (sl->rp_render == NULL && done < frames && !sl->ended) {
             uint32_t n;
             if (sl->frames_left == 0) {
                 sel_tick_result r;

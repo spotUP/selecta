@@ -19,7 +19,11 @@
  * list wraps and the replayer reports a loop (the queue tests need a song
  * that ends). The default output is unchanged.
  *
- * usage: gen_testmod [--short] <output.mod> */
+ * With --format mk the output is the bare ProTracker module (the PTDT payload
+ * alone, plain "M.K." header, no IFF wrapper), the same musical content. The
+ * protracker4 replayer rejects it; libopenmpt plays it (plan T22).
+ *
+ * usage: gen_testmod [--short] [--format mk] <output.mod> */
 #include <stdio.h>
 #include <string.h>
 
@@ -174,33 +178,9 @@ static void put_zeros(FILE* f, unsigned n) {
     }
 }
 
-static int write_mod(const char* path) {
-    FILE* f = fopen(path, "wb");
+static void write_ptdt(FILE* f) {
     unsigned i;
     int p;
-    unsigned long sample_bytes = 0;
-    unsigned long ptdt_bytes;
-    if (f == NULL) {
-        return 0;
-    }
-    for (i = 0; i < 4; i++) {
-        sample_bytes += g_samples[i].length;
-    }
-    ptdt_bytes = 8ul + PTDT_HEADER + (unsigned long)PATTERNS * PATTERN_BYTES + sample_bytes;
-    fwrite("FORM", 1, 4, f);
-    put_long(f, 4ul + VERS_BYTES + INFO_BYTES + ptdt_bytes);
-    fwrite("MODL", 1, 4, f);
-    fwrite("VERS", 1, 4, f);
-    put_long(f, VERS_BYTES);
-    put_zeros(f, VERS_BYTES - 8u);
-    fwrite("INFO", 1, 4, f);
-    put_long(f, INFO_BYTES);
-    put_name(f, g_title, 32);
-    put_zeros(f, 8);
-    put_word(f, 125); /* start tempo */
-    put_word(f, 0);   /* flags: Fxx always sets the speed */
-    fwrite("PTDT", 1, 4, f);
-    put_long(f, ptdt_bytes);
     put_name(f, g_title, 20);
     for (i = 0; i < SAMPLES; i++) {
         if (i < 4) {
@@ -234,23 +214,65 @@ static int write_mod(const char* path) {
     for (i = 0; i < 4; i++) {
         fwrite(g_samples[i].data, 1, g_samples[i].length, f);
     }
+}
+
+static int write_mod(const char* path, int bare) {
+    FILE* f = fopen(path, "wb");
+    unsigned i;
+    unsigned long sample_bytes = 0;
+    unsigned long ptdt_bytes;
+    if (f == NULL) {
+        return 0;
+    }
+    if (bare) {
+        write_ptdt(f);
+        return fclose(f) == 0;
+    }
+    for (i = 0; i < 4; i++) {
+        sample_bytes += g_samples[i].length;
+    }
+    ptdt_bytes = 8ul + PTDT_HEADER + (unsigned long)PATTERNS * PATTERN_BYTES + sample_bytes;
+    fwrite("FORM", 1, 4, f);
+    put_long(f, 4ul + VERS_BYTES + INFO_BYTES + ptdt_bytes);
+    fwrite("MODL", 1, 4, f);
+    fwrite("VERS", 1, 4, f);
+    put_long(f, VERS_BYTES);
+    put_zeros(f, VERS_BYTES - 8u);
+    fwrite("INFO", 1, 4, f);
+    put_long(f, INFO_BYTES);
+    put_name(f, g_title, 32);
+    put_zeros(f, 8);
+    put_word(f, 125); /* start tempo */
+    put_word(f, 0);   /* flags: Fxx always sets the speed */
+    fwrite("PTDT", 1, 4, f);
+    put_long(f, ptdt_bytes);
+    write_ptdt(f);
     return fclose(f) == 0;
 }
 
 int main(int argc, char** argv) {
-    if (argc == 3 && strcmp(argv[1], "--short") == 0) {
-        g_title = "selecta short";
-        g_song_length = 1;
-        argv++;
-        argc--;
+    int bare = 0;
+    while (argc >= 2 && argv[1][0] == '-') {
+        if (strcmp(argv[1], "--short") == 0) {
+            g_title = "selecta short";
+            g_song_length = 1;
+            argv++;
+            argc--;
+        } else if (argc >= 3 && strcmp(argv[1], "--format") == 0 && strcmp(argv[2], "mk") == 0) {
+            bare = 1;
+            argv += 2;
+            argc -= 2;
+        } else {
+            break;
+        }
     }
     if (argc != 2) {
-        fputs("usage: gen_testmod [--short] <output.mod>\n", stderr);
+        fputs("usage: gen_testmod [--short] [--format mk] <output.mod>\n", stderr);
         return 2;
     }
     make_samples();
     make_patterns();
-    if (!write_mod(argv[1])) {
+    if (!write_mod(argv[1], bare)) {
         fprintf(stderr, "gen_testmod: cannot write %s\n", argv[1]);
         return 1;
     }

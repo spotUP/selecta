@@ -119,6 +119,10 @@ typedef struct sel_engine_stats {
     uint32_t ticks;        /* replayer ticks run */
     uint32_t voice_ops;    /* calls through the voices API */
     uint32_t mixed_frames; /* frames mixed */
+    const char* replayer;            /* name of the open song's replayer, NULL: none */
+    uint32_t render_kind;            /* 1: the replayer renders itself (no ticks, no voices) */
+    uint32_t replayer_render_calls;  /* RP_RENDER calls (RENDER kind) */
+    uint32_t rendered_frames;        /* frames RP_RENDER produced (RENDER kind) */
     uint32_t seek_path;           /* last SEEK: 0 none, 1 native (RP_SEEK), 2 restart-and-skip */
     uint32_t seek_skipped_frames; /* frames the last restart-and-skip ran through */
 } sel_engine_stats;
