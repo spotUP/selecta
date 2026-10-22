@@ -20,7 +20,13 @@ sel_cli_test(protocol-reflection-events   "events"   "-DLINES=${SEL_COUNT_EVT}")
 sel_cli_test(protocol-reflection-tagtypes "tagtypes" "-DLINES=${SEL_COUNT_META}")
 
 # T5: the registry walked every descriptor and found only known tags.
-sel_cli_test(registry-tags "plugins --lint" "-DEXPECT=plugins=3 unknown_tags=0 duplicate_tags=0")
+# null, wav, nuade, plus coreaudio on macOS.
+if(APPLE)
+  set(SEL_EXPECT_PLUGINS 4)
+else()
+  set(SEL_EXPECT_PLUGINS 3)
+endif()
+sel_cli_test(registry-tags "plugins --lint" "-DEXPECT=plugins=${SEL_EXPECT_PLUGINS} unknown_tags=0 duplicate_tags=0")
 
 # T6: sel_host layout golden per architecture.
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" SEL_ARCH)
@@ -72,6 +78,15 @@ foreach(res none linear cubic sinc)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/render_check.cmake")
   set_tests_properties(${test_name} PROPERTIES SKIP_REGULAR_EXPRESSION "golden hash absent")
 endforeach()
+
+# T16: real playback through the default output device (macOS only). Exit
+# code 77 from the CLI (no output device) skips the test.
+if(APPLE)
+  add_test(NAME coreaudio-play
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DMOD=${SEL_TESTMOD}"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/coreaudio_play.cmake")
+  set_tests_properties(coreaudio-play PROPERTIES SKIP_REGULAR_EXPRESSION "no output device available")
+endif()
 
 add_subdirectory(m0)
 add_subdirectory(nuade_ab)
