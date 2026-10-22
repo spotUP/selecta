@@ -1,0 +1,40 @@
+SONG_OPENED {META_TITLE="selecta test",META_FORMAT="ProTracker MOD (M.K.)",META_MESSAGE="test sample 1
+test sample 2
+test sample 3
+test sample 4
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+",META_CHANNELS=4,META_PATTERNS=4,META_SAMPLES=31,META_SUBSONGS=1,META_DURATION_MS=30080,META_SIZE=6076}
+POSITION 0 0 0 0 0 0 0
+SNAPSHOT position_ms=0 order=0 row=0 pattern=0
+SEEKED 220500
+POSITION 0 0 5 220500 0 42 0
+SNAPSHOT position_ms=5000 order=0 row=42 pattern=0
+SEEKED 0
+POSITION 0 0 0 0 0 0 0
+SNAPSHOT position_ms=0 order=0 row=0 pattern=0

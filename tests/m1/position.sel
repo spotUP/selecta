@@ -1,0 +1,11 @@
+# I56: RP_POSITION reaches the POSITION event and the snapshot for the
+# openmpt song, and RP_SEEK moves it. Working directory: build/host/tests/songs.
+OPEN selecta-test-mk.mod
+@render 441
+@position
+SEEK 5000
+@render 441
+@position
+SEEK 0
+@render 441
+@position

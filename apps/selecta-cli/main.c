@@ -256,7 +256,11 @@ static void print_event(void* ctx, const sel_message* evt) {
  *   @render N           render N frames on this thread, then pump and print
  *   @render_until_end   render until SONG_ENDED is pumped; POSITION events
  *                       before it are not printed (their count depends on
- *                       the song length) */
+ *                       the song length)
+ *   @position           SNAPSHOT position_ms=M order=O row=R pattern=P (song.pattern_pos)
+ *   @alloc_guard on     write SEL_ALLOC_FREEZE/THAW to stderr around every
+ *                       sel_engine_render call (pump-side work stays outside
+ *                       the window), for the no-alloc shim (T26) */
 #define SCRIPT_RENDER_CHUNK 4096u
 #define SCRIPT_RENDER_LIMIT 100000u
 
@@ -276,11 +280,19 @@ static void script_event(void* ctx, const sel_message* evt) {
     print_event(NULL, evt);
 }
 
+static int g_alloc_guard;
+
 static void script_render(sel_engine* e, uint32_t frames) {
     static int16_t buf[SCRIPT_RENDER_CHUNK * 2u];
     while (frames > 0) {
         uint32_t n = frames < SCRIPT_RENDER_CHUNK ? frames : SCRIPT_RENDER_CHUNK;
+        if (g_alloc_guard) {
+            fputs("SEL_ALLOC_FREEZE\n", stderr);
+        }
         sel_engine_render(e, buf, n);
+        if (g_alloc_guard) {
+            fputs("SEL_ALLOC_THAW\n", stderr);
+        }
         frames -= n;
     }
 }
@@ -296,6 +308,12 @@ static void script_directive(sel_engine* e, const char* line) {
             printf(i ? ",%u" : "%u", (unsigned)st->queue[i].id);
         }
         printf("\n");
+    } else if (strcmp(line, "@position") == 0) {
+        const sel_song_state* so = &sel_engine_state(e)->song;
+        printf("SNAPSHOT position_ms=%u order=%u row=%u pattern=%u\n", (unsigned)so->position_ms,
+               (unsigned)so->pattern_pos.order, (unsigned)so->pattern_pos.row, (unsigned)so->pattern_pos.pattern);
+    } else if (strcmp(line, "@alloc_guard on") == 0) {
+        g_alloc_guard = 1;
     } else if (sscanf(line, "@render %lu", &n) == 1) {
         script_render(e, (uint32_t)n);
         sel_engine_pump(e, script_event, &sink);

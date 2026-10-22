@@ -233,12 +233,28 @@ add_test(NAME queue-engine
 set_tests_properties(queue-engine PROPERTIES
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/songs")
 
-# T21 (nuade half): a 5000 ms seek renders the second half of the golden
-# render. The openmpt half is added with the openmpt adapter (row I55).
+# T21: a 5000 ms seek renders the second half of the unseeked 10 s render,
+# for the nuade song (restart-and-skip) and the openmpt song (native RP_SEEK).
 add_test(NAME seek-render
   COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DMOD=${SEL_TESTMOD}"
-    "-DOUT_DIR=${SEL_RENDER_OUT}" -DRESAMPLE=linear
+    "-DOUT_DIR=${SEL_RENDER_OUT}" -DRESAMPLE=linear -DTAG=nuade
+    "-DPATH_RE=seek_path=skip skipped_frames=220500"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/seek_render.cmake")
+if(NOT SEL_AMIGA)
+  add_test(NAME seek-render-openmpt
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DMOD=${SEL_MKMOD}"
+      "-DOUT_DIR=${SEL_RENDER_OUT}" -DRESAMPLE=linear -DTAG=openmpt -DEXACT=0
+      "-DPATH_RE=seek_path=native"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/seek_render.cmake")
+  # I56: RP_POSITION in POSITION events and the snapshot.
+  add_test(NAME position-openmpt
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}"
+      "-DARGS=script ${CMAKE_CURRENT_SOURCE_DIR}/m1/position.sel"
+      "-DEXPECT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/m1/position.expected"
+      -P "${SEL_EXPECT}")
+  set_tests_properties(position-openmpt PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/songs")
+endif()
 
 # T23: the nuade adapter lists every player in third_party/nuade/players.
 add_test(NAME nuade-players

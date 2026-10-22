@@ -62,6 +62,7 @@
 /* PREV inside the first three seconds goes to the previous entry, later restarts */
 #define SEL_PREV_RESTART_MS 3000u
 #define SEL_SWAP_RING_DEPTH 4u
+#define SEL_SEEK_PATH_NATIVE 1u
 #define SEL_SEEK_PATH_SKIP 2u
 /* ids of the internal ring messages (not commands, not in commands.def) */
 #define SEL_RING_SWAP 1u
@@ -83,6 +84,9 @@ typedef struct sel_slot {
     sel_rp_start_fn rp_start;
     sel_rp_tick_fn rp_tick;
     sel_rp_metadata_fn rp_metadata;
+    sel_rp_seek_fn rp_seek;         /* optional: native seek, else restart-and-skip */
+    sel_rp_position_fn rp_position; /* optional: order/row/pattern */
+    uint32_t pos_order, pos_row, pos_pattern, pos_valid; /* audio side writes after each render */
     sel_rp_render_fn rp_render; /* RENDER kind: the replayer mixes, rp_tick is NULL */
     const char* rp_name;
     uint32_t rp_render_calls;
@@ -128,7 +132,7 @@ struct sel_engine {
     /* an OPEN or SUBSONG that found both slots busy, retried by the next pump */
     uint32_t deferred;
     uint32_t deferred_subsong;
-    uint32_t deferred_seek; /* target frame of a deferred SEL_BEGIN_SEEK */
+    uint32_t deferred_seek; /* target ms of a deferred SEL_BEGIN_SEEK */
     uint32_t seek_path;     /* SEL_SEEK_PATH_*: how the last SEEK got there */
     uint32_t seek_skipped;  /* frames the last restart-and-skip ran through */
     char deferred_path[SEL_DEFERRED_PATH_MAX];
@@ -408,6 +412,20 @@ static void cmd_END(sel_engine* e, const sel_message* m) {
 
 /* ---- songs ----------------------------------------------------------- */
 
+/* RP_POSITION into the slot's display fields. Runs on the thread that owns
+ * the replayer instance: the audio thread after each render call, or the
+ * pump thread while the slot is still unpublished. The pump only reads the
+ * copies, so it never touches the replayer while it renders. */
+static void sample_position(sel_slot* sl) {
+    sel_rp_position p;
+    if (sl->rp_position != NULL && sl->rp_position(sl->rp_state, &p)) {
+        sl->pos_order = p.order;
+        sl->pos_row = p.row;
+        sl->pos_pattern = p.pattern;
+        sl->pos_valid = 1;
+    }
+}
+
 static void emit_position(sel_engine* e, sel_slot* sl) {
     sel_message m;
     uint32_t seconds = sl->song_frames / e->rate;
@@ -416,6 +434,11 @@ static void emit_position(sel_engine* e, sel_slot* sl) {
     evt_uint(&m, sl->ticks);
     evt_uint(&m, seconds);
     evt_uint(&m, sl->song_frames);
+    if (sl->pos_valid) {
+        evt_uint(&m, sl->pos_order);
+        evt_uint(&m, sl->pos_row);
+        evt_uint(&m, sl->pos_pattern);
+    }
     sl->pos_emitted = seconds;
     emit(e, &m);
 }
@@ -555,8 +578,8 @@ static int find_free_slot(const sel_engine* e, uint32_t* idx) {
  * Pump thread; the slot is not yet published. Returns the frames skipped. */
 static uint32_t skip_frames(sel_slot* sl, uint32_t target) {
     if (sl->rp_render != NULL) {
-        /* A RENDER replayer has no voices to advance: render and discard
-         * until RP_SEEK takes over this path (row I56). */
+        /* A RENDER replayer without RP_SEEK has no voices to advance:
+         * render and discard. */
         int16_t scratch[512u * 2u];
         while (sl->song_frames < target && !sl->ended) {
             uint32_t want = target - sl->song_frames < 512u ? target - sl->song_frames : 512u;
@@ -595,7 +618,7 @@ static uint32_t skip_frames(sel_slot* sl, uint32_t target) {
  * read, RP_OPEN and RP_START happen here) and publishes it through the swap
  * ring. On failure the slot stays free and the error is reported. */
 static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t subsong,
-                        uint32_t skip_to, const char* err_detail) {
+                        uint32_t skip_ms, const char* err_detail) {
     sel_slot* sl = &e->slot[idx];
     sel_song_source src;
     const sel_tag* hooks;
@@ -629,6 +652,9 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     sl->rp_metadata = (sel_rp_metadata_fn)sel_tag_find(hooks, SEL_RP_METADATA, 0);
     sl->rp_render = kind == SEL_RP_KIND_RENDER ? (sel_rp_render_fn)sel_tag_find(hooks, SEL_RP_RENDER, 0) : NULL;
     sl->rp_name = (const char*)sel_tag_find(hooks, SEL_RP_NAME, 0);
+    sl->rp_seek = (sel_rp_seek_fn)sel_tag_find(hooks, SEL_RP_SEEK, 0);
+    sl->rp_position = (sel_rp_position_fn)sel_tag_find(hooks, SEL_RP_POSITION, 0);
+    sl->pos_valid = 0;
     if (kind == SEL_RP_KIND_RENDER) {
         sl->rp_tick = NULL;
     }
@@ -658,10 +684,19 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
         sel_engine_report_error(e, "start_failed", err_detail);
         return 0;
     }
-    if (skip_to > 0) {
-        e->seek_skipped = skip_frames(sl, skip_to);
-        e->seek_path = SEL_SEEK_PATH_SKIP;
+    if (skip_ms > 0) {
+        /* The target is converted from ms to a frame once, here. */
+        uint32_t target = (uint32_t)((uint64_t)skip_ms * e->rate / 1000u);
+        if (sl->rp_seek != NULL && sl->rp_seek(sl->rp_state, skip_ms)) {
+            sl->song_frames = target;
+            e->seek_skipped = 0;
+            e->seek_path = SEL_SEEK_PATH_NATIVE;
+        } else {
+            e->seek_skipped = skip_frames(sl, target);
+            e->seek_path = SEL_SEEK_PATH_SKIP;
+        }
     }
+    sample_position(sl);
     sl->busy = 1;
     memset(&sw, 0, sizeof sw);
     sw.kind = SEL_MSG_CMD;
@@ -758,13 +793,12 @@ static void cmd_SUBSONG(sel_engine* e, const sel_message* m) {
 }
 
 /* SEEK "ms" | "+ms" | "-ms": absolute or relative to the playing position,
- * clamped at 0. The target is converted to a frame once, here. */
+ * clamped at 0. The target stays in ms; prepare_slot converts it to a frame once. */
 static void cmd_SEEK(sel_engine* e, const sel_message* m) {
     const char* a = m->args[0].v.s;
     const sel_slot* cur = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
     int64_t ms = 0;
     int rel = 0, neg = 0;
-    uint32_t frame;
     if (cur == NULL || cur->rp_state == NULL) {
         sel_engine_report_error(e, "no_song", "SEEK");
         return;
@@ -795,8 +829,7 @@ static void cmd_SEEK(sel_engine* e, const sel_message* m) {
     if (ms > 4000000) { /* far beyond any song; keeps ms * rate inside 32 bits */
         ms = 4000000;
     }
-    frame = (uint32_t)((uint64_t)ms * e->rate / 1000u);
-    reopen_current(e, SEL_BEGIN_SEEK, SEL_SUBSONG_DEFAULT, frame, "SEEK");
+    reopen_current(e, SEL_BEGIN_SEEK, SEL_SUBSONG_DEFAULT, (uint32_t)ms, "SEEK");
 }
 
 /* ---- queue ----------------------------------------------------------- */
@@ -1016,6 +1049,11 @@ static void refresh_snapshot(sel_engine* e) {
         song->meta = sl->rp_metadata ? sl->rp_metadata(sl->rp_state) : NULL;
         song->duration_ms = (uint32_t)sel_tag_find(song->meta, SEL_META_DURATION_MS, 0);
         song->path = sl->path;
+        if (sl->pos_valid) {
+            song->pattern_pos.order = sl->pos_order;
+            song->pattern_pos.row = sl->pos_row;
+            song->pattern_pos.pattern = sl->pos_pattern;
+        }
     }
     e->state.queue = e->queue.entries;
     e->state.queue_text = e->queue.text;
@@ -1126,6 +1164,7 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
             sl->rendered_frames += got;
             sl->song_frames += got;
             done += got;
+            sample_position(sl);
             if (got < want) { /* short read: the song ended */
                 sl->ended = 1;
             }

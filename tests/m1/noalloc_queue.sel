@@ -1,0 +1,11 @@
+# T26: queue auto-advance with the audio-side render calls bracketed by the
+# no-alloc shim markers. Song opens and queue moves stay on the pump side,
+# outside the window. Working directory: build/host/tests/songs.
+@alloc_guard on
+QUEUE_ADD selecta-short.mod
+QUEUE_ADD selecta-short.mod
+QUEUE_ADD selecta-short.mod
+PLAY
+@render_until_end
+@render_until_end
+@render_until_end
