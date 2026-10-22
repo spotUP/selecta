@@ -54,6 +54,26 @@ Offer two Amiga routes, both feeding the same Selecta PCM source plugin:
 
 The correction to the verdict above: the "no client fits" reasoning missed cspot. TLS is not the blocker (AmiSSL and mbedTLS exist); CPU for Vorbis decoding is.
 
+## Prior art: A314 plus raspotify (Amiga 500, 2020)
+
+Source: Hackaday 2020-03-20 (https://hackaday.com/tag/a314/), A314 PiAudio README
+(https://github.com/niklasekstrom/a314/blob/master/Software/piaudio/README.md). Hackster
+article (https://www.hackster.io/news/you-can-now-listen-to-spotify-on-your-vintage-commodore-amiga-500-af87cdd66891)
+returned HTTP 403 and was not read.
+
+- A314 (Niklas Ekstrom) is an FPGA adapter that puts a Raspberry Pi inside the Amiga 500,
+  talking through shared memory. A clockport variant (A314-CP) exists for the A1200.
+- The Pi runs raspotify (librespot) and decodes Spotify. PiAudio is an ALSA plugin on the Pi
+  that sends samples to Paula through the A314 channel. Daniel Arvidsson built the Spotify setup.
+- It is the proxy route with an in-machine transport instead of TCP. The Amiga does no
+  networking or decoding, so it runs on a 68000.
+- Licence: reported as free (Verilog, software, board design on GitHub); exact licence unverified.
+
+Consequence for Selecta: the proxy route gets two transports behind one Amiga PCM source
+plugin: TCP for networked Amigas, and an A314 channel for A314 and A314-CP owners.
+PiAudio itself bypasses Selecta (ALSA straight to Paula), so Selecta should speak the A314
+channel protocol itself to keep its mixer, metadata and control path.
+
 ## Recommendation
 
 Take shape (b): a Spotify source plugin in the desktop tier that supervises go-librespot over its pipe and REST/WebSocket API, with librespot as a swappable fallback. Main risk: Spotify closes private playback endpoints without notice (10 Aug 2026 outage, issue #1737 open for weeks), so the feature can be dead for weeks with only upstream able to fix it, plus ToS and account-ban exposure. Mitigate by labelling it experimental, sidecar pinned and updatable independently of the player, and a hard failure path that does not affect other sources. Rough size: about 2 to 3 weeks for the desktop plugin (process supervision, pipe-to-PCM stream, control mapping, login UI, tests via a fake sidecar); Amiga network proxy about 1 more week on top (estimates, unverified).
