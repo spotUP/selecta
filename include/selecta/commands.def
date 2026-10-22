@@ -71,6 +71,10 @@ SEL_CMD(PREF_SET,        "ss")
 
 /* view model and shell */
 SEL_CMD(VIEW_STYLE,      "s")
+SEL_CMD(VIEW_SHOW,       "s")
+SEL_CMD(VIEW_CURSOR,     "s")
+SEL_CMD(VIEW_ACTIVATE,   "")
+SEL_CMD(VIEW_WINDOW,     "u")
 SEL_CMD(VIEW_GROUP,      "s")
 SEL_CMD(VIEW_EXPAND,     "u")
 SEL_CMD(VIEW_COLLAPSE,   "u")
