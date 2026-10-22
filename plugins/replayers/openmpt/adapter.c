@@ -13,6 +13,8 @@
 #define MESSAGE_LEN 512u
 #define LIST_LEN 2048u
 
+#define SEEK_DISCARD_FRAMES 1024u
+
 typedef struct openmpt_state {
     const sel_host* host;
     openmpt_module* mod;
@@ -23,6 +25,7 @@ typedef struct openmpt_state {
     char format[META_LEN];
     char message[MESSAGE_LEN];
     sel_tag meta[14];
+    int16_t discard[SEEK_DISCARD_FRAMES * 2]; /* seek lead-in, allocated with the state */
 } openmpt_state;
 
 static int rp_probe(const uint8_t* data, size_t size, const char* name) {
@@ -93,10 +96,39 @@ static uint32_t rp_render(void* state, int16_t* out, uint32_t frames) {
     return (uint32_t)openmpt_module_read_interleaved_stereo(s->mod, (int32_t)s->rate, frames, out);
 }
 
-/* ms is converted to seconds once, here. */
+/* libopenmpt's set_position_seconds snaps UP to the next row boundary, so the
+ * song would be ahead of the reported position. Land on the row containing
+ * the target (row start <= target), then render and discard the remaining
+ * lead-in so the song clock equals a straight-through render at the target.
+ * ms is converted to seconds once, here. */
 static int rp_seek(void* state, uint32_t ms) {
     openmpt_state* s = (openmpt_state*)state;
-    openmpt_module_set_position_seconds(s->mod, (double)ms / 1000.0);
+    double target = (double)ms / 1000.0;
+    double at = openmpt_module_set_position_seconds(s->mod, target);
+    if (at > target) {
+        int32_t order = openmpt_module_get_current_order(s->mod);
+        int32_t row = openmpt_module_get_current_row(s->mod);
+        if (row > 0) {
+            row--;
+        } else if (order > 0) {
+            order--;
+            row = openmpt_module_get_pattern_num_rows(
+                      s->mod, openmpt_module_get_order_pattern(s->mod, order)) - 1;
+        }
+        at = openmpt_module_set_position_order_row(s->mod, order, row);
+    }
+    if (at < target && s->rate != 0u) {
+        double lead = (target - at) * (double)s->rate;
+        uint32_t left = (uint32_t)(lead + 0.5);
+        while (left > 0u) {
+            uint32_t n = left < SEEK_DISCARD_FRAMES ? left : SEEK_DISCARD_FRAMES;
+            size_t got = openmpt_module_read_interleaved_stereo(s->mod, (int32_t)s->rate, n, s->discard);
+            if (got == 0u) {
+                break;
+            }
+            left -= (uint32_t)got;
+        }
+    }
     return 1;
 }
 
