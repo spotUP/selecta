@@ -91,6 +91,7 @@ endif()
 
 add_subdirectory(m0)
 add_subdirectory(nuade_ab)
+add_subdirectory(thread)
 
 # T5 negative path: a second tree with a broken descriptor must fail lint.
 add_test(NAME registry-tags-negative
