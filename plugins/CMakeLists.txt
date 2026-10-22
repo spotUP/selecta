@@ -3,6 +3,7 @@
 # 8 integration, 9 scripting (include/selecta/plugin.h).
 
 sel_add_plugin(null 2 outputs/null/null.c)
+sel_add_plugin(wav 2 outputs/wav/wav.c)
 
 # T5 negative path only; see tests/m0/bad_plugin.cmake.
 if(SEL_TEST_BAD_PLUGIN)

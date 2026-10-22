@@ -10,6 +10,11 @@ int sel_cli_abi(const char* what);
  * stderr once setup is complete (no_alloc.sh counts allocations after it). */
 int sel_cli_play_null(int argc, char** argv);
 
+/* T13/T17: `render <song> --output <wav> --seconds <n> --rate <hz> --resample <name>`;
+ * prints `ticks=<n> voice_ops=<v> mixed_frames=<f>`. Writes SEL_ALLOC_FREEZE and
+ * SEL_ALLOC_THAW to stderr around the render loop. */
+int sel_cli_render(int argc, char** argv);
+
 /* T5: `plugins [--lint]`; prints `plugins=<n> unknown_tags=<u> duplicate_tags=<d>`. */
 int sel_cli_plugins(int argc, char** argv);
 

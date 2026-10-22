@@ -1,0 +1,184 @@
+/* render <song> --output <wav> --seconds <n> --rate <hz> --resample <name>
+ * (T13, T17): opens a song in the engine, renders it through the wav
+ * output and prints `ticks=N voice_ops=V mixed_frames=F`. The wav output
+ * takes its path from the host config key "wav.path", so the command
+ * builds a copy of the default host that answers it. SEL_ALLOC_FREEZE and
+ * SEL_ALLOC_THAW on stderr bracket the render loop (no-alloc test). */
+#include <selecta/engine.h>
+#include <selecta/output.h>
+#include <selecta/registry.h>
+
+#include "cli.h"
+#include "mixer.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef struct render_ctx {
+    const char* wav_path;
+    int failed;
+} render_ctx;
+
+static const char* render_config(const sel_host* host, const char* key, const char* def) {
+    const render_ctx* c = (const render_ctx*)host->ctx;
+    if (strcmp(key, "wav.path") == 0) {
+        return c->wav_path;
+    }
+    return def;
+}
+
+static void render_sink(void* ctx, const sel_message* evt) {
+    render_ctx* c = (render_ctx*)ctx;
+    if (evt->id == SEL_EVT_ERROR) {
+        fprintf(stderr, "render: error %s %s\n", evt->args[0].v.s, evt->argc > 1 ? evt->args[1].v.s : "");
+        c->failed = 1;
+    }
+}
+
+static uint32_t engine_pull(void* ctx, int16_t* stereo, uint32_t frames) {
+    return sel_engine_render((sel_engine*)ctx, stereo, frames);
+}
+
+static int parse_resampler(const char* name, uint32_t* out) {
+    static const char* const names[] = {"none", "linear", "cubic", "sinc"};
+    uint32_t i;
+    for (i = 0; i < 4u; i++) {
+        if (strcmp(name, names[i]) == 0) {
+            *out = i;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int sel_cli_render(int argc, char** argv) {
+    sel_host host = *sel_host_default();
+    render_ctx ctx;
+    sel_engine_config cfg;
+    sel_engine_stats stats;
+    sel_message msg;
+    const char* song = NULL;
+    const char* wav = NULL;
+    unsigned long rate = 44100, seconds = 10;
+    uint32_t resampler = SEL_MIX_RESAMPLE_LINEAR;
+    const sel_tag* desc;
+    const sel_tag* hooks;
+    sel_out_open_fn out_open;
+    sel_out_close_fn out_close;
+    sel_out_set_source_fn out_set_source;
+    sel_out_pump_fn out_pump;
+    sel_engine* e;
+    void* out;
+    uint32_t total, pumped = 0;
+    int i;
+
+    if (argc < 1) {
+        fputs("render: song path missing\n", stderr);
+        return 2;
+    }
+    song = argv[0];
+    for (i = 1; i + 1 < argc; i += 2) {
+        if (strcmp(argv[i], "--output") == 0) {
+            wav = argv[i + 1];
+        } else if (strcmp(argv[i], "--seconds") == 0) {
+            seconds = strtoul(argv[i + 1], NULL, 10);
+        } else if (strcmp(argv[i], "--rate") == 0) {
+            rate = strtoul(argv[i + 1], NULL, 10);
+        } else if (strcmp(argv[i], "--resample") == 0) {
+            if (!parse_resampler(argv[i + 1], &resampler)) {
+                fprintf(stderr, "render: unknown resampler %s\n", argv[i + 1]);
+                return 2;
+            }
+        } else {
+            fprintf(stderr, "render: unknown option %s\n", argv[i]);
+            return 2;
+        }
+    }
+    if (wav == NULL || rate == 0) {
+        fputs("render: --output <wav> and a nonzero --rate are required\n", stderr);
+        return 2;
+    }
+
+    ctx.wav_path = wav;
+    ctx.failed = 0;
+    host.config_get = render_config;
+    host.ctx = &ctx;
+
+    sel_registry_init(&host);
+    desc = sel_registry_find(SEL_PLUGIN_KIND_OUTPUT, "wav");
+    hooks = desc ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
+    if (hooks == NULL) {
+        fputs("render: wav output not registered\n", stderr);
+        return 1;
+    }
+    out_open = (sel_out_open_fn)sel_tag_find(hooks, SEL_OUT_OPEN, 0);
+    out_close = (sel_out_close_fn)sel_tag_find(hooks, SEL_OUT_CLOSE, 0);
+    out_set_source = (sel_out_set_source_fn)sel_tag_find(hooks, SEL_OUT_SET_SOURCE, 0);
+    out_pump = (sel_out_pump_fn)sel_tag_find(hooks, SEL_OUT_PUMP, 0);
+    if (!out_open || !out_close || !out_set_source || !out_pump) {
+        fputs("render: wav output lacks a hook\n", stderr);
+        return 1;
+    }
+
+    memset(&cfg, 0, sizeof cfg);
+    cfg.registry_count = sel_registry_count;
+    cfg.registry_get = sel_registry_get;
+    e = sel_engine_create(&host, &cfg);
+    if (e == NULL) {
+        fputs("render: engine allocation failed\n", stderr);
+        return 1;
+    }
+    sel_engine_set_mix(e, (uint32_t)rate, resampler);
+
+    memset(&msg, 0, sizeof msg);
+    msg.kind = SEL_MSG_CMD;
+    msg.id = SEL_CMD_OPEN;
+    msg.argc = 1;
+    msg.args[0].type = SEL_ARG_STR;
+    msg.args[0].v.s = song;
+    sel_engine_send(e, &msg);
+    memset(&msg, 0, sizeof msg);
+    msg.kind = SEL_MSG_CMD;
+    msg.id = SEL_CMD_PLAY;
+    sel_engine_send(e, &msg);
+    sel_engine_pump(e, render_sink, &ctx);
+    if (ctx.failed) {
+        sel_engine_destroy(e);
+        return 1;
+    }
+
+    out = out_open(&host, (uint32_t)rate, 2);
+    if (out == NULL) {
+        sel_engine_destroy(e);
+        fputs("render: output open failed\n", stderr);
+        return 1;
+    }
+    out_set_source(out, engine_pull, e);
+
+    total = (uint32_t)(seconds * rate);
+    fputs("SEL_ALLOC_FREEZE\n", stderr);
+    fflush(stderr);
+    while (pumped < total) {
+        uint32_t want = total - pumped;
+        uint32_t got;
+        if (want > 512u) {
+            want = 512u;
+        }
+        got = out_pump(out, want);
+        if (got == 0) {
+            break;
+        }
+        pumped += got;
+    }
+    fputs("SEL_ALLOC_THAW\n", stderr);
+    fflush(stderr);
+
+    sel_engine_pump(e, render_sink, &ctx);
+    sel_engine_stats_get(e, &stats);
+    printf("ticks=%u voice_ops=%u mixed_frames=%u\n", (unsigned)stats.ticks, (unsigned)stats.voice_ops,
+           (unsigned)stats.mixed_frames);
+    out_close(out);
+    sel_engine_destroy(e);
+    return ctx.failed || pumped != total;
+}

@@ -25,6 +25,8 @@ static int usage(FILE* to) {
           "  abi [voices]               print sel_host (or sel_voices) size and field offsets\n"
           "  plugins [--lint]           list plugins; --lint counts bad descriptor tags\n"
           "  play-null --rate <hz> --frames <n>  pump the null output, print counters\n"
+          "  render <song> --output <wav> --seconds <n> --rate <hz> --resample <name>\n"
+          "                             render a song to a WAV file, print counters\n"
           "  machine                    probe the machine, print the sel_machine tags\n",
           to);
     return to == stdout ? 0 : 2;
@@ -337,6 +339,9 @@ int main(int argc, char** argv) {
     }
     if (strcmp(cmd, "play-null") == 0) {
         return sel_cli_play_null(argc - 2, argv + 2);
+    }
+    if (strcmp(cmd, "render") == 0) {
+        return sel_cli_render(argc - 2, argv + 2);
     }
     fprintf(stderr, "selecta-cli: unknown command %s\n", cmd);
     return usage(stderr);

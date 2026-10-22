@@ -48,6 +48,13 @@ add_test(NAME ratchet
 # hash file skips the comparison and prints the computed value.
 set(SEL_TESTMOD "${CMAKE_CURRENT_BINARY_DIR}/songs/selecta-test.mod")
 set(SEL_RENDER_OUT "${CMAKE_CURRENT_BINARY_DIR}/out")
+add_executable(gen_testmod "${PROJECT_SOURCE_DIR}/tools/gen_testmod.c")
+add_custom_command(OUTPUT "${SEL_TESTMOD}"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/songs"
+  COMMAND gen_testmod "${SEL_TESTMOD}"
+  DEPENDS gen_testmod
+  COMMENT "Generating selecta-test.mod")
+add_custom_target(testmod ALL DEPENDS "${SEL_TESTMOD}")
 add_test(NAME testmod-sha
   COMMAND "${CMAKE_COMMAND}" "-DMOD=${SEL_TESTMOD}"
     "-DPINNED=${CMAKE_CURRENT_SOURCE_DIR}/songs/selecta-test.mod.sha256"
