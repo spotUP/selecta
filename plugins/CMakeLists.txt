@@ -8,3 +8,5 @@ sel_add_plugin(null 2 outputs/null/null.c)
 if(SEL_TEST_BAD_PLUGIN)
   sel_add_plugin(bad 2 "${PROJECT_SOURCE_DIR}/tests/m0/bad_plugin.c")
 endif()
+
+add_subdirectory(replayers/nuade)
