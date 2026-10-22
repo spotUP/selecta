@@ -108,6 +108,10 @@ Session 2026-10-22 (2). Finish line: RULES.md rule 0 (plans and ledger never sta
 | SP1 | [x] | Research: real Spotify playback through an open-source client (librespot and others), sonnet agent | thoughts/shared/research/2026-10-22_spotify-open-source-client.md |
 | SP2 | [x] | Research: cspot native port for fast Amigas (C++ standard vs bebbo gcc 6.5, licence, maintenance, Tremor speed on 68k, porting surface), sonnet agent | thoughts/shared/research/2026-10-22_cspot-amiga-port.md |
 | D11 | [x] | Decision 2026-10-23: per-tier replayer owners; Amiga uses optimized native 68k players for many formats; XM on Amiga = HippoPlayer xmaplay060.s, 68060 only (XM on 68020-68040 is a tracked gap by user choice); MOD/S3M/MTM keep their owners | design doc section "Format coverage rule", paragraph "Per-tier owners" |
+| D12 | [x] | Decision 2026-10-23: Amiga target machines have fast RAM; size budgets count fast RAM, only Paula sample data needs chip RAM; the 1.85 MB nuade image (I53) is within budget | design doc paragraph "Per-tier owners, round 2" item 4 |
+| D13 | [x] | Decision 2026-10-23: xmaplay060 with AHI or AmiGUS output owns XM on 68020-68040; Paula-direct XM stays 68060 only; XM gap narrows to 020-040 machines without AHI/AmiGUS | design doc paragraph "Per-tier owners, round 2" item 2 |
+| D14 | [x] | Decision 2026-10-23: on the Amiga a HippoPlayer native player outranks nuade for every format both cover; nuade is the fallback owner | design doc paragraph "Per-tier owners, round 2" item 1 |
+| D15 | [x] | Decision 2026-10-23: PS3M owns IT on Amiga 68020+ (still not XM) | design doc paragraph "Per-tier owners, round 2" item 3 |
 
 ## Repo
 
