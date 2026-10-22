@@ -23,7 +23,8 @@ static int usage(FILE* to) {
           "  script <file>              feed command lines to the engine, print events\n"
           "  abi                        print sel_host size and field offsets\n"
           "  plugins [--lint]           list plugins; --lint counts bad descriptor tags\n"
-          "  play-null --rate <hz> --frames <n>  pump the null output, print counters\n",
+          "  play-null --rate <hz> --frames <n>  pump the null output, print counters\n"
+          "  machine                    probe the machine, print the sel_machine tags\n",
           to);
     return to == stdout ? 0 : 2;
 }
@@ -324,6 +325,9 @@ int main(int argc, char** argv) {
     }
     if (strcmp(cmd, "plugins") == 0) {
         return sel_cli_plugins(argc - 2, argv + 2);
+    }
+    if (strcmp(cmd, "machine") == 0) {
+        return sel_cli_machine();
     }
     if (strcmp(cmd, "play-null") == 0) {
         return sel_cli_play_null(argc - 2, argv + 2);

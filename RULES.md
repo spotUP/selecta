@@ -25,6 +25,7 @@ Toolchains: desktop clang/gcc + CMake + Ninja; Amiga bebbo amiga-gcc at `~/opt/a
 | Test, CI (all) | `nice -n 19 ctest --test-dir build/host -j2 --output-on-failure` |
 | Test, Amiga under vamos | build `build/amiga` first, reconfigure `build/host`, then `ctest --test-dir build/host -R amiga-roundtrip` |
 | List / lint plugins | `build/host/apps/selecta-cli/selecta-cli plugins --lint` |
+| Probe the machine (prints sel_machine tags) | `build/host/apps/selecta-cli/selecta-cli machine` |
 | Pump the null output | `build/host/apps/selecta-cli/selecta-cli play-null --rate 44100 --frames 4410` |
 | Golden render for one replayer (not yet implemented, M0b) | `build/host/apps/selecta-cli/selecta-cli render <song> --output <wav>`; compare with `tests/golden/<plugin>/<song>.sha256` |
 | Run text UI (local, not yet implemented) | `build/host/apps/selecta/selecta` in a terminal (LOCAL; on the Amiga: `Selecta` in an UP-Term window) |

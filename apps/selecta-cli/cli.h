@@ -13,4 +13,7 @@ int sel_cli_play_null(int argc, char** argv);
 /* T5: `plugins [--lint]`; prints `plugins=<n> unknown_tags=<u> duplicate_tags=<d>`. */
 int sel_cli_plugins(int argc, char** argv);
 
+/* T10/T11: `machine`; prints `probe_calls=<n>`, then `NAME=value` per SEL_MACHINE_* tag. */
+int sel_cli_machine(void);
+
 #endif

@@ -73,11 +73,11 @@ add_test(NAME machine-probe
           -P "${CMAKE_CURRENT_SOURCE_DIR}/machine.cmake")
 
 # T11: the same probe on the 68k binary under vamos -C 68020. vamos's
-# AvailMem defaults (measured 2026-10-22 by running the probe; vamos 68020
+# AvailMem defaults (measured 2026-10-22 by running `selecta-cli machine`; vamos 68020
 # profile, no -m or -H options): CHIP_RAM and FAST_RAM below, in bytes.
 if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
-  set(SEL_VAMOS_CHIP_RAM 0)
-  set(SEL_VAMOS_FAST_RAM 0)
+  set(SEL_VAMOS_CHIP_RAM 0) # vamos has no chip/fast split: AvailMem(MEMF_CHIP) is 0
+  set(SEL_VAMOS_FAST_RAM 1044480) # 1020 KiB: vamos default RAM less its own use
   add_test(NAME amiga-machine
     COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DAMIGA_CLI=${SEL_AMIGA_CLI}" -DPLATFORM=amiga
             "-DTAGS_DEF=${PROJECT_SOURCE_DIR}/include/selecta/tags.def"
