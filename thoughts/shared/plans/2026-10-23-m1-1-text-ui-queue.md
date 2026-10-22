@@ -1,0 +1,186 @@
+---
+date: 2026-10-23
+topic: M1.1 implementation plan: text UI shell, queue, browse, seek, module info, libopenmpt adapter, all nuade players
+tags: [plan, m1, text-ui, queue, openmpt, nuade]
+status: approved
+rows: I45 to I62 in thoughts/spot/todos.md
+---
+
+# M1.1: text UI shell, queue, local browse, seek, module info, libopenmpt, nuade players
+
+Implements design doc `thoughts/shared/plans/2026-10-22-architecture-design.md` section 3 (queue identity, NEXT/PREV, SEEK, SEEKED, state snapshot), section 4 (RENDER-kind replayer, metadata tags), section 7 (UI plugin tag list, shell main loop, text UI over a cell grid with diff flush), section 9b (view model, regular style only) and section 14 (first slice of M1). RULES.md rules 1 (engine is the single source of truth), 3 (plugins see `include/selecta/` only), 4 (no float in engine or interrupt path, no allocation after `start`), 5 (adapt, never fork) and 6 (golden WAVs) are the contract. Research input: `thoughts/shared/research/2026-10-23_m1-codebase-gap.md` (R9) and `thoughts/shared/research/2026-10-23_m1-replayer-reach.md` (R8). M0b (`2026-10-22-m0b-replay.md`, done) is the base.
+
+## M1 split (all of design section 14 M1 stays in scope)
+
+- **M1.1 (this plan):** shell `apps/selecta`, UI plugin ABI, text UI plugin (regular view), engine queue with stable ids, NEXT/PREV and auto-advance, SEEK, state snapshot with song and position, local file browse, module info panel, RENDER-kind replayers with a libopenmpt adapter (plain M.K. .mod, XM, S3M, IT on desktop), all 121 nuade players, nuade link-cycle fix.
+- **M1.2:** playlist codecs (Hippo, M3U, PLS, XSPF), tree and drilldown views, configurable columns and title formats (F48), vi command mode (F45), palette and help overlay (F49), user key bindings (F11 part), queue undo/redo, reshuffle, scope and album navigation (F30).
+- **M1.3:** scopes, VU, pattern scroller, phase view (F17), voice mute/solo, loop detect, auto-stop and fade, crossfade and gapless, sleep timer and alarm, sample export, crossfeed DSP (F18).
+
+M1.2 and M1.3 get their own plan files when M1.1 is done; ledger row L4 tracks writing them.
+
+## Finish line
+
+`cmake --build build/host && nice -n 19 ctest --test-dir build/host -j2` green on macOS and `cmake --build build/amiga` green, with T1 to T18 still green and these new tests:
+
+| ID | Test (ctest name) | Entry point | Sentinel (proves new code ran) | Spec number asserted |
+|----|-------------------|-------------|--------------------------------|----------------------|
+| T19 | `selecta-browse-play` (the M1.1 reachability test) | `selecta --output null --keys tests/m1/browse_play.keys --screen-dump <tmp>.txt` | on exit the shell prints `ui_waits=W flushes=F keys=K` (shell and grid counters) and `songs_opened=S queue_version=Q` (engine counters) | keys browse into `build/host/tests/songs/`, move to `selecta-test-mk.mod`, press Enter, wait 2000 ms, press `i`, quit. `S=1`; `K` equals the key count of the keys file (CMake counts it); last dumped screen equals `tests/m1/browse_play.screen` (header shows `Playing`, title `selecta-test`, `00:02 / 00:10`; info panel shows `Format`, `Channels 4`, `Patterns`, `Samples`); `Q=1` |
+| T20 | `queue-engine` | `selecta-cli script tests/m1/queue.sel` | `.expected` lines carry the `QUEUE_CHANGED` versions | ids are 1, 2, 3 in add order and never reused after `QUEUE_REMOVE 2`; `QUEUE_PLAY_NEXT` inserts after the playing entry; `NEXT` past the end emits `STATE stopped`; `PREV` within the first 3000 ms of a song goes to the previous entry, after it restarts the song; SONG_ENDED auto-advances and emits `SONG_OPENED` for entry 2; every edit raises the version by exactly 1 |
+| T21 | `seek-render` | `selecta-cli render <song> --seek-ms 5000 --seconds 5` for the nuade song and the openmpt song | prints `seek_path=native` (openmpt) or `seek_path=skip skipped_frames=220500` (nuade) | the 5 s WAV after the seek equals bytes 882000 onward of the 10 s golden render (same resampler), byte for byte, for both replayers; `SEEKED 220500` in the event log |
+| T22 | `render-golden-openmpt` | `selecta-cli render build/host/tests/songs/selecta-test-mk.mod --output <tmp>.wav --seconds 10 --rate 44100` | prints `replayer=openmpt render_calls=R rendered_frames=441000` | `rendered_frames=441000`; WAV data chunk 1764000 bytes; SHA-256 equals `tests/golden/openmpt/selecta-test-mk.sha256` (committed only after the listening check, row I55) |
+| T23 | `nuade-players` | `selecta-cli plugins --formats nuade` | prints `nuade_players=N` from the adapter's registry walk | `N` equals the count of `third_party/nuade/players/*/nuade_player.cmake` (CMake globs it at test time; 121 on today's tree); `pokeynoise`, `davidhanney`, `majortom` listed |
+| T24 | `view-unit` | `tests/view/view_test` (unit, behaviour where it lives) | n/a | directory rows sort directories first then case-insensitive name; cursor keeps the same entry id across a queue edit; `VIEW_ACTIVATE` on a directory row lists it, on a file row sends `QUEUE_ADD` + `PLAY` of the new id; `..` row present except at the filesystem root |
+| T25 | `grid-unit` | `tests/grid/grid_test` (unit) | n/a | a one-cell change on an 80x24 grid flushes one cursor move + one cell (byte vector in `tests/grid/vectors.h`); an unchanged frame flushes 0 bytes; a full redraw is wrapped in synchronized output `CSI ? 2026 h` / `CSI ? 2026 l` |
+| T26 | `no-alloc-render` (extended) | M0a shim over `selecta-cli render` for the openmpt song and over a queue auto-advance script | shim counts `malloc` between the engine `START` marker and end of render, on the audio thread only | zero allocations on the audio thread; song opens happen on the pump thread (the shim logs the thread of each call) |
+| T27 | `nuade-link-graph` (configure time) | `plugins/replayers/nuade/CMakeLists.txt` | `message(FATAL_ERROR)` when `selecta_nuade`'s `LINK_LIBRARIES` contains `sel_plugin_nuade` | fails on today's tree (cycle at lines 43 and 47), passes after I46; the host link prints no `ignoring duplicate libraries` line (checked by T27b `link-warnings`, which greps the log of a forced relink of `selecta-cli`) |
+| T8 | `ratchet` (lowered) | `selecta-cli commands --unimplemented` | as M0a | count <= 45 (54 minus NEXT, PREV, SEEK, QUEUE_ADD, QUEUE_REMOVE, QUEUE_CLEAR, QUEUE_PLAY_NEXT, LIBRARY_BROWSE, VIEW_STYLE); the four new VIEW verbs are implemented when born |
+
+Gate 2 (red first): every T row is written and seen failing before the code it checks exists; each ledger row names the T rows that went red then green.
+
+## Decisions taken in this plan (not open)
+
+- **Plain M.K. .mod is played by a libopenmpt adapter** (user decision 2026-10-23, AskUserQuestion). R8 established that no nuade player probes `M.K.`: the only 0x438 readers are `protracker4` (IFF MODL only, `protracker4.c:256-259`) and `audiosculpture` (`FLT4`/`EXO4` with a companion bank); other hits are period tables. The openmpt adapter moves from M5 to M1.1, desktop only. The 68k build of libopenmpt (C++17) is not attempted; the plugin is not added on `SEL_AMIGA`. On the Amiga, plain .mod reaches Paula in M2 through a nuade or UADE-native player (ledger row D-M2-2).
+- **libopenmpt source.** Git submodule `third_party/libopenmpt` from `https://github.com/OpenMPT/openmpt`, pinned at tag `libopenmpt-0.8.4` (the version Homebrew has on this machine; pin by commit SHA resolved with `gh api` at I50). Built by our CMake as static target `selecta_openmpt` (C++17, upstream flags) from the `LIBOPENMPT_CXX_SOURCES` and `COMMON_CXX_SOURCES` lists of upstream's root `Makefile` (the list is read at configure time by `cmake/openmpt_sources.cmake`, not copied), with zlib, mpg123, ogg and vorbis off (`MPT_WITH_*` undefined), so MO3 with compressed samples is reported unsupported. The system Homebrew copy is not used: golden hashes must not depend on what a machine has installed.
+- **RENDER-kind replayer ABI.** New tags in `tags.def`: `RP_RENDER (0x100E, PTR)`, `RP_SEEK (0x100F, PTR)`, `RP_POSITION (0x1010, PTR)`. In `replayer.h`:
+
+  ```c
+  /* RP_RENDER: interleaved stereo int16 at the rate given to RP_START;
+   * returns frames written, < frames only at song end. RENDER kind only. */
+  typedef uint32_t (*sel_rp_render_fn)(void* state, int16_t* out, uint32_t frames);
+  /* RP_SEEK: optional. Returns 1 when the replayer seeked natively. */
+  typedef int (*sel_rp_seek_fn)(void* state, uint32_t ms);
+  /* RP_POSITION: optional. Fills order/row/pattern; 0 = not reported. */
+  typedef struct sel_rp_position { uint32_t order, row, pattern; } sel_rp_position;
+  typedef int (*sel_rp_position_fn)(void* state, sel_rp_position* out);
+  ```
+
+  `RP_START` gets `voices = NULL` for RENDER kind. The engine render path calls `RP_RENDER` straight into the output buffer and skips the scheduler and mixer. Float inside libopenmpt runs on the desktop audio thread, not under an interrupt and not in engine code, so rule 4 holds; the adapter converts nothing (libopenmpt has an int16 read).
+- **Seek.** `SEEK` takes milliseconds (`"s"` argument parsed as `ms`, `+ms`, `-ms`; pattern:order:row form is M1.3). Engine order: `RP_SEEK` when present and it returns 1 (`seek_path=native`); otherwise restart the song (`RP_START` same subsong) and run the scheduler without mixing until the target frame (`seek_path=skip`), which is exact because the VOICE path is deterministic. The skip runs on the pump thread on a fresh replayer instance and is swapped in like a song change (next bullet). `SEEKED frame` is emitted after the swap.
+- **Song changes never touch the audio thread's replayer.** The engine keeps two replayer slots. OPEN, auto-advance and seek prepare the idle slot on the pump thread (file read, `RP_OPEN`, `RP_START`, all allocation), then publish it through the existing command SPSC (`SWAP slot`); the audio thread switches at the next buffer boundary and returns the old slot through the event SPSC; the pump thread calls `RP_CLOSE`. This is the base the M1.3 crossfade reuses. SONG_ENDED from the audio thread makes the pump thread advance the queue.
+- **Queue.** `src/engine/queue.c`, owned by the engine, fixed capacity allocated at `sel_engine_start`: `queue_capacity` entries and a `queue_text_bytes` path arena, both in `sel_engine_config` with defaults scaled from `sel_machine` fast RAM (>= 64 MB: 8192 entries, 2 MB; >= 8 MB: 2048, 256 KB; else 256, 32 KB). Entry = `{ uint32_t id; uint32_t subsong_plus1; uint32_t path_offset; }`. Ids start at 1, increase, never reused within a session. A full queue answers `ERROR queue_full`. Remove compacts the arena in place. `QUEUE_ADD path`, `QUEUE_PLAY_NEXT path`, `QUEUE_REMOVE id`, `QUEUE_CLEAR`, `NEXT`, `PREV` (restart when position >= 3000 ms, previous entry otherwise). `QUEUE_CHANGED version` on every edit.
+- **Snapshot.** `sel_state` grows (appended fields only):
+
+  ```c
+  typedef struct sel_song_state {
+      uint32_t queue_id;            /* 0 = opened outside the queue */
+      uint32_t subsong, subsong_count;
+      uint32_t duration_ms;         /* 0 = unknown */
+      uint32_t position_ms;
+      sel_rp_position pattern_pos;  /* zeros when not reported */
+      const sel_tag* meta;          /* SEL_META_* list, valid until next pump */
+      const char* path;
+  } sel_song_state;
+  /* appended to sel_state: */
+  sel_song_state song;
+  const sel_queue_entry* queue; uint32_t queue_count, queue_playing, queue_version;
+  const sel_view_state* view;
+  ```
+- **Metadata.** The nuade adapter adds `META_CHANNELS`, `META_SUBSONGS`, `META_PATTERNS`, `META_INSTRUMENTS` and `META_SAMPLES` where nuade's `tracker_info` reports them, and `META_SIZE` always; `META_DURATION_MS` only when nuade reports a length. The openmpt adapter reports TITLE, AUTHOR (`artist`), FORMAT (`type_long`), MESSAGE, CHANNELS, PATTERNS, INSTRUMENTS, SAMPLES, SUBSONGS, DURATION_MS (`get_duration_seconds` converted once at open, the only float conversion), SIZE. The info panel lists every tag the song has, in `tags.def` order; it has no fixed field list.
+- **nuade players.** `NUADE_PLAYERS` is set to the glob of `players/*/nuade_player.cmake`: all 121 players, no exclusion list. R8 flagged `pokeynoise`, `davidhanney` and `majortom` because their data files carry a note about UADE Eagleplayer data; the user confirmed on 2026-10-23 that the whole nuade package, these players included, is by the same author under one licence, so the flag is withdrawn. The 32 players with float are fine on desktop; their Amiga interrupt question stays D-M2-1. The design doc says 119 nuade formats while the tree has 121 players; I53 reconciles the number in the design doc from the registry count.
+- **nuade link cycle.** Root cause: the players call `nuade_voice_*` defined in the plugin's `voices_shim.c`, and the plugin calls the players, so the two archives depend on each other (`plugins/replayers/nuade/CMakeLists.txt:43,47`, multiplicity 3 at :46). Fix: `voices_shim.c` and `io_shim.c` move into a third static target `sel_nuade_shim` (still our code, still compiled against `include/selecta/` plus nuade's public headers, T7 unchanged). Link order is plugin -> `selecta_nuade` -> `sel_nuade_shim`, a DAG; lines 46 and 47 go. The shim calls `sel_voices` through the pointer table it receives, never back into the plugin, so no cycle remains.
+- **UI plugin ABI.** New `include/selecta/ui.h` and tags `UI_NAME (0x5000, STR)`, `UI_OPEN (0x5001, PTR)`, `UI_ON_EVENT (0x5002, PTR)`, `UI_WAIT (0x5003, PTR)`, `UI_CLOSE (0x5004, PTR)`, `UI_VIEW_STYLES (0x5005, INT)`, `UI_NEEDS_RTG (0x5006, INT)`, `UI_HOTKEYS (0x5007, PTR)`, `UI_STATS (0x5008, PTR)`. `UI_OPEN (const sel_ui_open_args*)` where the args struct carries `sel_engine*`, `const sel_host*`, `argc/argv` of UI options, and a reserved `void* library` (NULL until M3 creates `sel_library`; section 7's signature is kept). `UI_WAIT(state, uint32_t timeout_ms) -> int` returns 0 on timeout, 1 on input handled, -1 on quit. `UI_SURFACES` is M1.3 with viz.
+- **Waking the UI.** No syscall on the audio thread. The shell calls `UI_WAIT(state, 20)`; the text UI's POSIX backend uses `poll()` on the input fd with that timeout. 20 ms equals one 50 Hz tick, so position updates redraw at most 50 times a second and the engine needs no wake primitive in M1.1. On the Amiga (M2) the same contract maps to `Wait()` on the console signal plus a `timer.device` signal.
+- **Local browse.** `LIBRARY_BROWSE path` is implemented in `src/library/local.c` (new `selecta_library` target, portable) over a directory iterator in `src/core/<os>/dir.c` (POSIX `opendir` on macOS and Linux; Amiga `Examine/ExNext` in M2). Listing goes into a fixed-size browse buffer allocated at start (`browse_entries`, `browse_text_bytes`, scaled like the queue); an overflowing directory is truncated with `LOG browse_truncated n`. Event `LIBRARY_RESULT` carries `{path, count}` as tags. This is not the M3 `sel_source` interface; M3 wraps `local.c` as the `local` source without changing its listing code.
+- **View model (regular style).** `src/engine/view.c`: one view over either the queue or the browse listing. Design section 9b puts cursor and visible window in the engine view model, and section 3's VIEW verbs (STYLE, GROUP, EXPAND, COLLAPSE, DRILL) have no verb for source, cursor, activation or window height. Four verbs are added to `commands.def` in phase 4, born implemented, and design section 3 is extended in I62: `VIEW_SHOW "s"` (`queue` or `browse`), `VIEW_CURSOR "s"` (`n`, `+n`, `-n`, `top`, `bottom`), `VIEW_ACTIVATE ""` (directory: browse into it; `..`: parent; file: `QUEUE_ADD` + `PLAY` that id; queue row: play it), `VIEW_WINDOW "u"` (visible row count; the engine keeps the window start so the cursor stays visible). Existing `VIEW_STYLE regular` is implemented in the same row (other styles answer `ERROR unsupported_style` until M1.2). Each row = `{ kind (dir, file, queue), id, depth 0, text }` where `text` is the file name (browse) or META_TITLE else file name (queue); title formats are M1.2 (F48). `VIEW_CHANGED` carries style and row count; `VIEW_ROWS` is emitted with the visible window after every change. Ratchet: VIEW_STYLE removed from the unimplemented list (T8 count <= 45 at I58).
+- **Text UI.** Plugin `plugins/ui/text/`: `text_ui.c` (layout, key map, drawing from the snapshot), `grid.c` (cell grid, diff flush, synchronized output), `keys.c` (byte stream to key codes: arrows, Enter, Backspace, Tab, printable), portable; `plugins/ui/text/posix/term.c` (termios raw mode, alternate screen, `poll`, SIGWINCH size). Layout at 80x24 and up: header line 1 now playing (state, title, author), line 2 format, subsong `i / n`, time `mm:ss / mm:ss`, volume; main pane the view rows with the cursor row in reverse video; optional right info panel (toggled with `i`, full META list); bottom status line with key hints in full words (`Enter Play`, `Tab Queue`, `Space Pause`, `i Info`, `q Quit`). Default keys: Up/Down or j/k cursor, PgUp/PgDn, Enter activate, Backspace parent, Tab switch browse/queue, Space pause, s stop, n next, p previous, Left/Right seek -5000/+5000, `[`/`]` subsong, `+`/`-` volume, a add to queue, d remove from queue, i info, q quit. On start and on every SIGWINCH the UI sends `VIEW_WINDOW <main pane rows>`. Colours come from a token table in `plugins/ui/text/theme.c` (D8); no colour literal elsewhere in the plugin. Glyphs: ASCII and box drawing only (RULES.md rule 8).
+- **Shell.** `apps/selecta/main.c`: parses `--output name` (default `coreaudio` on macOS, `null` elsewhere), `--ui name` (default `text`), `--keys file`, `--screen-dump file`, `--start-dir path` (default current directory), registry and engine start, opens the UI, loop: `UI_WAIT(20)`; `sel_engine_pump`; for each event `UI_ON_EVENT`; until `UI_WAIT` returns -1. With the `null` output the shell pumps the null sink by exactly 20 ms of frames per loop turn, so tests are deterministic. `--keys` feeds the file's bytes (with `wait <ms>` lines expanded to loop turns) into the same `keys.c` decoder instead of the terminal; `--screen-dump` writes the grid as UTF-8 text after each flush (last frame kept). Both flags are test entry points into the real UI code, not a second UI.
+- **Amiga.** `apps/selecta`, the text UI plugin and the openmpt plugin are not built under `SEL_AMIGA` in M1.1 (text UI on Amiga is M2 via UP-Term). The engine, queue, view and library code is built for 68k and covered by T18 (no-float), extended to `queue.o`, `view.o`, `local.o`.
+
+## File layout created or changed by this plan
+
+```
+include/selecta/
+  ui.h                      new: UI hook typedefs, sel_ui_open_args
+  replayer.h                RP_RENDER, RP_SEEK, RP_POSITION typedefs
+  engine.h                  sel_song_state, queue/view fields appended, config fields
+  tags.def                  RP_RENDER..RP_POSITION, UI_* rows
+  commands.def              VIEW_SHOW, VIEW_CURSOR, VIEW_ACTIVATE, VIEW_WINDOW
+src/engine/
+  engine.c                  slots + SWAP, queue/next/prev/seek verbs, snapshot
+  queue.c, queue.h          new
+  view.c, view.h            new
+src/library/
+  CMakeLists.txt, local.c, local.h   new (selecta_library)
+src/core/macos/dir.c, src/core/linux/dir.c   new (POSIX, one file shared via CMake)
+plugins/replayers/nuade/
+  CMakeLists.txt            sel_nuade_shim target, player glob, T27 check
+  adapter.c                 metadata tags, registry count for T23
+plugins/replayers/openmpt/
+  CMakeLists.txt, adapter.c new
+plugins/ui/text/
+  CMakeLists.txt, text_ui.c, grid.c, grid.h, keys.c, keys.h, theme.c, posix/term.c   new
+apps/selecta/
+  CMakeLists.txt, main.c    new
+apps/selecta-cli/           render --seek-ms; plugins --formats
+cmake/openmpt_sources.cmake new
+third_party/libopenmpt      new submodule
+tests/m1/                   browse_play.keys, browse_play.screen, queue.sel, queue.expected, seek_render.cmake
+tests/view/, tests/grid/    new unit tests
+tests/golden/openmpt/       selecta-test-mk.sha256
+tools/gen_testmod.c         --format mk (plain M.K. variant of the same song; pinned hash)
+```
+
+## Phase 1: ABI, tags, link fix (rows I45 to I47)
+
+Tag rows, `ui.h`, `replayer.h` additions; T27 red, then `sel_nuade_shim` split, T27 green; T2, T5, T7 stay green. No `commands.def` rows in this phase: a verb born without dispatch would raise the ratchet, so the new VIEW verbs land in phase 4 together with their dispatch.
+
+## Phase 2: engine queue, slots, NEXT/PREV, seek, snapshot (rows I48 to I52)
+
+T20, T21 (nuade half) red; replayer slots and SWAP; queue.c; NEXT/PREV/auto-advance; restart-and-skip seek and SEEKED; snapshot fields; ratchet to 47 (SEEK, NEXT, PREV, four QUEUE verbs); T20, T21 nuade half green; T13, T14, T17 stay green.
+
+## Phase 3: replayers (rows I53 to I56)
+
+nuade metadata tags and all-player glob (T23 red then green, design doc count reconciled); libopenmpt submodule and `selecta_openmpt`; `gen_testmod --format mk`; openmpt adapter (probe via `openmpt_probe_file_header`, RENDER, SEEK via `set_position_seconds` with the ms value converted once, POSITION via `get_current_order/row/pattern`, metadata); T22 counters green, hash committed after the listening check; T21 openmpt half and T26 green.
+
+## Phase 4: library browse and view model (rows I57 to I58)
+
+T24 red; `selecta_library` + `dir.c`; LIBRARY_BROWSE (ratchet to 46); `view.c` with VIEW_SHOW, VIEW_CURSOR, VIEW_ACTIVATE, VIEW_WINDOW born implemented and VIEW_STYLE regular (ratchet to 45); T24 green.
+
+## Phase 5: text UI and shell (rows I59 to I61)
+
+T25 red; `grid.c`, `keys.c`, `term.c`, `theme.c`, `text_ui.c`; T25 green; `apps/selecta` shell; T19 red then green; manual check in a real terminal (Blocked on me).
+
+## Phase 6: docs, ledger, validation (row I62)
+
+RULES.md Commands rows for `selecta` (the "not yet implemented" row becomes real), openmpt render, the new tests; README; design doc section 3 (four VIEW verbs, RP_RENDER/SEEK/POSITION), section 5 (nuade count from the registry), section 14 (M1 split, openmpt in M1.1) and section 16 (decisions of 2026-10-23); validation doc `2026-10-23-m1-1-text-ui-queue.validation.md`; plan status done; open-row count reconciled.
+
+## Ledger rows (thoughts/spot/todos.md, section "Implementation M1.1")
+
+| ID | Phase | Task | Proof |
+|----|-------|------|-------|
+| I45 | 1 | tags.def RP_RENDER/SEEK/POSITION and UI_* rows; ui.h; replayer.h typedefs | T2, T5 green |
+| I46 | 1 | T27 written and red; sel_nuade_shim split; lines 46-47 removed | T27, T27b green; T13 hash unchanged |
+| I47 | 1 | 68k build after the link change | build/amiga green, T14 green |
+| I48 | 2 | T20 and T21 (nuade) written and red | ctest failures |
+| I49 | 2 | two replayer slots, SWAP through the SPSC, close on pump thread | T13, T14, T17 green |
+| I50 | 2 | queue.c, QUEUE_ADD/REMOVE/CLEAR/PLAY_NEXT, NEXT/PREV, auto-advance, QUEUE_CHANGED | T20 green, ratchet 48 |
+| I51 | 2 | SEEK restart-and-skip, SEEKED, render --seek-ms | T21 nuade half green, ratchet 47 |
+| I52 | 2 | sel_state song/queue fields; T18 over queue.o | T18 green, abi goldens updated (T6) |
+| I53 | 3 | nuade metadata tags; glob of all players; T23 red then green; design doc player count | T23 green |
+| I54 | 3 | libopenmpt submodule at libopenmpt-0.8.4 SHA; cmake/openmpt_sources.cmake; selecta_openmpt builds | host build green |
+| I55 | 3 | gen_testmod --format mk; openmpt adapter; T22 red then counters green; hash committed after listening check | T22 green |
+| I56 | 3 | RP_SEEK in engine; T21 openmpt half; T26 extended | T21, T26 green |
+| I57 | 4 | T24 red; selecta_library, dir.c, LIBRARY_BROWSE, LIBRARY_RESULT | ratchet 46 |
+| I58 | 4 | view.c; VIEW_SHOW, VIEW_CURSOR, VIEW_ACTIVATE, VIEW_WINDOW born implemented; VIEW_STYLE regular; VIEW_CHANGED, VIEW_ROWS | T24 green, ratchet 45 |
+| I59 | 5 | T25 red; grid.c, keys.c, theme.c, posix/term.c | T25 green |
+| I60 | 5 | text_ui.c; apps/selecta shell; T19 red then green | T19 green |
+| I61 | 5 | real-terminal check on macOS (Verification, manual 1); the agent never ticks it | user confirms |
+| I62 | 6 | RULES.md Commands, README, design doc 14 and 16, validation doc, plan status done | counts reconciled |
+
+Also: L4 (write M1.2 and M1.3 plans after I62), D-M2-2 (plain .mod on Amiga: nuade M.K. player upstream or UADE native; decide at M2 planning).
+
+## Verification
+
+Automated: the finish-line table, run per phase on the affected tests only (`nice -n 19 ctest --test-dir build/host -R '<names>'`), the full CI run once at I62 (reason: landing the milestone).
+
+Manual (only the user can confirm, never ticked by the agent):
+1. LOCAL, macOS Terminal: `build/host/apps/selecta/selecta --start-dir ~/Music/mods` (any folder of .mod/.xm files). PASS: the browser lists the folder, Enter on a plain .mod plays sound through the default output, the header time advances, Left/Right seek audibly, `n` plays the next queued song, `i` shows the module info, `q` restores the terminal (no stray characters, cursor visible).
+2. Listening check of `selecta-test-mk.mod` through openmpt before I55 commits the hash (the same song as the nuade golden; it should sound the same, minus the Amiga filter).
+
+## Out of scope for M1.1 (goes to M1.2, M1.3 or later)
+
+Everything listed under M1.2 and M1.3 above; `sel_source` and SQLite (M3); openmpt on 68k; UI switching at runtime (`UI_SWITCH` stays unimplemented until a second UI exists); text UI on the Amiga (M2); sixel/kitty graphics.
+
+## Deviations
+
+None yet.

@@ -4,6 +4,8 @@ Every task lives here with an ID. Each reply names IDs ticked since the last rep
 
 Session 2026-10-22 (1). Finish line: design doc complete (sources, feature bar, tiers, view styles, playlist model, tag ABI, decisions), research docs written, ledger restructured, first commit made, next-session prompt written. Done.
 
+Session 2026-10-23 (3). Finish line: M1.1 plan approved, rows in this ledger (R8, R9, L3).
+
 Session 2026-10-22 (2). Finish line: RULES.md rule 0 (plans and ledger never stale), M0a plan written and approved, ledger rows I1 to I22 added, implementation started.
 
 ## Research
@@ -24,6 +26,8 @@ Session 2026-10-22 (2). Finish line: RULES.md rule 0 (plans and ledger never sta
 | F13a | [x] | HippoPlayer parity inventory (sonnet agent) | thoughts/shared/research/2026-10-22_parity-hippoplayer.md |
 | F13b | [x] | bbmp parity inventory (sonnet agent) | thoughts/shared/research/2026-10-22_parity-bbmp.md |
 | F14 | [x] | Format coverage union bbmp + HippoPlayer | thoughts/shared/research/2026-10-22_format-coverage.md |
+| R8 | [x] | M1 replayer reach: which nuade player (if any) reads plain M.K. .mod, nuade player float use and licences, libopenmpt as a desktop adapter, cause of duplicate-nuade linker warning (sonnet agent) | thoughts/shared/research/2026-10-23_m1-replayer-reach.md |
+| R9 | [x] | M1 codebase gap: engine commands, state, events and what a UI shell needs (sonnet agent) | thoughts/shared/research/2026-10-23_m1-codebase-gap.md |
 
 ## Design (doc: thoughts/shared/plans/2026-10-22-architecture-design.md)
 
@@ -111,6 +115,8 @@ Session 2026-10-22 (2). Finish line: RULES.md rule 0 (plans and ledger never sta
 | L2 | [x] | Memories: structured-ledger-with-ids, design-not-capped-by-amiga, feature-menus, parity | ~/.claude/projects/-Users-spot-Code-MusicPlayer/memory/ |
 | R6 | [x] | First commit, named files, no attribution | git log |
 | R7 | [x] | next-session.md start prompt | thoughts/spot/next-session.md |
+| L3 | [x] | M1 split into slices; M1.1 plan written, approved, rows added | thoughts/shared/plans/2026-10-23-m1-1-text-ui-queue.md |
+| L4 | [ ] | Write the M1.2 and M1.3 plans after I62 | thoughts/shared/plans/ |
 
 ## Implementation (plan: thoughts/shared/plans/2026-10-22-m0-skeleton.md, status: done)
 
@@ -141,7 +147,7 @@ Tests T1 to T9 are defined in the plan's finish-line table. A row is ticked only
 | I21 | [x] | 7 | ratchet number committed, T8 green; ci.yml host jobs; Amiga CI image to verify | T8 green, workflow file |
 | I22 | [x] | 7 | RULES.md Commands table updated, README, validation doc, plan status done | counts reconciled in reply |
 
-## Implementation M0b (plan: thoughts/shared/plans/2026-10-22-m0b-replay.md, status: in-progress, approved 2026-10-22)
+## Implementation M0b (plan: thoughts/shared/plans/2026-10-22-m0b-replay.md, status: done, approved 2026-10-22)
 
 Tests T10 to T18 are defined in the plan's finish-line table. A row is ticked only when its proof column is green.
 
@@ -170,11 +176,37 @@ Tests T10 to T18 are defined in the plan's finish-line table. A row is ticked on
 | I43 | [x] | 7 | plan status done, ledger reconciled | grep count matches |
 | I44 | [ ] | - | Amiga CI image (from M0a I21): find and verify a bebbo toolchain container, add CI job | CI job green |
 
+## Implementation M1.1 (plan: thoughts/shared/plans/2026-10-23-m1-1-text-ui-queue.md, status: approved 2026-10-23)
+
+Tests T19 to T27 are defined in the plan's finish-line table. A row is ticked only when its proof column is green.
+
+| ID | Status | Phase | Task | Proof |
+|----|--------|-------|------|-------|
+| I45 | [ ] | 1 | tags.def RP_RENDER/SEEK/POSITION and UI_* rows; ui.h; replayer.h typedefs | T2, T5 green |
+| I46 | [ ] | 1 | T27 written and red; sel_nuade_shim split; nuade CMakeLists lines 46-47 removed | T27, T27b green; T13 hash unchanged |
+| I47 | [ ] | 1 | 68k build after the link change | build/amiga green, T14 green |
+| I48 | [ ] | 2 | T20 and T21 (nuade half) written and red | ctest failures |
+| I49 | [ ] | 2 | two replayer slots, SWAP through the SPSC, close on pump thread | T13, T14, T17 green |
+| I50 | [ ] | 2 | queue.c, QUEUE_ADD/REMOVE/CLEAR/PLAY_NEXT, NEXT/PREV, auto-advance, QUEUE_CHANGED | T20 green, ratchet 48 |
+| I51 | [ ] | 2 | SEEK restart-and-skip, SEEKED, render --seek-ms | T21 nuade half green, ratchet 47 |
+| I52 | [ ] | 2 | sel_state song/queue/view fields; T18 over queue.o | T18, T6 green |
+| I53 | [ ] | 3 | nuade metadata tags; glob of all 121 players; T23 red then green; design doc player count | T23 green |
+| I54 | [ ] | 3 | libopenmpt submodule at libopenmpt-0.8.4 SHA; cmake/openmpt_sources.cmake; selecta_openmpt builds | host build green |
+| I55 | [ ] | 3 | gen_testmod --format mk; openmpt adapter; T22 red then counters green; hash committed after listening check | T22 green |
+| I56 | [ ] | 3 | RP_SEEK in engine; T21 openmpt half; T26 extended | T21, T26 green |
+| I57 | [ ] | 4 | T24 red; selecta_library, dir.c, LIBRARY_BROWSE, LIBRARY_RESULT | ratchet 46 |
+| I58 | [ ] | 4 | view.c; VIEW_SHOW/CURSOR/ACTIVATE/WINDOW born implemented; VIEW_STYLE regular; VIEW_CHANGED, VIEW_ROWS | T24 green, ratchet 45 |
+| I59 | [ ] | 5 | T25 red; grid.c, keys.c, theme.c, posix/term.c | T25 green |
+| I60 | [ ] | 5 | text_ui.c; apps/selecta shell; T19 red then green | T19 green |
+| I61 | [ ] | 5 | real-terminal check on macOS (plan Verification, manual 1); only the user ticks it | user confirms |
+| I62 | [ ] | 6 | RULES.md Commands, README, design doc sections 3/5/14/16, validation doc, plan status done | counts reconciled |
+
 ## Open decisions
 
 Round 5 picks decided 2026-10-22 (AskUserQuestion, two calls): in = F19, F20, F21, F23, F24, F25, F29, F30, F31, F33 to F41, F43 to F46, F48, F49; restored into scope = F50 multi-zone sync, F51 server transcoding, F52 multi-user/multi-library; not picked = F32 CD audio, F42 rippers, F47 device sync; still out = Atmos, mpd client messaging, Tidal/Qobuz. Recorded in design doc sections 1a and 16. Open: none.
 
 - [ ] D-M2-1: nuade's voice API is float/double, so a nuade player ticking under a CIA interrupt on a 68020 without FPU runs soft-float in the interrupt (rule 4). Options for M2: tick in a high-priority task, upstream an integer voice API to emoon/nuade, or require an FPU for Paula-direct nuade. Source: thoughts/shared/research/2026-10-23_nuade-adapter.md. Not blocking M0b.
+- [ ] D-M2-2: plain M.K. .mod on the Amiga. No nuade player probes M.K. (R8) and libopenmpt stays desktop-only in M1.1. Options for M2: a nuade M.K. player upstream (author is a friend of the user) or the UADE-native plugin. Decide at M2 planning.
 
 Protocol additions from M1d are already in design doc section 3 (not a decision, engine protocol detail).
 
@@ -196,6 +228,9 @@ Protocol additions from M1d are already in design doc section 3 (not a decision,
 - F13b bbmp parity NEW rows (4, see research doc "NEW" list): songs inside collection archives and MP3/Ogg/FLAC in collections (bbmp "not prepared"; covered by F8 archives + F7 stream decoders, map in 1a); "!" key "this sounds wrong" flag with note dialog and sounds-wrong.txt plus `bbmp wrong` CLI (candidate F22); testers guide / tester-reporting workflow (docs, out of design scope). Unverified in doc: channel-scope data source, tui/guard.py purpose, log file, snapshot.py, licence note (bbmp GPL-3.0 versus Selecta MIT: adapters must not copy bbmp code, only ideas; C helpers under csrc/ need licence check before vendoring). Agent did not read docs/replayers.md body, tui/browse.py, lists.py, settings_tab.py in detail.
 - amiga-roundtrip flake (M0b phase 1, 2026-10-22): cause found and fixed. Two vamos instances started together collide on the per-user temp volume `~/.vamos/volumes/ram` ("temp volume volume path already exists"). All vamos tests now share `RESOURCE_LOCK vamos`, and an `amiga-build` ctest fixture rebuilds build/amiga first so a host ctest never runs a stale 68k binary.
 - clang-format and clang-tidy are not installed on this machine, so the format and lint rows of the Commands table do not run here.
+- nuade licence notices (2026-10-23): pokeynoise/pn_waves.c, davidhanney/dh_data.c and majortom/mt_data.c say their Eagleplayer data is not covered by nuade's MIT licence. The user says the whole package is by one author under one licence, so all 121 players are built. The file text still says otherwise; worth asking the author to update those notices before a public release.
+- nuade count: design doc section 5 says 119 nuade formats, the tree has 121 players. I53 reconciles it from the registry.
+- Linker warning `ignoring duplicate libraries: libsel_plugin_nuade.a, libselecta_nuade.a` comes from a deliberate static-library cycle (plugins/replayers/nuade/CMakeLists.txt:43-47). Fixed by I46.
 
 ## Facts gathered
 
