@@ -1,0 +1,8 @@
+VOLUME 50
+VOLUME 55
+STATE playing
+STATE paused
+STATE stopped
+ERROR unknown_command FOO
+ERROR not_implemented SEEK
+VOLUME 20

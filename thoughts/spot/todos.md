@@ -123,9 +123,9 @@ Tests T1 to T9 are defined in the plan's finish-line table. A row is ticked only
 | I5 | [x] | 2 | commands.def and events.def full first set; design doc BEGIN/END one-line fix | counts read by CMake |
 | I6 | [x] | 2 | protocol.h: enums, names, args, sel_message, codec API, SEL_MAX_ARGS static assert | compiles |
 | I7 | [x] | 2 | Tests T1, T2, T5, T6 written and RED | ctest shows 4 failures |
-| I8 | [ ] | 3 | src/protocol/codec.c encode/decode, tag-list argument codec | T1 green |
-| I9 | [ ] | 3 | selecta-cli commands, events, tagtypes, roundtrip | T2 green |
-| I10 | [ ] | 3 | T3 and T4 written and RED | ctest shows failures |
+| I8 | [x] | 3 | src/protocol/codec.c encode/decode, tag-list argument codec | T1 green |
+| I9 | [x] | 3 | selecta-cli commands, events, tagtypes, roundtrip | T2 green |
+| I10 | [x] | 3 | T3 and T4 written and RED | ctest shows failures |
 | I11 | [ ] | 4 | engine.h and engine.c: state, SPSC queues, dispatch X-macro, implemented set, not_implemented path, BEGIN/END batch | T3 green |
 | I12 | [ ] | 4 | selecta-cli script; tests/m0/basic.sel and basic.expected | T3 green |
 | I13 | [ ] | 4 | selecta-cli commands --unimplemented; T8 written RED | ratchet list printed |

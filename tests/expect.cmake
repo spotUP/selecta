@@ -2,6 +2,7 @@
 #   EXPECT       exact stdout (trailing newline ignored)
 #   EXPECT_FILE  stdout equals the file's content
 #   LINES        stdout has exactly this many lines
+#   EXPECT_REGEX stdout matches this regex
 # Fails with both texts on a mismatch. Used by every T row.
 if(NOT CLI)
   message(FATAL_ERROR "expect.cmake: CLI not set")
@@ -25,6 +26,10 @@ elseif(DEFINED EXPECT_FILE)
   string(REGEX REPLACE "\n$" "" want "${want}")
   if(NOT got STREQUAL want)
     message(FATAL_ERROR "selecta-cli ${ARGS} differs from ${EXPECT_FILE}\nexpected:\n${want}\ngot:\n${got}")
+  endif()
+elseif(DEFINED EXPECT_REGEX)
+  if(NOT got MATCHES "${EXPECT_REGEX}")
+    message(FATAL_ERROR "selecta-cli ${ARGS}\nexpected match:\n${EXPECT_REGEX}\ngot:\n${got}")
   endif()
 elseif(DEFINED LINES)
   string(REGEX MATCHALL "\n" nl "${got}")

@@ -25,3 +25,12 @@ sel_cli_test(registry-tags "plugins --lint" "-DEXPECT=plugins=1 unknown_tags=0 d
 # T6: sel_host layout golden per architecture.
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" SEL_ARCH)
 sel_cli_test(abi-host-layout "abi" "-DEXPECT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/abi/sel_host.${SEL_ARCH}.txt")
+
+# T3: the engine runs a script through the real dispatch and emits the
+# expected events, including batch deferral, unknown and unimplemented verbs.
+sel_cli_test(m0-script "script ${CMAKE_CURRENT_SOURCE_DIR}/m0/basic.sel"
+  "-DEXPECT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/m0/basic.expected")
+
+# T4: the null output pulls the requested frames through the engine render.
+sel_cli_test(m0-null-output "play-null --rate 44100 --frames 4410"
+  "-DEXPECT_REGEX=^pulled=4410 render_calls=[1-9][0-9]* rate=44100$")
