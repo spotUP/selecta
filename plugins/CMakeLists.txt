@@ -4,6 +4,11 @@
 
 sel_add_plugin(null 2 outputs/null/null.c)
 sel_add_plugin(wav 2 outputs/wav/wav.c)
+# OS headers live under plugins/*/<os>/ (RULES.md rule 3).
+if(APPLE)
+  sel_add_plugin(coreaudio 2 outputs/coreaudio/macos/coreaudio.c)
+  target_link_libraries(sel_plugin_coreaudio PUBLIC "-framework AudioToolbox" "-framework CoreAudio")
+endif()
 
 # T5 negative path only; see tests/m0/bad_plugin.cmake.
 if(SEL_TEST_BAD_PLUGIN)

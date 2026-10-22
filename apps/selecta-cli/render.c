@@ -36,10 +36,6 @@ static void render_sink(void* ctx, const sel_message* evt) {
     }
 }
 
-static uint32_t engine_pull(void* ctx, int16_t* stereo, uint32_t frames) {
-    return sel_engine_render((sel_engine*)ctx, stereo, frames);
-}
-
 static int parse_resampler(const char* name, uint32_t* out) {
     static const char* const names[] = {"none", "linear", "cubic", "sinc"};
     uint32_t i;
@@ -55,19 +51,12 @@ static int parse_resampler(const char* name, uint32_t* out) {
 int sel_cli_render(int argc, char** argv) {
     sel_host host = *sel_host_default();
     render_ctx ctx;
-    sel_engine_config cfg;
     sel_engine_stats stats;
-    sel_message msg;
+    sel_cli_output o;
     const char* song = NULL;
     const char* wav = NULL;
     unsigned long rate = 44100, seconds = 10;
     uint32_t resampler = SEL_MIX_RESAMPLE_LINEAR;
-    const sel_tag* desc;
-    const sel_tag* hooks;
-    sel_out_open_fn out_open;
-    sel_out_close_fn out_close;
-    sel_out_set_source_fn out_set_source;
-    sel_out_pump_fn out_pump;
     sel_engine* e;
     void* out;
     uint32_t total, pumped = 0;
@@ -106,55 +95,21 @@ int sel_cli_render(int argc, char** argv) {
     host.ctx = &ctx;
 
     sel_registry_init(&host);
-    desc = sel_registry_find(SEL_PLUGIN_KIND_OUTPUT, "wav");
-    hooks = desc ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
-    if (hooks == NULL) {
-        fputs("render: wav output not registered\n", stderr);
+    if (!sel_cli_find_output("render", "wav", &o)) {
         return 1;
     }
-    out_open = (sel_out_open_fn)sel_tag_find(hooks, SEL_OUT_OPEN, 0);
-    out_close = (sel_out_close_fn)sel_tag_find(hooks, SEL_OUT_CLOSE, 0);
-    out_set_source = (sel_out_set_source_fn)sel_tag_find(hooks, SEL_OUT_SET_SOURCE, 0);
-    out_pump = (sel_out_pump_fn)sel_tag_find(hooks, SEL_OUT_PUMP, 0);
-    if (!out_open || !out_close || !out_set_source || !out_pump) {
-        fputs("render: wav output lacks a hook\n", stderr);
-        return 1;
-    }
-
-    memset(&cfg, 0, sizeof cfg);
-    cfg.registry_count = sel_registry_count;
-    cfg.registry_get = sel_registry_get;
-    e = sel_engine_create(&host, &cfg);
+    e = sel_cli_start_song("render", &host, song, (uint32_t)rate, resampler);
     if (e == NULL) {
-        fputs("render: engine allocation failed\n", stderr);
-        return 1;
-    }
-    sel_engine_set_mix(e, (uint32_t)rate, resampler);
-
-    memset(&msg, 0, sizeof msg);
-    msg.kind = SEL_MSG_CMD;
-    msg.id = SEL_CMD_OPEN;
-    msg.argc = 1;
-    msg.args[0].type = SEL_ARG_STR;
-    msg.args[0].v.s = song;
-    sel_engine_send(e, &msg);
-    memset(&msg, 0, sizeof msg);
-    msg.kind = SEL_MSG_CMD;
-    msg.id = SEL_CMD_PLAY;
-    sel_engine_send(e, &msg);
-    sel_engine_pump(e, render_sink, &ctx);
-    if (ctx.failed) {
-        sel_engine_destroy(e);
         return 1;
     }
 
-    out = out_open(&host, (uint32_t)rate, 2);
+    out = o.open(&host, (uint32_t)rate, 2);
     if (out == NULL) {
         sel_engine_destroy(e);
         fputs("render: output open failed\n", stderr);
         return 1;
     }
-    out_set_source(out, engine_pull, e);
+    o.set_source(out, sel_cli_engine_pull, e);
 
     total = (uint32_t)(seconds * rate);
     fputs("SEL_ALLOC_FREEZE\n", stderr);
@@ -165,7 +120,7 @@ int sel_cli_render(int argc, char** argv) {
         if (want > 512u) {
             want = 512u;
         }
-        got = out_pump(out, want);
+        got = o.pump(out, want);
         if (got == 0) {
             break;
         }
@@ -178,7 +133,7 @@ int sel_cli_render(int argc, char** argv) {
     sel_engine_stats_get(e, &stats);
     printf("ticks=%u voice_ops=%u mixed_frames=%u\n", (unsigned)stats.ticks, (unsigned)stats.voice_ops,
            (unsigned)stats.mixed_frames);
-    out_close(out);
+    o.close(out);
     sel_engine_destroy(e);
     return ctx.failed || pumped != total;
 }

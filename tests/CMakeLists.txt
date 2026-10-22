@@ -20,12 +20,13 @@ sel_cli_test(protocol-reflection-events   "events"   "-DLINES=${SEL_COUNT_EVT}")
 sel_cli_test(protocol-reflection-tagtypes "tagtypes" "-DLINES=${SEL_COUNT_META}")
 
 # T5: the registry walked every descriptor and found only known tags.
-# null, wav, nuade, plus coreaudio on macOS.
+# null, wav, nuade, plus coreaudio on macOS; the negative tree adds one bad plugin.
 if(APPLE)
   set(SEL_EXPECT_PLUGINS 4)
 else()
   set(SEL_EXPECT_PLUGINS 3)
 endif()
+math(EXPR SEL_EXPECT_BAD_PLUGINS "${SEL_EXPECT_PLUGINS} + 1")
 sel_cli_test(registry-tags "plugins --lint" "-DEXPECT=plugins=${SEL_EXPECT_PLUGINS} unknown_tags=0 duplicate_tags=0")
 
 # T6: sel_host layout golden per architecture.
@@ -94,7 +95,7 @@ add_subdirectory(nuade_ab)
 # T5 negative path: a second tree with a broken descriptor must fail lint.
 add_test(NAME registry-tags-negative
   COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}"
-    "-DBIN=${PROJECT_BINARY_DIR}/host-bad" "-DGEN=${CMAKE_GENERATOR}"
+    "-DBIN=${PROJECT_BINARY_DIR}/host-bad" -DEXPECT_PLUGINS=${SEL_EXPECT_BAD_PLUGINS} "-DGEN=${CMAKE_GENERATOR}"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/m0/bad_plugin.cmake")
 
 # T7: every plugin compiles with include/ as its only project include path.

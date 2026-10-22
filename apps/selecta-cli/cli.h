@@ -21,4 +21,27 @@ int sel_cli_plugins(int argc, char** argv);
 /* T10/T11: `machine`; prints `probe_calls=<n>`, then `NAME=value` per SEL_MACHINE_* tag. */
 int sel_cli_machine(void);
 
+/* play <song> --output <id> --seconds <n> [--rate <hz>] [--resample <name>] (T16): plays
+ * through a real output; prints `callbacks=<k> frames=<f>` from the output's
+ * stats. Exits 77 when the output reports no device. */
+int sel_cli_play(int argc, char** argv);
+
+/* Shared by render and play (session.c). */
+#include <selecta/engine.h>
+#include <selecta/output.h>
+
+typedef struct sel_cli_output {
+    sel_out_open_fn open;
+    sel_out_close_fn close;
+    sel_out_set_source_fn set_source;
+    sel_out_pump_fn pump;
+    sel_out_stats_fn stats; /* may be NULL */
+} sel_cli_output;
+
+uint32_t sel_cli_engine_pull(void* ctx, int16_t* stereo, uint32_t frames);
+/* Looks up output plugin `id`; prints a message prefixed with `who` and returns 0 on failure. */
+int sel_cli_find_output(const char* who, const char* id, sel_cli_output* o);
+/* Creates an engine, sets the mix, opens `song` and starts playing; NULL (message printed) on failure. */
+sel_engine* sel_cli_start_song(const char* who, const sel_host* host, const char* song, uint32_t rate,
+                               uint32_t resampler);
 #endif
