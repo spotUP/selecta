@@ -229,6 +229,14 @@ add_executable(view_test view/view_test.c)
 target_link_libraries(view_test PRIVATE selecta_core selecta_registry)
 add_test(NAME view-unit COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs")
 
+# T25: text UI cell grid, key parser, theme tokens and POSIX terminal device
+# (plugins/ui/text). Desktop only: the Amiga text UI runs in UP-Term in M2.
+if(NOT SEL_AMIGA)
+  add_executable(grid_test grid/grid_test.c)
+  target_link_libraries(grid_test PRIVATE selecta_textui)
+  add_test(NAME grid-unit COMMAND grid_test)
+endif()
+
 # T20: queue edits, ids, NEXT/PREV and auto-advance through the engine
 # dispatch. The script names songs relative to the generated songs directory.
 add_test(NAME queue-engine
