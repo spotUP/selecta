@@ -2,6 +2,7 @@
  * section 12). Subcommands exercise the core through the same calls a
  * front end makes. */
 #include <selecta/api.h>
+#include <selecta/engine.h>
 #include <selecta/protocol.h>
 #include <selecta/tags.h>
 
@@ -15,7 +16,9 @@ static int usage(FILE* to) {
           "  commands                   list command verbs and signatures\n"
           "  events                     list event verbs and signatures\n"
           "  tagtypes                   list metadata tags and their types\n"
-          "  roundtrip                  encode and decode every table row\n",
+          "  roundtrip                  encode and decode every table row\n"
+          "  commands --unimplemented   list verbs the engine answers not_implemented\n"
+          "  script <file>              feed command lines to the engine, print events\n",
           to);
     return to == stdout ? 0 : 2;
 }
@@ -25,10 +28,16 @@ static int cmd_version(void) {
     return 0;
 }
 
-static int cmd_commands(void) {
+static int cmd_commands(int unimplemented_only) {
     uint32_t i;
     for (i = 0; i < SEL_CMD_COUNT; i++) {
-        printf("%s %s\n", sel_cmd_name(i), sel_cmd_args(i));
+        if (unimplemented_only) {
+            if (!sel_engine_cmd_implemented(i)) {
+                printf("%s\n", sel_cmd_name(i));
+            }
+        } else {
+            printf("%s %s\n", sel_cmd_name(i), sel_cmd_args(i));
+        }
     }
     return 0;
 }
@@ -218,6 +227,60 @@ static int cmd_roundtrip(void) {
     return ok == SEL_CMD_COUNT + SEL_EVT_COUNT ? 0 : 1;
 }
 
+/* Prints one event as the wire line the codec produces. */
+static void print_event(void* ctx, const sel_message* evt) {
+    char line[1024];
+    (void)ctx;
+    if (sel_codec_encode(evt, line, sizeof line) < 0) {
+        fprintf(stderr, "selecta-cli: event %u does not encode\n", (unsigned)evt->id);
+        return;
+    }
+    printf("%s\n", line);
+}
+
+/* T3: every line of the file goes through codec, queue, dispatch and back
+ * out as events. One pump per line so the decode pool can be reused. */
+static int cmd_script(const char* path) {
+    char line[1024];
+    char pool[2048];
+    char verb[64];
+    FILE* f = fopen(path, "r");
+    sel_engine* e;
+    if (f == NULL) {
+        fprintf(stderr, "selecta-cli: cannot open %s\n", path);
+        return 1;
+    }
+    e = sel_engine_create(sel_host_default(), NULL);
+    if (e == NULL) {
+        fclose(f);
+        fprintf(stderr, "selecta-cli: engine allocation failed\n");
+        return 1;
+    }
+    while (fgets(line, sizeof line, f)) {
+        sel_message m;
+        int err;
+        line[strcspn(line, "\r\n")] = '\0';
+        if (line[0] == '\0' || line[0] == '#') {
+            continue;
+        }
+        err = sel_codec_decode(line, SEL_MSG_CMD, &m, pool, sizeof pool);
+        if (err == SEL_CODEC_OK) {
+            if (!sel_engine_send(e, &m)) {
+                sel_engine_report_error(e, "queue_full", NULL);
+            }
+        } else {
+            sel_codec_verb(line, verb, sizeof verb);
+            sel_engine_report_error(e, err == SEL_CODEC_E_UNKNOWN_VERB ? "unknown_command"
+                                                                      : sel_codec_strerror(err),
+                                    verb);
+        }
+        sel_engine_pump(e, print_event, NULL);
+    }
+    fclose(f);
+    sel_engine_destroy(e);
+    return 0;
+}
+
 int main(int argc, char** argv) {
     const char* cmd;
     if (argc < 2) {
@@ -231,7 +294,16 @@ int main(int argc, char** argv) {
         return usage(stdout);
     }
     if (strcmp(cmd, "commands") == 0) {
-        return cmd_commands();
+        if (argc > 2 && strcmp(argv[2], "--unimplemented") == 0) {
+            return cmd_commands(1);
+        }
+        return cmd_commands(0);
+    }
+    if (strcmp(cmd, "script") == 0) {
+        if (argc < 3) {
+            return usage(stderr);
+        }
+        return cmd_script(argv[2]);
     }
     if (strcmp(cmd, "events") == 0) {
         return cmd_events();

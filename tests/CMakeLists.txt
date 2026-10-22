@@ -34,3 +34,9 @@ sel_cli_test(m0-script "script ${CMAKE_CURRENT_SOURCE_DIR}/m0/basic.sel"
 # T4: the null output pulls the requested frames through the engine render.
 sel_cli_test(m0-null-output "play-null --rate 44100 --frames 4410"
   "-DEXPECT_REGEX=^pulled=4410 render_calls=[1-9][0-9]* rate=44100$")
+
+# T8: the ratchet of unimplemented verbs.
+add_test(NAME ratchet
+  COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}"
+    "-DRATCHET=${CMAKE_CURRENT_SOURCE_DIR}/ratchet/unimplemented.txt"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/ratchet.cmake")

@@ -126,9 +126,9 @@ Tests T1 to T9 are defined in the plan's finish-line table. A row is ticked only
 | I8 | [x] | 3 | src/protocol/codec.c encode/decode, tag-list argument codec | T1 green |
 | I9 | [x] | 3 | selecta-cli commands, events, tagtypes, roundtrip | T2 green |
 | I10 | [x] | 3 | T3 and T4 written and RED | ctest shows failures |
-| I11 | [ ] | 4 | engine.h and engine.c: state, SPSC queues, dispatch X-macro, implemented set, not_implemented path, BEGIN/END batch | T3 green |
-| I12 | [ ] | 4 | selecta-cli script; tests/m0/basic.sel and basic.expected | T3 green |
-| I13 | [ ] | 4 | selecta-cli commands --unimplemented; T8 written RED | ratchet list printed |
+| I11 | [x] | 4 | engine.h and engine.c: state, SPSC queues, dispatch X-macro, implemented set, not_implemented path, BEGIN/END batch | T3 green |
+| I12 | [x] | 4 | selecta-cli script; tests/m0/basic.sel and basic.expected | T3 green |
+| I13 | [x] | 4 | selecta-cli commands --unimplemented; T8 written RED | ratchet list printed |
 | I14 | [ ] | 5 | host.h sel_host struct; src/core mem.c log.c clock.c; selecta-cli abi | T6 goldens x86_64 and arm64 committed, green |
 | I15 | [ ] | 5 | plugin.h, output.h, registry.c, generated registry_list.c, tag lint, bad-plugin negative build | T5 green both ways |
 | I16 | [ ] | 5 | plugins/outputs/null/null.c; selecta-cli play-null | T4 green |
