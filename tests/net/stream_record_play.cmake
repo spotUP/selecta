@@ -1,4 +1,4 @@
-# I196b (F36): OPEN of an http stream with `OPTION record_to <file>` plays the audio AND writes the recorded file from
+# I196b (F36): OPEN of an http stream with `OPTION record_to <directory>` plays the audio AND writes the recorded file from
 # ONE HTTP request. slow_server.py logs one line per request in <port file>.requests; the script prints the record
 # sentinel (@stream_live record_taps) and the played audio. The file must be a non-empty prefix of what the server
 # sent, as long as the recorded byte count; the render must not be silent; exactly one request reached the server.
@@ -8,7 +8,7 @@ set(PERCENT 60)
 file(SIZE "${MP3}" one)
 math(EXPR total "${one} * ${REPEAT}")
 math(EXPR part "${total} * ${PERCENT} / 100")
-file(REMOVE "${WORK}/slow-port" "${WORK}/slow-port.requests" "${WORK}/recplay.mp3")
+file(REMOVE_RECURSE "${WORK}/slow-port" "${WORK}/slow-port.requests" "${WORK}/recplay.d")
 execute_process(COMMAND sh -c "python3 -I '${SLOW}' '${WORK}/slow-port' '${MP3}' ${REPEAT} ${PERCENT} 30 >/dev/null 2>&1 &")
 foreach(i RANGE 50)
   if(EXISTS "${WORK}/slow-port")
@@ -25,8 +25,8 @@ if(sp STREQUAL "")
 endif()
 set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
 set(ENV{SELECTA_NET_MAP} "slow.test=http://127.0.0.1:${sp}")
-# record_to is limited to 63 characters, so the script runs inside WORK and names the file relatively.
-file(WRITE "${WORK}/recplay.sel" "@dump ${WORK}/recplay.raw\nOPTION record_to recplay.mp3\nOPEN http://slow.test/long.mp3\nPLAY\n@render 22050\n@stream_live\nSTOP\n")
+# record_to is a DIRECTORY (I196c); the file in it is named after the URL ("long.mp3"), the stream has no ICY titles.
+file(WRITE "${WORK}/recplay.sel" "@dump ${WORK}/recplay.raw\nOPTION record_to recplay.d\nOPEN http://slow.test/long.mp3\nPLAY\n@render 22050\n@stream_live\nSTOP\n")
 execute_process(COMMAND "${CLI}" script "${WORK}/recplay.sel" WORKING_DIRECTORY "${WORK}" OUTPUT_VARIABLE o
   ERROR_VARIABLE e RESULT_VARIABLE rc TIMEOUT 25)
 if(NOT rc EQUAL 0 OR o MATCHES "ERROR" OR e MATCHES "ERROR")
@@ -41,12 +41,12 @@ list(LENGTH hits nreq)
 if(NOT nreq EQUAL 1)
   message(FATAL_ERROR "I196b: the server saw ${nreq} requests, want 1 (play and record share one)")
 endif()
-file(SIZE "${WORK}/recplay.mp3" sz)
+file(SIZE "${WORK}/recplay.d/long.mp3" sz)
 if(sz LESS 1 OR sz GREATER part)
   message(FATAL_ERROR "I196b: recorded file is ${sz} bytes (server sent ${part})")
 endif()
 execute_process(COMMAND sh -c "i=0; while [ $i -lt ${REPEAT} ]; do cat '${MP3}'; i=$((i+1)); done | head -c ${sz} > '${WORK}/recplay-expected.bin'")
-execute_process(COMMAND cmp "${WORK}/recplay.mp3" "${WORK}/recplay-expected.bin" RESULT_VARIABLE cmp)
+execute_process(COMMAND cmp "${WORK}/recplay.d/long.mp3" "${WORK}/recplay-expected.bin" RESULT_VARIABLE cmp)
 if(NOT cmp EQUAL 0)
   message(FATAL_ERROR "I196b: recorded file differs from the served prefix")
 endif()

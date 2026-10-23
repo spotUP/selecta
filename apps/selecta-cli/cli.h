@@ -91,6 +91,8 @@ sel_engine* sel_cli_start_song(const char* who, const sel_host* host, const char
 void sel_cli_set_rp_config(const char* global, const char* song);
 /* Loudness of the next started song (I189): the mix.loudness mode (NULL: the pref), a library --db (NULL: throwaway),
  * and optionally a stored gain in centi-dB for the song. */
+/* `play --record <dir>`: the next session start sends OPTION record_to <dir> before OPEN (I196c). NULL clears. */
+void sel_cli_set_record_dir(const char* dir);
 void sel_cli_set_loudness(const char* mode, const char* db, int have_gain, int32_t gain_cdb);
 /* As sel_cli_start_song, with `sink` (may be NULL) as the voice backend of the replayer (plan M2 I118). */
 sel_engine* sel_cli_start_song_sink(const char* who, const sel_host* host, const char* song, uint32_t rate,

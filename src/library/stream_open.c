@@ -3,6 +3,7 @@
 
 #include "net/http.h"
 #include "net/net.h"
+#include "record_name.h"
 
 #include <selecta/tags.h>
 
@@ -137,7 +138,7 @@ uint32_t sel_stream_reads(void) {
 }
 
 /* ---- Live streams (I195b, see stream_open.h) ---- */
-static uint32_t g_live_opens, g_audio_bytes, g_audio_done, g_received, g_record_taps, g_recorded;
+static uint32_t g_live_opens, g_audio_bytes, g_audio_done, g_received, g_record_taps, g_recorded, g_record_files;
 
 #if defined(__amigaos__) || defined(AMIGA)
 /* No download thread on the Amiga until bsdsocket arrives with I199: OPEN keeps reading the whole file. */
@@ -180,6 +181,21 @@ sel_live* sel_live_open_record(const sel_host* host, const char* url, const vola
     (void)limit;
     return NULL;
 }
+sel_live* sel_live_open_record_dir(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start,
+                                   const char* dir) {
+    (void)host;
+    (void)url;
+    (void)gen;
+    (void)start;
+    (void)dir;
+    return NULL;
+}
+int sel_live_title(const sel_live* s, char* dst, size_t cap) {
+    (void)s;
+    (void)dst;
+    (void)cap;
+    return 0;
+}
 unsigned long sel_live_recorded(const sel_live* s) {
     (void)s;
     return 0;
@@ -220,6 +236,18 @@ struct sel_live {
     unsigned long received;
     FILE* rec;                      /* record sink (F36); written by the download thread only */
     unsigned long rec_limit, rec_written;
+    char rec_dir[512];              /* I196c: directory mode, one file per OPEN and per song; empty in file mode */
+    char rec_path[1100];            /* the file being written (directory mode) */
+    char rec_ext[8], rec_fallback[64];
+    int rec_id3;                    /* the file starts with a SEL_RECORD_ID3_SIZE tag block (ICY stream, mp3) */
+    int rec_first_pending;          /* the first file still carries the fallback name: the first title renames it */
+    /* ICY in-band metadata (I196a): every icy_metaint audio bytes one length byte (x16) and that many bytes follow. */
+    unsigned icy_metaint, icy_left, icy_phase, icy_need, icy_have;
+    int icy_started;
+    char icy_meta[16u * 255u + 1u];
+    char cur_title[256];            /* download thread's copy of the last StreamTitle */
+    volatile unsigned title_seq;    /* odd while title is being written */
+    char title[256];                /* last StreamTitle for the engine (sel_live_title); seqlock title_seq */
     volatile unsigned rec_count;    /* rec_written for other threads */
     const volatile unsigned* gen;   /* the engine's cancel generation, for the pump-side waits */
     unsigned gen_start;
@@ -239,12 +267,86 @@ static int cancelled(const sel_live* s) {
     return ld(&s->stop) != 0u || (s->gen != NULL && *s->gen != s->gen_start);
 }
 
-static int ring_sink(void* ctx, const void* data, size_t len) {
-    sel_live* s = (sel_live*)ctx;
-    const uint8_t* p = (const uint8_t*)data;
-    if (s->res != NULL && (s->res->status < 200 || s->res->status >= 300)) {
-        return 0; /* I195e: an error page never reaches the ring or the record file; the request ends as sink_aborted */
+/* Starts a recording file in directory mode. `title` names it (NULL: the stream's fallback name). Closes the
+ * previous one. On failure recording stops quietly; playback goes on. */
+static void rec_open_segment(sel_live* s, const char* title) {
+    char path[sizeof s->rec_path];
+    FILE* f;
+    if (!sel_record_name(path, sizeof path, s->rec_dir, title, s->rec_fallback, s->rec_ext)) {
+        return;
     }
+    f = fopen(path, "wb");
+    if (f == NULL) {
+        return;
+    }
+    if (s->rec != NULL) {
+        fclose(s->rec);
+    }
+    s->rec = f;
+    memcpy(s->rec_path, path, sizeof path);
+    s->rec_id3 = s->icy_metaint != 0u && strcmp(s->rec_ext, "mp3") == 0;
+    if (s->rec_id3) {
+        uint8_t tag[SEL_RECORD_ID3_SIZE];
+        sel_record_id3(tag, title);
+        fwrite(tag, 1, sizeof tag, f);
+    }
+    g_record_files++;
+}
+
+/* A new StreamTitle arrived in the metadata block (download thread). */
+static void on_title(sel_live* s, const char* title) {
+    if (s->rec_dir[0] != '\0' && s->rec != NULL) {
+        if (s->rec_first_pending) {
+            /* The first title names the file that already holds the song's start: rename it, write the tag. */
+            char path[sizeof s->rec_path];
+            s->rec_first_pending = 0;
+            if (sel_record_name(path, sizeof path, s->rec_dir, title, s->rec_fallback, s->rec_ext) &&
+                rename(s->rec_path, path) == 0) {
+                memcpy(s->rec_path, path, sizeof path);
+            }
+            if (s->rec_id3) {
+                uint8_t tag[SEL_RECORD_ID3_SIZE];
+                sel_record_id3(tag, title);
+                if (fseek(s->rec, 0, SEEK_SET) == 0) {
+                    fwrite(tag, 1, sizeof tag, s->rec);
+                }
+                fseek(s->rec, 0, SEEK_END);
+            }
+        } else {
+            rec_open_segment(s, title); /* a new song: a new file */
+        }
+    }
+    st_store(&s->title_seq, s->title_seq + 1u);
+    snprintf(s->title, sizeof s->title, "%s", title);
+    st_store(&s->title_seq, s->title_seq + 1u);
+}
+
+static void icy_block_done(sel_live* s) {
+    const char* at;
+    const char* end;
+    char title[sizeof s->cur_title];
+    size_t n;
+    s->icy_meta[s->icy_need] = '\0';
+    at = strstr(s->icy_meta, "StreamTitle='");
+    if (at == NULL) {
+        return;
+    }
+    at += 13;
+    end = strstr(at, "';");
+    n = end != NULL ? (size_t)(end - at) : strlen(at);
+    if (n >= sizeof title) {
+        n = sizeof title - 1u;
+    }
+    memcpy(title, at, n);
+    title[n] = '\0';
+    if (title[0] != '\0' && strcmp(title, s->cur_title) != 0) {
+        memcpy(s->cur_title, title, n + 1u);
+        on_title(s, title);
+    }
+}
+
+/* Audio bytes (no metadata) to the record file and the ring. 0: the download must end. */
+static int feed_audio(sel_live* s, const uint8_t* p, size_t len) {
     if (s->rec != NULL) {
         size_t n = len;
         if (s->rec_limit != 0 && n > s->rec_limit - s->rec_written) {
@@ -280,6 +382,88 @@ static int ring_sink(void* ctx, const void* data, size_t len) {
     return 1;
 }
 
+/* First body byte: learn icy-metaint, and in directory mode open the first file. */
+static void sink_start(sel_live* s) {
+    s->icy_started = 1;
+    if (s->res != NULL) {
+        s->icy_metaint = s->res->icy_metaint;
+        s->icy_left = s->icy_metaint;
+    }
+    if (s->rec_dir[0] != '\0') {
+        char buf[8];
+        const char* base = strrchr(s->url, '/');
+        size_t n;
+        snprintf(s->rec_ext, sizeof s->rec_ext, "%s",
+                 sel_record_ext(s->res != NULL ? s->res->content_type : NULL, s->url, buf, sizeof buf));
+        base = base != NULL && base[1] != '\0' && base[1] != '?' ? base + 1 : "stream";
+        n = strcspn(base, ".?#"); /* the URL's file name without extension names the file until a title arrives */
+        if (n >= sizeof s->rec_fallback) {
+            n = sizeof s->rec_fallback - 1u;
+        }
+        memcpy(s->rec_fallback, base, n);
+        s->rec_fallback[n] = '\0';
+        s->rec_first_pending = 1;
+        rec_open_segment(s, NULL);
+    }
+}
+
+static int ring_sink(void* ctx, const void* data, size_t len) {
+    sel_live* s = (sel_live*)ctx;
+    const uint8_t* p = (const uint8_t*)data;
+    if (s->res != NULL && (s->res->status < 200 || s->res->status >= 300)) {
+        return 0; /* I195e: an error page never reaches the ring or the record file; the request ends as sink_aborted */
+    }
+    if (!s->icy_started) {
+        sink_start(s);
+    }
+    if (s->icy_metaint == 0u) {
+        return feed_audio(s, p, len);
+    }
+    while (len > 0) {
+        size_t n;
+        if (s->icy_phase == 0u) {
+            n = len < s->icy_left ? len : s->icy_left;
+            if (n > 0 && !feed_audio(s, p, n)) {
+                return 0;
+            }
+            p += n;
+            len -= n;
+            s->icy_left -= (unsigned)n;
+            if (s->icy_left == 0u) {
+                s->icy_phase = 1u;
+            }
+        } else if (s->icy_phase == 1u) {
+            s->icy_need = (unsigned)p[0] * 16u;
+            s->icy_have = 0;
+            p++;
+            len--;
+            if (s->icy_need == 0u) {
+                s->icy_phase = 0u;
+                s->icy_left = s->icy_metaint;
+            } else {
+                s->icy_phase = 2u;
+            }
+        } else {
+            n = s->icy_need - s->icy_have;
+            if (n > len) {
+                n = len;
+            }
+            memcpy(s->icy_meta + s->icy_have, p, n);
+            s->icy_have += (unsigned)n;
+            p += n;
+            len -= n;
+            if (s->icy_have == s->icy_need) {
+                icy_block_done(s);
+                s->icy_phase = 0u;
+                s->icy_left = s->icy_metaint;
+            }
+        }
+    }
+    return 1;
+}
+
+static const char* const icy_headers[] = {"Icy-MetaData: 1", NULL}; /* radio servers answer with icy-metaint (I196a) */
+
 static void* download(void* arg) {
     sel_live* s = (sel_live*)arg;
     sel_http_req req;
@@ -289,6 +473,7 @@ static void* download(void* arg) {
     memset(&req, 0, sizeof req);
     memset(&res, 0, sizeof res);
     req.url = s->url;
+    req.headers = icy_headers;
     req.total_ms = SEL_STREAM_FOREVER;
     s->res = &res;
     ok = sel_http_request(&req, ring_sink, s, &res) == SEL_HTTP_OK && res.status >= 200 && res.status < 300;
@@ -340,7 +525,7 @@ static int view_ended(void* ctx) {
 }
 
 static sel_live* live_open(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start,
-                           const char* rec_path, unsigned long rec_limit) {
+                           const char* rec_path, unsigned long rec_limit, const char* rec_dir) {
     sel_live* s = (sel_live*)host->mem_alloc(host, sizeof *s, SEL_MEM_FAST);
     size_t n = strlen(url) + 1u;
     if (s == NULL) {
@@ -357,6 +542,13 @@ static sel_live* live_open(const sel_host* host, const char* url, const volatile
         return NULL;
     }
     memcpy(s->url, url, n);
+    if (rec_dir != NULL) {
+        if (strlen(rec_dir) >= sizeof s->rec_dir) {
+            sel_live_close(s);
+            return NULL;
+        }
+        memcpy(s->rec_dir, rec_dir, strlen(rec_dir) + 1u); /* the file is created by the first body byte */
+    }
     if (rec_path != NULL) {
         s->rec = fopen(rec_path, "wb"); /* before the thread starts, so no early byte is missed */
         s->rec_limit = rec_limit;
@@ -379,12 +571,28 @@ static sel_live* live_open(const sel_host* host, const char* url, const volatile
 }
 
 sel_live* sel_live_open(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start) {
-    return live_open(host, url, gen, start, NULL, 0);
+    return live_open(host, url, gen, start, NULL, 0, NULL);
 }
 
 sel_live* sel_live_open_record(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start,
                                const char* path, unsigned long limit) {
-    return live_open(host, url, gen, start, path, limit);
+    return live_open(host, url, gen, start, path, limit, NULL);
+}
+
+sel_live* sel_live_open_record_dir(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start,
+                                   const char* dir) {
+    return live_open(host, url, gen, start, NULL, 0, dir);
+}
+
+int sel_live_title(const sel_live* s, char* dst, size_t cap) {
+    unsigned a, b;
+    int tries = 0;
+    do {
+        a = ld(&s->title_seq);
+        snprintf(dst, cap, "%s", s->title);
+        b = ld(&s->title_seq);
+    } while ((a != b || (a & 1u) != 0u) && ++tries < 100);
+    return dst[0] != '\0';
 }
 
 int sel_live_head(sel_live* s, uint8_t* dst, size_t want, size_t* n) {
@@ -487,6 +695,9 @@ uint32_t sel_stream_audio_done(void) {
 }
 uint32_t sel_stream_recorded_total(void) {
     return g_recorded;
+}
+uint32_t sel_stream_record_files(void) {
+    return g_record_files;
 }
 uint32_t sel_stream_record_taps(void) {
     return g_record_taps;

@@ -42,7 +42,7 @@ typedef enum sel_option_id {
         SEL_OPTION_COUNT
 } sel_option_id;
 
-#define SEL_OPTION_VALUE_MAX 64
+#define SEL_OPTION_VALUE_MAX 256
 #define SEL_OUTPUT_NAME_MAX 32
 
 /* One play-queue entry. The path is `queue_text + path_offset` of the snapshot. */

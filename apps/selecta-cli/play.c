@@ -1,4 +1,4 @@
-/* play <song> --output <id> --seconds <n> [--rate <hz>] [--resample <name>]
+/* play <song> --output <id> --seconds <n> [--rate <hz>] [--record <dir>]
  * (T16): drives a real output (coreaudio) from the engine. The output owns
  * the clock; OUT_PUMP blocks until the requested frames have been played.
  * Prints `callbacks=K frames=F` from the output's own stats. Exit 77 when the
@@ -29,6 +29,7 @@ int sel_cli_play(int argc, char** argv) {
     sel_engine* e;
     void* out;
     const char* id = NULL;
+    const char* record = NULL;
     unsigned long rate = 44100, seconds = 10;
     uint32_t resampler = 1; /* linear */
     uint32_t total, played = 0, callbacks = 0, frames = 0;
@@ -44,6 +45,8 @@ int sel_cli_play(int argc, char** argv) {
             id = argv[i + 1];
         } else if (strcmp(argv[i], "--seconds") == 0) {
             seconds = strtoul(argv[i + 1], NULL, 10);
+        } else if (strcmp(argv[i], "--record") == 0) {
+            record = argv[i + 1]; /* I196c: OPTION record_to <dir> before OPEN */
         } else if (strcmp(argv[i], "--rate") == 0) {
             rate = strtoul(argv[i + 1], NULL, 10);
         } else {
@@ -60,6 +63,7 @@ int sel_cli_play(int argc, char** argv) {
     if (!sel_cli_find_output("play", id, &o) || o.stats == NULL) {
         return 1;
     }
+    sel_cli_set_record_dir(record);
     e = sel_cli_start_song("play", host, argv[0], (uint32_t)rate, resampler);
     if (e == NULL) {
         return 1;
