@@ -1228,6 +1228,12 @@ if(NOT SEL_AMIGA)
             "-DSONGS=${PROJECT_SOURCE_DIR}/tests/m3/genre" -P "${SEL_NET_DIR}/rate_devilbox.cmake")
   set_tests_properties(rate-devilbox PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "rate_devilbox_ok")
+
+  # T80 (row I174): VOTE posts /api/hip/vote with the I139 parameters, reads /api/hip/votes. Own fixture server and log.
+  add_test(NAME vote-devilbox
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/vote-net" "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3"
+            "-DSONGS=${PROJECT_SOURCE_DIR}/tests/m3/genre" -P "${SEL_NET_DIR}/vote_devilbox.cmake")
+  set_tests_properties(vote-devilbox PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "vote_devilbox_ok")
 endif()
 
 # T95 (row I177): SCROBBLE_DUE from the engine, the last.fm scrobbler plugin, its signed POST and the offline queue.

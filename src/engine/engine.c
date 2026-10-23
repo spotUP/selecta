@@ -34,6 +34,7 @@
 #include "prefs.h"
 #include "view.h"
 #include "db.h"
+#include "xxh32.h"
 #include "cache.h"
 #include "share.h"
 #if !defined(SEL_NO_ANALYSE)
@@ -118,7 +119,7 @@
     X(LIBRARY_SYNC)                                                                           \
     X(LIKE)                                                                                   \
     X(FLAG)                                                                                   \
-    X(RATE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
+    X(RATE) X(VOTE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
     X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
@@ -2946,6 +2947,86 @@ static void cmd_RATE(sel_engine* e, const sel_message* m) {
     }
 }
 
+/* The device token of the vote service: 128 random bits as 32 hex digits, made once and kept in the pref
+ * library.vote_token. The system random source where there is one; elsewhere (Amiga) clock, address and time mix
+ * through xxh32, which is enough for a rate-limit identity that guards nothing. */
+static void vote_token_make(char out[33]) {
+    static const char hex[] = "0123456789abcdef";
+    unsigned char raw[16];
+    unsigned i;
+    int got = 0;
+#if !defined(__amigaos__) && !defined(AMIGA)
+    FILE* f = fopen("/dev/urandom", "rb");
+
+    if (f != NULL) {
+        got = fread(raw, 1, sizeof raw, f) == sizeof raw;
+        fclose(f);
+    }
+#endif
+    if (!got) {
+        uint32_t seed[4];
+
+        seed[0] = (uint32_t)time(NULL);
+        seed[1] = (uint32_t)clock();
+        seed[2] = (uint32_t)(uintptr_t)out;
+        seed[3] = (uint32_t)(uintptr_t)&seed;
+        for (i = 0; i < 4; i++) {
+            uint32_t h = sel_xxh32(seed, sizeof seed, i + 1u);
+
+            raw[i * 4u] = (unsigned char)(h >> 24);
+            raw[i * 4u + 1u] = (unsigned char)(h >> 16);
+            raw[i * 4u + 2u] = (unsigned char)(h >> 8);
+            raw[i * 4u + 3u] = (unsigned char)h;
+        }
+    }
+    for (i = 0; i < sizeof raw; i++) {
+        out[i * 2u] = hex[raw[i] >> 4];
+        out[i * 2u + 1u] = hex[raw[i] & 15u];
+    }
+    out[32] = '\0';
+}
+
+/* VOTE [0|5] (I174, design doc section 17 "Remote": DEViLBOX votes): votes for (5), withdraws the vote on (0), or with
+ * no argument reads the votes of the song being played, through the HippoPlayer service. The song is named by its
+ * UADE key (xxh32 of the file, xxh32.h). The request is queued on the library job thread; the answer is read with
+ * sel_library_vote_result (script directive @votes). The user's own choice is kept locally as the sticker "vote",
+ * so a missing or unreachable service loses nothing. */
+static void cmd_VOTE(sel_engine* e, const sel_message* m) {
+    const char* arg = m->argc > 0 ? m->args[0].v.s : NULL;
+    const sel_slot* cur = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
+    char mkey[SEL_UADE_KEY_CHARS + 1u];
+    int r = -1;
+
+    if (arg != NULL && strcmp(arg, "5") == 0) {
+        r = 5;
+    } else if (arg != NULL && strcmp(arg, "0") == 0) {
+        r = 0;
+    } else if (arg != NULL) {
+        sel_engine_report_error(e, "range", "VOTE");
+        return;
+    }
+    if (e->lib == NULL) {
+        sel_engine_report_error(e, "no_library", "VOTE");
+    } else if (cur == NULL || cur->path[0] == '\0' || e->hist_key[0] == '\0') {
+        sel_engine_report_error(e, "no_song", "VOTE");
+    } else if (!sel_uade_key_file(cur->path, mkey)) {
+        sel_engine_report_error(e, "unreadable", "VOTE");
+    } else {
+        if (strlen(e->prefs.value[SEL_PREF_LIBRARY_VOTE_TOKEN]) != 32u) {
+            char fresh[33];
+
+            vote_token_make(fresh);
+            if (sel_prefs_set(&e->prefs, "library.vote_token", fresh) != 0) {
+                sel_engine_report_error(e, "library_failed", "VOTE");
+                return;
+            }
+            if (e->config_dir[0] != '\0') (void)sel_prefs_save(&e->prefs, e->config_dir);
+        }
+        if (r >= 0) (void)sel_library_sticker_set(e->lib, e->hist_key, "vote", r == 5 ? "5" : "0");
+        sel_library_vote(e->lib, e->prefs.value[SEL_PREF_LIBRARY_VOTE_TOKEN], mkey, r);
+    }
+}
+
 /* Position of the open song in ms, the same figure SEEK +n / -n counts from. */
 static uint32_t position_ms(const sel_engine* e) {
     const sel_slot* cur = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
@@ -4194,6 +4275,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->radio_appends = e->radio_appends;
     out->rating_pushes = sel_devilbox_pushes();
     out->rating_batches = sel_devilbox_batches();
+    out->vote_posts = sel_devilbox_vote_posts();
     out->rating_pending = 0;
     if (e->lib != NULL) {
         char none[4];

@@ -1,6 +1,8 @@
 /* xxHash32 (public algorithm by Yann Collet, BSD-2); see xxh32.h. */
 #include "xxh32.h"
 
+#include <stdio.h>
+
 #define P1 2654435761u
 #define P2 2246822519u
 #define P3 3266489917u
@@ -69,4 +71,28 @@ void sel_uade_key(const void* head, size_t head_len, uint64_t total_len, char ou
         out[8 + i] = hex[(l >> (12u - 4u * i)) & 15u];
     }
     out[12] = '\0';
+}
+
+long sel_file_head(const char* path, void* buf, size_t cap, size_t* got) {
+    FILE* f = fopen(path, "rb");
+    long size;
+
+    if (f == NULL) return -1;
+    if (fseek(f, 0, SEEK_END) != 0 || (size = ftell(f)) < 0 || fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        return -1;
+    }
+    *got = fread(buf, 1, cap, f);
+    fclose(f);
+    return size;
+}
+
+int sel_uade_key_file(const char* path, char out[SEL_UADE_KEY_CHARS + 1u]) {
+    static unsigned char head[SEL_UADE_KEY_HASH_BYTES]; /* the engine command thread is the only caller */
+    size_t got = 0;
+    long size = sel_file_head(path, head, sizeof head, &got);
+
+    if (size < 0) return 0;
+    sel_uade_key(head, got, (uint64_t)size, out);
+    return 1;
 }

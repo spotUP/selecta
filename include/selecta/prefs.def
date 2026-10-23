@@ -38,5 +38,7 @@ SEL_PREF(LIBRARY_SMART,      "library.smart_downloads", "off",                  
 #else
 SEL_PREF(LIBRARY_SMART,      "library.smart_downloads", "on",                                     SEL_PREF_PLAIN)
 #endif
+/* HippoPlayer vote service (I174): this install's random 128-bit device token (32 hex digits), made on the first VOTE */
+SEL_PREF(LIBRARY_VOTE_TOKEN, "library.vote_token", "",                                            SEL_PREF_PLAIN)
 SEL_PREF(LIBRARY_SMART_VIEW, "library.smart_playlist", "smart",                                   SEL_PREF_PLAIN)
 SEL_PREF(LIBRARY_SMART_TOP,  "library.smart_top",  "3",                                           SEL_PREF_PLAIN)

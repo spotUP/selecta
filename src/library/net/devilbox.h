@@ -39,7 +39,18 @@ typedef void (*sel_devilbox_rating_fn)(void* ctx, unsigned index, int rating);
 unsigned sel_devilbox_ratings_read(const char* source, const char* const* paths, unsigned n, sel_devilbox_rating_fn fn,
                                    void* ctx);
 
+/* HippoPlayer vote service (I174): GET /api/hip/vote?k=<token>&m=<key>&r=<0|5> casts or withdraws a vote, r < 0 reads
+ * GET /api/hip/votes?m=<key>&k=<token>. The answer is text/plain "<count> <yours>\n". token = 32 hex digits (the
+ * device token), mkey = 12 hex digits (sel_uade_key). Needs no account. */
+#define SEL_VOTE_OK 1       /* answered; *count and *yours are set */
+#define SEL_VOTE_RETRY 0    /* unreachable, 5xx or an unparsable answer */
+#define SEL_VOTE_BAD (-1)   /* "ERR bad" (400), or a token or key that is not hex */
+#define SEL_VOTE_RATE (-2)  /* "ERR rate" (429): the service limits this token */
+#define SEL_VOTE_MISSING (-3) /* 404: the server has no vote endpoint (devilbox_missing=hip_vote) */
+int sel_devilbox_vote(const char* token, const char* mkey, int r, unsigned* count, unsigned* yours);
+
 /* Counters since the process started. */
+unsigned sel_devilbox_vote_posts(void); /* votes the service accepted (r >= 0) */
 unsigned sel_devilbox_pushes(void);  /* rating pushes the server accepted */
 unsigned sel_devilbox_batches(void); /* batch read requests sent */
 

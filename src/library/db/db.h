@@ -344,6 +344,23 @@ void sel_library_prefetch_stop(sel_library* lib);
  * runs inline. _wait returns once the thread is idle (test hook, T79); _stop is called by sel_library_close. */
 void sel_library_rating_push(sel_library* lib);
 void sel_library_rating_wait(sel_library* lib);
+
+/* I174: VOTE. Queues one HippoPlayer vote request on the library job thread (the one behind ratings and prefetch);
+ * the engine command thread never waits on the network. `token` is the device token (32 hex), `mkey` the song's UADE
+ * key (12 hex), r = 5 vote, 0 withdraw, -1 read only. A newer request replaces one still queued. Without threads the
+ * request runs inline. sel_library_rating_wait also drains it (test hook). */
+void sel_library_vote(sel_library* lib, const char* token, const char* mkey, int r);
+
+/* The outcome of the last vote request: status is a SEL_VOTE_* value (net/devilbox.h), `done` 0 before any request. */
+typedef struct sel_vote_result {
+    unsigned done;
+    int status;
+    unsigned count, yours;
+    char mkey[13];
+} sel_vote_result;
+void sel_library_vote_result(sel_library* lib, sel_vote_result* out);
+/* "ok", "rate", "bad", "missing" or "down" for a SEL_VOTE_* status. */
+const char* sel_vote_status_name(int status);
 int sel_library_cache_stats(const sel_library* lib, struct sel_cache_stats* out);
 /* Prints `cache_hits= fetches= companions= md5_mismatches= mirror_tries=` when a fetch was served. */
 void sel_library_cache_report(const sel_library* lib);

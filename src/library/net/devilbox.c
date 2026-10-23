@@ -27,6 +27,7 @@ static char g_dir[256];
 #endif
 static unsigned g_pushes;
 static unsigned g_batches;
+static unsigned g_vote_posts;
 
 typedef struct text_buf {
     char* text;
@@ -314,4 +315,52 @@ unsigned sel_devilbox_pushes(void) {
 
 unsigned sel_devilbox_batches(void) {
     return COUNT_GET(&g_batches);
+}
+
+static int is_hex(const char* s, size_t n) {
+    size_t i;
+
+    if (strlen(s) != n) return 0;
+    for (i = 0; i < n; i++) {
+        if (!((s[i] >= '0' && s[i] <= '9') || (s[i] >= 'a' && s[i] <= 'f'))) return 0;
+    }
+    return 1;
+}
+
+int sel_devilbox_vote(const char* token, const char* mkey, int r, unsigned* count, unsigned* yours) {
+    char url[SEL_MIRROR_URL_MAX + 128];
+    char reply[64];
+    text_buf b;
+    sel_http_req req;
+    sel_http_res res;
+    unsigned c = 0, y = 0;
+
+    if (token == NULL || mkey == NULL || !is_hex(token, 32) || !is_hex(mkey, 12) || (r > 0 && r != 5)) {
+        return SEL_VOTE_BAD;
+    }
+    if (r >= 0) {
+        snprintf(url, sizeof url, "%s/api/hip/vote?k=%s&m=%s&r=%d", sel_devilbox_base(), token, mkey, r);
+    } else {
+        snprintf(url, sizeof url, "%s/api/hip/votes?m=%s&k=%s", sel_devilbox_base(), mkey, token);
+    }
+    memset(&req, 0, sizeof req);
+    memset(&res, 0, sizeof res);
+    b.text = reply;
+    b.cap = sizeof reply;
+    b.len = 0;
+    reply[0] = '\0';
+    req.url = url;
+    (void)sel_http_request(&req, text_sink, &b, &res);
+    if (res.status == 400) return SEL_VOTE_BAD;
+    if (res.status == 429) return SEL_VOTE_RATE;
+    if (res.status == 404) return SEL_VOTE_MISSING;
+    if (res.status != 200 || sscanf(reply, "%u %u", &c, &y) != 2) return SEL_VOTE_RETRY;
+    if (count != NULL) *count = c;
+    if (yours != NULL) *yours = y;
+    if (r >= 0) COUNT_ADD(&g_vote_posts);
+    return SEL_VOTE_OK;
+}
+
+unsigned sel_devilbox_vote_posts(void) {
+    return COUNT_GET(&g_vote_posts);
 }

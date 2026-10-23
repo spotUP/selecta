@@ -298,6 +298,7 @@ typedef struct sel_engine_stats {
     uint32_t radio_min_ahead;     /* fewest songs queued after the playing one after a radio top-up, 0xFFFFFFFF before RADIO (I186) */
     uint32_t rating_pushes;       /* ratings DEViLBOX accepted (PUT or DELETE) since the process started (I173 sentinel) */
     uint32_t rating_batches;      /* rating batch read requests sent (I173 sentinel) */
+    uint32_t vote_posts;          /* votes the HippoPlayer service accepted since the process started (I174, T80 sentinel) */
     uint32_t rating_pending;      /* ratings in the library not yet on DEViLBOX (I173) */
     uint32_t library_searches;    /* queries sent to the library worker (T64) */
     uint32_t library_fts_queries; /* of those, queries the FTS5 index served (T64) */
