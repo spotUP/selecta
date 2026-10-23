@@ -712,6 +712,9 @@ if(NOT SEL_AMIGA)
   if(SEL_M2_VAMOS)
     set_tests_properties(mixer-led-stereo-vamos PROPERTIES WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
   endif()
+  # I129 the LED filter and stereo width commands reach the stages (desktop; the 68k render is T53).
+  sel_m2_test(stage-commands stage_commands desktop "-DMKMOD=${SEL_MKMOD}"
+    "-DSCRIPT=${SEL_M2}/stage_commands.sel")
   # T55 Amiga text UI under vamos with scripted stdin.
   if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
     add_test(NAME amiga-text-ui-vamos

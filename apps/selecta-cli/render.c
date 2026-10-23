@@ -275,7 +275,7 @@ int sel_cli_render(int argc, char** argv) {
         printf("seek_path=%s skipped_frames=%u\n", stats.seek_path == 1u ? "native" : "skip",
                (unsigned)stats.seek_skipped_frames);
     }
-    if (stage_flag) {
+    if (stage_flag || stats.led_on || stats.width_percent != 100u) {
         printf("led=%s led_frames=%u led_cutoff_hz=%u\n", stats.led_on ? "on" : "off", (unsigned)stats.led_frames,
                (unsigned)stats.led_cutoff_hz);
         printf("width=%u width_frames=%u width_mono=%u\n", (unsigned)stats.width_percent, (unsigned)stats.width_frames,

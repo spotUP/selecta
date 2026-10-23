@@ -87,6 +87,10 @@ SEL_CMD(VIEW_COLLAPSE, "u", "view")
 SEL_CMD(VIEW_DRILL, "us", "view")
 SEL_CMD(UI_SWITCH, "s", "view")
 
+/* mixer stages: LED filter on|off|toggle, stereo width 0..100 (+n and -n are relative) */
+SEL_CMD(FILTER_LED, "s", "view")
+SEL_CMD(MIX_STEREO_WIDTH, "i", "view")
+
 /* dsp (palette area: view, the only settings-like group) */
 SEL_CMD(DSP, "ss", "view")
 

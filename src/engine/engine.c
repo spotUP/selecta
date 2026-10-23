@@ -37,6 +37,7 @@
 #include "thread.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* The verbs with real behaviour in M0a. Adding a row here is how a later
@@ -44,6 +45,8 @@
 #define SEL_CMD_IMPLEMENTED(X)                                                                \
     X(PREF_GET)                                                                               \
     X(PREF_SET)                                                                               \
+    X(FILTER_LED)                                                                             \
+    X(MIX_STEREO_WIDTH)                                                                       \
     X(DSP)                                                                                    \
     X(PLAY)                                                                                   \
     X(PAUSE)                                                                                  \
@@ -832,6 +835,51 @@ static const sel_tag* find_dsp(const sel_engine* e, const char* id) {
         }
     }
     return NULL;
+}
+
+/* Applies the LED and width state to the stage, the snapshot and the prefs. The pref is what
+ * prefs.conf keeps, so the next start comes up the same (apply_stage_prefs). */
+static void stage_changed(sel_engine* e, int pref_id) {
+    emit_pref(e, pref_id);
+    if (e->config_dir[0] != '\0' && !sel_prefs_save(&e->prefs, e->config_dir)) {
+        sel_engine_report_error(e, "prefs_save_failed", e->config_dir);
+    }
+}
+
+static void cmd_FILTER_LED(sel_engine* e, const sel_message* m) {
+    const char* mode = m->args[0].v.s;
+    uint32_t on;
+    if (strcmp(mode, "on") == 0) {
+        on = 1;
+    } else if (strcmp(mode, "off") == 0) {
+        on = 0;
+    } else if (strcmp(mode, "toggle") == 0) {
+        on = !e->state.led_on;
+    } else {
+        sel_engine_report_error(e, "argument_type", "FILTER_LED");
+        return;
+    }
+    e->state.led_on = on;
+    sel_engine_set_stage(e, on, e->state.stereo_width);
+    (void)sel_prefs_set(&e->prefs, "output.led", on ? "on" : "off");
+    stage_changed(e, SEL_PREF_OUTPUT_LED);
+}
+
+static void cmd_MIX_STEREO_WIDTH(sel_engine* e, const sel_message* m) {
+    const sel_arg* a = &m->args[0];
+    int32_t v = (a->flags & SEL_ARG_RELATIVE) ? (int32_t)e->state.stereo_width + a->v.i : a->v.i;
+    char text[16];
+    if (v < 0) {
+        v = 0;
+    }
+    if (v > 100) {
+        v = 100;
+    }
+    e->state.stereo_width = (uint32_t)v;
+    sel_engine_set_stage(e, e->state.led_on, (uint32_t)v);
+    snprintf(text, sizeof text, "%d", (int)v);
+    (void)sel_prefs_set(&e->prefs, "mix.stereo_width", text);
+    stage_changed(e, SEL_PREF_MIX_STEREO_WIDTH);
 }
 
 /* DSP <name> on|off. The chain only exists on the mixed path: a Paula-direct
@@ -2432,6 +2480,12 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         strcpy(e->config_dir, cfg->config_dir);
         (void)sel_prefs_load(&e->prefs, e->config_dir);
     }
+    e->state.led_on = strcmp(e->prefs.value[SEL_PREF_OUTPUT_LED], "on") == 0;
+    e->state.stereo_width = (uint32_t)strtoul(e->prefs.value[SEL_PREF_MIX_STEREO_WIDTH], NULL, 10);
+    if (e->state.stereo_width > 100u) {
+        e->state.stereo_width = 100u;
+    }
+    sel_engine_set_stage(e, e->state.led_on, e->state.stereo_width);
     copy_str(e->state.output, SEL_OUTPUT_NAME_MAX, "null");
     e->cur = SEL_SLOT_NONE;
     e->audio_slot = SEL_SLOT_NONE;
