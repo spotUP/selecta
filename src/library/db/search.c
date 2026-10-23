@@ -131,7 +131,12 @@ static void collect_meta(sel_library* lib, sel_lib_job* job) {
     if (job->meta == NULL || job->meta_cap == 0) {
         return;
     }
-    if (sqlite3_prepare_v2(lib->db, "SELECT name, artist, format, duration_ms FROM songs WHERE key = ?1", -1, &st, NULL) != SQLITE_OK) {
+    if (sqlite3_prepare_v2(lib->db,
+                           lib->has_index
+                               ? "SELECT name, artist, format, duration_ms FROM songs WHERE key = ?1"
+                                 " UNION ALL SELECT name, artist, format, duration_ms FROM idx.songs WHERE key = ?1"
+                               : "SELECT name, artist, format, duration_ms FROM songs WHERE key = ?1",
+                           -1, &st, NULL) != SQLITE_OK) {
         st = NULL;
     }
     for (i = 0; i < job->count; i++) {
@@ -177,7 +182,7 @@ static void collect_meta(sel_library* lib, sel_lib_job* job) {
 
 void sel_library_search(sel_library* lib, sel_lib_job* job) {
     sqlite3_stmt* st = NULL;
-    char sql[SEL_QUERY_SQL_MAX + 40];
+    char sql[2 * SEL_QUERY_SQL_MAX + 120]; /* the query once per schema when an index is attached */
     char match[SEL_QUERY_TEXT_MAX * 2];
     unsigned i;
 
@@ -200,8 +205,13 @@ void sel_library_search(sel_library* lib, sel_lib_job* job) {
         }
         match[o] = '\0';
         if (sqlite3_prepare_v2(lib->db,
-                               "SELECT songs.key FROM song_fts JOIN songs ON songs.id = song_fts.rowid"
-                               " WHERE song_fts MATCH ?1 ORDER BY songs.key",
+                               lib->has_index
+                                   ? "SELECT key FROM (SELECT songs.key AS key FROM song_fts JOIN songs ON songs.id = song_fts.rowid"
+                                     " WHERE song_fts MATCH ?1 UNION ALL SELECT s.key FROM idx.song_fts"
+                                     " JOIN idx.songs AS s ON s.id = song_fts.rowid WHERE song_fts MATCH ?1)"
+                                     " ORDER BY key"
+                                   : "SELECT songs.key FROM song_fts JOIN songs ON songs.id = song_fts.rowid"
+                                     " WHERE song_fts MATCH ?1 ORDER BY songs.key",
                                -1, &st, NULL) != SQLITE_OK) {
             set_error(job, "bad_value");
             return;
@@ -214,7 +224,16 @@ void sel_library_search(sel_library* lib, sel_lib_job* job) {
             set_error(job, lib->query.error);
             return;
         }
-        sqlite3_snprintf((int)sizeof sql, sql, "%s ORDER BY songs.key", lib->query.sql);
+        if (lib->has_index) {
+            /* The same query once more over the index: only the FROM table changes (the user tables a query
+             * joins stay unqualified and resolve to the main DB first). Each copy has its own `?` numbers. */
+            const char* where = strstr(lib->query.sql, " WHERE ");
+            sqlite3_snprintf((int)sizeof sql, sql,
+                             "SELECT key FROM (%s UNION ALL SELECT songs.key FROM idx.songs AS songs%s) ORDER BY key",
+                             lib->query.sql, where != NULL ? where : "");
+        } else {
+            sqlite3_snprintf((int)sizeof sql, sql, "%s ORDER BY songs.key", lib->query.sql);
+        }
         if (sqlite3_prepare_v2(lib->db, sql, -1, &st, NULL) != SQLITE_OK) {
             set_error(job, "bad_value");
             return;
@@ -225,6 +244,13 @@ void sel_library_search(sel_library* lib, sel_lib_job* job) {
                 sqlite3_bind_int64(st, (int)i + 1, p->i);
             } else {
                 sqlite3_bind_text(st, (int)i + 1, p->s, -1, SQLITE_STATIC);
+            }
+            if (lib->has_index) {
+                if (p->is_int) {
+                    sqlite3_bind_int64(st, (int)(lib->query.nparams + i) + 1, p->i);
+                } else {
+                    sqlite3_bind_text(st, (int)(lib->query.nparams + i) + 1, p->s, -1, SQLITE_STATIC);
+                }
             }
         }
     }

@@ -815,6 +815,10 @@ if(NOT SEL_AMIGA)
   # T57 library browse under vamos, T58 ToolTypes = CLI.
   sel_m2_test(amiga-library-browse browse vamos)
   sel_m2_test(amiga-tooltypes-cli tooltypes vamos)
+  # T96 library search and stats over a prebuilt read-only index plus a user DB, 68020/2 MB tier, I197.
+  find_program(SEL_AMIGA_SIZE m68k-amigaos-size HINTS "$ENV{HOME}/opt/amiga/bin" /opt/amiga/bin)
+  sel_m2_test(amiga-library library_vamos vamos "-DSRC_DIR=${CMAKE_CURRENT_SOURCE_DIR}/m3"
+    "-DAMIGA_SIZE=${SEL_AMIGA_SIZE}" "-DAMIGA_BUILD_DIR=${PROJECT_SOURCE_DIR}/build/amiga")
   # I114 SPSC queue: 1000 messages through a wrapping queue, head/tail published inside the pal guard.
   foreach(mode desktop vamos)
     sel_m2_test(spsc-queue run ${mode} -DTAG=I114 "-DARGS1=spsc-selftest"
@@ -931,6 +935,14 @@ if(NOT SEL_AMIGA)
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/search.golden
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
   set_tests_properties(library-search PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_searches=9")
+
+  # T96 desktop half: export-index plus read-only ATTACH next to a user DB (I197, D-M3-16).
+  add_test(NAME library-index-attach
+    COMMAND sh m3/index_attach.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/search.golden
+            ${CMAKE_CURRENT_BINARY_DIR}/m3-index-attach
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+  set_tests_properties(library-index-attach PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "index_checks=13")
 
   add_test(NAME play-query
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/play_query.sh $<TARGET_FILE:selecta-cli>

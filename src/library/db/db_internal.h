@@ -19,6 +19,7 @@ struct sel_library {
     const sel_host* host;
     uint32_t account;
     sqlite3* db;
+    int has_index;     /* a read-only index is attached as schema idx (index.c) */
     sel_spsc requests; /* caller -> worker */
     sel_spsc results;  /* worker -> caller */
     uint32_t served;   /* requests handled; written by the worker only */
@@ -126,3 +127,6 @@ void sel_fetch_job_run(sel_library* lib);     /* job_lock held on entry and exit
 void sel_rating_job_run(sel_library* lib);    /* sends every pending rating (no lock held) */
 
 #endif
+
+/* amiga_vfs.c: registers the AmigaDOS-path VFS as default (68k only; no-op on desktop). */
+void sel_library_vfs_init(void);
