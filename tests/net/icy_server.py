@@ -4,7 +4,8 @@ Every request is logged in <portfile>.requests as "icy=1|0" (was `Icy-MetaData: 
 chunk 8 -> 'Artist - Second Song', chunk 12 -> the same title again (no new song), every other chunk -> an empty block
 (length byte 0). 21 chunks, then the connection closes. A client that did not send the header gets the plain audio.
 The audio the decoder and the recorder must see (metadata removed) is written to <portfile>.all, and split at the
-title change to <portfile>.seg1 (chunks 1-8) and <portfile>.seg2 (chunks 9-21)."""
+title change to <portfile>.seg1 and <portfile>.seg2. The title changes after chunk 8 (audio byte 4096), mid-frame; the
+recorder cuts at the first MPEG frame start at or after it (I196d), so seg1 ends and seg2 starts on a whole frame."""
 import socket
 import sys
 import threading
@@ -16,7 +17,31 @@ with open(path, "rb") as f:
     one = f.read()
 audio = (one * (CHUNK * COUNT // len(one) + 1))[: CHUNK * COUNT]
 TITLES = {1: "Artist - First Song", 8: "Artist - Second Song", 12: "Artist - Second Song"}
-for name, data in ((".all", audio), (".seg1", audio[: 8 * CHUNK]), (".seg2", audio[8 * CHUNK:])):
+
+
+def frame_len(h):
+    """Length of the MPEG 1 Layer III frame whose header is h, 0 if h is none (the fixture is MPEG 1 Layer III)."""
+    kbps = (0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320)
+    if len(h) < 4 or h[0] != 0xFF or (h[1] & 0xFE) != 0xFA:
+        return 0
+    idx, rate, pad = h[2] >> 4, (h[2] >> 2) & 3, (h[2] >> 1) & 1
+    if idx in (0, 15) or rate == 3:
+        return 0
+    return 144 * kbps[idx] * 1000 // (44100, 48000, 32000)[rate] + pad
+
+
+def frame_cut(data, at):
+    """The first frame start at or after `at`, walking frames from the start as the recorder does."""
+    i = 0
+    while i < len(data):
+        if i >= at and frame_len(data[i:i + 4]):
+            return i
+        i += frame_len(data[i:i + 4]) or 1
+    return len(data)
+
+
+CUT = frame_cut(audio, 8 * CHUNK)
+for name, data in ((".all", audio), (".seg1", audio[:CUT]), (".seg2", audio[CUT:])):
     with open(port_file + name, "wb") as f:
         f.write(data)
 

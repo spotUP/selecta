@@ -122,3 +122,138 @@ void sel_record_id3(uint8_t* dst, const char* title) {
     dst[20] = 0;
     memcpy(dst + 21, title, len);
 }
+
+/* Length of the MPEG audio frame (Layer I, II or III; MPEG 1, 2 or 2.5) whose header is at h, 0 if h is no frame
+ * header. Free-format frames (bitrate index 0) carry no length and count as no header. The minimp3 plugin has its
+ * own Layer III-only copy (plugins build against the SDK alone). */
+static uint32_t mpeg_frame(const uint8_t* h) {
+    static const uint16_t kbps[5][15] = {
+        {0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448}, /* MPEG 1 Layer I */
+        {0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384},    /* MPEG 1 Layer II */
+        {0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320},     /* MPEG 1 Layer III */
+        {0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256},    /* MPEG 2 / 2.5 Layer I */
+        {0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160},         /* MPEG 2 / 2.5 Layer II, III */
+    };
+    static const uint32_t hz[3] = {44100u, 48000u, 32000u};
+    unsigned ver = (h[1] >> 3) & 3u, layer = (h[1] >> 1) & 3u, idx = (unsigned)(h[2] >> 4), rate = (h[2] >> 2) & 3u;
+    unsigned pad = (h[2] >> 1) & 1u, row;
+    uint32_t br, sr;
+    if (h[0] != 0xFFu || (h[1] & 0xE0u) != 0xE0u || ver == 1u || layer == 0u || idx == 0u || idx == 15u ||
+        rate == 3u) {
+        return 0;
+    }
+    row = ver == 3u ? 3u - layer : (layer == 3u ? 3u : 4u);
+    br = kbps[row][idx] * 1000u;
+    sr = hz[rate] >> (ver == 3u ? 0 : (ver == 2u ? 1 : 2));
+    if (layer == 3u) {
+        return (12u * br / sr + pad) * 4u;
+    }
+    return (layer == 1u && ver != 3u ? 72u : 144u) * br / sr + pad;
+}
+
+/* The frame starting with the held bytes: its length, 0 while more header bytes are needed, -1 if none starts. */
+static long cut_check(const sel_record_cut* c) {
+    if (c->kind == 1) {
+        return c->held < 4u ? 0 : (mpeg_frame(c->hold) != 0u ? (long)mpeg_frame(c->hold) : -1);
+    }
+    if (c->held < 4u) {
+        return 0;
+    }
+    if (memcmp(c->hold, "OggS", 4) != 0 || (c->held >= 5u && c->hold[4] != 0u)) {
+        return -1;
+    }
+    if (c->held < 27u || c->held < 27u + c->hold[26]) {
+        return 0;
+    }
+    {
+        long n = 27 + c->hold[26];
+        unsigned i;
+        for (i = 0; i < c->hold[26]; i++) {
+            n += c->hold[27u + i];
+        }
+        return n;
+    }
+}
+
+static uint32_t cut_need(const sel_record_cut* c) {
+    if (c->kind == 1) {
+        return 4u;
+    }
+    return c->held < 27u ? 27u : 27u + c->hold[26];
+}
+
+/* A frame (or, out of sync too long, any byte) starts: is it the split asked for? */
+static int cut_take(sel_record_cut* c) {
+    if (c->split == 1) {
+        c->split = 0;
+        return 1;
+    }
+    if (c->split == 2) {
+        c->split = 1;
+    }
+    return 0;
+}
+
+void sel_record_cut_init(sel_record_cut* c, const char* ext) {
+    memset(c, 0, sizeof *c);
+    if (strcmp(ext, "mp3") == 0 || strcmp(ext, "mp2") == 0 || strcmp(ext, "mpga") == 0) {
+        c->kind = 1;
+    } else if (strcmp(ext, "ogg") == 0 || strcmp(ext, "oga") == 0 || strcmp(ext, "opus") == 0) {
+        c->kind = 2;
+    }
+}
+
+void sel_record_cut_request(sel_record_cut* c) {
+    /* Held header bytes belong to a frame that started before the request: the split waits for the one after. */
+    c->split = c->kind != 0 && c->held > 0u ? 2 : 1;
+}
+
+void sel_record_cut_feed(sel_record_cut* c, const uint8_t* p, size_t len, sel_record_cut_out out, void* ctx) {
+    while (len > 0) {
+        size_t n;
+        long frame;
+        if (c->kind == 0) {
+            out(ctx, p, len, cut_take(c));
+            return;
+        }
+        if (c->left > 0u) {
+            n = len < c->left ? len : c->left;
+            out(ctx, p, n, 0);
+            c->left -= (uint32_t)n;
+            p += n;
+            len -= n;
+            continue;
+        }
+        n = cut_need(c) - c->held;
+        if (n > len) {
+            n = len;
+        }
+        if (c->held < 4u && n > 4u - c->held) {
+            n = 4u - c->held; /* check the sync bytes before taking a whole Ogg header */
+        }
+        memcpy(c->hold + c->held, p, n);
+        c->held += (uint32_t)n;
+        p += n;
+        len -= n;
+        while (c->held > 0u && (frame = cut_check(c)) != 0) {
+            if (frame > 0) {
+                out(ctx, c->hold, c->held, cut_take(c));
+                c->left = (uint32_t)frame - c->held;
+                c->held = 0;
+                c->lost = 0;
+            } else {
+                /* Not a frame start: pass one byte on and look again one byte later. */
+                out(ctx, c->hold, 1, c->lost >= SEL_RECORD_CUT_GIVE_UP ? cut_take(c) : 0);
+                c->lost++;
+                memmove(c->hold, c->hold + 1, --c->held);
+            }
+        }
+    }
+}
+
+void sel_record_cut_flush(sel_record_cut* c, sel_record_cut_out out, void* ctx) {
+    if (c->held > 0u) {
+        out(ctx, c->hold, c->held, 0);
+        c->held = 0;
+    }
+}

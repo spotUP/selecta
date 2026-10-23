@@ -1301,6 +1301,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(lyrics_unit_test PRIVATE selecta_library)
   add_test(NAME lrc-unit COMMAND lyrics_unit_test)
   set_tests_properties(lrc-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "lyrics_unit_ok")
+  # I196d: the recording split walker cuts at MP3 frame and Ogg page starts.
+  add_executable(record_cut_unit_test record_cut_unit_test.c)
+  target_include_directories(record_cut_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(record_cut_unit_test PRIVATE selecta_library)
+  add_test(NAME record-cut COMMAND record_cut_unit_test)
+  set_tests_properties(record-cut PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "record_cut_unit_ok")
   add_test(NAME lyrics
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3"
             -P "${SEL_NET_DIR}/lyrics.cmake")

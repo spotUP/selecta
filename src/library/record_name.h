@@ -23,4 +23,30 @@ const char* sel_record_ext(const char* content_type, const char* url, char* buf,
 /* Fills dst[SEL_RECORD_ID3_SIZE] with the tag block for `title` (NULL or empty: an empty tag). */
 void sel_record_id3(uint8_t* dst, const char* title);
 
+/* I196d: a recording that splits per song (ICY title change) cuts between two MP3 frames or two Ogg pages, never
+ * inside one. The walker follows the frame (page) lengths of the bytes it is fed and holds back the header bytes of
+ * the next frame until they are known to start one. Other formats, and a stream that stays out of sync for
+ * SEL_RECORD_CUT_GIVE_UP bytes, split at the next byte. */
+#define SEL_RECORD_CUT_HOLD 282u      /* the largest Ogg page header: 27 bytes and 255 lacing values */
+#define SEL_RECORD_CUT_GIVE_UP 65536u
+typedef struct sel_record_cut {
+    int kind;        /* 0: cut anywhere, 1: MPEG audio frames, 2: Ogg pages */
+    int split;       /* 0: none asked, 1: at the next frame start, 2: at the frame start after the held one */
+    uint32_t left;   /* bytes of the current frame still to pass */
+    uint32_t held;   /* header bytes held back */
+    uint32_t lost;   /* bytes passed out of sync since the last frame */
+    uint8_t hold[SEL_RECORD_CUT_HOLD];
+} sel_record_cut;
+
+/* Receives the bytes in stream order. `split` = 1: the new recording starts with these bytes. */
+typedef void (*sel_record_cut_out)(void* ctx, const uint8_t* p, size_t n, int split);
+
+/* `ext` is the recording's extension ("mp3", "ogg", ...). */
+void sel_record_cut_init(sel_record_cut* c, const char* ext);
+/* Asks for a split at the first frame that starts at or after the bytes fed so far. */
+void sel_record_cut_request(sel_record_cut* c);
+void sel_record_cut_feed(sel_record_cut* c, const uint8_t* p, size_t len, sel_record_cut_out out, void* ctx);
+/* Passes on the held bytes (end of stream). */
+void sel_record_cut_flush(sel_record_cut* c, sel_record_cut_out out, void* ctx);
+
 #endif

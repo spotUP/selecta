@@ -1,11 +1,12 @@
-# I196a + I196c: ICY streams and directory recording, driven through selecta-cli (script and play).
+# I196a + I196c + I196d: ICY streams and directory recording, driven through selecta-cli (script and play).
 # icy_server.py honours `Icy-MetaData: 1`: icy-metaint 512, StreamTitle "Artist - First Song" at chunk 1 and
 # "Artist - Second Song" at chunk 8 (repeated at chunk 12, which must NOT split), empty blocks elsewhere, 21 chunks.
 # Checks:
 #  1. the request carried Icy-MetaData: 1;
 #  2. OPTION record_to <directory longer than 63 characters> writes exactly two files named by the titles, the first
-#     with the audio of chunks 1-8, the second with chunks 9-21 (byte-compare after the 512-byte ID3 block, so no
-#     metadata byte reached the file), each tag holding its title (TIT2);
+#     with the audio up to the first MPEG frame start at or after the title change (byte 4096, mid-frame), the
+#     second with the rest (byte-compare after the 512-byte ID3 block, so no metadata byte reached the file), each
+#     tag holding its title (TIT2), each audio body starting with a frame sync (I196d: no cut mid-frame);
 #  3. @title shows the ICY title; the decoder swallowed no metadata (the render is not silent);
 #  4. a second OPEN writes "(2)" files instead of overwriting;
 #  5. `play --record <dir>` (macOS, needs an output device) writes the same two files.
@@ -68,6 +69,9 @@ function(check_file file seg title)
   string(SUBSTRING "${fh}" 1024 -1 body)
   if(NOT tag MATCHES "^494433" OR NOT tag MATCHES "54495432" OR NOT tag MATCHES "${th}")
     message(FATAL_ERROR "I196c: ${file} has no ID3 TIT2 tag for '${title}'")
+  endif()
+  if(NOT body MATCHES "^fff")
+    message(FATAL_ERROR "I196d: ${file} audio does not start with an MPEG frame sync")
   endif()
   if(NOT body STREQUAL sh)
     string(LENGTH "${body}" bl)

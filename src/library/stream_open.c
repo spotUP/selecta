@@ -241,6 +241,8 @@ struct sel_live {
     char rec_ext[8], rec_fallback[64];
     int rec_id3;                    /* the file starts with a SEL_RECORD_ID3_SIZE tag block (ICY stream, mp3) */
     int rec_first_pending;          /* the first file still carries the fallback name: the first title renames it */
+    sel_record_cut cut;             /* I196d: directory mode splits at the next MP3 frame or Ogg page start */
+    char split_title[256];          /* names the file the pending split opens */
     /* ICY in-band metadata (I196a): every icy_metaint audio bytes one length byte (x16) and that many bytes follow. */
     unsigned icy_metaint, icy_left, icy_phase, icy_need, icy_have;
     int icy_started;
@@ -313,7 +315,9 @@ static void on_title(sel_live* s, const char* title) {
                 fseek(s->rec, 0, SEEK_END);
             }
         } else {
-            rec_open_segment(s, title); /* a new song: a new file */
+            /* A new song: a new file, opened where the next frame starts so both files decode whole. */
+            snprintf(s->split_title, sizeof s->split_title, "%s", title);
+            sel_record_cut_request(&s->cut);
         }
     }
     st_store(&s->title_seq, s->title_seq + 1u);
@@ -345,18 +349,38 @@ static void icy_block_done(sel_live* s) {
     }
 }
 
+static void rec_write(sel_live* s, const uint8_t* p, size_t len) {
+    size_t n = len;
+    if (s->rec == NULL) {
+        return;
+    }
+    if (s->rec_limit != 0 && n > s->rec_limit - s->rec_written) {
+        n = (size_t)(s->rec_limit - s->rec_written);
+    }
+    if (n > 0 && fwrite(p, 1, n, s->rec) == n) {
+        s->rec_written += n;
+        g_record_taps++;
+        st_store(&s->rec_count, (unsigned)s->rec_written);
+    }
+}
+
+/* sel_record_cut_out: directory mode's bytes, `split` set on the first byte of the next song's file. */
+static void rec_emit(void* ctx, const uint8_t* p, size_t n, int split) {
+    sel_live* s = ctx;
+    if (split) {
+        rec_open_segment(s, s->split_title);
+    }
+    rec_write(s, p, n);
+}
+
 /* Audio bytes (no metadata) to the record file and the ring. 0: the download must end. */
 static int feed_audio(sel_live* s, const uint8_t* p, size_t len) {
-    if (s->rec != NULL) {
-        size_t n = len;
-        if (s->rec_limit != 0 && n > s->rec_limit - s->rec_written) {
-            n = (size_t)(s->rec_limit - s->rec_written);
+    if (s->rec_dir[0] != '\0') {
+        if (s->rec != NULL) {
+            sel_record_cut_feed(&s->cut, p, len, rec_emit, s);
         }
-        if (n > 0 && fwrite(p, 1, n, s->rec) == n) {
-            s->rec_written += n;
-            g_record_taps++;
-            st_store(&s->rec_count, (unsigned)s->rec_written);
-        }
+    } else {
+        rec_write(s, p, len);
     }
     while (len > 0) {
         unsigned w = ld(&s->wr), space = SEL_STREAM_RING - (w - ld(&s->rd));
@@ -403,6 +427,7 @@ static void sink_start(sel_live* s) {
         memcpy(s->rec_fallback, base, n);
         s->rec_fallback[n] = '\0';
         s->rec_first_pending = 1;
+        sel_record_cut_init(&s->cut, s->rec_ext);
         rec_open_segment(s, NULL);
     }
 }
@@ -669,6 +694,9 @@ void sel_live_close(sel_live* s) {
         pthread_join(s->thread, NULL);
     }
     if (s->rec != NULL) {
+        if (s->rec_dir[0] != '\0') {
+            sel_record_cut_flush(&s->cut, rec_emit, s); /* header bytes held back at the stream's end */
+        }
         g_recorded = (uint32_t)s->rec_written;
         fclose(s->rec);
         s->rec = NULL;
