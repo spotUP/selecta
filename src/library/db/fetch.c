@@ -187,7 +187,15 @@ void sel_library_prefetch_cancel(sel_library* lib) {
 }
 
 void sel_library_prefetch_wait(sel_library* lib) {
-    sel_job_wait(lib);
+    /* Only the fetch jobs: a rating, vote or lyrics push stuck on the network must not hold the caller (the script
+     * end waits here before close, and close bounds a stuck push, I173f). */
+    if (lib != NULL && lib->job_started) {
+        pthread_mutex_lock(&lib->job_lock);
+        while (sel_fetch_job_pending(lib) || lib->pf_busy) {
+            pthread_cond_wait(&lib->job_wake, &lib->job_lock);
+        }
+        pthread_mutex_unlock(&lib->job_lock);
+    }
 }
 
 void sel_library_prefetch_stop(sel_library* lib) {

@@ -717,7 +717,7 @@ static int cmd_script_file(FILE* f, int argc, char** argv) {
             continue;
         }
         if (strcmp(line, "@prefetch_wait") == 0) {
-            sel_library_prefetch_wait(lib); /* test hook: the prefetch thread is idle after this */
+            sel_library_prefetch_wait(lib); /* test hook: no prefetch or smart download runs after this */
             continue;
         }
 #ifndef __amigaos__
@@ -810,7 +810,7 @@ static int cmd_script_file(FILE* f, int argc, char** argv) {
     }
     fclose(f);
     if (lib != NULL) {
-        sel_library_prefetch_wait(lib); /* the job thread is idle, so the counters below are final (I170a) */
+        sel_library_prefetch_wait(lib); /* no fetch job runs, so the cache counters below are final (I170a) */
     }
     sel_library_cache_report(lib);
     sel_int_session_close(g_int);
