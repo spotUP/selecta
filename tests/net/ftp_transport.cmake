@@ -19,7 +19,7 @@ function(run prefix)
   execute_process(COMMAND "${CLI}" fetch ${ARGN} OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
   set(${prefix}_rc "${rc}" PARENT_SCOPE)
   set(${prefix}_raw "${o}${e}" PARENT_SCOPE)
-  foreach(k http_error ftp_retr ftp_size ftp_passive body_bytes net_blocked)
+  foreach(k ftp_error ftp_retr ftp_size ftp_passive body_bytes net_blocked)
     if(o MATCHES "(^|\n)${k}=([^\n]*)")
       set(${prefix}_${k} "${CMAKE_MATCH_2}" PARENT_SCOPE)
     else()
@@ -36,7 +36,7 @@ endfunction()
 
 run(ok ftp://ftp.modland.com/${file_name} --out "${out}")
 expect("exit code" "${ok_rc}" 0)
-expect("error" "${ok_http_error}" none)
+expect("error" "${ok_ftp_error}" ok)
 expect("ftp_retr" "${ok_ftp_retr}" 1)
 expect("passive" "${ok_ftp_passive}" 1)
 expect("SIZE matches the file" "${ok_ftp_size}" "${want_size}")
@@ -46,7 +46,7 @@ expect("body sha256" "${got_sha}" "${want_sha}")
 
 # A missing file is a clean failure with no RETR counted as success.
 run(miss ftp://ftp.modland.com/pub/modules/none.xm)
-expect("missing file error" "${miss_http_error}" ftp_no_such_file)
+expect("missing file error" "${miss_ftp_error}" no_such_file)
 expect("missing file retr" "${miss_ftp_retr}" 0)
 
 # The server saw the command sequence of D-M3-5: USER anonymous, TYPE I, SIZE, PASV, RETR.

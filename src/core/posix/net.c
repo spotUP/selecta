@@ -42,6 +42,64 @@ const char* sel_net_ca_file(void) {
     return p != NULL && p[0] != '\0' ? p : NULL;
 }
 
+/* Reads everything the command or file yields into a malloc'd NUL-terminated buffer. */
+static char* slurp(FILE* f, size_t* len) {
+    size_t cap = 1u << 16, n = 0, got;
+    char* buf = malloc(cap);
+    while (buf != NULL && (got = fread(buf + n, 1, cap - n - 1, f)) > 0) {
+        char* grown;
+        n += got;
+        if (cap - n < 2) {
+            cap *= 2;
+            grown = realloc(buf, cap);
+            if (grown == NULL) {
+                free(buf);
+                return NULL;
+            }
+            buf = grown;
+        }
+    }
+    if (buf != NULL) {
+        buf[n] = '\0';
+        *len = n;
+    }
+    return buf;
+}
+
+char* sel_net_os_ca_bundle(size_t* len) {
+    char* out = NULL;
+    *len = 0;
+#ifdef __APPLE__
+    {
+        FILE* p = popen("/usr/bin/security find-certificate -a -p "
+                        "/System/Library/Keychains/SystemRootCertificates.keychain "
+                        "/Library/Keychains/System.keychain 2>/dev/null", "r");
+        if (p != NULL) {
+            out = slurp(p, len);
+            pclose(p);
+        }
+    }
+#else
+    {
+        static const char* const files[] = {"/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt",
+                                            "/etc/ssl/cert.pem", NULL};
+        int i;
+        for (i = 0; files[i] != NULL && out == NULL; i++) {
+            FILE* f = fopen(files[i], "rb");
+            if (f != NULL) {
+                out = slurp(f, len);
+                fclose(f);
+            }
+        }
+    }
+#endif
+    if (out != NULL && *len == 0) {
+        free(out);
+        out = NULL;
+    }
+    return out;
+}
+
 void sel_net_stats_get(sel_net_stats* out) {
     *out = g_stats;
 }

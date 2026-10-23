@@ -4,6 +4,7 @@
 #include "http.h"
 
 #include "net.h"
+#include "tls.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -148,7 +149,7 @@ static int recv_dl(int h, void* buf, size_t cap, const clock_state* c, unsigned 
         *err = SEL_HTTP_E_TOTAL_TIMEOUT;
         return -1;
     }
-    n = sel_net_recv(h, buf, cap, wait);
+    n = sel_stream_recv(h, buf, cap, wait);
     if (n == SEL_NET_E_TIMEOUT) {
         *err = is_first ? SEL_HTTP_E_FIRST_BYTE_TIMEOUT : SEL_HTTP_E_TOTAL_TIMEOUT;
         return -1;
@@ -392,6 +393,8 @@ const char* sel_http_err_name(sel_http_err e) {
     case SEL_HTTP_E_IO: return "io_error";
     case SEL_HTTP_E_PROTOCOL: return "protocol_error";
     case SEL_HTTP_E_TLS_UNAVAILABLE: return "tls_unavailable";
+    case SEL_HTTP_E_TLS_VERIFY: return "tls_verify_failed";
+    case SEL_HTTP_E_TLS_HANDSHAKE: return "tls_handshake_failed";
     case SEL_HTTP_E_TOO_MANY_REDIRECTS: return "too_many_redirects";
     case SEL_HTTP_E_SINK: return "sink_aborted";
     }
@@ -422,25 +425,34 @@ static sel_http_err exchange(const sel_http_req* req, const char* method, const 
     if (rem == 0) {
         return SEL_HTTP_E_TOTAL_TIMEOUT;
     }
-    if (u->tls) {
-        return SEL_HTTP_E_TLS_UNAVAILABLE;
-    }
     h = sel_net_open(u->host, u->port, conn_ms < rem ? conn_ms : rem);
     if (h < 0) {
         return h == SEL_NET_E_TIMEOUT ? SEL_HTTP_E_CONNECT_TIMEOUT : map_net(h, 0);
     }
+    if (u->tls) {
+        int t = sel_tls_open(h, u->host, remaining(clk));
+        if (t != SEL_TLS_OK) {
+            sel_stream_close(h);
+            switch (t) {
+            case SEL_TLS_E_UNAVAILABLE: return SEL_HTTP_E_TLS_UNAVAILABLE;
+            case SEL_TLS_E_VERIFY: return SEL_HTTP_E_TLS_VERIFY;
+            case SEL_TLS_E_TIMEOUT: return SEL_HTTP_E_TOTAL_TIMEOUT;
+            default: return SEL_HTTP_E_TLS_HANDSHAKE;
+            }
+        }
+    }
     res->requests++;
     rq = build_request(hdr, sizeof hdr, req, method, u, with_body);
     if (rq < 0) {
-        sel_net_close(h);
+        sel_stream_close(h);
         return SEL_HTTP_E_URL;
     }
-    n = sel_net_send(h, hdr, (size_t)rq, remaining(clk));
+    n = sel_stream_send(h, hdr, (size_t)rq, remaining(clk));
     if (n == 0 && with_body && req->body_len > 0) {
-        n = sel_net_send(h, req->body, req->body_len, remaining(clk));
+        n = sel_stream_send(h, req->body, req->body_len, remaining(clk));
     }
     if (n != 0) {
-        sel_net_close(h);
+        sel_stream_close(h);
         return n == SEL_NET_E_TIMEOUT ? SEL_HTTP_E_TOTAL_TIMEOUT : SEL_HTTP_E_IO;
     }
     /* Read until the blank line that ends the head. */
@@ -519,7 +531,7 @@ static sel_http_err exchange(const sel_http_req* req, const char* method, const 
         }
     }
 done:
-    sel_net_close(h);
+    sel_stream_close(h);
     res->body_bytes = b.bytes;
     return err;
 }

@@ -9,7 +9,7 @@
  *   SELECTA_NET_MAP     <host>=http://<addr>:<port>[,...]; connects to <host> are
  *                       redirected to <addr>:<port>. The caller keeps sending the
  *                       original name in the Host header.
- *   SELECTA_CA_FILE     TLS trust anchor path (consumed by TLS, row I154).
+ *   SELECTA_CA_FILE     TLS trust anchor path (consumed by tls.c, row I154).
  */
 #ifndef SELECTA_LIBRARY_NET_NET_H
 #define SELECTA_LIBRARY_NET_NET_H
@@ -48,6 +48,10 @@ void sel_net_stats_get(sel_net_stats* out);
 unsigned long sel_net_now_ms(void);
 /* SELECTA_CA_FILE or NULL. */
 const char* sel_net_ca_file(void);
+/* The OS trust store as one malloc'd, NUL-terminated PEM text (macOS: Keychain export through
+ * `security`, Linux: the distribution bundle), or NULL when none is found or the OS has none
+ * (the Amiga). The caller frees it. *len is the text length without the NUL. */
+char* sel_net_os_ca_bundle(size_t* len);
 
 /* Pure helpers shared by both back ends (src/library/net/netpolicy.c). */
 /* 1 when host is allowed by the allow list (list NULL or empty allows all). */

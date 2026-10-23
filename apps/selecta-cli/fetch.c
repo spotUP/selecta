@@ -1,9 +1,11 @@
-/* `selecta-cli fetch <url>` (T67, T68): one HTTP request through the library's HTTP
+/* `selecta-cli fetch <url>` (T67, T68): one HTTP or passive FTP request through the library's HTTP
  * client and socket table, the same path the sources take. Prints counters as
  * `name=value` lines; exit 0 when a response arrived, 1 on a client error, 2 on usage. */
 #include "cli.h"
+#include "net/ftp.h"
 #include "net/http.h"
 #include "net/net.h"
+#include "net/tls.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -111,6 +113,19 @@ int sel_cli_fetch(int argc, char** argv) {
             return 2;
         }
     }
+    if (strncmp(req.url, "ftp://", 6) == 0) {
+        sel_ftp_res fr;
+        sel_ftp_err fe = sel_ftp_get(req.url, req.total_ms, on_body, &sink, &fr);
+        if (sink.out != NULL) {
+            fclose(sink.out);
+        }
+        free(body);
+        sel_net_stats_get(&ns);
+        printf("ftp_error=%s\nftp_retr=%u\nftp_size=%ld\nftp_passive=%u\nbody_bytes=%lu\nelapsed_ms=%lu\n"
+               "net_blocked=%u\nnet_mapped=%u\n",
+               sel_ftp_err_name(fe), fr.retr, fr.size, fr.passive, fr.body_bytes, fr.elapsed_ms, ns.blocked, ns.mapped);
+        return fe == SEL_FTP_OK ? 0 : 1;
+    }
     err = sel_http_request(&req, on_body, &sink, &res);
     if (sink.out != NULL) {
         fclose(sink.out);
@@ -118,8 +133,8 @@ int sel_cli_fetch(int argc, char** argv) {
     free(body);
     sel_net_stats_get(&ns);
     printf("http_status=%d\nhttp_error=%s\nhttp_requests=%u\nredirects=%u\nbody_bytes=%lu\ncontent_length=%ld\n"
-           "elapsed_ms=%lu\ntls_handshakes=0\nnet_blocked=%u\nnet_mapped=%u\n",
+           "elapsed_ms=%lu\ntls_handshakes=%u\nnet_blocked=%u\nnet_mapped=%u\n",
            res.status, sel_http_err_name(err), res.requests, res.redirects, res.body_bytes, res.content_length,
-           res.elapsed_ms, ns.blocked, ns.mapped);
+           res.elapsed_ms, sel_tls_handshakes(), ns.blocked, ns.mapped);
     return err == SEL_HTTP_OK ? 0 : 1;
 }

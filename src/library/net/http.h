@@ -1,8 +1,8 @@
 /* HTTP/1.1 client (plan 2026-10-25-m3-library.md, I153, D-M3-4). One client for both
  * tiers over the socket table in net.h. GET/PUT/POST/DELETE (and HEAD), chunked
  * transfer decoding, a single Range, up to 5 redirects, no allocation: the body is
- * streamed through a sink. https:// needs TLS (row I154) and fails with
- * SEL_HTTP_E_TLS_UNAVAILABLE until then.
+ * streamed through a sink. https:// goes through the TLS wrapper (tls.h); builds without TLS (Amiga)
+ * fail with SEL_HTTP_E_TLS_UNAVAILABLE.
  *
  * Time limits (the bbmp limits): connect 3 s, first response byte 3 s, whole
  * request including redirects 30 s. */
@@ -27,6 +27,8 @@ typedef enum sel_http_err {
     SEL_HTTP_E_IO,
     SEL_HTTP_E_PROTOCOL,
     SEL_HTTP_E_TLS_UNAVAILABLE,
+    SEL_HTTP_E_TLS_VERIFY,
+    SEL_HTTP_E_TLS_HANDSHAKE,
     SEL_HTTP_E_TOO_MANY_REDIRECTS,
     SEL_HTTP_E_SINK /* the sink returned 0 */
 } sel_http_err;
