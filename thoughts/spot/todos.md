@@ -275,8 +275,8 @@ Tests T49 to T61 are defined in the plan's finish-line table.
 
 | ID | Status | Phase | Task | Proof |
 |----|--------|-------|------|-------|
-| I105 | [ ] | 0 | Add T49 to T55, T57, T58, T61 red (desktop and vamos) with fixtures | ctest lists them, all fail |
-| I106 | [ ] | 0 | Add rig driver `tests/amiga/run_rig.cmake`, label `rig`, skip line; T56, T59, T60 red | ctest -L rig fails with rig up, skips visibly with rig down |
+| I105 | [x] | 0 | Add T49 to T55, T57, T58, T61 red (desktop and vamos) with fixtures | ctest lists them, all fail; merge 3606a9f (14 red, missing-feature reasons) |
+| I106 | [x] | 0 | Add rig driver `tests/amiga/run_rig.cmake`, label `rig`, skip line; T56, T59, T60 red | ctest -L rig fails with rig up, skips visibly with rig down; merge 3606a9f (rig tests skip visibly; rig-up path untested, rig auth failed) |
 | I107 | [ ] | 1 | Declared-need tags in `tags.def` (MIN_CPU, NEEDS_FLOAT, MEMORY, PRIORITY, CONFIG, OUT_MEM_CHIP) | build both trees; tag table test |
 | I108 | [ ] | 1 | Registry machine filter and priority owner choice, fake `sel_machine` injection | T49 green desktop |
 | I109 | [ ] | 1 | GFX and AUDIO probes, planar tier, `--tier` override | T50 green |
