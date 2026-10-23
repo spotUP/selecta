@@ -309,6 +309,8 @@ Tests T49 to T61 are defined in the plan's finish-line table.
 | I136 | [x] | 8 | Fix T8 ratchet number for M2 command set | T8 green; M2 command set fixed (FILTER_LED, MIX_STEREO_WIDTH landed implemented, none of the 21 open verbs is M2 scope), ratchet stays 21, T8 `ratchet` green |
 | I137 | [ ] | 8 | Full finish-line run (reason: landing M2) | all T49 to T61 and T8 green, none skipped |
 | I138 | [ ] | 8 | Manual checks 1 to 5 confirmed by Johan | Johan's confirmation recorded in ledger |
+| I138a | [ ] | 8 | paula14 hardware close waits for the last queued buffer before DMA stop | rig only (T56 family); found in m2-fixes-report, merge cd65b7c |
+| I138b | [ ] | 8 | Amiga paths in browse: `sel_browse_join` and ".." handle "Vol:dir" and "dir/sub" (parent of `Work:Music` is `Work:`) | desktop unit test of join/parent with Amiga style; T55 browse step into subdir under vamos; found in m2-fixes-report, merge cd65b7c |
 
 ## Open decisions
 
