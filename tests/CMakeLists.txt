@@ -541,3 +541,14 @@ if(NOT SEL_AMIGA)
       "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/golden/dsp/crossfeed.sha256"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/dsp/render_check.cmake")
 endif()
+
+# T46 (rows I97, I98): SAMPLE_LIST and SAMPLE_EXPORT (WAV, 8SVX) through the engine, libopenmpt adapter.
+if(NOT SEL_AMIGA)
+  add_test(NAME sample-export
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}"
+      "-DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/m13/samples.sel"
+      "-DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/m13/samples.expected"
+      "-DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DGOLDEN_DIR=${CMAKE_CURRENT_SOURCE_DIR}/golden/samples"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m13/samples_check.cmake")
+endif()
