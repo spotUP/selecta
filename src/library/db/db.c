@@ -512,6 +512,22 @@ int sel_library_folder_tree(sel_library* lib, char* out, uint32_t cap, uint32_t*
     return folder_text_call(lib, SEL_USER_FOLDER_TREE, 0, out, cap, count);
 }
 
+int sel_library_home(sel_library* lib, uint32_t limit, char* out, uint32_t cap, uint32_t* lines) {
+    sel_user_op op;
+    sel_message reply;
+    memset(&op, 0, sizeof op);
+    memset(&reply, 0, sizeof reply);
+    op.op = SEL_USER_HOME;
+    op.at = limit;
+    op.out = out;
+    op.out_cap = cap;
+    if (lib == NULL || !sel_library_request(lib, SEL_LIB_REQ_USER, &op, &reply) || reply.argc < 3 || reply.args[0].v.i < 1) {
+        return 0;
+    }
+    if (lines != NULL) *lines = (uint32_t)reply.args[2].v.i;
+    return 1;
+}
+
 int sel_library_user_counts(sel_library* lib, uint32_t* history, uint32_t* flags, uint32_t* notes, uint32_t* pending_push) {
     sel_user_op op;
     sel_message reply;

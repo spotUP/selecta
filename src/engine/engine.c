@@ -232,6 +232,7 @@ struct sel_engine {
     uint32_t cue_sets, cue_gotos, sticker_ops; /* sentinels of I175 / I176 */
     uint32_t analyse_jobs, analyse_speed, analyse_gated; /* I187 sentinels: jobs stored, x real time, R128 (not fallback) */
     int32_t analyse_lufs_cdb, analyse_gain_cdb, analyse_peak_cdb;
+    uint32_t home_rows;                        /* entries the home view source shows (I191 sentinel) */
     uint32_t folder_view_rows;                 /* rows the folders view source built (I179 sentinel) */
     uint32_t folder_ops;                       /* FOLDER_* / PLAYLIST_MOVE commands run against the library (I178) */
     uint32_t links_parsed, links_made;         /* share links OPEN parsed / SHARE wrote (I180 sentinels) */
@@ -3493,6 +3494,18 @@ static void folders_reload(sel_engine* e) {
     e->folder_view_rows += sel_view_set_folders(&e->view, tree);
 }
 
+/* I191: rebuilds the rows of the home view source (recently played, jump back in, new this week) from the
+ * library. Without a library the home view is empty. */
+static void home_reload(sel_engine* e) {
+    char text[4096];
+    uint32_t lines = 0;
+    text[0] = '\0';
+    if (e->lib != NULL && !sel_library_home(e->lib, 10, text, sizeof text, &lines)) {
+        text[0] = '\0';
+    }
+    e->home_rows += sel_view_set_home(&e->view, text);
+}
+
 /* FOLDER_ADD name [parent]: creates the folder (parent 0 or absent = root); the answer carries the new id. */
 static void cmd_FOLDER_ADD(sel_engine* e, const sel_message* m) {
     uint32_t id = 0;
@@ -3740,17 +3753,6 @@ static void cmd_VIEW_SOURCE(sel_engine* e, const sel_message* m) {
 
     if (strcmp(what, "playlist") == 0) {
         what = "queue"; /* the playlist being played is the queue; playlist folders arrive with I19x */
-    } else if (strcmp(what, "home") == 0) {
-        uint32_t fts = 0;
-        /* Home view before I191: the songs with a play in the history table, as a query snapshot.
-         * Without a library it is an empty list. I191 adds recently played order, jump back in and new this week. */
-        if (e->lib == NULL) {
-            e->res_count = 0;
-            e->res_meta_used = 0;
-        } else if (!run_search(e, "plays:>0", "VIEW_SOURCE", &fts)) {
-            return;
-        }
-        what = "query";
     }
     if (strcmp(what, "query") == 0) {
         sel_queue_clear(&e->qview);
@@ -3762,6 +3764,8 @@ static void cmd_VIEW_SOURCE(sel_engine* e, const sel_message* m) {
                 break;
             }
         }
+    } else if (strcmp(what, "home") == 0) {
+        home_reload(e);
     } else if (strcmp(what, "folders") == 0) {
         if (e->lib == NULL) {
             sel_engine_report_error(e, "no_library", "VIEW_SOURCE");
@@ -3789,7 +3793,7 @@ static void cmd_VIEW_SOURCE(sel_engine* e, const sel_message* m) {
 }
 
 const char* sel_view_source_label(uint32_t source) {
-    return source == SEL_VIEW_QUEUE ? "queue" : source == SEL_VIEW_BROWSE ? "browse" : source == SEL_VIEW_QUERY ? "query" : source == SEL_VIEW_FOLDERS ? "folders" : "unknown";
+    return source == SEL_VIEW_QUEUE ? "queue" : source == SEL_VIEW_BROWSE ? "browse" : source == SEL_VIEW_QUERY ? "query" : source == SEL_VIEW_FOLDERS ? "folders" : source == SEL_VIEW_HOME ? "home" : "unknown";
 }
 
 const char* sel_engine_view_cursor_key(const sel_engine* e) {
@@ -3797,7 +3801,7 @@ const char* sel_engine_view_cursor_key(const sel_engine* e) {
     const sel_queue* q = v->source == SEL_VIEW_QUERY ? &e->qview : &e->queue;
     uint32_t at;
 
-    if (v->source == SEL_VIEW_BROWSE || v->source == SEL_VIEW_FOLDERS || v->row_count == 0) {
+    if (v->source == SEL_VIEW_BROWSE || v->source == SEL_VIEW_FOLDERS || v->source == SEL_VIEW_HOME || v->row_count == 0) {
         return NULL;
     }
     at = sel_queue_index_of(q, v->cursor_id);
@@ -3896,6 +3900,9 @@ static void cmd_VIEW_ACTIVATE(sel_engine* e, const sel_message* m) {
         return;
     }
     at = v->cursor;
+    if (v->source == SEL_VIEW_HOME) {
+        return; /* home rows are display text; opening an entry arrives with the song keys (open item) */
+    }
     if (v->source == SEL_VIEW_FOLDERS) {
         /* A playlist row loads the playlist into the queue and starts its first song; a folder row has
          * nothing to start (the tree is always shown open). */
@@ -4383,6 +4390,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
         if (sel_library_rating_pending(e->lib, none, sizeof none, &rows)) out->rating_pending = rows;
     }
     out->radio_min_ahead = e->radio_min_ahead;
+    out->home_rows = e->home_rows;
     out->folder_view_rows = e->folder_view_rows;
     out->panel_loads = e->panel_loads;
     out->library_searches = e->searches;

@@ -91,7 +91,10 @@ void sel_view_free(sel_view* v, const sel_host* host);
  * indent per level). Returns the rows kept (at most SEL_VIEW_FOLDER_ROWS). */
 uint32_t sel_view_set_folders(sel_view* v, const char* tree);
 
-/* "queue", "browse", "query" or "folders". 0: unknown source. */
+/* Replaces the home rows from the library home text (H/S/C lines); returns the entry count (I191). */
+uint32_t sel_view_set_home(sel_view* v, const char* text);
+
+/* "queue", "browse", "query", "folders" or "home". 0: unknown source. */
 int sel_view_show(sel_view* v, const sel_view_src* s, const char* source);
 
 /* "N" absolute, "+N" / "-N" relative, "top", "bottom"; clamped to the list.

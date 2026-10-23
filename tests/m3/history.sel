@@ -1,0 +1,9 @@
+# T91 setup (row I191): one song played to its end (a finished play) and one replaced before its end (a skip),
+# written to the history table by the engine's own writer, the way userdata.sel does for T78.
+OPEN selecta-test.mod
+PLAY
+@render_until_end
+OPEN selecta-test-mk.mod
+PLAY
+@render 1024
+OPEN selecta-test.mod

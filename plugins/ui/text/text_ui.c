@@ -319,6 +319,10 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
         u->lib_screen = 0;
         u->folder_opens++;
         tui_send(u, "VIEW_SOURCE folders");
+    } else if (strcmp(name, "home") == 0) {
+        /* Recently played, jump back in, new this week (I191): the engine's home view source. */
+        u->lib_screen = 0;
+        tui_send(u, "VIEW_SOURCE home");
     } else if (strcmp(name, "search") == 0) {
         txt_cmdline_open(&u->cmd);
         u->cmd_mode = 2;
@@ -637,10 +641,15 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
         snprintf(buf, sizeof buf, "Browse  %s", tui_leaf(v->browse_path));
     } else if (v->source == SEL_VIEW_FOLDERS) {
         snprintf(buf, sizeof buf, "Playlist folders  %u rows", (unsigned)v->row_count);
+    } else if (v->source == SEL_VIEW_HOME) {
+        snprintf(buf, sizeof buf, "Home");
     } else {
         tui_queue_title(buf, sizeof buf, v, u->lib_screen);
     }
     txt_grid_text(&u->grid, 1, 2, buf, width - 1u, title);
+    if (v->source == SEL_VIEW_HOME && v->row_count == 0) {
+        txt_grid_text(&u->grid, 1, 3, "Nothing played yet", width - 1u, tui_style(u, TXT_ROLE_DIM));
+    }
     if (v->source == SEL_VIEW_FOLDERS && v->row_count == 0) {
         txt_grid_text(&u->grid, 1, 3, "No playlist folders yet", width - 1u, tui_style(u, TXT_ROLE_DIM));
     }
@@ -657,6 +666,7 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
         int playing = v->source == SEL_VIEW_QUEUE && r->kind == SEL_ROW_QUEUE && r->id == s->queue_playing;
         txt_role role = at_cursor ? TXT_ROLE_CURSOR
                         : playing ? TXT_ROLE_PLAYING
+                        : r->kind == SEL_ROW_HEADING ? TXT_ROLE_LABEL
                         : r->kind == SEL_ROW_DIR || r->kind == SEL_ROW_NODE || r->kind == SEL_ROW_FOLDER ? TXT_ROLE_DIRECTORY
                                                  : TXT_ROLE_FILE;
         txt_style st = tui_style(u, role);
@@ -665,6 +675,8 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
                      r->text, (unsigned)r->count);
         } else if (r->kind == SEL_ROW_FOLDER || r->kind == SEL_ROW_PLAYLIST) {
             snprintf(buf, sizeof buf, "%*s%s %s", (int)(2u * r->depth), "", r->kind == SEL_ROW_FOLDER ? "[-]" : " - ", r->text);
+        } else if (r->kind == SEL_ROW_HEADING || r->kind == SEL_ROW_HOME) {
+            snprintf(buf, sizeof buf, "%*s%s", (int)(2u * r->depth), "", r->text);
         } else {
             snprintf(buf, sizeof buf, "%*s%c %s%s", (int)(2u * r->depth), "", playing ? '>' : ' ', r->text,
                      r->kind == SEL_ROW_DIR && strcmp(r->text, "..") != 0 ? "/" : "");
