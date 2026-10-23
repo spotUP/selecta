@@ -197,6 +197,8 @@ void sel_library_handle(sel_library* lib, const sel_message* req, sel_message* r
         sel_library_scan_batch(lib, (const sel_scan_batch*)req->args[0].v.s, reply);
     } else if (req->id == SEL_LIB_REQ_REMOVE && req->argc == 1) {
         sel_library_remove(lib, (const sel_remove_batch*)req->args[0].v.s, reply);
+    } else if (req->id == SEL_LIB_REQ_MOVE && req->argc == 1) {
+        sel_library_move(lib, (const sel_move*)req->args[0].v.s, reply);
     } else if (req->id == SEL_LIB_REQ_ANNOTATE && req->argc == 1) {
         sel_library_annotate(lib, (const sel_annotate_batch*)req->args[0].v.s, reply);
     }

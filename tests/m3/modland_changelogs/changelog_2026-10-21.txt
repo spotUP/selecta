@@ -1,0 +1,6 @@
+Real Modland changelog layout (I161b): every entry is indented, the target of a move on its own line.
+
+  added: Protracker/Test Artist/indented one.mod
+  added: Protracker/Test Artist/indented two.mod
+  moved: Ace Tracker/505/blocks.am
+     to: Ace Tracker/Nemo

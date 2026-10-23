@@ -48,17 +48,17 @@ done < "$root/golden.txt"
 mkdir "$root/b"
 cp "$listing" "$root/b/"
 cp "$fx"/modland_changelogs/changelog_*.txt "$root/b/"
-added=$(cat "$root"/b/changelog_*.txt | grep -c '^added:' || true)
-deleted=$(cat "$root"/b/changelog_*.txt | grep -c '^deleted:' || true)
-moved=$(cat "$root"/b/changelog_*.txt | grep -c '^moved:' || true)
-updated=$(cat "$root"/b/changelog_*.txt | grep -c '^updated:' || true)
+added=$(cat "$root"/b/changelog_*.txt | grep -c '^ *added:' || true)
+deleted=$(cat "$root"/b/changelog_*.txt | grep -c '^ *deleted:' || true)
+moved=$(cat "$root"/b/changelog_*.txt | grep -c '^ *moved:' || true)
+updated=$(cat "$root"/b/changelog_*.txt | grep -c '^ *updated:' || true)
 week=0
 for f in "$root"/b/changelog_*.txt; do
     d=$(basename "$f" .txt)
     d=${d#changelog_}
     if [ "$d" \> "$week_from" ] || [ "$d" = "$week_from" ]; then
         if [ "$d" \< "$week_to" ] || [ "$d" = "$week_to" ]; then
-            week=$((week + $(grep -c '^added:' "$f" || true)))
+            week=$((week + $(grep -c '^ *added:' "$f" || true)))
         fi
     fi
 done
@@ -82,4 +82,23 @@ if echo "$out" | grep -qF 'row=pub/modules/Ace Tracker/Nemo/easy.am|'; then
     echo "FAIL deleted row still present"
     exit 1
 fi
+# I161b: indented entries are applied (the added/moved counts above include them), and a move keeps the md5.
+for m in 'Fasttracker 2/Lioz/final pray.xm|56a08b8d9b5dd1bc5858aef1bfbac695' 'Ace Tracker/Nemo/blocks.am|e068ba5e8ed7dfdec7369eb473593eca'; do
+    echo "$out" | sed -n 's/^row=//p' | awk -F'|' -v want="pub/modules/${m%%|*}" -v md5="${m##*|}" \
+        '$1 == want && $4 == md5 { f = 1 } END { exit !f }' || { echo "FAIL moved row lost its md5: $m"; exit 1; }
+done
+if echo "$out" | grep -qF 'row=pub/modules/Ace Tracker/505/blocks.am|'; then
+    echo "FAIL indented move left the old path"
+    exit 1
+fi
+echo "$out" | grep -qF 'row=pub/modules/Protracker/Test Artist/indented one.mod|' || { echo "FAIL indented added missing"; exit 1; }
+
+# Part 3: the real allmods.txt layout, "<size><TAB><path>" with no md5 column.
+mkdir "$root/c"
+awk -F'\t' '{ print (NR * 1000) "\t" $2 }' "$listing" > "$root/c/allmods_md5.txt"
+out=$("$cli" library sync --db "$root/c.db" --now "$now" --dump modland "$root/c")
+[ "$(field listing_rows)" = "$rows_expect" ] || { echo "FAIL size-form listing_rows != $rows_expect"; exit 1; }
+[ "$(field db_songs)" = "$rows_expect" ] || { echo "FAIL size-form db_songs"; exit 1; }
+echo "$out" | sed -n 's/^row=//p' | cut -d'|' -f1-3 | LC_ALL=C sort > "$root/fa3.txt"
+diff "$root/golden.txt" "$root/fa3.txt" > "$root/diff.txt" || { echo "FAIL size-form format/artist differ"; head -n 10 "$root/diff.txt"; exit 1; }
 echo "source_modland_ok listing_rows=$rows_expect new_this_week=$week db_songs=$want"

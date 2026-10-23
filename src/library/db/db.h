@@ -26,7 +26,8 @@ enum {
     SEL_LIB_REQ_IMPORT = 5,    /* import a TSV catalogue held in `text` (test and CLI seeding) */
     SEL_LIB_REQ_SCAN_BATCH = 6, /* payload: const sel_scan_batch*; writes files and songs rows (I158) */
     SEL_LIB_REQ_REMOVE = 7,     /* payload: const sel_remove_batch*; deletes files and songs rows (I161) */
-    SEL_LIB_REQ_ANNOTATE = 8    /* payload: const sel_annotate_batch*; lengths and notes onto existing songs (I162) */
+    SEL_LIB_REQ_ANNOTATE = 8,   /* payload: const sel_annotate_batch*; lengths and notes onto existing songs (I162) */
+    SEL_LIB_REQ_MOVE = 9        /* payload: const sel_move*; re-keys one song row in place (I161b) */
 };
 
 /* The data of a SEARCH, SAVE_VIEW or IMPORT request. The caller fills the inputs, passes the job to
@@ -73,6 +74,16 @@ typedef struct sel_remove_batch {
     const char* const* paths;
     uint32_t count;
 } sel_remove_batch;
+
+/* One moved file (a changelog's moved:/to: pair): the row at `from` is re-keyed to `to->path` in place, so
+ * md5, size, duration, year, added, stickers, likes, ratings, history and playlist entries stay. Only
+ * name, artist and format are taken from `to` (the new path may parse differently). A row already at the
+ * destination is replaced. Reply: INT [0] 1 when a row moved, 0 when `from` was unknown; [1] SQLite code. */
+typedef struct sel_move {
+    const char* source;
+    const char* from;
+    const sel_scan_row* to;
+} sel_move;
 
 /* Side data for songs that already have a row (HVSC Songlengths.md5 and STIL, I162). `duration_ms` > 0
  * and a non-empty `md5` replace the song's values; every sticker is stored under the song key in the
