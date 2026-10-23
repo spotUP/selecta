@@ -292,7 +292,7 @@ static const sel_tag* rp_metadata(void* state) {
 
 /* Filled at run time: a function pointer cast to an integer is not a
  * constant expression in C99. */
-static sel_tag g_hooks[18];
+static sel_tag g_hooks[20];
 static sel_tag g_desc[5];
 static char g_extensions[LIST_LEN];
 
@@ -343,7 +343,9 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[14], SEL_RP_MUTE, SEL_TAG_FN(rp_mute));
     set(&g_hooks[15], SEL_RP_SET_SPEED, SEL_TAG_FN(rp_set_speed));
     set(&g_hooks[16], SEL_RP_SAMPLE_GET, SEL_TAG_FN(rp_sample_get));
-    set(&g_hooks[17], SEL_TAG_END, 0);
+    set(&g_hooks[17], SEL_RP_MIN_CPU, 68020);
+    set(&g_hooks[18], SEL_RP_NEEDS_FLOAT, 1);
+    set(&g_hooks[19], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "openmpt");

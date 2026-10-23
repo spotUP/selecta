@@ -19,7 +19,7 @@ int sel_cli_render(int argc, char** argv);
 int sel_cli_plugins(int argc, char** argv);
 
 /* T10/T11: `machine`; prints `probe_calls=<n>`, then `NAME=value` per SEL_MACHINE_* tag. */
-int sel_cli_machine(void);
+int sel_cli_machine(int argc, char** argv);
 
 /* play <song> --output <id> --seconds <n> [--rate <hz>] [--resample <name>] (T16): plays
  * through a real output; prints `callbacks=<k> frames=<f>` from the output's

@@ -30,12 +30,13 @@ static int usage(FILE* to) {
           "  send <verb> [args]         send one command line to a running selecta (exit 0 OK, 1 ERROR, 2 none running)\n"
           "  abi [voices]               print sel_host (or sel_voices) size and field offsets\n"
           "  plugins [--lint]           list plugins; --lint counts bad descriptor tags\n"
+          "  plugins --machine <name> --stats  list what a fake machine runs (a500, a1200, a1200-fpu, a060)\n"
           "  plugins --formats <id>     list the formats (player ids) a plugin reports\n"
           "  play-null --rate <hz> --frames <n>  pump the null output, print counters\n"
           "  play <song> --output <id> --seconds <n>  play through a real output, print counters\n"
           "  render <song> --output <wav> --seconds <n> --rate <hz> --resample <name>\n"
           "                             render a song to a WAV file, print counters\n"
-          "  machine                    probe the machine, print the sel_machine tags\n",
+          "  machine [--tier <name>]    probe the machine, print the sel_machine tags\n",
           to);
     return to == stdout ? 0 : 2;
 }
@@ -560,7 +561,7 @@ int main(int argc, char** argv) {
         return sel_cli_plugins(argc - 2, argv + 2);
     }
     if (strcmp(cmd, "machine") == 0) {
-        return sel_cli_machine();
+        return sel_cli_machine(argc - 2, argv + 2);
     }
     if (strcmp(cmd, "play-null") == 0) {
         return sel_cli_play_null(argc - 2, argv + 2);

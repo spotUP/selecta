@@ -642,7 +642,10 @@ if(NOT SEL_AMIGA)
   sel_m2_test(registry-machine-filter registry vamos)
   # T50 machine probe under vamos.
   sel_m2_test(amiga-machine-probe run vamos -DTAG=T50 "-DARGS1=machine"
-    "-DCHECKS1=machine.gfx~^(OCS|ECS|AGA)$,machine.audio~paula" "-DARGS2=machine --tier text" "-DCHECKS2=machine.tier==text")
+    "-DCHECKS1=GFX~^(OCS|ECS|AGA)(\\+RTG)?$,AUDIO~paula" "-DARGS2=machine --tier planar" "-DCHECKS2=TIER==planar")
+  # I110 clock source: desktop monotonic, vamos has no timer.device so DateStamp (rig: eclock, open).
+  sel_m2_test(clock-source run desktop -DTAG=I110 "-DARGS1=machine" "-DCHECKS1=clock.source==monotonic")
+  sel_m2_test(clock-source run vamos -DTAG=I110 "-DARGS1=machine" "-DCHECKS1=clock.source==datestamp")
   # T51 Paula voice registers: AUDxPER once per note, register log golden.
   sel_m2_test(paula-voice-registers run vamos -DTAG=T51
     "-DARGS1=render --output paula-shadow @MOD@ --seconds 2" "-DCHECKS1=aud_writes>0,reg_log_sha256~^[0-9a-f]+$"

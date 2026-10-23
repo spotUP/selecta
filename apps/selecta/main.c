@@ -150,7 +150,9 @@ int main(int argc, char** argv) {
     char ctl_path[512];
     ctl_ctx cc;
 
-    sel_registry_init(host);
+    const sel_tag* machine_tags = sel_machine_probe(host); /* probed once; the registry hides what it cannot run */
+
+    sel_registry_init_machine(host, machine_tags);
     oh = hooks_of(SEL_PLUGIN_KIND_OUTPUT, out_id);
     uh = hooks_of(SEL_PLUGIN_KIND_UI, ui_id);
     if (oh == NULL || uh == NULL) {
@@ -175,7 +177,7 @@ int main(int argc, char** argv) {
     memset(&cfg, 0, sizeof cfg);
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;
-    cfg.machine = sel_machine_probe(host); /* queue and browse buffers scale with the machine */
+    cfg.machine = machine_tags; /* queue and browse buffers scale with the machine */
     cfg.config_dir = option(argc, argv, "--config-dir", NULL);
     if (cfg.config_dir == NULL && sel_config_dir(cfgdir, sizeof cfgdir)) {
         cfg.config_dir = cfgdir;
