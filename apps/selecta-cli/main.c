@@ -9,6 +9,10 @@
 #include <selecta/tags.h>
 
 #include "cli.h"
+#include "integration_host.h"
+#ifndef SEL_NO_CONTROL_SOCKET
+#include "ctlsock.h"
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,7 +26,8 @@ static int usage(FILE* to) {
           "  tagtypes                   list metadata tags and their types\n"
           "  roundtrip                  encode and decode every table row\n"
           "  commands --unimplemented   list verbs the engine answers not_implemented\n"
-          "  script <file>              feed command lines to the engine, print events\n"
+          "  script <file> [--integration <id>]  feed command lines to the engine, print events\n"
+          "  send <verb> [args]         send one command line to a running selecta (exit 0 OK, 1 ERROR, 2 none running)\n"
           "  abi [voices]               print sel_host (or sel_voices) size and field offsets\n"
           "  plugins [--lint]           list plugins; --lint counts bad descriptor tags\n"
           "  plugins --formats <id>     list the formats (player ids) a plugin reports\n"
@@ -239,7 +244,11 @@ static int cmd_roundtrip(void) {
     return ok == SEL_CMD_COUNT + SEL_EVT_COUNT ? 0 : 1;
 }
 
-/* Prints one event as the wire line the codec produces. */
+/* The integration plugin of a script run (--integration), or NULL. */
+static sel_int_session* g_int;
+
+/* Prints one event as the wire line the codec produces, then hands it to the
+ * integration plugin. */
 static void print_event(void* ctx, const sel_message* evt) {
     char line[1024];
     (void)ctx;
@@ -248,6 +257,7 @@ static void print_event(void* ctx, const sel_message* evt) {
         return;
     }
     printf("%s\n", line);
+    sel_int_session_event(g_int, evt);
 }
 
 /* Script directives (lines starting with '@') are not protocol verbs; they let
@@ -258,6 +268,7 @@ static void print_event(void* ctx, const sel_message* evt) {
  *                       before it are not printed (their count depends on
  *                       the song length)
  *   @position           SNAPSHOT position_ms=M order=O row=R pattern=P (song.pattern_pos)
+ *   @integration_poll   call INT_POLL of the --integration plugin once
  *   @alloc_guard on     write SEL_ALLOC_FREEZE/THAW to stderr around every
  *                       sel_engine_render call (pump-side work stays outside
  *                       the window), for the no-alloc shim (T26) */
@@ -312,6 +323,8 @@ static void script_directive(sel_engine* e, const char* line) {
         const sel_song_state* so = &sel_engine_state(e)->song;
         printf("SNAPSHOT position_ms=%u order=%u row=%u pattern=%u\n", (unsigned)so->position_ms,
                (unsigned)so->pattern_pos.order, (unsigned)so->pattern_pos.row, (unsigned)so->pattern_pos.pattern);
+    } else if (strcmp(line, "@integration_poll") == 0) {
+        sel_int_session_poll(g_int);
     } else if (strcmp(line, "@alloc_guard on") == 0) {
         g_alloc_guard = 1;
     } else if (sscanf(line, "@render %lu", &n) == 1) {
@@ -334,7 +347,9 @@ static void script_directive(sel_engine* e, const char* line) {
 
 /* T3: every line of the file goes through codec, queue, dispatch and back
  * out as events. One pump per line so the decode pool can be reused. */
-static int cmd_script(const char* path) {
+static int cmd_script(const char* path, int argc, char** argv) {
+    const char* int_id = NULL;
+    int i;
     char line[1024];
     char pool[2048];
     FILE* f = fopen(path, "r");
@@ -355,6 +370,20 @@ static int cmd_script(const char* path) {
         fprintf(stderr, "selecta-cli: engine allocation failed\n");
         return 1;
     }
+    for (i = 0; i + 1 < argc; i++) {
+        if (strcmp(argv[i], "--integration") == 0) {
+            int_id = argv[i + 1];
+        }
+    }
+    if (int_id != NULL) {
+        g_int = sel_int_session_open(e, sel_host_default(), int_id, print_event, NULL);
+        if (g_int == NULL) {
+            fprintf(stderr, "selecta-cli: integration '%s' is not registered\n", int_id);
+            fclose(f);
+            sel_engine_destroy(e);
+            return 1;
+        }
+    }
     while (fgets(line, sizeof line, f)) {
         line[strcspn(line, "\r\n")] = '\0';
         if (line[0] == '\0' || line[0] == '#') {
@@ -368,8 +397,48 @@ static int cmd_script(const char* path) {
         sel_engine_pump(e, print_event, NULL);
     }
     fclose(f);
+    sel_int_session_close(g_int);
+    g_int = NULL;
     sel_engine_destroy(e);
     return 0;
+}
+
+/* T35: `send <verb> [args]` writes one protocol line to the running shell's
+ * control socket and prints the reply. Exit 0 on OK, 1 on ERROR, 2 when no
+ * shell is running. */
+static int cmd_send(int argc, char** argv) {
+#ifdef SEL_NO_CONTROL_SOCKET
+    (void)argc;
+    (void)argv;
+    fputs("selecta-cli: send needs the control socket; the Amiga uses the ARexx port\n", stderr);
+    return 2;
+#else
+    char path[256], line[1024], reply[1024];
+    int i;
+    size_t used = 0;
+    if (argc < 1) {
+        return usage(stderr);
+    }
+    line[0] = '\0';
+    for (i = 0; i < argc; i++) {
+        int n = snprintf(line + used, sizeof line - used, i ? " %s" : "%s", argv[i]);
+        if (n < 0 || (size_t)n >= sizeof line - used) {
+            fputs("selecta-cli: command line too long\n", stderr);
+            return 2;
+        }
+        used += (size_t)n;
+    }
+    if (!sel_ctl_path(path, sizeof path)) {
+        fputs("selecta-cli: socket path too long\n", stderr);
+        return 2;
+    }
+    if (sel_ctl_send(path, line, reply, sizeof reply) != 0) {
+        fprintf(stderr, "no selecta running at %s\n", path);
+        return 2;
+    }
+    printf("%s\n", reply);
+    return strncmp(reply, "OK", 2) == 0 ? 0 : 1;
+#endif
 }
 
 int main(int argc, char** argv) {
@@ -394,7 +463,10 @@ int main(int argc, char** argv) {
         if (argc < 3) {
             return usage(stderr);
         }
-        return cmd_script(argv[2]);
+        return cmd_script(argv[2], argc - 3, argv + 3);
+    }
+    if (strcmp(cmd, "send") == 0) {
+        return cmd_send(argc - 2, argv + 2);
     }
     if (strcmp(cmd, "events") == 0) {
         return cmd_events();

@@ -16,6 +16,9 @@
 #include <selecta/registry.h>
 #include <selecta/ui.h>
 
+#include "ctlsock.h"
+#include "integration_host.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,6 +28,7 @@
 #define SHELL_TURN_MS 20u
 #define SHELL_RESAMPLER 1u /* linear */
 
+/* ctx[0] = UI on_event hook, ctx[1] = UI state, ctx[2] = integration session. */
 static void sink(void* ctx, const sel_message* evt) {
     sel_ui_on_event_fn on_event = (sel_ui_on_event_fn)((void**)ctx)[0];
     if (evt->id == SEL_EVT_ERROR) {
@@ -33,6 +37,7 @@ static void sink(void* ctx, const sel_message* evt) {
     if (on_event != NULL) {
         on_event(((void**)ctx)[1], evt);
     }
+    sel_int_session_event((sel_int_session*)((void**)ctx)[2], evt);
 }
 
 static int g_mark_audio;
@@ -68,6 +73,37 @@ static void send_line(sel_engine* e, const char* line) {
     }
 }
 
+/* Control socket (T35): one line in, one reply out. A line that does not parse,
+ * or whose command raises ERROR, is answered `ERROR <code> <detail>`; the rest
+ * `OK`. Only OK lines count in socket_cmds. */
+typedef struct ctl_ctx {
+    sel_engine* engine;
+    void** sink_ctx;
+    char err[160];
+} ctl_ctx;
+
+static void ctl_sink(void* ctx, const sel_message* evt) {
+    ctl_ctx* c = ctx;
+    if (evt->id == SEL_EVT_ERROR && c->err[0] == '\0') {
+        snprintf(c->err, sizeof c->err, "ERROR %s %s", evt->args[0].v.s, evt->argc > 1 ? evt->args[1].v.s : "");
+    }
+    sink(c->sink_ctx, evt);
+}
+
+static int ctl_handle(void* ctx, const char* line, char* reply, size_t cap) {
+    ctl_ctx* c = ctx;
+    char pool[1024];
+    int rc;
+    c->err[0] = '\0';
+    rc = sel_engine_send_line(c->engine, line, pool, sizeof pool);
+    sel_engine_pump(c->engine, ctl_sink, c); /* a rejected line queued its ERROR event */
+    if (rc != SEL_CODEC_OK && c->err[0] == '\0') {
+        snprintf(c->err, sizeof c->err, "ERROR %s", sel_codec_strerror(rc));
+    }
+    snprintf(reply, cap, "%s", c->err[0] != '\0' ? c->err : "OK");
+    return c->err[0] == '\0';
+}
+
 int main(int argc, char** argv) {
 #ifdef __APPLE__
     const char* default_output = "coreaudio";
@@ -97,10 +133,22 @@ int main(int argc, char** argv) {
     const sel_tag* ust;
     void* out;
     void* ui;
-    void* ctx[2];
+    void* ctx[3];
     char cwd[1024], cmd[1100];
     uint32_t waits = 0;
     int r;
+    int has_keys = option(argc, argv, "--keys", NULL) != NULL;
+#ifdef __APPLE__
+    const char* default_int = "nowplaying";
+#else
+    const char* default_int = "mpris";
+#endif
+    const char* int_id = option(argc, argv, "--integration", (is_null || has_keys) ? "none" : default_int);
+    sel_int_session* isess = NULL;
+    int ctl_fd = -1;
+    unsigned socket_cmds = 0;
+    char ctl_path[512];
+    ctl_ctx cc;
 
     sel_registry_init(host);
     oh = hooks_of(SEL_PLUGIN_KIND_OUTPUT, out_id);
@@ -160,6 +208,29 @@ int main(int argc, char** argv) {
         return 1;
     }
     ctx[1] = ui;
+    ctx[2] = NULL;
+
+    cc.engine = e;
+    cc.sink_ctx = ctx;
+    cc.err[0] = '\0';
+    if (!has_keys || getenv("SELECTA_SOCKET") != NULL) {
+        sel_ctl_path(ctl_path, sizeof ctl_path);
+        ctl_fd = sel_ctl_listen(ctl_path);
+        if (ctl_fd == SEL_CTL_ALREADY_RUNNING) {
+            fprintf(stderr, "selecta: already running (%s)\n", ctl_path);
+            ui_close(ui);
+            out_close(out);
+            sel_engine_destroy(e);
+            return 1;
+        }
+    }
+    if (strcmp(int_id, "none") != 0) {
+        isess = sel_int_session_open(e, host, int_id, sink, ctx);
+        if (isess == NULL) {
+            fprintf(stderr, "selecta: integration '%s' is not available\n", int_id);
+        }
+        ctx[2] = isess;
+    }
 
     if (start == NULL) {
         start = getcwd(cwd, sizeof cwd);
@@ -177,6 +248,10 @@ int main(int argc, char** argv) {
         waits++;
         out_pump(out, SHELL_RATE * SHELL_TURN_MS / 1000u);
         sel_engine_pump(e, sink, ctx);
+        sel_int_session_poll(isess);
+        if (ctl_fd >= 0) {
+            socket_cmds += (unsigned)sel_ctl_serve(ctl_fd, is_null ? SHELL_TURN_MS : 0u, ctl_handle, &cc);
+        }
     }
 
     ust = ui_stats != NULL ? ui_stats(ui) : NULL;
@@ -186,6 +261,11 @@ int main(int argc, char** argv) {
     printf("songs_opened=%u queue_version=%u\n", (unsigned)est.songs_opened,
            (unsigned)sel_engine_state(e)->queue_version);
 
+    if (ctl_fd >= 0) {
+        printf("socket_cmds=%u\n", socket_cmds);
+        sel_ctl_close(ctl_fd, ctl_path);
+    }
+    sel_int_session_close(isess);
     ui_close(ui);
     out_close(out);
     sel_engine_destroy(e);

@@ -1,0 +1,3 @@
+# T35 control-socket: keep the shell alive for 3 s (150 turns of 20 ms) so the
+# test can send commands through the socket.
+wait 3000

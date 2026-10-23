@@ -20,11 +20,13 @@ sel_cli_test(protocol-reflection-events   "events"   "-DLINES=${SEL_COUNT_EVT}")
 sel_cli_test(protocol-reflection-tagtypes "tagtypes" "-DLINES=${SEL_COUNT_META}")
 
 # T5: the registry walked every descriptor and found only known tags.
-# null, wav, nuade, openmpt and the text UI (host only), plus coreaudio on macOS; the negative tree adds one bad plugin.
+# null, wav, nuade, openmpt, the text UI and the nowplaying-test integration (host only), plus coreaudio and the
+# macOS Now Playing plugin on macOS, or MPRIS on Linux when libsystemd was found; the negative tree adds one bad plugin.
+set(SEL_EXPECT_PLUGINS 6)
 if(APPLE)
-  set(SEL_EXPECT_PLUGINS 6)
-else()
-  set(SEL_EXPECT_PLUGINS 5)
+  math(EXPR SEL_EXPECT_PLUGINS "${SEL_EXPECT_PLUGINS} + 2")
+elseif(SEL_HAVE_MPRIS)
+  math(EXPR SEL_EXPECT_PLUGINS "${SEL_EXPECT_PLUGINS} + 1")
 endif()
 math(EXPR SEL_EXPECT_BAD_PLUGINS "${SEL_EXPECT_PLUGINS} + 1")
 sel_cli_test(registry-tags "plugins --lint" "-DEXPECT=plugins=${SEL_EXPECT_PLUGINS} unknown_tags=0 duplicate_tags=0")
@@ -456,4 +458,20 @@ if(NOT SEL_AMIGA)
   target_link_libraries(cmdline_test PRIVATE selecta_textui selecta_core)
   add_test(NAME cmdline-unit
     COMMAND cmdline_test "${CMAKE_CURRENT_SOURCE_DIR}/m12/argdump.sh" "${CMAKE_CURRENT_BINARY_DIR}/cmdline_argdump.txt")
+endif()
+
+if(NOT SEL_AMIGA)
+  # T35 (row I79): the shell's control socket, driven by `selecta-cli send`.
+  add_test(NAME control-socket
+    COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/m12/control_socket.sh" "$<TARGET_FILE:selecta>"
+      "${SEL_CLI}" "${CMAKE_CURRENT_SOURCE_DIR}/m12/wait.keys" "${CMAKE_CURRENT_BINARY_DIR}/control_socket")
+
+  # T38 (row I80): the integration host and the fake Now Playing backend.
+  add_test(NAME integration-nowplaying
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}"
+      "-DARGS=script ${CMAKE_CURRENT_SOURCE_DIR}/m12/nowplaying.sel --integration nowplaying-test"
+      "-DEXPECT_REGEX=np_record title=selecta test duration_ms=0 state=playing.*np_publish=3 np_command=1"
+      -P "${SEL_EXPECT}")
+  set_tests_properties(integration-nowplaying PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/songs")
 endif()
