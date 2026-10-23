@@ -51,6 +51,7 @@
     X(TEMPO)                                                                                  \
     X(SOLO)                                                                                   \
     X(OUTPUT)                                                                                 \
+    X(REPEAT)                                                                                 \
     X(OPTION)                                                                                 \
     X(COMMANDS)                                                                               \
     X(EVENTS)                                                                                 \
@@ -100,6 +101,7 @@
 /* PREV inside the first three seconds goes to the previous entry, later restarts */
 #define SEL_PREV_RESTART_MS 3000u
 #define SEL_SWAP_RING_DEPTH 4u
+#define SEL_SILENCE_LEVEL 16 /* |sample| below this counts as silent */
 #define SEL_SEEK_PATH_NATIVE 1u
 #define SEL_SEEK_PATH_SKIP 2u
 /* ids of the internal ring messages (not commands, not in commands.def) */
@@ -114,6 +116,21 @@
 #define PENDING_VOLUME (1u << 1)
 #define PENDING_OUTPUT (1u << 2)
 #define PENDING_OPTION_BASE (1u << 3) /* one bit per option above this */
+
+/* Why a song ended (the SONG_ENDED reason argument). */
+typedef enum sel_end_reason { SEL_END_NONE = 0, SEL_END_END, SEL_END_LOOP, SEL_END_MAX_LENGTH, SEL_END_SILENCE } sel_end_reason;
+static const char* const k_end_reason_names[] = {"", "end", "loop", "max_length", "silence"};
+
+/* Playback policy state of one song (design section 3, loop detect and fade); audio side. */
+typedef struct sel_playpol {
+    uint32_t loops_seen;  /* LOOPED ticks seen */
+    uint32_t fade_on;     /* a fade is running */
+    uint32_t fade_pos;    /* frames faded so far */
+    uint32_t fade_total;  /* fade length in frames */
+    uint32_t fade_reason; /* sel_end_reason the fade ends with */
+    uint32_t reason;      /* sel_end_reason, set with ended */
+    uint32_t silent;      /* consecutive silent frames */
+} sel_playpol;
 
 typedef struct sel_slot {
     uint32_t busy; /* pump side: the slot holds a song until RP_CLOSE ran */
@@ -148,6 +165,7 @@ typedef struct sel_slot {
     uint32_t last_tick;   /* the current tick carries SEL_TICK_ENDED */
     uint32_t ended;       /* set by render, reported by the next pump */
     uint32_t reported;    /* pump side: SONG_ENDED was emitted for this song */
+    sel_playpol pol;      /* loop count, fade and silence state of this song */
 } sel_slot;
 
 struct sel_engine {
@@ -167,6 +185,12 @@ struct sel_engine {
     const sel_tag* (*registry_get)(uint32_t index);
     uint32_t rate;
     uint32_t resampler;
+    /* Playback policy, parsed from the options by set_option; the audio side reads them. */
+    uint32_t repeat;  /* 0 off, 1 one, 2 all */
+    uint32_t loops;   /* LOOPED ticks before the fade starts */
+    uint32_t fade_ms; /* 0..30000 */
+    uint32_t max_song_ms;
+    uint32_t silence_ms;
     sel_slot slot[SEL_SLOT_COUNT];
     sel_spsc swap_q;                /* pump -> audio: slot index to switch to */
     sel_spsc ret_q;                 /* audio -> pump: slot index to close */
@@ -518,12 +542,85 @@ static void cmd_OUTPUT(sel_engine* e, const sel_message* m) {
 
 static void order_reset(sel_engine* e);
 
+/* Decimal text to a number; 0 when value is not a plain unsigned number. */
+static int parse_uint(const char* v, uint32_t max, uint32_t* out) {
+    uint32_t n = 0;
+    if (*v == '\0') {
+        return 0;
+    }
+    for (; *v; v++) {
+        if (*v < '0' || *v > '9' || n > max) {
+            return 0;
+        }
+        n = n * 10u + (uint32_t)(*v - '0');
+    }
+    if (n > max) {
+        return 0;
+    }
+    *out = n;
+    return 1;
+}
+
+/* Validates the options that drive the playback policy and caches their numbers
+ * for the audio side. Returns 0 (and reports) for a value out of range. */
+static int policy_option(sel_engine* e, sel_option_id id, const char* value) {
+    uint32_t n = 0;
+    switch (id) {
+    case SEL_OPT_REPEAT:
+        if (strcmp(value, "off") == 0) {
+            e->repeat = 0;
+        } else if (strcmp(value, "one") == 0) {
+            e->repeat = 1;
+        } else if (strcmp(value, "all") == 0) {
+            e->repeat = 2;
+        } else {
+            return 0;
+        }
+        return 1;
+    case SEL_OPT_LOOPS:
+        if (!parse_uint(value, 1000u, &n) || n == 0) {
+            return 0;
+        }
+        e->loops = n;
+        return 1;
+    case SEL_OPT_FADE_MS:
+        if (!parse_uint(value, 30000u, &n)) {
+            return 0;
+        }
+        e->fade_ms = n;
+        return 1;
+    case SEL_OPT_MAX_SONG_MS:
+        if (!parse_uint(value, 86400000u, &n)) {
+            return 0;
+        }
+        e->max_song_ms = n;
+        return 1;
+    case SEL_OPT_SILENCE_MS:
+        if (!parse_uint(value, 3600000u, &n)) {
+            return 0;
+        }
+        e->silence_ms = n;
+        return 1;
+    default:
+        return 1;
+    }
+}
+
 static void set_option(sel_engine* e, sel_option_id id, const char* value) {
+    if (!policy_option(e, id, value)) {
+        sel_engine_report_error(e, "range", k_option_names[id]);
+        return;
+    }
     if (id == SEL_OPT_RANDOM && strcmp(value, "on") == 0) {
         order_reset(e);
     }
     copy_str(e->state.options[id], SEL_OPTION_VALUE_MAX, value);
     changed(e, PENDING_OPTION_BASE << (uint32_t)id);
+}
+
+/* REPEAT off|one|all: the repeat option. */
+static void cmd_REPEAT(sel_engine* e, const sel_message* m) {
+    set_option(e, SEL_OPT_REPEAT, m->args[0].v.s);
 }
 
 static void cmd_OPTION(sel_engine* e, const sel_message* m) {
@@ -714,6 +811,7 @@ static void close_slot(sel_engine* e, sel_slot* sl) {
     sl->ended = 0;
     sl->reported = 0;
     sl->last_tick = 0;
+    memset(&sl->pol, 0, sizeof sl->pol);
     sl->busy = 0;
 }
 
@@ -729,6 +827,7 @@ static int start_subsong(sel_engine* e, sel_slot* sl, uint32_t subsong) {
         sl->ended = 0;
         sl->reported = 0;
         sl->last_tick = 0;
+        memset(&sl->pol, 0, sizeof sl->pol);
         sl->subsong = subsong;
         return sl->rp_start(sl->rp_state, subsong, e->rate, NULL);
     }
@@ -741,6 +840,7 @@ static int start_subsong(sel_engine* e, sel_slot* sl, uint32_t subsong) {
     sl->ended = 0;
     sl->reported = 0;
     sl->last_tick = 0;
+    memset(&sl->pol, 0, sizeof sl->pol);
     sl->subsong = subsong;
     return sl->rp_start(sl->rp_state, subsong, e->rate, sel_mixer_voices(&sl->mixer));
 }
@@ -1294,7 +1394,14 @@ static uint32_t queue_next_index(sel_engine* e) {
     }
     next = skip_dividers(&e->queue, cur + 1u);
     if (next >= e->queue.count) {
-        return SEL_QUEUE_NONE;
+        if (e->repeat != 2u || strcmp(e->state.options[SEL_OPT_SCOPE], "album") == 0) {
+            return SEL_QUEUE_NONE;
+        }
+        next = skip_dividers(&e->queue, 0);
+        if (next >= e->queue.count || strcmp(e->state.options[SEL_OPT_STOP_AFTER_QUEUE], "on") == 0) {
+            return SEL_QUEUE_NONE;
+        }
+        return next;
     }
     if (strcmp(e->state.options[SEL_OPT_SCOPE], "album") == 0 && !same_album(&e->queue, cur, next)) {
         return SEL_QUEUE_NONE;
@@ -1942,6 +2049,14 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     memset(e, 0, sizeof *e);
     e->host = host;
     e->state.volume = 100;
+    e->loops = 1;
+    e->fade_ms = 3000;
+    e->silence_ms = 5000;
+    copy_str(e->state.options[SEL_OPT_REPEAT], SEL_OPTION_VALUE_MAX, "off");
+    copy_str(e->state.options[SEL_OPT_LOOPS], SEL_OPTION_VALUE_MAX, "1");
+    copy_str(e->state.options[SEL_OPT_FADE_MS], SEL_OPTION_VALUE_MAX, "3000");
+    copy_str(e->state.options[SEL_OPT_MAX_SONG_MS], SEL_OPTION_VALUE_MAX, "0");
+    copy_str(e->state.options[SEL_OPT_SILENCE_MS], SEL_OPTION_VALUE_MAX, "5000");
     e->rate = 44100;
     e->mixed_path = 1;
     e->resampler = SEL_MIX_RESAMPLE_LINEAR;
@@ -2085,14 +2200,30 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
         int advanced = 0;
         if (sl->ended && !sl->reported) {
             sel_message ev;
-            uint32_t next = queue_next_index(e);
+            uint32_t reason = sl->pol.reason != SEL_END_NONE ? sl->pol.reason : (uint32_t)SEL_END_END;
+            uint32_t next;
             sl->reported = 1;
-            evt_init(&ev, SEL_EVT_SONG_ENDED);
-            emit(e, &ev);
-            if (next < e->queue.count && queue_start(e, next)) {
+            if (e->repeat == 1u && reason == SEL_END_END && e->q_playing != 0 &&
+                queue_start(e, sel_queue_index_of(&e->queue, e->q_playing))) {
+                /* REPEAT one: the song restarts without ending. */
                 advanced = 1;
             } else {
-                queue_finish(e);
+                next = queue_next_index(e);
+                evt_init(&ev, SEL_EVT_SONG_ENDED);
+                evt_str(&ev, k_end_reason_names[reason]);
+                emit(e, &ev);
+                if (strcmp(e->state.options[SEL_OPT_STOP_AFTER_CURRENT], "on") == 0) {
+                    /* One-shot: stop here, the next PLAY or NEXT continues with the following entry. */
+                    set_option(e, SEL_OPT_STOP_AFTER_CURRENT, "off");
+                    e->q_hint = next < e->queue.count ? next : 0;
+                    e->q_playing = 0;
+                    e->song_over = 1;
+                    set_play(e, SEL_STOPPED);
+                } else if (next < e->queue.count && queue_start(e, next)) {
+                    advanced = 1;
+                } else {
+                    queue_finish(e);
+                }
             }
         }
         if (!advanced && sl->rp_state != NULL && sl->song_frames / e->rate != sl->pos_emitted) {
@@ -2204,6 +2335,104 @@ static void viz_feed(sel_engine* e, sel_slot* sl, const int16_t* stereo, uint32_
  * the mixer fills them. The tick that reports ENDED plays out, then the
  * song is flagged ended for the next pump (events are produced on the
  * command side only, keeping the event queue single-producer). */
+/* Applies the end policy to the n frames just mixed at buf (design section 3, loop
+ * detect, fade and silence): silence detection on the raw samples, the max-length
+ * trigger, then the linear fade in 64-frame gain steps. Returns the frames kept;
+ * sets sl->ended and sl->pol.reason when the song ends inside the chunk. Audio thread. */
+static uint32_t policy_chunk(const sel_engine* e, sel_slot* sl, int16_t* buf, uint32_t n) {
+    sel_playpol* p = &sl->pol;
+    uint32_t before = sl->song_frames - n;
+    uint32_t keep = n;
+    uint32_t reason = SEL_END_NONE;
+    uint32_t fade_at = p->fade_on ? 0u : n;
+    uint32_t i;
+    if (e->silence_ms != 0u) {
+        uint32_t need = (uint32_t)((uint64_t)e->silence_ms * e->rate / 1000u);
+        for (i = 0; i < n; i++) {
+            int32_t l = buf[i * 2u], r = buf[i * 2u + 1u];
+            if (l > -SEL_SILENCE_LEVEL && l < SEL_SILENCE_LEVEL && r > -SEL_SILENCE_LEVEL && r < SEL_SILENCE_LEVEL) {
+                if (++p->silent >= need) {
+                    keep = i + 1u;
+                    reason = SEL_END_SILENCE;
+                    break;
+                }
+            } else {
+                p->silent = 0;
+            }
+        }
+    }
+    if (!p->fade_on && e->max_song_ms != 0u) {
+        uint64_t max_frames = (uint64_t)e->max_song_ms * e->rate / 1000u;
+        if ((uint64_t)before + n > max_frames) {
+            uint32_t off = max_frames > before ? (uint32_t)(max_frames - before) : 0u;
+            if (off < keep) {
+                p->fade_on = 1;
+                p->fade_pos = 0;
+                p->fade_total = (uint32_t)((uint64_t)e->fade_ms * e->rate / 1000u);
+                p->fade_reason = SEL_END_MAX_LENGTH;
+                fade_at = off;
+            }
+        }
+    }
+    if (p->fade_on) {
+        uint32_t gain = 0;
+        for (i = fade_at; i < keep; i++) {
+            if (p->fade_pos >= p->fade_total) {
+                keep = i;
+                reason = p->fade_reason;
+                break;
+            }
+            if (i == fade_at || (p->fade_pos & 63u) == 0u) {
+                gain = (uint32_t)(((uint64_t)(p->fade_total - p->fade_pos) << 16) / p->fade_total);
+            }
+            buf[i * 2u] = (int16_t)(((int32_t)buf[i * 2u] * (int32_t)gain) >> 16);
+            buf[i * 2u + 1u] = (int16_t)(((int32_t)buf[i * 2u + 1u] * (int32_t)gain) >> 16);
+            p->fade_pos++;
+        }
+        if (reason == SEL_END_NONE && p->fade_pos >= p->fade_total) {
+            reason = p->fade_reason;
+        }
+    }
+    if (reason != SEL_END_NONE) {
+        p->reason = reason;
+        sl->ended = 1;
+    }
+    sl->song_frames -= n - keep;
+    return keep;
+}
+
+/* A LOOPED tick: counts the pass; the pass that reaches `loops` starts the fade
+ * (or ends the song at once when fade_ms is 0). REPEAT one never ends on a loop. */
+static void policy_loop(const sel_engine* e, sel_slot* sl) {
+    sel_playpol* p = &sl->pol;
+    if (e->repeat == 1u || p->fade_on) {
+        return;
+    }
+    p->loops_seen++;
+    if (p->loops_seen < e->loops) {
+        return;
+    }
+    if (e->fade_ms == 0u) {
+        sl->last_tick = 1;
+        p->reason = SEL_END_LOOP;
+        return;
+    }
+    p->fade_on = 1;
+    p->fade_pos = 0;
+    p->fade_total = (uint32_t)((uint64_t)e->fade_ms * e->rate / 1000u);
+    p->fade_reason = SEL_END_LOOP;
+}
+
+int sel_engine_fade(const sel_engine* e, uint32_t* pos, uint32_t* total) {
+    const sel_slot* sl = e->audio_slot < SEL_SLOT_COUNT ? &e->slot[e->audio_slot] : NULL;
+    if (sl == NULL || !sl->pol.fade_on) {
+        return 0;
+    }
+    *pos = sl->pol.fade_pos;
+    *total = sl->pol.fade_total;
+    return 1;
+}
+
 uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
     uint32_t done = 0;
     SEL_THREAD_AUDIO(e);
@@ -2257,10 +2486,12 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
             sl->rp_render_calls++;
             sl->rendered_frames += got;
             sl->song_frames += got;
+            got = policy_chunk(e, sl, stereo + (size_t)done * 2u, got);
             done += got;
             sample_position(sl);
-            if (got < want) { /* short read: the song ended */
+            if (got < want && !sl->ended) { /* short read: the song ended */
                 sl->ended = 1;
+                sl->pol.reason = SEL_END_END;
             }
         }
         while (sl->rp_render == NULL && done < frames && !sl->ended) {
@@ -2277,18 +2508,20 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
                         sl->frames_left = 1u;
                     }
                 }
-                /* A looping song ends after its first pass (repeat count 1, as the
-                 * nuade core does); REPEAT will make this configurable. */
-                if (r.flags & (SEL_TICK_ENDED | SEL_TICK_LOOPED)) {
+                if (r.flags & SEL_TICK_ENDED) {
                     sl->last_tick = 1;
+                    sl->pol.reason = SEL_END_END;
+                } else if (r.flags & SEL_TICK_LOOPED) {
+                    policy_loop(e, sl);
                 }
             }
             n = frames - done < sl->frames_left ? frames - done : sl->frames_left;
             sel_mixer_mix(&sl->mixer, stereo + (size_t)done * 2u, n);
             sl->frames_left -= n;
             sl->song_frames += n;
+            n = policy_chunk(e, sl, stereo + (size_t)done * 2u, n);
             done += n;
-            if (sl->frames_left == 0 && sl->last_tick) {
+            if (!sl->ended && sl->frames_left == 0 && sl->last_tick) {
                 sl->last_tick = 0;
                 sl->ended = 1;
             }

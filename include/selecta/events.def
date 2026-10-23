@@ -3,7 +3,7 @@
 
 SEL_EVT(STATE,           "s")
 SEL_EVT(SONG_OPENED,     "t")
-SEL_EVT(SONG_ENDED,      "")
+SEL_EVT(SONG_ENDED,      "s")
 SEL_EVT(POSITION,        "uuuu")
 SEL_EVT(VOICE,           "ut")
 SEL_EVT(VOLUME,          "i")

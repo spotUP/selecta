@@ -95,6 +95,13 @@ add_custom_command(OUTPUT "${SEL_ZERO1MOD}"
   COMMAND gen_testmod --zero-sample 1 "${SEL_ZERO1MOD}"
   DEPENDS gen_testmod
   COMMENT "Generating selecta-test-zero1.mod")
+# T43: selecta-test.mod with every sample zeroed (digital silence).
+set(SEL_SILENTMOD "${CMAKE_CURRENT_BINARY_DIR}/songs/selecta-silent.mod")
+add_custom_command(OUTPUT "${SEL_SILENTMOD}"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/songs"
+  COMMAND gen_testmod --silent "${SEL_SILENTMOD}"
+  DEPENDS gen_testmod
+  COMMENT "Generating selecta-silent.mod")
 # T31: copies of the test module in album directories a, b and c.
 set(SEL_ALBUM_STAMP "${CMAKE_CURRENT_BINARY_DIR}/songs/album.stamp")
 add_custom_command(OUTPUT "${SEL_ALBUM_STAMP}"
@@ -110,7 +117,7 @@ add_custom_command(OUTPUT "${SEL_ALBUM_STAMP}"
   COMMAND "${CMAKE_COMMAND}" -E touch "${SEL_ALBUM_STAMP}"
   DEPENDS "${SEL_TESTMOD}" "${CMAKE_CURRENT_SOURCE_DIR}/m12/list.prg" "${CMAKE_CURRENT_SOURCE_DIR}/m12/rel.m3u"
   COMMENT "Copying album test songs")
-add_custom_target(testmod ALL DEPENDS "${SEL_TESTMOD}" "${SEL_SHORTMOD}" "${SEL_MKMOD}" "${SEL_BREAKMOD}" "${SEL_ZERO1MOD}" "${SEL_ALBUM_STAMP}")
+add_custom_target(testmod ALL DEPENDS "${SEL_TESTMOD}" "${SEL_SHORTMOD}" "${SEL_MKMOD}" "${SEL_BREAKMOD}" "${SEL_ZERO1MOD}" "${SEL_SILENTMOD}" "${SEL_ALBUM_STAMP}")
 add_test(NAME testmod-sha
   COMMAND "${CMAKE_COMMAND}" "-DMOD=${SEL_TESTMOD}"
     "-DPINNED=${CMAKE_CURRENT_SOURCE_DIR}/songs/selecta-test.mod.sha256"
@@ -540,4 +547,18 @@ if(NOT SEL_AMIGA)
       "-DOUT=${SEL_RENDER_OUT}/crossfeed.wav" "-DPLAIN=${SEL_RENDER_OUT}/crossfeed-plain.wav"
       "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/golden/dsp/crossfeed.sha256"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/dsp/render_check.cmake")
+endif()
+
+# T43 (rows I93, I94): loop detect, REPEAT, fade, max_song_ms, silence_ms, stop-after options.
+# T44 (rows I93, I95): crossfade and gapless. T45 (rows I93, I96): sleep timer and alarm.
+if(NOT SEL_AMIGA)
+  foreach(t loop:loop-fade crossfade:crossfade sleep:sleep-alarm)
+    string(REPLACE ":" ";" parts "${t}")
+    list(GET parts 0 file)
+    list(GET parts 1 name)
+    add_test(NAME ${name}
+      COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DSCRIPTS=${CMAKE_CURRENT_SOURCE_DIR}/m13"
+        "-DSONGS=${CMAKE_CURRENT_BINARY_DIR}/songs"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/m13/${file}_check.cmake")
+  endforeach()
 endif()

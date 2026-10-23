@@ -1,0 +1,13 @@
+# T45: SLEEP_TIMER and ALARM against the fake clock (script --clock fake=HH:MM:SS).
+# @clock +MS advances the fake host clock by MS milliseconds.
+VOLUME 80
+QUEUE_ADD selecta-test.mod
+PLAY
+@render 441
+SLEEP_TIMER 1
+@clock +60000
+@render 441000
+ALARM 25:00
+ALARM 07:30
+@clock +1000
+@render 441

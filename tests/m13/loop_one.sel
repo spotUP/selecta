@@ -1,0 +1,5 @@
+# T43: REPEAT one never ends (120 s rendered, no SONG_ENDED).
+REPEAT one
+QUEUE_ADD selecta-test.mod
+PLAY
+@render 5292000

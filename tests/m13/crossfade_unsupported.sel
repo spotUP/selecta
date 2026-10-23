@@ -1,0 +1,5 @@
+# T44: on a Paula-direct output (SEL_OUT_VOICES, test output voices-test) crossfade is unsupported
+# and the snapshot capability mixed_path is 0.
+OUTPUT voices-test
+OPTION crossfade 2000
+@stats

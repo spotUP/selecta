@@ -1,0 +1,9 @@
+# T44: OPTION crossfade 2000 overlaps two songs by 2000 ms = 88200 frames, both slots mixed.
+# @stats prints the engine stats line: xfade_frames=F slots_mixed=N.
+OPTION crossfade 2000
+QUEUE_ADD selecta-short.mod
+QUEUE_ADD selecta-short.mod
+PLAY
+@render_until_end
+@render_until_end
+@stats
