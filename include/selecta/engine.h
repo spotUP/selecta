@@ -77,6 +77,8 @@ typedef struct sel_view_row {
     const char* text;
     uint32_t count;    /* SEL_ROW_NODE: songs the node holds */
     uint32_t expanded; /* SEL_ROW_NODE: 1 when its songs are listed below it */
+    const char* key;   /* SEL_ROW_HOME: the song key to play or, when album is 1, the album name to open; NULL else (I191a) */
+    uint32_t album;    /* SEL_ROW_HOME: 1 when key names an album, 0 when it names a song */
 } sel_view_row;
 
 /* rows[0..row_n) are the visible window: listing indices window_start and up.

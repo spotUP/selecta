@@ -281,8 +281,9 @@ static void home_put(const sel_user_op* op, uint32_t* used, int64_t* rows, const
     }
 }
 
-/* Runs `sql` (one text column, an optional second one for the artist) and puts every row as an `S` line. */
-static int home_list(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t* rows, const char* sql) {
+/* Runs `sql` (display name, artist, key) and puts every row as an `S <key>\t<entry>` line; `album` marks the key as an
+ * album name with a leading @ (I191a). */
+static int home_list(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t* rows, const char* sql, int album) {
     sqlite3_stmt* st = NULL;
     int rc = sqlite3_prepare_v2(db, sql, -1, &st, NULL);
     if (rc != SQLITE_OK) return rc;
@@ -290,11 +291,14 @@ static int home_list(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t
     while (sqlite3_step(st) == SQLITE_ROW) {
         const char* name = (const char*)sqlite3_column_text(st, 0);
         const char* artist = (const char*)sqlite3_column_text(st, 1);
-        char line[160];
+        const char* key = (const char*)sqlite3_column_text(st, 2);
+        char line[320];
+        size_t at = (size_t)snprintf(line, sizeof line, "%s%s\t", album ? "@" : "", key != NULL ? key : "");
+        if (at >= sizeof line) at = sizeof line - 1u;
         if (artist != NULL && artist[0] != '\0') {
-            snprintf(line, sizeof line, "%s - %s", name, artist);
+            snprintf(line + at, sizeof line - at, "%s - %s", name, artist);
         } else {
-            snprintf(line, sizeof line, "%s", name);
+            snprintf(line + at, sizeof line - at, "%s", name);
         }
         home_put(op, used, rows, "S", line);
     }
@@ -314,15 +318,15 @@ static int home_text(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     *rows = 0;
     home_put(op, &used, rows, "H", "Recently played");
     rc = home_list(db, op, &used, rows,
-                   "SELECT COALESCE(s.name, h.key), s.artist FROM (SELECT key, MAX(played_at) AS last FROM history GROUP BY key) h"
-                   " LEFT JOIN songs s ON s.key = h.key ORDER BY h.last DESC, h.key LIMIT ?1");
+                   "SELECT COALESCE(s.name, h.key), s.artist, h.key FROM (SELECT key, MAX(played_at) AS last FROM history GROUP BY key) h"
+                   " LEFT JOIN songs s ON s.key = h.key ORDER BY h.last DESC, h.key LIMIT ?1", 0);
     if (rc != SQLITE_OK) return rc;
     home_put(op, &used, rows, "H", "Jump back in");
     rc = home_list(db, op, &used, rows,
-                   "SELECT s.album, s.artist FROM history h JOIN songs s ON s.key = h.key"
+                   "SELECT s.album, s.artist, s.album FROM history h JOIN songs s ON s.key = h.key"
                    " WHERE h.skipped = 1 AND s.album IS NOT NULL AND s.album <> ''"
                    " AND NOT EXISTS (SELECT 1 FROM history f WHERE f.key = h.key AND f.skipped = 0)"
-                   " GROUP BY s.album ORDER BY MAX(h.played_at) DESC, s.album LIMIT ?1");
+                   " GROUP BY s.album ORDER BY MAX(h.played_at) DESC, s.album LIMIT ?1", 1);
     if (rc != SQLITE_OK) return rc;
     home_put(op, &used, rows, "H", "New this week");
     rc = sqlite3_prepare_v2(db, "SELECT value FROM meta WHERE key = 'modland.new_this_week'", -1, &st, NULL);

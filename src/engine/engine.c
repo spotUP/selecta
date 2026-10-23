@@ -3935,7 +3935,32 @@ static void cmd_VIEW_ACTIVATE(sel_engine* e, const sel_message* m) {
     }
     at = v->cursor;
     if (v->source == SEL_VIEW_HOME) {
-        return; /* home rows are display text; opening an entry arrives with the song keys (open item) */
+        /* I191a: a song row joins the queue and starts (like a query row); an album row runs the album search
+         * and shows it through VIEW_SOURCE query. Headings and the count line carry no key. */
+        const sel_view_row* r = &e->view.frows[at];
+        if (r->kind != SEL_ROW_HOME || r->key == NULL) {
+            return;
+        }
+        if (r->album) {
+            char text[SEL_VIEW_KEY_MAX + 16];
+            sel_message q;
+            uint32_t fts = 0;
+            snprintf(text, sizeof text, "album:\"%s\"", r->key);
+            if (!run_search(e, text, "VIEW_ACTIVATE", &fts)) {
+                return;
+            }
+            memset(&q, 0, sizeof q);
+            q.argc = 1;
+            q.args[0].v.s = "query";
+            cmd_VIEW_SOURCE(e, &q);
+        } else {
+            uint32_t before = e->queue.count;
+            queue_insert(e, before, r->key, "VIEW_ACTIVATE");
+            if (e->queue.count > before) {
+                queue_start(e, before);
+            }
+        }
+        return;
     }
     if (v->source == SEL_VIEW_FOLDERS) {
         /* A playlist row loads the playlist into the queue and starts its first song; a folder row has

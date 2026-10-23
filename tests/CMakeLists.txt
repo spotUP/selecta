@@ -1002,6 +1002,8 @@ if(NOT SEL_AMIGA)
       "-DSEL=${CMAKE_CURRENT_SOURCE_DIR}/m3/history.sel"
       "-DSQLITE3=${SEL_SQLITE3_META}"
       "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m3/home.keys"
+      "-DKEYS_SONG=${CMAKE_CURRENT_SOURCE_DIR}/m3/home_song.keys"
+      "-DKEYS_ALBUM=${CMAKE_CURRENT_SOURCE_DIR}/m3/home_album.keys"
       "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m3/home_view.screen"
       "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/home_view"

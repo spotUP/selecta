@@ -18,6 +18,7 @@
 #define SEL_VIEW_TITLE_DEFAULT "[%author% - ]%title%[  Votes %votes%]"
 #define SEL_VIEW_VOTES_MAX 12u /* a vote count as text, NUL included */
 #define SEL_VIEW_TEXT_MAX 160u /* one formatted row, NUL included */
+#define SEL_VIEW_KEY_MAX 128u    /* bytes of the song key or album name a home row carries (I191a) */
 #define SEL_VIEW_FOLDER_ROWS 256u /* rows of the folders source (the playlist folder tree, I179) */
 #define SEL_VIEW_FOLDER_NAME 64u
 
@@ -79,6 +80,7 @@ typedef struct sel_view {
     int anchor_node;      /* pub.cursor_id names a node, not a song */
     sel_view_row* frows;             /* the folders source: SEL_VIEW_FOLDER_ROWS rows, text in ftext */
     char* ftext;
+    char* fkey;                      /* SEL_VIEW_FOLDER_ROWS * SEL_VIEW_KEY_MAX: the key of each home row */
     uint32_t frow_n, fgen;           /* rows filled, bumps on every set */
     sel_view_sig last;
 } sel_view;
@@ -91,7 +93,8 @@ void sel_view_free(sel_view* v, const sel_host* host);
  * indent per level). Returns the rows kept (at most SEL_VIEW_FOLDER_ROWS). */
 uint32_t sel_view_set_folders(sel_view* v, const char* tree);
 
-/* Replaces the home rows from the library home text (H/S/C lines); returns the entry count (I191). */
+/* Replaces the home rows from the library home text (H/S/C lines); returns the entry count (I191). An `S` line is
+ * "S <key>\t<entry>" for a song row and "S @<album>\t<entry>" for an album row; the key lands in the row (I191a). */
 uint32_t sel_view_set_home(sel_view* v, const char* text);
 
 /* "queue", "browse", "query", "folders" or "home". 0: unknown source. */
