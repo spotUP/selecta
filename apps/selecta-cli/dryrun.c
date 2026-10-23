@@ -4,6 +4,7 @@
  * KEY=VALUE lines, the same words the command line takes. */
 #include "cli.h"
 #include "../../src/engine/options.h"
+#include "../../src/core/pal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -58,6 +59,7 @@ int sel_cli_dry_run(int argc, char** argv) {
     printf("output=%s\n", prefs.value[SEL_PREF_OUTPUT_ID]);
     printf("buffer=%s\n", prefs.value[SEL_PREF_OUTPUT_BUFFER]);
     printf("led=%s\n", prefs.value[SEL_PREF_OUTPUT_LED]);
-    printf("task_pri=%d\n", sel_opts_priority(&prefs));
+    /* I117: apply the option to this task and print what the OS reports back */
+    printf("task_pri=%d\n", sel_pal_set_task_priority(sel_opts_priority(&prefs)));
     return 0;
 }

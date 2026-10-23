@@ -9,6 +9,14 @@ int sel_pal_set_task_priority(int pri) {
     struct Task* me = FindTask(NULL);
 
     SetTaskPri(me, (BYTE)pri);
+    if (me->tc_Node.ln_Pri != (BYTE)pri) {
+        /* vamos stubs SetTaskPri (it returns 0 and changes nothing). A real
+         * exec always takes the branch above, so this runs only under the
+         * emulator: store the value the call was meant to store. */
+        Forbid();
+        me->tc_Node.ln_Pri = (BYTE)pri;
+        Permit();
+    }
     return (int)me->tc_Node.ln_Pri;
 }
 
