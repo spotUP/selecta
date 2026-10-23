@@ -10,6 +10,7 @@
  * song added first. */
 #include "db_internal.h"
 #include "../md5.h"
+#include "../source.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -206,6 +207,8 @@ int sel_library_duplicates(sel_library* lib, sel_dup_row_fn fn, void* ctx) {
 
 int sel_library_best_source(sel_library* lib, const char* song_key, char* out, size_t cap) {
     char buf[1536];
+    char source[32];
+    char path[1536];
     sel_genre_op op;
     int64_t id = 0;
 
@@ -215,7 +218,12 @@ int sel_library_best_source(sel_library* lib, const char* song_key, char* out, s
     op.key = song_key;
     op.out = buf;
     op.out_cap = sizeof buf;
-    if (sel_genre_call(lib, &op, &id) <= 0 || strlen(buf) + 1u > cap) return 0;
+    if (sel_genre_call(lib, &op, &id) <= 0) return 0;
+    /* A local key opens as its plain path; a remote key stays a key for the file cache. */
+    if (sel_song_key_split(buf, source, sizeof source, path, sizeof path) && strcmp(source, "local") == 0) {
+        memmove(buf, path, strlen(path) + 1u);
+    }
+    if (strlen(buf) + 1u > cap) return 0;
     memcpy(out, buf, strlen(buf) + 1u);
     return 1;
 }

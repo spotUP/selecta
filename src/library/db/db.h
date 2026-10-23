@@ -355,7 +355,8 @@ int sel_library_duplicates(sel_library* lib, sel_dup_row_fn fn, void* ctx);
  * at, -1 on a library error. */
 int sel_library_hash_local(sel_library* lib);
 /* The song OPEN plays for `song_key`: the best source among the songs with the same md5 (D-M3-14), which is
- * `song_key` itself when it is the best. 0 when the song has no md5 or is unknown. */
+ * `song_key` itself when it is the best. A local best source comes back as its plain path, a remote one as its key
+ * (the form read_song opens). 0 when the song has no md5 or is unknown. */
 int sel_library_best_source(sel_library* lib, const char* song_key, char* out, size_t cap);
 
 uint32_t sel_library_account(const sel_library* lib);

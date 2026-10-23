@@ -130,7 +130,7 @@ if(NOT hashed STREQUAL m_amb)
 endif()
 
 # ---- OPEN plays the best source: opening the modland copy of ambient.mod reads the local file, opening the local
-# key is no redirect. dup_stats is the sentinel (DUP redirects=N played=<key read instead>).
+# key is no redirect. dup_stats is the sentinel (DUP redirects=N played=<path or remote key read instead; a local best source is its plain path>).
 string(REGEX REPLACE "^local:" "" p_amb "${k_amb}")
 file(WRITE "${WORK}/t86-open.sel" "OPEN modland:Planted/amb.mod\n@dup_stats\nOPEN ${p_amb}\n@dup_stats\n@library_stats\n")
 execute_process(COMMAND "${CLI}" script "${WORK}/t86-open.sel" --db "${db}" OUTPUT_VARIABLE o2 ERROR_VARIABLE e2 RESULT_VARIABLE rc2)
@@ -142,7 +142,8 @@ string(REGEX MATCHALL "DUP redirects=[^\n]*" dups "${o2}")
 list(GET dups 0 dup_first)
 list(GET dups 1 dup_second)
 # the second OPEN is the local file itself: no twin ranks above it, so the count stays at 1
-if(NOT dup_first STREQUAL "DUP redirects=1 played=${k_amb}" OR NOT dup_second STREQUAL "DUP redirects=1 played=${k_amb}")
+string(REGEX REPLACE "^local:" "" p_amb "${k_amb}")
+if(NOT dup_first STREQUAL "DUP redirects=1 played=${p_amb}" OR NOT dup_second STREQUAL "DUP redirects=1 played=${p_amb}")
   message(FATAL_ERROR "T86 open: OPEN did not play the best source\n${o2}")
 endif()
 expect_counter("${o2}" songs_opened 2)

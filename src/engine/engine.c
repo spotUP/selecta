@@ -1143,9 +1143,6 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size) {
         snprintf(e->dup_played, sizeof e->dup_played, "%s", best);
         e->dup_redirects++;
         path = best;
-        if (strncmp(best, "local:", 6) == 0) { /* a local song key is local:<absolute path> */
-            path = best + 6;
-        }
     }
     if (e->lib != NULL && sel_cache_is_remote(path)) {
         /* Remote key: the file cache serves it (a hit when the prefetch got there first), I168. */
