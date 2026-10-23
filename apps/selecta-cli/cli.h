@@ -32,14 +32,6 @@ int sel_cli_library(int argc, char** argv);
 /* library fetch <source>:<path> (T69): the Mirrors transport; prints mirror_tries= mirror_retries=. */
 int sel_cli_library_fetch(int argc, char** argv);
 
-/* LIBRARY_FETCH hook of `script` (T75, I165, I166): file cache + companions. The counters print at
- * the end of the script when the hook served at least one request. */
-#include <selecta/engine.h>
-typedef struct sel_cli_cache sel_cli_cache;
-sel_cli_cache* sel_cli_cache_open(void);
-sel_library_fetch_fn sel_cli_cache_hook(void);
-void sel_cli_cache_report(const sel_cli_cache* c);
-
 /* fetch <url> (T67, T68): one HTTP request through the library client; prints counters. */
 int sel_cli_fetch(int argc, char** argv);
 

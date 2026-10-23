@@ -89,6 +89,9 @@ sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint
     return lib;
 fail:
     sqlite3_close(lib->db);
+    if (lib->cache != NULL) {
+        host->mem_free(host, lib->cache);
+    }
     heap_release(host);
     host->mem_free(host, lib);
     return NULL;

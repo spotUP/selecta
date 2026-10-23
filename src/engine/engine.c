@@ -33,6 +33,7 @@
 #include "prefs.h"
 #include "view.h"
 #include "db.h"
+#include "cache.h"
 #include "sources/local_source.h"
 #include "scheduler.h"
 #include "spsc.h"
@@ -265,8 +266,6 @@ struct sel_engine {
     uint32_t song_over; /* the open song ended or the queue ran out: PLAY restarts the queue */
     sel_browse browse;  /* the listing LIBRARY_BROWSE fills */
     sel_scan_info scan_info; /* counters of the last LIBRARY_SCAN */
-    sel_library_fetch_fn library_fetch; /* LIBRARY_FETCH hook (I165); NULL: no_library */
-    void* library_fetch_ctx;
     uint32_t lib_slot;
     sel_tag lib_tags[4][4];                  /* LIBRARY_RESULT tags, a ring like error_detail */
     char lib_path[4][SEL_BROWSE_PATH_MAX];
@@ -2479,19 +2478,21 @@ static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
     emit_library_path(e, m->args[0].v.s, files);
 }
 
-/* LIBRARY_FETCH <source>:<path>[#md5=<hex>]: the front end's hook fetches the file and its
- * companions into the file cache (I165, I166). The answer is a LIBRARY_RESULT carrying the cache
+/* LIBRARY_FETCH <source>:<path>[#md5=<hex>]: fetches the file and its companions into the library's
+ * file cache through cfg.library (I165, I166, I166a). The answer is a LIBRARY_RESULT carrying the cache
  * path and the number of files delivered; a wrong md5 on every mirror answers ERROR md5_mismatch. */
 static void cmd_LIBRARY_FETCH(sel_engine* e, const sel_message* m) {
     char out[SEL_BROWSE_PATH_MAX];
     uint32_t files = 0;
+    char rules[512];
     int rc;
 
-    if (e->library_fetch == NULL) {
+    if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", "LIBRARY_FETCH");
         return;
     }
-    rc = e->library_fetch(e->library_fetch_ctx, m->args[0].v.s, out, sizeof out, &files);
+    sel_companion_rules(e->registry_count, e->registry_get, rules, sizeof rules);
+    rc = sel_library_fetch(e->lib, m->args[0].v.s, rules, out, sizeof out, &files);
     if (rc < 0) {
         sel_engine_report_error(e, "md5_mismatch", m->args[0].v.s);
         return;
@@ -2822,8 +2823,6 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     }
     sel_prefs_init(&e->prefs);
     if (cfg) {
-        e->library_fetch = cfg->library_fetch;
-        e->library_fetch_ctx = cfg->library_fetch_ctx;
     }
     if (cfg && cfg->config_dir && strlen(cfg->config_dir) < sizeof e->config_dir) {
         strcpy(e->config_dir, cfg->config_dir);
