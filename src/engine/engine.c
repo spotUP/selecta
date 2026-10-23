@@ -35,6 +35,7 @@
 #include "db.h"
 #include "cache.h"
 #include "sources/local_source.h"
+#include "sources/modland_sync.h"
 #include "scheduler.h"
 #include "spsc.h"
 #include "thread.h"
@@ -102,6 +103,7 @@
     X(VIEW_SOURCE)                                                                            \
     X(LIBRARY_FETCH)                                                                          \
     X(LIBRARY_SCAN)                                                                           \
+    X(LIBRARY_SYNC)                                                                           \
     X(VIEW_SHOW)                                                                              \
     X(VIEW_CURSOR)                                                                            \
     X(VIEW_ACTIVATE)                                                                          \
@@ -266,6 +268,7 @@ struct sel_engine {
     uint32_t song_over; /* the open song ended or the queue ran out: PLAY restarts the queue */
     sel_browse browse;  /* the listing LIBRARY_BROWSE fills */
     sel_scan_info scan_info; /* counters of the last LIBRARY_SCAN */
+    sel_sync_info sync_info; /* counters of the last LIBRARY_SYNC */
     uint32_t lib_slot;
     sel_tag lib_tags[4][4];                  /* LIBRARY_RESULT tags, a ring like error_detail */
     char lib_path[4][SEL_BROWSE_PATH_MAX];
@@ -2486,6 +2489,46 @@ static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
     emit_library_path(e, m->args[0].v.s, files);
 }
 
+/* LIBRARY_SYNC <source> <dir> [now]: syncs a network source's catalogue from the listing and changelogs in
+ * <dir> (I161; only `modland` today). `now` (epoch seconds) fixes the clock of "new this week". The answer
+ * is a LIBRARY_RESULT with the directory and the listing row count; the counters are in sync_info. */
+static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
+    sel_local_scan_config scfg;
+    sel_modland_sync_stats st;
+    int64_t now;
+    int ok;
+
+    if (e->lib == NULL) {
+        sel_engine_report_error(e, "no_library", "LIBRARY_SYNC");
+        return;
+    }
+    if (strcmp(m->args[0].v.s, "modland") != 0) {
+        sel_engine_report_error(e, "unknown_source", m->args[0].v.s);
+        return;
+    }
+    memset(&scfg, 0, sizeof scfg);
+    scfg.host = e->host;
+    scfg.lib = e->lib;
+    scfg.registry_count = e->registry_count;
+    scfg.registry_get = e->registry_get;
+    now = m->argc > 2 ? (int64_t)m->args[2].v.u : (int64_t)time(NULL);
+    scfg.now = now;
+    ok = sel_modland_sync(&scfg, m->args[1].v.s, now, &st);
+    e->sync_info.listing_rows = st.listing_rows;
+    e->sync_info.skipped_rows = st.skipped_rows;
+    e->sync_info.changelogs = st.changelogs;
+    e->sync_info.cl_added = st.cl_added;
+    e->sync_info.cl_removed = st.cl_removed;
+    e->sync_info.cl_moved = st.cl_moved;
+    e->sync_info.cl_updated = st.cl_updated;
+    e->sync_info.new_this_week = st.new_this_week;
+    if (!ok) {
+        sel_engine_report_error(e, "sync_failed", m->args[1].v.s);
+        return;
+    }
+    emit_library_path(e, m->args[1].v.s, st.listing_rows);
+}
+
 /* LIBRARY_FETCH <source>:<path>[#md5=<hex>]: fetches the file and its companions into the library's
  * file cache through cfg.library (I165, I166, I166a). The answer is a LIBRARY_RESULT carrying the cache
  * path and the number of files delivered; a wrong md5 on every mirror answers ERROR md5_mismatch. */
@@ -3602,6 +3645,10 @@ uint32_t sel_engine_tracker_cells(const sel_engine* e, uint32_t order, uint32_t 
         return 0;
     }
     return sl->rp_tracker_cells(sl->rp_state, order, channel, row_lo, row_hi, out, cap);
+}
+
+void sel_engine_sync_info(const sel_engine* e, sel_sync_info* out) {
+    *out = e->sync_info;
 }
 
 void sel_engine_scan_info(const sel_engine* e, sel_scan_info* out) {

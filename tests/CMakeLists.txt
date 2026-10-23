@@ -1014,3 +1014,11 @@ if(NOT SEL_AMIGA)
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/cache_budget.sh $<TARGET_FILE:selecta-cli>)
   set_tests_properties(cache-budget PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "cache_budget_ok")
 endif()
+
+# M3 Phase 4 (I161): T72 source-modland. library sync modland over a 100-row allmods_md5 fixture plus changelogs, offline.
+if(NOT SEL_AMIGA)
+  add_test(NAME source-modland
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/source_modland.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3)
+  set_tests_properties(source-modland PROPERTIES LABELS m3 TIMEOUT 120 PASS_REGULAR_EXPRESSION "source_modland_ok")
+endif()
