@@ -1,0 +1,8 @@
+# I198b long FTS prefix golden: a word of 4+ letters is a token prefix, not a substring (see library_search.sh)
+song	1	k-songbird.mod k-songwriter.mod
+songb	1	k-songbird.mod
+songw	1	k-songwriter.mod
+prosong	1	k-prosong.mod
+songx	1
+sona	1	k-sonata.mod
+son	1	k-sonata.mod k-songbird.mod k-songwriter.mod

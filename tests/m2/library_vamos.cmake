@@ -86,14 +86,19 @@ m2_check(T96 "${out4}" "index_songs==${big_rows},db_heap_peak>0")
 
 # Multi-hit searches over that index (I198a): an FTS prefix matching every row (3 letters, served by the prefix
 # index) and a compiled field query (full scan of the index) must return hits inside the 512 KB heap, not ERROR
-# out_of_memory/bad_value. A longer prefix with this many hits still fails inside FTS5 (I198b).
-foreach(q "som" "artist:artist")
+# out_of_memory/bad_value. A prefix of 4+ letters (`song`, `long`) searches the 3-letter prefix index and
+# sel_fts_prefix() checks the whole word (I198b); FTS5 would otherwise merge every doclist in memory.
+foreach(q "som" "artist:artist" "song" "long")
   m2_exec(out5 rc5 library search --db work:user.db --index work:bigidx.db --machine a1200 -- ${q})
-  if(NOT rc5 EQUAL 0 OR out5 MATCHES "ERROR")
+  # vamos itself logs "path: ERROR: error removing temp dir" when another vamos shares ~/.vamos; the CLI prints
+  # "ERROR <code>".
+  if(NOT rc5 EQUAL 0 OR out5 MATCHES "(^|\n)ERROR [a-z_]+")
     message(FATAL_ERROR "RED[T96]: multi-hit search '${q}' over a ${big_rows}-row index failed (rc=${rc5}) on 68k.\n${out5}")
   endif()
   m2_check(T96 "${out5}" "index_songs==${big_rows},src_count>0,db_heap_peak>0")
   m2_get("${out5}" db_heap_peak multi_peak)
+  m2_get("${out5}" query_ms multi_ms)
+  message(STATUS "T96 '${q}' db_heap_peak=${multi_peak} query_ms=${multi_ms}")
   if(multi_peak GREATER 524288)
     message(FATAL_ERROR "RED[T96]: search '${q}' db_heap_peak=${multi_peak} exceeds the 512 KB tier heap.")
   endif()

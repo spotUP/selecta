@@ -25,6 +25,7 @@ struct sel_library {
     uint32_t served;   /* requests handled; written by the worker only */
     uint32_t heap_allocs;
     uint32_t heap_bytes;
+    char fts_long[SEL_QUERY_TEXT_MAX + 8]; /* long FTS words of the running search, space separated */
     sel_lib_job* job;  /* the job of the request in flight; set by sel_library_run */
     sel_query query;   /* compile scratch, used by the worker only */
     char view_text[16][256]; /* saved queries handed to the compiler during one compile */
