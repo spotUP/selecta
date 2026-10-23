@@ -43,10 +43,13 @@ int sel_net_send(int h, const void* data, size_t len, unsigned timeout_ms);
  * timeout_ms, SEL_NET_E_CLOSED on peer shutdown, or another negative code. */
 int sel_net_recv(int h, void* buf, size_t cap, unsigned timeout_ms);
 void sel_net_close(int h);
-/* Cancel flag of the calling thread: while *flag is non-zero every connect, send and recv wait on this thread ends
- * within ~50 ms (the call fails with a negative code). NULL clears it. Used by the library job thread so close does
- * not wait out a server that never answers (I173f). No-op where there is no second thread (Amiga). */
-void sel_net_set_cancel(const volatile unsigned* flag);
+/* Cancel generation of the calling thread: every connect, send and recv wait on this thread ends within ~50 ms (the
+ * call fails with a negative code) once *gen differs from start, the value it had when the fetch began. A cancel is a
+ * generation increment, so one that lands at any moment is seen; nothing is ever cleared. NULL clears the
+ * registration. Used by the library job thread so close does not wait out a server that never answers (I173f, start 0
+ * with the quit flag as generation) and by the engine pump for STOP and OPEN (I195a, I195c). No-op where there is no
+ * second thread (Amiga: jobs run inline, decided later with I199). */
+void sel_net_set_cancel(const volatile unsigned* gen, unsigned start);
 void sel_net_stats_get(sel_net_stats* out);
 /* Milliseconds on a monotonic clock (for deadlines). */
 unsigned long sel_net_now_ms(void);

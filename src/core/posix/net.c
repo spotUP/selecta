@@ -110,12 +110,15 @@ void sel_net_stats_get(sel_net_stats* out) {
     pthread_mutex_unlock(&g_lock);
 }
 
-/* The calling thread's cancel flag (sel_net_set_cancel); wait_fd polls in slices so a set flag ends any wait. */
+/* The calling thread's cancel generation (sel_net_set_cancel) and the value it had when the fetch started; wait_fd
+ * polls in slices so a generation that has moved ends any wait. */
 static __thread const volatile unsigned* t_cancel;
+static __thread unsigned t_cancel_start;
 #define NET_CANCEL_SLICE_MS 50u
 
-void sel_net_set_cancel(const volatile unsigned* flag) {
-    t_cancel = flag;
+void sel_net_set_cancel(const volatile unsigned* gen, unsigned start) {
+    t_cancel = gen;
+    t_cancel_start = start;
 }
 
 /* Returns > 0 ready, 0 timeout, < 0 error or cancelled. */
@@ -127,7 +130,7 @@ static int wait_fd(int fd, short ev, unsigned ms) {
         unsigned long now = sel_net_now_ms();
         unsigned slice = now >= end ? 0u : (unsigned)(end - now);
         if (t_cancel != NULL) {
-            if (*t_cancel) {
+            if (*t_cancel != t_cancel_start) {
                 return -1;
             }
             if (slice > NET_CANCEL_SLICE_MS) {

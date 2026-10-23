@@ -264,10 +264,13 @@ struct sel_engine {
     uint32_t rp_config_applied;     /* option values that came from an override layer (T61) */
     sel_state state;
     sel_spsc cmd_q;
-    /* I195a: set by sel_engine_send for STOP and OPEN, read by the pump thread's net waits (sel_net_set_cancel), so a
-     * URL fetch in read_song ends within one poll slice when a newer STOP or OPEN is queued. The pump clears it when it
-     * pops such a command and the queue is then empty. */
-    volatile unsigned net_cancel;
+    /* I195a/I195c: cancel generation. sel_engine_send (the one producer) increments cancel_gen for every STOP and OPEN
+     * before the push; the pump counts each canceller it pops in cancel_served and registers (&cancel_gen,
+     * cancel_served) with sel_net_set_cancel. A fetch is cancelled while cancel_gen != cancel_served, that is while a
+     * newer canceller sits in the queue. Nothing is cleared, so a send landing between any two pump steps is seen. On
+     * Amiga jobs run inline and the cancel is a no-op (decided later with I199). */
+    volatile unsigned cancel_gen;
+    unsigned cancel_served;
     uint32_t net_cancels;                   /* URL fetches abandoned for a newer STOP or OPEN (I195a sentinel) */
     uint32_t net_cancel_lost;               /* canceller dispatched while another sat queued behind it with no cancel pending (I195c sentinel, must stay 0) */
     sel_spsc evt_q;
@@ -1215,7 +1218,7 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size) {
     }
     if (sel_stream_is_url(path) || sel_stream_is_pipe(path)) {
         uint8_t* data = sel_stream_read(e->host, path, size); /* I195: URL or pipe, the whole stream in memory */
-        if (data == NULL && e->net_cancel) {
+        if (data == NULL && e->cancel_gen != e->cancel_served) {
             e->net_cancels++; /* I195a: the fetch was abandoned for a newer STOP or OPEN */
         }
         return data;
@@ -4258,7 +4261,7 @@ void sel_engine_destroy(sel_engine* e) {
         sel_dsp_chain_free(&e->dsp);
         sel_browse_free(&e->browse, e->host);
         sel_view_free(&e->view, e->host);
-        sel_net_set_cancel(NULL); /* the pump registered &e->net_cancel on this thread; it must not outlive e (every pump re-registers) */
+        sel_net_set_cancel(NULL, 0u); /* the pump registered &e->cancel_gen on this thread; it must not outlive e (every pump re-registers) */
         e->host->mem_free(e->host, e);
     }
 }
@@ -4266,7 +4269,7 @@ void sel_engine_destroy(sel_engine* e) {
 int sel_engine_send(sel_engine* e, const sel_message* cmd) {
     SEL_THREAD_NOT_AUDIO(e);
     if (cmd->kind == SEL_MSG_CMD && (cmd->id == SEL_CMD_STOP || cmd->id == SEL_CMD_OPEN)) {
-        e->net_cancel = 1; /* a pump blocked in a URL fetch gives up (I195a); set before the push so the pump sees it */
+        e->cancel_gen++; /* a pump blocked in a URL fetch gives up (I195a); counted before the push so the pump sees it */
     }
     return sel_spsc_push(&e->cmd_q, cmd);
 }
@@ -4402,14 +4405,14 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
     sel_message m;
     uint32_t delivered = 0;
     SEL_THREAD_NOT_AUDIO(e);
-    sel_net_set_cancel(&e->net_cancel); /* this thread's net waits end when send flags a STOP or OPEN (I195a) */
+    sel_net_set_cancel(&e->cancel_gen, e->cancel_served); /* this thread's net waits end when send counts a newer STOP or OPEN (I195a) */
     while (sel_spsc_pop(&e->cmd_q, &m)) {
-        if (m.kind == SEL_MSG_CMD && (m.id == SEL_CMD_STOP || m.id == SEL_CMD_OPEN) && sel_spsc_count(&e->cmd_q) == 0) {
-            e->net_cancel = 0; /* the last queued canceller is being served: its own fetch must run */
-        }
-        if (m.kind == SEL_MSG_CMD && (m.id == SEL_CMD_STOP || m.id == SEL_CMD_OPEN) && sel_spsc_count(&e->cmd_q) > 0 &&
-            !e->net_cancel) {
-            e->net_cancel_lost++;
+        if (m.kind == SEL_MSG_CMD && (m.id == SEL_CMD_STOP || m.id == SEL_CMD_OPEN)) {
+            e->cancel_served++; /* this canceller is being served: its own fetch starts at this generation and runs */
+            sel_net_set_cancel(&e->cancel_gen, e->cancel_served);
+            if (sel_spsc_count(&e->cmd_q) > 0 && e->cancel_gen == e->cancel_served) {
+                e->net_cancel_lost++; /* a canceller is queued behind this one yet no cancel is pending */
+            }
         }
         if (m.kind == SEL_MSG_CMD && m.id < SEL_CMD_COUNT) {
             dispatch(e, &m);
