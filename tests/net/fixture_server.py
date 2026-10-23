@@ -447,6 +447,10 @@ def run(args):
 
 
 def cmd_start(args):
+    # A server left by an earlier start (ctest --repeat reruns the setup test without the cleanup test, a killed
+    # run skips it) would lose its pidfile here and leak for good, so stop it first (I215).
+    if os.path.exists(args.pidfile):
+        cmd_stop(args)
     for p in (args.portfile, args.pidfile):
         if os.path.exists(p):
             os.remove(p)

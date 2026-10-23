@@ -128,8 +128,12 @@ endforeach()
 if(EXISTS "${WORK}/tls_port" AND CA_FILE)
   file(READ "${WORK}/tls_port" tls_port)
   string(STRIP "${tls_port}" tls_port)
-  set(ENV{SELECTA_NET_ALLOW} "127.0.0.1,localhost")
-  set(ENV{SELECTA_NET_MAP} "")
+  # The host map sends "localhost" straight to the fixture's IPv4 address (I215). Without it the client
+  # resolves localhost to ::1 first, and any stranger listening on ::1 with the same port number answers
+  # instead of the fixture (handshake fails). The name stays localhost, so SNI, Host and certificate
+  # verification are unchanged.
+  set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
+  set(ENV{SELECTA_NET_MAP} "localhost=http://127.0.0.1:${tls_port}")
   set(ENV{SELECTA_CA_FILE} "${CA_FILE}")
   fetch(tls tls.bin https://localhost:${tls_port}/plain)
   expect("tls error" "${tls_http_error}" ok)
