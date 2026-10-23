@@ -285,6 +285,7 @@ static void print_event(void* ctx, const sel_message* evt) {
  *   @queue              QUEUE version=V playing=ID ids=a,b,c
  *   @results            RESULTS n key,key,... (the last LIBRARY_SEARCH, PLAY_QUERY or QUEUE_ADD_QUERY result; T65)
  *   @library_stats      LIBRARY searches=N fts_queries=N songs_opened=N history_writes=N skip_excluded=N (T65, T78)
+ *   @dup_stats          DUP redirects=N played=<key> (OPENs that played the best source of the same md5, D-M3-14, T86)
  *   @render N           render N frames on this thread, then pump and print
  *   @fade_mid           render until the end fade runs, then to its midpoint; print FADE gain_q16 pos total
  *   @render_until_end   render until SONG_ENDED is pumped; POSITION events
@@ -376,6 +377,10 @@ static void script_directive(sel_engine* e, const char* line) {
         printf("LIBRARY searches=%u fts_queries=%u songs_opened=%u history_writes=%u skip_excluded=%u\n",
                (unsigned)es.library_searches, (unsigned)es.library_fts_queries, (unsigned)es.songs_opened,
                (unsigned)es.history_writes, (unsigned)es.skip_excluded);
+    } else if (strcmp(line, "@dup_stats") == 0) {
+        sel_engine_stats es;
+        sel_engine_stats_get(e, &es);
+        printf("DUP redirects=%u played=%s\n", (unsigned)es.dup_redirects, es.dup_played);
     } else if (strcmp(line, "@user_stats") == 0) {
         sel_engine_stats es;
         sel_engine_stats_get(e, &es);
@@ -451,6 +456,14 @@ static void script_directive(sel_engine* e, const char* line) {
     }
 }
 
+static int has_catalogue(int argc, char** argv) {
+    int i;
+    for (i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "--catalogue") == 0) return 1;
+    }
+    return 0;
+}
+
 /* T3: every line of the file goes through codec, queue, dispatch and back
  * out as events. One pump per line so the decode pool can be reused. */
 static int cmd_script(const char* path, int argc, char** argv) {
@@ -480,6 +493,14 @@ static int cmd_script(const char* path, int argc, char** argv) {
             g_fake_host = *sel_host_default();
             g_fake_host.query = fake_query;
             host = &g_fake_host;
+        } else if (strcmp(argv[i], "--db") == 0 && lib == NULL && !has_catalogue(argc, argv)) {
+            /* A library DB without a catalogue import (I184): OPEN resolves the best source through it. */
+            lib = sel_library_open(host, sel_machine_probe(host), 0, argv[i + 1]);
+            if (lib == NULL) {
+                fclose(f);
+                return 1;
+            }
+            cfg.library = lib;
         } else if (strcmp(argv[i], "--catalogue") == 0) {
             const char* db = NULL;
             int j;

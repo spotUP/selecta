@@ -1067,7 +1067,43 @@ static int library_similar(int also_by, int argc, char** argv) {
     return rows >= 0 ? 0 : 1;
 }
 
+static void dup_row(void* ctx, const char* md5, int members, const char* best) {
+    (void)ctx;
+    printf("group=%s|%d|%s\n", md5, members, best);
+}
+
+/* `library duplicates --db <path>` (I184, T86): songs with the same md5 across sources. Hashes the local songs
+ * that have no md5 first. Prints `group=<md5>|<members>|<best key>` per group (best per D-M3-14) and `dupes=N`. */
+static int library_duplicates(int argc, char** argv) {
+    const char* db_path = NULL;
+    const sel_host* host = sel_host_default();
+    sel_library* lib;
+    int rows;
+    int i;
+
+    for (i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "--db") == 0 && i + 1 < argc) {
+            db_path = argv[++i];
+        }
+    }
+    if (db_path == NULL) {
+        fputs("usage: selecta-cli library duplicates --db <path>\n", stderr);
+        return 2;
+    }
+    lib = sel_library_open(host, sel_machine_probe(host), 0, db_path);
+    if (lib == NULL) {
+        return 1;
+    }
+    rows = sel_library_duplicates(lib, dup_row, NULL);
+    printf("dupes=%d\n", rows);
+    sel_library_close(lib);
+    return rows >= 0 ? 0 : 1;
+}
+
 int sel_cli_library(int argc, char** argv) {
+    if (argc >= 1 && strcmp(argv[0], "duplicates") == 0) {
+        return library_duplicates(argc - 1, argv + 1);
+    }
     if (argc >= 1 && strcmp(argv[0], "similar") == 0) {
         return library_similar(0, argc - 1, argv + 1);
     }
@@ -1116,6 +1152,6 @@ int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "query") == 0) {
         return library_query(argc - 1, argv + 1);
     }
-    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | sync [--db <path>] [--now <epoch>] [--dump] modland <dir or http(s) url> | meta [--db <path>] <key> | key <source> <path> | genre --db <path> | composer --db <path> <name> | similar --db <path> <key> | also-by --db <path> <key> | trim [--budget <n>] [--machine <name>] | query --explain <q> | export-folder --db <path> --dir <dir> [--folder <id>] [--format m3u] | stats [--machine <name>] [--db <path>]\n", stderr);
+    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | sync [--db <path>] [--now <epoch>] [--dump] modland <dir or http(s) url> | meta [--db <path>] <key> | key <source> <path> | genre --db <path> | composer --db <path> <name> | similar --db <path> <key> | also-by --db <path> <key> | duplicates --db <path> | trim [--budget <n>] [--machine <name>] | query --explain <q> | export-folder --db <path> --dir <dir> [--folder <id>] [--format m3u] | stats [--machine <name>] [--db <path>]\n", stderr);
     return 2;
 }

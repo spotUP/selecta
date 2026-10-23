@@ -272,6 +272,8 @@ typedef struct sel_engine_stats {
     uint32_t seek_path;           /* last SEEK: 0 none, 1 native (RP_SEEK), 2 restart-and-skip */
     uint32_t seek_skipped_frames; /* frames the last restart-and-skip ran through */
     uint32_t songs_opened;        /* songs started by OPEN or the queue (T19) */
+    uint32_t dup_redirects;       /* OPENs that played another source of the same md5 than the one asked for (I184 sentinel) */
+    const char* dup_played;       /* key of the file the last redirected OPEN read, "" when none (I184) */
     uint32_t scrobble_due;        /* SCROBBLE_DUE events the engine emitted (T95 sentinel) */
     uint32_t history_writes;      /* history rows the engine wrote on song end or skip (T78 sentinel) */
     uint32_t skip_excluded;       /* skip-flagged rows the random order left out (T78 flags sentinel) */

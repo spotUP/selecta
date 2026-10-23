@@ -1,5 +1,6 @@
-# T86 similar part (row I183): `library also-by` and `library similar` through the real selecta-cli, on the
-# devilbox fixture songs (composers from the songdb step, genres by tag edit, ratings written to the ratings table).
+# T86 (rows I183, I184): `library also-by`, `library similar` and `library duplicates` through the real selecta-cli, on the
+# devilbox fixture songs (composers from the songdb step, genres by tag edit, ratings written to the ratings table;
+# duplicates: modland and hvsc rows planted with the md5 of the local files, OPEN through `selecta-cli script`).
 # -DCLI=<selecta-cli> -DWORK=<fixture work dir> -DSONGS=<tests/m3/genre> -DGOLDEN=<tests/m3/similar.golden>
 # -DSQLITE3=<sqlite3 shell>
 file(READ "${WORK}/port" port)
@@ -9,6 +10,7 @@ set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
 set(ENV{SELECTA_NET_MAP} "devilbox.uprough.net=${fx},fixture.test=${fx}")
 set(ENV{SELECTA_DEVILBOX_URL} "http://devilbox.uprough.net")
 
+set(good 0)
 set(db "${WORK}/t86-similar.db")
 file(REMOVE "${db}" "${db}-wal" "${db}-shm")
 execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/reset --method POST OUTPUT_VARIABLE o)
@@ -22,7 +24,7 @@ function(run_cli out)
 endfunction()
 
 function(sql out stmt)
-  execute_process(COMMAND "${SQLITE3}" "${db}" "${stmt}" OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
+  execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=1" "${db}" "${stmt}" OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
   if(NOT rc EQUAL 0)
     message(FATAL_ERROR "T86 similar: sqlite3 '${stmt}' failed rc=${rc}\n${o}${e}")
   endif()
@@ -88,4 +90,60 @@ file(READ "${GOLDEN}" want)
 if(NOT got STREQUAL want)
   message(FATAL_ERROR "T86 similar: order differs from tests/m3/similar.golden\n--- got\n${got}--- want\n${want}")
 endif()
-message(STATUS "similar_ok similar_rows=3 also_by_rows=2")
+
+# ---- duplicates (I184): a second database so the similar counts above stay as they are. Planted groups, md5 taken
+# from the files by cmake (not by the code under test): ambient.mod = local + modland + hvsc, techno.mod = local +
+# modland, and one modland + hvsc pair with no local copy. Three groups; nogenre.mod and down.mod are unique.
+set(db "${WORK}/t86-dupes.db")
+file(REMOVE "${db}" "${db}-wal" "${db}-shm")
+run_cli(scan2 library scan --db "${db}" "${SONGS}")
+file(MD5 "${SONGS}/ambient.mod" m_amb)
+file(MD5 "${SONGS}/techno.mod" m_tec)
+set(m_pair 0123456789abcdef0123456789abcdef)
+foreach(row "modland:Planted/amb.mod|${m_amb}" "hvsc:Planted/amb.sid|${m_amb}" "modland:Planted/tec.mod|${m_tec}"
+    "modland:Planted/pair.mod|${m_pair}" "hvsc:Planted/pair.sid|${m_pair}")
+  string(REPLACE "|" ";" f "${row}")
+  list(GET f 0 k)
+  list(GET f 1 m)
+  string(REGEX REPLACE "^([a-z]+):(.*)$" "\\1" src "${k}")
+  string(REGEX REPLACE "^([a-z]+):(.*)$" "\\2" pth "${k}")
+  sql(x "INSERT INTO songs(key, source, path, name, md5) VALUES('${k}', '${src}', '${pth}', '${pth}', '${m}')")
+endforeach()
+key_of(k_amb ambient.mod)
+key_of(k_tec techno.mod)
+run_cli(d1 library duplicates --db "${db}")
+expect_counter("${d1}" dupes 3)
+string(REGEX MATCHALL "group=[^\n]*" groups "${d1}")
+foreach(g IN LISTS groups)
+  if(g MATCHES "group=${m_amb}\\|3\\|${k_amb}$" OR g MATCHES "group=${m_tec}\\|2\\|${k_tec}$"
+      OR g MATCHES "group=${m_pair}\\|2\\|modland:Planted/pair.mod$")
+    math(EXPR good "${good} + 1" OUTPUT_FORMAT DECIMAL)
+  endif()
+endforeach()
+if(NOT good EQUAL 3)
+  message(FATAL_ERROR "T86 duplicates: best source per D-M3-14 wrong in ${good} of 3 groups\n${d1}")
+endif()
+# the md5 of the local files was stored by the duplicates step
+sql(hashed "SELECT md5 FROM songs WHERE key = '${k_amb}'")
+if(NOT hashed STREQUAL m_amb)
+  message(FATAL_ERROR "T86 duplicates: local md5 ${hashed}, want ${m_amb}")
+endif()
+
+# ---- OPEN plays the best source: opening the modland copy of ambient.mod reads the local file, opening the local
+# key is no redirect. dup_stats is the sentinel (DUP redirects=N played=<key read instead>).
+string(REGEX REPLACE "^local:" "" p_amb "${k_amb}")
+file(WRITE "${WORK}/t86-open.sel" "OPEN modland:Planted/amb.mod\n@dup_stats\nOPEN ${p_amb}\n@dup_stats\n@library_stats\n")
+execute_process(COMMAND "${CLI}" script "${WORK}/t86-open.sel" --db "${db}" OUTPUT_VARIABLE o2 ERROR_VARIABLE e2 RESULT_VARIABLE rc2)
+set(o2 "${o2}${e2}")
+if(NOT rc2 EQUAL 0 OR o2 MATCHES "ERROR")
+  message(FATAL_ERROR "T86 open: script failed rc=${rc2}\n${o2}")
+endif()
+string(REGEX MATCHALL "DUP redirects=[^\n]*" dups "${o2}")
+list(GET dups 0 dup_first)
+list(GET dups 1 dup_second)
+# the second OPEN is the local file itself: no twin ranks above it, so the count stays at 1
+if(NOT dup_first STREQUAL "DUP redirects=1 played=${k_amb}" OR NOT dup_second STREQUAL "DUP redirects=1 played=${k_amb}")
+  message(FATAL_ERROR "T86 open: OPEN did not play the best source\n${o2}")
+endif()
+expect_counter("${o2}" songs_opened 2)
+message(STATUS "similar_ok similar_rows=3 also_by_rows=2 dupes=3 open_best_source=1")
