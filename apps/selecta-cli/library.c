@@ -279,6 +279,9 @@ int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "search") == 0) {
         return library_search(argc - 1, argv + 1);
     }
+    if (argc >= 1 && strcmp(argv[0], "fetch") == 0) {
+        return sel_cli_library_fetch(argc - 1, argv + 1);
+    }
     if (argc >= 1 && strcmp(argv[0], "query") == 0) {
         return library_query(argc - 1, argv + 1);
     }

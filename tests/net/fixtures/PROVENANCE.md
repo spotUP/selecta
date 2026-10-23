@@ -15,3 +15,5 @@ All files fetched 2026-10-23 by HTTP GET. None are synthetic. JSON and .prg cann
 | devilbox.uprough.net/api/modland/list_virgill.json | /api/modland/list?dir=pub/modules/Protracker/Virgill | first 30 files |
 | devilbox.uprough.net/api/songdb/lookup_notfound.json | /api/songdb/lookup?hash=000000000000 | full |
 | devilbox.uprough.net/api/hip/votes_400.txt | /api/hip/votes | body `ERR bad`, HTTP 400 |
+
+Synthetic (T69, I156): fast.mirror.test, slow.mirror.test (4 s first byte via routes.json), home.mirror.test and devilbox.uprough.net/api/mirror/modland carry copies of fixture.test/data.bin as Protracker/test/song.mod; they stand in for mirrors, not for real Modland content.
