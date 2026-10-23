@@ -950,6 +950,12 @@ if(NOT SEL_AMIGA)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
   set_tests_properties(loudness-playback PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "loudness_playback_ok")
 
+  # T94 decode part (I194, D-M3-8): MP3 and Ogg Vorbis play through render as RENDER-kind replayer plugins.
+  add_test(NAME stream-decode
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/stream_decode.sh $<TARGET_FILE:selecta-cli> ${CMAKE_CURRENT_SOURCE_DIR}/m3/stream
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
+  set_tests_properties(stream-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "stream_decode_ok")
+
   add_test(NAME share-links
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/share_links.sh $<TARGET_FILE:selecta-cli> $<TARGET_FILE:selecta>
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/share_links.keys

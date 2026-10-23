@@ -1,0 +1,1 @@
+stb_vorbis 1.22 (2021-07-12), https://github.com/nothings/stb commit 5a0bb8b1c1b1ca3f4e2485f4114c1c8ea021b781 (public domain), copied unchanged from third_party/libopenmpt/include/stb_vorbis (OpenMPT patches: pull 1746, no alloca, macro redefinition fixes; see its OpenMPT.txt)
