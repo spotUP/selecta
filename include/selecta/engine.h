@@ -230,6 +230,10 @@ uint32_t sel_engine_routed_direct(const sel_engine* e);
 void sel_engine_set_stage(sel_engine* e, uint32_t led_on, uint32_t width_percent);
 void sel_engine_set_paula_output(sel_engine* e, uint32_t on);
 
+/* Per-song replayer options, "plugin.key=value,..." (D-M2-8): beats the global pref rp.config for songs
+ * opened afterwards. The library DB feeds this in M3; until then the caller sets it before OPEN. */
+void sel_engine_set_song_config(sel_engine* e, const char* list);
+
 typedef struct sel_engine_stats {
     uint32_t ticks;        /* replayer ticks run */
     uint32_t voice_ops;    /* calls through the voices API */
@@ -241,6 +245,7 @@ typedef struct sel_engine_stats {
     uint32_t seek_path;           /* last SEEK: 0 none, 1 native (RP_SEEK), 2 restart-and-skip */
     uint32_t seek_skipped_frames; /* frames the last restart-and-skip ran through */
     uint32_t songs_opened;        /* songs started by OPEN or the queue (T19) */
+    uint32_t rp_config_applied;   /* replayer option values answered by the rp.config pref or the song override (T61) */
     uint32_t undo_depth, redo_depth; /* queue edits that UNDO / REDO can step over (T28) */
     uint32_t dsp_blocks;             /* render blocks that ran at least one DSP plugin (T47) */
     uint32_t xfade_frames;           /* frames mixed with two songs at once (T44) */

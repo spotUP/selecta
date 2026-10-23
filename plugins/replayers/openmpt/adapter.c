@@ -8,6 +8,7 @@
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
 
+#include <stdlib.h>
 #include <string.h>
 
 #define META_LEN 128u
@@ -46,6 +47,17 @@ static int rp_probe(const uint8_t* data, size_t size, const char* name) {
     return SEL_PROBE_NO;
 }
 
+/* Options this adapter declares in SEL_RP_CONFIG (I134): the host answers "openmpt.<name>" from the
+ * rp.config pref or the per-song override; an unanswered name keeps libopenmpt's default. */
+static const char* const k_cfg_filter = "openmpt.interpolationfilter";
+
+static void apply_config(openmpt_module* mod, const sel_host* host) {
+    const char* v = host->config_get != NULL ? host->config_get(host, k_cfg_filter, NULL) : NULL;
+    if (v != NULL) {
+        openmpt_module_set_render_param(mod, OPENMPT_MODULE_RENDER_INTERPOLATIONFILTER_LENGTH, atoi(v));
+    }
+}
+
 static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_info* info) {
     openmpt_state* s;
     openmpt_module_ext* ext = openmpt_module_ext_create_from_memory(src->data, src->size, NULL, NULL, NULL, NULL,
@@ -59,6 +71,7 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
        default, so two renders of one song differ by up to 2 LSB. Golden WAVs
        need byte-identical output: turn dither off. */
     openmpt_module_ctl_set_integer(mod, "dither", 0);
+    apply_config(mod, host);
     s = (openmpt_state*)host->mem_alloc(host, sizeof *s, SEL_MEM_FAST);
     if (s == NULL) {
         openmpt_module_ext_destroy(ext);
@@ -292,8 +305,10 @@ static const sel_tag* rp_metadata(void* state) {
 
 /* Filled at run time: a function pointer cast to an integer is not a
  * constant expression in C99. */
-static sel_tag g_hooks[20];
+static sel_tag g_hooks[21];
 static sel_tag g_desc[5];
+/* SEL_RP_CONFIG list: one entry per option, value = the host config key. */
+static sel_tag g_config[2];
 static char g_extensions[LIST_LEN];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -345,7 +360,10 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[16], SEL_RP_SAMPLE_GET, SEL_TAG_FN(rp_sample_get));
     set(&g_hooks[17], SEL_RP_MIN_CPU, 68020);
     set(&g_hooks[18], SEL_RP_NEEDS_FLOAT, 1);
-    set(&g_hooks[19], SEL_TAG_END, 0);
+    set(&g_hooks[19], SEL_RP_CONFIG, (uintptr_t)g_config);
+    set(&g_hooks[20], SEL_TAG_END, 0);
+    set(&g_config[0], SEL_TAG_USER, (uintptr_t)k_cfg_filter);
+    set(&g_config[1], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "openmpt");

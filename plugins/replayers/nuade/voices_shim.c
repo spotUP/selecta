@@ -68,7 +68,7 @@ void nuade_voice_set_pitch(NuadeVoices* v, uint32_t voice, double hz) {
 
 void nuade_voice_set_volume(NuadeVoices* v, uint32_t voice, float volume) {
     if (!valid(v, voice)) return;
-    v->api->set_volume(v->api, voice, to_q16(volume));
+    v->api->set_volume(v->api, voice, (uint32_t)((uint64_t)to_q16(volume) * v->gain / 100u));
 }
 
 void nuade_voice_set_pan(NuadeVoices* v, uint32_t voice, float pan) {

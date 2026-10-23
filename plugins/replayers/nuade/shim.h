@@ -14,6 +14,7 @@
  * nuade_voice_get_state can return a pointer that stays valid. */
 struct NuadeVoices {
     const sel_voices* api;
+    uint32_t gain; /* output gain percent, 0 to 100 (SEL_RP_CONFIG nuade.gain) */
     NuadeSample current[SEL_NUADE_MAX_VOICES];
 };
 

@@ -7,6 +7,7 @@
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
 
+#include <stdlib.h>
 #include <string.h>
 
 #define META_LEN 128u
@@ -78,6 +79,21 @@ static int rp_probe(const uint8_t* data, size_t size, const char* name) {
     return probe_all(data, size, name, &p);
 }
 
+/* Option this adapter declares in SEL_RP_CONFIG (I134): "nuade.gain", output gain percent 0 to 100, answered by the
+ * host from the rp.config pref or the per-song override. Unanswered: 100, the song's own volume. */
+static const char* const k_cfg_gain = "nuade.gain";
+
+static uint32_t configured_gain(const sel_host* host) {
+    const char* v = host->config_get != NULL ? host->config_get(host, k_cfg_gain, NULL) : NULL;
+    long n = 100;
+    if (v != NULL) {
+        n = strtol(v, NULL, 10);
+        if (n < 0) n = 0;
+        if (n > 100) n = 100;
+    }
+    return (uint32_t)n;
+}
+
 static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_info* info) {
     const NuadePlayer* p;
     nuade_state* s;
@@ -91,6 +107,7 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     }
     memset(s, 0, sizeof *s);
     s->host = host;
+    s->voices.gain = configured_gain(host);
     s->player = p;
     s->src.data = src->data;
     s->src.size = src->size;
@@ -450,7 +467,8 @@ static const sel_tag* rp_metadata(void* state) {
 
 /* Filled at run time: a function pointer cast to an integer is not a
  * constant expression in C99. */
-static sel_tag g_hooks[19];
+static sel_tag g_hooks[20];
+static sel_tag g_config[2]; /* SEL_RP_CONFIG list: one entry per option, value = the host config key */
 static sel_tag g_desc[5];
 /* Built by the registry walk at entry: every usable player's id, and the
  * union of their extensions. A list that would overflow its buffer fails the
@@ -541,7 +559,10 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[15], SEL_RP_MIN_CPU, 68020);
     set(&g_hooks[16], SEL_RP_NEEDS_FLOAT, 1);
     set(&g_hooks[17], SEL_RP_MEMORY, 2097152);
-    set(&g_hooks[18], SEL_TAG_END, 0);
+    set(&g_hooks[18], SEL_RP_CONFIG, (uintptr_t)g_config);
+    set(&g_hooks[19], SEL_TAG_END, 0);
+    set(&g_config[0], SEL_TAG_USER, (uintptr_t)k_cfg_gain);
+    set(&g_config[1], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "nuade");
