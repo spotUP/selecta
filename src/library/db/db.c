@@ -301,6 +301,16 @@ int sel_library_sticker_list(sel_library* lib, const char* key, char* out, uint3
     return user_call_rows(lib, &op, rows) > 0;
 }
 
+int sel_library_song_panel(sel_library* lib, const char* key, char* out, uint32_t cap, uint32_t* rows) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_PANEL;
+    op.key = key;
+    op.out = out;
+    op.out_cap = cap;
+    return user_call_rows(lib, &op, rows) > 0;
+}
+
 int sel_library_cue_set(sel_library* lib, const char* key, uint32_t idx, uint32_t pos_ms) {
     sel_user_op op;
     memset(&op, 0, sizeof op);

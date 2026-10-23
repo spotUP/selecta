@@ -1,0 +1,4 @@
+# T87 metadata-panel (I185): i opens the module info panel of the song OPEN started.
+wait 500
+i
+wait 300

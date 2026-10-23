@@ -393,6 +393,8 @@ int main(int argc, char** argv)
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_LIBRARY_SEARCHES, 0));
     printf("folders_screen opens=%u rows_built=%u\n", (unsigned)sel_tag_find(ust, SEL_UI_STAT_FOLDER_OPENS, 0),
            (unsigned)est.folder_view_rows);
+    printf("meta_panel panel_loads=%u meta_panel_rows=%u\n", (unsigned)est.panel_loads,
+           (unsigned)sel_tag_find(ust, SEL_UI_STAT_META_PANEL_ROWS, 0));
 
     printf("engine_state pitch_cents=%d tempo_percent=%d mute_mask=%u mutes=%u\n", (int)sel_engine_state(e)->pitch_cents,
            (int)sel_engine_state(e)->tempo_percent, (unsigned)sel_engine_state(e)->mute_mask, (unsigned)est.mutes);

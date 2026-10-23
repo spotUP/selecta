@@ -107,6 +107,20 @@ static int tag_edit(sqlite3* db, const char* key, const char* field, const char*
     return exec_text3(db, sql, key, value, NULL);
 }
 
+/* I185: appends one "label\0value\0" pair to a panel list unless the value is absent, empty or "0"; the list
+ * always ends in an empty label. Returns 1 when a row was added. */
+static int panel_put(char* out, uint32_t cap, uint32_t* used, const char* label, const char* value) {
+    size_t ll = strlen(label) + 1u, lv;
+    if (value == NULL || value[0] == '\0' || strcmp(value, "0") == 0) return 0;
+    lv = strlen(value) + 1u;
+    if (*used + ll + lv + 1u > cap) return 0;
+    memcpy(out + *used, label, ll);
+    memcpy(out + *used + ll, value, lv);
+    *used += (uint32_t)(ll + lv);
+    out[*used] = '\0';
+    return 1;
+}
+
 static void user_counts(sqlite3* db, int32_t out[4]) {
     static const char* const tables[4] = {"history", "flags", "notes", "pending_push"};
     int i;
@@ -216,6 +230,33 @@ void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* repl
                     memcpy(op->out + used + ln, v, lv);
                     used += (uint32_t)(ln + lv);
                     op->out[used] = '\0';
+                }
+            }
+            sqlite3_finalize(st);
+        }
+    } else if (op->op == SEL_USER_PANEL && op->out != NULL && op->out_cap > 0) {
+        /* I185: the catalogue rows of the module info panel, in display order; absent data adds no row. */
+        static const char* const labels[] = {"STIL note", "Composer", "Release", "Year", "Genre", "Rating", "Play count"};
+        sqlite3_stmt* st = NULL;
+        uint32_t used = 0;
+        op->out[0] = '\0';
+        rows = 0;
+        rc = sqlite3_prepare_v2(
+            lib->db,
+            "SELECT (SELECT value FROM stickers WHERE key = ?1 AND name = 'stil.comment'),"
+            " (SELECT group_concat(display, ', ') FROM (SELECT display FROM song_composers WHERE song_key = ?1"
+            "  ORDER BY display)),"
+            " s.album, s.year, s.genre, (SELECT rating FROM ratings WHERE key = ?1),"
+            " (SELECT COUNT(*) FROM history WHERE key = ?1 AND skipped = 0)"
+            " FROM (SELECT ?1 AS k) q LEFT JOIN songs s ON s.key = q.k",
+            -1, &st, NULL);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+            if (sqlite3_step(st) == SQLITE_ROW) {
+                int c;
+                for (c = 0; c < 7; c++) {
+                    rows += (int64_t)panel_put(op->out, op->out_cap, &used, labels[c],
+                                               (const char*)sqlite3_column_text(st, c));
                 }
             }
             sqlite3_finalize(st);

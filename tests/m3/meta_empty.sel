@@ -1,0 +1,1 @@
+# T87: no verbs; the database is created from the catalogue import (meta_screen.cmake seeds the rest with sqlite3).

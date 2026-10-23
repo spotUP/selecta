@@ -1,0 +1,24 @@
+ Stopped  selecta test
+ ProTracker MOD (M.K.)  Subsong 1/1  00:00 / 00:30  Volume 100
+ Browse  songs                                    │ Information
+   ..                                             │ Title       selecta test
+   a/                                             │ Format      ProTracker MOD
+   b/                                             │ Channels    4
+   c/                                             │ Patterns    4
+   album.stamp                                    │ Samples     31
+   selecta-break-mk.mod                           │ Subsongs    1
+   selecta-jump0.mod                              │ Duration ms 30080
+   selecta-loop.mod                               │ Message     test sample 1 t
+   selecta-short.mod                              │ Size        6076
+   selecta-silent.mod                             │
+   selecta-test-mk.mod                            │
+   selecta-test-zero1.mod                         │
+   selecta-test.mod                               │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+ Up Down Move  Enter Open  Backspace Parent  Tab Queue  Space Pause  Left Right

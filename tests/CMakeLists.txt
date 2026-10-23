@@ -959,6 +959,20 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/folders_screen.cmake")
   set_tests_properties(text-ui-folders-tree PROPERTIES LABELS m3)
 
+  find_program(SEL_SQLITE3_META sqlite3)
+  add_test(NAME metadata-panel
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv"
+      "-DSEL=${CMAKE_CURRENT_SOURCE_DIR}/m3/meta_empty.sel"
+      "-DSQLITE3=${SEL_SQLITE3_META}"
+      "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m3/meta.keys"
+      "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m3/meta_screen.screen"
+      "-DGOLDEN_LOCAL=${CMAKE_CURRENT_SOURCE_DIR}/m3/meta_local.screen"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/meta_screen"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/meta_screen.cmake")
+  set_tests_properties(metadata-panel PROPERTIES LABELS m3)
+
   add_test(NAME view-library-source
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
       "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv"

@@ -93,7 +93,8 @@ enum {
     SEL_USER_FOLDER_COUNTS,/* I178: reply [2..5] = folders, playlists in folders, playlists, playlist entries */
     SEL_USER_FOLDER_PLAYLISTS, /* I178: at = folder id (0 = all); out = "id\0name\0" pairs then "\0"; reply [2] = playlists */
     SEL_USER_PLAYLIST_KEYS,/* I178: at = playlist id; out = song keys, each NUL terminated, then "\0"; reply [2] = keys */
-    SEL_USER_FOLDER_TREE   /* I178: out = indented tree text "F|P <id> <name>" per line; reply [2] = lines */
+    SEL_USER_FOLDER_TREE,  /* I178: out = indented tree text "F|P <id> <name>" per line; reply [2] = lines */
+    SEL_USER_PANEL         /* I185: out = "label\0value\0" rows of the module info panel, then "\0"; reply [2] = rows */
 };
 /* Why a folder op was refused: reply [0] = 0, [1] = SQLITE_CONSTRAINT, [2] = one of these. */
 enum { SEL_FOLDER_OK = 0, SEL_FOLDER_ERR_NO_FOLDER = 1, SEL_FOLDER_ERR_CYCLE = 2, SEL_FOLDER_ERR_NOT_EMPTY = 3,
@@ -274,6 +275,10 @@ int sel_library_sticker_set(sel_library* lib, const char* key, const char* name,
 int sel_library_sticker_get(sel_library* lib, const char* key, const char* name, char* out, uint32_t cap);
 int sel_library_sticker_del(sel_library* lib, const char* key, const char* name);
 int sel_library_sticker_list(sel_library* lib, const char* key, char* out, uint32_t cap, uint32_t* rows);
+/* I185: the catalogue rows of the module info panel for song `key` (STIL note, composer, release, year, genre,
+ * rating, play count): "label\0value\0" pairs in display order, then an empty label. Data the DB lacks adds no row.
+ * 1 on success; *rows = rows written (may be NULL). */
+int sel_library_song_panel(sel_library* lib, const char* key, char* out, uint32_t cap, uint32_t* rows);
 /* Cue points (I175): cue `idx` of a song key at `pos_ms`. get: 1 and *pos_ms when the cue exists. */
 int sel_library_cue_set(sel_library* lib, const char* key, uint32_t idx, uint32_t pos_ms);
 int sel_library_cue_get(sel_library* lib, const char* key, uint32_t idx, uint32_t* pos_ms);
