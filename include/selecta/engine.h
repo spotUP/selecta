@@ -280,6 +280,8 @@ typedef struct sel_engine_stats {
     uint32_t folder_view_rows;    /* rows the folders view source built from the library tree (I179 sentinel) */
     uint32_t folder_ops;          /* FOLDER_ADD/MOVE/DEL and PLAYLIST_MOVE run against the library (I178 sentinel) */
     uint32_t sticker_ops;         /* STICKER_* commands run against the library (I176 sentinel) */
+    uint32_t links_parsed;        /* share links OPEN parsed (I180 sentinel) */
+    uint32_t links_made;          /* share links SHARE wrote (I180 sentinel) */
     uint32_t library_searches;    /* queries sent to the library worker (T64) */
     uint32_t library_fts_queries; /* of those, queries the FTS5 index served (T64) */
     uint32_t result_count;         /* keys held by the last query result (T64, T65) */
