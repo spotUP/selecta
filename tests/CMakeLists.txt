@@ -803,3 +803,15 @@ set_source_files_properties("${SEL_P14_DIR}/shadow.c" PROPERTIES COMPILE_DEFINIT
 target_include_directories(p14_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
 target_link_libraries(p14_test PRIVATE selecta_core)
 add_test(NAME paula14-unit COMMAND p14_test)
+
+# M3 Phase 1 (plan 2026-10-25-m3-library.md): T62 library-db-open, I144 to I146.
+if(NOT SEL_AMIGA)
+  if(APPLE)
+    set(SEL_T62_SHIM $<TARGET_FILE:count_malloc>)
+  else()
+    set(SEL_T62_SHIM "")
+  endif()
+  add_test(NAME library-db-open
+    COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/m3/library_db_open.sh" $<TARGET_FILE:selecta-cli> ${SEL_T62_SHIM})
+  set_tests_properties(library-db-open PROPERTIES LABELS m3)
+endif()
