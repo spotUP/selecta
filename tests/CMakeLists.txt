@@ -834,3 +834,15 @@ if(NOT SEL_AMIGA)
       -P "${SEL_NET_DIR}/net_guard.cmake")
   set_tests_properties(net-guard PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture)
 endif()
+
+# M3 Phase 1 (plan 2026-10-25-m3-library.md): T62 library-db-open, I144 to I146.
+if(NOT SEL_AMIGA)
+  if(APPLE)
+    set(SEL_T62_SHIM $<TARGET_FILE:count_malloc>)
+  else()
+    set(SEL_T62_SHIM "")
+  endif()
+  add_test(NAME library-db-open
+    COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/m3/library_db_open.sh" $<TARGET_FILE:selecta-cli> ${SEL_T62_SHIM})
+  set_tests_properties(library-db-open PROPERTIES LABELS m3)
+endif()

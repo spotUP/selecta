@@ -10,6 +10,7 @@
 
 #include "cli.h"
 #include "local.h"
+#include "db.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -32,14 +33,14 @@ static void on_event(void* ctx, const sel_message* evt) {
     }
 }
 
-int sel_cli_library(int argc, char** argv) {
+static int library_browse(int argc, char** argv) {
     browse_sink sink;
     sel_engine_config cfg;
     sel_engine* e;
     char line[600];
     char pool[1024];
 
-    if (argc < 2 || strcmp(argv[0], "browse") != 0) {
+    if (argc < 2) {
         fputs("usage: selecta-cli library browse <dir>\n", stderr);
         return 2;
     }
@@ -60,4 +61,68 @@ int sel_cli_library(int argc, char** argv) {
     printf("dir_entries=%u\n", sink.entries);
     sel_engine_destroy(e);
     return sink.failed ? 1 : 0;
+}
+
+/* `library stats [--machine <fake>] [--db <path>]` (T62): opens the library DB (heap, worker,
+ * schema), asks the worker for stats twice and prints one sentinel line. SEL_ALLOC_FREEZE and
+ * SEL_ALLOC_THAW bracket the two requests: after start the library allocates nothing. */
+static int library_stats(int argc, char** argv) {
+    const sel_host* host = sel_host_default();
+    const sel_tag* machine = NULL;
+    const char* db_path = ":memory:";
+    sel_library* lib;
+    sel_message r1;
+    sel_message r2;
+    int i;
+
+    for (i = 0; i + 1 < argc; i += 2) {
+        if (strcmp(argv[i], "--machine") == 0) {
+            machine = sel_machine_fake(argv[i + 1]);
+            if (machine == NULL) {
+                fprintf(stderr, "library stats: unknown machine %s\n", argv[i + 1]);
+                return 2;
+            }
+        } else if (strcmp(argv[i], "--db") == 0) {
+            db_path = argv[i + 1];
+        } else {
+            fputs("usage: selecta-cli library stats [--machine <name>] [--db <path>]\n", stderr);
+            return 2;
+        }
+    }
+    if (machine == NULL) {
+        machine = sel_machine_probe(host);
+    }
+    lib = sel_library_open(host, machine, 0, db_path);
+    if (lib == NULL) {
+        puts("db_open=0");
+        return 1;
+    }
+    fputs("SEL_ALLOC_FREEZE\n", stderr);
+    fflush(stderr);
+    i = sel_library_call(lib, SEL_LIB_REQ_STATS, &r1) && sel_library_call(lib, SEL_LIB_REQ_STATS, &r2);
+    fputs("SEL_ALLOC_THAW\n", stderr);
+    fflush(stderr);
+    if (!i || r2.args[SEL_LIB_STAT_RC].v.i != 0) {
+        puts("db_open=0");
+        sel_library_close(lib);
+        return 1;
+    }
+    printf("db_open=1 schema_version=%d sqlite_version=%s fts5=%d heap_bytes=%u heap_allocs=%u worker_requests=%d"
+           " fts_hits=%d songs=%d account=%u\n",
+           r2.args[SEL_LIB_STAT_SCHEMA].v.i, sel_library_sqlite_version(), r2.args[SEL_LIB_STAT_FTS5].v.i,
+           sel_library_heap_size(lib), sel_library_heap_allocs(lib), r2.args[SEL_LIB_STAT_SERVED].v.i,
+           r2.args[SEL_LIB_STAT_FTS_HITS].v.i, r2.args[SEL_LIB_STAT_SONGS].v.i, sel_library_account(lib));
+    sel_library_close(lib);
+    return 0;
+}
+
+int sel_cli_library(int argc, char** argv) {
+    if (argc >= 1 && strcmp(argv[0], "browse") == 0) {
+        return library_browse(argc, argv);
+    }
+    if (argc >= 1 && strcmp(argv[0], "stats") == 0) {
+        return library_stats(argc - 1, argv + 1);
+    }
+    fputs("usage: selecta-cli library browse <dir> | stats [--machine <name>] [--db <path>]\n", stderr);
+    return 2;
 }

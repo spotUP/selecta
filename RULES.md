@@ -26,6 +26,7 @@ Toolchains: desktop clang/gcc + CMake + Ninja; Amiga bebbo amiga-gcc at `~/opt/a
 | Test, Amiga under vamos | build `build/amiga` first, reconfigure `build/host`, then `ctest --test-dir build/host -R amiga-roundtrip` |
 | List / lint plugins | `build/host/apps/selecta-cli/selecta-cli plugins --lint` |
 | Probe the machine (prints sel_machine tags) | `build/host/apps/selecta-cli/selecta-cli machine` |
+| Open the library DB, print schema and heap (T62) | `build/host/apps/selecta-cli/selecta-cli library stats [--machine a500]` |
 | Pump the null output | `build/host/apps/selecta-cli/selecta-cli play-null --rate 44100 --frames 4410` |
 | Render a song to a WAV (golden oracle; prints `ticks= voice_ops= mixed_frames=`) | `build/host/apps/selecta-cli/selecta-cli render build/host/tests/songs/selecta-test.mod --output <wav> --seconds 10 --rate 44100 --resample linear` (resamplers: none, linear, cubic, sinc); compare with `tests/golden/<plugin>/<song>.<resampler>.sha256` (hashes not yet committed, row I34) |
 | Play through the Mac's default output (LOCAL; prints `callbacks= frames=`) | `build/host/apps/selecta-cli/selecta-cli play build/host/tests/songs/selecta-test.mod --output coreaudio --seconds 10` |
