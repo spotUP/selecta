@@ -175,6 +175,29 @@ static int rp_pos(nuade_state* s, uint32_t* order, uint32_t* row) {
     return 1;
 }
 
+static int rp_tracker_info(void* state, uint32_t order, sel_rp_tracker_info* out);
+static uint32_t rp_tracker_cells(void* state, uint32_t order, uint32_t channel, uint32_t row_lo, uint32_t row_hi,
+                                 sel_rp_cell* out, uint32_t cap);
+
+/* I207: a song that lands on order 0 by an explicit Bxx (position jump, effect 0xB) on the row it just played
+ * is a loop by design. The player's own jump byte is not trusted (pt4 compares it against an IFF header byte),
+ * so the pattern cells of that row are read through the tracker hooks instead. */
+#define EFFECT_POSITION_JUMP 0x0Bu
+static int rp_row_jumps(nuade_state* s, uint32_t order, uint32_t row) {
+    sel_rp_tracker_info info;
+    sel_rp_cell cell;
+    uint32_t ch;
+    if (!rp_tracker_info(s, order, &info)) {
+        return 0;
+    }
+    for (ch = 0; ch < info.channels; ch++) {
+        if (rp_tracker_cells(s, order, ch, row, row + 1u, &cell, 1u) == 1u && cell.effect == EFFECT_POSITION_JUMP) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void rp_tick(void* state, sel_tick_result* out) {
     nuade_state* s = (nuade_state*)state;
     NuadeTickResult r = s->player->tick(s->pdata, &s->voices);
@@ -190,7 +213,7 @@ static void rp_tick(void* state, sel_tick_result* out) {
             looped = 0u;
         } else if (order != s->loop_order || row != s->loop_row) {
             s->loop_wait = 0u;
-            if (order == 0u) {
+            if (order == 0u && !rp_row_jumps(s, s->loop_order, s->loop_row)) {
                 ended = 1u;
             } else {
                 looped = 1u;

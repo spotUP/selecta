@@ -37,7 +37,7 @@
  *
  * With --silent the data of all four samples is zero (T43: digital silence).
  *
- * usage: gen_testmod [--short] [--loop] [--break] [--zero-sample N] [--silent] [--format mk] <output.mod> */
+ * usage: gen_testmod [--short] [--loop] [--jump0] [--break] [--zero-sample N] [--silent] [--format mk] <output.mod> */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -58,6 +58,7 @@ typedef struct sample_def {
 
 static int g_break = 0;
 static int g_loop = 0;
+static int g_jump0 = 0;
 static const char* g_title = "selecta test";
 static unsigned g_song_length = PATTERNS;
 static unsigned g_zero_sample = 0;
@@ -170,6 +171,9 @@ static void make_patterns(void) {
     cell(3, 48, 0, 0, 0, 0xF, 6);
     if (g_loop) {
         cell(2, 63, 3, 0, 0, 0xB, 0x01); /* position jump from order 2 back to order 1: a loop by design (I94a) */
+    }
+    if (g_jump0) {
+        cell(1, 63, 3, 0, 0, 0xB, 0x00); /* position jump from the last order (1) back to order 0: a designed loop (I207) */
     }
     if (g_break) {
         cell(0, 15, 2, 0, 0, 0xD, 0x00); /* break to row 0 of the next order */
@@ -287,6 +291,13 @@ int main(int argc, char** argv) {
             g_title = "selecta loop";
             g_song_length = 3;
             g_loop = 1;
+            argv++;
+            argc--;
+        } else if (strcmp(argv[1], "--jump0") == 0) {
+            g_title = "selecta jump0";
+            g_jump0 = 1;
+            g_song_length = 2;
+            g_song_length = 2;
             argv++;
             argc--;
         } else if (strcmp(argv[1], "--break") == 0) {
