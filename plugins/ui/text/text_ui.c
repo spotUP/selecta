@@ -66,7 +66,8 @@ typedef struct tui {
     uint32_t key_count;
     uint32_t pool_next;
     char pool[TUI_POOLS][TUI_POOL_BYTES];
-    sel_tag stats[6];
+    sel_tag stats[9];
+    uint32_t viz_frames, scope_reads, pattern_rows; /* T39 sentinels */
     uint32_t cmdline_runs, palette_opens; /* T28 sentinels */
 } tui;
 
@@ -691,6 +692,7 @@ static void tui_viz_panel(tui* u, const sel_state* s, uint32_t width) {
         txt_grid_text(&u->grid, 1, 3, "No per voice data for this player", width - 1u, dim);
         return;
     }
+    u->viz_frames++;
     for (i = 0; i < f->voice_count && i + 1u < rows; i++) {
         uint32_t y = 3u + i;
         int muted = (int)((s->mute_mask >> i) & 1u);
@@ -707,6 +709,7 @@ static void tui_viz_panel(tui* u, const sel_state* s, uint32_t width) {
                 txt_grid_text(&u->grid, 37, y, "Muted", width > 37u ? width - 37u : 1u, dim);
             }
         } else { /* scope: peak magnitude of each 4 sample span as a block glyph */
+            u->scope_reads++;
             for (x = 0; x < SEL_VIZ_SCOPE_FRAMES / 4u && 11u + x < width; x++) {
                 uint32_t k, peak = 0;
                 for (k = 0; k < 4u; k++) {
@@ -757,6 +760,7 @@ static void tui_pattern_panel(tui* u, const sel_state* s, uint32_t width) {
         if (row >= v->info.rows) {
             break;
         }
+        u->pattern_rows++;
         txt_grid_fill(&u->grid, 0, y, width, 1, ' ', st);
         snprintf(buf, sizeof buf, "%02X", (unsigned)row);
         txt_grid_text(&u->grid, 1, y, buf, 3, at ? st : dim);
@@ -1095,8 +1099,14 @@ static const sel_tag* tui_stats(void* state) {
     u->stats[3].value = u->palette_opens;
     u->stats[4].tag = SEL_UI_STAT_BINDINGS;
     u->stats[4].value = u->binds.count;
-    u->stats[5].tag = SEL_TAG_END;
-    u->stats[5].value = 0;
+    u->stats[5].tag = SEL_UI_STAT_VIZ_FRAMES;
+    u->stats[5].value = u->viz_frames;
+    u->stats[6].tag = SEL_UI_STAT_SCOPE_READS;
+    u->stats[6].value = u->scope_reads;
+    u->stats[7].tag = SEL_UI_STAT_PATTERN_ROWS;
+    u->stats[7].value = u->pattern_rows;
+    u->stats[8].tag = SEL_TAG_END;
+    u->stats[8].value = 0;
     return u->stats;
 }
 

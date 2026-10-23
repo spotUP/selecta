@@ -99,6 +99,10 @@ SEL_TAG(UI, STAT_KEYS,         0x500E, INT)
 SEL_TAG(UI, STAT_CMDLINE_RUNS, 0x500F, INT)
 SEL_TAG(UI, STAT_PALETTE_OPENS, 0x5010, INT)
 SEL_TAG(UI, STAT_BINDINGS,     0x5011, INT)
+/* T39 sentinels: viz panel frames drawn, scope voice reads, pattern rows drawn. */
+SEL_TAG(UI, STAT_VIZ_FRAMES,   0x5012, INT)
+SEL_TAG(UI, STAT_SCOPE_READS,  0x5013, INT)
+SEL_TAG(UI, STAT_PATTERN_ROWS, 0x5014, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)

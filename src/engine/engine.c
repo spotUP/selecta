@@ -252,6 +252,8 @@ struct sel_engine {
     sel_viz_tap viz;       /* visualisation taps; the audio thread writes, the pump reads */
     uint32_t viz_spectrum; /* capability: the spectrum is computed (CPU 68030 and up) */
     sel_dsp_chain dsp;
+    uint32_t mutes; /* mute mask changes, for @stats (T39) */
+    uint32_t fades; /* end fades started; audio side (T39) */
     uint32_t mixed_path; /* 1: the engine mixes (a DSP chain can run); 0: the output plays voices itself */
     /* Pattern window request (I101). The pump writes pat_order/pat_row_lo/pat_rows and then
      * raises pat_req; the audio thread fills pat_res between render calls and sets pat_ack
@@ -486,6 +488,7 @@ static void set_mute_mask(sel_engine* e, uint32_t mask) {
     static const sel_tag no_tags[1] = {{SEL_TAG_END, 0}};
     sel_message m;
     e->state.mute_mask = mask;
+    e->mutes++;
     evt_init(&m, SEL_EVT_VOICE);
     evt_uint(&m, mask);
     evt_tags(&m, no_tags);
@@ -2641,6 +2644,10 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->xfade_frames = e->xfade_frames;
     out->slots_mixed = e->slots_mixed;
     out->mixed_path = e->mixed_path;
+    out->mutes = e->mutes;
+    out->fades = e->fades;
+    out->crossfeed_on = (uint32_t)sel_dsp_chain_is_on(&e->dsp, "crossfeed");
+    out->sleep_armed = e->timer.sleep_left_ms != 0u;
 }
 
 /* Closes one 20 ms block: reads and clears the mixer's per-voice taps, steps the
@@ -2695,7 +2702,7 @@ static void viz_feed(sel_engine* e, sel_slot* sl, const int16_t* stereo, uint32_
  * detect, fade and silence): silence detection on the raw samples, the max-length
  * trigger, then the linear fade in 64-frame gain steps. Returns the frames kept;
  * sets sl->ended and sl->pol.reason when the song ends inside the chunk. Audio thread. */
-static uint32_t policy_chunk(const sel_engine* e, sel_slot* sl, int16_t* buf, uint32_t n) {
+static uint32_t policy_chunk(sel_engine* e, sel_slot* sl, int16_t* buf, uint32_t n) {
     sel_playpol* p = &sl->pol;
     uint32_t before = sl->song_frames - n;
     uint32_t keep = n;
@@ -2723,6 +2730,7 @@ static uint32_t policy_chunk(const sel_engine* e, sel_slot* sl, int16_t* buf, ui
             uint32_t off = max_frames > before ? (uint32_t)(max_frames - before) : 0u;
             if (off < keep) {
                 p->fade_on = 1;
+                e->fades++;
                 p->fade_pos = 0;
                 p->fade_total = (uint32_t)((uint64_t)e->fade_ms * e->rate / 1000u);
                 p->fade_reason = SEL_END_MAX_LENGTH;
@@ -2759,7 +2767,7 @@ static uint32_t policy_chunk(const sel_engine* e, sel_slot* sl, int16_t* buf, ui
 
 /* A LOOPED tick: counts the pass; the pass that reaches `loops` starts the fade
  * (or ends the song at once when fade_ms is 0). REPEAT one never ends on a loop. */
-static void policy_loop(const sel_engine* e, sel_slot* sl) {
+static void policy_loop(sel_engine* e, sel_slot* sl) {
     sel_playpol* p = &sl->pol;
     if (e->repeat == 1u || p->fade_on) {
         return;
@@ -2774,6 +2782,7 @@ static void policy_loop(const sel_engine* e, sel_slot* sl) {
         return;
     }
     p->fade_on = 1;
+    e->fades++;
     p->fade_pos = 0;
     p->fade_total = (uint32_t)((uint64_t)e->fade_ms * e->rate / 1000u);
     p->fade_reason = SEL_END_LOOP;

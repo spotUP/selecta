@@ -226,6 +226,10 @@ typedef struct sel_engine_stats {
     uint32_t xfade_frames;           /* frames mixed with two songs at once (T44) */
     uint32_t slots_mixed;            /* most songs mixed at once so far */
     uint32_t mixed_path;             /* 1: the engine mixes, 0: the output owns voices */
+    uint32_t mutes;                  /* mute mask changes (MUTE, SOLO) (T39) */
+    uint32_t fades;                  /* end fades started (loop count, max length) (T39) */
+    uint32_t crossfeed_on;           /* 1: the crossfeed DSP is in the chain (T39) */
+    uint32_t sleep_armed;            /* 1: a sleep timer is counting down (T39) */
 } sel_engine_stats;
 void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out);
 
