@@ -4257,6 +4257,7 @@ void sel_engine_destroy(sel_engine* e) {
         sel_dsp_chain_free(&e->dsp);
         sel_browse_free(&e->browse, e->host);
         sel_view_free(&e->view, e->host);
+        sel_net_set_cancel(NULL); /* the pump registered &e->net_cancel on this thread; it must not outlive e (every pump re-registers) */
         e->host->mem_free(e->host, e);
     }
 }
