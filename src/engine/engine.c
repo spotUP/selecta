@@ -35,6 +35,7 @@
 #include "db.h"
 #include "cache.h"
 #include "sources/local_source.h"
+#include "sources/hippo_publish.h"
 #include "sources/hippo_sync.h"
 #include "sources/hvsc_sync.h"
 #include "sources/modland_sync.h"
@@ -94,6 +95,7 @@
     X(PREV_ALBUM)                                                                             \
     X(PLAYLIST_LOAD)                                                                          \
     X(PLAYLIST_SAVE)                                                                          \
+    X(PLAYLIST_PUBLISH)                                                                       \
     X(SAMPLE_LIST)                                                                            \
     X(SAMPLE_EXPORT)                                                                          \
     X(QUEUE_PLAY_NEXT)                                                                        \
@@ -2104,6 +2106,87 @@ static void cmd_PLAYLIST_SAVE(sel_engine* e, const sel_message* m) {
     }
 }
 
+/* PLAYLIST_PUBLISH <title> <author> <genre> <filename> (I164): exports the queue as a Hippo `.prg` into the
+ * playlist scratch buffer, refuses more than SEL_HIPPO_PUBLISH_MAX bytes (ERROR too_large, no request), POSTs it
+ * and reports the parsed reply as LOG lines `publish posts=N id=..` and `publish_url <filename> <url>`. */
+typedef struct pl_mem {
+    char* buf;
+    size_t cap, len;
+    int over;
+} pl_mem;
+
+static int playlist_mem_sink(void* ctx, const char* bytes, uint32_t len) {
+    pl_mem* m = (pl_mem*)ctx;
+    if (len > m->cap - m->len) {
+        m->over = 1;
+        return 0;
+    }
+    memcpy(m->buf + m->len, bytes, len);
+    m->len += len;
+    return 1;
+}
+
+static void cmd_PLAYLIST_PUBLISH(sel_engine* e, const sel_message* m) {
+    sel_playlist pl;
+    pl_mem out;
+    sel_hippo_publish_reply rep;
+    char detail[SEL_LOG_LINE_MAX];
+    uint32_t i;
+    int rc;
+
+    sel_playlist_init(&pl, e->pl_entries, e->queue.capacity, e->pl_text, e->queue.text_bytes + 16u);
+    for (i = 0; i < e->queue.count; i++) {
+        const sel_queue_entry* en = &e->queue.entries[i];
+        const char* text = sel_queue_path(&e->queue, i);
+        size_t len = strlen(text);
+        int divider = (en->flags & SEL_QUEUE_FLAG_DIVIDER) != 0;
+        sel_pl_kind kind = divider ? SEL_PL_DIVIDER : (en->flags & SEL_QUEUE_FLAG_HIDDEN) ? SEL_PL_STEALTH : SEL_PL_SONG;
+        uint8_t sub = en->subsong_plus1 > 255u ? 255u : (uint8_t)en->subsong_plus1;
+        if (sel_playlist_add(&pl, kind, divider ? NULL : text, divider ? 0 : len, divider ? text : NULL, divider ? len : 0, sub,
+                             0) != 0) {
+            sel_engine_report_error(e, "queue_full", "PLAYLIST_PUBLISH");
+            return;
+        }
+    }
+    out.buf = e->pl_file;
+    out.cap = (size_t)e->queue.text_bytes + 16u;
+    out.len = 0;
+    out.over = 0;
+    rc = sel_playlist_write(SEL_PL_HIPPO, &pl, playlist_mem_sink, &out, playlist_warn, e);
+    if (out.over) {
+        sel_engine_report_error(e, "too_large", "PLAYLIST_PUBLISH"); /* does not fit the export buffer either */
+        return;
+    }
+    if (rc != SEL_PL_OK) {
+        sel_engine_report_error(e, "bad_format", "PLAYLIST_PUBLISH");
+        return;
+    }
+    rc = sel_hippo_publish(out.buf, out.len, m->args[0].v.s, m->args[1].v.s, m->args[2].v.s, m->args[3].v.s, &rep);
+    switch (rc) {
+    case SEL_HIPPO_PUB_OK:
+        snprintf(detail, sizeof detail, "posts=%u id=%s", sel_hippo_publish_posts(), rep.id);
+        emit_log(e, "publish", detail);
+        snprintf(detail, sizeof detail, "%s %s", rep.filename, rep.url);
+        emit_log(e, "publish_url", detail);
+        break;
+    case SEL_HIPPO_PUB_TOO_LARGE:
+        sel_engine_report_error(e, "too_large", "PLAYLIST_PUBLISH");
+        break;
+    case SEL_HIPPO_PUB_ARGS:
+        sel_engine_report_error(e, "range", "PLAYLIST_PUBLISH");
+        break;
+    case SEL_HIPPO_PUB_NET:
+        sel_engine_report_error(e, "net_failed", "PLAYLIST_PUBLISH");
+        break;
+    case SEL_HIPPO_PUB_STATUS:
+        sel_engine_report_error(e, "publish_rejected", "PLAYLIST_PUBLISH");
+        break;
+    default:
+        sel_engine_report_error(e, "bad_reply", "PLAYLIST_PUBLISH");
+        break;
+    }
+}
+
 /* SAMPLE_LIST / SAMPLE_EXPORT (I98): the replayer's optional RP_SAMPLE_GET hook
  * supplies the sample table; the writers live in src/library/export. The hook
  * runs on the command thread. */
@@ -3003,8 +3086,12 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         e->registry_get = cfg->registry_get;
         e->lib = cfg->library;
     }
-    sel_queue_default_sizes(cfg ? (uint32_t)sel_tag_find(cfg->machine, SEL_MACHINE_FAST_RAM, 0) : 0, &queue_cap,
-                            &queue_text);
+    {
+        /* FAST_RAM is a uintptr_t: a 4 GB or 8 GB host would wrap to 0 in a plain uint32_t cast and get the
+         * smallest queue. Saturate instead. */
+        unsigned long long fast = cfg ? (unsigned long long)sel_tag_find(cfg->machine, SEL_MACHINE_FAST_RAM, 0) : 0;
+        sel_queue_default_sizes(fast > 0xFFFFFFFFull ? 0xFFFFFFFFu : (uint32_t)fast, &queue_cap, &queue_text);
+    }
     if (cfg && cfg->queue_capacity) {
         queue_cap = cfg->queue_capacity;
     }

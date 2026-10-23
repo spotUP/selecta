@@ -1078,3 +1078,11 @@ if(NOT SEL_AMIGA)
   set_tests_properties(prefetch-preempt PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     DEPENDS cache-fetch TIMEOUT 60 PASS_REGULAR_EXPRESSION "prefetch_preempt_ok")
 endif()
+
+# M3 Phase 4 (I164): T74 publish part. PLAYLIST_PUBLISH through selecta-cli script against the fixture.
+if(NOT SEL_AMIGA)
+  add_test(NAME hippo-publish
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/hippo_publish.cmake")
+  set_tests_properties(hippo-publish PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "hippo_publish_ok")
+endif()
