@@ -27,6 +27,8 @@ typedef struct sel_local_scan_stats {
     uint32_t dirs;          /* directories listed */
     uint32_t archives;        /* archive files opened as folders (I159) */
     uint32_t archive_members; /* archive members recognised and queued */
+    uint32_t archive_lzx;     /* LZX archives opened (I159a) */
+    uint32_t depack_pp;       /* PowerPacker files depacked and scanned (I159a) */
     uint32_t rescanned_dirs;  /* directories rescanned by sel_source_rescan (I160) */
 } sel_local_scan_stats;
 

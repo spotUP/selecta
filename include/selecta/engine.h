@@ -148,6 +148,8 @@ typedef struct sel_scan_info {
     uint32_t scanned_files, skipped_files, scan_batches, probed, dirs;
     uint32_t archives;        /* archive files opened */
     uint32_t archive_members; /* members written as songs */
+    uint32_t archive_lzx;     /* LZX archives opened */
+    uint32_t depack_pp;       /* PowerPacker files depacked and scanned */
 } sel_scan_info;
 
 typedef struct sel_engine_config {

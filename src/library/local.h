@@ -23,6 +23,7 @@ typedef struct sel_browse {
     uint32_t capacity, text_bytes, text_used, count;
     uint32_t truncated;  /* entries dropped from the current listing */
     uint32_t generation; /* bumped by every successful listing */
+    const sel_host* host; /* memory for reading archives (I159a) */
     char path[SEL_BROWSE_PATH_MAX];
 } sel_browse;
 

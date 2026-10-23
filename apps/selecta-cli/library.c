@@ -519,10 +519,10 @@ static int library_scan(int argc, char** argv) {
     printf("rescanned_dirs=%u rescan_files=%u watch_events=%u ", (unsigned)rs.rescanned_dirs,
            (unsigned)rs.scanned_files, (unsigned)watch_events);
     printf("scanned_files=%u skipped_files=%u scan_batches=%u probed=%u dirs=%u archives=%u archive_members=%u "
-           "db_songs=%d\n",
+           "archive_lzx=%u depack_pp=%u db_songs=%d\n",
            (unsigned)info.scanned_files, (unsigned)info.skipped_files, (unsigned)info.scan_batches,
            (unsigned)info.probed, (unsigned)info.dirs, (unsigned)info.archives, (unsigned)info.archive_members,
-           st.args[SEL_LIB_STAT_SONGS].v.i);
+           (unsigned)info.archive_lzx, (unsigned)info.depack_pp, st.args[SEL_LIB_STAT_SONGS].v.i);
     sel_engine_destroy(e);
     sel_library_close(lib);
     return sink.failed ? 1 : 0;
