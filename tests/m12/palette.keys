@@ -1,0 +1,13 @@
+# T37 selecta-palette: browse_play, then Ctrl-P, fuzzy query "pau", Enter runs PAUSE.
+Down
+Enter
+Down
+Enter
+wait 2000
+Ctrl-P
+p
+a
+u
+Enter
+i
+q

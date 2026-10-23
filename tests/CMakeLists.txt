@@ -399,6 +399,13 @@ if(NOT SEL_AMIGA)
   add_test(NAME keybind-unit COMMAND keybind_test)
 endif()
 
+# T37: the command palette and help overlay model.
+if(NOT SEL_AMIGA)
+  add_executable(palette_test ui/palette_test.c)
+  target_link_libraries(palette_test PRIVATE selecta_textui selecta_core)
+  add_test(NAME palette-unit COMMAND palette_test)
+endif()
+
 # T36 reachability (I77): the real shell, keys typed into the command line.
 if(NOT SEL_AMIGA)
   add_test(NAME selecta-cmdline
@@ -406,6 +413,16 @@ if(NOT SEL_AMIGA)
       "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m12/cmdline.keys"
       "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m12/cmdline.screen"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/cmdline"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/browse_play.cmake")
+endif()
+
+# T37 reachability (I78): Ctrl-P palette runs a verb picked by fuzzy query.
+if(NOT SEL_AMIGA)
+  add_test(NAME selecta-palette
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DMOD=${SEL_MKMOD}"
+      "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m12/palette.keys"
+      "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m12/palette.screen"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/palette"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/browse_play.cmake")
 endif()
 

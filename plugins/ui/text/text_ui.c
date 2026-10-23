@@ -17,6 +17,7 @@
 #include "cmdline.h"
 #include "keybind.h"
 #include "keys.h"
+#include "palette.h"
 #include "spawn.h"
 #include "term.h"
 #include "theme.h"
@@ -41,6 +42,8 @@ typedef struct tui {
     txt_bindings binds;
     txt_cmdline cmd;
     int cmd_mode; /* the command line has the keys */
+    int overlay;  /* 0 none, 1 command palette, 2 help (read only) */
+    txt_palette pal;
     char marks[TUI_MARKS][TUI_MARK_BYTES]; /* selected browse files for `!` */
     uint32_t mark_n;
     txt_term term;
@@ -257,6 +260,9 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
     } else if (strcmp(name, "command") == 0) {
         txt_cmdline_open(&u->cmd);
         u->cmd_mode = 1;
+    } else if (strcmp(name, "palette") == 0 || strcmp(name, "help") == 0) {
+        txt_palette_open(&u->pal, &u->binds);
+        u->overlay = name[0] == 'p' ? 1 : 2;
     } else if (strcmp(name, "mark") == 0) {
         tui_mark(u);
     } else if (strcmp(name, "quit") == 0) {
@@ -283,8 +289,34 @@ static void tui_cmd_key(tui* u, const txt_key* k) {
     }
 }
 
+static void tui_overlay_key(tui* u, const txt_key* k) {
+    txt_pal_result r = txt_palette_key(&u->pal, k->code, k->mods);
+    if (r == TXT_PAL_EDITING) {
+        return;
+    }
+    if (r == TXT_PAL_RUN && u->overlay == 1) {
+        /* the palette runs the bare verb; commands with arguments are typed on the command line */
+        const char* verb = txt_palette_picked(&u->pal);
+        u->overlay = 0;
+        if (verb != NULL) {
+            tui_send(u, verb);
+        }
+        return;
+    }
+    if (r == TXT_PAL_RUN) {
+        return; /* help only lists */
+    }
+    u->overlay = 0;
+}
+
 static void tui_key(tui* u, const txt_key* k) {
     const char* action;
+    if (u->overlay) {
+        u->key_count++;
+        u->dirty = 1;
+        tui_overlay_key(u, k);
+        return;
+    }
     if (u->cmd_mode) {
         u->key_count++;
         u->dirty = 1;
@@ -313,7 +345,7 @@ static const struct {
 } k_tokens[] = {
     {"Up", "\x1b[A"},   {"Down", "\x1b[B"},  {"Right", "\x1b[C"},    {"Left", "\x1b[D"}, {"Home", "\x1b[H"},
     {"End", "\x1b[F"},  {"PageUp", "\x1b[5~"}, {"PageDown", "\x1b[6~"}, {"Enter", "\r"},   {"Tab", "\t"},
-    {"Backspace", "\x7f"}, {"Escape", "\x1b"}, {"Space", " "},
+    {"Backspace", "\x7f"}, {"Escape", "\x1b"}, {"Space", " "},        {"Ctrl-P", "\x10"},
 };
 
 /* Reads the next line of the keys file; returns 0 at the end of the file. */
@@ -552,6 +584,47 @@ static void tui_info(tui* u, const sel_state* s, uint32_t x) {
     }
 }
 
+/* Palette and help overlay: query line, then verbs grouped by area (query empty)
+ * or ranked (query typed), the bound key at the right edge. */
+static void tui_overlay(tui* u) {
+    const txt_palette* p = &u->pal;
+    uint32_t w = u->grid.cols > 60u ? 60u : u->grid.cols;
+    uint32_t x0 = (u->grid.cols - w) / 2u;
+    uint32_t rows = u->grid.rows > 4u ? u->grid.rows - 4u : 1u;
+    uint32_t y = 2, i, first = 0;
+    const char* last_area = NULL;
+    char line[96];
+    txt_style n = tui_style(u, TXT_ROLE_NORMAL);
+    txt_style d = tui_style(u, TXT_ROLE_DIM);
+    txt_style sel = tui_style(u, TXT_ROLE_CURSOR);
+    uint32_t r;
+    for (r = 1; r < rows + 1u; r++) {
+        txt_grid_fill(&u->grid, x0, 1u + r - 1u, w, 1, ' ', n);
+    }
+    snprintf(line, sizeof line, "%s %s", u->overlay == 1 ? "Command palette >" : "Help >", p->query);
+    txt_grid_text(&u->grid, x0 + 1u, 1, line, w - 2u, n);
+    if (p->cursor + 1u > rows - 1u) {
+        first = p->cursor + 1u - (rows - 1u);
+    }
+    for (i = first; i < p->count && y < rows + 1u; i++) {
+        const txt_palette_item* it = &p->items[i];
+        txt_style st = i == p->cursor ? sel : n;
+        if (p->len == 0 && (last_area == NULL || strcmp(last_area, it->area) != 0)) {
+            last_area = it->area;
+            txt_grid_text(&u->grid, x0 + 1u, y++, txt_palette_area_title(it->area), w - 2u, d);
+            if (y >= rows + 1u) {
+                break;
+            }
+        }
+        txt_grid_fill(&u->grid, x0, y, w, 1, ' ', st);
+        txt_grid_text(&u->grid, x0 + 3u, y, it->name, w - 12u, st);
+        if (it->key[0] != '\0') {
+            txt_grid_text(&u->grid, x0 + w - 8u, y, it->key, 7, st);
+        }
+        y++;
+    }
+}
+
 static void tui_draw(tui* u) {
     const sel_state* s = sel_engine_state(u->engine);
     uint32_t width = u->info && u->grid.cols > TUI_INFO_COLS + 20u ? u->grid.cols - TUI_INFO_COLS : u->grid.cols;
@@ -564,6 +637,9 @@ static void tui_draw(tui* u) {
             txt_grid_put(&u->grid, width, y, 0x2502u, tui_style(u, TXT_ROLE_BORDER));
         }
         tui_info(u, s, width + 2u);
+    }
+    if (u->overlay) {
+        tui_overlay(u);
     }
     txt_grid_fill(&u->grid, 0, u->grid.rows - 1u, u->grid.cols, 1, ' ', tui_style(u, TXT_ROLE_DIM));
     if (u->cmd_mode || u->cmd.status[0] != '\0') {
