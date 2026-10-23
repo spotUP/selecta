@@ -71,6 +71,9 @@ def load_routes(host):
     return {}
 
 
+HOST_ALIAS = {"localhost": "fixture.test"}
+
+
 def safe_join(host, path):
     root = os.path.realpath(os.path.join(FIXTURES, host))
     full = os.path.realpath(os.path.join(root, path.lstrip("/")))
@@ -90,6 +93,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length) if length else b""
         host = (self.headers.get("Host") or "").split(":")[0].lower()
+        host = HOST_ALIAS.get(host, host)  # the TLS cert is for localhost; serve the fixture.test tree
         parsed = urllib.parse.urlsplit(self.path)
         if parsed.path == "/__fixture/log":
             return self.send_bytes(200, json.dumps(LOG).encode(), {"Content-Type": "application/json"})
