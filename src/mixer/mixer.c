@@ -62,6 +62,14 @@ static int settle(sel_mixer_voice* v) {
     return 1;
 }
 
+/* The voice's resample step scaled by the PITCH factor. */
+static uint32_t pitched(const sel_mixer* m, const sel_mixer_voice* v) {
+    if (m->pitch_q16 == 0u || m->pitch_q16 == 65536u) {
+        return v->step;
+    }
+    return (uint32_t)(((uint64_t)v->step * m->pitch_q16) >> 16);
+}
+
 void sel_mixer_mix(sel_mixer* m, int16_t* stereo, uint32_t frames) {
     int32_t acc[MIX_CHUNK * 2];
     uint32_t done = 0;
@@ -86,7 +94,7 @@ void sel_mixer_mix(sel_mixer* m, int16_t* stereo, uint32_t frames) {
                 if (!settle(v)) break;
                 if (muted) {
                     /* a muted voice keeps its clock so unmuting rejoins the song in time */
-                    phase = v->frac + v->step;
+                    phase = v->frac + pitched(m, v);
                     v->position += phase >> 16;
                     v->frac = phase & 0xFFFFu;
                     scope[(base + i) & (SEL_MIXER_SCOPE - 1u)] = 0;
@@ -100,7 +108,7 @@ void sel_mixer_mix(sel_mixer* m, int16_t* stereo, uint32_t frames) {
                 scope[(base + i) & (SEL_MIXER_SCOPE - 1u)] = (int16_t)mono;
                 if (mono < 0) mono = -mono;
                 if (mono > peak) peak = mono;
-                phase = v->frac + v->step;
+                phase = v->frac + pitched(m, v);
                 v->position += phase >> 16;
                 v->frac = phase & 0xFFFFu;
             }
@@ -125,7 +133,7 @@ void sel_mixer_advance(sel_mixer* m, uint32_t frames) {
         for (i = 0; i < frames && v->playing; i++) {
             uint32_t phase;
             if (!settle(v)) break;
-            phase = v->frac + v->step;
+            phase = v->frac + pitched(m, v);
             v->position += phase >> 16;
             v->frac = phase & 0xFFFFu;
         }

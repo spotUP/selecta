@@ -253,7 +253,7 @@ int sel_cli_render(int argc, char** argv) {
         printf("mute_mask=0x%08x\n", (unsigned)st->mute_mask);
         printf("end_position order=%u row=%u\n", (unsigned)st->song.pattern_pos.order,
                (unsigned)st->song.pattern_pos.row);
-        printf("pitch_factor_q16=%u\n", 65536u); /* I92 replaces this with the engine value */
+        printf("pitch_factor_q16=%u\n", (unsigned)(st->pitch_q16 != 0u ? st->pitch_q16 : 65536u));
     }
     if (dump != NULL) {
         fclose(dump);
