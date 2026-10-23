@@ -260,7 +260,7 @@ Tests T39 to T48 are defined in the plan's finish-line table.
 | I98 | [x] | 5 | WAV and 8SVX writers, SAMPLE_LIST/SAMPLE_EXPORT, goldens | T46 green ; merge 9653063 (cb95a44, T46 green) |
 | I99 | [x] | 5 | T47 written and red; DSP ABI, chain, coefficient tool | ctest failure | red 3a3e6da (`crossfeed-render` Failed, `crossfeed-unit` Not Run); b14e63f; merge e577cdf
 | I100 | [x] | 5 | crossfeed plugin, DSP verb, OUT_HEADPHONES default | T47 green, T26 green | bcab7cd, 6265bfe; full run 75/75; golden hash `tests/golden/dsp/crossfeed.sha256` NOT pinned, waits for a listening check; merge e577cdf
-| I101 | [ ] | 6 | Text UI viz panel and pattern panel, default bindings | panel screen fixtures green |
+| I101 | [x] | 6 | Text UI viz panel and pattern panel, default bindings | panel screen fixtures green ; merge c4d422a (422f1de red, f8996a5) |
 | I102 | [ ] | 6 | T39 written and red; fixtures | ctest failure |
 | I103 | [ ] | 6 | Wire to T39; build/amiga green | T39 green, T8 at 21 |
 | I104 | [ ] | 6 | Design doc section 14 status, validation file, full CI run (reason: landing the milestone) | `2026-10-23-m1-3-viz-voices-playback.validation.md` |
