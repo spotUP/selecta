@@ -1,0 +1,6 @@
+# I207: a song whose last row holds an explicit B00 jump to order 0 loops by design: reason loop.
+OPTION loops 2
+QUEUE_ADD selecta-jump0.mod
+PLAY
+@render_until_end
+@stats
