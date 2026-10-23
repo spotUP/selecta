@@ -106,6 +106,13 @@ int sel_library_run(sel_library* lib, uint32_t req, sel_lib_job* job);
 int sel_library_fetch(sel_library* lib, const char* spec, const char* rules, char* out, size_t cap, uint32_t* files);
 /* Cache counters; 0 when the handle served no fetch. */
 struct sel_cache_stats;
+/* Trim the file cache to `budget` bytes (0 = the machine's default, sel_cache_budget) by last access.
+ * Songs in the `kept` and `liked` tables are exempt. Runs after every LIBRARY_FETCH that stored a
+ * file. Returns the trim_runs counter after the call; 0 when the handle has no cache dir. */
+struct sel_cache_trim_result;
+unsigned sel_library_cache_trim(sel_library* lib, uint32_t budget, struct sel_cache_trim_result* out);
+/* Marks song key `key` in table "kept" or "liked" (seeding and tests). 1 on success. */
+int sel_library_mark(sel_library* lib, const char* table, const char* key);
 int sel_library_cache_stats(const sel_library* lib, struct sel_cache_stats* out);
 /* Prints `cache_hits= fetches= companions= md5_mismatches= mirror_tries=` when a fetch was served. */
 void sel_library_cache_report(const sel_library* lib);

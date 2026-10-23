@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 
 static int entry_is_dir(const char* dir, const struct dirent* de) {
 #ifdef DT_DIR
@@ -56,4 +57,23 @@ int64_t sel_dir_mtime(const char* path) {
 #else
     return (int64_t)st.st_mtim.tv_sec * 1000000000LL + st.st_mtim.tv_nsec;
 #endif
+}
+
+int sel_file_stat(const char* path, uint32_t* size, int64_t* mtime) {
+    struct stat st;
+
+    if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) {
+        return 0;
+    }
+    *size = st.st_size > 0xFFFFFFFFLL ? 0xFFFFFFFFu : (uint32_t)st.st_size;
+#ifdef __APPLE__
+    *mtime = (int64_t)st.st_mtimespec.tv_sec * 1000000000LL + st.st_mtimespec.tv_nsec;
+#else
+    *mtime = (int64_t)st.st_mtim.tv_sec * 1000000000LL + st.st_mtim.tv_nsec;
+#endif
+    return 1;
+}
+
+int sel_file_touch(const char* path) {
+    return utimes(path, NULL) == 0;
 }

@@ -1,9 +1,11 @@
 /* File cache, see cache.h. */
 #include "cache.h"
 
+#include "dir.h"
 #include "md5.h"
 
 #include <selecta/engine.h>
+#include <selecta/machine.h>
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
 #include <selecta/tags.h>
@@ -144,6 +146,7 @@ sel_cache_result sel_cache_fetch(sel_cache* c, const char* source, const char* p
     }
     if (file_exists(out)) {
         c->stats.cache_hits++;
+        sel_file_touch(out);
         return SEL_CACHE_OK;
     }
     set = set_for(c, source);
@@ -299,4 +302,142 @@ sel_cache_result sel_cache_fetch_song(sel_cache* c, const char* source, const ch
         }
     }
     return r;
+}
+
+/* ---- trim (I167) ----------------------------------------------------- */
+
+typedef struct trim_entry {
+    char* path; /* full path under <dir>/files */
+    uint32_t size;
+    int64_t mtime;
+    int exempt;
+} trim_entry;
+
+typedef struct trim_walk {
+    trim_entry* e;
+    unsigned n, cap;
+    int failed;
+} trim_walk;
+
+typedef struct trim_ctx {
+    trim_walk* w;
+    char dir[SEL_CACHE_PATH_MAX];
+} trim_ctx;
+
+static void walk(trim_walk* w, const char* dir);
+
+static int on_entry(void* vctx, const char* name, int is_dir) {
+    trim_ctx* t = vctx;
+    trim_walk* w = t->w;
+    char full[SEL_CACHE_PATH_MAX];
+    size_t nl = strlen(name);
+    uint32_t size;
+    int64_t mtime;
+
+    if (snprintf(full, sizeof full, "%s/%s", t->dir, name) >= (int)sizeof full) {
+        return 1;
+    }
+    if (is_dir) {
+        walk(w, full);
+        return !w->failed;
+    }
+    if ((nl > 5 && strcmp(name + nl - 5, ".part") == 0) || !sel_file_stat(full, &size, &mtime)) {
+        return 1;
+    }
+    if (w->n == w->cap) {
+        unsigned cap = w->cap ? w->cap * 2u : 64u;
+        trim_entry* ne = realloc(w->e, cap * sizeof *ne);
+        if (ne == NULL) {
+            w->failed = 1;
+            return 0;
+        }
+        w->e = ne;
+        w->cap = cap;
+    }
+    w->e[w->n].path = malloc(strlen(full) + 1u);
+    if (w->e[w->n].path == NULL) {
+        w->failed = 1;
+        return 0;
+    }
+    strcpy(w->e[w->n].path, full);
+    w->e[w->n].size = size;
+    w->e[w->n].mtime = mtime;
+    w->e[w->n].exempt = 0;
+    w->n++;
+    return 1;
+}
+
+static void walk(trim_walk* w, const char* dir) {
+    trim_ctx t;
+
+    t.w = w;
+    snprintf(t.dir, sizeof t.dir, "%s", dir);
+    sel_dir_each(dir, on_entry, &t);
+}
+
+static int by_age(const void* a, const void* b) {
+    const trim_entry* x = a;
+    const trim_entry* y = b;
+    return x->mtime < y->mtime ? -1 : x->mtime > y->mtime ? 1 : 0;
+}
+
+uint32_t sel_cache_budget(const sel_tag* machine) {
+    uint64_t fast = (uint64_t)sel_tag_find(machine, SEL_MACHINE_FAST_RAM, 0);
+
+    if (fast >= 64ull * 1024u * 1024u) {
+        return 512u * 1024u * 1024u;
+    }
+    if (fast >= 8ull * 1024u * 1024u) {
+        return 64u * 1024u * 1024u;
+    }
+    return 8u * 1024u * 1024u;
+}
+
+void sel_cache_trim(sel_cache* c, uint32_t budget, sel_cache_keep_fn keep, void* ctx, const char* protect,
+                    sel_cache_trim_result* out) {
+    trim_walk w;
+    char root[SEL_CACHE_PATH_MAX];
+    size_t rl;
+    unsigned i;
+    uint64_t total = 0;
+
+    memset(&w, 0, sizeof w);
+    memset(out, 0, sizeof *out);
+    c->stats.trim_runs++;
+    rl = (size_t)snprintf(root, sizeof root, "%s/files", c->dir);
+    walk(&w, root);
+    for (i = 0; i < w.n; i++) {
+        const char* rel = w.e[i].path + rl + 1u;
+        char key[SEL_CACHE_PATH_MAX];
+        char* slash;
+
+        total += w.e[i].size;
+        snprintf(key, sizeof key, "%s", rel);
+        slash = strchr(key, '/');
+        if (slash != NULL) {
+            *slash = ':';
+        }
+        if (protect != NULL && strcmp(protect, w.e[i].path) == 0) {
+            w.e[i].exempt = 1;
+        } else if (keep != NULL && keep(ctx, key)) {
+            w.e[i].exempt = 1;
+            out->kept_exempt++;
+        }
+    }
+    out->bytes_before = total > 0xFFFFFFFFull ? 0xFFFFFFFFu : (uint32_t)total;
+    if (total > budget && w.n > 0) {
+        qsort(w.e, w.n, sizeof *w.e, by_age);
+        for (i = 0; i < w.n && total > budget; i++) {
+            if (!w.e[i].exempt && remove(w.e[i].path) == 0) {
+                total -= w.e[i].size;
+                out->trimmed++;
+                c->stats.evicted++;
+            }
+        }
+    }
+    out->bytes_after = total > 0xFFFFFFFFull ? 0xFFFFFFFFu : (uint32_t)total;
+    for (i = 0; i < w.n; i++) {
+        free(w.e[i].path);
+    }
+    free(w.e);
 }

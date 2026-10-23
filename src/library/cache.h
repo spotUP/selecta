@@ -37,6 +37,8 @@ typedef struct sel_cache_stats {
     unsigned companions;      /* companion files delivered (fetched or already cached) */
     unsigned md5_mismatches;  /* bodies rejected for a wrong md5 */
     unsigned mirror_tries;    /* transport attempts, all fetches */
+    unsigned trim_runs;       /* sel_cache_trim calls (I167 sentinel) */
+    unsigned evicted;         /* files removed by trims */
 } sel_cache_stats;
 
 typedef struct sel_cache {
@@ -63,5 +65,27 @@ void sel_companion_rules(uint32_t (*registry_count)(void), const sel_tag* (*regi
  * its sample set); the song itself decides the result. */
 sel_cache_result sel_cache_fetch_song(sel_cache* c, const char* source, const char* path, const char* md5,
                                       const char* rules, char* out, size_t cap);
+
+/* ---- trim (I167, design doc section 9.3) ---------------------------------------------------------
+ * The cache is trimmed to a byte budget by last access: every hit and every insert sets the file's
+ * modification time to now, and the trim removes the oldest files first until the total fits.
+ * Files the keep callback calls exempt (kept and liked songs) and the file named by `protect` are
+ * never removed, so the total can stay above the budget. The callback gets the song key
+ * `<source>:<path>`. */
+typedef int (*sel_cache_keep_fn)(void* ctx, const char* key);
+
+typedef struct sel_cache_trim_result {
+    uint32_t bytes_before;
+    uint32_t bytes_after;
+    unsigned trimmed;      /* files removed */
+    unsigned kept_exempt;  /* files in the cache the keep callback exempted */
+} sel_cache_trim_result;
+
+/* Default budget in bytes for a machine: scaled by the fast RAM tiers the queue also uses
+ * (below 8 MB, below 64 MB, more). The disk tag carries no size yet, so RAM decides. */
+uint32_t sel_cache_budget(const sel_tag* machine);
+/* Trim the cache under c->dir to `budget` bytes. keep and protect may be NULL. */
+void sel_cache_trim(sel_cache* c, uint32_t budget, sel_cache_keep_fn keep, void* ctx, const char* protect,
+                    sel_cache_trim_result* out);
 
 #endif

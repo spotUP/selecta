@@ -1006,3 +1006,11 @@ if(NOT SEL_AMIGA)
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/local.manifest ${SEL_TESTMOD} ${SEL_TESTMOD})
   set_tests_properties(source-watch PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "source_watch_ok")
 endif()
+
+# M3 Phase 5 (I167): T76 cache-budget. LRU trim of the download cache to a budget scaled by sel_machine;
+# kept and liked songs are exempt; trim_runs proves the real entry point (library trim) ran it.
+if(NOT SEL_AMIGA)
+  add_test(NAME cache-budget
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/cache_budget.sh $<TARGET_FILE:selecta-cli>)
+  set_tests_properties(cache-budget PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "cache_budget_ok")
+endif()

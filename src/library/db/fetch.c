@@ -17,6 +17,56 @@ static sel_cache* cache_get(sel_library* lib) {
     return lib->cache;
 }
 
+static int is_kept(void* ctx, const char* key) {
+    sqlite3_stmt* st = ctx;
+    int found;
+
+    sqlite3_reset(st);
+    sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
+    found = sqlite3_step(st) == SQLITE_ROW;
+    sqlite3_reset(st);
+    return found;
+}
+
+/* The one trim: budget 0 means the machine default; `protect` is the file just stored. */
+static unsigned library_trim_protect(sel_library* lib, uint32_t budget, const char* protect,
+                                     sel_cache_trim_result* out) {
+    sel_cache* c = cache_get(lib);
+    sqlite3_stmt* st = NULL;
+
+    if (c == NULL) {
+        return 0;
+    }
+    sqlite3_prepare_v2(lib->db,
+                       "SELECT 1 FROM kept WHERE key = ?1 UNION ALL SELECT 1 FROM liked WHERE key = ?1 LIMIT 1", -1, &st,
+                       NULL);
+    sel_cache_trim(c, budget != 0 ? budget : lib->cache_budget, st != NULL ? is_kept : NULL, st, protect, out);
+    sqlite3_finalize(st);
+    return c->stats.trim_runs;
+}
+
+unsigned sel_library_cache_trim(sel_library* lib, uint32_t budget, sel_cache_trim_result* out) {
+    return library_trim_protect(lib, budget, NULL, out);
+}
+
+int sel_library_mark(sel_library* lib, const char* table, const char* key) {
+    sqlite3_stmt* st = NULL;
+    char sql[96];
+    int ok;
+
+    if (strcmp(table, "kept") != 0 && strcmp(table, "liked") != 0) {
+        return 0;
+    }
+    snprintf(sql, sizeof sql, "INSERT OR REPLACE INTO %s(key, at) VALUES(?1, 0)", table);
+    if (sqlite3_prepare_v2(lib->db, sql, -1, &st, NULL) != SQLITE_OK) {
+        return 0;
+    }
+    sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
+    ok = sqlite3_step(st) == SQLITE_DONE;
+    sqlite3_finalize(st);
+    return ok;
+}
+
 int sel_library_fetch(sel_library* lib, const char* spec, const char* rules, char* out, size_t cap, uint32_t* files) {
     char source[24];
     char path[SEL_CACHE_PATH_MAX];
@@ -25,7 +75,7 @@ int sel_library_fetch(sel_library* lib, const char* spec, const char* rules, cha
     const char* tag = strstr(spec, "#md5=");
     sel_cache* c = cache_get(lib);
     size_t plen;
-    unsigned before;
+    unsigned before, fetched;
     sel_cache_result r;
 
     if (c == NULL || colon == NULL || colon == spec || (size_t)(colon - spec) >= sizeof source) {
@@ -45,7 +95,12 @@ int sel_library_fetch(sel_library* lib, const char* spec, const char* rules, cha
     }
     lib->fetch_requests++;
     before = c->stats.companions;
+    fetched = c->stats.fetches;
     r = sel_cache_fetch_song(c, source, path, md5[0] != '\0' ? md5 : NULL, rules, out, cap);
+    if (r == SEL_CACHE_OK && c->stats.fetches != fetched) {
+        sel_cache_trim_result tr;
+        library_trim_protect(lib, 0, out, &tr);
+    }
     if (r != SEL_CACHE_OK) {
         return r == SEL_CACHE_MD5 ? -1 : 0;
     }
