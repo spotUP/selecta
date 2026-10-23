@@ -63,7 +63,7 @@ static int fts_word_cb(void* c, int flags, const char* tok, int n, int start, in
     (void)end;
     if (sc->collect != NULL) {
         fts_words* w = sc->collect;
-        if (w->n < FTS_WORDS && n > 3 && n < FTS_WORD_MAX) {
+        if (w->n < FTS_WORDS && n < FTS_WORD_MAX) {
             memcpy(w->w[w->n], tok, (size_t)n);
             w->len[w->n++] = n;
         }
@@ -449,7 +449,7 @@ void sel_library_search(sel_library* lib, sel_lib_job* job) {
     char match[SEL_QUERY_TEXT_MAX * 2];
     static const char CHECK[] = " AND sel_fts_prefix(:pfx, songs.name, songs.artist, songs.format, songs.path)";
     char arm[256], arm_idx[256];
-    size_t nlong = 0;
+    size_t nlong = 0, nterms = 0;
 
     job->count = job->truncated = job->used_fts = 0;
     job->error[0] = '\0';
@@ -472,6 +472,15 @@ void sel_library_search(sel_library* lib, sel_lib_job* job) {
                 len = sizeof match - o - 6;
             }
             keep = len;
+            if (len == 1 && nlong + 2 < sizeof lib->fts_long) {
+                /* No prefix index covers one letter: FTS5 would merge every doclist of the letter in memory.
+                 * The word leaves the MATCH and sel_fts_prefix() checks it against each row's tokens (I198c). */
+                memcpy(lib->fts_long + nlong, w, len);
+                nlong += len;
+                lib->fts_long[nlong++] = ' ';
+                lib->fts_long[nlong] = '\0';
+                continue;
+            }
             if (len > 3 && memchr(w, '_', len) == NULL && nlong + len + 1 < sizeof lib->fts_long) {
                 /* the 3-letter prefix streams from the index; sel_fts_prefix checks the whole word */
                 keep = 3;
@@ -485,6 +494,7 @@ void sel_library_search(sel_library* lib, sel_lib_job* job) {
             o += keep;
             match[o++] = '"';
             match[o++] = '*';
+            nterms++;
         }
         match[o] = '\0';
         job->used_fts = 1;
@@ -496,6 +506,12 @@ void sel_library_search(sel_library* lib, sel_lib_job* job) {
                  "SELECT songs.key AS key FROM idx.song_fts JOIN idx.songs AS songs ON songs.id = song_fts.rowid"
                  " WHERE song_fts MATCH ?1%s",
                  nlong > 0 ? CHECK : "");
+        if (nterms == 0) {
+            /* only one-letter words: an ordered scan of the songs key, O(page) memory, no FTS */
+            snprintf(arm, sizeof arm, "SELECT songs.key AS key FROM songs WHERE 1%s", CHECK);
+            snprintf(arm_idx, sizeof arm_idx, "SELECT songs.key AS key FROM idx.songs AS songs WHERE 1%s", CHECK);
+            job->used_fts = 0;
+        }
         collect(lib, arm, lib->has_index ? arm_idx : NULL, match, job);
     } else {
         lib->view_used = 0;

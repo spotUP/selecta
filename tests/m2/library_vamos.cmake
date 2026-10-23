@@ -88,7 +88,7 @@ m2_check(T96 "${out4}" "index_songs==${big_rows},db_heap_peak>0")
 # index) and a compiled field query (full scan of the index) must return hits inside the 512 KB heap, not ERROR
 # out_of_memory/bad_value. A prefix of 4+ letters (`song`, `long`) searches the 3-letter prefix index and
 # sel_fts_prefix() checks the whole word (I198b); FTS5 would otherwise merge every doclist in memory.
-foreach(q "som" "artist:artist" "song" "long")
+foreach(q "som" "artist:artist" "song" "long" "a" "s")
   m2_exec(out5 rc5 library search --db work:user.db --index work:bigidx.db --machine a1200 -- ${q})
   # vamos itself logs "path: ERROR: error removing temp dir" when another vamos shares ~/.vamos; the CLI prints
   # "ERROR <code>".

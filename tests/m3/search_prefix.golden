@@ -6,3 +6,7 @@ prosong	1	k-prosong.mod
 songx	1
 sona	1	k-sonata.mod
 son	1	k-sonata.mod k-songbird.mod k-songwriter.mod
+# I198c one-letter words: no MATCH term, an ordered scan checked by sel_fts_prefix (fts_queries 0)
+p	0	k-prosong.mod k-sonata.mod k-songwriter.mod
+s	0	k-sonata.mod k-songbird.mod k-songwriter.mod
+z	0
