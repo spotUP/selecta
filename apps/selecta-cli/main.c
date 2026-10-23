@@ -265,6 +265,7 @@ static void print_event(void* ctx, const sel_message* evt) {
  * a script observe and drive what a front end and an audio thread would:
  *   @queue              QUEUE version=V playing=ID ids=a,b,c
  *   @render N           render N frames on this thread, then pump and print
+ *   @fade_mid           render until the end fade runs, then to its midpoint; print FADE gain_q16 pos total
  *   @render_until_end   render until SONG_ENDED is pumped; POSITION events
  *                       before it are not printed (their count depends on
  *                       the song length)
@@ -353,6 +354,21 @@ static void script_directive(sel_engine* e, const char* line) {
     } else if (sscanf(line, "@render %lu", &n) == 1) {
         script_render(e, (uint32_t)n);
         sel_engine_pump(e, script_event, &sink);
+    } else if (strcmp(line, "@fade_mid") == 0) {
+        uint32_t i, pos = 0, total = 0;
+        for (i = 0; i < SCRIPT_RENDER_LIMIT && !sink.ended && !sel_engine_fade(e, &pos, &total); i++) {
+            script_render(e, 1024u);
+            sel_engine_pump(e, script_event, &sink);
+        }
+        if (sel_engine_fade(e, &pos, &total) && pos < total / 2u) {
+            script_render(e, total / 2u - pos);
+            sel_engine_pump(e, script_event, &sink);
+            sel_engine_fade(e, &pos, &total);
+            printf("FADE gain_q16=%u pos=%u total=%u\n",
+                   (unsigned)(((uint64_t)(total - pos) << 16) / total), (unsigned)pos, (unsigned)total);
+        } else {
+            printf("ERROR script_timeout @fade_mid\n");
+        }
     } else if (strcmp(line, "@render_until_end") == 0) {
         uint32_t i;
         sink.quiet_position = 1;

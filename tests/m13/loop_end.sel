@@ -1,4 +1,4 @@
-# T43: a one-pass module with REPEAT off ends with reason end.
-QUEUE_ADD selecta-short.mod
+# T43: a one-pass module (libopenmpt reports the end; nuade Protracker only loops) with REPEAT off ends with reason end.
+QUEUE_ADD selecta-test-mk.mod
 PLAY
 @render_until_end

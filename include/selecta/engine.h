@@ -27,7 +27,11 @@ typedef enum sel_play_state { SEL_STOPPED = 0, SEL_PLAYING, SEL_PAUSED } sel_pla
     X(STOP_AFTER_QUEUE, "stop-after-queue")                                                   \
     X(FOLLOW, "follow")                                                                       \
     X(HOOK_COMMAND, "hook_command")                                                           \
-    X(SCOPE, "scope")
+    X(SCOPE, "scope")                                                                         \
+    X(LOOPS, "loops")                                                                         \
+    X(FADE_MS, "fade_ms")                                                                     \
+    X(MAX_SONG_MS, "max_song_ms")                                                             \
+    X(SILENCE_MS, "silence_ms")
 
 typedef enum sel_option_id {
 #define SEL_OPTION_ENUM(id, name) SEL_OPT_##id,
@@ -209,6 +213,8 @@ const char* sel_view_style_label(uint32_t style);
 void sel_engine_mark_audio_thread(sel_engine* e);
 uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames);
 uint32_t sel_engine_render_calls(const sel_engine* e);
+/* The running end fade of the playing song: 1 and its position and length in frames, else 0. */
+int sel_engine_fade(const sel_engine* e, uint32_t* pos, uint32_t* total);
 
 /* Tracker pattern data of the open song (RP_TRACKER_INFO / RP_TRACKER_CELLS).
  * Return 0 when no song is open or the replayer has no pattern data. They
