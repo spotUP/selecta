@@ -1,0 +1,8 @@
+# T34 selecta-bindings: same run as browse_play with x and z instead of i and q.
+Down
+Enter
+Down
+Enter
+wait 2000
+x
+z

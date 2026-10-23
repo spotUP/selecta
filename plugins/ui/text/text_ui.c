@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "grid.h"
+#include "keybind.h"
 #include "keys.h"
 #include "term.h"
 #include "theme.h"
@@ -33,6 +34,7 @@ typedef struct tui {
     txt_grid grid;
     txt_theme theme;
     txt_keys keys;
+    txt_bindings binds;
     txt_term term;
     int have_term;
     char* out; /* flush buffer */
@@ -151,103 +153,59 @@ static void tui_subsong(tui* u, int delta) {
     tui_send(u, line);
 }
 
-static void tui_key(tui* u, const txt_key* k) {
+/* UI-local actions (`@name` in the binding table). Returns 0 for an unknown name. */
+static int tui_local(tui* u, const char* name, const txt_key* k) {
     const sel_state* s = sel_engine_state(u->engine);
     char line[48];
-    u->key_count++;
-    u->dirty = 1;
-    switch (k->code) {
-    case TXT_KEY_UP:
-    case 'k':
-        tui_cursor(u, "-1");
-        break;
-    case TXT_KEY_DOWN:
-    case 'j':
-        tui_cursor(u, "+1");
-        break;
-    case TXT_KEY_PAGE_UP:
-    case TXT_KEY_PAGE_DOWN:
-        snprintf(line, sizeof line, "%c%u", k->code == TXT_KEY_PAGE_UP ? '-' : '+', (unsigned)tui_main_rows(u));
+    (void)k;
+    if (strcmp(name, "page_up") == 0 || strcmp(name, "page_down") == 0) {
+        snprintf(line, sizeof line, "%c%u", name[5] == 'u' ? '-' : '+', (unsigned)tui_main_rows(u));
         tui_cursor(u, line);
-        break;
-    case TXT_KEY_HOME:
-        tui_cursor(u, "top");
-        break;
-    case TXT_KEY_END:
-        tui_cursor(u, "bottom");
-        break;
-    case 13:
-        tui_send(u, "VIEW_ACTIVATE");
-        break;
-    case 'v':
+    } else if (strcmp(name, "next_style") == 0) {
         tui_next_style(u);
-        break;
-    case 'g':
+    } else if (strcmp(name, "next_group") == 0) {
         tui_next_group(u);
-        break;
-    case 127: /* Backspace: the parent directory is always the first browse row */
+    } else if (strcmp(name, "back") == 0) { /* the parent directory is always the first browse row */
         if (tui_drill_back(u, s->view)) {
-            break;
+            return 1;
         }
         if (s->view != NULL && s->view->source == SEL_VIEW_BROWSE) {
             tui_cursor(u, "top");
             tui_send(u, "VIEW_ACTIVATE");
         }
-        break;
-    case 9:
+    } else if (strcmp(name, "switch_view") == 0) {
         tui_send(u, s->view != NULL && s->view->source == SEL_VIEW_BROWSE ? "VIEW_SHOW queue" : "VIEW_SHOW browse");
-        break;
-    case ' ':
+    } else if (strcmp(name, "play_pause") == 0) {
         tui_send(u, s->play == SEL_STOPPED ? "PLAY" : "PAUSE");
-        break;
-    case 's':
-        tui_send(u, "STOP");
-        break;
-    case 'n':
-        tui_send(u, "NEXT");
-        break;
-    case 'p':
-        tui_send(u, "PREV");
-        break;
-    case TXT_KEY_LEFT:
-        snprintf(line, sizeof line, "SEEK -%d", TUI_SEEK_MS);
-        tui_send(u, line);
-        break;
-    case TXT_KEY_RIGHT:
-        snprintf(line, sizeof line, "SEEK +%d", TUI_SEEK_MS);
-        tui_send(u, line);
-        break;
-    case '[':
+    } else if (strcmp(name, "subsong_prev") == 0) {
         tui_subsong(u, -1);
-        break;
-    case ']':
+    } else if (strcmp(name, "subsong_next") == 0) {
         tui_subsong(u, 1);
-        break;
-    case '+':
-    case '=':
-        snprintf(line, sizeof line, "VOLUME +%d", TUI_VOLUME_STEP);
-        tui_send(u, line);
-        break;
-    case '-':
-        snprintf(line, sizeof line, "VOLUME -%d", TUI_VOLUME_STEP);
-        tui_send(u, line);
-        break;
-    case 'a':
+    } else if (strcmp(name, "add_file") == 0) {
         tui_add_cursor_file(u);
-        break;
-    case 'd':
+    } else if (strcmp(name, "remove_entry") == 0) {
         tui_remove_cursor_entry(u);
-        break;
-    case 'i':
+    } else if (strcmp(name, "info") == 0) {
         u->info = !u->info;
-        break;
-    case 'q':
+    } else if (strcmp(name, "quit") == 0) {
         u->quit = 1;
-        break;
-    default:
-        u->key_count--; /* not a key the UI knows */
-        u->dirty = 0;
-        break;
+    } else {
+        return 0;
+    }
+    return 1;
+}
+
+static void tui_key(tui* u, const txt_key* k) {
+    const char* action = txt_bindings_lookup(&u->binds, k->code, k->mods);
+    if (action == NULL) {
+        return; /* not a key the UI knows */
+    }
+    u->key_count++;
+    u->dirty = 1;
+    if (action[0] == '@') {
+        (void)tui_local(u, action + 1, k);
+    } else {
+        tui_send(u, action);
     }
 }
 
@@ -608,6 +566,48 @@ static void tui_close(void* state) {
     host->mem_free(host, u);
 }
 
+/* Defaults, then keys.conf from the config directory (--config-dir, else
+ * sel_config_dir), then --bindings <file>. A scripted run (--keys) skips the
+ * user's keys.conf so a test never depends on the machine it runs on. A named
+ * --bindings file that cannot be read fails the open; a missing keys.conf is
+ * normal. Bad lines are reported on stderr and skipped. */
+static int tui_load_bindings(tui* u, const sel_ui_open_args* a, int scripted) {
+    const char* explicit_path = tui_opt(a, "--bindings");
+    const char* cfg = tui_opt(a, "--config-dir");
+    char path[512], dir[256];
+    char* text;
+    uint32_t first_bad = 0, bad;
+    txt_bindings_default(&u->binds);
+    if (explicit_path == NULL && !scripted) {
+        if (cfg == NULL && sel_config_dir(dir, sizeof dir)) {
+            cfg = dir;
+        }
+        if (cfg == NULL || snprintf(path, sizeof path, "%s/keys.conf", cfg) >= (int)sizeof path) {
+            return 1;
+        }
+        explicit_path = path;
+        text = tui_slurp(a->host, path);
+        if (text == NULL) {
+            return 1;
+        }
+    } else if (explicit_path != NULL) {
+        text = tui_slurp(a->host, explicit_path);
+        if (text == NULL) {
+            fprintf(stderr, "selecta: cannot read bindings file %s\n", explicit_path);
+            return 0;
+        }
+    } else {
+        return 1;
+    }
+    bad = txt_bindings_load(&u->binds, text, &first_bad);
+    if (bad != 0) {
+        fprintf(stderr, "selecta: %s: %u bad line(s), first at line %u\n", explicit_path, (unsigned)bad,
+                (unsigned)first_bad);
+    }
+    a->host->mem_free(a->host, text);
+    return 1;
+}
+
 static void* tui_open(const sel_ui_open_args* a) {
     tui* u = (tui*)a->host->mem_alloc(a->host, sizeof *u, SEL_MEM_FAST);
     const char* keys_path = tui_opt(a, "--keys");
@@ -621,6 +621,10 @@ static void* tui_open(const sel_ui_open_args* a) {
     u->dump_path = tui_opt(a, "--screen-dump");
     txt_theme_default(&u->theme);
     txt_keys_init(&u->keys);
+    if (!tui_load_bindings(u, a, keys_path != NULL)) {
+        tui_close(u);
+        return NULL;
+    }
     if (keys_path != NULL) {
         u->key_text = tui_slurp(a->host, keys_path);
         if (u->key_text == NULL) {

@@ -23,9 +23,13 @@ endforeach()
 if(NOT EXISTS "${SELECTA}")
   message(FATAL_ERROR "selecta shell not built: ${SELECTA}")
 endif()
+set(extra)
+if(DEFINED BINDINGS)
+  set(extra --bindings "${BINDINGS}") # I76: the same run with a rebound table
+endif()
 execute_process(
   COMMAND "${SELECTA}" --output null --start-dir "${WORK}/root" --keys "${KEYS}"
-          --screen-dump "${WORK}/screen.txt"
+          --screen-dump "${WORK}/screen.txt" ${extra}
   OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "selecta exited ${rc}\nstdout:\n${out}\nstderr:\n${err}")

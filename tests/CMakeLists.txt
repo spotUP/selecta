@@ -283,6 +283,19 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/browse_play.cmake")
 endif()
 
+# T34 reachability (I76): the same run with x and z bound to info and quit by
+# --bindings. The screen must equal the browse_play golden and the shell must
+# have decoded the keys through the table.
+if(NOT SEL_AMIGA)
+  add_test(NAME selecta-bindings
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DMOD=${SEL_MKMOD}"
+      "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m1/bindings.keys"
+      "-DBINDINGS=${CMAKE_CURRENT_SOURCE_DIR}/m1/bindings.conf"
+      "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m1/browse_play.screen"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/bindings"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/browse_play.cmake")
+endif()
+
 # T24: the queue as a folder tree, scripted through the shell's key decoder.
 if(NOT SEL_AMIGA)
   add_test(NAME selecta-tree-view
@@ -378,3 +391,10 @@ add_executable(playlist_test playlist/playlist_test.c)
 target_link_libraries(playlist_test PRIVATE selecta_library)
 target_include_directories(playlist_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/playlist)
 add_test(NAME playlist-codecs COMMAND playlist_test)
+
+# T34: key binding table, keys.conf lines, key names (plugins/ui/text/keybind.c).
+if(NOT SEL_AMIGA)
+  add_executable(keybind_test ui/keybind_test.c)
+  target_link_libraries(keybind_test PRIVATE selecta_textui selecta_core)
+  add_test(NAME keybind-unit COMMAND keybind_test)
+endif()
