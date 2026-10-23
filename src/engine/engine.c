@@ -3547,7 +3547,7 @@ static void cmd_STICKER_GET(sel_engine* e, const sel_message* m) {
     if (!sel_library_sticker_get(e->lib, key, m->args[1].v.s, value, sizeof value)) {
         sel_engine_report_error(e, "no_such_sticker", m->args[1].v.s);
     } else {
-        sticker_answer(e, m->args[0].v.s, m->args[1].v.s, value, 1);
+        sticker_answer(e, key, m->args[1].v.s, value, 1);
     }
 }
 
@@ -3573,7 +3573,7 @@ static void cmd_STICKER_LIST(sel_engine* e, const sel_message* m) {
     }
     while (*p != '\0' && n < SEL_STICKER_ANSWERS) {
         const char* value = p + strlen(p) + 1;
-        sticker_answer(e, m->args[0].v.s, p, value, rows);
+        sticker_answer(e, key, p, value, rows);
         p = value + strlen(value) + 1;
         n++;
     }

@@ -1017,6 +1017,11 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/song_key.cmake")
   set_tests_properties(song-key PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "song_key_ok")
 
+  add_executable(key_remote_test m3/key_remote_test.c)
+  target_link_libraries(key_remote_test PRIVATE selecta_core)
+  add_test(NAME key-remote COMMAND key_remote_test)
+  set_tests_properties(key-remote PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "key_remote_ok")
+
   add_test(NAME home-view
     COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>" "-DSELECTA=$<TARGET_FILE:selecta>"
       "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue_keys.tsv"

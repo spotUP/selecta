@@ -4,6 +4,7 @@
 #include "db_internal.h"
 #include "http.h"
 #include "mirrors.h"
+#include "../source.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -157,19 +158,15 @@ int sel_devilbox_login(const char* user, const char* password, int* status) {
 }
 
 int sel_devilbox_item(const char* key, char* source, size_t cap, const char** path) {
-    static const char* const names[] = {"modland", "hvsc"};
-    unsigned i;
+    const char* colon = strchr(key, ':');
+    size_t n = colon != NULL ? (size_t)(colon - key) : 0;
 
-    for (i = 0; i < 2; i++) {
-        size_t n = strlen(names[i]);
-
-        if (strncmp(key, names[i], n) == 0 && key[n] == ':' && key[n + 1] != '\0' && n < cap) {
-            memcpy(source, names[i], n + 1);
-            *path = key + n + 1;
-            return 1;
-        }
-    }
-    return 0;
+    if (n == 0 || n >= cap || n >= SEL_SOURCE_ID_MAX || colon[1] == '\0') return 0;
+    memcpy(source, key, n);
+    source[n] = '\0';
+    if (!sel_source_is_remote(source)) return 0; /* the source table decides, not a literal list (I211b) */
+    *path = colon + 1;
+    return 1;
 }
 
 int sel_devilbox_rating_push(const char* key, int rating) {

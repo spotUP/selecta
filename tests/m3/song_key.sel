@@ -4,3 +4,5 @@ OPEN selecta-test.mod
 PLAY
 @render_until_end
 STICKER_SET selecta-test.mod mood calm
+STICKER_GET selecta-test.mod mood
+STICKER_LIST selecta-test.mod
