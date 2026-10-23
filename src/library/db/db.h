@@ -123,6 +123,17 @@ struct sel_cache_trim_result;
 unsigned sel_library_cache_trim(sel_library* lib, uint32_t budget, struct sel_cache_trim_result* out);
 /* Marks song key `key` in table "kept" or "liked" (seeding and tests). 1 on success. */
 int sel_library_mark(sel_library* lib, const char* table, const char* key);
+/* Companion rules (sel_companion_rules) the trim honours; every LIBRARY_FETCH sets them. */
+void sel_library_set_rules(sel_library* lib, const char* rules);
+/* Overrides the machine-scaled cache budget of this handle (tests). */
+void sel_library_set_budget(sel_library* lib, uint32_t budget);
+/* Prefetch (I168): fetches `spec` ("<source>:<path>") and its companions into the cache on a low-priority
+ * thread, one request at a time; a new request replaces a pending one. 0 when it cannot run (no thread,
+ * no cache). Cancel drops a pending request; wait blocks until the thread is idle (tests). */
+int sel_library_prefetch(sel_library* lib, const char* spec, const char* rules);
+void sel_library_prefetch_cancel(sel_library* lib);
+void sel_library_prefetch_wait(sel_library* lib);
+void sel_library_prefetch_stop(sel_library* lib);
 int sel_library_cache_stats(const sel_library* lib, struct sel_cache_stats* out);
 /* Prints `cache_hits= fetches= companions= md5_mismatches= mirror_tries=` when a fetch was served. */
 void sel_library_cache_report(const sel_library* lib);

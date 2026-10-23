@@ -273,6 +273,8 @@ struct sel_engine {
     sel_tag lib_tags[4][4];                  /* LIBRARY_RESULT tags, a ring like error_detail */
     char lib_path[4][SEL_BROWSE_PATH_MAX];
     sel_library* lib;     /* the database of the front end; NULL: no library */
+    uint32_t pf_id;       /* queue entry id whose song is being prefetched (I168); 0 = none */
+    uint32_t pf_qver;     /* queue version that request was made under */
     char* res_text;       /* last query result: keys, each NUL terminated */
     uint32_t res_count;
     char* res_meta;       /* last query result: title, artist, format, duration per key, each NUL terminated */
@@ -1077,9 +1079,21 @@ static int start_subsong(sel_engine* e, sel_slot* sl, uint32_t subsong) {
 
 /* Reads the whole file into host memory; NULL when it cannot be read. */
 static uint8_t* read_song(sel_engine* e, const char* path, size_t* size) {
-    FILE* f = fopen(path, "rb");
+    FILE* f;
     long len;
     uint8_t* buf;
+    char cached[SEL_BROWSE_PATH_MAX];
+    if (e->lib != NULL && sel_cache_is_remote(path)) {
+        /* Remote key: the file cache serves it (a hit when the prefetch got there first), I168. */
+        char rules[512];
+        uint32_t files = 0;
+        sel_companion_rules(e->registry_count, e->registry_get, rules, sizeof rules);
+        if (sel_library_fetch(e->lib, path, rules, cached, sizeof cached, &files) <= 0) {
+            return NULL;
+        }
+        path = cached;
+    }
+    f = fopen(path, "rb");
     if (f == NULL) {
         return NULL;
     }
@@ -1735,6 +1749,31 @@ static void commit_next(sel_engine* e) {
     evt_tags(&ev, sl->rp_metadata ? sl->rp_metadata(sl->rp_state) : NULL);
     emit(e, &ev);
     emit_position(e, sl);
+}
+
+/* Prefetch (I168): while a song plays, the next queue entry, when remote, is fetched into the cache on the
+ * library's prefetch thread (sel_library_prefetch, which reuses sel_library_fetch's cache code). One request
+ * at a time; a change of the queue or of the next entry replaces or cancels the pending one. */
+static void prefetch_sync(sel_engine* e) {
+    uint32_t next = SEL_QUEUE_NONE;
+    if (e->lib == NULL) {
+        return;
+    }
+    if (e->state.play == SEL_PLAYING && e->cur != SEL_SLOT_NONE && e->q_playing != 0 && e->repeat != 1u) {
+        next = queue_next_index(e);
+    }
+    if (next < e->queue.count && sel_cache_is_remote(sel_queue_path(&e->queue, next))) {
+        if (e->pf_id != e->queue.entries[next].id || e->pf_qver != e->queue.version) {
+            char rules[512];
+            sel_companion_rules(e->registry_count, e->registry_get, rules, sizeof rules);
+            e->pf_id = e->queue.entries[next].id;
+            e->pf_qver = e->queue.version;
+            sel_library_prefetch(e->lib, sel_queue_path(&e->queue, next), rules);
+        }
+    } else if (e->pf_id != 0) {
+        e->pf_id = 0;
+        sel_library_prefetch_cancel(e->lib);
+    }
 }
 
 /* Prepares the next queue entry into the idle slot shortly before the current song ends
@@ -3059,6 +3098,7 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
     } else {
         prepare_next(e);
     }
+    prefetch_sync(e);
     if (e->cur != SEL_SLOT_NONE) {
         sel_slot* sl = &e->slot[e->cur];
         int advanced = 0;

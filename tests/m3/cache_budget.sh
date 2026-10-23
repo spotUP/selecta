@@ -35,6 +35,21 @@ OUT=$("$CLI" library trim --budget 100 --machine a500 \
 [ "$(field trimmed)" = 1 ] || fail "trimmed (second): $OUT"
 { [ -f "$D/s1.mod" ] && [ -f "$D/s2.mod" ]; } || fail "exempt lost"
 
+# I167a: a kept song's companion (sample set) is exempt too. mdat.x is kept; smpl.x, its companion by rule,
+# is older than the unmarked file and would be evicted first without the exemption.
+T="$W/files/modland/TFMX/a"
+mkdir -p "$T" || exit 1
+for f in mdat.x smpl.x other.x; do head -c 1000 /dev/zero > "$T/$f"; done
+touch -t 202301010001 "$T/smpl.x"
+touch -t 202301010002 "$T/other.x"
+touch -t 202301010003 "$T/mdat.x"
+OUT=$("$CLI" library trim --budget 100 --machine a500 --rules 'mdat.*>smpl.*' \
+  --mark kept:modland:TFMX/a/mdat.x) || fail "companion trim exit"
+[ "$(field trim_runs)" = 1 ] || fail "companion sentinel: $OUT"
+[ "$(field companion_exempt)" = 1 ] || fail "companion_exempt: $OUT"
+{ [ -f "$T/mdat.x" ] && [ -f "$T/smpl.x" ]; } || fail "kept song or its companion evicted"
+[ ! -f "$T/other.x" ] || fail "unmarked file survived"
+
 # Default budget per tier (no --budget).
 for t in "a500 8388608" "a1200 8388608" "a1200-fpu 8388608" "a060 536870912"; do
   set -- $t

@@ -17,3 +17,5 @@ All files fetched 2026-10-23 by HTTP GET. None are synthetic. JSON and .prg cann
 | devilbox.uprough.net/api/hip/votes_400.txt | /api/hip/votes | body `ERR bad`, HTTP 400 |
 
 Synthetic (T69, I156): fast.mirror.test, slow.mirror.test (4 s first byte via routes.json), home.mirror.test and devilbox.uprough.net/api/mirror/modland carry copies of fixture.test/data.bin as Protracker/test/song.mod; they stand in for mirrors, not for real Modland content.
+
+Generated (I168): fast.mirror.test/mods/Protracker/test/play1.mod and play2.mod are copies of the gen_testmod song (tests/songs/selecta-test.mod), so the engine can decode them; T77 prefetch plays one and prefetches the other.

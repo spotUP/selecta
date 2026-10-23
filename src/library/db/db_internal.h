@@ -27,9 +27,17 @@ struct sel_library {
     char view_text[16][256]; /* saved queries handed to the compiler during one compile */
     unsigned view_used;
     sel_cache* cache;        /* file cache of LIBRARY_FETCH, created on the first fetch (fetch.c) */
+    char rules[512];         /* companion rules last seen by a fetch (trim exempts companions, I167a) */
     uint32_t cache_budget;   /* bytes, scaled by the machine (sel_cache_budget) */
     unsigned fetch_requests; /* LIBRARY_FETCH requests served */
 #if !defined(SEL_LIBRARY_NO_THREAD)
+    pthread_t pf_thread;     /* prefetch thread, created on the first prefetch (fetch.c, I168) */
+    pthread_mutex_t pf_lock; /* guards the pf_* fields and serialises the file cache between threads */
+    pthread_cond_t pf_wake;
+    pthread_mutex_t cache_lock; /* the file cache, once the prefetch thread exists */
+    char pf_spec[160];       /* pending request "<source>:<path>"; "" = none */
+    char pf_rules[512];
+    unsigned pf_started, pf_busy, pf_quit;
     pthread_t thread;
     pthread_mutex_t lock;
     pthread_cond_t wake_worker;

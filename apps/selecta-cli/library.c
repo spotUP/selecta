@@ -640,6 +640,7 @@ static int library_trim(int argc, char** argv) {
     const sel_tag* machine = NULL;
     const char* db_path = ":memory:";
     uint32_t budget = 0;
+    const char* rules = NULL;
     sel_library* lib;
     sel_cache_trim_result tr;
     int i;
@@ -653,10 +654,12 @@ static int library_trim(int argc, char** argv) {
             }
         } else if (strcmp(argv[i], "--db") == 0) {
             db_path = argv[i + 1];
+        } else if (strcmp(argv[i], "--rules") == 0) {
+            rules = argv[i + 1];
         } else if (strcmp(argv[i], "--budget") == 0) {
             budget = (uint32_t)strtoul(argv[i + 1], NULL, 10);
         } else if (strcmp(argv[i], "--mark") != 0) {
-            fputs("usage: selecta-cli library trim [--budget <n>] [--machine <name>] [--db <path>] [--mark kept:<key>|liked:<key>]\n", stderr);
+            fputs("usage: selecta-cli library trim [--budget <n>] [--machine <name>] [--db <path>] [--rules <companion rules>] [--mark kept:<key>|liked:<key>]\n", stderr);
             return 2;
         }
     }
@@ -682,10 +685,12 @@ static int library_trim(int argc, char** argv) {
             }
         }
     }
+    sel_library_set_rules(lib, rules);
     printf("budget=%lu\n", (unsigned long)(budget != 0 ? budget : sel_cache_budget(machine)));
     printf("trim_runs=%u\n", sel_library_cache_trim(lib, budget, &tr));
-    printf("bytes_before=%lu\nbytes_after=%lu\ntrimmed=%u kept_exempt=%u\n", (unsigned long)tr.bytes_before,
-           (unsigned long)tr.bytes_after, tr.trimmed, tr.kept_exempt);
+    printf("bytes_before=%lu\nbytes_after=%lu\ntrimmed=%u kept_exempt=%u companion_exempt=%u\n",
+           (unsigned long)tr.bytes_before, (unsigned long)tr.bytes_after, tr.trimmed, tr.kept_exempt,
+           tr.companion_exempt);
     sel_library_close(lib);
     return 0;
 }
