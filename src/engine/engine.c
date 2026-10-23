@@ -40,6 +40,7 @@
 #include "cache.h"
 #include "share.h"
 #include "stream_open.h"
+#include "net/net.h"
 #if !defined(SEL_NO_ANALYSE)
 #include "loudness.h"
 #endif
@@ -262,6 +263,11 @@ struct sel_engine {
     uint32_t rp_config_applied;     /* option values that came from an override layer (T61) */
     sel_state state;
     sel_spsc cmd_q;
+    /* I195a: set by sel_engine_send for STOP and OPEN, read by the pump thread's net waits (sel_net_set_cancel), so a
+     * URL fetch in read_song ends within one poll slice when a newer STOP or OPEN is queued. The pump clears it when it
+     * pops such a command and the queue is then empty. */
+    volatile unsigned net_cancel;
+    uint32_t net_cancels;                   /* URL fetches abandoned for a newer STOP or OPEN (I195a sentinel) */
     sel_spsc evt_q;
     uint32_t in_batch;
     uint32_t pending;
@@ -1206,7 +1212,11 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size) {
         path = cached;
     }
     if (sel_stream_is_url(path) || sel_stream_is_pipe(path)) {
-        return sel_stream_read(e->host, path, size); /* I195: URL or pipe, the whole stream in memory */
+        uint8_t* data = sel_stream_read(e->host, path, size); /* I195: URL or pipe, the whole stream in memory */
+        if (data == NULL && e->net_cancel) {
+            e->net_cancels++; /* I195a: the fetch was abandoned for a newer STOP or OPEN */
+        }
+        return data;
     }
     f = fopen(path, "rb");
     if (f == NULL) {
@@ -4229,6 +4239,9 @@ void sel_engine_destroy(sel_engine* e) {
 
 int sel_engine_send(sel_engine* e, const sel_message* cmd) {
     SEL_THREAD_NOT_AUDIO(e);
+    if (cmd->kind == SEL_MSG_CMD && (cmd->id == SEL_CMD_STOP || cmd->id == SEL_CMD_OPEN)) {
+        e->net_cancel = 1; /* a pump blocked in a URL fetch gives up (I195a); set before the push so the pump sees it */
+    }
     return sel_spsc_push(&e->cmd_q, cmd);
 }
 
@@ -4363,7 +4376,11 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
     sel_message m;
     uint32_t delivered = 0;
     SEL_THREAD_NOT_AUDIO(e);
+    sel_net_set_cancel(&e->net_cancel); /* this thread's net waits end when send flags a STOP or OPEN (I195a) */
     while (sel_spsc_pop(&e->cmd_q, &m)) {
+        if (m.kind == SEL_MSG_CMD && (m.id == SEL_CMD_STOP || m.id == SEL_CMD_OPEN) && sel_spsc_count(&e->cmd_q) == 0) {
+            e->net_cancel = 0; /* the last queued canceller is being served: its own fetch must run */
+        }
         if (m.kind == SEL_MSG_CMD && m.id < SEL_CMD_COUNT) {
             dispatch(e, &m);
         }
@@ -4532,6 +4549,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->links_parsed = e->links_parsed;
     out->links_made = e->links_made;
     out->radio_appends = e->radio_appends;
+    out->net_cancels = e->net_cancels;
     out->rating_pushes = sel_devilbox_pushes();
     out->rating_batches = sel_devilbox_batches();
     out->vote_posts = sel_devilbox_vote_posts();
