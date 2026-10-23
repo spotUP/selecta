@@ -201,6 +201,7 @@ typedef struct sel_slot {
     uint32_t last_tick;   /* the current tick carries SEL_TICK_ENDED */
     uint32_t ended;       /* set by render, reported by the next pump */
     uint32_t reported;    /* pump side: SONG_ENDED was emitted for this song */
+    uint32_t scrobbled;   /* pump side: SCROBBLE_DUE was emitted for this song (I177) */
     sel_playpol pol;      /* loop count, fade and silence state of this song */
 } sel_slot;
 
@@ -209,6 +210,7 @@ struct sel_engine {
     sel_host rp_host;               /* copy of host whose config_get answers per-replayer options (I134) */
     char rp_song_config[256];       /* per-song override list "plugin.key=value,...", read from the library DB sticker rp.config at OPEN (D-M2-8, I170) */
     char hist_key[SEL_DEFERRED_PATH_MAX]; /* key of the song being played, "" none: its end or skip goes to the history table (I170) */
+    uint32_t scrobble_due;   /* SCROBBLE_DUE events emitted (sentinel of the I177 rule) */
     uint32_t history_writes; /* history rows written (sentinel of the I170 writer) */
     uint32_t cue_sets, cue_gotos, sticker_ops; /* sentinels of I175 / I176 */
     uint32_t folder_ops;                       /* FOLDER_* / PLAYLIST_MOVE commands run against the library (I178) */
@@ -1046,6 +1048,30 @@ static void emit_position(sel_engine* e, sel_slot* sl) {
     emit(e, &m);
 }
 
+/* Scrobble rule (I177, last.fm): a song longer than 30 s is due once it has played half its length or 4 minutes,
+ * whichever comes first. A song of unknown length (duration 0) is due at the 4 minute mark. */
+#define SEL_SCROBBLE_MIN_MS 30000u
+#define SEL_SCROBBLE_CAP_MS 240000u
+
+static void scrobble_check(sel_engine* e, sel_slot* sl) {
+    uint32_t dur = (uint32_t)sel_tag_find(sl->rp_metadata != NULL ? sl->rp_metadata(sl->rp_state) : NULL,
+                                          SEL_META_DURATION_MS, 0);
+    uint32_t due = SEL_SCROBBLE_CAP_MS;
+    uint32_t played = (uint32_t)((uint64_t)sl->song_frames * 1000u / e->rate);
+    sel_message ev;
+
+    if (sl->scrobbled) return;
+    if (dur != 0) {
+        if (dur <= SEL_SCROBBLE_MIN_MS) return;
+        if (dur / 2u < due) due = dur / 2u;
+    }
+    if (played < due) return;
+    sl->scrobbled = 1;
+    e->scrobble_due++;
+    evt_init(&ev, SEL_EVT_SCROBBLE_DUE);
+    emit(e, &ev);
+}
+
 /* Pump thread only: RP_CLOSE and free; the audio thread no longer mixes the slot. */
 static void close_slot(sel_engine* e, sel_slot* sl) {
     if (sl->rp_state != NULL) {
@@ -1063,6 +1089,7 @@ static void close_slot(sel_engine* e, sel_slot* sl) {
     sl->frames_left = 0;
     sl->ended = 0;
     sl->reported = 0;
+    sl->scrobbled = 0;
     sl->last_tick = 0;
     memset(&sl->pol, 0, sizeof sl->pol);
     sl->busy = 0;
@@ -1079,6 +1106,7 @@ static int start_subsong(sel_engine* e, sel_slot* sl, uint32_t subsong) {
         sl->pos_emitted = 0;
         sl->ended = 0;
         sl->reported = 0;
+        sl->scrobbled = 0;
         sl->last_tick = 0;
         memset(&sl->pol, 0, sizeof sl->pol);
         sl->subsong = subsong;
@@ -1092,6 +1120,7 @@ static int start_subsong(sel_engine* e, sel_slot* sl, uint32_t subsong) {
     sl->pos_emitted = 0;
     sl->ended = 0;
     sl->reported = 0;
+    sl->scrobbled = 0;
     sl->last_tick = 0;
     memset(&sl->pol, 0, sizeof sl->pol);
     sl->subsong = subsong;
@@ -3571,6 +3600,9 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
         if (!advanced && sl->rp_state != NULL && sl->song_frames / e->rate != sl->pos_emitted) {
             emit_position(e, sl);
         }
+        if (!advanced && sl->rp_state != NULL && e->state.play == SEL_PLAYING) {
+            scrobble_check(e, sl);
+        }
     }
     refresh_snapshot(e);
     view_sync(e);
@@ -3664,6 +3696,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->seek_skipped_frames = e->seek_skipped;
     out->songs_opened = e->songs_opened;
     out->history_writes = e->history_writes;
+    out->scrobble_due = e->scrobble_due;
     out->skip_excluded = e->skip_excluded;
     out->cue_sets = e->cue_sets;
     out->cue_gotos = e->cue_gotos;

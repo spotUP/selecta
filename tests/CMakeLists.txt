@@ -20,10 +20,10 @@ sel_cli_test(protocol-reflection-events   "events"   "-DLINES=${SEL_COUNT_EVT}")
 sel_cli_test(protocol-reflection-tagtypes "tagtypes" "-DLINES=${SEL_COUNT_META}")
 
 # T5: the registry walked every descriptor and found only known tags.
-# null, wav, nuade, openmpt, the crossfeed DSP, the text UI, the nowplaying-test integration and the voices-test, paula-shadow and paula14-shadow
+# null, wav, nuade, openmpt, the crossfeed DSP, the text UI, the nowplaying-test and lastfm integrations and the voices-test, paula-shadow and paula14-shadow
 # output (both host only), plus coreaudio and the
 # macOS Now Playing plugin on macOS, or MPRIS on Linux when libsystemd was found; the negative tree adds one bad plugin.
-set(SEL_EXPECT_PLUGINS 10)
+set(SEL_EXPECT_PLUGINS 11)
 if(APPLE)
   math(EXPR SEL_EXPECT_PLUGINS "${SEL_EXPECT_PLUGINS} + 2")
 elseif(SEL_HAVE_MPRIS)
@@ -533,6 +533,7 @@ if(NOT SEL_AMIGA)
   set_tests_properties(integration-nowplaying PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/songs")
 endif()
+
 
 # T28 reachability (I82): the whole of M1.2 through the real shell, one run.
 if(NOT SEL_AMIGA)
@@ -1139,4 +1140,13 @@ if(NOT SEL_AMIGA)
             -P "${SEL_NET_DIR}/devilbox_genre.cmake")
   set_tests_properties(devilbox-genre PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "devilbox_genre_ok")
+endif()
+
+# T95 (row I177): SCROBBLE_DUE from the engine, the last.fm scrobbler plugin, its signed POST and the offline queue.
+if(NOT SEL_AMIGA)
+  add_test(NAME scrobble
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3"
+            "-DSONGS=${CMAKE_CURRENT_BINARY_DIR}/songs" -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/scrobble.cmake")
+  set_tests_properties(scrobble PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 180 PASS_REGULAR_EXPRESSION "scrobble_ok")
 endif()

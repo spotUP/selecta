@@ -4,6 +4,9 @@
 # T38 fake backend: counts what a Now Playing backend would have been given.
 sel_add_plugin(nowplaying_test 8 test/nowplaying_test.c)
 
+# last.fm scrobbler with an offline queue (I177, D-M3-15).
+sel_add_plugin(lastfm 8 lastfm/lastfm.c)
+
 # macOS Now Playing (MediaPlayer framework). Objective-C is allowed here only.
 if(APPLE)
   enable_language(OBJC)

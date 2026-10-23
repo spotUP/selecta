@@ -1,0 +1,2 @@
+# T95 offline queue: a second process. Opening the scrobbler flushes the queue the earlier run left behind.
+@integration_poll

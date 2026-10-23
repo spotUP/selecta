@@ -270,6 +270,7 @@ typedef struct sel_engine_stats {
     uint32_t seek_path;           /* last SEEK: 0 none, 1 native (RP_SEEK), 2 restart-and-skip */
     uint32_t seek_skipped_frames; /* frames the last restart-and-skip ran through */
     uint32_t songs_opened;        /* songs started by OPEN or the queue (T19) */
+    uint32_t scrobble_due;        /* SCROBBLE_DUE events the engine emitted (T95 sentinel) */
     uint32_t history_writes;      /* history rows the engine wrote on song end or skip (T78 sentinel) */
     uint32_t skip_excluded;       /* skip-flagged rows the random order left out (T78 flags sentinel) */
     uint32_t cue_sets;            /* CUE_SET rows stored (I175 sentinel) */
