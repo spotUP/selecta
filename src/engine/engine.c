@@ -269,6 +269,7 @@ struct sel_engine {
      * pops such a command and the queue is then empty. */
     volatile unsigned net_cancel;
     uint32_t net_cancels;                   /* URL fetches abandoned for a newer STOP or OPEN (I195a sentinel) */
+    uint32_t net_cancel_lost;               /* canceller dispatched while another sat queued behind it with no cancel pending (I195c sentinel, must stay 0) */
     sel_spsc evt_q;
     uint32_t in_batch;
     uint32_t pending;
@@ -4406,6 +4407,10 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
         if (m.kind == SEL_MSG_CMD && (m.id == SEL_CMD_STOP || m.id == SEL_CMD_OPEN) && sel_spsc_count(&e->cmd_q) == 0) {
             e->net_cancel = 0; /* the last queued canceller is being served: its own fetch must run */
         }
+        if (m.kind == SEL_MSG_CMD && (m.id == SEL_CMD_STOP || m.id == SEL_CMD_OPEN) && sel_spsc_count(&e->cmd_q) > 0 &&
+            !e->net_cancel) {
+            e->net_cancel_lost++;
+        }
         if (m.kind == SEL_MSG_CMD && m.id < SEL_CMD_COUNT) {
             dispatch(e, &m);
         }
@@ -4575,6 +4580,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->links_made = e->links_made;
     out->radio_appends = e->radio_appends;
     out->net_cancels = e->net_cancels;
+    out->net_cancel_lost = e->net_cancel_lost;
     out->rating_pushes = sel_devilbox_pushes();
     out->rating_batches = sel_devilbox_batches();
     out->vote_posts = sel_devilbox_vote_posts();
