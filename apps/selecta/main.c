@@ -8,6 +8,7 @@
  *
  * --catalogue backs the engine with an in-memory library imported from a TSV; each --exec
  * line is sent as a command once the engine is up (T66 uses LIBRARY_SEARCH and VIEW_SOURCE).
+ * A positional share link (selecta://... or the DEViLBOX form) is sent as OPEN (T84).
  * *
  * --keys and --screen-dump are passed to the UI, which owns them. On exit it
  * prints `ui_waits=<w> flushes=<f> keys=<k>` and `songs_opened=<s>
@@ -29,6 +30,7 @@
 #include "integration_host.h"
 #include "db.h"
 #include "local.h"
+#include "share.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -325,6 +327,15 @@ int main(int argc, char** argv)
         send_line(e, "VIEW_SHOW browse");
     }
     sel_engine_pump(e, sink, ctx);
+    for (a = 1; a < argc; a++) { /* `selecta <share link>` opens the song, playlist or view the link names (I180) */
+        if (sel_share_is_link(argv[a])) {
+            char pool[1536];
+            snprintf(cmd, sizeof cmd, "OPEN %s", argv[a]);
+            if (sel_engine_send_line(e, cmd, pool, sizeof pool) == SEL_CODEC_OK) {
+                sel_engine_pump(e, sink, ctx);
+            }
+        }
+    }
     for (a = 1; a + 1 < argc; a++) {
         if (strcmp(argv[a], "--exec") == 0) {
             char pool[1024];
@@ -354,6 +365,7 @@ int main(int argc, char** argv)
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_KEYS, 0));
     printf("songs_opened=%u queue_version=%u\n", (unsigned)est.songs_opened,
            (unsigned)sel_engine_state(e)->queue_version);
+    printf("links_parsed=%u links_made=%u\n", (unsigned)est.links_parsed, (unsigned)est.links_made);
 
     printf("cmdline_runs=%u palette_opens=%u bindings=%u playlist_entries=%u undo_depth=%u redo_depth=%u view_style=%s\n",
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_CMDLINE_RUNS, 0), (unsigned)sel_tag_find(ust, SEL_UI_STAT_PALETTE_OPENS, 0),

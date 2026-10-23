@@ -15,6 +15,7 @@
 #include "cli.h"
 #include "db.h"
 #include "integration_host.h"
+#include "share.h"
 #ifndef SEL_NO_CONTROL_SOCKET
 #include "ctlsock.h"
 #endif
@@ -54,6 +55,10 @@ static int usage(FILE* to) {
           "  userdata --db <p> [--catalogue <tsv>] [--note <song> <text>] [--tag <song> <field> <value>] [--wrong <song> <note>]  notes, tag edits, row counts (T78)\n"
           "  wrong [--db <p>] [--export <file>] [<song> [<note>]]  flag a song as sounding wrong, export sounds-wrong.txt (T78)\n"
           "  fetch <url> [--method M] [--range a-b] [--out file]  one HTTP request, print http_status= and net counters\n"
+          "  share make song|playlist|view ...  build a share link, print both forms and the parse round trip (T84)\n"
+          "  share parse <link>         parse a selecta:// or DEViLBOX link, print its parts (exit 2: ERROR bad_link)\n"
+          "  share song|position <song> [--at <ms>] [--catalogue <tsv>]  play a song, ask SHARE for its link\n"
+          "  open <link> [--catalogue <tsv>]  OPEN a share link, render a little, print SHARE counters (T84)\n"
           "  machine [--tier <name>]    probe the machine, print the sel_machine tags\n",
           to);
     return to == stdout ? 0 : 2;
@@ -293,6 +298,7 @@ static void print_event(void* ctx, const sel_message* evt) {
  *                       the song length)
  *   @position           SNAPSHOT position_ms=M order=O row=R pattern=P (song.pattern_pos)
  *   @user_stats         USERDATA cue_sets=N cue_gotos=N sticker_ops=N (T81, T82)
+ *   @share_stats        SHARE links_parsed=N links_made=N songs_opened=N (T84)
  *   @folder_stats       FOLDERS folders=N playlists_in_folders=N playlists=N entries=N folder_ops=N (T83)
  *   @folder_tree        the folder tree, one \"F|P <id> <name>\" line per node (T83)
  *   @playlist_add <folder> <name> <key>...  adds a DB playlist (test plumbing; no engine verb creates one yet)
@@ -381,6 +387,11 @@ static void script_directive(sel_engine* e, const char* line) {
         sel_engine_stats_get(e, &es);
         printf("USERDATA cue_sets=%u cue_gotos=%u sticker_ops=%u\n", (unsigned)es.cue_sets, (unsigned)es.cue_gotos,
                (unsigned)es.sticker_ops);
+    } else if (strcmp(line, "@share_stats") == 0) {
+        sel_engine_stats es;
+        sel_engine_stats_get(e, &es);
+        printf("SHARE links_parsed=%u links_made=%u songs_opened=%u\n", (unsigned)es.links_parsed,
+               (unsigned)es.links_made, (unsigned)es.songs_opened);
     } else if (strcmp(line, "@position") == 0) {
         const sel_song_state* so = &sel_engine_state(e)->song;
         printf("SNAPSHOT position_ms=%u order=%u row=%u pattern=%u\n", (unsigned)so->position_ms,
@@ -453,21 +464,16 @@ static void script_directive(sel_engine* e, const char* line) {
 
 /* T3: every line of the file goes through codec, queue, dispatch and back
  * out as events. One pump per line so the decode pool can be reused. */
-static int cmd_script(const char* path, int argc, char** argv) {
+static int cmd_script_file(FILE* f, int argc, char** argv) {
     const char* int_id = NULL;
     const sel_host* host = sel_host_default();
     int i;
     char line[1024];
     char pool[2048];
-    FILE* f = fopen(path, "r");
     sel_engine_config cfg;
     sel_engine* e;
     sel_library* lib = NULL;
     memset(&cfg, 0, sizeof cfg);
-    if (f == NULL) {
-        fprintf(stderr, "selecta-cli: cannot open %s\n", path);
-        return 1;
-    }
     for (i = 0; i + 1 < argc; i++) {
         unsigned hh, mm, ss;
         if (strcmp(argv[i], "--clock") == 0) {
@@ -614,6 +620,135 @@ static int cmd_script(const char* path, int argc, char** argv) {
     return 0;
 }
 
+static int cmd_script(const char* path, int argc, char** argv) {
+    FILE* f = fopen(path, "r");
+    if (f == NULL) {
+        fprintf(stderr, "selecta-cli: cannot open %s\n", path);
+        return 1;
+    }
+    return cmd_script_file(f, argc, argv);
+}
+
+/* T84 (I180): share links. `share make` and `share parse` drive the codec alone; `share song|position|playlist`
+ * and `open` run the engine verbs SHARE and OPEN through the script path, so the events and counters are the
+ * engine's own. */
+static const char* const k_share_kind[] = {"none", "song", "playlist", "view"};
+
+static void print_link(const sel_share_link* l) {
+    char text[SEL_SHARE_QUERY_MAX + SEL_SHARE_PATH_MAX], dev[SEL_SHARE_QUERY_MAX + SEL_SHARE_PATH_MAX];
+    sel_share_link back;
+    int ok = sel_share_format(l, text, sizeof text) && sel_share_format_devilbox(l, dev, sizeof dev);
+    if (!ok) {
+        puts("ERROR link_too_long");
+        return;
+    }
+    printf("LINK %s\nLINK_DEVILBOX %s\n", text, dev);
+    printf("ROUNDTRIP selecta=%s devilbox=%s\n",
+           sel_share_parse(text, &back) && sel_share_equal(l, &back) ? "equal" : "differs",
+           sel_share_parse(dev, &back) && sel_share_equal(l, &back) ? "equal" : "differs");
+}
+
+static int share_make(int argc, char** argv) {
+    sel_share_link l;
+    int i, pos = 0;
+    memset(&l, 0, sizeof l);
+    if (argc < 2) return usage(stderr);
+    l.kind = strcmp(argv[0], "song") == 0       ? SEL_SHARE_SONG
+             : strcmp(argv[0], "playlist") == 0 ? SEL_SHARE_PLAYLIST
+             : strcmp(argv[0], "view") == 0     ? SEL_SHARE_VIEW
+                                                : SEL_SHARE_NONE;
+    if (l.kind == SEL_SHARE_NONE) return usage(stderr);
+    for (i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--sub") == 0 && i + 1 < argc) {
+            l.has_sub = 1;
+            l.sub = (uint32_t)strtoul(argv[++i], NULL, 10);
+        } else if (strcmp(argv[i], "--t") == 0 && i + 1 < argc) {
+            l.has_t = 1;
+            l.t_ms = (uint32_t)strtoul(argv[++i], NULL, 10);
+        } else if (l.kind == SEL_SHARE_VIEW && pos == 0) {
+            snprintf(l.path, sizeof l.path, "%s", argv[i]);
+            pos++;
+        } else if (pos == 0) {
+            snprintf(l.source, sizeof l.source, "%s", argv[i]);
+            pos++;
+        } else if (pos == 1) {
+            snprintf(l.path, sizeof l.path, "%s", argv[i]);
+            pos++;
+        }
+    }
+    print_link(&l);
+    return 0;
+}
+
+static int share_parse(const char* text) {
+    sel_share_link l;
+    char key[SEL_SHARE_PATH_MAX + SEL_SHARE_SOURCE_MAX];
+    if (!sel_share_parse(text, &l)) {
+        puts("ERROR bad_link");
+        return 2;
+    }
+    printf("PARSED kind=%s source=%s path=%s sub=%d t=%d", k_share_kind[l.kind], l.source, l.path,
+           l.has_sub ? (int)l.sub : -1, l.has_t ? (int)l.t_ms : -1);
+    if (l.kind == SEL_SHARE_SONG && sel_share_key(l.source, l.path, key, sizeof key)) printf(" key=%s", key);
+    putchar('\n');
+    return 0;
+}
+
+/* Builds the script in a temp file and hands it to the script runner (which closes it). */
+static int run_generated(const char* const* lines, int n, int argc, char** argv) {
+    FILE* f = tmpfile();
+    int i;
+    if (f == NULL) {
+        fprintf(stderr, "selecta-cli: cannot create a script\n");
+        return 1;
+    }
+    for (i = 0; i < n; i++) fprintf(f, "%s\n", lines[i]);
+    rewind(f);
+    return cmd_script_file(f, argc, argv);
+}
+
+static int cmd_share(int argc, char** argv) {
+    char open_line[1100], seek_line[48], share_line[1100];
+    const char* lines[6];
+    int n = 0, i;
+    const char* at = NULL;
+    if (argc < 2) return usage(stderr);
+    if (strcmp(argv[0], "make") == 0) return share_make(argc - 1, argv + 1);
+    if (strcmp(argv[0], "parse") == 0) return share_parse(argv[1]);
+    if (strcmp(argv[0], "playlist") == 0) {
+        snprintf(share_line, sizeof share_line, "SHARE playlist %s", argv[1]);
+        lines[n++] = share_line;
+    } else if (strcmp(argv[0], "song") == 0 || strcmp(argv[0], "position") == 0) {
+        for (i = 2; i + 1 < argc; i++) {
+            if (strcmp(argv[i], "--at") == 0) at = argv[i + 1];
+        }
+        snprintf(open_line, sizeof open_line, "OPEN %s", argv[1]);
+        lines[n++] = open_line;
+        lines[n++] = "@render 441";
+        if (at != NULL) {
+            snprintf(seek_line, sizeof seek_line, "SEEK %s", at);
+            lines[n++] = seek_line;
+        }
+        snprintf(share_line, sizeof share_line, "SHARE %s", argv[0]);
+        lines[n++] = share_line;
+    } else {
+        return usage(stderr);
+    }
+    lines[n++] = "@share_stats";
+    return run_generated(lines, n, argc - 2, argv + 2);
+}
+
+static int cmd_open(int argc, char** argv) {
+    char open_line[1100];
+    const char* lines[3];
+    if (argc < 1) return usage(stderr);
+    snprintf(open_line, sizeof open_line, "OPEN %s", argv[0]);
+    lines[0] = open_line;
+    lines[1] = "@render 441";
+    lines[2] = "@share_stats";
+    return run_generated(lines, 3, argc - 1, argv + 1);
+}
+
 /* T35: `send <verb> [args]` writes one protocol line to the running shell's
  * control socket and prints the reply. Exit 0 on OK, 1 on ERROR, 2 when no
  * shell is running. */
@@ -728,6 +863,12 @@ int main(int argc, char** argv)
     }
     if (strcmp(cmd, "userdata") == 0) {
         return sel_cli_userdata(argc - 2, argv + 2);
+    }
+    if (strcmp(cmd, "share") == 0) {
+        return cmd_share(argc - 2, argv + 2);
+    }
+    if (strcmp(cmd, "open") == 0) {
+        return cmd_open(argc - 2, argv + 2);
     }
     if (strcmp(cmd, "fetch") == 0) {
         return sel_cli_fetch(argc - 2, argv + 2);

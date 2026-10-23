@@ -34,6 +34,7 @@
 #include "view.h"
 #include "db.h"
 #include "cache.h"
+#include "share.h"
 #include "sources/local_source.h"
 #include "sources/hippo_publish.h"
 #include "sources/hippo_sync.h"
@@ -112,7 +113,7 @@
     X(LIBRARY_SYNC)                                                                           \
     X(LIKE)                                                                                   \
     X(FLAG)                                                                                   \
-    X(CUE_SET) X(CUE_GOTO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
+    X(CUE_SET) X(CUE_GOTO) X(SHARE) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
     X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
@@ -215,6 +216,7 @@ struct sel_engine {
     uint32_t cue_sets, cue_gotos, sticker_ops; /* sentinels of I175 / I176 */
     uint32_t folder_view_rows;                 /* rows the folders view source built (I179 sentinel) */
     uint32_t folder_ops;                       /* FOLDER_* / PLAYLIST_MOVE commands run against the library (I178) */
+    uint32_t links_parsed, links_made;         /* share links OPEN parsed / SHARE wrote (I180 sentinels) */
     uint32_t skip_excluded;  /* skip-flagged queue rows left out of a random order (sentinel of I171) */
     char rp_value[SEL_PREF_VALUE_MAX]; /* answer of the last rp_config_get */
     uint32_t rp_config_applied;     /* option values that came from an override layer (T61) */
@@ -1465,7 +1467,7 @@ static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t s
     if (kind == SEL_BEGIN_OPEN) {
         song_config_load(e, path);
     }
-    if (!prepare_slot(e, idx, path, subsong, kind == SEL_BEGIN_SEEK ? seek_to : 0, detail, 0)) {
+    if (!prepare_slot(e, idx, path, subsong, kind == SEL_BEGIN_SEEK || kind == SEL_BEGIN_OPEN ? seek_to : 0, detail, 0)) {
         return 0;
     }
     e->cur = idx;
@@ -1477,6 +1479,11 @@ static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t s
         evt_init(&ev, SEL_EVT_SONG_OPENED);
         evt_tags(&ev, e->slot[idx].rp_metadata ? e->slot[idx].rp_metadata(e->slot[idx].rp_state) : NULL);
         emit(e, &ev);
+        if (seek_to > 0) { /* a share link with t=<ms> opens at that position (I180) */
+            evt_init(&ev, SEL_EVT_SEEKED);
+            evt_uint(&ev, e->slot[idx].song_frames);
+            emit(e, &ev);
+        }
     } else if (kind == SEL_BEGIN_RESTART) {
         evt_init(&ev, SEL_EVT_SEEKED);
         evt_uint(&ev, 0);
@@ -1490,7 +1497,13 @@ static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t s
     return 1;
 }
 
+static int open_share_link(sel_engine* e, const char* text);
+
 static void cmd_OPEN(sel_engine* e, const sel_message* m) {
+    if (sel_share_is_link(m->args[0].v.s)) {
+        open_share_link(e, m->args[0].v.s);
+        return;
+    }
     e->q_playing = 0;
     begin_song(e, SEL_BEGIN_OPEN, m->args[0].v.s, SEL_SUBSONG_DEFAULT, 0);
 }
@@ -2858,6 +2871,103 @@ static int sticker_ready(sel_engine* e, const char* who) {
     return 1;
 }
 
+/* Share links (I180, D-M3-11). OPEN <link> parses either form; SHARE song|position|playlist|view writes one. */
+static int open_share_link(sel_engine* e, const char* text) {
+    sel_share_link l;
+    char open_path[SEL_DEFERRED_PATH_MAX];
+    sel_message sub;
+
+    if (!sel_share_parse(text, &l)) {
+        sel_engine_report_error(e, "bad_link", "OPEN");
+        return 0;
+    }
+    e->links_parsed++;
+    memset(&sub, 0, sizeof sub);
+    sub.kind = SEL_MSG_CMD;
+    sub.argc = 1;
+    sub.args[0].type = SEL_ARG_STR;
+    if (l.kind == SEL_SHARE_SONG) {
+        if (!sel_share_song_open_path(&l, open_path, sizeof open_path)) {
+            sel_engine_report_error(e, "bad_link", "OPEN");
+            return 0;
+        }
+        e->q_playing = 0;
+        return begin_song(e, SEL_BEGIN_OPEN, open_path, l.has_sub ? l.sub : SEL_SUBSONG_DEFAULT,
+                          l.has_t ? (l.t_ms > 4000000u ? 4000000u : l.t_ms) : 0);
+    }
+    if (l.kind == SEL_SHARE_VIEW) {
+        sub.id = SEL_CMD_PLAY_QUERY;
+        sub.args[0].v.s = l.path;
+        cmd_PLAY_QUERY(e, &sub);
+        return 1;
+    }
+    if (strcmp(l.source, "local") != 0) { /* only local playlist files can be loaded without the library */
+        sel_engine_report_error(e, "no_such_playlist", "OPEN");
+        return 0;
+    }
+    sub.id = SEL_CMD_PLAYLIST_LOAD;
+    sub.argc = 2;
+    sub.args[0].v.s = l.path;
+    sub.args[1].type = SEL_ARG_STR;
+    sub.args[1].v.s = "replace";
+    cmd_PLAYLIST_LOAD(e, &sub);
+    return 1;
+}
+
+static void share_answer(sel_engine* e, const sel_share_link* l, const char* key) {
+    char text[SEL_STICKER_VALUE_MAX], dev[SEL_STICKER_VALUE_MAX];
+    if (!sel_share_format(l, text, sizeof text) || !sel_share_format_devilbox(l, dev, sizeof dev)) {
+        sel_engine_report_error(e, "range", "SHARE");
+        return;
+    }
+    e->links_made++;
+    sticker_answer(e, key, "share", text, 1);
+    sticker_answer(e, key, "share_devilbox", dev, 1);
+}
+
+static void cmd_SHARE(sel_engine* e, const sel_message* m) {
+    const char* what = m->args[0].v.s;
+    sel_share_link l;
+    const sel_slot* cur = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
+
+    memset(&l, 0, sizeof l);
+    if (strcmp(what, "playlist") == 0 || strcmp(what, "view") == 0) {
+        int view = what[0] == 'v';
+        if (m->argc < 2 || (!view && !sel_share_key_split(m->args[1].v.s, l.source, sizeof l.source, l.path, sizeof l.path))) {
+            sel_engine_report_error(e, "range", "SHARE");
+            return;
+        }
+        l.kind = view ? SEL_SHARE_VIEW : SEL_SHARE_PLAYLIST;
+        if (view) snprintf(l.path, sizeof l.path, "%s", m->args[1].v.s);
+        share_answer(e, &l, what);
+        return;
+    }
+    if (strcmp(what, "song") != 0 && strcmp(what, "position") != 0) {
+        sel_engine_report_error(e, "range", "SHARE");
+        return;
+    }
+    if (cur == NULL || e->hist_key[0] == '\0') {
+        sel_engine_report_error(e, "no_song", "SHARE");
+        return;
+    }
+    l.kind = SEL_SHARE_SONG;
+    if (sel_cache_is_remote(e->hist_key)) {
+        sel_share_key_split(e->hist_key, l.source, sizeof l.source, l.path, sizeof l.path);
+    } else {
+        snprintf(l.source, sizeof l.source, "local");
+        snprintf(l.path, sizeof l.path, "%s", e->hist_key);
+    }
+    if (cur->subsong != SEL_SUBSONG_DEFAULT && cur->subsong > 0) {
+        l.has_sub = 1;
+        l.sub = cur->subsong;
+    }
+    if (what[0] == 'p' && position_ms(e) > 0) {
+        l.has_t = 1;
+        l.t_ms = position_ms(e);
+    }
+    share_answer(e, &l, e->hist_key);
+}
+
 static void cmd_STICKER_SET(sel_engine* e, const sel_message* m) {
     if (sticker_ready(e, "STICKER_SET") &&
         !sel_library_sticker_set(e->lib, m->args[0].v.s, m->args[1].v.s, m->args[2].v.s)) {
@@ -3745,6 +3855,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->cue_gotos = e->cue_gotos;
     out->sticker_ops = e->sticker_ops;
     out->folder_ops = e->folder_ops;
+    out->links_parsed = e->links_parsed;
+    out->links_made = e->links_made;
     out->folder_view_rows = e->folder_view_rows;
     out->library_searches = e->searches;
     out->library_fts_queries = e->fts_queries;
