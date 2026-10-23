@@ -110,16 +110,41 @@ void sel_net_stats_get(sel_net_stats* out) {
     pthread_mutex_unlock(&g_lock);
 }
 
+/* The calling thread's cancel flag (sel_net_set_cancel); wait_fd polls in slices so a set flag ends any wait. */
+static __thread const volatile unsigned* t_cancel;
+#define NET_CANCEL_SLICE_MS 50u
+
+void sel_net_set_cancel(const volatile unsigned* flag) {
+    t_cancel = flag;
+}
+
+/* Returns > 0 ready, 0 timeout, < 0 error or cancelled. */
 static int wait_fd(int fd, short ev, unsigned ms) {
     struct pollfd p;
+    unsigned long end = sel_net_now_ms() + ms;
     int r;
-    p.fd = fd;
-    p.events = ev;
-    p.revents = 0;
-    do {
-        r = poll(&p, 1, (int)ms);
-    } while (r < 0 && errno == EINTR);
-    return r;
+    for (;;) {
+        unsigned long now = sel_net_now_ms();
+        unsigned slice = now >= end ? 0u : (unsigned)(end - now);
+        if (t_cancel != NULL) {
+            if (*t_cancel) {
+                return -1;
+            }
+            if (slice > NET_CANCEL_SLICE_MS) {
+                slice = NET_CANCEL_SLICE_MS;
+            }
+        }
+        p.fd = fd;
+        p.events = ev;
+        p.revents = 0;
+        r = poll(&p, 1, (int)slice);
+        if (r < 0 && errno == EINTR) {
+            continue;
+        }
+        if (r != 0 || now + slice >= end) {
+            return r;
+        }
+    }
 }
 
 int sel_net_open(const char* host, unsigned port, unsigned connect_ms) {
