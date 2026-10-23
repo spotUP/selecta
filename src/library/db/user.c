@@ -56,16 +56,90 @@ static int flags_export(sqlite3* db, const char* path, int64_t* lines) {
     return fclose(f) == 0 ? SQLITE_OK : SQLITE_IOERR;
 }
 
+/* Runs `sql` with up to three text parameters; a NULL argument binds nothing. */
+static int exec_text3(sqlite3* db, const char* sql, const char* a, const char* b, const char* c) {
+    sqlite3_stmt* st = NULL;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &st, NULL);
+    if (rc != SQLITE_OK) return rc;
+    if (a != NULL) sqlite3_bind_text(st, 1, a, -1, SQLITE_STATIC);
+    if (b != NULL) sqlite3_bind_text(st, 2, b, -1, SQLITE_STATIC);
+    if (c != NULL) sqlite3_bind_text(st, 3, c, -1, SQLITE_STATIC);
+    rc = sqlite3_step(st);
+    sqlite3_finalize(st);
+    return rc == SQLITE_DONE ? SQLITE_OK : rc;
+}
+
+/* NOTE: the note replaces the song's row in `notes` and a "comment" row joins pending_push (the optional
+ * DEViLBOX push drains that queue; this library never sends anything itself). */
+static int note_set(sqlite3* db, const char* key, const char* text) {
+    int rc;
+    if (text == NULL || text[0] == '\0') return exec_text3(db, "DELETE FROM notes WHERE key = ?1", key, NULL, NULL);
+    rc = exec_text3(db, "INSERT OR REPLACE INTO notes(key, note) VALUES(?1, ?2)", key, text, NULL);
+    if (rc != SQLITE_OK) return rc;
+    return exec_text3(db,
+                      "INSERT INTO pending_push(kind, key, payload, created) VALUES('comment', ?1, ?2,"
+                      " CAST(strftime('%s', 'now') AS INTEGER))", key, text, NULL);
+}
+
+/* TAG_EDIT: the edit lives in the sticker "tag.<field>" (re-applied by SEL_SONG_TAG_KEEP on every upsert) and is
+ * written to the songs row now, so queries, FTS and display all read the one songs column. */
+static int tag_edit(sqlite3* db, const char* key, const char* field, const char* value) {
+    static const char* const fields[] = {"artist", "name", "album", "genre"};
+    char sticker[24];
+    char sql[96];
+    size_t i;
+    int rc;
+
+    for (i = 0; i < sizeof fields / sizeof fields[0]; i++) {
+        if (strcmp(field, fields[i]) == 0) break;
+    }
+    if (i == sizeof fields / sizeof fields[0]) return SQLITE_MISUSE;
+    snprintf(sticker, sizeof sticker, "tag.%s", field);
+    if (value == NULL || value[0] == '\0') {
+        return exec_text3(db, "DELETE FROM stickers WHERE key = ?1 AND name = ?2", key, sticker, NULL);
+    }
+    rc = exec_text3(db, "INSERT OR REPLACE INTO stickers(key, name, value) VALUES(?1, ?2, ?3)", key, sticker, value);
+    if (rc != SQLITE_OK) return rc;
+    snprintf(sql, sizeof sql, "UPDATE songs SET %s = ?2 WHERE key = ?1", field);
+    return exec_text3(db, sql, key, value, NULL);
+}
+
+static void user_counts(sqlite3* db, int32_t out[4]) {
+    static const char* const tables[4] = {"history", "flags", "notes", "pending_push"};
+    int i;
+    for (i = 0; i < 4; i++) {
+        sqlite3_stmt* st = NULL;
+        char sql[48];
+        snprintf(sql, sizeof sql, "SELECT COUNT(*) FROM %s", tables[i]);
+        out[i] = 0;
+        if (sqlite3_prepare_v2(db, sql, -1, &st, NULL) == SQLITE_OK) {
+            if (sqlite3_step(st) == SQLITE_ROW) out[i] = sqlite3_column_int(st, 0);
+            sqlite3_finalize(st);
+        }
+    }
+}
+
 void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* reply) {
     int rc = SQLITE_MISUSE;
     int found = 0;
     int64_t rows = -1;
+    int32_t counts[4] = {0, 0, 0, 0};
+    int have_counts = 0;
+    int i;
 
-    if (op->op == SEL_USER_FLAG_EXPORT && op->name != NULL) {
+    if (op->op == SEL_USER_COUNTS) {
+        user_counts(lib->db, counts);
+        have_counts = 1;
+        rc = SQLITE_OK;
+    } else if (op->op == SEL_USER_FLAG_EXPORT && op->name != NULL) {
         rows = 0;
         rc = flags_export(lib->db, op->name, &rows);
     } else if (op->key == NULL || op->key[0] == '\0') {
         /* rc stays SQLITE_MISUSE */
+    } else if (op->op == SEL_USER_NOTE) {
+        rc = note_set(lib->db, op->key, op->value);
+    } else if (op->op == SEL_USER_TAG_EDIT && op->name != NULL) {
+        rc = tag_edit(lib->db, op->key, op->name, op->value);
     } else if (op->op == SEL_USER_FLAG && op->name != NULL && strcmp(op->name, "wrong") == 0) {
         sqlite3_stmt* st = NULL;
         rc = sqlite3_prepare_v2(lib->db,
@@ -118,11 +192,17 @@ void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* repl
     memset(reply, 0, sizeof *reply);
     reply->kind = SEL_MSG_EVT;
     reply->id = SEL_LIB_REQ_USER;
-    reply->argc = 3;
+    reply->argc = have_counts ? 6 : 3;
     reply->args[0].type = SEL_ARG_INT;
     reply->args[0].v.i = rc == SQLITE_OK ? 1 + found : 0;
     reply->args[1].type = SEL_ARG_INT;
     reply->args[1].v.i = rc;
     reply->args[2].type = SEL_ARG_INT; /* FLAG: rows in `flags`; FLAG_EXPORT: lines written */
     reply->args[2].v.i = (int32_t)rows;
+    if (have_counts) { /* COUNTS: [2..5] = history, flags, notes, pending_push */
+        for (i = 0; i < 4; i++) {
+            reply->args[2 + i].type = SEL_ARG_INT;
+            reply->args[2 + i].v.i = counts[i];
+        }
+    }
 }

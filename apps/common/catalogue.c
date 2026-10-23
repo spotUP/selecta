@@ -11,7 +11,7 @@
 /* Opens an in-memory library and imports the TSV catalogue `tsv` (key, source, path, name, artist,
  * format, year per line). NULL, with a message on stderr, when it cannot. Used by `library search`
  * and `script --catalogue`. */
-sel_library* sel_cli_open_catalogue(const char* tsv) {
+sel_library* sel_cli_open_catalogue_at(const char* tsv, const char* db_path) {
     const sel_host* host = sel_host_default();
     sel_library* lib;
     sel_lib_job job;
@@ -34,7 +34,7 @@ sel_library* sel_cli_open_catalogue(const char* tsv) {
     }
     fclose(f);
     buf[n] = '\0';
-    lib = sel_library_open(host, sel_machine_probe(host), 0, ":memory:");
+    lib = sel_library_open(host, sel_machine_probe(host), 0, db_path);
     if (lib == NULL) {
         fputs("selecta-cli: library open failed\n", stderr);
         free(buf);
@@ -49,4 +49,8 @@ sel_library* sel_cli_open_catalogue(const char* tsv) {
     }
     free(buf);
     return lib;
+}
+
+struct sel_library* sel_cli_open_catalogue(const char* tsv) {
+    return sel_cli_open_catalogue_at(tsv, ":memory:");
 }
