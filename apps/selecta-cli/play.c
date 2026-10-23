@@ -1,4 +1,4 @@
-/* play <song> --output <id> --seconds <n> [--rate <hz>] [--record <dir>]
+/* play <song> --output <id> --seconds <n> [--rate <hz>] [--resample <name>] [--record <dir>]
  * (T16): drives a real output (coreaudio) from the engine. The output owns
  * the clock; OUT_PUMP blocks until the requested frames have been played.
  * Prints `callbacks=K frames=F` from the output's own stats. Exit 77 when the
