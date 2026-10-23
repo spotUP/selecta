@@ -1,0 +1,14 @@
+# T81 (row I175): CUE_SET stores the playing position as cue 1 of the song, CUE_GOTO seeks back to it through
+# the SEEK path. cues.sh runs this file and cues2.sel in two processes on one database file.
+QUEUE_ADD selecta-test-mk.mod
+PLAY
+@render 441
+SEEK 5000
+@render 441
+CUE_SET 1
+SEEK 0
+@render 441
+CUE_GOTO 1
+@render 441
+CUE_GOTO 9
+@user_stats

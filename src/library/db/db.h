@@ -41,7 +41,11 @@ enum {
     SEL_USER_FLAG_EXPORT,  /* I171: name = path of the sounds-wrong.txt to write */
     SEL_USER_NOTE,         /* I172: value = note text on the song key (empty text removes it); queues a pending_push comment */
     SEL_USER_TAG_EDIT,     /* I172: name = artist|name|album|genre, value = edited tag (empty drops the edit) */
-    SEL_USER_COUNTS        /* I172: reply [2..5] = rows in history, flags, notes, pending_push */
+    SEL_USER_COUNTS,       /* I172: reply [2..5] = rows in history, flags, notes, pending_push */
+    SEL_USER_STICKER_DEL,  /* I176: reply [0] = 2 when a row was deleted */
+    SEL_USER_STICKER_LIST, /* I176: out = "name\0value\0" pairs in name order that fit; reply [2] = rows found */
+    SEL_USER_CUE_SET,      /* I175: at = cue index, duration_ms = position in ms; name = label or NULL */
+    SEL_USER_CUE_GET       /* I175: at = cue index; reply [0] = 2 and [2] = position in ms when the cue exists */
 };
 typedef struct sel_user_op {
     uint32_t op;       /* SEL_USER_* */
@@ -210,6 +214,17 @@ int sel_library_note(sel_library* lib, const char* key, const char* note);
  * written to the songs row, so queries, FTS and display read it from one place; a rescan or catalogue import
  * keeps it (SEL_SONG_TAG_KEEP). An empty value drops the edit (the scanned value returns on the next scan). */
 int sel_library_tag_edit(sel_library* lib, const char* key, const char* field, const char* value);
+/* Stickers (I176, D-M3-17): per-key name/value rows. get: 1 when the sticker exists (value copied to `out`), 0
+ * when absent or failed. del: 1 when a row was deleted. list: fills `out` with "name\0value\0" pairs in name
+ * order (as many as fit) and *rows with the total; 1 on success. */
+#define SEL_STICKER_VALUE_MAX 256u /* longest sticker value kept, with its NUL */
+int sel_library_sticker_set(sel_library* lib, const char* key, const char* name, const char* value);
+int sel_library_sticker_get(sel_library* lib, const char* key, const char* name, char* out, uint32_t cap);
+int sel_library_sticker_del(sel_library* lib, const char* key, const char* name);
+int sel_library_sticker_list(sel_library* lib, const char* key, char* out, uint32_t cap, uint32_t* rows);
+/* Cue points (I175): cue `idx` of a song key at `pos_ms`. get: 1 and *pos_ms when the cue exists. */
+int sel_library_cue_set(sel_library* lib, const char* key, uint32_t idx, uint32_t pos_ms);
+int sel_library_cue_get(sel_library* lib, const char* key, uint32_t idx, uint32_t* pos_ms);
 /* Row counts of the user tables (any pointer may be NULL). 1 on success. */
 int sel_library_user_counts(sel_library* lib, uint32_t* history, uint32_t* flags, uint32_t* notes, uint32_t* pending_push);
 /* Marks song key `key` in table "kept" or "liked" (seeding and tests). 1 on success. */

@@ -1,0 +1,4 @@
+# T82 second process: the sticker written by stickers.sel survived the restart.
+STICKER_GET selecta-test.mod rating
+STICKER_LIST selecta-test.mod
+@user_stats

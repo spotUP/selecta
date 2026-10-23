@@ -272,6 +272,9 @@ typedef struct sel_engine_stats {
     uint32_t songs_opened;        /* songs started by OPEN or the queue (T19) */
     uint32_t history_writes;      /* history rows the engine wrote on song end or skip (T78 sentinel) */
     uint32_t skip_excluded;       /* skip-flagged rows the random order left out (T78 flags sentinel) */
+    uint32_t cue_sets;            /* CUE_SET rows stored (I175 sentinel) */
+    uint32_t cue_gotos;           /* CUE_GOTO seeks made (I175 sentinel) */
+    uint32_t sticker_ops;         /* STICKER_* commands run against the library (I176 sentinel) */
     uint32_t library_searches;    /* queries sent to the library worker (T64) */
     uint32_t library_fts_queries; /* of those, queries the FTS5 index served (T64) */
     uint32_t result_count;         /* keys held by the last query result (T64, T65) */
