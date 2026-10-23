@@ -15,6 +15,7 @@
 typedef struct sel_modland_net_stats {
     uint32_t zip_bytes;          /* allmods.zip downloaded */
     uint32_t listing_bytes;      /* allmods.txt extracted */
+    uint32_t unpack_peak_heap;   /* most host heap bytes held while unpacking: proves the streaming path (I161c) */
     uint32_t changelogs_fetched; /* changelog files downloaded (HTTP 200) */
     uint32_t changelogs_missing; /* changelog days answered 404 */
     uint32_t http_requests;

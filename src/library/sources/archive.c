@@ -75,6 +75,146 @@ static int each_zip(const sel_host* host, const uint8_t* data, size_t size, size
     return delivered;
 }
 
+/* miniz allocations go through the host allocator; a header records the size so the peak can be measured. */
+typedef union heap_hdr {
+    size_t size;
+    double align;
+} heap_hdr;
+
+typedef struct heap_ctx {
+    const sel_host* host;
+    size_t live, peak;
+} heap_ctx;
+
+static void* heap_alloc(void* opaque, size_t items, size_t size) {
+    heap_ctx* h = opaque;
+    size_t n = items * size;
+    heap_hdr* p;
+
+    if (size != 0 && n / size != items) {
+        return NULL;
+    }
+    p = h->host->mem_alloc(h->host, sizeof *p + n, SEL_MEM_FAST);
+    if (p == NULL) {
+        return NULL;
+    }
+    p->size = n;
+    h->live += n;
+    if (h->live > h->peak) {
+        h->peak = h->live;
+    }
+    return p + 1;
+}
+
+static void heap_free(void* opaque, void* address) {
+    heap_ctx* h = opaque;
+    heap_hdr* p;
+
+    if (address == NULL) {
+        return;
+    }
+    p = (heap_hdr*)address - 1;
+    h->live -= p->size;
+    h->host->mem_free(h->host, p);
+}
+
+static void* heap_realloc(void* opaque, void* address, size_t items, size_t size) {
+    void* n;
+    size_t old, want = items * size;
+
+    if (address == NULL) {
+        return heap_alloc(opaque, items, size);
+    }
+    old = ((heap_hdr*)address - 1)->size;
+    if (want <= old) {
+        return address;
+    }
+    n = heap_alloc(opaque, items, size);
+    if (n != NULL) {
+        memcpy(n, address, old);
+        heap_free(opaque, address);
+    }
+    return n;
+}
+
+static size_t file_read(void* opaque, mz_uint64 ofs, void* buf, size_t n) {
+    FILE* f = opaque;
+
+    if (fseek(f, (long)ofs, SEEK_SET) != 0) {
+        return 0;
+    }
+    return fread(buf, 1, n, f);
+}
+
+static size_t file_write(void* opaque, mz_uint64 ofs, const void* buf, size_t n) {
+    (void)ofs;
+    return fwrite(buf, 1, n, opaque);
+}
+
+int sel_archive_extract_file(const sel_host* host, const char* zip_path, const char* member_base, size_t max_member,
+                             const char* out_path, uint32_t* out_bytes, uint32_t* peak_heap) {
+    mz_zip_archive zip;
+    heap_ctx heap;
+    FILE* in = fopen(zip_path, "rb");
+    FILE* out;
+    mz_uint i, n;
+    long size;
+    int ok = 0;
+
+    if (in == NULL) {
+        return 0;
+    }
+    heap.host = host;
+    heap.live = heap.peak = 0;
+    memset(&zip, 0, sizeof zip);
+    zip.m_pAlloc = heap_alloc;
+    zip.m_pRealloc = heap_realloc;
+    zip.m_pFree = heap_free;
+    zip.m_pAlloc_opaque = &heap;
+    zip.m_pRead = file_read;
+    zip.m_pIO_opaque = in;
+    fseek(in, 0, SEEK_END);
+    size = ftell(in);
+    if (size <= 0 || !mz_zip_reader_init(&zip, (mz_uint64)size, 0)) {
+        fclose(in);
+        return 0;
+    }
+    n = mz_zip_reader_get_num_files(&zip);
+    for (i = 0; i < n && !ok; i++) {
+        mz_zip_archive_file_stat st;
+        const char* base;
+
+        if (mz_zip_reader_is_file_a_directory(&zip, i) || !mz_zip_reader_file_stat(&zip, i, &st) ||
+            st.m_uncomp_size == 0 || st.m_uncomp_size > max_member) {
+            continue;
+        }
+        base = strrchr(st.m_filename, '/');
+        base = base != NULL ? base + 1 : st.m_filename;
+        if (strcmp(base, member_base) != 0) {
+            continue;
+        }
+        out = fopen(out_path, "wb");
+        if (out == NULL) {
+            break;
+        }
+        ok = mz_zip_reader_extract_to_callback(&zip, i, file_write, out, 0) != 0;
+        ok = fclose(out) == 0 && ok;
+        if (ok && out_bytes != NULL) {
+            *out_bytes = (uint32_t)st.m_uncomp_size;
+        }
+        if (!ok) {
+            remove(out_path);
+        }
+        break;
+    }
+    mz_zip_reader_end(&zip);
+    fclose(in);
+    if (peak_heap != NULL) {
+        *peak_heap = (uint32_t)heap.peak;
+    }
+    return ok;
+}
+
 typedef struct mem_stream {
     const uint8_t* data;
     size_t size, pos;

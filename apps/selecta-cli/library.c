@@ -790,9 +790,9 @@ static int library_sync(int argc, char** argv) {
            (unsigned)info.changelogs, (unsigned)info.cl_added, (unsigned)info.cl_removed, (unsigned)info.cl_moved,
            (unsigned)info.cl_updated, st.args[SEL_LIB_STAT_SONGS].v.i);
     if (strcmp(src, "modland") == 0 && info.net_requests > 0) {
-        printf("net_requests=%u net_zip_bytes=%u net_listing_bytes=%u net_changelogs_fetched=%u "
-               "net_changelogs_missing=%u\n",
-               (unsigned)info.net_requests, (unsigned)info.net_zip_bytes, (unsigned)info.net_listing_bytes,
+        printf("net_requests=%u net_zip_bytes=%u net_listing_bytes=%u net_unpack_peak_heap=%u "
+               "net_changelogs_fetched=%u net_changelogs_missing=%u\n",
+               (unsigned)info.net_requests, (unsigned)info.net_zip_bytes, (unsigned)info.net_listing_bytes, (unsigned)info.net_unpack_peak_heap,
                (unsigned)info.net_changelogs_fetched, (unsigned)info.net_changelogs_missing);
     }
     sel_engine_destroy(e);

@@ -38,6 +38,15 @@ int sel_archive_each(const sel_host* host, int kind, const uint8_t* data, size_t
 int sel_archive_list(const sel_host* host, int kind, const uint8_t* data, size_t size,
                      sel_archive_member_fn fn, void* ctx);
 
+/* Streams one zip member from a zip FILE on disk to a file on disk (I161c): the archive is read through a
+ * FILE callback and the member is inflated in small chunks straight into `out_path`, so neither the archive
+ * nor the member is ever held in memory. The first non-directory member whose base name equals `member_base`
+ * and whose unpacked size is at most max_member is extracted. Returns 1 on success and sets *out_bytes (the
+ * member size). `peak_heap` (may be NULL) receives the most host heap bytes miniz held at any moment: the
+ * sentinel that the streaming path ran and the bound on its memory. */
+int sel_archive_extract_file(const sel_host* host, const char* zip_path, const char* member_base, size_t max_member,
+                             const char* out_path, uint32_t* out_bytes, uint32_t* peak_heap);
+
 /* LZX walk (archive_lzx.c); list_only as above. */
 int sel_lzx_walk(const sel_host* host, const uint8_t* data, size_t size, size_t max_member, int list_only,
                  sel_archive_member_fn fn, void* ctx);

@@ -22,13 +22,6 @@ typedef struct net_ctx {
     unsigned long bytes;
 } net_ctx;
 
-typedef struct member_ctx {
-    const char* out_path;
-    uint32_t bytes;
-    int found;
-    int ok;
-} member_ctx;
-
 int sel_modland_is_url(const char* s) {
     return strncmp(s, "http://", 7) == 0 || strncmp(s, "https://", 8) == 0;
 }
@@ -65,58 +58,10 @@ static int get_file(const char* url, const char* path, sel_modland_net_stats* ne
     return err == SEL_HTTP_OK ? res.status : 0;
 }
 
-static int member_sink(void* ctx, const char* name, const uint8_t* data, size_t size) {
-    member_ctx* m = ctx;
-    const char* base = strrchr(name, '/');
-    FILE* f;
-
-    base = base != NULL ? base + 1 : name;
-    if (strcmp(base, MEMBER_NAME) != 0) {
-        return 1;
-    }
-    m->found = 1;
-    f = fopen(m->out_path, "wb");
-    if (f == NULL) {
-        return 0;
-    }
-    m->ok = fwrite(data, 1, size, f) == size;
-    m->bytes = (uint32_t)size;
-    fclose(f);
-    return 0;
-}
-
-/* Reads the zip into one host buffer and writes its allmods.txt member to `out_path`. */
-static int unpack_listing(const sel_host* host, const char* zip_path, const char* out_path, uint32_t* bytes) {
-    FILE* f = fopen(zip_path, "rb");
-    uint8_t* buf;
-    long size;
-    member_ctx m;
-    int kind;
-
-    if (f == NULL) {
-        return 0;
-    }
-    fseek(f, 0, SEEK_END);
-    size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    buf = size > 0 ? host->mem_alloc(host, (size_t)size, SEL_MEM_FAST) : NULL;
-    if (buf == NULL || fread(buf, 1, (size_t)size, f) != (size_t)size) {
-        fclose(f);
-        if (buf != NULL) {
-            host->mem_free(host, buf);
-        }
-        return 0;
-    }
-    fclose(f);
-    memset(&m, 0, sizeof m);
-    m.out_path = out_path;
-    kind = sel_archive_kind(buf, (size_t)size);
-    if (kind == SEL_ARCHIVE_ZIP) {
-        sel_archive_each(host, kind, buf, (size_t)size, MAX_LISTING_BYTES, member_sink, &m);
-    }
-    host->mem_free(host, buf);
-    *bytes = m.bytes;
-    return m.found && m.ok;
+/* Streams the zip's allmods.txt member to `out_path` (I161c): no whole-archive or whole-member buffer. */
+static int unpack_listing(const sel_host* host, const char* zip_path, const char* out_path, sel_modland_net_stats* net) {
+    return sel_archive_extract_file(host, zip_path, MEMBER_NAME, MAX_LISTING_BYTES, out_path, &net->listing_bytes,
+                                    &net->unpack_peak_heap);
 }
 
 /* Civil date of a day number (days since 1970-01-01); integers only. */
@@ -192,7 +137,7 @@ int sel_modland_net_sync(const sel_local_scan_config* cfg, const char* base, int
         return 0;
     }
     net->zip_bytes = (uint32_t)got;
-    if (!unpack_listing(cfg->host, zip, listing, &net->listing_bytes)) {
+    if (!unpack_listing(cfg->host, zip, listing, net)) {
         return 0;
     }
     for (day = 0; day < SEL_MODLAND_NET_DAYS; day++) {
