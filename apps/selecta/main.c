@@ -12,6 +12,9 @@
  * --keys and --screen-dump are passed to the UI, which owns them. On exit it
  * prints `ui_waits=<w> flushes=<f> keys=<k>` and `songs_opened=<s>
  * queue_version=<q>` (the sentinels of test T19). */
+#ifdef __amigaos__
+#include "amiga_start.h"
+#endif
 #include <selecta/engine.h>
 #include <selecta/machine.h>
 #include <selecta/output.h>
@@ -116,7 +119,18 @@ static int ctl_handle(void* ctx, const char* line, char* reply, size_t cap) {
 }
 #endif
 
+#ifdef __amigaos__
+static int app_main(int argc, char** argv);
+
 int main(int argc, char** argv) {
+    return sel_amiga_run_with_stack(app_main, argc, argv, SEL_AMIGA_STACK_BYTES);
+}
+
+static int app_main(int argc, char** argv)
+#else
+int main(int argc, char** argv)
+#endif
+{
 #ifdef __APPLE__
     const char* default_output = "coreaudio";
 #else

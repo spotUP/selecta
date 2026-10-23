@@ -9,6 +9,9 @@
 #include <selecta/tags.h>
 
 #include "catalogue.h"
+#ifdef __amigaos__
+#include "amiga_start.h"
+#endif
 #include "cli.h"
 #include "local.h"
 #include "db.h"
@@ -199,6 +202,9 @@ static int library_stats(int argc, char** argv) {
            r2.args[SEL_LIB_STAT_SCHEMA].v.i, sel_library_sqlite_version(), r2.args[SEL_LIB_STAT_FTS5].v.i,
            sel_library_heap_size(lib), sel_library_heap_allocs(lib), r2.args[SEL_LIB_STAT_SERVED].v.i,
            r2.args[SEL_LIB_STAT_FTS_HITS].v.i, r2.args[SEL_LIB_STAT_SONGS].v.i, sel_library_account(lib));
+#ifdef __amigaos__
+    printf("stack_swaps=%u stack_bytes=%lu\n", sel_amiga_stack_swaps(), sel_amiga_stack_bytes());
+#endif
     sel_library_close(lib);
     return 0;
 }

@@ -928,9 +928,8 @@ if(NOT SEL_AMIGA)
   set_tests_properties(source-archive PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_archive_ok")
 endif()
 
-# M3 Phase 4b (I158a): T71 scan under vamos agrees with the desktop scan. DISABLED: sel_library_open
-# crashes under vamos before any scan code runs (`selecta-cli library stats` crashes the same way, so it
-# predates I158a/I159: InvalidMemoryAccess in the Amiga SQLite open). Enable once the Amiga DB open works.
+# M3 Phase 4b (I158a, I158b): T71 scan under vamos agrees with the desktop scan. It crashed (InvalidMemoryAccess
+# in the SQLite open) until the Amiga executables requested their own stack (apps/common/amiga_stack.c).
 if(NOT SEL_AMIGA AND SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
   add_test(NAME source-local-scan-vamos
     COMMAND "${CMAKE_COMMAND}" "-DMODE=vamos" "-DCLI=${SEL_CLI}" "-DVAMOS=${SEL_VAMOS}"
@@ -938,7 +937,7 @@ if(NOT SEL_AMIGA AND SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m3/source-local-scan-vamos"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/scan_vamos.cmake")
   set_tests_properties(source-local-scan-vamos PROPERTIES LABELS m3 FIXTURES_REQUIRED amiga_cli
-    RESOURCE_LOCK vamos DISABLED TRUE PASS_REGULAR_EXPRESSION "scan_vamos_ok")
+    RESOURCE_LOCK vamos PASS_REGULAR_EXPRESSION "scan_vamos_ok")
 endif()
 
 # T75 cache-fetch (rows I165, I166): LIBRARY_FETCH through the file cache and its companions.
