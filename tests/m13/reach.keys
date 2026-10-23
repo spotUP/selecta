@@ -1,0 +1,50 @@
+# T39 selecta-m13-reach (plan 2026-10-23-m1-3-viz-voices-playback.md, Phase 6).
+# Browse into songs, play selecta-test.mod (nuade: voice kind, 4 voices), open the pattern
+# panel (P), switch to the viz panel (V twice: levels, then scopes), mute voice 1 (key 1),
+# set the crossfeed DSP, arm a one minute sleep timer, wait, quit. The pattern panel and the
+# viz panel are exclusive, so P comes first and the last screen is the scope view.
+Down
+Enter
+Down
+Enter
+wait 500
+P
+wait 300
+:
+D
+S
+P
+Space
+c
+r
+o
+s
+s
+f
+e
+e
+d
+Space
+o
+n
+Enter
+:
+S
+L
+E
+E
+P
+_
+T
+I
+M
+E
+R
+Space
+1
+Enter
+V
+V
+1
+wait 1000
+q

@@ -511,6 +511,23 @@ if(NOT SEL_AMIGA)
         "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/ui_panel_${panel}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/m13/panel.cmake")
   endforeach()
+  # Voice-kind player (nuade plays selecta-test.mod, openmpt plays selecta-test-mk.mod): levels and
+  # scopes are real data, not the "No per voice data" notice.
+  foreach(panel levels_voices viz_voices)
+    add_test(NAME ui-panel-${panel}
+      COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DMOD=${SEL_TESTMOD}"
+        "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m13/panel_${panel}.keys"
+        "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m13/panel_${panel}.screen"
+        "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/ui_panel_${panel}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/m13/panel.cmake")
+  endforeach()
+  # T39 (M1.3 Phase 6): the M1.3 reachability test.
+  add_test(NAME selecta-m13-reach
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DMOD=${SEL_TESTMOD}"
+      "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m13/reach.keys"
+      "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m13/reach.screen"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m13_reach"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m13/reach.cmake")
 endif()
 # T40, T48 (M1.3 Phase 1): viz taps, VU ballistics, spectrum bands, phase ring.
 if(NOT SEL_AMIGA)
