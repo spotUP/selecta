@@ -803,3 +803,34 @@ set_source_files_properties("${SEL_P14_DIR}/shadow.c" PROPERTIES COMPILE_DEFINIT
 target_include_directories(p14_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
 target_link_libraries(p14_test PRIVATE selecta_core)
 add_test(NAME paula14-unit COMMAND p14_test)
+
+# I141 (D-M3-6): net fixture server. Setup/cleanup tests start and stop it for
+# every test that REQUIRES the net-fixture fixture; all share RESOURCE_LOCK
+# net-fixture. The self-test starts its own server and needs no fixture.
+if(NOT SEL_AMIGA)
+  set(SEL_NET_DIR "${CMAKE_CURRENT_SOURCE_DIR}/net")
+  set(SEL_NET_WORK "${CMAKE_CURRENT_BINARY_DIR}/net")
+  set(SEL_NET_CA "${SEL_NET_WORK}/ca")
+  cmake_path(SET SEL_NET_CA NORMALIZE "${SEL_NET_CA}")
+  execute_process(COMMAND "${CMAKE_COMMAND}" "-DCA_DIR=${SEL_NET_CA}" -P "${SEL_NET_DIR}/gen_test_ca.cmake")
+  add_test(NAME net-fixture-start COMMAND "${CMAKE_COMMAND}" -DACTION=start "-DWORK=${SEL_NET_WORK}"
+    "-DCA_DIR=${SEL_NET_CA}" -P "${SEL_NET_DIR}/fixture_ctl.cmake")
+  add_test(NAME net-fixture-stop COMMAND "${CMAKE_COMMAND}" -DACTION=stop "-DWORK=${SEL_NET_WORK}"
+    -P "${SEL_NET_DIR}/fixture_ctl.cmake")
+  set_tests_properties(net-fixture-start PROPERTIES FIXTURES_SETUP net-fixture RESOURCE_LOCK net-fixture)
+  set_tests_properties(net-fixture-stop PROPERTIES FIXTURES_CLEANUP net-fixture RESOURCE_LOCK net-fixture)
+  find_program(SEL_PYTHON python3)
+  if(SEL_PYTHON)
+    add_test(NAME net-fixture-selftest COMMAND "${SEL_PYTHON}" -I "${SEL_NET_DIR}/fixture_server.py" selftest)
+    set_tests_properties(net-fixture-selftest PROPERTIES LABELS m3)
+  endif()
+
+  # T67 (red until I152): the net guard. The mapped host must reach the fixture
+  # (request log gets 1 line) and a non-loopback connect is refused with
+  # net_blocked=1. selecta-cli has no `fetch` yet, so this fails with
+  # "unknown command" (missing feature: I152 socket table, I153 fetch).
+  add_test(NAME net-guard
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
+      -P "${SEL_NET_DIR}/net_guard.cmake")
+  set_tests_properties(net-guard PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture)
+endif()
