@@ -16,6 +16,12 @@ int sel_view_init(sel_view* v, const sel_host* host, uint32_t row_cap) {
     if (v->rows == NULL) {
         return 0;
     }
+    v->row_text = host->mem_alloc(host, (size_t)row_cap * SEL_VIEW_TEXT_MAX, SEL_MEM_FAST);
+    if (v->row_text == NULL) {
+        host->mem_free(host, v->rows);
+        v->rows = NULL;
+        return 0;
+    }
     v->row_cap = row_cap;
     v->pub.window_rows = row_cap < SEL_VIEW_WINDOW_DEFAULT ? row_cap : SEL_VIEW_WINDOW_DEFAULT;
     v->pub.rows = v->rows;
@@ -25,6 +31,9 @@ int sel_view_init(sel_view* v, const sel_host* host, uint32_t row_cap) {
 void sel_view_free(sel_view* v, const sel_host* host) {
     if (v->rows) {
         host->mem_free(host, v->rows);
+    }
+    if (v->row_text) {
+        host->mem_free(host, v->row_text);
     }
     memset(v, 0, sizeof *v);
 }
@@ -119,6 +128,30 @@ static void anchor(sel_view* v, const sel_view_src* s, uint32_t count) {
     p->cursor_id = count ? row_id(v, s, p->cursor) : 0;
 }
 
+/* A queue row's text: the title format over the fields a path alone gives
+ * (no metadata store before M3): title and file are the basename, path the
+ * whole path, format the lowercase extension. Other fields stay empty. */
+static void queue_row_text(char* out, const sel_view_src* s, uint32_t idx) {
+    const char* path = sel_queue_path(s->queue, idx);
+    const char* base = sel_browse_basename(path);
+    const char* dot = strrchr(base, '.');
+    char ext[16];
+    size_t n = 0;
+    sel_format_values fv;
+    memset(&fv, 0, sizeof fv);
+    if (dot != NULL && dot != base) {
+        for (dot++; *dot && n + 1u < sizeof ext; dot++, n++) {
+            ext[n] = (*dot >= 'A' && *dot <= 'Z') ? (char)(*dot + ('a' - 'A')) : *dot;
+        }
+    }
+    ext[n] = '\0';
+    fv.field[SEL_FMT_TITLE] = base;
+    fv.field[SEL_FMT_FILE] = base;
+    fv.field[SEL_FMT_PATH] = path;
+    fv.field[SEL_FMT_FORMAT] = ext;
+    (void)sel_format_expand(s->title_format, &fv, SEL_VIEW_TITLE_DEFAULT, out, SEL_VIEW_TEXT_MAX);
+}
+
 void sel_view_refresh(sel_view* v, const sel_view_src* s) {
     sel_view_state* p = &v->pub;
     uint32_t count = list_count(v, s);
@@ -141,7 +174,9 @@ void sel_view_refresh(sel_view* v, const sel_view_src* s) {
         r->id = row_id(v, s, idx);
         if (p->source == SEL_VIEW_QUEUE) {
             r->kind = SEL_ROW_QUEUE;
-            r->text = sel_browse_basename(sel_queue_path(s->queue, idx));
+            char* buf = v->row_text + (size_t)i * SEL_VIEW_TEXT_MAX;
+            queue_row_text(buf, s, idx);
+            r->text = buf;
         } else {
             r->kind = s->browse->entries[idx].is_dir ? SEL_ROW_DIR : SEL_ROW_FILE;
             r->text = sel_browse_name(s->browse, idx);
@@ -167,6 +202,7 @@ int sel_view_changed(sel_view* v, const sel_view_src* s, int* structure) {
     now.queue_version = s->queue->version;
     now.browse_generation = s->browse->generation;
     now.playing = s->playing;
+    now.prefs_generation = s->prefs_generation;
     changed = memcmp(&now, &v->last, sizeof now) != 0;
     *structure = v->force_changed || now.source != v->last.source || now.style != v->last.style ||
                  now.window_rows != v->last.window_rows;

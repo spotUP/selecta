@@ -62,10 +62,8 @@ static const char* option(int argc, char** argv, const char* name, const char* d
 }
 
 static void send_line(sel_engine* e, const char* line) {
-    sel_message m;
     char pool[1024];
-    if (sel_codec_decode(line, SEL_MSG_CMD, &m, pool, sizeof pool) == SEL_CODEC_OK) {
-        sel_engine_send(e, &m);
+    if (sel_engine_send_line(e, line, pool, sizeof pool) == SEL_CODEC_OK) {
         sel_engine_pump(e, NULL, NULL); /* the pool is gone after this call */
     }
 }
@@ -84,6 +82,7 @@ int main(int argc, char** argv) {
     const sel_tag* oh;
     const sel_tag* uh;
     sel_engine_config cfg;
+    char cfgdir[256];
     sel_engine* e;
     sel_out_open_fn out_open;
     sel_out_close_fn out_close;
@@ -129,6 +128,10 @@ int main(int argc, char** argv) {
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;
     cfg.machine = sel_machine_probe(host); /* queue and browse buffers scale with the machine */
+    cfg.config_dir = option(argc, argv, "--config-dir", NULL);
+    if (cfg.config_dir == NULL && sel_config_dir(cfgdir, sizeof cfgdir)) {
+        cfg.config_dir = cfgdir;
+    }
     e = sel_engine_create(host, &cfg);
     if (e == NULL) {
         fputs("selecta: engine allocation failed\n", stderr);

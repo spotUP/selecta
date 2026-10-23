@@ -57,12 +57,9 @@ typedef struct tui {
 /* Sends one command line. String arguments live in a rotating pool until the
  * shell's next pump (the engine does not copy them). */
 static void tui_send(tui* u, const char* line) {
-    sel_message m;
     char* pool = u->pool[u->pool_next];
     u->pool_next = (u->pool_next + 1u) % TUI_POOLS;
-    if (sel_codec_decode(line, SEL_MSG_CMD, &m, pool, TUI_POOL_BYTES) == SEL_CODEC_OK) {
-        sel_engine_send(u->engine, &m);
-    }
+    sel_engine_send_line(u->engine, line, pool, TUI_POOL_BYTES);
 }
 
 static void tui_sendf(tui* u, const char* fmt, const char* a) {

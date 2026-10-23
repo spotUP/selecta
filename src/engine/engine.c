@@ -20,6 +20,7 @@
 #include "mixer.h"
 #include "queue.h"
 #include "local.h"
+#include "prefs.h"
 #include "view.h"
 #include "scheduler.h"
 #include "spsc.h"
@@ -31,6 +32,8 @@
 /* The verbs with real behaviour in M0a. Adding a row here is how a later
  * plan lowers tests/ratchet/unimplemented.txt. */
 #define SEL_CMD_IMPLEMENTED(X)                                                                \
+    X(PREF_GET)                                                                               \
+    X(PREF_SET)                                                                               \
     X(PLAY)                                                                                   \
     X(PAUSE)                                                                                  \
     X(PAUSE_PLAYBACK)                                                                         \
@@ -155,6 +158,8 @@ struct sel_engine {
     sel_tag lib_tags[4][3];                  /* LIBRARY_RESULT tags, a ring like error_detail */
     char lib_path[4][SEL_BROWSE_PATH_MAX];
     sel_view view;
+    sel_prefs prefs;
+    char config_dir[256]; /* "": prefs.conf is not read or written */
     sel_tag view_tags[4][5]; /* VIEW_CHANGED / VIEW_ROWS tags, a ring */
     uint32_t view_slot;
 };
@@ -386,6 +391,42 @@ static void cmd_OPTION(sel_engine* e, const sel_message* m) {
         }
     }
     sel_engine_report_error(e, "unknown_option", m->args[0].v.s);
+}
+
+/* ---- prefs ----------------------------------------------------------- */
+
+static void emit_pref(sel_engine* e, int id) {
+    sel_message m;
+    evt_init(&m, SEL_EVT_PREFS_CHANGED);
+    evt_str(&m, sel_prefs_key(id));
+    evt_str(&m, e->prefs.value[id]);
+    emit(e, &m);
+}
+
+/* The reply to PREF_GET is the PREFS_CHANGED event carrying the current value. */
+static void cmd_PREF_GET(sel_engine* e, const sel_message* m) {
+    int id = sel_prefs_find(m->args[0].v.s);
+    if (id < 0) {
+        sel_engine_report_error(e, "unknown_pref", m->args[0].v.s);
+        return;
+    }
+    emit_pref(e, id);
+}
+
+static void cmd_PREF_SET(sel_engine* e, const sel_message* m) {
+    int rc = sel_prefs_set(&e->prefs, m->args[0].v.s, m->args[1].v.s);
+    if (rc == SEL_PREFS_SET_UNKNOWN) {
+        sel_engine_report_error(e, "unknown_pref", m->args[0].v.s);
+        return;
+    }
+    if (rc == SEL_PREFS_SET_BAD) {
+        sel_engine_report_error(e, "bad_format", m->args[0].v.s);
+        return;
+    }
+    if (e->config_dir[0] != '\0' && !sel_prefs_save(&e->prefs, e->config_dir)) {
+        sel_engine_report_error(e, "prefs_save_failed", e->config_dir);
+    }
+    emit_pref(e, sel_prefs_find(m->args[0].v.s));
 }
 
 static void cmd_COMMANDS(sel_engine* e, const sel_message* m) {
@@ -1002,6 +1043,8 @@ static void view_src(const sel_engine* e, sel_view_src* s) {
     s->queue = &e->queue;
     s->browse = &e->browse;
     s->playing = e->q_playing;
+    s->title_format = e->prefs.value[SEL_PREF_VIEW_TITLE_FORMAT];
+    s->prefs_generation = e->prefs.generation;
 }
 
 /* VIEW_ROWS carries the window position only; the rows are read from the
@@ -1174,6 +1217,11 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     }
     if (cfg && cfg->queue_text_bytes) {
         queue_text = cfg->queue_text_bytes;
+    }
+    sel_prefs_init(&e->prefs);
+    if (cfg && cfg->config_dir && strlen(cfg->config_dir) < sizeof e->config_dir) {
+        strcpy(e->config_dir, cfg->config_dir);
+        (void)sel_prefs_load(&e->prefs, e->config_dir);
     }
     copy_str(e->state.output, SEL_OUTPUT_NAME_MAX, "null");
     e->cur = SEL_SLOT_NONE;
