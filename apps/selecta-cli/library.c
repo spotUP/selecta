@@ -1024,7 +1024,56 @@ static int library_composer(int argc, char** argv) {
     return rows >= 0 ? 0 : 1;
 }
 
+static void similar_row(void* ctx, const char* key, const char* name, const char* genre, int rating, int match) {
+    (void)ctx;
+    printf("row=%s|%s|%s|%d|%d\n", key, name, genre, rating, match);
+}
+
+/* `library similar --db <path> <song key>` (I183, T86): every other song by genre match with the seed, then
+ * rating. Prints `row=<key>|<name>|<genre>|<rating>|<genre_match>` per song and `similar_rows=N`.
+ * `library also-by --db <path> <song key>`: the composer's other songs. Prints `row=<key>|<name>` per song and
+ * `also_by_rows=N`. */
+static int library_similar(int also_by, int argc, char** argv) {
+    const char* db_path = NULL;
+    const char* key = NULL;
+    const sel_host* host = sel_host_default();
+    sel_library* lib;
+    int rows;
+    int i;
+
+    for (i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "--db") == 0 && i + 1 < argc) {
+            db_path = argv[++i];
+        } else {
+            key = argv[i];
+        }
+    }
+    if (db_path == NULL || key == NULL) {
+        fprintf(stderr, "usage: selecta-cli library %s --db <path> <song key>\n", also_by ? "also-by" : "similar");
+        return 2;
+    }
+    lib = sel_library_open(host, sel_machine_probe(host), 0, db_path);
+    if (lib == NULL) {
+        return 1;
+    }
+    if (also_by) {
+        rows = sel_library_also_by(lib, key, composer_row, NULL);
+        printf("also_by_rows=%d\n", rows);
+    } else {
+        rows = sel_library_similar(lib, key, similar_row, NULL);
+        printf("similar_rows=%d\n", rows);
+    }
+    sel_library_close(lib);
+    return rows >= 0 ? 0 : 1;
+}
+
 int sel_cli_library(int argc, char** argv) {
+    if (argc >= 1 && strcmp(argv[0], "similar") == 0) {
+        return library_similar(0, argc - 1, argv + 1);
+    }
+    if (argc >= 1 && strcmp(argv[0], "also-by") == 0) {
+        return library_similar(1, argc - 1, argv + 1);
+    }
     if (argc >= 1 && strcmp(argv[0], "composer") == 0) {
         return library_composer(argc - 1, argv + 1);
     }
@@ -1067,6 +1116,6 @@ int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "query") == 0) {
         return library_query(argc - 1, argv + 1);
     }
-    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | sync [--db <path>] [--now <epoch>] [--dump] modland <dir or http(s) url> | meta [--db <path>] <key> | key <source> <path> | genre --db <path> | composer --db <path> <name> | trim [--budget <n>] [--machine <name>] | query --explain <q> | export-folder --db <path> --dir <dir> [--folder <id>] [--format m3u] | stats [--machine <name>] [--db <path>]\n", stderr);
+    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | sync [--db <path>] [--now <epoch>] [--dump] modland <dir or http(s) url> | meta [--db <path>] <key> | key <source> <path> | genre --db <path> | composer --db <path> <name> | similar --db <path> <key> | also-by --db <path> <key> | trim [--budget <n>] [--machine <name>] | query --explain <q> | export-folder --db <path> --dir <dir> [--folder <id>] [--format m3u] | stats [--machine <name>] [--db <path>]\n", stderr);
     return 2;
 }

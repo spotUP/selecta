@@ -102,6 +102,8 @@ void sel_library_genre_op(sel_library* lib, const sel_genre_op* op, sel_message*
         found = rc == SQLITE_OK && sqlite3_changes(lib->db) > 0;
     } else if (op->op >= SEL_SONGDB_GET && op->op <= SEL_COMPOSER_NEXT) {
         rc = sel_library_songdb_op(lib, op, &found, &id);
+    } else if (op->op == SEL_SIMILAR_NEXT || op->op == SEL_ALSOBY_NEXT) {
+        rc = sel_library_similar_op(lib, op, &found, &id);
     }
     memset(reply, 0, sizeof *reply);
     reply->kind = SEL_MSG_EVT;

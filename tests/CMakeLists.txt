@@ -1162,6 +1162,15 @@ if(NOT SEL_AMIGA)
             -P "${SEL_NET_DIR}/devilbox_genre.cmake")
   set_tests_properties(devilbox-genre PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "devilbox_genre_ok")
+
+  # T86 similar part (row I183): also-by and similar through selecta-cli; the duplicates part is row I184.
+  find_program(SEL_SQLITE3 sqlite3)
+  add_test(NAME similar-duplicates
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DSONGS=${PROJECT_SOURCE_DIR}/tests/m3/genre"
+            "-DGOLDEN=${PROJECT_SOURCE_DIR}/tests/m3/similar.golden" "-DSQLITE3=${SEL_SQLITE3}"
+            -P "${SEL_NET_DIR}/similar.cmake")
+  set_tests_properties(similar-duplicates PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "similar_ok")
 endif()
 
 # T95 (row I177): SCROBBLE_DUE from the engine, the last.fm scrobbler plugin, its signed POST and the offline queue.

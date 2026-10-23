@@ -1,0 +1,91 @@
+# T86 similar part (row I183): `library also-by` and `library similar` through the real selecta-cli, on the
+# devilbox fixture songs (composers from the songdb step, genres by tag edit, ratings written to the ratings table).
+# -DCLI=<selecta-cli> -DWORK=<fixture work dir> -DSONGS=<tests/m3/genre> -DGOLDEN=<tests/m3/similar.golden>
+# -DSQLITE3=<sqlite3 shell>
+file(READ "${WORK}/port" port)
+string(STRIP "${port}" port)
+set(fx "http://127.0.0.1:${port}")
+set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
+set(ENV{SELECTA_NET_MAP} "devilbox.uprough.net=${fx},fixture.test=${fx}")
+set(ENV{SELECTA_DEVILBOX_URL} "http://devilbox.uprough.net")
+
+set(db "${WORK}/t86-similar.db")
+file(REMOVE "${db}" "${db}-wal" "${db}-shm")
+execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/reset --method POST OUTPUT_VARIABLE o)
+
+function(run_cli out)
+  execute_process(COMMAND "${CLI}" ${ARGN} OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
+  if(NOT rc EQUAL 0)
+    message(FATAL_ERROR "T86 similar: selecta-cli ${ARGN} failed rc=${rc}\n${o}${e}")
+  endif()
+  set(${out} "${o}${e}" PARENT_SCOPE)
+endfunction()
+
+function(sql out stmt)
+  execute_process(COMMAND "${SQLITE3}" "${db}" "${stmt}" OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
+  if(NOT rc EQUAL 0)
+    message(FATAL_ERROR "T86 similar: sqlite3 '${stmt}' failed rc=${rc}\n${o}${e}")
+  endif()
+  string(STRIP "${o}" o)
+  set(${out} "${o}" PARENT_SCOPE)
+endfunction()
+
+function(key_of var file)
+  sql(k "SELECT key FROM songs WHERE path LIKE '%/${file}'")
+  if(k STREQUAL "")
+    message(FATAL_ERROR "T86 similar: no song row for ${file}")
+  endif()
+  set(${var} "${k}" PARENT_SCOPE)
+endfunction()
+
+function(expect_counter text name want)
+  if(NOT text MATCHES "${name}=([0-9]+)")
+    message(FATAL_ERROR "T86 similar: counter ${name}= missing\n${text}")
+  endif()
+  if(NOT CMAKE_MATCH_1 EQUAL want)
+    message(FATAL_ERROR "T86 similar: ${name}=${CMAKE_MATCH_1}, want ${want}\n${text}")
+  endif()
+endfunction()
+
+# The rows of a CLI answer without their keys (keys depend on the checkout path): "name|genre|rating|match".
+function(rows_without_keys var text)
+  set(out "")
+  string(REPLACE "\n" ";" lines "${text}")
+  foreach(l IN LISTS lines)
+    if(l MATCHES "^row=[^|]*\\|(.*)$")
+      string(APPEND out "${CMAKE_MATCH_1}\n")
+    endif()
+  endforeach()
+  set(${var} "${out}" PARENT_SCOPE)
+endfunction()
+
+run_cli(scan library scan --db "${db}" "${SONGS}")
+run_cli(sync library genre --db "${db}")
+key_of(k_amb ambient.mod)
+key_of(k_tec techno.mod)
+key_of(k_nog nogenre.mod)
+key_of(k_dwn down.mod)
+
+# ---- also-by: composer songs of the seed, never the seed itself
+run_cli(a1 library also-by --db "${db}" ${k_amb})
+expect_counter("${a1}" also_by_rows 2)
+if(NOT a1 MATCHES "${k_tec}" OR NOT a1 MATCHES "${k_nog}" OR a1 MATCHES "${k_amb}" OR a1 MATCHES "${k_dwn}")
+  message(FATAL_ERROR "T86 also-by: wrong rows for ambient.mod\n${a1}")
+endif()
+run_cli(a2 library also-by --db "${db}" ${k_nog})
+expect_counter("${a2}" also_by_rows 2)
+run_cli(a3 library also-by --db "${db}" ${k_dwn})
+expect_counter("${a3}" also_by_rows 0)
+
+# ---- similar: genre match first, then rating. ambient.mod is "Electronic - Ambient" (fixture); nogenre.mod gets
+# the same genre in another case by tag edit, down.mod keeps none. Ratings: techno 5, nogenre 2, down 4.
+run_cli(t1 userdata --db "${db}" --tag ${k_nog} genre "electronic - ambient")
+sql(x "INSERT INTO ratings(key, rating) VALUES('${k_tec}', 5), ('${k_nog}', 2), ('${k_dwn}', 4)")
+run_cli(s1 library similar --db "${db}" ${k_amb})
+expect_counter("${s1}" similar_rows 3)
+rows_without_keys(got "${s1}")
+file(READ "${GOLDEN}" want)
+if(NOT got STREQUAL want)
+  message(FATAL_ERROR "T86 similar: order differs from tests/m3/similar.golden\n--- got\n${got}--- want\n${want}")
+endif()
+message(STATUS "similar_ok similar_rows=3 also_by_rows=2")
