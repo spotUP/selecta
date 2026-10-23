@@ -171,6 +171,7 @@ static int scan_blob(scan_state* s, const uint8_t* data, size_t size, const char
     src.data = data;
     src.size = size;
     src.path = probe_path;
+    src.stream = NULL;
     memset(&info, 0, sizeof info);
     state = open_fn != NULL ? open_fn(&src, s->cfg->host, &info) : NULL;
     if (state != NULL) {

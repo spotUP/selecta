@@ -1,7 +1,12 @@
 /* minimp3 stream decoder (design doc section 4, D-M3-8): a RENDER-kind replayer over an MP3 byte stream.
  * minimp3 decodes frame by frame from the source bytes; the adapter skips the ID3v2 tag, resamples to the
  * output rate (stream_pcm.h) and reports the duration from a header walk. Float synthesis inside minimp3, so
- * the plugin carries SEL_RP_NEEDS_FLOAT and the M2 machine filter hides it on a machine without an FPU. */
+ * the plugin carries SEL_RP_NEEDS_FLOAT and the M2 machine filter hides it on a machine without an FPU.
+ *
+ * Live streams (I195b): the plugin declares SEL_RP_STREAMING, so an http(s) source arrives as a sel_byte_stream
+ * while it still downloads. The adapter then decodes from a small window refilled without blocking; when the
+ * download runs dry it renders silence for the missing frames (the audio thread never waits) and carries on once
+ * bytes arrive. A stream has no known length: no duration, no size, no seek. */
 #include <minimp3.h>
 
 #include <selecta/plugin.h>
@@ -12,6 +17,9 @@
 
 #include <stdlib.h>
 #include <string.h>
+
+#define MP3_WINDOW 32768u /* stream mode: bytes buffered ahead of the decoder */
+#define MP3_NEED 3072u    /* stream mode: bytes that always hold one whole frame (longest Layer III frame is 1441) */
 
 typedef struct mp3_state {
     const sel_host* host;
@@ -27,6 +35,8 @@ typedef struct mp3_state {
     uint32_t left, off, frame_ch; /* undelivered frames of `frame` */
     sel_id3 tag;
     sel_tag meta[8];
+    const sel_byte_stream* in; /* live stream, or NULL when `data` is the whole file */
+    uint8_t win[MP3_WINDOW];
 } mp3_state;
 
 /* ID3v2 header: "ID3", version, flags, 4 syncsafe size bytes; returns the tag length or 0. */
@@ -86,6 +96,44 @@ static uint32_t walk_frames(mp3_state* s) {
     return total;
 }
 
+/* Stream mode open: consumes the ID3v2 tag from the stream (it may be longer than the head the probe saw), then
+ * waits for enough bytes to decode the first frame, which fixes the rate and channel count. */
+static int open_live(mp3_state* s, const sel_song_source* src, mp3dec_frame_info_t* fi) {
+    const sel_byte_stream* in = s->in;
+    size_t skip = id3v2_len(src->data, src->size);
+    while (skip > 0u) {
+        uint8_t junk[512];
+        size_t n = in->read_wait(in->ctx, junk, skip < sizeof junk ? skip : sizeof junk);
+        if (n == 0u) {
+            return 0;
+        }
+        skip -= n;
+    }
+    while (s->size < MP3_NEED && !in->ended(in->ctx)) {
+        size_t n = in->read_wait(in->ctx, s->win + s->size, MP3_NEED - s->size);
+        if (n == 0u) {
+            break;
+        }
+        s->size += n;
+    }
+    s->data = s->win;
+    s->pos = 0;
+    mp3dec_init(&s->dec);
+    return s->size > 0u && mp3dec_decode_frame(&s->dec, s->win, (int)s->size, s->frame, fi) != 0;
+}
+
+/* Stream mode: tops the window up from the ring without waiting; consumed bytes are squeezed out first. */
+static void refill(mp3_state* s) {
+    if (s->pos > 0u) {
+        memmove(s->win, s->win + s->pos, s->size - s->pos);
+        s->size -= s->pos;
+        s->pos = 0;
+    }
+    if (s->size < MP3_WINDOW) {
+        s->size += s->in->read(s->in->ctx, s->win + s->size, MP3_WINDOW - s->size);
+    }
+}
+
 static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_info* info) {
     mp3_state* s;
     mp3dec_frame_info_t fi;
@@ -95,6 +143,21 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     }
     memset(s, 0, sizeof *s);
     s->host = host;
+    s->in = src->stream;
+    if (s->in != NULL) {
+        if (!open_live(s, src, &fi)) {
+            host->mem_free(host, s);
+            return NULL;
+        }
+        s->hz = (uint32_t)fi.hz;
+        s->channels = fi.channels;
+        sel_id3_read(src->data, src->size, &s->tag);
+        info->voice_count = 0;
+        info->subsong_count = 1;
+        info->default_subsong = 0;
+        info->timebase_hz = 0;
+        return s;
+    }
     s->data = src->data;
     s->size = src->size;
     s->start = id3v2_len(src->data, src->size);
@@ -136,12 +199,28 @@ static uint32_t pull(void* ctx, int16_t* out, uint32_t frames) {
         if (s->left == 0u) {
             mp3dec_frame_info_t fi;
             int got;
+            if (s->in != NULL) {
+                int ended;
+                if (s->size - s->pos < MP3_NEED) {
+                    refill(s);
+                }
+                ended = s->in->ended(s->in->ctx);
+                if (s->size - s->pos < MP3_NEED && !ended) {
+                    /* Underrun: the download is behind. Silence for what is missing, never a wait. */
+                    memset(out + n * 2u, 0, (size_t)(frames - n) * 2u * sizeof out[0]);
+                    n = frames;
+                    break;
+                }
+            }
             if (s->pos >= s->size) {
                 break;
             }
             got = mp3dec_decode_frame(&s->dec, s->data + s->pos, (int)(s->size - s->pos), s->frame, &fi);
             if (fi.frame_bytes == 0) {
                 s->pos = s->size;
+                if (s->in != NULL && !s->in->ended(s->in->ctx)) {
+                    continue; /* garbage with more to come: drop it and resync on the next bytes */
+                }
                 break;
             }
             s->pos += (size_t)fi.frame_bytes;
@@ -169,7 +248,9 @@ static int rp_start(void* state, uint32_t subsong, uint32_t rate, const sel_voic
         return 0;
     }
     s->rate = rate;
-    s->pos = s->start;
+    if (s->in == NULL) {
+        s->pos = s->start; /* a live stream cannot rewind: it plays on from where the open left it */
+    }
     s->left = 0;
     mp3dec_init(&s->dec);
     sel_stream_pcm_reset(&s->pcm, pull, s, s->hz, rate);
@@ -185,6 +266,9 @@ static uint32_t rp_render(void* state, int16_t* out, uint32_t frames) {
  * decoded lead-in up to the target is dropped. */
 static int rp_seek(void* state, uint32_t ms) {
     mp3_state* s = (mp3_state*)state;
+    if (s->in != NULL) {
+        return 0; /* no seek in a live stream */
+    }
     uint64_t target = (uint64_t)ms * s->hz / 1000u, at = 0, from = 0, from1 = 0;
     size_t pos = s->start, pos1 = s->start, pos2 = s->start;
     mp3dec_t dec;
@@ -237,16 +321,18 @@ static const sel_tag* rp_metadata(void* state) {
     s->meta[n++].value = (uintptr_t) "MP3";
     s->meta[n].tag = SEL_META_CHANNELS;
     s->meta[n++].value = (uintptr_t)s->channels;
-    s->meta[n].tag = SEL_META_DURATION_MS;
-    s->meta[n++].value = (uintptr_t)((uint64_t)s->total_frames * 1000u / s->hz);
-    s->meta[n].tag = SEL_META_SIZE;
-    s->meta[n++].value = (uintptr_t)s->size;
+    if (s->in == NULL) { /* a live stream has neither a length nor a size */
+        s->meta[n].tag = SEL_META_DURATION_MS;
+        s->meta[n++].value = (uintptr_t)((uint64_t)s->total_frames * 1000u / s->hz);
+        s->meta[n].tag = SEL_META_SIZE;
+        s->meta[n++].value = (uintptr_t)s->size;
+    }
     s->meta[n].tag = SEL_TAG_END;
     s->meta[n].value = 0;
     return s->meta;
 }
 
-static sel_tag g_hooks[14];
+static sel_tag g_hooks[15];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -271,7 +357,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[10], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
     set(&g_hooks[11], SEL_RP_MIN_CPU, 68020);
     set(&g_hooks[12], SEL_RP_NEEDS_FLOAT, 1);
-    set(&g_hooks[13], SEL_TAG_END, 0);
+    set(&g_hooks[13], SEL_RP_STREAMING, 1);
+    set(&g_hooks[14], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "minimp3");
