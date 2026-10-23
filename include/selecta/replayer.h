@@ -58,6 +58,31 @@ typedef struct sel_rp_position {
 } sel_rp_position;
 typedef int (*sel_rp_position_fn)(void* state, sel_rp_position* out);
 
+/* RP_TRACKER_INFO: optional. The pattern layout for one order. `orders` is
+ * the length of the order list, `patterns` the number of distinct patterns
+ * (0 = the replayer does not know), `rows` the rows of the pattern played at
+ * `order`, `channels` its columns. Returns 1 when `order` exists. */
+typedef struct sel_rp_tracker_info {
+    uint32_t orders, patterns, rows, channels;
+} sel_rp_tracker_info;
+typedef int (*sel_rp_tracker_info_fn)(void* state, uint32_t order, sel_rp_tracker_info* out);
+
+/* One pattern cell. note: 0 = none, 1..120 with C-0 = 1 (libopenmpt's
+ * numbering), 254 = note cut, 255 = note off; instrument 0 = none; volume the volume column (0 = none);
+ * effect and param as the format stores them (0, 0 = none). */
+typedef struct sel_rp_cell {
+    uint8_t note, instrument, volume, effect, param;
+} sel_rp_cell;
+
+/* RP_TRACKER_CELLS: optional. Writes the cells of `channel` for rows
+ * row_lo .. row_hi - 1 of the pattern at `order` into `out` (at most `cap`),
+ * in row order; returns how many. A row outside the pattern reads as an empty
+ * cell. Like RP_POSITION it runs on the thread that owns the replayer
+ * instance (the audio thread between render calls, or the pump thread while
+ * the slot is unpublished). */
+typedef uint32_t (*sel_rp_tracker_cells_fn)(void* state, uint32_t order, uint32_t channel, uint32_t row_lo,
+                                            uint32_t row_hi, sel_rp_cell* out, uint32_t cap);
+
 SEL_EXTERN_C_END
 
 #endif /* SELECTA_REPLAYER_H */

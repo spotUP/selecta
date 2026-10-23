@@ -206,6 +206,14 @@ void sel_engine_mark_audio_thread(sel_engine* e);
 uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames);
 uint32_t sel_engine_render_calls(const sel_engine* e);
 
+/* Tracker pattern data of the open song (RP_TRACKER_INFO / RP_TRACKER_CELLS).
+ * Return 0 when no song is open or the replayer has no pattern data. They
+ * call the replayer directly: use them only from the thread that owns it
+ * (the script driver); there is no audio-thread request path yet. */
+int sel_engine_tracker_info(const sel_engine* e, uint32_t order, sel_rp_tracker_info* out);
+uint32_t sel_engine_tracker_cells(const sel_engine* e, uint32_t order, uint32_t channel, uint32_t row_lo,
+                                  uint32_t row_hi, sel_rp_cell* out, uint32_t cap);
+
 /* 1 when the engine answers this verb with real behaviour, 0 when it
  * replies ERROR not_implemented. The ratchet (T8) counts the zeros. */
 int sel_engine_cmd_implemented(uint32_t cmd_id);

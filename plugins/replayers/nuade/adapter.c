@@ -131,6 +131,105 @@ static void rp_tick(void* state, sel_tick_result* out) {
                  ((r.flags & NuadeTick_Ended) ? SEL_TICK_ENDED : 0u);
 }
 
+/* RP_TRACKER_INFO / RP_TRACKER_CELLS: the player's tracker_info and
+ * tracker_cells hooks, which are stateless and read-only. A player without
+ * them (event or grid players) reports no pattern data: the hooks answer 0. */
+static NuadePosition order_at(uint32_t order) {
+    NuadePosition at;
+    memset(&at, 0, sizeof at);
+    at.mode = NuadeScroll_Rows;
+    at.order = order;
+    return at;
+}
+
+#define MAX_ORDERS 4096u
+
+static int rp_tracker_info(void* state, uint32_t order, sel_rp_tracker_info* out) {
+    nuade_state* s = (nuade_state*)state;
+    NuadePosition at = order_at(order);
+    NuadeTrackerInfoResult r;
+    uint32_t n;
+    if (s->player->tracker_info == NULL) {
+        return 0;
+    }
+    r = s->player->tracker_info(s->pdata, &at);
+    if (!r.valid) {
+        return 0;
+    }
+    /* The player has no order count: probe upwards until no pattern is there. */
+    for (n = order + 1u; n < MAX_ORDERS; n++) {
+        at = order_at(n);
+        if (!s->player->tracker_info(s->pdata, &at).valid) {
+            break;
+        }
+    }
+    out->orders = n;
+    out->patterns = 0u; /* nuade does not report it */
+    out->rows = r.info.rows;
+    out->channels = r.info.channels;
+    return 1;
+}
+
+static int col_is(const NuadeColumnDesc* c, const char* a, const char* b, const char* d) {
+    return strcmp(c->name, a) == 0 || strcmp(c->name, b) == 0 || strcmp(c->name, d) == 0;
+}
+
+static uint8_t clamp_u8(int32_t v) {
+    return v < 0 ? 0u : v > 255 ? 255u : (uint8_t)v;
+}
+
+static uint8_t note_of(int32_t v, int32_t octave_shift) {
+    int32_t n;
+    if (v == NUADE_NOTE_CUT) {
+        return 254u;
+    }
+    if (v == NUADE_NOTE_OFF) {
+        return 255u;
+    }
+    n = v < 0 ? 0 : v + 12 * octave_shift + 1;
+    return n >= 1 && n <= 120 ? (uint8_t)n : 0u;
+}
+
+static uint32_t rp_tracker_cells(void* state, uint32_t order, uint32_t channel, uint32_t row_lo, uint32_t row_hi,
+                                 sel_rp_cell* out, uint32_t cap) {
+    nuade_state* s = (nuade_state*)state;
+    NuadePosition at = order_at(order);
+    NuadeTrackerInfoResult r;
+    NuadePatternCell cell;
+    uint32_t row, n = 0, c;
+    if (s->player->tracker_info == NULL || s->player->tracker_cells == NULL) {
+        return 0;
+    }
+    r = s->player->tracker_info(s->pdata, &at);
+    if (!r.valid) {
+        return 0;
+    }
+    for (row = row_lo; row < row_hi && n < cap; row++) {
+        memset(&out[n], 0, sizeof out[n]);
+        if (s->player->tracker_cells(s->pdata, &at, channel, (int32_t)row, (int32_t)row + 1, &cell, 1u) == 1u) {
+            for (c = 0; c < r.info.column_count && c < NUADE_MAX_COLUMNS; c++) {
+                const NuadeColumnDesc* d = &r.info.columns[c];
+                if (cell.value[c] < 0 && d->kind != NuadeColumn_Note) {
+                    continue;
+                }
+                if (d->kind == NuadeColumn_Note) {
+                    out[n].note = note_of(cell.value[c], d->octave_shift);
+                } else if (col_is(d, "smp", "inst", "ins")) {
+                    out[n].instrument = clamp_u8(cell.value[c]);
+                } else if (col_is(d, "vol", "volume", "vel")) {
+                    out[n].volume = clamp_u8(cell.value[c]);
+                } else if (col_is(d, "cmd", "fx", "eff")) {
+                    out[n].effect = clamp_u8(cell.value[c]);
+                } else if (col_is(d, "arg", "par", "prm")) {
+                    out[n].param = clamp_u8(cell.value[c]);
+                }
+            }
+        }
+        n++;
+    }
+    return n;
+}
+
 static void copy_str(char* dst, size_t cap, const char* value) {
     strncpy(dst, value, cap - 1u);
     dst[cap - 1u] = '\0';
@@ -204,7 +303,7 @@ static const sel_tag* rp_metadata(void* state) {
 
 /* Filled at run time: a function pointer cast to an integer is not a
  * constant expression in C99. */
-static sel_tag g_hooks[14];
+static sel_tag g_hooks[15];
 static sel_tag g_desc[5];
 /* Built by the registry walk at entry: every usable player's id, and the
  * union of their extensions. A list that would overflow its buffer fails the
@@ -287,7 +386,9 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[9], SEL_RP_START, SEL_TAG_FN(rp_start));
     set(&g_hooks[10], SEL_RP_TICK, SEL_TAG_FN(rp_tick));
     set(&g_hooks[11], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
-    set(&g_hooks[12], SEL_TAG_END, 0);
+    set(&g_hooks[12], SEL_RP_TRACKER_INFO, SEL_TAG_FN(rp_tracker_info));
+    set(&g_hooks[13], SEL_RP_TRACKER_CELLS, SEL_TAG_FN(rp_tracker_cells));
+    set(&g_hooks[14], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "nuade");

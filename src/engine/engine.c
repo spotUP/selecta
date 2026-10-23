@@ -117,6 +117,8 @@ typedef struct sel_slot {
     sel_rp_metadata_fn rp_metadata;
     sel_rp_seek_fn rp_seek;         /* optional: native seek, else restart-and-skip */
     sel_rp_position_fn rp_position; /* optional: order/row/pattern */
+    sel_rp_tracker_info_fn rp_tracker_info;   /* optional: pattern geometry */
+    sel_rp_tracker_cells_fn rp_tracker_cells; /* optional: pattern cells */
     uint32_t pos_order, pos_row, pos_pattern, pos_valid; /* audio side writes after each render */
     sel_rp_render_fn rp_render; /* RENDER kind: the replayer mixes, rp_tick is NULL */
     const char* rp_name;
@@ -759,6 +761,8 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     sl->rp_name = (const char*)sel_tag_find(hooks, SEL_RP_NAME, 0);
     sl->rp_seek = (sel_rp_seek_fn)sel_tag_find(hooks, SEL_RP_SEEK, 0);
     sl->rp_position = (sel_rp_position_fn)sel_tag_find(hooks, SEL_RP_POSITION, 0);
+    sl->rp_tracker_info = (sel_rp_tracker_info_fn)sel_tag_find(hooks, SEL_RP_TRACKER_INFO, 0);
+    sl->rp_tracker_cells = (sel_rp_tracker_cells_fn)sel_tag_find(hooks, SEL_RP_TRACKER_CELLS, 0);
     sl->pos_valid = 0;
     if (kind == SEL_RP_KIND_RENDER) {
         sl->rp_tick = NULL;
@@ -2103,4 +2107,25 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
 
 uint32_t sel_engine_render_calls(const sel_engine* e) {
     return e->render_calls;
+}
+
+/* Tracker pattern data of the open song. Calls the replayer on the caller's
+ * thread, so the caller must be the thread that owns the replayer: the
+ * script driver (one thread renders and pumps) today. A front end with a
+ * separate audio thread needs the request path of M1.3 Phase 5. */
+int sel_engine_tracker_info(const sel_engine* e, uint32_t order, sel_rp_tracker_info* out) {
+    const sel_slot* sl = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
+    if (sl == NULL || sl->rp_state == NULL || sl->rp_tracker_info == NULL) {
+        return 0;
+    }
+    return sl->rp_tracker_info(sl->rp_state, order, out);
+}
+
+uint32_t sel_engine_tracker_cells(const sel_engine* e, uint32_t order, uint32_t channel, uint32_t row_lo,
+                                  uint32_t row_hi, sel_rp_cell* out, uint32_t cap) {
+    const sel_slot* sl = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
+    if (sl == NULL || sl->rp_state == NULL || sl->rp_tracker_cells == NULL) {
+        return 0;
+    }
+    return sl->rp_tracker_cells(sl->rp_state, order, channel, row_lo, row_hi, out, cap);
 }

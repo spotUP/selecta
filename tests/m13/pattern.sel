@@ -1,0 +1,13 @@
+# T41 pattern-cells: RP_TRACKER_INFO and RP_TRACKER_CELLS through the engine for
+# both replayers. selecta-test.mod is the IFF-wrapped module (nuade protracker4),
+# selecta-test-mk.mod the same patterns as a plain M.K. module (libopenmpt).
+# @cells order row channels rows: the cells of channels 0..channels-1, rows
+# row..row+rows-1. Working directory: build/host/tests/songs.
+OPEN selecta-test.mod
+@render 441
+@cells 0 0 1 4
+@cells 0 8 1 1
+OPEN selecta-test-mk.mod
+@render 441
+@cells 0 0 1 4
+@cells 0 8 1 1

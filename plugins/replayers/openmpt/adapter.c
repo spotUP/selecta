@@ -145,6 +145,66 @@ static int rp_position(void* state, sel_rp_position* out) {
     return 1;
 }
 
+/* RP_TRACKER_INFO / RP_TRACKER_CELLS from openmpt_module_get_pattern_row_
+ * channel_command. The raw effect command is libopenmpt's internal
+ * EffectCommand number (modcommand.h); the formatting call that would give
+ * the letter allocates, and the cells may be read on the audio thread, so
+ * the common ProTracker effects map by table and the rest read as no effect. */
+static const uint8_t g_effect_letter[] = {
+    /* NONE   ARPEGGIO PORTUP PORTDOWN TONEPORTA VIBRATO TONEPORTAVOL VIBRATOVOL */
+    0xFF, 0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6,
+    /* TREMOLO PANNING8 OFFSET VOLSLIDE POSJUMP VOLUME PATBREAK RETRIG */
+    0x7, 0x8, 0x9, 0xA, 0xB, 0xC, 0xD, 0xFF,
+    /* SPEED  TEMPO   TREMOR MODCMDEX */
+    0xF, 0xF, 0xFF, 0xE,
+};
+
+static int rp_tracker_info(void* state, uint32_t order, sel_rp_tracker_info* out) {
+    openmpt_state* s = (openmpt_state*)state;
+    int32_t pattern;
+    if (order >= (uint32_t)openmpt_module_get_num_orders(s->mod)) {
+        return 0;
+    }
+    pattern = openmpt_module_get_order_pattern(s->mod, (int32_t)order);
+    out->orders = (uint32_t)openmpt_module_get_num_orders(s->mod);
+    out->patterns = (uint32_t)openmpt_module_get_num_patterns(s->mod);
+    out->rows = pattern >= 0 ? (uint32_t)openmpt_module_get_pattern_num_rows(s->mod, pattern) : 0u;
+    out->channels = (uint32_t)openmpt_module_get_num_channels(s->mod);
+    return 1;
+}
+
+static uint32_t rp_tracker_cells(void* state, uint32_t order, uint32_t channel, uint32_t row_lo, uint32_t row_hi,
+                                 sel_rp_cell* out, uint32_t cap) {
+    openmpt_state* s = (openmpt_state*)state;
+    int32_t pattern, ch = (int32_t)channel;
+    uint32_t row, n = 0;
+    if (order >= (uint32_t)openmpt_module_get_num_orders(s->mod)) {
+        return 0;
+    }
+    pattern = openmpt_module_get_order_pattern(s->mod, (int32_t)order);
+    for (row = row_lo; row < row_hi && n < cap; row++, n++) {
+        int32_t r = (int32_t)row;
+        uint8_t note, effect;
+        memset(&out[n], 0, sizeof out[n]);
+        if (pattern < 0) {
+            continue;
+        }
+        note = openmpt_module_get_pattern_row_channel_command(s->mod, pattern, r, ch, OPENMPT_MODULE_COMMAND_NOTE);
+        out[n].note = note <= 120u || note >= 254u ? note : 0u;
+        out[n].instrument =
+            openmpt_module_get_pattern_row_channel_command(s->mod, pattern, r, ch, OPENMPT_MODULE_COMMAND_INSTRUMENT);
+        out[n].volume =
+            openmpt_module_get_pattern_row_channel_command(s->mod, pattern, r, ch, OPENMPT_MODULE_COMMAND_VOLUME);
+        effect = openmpt_module_get_pattern_row_channel_command(s->mod, pattern, r, ch, OPENMPT_MODULE_COMMAND_EFFECT);
+        out[n].effect = effect < sizeof g_effect_letter && g_effect_letter[effect] != 0xFFu ? g_effect_letter[effect] : 0u;
+        out[n].param =
+            out[n].effect != 0u || effect == 1u
+                ? openmpt_module_get_pattern_row_channel_command(s->mod, pattern, r, ch, OPENMPT_MODULE_COMMAND_PARAMETER)
+                : 0u;
+    }
+    return n;
+}
+
 /* One metadata key into a fixed buffer; libopenmpt's string is freed here. */
 static void fetch(openmpt_module* mod, const char* key, char* dst, size_t cap) {
     const char* v = openmpt_module_get_metadata(mod, key);
@@ -245,7 +305,9 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[9], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
     set(&g_hooks[10], SEL_RP_POSITION, SEL_TAG_FN(rp_position));
     set(&g_hooks[11], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
-    set(&g_hooks[12], SEL_TAG_END, 0);
+    set(&g_hooks[12], SEL_RP_TRACKER_INFO, SEL_TAG_FN(rp_tracker_info));
+    set(&g_hooks[13], SEL_RP_TRACKER_CELLS, SEL_TAG_FN(rp_tracker_cells));
+    set(&g_hooks[14], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "openmpt");
