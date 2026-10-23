@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../../plugins/outputs/paula14/common/p14_out.h"
 #include "../../plugins/outputs/paula14/common/p14_sink.h"
 
 const sel_tag* shadow_entry(uint32_t host_api);
@@ -58,6 +59,57 @@ static void b_lc(void* ctx, uint32_t ch, const void* bytes, uint32_t offset, uin
     (void)serial;
     g_bus.lc[ch] = bytes;
     g_bus.lc_writes++;
+}
+
+/* A counting bus: every buffer scheduled on channel 0 (left high byte) is scanned for non-zero bytes. */
+static uint32_t g_count_nonzero, g_count_left;
+
+static void count_write(void* ctx, uint32_t reg, uint32_t value) {
+    (void)ctx;
+    (void)reg;
+    (void)value;
+}
+
+static void count_lc(void* ctx, uint32_t ch, const void* bytes, uint32_t offset, uint32_t serial) {
+    uint32_t i;
+    (void)ctx;
+    (void)offset;
+    (void)serial;
+    if (ch == 0) {
+        for (i = 0; i < SEL_P14_BUF_FRAMES; i++) {
+            g_count_nonzero += ((const int8_t*)bytes)[i] != 0;
+        }
+    }
+}
+
+static void* count_bus_open(const sel_host* host, sel_paula_bus* bus) {
+    (void)host;
+    bus->write = count_write;
+    bus->set_lc = count_lc;
+    bus->ctx = &g_count_nonzero;
+    return &g_count_nonzero;
+}
+
+static void count_bus_close(const sel_host* host, void* ctx) {
+    (void)host;
+    (void)ctx;
+}
+
+static const sel_p14_out_kind g_count_kind = {"p14-count", "p14 counting bus", 0, count_bus_open, count_bus_close};
+
+static void* count_open_wrapper(const sel_host* host, uint32_t rate, uint32_t channels) {
+    return sel_p14_out_open(&g_count_kind, host, rate, channels);
+}
+
+static uint32_t count_pull(void* ctx, int16_t* stereo, uint32_t frames) {
+    uint32_t i, n = frames < g_count_left ? frames : g_count_left;
+    (void)ctx;
+    for (i = 0; i < n; i++) {
+        stereo[i * 2u] = 8000;
+        stereo[i * 2u + 1u] = 8000;
+    }
+    g_count_left -= n;
+    return n;
 }
 
 int main(void) {
@@ -122,6 +174,37 @@ int main(void) {
     CHECK(g_bus.lc[0] == first_lc, "second submit must return to the first half");
     CHECK(p.bufs == 2u && p.frames == 128u, "bufs %u frames %u", (unsigned)p.bufs, (unsigned)p.frames);
     sel_p14_close(&p);
+
+    /* Regression: the partial final buffer is flushed at close (frames out == frames in). A counting bus counts
+     * the left high bytes that carry the DC input; the silence padding adds none. */
+    {
+        static const uint32_t in_frames = 1000u; /* 512 + 488: the last buffer is partial */
+        sel_tag fh[12], fd[5];
+        sel_out_open_fn o_open;
+        sel_out_close_fn o_close;
+        sel_out_set_source_fn o_src;
+        sel_out_pump_fn o_pump;
+        void* st;
+        uint32_t pumped = 0;
+        (void)sel_p14_out_describe(&g_count_kind, NULL, fh, fd);
+        o_open = count_open_wrapper;
+        o_close = (sel_out_close_fn)sel_tag_find(fh, SEL_OUT_CLOSE, 0);
+        o_src = (sel_out_set_source_fn)sel_tag_find(fh, SEL_OUT_SET_SOURCE, 0);
+        o_pump = (sel_out_pump_fn)sel_tag_find(fh, SEL_OUT_PUMP, 0);
+        g_count_left = in_frames;
+        g_count_nonzero = 0;
+        st = o_open(&host, 22050, 2);
+        CHECK(st != NULL, "counting output opens");
+        if (st != NULL) {
+            o_src(st, count_pull, NULL);
+            pumped = o_pump(st, 4096u);
+            CHECK(pumped == in_frames, "pumped %u of %u", (unsigned)pumped, (unsigned)in_frames);
+            CHECK(g_count_nonzero == 512u, "before close only the full buffer is out: %u", (unsigned)g_count_nonzero);
+            o_close(st);
+            CHECK(g_count_nonzero == in_frames, "frames out %u != frames in %u after close", (unsigned)g_count_nonzero,
+                  (unsigned)in_frames);
+        }
+    }
 
     /* I126: paula14 is a PCM output: no voice backend, so every kind and voice count goes to the mixer. */
     CHECK(sel_tag_find(hooks, SEL_OUT_VOICE_BACKEND, 0) == 0 && sel_tag_find(hooks, SEL_OUT_VOICES, 0) == 0,

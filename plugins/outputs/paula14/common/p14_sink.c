@@ -79,7 +79,7 @@ static void hash_byte(sel_p14* p, int8_t b) {
     p->hash = (p->hash ^ (uint8_t)b) * 16777619u;
 }
 
-void sel_p14_submit(sel_p14* p, const int16_t* pcm) {
+void sel_p14_submit_n(sel_p14* p, const int16_t* pcm, uint32_t n) {
     uint32_t idle = p->scheduled ^ 1u, i;
     for (i = 0; i < p->buf_frames; i++) {
         int8_t hi, lo;
@@ -96,6 +96,10 @@ void sel_p14_submit(sel_p14* p, const int16_t* pcm) {
     }
     point(p, idle);
     p->scheduled = idle;
-    p->frames += p->buf_frames;
+    p->frames += n;
     p->bufs++;
+}
+
+void sel_p14_submit(sel_p14* p, const int16_t* pcm) {
+    sel_p14_submit_n(p, pcm, p->buf_frames);
 }
