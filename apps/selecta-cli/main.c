@@ -260,7 +260,8 @@ static void print_event(void* ctx, const sel_message* evt) {
     sel_int_session_event(g_int, evt);
 }
 
-/* Script directives (lines starting with '@') are not protocol verbs; they let
+/* @cells order row channels rows prints TRACKER_INFO and the CELL lines.
+ * Script directives (lines starting with '@') are not protocol verbs; they let
  * a script observe and drive what a front end and an audio thread would:
  *   @queue              QUEUE version=V playing=ID ids=a,b,c
  *   @render N           render N frames on this thread, then pump and print
@@ -323,6 +324,28 @@ static void script_directive(sel_engine* e, const char* line) {
         const sel_song_state* so = &sel_engine_state(e)->song;
         printf("SNAPSHOT position_ms=%u order=%u row=%u pattern=%u\n", (unsigned)so->position_ms,
                (unsigned)so->pattern_pos.order, (unsigned)so->pattern_pos.row, (unsigned)so->pattern_pos.pattern);
+    } else if (strncmp(line, "@cells ", 7) == 0) {
+        unsigned order, row, channels, rows, c, r, got;
+        sel_rp_tracker_info ti;
+        sel_rp_cell cell;
+        if (sscanf(line, "@cells %u %u %u %u", &order, &row, &channels, &rows) != 4) {
+            fprintf(stderr, "selecta-cli: bad directive %s\n", line);
+        } else if (!sel_engine_tracker_info(e, order, &ti)) {
+            printf("No pattern data order=%u\n", order);
+        } else {
+            printf("TRACKER_INFO order=%u orders=%u patterns=%u rows=%u channels=%u\n", order, (unsigned)ti.orders,
+                   (unsigned)ti.patterns, (unsigned)ti.rows, (unsigned)ti.channels);
+            for (r = 0; r < rows; r++) {
+                for (c = 0; c < channels; c++) {
+                    got = sel_engine_tracker_cells(e, order, c, row + r, row + r + 1u, &cell, 1u);
+                    if (got == 1u) {
+                        printf("CELL order=%u row=%u channel=%u note=%u instrument=%u volume=%u effect=%u param=%u\n",
+                               order, row + r, c, (unsigned)cell.note, (unsigned)cell.instrument,
+                               (unsigned)cell.volume, (unsigned)cell.effect, (unsigned)cell.param);
+                    }
+                }
+            }
+        }
     } else if (strcmp(line, "@integration_poll") == 0) {
         sel_int_session_poll(g_int);
     } else if (strcmp(line, "@alloc_guard on") == 0) {
