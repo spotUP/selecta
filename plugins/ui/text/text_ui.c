@@ -66,7 +66,7 @@ typedef struct tui {
     uint32_t key_count;
     uint32_t pool_next;
     char pool[TUI_POOLS][TUI_POOL_BYTES];
-    sel_tag stats[15];
+    sel_tag stats[16];
     uint32_t frames;    /* flushes that wrote bytes */
     uint32_t hash;      /* FNV-1a over every flushed byte */
     int headless;       /* --size: fixed grid, keys from stdin, no terminal control */
@@ -74,6 +74,7 @@ typedef struct tui {
     uint32_t dot_rows, phase_points; /* I104d sentinels */
     uint32_t cmdline_runs, palette_opens; /* T28 sentinels */
     uint32_t lib_opens, lib_searches;      /* T98 sentinels */
+    uint32_t folder_opens;                 /* T83 sentinel: openings of the playlist folder tree */
     int lib_screen;                        /* the query view is the Library screen */
     int lib_empty_query;                   /* the last library query was empty (all songs) */
 } tui;
@@ -312,6 +313,11 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
         }
     } else if (strcmp(name, "library") == 0) {
         tui_library_open(u);
+    } else if (strcmp(name, "folders") == 0) {
+        /* The playlist folder tree (design doc 9c): the engine's folders view source. */
+        u->lib_screen = 0;
+        u->folder_opens++;
+        tui_send(u, "VIEW_SOURCE folders");
     } else if (strcmp(name, "search") == 0) {
         txt_cmdline_open(&u->cmd);
         u->cmd_mode = 2;
@@ -619,10 +625,15 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
     }
     if (v->source == SEL_VIEW_BROWSE) {
         snprintf(buf, sizeof buf, "Browse  %s", tui_leaf(v->browse_path));
+    } else if (v->source == SEL_VIEW_FOLDERS) {
+        snprintf(buf, sizeof buf, "Playlist folders  %u rows", (unsigned)v->row_count);
     } else {
         tui_queue_title(buf, sizeof buf, v, u->lib_screen);
     }
     txt_grid_text(&u->grid, 1, 2, buf, width - 1u, title);
+    if (v->source == SEL_VIEW_FOLDERS && v->row_count == 0) {
+        txt_grid_text(&u->grid, 1, 3, "No playlist folders yet", width - 1u, tui_style(u, TXT_ROLE_DIM));
+    }
     if (u->lib_screen && v->source == SEL_VIEW_QUERY && v->row_count == 0) {
         txt_grid_text(&u->grid, 1, 3,
                       u->lib_empty_query ? "Library is empty: scan a folder with :LIBRARY_SCAN <folder>"
@@ -636,12 +647,14 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
         int playing = v->source == SEL_VIEW_QUEUE && r->kind == SEL_ROW_QUEUE && r->id == s->queue_playing;
         txt_role role = at_cursor ? TXT_ROLE_CURSOR
                         : playing ? TXT_ROLE_PLAYING
-                        : r->kind == SEL_ROW_DIR || r->kind == SEL_ROW_NODE ? TXT_ROLE_DIRECTORY
+                        : r->kind == SEL_ROW_DIR || r->kind == SEL_ROW_NODE || r->kind == SEL_ROW_FOLDER ? TXT_ROLE_DIRECTORY
                                                  : TXT_ROLE_FILE;
         txt_style st = tui_style(u, role);
         if (r->kind == SEL_ROW_NODE) {
             snprintf(buf, sizeof buf, "%s %s (%u)", v->style == SEL_VIEW_STYLE_TREE ? (r->expanded ? "[-]" : "[+]") : "[>]",
                      r->text, (unsigned)r->count);
+        } else if (r->kind == SEL_ROW_FOLDER || r->kind == SEL_ROW_PLAYLIST) {
+            snprintf(buf, sizeof buf, "%*s%s %s", (int)(2u * r->depth), "", r->kind == SEL_ROW_FOLDER ? "[-]" : " - ", r->text);
         } else {
             snprintf(buf, sizeof buf, "%*s%c %s%s", (int)(2u * r->depth), "", playing ? '>' : ' ', r->text,
                      r->kind == SEL_ROW_DIR && strcmp(r->text, "..") != 0 ? "/" : "");
@@ -1000,6 +1013,11 @@ static void tui_draw(tui* u) {
         txt_grid_text(&u->grid, 1, u->grid.rows - 1u, line, u->grid.cols - 1u, tui_style(u, TXT_ROLE_NORMAL));
         return;
     }
+    if (s->view != NULL && s->view->source == SEL_VIEW_FOLDERS) {
+        txt_grid_text(&u->grid, 1, u->grid.rows - 1u, "Enter Play playlist  Up Down Move  Tab Browse  l Library  q Quit",
+                      u->grid.cols - 1u, tui_style(u, TXT_ROLE_DIM));
+        return;
+    }
     if (u->lib_screen && s->view != NULL && s->view->source == SEL_VIEW_QUERY) {
         txt_grid_text(&u->grid, 1, u->grid.rows - 1u,
                       "Enter Play  a Add to queue  / Search  v View style  g Group  Tab Browse  L Library  Quit",
@@ -1299,8 +1317,10 @@ static const sel_tag* tui_stats(void* state) {
     u->stats[12].value = u->lib_opens;
     u->stats[13].tag = SEL_UI_STAT_LIBRARY_SEARCHES;
     u->stats[13].value = u->lib_searches;
-    u->stats[14].tag = SEL_TAG_END;
-    u->stats[14].value = 0;
+    u->stats[14].tag = SEL_UI_STAT_FOLDER_OPENS;
+    u->stats[14].value = u->folder_opens;
+    u->stats[15].tag = SEL_TAG_END;
+    u->stats[15].value = 0;
     return u->stats;
 }
 
