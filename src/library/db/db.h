@@ -36,6 +36,9 @@ typedef struct sel_lib_job {
     long long now;     /* SEARCH: seconds since the epoch for relative times */
     char* out;         /* SEARCH: keys, each NUL terminated */
     uint32_t out_cap;
+    char* meta;         /* SEARCH, optional: per key in `out`, four NUL terminated fields: title, artist, format, duration "m:ss" ("" unknown) */
+    uint32_t meta_cap;
+    uint32_t meta_used; /* out: bytes of `meta` written (whole rows) */
     uint32_t count;     /* out: keys stored (SEARCH), rows imported (IMPORT) */
     uint32_t truncated; /* out: keys that did not fit */
     uint32_t used_fts;  /* out: 1 when the FTS5 index served the query */

@@ -7,6 +7,7 @@
 
 #include "../regex.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -119,6 +120,61 @@ static void collect(sel_library* lib, sqlite3_stmt* st, sel_lib_job* job) {
     }
 }
 
+/* Fills job->meta with title, artist, format and duration for each key collected into job->out.
+ * A row that does not fit, or has no match, gets four empty fields so the rows stay aligned. */
+static void collect_meta(sel_library* lib, sel_lib_job* job) {
+    sqlite3_stmt* st = NULL;
+    const char* key = job->out;
+    uint32_t used = 0, i;
+
+    job->meta_used = 0;
+    if (job->meta == NULL || job->meta_cap == 0) {
+        return;
+    }
+    if (sqlite3_prepare_v2(lib->db, "SELECT name, artist, format, duration_ms FROM songs WHERE key = ?1", -1, &st, NULL) != SQLITE_OK) {
+        st = NULL;
+    }
+    for (i = 0; i < job->count; i++) {
+        const char* f[3] = {"", "", ""};
+        char dur[16] = "";
+        size_t need;
+        int k;
+        if (st != NULL) {
+            sqlite3_reset(st);
+            sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
+            if (sqlite3_step(st) == SQLITE_ROW) {
+                for (k = 0; k < 3; k++) {
+                    const char* t = (const char*)sqlite3_column_text(st, k);
+                    f[k] = t != NULL ? t : "";
+                }
+                if (sqlite3_column_int64(st, 3) > 0) {
+                    long long s = sqlite3_column_int64(st, 3) / 1000;
+                    snprintf(dur, sizeof dur, "%lld:%02lld", s / 60, s % 60);
+                }
+            }
+        }
+        need = strlen(f[0]) + strlen(f[1]) + strlen(f[2]) + strlen(dur) + 4u;
+        if (used + need > job->meta_cap) {
+            if (used + 4u > job->meta_cap) {
+                break;
+            }
+            f[0] = f[1] = f[2] = "";
+            dur[0] = '\0';
+            need = 4u;
+        }
+        for (k = 0; k < 3; k++) {
+            size_t n = strlen(f[k]) + 1u;
+            memcpy(job->meta + used, f[k], n);
+            used += (uint32_t)n;
+        }
+        memcpy(job->meta + used, dur, strlen(dur) + 1u);
+        used += (uint32_t)strlen(dur) + 1u;
+        key += strlen(key) + 1u;
+        job->meta_used = used;
+    }
+    sqlite3_finalize(st);
+}
+
 void sel_library_search(sel_library* lib, sel_lib_job* job) {
     sqlite3_stmt* st = NULL;
     char sql[SEL_QUERY_SQL_MAX + 40];
@@ -174,6 +230,7 @@ void sel_library_search(sel_library* lib, sel_lib_job* job) {
     }
     collect(lib, st, job);
     sqlite3_finalize(st);
+    collect_meta(lib, job);
 }
 
 void sel_library_save_view(sel_library* lib, sel_lib_job* job) {

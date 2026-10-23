@@ -272,6 +272,11 @@ struct sel_engine {
     sel_library* lib;     /* the database of the front end; NULL: no library */
     char* res_text;       /* last query result: keys, each NUL terminated */
     uint32_t res_count;
+    char* res_meta;       /* last query result: title, artist, format, duration per key, each NUL terminated */
+    uint32_t res_meta_used;
+    char* qmeta;          /* snapshot of res_meta taken with qview (VIEW_SOURCE query) */
+    uint32_t* qmeta_off;  /* qmeta offset of each qview row; UINT32_MAX: no metadata */
+    uint32_t qmeta_rows;
     uint32_t searches, fts_queries;
     char lib_err[4][24]; /* query error codes of the library worker, a ring (the event keeps the pointer) */
     uint32_t lib_err_slot;
@@ -2318,6 +2323,8 @@ static int run_search(sel_engine* e, const char* text, const char* who, uint32_t
     job.now = (long long)time(NULL);
     job.out = e->res_text;
     job.out_cap = e->queue.text_bytes;
+    job.meta = e->res_meta;
+    job.meta_cap = e->queue.text_bytes;
     if (!sel_library_run(e->lib, SEL_LIB_REQ_SEARCH, &job)) {
         sel_engine_report_error(e, "library_failed", who);
         return 0;
@@ -2334,6 +2341,7 @@ static int run_search(sel_engine* e, const char* text, const char* who, uint32_t
         emit_log(e, "result_truncated", n);
     }
     e->res_count = job.count;
+    e->res_meta_used = job.meta_used;
     *fts = job.used_fts;
     return 1;
 }
@@ -2509,6 +2517,9 @@ static void cmd_LIBRARY_FETCH(sel_engine* e, const sel_message* m) {
 static void view_src(const sel_engine* e, sel_view_src* s) {
     s->queue = e->view.pub.source == SEL_VIEW_QUERY ? &e->qview : &e->queue;
     s->browse = &e->browse;
+    s->meta = e->view.pub.source == SEL_VIEW_QUERY ? e->qmeta : NULL;
+    s->meta_off = e->qmeta_off;
+    s->meta_rows = e->qmeta_rows;
     s->playing = e->q_playing;
     s->title_format = e->prefs.value[SEL_PREF_VIEW_TITLE_FORMAT];
     s->prefs_generation = e->prefs.generation;
@@ -2551,6 +2562,22 @@ static void view_sync(sel_engine* e) {
     }
 }
 
+/* Copies the last result's metadata with an offset per row, so the query view shows
+ * title, artist, format and duration instead of keys. Rows past the buffer have none. */
+static void snapshot_meta(sel_engine* e) {
+    uint32_t i, at = 0;
+
+    memcpy(e->qmeta, e->res_meta, e->res_meta_used);
+    e->qmeta_rows = e->res_count;
+    for (i = 0; i < e->res_count; i++) {
+        uint32_t f, start = at;
+        for (f = 0; f < 4u && at < e->res_meta_used; f++) {
+            at += (uint32_t)strlen(e->qmeta + at) + 1u;
+        }
+        e->qmeta_off[i] = f == 4u ? start : UINT32_MAX;
+    }
+}
+
 /* VIEW_SOURCE query lists the rows of the last library search; queue and browse switch back.
  * The query list is a snapshot, so later searches do not move a view that is showing it. */
 static void cmd_VIEW_SOURCE(sel_engine* e, const sel_message* m) {
@@ -2558,8 +2585,23 @@ static void cmd_VIEW_SOURCE(sel_engine* e, const sel_message* m) {
     sel_view_src s;
     uint32_t i;
 
+    if (strcmp(what, "playlist") == 0) {
+        what = "queue"; /* the playlist being played is the queue; playlist folders arrive with I19x */
+    } else if (strcmp(what, "home") == 0) {
+        uint32_t fts = 0;
+        /* Home view before I191: the songs with a play in the history table, as a query snapshot.
+         * Without a library it is an empty list. I191 adds recently played order, jump back in and new this week. */
+        if (e->lib == NULL) {
+            e->res_count = 0;
+            e->res_meta_used = 0;
+        } else if (!run_search(e, "plays:>0", "VIEW_SOURCE", &fts)) {
+            return;
+        }
+        what = "query";
+    }
     if (strcmp(what, "query") == 0) {
         sel_queue_clear(&e->qview);
+        snapshot_meta(e);
         for (i = 0; i < e->res_count; i++) {
             uint32_t id;
             if (!sel_queue_insert(&e->qview, SEL_QUEUE_NONE, sel_engine_result_key(e, i), &id)) {
@@ -2850,6 +2892,9 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         (e->pl_text = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
         (e->pl_file = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
         (e->res_text = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
+        (e->res_meta = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
+        (e->qmeta = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
+        (e->qmeta_off = host->mem_alloc(host, (size_t)queue_cap * sizeof *e->qmeta_off, SEL_MEM_FAST)) == NULL ||
         !sel_browse_init(&e->browse, host, cfg && cfg->browse_entries ? cfg->browse_entries : queue_cap,
                          cfg && cfg->browse_text_bytes ? cfg->browse_text_bytes : queue_text) ||
         !sel_view_init(&e->view, host, SEL_VIEW_WINDOW_MAX)) {
@@ -2893,6 +2938,15 @@ void sel_engine_destroy(sel_engine* e) {
         }
         if (e->res_text) {
             e->host->mem_free(e->host, e->res_text);
+        }
+        if (e->res_meta) {
+            e->host->mem_free(e->host, e->res_meta);
+        }
+        if (e->qmeta) {
+            e->host->mem_free(e->host, e->qmeta);
+        }
+        if (e->qmeta_off) {
+            e->host->mem_free(e->host, e->qmeta_off);
         }
         sel_queue_free(&e->qview, e->host);
         sel_dsp_chain_free(&e->dsp);
