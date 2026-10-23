@@ -10,7 +10,7 @@
 
 static const char* const k_field_names[SEL_FMT_FIELD_COUNT] = {"title",    "author", "format",   "subsong",
                                                                "subsongs", "duration", "elapsed", "path",
-                                                               "file",     "channels", "state"};
+                                                               "file",     "channels", "state",   "votes"};
 
 /* Index of the field called name[0..n), or -1. */
 static int field_index(const char* name, size_t n) {

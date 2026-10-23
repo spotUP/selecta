@@ -4,7 +4,7 @@
  * format, see src/engine/format.h). The engine reads and writes them through
  * the PREF_GET and PREF_SET verbs and keeps them in prefs.conf. Appending a
  * row is the only change a new pref needs. */
-SEL_PREF(VIEW_TITLE_FORMAT,  "view.title_format",  "[%author% - ]%title%",                       SEL_PREF_FORMAT)
+SEL_PREF(VIEW_TITLE_FORMAT,  "view.title_format",  "[%author% - ]%title%[  Votes %votes%]",    SEL_PREF_FORMAT)
 SEL_PREF(VIEW_COLUMNS,       "view.columns",       "title,format,duration",                       SEL_PREF_PLAIN)
 SEL_PREF(VIEW_STATUS_FORMAT, "view.status_format", "%state% %elapsed% / %duration%  %title%",     SEL_PREF_FORMAT)
 SEL_PREF(UI_HISTORY_SIZE,    "ui.history_size",    "100",                                         SEL_PREF_PLAIN)

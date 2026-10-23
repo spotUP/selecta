@@ -35,6 +35,7 @@ void sel_vote_job_run(sel_library* lib) {
         memset(&res, 0, sizeof res);
     }
     res.done = 1;
+    res.seq++;
     res.status = sel_devilbox_vote(token, mkey, r, &res.count, &res.yours);
     memcpy(res.mkey, mkey, sizeof res.mkey - 1u);
     VOTE_LOCK(lib);
