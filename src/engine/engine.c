@@ -12,6 +12,7 @@
  * rings are sel_spsc instances of their own: the command ring has the pump
  * thread as its consumer, these two have the audio thread on one end. */
 #include <selecta/engine.h>
+#include <selecta/machine.h>
 
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
@@ -192,6 +193,8 @@ struct sel_engine {
     sel_tag lib_tags[4][3];                  /* LIBRARY_RESULT tags, a ring like error_detail */
     char lib_path[4][SEL_BROWSE_PATH_MAX];
     sel_view view;
+    sel_viz_tap viz;       /* visualisation taps; the audio thread writes, the pump reads */
+    uint32_t viz_spectrum; /* capability: the spectrum is computed (CPU 68030 and up) */
     sel_prefs prefs;
     char config_dir[256]; /* "": prefs.conf is not read or written */
     sel_tag view_tags[4][5]; /* VIEW_CHANGED / VIEW_ROWS tags, a ring */
@@ -1785,6 +1788,13 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     e->state.volume = 100;
     e->rate = 44100;
     e->resampler = SEL_MIX_RESAMPLE_LINEAR;
+    sel_viz_tap_init(&e->viz);
+    e->state.viz = sel_viz_current(&e->viz);
+    {
+        /* The 256-point FFT is skipped below a 68030; an absent probe means a desktop. */
+        int64_t cpu = cfg ? sel_tag_find(cfg->machine, SEL_MACHINE_CPU, SEL_CPU_DESKTOP) : SEL_CPU_DESKTOP;
+        e->viz_spectrum = cpu == SEL_CPU_UNKNOWN || cpu >= SEL_CPU_68030;
+    }
     if (cfg) {
         e->registry_count = cfg->registry_count;
         e->registry_get = cfg->registry_get;
@@ -1873,6 +1883,10 @@ static void refresh_snapshot(sel_engine* e) {
     const sel_slot* sl = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
     sel_song_state* song = &e->state.song;
     e->state.view = &e->view.pub;
+    if (sel_viz_acquire(&e->viz)) {
+        sel_viz_analyse(&e->viz, (int)e->viz_spectrum);
+    }
+    e->state.viz = sel_viz_current(&e->viz);
     memset(song, 0, sizeof *song);
     if (sl != NULL && sl->rp_state != NULL) {
         song->queue_id = e->q_playing;
@@ -1963,6 +1977,50 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->songs_opened = e->songs_opened;
 }
 
+/* Closes one 20 ms block: reads and clears the mixer's per-voice taps, steps the
+ * VU levels, copies the scopes oldest first and publishes the frame. */
+static void viz_close(sel_engine* e, sel_slot* sl) {
+    sel_viz_frame* f = sel_viz_begin(&e->viz, e->rate);
+    sel_mixer* m = (sl != NULL && sl->rp_render == NULL) ? &sl->mixer : NULL;
+    uint32_t count = m ? m->voice_count : 0;
+    uint32_t k;
+    if (count > SEL_VIZ_MAX_VOICES) count = SEL_VIZ_MAX_VOICES;
+    f->voice_count = count;
+    for (k = 0; k < SEL_VIZ_MAX_VOICES; k++) {
+        int16_t peak = 0;
+        if (k < count) {
+            sel_mixer_voice* v = &m->voices[k];
+            uint32_t head = m->viz_head & (SEL_MIXER_SCOPE - 1u);
+            uint32_t first = SEL_MIXER_SCOPE - head;
+            peak = (int16_t)v->viz_peak;
+            v->viz_peak = 0;
+            f->pitch_q8[k] = v->playing ? v->pitch_q8 : 0;
+            f->note_on[k] = (uint8_t)(v->viz_kick != 0);
+            v->viz_kick = 0;
+            memcpy(f->scope[k], &m->viz_scope[k][head], (size_t)first * sizeof(int16_t));
+            memcpy(&f->scope[k][first], m->viz_scope[k], (size_t)head * sizeof(int16_t));
+        }
+        e->viz.vu[k] = sel_viz_vu_step(e->viz.vu[k], peak);
+        f->peak[k] = peak;
+        f->vu[k] = e->viz.vu[k];
+    }
+    sel_viz_publish(&e->viz);
+}
+
+/* Feeds the rendered, volume-scaled output to the post-mix ring and closes a
+ * block each time rate / 50 frames have gone by, playing or not. */
+static void viz_feed(sel_engine* e, sel_slot* sl, const int16_t* stereo, uint32_t frames) {
+    uint32_t off = 0;
+    while (off < frames) {
+        uint32_t n = sel_viz_block_left(&e->viz, e->rate);
+        if (n > frames - off) n = frames - off;
+        if (sel_viz_pcm_push(&e->viz, stereo + (size_t)off * 2u, n)) {
+            viz_close(e, sl);
+        }
+        off += n;
+    }
+}
+
 /* Mixes the open song: the scheduler turns each tick's length into frames,
  * the mixer fills them. The tick that reports ENDED plays out, then the
  * song is flagged ended for the next pump (events are produced on the
@@ -2037,6 +2095,7 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
     if (done < frames) {
         memset(stereo + (size_t)done * 2u, 0, (size_t)(frames - done) * 2u * sizeof(int16_t));
     }
+    viz_feed(e, sl, stereo, frames);
     return frames;
 }
 

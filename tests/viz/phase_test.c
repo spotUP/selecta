@@ -57,7 +57,7 @@ static void test_phase(void) {
     /* mono: points on the diagonal */
     sel_viz_tap_init(&tap);
     for (i = 0; i < SEL_VIZ_PCM_FRAMES; i++) buf[i * 2] = buf[i * 2 + 1] = noise();
-    f = run_block(&tap, buf, SEL_VIZ_PCM_FRAMES, 44100);
+    f = run_block(&tap, buf, SEL_VIZ_PCM_FRAMES, 51200);
     CHECK(f->seq >= 1, "no frame published (seq %u)", (unsigned)f->seq);
     for (i = 0; i < SEL_VIZ_PCM_FRAMES; i++) diag &= f->pcm[i * 2] == f->pcm[i * 2 + 1] && f->pcm[i * 2] == buf[i * 2];
     CHECK(diag, "mono ring is not the diagonal L=R of the input");
@@ -68,19 +68,19 @@ static void test_phase(void) {
         buf[i * 2] = noise();
         buf[i * 2 + 1] = (int16_t)-buf[i * 2];
     }
-    f = run_block(&tap, buf, SEL_VIZ_PCM_FRAMES, 44100);
+    f = run_block(&tap, buf, SEL_VIZ_PCM_FRAMES, 51200);
     for (i = 0; i < SEL_VIZ_PCM_FRAMES; i++) anti &= f->pcm[i * 2 + 1] == -f->pcm[i * 2] && f->pcm[i * 2] == buf[i * 2];
     CHECK(anti, "inverted ring is not the anti-diagonal L=-R");
     CHECK(f->correlation == -32767, "inverted correlation %d, want -32767", f->correlation);
     /* uncorrelated noise */
     sel_viz_tap_init(&tap);
     for (i = 0; i < SEL_VIZ_PCM_FRAMES * 2u; i++) buf[i] = noise();
-    f = run_block(&tap, buf, SEL_VIZ_PCM_FRAMES, 44100);
+    f = run_block(&tap, buf, SEL_VIZ_PCM_FRAMES, 51200);
     CHECK(abs(f->correlation) < 2000, "uncorrelated correlation %d, want |c| < 2000", f->correlation);
     /* silence */
     memset(buf, 0, sizeof buf);
     sel_viz_tap_init(&tap);
-    f = run_block(&tap, buf, SEL_VIZ_PCM_FRAMES, 44100);
+    f = run_block(&tap, buf, SEL_VIZ_PCM_FRAMES, 51200);
     CHECK(f->correlation == 0, "silence correlation %d, want 0", f->correlation);
     CHECK(sel_viz_correlation(buf, SEL_VIZ_PCM_FRAMES) == 0, "pure function: silence");
 }

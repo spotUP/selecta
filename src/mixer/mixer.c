@@ -76,17 +76,27 @@ void sel_mixer_mix(sel_mixer* m, int16_t* stereo, uint32_t frames) {
             /* Q15 gain: volume (Q16) * pan split (Q15) >> 18, including nuade's 0.5 headroom. */
             int32_t gl = (int32_t)(((uint32_t)v->volume_q16 * (uint32_t)(32768 - v->pan)) >> 18);
             int32_t gr = (int32_t)(((uint32_t)v->volume_q16 * (uint32_t)(32768 + v->pan)) >> 18);
+            uint32_t base = m->viz_head + done;
+            int16_t* scope = m->viz_scope[k];
+            int32_t peak = v->viz_peak;
             for (i = 0; i < n && v->playing; i++) {
-                int32_t s;
+                int32_t s, mono;
                 uint32_t phase;
                 if (!settle(v)) break;
                 s = sel_resample(&v->current, v->position, v->frac, m->resampler);
                 acc[i * 2] += (s * gl) >> 15;
                 acc[i * 2 + 1] += (s * gr) >> 15;
+                /* visualisation tap: post-volume, pre-pan */
+                mono = (int32_t)(((int64_t)s * (int64_t)v->volume_q16) >> 17);
+                scope[(base + i) & (SEL_MIXER_SCOPE - 1u)] = (int16_t)mono;
+                if (mono < 0) mono = -mono;
+                if (mono > peak) peak = mono;
                 phase = v->frac + v->step;
                 v->position += phase >> 16;
                 v->frac = phase & 0xFFFFu;
             }
+            v->viz_peak = peak > 32767 ? 32767 : peak;
+            for (; i < n; i++) scope[(base + i) & (SEL_MIXER_SCOPE - 1u)] = 0;
         }
         for (i = 0; i < n * 2u; i++) {
             int32_t x = acc[i];
@@ -94,6 +104,7 @@ void sel_mixer_mix(sel_mixer* m, int16_t* stereo, uint32_t frames) {
         }
         done += n;
     }
+    m->viz_head += frames;
 }
 
 void sel_mixer_advance(sel_mixer* m, uint32_t frames) {

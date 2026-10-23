@@ -10,6 +10,7 @@
 SEL_EXTERN_C_BEGIN
 
 #define SEL_MIXER_MAX_VOICES 32u
+#define SEL_MIXER_SCOPE 256u /* scope ring frames per voice; a power of two (SEL_VIZ_SCOPE_FRAMES) */
 #define SEL_PAULA_PAL_CLOCK 3546895u
 
 /* Values of the SEL_MIX_RESAMPLE tag. */
@@ -31,6 +32,8 @@ typedef struct sel_mixer_voice {
     uint32_t pitch_q8;
     uint32_t volume_q16;
     int32_t pan;
+    int32_t viz_peak; /* largest |mixed sample| since the engine last read it, Q15 */
+    uint32_t viz_kick; /* a sample started since the engine last read it */
 } sel_mixer_voice;
 
 typedef struct sel_mixer {
@@ -41,6 +44,9 @@ typedef struct sel_mixer {
     uint32_t voice_ops;     /* calls through the voices API */
     uint32_t mixed_frames;  /* frames produced by sel_mixer_mix */
     sel_mixer_voice voices[SEL_MIXER_MAX_VOICES];
+    /* Visualisation tap: the last SEL_MIXER_SCOPE mixed frames per voice (post-volume, pre-pan). */
+    uint32_t viz_head;
+    int16_t viz_scope[SEL_MIXER_MAX_VOICES][SEL_MIXER_SCOPE];
 } sel_mixer;
 
 /* Zeroes the mixer and fills the voices table. voice_count is clamped to
