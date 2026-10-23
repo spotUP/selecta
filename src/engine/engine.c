@@ -1679,11 +1679,12 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
         hooks = find_replayer(e, data, size, path);
     }
     if (fs != NULL && (hooks == NULL || sel_tag_find(hooks, SEL_RP_STREAMING, 0) == 0)) {
-        /* The replayer needs the whole file (trackers, archives): drop the head stream and read it all. */
+        /* The replayer needs the whole file (trackers, archives): read it all through the stream, which holds the
+         * file read_song resolved (a cached remote song or a best-source twin, not `path`). */
+        e->host->mem_free(e->host, data);
+        data = sel_file_stream_drain(fs, &size);
         sel_file_stream_close(fs);
         fs = NULL;
-        e->host->mem_free(e->host, data);
-        data = read_whole_file(e, path, &size);
         if (data == NULL) {
             report_open_failed(e, err_detail);
             return 0;

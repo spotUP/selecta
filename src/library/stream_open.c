@@ -843,6 +843,28 @@ uint64_t sel_file_stream_size(const sel_file_stream* s) {
     return s->size;
 }
 
+uint8_t* sel_file_stream_drain(sel_file_stream* s, size_t* size) {
+    uint8_t* buf;
+    size_t n;
+
+    if ((uint64_t)(size_t)s->size != s->size || fseek(s->f, 0, SEEK_SET) != 0) {
+        return NULL;
+    }
+    s->pos = 0;
+    buf = (uint8_t*)s->host->mem_alloc(s->host, (size_t)s->size + 1u, SEL_MEM_FAST);
+    if (buf == NULL) {
+        return NULL;
+    }
+    n = file_read(s, buf, (size_t)s->size);
+    if (n != (size_t)s->size) {
+        s->host->mem_free(s->host, buf);
+        return NULL;
+    }
+    buf[n] = 0;
+    *size = n;
+    return buf;
+}
+
 void sel_file_stream_close(sel_file_stream* s) {
     if (s != NULL) {
         const sel_host* host = s->host;

@@ -88,6 +88,9 @@ typedef struct sel_file_stream sel_file_stream;
 sel_file_stream* sel_file_stream_open(const sel_host* host, const char* path, uint8_t** head, size_t* headn);
 const sel_byte_stream* sel_file_stream_source(sel_file_stream* s);
 uint64_t sel_file_stream_size(const sel_file_stream* s);
+/* Reads the whole file into one host buffer (the replayer cannot stream), NUL-terminated. NULL on failure. The
+ * stream stays open; the caller still closes it. */
+uint8_t* sel_file_stream_drain(sel_file_stream* s, size_t* size);
 void sel_file_stream_close(sel_file_stream* s);
 uint32_t sel_file_stream_opens(void);
 uint32_t sel_file_stream_bytes_read(void);
