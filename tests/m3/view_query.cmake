@@ -42,3 +42,27 @@ if(NOT screen STREQUAL golden)
   message(FATAL_ERROR "screen differs from ${GOLDEN}\nexpected:\n${golden}\ngot:\n${screen}")
 endif()
 message(STATUS "view_source=query cursor_key=${key_cycled}")
+
+# I151a: VIEW_SOURCE playlist (the queue) and home (songs with plays; the catalogue has no history, so none) answer OK.
+foreach(src IN ITEMS playlist home)
+  execute_process(
+    COMMAND "${SELECTA}" --output null --start-dir "${WORK}" --catalogue "${CAT}"
+            --exec "LIBRARY_SEARCH lizardking" --exec "VIEW_SOURCE ${src}"
+            --keys "${WORK}/plain.keys" --screen-dump "${WORK}/${src}.txt"
+    OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
+  if(NOT rc EQUAL 0 OR err MATCHES "unsupported")
+    message(FATAL_ERROR "VIEW_SOURCE ${src} failed (rc ${rc})\nstdout:\n${out}\nstderr:\n${err}")
+  endif()
+endforeach()
+if(NOT out MATCHES "view_source=query")
+  message(FATAL_ERROR "VIEW_SOURCE home did not land on the query source\n${out}")
+endif()
+file(READ "${WORK}/home.txt" home_screen)
+if(NOT home_screen MATCHES "Query  0 results")
+  message(FATAL_ERROR "home view should list nothing without history\n${home_screen}")
+endif()
+file(READ "${WORK}/playlist.txt" pl_screen)
+if(NOT pl_screen MATCHES "Queue")
+  message(FATAL_ERROR "VIEW_SOURCE playlist should show the queue\n${pl_screen}")
+endif()
+message(STATUS "view_source playlist and home answer OK")

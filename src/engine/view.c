@@ -628,6 +628,20 @@ static void queue_row_text(char* out, const sel_view_src* s, uint32_t idx) {
     fv.field[SEL_FMT_FILE] = base;
     fv.field[SEL_FMT_PATH] = path;
     fv.field[SEL_FMT_FORMAT] = ext;
+    if (s->meta != NULL && idx < s->meta_rows && s->meta_off[idx] != UINT32_MAX) {
+        const char* m = s->meta + s->meta_off[idx];
+        const char* artist = m + strlen(m) + 1u;
+        const char* format = artist + strlen(artist) + 1u;
+        const char* dur = format + strlen(format) + 1u;
+        if (m[0] != '\0') {
+            fv.field[SEL_FMT_TITLE] = m;
+        }
+        fv.field[SEL_FMT_AUTHOR] = artist;
+        if (format[0] != '\0') {
+            fv.field[SEL_FMT_FORMAT] = format;
+        }
+        fv.field[SEL_FMT_DURATION] = dur;
+    }
     (void)sel_format_expand(s->title_format, &fv, SEL_VIEW_TITLE_DEFAULT, out, SEL_VIEW_TEXT_MAX);
 }
 

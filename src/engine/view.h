@@ -22,6 +22,9 @@
 typedef struct sel_view_src {
     const sel_queue* queue;
     const sel_browse* browse;
+    const char* meta;          /* query source only: title, artist, format, duration per row (NULL: paths only) */
+    const uint32_t* meta_off;  /* offset in `meta` of row i; UINT32_MAX none */
+    uint32_t meta_rows;
     uint32_t playing; /* queue id of the playing entry, 0 none */
     const char* title_format;  /* view.title_format pref, expanded per queue row */
     uint32_t prefs_generation; /* bumps when any pref changes */
