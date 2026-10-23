@@ -46,6 +46,11 @@ sel_cli_test(m0-script "script ${CMAKE_CURRENT_SOURCE_DIR}/m0/basic.sel"
 sel_cli_test(m0-null-output "play-null --rate 44100 --frames 4410"
   "-DEXPECT_REGEX=^pulled=4410 render_calls=[1-9][0-9]* rate=44100$")
 
+# I216: `play --output null` pulls on the command thread, which also destroys the engine; the debug-build thread
+# assertion in sel_engine_destroy must not fire (it aborted with exit 134).
+sel_cli_test(play-null-output "play ${CMAKE_CURRENT_SOURCE_DIR}/m3/stream/sine.mp3 --output null --seconds 1"
+  "-DEXPECT_REGEX=^callbacks=[0-9]+ frames=44100$")
+
 # T8: the ratchet of unimplemented verbs.
 add_test(NAME ratchet
   COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}"

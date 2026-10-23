@@ -9,15 +9,26 @@
 
 #include "cli.h"
 
+#ifndef __amigaos__
+#include <pthread.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* Runs on the output's audio thread: the first call marks it. */
+#ifndef __amigaos__
+static pthread_t g_command_thread;
+#endif
+
+/* Runs on the output's audio thread: the first call marks it. A sink with no clock (null) pulls inside OUT_PUMP on
+ * the command thread; that thread also destroys the engine, so it is not marked (I216). */
 static uint32_t audio_pull(void* ctx, int16_t* stereo, uint32_t frames) {
     static int marked;
     if (!marked) {
-        sel_engine_mark_audio_thread((sel_engine*)ctx);
+#ifndef __amigaos__
+        if (!pthread_equal(g_command_thread, pthread_self()))
+#endif
+            sel_engine_mark_audio_thread((sel_engine*)ctx);
         marked = 1;
     }
     return sel_cli_engine_pull(ctx, stereo, frames);
@@ -75,6 +86,9 @@ int sel_cli_play(int argc, char** argv) {
         fputs("play: no output device\n", stderr);
         return 77;
     }
+#ifndef __amigaos__
+    g_command_thread = pthread_self();
+#endif
     o.set_source(out, audio_pull, e);
 
     total = (uint32_t)(seconds * rate);
