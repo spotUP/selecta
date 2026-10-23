@@ -22,6 +22,9 @@ SEL_PREF(OUTPUT_LED,         "output.led",         "off",                       
 SEL_PREF(RP_CONFIG,          "rp.config",          "",                                            SEL_PREF_PLAIN)
 /* stereo width percent, 0 (mono) to 100 (unchanged); the LED filter is output.led */
 SEL_PREF(MIX_STEREO_WIDTH,   "mix.stereo_width",   "100",                                         SEL_PREF_PLAIN)
+/* loudness normalisation (I189, D-M3-9): track = apply the stored per-song gain, then the -1 dBFS limiter;
+ * auto = track, and the adaptive leveler for songs without a gain (I190); off = untouched samples, no limiter */
+SEL_PREF(MIX_LOUDNESS,       "mix.loudness",       "track",                                       SEL_PREF_PLAIN)
 /* Prefetch and smart downloads (I168, I169, F34). library.prefetch: fetch the next remote queue entry while a song
  * plays. library.metered: the connection is metered, so neither prefetch nor smart downloads run. library.smart_downloads:
  * fetch songs of the smart playlist and the most played history in the background, behind the foreground fetch and

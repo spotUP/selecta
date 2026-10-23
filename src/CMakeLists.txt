@@ -82,7 +82,7 @@ add_custom_command(
   VERBATIM)
 target_sources(selecta_core PRIVATE "${SEL_GEN_DIR}/xfade_table.h" "${SEL_GEN_DIR}/viz_table.h" "${SEL_GEN_DIR}/pitch_table.h" "${SEL_GEN_DIR}/dsp_coef.h")
 target_include_directories(selecta_core PRIVATE "${SEL_GEN_DIR}")
-add_library(selecta_mixer STATIC mixer/mixer.c mixer/resample.c mixer/stage.c "${SEL_GEN_DIR}/sinc_table.h")
+add_library(selecta_mixer STATIC mixer/mixer.c mixer/resample.c mixer/stage.c mixer/loudness_gain.c "${SEL_GEN_DIR}/sinc_table.h")
 target_include_directories(selecta_mixer PUBLIC ${PROJECT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/mixer)
 target_include_directories(selecta_mixer PRIVATE "${SEL_GEN_DIR}")
 target_link_libraries(selecta_core PUBLIC selecta_mixer)

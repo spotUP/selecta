@@ -277,6 +277,10 @@ add_test(NAME mixer-unit COMMAND mixer_test period none linear cubic sinc defaul
 add_executable(stage_test mixer/stage_test.c)
 target_link_libraries(stage_test PRIVATE selecta_core)
 add_test(NAME mixer-stage-unit COMMAND stage_test)
+add_executable(loudness_gain_test mixer/loudness_gain_test.c)
+target_link_libraries(loudness_gain_test PRIVATE selecta_core m)
+add_test(NAME mixer-loudness-gain-unit COMMAND loudness_gain_test)
+set_tests_properties(mixer-loudness-gain-unit PROPERTIES PASS_REGULAR_EXPRESSION "loudness_gain_unit_ok")
 # T50: Paula voice sink conformance (chip copy, AUDxPER/AUDxVOL, loop registers).
 add_executable(paula_voices_test paula/paula_voices_test.c "${PROJECT_SOURCE_DIR}/plugins/outputs/paula/paula_voices.c")
 target_include_directories(paula_voices_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
@@ -931,6 +935,12 @@ if(NOT SEL_AMIGA)
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/loudness_analysis.sh $<TARGET_FILE:selecta-cli> ${SEL_TESTMOD}
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
   set_tests_properties(loudness-analysis PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "loudness_analysis_ok")
+
+  # T90 gain and limiter part (I189): render applies the stored 16.16 gain and the -1 dBFS limiter.
+  add_test(NAME loudness-playback
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/loudness_playback.sh $<TARGET_FILE:selecta-cli> ${SEL_TESTMOD}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
+  set_tests_properties(loudness-playback PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "loudness_playback_ok")
 
   add_test(NAME share-links
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/share_links.sh $<TARGET_FILE:selecta-cli> $<TARGET_FILE:selecta>
