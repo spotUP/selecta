@@ -113,7 +113,7 @@
     X(LIBRARY_SYNC)                                                                           \
     X(LIKE)                                                                                   \
     X(FLAG)                                                                                   \
-    X(CUE_SET) X(CUE_GOTO) X(SHARE) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
+    X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
     X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
@@ -220,6 +220,11 @@ struct sel_engine {
     char panel[1024];                          /* catalogue rows of the open song, "label\0value\0" pairs (I185) */
     uint32_t panel_rows, panel_loads;          /* rows in `panel` / library lookups made for it (I185 sentinel) */
     const void* panel_state;                   /* replayer state the panel was loaded for (reload on a new song) */
+    char radio_seed[SEL_DEFERRED_PATH_MAX]; /* RADIO seed song (queue path or library key), "" radio off (I186) */
+    char radio_last[SEL_DEFERRED_PATH_MAX]; /* last song the radio appended, left out of the next draw */
+    uint32_t radio_rng;                     /* radio draw state, stepped once per appended song */
+    uint32_t radio_appends;                 /* songs the radio appended to the queue (I186 sentinel) */
+    uint32_t radio_min_ahead;               /* fewest songs queued after the playing one, measured after each top-up */
     uint32_t skip_excluded;  /* skip-flagged queue rows left out of a random order (sentinel of I171) */
     char rp_value[SEL_PREF_VALUE_MAX]; /* answer of the last rp_config_get */
     uint32_t rp_config_applied;     /* option values that came from an override layer (T61) */
@@ -1739,6 +1744,8 @@ static uint32_t start_index(sel_engine* e) {
 
 /* Plays the entry at `idx` through the one song-change path. A stopped
  * transport starts; paused stays paused. 0: the entry could not start. */
+static void radio_fill(sel_engine* e);
+
 static int queue_start(sel_engine* e, uint32_t idx) {
     if (random_on(e)) {
         order_mark(e, idx);
@@ -1750,6 +1757,7 @@ static int queue_start(sel_engine* e, uint32_t idx) {
         e->q_playing = 0;
         return 0;
     }
+    radio_fill(e);
     if (e->state.play == SEL_STOPPED) {
         set_play(e, SEL_PLAYING);
     }
@@ -1832,6 +1840,8 @@ static void cancel_next(sel_engine* e) {
 }
 
 /* The audio thread switched to the prepared song: the old one ended, the new one opens. */
+static void radio_fill(sel_engine* e);
+
 static void commit_next(sel_engine* e) {
     sel_message ev;
     uint32_t idx = sel_queue_index_of(&e->queue, e->nx_id);
@@ -1850,6 +1860,7 @@ static void commit_next(sel_engine* e) {
     if (idx < e->queue.count) {
         e->q_hint = idx;
     }
+    radio_fill(e);
     e->cur = e->nx_slot;
     e->nx_slot = SEL_SLOT_NONE;
     e->nx_id = 0;
@@ -2883,6 +2894,69 @@ static int sticker_ready(sel_engine* e, const char* who) {
     return 1;
 }
 
+/* RADIO <seed> | RADIO off (I186, D-M3-10): keeps at least SEL_RADIO_AHEAD songs queued after the playing one,
+ * each drawn by sel_library_radio_next (genre, composer, rating steering; skip-flagged songs never). The seed
+ * is a song key or a queue path; with nothing playing it is queued and started first. */
+#define SEL_RADIO_AHEAD 5u
+
+static void radio_fill(sel_engine* e) {
+    uint32_t cur, ahead;
+
+    if (e->radio_seed[0] == '\0' || e->lib == NULL) {
+        return;
+    }
+    cur = e->q_playing == 0 ? SEL_QUEUE_NONE : sel_queue_index_of(&e->queue, e->q_playing);
+    ahead = cur == SEL_QUEUE_NONE ? e->queue.count : e->queue.count - cur - 1u;
+    while (ahead < SEL_RADIO_AHEAD) {
+        char pick[SEL_DEFERRED_PATH_MAX];
+        uint32_t before = e->queue.count;
+
+        e->radio_rng = sel_xorshift32(e->radio_rng);
+        if (!sel_library_radio_next(e->lib, e->radio_seed, e->radio_rng, e->radio_last, pick, sizeof pick)) {
+            break;
+        }
+        queue_insert(e, e->queue.count, pick, "RADIO");
+        if (e->queue.count == before) {
+            break;
+        }
+        strcpy(e->radio_last, pick);
+        e->radio_appends++;
+        ahead++;
+    }
+    if (ahead < e->radio_min_ahead) {
+        e->radio_min_ahead = ahead;
+    }
+}
+
+static void cmd_RADIO(sel_engine* e, const sel_message* m) {
+    const char* seed = m->args[0].v.s;
+    size_t n = strlen(seed);
+
+    if (strcmp(seed, "off") == 0) {
+        e->radio_seed[0] = '\0';
+        return;
+    }
+    if (e->lib == NULL) {
+        sel_engine_report_error(e, "no_library", "RADIO");
+        return;
+    }
+    if (n == 0 || n >= sizeof e->radio_seed) {
+        sel_engine_report_error(e, "range", "RADIO");
+        return;
+    }
+    memcpy(e->radio_seed, seed, n + 1u);
+    e->radio_last[0] = '\0';
+    e->radio_rng = sel_shuffle_seed(e->rng);
+    e->radio_min_ahead = 0xFFFFFFFFu;
+    if (e->q_playing == 0) {
+        queue_insert(e, e->queue.count, seed, "RADIO");
+        if (e->queue.count > 0) {
+            queue_start(e, e->queue.count - 1u);
+        }
+    }
+    radio_fill(e);
+}
+
 /* Share links (I180, D-M3-11). OPEN <link> parses either form; SHARE song|position|playlist|view writes one. */
 static int open_share_link(sel_engine* e, const char* text) {
     sel_share_link l;
@@ -3888,6 +3962,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->folder_ops = e->folder_ops;
     out->links_parsed = e->links_parsed;
     out->links_made = e->links_made;
+    out->radio_appends = e->radio_appends;
+    out->radio_min_ahead = e->radio_min_ahead;
     out->folder_view_rows = e->folder_view_rows;
     out->panel_loads = e->panel_loads;
     out->library_searches = e->searches;

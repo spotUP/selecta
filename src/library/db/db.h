@@ -350,6 +350,14 @@ typedef void (*sel_similar_row_fn)(void* ctx, const char* song_key, const char* 
                                    int rating, int genre_match);
 int sel_library_similar(sel_library* lib, const char* song_key, sel_similar_row_fn fn, void* ctx);
 
+/* Radio (I186, T88; radio.c): the next song of a radio seeded from `seed` (a library key or the queue path of a
+ * local song). Candidates are the seed's genre matches, its songs rated 4 or more and its composer's other songs
+ * (the two queries above), never a skip-flagged song; the weighted draw uses `draw` (a caller-held xorshift
+ * step), so one seed gives one sequence. `avoid` (the previous pick, may be NULL) is left out unless nothing else
+ * is a candidate. Writes the queue form of the pick (plain path for a local song, the key otherwise) to `out`.
+ * Returns 1 with a pick, 0 when there is none. */
+int sel_library_radio_next(sel_library* lib, const char* seed, uint32_t draw, const char* avoid, char* out, size_t cap);
+
 /* Duplicates (I184, T86): groups of songs with the same md5 across sources. Hashes the local songs that have no
  * md5 yet, then calls `fn` once per group with the md5, the member count and the best key (D-M3-14: local >
  * home mirror > cache > modland > hvsc > hippo URL, ties by library order). Returns the group count, -1 on a

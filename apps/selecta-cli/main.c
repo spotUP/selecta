@@ -299,6 +299,7 @@ static void print_event(void* ctx, const sel_message* evt) {
  *                       the song length)
  *   @position           SNAPSHOT position_ms=M order=O row=R pattern=P (song.pattern_pos)
  *   @user_stats         USERDATA cue_sets=N cue_gotos=N sticker_ops=N (T81, T82)
+ *   @radio              RADIO radio_appends=N min_ahead=N then one `queue=<path>` line per queue row (T88)
  *   @share_stats        SHARE links_parsed=N links_made=N songs_opened=N (T84)
  *   @folder_stats       FOLDERS folders=N playlists_in_folders=N playlists=N entries=N folder_ops=N (T83)
  *   @folder_tree        the folder tree, one \"F|P <id> <name>\" line per node (T83)
@@ -392,6 +393,15 @@ static void script_directive(sel_engine* e, const char* line) {
         sel_engine_stats_get(e, &es);
         printf("USERDATA cue_sets=%u cue_gotos=%u sticker_ops=%u\n", (unsigned)es.cue_sets, (unsigned)es.cue_gotos,
                (unsigned)es.sticker_ops);
+    } else if (strcmp(line, "@radio") == 0) {
+        sel_engine_stats es;
+        uint32_t i;
+        const sel_state* st = sel_engine_state(e);
+        sel_engine_stats_get(e, &es);
+        printf("RADIO radio_appends=%u min_ahead=%u\n", (unsigned)es.radio_appends, (unsigned)es.radio_min_ahead);
+        for (i = 0; i < st->queue_count; i++) {
+            printf("queue=%s\n", st->queue_text + st->queue[i].path_offset);
+        }
     } else if (strcmp(line, "@share_stats") == 0) {
         sel_engine_stats es;
         sel_engine_stats_get(e, &es);

@@ -288,6 +288,8 @@ typedef struct sel_engine_stats {
     uint32_t sticker_ops;         /* STICKER_* commands run against the library (I176 sentinel) */
     uint32_t links_parsed;        /* share links OPEN parsed (I180 sentinel) */
     uint32_t links_made;          /* share links SHARE wrote (I180 sentinel) */
+    uint32_t radio_appends;       /* songs RADIO appended to the queue (I186 sentinel) */
+    uint32_t radio_min_ahead;     /* fewest songs queued after the playing one after a radio top-up, 0xFFFFFFFF before RADIO (I186) */
     uint32_t library_searches;    /* queries sent to the library worker (T64) */
     uint32_t library_fts_queries; /* of those, queries the FTS5 index served (T64) */
     uint32_t result_count;         /* keys held by the last query result (T64, T65) */
