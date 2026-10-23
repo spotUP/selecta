@@ -1,6 +1,9 @@
 /* selecta-cli: the top-level entry point every M0 test drives (design doc
  * section 12). Subcommands exercise the core through the same calls a
  * front end makes. */
+#ifdef __amigaos__
+#include "amiga_start.h"
+#endif
 #include <selecta/api.h>
 #include <selecta/engine.h>
 #include <selecta/machine.h>
@@ -559,7 +562,18 @@ static int cmd_send(int argc, char** argv) {
 #endif
 }
 
+#ifdef __amigaos__
+static int app_main(int argc, char** argv);
+
 int main(int argc, char** argv) {
+    return sel_amiga_run_with_stack(app_main, argc, argv, SEL_AMIGA_STACK_BYTES);
+}
+
+static int app_main(int argc, char** argv)
+#else
+int main(int argc, char** argv)
+#endif
+{
     const char* cmd;
     if (argc < 2) {
         return usage(stderr);

@@ -5,7 +5,7 @@ target_link_libraries(selecta PRIVATE selecta_registry selecta_core)
 # The control socket is POSIX only; the Amiga's equivalent is the ARexx port (M4).
 if(SEL_AMIGA)
   target_compile_definitions(selecta PRIVATE SEL_NO_CONTROL_SOCKET)
-  target_sources(selecta PRIVATE ../common/amiga_stack.c)
+  target_sources(selecta PRIVATE ../common/amiga_start.c)
 else()
   target_sources(selecta PRIVATE ../common/ctlsock.c)
 endif()
