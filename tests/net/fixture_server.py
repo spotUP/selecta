@@ -1,0 +1,448 @@
+#!/usr/bin/env python3
+"""Selecta M3 fixture server (plan 2026-10-25-m3-library.md, D-M3-6, row I141).
+
+Python 3 standard library only. Serves recorded responses from
+tests/net/fixtures/<host>/<path> and logs every request.
+
+Net contract (read by src/core/<os>/net.c only, row I152):
+  SELECTA_NET_ALLOW=127.0.0.1   comma list of hosts/addresses a connect may reach;
+                                anything else fails before any SYN with net_blocked=1.
+  SELECTA_NET_MAP=<host>=http://127.0.0.1:<port>[,<host>=...]
+                                the client rewrites <host> to the fixture URL
+                                and sends the original name in the Host header,
+                                which selects the fixtures/<host>/ directory here.
+  SELECTA_CA_FILE=<pem>         trust anchor for the TLS listener (test CA).
+
+Routing: Host header (port stripped) picks fixtures/<host>/. The request path
+plus query is looked up in fixtures/<host>/routes.json first (exact key
+"<path>?<query>" then "<path>"), else the file fixtures/<host>/<path> (a
+directory serves index.json, else index.html). Route entry keys:
+  file, status, headers{}, redirect (Location), chunked (bool),
+  delay_first_byte (s), delay_body (s, sleep between body halves), body (inline str).
+Range: single "bytes=a-b" ranges answer 206. Control endpoints (never logged):
+  GET /__fixture/log    JSON array of logged requests
+  POST /__fixture/reset clears the log
+Log line: {n, method, host, path, headers{range,authorization,content-type,
+content-length,user-agent}, body_sha256, body_len, status}.
+
+Commands:
+  start --portfile F --pidfile P --logfile L [--tls-port-file T --cert C --key K]
+  stop --pidfile P
+  selftest
+Passive FTP (anonymous): USER PASS TYPE SYST PWD CWD SIZE PASV RETR LIST QUIT, serving
+fixtures/<host>/ for a host chosen by --ftp-host (default ftp.modland.com).
+"""
+import argparse
+import hashlib
+import http.server
+import json
+import os
+import signal
+import socket
+import socketserver
+import ssl
+import sys
+import threading
+import time
+import urllib.parse
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+FIXTURES = os.path.join(HERE, "fixtures")
+LOG = []
+LOG_LOCK = threading.Lock()
+LOG_FILE = None
+KEEP_HEADERS = ("range", "authorization", "content-type", "content-length", "user-agent")
+
+
+def record(entry):
+    with LOG_LOCK:
+        entry["n"] = len(LOG) + 1
+        LOG.append(entry)
+        if LOG_FILE:
+            with open(LOG_FILE, "a") as f:
+                f.write(json.dumps(entry, sort_keys=True) + "\n")
+
+
+def load_routes(host):
+    p = os.path.join(FIXTURES, host, "routes.json")
+    if os.path.isfile(p):
+        with open(p) as f:
+            return json.load(f)
+    return {}
+
+
+def safe_join(host, path):
+    root = os.path.realpath(os.path.join(FIXTURES, host))
+    full = os.path.realpath(os.path.join(root, path.lstrip("/")))
+    if full != root and not full.startswith(root + os.sep):
+        return None
+    return full
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    server_version = "SelectaFixture/1"
+
+    def log_message(self, *a):
+        pass
+
+    def handle_any(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(length) if length else b""
+        host = (self.headers.get("Host") or "").split(":")[0].lower()
+        parsed = urllib.parse.urlsplit(self.path)
+        if parsed.path == "/__fixture/log":
+            return self.send_bytes(200, json.dumps(LOG).encode(), {"Content-Type": "application/json"})
+        if parsed.path == "/__fixture/reset":
+            with LOG_LOCK:
+                LOG.clear()
+            return self.send_bytes(200, b"{}", {"Content-Type": "application/json"})
+        hdrs = {k: self.headers[k] for k in KEEP_HEADERS if self.headers.get(k)}
+        entry = {"method": self.command, "host": host, "path": self.path, "headers": hdrs,
+                 "body_sha256": hashlib.sha256(body).hexdigest(), "body_len": len(body)}
+        self.entry = entry
+        self.route(host, parsed, entry)
+
+    def route(self, host, parsed, entry):
+        routes = load_routes(host)
+        key_q = parsed.path + ("?" + parsed.query if parsed.query else "")
+        route = routes.get(key_q) or routes.get(parsed.path)
+        route = dict(route) if route else {}
+        if "key_method" in route and route["key_method"] != self.command:
+            route = {}
+        if route.get("redirect"):
+            return self.send_bytes(route.get("status", 301), b"", {"Location": route["redirect"]})
+        data, ctype = None, "application/octet-stream"
+        if "body" in route:
+            data = route["body"].encode()
+        else:
+            if self.command not in ("GET", "HEAD"):
+                if "status" in route:
+                    return self.send_bytes(route["status"], b"", route.get("headers", {}))
+                return self.send_bytes(404, b"not found\n", {"Content-Type": "text/plain"})
+            fp = safe_join(host, route.get("file", parsed.path))
+            if fp and os.path.isdir(fp):
+                for idx in ("index.json", "index.html"):
+                    if os.path.isfile(os.path.join(fp, idx)):
+                        fp = os.path.join(fp, idx)
+                        break
+            if not fp or not os.path.isfile(fp) or os.path.basename(fp) == "routes.json":
+                return self.send_bytes(404, b"not found\n", {"Content-Type": "text/plain"})
+            with open(fp, "rb") as f:
+                data = f.read()
+            ctype = {".json": "application/json", ".txt": "text/plain", ".md5": "text/plain",
+                     ".html": "text/html"}.get(os.path.splitext(fp)[1], ctype)
+        headers = {"Content-Type": ctype}
+        headers.update(route.get("headers", {}))
+        status = route.get("status", 200)
+        if route.get("delay_first_byte"):
+            time.sleep(route["delay_first_byte"])
+        rng = self.headers.get("Range")
+        if rng and rng.startswith("bytes=") and status == 200:
+            a, _, b = rng[6:].partition("-")
+            try:
+                start = int(a) if a else max(0, len(data) - int(b))
+                end = min(int(b), len(data) - 1) if (a and b) else len(data) - 1
+            except ValueError:
+                start, end = 0, len(data) - 1
+            if start >= len(data):
+                return self.send_bytes(416, b"", {"Content-Range": "bytes */%d" % len(data)})
+            headers["Content-Range"] = "bytes %d-%d/%d" % (start, end, len(data))
+            data, status = data[start:end + 1], 206
+        headers["Accept-Ranges"] = "bytes"
+        if route.get("chunked"):
+            return self.send_chunked(status, data, headers, route.get("delay_body", 0))
+        if route.get("delay_body"):
+            return self.send_bytes(status, data, headers, split_delay=route["delay_body"])
+        return self.send_bytes(status, data, headers)
+
+    def send_head(self, status, headers):
+        # Log before the first byte leaves, so a client that reads the log
+        # right after a response always sees that request.
+        if getattr(self, "entry", None) is not None:
+            self.entry["status"] = status
+            record(self.entry)
+            self.entry = None
+        self.send_response(status)
+        for k, v in headers.items():
+            self.send_header(k, v)
+
+    def send_bytes(self, status, data, headers, split_delay=0):
+        self.send_head(status, headers)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        if self.command != "HEAD":
+            if split_delay and len(data) > 1:
+                half = len(data) // 2
+                self.wfile.write(data[:half])
+                self.wfile.flush()
+                time.sleep(split_delay)
+                self.wfile.write(data[half:])
+            else:
+                self.wfile.write(data)
+        return status
+
+    def send_chunked(self, status, data, headers, delay):
+        self.send_head(status, headers)
+        self.send_header("Transfer-Encoding", "chunked")
+        self.end_headers()
+        step = max(1, len(data) // 4)
+        for i in range(0, len(data), step):
+            c = data[i:i + step]
+            self.wfile.write(b"%x\r\n" % len(c) + c + b"\r\n")
+            self.wfile.flush()
+            if delay and i == 0:
+                time.sleep(delay)
+        self.wfile.write(b"0\r\n\r\n")
+        return status
+
+    do_GET = do_HEAD = do_POST = do_PUT = do_DELETE = handle_any
+
+
+class ThreadedHTTP(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+
+def ftp_session(conn, host):
+    """Minimal anonymous passive-mode FTP."""
+    f = conn.makefile("rwb", buffering=0)
+
+    def say(s):
+        f.write((s + "\r\n").encode())
+
+    say("220 selecta fixture ftp")
+    pasv = None
+    cwd = "/"
+    while True:
+        line = f.readline()
+        if not line:
+            break
+        cmd, _, arg = line.decode("latin-1").strip().partition(" ")
+        cmd = cmd.upper()
+        entry = {"method": "FTP " + cmd, "host": host, "path": arg, "headers": {}, "body_sha256": "", "body_len": 0}
+        if cmd == "USER":
+            say("331 password please")
+        elif cmd == "PASS":
+            say("230 logged in")
+        elif cmd in ("TYPE", "MODE", "STRU"):
+            say("200 ok")
+        elif cmd == "SYST":
+            say("215 UNIX Type: L8")
+        elif cmd == "PWD":
+            say('257 "%s"' % cwd)
+        elif cmd == "CWD":
+            cwd = arg if arg.startswith("/") else cwd.rstrip("/") + "/" + arg
+            say("250 ok")
+        elif cmd == "SIZE":
+            p = safe_join(host, arg if arg.startswith("/") else cwd + "/" + arg)
+            if p and os.path.isfile(p):
+                say("213 %d" % os.path.getsize(p))
+            else:
+                say("550 no such file")
+        elif cmd == "PASV":
+            if pasv:
+                pasv.close()
+            pasv = socket.socket()
+            pasv.bind(("127.0.0.1", 0))
+            pasv.listen(1)
+            p = pasv.getsockname()[1]
+            say("227 Entering Passive Mode (127,0,0,1,%d,%d)" % (p >> 8, p & 255))
+        elif cmd in ("RETR", "LIST"):
+            if cmd == "RETR":
+                p = safe_join(host, arg if arg.startswith("/") else cwd + "/" + arg)
+                ok = bool(p and os.path.isfile(p))
+                data = open(p, "rb").read() if ok else b""
+            else:
+                p = safe_join(host, arg or cwd)
+                ok = bool(p and os.path.isdir(p))
+                data = "".join(n + "\r\n" for n in sorted(os.listdir(p))).encode() if ok else b""
+            if not ok or not pasv:
+                say("550 failed" if not ok else "425 use PASV first")
+            else:
+                say("150 opening")
+                dc, _ = pasv.accept()
+                dc.sendall(data)
+                dc.close()
+                say("226 done")
+            if pasv:
+                pasv.close()
+                pasv = None
+        elif cmd == "QUIT":
+            say("221 bye")
+            record(entry)
+            break
+        else:
+            say("502 not implemented")
+        record(entry)
+    conn.close()
+
+
+def serve_ftp(host, port_file):
+    s = socket.socket()
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind(("127.0.0.1", 0))
+    s.listen(8)
+    with open(port_file, "w") as f:
+        f.write(str(s.getsockname()[1]))
+
+    def loop():
+        while True:
+            c, _ = s.accept()
+            threading.Thread(target=ftp_session, args=(c, host), daemon=True).start()
+    threading.Thread(target=loop, daemon=True).start()
+
+
+def run(args):
+    global LOG_FILE
+    LOG_FILE = args.logfile
+    if LOG_FILE:
+        open(LOG_FILE, "w").close()
+    httpd = ThreadedHTTP(("127.0.0.1", 0), Handler)
+    if args.tls_port_file:
+        tls = ThreadedHTTP(("127.0.0.1", 0), Handler)
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(args.cert, args.key)
+        tls.socket = ctx.wrap_socket(tls.socket, server_side=True)
+        with open(args.tls_port_file, "w") as f:
+            f.write(str(tls.server_address[1]))
+        threading.Thread(target=tls.serve_forever, daemon=True).start()
+    if args.ftp_port_file:
+        serve_ftp(args.ftp_host, args.ftp_port_file)
+    with open(args.portfile, "w") as f:
+        f.write(str(httpd.server_address[1]))
+    signal.signal(signal.SIGTERM, lambda *a: os._exit(0))
+    httpd.serve_forever()
+
+
+def cmd_start(args):
+    for p in (args.portfile, args.pidfile):
+        if os.path.exists(p):
+            os.remove(p)
+    pid = os.fork()
+    if pid == 0:
+        os.setsid()
+        sys.stdin.close()
+        out = open(os.devnull, "w")
+        os.dup2(out.fileno(), 1)
+        os.dup2(out.fileno(), 2)
+        with open(args.pidfile, "w") as f:
+            f.write(str(os.getpid()))
+        run(args)
+        os._exit(0)
+    for _ in range(100):
+        if os.path.exists(args.portfile) and os.path.getsize(args.portfile) > 0:
+            print("fixture_port=" + open(args.portfile).read())
+            return 0
+        time.sleep(0.1)
+    print("fixture server did not start", file=sys.stderr)
+    return 1
+
+
+def cmd_stop(args):
+    if os.path.exists(args.pidfile):
+        try:
+            os.kill(int(open(args.pidfile).read()), signal.SIGTERM)
+        except OSError:
+            pass
+        os.remove(args.pidfile)
+    return 0
+
+
+def cmd_selftest(_):
+    import http.client
+    import tempfile
+    import ftplib
+    d = tempfile.mkdtemp()
+    ns = argparse.Namespace(portfile=d + "/p", pidfile=d + "/pid", logfile=d + "/log", tls_port_file=None,
+                            cert=None, key=None, ftp_port_file=d + "/ftp", ftp_host="ftp.modland.com")
+    assert cmd_start(ns) == 0
+    time.sleep(0.3)
+    port = int(open(ns.portfile).read())
+    fails = []
+
+    def get(host, path, hdrs=None, method="GET"):
+        c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        c.request(method, path, headers=dict({"Host": host}, **(hdrs or {})))
+        r = c.getresponse()
+        return r.status, r.read(), r
+
+    def check(name, cond):
+        print(("[OK] " if cond else "[FAIL] ") + name)
+        if not cond:
+            fails.append(name)
+    try:
+        s, b, _ = get("devilbox.uprough.net", "/api/health")
+        check("plain GET serves index.json", s == 200 and b'"status":"ok"' in b)
+        s, b, _ = get("hippoplayer.se", "/playlist/LMan_SID_Chip_Club.prg", {"Range": "bytes=0-5"})
+        check("Range bytes=0-5 gives 206 and HiPPrg", s == 206 and b == b"HiPPrg")
+        s, b, _ = get("devilbox.uprough.net", "/api/nothing")
+        check("unknown path is 404", s == 404)
+        s, b, _ = get("hippoplayer.se", "/__fixture/log")
+        log = json.loads(b)
+        check("log has the 3 requests in order %s" % [(e["path"],e["status"]) for e in log], [e["status"] for e in log] == [200, 206, 404])
+        check("log records Range header", log[1]["headers"].get("range") == "bytes=0-5")
+        # routes.json knobs, through a temporary host directory
+        td = os.path.join(FIXTURES, "selftest.invalid")
+        os.makedirs(td, exist_ok=True)
+        open(os.path.join(td, "data.bin"), "wb").write(bytes(range(256)) * 8)
+        json.dump({"/chunk": {"file": "data.bin", "chunked": True},
+                   "/hop": {"redirect": "/chunk"},
+                   "/slow": {"file": "data.bin", "delay_first_byte": 0.4}}, open(os.path.join(td, "routes.json"), "w"))
+        s, b, r = get("selftest.invalid", "/chunk")
+        check("chunked body intact", s == 200 and len(b) == 2048 and r.getheader("Transfer-Encoding") == "chunked")
+        s, b, r = get("selftest.invalid", "/hop")
+        check("redirect gives 301 Location", s == 301 and r.getheader("Location") == "/chunk")
+        t = time.time()
+        get("selftest.invalid", "/slow")
+        check("delay_first_byte honoured", time.time() - t >= 0.4)
+        c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        c.request("POST", "/x", body=b"abc", headers={"Host": "selftest.invalid"})
+        c.getresponse().read()
+        s, b, _ = get("x", "/__fixture/log")
+        last = json.loads(b)[-1]
+        check("POST body hash logged", last["method"] == "POST" and last["body_sha256"] == hashlib.sha256(b"abc").hexdigest())
+        ftp = ftplib.FTP()
+        ftp.connect("127.0.0.1", int(open(ns.ftp_port_file).read()), timeout=10)
+        ftp.login()
+        sz = ftp.size("changelog_2026-10-22.txt")
+        got = []
+        ftp.retrbinary("RETR changelog_2026-10-22.txt", got.append)
+        ftp.quit()
+        check("passive FTP SIZE and RETR", sz == 171 and sum(map(len, got)) == 171)
+    finally:
+        cmd_stop(ns)
+        for n in ("data.bin", "routes.json"):
+            try:
+                os.remove(os.path.join(FIXTURES, "selftest.invalid", n))
+            except OSError:
+                pass
+        try:
+            os.rmdir(os.path.join(FIXTURES, "selftest.invalid"))
+        except OSError:
+            pass
+    print("selftest %s" % ("FAILED: " + ", ".join(fails) if fails else "passed"))
+    return 1 if fails else 0
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    st = sub.add_parser("start")
+    st.add_argument("--portfile", required=True)
+    st.add_argument("--pidfile", required=True)
+    st.add_argument("--logfile")
+    st.add_argument("--tls-port-file")
+    st.add_argument("--cert")
+    st.add_argument("--key")
+    st.add_argument("--ftp-port-file")
+    st.add_argument("--ftp-host", default="ftp.modland.com")
+    sp = sub.add_parser("stop")
+    sp.add_argument("--pidfile", required=True)
+    sub.add_parser("selftest")
+    a = ap.parse_args()
+    sys.exit({"start": cmd_start, "stop": cmd_stop, "selftest": cmd_selftest}[a.cmd](a))
+
+
+if __name__ == "__main__":
+    main()
