@@ -992,15 +992,19 @@ if(NOT SEL_AMIGA)
   set_tests_properties(loudness-playback PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "loudness_playback_ok")
 
   # T94 decode part (I194, D-M3-8): MP3 and Ogg Vorbis play through render as RENDER-kind replayer plugins.
+  # Own working directory: the script's output files must not land in the shared songs dir (I184c).
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/stream-decode)
   add_test(NAME stream-decode
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/stream_decode.sh $<TARGET_FILE:selecta-cli> ${CMAKE_CURRENT_SOURCE_DIR}/m3/stream
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/stream-decode)
   set_tests_properties(stream-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "stream_decode_ok")
 
   # I194b: ID3v2/ID3v1/Vorbis comment tags reach the library through rp_metadata.
+  # Own working directory: the script's output files must not land in the shared songs dir (I184c).
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/stream-tags)
   add_test(NAME stream-tags
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/stream_tags.sh $<TARGET_FILE:selecta-cli> ${CMAKE_CURRENT_SOURCE_DIR}/m3/stream
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/stream-tags)
   set_tests_properties(stream-tags PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "stream_tags_ok")
 
   add_test(NAME share-links

@@ -3,9 +3,23 @@
 # Inputs: MODE=vamos, CLI, VAMOS, AMIGA_CLI, MOD, WORK. Included helpers: tests/m2/lib.cmake.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/../m2/lib.cmake")
-get_filename_component(song_dir "${MOD}" DIRECTORY)
+get_filename_component(fixture_dir "${MOD}" DIRECTORY)
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
+# Private song directory (I184c): the shared build songs dir also holds files sibling tests write (decoded WAVs
+# of several hundred KB), and the 68k scan of those ran vamos out of memory depending on test order. Copy only
+# the build fixtures: the generated modules and the album directories a, b, c.
+set(song_dir "${WORK}/songs")
+file(MAKE_DIRECTORY "${song_dir}")
+file(GLOB fixture_mods "${fixture_dir}/*.mod")
+file(COPY ${fixture_mods} DESTINATION "${song_dir}")
+foreach(album a b c)
+  if(IS_DIRECTORY "${fixture_dir}/${album}")
+    file(COPY "${fixture_dir}/${album}" DESTINATION "${song_dir}")
+  endif()
+endforeach()
+get_filename_component(mod_name "${MOD}" NAME)
+set(MOD "${song_dir}/${mod_name}")
 
 set(MODE desktop)
 m2_exec(d_out d_rc library scan "${song_dir}")
