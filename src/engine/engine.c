@@ -2685,6 +2685,8 @@ static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
     e->scan_info.dirs = stats.dirs;
     e->scan_info.archives = stats.archives;
     e->scan_info.archive_members = stats.archive_members;
+    e->scan_info.archive_lzx = stats.archive_lzx;
+    e->scan_info.depack_pp = stats.depack_pp;
     if (!ok) {
         sel_engine_report_error(e, "scan_failed", m->args[0].v.s);
         return;

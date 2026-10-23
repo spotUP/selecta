@@ -227,12 +227,26 @@ static void scan_file(scan_state* s, const char* path) {
         return;
     }
     kind = sel_archive_kind(data, size);
-    if (kind != SEL_ARCHIVE_NONE) {
+    if (kind == SEL_ARCHIVE_PP20) {
+        size_t raw = 0;
+        uint8_t* plain = sel_pp20_depack(s->cfg->host, data, size, SCAN_MAX_FILE, &raw);
+
+        if (plain == NULL) {
+            s->stats->skipped_files++; /* damaged packed file */
+        } else {
+            s->stats->depack_pp++;
+            scan_blob(s, plain, raw, path, path);
+            s->cfg->host->mem_free(s->cfg->host, plain);
+        }
+    } else if (kind != SEL_ARCHIVE_NONE) {
         member_ctx mc;
 
         mc.s = s;
         mc.archive = path;
         s->stats->archives++;
+        if (kind == SEL_ARCHIVE_LZX) {
+            s->stats->archive_lzx++;
+        }
         if (sel_archive_each(s->cfg->host, kind, data, size, SCAN_MAX_FILE, on_member, &mc) < 0) {
             s->stats->skipped_files++; /* damaged archive */
         }
@@ -265,7 +279,7 @@ static void scan_dir(scan_state* s, const char* dir) {
         if (strcmp(name, "..") == 0 || !sel_browse_join(full, sizeof full, dir, name)) {
             continue;
         }
-        if (s->browse.entries[i].is_dir) {
+        if (s->browse.entries[i].is_dir == 1u) {
             if (!s->flat) {
                 push_dir(s, full);
             }
@@ -376,7 +390,7 @@ static int walk_dirs(const sel_host* host, const char* root, char (*path)[SEL_BR
         for (j = 0; j < b.count && n < SEL_TRACK_DIRS; j++) {
             const char* name = sel_browse_name(&b, j);
 
-            if (strcmp(name, "..") != 0 && b.entries[j].is_dir && sel_browse_join(full, sizeof full, path[i], name)) {
+            if (strcmp(name, "..") != 0 && b.entries[j].is_dir == 1u && sel_browse_join(full, sizeof full, path[i], name)) {
                 copy_text(path[n++], SEL_BROWSE_PATH_MAX, full);
             }
         }

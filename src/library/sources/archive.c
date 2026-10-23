@@ -16,10 +16,20 @@ int sel_archive_kind(const uint8_t* data, size_t size) {
     if (size >= 7 && data[2] == '-' && data[3] == 'l' && (data[4] == 'h' || data[4] == 'z') && data[6] == '-') {
         return SEL_ARCHIVE_LHA;
     }
+    if (size >= 10 && data[0] == 'L' && data[1] == 'Z' && data[2] == 'X') {
+        return SEL_ARCHIVE_LZX;
+    }
+    if (size >= 16 && data[0] == 'P' && data[1] == 'P' && data[2] == '2' && data[3] == '0') {
+        return SEL_ARCHIVE_PP20;
+    }
     return SEL_ARCHIVE_NONE;
 }
 
-static int each_zip(const sel_host* host, const uint8_t* data, size_t size, size_t max_member,
+int sel_archive_is_folder(int kind) {
+    return kind == SEL_ARCHIVE_ZIP || kind == SEL_ARCHIVE_LHA || kind == SEL_ARCHIVE_LZX;
+}
+
+static int each_zip(const sel_host* host, const uint8_t* data, size_t size, size_t max_member, int list_only,
                     sel_archive_member_fn fn, void* ctx) {
     mz_zip_archive zip;
     mz_uint i, n;
@@ -37,6 +47,13 @@ static int each_zip(const sel_host* host, const uint8_t* data, size_t size, size
 
         if (mz_zip_reader_is_file_a_directory(&zip, i) || !mz_zip_reader_file_stat(&zip, i, &st) ||
             st.m_uncomp_size == 0 || st.m_uncomp_size > max_member) {
+            continue;
+        }
+        if (list_only) {
+            delivered++;
+            if (!fn(ctx, st.m_filename, NULL, (size_t)st.m_uncomp_size)) {
+                break;
+            }
             continue;
         }
         buf = host->mem_alloc(host, (size_t)st.m_uncomp_size, SEL_MEM_FAST);
@@ -87,7 +104,7 @@ static int mem_skip(void* handle, size_t bytes) {
 
 static const LHAInputStreamType g_mem_type = {mem_read, mem_skip, NULL};
 
-static int each_lha(const sel_host* host, const uint8_t* data, size_t size, size_t max_member,
+static int each_lha(const sel_host* host, const uint8_t* data, size_t size, size_t max_member, int list_only,
                     sel_archive_member_fn fn, void* ctx) {
     mem_stream ms;
     LHAInputStream* in;
@@ -117,6 +134,13 @@ static int each_lha(const sel_host* host, const uint8_t* data, size_t size, size
             continue;
         }
         snprintf(name, sizeof name, "%s%s", h->path != NULL ? h->path : "", h->filename);
+        if (list_only) {
+            delivered++;
+            if (!fn(ctx, name, NULL, (size_t)h->length)) {
+                break;
+            }
+            continue;
+        }
         buf = host->mem_alloc(host, (size_t)h->length, SEL_MEM_FAST);
         if (buf == NULL) {
             continue;
@@ -137,13 +161,26 @@ static int each_lha(const sel_host* host, const uint8_t* data, size_t size, size
     return delivered;
 }
 
-int sel_archive_each(const sel_host* host, int kind, const uint8_t* data, size_t size, size_t max_member,
-                     sel_archive_member_fn fn, void* ctx) {
+static int walk(const sel_host* host, int kind, const uint8_t* data, size_t size, size_t max_member,
+                int list_only, sel_archive_member_fn fn, void* ctx) {
     if (kind == SEL_ARCHIVE_ZIP) {
-        return each_zip(host, data, size, max_member, fn, ctx);
+        return each_zip(host, data, size, max_member, list_only, fn, ctx);
     }
     if (kind == SEL_ARCHIVE_LHA) {
-        return each_lha(host, data, size, max_member, fn, ctx);
+        return each_lha(host, data, size, max_member, list_only, fn, ctx);
+    }
+    if (kind == SEL_ARCHIVE_LZX) {
+        return sel_lzx_walk(host, data, size, max_member, list_only, fn, ctx);
     }
     return -1;
+}
+
+int sel_archive_each(const sel_host* host, int kind, const uint8_t* data, size_t size, size_t max_member,
+                     sel_archive_member_fn fn, void* ctx) {
+    return walk(host, kind, data, size, max_member, 0, fn, ctx);
+}
+
+int sel_archive_list(const sel_host* host, int kind, const uint8_t* data, size_t size,
+                     sel_archive_member_fn fn, void* ctx) {
+    return walk(host, kind, data, size, (size_t)-1, 1, fn, ctx);
 }

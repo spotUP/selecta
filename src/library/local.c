@@ -1,11 +1,14 @@
 #include "local.h"
 
 #include "dir.h"
+#include "sources/archive.h"
 
+#include <stdio.h>
 #include <string.h>
 
 int sel_browse_init(sel_browse* b, const sel_host* host, uint32_t capacity, uint32_t text_bytes) {
     memset(b, 0, sizeof *b);
+    b->host = host;
     b->entries = host->mem_alloc(host, (size_t)capacity * sizeof *b->entries, SEL_MEM_FAST);
     b->text = host->mem_alloc(host, text_bytes, SEL_MEM_FAST);
     if (b->entries == NULL || b->text == NULL) {
@@ -49,8 +52,8 @@ static char lower(char c) {
 /* Directories first, then case-insensitive name. */
 static int entry_less(const sel_browse* b, uint32_t is_dir, const char* name, const sel_browse_entry* o) {
     const char* on = b->text + o->name_offset;
-    if (is_dir != o->is_dir) {
-        return is_dir > o->is_dir;
+    if ((is_dir != 0) != (o->is_dir != 0)) {
+        return is_dir != 0;
     }
     while (*name && *on && lower(*name) == lower(*on)) {
         name++;
@@ -75,7 +78,7 @@ static void add_entry(sel_browse* b, uint32_t first, const char* name, int is_di
     }
     while (lo < hi) {
         uint32_t mid = lo + (hi - lo) / 2u;
-        if (entry_less(b, is_dir ? 1u : 0u, name, &b->entries[mid])) {
+        if (entry_less(b, (uint32_t)is_dir, name, &b->entries[mid])) {
             hi = mid;
         } else {
             lo = mid + 1u;
@@ -84,17 +87,148 @@ static void add_entry(sel_browse* b, uint32_t first, const char* name, int is_di
     memmove(&b->entries[lo + 1u], &b->entries[lo], (size_t)(b->count - lo) * sizeof *b->entries);
     memcpy(b->text + b->text_used, name, n);
     b->entries[lo].name_offset = b->text_used;
-    b->entries[lo].is_dir = is_dir ? 1u : 0u;
+    b->entries[lo].is_dir = (uint32_t)is_dir;
     b->text_used += (uint32_t)n;
     b->count++;
+}
+
+/* Archives list as folders (I159a): zip, lha/lzh and lzx files by extension. */
+static int has_archive_ext(const char* name) {
+    static const char* const exts[] = {".zip", ".lha", ".lzh", ".lzx"};
+    size_t n = strlen(name), i, j;
+
+    for (i = 0; i < sizeof exts / sizeof exts[0]; i++) {
+        int same = n > 4u;
+
+        for (j = 0; same && j < 4u; j++) {
+            char c = name[n - 4u + j];
+
+            same = (char)(c >= 'A' && c <= 'Z' ? c + 32 : c) == exts[i][j];
+        }
+        if (same) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static int on_entry(void* ctx, const char* name, int is_dir) {
     const list_ctx* lc = ctx;
     if (name[0] != '.') {
-        add_entry(lc->b, lc->first, name, is_dir);
+        add_entry(lc->b, lc->first, name, is_dir ? 1 : (has_archive_ext(name) ? 2 : 0));
     }
     return 1;
+}
+
+#define BROWSE_ARCHIVE_MAX (64u * 1024u * 1024u)
+
+static uint8_t* load_file(const sel_host* host, const char* path, size_t* size) {
+    FILE* f = fopen(path, "rb");
+    long n;
+    uint8_t* buf = NULL;
+
+    if (f == NULL) {
+        return NULL;
+    }
+    if (fseek(f, 0, SEEK_END) == 0 && (n = ftell(f)) > 0 && (unsigned long)n <= BROWSE_ARCHIVE_MAX &&
+        fseek(f, 0, SEEK_SET) == 0 && (buf = host->mem_alloc(host, (size_t)n, SEL_MEM_FAST)) != NULL) {
+        if (fread(buf, 1, (size_t)n, f) == (size_t)n) {
+            *size = (size_t)n;
+        } else {
+            host->mem_free(host, buf);
+            buf = NULL;
+        }
+    }
+    fclose(f);
+    return buf;
+}
+
+typedef struct arch_ctx {
+    sel_browse* b;
+    const char* inner;
+    size_t inner_len;
+} arch_ctx;
+
+/* One archive member as an entry of the folder `inner`: a deeper name shows its first component. */
+static int on_arch_member(void* vctx, const char* name, const uint8_t* data, size_t size) {
+    arch_ctx* a = vctx;
+    const char* rest = name;
+    const char* slash;
+    char part[256];
+    size_t n;
+
+    (void)data;
+    (void)size;
+    if (a->inner_len) {
+        if (strncmp(name, a->inner, a->inner_len) != 0 || name[a->inner_len] != '/') {
+            return 1;
+        }
+        rest = name + a->inner_len + 1u;
+    }
+    if (*rest == '\0') {
+        return 1;
+    }
+    slash = strchr(rest, '/');
+    if (slash == NULL) {
+        add_entry(a->b, 1, rest, 0);
+        return 1;
+    }
+    n = (size_t)(slash - rest);
+    if (n > 0u && n < sizeof part) {
+        memcpy(part, rest, n);
+        part[n] = '\0';
+        if (sel_browse_find(a->b, part) == a->b->count) {
+            add_entry(a->b, 1, part, 1);
+        }
+    }
+    return 1;
+}
+
+/* `path` is "<archive file>[/<folder inside>]": finds the longest prefix that is an archive file and
+ * lists its folder. Returns 0 when no prefix is an archive. */
+static int fill_archive(sel_browse* b, const char* path) {
+    char arch[SEL_BROWSE_PATH_MAX];
+    char inner[SEL_BROWSE_PATH_MAX];
+    size_t n = strlen(path);
+
+    memcpy(arch, path, n + 1u);
+    for (;;) {
+        size_t size = 0;
+        uint8_t* data = load_file(b->host, arch, &size);
+        char* cut;
+
+        if (data != NULL) {
+            int kind = sel_archive_kind(data, size);
+
+            if (sel_archive_is_folder(kind)) {
+                arch_ctx a;
+                size_t il;
+                int got;
+
+                memcpy(inner, path + strlen(arch), n - strlen(arch) + 1u);
+                il = strlen(inner);
+                while (il > 0u && inner[il - 1u] == '/') {
+                    inner[--il] = '\0';
+                }
+                a.b = b;
+                a.inner = inner[0] == '/' ? inner + 1 : inner;
+                a.inner_len = strlen(a.inner);
+                b->count = 0;
+                b->text_used = 0;
+                b->truncated = 0;
+                add_entry(b, 0, "..", 1);
+                got = sel_archive_list(b->host, kind, data, size, on_arch_member, &a);
+                b->host->mem_free(b->host, data);
+                return got >= 0;
+            }
+            b->host->mem_free(b->host, data);
+        }
+        cut = strrchr(arch, '/');
+        if (cut == NULL || cut == arch) {
+            return 0;
+        }
+        *cut = '\0';
+    }
 }
 
 static int fill(sel_browse* b, const char* path) {
@@ -118,8 +252,10 @@ int sel_browse_list(sel_browse* b, const char* path) {
     if (strlen(path) >= SEL_BROWSE_PATH_MAX) {
         return 0;
     }
-    if (!fill(b, path)) {
-        (void)fill(b, b->path); /* the buffer was cleared: restore the old listing */
+    if (!fill(b, path) && !fill_archive(b, path)) {
+        if (!fill(b, b->path)) { /* the buffer was cleared: restore the old listing */
+            (void)fill_archive(b, b->path);
+        }
         return 0;
     }
     memcpy(b->path, path, strlen(path) + 1u);
