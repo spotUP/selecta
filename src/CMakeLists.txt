@@ -15,6 +15,7 @@ add_library(selecta_core STATIC
   engine/shuffle.c
   engine/view.c
   engine/prefs.c
+  engine/options.c
   engine/format.c
   engine/voices.c
   engine/scheduler.c
@@ -82,9 +83,9 @@ target_link_libraries(selecta_core PUBLIC selecta_library)
 target_include_directories(selecta_core PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/core ${CMAKE_CURRENT_SOURCE_DIR}/host)
 if(SEL_AMIGA)
-  target_sources(selecta_core PRIVATE core/amiga/clock.c core/amiga/machine.c core/amiga/config_mkdir.c)
+  target_sources(selecta_core PRIVATE core/amiga/clock.c core/amiga/machine.c core/amiga/config_mkdir.c core/amiga/pal.c)
 elseif(APPLE)
-  target_sources(selecta_core PRIVATE host/clock.c core/macos/machine.c core/macos/config_mkdir.c)
+  target_sources(selecta_core PRIVATE host/clock.c core/macos/machine.c core/macos/config_mkdir.c core/macos/pal.c)
 else()
-  target_sources(selecta_core PRIVATE host/clock.c core/linux/machine.c core/macos/config_mkdir.c)
+  target_sources(selecta_core PRIVATE host/clock.c core/linux/machine.c core/macos/config_mkdir.c core/macos/pal.c)
 endif()

@@ -524,6 +524,9 @@ int main(int argc, char** argv) {
         return usage(stderr);
     }
     cmd = argv[1];
+    if (strcmp(cmd, "--dry-run") == 0) {
+        return sel_cli_dry_run(argc - 2, argv + 2);
+    }
     if (strcmp(cmd, "version") == 0) {
         return cmd_version();
     }
