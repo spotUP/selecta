@@ -2,7 +2,9 @@
 # T94 decode part (I194, D-M3-8): MP3 (minimp3) and Ogg Vorbis (stb_vorbis) play through `selecta-cli render`
 # as RENDER-kind replayers. One reachability test through the product entry point; the sentinel is the
 # `replayer=<plugin>` line of render. Fixtures: tests/m3/stream/sine.mp3 (44100 Hz, 14976 frames) and
-# sine.ogg (22050 Hz, 0.3 s, 6615 frames).
+# sine.ogg (22050 Hz, final granule 6656: the encoder pads to whole blocks) and exact.ogg (the same stream with the
+# final granule patched to 6615 and the page CRC recomputed, as an exact-length encoder writes it): the decoder
+# must stop at the final granule, so both lengths are asserted exactly at the native rate and resampled.
 # usage: stream_decode.sh <selecta-cli> <fixture-dir>
 set -u
 cli=$1
@@ -23,7 +25,9 @@ check() { # <file> <plugin> <rate> <frames> <tolerance>
 
 rm -f sd_*.wav
 check "$dir/sine.mp3" minimp3 44100 14976 0
-check "$dir/sine.mp3" minimp3 22050 7488 2
-check "$dir/sine.ogg" stb_vorbis 22050 6615 64
-check "$dir/sine.ogg" stb_vorbis 44100 13230 128
+check "$dir/sine.mp3" minimp3 22050 7488 0
+check "$dir/sine.ogg" stb_vorbis 22050 6656 0
+check "$dir/sine.ogg" stb_vorbis 44100 13312 0
+check "$dir/exact.ogg" stb_vorbis 22050 6615 0
+check "$dir/exact.ogg" stb_vorbis 44100 13230 0
 echo stream_decode_ok

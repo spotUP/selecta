@@ -446,6 +446,27 @@ static int library_rescan(int argc, char** argv) {
     return ok ? 0 : 1;
 }
 
+#ifndef __amigaos__
+/* `library scan --dump`: one `song=<path>|<name>|<artist>|<album>` line per local song, read from the database
+ * file after the scan (I194b: the tags the replayers reported). */
+static void library_dump_local(const char* db_path) {
+    sqlite3* db = NULL;
+    sqlite3_stmt* st = NULL;
+
+    if (sqlite3_open_v2(db_path, &db, SQLITE_OPEN_READONLY, NULL) == SQLITE_OK &&
+        sqlite3_prepare_v2(db, "SELECT path, COALESCE(name,''), COALESCE(artist,''), COALESCE(album,'') FROM songs"
+                               " WHERE source='local' ORDER BY path", -1, &st, NULL) == SQLITE_OK) {
+        while (sqlite3_step(st) == SQLITE_ROW) {
+            printf("song=%s|%s|%s|%s\n", (const char*)sqlite3_column_text(st, 0),
+                   (const char*)sqlite3_column_text(st, 1), (const char*)sqlite3_column_text(st, 2),
+                   (const char*)sqlite3_column_text(st, 3));
+        }
+    }
+    sqlite3_finalize(st);
+    sqlite3_close(db);
+}
+#endif
+
 static int library_scan(int argc, char** argv) {
     const sel_host* host = sel_host_default();
     const char* db_path = ":memory:";
@@ -461,13 +482,15 @@ static int library_scan(int argc, char** argv) {
     sel_local_scan_config scfg;
     sel_local_scan_stats rs;
     uint32_t watch_ms = 0, watch_events = 0;
-    int use_poll = 0;
+    int use_poll = 0, dump = 0;
     int i;
 
     memset(&rs, 0, sizeof rs);
     for (i = 0; i < argc; i++) {
         if (strcmp(argv[i], "--db") == 0 && i + 1 < argc) {
             db_path = argv[++i];
+        } else if (strcmp(argv[i], "--dump") == 0) {
+            dump = 1;
         } else if ((strcmp(argv[i], "--watch") == 0 || strcmp(argv[i], "--poll") == 0) && i + 1 < argc) {
             use_poll = argv[i][2] == 'p';
             watch_ms = (uint32_t)strtoul(argv[++i], NULL, 10);
@@ -479,7 +502,7 @@ static int library_scan(int argc, char** argv) {
         }
     }
     if (dir == NULL) {
-        fputs("usage: selecta-cli library scan [--db <path>] <dir>\n", stderr);
+        fputs("usage: selecta-cli library scan [--db <path>] [--dump] <dir>\n", stderr);
         return 2;
     }
     memset(&sink, 0, sizeof sink);
@@ -526,6 +549,13 @@ static int library_scan(int argc, char** argv) {
            (unsigned)info.archive_lzx, (unsigned)info.depack_pp, st.args[SEL_LIB_STAT_SONGS].v.i);
     sel_engine_destroy(e);
     sel_library_close(lib);
+#ifndef __amigaos__
+    if (dump) {
+        library_dump_local(db_path);
+    }
+#else
+    (void)dump;
+#endif
     return sink.failed ? 1 : 0;
 }
 
@@ -1155,6 +1185,6 @@ int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "query") == 0) {
         return library_query(argc - 1, argv + 1);
     }
-    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | sync [--db <path>] [--now <epoch>] [--dump] modland <dir or http(s) url> | meta [--db <path>] <key> | key <source> <path> | genre --db <path> | composer --db <path> <name> | similar --db <path> <key> | also-by --db <path> <key> | duplicates --db <path> | trim [--budget <n>] [--machine <name>] | query --explain <q> | export-folder --db <path> --dir <dir> [--folder <id>] [--format m3u] | stats [--machine <name>] [--db <path>]\n", stderr);
+    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--dump] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | sync [--db <path>] [--now <epoch>] [--dump] modland <dir or http(s) url> | meta [--db <path>] <key> | key <source> <path> | genre --db <path> | composer --db <path> <name> | similar --db <path> <key> | also-by --db <path> <key> | duplicates --db <path> | trim [--budget <n>] [--machine <name>] | query --explain <q> | export-folder --db <path> --dir <dir> [--folder <id>] [--format m3u] | stats [--machine <name>] [--db <path>]\n", stderr);
     return 2;
 }

@@ -7,6 +7,7 @@
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
 
+#include "../stream/id3.h"
 #include "../stream/stream_pcm.h"
 
 #include <stdlib.h>
@@ -24,7 +25,8 @@ typedef struct mp3_state {
     sel_stream_pcm pcm;
     int16_t frame[MINIMP3_MAX_SAMPLES_PER_FRAME];
     uint32_t left, off, frame_ch; /* undelivered frames of `frame` */
-    sel_tag meta[5];
+    sel_id3 tag;
+    sel_tag meta[8];
 } mp3_state;
 
 /* ID3v2 header: "ID3", version, flags, 4 syncsafe size bytes; returns the tag length or 0. */
@@ -109,6 +111,7 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     s->hz = (uint32_t)fi.hz;
     s->channels = fi.channels;
     s->total_frames = walk_frames(s);
+    sel_id3_read(src->data, src->size, &s->tag);
     info->voice_count = 0;
     info->subsong_count = 1;
     info->default_subsong = 0;
@@ -218,6 +221,18 @@ static int rp_seek(void* state, uint32_t ms) {
 static const sel_tag* rp_metadata(void* state) {
     mp3_state* s = (mp3_state*)state;
     uint32_t n = 0;
+    if (s->tag.title[0] != '\0') {
+        s->meta[n].tag = SEL_META_TITLE;
+        s->meta[n++].value = (uintptr_t)s->tag.title;
+    }
+    if (s->tag.artist[0] != '\0') {
+        s->meta[n].tag = SEL_META_AUTHOR;
+        s->meta[n++].value = (uintptr_t)s->tag.artist;
+    }
+    if (s->tag.album[0] != '\0') {
+        s->meta[n].tag = SEL_META_RELEASE;
+        s->meta[n++].value = (uintptr_t)s->tag.album;
+    }
     s->meta[n].tag = SEL_META_FORMAT;
     s->meta[n++].value = (uintptr_t) "MP3";
     s->meta[n].tag = SEL_META_CHANNELS;

@@ -159,6 +159,7 @@ typedef struct sel_scan_row {
     const char* path;
     const char* format;
     const char* artist;
+    const char* album; /* "" = unknown */
     const char* name;
     const char* md5;
     int64_t size;

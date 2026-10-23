@@ -25,6 +25,7 @@ typedef struct scan_row_text {
     char path[SEL_BROWSE_PATH_MAX];
     char name[TEXT_NAME];
     char artist[TEXT_NAME];
+    char album[TEXT_NAME];
     char format[TEXT_FORMAT];
 } scan_row_text;
 
@@ -162,6 +163,7 @@ static int scan_blob(scan_state* s, const uint8_t* data, size_t size, const char
     copy_text(t->path, sizeof t->path, row_path);
     copy_text(t->name, sizeof t->name, sel_browse_basename(probe_path));
     t->artist[0] = '\0';
+    t->album[0] = '\0';
     t->format[0] = '\0';
     open_fn = (sel_rp_open_fn)sel_tag_find(hooks, SEL_RP_OPEN, 0);
     close_fn = (sel_rp_close_fn)sel_tag_find(hooks, SEL_RP_CLOSE, 0);
@@ -180,6 +182,7 @@ static int scan_blob(scan_state* s, const uint8_t* data, size_t size, const char
         }
         if (meta != NULL) {
             copy_text(t->artist, sizeof t->artist, (const char*)sel_tag_find(meta, SEL_META_AUTHOR, 0));
+            copy_text(t->album, sizeof t->album, (const char*)sel_tag_find(meta, SEL_META_RELEASE, 0));
             copy_text(t->format, sizeof t->format, (const char*)sel_tag_find(meta, SEL_META_FORMAT, 0));
             r->duration_ms = (int32_t)sel_tag_find(meta, SEL_META_DURATION_MS, 0);
         }
@@ -191,6 +194,7 @@ static int scan_blob(scan_state* s, const uint8_t* data, size_t size, const char
     r->path = t->path;
     r->name = t->name;
     r->artist = t->artist;
+    r->album = t->album;
     r->format = t->format;
     r->md5 = "";
     r->size = (int64_t)size;

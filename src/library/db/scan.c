@@ -9,10 +9,10 @@
 static const char SQL_FILE[] =
     "INSERT OR REPLACE INTO files(source, path, format, artist, name, md5, size) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)";
 static const char SQL_SONG[] =
-    "INSERT INTO songs(key, source, path, name, artist, format, year, duration_ms, md5, size, added)"
-    " VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"
+    "INSERT INTO songs(key, source, path, name, artist, format, year, duration_ms, md5, size, added, album)"
+    " VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"
     " ON CONFLICT(key) DO UPDATE SET name=" SEL_SONG_TAG_KEEP(name) ", artist=" SEL_SONG_TAG_KEEP(artist)
-    ", format=excluded.format,"
+    ", album=COALESCE(excluded.album, album), format=excluded.format,"
     " year=excluded.year, duration_ms=excluded.duration_ms, md5=excluded.md5, size=excluded.size";
 
 static void bind_text(sqlite3_stmt* st, int i, const char* s) {
@@ -74,6 +74,7 @@ void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_messa
         bind_text(ss, 9, r->md5);
         bind_positive(ss, 10, r->size);
         sqlite3_bind_int64(ss, 11, b->now);
+        bind_text(ss, 12, r->album);
         rc = sqlite3_step(ss);
         if (rc != SQLITE_DONE) {
             break;
