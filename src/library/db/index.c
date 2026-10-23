@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#define EXPORT_WINDOW 20000
+
 uint32_t sel_library_heap_peak(void) {
     sqlite3_int64 cur = 0, hi = 0;
 
@@ -55,6 +57,9 @@ int sel_library_attach_index(sel_library* lib, const char* path) {
     }
     /* Refuse a file that is not a library database: the first query would otherwise fail much later. */
     lib->has_index = 1;
+    /* Cap the index page cache at 64 KB: the default 2 MB cache is carved from the 512 KB heap and the first
+     * full scan of a large index fails with SQLITE_NOMEM. */
+    sqlite3_exec(lib->db, "PRAGMA idx.cache_size=-64", NULL, NULL, NULL);
     if (sqlite3_exec(lib->db, "SELECT 1 FROM idx.songs LIMIT 1", NULL, NULL, NULL) != SQLITE_OK) {
         sqlite3_exec(lib->db, "DETACH DATABASE idx", NULL, NULL, NULL);
         lib->has_index = 0;
@@ -87,21 +92,45 @@ int sel_library_export_index(sel_library* lib, const char* source, const char* o
     if (sqlite3_exec(lib->db, sql, NULL, NULL, NULL) != SQLITE_OK) {
         return 0;
     }
-    if (sqlite3_exec(lib->db, "BEGIN", NULL, NULL, NULL) == SQLITE_OK &&
-        sqlite3_prepare_v2(lib->db, "INSERT INTO ex.songs SELECT * FROM main.songs WHERE source = ?1", -1, &st,
-                           NULL) == SQLITE_OK) {
-        sqlite3_bind_text(st, 1, source, -1, SQLITE_STATIC);
-        ok = sqlite3_step(st) == SQLITE_DONE;
+    /* One transaction per window of ids: the FTS triggers and the page cache of a single transaction over a
+     * full source (Modland: 516k rows) outgrow the library heap ("out of memory"). */
+    {
+        sqlite3_int64 lo = 0, hi = 0, from;
+        uint32_t total = 0;
+
+        ok = sqlite3_prepare_v2(lib->db, "SELECT coalesce(min(id), 0), coalesce(max(id), 0) FROM main.songs WHERE source = ?1",
+                                -1, &st, NULL) == SQLITE_OK;
+        if (ok) {
+            sqlite3_bind_text(st, 1, source, -1, SQLITE_STATIC);
+            ok = sqlite3_step(st) == SQLITE_ROW;
+            if (ok) {
+                lo = sqlite3_column_int64(st, 0);
+                hi = sqlite3_column_int64(st, 1);
+            }
+        }
+        sqlite3_finalize(st);
+        st = NULL;
+        ok = ok && sqlite3_prepare_v2(lib->db,
+                                      "INSERT INTO ex.songs SELECT * FROM main.songs WHERE source = ?1 AND id >= ?2 AND id < ?3",
+                                      -1, &st, NULL) == SQLITE_OK;
+        for (from = lo; ok && from <= hi; from += EXPORT_WINDOW) {
+            ok = sqlite3_exec(lib->db, "BEGIN", NULL, NULL, NULL) == SQLITE_OK;
+            if (ok) {
+                sqlite3_reset(st);
+                sqlite3_bind_text(st, 1, source, -1, SQLITE_STATIC);
+                sqlite3_bind_int64(st, 2, from);
+                sqlite3_bind_int64(st, 3, from + EXPORT_WINDOW);
+                ok = sqlite3_step(st) == SQLITE_DONE;
+                total += ok ? (uint32_t)sqlite3_changes(lib->db) : 0;
+                ok = sqlite3_exec(lib->db, ok ? "COMMIT" : "ROLLBACK", NULL, NULL, NULL) == SQLITE_OK && ok;
+            }
+        }
+        sqlite3_finalize(st);
         if (ok && rows != NULL) {
-            *rows = (uint32_t)sqlite3_changes(lib->db);
+            *rows = total;
         }
     }
-    sqlite3_finalize(st);
-    ok = ok && sqlite3_exec(lib->db, "COMMIT", NULL, NULL, NULL) == SQLITE_OK &&
-         sqlite3_exec(lib->db, "INSERT INTO ex.song_fts(song_fts) VALUES('optimize')", NULL, NULL, NULL) == SQLITE_OK;
-    if (!ok) {
-        sqlite3_exec(lib->db, "ROLLBACK", NULL, NULL, NULL);
-    }
+    ok = ok && sqlite3_exec(lib->db, "INSERT INTO ex.song_fts(song_fts) VALUES('optimize')", NULL, NULL, NULL) == SQLITE_OK;
     sqlite3_exec(lib->db, "DETACH DATABASE ex", NULL, NULL, NULL);
     return ok;
 }
