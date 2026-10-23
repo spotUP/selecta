@@ -122,7 +122,7 @@ Session 2026-10-22 (2). Finish line: RULES.md rule 0 (plans and ledger never sta
 | R6 | [x] | First commit, named files, no attribution | git log |
 | R7 | [x] | next-session.md start prompt | thoughts/spot/next-session.md |
 | L3 | [x] | M1 split into slices; M1.1 plan written, approved, rows added | thoughts/shared/plans/2026-10-23-m1-1-text-ui-queue.md |
-| L4 | [ ] | Write the M1.2 and M1.3 plans after I62 | thoughts/shared/plans/ |
+| L4 | [x] | Write the M1.2 and M1.3 plans after I62 | thoughts/shared/plans/2026-10-23-m1-2-playlists-views-control.md, thoughts/shared/plans/2026-10-23-m1-3-viz-voices-playback.md |
 
 ## Implementation (plan: thoughts/shared/plans/2026-10-22-m0-skeleton.md, status: done)
 
@@ -208,6 +208,60 @@ Tests T19 to T27 are defined in the plan's finish-line table. A row is ticked on
 | I62 | [x] | 6 | RULES.md Commands, README, design doc sections 3/5/14/16, validation doc, plan status done | counts reconciled: ctest 48, ratchet 45, no_float 12, nuade 121; commit 18d24f4 |
 | I64 | [ ] | 5 | shell picks clocked pacing and audio-thread marking by output id (apps/selecta/main.c:83 strcmp "null"); should read the output's capability (SEL_OUT_LATENCY_MS != 0 or a dedicated tag). Latent: the default host has no config, so `--output wav` cannot open in the shell today; fix with the regression test when a second unclocked output becomes reachable | open |
 | I63 | [x] | 5 | fix shell with real output: interactive Enter never opens songs (songs_opened=0), keys-file wait hangs (timeout 0), check termios diff after quit; regression test without sound card | A was a repro error (started one directory too high; works under CoreAudio); B fixed: keys-file wait counts the host clock when the turn budget is 0, host clock now CLOCK_MONOTONIC; C is only the kernel PENDIN bit; test text-ui-keys-wait red then green; commit bdb9e75, merge on main |
+
+## Implementation M1.2 (plan: thoughts/shared/plans/2026-10-23-m1-2-playlists-views-control.md, status: approved 2026-10-23 autonomous)
+
+Tests T28 to T38 are defined in the plan's finish-line table. A row is ticked only when its proof column is green.
+
+| ID | Status | Phase | Task | Proof |
+|----|--------|-------|------|-------|
+| I65 | [ ] | 1 | Move the line parser to `src/protocol/parse.c`; CLI and shell share it | T1 to T27 green, no behaviour change |
+| I66 | [ ] | 1 | `prefs.def`, `prefs.c`, prefs file, PREF_GET/PREF_SET, config directory | T33 pref half green, ratchet 43 |
+| I67 | [ ] | 1 | T33 written and red; `format.c` resolver used by the view model | T33 green |
+| I68 | [ ] | 2 | T30 and T31 written and red | ctest failures |
+| I69 | [ ] | 2 | History ring; QUEUE_MOVE, QUEUE_SWAP, UNDO, REDO, QUEUE_HISTORY event | T30 move/swap/undo half green, ratchet 39 |
+| I70 | [ ] | 2 | xorshift32; QUEUE_SHUFFLE, SHUFFLE, RESHUFFLE | T30 green, ratchet 36 |
+| I71 | [ ] | 2 | SCOPE option, NEXT_ALBUM, PREV_ALBUM | T31 green, ratchet 33 |
+| I72 | [ ] | 3 | T29 written and red; four codecs | T29 green |
+| I73 | [ ] | 3 | PLAYLIST_LOAD, PLAYLIST_SAVE; divider/stealth queue rows | script check in T29 suite, ratchet 31 |
+| I74 | [ ] | 4 | T32 written and red; view grouping folder/format, node ids | T32 green, ratchet 27 |
+| I75 | [ ] | 4 | Text UI draws tree and drilldown | T24, T32 green; screen fixture |
+| I76 | [ ] | 5 | T34 written and red; `keybind.c`, `keys.conf`, `--bindings` | T34 green; T19 unchanged |
+| I77 | [ ] | 5 | T36 written and red; `cmdline.c`, history, `:!` spawn | T36 green |
+| I78 | [ ] | 5 | T37 written and red; `SEL_CMD_AREA`, COMMANDS `area`, `palette.c`, help overlay | T37 green, T5/T6 goldens updated |
+| I79 | [ ] | 6 | T35 written and red; socket in the shell, `selecta-cli send` | T35 green |
+| I80 | [ ] | 6 | `integration.h`, host side, `nowplaying-test`; T38 red then green | T38 green |
+| I81 | [ ] | 6 | macOS Now Playing and Linux MPRIS plugins | build green; manual check 2 |
+| I82 | [ ] | 7 | T28 written and red; fixtures | ctest failure |
+| I83 | [ ] | 7 | Wire everything to T28 | T28 green, T8 at 27, build/amiga green |
+| I84 | [ ] | 7 | Design doc section 14 status, validation file, full CI run (reason: landing the milestone) | `2026-10-23-m1-2-playlists-views-control.validation.md` |
+
+## Implementation M1.3 (plan: thoughts/shared/plans/2026-10-23-m1-3-viz-voices-playback.md, status: approved 2026-10-23 autonomous, starts after I84)
+
+Tests T39 to T48 are defined in the plan's finish-line table.
+
+| ID | Status | Phase | Task | Proof |
+|----|--------|-------|------|-------|
+| I85 | [ ] | 1 | T40 and T48 written and red; `viz.h`, VIZ tags | ctest failures; T2, T5 green |
+| I86 | [ ] | 1 | Engine taps (peaks, VU, scopes, PCM ring), triple buffer, snapshot field | T40 voice half green; T26 green |
+| I87 | [ ] | 1 | Integer FFT and bands on the pump thread; phase correlation | T40, T48 green |
+| I88 | [ ] | 2 | T41 written and red; RP_TRACKER_INFO/CELLS tags and typedefs | ctest failure |
+| I89 | [ ] | 2 | nuade and openmpt tracker hooks, `@cells` directive | T41 green |
+| I90 | [ ] | 3 | T42 written and red; mute golden committed after a listening check of voice 1 removed (agent compares against a render with the voice's samples zeroed) | ctest failure |
+| I91 | [ ] | 3 | Mute mask, MUTE, SOLO, VOICE event mask, RP_MUTE | T42 mute half green, ratchet 25 |
+| I92 | [ ] | 3 | Pitch and tempo tables, PITCH, TEMPO, RP_SET_SPEED | T42 green, ratchet 23 |
+| I93 | [ ] | 4 | T43, T44, T45 written and red; voices-test output | ctest failures |
+| I94 | [ ] | 4 | REPEAT, loops/fade_ms/max_song_ms/silence_ms options, SONG_ENDED reason, stop-after options | T43 green, ratchet 22 |
+| I95 | [ ] | 4 | Early prepare, gapless, crossfade table and mix, `mixed_path` | T44 green |
+| I96 | [ ] | 4 | HOSTQ_LOCAL_TIME, fake clock, SLEEP_TIMER, ALARM | T45 green, ratchet 21 |
+| I97 | [ ] | 5 | T46 written and red; RP_SAMPLE_GET; nuade scan catalogue; openmpt sample table | ctest failure then catalogue lines green |
+| I98 | [ ] | 5 | WAV and 8SVX writers, SAMPLE_LIST/SAMPLE_EXPORT, goldens | T46 green |
+| I99 | [ ] | 5 | T47 written and red; DSP ABI, chain, coefficient tool | ctest failure |
+| I100 | [ ] | 5 | crossfeed plugin, DSP verb, OUT_HEADPHONES default | T47 green, T26 green |
+| I101 | [ ] | 6 | Text UI viz panel and pattern panel, default bindings | panel screen fixtures green |
+| I102 | [ ] | 6 | T39 written and red; fixtures | ctest failure |
+| I103 | [ ] | 6 | Wire to T39; build/amiga green | T39 green, T8 at 21 |
+| I104 | [ ] | 6 | Design doc section 14 status, validation file, full CI run (reason: landing the milestone) | `2026-10-23-m1-3-viz-voices-playback.validation.md` |
 
 ## Open decisions
 
