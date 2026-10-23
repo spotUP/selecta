@@ -398,3 +398,8 @@ add_test(NAME playlist-verbs
     -P "${SEL_EXPECT}")
 set_tests_properties(playlist-verbs PROPERTIES
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/songs")
+
+# codec-optional-arg: a trailing `?` makes only the last argument optional.
+add_executable(codec_test protocol/codec_test.c)
+target_link_libraries(codec_test PRIVATE selecta_core)
+add_test(NAME codec-optional-arg COMMAND codec_test)
