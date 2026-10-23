@@ -2832,25 +2832,6 @@ static void cmd_FLAG(sel_engine* e, const sel_message* m) {
     }
 }
 
-/* Sends every rating still waiting for DEViLBOX (I173, D-M3-12): the pending pushes of the library, oldest first.
- * A rejected push (400) is dropped; one that cannot reach the server stays and ends the pass (the next run retries). */
-static void ratings_flush(sel_engine* e) {
-    char buf[2048];
-    uint32_t rows = 0;
-    const char* p = buf;
-
-    if (e->lib == NULL || !sel_library_rating_pending(e->lib, buf, sizeof buf, &rows) || rows == 0) return;
-    while (*p != '\0') {
-        const char* key = p;
-        const char* stars = key + strlen(key) + 1;
-        int r = sel_devilbox_rating_push(key, atoi(stars));
-
-        if (r == 0) break;
-        (void)sel_library_rating_done(e->lib, key);
-        p = stars + strlen(stars) + 1;
-    }
-}
-
 /* RATE <0..5>: rates the song being played (I173). 0 removes the rating. A modland or hvsc song is also pushed to
  * DEViLBOX (PUT, DELETE for 0); when that cannot happen now the rating stays in the library as pending and goes
  * out on the next run. A local song is rated in the library only. */
@@ -2871,7 +2852,7 @@ static void cmd_RATE(sel_engine* e, const sel_message* m) {
         if (!sel_library_rating_set(e->lib, e->hist_key, (int)stars, remote ? SEL_RATING_QUEUE : SEL_RATING_LOCAL)) {
             sel_engine_report_error(e, "library_failed", "RATE");
         } else if (remote) {
-            ratings_flush(e);
+            sel_library_rating_push(e->lib); /* the HTTP push runs on the library side, not on this thread (I173c) */
         }
     }
 }
@@ -3805,7 +3786,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         strcpy(e->config_dir, cfg->config_dir);
         (void)sel_prefs_load(&e->prefs, e->config_dir);
         sel_devilbox_set_config_dir(e->config_dir);
-        ratings_flush(e); /* ratings left over from a run without the server (I173) */
+        sel_library_rating_push(e->lib); /* ratings left over from a run without the server (I173, I173c) */
     }
     e->state.led_on = strcmp(e->prefs.value[SEL_PREF_OUTPUT_LED], "on") == 0;
     e->state.stereo_width = (uint32_t)strtoul(e->prefs.value[SEL_PREF_MIX_STEREO_WIDTH], NULL, 10);

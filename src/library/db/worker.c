@@ -9,13 +9,33 @@
 
 enum { QUEUE_SLOTS = 16 };
 
+#if !defined(SEL_LIBRARY_NO_THREAD)
+static void call_enter(sel_library* lib) {
+    pthread_mutex_lock(&lib->call_lock);
+}
+
+static void call_leave(sel_library* lib) {
+    pthread_mutex_unlock(&lib->call_lock);
+}
+#else
+static void call_enter(sel_library* lib) {
+    (void)lib;
+}
+
+static void call_leave(sel_library* lib) {
+    (void)lib;
+}
+#endif
+
 int sel_library_run(sel_library* lib, uint32_t req, sel_lib_job* job) {
     sel_message reply;
     int ok;
 
+    call_enter(lib);
     lib->job = job; /* the caller blocks in sel_library_call, so the worker is the only reader */
     ok = sel_library_call(lib, req, &reply);
     lib->job = NULL;
+    call_leave(lib);
     return ok;
 }
 
@@ -56,6 +76,13 @@ int sel_worker_start(sel_library* lib) {
     if (!sel_spsc_init(&lib->requests, lib->host, QUEUE_SLOTS) || !sel_spsc_init(&lib->results, lib->host, QUEUE_SLOTS)) {
         return 0;
     }
+    {
+        pthread_mutexattr_t at;
+        pthread_mutexattr_init(&at);
+        pthread_mutexattr_settype(&at, PTHREAD_MUTEX_RECURSIVE);
+        pthread_mutex_init(&lib->call_lock, &at);
+        pthread_mutexattr_destroy(&at);
+    }
     pthread_mutex_init(&lib->lock, NULL);
     pthread_cond_init(&lib->wake_worker, NULL);
     pthread_cond_init(&lib->wake_caller, NULL);
@@ -71,6 +98,7 @@ void sel_worker_stop(sel_library* lib) {
     pthread_cond_destroy(&lib->wake_worker);
     pthread_cond_destroy(&lib->wake_caller);
     pthread_mutex_destroy(&lib->lock);
+    pthread_mutex_destroy(&lib->call_lock);
     sel_spsc_free(&lib->requests, lib->host);
     sel_spsc_free(&lib->results, lib->host);
 }
@@ -86,9 +114,11 @@ int sel_library_request(sel_library* lib, uint32_t req, const void* payload, sel
         m.args[0].type = SEL_ARG_STR;
         m.args[0].v.s = (const char*)payload;
     }
+    call_enter(lib);
     pthread_mutex_lock(&lib->lock);
     if (!sel_spsc_push(&lib->requests, &m)) {
         pthread_mutex_unlock(&lib->lock);
+        call_leave(lib);
         return 0;
     }
     pthread_cond_signal(&lib->wake_worker);
@@ -96,6 +126,7 @@ int sel_library_request(sel_library* lib, uint32_t req, const void* payload, sel
         pthread_cond_wait(&lib->wake_caller, &lib->lock);
     }
     pthread_mutex_unlock(&lib->lock);
+    call_leave(lib);
     return 1;
 }
 

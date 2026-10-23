@@ -304,6 +304,7 @@ static void print_event(void* ctx, const sel_message* evt) {
  *   @position           SNAPSHOT position_ms=M order=O row=R pattern=P (song.pattern_pos)
  *   @user_stats         USERDATA cue_sets=N cue_gotos=N sticker_ops=N (T81, T82)
  *   @radio              RADIO radio_appends=N min_ahead=N then one `queue=<path>` line per queue row (T88)
+ *   @ratings_wait       the DEViLBOX push thread is idle (I173c; @ratings waits too)
  *   @ratings            RATINGS rating_pushes=N rating_batches=N rating_pending=N (T79)
  *   @ratings_read <source> <n> [<path>...]  batch-read n ratings from DEViLBOX (named paths first), store the own ones (T79)
  *   @share_stats        SHARE links_parsed=N links_made=N songs_opened=N (T84)
@@ -574,6 +575,12 @@ static int cmd_script_file(FILE* f, int argc, char** argv) {
         line[strcspn(line, "\r\n")] = '\0';
         if (line[0] == '\0' || line[0] == '#') {
             continue;
+        }
+        if (strcmp(line, "@ratings") == 0 || strcmp(line, "@ratings_wait") == 0) {
+            sel_library_rating_wait(lib); /* test hook: the DEViLBOX push thread (I173c) is idle after this */
+            if (line[8] != '\0') {
+                continue;
+            }
         }
         if (strcmp(line, "@prefetch_wait") == 0) {
             sel_library_prefetch_wait(lib); /* test hook: the prefetch thread is idle after this */

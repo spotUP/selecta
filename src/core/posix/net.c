@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <netdb.h>
 #include <poll.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +17,9 @@
 #include <time.h>
 #include <unistd.h>
 
+/* The slot table is shared by every thread that talks HTTP (engine, prefetch, DEViLBOX push, I173c): g_lock guards
+ * slot choice and the stats; a slot is reserved (-2) while its connect runs, and a handle belongs to one caller. */
+static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 static int g_fd[SEL_NET_MAX_CONN];
 static int g_init;
 static sel_net_stats g_stats;
@@ -101,7 +105,9 @@ char* sel_net_os_ca_bundle(size_t* len) {
 }
 
 void sel_net_stats_get(sel_net_stats* out) {
+    pthread_mutex_lock(&g_lock);
     *out = g_stats;
+    pthread_mutex_unlock(&g_lock);
 }
 
 static int wait_fd(int fd, short ev, unsigned ms) {
@@ -124,6 +130,7 @@ int sel_net_open(const char* host, unsigned port, unsigned connect_ms) {
     unsigned tport = port;
     int slot, fd = -1, err = SEL_NET_E_CONNECT;
 
+    pthread_mutex_lock(&g_lock);
     table_init();
     if (sel_net_map_lookup(getenv("SELECTA_NET_MAP"), host, addr, sizeof addr, &tport)) {
         target = addr;
@@ -132,18 +139,25 @@ int sel_net_open(const char* host, unsigned port, unsigned connect_ms) {
     /* The guard judges the real target (after the map), so a mapped fixture address passes. */
     if (!sel_net_allowed(getenv("SELECTA_NET_ALLOW"), target)) {
         g_stats.blocked++;
+        pthread_mutex_unlock(&g_lock);
         return SEL_NET_E_BLOCKED;
     }
-    for (slot = 0; slot < SEL_NET_MAX_CONN && g_fd[slot] >= 0; slot++) {
+    for (slot = 0; slot < SEL_NET_MAX_CONN && g_fd[slot] != -1; slot++) {
     }
     if (slot == SEL_NET_MAX_CONN) {
+        pthread_mutex_unlock(&g_lock);
         return SEL_NET_E_TABLE;
     }
+    g_fd[slot] = -2;
+    pthread_mutex_unlock(&g_lock);
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     snprintf(portstr, sizeof portstr, "%u", tport);
     if (getaddrinfo(target, portstr, &hints, &res) != 0) {
+        pthread_mutex_lock(&g_lock);
+        g_fd[slot] = -1;
+        pthread_mutex_unlock(&g_lock);
         return SEL_NET_E_RESOLVE;
     }
     for (ai = res; ai != NULL && fd < 0; ai = ai->ai_next) {
@@ -171,12 +185,13 @@ int sel_net_open(const char* host, unsigned port, unsigned connect_ms) {
         }
     }
     freeaddrinfo(res);
-    if (fd < 0) {
-        return err;
+    pthread_mutex_lock(&g_lock);
+    g_fd[slot] = fd < 0 ? -1 : fd;
+    if (fd >= 0) {
+        g_stats.connects++;
     }
-    g_fd[slot] = fd;
-    g_stats.connects++;
-    return slot;
+    pthread_mutex_unlock(&g_lock);
+    return fd < 0 ? err : slot;
 }
 
 int sel_net_send(int h, const void* data, size_t len, unsigned timeout_ms) {
@@ -233,7 +248,10 @@ int sel_net_recv(int h, void* buf, size_t cap, unsigned timeout_ms) {
 
 void sel_net_close(int h) {
     if (h >= 0 && h < SEL_NET_MAX_CONN && g_fd[h] >= 0) {
-        close(g_fd[h]);
+        int fd = g_fd[h];
+        pthread_mutex_lock(&g_lock);
         g_fd[h] = -1;
+        pthread_mutex_unlock(&g_lock);
+        close(fd);
     }
 }

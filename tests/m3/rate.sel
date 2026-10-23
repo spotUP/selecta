@@ -4,5 +4,6 @@
 # rating_pending=.
 OPEN modland:Protracker/test/play1.mod
 RATE 4
+@ratings_wait
 @ratings_read modland 250 Protracker/test/play1.mod
 @ratings

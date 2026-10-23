@@ -156,6 +156,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             elif self.command == "PUT" and (type(rating) is not int or rating < 1 or rating > 5):
                 self.json_reply(400, {"error": "rating must be an integer 1-5"})
             else:
+                if "slowrate" in item:  # delay knob of T79 (I173c): a push of a "slowrate" key answers after 2 s (below the client first-byte timeout of 3 s)
+                    time.sleep(2)
                 with LOG_LOCK:
                     if self.command == "PUT":
                         RATINGS[(token, source, item)] = rating
