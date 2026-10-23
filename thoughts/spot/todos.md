@@ -263,7 +263,11 @@ Tests T39 to T48 are defined in the plan's finish-line table.
 | I101 | [x] | 6 | Text UI viz panel and pattern panel, default bindings | panel screen fixtures green ; merge c4d422a (422f1de red, f8996a5) |
 | I102 | [x] | 6 | T39 written and red; fixtures | ctest failure; merge e72c31f (T39 red: no viz_frames line) |
 | I103 | [x] | 6 | Wire to T39; build/amiga green | T39 green, T8 at 21; merge 0cf158d (T39 green, T8 at 21, amiga green) |
-| I104 | [ ] | 6 | Design doc section 14 status, validation file, full CI run (reason: landing the milestone) | `2026-10-23-m1-3-viz-voices-playback.validation.md` |
+| I104 | [x] | 6 | Design doc section 14 status, validation file, full CI run (reason: landing the milestone) | `2026-10-23-m1-3-viz-voices-playback.validation.md`; commit 31a931a (validation: 11 of 13 verified, 7 manual open; gaps in I104a-d) |
+| I104a | [ ] | 7 | T26 no-alloc with crossfeed DSP on (T47 clause) | no-alloc test with --dsp crossfeed green |
+| I104b | [ ] | 7 | T46 nuade sample scan path test | test through selecta-cli on a nuade module green |
+| I104c | [ ] | 7 | Key-level tests for pitch, tempo and solo keys (`}` `{` `>` `<` `S` `0`) | keys file test asserts engine stats move |
+| I104d | [ ] | 7 | Note dots and phase view in text UI pattern/voice panel per plan | golden screen plus counter |
 
 ## Implementation M2 (plan: thoughts/shared/plans/2026-10-24-m2-amiga.md, status: approved 2026-10-24 autonomous with defaults D-M2-1..8 (Q35-Q42), starts after I104)
 
