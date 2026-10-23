@@ -230,9 +230,9 @@ Tests T28 to T38 are defined in the plan's finish-line table. A row is ticked on
 | I76 | [x] | 5 | T34 written and red; `keybind.c`, `keys.conf`, `--bindings` | T34 green; T19 unchanged; red "keybind.h not found"; commit 017d9b8, merge 8534239 |
 | I77 | [x] | 5 | T36 written and red; `cmdline.c`, history, `:!` spawn | T36 green; red link failure, selecta-cmdline red (Volume 100 vs 90); commit 9f82af0, merge 8534239 |
 | I78 | [x] | 5 | T37 written and red; `SEL_CMD_AREA`, COMMANDS `area`, `palette.c`, help overlay | T37 green, T5/T6 goldens updated ; red "palette.h not found"; no T5/T6 golden held COMMANDS output; commits 9fb9185, 0f07794, merge 8534239 |
-| I79 | [ ] | 6 | T35 written and red; socket in the shell, `selecta-cli send` | T35 green |
-| I80 | [ ] | 6 | `integration.h`, host side, `nowplaying-test`; T38 red then green | T38 green |
-| I81 | [ ] | 6 | macOS Now Playing and Linux MPRIS plugins | build green; manual check 2 |
+| I79 | [x] | 6 | T35 written and red; socket in the shell, `selecta-cli send` | T35 green; red `control-socket ***Failed` then green; 21c13d7, merge 137b413 |
+| I80 | [x] | 6 | `integration.h`, host side, `nowplaying-test`; T38 red then green | T38 green; red `integration-nowplaying ***Failed` then green; 21c13d7, merge 137b413 |
+| I81 | [~] | 6 | macOS Now Playing and Linux MPRIS plugins | macOS plugin builds; MPRIS UNVERIFIED (no libsystemd here); manual check 2 open; 21c13d7, merge 137b413 |
 | I82 | [ ] | 7 | T28 written and red; fixtures | ctest failure |
 | I83 | [ ] | 7 | Wire everything to T28 | T28 green, T8 at 27, build/amiga green |
 | I84 | [ ] | 7 | Design doc section 14 status, validation file, full CI run (reason: landing the milestone) | `2026-10-23-m1-2-playlists-views-control.validation.md` |
