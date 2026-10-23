@@ -12,6 +12,7 @@ static const char* const k_actions[] = {
     "quit",       "info",       "command",      "palette",       "help",         "add_file",
     "remove_entry", "play_pause", "next_style",   "next_group",    "back",         "switch_view",
     "subsong_prev", "subsong_next", "page_up",    "page_down",    "mark",
+    "library",    "search",
     "viz",        "pattern",    "solo",         "voice1",        "voice2",       "voice3",
     "voice4",     "voice5",     "voice6",       "voice7",        "voice8",       "voice9",
 };
@@ -136,7 +137,8 @@ static const struct {
     {"S", "@solo"},            {"}", "PITCH +100"},
     {"{", "PITCH -100"},       {">", "TEMPO +5"},
     {"<", "TEMPO -5"},
-    {"L", "FILTER_LED toggle"}, {"(", "MIX_STEREO_WIDTH -10"},
+    {"L", "@library"},          {"/", "@search"},
+    {"M-l", "FILTER_LED toggle"}, {"(", "MIX_STEREO_WIDTH -10"},
     {")", "MIX_STEREO_WIDTH +10"},
 };
 

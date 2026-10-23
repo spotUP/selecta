@@ -66,13 +66,16 @@ typedef struct tui {
     uint32_t key_count;
     uint32_t pool_next;
     char pool[TUI_POOLS][TUI_POOL_BYTES];
-    sel_tag stats[13];
+    sel_tag stats[15];
     uint32_t frames;    /* flushes that wrote bytes */
     uint32_t hash;      /* FNV-1a over every flushed byte */
     int headless;       /* --size: fixed grid, keys from stdin, no terminal control */
     uint32_t viz_frames, scope_reads, pattern_rows; /* T39 sentinels */
     uint32_t dot_rows, phase_points; /* I104d sentinels */
     uint32_t cmdline_runs, palette_opens; /* T28 sentinels */
+    uint32_t lib_opens, lib_searches;      /* T98 sentinels */
+    int lib_screen;                        /* the query view is the Library screen */
+    int lib_empty_query;                   /* the last library query was empty (all songs) */
 } tui;
 
 /* ---- commands ---- */
@@ -111,6 +114,14 @@ static void tui_add_cursor_file(tui* u) {
     const sel_view_state* v = sel_engine_state(u->engine)->view;
     uint32_t i;
     char path[512];
+    if (v != NULL && v->source == SEL_VIEW_QUERY && v->cursor >= v->window_start && v->cursor - v->window_start < v->row_n &&
+        v->rows[v->cursor - v->window_start].kind != SEL_ROW_NODE) {
+        const char* key = sel_engine_view_cursor_key(u->engine);
+        if (key != NULL) {
+            tui_sendf(u, "QUEUE_ADD %s", key);
+        }
+        return;
+    }
     if (v == NULL || v->source != SEL_VIEW_BROWSE || v->browse_path == NULL || v->cursor < v->window_start) {
         return;
     }
@@ -233,6 +244,40 @@ static void tui_run_program(tui* u, const char* line) {
     }
 }
 
+/* Library screen (design doc 9b, 9c): the query view over LIBRARY_SEARCH. The first
+ * opening lists all songs (the empty query) as a tree grouped by format. */
+static void tui_library_search(tui* u, const char* query) {
+    char line[TXT_CMD_LINE * 2 + 32];
+    size_t n = (size_t)snprintf(line, sizeof line, "LIBRARY_SEARCH \"");
+    const char* p;
+    for (p = query; *p != '\0' && n + 4u < sizeof line; p++) {
+        if (*p == '"' || *p == '\\') {
+            line[n++] = '\\';
+        }
+        line[n++] = *p;
+    }
+    line[n++] = '"';
+    line[n] = '\0';
+    tui_send(u, line);
+    tui_send(u, "VIEW_SOURCE query");
+    if (!u->lib_screen) {
+        u->lib_opens++;
+        tui_send(u, "VIEW_STYLE tree");
+        tui_send(u, "VIEW_GROUP format");
+    }
+    u->lib_screen = 1;
+    u->lib_searches++;
+    u->lib_empty_query = query[0] == '\0';
+}
+
+static void tui_library_open(tui* u) {
+    const sel_view_state* v = sel_engine_state(u->engine)->view;
+    if (!u->lib_screen || v == NULL || v->source != SEL_VIEW_QUERY) {
+        u->lib_screen = 0;
+        tui_library_search(u, "");
+    }
+}
+
 /* UI-local actions (`@name` in the binding table). Returns 0 for an unknown name. */
 static int tui_local(tui* u, const char* name, const txt_key* k) {
     const sel_state* s = sel_engine_state(u->engine);
@@ -254,7 +299,22 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
             tui_send(u, "VIEW_ACTIVATE");
         }
     } else if (strcmp(name, "switch_view") == 0) {
-        tui_send(u, s->view != NULL && s->view->source == SEL_VIEW_BROWSE ? "VIEW_SHOW queue" : "VIEW_SHOW browse");
+        /* Browse, Queue, Library, Browse ... */
+        uint32_t src = s->view != NULL ? s->view->source : SEL_VIEW_QUEUE;
+        if (src == SEL_VIEW_BROWSE) {
+            u->lib_screen = 0;
+            tui_send(u, "VIEW_SHOW queue");
+        } else if (src == SEL_VIEW_QUEUE) {
+            tui_library_open(u);
+        } else {
+            u->lib_screen = 0;
+            tui_send(u, "VIEW_SHOW browse");
+        }
+    } else if (strcmp(name, "library") == 0) {
+        tui_library_open(u);
+    } else if (strcmp(name, "search") == 0) {
+        txt_cmdline_open(&u->cmd);
+        u->cmd_mode = 2;
     } else if (strcmp(name, "play_pause") == 0) {
         tui_send(u, s->play == SEL_STOPPED ? "PLAY" : "PAUSE");
     } else if (strcmp(name, "subsong_prev") == 0) {
@@ -303,6 +363,13 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
 static void tui_cmd_key(tui* u, const txt_key* k) {
     txt_cmd_result r = txt_cmdline_key(&u->cmd, k->code, k->mods);
     if (r == TXT_CMD_EDITING) {
+        return;
+    }
+    if (u->cmd_mode == 2) { /* the search prompt: an empty line lists all songs */
+        u->cmd_mode = 0;
+        if (r == TXT_CMD_SUBMIT) {
+            tui_library_search(u, txt_cmdline_text(&u->cmd));
+        }
         return;
     }
     u->cmd_mode = 0;
@@ -526,10 +593,10 @@ static const char* tui_leaf(const char* path) {
 
 /* Queue heading: the entry count, or the grouping key and the drilldown
  * breadcrumb of picked values. */
-static void tui_queue_title(char* buf, size_t cap, const sel_view_state* v) {
+static void tui_queue_title(char* buf, size_t cap, const sel_view_state* v, int u_lib) {
     uint32_t i;
     size_t n;
-    const char* what = v->source == SEL_VIEW_QUERY ? "Query" : "Queue";
+    const char* what = v->source == SEL_VIEW_QUERY ? (u_lib ? "Library" : "Query") : "Queue";
     if (v->style == SEL_VIEW_STYLE_REGULAR || v->group == NULL) {
         snprintf(buf, cap, "%s  %u %s", what, (unsigned)v->row_count, v->source == SEL_VIEW_QUERY ? "results" : "entries");
         return;
@@ -552,9 +619,15 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
     if (v->source == SEL_VIEW_BROWSE) {
         snprintf(buf, sizeof buf, "Browse  %s", tui_leaf(v->browse_path));
     } else {
-        tui_queue_title(buf, sizeof buf, v);
+        tui_queue_title(buf, sizeof buf, v, u->lib_screen);
     }
     txt_grid_text(&u->grid, 1, 2, buf, width - 1u, title);
+    if (u->lib_screen && v->source == SEL_VIEW_QUERY && v->row_count == 0) {
+        txt_grid_text(&u->grid, 1, 3,
+                      u->lib_empty_query ? "Library is empty: scan a folder with :LIBRARY_SCAN <folder>"
+                                         : "No songs match the search",
+                      width - 1u, tui_style(u, TXT_ROLE_DIM));
+    }
     for (i = 0; i < v->row_n && i < tui_main_rows(u); i++) {
         const sel_view_row* r = &v->rows[i];
         uint32_t y = 3u + i;
@@ -918,12 +991,18 @@ static void tui_draw(tui* u) {
     if (u->cmd_mode || u->cmd.status[0] != '\0') {
         char line[TXT_CMD_LINE + TXT_CMD_STATUS + 8];
         if (u->cmd_mode) {
-            snprintf(line, sizeof line, ":%s%s%s", txt_cmdline_text(&u->cmd), u->cmd.status[0] ? "   " : "", u->cmd.status);
+            snprintf(line, sizeof line, "%c%s%s%s", u->cmd_mode == 2 ? '/' : ':', txt_cmdline_text(&u->cmd), u->cmd.status[0] ? "   " : "", u->cmd.status);
         } else {
             snprintf(line, sizeof line, "%s", u->cmd.status);
         }
         txt_grid_fill(&u->grid, 0, u->grid.rows - 1u, u->grid.cols, 1, ' ', tui_style(u, TXT_ROLE_NORMAL));
         txt_grid_text(&u->grid, 1, u->grid.rows - 1u, line, u->grid.cols - 1u, tui_style(u, TXT_ROLE_NORMAL));
+        return;
+    }
+    if (u->lib_screen && s->view != NULL && s->view->source == SEL_VIEW_QUERY) {
+        txt_grid_text(&u->grid, 1, u->grid.rows - 1u,
+                      "Enter Play  a Add to queue  / Search  v View style  g Group  Tab Browse  L Library  Quit",
+                      u->grid.cols - 1u, tui_style(u, TXT_ROLE_DIM));
         return;
     }
     txt_grid_text(&u->grid, 1, u->grid.rows - 1u,
@@ -1215,8 +1294,12 @@ static const sel_tag* tui_stats(void* state) {
     u->stats[10].value = u->frames;
     u->stats[11].tag = SEL_UI_STAT_HASH;
     u->stats[11].value = u->hash;
-    u->stats[12].tag = SEL_TAG_END;
-    u->stats[12].value = 0;
+    u->stats[12].tag = SEL_UI_STAT_LIBRARY_OPENS;
+    u->stats[12].value = u->lib_opens;
+    u->stats[13].tag = SEL_UI_STAT_LIBRARY_SEARCHES;
+    u->stats[13].value = u->lib_searches;
+    u->stats[14].tag = SEL_TAG_END;
+    u->stats[14].value = 0;
     return u->stats;
 }
 
