@@ -1,0 +1,22 @@
+# T65 play-query (plan 2026-10-25-m3-library.md, Phase 2, I150). Run with the
+# working directory set to build/host/tests/songs and
+# `--catalogue tests/m3/catalogue.tsv`. Directives (script-only):
+#   @results          print RESULTS n key,key,... of the last search
+#   @library_stats    print LIBRARY searches=N fts_queries=N songs_opened=N
+# The saved view and the inline query it stands for return the same keys.
+LIBRARY_SEARCH format:mod
+@results
+PLAY_QUERY format:mod
+@queue
+QUEUE_ADD_QUERY format:xm
+@queue
+VIEW_SAVE xmfans format:xm
+LIBRARY_SEARCH view:xmfans
+@results
+LIBRARY_SEARCH format:xm
+@results
+LIBRARY_SEARCH view:nosuchview
+LIBRARY_SEARCH nosuchword
+@results
+VIEW_SOURCE query
+@library_stats

@@ -1,0 +1,10 @@
+# T64 library-search golden: query<TAB>fts_queries<TAB>result keys in key order (see library_search.sh)
+lizardking	1	selecta-test-mk.mod selecta-test.mod
+tune	1	selecta-test-mk.mod selecta-test.mod
+purple	1	modland:p/purple.xm
+nosuchword	1
+format:xm	0	modland:p/purple.xm
+year:1995..1997	0	modland:j/jester.it modland:p/purple.xm selecta-test-mk.mod
+artist:/^liz.*king$/	0	selecta-test-mk.mod selecta-test.mod
+name:/^[jz][a-z]+.[a-z]+$/	0	modland:j/jester.it modland:z/zak.s3m
+bogus:x	0	ERROR unknown_key

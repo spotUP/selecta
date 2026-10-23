@@ -1,0 +1,8 @@
+# T66 view-library-source. The shell runs `--exec "LIBRARY_SEARCH lizardking"` and
+# `--exec "VIEW_SOURCE query"` first; the keys move to the second result and
+# cycle the view style once round (regular, tree, drilldown, regular).
+Down
+v
+v
+v
+wait 500

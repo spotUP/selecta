@@ -854,3 +854,28 @@ if(NOT SEL_AMIGA)
       "${CMAKE_CURRENT_SOURCE_DIR}/m3/query.golden")
   set_tests_properties(query-compile PROPERTIES LABELS m3)
 endif()
+
+# M3 Phase 2b: T64 library-search, T65 play-query, T66 view-library-source (I149-I151).
+if(NOT SEL_AMIGA)
+  add_test(NAME library-search
+    COMMAND sh m3/library_search.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/search.golden
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+  set_tests_properties(library-search PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_searches=9")
+
+  add_test(NAME play-query
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/play_query.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/play_query.sel
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/play_query.expected
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
+  set_tests_properties(play-query PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "play_query_ok")
+
+  add_test(NAME view-library-source
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv"
+      "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m3/view_query.keys"
+      "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m3/view_query.screen"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/view_query"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/view_query.cmake")
+  set_tests_properties(view-library-source PROPERTIES LABELS m3)
+endif()
