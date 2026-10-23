@@ -39,6 +39,7 @@
 #include "devilbox_lyrics.h"
 #include "cache.h"
 #include "share.h"
+#include "stream_open.h"
 #if !defined(SEL_NO_ANALYSE)
 #include "loudness.h"
 #endif
@@ -1203,6 +1204,9 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size) {
             return NULL;
         }
         path = cached;
+    }
+    if (sel_stream_is_url(path) || sel_stream_is_pipe(path)) {
+        return sel_stream_read(e->host, path, size); /* I195: URL or pipe, the whole stream in memory */
     }
     f = fopen(path, "rb");
     if (f == NULL) {
