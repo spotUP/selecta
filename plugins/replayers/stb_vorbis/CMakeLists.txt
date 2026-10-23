@@ -8,10 +8,3 @@ set_target_properties(selecta_stb_vorbis PROPERTIES COMPILE_OPTIONS "-Wall")
 
 sel_add_plugin(stb_vorbis 1 adapter.c THIRD_PARTY_INCLUDES "${PROJECT_SOURCE_DIR}/third_party/stb_vorbis")
 target_link_libraries(sel_plugin_stb_vorbis PUBLIC selecta_stb_vorbis)
-
-# I213: this float decoder runs on the FPU when one is fitted. The registry hides it (SEL_RP_NEEDS_FLOAT) on a
-# machine without one, so FPU code never executes there. Only the float decoders get -m68881, never the engine.
-if(SEL_AMIGA)
-  target_compile_options(selecta_stb_vorbis PRIVATE -m68881)
-  target_compile_options(sel_plugin_stb_vorbis PRIVATE -m68881)
-endif()
