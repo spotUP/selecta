@@ -47,6 +47,11 @@ struct sel_library {
     volatile int pf_cancel;  /* set (under pf_lock) to abort the running prefetch download at its next chunk */
     unsigned pf_started, pf_busy, pf_quit;
     unsigned pf_busy_smart;  /* the running request is a smart download (a prefetch request cancels it) */
+    pthread_t rp_thread;     /* DEViLBOX rating push thread, created on the first RATE (rating_push.c, I173c) */
+    pthread_mutex_t rp_lock;
+    pthread_cond_t rp_wake;
+    unsigned rp_started, rp_work, rp_busy, rp_quit;
+    pthread_mutex_t call_lock; /* recursive: one caller at a time owns job and the reply queue (engine, push thread) */
     pthread_t thread;
     pthread_mutex_t lock;
     pthread_cond_t wake_worker;

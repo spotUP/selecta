@@ -17,6 +17,14 @@
 #define BODY_CAP 32768u
 
 static char g_dir[256];
+/* The push thread (rating_push.c, I173c) and the caller both count; builds without threads count plainly (no libatomic). */
+#if defined(SEL_LIBRARY_NO_THREAD)
+#define COUNT_ADD(p) (*(p) += 1u)
+#define COUNT_GET(p) (*(p))
+#else
+#define COUNT_ADD(p) __atomic_fetch_add((p), 1u, __ATOMIC_RELAXED)
+#define COUNT_GET(p) __atomic_load_n((p), __ATOMIC_RELAXED)
+#endif
 static unsigned g_pushes;
 static unsigned g_batches;
 
@@ -207,7 +215,7 @@ int sel_devilbox_rating_push(const char* key, int rating) {
     (void)sel_http_request(&req, text_sink, &b, &res);
     memset(auth, 0, sizeof auth);
     if (res.status == 200) {
-        g_pushes++;
+        COUNT_ADD(&g_pushes);
         return 1;
     }
     return res.status == 400 ? -1 : 0;
@@ -284,7 +292,7 @@ unsigned sel_devilbox_ratings_read(const char* source, const char* const* paths,
         reply[0] = '\0';
         req.url = url;
         req.headers = headers[0] != NULL ? headers : NULL;
-        g_batches++;
+        COUNT_ADD(&g_batches);
         (void)sel_http_request(&req, text_sink, &b, &res);
         if (res.status != 200) break;
         done++;
@@ -301,9 +309,9 @@ unsigned sel_devilbox_ratings_read(const char* source, const char* const* paths,
 }
 
 unsigned sel_devilbox_pushes(void) {
-    return g_pushes;
+    return COUNT_GET(&g_pushes);
 }
 
 unsigned sel_devilbox_batches(void) {
-    return g_batches;
+    return COUNT_GET(&g_batches);
 }
