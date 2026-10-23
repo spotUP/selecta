@@ -175,3 +175,29 @@ int sel_browse_join(char* out, size_t cap, const char* dir, const char* name) {
     }
     return 1;
 }
+
+int sel_path_is_absolute_style(const char* path, int amiga_style) {
+    const char* p;
+    if (path[0] == '/') {
+        return 1;
+    }
+    if (!amiga_style) {
+        return 0;
+    }
+    /* AmigaDOS: "Volume:dir" and "PROGDIR:" are absolute; the volume name is
+     * non-empty and ends at the first ':' before any '/'. */
+    for (p = path; *p && *p != '/'; p++) {
+        if (*p == ':') {
+            return p != path;
+        }
+    }
+    return 0;
+}
+
+int sel_path_is_absolute(const char* path) {
+#if defined(__amigaos__) || defined(AMIGA)
+    return sel_path_is_absolute_style(path, 1);
+#else
+    return sel_path_is_absolute_style(path, 0);
+#endif
+}
