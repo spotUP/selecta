@@ -11,7 +11,7 @@
 static const char* const k_actions[] = {
     "quit",       "info",       "command",      "palette",       "help",         "add_file",
     "remove_entry", "play_pause", "next_style",   "next_group",    "back",         "switch_view",
-    "subsong_prev", "subsong_next", "page_up",    "page_down",
+    "subsong_prev", "subsong_next", "page_up",    "page_down",    "mark",
 };
 
 int txt_action_known(const char* name) {
@@ -123,7 +123,7 @@ static const struct {
     {"i", "@info"},            {"q", "@quit"},
     {":", "@command"},         {"C-p", "@palette"},
     {"?", "@help"},            {"u", "UNDO"},
-    {"C-r", "REDO"},
+    {"C-r", "REDO"},           {"m", "@mark"},
 };
 
 static int find(const txt_bindings* b, uint32_t code, uint32_t mods) {

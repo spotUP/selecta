@@ -398,3 +398,21 @@ if(NOT SEL_AMIGA)
   target_link_libraries(keybind_test PRIVATE selecta_textui selecta_core)
   add_test(NAME keybind-unit COMMAND keybind_test)
 endif()
+
+# T36 reachability (I77): the real shell, keys typed into the command line.
+if(NOT SEL_AMIGA)
+  add_test(NAME selecta-cmdline
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DMOD=${SEL_MKMOD}"
+      "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m12/cmdline.keys"
+      "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m12/cmdline.screen"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/cmdline"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/browse_play.cmake")
+endif()
+
+# T36: the command line. argdump.sh stands in for `:!program`.
+if(NOT SEL_AMIGA)
+  add_executable(cmdline_test ui/cmdline_test.c)
+  target_link_libraries(cmdline_test PRIVATE selecta_textui selecta_core)
+  add_test(NAME cmdline-unit
+    COMMAND cmdline_test "${CMAKE_CURRENT_SOURCE_DIR}/m12/argdump.sh" "${CMAKE_CURRENT_BINARY_DIR}/cmdline_argdump.txt")
+endif()

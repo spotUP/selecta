@@ -14,8 +14,10 @@
 #include <string.h>
 
 #include "grid.h"
+#include "cmdline.h"
 #include "keybind.h"
 #include "keys.h"
+#include "spawn.h"
 #include "term.h"
 #include "theme.h"
 
@@ -26,6 +28,8 @@
 #define TUI_INFO_COLS 30u
 #define TUI_CHROME_ROWS 4u /* two header lines, pane title, status line */
 #define TUI_SEEK_MS 5000
+#define TUI_MARKS 16u
+#define TUI_MARK_BYTES 256u
 #define TUI_VOLUME_STEP 5
 
 typedef struct tui {
@@ -35,6 +39,10 @@ typedef struct tui {
     txt_theme theme;
     txt_keys keys;
     txt_bindings binds;
+    txt_cmdline cmd;
+    int cmd_mode; /* the command line has the keys */
+    char marks[TUI_MARKS][TUI_MARK_BYTES]; /* selected browse files for `!` */
+    uint32_t mark_n;
     txt_term term;
     int have_term;
     char* out; /* flush buffer */
@@ -153,6 +161,65 @@ static void tui_subsong(tui* u, int delta) {
     tui_send(u, line);
 }
 
+/* The path of the browse row under the cursor, or 0. */
+static int tui_cursor_path(const tui* u, char* out, size_t cap) {
+    const sel_view_state* v = sel_engine_state(u->engine)->view;
+    uint32_t i;
+    if (v == NULL || v->source != SEL_VIEW_BROWSE || v->browse_path == NULL || v->cursor < v->window_start) {
+        return 0;
+    }
+    i = v->cursor - v->window_start;
+    if (i >= v->row_n || v->rows[i].kind != SEL_ROW_FILE) {
+        return 0;
+    }
+    return snprintf(out, cap, "%s/%s", v->browse_path, v->rows[i].text) < (int)cap;
+}
+
+/* `m`: toggles the file under the cursor in the selection that `:!` uses. */
+static void tui_mark(tui* u) {
+    char path[TUI_MARK_BYTES];
+    uint32_t i;
+    if (!tui_cursor_path(u, path, sizeof path)) {
+        return;
+    }
+    for (i = 0; i < u->mark_n; i++) {
+        if (strcmp(u->marks[i], path) == 0) {
+            memmove(u->marks[i], u->marks[i + 1u], (u->mark_n - i - 1u) * sizeof u->marks[0]);
+            u->mark_n--;
+            return;
+        }
+    }
+    if (u->mark_n < TUI_MARKS) {
+        strcpy(u->marks[u->mark_n++], path);
+    }
+}
+
+/* `:!program args`: runs the program with the selected files (else the file
+ * under the cursor) appended. The terminal is given back while it runs. */
+static void tui_run_program(tui* u, const char* line) {
+    const char* paths[TUI_MARKS];
+    char cur[TUI_MARK_BYTES];
+    uint32_t n = 0, i;
+    if (u->mark_n > 0) {
+        for (i = 0; i < u->mark_n; i++) {
+            paths[n++] = u->marks[i];
+        }
+    } else if (tui_cursor_path(u, cur, sizeof cur)) {
+        paths[n++] = cur;
+    }
+    if (u->have_term) {
+        txt_term_close(&u->term);
+    }
+    i = (uint32_t)txt_spawn(line, paths, n) == 0 ? 0u : 1u;
+    if (u->have_term) {
+        (void)txt_term_open(&u->term, u->term.in_fd, u->term.out_fd);
+        txt_grid_invalidate(&u->grid);
+    }
+    if (i != 0) {
+        snprintf(u->cmd.status, sizeof u->cmd.status, "Program failed: %s", line);
+    }
+}
+
 /* UI-local actions (`@name` in the binding table). Returns 0 for an unknown name. */
 static int tui_local(tui* u, const char* name, const txt_key* k) {
     const sel_state* s = sel_engine_state(u->engine);
@@ -187,6 +254,11 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
         tui_remove_cursor_entry(u);
     } else if (strcmp(name, "info") == 0) {
         u->info = !u->info;
+    } else if (strcmp(name, "command") == 0) {
+        txt_cmdline_open(&u->cmd);
+        u->cmd_mode = 1;
+    } else if (strcmp(name, "mark") == 0) {
+        tui_mark(u);
     } else if (strcmp(name, "quit") == 0) {
         u->quit = 1;
     } else {
@@ -195,8 +267,32 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
     return 1;
 }
 
+static void tui_cmd_key(tui* u, const txt_key* k) {
+    txt_cmd_result r = txt_cmdline_key(&u->cmd, k->code, k->mods);
+    if (r == TXT_CMD_EDITING) {
+        return;
+    }
+    u->cmd_mode = 0;
+    if (r == TXT_CMD_SUBMIT && txt_cmdline_text(&u->cmd)[0] != '\0') {
+        const char* line = txt_cmdline_text(&u->cmd);
+        if (line[0] == '!') {
+            tui_run_program(u, line + 1);
+        } else {
+            tui_send(u, line);
+        }
+    }
+}
+
 static void tui_key(tui* u, const txt_key* k) {
-    const char* action = txt_bindings_lookup(&u->binds, k->code, k->mods);
+    const char* action;
+    if (u->cmd_mode) {
+        u->key_count++;
+        u->dirty = 1;
+        tui_cmd_key(u, k);
+        return;
+    }
+    u->cmd.status[0] = '\0';
+    action = txt_bindings_lookup(&u->binds, k->code, k->mods);
     if (action == NULL) {
         return; /* not a key the UI knows */
     }
@@ -470,6 +566,17 @@ static void tui_draw(tui* u) {
         tui_info(u, s, width + 2u);
     }
     txt_grid_fill(&u->grid, 0, u->grid.rows - 1u, u->grid.cols, 1, ' ', tui_style(u, TXT_ROLE_DIM));
+    if (u->cmd_mode || u->cmd.status[0] != '\0') {
+        char line[TXT_CMD_LINE + TXT_CMD_STATUS + 8];
+        if (u->cmd_mode) {
+            snprintf(line, sizeof line, ":%s%s%s", txt_cmdline_text(&u->cmd), u->cmd.status[0] ? "   " : "", u->cmd.status);
+        } else {
+            snprintf(line, sizeof line, "%s", u->cmd.status);
+        }
+        txt_grid_fill(&u->grid, 0, u->grid.rows - 1u, u->grid.cols, 1, ' ', tui_style(u, TXT_ROLE_NORMAL));
+        txt_grid_text(&u->grid, 1, u->grid.rows - 1u, line, u->grid.cols - 1u, tui_style(u, TXT_ROLE_NORMAL));
+        return;
+    }
     txt_grid_text(&u->grid, 1, u->grid.rows - 1u,
                   "Up Down Move  Enter Open  Backspace Parent  Tab Queue  Space Pause  Left Right Seek  Info  Quit",
                   u->grid.cols - 1u, tui_style(u, TXT_ROLE_DIM));
