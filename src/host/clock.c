@@ -1,7 +1,13 @@
 #define _POSIX_C_SOURCE 200809L
 #include "host_internal.h"
 
+#include <selecta/machine.h>
+
 #include <time.h>
+
+const char* sel_clock_source(void) {
+    return "monotonic";
+}
 
 /* Milliseconds of wall time from a monotonic clock. clock() is process CPU
  * time: it stands still while the process sleeps (a device-paced shell turn,

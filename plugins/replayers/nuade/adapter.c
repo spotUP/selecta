@@ -450,7 +450,7 @@ static const sel_tag* rp_metadata(void* state) {
 
 /* Filled at run time: a function pointer cast to an integer is not a
  * constant expression in C99. */
-static sel_tag g_hooks[16];
+static sel_tag g_hooks[19];
 static sel_tag g_desc[5];
 /* Built by the registry walk at entry: every usable player's id, and the
  * union of their extensions. A list that would overflow its buffer fails the
@@ -536,7 +536,12 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[12], SEL_RP_TRACKER_INFO, SEL_TAG_FN(rp_tracker_info));
     set(&g_hooks[13], SEL_RP_TRACKER_CELLS, SEL_TAG_FN(rp_tracker_cells));
     set(&g_hooks[14], SEL_RP_SAMPLE_GET, SEL_TAG_FN(rp_sample_get));
-    set(&g_hooks[15], SEL_TAG_END, 0);
+    /* Needs: 68020 build, floating point in the voice shim (pending the T60 per-player
+     * measurement), and a 1.85 MB runtime image (fast RAM counts). */
+    set(&g_hooks[15], SEL_RP_MIN_CPU, 68020);
+    set(&g_hooks[16], SEL_RP_NEEDS_FLOAT, 1);
+    set(&g_hooks[17], SEL_RP_MEMORY, 2097152);
+    set(&g_hooks[18], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "nuade");

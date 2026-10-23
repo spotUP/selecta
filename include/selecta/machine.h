@@ -33,9 +33,25 @@ typedef enum sel_tier {
  * process (static storage; the next call refills it). Tags: SEL_MACHINE_CPU
  * (sel_cpu), CPU_SPEED and FPU_SPEED (loop iterations per millisecond, FPU_SPEED 0
  * without an FPU), FPU (0 or 1), FAST_RAM and CHIP_RAM (bytes, total),
- * GFX / AUDIO / NET / DISK (strings, "unknown" until their probes exist),
+ * GFX ("OCS", "ECS" or "AGA", suffix "+RTG" with a graphics card) and AUDIO (comma list: "paula",
+ * "paula,ahi") on Amiga, NET / DISK (strings, "unknown" until their probes exist),
  * TIER (sel_tier). Uses host->clock_ms for the speed loop. No floating point. */
 const sel_tag* sel_machine_probe(const sel_host* host);
+
+/* Fake machines for tests and `--machine`: "a500" (68000, no FPU, 512 KiB chip), "a1200"
+ * (68020, no FPU, 2 MiB chip), "a1200-fpu" (68030 with FPU, 2 MiB chip, 4 MiB fast), "a060"
+ * (68060 with FPU, 2 MiB chip, 64 MiB fast). Same layout as sel_machine_probe; NULL for an unknown
+ * name. Static storage, valid for the life of the process. */
+const sel_tag* sel_machine_fake(const char* name);
+
+/* Forces the tier of every later probe (the `--tier` option); a negative value clears it. */
+void sel_machine_set_tier_override(int tier);
+/* Tier named "text", "planar", "rtg" or "gpu"; -1 for anything else. */
+int sel_machine_tier_by_name(const char* name);
+
+/* Where host->clock_ms gets its time: "eclock" (Amiga timer.device), "datestamp" (Amiga without
+ * timer.device, e.g. vamos) or "monotonic" (desktop). Opens the Amiga timer on first use. */
+const char* sel_clock_source(void);
 
 /* Number of times sel_machine_probe has run in this process (test sentinel). */
 uint32_t sel_machine_probe_calls(void);

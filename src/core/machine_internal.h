@@ -10,6 +10,8 @@ typedef struct sel_machine_raw {
     uintptr_t fast_ram;
     uintptr_t chip_ram;
     sel_tier tier;
+    const char* gfx;   /* "OCS" "ECS" "AGA" ..., NULL = not probed */
+    const char* audio; /* "paula", "paula,ahi", ..., NULL = not probed */
 } sel_machine_raw;
 
 /* Implemented once per platform in src/core/<os>/machine.c. */

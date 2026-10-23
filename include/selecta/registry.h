@@ -3,6 +3,7 @@
 #ifndef SELECTA_REGISTRY_H
 #define SELECTA_REGISTRY_H
 
+#include <selecta/machine.h>
 #include <selecta/plugin.h>
 
 SEL_EXTERN_C_BEGIN
@@ -13,8 +14,26 @@ typedef struct sel_lint_report {
     uint32_t duplicate_tags; /* same tag twice in one list */
 } sel_lint_report;
 
-/* Calls every entry once; returns the number of plugins that answered. */
+/* Counters of the machine filter from the last init (test sentinels). A plugin missing several
+ * needs counts once in `filtered` and once per unmet need. */
+typedef struct sel_registry_stats {
+    uint32_t total;              /* plugins that answered */
+    uint32_t filtered;           /* removed by the machine filter */
+    uint32_t hidden_min_cpu;     /* SEL_RP_MIN_CPU above the machine CPU */
+    uint32_t hidden_needs_float; /* SEL_RP_NEEDS_FLOAT without an FPU */
+    uint32_t hidden_memory;      /* SEL_RP_MEMORY above chip plus fast RAM */
+    uint32_t hidden_chip;        /* SEL_OUT_MEM_CHIP above chip RAM */
+} sel_registry_stats;
+
+/* Calls every entry once; keeps the plugins the machine can run (a sel_machine tag list, NULL =
+ * no filter, the desktop probe passes everything). Returns the number kept. */
+uint32_t sel_registry_init_machine(const sel_host* host, const sel_tag* machine);
+/* sel_registry_init_machine(host, NULL). */
 uint32_t sel_registry_init(const sel_host* host);
+const sel_registry_stats* sel_registry_get_stats(void);
+/* Plugin with the highest SEL_RP_PRIORITY among those listing `format` in SEL_RP_FORMATS (ties:
+ * first registered); NULL when none. */
+const sel_tag* sel_registry_format_owner(const char* format);
 uint32_t sel_registry_count(void);
 const sel_tag* sel_registry_get(uint32_t index);
 /* First plugin with this kind and PLUGIN_ID; NULL when absent. */

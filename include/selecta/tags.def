@@ -48,6 +48,16 @@ SEL_TAG(RP, TRACKER_CELLS,     0x1012, PTR)
 SEL_TAG(RP, MUTE,              0x1013, PTR)
 SEL_TAG(RP, SET_SPEED,         0x1014, PTR)
 SEL_TAG(RP, SAMPLE_GET,        0x1015, PTR)
+/* Declared needs (M2, design doc section 14): the registry machine filter hides a plugin whose
+ * needs the probed machine cannot meet; among plugins claiming the same format the highest
+ * PRIORITY wins. MIN_CPU: 68000, 68010, 68020, ... as plain numbers; NEEDS_FLOAT: 1 = needs an
+ * FPU; MEMORY: bytes of chip plus fast RAM; PRIORITY: signed, default 0; CONFIG: per-replayer
+ * option list. */
+SEL_TAG(RP, MIN_CPU,           0x1016, INT)
+SEL_TAG(RP, NEEDS_FLOAT,       0x1017, INT)
+SEL_TAG(RP, MEMORY,            0x1018, INT)
+SEL_TAG(RP, PRIORITY,          0x1019, INT)
+SEL_TAG(RP, CONFIG,            0x101A, LIST)
 
 SEL_TAG(OUT, NAME,             0x2000, STR)
 SEL_TAG(OUT, SINK,             0x2001, INT)
@@ -64,6 +74,7 @@ SEL_TAG(OUT, STAT_FRAMES,      0x200B, INT)
 SEL_TAG(OUT, DIRECT_VOLUME,    0x200C, INT)
 SEL_TAG(OUT, HEADPHONES,       0x200D, INT)
 SEL_TAG(OUT, STAT_CALLBACKS,   0x200E, INT)
+SEL_TAG(OUT, MEM_CHIP,         0x200F, INT) /* bytes of chip RAM the output needs */
 
 /* DSP plugin rows (design doc section 5, include/selecta/dsp.h). */
 SEL_TAG(DSP, NAME,             0x3000, STR)

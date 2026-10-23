@@ -1,5 +1,7 @@
-/* plugins [--lint]: lists the static registry; --lint walks every
- * descriptor and fails on unknown or duplicate tags (T5). */
+/* plugins [--lint] [--owner <format>]: lists the static registry; --lint walks every
+ * descriptor and fails on unknown or duplicate tags (T5). `--machine <name>` lists what a fake
+ * machine (sel_machine_fake) can run, `--stats` prints the registry filter counters (T49). */
+#include <selecta/machine.h>
 #include <selecta/registry.h>
 
 #include "cli.h"
@@ -47,13 +49,34 @@ static int formats(const char* plugin, uint32_t count) {
 }
 
 int sel_cli_plugins(int argc, char** argv) {
-    uint32_t i, n = sel_registry_init(sel_host_default());
+    uint32_t i, n;
+    const sel_tag* machine = NULL;
+    int stats = 0;
+    int a;
+
+    for (a = 0; a < argc; a++) {
+        if (strcmp(argv[a], "--machine") == 0 && a + 1 < argc) {
+            machine = sel_machine_fake(argv[++a]);
+            if (machine == NULL) {
+                fprintf(stderr, "unknown machine %s (a500, a1200, a1200-fpu, a060)\n", argv[a]);
+                return 1;
+            }
+        } else if (strcmp(argv[a], "--stats") == 0) {
+            stats = 1;
+        }
+    }
+    n = sel_registry_init_machine(sel_host_default(), machine);
     if (argc > 0 && strcmp(argv[0], "--lint") == 0) {
         sel_lint_report r;
         sel_registry_lint(&r);
         printf("plugins=%u unknown_tags=%u duplicate_tags=%u\n", (unsigned)r.plugins,
                (unsigned)r.unknown_tags, (unsigned)r.duplicate_tags);
         return (r.unknown_tags || r.duplicate_tags) ? 1 : 0;
+    }
+    if (argc > 1 && strcmp(argv[0], "--owner") == 0) {
+        const sel_tag* o = sel_registry_format_owner(argv[1]);
+        printf("owner=%s\n", o != NULL ? (const char*)sel_tag_find(o, SEL_PLUGIN_ID, (uintptr_t) "?") : "none");
+        return 0;
     }
     if (argc > 1 && strcmp(argv[0], "--formats") == 0) {
         return formats(argv[1], n);
@@ -63,6 +86,14 @@ int sel_cli_plugins(int argc, char** argv) {
         printf("%s kind=%u version=%u\n", (const char*)sel_tag_find(d, SEL_PLUGIN_ID, (uintptr_t) "?"),
                (unsigned)sel_tag_find(d, SEL_PLUGIN_KIND, 0),
                (unsigned)sel_tag_find(d, SEL_PLUGIN_VERSION, 0));
+    }
+    if (stats) {
+        const sel_registry_stats* st = sel_registry_get_stats();
+        printf("registry_total=%u\nfiltered=%u\nhidden_min_cpu=%u\nhidden_needs_float=%u\n"
+               "hidden_memory=%u\nhidden_chip=%u\n",
+               (unsigned)st->total, (unsigned)st->filtered, (unsigned)st->hidden_min_cpu,
+               (unsigned)st->hidden_needs_float, (unsigned)st->hidden_memory,
+               (unsigned)st->hidden_chip);
     }
     return 0;
 }
