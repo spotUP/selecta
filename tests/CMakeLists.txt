@@ -713,6 +713,11 @@ if(NOT SEL_AMIGA)
   # T57 library browse under vamos, T58 ToolTypes = CLI.
   sel_m2_test(amiga-library-browse browse vamos)
   sel_m2_test(amiga-tooltypes-cli tooltypes vamos)
+  # I114 SPSC queue: 1000 messages through a wrapping queue, head/tail published inside the pal guard.
+  foreach(mode desktop vamos)
+    sel_m2_test(spsc-queue run ${mode} -DTAG=I114 "-DARGS1=spsc-selftest"
+      "-DCHECKS1=spsc_pushed==1000,spsc_popped==1000,spsc_publishes==2000")
+  endforeach()
   # T61 per-replayer config.
   sel_m2_test(rp-config-taglist rpconfig desktop)
   sel_m2_test(rp-config-taglist rpconfig vamos)
@@ -724,15 +729,16 @@ if(NOT SEL_AMIGA)
     set_tests_properties(no-float-interrupt PROPERTIES FIXTURES_REQUIRED amiga_cli)
   endif()
 
-  # Rig tests (T56, T59, T60), label rig: skipped (never passed) while the rig is down.
+  # Rig tests (T56, T58 priority read-back, T59, T60), label rig: skipped (never passed) while the rig is down.
   set(SEL_RIG_DIR "$ENV{HOME}/Code/UP-Term/vtcon/tools/rig")
-  foreach(rt T56:rig-selecta-upterm T59:rig-ahi-render T60:rig-nofpu-voice-budget)
+  foreach(rt T56:rig-selecta-upterm T58:rig-task-priority T59:rig-ahi-render T60:rig-nofpu-voice-budget)
     string(REPLACE ":" ";" parts "${rt}")
     list(GET parts 0 tag)
     list(GET parts 1 name)
     add_test(NAME ${name}
       COMMAND "${CMAKE_COMMAND}" -DTAG=${tag} "-DRIG_DIR=${SEL_RIG_DIR}"
         "-DSELECTA=${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta/selecta" "-DMOD=${SEL_TESTMOD}"
+        "-DSELECTA_CLI=${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta-cli/selecta-cli"
         "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/${name}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
     set_tests_properties(${name} PROPERTIES LABELS rig RESOURCE_LOCK rig

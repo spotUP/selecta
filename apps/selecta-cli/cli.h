@@ -26,6 +26,15 @@ int sel_cli_machine(int argc, char** argv);
  * stats. Exits 77 when the output reports no device. */
 int sel_cli_play(int argc, char** argv);
 
+/* library browse <dir> (T57): LIBRARY_BROWSE through the engine; prints `dir_entries=<n>`. */
+int sel_cli_library(int argc, char** argv);
+
+/* --dry-run [--tooltypes <file>] [KEY=VALUE ...] (T58): parses the start options, prints opts=, prefs_hash=, task_pri=. */
+int sel_cli_dry_run(int argc, char** argv);
+
+/* spsc-selftest (I114): 1000 messages through a wrapping queue; prints spsc_pushed=, spsc_popped=, spsc_publishes=. */
+int sel_cli_spsc_selftest(void);
+
 /* Shared by render and play (session.c). */
 #include <selecta/engine.h>
 #include <selecta/output.h>

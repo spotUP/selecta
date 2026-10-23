@@ -1,6 +1,15 @@
 #include "spsc.h"
 
+#include "../core/pal.h"
+
 #include <string.h>
+
+/* Head/tail publications so far (sentinel spsc_publishes=). */
+static uint32_t g_publishes;
+
+uint32_t sel_spsc_publishes(void) {
+    return g_publishes;
+}
 
 static uint32_t round_pow2(uint32_t n) {
     uint32_t p = 1;
@@ -33,7 +42,10 @@ int sel_spsc_push(sel_spsc* q, const sel_message* m) {
         return 0;
     }
     q->slots[q->tail & (q->capacity - 1)] = *m;
+    sel_pal_publish_begin(); /* only the index store is guarded; the slot copy above is not */
     q->tail++;
+    g_publishes++;
+    sel_pal_publish_end();
     return 1;
 }
 
@@ -42,6 +54,9 @@ int sel_spsc_pop(sel_spsc* q, sel_message* out) {
         return 0;
     }
     *out = q->slots[q->head & (q->capacity - 1)];
+    sel_pal_publish_begin();
     q->head++;
+    g_publishes++;
+    sel_pal_publish_end();
     return 1;
 }

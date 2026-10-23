@@ -36,6 +36,7 @@ static int usage(FILE* to) {
           "  play <song> --output <id> --seconds <n>  play through a real output, print counters\n"
           "  render <song> --output <wav> --seconds <n> --rate <hz> --resample <name>\n"
           "                             render a song to a WAV file, print counters\n"
+          "  library browse <dir>       list a directory through LIBRARY_BROWSE, print dir_entries=\n"
           "  machine [--tier <name>]    probe the machine, print the sel_machine tags\n",
           to);
     return to == stdout ? 0 : 2;
@@ -524,6 +525,9 @@ int main(int argc, char** argv) {
         return usage(stderr);
     }
     cmd = argv[1];
+    if (strcmp(cmd, "--dry-run") == 0) {
+        return sel_cli_dry_run(argc - 2, argv + 2);
+    }
     if (strcmp(cmd, "version") == 0) {
         return cmd_version();
     }
@@ -568,6 +572,12 @@ int main(int argc, char** argv) {
     }
     if (strcmp(cmd, "play") == 0) {
         return sel_cli_play(argc - 2, argv + 2);
+    }
+    if (strcmp(cmd, "spsc-selftest") == 0) {
+        return sel_cli_spsc_selftest();
+    }
+    if (strcmp(cmd, "library") == 0) {
+        return sel_cli_library(argc - 2, argv + 2);
     }
     if (strcmp(cmd, "render") == 0) {
         return sel_cli_render(argc - 2, argv + 2);

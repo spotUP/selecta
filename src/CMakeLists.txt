@@ -15,6 +15,7 @@ add_library(selecta_core STATIC
   engine/shuffle.c
   engine/view.c
   engine/prefs.c
+  engine/options.c
   engine/format.c
   engine/voices.c
   engine/scheduler.c
@@ -82,9 +83,17 @@ target_link_libraries(selecta_core PUBLIC selecta_library)
 target_include_directories(selecta_core PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/core ${CMAKE_CURRENT_SOURCE_DIR}/host)
 if(SEL_AMIGA)
-  target_sources(selecta_core PRIVATE core/amiga/clock.c core/amiga/machine.c core/amiga/config_mkdir.c)
+  target_sources(selecta_core PRIVATE core/amiga/clock.c core/amiga/machine.c core/amiga/config_mkdir.c core/amiga/pal.c
+    core/amiga/loop.c)
+  # The interrupt and audio-task path: integer only (T54 no-float-interrupt). The object list is generated from
+  # the target, so the test counts what the build produced. Phases 3 and 4 add paula, paula14 and ahi objects here.
+  add_library(selecta_audio_irq OBJECT core/amiga/audio_int.c core/amiga/audio_task.c)
+  target_include_directories(selecta_audio_irq PRIVATE ${PROJECT_SOURCE_DIR}/include)
+  target_sources(selecta_core PRIVATE $<TARGET_OBJECTS:selecta_audio_irq>)
+  file(GENERATE OUTPUT ${PROJECT_BINARY_DIR}/m2-interrupt-objects.txt
+    CONTENT "$<JOIN:$<TARGET_OBJECTS:selecta_audio_irq>,\n>\n")
 elseif(APPLE)
-  target_sources(selecta_core PRIVATE host/clock.c core/macos/machine.c core/macos/config_mkdir.c)
+  target_sources(selecta_core PRIVATE host/clock.c core/macos/machine.c core/macos/config_mkdir.c core/macos/pal.c)
 else()
-  target_sources(selecta_core PRIVATE host/clock.c core/linux/machine.c core/macos/config_mkdir.c)
+  target_sources(selecta_core PRIVATE host/clock.c core/linux/machine.c core/macos/config_mkdir.c core/macos/pal.c)
 endif()

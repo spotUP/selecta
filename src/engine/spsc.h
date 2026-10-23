@@ -18,5 +18,7 @@ void sel_spsc_free(sel_spsc* q, const sel_host* host);
 int sel_spsc_push(sel_spsc* q, const sel_message* m); /* 0 when full */
 int sel_spsc_pop(sel_spsc* q, sel_message* out);      /* 0 when empty */
 uint32_t sel_spsc_count(const sel_spsc* q);
+/* Head/tail publications so far (each one ran inside sel_pal_publish_begin/end). */
+uint32_t sel_spsc_publishes(void);
 
 #endif

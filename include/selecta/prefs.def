@@ -10,3 +10,11 @@ SEL_PREF(VIEW_STATUS_FORMAT, "view.status_format", "%state% %elapsed% / %duratio
 SEL_PREF(UI_HISTORY_SIZE,    "ui.history_size",    "100",                                         SEL_PREF_PLAIN)
 /* crossfeed: auto (on when the output reports headphones), on, off */
 SEL_PREF(DSP_CROSSFEED,      "dsp.crossfeed",      "auto",                                        SEL_PREF_PLAIN)
+/* Start options (one parser for ToolTypes and CLI, src/engine/options.c; keys OUTPUT, PRI, BUFFER, LED). */
+SEL_PREF(OUTPUT_ID,          "output.id",          "",                                            SEL_PREF_PLAIN)
+/* audio task priority; 30 is the default of the interrupt design (plan M2 D-M2-1) */
+SEL_PREF(AUDIO_PRIORITY,     "audio.priority",     "30",                                          SEL_PREF_PLAIN)
+/* output buffer in frames; 0: scaled from the machine */
+SEL_PREF(OUTPUT_BUFFER,      "output.buffer",      "0",                                           SEL_PREF_PLAIN)
+/* Amiga LED (power) filter: on, off */
+SEL_PREF(OUTPUT_LED,         "output.led",         "off",                                         SEL_PREF_PLAIN)

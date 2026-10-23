@@ -7,7 +7,7 @@
 #   SKIP_REGULAR_EXPRESSION "SKIPPED rig not running" so ctest reports Skipped, never Passed.
 # Rig up: runs the scenario for TAG; a missing binary or sentinel is a red failure.
 #
-# Inputs: TAG (T56|T59|T60)  RIG_DIR  SELECTA (Amiga binary)  MOD (selecta-test.mod)  WORK (scratch dir)
+# Inputs: TAG (T56|T58|T59|T60)  RIG_DIR  SELECTA (Amiga binary)  SELECTA_CLI (Amiga selecta-cli)  MOD (selecta-test.mod)  WORK (scratch dir)
 find_program(PYTHON3 python3)
 if(NOT PYTHON3 OR NOT EXISTS "${RIG_DIR}/ami.py")
   message(STATUS "SKIPPED rig not running (python3 or ${RIG_DIR}/ami.py not found)")
@@ -59,6 +59,11 @@ if(TAG STREQUAL "T56")
   ami(ignored type "q")
   fetch(stats "T:selecta-stats")
   m2_check(T56 "${stats}" "paula_ints>=225,paula_ints<=275,underruns==0,out==paula")
+elseif(TAG STREQUAL "T58")
+  # Task priority read back on real exec (vamos stubs SetTaskPri), row I117.
+  ami(ignored put "${SELECTA_CLI}" "RAM:selecta-cli")
+  ami(out exec "RAM:selecta-cli --dry-run PRI=5" 10)
+  m2_check(T58 "${out}" "task_pri_requested==5,task_pri==5")
 elseif(TAG STREQUAL "T59")
   # RENDER-kind song on AHI; swaps = elapsed_ms * rate / buffer_frames / 1000 +-10%.
   ami(ignored exec "RAM:Selecta OUTPUT=AHI --play RAM:selecta-test.mod --seconds 10 --stats T:selecta-stats" 60)
