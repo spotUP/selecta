@@ -52,3 +52,7 @@ GFX=ECS (not AGA) is irrelevant to decode speed.
 - `selecta-cli plugins` and `render` hang silently when `ENVARC:` is unassigned (src/core/config_dir.c uses `ENVARC:Selecta`):
   AmigaDOS opens an invisible requester. `machine` does not hit it. The rig assigns `ENVARC:` and `ENV:` to fix this.
 - rig6 (fs-uae pid 77717) ran concurrently and was not touched. The cycle-exact emulated clock does not depend on host load.
+
+## I213 follow-up (2026-10-23): FPU build, before/after
+
+See thoughts/shared/reports/m3-I213-report.md. After table: not measured (rig run did not produce output); before values are the table above.
