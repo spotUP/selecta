@@ -1,0 +1,4 @@
+  moved: Fasttracker 2/Hans Der Reuter/final pray.xm
+     to: Fasttracker 2/Lioz
+updated: Protracker/Virgill/high density.mod
+deleted: Protracker/Virgill/high-density.mod
