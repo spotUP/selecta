@@ -339,8 +339,9 @@ Tests T62 to T97 are defined in the plan's finish-line table. T8 ratchet target 
 | I154 | [x] | 3 | Vendor mbedTLS, TLS stream wrapper, OS CA store, `SELECTA_CA_FILE` (D-M3-4) | T68 green; T70 ftp-transport green, Amiga TLS/FTP runtime untested (rig T97); merge 78ae1e0 |
 | I155 | [x] | 3 | Passive FTP client (D-M3-5) | T70 green; T70 ftp-transport green, Amiga TLS/FTP runtime untested (rig T97); merge 78ae1e0 |
 | I156 | [ ] | 3 | Mirrors: first-byte ranking, retry next, home mirror first, Amiga route to `/api/mirror/<source>/<path>` | T69 green |
-| I157 | [ ] | 4 | `src/library/source.h` (`sel_source`), source registry, song key helpers, Modland format table, `SEL_SRC_*` tags | key round trip in T72; tag lint green |
-| I158 | [ ] | 4 | `local` source over `sel_browse`: scan into files/songs with probe metadata, LIBRARY_SCAN | T71 scan part green |
+| I157 | [x] | 4 | `src/library/source.h` (`sel_source`), source registry, song key helpers, Modland format table, `SEL_SRC_*` tags | key round trip in T72; tag lint green; T71 scan part and T72 green; SRC_FTS renumbered to 0x7014 at merge; merge 973da89 |
+| I158 | [x] | 4 | `local` source over `sel_browse`: scan into files/songs with probe metadata, LIBRARY_SCAN | T71 scan part green; T71 scan part and T72 green; SRC_FTS renumbered to 0x7014 at merge; merge 973da89 |
+| I158a | [ ] | 4 | Move LIBRARY_SCAN from the cfg library_scan hook onto cfg.library (sel_library) now I149 landed; extend T71 with `library search source:local`; vamos scan test | T71 asserts search hits from scanned files; scan vamos test green |
 | I159 | [ ] | 4 | Archive adapters (D-M3-7), archives browse as folders; xad/xfd on Amiga | T71 archive part green |
 | I160 | [ ] | 4 | `sel_source_rescan(paths)`, folder watcher in `src/core/<os>/watch.c`, Amiga timed rescan | T71 green |
 | I161 | [ ] | 4 | `modland` source: allmods_md5 listing, path parse, `url`/`path_in`, changelog, LIBRARY_SYNC | T72 green |
