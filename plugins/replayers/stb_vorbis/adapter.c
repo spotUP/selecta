@@ -23,8 +23,8 @@ typedef struct vorbis_state {
     uint32_t hz, rate;
     uint32_t channels, total_frames;
     sel_stream_pcm pcm;
-    char title[META_LEN], author[META_LEN];
-    sel_tag meta[7];
+    char title[META_LEN], author[META_LEN], album[META_LEN];
+    sel_tag meta[8];
 } vorbis_state;
 
 /* "OggS", then the Vorbis identification packet (type 1, "vorbis") in the first page. Ogg also carries Opus
@@ -93,6 +93,7 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     vc = stb_vorbis_get_comment(v);
     comment(&vc, "TITLE", s->title);
     comment(&vc, "ARTIST", s->author);
+    comment(&vc, "ALBUM", s->album);
     info->voice_count = 0;
     info->subsong_count = 1;
     info->default_subsong = 0;
@@ -152,6 +153,10 @@ static const sel_tag* rp_metadata(void* state) {
     if (s->author[0] != '\0') {
         s->meta[n].tag = SEL_META_AUTHOR;
         s->meta[n++].value = (uintptr_t)s->author;
+    }
+    if (s->album[0] != '\0') {
+        s->meta[n].tag = SEL_META_RELEASE;
+        s->meta[n++].value = (uintptr_t)s->album;
     }
     s->meta[n].tag = SEL_META_FORMAT;
     s->meta[n++].value = (uintptr_t) "Ogg Vorbis";
