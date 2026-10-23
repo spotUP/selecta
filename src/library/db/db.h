@@ -43,7 +43,9 @@ enum {
     SEL_SONGDB_GET,     /* I182: cached songdb answer of UADE key `key`: reply [0] = 1 when cached; `out` = authors, one per line, "" = not in songdb */
     SEL_SONGDB_PUT,     /* I182: cache UADE key `key` -> authors `value` (lines; NULL = not in songdb) with fetch time `at` */
     SEL_SONGDB_APPLY,   /* I182: rebuild song_composers of song key `key` from authors `value` (lines) */
-    SEL_COMPOSER_NEXT   /* I182: next song with id > `after` that has composer canon `key`: `out` = song key NUL name NUL display NUL, reply [2] = its id (0: none) */
+    SEL_COMPOSER_NEXT,  /* I182: next song with id > `after` that has composer canon `key`: `out` = song key NUL name NUL display NUL, reply [2] = its id (0: none) */
+    SEL_SIMILAR_NEXT,   /* I183: song at row offset `after` of the similar list of song key `key`: `out` = key NUL name NUL genre NUL rating NUL genre_match NUL (decimal text), reply [2] = after + 1 (0: none) */
+    SEL_ALSOBY_NEXT     /* I183: song at row offset `after` among the other songs sharing a composer with song key `key`: `out` = key NUL name NUL composer display NUL, reply [2] = after + 1 (0: none) */
 };
 typedef struct sel_genre_op {
     uint32_t op;       /* SEL_GENRE_* */
@@ -327,6 +329,18 @@ int sel_library_genre_sync(sel_library* lib, sel_genre_stats* stats);
  * step (GET /api/songdb/lookup?hash=<uade key>, cached in songdb_cache). */
 typedef void (*sel_composer_row_fn)(void* ctx, const char* song_key, const char* song_name, const char* composer);
 int sel_library_composer_page(sel_library* lib, const char* name, sel_composer_row_fn fn, void* ctx);
+
+/* Also-by (I183, T86): the other songs that share a composer with song `song_key` (song_composers, canonical
+ * spelling), in library order. Same row callback as the composer page (`composer` = the shared display name).
+ * Returns the row count, or -1 on a library error. */
+int sel_library_also_by(sel_library* lib, const char* song_key, sel_composer_row_fn fn, void* ctx);
+
+/* Similar (I183, T86): every other song ordered by genre match with `song_key` (1 = same genre, case-insensitive;
+ * empty genre never matches), then rating (unrated = 0, higher first), then library order; at most 100 rows.
+ * Returns the row count, or -1 on a library error. */
+typedef void (*sel_similar_row_fn)(void* ctx, const char* song_key, const char* song_name, const char* genre,
+                                   int rating, int genre_match);
+int sel_library_similar(sel_library* lib, const char* song_key, sel_similar_row_fn fn, void* ctx);
 
 uint32_t sel_library_account(const sel_library* lib);
 uint32_t sel_library_heap_size(const sel_library* lib);
