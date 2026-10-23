@@ -1,0 +1,5 @@
+# T76 part 2 (row I167a): the LRU trim runs after LIBRARY_FETCH (src/library/db/fetch.c). The TFMX song is kept,
+# so it and its smpl.* companion survive a budget far below their size; an older unmarked file is evicted.
+@mark kept:modland:TFMX/test/mdat.song
+@budget 10
+LIBRARY_FETCH modland:TFMX/test/mdat.song

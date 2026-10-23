@@ -105,6 +105,7 @@ void sel_library_close(sel_library* lib) {
         return;
     }
     host = lib->host;
+    sel_library_prefetch_stop(lib);
     sel_worker_stop(lib);
     sqlite3_close(lib->db);
     heap_release(host);

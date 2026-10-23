@@ -504,6 +504,24 @@ static int cmd_script(const char* path, int argc, char** argv) {
         if (line[0] == '\0' || line[0] == '#') {
             continue;
         }
+        if (strcmp(line, "@prefetch_wait") == 0) {
+            sel_library_prefetch_wait(lib); /* test hook: the prefetch thread is idle after this */
+            continue;
+        }
+        if (strncmp(line, "@mark ", 6) == 0 && lib != NULL) {
+            char table[8];
+            const char* colon = strchr(line + 6, ':');
+            if (colon != NULL && (size_t)(colon - line - 6) < sizeof table) {
+                memcpy(table, line + 6, (size_t)(colon - line - 6));
+                table[colon - line - 6] = '\0';
+                sel_library_mark(lib, table, colon + 1);
+            }
+            continue;
+        }
+        if (strncmp(line, "@budget ", 8) == 0 && lib != NULL) {
+            sel_library_set_budget(lib, (uint32_t)strtoul(line + 8, NULL, 10));
+            continue;
+        }
         if (line[0] == '@') {
             script_directive(e, line);
             continue;

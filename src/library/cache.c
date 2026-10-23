@@ -381,6 +381,10 @@ static int by_age(const void* a, const void* b) {
     return x->mtime < y->mtime ? -1 : x->mtime > y->mtime ? 1 : 0;
 }
 
+int sel_cache_is_remote(const char* key) {
+    return key != NULL && (strncmp(key, "modland:", 8) == 0 || strncmp(key, "hvsc:", 5) == 0);
+}
+
 uint32_t sel_cache_budget(const sel_tag* machine) {
     uint64_t fast = (uint64_t)sel_tag_find(machine, SEL_MACHINE_FAST_RAM, 0);
 
@@ -393,8 +397,36 @@ uint32_t sel_cache_budget(const sel_tag* machine) {
     return 8u * 1024u * 1024u;
 }
 
+/* Exempt the companions of every exempt entry: entry `<source>/<path>` -> sel_companion_paths(path). */
+static void mark_companions(trim_walk* w, size_t rl, const char* rules, sel_cache_trim_result* out) {
+    char comp[SEL_CACHE_COMPANIONS_MAX][SEL_CACHE_PATH_MAX];
+    unsigned i, j, k, n;
+
+    for (i = 0; i < w->n; i++) {
+        const char* rel = w->e[i].path + rl + 1u;
+        const char* slash = strchr(rel, '/');
+        size_t sl;
+
+        if (!w->e[i].exempt || slash == NULL) {
+            continue;
+        }
+        sl = (size_t)(slash - rel);
+        n = sel_companion_paths(rules, slash + 1, comp, SEL_CACHE_COMPANIONS_MAX);
+        for (k = 0; k < n; k++) {
+            for (j = 0; j < w->n; j++) {
+                const char* r2 = w->e[j].path + rl + 1u;
+
+                if (!w->e[j].exempt && strncmp(r2, rel, sl + 1u) == 0 && strcmp(r2 + sl + 1u, comp[k]) == 0) {
+                    w->e[j].exempt = 1;
+                    out->companion_exempt++;
+                }
+            }
+        }
+    }
+}
+
 void sel_cache_trim(sel_cache* c, uint32_t budget, sel_cache_keep_fn keep, void* ctx, const char* protect,
-                    sel_cache_trim_result* out) {
+                    const char* rules, sel_cache_trim_result* out) {
     trim_walk w;
     char root[SEL_CACHE_PATH_MAX];
     size_t rl;
@@ -423,6 +455,9 @@ void sel_cache_trim(sel_cache* c, uint32_t budget, sel_cache_keep_fn keep, void*
             w.e[i].exempt = 1;
             out->kept_exempt++;
         }
+    }
+    if (rules != NULL && rules[0] != '\0') {
+        mark_companions(&w, rl, rules, out);
     }
     out->bytes_before = total > 0xFFFFFFFFull ? 0xFFFFFFFFu : (uint32_t)total;
     if (total > budget && w.n > 0) {

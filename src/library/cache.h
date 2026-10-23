@@ -39,6 +39,8 @@ typedef struct sel_cache_stats {
     unsigned mirror_tries;    /* transport attempts, all fetches */
     unsigned trim_runs;       /* sel_cache_trim calls (I167 sentinel) */
     unsigned evicted;         /* files removed by trims */
+    unsigned prefetches;      /* prefetch requests finished (I168) */
+    unsigned prefetch_fetches; /* of those, songs the prefetch downloaded (not already cached) */
 } sel_cache_stats;
 
 typedef struct sel_cache {
@@ -79,13 +81,19 @@ typedef struct sel_cache_trim_result {
     uint32_t bytes_after;
     unsigned trimmed;      /* files removed */
     unsigned kept_exempt;  /* files in the cache the keep callback exempted */
+    unsigned companion_exempt; /* further files exempt as companions of an exempt song (I167a) */
 } sel_cache_trim_result;
+
+/* 1 when a queue path is a remote song key `<source>:<path>` of a source with mirrors (modland, hvsc). */
+int sel_cache_is_remote(const char* key);
 
 /* Default budget in bytes for a machine: scaled by the fast RAM tiers the queue also uses
  * (below 8 MB, below 64 MB, more). The disk tag carries no size yet, so RAM decides. */
 uint32_t sel_cache_budget(const sel_tag* machine);
-/* Trim the cache under c->dir to `budget` bytes. keep and protect may be NULL. */
+/* Trim the cache under c->dir to `budget` bytes. keep, protect and rules may be NULL. `rules` are the
+ * SEL_RP_COMPANIONS rules (sel_companion_rules): the companions of an exempt or protected song are exempt
+ * too, found with sel_companion_paths, the lookup the fetch uses (I167a). */
 void sel_cache_trim(sel_cache* c, uint32_t budget, sel_cache_keep_fn keep, void* ctx, const char* protect,
-                    sel_cache_trim_result* out);
+                    const char* rules, sel_cache_trim_result* out);
 
 #endif
