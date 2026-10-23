@@ -78,4 +78,23 @@ expect("play2 requests (prefetch only, none at play)" "${h2}" 1)
 if(NOT last_raw MATCHES "SONG_OPENED[^\n]*\n[^\n]*SONG_OPENED" AND NOT last_raw MATCHES "playing=2")
   message(FATAL_ERROR "T77 second song never played: ${last_raw}")
 endif()
+
+# library.prefetch off (row I169a): the same script makes no prefetch; play2 downloads when NEXT opens it.
+execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/reset --method POST
+  OUTPUT_VARIABLE o RESULT_VARIABLE rc)
+file(REMOVE_RECURSE "${cache}")
+file(READ "${M3}/prefetch.sel" body)
+file(WRITE "${WORK}/t77-prefetch-off.sel" "PREF_SET library.prefetch off\n${body}")
+execute_process(COMMAND "${CLI}" script "${WORK}/t77-prefetch-off.sel" --catalogue "${CAT}"
+  OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
+set(last_raw "${o}${e}")
+counter(prefetch_fetches prefetch_fetches)
+expect("off: prefetch_fetches" "${prefetch_fetches}" 0)
+counter(fetches fetches)
+expect("off: fetches (play1 + play2 at play)" "${fetches}" 2)
+hits(h2 fast.mirror.test "/mods/Protracker/test/play2.mod")
+expect("off: play2 requests (at play only)" "${h2}" 1)
+if(NOT EXISTS "${cache}/files/modland/Protracker/test/play2.mod")
+  message(FATAL_ERROR "T77 off: play2.mod never played\n${last_raw}")
+endif()
 message(STATUS "prefetch_ok")
