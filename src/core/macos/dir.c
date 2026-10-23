@@ -44,3 +44,16 @@ int sel_dir_each(const char* path, sel_dir_fn fn, void* ctx) {
     closedir(d);
     return 1;
 }
+
+int64_t sel_dir_mtime(const char* path) {
+    struct stat st;
+
+    if (stat(path, &st) != 0 || !S_ISDIR(st.st_mode)) {
+        return -1;
+    }
+#ifdef __APPLE__
+    return (int64_t)st.st_mtimespec.tv_sec * 1000000000LL + st.st_mtimespec.tv_nsec;
+#else
+    return (int64_t)st.st_mtim.tv_sec * 1000000000LL + st.st_mtim.tv_nsec;
+#endif
+}

@@ -18,11 +18,15 @@
 #include "query.h"
 #include "source.h"
 #include "sources/local_source.h"
+#include "watch.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#if !SEL_PATH_STYLE_AMIGA
+#include <unistd.h>
+#endif
 
 typedef struct browse_sink {
     unsigned entries;
@@ -291,6 +295,110 @@ static int library_query(int argc, char** argv) {
  * <dir> with the local source through cfg.library (the handle LIBRARY_SEARCH uses). Prints
  * `scanned_files= skipped_files= scan_batches= probed= dirs= archives= archive_members= db_songs=`
  * (db_songs read back from the DB after the scan). */
+typedef struct rescan_dirs {
+    char path[SEL_TRACK_DIRS][SEL_BROWSE_PATH_MAX];
+    const char* list[SEL_TRACK_DIRS];
+    uint32_t count;
+} rescan_dirs;
+
+static void collect_dir(void* ctx, const char* dir) {
+    rescan_dirs* r = ctx;
+
+    if (r->count < SEL_TRACK_DIRS) {
+        snprintf(r->path[r->count], sizeof r->path[0], "%s", dir);
+        r->list[r->count] = r->path[r->count];
+        r->count++;
+    }
+}
+
+/* The I160 part of `library scan`: after the first scan, `--watch <ms>` (folder watcher) or `--poll <ms>`
+ * (directory mtimes, the Amiga path) waits at most <ms> for a change and rescans just the changed
+ * directories through sel_source_rescan. Prints `watch_ready=1` once the watcher is armed so a test can
+ * touch the tree deterministically. Fills rescanned_dirs, rescan_files and watch_events. */
+static void library_watch_rescan(const sel_local_scan_config* scfg, const char* dir, uint32_t ms, int use_poll,
+                                 sel_local_scan_stats* rs, uint32_t* events) {
+    static rescan_dirs r;
+    sel_watch* w = use_poll ? NULL : sel_watch_open(dir);
+
+    memset(rs, 0, sizeof *rs);
+    r.count = 0;
+    if (w != NULL) {
+        puts("watch_ready=1");
+        fflush(stdout);
+        *events = sel_watch_poll(w, ms, collect_dir, &r);
+        sel_watch_close(w);
+        if (r.count > 0) {
+            sel_source_rescan(scfg, r.list, r.count, rs);
+        }
+        return;
+    }
+#if !SEL_PATH_STYLE_AMIGA
+    {
+        sel_local_tracker* t = sel_local_track(scfg, dir);
+        uint32_t waited;
+
+        if (t != NULL) {
+            puts("watch_ready=1");
+            fflush(stdout);
+            for (waited = 0; waited < ms; waited += 50u) {
+                usleep(50000);
+                if (sel_local_poll_changed(scfg, t, rs) > 0) {
+                    break;
+                }
+            }
+            sel_local_untrack(scfg, t);
+        }
+    }
+#endif
+}
+
+/* `library rescan [--db <path>] <dir>...` (I160): the manual rescan, flat per directory, same entry the
+ * watcher and the Amiga timer use. Prints `rescanned_dirs= rescan_files= db_songs=`. */
+static int library_rescan(int argc, char** argv) {
+    const sel_host* host = sel_host_default();
+    const char* db_path = ":memory:";
+    const char* dirs[SEL_TRACK_DIRS];
+    uint32_t n = 0;
+    sel_local_scan_config scfg;
+    sel_local_scan_stats rs;
+    sel_library* lib;
+    sel_message st;
+    int i, ok;
+
+    for (i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "--db") == 0 && i + 1 < argc) {
+            db_path = argv[++i];
+        } else if (n < SEL_TRACK_DIRS) {
+            dirs[n++] = argv[i];
+        }
+    }
+    if (n == 0) {
+        fputs("usage: selecta-cli library rescan [--db <path>] <dir>...\n", stderr);
+        return 2;
+    }
+    sel_registry_init(host);
+    lib = sel_library_open(host, sel_machine_probe(host), 0, db_path);
+    if (lib == NULL) {
+        puts("db_open=0");
+        return 1;
+    }
+    memset(&scfg, 0, sizeof scfg);
+    scfg.host = host;
+    scfg.lib = lib;
+    scfg.registry_count = sel_registry_count;
+    scfg.registry_get = sel_registry_get;
+    scfg.now = (int64_t)time(NULL);
+    ok = sel_source_rescan(&scfg, dirs, n, &rs);
+    memset(&st, 0, sizeof st);
+    if (!sel_library_call(lib, SEL_LIB_REQ_STATS, &st)) {
+        st.args[SEL_LIB_STAT_SONGS].v.i = -1;
+    }
+    printf("rescanned_dirs=%u rescan_files=%u db_songs=%d\n", (unsigned)rs.rescanned_dirs,
+           (unsigned)rs.scanned_files, st.args[SEL_LIB_STAT_SONGS].v.i);
+    sel_library_close(lib);
+    return ok ? 0 : 1;
+}
+
 static int library_scan(int argc, char** argv) {
     const sel_host* host = sel_host_default();
     const char* db_path = ":memory:";
@@ -303,11 +411,19 @@ static int library_scan(int argc, char** argv) {
     sel_message st;
     char line[1100];
     char pool[1100];
+    sel_local_scan_config scfg;
+    sel_local_scan_stats rs;
+    uint32_t watch_ms = 0, watch_events = 0;
+    int use_poll = 0;
     int i;
 
+    memset(&rs, 0, sizeof rs);
     for (i = 0; i < argc; i++) {
         if (strcmp(argv[i], "--db") == 0 && i + 1 < argc) {
             db_path = argv[++i];
+        } else if ((strcmp(argv[i], "--watch") == 0 || strcmp(argv[i], "--poll") == 0) && i + 1 < argc) {
+            use_poll = argv[i][2] == 'p';
+            watch_ms = (uint32_t)strtoul(argv[++i], NULL, 10);
         } else if (dir == NULL) {
             dir = argv[i];
         } else {
@@ -340,11 +456,22 @@ static int library_scan(int argc, char** argv) {
     snprintf(line, sizeof line, "LIBRARY_SCAN %s", dir);
     sel_engine_send_line(e, line, pool, sizeof pool);
     sel_engine_pump(e, on_event, &sink);
+    sel_engine_scan_info(e, &info);
+    if (watch_ms > 0) {
+        memset(&scfg, 0, sizeof scfg);
+        scfg.host = host;
+        scfg.lib = lib;
+        scfg.registry_count = sel_registry_count;
+        scfg.registry_get = sel_registry_get;
+        scfg.now = (int64_t)time(NULL);
+        library_watch_rescan(&scfg, dir, watch_ms, use_poll, &rs, &watch_events);
+    }
     memset(&st, 0, sizeof st);
     if (!sel_library_call(lib, SEL_LIB_REQ_STATS, &st)) {
         st.args[SEL_LIB_STAT_SONGS].v.i = -1;
     }
-    sel_engine_scan_info(e, &info);
+    printf("rescanned_dirs=%u rescan_files=%u watch_events=%u ", (unsigned)rs.rescanned_dirs,
+           (unsigned)rs.scanned_files, (unsigned)watch_events);
     printf("scanned_files=%u skipped_files=%u scan_batches=%u probed=%u dirs=%u archives=%u archive_members=%u "
            "db_songs=%d\n",
            (unsigned)info.scanned_files, (unsigned)info.skipped_files, (unsigned)info.scan_batches,
@@ -396,6 +523,9 @@ int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "browse") == 0) {
         return library_browse(argc, argv);
     }
+    if (argc >= 1 && strcmp(argv[0], "rescan") == 0) {
+        return library_rescan(argc - 1, argv + 1);
+    }
     if (argc >= 1 && strcmp(argv[0], "scan") == 0) {
         return library_scan(argc - 1, argv + 1);
     }
@@ -414,6 +544,6 @@ int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "query") == 0) {
         return library_query(argc - 1, argv + 1);
     }
-    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] <dir> | key <source> <path> | query --explain <q> | stats [--machine <name>] [--db <path>]\n", stderr);
+    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | key <source> <path> | query --explain <q> | stats [--machine <name>] [--db <path>]\n", stderr);
     return 2;
 }
