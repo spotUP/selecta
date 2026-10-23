@@ -1333,6 +1333,14 @@ if(NOT SEL_AMIGA)
   set_tests_properties(stream-live-ogg PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "stream_live_ok")
 
+  # I195f: a chained Ogg stream (new BOS page, new serial) resets the decoder and changes the title tag.
+  add_test(NAME stream-live-ogg-chained
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
+            "-DOGG=${PROJECT_SOURCE_DIR}/tests/m3/stream/chained.ogg" "-DSLOW=${SEL_NET_DIR}/slow_server.py"
+            -P "${SEL_NET_DIR}/stream_chained.cmake")
+  set_tests_properties(stream-live-ogg-chained PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "stream_chained_ok")
+
   # I196b: OPEN + OPTION record_to plays and records from one request.
   add_test(NAME stream-record-play
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"

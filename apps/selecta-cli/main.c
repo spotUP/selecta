@@ -333,6 +333,8 @@ static void print_event(void* ctx, const sel_message* evt) {
  *   @stream_stats       STREAM stream_reads=N stream_bytes=N (T94: OPEN of a URL or pipe path, I195)
  *   @stream_live        STREAMLIVE opens=N audio_bytes=N audio_done=0|1 received=N record_taps=N (I195b: bytes downloaded when
  *                       the first audio frame played, and whether the download had finished by then)
+ *   @title              TITLE text=<title tag of the song playing now, empty when none> (I195f: a chained Ogg stream changes it
+ *                       mid-song)
  *   @folder_stats       FOLDERS folders=N playlists_in_folders=N playlists=N entries=N folder_ops=N (T83)
  *   @folder_tree        the folder tree, one \"F|P <id> <name>\" line per node (T83)
  *   @playlist_add <folder> <name> <key>...  adds a DB playlist (test plumbing; no engine verb creates one yet)
@@ -489,6 +491,9 @@ static void script_directive(sel_engine* e, const char* line) {
         sel_engine_stats es;
         sel_engine_stats_get(e, &es);
         printf("CANCEL net_cancels=%u\n", (unsigned)es.net_cancels);
+    } else if (strcmp(line, "@title") == 0) {
+        const sel_song_state* so = &sel_engine_state(e)->song;
+        printf("TITLE text=%s\n", (const char*)sel_tag_find(so->meta, SEL_META_TITLE, (uintptr_t) ""));
     } else if (strcmp(line, "@position") == 0) {
         const sel_song_state* so = &sel_engine_state(e)->song;
         printf("SNAPSHOT position_ms=%u order=%u row=%u pattern=%u\n", (unsigned)so->position_ms,
