@@ -1319,6 +1319,14 @@ if(NOT SEL_AMIGA)
   set_tests_properties(stream-live PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "stream_live_ok")
 
+  # I195d: the same for Ogg Vorbis (stb_vorbis pushdata path); one long file, no repeat (chained Ogg streams).
+  add_test(NAME stream-live-ogg
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
+            "-DMP3=${PROJECT_SOURCE_DIR}/tests/m3/stream/long.ogg" "-DSLOW=${SEL_NET_DIR}/slow_server.py"
+            -DREPEAT=1 -DEXT=ogg -P "${SEL_NET_DIR}/stream_live.cmake")
+  set_tests_properties(stream-live-ogg PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "stream_live_ok")
+
   # T94 record part (I196, F36): `selecta-cli record` writes the served bytes to disk; STOP (SIGTERM) and the time
   # limit end a stalled stream with a valid file.
   add_test(NAME stream-record
