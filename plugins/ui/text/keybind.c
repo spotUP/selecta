@@ -12,6 +12,8 @@ static const char* const k_actions[] = {
     "quit",       "info",       "command",      "palette",       "help",         "add_file",
     "remove_entry", "play_pause", "next_style",   "next_group",    "back",         "switch_view",
     "subsong_prev", "subsong_next", "page_up",    "page_down",    "mark",
+    "viz",        "pattern",    "solo",         "voice1",        "voice2",       "voice3",
+    "voice4",     "voice5",     "voice6",       "voice7",        "voice8",       "voice9",
 };
 
 int txt_action_known(const char* name) {
@@ -124,6 +126,16 @@ static const struct {
     {":", "@command"},         {"C-p", "@palette"},
     {"?", "@help"},            {"u", "UNDO"},
     {"C-r", "REDO"},           {"m", "@mark"},
+    /* M1.3 I101. Pitch cannot take + and - (volume has them): braces move it a semitone. */
+    {"V", "@viz"},             {"P", "@pattern"},
+    {"1", "@voice1"},          {"2", "@voice2"},
+    {"3", "@voice3"},          {"4", "@voice4"},
+    {"5", "@voice5"},          {"6", "@voice6"},
+    {"7", "@voice7"},          {"8", "@voice8"},
+    {"9", "@voice9"},          {"0", "SOLO 0"},
+    {"S", "@solo"},            {"}", "PITCH +100"},
+    {"{", "PITCH -100"},       {">", "TEMPO +5"},
+    {"<", "TEMPO -5"},
 };
 
 static int find(const txt_bindings* b, uint32_t code, uint32_t mods) {

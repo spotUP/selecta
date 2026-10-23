@@ -1,0 +1,10 @@
+# I101 pattern panel. Browse into songs, play selecta-test-mk.mod, open the
+# pattern panel (P), quit. The last screen is the golden.
+Down
+Enter
+Down
+Enter
+wait 2000
+P
+wait 100
+q

@@ -58,6 +58,10 @@ typedef struct tui {
     const char* dump_path;
     int dirty;
     int info;
+    int viz;     /* viz panel: 0 off, 1 levels, 2 scope, 3 spectrum (V cycles) */
+    int pattern; /* pattern panel shown (P toggles); excludes the viz panel */
+    uint32_t voice; /* 1-based voice the digit keys touched last; S solos it */
+    uint32_t pat_order, pat_row, pat_qid, pat_asked; /* what the last pattern request was for */
     int quit;
     uint32_t key_count;
     uint32_t pool_next;
@@ -258,6 +262,22 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
         tui_remove_cursor_entry(u);
     } else if (strcmp(name, "info") == 0) {
         u->info = !u->info;
+    } else if (strcmp(name, "viz") == 0) {
+        u->viz = (u->viz + 1) % 4;
+        u->pattern = 0;
+    } else if (strcmp(name, "pattern") == 0) {
+        u->pattern = !u->pattern;
+        u->viz = 0;
+        u->pat_asked = 0;
+    } else if (strncmp(name, "voice", 5) == 0 && name[5] >= '1' && name[5] <= '9' && name[6] == '\0') {
+        char vl[32];
+        u->voice = (uint32_t)(name[5] - '0');
+        snprintf(vl, sizeof vl, "MUTE %u toggle", (unsigned)u->voice);
+        tui_send(u, vl);
+    } else if (strcmp(name, "solo") == 0) {
+        char vl[32];
+        snprintf(vl, sizeof vl, "SOLO %u", (unsigned)(u->voice != 0 ? u->voice : 1u));
+        tui_send(u, vl);
     } else if (strcmp(name, "command") == 0) {
         txt_cmdline_open(&u->cmd);
         u->cmd_mode = 1;
@@ -628,13 +648,177 @@ static void tui_overlay(tui* u) {
     }
 }
 
+/* ---- viz and pattern panels (M1.3 I101) ---- */
+
+static const char* const k_viz_title[] = {"", "Levels", "Scope", "Spectrum"};
+
+/* Eight-step block glyph for a Q15 magnitude. */
+static uint32_t tui_block(uint32_t q15) {
+    uint32_t step = (q15 * 8u) >> 15;
+    return 0x2581u + (step > 7u ? 7u : step);
+}
+
+static void tui_viz_panel(tui* u, const sel_state* s, uint32_t width) {
+    const sel_viz_frame* f = s->viz;
+    txt_style label = tui_style(u, TXT_ROLE_LABEL);
+    txt_style norm = tui_style(u, TXT_ROLE_NORMAL);
+    txt_style dim = tui_style(u, TXT_ROLE_DIM);
+    uint32_t rows = tui_main_rows(u), i, x;
+    char buf[32];
+    txt_grid_text(&u->grid, 1, 2, k_viz_title[u->viz], width - 1u, label);
+    if (f == NULL || f->seq == 0) {
+        txt_grid_text(&u->grid, 1, 3, "No visualisation data", width - 1u, dim);
+        return;
+    }
+    if (u->viz == 3) { /* spectrum: one block column pair per band */
+        uint32_t height = rows > 3u ? rows - 2u : 1u;
+        uint32_t b, h;
+        if (!f->spectrum_valid) {
+            txt_grid_text(&u->grid, 1, 3, "No spectrum available", width - 1u, dim);
+            return;
+        }
+        for (b = 0; b < SEL_VIZ_BANDS && 2u + 3u * b + 2u < width; b++) {
+            uint32_t fill = ((uint32_t)(f->band[b] > 0 ? f->band[b] : 0) * height) >> 14;
+            fill = fill > height ? height : fill;
+            for (h = 0; h < fill; h++) {
+                txt_grid_put(&u->grid, 2u + 3u * b, 2u + height - h, 0x2588u, norm);
+                txt_grid_put(&u->grid, 3u + 3u * b, 2u + height - h, 0x2588u, norm);
+            }
+        }
+        return;
+    }
+    if (f->voice_count == 0) {
+        txt_grid_text(&u->grid, 1, 3, "No per voice data for this player", width - 1u, dim);
+        return;
+    }
+    for (i = 0; i < f->voice_count && i + 1u < rows; i++) {
+        uint32_t y = 3u + i;
+        int muted = (int)((s->mute_mask >> i) & 1u);
+        snprintf(buf, sizeof buf, "Voice %2u", (unsigned)(i + 1u));
+        txt_grid_text(&u->grid, 1, y, buf, 9, label);
+        if (u->viz == 1) {
+            uint32_t on = ((uint32_t)(f->vu[i] > 0 ? f->vu[i] : 0) * 24u) >> 15;
+            for (x = 0; x < 24u; x++) {
+                txt_grid_put(&u->grid, 11u + x, y, x < on ? '#' : ' ', norm);
+            }
+            txt_grid_put(&u->grid, 10, y, '[', dim);
+            txt_grid_put(&u->grid, 35, y, ']', dim);
+            if (muted) {
+                txt_grid_text(&u->grid, 37, y, "Muted", width > 37u ? width - 37u : 1u, dim);
+            }
+        } else { /* scope: peak magnitude of each 4 sample span as a block glyph */
+            for (x = 0; x < SEL_VIZ_SCOPE_FRAMES / 4u && 11u + x < width; x++) {
+                uint32_t k, peak = 0;
+                for (k = 0; k < 4u; k++) {
+                    int32_t v = f->scope[i][x * 4u + k];
+                    uint32_t m = (uint32_t)(v < 0 ? -v : v);
+                    peak = m > peak ? m : peak;
+                }
+                txt_grid_put(&u->grid, 11u + x, y, muted ? ' ' : tui_block(peak > 32767u ? 32767u : peak), norm);
+            }
+        }
+    }
+}
+
+/* Note name of the pattern scale (1 = C-0) into out[4]. */
+static void tui_note(uint8_t n, char* out) {
+    static const char names[] = "C-C#D-D#E-F-F#G-G#A-A#B-";
+    if (n >= 1u && n <= 120u) {
+        out[0] = names[((n - 1u) % 12u) * 2u];
+        out[1] = names[((n - 1u) % 12u) * 2u + 1u];
+        out[2] = (char)('0' + (n - 1u) / 12u % 10u);
+        out[3] = '\0';
+    } else {
+        memcpy(out, n == 254u ? "^^^" : n == 255u ? "===" : "...", 4);
+    }
+}
+
+#define TUI_CELL_COLS 14u
+
+static void tui_pattern_panel(tui* u, const sel_state* s, uint32_t width) {
+    const sel_pattern_view* v = s->pattern;
+    txt_style label = tui_style(u, TXT_ROLE_LABEL);
+    txt_style norm = tui_style(u, TXT_ROLE_NORMAL);
+    txt_style dim = tui_style(u, TXT_ROLE_DIM);
+    char buf[96];
+    uint32_t r, c, cols_fit = width > 6u ? (width - 5u) / TUI_CELL_COLS : 0;
+    if (v == NULL || !v->valid) {
+        txt_grid_text(&u->grid, 1, 2, "Pattern", width - 1u, label);
+        txt_grid_text(&u->grid, 1, 3, "No pattern data", width - 1u, dim);
+        return;
+    }
+    snprintf(buf, sizeof buf, "Pattern  order %u of %u  pattern %u  rows %u", (unsigned)(v->order + 1u),
+             (unsigned)v->info.orders, (unsigned)s->song.pattern_pos.pattern, (unsigned)v->info.rows);
+    txt_grid_text(&u->grid, 1, 2, buf, width - 1u, label);
+    for (r = 0; r < v->row_n && 3u + r + 1u < u->grid.rows; r++) {
+        uint32_t row = v->row_lo + r, y = 3u + r;
+        int at = v->order == s->song.pattern_pos.order && row == s->song.pattern_pos.row;
+        txt_style st = at ? tui_style(u, TXT_ROLE_CURSOR) : norm;
+        if (row >= v->info.rows) {
+            break;
+        }
+        txt_grid_fill(&u->grid, 0, y, width, 1, ' ', st);
+        snprintf(buf, sizeof buf, "%02X", (unsigned)row);
+        txt_grid_text(&u->grid, 1, y, buf, 3, at ? st : dim);
+        for (c = 0; c < v->channels && c < cols_fit; c++) {
+            const sel_rp_cell* cell = &v->cell[r][c];
+            char note[4], ins[4], vol[4], fx[8];
+            tui_note(cell->note, note);
+            if (cell->instrument != 0) {
+                snprintf(ins, sizeof ins, "%02X", (unsigned)cell->instrument);
+            } else {
+                memcpy(ins, "..", 3);
+            }
+            if (cell->volume != 0) {
+                snprintf(vol, sizeof vol, "%02X", (unsigned)cell->volume);
+            } else {
+                memcpy(vol, "..", 3);
+            }
+            if (cell->effect != 0 || cell->param != 0) {
+                snprintf(fx, sizeof fx, "%X%02X", (unsigned)(cell->effect & 15u), (unsigned)cell->param);
+            } else {
+                memcpy(fx, "...", 4);
+            }
+            snprintf(buf, sizeof buf, "%s %s %s %s", note, ins, vol, fx);
+            txt_grid_put(&u->grid, 4u + c * TUI_CELL_COLS, y, 0x2502u, tui_style(u, TXT_ROLE_BORDER));
+            txt_grid_text(&u->grid, 5u + c * TUI_CELL_COLS, y, buf, TUI_CELL_COLS - 1u, st);
+        }
+    }
+}
+
+/* Asks the engine for the pattern window around the playing row when the
+ * panel is open and the position moved. The audio thread answers; the next
+ * pump publishes it (sel_state.pattern). */
+static void tui_pattern_ask(tui* u) {
+    const sel_state* s = sel_engine_state(u->engine);
+    uint32_t n = tui_main_rows(u) > SEL_PATTERN_ROWS ? SEL_PATTERN_ROWS : tui_main_rows(u);
+    uint32_t row = s->song.pattern_pos.row, lo;
+    if (u->pat_asked && u->pat_order == s->song.pattern_pos.order && u->pat_row == row &&
+        u->pat_qid == s->song.queue_id) {
+        return;
+    }
+    lo = row > n / 2u ? row - n / 2u : 0;
+    if (sel_engine_pattern_request(u->engine, s->song.pattern_pos.order, lo, n) != 0) {
+        u->pat_asked = 1;
+        u->pat_order = s->song.pattern_pos.order;
+        u->pat_row = row;
+        u->pat_qid = s->song.queue_id;
+    }
+}
+
 static void tui_draw(tui* u) {
     const sel_state* s = sel_engine_state(u->engine);
     uint32_t width = u->info && u->grid.cols > TUI_INFO_COLS + 20u ? u->grid.cols - TUI_INFO_COLS : u->grid.cols;
     uint32_t y;
     txt_grid_clear(&u->grid, tui_style(u, TXT_ROLE_NORMAL));
     tui_header(u, s);
-    tui_pane(u, s, width);
+    if (u->pattern) {
+        tui_pattern_panel(u, s, width);
+    } else if (u->viz) {
+        tui_viz_panel(u, s, width);
+    } else {
+        tui_pane(u, s, width);
+    }
     if (width < u->grid.cols) {
         for (y = 2; y + 1u < u->grid.rows; y++) {
             txt_grid_put(&u->grid, width, y, 0x2502u, tui_style(u, TXT_ROLE_BORDER));
@@ -853,6 +1037,12 @@ static int tui_wait(void* state, uint32_t timeout_ms) {
     long n, i;
     txt_key k;
     int handled = 0;
+    if (u->viz || u->pattern) {
+        u->dirty = 1; /* the panels follow the audio: redraw every turn */
+        if (u->pattern) {
+            tui_pattern_ask(u);
+        }
+    }
     if (u->dirty) {
         tui_present(u);
     }

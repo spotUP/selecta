@@ -103,6 +103,21 @@ typedef struct sel_song_state {
     const char* path;            /* NULL when no song is open; valid until next pump */
 } sel_song_state;
 
+/* Pattern window of the playing tracker song (plan M1.3 I101). A front end asks
+ * with sel_engine_pattern_request; the audio thread, which owns the replayer,
+ * fills it between render calls and the next pump publishes it in
+ * sel_state.pattern. */
+#define SEL_PATTERN_ROWS 48u     /* rows a window holds */
+#define SEL_PATTERN_CHANNELS 16u /* channels a window holds */
+typedef struct sel_pattern_view {
+    uint32_t seq;      /* the request this answers; 0: none answered yet */
+    uint32_t valid;    /* 1: the song has pattern data and the window below is filled */
+    uint32_t order, row_lo, row_n; /* the window: rows row_lo .. row_lo + row_n - 1 of the pattern at `order` */
+    uint32_t channels; /* columns filled (the song's channels, at most SEL_PATTERN_CHANNELS) */
+    sel_rp_tracker_info info; /* the pattern's geometry: orders, patterns, rows, channels */
+    sel_rp_cell cell[SEL_PATTERN_ROWS][SEL_PATTERN_CHANNELS]; /* [row - row_lo][channel] */
+} sel_pattern_view;
+
 /* The snapshot front ends render. Fields are only appended. Everything below
  * `options` is refreshed at the end of every sel_engine_pump. */
 typedef struct sel_state {
@@ -121,6 +136,7 @@ typedef struct sel_state {
     uint32_t pitch_q16;         /* 2^(pitch_cents / 1200), Q16 */
     uint32_t mute_mask;         /* bit k set: voice k + 1 is muted (MUTE, SOLO) */
     uint32_t mixed_path;        /* 1: the engine mixes (DSP, crossfade); 0: the output plays voices itself */
+    const sel_pattern_view* pattern; /* newest answered pattern window, valid until the next pump */
 } sel_state;
 
 typedef struct sel_engine_config {
@@ -234,6 +250,14 @@ int sel_engine_fade(const sel_engine* e, uint32_t* pos, uint32_t* total);
 int sel_engine_tracker_info(const sel_engine* e, uint32_t order, sel_rp_tracker_info* out);
 uint32_t sel_engine_tracker_cells(const sel_engine* e, uint32_t order, uint32_t channel, uint32_t row_lo,
                                   uint32_t row_hi, sel_rp_cell* out, uint32_t cap);
+
+/* Asks for a pattern window: rows row_lo .. row_lo + rows - 1 (at most
+ * SEL_PATTERN_ROWS) of the pattern at `order`. Pump thread only. The audio
+ * thread answers after its next render call and the following pump publishes
+ * the answer in sel_state.pattern (same `seq` as the return value). Returns the
+ * request number, or 0 when the previous request is still unanswered (ask
+ * again after the next pump). */
+uint32_t sel_engine_pattern_request(sel_engine* e, uint32_t order, uint32_t row_lo, uint32_t rows);
 
 /* 1 when the engine answers this verb with real behaviour, 0 when it
  * replies ERROR not_implemented. The ratchet (T8) counts the zeros. */
