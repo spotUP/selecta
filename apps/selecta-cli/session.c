@@ -41,6 +41,14 @@ static void start_sink(void* ctx, const sel_message* evt) {
     }
 }
 
+static const char* g_rp_global;
+static const char* g_rp_song;
+
+void sel_cli_set_rp_config(const char* global, const char* song) {
+    g_rp_global = global;
+    g_rp_song = song;
+}
+
 sel_engine* sel_cli_start_song_sink(const char* who, const sel_host* host, const char* song, uint32_t rate,
                                     uint32_t resampler, const sel_voices* sink) {
     sel_engine_config cfg;
@@ -61,6 +69,18 @@ sel_engine* sel_cli_start_song_sink(const char* who, const sel_host* host, const
         sel_engine_set_voice_sink(e, sink);
     }
 
+    if (g_rp_global != NULL) {
+        memset(&msg, 0, sizeof msg);
+        msg.kind = SEL_MSG_CMD;
+        msg.id = SEL_CMD_PREF_SET;
+        msg.argc = 2;
+        msg.args[0].type = SEL_ARG_STR;
+        msg.args[0].v.s = "rp.config";
+        msg.args[1].type = SEL_ARG_STR;
+        msg.args[1].v.s = g_rp_global;
+        sel_engine_send(e, &msg);
+    }
+    sel_engine_set_song_config(e, g_rp_song);
     memset(&msg, 0, sizeof msg);
     msg.kind = SEL_MSG_CMD;
     msg.id = SEL_CMD_OPEN;

@@ -182,6 +182,10 @@ typedef struct sel_slot {
 
 struct sel_engine {
     const sel_host* host;
+    sel_host rp_host;               /* copy of host whose config_get answers per-replayer options (I134) */
+    char rp_song_config[256];       /* per-song override list "plugin.key=value,..." (library DB later, D-M2-8) */
+    char rp_value[SEL_PREF_VALUE_MAX]; /* answer of the last rp_config_get */
+    uint32_t rp_config_applied;     /* option values that came from an override layer (T61) */
     sel_state state;
     sel_spsc cmd_q;
     sel_spsc evt_q;
@@ -1166,6 +1170,49 @@ static uint32_t skip_frames(sel_slot* sl, uint32_t target) {
     return sl->song_frames;
 }
 
+/* Value of `key` in a "k=v,k=v" list into e->rp_value; 0 when absent. */
+static int rp_list_find(sel_engine* e, const char* list, const char* key) {
+    size_t kl = strlen(key);
+    while (*list != '\0') {
+        const char* end = strchr(list, ',');
+        size_t n = end != NULL ? (size_t)(end - list) : strlen(list);
+        if (n > kl && list[kl] == '=' && strncmp(list, key, kl) == 0) {
+            size_t vl = n - kl - 1u;
+            if (vl >= sizeof e->rp_value) vl = sizeof e->rp_value - 1u;
+            memcpy(e->rp_value, list + kl + 1u, vl);
+            e->rp_value[vl] = '\0';
+            return 1;
+        }
+        if (end == NULL) break;
+        list = end + 1;
+    }
+    return 0;
+}
+
+/* host->config_get handed to replayers (I134): the per-song override beats the pref "rp.config",
+ * which beats whatever the real host answers. Each layer that answered counts in rp_config_applied. */
+static const char* rp_config_get(const sel_host* h, const char* key, const char* def) {
+    sel_engine* e = (sel_engine*)h->ctx;
+    int have = 0;
+    if (rp_list_find(e, e->prefs.value[SEL_PREF_RP_CONFIG], key)) {
+        e->rp_config_applied++;
+        have = 1;
+    }
+    if (rp_list_find(e, e->rp_song_config, key)) {
+        e->rp_config_applied++;
+        have = 1;
+    }
+    if (have) return e->rp_value;
+    return e->host->config_get != NULL ? e->host->config_get(e->host, key, def) : def;
+}
+
+void sel_engine_set_song_config(sel_engine* e, const char* list) {
+    size_t n = list != NULL ? strlen(list) : 0;
+    if (n >= sizeof e->rp_song_config) n = sizeof e->rp_song_config - 1u;
+    if (n) memcpy(e->rp_song_config, list, n);
+    e->rp_song_config[n] = '\0';
+}
+
 /* Prepares the idle slot `idx` with the song at `path` (all allocation, file
  * read, RP_OPEN and RP_START happen here) and publishes it through the swap
  * ring. On failure the slot stays free and the error is reported. */
@@ -1228,7 +1275,7 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     src.size = size;
     src.path = path;
     memset(&sl->rp_info, 0, sizeof sl->rp_info);
-    sl->rp_state = open(&src, e->host, &sl->rp_info);
+    sl->rp_state = open(&src, &e->rp_host, &sl->rp_info);
     if (sl->rp_state == NULL) {
         e->host->mem_free(e->host, data);
         sel_engine_report_error(e, "open_failed", err_detail);
@@ -2441,6 +2488,9 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     }
     memset(e, 0, sizeof *e);
     e->host = host;
+    e->rp_host = *host;
+    e->rp_host.config_get = rp_config_get;
+    e->rp_host.ctx = e;
     e->state.volume = 100;
     sel_timer_init(&e->timer);
     (void)local_ms(e); /* primes the C library time zone state outside the render path */
@@ -2738,6 +2788,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->seek_path = e->seek_path;
     out->seek_skipped_frames = e->seek_skipped;
     out->songs_opened = e->songs_opened;
+    out->rp_config_applied = e->rp_config_applied;
     out->undo_depth = e->history.undo_count;
     out->redo_depth = e->history.redo_count;
     out->dsp_blocks = e->dsp.blocks;

@@ -113,6 +113,8 @@ int sel_cli_render(int argc, char** argv) {
     const char* out_id = NULL;
     const sel_voices* sink = NULL;
     const char* seek_ms = NULL;
+    const char* rp_global = NULL;
+    const char* rp_song = NULL;
     const char* viz_dump = NULL;
     const char* script = NULL;
     const char* dsp = NULL;
@@ -158,6 +160,10 @@ int sel_cli_render(int argc, char** argv) {
             dsp = argv[i + 1];
         } else if (strcmp(argv[i], "--seek-ms") == 0) {
             seek_ms = argv[i + 1];
+        } else if (strcmp(argv[i], "--rp-config") == 0) {
+            rp_global = argv[i + 1];
+        } else if (strcmp(argv[i], "--rp-config-song") == 0) {
+            rp_song = argv[i + 1];
         } else if (strcmp(argv[i], "--rate") == 0) {
             rate = strtoul(argv[i + 1], NULL, 10);
         } else if (strcmp(argv[i], "--led") == 0) {
@@ -217,6 +223,7 @@ int sel_cli_render(int argc, char** argv) {
             sink = backend(out);
         }
     }
+    sel_cli_set_rp_config(rp_global, rp_song);
     e = sel_cli_start_song_sink("render", &host, song, (uint32_t)rate, resampler, sink);
     if (e == NULL) {
         if (out != NULL) {
@@ -317,6 +324,9 @@ int sel_cli_render(int argc, char** argv) {
     if (seek_ms != NULL) {
         printf("seek_path=%s skipped_frames=%u\n", stats.seek_path == 1u ? "native" : "skip",
                (unsigned)stats.seek_skipped_frames);
+    }
+    if (rp_global != NULL || rp_song != NULL) {
+        printf("rp_config_applied=%u\n", (unsigned)stats.rp_config_applied);
     }
     if (stage_flag || stats.led_on || stats.width_percent != 100u) {
         printf("led=%s led_frames=%u led_cutoff_hz=%u\n", stats.led_on ? "on" : "off", (unsigned)stats.led_frames,
