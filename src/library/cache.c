@@ -89,10 +89,14 @@ typedef struct sink {
     const char* part;
     sel_md5 md5;
     const char* want;
+    volatile int* cancel;
 } sink;
 
 static int on_body(void* ctx, const void* data, size_t len) {
     sink* s = ctx;
+    if (s->cancel != NULL && *s->cancel) {
+        return 0;
+    }
     sel_md5_update(&s->md5, data, len);
     return s->f != NULL && fwrite(data, 1, len, s->f) == len;
 }
@@ -102,7 +106,7 @@ static void on_restart(void* ctx) {
     if (s->f != NULL) {
         fclose(s->f);
     }
-    s->f = fopen(s->part, "wb");
+    s->f = (s->cancel != NULL && *s->cancel) ? NULL : fopen(s->part, "wb");
     sel_md5_init(&s->md5);
 }
 
@@ -141,7 +145,7 @@ sel_cache_result sel_cache_fetch(sel_cache* c, const char* source, const char* p
     sink s;
     int ok;
 
-    if (!sel_cache_path(c, source, path, out, cap) || strlen(out) + 6 > sizeof part) {
+    if (!sel_cache_path(c, source, path, out, cap) || strlen(out) + 10 > sizeof part) {
         return SEL_CACHE_FAILED;
     }
     if (file_exists(out)) {
@@ -153,9 +157,10 @@ sel_cache_result sel_cache_fetch(sel_cache* c, const char* source, const char* p
     if (set == NULL || !make_parent(out)) {
         return SEL_CACHE_FAILED;
     }
-    snprintf(part, sizeof part, "%s.part", out);
+    snprintf(part, sizeof part, "%s%s.part", out, c->part_tag != NULL ? c->part_tag : "");
     memset(&s, 0, sizeof s);
     s.part = part;
+    s.cancel = c->cancel;
     s.want = (md5 != NULL && strlen(md5) == 32u) ? md5 : NULL;
     on_restart(&s);
     if (s.f == NULL) {
@@ -296,7 +301,7 @@ sel_cache_result sel_cache_fetch_song(sel_cache* c, const char* source, const ch
         return r;
     }
     n = sel_companion_paths(rules, path, comp, SEL_CACHE_COMPANIONS_MAX);
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < n && !(c->cancel != NULL && *c->cancel); i++) {
         if (sel_cache_fetch(c, source, comp[i], NULL, cpath, sizeof cpath) == SEL_CACHE_OK) {
             c->stats.companions++;
         }

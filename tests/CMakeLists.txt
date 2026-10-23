@@ -1050,3 +1050,13 @@ if(NOT SEL_AMIGA)
             ${CMAKE_CURRENT_SOURCE_DIR}/m3)
   set_tests_properties(source-hvsc PROPERTIES LABELS m3 TIMEOUT 120 PASS_REGULAR_EXPRESSION "source_hvsc_ok")
 endif()
+
+# M3 Phase 5 (I168a): T77 part 2. A foreground fetch during a slow prefetch returns within a stated bound.
+if(NOT SEL_AMIGA)
+  add_test(NAME prefetch-preempt
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
+      "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3" "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv"
+      -P "${SEL_NET_DIR}/prefetch_preempt.cmake")
+  set_tests_properties(prefetch-preempt PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    DEPENDS cache-fetch TIMEOUT 60 PASS_REGULAR_EXPRESSION "prefetch_preempt_ok")
+endif()

@@ -3114,6 +3114,9 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
         prepare_next(e);
     }
     prefetch_sync(e);
+    if (e->lib != NULL && e->pf_id != 0) {
+        sel_library_prefetch_poll(e->lib); /* builds without threads run the parked request here, after playback started */
+    }
     if (e->cur != SEL_SLOT_NONE) {
         sel_slot* sl = &e->slot[e->cur];
         int advanced = 0;

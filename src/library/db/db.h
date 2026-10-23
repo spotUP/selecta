@@ -155,6 +155,10 @@ void sel_library_set_budget(sel_library* lib, uint32_t budget);
 int sel_library_prefetch(sel_library* lib, const char* spec, const char* rules);
 void sel_library_prefetch_cancel(sel_library* lib);
 void sel_library_prefetch_wait(sel_library* lib);
+/* Builds without threads (Amiga): runs the pending prefetch request, one blocking transfer per call; the engine
+ * calls it from its tick right after playback started. Threaded builds: no-op, returns 0. Returns 1 when a
+ * request was run. */
+int sel_library_prefetch_poll(sel_library* lib);
 void sel_library_prefetch_stop(sel_library* lib);
 int sel_library_cache_stats(const sel_library* lib, struct sel_cache_stats* out);
 /* Prints `cache_hits= fetches= companions= md5_mismatches= mirror_tries=` when a fetch was served. */

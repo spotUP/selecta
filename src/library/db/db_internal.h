@@ -30,13 +30,16 @@ struct sel_library {
     char rules[512];         /* companion rules last seen by a fetch (trim exempts companions, I167a) */
     uint32_t cache_budget;   /* bytes, scaled by the machine (sel_cache_budget) */
     unsigned fetch_requests; /* LIBRARY_FETCH requests served */
+    char pf_spec[160];       /* pending prefetch request "<source>:<path>"; "" = none (I168, I168a) */
+    char pf_rules[512];
 #if !defined(SEL_LIBRARY_NO_THREAD)
     pthread_t pf_thread;     /* prefetch thread, created on the first prefetch (fetch.c, I168) */
     pthread_mutex_t pf_lock; /* guards the pf_* fields and serialises the file cache between threads */
     pthread_cond_t pf_wake;
-    pthread_mutex_t cache_lock; /* the file cache, once the prefetch thread exists */
-    char pf_spec[160];       /* pending request "<source>:<path>"; "" = none */
-    char pf_rules[512];
+    pthread_mutex_t cache_lock; /* the file cache's stats and the foreground fetch; never held by the prefetch thread
+                                 * during a transfer (I168a) */
+    sel_cache* pf_cache;     /* the prefetch thread's own cache handle: same directory, own mirror state and stats */
+    volatile int pf_cancel;  /* set (under pf_lock) to abort the running prefetch download at its next chunk */
     unsigned pf_started, pf_busy, pf_quit;
     pthread_t thread;
     pthread_mutex_t lock;
