@@ -9,6 +9,8 @@ add_library(selecta_core STATIC
   engine/spsc.c
   engine/engine.c
   engine/queue.c
+  engine/history.c
+  engine/shuffle.c
   engine/view.c
   engine/voices.c
   engine/scheduler.c)

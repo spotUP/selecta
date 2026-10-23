@@ -18,7 +18,9 @@
 #include <selecta/tags.h>
 
 #include "mixer.h"
+#include "history.h"
 #include "queue.h"
+#include "shuffle.h"
 #include "local.h"
 #include "view.h"
 #include "scheduler.h"
@@ -51,6 +53,10 @@
     X(QUEUE_ADD)                                                                              \
     X(QUEUE_REMOVE)                                                                           \
     X(QUEUE_CLEAR)                                                                            \
+    X(QUEUE_MOVE)                                                                             \
+    X(QUEUE_SWAP)                                                                             \
+    X(UNDO)                                                                                   \
+    X(REDO)                                                                                   \
     X(QUEUE_PLAY_NEXT)                                                                        \
     X(LIBRARY_BROWSE)                                                                         \
     X(VIEW_SHOW)                                                                              \
@@ -147,6 +153,7 @@ struct sel_engine {
     char deferred_path[SEL_DEFERRED_PATH_MAX];
     char subsong_path[SEL_DEFERRED_PATH_MAX];
     sel_queue queue;
+    sel_history history;
     uint32_t q_playing; /* id of the playing queue entry, 0: none */
     uint32_t q_hint;    /* position NEXT and PLAY start from while q_playing is 0 */
     uint32_t song_over; /* the open song ended or the queue ran out: PLAY restarts the queue */
@@ -856,6 +863,10 @@ static void emit_queue_changed(sel_engine* e) {
     evt_init(&m, SEL_EVT_QUEUE_CHANGED);
     evt_uint(&m, e->queue.version);
     emit(e, &m);
+    evt_init(&m, SEL_EVT_QUEUE_HISTORY);
+    evt_uint(&m, e->history.undo_count);
+    evt_uint(&m, e->history.redo_count);
+    emit(e, &m);
 }
 
 /* Plays the entry at `idx` through the one song-change path. A stopped
@@ -917,7 +928,9 @@ static void cmd_PREV(sel_engine* e, const sel_message* m) {
 
 static void queue_insert(sel_engine* e, uint32_t at, const char* path, const char* who) {
     uint32_t id;
+    sel_history_record(&e->history, &e->queue);
     if (!sel_queue_insert(&e->queue, at, path, &id)) {
+        sel_history_forget(&e->history);
         sel_engine_report_error(e, "queue_full", who);
         return;
     }
@@ -935,7 +948,12 @@ static void cmd_QUEUE_PLAY_NEXT(sel_engine* e, const sel_message* m) {
 
 static void cmd_QUEUE_REMOVE(sel_engine* e, const sel_message* m) {
     uint32_t id = m->args[0].v.u;
-    uint32_t at = sel_queue_remove(&e->queue, id);
+    uint32_t at = sel_queue_index_of(&e->queue, id);
+    if (at != SEL_QUEUE_NONE) {
+        sel_history_record(&e->history, &e->queue);
+        sel_history_bury(&e->history, &e->queue, at);
+        sel_queue_remove(&e->queue, id);
+    }
     if (at == SEL_QUEUE_NONE) {
         sel_engine_report_error(e, "range", "QUEUE_REMOVE");
         return;
@@ -952,10 +970,64 @@ static void cmd_QUEUE_REMOVE(sel_engine* e, const sel_message* m) {
 
 static void cmd_QUEUE_CLEAR(sel_engine* e, const sel_message* m) {
     (void)m;
+    sel_history_record(&e->history, &e->queue);
+    sel_history_bury(&e->history, &e->queue, SEL_QUEUE_NONE);
     sel_queue_clear(&e->queue);
     e->q_playing = 0;
     e->q_hint = 0;
     emit_queue_changed(e);
+}
+
+/* The playing entry may be gone after a rewrite of the order: the song keeps
+ * playing and the hint points at the position it had. */
+static void queue_after_rewrite(sel_engine* e, uint32_t old_index) {
+    if (e->q_playing && sel_queue_index_of(&e->queue, e->q_playing) == SEL_QUEUE_NONE) {
+        e->q_playing = 0;
+        e->q_hint = old_index;
+    }
+    if (e->q_hint > e->queue.count) {
+        e->q_hint = e->queue.count;
+    }
+}
+
+static void cmd_QUEUE_MOVE(sel_engine* e, const sel_message* m) {
+    sel_history_record(&e->history, &e->queue);
+    if (!sel_queue_move(&e->queue, m->args[0].v.u, m->args[1].v.u)) {
+        sel_history_forget(&e->history);
+        sel_engine_report_error(e, "range", "QUEUE_MOVE");
+        return;
+    }
+    emit_queue_changed(e);
+}
+
+static void cmd_QUEUE_SWAP(sel_engine* e, const sel_message* m) {
+    sel_history_record(&e->history, &e->queue);
+    if (!sel_queue_swap(&e->queue, m->args[0].v.u, m->args[1].v.u)) {
+        sel_history_forget(&e->history);
+        sel_engine_report_error(e, "range", "QUEUE_SWAP");
+        return;
+    }
+    emit_queue_changed(e);
+}
+
+static void queue_step(sel_engine* e, int undo, const char* who) {
+    uint32_t old_index = e->q_playing ? sel_queue_index_of(&e->queue, e->q_playing) : e->q_hint;
+    if (!(undo ? sel_history_undo(&e->history, &e->queue) : sel_history_redo(&e->history, &e->queue))) {
+        sel_engine_report_error(e, "nothing_to_do", who);
+        return;
+    }
+    queue_after_rewrite(e, old_index);
+    emit_queue_changed(e);
+}
+
+static void cmd_UNDO(sel_engine* e, const sel_message* m) {
+    (void)m;
+    queue_step(e, 1, "UNDO");
+}
+
+static void cmd_REDO(sel_engine* e, const sel_message* m) {
+    (void)m;
+    queue_step(e, 0, "REDO");
 }
 
 /* ---- library --------------------------------------------------------- */
@@ -1183,6 +1255,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         !sel_spsc_init(&e->swap_q, host, SEL_SWAP_RING_DEPTH) ||
         !sel_spsc_init(&e->ret_q, host, SEL_SWAP_RING_DEPTH) ||
         !sel_queue_init(&e->queue, host, queue_cap, queue_text) ||
+        !sel_history_init(&e->history, host, queue_cap, queue_text) ||
         !sel_browse_init(&e->browse, host, cfg && cfg->browse_entries ? cfg->browse_entries : queue_cap,
                          cfg && cfg->browse_text_bytes ? cfg->browse_text_bytes : queue_text) ||
         !sel_view_init(&e->view, host, SEL_VIEW_WINDOW_MAX)) {
@@ -1208,6 +1281,7 @@ void sel_engine_destroy(sel_engine* e) {
         sel_spsc_free(&e->swap_q, e->host);
         sel_spsc_free(&e->ret_q, e->host);
         sel_queue_free(&e->queue, e->host);
+        sel_history_free(&e->history, e->host);
         sel_browse_free(&e->browse, e->host);
         sel_view_free(&e->view, e->host);
         e->host->mem_free(e->host, e);
