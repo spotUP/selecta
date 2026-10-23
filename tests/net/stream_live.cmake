@@ -3,7 +3,14 @@
 # render while the download is unfinished (@stream_live: audio_done=0, audio_bytes below the advertised length), and
 # the end of the script (STOP, exit) must end the stalled download quickly instead of waiting for the server.
 # -DCLI=<selecta-cli> -DWORK=<scratch dir> -DMP3=<tests/m3/stream/sine.mp3> -DSLOW=<slow_server.py>
-set(REPEAT 40)
+# I195d: -DREPEAT=<n> -DEXT=<ext> serve the file n times as long.<ext>; the Ogg variant serves one long.ogg
+# (repeated Ogg files would be chained streams).
+if(NOT DEFINED REPEAT)
+  set(REPEAT 40)
+endif()
+if(NOT DEFINED EXT)
+  set(EXT mp3)
+endif()
 set(PERCENT 60)
 file(SIZE "${MP3}" one)
 math(EXPR total "${one} * ${REPEAT}")
@@ -25,7 +32,7 @@ if(sp STREQUAL "")
 endif()
 set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
 set(ENV{SELECTA_NET_MAP} "slow.test=http://127.0.0.1:${sp}")
-file(WRITE "${WORK}/live.sel" "@dump ${WORK}/live.raw\nOPEN http://slow.test/long.mp3\nPLAY\n@render 22050\n@stream_live\nSTOP\n")
+file(WRITE "${WORK}/live.sel" "@dump ${WORK}/live.raw\nOPEN http://slow.test/long.${EXT}\nPLAY\n@render 22050\n@stream_live\nSTOP\n")
 string(TIMESTAMP t0 "%s")
 execute_process(COMMAND "${CLI}" script "${WORK}/live.sel" OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc
   TIMEOUT 25)
