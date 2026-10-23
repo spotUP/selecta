@@ -703,3 +703,7 @@ int sel_view_changed(sel_view* v, const sel_view_src* s, int* structure) {
     v->last = now;
     return changed || *structure;
 }
+
+const char* sel_view_style_label(uint32_t style) {
+    return style < 3u ? style_name[style] : "unknown";
+}

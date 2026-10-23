@@ -62,7 +62,8 @@ typedef struct tui {
     uint32_t key_count;
     uint32_t pool_next;
     char pool[TUI_POOLS][TUI_POOL_BYTES];
-    sel_tag stats[3];
+    sel_tag stats[6];
+    uint32_t cmdline_runs, palette_opens; /* T28 sentinels */
 } tui;
 
 /* ---- commands ---- */
@@ -262,6 +263,7 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
         u->cmd_mode = 1;
     } else if (strcmp(name, "palette") == 0 || strcmp(name, "help") == 0) {
         txt_palette_open(&u->pal, &u->binds);
+        u->palette_opens++;
         u->overlay = name[0] == 'p' ? 1 : 2;
     } else if (strcmp(name, "mark") == 0) {
         tui_mark(u);
@@ -281,6 +283,7 @@ static void tui_cmd_key(tui* u, const txt_key* k) {
     u->cmd_mode = 0;
     if (r == TXT_CMD_SUBMIT && txt_cmdline_text(&u->cmd)[0] != '\0') {
         const char* line = txt_cmdline_text(&u->cmd);
+        u->cmdline_runs++;
         if (line[0] == '!') {
             tui_run_program(u, line + 1);
         } else {
@@ -896,8 +899,14 @@ static const sel_tag* tui_stats(void* state) {
     u->stats[0].value = u->grid.flushes;
     u->stats[1].tag = SEL_UI_STAT_KEYS;
     u->stats[1].value = u->key_count;
-    u->stats[2].tag = SEL_TAG_END;
-    u->stats[2].value = 0;
+    u->stats[2].tag = SEL_UI_STAT_CMDLINE_RUNS;
+    u->stats[2].value = u->cmdline_runs;
+    u->stats[3].tag = SEL_UI_STAT_PALETTE_OPENS;
+    u->stats[3].value = u->palette_opens;
+    u->stats[4].tag = SEL_UI_STAT_BINDINGS;
+    u->stats[4].value = u->binds.count;
+    u->stats[5].tag = SEL_TAG_END;
+    u->stats[5].value = 0;
     return u->stats;
 }
 

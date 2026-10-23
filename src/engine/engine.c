@@ -1961,6 +1961,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->seek_path = e->seek_path;
     out->seek_skipped_frames = e->seek_skipped;
     out->songs_opened = e->songs_opened;
+    out->undo_depth = e->history.undo_count;
+    out->redo_depth = e->history.redo_count;
 }
 
 /* Mixes the open song: the scheduler turns each tick's length into frames,

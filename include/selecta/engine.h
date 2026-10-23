@@ -188,8 +188,12 @@ typedef struct sel_engine_stats {
     uint32_t seek_path;           /* last SEEK: 0 none, 1 native (RP_SEEK), 2 restart-and-skip */
     uint32_t seek_skipped_frames; /* frames the last restart-and-skip ran through */
     uint32_t songs_opened;        /* songs started by OPEN or the queue (T19) */
+    uint32_t undo_depth, redo_depth; /* queue edits that UNDO / REDO can step over (T28) */
 } sel_engine_stats;
 void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out);
+
+/* "regular", "tree" or "drilldown" for a sel_view_style value; "unknown" otherwise. */
+const char* sel_view_style_label(uint32_t style);
 
 /* Fills `frames` stereo frames: the open song's mix while PLAYING, else
  * silence. Counts calls. Never allocates. */
