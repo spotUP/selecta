@@ -7,5 +7,7 @@ void* sel_host_mem_alloc(const sel_host* h, size_t size, uint32_t kind);
 void sel_host_mem_free(const sel_host* h, void* p);
 void sel_host_log(const sel_host* h, int level, const char* msg);
 uint32_t sel_host_clock_ms(const sel_host* h);
+/* HOSTQ_LOCAL_TIME: milliseconds since local midnight. */
+uint32_t sel_host_local_ms(const sel_host* h);
 
 #endif

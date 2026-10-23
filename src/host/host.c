@@ -13,6 +13,11 @@ static int query(const sel_host* h, const sel_tag* ask, sel_tag* answer) {
         answer->value = SEL_API_VERSION;
         return 1;
     }
+    if (ask && ask->tag == SEL_HOSTQ_LOCAL_TIME) {
+        answer->tag = SEL_HOSTQ_LOCAL_TIME;
+        answer->value = sel_host_local_ms(h);
+        return 1;
+    }
     return 0;
 }
 

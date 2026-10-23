@@ -20,6 +20,7 @@
 
 #include "mixer.h"
 #include "dsp_chain.h"
+#include "timer.h"
 #include "pitch_table.h"
 #include "xfade_table.h"
 #include "history.h"
@@ -53,6 +54,8 @@
     X(TEMPO)                                                                                  \
     X(SOLO)                                                                                   \
     X(OUTPUT)                                                                                 \
+    X(SLEEP_TIMER)                                                                            \
+    X(ALARM)                                                                                  \
     X(REPEAT)                                                                                 \
     X(OPTION)                                                                                 \
     X(COMMANDS)                                                                               \
@@ -197,6 +200,9 @@ struct sel_engine {
     uint32_t max_song_ms;
     uint32_t silence_ms;
     uint32_t crossfade_ms; /* 0..10000, 0: gapless */
+    sel_timer timer; /* sleep timer and alarm (timer.h) */
+    char timer_text[8][16]; /* event strings live until the pump delivers them (ring) */
+    uint32_t timer_text_next;
     /* Next song, prepared in the idle slot (plan M1.3 I95). nx and the xf_* fields belong to
      * the audio thread; nx_slot, nx_id and nx_qver to the pump. */
     uint32_t nx;                 /* audio: prepared incoming slot, or NONE */
@@ -649,6 +655,100 @@ static void set_option(sel_engine* e, sel_option_id id, const char* value) {
     }
     copy_str(e->state.options[id], SEL_OPTION_VALUE_MAX, value);
     changed(e, PENDING_OPTION_BASE << (uint32_t)id);
+}
+
+static void cmd_PLAY(sel_engine* e, const sel_message* m);
+
+/* Local time of day in ms from HOSTQ_LOCAL_TIME; 0 when the host has no clock. */
+static uint32_t local_ms(const sel_engine* e) {
+    sel_tag ask, ans;
+    ask.tag = SEL_HOSTQ_LOCAL_TIME;
+    ask.value = 0;
+    ans.tag = SEL_TAG_END;
+    ans.value = 0;
+    if (e->host->query != NULL && e->host->query(e->host, &ask, &ans) && ans.tag == SEL_HOSTQ_LOCAL_TIME) {
+        return (uint32_t)ans.value % SEL_DAY_MS;
+    }
+    return 0;
+}
+
+static void emit_timer(sel_engine* e, uint32_t which, const char* value) {
+    sel_message m;
+    char* text = e->timer_text[e->timer_text_next++ % 8u];
+    copy_str(text, sizeof e->timer_text[0], value);
+    evt_init(&m, SEL_EVT_OPTIONS_CHANGED);
+    evt_str(&m, which == 0u ? "sleep_timer" : "alarm");
+    evt_str(&m, text);
+    emit(e, &m);
+}
+
+/* SLEEP_TIMER minutes: 0 cancels, at most 1440. */
+static void cmd_SLEEP_TIMER(sel_engine* e, const sel_message* m) {
+    uint32_t min = m->args[0].v.u;
+    char buf[16];
+    if (min > 1440u) {
+        sel_engine_report_error(e, "range", "SLEEP_TIMER");
+        return;
+    }
+    sel_timer_set_sleep(&e->timer, min * 60000u, local_ms(e));
+    if (min == 0u && e->timer.ramp_dir == SEL_RAMP_DOWN) {
+        sel_timer_ramp_clear(&e->timer); /* cancelled mid-ramp: volume back at once */
+    }
+    snprintf(buf, sizeof buf, "%lu", (unsigned long)min * 60000ul);
+    emit_timer(e, 0, buf);
+}
+
+/* ALARM HH:MM|off: one daily alarm on the local clock. */
+static void cmd_ALARM(sel_engine* e, const sel_message* m) {
+    const char* v = m->args[0].v.s;
+    unsigned hh, mm;
+    char buf[8];
+    if (strcmp(v, "off") == 0) {
+        sel_timer_set_alarm(&e->timer, SEL_ALARM_OFF, local_ms(e));
+        emit_timer(e, 1, "off");
+        return;
+    }
+    if (strlen(v) != 5u || v[2] != ':' || v[0] < '0' || v[0] > '9' || v[1] < '0' || v[1] > '9' || v[3] < '0' ||
+        v[3] > '9' || v[4] < '0' || v[4] > '9') {
+        sel_engine_report_error(e, "range", "ALARM");
+        return;
+    }
+    hh = (unsigned)((v[0] - '0') * 10 + (v[1] - '0'));
+    mm = (unsigned)((v[3] - '0') * 10 + (v[4] - '0'));
+    if (hh > 23u || mm > 59u) {
+        sel_engine_report_error(e, "range", "ALARM");
+        return;
+    }
+    sel_timer_set_alarm(&e->timer, (hh * 60u + mm) * 60000u, local_ms(e));
+    snprintf(buf, sizeof buf, "%02u:%02u", hh, mm);
+    emit_timer(e, 1, buf);
+}
+
+/* Pump side of the timers: a finished down ramp pauses and restores the volume
+ * gain; a fired alarm resumes (or starts the queue) with a rising ramp. */
+static void timer_pump(sel_engine* e) {
+    sel_timer* t = &e->timer;
+    if (t->sleep_expired) {
+        t->sleep_expired = 0;
+        emit_timer(e, 0, "0");
+    }
+    if (t->sleep_done) {
+        t->sleep_done = 0;
+        sel_timer_ramp_clear(t);
+        if (e->state.play == SEL_PLAYING) {
+            set_play(e, SEL_PAUSED);
+        }
+    }
+    if (t->alarm_fired) {
+        t->alarm_fired = 0;
+        if (e->state.play != SEL_PLAYING) {
+            sel_timer_ramp_up(t, (uint32_t)((uint64_t)SEL_ALARM_RAMP_MS * e->rate / 1000u));
+            cmd_PLAY(e, NULL);
+        }
+    }
+    if (t->ramp_dir == SEL_RAMP_DOWN && e->state.play != SEL_PLAYING) {
+        sel_timer_ramp_clear(t); /* paused or stopped by hand mid-ramp */
+    }
 }
 
 /* REPEAT off|one|all: the repeat option. */
@@ -2276,6 +2376,8 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     memset(e, 0, sizeof *e);
     e->host = host;
     e->state.volume = 100;
+    sel_timer_init(&e->timer);
+    (void)local_ms(e); /* primes the C library time zone state outside the render path */
     e->loops = 1;
     e->fade_ms = 3000;
     e->silence_ms = 5000;
@@ -2423,6 +2525,7 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
             dispatch(e, &m);
         }
     }
+    timer_pump(e);
     reclaim_slots(e);
     if (e->deferred) {
         begin_song(e, e->deferred, e->deferred_path, e->deferred_subsong, e->deferred_seek);
@@ -2873,10 +2976,13 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
             e->audio_slot = e->act;
         }
     }
+    sel_timer_poll(&e->timer, local_ms(e), e->state.play == SEL_PLAYING,
+                   (uint32_t)((uint64_t)SEL_SLEEP_RAMP_MS * e->rate / 1000u));
     {
         sl = e->act < SEL_SLOT_COUNT ? &e->slot[e->act] : NULL;
         if (sl != NULL && e->state.play == SEL_PLAYING) {
             done = render_mix(e, stereo, frames);
+            sel_timer_apply(&e->timer, stereo, done);
             if (e->state.volume != 100) {
                 uint32_t i;
                 for (i = 0; i < done * 2u; i++) {

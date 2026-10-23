@@ -19,7 +19,8 @@ add_library(selecta_core STATIC
   engine/voices.c
   engine/scheduler.c
   engine/viz.c
-  engine/dsp_chain.c)
+  engine/dsp_chain.c
+  engine/timer.c)
 target_include_directories(selecta_core PUBLIC ${PROJECT_SOURCE_DIR}/include)
 
 # Fixed-point mixer and resamplers (no float, no allocation).

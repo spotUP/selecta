@@ -1,0 +1,13 @@
+# T45: a cancelled sleep timer and a cancelled alarm do nothing.
+VOLUME 80
+QUEUE_ADD selecta-test.mod
+PLAY
+@render 441
+SLEEP_TIMER 1
+SLEEP_TIMER 0
+@clock +60000
+@render 441000
+ALARM 07:30
+ALARM off
+@clock +1000
+@render 441

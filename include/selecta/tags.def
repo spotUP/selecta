@@ -137,6 +137,7 @@ SEL_TAG(MACHINE, DISK,         0x9009, STR)
 SEL_TAG(MACHINE, TIER,         0x900A, INT)
 
 SEL_TAG(HOSTQ, API_VERSION,    0xA000, INT)
+SEL_TAG(HOSTQ, LOCAL_TIME,     0xA001, INT) /* milliseconds since local midnight */
 
 /* Mixer configuration. The resampler values (none, linear, cubic, sinc)
  * are enum constants in the mixer header, not tags. */

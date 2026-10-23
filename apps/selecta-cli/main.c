@@ -296,6 +296,20 @@ static void script_event(void* ctx, const sel_message* evt) {
 
 static int g_alloc_guard;
 
+/* --clock fake=HH:MM:SS: the host answers HOSTQ_LOCAL_TIME from a counter that
+ * only the script directive @clock +ms advances (T45). */
+static sel_host g_fake_host;
+static uint32_t g_fake_ms;
+
+static int fake_query(const sel_host* h, const sel_tag* ask, sel_tag* answer) {
+    if (ask && ask->tag == SEL_HOSTQ_LOCAL_TIME) {
+        answer->tag = SEL_HOSTQ_LOCAL_TIME;
+        answer->value = g_fake_ms;
+        return 1;
+    }
+    return sel_host_default()->query(h, ask, answer);
+}
+
 static void script_render(sel_engine* e, uint32_t frames) {
     static int16_t buf[SCRIPT_RENDER_CHUNK * 2u];
     while (frames > 0) {
@@ -353,6 +367,8 @@ static void script_directive(sel_engine* e, const char* line) {
         sel_engine_stats_get(e, &st);
         printf("STATS xfade_frames=%u slots_mixed=%u mixed_path=%u\n", (unsigned)st.xfade_frames,
                (unsigned)st.slots_mixed, (unsigned)st.mixed_path);
+    } else if (sscanf(line, "@clock +%lu", &n) == 1) {
+        g_fake_ms = (uint32_t)(((unsigned long)g_fake_ms + n) % 86400000ul);
     } else if (strcmp(line, "@integration_poll") == 0) {
         sel_int_session_poll(g_int);
     } else if (strcmp(line, "@alloc_guard on") == 0) {
@@ -394,6 +410,7 @@ static void script_directive(sel_engine* e, const char* line) {
  * out as events. One pump per line so the decode pool can be reused. */
 static int cmd_script(const char* path, int argc, char** argv) {
     const char* int_id = NULL;
+    const sel_host* host = sel_host_default();
     int i;
     char line[1024];
     char pool[2048];
@@ -405,11 +422,25 @@ static int cmd_script(const char* path, int argc, char** argv) {
         fprintf(stderr, "selecta-cli: cannot open %s\n", path);
         return 1;
     }
+    for (i = 0; i + 1 < argc; i++) {
+        unsigned hh, mm, ss;
+        if (strcmp(argv[i], "--clock") == 0) {
+            if (sscanf(argv[i + 1], "fake=%2u:%2u:%2u", &hh, &mm, &ss) != 3 || hh > 23u || mm > 59u || ss > 59u) {
+                fprintf(stderr, "selecta-cli: --clock wants fake=HH:MM:SS\n");
+                fclose(f);
+                return 1;
+            }
+            g_fake_ms = (hh * 3600u + mm * 60u + ss) * 1000u;
+            g_fake_host = *sel_host_default();
+            g_fake_host.query = fake_query;
+            host = &g_fake_host;
+        }
+    }
     sel_registry_init(sel_host_default());
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;
     cfg.machine = sel_machine_probe(sel_host_default());
-    e = sel_engine_create(sel_host_default(), &cfg);
+    e = sel_engine_create(host, &cfg);
     if (e == NULL) {
         fclose(f);
         fprintf(stderr, "selecta-cli: engine allocation failed\n");

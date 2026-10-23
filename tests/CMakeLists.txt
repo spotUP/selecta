@@ -562,6 +562,13 @@ if(NOT SEL_AMIGA)
         -P "${CMAKE_CURRENT_SOURCE_DIR}/m13/${file}_check.cmake")
   endforeach()
 endif()
+# T45 unit side: ramp shapes, midnight wrap and daily re-arm of src/engine/timer.c.
+if(NOT SEL_AMIGA)
+  add_executable(timer_test m13/timer_test.c)
+  target_link_libraries(timer_test PRIVATE selecta_core)
+  add_test(NAME sleep-ramp COMMAND timer_test)
+endif()
+
 # T46 (rows I97, I98): SAMPLE_LIST and SAMPLE_EXPORT (WAV, 8SVX) through the engine, libopenmpt adapter.
 if(NOT SEL_AMIGA)
   add_test(NAME sample-export
