@@ -57,6 +57,9 @@
     X(QUEUE_SWAP)                                                                             \
     X(UNDO)                                                                                   \
     X(REDO)                                                                                   \
+    X(QUEUE_SHUFFLE)                                                                          \
+    X(RESHUFFLE)                                                                              \
+    X(SHUFFLE)                                                                                \
     X(QUEUE_PLAY_NEXT)                                                                        \
     X(LIBRARY_BROWSE)                                                                         \
     X(VIEW_SHOW)                                                                              \
@@ -154,6 +157,7 @@ struct sel_engine {
     char subsong_path[SEL_DEFERRED_PATH_MAX];
     sel_queue queue;
     sel_history history;
+    uint32_t rng; /* shuffle generator state, 0: not seeded yet */
     uint32_t q_playing; /* id of the playing queue entry, 0: none */
     uint32_t q_hint;    /* position NEXT and PLAY start from while q_playing is 0 */
     uint32_t song_over; /* the open song ended or the queue ran out: PLAY restarts the queue */
@@ -383,12 +387,16 @@ static void cmd_OUTPUT(sel_engine* e, const sel_message* m) {
     changed(e, PENDING_OUTPUT);
 }
 
+static void set_option(sel_engine* e, sel_option_id id, const char* value) {
+    copy_str(e->state.options[id], SEL_OPTION_VALUE_MAX, value);
+    changed(e, PENDING_OPTION_BASE << (uint32_t)id);
+}
+
 static void cmd_OPTION(sel_engine* e, const sel_message* m) {
     uint32_t i;
     for (i = 0; i < (uint32_t)SEL_OPTION_COUNT; i++) {
         if (strcmp(k_option_names[i], m->args[0].v.s) == 0) {
-            copy_str(e->state.options[i], SEL_OPTION_VALUE_MAX, m->args[1].v.s);
-            changed(e, PENDING_OPTION_BASE << i);
+            set_option(e, (sel_option_id)i, m->args[1].v.s);
             return;
         }
     }
@@ -1008,6 +1016,45 @@ static void cmd_QUEUE_SWAP(sel_engine* e, const sel_message* m) {
         return;
     }
     emit_queue_changed(e);
+}
+
+/* Shuffles the rows after the playing one (all rows when nothing plays). */
+static void queue_shuffle_rows(sel_engine* e, uint32_t seed) {
+    uint32_t first = e->q_playing ? sel_queue_index_of(&e->queue, e->q_playing) + 1u : 0;
+    sel_history_record(&e->history, &e->queue);
+    e->rng = sel_queue_shuffle(&e->queue, first, seed);
+    emit_queue_changed(e);
+}
+
+static void cmd_QUEUE_SHUFFLE(sel_engine* e, const sel_message* m) {
+    uint32_t seed = 0;
+    const char* p = m->argc ? m->args[0].v.s : NULL;
+    if (p != NULL) {
+        for (; *p >= '0' && *p <= '9'; p++) {
+            seed = seed * 10u + (uint32_t)(*p - '0');
+        }
+        if (p == m->args[0].v.s || *p != '\0') {
+            sel_engine_report_error(e, "range", "QUEUE_SHUFFLE");
+            return;
+        }
+    } else {
+        seed = e->host->clock_ms(e->host) ^ e->rng;
+    }
+    queue_shuffle_rows(e, seed);
+}
+
+static void cmd_RESHUFFLE(sel_engine* e, const sel_message* m) {
+    (void)m;
+    queue_shuffle_rows(e, sel_xorshift32(sel_shuffle_seed(e->rng)));
+}
+
+static void cmd_SHUFFLE(sel_engine* e, const sel_message* m) {
+    const char* v = m->argc ? m->args[0].v.s : "on";
+    if (strcmp(v, "on") != 0 && strcmp(v, "off") != 0) {
+        sel_engine_report_error(e, "range", "SHUFFLE");
+        return;
+    }
+    set_option(e, SEL_OPT_RANDOM, v);
 }
 
 static void queue_step(sel_engine* e, int undo, const char* who) {

@@ -182,8 +182,8 @@ SONG_OPENED {META_TITLE="selecta test",META_FORMAT=Protracker4,META_CHANNELS=4,M
 POSITION 0 0 0 0
 STATE playing
 POSITION 0 50 1 44100
-SNAPSHOT position_ms=1000 order=0 row=50 pattern=0
+SNAPSHOT position_ms=1000 order=0 row=0 pattern=0
 QUEUE_CHANGED 85
 QUEUE_HISTORY 63 1
-SNAPSHOT position_ms=1000 order=0 row=50 pattern=0
+SNAPSHOT position_ms=1000 order=0 row=0 pattern=0
 QUEUE version=85 playing=2 ids=1,5,4,2,3
