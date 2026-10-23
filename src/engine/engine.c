@@ -265,6 +265,8 @@ struct sel_engine {
     uint32_t seek_path;     /* SEL_SEEK_PATH_*: how the last SEEK got there */
     uint32_t seek_skipped;  /* frames the last restart-and-skip ran through */
     uint32_t songs_opened;  /* OPEN-kind song starts that succeeded (not seeks, restarts, subsongs) */
+    uint32_t dup_redirects; /* reads that took the best source of the same md5 (D-M3-14, I184) */
+    char dup_played[SEL_DEFERRED_PATH_MAX]; /* key of the last best source read */
     char deferred_path[SEL_DEFERRED_PATH_MAX];
     char subsong_path[SEL_DEFERRED_PATH_MAX];
     sel_queue queue;
@@ -1137,6 +1139,13 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size) {
     long len;
     uint8_t* buf;
     char cached[SEL_BROWSE_PATH_MAX];
+    char best[SEL_BROWSE_PATH_MAX];
+    /* D-M3-14 (I184): a library song with twins of the same md5 plays its best source. */
+    if (e->lib != NULL && sel_library_best_source(e->lib, path, best, sizeof best) && strcmp(best, path) != 0) {
+        snprintf(e->dup_played, sizeof e->dup_played, "%s", best);
+        e->dup_redirects++;
+        path = best;
+    }
     if (e->lib != NULL && sel_cache_is_remote(path)) {
         /* Remote key: the file cache serves it (a hit when the prefetch got there first), I168. */
         char rules[512];
@@ -3848,6 +3857,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->seek_path = e->seek_path;
     out->seek_skipped_frames = e->seek_skipped;
     out->songs_opened = e->songs_opened;
+    out->dup_redirects = e->dup_redirects;
+    out->dup_played = e->dup_played;
     out->history_writes = e->history_writes;
     out->scrobble_due = e->scrobble_due;
     out->skip_excluded = e->skip_excluded;

@@ -45,7 +45,10 @@ enum {
     SEL_SONGDB_APPLY,   /* I182: rebuild song_composers of song key `key` from authors `value` (lines) */
     SEL_COMPOSER_NEXT,  /* I182: next song with id > `after` that has composer canon `key`: `out` = song key NUL name NUL display NUL, reply [2] = its id (0: none) */
     SEL_SIMILAR_NEXT,   /* I183: song at row offset `after` of the similar list of song key `key`: `out` = key NUL name NUL genre NUL rating NUL genre_match NUL (decimal text), reply [2] = after + 1 (0: none) */
-    SEL_ALSOBY_NEXT     /* I183: song at row offset `after` among the other songs sharing a composer with song key `key`: `out` = key NUL name NUL composer display NUL, reply [2] = after + 1 (0: none) */
+    SEL_ALSOBY_NEXT,    /* I183: song at row offset `after` among the other songs sharing a composer with song key `key`: `out` = key NUL name NUL composer display NUL, reply [2] = after + 1 (0: none) */
+    SEL_DUP_HASH,       /* I184: hashes the next local song with id > `after` that has no md5 and stores it: reply [2] = its id (0: none left) */
+    SEL_DUP_NEXT,       /* I184: duplicate group at row offset `after` (same md5, two or more songs): `out` = md5 NUL member count NUL best key NUL, reply [2] = after + 1 (0: none) */
+    SEL_BEST_SOURCE     /* I184: best song among those sharing the md5 of song key `key` (D-M3-14): `out` = key NUL, reply [2] = 1 (0: key unknown or no md5) */
 };
 typedef struct sel_genre_op {
     uint32_t op;       /* SEL_GENRE_* */
@@ -341,6 +344,20 @@ int sel_library_also_by(sel_library* lib, const char* song_key, sel_composer_row
 typedef void (*sel_similar_row_fn)(void* ctx, const char* song_key, const char* song_name, const char* genre,
                                    int rating, int genre_match);
 int sel_library_similar(sel_library* lib, const char* song_key, sel_similar_row_fn fn, void* ctx);
+
+/* Duplicates (I184, T86): groups of songs with the same md5 across sources. Hashes the local songs that have no
+ * md5 yet, then calls `fn` once per group with the md5, the member count and the best key (D-M3-14: local >
+ * home mirror > cache > modland > hvsc > hippo URL, ties by library order). Returns the group count, -1 on a
+ * library error. */
+typedef void (*sel_dup_row_fn)(void* ctx, const char* md5, int members, const char* best_key);
+int sel_library_duplicates(sel_library* lib, sel_dup_row_fn fn, void* ctx);
+/* Hashes the local songs without an md5 (what the duplicates step needs). Returns how many files were looked
+ * at, -1 on a library error. */
+int sel_library_hash_local(sel_library* lib);
+/* The song OPEN plays for `song_key`: the best source among the songs with the same md5 (D-M3-14), which is
+ * `song_key` itself when it is the best. A local best source comes back as its plain path, a remote one as its key
+ * (the form read_song opens). 0 when the song has no md5 or is unknown. */
+int sel_library_best_source(sel_library* lib, const char* song_key, char* out, size_t cap);
 
 uint32_t sel_library_account(const sel_library* lib);
 uint32_t sel_library_heap_size(const sel_library* lib);
