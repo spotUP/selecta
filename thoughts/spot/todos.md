@@ -246,8 +246,9 @@ Tests T39 to T48 are defined in the plan's finish-line table.
 | I85 | [x] | 1 | T40 and T48 written and red; `viz.h`, VIZ tags | red `phase-tap, viz-vu, viz-spectrum, viz-taps ***Failed` (0 of 4); T2, T5 green; 2550bd6 |
 | I86 | [x] | 1 | Engine taps (peaks, VU, scopes, PCM ring), triple buffer, snapshot field | phase-tap, viz-vu, mixer-unit, render-golden-*, no-alloc-* green; 4ad74ac |
 | I87 | [x] | 1 | Integer FFT and bands on the pump thread; phase correlation | viz-spectrum, viz-taps green, dump byte identical twice; 6d1e866 |
-| I88 | [ ] | 2 | T41 written and red; RP_TRACKER_INFO/CELLS tags and typedefs | ctest failure |
-| I89 | [ ] | 2 | nuade and openmpt tracker hooks, `@cells` directive | T41 green |
+| I88 | [x] | 2 | T41 written and red; RP_TRACKER_INFO/CELLS tags and typedefs | ctest failure; red 2bd9668 `Test #52: pattern-cells ***Failed` |
+| I89 | [x] | 2 | nuade and openmpt tracker hooks, `@cells` directive | T41 green; f5d8fa2, merge d068100, full run 72 of 72, ratchet 27 |
+| I89a | [ ] | 2 | One note scale in `sel_rp_cell`: nuade adapter maps to the libopenmpt scale (MOD period 428 = 61); pattern.expected nuade rows updated | T41 green with equal notes for both adapters on the same period |
 | I90 | [ ] | 3 | T42 written and red; mute golden committed after a listening check of voice 1 removed (agent compares against a render with the voice's samples zeroed) | ctest failure |
 | I91 | [ ] | 3 | Mute mask, MUTE, SOLO, VOICE event mask, RP_MUTE | T42 mute half green, ratchet 25 |
 | I92 | [ ] | 3 | Pitch and tempo tables, PITCH, TEMPO, RP_SET_SPEED | T42 green, ratchet 23 |

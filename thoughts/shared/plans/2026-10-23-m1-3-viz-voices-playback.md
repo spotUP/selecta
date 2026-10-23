@@ -127,3 +127,11 @@ Visualizer plugins on bitmap surfaces (M4), GPU visualizers (M5), chip register 
 - Spectrum bands take the maximum over FFT bins (172 Hz per bin at 44100 Hz), so the lowest bands share bins.
 - On m68k the triple-buffer swap is a plain volatile exchange; elsewhere `__atomic_exchange_n`. The spectrum is skipped below a 68030.
 - Memory: about 16 KB per mixer slot and about 70 KB in the engine. no_float object count is 23.
+
+### Phase 2 (rows I88 to I89, branch worktree-agent-aed727b550d9fa4be)
+
+- nuade does not open the plain M.K. test module, so T41 reads `selecta-test.mod` through nuade and `selecta-test-mk.mod` through openmpt.
+- Note numbering differs between the adapters: for MOD period 428 openmpt reports note 61 and nuade note 25 (36 semitones apart). `tests/m13/pattern.expected` records the raw values. This is a defect, not a choice: `sel_rp_cell.note` needs one scale. Fixed in row I89a: the libopenmpt scale (1 = C-0, MOD period 428 = 61) is canonical, the nuade adapter maps to it.
+- The openmpt adapter maps effects through a ProTracker-only table; other effect commands read as 0.
+- nuade reports `patterns = 0`; its order count is probed up to 4096.
+- `sel_engine_tracker_info` and `sel_engine_tracker_cells` call the replayer on the caller's thread, so they are valid from the script driver only. The pump-thread request path for a published slot (I56 pattern) lands with the pattern panel in Phase 6 (I101), before any front end with a separate audio thread reads cells.
