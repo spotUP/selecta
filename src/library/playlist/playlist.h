@@ -60,6 +60,9 @@ const char* sel_playlist_str(const sel_playlist* pl, uint32_t offset);
 int sel_playlist_add(sel_playlist* pl, sel_pl_kind kind, const char* key, size_t key_len, const char* name, size_t name_len,
                      uint8_t subsong, uint32_t duration_ms);
 
+/* Replaces the name of entry `index`. Returns 0 or SEL_PL_RANGE. */
+int sel_playlist_set_name(sel_playlist* pl, uint32_t index, const char* name, size_t name_len);
+
 /* By extension (.prg .m3u .m3u8 .pls .xspf, case-insensitive), else by
  * sniffing (HiPPrg, #EXTM3U, [playlist], <?xml). SEL_PL_AUTO = unknown. */
 sel_pl_format sel_playlist_format_from_name(const char* name);

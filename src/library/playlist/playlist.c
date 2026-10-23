@@ -55,6 +55,15 @@ int sel_playlist_add(sel_playlist* pl, sel_pl_kind kind, const char* key, size_t
     return SEL_PL_OK;
 }
 
+int sel_playlist_set_name(sel_playlist* pl, uint32_t index, const char* name, size_t name_len) {
+    uint32_t off = 0;
+    if (index >= pl->count || add_text(pl, name, name_len, &off) != SEL_PL_OK) {
+        return SEL_PL_RANGE;
+    }
+    pl->entries[index].name = off;
+    return SEL_PL_OK;
+}
+
 static int ieq_tail(const char* name, const char* ext) {
     size_t n = strlen(name);
     size_t e = strlen(ext);

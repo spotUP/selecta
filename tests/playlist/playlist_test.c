@@ -146,7 +146,7 @@ static void test_m3u(void) {
     }
     /* CRLF and a plain list without #EXTM3U */
     fresh(&back);
-    rc = sel_playlist_read(SEL_PL_M3U, "a.mod\r\n\r\nb.mod\r\n", 15, &back, NULL, NULL);
+    rc = sel_playlist_read(SEL_PL_M3U, "a.mod\r\n\r\nb.mod\r\n", 16, &back, NULL, NULL);
     CHECK(rc == SEL_PL_OK && back.count == 2 && strcmp(key_of(&back, 1), "b.mod") == 0, "plain m3u");
 }
 
