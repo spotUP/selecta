@@ -1,3 +1,9 @@
-add_executable(selecta main.c ../common/ctlsock.c ../common/integration_host.c)
+add_executable(selecta main.c ../common/integration_host.c)
 target_include_directories(selecta PRIVATE ../common)
 target_link_libraries(selecta PRIVATE selecta_registry selecta_core)
+# The control socket is POSIX only; the Amiga's equivalent is the ARexx port (M4).
+if(SEL_AMIGA)
+  target_compile_definitions(selecta PRIVATE SEL_NO_CONTROL_SOCKET)
+else()
+  target_sources(selecta PRIVATE ../common/ctlsock.c)
+endif()

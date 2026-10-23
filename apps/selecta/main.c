@@ -16,7 +16,9 @@
 #include <selecta/registry.h>
 #include <selecta/ui.h>
 
+#ifndef SEL_NO_CONTROL_SOCKET
 #include "ctlsock.h"
+#endif
 #include "integration_host.h"
 
 #include <stdio.h>
@@ -28,9 +30,11 @@
 #define SHELL_TURN_MS 20u
 #define SHELL_RESAMPLER 1u /* linear */
 
-/* ctx[0] = UI on_event hook, ctx[1] = UI state, ctx[2] = integration session. */
+static sel_ui_on_event_fn g_on_event;
+
+/* ctx[0] unused, ctx[1] = UI state, ctx[2] = integration session. */
 static void sink(void* ctx, const sel_message* evt) {
-    sel_ui_on_event_fn on_event = (sel_ui_on_event_fn)((void**)ctx)[0];
+    sel_ui_on_event_fn on_event = g_on_event;
     if (evt->id == SEL_EVT_ERROR) {
         fprintf(stderr, "error %s %s\n", evt->args[0].v.s, evt->argc > 1 ? evt->args[1].v.s : "");
     }
@@ -76,6 +80,7 @@ static void send_line(sel_engine* e, const char* line) {
 /* Control socket (T35): one line in, one reply out. A line that does not parse,
  * or whose command raises ERROR, is answered `ERROR <code> <detail>`; the rest
  * `OK`. Only OK lines count in socket_cmds. */
+#ifndef SEL_NO_CONTROL_SOCKET
 typedef struct ctl_ctx {
     sel_engine* engine;
     void** sink_ctx;
@@ -103,6 +108,7 @@ static int ctl_handle(void* ctx, const char* line, char* reply, size_t cap) {
     snprintf(reply, cap, "%s", c->err[0] != '\0' ? c->err : "OK");
     return c->err[0] == '\0';
 }
+#endif
 
 int main(int argc, char** argv) {
 #ifdef __APPLE__
@@ -147,8 +153,12 @@ int main(int argc, char** argv) {
     sel_int_session* isess = NULL;
     int ctl_fd = -1;
     unsigned socket_cmds = 0;
+    (void)ctl_fd;
+    (void)socket_cmds;
+#ifndef SEL_NO_CONTROL_SOCKET
     char ctl_path[512];
     ctl_ctx cc;
+#endif
 
     const sel_tag* machine_tags = sel_machine_probe(host); /* probed once; the registry hides what it cannot run */
 
@@ -165,7 +175,8 @@ int main(int argc, char** argv) {
     out_set_source = (sel_out_set_source_fn)sel_tag_find(oh, SEL_OUT_SET_SOURCE, 0);
     out_pump = (sel_out_pump_fn)sel_tag_find(oh, SEL_OUT_PUMP, 0);
     ui_open = (sel_ui_open_fn)sel_tag_find(uh, SEL_UI_OPEN, 0);
-    ctx[0] = (void*)sel_tag_find(uh, SEL_UI_ON_EVENT, 0);
+    g_on_event = (sel_ui_on_event_fn)sel_tag_find(uh, SEL_UI_ON_EVENT, 0);
+    ctx[0] = NULL;
     ui_wait = (sel_ui_wait_fn)sel_tag_find(uh, SEL_UI_WAIT, 0);
     ui_close = (sel_ui_close_fn)sel_tag_find(uh, SEL_UI_CLOSE, 0);
     ui_stats = (sel_ui_stats_fn)sel_tag_find(uh, SEL_UI_STATS, 0);
@@ -213,6 +224,7 @@ int main(int argc, char** argv) {
     ctx[1] = ui;
     ctx[2] = NULL;
 
+#ifndef SEL_NO_CONTROL_SOCKET
     cc.engine = e;
     cc.sink_ctx = ctx;
     cc.err[0] = '\0';
@@ -227,6 +239,7 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
+#endif
     if (strcmp(int_id, "none") != 0) {
         isess = sel_int_session_open(e, host, int_id, sink, ctx);
         if (isess == NULL) {
@@ -252,9 +265,11 @@ int main(int argc, char** argv) {
         out_pump(out, SHELL_RATE * SHELL_TURN_MS / 1000u);
         sel_engine_pump(e, sink, ctx);
         sel_int_session_poll(isess);
+#ifndef SEL_NO_CONTROL_SOCKET
         if (ctl_fd >= 0) {
             socket_cmds += (unsigned)sel_ctl_serve(ctl_fd, is_null ? SHELL_TURN_MS : 0u, ctl_handle, &cc);
         }
+#endif
     }
 
     ust = ui_stats != NULL ? ui_stats(ui) : NULL;
@@ -274,16 +289,21 @@ int main(int argc, char** argv) {
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_PATTERN_ROWS, 0), (unsigned)est.mutes,
            est.crossfeed_on ? "on" : "off", (unsigned)est.fades, (unsigned)est.sleep_armed);
 
+    printf("ui_frames=%u ui_hash=%08x\n", (unsigned)sel_tag_find(ust, SEL_UI_STAT_FRAMES, 0),
+           (unsigned)sel_tag_find(ust, SEL_UI_STAT_HASH, 0));
+
     printf("viz_marks dot_rows=%u phase_points=%u\n", (unsigned)sel_tag_find(ust, SEL_UI_STAT_DOT_ROWS, 0),
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_PHASE_POINTS, 0));
 
     printf("engine_state pitch_cents=%d tempo_percent=%d mute_mask=%u mutes=%u\n", (int)sel_engine_state(e)->pitch_cents,
            (int)sel_engine_state(e)->tempo_percent, (unsigned)sel_engine_state(e)->mute_mask, (unsigned)est.mutes);
 
+#ifndef SEL_NO_CONTROL_SOCKET
     if (ctl_fd >= 0) {
         printf("socket_cmds=%u\n", socket_cmds);
         sel_ctl_close(ctl_fd, ctl_path);
     }
+#endif
     sel_int_session_close(isess);
     ui_close(ui);
     out_close(out);
