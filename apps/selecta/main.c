@@ -261,6 +261,11 @@ int main(int argc, char** argv) {
     printf("songs_opened=%u queue_version=%u\n", (unsigned)est.songs_opened,
            (unsigned)sel_engine_state(e)->queue_version);
 
+    printf("cmdline_runs=%u palette_opens=%u bindings=%u playlist_entries=%u undo_depth=%u redo_depth=%u view_style=%s\n",
+           (unsigned)sel_tag_find(ust, SEL_UI_STAT_CMDLINE_RUNS, 0), (unsigned)sel_tag_find(ust, SEL_UI_STAT_PALETTE_OPENS, 0),
+           (unsigned)sel_tag_find(ust, SEL_UI_STAT_BINDINGS, 0), (unsigned)sel_engine_state(e)->queue_count,
+           (unsigned)est.undo_depth, (unsigned)est.redo_depth, sel_view_style_label(sel_engine_state(e)->view->style));
+
     if (ctl_fd >= 0) {
         printf("socket_cmds=%u\n", socket_cmds);
         sel_ctl_close(ctl_fd, ctl_path);
