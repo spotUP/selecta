@@ -277,11 +277,11 @@ Tests T49 to T61 are defined in the plan's finish-line table.
 |----|--------|-------|------|-------|
 | I105 | [x] | 0 | Add T49 to T55, T57, T58, T61 red (desktop and vamos) with fixtures | ctest lists them, all fail; merge 3606a9f (14 red, missing-feature reasons) |
 | I106 | [x] | 0 | Add rig driver `tests/amiga/run_rig.cmake`, label `rig`, skip line; T56, T59, T60 red | ctest -L rig fails with rig up, skips visibly with rig down; merge 3606a9f (rig tests skip visibly; rig-up path untested, rig auth failed) |
-| I107 | [ ] | 1 | Declared-need tags in `tags.def` (MIN_CPU, NEEDS_FLOAT, MEMORY, PRIORITY, CONFIG, OUT_MEM_CHIP) | build both trees; tag table test |
-| I108 | [ ] | 1 | Registry machine filter and priority owner choice, fake `sel_machine` injection | T49 green desktop |
-| I109 | [ ] | 1 | GFX and AUDIO probes, planar tier, `--tier` override | T50 green |
-| I110 | [ ] | 1 | timer.device ReadEClock clock, DateStamp fallback under vamos | clock test green on rig and vamos |
-| I111 | [ ] | 1 | T49 green under vamos; tag every existing plugin with its needs | T49 green both trees |
+| I107 | [x] | 1 | Declared-need tags in `tags.def` (MIN_CPU, NEEDS_FLOAT, MEMORY, PRIORITY, CONFIG, OUT_MEM_CHIP) | build both trees; tag table test; e120aee; merge 2d15f64 (rig proof open for I109, I110) |
+| I108 | [x] | 1 | Registry machine filter and priority owner choice, fake `sel_machine` injection | T49 green desktop; e120aee; merge 2d15f64 (rig proof open for I109, I110) |
+| I109 | [x] | 1 | GFX and AUDIO probes, planar tier, `--tier` override | T50 green; e120aee; merge 2d15f64 (rig proof open for I109, I110) |
+| I110 | [x] | 1 | timer.device ReadEClock clock, DateStamp fallback under vamos | clock test green on rig and vamos; e120aee; merge 2d15f64 (rig proof open for I109, I110) |
+| I111 | [x] | 1 | T49 green under vamos; tag every existing plugin with its needs | T49 green both trees; e120aee; merge 2d15f64 (rig proof open for I109, I110) |
 | I112 | [ ] | 2 | CIA-B interrupt server (signal only) | T54 core objects green; rig sentinel `cia_ints=` |
 | I113 | [ ] | 2 | Audio task at prefs priority, render loop | rig sentinel `audio_task_ticks=` |
 | I114 | [ ] | 2 | SPSC publication with Disable/Enable around head/tail; main loop Wait plus `sel_engine_pump()` | queue test under vamos |
