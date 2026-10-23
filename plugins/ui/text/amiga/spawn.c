@@ -16,14 +16,12 @@ int txt_spawn(const char* line, const char* const* paths, uint32_t n) {
     if (len == 0 || len >= sizeof cmd) return -1;
     memcpy(cmd, line, len + 1u);
     for (i = 0; i < n; i++) {
-        size_t pl = strlen(paths[i]);
-        if (len + pl + 4u >= sizeof cmd) return -1;
+        size_t ql;
+        if (len + 2u >= sizeof cmd) return -1;
         cmd[len++] = ' ';
-        cmd[len++] = '"';
-        memcpy(cmd + len, paths[i], pl);
-        len += pl;
-        cmd[len++] = '"';
-        cmd[len] = '\0';
+        ql = txt_quote_arg(cmd + len, sizeof cmd - len, paths[i]);
+        if (ql == 0) return -1;
+        len += ql;
     }
     rc = SystemTagList(cmd, NULL);
     return rc == -1 ? -1 : (int)rc; /* -1: the command could not be started */
