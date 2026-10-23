@@ -141,3 +141,5 @@ Visualizer plugins on bitmap surfaces (M4), GPU visualizers (M5), chip register 
 - Phase 3a: openmpt mute is tested as "differs from unmuted" only, no golden.
 - Phase 3a: red reason was the missing `--script` option, not a wrong mask.
 - Phase 3a: `pitch_factor_q16=65536` is a placeholder in `apps/selecta-cli/render.c`; I92 replaces it with the engine value.
+- Phase 3b: PITCH and TEMPO accept relative arguments like VOLUME; values live in `sel_state` and emit no event.
+- Phase 3b: T42 checks tempo by song position only; pitch and tempo are not checked by ear yet.
