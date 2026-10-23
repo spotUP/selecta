@@ -205,6 +205,14 @@ if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
   set_tests_properties(amiga-roundtrip PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos)
 endif()
 
+# I214: config directory falls back to PROGDIR:Selecta when ENVARC: is unassigned (requesters off while probing).
+if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
+  add_test(NAME amiga-config-dir
+    COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DAMIGA_CLI=${SEL_AMIGA_CLI}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_config_dir.cmake")
+  set_tests_properties(amiga-config-dir PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 120)
+endif()
+
 # T10: the machine probe through `selecta-cli machine`. FAST_RAM is the
 # machine's physical memory, read at test time by machine.cmake.
 add_test(NAME machine-probe
