@@ -210,6 +210,13 @@ void sel_engine_set_mix(sel_engine* e, uint32_t rate, uint32_t resampler);
  * sel_engine_set_mix and the registry hook-up, before the song starts. */
 void sel_engine_set_output(sel_engine* e, const sel_tag* out_hooks);
 
+/* LED filter on/off and stereo width percent (0 mono, 100 unchanged), applied
+ * to the mixed output before the DSP chain (I127, I128). Call before the
+ * audio thread renders. Both stages are bypassed while the output is real
+ * Paula: the Paula output calls sel_engine_set_paula_output(e, 1). */
+void sel_engine_set_stage(sel_engine* e, uint32_t led_on, uint32_t width_percent);
+void sel_engine_set_paula_output(sel_engine* e, uint32_t on);
+
 typedef struct sel_engine_stats {
     uint32_t ticks;        /* replayer ticks run */
     uint32_t voice_ops;    /* calls through the voices API */
@@ -230,6 +237,8 @@ typedef struct sel_engine_stats {
     uint32_t fades;                  /* end fades started (loop count, max length) (T39) */
     uint32_t crossfeed_on;           /* 1: the crossfeed DSP is in the chain (T39) */
     uint32_t sleep_armed;            /* 1: a sleep timer is counting down (T39) */
+    uint32_t led_on, led_frames, led_cutoff_hz;       /* LED filter state, frames filtered, designed -3 dB point (T53) */
+    uint32_t width_percent, width_frames, width_mono; /* stereo width, frames processed, 1: width 0 (T53) */
 } sel_engine_stats;
 void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out);
 

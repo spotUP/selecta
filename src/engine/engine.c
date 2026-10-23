@@ -19,6 +19,7 @@
 #include <selecta/tags.h>
 
 #include "mixer.h"
+#include "stage.h"
 #include "dsp_chain.h"
 #include "timer.h"
 #include "pitch_table.h"
@@ -252,6 +253,7 @@ struct sel_engine {
     sel_viz_tap viz;       /* visualisation taps; the audio thread writes, the pump reads */
     uint32_t viz_spectrum; /* capability: the spectrum is computed (CPU 68030 and up) */
     sel_dsp_chain dsp;
+    sel_mix_stage stage; /* LED filter and stereo width, before the DSP chain (I127, I128) */
     uint32_t mutes; /* mute mask changes, for @stats (T39) */
     uint32_t fades; /* end fades started; audio side (T39) */
     uint32_t mixed_path; /* 1: the engine mixes (a DSP chain can run); 0: the output plays voices itself */
@@ -2405,6 +2407,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     e->rate = 44100;
     e->mixed_path = 1;
     e->resampler = SEL_MIX_RESAMPLE_LINEAR;
+    sel_mix_stage_init(&e->stage, e->rate);
     sel_viz_tap_init(&e->viz);
     e->state.viz = sel_viz_current(&e->viz);
     {
@@ -2607,6 +2610,24 @@ void sel_engine_set_mix(sel_engine* e, uint32_t rate, uint32_t resampler) {
     }
     e->resampler = resampler;
     sel_dsp_chain_set_rate(&e->dsp, e->host, e->rate);
+    {
+        sel_mix_stage old = e->stage;
+        sel_mix_stage_init(&e->stage, e->rate);
+        e->stage.paula_output = old.paula_output;
+        e->stage.led_frames = old.led_frames;
+        e->stage.width_frames = old.width_frames;
+        sel_mix_stage_set_width(&e->stage, old.width);
+        sel_mix_stage_set_led(&e->stage, old.led_on);
+    }
+}
+
+void sel_engine_set_stage(sel_engine* e, uint32_t led_on, uint32_t width_percent) {
+    sel_mix_stage_set_led(&e->stage, led_on);
+    sel_mix_stage_set_width(&e->stage, width_percent);
+}
+
+void sel_engine_set_paula_output(sel_engine* e, uint32_t on) {
+    e->stage.paula_output = on != 0u;
 }
 
 void sel_engine_set_output(sel_engine* e, const sel_tag* out_hooks) {
@@ -2641,6 +2662,12 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->undo_depth = e->history.undo_count;
     out->redo_depth = e->history.redo_count;
     out->dsp_blocks = e->dsp.blocks;
+    out->led_on = e->stage.led_on;
+    out->led_frames = e->stage.led_frames;
+    out->led_cutoff_hz = SEL_LED_CUTOFF_HZ;
+    out->width_percent = e->stage.width;
+    out->width_frames = e->stage.width_frames;
+    out->width_mono = e->stage.width == 0u;
     out->xfade_frames = e->xfade_frames;
     out->slots_mixed = e->slots_mixed;
     out->mixed_path = e->mixed_path;
@@ -3018,6 +3045,7 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
     if (done < frames) {
         memset(stereo + (size_t)done * 2u, 0, (size_t)(frames - done) * 2u * sizeof(int16_t));
     }
+    sel_mix_stage_process(&e->stage, stereo, frames);
     sel_dsp_chain_process(&e->dsp, stereo, frames);
     viz_feed(e, sl, stereo, frames);
     if (e->pat_ack != e->pat_req) {
