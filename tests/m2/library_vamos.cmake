@@ -62,6 +62,28 @@ if(stats_peak GREATER 524288)
   message(FATAL_ERROR "RED[T96]: stats db_heap_peak=${stats_peak} exceeds the 512 KB tier heap.")
 endif()
 
+# An index far larger than the 512 KB tier heap must still be readable: the page cache of the ATTACHed index is
+# capped, else count(*) over it ends in SQLITE_NOMEM (found by I198 on the 516k-row Modland index).
+set(big_rows 20000)
+set(big_listing "")
+foreach(n RANGE 1 ${big_rows})
+  string(APPEND big_listing "${n}0\tProtracker/Artist ${n}/some long song name number ${n}.mod\n")
+endforeach()
+file(MAKE_DIRECTORY "${WORK}/big")
+file(WRITE "${WORK}/big/allmods_md5.txt" "${big_listing}")
+execute_process(COMMAND "${CLI}" library sync --db "${WORK}/bigsrc.db" modland "${WORK}/big"
+                OUTPUT_VARIABLE bigsync RESULT_VARIABLE rc)
+execute_process(COMMAND "${CLI}" library export-index --db "${WORK}/bigsrc.db" --out "${WORK}/bigidx.db" modland
+                OUTPUT_VARIABLE bigexp RESULT_VARIABLE rc2)
+if(NOT rc EQUAL 0 OR NOT rc2 EQUAL 0 OR NOT bigexp MATCHES "index_rows=${big_rows}")
+  message(FATAL_ERROR "RED[T96]: big index not built (rc=${rc}/${rc2}): ${bigsync}${bigexp}")
+endif()
+m2_exec(out4 rc4 library stats --db work:user.db --index work:bigidx.db --machine a1200)
+if(NOT rc4 EQUAL 0)
+  message(FATAL_ERROR "RED[T96]: 'library stats' over a ${big_rows}-row index exited ${rc4} on 68k.\n${out4}")
+endif()
+m2_check(T96 "${out4}" "index_songs==${big_rows},db_heap_peak>0")
+
 # sqlite_text_bytes: code size of the SQLite static library in the Amiga build.
 set(sqlite_text "unmeasured")
 if(AMIGA_SIZE AND AMIGA_BUILD_DIR)
