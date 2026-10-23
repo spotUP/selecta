@@ -79,7 +79,7 @@ sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint
     lib->heap_allocs = g_heap_allocs;
     if (sqlite3_open_v2(path, &lib->db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL) !=
             SQLITE_OK ||
-        !sel_schema_migrate(lib->db)) {
+        !sel_schema_migrate(lib->db) || !sel_library_register_regexp(lib->db)) {
         goto fail;
     }
     sqlite3_snprintf((int)sizeof sql, sql, "INSERT OR REPLACE INTO meta(key, value) VALUES('account', '%u')", account);
@@ -175,5 +175,18 @@ void sel_library_handle(sel_library* lib, const sel_message* req, sel_message* r
     lib->served++;
     if (req->id == SEL_LIB_REQ_STATS) {
         handle_stats(lib, reply);
+    } else if (req->id == SEL_LIB_REQ_SEARCH || req->id == SEL_LIB_REQ_SAVE_VIEW || req->id == SEL_LIB_REQ_IMPORT) {
+        if (lib->job != NULL) {
+            if (req->id == SEL_LIB_REQ_SEARCH) {
+                sel_library_search(lib, lib->job);
+            } else if (req->id == SEL_LIB_REQ_SAVE_VIEW) {
+                sel_library_save_view(lib, lib->job);
+            } else {
+                sel_library_import(lib, lib->job);
+            }
+        }
+        reply->kind = SEL_MSG_EVT;
+        reply->id = req->id;
+        reply->argc = 0;
     }
 }

@@ -20,8 +20,26 @@ typedef struct sel_library sel_library;
 /* Request codes (sel_message.id of a SEL_MSG_CMD on the request queue). */
 enum {
     SEL_LIB_REQ_STATS = 1, /* counts plus an FTS5 self-check in a rolled-back savepoint */
-    SEL_LIB_REQ_STOP = 2
+    SEL_LIB_REQ_STOP = 2,
+    SEL_LIB_REQ_SEARCH = 3,    /* run a query text; keys come back in sel_lib_job.out (I149) */
+    SEL_LIB_REQ_SAVE_VIEW = 4, /* store text2 as the saved query `text` (I150) */
+    SEL_LIB_REQ_IMPORT = 5     /* import a TSV catalogue held in `text` (test and CLI seeding) */
 };
+
+/* The data of a SEARCH, SAVE_VIEW or IMPORT request. The caller fills the inputs, passes the job to
+ * sel_library_run and blocks until the worker answers, so the pointers stay valid. No allocation:
+ * `out` is a caller buffer of NUL-terminated keys. */
+typedef struct sel_lib_job {
+    const char* text;  /* SEARCH: query text; SAVE_VIEW: view name; IMPORT: catalogue TSV */
+    const char* text2; /* SAVE_VIEW: the query text */
+    long long now;     /* SEARCH: seconds since the epoch for relative times */
+    char* out;         /* SEARCH: keys, each NUL terminated */
+    uint32_t out_cap;
+    uint32_t count;     /* out: keys stored (SEARCH), rows imported (IMPORT) */
+    uint32_t truncated; /* out: keys that did not fit */
+    uint32_t used_fts;  /* out: 1 when the FTS5 index served the query */
+    char error[24];     /* out: "" or a query error code (unknown_key, unknown_view, ...) */
+} sel_lib_job;
 
 /* Reply to SEL_LIB_REQ_STATS (sel_message.id = the request code, kind SEL_MSG_EVT): args are INT
  * [0] schema_version, [1] fts5 compiled in, [2] fts_hits of the self-check, [3] songs rows,
@@ -49,6 +67,9 @@ void sel_library_close(sel_library* lib);
 
 /* Sends a request and waits for its reply. 1 on success. */
 int sel_library_call(sel_library* lib, uint32_t req, sel_message* reply);
+
+/* Runs a request that carries a job (SEARCH, SAVE_VIEW, IMPORT). 1 on success; query errors are in job->error. */
+int sel_library_run(sel_library* lib, uint32_t req, sel_lib_job* job);
 
 uint32_t sel_library_account(const sel_library* lib);
 uint32_t sel_library_heap_size(const sel_library* lib);

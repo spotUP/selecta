@@ -9,6 +9,16 @@
 
 enum { QUEUE_SLOTS = 16 };
 
+int sel_library_run(sel_library* lib, uint32_t req, sel_lib_job* job) {
+    sel_message reply;
+    int ok;
+
+    lib->job = job; /* the caller blocks in sel_library_call, so the worker is the only reader */
+    ok = sel_library_call(lib, req, &reply);
+    lib->job = NULL;
+    return ok;
+}
+
 #if !defined(SEL_LIBRARY_NO_THREAD)
 
 static void* worker_main(void* arg) {

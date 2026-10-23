@@ -4,6 +4,7 @@
 
 #include "db.h"
 #include "../../engine/spsc.h"
+#include "../query.h"
 
 #include <sqlite3.h>
 
@@ -20,6 +21,10 @@ struct sel_library {
     uint32_t served;   /* requests handled; written by the worker only */
     uint32_t heap_allocs;
     uint32_t heap_bytes;
+    sel_lib_job* job;  /* the job of the request in flight; set by sel_library_run */
+    sel_query query;   /* compile scratch, used by the worker only */
+    char view_text[16][256]; /* saved queries handed to the compiler during one compile */
+    unsigned view_used;
 #if !defined(SEL_LIBRARY_NO_THREAD)
     pthread_t thread;
     pthread_mutex_t lock;
@@ -31,6 +36,10 @@ struct sel_library {
 
 /* db.c: the one request handler; runs on the worker (or the caller's task without threads). */
 void sel_library_handle(sel_library* lib, const sel_message* req, sel_message* reply);
+void sel_library_search(sel_library* lib, sel_lib_job* job);
+void sel_library_save_view(sel_library* lib, sel_lib_job* job);
+void sel_library_import(sel_library* lib, sel_lib_job* job);
+int sel_library_register_regexp(sqlite3* db);
 
 /* worker.c */
 int sel_worker_start(sel_library* lib);

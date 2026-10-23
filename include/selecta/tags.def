@@ -132,6 +132,7 @@ SEL_TAG(UI, STAT_HASH,         0x5018, INT)
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)
 SEL_TAG(SRC, COUNT,            0x7001, INT)
+SEL_TAG(SRC, FTS,              0x7002, INT)
 
 SEL_TAG(META, TITLE,           0x8000, STR)
 SEL_TAG(META, AUTHOR,          0x8001, STR)
