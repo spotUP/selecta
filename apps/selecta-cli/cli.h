@@ -26,6 +26,9 @@ int sel_cli_machine(void);
  * stats. Exits 77 when the output reports no device. */
 int sel_cli_play(int argc, char** argv);
 
+/* library browse <dir> (T57): LIBRARY_BROWSE through the engine; prints `dir_entries=<n>`. */
+int sel_cli_library(int argc, char** argv);
+
 /* Shared by render and play (session.c). */
 #include <selecta/engine.h>
 #include <selecta/output.h>
