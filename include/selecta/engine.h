@@ -187,6 +187,7 @@ typedef struct sel_sync_info {
     uint32_t new_this_week;
     uint32_t songlengths, stil_entries, subtunes; /* hvsc sync (I162) */
     uint32_t hippo_lists, prg_files, prg_entries, prg_dividers, prg_stealth, prg_subsongs; /* hippo sync (I163) */
+    uint32_t net_zip_bytes, net_listing_bytes, net_changelogs_fetched, net_changelogs_missing, net_requests; /* modland URL sync (I161a) */
 } sel_sync_info;
 void sel_engine_sync_info(const sel_engine* e, sel_sync_info* out);
 

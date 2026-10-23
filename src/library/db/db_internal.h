@@ -66,6 +66,7 @@ int sel_library_register_regexp(sqlite3* db);
 void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_message* reply);
 void sel_library_remove(sel_library* lib, const sel_remove_batch* b, sel_message* reply);
 void sel_library_move(sel_library* lib, const sel_move* m, sel_message* reply);
+void sel_library_meta(sel_library* lib, const sel_meta_op* op, sel_message* reply);
 void sel_library_annotate(sel_library* lib, const sel_annotate_batch* b, sel_message* reply);
 
 /* worker.c */

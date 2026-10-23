@@ -161,6 +161,48 @@ static int library_search(int argc, char** argv) {
     return sink.failed ? 1 : 0;
 }
 
+/* `library meta [--db <path>] <key>` (I161a): prints `meta.<key>=<value>` from the DB meta table, empty when unset. */
+static int library_meta(int argc, char** argv) {
+    const sel_host* host = sel_host_default();
+    const char* db_path = ":memory:";
+    const char* key = NULL;
+    char value[128];
+    sel_meta_op op;
+    sel_message reply;
+    sel_library* lib;
+    int i;
+
+    for (i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "--db") == 0 && i + 1 < argc) {
+            db_path = argv[++i];
+        } else if (key == NULL) {
+            key = argv[i];
+        } else {
+            key = NULL;
+            break;
+        }
+    }
+    if (key == NULL) {
+        fputs("usage: selecta-cli library meta [--db <path>] <key>\n", stderr);
+        return 2;
+    }
+    lib = sel_library_open(host, sel_machine_probe(host), 0, db_path);
+    if (lib == NULL) {
+        puts("db_open=0");
+        return 1;
+    }
+    value[0] = '\0';
+    op.key = key;
+    op.value = value;
+    op.cap = sizeof value;
+    op.set = 0;
+    memset(&reply, 0, sizeof reply);
+    i = sel_library_request(lib, SEL_LIB_REQ_META, &op, &reply) && reply.args[1].v.i == 0;
+    printf("meta.%s=%s\n", key, value);
+    sel_library_close(lib);
+    return i ? 0 : 1;
+}
+
 /* `library stats [--machine <fake>] [--db <path>]` (T62): opens the library DB (heap, worker,
  * schema), asks the worker for stats twice and prints one sentinel line. SEL_ALLOC_FREEZE and
  * SEL_ALLOC_THAW bracket the two requests: after start the library allocates nothing. */
@@ -627,7 +669,7 @@ static int library_sync(int argc, char** argv) {
         }
     }
     if (src == NULL || dir == NULL) {
-        fputs("usage: selecta-cli library sync [--db <path>] [--now <epoch>] [--dump] modland|hvsc|hippo <dir>\n", stderr);
+        fputs("usage: selecta-cli library sync [--db <path>] [--now <epoch>] [--dump] modland|hvsc|hippo <dir> | modland <http(s) url>\n", stderr);
         return 2;
     }
     memset(&sink, 0, sizeof sink);
@@ -676,6 +718,12 @@ static int library_sync(int argc, char** argv) {
            (unsigned)info.listing_rows, (unsigned)info.new_this_week, (unsigned)info.skipped_rows,
            (unsigned)info.changelogs, (unsigned)info.cl_added, (unsigned)info.cl_removed, (unsigned)info.cl_moved,
            (unsigned)info.cl_updated, st.args[SEL_LIB_STAT_SONGS].v.i);
+    if (strcmp(src, "modland") == 0 && info.net_requests > 0) {
+        printf("net_requests=%u net_zip_bytes=%u net_listing_bytes=%u net_changelogs_fetched=%u "
+               "net_changelogs_missing=%u\n",
+               (unsigned)info.net_requests, (unsigned)info.net_zip_bytes, (unsigned)info.net_listing_bytes,
+               (unsigned)info.net_changelogs_fetched, (unsigned)info.net_changelogs_missing);
+    }
     sel_engine_destroy(e);
     sel_library_close(lib);
 #ifndef __amigaos__
@@ -811,6 +859,9 @@ int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "key") == 0) {
         return library_key(argc - 1, argv + 1);
     }
+    if (argc >= 1 && strcmp(argv[0], "meta") == 0) {
+        return library_meta(argc - 1, argv + 1);
+    }
     if (argc >= 1 && strcmp(argv[0], "stats") == 0) {
         return library_stats(argc - 1, argv + 1);
     }
@@ -826,6 +877,6 @@ int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "query") == 0) {
         return library_query(argc - 1, argv + 1);
     }
-    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | sync [--db <path>] [--now <epoch>] [--dump] modland <dir> | key <source> <path> | trim [--budget <n>] [--machine <name>] | query --explain <q> | stats [--machine <name>] [--db <path>]\n", stderr);
+    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | sync [--db <path>] [--now <epoch>] [--dump] modland <dir or http(s) url> | meta [--db <path>] <key> | key <source> <path> | trim [--budget <n>] [--machine <name>] | query --explain <q> | stats [--machine <name>] [--db <path>]\n", stderr);
     return 2;
 }

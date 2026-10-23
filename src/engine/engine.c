@@ -38,6 +38,7 @@
 #include "sources/hippo_publish.h"
 #include "sources/hippo_sync.h"
 #include "sources/hvsc_sync.h"
+#include "sources/modland_net.h"
 #include "sources/modland_sync.h"
 #include "scheduler.h"
 #include "spsc.h"
@@ -2651,6 +2652,21 @@ static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
     emit_library_path(e, m->args[0].v.s, files);
 }
 
+/* Stores the "new this week" count of a modland sync in the DB meta table, so it survives a restart (I161a). */
+static void persist_new_this_week(sel_engine* e, uint32_t count) {
+    char text[16];
+    sel_meta_op op;
+    sel_message reply;
+
+    snprintf(text, sizeof text, "%u", (unsigned)count);
+    op.key = SEL_MODLAND_META_NEW;
+    op.value = text;
+    op.cap = sizeof text;
+    op.set = 1;
+    memset(&reply, 0, sizeof reply);
+    sel_library_request(e->lib, SEL_LIB_REQ_META, &op, &reply);
+}
+
 /* LIBRARY_SYNC <source> <dir> [now]: syncs a network source's catalogue from the listing and changelogs in
  * <dir> (I161, I162; `modland` and `hvsc`). `now` (epoch seconds) fixes the clock of "new this week". The answer
  * is a LIBRARY_RESULT with the directory and the listing row count; the counters are in sync_info. */
@@ -2699,8 +2715,20 @@ static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
         e->sync_info.songlengths = hv.songlengths;
         e->sync_info.stil_entries = hv.stil_entries;
         e->sync_info.subtunes = hv.subtunes;
+    } else if (sel_modland_is_url(m->args[1].v.s)) {
+        sel_modland_net_stats ns;
+
+        ok = sel_modland_net_sync(&scfg, m->args[1].v.s, now, &st, &ns);
+        e->sync_info.net_zip_bytes = ns.zip_bytes;
+        e->sync_info.net_listing_bytes = ns.listing_bytes;
+        e->sync_info.net_changelogs_fetched = ns.changelogs_fetched;
+        e->sync_info.net_changelogs_missing = ns.changelogs_missing;
+        e->sync_info.net_requests = ns.http_requests;
     } else {
         ok = sel_modland_sync(&scfg, m->args[1].v.s, now, &st);
+    }
+    if (ok && !is_hvsc && !is_hippo) {
+        persist_new_this_week(e, st.new_this_week);
     }
     e->sync_info.listing_rows = st.listing_rows;
     e->sync_info.skipped_rows = st.skipped_rows;

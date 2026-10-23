@@ -27,8 +27,18 @@ enum {
     SEL_LIB_REQ_SCAN_BATCH = 6, /* payload: const sel_scan_batch*; writes files and songs rows (I158) */
     SEL_LIB_REQ_REMOVE = 7,     /* payload: const sel_remove_batch*; deletes files and songs rows (I161) */
     SEL_LIB_REQ_ANNOTATE = 8,   /* payload: const sel_annotate_batch*; lengths and notes onto existing songs (I162) */
-    SEL_LIB_REQ_MOVE = 9        /* payload: const sel_move*; re-keys one song row in place (I161b) */
+    SEL_LIB_REQ_MOVE = 9,       /* payload: const sel_move*; re-keys one song row in place (I161b) */
+    SEL_LIB_REQ_META = 10       /* payload: sel_meta_op*; reads or writes one row of the meta table (I161a) */
 };
+
+/* One meta key/value (text). set != 0 stores `value`; set == 0 reads into `value` (capacity `cap`, "" when the
+ * key is unset). Reply: INT [0] 1 when the key exists (read) or was stored (write), [1] SQLite code. */
+typedef struct sel_meta_op {
+    const char* key;
+    char* value;
+    uint32_t cap;
+    int set;
+} sel_meta_op;
 
 /* The data of a SEARCH, SAVE_VIEW or IMPORT request. The caller fills the inputs, passes the job to
  * sel_library_run and blocks until the worker answers, so the pointers stay valid. No allocation:
