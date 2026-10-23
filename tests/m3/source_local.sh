@@ -26,4 +26,13 @@ field() { echo "$out" | tr ' ' '\n' | sed -n "s/^$1=//p"; }
 # Rescan is idempotent: same song count.
 out=$("$cli" library scan --db "$root/lib.db" "$root")
 [ "$(field db_songs)" = "$expect" ] || { echo "FAIL rescan db_songs"; exit 1; }
+# LIBRARY_SEARCH over the scanned rows (I158a): both scanned files are source:local hits, and the
+# search goes through the same cfg.library handle as the scan.
+hits=$("$cli" library search --db "$root/lib.db" "source:local")
+echo "$hits"
+[ "$(echo "$hits" | sed -n 's/^src_count=//p')" = "$expect" ] || { echo "FAIL search src_count != $expect"; exit 1; }
+echo "$hits" | grep -q "^key=local:$root/one.mod\$" || { echo "FAIL search missing one.mod"; exit 1; }
+echo "$hits" | grep -q "^key=local:$root/sub/two.mod\$" || { echo "FAIL search missing two.mod"; exit 1; }
+none=$("$cli" library search --db "$root/lib.db" "source:modland")
+[ "$(echo "$none" | sed -n 's/^src_count=//p')" = 0 ] || { echo "FAIL source:modland should have no hits"; exit 1; }
 echo "source_local_ok scanned=$expect"

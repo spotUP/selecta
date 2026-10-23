@@ -91,6 +91,7 @@ static void on_search_event(void* ctx, const sel_message* evt) {
  * (1: the FTS5 index served it). An engine ERROR prints `ERROR <code>` alone and exits 1. */
 static int library_search(int argc, char** argv) {
     const char* catalogue = NULL;
+    const char* db_path = NULL;
     const char* text = NULL;
     sel_engine_config cfg;
     sel_engine* e;
@@ -104,17 +105,25 @@ static int library_search(int argc, char** argv) {
     for (a = 0; a < argc; a++) {
         if (strcmp(argv[a], "--catalogue") == 0 && a + 1 < argc) {
             catalogue = argv[++a];
+        } else if (strcmp(argv[a], "--db") == 0 && a + 1 < argc) {
+            db_path = argv[++a];
         } else if (strcmp(argv[a], "--") == 0 && a + 1 < argc) {
             text = argv[++a];
         } else if (text == NULL && argv[a][0] != '-') {
             text = argv[a];
         }
     }
-    if (catalogue == NULL || text == NULL) {
-        fputs("usage: selecta-cli library search --catalogue <tsv> [--] <query>\n", stderr);
+    if ((catalogue == NULL) == (db_path == NULL) || text == NULL) {
+        fputs("usage: selecta-cli library search (--catalogue <tsv> | --db <path>) [--] <query>\n", stderr);
         return 2;
     }
-    lib = sel_cli_open_catalogue(catalogue);
+    if (db_path != NULL) {
+        const sel_host* host = sel_host_default();
+
+        lib = sel_library_open(host, sel_machine_probe(host), 0, db_path);
+    } else {
+        lib = sel_cli_open_catalogue(catalogue);
+    }
     if (lib == NULL) {
         return 1;
     }
@@ -272,39 +281,19 @@ static int library_query(int argc, char** argv) {
     return 0;
 }
 
-/* `library scan [--db <path>] <dir>` (T71 scan part): LIBRARY_SCAN through the engine. The engine
- * calls the hook below, which walks <dir> with the local source and writes the rows through the
- * library worker. Prints `scanned_files= skipped_files= scan_batches= probed= dirs= db_songs=`
+/* `library scan [--db <path>] <dir>` (T71 scan part): LIBRARY_SCAN through the engine, which scans
+ * <dir> with the local source through cfg.library (the handle LIBRARY_SEARCH uses). Prints
+ * `scanned_files= skipped_files= scan_batches= probed= dirs= archives= archive_members= db_songs=`
  * (db_songs read back from the DB after the scan). */
-typedef struct scan_ctx {
-    sel_library* lib;
-    sel_local_scan_stats stats;
-} scan_ctx;
-
-static int scan_hook(void* ctx, const char* path, uint32_t* files) {
-    scan_ctx* c = ctx;
-    sel_local_scan_config cfg;
-    int ok;
-
-    memset(&cfg, 0, sizeof cfg);
-    cfg.host = sel_host_default();
-    cfg.lib = c->lib;
-    cfg.registry_count = sel_registry_count;
-    cfg.registry_get = sel_registry_get;
-    cfg.now = (int64_t)time(NULL);
-    ok = sel_local_scan(&cfg, path, &c->stats);
-    *files = c->stats.scanned_files;
-    return ok;
-}
-
 static int library_scan(int argc, char** argv) {
     const sel_host* host = sel_host_default();
     const char* db_path = ":memory:";
     const char* dir = NULL;
     browse_sink sink;
-    scan_ctx ctx;
+    sel_scan_info info;
     sel_engine_config cfg;
     sel_engine* e;
+    sel_library* lib;
     sel_message st;
     char line[1100];
     char pool[1100];
@@ -325,37 +314,38 @@ static int library_scan(int argc, char** argv) {
         return 2;
     }
     memset(&sink, 0, sizeof sink);
-    memset(&ctx, 0, sizeof ctx);
     memset(&cfg, 0, sizeof cfg);
     sel_registry_init(host);
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;
     cfg.machine = sel_machine_probe(host);
-    ctx.lib = sel_library_open(host, cfg.machine, 0, db_path);
-    if (ctx.lib == NULL) {
+    lib = sel_library_open(host, cfg.machine, 0, db_path);
+    if (lib == NULL) {
         puts("db_open=0");
         return 1;
     }
-    cfg.library_scan = scan_hook;
-    cfg.library_ctx = &ctx;
+    cfg.library = lib;
     e = sel_engine_create(host, &cfg);
     if (e == NULL) {
         fputs("selecta-cli: engine allocation failed\n", stderr);
-        sel_library_close(ctx.lib);
+        sel_library_close(lib);
         return 1;
     }
     snprintf(line, sizeof line, "LIBRARY_SCAN %s", dir);
     sel_engine_send_line(e, line, pool, sizeof pool);
     sel_engine_pump(e, on_event, &sink);
     memset(&st, 0, sizeof st);
-    if (!sel_library_call(ctx.lib, SEL_LIB_REQ_STATS, &st)) {
+    if (!sel_library_call(lib, SEL_LIB_REQ_STATS, &st)) {
         st.args[SEL_LIB_STAT_SONGS].v.i = -1;
     }
-    printf("scanned_files=%u skipped_files=%u scan_batches=%u probed=%u dirs=%u db_songs=%d\n",
-           (unsigned)ctx.stats.scanned_files, (unsigned)ctx.stats.skipped_files, (unsigned)ctx.stats.scan_batches,
-           (unsigned)ctx.stats.probed, (unsigned)ctx.stats.dirs, st.args[SEL_LIB_STAT_SONGS].v.i);
+    sel_engine_scan_info(e, &info);
+    printf("scanned_files=%u skipped_files=%u scan_batches=%u probed=%u dirs=%u archives=%u archive_members=%u "
+           "db_songs=%d\n",
+           (unsigned)info.scanned_files, (unsigned)info.skipped_files, (unsigned)info.scan_batches,
+           (unsigned)info.probed, (unsigned)info.dirs, (unsigned)info.archives, (unsigned)info.archive_members,
+           st.args[SEL_LIB_STAT_SONGS].v.i);
     sel_engine_destroy(e);
-    sel_library_close(ctx.lib);
+    sel_library_close(lib);
     return sink.failed ? 1 : 0;
 }
 
