@@ -1,6 +1,7 @@
 # T95 (row I177): the engine emits SCROBBLE_DUE, the lastfm integration plugin posts a signed track.scrobble to the
 # last.fm fixture, and a scrobble that could not be sent stays in the queue file and drains in the next process.
 # -DCLI=<selecta-cli> -DWORK=<fixture work dir> -DM3=<tests/m3> -DSONGS=<build tests/songs>
+# -DSONGS_LONG=<build tests/songs-long> (selecta-long-mk.mod, I177a)
 file(READ "${WORK}/port" port)
 string(STRIP "${port}" port)
 set(fx "http://127.0.0.1:${port}")
@@ -21,7 +22,11 @@ endfunction()
 
 function(run_script out sel url)
   set(ENV{SELECTA_LASTFM_URL} "${url}")
-  execute_process(COMMAND "${CLI}" script "${M3}/${sel}" --integration lastfm WORKING_DIRECTORY "${SONGS}"
+  set(dir "${SONGS}")
+  if(ARGC GREATER 3)
+    set(dir "${ARGV3}")
+  endif()
+  execute_process(COMMAND "${CLI}" script "${M3}/${sel}" --integration lastfm WORKING_DIRECTORY "${dir}"
     OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
   if(NOT rc EQUAL 0)
     message(FATAL_ERROR "T95 scrobble: script ${sel} failed rc=${rc}\n${o}${e}")
@@ -139,6 +144,21 @@ endif()
 run_script(r3b scrobble_flush.sel "${live}")
 expect_counter("${r3b}" scrobble_posts 0)
 
+# ---- case 4 (I177a): a song longer than 8 minutes is due at the 4 minute cap, not at half its length
+file(REMOVE "${queue}")
+reset_fixture()
+run_script(r4 scrobble_long.sel "${live}" "${SONGS_LONG}")
+expect_due_between("${r4}")
+expect_counter("${r4}" scrobble_due 1)
+expect_counter("${r4}" scrobble_posts 1)
+fixture_posts(log4)
+string(JSON body4 GET "${log4}" 0 body)
+foreach(part "timestamp%5B0%5D=1699999760" "track%5B0%5D=selecta%20long")
+  if(NOT body4 MATCHES "(^|&)${part}(&|$)")
+    message(FATAL_ERROR "T95 scrobble: case 4 body lacks ${part}\n${body4}\n${r4}")
+  endif()
+endforeach()
+
 file(REMOVE "${queue}")
 reset_fixture()
 set(ENV{SELECTA_LASTFM_KEY} "")
@@ -155,4 +175,4 @@ if(NOT n5 EQUAL 0)
   message(FATAL_ERROR "T95 scrobble: scrobbling off but ${n5} requests were sent")
 endif()
 
-message(STATUS "scrobble_ok due=15040ms posts=1 offline_pending=1 drained=1")
+message(STATUS "scrobble_ok due=15040ms cap=240000ms posts=1 offline_pending=1 drained=1")

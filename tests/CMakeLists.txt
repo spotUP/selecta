@@ -100,6 +100,13 @@ add_custom_command(OUTPUT "${SEL_MKMOD}"
   COMMAND gen_testmod --format mk "${SEL_MKMOD}"
   DEPENDS gen_testmod
   COMMENT "Generating selecta-test-mk.mod")
+# I177a: a 16 minute module for the 4 minute scrobble cap; its own directory, so scans of songs/ do not see it.
+set(SEL_LONGMOD "${CMAKE_CURRENT_BINARY_DIR}/songs-long/selecta-long-mk.mod")
+add_custom_command(OUTPUT "${SEL_LONGMOD}"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/songs-long"
+  COMMAND gen_testmod --long --format mk "${SEL_LONGMOD}"
+  DEPENDS gen_testmod
+  COMMENT "Generating selecta-long-mk.mod")
 set(SEL_BREAKMOD "${CMAKE_CURRENT_BINARY_DIR}/songs/selecta-break-mk.mod")
 add_custom_command(OUTPUT "${SEL_BREAKMOD}"
   COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/songs"
@@ -135,7 +142,7 @@ add_custom_command(OUTPUT "${SEL_ALBUM_STAMP}"
   COMMAND "${CMAKE_COMMAND}" -E touch "${SEL_ALBUM_STAMP}"
   DEPENDS "${SEL_TESTMOD}" "${CMAKE_CURRENT_SOURCE_DIR}/m12/list.prg" "${CMAKE_CURRENT_SOURCE_DIR}/m12/rel.m3u"
   COMMENT "Copying album test songs")
-add_custom_target(testmod ALL DEPENDS "${SEL_TESTMOD}" "${SEL_SHORTMOD}" "${SEL_LOOPMOD}" "${SEL_JUMP0MOD}" "${SEL_MKMOD}" "${SEL_BREAKMOD}" "${SEL_ZERO1MOD}" "${SEL_SILENTMOD}" "${SEL_ALBUM_STAMP}")
+add_custom_target(testmod ALL DEPENDS "${SEL_TESTMOD}" "${SEL_SHORTMOD}" "${SEL_LOOPMOD}" "${SEL_JUMP0MOD}" "${SEL_MKMOD}" "${SEL_BREAKMOD}" "${SEL_ZERO1MOD}" "${SEL_SILENTMOD}" "${SEL_LONGMOD}" "${SEL_ALBUM_STAMP}")
 add_test(NAME testmod-sha
   COMMAND "${CMAKE_COMMAND}" "-DMOD=${SEL_TESTMOD}"
     "-DPINNED=${CMAKE_CURRENT_SOURCE_DIR}/songs/selecta-test.mod.sha256"
@@ -1494,7 +1501,8 @@ endif()
 if(NOT SEL_AMIGA)
   add_test(NAME scrobble
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3"
-            "-DSONGS=${CMAKE_CURRENT_BINARY_DIR}/songs" -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/scrobble.cmake")
+            "-DSONGS=${CMAKE_CURRENT_BINARY_DIR}/songs" "-DSONGS_LONG=${CMAKE_CURRENT_BINARY_DIR}/songs-long"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/scrobble.cmake")
   set_tests_properties(scrobble PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 180 PASS_REGULAR_EXPRESSION "scrobble_ok")
 endif()

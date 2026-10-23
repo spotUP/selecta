@@ -1,0 +1,9 @@
+# T95 (row I177a): selecta-long-mk.mod plays about 16 minutes, so half its length is past the 4 minute cap and
+# SCROBBLE_DUE is due at 240000 ms. 44100 frames per second. First step ends at 239900 ms (not due), the second at
+# 240100 ms (due). scrobble.cmake runs this with --integration lastfm from the songs-long directory.
+OPEN selecta-long-mk.mod
+PLAY
+@render 10579590
+@position
+@render 8820
+@position

@@ -19,6 +19,9 @@
  * list wraps and the replayer reports a loop (the queue tests need a song
  * that ends). The default output is unchanged.
  *
+ * With --long the order list holds all 128 orders, cycling the four patterns, and the title is
+ * "selecta long": about 16 minutes, so half its length is past the 4 minute scrobble cap (I177a).
+ *
  * With --loop the order list holds three patterns and pattern 2 ends in a B01 position jump back to
  * order 1: the song loops by design (the replayer reports a loop that lands on a later order, not a
  * restart at order 0), so SONG_ENDED reports `loop` where the other fixtures report `end` (row I94a).
@@ -37,7 +40,7 @@
  *
  * With --silent the data of all four samples is zero (T43: digital silence).
  *
- * usage: gen_testmod [--short] [--loop] [--jump0] [--break] [--zero-sample N] [--silent] [--format mk] <output.mod> */
+ * usage: gen_testmod [--short] [--long] [--loop] [--jump0] [--break] [--zero-sample N] [--silent] [--format mk] <output.mod> */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -59,6 +62,7 @@ typedef struct sample_def {
 static int g_break = 0;
 static int g_loop = 0;
 static int g_jump0 = 0;
+static int g_long = 0;
 static const char* g_title = "selecta test";
 static unsigned g_song_length = PATTERNS;
 static unsigned g_zero_sample = 0;
@@ -234,7 +238,7 @@ static void write_ptdt(FILE* f) {
     fputc((int)g_song_length, f); /* song length */
     fputc(127, f);      /* restart */
     for (i = 0; i < 128; i++) {
-        fputc(i < PATTERNS ? (int)i : 0, f);
+        fputc(g_long ? (int)(i % PATTERNS) : i < PATTERNS ? (int)i : 0, f);
     }
     fwrite("M.K.", 1, 4, f);
     for (p = 0; p < PATTERNS; p++) {
@@ -287,6 +291,12 @@ int main(int argc, char** argv) {
             g_song_length = 1;
             argv++;
             argc--;
+        } else if (strcmp(argv[1], "--long") == 0) {
+            g_title = "selecta long";
+            g_song_length = 128;
+            g_long = 1;
+            argv++;
+            argc--;
         } else if (strcmp(argv[1], "--loop") == 0) {
             g_title = "selecta loop";
             g_song_length = 3;
@@ -326,7 +336,7 @@ int main(int argc, char** argv) {
         }
     }
     if (argc != 2) {
-        fputs("usage: gen_testmod [--short] [--loop] [--break] [--zero-sample N] [--format mk] <output.mod>\n", stderr);
+        fputs("usage: gen_testmod [--short] [--long] [--loop] [--break] [--zero-sample N] [--format mk] <output.mod>\n", stderr);
         return 2;
     }
     make_samples();
