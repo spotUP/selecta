@@ -20,10 +20,10 @@ sel_cli_test(protocol-reflection-events   "events"   "-DLINES=${SEL_COUNT_EVT}")
 sel_cli_test(protocol-reflection-tagtypes "tagtypes" "-DLINES=${SEL_COUNT_META}")
 
 # T5: the registry walked every descriptor and found only known tags.
-# null, wav, nuade, openmpt, the crossfeed DSP, the text UI, the nowplaying-test integration and the voices-test and paula-shadow
+# null, wav, nuade, openmpt, the crossfeed DSP, the text UI, the nowplaying-test integration and the voices-test, paula-shadow and paula14-shadow
 # output (both host only), plus coreaudio and the
 # macOS Now Playing plugin on macOS, or MPRIS on Linux when libsystemd was found; the negative tree adds one bad plugin.
-set(SEL_EXPECT_PLUGINS 9)
+set(SEL_EXPECT_PLUGINS 10)
 if(APPLE)
   math(EXPR SEL_EXPECT_PLUGINS "${SEL_EXPECT_PLUGINS} + 2")
 elseif(SEL_HAVE_MPRIS)
@@ -723,6 +723,11 @@ if(NOT SEL_AMIGA)
     sel_m2_test(paula14-tables run ${mode} -DTAG=T52
       "-DARGS1=render --output paula14-shadow @MOD@ --seconds 2" "-DCHECKS1=p14_frames>0,p14_max_err_lsb<=1" -DHASH_KEY=p14_hash)
   endforeach()
+  # I126: a VOICE-kind song on a PCM output (no voice backend) goes through the mixer into the paula14 chip buffers.
+  foreach(mode desktop vamos)
+    sel_m2_test(paula14-routing run ${mode} -DTAG=T52
+      "-DARGS1=render --output paula14-shadow @MOD@ --seconds 2" "-DCHECKS1=mixed_frames>0,p14_bufs>0")
+  endforeach()
   # T53 LED filter and stereo width.
   # selecta-test.mod is mono (the protracker4 replayer does not pan), so a width knob cannot
   # move its hash; the desktop run also renders the stereo mk module (libopenmpt pans it).
@@ -775,3 +780,11 @@ if(NOT SEL_AMIGA)
       SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
   endforeach()
 endif()
+# I122/I123/I126: paula14 split tables, chip double buffer through a recording bus, routing of PCM outputs.
+set(SEL_P14_DIR "${PROJECT_SOURCE_DIR}/plugins/outputs/paula14")
+add_executable(p14_test paula/p14_test.c "${SEL_P14_DIR}/shadow.c" "${SEL_P14_DIR}/common/p14_split.c"
+  "${SEL_P14_DIR}/common/p14_sink.c" "${SEL_P14_DIR}/common/p14_out.c")
+set_source_files_properties("${SEL_P14_DIR}/shadow.c" PROPERTIES COMPILE_DEFINITIONS SEL_PLUGIN_ENTRY=shadow_entry)
+target_include_directories(p14_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
+target_link_libraries(p14_test PRIVATE selecta_core)
+add_test(NAME paula14-unit COMMAND p14_test)

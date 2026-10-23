@@ -15,6 +15,16 @@ if(SEL_AMIGA)
   add_library(selecta_paula_irq OBJECT outputs/paula/paula_voices.c outputs/paula/paula_hw.c)
   target_include_directories(selecta_paula_irq PRIVATE ${PROJECT_SOURCE_DIR}/include)
 endif()
+# paula14 (M2 phase 4, I122/I123): portable split tables and chip double buffer in common/; the shadow twin counts
+# register writes, the hardware output (Amiga) drives the custom chip through paula_hw.c.
+set(SEL_P14_COMMON outputs/paula14/common/p14_split.c outputs/paula14/common/p14_sink.c outputs/paula14/common/p14_out.c)
+sel_add_plugin(paula14_shadow 2 outputs/paula14/shadow.c ${SEL_P14_COMMON})
+if(SEL_AMIGA)
+  sel_add_plugin(paula14 2 outputs/paula14/paula14.c outputs/paula/paula_hw.c ${SEL_P14_COMMON})
+  add_library(selecta_paula14_irq OBJECT outputs/paula14/common/p14_split.c outputs/paula14/common/p14_sink.c
+    outputs/paula14/common/p14_out.c)
+  target_include_directories(selecta_paula14_irq PRIVATE ${PROJECT_SOURCE_DIR}/include)
+endif()
 sel_add_plugin(wav 2 outputs/wav/wav.c)
 sel_add_plugin(crossfeed 3 dsp/crossfeed/crossfeed.c)
 # OS headers live under plugins/*/<os>/ (RULES.md rule 3).

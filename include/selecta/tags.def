@@ -81,6 +81,11 @@ SEL_TAG(OUT, STAT_LOG_DIGEST,  0x2012, STR) /* shadow outputs: SHA-256 of the re
 SEL_TAG(OUT, VOICE_MAX,        0x2013, INT) /* voice outputs: most voices the backend plays; a replayer with more goes through the mixer */
 SEL_TAG(OUT, PAULA_HW,         0x2014, INT) /* the output drives the real Paula: LED and width stages are bypassed */
 
+SEL_TAG(OUT, STAT_P14_FRAMES,  0x2015, INT) /* paula14 outputs: frames split into the chip buffers */
+SEL_TAG(OUT, STAT_P14_MAX_ERR, 0x2016, INT) /* paula14 outputs: worst split error over every s16 input, 14-bit LSB */
+SEL_TAG(OUT, STAT_P14_HASH,    0x2017, STR) /* paula14 outputs: FNV-1a of the split channel bytes, 8 lowercase hex digits */
+SEL_TAG(OUT, STAT_P14_BUFS,    0x2018, INT) /* paula14 outputs: chip buffer swaps */
+
 /* DSP plugin rows (design doc section 5, include/selecta/dsp.h). */
 SEL_TAG(DSP, NAME,             0x3000, STR)
 SEL_TAG(DSP, OPEN,             0x3001, PTR)
