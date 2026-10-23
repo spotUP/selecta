@@ -299,7 +299,7 @@ Tests T49 to T61 are defined in the plan's finish-line table.
 | I126 | [ ] | 4 | Routing: RENDER and VOICE over 4 voices to mixer then paula14 or ahi | routing table test |
 | I127 | [x] | 5 | Integer LED filter stage | T53 LED part green; 6ada682 LED -3 dB 3275 Hz measured; merge 5d60c2c |
 | I128 | [x] | 5 | Integer stereo width stage | T53 width part green; 6ada682 width; width-moves-hash on stereo mk.mod desktop only (Q46); merge 5d60c2c |
-| I129 | [ ] | 5 | Commands, prefs keys, text UI controls for LED and width | T53 green both trees; T8 count moves |
+| I129 | [x] | 5 | Commands, prefs keys, text UI controls for LED and width | T53 green both trees; T8 count moves; 2fccb64 verbs FILTER_LED, MIX_STEREO_WIDTH; T8 stays 21; merge 22ff2c9 |
 | I130 | [ ] | 6 | `plugins/ui/text/amiga/term.c` raw mode, WaitForChar | T55 partial |
 | I131 | [ ] | 6 | `plugins/ui/text/amiga/spawn.c` | spawn test under vamos |
 | I132 | [ ] | 6 | Build `plugins/ui/text` and `apps/selecta` on Amiga | T55 green |
