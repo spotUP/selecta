@@ -1,0 +1,20 @@
+# T24 selecta-tree-view. Start directory holds directories a and b, each with
+# selecta-test-mk.mod. Row 0 is "..", row 1 is a, row 2 is b.
+Down
+Enter
+# Inside a: row 1 is the song. Add it, go back (the cursor lands on a).
+Down
+a
+Backspace
+Down
+Down
+Enter
+Down
+a
+Tab
+# Queue: v shows the tree (two collapsed folders); Enter expands the first.
+v
+Enter
+Down
+Down
+wait 2000

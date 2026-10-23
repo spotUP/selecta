@@ -108,6 +108,38 @@ static void tui_remove_cursor_entry(tui* u) {
     }
 }
 
+static int tui_queue_view(const sel_view_state* v) {
+    return v != NULL && v->source == SEL_VIEW_QUEUE;
+}
+
+/* v: regular -> tree -> drilldown -> regular. */
+static void tui_next_style(tui* u) {
+    const sel_view_state* v = sel_engine_state(u->engine)->view;
+    static const char* const next[] = {"VIEW_STYLE tree", "VIEW_STYLE drilldown", "VIEW_STYLE regular"};
+    if (tui_queue_view(v) && v->style <= SEL_VIEW_STYLE_DRILLDOWN) {
+        tui_send(u, next[v->style]);
+    }
+}
+
+/* g: group the queue by folder, or by format when it is by folder. */
+static void tui_next_group(tui* u) {
+    const sel_view_state* v = sel_engine_state(u->engine)->view;
+    if (tui_queue_view(v)) {
+        tui_send(u, v->group != NULL && strcmp(v->group, "folder") == 0 ? "VIEW_GROUP format" : "VIEW_GROUP folder");
+    }
+}
+
+/* Backspace in a drilldown list steps back one picked value. */
+static int tui_drill_back(tui* u, const sel_view_state* v) {
+    char line[48];
+    if (!tui_queue_view(v) || v->style != SEL_VIEW_STYLE_DRILLDOWN || v->drill_n == 0) {
+        return 0;
+    }
+    snprintf(line, sizeof line, "VIEW_DRILL %u ..", (unsigned)(v->drill_n - 1u));
+    tui_send(u, line);
+    return 1;
+}
+
 static void tui_subsong(tui* u, int delta) {
     const sel_state* s = sel_engine_state(u->engine);
     char line[48];
@@ -147,7 +179,16 @@ static void tui_key(tui* u, const txt_key* k) {
     case 13:
         tui_send(u, "VIEW_ACTIVATE");
         break;
+    case 'v':
+        tui_next_style(u);
+        break;
+    case 'g':
+        tui_next_group(u);
+        break;
     case 127: /* Backspace: the parent directory is always the first browse row */
+        if (tui_drill_back(u, s->view)) {
+            break;
+        }
         if (s->view != NULL && s->view->source == SEL_VIEW_BROWSE) {
             tui_cursor(u, "top");
             tui_send(u, "VIEW_ACTIVATE");
@@ -357,6 +398,22 @@ static const char* tui_leaf(const char* path) {
     return slash != NULL && slash[1] != '\0' ? slash + 1 : (path != NULL ? path : "");
 }
 
+/* Queue heading: the entry count, or the grouping key and the drilldown
+ * breadcrumb of picked values. */
+static void tui_queue_title(char* buf, size_t cap, const sel_view_state* v) {
+    uint32_t i;
+    size_t n;
+    if (v->style == SEL_VIEW_STYLE_REGULAR || v->group == NULL) {
+        snprintf(buf, cap, "Queue  %u entries", (unsigned)v->row_count);
+        return;
+    }
+    snprintf(buf, cap, "Queue by %s%s", v->group, v->style == SEL_VIEW_STYLE_TREE ? "  Tree" : "  Drilldown");
+    for (i = 0; v->style == SEL_VIEW_STYLE_DRILLDOWN && i < v->drill_n && i < 2u; i++) {
+        n = strlen(buf);
+        snprintf(buf + n, cap - n, " > %s", v->drill[i]);
+    }
+}
+
 static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
     const sel_view_state* v = s->view;
     char buf[300];
@@ -368,7 +425,7 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
     if (v->source == SEL_VIEW_BROWSE) {
         snprintf(buf, sizeof buf, "Browse  %s", tui_leaf(v->browse_path));
     } else {
-        snprintf(buf, sizeof buf, "Queue  %u entries", (unsigned)v->row_count);
+        tui_queue_title(buf, sizeof buf, v);
     }
     txt_grid_text(&u->grid, 1, 2, buf, width - 1u, title);
     for (i = 0; i < v->row_n && i < tui_main_rows(u); i++) {
@@ -378,11 +435,16 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
         int playing = r->kind == SEL_ROW_QUEUE && r->id == s->queue_playing;
         txt_role role = at_cursor ? TXT_ROLE_CURSOR
                         : playing ? TXT_ROLE_PLAYING
-                        : r->kind == SEL_ROW_DIR ? TXT_ROLE_DIRECTORY
+                        : r->kind == SEL_ROW_DIR || r->kind == SEL_ROW_NODE ? TXT_ROLE_DIRECTORY
                                                  : TXT_ROLE_FILE;
         txt_style st = tui_style(u, role);
-        snprintf(buf, sizeof buf, "%c %s%s", playing ? '>' : ' ', r->text,
-                 r->kind == SEL_ROW_DIR && strcmp(r->text, "..") != 0 ? "/" : "");
+        if (r->kind == SEL_ROW_NODE) {
+            snprintf(buf, sizeof buf, "%s %s (%u)", v->style == SEL_VIEW_STYLE_TREE ? (r->expanded ? "[-]" : "[+]") : "[>]",
+                     r->text, (unsigned)r->count);
+        } else {
+            snprintf(buf, sizeof buf, "%*s%c %s%s", (int)(2u * r->depth), "", playing ? '>' : ' ', r->text,
+                     r->kind == SEL_ROW_DIR && strcmp(r->text, "..") != 0 ? "/" : "");
+        }
         txt_grid_fill(&u->grid, 0, y, width, 1, ' ', st);
         txt_grid_text(&u->grid, 1, y, buf, width - 1u, st);
     }
