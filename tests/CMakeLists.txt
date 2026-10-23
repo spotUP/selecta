@@ -86,7 +86,20 @@ add_custom_command(OUTPUT "${SEL_BREAKMOD}"
   COMMAND gen_testmod --break --format mk "${SEL_BREAKMOD}"
   DEPENDS gen_testmod
   COMMENT "Generating selecta-break-mk.mod")
-add_custom_target(testmod ALL DEPENDS "${SEL_TESTMOD}" "${SEL_SHORTMOD}" "${SEL_MKMOD}" "${SEL_BREAKMOD}")
+# T31: copies of the test module in album directories a, b and c.
+set(SEL_ALBUM_STAMP "${CMAKE_CURRENT_BINARY_DIR}/songs/album.stamp")
+add_custom_command(OUTPUT "${SEL_ALBUM_STAMP}"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/songs/a"
+    "${CMAKE_CURRENT_BINARY_DIR}/songs/b" "${CMAKE_CURRENT_BINARY_DIR}/songs/c"
+  COMMAND "${CMAKE_COMMAND}" -E copy "${SEL_TESTMOD}" "${CMAKE_CURRENT_BINARY_DIR}/songs/a/one.mod"
+  COMMAND "${CMAKE_COMMAND}" -E copy "${SEL_TESTMOD}" "${CMAKE_CURRENT_BINARY_DIR}/songs/a/two.mod"
+  COMMAND "${CMAKE_COMMAND}" -E copy "${SEL_TESTMOD}" "${CMAKE_CURRENT_BINARY_DIR}/songs/b/three.mod"
+  COMMAND "${CMAKE_COMMAND}" -E copy "${SEL_TESTMOD}" "${CMAKE_CURRENT_BINARY_DIR}/songs/b/four.mod"
+  COMMAND "${CMAKE_COMMAND}" -E copy "${SEL_TESTMOD}" "${CMAKE_CURRENT_BINARY_DIR}/songs/c/five.mod"
+  COMMAND "${CMAKE_COMMAND}" -E touch "${SEL_ALBUM_STAMP}"
+  DEPENDS "${SEL_TESTMOD}"
+  COMMENT "Copying album test songs")
+add_custom_target(testmod ALL DEPENDS "${SEL_TESTMOD}" "${SEL_SHORTMOD}" "${SEL_MKMOD}" "${SEL_BREAKMOD}" "${SEL_ALBUM_STAMP}")
 add_test(NAME testmod-sha
   COMMAND "${CMAKE_COMMAND}" "-DMOD=${SEL_TESTMOD}"
     "-DPINNED=${CMAKE_CURRENT_SOURCE_DIR}/songs/selecta-test.mod.sha256"
@@ -268,6 +281,24 @@ add_test(NAME queue-engine
     "-DEXPECT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/m1/queue.expected"
     -P "${SEL_EXPECT}")
 set_tests_properties(queue-engine PROPERTIES
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/songs")
+
+# T30: queue history ring, MOVE, SWAP, SHUFFLE, RESHUFFLE, UNDO, REDO.
+add_test(NAME queue-history
+  COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}"
+    "-DARGS=script ${CMAKE_CURRENT_SOURCE_DIR}/m12/history.sel"
+    "-DEXPECT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/m12/history.expected"
+    -P "${SEL_EXPECT}")
+set_tests_properties(queue-history PROPERTIES
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/songs")
+
+# T31: SCOPE, NEXT_ALBUM, PREV_ALBUM (album = parent directory).
+add_test(NAME queue-scope-album
+  COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}"
+    "-DARGS=script ${CMAKE_CURRENT_SOURCE_DIR}/m12/album.sel"
+    "-DEXPECT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/m12/album.expected"
+    -P "${SEL_EXPECT}")
+set_tests_properties(queue-scope-album PROPERTIES
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/songs")
 
 # T21: a 5000 ms seek renders the second half of the unseeked 10 s render,

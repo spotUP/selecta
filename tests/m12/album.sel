@@ -1,0 +1,75 @@
+# T31 queue-scope-album: NEXT_ALBUM, PREV_ALBUM and SCOPE through the real dispatch.
+# Queue of 5 songs in directories a, a, b, b, c (copies of selecta-test.mod under
+# build/host/tests/songs). Working directory build/host/tests/songs.
+QUEUE_ADD a/one.mod
+QUEUE_ADD a/two.mod
+QUEUE_ADD b/three.mod
+QUEUE_ADD b/four.mod
+QUEUE_ADD c/five.mod
+PLAY
+@queue
+@render 1
+NEXT_ALBUM
+@queue
+@render 1
+NEXT_ALBUM
+@queue
+@render 1
+NEXT_ALBUM
+@queue
+@render 1
+PLAY
+@queue
+@render 1
+NEXT
+@queue
+@render 1
+NEXT
+@queue
+@render 1
+NEXT
+@queue
+@render 1
+PREV_ALBUM
+@queue
+@render 1
+NEXT
+@queue
+@render 1
+NEXT
+@queue
+@render 1
+PREV_ALBUM
+@queue
+@render 1
+NEXT
+@queue
+@render 1
+NEXT
+@queue
+@render 1
+NEXT
+@queue
+@render 1
+SCOPE album
+NEXT
+@queue
+@render 1
+SCOPE library
+PLAY
+@queue
+@render 1
+NEXT
+@queue
+@render 1
+NEXT
+@queue
+@render 1
+NEXT
+@queue
+@render 1
+NEXT
+@queue
+@render 1
+SCOPE playlist
+SCOPE bad
