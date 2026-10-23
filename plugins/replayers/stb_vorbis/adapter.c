@@ -20,11 +20,26 @@
 #include <string.h>
 
 #define META_LEN 128u
+/* The decoder arena (I195h): stb_vorbis_alloc hands stb_vorbis one buffer to take all of its memory from, setup data
+ * and the per-frame temporaries alike (the vendored copy mallocs its temporaries when it has no arena), so after
+ * RP_OPEN no malloc runs (RULES.md 4). It is
+ * allocated once by host->mem_alloc in rp_open, reused for every chained stream and freed in rp_close.
+ * Measured with stb_vorbis_get_info on the tests/m3/stream Ogg files (22.05 and 44.1 kHz stereo, blocksizes 256/2048):
+ * setup 162.5 KB, temporaries 4 KB (7.2 KB while the setup runs), plus the decoder struct (about 2 KB). Real files
+ * with larger codebooks or 8192-sample blocks (low bitrate profiles) need up to about 3x that; 768 KB is 4.5x the
+ * measured need. A stream that needs more fails to open cleanly (VORBIS_outofmem, rp_open returns NULL, or the
+ * live stream ends at the chained header). It does not scale with sel_machine: the plugin has no machine query,
+ * the arena exists only while an Ogg file is open, and the Amiga baseline has 2 MB of fast RAM next to nuade's
+ * 1.85 MB image only when no Vorbis song is loaded. A smaller arena for a small machine would reject real files. */
+#ifndef VORBIS_ARENA_BYTES
+#define VORBIS_ARENA_BYTES (768u * 1024u)
+#endif
 #define VORBIS_WINDOW 66000u /* stream mode: bytes buffered ahead of the decoder; one Ogg page is at most 65307 */
 
 typedef struct vorbis_state {
     const sel_host* host;
     stb_vorbis* v;
+    stb_vorbis_alloc arena; /* the buffer every decoder of this state allocates from */
     size_t size;
     uint32_t hz, rate;
     uint32_t channels, total_frames;
@@ -98,7 +113,7 @@ static stb_vorbis* open_live(vorbis_state* s) {
         stb_vorbis* v;
         size_t n;
         if (s->win_size > 0u) {
-            v = stb_vorbis_open_pushdata(s->win, (int)s->win_size, &used, &err, NULL);
+            v = stb_vorbis_open_pushdata(s->win, (int)s->win_size, &used, &err, &s->arena);
             if (v != NULL) {
                 s->win_pos = (size_t)used;
                 return v;
@@ -142,13 +157,20 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     }
     memset(s, 0, sizeof *s);
     s->host = host;
+    s->arena.alloc_buffer = (char*)host->mem_alloc(host, VORBIS_ARENA_BYTES, SEL_MEM_FAST);
+    if (s->arena.alloc_buffer == NULL) {
+        host->mem_free(host, s);
+        return NULL;
+    }
+    s->arena.alloc_buffer_length_in_bytes = (int)VORBIS_ARENA_BYTES;
     s->in = src->stream;
     if (s->in != NULL) {
         v = open_live(s);
     } else {
-        v = stb_vorbis_open_memory(src->data, (int)src->size, &err, NULL);
+        v = stb_vorbis_open_memory(src->data, (int)src->size, &err, &s->arena);
     }
-    if (v == NULL) {
+    if (v == NULL) { /* includes VORBIS_outofmem: the headers need more than the arena holds */
+        host->mem_free(host, s->arena.alloc_buffer);
         host->mem_free(host, s);
         return NULL;
     }
@@ -173,7 +195,10 @@ static void rp_close(void* state) {
     vorbis_state* s = (vorbis_state*)state;
     if (s != NULL) {
         const sel_host* host = s->host;
-        stb_vorbis_close(s->v);
+        if (s->v != NULL) {
+            stb_vorbis_close(s->v);
+        }
+        host->mem_free(host, s->arena.alloc_buffer);
         host->mem_free(host, s);
     }
 }
@@ -204,11 +229,17 @@ static int rechain(vorbis_state* s) {
         p = s->win + s->win_pos;
         avail = s->win_size - s->win_pos;
     }
-    v = stb_vorbis_open_pushdata(p, (int)avail, &used, &err, NULL);
+    /* The old stream ended at this BOS page, so its decoder is closed first and the new one is opened into the same
+     * arena (no allocation). s->v stays NULL until the new headers are complete; pull_live decodes nothing then. */
+    if (s->v != NULL) {
+        stb_vorbis_close(s->v);
+        s->v = NULL;
+    }
+    s->left = 0;
+    v = stb_vorbis_open_pushdata(p, (int)avail, &used, &err, &s->arena);
     if (v == NULL) {
         return err == VORBIS_need_more_data && avail < VORBIS_WINDOW ? 0 : -1;
     }
-    stb_vorbis_close(s->v);
     s->v = v;
     s->win_pos += (size_t)used;
     vi = stb_vorbis_get_info(v);
@@ -253,6 +284,9 @@ static uint32_t pull_live(vorbis_state* s, int16_t* out, uint32_t frames) {
                 break;
             }
             break; /* headers that never complete or do not decode: the stream ends here */
+        }
+        if (s->v == NULL) {
+            break;
         }
         if (s->win_size > s->win_pos) {
             used = stb_vorbis_decode_frame_pushdata(s->v, s->win + s->win_pos, (int)(s->win_size - s->win_pos), &ch,
