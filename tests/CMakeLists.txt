@@ -665,7 +665,7 @@ if(NOT SEL_AMIGA)
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}"
       "-DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/m13/nuade_samples.sel"
       "-DMOD=${SEL_TESTMOD}"
-      "-DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/m13_samples"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m13/nuade_samples_check.cmake")
 endif()
 if(NOT SEL_AMIGA)
@@ -702,7 +702,7 @@ if(NOT SEL_AMIGA)
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}"
       "-DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/m13/samples.sel"
       "-DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/m13/samples.expected"
-      "-DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/m13_samples"
       "-DGOLDEN_DIR=${CMAKE_CURRENT_SOURCE_DIR}/golden/samples"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m13/samples_check.cmake")
 endif()

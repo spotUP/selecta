@@ -9,6 +9,7 @@
 # 2. The 8SVX BODY of slots 1 and 3 equals the bytes of module samples 1 and 4.
 # 3. The WAV of sample 1 is 44 + length bytes.
 # 4. Slot 9 answers ERROR range.
+file(MAKE_DIRECTORY "${WORKDIR}")
 file(REMOVE "${WORKDIR}/nuade-samples-1.8svx" "${WORKDIR}/nuade-samples-3.8svx" "${WORKDIR}/nuade-samples-1.wav")
 execute_process(COMMAND "${CLI}" script "${SCRIPT}" WORKING_DIRECTORY "${WORKDIR}"
   OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)

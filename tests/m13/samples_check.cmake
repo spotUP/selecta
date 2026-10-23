@@ -3,6 +3,7 @@
 # 2. samples-1.wav: RIFF/WAVE, mono 8-bit PCM at 8287 Hz, data = the sample bytes + 128.
 # 3. samples-1.8svx / samples-4.8svx: FORM/8SVX, VHDR one-shot and repeat sizes, BODY = signed bytes.
 # 4. SHA-256 of the files equal GOLDEN_DIR/<name>.sha256 (golden written when T46 went green).
+file(MAKE_DIRECTORY "${WORKDIR}")
 file(REMOVE "${WORKDIR}/samples-1.wav" "${WORKDIR}/samples-1.8svx" "${WORKDIR}/samples-4.8svx")
 execute_process(COMMAND "${CLI}" script "${SCRIPT}" WORKING_DIRECTORY "${WORKDIR}"
   OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)

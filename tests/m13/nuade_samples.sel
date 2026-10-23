@@ -1,6 +1,6 @@
 # T46 (row I104b): SAMPLE_LIST and SAMPLE_EXPORT on a module the nuade replayer plays
-# (selecta-test.mod, Protracker). Working directory: build/host/tests/songs.
-OPEN selecta-test.mod
+# (selecta-test.mod, Protracker). Working directory: build/host/tests/m13_samples, so exports stay out of the shared songs fixture dir.
+OPEN ../songs/selecta-test.mod
 SAMPLE_LIST
 SAMPLE_EXPORT 1 nuade-samples-1.8svx
 SAMPLE_EXPORT 3 nuade-samples-3.8svx

@@ -1,7 +1,7 @@
 # T46 sample-export: SAMPLE_LIST and SAMPLE_EXPORT through the engine (libopenmpt
-# adapter). Working directory: build/host/tests/songs. Sample 1 is the 64-byte
+# adapter). Working directory: build/host/tests/m13_samples, so exports stay out of the shared songs fixture dir. Sample 1 is the 64-byte
 # looped square wave of gen_testmod; sample 4 is the one-shot click.
-OPEN selecta-test-mk.mod
+OPEN ../songs/selecta-test-mk.mod
 SAMPLE_LIST
 SAMPLE_EXPORT 1 samples-1.wav
 SAMPLE_EXPORT 1 samples-1.8svx
