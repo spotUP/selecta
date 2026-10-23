@@ -1,0 +1,2 @@
+# T28: the user binding under test. x swaps queue rows 1 and 2.
+x QUEUE_SWAP 1 2

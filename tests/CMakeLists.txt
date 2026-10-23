@@ -475,3 +475,14 @@ if(NOT SEL_AMIGA)
   set_tests_properties(integration-nowplaying PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/songs")
 endif()
+
+# T28 reachability (I82): the whole of M1.2 through the real shell, one run.
+if(NOT SEL_AMIGA)
+  add_test(NAME selecta-m12-reach
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DMOD=${SEL_MKMOD}"
+      "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m12/reach.keys"
+      "-DBINDINGS=${CMAKE_CURRENT_SOURCE_DIR}/m12/reach.bindings"
+      "-DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/m12/three.m3u"
+      "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m12/reach.screen"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m12/reach.cmake")
+endif()
