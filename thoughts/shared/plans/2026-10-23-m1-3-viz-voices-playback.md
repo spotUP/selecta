@@ -118,3 +118,12 @@ Manual (only the user can confirm, never ticked by the agent):
 Visualizer plugins on bitmap surfaces (M4), GPU visualizers (M5), chip register panels (M4), the general DSP chain with user plugins and EQ (M5), Paula-direct crossfade (user decision: not supported), pattern:order:row seek form (later, on request), BPM detect (M5).
 
 ## Deviations
+
+### Phase 1 (rows I85 to I87, branch worktree-agent-ae23ccc3fbc089dee)
+- `render --viz-dump` still needs `--output <wav>`; the T40 command in the plan omits it, so the test passes it.
+- VU release is `level -= max(1, level >> 3)` so small levels reach 0.
+- Extra ctest entries `viz-vu` and `viz-spectrum`; the phase, VU and spectrum unit tests are host only (they use `math.h` for reference values).
+- Viz blocks close at the end of each `sel_engine_render` call, not at exact block edges. This keeps golden renders and RENDER-kind call counts unchanged. In dump mode the CLI pulls `rate/50` frames per call so the dump is exact; with unaligned callers the voice taps can lead the block edge by up to one call.
+- Spectrum bands take the maximum over FFT bins (172 Hz per bin at 44100 Hz), so the lowest bands share bins.
+- On m68k the triple-buffer swap is a plain volatile exchange; elsewhere `__atomic_exchange_n`. The spectrum is skipped below a 68030.
+- Memory: about 16 KB per mixer slot and about 70 KB in the engine. no_float object count is 23.

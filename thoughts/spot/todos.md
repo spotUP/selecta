@@ -243,9 +243,9 @@ Tests T39 to T48 are defined in the plan's finish-line table.
 
 | ID | Status | Phase | Task | Proof |
 |----|--------|-------|------|-------|
-| I85 | [ ] | 1 | T40 and T48 written and red; `viz.h`, VIZ tags | ctest failures; T2, T5 green |
-| I86 | [ ] | 1 | Engine taps (peaks, VU, scopes, PCM ring), triple buffer, snapshot field | T40 voice half green; T26 green |
-| I87 | [ ] | 1 | Integer FFT and bands on the pump thread; phase correlation | T40, T48 green |
+| I85 | [x] | 1 | T40 and T48 written and red; `viz.h`, VIZ tags | red `phase-tap, viz-vu, viz-spectrum, viz-taps ***Failed` (0 of 4); T2, T5 green; 2550bd6 |
+| I86 | [x] | 1 | Engine taps (peaks, VU, scopes, PCM ring), triple buffer, snapshot field | phase-tap, viz-vu, mixer-unit, render-golden-*, no-alloc-* green; 4ad74ac |
+| I87 | [x] | 1 | Integer FFT and bands on the pump thread; phase correlation | viz-spectrum, viz-taps green, dump byte identical twice; 6d1e866 |
 | I88 | [ ] | 2 | T41 written and red; RP_TRACKER_INFO/CELLS tags and typedefs | ctest failure |
 | I89 | [ ] | 2 | nuade and openmpt tracker hooks, `@cells` directive | T41 green |
 | I90 | [ ] | 3 | T42 written and red; mute golden committed after a listening check of voice 1 removed (agent compares against a render with the voice's samples zeroed) | ctest failure |
