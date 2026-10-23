@@ -414,6 +414,7 @@ Tests T62 to T97 are defined in the plan's finish-line table. T8 ratchet target 
 | I173c | [x] | 9 | Move DEViLBOX HTTP (cmd_RATE, engine-create flush) off the engine command thread onto the library worker | unreachable network does not stall engine commands; regression test with fixture server delay | found in m3-I173-report.md; merge b338103, rate-devilbox (2 s delayed PUT, commands return <= 700 ms, failed 2008 ms before) and net-guard green, report m3-I173c-report.md |
 | I180a | [ ] | 8 | DEViLBOX web app (~/Code/DEViLBOX src/App.tsx): open ?song=<source/path>&sub=&t= and ?playlist= links from Selecta SHARE; Johan approved 2026-10-23 | DEViLBOX test opens a Selecta link |
 | I191 | [ ] | 10 | Home view source: recently played, jump back in, new this week | T91 green |
+| I191a | [ ] | 10 | Home view rows act: Enter on a Recently played / New this week row opens the song, on a Jump back in row opens the album (rows carry song or album keys, not display text only); found at I191 merge | home-view key script presses Enter on a row and the snapshot shows that song playing |
 | I192 | [ ] | 10 | Stats SQL views and text UI stats screen | T92 green |
 | I193 | [ ] | 10 | Lyrics: LRC, song message, DEViLBOX lyrics, current line in the snapshot | T93 green |
 | I194 | [ ] | 11 | minimp3 and stb_vorbis RENDER-kind plugins over a byte stream (D-M3-8) | T94 decode part green |
