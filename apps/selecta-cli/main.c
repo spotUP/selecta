@@ -337,7 +337,6 @@ static void script_directive(sel_engine* e, const char* line) {
 static int cmd_script(const char* path) {
     char line[1024];
     char pool[2048];
-    char verb[64];
     FILE* f = fopen(path, "r");
     sel_engine_config cfg;
     sel_engine* e;
@@ -357,8 +356,6 @@ static int cmd_script(const char* path) {
         return 1;
     }
     while (fgets(line, sizeof line, f)) {
-        sel_message m;
-        int err;
         line[strcspn(line, "\r\n")] = '\0';
         if (line[0] == '\0' || line[0] == '#') {
             continue;
@@ -367,17 +364,7 @@ static int cmd_script(const char* path) {
             script_directive(e, line);
             continue;
         }
-        err = sel_codec_decode(line, SEL_MSG_CMD, &m, pool, sizeof pool);
-        if (err == SEL_CODEC_OK) {
-            if (!sel_engine_send(e, &m)) {
-                sel_engine_report_error(e, "queue_full", NULL);
-            }
-        } else {
-            sel_codec_verb(line, verb, sizeof verb);
-            sel_engine_report_error(e, err == SEL_CODEC_E_UNKNOWN_VERB ? "unknown_command"
-                                                                      : sel_codec_strerror(err),
-                                    verb);
-        }
+        sel_engine_send_line(e, line, pool, sizeof pool);
         sel_engine_pump(e, print_event, NULL);
     }
     fclose(f);

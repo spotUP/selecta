@@ -9,26 +9,32 @@
 #include <selecta/engine.h>
 #include <selecta/host.h>
 
+#include "format.h"
 #include "local.h"
 #include "queue.h"
 
 #define SEL_VIEW_WINDOW_MAX 256u
 #define SEL_VIEW_WINDOW_DEFAULT 20u
+#define SEL_VIEW_TITLE_DEFAULT "[%author% - ]%title%"
+#define SEL_VIEW_TEXT_MAX 160u /* one formatted row, NUL included */
 
 /* The data the view lists; read-only here. */
 typedef struct sel_view_src {
     const sel_queue* queue;
     const sel_browse* browse;
     uint32_t playing; /* queue id of the playing entry, 0 none */
+    const char* title_format;  /* view.title_format pref, expanded per queue row */
+    uint32_t prefs_generation; /* bumps when any pref changes */
 } sel_view_src;
 
 typedef struct sel_view_sig {
-    uint32_t source, style, row_count, cursor, window_start, window_rows, queue_version, browse_generation, playing;
+    uint32_t source, style, row_count, cursor, window_start, window_rows, queue_version, browse_generation, playing, prefs_generation;
 } sel_view_sig;
 
 typedef struct sel_view {
     sel_view_state pub;
     sel_view_row* rows;
+    char* row_text; /* row_cap * SEL_VIEW_TEXT_MAX: the formatted queue rows */
     uint32_t row_cap;
     uint32_t cursor_of[2], id_of[2]; /* the cursor each source was left at */
     uint32_t browse_seen;            /* browse generation the cursor belongs to */

@@ -235,6 +235,12 @@ add_executable(view_test view/view_test.c)
 target_link_libraries(view_test PRIVATE selecta_core selecta_registry)
 add_test(NAME view-unit COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs")
 
+# T33: title-format resolver and PREF_GET / PREF_SET (src/engine/format.c, prefs.c).
+add_executable(format_test view/format_test.c)
+target_link_libraries(format_test PRIVATE selecta_core selecta_registry)
+target_include_directories(format_test PRIVATE ${PROJECT_SOURCE_DIR}/src/engine)
+add_test(NAME title-format COMMAND format_test)
+
 # T25: text UI cell grid, key parser, theme tokens and POSIX terminal device
 # (plugins/ui/text). Desktop only: the Amiga text UI runs in UP-Term in M2.
 if(NOT SEL_AMIGA)

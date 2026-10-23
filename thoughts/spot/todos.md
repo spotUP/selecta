@@ -215,9 +215,9 @@ Tests T28 to T38 are defined in the plan's finish-line table. A row is ticked on
 
 | ID | Status | Phase | Task | Proof |
 |----|--------|-------|------|-------|
-| I65 | [ ] | 1 | Move the line parser to `src/protocol/parse.c`; CLI and shell share it | T1 to T27 green, no behaviour change |
-| I66 | [ ] | 1 | `prefs.def`, `prefs.c`, prefs file, PREF_GET/PREF_SET, config directory | T33 pref half green, ratchet 43 |
-| I67 | [ ] | 1 | T33 written and red; `format.c` resolver used by the view model | T33 green |
+| I65 | [x] | 1 | Move the line parser to `src/protocol/parse.c`; CLI and shell share it | T1 to T27 green, no behaviour change |
+| I66 | [x] | 1 | `prefs.def`, `prefs.c`, prefs file, PREF_GET/PREF_SET, config directory | T33 pref half green, ratchet 43 |
+| I67 | [x] | 1 | T33 written and red; `format.c` resolver used by the view model | T33 green |
 | I68 | [ ] | 2 | T30 and T31 written and red | ctest failures |
 | I69 | [ ] | 2 | History ring; QUEUE_MOVE, QUEUE_SWAP, UNDO, REDO, QUEUE_HISTORY event | T30 move/swap/undo half green, ratchet 39 |
 | I70 | [ ] | 2 | xorshift32; QUEUE_SHUFFLE, SHUFFLE, RESHUFFLE | T30 green, ratchet 36 |

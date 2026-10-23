@@ -113,9 +113,20 @@ typedef struct sel_engine_config {
     uint32_t browse_entries;
     uint32_t browse_text_bytes;
     const sel_tag* machine;
+    /* Directory of prefs.conf (see sel_config_dir). NULL: prefs are not read
+     * or written, they stay at their defaults for this run. */
+    const char* config_dir;
 } sel_engine_config;
 
 typedef struct sel_engine sel_engine;
+
+/* The config directory: $XDG_CONFIG_HOME/selecta, else ~/.config/selecta;
+ * ENVARC:Selecta on the Amiga. Writes the path to `out`; 0 when it cannot be
+ * determined or does not fit. The directory is not created. */
+int sel_config_dir(char* out, size_t cap);
+
+/* Creates `dir` and missing parents (src/core/<os>/config_mkdir.c). 1 when it exists afterwards. */
+int sel_config_mkdir(const char* dir);
 
 /* Called by sel_engine_pump once per delivered event. */
 typedef void (*sel_event_sink)(void* ctx, const sel_message* evt);
@@ -130,6 +141,12 @@ int sel_engine_send(sel_engine* e, const sel_message* cmd);
 /* Enqueues an ERROR event on behalf of the protocol layer (for a line the
  * codec could not decode). `detail` is copied. */
 void sel_engine_report_error(sel_engine* e, const char* code, const char* detail);
+
+/* The shared protocol line parser (src/protocol/parse.c): decodes one command
+ * line into `pool` (the strings stay in it, so it must live until the next
+ * sel_engine_pump) and sends it, or raises the ERROR event. Returns
+ * SEL_CODEC_OK or the codec error. */
+int sel_engine_send_line(sel_engine* e, const char* line, char* pool, size_t poolcap);
 
 /* Drains the command queue, dispatches, delivers events. Returns the
  * number of events delivered. */
