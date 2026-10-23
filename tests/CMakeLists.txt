@@ -1286,6 +1286,14 @@ if(NOT SEL_AMIGA)
   set_tests_properties(stream-url PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "stream_url_ok")
 
+  # I195b: OPEN of an http URL plays while it downloads (server sends 60% of the file and stalls).
+  add_test(NAME stream-live
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
+            "-DMP3=${PROJECT_SOURCE_DIR}/tests/m3/stream/sine.mp3" "-DSLOW=${SEL_NET_DIR}/slow_server.py"
+            -P "${SEL_NET_DIR}/stream_live.cmake")
+  set_tests_properties(stream-live PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "stream_live_ok")
+
   # I195c: STOP sends racing the pump never lose their net cancel (threads, many iterations).
   add_executable(cancel_race_test engine/cancel_race_test.c)
   target_link_libraries(cancel_race_test PRIVATE selecta_core ${CMAKE_THREAD_LIBS_INIT})

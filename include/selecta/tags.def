@@ -61,6 +61,9 @@ SEL_TAG(RP, CONFIG,            0x101A, LIST)
 /* Companion file rules (library cache, I166): ';'-separated `pattern>companion` over the base name,
  * '*' standing for the rest of the name. `mdat.*>smpl.*` fetches smpl.<name> with mdat.<name>. */
 SEL_TAG(RP, COMPANIONS,        0x101B, STR)
+/* STREAMING: 1 = the replayer can open from a growing byte stream (sel_song_source.stream, I195b) instead of the
+ * whole file; it then plays an http(s) URL while the download runs. Others get the whole file. */
+SEL_TAG(RP, STREAMING,         0x101C, INT)
 
 SEL_TAG(OUT, NAME,             0x2000, STR)
 SEL_TAG(OUT, SINK,             0x2001, INT)

@@ -318,6 +318,8 @@ static void print_event(void* ctx, const sel_message* evt) {
  *   @ratings_read <source> <n> [<path>...]  batch-read n ratings from DEViLBOX (named paths first), store the own ones (T79)
  *   @share_stats        SHARE links_parsed=N links_made=N songs_opened=N (T84)
  *   @stream_stats       STREAM stream_reads=N stream_bytes=N (T94: OPEN of a URL or pipe path, I195)
+ *   @stream_live        STREAMLIVE opens=N audio_bytes=N audio_done=0|1 received=N (I195b: bytes downloaded when
+ *                       the first audio frame played, and whether the download had finished by then)
  *   @folder_stats       FOLDERS folders=N playlists_in_folders=N playlists=N entries=N folder_ops=N (T83)
  *   @folder_tree        the folder tree, one \"F|P <id> <name>\" line per node (T83)
  *   @playlist_add <folder> <name> <key>...  adds a DB playlist (test plumbing; no engine verb creates one yet)
@@ -466,6 +468,9 @@ static void script_directive(sel_engine* e, const char* line) {
                (unsigned)es.links_made, (unsigned)es.songs_opened);
     } else if (strcmp(line, "@stream_stats") == 0) {
         printf("STREAM stream_reads=%u stream_bytes=%u\n", (unsigned)sel_stream_reads(), (unsigned)sel_stream_bytes());
+    } else if (strcmp(line, "@stream_live") == 0) {
+        printf("STREAMLIVE opens=%u audio_bytes=%u audio_done=%u received=%u\n", (unsigned)sel_stream_live_opens(),
+               (unsigned)sel_stream_audio_bytes(), (unsigned)sel_stream_audio_done(), (unsigned)sel_stream_received());
     } else if (strcmp(line, "@cancel_stats") == 0) {
         sel_engine_stats es;
         sel_engine_stats_get(e, &es);

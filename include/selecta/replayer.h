@@ -17,11 +17,27 @@ enum sel_probe_result { SEL_PROBE_NO = 0, SEL_PROBE_YES = 1, SEL_PROBE_UNSURE = 
 /* sel_tick_result.flags */
 enum { SEL_TICK_LOOPED = 1, SEL_TICK_ENDED = 2 };
 
-/* The whole song in memory. `data` stays valid until RP_CLOSE returns. */
+/* A byte stream that is still arriving (I195b), offered only to a replayer that declares SEL_RP_STREAMING. */
+typedef struct sel_byte_stream {
+    void* ctx;
+    /* Copies up to `max` bytes that have already arrived; 0 when none is there yet. Never blocks (it runs on the
+     * audio thread during RP_RENDER). */
+    size_t (*read)(void* ctx, uint8_t* dst, size_t max);
+    /* Like read, but waits for at least one byte; 0 only at the end of the stream or when the stream was
+     * cancelled. Only for RP_OPEN (the command thread), never for RP_RENDER. */
+    size_t (*read_wait)(void* ctx, uint8_t* dst, size_t max);
+    /* 1 once every byte has been read and no more will come (end of stream, error or cancel). */
+    int (*ended)(void* ctx);
+} sel_byte_stream;
+
+/* The whole song in memory. `data` stays valid until RP_CLOSE returns. With `stream` set (SEL_RP_STREAMING
+ * replayers only) `data`/`size` are a copy of the first bytes for RP_OPEN, and the song is read from `stream`
+ * starting at its byte 0; the file size is unknown and the stream may never end (internet radio). */
 typedef struct sel_song_source {
     const uint8_t* data;
     size_t size;
     const char* path; /* may be NULL */
+    const sel_byte_stream* stream; /* NULL for a whole file */
 } sel_song_source;
 
 typedef struct sel_rp_info {
