@@ -272,6 +272,12 @@ int main(int argc, char** argv) {
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_PATTERN_ROWS, 0), (unsigned)est.mutes,
            est.crossfeed_on ? "on" : "off", (unsigned)est.fades, (unsigned)est.sleep_armed);
 
+    printf("viz_marks dot_rows=%u phase_points=%u\n", (unsigned)sel_tag_find(ust, SEL_UI_STAT_DOT_ROWS, 0),
+           (unsigned)sel_tag_find(ust, SEL_UI_STAT_PHASE_POINTS, 0));
+
+    printf("engine_state pitch_cents=%d tempo_percent=%d mute_mask=%u mutes=%u\n", (int)sel_engine_state(e)->pitch_cents,
+           (int)sel_engine_state(e)->tempo_percent, (unsigned)sel_engine_state(e)->mute_mask, (unsigned)est.mutes);
+
     if (ctl_fd >= 0) {
         printf("socket_cmds=%u\n", socket_cmds);
         sel_ctl_close(ctl_fd, ctl_path);

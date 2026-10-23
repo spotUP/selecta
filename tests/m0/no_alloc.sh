@@ -5,6 +5,9 @@
 # With a song and output path the render command runs instead of play-null (T17).
 # With "--script <file>" the script command runs; the script's @alloc_guard on
 # brackets each engine render call with the markers (T26, queue auto-advance).
+# Extra arguments after the output path go to render (T26: "--dsp crossfeed"); with
+# "--dsp" the render must also report dsp=<name> blocks=N with N > 0, so the window
+# provably covered the plugin.
 # The shim reports after every THAW; the last report is the cumulative count.
 set -eu
 cli=$1
@@ -12,8 +15,21 @@ shim=$2
 if [ "${3:-}" = "--script" ]; then
     err=$(DYLD_INSERT_LIBRARIES="$shim" "$cli" script "$4" 2>&1 >/dev/null)
 elif [ $# -ge 4 ]; then
-    mkdir -p "$(dirname "$4")"
-    err=$(DYLD_INSERT_LIBRARIES="$shim" "$cli" render "$3" --output "$4" --seconds 2 --rate 44100 --resample linear 2>&1 >/dev/null)
+    song=$3
+    wav=$4
+    shift 4
+    mkdir -p "$(dirname "$wav")"
+    outf="$wav.stdout"
+    err=$(DYLD_INSERT_LIBRARIES="$shim" "$cli" render "$song" --output "$wav" --seconds 2 --rate 44100 --resample linear "$@" 2>&1 >"$outf")
+    case " $* " in
+    *" --dsp "*)
+        if ! grep -q '^dsp=[a-z]* blocks=[1-9]' "$outf"; then
+            echo "[ERROR] --dsp given but the render reported no DSP blocks"
+            cat "$outf"
+            exit 1
+        fi
+        ;;
+    esac
 else
     err=$(DYLD_INSERT_LIBRARIES="$shim" "$cli" play-null --rate 44100 --frames 4410 2>&1 >/dev/null)
 fi
