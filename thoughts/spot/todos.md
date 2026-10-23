@@ -282,12 +282,12 @@ Tests T49 to T61 are defined in the plan's finish-line table.
 | I109 | [x] | 1 | GFX and AUDIO probes, planar tier, `--tier` override | T50 green; e120aee; merge 2d15f64 (rig proof open for I109, I110) |
 | I110 | [x] | 1 | timer.device ReadEClock clock, DateStamp fallback under vamos | clock test green on rig and vamos; e120aee; merge 2d15f64 (rig proof open for I109, I110) |
 | I111 | [x] | 1 | T49 green under vamos; tag every existing plugin with its needs | T49 green both trees; e120aee; merge 2d15f64 (rig proof open for I109, I110) |
-| I112 | [ ] | 2 | CIA-B interrupt server (signal only) | T54 core objects green; rig sentinel `cia_ints=` |
-| I113 | [ ] | 2 | Audio task at prefs priority, render loop | rig sentinel `audio_task_ticks=` |
-| I114 | [ ] | 2 | SPSC publication with Disable/Enable around head/tail; main loop Wait plus `sel_engine_pump()` | queue test under vamos |
-| I115 | [ ] | 2 | `dir.c` Examine/ExNext | T57 green |
-| I116 | [ ] | 2 | One option parser for ToolTypes and CLI over `commands.def` | T58 green (options) |
-| I117 | [ ] | 2 | Task priority from option | T58 green (priority read back) |
+| I112 | [x] | 2 | CIA-B interrupt server (signal only) | T54 core objects green; rig sentinel `cia_ints=`; 2987e49; rig sentinel cia_ints= unverified; merge a97bb26 |
+| I113 | [x] | 2 | Audio task at prefs priority, render loop | rig sentinel `audio_task_ticks=`; 2987e49; rig sentinel audio_task_ticks= unverified, not wired into an app; merge a97bb26 |
+| I114 | [x] | 2 | SPSC publication with Disable/Enable around head/tail; main loop Wait plus `sel_engine_pump()` | queue test under vamos; c971ab2 spsc-queue desktop and vamos; merge a97bb26 |
+| I115 | [x] | 2 | `dir.c` Examine/ExNext | T57 green; 8ee0f79 T57 vamos; merge a97bb26 |
+| I116 | [x] | 2 | One option parser for ToolTypes and CLI over `commands.def` | T58 green (options); 9780bda, d8b689b T58 options; merge a97bb26 |
+| I117 | [x] | 2 | Task priority from option | T58 green (priority read back); d77d32d; vamos shim removed in merge, read-back moved to rig-task-priority (open); merge a97bb26 |
 | I118 | [ ] | 3 | Paula voice sink, chip RAM samples via `host->mem_alloc` | build; voice API conformance test |
 | I119 | [ ] | 3 | Period once per note, volume 0..64, loop registers | T51 register hash |
 | I120 | [ ] | 3 | Shadow register twin for vamos and desktop | T51 green both trees |
