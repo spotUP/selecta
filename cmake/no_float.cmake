@@ -1,6 +1,6 @@
 # T18: rule 4 (no floating point in the engine) checked from the 68k object
 # files, not from the source. Runs m68k-amigaos-nm over the objects of the
-# engine (src/engine), the mixer, the library, the wav output and the null output, and
+# engine (src/engine), the protocol parser, the mixer, the library, the wav output and the null output, and
 # fails when any of them references a soft-float runtime routine.
 # Inputs: -DNM (m68k-amigaos-nm) -DBUILD_DIR (the 68k build tree)
 foreach(v NM BUILD_DIR)
@@ -14,15 +14,17 @@ set(forbidden __adddf3 __subdf3 __muldf3 __divdf3 __addsf3 __subsf3 __mulsf3 __d
 
 file(GLOB_RECURSE objs
   "${BUILD_DIR}/src/CMakeFiles/selecta_core.dir/engine/*.obj"
+  "${BUILD_DIR}/src/CMakeFiles/selecta_core.dir/protocol/*.obj"
   "${BUILD_DIR}/src/CMakeFiles/selecta_mixer.dir/mixer/*.obj"
   "${BUILD_DIR}/plugins/CMakeFiles/sel_plugin_wav.dir/*.obj"
   "${BUILD_DIR}/plugins/CMakeFiles/sel_plugin_null.dir/*.obj"
   "${BUILD_DIR}/src/library/CMakeFiles/selecta_library.dir/*.obj")
 list(LENGTH objs nobjs)
-# engine (engine, queue, view, voices, spsc, scheduler) + mixer (mixer, resample) + wav + null
-# + library (local, dir)
-if(NOT nobjs EQUAL 12)
-  message(FATAL_ERROR "expected 12 objects (6 engine, 2 mixer, wav, null, 2 library), found ${nobjs}:\n${objs}")
+# engine (engine, format, prefs, queue, view, voices, spsc, scheduler) + protocol (parse)
+# + mixer (mixer, resample) + wav + null
+# + library (local, dir, playlist, hippo, m3u, pls, xspf)
+if(NOT nobjs EQUAL 20)
+  message(FATAL_ERROR "expected 20 objects (8 engine, 1 protocol, 2 mixer, wav, null, 7 library), found ${nobjs}:\n${objs}")
 endif()
 
 set(bad "")
