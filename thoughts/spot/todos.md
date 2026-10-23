@@ -233,9 +233,9 @@ Tests T28 to T38 are defined in the plan's finish-line table. A row is ticked on
 | I79 | [x] | 6 | T35 written and red; socket in the shell, `selecta-cli send` | T35 green; red `control-socket ***Failed` then green; 21c13d7, merge 137b413 |
 | I80 | [x] | 6 | `integration.h`, host side, `nowplaying-test`; T38 red then green | T38 green; red `integration-nowplaying ***Failed` then green; 21c13d7, merge 137b413 |
 | I81 | [~] | 6 | macOS Now Playing and Linux MPRIS plugins | macOS plugin builds; MPRIS UNVERIFIED (no libsystemd here); manual check 2 open; 21c13d7, merge 137b413 |
-| I82 | [ ] | 7 | T28 written and red; fixtures | ctest failure |
-| I83 | [ ] | 7 | Wire everything to T28 | T28 green, T8 at 27, build/amiga green |
-| I84 | [ ] | 7 | Design doc section 14 status, validation file, full CI run (reason: landing the milestone) | `2026-10-23-m1-2-playlists-views-control.validation.md` |
+| I82 | [x] | 7 | T28 written and red; fixtures | red `Test #51: selecta-m12-reach ***Failed` (baseline run failed); 5761822 |
+| I83 | [x] | 7 | Wire everything to T28 | T28 green, T8 at 27, build/amiga green; 20ab1d0, merge |
+| I84 | [x] | 7 | Design doc section 14 status, validation file, full CI run (reason: landing the milestone) | validation file written; 67 of 67 passed, ratchet 27 |
 
 ## Implementation M1.3 (plan: thoughts/shared/plans/2026-10-23-m1-3-viz-voices-playback.md, status: approved 2026-10-23 autonomous, starts after I84)
 
