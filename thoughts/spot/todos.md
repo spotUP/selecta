@@ -222,7 +222,7 @@ Tests T28 to T38 are defined in the plan's finish-line table. A row is ticked on
 | I69 | [ ] | 2 | History ring; QUEUE_MOVE, QUEUE_SWAP, UNDO, REDO, QUEUE_HISTORY event | T30 move/swap/undo half green, ratchet 39 |
 | I70 | [ ] | 2 | xorshift32; QUEUE_SHUFFLE, SHUFFLE, RESHUFFLE | T30 green, ratchet 36 |
 | I71 | [ ] | 2 | SCOPE option, NEXT_ALBUM, PREV_ALBUM | T31 green, ratchet 33 |
-| I72 | [ ] | 3 | T29 written and red; four codecs | T29 green |
+| I72 | [x] | 3 | T29 written and red; four codecs | T29 green; commits 64c6056, 474f15b, merge 630ca11 |
 | I73 | [ ] | 3 | PLAYLIST_LOAD, PLAYLIST_SAVE; divider/stealth queue rows | script check in T29 suite, ratchet 31 |
 | I74 | [ ] | 4 | T32 written and red; view grouping folder/format, node ids | T32 green, ratchet 27 |
 | I75 | [ ] | 4 | Text UI draws tree and drilldown | T24, T32 green; screen fixture |
