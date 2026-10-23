@@ -96,3 +96,7 @@ Verdict items: 11 verified, 2 partial (not counted).
 ## Verdict
 
 M1.3: 11 of 13 plan items verified, 7 manual open.
+
+Update after I104a-d (merge 7e031ff): the two partial items now pass (`no-alloc-render-dsp`, `sample-export-nuade`, key tests for pitch, tempo and solo, note dots and phase views with goldens). Affected set green except the planned M2 red test `no-float-interrupt`.
+
+M1.3: 13 of 13 plan items verified automatically, 7 manual checks open (list above).

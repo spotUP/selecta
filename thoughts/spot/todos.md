@@ -237,7 +237,7 @@ Tests T28 to T38 are defined in the plan's finish-line table. A row is ticked on
 | I83 | [x] | 7 | Wire everything to T28 | T28 green, T8 at 27, build/amiga green; 20ab1d0, merge |
 | I84 | [x] | 7 | Design doc section 14 status, validation file, full CI run (reason: landing the milestone) | validation file written; 67 of 67 passed, ratchet 27 |
 
-## Implementation M1.3 (plan: thoughts/shared/plans/2026-10-23-m1-3-viz-voices-playback.md, status: approved 2026-10-23 autonomous, starts after I84)
+## Implementation M1.3 (plan: thoughts/shared/plans/2026-10-23-m1-3-viz-voices-playback.md, status: done 2026-10-23, 13 of 13 automated, 7 manual checks open)
 
 Tests T39 to T48 are defined in the plan's finish-line table.
 
