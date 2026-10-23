@@ -1,0 +1,24 @@
+#
+# Excerpt of STIL.txt (fixture for T73)
+#
+
+/MUSICIANS/H/Hubbard_Rob/Commando.sid
+COMMENT: Rob's title tune for the 1985 Elite conversion
+         of the Capcom arcade game.
+
+/MUSICIANS/H/Hubbard_Rob/Monty_on_the_Run.sid
+COMMENT: Whole-file note for Monty.
+(#1)
+  TITLE: Monty on the Run (main)
+ ARTIST: Rob Hubbard
+(#2)
+COMMENT: Short jingle version.
+(#3)
+  TITLE: Monty on the Run (reprise)
+
+/MUSICIANS/T/Tel_Jeroen/Cybernoid.sid
+(#2)
+  NAME: Cybernoid second tune
+
+/MUSICIANS/X/Nobody/Unlisted.sid
+COMMENT: This entry has no catalogue row.

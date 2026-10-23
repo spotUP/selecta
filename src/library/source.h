@@ -66,12 +66,13 @@ int sel_source_register(const sel_source* src);
 const sel_source* sel_source_find(const char* id);
 uint32_t sel_source_count(void);
 const sel_source* sel_source_get(uint32_t index);
-/* Registers the sources this build ships (local, modland). Idempotent. */
+/* Registers the sources this build ships (local, modland, hvsc). Idempotent. */
 void sel_source_register_builtin(void);
 
 /* The `local` and `modland` descriptors (sources/local.c, sources/modland.c). */
 const sel_source* sel_source_local(void);
 const sel_source* sel_source_modland(void);
+const sel_source* sel_source_hvsc(void); /* sources/hvsc.c, hosted by Modland */
 
 /* Song key <source id>:<path>. 0 when it does not fit. */
 int sel_song_key(const char* source, const char* path, char* out, size_t n);

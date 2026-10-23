@@ -505,6 +505,50 @@ static void library_dump_modland(const char* db_path) {
     sqlite3_finalize(st);
     sqlite3_close(db);
 }
+
+/* `--dump` for hvsc: `hvsc_row=<path>|<format>|<md5>|<duration_ms>|<subtunes>|<lengths_ms>|<url>` per song and
+ * `hvsc_sticker=<path>|<name>|<value>` per STIL note (T73). */
+static void library_dump_hvsc(const char* db_path) {
+    sqlite3* db = NULL;
+    sqlite3_stmt* st = NULL;
+    const sel_source* src;
+    char url[SEL_BROWSE_PATH_MAX];
+
+    sel_source_register_builtin();
+    src = sel_source_find("hvsc");
+    if (sqlite3_open_v2(db_path, &db, SQLITE_OPEN_READONLY, NULL) != SQLITE_OK) {
+        sqlite3_close(db);
+        return;
+    }
+    if (sqlite3_prepare_v2(db,
+                           "SELECT s.path, COALESCE(s.format,''), COALESCE(s.md5,''), COALESCE(s.duration_ms,0),"
+                           " COALESCE((SELECT value FROM stickers k WHERE k.key=s.key AND k.name='subtunes'),''),"
+                           " COALESCE((SELECT value FROM stickers k WHERE k.key=s.key AND k.name='lengths_ms'),'')"
+                           " FROM songs s WHERE s.source='hvsc' ORDER BY s.path", -1, &st, NULL) == SQLITE_OK) {
+        while (sqlite3_step(st) == SQLITE_ROW) {
+            const char* path = (const char*)sqlite3_column_text(st, 0);
+
+            if (src == NULL || src->url == NULL || !src->url(path, url, sizeof url)) {
+                url[0] = '\0';
+            }
+            printf("hvsc_row=%s|%s|%s|%d|%s|%s|%s\n", path, (const char*)sqlite3_column_text(st, 1),
+                   (const char*)sqlite3_column_text(st, 2), sqlite3_column_int(st, 3),
+                   (const char*)sqlite3_column_text(st, 4), (const char*)sqlite3_column_text(st, 5), url);
+        }
+    }
+    sqlite3_finalize(st);
+    st = NULL;
+    if (sqlite3_prepare_v2(db, "SELECT s.path, k.name, k.value FROM stickers k JOIN songs s ON s.key=k.key"
+                               " WHERE s.source='hvsc' AND k.name LIKE 'stil.%' ORDER BY s.path, k.name",
+                           -1, &st, NULL) == SQLITE_OK) {
+        while (sqlite3_step(st) == SQLITE_ROW) {
+            printf("hvsc_sticker=%s|%s|%s\n", (const char*)sqlite3_column_text(st, 0),
+                   (const char*)sqlite3_column_text(st, 1), (const char*)sqlite3_column_text(st, 2));
+        }
+    }
+    sqlite3_finalize(st);
+    sqlite3_close(db);
+}
 #endif
 
 /* `library sync [--db <p>] [--now <epoch>] [--dump] modland <dir>` (I161, T72): LIBRARY_SYNC through the
@@ -544,7 +588,7 @@ static int library_sync(int argc, char** argv) {
         }
     }
     if (src == NULL || dir == NULL) {
-        fputs("usage: selecta-cli library sync [--db <path>] [--now <epoch>] [--dump] modland <dir>\n", stderr);
+        fputs("usage: selecta-cli library sync [--db <path>] [--now <epoch>] [--dump] modland|hvsc <dir>\n", stderr);
         return 2;
     }
     memset(&sink, 0, sizeof sink);
@@ -577,6 +621,11 @@ static int library_sync(int argc, char** argv) {
     if (!sel_library_call(lib, SEL_LIB_REQ_STATS, &st)) {
         st.args[SEL_LIB_STAT_SONGS].v.i = -1;
     }
+    if (strcmp(src, "hvsc") == 0) {
+        printf("listing_rows=%u skipped_rows=%u songlengths=%u subtunes=%u stil_entries=%u db_songs=%d\n",
+               (unsigned)info.listing_rows, (unsigned)info.skipped_rows, (unsigned)info.songlengths,
+               (unsigned)info.subtunes, (unsigned)info.stil_entries, st.args[SEL_LIB_STAT_SONGS].v.i);
+    } else
     printf("listing_rows=%u new_this_week=%u skipped_rows=%u changelogs=%u cl_added=%u cl_removed=%u cl_moved=%u "
            "cl_updated=%u db_songs=%d\n",
            (unsigned)info.listing_rows, (unsigned)info.new_this_week, (unsigned)info.skipped_rows,
@@ -586,7 +635,11 @@ static int library_sync(int argc, char** argv) {
     sel_library_close(lib);
 #ifndef __amigaos__
     if (dump && strcmp(db_path, ":memory:") != 0) {
-        library_dump_modland(db_path);
+        if (strcmp(src, "hvsc") == 0) {
+            library_dump_hvsc(db_path);
+        } else {
+            library_dump_modland(db_path);
+        }
     }
 #else
     (void)dump;

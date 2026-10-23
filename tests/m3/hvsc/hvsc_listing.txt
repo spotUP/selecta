@@ -1,0 +1,8 @@
+/MUSICIANS/H/Hubbard_Rob/Commando.sid
+/MUSICIANS/H/Hubbard_Rob/Monty_on_the_Run.sid
+/MUSICIANS/G/Galway_Martin/Comic_Bakery.sid
+/MUSICIANS/T/Tel_Jeroen/Cybernoid.sid
+/MUSICIANS/D/DRAX/Listing_Only.sid
+/GAMES/A/Arkanoid.sid
+/DEMOS/0-9/1000_Cherries.sid
+/DOCUMENTS/Songlengths.txt
