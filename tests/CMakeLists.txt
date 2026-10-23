@@ -946,7 +946,17 @@ endif()
 if(NOT SEL_AMIGA)
   add_test(NAME cache-fetch
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
-      "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3" -P "${SEL_NET_DIR}/cache_fetch.cmake")
+      "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3" "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv"
+      -P "${SEL_NET_DIR}/cache_fetch.cmake")
   set_tests_properties(cache-fetch PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     DEPENDS mirrors-ranking TIMEOUT 60)
+endif()
+
+# T75a cache-fetch-shell (row I166a): LIBRARY_FETCH through the selecta shell on the same library handle.
+if(NOT SEL_AMIGA)
+  add_test(NAME cache-fetch-shell
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv" -P "${SEL_NET_DIR}/cache_fetch_shell.cmake")
+  set_tests_properties(cache-fetch-shell PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    DEPENDS cache-fetch TIMEOUT 60)
 endif()

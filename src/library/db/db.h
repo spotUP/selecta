@@ -96,6 +96,17 @@ int sel_library_request(sel_library* lib, uint32_t req, const void* payload, sel
 /* Runs a request that carries a job (SEARCH, SAVE_VIEW, IMPORT). 1 on success; query errors are in job->error. */
 int sel_library_run(sel_library* lib, uint32_t req, sel_lib_job* job);
 
+/* LIBRARY_FETCH (I165, I166, I166a): `spec` is "<source>:<path>" with an optional "#md5=<hex>". The
+ * song and the companions `rules` name (sel_companion_rules) land in the handle's file cache. 1 with
+ * the cache path in `out` and the files delivered in `files`; 0 on failure; -1 when every mirror
+ * delivered a body whose md5 differs. */
+int sel_library_fetch(sel_library* lib, const char* spec, const char* rules, char* out, size_t cap, uint32_t* files);
+/* Cache counters; 0 when the handle served no fetch. */
+struct sel_cache_stats;
+int sel_library_cache_stats(const sel_library* lib, struct sel_cache_stats* out);
+/* Prints `cache_hits= fetches= companions= md5_mismatches= mirror_tries=` when a fetch was served. */
+void sel_library_cache_report(const sel_library* lib);
+
 uint32_t sel_library_account(const sel_library* lib);
 uint32_t sel_library_heap_size(const sel_library* lib);
 /* Heap allocations made so far by this library (1 after a successful open). */

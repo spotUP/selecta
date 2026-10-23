@@ -444,7 +444,6 @@ static int cmd_script(const char* path, int argc, char** argv) {
     sel_engine_config cfg;
     sel_engine* e;
     sel_library* lib = NULL;
-    sel_cli_cache* cache;
     memset(&cfg, 0, sizeof cfg);
     if (f == NULL) {
         fprintf(stderr, "selecta-cli: cannot open %s\n", path);
@@ -475,9 +474,6 @@ static int cmd_script(const char* path, int argc, char** argv) {
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;
     cfg.machine = sel_machine_probe(sel_host_default());
-    cache = sel_cli_cache_open();
-    cfg.library_fetch = sel_cli_cache_hook();
-    cfg.library_fetch_ctx = cache;
     e = sel_engine_create(host, &cfg);
     if (e == NULL) {
         fclose(f);
@@ -513,7 +509,7 @@ static int cmd_script(const char* path, int argc, char** argv) {
         sel_engine_pump(e, print_event, NULL);
     }
     fclose(f);
-    sel_cli_cache_report(cache);
+    sel_library_cache_report(lib);
     sel_int_session_close(g_int);
     g_int = NULL;
     sel_engine_destroy(e);

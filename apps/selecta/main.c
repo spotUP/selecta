@@ -344,6 +344,7 @@ int main(int argc, char** argv) {
     out_close(out);
     sel_engine_destroy(e);
     if (library != NULL) {
+        sel_library_cache_report(library); /* cache_hits= fetches= ... after LIBRARY_FETCH (I166a) */
         sel_library_close(library);
     }
     return 0;

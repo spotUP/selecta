@@ -1,5 +1,5 @@
 # T75 cache-fetch (rows I165, I166): `selecta-cli script tests/m3/fetch.sel` over fixture mirrors.
-# -DCLI=<selecta-cli> -DWORK=<fixture work dir> -DFIXDIR=<tests/net/fixtures> -DM3=<tests/m3>
+# -DCAT=<catalogue tsv; LIBRARY_FETCH runs on cfg.library, I166a> -DCLI=<selecta-cli>-DWORK=<fixture work dir> -DFIXDIR=<tests/net/fixtures> -DM3=<tests/m3>
 # bad.mirror.test serves a song.mod whose md5 differs from the catalogue's; fast.mirror.test serves
 # the right one and a TFMX song with its smpl.* companion.
 file(READ "${WORK}/port" port)
@@ -55,7 +55,7 @@ endfunction()
 function(run_script script cache)
   file(REMOVE_RECURSE "${cache}")
   set(ENV{SELECTA_CACHE_DIR} "${cache}")
-  execute_process(COMMAND "${CLI}" script "${script}" OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
+  execute_process(COMMAND "${CLI}" script "${script}" --catalogue "${CAT}" OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
   set(last_raw "${o}${e}" PARENT_SCOPE)
 endfunction()
 
@@ -99,7 +99,7 @@ expect("companion requested once" "${smpl_hits}" 1)
 # and a fresh process over the filled cache makes none at all.
 reset_log()
 set(ENV{SELECTA_CACHE_DIR} "${cache}")
-execute_process(COMMAND "${CLI}" script "${M3}/fetch.sel" OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
+execute_process(COMMAND "${CLI}" script "${M3}/fetch.sel" --catalogue "${CAT}" OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
 set(last_raw "${o}${e}")
 counter(hits3 cache_hits)
 expect("warm cache hits (3 fetches + 2 repeats)" "${hits3}" 4)

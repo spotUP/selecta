@@ -5,6 +5,7 @@
 #include "db.h"
 #include "../../engine/spsc.h"
 #include "../query.h"
+#include "../cache.h"
 
 #include <sqlite3.h>
 
@@ -25,6 +26,8 @@ struct sel_library {
     sel_query query;   /* compile scratch, used by the worker only */
     char view_text[16][256]; /* saved queries handed to the compiler during one compile */
     unsigned view_used;
+    sel_cache* cache;        /* file cache of LIBRARY_FETCH, created on the first fetch (fetch.c) */
+    unsigned fetch_requests; /* LIBRARY_FETCH requests served */
 #if !defined(SEL_LIBRARY_NO_THREAD)
     pthread_t thread;
     pthread_mutex_t lock;
