@@ -126,7 +126,7 @@
     X(FLAG)                                                                                   \
     X(NOTE)                                                                                   \
     X(RATE) X(VOTE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
-    X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) \
+    X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) \
     X(STATS_SHOW) X(STATS_HIDE) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
@@ -3718,6 +3718,41 @@ static void cmd_PLAYLIST_MOVE(sel_engine* e, const sel_message* m) {
     rc = sel_library_playlist_move(e->lib, (uint32_t)m->args[0].v.u, (uint32_t)m->args[1].v.u);
     if (rc != SEL_FOLDER_OK) folder_report(e, rc, "PLAYLIST_MOVE");
     else folders_reload(e);
+}
+
+/* PLAYLIST_CREATE name [folder] (I178a): saves the queue, in order, as a library DB playlist (folder 0 or absent
+ * = root). Dividers are skipped; the answer carries the new id. PLAYLIST_SAVE keeps writing files. */
+static void cmd_PLAYLIST_CREATE(sel_engine* e, const sel_message* m) {
+    uint32_t id = 0;
+    uint32_t i;
+    size_t used = 0, cap = e->queue.text_bytes + 16u;
+    int rc;
+    char text[16];
+    if (!folder_ready(e, "PLAYLIST_CREATE")) return;
+    e->pl_text[0] = '\0';
+    for (i = 0; i < e->queue.count; i++) {
+        const char* key;
+        size_t len;
+        if ((e->queue.entries[i].flags & SEL_QUEUE_FLAG_DIVIDER) != 0) continue;
+        key = sel_queue_path(&e->queue, i);
+        len = strlen(key);
+        if (used + len + 2u > cap) {
+            sel_engine_report_error(e, "queue_full", "PLAYLIST_CREATE");
+            return;
+        }
+        memcpy(e->pl_text + used, key, len);
+        e->pl_text[used + len] = '\n';
+        used += len + 1u;
+        e->pl_text[used] = '\0';
+    }
+    rc = sel_library_playlist_add(e->lib, m->args[0].v.s, m->argc > 1 ? (uint32_t)m->args[1].v.u : 0u, e->pl_text, &id);
+    if (rc != SEL_FOLDER_OK) {
+        folder_report(e, rc, "PLAYLIST_CREATE");
+        return;
+    }
+    snprintf(text, sizeof text, "%u", (unsigned)id);
+    folders_reload(e);
+    sticker_answer(e, "playlist", m->args[0].v.s, text, id);
 }
 
 static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
