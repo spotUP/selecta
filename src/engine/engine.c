@@ -32,6 +32,7 @@
 #include "export/export.h"
 #include "prefs.h"
 #include "view.h"
+#include "db.h"
 #include "scheduler.h"
 #include "spsc.h"
 #include "thread.h"
@@ -39,6 +40,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 /* The verbs with real behaviour in M0a. Adding a row here is how a later
  * plan lowers tests/ratchet/unimplemented.txt. */
@@ -91,6 +93,10 @@
     X(SAMPLE_EXPORT)                                                                          \
     X(QUEUE_PLAY_NEXT)                                                                        \
     X(LIBRARY_BROWSE)                                                                         \
+    X(LIBRARY_SEARCH)                                                                         \
+    X(PLAY_QUERY)                                                                             \
+    X(QUEUE_ADD_QUERY)                                                                        \
+    X(VIEW_SAVE)                                                                              \
     X(VIEW_SHOW)                                                                              \
     X(VIEW_CURSOR)                                                                            \
     X(VIEW_ACTIVATE)                                                                          \
@@ -254,8 +260,14 @@ struct sel_engine {
     uint32_t song_over; /* the open song ended or the queue ran out: PLAY restarts the queue */
     sel_browse browse;  /* the listing LIBRARY_BROWSE fills */
     uint32_t lib_slot;
-    sel_tag lib_tags[4][3];                  /* LIBRARY_RESULT tags, a ring like error_detail */
+    sel_tag lib_tags[4][4];                  /* LIBRARY_RESULT tags, a ring like error_detail */
     char lib_path[4][SEL_BROWSE_PATH_MAX];
+    sel_library* lib;     /* the database of the front end; NULL: no library */
+    char* res_text;       /* last query result: keys, each NUL terminated */
+    uint32_t res_count;
+    uint32_t searches, fts_queries;
+    char lib_err[4][24]; /* query error codes of the library worker, a ring (the event keeps the pointer) */
+    uint32_t lib_err_slot;
     sel_view view;
     sel_viz_tap viz;       /* visualisation taps; the audio thread writes, the pump reads */
     uint32_t viz_spectrum; /* capability: the spectrum is computed (CPU 68030 and up) */
@@ -2249,6 +2261,8 @@ static void emit_library_result(sel_engine* e) {
     t[1].value = e->browse.count;
     t[2].tag = SEL_TAG_END;
     t[2].value = 0;
+    t[3].tag = SEL_TAG_END;
+    t[3].value = 0;
     evt_init(&m, SEL_EVT_LIBRARY_RESULT);
     evt_tags(&m, t);
     emit(e, &m);
@@ -2272,6 +2286,134 @@ static int browse_to(sel_engine* e, const char* path, const char* who) {
 
 static void cmd_LIBRARY_BROWSE(sel_engine* e, const sel_message* m) {
     browse_to(e, m->args[0].v.s, "LIBRARY_BROWSE");
+}
+
+/* ---- library queries (plan M3 Phase 2, I149 and I150) ------------------ */
+
+/* The event keeps the code pointer, so a code that is not a literal is copied into a ring first. */
+static void report_library_error(sel_engine* e, const char* code, const char* who) {
+    char* slot = e->lib_err[e->lib_err_slot++ & 3u];
+    copy_str(slot, sizeof e->lib_err[0], code);
+    sel_engine_report_error(e, slot, who);
+}
+
+/* Runs `text` on the library worker into res_text. 1 on success; on failure the ERROR event is raised. */
+static int run_search(sel_engine* e, const char* text, const char* who, uint32_t* fts) {
+    sel_lib_job job;
+
+    e->res_count = 0;
+    if (e->lib == NULL) {
+        sel_engine_report_error(e, "no_library", who);
+        return 0;
+    }
+    memset(&job, 0, sizeof job);
+    job.text = text;
+    job.now = (long long)time(NULL);
+    job.out = e->res_text;
+    job.out_cap = e->queue.text_bytes;
+    if (!sel_library_run(e->lib, SEL_LIB_REQ_SEARCH, &job)) {
+        sel_engine_report_error(e, "library_failed", who);
+        return 0;
+    }
+    e->searches++;
+    e->fts_queries += job.used_fts;
+    if (job.error[0] != '\0') {
+        report_library_error(e, job.error, who);
+        return 0;
+    }
+    if (job.truncated) {
+        char n[16];
+        snprintf(n, sizeof n, "%u", (unsigned)job.truncated);
+        emit_log(e, "result_truncated", n);
+    }
+    e->res_count = job.count;
+    *fts = job.used_fts;
+    return 1;
+}
+
+const char* sel_engine_result_key(const sel_engine* e, uint32_t i) {
+    const char* p = e->res_text;
+    if (p == NULL || i >= e->res_count) {
+        return NULL;
+    }
+    while (i-- > 0) {
+        p += strlen(p) + 1u;
+    }
+    return p;
+}
+
+static void cmd_LIBRARY_SEARCH(sel_engine* e, const sel_message* m) {
+    uint32_t fts = 0;
+    sel_message ev;
+    uint32_t slot;
+    sel_tag* t;
+
+    if (!run_search(e, m->args[0].v.s, "LIBRARY_SEARCH", &fts)) {
+        return;
+    }
+    slot = e->lib_slot++ & 3u;
+    t = e->lib_tags[slot];
+    snprintf(e->lib_path[slot], sizeof e->lib_path[slot], "%s", m->args[0].v.s);
+    t[0].tag = SEL_SRC_PATH;
+    t[0].value = (uintptr_t)e->lib_path[slot];
+    t[1].tag = SEL_SRC_COUNT;
+    t[1].value = e->res_count;
+    t[2].tag = SEL_SRC_FTS;
+    t[2].value = fts;
+    t[3].tag = SEL_TAG_END;
+    t[3].value = 0;
+    evt_init(&ev, SEL_EVT_LIBRARY_RESULT);
+    evt_tags(&ev, t);
+    emit(e, &ev);
+}
+
+static void cmd_QUEUE_ADD_QUERY(sel_engine* e, const sel_message* m) {
+    uint32_t fts = 0, i;
+
+    if (!run_search(e, m->args[0].v.s, "QUEUE_ADD_QUERY", &fts)) {
+        return;
+    }
+    for (i = 0; i < e->res_count; i++) {
+        queue_insert(e, e->queue.count, sel_engine_result_key(e, i), "QUEUE_ADD_QUERY");
+    }
+}
+
+static void cmd_PLAY_QUERY(sel_engine* e, const sel_message* m) {
+    uint32_t fts = 0, i;
+
+    if (!run_search(e, m->args[0].v.s, "PLAY_QUERY", &fts)) {
+        return;
+    }
+    sel_history_record(&e->history, &e->queue);
+    sel_history_bury(&e->history, &e->queue, SEL_QUEUE_NONE);
+    sel_queue_clear(&e->queue);
+    e->q_playing = 0;
+    e->q_hint = 0;
+    for (i = 0; i < e->res_count; i++) {
+        queue_insert(e, e->queue.count, sel_engine_result_key(e, i), "PLAY_QUERY");
+    }
+    emit_queue_changed(e);
+    if (e->queue.count > 0) {
+        queue_start(e, 0);
+    }
+}
+
+static void cmd_VIEW_SAVE(sel_engine* e, const sel_message* m) {
+    sel_lib_job job;
+
+    if (e->lib == NULL) {
+        sel_engine_report_error(e, "no_library", "VIEW_SAVE");
+        return;
+    }
+    memset(&job, 0, sizeof job);
+    job.text = m->args[0].v.s;
+    job.text2 = m->args[1].v.s;
+    job.now = (long long)time(NULL);
+    if (!sel_library_run(e->lib, SEL_LIB_REQ_SAVE_VIEW, &job)) {
+        sel_engine_report_error(e, "library_failed", "VIEW_SAVE");
+    } else if (job.error[0] != '\0') {
+        report_library_error(e, job.error, "VIEW_SAVE");
+    }
 }
 
 /* ---- view ------------------------------------------------------------ */
@@ -2520,6 +2662,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     if (cfg) {
         e->registry_count = cfg->registry_count;
         e->registry_get = cfg->registry_get;
+        e->lib = cfg->library;
     }
     sel_queue_default_sizes(cfg ? (uint32_t)sel_tag_find(cfg->machine, SEL_MACHINE_FAST_RAM, 0) : 0, &queue_cap,
                             &queue_text);
@@ -2554,6 +2697,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         (e->pl_entries = host->mem_alloc(host, (size_t)queue_cap * sizeof *e->pl_entries, SEL_MEM_FAST)) == NULL ||
         (e->pl_text = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
         (e->pl_file = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
+        (e->res_text = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
         !sel_browse_init(&e->browse, host, cfg && cfg->browse_entries ? cfg->browse_entries : queue_cap,
                          cfg && cfg->browse_text_bytes ? cfg->browse_text_bytes : queue_text) ||
         !sel_view_init(&e->view, host, SEL_VIEW_WINDOW_MAX)) {
@@ -2594,6 +2738,9 @@ void sel_engine_destroy(sel_engine* e) {
         }
         if (e->pl_file) {
             e->host->mem_free(e->host, e->pl_file);
+        }
+        if (e->res_text) {
+            e->host->mem_free(e->host, e->res_text);
         }
         sel_dsp_chain_free(&e->dsp);
         sel_browse_free(&e->browse, e->host);
@@ -2788,6 +2935,9 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->seek_path = e->seek_path;
     out->seek_skipped_frames = e->seek_skipped;
     out->songs_opened = e->songs_opened;
+    out->library_searches = e->searches;
+    out->library_fts_queries = e->fts_queries;
+    out->result_count = e->res_count;
     out->rp_config_applied = e->rp_config_applied;
     out->undo_depth = e->history.undo_count;
     out->redo_depth = e->history.redo_count;

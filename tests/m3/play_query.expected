@@ -1,0 +1,55 @@
+LIBRARY_RESULT {SRC_PATH=format:mod,SRC_COUNT=2,SRC_FTS=0}
+RESULTS 2 selecta-test-mk.mod,selecta-test.mod
+QUEUE_CHANGED 2
+QUEUE_HISTORY 2 0
+QUEUE_CHANGED 3
+QUEUE_HISTORY 3 0
+QUEUE_CHANGED 3
+QUEUE_HISTORY 3 0
+SONG_OPENED {META_TITLE="selecta test",META_FORMAT="ProTracker MOD (M.K.)",META_MESSAGE="test sample 1
+test sample 2
+test sample 3
+test sample 4
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+",META_CHANNELS=4,META_PATTERNS=4,META_SAMPLES=31,META_SUBSONGS=1,META_DURATION_MS=30080,META_SIZE=6076}
+POSITION 0 0 0 0 0 0 0
+STATE playing
+QUEUE version=3 playing=1 ids=1,2
+QUEUE_CHANGED 4
+QUEUE_HISTORY 4 0
+QUEUE version=4 playing=1 ids=1,2,3
+LIBRARY_RESULT {SRC_PATH=view:xmfans,SRC_COUNT=1,SRC_FTS=0}
+RESULTS 1 modland:p/purple.xm
+LIBRARY_RESULT {SRC_PATH=format:xm,SRC_COUNT=1,SRC_FTS=0}
+RESULTS 1 modland:p/purple.xm
+ERROR unknown_view LIBRARY_SEARCH
+LIBRARY_RESULT {SRC_PATH=nosuchword,SRC_COUNT=0,SRC_FTS=1}
+RESULTS 0 
+ERROR unknown_command VIEW_SOURCE
+LIBRARY searches=7 fts_queries=1 songs_opened=1

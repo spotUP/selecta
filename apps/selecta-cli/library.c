@@ -65,6 +65,121 @@ static int library_browse(int argc, char** argv) {
     return sink.failed ? 1 : 0;
 }
 
+/* Opens an in-memory library and imports the TSV catalogue `tsv` (key, source, path, name, artist,
+ * format, year per line). NULL, with a message on stderr, when it cannot. Used by `library search`
+ * and `script --catalogue`. */
+sel_library* sel_cli_open_catalogue(const char* tsv) {
+    const sel_host* host = sel_host_default();
+    sel_library* lib;
+    sel_lib_job job;
+    FILE* f = fopen(tsv, "rb");
+    char* buf;
+    long n;
+
+    if (f == NULL) {
+        fprintf(stderr, "selecta-cli: cannot read catalogue %s\n", tsv);
+        return NULL;
+    }
+    fseek(f, 0, SEEK_END);
+    n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    buf = malloc((size_t)n + 1u);
+    if (buf == NULL || fread(buf, 1, (size_t)n, f) != (size_t)n) {
+        fclose(f);
+        free(buf);
+        return NULL;
+    }
+    fclose(f);
+    buf[n] = '\0';
+    lib = sel_library_open(host, sel_machine_probe(host), 0, ":memory:");
+    if (lib == NULL) {
+        fputs("selecta-cli: library open failed\n", stderr);
+        free(buf);
+        return NULL;
+    }
+    memset(&job, 0, sizeof job);
+    job.text = buf;
+    if (!sel_library_run(lib, SEL_LIB_REQ_IMPORT, &job) || job.error[0] != '\0') {
+        fputs("selecta-cli: catalogue import failed\n", stderr);
+        sel_library_close(lib);
+        lib = NULL;
+    }
+    free(buf);
+    return lib;
+}
+
+typedef struct search_sink {
+    int failed;
+    unsigned count, fts;
+} search_sink;
+
+static void on_search_event(void* ctx, const sel_message* evt) {
+    search_sink* s = ctx;
+    if (evt->id == SEL_EVT_ERROR) {
+        printf("ERROR %s\n", evt->args[0].v.s);
+        s->failed = 1;
+    } else if (evt->id == SEL_EVT_LIBRARY_RESULT) {
+        const sel_tag* tags = evt->args[0].v.t;
+        s->count = (unsigned)sel_tag_find(tags, SEL_SRC_COUNT, 0);
+        s->fts = (unsigned)sel_tag_find(tags, SEL_SRC_FTS, 0);
+    }
+}
+
+/* `library search --catalogue <tsv> [--] <query>` (T64): LIBRARY_SEARCH through the engine with the
+ * catalogue behind it. Prints `key=<k>` per result in key order, then `src_count=` and `fts_queries=`
+ * (1: the FTS5 index served it). An engine ERROR prints `ERROR <code>` alone and exits 1. */
+static int library_search(int argc, char** argv) {
+    const char* catalogue = NULL;
+    const char* text = NULL;
+    sel_engine_config cfg;
+    sel_engine* e;
+    sel_library* lib;
+    search_sink sink;
+    char pool[512];
+    char line[600];
+    uint32_t i;
+    int a;
+
+    for (a = 0; a < argc; a++) {
+        if (strcmp(argv[a], "--catalogue") == 0 && a + 1 < argc) {
+            catalogue = argv[++a];
+        } else if (strcmp(argv[a], "--") == 0 && a + 1 < argc) {
+            text = argv[++a];
+        } else if (text == NULL && argv[a][0] != '-') {
+            text = argv[a];
+        }
+    }
+    if (catalogue == NULL || text == NULL) {
+        fputs("usage: selecta-cli library search --catalogue <tsv> [--] <query>\n", stderr);
+        return 2;
+    }
+    lib = sel_cli_open_catalogue(catalogue);
+    if (lib == NULL) {
+        return 1;
+    }
+    memset(&cfg, 0, sizeof cfg);
+    memset(&sink, 0, sizeof sink);
+    cfg.machine = sel_machine_probe(sel_host_default());
+    cfg.library = lib;
+    e = sel_engine_create(sel_host_default(), &cfg);
+    if (e == NULL) {
+        sel_library_close(lib);
+        return 1;
+    }
+    snprintf(line, sizeof line, "LIBRARY_SEARCH %s", text);
+    sel_engine_send_line(e, line, pool, sizeof pool);
+    sel_engine_pump(e, on_search_event, &sink);
+    if (!sink.failed) {
+        for (i = 0; i < sink.count; i++) {
+            printf("key=%s\n", sel_engine_result_key(e, i));
+        }
+        printf("src_count=%u\nfts_queries=%u\n", sink.count, sink.fts);
+    }
+    sel_engine_destroy(e);
+    sel_library_close(lib);
+    return sink.failed ? 1 : 0;
+}
+
 /* `library stats [--machine <fake>] [--db <path>]` (T62): opens the library DB (heap, worker,
  * schema), asks the worker for stats twice and prints one sentinel line. SEL_ALLOC_FREEZE and
  * SEL_ALLOC_THAW bracket the two requests: after start the library allocates nothing. */
@@ -203,9 +318,12 @@ int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "stats") == 0) {
         return library_stats(argc - 1, argv + 1);
     }
+    if (argc >= 1 && strcmp(argv[0], "search") == 0) {
+        return library_search(argc - 1, argv + 1);
+    }
     if (argc >= 1 && strcmp(argv[0], "query") == 0) {
         return library_query(argc - 1, argv + 1);
     }
-    fputs("usage: selecta-cli library browse <dir> | query --explain <q> | stats [--machine <name>] [--db <path>]\n", stderr);
+    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | query --explain <q> | stats [--machine <name>] [--db <path>]\n", stderr);
     return 2;
 }

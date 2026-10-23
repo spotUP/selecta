@@ -142,6 +142,8 @@ typedef struct sel_state {
     uint32_t stereo_width;      /* MIX_STEREO_WIDTH: 0 (mono) to 100 (unchanged) */
 } sel_state;
 
+struct sel_library;
+
 typedef struct sel_engine_config {
     uint32_t cmd_queue_depth; /* 0: default 64 */
     uint32_t evt_queue_depth; /* 0: default 256 */
@@ -163,6 +165,9 @@ typedef struct sel_engine_config {
     /* Directory of prefs.conf (see sel_config_dir). NULL: prefs are not read
      * or written, they stay at their defaults for this run. */
     const char* config_dir;
+    /* Library database (src/library/db); the front end opens and closes it. NULL:
+     * LIBRARY_SEARCH, PLAY_QUERY, QUEUE_ADD_QUERY and VIEW_SAVE answer ERROR no_library. */
+    struct sel_library* library;
 } sel_engine_config;
 
 typedef struct sel_engine sel_engine;
@@ -245,6 +250,9 @@ typedef struct sel_engine_stats {
     uint32_t seek_path;           /* last SEEK: 0 none, 1 native (RP_SEEK), 2 restart-and-skip */
     uint32_t seek_skipped_frames; /* frames the last restart-and-skip ran through */
     uint32_t songs_opened;        /* songs started by OPEN or the queue (T19) */
+    uint32_t library_searches;    /* queries sent to the library worker (T64) */
+    uint32_t library_fts_queries; /* of those, queries the FTS5 index served (T64) */
+    uint32_t result_count;         /* keys held by the last query result (T64, T65) */
     uint32_t rp_config_applied;   /* replayer option values answered by the rp.config pref or the song override (T61) */
     uint32_t undo_depth, redo_depth; /* queue edits that UNDO / REDO can step over (T28) */
     uint32_t dsp_blocks;             /* render blocks that ran at least one DSP plugin (T47) */
@@ -259,6 +267,8 @@ typedef struct sel_engine_stats {
     uint32_t width_percent, width_frames, width_mono; /* stereo width, frames processed, 1: width 0 (T53) */
 } sel_engine_stats;
 void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out);
+/* Key `i` of the last LIBRARY_SEARCH, PLAY_QUERY or QUEUE_ADD_QUERY result (byte order of the key), NULL past the end. */
+const char* sel_engine_result_key(const sel_engine* e, uint32_t i);
 
 /* "regular", "tree" or "drilldown" for a sel_view_style value; "unknown" otherwise. */
 const char* sel_view_style_label(uint32_t style);

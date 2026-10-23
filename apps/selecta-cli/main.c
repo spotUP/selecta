@@ -9,6 +9,7 @@
 #include <selecta/tags.h>
 
 #include "cli.h"
+#include "db.h"
 #include "integration_host.h"
 #ifndef SEL_NO_CONTROL_SOCKET
 #include "ctlsock.h"
@@ -26,7 +27,7 @@ static int usage(FILE* to) {
           "  tagtypes                   list metadata tags and their types\n"
           "  roundtrip                  encode and decode every table row\n"
           "  commands --unimplemented   list verbs the engine answers not_implemented\n"
-          "  script <file> [--integration <id>]  feed command lines to the engine, print events\n"
+          "  script <file> [--integration <id>] [--catalogue <tsv>]  feed command lines to the engine, print events\n"
           "  send <verb> [args]         send one command line to a running selecta (exit 0 OK, 1 ERROR, 2 none running)\n"
           "  abi [voices]               print sel_host (or sel_voices) size and field offsets\n"
           "  plugins [--lint]           list plugins; --lint counts bad descriptor tags\n"
@@ -37,6 +38,7 @@ static int usage(FILE* to) {
           "  render <song> --output <wav> --seconds <n> --rate <hz> --resample <name>\n"
           "                             render a song to a WAV file, print counters\n"
           "  library browse <dir>       list a directory through LIBRARY_BROWSE, print dir_entries=\n"
+          "  library search --catalogue <tsv> <q> run a library query through LIBRARY_SEARCH, print key= src_count= fts_queries= (T64)\n"
           "  library query --explain <q> compile a library query, print sql= params= query_terms= (T63)\n"
           "  library stats              open the library DB, print db_open= schema_version= sqlite_version= (T62)\n"
           "  fetch <url> [--method M] [--range a-b] [--out file]  one HTTP request, print http_status= and net counters\n"
@@ -269,6 +271,8 @@ static void print_event(void* ctx, const sel_message* evt) {
  * Script directives (lines starting with '@') are not protocol verbs; they let
  * a script observe and drive what a front end and an audio thread would:
  *   @queue              QUEUE version=V playing=ID ids=a,b,c
+ *   @results            RESULTS n key,key,... (the last LIBRARY_SEARCH, PLAY_QUERY or QUEUE_ADD_QUERY result; T65)
+ *   @library_stats      LIBRARY searches=N fts_queries=N songs_opened=N (T65)
  *   @render N           render N frames on this thread, then pump and print
  *   @fade_mid           render until the end fade runs, then to its midpoint; print FADE gain_q16 pos total
  *   @render_until_end   render until SONG_ENDED is pumped; POSITION events
@@ -341,6 +345,20 @@ static void script_directive(sel_engine* e, const char* line) {
             printf(i ? ",%u" : "%u", (unsigned)st->queue[i].id);
         }
         printf("\n");
+    } else if (strcmp(line, "@results") == 0) {
+        uint32_t i;
+        sel_engine_stats es;
+        sel_engine_stats_get(e, &es);
+        printf("RESULTS %u ", (unsigned)es.result_count);
+        for (i = 0; i < es.result_count; i++) {
+            printf(i ? ",%s" : "%s", sel_engine_result_key(e, i));
+        }
+        printf("\n");
+    } else if (strcmp(line, "@library_stats") == 0) {
+        sel_engine_stats es;
+        sel_engine_stats_get(e, &es);
+        printf("LIBRARY searches=%u fts_queries=%u songs_opened=%u\n", (unsigned)es.library_searches,
+               (unsigned)es.library_fts_queries, (unsigned)es.songs_opened);
     } else if (strcmp(line, "@position") == 0) {
         const sel_song_state* so = &sel_engine_state(e)->song;
         printf("SNAPSHOT position_ms=%u order=%u row=%u pattern=%u\n", (unsigned)so->position_ms,
@@ -422,6 +440,7 @@ static int cmd_script(const char* path, int argc, char** argv) {
     FILE* f = fopen(path, "r");
     sel_engine_config cfg;
     sel_engine* e;
+    sel_library* lib = NULL;
     memset(&cfg, 0, sizeof cfg);
     if (f == NULL) {
         fprintf(stderr, "selecta-cli: cannot open %s\n", path);
@@ -439,6 +458,13 @@ static int cmd_script(const char* path, int argc, char** argv) {
             g_fake_host = *sel_host_default();
             g_fake_host.query = fake_query;
             host = &g_fake_host;
+        } else if (strcmp(argv[i], "--catalogue") == 0) {
+            lib = sel_cli_open_catalogue(argv[i + 1]);
+            if (lib == NULL) {
+                fclose(f);
+                return 1;
+            }
+            cfg.library = lib;
         }
     }
     sel_registry_init(sel_host_default());
@@ -448,6 +474,7 @@ static int cmd_script(const char* path, int argc, char** argv) {
     e = sel_engine_create(host, &cfg);
     if (e == NULL) {
         fclose(f);
+        sel_library_close(lib);
         fprintf(stderr, "selecta-cli: engine allocation failed\n");
         return 1;
     }
@@ -462,6 +489,7 @@ static int cmd_script(const char* path, int argc, char** argv) {
             fprintf(stderr, "selecta-cli: integration '%s' is not registered\n", int_id);
             fclose(f);
             sel_engine_destroy(e);
+            sel_library_close(lib);
             return 1;
         }
     }
@@ -481,6 +509,7 @@ static int cmd_script(const char* path, int argc, char** argv) {
     sel_int_session_close(g_int);
     g_int = NULL;
     sel_engine_destroy(e);
+    sel_library_close(lib);
     return 0;
 }
 
