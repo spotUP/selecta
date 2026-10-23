@@ -3089,9 +3089,19 @@ static void cmd_LIKE(sel_engine* e, const sel_message* m) {
     user_mark(e, "LIKE", sel_library_like);
 }
 
+/* KEEP [on|off]: no argument is on. */
 static void cmd_KEEP(sel_engine* e, const sel_message* m) {
-    (void)m;
-    user_mark(e, "KEEP", sel_library_keep);
+    int on = 1;
+    if (m->argc > 0) {
+        const char* a = m->args[0].v.s;
+        if (strcmp(a, "off") == 0) {
+            on = 0;
+        } else if (strcmp(a, "on") != 0) {
+            sel_engine_report_error(e, "range", "KEEP");
+            return;
+        }
+    }
+    user_mark(e, "KEEP", on ? sel_library_keep : sel_library_unkeep);
 }
 
 /* FLAG wrong [note] | FLAG skip: flags the song being played (I171). `wrong` keeps the note for

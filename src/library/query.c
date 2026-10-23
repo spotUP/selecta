@@ -40,6 +40,7 @@ static const key_def KEYS[] = {
     {"lastplayed", K_TIME, LAST_PLAYED, 1},
     {"added", K_TIME, "songs.added", 0},
     {"liked", K_BOOL, "liked", 0},
+    {"kept", K_BOOL, "kept", 0},
     {"wrong", K_BOOL, "flags.wrong = 1", 0},
     {"skip", K_BOOL, "flags.skip = 1", 0},
     {"in", K_IN, NULL, 0},
