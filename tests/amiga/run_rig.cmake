@@ -45,9 +45,18 @@ function(fetch var path)
   set(${var} "${text}" PARENT_SCOPE)
 endfunction()
 
+# clean(): drops what this script puts in RAM: (Selecta + selecta-cli are 25 MB; RAM: on the rig holds 24 MB free).
+# Runs before the put, so a run that stopped on a RED still gets cleared by the next one, and again after a pass.
+function(clean)
+  execute_process(COMMAND "${PYTHON3}" "${RIG_DIR}/ami.py" exec
+    "Delete >NIL: RAM:Selecta RAM:selecta-cli RAM:selecta-test.mod QUIET" 10
+    OUTPUT_QUIET ERROR_QUIET TIMEOUT 60)
+endfunction()
+
 if(NOT EXISTS "${SELECTA}")
   message(FATAL_ERROR "RED[${TAG}]: ${SELECTA} not built: apps/selecta has no Amiga build yet.")
 endif()
+clean()
 ami(ignored put "${SELECTA}" "RAM:Selecta")
 ami(ignored put "${MOD}" "RAM:selecta-test.mod")
 
@@ -94,4 +103,5 @@ elseif(TAG STREQUAL "T60")
 else()
   message(FATAL_ERROR "run_rig.cmake: unknown TAG ${TAG}")
 endif()
+clean()
 message(STATUS "[OK] ${TAG}")
