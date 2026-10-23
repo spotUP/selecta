@@ -328,9 +328,9 @@ Tests T62 to T97 are defined in the plan's finish-line table. T8 ratchet target 
 | I144 | [x] | 1 | Vendor SQLite amalgamation, `selecta_sqlite` target, options per D-M3-1, desktop and 68k | both trees build; `library stats` prints `sqlite_version=`; SQLite 3.54.1 vendored as selecta_sqlite; libnix fchmod/fchown stubs in third_party/sqlite/amiga_stubs.c; merge 03e011d |
 | I145 | [x] | 1 | Library worker (thread / subtask), request and result SPSC queues, memsys5 heap at start (D-M3-2) | T62 heap and no-alloc parts green; worker, memsys5 heap table by RAM (Q71); Amiga worker synchronous until Phase 12; merge 03e011d |
 | I146 | [x] | 1 | Schema v1, `user_version` migrations, FTS5 table, account handle on every entry point | T62 green; schema v1 + FTS5; T62 library-db-open green via selecta-cli library stats; Amiga file DB untested (rig, Phase 12); merge 03e011d |
-| I147 | [ ] | 2 | `src/library/query.c` parser for the full section 9.2 syntax, unknown key and view cycle errors | T63 parse rows green |
-| I148 | [ ] | 2 | SQL compiler with bound parameters, durations, sizes, relative time, `in:`, `view:` | T63 green |
-| I149 | [ ] | 2 | LIBRARY_SEARCH through the worker, LIBRARY_RESULT row tags in `tags.def` | T64 green; T8 count moves |
+| I147 | [x] | 2 | `src/library/query.c` parser for the full section 9.2 syntax, unknown key and view cycle errors | T63 parse rows green; parser in src/library/query.c; selecta-cli library query --explain; merge ec86a6b |
+| I148 | [x] | 2 | SQL compiler with bound parameters, durations, sizes, relative time, `in:`, `view:` | T63 green; bound params only; T63 query-compile green, 29-row golden tests/m3/query.golden; in: depth and played aliases are Q72/Q73; merge ec86a6b |
+| I149 | [ ] | 2 | LIBRARY_SEARCH through the worker, LIBRARY_RESULT row tags in `tags.def`; worker registers a REGEXP SQL function (desktop and 68k) for `key:/re/` | T64 green; T8 count moves |
 | I150 | [ ] | 2 | PLAY_QUERY, QUEUE_ADD_QUERY, VIEW_SAVE (smart playlists) | T65 green; T8 count moves |
 | I151 | [ ] | 2 | View model source = library query (VIEW_SOURCE), style switch keeps the key | T66 green |
 | I152 | [ ] | 3 | `src/core/{posix,amiga}/net.c` socket table, guard and host map | T67 green |
