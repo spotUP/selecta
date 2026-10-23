@@ -2948,9 +2948,10 @@ static void cmd_RATE(sel_engine* e, const sel_message* m) {
 }
 
 /* The device token of the vote service: 128 random bits as 32 hex digits, made once and kept in the pref
- * library.vote_token. The system random source where there is one; elsewhere (Amiga) clock, address and time mix
- * through xxh32, which is enough for a rate-limit identity that guards nothing. */
-static void vote_token_make(char out[33]) {
+ * library.vote_token. The system random source where there is one; elsewhere (Amiga) the host clock, address and time of
+ * day mix through xxh32 (never libc clock(): libnix opens timer.device at startup, which vamos cannot run),
+ * which is enough for a rate-limit identity that guards nothing. */
+static void vote_token_make(const sel_engine* e, char out[33]) {
     static const char hex[] = "0123456789abcdef";
     unsigned char raw[16];
     unsigned i;
@@ -2966,8 +2967,8 @@ static void vote_token_make(char out[33]) {
     if (!got) {
         uint32_t seed[4];
 
-        seed[0] = (uint32_t)time(NULL);
-        seed[1] = (uint32_t)clock();
+        seed[0] = local_ms(e);
+        seed[1] = e->host->clock_ms(e->host);
         seed[2] = (uint32_t)(uintptr_t)out;
         seed[3] = (uint32_t)(uintptr_t)&seed;
         for (i = 0; i < 4; i++) {
@@ -3015,7 +3016,7 @@ static void cmd_VOTE(sel_engine* e, const sel_message* m) {
         if (strlen(e->prefs.value[SEL_PREF_LIBRARY_VOTE_TOKEN]) != 32u) {
             char fresh[33];
 
-            vote_token_make(fresh);
+            vote_token_make(e, fresh);
             if (sel_prefs_set(&e->prefs, "library.vote_token", fresh) != 0) {
                 sel_engine_report_error(e, "library_failed", "VOTE");
                 return;
