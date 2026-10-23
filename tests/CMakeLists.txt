@@ -1022,3 +1022,10 @@ if(NOT SEL_AMIGA)
             ${CMAKE_CURRENT_SOURCE_DIR}/m3)
   set_tests_properties(source-modland PROPERTIES LABELS m3 TIMEOUT 120 PASS_REGULAR_EXPRESSION "source_modland_ok")
 endif()
+
+if(NOT SEL_AMIGA)
+  add_test(NAME source-hvsc
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/source_hvsc.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3)
+  set_tests_properties(source-hvsc PROPERTIES LABELS m3 TIMEOUT 120 PASS_REGULAR_EXPRESSION "source_hvsc_ok")
+endif()

@@ -150,3 +150,84 @@ void sel_library_remove(sel_library* lib, const sel_remove_batch* b, sel_message
     reply->args[1].type = SEL_ARG_INT;
     reply->args[1].v.i = rc;
 }
+
+/* SEL_LIB_REQ_ANNOTATE (I162): sets duration and md5 of existing songs and stores their stickers
+ * (subtune count, lengths, STIL notes). One transaction per batch. */
+void sel_library_annotate(sel_library* lib, const sel_annotate_batch* b, sel_message* reply) {
+    sqlite3_stmt* su = NULL;
+    sqlite3_stmt* sf = NULL;
+    sqlite3_stmt* sk = NULL;
+    int rc;
+    int done = 0;
+    uint32_t i, j;
+    char key[1200];
+
+    rc = sqlite3_exec(lib->db, "BEGIN", NULL, NULL, NULL);
+    if (rc == SQLITE_OK) {
+        rc = sqlite3_prepare_v2(lib->db,
+                                "UPDATE songs SET duration_ms=COALESCE(?2, duration_ms), md5=COALESCE(?3, md5) WHERE key=?1",
+                                -1, &su, NULL);
+    }
+    if (rc == SQLITE_OK) {
+        rc = sqlite3_prepare_v2(lib->db,
+                                "UPDATE files SET md5=COALESCE(?3, md5) WHERE source=?1 AND path=?2", -1, &sf, NULL);
+    }
+    if (rc == SQLITE_OK) {
+        rc = sqlite3_prepare_v2(lib->db, "INSERT OR REPLACE INTO stickers(key, name, value) VALUES(?1, ?2, ?3)", -1,
+                                &sk, NULL);
+    }
+    for (i = 0; rc == SQLITE_OK && i < b->count; i++) {
+        const sel_annotation* a = &b->items[i];
+        int has_md5 = a->md5 != NULL && a->md5[0] != '\0';
+
+        snprintf(key, sizeof key, "%s:%s", b->source, a->path);
+        sqlite3_reset(su);
+        sqlite3_bind_text(su, 1, key, -1, SQLITE_STATIC);
+        bind_positive(su, 2, a->duration_ms);
+        bind_text(su, 3, has_md5 ? a->md5 : NULL);
+        rc = sqlite3_step(su);
+        if (rc != SQLITE_DONE) {
+            break;
+        }
+        rc = SQLITE_OK;
+        if (sqlite3_changes(lib->db) == 0) {
+            continue;
+        }
+        sqlite3_reset(sf);
+        sqlite3_bind_text(sf, 1, b->source, -1, SQLITE_STATIC);
+        sqlite3_bind_text(sf, 2, a->path, -1, SQLITE_STATIC);
+        bind_text(sf, 3, has_md5 ? a->md5 : NULL);
+        if (sqlite3_step(sf) != SQLITE_DONE) {
+            rc = SQLITE_ERROR;
+            break;
+        }
+        for (j = 0; j < a->sticker_n; j++) {
+            sqlite3_reset(sk);
+            sqlite3_bind_text(sk, 1, key, -1, SQLITE_STATIC);
+            sqlite3_bind_text(sk, 2, a->stickers[j].name, -1, SQLITE_STATIC);
+            sqlite3_bind_text(sk, 3, a->stickers[j].value, -1, SQLITE_STATIC);
+            if (sqlite3_step(sk) != SQLITE_DONE) {
+                rc = SQLITE_ERROR;
+                break;
+            }
+        }
+        done++;
+    }
+    sqlite3_finalize(su);
+    sqlite3_finalize(sf);
+    sqlite3_finalize(sk);
+    if (rc == SQLITE_OK) {
+        rc = sqlite3_exec(lib->db, "COMMIT", NULL, NULL, NULL);
+    } else {
+        sqlite3_exec(lib->db, "ROLLBACK", NULL, NULL, NULL);
+        done = 0;
+    }
+    memset(reply, 0, sizeof *reply);
+    reply->kind = SEL_MSG_EVT;
+    reply->id = SEL_LIB_REQ_ANNOTATE;
+    reply->argc = 2;
+    reply->args[0].type = SEL_ARG_INT;
+    reply->args[0].v.i = done;
+    reply->args[1].type = SEL_ARG_INT;
+    reply->args[1].v.i = rc;
+}

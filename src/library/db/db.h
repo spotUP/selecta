@@ -25,7 +25,8 @@ enum {
     SEL_LIB_REQ_SAVE_VIEW = 4, /* store text2 as the saved query `text` (I150) */
     SEL_LIB_REQ_IMPORT = 5,    /* import a TSV catalogue held in `text` (test and CLI seeding) */
     SEL_LIB_REQ_SCAN_BATCH = 6, /* payload: const sel_scan_batch*; writes files and songs rows (I158) */
-    SEL_LIB_REQ_REMOVE = 7      /* payload: const sel_remove_batch*; deletes files and songs rows (I161) */
+    SEL_LIB_REQ_REMOVE = 7,     /* payload: const sel_remove_batch*; deletes files and songs rows (I161) */
+    SEL_LIB_REQ_ANNOTATE = 8    /* payload: const sel_annotate_batch*; lengths and notes onto existing songs (I162) */
 };
 
 /* The data of a SEARCH, SAVE_VIEW or IMPORT request. The caller fills the inputs, passes the job to
@@ -72,6 +73,27 @@ typedef struct sel_remove_batch {
     const char* const* paths;
     uint32_t count;
 } sel_remove_batch;
+
+/* Side data for songs that already have a row (HVSC Songlengths.md5 and STIL, I162). `duration_ms` > 0
+ * and a non-empty `md5` replace the song's values; every sticker is stored under the song key in the
+ * stickers table. A path without a songs row is skipped (not an error, not counted). */
+typedef struct sel_sticker {
+    const char* name;
+    const char* value;
+} sel_sticker;
+typedef struct sel_annotation {
+    const char* path;
+    const char* md5;      /* "" or NULL = keep */
+    int32_t duration_ms;  /* 0 = keep */
+    const sel_sticker* stickers;
+    uint32_t sticker_n;
+} sel_annotation;
+typedef struct sel_annotate_batch {
+    const char* source;
+    const sel_annotation* items;
+    uint32_t count;
+} sel_annotate_batch;
+/* Reply to SEL_LIB_REQ_ANNOTATE: INT [0] songs annotated, [1] SQLite result code (0 = ok). */
 
 /* Reply to SEL_LIB_REQ_REMOVE: INT [0] song rows deleted, [1] SQLite result code (0 = ok). */
 

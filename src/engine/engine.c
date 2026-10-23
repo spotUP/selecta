@@ -35,6 +35,7 @@
 #include "db.h"
 #include "cache.h"
 #include "sources/local_source.h"
+#include "sources/hvsc_sync.h"
 #include "sources/modland_sync.h"
 #include "scheduler.h"
 #include "spsc.h"
@@ -2490,19 +2491,22 @@ static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
 }
 
 /* LIBRARY_SYNC <source> <dir> [now]: syncs a network source's catalogue from the listing and changelogs in
- * <dir> (I161; only `modland` today). `now` (epoch seconds) fixes the clock of "new this week". The answer
+ * <dir> (I161, I162; `modland` and `hvsc`). `now` (epoch seconds) fixes the clock of "new this week". The answer
  * is a LIBRARY_RESULT with the directory and the listing row count; the counters are in sync_info. */
 static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
     sel_local_scan_config scfg;
     sel_modland_sync_stats st;
+    sel_hvsc_sync_stats hv;
     int64_t now;
     int ok;
+    int is_hvsc;
 
     if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", "LIBRARY_SYNC");
         return;
     }
-    if (strcmp(m->args[0].v.s, "modland") != 0) {
+    is_hvsc = strcmp(m->args[0].v.s, "hvsc") == 0;
+    if (!is_hvsc && strcmp(m->args[0].v.s, "modland") != 0) {
         sel_engine_report_error(e, "unknown_source", m->args[0].v.s);
         return;
     }
@@ -2513,7 +2517,18 @@ static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
     scfg.registry_get = e->registry_get;
     now = m->argc > 2 ? (int64_t)m->args[2].v.u : (int64_t)time(NULL);
     scfg.now = now;
-    ok = sel_modland_sync(&scfg, m->args[1].v.s, now, &st);
+    memset(&st, 0, sizeof st);
+    memset(&e->sync_info, 0, sizeof e->sync_info);
+    if (is_hvsc) {
+        ok = sel_hvsc_sync(&scfg, m->args[1].v.s, &hv);
+        st.listing_rows = hv.listing_rows;
+        st.skipped_rows = hv.skipped_rows;
+        e->sync_info.songlengths = hv.songlengths;
+        e->sync_info.stil_entries = hv.stil_entries;
+        e->sync_info.subtunes = hv.subtunes;
+    } else {
+        ok = sel_modland_sync(&scfg, m->args[1].v.s, now, &st);
+    }
     e->sync_info.listing_rows = st.listing_rows;
     e->sync_info.skipped_rows = st.skipped_rows;
     e->sync_info.changelogs = st.changelogs;
