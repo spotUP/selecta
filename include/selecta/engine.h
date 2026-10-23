@@ -125,6 +125,9 @@ typedef struct sel_pattern_view {
 
 /* The snapshot front ends render. Fields are only appended. Everything below
  * `options` is refreshed at the end of every sel_engine_pump. */
+/* sel_state.lyric_source (F19): precedence is a .lrc next to the song, then the tracker's song message, then DEViLBOX. */
+enum { SEL_LYRIC_NONE = 0, SEL_LYRIC_LRC = 1, SEL_LYRIC_MESSAGE = 2, SEL_LYRIC_DEVILBOX = 3 };
+
 typedef struct sel_state {
     sel_play_state play;
     int32_t volume; /* 0..100 */
@@ -148,6 +151,11 @@ typedef struct sel_state {
                                  * composer, release, year, genre, rating, play count; absent data has no row), NULL: none */
     uint32_t panel_rows;        /* rows in `panel` */
     const char* stats;          /* I192: the stats screen is open: "label\0value\0" pairs read from the stats SQL views, then "\0"; NULL: closed */
+    uint32_t lyric_source;      /* I193: SEL_LYRIC_*: where the lyrics of the open song come from */
+    const char* lyric_text;     /* plain lyrics (song message, or unsynced text), NULL: none or synced */
+    uint32_t lyric_lines;       /* timed lines of synced lyrics (LRC), 0: none */
+    int32_t lyric_line;         /* index of the line at the play position, -1: before the first line or no synced lyrics */
+    const char* lyric_current;  /* text of that line, NULL when lyric_line is -1 */
 } sel_state;
 
 struct sel_library;
@@ -295,6 +303,7 @@ typedef struct sel_engine_stats {
     uint32_t folder_view_rows;    /* rows the folders view source built from the library tree (I179 sentinel) */
     uint32_t stats_queries;       /* STATS_SHOW queries run against the stats views (I192 sentinel) */
     uint32_t panel_loads;         /* module info panel lookups made in the library (I185 sentinel) */
+    uint32_t lyric_fetches;       /* DEViLBOX lyrics requests queued, none for a song with a .lrc or a message (I193 sentinel) */
     uint32_t folder_ops;          /* FOLDER_ADD/MOVE/DEL and PLAYLIST_MOVE run against the library (I178 sentinel) */
     uint32_t sticker_ops;         /* STICKER_* commands run against the library (I176 sentinel) */
     uint32_t links_parsed;        /* share links OPEN parsed (I180 sentinel) */

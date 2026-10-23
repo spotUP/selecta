@@ -1,0 +1,24 @@
+# T93 lyrics (plan 2026-10-25-m3-library.md, I193, F19). tests/net/lyrics.cmake runs this from tests/m3 with --db
+# against the devilbox fixture; the songs and their lyrics sit in tests/m3/lyrics/.
+#   ambient.mod + ambient.lrc  local file: lyric_source=lrc, at 12.5 s the line is index 3 (the 00:12.00 line)
+#   message.it                 tracker song message, plain text: lyric_source=message
+#   techno.mod                 no local lyrics: the fixture endpoint answers, lyric_source=devilbox, synced
+#   nogenre.mod                no route on the fixture: devilbox_missing=lyrics, lyric_source=none
+# lyric_fetches counts endpoint requests: it stays 0 for the first two songs.
+PREF_SET library.lyrics_online on
+OPEN lyrics/ambient.mod
+SEEK 12500
+@render 441
+@lyrics
+OPEN lyrics/message.it
+@render 441
+@lyrics
+OPEN lyrics/techno.mod
+@render 441
+@lyrics
+SEEK 2600
+@render 441
+@lyrics
+OPEN lyrics/nogenre.mod
+@render 441
+@lyrics

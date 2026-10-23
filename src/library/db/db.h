@@ -375,6 +375,21 @@ typedef struct sel_vote_result {
 void sel_library_vote_result(sel_library* lib, sel_vote_result* out);
 /* "ok", "rate", "bad", "missing" or "down" for a SEL_VOTE_* status. */
 const char* sel_vote_status_name(int status);
+
+/* I193 (F19): DEViLBOX lyrics for a song that has none locally. Queues one request on the library job thread (the
+ * network never runs on the engine command or audio thread): the job hashes the file (md5) and asks GET
+ * /api/lyrics/<md5>. A newer request replaces one still queued. Without threads the request runs inline.
+ * status is a SEL_DVB_LYRICS_* value (devilbox_lyrics.h); `seq` moves with every finished request. */
+#define SEL_LYRICS_TEXT_MAX 8192u
+typedef struct sel_lyrics_result {
+    unsigned seq;
+    int status;
+    char path[512]; /* the song the answer belongs to */
+    char text[SEL_LYRICS_TEXT_MAX];
+} sel_lyrics_result;
+void sel_library_lyrics_fetch(sel_library* lib, const char* song_path);
+unsigned sel_library_lyrics_seq(sel_library* lib);                     /* cheap: result sequence only */
+void sel_library_lyrics_result(sel_library* lib, sel_lyrics_result* out); /* copies the whole result */
 int sel_library_cache_stats(const sel_library* lib, struct sel_cache_stats* out);
 /* Prints `cache_hits= fetches= companions= md5_mismatches= mirror_tries=` when a fetch was served. */
 void sel_library_cache_report(const sel_library* lib);
