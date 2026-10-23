@@ -143,9 +143,12 @@ typedef struct sel_state {
 } sel_state;
 
 struct sel_library;
-/* LIBRARY_SCAN hook (I158): scans `path` into the catalogue; returns 1 and the number of files
- * scanned, 0 on failure. The engine does not link the library; the front end hands this in. */
-typedef int (*sel_library_scan_fn)(void* ctx, const char* path, uint32_t* files);
+/* Counters of the last LIBRARY_SCAN (test sentinels; probed > 0 proves the scan code ran). */
+typedef struct sel_scan_info {
+    uint32_t scanned_files, skipped_files, scan_batches, probed, dirs;
+    uint32_t archives;        /* archive files opened */
+    uint32_t archive_members; /* members written as songs */
+} sel_scan_info;
 
 typedef struct sel_engine_config {
     uint32_t cmd_queue_depth; /* 0: default 64 */
@@ -169,13 +172,13 @@ typedef struct sel_engine_config {
      * or written, they stay at their defaults for this run. */
     const char* config_dir;
     /* Library database (src/library/db); the front end opens and closes it. NULL:
-     * LIBRARY_SEARCH, PLAY_QUERY, QUEUE_ADD_QUERY and VIEW_SAVE answer ERROR no_library. */
+     * LIBRARY_SEARCH, LIBRARY_SCAN, PLAY_QUERY, QUEUE_ADD_QUERY and VIEW_SAVE answer ERROR no_library. */
     struct sel_library* library;
-    sel_library_scan_fn library_scan;
-    void* library_ctx;
 } sel_engine_config;
 
 typedef struct sel_engine sel_engine;
+
+void sel_engine_scan_info(const sel_engine* e, sel_scan_info* out);
 
 /* The config directory: $XDG_CONFIG_HOME/selecta, else ~/.config/selecta;
  * ENVARC:Selecta on the Amiga. Writes the path to `out`; 0 when it cannot be

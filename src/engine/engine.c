@@ -33,6 +33,7 @@
 #include "prefs.h"
 #include "view.h"
 #include "db.h"
+#include "sources/local_source.h"
 #include "scheduler.h"
 #include "spsc.h"
 #include "thread.h"
@@ -262,8 +263,7 @@ struct sel_engine {
     uint32_t q_hint;    /* position NEXT and PLAY start from while q_playing is 0 */
     uint32_t song_over; /* the open song ended or the queue ran out: PLAY restarts the queue */
     sel_browse browse;  /* the listing LIBRARY_BROWSE fills */
-    sel_library_scan_fn library_scan; /* LIBRARY_SCAN hook from the front end (I158); NULL: no_library */
-    void* library_ctx;
+    sel_scan_info scan_info; /* counters of the last LIBRARY_SCAN */
     uint32_t lib_slot;
     sel_tag lib_tags[4][4];                  /* LIBRARY_RESULT tags, a ring like error_detail */
     char lib_path[4][SEL_BROWSE_PATH_MAX];
@@ -2421,20 +2421,38 @@ static void cmd_VIEW_SAVE(sel_engine* e, const sel_message* m) {
     }
 }
 
-/* LIBRARY_SCAN <dir>: the front end's library hook scans the directory tree into the catalogue
- * (I158); the answer is a LIBRARY_RESULT carrying the scanned path and the file count. */
+/* LIBRARY_SCAN <dir>: scans the directory tree (and the archives in it) into the catalogue through
+ * cfg.library (I158, I158a, I159); the answer is a LIBRARY_RESULT carrying the scanned path and the file count. */
 static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
     uint32_t files = 0;
     uint32_t slot;
     sel_tag* t;
     sel_message r;
     size_t n;
+    int ok;
+    sel_local_scan_config scfg;
+    sel_local_scan_stats stats;
 
-    if (e->library_scan == NULL) {
+    if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", "LIBRARY_SCAN");
         return;
     }
-    if (!e->library_scan(e->library_ctx, m->args[0].v.s, &files)) {
+    memset(&scfg, 0, sizeof scfg);
+    scfg.host = e->host;
+    scfg.lib = e->lib;
+    scfg.registry_count = e->registry_count;
+    scfg.registry_get = e->registry_get;
+    scfg.now = (int64_t)time(NULL);
+    ok = sel_local_scan(&scfg, m->args[0].v.s, &stats);
+    files = stats.scanned_files;
+    e->scan_info.scanned_files = stats.scanned_files;
+    e->scan_info.skipped_files = stats.skipped_files;
+    e->scan_info.scan_batches = stats.scan_batches;
+    e->scan_info.probed = stats.probed;
+    e->scan_info.dirs = stats.dirs;
+    e->scan_info.archives = stats.archives;
+    e->scan_info.archive_members = stats.archive_members;
+    if (!ok) {
         sel_engine_report_error(e, "scan_failed", m->args[0].v.s);
         return;
     }
@@ -2773,10 +2791,6 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         queue_text = cfg->queue_text_bytes;
     }
     sel_prefs_init(&e->prefs);
-    if (cfg) {
-        e->library_scan = cfg->library_scan;
-        e->library_ctx = cfg->library_ctx;
-    }
     if (cfg && cfg->config_dir && strlen(cfg->config_dir) < sizeof e->config_dir) {
         strcpy(e->config_dir, cfg->config_dir);
         (void)sel_prefs_load(&e->prefs, e->config_dir);
@@ -3501,4 +3515,8 @@ uint32_t sel_engine_tracker_cells(const sel_engine* e, uint32_t order, uint32_t 
         return 0;
     }
     return sl->rp_tracker_cells(sl->rp_state, order, channel, row_lo, row_hi, out, cap);
+}
+
+void sel_engine_scan_info(const sel_engine* e, sel_scan_info* out) {
+    *out = e->scan_info;
 }

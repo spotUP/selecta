@@ -1,0 +1,1 @@
+miniz 11.3.0, https://github.com/richgel999/miniz, copied unchanged from third_party/libopenmpt/include/miniz (OpenMPT vendoring; NO_STDIO and NO_TIME are set by src/library/CMakeLists.txt)

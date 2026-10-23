@@ -919,3 +919,24 @@ if(NOT SEL_AMIGA)
   set_tests_properties(mirrors-ranking PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     DEPENDS ftp-transport TIMEOUT 60)
 endif()
+
+# M3 Phase 4b (I159): T71 archive part, zip and lha members scan as songs at <archive>/<member>.
+if(NOT SEL_AMIGA)
+  add_test(NAME source-archive
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/source_archive.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/make_archives.py ${SEL_TESTMOD})
+  set_tests_properties(source-archive PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_archive_ok")
+endif()
+
+# M3 Phase 4b (I158a): T71 scan under vamos agrees with the desktop scan. DISABLED: sel_library_open
+# crashes under vamos before any scan code runs (`selecta-cli library stats` crashes the same way, so it
+# predates I158a/I159: InvalidMemoryAccess in the Amiga SQLite open). Enable once the Amiga DB open works.
+if(NOT SEL_AMIGA AND SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
+  add_test(NAME source-local-scan-vamos
+    COMMAND "${CMAKE_COMMAND}" "-DMODE=vamos" "-DCLI=${SEL_CLI}" "-DVAMOS=${SEL_VAMOS}"
+      "-DAMIGA_CLI=${SEL_AMIGA_CLI}" "-DMOD=${SEL_TESTMOD}"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m3/source-local-scan-vamos"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/scan_vamos.cmake")
+  set_tests_properties(source-local-scan-vamos PROPERTIES LABELS m3 FIXTURES_REQUIRED amiga_cli
+    RESOURCE_LOCK vamos DISABLED TRUE PASS_REGULAR_EXPRESSION "scan_vamos_ok")
+endif()
