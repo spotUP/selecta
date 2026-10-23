@@ -115,6 +115,18 @@ static const char* tag_type_name(sel_tag_type t) {
     }
 }
 
+/* config-dir: prints the directory sel_config_dir picks (I214 sentinel: on the Amiga it is
+ * ENVARC:Selecta, or PROGDIR:Selecta when ENVARC: is unassigned). */
+static int cmd_config_dir(void) {
+    char dir[256];
+    if (!sel_config_dir(dir, sizeof dir)) {
+        fprintf(stderr, "selecta-cli: no config directory\n");
+        return 1;
+    }
+    printf("config_dir=%s\n", dir);
+    return 0;
+}
+
 static int cmd_tagtypes(void) {
     uint32_t count, i;
     const sel_tag_info* table = sel_tag_table(&count);
@@ -1003,6 +1015,9 @@ int main(int argc, char** argv)
     }
     if (strcmp(cmd, "tagtypes") == 0) {
         return cmd_tagtypes();
+    }
+    if (strcmp(cmd, "config-dir") == 0) {
+        return cmd_config_dir();
     }
     if (strcmp(cmd, "roundtrip") == 0) {
         return cmd_roundtrip();
