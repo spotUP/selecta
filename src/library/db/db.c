@@ -43,12 +43,15 @@ static int heap_acquire(const sel_host* host, uint32_t bytes) {
         }
         g_heap_bytes = bytes;
         g_heap_allocs++;
+        /* SQLite is compiled with MEMSTATUS=0; switch the counters on so sel_library_heap_peak() has data. */
+        sqlite3_config(SQLITE_CONFIG_MEMSTATUS, 1);
         if (sqlite3_config(SQLITE_CONFIG_HEAP, g_heap, (int)bytes, 32) != SQLITE_OK) {
             host->mem_free(host, g_heap);
             g_heap = NULL;
             return 0;
         }
     }
+    sel_library_vfs_init();
     g_heap_users++;
     return 1;
 }
@@ -78,7 +81,7 @@ sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint
     }
     lib->heap_bytes = g_heap_bytes;
     lib->heap_allocs = g_heap_allocs;
-    if (sqlite3_open_v2(path, &lib->db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL) !=
+    if (sqlite3_open_v2(path, &lib->db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_URI, NULL) !=
             SQLITE_OK ||
         !sel_schema_migrate(lib->db) || !sel_library_register_regexp(lib->db)) {
         goto fail;
@@ -164,6 +167,11 @@ static void handle_stats(sel_library* lib, sel_message* reply) {
     }
     if (rc == SQLITE_OK) {
         rc = query_int(lib->db, "SELECT count(*) FROM songs", &songs);
+    }
+    if (rc == SQLITE_OK && lib->has_index) {
+        int idx_songs = 0;
+        rc = query_int(lib->db, "SELECT count(*) FROM idx.songs", &idx_songs);
+        songs += idx_songs;
     }
     reply->kind = SEL_MSG_EVT;
     reply->id = SEL_LIB_REQ_STATS;

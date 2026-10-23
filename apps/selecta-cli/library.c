@@ -104,7 +104,10 @@ static void on_search_event(void* ctx, const sel_message* evt) {
 static int library_search(int argc, char** argv) {
     const char* catalogue = NULL;
     const char* db_path = NULL;
+    const char* index_path = NULL;
+    const sel_tag* machine = NULL;
     const char* text = NULL;
+    uint32_t t0 = 0;
     sel_engine_config cfg;
     sel_engine* e;
     sel_library* lib;
@@ -119,6 +122,14 @@ static int library_search(int argc, char** argv) {
             catalogue = argv[++a];
         } else if (strcmp(argv[a], "--db") == 0 && a + 1 < argc) {
             db_path = argv[++a];
+        } else if (strcmp(argv[a], "--index") == 0 && a + 1 < argc) {
+            index_path = argv[++a];
+        } else if (strcmp(argv[a], "--machine") == 0 && a + 1 < argc) {
+            machine = sel_machine_fake(argv[++a]);
+            if (machine == NULL) {
+                fprintf(stderr, "library search: unknown machine %s\n", argv[a]);
+                return 2;
+            }
         } else if (strcmp(argv[a], "--") == 0 && a + 1 < argc) {
             text = argv[++a];
         } else if (text == NULL && argv[a][0] != '-') {
@@ -126,22 +137,30 @@ static int library_search(int argc, char** argv) {
         }
     }
     if ((catalogue == NULL) == (db_path == NULL) || text == NULL) {
-        fputs("usage: selecta-cli library search (--catalogue <tsv> | --db <path>) [--] <query>\n", stderr);
+        fputs("usage: selecta-cli library search (--catalogue <tsv> | --db <path> [--index <file>] [--machine <name>]) [--] <query>\n", stderr);
         return 2;
     }
     if (db_path != NULL) {
         const sel_host* host = sel_host_default();
 
-        lib = sel_library_open(host, sel_machine_probe(host), 0, db_path);
+        if (machine == NULL) {
+            machine = sel_machine_probe(host);
+        }
+        lib = sel_library_open(host, machine, 0, db_path);
     } else {
         lib = sel_cli_open_catalogue(catalogue);
     }
     if (lib == NULL) {
         return 1;
     }
+    if (index_path != NULL && !sel_library_attach_index(lib, index_path)) {
+        puts("ERROR index_open");
+        sel_library_close(lib);
+        return 1;
+    }
     memset(&cfg, 0, sizeof cfg);
     memset(&sink, 0, sizeof sink);
-    cfg.machine = sel_machine_probe(sel_host_default());
+    cfg.machine = machine != NULL ? machine : sel_machine_probe(sel_host_default());
     cfg.library = lib;
     e = sel_engine_create(sel_host_default(), &cfg);
     if (e == NULL) {
@@ -149,13 +168,19 @@ static int library_search(int argc, char** argv) {
         return 1;
     }
     snprintf(line, sizeof line, "LIBRARY_SEARCH %s", text);
+    t0 = sel_host_default()->clock_ms(sel_host_default());
     sel_engine_send_line(e, line, pool, sizeof pool);
     sel_engine_pump(e, on_search_event, &sink);
+    t0 = sel_host_default()->clock_ms(sel_host_default()) - t0;
     if (!sink.failed) {
         for (i = 0; i < sink.count; i++) {
             printf("key=%s\n", sel_engine_result_key(e, i));
         }
         printf("src_count=%u\nfts_queries=%u\n", sink.count, sink.fts);
+        if (index_path != NULL) {
+            printf("index_songs=%u heap_bytes=%u db_heap_peak=%u query_ms=%u\n", (unsigned)sel_library_index_songs(lib),
+                   (unsigned)sel_library_heap_size(lib), (unsigned)sel_library_heap_peak(), (unsigned)t0);
+        }
     }
     sel_engine_destroy(e);
     sel_library_close(lib);
@@ -211,9 +236,11 @@ static int library_stats(int argc, char** argv) {
     const sel_host* host = sel_host_default();
     const sel_tag* machine = NULL;
     const char* db_path = ":memory:";
+    const char* index_path = NULL;
     sel_library* lib;
     sel_message r1;
     sel_message r2;
+    uint32_t t0;
     int i;
 
     for (i = 0; i + 1 < argc; i += 2) {
@@ -225,8 +252,10 @@ static int library_stats(int argc, char** argv) {
             }
         } else if (strcmp(argv[i], "--db") == 0) {
             db_path = argv[i + 1];
+        } else if (strcmp(argv[i], "--index") == 0) {
+            index_path = argv[i + 1];
         } else {
-            fputs("usage: selecta-cli library stats [--machine <name>] [--db <path>]\n", stderr);
+            fputs("usage: selecta-cli library stats [--machine <name>] [--db <path>] [--index <file>]\n", stderr);
             return 2;
         }
     }
@@ -238,9 +267,16 @@ static int library_stats(int argc, char** argv) {
         puts("db_open=0");
         return 1;
     }
+    if (index_path != NULL && !sel_library_attach_index(lib, index_path)) {
+        puts("db_open=0 index_open=0");
+        sel_library_close(lib);
+        return 1;
+    }
     fputs("SEL_ALLOC_FREEZE\n", stderr);
     fflush(stderr);
+    t0 = host->clock_ms(host);
     i = sel_library_call(lib, SEL_LIB_REQ_STATS, &r1) && sel_library_call(lib, SEL_LIB_REQ_STATS, &r2);
+    t0 = host->clock_ms(host) - t0;
     fputs("SEL_ALLOC_THAW\n", stderr);
     fflush(stderr);
     if (!i || r2.args[SEL_LIB_STAT_RC].v.i != 0) {
@@ -253,6 +289,10 @@ static int library_stats(int argc, char** argv) {
            r2.args[SEL_LIB_STAT_SCHEMA].v.i, sel_library_sqlite_version(), r2.args[SEL_LIB_STAT_FTS5].v.i,
            sel_library_heap_size(lib), sel_library_heap_allocs(lib), r2.args[SEL_LIB_STAT_SERVED].v.i,
            r2.args[SEL_LIB_STAT_FTS_HITS].v.i, r2.args[SEL_LIB_STAT_SONGS].v.i, sel_library_account(lib));
+    if (index_path != NULL) {
+        printf("index_songs=%u db_heap_peak=%u query_ms=%u\n", (unsigned)sel_library_index_songs(lib),
+               (unsigned)sel_library_heap_peak(), (unsigned)t0);
+    }
 #ifdef __amigaos__
     printf("stack_swaps=%u stack_bytes=%lu\n", sel_amiga_stack_swaps(), sel_amiga_stack_bytes());
 #endif
@@ -874,6 +914,55 @@ static int library_trim(int argc, char** argv) {
     return 0;
 }
 
+/* `library export-index --db <path> --out <file> <source>` (I197, D-M3-16): copies the songs of one source
+ * from the library DB into a prebuilt read-only index file with the full schema and FTS. Prints
+ * `index_rows=<n> index_bytes=<size> index_file=<file>`. The Amiga build attaches the file with
+ * `library search|stats --index`. */
+static int library_export_index(int argc, char** argv) {
+    const sel_host* host = sel_host_default();
+    const char* db_path = NULL;
+    const char* out = NULL;
+    const char* source = NULL;
+    sel_library* lib;
+    uint32_t rows = 0;
+    long bytes = -1;
+    FILE* f;
+    int a, ok;
+
+    for (a = 0; a < argc; a++) {
+        if (strcmp(argv[a], "--db") == 0 && a + 1 < argc) {
+            db_path = argv[++a];
+        } else if (strcmp(argv[a], "--out") == 0 && a + 1 < argc) {
+            out = argv[++a];
+        } else if (argv[a][0] != '-' && source == NULL) {
+            source = argv[a];
+        }
+    }
+    if (db_path == NULL || out == NULL || source == NULL) {
+        fputs("usage: selecta-cli library export-index --db <path> --out <file> <source>\n", stderr);
+        return 2;
+    }
+    lib = sel_library_open(host, sel_machine_probe(host), 0, db_path);
+    if (lib == NULL) {
+        puts("ERROR db_open");
+        return 1;
+    }
+    ok = sel_library_export_index(lib, source, out, &rows);
+    sel_library_close(lib);
+    if (!ok) {
+        puts("ERROR export_failed");
+        return 1;
+    }
+    f = fopen(out, "rb");
+    if (f != NULL) {
+        fseek(f, 0, SEEK_END);
+        bytes = ftell(f);
+        fclose(f);
+    }
+    printf("index_rows=%u index_bytes=%ld index_file=%s\n", (unsigned)rows, bytes, out);
+    return 0;
+}
+
 int sel_cli_wrong(int argc, char** argv) {
     const sel_host* host = sel_host_default();
     const char* db_path = ":memory:";
@@ -1166,6 +1255,9 @@ int sel_cli_library(int argc, char** argv) {
     }
     if (argc >= 1 && strcmp(argv[0], "meta") == 0) {
         return library_meta(argc - 1, argv + 1);
+    }
+    if (argc >= 1 && strcmp(argv[0], "export-index") == 0) {
+        return library_export_index(argc - 1, argv + 1);
     }
     if (argc >= 1 && strcmp(argv[0], "stats") == 0) {
         return library_stats(argc - 1, argv + 1);

@@ -58,6 +58,7 @@ static int usage(FILE* to) {
           "  library scan [--db <p>] <dir> scan a folder into the library DB, print scanned_files= db_songs= (T71)\n"
           "  library key <source> <path> print the song key and its URL round trip (T72)\n"
           "  library query --explain <q> compile a library query, print sql= params= query_terms= (T63)\n"
+          "  library export-index --db <p> --out <f> <source>  copy a source into a read-only index file; search and stats take --index <f> (I197, T96)\n"
           "  library stats              open the library DB, print db_open= schema_version= sqlite_version= (T62)\n"
           "  userdata --db <p> [--catalogue <tsv>] [--note <song> <text>] [--tag <song> <field> <value>] [--wrong <song> <note>]  notes, tag edits, row counts (T78)\n"
           "  wrong [--db <p>] [--export <file>] [<song> [<note>]]  flag a song as sounding wrong, export sounds-wrong.txt (T78)\n"

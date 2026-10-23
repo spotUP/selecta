@@ -239,6 +239,17 @@ uint32_t sel_library_heap_bytes(const sel_tag* machine);
 sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint32_t account, const char* path);
 void sel_library_close(sel_library* lib);
 
+/* D-M3-16, I197: the prebuilt read-only index of a big source. export_index (desktop) copies the songs of
+ * `source` from the open library into a fresh database file at `out_path` (full schema, FTS built), rows =
+ * songs written. attach_index (any machine) ATTACHes such a file read-only as schema `idx` next to the
+ * writable user DB; LIBRARY_SEARCH, metadata lookups and stats then cover both. Call both from the thread
+ * that opened the library while no request is in flight. index_songs = rows of the attached index (0 when
+ * none). heap_peak = high water mark of the SQLite heap since it was configured, bytes. */
+int sel_library_export_index(sel_library* lib, const char* source, const char* out_path, uint32_t* rows);
+int sel_library_attach_index(sel_library* lib, const char* path);
+uint32_t sel_library_index_songs(sel_library* lib);
+uint32_t sel_library_heap_peak(void);
+
 /* Sends a request and waits for its reply. 1 on success. */
 int sel_library_call(sel_library* lib, uint32_t req, sel_message* reply);
 /* Same with a payload the worker reads while the caller waits (carried in args[0].v.s). */
