@@ -25,7 +25,8 @@ typedef enum sel_play_state { SEL_STOPPED = 0, SEL_PLAYING, SEL_PAUSED } sel_pla
     X(STOP_AFTER_CURRENT, "stop-after-current")                                               \
     X(STOP_AFTER_QUEUE, "stop-after-queue")                                                   \
     X(FOLLOW, "follow")                                                                       \
-    X(HOOK_COMMAND, "hook_command")
+    X(HOOK_COMMAND, "hook_command")                                                           \
+    X(SCOPE, "scope")
 
 typedef enum sel_option_id {
 #define SEL_OPTION_ENUM(id, name) SEL_OPT_##id,

@@ -60,6 +60,9 @@
     X(QUEUE_SHUFFLE)                                                                          \
     X(RESHUFFLE)                                                                              \
     X(SHUFFLE)                                                                                \
+    X(SCOPE)                                                                                  \
+    X(NEXT_ALBUM)                                                                             \
+    X(PREV_ALBUM)                                                                             \
     X(QUEUE_PLAY_NEXT)                                                                        \
     X(LIBRARY_BROWSE)                                                                         \
     X(VIEW_SHOW)                                                                              \
@@ -909,14 +912,95 @@ static void cmd_PLAY(sel_engine* e, const sel_message* m) {
     set_play(e, SEL_PLAYING);
 }
 
+/* The album of a queue entry is the directory of its path. */
+static int same_album(const sel_queue* q, uint32_t a, uint32_t b) {
+    const char* pa = sel_queue_path(q, a);
+    const char* pb = sel_queue_path(q, b);
+    const char* sa = strrchr(pa, '/');
+    const char* sb = strrchr(pb, '/');
+    size_t la = sa ? (size_t)(sa - pa) : 0;
+    size_t lb = sb ? (size_t)(sb - pb) : 0;
+    return la == lb && memcmp(pa, pb, la) == 0;
+}
+
+/* First position of the album that holds position `idx`. */
+static uint32_t album_first(const sel_queue* q, uint32_t idx) {
+    while (idx > 0 && same_album(q, idx - 1u, idx)) {
+        idx--;
+    }
+    return idx;
+}
+
+/* Position that follows the playing one, honouring the scope option;
+ * SEL_QUEUE_NONE when the queue (or the album under scope album) ends. */
+static uint32_t queue_next_index(const sel_engine* e) {
+    uint32_t cur, next;
+    if (e->q_playing == 0) {
+        return SEL_QUEUE_NONE;
+    }
+    cur = sel_queue_index_of(&e->queue, e->q_playing);
+    next = cur + 1u;
+    if (next >= e->queue.count) {
+        return SEL_QUEUE_NONE;
+    }
+    if (strcmp(e->state.options[SEL_OPT_SCOPE], "album") == 0 && !same_album(&e->queue, cur, next)) {
+        return SEL_QUEUE_NONE;
+    }
+    return next;
+}
+
 static void cmd_NEXT(sel_engine* e, const sel_message* m) {
-    uint32_t idx = e->q_playing ? sel_queue_index_of(&e->queue, e->q_playing) + 1u : e->q_hint;
+    uint32_t idx = e->q_playing ? queue_next_index(e) : e->q_hint;
     (void)m;
     if (idx >= e->queue.count) {
         queue_finish(e);
         return;
     }
     queue_start(e, idx);
+}
+
+static void cmd_NEXT_ALBUM(sel_engine* e, const sel_message* m) {
+    uint32_t cur = e->q_playing ? sel_queue_index_of(&e->queue, e->q_playing) : e->q_hint;
+    uint32_t idx = cur;
+    (void)m;
+    if (cur >= e->queue.count) {
+        queue_finish(e);
+        return;
+    }
+    while (idx < e->queue.count && same_album(&e->queue, cur, idx)) {
+        idx++;
+    }
+    if (idx >= e->queue.count) {
+        queue_finish(e);
+        return;
+    }
+    queue_start(e, idx);
+}
+
+/* Plays the first song of the album before the current one; in the first
+ * album it plays that album's first song. */
+static void cmd_PREV_ALBUM(sel_engine* e, const sel_message* m) {
+    uint32_t cur = e->q_playing ? sel_queue_index_of(&e->queue, e->q_playing) : e->q_hint;
+    uint32_t first;
+    (void)m;
+    if (cur >= e->queue.count) {
+        sel_engine_report_error(e, "no_song", "PREV_ALBUM");
+        return;
+    }
+    first = album_first(&e->queue, cur);
+    if (first > 0) {
+        first = album_first(&e->queue, first - 1u);
+    }
+    queue_start(e, first);
+}
+
+static void cmd_SCOPE(sel_engine* e, const sel_message* m) {
+    const char* v = m->args[0].v.s;
+    if (strcmp(v, "library") != 0 && strcmp(v, "album") != 0 && strcmp(v, "playlist") != 0) {
+        sel_engine_report_error(e, "range", "SCOPE");
+        return;
+    }
+    set_option(e, SEL_OPT_SCOPE, v);
 }
 
 static void cmd_PREV(sel_engine* e, const sel_message* m) {
@@ -1385,7 +1469,7 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
         int advanced = 0;
         if (sl->ended && !sl->reported) {
             sel_message ev;
-            uint32_t next = e->q_playing ? sel_queue_index_of(&e->queue, e->q_playing) + 1u : SEL_QUEUE_NONE;
+            uint32_t next = queue_next_index(e);
             sl->reported = 1;
             evt_init(&ev, SEL_EVT_SONG_ENDED);
             emit(e, &ev);
