@@ -114,6 +114,7 @@ int sel_cli_render(int argc, char** argv) {
     uint32_t viz_blocks = 0, viz_seen = 0;
     unsigned long rate = 44100, seconds = 10;
     uint32_t resampler = SEL_MIX_RESAMPLE_LINEAR;
+    uint32_t led_on = 0, width = 100, stage_flag = 0;
     sel_engine* e;
     void* out;
     uint32_t total, pumped = 0;
@@ -139,6 +140,20 @@ int sel_cli_render(int argc, char** argv) {
             seek_ms = argv[i + 1];
         } else if (strcmp(argv[i], "--rate") == 0) {
             rate = strtoul(argv[i + 1], NULL, 10);
+        } else if (strcmp(argv[i], "--led") == 0) {
+            if (strcmp(argv[i + 1], "on") != 0 && strcmp(argv[i + 1], "off") != 0) {
+                fputs("render: --led takes on or off\n", stderr);
+                return 2;
+            }
+            led_on = strcmp(argv[i + 1], "on") == 0;
+            stage_flag = 1;
+        } else if (strcmp(argv[i], "--stereo-width") == 0) {
+            width = (uint32_t)strtoul(argv[i + 1], NULL, 10);
+            if (width > 100u) {
+                fputs("render: --stereo-width takes 0 to 100\n", stderr);
+                return 2;
+            }
+            stage_flag = 1;
         } else if (strcmp(argv[i], "--resample") == 0) {
             if (!parse_resampler(argv[i + 1], &resampler)) {
                 fprintf(stderr, "render: unknown resampler %s\n", argv[i + 1]);
@@ -170,6 +185,7 @@ int sel_cli_render(int argc, char** argv) {
     }
 
     sel_engine_set_output(e, o.hooks);
+    sel_engine_set_stage(e, led_on, width);
     if (dsp != NULL) {
         sel_message msg;
         memset(&msg, 0, sizeof msg);
@@ -258,6 +274,12 @@ int sel_cli_render(int argc, char** argv) {
     if (seek_ms != NULL) {
         printf("seek_path=%s skipped_frames=%u\n", stats.seek_path == 1u ? "native" : "skip",
                (unsigned)stats.seek_skipped_frames);
+    }
+    if (stage_flag) {
+        printf("led=%s led_frames=%u led_cutoff_hz=%u\n", stats.led_on ? "on" : "off", (unsigned)stats.led_frames,
+               (unsigned)stats.led_cutoff_hz);
+        printf("width=%u width_frames=%u width_mono=%u\n", (unsigned)stats.width_percent, (unsigned)stats.width_frames,
+               (unsigned)stats.width_mono);
     }
     if (dsp != NULL) {
         printf("dsp=%s blocks=%u\n", dsp, (unsigned)stats.dsp_blocks);

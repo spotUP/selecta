@@ -261,6 +261,11 @@ add_executable(mixer_test mixer/mixer_test.c)
 target_link_libraries(mixer_test PRIVATE selecta_core)
 add_test(NAME mixer-unit COMMAND mixer_test period none linear cubic sinc default clip loop)
 
+# T53 unit part: LED -3 dB point on a swept sine, width identities, Paula bypass.
+add_executable(stage_test mixer/stage_test.c)
+target_link_libraries(stage_test PRIVATE selecta_core)
+add_test(NAME mixer-stage-unit COMMAND stage_test)
+
 # T24: browse listing and view model through the engine command queue and
 # snapshot. The temp tree is created inside the generated songs directory.
 add_executable(view_test view/view_test.c)
@@ -699,8 +704,14 @@ if(NOT SEL_AMIGA)
       "-DARGS1=render --output paula14-shadow @MOD@ --seconds 2" "-DCHECKS1=p14_frames>0,p14_max_err_lsb<=1" -DHASH_KEY=p14_hash)
   endforeach()
   # T53 LED filter and stereo width.
-  sel_m2_test(mixer-led-stereo mixer desktop)
-  sel_m2_test(mixer-led-stereo mixer vamos)
+  # selecta-test.mod is mono (the protracker4 replayer does not pan), so a width knob cannot
+  # move its hash; the desktop run also renders the stereo mk module (libopenmpt pans it).
+  sel_m2_test(mixer-led-stereo mixer desktop "-DMKMOD=${SEL_MKMOD}")
+  # vamos truncates long absolute host paths: the 68k run starts in the repository root and gets relative paths.
+  sel_m2_test(mixer-led-stereo mixer vamos "-DMKMOD=${SEL_MKMOD}" "-DROOT=${PROJECT_SOURCE_DIR}")
+  if(SEL_M2_VAMOS)
+    set_tests_properties(mixer-led-stereo-vamos PROPERTIES WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+  endif()
   # T55 Amiga text UI under vamos with scripted stdin.
   if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
     add_test(NAME amiga-text-ui-vamos

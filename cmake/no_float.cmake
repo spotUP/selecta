@@ -22,10 +22,10 @@ file(GLOB_RECURSE objs
 list(LENGTH objs nobjs)
 # engine (engine, format, history, prefs, queue, shuffle, view, voices, spsc, scheduler, viz, dsp_chain, timer)
 # + protocol (parse)
-# + mixer (mixer, resample) + wav + null
+# + mixer (mixer, resample, stage) + wav + null
 # + library (local, dir, playlist, hippo, m3u, pls, xspf, export wav, export svx)
-if(NOT nobjs EQUAL 28)
-  message(FATAL_ERROR "expected 28 objects (14 engine, 1 protocol, 2 mixer, wav, null, 9 library), found ${nobjs}:\n${objs}")
+if(NOT nobjs EQUAL 29)
+  message(FATAL_ERROR "expected 29 objects (14 engine, 1 protocol, 3 mixer, wav, null, 9 library), found ${nobjs}:\n${objs}")
 endif()
 
 set(bad "")
