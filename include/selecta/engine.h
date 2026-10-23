@@ -248,6 +248,10 @@ int sel_engine_send_line(sel_engine* e, const char* line, char* pool, size_t poo
 uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx);
 
 const sel_state* sel_engine_state(const sel_engine* e);
+/* The host to hand to plugins outside playback (integrations, I177b): a copy of the engine's host whose
+ * config_get answers a non-empty engine pref (include/selecta/prefs.def) first, then the real host. Valid until
+ * sel_engine_destroy. */
+const sel_host* sel_engine_plugin_host(const sel_engine* e);
 const char* sel_play_state_name(sel_play_state s);
 const char* sel_option_name(sel_option_id id);
 

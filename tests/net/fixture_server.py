@@ -117,6 +117,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.entry = entry
         if host == "devilbox.uprough.net" and self.devilbox(parsed, body):
             return
+        if host == "ws.audioscrobbler.com" and self.lastfm_auth(body):
+            return
         self.route(host, parsed, entry)
 
     def json_reply(self, status, obj):
@@ -152,6 +154,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if rate:
             return text(429, "ERR rate\n") or True
         return text(200, "%d %d\n" % (count, yours)) or True
+
+    def lastfm_auth(self, body):
+        """last.fm desktop auth of row I177b: auth.getToken answers "fixturetoken", auth.getSession with that token
+        answers the session "loginsession" of "fixtureuser". The api_sig must be the one the shared secret
+        "fixturesecret" gives (error 13 otherwise), like the real service. Other methods fall through to the routes."""
+        if self.command != "POST":
+            return False
+        form = {k: v[0] for k, v in urllib.parse.parse_qs(body.decode("latin-1"), keep_blank_values=True).items()}
+        method = form.get("method")
+        if method not in ("auth.getToken", "auth.getSession"):
+            return False
+        signed = "".join(k + form[k] for k in sorted(form) if k not in ("format", "callback", "api_sig"))
+        if hashlib.md5((signed + "fixturesecret").encode("utf-8")).hexdigest() != form.get("api_sig"):
+            self.json_reply(403, {"error": 13, "message": "Invalid method signature supplied"})
+        elif method == "auth.getToken":
+            self.json_reply(200, {"token": "fixturetoken"})
+        elif form.get("token") != "fixturetoken":
+            self.json_reply(403, {"error": 14, "message": "Unauthorized Token - This token has not been authorized"})
+        else:
+            self.json_reply(200, {"session": {"name": "fixtureuser", "key": "loginsession", "subscriber": 0}})
+        return True
 
     def devilbox(self, parsed, body):
         """Stateful account and ratings endpoints of row I173 (like DEViLBOX auth.ts and ratings.ts).

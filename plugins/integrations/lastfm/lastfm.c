@@ -210,20 +210,42 @@ static void sign(const lf_state* s, param* p, unsigned np, char out[33]) {
     free(buf);
 }
 
+/* Signs p[0..np) (sorting it), POSTs it with format=json and copies the reply into `reply`. 1 when last.fm
+ * answered 200 without an "error" member. */
+static int signed_post(lf_state* s, param* p, unsigned np, char* reply, size_t reply_cap) {
+    char sig[33];
+    char* body = malloc((size_t)np * (3u * sizeof p->name + 3u * FIELD + 2u) + 64u);
+    char enc[3 * FIELD + 4];
+    unsigned i;
+    size_t len = 0;
+    int status = 0, ok = 0;
+    if (body == NULL) {
+        return 0;
+    }
+    sign(s, p, np, sig); /* sorts p */
+    for (i = 0; i < np; i++) {
+        pct_encode(p[i].name, enc, sizeof enc);
+        len += (size_t)sprintf(body + len, "%s%s=", i == 0 ? "" : "&", enc);
+        pct_encode(p[i].value, enc, sizeof enc);
+        len += (size_t)sprintf(body + len, "%s", enc);
+    }
+    sprintf(body + len, "&api_sig=%s&format=json", sig);
+    if (s->ih.http_post(s->ih.ctx, s->url, body, reply, reply_cap, &status) == 0 && status == 200 &&
+        strstr(reply, "\"error\"") == NULL) {
+        ok = 1;
+    }
+    free(body);
+    return ok;
+}
+
 /* POSTs entries[0..n) as one track.scrobble. 1 when last.fm accepted the batch. */
 static int post_batch(lf_state* s, const entry* en, unsigned n) {
     param* p = calloc(8u + 5u * BATCH_MAX, sizeof *p);
-    char sig[33];
     char reply[2048];
-    char* body = malloc((8u + 5u * BATCH_MAX) * (sizeof p->name + 3u * FIELD + 8u));
-    char enc[3 * FIELD + 4];
     unsigned np = 0, i;
-    size_t len = 0;
-    int status = 0, ok = 0;
+    int ok;
 
-    if (p == NULL || body == NULL) {
-        free(p);
-        free(body);
+    if (p == NULL) {
         return 0;
     }
     add_param(p, &np, "method", "track.scrobble");
@@ -243,21 +265,11 @@ static int post_batch(lf_state* s, const entry* en, unsigned n) {
             add_indexed(p, &np, "duration", i, num);
         }
     }
-    sign(s, p, np, sig); /* sorts p */
-    for (i = 0; i < np; i++) {
-        pct_encode(p[i].name, enc, sizeof enc);
-        len += (size_t)sprintf(body + len, "%s%s=", i == 0 ? "" : "&", enc);
-        pct_encode(p[i].value, enc, sizeof enc);
-        len += (size_t)sprintf(body + len, "%s", enc);
-    }
-    sprintf(body + len, "&api_sig=%s&format=json", sig);
-    if (s->ih.http_post(s->ih.ctx, s->url, body, reply, sizeof reply, &status) == 0 && status == 200 &&
-        strstr(reply, "\"error\"") == NULL) {
-        ok = 1;
+    ok = signed_post(s, p, np, reply, sizeof reply);
+    if (ok) {
         s->posts++;
     }
     free(p);
-    free(body);
     return ok;
 }
 
@@ -372,7 +384,69 @@ static void lf_close(void* state) {
     free(s);
 }
 
-static sel_tag g_hooks[6];
+/* The string member `name` of a flat JSON reply ("name":"value"), escapes kept as sent. 1 when found. */
+static int json_str(const char* json, const char* name, char* out, size_t cap) {
+    char pat[32];
+    const char* v;
+    size_t n = 0;
+    snprintf(pat, sizeof pat, "\"%s\":\"", name);
+    v = strstr(json, pat);
+    if (v == NULL) {
+        return 0;
+    }
+    for (v += strlen(pat); *v != '\0' && *v != '"' && n + 1 < cap; v++) {
+        out[n++] = *v;
+    }
+    out[n] = '\0';
+    return n != 0;
+}
+
+/* INT_LOGIN: the desktop-application auth flow (auth.getToken, the person authorises the token on last.fm,
+ * auth.getSession). Both calls are signed with the shared secret. */
+static int lf_login(const sel_host* host, const sel_int_host* ih, const char* token, char* out, size_t cap) {
+    lf_state s;
+    param p[4];
+    char reply[2048];
+    char a[FIELD], b[FIELD];
+    unsigned np = 0;
+    memset(&s, 0, sizeof s);
+    s.ih = *ih;
+    cfg(host, "scrobble.lastfm_key", "SELECTA_LASTFM_KEY", NULL, s.key, sizeof s.key);
+    cfg(host, "scrobble.lastfm_secret", "SELECTA_LASTFM_SECRET", NULL, s.secret, sizeof s.secret);
+    cfg(host, "scrobble.lastfm_url", "SELECTA_LASTFM_URL", "https://ws.audioscrobbler.com/2.0/", s.url,
+        sizeof s.url);
+    if (s.key[0] == '\0' || s.secret[0] == '\0') {
+        snprintf(out, cap, "no API key or secret (scrobble.lastfm_key / scrobble.lastfm_secret)");
+        return 1;
+    }
+    add_param(p, &np, "api_key", s.key);
+    add_param(p, &np, "method", token == NULL ? "auth.getToken" : "auth.getSession");
+    if (token != NULL) {
+        add_param(p, &np, "token", token);
+    }
+    if (!signed_post(&s, p, np, reply, sizeof reply)) {
+        if (!json_str(reply, "message", out, cap)) {
+            snprintf(out, cap, "last.fm did not answer");
+        }
+        return 1;
+    }
+    if (token == NULL) {
+        if (!json_str(reply, "token", a, sizeof a)) {
+            snprintf(out, cap, "no token in the reply");
+            return 1;
+        }
+        snprintf(out, cap, "token=%s url=https://www.last.fm/api/auth/?api_key=%s&token=%s", a, s.key, a);
+        return 0;
+    }
+    if (!json_str(reply, "key", a, sizeof a) || !json_str(reply, "name", b, sizeof b)) {
+        snprintf(out, cap, "no session in the reply");
+        return 1;
+    }
+    snprintf(out, cap, "session=%s user=%s", a, b);
+    return 0;
+}
+
+static sel_tag g_hooks[7];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -389,7 +463,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[2], SEL_INT_ON_EVENT, SEL_TAG_FN(lf_on_event));
     set(&g_hooks[3], SEL_INT_POLL, SEL_TAG_FN(lf_poll));
     set(&g_hooks[4], SEL_INT_CLOSE, SEL_TAG_FN(lf_close));
-    set(&g_hooks[5], SEL_TAG_END, 0);
+    set(&g_hooks[5], SEL_INT_LOGIN, SEL_TAG_FN(lf_login));
+    set(&g_hooks[6], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_INTEGRATION);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "lastfm");

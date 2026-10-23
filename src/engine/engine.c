@@ -230,6 +230,7 @@ typedef struct sel_slot {
 struct sel_engine {
     const sel_host* host;
     sel_host rp_host;               /* copy of host whose config_get answers per-replayer options (I134) */
+    sel_host pl_host;               /* copy of host whose config_get answers engine prefs first (I177b) */
     char rp_song_config[256];       /* per-song override list "plugin.key=value,...", read from the library DB sticker rp.config at OPEN (D-M2-8, I170) */
     char hist_key[SEL_DEFERRED_PATH_MAX + 8]; /* key of the song being played, "" none: its end or skip goes to the history table (I170) */
     char vote_song[SEL_DEFERRED_PATH_MAX + 8]; /* song key of the last VOTE request: the count the service answers is stored under it (I174a) */
@@ -1419,6 +1420,14 @@ static const char* rp_config_get(const sel_host* h, const char* key, const char*
         have = 1;
     }
     if (have) return e->rp_value;
+    return e->host->config_get != NULL ? e->host->config_get(e->host, key, def) : def;
+}
+
+/* host->config_get handed to integrations (I177b): a set engine pref beats whatever the real host answers. */
+static const char* pl_config_get(const sel_host* h, const char* key, const char* def) {
+    const sel_engine* e = (const sel_engine*)h->ctx;
+    int id = sel_prefs_find(key);
+    if (id >= 0 && e->prefs.value[id][0] != '\0') return e->prefs.value[id];
     return e->host->config_get != NULL ? e->host->config_get(e->host, key, def) : def;
 }
 
@@ -4282,6 +4291,9 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     e->rp_host = *host;
     e->rp_host.config_get = rp_config_get;
     e->rp_host.ctx = e;
+    e->pl_host = *host;
+    e->pl_host.config_get = pl_config_get;
+    e->pl_host.ctx = e;
     e->state.volume = 100;
     sel_loudness_gain_set(&e->loud, 0, SEL_GAIN_UNITY);
     sel_timer_init(&e->timer);
@@ -4658,6 +4670,10 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
 
 const sel_state* sel_engine_state(const sel_engine* e) {
     return &e->state;
+}
+
+const sel_host* sel_engine_plugin_host(const sel_engine* e) {
+    return &e->pl_host;
 }
 
 void sel_engine_set_mix(sel_engine* e, uint32_t rate, uint32_t resampler) {

@@ -63,6 +63,7 @@ static int usage(FILE* to) {
           "  userdata --db <p> [--catalogue <tsv>] [--note <song> <text>] [--tag <song> <field> <value>] [--wrong <song> <note>]  notes, tag edits, row counts (T78)\n"
           "  wrong [--db <p>] [--export <file>] [<song> [<note>]]  flag a song as sounding wrong, export sounds-wrong.txt (T78)\n"
           "  devilbox login <user> [--password-stdin] [--config-dir <dir>]  log in to DEViLBOX, store the token (password from stdin) (I173)\n"
+          "  lastfm login [--config-dir <dir>]  authorise the last.fm scrobbler, store the session key in prefs.conf (I177b)\n"
           "  record <url> <file> [--bytes N] [--seconds S]  stream-to-disk: write the raw stream bytes as they arrive\n"
           "  fetch <url> [--method M] [--range a-b] [--out file]  one HTTP request, print http_status= and net counters\n"
           "  share make song|playlist|view ...  build a share link, print both forms and the parse round trip (T84)\n"
@@ -651,7 +652,7 @@ static int cmd_script_file(FILE* f, int argc, char** argv) {
         }
     }
     if (int_id != NULL) {
-        g_int = sel_int_session_open(e, sel_host_default(), int_id, print_event, NULL);
+        g_int = sel_int_session_open(e, int_id, print_event, NULL);
         if (g_int == NULL) {
             fprintf(stderr, "selecta-cli: integration '%s' is not registered\n", int_id);
             fclose(f);
@@ -1077,6 +1078,9 @@ int main(int argc, char** argv)
     }
     if (strcmp(cmd, "devilbox") == 0) {
         return sel_cli_devilbox(argc - 2, argv + 2);
+    }
+    if (strcmp(cmd, "lastfm") == 0) {
+        return sel_cli_lastfm(argc - 2, argv + 2);
     }
     if (strcmp(cmd, "fetch") == 0) {
         return sel_cli_fetch(argc - 2, argv + 2);

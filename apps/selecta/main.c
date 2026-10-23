@@ -309,7 +309,7 @@ int main(int argc, char** argv)
     }
 #endif
     if (strcmp(int_id, "none") != 0) {
-        isess = sel_int_session_open(e, host, int_id, sink, ctx);
+        isess = sel_int_session_open(e, int_id, sink, ctx);
         if (isess == NULL) {
             fprintf(stderr, "selecta: integration '%s' is not available\n", int_id);
         }

@@ -83,10 +83,13 @@ static void session_md5_hex(void* ctx, const void* data, size_t len, char out[33
     sel_md5_hex(&m, out);
 }
 
-sel_int_session* sel_int_session_open(sel_engine* e, const sel_host* host, const char* id,
-                                      sel_int_sink sink, void* sink_ctx) {
+static const sel_tag* plugin_hooks(const char* id) {
     const sel_tag* desc = sel_registry_find(SEL_PLUGIN_KIND_INTEGRATION, id);
-    const sel_tag* hooks = desc != NULL ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
+    return desc != NULL ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
+}
+
+sel_int_session* sel_int_session_open(sel_engine* e, const char* id, sel_int_sink sink, void* sink_ctx) {
+    const sel_tag* hooks = plugin_hooks(id);
     sel_int_session* s;
     sel_int_open_fn open;
     if (hooks == NULL) {
@@ -108,12 +111,25 @@ sel_int_session* sel_int_session_open(sel_engine* e, const sel_host* host, const
     s->on_event = (sel_int_on_event_fn)sel_tag_find(hooks, SEL_INT_ON_EVENT, 0);
     s->poll = (sel_int_poll_fn)sel_tag_find(hooks, SEL_INT_POLL, 0);
     s->close = (sel_int_close_fn)sel_tag_find(hooks, SEL_INT_CLOSE, 0);
-    s->state = open(host, &s->ih);
+    s->state = open(sel_engine_plugin_host(e), &s->ih);
     if (s->state == NULL) {
         free(s);
         return NULL;
     }
     return s;
+}
+
+int sel_int_login(sel_engine* e, const char* id, const char* token, char* out, size_t cap) {
+    const sel_tag* hooks = plugin_hooks(id);
+    sel_int_login_fn login = hooks != NULL ? (sel_int_login_fn)sel_tag_find(hooks, SEL_INT_LOGIN, 0) : NULL;
+    sel_int_host ih;
+    if (login == NULL) {
+        return -1;
+    }
+    memset(&ih, 0, sizeof ih); /* no session: send_command stays NULL */
+    ih.http_post = session_http_post;
+    ih.md5_hex = session_md5_hex;
+    return login(sel_engine_plugin_host(e), &ih, token, out, cap);
 }
 
 void sel_int_session_event(sel_int_session* s, const sel_message* evt) {

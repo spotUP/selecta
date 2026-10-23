@@ -32,6 +32,12 @@ typedef void (*sel_int_on_event_fn)(void* state, const sel_message* evt,
                                     const sel_state* snapshot);                   /* INT_ON_EVENT */
 typedef void (*sel_int_poll_fn)(void* state);                                     /* INT_POLL */
 typedef void (*sel_int_close_fn)(void* state);                                    /* INT_CLOSE */
+/* INT_LOGIN (optional): one step of the service's account login, run without a session. token NULL asks the
+ * service for a request token and writes "token=<t> url=<page where the person authorises it>"; a token asks for
+ * the session that token grants and writes "session=<key> user=<name>". 0 on success; on failure `out` holds the
+ * reason. Configuration (API key, secret, endpoint) comes from host->config_get like INT_OPEN. */
+typedef int (*sel_int_login_fn)(const sel_host* host, const sel_int_host* ih, const char* token, char* out,
+                                size_t cap);
 
 SEL_EXTERN_C_END
 

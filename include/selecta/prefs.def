@@ -45,3 +45,10 @@ SEL_PREF(LIBRARY_VOTE_TOKEN, "library.vote_token", "",                          
 SEL_PREF(LIBRARY_LYRICS,     "library.lyrics_online", "on",                                       SEL_PREF_PLAIN)
 SEL_PREF(LIBRARY_SMART_VIEW, "library.smart_playlist", "smart",                                   SEL_PREF_PLAIN)
 SEL_PREF(LIBRARY_SMART_TOP,  "library.smart_top",  "3",                                           SEL_PREF_PLAIN)
+#ifndef __amigaos__
+/* last.fm scrobbler (I177, I177b; plugins/integrations/lastfm): API key, shared secret and the session key that
+ * `selecta-cli lastfm login` stores. Empty: the plugin falls back to SELECTA_LASTFM_* in the environment. */
+SEL_PREF(SCROBBLE_LASTFM_KEY,     "scrobble.lastfm_key",     "",                                  SEL_PREF_PLAIN)
+SEL_PREF(SCROBBLE_LASTFM_SECRET,  "scrobble.lastfm_secret",  "",                                  SEL_PREF_PLAIN)
+SEL_PREF(SCROBBLE_LASTFM_SESSION, "scrobble.lastfm_session", "",                                  SEL_PREF_PLAIN)
+#endif
