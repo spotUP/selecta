@@ -91,6 +91,9 @@ SEL_TAG(OUT, STAT_P14_FRAMES,  0x2015, INT) /* paula14 outputs: frames split int
 SEL_TAG(OUT, STAT_P14_MAX_ERR, 0x2016, INT) /* paula14 outputs: worst split error over every s16 input, 14-bit LSB */
 SEL_TAG(OUT, STAT_P14_HASH,    0x2017, STR) /* paula14 outputs: FNV-1a of the split channel bytes, 8 lowercase hex digits */
 SEL_TAG(OUT, STAT_P14_BUFS,    0x2018, INT) /* paula14 outputs: chip buffer swaps */
+/* CLOCKLESS: 1 = the sink has no clock of its own; the caller paces it and OUT_PUMP pulls on the caller's thread,
+ * which therefore is not marked as the audio thread (I64, I216). Absent = the output plays from its own clock. */
+SEL_TAG(OUT, CLOCKLESS,        0x2019, INT)
 
 /* DSP plugin rows (design doc section 5, include/selecta/dsp.h). */
 SEL_TAG(DSP, NAME,             0x3000, STR)

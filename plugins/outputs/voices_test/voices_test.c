@@ -108,7 +108,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[7], SEL_OUT_PUMP, SEL_TAG_FN(vt_pump));
     set(&g_hooks[8], SEL_OUT_STATS, SEL_TAG_FN(vt_stats));
     set(&g_hooks[9], SEL_OUT_VOICES, (uintptr_t)&g_voices_marker);
-    set(&g_hooks[10], SEL_TAG_END, 0);
+    set(&g_hooks[10], SEL_OUT_CLOCKLESS, 1);
+    set(&g_hooks[11], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_OUTPUT);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "voices-test");

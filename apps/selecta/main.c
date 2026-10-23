@@ -59,7 +59,7 @@ static int g_mark_audio;
 
 static uint32_t audio_pull(void* ctx, int16_t* stereo, uint32_t frames) {
     static int marked;
-    if (g_mark_audio && !marked) { /* the null output pumps on the main thread */
+    if (g_mark_audio && !marked) { /* a clockless output pumps on the main thread */
         sel_engine_mark_audio_thread((sel_engine*)ctx);
         marked = 1;
     }
@@ -161,6 +161,7 @@ int main(int argc, char** argv)
     sel_library* library = NULL;
     int a;
     int is_null = strcmp(out_id, "null") == 0;
+    int clockless;
     const sel_tag* oh;
     const sel_tag* uh;
     sel_engine_config cfg;
@@ -217,6 +218,7 @@ int main(int argc, char** argv)
     out_close = (sel_out_close_fn)sel_tag_find(oh, SEL_OUT_CLOSE, 0);
     out_set_source = (sel_out_set_source_fn)sel_tag_find(oh, SEL_OUT_SET_SOURCE, 0);
     out_pump = (sel_out_pump_fn)sel_tag_find(oh, SEL_OUT_PUMP, 0);
+    clockless = sel_tag_find(oh, SEL_OUT_CLOCKLESS, 0) != 0;
     ui_open = (sel_ui_open_fn)sel_tag_find(uh, SEL_UI_OPEN, 0);
     g_on_event = (sel_ui_on_event_fn)sel_tag_find(uh, SEL_UI_ON_EVENT, 0);
     ctx[0] = NULL;
@@ -272,7 +274,7 @@ int main(int argc, char** argv)
         sel_engine_destroy(e);
         return 77;
     }
-    g_mark_audio = !is_null;
+    g_mark_audio = !clockless;
     out_set_source(out, audio_pull, e);
 
     memset(&args, 0, sizeof args);
@@ -345,16 +347,16 @@ int main(int argc, char** argv)
         }
     }
 
-    /* The null output has no clock: each turn pumps exactly one UI_WAIT's worth
+    /* A clockless output (null, wav): each turn pumps exactly one UI_WAIT's worth
      * of frames, so a run is deterministic. A real output paces the loop. */
-    while ((r = ui_wait(ui, is_null ? SHELL_TURN_MS : 0u)) >= 0) {
+    while ((r = ui_wait(ui, clockless ? SHELL_TURN_MS : 0u)) >= 0) {
         waits++;
         out_pump(out, SHELL_RATE * SHELL_TURN_MS / 1000u);
         sel_engine_pump(e, sink, ctx);
         sel_int_session_poll(isess);
 #ifndef SEL_NO_CONTROL_SOCKET
         if (ctl_fd >= 0) {
-            socket_cmds += (unsigned)sel_ctl_serve(ctl_fd, is_null ? SHELL_TURN_MS : 0u, ctl_handle, &cc);
+            socket_cmds += (unsigned)sel_ctl_serve(ctl_fd, clockless ? SHELL_TURN_MS : 0u, ctl_handle, &cc);
         }
 #endif
     }
