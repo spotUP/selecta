@@ -958,7 +958,7 @@ if(NOT SEL_AMIGA)
     COMMAND sh m3/library_search.sh $<TARGET_FILE:selecta-cli>
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/search_prefix.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/search_prefix.golden
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-  set_tests_properties(library-search-long-prefix PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_searches=10")
+  set_tests_properties(library-search-long-prefix PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_searches=16")
 
   # T96 desktop half: export-index plus read-only ATTACH next to a user DB (I197, D-M3-16).
   add_test(NAME library-index-attach

@@ -127,29 +127,75 @@ static void fts_tok_free(void* p) {
 }
 
 /* fts5_api through `SELECT fts5(?1)` with a pointer binding, then the unicode61 tokenizer. */
-static int register_fts_prefix(sqlite3* db) {
-    fts_tok* t = (fts_tok*)sqlite3_malloc((int)sizeof *t);
+static int fts_open(sqlite3* db, fts_tok* t) {
     sqlite3_stmt* st = NULL;
     void* ctx = NULL;
-    int ok = 0;
 
-    if (t == NULL) {
-        return 0;
-    }
     memset(t, 0, sizeof *t);
     if (sqlite3_prepare_v2(db, "SELECT fts5(?1)", -1, &st, NULL) == SQLITE_OK) {
         sqlite3_bind_pointer(st, 1, (void*)&t->api, "fts5_api_ptr", NULL);
         sqlite3_step(st);
     }
     sqlite3_finalize(st);
-    if (t->api != NULL && t->api->xFindTokenizer(t->api, "unicode61", &ctx, &t->tm) == SQLITE_OK &&
-        t->tm.xCreate(ctx, NULL, 0, &t->tok) == SQLITE_OK) {
-        ok = sqlite3_create_function_v2(db, "sel_fts_prefix", -1, SQLITE_UTF8 | SQLITE_DETERMINISTIC, t,
-                                        fts_prefix_fn, NULL, NULL, fts_tok_free) == SQLITE_OK;
-        return ok;
+    return t->api != NULL && t->api->xFindTokenizer(t->api, "unicode61", &ctx, &t->tm) == SQLITE_OK &&
+           t->tm.xCreate(ctx, NULL, 0, &t->tok) == SQLITE_OK;
+}
+
+static int register_fts_prefix(sqlite3* db) {
+    fts_tok* t = (fts_tok*)sqlite3_malloc((int)sizeof *t);
+
+    if (t == NULL) {
+        return 0;
+    }
+    if (fts_open(db, t)) {
+        return sqlite3_create_function_v2(db, "sel_fts_prefix", -1, SQLITE_UTF8 | SQLITE_DETERMINISTIC, t,
+                                          fts_prefix_fn, NULL, NULL, fts_tok_free) == SQLITE_OK;
     }
     sqlite3_free(t);
     return 0;
+}
+
+/* The tokens unicode61 makes of a query word (I198d). A non-ASCII word folds (e with an acute accent becomes e),
+ * so its length is the length of the folded token in characters, not the bytes typed; a word of punctuation
+ * only makes no token at all. The same tokenizer as the index and sel_fts_prefix(), so the three agree. */
+static int fts_fold_word(sqlite3* db, const char* w, size_t len, fts_words* out) {
+    fts_tok t;
+    fts_scan sc;
+    int rc;
+
+    memset(out, 0, sizeof *out);
+    if (!fts_open(db, &t)) {
+        return 0;
+    }
+    memset(&sc, 0, sizeof sc);
+    sc.collect = out;
+    rc = t.tm.xTokenize(t.tok, &sc, FTS5_TOKENIZE_DOCUMENT, w, (int)len, fts_word_cb);
+    t.tm.xDelete(t.tok);
+    return rc == SQLITE_OK || rc == SQLITE_DONE;
+}
+
+/* Characters (UTF-8 code points) in n bytes. */
+static int utf8_chars(const char* s, int n) {
+    int c = 0, i;
+
+    for (i = 0; i < n; i++) {
+        c += ((unsigned char)s[i] & 0xC0) != 0x80;
+    }
+    return c;
+}
+
+/* Bytes of the first k characters of s (n bytes). */
+static int utf8_prefix_bytes(const char* s, int n, int k) {
+    int i = 0;
+
+    while (i < n && k > 0) {
+        i++;
+        while (i < n && ((unsigned char)s[i] & 0xC0) == 0x80) {
+            i++;
+        }
+        k--;
+    }
+    return i;
 }
 
 int sel_library_register_regexp(sqlite3* db) {
@@ -198,7 +244,18 @@ static void set_sql_error(sel_lib_job* job, sqlite3* db) {
     set_error(job, (rc & 0xff) == SQLITE_NOMEM ? "out_of_memory" : "bad_value");
 }
 
-/* Bare words: letters, digits, `_` and blanks only, and none of the query operators. */
+/* Bare words: letters, digits, `_`, non-ASCII (UTF-8) characters and blanks only, and none of the query operators. */
+static int word_is_ascii(const char* w, size_t n) {
+    size_t i;
+
+    for (i = 0; i < n; i++) {
+        if ((unsigned char)w[i] >= 0x80) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int is_bare_words(const char* t) {
     int words = 0;
     int in_word = 0;
@@ -206,7 +263,8 @@ static int is_bare_words(const char* t) {
 
     for (; *t != '\0'; t++) {
         char c = *t;
-        int alnum = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+        int alnum = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' ||
+                    (unsigned char)c >= 0x80;
         if (alnum) {
             if (!in_word) {
                 w = t;
@@ -226,6 +284,25 @@ static int is_bare_words(const char* t) {
         return 0;
     }
     return words > 0;
+}
+
+/* A query of punctuation only (no letter, digit, non-ASCII character, quote, bracket, `:` or `/`) tokenizes to
+ * nothing, so no row can match it (I198d). */
+static int punct_only(const char* t) {
+    int any = 0;
+
+    for (; *t != '\0'; t++) {
+        unsigned char c = (unsigned char)*t;
+        if (c == ' ') {
+            continue;
+        }
+        if (c >= 0x80 || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' ||
+            c == '"' || c == '(' || c == ')' || c == ':' || c == '/') {
+            return 0;
+        }
+        any = 1;
+    }
+    return any;
 }
 
 /* Sorted hits come in pages (I198a): `ORDER BY key LIMIT n` keeps at most n rows in the sorter, and the
@@ -453,6 +530,10 @@ void sel_library_search(sel_library* lib, sel_lib_job* job) {
 
     job->count = job->truncated = job->used_fts = 0;
     job->error[0] = '\0';
+    if (punct_only(job->text)) {
+        collect_meta(lib, job);
+        return;
+    }
     if (is_bare_words(job->text)) {
         const char* p = job->text;
         size_t o = 0;
@@ -472,6 +553,36 @@ void sel_library_search(sel_library* lib, sel_lib_job* job) {
                 len = sizeof match - o - 6;
             }
             keep = len;
+            if (!word_is_ascii(w, len)) {
+                /* Non-ASCII: the folded tokens decide (I198d). One character after folding is a per-row check,
+                 * as for one ASCII letter; longer than 3 searches the first 3 characters of the token. No token
+                 * at all (symbols) drops the word. */
+                fts_words fw;
+                int k;
+                if (!fts_fold_word(lib->db, w, len, &fw)) {
+                    fw.n = 0;
+                }
+                for (k = 0; k < fw.n; k++) {
+                    int nc = utf8_chars(fw.w[k], fw.len[k]);
+                    int kb = nc > 3 ? utf8_prefix_bytes(fw.w[k], fw.len[k], 3) : fw.len[k];
+                    if ((nc == 1 || nc > 3) && nlong + (size_t)fw.len[k] + 1 < sizeof lib->fts_long) {
+                        memcpy(lib->fts_long + nlong, fw.w[k], (size_t)fw.len[k]);
+                        nlong += (size_t)fw.len[k];
+                        lib->fts_long[nlong++] = ' ';
+                        lib->fts_long[nlong] = '\0';
+                    }
+                    if (nc != 1 && o + (size_t)kb + 4 < sizeof match) {
+                        match[o++] = '"';
+                        memcpy(match + o, fw.w[k], (size_t)kb);
+                        o += (size_t)kb;
+                        match[o++] = '"';
+                        match[o++] = '*';
+                        match[o++] = ' ';
+                        nterms++;
+                    }
+                }
+                continue;
+            }
             if (len == 1 && nlong + 2 < sizeof lib->fts_long) {
                 /* No prefix index covers one letter: FTS5 would merge every doclist of the letter in memory.
                  * The word leaves the MATCH and sel_fts_prefix() checks it against each row's tokens (I198c). */
@@ -497,6 +608,11 @@ void sel_library_search(sel_library* lib, sel_lib_job* job) {
             nterms++;
         }
         match[o] = '\0';
+        if (nterms == 0 && nlong == 0) {
+            /* every word tokenized to nothing: no row can match, and an empty MATCH is a syntax error */
+            collect_meta(lib, job);
+            return;
+        }
         job->used_fts = 1;
         snprintf(arm, sizeof arm,
                  "SELECT songs.key AS key FROM song_fts JOIN songs ON songs.id = song_fts.rowid"
