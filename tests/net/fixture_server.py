@@ -105,7 +105,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         hdrs = {k: self.headers[k] for k in KEEP_HEADERS if self.headers.get(k)}
         entry = {"method": self.command, "host": host, "path": self.path, "headers": hdrs,
                  "body_sha256": hashlib.sha256(body).hexdigest(), "body_len": len(body)}
-        if self.command == "POST":
+        if self.command in ("POST", "PUT"):
             entry["body"] = body[:4096].decode("latin-1")
         self.entry = entry
         self.route(host, parsed, entry)
@@ -114,6 +114,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         routes = load_routes(host)
         key_q = parsed.path + ("?" + parsed.query if parsed.query else "")
         route = routes.get(key_q) or routes.get(parsed.path)
+        if isinstance(route, list):  # one entry per method: the first whose key_method matches (I188)
+            route = next((x for x in route if x.get("key_method", self.command) == self.command), None)
         route = dict(route) if route else {}
         if "key_method" in route and route["key_method"] != self.command:
             route = {}

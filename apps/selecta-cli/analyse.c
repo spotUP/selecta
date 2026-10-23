@@ -8,6 +8,7 @@
 
 #include "cli.h"
 #include "db.h"
+#include "devilbox_loudness.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -237,4 +238,107 @@ int sel_cli_library_analyse(int argc, char** argv) {
     sel_engine_destroy(e);
     sel_library_close(lib);
     return sink.failed || bad > 0 ? 1 : 0;
+}
+
+/* loudness [--db <p>] [--machine <name>] [--config-dir <dir>] <song> (I188, T90 fetch part, D-M3-9, D-M3-13): the
+ * gain of one song, in the order stored gain, DEViLBOX GET /api/loudness/<md5>, local analysis (desktop only; a
+ * fake Amiga machine never analyses). A local analysis is submitted with one PUT when <config>/devilbox.token
+ * exists. Prints loudness_source=stored|devilbox|analysis|none gain_cdb= hash= loudness_get= loudness_put=. */
+static const char* put_state(int status, int have_token, int attempted) {
+    if (!attempted) return "none";
+    if (!have_token) return "skipped_no_token";
+    return status == 200 ? "ok" : "failed";
+}
+
+int sel_cli_loudness(int argc, char** argv) {
+    const sel_host* host = sel_host_default();
+    const char* db_path = ":memory:";
+    const char* song = NULL;
+    const char* config_arg = NULL;
+    const char* source = "none";
+    int amiga = 0, i, have_token = 0, put_status = 0, attempted = 0, missing = 0;
+    unsigned requests = 0;
+    char key[1100], path[1100], hash[33], config[1024], token[900];
+    int32_t gain = 0;
+    sel_dvb_loudness_status got = SEL_DVB_LOUDNESS_MISSING;
+    analyse_sink sink;
+    sel_library* lib;
+    sel_engine* e;
+
+    for (i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "--db") == 0 && i + 1 < argc) {
+            db_path = argv[++i];
+        } else if (strcmp(argv[i], "--machine") == 0 && i + 1 < argc) {
+            amiga = sel_machine_fake(argv[++i]) != NULL;
+        } else if (strcmp(argv[i], "--config-dir") == 0 && i + 1 < argc) {
+            config_arg = argv[++i];
+        } else if (song == NULL && argv[i][0] != '-') {
+            song = argv[i];
+        } else {
+            song = NULL;
+            break;
+        }
+    }
+    if (song == NULL) {
+        fputs("usage: selecta-cli loudness [--db <path>] [--machine <name>] [--config-dir <dir>] <song>\n", stderr);
+        return 2;
+    }
+    snprintf(key, sizeof key, strncmp(song, "local:", 6) == 0 ? "%s" : "local:%s", song);
+    snprintf(path, sizeof path, "%s", key + 6);
+    if (!sel_dvb_loudness_file_hash(path, hash)) {
+        fprintf(stderr, "loudness: cannot read %s\n", path);
+        return 1;
+    }
+#if defined(SEL_NO_ANALYSE)
+    amiga = 1;
+#endif
+    memset(&sink, 0, sizeof sink);
+    e = open_engine(host, db_path, &lib);
+    if (e == NULL) return 1;
+    if (sel_library_loudness_get(lib, key, &gain)) {
+        source = "stored";
+    } else {
+        sel_dvb_loudness fetched;
+
+        got = sel_dvb_loudness_get(hash, &fetched, &requests);
+        if (got == SEL_DVB_LOUDNESS_HIT) {
+            gain = sel_dvb_loudness_gain_cdb(fetched.lufs_cdb);
+            sel_library_loudness_set(lib, key, path, gain);
+            source = "devilbox";
+        } else if (got == SEL_DVB_LOUDNESS_MISSING) {
+            missing = 1;
+        }
+    }
+    if (strcmp(source, "none") == 0 && !amiga) {
+        if (send_analyse(e, key, &sink) && sel_library_loudness_get(lib, key, &gain)) {
+            sel_engine_stats st;
+            sel_dvb_loudness mine;
+
+            source = "analysis";
+            sel_engine_stats_get(e, &st);
+            mine.lufs_cdb = st.analyse_lufs_cdb;
+            mine.peak_cdb = st.analyse_peak_cdb;
+            mine.r128 = (int)st.analyse_gated;
+            mine.count = 0;
+            if (got != SEL_DVB_LOUDNESS_MISSING) {
+                attempted = 1;
+                if (config_arg != NULL) {
+                    snprintf(config, sizeof config, "%s", config_arg);
+                } else if (!sel_config_dir(config, sizeof config)) {
+                    config[0] = '\0';
+                }
+                have_token = sel_dvb_loudness_token_read(config, token, sizeof token);
+                if (have_token) put_status = sel_dvb_loudness_put(hash, token, &mine, "selecta-r128");
+            }
+        } else {
+            sink.failed = 1;
+        }
+    }
+    printf("loudness_source=%s gain_cdb=%d hash=%s loudness_get=%u loudness_put=%s", source, (int)gain, hash, requests,
+           put_state(put_status, have_token, attempted));
+    if (missing) fputs(" devilbox_missing=loudness", stdout);
+    fputc('\n', stdout);
+    sel_engine_destroy(e);
+    sel_library_close(lib);
+    return sink.failed ? 1 : 0;
 }
