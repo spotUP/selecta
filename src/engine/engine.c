@@ -21,6 +21,7 @@
 #include "mixer.h"
 #include "dsp_chain.h"
 #include "pitch_table.h"
+#include "xfade_table.h"
 #include "history.h"
 #include "queue.h"
 #include "playlist/playlist.h"
@@ -191,6 +192,14 @@ struct sel_engine {
     uint32_t fade_ms; /* 0..30000 */
     uint32_t max_song_ms;
     uint32_t silence_ms;
+    uint32_t crossfade_ms; /* 0..10000, 0: gapless */
+    /* Next song, prepared in the idle slot (plan M1.3 I95). nx and the xf_* fields belong to
+     * the audio thread; nx_slot, nx_id and nx_qver to the pump. */
+    uint32_t nx;                 /* audio: prepared incoming slot, or NONE */
+    uint32_t xf_on, xf_pos, xf_total; /* audio: crossfade running, frames done, frames in all */
+    volatile uint32_t xf_reason; /* audio writes before the switch: end reason of the old song */
+    uint32_t nx_slot, nx_id, nx_qver; /* pump: slot, queue entry id and queue version of the prepared song */
+    uint32_t xfade_frames, slots_mixed; /* audio: counters for @stats */
     sel_slot slot[SEL_SLOT_COUNT];
     sel_spsc swap_q;                /* pump -> audio: slot index to switch to */
     sel_spsc ret_q;                 /* audio -> pump: slot index to close */
@@ -536,7 +545,16 @@ static void cmd_TEMPO(sel_engine* e, const sel_message* m) {
 }
 
 static void cmd_OUTPUT(sel_engine* e, const sel_message* m) {
+    uint32_t i, n = e->registry_count != NULL && e->registry_get != NULL ? e->registry_count() : 0;
     copy_str(e->state.output, SEL_OUTPUT_NAME_MAX, m->args[0].v.s);
+    for (i = 0; i < n; i++) { /* the output's capability decides the path (SEL_OUT_VOICES: no mixing) */
+        const sel_tag* desc = e->registry_get(i);
+        const char* pid = (const char*)sel_tag_find(desc, SEL_PLUGIN_ID, 0);
+        if (sel_tag_find(desc, SEL_PLUGIN_KIND, 0) == SEL_PLUGIN_KIND_OUTPUT && pid != NULL &&
+            strcmp(pid, m->args[0].v.s) == 0) {
+            e->mixed_path = sel_tag_find((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0), SEL_OUT_VOICES, 0) == 0;
+        }
+    }
     changed(e, PENDING_OUTPUT);
 }
 
@@ -601,12 +619,23 @@ static int policy_option(sel_engine* e, sel_option_id id, const char* value) {
         }
         e->silence_ms = n;
         return 1;
+    case SEL_OPT_CROSSFADE:
+        if (!parse_uint(value, 10000u, &n)) {
+            return 0;
+        }
+        e->crossfade_ms = n;
+        return 1;
     default:
         return 1;
     }
 }
 
 static void set_option(sel_engine* e, sel_option_id id, const char* value) {
+    if (id == SEL_OPT_CROSSFADE && !e->mixed_path && strcmp(value, "0") != 0) {
+        /* A Paula-direct output owns its voices: two songs cannot be mixed (plan M1.3 I95). */
+        sel_engine_report_error(e, "unsupported_path", "OPTION");
+        return;
+    }
     if (!policy_option(e, id, value)) {
         sel_engine_report_error(e, "range", k_option_names[id]);
         return;
@@ -971,7 +1000,7 @@ static uint32_t skip_frames(sel_slot* sl, uint32_t target) {
  * read, RP_OPEN and RP_START happen here) and publishes it through the swap
  * ring. On failure the slot stays free and the error is reported. */
 static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t subsong,
-                        uint32_t skip_ms, const char* err_detail) {
+                        uint32_t skip_ms, const char* err_detail, uint32_t queued) {
     sel_slot* sl = &e->slot[idx];
     sel_song_source src;
     const sel_tag* hooks;
@@ -1062,9 +1091,11 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     memset(&sw, 0, sizeof sw);
     sw.kind = SEL_MSG_CMD;
     sw.id = SEL_RING_SWAP;
-    sw.argc = 1;
+    sw.argc = 2;
     sw.args[0].type = SEL_ARG_UINT;
     sw.args[0].v.u = idx;
+    sw.args[1].type = SEL_ARG_UINT;
+    sw.args[1].v.u = queued; /* 0: switch now, 1: keep as the next song, 2: drop the next song */
     if (!sel_spsc_push(&e->swap_q, &sw)) {
         close_slot(e, sl);
         sel_engine_report_error(e, "start_failed", err_detail);
@@ -1072,6 +1103,8 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     }
     return 1;
 }
+
+static void cancel_next(sel_engine* e);
 
 /* One song change (SEL_BEGIN_*). Both slots busy means the audio thread has
  * not yet returned the old one: the request waits for the next pump. Returns
@@ -1083,6 +1116,7 @@ static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t s
                          : kind == SEL_BEGIN_SUBSONG ? "SUBSONG"
                          : kind == SEL_BEGIN_SEEK    ? "SEEK"
                                                      : "PREV";
+    cancel_next(e);
     reclaim_slots(e);
     if (!find_free_slot(e, &idx)) {
         size_t n = strlen(path);
@@ -1098,7 +1132,7 @@ static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t s
         return 1;
     }
     e->deferred = 0;
-    if (!prepare_slot(e, idx, path, subsong, kind == SEL_BEGIN_SEEK ? seek_to : 0, detail)) {
+    if (!prepare_slot(e, idx, path, subsong, kind == SEL_BEGIN_SEEK ? seek_to : 0, detail, 0)) {
         return 0;
     }
     e->cur = idx;
@@ -1407,6 +1441,105 @@ static uint32_t queue_next_index(sel_engine* e) {
         return SEL_QUEUE_NONE;
     }
     return next;
+}
+
+/* Early prepare (plan M1.3 I95): drops the prepared next song. The audio thread returns
+ * its slot; when it already switched to it the song simply plays on. */
+static void cancel_next(sel_engine* e) {
+    if (e->nx_slot == SEL_SLOT_NONE) {
+        e->nx_id = 0;
+        return;
+    }
+    if (e->audio_slot != e->nx_slot && e->slot[e->nx_slot].busy) {
+        sel_message sw;
+        memset(&sw, 0, sizeof sw);
+        sw.kind = SEL_MSG_CMD;
+        sw.id = SEL_RING_SWAP;
+        sw.argc = 2;
+        sw.args[0].type = SEL_ARG_UINT;
+        sw.args[0].v.u = e->nx_slot;
+        sw.args[1].type = SEL_ARG_UINT;
+        sw.args[1].v.u = 2u;
+        sel_spsc_push(&e->swap_q, &sw);
+    }
+    e->nx_slot = SEL_SLOT_NONE;
+    e->nx_id = 0;
+}
+
+/* The audio thread switched to the prepared song: the old one ended, the new one opens. */
+static void commit_next(sel_engine* e) {
+    sel_message ev;
+    uint32_t idx = sel_queue_index_of(&e->queue, e->nx_id);
+    sel_slot* sl = &e->slot[e->nx_slot];
+    evt_init(&ev, SEL_EVT_SONG_ENDED);
+    evt_str(&ev, k_end_reason_names[e->xf_reason < 5u ? e->xf_reason : (uint32_t)SEL_END_END]);
+    emit(e, &ev);
+    if (random_on(e) && idx < e->queue.count) {
+        order_mark(e, idx);
+    }
+    e->q_playing = e->nx_id;
+    if (idx < e->queue.count) {
+        e->q_hint = idx;
+    }
+    e->cur = e->nx_slot;
+    e->nx_slot = SEL_SLOT_NONE;
+    e->nx_id = 0;
+    e->songs_opened++;
+    e->song_over = 0;
+    evt_init(&ev, SEL_EVT_SONG_OPENED);
+    evt_tags(&ev, sl->rp_metadata ? sl->rp_metadata(sl->rp_state) : NULL);
+    emit(e, &ev);
+    emit_position(e, sl);
+}
+
+/* Prepares the next queue entry into the idle slot shortly before the current song ends
+ * (end of the fade, or of max_song_ms), so the switch is gapless or crossfaded. A song
+ * with no known end is prepared at once: no duration is used (plan Q20). */
+static void prepare_next(sel_engine* e) {
+    const sel_slot* sl;
+    uint32_t next, idx;
+    if (e->nx_slot != SEL_SLOT_NONE) {
+        if (e->queue.version != e->nx_qver || e->state.play == SEL_STOPPED || e->repeat == 1u || e->q_playing == 0 ||
+            strcmp(e->state.options[SEL_OPT_STOP_AFTER_CURRENT], "on") == 0) {
+            cancel_next(e);
+        }
+        return;
+    }
+    if (e->state.play != SEL_PLAYING || e->cur == SEL_SLOT_NONE || e->q_playing == 0 || e->repeat == 1u ||
+        e->audio_slot != e->cur || strcmp(e->state.options[SEL_OPT_STOP_AFTER_CURRENT], "on") == 0) {
+        return;
+    }
+    sl = &e->slot[e->cur];
+    if (sl->ended || e->deferred) {
+        return;
+    }
+    {
+        uint64_t lead = (uint64_t)(e->crossfade_ms + 2000u) * e->rate / 1000u;
+        uint64_t remain = ~(uint64_t)0;
+        if (sl->pol.fade_on) {
+            remain = sl->pol.fade_total - sl->pol.fade_pos;
+        } else if (e->max_song_ms != 0u) {
+            uint64_t end = (uint64_t)e->max_song_ms * e->rate / 1000u + (uint64_t)e->fade_ms * e->rate / 1000u;
+            remain = end > sl->song_frames ? end - sl->song_frames : 0u;
+        }
+        if (remain == ~(uint64_t)0 || remain > lead) { /* end unknown (no duration is used, Q20): no early prepare */
+            return;
+        }
+    }
+    next = queue_next_index(e);
+    if (next >= e->queue.count || !find_free_slot(e, &idx)) {
+        return;
+    }
+    if (e->nx_id == e->queue.entries[next].id && e->nx_qver == e->queue.version) {
+        return; /* this attempt failed already */
+    }
+    e->nx_id = e->queue.entries[next].id;
+    e->nx_qver = e->queue.version;
+    if (prepare_slot(e, idx, sel_queue_path(&e->queue, next),
+                     e->queue.entries[next].subsong_plus1 ? e->queue.entries[next].subsong_plus1 - 1u : SEL_SUBSONG_DEFAULT, 0,
+                     sel_queue_path(&e->queue, next), 1u)) {
+        e->nx_slot = idx;
+    }
 }
 
 static void cmd_NEXT(sel_engine* e, const sel_message* m) {
@@ -2057,6 +2190,10 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     copy_str(e->state.options[SEL_OPT_FADE_MS], SEL_OPTION_VALUE_MAX, "3000");
     copy_str(e->state.options[SEL_OPT_MAX_SONG_MS], SEL_OPTION_VALUE_MAX, "0");
     copy_str(e->state.options[SEL_OPT_SILENCE_MS], SEL_OPTION_VALUE_MAX, "5000");
+    copy_str(e->state.options[SEL_OPT_CROSSFADE], SEL_OPTION_VALUE_MAX, "0");
+    e->nx = SEL_SLOT_NONE;
+    e->nx_slot = SEL_SLOT_NONE;
+    e->state.mixed_path = 1;
     e->rate = 44100;
     e->mixed_path = 1;
     e->resampler = SEL_MIX_RESAMPLE_LINEAR;
@@ -2156,6 +2293,7 @@ static void refresh_snapshot(sel_engine* e) {
     const sel_slot* sl = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
     sel_song_state* song = &e->state.song;
     e->state.view = &e->view.pub;
+    e->state.mixed_path = e->mixed_path;
     if (sel_viz_acquire(&e->viz)) {
         sel_viz_analyse(&e->viz, (int)e->viz_spectrum);
     }
@@ -2195,10 +2333,15 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
     if (e->deferred) {
         begin_song(e, e->deferred, e->deferred_path, e->deferred_subsong, e->deferred_seek);
     }
+    if (e->nx_slot != SEL_SLOT_NONE && e->audio_slot == e->nx_slot) {
+        commit_next(e);
+    } else {
+        prepare_next(e);
+    }
     if (e->cur != SEL_SLOT_NONE) {
         sel_slot* sl = &e->slot[e->cur];
         int advanced = 0;
-        if (sl->ended && !sl->reported) {
+        if (sl->ended && !sl->reported && e->nx_slot == SEL_SLOT_NONE) {
             sel_message ev;
             uint32_t reason = sl->pol.reason != SEL_END_NONE ? sl->pol.reason : (uint32_t)SEL_END_END;
             uint32_t next;
@@ -2285,6 +2428,9 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->undo_depth = e->history.undo_count;
     out->redo_depth = e->history.redo_count;
     out->dsp_blocks = e->dsp.blocks;
+    out->xfade_frames = e->xfade_frames;
+    out->slots_mixed = e->slots_mixed;
+    out->mixed_path = e->mixed_path;
 }
 
 /* Closes one 20 ms block: reads and clears the mixer's per-voice taps, steps the
@@ -2433,31 +2579,23 @@ int sel_engine_fade(const sel_engine* e, uint32_t* pos, uint32_t* total) {
     return 1;
 }
 
-uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
+/* Hands slot `idx` back to the pump (RP_CLOSE runs there). Audio thread. */
+static void return_slot(sel_engine* e, uint32_t idx) {
+    sel_message back;
+    memset(&back, 0, sizeof back);
+    back.kind = SEL_MSG_CMD;
+    back.id = SEL_RING_RETURN;
+    back.argc = 1;
+    back.args[0].type = SEL_ARG_UINT;
+    back.args[0].v.u = idx;
+    sel_spsc_push(&e->ret_q, &back);
+}
+
+/* Renders up to `frames` frames of one song into stereo, with the end policy applied;
+ * fewer frames mean the song ended. Audio thread. */
+static uint32_t render_slot(sel_engine* e, sel_slot* sl, int16_t* stereo, uint32_t frames) {
     uint32_t done = 0;
-    SEL_THREAD_AUDIO(e);
-    e->render_calls++;
-    if (stereo == NULL || frames == 0) {
-        return frames;
-    }
-    sel_message sw;
-    sel_slot* sl;
-    while (sel_spsc_pop(&e->swap_q, &sw)) {
-        if (e->act < SEL_SLOT_COUNT) {
-            sel_message back;
-            memset(&back, 0, sizeof back);
-            back.kind = SEL_MSG_CMD;
-            back.id = SEL_RING_RETURN;
-            back.argc = 1;
-            back.args[0].type = SEL_ARG_UINT;
-            back.args[0].v.u = e->act;
-            sel_spsc_push(&e->ret_q, &back);
-        }
-        e->act = sw.args[0].v.u;
-        e->audio_slot = e->act;
-    }
-    sl = e->act < SEL_SLOT_COUNT ? &e->slot[e->act] : NULL;
-    if (sl != NULL && e->state.play == SEL_PLAYING) {
+    {
         uint32_t want_mute = e->state.mute_mask;
         if (sl->rp_render == NULL) {
             sl->mixer.mute_mask = want_mute;
@@ -2526,10 +2664,130 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
                 sl->ended = 1;
             }
         }
-        if (e->state.volume != 100) {
-            uint32_t i;
-            for (i = 0; i < done * 2u; i++) {
-                stereo[i] = (int16_t)(((int32_t)stereo[i] * e->state.volume) / 100);
+    }
+    return done;
+}
+
+#define SEL_XF_BLOCK 512u
+
+/* The outgoing song ended (or its crossfade finished): the prepared song takes over. */
+static void switch_to_next(sel_engine* e) {
+    e->xf_reason = e->slot[e->act].pol.reason != SEL_END_NONE ? e->slot[e->act].pol.reason : (uint32_t)SEL_END_END;
+    return_slot(e, e->act);
+    e->act = e->nx;
+    e->nx = SEL_SLOT_NONE;
+    e->xf_on = 0;
+    e->audio_slot = e->act;
+}
+
+/* Mixes up to `frames` frames: the current song, then (gapless) the prepared song right
+ * after it, and during a crossfade both with an equal-power Q16 gain pair (design
+ * section 5). The outgoing song's own fade still multiplies, so the gain stays continuous. */
+static uint32_t render_mix(sel_engine* e, int16_t* stereo, uint32_t frames) {
+    static int16_t scratch[SEL_XF_BLOCK * 2u]; /* only the audio thread touches it */
+    uint32_t done = 0;
+    while (done < frames && e->act < SEL_SLOT_COUNT) {
+        sel_slot* sl = &e->slot[e->act];
+        uint32_t want = frames - done;
+        int16_t* out = stereo + (size_t)done * 2u;
+        uint32_t n;
+        if (e->nx < SEL_SLOT_COUNT && !e->xf_on && e->crossfade_ms != 0u && sl->pol.fade_on) {
+            uint32_t xf = (uint32_t)((uint64_t)e->crossfade_ms * e->rate / 1000u);
+            uint32_t rem = sl->pol.fade_total - sl->pol.fade_pos;
+            if (rem <= xf) {
+                e->xf_on = 1;
+                e->xf_pos = 0;
+                e->xf_total = rem;
+            } else if (rem - xf < want) {
+                want = rem - xf; /* the crossfade starts exactly where the remaining fade equals it */
+            }
+        }
+        if (e->xf_on) {
+            sel_slot* in = &e->slot[e->nx];
+            uint32_t i, m;
+            if (want > SEL_XF_BLOCK) {
+                want = SEL_XF_BLOCK;
+            }
+            if (want > e->xf_total - e->xf_pos) {
+                want = e->xf_total - e->xf_pos;
+            }
+            n = render_slot(e, sl, out, want);
+            m = render_slot(e, in, scratch, want);
+            for (i = n; i < want; i++) { /* a short outgoing song leaves silence under its tail */
+                out[i * 2u] = 0;
+                out[i * 2u + 1u] = 0;
+            }
+            for (i = m; i < want; i++) {
+                scratch[i * 2u] = 0;
+                scratch[i * 2u + 1u] = 0;
+            }
+            for (i = 0; i < want; i++) {
+                uint32_t idx = (uint32_t)(((uint64_t)(e->xf_pos + i) * SEL_XFADE_STEPS) / e->xf_total);
+                int32_t go = (int32_t)sel_xfade_out_q16[idx];
+                int32_t gi = (int32_t)sel_xfade_out_q16[SEL_XFADE_STEPS - idx];
+                out[i * 2u] = (int16_t)(((int32_t)out[i * 2u] * go + (int32_t)scratch[i * 2u] * gi) >> 16);
+                out[i * 2u + 1u] = (int16_t)(((int32_t)out[i * 2u + 1u] * go + (int32_t)scratch[i * 2u + 1u] * gi) >> 16);
+            }
+            e->xf_pos += want;
+            e->xfade_frames += want;
+            e->slots_mixed = 2u;
+            done += want;
+            if (e->xf_pos >= e->xf_total || sl->ended) {
+                switch_to_next(e);
+            }
+            continue;
+        }
+        n = render_slot(e, sl, out, want);
+        done += n;
+        if (sl->ended && e->nx < SEL_SLOT_COUNT) {
+            switch_to_next(e); /* gapless: the next song fills the rest of this block */
+        } else if (n < want) {
+            break;
+        }
+    }
+    if (done != 0u && e->slots_mixed == 0u) {
+        e->slots_mixed = 1u;
+    }
+    return done;
+}
+
+uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
+    uint32_t done = 0;
+    sel_message sw;
+    sel_slot* sl;
+    SEL_THREAD_AUDIO(e);
+    e->render_calls++;
+    if (stereo == NULL || frames == 0) {
+        return frames;
+    }
+    while (sel_spsc_pop(&e->swap_q, &sw)) {
+        uint32_t flag = sw.args[1].v.u;
+        if (flag == 1u) { /* keep as the next song */
+            e->nx = sw.args[0].v.u;
+        } else if (flag == 2u) { /* drop the next song */
+            if (e->nx == sw.args[0].v.u) {
+                return_slot(e, e->nx);
+                e->nx = SEL_SLOT_NONE;
+                e->xf_on = 0;
+            }
+        } else {
+            if (e->act < SEL_SLOT_COUNT) {
+                return_slot(e, e->act);
+            }
+            e->xf_on = 0;
+            e->act = sw.args[0].v.u;
+            e->audio_slot = e->act;
+        }
+    }
+    {
+        sl = e->act < SEL_SLOT_COUNT ? &e->slot[e->act] : NULL;
+        if (sl != NULL && e->state.play == SEL_PLAYING) {
+            done = render_mix(e, stereo, frames);
+            if (e->state.volume != 100) {
+                uint32_t i;
+                for (i = 0; i < done * 2u; i++) {
+                    stereo[i] = (int16_t)(((int32_t)stereo[i] * e->state.volume) / 100);
+                }
             }
         }
     }

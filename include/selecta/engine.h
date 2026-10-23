@@ -120,6 +120,7 @@ typedef struct sel_state {
     int32_t tempo_percent;      /* TEMPO: -50..100 */
     uint32_t pitch_q16;         /* 2^(pitch_cents / 1200), Q16 */
     uint32_t mute_mask;         /* bit k set: voice k + 1 is muted (MUTE, SOLO) */
+    uint32_t mixed_path;        /* 1: the engine mixes (DSP, crossfade); 0: the output plays voices itself */
 } sel_state;
 
 typedef struct sel_engine_config {
@@ -206,6 +207,9 @@ typedef struct sel_engine_stats {
     uint32_t songs_opened;        /* songs started by OPEN or the queue (T19) */
     uint32_t undo_depth, redo_depth; /* queue edits that UNDO / REDO can step over (T28) */
     uint32_t dsp_blocks;             /* render blocks that ran at least one DSP plugin (T47) */
+    uint32_t xfade_frames;           /* frames mixed with two songs at once (T44) */
+    uint32_t slots_mixed;            /* most songs mixed at once so far */
+    uint32_t mixed_path;             /* 1: the engine mixes, 0: the output owns voices */
 } sel_engine_stats;
 void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out);
 

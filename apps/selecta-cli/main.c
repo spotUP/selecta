@@ -267,6 +267,7 @@ static void print_event(void* ctx, const sel_message* evt) {
  *   @render N           render N frames on this thread, then pump and print
  *   @fade_mid           render until the end fade runs, then to its midpoint; print FADE gain_q16 pos total
  *   @render_until_end   render until SONG_ENDED is pumped; POSITION events
+ *   @stats              print STATS xfade_frames slots_mixed mixed_path (crossfade, T44)
  *                       before it are not printed (their count depends on
  *                       the song length)
  *   @position           SNAPSHOT position_ms=M order=O row=R pattern=P (song.pattern_pos)
@@ -347,6 +348,11 @@ static void script_directive(sel_engine* e, const char* line) {
                 }
             }
         }
+    } else if (strcmp(line, "@stats") == 0) {
+        sel_engine_stats st;
+        sel_engine_stats_get(e, &st);
+        printf("STATS xfade_frames=%u slots_mixed=%u mixed_path=%u\n", (unsigned)st.xfade_frames,
+               (unsigned)st.slots_mixed, (unsigned)st.mixed_path);
     } else if (strcmp(line, "@integration_poll") == 0) {
         sel_int_session_poll(g_int);
     } else if (strcmp(line, "@alloc_guard on") == 0) {
