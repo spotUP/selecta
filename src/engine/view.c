@@ -11,14 +11,14 @@ static const char* const style_name[3] = {"regular", "tree", "drilldown"};
 
 /* The browse source is a directory listing: always regular. */
 static uint32_t mode_of(const sel_view* v) {
-    return v->pub.source == SEL_VIEW_QUEUE ? v->pub.style : (uint32_t)SEL_VIEW_STYLE_REGULAR;
+    return v->pub.source != SEL_VIEW_BROWSE ? v->pub.style : (uint32_t)SEL_VIEW_STYLE_REGULAR;
 }
 
 static uint32_t list_count(const sel_view* v, const sel_view_src* s) {
     if (mode_of(v) != SEL_VIEW_STYLE_REGULAR) {
         return v->total;
     }
-    return v->pub.source == SEL_VIEW_QUEUE ? s->queue->count : s->browse->count;
+    return v->pub.source != SEL_VIEW_BROWSE ? s->queue->count : s->browse->count;
 }
 
 static void set_anchor(sel_view* v, const sel_view_src* s, uint32_t idx, uint32_t count);
@@ -27,7 +27,7 @@ static void anchor_styled(sel_view* v, const sel_view_src* s, uint32_t count);
 static void fill_styled(sel_view* v, const sel_view_src* s);
 
 static uint32_t row_id(const sel_view* v, const sel_view_src* s, uint32_t idx) {
-    return v->pub.source == SEL_VIEW_QUEUE ? s->queue->entries[idx].id : idx;
+    return v->pub.source != SEL_VIEW_BROWSE ? s->queue->entries[idx].id : idx;
 }
 
 int sel_view_init(sel_view* v, const sel_host* host, uint32_t row_cap) {
@@ -526,6 +526,8 @@ int sel_view_show(sel_view* v, const sel_view_src* s, const char* source) {
     uint32_t want;
     if (strcmp(source, "queue") == 0) {
         want = SEL_VIEW_QUEUE;
+    } else if (strcmp(source, "query") == 0) {
+        want = SEL_VIEW_QUERY;
     } else if (strcmp(source, "browse") == 0) {
         want = SEL_VIEW_BROWSE;
     } else {
@@ -595,7 +597,7 @@ int sel_view_window(sel_view* v, const sel_view_src* s, uint32_t rows) {
 
 static void anchor(sel_view* v, const sel_view_src* s, uint32_t count) {
     sel_view_state* p = &v->pub;
-    if (p->source == SEL_VIEW_QUEUE) {
+    if (p->source != SEL_VIEW_BROWSE) {
         uint32_t at = count ? sel_queue_index_of(s->queue, p->cursor_id) : SEL_QUEUE_NONE;
         if (at != SEL_QUEUE_NONE) {
             p->cursor = at;
@@ -659,7 +661,7 @@ void sel_view_refresh(sel_view* v, const sel_view_src* s) {
         sel_view_row* r = &v->rows[i];
         r->depth = 0;
         r->id = row_id(v, s, idx);
-        if (p->source == SEL_VIEW_QUEUE) {
+        if (p->source != SEL_VIEW_BROWSE) {
             r->kind = SEL_ROW_QUEUE;
             char* buf = v->row_text + (size_t)i * SEL_VIEW_TEXT_MAX;
             queue_row_text(buf, s, idx);

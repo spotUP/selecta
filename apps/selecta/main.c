@@ -4,8 +4,11 @@
  * and no drawing.
  *
  *   selecta [--output <id>] [--ui <id>] [--start-dir <dir>]
- *           [--keys <file>] [--screen-dump <file>]
+ *           [--keys <file>] [--screen-dump <file>] [--catalogue <tsv>] [--exec "<command>"]...
  *
+ * --catalogue backs the engine with an in-memory library imported from a TSV; each --exec
+ * line is sent as a command once the engine is up (T66 uses LIBRARY_SEARCH and VIEW_SOURCE).
+ * *
  * --keys and --screen-dump are passed to the UI, which owns them. On exit it
  * prints `ui_waits=<w> flushes=<f> keys=<k>` and `songs_opened=<s>
  * queue_version=<q>` (the sentinels of test T19). */
@@ -19,7 +22,9 @@
 #ifndef SEL_NO_CONTROL_SOCKET
 #include "ctlsock.h"
 #endif
+#include "catalogue.h"
 #include "integration_host.h"
+#include "db.h"
 #include "local.h"
 
 #include <stdio.h>
@@ -121,6 +126,9 @@ int main(int argc, char** argv) {
     const char* out_id = option(argc, argv, "--output", default_output);
     const char* ui_id = option(argc, argv, "--ui", "text");
     const char* start = option(argc, argv, "--start-dir", NULL);
+    const char* catalogue = option(argc, argv, "--catalogue", NULL);
+    sel_library* library = NULL;
+    int a;
     int is_null = strcmp(out_id, "null") == 0;
     const sel_tag* oh;
     const sel_tag* uh;
@@ -193,6 +201,13 @@ int main(int argc, char** argv) {
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;
     cfg.machine = machine_tags; /* queue and browse buffers scale with the machine */
+    if (catalogue != NULL) {
+        library = sel_cli_open_catalogue(catalogue);
+        if (library == NULL) {
+            return 1;
+        }
+        cfg.library = library;
+    }
     cfg.config_dir = option(argc, argv, "--config-dir", NULL);
     if (cfg.config_dir == NULL && sel_config_dir(cfgdir, sizeof cfgdir)) {
         cfg.config_dir = cfgdir;
@@ -265,6 +280,14 @@ int main(int argc, char** argv) {
         send_line(e, "VIEW_SHOW browse");
     }
     sel_engine_pump(e, sink, ctx);
+    for (a = 1; a + 1 < argc; a++) {
+        if (strcmp(argv[a], "--exec") == 0) {
+            char pool[1024];
+            if (sel_engine_send_line(e, argv[a + 1], pool, sizeof pool) == SEL_CODEC_OK) {
+                sel_engine_pump(e, sink, ctx);
+            }
+        }
+    }
 
     /* The null output has no clock: each turn pumps exactly one UI_WAIT's worth
      * of frames, so a run is deterministic. A real output paces the loop. */
@@ -292,6 +315,10 @@ int main(int argc, char** argv) {
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_BINDINGS, 0), (unsigned)sel_engine_state(e)->queue_count,
            (unsigned)est.undo_depth, (unsigned)est.redo_depth, sel_view_style_label(sel_engine_state(e)->view->style));
 
+    printf("view_source=%s view_style=%s cursor_key=%s\n", sel_view_source_label(sel_engine_state(e)->view->source),
+           sel_view_style_label(sel_engine_state(e)->view->style),
+           sel_engine_view_cursor_key(e) != NULL ? sel_engine_view_cursor_key(e) : "");
+
     printf("viz_frames=%u scope_reads=%u pattern_rows=%u mutes=%u dsp=crossfeed:%s fades=%u sleep_armed=%u\n",
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_VIZ_FRAMES, 0), (unsigned)sel_tag_find(ust, SEL_UI_STAT_SCOPE_READS, 0),
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_PATTERN_ROWS, 0), (unsigned)est.mutes,
@@ -316,5 +343,8 @@ int main(int argc, char** argv) {
     ui_close(ui);
     out_close(out);
     sel_engine_destroy(e);
+    if (library != NULL) {
+        sel_library_close(library);
+    }
     return 0;
 }
