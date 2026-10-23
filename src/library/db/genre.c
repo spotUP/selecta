@@ -104,7 +104,8 @@ void sel_library_genre_op(sel_library* lib, const sel_genre_op* op, sel_message*
         rc = sel_library_songdb_op(lib, op, &found, &id);
     } else if (op->op == SEL_SIMILAR_NEXT || op->op == SEL_ALSOBY_NEXT) {
         rc = sel_library_similar_op(lib, op, &found, &id);
-    } else if (op->op == SEL_DUP_HASH || op->op == SEL_DUP_NEXT || op->op == SEL_BEST_SOURCE) {
+    } else if (op->op == SEL_DUP_HASH || op->op == SEL_DUP_NEXT || op->op == SEL_BEST_SOURCE || op->op == SEL_DUP_PICK
+               || op->op == SEL_DUP_STORE) {
         rc = sel_library_duplicates_op(lib, op, &found, &id);
     }
     memset(reply, 0, sizeof *reply);

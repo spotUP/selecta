@@ -113,6 +113,41 @@ static int op_hash(sqlite3* db, const sel_genre_op* op, int64_t* id) {
     return hash_next(db, op->after, 0, NULL, id);
 }
 
+/* SEL_DUP_PICK (I184b): next local song with id > after and no md5, without hashing it: out = key NUL path NUL. */
+static int op_pick(sqlite3* db, const sel_genre_op* op, int64_t* id) {
+    sqlite3_stmt* st = NULL;
+    int rc = sqlite3_prepare_v2(db,
+                                "SELECT id, key, path FROM songs WHERE source = 'local' AND COALESCE(md5, '') = ''"
+                                " AND id > ?1 ORDER BY id LIMIT 1",
+                                -1, &st, NULL);
+
+    if (rc != SQLITE_OK) return rc;
+    sqlite3_bind_int64(st, 1, op->after);
+    rc = sqlite3_step(st);
+    if (rc == SQLITE_ROW) {
+        const char* f[2];
+
+        f[0] = (const char*)sqlite3_column_text(st, 1);
+        f[1] = (const char*)sqlite3_column_text(st, 2);
+        if (pack(op, f, 2)) *id = sqlite3_column_int64(st, 0);
+        rc = SQLITE_DONE;
+    }
+    sqlite3_finalize(st);
+    return rc == SQLITE_DONE ? SQLITE_OK : rc;
+}
+
+/* SEL_DUP_STORE (I184b): md5 `value` of local song `key`, in songs and in the files row of its path. */
+static int op_store(sqlite3* db, const sel_genre_op* op, int64_t* id) {
+    int rc = exec2(db,
+                   "UPDATE files SET md5 = ?2 WHERE source = 'local'"
+                   " AND path = (SELECT path FROM songs WHERE key = ?1 AND source = 'local')",
+                   op->key, op->value);
+
+    if (rc == SQLITE_OK) rc = exec2(db, "UPDATE songs SET md5 = ?2 WHERE key = ?1", op->key, op->value);
+    if (rc == SQLITE_OK) *id = 1;
+    return rc;
+}
+
 /* OPEN of song `key` (I184a): the scan leaves local md5 empty, so before ranking the sources hash what the twin search
  * needs. A local song without md5 hashes itself (the file is about to be read anyway). A remote song with an md5 hashes
  * the unhashed local songs that could be its twin: same byte size when the remote row has one, else same file name. */
@@ -225,6 +260,10 @@ int sel_library_duplicates_op(sel_library* lib, const sel_genre_op* op, int* fou
         rc = op_dup_next(lib->db, op, id);
     } else if (op->op == SEL_BEST_SOURCE && op->out != NULL && op->key != NULL) {
         rc = op_best(lib->db, op, id);
+    } else if (op->op == SEL_DUP_PICK && op->out != NULL) {
+        rc = op_pick(lib->db, op, id);
+    } else if (op->op == SEL_DUP_STORE && op->key != NULL && op->value != NULL) {
+        rc = op_store(lib->db, op, id);
     }
     *found = *id != 0;
     return rc;
@@ -250,6 +289,8 @@ int sel_library_hash_local(sel_library* lib) {
     return n;
 }
 
+#if !defined(SEL_LIBRARY_NO_THREAD)
+
 /* One step of the idle pass: the next unhashed local song after *after. 1 = hashed one, 0 = none left, -1 = error. */
 static int hash_step(sel_library* lib, int64_t* after) {
     sel_genre_op op;
@@ -264,8 +305,6 @@ static int hash_step(sel_library* lib, int64_t* after) {
     return 1;
 }
 
-#if !defined(SEL_LIBRARY_NO_THREAD)
-
 void sel_hash_job_run(sel_library* lib) {
     int64_t after;
     int r;
@@ -279,6 +318,10 @@ void sel_hash_job_run(sel_library* lib) {
     r = hash_step(lib, &after);
     pthread_mutex_lock(&lib->job_lock);
     if (!lib->hash_pending) lib->hash_after = after; /* a kick during the file restarts the pass instead */
+    if (r > 0) {
+        lib->hash_files++;
+        lib->hash_chunks++;
+    }
     if (r > 0 || lib->hash_pending) lib->job_hash = 1; /* one file per turn: ratings, votes and fetches go first */
 }
 
@@ -296,21 +339,118 @@ int sel_library_hash_poll(sel_library* lib) {
     return 0;
 }
 
+void sel_library_hash_close(sel_library* lib) {
+    (void)lib;
+}
+
+void sel_library_hash_stats(sel_library* lib, sel_hash_stats* out) {
+    memset(out, 0, sizeof *out);
+    if (lib == NULL) return;
+    pthread_mutex_lock(&lib->job_lock);
+    out->files = lib->hash_files;
+    out->chunks = lib->hash_chunks;
+    out->tick_max = lib->hash_tick_max;
+    pthread_mutex_unlock(&lib->job_lock);
+}
+
 #else
+
+/* Without threads the pass runs on the caller's idle ticks, so one file is read in chunks of SEL_HASH_CHUNK bytes
+ * across polls (I184b): a whole multi-megabyte file in one tick would stall a 68020 for seconds. */
+void sel_library_hash_close(sel_library* lib) {
+    if (lib != NULL && lib->hash_file != NULL) {
+        fclose(lib->hash_file);
+        lib->hash_file = NULL;
+    }
+}
 
 void sel_library_hash_kick(sel_library* lib) {
     if (lib == NULL) return;
+    sel_library_hash_close(lib); /* the pass restarts from id 0; a half-read file is picked again */
     lib->hash_after = 0;
     lib->hash_pending = 1;
 }
 
+/* Opens the next unhashed local song. 1 = opened, 0 = none left, -1 = library error, 2 = unreadable (skipped). */
+static int hash_open(sel_library* lib) {
+    char buf[2400];
+    sel_genre_op op;
+    int64_t id = 0;
+    const char* path;
+
+    memset(&op, 0, sizeof op);
+    op.op = SEL_DUP_PICK;
+    op.after = lib->hash_after;
+    op.out = buf;
+    op.out_cap = sizeof buf;
+    if (sel_genre_call(lib, &op, &id) < 0) return -1;
+    if (id == 0) return 0;
+    lib->hash_after = id; /* an unreadable file stays unhashed, the pass goes on */
+    path = buf + strlen(buf) + 1u;
+    lib->hash_file = fopen(path, "rb");
+    if (lib->hash_file == NULL) return 2;
+    snprintf(lib->hash_key, sizeof lib->hash_key, "%s", buf);
+    sel_md5_init(&lib->hash_md5);
+    return 1;
+}
+
 int sel_library_hash_poll(sel_library* lib) {
-    int r;
+    unsigned char buf[4096];
+    uint32_t got = 0;
+    int end = 0;
 
     if (lib == NULL || !lib->hash_pending) return 0;
-    r = hash_step(lib, &lib->hash_after);
-    if (r <= 0) lib->hash_pending = 0;
-    return r > 0;
+    if (lib->hash_file == NULL) {
+        int r = hash_open(lib);
+
+        if (r <= 0) {
+            lib->hash_pending = 0;
+            return 0;
+        }
+        if (r == 2) return 1;
+    }
+    while (got < SEL_HASH_CHUNK) {
+        size_t n = fread(buf, 1, sizeof buf, lib->hash_file);
+
+        sel_md5_update(&lib->hash_md5, buf, n);
+        got += (uint32_t)n;
+        if (n < sizeof buf) {
+            end = 1;
+            break;
+        }
+    }
+    lib->hash_chunks++;
+    if (got > lib->hash_tick_max) lib->hash_tick_max = got;
+    if (end) {
+        int failed = ferror(lib->hash_file);
+
+        sel_library_hash_close(lib);
+        if (!failed) {
+            char hex[33];
+            sel_genre_op op;
+            int64_t id = 0;
+
+            sel_md5_hex(&lib->hash_md5, hex);
+            memset(&op, 0, sizeof op);
+            op.op = SEL_DUP_STORE;
+            op.key = lib->hash_key;
+            op.value = hex;
+            if (sel_genre_call(lib, &op, &id) < 0) {
+                lib->hash_pending = 0;
+                return 0;
+            }
+            lib->hash_files++;
+        }
+    }
+    return 1;
+}
+
+void sel_library_hash_stats(sel_library* lib, sel_hash_stats* out) {
+    memset(out, 0, sizeof *out);
+    if (lib == NULL) return;
+    out->files = lib->hash_files;
+    out->chunks = lib->hash_chunks;
+    out->tick_max = lib->hash_tick_max;
 }
 
 #endif

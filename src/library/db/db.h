@@ -48,7 +48,9 @@ enum {
     SEL_ALSOBY_NEXT,    /* I183: song at row offset `after` among the other songs sharing a composer with song key `key`: `out` = key NUL name NUL composer display NUL, reply [2] = after + 1 (0: none) */
     SEL_DUP_HASH,       /* I184: hashes the next local song with id > `after` that has no md5 and stores it: reply [2] = its id (0: none left) */
     SEL_DUP_NEXT,       /* I184: duplicate group at row offset `after` (same md5, two or more songs): `out` = md5 NUL member count NUL best key NUL, reply [2] = after + 1 (0: none) */
-    SEL_BEST_SOURCE     /* I184: best song among those sharing the md5 of song key `key` (D-M3-14): `out` = key NUL, reply [2] = 1 (0: key unknown or no md5) */
+    SEL_BEST_SOURCE,    /* I184: best song among those sharing the md5 of song key `key` (D-M3-14): `out` = key NUL, reply [2] = 1 (0: key unknown or no md5) */
+    SEL_DUP_PICK,       /* I184b: next local song with id > `after` that has no md5, not hashed: `out` = key NUL path NUL, reply [2] = its id (0: none left) */
+    SEL_DUP_STORE       /* I184b: store md5 `value` for local song key `key` (songs and files tables) */
 };
 typedef struct sel_genre_op {
     uint32_t op;       /* SEL_GENRE_* */
@@ -377,6 +379,15 @@ void sel_library_rating_push(sel_library* lib);
  * caller invokes it only while it is idle. With threads _poll does nothing and returns 0. */
 void sel_library_hash_kick(sel_library* lib);
 int sel_library_hash_poll(sel_library* lib);
+/* I184b: counters of the md5 pass. files = files hashed, chunks = file reads (builds without threads read one
+ * chunk of at most SEL_HASH_CHUNK bytes per _poll; with threads one per file), tick_max = most bytes one _poll read. */
+#define SEL_HASH_CHUNK 16384u
+typedef struct sel_hash_stats {
+    uint32_t files;
+    uint32_t chunks;
+    uint32_t tick_max;
+} sel_hash_stats;
+void sel_library_hash_stats(sel_library* lib, sel_hash_stats* out);
 void sel_library_rating_wait(sel_library* lib);
 
 /* I174: VOTE. Queues one HippoPlayer vote request on the library job thread (the one behind ratings and prefetch);

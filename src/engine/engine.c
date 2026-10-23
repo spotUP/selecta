@@ -4727,6 +4727,16 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->songs_opened = e->songs_opened;
     out->dup_redirects = e->dup_redirects;
     out->dup_played = e->dup_played;
+    if (e->lib != NULL) {
+        sel_hash_stats hs;
+
+        sel_library_hash_stats(e->lib, &hs);
+        out->hash_files = hs.files;
+        out->hash_chunks = hs.chunks;
+        out->hash_tick_max = hs.tick_max;
+    } else {
+        out->hash_files = out->hash_chunks = out->hash_tick_max = 0;
+    }
     out->history_writes = e->history_writes;
     out->scrobble_due = e->scrobble_due;
     out->skip_excluded = e->skip_excluded;

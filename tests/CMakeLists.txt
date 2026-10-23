@@ -1146,6 +1146,18 @@ if(NOT SEL_AMIGA AND SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
     RESOURCE_LOCK vamos PASS_REGULAR_EXPRESSION "scan_vamos_ok")
 endif()
 
+# I184b: the idle md5 pass of the 68k build (no library threads) reads a big file across idle ticks, one chunk
+# per tick, and stores md5 values that `library duplicates` groups.
+if(NOT SEL_AMIGA AND SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
+  add_test(NAME hash-idle-vamos
+    COMMAND "${CMAKE_COMMAND}" "-DMODE=vamos" "-DCLI=${SEL_CLI}" "-DVAMOS=${SEL_VAMOS}"
+      "-DAMIGA_CLI=${SEL_AMIGA_CLI}" "-DMOD=${SEL_TESTMOD}"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m3/hash-idle-vamos"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/hash_idle_vamos.cmake")
+  set_tests_properties(hash-idle-vamos PROPERTIES LABELS m3 FIXTURES_REQUIRED amiga_cli
+    RESOURCE_LOCK vamos PASS_REGULAR_EXPRESSION "hash_idle_vamos_ok")
+endif()
+
 # T75 cache-fetch (rows I165, I166): LIBRARY_FETCH through the file cache and its companions.
 # Runs after mirrors-ranking because both read the shared request log.
 if(NOT SEL_AMIGA)

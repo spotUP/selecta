@@ -458,6 +458,11 @@ static void script_directive(sel_engine* e, const char* line) {
         sel_engine_stats es;
         sel_engine_stats_get(e, &es);
         printf("DUP redirects=%u played=%s\n", (unsigned)es.dup_redirects, es.dup_played);
+    } else if (strcmp(line, "@hash_stats") == 0) {
+        sel_engine_stats es;
+        sel_engine_stats_get(e, &es);
+        printf("HASH files=%u chunks=%u tick_max=%u\n", (unsigned)es.hash_files, (unsigned)es.hash_chunks,
+               (unsigned)es.hash_tick_max);
     } else if (strcmp(line, "@user_stats") == 0) {
         sel_engine_stats es;
         sel_engine_stats_get(e, &es);
@@ -700,6 +705,11 @@ static int cmd_script_file(FILE* f, int argc, char** argv) {
             } else {
                 printf("%s\n", st->lyric_current != NULL ? st->lyric_current : "");
             }
+            continue;
+        }
+        if (strncmp(line, "@idle ", 6) == 0) { /* test hook: N engine pumps with no command (idle ticks, I184b) */
+            unsigned long k, n = strtoul(line + 6, NULL, 10);
+            for (k = 0; k < n; k++) sel_engine_pump(e, print_event, NULL);
             continue;
         }
         if (strcmp(line, "@prefetch_wait") == 0) {

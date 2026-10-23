@@ -6,6 +6,9 @@
 #include "../../engine/spsc.h"
 #include "../query.h"
 #include "../cache.h"
+#include "../md5.h"
+
+#include <stdio.h>
 
 #include <sqlite3.h>
 
@@ -49,6 +52,7 @@ struct sel_library {
     int64_t hash_after;      /* last song id the md5 pass hashed (duplicates.c, I184a); threads: under job_lock */
     unsigned hash_pending;   /* cooperative build: the idle md5 pass has songs left; threads: a kick restarts the
                               * pass from id 0 (under job_lock) */
+    uint32_t hash_files, hash_chunks, hash_tick_max; /* sel_hash_stats (I184b) */
 #if !defined(SEL_LIBRARY_NO_THREAD)
     unsigned job_vote, job_vote_busy; /* one queued vote request, and one running */
     unsigned job_lyric, job_lyric_busy; /* one queued lyrics request, and one running */
@@ -70,6 +74,10 @@ struct sel_library {
     pthread_cond_t wake_worker;
     pthread_cond_t wake_caller;
     int running;
+#else
+    FILE* hash_file;         /* the file the idle md5 pass is reading, one chunk per poll (I184b); NULL = none */
+    sel_md5 hash_md5;
+    char hash_key[1200];
 #endif
 };
 
@@ -103,8 +111,9 @@ int sel_library_songdb_resolve(sel_library* lib, const char* ukey, const char* s
 /* similar.c (I183): worker half of SEL_SIMILAR_NEXT / SEL_ALSOBY_NEXT. 0 on a library error. */
 int sel_library_similar_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id);
 
-/* duplicates.c (I184): worker half of SEL_DUP_HASH / SEL_DUP_NEXT / SEL_BEST_SOURCE. 0 on a library error. */
+/* duplicates.c (I184): worker half of SEL_DUP_HASH / SEL_DUP_NEXT / SEL_BEST_SOURCE / SEL_DUP_PICK / SEL_DUP_STORE. 0 on a library error. */
 int sel_library_duplicates_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id);
+void sel_library_hash_close(sel_library* lib); /* closes the file of an unfinished idle md5 pass (no threads) */
 
 /* user.c: SEL_LIB_REQ_USER. */
 void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* reply);
