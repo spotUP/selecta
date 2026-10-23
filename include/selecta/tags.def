@@ -15,6 +15,7 @@
  *   MACHINE 0x9000  machine probe       (M0b)
  *   HOSTQ   0xA000  host queries
  *   MIX     0xB000  mixer configuration (M0b)
+ *   INT     0xC000  integration plugins (M1.2)
  * Control tags 0 END, 1 MORE, 2 SKIP and the SEL_TAG_USER bit 0x80000000
  * live in tags.h. Types: INT (value is a number), STR (value is a
  * const char*), PTR (value is a function or object pointer), LIST (value
@@ -117,3 +118,10 @@ SEL_TAG(HOSTQ, API_VERSION,    0xA000, INT)
 /* Mixer configuration. The resampler values (none, linear, cubic, sinc)
  * are enum constants in the mixer header, not tags. */
 SEL_TAG(MIX, RESAMPLE,         0xB000, INT)
+
+/* Integration plugins (Now Playing, MPRIS; include/selecta/integration.h). */
+SEL_TAG(INT, NAME,             0xC000, STR)
+SEL_TAG(INT, OPEN,             0xC001, PTR)
+SEL_TAG(INT, ON_EVENT,         0xC002, PTR)
+SEL_TAG(INT, POLL,             0xC003, PTR)
+SEL_TAG(INT, CLOSE,            0xC004, PTR)

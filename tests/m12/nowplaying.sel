@@ -1,0 +1,7 @@
+# T38 integration-nowplaying: run with `--integration nowplaying-test`, working
+# directory build/host/tests/songs. The fake backend counts publishes (song
+# opened, play, pause) and issues one fake remote `next` on the first poll.
+OPEN selecta-test.mod
+PLAY
+@integration_poll
+PAUSE
