@@ -5,6 +5,7 @@
 #include "../local.h"
 #include "../net/http.h"
 #include "archive.h"
+#include "sync_net.h"
 
 #include <selecta/engine.h>
 #include <stdio.h>
@@ -17,45 +18,8 @@
 #define CHANGELOG_DIR "/pub/changelogs/"
 #define MAX_LISTING_BYTES ((size_t)512u * 1024u * 1024u)
 
-typedef struct net_ctx {
-    FILE* f;
-    unsigned long bytes;
-} net_ctx;
-
 int sel_modland_is_url(const char* s) {
     return strncmp(s, "http://", 7) == 0 || strncmp(s, "https://", 8) == 0;
-}
-
-static int file_sink(void* ctx, const void* data, size_t len) {
-    net_ctx* c = ctx;
-
-    c->bytes += (unsigned long)len;
-    return fwrite(data, 1, len, c->f) == len;
-}
-
-/* GETs `url` into `path`. Returns the HTTP status (0 on a transport failure). Any result but 200 removes the file. */
-static int get_file(const char* url, const char* path, sel_modland_net_stats* net, unsigned long* bytes) {
-    sel_http_req req;
-    sel_http_res res;
-    net_ctx c;
-    sel_http_err err;
-
-    memset(&req, 0, sizeof req);
-    memset(&res, 0, sizeof res);
-    c.bytes = 0;
-    c.f = fopen(path, "wb");
-    if (c.f == NULL) {
-        return 0;
-    }
-    req.url = url;
-    err = sel_http_request(&req, file_sink, &c, &res);
-    net->http_requests += res.requests;
-    fclose(c.f);
-    *bytes = c.bytes;
-    if (err != SEL_HTTP_OK || res.status != 200) {
-        remove(path);
-    }
-    return err == SEL_HTTP_OK ? res.status : 0;
 }
 
 /* Streams the zip's allmods.txt member to `out_path` (I161c): no whole-archive or whole-member buffer. */
@@ -133,7 +97,7 @@ int sel_modland_net_sync(const sel_local_scan_config* cfg, const char* base, int
     }
     remove_stale_changelogs(cfg->host, dir);
     snprintf(url, sizeof url, "%s/" ZIP_NAME, root);
-    if (get_file(url, zip, net, &got) != 200) {
+    if (sel_sync_net_get_file(url, zip, &net->http_requests, &got) != 200) {
         return 0;
     }
     net->zip_bytes = (uint32_t)got;
@@ -150,7 +114,7 @@ int sel_modland_net_sync(const sel_local_scan_config* cfg, const char* base, int
         if (!sel_browse_join(file, sizeof file, dir, name)) {
             return 0;
         }
-        status = get_file(url, file, net, &got);
+        status = sel_sync_net_get_file(url, file, &net->http_requests, &got);
         if (status == 200) {
             net->changelogs_fetched++;
         } else if (status == 404) {

@@ -48,6 +48,7 @@
 #include "sources/local_source.h"
 #include "sources/hippo_publish.h"
 #include "sources/hippo_sync.h"
+#include "sources/hvsc_net.h"
 #include "sources/hvsc_sync.h"
 #include "sources/modland_net.h"
 #include "net/devilbox.h"
@@ -3854,7 +3855,17 @@ static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
         e->sync_info.prg_stealth = hp.prg_stealth;
         e->sync_info.prg_subsongs = hp.prg_subsongs;
     } else if (is_hvsc) {
-        ok = sel_hvsc_sync(&scfg, m->args[1].v.s, &hv);
+        if (sel_modland_is_url(m->args[1].v.s)) {
+            sel_hvsc_net_stats hn;
+
+            ok = sel_hvsc_net_sync(&scfg, m->args[1].v.s, &hv, &hn);
+            e->sync_info.net_songlengths_bytes = hn.songlengths_bytes;
+            e->sync_info.net_stil_bytes = hn.stil_bytes;
+            e->sync_info.net_listing_derived = hn.listing_derived;
+            e->sync_info.net_requests = hn.http_requests;
+        } else {
+            ok = sel_hvsc_sync(&scfg, m->args[1].v.s, &hv);
+        }
         st.listing_rows = hv.listing_rows;
         st.skipped_rows = hv.skipped_rows;
         e->sync_info.songlengths = hv.songlengths;

@@ -740,7 +740,7 @@ static int library_sync(int argc, char** argv) {
         }
     }
     if (src == NULL || dir == NULL) {
-        fputs("usage: selecta-cli library sync [--db <path>] [--now <epoch>] [--dump] modland|hvsc|hippo <dir> | modland <http(s) url>\n", stderr);
+        fputs("usage: selecta-cli library sync [--db <path>] [--now <epoch>] [--dump] modland|hvsc|hippo <dir> | modland|hvsc <http(s) url>\n", stderr);
         return 2;
     }
     memset(&sink, 0, sizeof sink);
@@ -783,6 +783,11 @@ static int library_sync(int argc, char** argv) {
         printf("listing_rows=%u skipped_rows=%u songlengths=%u subtunes=%u stil_entries=%u db_songs=%d\n",
                (unsigned)info.listing_rows, (unsigned)info.skipped_rows, (unsigned)info.songlengths,
                (unsigned)info.subtunes, (unsigned)info.stil_entries, st.args[SEL_LIB_STAT_SONGS].v.i);
+        if (info.net_requests > 0) {
+            printf("net_requests=%u net_songlengths_bytes=%u net_stil_bytes=%u net_listing_derived=%u\n",
+                   (unsigned)info.net_requests, (unsigned)info.net_songlengths_bytes, (unsigned)info.net_stil_bytes,
+                   (unsigned)info.net_listing_derived);
+        }
     } else
     printf("listing_rows=%u new_this_week=%u skipped_rows=%u changelogs=%u cl_added=%u cl_removed=%u cl_moved=%u "
            "cl_updated=%u db_songs=%d\n",

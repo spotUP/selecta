@@ -1323,6 +1323,15 @@ if(NOT SEL_AMIGA)
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "modland_net_ok")
 endif()
 
+# M3 Phase 4 (I162a): T73 network part. LIBRARY_SYNC hvsc <url> over the hvsc.c64.org fixture.
+if(NOT SEL_AMIGA)
+  add_test(NAME source-hvsc-net
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      -P "${SEL_NET_DIR}/hvsc_net.cmake")
+  set_tests_properties(source-hvsc-net PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "hvsc_net_ok")
+endif()
+
 # M3 Phase 4 (I164): T74 publish part. PLAYLIST_PUBLISH through selecta-cli script against the fixture.
 if(NOT SEL_AMIGA)
   add_test(NAME hippo-publish
