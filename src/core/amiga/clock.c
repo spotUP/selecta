@@ -13,3 +13,11 @@ uint32_t sel_host_clock_ms(const sel_host* h) {
     return (uint32_t)ds.ds_Days * 86400000u + (uint32_t)ds.ds_Minute * 60000u +
            (uint32_t)ds.ds_Tick * 20u;
 }
+
+/* DateStamp holds local time: minutes since midnight and 20 ms ticks. */
+uint32_t sel_host_local_ms(const sel_host* h) {
+    struct DateStamp ds;
+    (void)h;
+    DateStamp(&ds);
+    return (uint32_t)ds.ds_Minute * 60000u + (uint32_t)ds.ds_Tick * 20u;
+}

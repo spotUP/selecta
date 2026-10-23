@@ -35,6 +35,7 @@ SEL_CMD(REPEAT, "s", "transport")
 SEL_CMD(OUTPUT, "s", "transport")
 SEL_CMD(OPTION, "ss", "transport")
 SEL_CMD(SLEEP_TIMER, "u", "transport")
+SEL_CMD(ALARM, "s", "transport")
 
 /* queue */
 SEL_CMD(QUEUE_ADD, "s", "queue")
