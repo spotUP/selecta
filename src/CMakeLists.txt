@@ -18,7 +18,8 @@ add_library(selecta_core STATIC
   engine/format.c
   engine/voices.c
   engine/scheduler.c
-  engine/viz.c)
+  engine/viz.c
+  engine/dsp_chain.c)
 target_include_directories(selecta_core PUBLIC ${PROJECT_SOURCE_DIR}/include)
 
 # Fixed-point mixer and resamplers (no float, no allocation).
@@ -44,7 +45,14 @@ add_custom_command(
   COMMAND "${SEL_GEN_DIR}/gen_viz_table" > "${SEL_GEN_DIR}/viz_table.h"
   DEPENDS "${PROJECT_SOURCE_DIR}/tools/gen_viz_table.c"
   VERBATIM)
-target_sources(selecta_core PRIVATE "${SEL_GEN_DIR}/viz_table.h")
+add_custom_command(
+  OUTPUT "${SEL_GEN_DIR}/dsp_coef.h"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${SEL_GEN_DIR}"
+  COMMAND "${SEL_HOST_CC}" -O1 -o "${SEL_GEN_DIR}/gen_dsp_coef" "${PROJECT_SOURCE_DIR}/tools/gen_dsp_coef.c" -lm
+  COMMAND "${SEL_GEN_DIR}/gen_dsp_coef" > "${SEL_GEN_DIR}/dsp_coef.h"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/gen_dsp_coef.c"
+  VERBATIM)
+target_sources(selecta_core PRIVATE "${SEL_GEN_DIR}/viz_table.h" "${SEL_GEN_DIR}/dsp_coef.h")
 target_include_directories(selecta_core PRIVATE "${SEL_GEN_DIR}")
 add_library(selecta_mixer STATIC mixer/mixer.c mixer/resample.c "${SEL_GEN_DIR}/sinc_table.h")
 target_include_directories(selecta_mixer PUBLIC ${PROJECT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/mixer)

@@ -62,6 +62,13 @@ SEL_TAG(OUT, DIRECT_VOLUME,    0x200C, INT)
 SEL_TAG(OUT, HEADPHONES,       0x200D, INT)
 SEL_TAG(OUT, STAT_CALLBACKS,   0x200E, INT)
 
+/* DSP plugin rows (design doc section 5, include/selecta/dsp.h). */
+SEL_TAG(DSP, NAME,             0x3000, STR)
+SEL_TAG(DSP, OPEN,             0x3001, PTR)
+SEL_TAG(DSP, PROCESS,          0x3002, PTR)
+SEL_TAG(DSP, CLOSE,            0x3003, PTR)
+SEL_TAG(DSP, PARAM,            0x3004, PTR)
+
 /* Visualizer plugin rows (design doc section 8). The built-in text UI panels
  * read the snapshot frame (sel_state.viz) directly and need none of these. */
 SEL_TAG(VIZ, NAME,             0x4000, STR)
