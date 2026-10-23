@@ -25,6 +25,8 @@ typedef struct sel_local_scan_stats {
     uint32_t scan_batches;  /* SEL_LIB_REQ_SCAN_BATCH requests sent */
     uint32_t probed;        /* replayer probe calls made */
     uint32_t dirs;          /* directories listed */
+    uint32_t archives;        /* archive files opened as folders (I159) */
+    uint32_t archive_members; /* archive members recognised and queued */
 } sel_local_scan_stats;
 
 /* Scans `root` recursively. Returns 0 when the root cannot be listed, memory runs out or the DB

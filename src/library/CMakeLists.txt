@@ -37,4 +37,35 @@ endif()
 
 # Sources (plan Phase 4, I157, I158): the sel_source interface and registry, song keys, the Modland
 # format table and the local source (scan over sel_browse).
-target_sources(selecta_library PRIVATE source.c formats_table.c sources/local.c sources/modland.c)
+target_sources(selecta_library PRIVATE source.c formats_table.c sources/local.c sources/modland.c sources/archive.c)
+
+# Archive adapters (I159, D-M3-7): vendored miniz (zip) and lhasa (lha/lzh), memory in, memory out.
+add_library(selecta_archive STATIC
+  ${PROJECT_SOURCE_DIR}/third_party/miniz/miniz.c
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/crc16.c
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/ext_header.c
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/lh1_decoder.c
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/lh5_decoder.c
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/lh6_decoder.c
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/lh7_decoder.c
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/lha_arch_unix.c
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/lha_basic_reader.c
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/lha_decoder.c
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/lha_endian.c
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/lha_file_header.c
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/lha_input_stream.c
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/lha_reader.c
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/lhx_decoder.c
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/lk7_decoder.c
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/lz5_decoder.c
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/lzs_decoder.c
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/macbinary.c
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/null_decoder.c
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/pm1_decoder.c
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/pm2_decoder.c)
+target_include_directories(selecta_archive PUBLIC ${PROJECT_SOURCE_DIR}/third_party/miniz
+  ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib/public PRIVATE ${PROJECT_SOURCE_DIR}/third_party/lhasa/lib)
+# Third-party source: no project warning flags. miniz without stdio and time (memory in, memory out).
+target_compile_options(selecta_archive PRIVATE -w)
+target_compile_definitions(selecta_archive PUBLIC MINIZ_NO_ZLIB_COMPATIBLE_NAMES)
+target_link_libraries(selecta_library PUBLIC selecta_archive)

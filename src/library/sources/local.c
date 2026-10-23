@@ -4,6 +4,7 @@
 #include "local_source.h"
 
 #include "../source.h"
+#include "archive.h"
 #include "local.h"
 
 #include <selecta/plugin.h>
@@ -129,9 +130,12 @@ static const sel_tag* find_replayer(scan_state* s, const uint8_t* data, size_t s
     return best;
 }
 
-static void scan_file(scan_state* s, const char* path) {
-    size_t size = 0;
-    uint8_t* data = read_file(s->cfg->host, path, &size);
+/* Probes, opens and describes one module held in memory and queues its catalogue row. `probe_path`
+ * is what the replayers see (the extension matters), `row_path` is the path stored in the catalogue
+ * (for an archive member: "<archive>/<member>"). Does not free `data`. Returns 1 when a row was
+ * queued. */
+static int scan_blob(scan_state* s, const uint8_t* data, size_t size, const char* probe_path,
+                     const char* row_path) {
     const sel_tag* hooks;
     scan_row_text* t;
     sel_scan_row* r;
@@ -142,25 +146,19 @@ static void scan_file(scan_state* s, const char* path) {
     sel_song_source src;
     void* state;
 
-    if (data == NULL) {
-        s->stats->skipped_files++;
-        return;
-    }
-    hooks = find_replayer(s, data, size, path);
+    hooks = find_replayer(s, data, size, probe_path);
     if (hooks == NULL) {
-        s->cfg->host->mem_free(s->cfg->host, data);
         s->stats->skipped_files++;
-        return;
+        return 0;
     }
     if (s->row_n == SCAN_BATCH && !flush_rows(s)) {
-        s->cfg->host->mem_free(s->cfg->host, data);
-        return;
+        return 0;
     }
     t = &s->text[s->row_n];
     r = &s->rows[s->row_n];
     memset(r, 0, sizeof *r);
-    copy_text(t->path, sizeof t->path, path);
-    copy_text(t->name, sizeof t->name, sel_browse_basename(path));
+    copy_text(t->path, sizeof t->path, row_path);
+    copy_text(t->name, sizeof t->name, sel_browse_basename(probe_path));
     t->artist[0] = '\0';
     t->format[0] = '\0';
     open_fn = (sel_rp_open_fn)sel_tag_find(hooks, SEL_RP_OPEN, 0);
@@ -168,7 +166,7 @@ static void scan_file(scan_state* s, const char* path) {
     meta_fn = (sel_rp_metadata_fn)sel_tag_find(hooks, SEL_RP_METADATA, 0);
     src.data = data;
     src.size = size;
-    src.path = path;
+    src.path = probe_path;
     memset(&info, 0, sizeof info);
     state = open_fn != NULL ? open_fn(&src, s->cfg->host, &info) : NULL;
     if (state != NULL) {
@@ -187,7 +185,6 @@ static void scan_file(scan_state* s, const char* path) {
             close_fn(state);
         }
     }
-    s->cfg->host->mem_free(s->cfg->host, data);
     r->source = "local";
     r->path = t->path;
     r->name = t->name;
@@ -196,6 +193,51 @@ static void scan_file(scan_state* s, const char* path) {
     r->md5 = "";
     r->size = (int64_t)size;
     s->row_n++;
+    return 1;
+}
+
+typedef struct member_ctx {
+    scan_state* s;
+    const char* archive;
+} member_ctx;
+
+static int on_member(void* vctx, const char* name, const uint8_t* data, size_t size) {
+    member_ctx* c = vctx;
+    char row[SEL_BROWSE_PATH_MAX];
+
+    if (snprintf(row, sizeof row, "%s/%s", c->archive, name) >= (int)sizeof row) {
+        c->s->stats->skipped_files++;
+        return 1;
+    }
+    if (scan_blob(c->s, data, size, name, row)) {
+        c->s->stats->archive_members++;
+    }
+    return !c->s->failed;
+}
+
+static void scan_file(scan_state* s, const char* path) {
+    size_t size = 0;
+    uint8_t* data = read_file(s->cfg->host, path, &size);
+    int kind;
+
+    if (data == NULL) {
+        s->stats->skipped_files++;
+        return;
+    }
+    kind = sel_archive_kind(data, size);
+    if (kind != SEL_ARCHIVE_NONE) {
+        member_ctx mc;
+
+        mc.s = s;
+        mc.archive = path;
+        s->stats->archives++;
+        if (sel_archive_each(s->cfg->host, kind, data, size, SCAN_MAX_FILE, on_member, &mc) < 0) {
+            s->stats->skipped_files++; /* damaged archive */
+        }
+    } else {
+        scan_blob(s, data, size, path, path);
+    }
+    s->cfg->host->mem_free(s->cfg->host, data);
 }
 
 static void push_dir(scan_state* s, const char* path) {
