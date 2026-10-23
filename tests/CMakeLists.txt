@@ -246,7 +246,11 @@ add_test(NAME mixer-unit COMMAND mixer_test period none linear cubic sinc defaul
 # snapshot. The temp tree is created inside the generated songs directory.
 add_executable(view_test view/view_test.c)
 target_link_libraries(view_test PRIVATE selecta_core selecta_registry)
-add_test(NAME view-unit COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs")
+add_test(NAME view-unit COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs" browse sort cursor activate window style)
+# T32: grouping, node ids, expand/collapse, drilldown, cursor across styles.
+add_test(NAME view-tree COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs" tree)
+# Both rebuild the same song directory.
+set_tests_properties(view-unit view-tree PROPERTIES RESOURCE_LOCK view_songs_dir)
 
 # T33: title-format resolver and PREF_GET / PREF_SET (src/engine/format.c, prefs.c).
 add_executable(format_test view/format_test.c)
@@ -277,6 +281,27 @@ if(NOT SEL_AMIGA)
       "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m1/browse_play.screen"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/browse_play"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/browse_play.cmake")
+endif()
+
+# T24: the queue as a folder tree, scripted through the shell's key decoder.
+if(NOT SEL_AMIGA)
+  add_test(NAME selecta-tree-view
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DMOD=${SEL_MKMOD}"
+      "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m1/tree_view.keys"
+      "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m1/tree_view.screen"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/tree_view"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/tree_view.cmake")
+endif()
+
+# T24: the same queue as a drilldown: pick a folder, the breadcrumb and its songs show.
+if(NOT SEL_AMIGA)
+  add_test(NAME selecta-drill-view
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DMOD=${SEL_MKMOD}"
+      "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m1/drill_view.keys"
+      "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m1/drill_view.screen"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/drill_view"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/tree_view.cmake")
+  set_tests_properties(selecta-tree-view selecta-drill-view PROPERTIES RESOURCE_LOCK tree_view_root)
 endif()
 
 # T20: queue edits, ids, NEXT/PREV and auto-advance through the engine

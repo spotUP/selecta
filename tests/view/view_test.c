@@ -2,7 +2,7 @@
  * driven through the engine's command queue and snapshot. Behaviour is tested
  * where it lives; the reachability test of the whole UI is the text UI test.
  * Usage: view_test <songs dir> [group...]
- * groups: browse sort cursor activate window style   (none: all) */
+ * groups: browse sort cursor activate window style tree   (none: all) */
 #include <selecta/engine.h>
 #include <selecta/host.h>
 #include <selecta/protocol.h>
@@ -223,8 +223,93 @@ static void test_style(void) {
     run("VIEW_STYLE regular");
     CHECK(strstr(evlog, "ERROR") == NULL, "regular rejected: %s", evlog);
     CHECK(strstr(evlog, "VIEW_CHANGED regular") != NULL, "no VIEW_CHANGED: %s", evlog);
+    run("VIEW_STYLE nonsense");
+    CHECK(strstr(evlog, "ERROR unsupported_style") != NULL, "nonsense: %s", evlog);
+}
+
+/* T32 view-tree: grouping, node ids, expand/collapse, drilldown, and the
+ * cursor staying on one song across the three styles. */
+static int is_node(uint32_t i) {
+    const sel_view_state* v = view();
+    return i >= v->window_start && i - v->window_start < v->row_n && v->rows[i - v->window_start].kind == SEL_ROW_NODE;
+}
+
+static uint32_t row_depth(uint32_t i) {
+    const sel_view_state* v = view();
+    return i >= v->window_start && i - v->window_start < v->row_n ? v->rows[i - v->window_start].depth : 99u;
+}
+
+static void test_tree(void) {
+    uint32_t song;
+    run("QUEUE_CLEAR");
+    run("QUEUE_ADD /m/a/one.mod");
+    run("QUEUE_ADD /m/a/two.xm");
+    run("QUEUE_ADD /m/b/three.mod");
+    run("QUEUE_ADD /m/c/four.s3m");
+    run("QUEUE_ADD /m/c/five.mod");
+    run("VIEW_SHOW queue");
+    run("VIEW_WINDOW 20");
+    run("VIEW_CURSOR 2");
+    song = view()->cursor_id;
+    CHECK(view()->row_count == 5u && song != 0u, "regular queue: %u rows, cursor id %u", view()->row_count, song);
+
+    run("VIEW_GROUP folder");
+    CHECK(strstr(evlog, "ERROR") == NULL, "group folder: %s", evlog);
+    CHECK(strstr(evlog, "VIEW_CHANGED tree") != NULL, "no VIEW_CHANGED tree: %s", evlog);
+    CHECK(view()->style == SEL_VIEW_STYLE_TREE && view()->row_count == 3u, "tree: style %u rows %u", view()->style,
+          view()->row_count);
+    CHECK(is_node(0) && is_node(1) && is_node(2), "rows are not all nodes");
+    CHECK(strcmp(row_text(0), "/m/a") == 0 && strcmp(row_text(2), "/m/c") == 0, "node names '%s' '%s'", row_text(0),
+          row_text(2));
+    CHECK(view()->cursor_id == song, "cursor id lost in the tree: %u vs %u", view()->cursor_id, song);
+    CHECK(view()->cursor == 1u, "hidden song: cursor sits on its node, got %u", view()->cursor);
+
+    run("VIEW_EXPAND 2");
+    CHECK(strstr(evlog, "ERROR") == NULL, "expand: %s", evlog);
+    CHECK(view()->row_count == 4u, "expanded rows %u", view()->row_count);
+    CHECK(strcmp(row_text(2), "three.mod") == 0 && row_depth(2) == 1u, "child row '%s' depth %u", row_text(2),
+          row_depth(2));
+    CHECK(view()->cursor == 2u && view()->cursor_id == song, "cursor on the song: %u id %u", view()->cursor,
+          view()->cursor_id);
+    run("VIEW_COLLAPSE 2");
+    CHECK(view()->row_count == 3u, "collapsed rows %u", view()->row_count);
+    run("VIEW_EXPAND 999");
+    CHECK(strstr(evlog, "ERROR range VIEW_EXPAND") != NULL, "unknown node: %s", evlog);
+
+    run("VIEW_EXPAND 2");
+    run("VIEW_STYLE drilldown");
+    CHECK(view()->style == SEL_VIEW_STYLE_DRILLDOWN && view()->cursor_id == song, "drilldown cursor id %u", view()->cursor_id);
+    run("VIEW_STYLE regular");
+    CHECK(view()->cursor == 2u && view()->cursor_id == song && view()->row_count == 5u, "regular again: %u id %u rows %u",
+          view()->cursor, view()->cursor_id, view()->row_count);
+
+    run("VIEW_STYLE drilldown");
+    CHECK(view()->row_count == 3u && is_node(0), "drilldown level 0 lists the folders: %u", view()->row_count);
+    run("VIEW_DRILL 0 /m/a");
+    CHECK(strstr(evlog, "ERROR") == NULL, "drill: %s", evlog);
+    CHECK(view()->drill_n == 1u && view()->row_count == 2u, "drilled: n %u rows %u", view()->drill_n, view()->row_count);
+    CHECK(strcmp(row_text(0), "one.mod") == 0 && strcmp(row_text(1), "two.xm") == 0, "songs '%s' '%s'", row_text(0),
+          row_text(1));
+    run("VIEW_DRILL 0 /m/nowhere");
+    CHECK(strstr(evlog, "ERROR range VIEW_DRILL") != NULL, "drill to nothing: %s", evlog);
+    run("VIEW_DRILL 0 ..");
+    CHECK(view()->drill_n == 0u && view()->row_count == 3u, "drill cleared: n %u rows %u", view()->drill_n, view()->row_count);
+
+    run("VIEW_GROUP format");
+    CHECK(strcmp(view()->group, "format") == 0 && view()->row_count == 3u, "format groups %u", view()->row_count);
+    CHECK(strcmp(row_text(0), "mod") == 0 && strcmp(row_text(1), "s3m") == 0 && strcmp(row_text(2), "xm") == 0,
+          "format nodes '%s' '%s' '%s'", row_text(0), row_text(1), row_text(2));
+    run("VIEW_DRILL 0 mod");
+    CHECK(view()->row_count == 3u && is_node(0) && strcmp(row_text(2), "/m/c") == 0, "format > folder: %u rows", view()->row_count);
+    run("VIEW_DRILL 1 /m/c");
+    CHECK(view()->row_count == 1u && strcmp(row_text(0), "five.mod") == 0, "format > folder > song: %u rows '%s'",
+          view()->row_count, row_text(0));
     run("VIEW_STYLE tree");
-    CHECK(strstr(evlog, "ERROR unsupported_style") != NULL, "tree: %s", evlog);
+    CHECK(view()->row_count == 3u && view()->drill_n == 0u, "tree by format: %u rows", view()->row_count);
+
+    run("VIEW_GROUP artist");
+    CHECK(strstr(evlog, "ERROR unsupported VIEW_GROUP") != NULL, "artist: %s", evlog);
+    CHECK(strcmp(view()->group, "format") == 0, "failed group changed the key");
 }
 
 int main(int argc, char** argv) {
@@ -265,6 +350,7 @@ int main(int argc, char** argv) {
     }
     if (wanted(argc, argv, "window")) test_window();
     if (wanted(argc, argv, "style")) test_style();
+    if (wanted(argc, argv, "tree")) test_tree();
     sel_engine_destroy(eng);
     remove_tree();
     printf(failures ? "view-unit: %d failure(s)\n" : "view-unit: ok\n", failures);

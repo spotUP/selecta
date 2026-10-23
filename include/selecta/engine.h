@@ -48,28 +48,39 @@ typedef struct sel_queue_entry {
 /* The view model (design doc section 9b), regular style: one flat list over
  * the queue or the browse listing, a cursor and the visible window. */
 typedef enum sel_view_source { SEL_VIEW_QUEUE = 0, SEL_VIEW_BROWSE = 1 } sel_view_source;
-typedef enum sel_row_kind { SEL_ROW_DIR = 0, SEL_ROW_FILE, SEL_ROW_QUEUE } sel_row_kind;
+typedef enum sel_row_kind { SEL_ROW_DIR = 0, SEL_ROW_FILE, SEL_ROW_QUEUE, SEL_ROW_NODE } sel_row_kind;
+/* Styles over the queue: regular (flat), tree (group nodes that expand to
+ * their songs) and drilldown (columns: pick a value per level, the next
+ * column lists what matches). The browse source is always regular. */
+typedef enum sel_view_style { SEL_VIEW_STYLE_REGULAR = 0, SEL_VIEW_STYLE_TREE, SEL_VIEW_STYLE_DRILLDOWN } sel_view_style;
 
 typedef struct sel_view_row {
     uint32_t kind;  /* sel_row_kind */
-    uint32_t id;    /* queue entry id (SEL_ROW_QUEUE), else the index in the listing */
-    uint32_t depth; /* 0 in the regular style */
+    uint32_t id;    /* queue entry id (SEL_ROW_QUEUE), node id (SEL_ROW_NODE: 1.. in order of first
+                       appearance, stable while the group has songs), else the index in the listing */
+    uint32_t depth; /* 0 in the regular style; songs under a tree node are 1 */
     const char* text;
+    uint32_t count;    /* SEL_ROW_NODE: songs the node holds */
+    uint32_t expanded; /* SEL_ROW_NODE: 1 when its songs are listed below it */
 } sel_view_row;
 
 /* rows[0..row_n) are the visible window: listing indices window_start and up.
  * Row and path pointers are valid until the next pump. */
 typedef struct sel_view_state {
     uint32_t source;       /* sel_view_source */
-    uint32_t style;        /* 0: regular */
+    uint32_t style;        /* sel_view_style */
     uint32_t row_count;    /* rows in the whole list */
     uint32_t cursor;       /* index into the whole list */
-    uint32_t cursor_id;    /* id of the cursor row (see sel_view_row.id) */
+    uint32_t cursor_id;    /* id of the cursor row (see sel_view_row.id); tree and
+                              drilldown keep the song's id while its node row shows */
     uint32_t window_start; /* index of rows[0] */
     uint32_t window_rows;  /* requested window height */
     uint32_t row_n;        /* rows[] entries filled */
     const sel_view_row* rows;
     const char* browse_path; /* directory the browse listing shows */
+    const char* group;       /* grouping key: "folder" or "format" */
+    uint32_t drill_n;        /* drilldown: values picked so far */
+    const char* drill[2];    /* the picked values, column order */
 } sel_view_state;
 
 typedef struct sel_song_state {
