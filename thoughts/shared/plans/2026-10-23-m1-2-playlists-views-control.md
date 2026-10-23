@@ -145,3 +145,10 @@ Everything listed under M1.3; artist/album/genre grouping and smart playlists (M
 - T5 plugin count: 6 base, +2 on APPLE, +1 on Linux with MPRIS.
 - MPRIS (`plugins/integrations/mpris/linux/mpris.c`) is not compiled on this host; it needs libsystemd. Unverified until Linux CI.
 - Merge kept Phase 5's single `selecta_registry` link for selecta-cli (no duplicate core library).
+
+### Phase 7 (merge e677438)
+- The plan gives no absolute B; `tests/m12/reach.cmake` runs a quit-only shell first for the default binding count and asserts B equals it plus 1.
+- `reach.keys` adds Tab and Enter after the palette closes; without them the last screen is browse, not the queue tree (Q22).
+- Playlist entries are relative and titles are file names (`one.mod - mod`): queue load reads no tag metadata (Q23).
+- The title format comes from a `prefs.conf` written by the test script into `--config-dir`.
+- New: three UI stat tags (command lines run, palette openings, binding count), `undo_depth` and `redo_depth` in `sel_engine_stats`, `sel_view_style_label`.
