@@ -3,6 +3,7 @@
 
 #include "dir.h"
 #include "md5.h"
+#include "source.h"
 
 #include <selecta/engine.h>
 #include <selecta/machine.h>
@@ -387,7 +388,16 @@ static int by_age(const void* a, const void* b) {
 }
 
 int sel_cache_is_remote(const char* key) {
-    return key != NULL && (strncmp(key, "modland:", 8) == 0 || strncmp(key, "hvsc:", 5) == 0);
+    char id[SEL_SOURCE_ID_MAX];
+    const char* colon = key != NULL ? strchr(key, ':') : NULL;
+    size_t n = colon != NULL ? (size_t)(colon - key) : 0;
+
+    if (n == 0 || n >= sizeof id || colon[1] == '/' || colon[1] == '\0') { /* no source id, a URL scheme or no path */
+        return 0;
+    }
+    memcpy(id, key, n);
+    id[n] = '\0';
+    return sel_source_is_remote(id);
 }
 
 uint32_t sel_cache_budget(const sel_tag* machine) {
