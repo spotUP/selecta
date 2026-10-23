@@ -58,8 +58,8 @@ const char* txt_bindings_lookup(const txt_bindings* b, uint32_t ctx, uint32_t co
 const char* txt_bindings_key_for(const txt_bindings* b, const char* action, char* out, size_t cap);
 
 /* Key names: a single character, Space Tab Enter Escape Backspace Up Down
- * Left Right Home End PageUp PageDown Insert Delete F1..F12, with C- and M-
- * prefixes. Returns 1 on success. */
+ * Left Right Home End PageUp PageDown Insert Delete F1..F12, with C-, M- and S-
+ * (Shift) prefixes. Returns 1 on success. */
 int txt_key_parse(const char* name, uint32_t* code, uint32_t* mods);
 /* txt_key_parse plus the optional `list:` / `player:` prefix. */
 int txt_key_parse_ctx(const char* name, uint32_t* ctx, uint32_t* code, uint32_t* mods);

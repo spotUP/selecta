@@ -117,6 +117,21 @@ int main(void) {
     CHECK(!txt_key_parse("", &code, &mods));
     CHECK(txt_key_name('a', TXT_MOD_CTRL, name, sizeof name) && strcmp(name, "C-a") == 0);
     CHECK(txt_key_name(TXT_KEY_F1 + 2u, 0, name, sizeof name) && strcmp(name, "F3") == 0);
+    /* I218b: S- names Shift; an unbound Shift+key acts as the plain key, a bound one wins */
+    CHECK(txt_key_parse("S-Up", &code, &mods) && code == TXT_KEY_UP && mods == TXT_MOD_SHIFT);
+    CHECK(txt_key_parse("C-S-F2", &code, &mods) && code == TXT_KEY_F1 + 1u && mods == (TXT_MOD_CTRL | TXT_MOD_SHIFT));
+    CHECK(txt_key_name(TXT_KEY_DOWN, TXT_MOD_SHIFT, name, sizeof name) && strcmp(name, "S-Down") == 0);
+    CHECK(is(look(&b, TXT_KEY_UP, TXT_MOD_SHIFT), "VIEW_CURSOR -1"));
+    CHECK(is(txt_bindings_lookup(&b, TXT_CTX_PLAYER, TXT_KEY_LEFT, TXT_MOD_SHIFT), "SEEK -5000"));
+    CHECK(look(&b, TXT_KEY_F1, TXT_MOD_SHIFT) == NULL);
+    {
+        static txt_bindings sb;
+        uint32_t sbad = 0;
+        txt_bindings_default(&sb);
+        CHECK(txt_bindings_load(&sb, "S-Down NEXT\n", &sbad) == 0);
+        CHECK(is(txt_bindings_lookup(&sb, TXT_CTX_LIST, TXT_KEY_DOWN, TXT_MOD_SHIFT), "NEXT"));
+        CHECK(is(txt_bindings_lookup(&sb, TXT_CTX_LIST, TXT_KEY_DOWN, 0), "VIEW_CURSOR +1"));
+    }
     CHECK(txt_bindings_load(&b, "F5 NEXT\nM-x PREV\nC-a STOP\n", &bad) == 0);
     CHECK(is(look(&b, TXT_KEY_F1 + 4u, 0), "NEXT"));
     CHECK(is(look(&b, 'x', TXT_MOD_ALT), "PREV"));

@@ -52,6 +52,9 @@ int txt_key_parse(const char* name, uint32_t* code, uint32_t* mods) {
         } else if (strncmp(name, "M-", 2) == 0 && name[2] != '\0') {
             *mods |= TXT_MOD_ALT;
             name += 2;
+        } else if (strncmp(name, "S-", 2) == 0 && name[2] != '\0') {
+            *mods |= TXT_MOD_SHIFT;
+            name += 2;
         } else {
             break;
         }
@@ -119,7 +122,8 @@ int txt_key_name(uint32_t code, uint32_t mods, char* out, size_t cap) {
     if (base[0] == '\0') {
         return 0;
     }
-    n = snprintf(out, cap, "%s%s%s", (mods & TXT_MOD_CTRL) ? "C-" : "", (mods & TXT_MOD_ALT) ? "M-" : "", base);
+    n = snprintf(out, cap, "%s%s%s%s", (mods & TXT_MOD_CTRL) ? "C-" : "", (mods & TXT_MOD_ALT) ? "M-" : "",
+                 (mods & TXT_MOD_SHIFT) ? "S-" : "", base);
     return n > 0 && (size_t)n < cap;
 }
 
@@ -288,12 +292,22 @@ uint32_t txt_bindings_load(txt_bindings* b, const char* text, uint32_t* first_ba
     return bad;
 }
 
-const char* txt_bindings_lookup(const txt_bindings* b, uint32_t ctx, uint32_t code, uint32_t mods) {
+static const char* lookup_exact(const txt_bindings* b, uint32_t ctx, uint32_t code, uint32_t mods) {
     int at = ctx != TXT_CTX_ANY ? find(b, ctx, code, mods) : -1;
     if (at < 0) {
         at = find(b, TXT_CTX_ANY, code, mods);
     }
     return at < 0 ? NULL : b->rows[at].action;
+}
+
+const char* txt_bindings_lookup(const txt_bindings* b, uint32_t ctx, uint32_t code, uint32_t mods) {
+    const char* action = lookup_exact(b, ctx, code, mods);
+    /* Row I218b: a Shift+key nobody bound acts as the key without Shift, so Shift+Up on the
+       Amiga console moves the cursor like Up. */
+    if (action == NULL && (mods & TXT_MOD_SHIFT) != 0u) {
+        action = lookup_exact(b, ctx, code, mods & ~TXT_MOD_SHIFT);
+    }
+    return action;
 }
 
 static const char* row_name(const txt_bind* r, char* out, size_t cap) {
