@@ -49,6 +49,9 @@ typedef struct sel_cache {
     sel_cache_stats stats;
     sel_mirror_set sets[SEL_CACHE_SETS];
     unsigned set_count;
+    const char* part_tag;   /* inserted before ".part" in the temporary name; "" or ".pf" (prefetch, I168a) so two
+                             * downloads of one file never share a temporary */
+    volatile int* cancel;   /* non-NULL: a download stops at its next body chunk once *cancel is set (I168a) */
 } sel_cache;
 
 /* dir NULL or empty: $SELECTA_CACHE_DIR, else $XDG_CACHE_HOME/selecta, else $HOME/.cache/selecta. */

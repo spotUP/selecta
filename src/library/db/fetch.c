@@ -17,6 +17,24 @@ static sel_cache* cache_get(sel_library* lib) {
     return lib->cache;
 }
 
+/* Runs one prefetch request on `c` (sel_cache_fetch_song, the code LIBRARY_FETCH uses: no second downloader).
+ * Returns 1 when the request named a valid song. The stats of `c` moved by the work done. */
+static int prefetch_run(sel_cache* c, const char* spec, const char* rules) {
+    char path[SEL_CACHE_PATH_MAX];
+    char out[SEL_CACHE_PATH_MAX];
+    char source[24];
+    const char* colon = strchr(spec, ':');
+
+    if (colon == NULL || colon == spec || (size_t)(colon - spec) >= sizeof source || strlen(colon + 1) >= sizeof path) {
+        return 0;
+    }
+    memcpy(source, spec, (size_t)(colon - spec));
+    source[colon - spec] = '\0';
+    snprintf(path, sizeof path, "%s", colon + 1);
+    sel_cache_fetch_song(c, source, path, NULL, rules, out, sizeof out);
+    return 1;
+}
+
 #if !defined(SEL_LIBRARY_NO_THREAD)
 static void cache_lock(sel_library* lib) {
     if (lib->pf_started) {
@@ -30,9 +48,33 @@ static void cache_unlock(sel_library* lib) {
     }
 }
 
-/* The prefetch thread (I168): takes the pending request, fetches the song and its companions through the
- * same sel_cache_fetch_song as LIBRARY_FETCH (no second downloader), one request at a time. The trim and
- * the kept query stay on the caller thread, so the next foreground fetch enforces the budget. */
+static void stats_add(sel_cache_stats* to, const sel_cache_stats* from) {
+    to->cache_hits += from->cache_hits;
+    to->fetches += from->fetches;
+    to->companions += from->companions;
+    to->md5_mismatches += from->md5_mismatches;
+    to->mirror_tries += from->mirror_tries;
+    to->prefetches++;
+    if (from->fetches != 0) {
+        to->prefetch_fetches++;
+    }
+}
+
+/* A foreground fetch never waits behind a prefetch (I168a): the pending request is dropped and a download in
+ * flight is told to stop at its next chunk. The two do not share a lock across a transfer: the prefetch thread
+ * works on its own sel_cache handle (same directory, own mirror ranking and stats, own ".pf.part" temporary), and
+ * only merges its stats into the shared one under cache_lock when the request is over. */
+static void prefetch_preempt(sel_library* lib) {
+    if (lib->pf_started) {
+        pthread_mutex_lock(&lib->pf_lock);
+        lib->pf_spec[0] = '\0';
+        lib->pf_cancel = 1;
+        pthread_mutex_unlock(&lib->pf_lock);
+    }
+}
+
+/* The prefetch thread (I168): takes the pending request, fetches the song and its companions, one request at a
+ * time. The trim and the kept query stay on the caller thread, so the next foreground fetch enforces the budget. */
 static void* prefetch_main(void* arg) {
     sel_library* lib = arg;
 
@@ -40,10 +82,6 @@ static void* prefetch_main(void* arg) {
     for (;;) {
         char spec[sizeof lib->pf_spec];
         char rules[sizeof lib->pf_rules];
-        char path[SEL_CACHE_PATH_MAX];
-        char out[SEL_CACHE_PATH_MAX];
-        const char* colon;
-        unsigned before;
 
         while (!lib->pf_quit && lib->pf_spec[0] == '\0') {
             pthread_cond_wait(&lib->pf_wake, &lib->pf_lock);
@@ -54,22 +92,14 @@ static void* prefetch_main(void* arg) {
         memcpy(spec, lib->pf_spec, sizeof spec);
         memcpy(rules, lib->pf_rules, sizeof rules);
         lib->pf_spec[0] = '\0';
+        lib->pf_cancel = 0;
         lib->pf_busy = 1;
         pthread_mutex_unlock(&lib->pf_lock);
-        colon = strchr(spec, ':');
-        if (colon != NULL && colon != spec && (size_t)(colon - spec) < 24u && strlen(colon + 1) < sizeof path) {
-            char source[24];
-
-            memcpy(source, spec, (size_t)(colon - spec));
-            source[colon - spec] = '\0';
-            snprintf(path, sizeof path, "%s", colon + 1);
+        memcpy(lib->pf_cache->dir, lib->cache->dir, sizeof lib->pf_cache->dir);
+        memset(&lib->pf_cache->stats, 0, sizeof lib->pf_cache->stats);
+        if (prefetch_run(lib->pf_cache, spec, rules)) {
             pthread_mutex_lock(&lib->cache_lock);
-            before = lib->cache->stats.fetches;
-            sel_cache_fetch_song(lib->cache, source, path, NULL, rules, out, sizeof out);
-            lib->cache->stats.prefetches++;
-            if (lib->cache->stats.fetches != before) {
-                lib->cache->stats.prefetch_fetches++;
-            }
+            stats_add(&lib->cache->stats, &lib->pf_cache->stats);
             pthread_mutex_unlock(&lib->cache_lock);
         }
         pthread_mutex_lock(&lib->pf_lock);
@@ -85,6 +115,14 @@ int sel_library_prefetch(sel_library* lib, const char* spec, const char* rules) 
         return 0;
     }
     if (!lib->pf_started) {
+        lib->pf_cache = lib->host->mem_alloc(lib->host, sizeof *lib->pf_cache, SEL_MEM_FAST);
+        if (lib->pf_cache == NULL) {
+            return 0;
+        }
+        memset(lib->pf_cache, 0, sizeof *lib->pf_cache);
+        sel_cache_init(lib->pf_cache, lib->cache->dir, lib->cache->amiga_route);
+        lib->pf_cache->part_tag = ".pf";
+        lib->pf_cache->cancel = &lib->pf_cancel;
         pthread_mutex_init(&lib->pf_lock, NULL);
         pthread_mutex_init(&lib->cache_lock, NULL);
         pthread_cond_init(&lib->pf_wake, NULL);
@@ -102,10 +140,8 @@ int sel_library_prefetch(sel_library* lib, const char* spec, const char* rules) 
 }
 
 void sel_library_prefetch_cancel(sel_library* lib) {
-    if (lib != NULL && lib->pf_started) {
-        pthread_mutex_lock(&lib->pf_lock);
-        lib->pf_spec[0] = '\0'; /* a request already running finishes; its file stays cached */
-        pthread_mutex_unlock(&lib->pf_lock);
+    if (lib != NULL) {
+        prefetch_preempt(lib); /* the pending request is dropped and a running download stops */
     }
 }
 
@@ -123,11 +159,17 @@ void sel_library_prefetch_stop(sel_library* lib) {
     if (lib != NULL && lib->pf_started) {
         pthread_mutex_lock(&lib->pf_lock);
         lib->pf_quit = 1;
+        lib->pf_cancel = 1;
         pthread_cond_broadcast(&lib->pf_wake);
         pthread_mutex_unlock(&lib->pf_lock);
         pthread_join(lib->pf_thread, NULL);
         lib->pf_started = 0;
     }
+}
+
+int sel_library_prefetch_poll(sel_library* lib) {
+    (void)lib;
+    return 0;
 }
 #else
 static void cache_lock(sel_library* lib) {
@@ -138,24 +180,58 @@ static void cache_unlock(sel_library* lib) {
     (void)lib;
 }
 
-/* No threads (Amiga build): a prefetch would block the engine's pump, so it is not done there yet. */
+static void prefetch_preempt(sel_library* lib) {
+    lib->pf_spec[0] = '\0'; /* single task: nothing runs in the background, the pending request is just dropped */
+}
+
+/* No threads (Amiga build): the request is parked and run cooperatively by sel_library_prefetch_poll, called
+ * from the engine's tick right after playback started. The transfer is one blocking call; a foreground fetch
+ * cannot overlap it, it only drops a request that has not started yet. */
 int sel_library_prefetch(sel_library* lib, const char* spec, const char* rules) {
-    (void)lib;
-    (void)spec;
-    (void)rules;
-    return 0;
+    if (lib == NULL || spec == NULL || spec[0] == '\0' || strlen(spec) >= sizeof lib->pf_spec || cache_get(lib) == NULL) {
+        return 0;
+    }
+    snprintf(lib->pf_spec, sizeof lib->pf_spec, "%s", spec);
+    snprintf(lib->pf_rules, sizeof lib->pf_rules, "%s", rules != NULL ? rules : "");
+    return 1;
 }
 
 void sel_library_prefetch_cancel(sel_library* lib) {
-    (void)lib;
+    if (lib != NULL) {
+        prefetch_preempt(lib);
+    }
+}
+
+int sel_library_prefetch_poll(sel_library* lib) {
+    char spec[sizeof lib->pf_spec];
+    char rules[sizeof lib->pf_rules];
+    unsigned before;
+
+    if (lib == NULL || lib->pf_spec[0] == '\0' || lib->cache == NULL) {
+        return 0;
+    }
+    memcpy(spec, lib->pf_spec, sizeof spec);
+    memcpy(rules, lib->pf_rules, sizeof rules);
+    lib->pf_spec[0] = '\0';
+    before = lib->cache->stats.fetches;
+    if (prefetch_run(lib->cache, spec, rules)) {
+        lib->cache->stats.prefetches++;
+        if (lib->cache->stats.fetches != before) {
+            lib->cache->stats.prefetch_fetches++;
+        }
+    }
+    return 1;
 }
 
 void sel_library_prefetch_wait(sel_library* lib) {
-    (void)lib;
+    while (sel_library_prefetch_poll(lib)) {
+    }
 }
 
 void sel_library_prefetch_stop(sel_library* lib) {
-    (void)lib;
+    if (lib != NULL) {
+        lib->pf_spec[0] = '\0';
+    }
 }
 #endif
 
@@ -244,6 +320,7 @@ int sel_library_fetch(sel_library* lib, const char* spec, const char* rules, cha
         snprintf(md5, sizeof md5, "%s", tag + 5);
     }
     lib->fetch_requests++;
+    prefetch_preempt(lib);
     cache_lock(lib);
     if (rules != NULL) {
         sel_library_set_rules(lib, rules);

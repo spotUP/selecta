@@ -22,6 +22,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef __amigaos__
+#include <time.h>
+#include <unistd.h>
+#endif
 
 static int usage(FILE* to) {
     fputs("usage: selecta-cli <command> [args]\n"
@@ -508,6 +512,21 @@ static int cmd_script(const char* path, int argc, char** argv) {
             sel_library_prefetch_wait(lib); /* test hook: the prefetch thread is idle after this */
             continue;
         }
+#ifndef __amigaos__
+        if (strncmp(line, "@sleep ", 7) == 0) { /* test hook: let a background transfer get going */
+            usleep((useconds_t)strtoul(line + 7, NULL, 10) * 1000u);
+            continue;
+        }
+        if (strncmp(line, "@timed ", 7) == 0) { /* test hook: one protocol line, wall time printed */
+            struct timespec t0, t1;
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            sel_engine_send_line(e, line + 7, pool, sizeof pool);
+            sel_engine_pump(e, print_event, NULL);
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("timed_ms=%ld\n", (long)((t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000));
+            continue;
+        }
+#endif
         if (strncmp(line, "@mark ", 6) == 0 && lib != NULL) {
             char table[8];
             const char* colon = strchr(line + 6, ':');

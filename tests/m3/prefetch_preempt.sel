@@ -1,0 +1,8 @@
+# T77 part 2 (row I168a): a foreground fetch during a slow prefetch is not held up by it. quick1 plays, the engine
+# prefetches slowpf (first byte after 5 s on the fixture), and LIBRARY_FETCH of quick2 must return long before.
+QUEUE_ADD modland:Protracker/test/quick1.mod
+QUEUE_ADD modland:Protracker/test/slowpf.mod
+PLAY
+@render 1024
+@sleep 500
+@timed LIBRARY_FETCH modland:Protracker/test/quick2.mod
