@@ -260,6 +260,7 @@ struct sel_engine {
     uint32_t mutes; /* mute mask changes, for @stats (T39) */
     uint32_t fades; /* end fades started; audio side (T39) */
     uint32_t mixed_path; /* 1: the engine mixes (a DSP chain can run); 0: the output plays voices itself */
+    const sel_voices* voice_sink; /* the output's own voice backend (Paula-direct), or NULL: voices go to the mixer */
     /* Pattern window request (I101). The pump writes pat_order/pat_row_lo/pat_rows and then
      * raises pat_req; the audio thread fills pat_res between render calls and sets pat_ack
      * equal to pat_req; the pump copies pat_res to pat_pub and points the snapshot at it.
@@ -1037,7 +1038,8 @@ static int start_subsong(sel_engine* e, sel_slot* sl, uint32_t subsong) {
     sl->last_tick = 0;
     memset(&sl->pol, 0, sizeof sl->pol);
     sl->subsong = subsong;
-    return sl->rp_start(sl->rp_state, subsong, e->rate, sel_mixer_voices(&sl->mixer));
+    return sl->rp_start(sl->rp_state, subsong, e->rate,
+                        e->voice_sink != NULL ? e->voice_sink : sel_mixer_voices(&sl->mixer));
 }
 
 /* Reads the whole file into host memory; NULL when it cannot be read. */
@@ -2682,6 +2684,10 @@ void sel_engine_set_stage(sel_engine* e, uint32_t led_on, uint32_t width_percent
 
 void sel_engine_set_paula_output(sel_engine* e, uint32_t on) {
     e->stage.paula_output = on != 0u;
+}
+
+void sel_engine_set_voice_sink(sel_engine* e, const sel_voices* sink) {
+    e->voice_sink = sink;
 }
 
 void sel_engine_set_output(sel_engine* e, const sel_tag* out_hooks) {

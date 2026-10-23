@@ -41,8 +41,8 @@ static void start_sink(void* ctx, const sel_message* evt) {
     }
 }
 
-sel_engine* sel_cli_start_song(const char* who, const sel_host* host, const char* song, uint32_t rate,
-                               uint32_t resampler) {
+sel_engine* sel_cli_start_song_sink(const char* who, const sel_host* host, const char* song, uint32_t rate,
+                                    uint32_t resampler, const sel_voices* sink) {
     sel_engine_config cfg;
     sel_message msg;
     sel_engine* e;
@@ -57,6 +57,9 @@ sel_engine* sel_cli_start_song(const char* who, const sel_host* host, const char
         return NULL;
     }
     sel_engine_set_mix(e, rate, resampler);
+    if (sink != NULL) {
+        sel_engine_set_voice_sink(e, sink);
+    }
 
     memset(&msg, 0, sizeof msg);
     msg.kind = SEL_MSG_CMD;
@@ -75,4 +78,9 @@ sel_engine* sel_cli_start_song(const char* who, const sel_host* host, const char
         return NULL;
     }
     return e;
+}
+
+sel_engine* sel_cli_start_song(const char* who, const sel_host* host, const char* song, uint32_t rate,
+                               uint32_t resampler) {
+    return sel_cli_start_song_sink(who, host, song, rate, resampler, NULL);
 }

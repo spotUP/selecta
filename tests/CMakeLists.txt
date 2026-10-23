@@ -20,10 +20,10 @@ sel_cli_test(protocol-reflection-events   "events"   "-DLINES=${SEL_COUNT_EVT}")
 sel_cli_test(protocol-reflection-tagtypes "tagtypes" "-DLINES=${SEL_COUNT_META}")
 
 # T5: the registry walked every descriptor and found only known tags.
-# null, wav, nuade, openmpt, the crossfeed DSP, the text UI, the nowplaying-test integration and the voices-test
+# null, wav, nuade, openmpt, the crossfeed DSP, the text UI, the nowplaying-test integration and the voices-test and paula-shadow
 # output (both host only), plus coreaudio and the
 # macOS Now Playing plugin on macOS, or MPRIS on Linux when libsystemd was found; the negative tree adds one bad plugin.
-set(SEL_EXPECT_PLUGINS 8)
+set(SEL_EXPECT_PLUGINS 9)
 if(APPLE)
   math(EXPR SEL_EXPECT_PLUGINS "${SEL_EXPECT_PLUGINS} + 2")
 elseif(SEL_HAVE_MPRIS)
@@ -265,6 +265,10 @@ add_test(NAME mixer-unit COMMAND mixer_test period none linear cubic sinc defaul
 add_executable(stage_test mixer/stage_test.c)
 target_link_libraries(stage_test PRIVATE selecta_core)
 add_test(NAME mixer-stage-unit COMMAND stage_test)
+# T50: Paula voice sink conformance (chip copy, AUDxPER/AUDxVOL, loop registers).
+add_executable(paula_voices_test paula/paula_voices_test.c "${PROJECT_SOURCE_DIR}/plugins/outputs/paula/paula_voices.c")
+target_include_directories(paula_voices_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
+add_test(NAME paula-voices-unit COMMAND paula_voices_test)
 
 # T24: browse listing and view model through the engine command queue and
 # snapshot. The temp tree is created inside the generated songs directory.
@@ -695,9 +699,11 @@ if(NOT SEL_AMIGA)
   sel_m2_test(clock-source run desktop -DTAG=I110 "-DARGS1=machine" "-DCHECKS1=clock.source==monotonic")
   sel_m2_test(clock-source run vamos -DTAG=I110 "-DARGS1=machine" "-DCHECKS1=clock.source==datestamp")
   # T51 Paula voice registers: AUDxPER once per note, register log golden.
-  sel_m2_test(paula-voice-registers run vamos -DTAG=T51
-    "-DARGS1=render --output paula-shadow @MOD@ --seconds 2" "-DCHECKS1=aud_writes>0,reg_log_sha256~^[0-9a-f]+$"
-    -DGOLDEN_KEY=reg_log_sha256 "-DGOLDEN_FILE=${SEL_M2_GOLDEN}/paula-voice-registers.sha256")
+  foreach(mode desktop vamos)
+    sel_m2_test(paula-voice-registers run ${mode} -DTAG=T51
+      "-DARGS1=render --output paula-shadow @MOD@ --seconds 2" "-DCHECKS1=aud_writes>0,reg_log_sha256~^[0-9a-f]+$"
+      -DGOLDEN_KEY=reg_log_sha256 "-DGOLDEN_FILE=${SEL_M2_GOLDEN}/paula-voice-registers.sha256")
+  endforeach()
   # T52 paula14 split tables, desktop and vamos hashes equal.
   foreach(mode desktop vamos)
     sel_m2_test(paula14-tables run ${mode} -DTAG=T52

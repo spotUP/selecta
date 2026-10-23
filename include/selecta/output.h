@@ -18,6 +18,7 @@ typedef void (*sel_out_set_source_fn)(void* state, sel_pcm_pull fn, void* ctx); 
  * `frames` frames now and returns how many it pulled. */
 typedef uint32_t (*sel_out_pump_fn)(void* state, uint32_t frames);
 typedef const sel_tag* (*sel_out_stats_fn)(void* state); /* OUT_STATS: OUT_STAT_* tags */
+typedef const struct sel_voices* (*sel_out_voice_backend_fn)(void* state); /* OUT_VOICE_BACKEND */
 
 SEL_EXTERN_C_END
 

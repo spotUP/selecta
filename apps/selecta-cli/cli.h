@@ -54,4 +54,7 @@ int sel_cli_find_output(const char* who, const char* id, sel_cli_output* o);
 /* Creates an engine, sets the mix, opens `song` and starts playing; NULL (message printed) on failure. */
 sel_engine* sel_cli_start_song(const char* who, const sel_host* host, const char* song, uint32_t rate,
                                uint32_t resampler);
+/* As sel_cli_start_song, with `sink` (may be NULL) as the voice backend of the replayer (plan M2 I118). */
+sel_engine* sel_cli_start_song_sink(const char* who, const sel_host* host, const char* song, uint32_t rate,
+                                    uint32_t resampler, const sel_voices* sink);
 #endif

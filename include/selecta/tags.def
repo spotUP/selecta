@@ -75,6 +75,9 @@ SEL_TAG(OUT, DIRECT_VOLUME,    0x200C, INT)
 SEL_TAG(OUT, HEADPHONES,       0x200D, INT)
 SEL_TAG(OUT, STAT_CALLBACKS,   0x200E, INT)
 SEL_TAG(OUT, MEM_CHIP,         0x200F, INT) /* bytes of chip RAM the output needs */
+SEL_TAG(OUT, VOICE_BACKEND,    0x2010, PTR) /* const sel_voices* (*)(void* state): the open output's voice sink */
+SEL_TAG(OUT, STAT_REG_WRITES,  0x2011, INT) /* shadow outputs: AUDx register writes logged */
+SEL_TAG(OUT, STAT_LOG_DIGEST,  0x2012, STR) /* shadow outputs: SHA-256 of the register log, lowercase hex */
 
 /* DSP plugin rows (design doc section 5, include/selecta/dsp.h). */
 SEL_TAG(DSP, NAME,             0x3000, STR)
