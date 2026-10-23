@@ -175,5 +175,7 @@ void sel_library_handle(sel_library* lib, const sel_message* req, sel_message* r
     lib->served++;
     if (req->id == SEL_LIB_REQ_STATS) {
         handle_stats(lib, reply);
+    } else if (req->id == SEL_LIB_REQ_SCAN_BATCH && req->argc == 1) {
+        sel_library_scan_batch(lib, (const sel_scan_batch*)req->args[0].v.s, reply);
     }
 }

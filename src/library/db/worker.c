@@ -65,12 +65,17 @@ void sel_worker_stop(sel_library* lib) {
     sel_spsc_free(&lib->results, lib->host);
 }
 
-int sel_library_call(sel_library* lib, uint32_t req, sel_message* reply) {
+int sel_library_request(sel_library* lib, uint32_t req, const void* payload, sel_message* reply) {
     sel_message m;
 
     memset(&m, 0, sizeof m);
     m.kind = SEL_MSG_CMD;
     m.id = req;
+    if (payload != NULL) {
+        m.argc = 1;
+        m.args[0].type = SEL_ARG_STR;
+        m.args[0].v.s = (const char*)payload;
+    }
     pthread_mutex_lock(&lib->lock);
     if (!sel_spsc_push(&lib->requests, &m)) {
         pthread_mutex_unlock(&lib->lock);
@@ -95,12 +100,17 @@ void sel_worker_stop(sel_library* lib) {
     sel_spsc_free(&lib->results, lib->host);
 }
 
-int sel_library_call(sel_library* lib, uint32_t req, sel_message* reply) {
+int sel_library_request(sel_library* lib, uint32_t req, const void* payload, sel_message* reply) {
     sel_message m;
 
     memset(&m, 0, sizeof m);
     m.kind = SEL_MSG_CMD;
     m.id = req;
+    if (payload != NULL) {
+        m.argc = 1;
+        m.args[0].type = SEL_ARG_STR;
+        m.args[0].v.s = (const char*)payload;
+    }
     if (!sel_spsc_push(&lib->requests, &m) || !sel_spsc_pop(&lib->requests, &m)) {
         return 0;
     }
@@ -110,3 +120,7 @@ int sel_library_call(sel_library* lib, uint32_t req, sel_message* reply) {
 }
 
 #endif
+
+int sel_library_call(sel_library* lib, uint32_t req, sel_message* reply) {
+    return sel_library_request(lib, req, NULL, reply);
+}

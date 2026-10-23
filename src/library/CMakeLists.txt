@@ -17,7 +17,7 @@ target_include_directories(selecta_library PUBLIC ${PROJECT_SOURCE_DIR}/include 
 # SQLite, schema v1 with migrations, the memsys5 heap and the worker with its SPSC queues. The
 # Amiga build runs requests on the caller's task until the library subtask (Phase 12).
 add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/sqlite ${CMAKE_BINARY_DIR}/third_party/sqlite)
-target_sources(selecta_library PRIVATE db/db.c db/schema.c db/worker.c query.c)
+target_sources(selecta_library PRIVATE db/db.c db/schema.c db/worker.c db/scan.c query.c)
 target_include_directories(selecta_library PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/db)
 target_link_libraries(selecta_library PUBLIC selecta_sqlite)
 if(SEL_AMIGA)
@@ -34,3 +34,7 @@ else()
   add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/mbedtls ${CMAKE_BINARY_DIR}/third_party/mbedtls)
   target_link_libraries(selecta_library PUBLIC selecta_mbedtls)
 endif()
+
+# Sources (plan Phase 4, I157, I158): the sel_source interface and registry, song keys, the Modland
+# format table and the local source (scan over sel_browse).
+target_sources(selecta_library PRIVATE source.c formats_table.c sources/local.c sources/modland.c)

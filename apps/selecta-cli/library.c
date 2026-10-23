@@ -12,10 +12,13 @@
 #include "local.h"
 #include "db.h"
 #include "query.h"
+#include "source.h"
+#include "sources/local_source.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 typedef struct browse_sink {
     unsigned entries;
@@ -196,9 +199,139 @@ static int library_query(int argc, char** argv) {
     return 0;
 }
 
+/* `library scan [--db <path>] <dir>` (T71 scan part): LIBRARY_SCAN through the engine. The engine
+ * calls the hook below, which walks <dir> with the local source and writes the rows through the
+ * library worker. Prints `scanned_files= skipped_files= scan_batches= probed= dirs= db_songs=`
+ * (db_songs read back from the DB after the scan). */
+typedef struct scan_ctx {
+    sel_library* lib;
+    sel_local_scan_stats stats;
+} scan_ctx;
+
+static int scan_hook(void* ctx, const char* path, uint32_t* files) {
+    scan_ctx* c = ctx;
+    sel_local_scan_config cfg;
+    int ok;
+
+    memset(&cfg, 0, sizeof cfg);
+    cfg.host = sel_host_default();
+    cfg.lib = c->lib;
+    cfg.registry_count = sel_registry_count;
+    cfg.registry_get = sel_registry_get;
+    cfg.now = (int64_t)time(NULL);
+    ok = sel_local_scan(&cfg, path, &c->stats);
+    *files = c->stats.scanned_files;
+    return ok;
+}
+
+static int library_scan(int argc, char** argv) {
+    const sel_host* host = sel_host_default();
+    const char* db_path = ":memory:";
+    const char* dir = NULL;
+    browse_sink sink;
+    scan_ctx ctx;
+    sel_engine_config cfg;
+    sel_engine* e;
+    sel_message st;
+    char line[1100];
+    char pool[1100];
+    int i;
+
+    for (i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "--db") == 0 && i + 1 < argc) {
+            db_path = argv[++i];
+        } else if (dir == NULL) {
+            dir = argv[i];
+        } else {
+            dir = NULL;
+            break;
+        }
+    }
+    if (dir == NULL) {
+        fputs("usage: selecta-cli library scan [--db <path>] <dir>\n", stderr);
+        return 2;
+    }
+    memset(&sink, 0, sizeof sink);
+    memset(&ctx, 0, sizeof ctx);
+    memset(&cfg, 0, sizeof cfg);
+    sel_registry_init(host);
+    cfg.registry_count = sel_registry_count;
+    cfg.registry_get = sel_registry_get;
+    cfg.machine = sel_machine_probe(host);
+    ctx.lib = sel_library_open(host, cfg.machine, 0, db_path);
+    if (ctx.lib == NULL) {
+        puts("db_open=0");
+        return 1;
+    }
+    cfg.library_scan = scan_hook;
+    cfg.library_ctx = &ctx;
+    e = sel_engine_create(host, &cfg);
+    if (e == NULL) {
+        fputs("selecta-cli: engine allocation failed\n", stderr);
+        sel_library_close(ctx.lib);
+        return 1;
+    }
+    snprintf(line, sizeof line, "LIBRARY_SCAN %s", dir);
+    sel_engine_send_line(e, line, pool, sizeof pool);
+    sel_engine_pump(e, on_event, &sink);
+    memset(&st, 0, sizeof st);
+    if (!sel_library_call(ctx.lib, SEL_LIB_REQ_STATS, &st)) {
+        st.args[SEL_LIB_STAT_SONGS].v.i = -1;
+    }
+    printf("scanned_files=%u skipped_files=%u scan_batches=%u probed=%u dirs=%u db_songs=%d\n",
+           (unsigned)ctx.stats.scanned_files, (unsigned)ctx.stats.skipped_files, (unsigned)ctx.stats.scan_batches,
+           (unsigned)ctx.stats.probed, (unsigned)ctx.stats.dirs, st.args[SEL_LIB_STAT_SONGS].v.i);
+    sel_engine_destroy(e);
+    sel_library_close(ctx.lib);
+    return sink.failed ? 1 : 0;
+}
+
+/* `library key <source> <path>` (T72 key round trip): prints `key=<id>:<path>`, then the split back
+ * (`key_source=` `key_path=`), and for a source with URLs `url=` and `path_in=` plus
+ * `roundtrip=1` when url -> path_in -> url returns the first URL and the key splits back to the
+ * input. Exit 1 when the round trip fails. */
+static int library_key(int argc, char** argv) {
+    char key[SEL_SONG_KEY_MAX];
+    char src[SEL_SOURCE_ID_MAX];
+    char path[SEL_BROWSE_PATH_MAX];
+    char url[SEL_SONG_KEY_MAX + 64];
+    char back[SEL_BROWSE_PATH_MAX];
+    char url2[SEL_SONG_KEY_MAX + 64];
+    const sel_source* source;
+    int ok;
+
+    if (argc != 2) {
+        fputs("usage: selecta-cli library key <source> <path>\n", stderr);
+        return 2;
+    }
+    sel_source_register_builtin();
+    source = sel_source_find(argv[0]);
+    if (source == NULL) {
+        printf("ERROR unknown_source %s\n", argv[0]);
+        return 1;
+    }
+    ok = sel_song_key(argv[0], argv[1], key, sizeof key) &&
+         sel_song_key_split(key, src, sizeof src, path, sizeof path) && strcmp(src, argv[0]) == 0 &&
+         strcmp(path, argv[1]) == 0;
+    printf("key=%s\n", key);
+    if (ok && source->url != NULL && source->path_in != NULL) {
+        ok = source->url(argv[1], url, sizeof url) && source->path_in(url, back, sizeof back) &&
+             strcmp(back, argv[1]) == 0 && source->url(back, url2, sizeof url2) && strcmp(url, url2) == 0;
+        printf("url=%s\npath_in=%s\n", url, back);
+    }
+    printf("roundtrip=%d\n", ok);
+    return ok ? 0 : 1;
+}
+
 int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "browse") == 0) {
         return library_browse(argc, argv);
+    }
+    if (argc >= 1 && strcmp(argv[0], "scan") == 0) {
+        return library_scan(argc - 1, argv + 1);
+    }
+    if (argc >= 1 && strcmp(argv[0], "key") == 0) {
+        return library_key(argc - 1, argv + 1);
     }
     if (argc >= 1 && strcmp(argv[0], "stats") == 0) {
         return library_stats(argc - 1, argv + 1);
@@ -206,6 +339,6 @@ int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "query") == 0) {
         return library_query(argc - 1, argv + 1);
     }
-    fputs("usage: selecta-cli library browse <dir> | query --explain <q> | stats [--machine <name>] [--db <path>]\n", stderr);
+    fputs("usage: selecta-cli library browse <dir> | scan [--db <path>] <dir> | key <source> <path> | query --explain <q> | stats [--machine <name>] [--db <path>]\n", stderr);
     return 2;
 }

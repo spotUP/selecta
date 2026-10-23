@@ -32,6 +32,9 @@ struct sel_library {
 /* db.c: the one request handler; runs on the worker (or the caller's task without threads). */
 void sel_library_handle(sel_library* lib, const sel_message* req, sel_message* reply);
 
+/* scan.c: SEL_LIB_REQ_SCAN_BATCH. */
+void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_message* reply);
+
 /* worker.c */
 int sel_worker_start(sel_library* lib);
 void sel_worker_stop(sel_library* lib);

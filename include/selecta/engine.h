@@ -142,6 +142,10 @@ typedef struct sel_state {
     uint32_t stereo_width;      /* MIX_STEREO_WIDTH: 0 (mono) to 100 (unchanged) */
 } sel_state;
 
+/* LIBRARY_SCAN hook (I158): scans `path` into the catalogue; returns 1 and the number of files
+ * scanned, 0 on failure. The engine does not link the library; the front end hands this in. */
+typedef int (*sel_library_scan_fn)(void* ctx, const char* path, uint32_t* files);
+
 typedef struct sel_engine_config {
     uint32_t cmd_queue_depth; /* 0: default 64 */
     uint32_t evt_queue_depth; /* 0: default 256 */
@@ -163,6 +167,8 @@ typedef struct sel_engine_config {
     /* Directory of prefs.conf (see sel_config_dir). NULL: prefs are not read
      * or written, they stay at their defaults for this run. */
     const char* config_dir;
+    sel_library_scan_fn library_scan;
+    void* library_ctx;
 } sel_engine_config;
 
 typedef struct sel_engine sel_engine;
