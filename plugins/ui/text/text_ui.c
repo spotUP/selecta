@@ -334,6 +334,9 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
         u->pattern = !u->pattern;
         u->viz = 0;
         u->pat_asked = 0;
+    } else if (strcmp(name, "show_list") == 0) {
+        u->pattern = 0;
+        u->viz = 0;
     } else if (strncmp(name, "voice", 5) == 0 && name[5] >= '1' && name[5] <= '9' && name[6] == '\0') {
         char vl[32];
         u->voice = (uint32_t)(name[5] - '0');
@@ -404,6 +407,11 @@ static void tui_overlay_key(tui* u, const txt_key* k) {
     u->overlay = 0;
 }
 
+/* The binding context: the pattern and viz panels replace the list pane. */
+static uint32_t tui_bind_ctx(const tui* u) {
+    return (u->pattern || u->viz) ? TXT_CTX_PLAYER : TXT_CTX_LIST;
+}
+
 static void tui_key(tui* u, const txt_key* k) {
     const char* action;
     if (u->overlay) {
@@ -419,7 +427,7 @@ static void tui_key(tui* u, const txt_key* k) {
         return;
     }
     u->cmd.status[0] = '\0';
-    action = txt_bindings_lookup(&u->binds, k->code, k->mods);
+    action = txt_bindings_lookup(&u->binds, tui_bind_ctx(u), k->code, k->mods);
     if (action == NULL) {
         return; /* not a key the UI knows */
     }
@@ -442,6 +450,7 @@ static const struct {
     {"End", "\x1b[F"},  {"PageUp", "\x1b[5~"}, {"PageDown", "\x1b[6~"}, {"Enter", "\r"},   {"Tab", "\t"},
     {"Backspace", "\x7f"}, {"Escape", "\x1b"}, {"Space", " "},        {"Ctrl-P", "\x10"},
     {"Ctrl-Left", "\x1b[1;5D"}, {"Ctrl-Right", "\x1b[1;5C"},
+    {"Alt-Left", "\x1b[1;3D"}, {"Alt-Right", "\x1b[1;3C"},
 };
 
 /* Reads the next line of the keys file; returns 0 at the end of the file. */
@@ -1006,8 +1015,14 @@ static void tui_draw(tui* u) {
                       u->grid.cols - 1u, tui_style(u, TXT_ROLE_DIM));
         return;
     }
+    if (tui_bind_ctx(u) == TXT_CTX_PLAYER) {
+        txt_grid_text(&u->grid, 1, u->grid.rows - 1u,
+                      "Left Right Seek  Up Down Volume  Page Up Page Down Subsong  Enter Pause  Escape List  Quit",
+                      u->grid.cols - 1u, tui_style(u, TXT_ROLE_DIM));
+        return;
+    }
     txt_grid_text(&u->grid, 1, u->grid.rows - 1u,
-                  "Up Down Move  Enter Open  Backspace Parent  Tab Queue  Space Pause  Left Right Seek  Info  Quit",
+                  "Up Down Move  Enter Open  Backspace Parent  Tab Queue  Space Pause  Left Right Page  Alt+Left Alt+Right Seek  Info  Quit",
                   u->grid.cols - 1u, tui_style(u, TXT_ROLE_DIM));
 }
 

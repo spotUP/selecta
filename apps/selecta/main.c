@@ -360,6 +360,8 @@ int main(int argc, char** argv)
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_BINDINGS, 0), (unsigned)sel_engine_state(e)->queue_count,
            (unsigned)est.undo_depth, (unsigned)est.redo_depth, sel_view_style_label(sel_engine_state(e)->view->style));
 
+    printf("seek_path=%u volume=%d view_cursor=%u\n", (unsigned)est.seek_path, (int)sel_engine_state(e)->volume,
+           (unsigned)sel_engine_state(e)->view->cursor);
     printf("view_source=%s view_style=%s cursor_key=%s\n", sel_view_source_label(sel_engine_state(e)->view->source),
            sel_view_style_label(sel_engine_state(e)->view->style),
            sel_engine_view_cursor_key(e) != NULL ? sel_engine_view_cursor_key(e) : "");

@@ -12,7 +12,7 @@ static const char* const k_actions[] = {
     "quit",       "info",       "command",      "palette",       "help",         "add_file",
     "remove_entry", "play_pause", "next_style",   "next_group",    "back",         "switch_view",
     "subsong_prev", "subsong_next", "page_up",    "page_down",    "mark",
-    "library",    "search",
+    "library",    "search",       "show_list",
     "viz",        "pattern",    "solo",         "voice1",        "voice2",       "voice3",
     "voice4",     "voice5",     "voice6",       "voice7",        "voice8",       "voice9",
 };
@@ -83,6 +83,22 @@ int txt_key_parse(const char* name, uint32_t* code, uint32_t* mods) {
     return 0;
 }
 
+static const char* const k_ctx_prefix[] = {"", "list:", "player:"};
+
+int txt_key_parse_ctx(const char* name, uint32_t* ctx, uint32_t* code, uint32_t* mods) {
+    uint32_t c;
+    *ctx = TXT_CTX_ANY;
+    for (c = TXT_CTX_LIST; c <= TXT_CTX_PLAYER; c++) {
+        size_t n = strlen(k_ctx_prefix[c]);
+        if (strncmp(name, k_ctx_prefix[c], n) == 0) {
+            *ctx = c;
+            name += n;
+            break;
+        }
+    }
+    return txt_key_parse(name, code, mods);
+}
+
 int txt_key_name(uint32_t code, uint32_t mods, char* out, size_t cap) {
     char base[16];
     size_t i;
@@ -118,8 +134,8 @@ static const struct {
     {"g", "@next_group"},      {"Backspace", "@back"},
     {"Tab", "@switch_view"},   {"Space", "@play_pause"},
     {"s", "STOP"},             {"n", "NEXT"},
-    {"p", "PREV"},             {"Left", "SEEK -5000"},
-    {"Right", "SEEK +5000"},   {"[", "@subsong_prev"},
+    {"p", "PREV"},             {"Left", "@page_up"},
+    {"Right", "@page_down"},   {"[", "@subsong_prev"},
     {"]", "@subsong_next"},    {"+", "VOLUME +5"},
     {"=", "VOLUME +5"},        {"-", "VOLUME -5"},
     {"a", "@add_file"},        {"d", "@remove_entry"},
@@ -140,20 +156,31 @@ static const struct {
     {"C-Left", "TEMPO -5"},
     {"l", "@library"},          {"/", "@search"},
     {"M-l", "FILTER_LED toggle"},
+    /* Context rows. Left and Right page a list and seek when the pattern or viz panel fills the
+       main pane; Alt+arrows seek everywhere. Terminal.app sends Option+Left and Option+Right as
+       ESC b and ESC f, so the readline word keys seek too. With a panel up the list is hidden,
+       so the list keys drive the song instead of a cursor nobody sees. */
+    {"M-Left", "SEEK -5000"},  {"M-Right", "SEEK +5000"},
+    {"M-b", "SEEK -5000"},     {"M-f", "SEEK +5000"},
+    {"player:Left", "SEEK -5000"}, {"player:Right", "SEEK +5000"},
+    {"player:Up", "VOLUME +5"},  {"player:Down", "VOLUME -5"},
+    {"player:PageUp", "@subsong_prev"}, {"player:PageDown", "@subsong_next"},
+    {"player:Home", "SEEK 0"},   {"player:Enter", "@play_pause"},
+    {"player:Backspace", "@show_list"}, {"player:Escape", "@show_list"},
 };
 
-static int find(const txt_bindings* b, uint32_t code, uint32_t mods) {
+static int find(const txt_bindings* b, uint32_t ctx, uint32_t code, uint32_t mods) {
     uint32_t i;
     for (i = 0; i < b->count; i++) {
-        if (b->rows[i].code == code && b->rows[i].mods == mods) {
+        if (b->rows[i].ctx == ctx && b->rows[i].code == code && b->rows[i].mods == mods) {
             return (int)i;
         }
     }
     return -1;
 }
 
-static int set(txt_bindings* b, uint32_t code, uint32_t mods, const char* action) {
-    int at = find(b, code, mods);
+static int set(txt_bindings* b, uint32_t ctx, uint32_t code, uint32_t mods, const char* action) {
+    int at = find(b, ctx, code, mods);
     if (strlen(action) >= TXT_BIND_ACTION) {
         return 0;
     }
@@ -162,6 +189,7 @@ static int set(txt_bindings* b, uint32_t code, uint32_t mods, const char* action
             return 0;
         }
         at = (int)b->count++;
+        b->rows[at].ctx = ctx;
         b->rows[at].code = code;
         b->rows[at].mods = mods;
     }
@@ -169,8 +197,8 @@ static int set(txt_bindings* b, uint32_t code, uint32_t mods, const char* action
     return 1;
 }
 
-static void unset(txt_bindings* b, uint32_t code, uint32_t mods) {
-    int at = find(b, code, mods);
+static void unset(txt_bindings* b, uint32_t ctx, uint32_t code, uint32_t mods) {
+    int at = find(b, ctx, code, mods);
     if (at >= 0) {
         /* shift, not swap: the row order is the order the palette shows */
         memmove(&b->rows[at], &b->rows[at + 1], (b->count - (uint32_t)at - 1u) * sizeof b->rows[0]);
@@ -180,11 +208,11 @@ static void unset(txt_bindings* b, uint32_t code, uint32_t mods) {
 
 void txt_bindings_default(txt_bindings* b) {
     size_t i;
-    uint32_t code, mods;
+    uint32_t ctx, code, mods;
     memset(b, 0, sizeof *b);
     for (i = 0; i < sizeof k_defaults / sizeof k_defaults[0]; i++) {
-        if (txt_key_parse(k_defaults[i].key, &code, &mods)) {
-            (void)set(b, code, mods, k_defaults[i].action);
+        if (txt_key_parse_ctx(k_defaults[i].key, &ctx, &code, &mods)) {
+            (void)set(b, ctx, code, mods, k_defaults[i].action);
         }
     }
 }
@@ -214,7 +242,7 @@ uint32_t txt_bindings_load(txt_bindings* b, const char* text, uint32_t* first_ba
         size_t n = strcspn(p, "\n"), len = n;
         char* key;
         char* rest;
-        uint32_t code, mods;
+        uint32_t ctx, code, mods;
         int ok = 1;
         line_no++;
         if (len >= sizeof line) {
@@ -240,12 +268,12 @@ uint32_t txt_bindings_load(txt_bindings* b, const char* text, uint32_t* first_ba
             rest += strspn(rest, " \t");
         }
         if (ok && strcmp(key, "unbind") == 0) {
-            ok = txt_key_parse(rest, &code, &mods);
+            ok = txt_key_parse_ctx(rest, &ctx, &code, &mods);
             if (ok) {
-                unset(b, code, mods);
+                unset(b, ctx, code, mods);
             }
         } else if (ok) {
-            ok = txt_key_parse(key, &code, &mods) && action_valid(rest) && set(b, code, mods, rest);
+            ok = txt_key_parse_ctx(key, &ctx, &code, &mods) && action_valid(rest) && set(b, ctx, code, mods, rest);
         }
         if (!ok) {
             if (bad == 0 && first_bad_line != NULL) {
@@ -257,9 +285,22 @@ uint32_t txt_bindings_load(txt_bindings* b, const char* text, uint32_t* first_ba
     return bad;
 }
 
-const char* txt_bindings_lookup(const txt_bindings* b, uint32_t code, uint32_t mods) {
-    int at = find(b, code, mods);
+const char* txt_bindings_lookup(const txt_bindings* b, uint32_t ctx, uint32_t code, uint32_t mods) {
+    int at = ctx != TXT_CTX_ANY ? find(b, ctx, code, mods) : -1;
+    if (at < 0) {
+        at = find(b, TXT_CTX_ANY, code, mods);
+    }
     return at < 0 ? NULL : b->rows[at].action;
+}
+
+static const char* row_name(const txt_bind* r, char* out, size_t cap) {
+    const char* pre = r->ctx <= TXT_CTX_PLAYER ? k_ctx_prefix[r->ctx] : "";
+    size_t n = strlen(pre);
+    if (n >= cap || !txt_key_name(r->code, r->mods, out + n, cap - n)) {
+        return NULL;
+    }
+    memcpy(out, pre, n);
+    return out;
 }
 
 const char* txt_bindings_key_for(const txt_bindings* b, const char* action, char* out, size_t cap) {
@@ -268,7 +309,7 @@ const char* txt_bindings_key_for(const txt_bindings* b, const char* action, char
     int first_word = -1;
     for (i = 0; i < b->count; i++) {
         if (strcmp(b->rows[i].action, action) == 0) {
-            return txt_key_name(b->rows[i].code, b->rows[i].mods, out, cap) ? out : NULL;
+            return row_name(&b->rows[i], out, cap);
         }
         if (first_word < 0 && strncmp(b->rows[i].action, action, verb) == 0 &&
             (b->rows[i].action[verb] == ' ' || b->rows[i].action[verb] == '\0')) {
@@ -276,7 +317,7 @@ const char* txt_bindings_key_for(const txt_bindings* b, const char* action, char
         }
     }
     if (first_word >= 0) {
-        return txt_key_name(b->rows[first_word].code, b->rows[first_word].mods, out, cap) ? out : NULL;
+        return row_name(&b->rows[first_word], out, cap);
     }
     return NULL;
 }

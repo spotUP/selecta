@@ -16,7 +16,7 @@ static int g_fail;
     } while (0)
 
 static const char* look(const txt_bindings* b, uint32_t code, uint32_t mods) {
-    return txt_bindings_lookup(b, code, mods);
+    return txt_bindings_lookup(b, TXT_CTX_LIST, code, mods);
 }
 
 static int is(const char* got, const char* want) {
@@ -37,8 +37,33 @@ int main(void) {
     CHECK(is(look(&b, 's', 0), "STOP"));
     CHECK(is(look(&b, 'n', 0), "NEXT"));
     CHECK(is(look(&b, 'p', 0), "PREV"));
-    CHECK(is(look(&b, TXT_KEY_LEFT, 0), "SEEK -5000"));
-    CHECK(is(look(&b, TXT_KEY_RIGHT, 0), "SEEK +5000"));
+    /* Left and Right page the list instead of seeking (seek with no song loaded failed) */
+    CHECK(is(look(&b, TXT_KEY_LEFT, 0), "@page_up"));
+    CHECK(is(look(&b, TXT_KEY_RIGHT, 0), "@page_down"));
+    CHECK(is(look(&b, TXT_KEY_LEFT, TXT_MOD_ALT), "SEEK -5000"));
+    CHECK(is(look(&b, TXT_KEY_RIGHT, TXT_MOD_ALT), "SEEK +5000"));
+    CHECK(is(look(&b, 'b', TXT_MOD_ALT), "SEEK -5000"));
+    CHECK(is(look(&b, 'f', TXT_MOD_ALT), "SEEK +5000"));
+    /* the player context (pattern or viz panel up) seeks with plain arrows */
+    CHECK(is(txt_bindings_lookup(&b, TXT_CTX_PLAYER, TXT_KEY_LEFT, 0), "SEEK -5000"));
+    CHECK(is(txt_bindings_lookup(&b, TXT_CTX_PLAYER, TXT_KEY_RIGHT, 0), "SEEK +5000"));
+    CHECK(is(txt_bindings_lookup(&b, TXT_CTX_PLAYER, TXT_KEY_UP, 0), "VOLUME +5"));
+    CHECK(is(txt_bindings_lookup(&b, TXT_CTX_PLAYER, 27, 0), "@show_list"));
+    CHECK(is(txt_bindings_lookup(&b, TXT_CTX_PLAYER, 'n', 0), "NEXT")); /* falls back to any context */
+    CHECK(txt_bindings_lookup(&b, TXT_CTX_LIST, 27, 0) == NULL);
+    {
+        txt_bindings c;
+        uint32_t cbad;
+        char cname[24];
+        txt_bindings_default(&c);
+        CHECK(txt_bindings_load(&c, "list:Right NEXT\nunbind player:Left\nplayer:x PREV\nbogus:x PREV\n", &cbad) == 1);
+        CHECK(cbad == 4);
+        CHECK(is(txt_bindings_lookup(&c, TXT_CTX_LIST, TXT_KEY_RIGHT, 0), "NEXT"));
+        CHECK(is(txt_bindings_lookup(&c, TXT_CTX_PLAYER, TXT_KEY_RIGHT, 0), "SEEK +5000"));
+        CHECK(is(txt_bindings_lookup(&c, TXT_CTX_PLAYER, TXT_KEY_LEFT, 0), "@page_up")); /* the any-context row */
+        CHECK(txt_bindings_lookup(&c, TXT_CTX_LIST, 'x', 0) == NULL);
+        CHECK(txt_bindings_key_for(&c, "@show_list", cname, sizeof cname) != NULL && strcmp(cname, "player:Backspace") == 0);
+    }
     CHECK(is(look(&b, 'a', 0), "@add_file"));
     CHECK(is(look(&b, 'd', 0), "@remove_entry"));
     CHECK(is(look(&b, 'i', 0), "@info"));

@@ -1,0 +1,55 @@
+# selecta-context-keys: Left/Right and the list keys are context aware.
+# In a list Right pages the list and never seeks (seek with no song failed
+# with an error); with the pattern panel up Right seeks and Down sets the volume.
+#   -DSELECTA=<exe> -DMOD=<selecta-test-mk.mod> -DLIST_KEYS=<keys> -DPLAYER_KEYS=<keys> -DWORK=<dir>
+file(REMOVE_RECURSE "${WORK}")
+file(MAKE_DIRECTORY "${WORK}/root/songs")
+file(COPY "${MOD}" DESTINATION "${WORK}/root/songs")
+
+function(run_keys keys out_var)
+  execute_process(
+    COMMAND "${SELECTA}" --output null --start-dir "${WORK}/root" --keys "${keys}"
+            --screen-dump "${WORK}/screen.txt"
+    OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
+  if(NOT rc EQUAL 0)
+    message(FATAL_ERROR "selecta exited ${rc}\nstdout:\n${out}\nstderr:\n${err}")
+  endif()
+  if(NOT out MATCHES "seek_path=([0-9]+) volume=(-?[0-9]+) view_cursor=([0-9]+)")
+    message(FATAL_ERROR "no seek_path line\n${out}")
+  endif()
+  set(${out_var} "${CMAKE_MATCH_1};${CMAKE_MATCH_2};${CMAKE_MATCH_3}" PARENT_SCOPE)
+  if(NOT out MATCHES "songs_opened=1 ")
+    message(FATAL_ERROR "the song did not open\n${out}")
+  endif()
+  file(READ "${WORK}/screen.txt" screen)
+  set(screen_text "${screen}" PARENT_SCOPE)
+endfunction()
+
+run_keys("${LIST_KEYS}" list)
+list(GET list 0 list_seek)
+list(GET list 1 list_volume)
+list(GET list 2 list_cursor)
+if(NOT list_seek EQUAL 0)
+  message(FATAL_ERROR "Right in the list seeked (seek_path=${list_seek})")
+endif()
+if(NOT list_cursor EQUAL 1)
+  message(FATAL_ERROR "Right in the list did not page to the last row (view_cursor=${list_cursor})")
+endif()
+if(screen_text MATCHES "SEEK")
+  message(FATAL_ERROR "the list screen shows a SEEK error\n${screen_text}")
+endif()
+
+run_keys("${PLAYER_KEYS}" player)
+list(GET player 0 player_seek)
+list(GET player 1 player_volume)
+if(player_seek EQUAL 0)
+  message(FATAL_ERROR "Right with the pattern panel up did not seek")
+endif()
+math(EXPR want_volume "${list_volume} - 5")
+if(NOT player_volume EQUAL want_volume)
+  message(FATAL_ERROR "Down with the pattern panel up: volume=${player_volume}, want ${want_volume}")
+endif()
+if(NOT screen_text MATCHES "Up Down Move  Enter Open")
+  message(FATAL_ERROR "Escape did not return to the list footer\n${screen_text}")
+endif()
+message(STATUS "context keys: list cursor=${list_cursor} seek=${list_seek}; player seek_path=${player_seek} volume=${player_volume}")

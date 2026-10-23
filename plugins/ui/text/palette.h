@@ -23,7 +23,7 @@ typedef struct txt_palette_item {
     uint32_t id;       /* sel_cmd_id */
     const char* name;  /* verb */
     const char* area;  /* transport, queue, playlists, view, protocol */
-    char key[16];      /* bound key name, "" when none */
+    char key[24];      /* bound key name, "" when none */
     int32_t score;     /* ranking against the query */
 } txt_palette_item;
 

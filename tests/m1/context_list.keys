@@ -1,0 +1,10 @@
+# selecta-context-keys, list half. Browse into songs, play the song, then
+# Right in the list: the list pages (cursor to the last row), nothing seeks.
+Down
+Enter
+Down
+Enter
+wait 500
+Home
+Right
+q

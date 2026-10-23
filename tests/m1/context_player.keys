@@ -1,0 +1,14 @@
+# selecta-context-keys, player half. Play the song, open the pattern panel,
+# then Right seeks and Down lowers the volume. Escape returns to the list.
+Down
+Enter
+Down
+Enter
+wait 500
+t
+Right
+wait 200
+Down
+Escape
+wait 200
+q

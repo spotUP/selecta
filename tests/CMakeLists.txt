@@ -337,6 +337,17 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/browse_play.cmake")
 endif()
 
+# Context-aware keys: Right pages the list, and seeks with the pattern panel up
+# (Down lowers the volume there, Escape returns to the list).
+if(NOT SEL_AMIGA)
+  add_test(NAME selecta-context-keys
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DMOD=${SEL_MKMOD}"
+      "-DLIST_KEYS=${CMAKE_CURRENT_SOURCE_DIR}/m1/context_list.keys"
+      "-DPLAYER_KEYS=${CMAKE_CURRENT_SOURCE_DIR}/m1/context_player.keys"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/context_keys"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/context_keys.cmake")
+endif()
+
 # T34 reachability (I76): the same run with x and z bound to info and quit by
 # --bindings. The screen must equal the browse_play golden and the shell must
 # have decoded the keys through the table.
