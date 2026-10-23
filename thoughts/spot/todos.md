@@ -380,7 +380,8 @@ Tests T62 to T97 are defined in the plan's finish-line table. T8 ratchet target 
 | I174 | [ ] | 6 | VOTE with parameters from I139 | T80 green; T8 count moves |
 | I175 | [x] | 6 | CUE_SET, CUE_GOTO over the `cues` table (SEL_LIB_REQ_USER; CUE_GOTO seeks through SEEK) | T81 cues green across two processes; unimplemented 16 to 10 with I176; merge afd83ab |
 | I176 | [x] | 6 | STICKER_SET/GET/DEL/LIST (D-M3-17): explicit song key, LIBRARY_RESULT answers, ERROR no_such_sticker, LIST capped at 8 answers with SRC_COUNT total, values capped at 255 bytes | T82 stickers green across two processes; merge afd83ab |
-| I177 | [ ] | 6 | Engine emits SCROBBLE_DUE; `plugins/integrations/lastfm` scrobbler, offline queue (D-M3-15) | T95 green |
+| I177 | [x] | 6 | Engine emits SCROBBLE_DUE; `plugins/integrations/lastfm` scrobbler, offline queue (D-M3-15) | T95 green |
+| I177a | [ ] | 8 | I177 follow-ups: 240 s scrobble cap not driven end to end (fixture mods end at about 30 s; needs a long song or fake-clock test); `selecta-cli lastfm login` not built (key, secret and session only via prefs or SELECTA_LASTFM_* env) | test drives a song past 240 s and asserts due at 240 s; login command green |
 | I178 | [x] | 7 | Playlists and folder tree in the DB, FOLDER_ADD/MOVE/DEL, PLAYLIST_MOVE, folder export | T83 DB part green (merge 406fc8f, ctest folders-tree) |
 | I178a | [ ] | 7 | I178 follow-ups: no engine verb creates a DB playlist (only the @playlist_add test directive), add save-queue-as-playlist; FOLDER_DEL on a non-empty folder answers folder_not_empty (agent choice, design silent, confirm with Johan) | engine verb test green |
 | I179 | [x] | 7 | Text UI tree renders the folder tree | T83 green Done: merge 8f26211 (key f, folders always open, Enter on folder no-op, 256 rows cap pending Johan veto) |
