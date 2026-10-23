@@ -52,6 +52,7 @@ int sel_queue_insert(sel_queue* q, uint32_t at, const char* path, uint32_t* id_o
     en = &q->entries[at];
     en->id = q->next_id++;
     en->subsong_plus1 = 0;
+    en->flags = 0;
     en->path_offset = q->text_used;
     memcpy(q->text + q->text_used, path, n);
     q->text_used += (uint32_t)n;

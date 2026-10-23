@@ -11,6 +11,10 @@ uint32_t sel_xorshift32(uint32_t x);
 /* Maps the unusable seed 0 to a fixed non-zero constant. */
 uint32_t sel_shuffle_seed(uint32_t seed);
 
+/* Fisher-Yates over a plain id list with the same step rule as the queue
+ * shuffle. Returns the final generator state. */
+uint32_t sel_shuffle_ids(uint32_t* ids, uint32_t n, uint32_t seed);
+
 /* Shuffles the entries from position `first` to the end with Fisher-Yates
  * (i from last down to first+1, j = step % span). Returns the final
  * generator state. Bumps the queue version. */

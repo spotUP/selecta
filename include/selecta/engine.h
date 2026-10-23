@@ -43,7 +43,12 @@ typedef struct sel_queue_entry {
     uint32_t id;
     uint32_t subsong_plus1; /* 0: the replayer's default subsong */
     uint32_t path_offset;   /* into the text arena */
+    uint32_t flags;         /* SEL_QUEUE_FLAG_* */
 } sel_queue_entry;
+/* A divider row shows its name (the path text) and is never played. A hidden
+ * row plays but the regular style does not show it (Hippo stealth). */
+#define SEL_QUEUE_FLAG_DIVIDER 1u
+#define SEL_QUEUE_FLAG_HIDDEN 2u
 
 /* The view model (design doc section 9b), regular style: one flat list over
  * the queue or the browse listing, a cursor and the visible window. */

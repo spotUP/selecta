@@ -164,6 +164,13 @@ struct sel_engine {
     sel_queue queue;
     sel_history history;
     uint32_t rng; /* shuffle generator state, 0: not seeded yet */
+    /* random play order: the first order_done ids are played (the last one is
+     * playing), the rest is the shuffled remainder. Valid for order_qver. */
+    uint32_t* order;
+    uint8_t* order_seen; /* scratch, one byte per queue position */
+    uint32_t order_n;
+    uint32_t order_done;
+    uint32_t order_qver;
     uint32_t q_playing; /* id of the playing queue entry, 0: none */
     uint32_t q_hint;    /* position NEXT and PLAY start from while q_playing is 0 */
     uint32_t song_over; /* the open song ended or the queue ran out: PLAY restarts the queue */
@@ -395,7 +402,12 @@ static void cmd_OUTPUT(sel_engine* e, const sel_message* m) {
     changed(e, PENDING_OUTPUT);
 }
 
+static void order_reset(sel_engine* e);
+
 static void set_option(sel_engine* e, sel_option_id id, const char* value) {
+    if (id == SEL_OPT_RANDOM && strcmp(value, "on") == 0) {
+        order_reset(e);
+    }
     copy_str(e->state.options[id], SEL_OPTION_VALUE_MAX, value);
     changed(e, PENDING_OPTION_BASE << (uint32_t)id);
 }
@@ -921,9 +933,143 @@ static void emit_queue_changed(sel_engine* e) {
     emit(e, &m);
 }
 
+/* The album of a queue entry is the directory of its path. */
+static int same_album(const sel_queue* q, uint32_t a, uint32_t b) {
+    const char* pa = sel_queue_path(q, a);
+    const char* pb = sel_queue_path(q, b);
+    const char* sa = strrchr(pa, '/');
+    const char* sb = strrchr(pb, '/');
+    size_t la = sa ? (size_t)(sa - pa) : 0;
+    size_t lb = sb ? (size_t)(sb - pb) : 0;
+    return la == lb && memcmp(pa, pb, la) == 0;
+}
+
+/* First position of the album that holds position `idx`. */
+static uint32_t album_first(const sel_queue* q, uint32_t idx) {
+    while (idx > 0 && same_album(q, idx - 1u, idx)) {
+        idx--;
+    }
+    return idx;
+}
+
+static int random_on(const sel_engine* e) {
+    return strcmp(e->state.options[SEL_OPT_RANDOM], "on") == 0;
+}
+
+static int row_is_divider(const sel_queue* q, uint32_t idx) {
+    return (q->entries[idx].flags & SEL_QUEUE_FLAG_DIVIDER) != 0;
+}
+
+/* First position at or after idx that is not a divider row. */
+static uint32_t skip_dividers(const sel_queue* q, uint32_t idx) {
+    while (idx < q->count && row_is_divider(q, idx)) {
+        idx++;
+    }
+    return idx;
+}
+
+/* ---- random play order ------------------------------------------------ */
+
+/* Starts a new round: nothing played, except the song that plays now. */
+static void order_reset(sel_engine* e) {
+    e->order_n = 0;
+    e->order_done = 0;
+    if (e->q_playing && e->order != NULL) {
+        e->order[0] = e->q_playing;
+        e->order_n = 1;
+        e->order_done = 1;
+    }
+    e->order_qver = 0xFFFFFFFFu; /* never equal to a queue version: rebuild on first use */
+}
+
+/* Brings the order in line with the queue: played ids that are still queued
+ * stay played; every other playable row is shuffled behind them. */
+static void order_ensure(sel_engine* e) {
+    const sel_queue* q = &e->queue;
+    uint32_t i, kept = 0;
+    if (e->order == NULL || e->order_qver == q->version) {
+        return;
+    }
+    memset(e->order_seen, 0, q->count);
+    for (i = 0; i < e->order_done; i++) {
+        uint32_t at = sel_queue_index_of(q, e->order[i]);
+        if (at != SEL_QUEUE_NONE) {
+            e->order[kept++] = e->order[i];
+            e->order_seen[at] = 1;
+        }
+    }
+    e->order_done = kept;
+    for (i = 0; i < q->count; i++) {
+        if (!e->order_seen[i] && !row_is_divider(q, i)) {
+            e->order[kept++] = q->entries[i].id;
+        }
+    }
+    e->order_n = kept;
+    e->rng = sel_shuffle_ids(e->order + e->order_done, kept - e->order_done, e->rng);
+    e->order_qver = q->version;
+}
+
+/* Marks the entry at queue position idx as the one that plays now. */
+static void order_mark(sel_engine* e, uint32_t idx) {
+    uint32_t id = e->queue.entries[idx].id;
+    uint32_t k;
+    order_ensure(e);
+    for (k = 0; k < e->order_n && e->order[k] != id; k++) {
+    }
+    if (k == e->order_n) {
+        return;
+    }
+    if (k >= e->order_done) {
+        uint32_t t = e->order[e->order_done];
+        e->order[e->order_done] = id;
+        e->order[k] = t;
+        e->order_done++;
+    } else {
+        e->order_done = k + 1u;
+    }
+}
+
+/* Position of the next unplayed entry in the order that the scope allows;
+ * `from` is the playing position, SEL_QUEUE_NONE when nothing plays. */
+static uint32_t order_next(sel_engine* e, uint32_t from) {
+    uint32_t k;
+    int album = from != SEL_QUEUE_NONE && strcmp(e->state.options[SEL_OPT_SCOPE], "album") == 0;
+    order_ensure(e);
+    for (k = e->order_done; k < e->order_n; k++) {
+        uint32_t at = sel_queue_index_of(&e->queue, e->order[k]);
+        if (at != SEL_QUEUE_NONE && (!album || same_album(&e->queue, from, at))) {
+            return at;
+        }
+    }
+    return SEL_QUEUE_NONE;
+}
+
+/* Position of the entry that played before the playing one in the order. */
+static uint32_t order_prev(sel_engine* e) {
+    uint32_t k;
+    order_ensure(e);
+    for (k = 0; k < e->order_n && e->order[k] != e->q_playing; k++) {
+    }
+    return (k > 0 && k < e->order_n) ? sel_queue_index_of(&e->queue, e->order[k - 1u]) : SEL_QUEUE_NONE;
+}
+
+/* Position NEXT and PLAY start from while nothing plays. */
+static uint32_t start_index(sel_engine* e) {
+    if (random_on(e)) {
+        if (e->song_over) {
+            order_reset(e);
+        }
+        return order_next(e, SEL_QUEUE_NONE);
+    }
+    return skip_dividers(&e->queue, e->q_hint);
+}
+
 /* Plays the entry at `idx` through the one song-change path. A stopped
  * transport starts; paused stays paused. 0: the entry could not start. */
 static int queue_start(sel_engine* e, uint32_t idx) {
+    if (random_on(e)) {
+        order_mark(e, idx);
+    }
     e->q_playing = e->queue.entries[idx].id;
     e->q_hint = idx;
     if (!begin_song(e, SEL_BEGIN_OPEN, sel_queue_path(&e->queue, idx), SEL_SUBSONG_DEFAULT, 0)) {
@@ -947,40 +1093,31 @@ static void queue_finish(sel_engine* e) {
 static void cmd_PLAY(sel_engine* e, const sel_message* m) {
     (void)m;
     if (e->q_playing == 0 && e->queue.count > 0 && (e->cur == SEL_SLOT_NONE || e->song_over)) {
-        queue_start(e, e->q_hint < e->queue.count ? e->q_hint : 0);
+        uint32_t idx;
+        if (!random_on(e) && e->q_hint >= e->queue.count) {
+            e->q_hint = 0;
+        }
+        idx = start_index(e);
+        if (idx < e->queue.count) {
+            queue_start(e, idx);
+        }
         return;
     }
     set_play(e, SEL_PLAYING);
 }
 
-/* The album of a queue entry is the directory of its path. */
-static int same_album(const sel_queue* q, uint32_t a, uint32_t b) {
-    const char* pa = sel_queue_path(q, a);
-    const char* pb = sel_queue_path(q, b);
-    const char* sa = strrchr(pa, '/');
-    const char* sb = strrchr(pb, '/');
-    size_t la = sa ? (size_t)(sa - pa) : 0;
-    size_t lb = sb ? (size_t)(sb - pb) : 0;
-    return la == lb && memcmp(pa, pb, la) == 0;
-}
-
-/* First position of the album that holds position `idx`. */
-static uint32_t album_first(const sel_queue* q, uint32_t idx) {
-    while (idx > 0 && same_album(q, idx - 1u, idx)) {
-        idx--;
-    }
-    return idx;
-}
-
 /* Position that follows the playing one, honouring the scope option;
  * SEL_QUEUE_NONE when the queue (or the album under scope album) ends. */
-static uint32_t queue_next_index(const sel_engine* e) {
+static uint32_t queue_next_index(sel_engine* e) {
     uint32_t cur, next;
     if (e->q_playing == 0) {
         return SEL_QUEUE_NONE;
     }
     cur = sel_queue_index_of(&e->queue, e->q_playing);
-    next = cur + 1u;
+    if (random_on(e)) {
+        return order_next(e, cur);
+    }
+    next = skip_dividers(&e->queue, cur + 1u);
     if (next >= e->queue.count) {
         return SEL_QUEUE_NONE;
     }
@@ -991,7 +1128,7 @@ static uint32_t queue_next_index(const sel_engine* e) {
 }
 
 static void cmd_NEXT(sel_engine* e, const sel_message* m) {
-    uint32_t idx = e->q_playing ? queue_next_index(e) : e->q_hint;
+    uint32_t idx = e->q_playing ? queue_next_index(e) : start_index(e);
     (void)m;
     if (idx >= e->queue.count) {
         queue_finish(e);
@@ -1052,11 +1189,22 @@ static void cmd_PREV(sel_engine* e, const sel_message* m) {
         sel_engine_report_error(e, "no_song", "PREV");
         return;
     }
-    if (idx == 0 || (uint64_t)cur->song_frames * 1000u / e->rate >= SEL_PREV_RESTART_MS) {
+    uint32_t prev = SEL_QUEUE_NONE;
+    if (random_on(e)) {
+        prev = order_prev(e);
+    } else {
+        while (idx > 0 && prev == SEL_QUEUE_NONE) {
+            idx--;
+            if (!row_is_divider(&e->queue, idx)) {
+                prev = idx;
+            }
+        }
+    }
+    if (prev == SEL_QUEUE_NONE || (uint64_t)cur->song_frames * 1000u / e->rate >= SEL_PREV_RESTART_MS) {
         reopen_current(e, SEL_BEGIN_RESTART, SEL_SUBSONG_DEFAULT, 0, "PREV");
         return;
     }
-    queue_start(e, idx - 1u);
+    queue_start(e, prev);
 }
 
 static void queue_insert(sel_engine* e, uint32_t at, const char* path, const char* who) {
@@ -1170,6 +1318,13 @@ static void cmd_QUEUE_SHUFFLE(sel_engine* e, const sel_message* m) {
 
 static void cmd_RESHUFFLE(sel_engine* e, const sel_message* m) {
     (void)m;
+    if (random_on(e)) {
+        /* rows stay; the unplayed part of the play order is permuted again */
+        order_ensure(e);
+        e->rng = sel_shuffle_ids(e->order + e->order_done, e->order_n - e->order_done,
+                                 sel_xorshift32(sel_shuffle_seed(e->rng)));
+        return;
+    }
     queue_shuffle_rows(e, sel_xorshift32(sel_shuffle_seed(e->rng)));
 }
 
@@ -1178,6 +1333,20 @@ static void cmd_SHUFFLE(sel_engine* e, const sel_message* m) {
     if (strcmp(v, "on") != 0 && strcmp(v, "off") != 0) {
         sel_engine_report_error(e, "range", "SHUFFLE");
         return;
+    }
+    if (m->argc > 1) {
+        uint32_t seed = 0;
+        const char* p = m->args[1].v.s;
+        for (; *p >= '0' && *p <= '9'; p++) {
+            seed = seed * 10u + (uint32_t)(*p - '0');
+        }
+        if (p == m->args[1].v.s || *p != '\0') {
+            sel_engine_report_error(e, "range", "SHUFFLE");
+            return;
+        }
+        e->rng = seed;
+    } else if (strcmp(v, "on") == 0) {
+        e->rng = e->host->clock_ms(e->host) ^ e->rng;
     }
     set_option(e, SEL_OPT_RANDOM, v);
 }
@@ -1435,6 +1604,8 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         !sel_spsc_init(&e->ret_q, host, SEL_SWAP_RING_DEPTH) ||
         !sel_queue_init(&e->queue, host, queue_cap, queue_text) ||
         !sel_history_init(&e->history, host, queue_cap, queue_text) ||
+        (e->order = host->mem_alloc(host, (size_t)queue_cap * sizeof *e->order, SEL_MEM_FAST)) == NULL ||
+        (e->order_seen = host->mem_alloc(host, queue_cap, SEL_MEM_FAST)) == NULL ||
         !sel_browse_init(&e->browse, host, cfg && cfg->browse_entries ? cfg->browse_entries : queue_cap,
                          cfg && cfg->browse_text_bytes ? cfg->browse_text_bytes : queue_text) ||
         !sel_view_init(&e->view, host, SEL_VIEW_WINDOW_MAX)) {
@@ -1461,6 +1632,12 @@ void sel_engine_destroy(sel_engine* e) {
         sel_spsc_free(&e->ret_q, e->host);
         sel_queue_free(&e->queue, e->host);
         sel_history_free(&e->history, e->host);
+        if (e->order) {
+            e->host->mem_free(e->host, e->order);
+        }
+        if (e->order_seen) {
+            e->host->mem_free(e->host, e->order_seen);
+        }
         sel_browse_free(&e->browse, e->host);
         sel_view_free(&e->view, e->host);
         e->host->mem_free(e->host, e);

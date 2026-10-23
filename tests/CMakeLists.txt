@@ -353,3 +353,12 @@ add_executable(playlist_test playlist/playlist_test.c)
 target_link_libraries(playlist_test PRIVATE selecta_library)
 target_include_directories(playlist_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/playlist)
 add_test(NAME playlist-codecs COMMAND playlist_test)
+
+# T30a: random play order (seeded permutation, each entry once before a repeat).
+add_test(NAME queue-random-order
+  COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}"
+    "-DARGS=script ${CMAKE_CURRENT_SOURCE_DIR}/m12/random.sel"
+    "-DEXPECT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/m12/random.expected"
+    -P "${SEL_EXPECT}")
+set_tests_properties(queue-random-order PROPERTIES
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/songs")
