@@ -274,6 +274,14 @@ if(SEL_AMIGA_NM AND EXISTS "${SEL_AMIGA_CLI}")
   set_tests_properties(no-float-engine PROPERTIES FIXTURES_REQUIRED amiga_cli)
 endif()
 
+# I213a: the stb_vorbis FPU objects call no libm and no soft-float routine (nm -u on the 68k objects).
+if(SEL_AMIGA_NM AND EXISTS "${SEL_AMIGA_CLI}")
+  add_test(NAME stb-vorbis-fpu-symbols
+    COMMAND "${CMAKE_COMMAND}" "-DNM=${SEL_AMIGA_NM}" "-DBUILD_DIR=${PROJECT_SOURCE_DIR}/build/amiga"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/stb_vorbis_fpu.cmake")
+  set_tests_properties(stb-vorbis-fpu-symbols PROPERTIES FIXTURES_REQUIRED amiga_cli LABELS m3)
+endif()
+
 # I190b: no libnix startup constructor (___initclock) in the linked Amiga selecta-cli; vamos cannot run it.
 if(SEL_AMIGA_NM AND EXISTS "${SEL_AMIGA_CLI}")
   add_test(NAME no-startup-ctor
@@ -1253,6 +1261,10 @@ endif()
 
 # M3 (I181): xxh32 published vectors and the UADE key; T85 genre part against the devilbox fixture, two runs.
 if(NOT SEL_AMIGA)
+  # I213a: the stb_vorbis FPU math substitutes equal libm on the inputs stb_vorbis uses.
+  add_executable(stb_vorbis_fpu_math_test m3/stb_vorbis_fpu_math_test.c)
+  add_test(NAME stb-vorbis-fpu-math COMMAND stb_vorbis_fpu_math_test)
+  set_tests_properties(stb-vorbis-fpu-math PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "stb_vorbis_fpu_math_ok")
   add_executable(xxh32_test xxh32_test.c)
   target_include_directories(xxh32_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
   target_link_libraries(xxh32_test PRIVATE selecta_library)
