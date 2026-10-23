@@ -1,0 +1,34 @@
+# T63 query-compile golden: query<TAB>sql<TAB>params (see tests/m3/query_compile.sh)
+#now 1700000000
+#view fast=length:<2m
+#view loop1=view:loop2
+#view loop2=view:loop1
+format:mod	SELECT songs.key FROM songs WHERE COALESCE(songs.format, '') LIKE ? ESCAPE '\'	s:%mod%
+artist:=Jogeir	SELECT songs.key FROM songs WHERE COALESCE(songs.artist, '') = ? COLLATE NOCASE	s:Jogeir
+name:/^a.*b$/	SELECT songs.key FROM songs WHERE COALESCE(songs.name, '') REGEXP ?	s:^a.*b$
+year:>1990	SELECT songs.key FROM songs WHERE songs.year > ?	i:1990
+year:<1990	SELECT songs.key FROM songs WHERE songs.year < ?	i:1990
+year:1990..1995	SELECT songs.key FROM songs WHERE songs.year BETWEEN ? AND ?	i:1990|i:1995
+length:>3m	SELECT songs.key FROM songs WHERE songs.duration_ms > ?	i:180000
+size:<64k	SELECT songs.key FROM songs WHERE songs.size < ?	i:65536
+played:<7d	SELECT songs.key FROM songs WHERE (SELECT MAX(history.played_at) FROM history WHERE history.key = songs.key AND history.skipped = 0) > ?	i:1699395200
+added:>2w	SELECT songs.key FROM songs WHERE songs.added < ?	i:1698790400
+lastplayed:never	SELECT songs.key FROM songs WHERE NOT EXISTS (SELECT 1 FROM history WHERE history.key = songs.key AND history.skipped = 0)	-
+in:Favs	SELECT songs.key FROM songs WHERE songs.key IN (SELECT playlist_entries.key FROM playlist_entries JOIN playlists ON playlists.id = playlist_entries.playlist_id LEFT JOIN folders ON folders.id = playlists.folder_id WHERE playlists.name = ? OR folders.name = ?)	s:Favs|s:Favs
+view:fast	SELECT songs.key FROM songs WHERE (songs.duration_ms < ?)	i:120000
+-artist:foo	SELECT songs.key FROM songs WHERE NOT COALESCE(songs.artist, '') LIKE ? ESCAPE '\'	s:%foo%
+NOT year:1990	SELECT songs.key FROM songs WHERE NOT songs.year = ?	i:1990
+format:mod OR format:xm	SELECT songs.key FROM songs WHERE COALESCE(songs.format, '') LIKE ? ESCAPE '\' OR COALESCE(songs.format, '') LIKE ? ESCAPE '\'	s:%mod%|s:%xm%
+(format:mod OR format:xm) artist:foo	SELECT songs.key FROM songs WHERE (COALESCE(songs.format, '') LIKE ? ESCAPE '\' OR COALESCE(songs.format, '') LIKE ? ESCAPE '\') AND COALESCE(songs.artist, '') LIKE ? ESCAPE '\'	s:%mod%|s:%xm%|s:%foo%
+chiptune	SELECT songs.key FROM songs WHERE (COALESCE(songs.name, '') LIKE ? ESCAPE '\' OR COALESCE(songs.artist, '') LIKE ? ESCAPE '\' OR COALESCE(songs.path, '') LIKE ? ESCAPE '\')	s:%chiptune%|s:%chiptune%|s:%chiptune%
+liked:yes	SELECT songs.key FROM songs WHERE EXISTS (SELECT 1 FROM liked WHERE liked.key = songs.key)	-
+wrong:no	SELECT songs.key FROM songs WHERE NOT EXISTS (SELECT 1 FROM flags WHERE flags.key = songs.key AND flags.wrong = 1)	-
+rating:>3	SELECT songs.key FROM songs WHERE (SELECT ratings.rating FROM ratings WHERE ratings.key = songs.key) > ?	i:3
+artist:"Rob Hubbard"	SELECT songs.key FROM songs WHERE COALESCE(songs.artist, '') LIKE ? ESCAPE '\'	s:%Rob Hubbard%
+plays:>5	SELECT songs.key FROM songs WHERE (SELECT COUNT(*) FROM history WHERE history.key = songs.key AND history.skipped = 0) > ?	i:5
+format:100%	SELECT songs.key FROM songs WHERE COALESCE(songs.format, '') LIKE ? ESCAPE '\'	s:%100\%%
+foo:bar	ERROR unknown_key	-
+view:loop1	ERROR view_cycle	-
+view:nosuch	ERROR unknown_view	-
+(format:mod	ERROR syntax	-
+year:abc	ERROR bad_value	-

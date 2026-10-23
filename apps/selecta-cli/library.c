@@ -11,8 +11,10 @@
 #include "cli.h"
 #include "local.h"
 #include "db.h"
+#include "query.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct browse_sink {
@@ -116,6 +118,84 @@ static int library_stats(int argc, char** argv) {
     return 0;
 }
 
+/* `library query --explain [--now <epoch>] [--view <name>=<query>]... [--] <query>` (T63): runs
+ * the query through sel_query_compile and prints `sql=`, `params=` (s:<text> or i:<n> joined by
+ * `|`, `-` when none) and `query_terms=`. An error prints `ERROR <code>` and exits 1. Running a
+ * query against the DB arrives with LIBRARY_SEARCH (I149). */
+#define CLI_VIEWS_MAX 8
+
+typedef struct cli_views {
+    const char* name[CLI_VIEWS_MAX];
+    size_t name_len[CLI_VIEWS_MAX];
+    const char* text[CLI_VIEWS_MAX];
+    int count;
+} cli_views;
+
+static const char* cli_view_lookup(void* ctx, const char* name) {
+    const cli_views* v = ctx;
+    int i;
+    for (i = 0; i < v->count; i++) {
+        if (strlen(name) == v->name_len[i] && strncmp(name, v->name[i], v->name_len[i]) == 0) {
+            return v->text[i];
+        }
+    }
+    return NULL;
+}
+
+static int library_query(int argc, char** argv) {
+    static sel_query q;
+    cli_views views;
+    long long now = 0;
+    const char* text = NULL;
+    int explain = 0;
+    unsigned i;
+    int a;
+
+    memset(&views, 0, sizeof views);
+    for (a = 0; a < argc; a++) {
+        if (strcmp(argv[a], "--explain") == 0) {
+            explain = 1;
+        } else if (strcmp(argv[a], "--now") == 0 && a + 1 < argc) {
+            now = atoll(argv[++a]);
+        } else if (strcmp(argv[a], "--view") == 0 && a + 1 < argc && views.count < CLI_VIEWS_MAX) {
+            const char* eq = strchr(argv[++a], '=');
+            if (eq == NULL) {
+                fputs("library query: --view needs name=query\n", stderr);
+                return 2;
+            }
+            views.name[views.count] = argv[a];
+            views.name_len[views.count] = (size_t)(eq - argv[a]);
+            views.text[views.count++] = eq + 1;
+        } else if (strcmp(argv[a], "--") == 0 && a + 1 < argc) {
+            text = argv[++a];
+        } else if (argv[a][0] != '-' || text == NULL) {
+            text = argv[a];
+        }
+    }
+    if (!explain || text == NULL) {
+        fputs("usage: selecta-cli library query --explain [--now <epoch>] [--view <name>=<query>]... [--] <query>\n",
+              stderr);
+        return 2;
+    }
+    if (!sel_query_compile(text, now, cli_view_lookup, &views, &q)) {
+        fprintf(stderr, "ERROR %s\n", q.error);
+        return 1;
+    }
+    printf("sql=%s\nparams=", q.sql);
+    if (q.nparams == 0) {
+        fputs("-", stdout);
+    }
+    for (i = 0; i < q.nparams; i++) {
+        if (q.params[i].is_int) {
+            printf("%si:%lld", i ? "|" : "", q.params[i].i);
+        } else {
+            printf("%ss:%s", i ? "|" : "", q.params[i].s);
+        }
+    }
+    printf("\nquery_terms=%u\n", q.terms);
+    return 0;
+}
+
 int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "browse") == 0) {
         return library_browse(argc, argv);
@@ -123,6 +203,9 @@ int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "stats") == 0) {
         return library_stats(argc - 1, argv + 1);
     }
-    fputs("usage: selecta-cli library browse <dir> | stats [--machine <name>] [--db <path>]\n", stderr);
+    if (argc >= 1 && strcmp(argv[0], "query") == 0) {
+        return library_query(argc - 1, argv + 1);
+    }
+    fputs("usage: selecta-cli library browse <dir> | query --explain <q> | stats [--machine <name>] [--db <path>]\n", stderr);
     return 2;
 }

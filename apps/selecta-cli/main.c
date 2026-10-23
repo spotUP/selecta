@@ -37,6 +37,7 @@ static int usage(FILE* to) {
           "  render <song> --output <wav> --seconds <n> --rate <hz> --resample <name>\n"
           "                             render a song to a WAV file, print counters\n"
           "  library browse <dir>       list a directory through LIBRARY_BROWSE, print dir_entries=\n"
+          "  library query --explain <q> compile a library query, print sql= params= query_terms= (T63)\n"
           "  library stats              open the library DB, print db_open= schema_version= sqlite_version= (T62)\n"
           "  machine [--tier <name>]    probe the machine, print the sel_machine tags\n",
           to);
