@@ -313,6 +313,7 @@ typedef struct sel_engine_stats {
     uint32_t radio_appends;       /* songs RADIO appended to the queue (I186 sentinel) */
     uint32_t radio_min_ahead;     /* fewest songs queued after the playing one after a radio top-up, 0xFFFFFFFF before RADIO (I186) */
     uint32_t net_cancels;         /* URL fetches abandoned because a newer STOP or OPEN arrived (I195a sentinel) */
+    uint32_t net_cancel_lost;     /* cancels lost to the send/pump race; must be 0 (I195c sentinel) */
     uint32_t rating_pushes;       /* ratings DEViLBOX accepted (PUT or DELETE) since the process started (I173 sentinel) */
     uint32_t rating_batches;      /* rating batch read requests sent (I173 sentinel) */
     uint32_t vote_posts;          /* votes the HippoPlayer service accepted since the process started (I174, T80 sentinel) */

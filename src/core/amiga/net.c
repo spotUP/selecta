@@ -62,8 +62,9 @@ char* sel_net_os_ca_bundle(size_t* len) {
     return NULL; /* no OS trust store; the Amiga build is plain HTTP (D-M3-4) */
 }
 
-void sel_net_set_cancel(const volatile unsigned* flag) {
-    (void)flag; /* jobs run inline on the one task, nothing to cancel from */
+void sel_net_set_cancel(const volatile unsigned* gen, unsigned start) {
+    (void)gen; /* jobs run inline on the one task, nothing to cancel from (revisit with I199) */
+    (void)start;
 }
 
 void sel_net_stats_get(sel_net_stats* out) {

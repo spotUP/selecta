@@ -14,7 +14,7 @@
 static void* job_main(void* arg) {
     sel_library* lib = arg;
 
-    sel_net_set_cancel(&lib->job_quit); /* close ends a job stuck on a silent server within one poll slice (I173f) */
+    sel_net_set_cancel(&lib->job_quit, 0u); /* close ends a job stuck on a silent server within one poll slice (I173f) */
     pthread_mutex_lock(&lib->job_lock);
     for (;;) {
         while (!lib->job_quit && !lib->job_rating && !lib->job_vote && !lib->job_lyric &&
