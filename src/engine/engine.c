@@ -26,6 +26,7 @@
 #include "playlist/playlist.h"
 #include "shuffle.h"
 #include "local.h"
+#include "export/export.h"
 #include "prefs.h"
 #include "view.h"
 #include "scheduler.h"
@@ -78,6 +79,8 @@
     X(PREV_ALBUM)                                                                             \
     X(PLAYLIST_LOAD)                                                                          \
     X(PLAYLIST_SAVE)                                                                          \
+    X(SAMPLE_LIST)                                                                            \
+    X(SAMPLE_EXPORT)                                                                          \
     X(QUEUE_PLAY_NEXT)                                                                        \
     X(LIBRARY_BROWSE)                                                                         \
     X(VIEW_SHOW)                                                                              \
@@ -143,6 +146,7 @@ typedef struct sel_slot {
     sel_rp_position_fn rp_position; /* optional: order/row/pattern */
     sel_rp_tracker_info_fn rp_tracker_info;   /* optional: pattern geometry */
     sel_rp_tracker_cells_fn rp_tracker_cells; /* optional: pattern cells */
+    sel_rp_sample_get_fn rp_sample_get;       /* optional: sample table (I97) */
     sel_rp_mute_fn rp_mute;                   /* optional, RENDER kind: channel mute */
     sel_rp_set_speed_fn rp_set_speed;         /* optional, RENDER kind: pitch and tempo factors */
     uint32_t applied_pitch, applied_tempo;    /* audio side: factors last handed to rp_set_speed */
@@ -1009,6 +1013,7 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     sl->rp_position = (sel_rp_position_fn)sel_tag_find(hooks, SEL_RP_POSITION, 0);
     sl->rp_tracker_info = (sel_rp_tracker_info_fn)sel_tag_find(hooks, SEL_RP_TRACKER_INFO, 0);
     sl->rp_tracker_cells = (sel_rp_tracker_cells_fn)sel_tag_find(hooks, SEL_RP_TRACKER_CELLS, 0);
+    sl->rp_sample_get = (sel_rp_sample_get_fn)sel_tag_find(hooks, SEL_RP_SAMPLE_GET, 0);
     sl->rp_mute = kind == SEL_RP_KIND_RENDER ? (sel_rp_mute_fn)sel_tag_find(hooks, SEL_RP_MUTE, 0) : NULL;
     sl->applied_mute = 0;
     sl->rp_set_speed =
@@ -1644,6 +1649,95 @@ static void cmd_PLAYLIST_SAVE(sel_engine* e, const sel_message* m) {
     }
     if (rc != SEL_PL_OK) {
         sel_engine_report_error(e, "open_failed", "PLAYLIST_SAVE");
+    }
+}
+
+/* SAMPLE_LIST / SAMPLE_EXPORT (I98): the replayer's optional RP_SAMPLE_GET hook
+ * supplies the sample table; the writers live in src/library/export. The hook
+ * runs on the command thread. */
+static const sel_slot* sample_slot(sel_engine* e, const char* verb) {
+    const sel_slot* sl = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
+    if (sl == NULL || sl->rp_state == NULL || sl->rp_sample_get == NULL) {
+        sel_engine_report_error(e, "unsupported", verb);
+        return NULL;
+    }
+    return sl;
+}
+
+static void cmd_SAMPLE_LIST(sel_engine* e, const sel_message* m) {
+    const sel_slot* sl = sample_slot(e, "SAMPLE_LIST");
+    sel_rp_sample smp;
+    uint32_t n = 1, count = 1;
+    (void)m;
+    if (sl == NULL) {
+        return;
+    }
+    while (n <= count) {
+        memset(&smp, 0, sizeof smp);
+        if (sl->rp_sample_get(sl->rp_state, n, &smp) && smp.name != NULL) {
+            sel_message ev;
+            evt_init(&ev, SEL_EVT_SAMPLE);
+            evt_uint(&ev, n);
+            evt_uint(&ev, smp.length);
+            evt_uint(&ev, smp.loop_start);
+            evt_uint(&ev, smp.loop_length);
+            evt_uint(&ev, smp.rate);
+            evt_str(&ev, smp.name);
+            emit(e, &ev);
+        }
+        count = smp.count;
+        n++;
+    }
+}
+
+static int sample_sink(void* ctx, const void* bytes, uint32_t len) {
+    return fwrite(bytes, 1, len, (FILE*)ctx) == len;
+}
+
+static int path_has_ext(const char* path, const char* ext) {
+    size_t a = strlen(path), b = strlen(ext);
+    size_t i;
+    if (a < b) {
+        return 0;
+    }
+    for (i = 0; i < b; i++) {
+        char c = path[a - b + i];
+        if (c >= 'A' && c <= 'Z') {
+            c = (char)(c + 32);
+        }
+        if (c != ext[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void cmd_SAMPLE_EXPORT(sel_engine* e, const sel_message* m) {
+    const sel_slot* sl = sample_slot(e, "SAMPLE_EXPORT");
+    const char* path = m->args[1].v.s;
+    sel_rp_sample smp;
+    int svx = path_has_ext(path, ".8svx");
+    FILE* f;
+    int ok;
+    if (sl == NULL) {
+        return;
+    }
+    memset(&smp, 0, sizeof smp);
+    if ((!svx && !path_has_ext(path, ".wav")) || !sl->rp_sample_get(sl->rp_state, m->args[0].v.u, &smp)) {
+        sel_engine_report_error(e, "range", "SAMPLE_EXPORT");
+        return;
+    }
+    f = fopen(path, "wb");
+    if (f == NULL) {
+        sel_engine_report_error(e, "open_failed", "SAMPLE_EXPORT");
+        return;
+    }
+    ok = svx ? sel_export_svx(&smp, sample_sink, f) : sel_export_wav(&smp, sample_sink, f);
+    if (fclose(f) != 0) {
+        ok = 0;
+    }
+    if (!ok) {
+        sel_engine_report_error(e, "open_failed", "SAMPLE_EXPORT");
     }
 }
 

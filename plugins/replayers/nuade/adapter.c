@@ -12,6 +12,10 @@
 #define META_LEN 128u
 #define MESSAGE_LEN 512u
 #define LIST_LEN 4096u
+#define SAMPLE_CATALOGUE_MAX 64u
+#define SAMPLE_SCAN_RATE 44100u
+#define SAMPLE_SCAN_LIMIT_SEC 600u
+#define SAMPLE_BASE_RATE 8287u
 
 typedef struct nuade_state {
     const sel_host* host;
@@ -28,6 +32,11 @@ typedef struct nuade_state {
     uint32_t instruments;
     uintptr_t size;
     sel_tag meta[10];
+    uint32_t default_subsong;
+    int scanned;                       /* RP_SAMPLE_GET catalogue built */
+    uint32_t cat_n;
+    sel_sample cat[SAMPLE_CATALOGUE_MAX]; /* distinct samples, order of first use */
+    char cat_name[SAMPLE_CATALOGUE_MAX][12];
 } nuade_state;
 
 /* A player this adapter can drive: tick players only. Self-rendering
@@ -100,6 +109,7 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     s->pdata = r.user_data;
     s->channels = r.info.display_voices != 0u ? r.info.display_voices : r.info.voice_count;
     s->subsongs = r.info.subsong_count;
+    s->default_subsong = r.info.default_subsong;
     s->size = (uintptr_t)src->size;
     info->voice_count = r.info.voice_count;
     info->subsong_count = r.info.subsong_count;
@@ -239,6 +249,134 @@ static uint32_t rp_tracker_cells(void* state, uint32_t order, uint32_t channel, 
     return n;
 }
 
+/* RP_SAMPLE_GET. The nuade players have no sample hook, so the catalogue is
+ * built from what they hand to the voice API: a second player instance (the
+ * scan instance) runs tick by tick against a recording backend until the song
+ * ends, loops, or SAMPLE_SCAN_LIMIT_SEC of song time passed, and every distinct
+ * sample data pointer is catalogued in order of first use. Built on first call,
+ * on the calling thread. Slot numbers are catalogue positions. */
+static void scan_record(const sel_sample* smp, nuade_state* s) {
+    uint32_t i;
+    if (smp == NULL || smp->data == NULL || smp->length == 0u) {
+        return;
+    }
+    for (i = 0; i < s->cat_n; i++) {
+        if (s->cat[i].data == smp->data) {
+            return;
+        }
+    }
+    if (s->cat_n < SAMPLE_CATALOGUE_MAX) {
+        s->cat[s->cat_n++] = *smp;
+    }
+}
+
+static void scan_play(const sel_voices* v, uint32_t voice, const sel_sample* smp, uint32_t start) {
+    (void)voice;
+    (void)start;
+    scan_record(smp, (nuade_state*)v->ctx);
+}
+
+static void scan_queue(const sel_voices* v, uint32_t voice, const sel_sample* smp) {
+    (void)voice;
+    scan_record(smp, (nuade_state*)v->ctx);
+}
+
+static void scan_stop(const sel_voices* v, uint32_t voice) {
+    (void)v;
+    (void)voice;
+}
+
+static void scan_set(const sel_voices* v, uint32_t voice, uint32_t value) {
+    (void)v;
+    (void)voice;
+    (void)value;
+}
+
+static void scan_pan(const sel_voices* v, uint32_t voice, int32_t value) {
+    (void)v;
+    (void)voice;
+    (void)value;
+}
+
+static int scan_is_playing(const sel_voices* v, uint32_t voice) {
+    (void)v;
+    (void)voice;
+    return 0;
+}
+
+static void scan_get_state(const sel_voices* v, uint32_t voice, sel_voice_state* out) {
+    (void)v;
+    (void)voice;
+    memset(out, 0, sizeof *out);
+}
+
+static void scan_samples(nuade_state* s) {
+    sel_voices api;
+    NuadeVoices nv;
+    NuadePlayerOpenResult r;
+    uint64_t units = 0, limit;
+    uint32_t i;
+    s->scanned = 1;
+    memset(&api, 0, sizeof api);
+    api.size = (uint32_t)sizeof api;
+    api.play = scan_play;
+    api.queue = scan_queue;
+    api.stop = scan_stop;
+    api.set_pitch_hz = scan_set;
+    api.set_period = scan_set;
+    api.set_volume = scan_set;
+    api.set_pan = scan_pan;
+    api.is_playing = scan_is_playing;
+    api.get_state = scan_get_state;
+    api.ctx = s;
+    memset(&nv, 0, sizeof nv);
+    nv.api = &api;
+    r = s->player->open(&s->src);
+    if (r.user_data == NULL) {
+        return;
+    }
+    limit = (uint64_t)SAMPLE_SCAN_LIMIT_SEC * (r.info.timebase_hz != 0u ? r.info.timebase_hz : 1000u);
+    if (s->player->start(r.user_data, s->default_subsong, SAMPLE_SCAN_RATE, &nv)) {
+        for (i = 0; i < 1000000u && units < limit; i++) {
+            NuadeTickResult t = s->player->tick(r.user_data, &nv);
+            units += t.length != 0u ? t.length : 1u;
+            if (t.flags & (NuadeTick_Looped | NuadeTick_Ended)) {
+                break;
+            }
+        }
+    }
+    s->player->close(r.user_data);
+}
+
+static int rp_sample_get(void* state, uint32_t n, sel_rp_sample* out) {
+    nuade_state* s = (nuade_state*)state;
+    const sel_sample* c;
+    if (!s->scanned) {
+        scan_samples(s);
+    }
+    out->count = s->cat_n;
+    if (n < 1u || n > s->cat_n) {
+        return 0;
+    }
+    c = &s->cat[n - 1u];
+    out->data = c->data;
+    out->length = c->length;
+    out->loop_start = c->loop_length != 0u ? c->loop_start : 0u;
+    out->loop_length = c->loop_length;
+    out->bits = c->format == SEL_SAMPLE_S16 ? 16u : 8u;
+    out->channels = 1u;
+    out->rate = SAMPLE_BASE_RATE;
+    {
+        char* nm = s->cat_name[n - 1u];
+        memcpy(nm, "sample ", 7);
+        nm[7] = (char)('0' + (n / 10u) % 10u);
+        nm[8] = (char)('0' + n % 10u);
+        nm[9] = '\0';
+        out->name = nm;
+    }
+    return 1;
+}
+
 static void copy_str(char* dst, size_t cap, const char* value) {
     strncpy(dst, value, cap - 1u);
     dst[cap - 1u] = '\0';
@@ -312,7 +450,7 @@ static const sel_tag* rp_metadata(void* state) {
 
 /* Filled at run time: a function pointer cast to an integer is not a
  * constant expression in C99. */
-static sel_tag g_hooks[15];
+static sel_tag g_hooks[16];
 static sel_tag g_desc[5];
 /* Built by the registry walk at entry: every usable player's id, and the
  * union of their extensions. A list that would overflow its buffer fails the
@@ -397,7 +535,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[11], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
     set(&g_hooks[12], SEL_RP_TRACKER_INFO, SEL_TAG_FN(rp_tracker_info));
     set(&g_hooks[13], SEL_RP_TRACKER_CELLS, SEL_TAG_FN(rp_tracker_cells));
-    set(&g_hooks[14], SEL_TAG_END, 0);
+    set(&g_hooks[14], SEL_RP_SAMPLE_GET, SEL_TAG_FN(rp_sample_get));
+    set(&g_hooks[15], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "nuade");

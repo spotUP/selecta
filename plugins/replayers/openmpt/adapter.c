@@ -117,6 +117,13 @@ static void rp_set_speed(void* state, uint32_t pitch_q16, uint32_t tempo_q16) {
     }
 }
 
+/* RP_SAMPLE_GET: the sample table lives in sample_table.cpp (libopenmpt internals). */
+extern int selecta_openmpt_sample_get(openmpt_module* mod, uint32_t n, sel_rp_sample* out);
+
+static int rp_sample_get(void* state, uint32_t n, sel_rp_sample* out) {
+    return selecta_openmpt_sample_get(((openmpt_state*)state)->mod, n, out);
+}
+
 static uint32_t rp_render(void* state, int16_t* out, uint32_t frames) {
     openmpt_state* s = (openmpt_state*)state;
     return (uint32_t)openmpt_module_read_interleaved_stereo(s->mod, (int32_t)s->rate, frames, out);
@@ -335,7 +342,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[13], SEL_RP_TRACKER_CELLS, SEL_TAG_FN(rp_tracker_cells));
     set(&g_hooks[14], SEL_RP_MUTE, SEL_TAG_FN(rp_mute));
     set(&g_hooks[15], SEL_RP_SET_SPEED, SEL_TAG_FN(rp_set_speed));
-    set(&g_hooks[16], SEL_TAG_END, 0);
+    set(&g_hooks[16], SEL_RP_SAMPLE_GET, SEL_TAG_FN(rp_sample_get));
+    set(&g_hooks[17], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "openmpt");

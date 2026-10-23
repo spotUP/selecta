@@ -1,0 +1,6 @@
+SAMPLE 1 64 0 64 8287 "test sample 1"
+SAMPLE 2 64 0 64 8287 "test sample 2"
+SAMPLE 3 256 0 256 8287 "test sample 3"
+SAMPLE 4 512 0 0 8287 "test sample 4"
+ERROR range SAMPLE_EXPORT
+ERROR range SAMPLE_EXPORT
