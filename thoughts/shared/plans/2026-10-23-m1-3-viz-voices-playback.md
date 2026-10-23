@@ -172,3 +172,9 @@ Visualizer plugins on bitmap surfaces (M4), GPU visualizers (M5), chip register 
 - The pattern panel and the viz panel are mutually exclusive (`P` clears viz, `V` clears pattern), so T39 cannot show scope rows and pattern rows on one screen. T39 key order: `P`, wait, `:DSP crossfeed on`, `:SLEEP_TIMER 1`, `V`, `V`, `1`, wait, quit. The final screen is the scope view with voice 1 blank. `pattern_rows>0` is proven by the exit counter; the pattern screen stays covered by `ui-panel-pattern`.
 - `Muted` is drawn only in levels mode, not scope mode (Q34).
 - `fades=` is parsed by T39 but not asserted; the plan names no value.
+
+### Phase 6c (I103) deviations
+
+- The `error not_implemented SLEEP_TIMER` seen during I102 came from a stale build; SLEEP_TIMER and ALARM were already in `SEL_CMD_IMPLEMENTED`. The T8 ratchet therefore stays at 21 instead of dropping.
+- Viz frames, scope reads and pattern rows are counted as three new UI stat tags in `include/selecta/tags.def` (same mechanism as the T28 sentinels). Mutes, fades, crossfeed state and sleep armed are engine stats.
+- `fades` counts end fades started (loop count or max length); T39 still does not assert it.
