@@ -266,6 +266,14 @@ if(SEL_AMIGA_NM AND EXISTS "${SEL_AMIGA_CLI}")
   set_tests_properties(no-float-engine PROPERTIES FIXTURES_REQUIRED amiga_cli)
 endif()
 
+# I190b: no libnix startup constructor (___initclock) in the linked Amiga selecta-cli; vamos cannot run it.
+if(SEL_AMIGA_NM AND EXISTS "${SEL_AMIGA_CLI}")
+  add_test(NAME no-startup-ctor
+    COMMAND "${CMAKE_COMMAND}" "-DNM=${SEL_AMIGA_NM}" "-DAMIGA_CLI=${SEL_AMIGA_CLI}"
+            -P "${PROJECT_SOURCE_DIR}/cmake/no_startup_ctor.cmake")
+  set_tests_properties(no-startup-ctor PROPERTIES FIXTURES_REQUIRED amiga_cli)
+endif()
+
 # T12: mixer unit test (period step, resampler vectors, clipping, loop and
 # queue semantics). Groups are listed so a resampler lands in the gate with
 # the row that implements it.
