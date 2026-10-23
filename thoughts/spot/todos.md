@@ -254,6 +254,7 @@ Tests T39 to T48 are defined in the plan's finish-line table.
 | I92 | [x] | 3 | Pitch and tempo tables, PITCH, TEMPO, RP_SET_SPEED | T42 green, ratchet 23 | red `Test #57: voice-control ***Failed 0.53 sec`; 86b9689, 51a8b7a, 10ec5f5; ratchet 23; full run 73/73; merge 29239fc
 | I93 | [x] | 4 | T43, T44, T45 written and red; voices-test output | ctest failures | faae4ad red `#58 loop-fade`, `#59 crossfade`, `#60 sleep-alarm` ***Failed; merge 19a5dc1
 | I94 | [x] | 4 | REPEAT, loops/fade_ms/max_song_ms/silence_ms options, SONG_ENDED reason, stop-after options | T43 green, ratchet 22 | 108bbed, 78a8391; T43 green, ratchet 22; full run 76/78 (crossfade, sleep-alarm red until I95, I96); merge 19a5dc1
+| I94a | [ ] | 4 | Q24 answer: the first loop of a non-looping song ends it with SONG_ENDED reason `end`; songs that loop by design keep `loop`. Needs a per-song "loops by design" signal from the replayer (nuade Protracker reports only loops) | regression test: short non-looping MOD ends with `end`; looping fixture still `loop`; queue.expected repinned | decided 2026-10-23 |
 | I95 | [x] | 4 | Early prepare, gapless, crossfade table and mix, `mixed_path` | T44 green ; merge 248716b (7323311) |
 | I96 | [x] | 4 | HOSTQ_LOCAL_TIME, fake clock, SLEEP_TIMER, ALARM | T45 green, ratchet 21 ; merge 696618b (d5dcb45), ratchet 21 |
 | I97 | [x] | 5 | T46 written and red; RP_SAMPLE_GET; nuade scan catalogue; openmpt sample table | ctest failure then catalogue lines green ; merge 9653063 (cb2b65c red, 5b93144) |
@@ -353,6 +354,7 @@ Tests T62 to T97 are defined in the plan's finish-line table. T8 ratchet target 
 | I165 | [x] | 5 | File cache paths, md5 verify with next-mirror retry, LIBRARY_FETCH | T75 fetch part green; T8 count moves; cache at <cache>/files/<source>/<path>, sel_mirrors_fetch_verified retries next mirror on md5 mismatch, T8 count 18 to 17; merge 4e85843 |
 | I166 | [x] | 5 | `SEL_RP_COMPANIONS` tag, per-format rules on the replayers that need them, fetched with the song | T75 green; SEL_RP_COMPANIONS 0x101B, nuade mdat/smpl and tfx/sam rules, T75 cache_hits=1 fetches=3 companions=1; merge 4e85843 |
 | I166a | [ ] | 5 | Move LIBRARY_FETCH from the `library_fetch` cfg hook onto `cfg.library` (same as I158a did for scan); install fetch in the `selecta` shell, not only `script`; vamos cache-fetch run | T75 green through `selecta --exec`; vamos fetch test green | m3-phase5a-report.md |
+| I139a | [ ] | 0 | Q69 answer: hip_vote client waits for the user to give the /api/hip/vote parameter names or add the endpoint server side | blocked on user | decided 2026-10-23 |
 | I167 | [ ] | 5 | LRU trim to a `sel_machine`-scaled budget, kept and liked exempt | T76 green |
 | I168 | [ ] | 5 | Prefetch of the next queued remote song while one plays | T77 prefetch part green |
 | I169 | [ ] | 5 | Smart downloads (F34): history and smart-playlist policy, low priority, metered and off prefs | T77 green |
