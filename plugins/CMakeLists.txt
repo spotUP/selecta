@@ -4,6 +4,13 @@
 
 sel_add_plugin(null 2 outputs/null/null.c)
 sel_add_plugin(voices_test 2 outputs/voices_test/voices_test.c)
+sel_add_plugin(paula_shadow 2 outputs/paula/shadow.c outputs/paula/paula_voices.c)
+# The Paula voice sink runs from the audio task on Amiga: integer only. Its objects join the T54 list
+# (src/CMakeLists.txt writes m2-interrupt-objects.txt from the targets).
+if(SEL_AMIGA)
+  add_library(selecta_paula_irq OBJECT outputs/paula/paula_voices.c)
+  target_include_directories(selecta_paula_irq PRIVATE ${PROJECT_SOURCE_DIR}/include)
+endif()
 sel_add_plugin(wav 2 outputs/wav/wav.c)
 sel_add_plugin(crossfeed 3 dsp/crossfeed/crossfeed.c)
 # OS headers live under plugins/*/<os>/ (RULES.md rule 3).

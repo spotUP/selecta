@@ -26,6 +26,10 @@ static const char* render_config(const sel_host* host, const char* key, const ch
     if (strcmp(key, "wav.path") == 0) {
         return c->wav_path;
     }
+    if (strcmp(key, "paula.log") == 0) { /* echo the paula-shadow register log (hand checks) */
+        const char* v = getenv("SELECTA_PAULA_LOG");
+        return v != NULL ? v : def;
+    }
     return def;
 }
 
@@ -106,6 +110,8 @@ int sel_cli_render(int argc, char** argv) {
     sel_cli_output o;
     const char* song = NULL;
     const char* wav = NULL;
+    const char* out_id = NULL;
+    const sel_voices* sink = NULL;
     const char* seek_ms = NULL;
     const char* viz_dump = NULL;
     const char* script = NULL;
@@ -119,14 +125,28 @@ int sel_cli_render(int argc, char** argv) {
     uint32_t total, pumped = 0;
     int i;
 
-    if (argc < 1) {
-        fputs("render: song path missing\n", stderr);
-        return 2;
-    }
-    song = argv[0];
-    for (i = 1; i + 1 < argc; i += 2) {
+    /* Options are `--name value` pairs in any order; the first other argument is the song. */
+    for (i = 0; i < argc; i++) {
+        if (strncmp(argv[i], "--", 2) != 0) {
+            if (song != NULL) {
+                fprintf(stderr, "render: unexpected argument %s\n", argv[i]);
+                return 2;
+            }
+            song = argv[i];
+            continue;
+        }
+        if (i + 1 >= argc) {
+            fprintf(stderr, "render: option %s needs a value\n", argv[i]);
+            return 2;
+        }
         if (strcmp(argv[i], "--output") == 0) {
-            wav = argv[i + 1];
+            /* A path (a slash or a .wav suffix) is the wav output; anything else names an output plugin. */
+            size_t n = strlen(argv[i + 1]);
+            if (strchr(argv[i + 1], '/') != NULL || (n > 4 && strcmp(argv[i + 1] + n - 4, ".wav") == 0)) {
+                wav = argv[i + 1];
+            } else {
+                out_id = argv[i + 1];
+            }
         } else if (strcmp(argv[i], "--seconds") == 0) {
             seconds = strtoul(argv[i + 1], NULL, 10);
         } else if (strcmp(argv[i], "--viz-dump") == 0) {
@@ -148,24 +168,45 @@ int sel_cli_render(int argc, char** argv) {
             fprintf(stderr, "render: unknown option %s\n", argv[i]);
             return 2;
         }
+        i++;
     }
-    if (wav == NULL || rate == 0) {
-        fputs("render: --output <wav> and a nonzero --rate are required\n", stderr);
+    if (song == NULL) {
+        fputs("render: song path missing\n", stderr);
+        return 2;
+    }
+    if ((wav == NULL && out_id == NULL) || rate == 0) {
+        fputs("render: --output <wav or output id> and a nonzero --rate are required\n", stderr);
         return 2;
     }
 
-    ctx.wav_path = wav;
+    ctx.wav_path = wav != NULL ? wav : "";
     ctx.failed = 0;
     ctx.script = script != NULL;
     host.config_get = render_config;
     host.ctx = &ctx;
 
     sel_registry_init(&host);
-    if (!sel_cli_find_output("render", "wav", &o)) {
+    if (!sel_cli_find_output("render", out_id != NULL ? out_id : "wav", &o)) {
         return 1;
     }
-    e = sel_cli_start_song("render", &host, song, (uint32_t)rate, resampler);
+    out = NULL;
+    if (out_id != NULL) {
+        /* An output with a voice backend (paula-shadow) opens first: the replayer needs its sink at start. */
+        sel_out_voice_backend_fn backend = (sel_out_voice_backend_fn)sel_tag_find(o.hooks, SEL_OUT_VOICE_BACKEND, 0);
+        out = o.open(&host, (uint32_t)rate, 2);
+        if (out == NULL) {
+            fputs("render: output open failed\n", stderr);
+            return 1;
+        }
+        if (backend != NULL) {
+            sink = backend(out);
+        }
+    }
+    e = sel_cli_start_song_sink("render", &host, song, (uint32_t)rate, resampler, sink);
     if (e == NULL) {
+        if (out != NULL) {
+            o.close(out);
+        }
         return 1;
     }
 
@@ -205,7 +246,9 @@ int sel_cli_render(int argc, char** argv) {
         }
     }
 
-    out = o.open(&host, (uint32_t)rate, 2);
+    if (out == NULL) {
+        out = o.open(&host, (uint32_t)rate, 2);
+    }
     if (out == NULL) {
         sel_engine_destroy(e);
         fputs("render: output open failed\n", stderr);
@@ -279,6 +322,14 @@ int sel_cli_render(int argc, char** argv) {
     if (dump != NULL) {
         fclose(dump);
         printf("viz_blocks=%u\n", (unsigned)viz_blocks);
+    }
+    if (o.stats != NULL && out_id != NULL) {
+        const sel_tag* st = o.stats(out);
+        uintptr_t writes = sel_tag_find(st, SEL_OUT_STAT_REG_WRITES, 0);
+        const char* digest = (const char*)sel_tag_find(st, SEL_OUT_STAT_LOG_DIGEST, 0);
+        if (digest != NULL) {
+            printf("output=%s aud_writes=%u reg_log_sha256=%s\n", out_id, (unsigned)writes, digest);
+        }
     }
     o.close(out);
     sel_engine_destroy(e);
