@@ -178,6 +178,15 @@ static uint8_t clamp_u8(int32_t v) {
     return v < 0 ? 0u : v > 255 ? 255u : (uint8_t)v;
 }
 
+/* nuade names notes the ProTracker way (period 856 = C-1, so 428 = C-2; value
+ * 12 = C-1, plus the column's octave_shift for formats that sit lower or
+ * higher). libopenmpt, whose scale sel_rp_cell.note uses, shows the same
+ * period three octaves up (428 = C-5 = note 61). Every nuade tracker player
+ * derives its value from Paula periods in that ProTracker numbering (formats
+ * with a different base declare it in octave_shift), so one constant converts
+ * all of them. */
+#define NUADE_TO_OPENMPT_OCTAVES 3
+
 static uint8_t note_of(int32_t v, int32_t octave_shift) {
     int32_t n;
     if (v == NUADE_NOTE_CUT) {
@@ -186,7 +195,7 @@ static uint8_t note_of(int32_t v, int32_t octave_shift) {
     if (v == NUADE_NOTE_OFF) {
         return 255u;
     }
-    n = v < 0 ? 0 : v + 12 * octave_shift + 1;
+    n = v < 0 ? 0 : v + 12 * (octave_shift + NUADE_TO_OPENMPT_OCTAVES) + 1;
     return n >= 1 && n <= 120 ? (uint8_t)n : 0u;
 }
 
