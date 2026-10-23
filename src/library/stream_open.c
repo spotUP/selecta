@@ -131,7 +131,7 @@ uint32_t sel_stream_reads(void) {
 }
 
 /* ---- Live streams (I195b, see stream_open.h) ---- */
-static uint32_t g_live_opens, g_audio_bytes, g_audio_done, g_received;
+static uint32_t g_live_opens, g_audio_bytes, g_audio_done, g_received, g_record_taps, g_recorded;
 
 #if defined(__amigaos__) || defined(AMIGA)
 /* No download thread on the Amiga until bsdsocket arrives with I199: OPEN keeps reading the whole file. */
@@ -164,6 +164,33 @@ void sel_live_note_audio(sel_live* s) {
 void sel_live_close(sel_live* s) {
     (void)s;
 }
+sel_live* sel_live_open_record(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start,
+                               const char* path, unsigned long limit) {
+    (void)host;
+    (void)url;
+    (void)gen;
+    (void)start;
+    (void)path;
+    (void)limit;
+    return NULL;
+}
+unsigned long sel_live_recorded(const sel_live* s) {
+    (void)s;
+    return 0;
+}
+int sel_live_finished(const sel_live* s) {
+    (void)s;
+    return 1;
+}
+int sel_live_failed(const sel_live* s) {
+    (void)s;
+    return 1;
+}
+size_t sel_live_discard(sel_live* s, size_t max) {
+    (void)s;
+    (void)max;
+    return 0;
+}
 #else
 #include <pthread.h>
 #include <unistd.h>
@@ -179,6 +206,9 @@ struct sel_live {
     volatile unsigned eof, failed;  /* set by the download thread when it ends */
     volatile unsigned stop;         /* the thread's cancel generation (sel_net_set_cancel) and the sink's abort */
     unsigned long received;
+    FILE* rec;                      /* record sink (F36); written by the download thread only */
+    unsigned long rec_limit, rec_written;
+    volatile unsigned rec_count;    /* rec_written for other threads */
     const volatile unsigned* gen;   /* the engine's cancel generation, for the pump-side waits */
     unsigned gen_start;
     pthread_t thread;
@@ -200,6 +230,17 @@ static int cancelled(const sel_live* s) {
 static int ring_sink(void* ctx, const void* data, size_t len) {
     sel_live* s = (sel_live*)ctx;
     const uint8_t* p = (const uint8_t*)data;
+    if (s->rec != NULL) {
+        size_t n = len;
+        if (s->rec_limit != 0 && n > s->rec_limit - s->rec_written) {
+            n = (size_t)(s->rec_limit - s->rec_written);
+        }
+        if (n > 0 && fwrite(p, 1, n, s->rec) == n) {
+            s->rec_written += n;
+            g_record_taps++;
+            st_store(&s->rec_count, (unsigned)s->rec_written);
+        }
+    }
     while (len > 0) {
         unsigned w = ld(&s->wr), space = SEL_STREAM_RING - (w - ld(&s->rd));
         size_t n, at;
@@ -281,7 +322,8 @@ static int view_ended(void* ctx) {
     return is_ended((sel_live*)ctx);
 }
 
-sel_live* sel_live_open(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start) {
+static sel_live* live_open(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start,
+                           const char* rec_path, unsigned long rec_limit) {
     sel_live* s = (sel_live*)host->mem_alloc(host, sizeof *s, SEL_MEM_FAST);
     size_t n = strlen(url) + 1u;
     if (s == NULL) {
@@ -298,6 +340,14 @@ sel_live* sel_live_open(const sel_host* host, const char* url, const volatile un
         return NULL;
     }
     memcpy(s->url, url, n);
+    if (rec_path != NULL) {
+        s->rec = fopen(rec_path, "wb"); /* before the thread starts, so no early byte is missed */
+        s->rec_limit = rec_limit;
+        if (s->rec == NULL) {
+            sel_live_close(s);
+            return NULL;
+        }
+    }
     s->view.ctx = s;
     s->view.read = view_read;
     s->view.read_wait = view_read_wait;
@@ -309,6 +359,15 @@ sel_live* sel_live_open(const sel_host* host, const char* url, const volatile un
     s->started = 1;
     g_live_opens++;
     return s;
+}
+
+sel_live* sel_live_open(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start) {
+    return live_open(host, url, gen, start, NULL, 0);
+}
+
+sel_live* sel_live_open_record(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start,
+                               const char* path, unsigned long limit) {
+    return live_open(host, url, gen, start, path, limit);
 }
 
 int sel_live_head(sel_live* s, uint8_t* dst, size_t want, size_t* n) {
@@ -357,6 +416,22 @@ void sel_live_note_audio(sel_live* s) {
     g_audio_done = ld(&s->eof) != 0u ? 1u : 0u;
 }
 
+unsigned long sel_live_recorded(const sel_live* s) {
+    return ld(&s->rec_count);
+}
+int sel_live_finished(const sel_live* s) {
+    return ld(&s->eof) != 0u;
+}
+int sel_live_failed(const sel_live* s) {
+    return ld(&s->failed) != 0u;
+}
+size_t sel_live_discard(sel_live* s, size_t max) {
+    unsigned r = ld(&s->rd), avail = ld(&s->wr) - r;
+    size_t n = max < avail ? max : avail;
+    st_store(&s->rd, r + (unsigned)n);
+    return n;
+}
+
 void sel_live_close(sel_live* s) {
     if (s == NULL) {
         return;
@@ -364,6 +439,11 @@ void sel_live_close(sel_live* s) {
     st_store(&s->stop, 1u);
     if (s->started) {
         pthread_join(s->thread, NULL);
+    }
+    if (s->rec != NULL) {
+        g_recorded = (uint32_t)s->rec_written;
+        fclose(s->rec);
+        s->rec = NULL;
     }
     g_received = (uint32_t)s->received;
     if (s->ring != NULL) {
@@ -384,6 +464,12 @@ uint32_t sel_stream_audio_bytes(void) {
 }
 uint32_t sel_stream_audio_done(void) {
     return g_audio_done;
+}
+uint32_t sel_stream_recorded_total(void) {
+    return g_recorded;
+}
+uint32_t sel_stream_record_taps(void) {
+    return g_record_taps;
 }
 uint32_t sel_stream_received(void) {
     return g_received;

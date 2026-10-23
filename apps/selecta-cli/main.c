@@ -62,6 +62,7 @@ static int usage(FILE* to) {
           "  userdata --db <p> [--catalogue <tsv>] [--note <song> <text>] [--tag <song> <field> <value>] [--wrong <song> <note>]  notes, tag edits, row counts (T78)\n"
           "  wrong [--db <p>] [--export <file>] [<song> [<note>]]  flag a song as sounding wrong, export sounds-wrong.txt (T78)\n"
           "  devilbox login <user> [--password-stdin] [--config-dir <dir>]  log in to DEViLBOX, store the token (password from stdin) (I173)\n"
+          "  record <url> <file> [--bytes N] [--seconds S]  stream-to-disk: write the raw stream bytes as they arrive\n"
           "  fetch <url> [--method M] [--range a-b] [--out file]  one HTTP request, print http_status= and net counters\n"
           "  share make song|playlist|view ...  build a share link, print both forms and the parse round trip (T84)\n"
           "  share parse <link>         parse a selecta:// or DEViLBOX link, print its parts (exit 2: ERROR bad_link)\n"
@@ -1044,6 +1045,9 @@ int main(int argc, char** argv)
     }
     if (strcmp(cmd, "fetch") == 0) {
         return sel_cli_fetch(argc - 2, argv + 2);
+    }
+    if (strcmp(cmd, "record") == 0) {
+        return sel_cli_record(argc - 2, argv + 2);
     }
     if (strcmp(cmd, "render") == 0) {
         return sel_cli_render(argc - 2, argv + 2);
