@@ -114,25 +114,15 @@ static void tui_cursor(tui* u, const char* where) {
 
 static void tui_add_cursor_file(tui* u) {
     const sel_view_state* v = sel_engine_state(u->engine)->view;
-    uint32_t i;
-    char path[512];
-    if (v != NULL && v->source == SEL_VIEW_QUERY && v->cursor >= v->window_start && v->cursor - v->window_start < v->row_n &&
-        v->rows[v->cursor - v->window_start].kind != SEL_ROW_NODE) {
-        const char* key = sel_engine_view_cursor_key(u->engine);
-        if (key != NULL) {
-            tui_sendf(u, "QUEUE_ADD %s", key);
-        }
+    const char* key;
+    /* A tree or drilldown node row keeps its song's id as cursor_id; it adds nothing. */
+    if (v == NULL || (v->source != SEL_VIEW_QUERY && v->source != SEL_VIEW_BROWSE) ||
+        (v->source == SEL_VIEW_QUERY && (v->cursor < v->window_start || v->cursor - v->window_start >= v->row_n ||
+                                         v->rows[v->cursor - v->window_start].kind == SEL_ROW_NODE)) ||
+        (key = sel_engine_view_cursor_key(u->engine)) == NULL) {
         return;
     }
-    if (v == NULL || v->source != SEL_VIEW_BROWSE || v->browse_path == NULL || v->cursor < v->window_start) {
-        return;
-    }
-    i = v->cursor - v->window_start;
-    if (i >= v->row_n || v->rows[i].kind != SEL_ROW_FILE) {
-        return;
-    }
-    snprintf(path, sizeof path, "%s/%s", v->browse_path, v->rows[i].text);
-    tui_sendf(u, "QUEUE_ADD %s", path);
+    tui_sendf(u, "QUEUE_ADD %s", key);
 }
 
 static void tui_remove_cursor_entry(tui* u) {
@@ -187,18 +177,14 @@ static void tui_subsong(tui* u, int delta) {
     tui_send(u, line);
 }
 
-/* The path of the browse row under the cursor, or 0. */
+/* The path of the browse file row under the cursor, or 0. */
 static int tui_cursor_path(const tui* u, char* out, size_t cap) {
     const sel_view_state* v = sel_engine_state(u->engine)->view;
-    uint32_t i;
-    if (v == NULL || v->source != SEL_VIEW_BROWSE || v->browse_path == NULL || v->cursor < v->window_start) {
+    const char* path;
+    if (v == NULL || v->source != SEL_VIEW_BROWSE || (path = sel_engine_view_cursor_key(u->engine)) == NULL) {
         return 0;
     }
-    i = v->cursor - v->window_start;
-    if (i >= v->row_n || v->rows[i].kind != SEL_ROW_FILE) {
-        return 0;
-    }
-    return snprintf(out, cap, "%s/%s", v->browse_path, v->rows[i].text) < (int)cap;
+    return snprintf(out, cap, "%s", path) < (int)cap;
 }
 
 /* `m`: toggles the file under the cursor in the selection that `:!` uses. */
@@ -616,11 +602,6 @@ static void tui_header(tui* u, const sel_state* s) {
     txt_grid_text(&u->grid, 1, 1, buf, u->grid.cols - 1u, tui_style(u, TXT_ROLE_NORMAL));
 }
 
-static const char* tui_leaf(const char* path) {
-    const char* slash = path != NULL ? strrchr(path, '/') : NULL;
-    return slash != NULL && slash[1] != '\0' ? slash + 1 : (path != NULL ? path : "");
-}
-
 /* Queue heading: the entry count, or the grouping key and the drilldown
  * breadcrumb of picked values. */
 static void tui_queue_title(char* buf, size_t cap, const sel_view_state* v, int u_lib) {
@@ -647,7 +628,8 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
         return;
     }
     if (v->source == SEL_VIEW_BROWSE) {
-        snprintf(buf, sizeof buf, "Browse  %s", tui_leaf(v->browse_path));
+        snprintf(buf, sizeof buf, "Browse  %s",
+                 v->browse_leaf != NULL && v->browse_leaf[0] ? v->browse_leaf : (v->browse_path != NULL ? v->browse_path : ""));
     } else if (v->source == SEL_VIEW_FOLDERS) {
         snprintf(buf, sizeof buf, "Playlist folders  %u rows", (unsigned)v->row_count);
     } else if (v->source == SEL_VIEW_HOME) {

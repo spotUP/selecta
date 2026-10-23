@@ -773,6 +773,7 @@ void sel_view_refresh(sel_view* v, const sel_view_src* s) {
         }
     }
     p->browse_path = s->browse->path;
+    p->browse_leaf = sel_browse_basename(s->browse->path);
     p->group = key_name[v->group_key];
     p->drill_n = mode == SEL_VIEW_STYLE_DRILLDOWN ? v->drill_n : 0u;
     p->drill[0] = v->drill_value[0];

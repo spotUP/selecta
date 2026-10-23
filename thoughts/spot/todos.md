@@ -312,7 +312,7 @@ Tests T49 to T61 are defined in the plan's finish-line table.
 | I138 | [ ] | 8 | Manual checks 1 to 5 confirmed by Johan | Johan's confirmation recorded in ledger |
 | I138a | [ ] | 8 | paula14 hardware close waits for the last queued buffer before DMA stop | rig only (T56 family); found in m2-fixes-report, merge cd65b7c |
 | I138b | [x] | 8 | Amiga paths in browse: `sel_browse_join` and ".." handle "Vol:dir" and "dir/sub" (parent of `Work:Music` is `Work:`) | desktop unit test of join/parent with Amiga style; T55 browse step into subdir under vamos; found in m2-fixes-report, merge cd65b7c; style-aware join/parent/root in src/library/local; T amiga-browse-nav-vamos; title leaf cosmetic open as I138c; merge adba905 |
-| I138c | [ ] | 8 | Text UI title leaf (`tui_leaf`, plugins/ui/text/text_ui.c) splits on "/" only, shows "work:songs"; needs SDK-visible leaf helper | regression test on Amiga title; found by I138b agent |
+| I138c | [x] | 8 | Text UI title leaf (`tui_leaf`, plugins/ui/text/text_ui.c) splits on "/" only, shows "work:songs"; needs SDK-visible leaf helper | done: engine publishes sel_view_state.browse_leaf (sel_browse_basename) and sel_engine_view_cursor_key returns the browse file path joined by sel_browse_join; text UI title, add, mark and :! use them instead of splitting/joining on "/" (old join gave "work:/x" at a volume root). Test amiga-browse-nav-vamos: title "songs", cursor_key=work:<file>; title half fails with the old text_ui.c |
 
 
 ## Implementation M3 (plan: thoughts/shared/plans/2026-10-25-m3-library.md, status: approved 2026-10-25 autonomous with defaults D-M3-1..19 (Q50-Q68), starts after M2 non-rig rows)

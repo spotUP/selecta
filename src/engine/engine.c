@@ -346,6 +346,7 @@ struct sel_engine {
     uint32_t q_hint;    /* position NEXT and PLAY start from while q_playing is 0 */
     uint32_t song_over; /* the open song ended or the queue ran out: PLAY restarts the queue */
     sel_browse browse;  /* the listing LIBRARY_BROWSE fills */
+    char browse_cursor[SEL_BROWSE_PATH_MAX]; /* path of the browse file row under the cursor (sel_engine_view_cursor_key) */
     sel_scan_info scan_info; /* counters of the last LIBRARY_SCAN */
     sel_sync_info sync_info; /* counters of the last LIBRARY_SYNC */
     uint32_t lib_slot;
@@ -3958,12 +3959,21 @@ const char* sel_view_source_label(uint32_t source) {
     return source == SEL_VIEW_QUEUE ? "queue" : source == SEL_VIEW_BROWSE ? "browse" : source == SEL_VIEW_QUERY ? "query" : source == SEL_VIEW_FOLDERS ? "folders" : source == SEL_VIEW_HOME ? "home" : "unknown";
 }
 
-const char* sel_engine_view_cursor_key(const sel_engine* e) {
+const char* sel_engine_view_cursor_key(sel_engine* e) {
     const sel_view_state* v = &e->view.pub;
     const sel_queue* q = v->source == SEL_VIEW_QUERY ? &e->qview : &e->queue;
     uint32_t at;
 
-    if (v->source == SEL_VIEW_BROWSE || v->source == SEL_VIEW_FOLDERS || v->source == SEL_VIEW_HOME || v->row_count == 0) {
+    if (v->source == SEL_VIEW_BROWSE) {
+        /* The path rules (AmigaDOS "Work:" + "songs" = "Work:songs") live in sel_browse_join only. */
+        at = v->cursor;
+        if (at >= e->browse.count || e->browse.entries[at].is_dir ||
+            !sel_browse_join(e->browse_cursor, sizeof e->browse_cursor, e->browse.path, sel_browse_name(&e->browse, at))) {
+            return NULL;
+        }
+        return e->browse_cursor;
+    }
+    if (v->source == SEL_VIEW_FOLDERS || v->source == SEL_VIEW_HOME || v->row_count == 0) {
         return NULL;
     }
     at = sel_queue_index_of(q, v->cursor_id);

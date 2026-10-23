@@ -96,6 +96,8 @@ typedef struct sel_view_state {
     uint32_t row_n;        /* rows[] entries filled */
     const sel_view_row* rows;
     const char* browse_path; /* directory the browse listing shows */
+    const char* browse_leaf; /* last component of browse_path, split on "/" and AmigaDOS ":";
+                                empty at a root ("/", "Work:") */
     const char* group;       /* grouping key: "folder" or "format" */
     uint32_t drill_n;        /* drilldown: values picked so far */
     const char* drill[2];    /* the picked values, column order */
@@ -349,8 +351,10 @@ const char* sel_engine_result_key(const sel_engine* e, uint32_t i);
 const char* sel_view_style_label(uint32_t style);
 /* "queue", "browse" or "query" for a sel_view_source value; "unknown" otherwise. */
 const char* sel_view_source_label(uint32_t source);
-/* Key of the song under the cursor in the queue or query list; NULL on a directory row or an empty list. */
-const char* sel_engine_view_cursor_key(const sel_engine* e);
+/* Key of the song under the cursor in the queue or query list, or the path of the file row under the cursor in
+ * the browse listing (joined with the platform's path rules); NULL on a directory or node row or an empty list.
+ * The browse path stays valid until the next call. */
+const char* sel_engine_view_cursor_key(sel_engine* e);
 
 /* Fills `frames` stereo frames: the open song's mix while PLAYING, else
  * silence. Counts calls. Never allocates. */
