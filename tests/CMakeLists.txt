@@ -233,7 +233,9 @@ add_test(NAME mixer-unit COMMAND mixer_test period none linear cubic sinc defaul
 # snapshot. The temp tree is created inside the generated songs directory.
 add_executable(view_test view/view_test.c)
 target_link_libraries(view_test PRIVATE selecta_core selecta_registry)
-add_test(NAME view-unit COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs")
+add_test(NAME view-unit COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs" browse sort cursor activate window style)
+# T32: grouping, node ids, expand/collapse, drilldown, cursor across styles.
+add_test(NAME view-tree COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs" tree)
 
 # T33: title-format resolver and PREF_GET / PREF_SET (src/engine/format.c, prefs.c).
 add_executable(format_test view/format_test.c)
