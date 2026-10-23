@@ -1024,6 +1024,12 @@ if(NOT SEL_AMIGA)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
   set_tests_properties(folders-tree PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "folders_ok")
 
+  add_test(NAME playlist-create
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/playlist_create.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/playlist_create.sel
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
+  set_tests_properties(playlist-create PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "plc_ok")
+
   add_test(NAME text-ui-folders-tree
     COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>" "-DSELECTA=$<TARGET_FILE:selecta>"
       "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv"

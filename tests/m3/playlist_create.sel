@@ -1,0 +1,6 @@
+# I178a: PLAYLIST_CREATE saves the queue as a DB playlist; playlist_create.sh proves it through export-folder.
+FOLDER_ADD Out
+QUEUE_ADD selecta-test-mk.mod
+QUEUE_ADD selecta-test.mod
+PLAYLIST_CREATE Saved 1
+@folder_tree
