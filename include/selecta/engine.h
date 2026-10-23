@@ -11,6 +11,7 @@
 #include <selecta/replayer.h>
 #include <selecta/tags.h>
 #include <selecta/viz.h>
+#include <selecta/voices.h>
 
 SEL_EXTERN_C_BEGIN
 
@@ -209,6 +210,9 @@ void sel_engine_set_mix(sel_engine* e, uint32_t rate, uint32_t resampler);
  * turns the crossfeed on unless the pref dsp.crossfeed is "off". Call after
  * sel_engine_set_mix and the registry hook-up, before the song starts. */
 void sel_engine_set_output(sel_engine* e, const sel_tag* out_hooks);
+/* An output that plays voices itself (SEL_OUT_VOICE_BACKEND) hands its backend here before the song starts;
+ * the replayer's voice calls then reach it instead of the mixer. NULL restores the mixer. */
+void sel_engine_set_voice_sink(sel_engine* e, const sel_voices* sink);
 
 typedef struct sel_engine_stats {
     uint32_t ticks;        /* replayer ticks run */
