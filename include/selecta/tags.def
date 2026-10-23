@@ -59,6 +59,13 @@ SEL_TAG(OUT, DIRECT_VOLUME,    0x200C, INT)
 SEL_TAG(OUT, HEADPHONES,       0x200D, INT)
 SEL_TAG(OUT, STAT_CALLBACKS,   0x200E, INT)
 
+/* Visualizer plugin rows (design doc section 8). The built-in text UI panels
+ * read the snapshot frame (sel_state.viz) directly and need none of these. */
+SEL_TAG(VIZ, NAME,             0x4000, STR)
+SEL_TAG(VIZ, OPEN,             0x4001, PTR)
+SEL_TAG(VIZ, FRAME,            0x4002, PTR)
+SEL_TAG(VIZ, CLOSE,            0x4003, PTR)
+
 SEL_TAG(UI, NAME,              0x5000, STR)
 SEL_TAG(UI, OPEN,              0x5001, PTR)
 SEL_TAG(UI, ON_EVENT,          0x5002, PTR)

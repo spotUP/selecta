@@ -23,8 +23,8 @@ list(LENGTH objs nobjs)
 # engine (engine, format, history, prefs, queue, shuffle, view, voices, spsc, scheduler) + protocol (parse)
 # + mixer (mixer, resample) + wav + null
 # + library (local, dir, playlist, hippo, m3u, pls, xspf)
-if(NOT nobjs EQUAL 22)
-  message(FATAL_ERROR "expected 22 objects (10 engine, 1 protocol, 2 mixer, wav, null, 7 library), found ${nobjs}:\n${objs}")
+if(NOT nobjs EQUAL 23)
+  message(FATAL_ERROR "expected 23 objects (11 engine, 1 protocol, 2 mixer, wav, null, 7 library), found ${nobjs}:\n${objs}")
 endif()
 
 set(bad "")
