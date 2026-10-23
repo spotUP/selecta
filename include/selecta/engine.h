@@ -10,6 +10,7 @@
 #include <selecta/protocol.h>
 #include <selecta/replayer.h>
 #include <selecta/tags.h>
+#include <selecta/viz.h>
 
 SEL_EXTERN_C_BEGIN
 
@@ -110,6 +111,7 @@ typedef struct sel_state {
     const char* queue_text; /* path arena the entries' path_offset points into */
     uint32_t queue_count, queue_playing, queue_version; /* queue_playing: id, 0 = none */
     const sel_view_state* view; /* the view model, valid until the next pump */
+    const sel_viz_frame* viz;   /* newest visualisation frame (seq 0: none yet), valid until the next pump */
 } sel_state;
 
 typedef struct sel_engine_config {

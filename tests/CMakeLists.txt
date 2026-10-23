@@ -486,3 +486,18 @@ if(NOT SEL_AMIGA)
       "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m12/reach.screen"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m12/reach.cmake")
 endif()
+# T40, T48 (M1.3 Phase 1): viz taps, VU ballistics, spectrum bands, phase ring.
+if(NOT SEL_AMIGA)
+  add_executable(phase_test viz/phase_test.c)
+  target_link_libraries(phase_test PRIVATE selecta_core m)
+  add_test(NAME phase-tap COMMAND phase_test phase)
+  add_test(NAME viz-vu COMMAND phase_test vu)
+  add_test(NAME viz-spectrum COMMAND phase_test spectrum)
+endif()
+if(NOT SEL_AMIGA)
+  add_test(NAME viz-taps
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DMOD=${SEL_TESTMOD}"
+      "-DOUT=${SEL_RENDER_OUT}/viz.wav" "-DDUMP=${CMAKE_CURRENT_BINARY_DIR}/viz/viz.txt"
+      "-DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/m13/viz.expected"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m13/viz_check.cmake")
+endif()

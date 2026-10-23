@@ -12,6 +12,7 @@ static void start(sel_mixer_voice* v, const sel_sample* s, uint32_t start_frame)
     v->current = *s;
     v->has_queued = 0;
     v->playing = s->data != NULL;
+    if (v->playing) v->viz_kick = 1;
     v->position = start_frame;
     v->frac = 0;
 }

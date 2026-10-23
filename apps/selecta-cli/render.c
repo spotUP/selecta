@@ -50,6 +50,30 @@ static int parse_resampler(const char* name, uint32_t* out) {
     return 0;
 }
 
+static uint32_t fnv1a(const int16_t* v, uint32_t n) {
+    uint32_t h = 2166136261u, i;
+    for (i = 0; i < n; i++) {
+        h = (h ^ ((uint16_t)v[i] & 0xFFu)) * 16777619u;
+        h = (h ^ ((uint16_t)v[i] >> 8)) * 16777619u;
+    }
+    return h;
+}
+
+/* One line per 20 ms block (T40): voice peaks and VU levels, the spectrum bands,
+ * a hash of each voice's scope and of the post-mix ring, and the correlation. */
+static void dump_viz_block(FILE* f, const sel_viz_frame* z) {
+    uint32_t k;
+    fprintf(f, "block=%u peaks=", (unsigned)z->seq);
+    for (k = 0; k < z->voice_count; k++) fprintf(f, "%s%d", k ? "," : "", z->peak[k]);
+    fputs(" vu=", f);
+    for (k = 0; k < z->voice_count; k++) fprintf(f, "%s%d", k ? "," : "", z->vu[k]);
+    fputs(" bands=", f);
+    for (k = 0; k < SEL_VIZ_BANDS; k++) fprintf(f, "%s%d", k ? "," : "", z->band[k]);
+    fputs(" scope=", f);
+    for (k = 0; k < z->voice_count; k++) fprintf(f, "%s%08x", k ? "," : "", (unsigned)fnv1a(z->scope[k], SEL_VIZ_SCOPE_FRAMES));
+    fprintf(f, " pcm=%08x corr=%d\n", (unsigned)fnv1a(z->pcm, SEL_VIZ_PCM_FRAMES * 2u), z->correlation);
+}
+
 int sel_cli_render(int argc, char** argv) {
     sel_host host = *sel_host_default();
     render_ctx ctx;
@@ -58,6 +82,9 @@ int sel_cli_render(int argc, char** argv) {
     const char* song = NULL;
     const char* wav = NULL;
     const char* seek_ms = NULL;
+    const char* viz_dump = NULL;
+    FILE* dump = NULL;
+    uint32_t viz_blocks = 0, viz_seen = 0;
     unsigned long rate = 44100, seconds = 10;
     uint32_t resampler = SEL_MIX_RESAMPLE_LINEAR;
     sel_engine* e;
@@ -75,6 +102,8 @@ int sel_cli_render(int argc, char** argv) {
             wav = argv[i + 1];
         } else if (strcmp(argv[i], "--seconds") == 0) {
             seconds = strtoul(argv[i + 1], NULL, 10);
+        } else if (strcmp(argv[i], "--viz-dump") == 0) {
+            viz_dump = argv[i + 1];
         } else if (strcmp(argv[i], "--seek-ms") == 0) {
             seek_ms = argv[i + 1];
         } else if (strcmp(argv[i], "--rate") == 0) {
@@ -133,20 +162,42 @@ int sel_cli_render(int argc, char** argv) {
     }
     o.set_source(out, sel_cli_engine_pull, e);
 
+    if (viz_dump != NULL) {
+        dump = fopen(viz_dump, "w");
+        if (dump == NULL) {
+            o.close(out);
+            sel_engine_destroy(e);
+            fprintf(stderr, "render: cannot write %s\n", viz_dump);
+            return 1;
+        }
+    }
     total = (uint32_t)(seconds * rate);
     fputs("SEL_ALLOC_FREEZE\n", stderr);
     fflush(stderr);
     while (pumped < total) {
         uint32_t want = total - pumped;
         uint32_t got;
-        if (want > 512u) {
-            want = 512u;
+        /* Dump mode pulls exactly one visualisation block per call, so the
+         * voice taps and the block edge line up. */
+        uint32_t chunk = dump != NULL ? (uint32_t)(rate / SEL_VIZ_BLOCKS_PER_SECOND) : 512u;
+        if (want > chunk) {
+            want = chunk;
         }
         got = o.pump(out, want);
         if (got == 0) {
             break;
         }
         pumped += got;
+        if (dump != NULL) {
+            const sel_viz_frame* z;
+            sel_engine_pump(e, render_sink, &ctx);
+            z = sel_engine_state(e)->viz;
+            if (z != NULL && z->seq != 0 && z->seq != viz_seen) {
+                viz_seen = z->seq;
+                viz_blocks++;
+                dump_viz_block(dump, z);
+            }
+        }
     }
     fputs("SEL_ALLOC_THAW\n", stderr);
     fflush(stderr);
@@ -163,6 +214,10 @@ int sel_cli_render(int argc, char** argv) {
     } else {
         printf("ticks=%u voice_ops=%u mixed_frames=%u\n", (unsigned)stats.ticks, (unsigned)stats.voice_ops,
                (unsigned)stats.mixed_frames);
+    }
+    if (dump != NULL) {
+        fclose(dump);
+        printf("viz_blocks=%u\n", (unsigned)viz_blocks);
     }
     o.close(out);
     sel_engine_destroy(e);
