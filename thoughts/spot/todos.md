@@ -222,9 +222,9 @@ Tests T28 to T38 are defined in the plan's finish-line table. A row is ticked on
 | I69 | [x] | 2 | History ring; QUEUE_MOVE, QUEUE_SWAP, UNDO, REDO, QUEUE_HISTORY event | T30 move/swap/undo half green, ratchet 39 |
 | I70 | [x] | 2 | xorshift32; QUEUE_SHUFFLE, SHUFFLE, RESHUFFLE | T30 green, ratchet 36 |
 | I71 | [x] | 2 | SCOPE option, NEXT_ALBUM, PREV_ALBUM | T31 green, ratchet 33 |
-| I71a | [ ] | 2 | Random play order: permutation of the entries in scope from xorshift32 when `random` turns on or the queue changes; NEXT and PREV walk it; each entry once before a repeat (plan Deviations) | T30a `queue-random-order` red then green |
+| I71a | [x] | 2 | Random play order: permutation of the entries in scope from xorshift32 when `random` turns on or the queue changes; NEXT and PREV walk it; each entry once before a repeat (plan Deviations) | T30a `queue-random-order` red (Test #37 Failed) then green; commit 0fc40cc, merge c29b2bd; codec fix regression test 55d9281 |
 | I72 | [x] | 3 | T29 written and red; four codecs | T29 green; commits 64c6056, 474f15b, merge 630ca11 |
-| I73 | [ ] | 3 | PLAYLIST_LOAD, PLAYLIST_SAVE; divider/stealth queue rows | script check in T29 suite, ratchet 31 |
+| I73 | [x] | 3 | PLAYLIST_LOAD, PLAYLIST_SAVE; divider/stealth queue rows | script check in T29 suite, ratchet 31; playlist-verbs red on main dec988f (ERROR not_implemented PLAYLIST_LOAD), green after; commit 0c7e038, merge c29b2bd; ratchet 27 after merge with Phase 4 |
 | I74 | [x] | 4 | T32 written and red; view grouping folder/format, node ids | T32 green (red fd69a7a segfault); commit b680b06, merge dec988f; ratchet 29 (27 after other phases) |
 | I75 | [x] | 4 | Text UI draws tree and drilldown | T24 selecta-tree-view, selecta-drill-view green; commit 33b55cc, merge dec988f |
 | I76 | [ ] | 5 | T34 written and red; `keybind.c`, `keys.conf`, `--bindings` | T34 green; T19 unchanged |
