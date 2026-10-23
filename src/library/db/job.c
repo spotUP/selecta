@@ -44,16 +44,6 @@ static void* job_main(void* arg) {
             pthread_cond_broadcast(&lib->job_wake);
             continue;
         }
-        if (lib->job_hash) {
-            lib->job_hash = 0;
-            lib->job_hash_busy = 1;
-            pthread_mutex_unlock(&lib->job_lock);
-            sel_hash_job_run(lib);
-            pthread_mutex_lock(&lib->job_lock);
-            lib->job_hash_busy = 0;
-            pthread_cond_broadcast(&lib->job_wake);
-            continue;
-        }
         if (lib->job_lyric) {
             lib->job_lyric = 0;
             lib->job_lyric_busy = 1;
@@ -61,6 +51,15 @@ static void* job_main(void* arg) {
             sel_lyrics_job_run(lib);
             pthread_mutex_lock(&lib->job_lock);
             lib->job_lyric_busy = 0;
+            pthread_cond_broadcast(&lib->job_wake);
+            continue;
+        }
+        if (lib->job_hash && !sel_fetch_job_pending(lib)) {
+            /* lowest priority: one file per turn, so a queued job never waits for the whole pass (I184a) */
+            lib->job_hash = 0;
+            lib->job_hash_busy = 1;
+            sel_hash_job_run(lib);
+            lib->job_hash_busy = 0;
             pthread_cond_broadcast(&lib->job_wake);
             continue;
         }

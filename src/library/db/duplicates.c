@@ -267,15 +267,25 @@ static int hash_step(sel_library* lib, int64_t* after) {
 #if !defined(SEL_LIBRARY_NO_THREAD)
 
 void sel_hash_job_run(sel_library* lib) {
-    int64_t after = 0;
+    int64_t after;
+    int r;
 
-    while (!*(volatile unsigned*)&lib->job_quit && hash_step(lib, &after) > 0) {
+    if (lib->hash_pending) {
+        lib->hash_pending = 0;
+        lib->hash_after = 0;
     }
+    after = lib->hash_after;
+    pthread_mutex_unlock(&lib->job_lock);
+    r = hash_step(lib, &after);
+    pthread_mutex_lock(&lib->job_lock);
+    if (!lib->hash_pending) lib->hash_after = after; /* a kick during the file restarts the pass instead */
+    if (r > 0 || lib->hash_pending) lib->job_hash = 1; /* one file per turn: ratings, votes and fetches go first */
 }
 
 void sel_library_hash_kick(sel_library* lib) {
     if (lib == NULL || !sel_job_start(lib)) return;
     pthread_mutex_lock(&lib->job_lock);
+    lib->hash_pending = 1;
     lib->job_hash = 1;
     sel_job_wake(lib);
     pthread_mutex_unlock(&lib->job_lock);
