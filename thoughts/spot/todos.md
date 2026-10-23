@@ -262,15 +262,56 @@ Tests T39 to T48 are defined in the plan's finish-line table.
 | I100 | [x] | 5 | crossfeed plugin, DSP verb, OUT_HEADPHONES default | T47 green, T26 green | bcab7cd, 6265bfe; full run 75/75; golden hash `tests/golden/dsp/crossfeed.sha256` NOT pinned, waits for a listening check; merge e577cdf
 | I101 | [x] | 6 | Text UI viz panel and pattern panel, default bindings | panel screen fixtures green ; merge c4d422a (422f1de red, f8996a5) |
 | I102 | [x] | 6 | T39 written and red; fixtures | ctest failure; merge e72c31f (T39 red: no viz_frames line) |
-| I103 | [x] | 6 | Wire to T39; build/amiga green | T39 green, T8 at 21; merge 698ca3f (T39 green, T8 at 21, amiga green) |
+| I103 | [x] | 6 | Wire to T39; build/amiga green | T39 green, T8 at 21; merge 0cf158d (T39 green, T8 at 21, amiga green) |
 | I104 | [ ] | 6 | Design doc section 14 status, validation file, full CI run (reason: landing the milestone) | `2026-10-23-m1-3-viz-voices-playback.validation.md` |
+
+## Implementation M2 (plan: thoughts/shared/plans/2026-10-24-m2-amiga.md, status: approved 2026-10-24 autonomous with defaults D-M2-1..8 (Q35-Q42), starts after I104)
+
+Tests T49 to T61 are defined in the plan's finish-line table.
+
+| ID | Status | Phase | Task | Proof |
+|----|--------|-------|------|-------|
+| I105 | [ ] | 0 | Add T49 to T55, T57, T58, T61 red (desktop and vamos) with fixtures | ctest lists them, all fail |
+| I106 | [ ] | 0 | Add rig driver `tests/amiga/run_rig.cmake`, label `rig`, skip line; T56, T59, T60 red | ctest -L rig fails with rig up, skips visibly with rig down |
+| I107 | [ ] | 1 | Declared-need tags in `tags.def` (MIN_CPU, NEEDS_FLOAT, MEMORY, PRIORITY, CONFIG, OUT_MEM_CHIP) | build both trees; tag table test |
+| I108 | [ ] | 1 | Registry machine filter and priority owner choice, fake `sel_machine` injection | T49 green desktop |
+| I109 | [ ] | 1 | GFX and AUDIO probes, planar tier, `--tier` override | T50 green |
+| I110 | [ ] | 1 | timer.device ReadEClock clock, DateStamp fallback under vamos | clock test green on rig and vamos |
+| I111 | [ ] | 1 | T49 green under vamos; tag every existing plugin with its needs | T49 green both trees |
+| I112 | [ ] | 2 | CIA-B interrupt server (signal only) | T54 core objects green; rig sentinel `cia_ints=` |
+| I113 | [ ] | 2 | Audio task at prefs priority, render loop | rig sentinel `audio_task_ticks=` |
+| I114 | [ ] | 2 | SPSC publication with Disable/Enable around head/tail; main loop Wait plus `sel_engine_pump()` | queue test under vamos |
+| I115 | [ ] | 2 | `dir.c` Examine/ExNext | T57 green |
+| I116 | [ ] | 2 | One option parser for ToolTypes and CLI over `commands.def` | T58 green (options) |
+| I117 | [ ] | 2 | Task priority from option | T58 green (priority read back) |
+| I118 | [ ] | 3 | Paula voice sink, chip RAM samples via `host->mem_alloc` | build; voice API conformance test |
+| I119 | [ ] | 3 | Period once per note, volume 0..64, loop registers | T51 register hash |
+| I120 | [ ] | 3 | Shadow register twin for vamos and desktop | T51 green both trees |
+| I121 | [ ] | 3 | Routing: VOICE with voice_count <= 4 to `paula` | routing table test; T56 precondition |
+| I122 | [ ] | 4 | Portable paula14 split tables, default calibration (D-M2-4) | T52 green desktop |
+| I123 | [ ] | 4 | paula14 Amiga sink, chip RAM double buffer | T52 green vamos; T54 extended |
+| I124 | [ ] | 4 | AHI sink over ahi.device | rig sentinel `ahi_bufs=` |
+| I125 | [ ] | 4 | Buffer length per CPU class in `sel_prefs`, AHI mode and rate defaults (D-M2-5) | T59 green |
+| I126 | [ ] | 4 | Routing: RENDER and VOICE over 4 voices to mixer then paula14 or ahi | routing table test |
+| I127 | [ ] | 5 | Integer LED filter stage | T53 LED part green |
+| I128 | [ ] | 5 | Integer stereo width stage | T53 width part green |
+| I129 | [ ] | 5 | Commands, prefs keys, text UI controls for LED and width | T53 green both trees; T8 count moves |
+| I130 | [ ] | 6 | `plugins/ui/text/amiga/term.c` raw mode, WaitForChar | T55 partial |
+| I131 | [ ] | 6 | `plugins/ui/text/amiga/spawn.c` | spawn test under vamos |
+| I132 | [ ] | 6 | Build `plugins/ui/text` and `apps/selecta` on Amiga | T55 green |
+| I133 | [ ] | 6 | Rig run in UP-Term | T56 green |
+| I134 | [ ] | 7 | `SEL_RP_CONFIG` tag list, prefs, per-song override (D-M2-8) | T61 green |
+| I135 | [ ] | 7 | T60 batch on `--a1200 --nofpu`, verdicts recorded, NEEDS_FLOAT tags set | T60 green |
+| I136 | [ ] | 8 | Fix T8 ratchet number for M2 command set | T8 green |
+| I137 | [ ] | 8 | Full finish-line run (reason: landing M2) | all T49 to T61 and T8 green, none skipped |
+| I138 | [ ] | 8 | Manual checks 1 to 5 confirmed by Johan | Johan's confirmation recorded in ledger |
 
 ## Open decisions
 
 Round 5 picks decided 2026-10-22 (AskUserQuestion, two calls): in = F19, F20, F21, F23, F24, F25, F29, F30, F31, F33 to F41, F43 to F46, F48, F49; restored into scope = F50 multi-zone sync, F51 server transcoding, F52 multi-user/multi-library; not picked = F32 CD audio, F42 rippers, F47 device sync; still out = Atmos, mpd client messaging, Tidal/Qobuz. Recorded in design doc sections 1a and 16. Open: none.
 
-- [ ] D-M2-1: nuade's voice API is float/double, so a nuade player ticking under a CIA interrupt on a 68020 without FPU runs soft-float in the interrupt (rule 4). Options for M2: tick in a high-priority task, upstream an integer voice API to emoon/nuade, or require an FPU for Paula-direct nuade. Source: thoughts/shared/research/2026-10-23_nuade-adapter.md. Not blocking M0b.
-- [ ] D-M2-2: plain M.K. .mod on the Amiga. No nuade player probes M.K. (R8) and libopenmpt stays desktop-only in M1.1. Options for M2: a nuade M.K. player upstream (author is a friend of the user) or the UADE-native plugin. Decide at M2 planning.
+- [x] D-M2-1 (default taken, Q35, plan 2026-10-24-m2-amiga.md): nuade's voice API is float/double, so a nuade player ticking under a CIA interrupt on a 68020 without FPU runs soft-float in the interrupt (rule 4). Options for M2: tick in a high-priority task, upstream an integer voice API to emoon/nuade, or require an FPU for Paula-direct nuade. Source: thoughts/shared/research/2026-10-23_nuade-adapter.md. Not blocking M0b.
+- [x] D-M2-2 (default taken, Q36): plain M.K. .mod on the Amiga. No nuade player probes M.K. (R8) and libopenmpt stays desktop-only in M1.1. Options for M2: a nuade M.K. player upstream (author is a friend of the user) or the UADE-native plugin. Decide at M2 planning.
 
 Protocol additions from M1d are already in design doc section 3 (not a decision, engine protocol detail).
 
