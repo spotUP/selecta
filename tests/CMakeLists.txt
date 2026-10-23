@@ -927,6 +927,11 @@ if(NOT SEL_AMIGA)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
   set_tests_properties(cues PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "cues_ok")
 
+  add_test(NAME loudness-analysis
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/loudness_analysis.sh $<TARGET_FILE:selecta-cli> ${SEL_TESTMOD}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
+  set_tests_properties(loudness-analysis PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "loudness_analysis_ok")
+
   add_test(NAME share-links
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/share_links.sh $<TARGET_FILE:selecta-cli> $<TARGET_FILE:selecta>
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/share_links.keys

@@ -28,6 +28,9 @@ int sel_cli_play(int argc, char** argv);
 
 /* library browse <dir> (T57): LIBRARY_BROWSE through the engine; prints `dir_entries=<n>`. */
 int sel_cli_library(int argc, char** argv);
+/* I187: analyse <song> | --sine <hz>:<dbfs>; library analyse --db <p> ['source:local']. Print analyse_jobs= analyse_speed= and the gain. */
+int sel_cli_analyse(int argc, char** argv);
+int sel_cli_library_analyse(int argc, char** argv);
 
 /* wrong [--db <p>] [--export <file>] [<song> [<note>]] (T78, I171): flags the song wrong with the note in the
  * library DB, optionally writes sounds-wrong.txt; prints `flags=<rows> wrong_exported=<lines>`. */

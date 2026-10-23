@@ -28,6 +28,8 @@ Toolchains: desktop clang/gcc + CMake + Ninja; Amiga bebbo amiga-gcc at `~/opt/a
 | Probe the machine (prints sel_machine tags) | `build/host/apps/selecta-cli/selecta-cli machine` |
 | Open the library DB, print schema and heap (T62) | `build/host/apps/selecta-cli/selecta-cli library stats [--machine a500]` |
 | Scan a folder into the catalogue (T71) | `build/host/apps/selecta-cli/selecta-cli library scan [--db <path>] <dir>` |
+| Measure a song's EBU R128 loudness and store its gain (T89) | `build/host/apps/selecta-cli/selecta-cli analyse [--db <path>] <song>` (`analyse --sine <hz>:<dbfs>` for a generated reference) |
+| Analyse every local song in the catalogue (T89) | `build/host/apps/selecta-cli/selecta-cli library analyse [--db <path>] 'source:local'` |
 | Song key and URL round trip for a source (T72) | `build/host/apps/selecta-cli/selecta-cli library key <source> <path>` |
 | Pump the null output | `build/host/apps/selecta-cli/selecta-cli play-null --rate 44100 --frames 4410` |
 | Render a song to a WAV (golden oracle; prints `ticks= voice_ops= mixed_frames=`) | `build/host/apps/selecta-cli/selecta-cli render build/host/tests/songs/selecta-test.mod --output <wav> --seconds 10 --rate 44100 --resample linear` (resamplers: none, linear, cubic, sinc); compare with `tests/golden/<plugin>/<song>.<resampler>.sha256` (hashes not yet committed, row I34) |

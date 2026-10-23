@@ -23,6 +23,18 @@ add_library(selecta_core STATIC
   engine/dsp_chain.c
   engine/timer.c)
 target_include_directories(selecta_core PUBLIC ${PROJECT_SOURCE_DIR}/include)
+# Loudness analyser (I187): double precision, desktop only. The Amiga build leaves it out and answers ANALYSE with an error.
+if(SEL_AMIGA)
+  target_compile_definitions(selecta_core PRIVATE SEL_NO_ANALYSE)
+else()
+  add_library(selecta_loudness STATIC analyse/loudness.c)
+  target_include_directories(selecta_loudness PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/analyse)
+  find_library(SEL_LIBM m)
+  if(SEL_LIBM)
+    target_link_libraries(selecta_loudness PUBLIC ${SEL_LIBM})
+  endif()
+  target_link_libraries(selecta_core PUBLIC selecta_loudness)
+endif()
 
 # Fixed-point mixer and resamplers (no float, no allocation).
 # The SINC table is generated at build time by a host tool (float and libm

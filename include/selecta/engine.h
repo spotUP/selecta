@@ -280,6 +280,12 @@ typedef struct sel_engine_stats {
     uint32_t scrobble_due;        /* SCROBBLE_DUE events the engine emitted (T95 sentinel) */
     uint32_t history_writes;      /* history rows the engine wrote on song end or skip (T78 sentinel) */
     uint32_t skip_excluded;       /* skip-flagged rows the random order left out (T78 flags sentinel) */
+    uint32_t analyse_jobs;        /* ANALYSE jobs that stored a gain (I187 sentinel, T89) */
+    uint32_t analyse_speed;       /* last ANALYSE job: audio seconds rendered per CPU second (x real time) */
+    int32_t analyse_lufs_cdb;     /* last ANALYSE job: integrated loudness in centi-LUFS (the RMS fallback when ungated) */
+    int32_t analyse_gain_cdb;     /* last ANALYSE job: gain stored in the library, centi-dB */
+    int32_t analyse_peak_cdb;     /* last ANALYSE job: sample peak in centi-dBFS */
+    uint32_t analyse_gated;       /* last ANALYSE job: 1 = R128 gated result, 0 = RMS+peak fallback */
     uint32_t cue_sets;            /* CUE_SET rows stored (I175 sentinel) */
     uint32_t cue_gotos;           /* CUE_GOTO seeks made (I175 sentinel) */
     uint32_t folder_view_rows;    /* rows the folders view source built from the library tree (I179 sentinel) */

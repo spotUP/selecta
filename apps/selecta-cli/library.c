@@ -1122,6 +1122,9 @@ int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "rescan") == 0) {
         return library_rescan(argc - 1, argv + 1);
     }
+    if (argc >= 1 && strcmp(argv[0], "analyse") == 0) {
+        return sel_cli_library_analyse(argc - 1, argv + 1);
+    }
     if (argc >= 1 && strcmp(argv[0], "scan") == 0) {
         return library_scan(argc - 1, argv + 1);
     }
