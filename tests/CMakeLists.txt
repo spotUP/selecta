@@ -827,12 +827,21 @@ if(NOT SEL_AMIGA)
 
   # T67 (red until I152): the net guard. The mapped host must reach the fixture
   # (request log gets 1 line) and a non-loopback connect is refused with
-  # net_blocked=1. selecta-cli has no `fetch` yet, so this fails with
-  # "unknown command" (missing feature: I152 socket table, I153 fetch).
+  # net_blocked=1 (the guard checks the target after the map, so the mapped
+  # fixture address 127.0.0.1 is what SELECTA_NET_ALLOW must list).
   add_test(NAME net-guard
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
       -P "${SEL_NET_DIR}/net_guard.cmake")
   set_tests_properties(net-guard PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture)
+
+  # T68 (row I153): the HTTP/1.1 client, plain HTTP parts, against the fixture server.
+  # Includes the real 30 s total timeout, so the test gets a 120 s budget. It runs after
+  # net-guard because that test counts the whole request log.
+  add_test(NAME http-client
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      -P "${SEL_NET_DIR}/http_client.cmake")
+  set_tests_properties(http-client PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    DEPENDS net-guard TIMEOUT 120)
 endif()
 
 # M3 Phase 1 (plan 2026-10-25-m3-library.md): T62 library-db-open, I144 to I146.

@@ -39,6 +39,7 @@ static int usage(FILE* to) {
           "  library browse <dir>       list a directory through LIBRARY_BROWSE, print dir_entries=\n"
           "  library query --explain <q> compile a library query, print sql= params= query_terms= (T63)\n"
           "  library stats              open the library DB, print db_open= schema_version= sqlite_version= (T62)\n"
+          "  fetch <url> [--method M] [--range a-b] [--out file]  one HTTP request, print http_status= and net counters\n"
           "  machine [--tier <name>]    probe the machine, print the sel_machine tags\n",
           to);
     return to == stdout ? 0 : 2;
@@ -580,6 +581,9 @@ int main(int argc, char** argv) {
     }
     if (strcmp(cmd, "library") == 0) {
         return sel_cli_library(argc - 2, argv + 2);
+    }
+    if (strcmp(cmd, "fetch") == 0) {
+        return sel_cli_fetch(argc - 2, argv + 2);
     }
     if (strcmp(cmd, "render") == 0) {
         return sel_cli_render(argc - 2, argv + 2);
