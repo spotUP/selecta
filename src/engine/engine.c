@@ -3051,6 +3051,7 @@ static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
         sel_engine_report_error(e, "scan_failed", m->args[0].v.s);
         return;
     }
+    sel_library_hash_kick(e->lib); /* the new local songs get their md5 in the background (I184a) */
     emit_library_path(e, m->args[0].v.s, files);
 }
 
@@ -4287,6 +4288,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         (void)sel_prefs_load(&e->prefs, e->config_dir);
         sel_devilbox_set_config_dir(e->config_dir);
         sel_library_rating_push(e->lib); /* ratings left over from a run without the server (I173, I173c) */
+        sel_library_hash_kick(e->lib);   /* local md5 for the duplicate redirect of OPEN (I184a) */
     }
     e->state.led_on = strcmp(e->prefs.value[SEL_PREF_OUTPUT_LED], "on") == 0;
     e->state.stereo_width = (uint32_t)strtoul(e->prefs.value[SEL_PREF_MIX_STEREO_WIDTH], NULL, 10);
@@ -4552,6 +4554,9 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
     prefetch_sync(e);
     if (e->lib != NULL && (e->pf_id != 0 || e->sm_key != 0)) {
         sel_library_prefetch_poll(e->lib); /* builds without threads run the parked request here, after playback started */
+    }
+    if (e->lib != NULL && e->cur == SEL_SLOT_NONE) {
+        (void)sel_library_hash_poll(e->lib); /* builds without threads hash one file per idle tick (I184a) */
     }
     if (e->cur != SEL_SLOT_NONE) {
         sel_slot* sl = &e->slot[e->cur];

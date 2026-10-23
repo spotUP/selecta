@@ -62,19 +62,40 @@ static int exec2(sqlite3* db, const char* sql, const char* a, const char* b) {
     return rc == SQLITE_DONE ? SQLITE_OK : rc;
 }
 
-/* Next local song with id > after and no md5: hashes the file and stores the value. Reply id = that song's id. */
-static int op_hash(sqlite3* db, const sel_genre_op* op, int64_t* id) {
-    sqlite3_stmt* st = NULL;
+/* Hashes the file at `path` and stores the value for song `key` (songs and files tables). An unreadable file stays
+ * unhashed. */
+static int store_hash(sqlite3* db, const char* key, const char* path) {
     char hex[33];
+    int rc;
+
+    if (!md5_of_file(path, hex)) return SQLITE_OK;
+    rc = exec2(db, "UPDATE songs SET md5 = ?2 WHERE key = ?1", key, hex);
+    if (rc == SQLITE_OK) rc = exec2(db, "UPDATE files SET md5 = ?2 WHERE source = 'local' AND path = ?1", path, hex);
+    return rc;
+}
+
+/* Next local song with id > after and no md5, optionally narrowed to the songs of byte size `size` (> 0) or, when
+ * `size` <= 0 and `base` is set, to the songs whose path ends in `base`: hashes the file and stores the value.
+ * *id = that song's id (0: none left). */
+static int hash_next(sqlite3* db, int64_t after, int64_t size, const char* base, int64_t* id) {
+    sqlite3_stmt* st = NULL;
     char key[1200];
     char path[1200];
     int rc = sqlite3_prepare_v2(
-        db, "SELECT id, key, path FROM songs WHERE source = 'local' AND COALESCE(md5, '') = '' AND id > ?1 ORDER BY id LIMIT 1",
+        db,
+        "SELECT id, key, path FROM songs WHERE source = 'local' AND COALESCE(md5, '') = '' AND id > ?1"
+        " AND (?2 <= 0 OR size = ?2) AND (?2 > 0 OR ?3 IS NULL OR substr(path, -length(?3)) = ?3) ORDER BY id LIMIT 1",
         -1, &st, NULL);
 
     *id = 0;
     if (rc != SQLITE_OK) return rc;
-    sqlite3_bind_int64(st, 1, op->after);
+    sqlite3_bind_int64(st, 1, after);
+    sqlite3_bind_int64(st, 2, size);
+    if (base != NULL) {
+        sqlite3_bind_text(st, 3, base, -1, SQLITE_STATIC);
+    } else {
+        sqlite3_bind_null(st, 3);
+    }
     rc = sqlite3_step(st);
     if (rc != SQLITE_ROW) {
         sqlite3_finalize(st);
@@ -84,10 +105,55 @@ static int op_hash(sqlite3* db, const sel_genre_op* op, int64_t* id) {
     snprintf(key, sizeof key, "%s", (const char*)sqlite3_column_text(st, 1));
     snprintf(path, sizeof path, "%s", (const char*)sqlite3_column_text(st, 2));
     sqlite3_finalize(st);
-    if (!md5_of_file(path, hex)) return SQLITE_OK; /* unreadable: stays unhashed, the scan goes on */
-    rc = exec2(db, "UPDATE songs SET md5 = ?2 WHERE key = ?1", key, hex);
-    if (rc == SQLITE_OK) rc = exec2(db, "UPDATE files SET md5 = ?2 WHERE source = 'local' AND path = ?1", path, hex);
-    return rc;
+    return store_hash(db, key, path); /* unreadable: stays unhashed, the pass goes on */
+}
+
+/* Next local song with id > after and no md5: hashes the file and stores the value. Reply id = that song's id. */
+static int op_hash(sqlite3* db, const sel_genre_op* op, int64_t* id) {
+    return hash_next(db, op->after, 0, NULL, id);
+}
+
+/* OPEN of song `key` (I184a): the scan leaves local md5 empty, so before ranking the sources hash what the twin search
+ * needs. A local song without md5 hashes itself (the file is about to be read anyway). A remote song with an md5 hashes
+ * the unhashed local songs that could be its twin: same byte size when the remote row has one, else same file name. */
+static int hash_for_open(sqlite3* db, const char* key) {
+    sqlite3_stmt* st = NULL;
+    char skey[1200];
+    char spath[1200];
+    char smd5[40];
+    char base[300];
+    const char* slash;
+    int local;
+    int64_t size;
+    int64_t id = 0;
+    int rc = sqlite3_prepare_v2(
+        db,
+        "SELECT key, path, source = 'local', COALESCE(md5, ''), COALESCE(size, 0) FROM songs"
+        " WHERE key = ?1 OR (source = 'local' AND path = ?1) LIMIT 1",
+        -1, &st, NULL);
+
+    if (rc != SQLITE_OK) return rc;
+    sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
+    rc = sqlite3_step(st);
+    if (rc != SQLITE_ROW) {
+        sqlite3_finalize(st);
+        return rc == SQLITE_DONE ? SQLITE_OK : rc;
+    }
+    snprintf(skey, sizeof skey, "%s", (const char*)sqlite3_column_text(st, 0));
+    snprintf(spath, sizeof spath, "%s", (const char*)sqlite3_column_text(st, 1));
+    local = sqlite3_column_int(st, 2);
+    snprintf(smd5, sizeof smd5, "%s", (const char*)sqlite3_column_text(st, 3));
+    size = sqlite3_column_int64(st, 4);
+    sqlite3_finalize(st);
+    if (local) return smd5[0] == '\0' ? store_hash(db, skey, spath) : SQLITE_OK;
+    if (smd5[0] == '\0') return SQLITE_OK;
+    slash = strrchr(spath, '/');
+    snprintf(base, sizeof base, "%s", slash != NULL ? slash + 1 : spath);
+    if (size <= 0 && base[0] == '\0') return SQLITE_OK; /* no narrowing key: the background pass covers it */
+    for (;;) {
+        rc = hash_next(db, id, size, base, &id);
+        if (rc != SQLITE_OK || id == 0) return rc;
+    }
 }
 
 /* The group at row offset `after`: out = md5 NUL member count NUL best key NUL. */
@@ -130,6 +196,11 @@ static int op_best(sqlite3* db, const sel_genre_op* op, int64_t* id) {
 
     *id = 0;
     if (rc != SQLITE_OK) return rc;
+    rc = hash_for_open(db, op->key);
+    if (rc != SQLITE_OK) {
+        sqlite3_finalize(st);
+        return rc;
+    }
     sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
     rc = sqlite3_step(st);
     if (rc == SQLITE_ROW) {
@@ -178,6 +249,61 @@ int sel_library_hash_local(sel_library* lib) {
     }
     return n;
 }
+
+/* One step of the idle pass: the next unhashed local song after *after. 1 = hashed one, 0 = none left, -1 = error. */
+static int hash_step(sel_library* lib, int64_t* after) {
+    sel_genre_op op;
+    int64_t id = 0;
+
+    memset(&op, 0, sizeof op);
+    op.op = SEL_DUP_HASH;
+    op.after = *after;
+    if (sel_genre_call(lib, &op, &id) < 0) return -1;
+    if (id == 0) return 0;
+    *after = id;
+    return 1;
+}
+
+#if !defined(SEL_LIBRARY_NO_THREAD)
+
+void sel_hash_job_run(sel_library* lib) {
+    int64_t after = 0;
+
+    while (!*(volatile unsigned*)&lib->job_quit && hash_step(lib, &after) > 0) {
+    }
+}
+
+void sel_library_hash_kick(sel_library* lib) {
+    if (lib == NULL || !sel_job_start(lib)) return;
+    pthread_mutex_lock(&lib->job_lock);
+    lib->job_hash = 1;
+    sel_job_wake(lib);
+    pthread_mutex_unlock(&lib->job_lock);
+}
+
+int sel_library_hash_poll(sel_library* lib) {
+    (void)lib;
+    return 0;
+}
+
+#else
+
+void sel_library_hash_kick(sel_library* lib) {
+    if (lib == NULL) return;
+    lib->hash_after = 0;
+    lib->hash_pending = 1;
+}
+
+int sel_library_hash_poll(sel_library* lib) {
+    int r;
+
+    if (lib == NULL || !lib->hash_pending) return 0;
+    r = hash_step(lib, &lib->hash_after);
+    if (r <= 0) lib->hash_pending = 0;
+    return r > 0;
+}
+
+#endif
 
 int sel_library_duplicates(sel_library* lib, sel_dup_row_fn fn, void* ctx) {
     char buf[1536];

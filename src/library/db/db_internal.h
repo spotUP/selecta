@@ -46,9 +46,12 @@ struct sel_library {
     int lyr_local;           /* the queued song has a local .lrc: upload it after a definite 404 (I193b) */
     char lyr_path[512];      /* queued lyrics request: the song file whose md5 keys the endpoint (lyrics_fetch.c, I193) */
     sel_lyrics_result lyr_res;
+    int64_t hash_after;      /* cooperative build: last song id the idle md5 pass hashed (duplicates.c, I184a) */
+    unsigned hash_pending;   /* cooperative build: the idle md5 pass has songs left */
 #if !defined(SEL_LIBRARY_NO_THREAD)
     unsigned job_vote, job_vote_busy; /* one queued vote request, and one running */
     unsigned job_lyric, job_lyric_busy; /* one queued lyrics request, and one running */
+    unsigned job_hash, job_hash_busy;   /* local md5 pass: one coalesced pending job, and one running (duplicates.c, I184a) */
     pthread_t job_thread;    /* the one background job thread, created on the first job (job.c, I173d) */
     pthread_mutex_t job_lock; /* guards the job queue (pf_spec, sm_spec, job_rating) and the flags below */
     pthread_cond_t job_wake;
@@ -123,6 +126,7 @@ void sel_worker_stop(sel_library* lib);
 int sel_job_start(sel_library* lib);
 void sel_lyrics_job_run(sel_library* lib);       /* lyrics_fetch.c: runs the queued lyrics request (job_lock NOT held) */
 void sel_vote_job_run(sel_library* lib);        /* vote_push.c: runs the queued vote request (job_lock NOT held) */
+void sel_hash_job_run(sel_library* lib);        /* duplicates.c: hashes every unhashed local song, stops when job_quit is set (no lock held) */
 void sel_job_wake(sel_library* lib);  /* job_lock held: a job was queued */
 void sel_job_wait(sel_library* lib);  /* returns once the queue is empty and nothing runs */
 void sel_job_stop(sel_library* lib);

@@ -17,7 +17,7 @@ static void* job_main(void* arg) {
     sel_net_set_cancel(&lib->job_quit, 0u); /* close ends a job stuck on a silent server within one poll slice (I173f) */
     pthread_mutex_lock(&lib->job_lock);
     for (;;) {
-        while (!lib->job_quit && !lib->job_rating && !lib->job_vote && !lib->job_lyric &&
+        while (!lib->job_quit && !lib->job_rating && !lib->job_vote && !lib->job_lyric && !lib->job_hash &&
                !sel_fetch_job_pending(lib)) {
             pthread_cond_wait(&lib->job_wake, &lib->job_lock);
         }
@@ -41,6 +41,16 @@ static void* job_main(void* arg) {
             sel_vote_job_run(lib);
             pthread_mutex_lock(&lib->job_lock);
             lib->job_vote_busy = 0;
+            pthread_cond_broadcast(&lib->job_wake);
+            continue;
+        }
+        if (lib->job_hash) {
+            lib->job_hash = 0;
+            lib->job_hash_busy = 1;
+            pthread_mutex_unlock(&lib->job_lock);
+            sel_hash_job_run(lib);
+            pthread_mutex_lock(&lib->job_lock);
+            lib->job_hash_busy = 0;
             pthread_cond_broadcast(&lib->job_wake);
             continue;
         }
@@ -80,7 +90,7 @@ void sel_job_wake(sel_library* lib) {
 void sel_job_wait(sel_library* lib) {
     if (lib != NULL && lib->job_started) {
         pthread_mutex_lock(&lib->job_lock);
-        while (lib->job_rating || lib->job_rating_busy || lib->job_vote || lib->job_vote_busy || lib->job_lyric || lib->job_lyric_busy || sel_fetch_job_pending(lib) || lib->pf_busy) {
+        while (lib->job_rating || lib->job_rating_busy || lib->job_vote || lib->job_vote_busy || lib->job_lyric || lib->job_lyric_busy || lib->job_hash || lib->job_hash_busy || sel_fetch_job_pending(lib) || lib->pf_busy) {
             pthread_cond_wait(&lib->job_wake, &lib->job_lock);
         }
         pthread_mutex_unlock(&lib->job_lock);
