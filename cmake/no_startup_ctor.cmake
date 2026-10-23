@@ -1,0 +1,31 @@
+# I190b: no libnix startup constructor that vamos cannot run in the linked Amiga selecta-cli. A libc clock() call
+# linked libnix ___initclock, which opens timer.device at startup; every vamos test then crashed (PC=0x404).
+# Same nm pattern as no_float.cmake / tests/m2/nofloat.cmake, but over the linked executable (the constructor is
+# pulled in at link time, so an object scan cannot see it).
+# Inputs: -DNM (m68k-amigaos-nm) -DAMIGA_CLI (the linked 68k selecta-cli)
+foreach(v NM AMIGA_CLI)
+  if(NOT DEFINED ${v})
+    message(FATAL_ERROR "no_startup_ctor.cmake: -D${v} is required")
+  endif()
+endforeach()
+set(forbidden initclock)
+execute_process(COMMAND "${NM}" "${AMIGA_CLI}" OUTPUT_VARIABLE syms ERROR_VARIABLE err RESULT_VARIABLE rc)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "nm ${AMIGA_CLI}: exit ${rc}\n${err}")
+endif()
+string(REGEX MATCHALL "\n" nl "\n${syms}")
+list(LENGTH nl nsyms)
+if(nsyms LESS 100)
+  message(FATAL_ERROR "no_startup_ctor.cmake: nm printed only ${nsyms} lines for ${AMIGA_CLI}, not a linked executable")
+endif()
+set(bad "")
+foreach(sym IN LISTS forbidden)
+  # The 68k nm prints C symbols with a leading underscore (___initclock).
+  if(syms MATCHES "(^|\n)[0-9a-fA-F ]* [A-Za-z] _*${sym}(\n|$)")
+    string(APPEND bad "  ${sym}\n")
+  endif()
+endforeach()
+if(bad)
+  message(FATAL_ERROR "libnix startup constructor linked into ${AMIGA_CLI} (vamos cannot run it; remove the libc call that pulls it in, e.g. clock()):\n${bad}")
+endif()
+message(STATUS "[OK] no libnix startup constructors (initclock) among ${nsyms} symbols")

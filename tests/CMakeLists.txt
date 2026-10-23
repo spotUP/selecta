@@ -266,6 +266,14 @@ if(SEL_AMIGA_NM AND EXISTS "${SEL_AMIGA_CLI}")
   set_tests_properties(no-float-engine PROPERTIES FIXTURES_REQUIRED amiga_cli)
 endif()
 
+# I190b: no libnix startup constructor (___initclock) in the linked Amiga selecta-cli; vamos cannot run it.
+if(SEL_AMIGA_NM AND EXISTS "${SEL_AMIGA_CLI}")
+  add_test(NAME no-startup-ctor
+    COMMAND "${CMAKE_COMMAND}" "-DNM=${SEL_AMIGA_NM}" "-DAMIGA_CLI=${SEL_AMIGA_CLI}"
+            -P "${PROJECT_SOURCE_DIR}/cmake/no_startup_ctor.cmake")
+  set_tests_properties(no-startup-ctor PROPERTIES FIXTURES_REQUIRED amiga_cli)
+endif()
+
 # T12: mixer unit test (period step, resampler vectors, clipping, loop and
 # queue semantics). Groups are listed so a resampler lands in the gate with
 # the row that implements it.
@@ -858,9 +866,9 @@ if(NOT SEL_AMIGA)
   # net_blocked=1 (the guard checks the target after the map, so the mapped
   # fixture address 127.0.0.1 is what SELECTA_NET_ALLOW must list).
   add_test(NAME net-guard
-    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/net-guard"
       -P "${SEL_NET_DIR}/net_guard.cmake")
-  set_tests_properties(net-guard PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture)
+  set_tests_properties(net-guard PROPERTIES LABELS m3)
 
   # T68 (row I153): the HTTP/1.1 client, plain HTTP parts, against the fixture server.
   # Includes the real 30 s total timeout, so the test gets a 120 s budget. It runs after
