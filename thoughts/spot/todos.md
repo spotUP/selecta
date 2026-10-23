@@ -297,8 +297,8 @@ Tests T49 to T61 are defined in the plan's finish-line table.
 | I124 | [ ] | 4 | AHI sink over ahi.device | rig sentinel `ahi_bufs=` |
 | I125 | [ ] | 4 | Buffer length per CPU class in `sel_prefs`, AHI mode and rate defaults (D-M2-5) | T59 green |
 | I126 | [ ] | 4 | Routing: RENDER and VOICE over 4 voices to mixer then paula14 or ahi | routing table test |
-| I127 | [ ] | 5 | Integer LED filter stage | T53 LED part green |
-| I128 | [ ] | 5 | Integer stereo width stage | T53 width part green |
+| I127 | [x] | 5 | Integer LED filter stage | T53 LED part green; 6ada682 LED -3 dB 3275 Hz measured; merge 5d60c2c |
+| I128 | [x] | 5 | Integer stereo width stage | T53 width part green; 6ada682 width; width-moves-hash on stereo mk.mod desktop only (Q46); merge 5d60c2c |
 | I129 | [ ] | 5 | Commands, prefs keys, text UI controls for LED and width | T53 green both trees; T8 count moves |
 | I130 | [ ] | 6 | `plugins/ui/text/amiga/term.c` raw mode, WaitForChar | T55 partial |
 | I131 | [ ] | 6 | `plugins/ui/text/amiga/spawn.c` | spawn test under vamos |
