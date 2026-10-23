@@ -60,7 +60,10 @@ static const char SCHEMA_V2[] =
     " PRIMARY KEY(song_key, canon)) WITHOUT ROWID;"
     "CREATE INDEX song_composers_canon ON song_composers(canon);";
 
-static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2};
+/* v3 (I190): 1 marks songs.loudness_gain as the adaptive leveler's provisional estimate; a real gain clears it. */
+static const char SCHEMA_V3[] = "ALTER TABLE songs ADD COLUMN loudness_prov INTEGER NOT NULL DEFAULT 0;";
+
+static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 

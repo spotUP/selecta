@@ -98,8 +98,8 @@ enum {
     SEL_USER_PLAYLIST_KEYS,/* I178: at = playlist id; out = song keys, each NUL terminated, then "\0"; reply [2] = keys */
     SEL_USER_FOLDER_TREE,  /* I178: out = indented tree text "F|P <id> <name>" per line; reply [2] = lines */
     SEL_USER_PANEL,        /* I185: out = "label\0value\0" rows of the module info panel, then "\0"; reply [2] = rows */
-    SEL_USER_LOUDNESS_SET, /* I187: at = gain in centi-dB; value = path used when the song row does not exist yet */
-    SEL_USER_LOUDNESS_GET, /* I187: reply [0] = 2 and [2] = gain in centi-dB (signed) when songs.loudness_gain is set */
+    SEL_USER_LOUDNESS_SET, /* I187: at = gain in centi-dB; to = 1 provisional (I190); value = path used when the song row does not exist yet */
+    SEL_USER_LOUDNESS_GET, /* I187: reply [0] = 2 (3 when provisional) and [2] = gain in centi-dB (signed) when songs.loudness_gain is set */
     SEL_USER_RATING_SET,   /* I173: at = stars 1..5 (0 removes the rating), to = SEL_RATING_*; replaces the ratings row */
     SEL_USER_RATING_GET,   /* I173: reply [0] = 2 and [2] = stars when the song is rated */
     SEL_USER_RATING_PENDING, /* I173: out = "key\0stars\0" pairs of the ratings not yet on DEViLBOX, then "\0"; reply [2] = rows */
@@ -225,7 +225,7 @@ enum {
 };
 
 /* Schema version this build writes (PRAGMA user_version after migration). */
-#define SEL_LIB_SCHEMA_VERSION 2
+#define SEL_LIB_SCHEMA_VERSION 3
 
 /* Heap bytes for SQLite on a machine: the scaling table of D-M3-2 over fast + chip RAM
  * (<= 4 MiB: 512 KiB, <= 16 MiB: 2 MiB, <= 128 MiB: 8 MiB, above: 32 MiB). */
@@ -296,6 +296,10 @@ int sel_library_cue_get(sel_library* lib, const char* key, uint32_t idx, uint32_
 /* I187: per-song loudness gain (centi-dB) in songs.loudness_gain; set creates the song row when missing. */
 int sel_library_loudness_set(sel_library* lib, const char* key, const char* path, int32_t gain_cdb);
 int sel_library_loudness_get(sel_library* lib, const char* key, int32_t* gain_cdb);
+/* I190: provisional = 1 marks the adaptive leveler's estimate. A provisional set never replaces a real gain (it
+ * only fills a missing or an earlier provisional one); a real set clears the mark. get_ex reports the mark. */
+int sel_library_loudness_set_ex(sel_library* lib, const char* key, const char* path, int32_t gain_cdb, int provisional);
+int sel_library_loudness_get_ex(sel_library* lib, const char* key, int32_t* gain_cdb, int* provisional);
 /* Ratings (I173): stars 1..5, 0 removes. origin is SEL_RATING_LOCAL / QUEUE / SERVER. _pending fills out with
  * "key\0stars\0" pairs then "\0" (cap bytes) and *rows with the number of pending ratings; _done drops the key's
  * pending push. */

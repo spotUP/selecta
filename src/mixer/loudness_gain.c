@@ -105,3 +105,104 @@ void sel_loudness_gain_process(sel_loudness_gain* g, int16_t* stereo, uint32_t f
         stereo[i * 2u + 1u] = (int16_t)(r > 32767 ? 32767 : (r < -32768 ? -32768 : r));
     }
 }
+
+/* ---- adaptive leveler (I190) ---- */
+
+int32_t sel_db10_cdb(uint64_t x) {
+    uint32_t n = 0;
+    uint64_t m;
+    uint32_t frac = 0;
+    uint32_t i;
+    uint64_t log2_q16;
+    if (x < 2u) {
+        return 0;
+    }
+    while ((x >> (n + 1u)) != 0u) {
+        n++;
+    }
+    /* mantissa in [1,2) as Q30, then the fraction of log2 by repeated squaring */
+    m = n >= 30u ? x >> (n - 30u) : x << (30u - n);
+    for (i = 0; i < 16u; i++) {
+        m = (m * m) >> 30;
+        frac <<= 1;
+        if (m >= (2ull << 30)) {
+            m >>= 1;
+            frac |= 1u;
+        }
+    }
+    log2_q16 = ((uint64_t)n << 16) | frac;
+    return (int32_t)((log2_q16 * 30103u + (100ull << 15)) / (100ull << 16)); /* 3.0103 cdb per octave of power */
+}
+
+void sel_leveler_init(sel_leveler* lv) {
+    lv->p = 0;
+    lv->sum_e = 0;
+    lv->sum_n = 0;
+    lv->cur_q16 = 0;
+    lv->want_cdb = 0;
+    lv->frames = 0;
+}
+
+static int32_t lev_clamp(int32_t v) {
+    return v > SEL_GAIN_MAX_CDB ? SEL_GAIN_MAX_CDB : (v < -SEL_GAIN_MAX_CDB ? -SEL_GAIN_MAX_CDB : v);
+}
+
+/* Gain in centi-dB that brings a per-frame mean of L^2+R^2 to the target, same unweighted RMS convention as the
+ * analyser's fallback (sum over both channels, full scale 32768). */
+static int32_t lev_gain_for(uint64_t mean) {
+    int32_t loud = sel_db10_cdb(mean) - sel_db10_cdb(1ull << 30);
+    return lev_clamp(SEL_LEVELER_TARGET_CDB - loud);
+}
+
+static int32_t lev_round(int64_t q16) {
+    return (int32_t)((q16 + (q16 < 0 ? -32768 : 32768)) / 65536);
+}
+
+uint32_t sel_leveler_chunk(sel_leveler* lv, const int16_t* stereo, uint32_t frames, uint32_t rate) {
+    uint64_t e = 0;
+    uint32_t i;
+    uint64_t mean;
+    int64_t step;
+    lv->frames += frames;
+    for (i = 0; i < frames * 2u; i++) {
+        e += (uint64_t)((int64_t)stereo[i] * stereo[i]);
+    }
+    mean = frames != 0u ? e / frames : 0u;
+    if (mean >= 2000u) { /* gate: about -60 dBFS per channel; silence and quiet gaps do not move the estimate */
+        uint64_t tau = (uint64_t)rate * SEL_LEVELER_TAU_MS / 1000u;
+        uint64_t span;
+        lv->sum_e += e;
+        lv->sum_n += frames;
+        span = lv->sum_n < tau ? lv->sum_n : tau;
+        if (lv->p == 0u || span <= frames) {
+            lv->p = mean;
+        } else {
+            int64_t d = (int64_t)mean - (int64_t)lv->p;
+            lv->p = (uint64_t)((int64_t)lv->p + d * (int64_t)frames / (int64_t)span);
+        }
+        lv->want_cdb = lev_gain_for(lv->p);
+    }
+    step = (int64_t)SEL_LEVELER_SLEW_CDB_S * 65536 * frames / (rate != 0u ? rate : 1u);
+    {
+        int64_t want = (int64_t)lv->want_cdb * 65536;
+        if (want > lv->cur_q16) {
+            lv->cur_q16 = lv->cur_q16 + step > want ? want : lv->cur_q16 + step;
+        } else {
+            lv->cur_q16 = lv->cur_q16 - step < want ? want : lv->cur_q16 - step;
+        }
+    }
+    return sel_gain_q16_from_cdb(lev_round(lv->cur_q16));
+}
+
+uint32_t sel_leveler_ceiling_q16(const sel_leveler* lv, uint32_t frames, uint32_t rate) {
+    int64_t up = lv->cur_q16 + (int64_t)SEL_LEVELER_SLEW_CDB_S * 65536 * frames / (rate != 0u ? rate : 1u);
+    return sel_gain_q16_from_cdb(lev_round(up) + 1);
+}
+
+int sel_leveler_estimate_cdb(const sel_leveler* lv, uint32_t rate, int32_t* cdb) {
+    if (lv->sum_n < (uint64_t)rate * SEL_LEVELER_MIN_MS / 1000u || lv->sum_n == 0u) {
+        return 0;
+    }
+    *cdb = lev_gain_for(lv->sum_e / lv->sum_n);
+    return 1;
+}

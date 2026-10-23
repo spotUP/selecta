@@ -212,7 +212,10 @@ typedef struct sel_slot {
     sel_playpol pol;      /* loop count, fade and silence state of this song */
     uint32_t loud_active;      /* loudness gain applies to this song (I189a); set by prepare_slot before the swap */
     uint32_t loud_gain_q16;    /* this song's gain, 16.16 */
-    const char* loud_source;   /* "off", "none" or "stored" */
+    const char* loud_source;   /* "off", "none", "stored", "provisional" or "leveler" */
+    uint32_t lev_on;           /* auto mode, no gain known: the adaptive leveler runs on this slot (I190) */
+    uint32_t lev_done;         /* the leveler's estimate was written back (command thread) */
+    sel_leveler lev;           /* audio thread writes; the command thread reads it once the slot is returned */
 } sel_slot;
 
 struct sel_engine {
@@ -340,6 +343,8 @@ struct sel_engine {
     sel_mix_stage stage; /* LED filter and stereo width, before the DSP chain (I127, I128) */
     sel_loudness_gain loud; /* the -1 dBFS limiter on the mixed output, after the DSP chain (I189); the gain is per slot */
     uint32_t loud_ref;       /* audio thread: this render call's reference gain, 16.16; the limiter stage applies it (I189b) */
+    uint32_t lev_frames;     /* frames the adaptive leveler measured (sentinel of I190) */
+    uint32_t lev_writes;     /* provisional gains written back to the library (I190) */
     uint32_t loud_mixed;     /* audio thread: a slot with a loudness gain was mixed in this render call */
     uint32_t mutes; /* mute mask changes, for @stats (T39) */
     uint32_t fades; /* end fades started; audio side (T39) */
@@ -1100,7 +1105,11 @@ static void scrobble_check(sel_engine* e, sel_slot* sl) {
 }
 
 /* Pump thread only: RP_CLOSE and free; the audio thread no longer mixes the slot. */
+static void leveler_writeback(sel_engine* e, sel_slot* sl);
+
 static void close_slot(sel_engine* e, sel_slot* sl) {
+    leveler_writeback(e, sl);
+    sl->lev_on = 0;
     if (sl->rp_state != NULL) {
         sl->rp_close(sl->rp_state);
         sl->rp_state = NULL;
@@ -1365,20 +1374,47 @@ static void loudness_slot(sel_engine* e, sel_slot* sl, const char* path) {
     const char* mode = e->prefs.value[SEL_PREF_MIX_LOUDNESS];
     char key[SEL_DEFERRED_PATH_MAX + 8];
     int32_t cdb = 0;
+    int provisional = 0;
     sl->loud_active = 0;
     sl->loud_gain_q16 = SEL_GAIN_UNITY;
+    sl->lev_on = 0;
+    sl->lev_done = 0;
+    sel_leveler_init(&sl->lev);
     if (strcmp(mode, "off") == 0) {
         sl->loud_source = "off";
         return;
     }
     song_key(path, key, sizeof key);
-    if (e->lib != NULL && sel_library_loudness_get(e->lib, key, &cdb)) {
-        sl->loud_source = "stored";
+    if (e->lib != NULL && sel_library_loudness_get_ex(e->lib, key, &cdb, &provisional)) {
+        sl->loud_source = provisional ? "provisional" : "stored";
         sl->loud_active = 1;
         sl->loud_gain_q16 = sel_gain_q16_from_cdb(cdb);
         return;
     }
+    if (strcmp(mode, "auto") == 0) { /* no gain known: the adaptive leveler (I190) */
+        sl->loud_source = "leveler";
+        sl->loud_active = 1;
+        sl->lev_on = 1;
+        return;
+    }
     sl->loud_source = "none";
+}
+
+/* Command thread (I190): a song the leveler measured long enough leaves its estimate in the library as a
+ * provisional gain; a real analysis or DEViLBOX value overrides it (the library never lets a provisional write
+ * replace a real gain). The slot is no longer rendered when this runs. The audio thread only wrote the estimate. */
+static void leveler_writeback(sel_engine* e, sel_slot* sl) {
+    int32_t cdb = 0;
+    char key[SEL_DEFERRED_PATH_MAX + 8];
+    if (!sl->lev_on || sl->lev_done || sl->path == NULL || e->lib == NULL ||
+        !sel_leveler_estimate_cdb(&sl->lev, e->rate, &cdb)) {
+        return;
+    }
+    sl->lev_done = 1;
+    song_key(sl->path, key, sizeof key);
+    if (sel_library_loudness_set_ex(e->lib, key, key + 6, cdb, 1)) {
+        e->lev_writes++;
+    }
 }
 
 /* Audio thread: the loudness reference gain of this render call, 16.16 (I189b). The DSP chain and the mix stage
@@ -1388,7 +1424,7 @@ static void loudness_slot(sel_engine* e, sel_slot* sl, const char* path) {
  * wide arithmetic, saturating only after its ceiling. A call without a boost has reference unity: the slot gains
  * are applied as before, bit for bit. Every song that can sound must carry a gain, else the limiter would raise
  * an unscaled song. */
-static uint32_t loud_reference(const sel_engine* e) {
+static uint32_t loud_reference(const sel_engine* e, uint32_t frames) {
     uint32_t ref = SEL_GAIN_UNITY;
     uint32_t idx[2];
     uint32_t i;
@@ -1403,8 +1439,11 @@ static uint32_t loud_reference(const sel_engine* e) {
         if (!sl->loud_active) {
             return SEL_GAIN_UNITY;
         }
-        if (sl->loud_gain_q16 > ref) {
-            ref = sl->loud_gain_q16;
+        {
+            uint32_t g = sl->lev_on ? sel_leveler_ceiling_q16(&sl->lev, frames, e->rate) : sl->loud_gain_q16;
+            if (g > ref) {
+                ref = g;
+            }
         }
     }
     return ref;
@@ -1412,13 +1451,34 @@ static uint32_t loud_reference(const sel_engine* e) {
 
 /* Audio thread: this slot's gain on its own samples, before the crossfade mix, relative to the call's reference
  * gain (at most unity, so it never saturates). The limiter runs once on the mixed output. */
-static void slot_gain(sel_engine* e, const sel_slot* sl, int16_t* stereo, uint32_t frames) {
+static void slot_gain(sel_engine* e, sel_slot* sl, int16_t* stereo, uint32_t frames) {
     uint32_t i;
     uint32_t gain;
     if (!sl->loud_active || frames == 0u) {
         return;
     }
     e->loud_mixed = 1;
+    if (sl->lev_on) { /* the leveler: gain per short chunk, measured on the unscaled samples (I190) */
+        uint32_t at = 0;
+        while (at < frames) {
+            uint32_t n = frames - at < SEL_LEVELER_CHUNK ? frames - at : SEL_LEVELER_CHUNK;
+            int16_t* p = stereo + (size_t)at * 2u;
+            uint32_t g = sel_leveler_chunk(&sl->lev, p, n, e->rate);
+            if (e->loud_ref > SEL_GAIN_UNITY) {
+                g = (uint32_t)((((uint64_t)g << 16) + (e->loud_ref >> 1)) / e->loud_ref);
+            }
+            if (g != SEL_GAIN_UNITY) {
+                for (i = 0; i < n * 2u; i++) {
+                    int64_t v = ((int64_t)p[i] * g + 32768) >> 16;
+                    p[i] = (int16_t)(v > 32767 ? 32767 : (v < -32768 ? -32768 : v));
+                }
+            }
+            at += n;
+        }
+        e->lev_frames += frames;
+        sl->loud_gain_q16 = sel_gain_q16_from_cdb((int32_t)((sl->lev.cur_q16 + 32768) >> 16));
+        return;
+    }
     gain = sl->loud_gain_q16;
     if (e->loud_ref > SEL_GAIN_UNITY) {
         gain = (uint32_t)((((uint64_t)gain << 16) + (e->loud_ref >> 1)) / e->loud_ref);
@@ -4306,6 +4366,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     }
     out->limiter_hits = e->loud.hits;
     out->loudness_frames = e->loud.frames;
+    out->leveler_frames = e->lev_frames;
+    out->leveler_writes = e->lev_writes;
     out->xfade_frames = e->xfade_frames;
     out->slots_mixed = e->slots_mixed;
     out->mixed_path = e->mixed_path;
@@ -4675,7 +4737,7 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
     {
         sl = e->act < SEL_SLOT_COUNT ? &e->slot[e->act] : NULL;
         if (sl != NULL && e->state.play == SEL_PLAYING) {
-            e->loud_ref = loud_reference(e);
+            e->loud_ref = loud_reference(e, frames);
             done = render_mix(e, stereo, frames);
             sel_timer_apply(&e->timer, stereo, done);
             if (e->state.volume != 100) {
