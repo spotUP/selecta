@@ -104,7 +104,7 @@ static int fill(sel_browse* b, const char* path) {
     b->truncated = 0;
     lc.b = b;
     lc.first = 0;
-    if (strcmp(path, "/") != 0) {
+    if (!sel_browse_is_root(path)) {
         add_entry(b, 0, "..", 1);
         lc.first = 1;
     }
@@ -127,19 +127,72 @@ int sel_browse_list(sel_browse* b, const char* path) {
     return 1;
 }
 
-const char* sel_browse_basename(const char* path) {
+const char* sel_browse_basename_style(const char* path, int amiga_style) {
     const char* base = path;
     const char* p;
     for (p = path; *p; p++) {
-        if (*p == '/') {
+        if (*p == '/' || (amiga_style && *p == ':')) {
             base = p + 1;
         }
     }
     return base;
 }
 
-int sel_browse_join(char* out, size_t cap, const char* dir, const char* name) {
+const char* sel_browse_basename(const char* path) {
+    return sel_browse_basename_style(path, SEL_PATH_STYLE_AMIGA);
+}
+
+int sel_browse_is_root_style(const char* path, int amiga_style) {
+    size_t n = strlen(path);
+    if (strcmp(path, "/") == 0) {
+        return 1;
+    }
+    /* AmigaDOS volume root: "Work:" (a non-empty volume name ending in ':') */
+    return amiga_style && n > 1u && path[n - 1u] == ':' && strchr(path, '/') == NULL &&
+           strchr(path, ':') == path + n - 1u;
+}
+
+int sel_browse_is_root(const char* path) {
+    return sel_browse_is_root_style(path, SEL_PATH_STYLE_AMIGA);
+}
+
+int sel_browse_join_style(char* out, size_t cap, const char* dir, const char* name, int amiga_style) {
     size_t n = strlen(dir);
+    if (amiga_style) {
+        while (n > 0u && dir[n - 1u] == '/') {
+            n--; /* "Work:Music/" is "Work:Music"; "Work:" keeps its colon */
+        }
+        if (strcmp(name, "..") == 0) {
+            size_t keep = n;
+            while (keep > 0u && dir[keep - 1u] != '/' && dir[keep - 1u] != ':') {
+                keep--;
+            }
+            if (keep == 0u) {
+                keep = n; /* relative single component: stays */
+            } else if (dir[keep - 1u] == '/') {
+                keep--; /* drop the separator: "Work:Music/Mods" -> "Work:Music" */
+            } /* else a ':' stays: "Work:Music" -> "Work:" */
+            if (keep + 1u > cap) {
+                return 0;
+            }
+            memcpy(out, dir, keep);
+            out[keep] = '\0';
+            return 1;
+        }
+        {
+            size_t m = strlen(name);
+            size_t sep = n == 0u || dir[n - 1u] == ':' ? 0u : 1u;
+            if (n + sep + m + 1u > cap) {
+                return 0;
+            }
+            memcpy(out, dir, n);
+            if (sep) {
+                out[n] = '/';
+            }
+            memcpy(out + n + sep, name, m + 1u);
+        }
+        return 1;
+    }
     while (n > 1u && dir[n - 1u] == '/') {
         n--;
     }
@@ -174,6 +227,10 @@ int sel_browse_join(char* out, size_t cap, const char* dir, const char* name) {
         memcpy(out + n + sep, name, m + 1u);
     }
     return 1;
+}
+
+int sel_browse_join(char* out, size_t cap, const char* dir, const char* name) {
+    return sel_browse_join_style(out, cap, dir, name, SEL_PATH_STYLE_AMIGA);
 }
 
 int sel_path_is_absolute_style(const char* path, int amiga_style) {

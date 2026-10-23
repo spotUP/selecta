@@ -752,6 +752,13 @@ if(NOT SEL_AMIGA)
         "-DDESKTOP_SELECTA=$<TARGET_FILE:selecta>" "-DKEYS=${SEL_M2}/quit.keys"
         -P "${SEL_M2}/ui.cmake")
     set_tests_properties(amiga-text-ui-vamos PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos)
+    # I138b AmigaDOS browse join and parent through the Amiga text UI.
+    add_test(NAME amiga-browse-nav-vamos
+      COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}"
+        "-DAMIGA_SELECTA=${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta/selecta"
+        "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/amiga-browse-nav-vamos"
+        -P "${SEL_M2}/browse_nav.cmake")
+    set_tests_properties(amiga-browse-nav-vamos PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos)
   endif()
   # T57 library browse under vamos, T58 ToolTypes = CLI.
   sel_m2_test(amiga-library-browse browse vamos)

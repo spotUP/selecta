@@ -9,6 +9,7 @@
 #include <selecta/tags.h>
 
 #include "cli.h"
+#include "local.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -27,7 +28,7 @@ static void on_event(void* ctx, const sel_message* evt) {
         const sel_tag* tags = evt->args[0].v.t;
         const char* path = (const char*)sel_tag_find(tags, SEL_SRC_PATH, 0);
         unsigned count = (unsigned)sel_tag_find(tags, SEL_SRC_COUNT, 0);
-        s->entries = count > 0 && path != NULL && strcmp(path, "/") != 0 ? count - 1u : count;
+        s->entries = count > 0 && path != NULL && !sel_browse_is_root(path) ? count - 1u : count;
     }
 }
 

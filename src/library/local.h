@@ -39,6 +39,20 @@ const char* sel_browse_name(const sel_browse* b, uint32_t index);
 /* Index of the entry called `name`, or the count when there is none. */
 uint32_t sel_browse_find(const sel_browse* b, const char* name);
 
+/* Path style of this binary: AmigaDOS ("Volume:dir/sub", parent of "Work:Music" is "Work:")
+ * on the Amiga build, "/" paths elsewhere. The *_style variants take it explicitly (tests). */
+#if defined(__amigaos__) || defined(AMIGA)
+#define SEL_PATH_STYLE_AMIGA 1
+#else
+#define SEL_PATH_STYLE_AMIGA 0
+#endif
+
+/* Whether `path` is a listing root: "/" or, with `amiga_style`, a bare "Volume:". */
+int sel_browse_is_root_style(const char* path, int amiga_style);
+int sel_browse_is_root(const char* path);
+const char* sel_browse_basename_style(const char* path, int amiga_style);
+int sel_browse_join_style(char* out, size_t cap, const char* dir, const char* name, int amiga_style);
+
 /* `dir` + name into `out`; the name ".." goes to the parent (the root stays
  * the root). Returns 0 when it does not fit. */
 int sel_browse_join(char* out, size_t cap, const char* dir, const char* name);
