@@ -40,6 +40,10 @@ endif()
 
 add_subdirectory(replayers/nuade)
 
+# Stream decoders (M3 phase 11, D-M3-8): single-header libraries, float inside, tagged SEL_RP_NEEDS_FLOAT.
+add_subdirectory(replayers/minimp3)
+add_subdirectory(replayers/stb_vorbis)
+
 # libopenmpt is C++17 and desktop only (plan M1.1, no 68k build of it).
 if(NOT SEL_AMIGA)
   add_subdirectory(replayers/openmpt)

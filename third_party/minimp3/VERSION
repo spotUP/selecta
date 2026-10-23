@@ -1,0 +1,1 @@
+minimp3 openmpt-2025-11-07-v5 fork of lieff/minimp3 (commit 2116754771b79347ad2f39127abace2a093c383e, 2024-08-15), https://github.com/manxorist/minimp3/releases/tag/openmpt-2025-11-07-v5, minimp3.h and LICENSE (CC0) copied unchanged from third_party/libopenmpt/include/minimp3; minimp3_impl.c is its minimp3.c (defines MINIMP3_IMPLEMENTATION)
