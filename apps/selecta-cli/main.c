@@ -734,7 +734,7 @@ static int cmd_script_file(FILE* f, int argc, char** argv) {
             continue;
         }
         if (strncmp(line, "@mark ", 6) == 0 && lib != NULL) {
-            char table[8]; /* kept, liked or history */
+            char table[8]; /* kept or liked */
             const char* colon = strchr(line + 6, ':');
             if (colon != NULL && (size_t)(colon - line - 6) < sizeof table) {
                 memcpy(table, line + 6, (size_t)(colon - line - 6));
@@ -795,6 +795,9 @@ static int cmd_script_file(FILE* f, int argc, char** argv) {
         sel_engine_pump(e, print_event, NULL);
     }
     fclose(f);
+    if (lib != NULL) {
+        sel_library_prefetch_wait(lib); /* the job thread is idle, so the counters below are final (I170a) */
+    }
     sel_library_cache_report(lib);
     sel_int_session_close(g_int);
     g_int = NULL;

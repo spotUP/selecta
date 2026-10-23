@@ -1235,6 +1235,13 @@ endif()
 
 # M3 Phase 5 (I167a): T76 part 2. The trim driven through LIBRARY_FETCH keeps a kept song and its companion.
 if(NOT SEL_AMIGA)
+  add_test(NAME keep-command
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
+      "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3" "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/smart.tsv"
+      -P "${SEL_NET_DIR}/keep.cmake")
+  set_tests_properties(keep-command PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    DEPENDS cache-fetch TIMEOUT 60 PASS_REGULAR_EXPRESSION "keep_ok")
+
   add_test(NAME cache-budget-fetch
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
       "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3" "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv"

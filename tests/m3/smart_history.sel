@@ -1,0 +1,8 @@
+# T77 smart downloads, history seed (row I170a): play2 is played to its end twice, so the engine's SONG_ENDED writer
+# (I170) records two plays in the library DB. Run in front of smart.sel over the same --db, with its own cache dir.
+QUEUE_ADD modland:Protracker/test/play2.mod
+PLAY
+@render_until_end
+QUEUE_ADD modland:Protracker/test/play2.mod
+PLAY
+@render_until_end

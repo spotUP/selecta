@@ -411,15 +411,6 @@ int sel_library_mark(sel_library* lib, const char* table, const char* key) {
     char sql[96];
     int ok;
 
-    if (strcmp(table, "history") == 0) { /* one finished play (seeding until the SONG_ENDED writer, I170) */
-        if (sqlite3_prepare_v2(lib->db, "INSERT INTO history(key, played_at) VALUES(?1, 0)", -1, &st, NULL) != SQLITE_OK) {
-            return 0;
-        }
-        sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
-        ok = sqlite3_step(st) == SQLITE_DONE;
-        sqlite3_finalize(st);
-        return ok;
-    }
     if (strcmp(table, "kept") != 0 && strcmp(table, "liked") != 0) {
         return 0;
     }

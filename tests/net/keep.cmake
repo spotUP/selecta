@@ -1,0 +1,52 @@
+# T78 KEEP (row I170a): `selecta-cli script tests/m3/keep.sel` over fixture mirrors, two runs.
+# -DCLI=<selecta-cli> -DWORK=<fixture work dir> -DM3=<tests/m3> -DCAT=<smart catalogue tsv>
+# play1 is played and, in run A, KEEP is sent while it plays; then a tiny budget and a LIBRARY_FETCH of play2 run
+# the trim (trim_runs is the sentinel). Kept: play1 stays in the cache. Run B has no KEEP: the same trim evicts play1.
+# The kept table has no query field, so the cache trim is the existing observable of what KEEP stored.
+file(READ "${WORK}/port" port)
+string(STRIP "${port}" port)
+set(fx "http://127.0.0.1:${port}")
+set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
+set(ENV{SELECTA_NET_MAP} "fixture.test=${fx},fast.mirror.test=${fx}")
+unset(ENV{SELECTA_MIRROR})
+set(ENV{SELECTA_MIRRORS_MODLAND} "http://fast.mirror.test/mods/")
+
+function(run_keep name keep_line)
+  execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/reset --method POST
+    OUTPUT_VARIABLE o RESULT_VARIABLE rc)
+  set(cache "${WORK}/t78k-cache-${name}")
+  file(REMOVE_RECURSE "${cache}")
+  file(WRITE "${cache}/files/modland/Old/old.mod" "old unmarked file")
+  execute_process(COMMAND touch -t 202001010000 "${cache}/files/modland/Old/old.mod")
+  set(ENV{SELECTA_CACHE_DIR} "${cache}")
+  file(READ "${M3}/keep.sel" body)
+  string(REPLACE "@KEEP_MARKER\n" "${keep_line}" body "${body}")
+  file(WRITE "${WORK}/t78k-${name}.sel" "${body}")
+  execute_process(COMMAND "${CLI}" script "${WORK}/t78k-${name}.sel" --catalogue "${CAT}"
+    OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
+  set(last_raw "${o}${e}")
+  if(NOT last_raw MATCHES "(^|\n)trim_runs=([0-9]+)" OR CMAKE_MATCH_2 LESS 1)
+    message(FATAL_ERROR "T78 keep ${name}: the trim did not run\n${last_raw}")
+  endif()
+  if(last_raw MATCHES "(^|\n)ERROR")
+    message(FATAL_ERROR "T78 keep ${name}: an ERROR event\n${last_raw}")
+  endif()
+  if(EXISTS "${cache}/files/modland/Old/old.mod")
+    message(FATAL_ERROR "T78 keep ${name}: the old unmarked file survived the trim\n${last_raw}")
+  endif()
+  if(EXISTS "${cache}/files/modland/Protracker/test/play1.mod")
+    set(play1_kept 1 PARENT_SCOPE)
+  else()
+    set(play1_kept 0 PARENT_SCOPE)
+  endif()
+endfunction()
+
+run_keep(a "KEEP\n")
+if(NOT play1_kept)
+  message(FATAL_ERROR "T78 keep A: play1 was evicted although KEEP marked it\n${last_raw}")
+endif()
+run_keep(b "")
+if(play1_kept)
+  message(FATAL_ERROR "T78 keep B: play1 survived the trim without KEEP, so run A proves nothing\n${last_raw}")
+endif()
+message(STATUS "keep_ok")
