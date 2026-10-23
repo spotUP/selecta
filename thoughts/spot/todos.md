@@ -350,8 +350,9 @@ Tests T62 to T97 are defined in the plan's finish-line table. T8 ratchet target 
 | I162 | [ ] | 4 | `hvsc` source: listing, Songlengths.md5, STIL, hosted-by Modland | T73 green |
 | I163 | [ ] | 4 | `hippo` source: JSON list, legacy TSV list, `.prg` fetch through the hippo codec | T74 list and fetch parts green |
 | I164 | [ ] | 4 | PLAYLIST_PUBLISH: hippo export, 512 KB check, POST, reply parse | T74 green; T8 count moves |
-| I165 | [ ] | 5 | File cache paths, md5 verify with next-mirror retry, LIBRARY_FETCH | T75 fetch part green; T8 count moves |
-| I166 | [ ] | 5 | `SEL_RP_COMPANIONS` tag, per-format rules on the replayers that need them, fetched with the song | T75 green |
+| I165 | [x] | 5 | File cache paths, md5 verify with next-mirror retry, LIBRARY_FETCH | T75 fetch part green; T8 count moves; cache at <cache>/files/<source>/<path>, sel_mirrors_fetch_verified retries next mirror on md5 mismatch, T8 count 18 to 17; merge 4e85843 |
+| I166 | [x] | 5 | `SEL_RP_COMPANIONS` tag, per-format rules on the replayers that need them, fetched with the song | T75 green; SEL_RP_COMPANIONS 0x101B, nuade mdat/smpl and tfx/sam rules, T75 cache_hits=1 fetches=3 companions=1; merge 4e85843 |
+| I166a | [ ] | 5 | Move LIBRARY_FETCH from the `library_fetch` cfg hook onto `cfg.library` (same as I158a did for scan); install fetch in the `selecta` shell, not only `script`; vamos cache-fetch run | T75 green through `selecta --exec`; vamos fetch test green | m3-phase5a-report.md |
 | I167 | [ ] | 5 | LRU trim to a `sel_machine`-scaled budget, kept and liked exempt | T76 green |
 | I168 | [ ] | 5 | Prefetch of the next queued remote song while one plays | T77 prefetch part green |
 | I169 | [ ] | 5 | Smart downloads (F34): history and smart-playlist policy, low priority, metered and off prefs | T77 green |
