@@ -1,12 +1,20 @@
 # T87 metadata-panel (plan 2026-10-25-m3-library.md, I185).
 #   -DCLI=<selecta-cli> -DSELECTA=<exe> -DCAT=<catalogue.tsv> -DSQLITE3=<sqlite3 shell> -DKEYS=<keys>
-#   -DGOLDEN=<screen golden> -DGOLDEN_LOCAL=<screen golden> -DWORK=<dir> -DCWD=<dir holding selecta-test.mod>
+#   -DGOLDEN=<screen golden> -DGOLDEN_LOCAL=<screen golden> -DWORK=<dir> -DCWD=<dir holding selecta-test.mod and selecta-test-mk.mod, copied into ${WORK}/songs>
 # The catalogue is imported into a database file; sqlite3 then seeds what a HVSC sync and the genre step would have
 # written for selecta-test.mod (STIL sticker, composer, release, year, genre, rating, two finished plays). The real
 # selecta binary opens that file, plays the song and key i shows the panel. selecta-test-mk.mod has no catalogue data
 # (its year is removed): its panel must show replayer metadata only, with no catalogue rows at all.
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
+# Private song directory: the browser lists the directory, so sharing build/.../songs with sibling tests (which leave
+# a/, b/, c/, album.stamp, sd_*.wav there) made the golden depend on test order.
+set(songs "${WORK}/songs")
+file(MAKE_DIRECTORY "${songs}")
+foreach(m selecta-test.mod selecta-test-mk.mod)
+  file(COPY "${CWD}/${m}" DESTINATION "${songs}")
+endforeach()
+set(CWD "${songs}")
 set(db "${WORK}/m.db")
 execute_process(COMMAND "${CLI}" script "${SEL}" --catalogue "${CAT}" --db "${db}"
   WORKING_DIRECTORY "${CWD}" OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
