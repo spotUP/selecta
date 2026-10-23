@@ -58,7 +58,7 @@ typedef struct tui {
     const char* dump_path;
     int dirty;
     int info;
-    int viz;     /* viz panel: 0 off, 1 levels, 2 scope, 3 spectrum (V cycles) */
+    int viz;     /* viz panel: 0 off, 1 levels, 2 scope, 3 spectrum, 4 note dots, 5 phase (V cycles) */
     int pattern; /* pattern panel shown (P toggles); excludes the viz panel */
     uint32_t voice; /* 1-based voice the digit keys touched last; S solos it */
     uint32_t pat_order, pat_row, pat_qid, pat_asked; /* what the last pattern request was for */
@@ -66,8 +66,9 @@ typedef struct tui {
     uint32_t key_count;
     uint32_t pool_next;
     char pool[TUI_POOLS][TUI_POOL_BYTES];
-    sel_tag stats[9];
+    sel_tag stats[11];
     uint32_t viz_frames, scope_reads, pattern_rows; /* T39 sentinels */
+    uint32_t dot_rows, phase_points; /* I104d sentinels */
     uint32_t cmdline_runs, palette_opens; /* T28 sentinels */
 } tui;
 
@@ -264,7 +265,7 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
     } else if (strcmp(name, "info") == 0) {
         u->info = !u->info;
     } else if (strcmp(name, "viz") == 0) {
-        u->viz = (u->viz + 1) % 4;
+        u->viz = (u->viz + 1) % 6;
         u->pattern = 0;
     } else if (strcmp(name, "pattern") == 0) {
         u->pattern = !u->pattern;
@@ -651,7 +652,61 @@ static void tui_overlay(tui* u) {
 
 /* ---- viz and pattern panels (M1.3 I101) ---- */
 
-static const char* const k_viz_title[] = {"", "Levels", "Scope", "Spectrum"};
+static const char* const k_viz_title[] = {"", "Levels", "Scope", "Spectrum", "Note dots", "Phase"};
+
+/* Semitone index 0..95 of a voice rate in Hz (24.8), integer only: climbs the equal tempered
+ * ladder, each step times 2^(1/12) = 69433 / 65536. The voice rate is the sample rate Paula plays
+ * at, so tracker C-2 (period 428) is 8287 Hz and tracker C-0 (period 1712) is 2072 Hz = index 0. */
+static uint32_t tui_semitone(uint32_t pitch_q8) {
+    uint64_t t = 2072ull << 24, p = (uint64_t)pitch_q8 << 16;
+    uint32_t semi = 0;
+    while (semi < 95u) {
+        uint64_t next = (t * 69433ull) >> 16;
+        if (p < next) {
+            break;
+        }
+        t = next;
+        semi++;
+    }
+    return semi;
+}
+
+/* Phase panel: the last post-mix frames as an L (x) against R (y) plot in 2x4 braille cells, plus
+ * the Q15 correlation as a percentage. Only the mixed path has a post-mix signal. */
+#define TUI_PHASE_COLS 40u
+#define TUI_PHASE_ROWS 12u
+static void tui_phase_panel(tui* u, const sel_state* s, uint32_t width) {
+    const sel_viz_frame* f = s->viz;
+    txt_style norm = tui_style(u, TXT_ROLE_NORMAL);
+    txt_style dim = tui_style(u, TXT_ROLE_DIM);
+    uint32_t rows = tui_main_rows(u);
+    uint32_t pw = width > 3u && width - 3u < TUI_PHASE_COLS ? width - 3u : TUI_PHASE_COLS;
+    uint32_t ph = rows > 4u && rows - 4u < TUI_PHASE_ROWS ? rows - 4u : TUI_PHASE_ROWS;
+    uint8_t cell[TUI_PHASE_ROWS][TUI_PHASE_COLS];
+    static const uint8_t bit[4][2] = {{0x01, 0x08}, {0x02, 0x10}, {0x04, 0x20}, {0x40, 0x80}};
+    uint32_t i, x, y;
+    char buf[32];
+    int32_t pct;
+    if (!s->mixed_path) {
+        txt_grid_text(&u->grid, 1, 3, "unsupported_path", width - 1u, dim);
+        return;
+    }
+    memset(cell, 0, sizeof cell);
+    for (i = 0; i < SEL_VIZ_PCM_FRAMES; i += 4u) {
+        uint32_t px = ((uint32_t)((int32_t)f->pcm[i * 2u] + 32768) * pw * 2u) >> 16;
+        uint32_t py = ((uint32_t)(32767 - (int32_t)f->pcm[i * 2u + 1u]) * ph * 4u) >> 16;
+        cell[py / 4u][px / 2u] |= bit[py % 4u][px % 2u];
+        u->phase_points++;
+    }
+    for (y = 0; y < ph; y++) {
+        for (x = 0; x < pw; x++) {
+            txt_grid_put(&u->grid, 2u + x, 3u + y, cell[y][x] ? 0x2800u + cell[y][x] : ' ', norm);
+        }
+    }
+    pct = (int32_t)f->correlation * 100 / 32768;
+    snprintf(buf, sizeof buf, "Correlation %d%%", (int)pct);
+    txt_grid_text(&u->grid, 2, 3u + ph, buf, width - 2u, dim);
+}
 
 /* Eight-step block glyph for a Q15 magnitude. */
 static uint32_t tui_block(uint32_t q15) {
@@ -688,6 +743,10 @@ static void tui_viz_panel(tui* u, const sel_state* s, uint32_t width) {
         }
         return;
     }
+    if (u->viz == 5) {
+        tui_phase_panel(u, s, width);
+        return;
+    }
     if (f->voice_count == 0) {
         txt_grid_text(&u->grid, 1, 3, "No per voice data for this player", width - 1u, dim);
         return;
@@ -707,6 +766,13 @@ static void tui_viz_panel(tui* u, const sel_state* s, uint32_t width) {
             txt_grid_put(&u->grid, 35, y, ']', dim);
             if (muted) {
                 txt_grid_text(&u->grid, 37, y, "Muted", width > 37u ? width - 37u : 1u, dim);
+            }
+        } else if (u->viz == 4) { /* note dots: one dot per sounding voice, column = pitch over 96 semitones */
+            u->dot_rows++;
+            if (f->pitch_q8[i] != 0 && !muted) {
+                uint32_t span = width > 13u ? width - 13u : 1u;
+                txt_grid_put(&u->grid, 11u + tui_semitone(f->pitch_q8[i]) * span / 96u, y, 0x25CFu,
+                             f->note_on[i] ? norm : dim);
             }
         } else { /* scope: peak magnitude of each 4 sample span as a block glyph */
             u->scope_reads++;
@@ -1105,8 +1171,12 @@ static const sel_tag* tui_stats(void* state) {
     u->stats[6].value = u->scope_reads;
     u->stats[7].tag = SEL_UI_STAT_PATTERN_ROWS;
     u->stats[7].value = u->pattern_rows;
-    u->stats[8].tag = SEL_TAG_END;
-    u->stats[8].value = 0;
+    u->stats[8].tag = SEL_UI_STAT_DOT_ROWS;
+    u->stats[8].value = u->dot_rows;
+    u->stats[9].tag = SEL_UI_STAT_PHASE_POINTS;
+    u->stats[9].value = u->phase_points;
+    u->stats[10].tag = SEL_TAG_END;
+    u->stats[10].value = 0;
     return u->stats;
 }
 

@@ -1,0 +1,13 @@
+# I104d note dots: play selecta-test.mod (nuade, four voices), press V four times
+# (levels, scope, spectrum, note dots), quit.
+Down
+Enter
+Down
+Enter
+wait 2000
+V
+V
+V
+V
+wait 100
+q

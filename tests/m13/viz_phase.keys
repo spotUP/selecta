@@ -1,0 +1,14 @@
+# I104d phase view: play selecta-test.mod (nuade, four voices), press V five times
+# (levels, scope, spectrum, note dots, phase), quit.
+Down
+Enter
+Down
+Enter
+wait 2000
+V
+V
+V
+V
+V
+wait 100
+q

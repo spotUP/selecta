@@ -626,6 +626,19 @@ if(NOT SEL_AMIGA)
         "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m13_keys_${case}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/m13/keys_engine_check.cmake")
   endforeach()
+  # I104d: note dots (V x4) and phase view (V x5); the counter proves the draw path ran.
+  foreach(view dots phase)
+    set(counter dot_rows)
+    if(view STREQUAL "phase")
+      set(counter phase_points)
+    endif()
+    add_test(NAME ui-viz-${view}
+      COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DMOD=${SEL_TESTMOD}"
+        "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m13/viz_${view}.keys"
+        "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m13/viz_${view}.screen"
+        "-DCOUNTER=${counter}" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/ui_viz_${view}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/m13/viz_marks.cmake")
+  endforeach()
 endif()
 
 # T46 (rows I97, I98): SAMPLE_LIST and SAMPLE_EXPORT (WAV, 8SVX) through the engine, libopenmpt adapter.
