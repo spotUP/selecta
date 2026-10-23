@@ -288,9 +288,9 @@ Tests T49 to T61 are defined in the plan's finish-line table.
 | I115 | [x] | 2 | `dir.c` Examine/ExNext | T57 green; 8ee0f79 T57 vamos; merge a97bb26 |
 | I116 | [x] | 2 | One option parser for ToolTypes and CLI over `commands.def` | T58 green (options); 9780bda, d8b689b T58 options; merge a97bb26 |
 | I117 | [x] | 2 | Task priority from option | T58 green (priority read back); d77d32d; vamos shim removed in merge, read-back moved to rig-task-priority (open); merge a97bb26 |
-| I118 | [ ] | 3 | Paula voice sink, chip RAM samples via `host->mem_alloc` | build; voice API conformance test |
-| I119 | [ ] | 3 | Period once per note, volume 0..64, loop registers | T51 register hash |
-| I120 | [ ] | 3 | Shadow register twin for vamos and desktop | T51 green both trees |
+| I118 | [ ] | 3 | Paula voice sink, chip RAM samples via `host->mem_alloc` | build; voice API conformance test; partial: sink + chip copy in 48d8e4e (merge 6b44e20); open: MEMF_CHIP in Amiga mem.c, hardware paula output |
+| I119 | [x] | 3 | Period once per note, volume 0..64, loop registers | T51 register hash; 48d8e4e 3c1dd9d AUD0PER 428 hand-checked; merge 6b44e20 |
+| I120 | [x] | 3 | Shadow register twin for vamos and desktop | T51 green both trees; 76c5b29 paula-shadow aud_writes=53 golden; vamos path fix c395d55; merge 6b44e20 |
 | I121 | [ ] | 3 | Routing: VOICE with voice_count <= 4 to `paula` | routing table test; T56 precondition |
 | I122 | [ ] | 4 | Portable paula14 split tables, default calibration (D-M2-4) | T52 green desktop |
 | I123 | [ ] | 4 | paula14 Amiga sink, chip RAM double buffer | T52 green vamos; T54 extended |
