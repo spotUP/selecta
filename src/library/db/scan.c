@@ -151,6 +151,116 @@ void sel_library_remove(sel_library* lib, const sel_remove_batch* b, sel_message
     reply->args[1].v.i = rc;
 }
 
+/* Tables whose `key` column names a song; a move re-keys them all with the songs row. */
+static const char* const KEYED_TABLES[] = {"history", "liked",  "kept",       "ratings",         "cues",
+                                           "notes",   "flags",  "stickers",   "genre_cache",     "pending_push",
+                                           "playlist_entries"};
+
+static int exec_bind2(sqlite3* db, const char* sql, const char* a, const char* b, const char* c, const char* d,
+                      const char* e, int* changes) {
+    sqlite3_stmt* st = NULL;
+    const char* v[5];
+    int rc = sqlite3_prepare_v2(db, sql, -1, &st, NULL);
+    int i;
+
+    v[0] = a;
+    v[1] = b;
+    v[2] = c;
+    v[3] = d;
+    v[4] = e;
+    for (i = 0; rc == SQLITE_OK && i < 5 && v[i] != NULL; i++) {
+        rc = sqlite3_bind_text(st, i + 1, v[i], -1, SQLITE_STATIC);
+    }
+    if (rc == SQLITE_OK) {
+        rc = sqlite3_step(st);
+        rc = rc == SQLITE_DONE ? SQLITE_OK : rc;
+    }
+    sqlite3_finalize(st);
+    if (changes != NULL) {
+        *changes = rc == SQLITE_OK ? sqlite3_changes(db) : 0;
+    }
+    return rc;
+}
+
+/* SEL_LIB_REQ_MOVE (I161b): re-keys one song in place so everything stored under its key survives. */
+void sel_library_move(sel_library* lib, const sel_move* m, sel_message* reply) {
+    char oldkey[1200];
+    char newkey[1200];
+    char sql[160];
+    int moved = 0;
+    int changes = 0;
+    int rc;
+    size_t t;
+
+    snprintf(oldkey, sizeof oldkey, "%s:%s", m->source, m->from);
+    snprintf(newkey, sizeof newkey, "%s:%s", m->to->source, m->to->path);
+    rc = sqlite3_exec(lib->db, "BEGIN", NULL, NULL, NULL);
+    if (rc == SQLITE_OK && strcmp(oldkey, newkey) != 0) {
+        rc = exec_bind2(lib->db, "DELETE FROM songs WHERE key=?1 AND EXISTS(SELECT 1 FROM songs WHERE key=?2)", newkey,
+                        oldkey, NULL, NULL, NULL, NULL);
+        if (rc == SQLITE_OK) {
+            rc = exec_bind2(lib->db, "DELETE FROM files WHERE source=?1 AND path=?2 AND EXISTS("
+                                     "SELECT 1 FROM files WHERE source=?1 AND path=?3)",
+                            m->to->source, m->to->path, m->from, NULL, NULL, NULL);
+        }
+    }
+    if (rc == SQLITE_OK) {
+        sqlite3_stmt* st = NULL;
+
+        rc = sqlite3_prepare_v2(lib->db,
+                                "UPDATE songs SET key=?1, path=?2, name=?3, artist=?4, format=?5 WHERE key=?6", -1, &st,
+                                NULL);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, newkey, -1, SQLITE_STATIC);
+            sqlite3_bind_text(st, 2, m->to->path, -1, SQLITE_STATIC);
+            bind_text(st, 3, m->to->name);
+            bind_text(st, 4, m->to->artist);
+            bind_text(st, 5, m->to->format);
+            sqlite3_bind_text(st, 6, oldkey, -1, SQLITE_STATIC);
+            rc = sqlite3_step(st);
+            rc = rc == SQLITE_DONE ? SQLITE_OK : rc;
+            moved = rc == SQLITE_OK ? sqlite3_changes(lib->db) : 0;
+        }
+        sqlite3_finalize(st);
+    }
+    if (rc == SQLITE_OK && moved > 0) {
+        sqlite3_stmt* st = NULL;
+
+        rc = sqlite3_prepare_v2(lib->db,
+                                "UPDATE files SET path=?1, format=?2, artist=?3, name=?4 WHERE source=?5 AND path=?6", -1,
+                                &st, NULL);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, m->to->path, -1, SQLITE_STATIC);
+            bind_text(st, 2, m->to->format);
+            bind_text(st, 3, m->to->artist);
+            bind_text(st, 4, m->to->name);
+            sqlite3_bind_text(st, 5, m->source, -1, SQLITE_STATIC);
+            sqlite3_bind_text(st, 6, m->from, -1, SQLITE_STATIC);
+            rc = sqlite3_step(st);
+            rc = rc == SQLITE_DONE ? SQLITE_OK : rc;
+        }
+        sqlite3_finalize(st);
+        for (t = 0; rc == SQLITE_OK && t < sizeof KEYED_TABLES / sizeof KEYED_TABLES[0]; t++) {
+            snprintf(sql, sizeof sql, "UPDATE OR REPLACE %s SET key=?1 WHERE key=?2", KEYED_TABLES[t]);
+            rc = exec_bind2(lib->db, sql, newkey, oldkey, NULL, NULL, NULL, &changes);
+        }
+    }
+    if (rc == SQLITE_OK) {
+        rc = sqlite3_exec(lib->db, "COMMIT", NULL, NULL, NULL);
+    } else {
+        sqlite3_exec(lib->db, "ROLLBACK", NULL, NULL, NULL);
+        moved = 0;
+    }
+    memset(reply, 0, sizeof *reply);
+    reply->kind = SEL_MSG_EVT;
+    reply->id = SEL_LIB_REQ_MOVE;
+    reply->argc = 2;
+    reply->args[0].type = SEL_ARG_INT;
+    reply->args[0].v.i = moved > 0;
+    reply->args[1].type = SEL_ARG_INT;
+    reply->args[1].v.i = rc;
+}
+
 /* SEL_LIB_REQ_ANNOTATE (I162): sets duration and md5 of existing songs and stores their stickers
  * (subtune count, lengths, STIL notes). One transaction per batch. */
 void sel_library_annotate(sel_library* lib, const sel_annotate_batch* b, sel_message* reply) {

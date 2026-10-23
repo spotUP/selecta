@@ -194,6 +194,35 @@ static int add_path(sync_state* s, const char* rel) {
     return flush_rows(s);
 }
 
+/* Re-keys the row at `from` to `dest` in place (md5, size, stickers, likes stay). A `from` the catalogue
+ * never had is simply added at `dest`. */
+static int move_row(sync_state* s, const char* from, const char* dest) {
+    sel_move mv;
+    sel_message reply;
+    char fpath[PATH_BYTES];
+
+    if (!full_path(from, fpath, sizeof fpath) || !queue_row(s, dest, NULL, 0)) {
+        return 0;
+    }
+    s->row_n--;
+    mv.source = "modland";
+    mv.from = fpath;
+    mv.to = &s->rows[s->row_n];
+    memset(&reply, 0, sizeof reply);
+    if (!sel_library_request(s->cfg->lib, SEL_LIB_REQ_MOVE, &mv, &reply) || reply.args[1].v.i != 0) {
+        s->failed = 1;
+        return 0;
+    }
+    if (reply.args[0].v.i == 0) {
+        s->row_n++;
+        if (!flush_rows(s)) {
+            return 0;
+        }
+    }
+    s->st->cl_moved++;
+    return 1;
+}
+
 /* Days since 1970-01-01 of a civil date (proleptic Gregorian, integers only). */
 static int64_t days_from_civil(int64_t y, int64_t m, int64_t d) {
     int64_t era, yoe, doy, doe;
@@ -239,14 +268,7 @@ static int apply_move(sync_state* s, const char* from, const char* to) {
     if (w <= 0 || (size_t)w >= sizeof dest) {
         return 0;
     }
-    if (remove_path(s, from)) {
-        s->st->cl_removed++;
-    }
-    if (!add_path(s, dest)) {
-        return 0;
-    }
-    s->st->cl_moved++;
-    return 1;
+    return move_row(s, from, dest);
 }
 
 static int apply_changelog(sync_state* s, const char* file, int in_week) {
@@ -260,9 +282,14 @@ static int apply_changelog(sync_state* s, const char* file, int in_week) {
     from[0] = '\0';
     while (!s->failed && fgets(line, sizeof line, f) != NULL) {
         char* p;
+        char* key;
 
         chomp(line);
-        p = strchr(line, ':');
+        key = line;
+        while (*key == ' ' || *key == '\t') {
+            key++;
+        }
+        p = strchr(key, ':');
         if (p == NULL) {
             continue;
         }
@@ -270,20 +297,20 @@ static int apply_changelog(sync_state* s, const char* file, int in_week) {
         while (*p == ' ') {
             p++;
         }
-        if (strcmp(line, "added") == 0 || strcmp(line, "new") == 0) {
+        if (strcmp(key, "added") == 0 || strcmp(key, "new") == 0) {
             if (add_path(s, p)) {
                 s->st->cl_added++;
                 s->st->new_this_week += (uint32_t)in_week;
             }
-        } else if (strcmp(line, "deleted") == 0) {
+        } else if (strcmp(key, "deleted") == 0) {
             if (remove_path(s, p)) {
                 s->st->cl_removed++;
             }
-        } else if (strcmp(line, "updated") == 0) {
+        } else if (strcmp(key, "updated") == 0) {
             s->st->cl_updated++;
-        } else if (strcmp(line, "moved") == 0) {
+        } else if (strcmp(key, "moved") == 0) {
             snprintf(from, sizeof from, "%s", p);
-        } else if (strcmp(line, "to") == 0 && from[0] != '\0') {
+        } else if (strcmp(key, "to") == 0 && from[0] != '\0') {
             apply_move(s, from, p);
             from[0] = '\0';
         }
