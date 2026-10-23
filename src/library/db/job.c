@@ -3,16 +3,18 @@
  * and lives in the library handle: one prefetch slot (pf_spec), SEL_SMART_MAX smart slots (sm_spec) and one rating
  * flush flag (job_rating); a repeated request overwrites or sets the same slot, so nothing is allocated per job and
  * a repeated rating flush coalesces into one. Order: rating flush first (short), then a prefetch, then smart
- * downloads. Close stops accepting work, wakes the thread and joins it; a job in flight ends at the net timeout
- * (a download also at its next chunk, pf_cancel). Builds without threads (Amiga) run jobs inline, see fetch.c
+ * downloads. Close stops accepting work, wakes the thread and joins it; a job in flight ends at its next net poll slice
+ * (sel_net_set_cancel on job_quit, ~50 ms; a download also at its next chunk, pf_cancel). Builds without threads (Amiga) run jobs inline, see fetch.c
  * (cooperative poll) and rating_push.c (inline flush). */
 #include "db_internal.h"
+#include "../net/net.h"
 
 #if !defined(SEL_LIBRARY_NO_THREAD)
 
 static void* job_main(void* arg) {
     sel_library* lib = arg;
 
+    sel_net_set_cancel(&lib->job_quit); /* close ends a job stuck on a silent server within one poll slice (I173f) */
     pthread_mutex_lock(&lib->job_lock);
     for (;;) {
         while (!lib->job_quit && !lib->job_rating && !lib->job_vote &&

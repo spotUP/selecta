@@ -1234,6 +1234,13 @@ if(NOT SEL_AMIGA)
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/vote-net" "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3"
             "-DSONGS=${PROJECT_SOURCE_DIR}/tests/m3/genre" -P "${SEL_NET_DIR}/vote_devilbox.cmake")
   set_tests_properties(vote-devilbox PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "vote_devilbox_ok")
+
+  # I173f: library close returns promptly while a rating push is stuck on a server that never answers; the rating
+  # stays pending and is pushed on the next engine create. Own fixture server.
+  add_test(NAME library-close-cancel
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/close-cancel-net"
+            -P "${SEL_NET_DIR}/library_close_cancel.cmake")
+  set_tests_properties(library-close-cancel PROPERTIES LABELS m3 TIMEOUT 90 PASS_REGULAR_EXPRESSION "library_close_cancel_ok")
 endif()
 
 # T95 (row I177): SCROBBLE_DUE from the engine, the last.fm scrobbler plugin, its signed POST and the offline queue.
