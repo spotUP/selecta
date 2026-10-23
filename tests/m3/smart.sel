@@ -1,0 +1,11 @@
+# T77 smart downloads (row I169): the history holds play2 (twice), the saved view "smart" holds song.mod, and play1
+# is queued and played. The smart plan fetches the view first, then the most played history, behind the foreground
+# fetch. @prefetch_wait waits until the library thread is idle; counters are printed at the end.
+@mark history:modland:Protracker/test/play2.mod
+@mark history:modland:Protracker/test/play2.mod
+VIEW_SAVE smart gammathree
+QUEUE_ADD modland:Protracker/test/play1.mod
+PLAY
+@render 1024
+@prefetch_wait
+@render 1024

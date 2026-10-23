@@ -22,3 +22,18 @@ SEL_PREF(OUTPUT_LED,         "output.led",         "off",                       
 SEL_PREF(RP_CONFIG,          "rp.config",          "",                                            SEL_PREF_PLAIN)
 /* stereo width percent, 0 (mono) to 100 (unchanged); the LED filter is output.led */
 SEL_PREF(MIX_STEREO_WIDTH,   "mix.stereo_width",   "100",                                         SEL_PREF_PLAIN)
+/* Prefetch and smart downloads (I168, I169, F34). library.prefetch: fetch the next remote queue entry while a song
+ * plays. library.metered: the connection is metered, so neither prefetch nor smart downloads run. library.smart_downloads:
+ * fetch songs of the smart playlist and the most played history in the background, behind the foreground fetch and
+ * the prefetch, within the cache budget (off by default on the Amiga, where a transfer blocks the single task).
+ * library.smart_playlist: name of the saved view that is the smart playlist ("" = history only). library.smart_top:
+ * how many songs one planning round fetches at most (0 = none, capped at 8). */
+SEL_PREF(LIBRARY_PREFETCH,   "library.prefetch",   "on",                                          SEL_PREF_PLAIN)
+SEL_PREF(LIBRARY_METERED,    "library.metered",    "off",                                         SEL_PREF_PLAIN)
+#ifdef __amigaos__
+SEL_PREF(LIBRARY_SMART,      "library.smart_downloads", "off",                                    SEL_PREF_PLAIN)
+#else
+SEL_PREF(LIBRARY_SMART,      "library.smart_downloads", "on",                                     SEL_PREF_PLAIN)
+#endif
+SEL_PREF(LIBRARY_SMART_VIEW, "library.smart_playlist", "smart",                                   SEL_PREF_PLAIN)
+SEL_PREF(LIBRARY_SMART_TOP,  "library.smart_top",  "3",                                           SEL_PREF_PLAIN)

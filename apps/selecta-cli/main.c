@@ -528,7 +528,7 @@ static int cmd_script(const char* path, int argc, char** argv) {
         }
 #endif
         if (strncmp(line, "@mark ", 6) == 0 && lib != NULL) {
-            char table[8];
+            char table[8]; /* kept, liked or history */
             const char* colon = strchr(line + 6, ':');
             if (colon != NULL && (size_t)(colon - line - 6) < sizeof table) {
                 memcpy(table, line + 6, (size_t)(colon - line - 6));
