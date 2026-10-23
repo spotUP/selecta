@@ -1126,6 +1126,12 @@ if(NOT SEL_AMIGA)
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/local.manifest ${SEL_TESTMOD} ${SEL_TESTMOD})
   set_tests_properties(source-local PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_local_ok")
 
+  # I184d: a local MP3 / Ogg is scanned and played through a file-backed byte stream, not read whole.
+  add_test(NAME file-stream-local
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/file_stream.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/stream)
+  set_tests_properties(file-stream-local PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "file_stream_ok")
+
   add_test(NAME source-modland-key
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/source_key.sh $<TARGET_FILE:selecta-cli>)
   set_tests_properties(source-modland-key PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_key_ok")

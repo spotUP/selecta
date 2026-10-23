@@ -35,7 +35,9 @@ typedef struct mp3_state {
     uint32_t left, off, frame_ch; /* undelivered frames of `frame` */
     sel_id3 tag;
     sel_tag meta[8];
-    const sel_byte_stream* in; /* live stream, or NULL when `data` is the whole file */
+    const sel_byte_stream* in; /* live stream or file-backed stream (I184d), or NULL when `data` is the whole file */
+    uint64_t base;             /* file mode: file offset of win[0] */
+    uint64_t start_off;        /* file mode: file offset of the first frame (behind the ID3v2 tag) */
     uint8_t win[MP3_WINDOW];
 } mp3_state;
 
@@ -96,11 +98,19 @@ static uint32_t walk_frames(mp3_state* s) {
     return total;
 }
 
+/* File-backed stream (I184d): the byte stream knows its length and can seek, so the song keeps duration, size and
+ * seek; a live download has none of them. */
+static int file_mode(const mp3_state* s) {
+    return s->in != NULL && s->in->seek != NULL;
+}
+
 /* Stream mode open: consumes the ID3v2 tag from the stream (it may be longer than the head the probe saw), then
  * waits for enough bytes to decode the first frame, which fixes the rate and channel count. */
 static int open_live(mp3_state* s, const sel_song_source* src, mp3dec_frame_info_t* fi) {
     const sel_byte_stream* in = s->in;
     size_t skip = id3v2_len(src->data, src->size);
+    s->start_off = skip;
+    s->base = skip;
     while (skip > 0u) {
         uint8_t junk[512];
         size_t n = in->read_wait(in->ctx, junk, skip < sizeof junk ? skip : sizeof junk);
@@ -126,12 +136,22 @@ static int open_live(mp3_state* s, const sel_song_source* src, mp3dec_frame_info
 static void refill(mp3_state* s) {
     if (s->pos > 0u) {
         memmove(s->win, s->win + s->pos, s->size - s->pos);
+        s->base += s->pos;
         s->size -= s->pos;
         s->pos = 0;
     }
     if (s->size < MP3_WINDOW) {
         s->size += s->in->read(s->in->ctx, s->win + s->size, MP3_WINDOW - s->size);
     }
+}
+
+/* File mode: moves the window to file offset `off` and fills it. */
+static void file_goto(mp3_state* s, uint64_t off) {
+    s->in->seek(s->in->ctx, off);
+    s->base = off;
+    s->size = 0;
+    s->pos = 0;
+    refill(s);
 }
 
 static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_info* info) {
@@ -151,6 +171,12 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
         }
         s->hz = (uint32_t)fi.hz;
         s->channels = fi.channels;
+        if (file_mode(s) && fi.bitrate_kbps > 0 && s->in->total > s->start_off) {
+            /* No frame walk (it would read the whole file): length from the audio bytes and the first frame's
+             * bitrate. Exact for constant bitrate, an estimate for variable bitrate. */
+            uint64_t ms = (s->in->total - s->start_off) * 8u / (uint64_t)fi.bitrate_kbps;
+            s->total_frames = (uint32_t)(ms * s->hz / 1000u);
+        }
         sel_id3_read(src->data, src->size, &s->tag);
         info->voice_count = 0;
         info->subsong_count = 1;
@@ -250,6 +276,8 @@ static int rp_start(void* state, uint32_t subsong, uint32_t rate, const sel_voic
     s->rate = rate;
     if (s->in == NULL) {
         s->pos = s->start; /* a live stream cannot rewind: it plays on from where the open left it */
+    } else if (file_mode(s) && (s->base != s->start_off || s->pos != 0u)) {
+        file_goto(s, s->start_off);
     }
     s->left = 0;
     mp3dec_init(&s->dec);
@@ -262,12 +290,60 @@ static uint32_t rp_render(void* state, int16_t* out, uint32_t frames) {
     return sel_stream_pcm_read(&s->pcm, out, frames);
 }
 
+/* Drops decoded frames until `from` reaches `target`. */
+static void discard_to(mp3_state* s, uint64_t from, uint64_t target) {
+    while (from < target) {
+        int16_t junk[SEL_STREAM_CHUNK * 2];
+        uint64_t left = target - from;
+        uint32_t got = pull(s, junk, left < SEL_STREAM_CHUNK ? (uint32_t)left : SEL_STREAM_CHUNK);
+        if (got == 0u) {
+            break;
+        }
+        from += got;
+    }
+}
+
+/* File mode seek: the same header walk, through the window, then back two frames in the file. */
+static int seek_file(mp3_state* s, uint32_t ms) {
+    uint64_t target = (uint64_t)ms * s->hz / 1000u, at = 0, from = 0, from1 = 0;
+    uint64_t off1 = s->start_off, off2 = s->start_off;
+    mp3dec_t dec;
+    mp3dec_frame_info_t fi;
+    file_goto(s, s->start_off);
+    mp3dec_init(&dec);
+    while (at < target) {
+        int samples;
+        if (s->size - s->pos < MP3_NEED) {
+            refill(s);
+        }
+        if (s->pos >= s->size) {
+            break;
+        }
+        samples = mp3dec_decode_frame(&dec, s->win + s->pos, (int)(s->size - s->pos), NULL, &fi);
+        if (fi.frame_bytes == 0) {
+            break;
+        }
+        off2 = off1;
+        from = from1;
+        off1 = s->base + s->pos;
+        from1 = at;
+        at += (uint64_t)samples;
+        s->pos += (size_t)fi.frame_bytes;
+    }
+    file_goto(s, off2);
+    s->left = 0;
+    mp3dec_init(&s->dec);
+    sel_stream_pcm_reset(&s->pcm, pull, s, s->hz, s->rate);
+    discard_to(s, from, target);
+    return 1;
+}
+
 /* Header walk to the frame holding the target, then back two frames so the bit reservoir refills; the
  * decoded lead-in up to the target is dropped. */
 static int rp_seek(void* state, uint32_t ms) {
     mp3_state* s = (mp3_state*)state;
     if (s->in != NULL) {
-        return 0; /* no seek in a live stream */
+        return file_mode(s) ? seek_file(s, ms) : 0; /* no seek in a live stream */
     }
     uint64_t target = (uint64_t)ms * s->hz / 1000u, at = 0, from = 0, from1 = 0;
     size_t pos = s->start, pos1 = s->start, pos2 = s->start;
@@ -321,11 +397,11 @@ static const sel_tag* rp_metadata(void* state) {
     s->meta[n++].value = (uintptr_t) "MP3";
     s->meta[n].tag = SEL_META_CHANNELS;
     s->meta[n++].value = (uintptr_t)s->channels;
-    if (s->in == NULL) { /* a live stream has neither a length nor a size */
+    if (s->in == NULL || file_mode(s)) { /* a live stream has neither a length nor a size */
         s->meta[n].tag = SEL_META_DURATION_MS;
         s->meta[n++].value = (uintptr_t)((uint64_t)s->total_frames * 1000u / s->hz);
         s->meta[n].tag = SEL_META_SIZE;
-        s->meta[n++].value = (uintptr_t)s->size;
+        s->meta[n++].value = (uintptr_t)(s->in != NULL ? s->in->total : s->size);
     }
     s->meta[n].tag = SEL_TAG_END;
     s->meta[n].value = 0;

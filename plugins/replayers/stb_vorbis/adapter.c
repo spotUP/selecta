@@ -51,7 +51,8 @@ typedef struct vorbis_state {
     } md[2];
     volatile uint32_t md_cur;
     sel_tag meta[8];
-    const sel_byte_stream* in; /* live stream, or NULL when the whole file is in memory */
+    const sel_byte_stream* in; /* live stream or file-backed stream (I184d), or NULL when the whole file is in memory */
+    uint32_t delivered;        /* file mode: frames handed out since the start (clamped to total_frames) */
     size_t win_size, win_pos;
     float** out; /* undelivered samples of the last pushdata frame */
     int out_ch;
@@ -104,6 +105,45 @@ static void read_comments(vorbis_state* s, stb_vorbis_comment vc, uint32_t set) 
     comment(&vc, "TITLE", s->md[set].title);
     comment(&vc, "ARTIST", s->md[set].author);
     comment(&vc, "ALBUM", s->md[set].album);
+}
+
+/* File-backed stream (I184d): the byte stream knows its length and can seek, so the song keeps duration, size and
+ * seek; a live download has none of them. */
+static int file_mode(const vorbis_state* s) {
+    return s->in != NULL && s->in->seek != NULL;
+}
+
+/* File mode: the exact length is the granule position of the file's last page, found in the last 64 KB. Zero when
+ * the file is chained (the last page belongs to another logical stream than the first), so no length is claimed.
+ * Uses the window as scratch and leaves the stream at offset 0 with an empty window. */
+static uint32_t file_length(vorbis_state* s, const uint8_t* head, size_t headn) {
+    uint64_t total = s->in->total, from = total > 65536u ? total - 65536u : 0u;
+    size_t n, i, at = (size_t)-1;
+    uint32_t frames = 0;
+
+    if (headn < 18u || memcmp(head, "OggS", 4) != 0 || !s->in->seek(s->in->ctx, from)) {
+        return 0;
+    }
+    n = s->in->read(s->in->ctx, s->win, (size_t)(total - from));
+    for (i = 0; i + 27u <= n; i++) {
+        if (memcmp(s->win + i, "OggS", 4) == 0) {
+            at = i;
+        }
+    }
+    if (at != (size_t)-1 && memcmp(s->win + at + 14u, head + 14u, 4) == 0) { /* same serial as the first page */
+        uint64_t g = 0;
+        int k;
+        for (k = 7; k >= 0; k--) {
+            g = (g << 8) | s->win[at + 6u + (size_t)k];
+        }
+        if (g != ~(uint64_t)0 && g <= 0xFFFFFFFFu) {
+            frames = (uint32_t)g;
+        }
+    }
+    s->in->seek(s->in->ctx, 0);
+    s->win_size = 0;
+    s->win_pos = 0;
+    return frames;
 }
 
 /* Stream mode open: reads from the stream until the headers (identification, comments, setup) are complete. */
@@ -165,6 +205,9 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     s->arena.alloc_buffer_length_in_bytes = (int)VORBIS_ARENA_BYTES;
     s->in = src->stream;
     if (s->in != NULL) {
+        if (file_mode(s)) {
+            s->total_frames = file_length(s, src->data, src->size);
+        }
         v = open_live(s);
     } else {
         v = stb_vorbis_open_memory(src->data, (int)src->size, &err, &s->arena);
@@ -319,9 +362,37 @@ static uint32_t pull_live(vorbis_state* s, int16_t* out, uint32_t frames) {
 static uint32_t pull(void* ctx, int16_t* out, uint32_t frames) {
     vorbis_state* s = (vorbis_state*)ctx;
     if (s->in != NULL) {
-        return pull_live(s, out, frames);
+        uint32_t n;
+        if (file_mode(s) && s->total_frames > 0u) { /* the last Vorbis block overshoots the final granule */
+            uint32_t room = s->total_frames > s->delivered ? s->total_frames - s->delivered : 0u;
+            frames = frames < room ? frames : room;
+        }
+        n = pull_live(s, out, frames);
+        s->delivered += n;
+        return n;
     }
     return (uint32_t)stb_vorbis_get_samples_short_interleaved(s->v, 2, out, (int)(frames * 2u));
+}
+
+/* File mode: back to the first byte, a fresh decoder on the same arena. */
+static int restart_file(vorbis_state* s) {
+    stb_vorbis* v;
+
+    if (s->v != NULL) {
+        stb_vorbis_close(s->v);
+        s->v = NULL;
+    }
+    s->in->seek(s->in->ctx, 0);
+    s->win_size = 0;
+    s->win_pos = 0;
+    s->left = 0;
+    s->delivered = 0;
+    v = open_live(s);
+    if (v == NULL) {
+        return 0;
+    }
+    s->v = v;
+    return 1;
 }
 
 static int rp_start(void* state, uint32_t subsong, uint32_t rate, const sel_voices* voices) {
@@ -334,6 +405,8 @@ static int rp_start(void* state, uint32_t subsong, uint32_t rate, const sel_voic
     s->rate = rate;
     if (s->in == NULL) {
         stb_vorbis_seek_start(s->v); /* a live stream cannot rewind: it plays on from where the open left it */
+    } else if (file_mode(s) && s->delivered > 0u) {
+        restart_file(s);
     }
     sel_stream_pcm_reset(&s->pcm, pull, s, s->hz, rate);
     return 1;
@@ -347,7 +420,23 @@ static uint32_t rp_render(void* state, int16_t* out, uint32_t frames) {
 static int rp_seek(void* state, uint32_t ms) {
     vorbis_state* s = (vorbis_state*)state;
     if (s->in != NULL) {
-        return 0; /* no seek in a live stream */
+        uint64_t target, from;
+        if (!file_mode(s) || !restart_file(s)) {
+            return 0; /* no seek in a live stream */
+        }
+        /* Pushdata has no seek: decode from the start and drop the frames before the target. */
+        target = (uint64_t)ms * s->hz / 1000u;
+        sel_stream_pcm_reset(&s->pcm, pull, s, s->hz, s->rate);
+        for (from = 0; from < target;) {
+            int16_t junk[SEL_STREAM_CHUNK * 2];
+            uint64_t left = target - from;
+            uint32_t got = pull(s, junk, left < SEL_STREAM_CHUNK ? (uint32_t)left : SEL_STREAM_CHUNK);
+            if (got == 0u) {
+                break;
+            }
+            from += got;
+        }
+        return 1;
     }
     if (!stb_vorbis_seek(s->v, (unsigned)((uint64_t)ms * s->hz / 1000u))) {
         return 0;
@@ -376,11 +465,11 @@ static const sel_tag* rp_metadata(void* state) {
     s->meta[n++].value = (uintptr_t) "Ogg Vorbis";
     s->meta[n].tag = SEL_META_CHANNELS;
     s->meta[n++].value = (uintptr_t)s->channels;
-    if (s->in == NULL) { /* a live stream has neither a length nor a size */
+    if (s->in == NULL || file_mode(s)) { /* a live stream has neither a length nor a size */
         s->meta[n].tag = SEL_META_DURATION_MS;
         s->meta[n++].value = (uintptr_t)((uint64_t)s->total_frames * 1000u / s->hz);
         s->meta[n].tag = SEL_META_SIZE;
-        s->meta[n++].value = (uintptr_t)s->size;
+        s->meta[n++].value = (uintptr_t)(s->in != NULL ? s->in->total : s->size);
     }
     s->meta[n].tag = SEL_TAG_END;
     s->meta[n].value = 0;

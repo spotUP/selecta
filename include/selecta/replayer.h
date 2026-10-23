@@ -28,6 +28,11 @@ typedef struct sel_byte_stream {
     size_t (*read_wait)(void* ctx, uint8_t* dst, size_t max);
     /* 1 once every byte has been read and no more will come (end of stream, error or cancel). */
     int (*ended)(void* ctx);
+    /* A stream backed by a local file (I184d) also reports its length and can reposition; a live stream leaves
+     * both at 0 / NULL (length unknown, no seek). seek(ctx, 0) restarts at the file's first byte. Returns 1 on
+     * success. Only for the command thread (RP_OPEN, RP_SEEK), the same rule as read_wait. */
+    uint64_t total;
+    int (*seek)(void* ctx, uint64_t pos);
 } sel_byte_stream;
 
 /* The whole song in memory. `data` stays valid until RP_CLOSE returns. With `stream` set (SEL_RP_STREAMING

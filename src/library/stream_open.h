@@ -78,4 +78,18 @@ uint32_t sel_stream_recorded_total(void); /* bytes in the record file of the las
 uint32_t sel_stream_record_files(void); /* record files created (directory mode) */
 uint32_t sel_stream_record_taps(void);  /* sink calls that wrote to a record file (sentinel, T94) */     /* bytes received by the last closed stream */
 
+/* File-backed stream (I184d): a local song of a SEL_RP_STREAMING replayer is read from disk in pieces instead of
+ * being loaded whole (MP3 and Ogg can be several MB; the 68k tier cannot hold them plus the decoder). Same
+ * sel_byte_stream as a live download, plus the file length (view.total) and seek. *head receives (host memory, the caller
+ * frees it) the first *headn bytes for the probe: SEL_STREAM_HEAD, or the whole ID3v2 tag plus that when the file starts
+ * with one; the stream then starts again at byte 0. NULL when the file is unreadable or empty.
+ * The counters are process wide sentinels: opens, and every byte read from such files (head reads included). */
+typedef struct sel_file_stream sel_file_stream;
+sel_file_stream* sel_file_stream_open(const sel_host* host, const char* path, uint8_t** head, size_t* headn);
+const sel_byte_stream* sel_file_stream_source(sel_file_stream* s);
+uint64_t sel_file_stream_size(const sel_file_stream* s);
+void sel_file_stream_close(sel_file_stream* s);
+uint32_t sel_file_stream_opens(void);
+uint32_t sel_file_stream_bytes_read(void);
+
 #endif

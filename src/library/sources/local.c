@@ -7,6 +7,7 @@
 #include "archive.h"
 #include "dir.h"
 #include "local.h"
+#include "../stream_open.h"
 
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
@@ -137,8 +138,8 @@ static const sel_tag* find_replayer(scan_state* s, const uint8_t* data, size_t s
  * is what the replayers see (the extension matters), `row_path` is the path stored in the catalogue
  * (for an archive member: "<archive>/<member>"). Does not free `data`. Returns 1 when a row was
  * queued. */
-static int scan_blob(scan_state* s, const uint8_t* data, size_t size, const char* probe_path,
-                     const char* row_path) {
+static int scan_blob_ex(scan_state* s, const uint8_t* data, size_t size, const sel_byte_stream* stream,
+                        uint64_t total, const char* probe_path, const char* row_path) {
     const sel_tag* hooks;
     scan_row_text* t;
     sel_scan_row* r;
@@ -171,7 +172,7 @@ static int scan_blob(scan_state* s, const uint8_t* data, size_t size, const char
     src.data = data;
     src.size = size;
     src.path = probe_path;
-    src.stream = NULL;
+    src.stream = stream;
     memset(&info, 0, sizeof info);
     state = open_fn != NULL ? open_fn(&src, s->cfg->host, &info) : NULL;
     if (state != NULL) {
@@ -198,9 +199,14 @@ static int scan_blob(scan_state* s, const uint8_t* data, size_t size, const char
     r->album = t->album;
     r->format = t->format;
     r->md5 = "";
-    r->size = (int64_t)size;
+    r->size = stream != NULL ? (int64_t)total : (int64_t)size;
     s->row_n++;
     return 1;
+}
+
+static int scan_blob(scan_state* s, const uint8_t* data, size_t size, const char* probe_path,
+                     const char* row_path) {
+    return scan_blob_ex(s, data, size, NULL, 0u, probe_path, row_path);
 }
 
 typedef struct member_ctx {
@@ -222,11 +228,46 @@ static int on_member(void* vctx, const char* name, const uint8_t* data, size_t s
     return !c->s->failed;
 }
 
+/* I184d: a file of a SEL_RP_STREAMING replayer (MP3, Ogg) is probed from a header read and opened through a
+ * file-backed stream, so the scan never holds (or reads) the whole file. Returns 1 when it handled the file. */
+static int scan_streamed(scan_state* s, const char* path) {
+    const sel_host* host = s->cfg->host;
+    sel_file_stream* fs;
+    uint8_t* head = NULL;
+    size_t headn = 0;
+    const sel_tag* hooks;
+    int done = 0;
+    uint32_t before = sel_file_stream_bytes_read();
+
+    fs = sel_file_stream_open(host, path, &head, &headn);
+    if (fs == NULL) {
+        return 0;
+    }
+    if (sel_archive_kind(head, headn) == SEL_ARCHIVE_NONE) {
+        hooks = find_replayer(s, head, headn, path);
+        if (hooks != NULL && sel_tag_find(hooks, SEL_RP_STREAMING, 0) != 0) {
+            scan_blob_ex(s, head, headn, sel_file_stream_source(fs), sel_file_stream_size(fs), path, path);
+            done = 1;
+        }
+    }
+    s->stats->bytes_read += sel_file_stream_bytes_read() - before;
+    sel_file_stream_close(fs);
+    host->mem_free(host, head);
+    return done;
+}
+
 static void scan_file(scan_state* s, const char* path) {
     size_t size = 0;
-    uint8_t* data = read_file(s->cfg->host, path, &size);
+    uint8_t* data;
     int kind;
 
+    if (scan_streamed(s, path)) {
+        return;
+    }
+    data = read_file(s->cfg->host, path, &size);
+    if (data != NULL) {
+        s->stats->bytes_read += (uint32_t)size;
+    }
     if (data == NULL) {
         s->stats->skipped_files++;
         return;

@@ -490,6 +490,9 @@ static void script_directive(sel_engine* e, const char* line) {
                (unsigned)es.links_made, (unsigned)es.songs_opened);
     } else if (strcmp(line, "@stream_stats") == 0) {
         printf("STREAM stream_reads=%u stream_bytes=%u\n", (unsigned)sel_stream_reads(), (unsigned)sel_stream_bytes());
+    } else if (strcmp(line, "@file_stream_stats") == 0) {
+        printf("FILESTREAM opens=%u bytes_read=%u\n", (unsigned)sel_file_stream_opens(),
+               (unsigned)sel_file_stream_bytes_read());
     } else if (strcmp(line, "@stream_live") == 0) {
         printf("STREAMLIVE opens=%u audio_bytes=%u audio_done=%u received=%u record_taps=%u record_files=%u\n",
                (unsigned)sel_stream_live_opens(), (unsigned)sel_stream_audio_bytes(), (unsigned)sel_stream_audio_done(),
