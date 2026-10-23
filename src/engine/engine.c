@@ -247,6 +247,15 @@ struct sel_engine {
     uint32_t viz_spectrum; /* capability: the spectrum is computed (CPU 68030 and up) */
     sel_dsp_chain dsp;
     uint32_t mixed_path; /* 1: the engine mixes (a DSP chain can run); 0: the output plays voices itself */
+    /* Pattern window request (I101). The pump writes pat_order/pat_row_lo/pat_rows and then
+     * raises pat_req; the audio thread fills pat_res between render calls and sets pat_ack
+     * equal to pat_req; the pump copies pat_res to pat_pub and points the snapshot at it.
+     * No new request is written while pat_ack differs from pat_req, so the audio thread
+     * never reads torn parameters. */
+    volatile uint32_t pat_req, pat_ack;
+    uint32_t pat_order, pat_row_lo, pat_rows;
+    sel_pattern_view pat_res; /* audio writes while pat_ack != pat_req, pump copies after */
+    sel_pattern_view pat_pub; /* what the snapshot points at */
     sel_prefs prefs;
     char config_dir[256]; /* "": prefs.conf is not read or written */
     sel_tag view_tags[4][5]; /* VIEW_CHANGED / VIEW_ROWS tags, a ring */
@@ -2392,6 +2401,10 @@ static void refresh_snapshot(sel_engine* e) {
         sel_viz_analyse(&e->viz, (int)e->viz_spectrum);
     }
     e->state.viz = sel_viz_current(&e->viz);
+    if (e->pat_ack == e->pat_req && e->pat_res.seq != e->pat_pub.seq) {
+        e->pat_pub = e->pat_res;
+    }
+    e->state.pattern = &e->pat_pub;
     memset(song, 0, sizeof *song);
     if (sl != NULL && sl->rp_state != NULL) {
         song->queue_id = e->q_playing;
@@ -2845,6 +2858,8 @@ static uint32_t render_mix(sel_engine* e, int16_t* stereo, uint32_t frames) {
     return done;
 }
 
+static void answer_pattern(sel_engine* e, const sel_slot* sl);
+
 uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
     uint32_t done = 0;
     sel_message sw;
@@ -2890,11 +2905,52 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
     }
     sel_dsp_chain_process(&e->dsp, stereo, frames);
     viz_feed(e, sl, stereo, frames);
+    if (e->pat_ack != e->pat_req) {
+        answer_pattern(e, sl);
+    }
     return frames;
 }
 
 uint32_t sel_engine_render_calls(const sel_engine* e) {
     return e->render_calls;
+}
+
+/* Audio thread, after a render call: answers an outstanding pattern window request from the
+ * slot being mixed. The replayer is read here because the audio thread owns it. */
+static void answer_pattern(sel_engine* e, const sel_slot* sl) {
+    sel_pattern_view* v = &e->pat_res;
+    uint32_t req = e->pat_req, rows = e->pat_rows, ch;
+    sel_rp_cell col[SEL_PATTERN_ROWS];
+    memset(v, 0, sizeof *v);
+    v->order = e->pat_order;
+    v->row_lo = e->pat_row_lo;
+    if (sl != NULL && sl->rp_state != NULL && sl->rp_tracker_info != NULL && sl->rp_tracker_cells != NULL &&
+        sl->rp_tracker_info(sl->rp_state, v->order, &v->info) && v->info.channels > 0u) {
+        v->valid = 1;
+        v->row_n = rows > SEL_PATTERN_ROWS ? SEL_PATTERN_ROWS : rows;
+        v->channels = v->info.channels > SEL_PATTERN_CHANNELS ? SEL_PATTERN_CHANNELS : v->info.channels;
+        for (ch = 0; ch < v->channels; ch++) {
+            uint32_t n = sl->rp_tracker_cells(sl->rp_state, v->order, ch, v->row_lo, v->row_lo + v->row_n, col,
+                                              v->row_n);
+            uint32_t r;
+            for (r = 0; r < n && r < v->row_n; r++) {
+                v->cell[r][ch] = col[r];
+            }
+        }
+    }
+    v->seq = req;
+    e->pat_ack = req;
+}
+
+uint32_t sel_engine_pattern_request(sel_engine* e, uint32_t order, uint32_t row_lo, uint32_t rows) {
+    if (e->pat_ack != e->pat_req) {
+        return 0;
+    }
+    e->pat_order = order;
+    e->pat_row_lo = row_lo;
+    e->pat_rows = rows;
+    e->pat_req++;
+    return e->pat_req;
 }
 
 /* Tracker pattern data of the open song. Calls the replayer on the caller's
