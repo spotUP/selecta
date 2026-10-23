@@ -1341,6 +1341,30 @@ if(NOT SEL_AMIGA)
   set_tests_properties(stream-live-ogg-chained PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "stream_chained_ok")
 
+  # I195h: the stb_vorbis adapter makes no malloc or alloca after (or even during) the render path: every decoder
+  # allocation comes from the host-allocated arena. The test compiles the adapter and stb_vorbis.c with counting
+  # malloc/alloca (stb_vorbis_count.h) and drives the plugin hooks over chained.ogg; the tiny variant has a 4 KB
+  # arena and must fail rp_open cleanly (VORBIS_outofmem).
+  foreach(_variant IN ITEMS "" "_tiny")
+    add_executable(stb_vorbis_arena${_variant}_test m3/stb_vorbis_arena_test.c
+      "${PROJECT_SOURCE_DIR}/plugins/replayers/stb_vorbis/adapter.c" "${PROJECT_SOURCE_DIR}/third_party/stb_vorbis/stb_vorbis.c")
+    target_include_directories(stb_vorbis_arena${_variant}_test PRIVATE "${PROJECT_SOURCE_DIR}/include"
+      "${PROJECT_SOURCE_DIR}/third_party/stb_vorbis")
+    target_compile_definitions(stb_vorbis_arena${_variant}_test PRIVATE SEL_PLUGIN_KIND_BUILD=1)
+    target_compile_options(stb_vorbis_arena${_variant}_test PRIVATE -include "${CMAKE_CURRENT_SOURCE_DIR}/m3/stb_vorbis_count.h")
+    if(_variant STREQUAL "_tiny")
+      target_compile_definitions(stb_vorbis_arena${_variant}_test PRIVATE VORBIS_ARENA_BYTES=4096u)
+    endif()
+    set_source_files_properties("${PROJECT_SOURCE_DIR}/third_party/stb_vorbis/stb_vorbis.c" PROPERTIES COMPILE_OPTIONS "-w" COMPILE_DEFINITIONS STB_VORBIS_NO_STDIO)
+    target_link_libraries(stb_vorbis_arena${_variant}_test PRIVATE m)
+    set(_sv_args "${PROJECT_SOURCE_DIR}/tests/m3/stream/chained.ogg")
+    if(_variant STREQUAL "_tiny")
+      list(APPEND _sv_args tiny)
+    endif()
+    add_test(NAME stb-vorbis-arena${_variant} COMMAND stb_vorbis_arena${_variant}_test ${_sv_args})
+    set_tests_properties(stb-vorbis-arena${_variant} PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "stb_vorbis_arena_ok${_variant}")
+  endforeach()
+
   # I196b: OPEN + OPTION record_to plays and records from one request.
   add_test(NAME stream-record-play
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
