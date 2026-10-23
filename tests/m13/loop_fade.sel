@@ -3,6 +3,6 @@
 # FADE gain_q16=G pos=P total=T (frames).
 OPTION loops 1
 OPTION fade_ms 3000
-QUEUE_ADD selecta-test.mod
+QUEUE_ADD selecta-loop.mod
 PLAY
 @fade_mid

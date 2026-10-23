@@ -1,0 +1,20 @@
+# I94a: SONG_ENDED reason for the first loop. Variables: CLI SCRIPTS SONGS
+function(sel_run tag)
+  execute_process(COMMAND "${CLI}" script "${SCRIPTS}/${tag}.sel"
+    WORKING_DIRECTORY "${SONGS}" OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
+  if(NOT rc EQUAL 0)
+    message(FATAL_ERROR "${tag}: script exited ${rc}\nstdout:\n${out}\nstderr:\n${err}")
+  endif()
+  set(${tag}_out "${out}" PARENT_SCOPE)
+endfunction()
+
+sel_run(first_end)
+string(REGEX MATCHALL "SONG_ENDED [a-z_]+" ends "${first_end_out}")
+if(NOT ends STREQUAL "SONG_ENDED end;SONG_ENDED end")
+  message(FATAL_ERROR "first_end: expected two 'SONG_ENDED end', got '${ends}' in:\n${first_end_out}")
+endif()
+sel_run(first_loop)
+string(REGEX MATCHALL "SONG_ENDED [a-z_]+" ends "${first_loop_out}")
+if(NOT ends STREQUAL "SONG_ENDED loop")
+  message(FATAL_ERROR "first_loop: expected one 'SONG_ENDED loop', got '${ends}' in:\n${first_loop_out}")
+endif()

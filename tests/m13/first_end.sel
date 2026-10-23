@@ -1,0 +1,6 @@
+# I94a: the first loop of a non-looping song (the player wraps to order 0) is the song's end: reason end.
+QUEUE_ADD selecta-short.mod
+QUEUE_ADD selecta-test.mod
+PLAY
+@render_until_end
+@render_until_end

@@ -77,6 +77,12 @@ add_custom_command(OUTPUT "${SEL_SHORTMOD}"
   COMMAND gen_testmod --short "${SEL_SHORTMOD}"
   DEPENDS gen_testmod
   COMMENT "Generating selecta-short.mod")
+set(SEL_LOOPMOD "${CMAKE_CURRENT_BINARY_DIR}/songs/selecta-loop.mod")
+add_custom_command(OUTPUT "${SEL_LOOPMOD}"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/songs"
+  COMMAND gen_testmod --loop "${SEL_LOOPMOD}"
+  DEPENDS gen_testmod
+  COMMENT "Generating selecta-loop.mod")
 set(SEL_MKMOD "${CMAKE_CURRENT_BINARY_DIR}/songs/selecta-test-mk.mod")
 add_custom_command(OUTPUT "${SEL_MKMOD}"
   COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/songs"
@@ -118,7 +124,7 @@ add_custom_command(OUTPUT "${SEL_ALBUM_STAMP}"
   COMMAND "${CMAKE_COMMAND}" -E touch "${SEL_ALBUM_STAMP}"
   DEPENDS "${SEL_TESTMOD}" "${CMAKE_CURRENT_SOURCE_DIR}/m12/list.prg" "${CMAKE_CURRENT_SOURCE_DIR}/m12/rel.m3u"
   COMMENT "Copying album test songs")
-add_custom_target(testmod ALL DEPENDS "${SEL_TESTMOD}" "${SEL_SHORTMOD}" "${SEL_MKMOD}" "${SEL_BREAKMOD}" "${SEL_ZERO1MOD}" "${SEL_SILENTMOD}" "${SEL_ALBUM_STAMP}")
+add_custom_target(testmod ALL DEPENDS "${SEL_TESTMOD}" "${SEL_SHORTMOD}" "${SEL_LOOPMOD}" "${SEL_MKMOD}" "${SEL_BREAKMOD}" "${SEL_ZERO1MOD}" "${SEL_SILENTMOD}" "${SEL_ALBUM_STAMP}")
 add_test(NAME testmod-sha
   COMMAND "${CMAKE_COMMAND}" "-DMOD=${SEL_TESTMOD}"
     "-DPINNED=${CMAKE_CURRENT_SOURCE_DIR}/songs/selecta-test.mod.sha256"
@@ -958,4 +964,14 @@ if(NOT SEL_AMIGA)
       "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv" -P "${SEL_NET_DIR}/cache_fetch_shell.cmake")
   set_tests_properties(cache-fetch-shell PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     DEPENDS cache-fetch TIMEOUT 60)
+endif()
+
+# I94a (row I94 refinement, user decision Q24): the first loop of a non-looping song counts as the song's end,
+# so SONG_ENDED reports `end`; a song that loops by design (selecta-loop.mod, B01 jump) keeps `loop`.
+# Reachability: the script drives the engine dispatch; the nuade adapter turns the wrap to order 0 into ENDED.
+if(NOT SEL_AMIGA)
+  add_test(NAME loop-first-end
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DSCRIPTS=${CMAKE_CURRENT_SOURCE_DIR}/m13"
+      "-DSONGS=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m13/first_check.cmake")
 endif()

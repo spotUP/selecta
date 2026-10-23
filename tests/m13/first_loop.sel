@@ -1,0 +1,6 @@
+# I94a: a song that loops by design (B01 jump back to order 1) keeps reason loop; `loops` still decides when.
+OPTION loops 2
+QUEUE_ADD selecta-loop.mod
+PLAY
+@render_until_end
+@stats
