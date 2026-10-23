@@ -1,5 +1,5 @@
-RESULTS 1 selecta-test-mk.mod
-RESULTS 1 selecta-test-mk.mod
+RESULTS 1 local:selecta-test-mk.mod
+RESULTS 1 local:selecta-test-mk.mod
 QUEUE version=4 playing=1 ids=1,2,3,4
 QUEUE version=4 playing=4 ids=1,2,3,4
 QUEUE version=4 playing=3 ids=1,2,3,4

@@ -3,6 +3,7 @@
  * One request, SEL_LIB_REQ_USER, runs on the worker like every other library request. */
 #include "db_internal.h"
 #include "folders.h"
+#include "../source.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -341,7 +342,10 @@ static int home_text(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     return SQLITE_OK;
 }
 
-void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* reply) {
+void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* reply) {
+    sel_user_op canon;
+    char kbuf[SEL_SONG_KEY_MAX];
+    const sel_user_op* op = in;
     int rc = SQLITE_MISUSE;
     int found = 0;
     int64_t rows = -1;
@@ -349,6 +353,14 @@ void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* repl
     int have_counts = 0;
     int i;
 
+    /* I211: every row of history, liked, kept, ratings, cues, notes, flags, stickers and loudness is stored under
+     * the canonical song key, whatever form the caller passes (a plain local path or the key). */
+    if (in->key != NULL && in->key[0] != '\0' && !(in->op >= SEL_USER_FOLDER_ADD && in->op <= SEL_USER_FOLDER_TREE) &&
+        sel_song_key_of(in->key, kbuf, sizeof kbuf)) {
+        canon = *in;
+        canon.key = kbuf;
+        op = &canon;
+    }
     if (op->op >= SEL_USER_FOLDER_ADD && op->op <= SEL_USER_FOLDER_TREE) {
         rc = sel_folder_exec(lib->db, op, &rows, counts);
         have_counts = op->op == SEL_USER_FOLDER_COUNTS;

@@ -1,4 +1,4 @@
 LIBRARY searches=0 fts_queries=0 songs_opened=3 history_writes=2 skip_excluded=0
-RESULTS 1 selecta-test.mod
-RESULTS 1 selecta-test-mk.mod
-RESULTS 1 selecta-test-mk.mod
+RESULTS 1 local:selecta-test.mod
+RESULTS 1 local:selecta-test-mk.mod
+RESULTS 1 local:selecta-test-mk.mod

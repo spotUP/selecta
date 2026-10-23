@@ -14,12 +14,12 @@ if(NOT rc EQUAL 0)
   message(FATAL_ERROR "selecta-cli exited ${rc}\nstdout:\n${out}\nstderr:\n${err}")
 endif()
 string(CONCAT seed_sql "PRAGMA trusted_schema = 1; "
-  "UPDATE songs SET album = 'Hardcore Heroes', year = 1994, genre = 'Electronic - Techno' WHERE key = 'selecta-test.mod'; "
-  "INSERT INTO stickers(key, name, value) VALUES('selecta-test.mod', 'stil.comment', 'Rob''s title tune for the Elite conversion'); "
-  "INSERT INTO song_composers(song_key, canon, display) VALUES('selecta-test.mod', 'lizardking', 'Lizardking'); "
-  "INSERT INTO ratings(key, rating) VALUES('selecta-test.mod', 4); "
-  "INSERT INTO history(key, played_at, skipped) VALUES('selecta-test.mod', 1, 0), ('selecta-test.mod', 2, 0), ('selecta-test.mod', 3, 1); "
-  "UPDATE songs SET year = NULL WHERE key = 'selecta-test-mk.mod';")
+  "UPDATE songs SET album = 'Hardcore Heroes', year = 1994, genre = 'Electronic - Techno' WHERE key = 'local:selecta-test.mod'; "
+  "INSERT INTO stickers(key, name, value) VALUES('local:selecta-test.mod', 'stil.comment', 'Rob''s title tune for the Elite conversion'); "
+  "INSERT INTO song_composers(song_key, canon, display) VALUES('local:selecta-test.mod', 'lizardking', 'Lizardking'); "
+  "INSERT INTO ratings(key, rating) VALUES('local:selecta-test.mod', 4); "
+  "INSERT INTO history(key, played_at, skipped) VALUES('local:selecta-test.mod', 1, 0), ('local:selecta-test.mod', 2, 0), ('local:selecta-test.mod', 3, 1); "
+  "UPDATE songs SET year = NULL WHERE key = 'local:selecta-test-mk.mod';")
 execute_process(COMMAND "${SQLITE3}" "${db}" "${seed_sql}" RESULT_VARIABLE rc ERROR_VARIABLE err)
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "sqlite3 seed failed: ${err}")

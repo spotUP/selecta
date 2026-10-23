@@ -68,6 +68,40 @@ int sel_song_key(const char* source, const char* path, char* out, size_t n) {
     return 1;
 }
 
+int sel_song_key_of(const char* ref, char* out, size_t n) {
+    char id[SEL_SOURCE_ID_MAX + 1];
+    const char* colon;
+    size_t a;
+
+    if (ref == NULL || out == NULL) {
+        return 0;
+    }
+    if (strstr(ref, "://") != NULL) { /* a URL stream is its own identity */
+        size_t len = strlen(ref);
+        if (len + 1u > n) {
+            return 0;
+        }
+        memcpy(out, ref, len + 1u);
+        return 1;
+    }
+    sel_source_register_builtin();
+    colon = strchr(ref, ':');
+    a = colon != NULL ? (size_t)(colon - ref) : 0;
+    if (a > 0 && a < sizeof id) {
+        memcpy(id, ref, a);
+        id[a] = '\0';
+        if (sel_source_find(id) != NULL) { /* already a key */
+            size_t len = strlen(ref);
+            if (len + 1u > n) {
+                return 0;
+            }
+            memcpy(out, ref, len + 1u);
+            return 1;
+        }
+    }
+    return sel_song_key("local", ref, out, n);
+}
+
 int sel_song_key_split(const char* key, char* source, size_t source_n, char* path, size_t path_n) {
     const char* colon = key != NULL ? strchr(key, ':') : NULL;
     size_t a, b;

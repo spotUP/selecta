@@ -8,6 +8,7 @@
 
 #include "cli.h"
 #include "db.h"
+#include "source.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -96,7 +97,7 @@ sel_engine* sel_cli_start_song_sink(const char* who, const sel_host* host, const
         }
         if (g_loud_have_gain) {
             char key[1100];
-            snprintf(key, sizeof key, strncmp(song, "local:", 6) == 0 ? "%s" : "local:%s", song);
+            if (!sel_song_key_of(song, key, sizeof key)) key[0] = '\0';
             if (!sel_library_loudness_set(g_rp_lib, key, key + 6, g_loud_gain_cdb)) {
                 fprintf(stderr, "%s: cannot store the loudness gain\n", who);
                 return NULL;

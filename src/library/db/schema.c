@@ -87,7 +87,34 @@ static const char SCHEMA_V4[] =
     " (SELECT COUNT(*) FROM stats_artist_counts b WHERE b.period = a.period"
     "  AND (b.plays > a.plays OR (b.plays = a.plays AND b.name < a.name))) + 1 AS rank FROM stats_artist_counts a;";
 
-static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4};
+/* v5 (I211): one song key everywhere. The canonical key is the source-prefixed key of design doc 9 (`local:<path>`,
+ * the key the songs table, loudness and the stats and home views join on). History, liked, kept, ratings, cues,
+ * notes, flags, stickers, pending pushes and playlist entries written by earlier builds under the plain local path
+ * are rewritten to `local:<path>`. A URL (`scheme://`, a stream, I195) is its own identity and stays. A key that already starts with a built-in source id is left alone, so the script
+ * is idempotent; where a prefixed row already exists the plain-path duplicate is dropped. The id list is the
+ * built-in sources (source.c) frozen at this version. */
+#define V5_RAW_KEY "instr(key, '://') = 0 AND (instr(key, ':') = 0 OR substr(key, 1, instr(key, ':') - 1) NOT IN ('local', 'modland', 'hvsc', 'hippo'))"
+static const char SCHEMA_V5[] =
+    "UPDATE history SET key = 'local:' || key WHERE " V5_RAW_KEY ";"
+    "UPDATE OR IGNORE liked SET key = 'local:' || key WHERE " V5_RAW_KEY ";"
+    "DELETE FROM liked WHERE " V5_RAW_KEY ";"
+    "UPDATE OR IGNORE kept SET key = 'local:' || key WHERE " V5_RAW_KEY ";"
+    "DELETE FROM kept WHERE " V5_RAW_KEY ";"
+    "UPDATE OR IGNORE ratings SET key = 'local:' || key WHERE " V5_RAW_KEY ";"
+    "DELETE FROM ratings WHERE " V5_RAW_KEY ";"
+    "UPDATE OR IGNORE cues SET key = 'local:' || key WHERE " V5_RAW_KEY ";"
+    "DELETE FROM cues WHERE " V5_RAW_KEY ";"
+    "UPDATE OR IGNORE notes SET key = 'local:' || key WHERE " V5_RAW_KEY ";"
+    "DELETE FROM notes WHERE " V5_RAW_KEY ";"
+    "UPDATE OR IGNORE flags SET key = 'local:' || key WHERE " V5_RAW_KEY ";"
+    "DELETE FROM flags WHERE " V5_RAW_KEY ";"
+    "UPDATE OR IGNORE stickers SET key = 'local:' || key WHERE " V5_RAW_KEY ";"
+    "DELETE FROM stickers WHERE " V5_RAW_KEY ";"
+    "UPDATE pending_push SET key = 'local:' || key WHERE " V5_RAW_KEY ";"
+    "UPDATE OR IGNORE playlist_entries SET key = 'local:' || key WHERE " V5_RAW_KEY ";"
+    "DELETE FROM playlist_entries WHERE " V5_RAW_KEY ";";
+
+static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 
