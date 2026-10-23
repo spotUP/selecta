@@ -4,7 +4,13 @@
 if(SEL_AMIGA)
   set(SEL_DIR_SOURCE ${PROJECT_SOURCE_DIR}/src/core/amiga/dir.c)
   set(SEL_NET_SOURCE ${PROJECT_SOURCE_DIR}/src/core/amiga/net.c)
+  set(SEL_WATCH_SOURCE ${PROJECT_SOURCE_DIR}/src/core/amiga/watch.c)
 else()
+  if(APPLE)
+    set(SEL_WATCH_SOURCE ${PROJECT_SOURCE_DIR}/src/core/macos/watch.c)
+  else()
+    set(SEL_WATCH_SOURCE ${PROJECT_SOURCE_DIR}/src/core/linux/watch.c)
+  endif()
   set(SEL_NET_SOURCE ${PROJECT_SOURCE_DIR}/src/core/posix/net.c)
   set(SEL_DIR_SOURCE ${PROJECT_SOURCE_DIR}/src/core/macos/dir.c)
 endif()
@@ -37,7 +43,10 @@ endif()
 
 # Sources (plan Phase 4, I157, I158): the sel_source interface and registry, song keys, the Modland
 # format table and the local source (scan over sel_browse).
-target_sources(selecta_library PRIVATE source.c formats_table.c sources/local.c sources/modland.c sources/archive.c)
+target_sources(selecta_library PRIVATE source.c formats_table.c sources/local.c sources/modland.c sources/archive.c ${SEL_WATCH_SOURCE})
+if(APPLE)
+  target_link_libraries(selecta_library PUBLIC "-framework CoreServices")
+endif()
 
 # Archive adapters (I159, D-M3-7): vendored miniz (zip) and lhasa (lha/lzh), memory in, memory out.
 add_library(selecta_archive STATIC

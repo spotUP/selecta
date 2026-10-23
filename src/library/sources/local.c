@@ -5,6 +5,7 @@
 
 #include "../source.h"
 #include "archive.h"
+#include "dir.h"
 #include "local.h"
 
 #include <selecta/plugin.h>
@@ -37,6 +38,7 @@ typedef struct scan_state {
     sel_scan_row* rows;
     uint32_t row_n;
     int failed;
+    int flat; /* rescan: list the directory without entering its subdirectories */
 } scan_state;
 
 static void copy_text(char* dst, size_t n, const char* src) {
@@ -264,35 +266,33 @@ static void scan_dir(scan_state* s, const char* dir) {
             continue;
         }
         if (s->browse.entries[i].is_dir) {
-            push_dir(s, full);
+            if (!s->flat) {
+                push_dir(s, full);
+            }
         } else {
             scan_file(s, full);
         }
     }
 }
 
-int sel_local_scan(const sel_local_scan_config* cfg, const char* root, sel_local_scan_stats* stats) {
+/* Shared by sel_local_scan and sel_source_rescan: scratch memory, then `run` over the state. */
+static int scan_with(const sel_local_scan_config* cfg, sel_local_scan_stats* stats, int flat,
+                     void (*run)(scan_state*, const void*), const void* arg) {
     scan_state s;
     const sel_host* host = cfg->host;
     int ok = 0;
-    char first[SEL_BROWSE_PATH_MAX];
 
     memset(&s, 0, sizeof s);
     memset(stats, 0, sizeof *stats);
     s.cfg = cfg;
     s.stats = stats;
+    s.flat = flat;
     s.stack = host->mem_alloc(host, (size_t)SCAN_STACK * SEL_BROWSE_PATH_MAX, SEL_MEM_FAST);
     s.text = host->mem_alloc(host, (size_t)SCAN_BATCH * sizeof *s.text, SEL_MEM_FAST);
     s.rows = host->mem_alloc(host, (size_t)SCAN_BATCH * sizeof *s.rows, SEL_MEM_FAST);
     if (s.stack != NULL && s.text != NULL && s.rows != NULL &&
-        sel_browse_init(&s.browse, host, SCAN_ENTRIES, SCAN_TEXT_BYTES) &&
-        sel_browse_list(&s.browse, root)) {
-        copy_text(first, sizeof first, root);
-        push_dir(&s, first);
-        while (s.stack_n > 0 && !s.failed) {
-            copy_text(first, sizeof first, s.stack[--s.stack_n]);
-            scan_dir(&s, first);
-        }
+        sel_browse_init(&s.browse, host, SCAN_ENTRIES, SCAN_TEXT_BYTES)) {
+        run(&s, arg);
         ok = !s.failed && flush_rows(&s);
         sel_browse_free(&s.browse, host);
     }
@@ -306,6 +306,147 @@ int sel_local_scan(const sel_local_scan_config* cfg, const char* root, sel_local
         host->mem_free(host, s.rows);
     }
     return ok;
+}
+
+static void run_tree(scan_state* s, const void* root) {
+    char first[SEL_BROWSE_PATH_MAX];
+
+    if (!sel_browse_list(&s->browse, (const char*)root)) {
+        s->failed = 1;
+        return;
+    }
+    copy_text(first, sizeof first, (const char*)root);
+    push_dir(s, first);
+    while (s->stack_n > 0 && !s->failed) {
+        copy_text(first, sizeof first, s->stack[--s->stack_n]);
+        scan_dir(s, first);
+    }
+}
+
+int sel_local_scan(const sel_local_scan_config* cfg, const char* root, sel_local_scan_stats* stats) {
+    return scan_with(cfg, stats, 0, run_tree, root);
+}
+
+typedef struct rescan_list {
+    const char* const* paths;
+    uint32_t count;
+} rescan_list;
+
+static void run_flat(scan_state* s, const void* arg) {
+    const rescan_list* l = arg;
+    uint32_t i;
+
+    for (i = 0; i < l->count && !s->failed; i++) {
+        scan_dir(s, l->paths[i]);
+        s->stats->rescanned_dirs++;
+    }
+}
+
+int sel_source_rescan(const sel_local_scan_config* cfg, const char* const* paths, uint32_t count,
+                      sel_local_scan_stats* stats) {
+    rescan_list l;
+
+    l.paths = paths;
+    l.count = count;
+    return scan_with(cfg, stats, 1, run_flat, &l);
+}
+
+/* mtime tracker: the table doubles as the breadth-first queue of the directory walk. */
+struct sel_local_tracker {
+    char (*path)[SEL_BROWSE_PATH_MAX];
+    int64_t mtime[SEL_TRACK_DIRS];
+    uint32_t count;
+};
+
+static int walk_dirs(const sel_host* host, const char* root, char (*path)[SEL_BROWSE_PATH_MAX], int64_t* mtime,
+                     uint32_t* count) {
+    sel_browse b;
+    uint32_t n = 0, i, j;
+    char full[SEL_BROWSE_PATH_MAX];
+
+    if (!sel_browse_init(&b, host, SCAN_ENTRIES, SCAN_TEXT_BYTES)) {
+        return 0;
+    }
+    copy_text(path[n++], SEL_BROWSE_PATH_MAX, root);
+    for (i = 0; i < n; i++) {
+        mtime[i] = sel_dir_mtime(path[i]);
+        if (!sel_browse_list(&b, path[i])) {
+            continue;
+        }
+        for (j = 0; j < b.count && n < SEL_TRACK_DIRS; j++) {
+            const char* name = sel_browse_name(&b, j);
+
+            if (strcmp(name, "..") != 0 && b.entries[j].is_dir && sel_browse_join(full, sizeof full, path[i], name)) {
+                copy_text(path[n++], SEL_BROWSE_PATH_MAX, full);
+            }
+        }
+    }
+    sel_browse_free(&b, host);
+    *count = n;
+    return 1;
+}
+
+sel_local_tracker* sel_local_track(const sel_local_scan_config* cfg, const char* root) {
+    const sel_host* host = cfg->host;
+    sel_local_tracker* t = host->mem_alloc(host, sizeof *t, SEL_MEM_FAST);
+
+    if (t == NULL) {
+        return NULL;
+    }
+    memset(t, 0, sizeof *t);
+    t->path = host->mem_alloc(host, (size_t)SEL_TRACK_DIRS * SEL_BROWSE_PATH_MAX, SEL_MEM_FAST);
+    if (t->path == NULL || !walk_dirs(host, root, t->path, t->mtime, &t->count)) {
+        sel_local_untrack(cfg, t);
+        return NULL;
+    }
+    return t;
+}
+
+uint32_t sel_local_poll_changed(const sel_local_scan_config* cfg, sel_local_tracker* t,
+                                sel_local_scan_stats* stats) {
+    const sel_host* host = cfg->host;
+    char (*np)[SEL_BROWSE_PATH_MAX] = host->mem_alloc(host, (size_t)SEL_TRACK_DIRS * SEL_BROWSE_PATH_MAX, SEL_MEM_FAST);
+    const char* changed[SEL_TRACK_DIRS];
+    int64_t nm[SEL_TRACK_DIRS];
+    uint32_t nn = 0, i, j, nc = 0;
+
+    memset(stats, 0, sizeof *stats);
+    if (np == NULL || !walk_dirs(host, t->path[0], np, nm, &nn)) {
+        if (np != NULL) {
+            host->mem_free(host, np);
+        }
+        return 0;
+    }
+    for (i = 0; i < nn; i++) {
+        int known = 0;
+
+        for (j = 0; j < t->count; j++) {
+            if (strcmp(t->path[j], np[i]) == 0) {
+                known = 1;
+                break;
+            }
+        }
+        if (!known || t->mtime[j] != nm[i]) {
+            changed[nc++] = np[i];
+        }
+    }
+    if (nc > 0) {
+        sel_source_rescan(cfg, changed, nc, stats);
+    }
+    memcpy(t->path, np, (size_t)nn * SEL_BROWSE_PATH_MAX);
+    memcpy(t->mtime, nm, (size_t)nn * sizeof nm[0]);
+    t->count = nn;
+    host->mem_free(host, np);
+    return nc;
+}
+
+void sel_local_untrack(const sel_local_scan_config* cfg, sel_local_tracker* t) {
+    if (t != NULL) {
+        if (t->path != NULL) {
+            cfg->host->mem_free(cfg->host, t->path);
+        }
+        cfg->host->mem_free(cfg->host, t);
+    }
 }
 
 /* Descriptor: a local path is its own URL; the key is local:<absolute path>. */

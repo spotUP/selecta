@@ -997,3 +997,12 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/library_screen.cmake")
   set_tests_properties(text-ui-library-screen PROPERTIES LABELS m3)
 endif()
+
+# M3 Phase 4 (I160): T71 rescan and watcher part. A file added to one subdirectory of a fixture copy after
+# the first scan rescans that directory alone (folder watcher, mtime poll, manual rescan).
+if(NOT SEL_AMIGA)
+  add_test(NAME source-watch
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/source_watch.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/local.manifest ${SEL_TESTMOD} ${SEL_TESTMOD})
+  set_tests_properties(source-watch PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "source_watch_ok")
+endif()
