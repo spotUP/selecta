@@ -1,6 +1,6 @@
 # M1.3 Phase 2 report (I88, I89)
 
-Red evidence: `52/60 Test #52: pattern-cells ....***Failed 0.26 sec`, `0% tests passed, 1 tests failed out of 1` (script printed "unknown directive @cells 0 0 1 4"). Red commit: a3f2630.
+Red evidence: `52/60 Test #52: pattern-cells ....***Failed 0.26 sec`, `0% tests passed, 1 tests failed out of 1` (script printed "unknown directive @cells 0 0 1 4"). Red commit: 2bd9668.
 
 Green: `ctest -R pattern-cells` 100% passed. Related tests (position, nuade, openmpt) pass. Ratchet `commands --unimplemented | wc -l` = 27. `cmake --build build/amiga -j4` green. No new engine objects, so `cmake/no_float.cmake` count unchanged.
 
