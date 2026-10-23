@@ -39,7 +39,11 @@ enum {
     SEL_GENRE_NEXT = 1, /* next local song with id > `after`: `out` = song key NUL path NUL, reply [2] = its id (0: none left) */
     SEL_GENRE_GET,      /* cached entry of `key`: reply [0] = 1 when cached; `out` = genre, "" when cached as "no genre" */
     SEL_GENRE_PUT,      /* cache `key` -> `value` (NULL = no genre) with fetch time `at` */
-    SEL_GENRE_APPLY     /* songs.genre of song key `key` = `value`, unless the user edited the tag (sticker tag.genre) */
+    SEL_GENRE_APPLY,    /* songs.genre of song key `key` = `value`, unless the user edited the tag (sticker tag.genre) */
+    SEL_SONGDB_GET,     /* I182: cached songdb answer of UADE key `key`: reply [0] = 1 when cached; `out` = authors, one per line, "" = not in songdb */
+    SEL_SONGDB_PUT,     /* I182: cache UADE key `key` -> authors `value` (lines; NULL = not in songdb) with fetch time `at` */
+    SEL_SONGDB_APPLY,   /* I182: rebuild song_composers of song key `key` from authors `value` (lines) */
+    SEL_COMPOSER_NEXT   /* I182: next song with id > `after` that has composer canon `key`: `out` = song key NUL name NUL display NUL, reply [2] = its id (0: none) */
 };
 typedef struct sel_genre_op {
     uint32_t op;       /* SEL_GENRE_* */
@@ -60,6 +64,9 @@ typedef struct sel_genre_stats {
     uint32_t genre_set;    /* songs whose songs.genre was set */
     uint32_t unknown;      /* lookups that left the genre unknown (503, 404, transport error, untagged) */
     uint32_t http_requests;
+    uint32_t songdb_lookups;    /* I182: requests sent to the DEViLBOX songdb endpoint */
+    uint32_t songdb_cache_hits; /* I182: songs whose songdb answer came from songdb_cache */
+    uint32_t composers_set;     /* I182: songs that got song_composers rows */
 } sel_genre_stats;
 
 /* One user-data operation (SEL_LIB_REQ_USER). The reply is INT [0] 0 = failed, 1 = done, 2 = done and a
@@ -191,7 +198,7 @@ enum {
 };
 
 /* Schema version this build writes (PRAGMA user_version after migration). */
-#define SEL_LIB_SCHEMA_VERSION 1
+#define SEL_LIB_SCHEMA_VERSION 2
 
 /* Heap bytes for SQLite on a machine: the scaling table of D-M3-2 over fast + chip RAM
  * (<= 4 MiB: 512 KiB, <= 16 MiB: 2 MiB, <= 128 MiB: 8 MiB, above: 32 MiB). */
@@ -289,6 +296,13 @@ void sel_library_cache_report(const sel_library* lib);
  * miss and ambiguous answers are cached as "no genre". A 503, other status or transport failure caches nothing
  * and is not an error. 1 on success. */
 int sel_library_genre_sync(sel_library* lib, sel_genre_stats* stats);
+
+/* Composer page (I182, T85): the songs of `name` under every spelling and alias songdb gave them (composer.h
+ * folds both the stored authors and `name`). Calls `fn(ctx, song_key, song_name, composer_display)` per song in
+ * library order; returns the row count, or -1 on a library error. Data comes from sel_library_genre_sync's songdb
+ * step (GET /api/songdb/lookup?hash=<uade key>, cached in songdb_cache). */
+typedef void (*sel_composer_row_fn)(void* ctx, const char* song_key, const char* song_name, const char* composer);
+int sel_library_composer_page(sel_library* lib, const char* name, sel_composer_row_fn fn, void* ctx);
 
 uint32_t sel_library_account(const sel_library* lib);
 uint32_t sel_library_heap_size(const sel_library* lib);

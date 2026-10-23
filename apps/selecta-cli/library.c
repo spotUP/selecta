@@ -8,6 +8,7 @@
 #include <selecta/registry.h>
 #include <selecta/tags.h>
 
+#include "composer.h"
 #include "cache.h"
 #include "catalogue.h"
 #ifdef __amigaos__
@@ -975,14 +976,58 @@ static int library_genre(int argc, char** argv) {
         return 1;
     }
     ok = sel_library_genre_sync(lib, &gs);
-    printf("songs=%u genre_lookups=%u genre_cache_hits=%u genre_set=%u unknown=%u unreadable=%u http_requests=%u\n",
+    printf("songs=%u genre_lookups=%u genre_cache_hits=%u genre_set=%u unknown=%u unreadable=%u http_requests=%u "
+           "songdb_lookups=%u songdb_cache_hits=%u composers_set=%u\n",
            (unsigned)gs.songs, (unsigned)gs.genre_lookups, (unsigned)gs.genre_cache_hits, (unsigned)gs.genre_set,
-           (unsigned)gs.unknown, (unsigned)gs.unreadable, (unsigned)gs.http_requests);
+           (unsigned)gs.unknown, (unsigned)gs.unreadable, (unsigned)gs.http_requests, (unsigned)gs.songdb_lookups,
+           (unsigned)gs.songdb_cache_hits, (unsigned)gs.composers_set);
     sel_library_close(lib);
     return ok ? 0 : 1;
 }
 
+static void composer_row(void* ctx, const char* key, const char* name, const char* composer) {
+    (void)ctx;
+    (void)composer;
+    printf("row=%s|%s\n", key, name);
+}
+
+/* `library composer --db <path> <name>` (I182, T85): the composer page. Any spelling or alias of the composer
+ * lists the same songs. Prints `composer=<display>`, one `row=<key>|<name>` per song and `composer_rows=N`. */
+static int library_composer(int argc, char** argv) {
+    const char* db_path = NULL;
+    const char* name = NULL;
+    const sel_host* host = sel_host_default();
+    char display[SEL_COMPOSER_MAX];
+    sel_library* lib;
+    int rows;
+    int i;
+
+    for (i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "--db") == 0 && i + 1 < argc) {
+            db_path = argv[++i];
+        } else {
+            name = argv[i];
+        }
+    }
+    if (db_path == NULL || name == NULL || !sel_composer_display(name, display, sizeof display)) {
+        fputs("usage: selecta-cli library composer --db <path> <name>\n", stderr);
+        return 2;
+    }
+    lib = sel_library_open(host, sel_machine_probe(host), 0, db_path);
+    if (lib == NULL) {
+        return 1;
+    }
+    printf("composer=%s\n", display);
+    rows = sel_library_composer_page(lib, name, composer_row, NULL);
+    printf("composer_rows=%d\n", rows);
+    sel_library_close(lib);
+    return rows >= 0 ? 0 : 1;
+}
+
 int sel_cli_library(int argc, char** argv) {
+    if (argc >= 1 && strcmp(argv[0], "composer") == 0) {
+        return library_composer(argc - 1, argv + 1);
+    }
     if (argc >= 1 && strcmp(argv[0], "genre") == 0) {
         return library_genre(argc - 1, argv + 1);
     }
@@ -1019,6 +1064,6 @@ int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "query") == 0) {
         return library_query(argc - 1, argv + 1);
     }
-    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | sync [--db <path>] [--now <epoch>] [--dump] modland <dir or http(s) url> | meta [--db <path>] <key> | key <source> <path> | genre --db <path> | trim [--budget <n>] [--machine <name>] | query --explain <q> | stats [--machine <name>] [--db <path>]\n", stderr);
+    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | sync [--db <path>] [--now <epoch>] [--dump] modland <dir or http(s) url> | meta [--db <path>] <key> | key <source> <path> | genre --db <path> | composer --db <path> <name> | trim [--budget <n>] [--machine <name>] | query --explain <q> | stats [--machine <name>] [--db <path>]\n", stderr);
     return 2;
 }

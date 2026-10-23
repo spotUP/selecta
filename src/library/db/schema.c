@@ -52,7 +52,15 @@ static const char SCHEMA_V1[] =
     " INSERT INTO song_fts(rowid, name, artist, format, path) VALUES(new.id, new.name, new.artist, new.format, new.path);"
     "END;";
 
-static const char* const g_migrations[] = {SCHEMA_V1};
+/* v2 (I182): DEViLBOX songdb answers by UADE key (authors one per line, NULL = not in songdb) and the composer
+ * rows derived from them per song key (canon from library/composer.h, display for the composer page). */
+static const char SCHEMA_V2[] =
+    "CREATE TABLE songdb_cache(key TEXT PRIMARY KEY, authors TEXT, fetched INTEGER NOT NULL DEFAULT 0) WITHOUT ROWID;"
+    "CREATE TABLE song_composers(song_key TEXT NOT NULL, canon TEXT NOT NULL, display TEXT NOT NULL,"
+    " PRIMARY KEY(song_key, canon)) WITHOUT ROWID;"
+    "CREATE INDEX song_composers_canon ON song_composers(canon);";
+
+static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 

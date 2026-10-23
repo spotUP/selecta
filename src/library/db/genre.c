@@ -100,6 +100,8 @@ void sel_library_genre_op(sel_library* lib, const sel_genre_op* op, sel_message*
                      " (SELECT 1 FROM stickers WHERE key = ?1 AND name = 'tag.genre')",
                      op, 0);
         found = rc == SQLITE_OK && sqlite3_changes(lib->db) > 0;
+    } else if (op->op >= SEL_SONGDB_GET && op->op <= SEL_COMPOSER_NEXT) {
+        rc = sel_library_songdb_op(lib, op, &found, &id);
     }
     memset(reply, 0, sizeof *reply);
     reply->kind = SEL_MSG_EVT;
@@ -115,7 +117,7 @@ void sel_library_genre_op(sel_library* lib, const sel_genre_op* op, sel_message*
 
 /* ---- caller half ---- */
 
-static int genre_call(sel_library* lib, const sel_genre_op* op, int64_t* id) {
+int sel_genre_call(sel_library* lib, const sel_genre_op* op, int64_t* id) {
     sel_message reply;
 
     memset(&reply, 0, sizeof reply);
@@ -125,22 +127,44 @@ static int genre_call(sel_library* lib, const sel_genre_op* op, int64_t* id) {
 }
 
 typedef struct body {
-    char text[REPLY_MAX];
+    char* text;
+    size_t cap;
     size_t len;
 } body;
 
 static int body_sink(void* ctx, const void* data, size_t len) {
     body* b = ctx;
 
-    if (b->len + len >= sizeof b->text) return 0;
+    if (b->len + len >= b->cap) return 0;
     memcpy(b->text + b->len, data, len);
     b->len += len;
     b->text[b->len] = '\0';
     return 1;
 }
 
+/* GET `url` through the one HTTP client into `text` (NUL-terminated, at most cap-1 bytes). Adds the transport
+ * requests made to *requests. 1 when the answer is a 200 that fit; 0 for any other status, a transport failure or
+ * an oversize body (nothing to cache). Shared by the genre and songdb lookups. */
+int sel_library_http_json(const char* url, char* text, size_t cap, uint32_t* requests) {
+    body b;
+    sel_http_req req;
+    sel_http_res res;
+    sel_http_err err;
+
+    memset(&req, 0, sizeof req);
+    memset(&res, 0, sizeof res);
+    b.text = text;
+    b.cap = cap;
+    b.len = 0;
+    text[0] = '\0';
+    req.url = url;
+    err = sel_http_request(&req, body_sink, &b, &res);
+    if (requests != NULL) *requests += res.requests;
+    return err == SEL_HTTP_OK && res.status == 200;
+}
+
 /* Copies the JSON string value of `"name":` into `out` (empty when absent or not a string). Handles \" \\ \/. */
-static int json_string(const char* json, const char* name, char* out, size_t cap) {
+int sel_json_string(const char* json, const char* name, char* out, size_t cap) {
     char pat[32];
     const char* p;
     size_t n = 0;
@@ -210,24 +234,17 @@ static int lookup(const char* key, const char* path, int64_t size, char* genre, 
     char enc[NAME_ENC_MAX];
     char url[URL_MAX];
     char source[24];
-    body b;
-    sel_http_req req;
-    sel_http_res res;
-    sel_http_err err;
+    char text[REPLY_MAX];
 
     encode_name(base_name(path), enc, sizeof enc);
     snprintf(url, sizeof url, "%s/api/genre/%s?name=%s&size=%lld", sel_devilbox_base(), key, enc, (long long)size);
-    memset(&req, 0, sizeof req);
-    memset(&res, 0, sizeof res);
-    memset(&b, 0, sizeof b);
-    req.url = url;
     st->genre_lookups++;
-    err = sel_http_request(&req, body_sink, &b, &res);
-    st->http_requests += res.requests;
     genre[0] = '\0';
-    if (err != SEL_HTTP_OK || res.status != 200) return 0; /* 503 budget/queue, 502, 404, transport: unknown, not cached */
-    if (json_string(b.text, "source", source, sizeof source) && strcmp(source, "modarchive") == 0) {
-        json_string(b.text, "genre", genre, GENRE_MAX);
+    if (!sel_library_http_json(url, text, sizeof text, &st->http_requests)) {
+        return 0; /* 503 budget/queue, 502, 404, transport: unknown, not cached */
+    }
+    if (sel_json_string(text, "source", source, sizeof source) && strcmp(source, "modarchive") == 0) {
+        sel_json_string(text, "genre", genre, GENRE_MAX);
     }
     return 1;
 }
@@ -256,7 +273,7 @@ int sel_library_genre_sync(sel_library* lib, sel_genre_stats* stats) {
         op.after = after;
         op.out = buf;
         op.out_cap = sizeof buf;
-        if (genre_call(lib, &op, &id) < 0) return 0;
+        if (sel_genre_call(lib, &op, &id) < 0) return 0;
         if (id == 0) break;
         after = id;
         song = buf;
@@ -268,12 +285,13 @@ int sel_library_genre_sync(sel_library* lib, sel_genre_stats* stats) {
             continue;
         }
         sel_uade_key(head, got, (uint64_t)size, ukey);
+        if (!sel_library_songdb_resolve(lib, ukey, song, stats)) return 0;
         memset(&op, 0, sizeof op);
         op.op = SEL_GENRE_GET;
         op.key = ukey;
         op.out = genre;
         op.out_cap = sizeof genre;
-        cached = genre_call(lib, &op, NULL);
+        cached = sel_genre_call(lib, &op, NULL);
         if (cached < 0) return 0;
         if (cached == 1) {
             stats->genre_cache_hits++;
@@ -286,7 +304,7 @@ int sel_library_genre_sync(sel_library* lib, sel_genre_stats* stats) {
             op.key = ukey;
             op.value = genre;
             op.at = (int64_t)time(NULL);
-            if (genre_call(lib, &op, NULL) < 0) return 0;
+            if (sel_genre_call(lib, &op, NULL) < 0) return 0;
         }
         if (genre[0] == '\0') {
             stats->unknown++;
@@ -296,7 +314,7 @@ int sel_library_genre_sync(sel_library* lib, sel_genre_stats* stats) {
         op.op = SEL_GENRE_APPLY;
         op.key = song;
         op.value = genre;
-        if (genre_call(lib, &op, NULL) == 1) stats->genre_set++;
+        if (sel_genre_call(lib, &op, NULL) == 1) stats->genre_set++;
     }
     return 1;
 }

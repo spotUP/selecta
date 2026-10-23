@@ -1,0 +1,23 @@
+/* Composer name normalisation (plan 2026-10-25-m3-library.md I182, T85; design doc 6/9 "author normalisation via
+ * DEViLBOX songdb"). ONE function turns every spelling of a composer into a canonical key: the composer query, the
+ * stored song_composers rows and the composer page header all go through it, so a display and a query never
+ * disagree.
+ *
+ * Steps: drop "(handle)" groups, turn "Last, First" into "First Last", fold case and punctuation to single spaces,
+ * then map known handles through the alias table (virgill -> Jogeir Liljedahl). Only ASCII is case-folded; bytes
+ * >= 0x80 pass through unchanged (UTF-8 names compare byte-exact). */
+#ifndef SELECTA_LIBRARY_COMPOSER_H
+#define SELECTA_LIBRARY_COMPOSER_H
+
+#include <stddef.h>
+
+#define SEL_COMPOSER_MAX 160u
+
+/* Canonical key of `name` (lowercase words joined by one space). Returns 1 when non-empty. */
+int sel_composer_canon(const char* name, char* out, size_t cap);
+
+/* Display name for `name`: the alias table's real name, else the cleaned spelling with all-caps words
+ * capitalised. Same canon <=> same display after this call on the canonical entry. Returns 1 when non-empty. */
+int sel_composer_display(const char* name, char* out, size_t cap);
+
+#endif
