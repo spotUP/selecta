@@ -253,9 +253,8 @@ uint32_t sel_engine_routed_direct(const sel_engine* e);
 void sel_engine_set_stage(sel_engine* e, uint32_t led_on, uint32_t width_percent);
 void sel_engine_set_paula_output(sel_engine* e, uint32_t on);
 
-/* Per-song replayer options, "plugin.key=value,..." (D-M2-8): beats the global pref rp.config for songs
- * opened afterwards. The library DB feeds this in M3; until then the caller sets it before OPEN. */
-void sel_engine_set_song_config(sel_engine* e, const char* list);
+/* Per-song replayer options, "plugin.key=value,..." (D-M2-8): beats the global pref rp.config. They live in
+ * the library DB (sticker rp.config of the song key, sel_library_song_config_set) and are read at OPEN (I170). */
 
 typedef struct sel_engine_stats {
     uint32_t ticks;        /* replayer ticks run */
@@ -268,6 +267,7 @@ typedef struct sel_engine_stats {
     uint32_t seek_path;           /* last SEEK: 0 none, 1 native (RP_SEEK), 2 restart-and-skip */
     uint32_t seek_skipped_frames; /* frames the last restart-and-skip ran through */
     uint32_t songs_opened;        /* songs started by OPEN or the queue (T19) */
+    uint32_t history_writes;      /* history rows the engine wrote on song end or skip (T78 sentinel) */
     uint32_t library_searches;    /* queries sent to the library worker (T64) */
     uint32_t library_fts_queries; /* of those, queries the FTS5 index served (T64) */
     uint32_t result_count;         /* keys held by the last query result (T64, T65) */

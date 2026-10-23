@@ -899,6 +899,13 @@ if(NOT SEL_AMIGA)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
   set_tests_properties(play-query PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "play_query_ok")
 
+  add_test(NAME user-data
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/userdata.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/userdata.sel
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/userdata.expected
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
+  set_tests_properties(user-data PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "userdata_ok")
+
   add_test(NAME view-library-source
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
       "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv"

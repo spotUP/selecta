@@ -27,8 +27,24 @@ enum {
     SEL_LIB_REQ_SCAN_BATCH = 6, /* payload: const sel_scan_batch*; writes files and songs rows (I158) */
     SEL_LIB_REQ_REMOVE = 7,     /* payload: const sel_remove_batch*; deletes files and songs rows (I161) */
     SEL_LIB_REQ_ANNOTATE = 8,   /* payload: const sel_annotate_batch*; lengths and notes onto existing songs (I162) */
-    SEL_LIB_REQ_MOVE = 9        /* payload: const sel_move*; re-keys one song row in place (I161b) */
+    SEL_LIB_REQ_MOVE = 9,       /* payload: const sel_move*; re-keys one song row in place (I161b) */
+    SEL_LIB_REQ_USER = 10       /* payload: const sel_user_op*; history, liked, kept, per-song stickers (I170) */
 };
+
+/* One user-data operation (SEL_LIB_REQ_USER). The reply is INT [0] 0 = failed, 1 = done, 2 = done and a
+ * STICKER_GET found its value, [1] SQLite result code. `at` is epoch seconds. */
+enum { SEL_USER_HISTORY = 1, SEL_USER_LIKE, SEL_USER_KEEP, SEL_USER_STICKER_SET, SEL_USER_STICKER_GET };
+typedef struct sel_user_op {
+    uint32_t op;       /* SEL_USER_* */
+    const char* key;   /* song key */
+    const char* name;  /* STICKER_*: sticker name */
+    const char* value; /* STICKER_SET: value */
+    int64_t at;
+    int32_t skipped;     /* HISTORY: 1 = ended by the user before the natural end */
+    int32_t duration_ms; /* HISTORY: 0 = unknown */
+    char* out;           /* STICKER_GET: value, "" when absent */
+    uint32_t out_cap;
+} sel_user_op;
 
 /* The data of a SEARCH, SAVE_VIEW or IMPORT request. The caller fills the inputs, passes the job to
  * sel_library_run and blocks until the worker answers, so the pointers stay valid. No allocation:
@@ -154,6 +170,14 @@ struct sel_cache_stats;
  * file. Returns the trim_runs counter after the call; 0 when the handle has no cache dir. */
 struct sel_cache_trim_result;
 unsigned sel_library_cache_trim(sel_library* lib, uint32_t budget, struct sel_cache_trim_result* out);
+/* User data (I170): 1 on success. A finished play or a skip goes to `history`; like and keep to their tables. */
+int sel_library_history_add(sel_library* lib, const char* key, int64_t at, int skipped);
+int sel_library_like(sel_library* lib, const char* key, int64_t at);
+int sel_library_keep(sel_library* lib, const char* key, int64_t at);
+/* Per-song replayer options (D-M2-8) live in the sticker "rp.config" of the song key. */
+int sel_library_song_config_set(sel_library* lib, const char* key, const char* list);
+/* Copies the list into `out` ("" when the song has none); 1 on success. */
+int sel_library_song_config_get(sel_library* lib, const char* key, char* out, uint32_t cap);
 /* Marks song key `key` in table "kept" or "liked" (seeding and tests). 1 on success. */
 int sel_library_mark(sel_library* lib, const char* table, const char* key);
 /* Companion rules (sel_companion_rules) the trim honours; every LIBRARY_FETCH sets them. */

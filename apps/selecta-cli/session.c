@@ -2,12 +2,15 @@
  * engine (render, play): find an output plugin by id, build an engine, open
  * and start a song. */
 #include <selecta/engine.h>
+#include <selecta/machine.h>
 #include <selecta/output.h>
 #include <selecta/registry.h>
 
 #include "cli.h"
+#include "db.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 uint32_t sel_cli_engine_pull(void* ctx, int16_t* stereo, uint32_t frames) {
@@ -43,6 +46,13 @@ static void start_sink(void* ctx, const sel_message* evt) {
 
 static const char* g_rp_global;
 static const char* g_rp_song;
+static sel_library* g_rp_lib;
+static sel_host g_rp_host; /* the library keeps the host pointer until the atexit close, so the host is copied here */
+
+static void close_rp_lib(void) {
+    sel_library_close(g_rp_lib);
+    g_rp_lib = NULL;
+}
 
 void sel_cli_set_rp_config(const char* global, const char* song) {
     g_rp_global = global;
@@ -59,6 +69,20 @@ sel_engine* sel_cli_start_song_sink(const char* who, const sel_host* host, const
     memset(&cfg, 0, sizeof cfg);
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;
+    cfg.machine = sel_machine_probe(host);
+    if (g_rp_song != NULL) {
+        /* The per-song override lives in the library DB: a throwaway library holds it for this song (I170). */
+        if (g_rp_lib == NULL) {
+            g_rp_host = *host;
+            g_rp_lib = sel_library_open(&g_rp_host, cfg.machine, 1, ":memory:");
+            if (g_rp_lib != NULL) atexit(close_rp_lib);
+        }
+        if (g_rp_lib == NULL || !sel_library_song_config_set(g_rp_lib, song, g_rp_song)) {
+            fprintf(stderr, "%s: cannot store the per-song replayer options\n", who);
+            return NULL;
+        }
+        cfg.library = g_rp_lib;
+    }
     e = sel_engine_create(host, &cfg);
     if (e == NULL) {
         fprintf(stderr, "%s: engine allocation failed\n", who);
@@ -80,7 +104,6 @@ sel_engine* sel_cli_start_song_sink(const char* who, const sel_host* host, const
         msg.args[1].v.s = g_rp_global;
         sel_engine_send(e, &msg);
     }
-    sel_engine_set_song_config(e, g_rp_song);
     memset(&msg, 0, sizeof msg);
     msg.kind = SEL_MSG_CMD;
     msg.id = SEL_CMD_OPEN;

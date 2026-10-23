@@ -33,6 +33,7 @@ static const key_def KEYS[] = {
     {"year", K_INT, "songs.year", 0},
     {"rating", K_INT, "(SELECT ratings.rating FROM ratings WHERE ratings.key = songs.key)", 0},
     {"plays", K_INT, "(SELECT COUNT(*) FROM history WHERE history.key = songs.key AND history.skipped = 0)", 0},
+    {"skips", K_INT, "(SELECT COUNT(*) FROM history WHERE history.key = songs.key AND history.skipped = 1)", 0},
     {"length", K_DUR, "songs.duration_ms", 0},
     {"size", K_SIZE, "songs.size", 0},
     {"played", K_TIME, LAST_PLAYED, 1},

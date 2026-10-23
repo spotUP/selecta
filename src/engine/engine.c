@@ -45,6 +45,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include <string.h>
 #include <time.h>
 
@@ -108,6 +109,8 @@
     X(LIBRARY_FETCH)                                                                          \
     X(LIBRARY_SCAN)                                                                           \
     X(LIBRARY_SYNC)                                                                           \
+    X(LIKE)                                                                                   \
+    X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
     X(VIEW_CURSOR)                                                                            \
     X(VIEW_ACTIVATE)                                                                          \
@@ -200,7 +203,9 @@ typedef struct sel_slot {
 struct sel_engine {
     const sel_host* host;
     sel_host rp_host;               /* copy of host whose config_get answers per-replayer options (I134) */
-    char rp_song_config[256];       /* per-song override list "plugin.key=value,..." (library DB later, D-M2-8) */
+    char rp_song_config[256];       /* per-song override list "plugin.key=value,...", read from the library DB sticker rp.config at OPEN (D-M2-8, I170) */
+    char hist_key[SEL_DEFERRED_PATH_MAX]; /* key of the song being played, "" none: its end or skip goes to the history table (I170) */
+    uint32_t history_writes; /* history rows written (sentinel of the I170 writer) */
     char rp_value[SEL_PREF_VALUE_MAX]; /* answer of the last rp_config_get */
     uint32_t rp_config_applied;     /* option values that came from an override layer (T61) */
     sel_state state;
@@ -1252,11 +1257,30 @@ static const char* rp_config_get(const sel_host* h, const char* key, const char*
     return e->host->config_get != NULL ? e->host->config_get(e->host, key, def) : def;
 }
 
-void sel_engine_set_song_config(sel_engine* e, const char* list) {
-    size_t n = list != NULL ? strlen(list) : 0;
-    if (n >= sizeof e->rp_song_config) n = sizeof e->rp_song_config - 1u;
-    if (n) memcpy(e->rp_song_config, list, n);
-    e->rp_song_config[n] = '\0';
+/* The per-song override of `path` comes from the library DB (sticker rp.config, I170); no library: none. */
+static void song_config_load(sel_engine* e, const char* path) {
+    e->rp_song_config[0] = '\0';
+    if (e->lib != NULL) {
+        sel_library_song_config_get(e->lib, path, e->rp_song_config, sizeof e->rp_song_config);
+    }
+}
+
+/* History (I170): the song that was playing ended. skipped = 0: it reached its natural end (a play);
+ * skipped = 1: the user replaced it first. One row per song, written through the library worker. */
+static void hist_end(sel_engine* e, int skipped) {
+    if (e->hist_key[0] != '\0' && e->lib != NULL) {
+        if (sel_library_history_add(e->lib, e->hist_key, (int64_t)time(NULL), skipped)) {
+            e->history_writes++;
+        }
+    }
+    e->hist_key[0] = '\0';
+}
+
+static void hist_begin(sel_engine* e, const char* path) {
+    size_t n = strlen(path);
+    if (n >= sizeof e->hist_key) n = sizeof e->hist_key - 1u;
+    memcpy(e->hist_key, path, n);
+    e->hist_key[n] = '\0';
 }
 
 /* Prepares the idle slot `idx` with the song at `path` (all allocation, file
@@ -1396,12 +1420,17 @@ static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t s
         return 1;
     }
     e->deferred = 0;
+    if (kind == SEL_BEGIN_OPEN) {
+        song_config_load(e, path);
+    }
     if (!prepare_slot(e, idx, path, subsong, kind == SEL_BEGIN_SEEK ? seek_to : 0, detail, 0)) {
         return 0;
     }
     e->cur = idx;
     e->song_over = 0;
     if (kind == SEL_BEGIN_OPEN) {
+        hist_end(e, 1); /* a song still open here was replaced by the user */
+        hist_begin(e, path);
         e->songs_opened++;
         evt_init(&ev, SEL_EVT_SONG_OPENED);
         evt_tags(&ev, e->slot[idx].rp_metadata ? e->slot[idx].rp_metadata(e->slot[idx].rp_state) : NULL);
@@ -1738,6 +1767,10 @@ static void commit_next(sel_engine* e) {
     evt_init(&ev, SEL_EVT_SONG_ENDED);
     evt_str(&ev, k_end_reason_names[e->xf_reason < 5u ? e->xf_reason : (uint32_t)SEL_END_END]);
     emit(e, &ev);
+    hist_end(e, 0);
+    if (idx < e->queue.count) {
+        hist_begin(e, sel_queue_path(&e->queue, idx));
+    }
     if (random_on(e) && idx < e->queue.count) {
         order_mark(e, idx);
     }
@@ -2654,6 +2687,27 @@ static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
 /* LIBRARY_SYNC <source> <dir> [now]: syncs a network source's catalogue from the listing and changelogs in
  * <dir> (I161, I162; `modland` and `hvsc`). `now` (epoch seconds) fixes the clock of "new this week". The answer
  * is a LIBRARY_RESULT with the directory and the listing row count; the counters are in sync_info. */
+/* LIKE and KEEP mark the song being played in the library (I170). KEEP exempts it from the cache trim. */
+static void user_mark(sel_engine* e, const char* who, int (*mark)(sel_library*, const char*, int64_t)) {
+    if (e->lib == NULL) {
+        sel_engine_report_error(e, "no_library", who);
+    } else if (e->hist_key[0] == '\0') {
+        sel_engine_report_error(e, "no_song", who);
+    } else if (!mark(e->lib, e->hist_key, (int64_t)time(NULL))) {
+        sel_engine_report_error(e, "library_failed", who);
+    }
+}
+
+static void cmd_LIKE(sel_engine* e, const sel_message* m) {
+    (void)m;
+    user_mark(e, "LIKE", sel_library_like);
+}
+
+static void cmd_KEEP(sel_engine* e, const sel_message* m) {
+    (void)m;
+    user_mark(e, "KEEP", sel_library_keep);
+}
+
 static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
     sel_local_scan_config scfg;
     sel_modland_sync_stats st;
@@ -3265,13 +3319,15 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
             sl->reported = 1;
             if (e->repeat == 1u && reason == SEL_END_END && e->q_playing != 0 &&
                 queue_start(e, sel_queue_index_of(&e->queue, e->q_playing))) {
-                /* REPEAT one: the song restarts without ending. */
+                /* REPEAT one: the song restarts without ending; the finished round counts as a play. */
+                hist_end(e, 0);
                 advanced = 1;
             } else {
                 next = queue_next_index(e);
                 evt_init(&ev, SEL_EVT_SONG_ENDED);
                 evt_str(&ev, k_end_reason_names[reason]);
                 emit(e, &ev);
+                hist_end(e, 0);
                 if (strcmp(e->state.options[SEL_OPT_STOP_AFTER_CURRENT], "on") == 0) {
                     /* One-shot: stop here, the next PLAY or NEXT continues with the following entry. */
                     set_option(e, SEL_OPT_STOP_AFTER_CURRENT, "off");
@@ -3381,6 +3437,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->seek_path = e->seek_path;
     out->seek_skipped_frames = e->seek_skipped;
     out->songs_opened = e->songs_opened;
+    out->history_writes = e->history_writes;
     out->library_searches = e->searches;
     out->library_fts_queries = e->fts_queries;
     out->result_count = e->res_count;
