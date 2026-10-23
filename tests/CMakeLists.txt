@@ -554,6 +554,11 @@ if(NOT SEL_AMIGA)
   add_test(NAME library-path-unit COMMAND library_path_test)
 endif()
 
+# I182a: composer canonical key and display name golden cases.
+add_executable(composer_test library/composer_test.c "${PROJECT_SOURCE_DIR}/src/library/composer.c")
+target_include_directories(composer_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+add_test(NAME composer-unit COMMAND composer_test)
+
 # T36: the command line. argdump.sh stands in for `:!program`.
 if(NOT SEL_AMIGA)
   add_executable(cmdline_test ui/cmdline_test.c)

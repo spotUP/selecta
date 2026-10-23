@@ -84,6 +84,12 @@ int sel_composer_canon(const char* name, char* out, size_t cap) {
     fold(cleaned, folded, sizeof folded);
     strncpy(out, folded, cap - 1u);
     out[cap - 1u] = '\0';
+    /* a cut inside the key may end on the space between two words */
+    {
+        size_t n = strlen(out);
+
+        while (n > 0 && out[n - 1u] == ' ') out[--n] = '\0';
+    }
     return out[0] != '\0';
 }
 
