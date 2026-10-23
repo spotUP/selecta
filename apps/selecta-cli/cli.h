@@ -41,6 +41,8 @@ int sel_cli_userdata(int argc, char** argv);
 
 /* library fetch <source>:<path> (T69): the Mirrors transport; prints mirror_tries= mirror_retries=. */
 int sel_cli_library_fetch(int argc, char** argv);
+/* I178: library export-folder --db <path> --dir <dir> [--folder <id>] [--format m3u]. */
+int sel_cli_library_export_folder(int argc, char** argv);
 
 /* fetch <url> (T67, T68): one HTTP request through the library client; prints counters. */
 int sel_cli_fetch(int argc, char** argv);

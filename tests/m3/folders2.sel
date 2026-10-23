@@ -1,0 +1,3 @@
+# T83 second process: the tree written by folders.sel survives a restart.
+@folder_stats
+@folder_tree

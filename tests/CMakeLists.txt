@@ -922,6 +922,14 @@ if(NOT SEL_AMIGA)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
   set_tests_properties(stickers PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "stickers_ok")
 
+  add_test(NAME folders-tree
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/folders.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/folders.sel
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/folders2.sel ${CMAKE_CURRENT_SOURCE_DIR}/m3/folders_tree.golden
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/folders_export.golden
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
+  set_tests_properties(folders-tree PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "folders_ok")
+
   add_test(NAME view-library-source
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
       "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv"

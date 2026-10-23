@@ -1,0 +1,7 @@
+F 1 Rock
+  F 2 Metal
+    P 1 Mix_one
+  F 3 Jazz
+    P 3 Mix_three
+  P 2 Mix_two
+TREE lines=6
