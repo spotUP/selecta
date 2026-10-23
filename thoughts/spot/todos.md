@@ -255,7 +255,7 @@ Tests T39 to T48 are defined in the plan's finish-line table.
 | I93 | [x] | 4 | T43, T44, T45 written and red; voices-test output | ctest failures | faae4ad red `#58 loop-fade`, `#59 crossfade`, `#60 sleep-alarm` ***Failed; merge 19a5dc1
 | I94 | [x] | 4 | REPEAT, loops/fade_ms/max_song_ms/silence_ms options, SONG_ENDED reason, stop-after options | T43 green, ratchet 22 | 108bbed, 78a8391; T43 green, ratchet 22; full run 76/78 (crossfade, sleep-alarm red until I95, I96); merge 19a5dc1
 | I95 | [x] | 4 | Early prepare, gapless, crossfade table and mix, `mixed_path` | T44 green ; merge 248716b (7323311) |
-| I96 | [ ] | 4 | HOSTQ_LOCAL_TIME, fake clock, SLEEP_TIMER, ALARM | T45 green, ratchet 21 |
+| I96 | [x] | 4 | HOSTQ_LOCAL_TIME, fake clock, SLEEP_TIMER, ALARM | T45 green, ratchet 21 ; merge 696618b (d5dcb45), ratchet 21 |
 | I97 | [x] | 5 | T46 written and red; RP_SAMPLE_GET; nuade scan catalogue; openmpt sample table | ctest failure then catalogue lines green ; merge 9653063 (cb2b65c red, 5b93144) |
 | I98 | [x] | 5 | WAV and 8SVX writers, SAMPLE_LIST/SAMPLE_EXPORT, goldens | T46 green ; merge 9653063 (cb95a44, T46 green) |
 | I99 | [x] | 5 | T47 written and red; DSP ABI, chain, coefficient tool | ctest failure | red 3a3e6da (`crossfeed-render` Failed, `crossfeed-unit` Not Run); b14e63f; merge e577cdf
