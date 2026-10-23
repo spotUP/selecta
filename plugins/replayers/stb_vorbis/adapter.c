@@ -29,7 +29,12 @@ typedef struct vorbis_state {
     uint32_t hz, rate;
     uint32_t channels, total_frames;
     sel_stream_pcm pcm;
-    char title[META_LEN], author[META_LEN], album[META_LEN];
+    /* Tags of the stream playing now. A chained stream (I195f) fills the idle set and flips md_cur, so a reader on
+     * another thread never sees a half-written string. */
+    struct {
+        char title[META_LEN], author[META_LEN], album[META_LEN];
+    } md[2];
+    volatile uint32_t md_cur;
     sel_tag meta[8];
     const sel_byte_stream* in; /* live stream, or NULL when the whole file is in memory */
     size_t win_size, win_pos;
@@ -78,6 +83,12 @@ static void comment(const stb_vorbis_comment* c, const char* key, char* dst) {
             return;
         }
     }
+}
+
+static void read_comments(vorbis_state* s, stb_vorbis_comment vc, uint32_t set) {
+    comment(&vc, "TITLE", s->md[set].title);
+    comment(&vc, "ARTIST", s->md[set].author);
+    comment(&vc, "ALBUM", s->md[set].album);
 }
 
 /* Stream mode open: reads from the stream until the headers (identification, comments, setup) are complete. */
@@ -150,9 +161,7 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
         s->total_frames = stb_vorbis_stream_length_in_samples(v);
     }
     vc = stb_vorbis_get_comment(v);
-    comment(&vc, "TITLE", s->title);
-    comment(&vc, "ARTIST", s->author);
-    comment(&vc, "ALBUM", s->album);
+    read_comments(s, vc, 0u);
     info->voice_count = 0;
     info->subsong_count = 1;
     info->default_subsong = 0;
@@ -175,6 +184,46 @@ static int16_t to_s16(float f) {
     return (int16_t)(v > 32767 ? 32767 : (v < -32768 ? -32768 : v));
 }
 
+/* A chained Ogg stream (I195f; an Ogg radio station starts a new logical stream per track) begins with a page
+ * flagged beginning-of-stream, a new serial number and new Vorbis headers. stb_vorbis's pushdata decoder would skip
+ * the three header packets as bad packets and decode on with the old codebooks, and the tags would stay the old
+ * track's. So a BOS page at the read position closes the decoder and opens a new one on the window, then reads the
+ * tags again. Returns 1 when the new stream is open, 0 when its headers are not all in the window yet (the caller
+ * renders silence and tries again; the audio thread never waits) and -1 when they do not decode. */
+static uint32_t pull(void* ctx, int16_t* out, uint32_t frames);
+
+static int rechain(vorbis_state* s) {
+    const uint8_t* p = s->win + s->win_pos;
+    size_t avail = s->win_size - s->win_pos;
+    int used = 0, err = 0;
+    stb_vorbis* v;
+    stb_vorbis_info vi;
+    uint32_t set;
+    if (avail < VORBIS_WINDOW) {
+        refill(s);
+        p = s->win + s->win_pos;
+        avail = s->win_size - s->win_pos;
+    }
+    v = stb_vorbis_open_pushdata(p, (int)avail, &used, &err, NULL);
+    if (v == NULL) {
+        return err == VORBIS_need_more_data && avail < VORBIS_WINDOW ? 0 : -1;
+    }
+    stb_vorbis_close(s->v);
+    s->v = v;
+    s->win_pos += (size_t)used;
+    vi = stb_vorbis_get_info(v);
+    s->channels = (uint32_t)vi.channels;
+    set = s->md_cur ^ 1u;
+    read_comments(s, stb_vorbis_get_comment(v), set);
+    s->md_cur = set;
+    if (vi.sample_rate != s->hz) { /* the resampler restarts at the new rate */
+        s->hz = vi.sample_rate;
+        sel_stream_pcm_reset(&s->pcm, pull, s, s->hz, s->rate);
+    }
+    s->left = 0;
+    return 1;
+}
+
 /* Stream mode: decodes one pushdata frame at a time from the window; mono is duplicated to both channels. */
 static uint32_t pull_live(vorbis_state* s, int16_t* out, uint32_t frames) {
     uint32_t n = 0;
@@ -191,6 +240,19 @@ static uint32_t pull_live(vorbis_state* s, int16_t* out, uint32_t frames) {
         }
         if (s->win_size - s->win_pos < VORBIS_WINDOW / 2u) {
             refill(s);
+        }
+        if (s->win_size - s->win_pos >= 6u && memcmp(s->win + s->win_pos, "OggS", 4) == 0 &&
+            (s->win[s->win_pos + 5u] & 2u) != 0u) {
+            int r = rechain(s);
+            if (r > 0) {
+                continue;
+            }
+            if (r == 0 && !s->in->ended(s->in->ctx)) {
+                memset(out + n * 2u, 0, (size_t)(frames - n) * 2u * sizeof out[0]);
+                n = frames;
+                break;
+            }
+            break; /* headers that never complete or do not decode: the stream ends here */
         }
         if (s->win_size > s->win_pos) {
             used = stb_vorbis_decode_frame_pushdata(s->v, s->win + s->win_pos, (int)(s->win_size - s->win_pos), &ch,
@@ -263,17 +325,18 @@ static int rp_seek(void* state, uint32_t ms) {
 static const sel_tag* rp_metadata(void* state) {
     vorbis_state* s = (vorbis_state*)state;
     uint32_t n = 0;
-    if (s->title[0] != '\0') {
+    uint32_t cur = s->md_cur;
+    if (s->md[cur].title[0] != '\0') {
         s->meta[n].tag = SEL_META_TITLE;
-        s->meta[n++].value = (uintptr_t)s->title;
+        s->meta[n++].value = (uintptr_t)s->md[cur].title;
     }
-    if (s->author[0] != '\0') {
+    if (s->md[cur].author[0] != '\0') {
         s->meta[n].tag = SEL_META_AUTHOR;
-        s->meta[n++].value = (uintptr_t)s->author;
+        s->meta[n++].value = (uintptr_t)s->md[cur].author;
     }
-    if (s->album[0] != '\0') {
+    if (s->md[cur].album[0] != '\0') {
         s->meta[n].tag = SEL_META_RELEASE;
-        s->meta[n++].value = (uintptr_t)s->album;
+        s->meta[n++].value = (uintptr_t)s->md[cur].album;
     }
     s->meta[n].tag = SEL_META_FORMAT;
     s->meta[n++].value = (uintptr_t) "Ogg Vorbis";
