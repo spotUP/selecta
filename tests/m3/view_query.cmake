@@ -1,0 +1,44 @@
+# T66 view-library-source (plan 2026-10-25-m3-library.md, Phase 2, I151).
+#   -DSELECTA=<exe> -DCAT=<catalogue.tsv> -DKEYS=<keys file> -DGOLDEN=<screen golden> -DWORK=<dir>
+# Runs the shell twice over the same library query results shown as the view
+# source: once with only the cursor move, once with the style cycled (KEYS).
+# Both must end on the same cursor_key=, say view_source=query, and the cycled
+# run's last screen must equal the golden.
+file(REMOVE_RECURSE "${WORK}")
+file(MAKE_DIRECTORY "${WORK}")
+set(runs plain cycled)
+foreach(run IN LISTS runs)
+  set(keys "${KEYS}")
+  if(run STREQUAL "plain")
+    file(WRITE "${WORK}/plain.keys" "Down\nwait 500\n")
+    set(keys "${WORK}/plain.keys")
+  endif()
+  execute_process(
+    COMMAND "${SELECTA}" --output null --start-dir "${WORK}" --catalogue "${CAT}"
+            --exec "LIBRARY_SEARCH lizardking" --exec "VIEW_SOURCE query"
+            --keys "${keys}" --screen-dump "${WORK}/${run}.txt"
+    OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
+  if(NOT rc EQUAL 0)
+    message(FATAL_ERROR "${run}: selecta exited ${rc}\nstdout:\n${out}\nstderr:\n${err}")
+  endif()
+  if(NOT out MATCHES "view_source=query view_style=([a-z]+) cursor_key=([^\n]+)\n")
+    message(FATAL_ERROR "${run}: no view_source=query line\n${out}")
+  endif()
+  set(style_${run} "${CMAKE_MATCH_1}")
+  set(key_${run} "${CMAKE_MATCH_2}")
+endforeach()
+if(NOT style_cycled STREQUAL "regular" OR NOT style_plain STREQUAL "regular")
+  message(FATAL_ERROR "style after the cycle: ${style_cycled} (plain ${style_plain}), want regular")
+endif()
+if(NOT key_plain STREQUAL "selecta-test.mod")
+  message(FATAL_ERROR "cursor_key=${key_plain}, want the second result selecta-test.mod")
+endif()
+if(NOT key_cycled STREQUAL key_plain)
+  message(FATAL_ERROR "the style switch lost the selected song: ${key_cycled} vs ${key_plain}")
+endif()
+file(READ "${WORK}/cycled.txt" screen)
+file(READ "${GOLDEN}" golden)
+if(NOT screen STREQUAL golden)
+  message(FATAL_ERROR "screen differs from ${GOLDEN}\nexpected:\n${golden}\ngot:\n${screen}")
+endif()
+message(STATUS "view_source=query cursor_key=${key_cycled}")
