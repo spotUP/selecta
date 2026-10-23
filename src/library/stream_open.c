@@ -204,6 +204,7 @@ struct sel_live {
     uint8_t* ring;
     volatile unsigned wr, rd;       /* byte counters, free running; wr - rd bytes are buffered */
     volatile unsigned eof, failed;  /* set by the download thread when it ends */
+    const sel_http_res* res;        /* the download thread's response record: status is set before any body byte */
     volatile unsigned stop;         /* the thread's cancel generation (sel_net_set_cancel) and the sink's abort */
     unsigned long received;
     FILE* rec;                      /* record sink (F36); written by the download thread only */
@@ -230,6 +231,9 @@ static int cancelled(const sel_live* s) {
 static int ring_sink(void* ctx, const void* data, size_t len) {
     sel_live* s = (sel_live*)ctx;
     const uint8_t* p = (const uint8_t*)data;
+    if (s->res != NULL && (s->res->status < 200 || s->res->status >= 300)) {
+        return 0; /* I195e: an error page never reaches the ring or the record file; the request ends as sink_aborted */
+    }
     if (s->rec != NULL) {
         size_t n = len;
         if (s->rec_limit != 0 && n > s->rec_limit - s->rec_written) {
@@ -275,6 +279,7 @@ static void* download(void* arg) {
     memset(&res, 0, sizeof res);
     req.url = s->url;
     req.total_ms = SEL_STREAM_FOREVER;
+    s->res = &res;
     ok = sel_http_request(&req, ring_sink, s, &res) == SEL_HTTP_OK && res.status >= 200 && res.status < 300;
     sel_net_set_cancel(NULL, 0u);
     if (!ok) {

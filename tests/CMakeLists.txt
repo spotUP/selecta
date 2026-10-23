@@ -1311,6 +1311,12 @@ if(NOT SEL_AMIGA)
   set_tests_properties(stream-url PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "stream_url_ok")
 
+  # I195e: a 404 and a 503 whose body is a playable module report open_failed, never play and never no_replayer.
+  add_test(NAME stream-status
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" -P "${SEL_NET_DIR}/stream_status.cmake")
+  set_tests_properties(stream-status PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "stream_status_ok")
+
   # I195b: OPEN of an http URL plays while it downloads (server sends 60% of the file and stalls).
   add_test(NAME stream-live
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"

@@ -12,6 +12,8 @@
   "/r6": {"redirect": "/plain"},
   "/slow_first": {"file": "data.bin", "delay_first_byte": 6},
   "/slow_body": {"file": "data.bin", "delay_body": 35},
+  "/stream_404": {"body": "<html><body>404 Not Found, this is an error page and not a module</body></html>", "status": 404},
+  "/stream_503": {"body": "<html><body>503 Service Unavailable, try again later, error page</body></html>", "status": 503},
   "/put": {"key_method": "PUT", "status": 201},
   "/post": {"key_method": "POST", "status": 202},
   "/delete": {"key_method": "DELETE", "status": 204}
