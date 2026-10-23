@@ -1,0 +1,25 @@
+# T61 rp-config-taglist: `render --rp-config <key>=<value>`; sentinel rp_config_applied=.
+# A SEL_RP_CONFIG key moves the output hash; a per-song override (library DB) beats the global value.
+# Key used: libopenmpt's interpolation filter (the openmpt adapter is the desktop adapter that declares one).
+# Inputs: MODE CLI MOD WORK [VAMOS AMIGA_CLI]
+include("${CMAKE_CURRENT_LIST_DIR}/lib.cmake")
+file(REMOVE_RECURSE "${WORK}")
+file(MAKE_DIRECTORY "${WORK}")
+function(render tag)
+  m2_run_ok(T61 out render "${MOD}" --output "${WORK}/${tag}.wav" --seconds 2 ${ARGN})
+  file(SHA256 "${WORK}/${tag}.wav" h)
+  set(${tag}_out "${out}" PARENT_SCOPE)
+  set(${tag}_hash "${h}" PARENT_SCOPE)
+endfunction()
+render(plain)
+render(cfg --rp-config openmpt.interpolationfilter=8)
+m2_check(T61 "${cfg_out}" "rp_config_applied>=1")
+if(cfg_hash STREQUAL plain_hash)
+  message(FATAL_ERROR "RED[T61]: --rp-config did not move the output hash")
+endif()
+render(song --rp-config openmpt.interpolationfilter=8 --rp-config-song openmpt.interpolationfilter=1)
+m2_check(T61 "${song_out}" "rp_config_applied>=2")
+if(song_hash STREQUAL cfg_hash)
+  message(FATAL_ERROR "RED[T61]: per-song override did not beat the global value")
+endif()
+message(STATUS "[OK] T61 ${MODE}")

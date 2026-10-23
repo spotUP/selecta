@@ -608,3 +608,88 @@ if(NOT SEL_AMIGA)
       "-DGOLDEN_DIR=${CMAKE_CURRENT_SOURCE_DIR}/golden/samples"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m13/samples_check.cmake")
 endif()
+
+# M2 Phase 0 (rows I105, I106): T49 to T61, red until the M2 rows land (plan 2026-10-24-m2-amiga.md).
+# Every script fails with "RED[Tnn]: ..." naming the missing feature. Desktop tests run through
+# selecta-cli; the "-vamos" twins run the 68k binary and compare against the desktop run.
+if(NOT SEL_AMIGA)
+  set(SEL_M2 "${CMAKE_CURRENT_SOURCE_DIR}/m2")
+  set(SEL_M2_GOLDEN "${CMAKE_CURRENT_SOURCE_DIR}/golden/m2")
+  set(SEL_M2_VAMOS "")
+  if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
+    set(SEL_M2_VAMOS "-DVAMOS=${SEL_VAMOS}" "-DAMIGA_CLI=${SEL_AMIGA_CLI}")
+  endif()
+  # sel_m2_test(name script mode [-Dvar=value ...]): mode is desktop or vamos.
+  function(sel_m2_test name script mode)
+    if(mode STREQUAL "vamos" AND NOT SEL_M2_VAMOS)
+      return()
+    endif()
+    set(tname ${name})
+    if(mode STREQUAL "vamos")
+      set(tname ${name}-vamos)
+    endif()
+    add_test(NAME ${tname}
+      COMMAND "${CMAKE_COMMAND}" "-DMODE=${mode}" "-DCLI=${SEL_CLI}" ${SEL_M2_VAMOS} "-DMOD=${SEL_TESTMOD}"
+        "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/${tname}" "-DGOLDEN_DIR=${SEL_M2_GOLDEN}" ${ARGN}
+        -P "${SEL_M2}/${script}.cmake")
+    if(mode STREQUAL "vamos")
+      set_tests_properties(${tname} PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos)
+    endif()
+  endfunction()
+
+  # T49 registry machine filter, desktop and vamos.
+  sel_m2_test(registry-machine-filter registry desktop)
+  sel_m2_test(registry-machine-filter registry vamos)
+  # T50 machine probe under vamos.
+  sel_m2_test(amiga-machine-probe run vamos -DTAG=T50 "-DARGS1=machine"
+    "-DCHECKS1=machine.gfx~^(OCS|ECS|AGA)$,machine.audio~paula" "-DARGS2=machine --tier text" "-DCHECKS2=machine.tier==text")
+  # T51 Paula voice registers: AUDxPER once per note, register log golden.
+  sel_m2_test(paula-voice-registers run vamos -DTAG=T51
+    "-DARGS1=render --output paula-shadow @MOD@ --seconds 2" "-DCHECKS1=aud_writes>0,reg_log_sha256~^[0-9a-f]+$"
+    -DGOLDEN_KEY=reg_log_sha256 "-DGOLDEN_FILE=${SEL_M2_GOLDEN}/paula-voice-registers.sha256")
+  # T52 paula14 split tables, desktop and vamos hashes equal.
+  foreach(mode desktop vamos)
+    sel_m2_test(paula14-tables run ${mode} -DTAG=T52
+      "-DARGS1=render --output paula14-shadow @MOD@ --seconds 2" "-DCHECKS1=p14_frames>0,p14_max_err_lsb<=1" -DHASH_KEY=p14_hash)
+  endforeach()
+  # T53 LED filter and stereo width.
+  sel_m2_test(mixer-led-stereo mixer desktop)
+  sel_m2_test(mixer-led-stereo mixer vamos)
+  # T55 Amiga text UI under vamos with scripted stdin.
+  if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
+    add_test(NAME amiga-text-ui-vamos
+      COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}"
+        "-DAMIGA_SELECTA=${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta/selecta"
+        "-DDESKTOP_SELECTA=$<TARGET_FILE:selecta>" "-DKEYS=${SEL_M2}/quit.keys"
+        -P "${SEL_M2}/ui.cmake")
+    set_tests_properties(amiga-text-ui-vamos PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos)
+  endif()
+  # T57 library browse under vamos, T58 ToolTypes = CLI.
+  sel_m2_test(amiga-library-browse browse vamos)
+  sel_m2_test(amiga-tooltypes-cli tooltypes vamos)
+  # T61 per-replayer config.
+  sel_m2_test(rp-config-taglist rpconfig desktop)
+  sel_m2_test(rp-config-taglist rpconfig vamos)
+  # T54 no float in the interrupt path (needs the cross nm and a built build/amiga).
+  if(SEL_AMIGA_NM AND EXISTS "${SEL_AMIGA_CLI}")
+    add_test(NAME no-float-interrupt
+      COMMAND "${CMAKE_COMMAND}" "-DNM=${SEL_AMIGA_NM}" "-DBUILD_DIR=${PROJECT_SOURCE_DIR}/build/amiga"
+        -P "${SEL_M2}/nofloat.cmake")
+    set_tests_properties(no-float-interrupt PROPERTIES FIXTURES_REQUIRED amiga_cli)
+  endif()
+
+  # Rig tests (T56, T59, T60), label rig: skipped (never passed) while the rig is down.
+  set(SEL_RIG_DIR "$ENV{HOME}/Code/UP-Term/vtcon/tools/rig")
+  foreach(rt T56:rig-selecta-upterm T59:rig-ahi-render T60:rig-nofpu-voice-budget)
+    string(REPLACE ":" ";" parts "${rt}")
+    list(GET parts 0 tag)
+    list(GET parts 1 name)
+    add_test(NAME ${name}
+      COMMAND "${CMAKE_COMMAND}" -DTAG=${tag} "-DRIG_DIR=${SEL_RIG_DIR}"
+        "-DSELECTA=${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta/selecta" "-DMOD=${SEL_TESTMOD}"
+        "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/${name}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
+    set_tests_properties(${name} PROPERTIES LABELS rig RESOURCE_LOCK rig
+      SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  endforeach()
+endif()
