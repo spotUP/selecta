@@ -41,6 +41,12 @@ uint32_t sel_queue_remove(sel_queue* q, uint32_t id);
 /* Drops every entry; ids keep counting. Bumps the version. */
 void sel_queue_clear(sel_queue* q);
 
+/* Moves entry `from_id` to the position `to_id` occupies now (the entries in
+ * between shift by one). Swaps two entries. 0: an id is not in the queue.
+ * Both bump the version. */
+int sel_queue_move(sel_queue* q, uint32_t from_id, uint32_t to_id);
+int sel_queue_swap(sel_queue* q, uint32_t a_id, uint32_t b_id);
+
 /* Position of an id, or SEL_QUEUE_NONE. */
 uint32_t sel_queue_index_of(const sel_queue* q, uint32_t id);
 const char* sel_queue_path(const sel_queue* q, uint32_t index);

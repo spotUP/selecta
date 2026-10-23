@@ -103,3 +103,36 @@ void sel_queue_clear(sel_queue* q) {
     q->text_used = 0;
     q->version++;
 }
+
+/* Moves the entry `from_id` to the position `to_id` holds now. */
+int sel_queue_move(sel_queue* q, uint32_t from_id, uint32_t to_id) {
+    uint32_t from = sel_queue_index_of(q, from_id);
+    uint32_t to = sel_queue_index_of(q, to_id);
+    sel_queue_entry en;
+    if (from == SEL_QUEUE_NONE || to == SEL_QUEUE_NONE) {
+        return 0;
+    }
+    en = q->entries[from];
+    if (from < to) {
+        memmove(&q->entries[from], &q->entries[from + 1u], (size_t)(to - from) * sizeof en);
+    } else {
+        memmove(&q->entries[to + 1u], &q->entries[to], (size_t)(from - to) * sizeof en);
+    }
+    q->entries[to] = en;
+    q->version++;
+    return 1;
+}
+
+int sel_queue_swap(sel_queue* q, uint32_t a_id, uint32_t b_id) {
+    uint32_t a = sel_queue_index_of(q, a_id);
+    uint32_t b = sel_queue_index_of(q, b_id);
+    sel_queue_entry en;
+    if (a == SEL_QUEUE_NONE || b == SEL_QUEUE_NONE) {
+        return 0;
+    }
+    en = q->entries[a];
+    q->entries[a] = q->entries[b];
+    q->entries[b] = en;
+    q->version++;
+    return 1;
+}

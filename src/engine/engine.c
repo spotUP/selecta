@@ -18,7 +18,9 @@
 #include <selecta/tags.h>
 
 #include "mixer.h"
+#include "history.h"
 #include "queue.h"
+#include "shuffle.h"
 #include "local.h"
 #include "prefs.h"
 #include "view.h"
@@ -54,6 +56,16 @@
     X(QUEUE_ADD)                                                                              \
     X(QUEUE_REMOVE)                                                                           \
     X(QUEUE_CLEAR)                                                                            \
+    X(QUEUE_MOVE)                                                                             \
+    X(QUEUE_SWAP)                                                                             \
+    X(UNDO)                                                                                   \
+    X(REDO)                                                                                   \
+    X(QUEUE_SHUFFLE)                                                                          \
+    X(RESHUFFLE)                                                                              \
+    X(SHUFFLE)                                                                                \
+    X(SCOPE)                                                                                  \
+    X(NEXT_ALBUM)                                                                             \
+    X(PREV_ALBUM)                                                                             \
     X(QUEUE_PLAY_NEXT)                                                                        \
     X(LIBRARY_BROWSE)                                                                         \
     X(VIEW_SHOW)                                                                              \
@@ -150,6 +162,8 @@ struct sel_engine {
     char deferred_path[SEL_DEFERRED_PATH_MAX];
     char subsong_path[SEL_DEFERRED_PATH_MAX];
     sel_queue queue;
+    sel_history history;
+    uint32_t rng; /* shuffle generator state, 0: not seeded yet */
     uint32_t q_playing; /* id of the playing queue entry, 0: none */
     uint32_t q_hint;    /* position NEXT and PLAY start from while q_playing is 0 */
     uint32_t song_over; /* the open song ended or the queue ran out: PLAY restarts the queue */
@@ -381,12 +395,16 @@ static void cmd_OUTPUT(sel_engine* e, const sel_message* m) {
     changed(e, PENDING_OUTPUT);
 }
 
+static void set_option(sel_engine* e, sel_option_id id, const char* value) {
+    copy_str(e->state.options[id], SEL_OPTION_VALUE_MAX, value);
+    changed(e, PENDING_OPTION_BASE << (uint32_t)id);
+}
+
 static void cmd_OPTION(sel_engine* e, const sel_message* m) {
     uint32_t i;
     for (i = 0; i < (uint32_t)SEL_OPTION_COUNT; i++) {
         if (strcmp(k_option_names[i], m->args[0].v.s) == 0) {
-            copy_str(e->state.options[i], SEL_OPTION_VALUE_MAX, m->args[1].v.s);
-            changed(e, PENDING_OPTION_BASE << i);
+            set_option(e, (sel_option_id)i, m->args[1].v.s);
             return;
         }
     }
@@ -897,6 +915,10 @@ static void emit_queue_changed(sel_engine* e) {
     evt_init(&m, SEL_EVT_QUEUE_CHANGED);
     evt_uint(&m, e->queue.version);
     emit(e, &m);
+    evt_init(&m, SEL_EVT_QUEUE_HISTORY);
+    evt_uint(&m, e->history.undo_count);
+    evt_uint(&m, e->history.redo_count);
+    emit(e, &m);
 }
 
 /* Plays the entry at `idx` through the one song-change path. A stopped
@@ -931,14 +953,95 @@ static void cmd_PLAY(sel_engine* e, const sel_message* m) {
     set_play(e, SEL_PLAYING);
 }
 
+/* The album of a queue entry is the directory of its path. */
+static int same_album(const sel_queue* q, uint32_t a, uint32_t b) {
+    const char* pa = sel_queue_path(q, a);
+    const char* pb = sel_queue_path(q, b);
+    const char* sa = strrchr(pa, '/');
+    const char* sb = strrchr(pb, '/');
+    size_t la = sa ? (size_t)(sa - pa) : 0;
+    size_t lb = sb ? (size_t)(sb - pb) : 0;
+    return la == lb && memcmp(pa, pb, la) == 0;
+}
+
+/* First position of the album that holds position `idx`. */
+static uint32_t album_first(const sel_queue* q, uint32_t idx) {
+    while (idx > 0 && same_album(q, idx - 1u, idx)) {
+        idx--;
+    }
+    return idx;
+}
+
+/* Position that follows the playing one, honouring the scope option;
+ * SEL_QUEUE_NONE when the queue (or the album under scope album) ends. */
+static uint32_t queue_next_index(const sel_engine* e) {
+    uint32_t cur, next;
+    if (e->q_playing == 0) {
+        return SEL_QUEUE_NONE;
+    }
+    cur = sel_queue_index_of(&e->queue, e->q_playing);
+    next = cur + 1u;
+    if (next >= e->queue.count) {
+        return SEL_QUEUE_NONE;
+    }
+    if (strcmp(e->state.options[SEL_OPT_SCOPE], "album") == 0 && !same_album(&e->queue, cur, next)) {
+        return SEL_QUEUE_NONE;
+    }
+    return next;
+}
+
 static void cmd_NEXT(sel_engine* e, const sel_message* m) {
-    uint32_t idx = e->q_playing ? sel_queue_index_of(&e->queue, e->q_playing) + 1u : e->q_hint;
+    uint32_t idx = e->q_playing ? queue_next_index(e) : e->q_hint;
     (void)m;
     if (idx >= e->queue.count) {
         queue_finish(e);
         return;
     }
     queue_start(e, idx);
+}
+
+static void cmd_NEXT_ALBUM(sel_engine* e, const sel_message* m) {
+    uint32_t cur = e->q_playing ? sel_queue_index_of(&e->queue, e->q_playing) : e->q_hint;
+    uint32_t idx = cur;
+    (void)m;
+    if (cur >= e->queue.count) {
+        queue_finish(e);
+        return;
+    }
+    while (idx < e->queue.count && same_album(&e->queue, cur, idx)) {
+        idx++;
+    }
+    if (idx >= e->queue.count) {
+        queue_finish(e);
+        return;
+    }
+    queue_start(e, idx);
+}
+
+/* Plays the first song of the album before the current one; in the first
+ * album it plays that album's first song. */
+static void cmd_PREV_ALBUM(sel_engine* e, const sel_message* m) {
+    uint32_t cur = e->q_playing ? sel_queue_index_of(&e->queue, e->q_playing) : e->q_hint;
+    uint32_t first;
+    (void)m;
+    if (cur >= e->queue.count) {
+        sel_engine_report_error(e, "no_song", "PREV_ALBUM");
+        return;
+    }
+    first = album_first(&e->queue, cur);
+    if (first > 0) {
+        first = album_first(&e->queue, first - 1u);
+    }
+    queue_start(e, first);
+}
+
+static void cmd_SCOPE(sel_engine* e, const sel_message* m) {
+    const char* v = m->args[0].v.s;
+    if (strcmp(v, "library") != 0 && strcmp(v, "album") != 0 && strcmp(v, "playlist") != 0) {
+        sel_engine_report_error(e, "range", "SCOPE");
+        return;
+    }
+    set_option(e, SEL_OPT_SCOPE, v);
 }
 
 static void cmd_PREV(sel_engine* e, const sel_message* m) {
@@ -958,7 +1061,9 @@ static void cmd_PREV(sel_engine* e, const sel_message* m) {
 
 static void queue_insert(sel_engine* e, uint32_t at, const char* path, const char* who) {
     uint32_t id;
+    sel_history_record(&e->history, &e->queue);
     if (!sel_queue_insert(&e->queue, at, path, &id)) {
+        sel_history_forget(&e->history);
         sel_engine_report_error(e, "queue_full", who);
         return;
     }
@@ -976,7 +1081,12 @@ static void cmd_QUEUE_PLAY_NEXT(sel_engine* e, const sel_message* m) {
 
 static void cmd_QUEUE_REMOVE(sel_engine* e, const sel_message* m) {
     uint32_t id = m->args[0].v.u;
-    uint32_t at = sel_queue_remove(&e->queue, id);
+    uint32_t at = sel_queue_index_of(&e->queue, id);
+    if (at != SEL_QUEUE_NONE) {
+        sel_history_record(&e->history, &e->queue);
+        sel_history_bury(&e->history, &e->queue, at);
+        sel_queue_remove(&e->queue, id);
+    }
     if (at == SEL_QUEUE_NONE) {
         sel_engine_report_error(e, "range", "QUEUE_REMOVE");
         return;
@@ -993,10 +1103,103 @@ static void cmd_QUEUE_REMOVE(sel_engine* e, const sel_message* m) {
 
 static void cmd_QUEUE_CLEAR(sel_engine* e, const sel_message* m) {
     (void)m;
+    sel_history_record(&e->history, &e->queue);
+    sel_history_bury(&e->history, &e->queue, SEL_QUEUE_NONE);
     sel_queue_clear(&e->queue);
     e->q_playing = 0;
     e->q_hint = 0;
     emit_queue_changed(e);
+}
+
+/* The playing entry may be gone after a rewrite of the order: the song keeps
+ * playing and the hint points at the position it had. */
+static void queue_after_rewrite(sel_engine* e, uint32_t old_index) {
+    if (e->q_playing && sel_queue_index_of(&e->queue, e->q_playing) == SEL_QUEUE_NONE) {
+        e->q_playing = 0;
+        e->q_hint = old_index;
+    }
+    if (e->q_hint > e->queue.count) {
+        e->q_hint = e->queue.count;
+    }
+}
+
+static void cmd_QUEUE_MOVE(sel_engine* e, const sel_message* m) {
+    sel_history_record(&e->history, &e->queue);
+    if (!sel_queue_move(&e->queue, m->args[0].v.u, m->args[1].v.u)) {
+        sel_history_forget(&e->history);
+        sel_engine_report_error(e, "range", "QUEUE_MOVE");
+        return;
+    }
+    emit_queue_changed(e);
+}
+
+static void cmd_QUEUE_SWAP(sel_engine* e, const sel_message* m) {
+    sel_history_record(&e->history, &e->queue);
+    if (!sel_queue_swap(&e->queue, m->args[0].v.u, m->args[1].v.u)) {
+        sel_history_forget(&e->history);
+        sel_engine_report_error(e, "range", "QUEUE_SWAP");
+        return;
+    }
+    emit_queue_changed(e);
+}
+
+/* Shuffles the rows after the playing one (all rows when nothing plays). */
+static void queue_shuffle_rows(sel_engine* e, uint32_t seed) {
+    uint32_t first = e->q_playing ? sel_queue_index_of(&e->queue, e->q_playing) + 1u : 0;
+    sel_history_record(&e->history, &e->queue);
+    e->rng = sel_queue_shuffle(&e->queue, first, seed);
+    emit_queue_changed(e);
+}
+
+static void cmd_QUEUE_SHUFFLE(sel_engine* e, const sel_message* m) {
+    uint32_t seed = 0;
+    const char* p = m->argc ? m->args[0].v.s : NULL;
+    if (p != NULL) {
+        for (; *p >= '0' && *p <= '9'; p++) {
+            seed = seed * 10u + (uint32_t)(*p - '0');
+        }
+        if (p == m->args[0].v.s || *p != '\0') {
+            sel_engine_report_error(e, "range", "QUEUE_SHUFFLE");
+            return;
+        }
+    } else {
+        seed = e->host->clock_ms(e->host) ^ e->rng;
+    }
+    queue_shuffle_rows(e, seed);
+}
+
+static void cmd_RESHUFFLE(sel_engine* e, const sel_message* m) {
+    (void)m;
+    queue_shuffle_rows(e, sel_xorshift32(sel_shuffle_seed(e->rng)));
+}
+
+static void cmd_SHUFFLE(sel_engine* e, const sel_message* m) {
+    const char* v = m->argc ? m->args[0].v.s : "on";
+    if (strcmp(v, "on") != 0 && strcmp(v, "off") != 0) {
+        sel_engine_report_error(e, "range", "SHUFFLE");
+        return;
+    }
+    set_option(e, SEL_OPT_RANDOM, v);
+}
+
+static void queue_step(sel_engine* e, int undo, const char* who) {
+    uint32_t old_index = e->q_playing ? sel_queue_index_of(&e->queue, e->q_playing) : e->q_hint;
+    if (!(undo ? sel_history_undo(&e->history, &e->queue) : sel_history_redo(&e->history, &e->queue))) {
+        sel_engine_report_error(e, "nothing_to_do", who);
+        return;
+    }
+    queue_after_rewrite(e, old_index);
+    emit_queue_changed(e);
+}
+
+static void cmd_UNDO(sel_engine* e, const sel_message* m) {
+    (void)m;
+    queue_step(e, 1, "UNDO");
+}
+
+static void cmd_REDO(sel_engine* e, const sel_message* m) {
+    (void)m;
+    queue_step(e, 0, "REDO");
 }
 
 /* ---- library --------------------------------------------------------- */
@@ -1231,6 +1434,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         !sel_spsc_init(&e->swap_q, host, SEL_SWAP_RING_DEPTH) ||
         !sel_spsc_init(&e->ret_q, host, SEL_SWAP_RING_DEPTH) ||
         !sel_queue_init(&e->queue, host, queue_cap, queue_text) ||
+        !sel_history_init(&e->history, host, queue_cap, queue_text) ||
         !sel_browse_init(&e->browse, host, cfg && cfg->browse_entries ? cfg->browse_entries : queue_cap,
                          cfg && cfg->browse_text_bytes ? cfg->browse_text_bytes : queue_text) ||
         !sel_view_init(&e->view, host, SEL_VIEW_WINDOW_MAX)) {
@@ -1256,6 +1460,7 @@ void sel_engine_destroy(sel_engine* e) {
         sel_spsc_free(&e->swap_q, e->host);
         sel_spsc_free(&e->ret_q, e->host);
         sel_queue_free(&e->queue, e->host);
+        sel_history_free(&e->history, e->host);
         sel_browse_free(&e->browse, e->host);
         sel_view_free(&e->view, e->host);
         e->host->mem_free(e->host, e);
@@ -1312,7 +1517,7 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
         int advanced = 0;
         if (sl->ended && !sl->reported) {
             sel_message ev;
-            uint32_t next = e->q_playing ? sel_queue_index_of(&e->queue, e->q_playing) + 1u : SEL_QUEUE_NONE;
+            uint32_t next = queue_next_index(e);
             sl->reported = 1;
             evt_init(&ev, SEL_EVT_SONG_ENDED);
             emit(e, &ev);
