@@ -349,6 +349,38 @@ static int key_eq(const char* name, const char* k, size_t n) {
     return 1;
 }
 
+/* A quoted value ends at the first `"` not escaped by a backslash. Inside quotes `\"` is a quote and `\\` a backslash;
+ * any other backslash stays literal. Returns the closing quote or NULL. */
+static const char* quote_end(const char* v) {
+    while (*v != '\0') {
+        if (*v == '\\' && (v[1] == '"' || v[1] == '\\')) {
+            v += 2;
+        } else if (*v == '"') {
+            return v;
+        } else {
+            v++;
+        }
+    }
+    return NULL;
+}
+
+/* Copies the quoted body v[0..n) to out with the escapes resolved; returns the new length, or (size_t)-1 when too long. */
+static size_t unescape_quoted(const char* v, size_t n, char* out, size_t cap) {
+    size_t o = 0;
+    size_t i;
+    for (i = 0; i < n; i++) {
+        if (v[i] == '\\' && i + 1 < n && (v[i + 1] == '"' || v[i + 1] == '\\')) {
+            i++;
+        }
+        if (o + 1 >= cap) {
+            return (size_t)-1;
+        }
+        out[o++] = v[i];
+    }
+    out[o] = '\0';
+    return o;
+}
+
 static void parse_term(pq* s) {
     const char* start = s->p;
     const char* k = s->p;
@@ -357,6 +389,7 @@ static void parse_term(pq* s) {
     size_t vlen;
     char mode = ' ';
     size_t i;
+    char buf[SEL_QUERY_TEXT_MAX];
 
     s->q->terms++;
     while ((k[klen] >= 'a' && k[klen] <= 'z') || (k[klen] >= 'A' && k[klen] <= 'Z') || k[klen] == '_') {
@@ -375,13 +408,17 @@ static void parse_term(pq* s) {
         }
         v = k + klen + 1;
         if (*v == '"') {
-            const char* e = strchr(v + 1, '"');
+            const char* e = quote_end(v + 1);
             if (e == NULL) {
                 fail(s, "syntax");
                 return;
             }
-            vlen = (size_t)(e - v - 1);
-            v++;
+            vlen = unescape_quoted(v + 1, (size_t)(e - v - 1), buf, sizeof buf);
+            if (vlen == (size_t)-1) {
+                fail(s, "too_complex");
+                return;
+            }
+            v = buf;
             s->p = e + 1;
         } else if (*v == '/' && kd->kind == K_TEXT) {
             const char* e = v + 1;
@@ -429,13 +466,17 @@ static void parse_term(pq* s) {
     }
     /* bare word or quoted phrase: matches name, artist, path */
     if (*start == '"') {
-        const char* e = strchr(start + 1, '"');
+        const char* e = quote_end(start + 1);
         if (e == NULL) {
             fail(s, "syntax");
             return;
         }
-        v = start + 1;
-        vlen = (size_t)(e - v);
+        vlen = unescape_quoted(start + 1, (size_t)(e - start - 1), buf, sizeof buf);
+        if (vlen == (size_t)-1) {
+            fail(s, "too_complex");
+            return;
+        }
+        v = buf;
         s->p = e + 1;
     } else {
         v = start;

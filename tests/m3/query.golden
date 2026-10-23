@@ -32,3 +32,4 @@ view:loop1	ERROR view_cycle	-
 view:nosuch	ERROR unknown_view	-
 (format:mod	ERROR syntax	-
 year:abc	ERROR bad_value	-
+album:"say \"hi\" \\ x"	SELECT songs.key FROM songs WHERE COALESCE(songs.album, '') LIKE ? ESCAPE '\'	s:%say "hi" \\ x%
