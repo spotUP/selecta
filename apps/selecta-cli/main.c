@@ -48,7 +48,7 @@ static int cmd_commands(int unimplemented_only) {
                 printf("%s\n", sel_cmd_name(i));
             }
         } else {
-            printf("%s %s\n", sel_cmd_name(i), sel_cmd_args(i));
+            printf("%s %s area=%s\n", sel_cmd_name(i), sel_cmd_args(i), sel_cmd_area(i));
         }
     }
     return 0;

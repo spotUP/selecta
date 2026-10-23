@@ -476,7 +476,9 @@ static void cmd_COMMANDS(sel_engine* e, const sel_message* m) {
     uint32_t i;
     (void)m;
     for (i = 0; i < SEL_CMD_COUNT; i++) {
-        emit_log(e, sel_cmd_name(i), sel_cmd_args(i));
+        char fields[96];
+        snprintf(fields, sizeof fields, "%s area=%s", sel_cmd_args(i), sel_cmd_area(i));
+        emit_log(e, sel_cmd_name(i), fields);
     }
 }
 

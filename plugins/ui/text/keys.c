@@ -33,6 +33,10 @@ static uint32_t final_key(uint8_t f) {
     case 'D': return TXT_KEY_LEFT;
     case 'H': return TXT_KEY_HOME;
     case 'F': return TXT_KEY_END;
+    case 'P': return TXT_KEY_F1;      /* SS3 P..S: F1..F4 */
+    case 'Q': return TXT_KEY_F1 + 1u;
+    case 'R': return TXT_KEY_F1 + 2u;
+    case 'S': return TXT_KEY_F1 + 3u;
     default: return 0;
     }
 }
@@ -47,6 +51,9 @@ static uint32_t tilde_key(uint32_t n) {
     case 8: return TXT_KEY_END;
     case 5: return TXT_KEY_PAGE_UP;
     case 6: return TXT_KEY_PAGE_DOWN;
+    case 11: case 12: case 13: case 14: case 15: return TXT_KEY_F1 + (n - 11u); /* F1..F5 */
+    case 17: case 18: case 19: case 20: case 21: return TXT_KEY_F1 + (n - 12u); /* F6..F10 */
+    case 23: case 24: return TXT_KEY_F1 + (n - 13u); /* F11, F12 */
     default: return 0;
     }
 }

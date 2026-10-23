@@ -23,7 +23,8 @@ enum {
     TXT_KEY_PAGE_DOWN,
     TXT_KEY_INSERT,
     TXT_KEY_DELETE,
-    TXT_KEY_MOUSE
+    TXT_KEY_MOUSE,
+    TXT_KEY_F1 /* F1 .. F12 are TXT_KEY_F1 + 0 .. 11 */
 };
 
 #define TXT_MOD_SHIFT 1u
