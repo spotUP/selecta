@@ -598,6 +598,14 @@ if(NOT SEL_AMIGA)
   add_test(NAME sleep-ramp COMMAND timer_test)
 endif()
 
+# M1.3 Phase 7 gap rows I104a-d (T26 with DSP on, T46 nuade scan, key-level engine state, note dots and phase view).
+if(APPLE)
+  add_test(NAME no-alloc-render-dsp
+    COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/m0/no_alloc.sh"
+      $<TARGET_FILE:selecta-cli> $<TARGET_FILE:count_malloc>
+      "${SEL_TESTMOD}" "${SEL_RENDER_OUT}/no-alloc-dsp.wav" --dsp crossfeed)
+endif()
+
 # T46 (rows I97, I98): SAMPLE_LIST and SAMPLE_EXPORT (WAV, 8SVX) through the engine, libopenmpt adapter.
 if(NOT SEL_AMIGA)
   add_test(NAME sample-export
