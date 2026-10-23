@@ -58,6 +58,9 @@ SEL_TAG(RP, NEEDS_FLOAT,       0x1017, INT)
 SEL_TAG(RP, MEMORY,            0x1018, INT)
 SEL_TAG(RP, PRIORITY,          0x1019, INT)
 SEL_TAG(RP, CONFIG,            0x101A, LIST)
+/* Companion file rules (library cache, I166): ';'-separated `pattern>companion` over the base name,
+ * '*' standing for the rest of the name. `mdat.*>smpl.*` fetches smpl.<name> with mdat.<name>. */
+SEL_TAG(RP, COMPANIONS,        0x101B, STR)
 
 SEL_TAG(OUT, NAME,             0x2000, STR)
 SEL_TAG(OUT, SINK,             0x2001, INT)

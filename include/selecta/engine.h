@@ -149,6 +149,11 @@ typedef struct sel_scan_info {
     uint32_t archives;        /* archive files opened */
     uint32_t archive_members; /* members written as songs */
 } sel_scan_info;
+/* LIBRARY_FETCH hook (I165, I166): fetches `spec` ("<source>:<path>", optional "#md5=<hex>") and the
+ * companion files of its format into the file cache. Returns 1 with the cache path in `out` and the
+ * number of files delivered (the song plus its companions) in `files`; 0 on failure; -1 when every
+ * mirror delivered a body whose md5 differs. */
+typedef int (*sel_library_fetch_fn)(void* ctx, const char* spec, char* out, size_t cap, uint32_t* files);
 
 typedef struct sel_engine_config {
     uint32_t cmd_queue_depth; /* 0: default 64 */
@@ -174,6 +179,8 @@ typedef struct sel_engine_config {
     /* Library database (src/library/db); the front end opens and closes it. NULL:
      * LIBRARY_SEARCH, LIBRARY_SCAN, PLAY_QUERY, QUEUE_ADD_QUERY and VIEW_SAVE answer ERROR no_library. */
     struct sel_library* library;
+    sel_library_fetch_fn library_fetch; /* LIBRARY_FETCH hook; NULL: ERROR no_library */
+    void* library_fetch_ctx;
 } sel_engine_config;
 
 typedef struct sel_engine sel_engine;

@@ -940,3 +940,13 @@ if(NOT SEL_AMIGA AND SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
   set_tests_properties(source-local-scan-vamos PROPERTIES LABELS m3 FIXTURES_REQUIRED amiga_cli
     RESOURCE_LOCK vamos DISABLED TRUE PASS_REGULAR_EXPRESSION "scan_vamos_ok")
 endif()
+
+# T75 cache-fetch (rows I165, I166): LIBRARY_FETCH through the file cache and its companions.
+# Runs after mirrors-ranking because both read the shared request log.
+if(NOT SEL_AMIGA)
+  add_test(NAME cache-fetch
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3" -P "${SEL_NET_DIR}/cache_fetch.cmake")
+  set_tests_properties(cache-fetch PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    DEPENDS mirrors-ranking TIMEOUT 60)
+endif()
