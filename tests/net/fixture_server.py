@@ -23,7 +23,8 @@ Range: single "bytes=a-b" ranges answer 206. Control endpoints (never logged):
   GET /__fixture/log    JSON array of logged requests
   POST /__fixture/reset clears the log
 Log line: {n, method, host, path, headers{range,authorization,content-type,
-content-length,user-agent}, body_sha256, body_len, status}.
+content-length,user-agent}, body_sha256, body_len, status}; a POST also carries body (its first 4096
+bytes, latin-1), so a test can check a signed form request (I177 last.fm scrobble).
 
 Commands:
   start --portfile F --pidfile P --logfile L [--tls-port-file T --cert C --key K]
@@ -104,6 +105,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         hdrs = {k: self.headers[k] for k in KEEP_HEADERS if self.headers.get(k)}
         entry = {"method": self.command, "host": host, "path": self.path, "headers": hdrs,
                  "body_sha256": hashlib.sha256(body).hexdigest(), "body_len": len(body)}
+        if self.command == "POST":
+            entry["body"] = body[:4096].decode("latin-1")
         self.entry = entry
         self.route(host, parsed, entry)
 

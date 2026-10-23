@@ -1,0 +1,9 @@
+# T95 (row I177): selecta-test-mk.mod reports META_DURATION_MS=30080, so SCROBBLE_DUE is due at 15040 ms.
+# 44100 frames per second. First step ends at 14900 ms (not due), the second at 15100 ms (due).
+# scrobble.cmake runs this with --integration lastfm.
+OPEN selecta-test-mk.mod
+PLAY
+@render 657090
+@position
+@render 8820
+@position

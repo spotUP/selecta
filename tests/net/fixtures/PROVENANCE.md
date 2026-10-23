@@ -23,3 +23,5 @@ Generated (I168): fast.mirror.test/mods/Protracker/test/play1.mod and play2.mod 
 Synthetic (I161a): sync.modland.test/allmods.zip holds allmods.txt in the real "<size><TAB><path>" layout (the 100 paths of tests/m3/modland_listing, sizes NR*1000); sync.modland.test/pub/changelogs/ has copies of tests/m3/modland_changelogs 2026-10-20 and 2026-10-22; every other date answers 404 like upstream.
 
 Synthetic (I181): devilbox.uprough.net/api/genre/<key> answers for the four songs of tests/m3/genre (key = UADE key, hex8 xxh32 of the first 256 KB + hex4 of length): ambient and techno carry source modarchive, nogenre source untagged with genre null, down answers 503 via routes.json (genre stays unknown, uncached). The ambient/techno genre strings are invented, not Mod Archive data.
+
+Synthetic (I177): ws.audioscrobbler.com/2.0/ answers every request with the last.fm success JSON `{"scrobbles":{"@attr":{"accepted":1,"ignored":0}}}`; the fixture key and secret in tests/m3/scrobble.cmake are invented, the real service is never contacted.

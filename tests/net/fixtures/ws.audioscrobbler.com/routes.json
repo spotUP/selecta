@@ -1,0 +1,6 @@
+{
+  "/2.0/": {
+    "status": 200,
+    "body": "{\"scrobbles\":{\"@attr\":{\"accepted\":1,\"ignored\":0}}}"
+  }
+}

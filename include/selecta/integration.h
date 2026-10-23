@@ -19,6 +19,12 @@ SEL_EXTERN_C_BEGIN
 typedef struct sel_int_host {
     void* ctx;
     int (*send_command)(void* ctx, const char* line);
+    /* Append only below this line. POST `body` (application/x-www-form-urlencoded) to `url` through the host's
+     * one HTTP client (net guard and proxies apply). Returns 0 when a response arrived, non-zero on a transport
+     * failure; *status is the HTTP status and `reply` receives up to reply_cap-1 bytes of the body, NUL ended. */
+    int (*http_post)(void* ctx, const char* url, const char* body, char* reply, size_t reply_cap, int* status);
+    /* MD5 of `data` as 32 lower-case hex characters plus NUL. */
+    void (*md5_hex)(void* ctx, const void* data, size_t len, char out[33]);
 } sel_int_host;
 
 typedef void* (*sel_int_open_fn)(const sel_host* host, const sel_int_host* ih); /* INT_OPEN: state or NULL */
