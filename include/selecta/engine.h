@@ -314,6 +314,10 @@ typedef struct sel_engine_stats {
     uint32_t sleep_armed;            /* 1: a sleep timer is counting down (T39) */
     uint32_t led_on, led_frames, led_cutoff_hz;       /* LED filter state, frames filtered, designed -3 dB point (T53) */
     uint32_t width_percent, width_frames, width_mono; /* stereo width, frames processed, 1: width 0 (T53) */
+    const char* loudness_source;  /* "off", "none" (no gain known) or "stored" (library gain applied) (T90, I189) */
+    uint32_t loudness_gain_q16;   /* the 16.16 gain in force; 65536 when none */
+    uint32_t limiter_hits;        /* frames the -1 dBFS limiter reduced */
+    uint32_t loudness_frames;     /* frames that ran through the gain stage (sentinel) */
 } sel_engine_stats;
 void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out);
 /* Key `i` of the last LIBRARY_SEARCH, PLAY_QUERY or QUEUE_ADD_QUERY result (byte order of the key), NULL past the end. */

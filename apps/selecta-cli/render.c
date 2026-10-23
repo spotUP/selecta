@@ -118,6 +118,10 @@ int sel_cli_render(int argc, char** argv) {
     const char* viz_dump = NULL;
     const char* script = NULL;
     const char* dsp = NULL;
+    const char* loud_mode = NULL;
+    const char* loud_db = NULL;
+    int loud_have_gain = 0;
+    int32_t loud_gain_cdb = 0;
     FILE* dump = NULL;
     uint32_t viz_blocks = 0, viz_seen = 0;
     unsigned long rate = 44100, seconds = 10;
@@ -180,6 +184,17 @@ int sel_cli_render(int argc, char** argv) {
                 return 2;
             }
             stage_flag = 1;
+        } else if (strcmp(argv[i], "--loudness") == 0) {
+            if (strcmp(argv[i + 1], "track") != 0 && strcmp(argv[i + 1], "auto") != 0 && strcmp(argv[i + 1], "off") != 0) {
+                fputs("render: --loudness takes track, auto or off\n", stderr);
+                return 2;
+            }
+            loud_mode = argv[i + 1];
+        } else if (strcmp(argv[i], "--db") == 0) {
+            loud_db = argv[i + 1];
+        } else if (strcmp(argv[i], "--gain-cdb") == 0) {
+            loud_gain_cdb = (int32_t)strtol(argv[i + 1], NULL, 10);
+            loud_have_gain = 1;
         } else if (strcmp(argv[i], "--resample") == 0) {
             if (!parse_resampler(argv[i + 1], &resampler)) {
                 fprintf(stderr, "render: unknown resampler %s\n", argv[i + 1]);
@@ -224,6 +239,7 @@ int sel_cli_render(int argc, char** argv) {
         }
     }
     sel_cli_set_rp_config(rp_global, rp_song);
+    sel_cli_set_loudness(loud_mode, loud_db, loud_have_gain, loud_gain_cdb);
     e = sel_cli_start_song_sink("render", &host, song, (uint32_t)rate, resampler, sink);
     if (e == NULL) {
         if (out != NULL) {
@@ -333,6 +349,10 @@ int sel_cli_render(int argc, char** argv) {
                (unsigned)stats.led_cutoff_hz);
         printf("width=%u width_frames=%u width_mono=%u\n", (unsigned)stats.width_percent, (unsigned)stats.width_frames,
                (unsigned)stats.width_mono);
+    }
+    if (loud_mode != NULL || loud_db != NULL || loud_have_gain) {
+        printf("loudness_source=%s gain_q16=%u limiter_hits=%u leveler_frames=0 loudness_frames=%u\n", stats.loudness_source,
+               (unsigned)stats.loudness_gain_q16, (unsigned)stats.limiter_hits, (unsigned)stats.loudness_frames);
     }
     if (dsp != NULL) {
         printf("dsp=%s blocks=%u\n", dsp, (unsigned)stats.dsp_blocks);

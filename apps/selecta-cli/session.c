@@ -47,6 +47,10 @@ static void start_sink(void* ctx, const sel_message* evt) {
 static const char* g_rp_global;
 static const char* g_rp_song;
 static sel_library* g_rp_lib;
+static const char* g_loud_mode;
+static const char* g_loud_db;
+static int g_loud_have_gain;
+static int32_t g_loud_gain_cdb;
 static sel_host g_rp_host; /* the library keeps the host pointer until the atexit close, so the host is copied here */
 
 static void close_rp_lib(void) {
@@ -57,6 +61,13 @@ static void close_rp_lib(void) {
 void sel_cli_set_rp_config(const char* global, const char* song) {
     g_rp_global = global;
     g_rp_song = song;
+}
+
+void sel_cli_set_loudness(const char* mode, const char* db, int have_gain, int32_t gain_cdb) {
+    g_loud_mode = mode;
+    g_loud_db = db;
+    g_loud_have_gain = have_gain;
+    g_loud_gain_cdb = gain_cdb;
 }
 
 sel_engine* sel_cli_start_song_sink(const char* who, const sel_host* host, const char* song, uint32_t rate,
@@ -70,16 +81,26 @@ sel_engine* sel_cli_start_song_sink(const char* who, const sel_host* host, const
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;
     cfg.machine = sel_machine_probe(host);
-    if (g_rp_song != NULL) {
-        /* The per-song override lives in the library DB: a throwaway library holds it for this song (I170). */
+    if (g_rp_song != NULL || g_loud_db != NULL || g_loud_have_gain) {
+        /* The per-song override (I170) and the stored loudness gain (I189) live in the library DB: --db names a
+         * real one, otherwise a throwaway library holds them for this song. */
         if (g_rp_lib == NULL) {
             g_rp_host = *host;
-            g_rp_lib = sel_library_open(&g_rp_host, cfg.machine, 1, ":memory:");
+            g_rp_lib = sel_library_open(&g_rp_host, cfg.machine, g_loud_db != NULL ? 0 : 1,
+                                        g_loud_db != NULL ? g_loud_db : ":memory:");
             if (g_rp_lib != NULL) atexit(close_rp_lib);
         }
-        if (g_rp_lib == NULL || !sel_library_song_config_set(g_rp_lib, song, g_rp_song)) {
+        if (g_rp_lib == NULL || (g_rp_song != NULL && !sel_library_song_config_set(g_rp_lib, song, g_rp_song))) {
             fprintf(stderr, "%s: cannot store the per-song replayer options\n", who);
             return NULL;
+        }
+        if (g_loud_have_gain) {
+            char key[1100];
+            snprintf(key, sizeof key, strncmp(song, "local:", 6) == 0 ? "%s" : "local:%s", song);
+            if (!sel_library_loudness_set(g_rp_lib, key, key + 6, g_loud_gain_cdb)) {
+                fprintf(stderr, "%s: cannot store the loudness gain\n", who);
+                return NULL;
+            }
         }
         cfg.library = g_rp_lib;
     }
@@ -102,6 +123,17 @@ sel_engine* sel_cli_start_song_sink(const char* who, const sel_host* host, const
         msg.args[0].v.s = "rp.config";
         msg.args[1].type = SEL_ARG_STR;
         msg.args[1].v.s = g_rp_global;
+        sel_engine_send(e, &msg);
+    }
+    if (g_loud_mode != NULL) {
+        memset(&msg, 0, sizeof msg);
+        msg.kind = SEL_MSG_CMD;
+        msg.id = SEL_CMD_PREF_SET;
+        msg.argc = 2;
+        msg.args[0].type = SEL_ARG_STR;
+        msg.args[0].v.s = "mix.loudness";
+        msg.args[1].type = SEL_ARG_STR;
+        msg.args[1].v.s = g_loud_mode;
         sel_engine_send(e, &msg);
     }
     memset(&msg, 0, sizeof msg);
