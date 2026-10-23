@@ -97,6 +97,7 @@
     X(PLAY_QUERY)                                                                             \
     X(QUEUE_ADD_QUERY)                                                                        \
     X(VIEW_SAVE)                                                                              \
+    X(VIEW_SOURCE)                                                                            \
     X(VIEW_SHOW)                                                                              \
     X(VIEW_CURSOR)                                                                            \
     X(VIEW_ACTIVATE)                                                                          \
@@ -240,6 +241,7 @@ struct sel_engine {
     char deferred_path[SEL_DEFERRED_PATH_MAX];
     char subsong_path[SEL_DEFERRED_PATH_MAX];
     sel_queue queue;
+    sel_queue qview; /* the library query rows the query view source lists */
     sel_history history;
     uint32_t rng; /* shuffle generator state, 0: not seeded yet */
     /* random play order: the first order_done ids are played (the last one is
@@ -2419,7 +2421,7 @@ static void cmd_VIEW_SAVE(sel_engine* e, const sel_message* m) {
 /* ---- view ------------------------------------------------------------ */
 
 static void view_src(const sel_engine* e, sel_view_src* s) {
-    s->queue = &e->queue;
+    s->queue = e->view.pub.source == SEL_VIEW_QUERY ? &e->qview : &e->queue;
     s->browse = &e->browse;
     s->playing = e->q_playing;
     s->title_format = e->prefs.value[SEL_PREF_VIEW_TITLE_FORMAT];
@@ -2461,6 +2463,58 @@ static void view_sync(sel_engine* e) {
             emit_view(e, SEL_EVT_VIEW_ROWS);
         }
     }
+}
+
+/* VIEW_SOURCE query lists the rows of the last library search; queue and browse switch back.
+ * The query list is a snapshot, so later searches do not move a view that is showing it. */
+static void cmd_VIEW_SOURCE(sel_engine* e, const sel_message* m) {
+    const char* what = m->args[0].v.s;
+    sel_view_src s;
+    uint32_t i;
+
+    if (strcmp(what, "query") == 0) {
+        sel_queue_clear(&e->qview);
+        for (i = 0; i < e->res_count; i++) {
+            uint32_t id;
+            if (!sel_queue_insert(&e->qview, SEL_QUEUE_NONE, sel_engine_result_key(e, i), &id)) {
+                sel_engine_report_error(e, "queue_full", "VIEW_SOURCE");
+                break;
+            }
+        }
+    } else if (strcmp(what, "queue") != 0 && strcmp(what, "browse") != 0) {
+        sel_engine_report_error(e, "unsupported", "VIEW_SOURCE");
+        return;
+    }
+    if (strcmp(what, "query") == 0) {
+        e->view.cursor_of[SEL_VIEW_QUERY] = 0; /* a new result list starts at its first row */
+        e->view.id_of[SEL_VIEW_QUERY] = 0;
+        if (e->view.pub.source == SEL_VIEW_QUERY) {
+            e->view.pub.cursor = 0;
+            e->view.pub.cursor_id = 0;
+        }
+    }
+    view_src(e, &s);
+    e->view.active = 1;
+    sel_view_show(&e->view, &s, what);
+    view_src(e, &s);
+    sel_view_refresh(&e->view, &s);
+    e->view.force_changed = 1;
+}
+
+const char* sel_view_source_label(uint32_t source) {
+    return source == SEL_VIEW_QUEUE ? "queue" : source == SEL_VIEW_BROWSE ? "browse" : source == SEL_VIEW_QUERY ? "query" : "unknown";
+}
+
+const char* sel_engine_view_cursor_key(const sel_engine* e) {
+    const sel_view_state* v = &e->view.pub;
+    const sel_queue* q = v->source == SEL_VIEW_QUERY ? &e->qview : &e->queue;
+    uint32_t at;
+
+    if (v->source == SEL_VIEW_BROWSE || v->row_count == 0) {
+        return NULL;
+    }
+    at = sel_queue_index_of(q, v->cursor_id);
+    return at == SEL_QUEUE_NONE ? NULL : sel_queue_path(q, at);
 }
 
 static void cmd_VIEW_SHOW(sel_engine* e, const sel_message* m) {
@@ -2555,9 +2609,18 @@ static void cmd_VIEW_ACTIVATE(sel_engine* e, const sel_message* m) {
         return;
     }
     at = v->cursor;
-    if (v->source == SEL_VIEW_QUEUE) {
+    if (v->source != SEL_VIEW_BROWSE) {
         uint32_t qi;
         if (sel_view_enter(&e->view, &s, &qi)) {
+            if (v->source == SEL_VIEW_QUERY) {
+                /* A query row plays like PLAY_QUERY of one song: it joins the queue and starts. */
+                uint32_t before = e->queue.count;
+                queue_insert(e, before, sel_queue_path(&e->qview, qi), "VIEW_ACTIVATE");
+                if (e->queue.count > before) {
+                    queue_start(e, before);
+                }
+                return;
+            }
             queue_start(e, qi);
         } else {
             e->view.force_changed = 1;
@@ -2691,6 +2754,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         !sel_spsc_init(&e->swap_q, host, SEL_SWAP_RING_DEPTH) ||
         !sel_spsc_init(&e->ret_q, host, SEL_SWAP_RING_DEPTH) ||
         !sel_queue_init(&e->queue, host, queue_cap, queue_text) ||
+        !sel_queue_init(&e->qview, host, queue_cap, queue_text) ||
         !sel_history_init(&e->history, host, queue_cap, queue_text) ||
         (e->order = host->mem_alloc(host, (size_t)queue_cap * sizeof *e->order, SEL_MEM_FAST)) == NULL ||
         (e->order_seen = host->mem_alloc(host, queue_cap, SEL_MEM_FAST)) == NULL ||
@@ -2742,6 +2806,7 @@ void sel_engine_destroy(sel_engine* e) {
         if (e->res_text) {
             e->host->mem_free(e->host, e->res_text);
         }
+        sel_queue_free(&e->qview, e->host);
         sel_dsp_chain_free(&e->dsp);
         sel_browse_free(&e->browse, e->host);
         sel_view_free(&e->view, e->host);

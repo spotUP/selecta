@@ -29,9 +29,6 @@ int sel_cli_play(int argc, char** argv);
 /* library browse <dir> (T57): LIBRARY_BROWSE through the engine; prints `dir_entries=<n>`. */
 int sel_cli_library(int argc, char** argv);
 
-/* An in-memory library seeded from a TSV catalogue (library search, script --catalogue); NULL on failure. */
-struct sel_library* sel_cli_open_catalogue(const char* tsv);
-
 /* fetch <url> (T67, T68): one HTTP request through the library client; prints counters. */
 int sel_cli_fetch(int argc, char** argv);
 

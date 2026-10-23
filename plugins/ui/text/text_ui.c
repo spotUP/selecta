@@ -132,7 +132,7 @@ static void tui_remove_cursor_entry(tui* u) {
 }
 
 static int tui_queue_view(const sel_view_state* v) {
-    return v != NULL && v->source == SEL_VIEW_QUEUE;
+    return v != NULL && v->source != SEL_VIEW_BROWSE; /* the queue and the library query share the styles */
 }
 
 /* v: regular -> tree -> drilldown -> regular. */
@@ -529,11 +529,12 @@ static const char* tui_leaf(const char* path) {
 static void tui_queue_title(char* buf, size_t cap, const sel_view_state* v) {
     uint32_t i;
     size_t n;
+    const char* what = v->source == SEL_VIEW_QUERY ? "Query" : "Queue";
     if (v->style == SEL_VIEW_STYLE_REGULAR || v->group == NULL) {
-        snprintf(buf, cap, "Queue  %u entries", (unsigned)v->row_count);
+        snprintf(buf, cap, "%s  %u %s", what, (unsigned)v->row_count, v->source == SEL_VIEW_QUERY ? "results" : "entries");
         return;
     }
-    snprintf(buf, cap, "Queue by %s%s", v->group, v->style == SEL_VIEW_STYLE_TREE ? "  Tree" : "  Drilldown");
+    snprintf(buf, cap, "%s by %s%s", what, v->group, v->style == SEL_VIEW_STYLE_TREE ? "  Tree" : "  Drilldown");
     for (i = 0; v->style == SEL_VIEW_STYLE_DRILLDOWN && i < v->drill_n && i < 2u; i++) {
         n = strlen(buf);
         snprintf(buf + n, cap - n, " > %s", v->drill[i]);
@@ -558,7 +559,7 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
         const sel_view_row* r = &v->rows[i];
         uint32_t y = 3u + i;
         int at_cursor = v->window_start + i == v->cursor;
-        int playing = r->kind == SEL_ROW_QUEUE && r->id == s->queue_playing;
+        int playing = v->source == SEL_VIEW_QUEUE && r->kind == SEL_ROW_QUEUE && r->id == s->queue_playing;
         txt_role role = at_cursor ? TXT_ROLE_CURSOR
                         : playing ? TXT_ROLE_PLAYING
                         : r->kind == SEL_ROW_DIR || r->kind == SEL_ROW_NODE ? TXT_ROLE_DIRECTORY

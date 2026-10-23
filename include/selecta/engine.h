@@ -58,7 +58,7 @@ typedef struct sel_queue_entry {
 
 /* The view model (design doc section 9b), regular style: one flat list over
  * the queue or the browse listing, a cursor and the visible window. */
-typedef enum sel_view_source { SEL_VIEW_QUEUE = 0, SEL_VIEW_BROWSE = 1 } sel_view_source;
+typedef enum sel_view_source { SEL_VIEW_QUEUE = 0, SEL_VIEW_BROWSE = 1, SEL_VIEW_QUERY = 2 } sel_view_source;
 typedef enum sel_row_kind { SEL_ROW_DIR = 0, SEL_ROW_FILE, SEL_ROW_QUEUE, SEL_ROW_NODE } sel_row_kind;
 /* Styles over the queue: regular (flat), tree (group nodes that expand to
  * their songs) and drilldown (columns: pick a value per level, the next
@@ -272,6 +272,10 @@ const char* sel_engine_result_key(const sel_engine* e, uint32_t i);
 
 /* "regular", "tree" or "drilldown" for a sel_view_style value; "unknown" otherwise. */
 const char* sel_view_style_label(uint32_t style);
+/* "queue", "browse" or "query" for a sel_view_source value; "unknown" otherwise. */
+const char* sel_view_source_label(uint32_t source);
+/* Key of the song under the cursor in the queue or query list; NULL on a directory row or an empty list. */
+const char* sel_engine_view_cursor_key(const sel_engine* e);
 
 /* Fills `frames` stereo frames: the open song's mix while PLAYING, else
  * silence. Counts calls. Never allocates. */

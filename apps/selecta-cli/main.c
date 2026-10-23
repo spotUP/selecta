@@ -8,6 +8,7 @@
 #include <selecta/registry.h>
 #include <selecta/tags.h>
 
+#include "catalogue.h"
 #include "cli.h"
 #include "db.h"
 #include "integration_host.h"

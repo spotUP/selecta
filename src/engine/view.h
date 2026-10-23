@@ -51,7 +51,7 @@ typedef struct sel_view {
     sel_view_row* rows;
     char* row_text; /* row_cap * SEL_VIEW_TEXT_MAX: the formatted queue rows */
     uint32_t row_cap;
-    uint32_t cursor_of[2], id_of[2]; /* the cursor each source was left at */
+    uint32_t cursor_of[3], id_of[3]; /* the cursor each source was left at */
     uint32_t browse_seen;            /* browse generation the cursor belongs to */
     uint32_t land;                   /* cursor for the next browse listing */
     int active;                      /* a VIEW_ command ran: events are wanted */
