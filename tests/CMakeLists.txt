@@ -969,6 +969,7 @@ if(NOT SEL_AMIGA)
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/userdata.expected
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/userflags.sel ${CMAKE_CURRENT_SOURCE_DIR}/m3/userflags.expected
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/sounds-wrong.golden
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/usernote.sel
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
   set_tests_properties(user-data PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "userdata_ok")
 

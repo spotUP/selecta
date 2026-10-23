@@ -210,7 +210,8 @@ void sel_library_move(sel_library* lib, const sel_move* m, sel_message* reply) {
         sqlite3_stmt* st = NULL;
 
         rc = sqlite3_prepare_v2(lib->db,
-                                "UPDATE songs SET key=?1, path=?2, name=?3, artist=?4, format=?5 WHERE key=?6", -1, &st,
+                                "UPDATE songs SET key=?1, path=?2, name=" SEL_SONG_TAG_KEEP_AT(name, "?6", "?3")
+                                ", artist=" SEL_SONG_TAG_KEEP_AT(artist, "?6", "?4") ", format=?5 WHERE key=?6", -1, &st,
                                 NULL);
         if (rc == SQLITE_OK) {
             sqlite3_bind_text(st, 1, newkey, -1, SQLITE_STATIC);

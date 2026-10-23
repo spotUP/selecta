@@ -1,0 +1,6 @@
+# T78 NOTE part (row I172a): NOTE from a script stores a note on the song being played in the library DB.
+# userdata.sh runs this with --db and then counts notes=1 in that file.
+QUEUE_ADD selecta-test.mod
+PLAY
+@render 1
+NOTE "great bassline"

@@ -124,6 +124,7 @@
     X(LIBRARY_SYNC)                                                                           \
     X(LIKE)                                                                                   \
     X(FLAG)                                                                                   \
+    X(NOTE)                                                                                   \
     X(RATE) X(VOTE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
     X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) \
     X(STATS_SHOW) X(STATS_HIDE) \
@@ -3107,6 +3108,18 @@ static void cmd_FLAG(sel_engine* e, const sel_message* m) {
         sel_engine_report_error(e, "library_failed", "FLAG");
     } else {
         e->order_qver = 0xFFFFFFFFu; /* a skip flag changes the candidates: rebuild the order on next use */
+    }
+}
+
+/* NOTE [text]: keeps a note for the song being played (I172a); no text removes it. The library also queues the
+ * note as a DEViLBOX comment (pending_push), which nothing sends yet. */
+static void cmd_NOTE(sel_engine* e, const sel_message* m) {
+    if (e->lib == NULL) {
+        sel_engine_report_error(e, "no_library", "NOTE");
+    } else if (e->hist_key[0] == '\0') {
+        sel_engine_report_error(e, "no_song", "NOTE");
+    } else if (!sel_library_note(e->lib, e->hist_key, m->argc > 0 ? m->args[0].v.s : NULL)) {
+        sel_engine_report_error(e, "library_failed", "NOTE");
     }
 }
 

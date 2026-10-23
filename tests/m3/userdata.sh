@@ -4,7 +4,7 @@
 # lines with userdata.expected. Flags: userflags.sel (FLAG wrong/skip, wrong:yes/skip:yes, SHUFFLE never picks the
 # skip-flagged song, skip_excluded sentinel) diffed with userflags.expected; then `selecta-cli wrong` writes two
 # flags into a database file, exports sounds-wrong.txt and diffs it with the golden file. Prints userdata_ok.
-# usage: userdata.sh <selecta-cli> <catalogue.tsv> <userdata.sel> <expected> <userflags.sel> <userflags.expected> <golden>
+# usage: userdata.sh <selecta-cli> <catalogue.tsv> <userdata.sel> <expected> <userflags.sel> <userflags.expected> <golden> <usernote.sel>
 set -u
 cli=$1
 out=$("$cli" script "$3" --catalogue "$2" 2>&1 | grep -E '^(LIBRARY |RESULTS |ERROR)')
@@ -32,5 +32,10 @@ res=$("$cli" userdata --db userdata_notes.db --catalogue "$2") || exit 1
 [ "$res" = "history_rows=1 flags=1 notes=1 pending_push=1" ] || { echo "restart: $res"; exit 1; }
 res=$("$cli" library search --db userdata_notes.db "artist:zedtag") || exit 1
 printf '%s\n' "$res" | grep -q '^key=local:selecta-test.mod' || { echo "tag after reimport: $res"; exit 1; }
+rm -f userdata_notes.db
+# NOTE from a .sel script (I172a): the engine command stores the note on the playing song in the database file.
+out=$("$cli" script "$8" --catalogue "$2" --db userdata_notes.db 2>&1 | grep -E '^ERROR') && { echo "NOTE script: $out"; exit 1; }
+res=$("$cli" userdata --db userdata_notes.db) || exit 1
+case "$res" in *" notes=1 pending_push=1") ;; *) echo "NOTE script: $res"; exit 1 ;; esac
 rm -f userdata_notes.db
 echo userdata_ok

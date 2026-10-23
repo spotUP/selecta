@@ -107,8 +107,11 @@ void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* repl
 
 /* I172: inside `INSERT ... ON CONFLICT DO UPDATE SET col = ...` on songs, keeps a user's tag edit (sticker
  * "tag.<col>") over the scanned value. Every songs upsert uses it, so the edit survives a rescan. */
-#define SEL_SONG_TAG_KEEP(col) \
-    "COALESCE((SELECT value FROM stickers WHERE key = excluded.key AND name = 'tag." #col "'), excluded." #col ")"
+#define SEL_SONG_TAG_KEEP(col) SEL_SONG_TAG_KEEP_AT(col, "excluded.key", "excluded." #col)
+/* The same rule with the sticker key and the scanned value as SQL expressions, for a plain UPDATE (the MOVE
+ * rekey, where the stickers still sit under the old key). */
+#define SEL_SONG_TAG_KEEP_AT(col, key, value) \
+    "COALESCE((SELECT value FROM stickers WHERE key = " key " AND name = 'tag." #col "'), " value ")"
 
 /* worker.c */
 int sel_worker_start(sel_library* lib);

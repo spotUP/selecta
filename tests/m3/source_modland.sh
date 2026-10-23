@@ -93,6 +93,18 @@ if echo "$out" | grep -qF 'row=pub/modules/Ace Tracker/505/blocks.am|'; then
 fi
 echo "$out" | grep -qF 'row=pub/modules/Protracker/Test Artist/indented one.mod|' || { echo "FAIL indented added missing"; exit 1; }
 
+# I172a: a tag edit on a song survives the changelog MOVE that rekeys it. Sync the listing alone, edit the
+# artist under the old key, then sync again with the changelogs and search for the edited artist.
+mkdir "$root/e"
+cp "$listing" "$root/e/"
+"$cli" library sync --db "$root/e.db" --now "$now" modland "$root/e" > /dev/null
+"$cli" userdata --db "$root/e.db" --tag 'modland:pub/modules/Fasttracker 2/Hans Der Reuter/final pray.xm' artist Zzedited > /dev/null \
+    || { echo "FAIL tag edit before the move"; exit 1; }
+cp "$fx"/modland_changelogs/changelog_*.txt "$root/e/"
+"$cli" library sync --db "$root/e.db" --now "$now" modland "$root/e" > /dev/null
+hits=$("$cli" library search --db "$root/e.db" artist:zzedited)
+echo "$hits" | grep -qF 'pub/modules/Fasttracker 2/Lioz/final pray.xm' || { echo "FAIL tag edit lost by the move"; echo "$hits"; exit 1; }
+
 # Part 3: the real allmods.txt layout, "<size><TAB><path>" with no md5 column.
 mkdir "$root/c"
 awk -F'\t' '{ print (NR * 1000) "\t" $2 }' "$listing" > "$root/c/allmods_md5.txt"
