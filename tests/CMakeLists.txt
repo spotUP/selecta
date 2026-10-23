@@ -713,11 +713,7 @@ if(NOT SEL_AMIGA)
   # selecta-test.mod is mono (the protracker4 replayer does not pan), so a width knob cannot
   # move its hash; the desktop run also renders the stereo mk module (libopenmpt pans it).
   sel_m2_test(mixer-led-stereo mixer desktop "-DMKMOD=${SEL_MKMOD}")
-  # vamos truncates long absolute host paths: the 68k run starts in the repository root and gets relative paths.
-  sel_m2_test(mixer-led-stereo mixer vamos "-DMKMOD=${SEL_MKMOD}" "-DROOT=${PROJECT_SOURCE_DIR}")
-  if(SEL_M2_VAMOS)
-    set_tests_properties(mixer-led-stereo-vamos PROPERTIES WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
-  endif()
+  sel_m2_test(mixer-led-stereo mixer vamos "-DMKMOD=${SEL_MKMOD}")
   # I129 the LED filter and stereo width commands reach the stages (desktop; the 68k render is T53).
   sel_m2_test(stage-commands stage_commands desktop "-DMKMOD=${SEL_MKMOD}"
     "-DSCRIPT=${SEL_M2}/stage_commands.sel")

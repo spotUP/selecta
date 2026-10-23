@@ -3,10 +3,47 @@
 # Every failure message starts with "RED[<tag>]:" and names the missing feature, so a red run is
 # readable as "feature not there yet", never as a typo.
 
+# Volumes the 68k binary sees under vamos. AmigaDOS reads a leading "/" as "parent directory", so a host
+# path like /Users/... never opens on the 68k side: scripts hand it volume paths from m2_path instead.
+# work: is the scratch dir WORK, song: the directory of the test module MOD. A script that sets its own
+# VAMOS_VOLUMES replaces these. A volume is mounted only when its directory exists at run time (vamos
+# refuses a missing one), so scripts without a scratch dir still run.
+
+# m2_path(var host_path): the path the CLI under test opens. Desktop: host_path unchanged. Vamos: a file
+# under WORK becomes work:<rel>, a file next to MOD becomes song:<rel>.
+function(m2_path var path)
+  set(p "${path}")
+  if(MODE STREQUAL "vamos")
+    get_filename_component(song_dir "${MOD}" DIRECTORY)
+    foreach(pair "work:;${WORK}" "song:;${song_dir}")
+      list(GET pair 0 vol)
+      list(GET pair 1 root)
+      string(LENGTH "${root}/" n)
+      string(SUBSTRING "${path}" 0 ${n} head)
+      if(root AND head STREQUAL "${root}/")
+        string(SUBSTRING "${path}" ${n} -1 rel)
+        set(p "${vol}${rel}")
+        break()
+      endif()
+    endforeach()
+  endif()
+  set(${var} "${p}" PARENT_SCOPE)
+endfunction()
+
 # m2_exec(out_var rc_var <args...>): runs the CLI (or AMIGA_CLI under vamos), captures stdout+stderr.
 function(m2_exec out_var rc_var)
   if(MODE STREQUAL "vamos")
-    set(cmd "${VAMOS}" -C 68020 -m 8192 ${VAMOS_VOLUMES} -- "${AMIGA_CLI}" ${ARGN})
+    set(vols ${VAMOS_VOLUMES})
+    if(NOT DEFINED VAMOS_VOLUMES)
+      get_filename_component(song_dir "${MOD}" DIRECTORY)
+      if(WORK AND IS_DIRECTORY "${WORK}")
+        list(APPEND vols -V "work:${WORK}")
+      endif()
+      if(MOD AND IS_DIRECTORY "${song_dir}")
+        list(APPEND vols -V "song:${song_dir}")
+      endif()
+    endif()
+    set(cmd "${VAMOS}" -C 68020 -m 8192 ${vols} -- "${AMIGA_CLI}" ${ARGN})
   else()
     set(cmd "${CLI}" ${ARGN})
   endif()
