@@ -968,6 +968,12 @@ if(NOT SEL_AMIGA)
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
   set_tests_properties(library-search-long-prefix PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_searches=16")
 
+  # I198e: a one-letter per-row scan stops at the queue capacity and reports truncated=1.
+  add_test(NAME library-search-scan-cap
+    COMMAND sh m3/library_scan_cap.sh $<TARGET_FILE:selecta-cli> ${CMAKE_CURRENT_BINARY_DIR}/scan_cap
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+  set_tests_properties(library-search-scan-cap PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "scan_cap count=256 keys=256 truncated=1")
+
   # T96 desktop half: export-index plus read-only ATTACH next to a user DB (I197, D-M3-16).
   add_test(NAME library-index-attach
     COMMAND sh m3/index_attach.sh $<TARGET_FILE:selecta-cli>
