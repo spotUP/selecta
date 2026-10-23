@@ -58,6 +58,7 @@ typedef struct tui {
     const char* dump_path;
     int dirty;
     int info;
+    uint32_t meta_panel_rows; /* catalogue rows the info panel drew in the latest frame (I185 sentinel) */
     int viz;     /* viz panel: 0 off, 1 levels, 2 scope, 3 spectrum, 4 note dots, 5 phase (V cycles) */
     int pattern; /* pattern panel shown (P toggles); excludes the viz panel */
     uint32_t voice; /* 1-based voice the digit keys touched last; S solos it */
@@ -66,7 +67,7 @@ typedef struct tui {
     uint32_t key_count;
     uint32_t pool_next;
     char pool[TUI_POOLS][TUI_POOL_BYTES];
-    sel_tag stats[16];
+    sel_tag stats[17];
     uint32_t frames;    /* flushes that wrote bytes */
     uint32_t hash;      /* FNV-1a over every flushed byte */
     int headless;       /* --size: fixed grid, keys from stdin, no terminal control */
@@ -719,6 +720,27 @@ static void tui_info(tui* u, const sel_state* s, uint32_t x) {
         txt_grid_text(&u->grid, x + 12u, y, val, w > 12u ? w - 12u : 1u, tui_style(u, TXT_ROLE_VALUE));
         y++;
     }
+    /* I185: the catalogue rows the engine took from the library (label and value pairs); absent data has no row. */
+    u->meta_panel_rows = 0;
+    if (s->panel != NULL) {
+        const char* p = s->panel;
+        while (*p != '\0' && y < u->grid.rows - 1u) {
+            const char* value = p + strlen(p) + 1;
+            char val[160];
+            uint32_t i;
+            snprintf(val, sizeof val, "%s", value);
+            for (i = 0; val[i] != '\0'; i++) {
+                if ((unsigned char)val[i] < 32u) {
+                    val[i] = ' ';
+                }
+            }
+            txt_grid_text(&u->grid, x, y, p, w, tui_style(u, TXT_ROLE_LABEL));
+            txt_grid_text(&u->grid, x + 12u, y, val, w > 12u ? w - 12u : 1u, tui_style(u, TXT_ROLE_VALUE));
+            y++;
+            u->meta_panel_rows++;
+            p = value + strlen(value) + 1;
+        }
+    }
 }
 
 /* Palette and help overlay: query line, then verbs grouped by area (query empty)
@@ -1334,8 +1356,10 @@ static const sel_tag* tui_stats(void* state) {
     u->stats[13].value = u->lib_searches;
     u->stats[14].tag = SEL_UI_STAT_FOLDER_OPENS;
     u->stats[14].value = u->folder_opens;
-    u->stats[15].tag = SEL_TAG_END;
-    u->stats[15].value = 0;
+    u->stats[15].tag = SEL_UI_STAT_META_PANEL_ROWS;
+    u->stats[15].value = u->meta_panel_rows;
+    u->stats[16].tag = SEL_TAG_END;
+    u->stats[16].value = 0;
     return u->stats;
 }
 

@@ -217,6 +217,9 @@ struct sel_engine {
     uint32_t folder_view_rows;                 /* rows the folders view source built (I179 sentinel) */
     uint32_t folder_ops;                       /* FOLDER_* / PLAYLIST_MOVE commands run against the library (I178) */
     uint32_t links_parsed, links_made;         /* share links OPEN parsed / SHARE wrote (I180 sentinels) */
+    char panel[1024];                          /* catalogue rows of the open song, "label\0value\0" pairs (I185) */
+    uint32_t panel_rows, panel_loads;          /* rows in `panel` / library lookups made for it (I185 sentinel) */
+    const void* panel_state;                   /* replayer state the panel was loaded for (reload on a new song) */
     uint32_t skip_excluded;  /* skip-flagged queue rows left out of a random order (sentinel of I171) */
     char rp_value[SEL_PREF_VALUE_MAX]; /* answer of the last rp_config_get */
     uint32_t rp_config_applied;     /* option values that came from an override layer (T61) */
@@ -3682,6 +3685,23 @@ static void refresh_snapshot(sel_engine* e) {
     }
     e->state.pattern = &e->pat_pub;
     memset(song, 0, sizeof *song);
+    if (sl == NULL || sl->rp_state == NULL) {
+        e->panel_state = NULL;
+        e->panel_rows = 0;
+    } else if (sl->rp_state != e->panel_state) {
+        /* I185: the catalogue rows of a newly opened song come from the library, on this (pump) thread only. */
+        e->panel_state = sl->rp_state;
+        e->panel_rows = 0;
+        e->panel[0] = '\0';
+        if (e->lib != NULL && sl->path != NULL) {
+            e->panel_loads++;
+            if (!sel_library_song_panel(e->lib, sl->path, e->panel, sizeof e->panel, &e->panel_rows)) {
+                e->panel_rows = 0;
+            }
+        }
+    }
+    e->state.panel = e->panel_rows > 0 ? e->panel : NULL;
+    e->state.panel_rows = e->panel_rows;
     if (sl != NULL && sl->rp_state != NULL) {
         song->queue_id = e->q_playing;
         song->subsong = sl->subsong;
@@ -3869,6 +3889,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->links_parsed = e->links_parsed;
     out->links_made = e->links_made;
     out->folder_view_rows = e->folder_view_rows;
+    out->panel_loads = e->panel_loads;
     out->library_searches = e->searches;
     out->library_fts_queries = e->fts_queries;
     out->result_count = e->res_count;
