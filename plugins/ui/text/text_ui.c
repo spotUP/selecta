@@ -1243,6 +1243,7 @@ static void* tui_open(const sel_ui_open_args* a) {
     u->dump_path = tui_opt(a, "--screen-dump");
     txt_theme_default(&u->theme);
     txt_keys_init(&u->keys);
+    u->keys.amiga_console = txt_term_amiga_console;
     if (!tui_load_bindings(u, a, keys_path != NULL)) {
         tui_close(u);
         return NULL;
@@ -1274,6 +1275,7 @@ static void* tui_open(const sel_ui_open_args* a) {
         tui_close(u);
         return NULL;
     }
+    u->grid.latin1 = txt_term_amiga_console;
     u->out_cap = txt_grid_flush_bound(&u->grid);
     u->out = (char*)a->host->mem_alloc(a->host, u->out_cap, SEL_MEM_FAST);
     if (u->out == NULL) {

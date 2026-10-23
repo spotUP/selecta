@@ -122,6 +122,10 @@ static int ground(txt_keys* k, uint8_t b, txt_key* out) {
         emit(k, out, 13, 0);
         return 1;
     }
+    if (k->amiga_console && b == 127) {
+        emit(k, out, TXT_KEY_DELETE, 0);
+        return 1;
+    }
     if (b == 9 || b == 127 || b == 8) {
         emit(k, out, b == 8 ? 127u : b, 0);
         return 1;
@@ -132,6 +136,10 @@ static int ground(txt_keys* k, uint8_t b, txt_key* out) {
     }
     if (b < 0x80) {
         emit(k, out, b, 0);
+        return 1;
+    }
+    if (k->amiga_console) { /* Latin-1: one byte is one code point; C1 controls carry no key */
+        emit(k, out, b >= 0xA0 ? (uint32_t)b : 0xFFFDu, 0);
         return 1;
     }
     if (b >= 0xC2 && b < 0xE0) {

@@ -22,6 +22,10 @@ typedef struct txt_term {
  * hidden cursor, SGR mouse. */
 extern const char txt_term_enter_seq[];
 extern const char txt_term_leave_seq[];
+/* 1 when this OS family's console speaks the Amiga console dialect (row I218a): bytes are
+ * Latin-1 both ways, Backspace sends 0x08 and Del sends 0x7F. 0 means xterm: UTF-8, and
+ * Backspace sends 0x7F. Each backend defines it next to txt_term_enter_seq. */
+extern const int txt_term_amiga_console;
 
 /* Saves the terminal state, switches to raw mode and writes txt_term_enter_seq.
  * Returns 0, or -1 when in_fd is not a terminal. */

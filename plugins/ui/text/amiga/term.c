@@ -9,6 +9,7 @@
 
 #include <string.h>
 
+const int txt_term_amiga_console = 1;
 const char txt_term_enter_seq[] = "\x1b[?1049h\x1b[?25l\x1b[?1000h\x1b[?1006h";
 const char txt_term_leave_seq[] = "\x1b[?1006l\x1b[?1000l\x1b[?25h\x1b[0m\x1b[?1049l";
 

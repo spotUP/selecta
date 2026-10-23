@@ -33,6 +33,7 @@ typedef struct txt_grid {
     int dirty_all;   /* next flush redraws everything */
     uint32_t flushes;
     uint32_t bytes; /* total bytes produced by flush */
+    int latin1;     /* set by the caller after init: flush writes Latin-1, '?' above U+00FF (row I218a) */
 } txt_grid;
 
 txt_style txt_style_make(uint16_t fg, uint16_t bg, uint8_t attr);

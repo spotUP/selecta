@@ -167,10 +167,13 @@ static void put_num(out_buf* o, unsigned v) {
     while (n) put_bytes(o, &t[--n], 1);
 }
 
-static void put_cp(out_buf* o, uint32_t cp) {
+static void put_cp(out_buf* o, uint32_t cp, int latin1) {
     char t[4];
-    if (cp < 0x20u || cp == 0x7Fu) cp = ' ';
-    if (cp < 0x80u) {
+    if (cp < 0x20u || (cp >= 0x7Fu && cp < 0xA0u)) cp = ' ';
+    if (latin1) {
+        t[0] = (char)(cp < 0x100u ? cp : '?');
+        put_bytes(o, t, 1);
+    } else if (cp < 0x80u) {
         t[0] = (char)cp;
         put_bytes(o, t, 1);
     } else if (cp < 0x800u) {
@@ -244,7 +247,7 @@ long txt_grid_flush(txt_grid* g, char* out, size_t cap) {
                 put_sgr(&o, b->style);
                 cur = b->style;
             }
-            put_cp(&o, b->cp);
+            put_cp(&o, b->cp, g->latin1);
             next_pos = (long)i + 1;
         }
     }

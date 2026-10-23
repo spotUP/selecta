@@ -94,6 +94,14 @@ static void test_flush(void) {
     CHECK(txt_grid_text(&g, 78, 2, "h\xC3\xA9llo", 0, PLAIN) == 2, "text clips at the right edge");
     CHECK(txt_grid_text(&g, 0, 2, "\xC3\xA9\xFF" "ab", 0, PLAIN) == 4, "invalid byte draws one cell");
     CHECK(g.back[2 * 80 + 1].cp == 0xFFFD, "invalid byte is U+FFFD");
+    /* I218a: an Amiga console gets Latin-1, '?' above U+00FF */
+    (void)flush_str(&g, buf, sizeof buf - 1);
+    g.latin1 = 1;
+    txt_grid_put(&g, 0, 3, 0xE9, PLAIN);
+    txt_grid_put(&g, 1, 3, 0x2588, PLAIN);
+    n = flush_str(&g, buf, sizeof buf - 1);
+    CHECK(strcmp(buf, "\x1b[4;1H\xE9?") == 0, "Latin-1 flush wrong");
+    g.latin1 = 0;
     txt_grid_put(&g, 200, 200, 'Q', PLAIN); /* out of range: ignored, no crash */
     txt_grid_free(&g);
 }
@@ -193,6 +201,15 @@ static void test_keys(void) {
           "Amiga console function and PC keys");
     n = feed_all(&k, "\x9b?~q", o, 8);
     CHECK(n == 1 && o[0].code == 'q', "Amiga Help dropped, next key intact");
+    /* I218a: the Amiga console sends Latin-1 bytes, Backspace 0x08 and Del 0x7F */
+    k.amiga_console = 1;
+    n = feed_all(&k, "\xe4q\x08\x7f\x85q", o, 8);
+    CHECK(n == 6 && o[0].code == 0xE4u && o[1].code == 'q' && o[2].code == 127u && o[3].code == TXT_KEY_DELETE &&
+              o[4].code == 0xFFFDu && o[5].code == 'q',
+          "Amiga console Latin-1, Backspace and Del");
+    k.amiga_console = 0;
+    n = feed_all(&k, "\x7f\xc3\xa4", o, 8);
+    CHECK(n == 2 && o[0].code == 127u && o[1].code == 0xE4u, "xterm Backspace 0x7F and UTF-8 stay");
     /* an unknown sequence is dropped whole and the parser recovers */
     n = feed_all(&k, "\x1b[99zq", o, 8);
     CHECK(n == 1 && o[0].code == 'q', "unknown CSI dropped, next key intact");
