@@ -300,9 +300,9 @@ Tests T49 to T61 are defined in the plan's finish-line table.
 | I127 | [x] | 5 | Integer LED filter stage | T53 LED part green; 6ada682 LED -3 dB 3275 Hz measured; merge 5d60c2c |
 | I128 | [x] | 5 | Integer stereo width stage | T53 width part green; 6ada682 width; width-moves-hash on stereo mk.mod desktop only (Q46); merge 5d60c2c |
 | I129 | [x] | 5 | Commands, prefs keys, text UI controls for LED and width | T53 green both trees; T8 count moves; 2fccb64 verbs FILTER_LED, MIX_STEREO_WIDTH; T8 stays 21; merge 22ff2c9 |
-| I130 | [ ] | 6 | `plugins/ui/text/amiga/term.c` raw mode, WaitForChar | T55 partial |
-| I131 | [ ] | 6 | `plugins/ui/text/amiga/spawn.c` | spawn test under vamos |
-| I132 | [ ] | 6 | Build `plugins/ui/text` and `apps/selecta` on Amiga | T55 green |
+| I130 | [x] | 6 | `plugins/ui/text/amiga/term.c` raw mode, WaitForChar | T55 partial; term.c raw mode, WaitForChar, CSI size query in c81c48d; interactive path unverified until T56; merge 9c6594a |
+| I131 | [ ] | 6 | `plugins/ui/text/amiga/spawn.c` | spawn test under vamos; partial: amiga/spawn.c (SystemTagList) linked in c81c48d, no vamos spawn test yet |
+| I132 | [x] | 6 | Build `plugins/ui/text` and `apps/selecta` on Amiga | T55 green; selecta and plugins/ui/text build for Amiga, T55 green (68k ui_hash = desktop) in c81c48d; merge 9c6594a |
 | I133 | [ ] | 6 | Rig run in UP-Term | T56 green |
 | I134 | [ ] | 7 | `SEL_RP_CONFIG` tag list, prefs, per-song override (D-M2-8) | T61 green |
 | I135 | [ ] | 7 | T60 batch on `--a1200 --nofpu`, verdicts recorded, NEEDS_FLOAT tags set | T60 green |
