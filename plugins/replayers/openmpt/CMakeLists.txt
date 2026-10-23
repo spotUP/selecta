@@ -15,10 +15,11 @@ include("${PROJECT_SOURCE_DIR}/cmake/openmpt_sources.cmake")
 set(OPENMPT_DIR "${PROJECT_SOURCE_DIR}/third_party/libopenmpt")
 selecta_openmpt_sources("${OPENMPT_DIR}" SEL_OPENMPT_CXX_SOURCES)
 
-add_library(selecta_openmpt STATIC ${SEL_OPENMPT_CXX_SOURCES})
+# sample_table.cpp (RP_SAMPLE_GET) reads libopenmpt internals; it is our file, not a vendored one.
+add_library(selecta_openmpt STATIC ${SEL_OPENMPT_CXX_SOURCES} sample_table.cpp)
 target_include_directories(selecta_openmpt
   PUBLIC "${OPENMPT_DIR}"
-  PRIVATE "${OPENMPT_DIR}/src" "${OPENMPT_DIR}/common")
+  PRIVATE "${OPENMPT_DIR}/src" "${OPENMPT_DIR}/common" "${PROJECT_SOURCE_DIR}/include")
 target_compile_definitions(selecta_openmpt PRIVATE LIBOPENMPT_BUILD)
 target_compile_options(selecta_openmpt PRIVATE -Wall -fvisibility=hidden)
 set_target_properties(selecta_openmpt PROPERTIES

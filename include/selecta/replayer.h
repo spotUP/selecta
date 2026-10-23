@@ -97,6 +97,24 @@ typedef void (*sel_rp_mute_fn)(void* state, uint32_t channel, uint32_t muted);
  * Runs on the audio thread between render calls. */
 typedef void (*sel_rp_set_speed_fn)(void* state, uint32_t pitch_q16, uint32_t tempo_q16);
 
+/* One sample of the open song (RP_SAMPLE_GET). `data` points at `length` frames
+ * of `channels` interleaved signed PCM, 8-bit (`bits` 8) or 16-bit native
+ * endian (`bits` 16), owned by the replayer and valid until the song closes.
+ * loop_length 0 = no loop. `rate` is the base rate in Hz (8287 for MOD-family
+ * samples, the PAL C-3 rate). `count` is the number of sample slots, numbered
+ * 1..count. */
+typedef struct sel_rp_sample {
+    const void* data;
+    uint32_t length, loop_start, loop_length, rate, bits, channels, count;
+    const char* name; /* replayer-owned, valid while the song is open (events keep the pointer) */
+} sel_rp_sample;
+
+/* RP_SAMPLE_GET: optional. Fills `out` for sample slot `n` (1-based) and
+ * returns 1, or returns 0 when the slot is empty or beyond `count`; `out->count`
+ * is set on every call. Runs on the thread that owns the replayer instance, like
+ * RP_TRACKER_CELLS. */
+typedef int (*sel_rp_sample_get_fn)(void* state, uint32_t n, sel_rp_sample* out);
+
 SEL_EXTERN_C_END
 
 #endif /* SELECTA_REPLAYER_H */
