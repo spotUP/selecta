@@ -186,6 +186,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     sel_engine_set_mix(e, SHELL_RATE, SHELL_RESAMPLER);
+    sel_engine_set_output(e, oh);
     out = out_open(host, SHELL_RATE, 2);
     if (out == NULL) {
         fputs("selecta: no output device\n", stderr);

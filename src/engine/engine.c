@@ -19,6 +19,7 @@
 #include <selecta/tags.h>
 
 #include "mixer.h"
+#include "dsp_chain.h"
 #include "pitch_table.h"
 #include "history.h"
 #include "queue.h"
@@ -39,6 +40,7 @@
 #define SEL_CMD_IMPLEMENTED(X)                                                                \
     X(PREF_GET)                                                                               \
     X(PREF_SET)                                                                               \
+    X(DSP)                                                                                    \
     X(PLAY)                                                                                   \
     X(PAUSE)                                                                                  \
     X(PAUSE_PLAYBACK)                                                                         \
@@ -206,6 +208,8 @@ struct sel_engine {
     sel_view view;
     sel_viz_tap viz;       /* visualisation taps; the audio thread writes, the pump reads */
     uint32_t viz_spectrum; /* capability: the spectrum is computed (CPU 68030 and up) */
+    sel_dsp_chain dsp;
+    uint32_t mixed_path; /* 1: the engine mixes (a DSP chain can run); 0: the output plays voices itself */
     sel_prefs prefs;
     char config_dir[256]; /* "": prefs.conf is not read or written */
     sel_tag view_tags[4][5]; /* VIEW_CHANGED / VIEW_ROWS tags, a ring */
@@ -567,6 +571,56 @@ static void cmd_PREF_SET(sel_engine* e, const sel_message* m) {
         sel_engine_report_error(e, "prefs_save_failed", e->config_dir);
     }
     emit_pref(e, sel_prefs_find(m->args[0].v.s));
+}
+
+/* The registry descriptor of the DSP plugin `id`, or NULL. */
+static const sel_tag* find_dsp(const sel_engine* e, const char* id) {
+    uint32_t i, n;
+    if (e->registry_count == NULL || e->registry_get == NULL) {
+        return NULL;
+    }
+    n = e->registry_count();
+    for (i = 0; i < n; i++) {
+        const sel_tag* desc = e->registry_get(i);
+        const char* pid = (const char*)sel_tag_find(desc, SEL_PLUGIN_ID, 0);
+        if (sel_tag_find(desc, SEL_PLUGIN_KIND, 0) == SEL_PLUGIN_KIND_DSP && pid != NULL && strcmp(pid, id) == 0) {
+            return desc;
+        }
+    }
+    return NULL;
+}
+
+/* DSP <name> on|off. The chain only exists on the mixed path: a Paula-direct
+ * output plays voices without any PCM to filter. */
+static void cmd_DSP(sel_engine* e, const sel_message* m) {
+    const char* name = m->args[0].v.s;
+    const char* mode = m->args[1].v.s;
+    const sel_tag* desc = find_dsp(e, name);
+    int on;
+    if (desc == NULL) {
+        sel_engine_report_error(e, "unknown_dsp", name);
+        return;
+    }
+    if (strcmp(mode, "on") == 0) {
+        on = 1;
+    } else if (strcmp(mode, "off") == 0) {
+        on = 0;
+    } else {
+        sel_engine_report_error(e, "argument_type", "DSP");
+        return;
+    }
+    if (!on) {
+        sel_dsp_chain_disable(&e->dsp, (const char*)sel_tag_find(desc, SEL_PLUGIN_ID, 0));
+        return;
+    }
+    if (!e->mixed_path) {
+        sel_engine_report_error(e, "unsupported_path", "DSP");
+        return;
+    }
+    if (!sel_dsp_chain_enable(&e->dsp, e->host, (const char*)sel_tag_find(desc, SEL_PLUGIN_ID, 0),
+                              (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0), e->rate)) {
+        sel_engine_report_error(e, "dsp_failed", name);
+    }
 }
 
 static void cmd_COMMANDS(sel_engine* e, const sel_message* m) {
@@ -1889,6 +1943,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     e->host = host;
     e->state.volume = 100;
     e->rate = 44100;
+    e->mixed_path = 1;
     e->resampler = SEL_MIX_RESAMPLE_LINEAR;
     sel_viz_tap_init(&e->viz);
     e->state.viz = sel_viz_current(&e->viz);
@@ -1969,6 +2024,7 @@ void sel_engine_destroy(sel_engine* e) {
         if (e->pl_file) {
             e->host->mem_free(e->host, e->pl_file);
         }
+        sel_dsp_chain_free(&e->dsp);
         sel_browse_free(&e->browse, e->host);
         sel_view_free(&e->view, e->host);
         e->host->mem_free(e->host, e);
@@ -2063,6 +2119,24 @@ void sel_engine_set_mix(sel_engine* e, uint32_t rate, uint32_t resampler) {
         e->rate = rate;
     }
     e->resampler = resampler;
+    sel_dsp_chain_set_rate(&e->dsp, e->host, e->rate);
+}
+
+void sel_engine_set_output(sel_engine* e, const sel_tag* out_hooks) {
+    e->mixed_path = sel_tag_find(out_hooks, SEL_OUT_VOICES, 0) == 0;
+    if (sel_tag_find(out_hooks, SEL_OUT_HEADPHONES, 0) != 0 && e->mixed_path &&
+        strcmp(e->prefs.value[SEL_PREF_DSP_CROSSFEED], "off") != 0) {
+        sel_message m;
+        memset(&m, 0, sizeof m);
+        m.kind = SEL_MSG_CMD;
+        m.id = SEL_CMD_DSP;
+        m.argc = 2;
+        m.args[0].type = SEL_ARG_STR;
+        m.args[0].v.s = "crossfeed";
+        m.args[1].type = SEL_ARG_STR;
+        m.args[1].v.s = "on";
+        cmd_DSP(e, &m);
+    }
 }
 
 void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
@@ -2079,6 +2153,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->songs_opened = e->songs_opened;
     out->undo_depth = e->history.undo_count;
     out->redo_depth = e->history.redo_count;
+    out->dsp_blocks = e->dsp.blocks;
 }
 
 /* Closes one 20 ms block: reads and clears the mixer's per-voice taps, steps the
@@ -2228,6 +2303,7 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
     if (done < frames) {
         memset(stereo + (size_t)done * 2u, 0, (size_t)(frames - done) * 2u * sizeof(int16_t));
     }
+    sel_dsp_chain_process(&e->dsp, stereo, frames);
     viz_feed(e, sl, stereo, frames);
     return frames;
 }

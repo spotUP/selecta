@@ -109,6 +109,7 @@ int sel_cli_render(int argc, char** argv) {
     const char* seek_ms = NULL;
     const char* viz_dump = NULL;
     const char* script = NULL;
+    const char* dsp = NULL;
     FILE* dump = NULL;
     uint32_t viz_blocks = 0, viz_seen = 0;
     unsigned long rate = 44100, seconds = 10;
@@ -132,6 +133,8 @@ int sel_cli_render(int argc, char** argv) {
             viz_dump = argv[i + 1];
         } else if (strcmp(argv[i], "--script") == 0) {
             script = argv[i + 1];
+        } else if (strcmp(argv[i], "--dsp") == 0) {
+            dsp = argv[i + 1];
         } else if (strcmp(argv[i], "--seek-ms") == 0) {
             seek_ms = argv[i + 1];
         } else if (strcmp(argv[i], "--rate") == 0) {
@@ -164,6 +167,21 @@ int sel_cli_render(int argc, char** argv) {
     e = sel_cli_start_song("render", &host, song, (uint32_t)rate, resampler);
     if (e == NULL) {
         return 1;
+    }
+
+    sel_engine_set_output(e, o.hooks);
+    if (dsp != NULL) {
+        sel_message msg;
+        memset(&msg, 0, sizeof msg);
+        msg.kind = SEL_MSG_CMD;
+        msg.id = SEL_CMD_DSP;
+        msg.argc = 2;
+        msg.args[0].type = SEL_ARG_STR;
+        msg.args[0].v.s = dsp;
+        msg.args[1].type = SEL_ARG_STR;
+        msg.args[1].v.s = "on";
+        sel_engine_send(e, &msg);
+        sel_engine_pump(e, render_sink, &ctx);
     }
 
     if (script != NULL && !run_script(e, &ctx, script)) {
@@ -240,6 +258,9 @@ int sel_cli_render(int argc, char** argv) {
     if (seek_ms != NULL) {
         printf("seek_path=%s skipped_frames=%u\n", stats.seek_path == 1u ? "native" : "skip",
                (unsigned)stats.seek_skipped_frames);
+    }
+    if (dsp != NULL) {
+        printf("dsp=%s blocks=%u\n", dsp, (unsigned)stats.dsp_blocks);
     }
     if (stats.render_kind) {
         printf("replayer=%s render_calls=%u rendered_frames=%u\n", stats.replayer, (unsigned)stats.replayer_render_calls,

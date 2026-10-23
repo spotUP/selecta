@@ -8,3 +8,5 @@ SEL_PREF(VIEW_TITLE_FORMAT,  "view.title_format",  "[%author% - ]%title%",      
 SEL_PREF(VIEW_COLUMNS,       "view.columns",       "title,format,duration",                       SEL_PREF_PLAIN)
 SEL_PREF(VIEW_STATUS_FORMAT, "view.status_format", "%state% %elapsed% / %duration%  %title%",     SEL_PREF_FORMAT)
 SEL_PREF(UI_HISTORY_SIZE,    "ui.history_size",    "100",                                         SEL_PREF_PLAIN)
+/* crossfeed: auto (on when the output reports headphones), on, off */
+SEL_PREF(DSP_CROSSFEED,      "dsp.crossfeed",      "auto",                                        SEL_PREF_PLAIN)
