@@ -1,0 +1,8 @@
+# T46 (row I104b): SAMPLE_LIST and SAMPLE_EXPORT on a module the nuade replayer plays
+# (selecta-test.mod, Protracker). Working directory: build/host/tests/songs.
+OPEN selecta-test.mod
+SAMPLE_LIST
+SAMPLE_EXPORT 1 nuade-samples-1.8svx
+SAMPLE_EXPORT 3 nuade-samples-3.8svx
+SAMPLE_EXPORT 1 nuade-samples-1.wav
+SAMPLE_EXPORT 9 nuade-samples-9.wav

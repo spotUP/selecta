@@ -605,6 +605,14 @@ if(APPLE)
       $<TARGET_FILE:selecta-cli> $<TARGET_FILE:count_malloc>
       "${SEL_TESTMOD}" "${SEL_RENDER_OUT}/no-alloc-dsp.wav" --dsp crossfeed)
 endif()
+if(NOT SEL_AMIGA)
+  add_test(NAME sample-export-nuade
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}"
+      "-DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/m13/nuade_samples.sel"
+      "-DMOD=${SEL_TESTMOD}"
+      "-DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m13/nuade_samples_check.cmake")
+endif()
 
 # T46 (rows I97, I98): SAMPLE_LIST and SAMPLE_EXPORT (WAV, 8SVX) through the engine, libopenmpt adapter.
 if(NOT SEL_AMIGA)
