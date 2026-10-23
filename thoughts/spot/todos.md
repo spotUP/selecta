@@ -397,7 +397,7 @@ Tests T62 to T97 are defined in the plan's finish-line table. T8 ratchet target 
 | I184a | [ ] | 8 | I184 follow-up: hash local md5 during scan (or a background pass) so OPEN redirects without running `library duplicates` first | similar-duplicates OPEN case without the duplicates step |
 | I185 | [x] | 8 | Metadata panel rows (STIL, composer, release, year, genre, rating, plays) in module info | T87 green: metadata-panel passes (2d06bd1). Golden broke on stray sample-export files in the songs fixture dir; those tests now use their own work dir (0207b71). STIL shows stil.comment only; rating is the raw integer |
 | I186 | [x] | 8 | RADIO from a seed with genre/composer/rating steering, skip excluded | T88 green; RADIO must drop skip-flagged songs through sel_library_flag_skipped (from I171): radio passes, merge b78a750; ahead counts rows after the playing one (sequential play) |
-| I187 | [ ] | 9 | Desktop analysis job: faster-than-real-time render into R128 analyser, RMS+peak fallback, ANALYSE, `selecta-cli analyse` | T89 green |
+| I187 | [x] | 9 | Desktop analysis job: faster-than-real-time render into R128 analyser, RMS+peak fallback, ANALYSE, `selecta-cli analyse` | T89 green; merge 5258ddc, report m3-I187-report.md |
 | I188 | [ ] | 9 | Gain store per song key; DEViLBOX GET/PUT loudness by hash | T90 fetch part green |
 | I189 | [ ] | 9 | Mixer 16.16 per-song gain and -1 dBFS limiter, `mix.loudness` pref (D-M3-9) | T90 gain and limiter parts green |
 | I190 | [ ] | 9 | Integer adaptive leveler, provisional gain write-back | T90 green |
