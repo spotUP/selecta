@@ -1,0 +1,31 @@
+# T88 radio (plan 2026-10-25-m3-library.md, Phase 8, I186). tests/net/radio.cmake replaces @SONGS@ with
+# tests/m3/genre and runs this through `selecta-cli script --db <db>` on a library that holds the four fixture songs:
+# ambient.mod (seed), nogenre.mod (same genre, shares the composer), techno.mod (shares the composer, rated 5),
+# down.mod (rated 4, flagged skip below). The fixed seed is `SHUFFLE on 88`: it seeds the engine generator
+# that RADIO derives its draw state from. @radio prints RADIO radio_appends=N min_ahead=N and the queue paths.
+SHUFFLE off 88
+OPEN @SONGS@/down.mod
+FLAG skip
+RADIO @SONGS@/ambient.mod
+@radio
+NEXT
+NEXT
+NEXT
+NEXT
+NEXT
+NEXT
+NEXT
+NEXT
+NEXT
+NEXT
+NEXT
+NEXT
+NEXT
+NEXT
+NEXT
+NEXT
+NEXT
+NEXT
+NEXT
+NEXT
+@radio

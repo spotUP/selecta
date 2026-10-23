@@ -1177,6 +1177,14 @@ if(NOT SEL_AMIGA)
             -P "${SEL_NET_DIR}/similar.cmake")
   set_tests_properties(similar-duplicates PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "similar_ok")
+
+  # T88 (row I186): RADIO from a seed song, steering, skip exclusion, determinism.
+  add_test(NAME radio
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DSONGS=${PROJECT_SOURCE_DIR}/tests/m3/genre"
+            "-DSCRIPT=${PROJECT_SOURCE_DIR}/tests/m3/radio.sel" "-DSQLITE3=${SEL_SQLITE3}"
+            -P "${SEL_NET_DIR}/radio.cmake")
+  set_tests_properties(radio PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "radio_ok")
 endif()
 
 # T95 (row I177): SCROBBLE_DUE from the engine, the last.fm scrobbler plugin, its signed POST and the offline queue.

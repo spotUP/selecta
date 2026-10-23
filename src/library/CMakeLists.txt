@@ -23,7 +23,7 @@ target_include_directories(selecta_library PUBLIC ${PROJECT_SOURCE_DIR}/include 
 # SQLite, schema v1 with migrations, the memsys5 heap and the worker with its SPSC queues. The
 # Amiga build runs requests on the caller's task until the library subtask (Phase 12).
 add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/sqlite ${CMAKE_BINARY_DIR}/third_party/sqlite)
-target_sources(selecta_library PRIVATE db/db.c db/schema.c db/worker.c db/search.c db/scan.c db/user.c db/folders.c db/fetch.c db/genre.c db/songdb.c db/similar.c db/duplicates.c composer.c xxh32.c query.c regex.c share.c)
+target_sources(selecta_library PRIVATE db/db.c db/schema.c db/worker.c db/search.c db/scan.c db/user.c db/folders.c db/fetch.c db/genre.c db/songdb.c db/similar.c db/duplicates.c radio.c composer.c xxh32.c query.c regex.c share.c)
 target_include_directories(selecta_library PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/db)
 target_link_libraries(selecta_library PUBLIC selecta_sqlite)
 if(SEL_AMIGA)
