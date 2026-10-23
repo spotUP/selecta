@@ -218,10 +218,10 @@ Tests T28 to T38 are defined in the plan's finish-line table. A row is ticked on
 | I65 | [ ] | 1 | Move the line parser to `src/protocol/parse.c`; CLI and shell share it | T1 to T27 green, no behaviour change |
 | I66 | [ ] | 1 | `prefs.def`, `prefs.c`, prefs file, PREF_GET/PREF_SET, config directory | T33 pref half green, ratchet 43 |
 | I67 | [ ] | 1 | T33 written and red; `format.c` resolver used by the view model | T33 green |
-| I68 | [ ] | 2 | T30 and T31 written and red | ctest failures |
-| I69 | [ ] | 2 | History ring; QUEUE_MOVE, QUEUE_SWAP, UNDO, REDO, QUEUE_HISTORY event | T30 move/swap/undo half green, ratchet 39 |
-| I70 | [ ] | 2 | xorshift32; QUEUE_SHUFFLE, SHUFFLE, RESHUFFLE | T30 green, ratchet 36 |
-| I71 | [ ] | 2 | SCOPE option, NEXT_ALBUM, PREV_ALBUM | T31 green, ratchet 33 |
+| I68 | [x] | 2 | T30 and T31 written and red | ctest failures |
+| I69 | [x] | 2 | History ring; QUEUE_MOVE, QUEUE_SWAP, UNDO, REDO, QUEUE_HISTORY event | T30 move/swap/undo half green, ratchet 39 |
+| I70 | [x] | 2 | xorshift32; QUEUE_SHUFFLE, SHUFFLE, RESHUFFLE | T30 green, ratchet 36 |
+| I71 | [x] | 2 | SCOPE option, NEXT_ALBUM, PREV_ALBUM | T31 green, ratchet 33 |
 | I72 | [x] | 3 | T29 written and red; four codecs | T29 green; commits 64c6056, 474f15b, merge 630ca11 |
 | I73 | [ ] | 3 | PLAYLIST_LOAD, PLAYLIST_SAVE; divider/stealth queue rows | script check in T29 suite, ratchet 31 |
 | I74 | [ ] | 4 | T32 written and red; view grouping folder/format, node ids | T32 green, ratchet 27 |
