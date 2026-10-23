@@ -121,6 +121,7 @@
     X(FLAG)                                                                                   \
     X(RATE) X(VOTE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
     X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) \
+    X(STATS_SHOW) X(STATS_HIDE) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
     X(VIEW_CURSOR)                                                                            \
@@ -236,6 +237,8 @@ struct sel_engine {
     uint32_t folder_view_rows;                 /* rows the folders view source built (I179 sentinel) */
     uint32_t folder_ops;                       /* FOLDER_* / PLAYLIST_MOVE commands run against the library (I178) */
     uint32_t links_parsed, links_made;         /* share links OPEN parsed / SHARE wrote (I180 sentinels) */
+    char stats[2048];                          /* rows of the open stats screen, "label\0value\0" pairs (I192) */
+    uint32_t stats_open, stats_queries;        /* the screen is up / queries made against the stats views (I192 sentinel) */
     char panel[1024];                          /* catalogue rows of the open song, "label\0value\0" pairs (I185) */
     uint32_t panel_rows, panel_loads;          /* rows in `panel` / library lookups made for it (I185 sentinel) */
     const void* panel_state;                   /* replayer state the panel was loaded for (reload on a new song) */
@@ -3506,6 +3509,28 @@ static void home_reload(sel_engine* e) {
     e->home_rows += sel_view_set_home(&e->view, text);
 }
 
+/* STATS_SHOW: reads the stats screen rows from the library (the stats_* SQL views, F24) and publishes them in
+ * the state; STATS_HIDE closes the screen. The text UI only renders what the views returned. */
+static void cmd_STATS_SHOW(sel_engine* e, const sel_message* m) {
+    uint32_t rows = 0;
+    (void)m;
+    if (e->lib == NULL) {
+        sel_engine_report_error(e, "no_library", "STATS_SHOW");
+        return;
+    }
+    e->stats_queries++;
+    e->stats[0] = '\0';
+    if (!sel_library_stats(e->lib, e->stats, sizeof e->stats, &rows)) {
+        e->stats[0] = '\0';
+    }
+    e->stats_open = 1;
+}
+
+static void cmd_STATS_HIDE(sel_engine* e, const sel_message* m) {
+    (void)m;
+    e->stats_open = 0;
+}
+
 /* FOLDER_ADD name [parent]: creates the folder (parent 0 or absent = root); the answer carries the new id. */
 static void cmd_FOLDER_ADD(sel_engine* e, const sel_message* m) {
     uint32_t id = 0;
@@ -4183,6 +4208,7 @@ static void refresh_snapshot(sel_engine* e) {
             }
         }
     }
+    e->state.stats = e->stats_open ? e->stats : NULL;
     e->state.panel = e->panel_rows > 0 ? e->panel : NULL;
     e->state.panel_rows = e->panel_rows;
     if (sl != NULL && sl->rp_state != NULL) {
@@ -4393,6 +4419,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->home_rows = e->home_rows;
     out->folder_view_rows = e->folder_view_rows;
     out->panel_loads = e->panel_loads;
+    out->stats_queries = e->stats_queries;
     out->library_searches = e->searches;
     out->library_fts_queries = e->fts_queries;
     out->result_count = e->res_count;

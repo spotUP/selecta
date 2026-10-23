@@ -1007,6 +1007,16 @@ if(NOT SEL_AMIGA)
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/home_view"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/home_view.cmake")
   set_tests_properties(home-view PROPERTIES LABELS m3)
+  add_test(NAME stats-screen
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv"
+      "-DSEL=${CMAKE_CURRENT_SOURCE_DIR}/m3/meta_empty.sel"
+      "-DSQLITE3=${SEL_SQLITE3_META}"
+      "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m3/stats.keys"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/stats_screen"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/stats_screen.cmake")
+  set_tests_properties(stats-screen PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "stats_screen ok")
 
   add_test(NAME view-library-source
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"

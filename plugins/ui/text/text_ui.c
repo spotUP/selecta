@@ -323,6 +323,9 @@ static int tui_local(tui* u, const char* name, const txt_key* k) {
         /* Recently played, jump back in, new this week (I191): the engine's home view source. */
         u->lib_screen = 0;
         tui_send(u, "VIEW_SOURCE home");
+    } else if (strcmp(name, "stats") == 0) {
+        /* The statistics screen (F24, I192): the engine reads the stats SQL views; b again closes it. */
+        tui_send(u, s->stats != NULL ? "STATS_HIDE" : "STATS_SHOW");
     } else if (strcmp(name, "search") == 0) {
         txt_cmdline_open(&u->cmd);
         u->cmd_mode = 2;
@@ -438,6 +441,12 @@ static void tui_key(tui* u, const txt_key* k) {
         return;
     }
     u->cmd.status[0] = '\0';
+    if (sel_engine_state(u->engine)->stats != NULL && ((k->code == 27u || k->code == 127u) && k->mods == 0)) {
+        u->key_count++;
+        u->dirty = 1;
+        tui_send(u, "STATS_HIDE");
+        return;
+    }
     action = txt_bindings_lookup(&u->binds, tui_bind_ctx(u), k->code, k->mods);
     if (action == NULL) {
         return; /* not a key the UI knows */
@@ -1022,13 +1031,34 @@ static void tui_pattern_ask(tui* u) {
     }
 }
 
+/* I192 (F24): the statistics screen. Renders the "label\0value\0" rows the engine read from the stats views;
+ * no number is computed here. */
+static void tui_stats_pane(tui* u, const sel_state* s, uint32_t width) {
+    const char* p = s->stats;
+    uint32_t y = 3;
+    txt_grid_text(&u->grid, 1, 2, "Statistics", width - 1u, tui_style(u, TXT_ROLE_LABEL));
+    if (*p == '\0') {
+        txt_grid_text(&u->grid, 1, 3, "No statistics available", width - 1u, tui_style(u, TXT_ROLE_DIM));
+        return;
+    }
+    while (*p != '\0' && y < u->grid.rows - 1u) {
+        const char* value = p + strlen(p) + 1;
+        txt_grid_text(&u->grid, 1, y, p, 22u, tui_style(u, TXT_ROLE_LABEL));
+        txt_grid_text(&u->grid, 24, y, value, width > 25u ? width - 25u : 1u, tui_style(u, TXT_ROLE_VALUE));
+        y++;
+        p = value + strlen(value) + 1;
+    }
+}
+
 static void tui_draw(tui* u) {
     const sel_state* s = sel_engine_state(u->engine);
     uint32_t width = u->info && u->grid.cols > TUI_INFO_COLS + 20u ? u->grid.cols - TUI_INFO_COLS : u->grid.cols;
     uint32_t y;
     txt_grid_clear(&u->grid, tui_style(u, TXT_ROLE_NORMAL));
     tui_header(u, s);
-    if (u->pattern) {
+    if (s->stats != NULL) {
+        tui_stats_pane(u, s, width);
+    } else if (u->pattern) {
         tui_pattern_panel(u, s, width);
     } else if (u->viz) {
         tui_viz_panel(u, s, width);

@@ -97,6 +97,7 @@ enum {
     SEL_USER_FOLDER_PLAYLISTS, /* I178: at = folder id (0 = all); out = "id\0name\0" pairs then "\0"; reply [2] = playlists */
     SEL_USER_PLAYLIST_KEYS,/* I178: at = playlist id; out = song keys, each NUL terminated, then "\0"; reply [2] = keys */
     SEL_USER_FOLDER_TREE,  /* I178: out = indented tree text "F|P <id> <name>" per line; reply [2] = lines */
+    SEL_USER_STATS,        /* I192: out = "label\0value\0" rows of the stats screen read from the stats_* views, then "\0"; reply [2] = rows */
     SEL_USER_PANEL,        /* I185: out = "label\0value\0" rows of the module info panel, then "\0"; reply [2] = rows */
     SEL_USER_LOUDNESS_SET, /* I187: at = gain in centi-dB; to = 1 provisional (I190); value = path used when the song row does not exist yet */
     SEL_USER_LOUDNESS_GET, /* I187: reply [0] = 2 (3 when provisional) and [2] = gain in centi-dB (signed) when songs.loudness_gain is set */
@@ -291,6 +292,9 @@ int sel_library_sticker_list(sel_library* lib, const char* key, char* out, uint3
  * rating, play count): "label\0value\0" pairs in display order, then an empty label. Data the DB lacks adds no row.
  * 1 on success; *rows = rows written (may be NULL). */
 int sel_library_song_panel(sel_library* lib, const char* key, char* out, uint32_t cap, uint32_t* rows);
+/* I192 (F24): the stats screen rows ("label\0value\0" pairs, then an empty label): totals and, per year, plays,
+ * play time and top formats and artists, all read from the stats_* SQL views. 1 on success; *rows = rows written. */
+int sel_library_stats(sel_library* lib, char* out, uint32_t cap, uint32_t* rows);
 /* Cue points (I175): cue `idx` of a song key at `pos_ms`. get: 1 and *pos_ms when the cue exists. */
 int sel_library_cue_set(sel_library* lib, const char* key, uint32_t idx, uint32_t pos_ms);
 int sel_library_cue_get(sel_library* lib, const char* key, uint32_t idx, uint32_t* pos_ms);

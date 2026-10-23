@@ -1,0 +1,3 @@
+# T92 stats-screen (I192): b opens the statistics screen (the engine reads the stats SQL views).
+b
+wait 300
