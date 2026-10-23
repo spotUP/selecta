@@ -1,7 +1,7 @@
 #!/bin/sh
 # T62 library-db-open (plan 2026-10-25-m3-library.md, Phase 1, I144-I146).
 # Drives `selecta-cli library stats` and checks the sentinel
-# `db_open=1 schema_version= sqlite_version=`, schema_version=1, fts5=1,
+# `db_open=1 schema_version= sqlite_version=`, schema_version=2, fts5=1,
 # heap_bytes equal to the sel_machine scaling table, one heap allocation, and
 # (macOS, with the count_malloc shim) zero malloc calls between
 # SEL_ALLOC_FREEZE and SEL_ALLOC_THAW while the worker runs queries.
@@ -25,7 +25,7 @@ check() { # machine expected_heap
         echo "[ERROR] $1: no db_open= line (rc=$rc)"; fail=1; return
     fi
     [ "$(field "$line" db_open)" = 1 ] || { echo "[ERROR] $1: db_open != 1"; fail=1; }
-    [ "$(field "$line" schema_version)" = 1 ] || { echo "[ERROR] $1: schema_version != 1"; fail=1; }
+    [ "$(field "$line" schema_version)" = 2 ] || { echo "[ERROR] $1: schema_version != 2"; fail=1; }
     [ -n "$(field "$line" sqlite_version)" ] || { echo "[ERROR] $1: no sqlite_version"; fail=1; }
     [ "$(field "$line" fts5)" = 1 ] || { echo "[ERROR] $1: fts5 != 1"; fail=1; }
     [ "$(field "$line" heap_allocs)" = 1 ] || { echo "[ERROR] $1: heap_allocs != 1"; fail=1; }
