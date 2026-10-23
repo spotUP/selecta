@@ -121,6 +121,64 @@ static int panel_put(char* out, uint32_t cap, uint32_t* used, const char* label,
     return 1;
 }
 
+/* I192 (F24): appends one "label\0value\0" pair of the stats screen; unlike panel_put a zero is a value. */
+static void stats_put(char* out, uint32_t cap, uint32_t* used, uint32_t* rows, const char* label, const char* value) {
+    size_t ll = strlen(label) + 1u, lv;
+    if (value == NULL) return;
+    lv = strlen(value) + 1u;
+    if (*used + ll + lv + 1u > cap) return;
+    memcpy(out + *used, label, ll);
+    memcpy(out + *used + ll, value, lv);
+    *used += (uint32_t)(ll + lv);
+    out[*used] = '\0';
+    (*rows)++;
+}
+
+/* Runs `sql` (bind ?1 = period when non-NULL) and adds one row per result row: column 0 = label, column 1 = value. */
+static void stats_rows(sqlite3* db, const char* sql, const char* period, char* out, uint32_t cap, uint32_t* used,
+                       uint32_t* rows) {
+    sqlite3_stmt* st = NULL;
+    if (sqlite3_prepare_v2(db, sql, -1, &st, NULL) != SQLITE_OK) return;
+    if (period != NULL) sqlite3_bind_text(st, 1, period, -1, SQLITE_STATIC);
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        stats_put(out, cap, used, rows, (const char*)sqlite3_column_text(st, 0), (const char*)sqlite3_column_text(st, 1));
+    }
+    sqlite3_finalize(st);
+}
+
+#define STATS_HMS(col) "printf('%d:%02d:%02d', " col " / 1000 / 3600, " col " / 1000 % 3600 / 60, " col " / 1000 % 60)"
+
+/* The stats screen text: every number comes out of the stats_* views (schema v4). Totals, then for the newest
+ * three periods the plays and play time and the top two formats and artists. */
+static int64_t stats_build(sqlite3* db, char* out, uint32_t cap) {
+    sqlite3_stmt* st = NULL;
+    uint32_t used = 0, rows = 0;
+    char periods[3][8];
+    int n = 0, i;
+    out[0] = '\0';
+    stats_rows(db, "SELECT 'Songs in library', songs FROM stats_totals UNION ALL SELECT 'Total plays', plays FROM stats_totals"
+                   " UNION ALL SELECT 'Total play time', " STATS_HMS("play_ms") " FROM stats_totals",
+               NULL, out, cap, &used, &rows);
+    if (sqlite3_prepare_v2(db, "SELECT period FROM stats_periods ORDER BY period DESC LIMIT 3", -1, &st, NULL) == SQLITE_OK) {
+        while (n < 3 && sqlite3_step(st) == SQLITE_ROW) {
+            snprintf(periods[n++], sizeof periods[0], "%s", (const char*)sqlite3_column_text(st, 0));
+        }
+        sqlite3_finalize(st);
+    }
+    for (i = 0; i < n; i++) {
+        stats_rows(db, "SELECT period || ' plays', plays || ' plays, ' || " STATS_HMS("play_ms")
+                       " FROM stats_periods WHERE period = ?1",
+                   periods[i], out, cap, &used, &rows);
+        stats_rows(db, "SELECT period || ' format ' || rank, name || ' (' || plays || ')' FROM stats_top_formats"
+                       " WHERE period = ?1 AND rank <= 2 ORDER BY rank",
+                   periods[i], out, cap, &used, &rows);
+        stats_rows(db, "SELECT period || ' artist ' || rank, name || ' (' || plays || ')' FROM stats_top_artists"
+                       " WHERE period = ?1 AND rank <= 2 ORDER BY rank",
+                   periods[i], out, cap, &used, &rows);
+    }
+    return rows;
+}
+
 static void user_counts(sqlite3* db, int32_t out[4]) {
     static const char* const tables[4] = {"history", "flags", "notes", "pending_push"};
     int i;
@@ -233,6 +291,9 @@ void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* repl
     } else if (op->op == SEL_USER_FLAG_EXPORT && op->name != NULL) {
         rows = 0;
         rc = flags_export(lib->db, op->name, &rows);
+    } else if (op->op == SEL_USER_STATS && op->out != NULL && op->out_cap > 0) {
+        rows = stats_build(lib->db, op->out, op->out_cap);
+        rc = SQLITE_OK;
     } else if (op->key == NULL || op->key[0] == '\0') {
         /* rc stays SQLITE_MISUSE */
     } else if (op->op == SEL_USER_NOTE) {

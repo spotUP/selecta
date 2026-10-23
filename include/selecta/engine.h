@@ -145,6 +145,7 @@ typedef struct sel_state {
     const char* panel;          /* I185: catalogue rows of the open song, "label\0value\0" pairs (library data: STIL note,
                                  * composer, release, year, genre, rating, play count; absent data has no row), NULL: none */
     uint32_t panel_rows;        /* rows in `panel` */
+    const char* stats;          /* I192: the stats screen is open: "label\0value\0" pairs read from the stats SQL views, then "\0"; NULL: closed */
 } sel_state;
 
 struct sel_library;
@@ -289,6 +290,7 @@ typedef struct sel_engine_stats {
     uint32_t cue_sets;            /* CUE_SET rows stored (I175 sentinel) */
     uint32_t cue_gotos;           /* CUE_GOTO seeks made (I175 sentinel) */
     uint32_t folder_view_rows;    /* rows the folders view source built from the library tree (I179 sentinel) */
+    uint32_t stats_queries;       /* STATS_SHOW queries run against the stats views (I192 sentinel) */
     uint32_t panel_loads;         /* module info panel lookups made in the library (I185 sentinel) */
     uint32_t folder_ops;          /* FOLDER_ADD/MOVE/DEL and PLAYLIST_MOVE run against the library (I178 sentinel) */
     uint32_t sticker_ops;         /* STICKER_* commands run against the library (I176 sentinel) */

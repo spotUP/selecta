@@ -63,7 +63,31 @@ static const char SCHEMA_V2[] =
 /* v3 (I190): 1 marks songs.loudness_gain as the adaptive leveler's provisional estimate; a real gain clears it. */
 static const char SCHEMA_V3[] = "ALTER TABLE songs ADD COLUMN loudness_prov INTEGER NOT NULL DEFAULT 0;";
 
-static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3};
+/* v4 (I192, F24): the statistics views. The stats screen reads only these views; no number is computed in C.
+ * A play is a history row that was not skipped; its period is the calendar year (UTC) of played_at. Songs the
+ * catalogue lacks count as format and artist "Unknown". Rank 1 is the most played, ties broken by name. */
+static const char SCHEMA_V4[] =
+    "CREATE VIEW stats_plays AS SELECT h.key AS key, strftime('%Y', h.played_at, 'unixepoch') AS period,"
+    " COALESCE(h.duration_ms, 0) AS duration_ms, COALESCE(NULLIF(s.format, ''), 'Unknown') AS format,"
+    " COALESCE(NULLIF(s.artist, ''), 'Unknown') AS artist"
+    " FROM history h LEFT JOIN songs s ON s.key = h.key WHERE h.skipped = 0;"
+    "CREATE VIEW stats_totals AS SELECT (SELECT COUNT(*) FROM songs) AS songs,"
+    " (SELECT COUNT(*) FROM stats_plays) AS plays,"
+    " (SELECT COALESCE(SUM(duration_ms), 0) FROM stats_plays) AS play_ms;"
+    "CREATE VIEW stats_periods AS SELECT period, COUNT(*) AS plays, SUM(duration_ms) AS play_ms"
+    " FROM stats_plays GROUP BY period;"
+    "CREATE VIEW stats_format_counts AS SELECT period, format AS name, COUNT(*) AS plays"
+    " FROM stats_plays GROUP BY period, format;"
+    "CREATE VIEW stats_artist_counts AS SELECT period, artist AS name, COUNT(*) AS plays"
+    " FROM stats_plays GROUP BY period, artist;"
+    "CREATE VIEW stats_top_formats AS SELECT a.period AS period, a.name AS name, a.plays AS plays,"
+    " (SELECT COUNT(*) FROM stats_format_counts b WHERE b.period = a.period"
+    "  AND (b.plays > a.plays OR (b.plays = a.plays AND b.name < a.name))) + 1 AS rank FROM stats_format_counts a;"
+    "CREATE VIEW stats_top_artists AS SELECT a.period AS period, a.name AS name, a.plays AS plays,"
+    " (SELECT COUNT(*) FROM stats_artist_counts b WHERE b.period = a.period"
+    "  AND (b.plays > a.plays OR (b.plays = a.plays AND b.name < a.name))) + 1 AS rank FROM stats_artist_counts a;";
+
+static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 

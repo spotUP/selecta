@@ -27,6 +27,7 @@ Toolchains: desktop clang/gcc + CMake + Ninja; Amiga bebbo amiga-gcc at `~/opt/a
 | List / lint plugins | `build/host/apps/selecta-cli/selecta-cli plugins --lint` |
 | Probe the machine (prints sel_machine tags) | `build/host/apps/selecta-cli/selecta-cli machine` |
 | Open the library DB, print schema and heap (T62) | `build/host/apps/selecta-cli/selecta-cli library stats [--machine a500]` |
+| Statistics screen (F24, I192; schema v4 views `stats_*`; key `b` sends STATS_SHOW, `b` or Escape closes) | `build/host/apps/selecta/selecta --size 80x25 --keys tests/m3/stats.keys --screen-dump --db <db>` prints `stats_queries=`; test `nice -n 19 ctest --test-dir build/host -R stats-screen` (T92) |
 | Scan a folder into the catalogue (T71) | `build/host/apps/selecta-cli/selecta-cli library scan [--db <path>] <dir>` |
 | Measure a song's EBU R128 loudness and store its gain (T89) | `build/host/apps/selecta-cli/selecta-cli analyse [--db <path>] <song>` (`analyse --sine <hz>:<dbfs>` for a generated reference) |
 | Get a song's gain from the DEViLBOX loudness endpoint, or analyse and submit it (T90 fetch part, I188) | `build/host/apps/selecta-cli/selecta-cli loudness [--db <path>] [--machine <name>] [--config-dir <dir>] <song>`; prints `loudness_source=stored\|devilbox\|analysis\|none gain_cdb= hash= loudness_get= loudness_put=ok\|failed\|skipped_no_token\|none`, `devilbox_missing=loudness` when the endpoint is absent; test: `ctest --test-dir build/host -R loudness-fetch` |
