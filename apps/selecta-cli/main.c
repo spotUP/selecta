@@ -51,6 +51,7 @@ static int usage(FILE* to) {
           "  library key <source> <path> print the song key and its URL round trip (T72)\n"
           "  library query --explain <q> compile a library query, print sql= params= query_terms= (T63)\n"
           "  library stats              open the library DB, print db_open= schema_version= sqlite_version= (T62)\n"
+          "  userdata --db <p> [--catalogue <tsv>] [--note <song> <text>] [--tag <song> <field> <value>] [--wrong <song> <note>]  notes, tag edits, row counts (T78)\n"
           "  wrong [--db <p>] [--export <file>] [<song> [<note>]]  flag a song as sounding wrong, export sounds-wrong.txt (T78)\n"
           "  fetch <url> [--method M] [--range a-b] [--out file]  one HTTP request, print http_status= and net counters\n"
           "  machine [--tier <name>]    probe the machine, print the sel_machine tags\n",
@@ -670,6 +671,9 @@ int main(int argc, char** argv)
     }
     if (strcmp(cmd, "wrong") == 0) {
         return sel_cli_wrong(argc - 2, argv + 2);
+    }
+    if (strcmp(cmd, "userdata") == 0) {
+        return sel_cli_userdata(argc - 2, argv + 2);
     }
     if (strcmp(cmd, "fetch") == 0) {
         return sel_cli_fetch(argc - 2, argv + 2);

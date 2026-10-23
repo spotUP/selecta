@@ -38,7 +38,10 @@ enum {
     SEL_USER_HISTORY = 1, SEL_USER_LIKE, SEL_USER_KEEP, SEL_USER_STICKER_SET, SEL_USER_STICKER_GET,
     SEL_USER_FLAG,         /* I171: name "wrong" (value = note) or "skip" on the song key */
     SEL_USER_FLAG_SKIPPED, /* I171: reply [0] = 2 when the key carries the skip flag */
-    SEL_USER_FLAG_EXPORT   /* I171: name = path of the sounds-wrong.txt to write */
+    SEL_USER_FLAG_EXPORT,  /* I171: name = path of the sounds-wrong.txt to write */
+    SEL_USER_NOTE,         /* I172: value = note text on the song key (empty text removes it); queues a pending_push comment */
+    SEL_USER_TAG_EDIT,     /* I172: name = artist|name|album|genre, value = edited tag (empty drops the edit) */
+    SEL_USER_COUNTS        /* I172: reply [2..5] = rows in history, flags, notes, pending_push */
 };
 typedef struct sel_user_op {
     uint32_t op;       /* SEL_USER_* */
@@ -200,6 +203,15 @@ int sel_library_flag_skipped(sel_library* lib, const char* key);
 /* Writes the wrong-flagged songs to `path` as "key<TAB>note" lines in key order (sounds-wrong.txt). 1 on
  * success; *rows = lines written (may be NULL). */
 int sel_library_flags_export(sel_library* lib, const char* path, uint32_t* rows);
+/* NOTE (I172): stores the note for the song key and queues a "comment" row in pending_push for the optional
+ * DEViLBOX push (nothing is sent by the library; no endpoint is defined in the repo). Empty note deletes it. */
+int sel_library_note(sel_library* lib, const char* key, const char* note);
+/* Tag edit (I172): `field` is artist, name, album or genre. The edit is kept in the sticker "tag.<field>" and
+ * written to the songs row, so queries, FTS and display read it from one place; a rescan or catalogue import
+ * keeps it (SEL_SONG_TAG_KEEP). An empty value drops the edit (the scanned value returns on the next scan). */
+int sel_library_tag_edit(sel_library* lib, const char* key, const char* field, const char* value);
+/* Row counts of the user tables (any pointer may be NULL). 1 on success. */
+int sel_library_user_counts(sel_library* lib, uint32_t* history, uint32_t* flags, uint32_t* notes, uint32_t* pending_push);
 /* Marks song key `key` in table "kept" or "liked" (seeding and tests). 1 on success. */
 int sel_library_mark(sel_library* lib, const char* table, const char* key);
 /* Companion rules (sel_companion_rules) the trim honours; every LIBRARY_FETCH sets them. */

@@ -11,7 +11,8 @@ static const char SQL_FILE[] =
 static const char SQL_SONG[] =
     "INSERT INTO songs(key, source, path, name, artist, format, year, duration_ms, md5, size, added)"
     " VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"
-    " ON CONFLICT(key) DO UPDATE SET name=excluded.name, artist=excluded.artist, format=excluded.format,"
+    " ON CONFLICT(key) DO UPDATE SET name=" SEL_SONG_TAG_KEEP(name) ", artist=" SEL_SONG_TAG_KEEP(artist)
+    ", format=excluded.format,"
     " year=excluded.year, duration_ms=excluded.duration_ms, md5=excluded.md5, size=excluded.size";
 
 static void bind_text(sqlite3_stmt* st, int i, const char* s) {

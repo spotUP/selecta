@@ -267,8 +267,8 @@ void sel_library_import(sel_library* lib, sel_lib_job* job) {
         sqlite3_prepare_v2(lib->db,
                            "INSERT INTO songs(key, source, path, name, artist, format, year)"
                            " VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT(key) DO UPDATE SET"
-                           " source = excluded.source, path = excluded.path, name = excluded.name,"
-                           " artist = excluded.artist, format = excluded.format, year = excluded.year",
+                           " source = excluded.source, path = excluded.path, name = " SEL_SONG_TAG_KEEP(name) ","
+                           " artist = " SEL_SONG_TAG_KEEP(artist) ", format = excluded.format, year = excluded.year",
                            -1, &st, NULL) != SQLITE_OK) {
         sqlite3_exec(lib->db, "ROLLBACK", NULL, NULL, NULL);
         set_error(job, "bad_value");

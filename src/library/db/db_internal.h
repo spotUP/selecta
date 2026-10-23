@@ -72,6 +72,11 @@ void sel_library_annotate(sel_library* lib, const sel_annotate_batch* b, sel_mes
 /* user.c: SEL_LIB_REQ_USER. */
 void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* reply);
 
+/* I172: inside `INSERT ... ON CONFLICT DO UPDATE SET col = ...` on songs, keeps a user's tag edit (sticker
+ * "tag.<col>") over the scanned value. Every songs upsert uses it, so the edit survives a rescan. */
+#define SEL_SONG_TAG_KEEP(col) \
+    "COALESCE((SELECT value FROM stickers WHERE key = excluded.key AND name = 'tag." #col "'), excluded." #col ")"
+
 /* worker.c */
 int sel_worker_start(sel_library* lib);
 void sel_worker_stop(sel_library* lib);

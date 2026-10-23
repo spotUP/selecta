@@ -250,6 +250,42 @@ int sel_library_flags_export(sel_library* lib, const char* path, uint32_t* rows)
     return user_call_rows(lib, &op, rows) > 0;
 }
 
+int sel_library_note(sel_library* lib, const char* key, const char* note) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_NOTE;
+    op.key = key;
+    op.value = note != NULL ? note : "";
+    return user_call(lib, &op) > 0;
+}
+
+int sel_library_tag_edit(sel_library* lib, const char* key, const char* field, const char* value) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_TAG_EDIT;
+    op.key = key;
+    op.name = field;
+    op.value = value != NULL ? value : "";
+    return user_call(lib, &op) > 0;
+}
+
+int sel_library_user_counts(sel_library* lib, uint32_t* history, uint32_t* flags, uint32_t* notes, uint32_t* pending_push) {
+    sel_user_op op;
+    sel_message reply;
+    memset(&op, 0, sizeof op);
+    memset(&reply, 0, sizeof reply);
+    op.op = SEL_USER_COUNTS;
+    if (lib == NULL || !sel_library_request(lib, SEL_LIB_REQ_USER, &op, &reply) || reply.argc < 6 ||
+        reply.args[0].v.i < 1) {
+        return 0;
+    }
+    if (history != NULL) *history = (uint32_t)reply.args[2].v.i;
+    if (flags != NULL) *flags = (uint32_t)reply.args[3].v.i;
+    if (notes != NULL) *notes = (uint32_t)reply.args[4].v.i;
+    if (pending_push != NULL) *pending_push = (uint32_t)reply.args[5].v.i;
+    return 1;
+}
+
 int sel_library_history_add(sel_library* lib, const char* key, int64_t at, int skipped) {
     sel_user_op op;
     memset(&op, 0, sizeof op);

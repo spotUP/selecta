@@ -890,6 +890,66 @@ int sel_cli_wrong(int argc, char** argv) {
     return ok ? 0 : 1;
 }
 
+int sel_cli_userdata(int argc, char** argv) {
+    const sel_host* host = sel_host_default();
+    const char* db_path = NULL;
+    const char* catalogue = NULL;
+    uint32_t history = 0, flags = 0, notes = 0, pending = 0, rows = 0;
+    sel_library* lib;
+    int i, ok = 1;
+
+    for (i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "--db") == 0 && i + 1 < argc) {
+            db_path = argv[++i];
+        } else if (strcmp(argv[i], "--catalogue") == 0 && i + 1 < argc) {
+            catalogue = argv[++i];
+        } else if (strcmp(argv[i], "--played") == 0 && i + 1 < argc) {
+            i += 1;
+        } else if ((strcmp(argv[i], "--note") == 0 || strcmp(argv[i], "--wrong") == 0) && i + 2 < argc) {
+            i += 2;
+        } else if (strcmp(argv[i], "--tag") == 0 && i + 3 < argc) {
+            i += 3;
+        } else {
+            db_path = NULL;
+            break;
+        }
+    }
+    if (db_path == NULL) {
+        fputs("usage: selecta-cli userdata --db <path> [--catalogue <tsv>] [--note <song> <text>] "
+              "[--tag <song> <field> <value>] [--wrong <song> <note>]\n", stderr);
+        return 2;
+    }
+    sel_registry_init(host);
+    lib = catalogue != NULL ? sel_cli_open_catalogue_at(catalogue, db_path)
+                            : sel_library_open(host, sel_machine_probe(host), 0, db_path);
+    if (lib == NULL) {
+        puts("db_open=0");
+        return 1;
+    }
+    for (i = 0; i < argc && ok; i++) {
+        if (strcmp(argv[i], "--played") == 0) {
+            ok = sel_library_history_add(lib, argv[i + 1], (int64_t)time(NULL), 0);
+            i += 1;
+        } else if (strcmp(argv[i], "--note") == 0) {
+            ok = sel_library_note(lib, argv[i + 1], argv[i + 2]);
+            i += 2;
+        } else if (strcmp(argv[i], "--wrong") == 0) {
+            ok = sel_library_flag(lib, argv[i + 1], "wrong", argv[i + 2], &rows);
+            i += 2;
+        } else if (strcmp(argv[i], "--tag") == 0) {
+            ok = sel_library_tag_edit(lib, argv[i + 1], argv[i + 2], argv[i + 3]);
+            i += 3;
+        } else if (strcmp(argv[i], "--db") == 0 || strcmp(argv[i], "--catalogue") == 0) {
+            i++;
+        }
+    }
+    if (ok) ok = sel_library_user_counts(lib, &history, &flags, &notes, &pending);
+    printf("history_rows=%u flags=%u notes=%u pending_push=%u\n", (unsigned)history, (unsigned)flags,
+           (unsigned)notes, (unsigned)pending);
+    sel_library_close(lib);
+    return ok ? 0 : 1;
+}
+
 int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "browse") == 0) {
         return library_browse(argc, argv);

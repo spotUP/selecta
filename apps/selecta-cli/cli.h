@@ -33,6 +33,12 @@ int sel_cli_library(int argc, char** argv);
  * library DB, optionally writes sounds-wrong.txt; prints `flags=<rows> wrong_exported=<lines>`. */
 int sel_cli_wrong(int argc, char** argv);
 
+/* userdata --db <p> [--catalogue <tsv>] [--played <song>]... [--note <song> <text>]... [--tag <song> <field> <value>]... [--wrong <song> <note>]
+ * (T78, I172): imports the catalogue into the DB file, applies NOTE, tag edits and wrong flags (the same
+ * sel_library_* calls as FLAG and `wrong`), prints
+ * `history_rows=<n> flags=<n> notes=<n> pending_push=<n>`. */
+int sel_cli_userdata(int argc, char** argv);
+
 /* library fetch <source>:<path> (T69): the Mirrors transport; prints mirror_tries= mirror_retries=. */
 int sel_cli_library_fetch(int argc, char** argv);
 
