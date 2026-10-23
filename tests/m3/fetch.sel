@@ -1,0 +1,7 @@
+# T75 cache-fetch (rows I165, I166): LIBRARY_FETCH through the file cache.
+# 1. the song lands in <cache>/files/modland/<path>, md5-checked
+# 2. the same fetch again is a cache hit and makes no request
+# 3. a TFMX song brings its companion (smpl.*) with it
+LIBRARY_FETCH modland:Protracker/test/song.mod#md5=5f44e59c56ed3ff04563de02b3e56727
+LIBRARY_FETCH modland:Protracker/test/song.mod#md5=5f44e59c56ed3ff04563de02b3e56727
+LIBRARY_FETCH modland:TFMX/test/mdat.song

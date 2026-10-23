@@ -1,0 +1,2 @@
+# T75: every mirror serves a body whose md5 differs: ERROR md5_mismatch.
+LIBRARY_FETCH modland:Protracker/test/song.mod#md5=5f44e59c56ed3ff04563de02b3e56727

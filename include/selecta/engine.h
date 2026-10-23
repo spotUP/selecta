@@ -146,6 +146,11 @@ struct sel_library;
 /* LIBRARY_SCAN hook (I158): scans `path` into the catalogue; returns 1 and the number of files
  * scanned, 0 on failure. The engine does not link the library; the front end hands this in. */
 typedef int (*sel_library_scan_fn)(void* ctx, const char* path, uint32_t* files);
+/* LIBRARY_FETCH hook (I165, I166): fetches `spec` ("<source>:<path>", optional "#md5=<hex>") and the
+ * companion files of its format into the file cache. Returns 1 with the cache path in `out` and the
+ * number of files delivered (the song plus its companions) in `files`; 0 on failure; -1 when every
+ * mirror delivered a body whose md5 differs. */
+typedef int (*sel_library_fetch_fn)(void* ctx, const char* spec, char* out, size_t cap, uint32_t* files);
 
 typedef struct sel_engine_config {
     uint32_t cmd_queue_depth; /* 0: default 64 */
@@ -173,6 +178,8 @@ typedef struct sel_engine_config {
     struct sel_library* library;
     sel_library_scan_fn library_scan;
     void* library_ctx;
+    sel_library_fetch_fn library_fetch; /* LIBRARY_FETCH hook; NULL: ERROR no_library */
+    void* library_fetch_ctx;
 } sel_engine_config;
 
 typedef struct sel_engine sel_engine;

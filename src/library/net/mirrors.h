@@ -33,6 +33,7 @@ typedef struct sel_mirror_set {
 typedef struct sel_mirror_res {
     unsigned tries;   /* mirrors attempted */
     unsigned retries; /* attempts after the first */
+    unsigned rejected; /* complete bodies the verify callback refused (md5 mismatch) */
     int served;       /* index into the set, -1 when every mirror failed */
     char url[SEL_MIRROR_URL_MAX + SEL_MIRROR_PATH_MAX];
     unsigned long body_bytes;
@@ -43,6 +44,9 @@ typedef struct sel_mirror_res {
  * sink can discard a partial body (may be NULL when the sink is idempotent). */
 typedef int (*sel_mirror_sink)(void* ctx, const void* data, size_t len);
 typedef void (*sel_mirror_restart)(void* ctx);
+/* Called after a mirror delivered a complete body; return 0 to reject it (the body counts as a
+ * failure of that mirror and the next one is tried; used for the md5 check of the cache). */
+typedef int (*sel_mirror_verify)(void* ctx);
 
 /* Build the set for source ("modland", "hvsc"). amiga_route selects the DEViLBOX route.
  * Returns the mirror count (0 for an unknown source without an env list). */
@@ -52,5 +56,9 @@ void sel_mirrors_rank(const sel_mirror_set* set, unsigned* order);
 /* Fetch <path> (no leading slash). Returns 1 when a mirror served it, 0 when all failed. */
 int sel_mirrors_fetch(sel_mirror_set* set, const char* path, sel_mirror_sink sink, sel_mirror_restart restart,
                       void* ctx, sel_mirror_res* res);
+
+/* Same, with a verify step after every complete body (NULL: none). */
+int sel_mirrors_fetch_verified(sel_mirror_set* set, const char* path, sel_mirror_sink sink, sel_mirror_restart restart,
+                               sel_mirror_verify verify, void* ctx, sel_mirror_res* res);
 
 #endif

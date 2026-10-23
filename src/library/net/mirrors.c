@@ -178,8 +178,8 @@ static int try_one(const char* url, attempt* a) {
     }
 }
 
-int sel_mirrors_fetch(sel_mirror_set* s, const char* path, sel_mirror_sink sink, sel_mirror_restart restart,
-                      void* ctx, sel_mirror_res* res) {
+int sel_mirrors_fetch_verified(sel_mirror_set* s, const char* path, sel_mirror_sink sink, sel_mirror_restart restart,
+                               sel_mirror_verify verify, void* ctx, sel_mirror_res* res) {
     char enc[SEL_MIRROR_PATH_MAX];
     unsigned k;
     memset(res, 0, sizeof *res);
@@ -204,7 +204,7 @@ int sel_mirrors_fetch(sel_mirror_set* s, const char* path, sel_mirror_sink sink,
         a.ttfb = 0;
         a.bytes = 0;
         res->tries++;
-        if (try_one(res->url, &a)) {
+        if (try_one(res->url, &a) && (verify == NULL || verify(ctx) || (res->rejected++, 0))) {
             if (a.ttfb > 0) {
                 s->ttfb_ms[i] = a.ttfb;
             }
@@ -218,4 +218,9 @@ int sel_mirrors_fetch(sel_mirror_set* s, const char* path, sel_mirror_sink sink,
     }
     res->retries = res->tries > 0 ? res->tries - 1u : 0u;
     return 0;
+}
+
+int sel_mirrors_fetch(sel_mirror_set* s, const char* path, sel_mirror_sink sink, sel_mirror_restart restart,
+                      void* ctx, sel_mirror_res* res) {
+    return sel_mirrors_fetch_verified(s, path, sink, restart, NULL, ctx, res);
 }

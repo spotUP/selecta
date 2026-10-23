@@ -98,6 +98,7 @@
     X(QUEUE_ADD_QUERY)                                                                        \
     X(VIEW_SAVE)                                                                              \
     X(VIEW_SOURCE)                                                                            \
+    X(LIBRARY_FETCH)                                                                          \
     X(LIBRARY_SCAN)                                                                           \
     X(VIEW_SHOW)                                                                              \
     X(VIEW_CURSOR)                                                                            \
@@ -264,6 +265,8 @@ struct sel_engine {
     sel_browse browse;  /* the listing LIBRARY_BROWSE fills */
     sel_library_scan_fn library_scan; /* LIBRARY_SCAN hook from the front end (I158); NULL: no_library */
     void* library_ctx;
+    sel_library_fetch_fn library_fetch; /* LIBRARY_FETCH hook (I165); NULL: no_library */
+    void* library_fetch_ctx;
     uint32_t lib_slot;
     sel_tag lib_tags[4][4];                  /* LIBRARY_RESULT tags, a ring like error_detail */
     char lib_path[4][SEL_BROWSE_PATH_MAX];
@@ -2421,14 +2424,31 @@ static void cmd_VIEW_SAVE(sel_engine* e, const sel_message* m) {
     }
 }
 
+/* Emit a LIBRARY_RESULT with a path and a count from the library hooks (scan and fetch). */
+static void emit_library_path(sel_engine* e, const char* path, uint32_t count) {
+    uint32_t slot = e->lib_slot++ & 3u;
+    sel_tag* t = e->lib_tags[slot];
+    sel_message r;
+    size_t n = strlen(path);
+
+    if (n >= sizeof e->lib_path[slot]) n = sizeof e->lib_path[slot] - 1u;
+    memcpy(e->lib_path[slot], path, n);
+    e->lib_path[slot][n] = '\0';
+    t[0].tag = SEL_SRC_PATH;
+    t[0].value = (uintptr_t)e->lib_path[slot];
+    t[1].tag = SEL_SRC_COUNT;
+    t[1].value = count;
+    t[2].tag = SEL_TAG_END;
+    t[2].value = 0;
+    evt_init(&r, SEL_EVT_LIBRARY_RESULT);
+    evt_tags(&r, t);
+    emit(e, &r);
+}
+
 /* LIBRARY_SCAN <dir>: the front end's library hook scans the directory tree into the catalogue
  * (I158); the answer is a LIBRARY_RESULT carrying the scanned path and the file count. */
 static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
     uint32_t files = 0;
-    uint32_t slot;
-    sel_tag* t;
-    sel_message r;
-    size_t n;
 
     if (e->library_scan == NULL) {
         sel_engine_report_error(e, "no_library", "LIBRARY_SCAN");
@@ -2438,21 +2458,31 @@ static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
         sel_engine_report_error(e, "scan_failed", m->args[0].v.s);
         return;
     }
-    slot = e->lib_slot++ & 3u;
-    t = e->lib_tags[slot];
-    n = strlen(m->args[0].v.s);
-    if (n >= sizeof e->lib_path[slot]) n = sizeof e->lib_path[slot] - 1u;
-    memcpy(e->lib_path[slot], m->args[0].v.s, n);
-    e->lib_path[slot][n] = '\0';
-    t[0].tag = SEL_SRC_PATH;
-    t[0].value = (uintptr_t)e->lib_path[slot];
-    t[1].tag = SEL_SRC_COUNT;
-    t[1].value = files;
-    t[2].tag = SEL_TAG_END;
-    t[2].value = 0;
-    evt_init(&r, SEL_EVT_LIBRARY_RESULT);
-    evt_tags(&r, t);
-    emit(e, &r);
+    emit_library_path(e, m->args[0].v.s, files);
+}
+
+/* LIBRARY_FETCH <source>:<path>[#md5=<hex>]: the front end's hook fetches the file and its
+ * companions into the file cache (I165, I166). The answer is a LIBRARY_RESULT carrying the cache
+ * path and the number of files delivered; a wrong md5 on every mirror answers ERROR md5_mismatch. */
+static void cmd_LIBRARY_FETCH(sel_engine* e, const sel_message* m) {
+    char out[SEL_BROWSE_PATH_MAX];
+    uint32_t files = 0;
+    int rc;
+
+    if (e->library_fetch == NULL) {
+        sel_engine_report_error(e, "no_library", "LIBRARY_FETCH");
+        return;
+    }
+    rc = e->library_fetch(e->library_fetch_ctx, m->args[0].v.s, out, sizeof out, &files);
+    if (rc < 0) {
+        sel_engine_report_error(e, "md5_mismatch", m->args[0].v.s);
+        return;
+    }
+    if (rc == 0) {
+        sel_engine_report_error(e, "fetch_failed", m->args[0].v.s);
+        return;
+    }
+    emit_library_path(e, out, files);
 }
 
 /* ---- view ------------------------------------------------------------ */
@@ -2776,6 +2806,8 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     if (cfg) {
         e->library_scan = cfg->library_scan;
         e->library_ctx = cfg->library_ctx;
+        e->library_fetch = cfg->library_fetch;
+        e->library_fetch_ctx = cfg->library_fetch_ctx;
     }
     if (cfg && cfg->config_dir && strlen(cfg->config_dir) < sizeof e->config_dir) {
         strcpy(e->config_dir, cfg->config_dir);
