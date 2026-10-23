@@ -24,6 +24,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifndef __amigaos__
+#include <sqlite3.h>
+#endif
 #if !SEL_PATH_STYLE_AMIGA
 #include <unistd.h>
 #endif
@@ -482,6 +485,114 @@ static int library_scan(int argc, char** argv) {
     return sink.failed ? 1 : 0;
 }
 
+#ifndef __amigaos__
+/* `--dump`: one `row=<path>|<format>|<artist>|<md5>` line per modland files row, read straight from the
+ * database file after the engine is closed (T72 compares them with the golden). */
+static void library_dump_modland(const char* db_path) {
+    sqlite3* db = NULL;
+    sqlite3_stmt* st = NULL;
+
+    if (sqlite3_open_v2(db_path, &db, SQLITE_OPEN_READONLY, NULL) == SQLITE_OK &&
+        sqlite3_prepare_v2(db, "SELECT path, COALESCE(format,''), COALESCE(artist,''), COALESCE(md5,'') FROM files"
+                               " WHERE source='modland' ORDER BY path", -1, &st, NULL) == SQLITE_OK) {
+        while (sqlite3_step(st) == SQLITE_ROW) {
+            printf("row=%s|%s|%s|%s\n", (const char*)sqlite3_column_text(st, 0),
+                   (const char*)sqlite3_column_text(st, 1), (const char*)sqlite3_column_text(st, 2),
+                   (const char*)sqlite3_column_text(st, 3));
+        }
+    }
+    sqlite3_finalize(st);
+    sqlite3_close(db);
+}
+#endif
+
+/* `library sync [--db <p>] [--now <epoch>] [--dump] modland <dir>` (I161, T72): LIBRARY_SYNC through the
+ * engine. <dir> holds allmods_md5.txt and changelog_YYYY-MM-DD.txt files. Prints
+ * `listing_rows= new_this_week= ...` and `db_songs=`. */
+static int library_sync(int argc, char** argv) {
+    const sel_host* host = sel_host_default();
+    const char* db_path = ":memory:";
+    const char* src = NULL;
+    const char* dir = NULL;
+    const char* now = NULL;
+    int dump = 0;
+    browse_sink sink;
+    sel_sync_info info;
+    sel_engine_config cfg;
+    sel_engine* e;
+    sel_library* lib;
+    sel_message st;
+    char line[1100];
+    char pool[1100];
+    int i;
+
+    for (i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "--db") == 0 && i + 1 < argc) {
+            db_path = argv[++i];
+        } else if (strcmp(argv[i], "--now") == 0 && i + 1 < argc) {
+            now = argv[++i];
+        } else if (strcmp(argv[i], "--dump") == 0) {
+            dump = 1;
+        } else if (src == NULL) {
+            src = argv[i];
+        } else if (dir == NULL) {
+            dir = argv[i];
+        } else {
+            src = NULL;
+            break;
+        }
+    }
+    if (src == NULL || dir == NULL) {
+        fputs("usage: selecta-cli library sync [--db <path>] [--now <epoch>] [--dump] modland <dir>\n", stderr);
+        return 2;
+    }
+    memset(&sink, 0, sizeof sink);
+    memset(&cfg, 0, sizeof cfg);
+    sel_registry_init(host);
+    cfg.registry_count = sel_registry_count;
+    cfg.registry_get = sel_registry_get;
+    cfg.machine = sel_machine_probe(host);
+    lib = sel_library_open(host, cfg.machine, 0, db_path);
+    if (lib == NULL) {
+        puts("db_open=0");
+        return 1;
+    }
+    cfg.library = lib;
+    e = sel_engine_create(host, &cfg);
+    if (e == NULL) {
+        fputs("selecta-cli: engine allocation failed\n", stderr);
+        sel_library_close(lib);
+        return 1;
+    }
+    if (now != NULL) {
+        snprintf(line, sizeof line, "LIBRARY_SYNC %s %s %s", src, dir, now);
+    } else {
+        snprintf(line, sizeof line, "LIBRARY_SYNC %s %s", src, dir);
+    }
+    sel_engine_send_line(e, line, pool, sizeof pool);
+    sel_engine_pump(e, on_event, &sink);
+    sel_engine_sync_info(e, &info);
+    memset(&st, 0, sizeof st);
+    if (!sel_library_call(lib, SEL_LIB_REQ_STATS, &st)) {
+        st.args[SEL_LIB_STAT_SONGS].v.i = -1;
+    }
+    printf("listing_rows=%u new_this_week=%u skipped_rows=%u changelogs=%u cl_added=%u cl_removed=%u cl_moved=%u "
+           "cl_updated=%u db_songs=%d\n",
+           (unsigned)info.listing_rows, (unsigned)info.new_this_week, (unsigned)info.skipped_rows,
+           (unsigned)info.changelogs, (unsigned)info.cl_added, (unsigned)info.cl_removed, (unsigned)info.cl_moved,
+           (unsigned)info.cl_updated, st.args[SEL_LIB_STAT_SONGS].v.i);
+    sel_engine_destroy(e);
+    sel_library_close(lib);
+#ifndef __amigaos__
+    if (dump && strcmp(db_path, ":memory:") != 0) {
+        library_dump_modland(db_path);
+    }
+#else
+    (void)dump;
+#endif
+    return sink.failed ? 1 : 0;
+}
+
 /* `library key <source> <path>` (T72 key round trip): prints `key=<id>:<path>`, then the split back
  * (`key_source=` `key_path=`), and for a source with URLs `url=` and `path_in=` plus
  * `roundtrip=1` when url -> path_in -> url returns the first URL and the key splits back to the
@@ -529,6 +640,9 @@ int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "scan") == 0) {
         return library_scan(argc - 1, argv + 1);
     }
+    if (argc >= 1 && strcmp(argv[0], "sync") == 0) {
+        return library_sync(argc - 1, argv + 1);
+    }
     if (argc >= 1 && strcmp(argv[0], "key") == 0) {
         return library_key(argc - 1, argv + 1);
     }
@@ -544,6 +658,6 @@ int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "query") == 0) {
         return library_query(argc - 1, argv + 1);
     }
-    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | key <source> <path> | query --explain <q> | stats [--machine <name>] [--db <path>]\n", stderr);
+    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | sync [--db <path>] [--now <epoch>] [--dump] modland <dir> | key <source> <path> | query --explain <q> | stats [--machine <name>] [--db <path>]\n", stderr);
     return 2;
 }

@@ -24,7 +24,8 @@ enum {
     SEL_LIB_REQ_SEARCH = 3,    /* run a query text; keys come back in sel_lib_job.out (I149) */
     SEL_LIB_REQ_SAVE_VIEW = 4, /* store text2 as the saved query `text` (I150) */
     SEL_LIB_REQ_IMPORT = 5,    /* import a TSV catalogue held in `text` (test and CLI seeding) */
-    SEL_LIB_REQ_SCAN_BATCH = 6 /* payload: const sel_scan_batch*; writes files and songs rows (I158) */
+    SEL_LIB_REQ_SCAN_BATCH = 6, /* payload: const sel_scan_batch*; writes files and songs rows (I158) */
+    SEL_LIB_REQ_REMOVE = 7      /* payload: const sel_remove_batch*; deletes files and songs rows (I161) */
 };
 
 /* The data of a SEARCH, SAVE_VIEW or IMPORT request. The caller fills the inputs, passes the job to
@@ -64,6 +65,15 @@ typedef struct sel_scan_batch {
     uint32_t count;
     int64_t now; /* epoch seconds stored in songs.added */
 } sel_scan_batch;
+
+/* Rows to delete again (a changelog's deleted: and moved: entries): `count` paths of one source. */
+typedef struct sel_remove_batch {
+    const char* source;
+    const char* const* paths;
+    uint32_t count;
+} sel_remove_batch;
+
+/* Reply to SEL_LIB_REQ_REMOVE: INT [0] song rows deleted, [1] SQLite result code (0 = ok). */
 
 /* Reply to SEL_LIB_REQ_SCAN_BATCH: INT [0] rows written, [1] SQLite result code (0 = ok). */
 

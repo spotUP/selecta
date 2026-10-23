@@ -97,3 +97,56 @@ void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_messa
     reply->args[1].type = SEL_ARG_INT;
     reply->args[1].v.i = rc;
 }
+
+/* SEL_LIB_REQ_REMOVE (I161): deletes the files and songs rows of the listed paths (a changelog's
+ * deleted: and moved: entries). A path that is not in the catalogue is not an error. */
+void sel_library_remove(sel_library* lib, const sel_remove_batch* b, sel_message* reply) {
+    sqlite3_stmt* sf = NULL;
+    sqlite3_stmt* ss = NULL;
+    int rc;
+    int removed = 0;
+    uint32_t i;
+    char key[1200];
+
+    rc = sqlite3_exec(lib->db, "BEGIN", NULL, NULL, NULL);
+    if (rc == SQLITE_OK) {
+        rc = sqlite3_prepare_v2(lib->db, "DELETE FROM files WHERE source=?1 AND path=?2", -1, &sf, NULL);
+    }
+    if (rc == SQLITE_OK) {
+        rc = sqlite3_prepare_v2(lib->db, "DELETE FROM songs WHERE key=?1", -1, &ss, NULL);
+    }
+    for (i = 0; rc == SQLITE_OK && i < b->count; i++) {
+        snprintf(key, sizeof key, "%s:%s", b->source, b->paths[i]);
+        sqlite3_reset(sf);
+        sqlite3_bind_text(sf, 1, b->source, -1, SQLITE_STATIC);
+        sqlite3_bind_text(sf, 2, b->paths[i], -1, SQLITE_STATIC);
+        rc = sqlite3_step(sf);
+        if (rc != SQLITE_DONE) {
+            break;
+        }
+        sqlite3_reset(ss);
+        sqlite3_bind_text(ss, 1, key, -1, SQLITE_STATIC);
+        rc = sqlite3_step(ss);
+        if (rc != SQLITE_DONE) {
+            break;
+        }
+        rc = SQLITE_OK;
+        removed += sqlite3_changes(lib->db);
+    }
+    sqlite3_finalize(sf);
+    sqlite3_finalize(ss);
+    if (rc == SQLITE_OK) {
+        rc = sqlite3_exec(lib->db, "COMMIT", NULL, NULL, NULL);
+    } else {
+        sqlite3_exec(lib->db, "ROLLBACK", NULL, NULL, NULL);
+        removed = 0;
+    }
+    memset(reply, 0, sizeof *reply);
+    reply->kind = SEL_MSG_EVT;
+    reply->id = SEL_LIB_REQ_REMOVE;
+    reply->argc = 2;
+    reply->args[0].type = SEL_ARG_INT;
+    reply->args[0].v.i = removed;
+    reply->args[1].type = SEL_ARG_INT;
+    reply->args[1].v.i = rc;
+}

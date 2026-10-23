@@ -180,6 +180,14 @@ typedef struct sel_engine sel_engine;
 
 void sel_engine_scan_info(const sel_engine* e, sel_scan_info* out);
 
+/* Counters of the last LIBRARY_SYNC (I161; test sentinels: listing_rows > 0 proves the sync code ran). */
+typedef struct sel_sync_info {
+    uint32_t listing_rows, skipped_rows, changelogs;
+    uint32_t cl_added, cl_removed, cl_moved, cl_updated;
+    uint32_t new_this_week;
+} sel_sync_info;
+void sel_engine_sync_info(const sel_engine* e, sel_sync_info* out);
+
 /* The config directory: $XDG_CONFIG_HOME/selecta, else ~/.config/selecta;
  * ENVARC:Selecta on the Amiga. Writes the path to `out`; 0 when it cannot be
  * determined or does not fit. The directory is not created. */
