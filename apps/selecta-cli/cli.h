@@ -59,6 +59,7 @@ void sel_cli_ratings_read(struct sel_library* lib, const char* args);
 
 /* fetch <url> (T67, T68): one HTTP request through the library client; prints counters. */
 int sel_cli_fetch(int argc, char** argv);
+int sel_cli_record(int argc, char** argv); /* F36 stream-to-disk (I196, T94) */
 
 /* --dry-run [--tooltypes <file>] [KEY=VALUE ...] (T58): parses the start options, prints opts=, prefs_hash=, task_pri=. */
 int sel_cli_dry_run(int argc, char** argv);

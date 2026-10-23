@@ -46,9 +46,24 @@ uint8_t* sel_live_drain(sel_live* s, size_t* size);
 void sel_live_note_audio(sel_live* s);
 void sel_live_close(sel_live* s);
 
+/* Stream-to-disk (F36, I196): sel_live_open plus a record sink tapping the download. Every byte the socket delivers
+ * is appended to `path` (the raw stream, no re-encode) before it enters the ring, from the download thread, so
+ * recording needs no second connection and does not depend on the reader keeping up. `limit` stops recording after
+ * that many bytes (0 = until the stream ends). The file is closed by sel_live_close, which every cancel, STOP and
+ * exit path reaches, so it is always a complete prefix of the stream. NULL when the file cannot be created. */
+sel_live* sel_live_open_record(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start,
+                               const char* path, unsigned long limit);
+unsigned long sel_live_recorded(const sel_live* s); /* bytes written to the record file so far */
+int sel_live_finished(const sel_live* s);           /* download ended (all bytes in, or failed) */
+int sel_live_failed(const sel_live* s);             /* ended without a 2xx body */
+/* Discards up to `max` buffered bytes (a recorder has no decoder reading the ring); returns how many. */
+size_t sel_live_discard(sel_live* s, size_t max);
+
 uint32_t sel_stream_live_opens(void);   /* streams started */
 uint32_t sel_stream_audio_bytes(void);  /* bytes received when the first audio frame was rendered (last stream) */
 uint32_t sel_stream_audio_done(void);   /* 1 when the download had already finished at that moment */
-uint32_t sel_stream_received(void);     /* bytes received by the last closed stream */
+uint32_t sel_stream_received(void);
+uint32_t sel_stream_recorded_total(void); /* bytes in the record file of the last closed stream */
+uint32_t sel_stream_record_taps(void);  /* sink calls that wrote to a record file (sentinel, T94) */     /* bytes received by the last closed stream */
 
 #endif
