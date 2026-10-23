@@ -5,6 +5,8 @@
  * only; no planar UI exists yet. */
 #include "machine_internal.h"
 
+#include <selecta/machine.h>
+
 #include <exec/execbase.h>
 #include <exec/io.h>
 #include <exec/memory.h>
@@ -29,6 +31,45 @@ static const char* probe_chipset(struct Library* gfx) {
     return "OCS";
 }
 
+/* ahi.device takes a struct AHIRequest: an IOStdReq followed by ahir_Version (the AHI version the
+ * caller was built for) and AHI's own fields, 80 bytes in all. The toolchain ships no AHI headers,
+ * so the size and the field offset are written out here (devices/ahi.h, AHI 4). Opened with a
+ * plain IOStdReq, AHI reads past the request, raises recoverable alert #00080000 (AG_BadParm) and
+ * fails the open; measured on the Replay 68060 2026-10-23 (row I217). */
+#define AHI_REQUEST_BYTES 80u
+#define AHI_VERSION_OFFSET sizeof(struct IOStdReq)
+#define AHI_VERSION 4u
+
+/* Size of the last request ahi_request_create asked exec for. The sentinel reports it instead of
+ * io_Message.mn_Length because vamos's CreateIORequest leaves mn_Length unset. */
+static ULONG ahi_request_bytes;
+
+static struct IORequest* ahi_request_create(struct MsgPort* port) {
+    struct IORequest* io;
+
+    ahi_request_bytes = AHI_REQUEST_BYTES;
+    io = CreateIORequest(port, ahi_request_bytes);
+
+    if (io) {
+        *(UWORD*)(void*)((UBYTE*)io + AHI_VERSION_OFFSET) = AHI_VERSION;
+    }
+    return io;
+}
+
+void sel_machine_ahi_request(uint32_t* bytes, uint32_t* version) {
+    struct MsgPort* port = CreateMsgPort();
+    struct IORequest* io = port ? ahi_request_create(port) : NULL;
+
+    *bytes = io ? ahi_request_bytes : 0u;
+    *version = io ? *(UWORD*)(void*)((UBYTE*)io + AHI_VERSION_OFFSET) : 0u;
+    if (io) {
+        DeleteIORequest(io);
+    }
+    if (port) {
+        DeleteMsgPort(port);
+    }
+}
+
 /* ahi.device is a disk device: its file in DEVS: says it is installed. Opening an absent device
  * under vamos never returns, so look at the file first; the open then proves it loads. */
 static int ahi_present(void) {
@@ -44,7 +85,7 @@ static int ahi_present(void) {
     port = CreateMsgPort();
 
     if (port) {
-        io = CreateIORequest(port, sizeof(struct IOStdReq));
+        io = ahi_request_create(port);
     }
     if (io && OpenDevice((CONST_STRPTR)AHI_DEVICE_NAME, 255, io, 0) == 0) {
         CloseDevice(io);

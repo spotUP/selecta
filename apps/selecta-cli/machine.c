@@ -30,6 +30,13 @@ int sel_cli_machine(int argc, char** argv) {
 
     printf("probe_calls=%u\n", (unsigned)sel_machine_probe_calls());
     printf("clock.source=%s\n", sel_clock_source());
+#if defined(__amigaos__)
+    {
+        uint32_t bytes, version;
+        sel_machine_ahi_request(&bytes, &version);
+        printf("ahi.request=%lu/%lu\n", (unsigned long)bytes, (unsigned long)version);
+    }
+#endif
     while ((t = sel_tag_next(&iter)) != NULL) {
         const char* name = sel_tag_name(t->tag);
         sel_tag_type type = SEL_TT_INT;

@@ -783,9 +783,10 @@ if(NOT SEL_AMIGA)
   # T49 registry machine filter, desktop and vamos.
   sel_m2_test(registry-machine-filter registry desktop)
   sel_m2_test(registry-machine-filter registry vamos)
-  # T50 machine probe under vamos.
+  # T50 machine probe under vamos. I217: the AHI probe request is a struct AHIRequest (80 bytes,
+  # ahir_Version 4); a plain IOStdReq made ahi.device raise alert #00080000 on the Replay.
   sel_m2_test(amiga-machine-probe run vamos -DTAG=T50 "-DARGS1=machine"
-    "-DCHECKS1=GFX~^(OCS|ECS|AGA)(\\+RTG)?$,AUDIO~paula" "-DARGS2=machine --tier planar" "-DCHECKS2=TIER==planar")
+    "-DCHECKS1=GFX~^(OCS|ECS|AGA)(\\+RTG)?$,AUDIO~paula,ahi.request==80/4" "-DARGS2=machine --tier planar" "-DCHECKS2=TIER==planar")
   # I110 clock source: desktop monotonic, vamos has no timer.device so DateStamp (rig: eclock, open).
   sel_m2_test(clock-source run desktop -DTAG=I110 "-DARGS1=machine" "-DCHECKS1=clock.source==monotonic")
   sel_m2_test(clock-source run vamos -DTAG=I110 "-DARGS1=machine" "-DCHECKS1=clock.source==datestamp")

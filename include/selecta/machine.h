@@ -53,6 +53,12 @@ int sel_machine_tier_by_name(const char* name);
  * timer.device, e.g. vamos) or "monotonic" (desktop). Opens the Amiga timer on first use. */
 const char* sel_clock_source(void);
 
+#if defined(__amigaos__)
+/* Size in bytes and ahir_Version of the request the AHI probe opens ahi.device with (test sentinel,
+ * row I217: AHI needs a struct AHIRequest, 80 bytes, version 4). Zeros when no request could be made. */
+void sel_machine_ahi_request(uint32_t* bytes, uint32_t* version);
+#endif
+
 /* Number of times sel_machine_probe has run in this process (test sentinel). */
 uint32_t sel_machine_probe_calls(void);
 
