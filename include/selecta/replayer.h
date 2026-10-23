@@ -91,6 +91,12 @@ typedef uint32_t (*sel_rp_tracker_cells_fn)(void* state, uint32_t order, uint32_
  * the audio thread between render calls. */
 typedef void (*sel_rp_mute_fn)(void* state, uint32_t channel, uint32_t muted);
 
+/* RP_SET_SPEED: optional, RENDER kind only. Sets the replayer's pitch factor
+ * and tempo factor (both Q16, 65536 = 1.0) for PITCH and TEMPO. VOICE-kind
+ * replayers need none: the engine scales the mixer step and the tick interval.
+ * Runs on the audio thread between render calls. */
+typedef void (*sel_rp_set_speed_fn)(void* state, uint32_t pitch_q16, uint32_t tempo_q16);
+
 SEL_EXTERN_C_END
 
 #endif /* SELECTA_REPLAYER_H */

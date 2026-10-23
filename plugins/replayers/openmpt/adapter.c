@@ -108,6 +108,15 @@ static void rp_mute(void* state, uint32_t channel, uint32_t muted) {
     }
 }
 
+/* RP_SET_SPEED: libopenmpt's interactive pitch and tempo factors (Q16 to double). */
+static void rp_set_speed(void* state, uint32_t pitch_q16, uint32_t tempo_q16) {
+    openmpt_state* s = (openmpt_state*)state;
+    if (s->have_inter) {
+        s->inter.set_pitch_factor(s->ext, (double)pitch_q16 / 65536.0);
+        s->inter.set_tempo_factor(s->ext, (double)tempo_q16 / 65536.0);
+    }
+}
+
 static uint32_t rp_render(void* state, int16_t* out, uint32_t frames) {
     openmpt_state* s = (openmpt_state*)state;
     return (uint32_t)openmpt_module_read_interleaved_stereo(s->mod, (int32_t)s->rate, frames, out);
@@ -276,7 +285,7 @@ static const sel_tag* rp_metadata(void* state) {
 
 /* Filled at run time: a function pointer cast to an integer is not a
  * constant expression in C99. */
-static sel_tag g_hooks[17];
+static sel_tag g_hooks[18];
 static sel_tag g_desc[5];
 static char g_extensions[LIST_LEN];
 
@@ -325,7 +334,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[12], SEL_RP_TRACKER_INFO, SEL_TAG_FN(rp_tracker_info));
     set(&g_hooks[13], SEL_RP_TRACKER_CELLS, SEL_TAG_FN(rp_tracker_cells));
     set(&g_hooks[14], SEL_RP_MUTE, SEL_TAG_FN(rp_mute));
-    set(&g_hooks[15], SEL_TAG_END, 0);
+    set(&g_hooks[15], SEL_RP_SET_SPEED, SEL_TAG_FN(rp_set_speed));
+    set(&g_hooks[16], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "openmpt");

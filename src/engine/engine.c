@@ -19,6 +19,7 @@
 #include <selecta/tags.h>
 
 #include "mixer.h"
+#include "pitch_table.h"
 #include "history.h"
 #include "queue.h"
 #include "playlist/playlist.h"
@@ -44,6 +45,8 @@
     X(STOP)                                                                                   \
     X(VOLUME)                                                                                 \
     X(MUTE)                                                                                   \
+    X(PITCH)                                                                                  \
+    X(TEMPO)                                                                                  \
     X(SOLO)                                                                                   \
     X(OUTPUT)                                                                                 \
     X(OPTION)                                                                                 \
@@ -122,6 +125,8 @@ typedef struct sel_slot {
     sel_rp_tracker_info_fn rp_tracker_info;   /* optional: pattern geometry */
     sel_rp_tracker_cells_fn rp_tracker_cells; /* optional: pattern cells */
     sel_rp_mute_fn rp_mute;                   /* optional, RENDER kind: channel mute */
+    sel_rp_set_speed_fn rp_set_speed;         /* optional, RENDER kind: pitch and tempo factors */
+    uint32_t applied_pitch, applied_tempo;    /* audio side: factors last handed to rp_set_speed */
     uint32_t applied_mute;                    /* audio side: mask last handed to rp_mute */
     uint32_t pos_order, pos_row, pos_pattern, pos_valid; /* audio side writes after each render */
     sel_rp_render_fn rp_render; /* RENDER kind: the replayer mixes, rp_tick is NULL */
@@ -476,6 +481,32 @@ static void cmd_SOLO(sel_engine* e, const sel_message* m) {
     set_mute_mask(e, v == 0u ? 0u : (n >= 32u ? 0xFFFFFFFFu : ((1u << n) - 1u)) & ~(1u << (v - 1u)));
 }
 
+/* PITCH <cents>: scales every voice's resample step (VOICE kind) or the
+ * replayer's pitch factor (RENDER kind, RP_SET_SPEED) by 2^(cents / 1200). */
+static void cmd_PITCH(sel_engine* e, const sel_message* m) {
+    const sel_arg* a = &m->args[0];
+    int32_t c = (a->flags & SEL_ARG_RELATIVE) ? e->state.pitch_cents + a->v.i : a->v.i;
+    if (c < -SEL_PITCH_MAX_CENTS || c > SEL_PITCH_MAX_CENTS) {
+        sel_engine_report_error(e, "range", "PITCH");
+        return;
+    }
+    e->state.pitch_cents = c;
+    e->state.pitch_q16 = sel_pitch_q16[c + SEL_PITCH_MAX_CENTS];
+}
+
+/* TEMPO <percent>: -50..100, 100 percent doubles the tick rate. VOICE kind
+ * shortens or lengthens the scheduler's tick interval; RENDER kind passes the
+ * factor to RP_SET_SPEED. */
+static void cmd_TEMPO(sel_engine* e, const sel_message* m) {
+    const sel_arg* a = &m->args[0];
+    int32_t t = (a->flags & SEL_ARG_RELATIVE) ? e->state.tempo_percent + a->v.i : a->v.i;
+    if (t < -50 || t > 100) {
+        sel_engine_report_error(e, "range", "TEMPO");
+        return;
+    }
+    e->state.tempo_percent = t;
+}
+
 static void cmd_OUTPUT(sel_engine* e, const sel_message* m) {
     copy_str(e->state.output, SEL_OUTPUT_NAME_MAX, m->args[0].v.s);
     changed(e, PENDING_OUTPUT);
@@ -826,6 +857,10 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     sl->rp_tracker_cells = (sel_rp_tracker_cells_fn)sel_tag_find(hooks, SEL_RP_TRACKER_CELLS, 0);
     sl->rp_mute = kind == SEL_RP_KIND_RENDER ? (sel_rp_mute_fn)sel_tag_find(hooks, SEL_RP_MUTE, 0) : NULL;
     sl->applied_mute = 0;
+    sl->rp_set_speed =
+        kind == SEL_RP_KIND_RENDER ? (sel_rp_set_speed_fn)sel_tag_find(hooks, SEL_RP_SET_SPEED, 0) : NULL;
+    sl->applied_pitch = 0;
+    sl->applied_tempo = 0;
     sl->pos_valid = 0;
     if (kind == SEL_RP_KIND_RENDER) {
         sl->rp_tick = NULL;
@@ -2131,6 +2166,16 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
             }
             sl->applied_mute = want_mute;
         }
+        {
+            uint32_t pq = e->state.pitch_q16 != 0u ? e->state.pitch_q16 : 65536u;
+            uint32_t tq = (uint32_t)(((uint64_t)(100 + e->state.tempo_percent) << 16) / 100u);
+            sl->mixer.pitch_q16 = pq;
+            if (sl->rp_set_speed != NULL && (sl->applied_pitch != pq || sl->applied_tempo != tq)) {
+                sl->rp_set_speed(sl->rp_state, pq, tq);
+                sl->applied_pitch = pq;
+                sl->applied_tempo = tq;
+            }
+        }
         while (sl->rp_render != NULL && done < frames && !sl->ended) {
             uint32_t want = frames - done;
             uint32_t got = sl->rp_render(sl->rp_state, stereo + (size_t)done * 2u, want);
@@ -2150,6 +2195,13 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
                 sl->rp_tick(sl->rp_state, &r);
                 sl->ticks++;
                 sl->frames_left = sel_scheduler_frames(&sl->sched, r.length);
+                if (e->state.tempo_percent != 0) { /* TEMPO: tick rate is (100 + percent) percent */
+                    sl->frames_left =
+                        (uint32_t)(((uint64_t)sl->frames_left * 100u) / (uint32_t)(100 + e->state.tempo_percent));
+                    if (sl->frames_left == 0u) {
+                        sl->frames_left = 1u;
+                    }
+                }
                 /* A looping song ends after its first pass (repeat count 1, as the
                  * nuade core does); REPEAT will make this configurable. */
                 if (r.flags & (SEL_TICK_ENDED | SEL_TICK_LOOPED)) {
