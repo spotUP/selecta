@@ -486,3 +486,14 @@ if(NOT SEL_AMIGA)
       "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m12/reach.screen"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m12/reach.cmake")
 endif()
+
+# T41 (rows I88, I89): RP_TRACKER_INFO and RP_TRACKER_CELLS, nuade and openmpt.
+if(NOT SEL_AMIGA)
+  add_test(NAME pattern-cells
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}"
+      "-DARGS=script ${CMAKE_CURRENT_SOURCE_DIR}/m13/pattern.sel"
+      "-DEXPECT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/m13/pattern.expected"
+      -P "${SEL_EXPECT}")
+  set_tests_properties(pattern-cells PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/songs")
+endif()

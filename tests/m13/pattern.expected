@@ -1,0 +1,49 @@
+SONG_OPENED {META_TITLE="selecta test",META_FORMAT=Protracker4,META_CHANNELS=4,META_SUBSONGS=1,META_SIZE=6166}
+POSITION 0 0 0 0
+TRACKER_INFO order=0 orders=4 patterns=0 rows=64 channels=4
+CELL order=0 row=0 channel=0 note=25 instrument=1 volume=0 effect=15 param=6
+CELL order=0 row=1 channel=0 note=0 instrument=0 volume=0 effect=0 param=0
+CELL order=0 row=2 channel=0 note=0 instrument=0 volume=0 effect=0 param=0
+CELL order=0 row=3 channel=0 note=0 instrument=0 volume=0 effect=0 param=0
+TRACKER_INFO order=0 orders=4 patterns=0 rows=64 channels=4
+CELL order=0 row=8 channel=0 note=0 instrument=0 volume=0 effect=12 param=48
+SONG_OPENED {META_TITLE="selecta test",META_FORMAT="ProTracker MOD (M.K.)",META_MESSAGE="test sample 1
+test sample 2
+test sample 3
+test sample 4
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+",META_CHANNELS=4,META_PATTERNS=4,META_SAMPLES=31,META_SUBSONGS=1,META_DURATION_MS=30080,META_SIZE=6076}
+POSITION 0 0 0 0 0 0 0
+TRACKER_INFO order=0 orders=4 patterns=4 rows=64 channels=4
+CELL order=0 row=0 channel=0 note=25 instrument=1 volume=0 effect=15 param=6
+CELL order=0 row=1 channel=0 note=0 instrument=0 volume=0 effect=0 param=0
+CELL order=0 row=2 channel=0 note=0 instrument=0 volume=0 effect=0 param=0
+CELL order=0 row=3 channel=0 note=0 instrument=0 volume=0 effect=0 param=0
+TRACKER_INFO order=0 orders=4 patterns=0 rows=64 channels=4
+CELL order=0 row=8 channel=0 note=0 instrument=0 volume=0 effect=12 param=48
