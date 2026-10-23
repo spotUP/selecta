@@ -209,6 +209,9 @@ typedef struct sel_slot {
     uint32_t reported;    /* pump side: SONG_ENDED was emitted for this song */
     uint32_t scrobbled;   /* pump side: SCROBBLE_DUE was emitted for this song (I177) */
     sel_playpol pol;      /* loop count, fade and silence state of this song */
+    uint32_t loud_active;      /* loudness gain applies to this song (I189a); set by prepare_slot before the swap */
+    uint32_t loud_gain_q16;    /* this song's gain, 16.16 */
+    const char* loud_source;   /* "off", "none" or "stored" */
 } sel_slot;
 
 struct sel_engine {
@@ -334,8 +337,8 @@ struct sel_engine {
     uint32_t viz_spectrum; /* capability: the spectrum is computed (CPU 68030 and up) */
     sel_dsp_chain dsp;
     sel_mix_stage stage; /* LED filter and stereo width, before the DSP chain (I127, I128) */
-    sel_loudness_gain loud; /* per-song gain and -1 dBFS limiter, after the DSP chain (I189); the pump sets it at song start */
-    const char* loud_source; /* "off", "none" or "stored" */
+    sel_loudness_gain loud; /* the -1 dBFS limiter on the mixed output, after the DSP chain (I189); the gain is per slot */
+    uint32_t loud_mixed;     /* audio thread: a slot with a loudness gain was mixed in this render call */
     uint32_t mutes; /* mute mask changes, for @stats (T39) */
     uint32_t fades; /* end fades started; audio side (T39) */
     uint32_t mixed_path; /* 1: the engine mixes (a DSP chain can run); 0: the output plays voices itself */
@@ -1346,26 +1349,51 @@ static void hist_end(sel_engine* e, int skipped) {
     e->hist_key[0] = '\0';
 }
 
-/* Loudness (I189, D-M3-9): mix.loudness off leaves the samples alone; track and auto apply the library's stored
- * gain of the song and run the limiter. A song without a stored gain stays untouched (auto's adaptive leveler is
- * I190). The audio thread reads the struct; it is written here, before the song's first block is mixed. */
-static void loudness_begin(sel_engine* e, const char* path) {
+/* The library key of a song: a "local:" key stays, a plain path gets the prefix. Used by the loudness lookup and
+ * by ANALYSE. */
+static void song_key(const char* path, char* key, size_t cap) {
+    snprintf(key, cap, strncmp(path, "local:", 6) == 0 ? "%s" : "local:%s", path);
+}
+
+/* Loudness (I189, I189a, D-M3-9): the gain is a property of the song, so it is fixed per slot here on the command
+ * thread, before the slot is published through the swap ring. mix.loudness off leaves the samples alone; track and
+ * auto apply the library's stored gain of the song. A song without a stored gain stays untouched (auto's adaptive
+ * leveler is I190). */
+static void loudness_slot(sel_engine* e, sel_slot* sl, const char* path) {
     const char* mode = e->prefs.value[SEL_PREF_MIX_LOUDNESS];
     char key[SEL_DEFERRED_PATH_MAX + 8];
     int32_t cdb = 0;
+    sl->loud_active = 0;
+    sl->loud_gain_q16 = SEL_GAIN_UNITY;
     if (strcmp(mode, "off") == 0) {
-        e->loud_source = "off";
-        sel_loudness_gain_set(&e->loud, 0, SEL_GAIN_UNITY);
+        sl->loud_source = "off";
         return;
     }
-    snprintf(key, sizeof key, strncmp(path, "local:", 6) == 0 ? "%s" : "local:%s", path);
+    song_key(path, key, sizeof key);
     if (e->lib != NULL && sel_library_loudness_get(e->lib, key, &cdb)) {
-        e->loud_source = "stored";
-        sel_loudness_gain_set(&e->loud, 1, sel_gain_q16_from_cdb(cdb));
+        sl->loud_source = "stored";
+        sl->loud_active = 1;
+        sl->loud_gain_q16 = sel_gain_q16_from_cdb(cdb);
         return;
     }
-    e->loud_source = "none";
-    sel_loudness_gain_set(&e->loud, 0, SEL_GAIN_UNITY);
+    sl->loud_source = "none";
+}
+
+/* Audio thread: this slot's gain on its own samples, before the crossfade mix. Saturates at 16 bits; the limiter
+ * runs once on the mixed output. */
+static void slot_gain(sel_engine* e, const sel_slot* sl, int16_t* stereo, uint32_t frames) {
+    uint32_t i;
+    if (!sl->loud_active || frames == 0u) {
+        return;
+    }
+    e->loud_mixed = 1;
+    if (sl->loud_gain_q16 == SEL_GAIN_UNITY) {
+        return;
+    }
+    for (i = 0; i < frames * 2u; i++) {
+        int64_t v = ((int64_t)stereo[i] * sl->loud_gain_q16 + 32768) >> 16;
+        stereo[i] = (int16_t)(v > 32767 ? 32767 : (v < -32768 ? -32768 : v));
+    }
 }
 
 static void hist_begin(sel_engine* e, const char* path) {
@@ -1373,7 +1401,6 @@ static void hist_begin(sel_engine* e, const char* path) {
     if (n >= sizeof e->hist_key) n = sizeof e->hist_key - 1u;
     memcpy(e->hist_key, path, n);
     e->hist_key[n] = '\0';
-    loudness_begin(e, path);
 }
 
 /* Prepares the idle slot `idx` with the song at `path` (all allocation, file
@@ -1468,6 +1495,7 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
         }
     }
     sample_position(sl);
+    loudness_slot(e, sl, path);
     sl->busy = 1;
     memset(&sw, 0, sizeof sw);
     sw.kind = SEL_MSG_CMD;
@@ -2942,11 +2970,9 @@ static void cmd_ANALYSE(sel_engine* e, const sel_message* m) {
         sel_engine_report_error(e, "no_library", "ANALYSE");
         return;
     }
+    song_key(path, key, sizeof key);
     if (strncmp(path, "local:", 6) == 0) {
-        snprintf(key, sizeof key, "%s", path);
         path += 6;
-    } else {
-        snprintf(key, sizeof key, "local:%s", path);
     }
     memset(&cfg, 0, sizeof cfg);
     cfg.registry_count = e->registry_count;
@@ -3782,6 +3808,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     e->rp_host.config_get = rp_config_get;
     e->rp_host.ctx = e;
     e->state.volume = 100;
+    sel_loudness_gain_set(&e->loud, 0, SEL_GAIN_UNITY);
     sel_timer_init(&e->timer);
     (void)local_ms(e); /* primes the C library time zone state outside the render path */
     e->loops = 1;
@@ -4174,8 +4201,11 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->width_percent = e->stage.width;
     out->width_frames = e->stage.width_frames;
     out->width_mono = e->stage.width == 0u;
-    out->loudness_source = e->loud_source != NULL ? e->loud_source : "none";
-    out->loudness_gain_q16 = e->loud.gain_q16 != 0u ? e->loud.gain_q16 : (uint32_t)SEL_GAIN_UNITY;
+    {
+        const sel_slot* ls = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
+        out->loudness_source = ls != NULL && ls->loud_source != NULL ? ls->loud_source : "none";
+        out->loudness_gain_q16 = ls != NULL && ls->loud_gain_q16 != 0u ? ls->loud_gain_q16 : (uint32_t)SEL_GAIN_UNITY;
+    }
     out->limiter_hits = e->loud.hits;
     out->loudness_frames = e->loud.frames;
     out->xfade_frames = e->xfade_frames;
@@ -4469,6 +4499,8 @@ static uint32_t render_mix(sel_engine* e, int16_t* stereo, uint32_t frames) {
             }
             n = render_slot(e, sl, out, want);
             m = render_slot(e, in, scratch, want);
+            slot_gain(e, sl, out, n);
+            slot_gain(e, in, scratch, m);
             for (i = n; i < want; i++) { /* a short outgoing song leaves silence under its tail */
                 out[i * 2u] = 0;
                 out[i * 2u + 1u] = 0;
@@ -4494,6 +4526,7 @@ static uint32_t render_mix(sel_engine* e, int16_t* stereo, uint32_t frames) {
             continue;
         }
         n = render_slot(e, sl, out, want);
+        slot_gain(e, sl, out, n);
         done += n;
         if (sl->ended && e->nx < SEL_SLOT_COUNT) {
             switch_to_next(e); /* gapless: the next song fills the rest of this block */
@@ -4515,6 +4548,7 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
     sel_slot* sl;
     SEL_THREAD_AUDIO(e);
     e->render_calls++;
+    e->loud_mixed = 0;
     if (stereo == NULL || frames == 0) {
         return frames;
     }
@@ -4557,6 +4591,7 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
     }
     sel_mix_stage_process(&e->stage, stereo, frames);
     sel_dsp_chain_process(&e->dsp, stereo, frames);
+    e->loud.active = e->loud_mixed;
     sel_loudness_gain_process(&e->loud, stereo, frames);
     viz_feed(e, sl, stereo, frames);
     if (e->pat_ack != e->pat_req) {

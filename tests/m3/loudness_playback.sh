@@ -50,5 +50,35 @@ hot=$(render lp_hot.wav --loudness track --gain-cdb 2400)
 [ "$(field "$hot" limiter_hits)" -gt 0 ] || fail "limiter never engaged on the hot render"
 samples lp_hot.wav | awk '{ v = $1 < 0 ? -$1 : $1; if (v > m) m = v } END { print "hot_peak=" m; exit !(m <= 29203) }' || fail "hot render exceeds -1 dBFS"
 echo "q16=$q16 hot_hits=$(field "$hot" limiter_hits)"
+
+# per-song gain at a song switch (I189a): two songs with different stored gains play gapless in one engine; every
+# frame of each song, the first of the second included, is its own plain samples times its own stored gain.
+cp "$song" lp_b.mod
+"$cli" render "$song" --output lp_x.wav --seconds 1 --loudness track --db lp2.db --gain-cdb -600 > /dev/null 2>&1 || fail "seed A"
+"$cli" render lp_b.mod --output lp_x.wav --seconds 1 --loudness track --db lp2.db --gain-cdb -1200 > /dev/null 2>&1 || fail "seed B"
+
+# the next song is prepared in the pump between renders, so render in blocks; 8192-frame blocks put the first
+# non-silent frames of song B (frame 4450) in the block right after the switch
+{
+    printf 'OPTION max_song_ms 1000\nOPTION fade_ms 0\nQUEUE_ADD %s\nQUEUE_ADD lp_b.mod\n@dump lp_two.raw\nPLAY\n' "$song"
+    n=0; while [ $n -lt 11 ]; do echo "@render 8192"; n=$((n + 1)); done
+    printf '@dump off\n'
+} > lp_two.sel
+"$cli" script lp_two.sel --db lp2.db > lp_two.out 2>&1 || fail "gapless script failed"
+ga=$(awk 'BEGIN { printf "%d", 65536 * exp(log(10) * -600 / 2000) + 0.5 }')
+gb=$(awk 'BEGIN { printf "%d", 65536 * exp(log(10) * -1200 / 2000) + 0.5 }')
+samples lp_plain.wav | head -n 88200 > lp_one.txt
+od -An -v -t d2 lp_two.raw | tr -s " " "\n" | sed "/^$/d" > lp_two.txt
+[ "$(wc -l < lp_two.txt)" -ge 176400 ] || fail "gapless dump too short: $(wc -l < lp_two.txt) samples"
+# song A is samples 1..88200 (44100 frames), song B follows and must carry gain B from its first frame
+awk -v ga="$ga" -v gb="$gb" '
+    function sc(p, g,   x) { x = p * g; return x < 0 ? -int((-x + 32768) / 65536) : int((x + 32768) / 65536) }
+    FNR == NR { plain[FNR] = $1 + 0; next }
+    { i = FNR; if (i > 176400) exit
+      if (i <= 88200) { want = sc(plain[i], ga) } else { want = sc(plain[i - 88200], gb) }
+      if ($1 + 0 != want) { if (!bad) first = i; bad++ } }
+    END { if (bad > 0) { print "switch mismatches=" bad " first_sample=" first; exit 1 } }' lp_one.txt lp_two.txt || fail "song B is not scaled by its own gain from its first frame, or song A by its own"
+rm -f lp_b.mod lp_x.wav lp_two.sel lp_two.out lp_two.raw lp2.db lp2.db-wal lp2.db-shm
+
 rm -f lp_*.wav lp_*.txt lp.db lp.db-wal lp.db-shm
 echo loudness_playback_ok

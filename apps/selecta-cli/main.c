@@ -298,6 +298,7 @@ static void print_event(void* ctx, const sel_message* evt) {
  *   @render N           render N frames on this thread, then pump and print
  *   @fade_mid           render until the end fade runs, then to its midpoint; print FADE gain_q16 pos total
  *   @render_until_end   render until SONG_ENDED is pumped; POSITION events
+ *   @dump <file>|off    write every rendered block as raw s16 stereo to <file> (I189a)
  *   @stats              print STATS xfade_frames slots_mixed mixed_path (crossfade, T44)
  *                       before it are not printed (their count depends on
  *                       the song length)
@@ -349,6 +350,8 @@ static int fake_query(const sel_host* h, const sel_tag* ask, sel_tag* answer) {
     return sel_host_default()->query(h, ask, answer);
 }
 
+static FILE* g_dump; /* @dump: raw s16 stereo of every rendered block (I189a) */
+
 static void script_render(sel_engine* e, uint32_t frames) {
     static int16_t buf[SCRIPT_RENDER_CHUNK * 2u];
     while (frames > 0) {
@@ -359,6 +362,9 @@ static void script_render(sel_engine* e, uint32_t frames) {
         sel_engine_render(e, buf, n);
         if (g_alloc_guard) {
             fputs("SEL_ALLOC_THAW\n", stderr);
+        }
+        if (g_dump != NULL) {
+            fwrite(buf, sizeof(int16_t) * 2u, n, g_dump);
         }
         frames -= n;
     }
@@ -451,6 +457,14 @@ static void script_directive(sel_engine* e, const char* line) {
                (unsigned)st.slots_mixed, (unsigned)st.mixed_path);
     } else if (sscanf(line, "@clock +%lu", &n) == 1) {
         g_fake_ms = (uint32_t)(((unsigned long)g_fake_ms + n) % 86400000ul);
+    } else if (strncmp(line, "@dump ", 6) == 0) {
+        if (g_dump != NULL) {
+            fclose(g_dump);
+            g_dump = NULL;
+        }
+        if (strcmp(line + 6, "off") != 0) {
+            g_dump = fopen(line + 6, "wb");
+        }
     } else if (strcmp(line, "@integration_poll") == 0) {
         sel_int_session_poll(g_int);
     } else if (strcmp(line, "@alloc_guard on") == 0) {
