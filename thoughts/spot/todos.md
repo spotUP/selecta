@@ -254,7 +254,7 @@ Tests T39 to T48 are defined in the plan's finish-line table.
 | I92 | [x] | 3 | Pitch and tempo tables, PITCH, TEMPO, RP_SET_SPEED | T42 green, ratchet 23 | red `Test #57: voice-control ***Failed 0.53 sec`; 86b9689, 51a8b7a, 10ec5f5; ratchet 23; full run 73/73; merge 29239fc
 | I93 | [x] | 4 | T43, T44, T45 written and red; voices-test output | ctest failures | faae4ad red `#58 loop-fade`, `#59 crossfade`, `#60 sleep-alarm` ***Failed; merge 19a5dc1
 | I94 | [x] | 4 | REPEAT, loops/fade_ms/max_song_ms/silence_ms options, SONG_ENDED reason, stop-after options | T43 green, ratchet 22 | 108bbed, 78a8391; T43 green, ratchet 22; full run 76/78 (crossfade, sleep-alarm red until I95, I96); merge 19a5dc1
-| I94a | [ ] | 4 | Q24 answer: the first loop of a non-looping song ends it with SONG_ENDED reason `end`; songs that loop by design keep `loop`. Needs a per-song "loops by design" signal from the replayer (nuade Protracker reports only loops) | regression test: short non-looping MOD ends with `end`; looping fixture still `loop`; queue.expected repinned | decided 2026-10-23 |
+| I94a | [x] | 4 | Q24 answer: the first loop of a non-looping song ends it with SONG_ENDED reason `end`; songs that loop by design keep `loop`. Needs a per-song "loops by design" signal from the replayer (nuade Protracker reports only loops) | regression test: short non-looping MOD ends with `end`; looping fixture still `loop`; queue.expected repinned | decided 2026-10-23 ; done: nuade adapter holds LOOPED until the position moves, order 0 = ENDED; test loop-first-end red with the adapter reverted, green after; queue.expected lines 51/53/55 repinned; 37 affected ctests green; merge eb23c1a |
 | I95 | [x] | 4 | Early prepare, gapless, crossfade table and mix, `mixed_path` | T44 green ; merge 248716b (7323311) |
 | I96 | [x] | 4 | HOSTQ_LOCAL_TIME, fake clock, SLEEP_TIMER, ALARM | T45 green, ratchet 21 ; merge 696618b (d5dcb45), ratchet 21 |
 | I97 | [x] | 5 | T46 written and red; RP_SAMPLE_GET; nuade scan catalogue; openmpt sample table | ctest failure then catalogue lines green ; merge 9653063 (cb2b65c red, 5b93144) |
@@ -395,6 +395,7 @@ Tests T62 to T97 are defined in the plan's finish-line table. T8 ratchet target 
 | I203 | [ ] | 13 | Manual checks 1 to 6 confirmed by Johan | Johan's confirmation recorded in ledger |
 | I205 | [ ] | 1 | selecta opens a persistent library DB on start: `--db <path>`, default `~/.config/selecta/library.db` (Amiga `PROGDIR:library.db`); `--catalogue <tsv>` keeps working for tests (user decision 2026-10-23) | T98 db part green |
 | I206 | [ ] | 1 | Text UI library screen: third Tab stop (Browse, Queue, Library) plus `L`; opens on all songs in tree style grouped by format; `/` search prompt runs LIBRARY_SEARCH with the query language; Enter plays from the results, `a` adds to queue; empty library shows a scan hint (user decision 2026-10-23) | T98 `text-ui-library-screen` green: screen dump golden, sentinel proves the screen ran |
+| I207 | [ ] | 1 | I94a gap: a song whose last order holds an explicit B00 (designed loop back to the start) now reports `end`, but Q24 says designed loops keep `loop`. Detect the explicit jump effect in the nuade adapter (pt4 position_jump target byte is unreliable, see m13-i94a-report.md) | regression test with a B00 fixture: ends `loop` |
 
 ## Open decisions
 
