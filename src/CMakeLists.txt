@@ -59,7 +59,14 @@ add_custom_command(
   COMMAND "${SEL_GEN_DIR}/gen_dsp_coef" > "${SEL_GEN_DIR}/dsp_coef.h"
   DEPENDS "${PROJECT_SOURCE_DIR}/tools/gen_dsp_coef.c"
   VERBATIM)
-target_sources(selecta_core PRIVATE "${SEL_GEN_DIR}/viz_table.h" "${SEL_GEN_DIR}/pitch_table.h" "${SEL_GEN_DIR}/dsp_coef.h")
+add_custom_command(
+  OUTPUT "${SEL_GEN_DIR}/xfade_table.h"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${SEL_GEN_DIR}"
+  COMMAND "${SEL_HOST_CC}" -O1 -o "${SEL_GEN_DIR}/gen_xfade" "${PROJECT_SOURCE_DIR}/tools/gen_xfade.c" -lm
+  COMMAND "${SEL_GEN_DIR}/gen_xfade" > "${SEL_GEN_DIR}/xfade_table.h"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/gen_xfade.c"
+  VERBATIM)
+target_sources(selecta_core PRIVATE "${SEL_GEN_DIR}/xfade_table.h" "${SEL_GEN_DIR}/viz_table.h" "${SEL_GEN_DIR}/pitch_table.h" "${SEL_GEN_DIR}/dsp_coef.h")
 target_include_directories(selecta_core PRIVATE "${SEL_GEN_DIR}")
 add_library(selecta_mixer STATIC mixer/mixer.c mixer/resample.c "${SEL_GEN_DIR}/sinc_table.h")
 target_include_directories(selecta_mixer PUBLIC ${PROJECT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/mixer)

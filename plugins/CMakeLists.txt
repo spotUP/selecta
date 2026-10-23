@@ -3,6 +3,7 @@
 # 8 integration, 9 scripting (include/selecta/plugin.h).
 
 sel_add_plugin(null 2 outputs/null/null.c)
+sel_add_plugin(voices_test 2 outputs/voices_test/voices_test.c)
 sel_add_plugin(wav 2 outputs/wav/wav.c)
 sel_add_plugin(crossfeed 3 dsp/crossfeed/crossfeed.c)
 # OS headers live under plugins/*/<os>/ (RULES.md rule 3).
