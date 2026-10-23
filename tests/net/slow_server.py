@@ -21,6 +21,8 @@ held = []
 
 def serve(c):
     c.recv(4096)
+    with open(port_file + ".requests", "a") as rq:  # one line per request: the tests count them (I196b)
+        rq.write("1\n")
     head = "HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % len(body)
     c.sendall(head.encode() + body[:sent_n])
     held.append(c)

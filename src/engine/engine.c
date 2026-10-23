@@ -1225,7 +1225,10 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
     }
     if (live != NULL && sel_stream_is_url(path)) {
         /* I195b: start the download and hand back only its head; the rest plays while it arrives. */
-        sel_live* st = sel_live_open(e->host, path, &e->cancel_gen, e->cancel_served);
+        /* I196b: with OPTION record_to set, the same single request also feeds the record sink (F36). */
+        const char* rec = e->state.options[SEL_OPT_RECORD_TO];
+        sel_live* st = rec[0] != '\0' ? sel_live_open_record(e->host, path, &e->cancel_gen, e->cancel_served, rec, 0)
+                                       : sel_live_open(e->host, path, &e->cancel_gen, e->cancel_served);
         if (st != NULL) {
             uint8_t head[SEL_STREAM_HEAD];
             size_t n = 0;

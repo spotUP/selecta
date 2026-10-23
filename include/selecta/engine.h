@@ -32,7 +32,8 @@ typedef enum sel_play_state { SEL_STOPPED = 0, SEL_PLAYING, SEL_PAUSED } sel_pla
     X(LOOPS, "loops")                                                                         \
     X(FADE_MS, "fade_ms")                                                                     \
     X(MAX_SONG_MS, "max_song_ms")                                                             \
-    X(SILENCE_MS, "silence_ms")
+    X(SILENCE_MS, "silence_ms")                                                               \
+    X(RECORD_TO, "record_to")
 
 typedef enum sel_option_id {
 #define SEL_OPTION_ENUM(id, name) SEL_OPT_##id,
