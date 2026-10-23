@@ -311,7 +311,7 @@ add_test(NAME mem-class-unit COMMAND mem_class_test)
 # T24: browse listing and view model through the engine command queue and
 # snapshot. The temp tree is created inside the generated songs directory.
 add_executable(view_test view/view_test.c)
-target_link_libraries(view_test PRIVATE selecta_core selecta_registry)
+target_link_libraries(view_test PRIVATE selecta_registry)
 add_test(NAME view-unit COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs" browse sort cursor activate window style)
 # T32: grouping, node ids, expand/collapse, drilldown, cursor across styles.
 add_test(NAME view-tree COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs" tree)
@@ -320,7 +320,7 @@ set_tests_properties(view-unit view-tree PROPERTIES RESOURCE_LOCK view_songs_dir
 
 # T33: title-format resolver and PREF_GET / PREF_SET (src/engine/format.c, prefs.c).
 add_executable(format_test view/format_test.c)
-target_link_libraries(format_test PRIVATE selecta_core selecta_registry)
+target_link_libraries(format_test PRIVATE selecta_registry)
 target_include_directories(format_test PRIVATE ${PROJECT_SOURCE_DIR}/src/engine)
 add_test(NAME title-format COMMAND format_test)
 
@@ -333,7 +333,7 @@ if(NOT SEL_AMIGA)
   # I60 fix: a keys-file `wait` ends under a clockless and a device-clocked
   # shell (it hung when the shell passed timeout 0).
   add_executable(text_ui_test ui/text_ui_test.c)
-  target_link_libraries(text_ui_test PRIVATE selecta_core selecta_registry)
+  target_link_libraries(text_ui_test PRIVATE selecta_registry)
   add_test(NAME text-ui-keys-wait COMMAND text_ui_test "${CMAKE_CURRENT_BINARY_DIR}")
   set_tests_properties(text-ui-keys-wait PROPERTIES TIMEOUT 30)
 endif()
@@ -871,13 +871,13 @@ if(NOT SEL_AMIGA)
   set_tests_properties(net-guard PROPERTIES LABELS m3)
 
   # T68 (row I153): the HTTP/1.1 client, plain HTTP parts, against the fixture server.
-  # Includes the real 30 s total timeout, so the test gets a 120 s budget. It runs after
-  # net-guard because that test counts the whole request log.
+  # Includes the real 30 s total timeout, so the test gets a 120 s budget. net-guard runs its own
+  # fixture server and log (I173e), so the two share no state and need no order.
   add_test(NAME http-client
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
       "-DCA_FILE=${SEL_NET_CA}/ca.pem" -P "${SEL_NET_DIR}/http_client.cmake")
   set_tests_properties(http-client PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
-    DEPENDS net-guard TIMEOUT 120)
+    TIMEOUT 120)
 
   # T70 (row I155): passive FTP through selecta-cli fetch ftp://. After http-client because
   # that test reads no log but the FTP check reads the request log.
