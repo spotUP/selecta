@@ -41,6 +41,9 @@ typedef struct sel_cache_stats {
     unsigned evicted;         /* files removed by trims */
     unsigned prefetches;      /* prefetch requests finished (I168) */
     unsigned prefetch_fetches; /* of those, songs the prefetch downloaded (not already cached) */
+    unsigned smart_requests;   /* smart download requests finished (I169) */
+    unsigned smart_fetches;    /* of those, songs downloaded (not already cached) */
+    unsigned smart_skipped;    /* requests dropped because the cache was at its budget */
 } sel_cache_stats;
 
 typedef struct sel_cache {

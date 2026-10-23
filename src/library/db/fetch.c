@@ -35,6 +35,18 @@ static int prefetch_run(sel_cache* c, const char* spec, const char* rules) {
     return 1;
 }
 
+/* Smart downloads respect the LRU budget (I169): one is not started once the cache already holds the budget. The
+ * measurement is the trim walk with an unreachable budget, which removes nothing. */
+static int smart_over_budget(sel_cache* c, uint32_t budget) {
+    sel_cache_trim_result r;
+
+    if (budget == 0) {
+        return 0;
+    }
+    sel_cache_trim(c, 0xFFFFFFFFu, NULL, NULL, NULL, NULL, &r);
+    return r.bytes_before >= budget;
+}
+
 #if !defined(SEL_LIBRARY_NO_THREAD)
 static void cache_lock(sel_library* lib) {
     if (lib->pf_started) {
@@ -48,15 +60,22 @@ static void cache_unlock(sel_library* lib) {
     }
 }
 
-static void stats_add(sel_cache_stats* to, const sel_cache_stats* from) {
+static void stats_add(sel_cache_stats* to, const sel_cache_stats* from, int smart) {
     to->cache_hits += from->cache_hits;
     to->fetches += from->fetches;
     to->companions += from->companions;
     to->md5_mismatches += from->md5_mismatches;
     to->mirror_tries += from->mirror_tries;
-    to->prefetches++;
-    if (from->fetches != 0) {
-        to->prefetch_fetches++;
+    if (smart) {
+        to->smart_requests++;
+        if (from->fetches != 0) {
+            to->smart_fetches++;
+        }
+    } else {
+        to->prefetches++;
+        if (from->fetches != 0) {
+            to->prefetch_fetches++;
+        }
     }
 }
 
@@ -68,6 +87,7 @@ static void prefetch_preempt(sel_library* lib) {
     if (lib->pf_started) {
         pthread_mutex_lock(&lib->pf_lock);
         lib->pf_spec[0] = '\0';
+        lib->sm_n = 0; /* smart downloads are dropped too (I169) */
         lib->pf_cancel = 1;
         pthread_mutex_unlock(&lib->pf_lock);
     }
@@ -83,23 +103,37 @@ static void* prefetch_main(void* arg) {
         char spec[sizeof lib->pf_spec];
         char rules[sizeof lib->pf_rules];
 
-        while (!lib->pf_quit && lib->pf_spec[0] == '\0') {
+        int smart;
+
+        while (!lib->pf_quit && lib->pf_spec[0] == '\0' && lib->sm_n == 0) {
             pthread_cond_wait(&lib->pf_wake, &lib->pf_lock);
         }
         if (lib->pf_quit) {
             break;
         }
-        memcpy(spec, lib->pf_spec, sizeof spec);
+        smart = lib->pf_spec[0] == '\0'; /* a prefetch request always goes first (I169) */
+        if (smart) {
+            memcpy(spec, lib->sm_spec[0], sizeof spec);
+            memmove(lib->sm_spec[0], lib->sm_spec[1], sizeof lib->sm_spec[0] * (SEL_SMART_MAX - 1u));
+            lib->sm_n--;
+        } else {
+            memcpy(spec, lib->pf_spec, sizeof spec);
+            lib->pf_spec[0] = '\0';
+        }
         memcpy(rules, lib->pf_rules, sizeof rules);
-        lib->pf_spec[0] = '\0';
         lib->pf_cancel = 0;
         lib->pf_busy = 1;
+        lib->pf_busy_smart = (unsigned)smart;
         pthread_mutex_unlock(&lib->pf_lock);
         memcpy(lib->pf_cache->dir, lib->cache->dir, sizeof lib->pf_cache->dir);
         memset(&lib->pf_cache->stats, 0, sizeof lib->pf_cache->stats);
-        if (prefetch_run(lib->pf_cache, spec, rules)) {
+        if (smart && smart_over_budget(lib->pf_cache, lib->cache_budget)) {
             pthread_mutex_lock(&lib->cache_lock);
-            stats_add(&lib->cache->stats, &lib->pf_cache->stats);
+            lib->cache->stats.smart_skipped++;
+            pthread_mutex_unlock(&lib->cache_lock);
+        } else if (prefetch_run(lib->pf_cache, spec, rules)) {
+            pthread_mutex_lock(&lib->cache_lock);
+            stats_add(&lib->cache->stats, &lib->pf_cache->stats, smart);
             pthread_mutex_unlock(&lib->cache_lock);
         }
         pthread_mutex_lock(&lib->pf_lock);
@@ -110,10 +144,7 @@ static void* prefetch_main(void* arg) {
     return NULL;
 }
 
-int sel_library_prefetch(sel_library* lib, const char* spec, const char* rules) {
-    if (lib == NULL || spec == NULL || spec[0] == '\0' || strlen(spec) >= sizeof lib->pf_spec || cache_get(lib) == NULL) {
-        return 0;
-    }
+static int thread_start(sel_library* lib) {
     if (!lib->pf_started) {
         lib->pf_cache = lib->host->mem_alloc(lib->host, sizeof *lib->pf_cache, SEL_MEM_FAST);
         if (lib->pf_cache == NULL) {
@@ -131,12 +162,39 @@ int sel_library_prefetch(sel_library* lib, const char* spec, const char* rules) 
         }
         lib->pf_started = 1;
     }
+    return 1;
+}
+
+int sel_library_prefetch(sel_library* lib, const char* spec, const char* rules) {
+    if (lib == NULL || spec == NULL || spec[0] == '\0' || strlen(spec) >= sizeof lib->pf_spec || cache_get(lib) == NULL ||
+        !thread_start(lib)) {
+        return 0;
+    }
     pthread_mutex_lock(&lib->pf_lock);
+    if (lib->pf_busy && lib->pf_busy_smart) {
+        lib->pf_cancel = 1; /* a smart download yields to the prefetch */
+    }
     snprintf(lib->pf_spec, sizeof lib->pf_spec, "%s", spec);
     snprintf(lib->pf_rules, sizeof lib->pf_rules, "%s", rules != NULL ? rules : "");
     pthread_cond_broadcast(&lib->pf_wake);
     pthread_mutex_unlock(&lib->pf_lock);
     return 1;
+}
+
+static void smart_enqueue(sel_library* lib, char cand[][160], unsigned n, const char* rules) {
+    unsigned i;
+
+    if (!thread_start(lib)) {
+        return;
+    }
+    pthread_mutex_lock(&lib->pf_lock);
+    for (i = 0; i < n; i++) {
+        memcpy(lib->sm_spec[i], cand[i], sizeof lib->sm_spec[i]);
+    }
+    lib->sm_n = n;
+    snprintf(lib->pf_rules, sizeof lib->pf_rules, "%s", rules != NULL ? rules : "");
+    pthread_cond_broadcast(&lib->pf_wake);
+    pthread_mutex_unlock(&lib->pf_lock);
 }
 
 void sel_library_prefetch_cancel(sel_library* lib) {
@@ -148,7 +206,7 @@ void sel_library_prefetch_cancel(sel_library* lib) {
 void sel_library_prefetch_wait(sel_library* lib) {
     if (lib != NULL && lib->pf_started) {
         pthread_mutex_lock(&lib->pf_lock);
-        while (lib->pf_spec[0] != '\0' || lib->pf_busy) {
+        while (lib->pf_spec[0] != '\0' || lib->sm_n != 0 || lib->pf_busy) {
             pthread_cond_wait(&lib->pf_wake, &lib->pf_lock);
         }
         pthread_mutex_unlock(&lib->pf_lock);
@@ -182,6 +240,7 @@ static void cache_unlock(sel_library* lib) {
 
 static void prefetch_preempt(sel_library* lib) {
     lib->pf_spec[0] = '\0'; /* single task: nothing runs in the background, the pending request is just dropped */
+    lib->sm_n = 0;
 }
 
 /* No threads (Amiga build): the request is parked and run cooperatively by sel_library_prefetch_poll, called
@@ -202,22 +261,52 @@ void sel_library_prefetch_cancel(sel_library* lib) {
     }
 }
 
+static void smart_enqueue(sel_library* lib, char cand[][160], unsigned n, const char* rules) {
+    unsigned i;
+
+    for (i = 0; i < n; i++) {
+        memcpy(lib->sm_spec[i], cand[i], sizeof lib->sm_spec[i]);
+    }
+    lib->sm_n = n;
+    snprintf(lib->pf_rules, sizeof lib->pf_rules, "%s", rules != NULL ? rules : "");
+}
+
 int sel_library_prefetch_poll(sel_library* lib) {
     char spec[sizeof lib->pf_spec];
     char rules[sizeof lib->pf_rules];
     unsigned before;
+    int smart;
 
-    if (lib == NULL || lib->pf_spec[0] == '\0' || lib->cache == NULL) {
+    if (lib == NULL || (lib->pf_spec[0] == '\0' && lib->sm_n == 0) || lib->cache == NULL) {
         return 0;
     }
-    memcpy(spec, lib->pf_spec, sizeof spec);
+    smart = lib->pf_spec[0] == '\0';
+    if (smart) {
+        memcpy(spec, lib->sm_spec[0], sizeof spec);
+        memmove(lib->sm_spec[0], lib->sm_spec[1], sizeof lib->sm_spec[0] * (SEL_SMART_MAX - 1u));
+        lib->sm_n--;
+    } else {
+        memcpy(spec, lib->pf_spec, sizeof spec);
+        lib->pf_spec[0] = '\0';
+    }
     memcpy(rules, lib->pf_rules, sizeof rules);
-    lib->pf_spec[0] = '\0';
+    if (smart && smart_over_budget(lib->cache, lib->cache_budget)) {
+        lib->cache->stats.smart_skipped++;
+        return 1;
+    }
     before = lib->cache->stats.fetches;
     if (prefetch_run(lib->cache, spec, rules)) {
-        lib->cache->stats.prefetches++;
+        if (smart) {
+            lib->cache->stats.smart_requests++;
+        } else {
+            lib->cache->stats.prefetches++;
+        }
         if (lib->cache->stats.fetches != before) {
-            lib->cache->stats.prefetch_fetches++;
+            if (smart) {
+                lib->cache->stats.smart_fetches++;
+            } else {
+                lib->cache->stats.prefetch_fetches++;
+            }
         }
     }
     return 1;
@@ -231,9 +320,82 @@ void sel_library_prefetch_wait(sel_library* lib) {
 void sel_library_prefetch_stop(sel_library* lib) {
     if (lib != NULL) {
         lib->pf_spec[0] = '\0';
+        lib->sm_n = 0;
     }
 }
 #endif
+
+/* A candidate: a remote song key that is not in the cache yet and not already picked. */
+static void smart_add(sel_library* lib, char cand[][160], unsigned* n, unsigned top, const char* key) {
+    char path[SEL_CACHE_PATH_MAX];
+    char source[24];
+    const char* colon = strchr(key, ':');
+    FILE* f;
+    unsigned i;
+
+    if (*n >= top || colon == NULL || colon == key || (size_t)(colon - key) >= sizeof source || strlen(key) >= 160u ||
+        !sel_cache_is_remote(key)) {
+        return;
+    }
+    memcpy(source, key, (size_t)(colon - key));
+    source[colon - key] = '\0';
+    for (i = 0; i < *n; i++) {
+        if (strcmp(cand[i], key) == 0) {
+            return;
+        }
+    }
+    if (sel_cache_path(lib->cache, source, colon + 1, path, sizeof path) && (f = fopen(path, "rb")) != NULL) {
+        fclose(f);
+        return;
+    }
+    snprintf(cand[*n], 160u, "%s", key);
+    (*n)++;
+}
+
+unsigned sel_library_smart(sel_library* lib, const char* view, unsigned top, const char* rules) {
+    char cand[SEL_SMART_MAX][160];
+    char out[2048];
+    unsigned n = 0;
+    sqlite3_stmt* st = NULL;
+
+    if (lib == NULL || top == 0 || cache_get(lib) == NULL) {
+        return 0;
+    }
+    if (top > SEL_SMART_MAX) {
+        top = SEL_SMART_MAX;
+    }
+    if (view != NULL && view[0] != '\0') { /* the smart playlist: a saved view, its songs in key order */
+        char text[SEL_QUERY_TEXT_MAX];
+        sel_lib_job job;
+        const char* k;
+
+        memset(&job, 0, sizeof job);
+        snprintf(text, sizeof text, "view:%s", view);
+        job.text = text;
+        job.out = out;
+        job.out_cap = sizeof out;
+        if (sel_library_run(lib, SEL_LIB_REQ_SEARCH, &job) && job.error[0] == '\0') {
+            uint32_t i;
+            for (i = 0, k = out; i < job.count; i++, k += strlen(k) + 1u) {
+                smart_add(lib, cand, &n, top, k);
+            }
+        }
+    }
+    if (sqlite3_prepare_v2(lib->db,
+                           "SELECT key FROM history WHERE skipped = 0 GROUP BY key ORDER BY COUNT(*) DESC, "
+                           "MAX(played_at) DESC, key LIMIT 32",
+                           -1, &st, NULL) == SQLITE_OK) {
+        while (n < top && sqlite3_step(st) == SQLITE_ROW) {
+            smart_add(lib, cand, &n, top, (const char*)sqlite3_column_text(st, 0));
+        }
+    }
+    sqlite3_finalize(st);
+    lib->sm_planned++;
+    if (n != 0) {
+        smart_enqueue(lib, cand, n, rules);
+    }
+    return n;
+}
 
 static int is_kept(void* ctx, const char* key) {
     sqlite3_stmt* st = ctx;
@@ -280,6 +442,15 @@ int sel_library_mark(sel_library* lib, const char* table, const char* key) {
     char sql[96];
     int ok;
 
+    if (strcmp(table, "history") == 0) { /* one finished play (seeding until the SONG_ENDED writer, I170) */
+        if (sqlite3_prepare_v2(lib->db, "INSERT INTO history(key, played_at) VALUES(?1, 0)", -1, &st, NULL) != SQLITE_OK) {
+            return 0;
+        }
+        sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
+        ok = sqlite3_step(st) == SQLITE_DONE;
+        sqlite3_finalize(st);
+        return ok;
+    }
     if (strcmp(table, "kept") != 0 && strcmp(table, "liked") != 0) {
         return 0;
     }
@@ -341,7 +512,7 @@ int sel_library_fetch(sel_library* lib, const char* spec, const char* rules, cha
 }
 
 int sel_library_cache_stats(const sel_library* lib, sel_cache_stats* out) {
-    if (lib == NULL || lib->cache == NULL || lib->fetch_requests == 0) {
+    if (lib == NULL || lib->cache == NULL || (lib->fetch_requests == 0 && lib->sm_planned == 0)) {
         return 0;
     }
     *out = lib->cache->stats;
@@ -353,8 +524,9 @@ void sel_library_cache_report(const sel_library* lib) {
 
     if (sel_library_cache_stats(lib, &s)) {
         printf("cache_hits=%u\nfetches=%u\ncompanions=%u\nmd5_mismatches=%u\nmirror_tries=%u\n"
-               "trim_runs=%u\nprefetches=%u\nprefetch_fetches=%u\n",
+               "trim_runs=%u\nprefetches=%u\nprefetch_fetches=%u\nsmart_requests=%u\nsmart_fetches=%u\n"
+               "smart_skipped=%u\n",
                s.cache_hits, s.fetches, s.companions, s.md5_mismatches, s.mirror_tries, s.trim_runs, s.prefetches,
-               s.prefetch_fetches);
+               s.prefetch_fetches, s.smart_requests, s.smart_fetches, s.smart_skipped);
     }
 }

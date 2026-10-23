@@ -13,6 +13,8 @@
 #include <pthread.h>
 #endif
 
+#define SEL_SMART_MAX 8u
+
 struct sel_library {
     const sel_host* host;
     uint32_t account;
@@ -32,6 +34,9 @@ struct sel_library {
     unsigned fetch_requests; /* LIBRARY_FETCH requests served */
     char pf_spec[160];       /* pending prefetch request "<source>:<path>"; "" = none (I168, I168a) */
     char pf_rules[512];
+    char sm_spec[SEL_SMART_MAX][160]; /* smart download queue (I169): lower priority than pf_spec */
+    unsigned sm_n;
+    unsigned sm_planned;     /* smart plans made (the handle reports smart_* once a plan ran) */
 #if !defined(SEL_LIBRARY_NO_THREAD)
     pthread_t pf_thread;     /* prefetch thread, created on the first prefetch (fetch.c, I168) */
     pthread_mutex_t pf_lock; /* guards the pf_* fields and serialises the file cache between threads */
@@ -41,6 +46,7 @@ struct sel_library {
     sel_cache* pf_cache;     /* the prefetch thread's own cache handle: same directory, own mirror state and stats */
     volatile int pf_cancel;  /* set (under pf_lock) to abort the running prefetch download at its next chunk */
     unsigned pf_started, pf_busy, pf_quit;
+    unsigned pf_busy_smart;  /* the running request is a smart download (a prefetch request cancels it) */
     pthread_t thread;
     pthread_mutex_t lock;
     pthread_cond_t wake_worker;

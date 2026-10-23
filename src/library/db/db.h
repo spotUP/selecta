@@ -154,6 +154,11 @@ void sel_library_set_budget(sel_library* lib, uint32_t budget);
  * no cache). Cancel drops a pending request; wait blocks until the thread is idle (tests). */
 int sel_library_prefetch(sel_library* lib, const char* spec, const char* rules);
 void sel_library_prefetch_cancel(sel_library* lib);
+/* Smart downloads (I169, F34): plans up to `top` (capped at 8) remote songs not yet cached, first the songs of the
+ * saved view `view` (the smart playlist; "" or NULL = none), then the most played songs of the history, and queues
+ * them behind the prefetch on the same low-priority thread. A foreground fetch drops them, a prefetch request goes
+ * first, and none starts once the cache holds its budget. Returns the songs queued. */
+unsigned sel_library_smart(sel_library* lib, const char* view, unsigned top, const char* rules);
 void sel_library_prefetch_wait(sel_library* lib);
 /* Builds without threads (Amiga): runs the pending prefetch request, one blocking transfer per call; the engine
  * calls it from its tick right after playback started. Threaded builds: no-op, returns 0. Returns 1 when a

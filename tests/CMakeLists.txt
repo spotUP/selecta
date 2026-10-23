@@ -1034,6 +1034,17 @@ if(NOT SEL_AMIGA)
     DEPENDS cache-fetch TIMEOUT 60 PASS_REGULAR_EXPRESSION "prefetch_ok")
 endif()
 
+# M3 Phase 5 (I169): T77 smart downloads. History and smart-playlist songs are fetched behind the foreground;
+# smart_fetches=2 is the sentinel, and the off, metered, top and budget prefs each move it.
+if(NOT SEL_AMIGA)
+  add_test(NAME smart-downloads
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
+      "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3" "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/smart.tsv"
+      -P "${SEL_NET_DIR}/smart.cmake")
+  set_tests_properties(smart-downloads PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    DEPENDS cache-fetch TIMEOUT 90 PASS_REGULAR_EXPRESSION "smart_ok")
+endif()
+
 # M3 Phase 5 (I167a): T76 part 2. The trim driven through LIBRARY_FETCH keeps a kept song and its companion.
 if(NOT SEL_AMIGA)
   add_test(NAME cache-budget-fetch

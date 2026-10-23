@@ -277,6 +277,7 @@ struct sel_engine {
     sel_library* lib;     /* the database of the front end; NULL: no library */
     uint32_t pf_id;       /* queue entry id whose song is being prefetched (I168); 0 = none */
     uint32_t pf_qver;     /* queue version that request was made under */
+    uint32_t sm_key;      /* smart download plan made for this queue version, playing entry and prefs generation (I169); 0 = none */
     char* res_text;       /* last query result: keys, each NUL terminated */
     uint32_t res_count;
     char* res_meta;       /* last query result: title, artist, format, duration per key, each NUL terminated */
@@ -1756,9 +1757,46 @@ static void commit_next(sel_engine* e) {
 /* Prefetch (I168): while a song plays, the next queue entry, when remote, is fetched into the cache on the
  * library's prefetch thread (sel_library_prefetch, which reuses sel_library_fetch's cache code). One request
  * at a time; a change of the queue or of the next entry replaces or cancels the pending one. */
+static int pref_is_on(const sel_engine* e, int id) {
+    return strcmp(e->prefs.value[id], "on") == 0;
+}
+
+/* Smart downloads (I169, F34): once per (queue version, playing entry, prefs generation) the library plans the songs of
+ * the smart playlist and the history that are not cached; its thread fetches them behind the prefetch. */
+static void smart_sync(sel_engine* e, int allowed) {
+    uint32_t key;
+
+    if (!allowed || !pref_is_on(e, SEL_PREF_LIBRARY_SMART) || e->state.play != SEL_PLAYING) {
+        if (e->sm_key != 0) {
+            e->sm_key = 0;
+            sel_library_prefetch_cancel(e->lib);
+        }
+        return;
+    }
+    key = (e->queue.version * 31u + e->q_playing) * 31u + e->prefs.generation + 1u;
+    if (key != e->sm_key) {
+        char rules[512];
+        e->sm_key = key;
+        sel_companion_rules(e->registry_count, e->registry_get, rules, sizeof rules);
+        (void)sel_library_smart(e->lib, e->prefs.value[SEL_PREF_LIBRARY_SMART_VIEW],
+                                (unsigned)strtoul(e->prefs.value[SEL_PREF_LIBRARY_SMART_TOP], NULL, 10), rules);
+    }
+}
+
 static void prefetch_sync(sel_engine* e) {
     uint32_t next = SEL_QUEUE_NONE;
+    int allowed;
     if (e->lib == NULL) {
+        return;
+    }
+    /* library.prefetch=off or library.metered=on: no background transfer at all (I169) */
+    allowed = pref_is_on(e, SEL_PREF_LIBRARY_PREFETCH) && !pref_is_on(e, SEL_PREF_LIBRARY_METERED);
+    smart_sync(e, allowed);
+    if (!allowed) {
+        if (e->pf_id != 0) {
+            e->pf_id = 0;
+            sel_library_prefetch_cancel(e->lib);
+        }
         return;
     }
     if (e->state.play == SEL_PLAYING && e->cur != SEL_SLOT_NONE && e->q_playing != 0 && e->repeat != 1u) {
@@ -3127,7 +3165,7 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
         prepare_next(e);
     }
     prefetch_sync(e);
-    if (e->lib != NULL && e->pf_id != 0) {
+    if (e->lib != NULL && (e->pf_id != 0 || e->sm_key != 0)) {
         sel_library_prefetch_poll(e->lib); /* builds without threads run the parked request here, after playback started */
     }
     if (e->cur != SEL_SLOT_NONE) {
