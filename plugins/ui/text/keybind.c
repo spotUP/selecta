@@ -114,7 +114,7 @@ static const struct {
     {"Up", "VIEW_CURSOR -1"},  {"Down", "VIEW_CURSOR +1"},
     {"PageUp", "@page_up"},    {"PageDown", "@page_down"},
     {"Home", "VIEW_CURSOR top"}, {"End", "VIEW_CURSOR bottom"},
-    {"Enter", "VIEW_ACTIVATE"}, {"v", "@next_style"},
+    {"Enter", "VIEW_ACTIVATE"}, {"y", "@next_style"},
     {"g", "@next_group"},      {"Backspace", "@back"},
     {"Tab", "@switch_view"},   {"Space", "@play_pause"},
     {"s", "STOP"},             {"n", "NEXT"},
@@ -128,7 +128,7 @@ static const struct {
     {"?", "@help"},            {"u", "UNDO"},
     {"C-r", "REDO"},           {"m", "@mark"},
     /* M1.3 I101. Pitch cannot take + and - (volume has them): braces move it a semitone. */
-    {"V", "@viz"},             {"P", "@pattern"},
+    {"v", "@viz"},             {"P", "@pattern"},
     {"1", "@voice1"},          {"2", "@voice2"},
     {"3", "@voice3"},          {"4", "@voice4"},
     {"5", "@voice5"},          {"6", "@voice6"},

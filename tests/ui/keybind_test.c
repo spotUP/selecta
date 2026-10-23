@@ -46,6 +46,8 @@ int main(void) {
     CHECK(is(look(&b, 13, 0), "VIEW_ACTIVATE"));
     CHECK(is(look(&b, ':', 0), "@command"));
     CHECK(is(look(&b, 'p', TXT_MOD_CTRL), "@palette"));
+    CHECK(is(look(&b, 'v', 0), "@viz"));
+    CHECK(is(look(&b, 'y', 0), "@next_style"));
     CHECK(look(&b, 'x', 0) == NULL);
 
     /* a file line overrides or adds */
