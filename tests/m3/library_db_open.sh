@@ -37,7 +37,8 @@ check() { # machine expected_heap
 # Scaling table (src/library/db/db.c): fast + chip RAM <= 4 MiB 512 KiB,
 # <= 16 MiB 2 MiB, <= 128 MiB 8 MiB, above 32 MiB. a500 = 2 MiB chip.
 check a500 524288
-check a1200 2097152
+check a1200 524288
+check a1200-fpu 2097152
 check a060 8388608
 mach=$("$cli" machine 2>/dev/null)
 fast=$(printf '%s\n' "$mach" | sed -n 's/^[A-Z_]*FAST_RAM=//p' | head -n 1)

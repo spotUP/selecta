@@ -37,6 +37,7 @@ static int usage(FILE* to) {
           "  render <song> --output <wav> --seconds <n> --rate <hz> --resample <name>\n"
           "                             render a song to a WAV file, print counters\n"
           "  library browse <dir>       list a directory through LIBRARY_BROWSE, print dir_entries=\n"
+          "  library stats              open the library DB, print db_open= schema_version= sqlite_version= (T62)\n"
           "  machine [--tier <name>]    probe the machine, print the sel_machine tags\n",
           to);
     return to == stdout ? 0 : 2;
