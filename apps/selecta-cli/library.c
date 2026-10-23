@@ -8,6 +8,7 @@
 #include <selecta/registry.h>
 #include <selecta/tags.h>
 
+#include "cache.h"
 #include "catalogue.h"
 #ifdef __amigaos__
 #include "amiga_start.h"
@@ -519,6 +520,65 @@ static int library_key(int argc, char** argv) {
     return ok ? 0 : 1;
 }
 
+/* `library trim [--budget <n>] [--machine <fake>] [--db <path>] [--mark kept|liked:<key>]...` (T76, I167):
+ * opens the library, marks the given songs and trims the cache under $SELECTA_CACHE_DIR through
+ * sel_library_cache_trim, the call every LIBRARY_FETCH makes after storing a file. Without
+ * --budget the machine's default applies. */
+static int library_trim(int argc, char** argv) {
+    const sel_host* host = sel_host_default();
+    const sel_tag* machine = NULL;
+    const char* db_path = ":memory:";
+    uint32_t budget = 0;
+    sel_library* lib;
+    sel_cache_trim_result tr;
+    int i;
+
+    for (i = 0; i + 1 < argc; i += 2) {
+        if (strcmp(argv[i], "--machine") == 0) {
+            machine = sel_machine_fake(argv[i + 1]);
+            if (machine == NULL) {
+                fprintf(stderr, "library trim: unknown machine %s\n", argv[i + 1]);
+                return 2;
+            }
+        } else if (strcmp(argv[i], "--db") == 0) {
+            db_path = argv[i + 1];
+        } else if (strcmp(argv[i], "--budget") == 0) {
+            budget = (uint32_t)strtoul(argv[i + 1], NULL, 10);
+        } else if (strcmp(argv[i], "--mark") != 0) {
+            fputs("usage: selecta-cli library trim [--budget <n>] [--machine <name>] [--db <path>] [--mark kept:<key>|liked:<key>]\n", stderr);
+            return 2;
+        }
+    }
+    if (machine == NULL) {
+        machine = sel_machine_probe(host);
+    }
+    lib = sel_library_open(host, machine, 0, db_path);
+    if (lib == NULL) {
+        puts("db_open=0");
+        return 1;
+    }
+    for (i = 0; i + 1 < argc; i += 2) {
+        if (strcmp(argv[i], "--mark") == 0) {
+            char table[8];
+            const char* colon = strchr(argv[i + 1], ':');
+            if (colon == NULL || (size_t)(colon - argv[i + 1]) >= sizeof table) {
+                continue;
+            }
+            memcpy(table, argv[i + 1], (size_t)(colon - argv[i + 1]));
+            table[colon - argv[i + 1]] = '\0';
+            if (!sel_library_mark(lib, table, colon + 1)) {
+                fprintf(stderr, "library trim: cannot mark %s\n", argv[i + 1]);
+            }
+        }
+    }
+    printf("budget=%lu\n", (unsigned long)(budget != 0 ? budget : sel_cache_budget(machine)));
+    printf("trim_runs=%u\n", sel_library_cache_trim(lib, budget, &tr));
+    printf("bytes_before=%lu\nbytes_after=%lu\ntrimmed=%u kept_exempt=%u\n", (unsigned long)tr.bytes_before,
+           (unsigned long)tr.bytes_after, tr.trimmed, tr.kept_exempt);
+    sel_library_close(lib);
+    return 0;
+}
+
 int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "browse") == 0) {
         return library_browse(argc, argv);
@@ -541,9 +601,12 @@ int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "fetch") == 0) {
         return sel_cli_library_fetch(argc - 1, argv + 1);
     }
+    if (argc >= 1 && strcmp(argv[0], "trim") == 0) {
+        return library_trim(argc - 1, argv + 1);
+    }
     if (argc >= 1 && strcmp(argv[0], "query") == 0) {
         return library_query(argc - 1, argv + 1);
     }
-    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | key <source> <path> | query --explain <q> | stats [--machine <name>] [--db <path>]\n", stderr);
+    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | key <source> <path> | trim [--budget <n>] [--machine <name>] | query --explain <q> | stats [--machine <name>] [--db <path>]\n", stderr);
     return 2;
 }

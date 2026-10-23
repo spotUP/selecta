@@ -27,6 +27,7 @@ struct sel_library {
     char view_text[16][256]; /* saved queries handed to the compiler during one compile */
     unsigned view_used;
     sel_cache* cache;        /* file cache of LIBRARY_FETCH, created on the first fetch (fetch.c) */
+    uint32_t cache_budget;   /* bytes, scaled by the machine (sel_cache_budget) */
     unsigned fetch_requests; /* LIBRARY_FETCH requests served */
 #if !defined(SEL_LIBRARY_NO_THREAD)
     pthread_t thread;

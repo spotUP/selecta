@@ -71,6 +71,7 @@ sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint
     memset(lib, 0, sizeof *lib);
     lib->host = host;
     lib->account = account;
+    lib->cache_budget = sel_cache_budget(machine);
     if (!heap_acquire(host, sel_library_heap_bytes(machine))) {
         host->mem_free(host, lib);
         return NULL;
