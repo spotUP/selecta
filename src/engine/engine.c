@@ -338,6 +338,7 @@ struct sel_engine {
     sel_dsp_chain dsp;
     sel_mix_stage stage; /* LED filter and stereo width, before the DSP chain (I127, I128) */
     sel_loudness_gain loud; /* the -1 dBFS limiter on the mixed output, after the DSP chain (I189); the gain is per slot */
+    uint32_t loud_ref;       /* audio thread: this render call's reference gain, 16.16; the limiter stage applies it (I189b) */
     uint32_t loud_mixed;     /* audio thread: a slot with a loudness gain was mixed in this render call */
     uint32_t mutes; /* mute mask changes, for @stats (T39) */
     uint32_t fades; /* end fades started; audio side (T39) */
@@ -1379,19 +1380,53 @@ static void loudness_slot(sel_engine* e, sel_slot* sl, const char* path) {
     sl->loud_source = "none";
 }
 
-/* Audio thread: this slot's gain on its own samples, before the crossfade mix. Saturates at 16 bits; the limiter
- * runs once on the mixed output. */
+/* Audio thread: the loudness reference gain of this render call, 16.16 (I189b). The DSP chain and the mix stage
+ * between the mix and the limiter work in place on 16-bit samples, so a boost cannot travel through them. Instead the
+ * slots are mixed at their gain relative to the largest gain of the songs that can sound in this call (at most
+ * unity, so no slot or crossfade sum can pass 16 bits) and the limiter stage multiplies that reference back in
+ * wide arithmetic, saturating only after its ceiling. A call without a boost has reference unity: the slot gains
+ * are applied as before, bit for bit. Every song that can sound must carry a gain, else the limiter would raise
+ * an unscaled song. */
+static uint32_t loud_reference(const sel_engine* e) {
+    uint32_t ref = SEL_GAIN_UNITY;
+    uint32_t idx[2];
+    uint32_t i;
+    idx[0] = e->act;
+    idx[1] = e->nx;
+    for (i = 0; i < 2u; i++) {
+        const sel_slot* sl;
+        if (idx[i] >= SEL_SLOT_COUNT) {
+            continue;
+        }
+        sl = &e->slot[idx[i]];
+        if (!sl->loud_active) {
+            return SEL_GAIN_UNITY;
+        }
+        if (sl->loud_gain_q16 > ref) {
+            ref = sl->loud_gain_q16;
+        }
+    }
+    return ref;
+}
+
+/* Audio thread: this slot's gain on its own samples, before the crossfade mix, relative to the call's reference
+ * gain (at most unity, so it never saturates). The limiter runs once on the mixed output. */
 static void slot_gain(sel_engine* e, const sel_slot* sl, int16_t* stereo, uint32_t frames) {
     uint32_t i;
+    uint32_t gain;
     if (!sl->loud_active || frames == 0u) {
         return;
     }
     e->loud_mixed = 1;
-    if (sl->loud_gain_q16 == SEL_GAIN_UNITY) {
+    gain = sl->loud_gain_q16;
+    if (e->loud_ref > SEL_GAIN_UNITY) {
+        gain = (uint32_t)((((uint64_t)gain << 16) + (e->loud_ref >> 1)) / e->loud_ref);
+    }
+    if (gain == SEL_GAIN_UNITY) {
         return;
     }
     for (i = 0; i < frames * 2u; i++) {
-        int64_t v = ((int64_t)stereo[i] * sl->loud_gain_q16 + 32768) >> 16;
+        int64_t v = ((int64_t)stereo[i] * gain + 32768) >> 16; /* saturates only when a song without a gain shares the call */
         stereo[i] = (int16_t)(v > 32767 ? 32767 : (v < -32768 ? -32768 : v));
     }
 }
@@ -4530,6 +4565,7 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
     SEL_THREAD_AUDIO(e);
     e->render_calls++;
     e->loud_mixed = 0;
+    e->loud_ref = SEL_GAIN_UNITY;
     if (stereo == NULL || frames == 0) {
         return frames;
     }
@@ -4557,6 +4593,7 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
     {
         sl = e->act < SEL_SLOT_COUNT ? &e->slot[e->act] : NULL;
         if (sl != NULL && e->state.play == SEL_PLAYING) {
+            e->loud_ref = loud_reference(e);
             done = render_mix(e, stereo, frames);
             sel_timer_apply(&e->timer, stereo, done);
             if (e->state.volume != 100) {
@@ -4573,6 +4610,7 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
     sel_mix_stage_process(&e->stage, stereo, frames);
     sel_dsp_chain_process(&e->dsp, stereo, frames);
     e->loud.active = e->loud_mixed;
+    e->loud.gain_q16 = e->loud_ref;
     sel_loudness_gain_process(&e->loud, stereo, frames);
     viz_feed(e, sl, stereo, frames);
     if (e->pat_ack != e->pat_req) {
