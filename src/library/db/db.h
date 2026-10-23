@@ -29,8 +29,38 @@ enum {
     SEL_LIB_REQ_ANNOTATE = 8,   /* payload: const sel_annotate_batch*; lengths and notes onto existing songs (I162) */
     SEL_LIB_REQ_MOVE = 9,       /* payload: const sel_move*; re-keys one song row in place (I161b) */
     SEL_LIB_REQ_USER = 10,      /* payload: const sel_user_op*; history, liked, kept, per-song stickers (I170) */
-    SEL_LIB_REQ_META = 11       /* payload: sel_meta_op*; reads or writes one row of the meta table (I161a) */
+    SEL_LIB_REQ_META = 11,      /* payload: sel_meta_op*; reads or writes one row of the meta table (I161a) */
+    SEL_LIB_REQ_GENRE = 12      /* payload: sel_genre_op*; genre_cache and songs.genre (I181) */
 };
+
+/* One genre_cache operation (SEL_LIB_REQ_GENRE). The reply is INT [0] 1 = done and found/stored, 0 = not found
+ * or failed, [1] SQLite result code, [2] row id (NEXT). */
+enum {
+    SEL_GENRE_NEXT = 1, /* next local song with id > `after`: `out` = song key NUL path NUL, reply [2] = its id (0: none left) */
+    SEL_GENRE_GET,      /* cached entry of `key`: reply [0] = 1 when cached; `out` = genre, "" when cached as "no genre" */
+    SEL_GENRE_PUT,      /* cache `key` -> `value` (NULL = no genre) with fetch time `at` */
+    SEL_GENRE_APPLY     /* songs.genre of song key `key` = `value`, unless the user edited the tag (sticker tag.genre) */
+};
+typedef struct sel_genre_op {
+    uint32_t op;       /* SEL_GENRE_* */
+    const char* key;
+    const char* value;
+    int64_t at;
+    int64_t after;
+    char* out;
+    uint32_t out_cap;
+} sel_genre_op;
+
+/* Counters of one sel_library_genre_sync run. */
+typedef struct sel_genre_stats {
+    uint32_t songs;        /* local songs looked at */
+    uint32_t unreadable;   /* files that could not be read */
+    uint32_t genre_lookups;    /* requests sent to the DEViLBOX genre endpoint */
+    uint32_t genre_cache_hits; /* songs served from genre_cache without a request */
+    uint32_t genre_set;    /* songs whose songs.genre was set */
+    uint32_t unknown;      /* lookups that left the genre unknown (503, 404, transport error, untagged) */
+    uint32_t http_requests;
+} sel_genre_stats;
 
 /* One user-data operation (SEL_LIB_REQ_USER). The reply is INT [0] 0 = failed, 1 = done, 2 = done and a
  * STICKER_GET found its value, [1] SQLite result code. `at` is epoch seconds. */
@@ -237,6 +267,13 @@ void sel_library_prefetch_stop(sel_library* lib);
 int sel_library_cache_stats(const sel_library* lib, struct sel_cache_stats* out);
 /* Prints `cache_hits= fetches= companions= md5_mismatches= mirror_tries=` when a fetch was served. */
 void sel_library_cache_report(const sel_library* lib);
+
+/* Genre (I181, T85): for every local song reads the file, builds the UADE key (xxh32.h), takes the genre from
+ * genre_cache or, on a miss, from GET <SELECTA_DEVILBOX_URL>/api/genre/<key>?name=&size= through the one HTTP
+ * client, caches the answer and sets songs.genre. Only source "modarchive" with a genre counts as known; untagged,
+ * miss and ambiguous answers are cached as "no genre". A 503, other status or transport failure caches nothing
+ * and is not an error. 1 on success. */
+int sel_library_genre_sync(sel_library* lib, sel_genre_stats* stats);
 
 uint32_t sel_library_account(const sel_library* lib);
 uint32_t sel_library_heap_size(const sel_library* lib);

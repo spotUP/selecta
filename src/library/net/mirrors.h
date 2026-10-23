@@ -61,4 +61,7 @@ int sel_mirrors_fetch(sel_mirror_set* set, const char* path, sel_mirror_sink sin
 int sel_mirrors_fetch_verified(sel_mirror_set* set, const char* path, sel_mirror_sink sink, sel_mirror_restart restart,
                                sel_mirror_verify verify, void* ctx, sel_mirror_res* res);
 
+/* DEViLBOX base URL without a trailing path: SELECTA_DEVILBOX_URL, else http://devilbox.uprough.net. */
+const char* sel_devilbox_base(void);
+
 #endif

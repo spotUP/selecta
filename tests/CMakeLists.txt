@@ -1104,3 +1104,17 @@ if(NOT SEL_AMIGA)
   set_tests_properties(hippo-publish PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "hippo_publish_ok")
 endif()
+
+# M3 (I181): xxh32 published vectors and the UADE key; T85 genre part against the devilbox fixture, two runs.
+if(NOT SEL_AMIGA)
+  add_executable(xxh32_test xxh32_test.c)
+  target_include_directories(xxh32_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(xxh32_test PRIVATE selecta_library)
+  add_test(NAME xxh32-unit COMMAND xxh32_test)
+  set_tests_properties(xxh32-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "xxh32_ok")
+  add_test(NAME devilbox-genre
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DSONGS=${PROJECT_SOURCE_DIR}/tests/m3/genre"
+            -P "${SEL_NET_DIR}/devilbox_genre.cmake")
+  set_tests_properties(devilbox-genre PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "devilbox_genre_ok")
+endif()

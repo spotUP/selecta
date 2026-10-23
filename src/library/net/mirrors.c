@@ -12,6 +12,12 @@
 #define DEVILBOX_DEFAULT "http://devilbox.uprough.net"
 #define ENV_PREFIX "SELECTA_MIRRORS_"
 
+const char* sel_devilbox_base(void) {
+    const char* dev = getenv("SELECTA_DEVILBOX_URL");
+
+    return dev != NULL && dev[0] != '\0' ? dev : DEVILBOX_DEFAULT;
+}
+
 /* Built-in lists (research 2026-10-25-m3-external-endpoints.md). HTTP mirrors first, FTP last. */
 typedef struct builtin {
     const char* source;
@@ -65,9 +71,7 @@ unsigned sel_mirrors_init(sel_mirror_set* s, const char* source, int amiga_route
     }
     if (amiga_route) {
         char base[SEL_MIRROR_URL_MAX];
-        const char* dev = getenv("SELECTA_DEVILBOX_URL");
-        snprintf(base, sizeof base, "%s/api/mirror/%s/", dev != NULL && dev[0] != '\0' ? dev : DEVILBOX_DEFAULT,
-                 source);
+        snprintf(base, sizeof base, "%s/api/mirror/%s/", sel_devilbox_base(), source);
         add_base(s, base, strlen(base));
         return s->count;
     }
