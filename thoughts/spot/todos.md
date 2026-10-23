@@ -227,9 +227,9 @@ Tests T28 to T38 are defined in the plan's finish-line table. A row is ticked on
 | I73 | [x] | 3 | PLAYLIST_LOAD, PLAYLIST_SAVE; divider/stealth queue rows | script check in T29 suite, ratchet 31; playlist-verbs red on main dec988f (ERROR not_implemented PLAYLIST_LOAD), green after; commit 0c7e038, merge c29b2bd; ratchet 27 after merge with Phase 4 |
 | I74 | [x] | 4 | T32 written and red; view grouping folder/format, node ids | T32 green (red fd69a7a segfault); commit b680b06, merge dec988f; ratchet 29 (27 after other phases) |
 | I75 | [x] | 4 | Text UI draws tree and drilldown | T24 selecta-tree-view, selecta-drill-view green; commit 33b55cc, merge dec988f |
-| I76 | [ ] | 5 | T34 written and red; `keybind.c`, `keys.conf`, `--bindings` | T34 green; T19 unchanged |
-| I77 | [ ] | 5 | T36 written and red; `cmdline.c`, history, `:!` spawn | T36 green |
-| I78 | [ ] | 5 | T37 written and red; `SEL_CMD_AREA`, COMMANDS `area`, `palette.c`, help overlay | T37 green, T5/T6 goldens updated |
+| I76 | [x] | 5 | T34 written and red; `keybind.c`, `keys.conf`, `--bindings` | T34 green; T19 unchanged; red "keybind.h not found"; commit 017d9b8, merge 8534239 |
+| I77 | [x] | 5 | T36 written and red; `cmdline.c`, history, `:!` spawn | T36 green; red link failure, selecta-cmdline red (Volume 100 vs 90); commit 9f82af0, merge 8534239 |
+| I78 | [x] | 5 | T37 written and red; `SEL_CMD_AREA`, COMMANDS `area`, `palette.c`, help overlay | T37 green, T5/T6 goldens updated ; red "palette.h not found"; no T5/T6 golden held COMMANDS output; commits 9fb9185, 0f07794, merge 8534239 |
 | I79 | [ ] | 6 | T35 written and red; socket in the shell, `selecta-cli send` | T35 green |
 | I80 | [ ] | 6 | `integration.h`, host side, `nowplaying-test`; T38 red then green | T38 green |
 | I81 | [ ] | 6 | macOS Now Playing and Linux MPRIS plugins | build green; manual check 2 |
