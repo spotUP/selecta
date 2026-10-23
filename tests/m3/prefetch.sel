@@ -1,0 +1,11 @@
+# T77 prefetch (row I168): while play1 plays, the engine prefetches the next queue entry (play2) into the
+# cache on the library's prefetch thread. @prefetch_wait (script-only) waits until that thread is idle;
+# NEXT then opens play2 through the same sel_library_fetch and finds it in the cache (a cache hit, no request).
+QUEUE_ADD modland:Protracker/test/play1.mod
+QUEUE_ADD modland:Protracker/test/play2.mod
+PLAY
+@render 1024
+@prefetch_wait
+NEXT
+@render 1024
+@queue

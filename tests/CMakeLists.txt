@@ -1014,3 +1014,24 @@ if(NOT SEL_AMIGA)
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/cache_budget.sh $<TARGET_FILE:selecta-cli>)
   set_tests_properties(cache-budget PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "cache_budget_ok")
 endif()
+
+# M3 Phase 5 (I168): T77 prefetch. Playing a remote song prefetches the next queue entry into the cache;
+# prefetch_fetches=1 is the sentinel, and playing the next song then makes no request.
+if(NOT SEL_AMIGA)
+  add_test(NAME prefetch
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
+      "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3" "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv"
+      -P "${SEL_NET_DIR}/prefetch.cmake")
+  set_tests_properties(prefetch PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    DEPENDS cache-fetch TIMEOUT 60 PASS_REGULAR_EXPRESSION "prefetch_ok")
+endif()
+
+# M3 Phase 5 (I167a): T76 part 2. The trim driven through LIBRARY_FETCH keeps a kept song and its companion.
+if(NOT SEL_AMIGA)
+  add_test(NAME cache-budget-fetch
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
+      "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3" "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv"
+      -P "${SEL_NET_DIR}/cache_budget_fetch.cmake")
+  set_tests_properties(cache-budget-fetch PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    DEPENDS cache-fetch TIMEOUT 60 PASS_REGULAR_EXPRESSION "cache_budget_fetch_ok")
+endif()
