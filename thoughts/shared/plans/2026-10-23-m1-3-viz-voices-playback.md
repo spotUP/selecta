@@ -143,3 +143,7 @@ Visualizer plugins on bitmap surfaces (M4), GPU visualizers (M5), chip register 
 - Phase 3a: `pitch_factor_q16=65536` is a placeholder in `apps/selecta-cli/render.c`; I92 replaces it with the engine value.
 - Phase 3b: PITCH and TEMPO accept relative arguments like VOLUME; values live in `sel_state` and emit no event.
 - Phase 3b: T42 checks tempo by song position only; pitch and tempo are not checked by ear yet.
+- Phase 5b: DSP sits in palette area "view"; a new "dsp" area broke palette-unit, which allows five known areas only.
+- Phase 5b: the engine passes generated Q15 coefficients to the plugin through DSP_PARAM, because plugins compile against `include/` only.
+- Phase 5b: the DSP verb sends no acknowledgement event. Slots reopen on a rate change only through `set_mix`.
+- Phase 5b: the crossfeed golden hash is not pinned; it waits for a listening check.
