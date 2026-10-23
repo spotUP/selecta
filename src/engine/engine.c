@@ -35,6 +35,7 @@
 #include "db.h"
 #include "cache.h"
 #include "sources/local_source.h"
+#include "sources/hippo_sync.h"
 #include "sources/hvsc_sync.h"
 #include "sources/modland_sync.h"
 #include "scheduler.h"
@@ -2536,16 +2537,18 @@ static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
     sel_local_scan_config scfg;
     sel_modland_sync_stats st;
     sel_hvsc_sync_stats hv;
+    sel_hippo_sync_stats hp;
     int64_t now;
     int ok;
-    int is_hvsc;
+    int is_hvsc, is_hippo;
 
     if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", "LIBRARY_SYNC");
         return;
     }
     is_hvsc = strcmp(m->args[0].v.s, "hvsc") == 0;
-    if (!is_hvsc && strcmp(m->args[0].v.s, "modland") != 0) {
+    is_hippo = strcmp(m->args[0].v.s, "hippo") == 0;
+    if (!is_hvsc && !is_hippo && strcmp(m->args[0].v.s, "modland") != 0) {
         sel_engine_report_error(e, "unknown_source", m->args[0].v.s);
         return;
     }
@@ -2558,7 +2561,17 @@ static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
     scfg.now = now;
     memset(&st, 0, sizeof st);
     memset(&e->sync_info, 0, sizeof e->sync_info);
-    if (is_hvsc) {
+    if (is_hippo) {
+        ok = sel_hippo_sync(&scfg, m->args[1].v.s, &hp);
+        st.listing_rows = hp.lists;
+        st.skipped_rows = hp.skipped;
+        e->sync_info.hippo_lists = hp.lists;
+        e->sync_info.prg_files = hp.prg_files;
+        e->sync_info.prg_entries = hp.prg_entries;
+        e->sync_info.prg_dividers = hp.prg_dividers;
+        e->sync_info.prg_stealth = hp.prg_stealth;
+        e->sync_info.prg_subsongs = hp.prg_subsongs;
+    } else if (is_hvsc) {
         ok = sel_hvsc_sync(&scfg, m->args[1].v.s, &hv);
         st.listing_rows = hv.listing_rows;
         st.skipped_rows = hv.skipped_rows;

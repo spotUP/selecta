@@ -186,6 +186,7 @@ typedef struct sel_sync_info {
     uint32_t cl_added, cl_removed, cl_moved, cl_updated;
     uint32_t new_this_week;
     uint32_t songlengths, stil_entries, subtunes; /* hvsc sync (I162) */
+    uint32_t hippo_lists, prg_files, prg_entries, prg_dividers, prg_stealth, prg_subsongs; /* hippo sync (I163) */
 } sel_sync_info;
 void sel_engine_sync_info(const sel_engine* e, sel_sync_info* out);
 

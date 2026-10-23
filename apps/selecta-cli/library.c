@@ -549,6 +549,45 @@ static void library_dump_hvsc(const char* db_path) {
     sqlite3_finalize(st);
     sqlite3_close(db);
 }
+/* `--dump` for hippo: `hippo_row=<path>|<format>|<name>|<artist>|<genre>|<url>|<hippo_id>|<prg_entries>|<prg_dividers>|
+ * <prg_stealth>|<prg_subsongs>` per playlist (T74). */
+static void library_dump_hippo(const char* db_path) {
+    sqlite3* db = NULL;
+    sqlite3_stmt* st = NULL;
+    const sel_source* src;
+    char url[SEL_BROWSE_PATH_MAX];
+
+    sel_source_register_builtin();
+    src = sel_source_find("hippo");
+    if (sqlite3_open_v2(db_path, &db, SQLITE_OPEN_READONLY, NULL) != SQLITE_OK) {
+        sqlite3_close(db);
+        return;
+    }
+    if (sqlite3_prepare_v2(db,
+                           "SELECT s.path, COALESCE(s.format,''), COALESCE(s.name,''), COALESCE(s.artist,''),"
+                           " COALESCE((SELECT value FROM stickers k WHERE k.key=s.key AND k.name='genre'),''),"
+                           " COALESCE((SELECT value FROM stickers k WHERE k.key=s.key AND k.name='hippo_id'),''),"
+                           " COALESCE((SELECT value FROM stickers k WHERE k.key=s.key AND k.name='prg_entries'),''),"
+                           " COALESCE((SELECT value FROM stickers k WHERE k.key=s.key AND k.name='prg_dividers'),''),"
+                           " COALESCE((SELECT value FROM stickers k WHERE k.key=s.key AND k.name='prg_stealth'),''),"
+                           " COALESCE((SELECT value FROM stickers k WHERE k.key=s.key AND k.name='prg_subsongs'),'')"
+                           " FROM songs s WHERE s.source='hippo' ORDER BY s.path", -1, &st, NULL) == SQLITE_OK) {
+        while (sqlite3_step(st) == SQLITE_ROW) {
+            const char* path = (const char*)sqlite3_column_text(st, 0);
+
+            if (src == NULL || src->url == NULL || !src->url(path, url, sizeof url)) {
+                url[0] = '\0';
+            }
+            printf("hippo_row=%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n", path, (const char*)sqlite3_column_text(st, 1),
+                   (const char*)sqlite3_column_text(st, 2), (const char*)sqlite3_column_text(st, 3),
+                   (const char*)sqlite3_column_text(st, 4), url, (const char*)sqlite3_column_text(st, 5),
+                   (const char*)sqlite3_column_text(st, 6), (const char*)sqlite3_column_text(st, 7),
+                   (const char*)sqlite3_column_text(st, 8), (const char*)sqlite3_column_text(st, 9));
+        }
+    }
+    sqlite3_finalize(st);
+    sqlite3_close(db);
+}
 #endif
 
 /* `library sync [--db <p>] [--now <epoch>] [--dump] modland <dir>` (I161, T72): LIBRARY_SYNC through the
@@ -588,7 +627,7 @@ static int library_sync(int argc, char** argv) {
         }
     }
     if (src == NULL || dir == NULL) {
-        fputs("usage: selecta-cli library sync [--db <path>] [--now <epoch>] [--dump] modland|hvsc <dir>\n", stderr);
+        fputs("usage: selecta-cli library sync [--db <path>] [--now <epoch>] [--dump] modland|hvsc|hippo <dir>\n", stderr);
         return 2;
     }
     memset(&sink, 0, sizeof sink);
@@ -621,7 +660,13 @@ static int library_sync(int argc, char** argv) {
     if (!sel_library_call(lib, SEL_LIB_REQ_STATS, &st)) {
         st.args[SEL_LIB_STAT_SONGS].v.i = -1;
     }
-    if (strcmp(src, "hvsc") == 0) {
+    if (strcmp(src, "hippo") == 0) {
+        printf("hippo_lists=%u skipped_rows=%u prg_files=%u prg_entries=%u prg_dividers=%u prg_stealth=%u "
+               "prg_subsongs=%u db_songs=%d\n",
+               (unsigned)info.hippo_lists, (unsigned)info.skipped_rows, (unsigned)info.prg_files,
+               (unsigned)info.prg_entries, (unsigned)info.prg_dividers, (unsigned)info.prg_stealth,
+               (unsigned)info.prg_subsongs, st.args[SEL_LIB_STAT_SONGS].v.i);
+    } else if (strcmp(src, "hvsc") == 0) {
         printf("listing_rows=%u skipped_rows=%u songlengths=%u subtunes=%u stil_entries=%u db_songs=%d\n",
                (unsigned)info.listing_rows, (unsigned)info.skipped_rows, (unsigned)info.songlengths,
                (unsigned)info.subtunes, (unsigned)info.stil_entries, st.args[SEL_LIB_STAT_SONGS].v.i);
@@ -635,7 +680,9 @@ static int library_sync(int argc, char** argv) {
     sel_library_close(lib);
 #ifndef __amigaos__
     if (dump && strcmp(db_path, ":memory:") != 0) {
-        if (strcmp(src, "hvsc") == 0) {
+        if (strcmp(src, "hippo") == 0) {
+            library_dump_hippo(db_path);
+        } else if (strcmp(src, "hvsc") == 0) {
             library_dump_hvsc(db_path);
         } else {
             library_dump_modland(db_path);
