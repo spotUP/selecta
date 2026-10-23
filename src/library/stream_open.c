@@ -16,6 +16,7 @@
 #endif
 
 static uint32_t g_bytes, g_reads;
+static int g_status; /* HTTP status of the last sel_stream_read (0: no response) */
 
 typedef struct sbuf {
     const sel_host* host;
@@ -104,6 +105,7 @@ uint8_t* sel_stream_read(const sel_host* host, const char* path, size_t* size) {
         memset(&res, 0, sizeof res);
         req.url = path;
         ok = sel_http_request(&req, sink, &b, &res) == SEL_HTTP_OK && res.status >= 200 && res.status < 300;
+        g_status = res.status;
     } else if (sel_stream_is_pipe(path)) {
         ok = read_pipe(&b, path + 5);
     } else {
@@ -120,6 +122,10 @@ uint8_t* sel_stream_read(const sel_host* host, const char* path, size_t* size) {
     g_bytes = (uint32_t)b.len;
     g_reads++;
     return b.p;
+}
+
+int sel_stream_status(void) {
+    return g_status;
 }
 
 uint32_t sel_stream_bytes(void) {
@@ -186,6 +192,10 @@ int sel_live_failed(const sel_live* s) {
     (void)s;
     return 1;
 }
+int sel_live_status(const sel_live* s) {
+    (void)s;
+    return 0;
+}
 size_t sel_live_discard(sel_live* s, size_t max) {
     (void)s;
     (void)max;
@@ -204,6 +214,7 @@ struct sel_live {
     uint8_t* ring;
     volatile unsigned wr, rd;       /* byte counters, free running; wr - rd bytes are buffered */
     volatile unsigned eof, failed;  /* set by the download thread when it ends */
+    volatile unsigned status;       /* HTTP status of the response, stored before eof (0: no response) */
     const sel_http_res* res;        /* the download thread's response record: status is set before any body byte */
     volatile unsigned stop;         /* the thread's cancel generation (sel_net_set_cancel) and the sink's abort */
     unsigned long received;
@@ -282,6 +293,7 @@ static void* download(void* arg) {
     s->res = &res;
     ok = sel_http_request(&req, ring_sink, s, &res) == SEL_HTTP_OK && res.status >= 200 && res.status < 300;
     sel_net_set_cancel(NULL, 0u);
+    st_store(&s->status, (unsigned)res.status);
     if (!ok) {
         st_store(&s->failed, 1u);
     }
@@ -429,6 +441,9 @@ int sel_live_finished(const sel_live* s) {
 }
 int sel_live_failed(const sel_live* s) {
     return ld(&s->failed) != 0u;
+}
+int sel_live_status(const sel_live* s) {
+    return (int)ld(&s->status);
 }
 size_t sel_live_discard(sel_live* s, size_t max) {
     unsigned r = ld(&s->rd), avail = ld(&s->wr) - r;

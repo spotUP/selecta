@@ -17,6 +17,7 @@ int sel_stream_is_pipe(const char* path); /* desktop `pipe:<cmd>` only; always 0
  * Counters below move on each call (the test reads them). */
 uint8_t* sel_stream_read(const sel_host* host, const char* path, size_t* size);
 
+int sel_stream_status(void); /* HTTP status of the last sel_stream_read, 0 when no response came (I195g) */
 uint32_t sel_stream_bytes(void);  /* bytes delivered by the last successful read */
 uint32_t sel_stream_reads(void);  /* successful reads */
 
@@ -55,6 +56,7 @@ sel_live* sel_live_open_record(const sel_host* host, const char* url, const vola
                                const char* path, unsigned long limit);
 unsigned long sel_live_recorded(const sel_live* s); /* bytes written to the record file so far */
 int sel_live_finished(const sel_live* s);           /* download ended (all bytes in, or failed) */
+int sel_live_status(const sel_live* s);             /* HTTP status once the download ended, else 0 (I195g) */
 int sel_live_failed(const sel_live* s);             /* ended without a 2xx body */
 /* Discards up to `max` buffered bytes (a recorder has no decoder reading the ring); returns how many. */
 size_t sel_live_discard(sel_live* s, size_t max);
