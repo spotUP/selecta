@@ -1086,6 +1086,15 @@ if(NOT SEL_AMIGA)
     DEPENDS cache-fetch TIMEOUT 60 PASS_REGULAR_EXPRESSION "prefetch_preempt_ok")
 endif()
 
+# M3 Phase 4 (I161a): T72 network part. LIBRARY_SYNC modland <url> over the sync.modland.test fixture.
+if(NOT SEL_AMIGA)
+  add_test(NAME source-modland-net
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3" -P "${SEL_NET_DIR}/modland_net.cmake")
+  set_tests_properties(source-modland-net PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "modland_net_ok")
+endif()
+
 # M3 Phase 4 (I164): T74 publish part. PLAYLIST_PUBLISH through selecta-cli script against the fixture.
 if(NOT SEL_AMIGA)
   add_test(NAME hippo-publish

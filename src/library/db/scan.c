@@ -341,3 +341,49 @@ void sel_library_annotate(sel_library* lib, const sel_annotate_batch* b, sel_mes
     reply->args[1].type = SEL_ARG_INT;
     reply->args[1].v.i = rc;
 }
+
+/* SEL_LIB_REQ_META (I161a): one row of the meta table, read or written (e.g. "modland.new_this_week"). */
+void sel_library_meta(sel_library* lib, const sel_meta_op* op, sel_message* reply) {
+    sqlite3_stmt* st = NULL;
+    int found = 0;
+    int rc;
+
+    if (op->set) {
+        rc = sqlite3_prepare_v2(lib->db, "INSERT OR REPLACE INTO meta(key, value) VALUES(?1, ?2)", -1, &st, NULL);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+            sqlite3_bind_text(st, 2, op->value, -1, SQLITE_STATIC);
+            rc = sqlite3_step(st);
+            found = rc == SQLITE_DONE;
+            rc = found ? SQLITE_OK : rc;
+        }
+    } else {
+        if (op->cap > 0) {
+            op->value[0] = '\0';
+        }
+        rc = sqlite3_prepare_v2(lib->db, "SELECT value FROM meta WHERE key=?1", -1, &st, NULL);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+            rc = sqlite3_step(st);
+            if (rc == SQLITE_ROW) {
+                const char* v = (const char*)sqlite3_column_text(st, 0);
+                if (v != NULL && op->cap > 0) {
+                    snprintf(op->value, op->cap, "%s", v);
+                }
+                found = 1;
+                rc = SQLITE_OK;
+            } else if (rc == SQLITE_DONE) {
+                rc = SQLITE_OK;
+            }
+        }
+    }
+    sqlite3_finalize(st);
+    memset(reply, 0, sizeof *reply);
+    reply->kind = SEL_MSG_EVT;
+    reply->id = SEL_LIB_REQ_META;
+    reply->argc = 2;
+    reply->args[0].type = SEL_ARG_INT;
+    reply->args[0].v.i = found;
+    reply->args[1].type = SEL_ARG_INT;
+    reply->args[1].v.i = rc;
+}
