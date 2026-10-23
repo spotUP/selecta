@@ -41,6 +41,7 @@ typedef struct sel_mixer {
     uint32_t rate;
     uint32_t voice_count;
     uint32_t resampler;
+    uint32_t mute_mask;     /* bit k set: voice k advances but adds nothing and taps silence */
     uint32_t voice_ops;     /* calls through the voices API */
     uint32_t mixed_frames;  /* frames produced by sel_mixer_mix */
     sel_mixer_voice voices[SEL_MIXER_MAX_VOICES];

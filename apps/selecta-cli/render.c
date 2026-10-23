@@ -18,6 +18,7 @@
 typedef struct render_ctx {
     const char* wav_path;
     int failed;
+    int script; /* --script: errors go to stdout and do not fail the render */
 } render_ctx;
 
 static const char* render_config(const sel_host* host, const char* key, const char* def) {
@@ -30,7 +31,9 @@ static const char* render_config(const sel_host* host, const char* key, const ch
 
 static void render_sink(void* ctx, const sel_message* evt) {
     render_ctx* c = (render_ctx*)ctx;
-    if (evt->id == SEL_EVT_ERROR) {
+    if (evt->id == SEL_EVT_ERROR && c->script) {
+        printf("ERROR %s %s\n", evt->args[0].v.s, evt->argc > 1 ? evt->args[1].v.s : "");
+    } else if (evt->id == SEL_EVT_ERROR) {
         fprintf(stderr, "render: error %s %s\n", evt->args[0].v.s, evt->argc > 1 ? evt->args[1].v.s : "");
         c->failed = 1;
     } else if (evt->id == SEL_EVT_SEEKED) {
@@ -48,6 +51,28 @@ static int parse_resampler(const char* name, uint32_t* out) {
         }
     }
     return 0;
+}
+
+/* --script <file>: sends each command line (blank and # lines skipped) before the
+ * first sample is pulled, pumping after each so its events print. */
+static int run_script(sel_engine* e, render_ctx* c, const char* path) {
+    char line[256];
+    char pool[512];
+    FILE* f = fopen(path, "r");
+    if (f == NULL) {
+        fprintf(stderr, "render: cannot read %s\n", path);
+        return 0;
+    }
+    while (fgets(line, sizeof line, f) != NULL) {
+        line[strcspn(line, "\r\n")] = '\0';
+        if (line[0] == '\0' || line[0] == '#') {
+            continue;
+        }
+        sel_engine_send_line(e, line, pool, sizeof pool);
+        sel_engine_pump(e, render_sink, c);
+    }
+    fclose(f);
+    return 1;
 }
 
 static uint32_t fnv1a(const int16_t* v, uint32_t n) {
@@ -83,6 +108,7 @@ int sel_cli_render(int argc, char** argv) {
     const char* wav = NULL;
     const char* seek_ms = NULL;
     const char* viz_dump = NULL;
+    const char* script = NULL;
     FILE* dump = NULL;
     uint32_t viz_blocks = 0, viz_seen = 0;
     unsigned long rate = 44100, seconds = 10;
@@ -104,6 +130,8 @@ int sel_cli_render(int argc, char** argv) {
             seconds = strtoul(argv[i + 1], NULL, 10);
         } else if (strcmp(argv[i], "--viz-dump") == 0) {
             viz_dump = argv[i + 1];
+        } else if (strcmp(argv[i], "--script") == 0) {
+            script = argv[i + 1];
         } else if (strcmp(argv[i], "--seek-ms") == 0) {
             seek_ms = argv[i + 1];
         } else if (strcmp(argv[i], "--rate") == 0) {
@@ -125,6 +153,7 @@ int sel_cli_render(int argc, char** argv) {
 
     ctx.wav_path = wav;
     ctx.failed = 0;
+    ctx.script = script != NULL;
     host.config_get = render_config;
     host.ctx = &ctx;
 
@@ -137,6 +166,10 @@ int sel_cli_render(int argc, char** argv) {
         return 1;
     }
 
+    if (script != NULL && !run_script(e, &ctx, script)) {
+        sel_engine_destroy(e);
+        return 1;
+    }
     if (seek_ms != NULL) {
         sel_message msg;
         memset(&msg, 0, sizeof msg);
@@ -215,11 +248,18 @@ int sel_cli_render(int argc, char** argv) {
         printf("ticks=%u voice_ops=%u mixed_frames=%u\n", (unsigned)stats.ticks, (unsigned)stats.voice_ops,
                (unsigned)stats.mixed_frames);
     }
+    if (script != NULL) {
+        const sel_state* st = sel_engine_state(e);
+        printf("mute_mask=0x%08x\n", (unsigned)st->mute_mask);
+        printf("end_position order=%u row=%u\n", (unsigned)st->song.pattern_pos.order,
+               (unsigned)st->song.pattern_pos.row);
+        printf("pitch_factor_q16=%u\n", 65536u); /* I92 replaces this with the engine value */
+    }
     if (dump != NULL) {
         fclose(dump);
         printf("viz_blocks=%u\n", (unsigned)viz_blocks);
     }
     o.close(out);
     sel_engine_destroy(e);
-    return ctx.failed || pumped != total;
+    return (ctx.failed && !ctx.script) || pumped != total;
 }

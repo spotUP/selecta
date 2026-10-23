@@ -112,6 +112,7 @@ typedef struct sel_state {
     uint32_t queue_count, queue_playing, queue_version; /* queue_playing: id, 0 = none */
     const sel_view_state* view; /* the view model, valid until the next pump */
     const sel_viz_frame* viz;   /* newest visualisation frame (seq 0: none yet), valid until the next pump */
+    uint32_t mute_mask;         /* bit k set: voice k + 1 is muted (MUTE, SOLO) */
 } sel_state;
 
 typedef struct sel_engine_config {

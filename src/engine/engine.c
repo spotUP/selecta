@@ -43,6 +43,8 @@
     X(PAUSE_PLAYBACK)                                                                         \
     X(STOP)                                                                                   \
     X(VOLUME)                                                                                 \
+    X(MUTE)                                                                                   \
+    X(SOLO)                                                                                   \
     X(OUTPUT)                                                                                 \
     X(OPTION)                                                                                 \
     X(COMMANDS)                                                                               \
@@ -119,6 +121,8 @@ typedef struct sel_slot {
     sel_rp_position_fn rp_position; /* optional: order/row/pattern */
     sel_rp_tracker_info_fn rp_tracker_info;   /* optional: pattern geometry */
     sel_rp_tracker_cells_fn rp_tracker_cells; /* optional: pattern cells */
+    sel_rp_mute_fn rp_mute;                   /* optional, RENDER kind: channel mute */
+    uint32_t applied_mute;                    /* audio side: mask last handed to rp_mute */
     uint32_t pos_order, pos_row, pos_pattern, pos_valid; /* audio side writes after each render */
     sel_rp_render_fn rp_render; /* RENDER kind: the replayer mixes, rp_tick is NULL */
     const char* rp_name;
@@ -413,6 +417,63 @@ static void cmd_VOLUME(sel_engine* e, const sel_message* m) {
     }
     e->state.volume = v;
     changed(e, PENDING_VOLUME);
+}
+
+/* The mask is a state field (the snapshot shows it) and a VOICE event. The
+ * audio thread reads it every render call; a 32-bit store is atomic enough. */
+static void set_mute_mask(sel_engine* e, uint32_t mask) {
+    static const sel_tag no_tags[1] = {{SEL_TAG_END, 0}};
+    sel_message m;
+    e->state.mute_mask = mask;
+    evt_init(&m, SEL_EVT_VOICE);
+    evt_uint(&m, mask);
+    evt_tags(&m, no_tags);
+    emit(e, &m);
+}
+
+/* MUTE <voice> on|off|toggle: voices count from 1. A voice beyond 32 is a
+ * range error; a voice the loaded song lacks is accepted (the mask outlives
+ * the song) so the mask is the same on every replayer. */
+static void cmd_MUTE(sel_engine* e, const sel_message* m) {
+    uint32_t v = m->args[0].v.u;
+    const char* how = m->args[1].v.s;
+    uint32_t bit, mask = e->state.mute_mask;
+    if (v < 1u || v > 32u) {
+        sel_engine_report_error(e, "range", "MUTE");
+        return;
+    }
+    bit = 1u << (v - 1u);
+    if (strcmp(how, "on") == 0) {
+        mask |= bit;
+    } else if (strcmp(how, "off") == 0) {
+        mask &= ~bit;
+    } else if (strcmp(how, "toggle") == 0) {
+        mask ^= bit;
+    } else {
+        sel_engine_report_error(e, "range", "MUTE");
+        return;
+    }
+    set_mute_mask(e, mask);
+}
+
+/* SOLO <voice>: mute every other voice of the loaded song; SOLO 0 clears the
+ * mask. The song's channel count comes from the tracker geometry (RENDER
+ * replayers report no voices), else the voice count, else all 32 bits. */
+static void cmd_SOLO(sel_engine* e, const sel_message* m) {
+    uint32_t v = m->args[0].v.u;
+    uint32_t n = 32u;
+    sel_rp_tracker_info ti;
+    const sel_slot* sl = e->act < SEL_SLOT_COUNT ? &e->slot[e->act] : NULL;
+    if (v > 32u) {
+        sel_engine_report_error(e, "range", "SOLO");
+        return;
+    }
+    if (sel_engine_tracker_info(e, 0, &ti) && ti.channels > 0u && ti.channels < 32u) {
+        n = ti.channels;
+    } else if (sl != NULL && sl->busy && sl->rp_info.voice_count > 0u && sl->rp_info.voice_count < 32u) {
+        n = sl->rp_info.voice_count;
+    }
+    set_mute_mask(e, v == 0u ? 0u : (n >= 32u ? 0xFFFFFFFFu : ((1u << n) - 1u)) & ~(1u << (v - 1u)));
 }
 
 static void cmd_OUTPUT(sel_engine* e, const sel_message* m) {
@@ -763,6 +824,8 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     sl->rp_position = (sel_rp_position_fn)sel_tag_find(hooks, SEL_RP_POSITION, 0);
     sl->rp_tracker_info = (sel_rp_tracker_info_fn)sel_tag_find(hooks, SEL_RP_TRACKER_INFO, 0);
     sl->rp_tracker_cells = (sel_rp_tracker_cells_fn)sel_tag_find(hooks, SEL_RP_TRACKER_CELLS, 0);
+    sl->rp_mute = kind == SEL_RP_KIND_RENDER ? (sel_rp_mute_fn)sel_tag_find(hooks, SEL_RP_MUTE, 0) : NULL;
+    sl->applied_mute = 0;
     sl->pos_valid = 0;
     if (kind == SEL_RP_KIND_RENDER) {
         sl->rp_tick = NULL;
@@ -2056,6 +2119,18 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
     }
     sl = e->act < SEL_SLOT_COUNT ? &e->slot[e->act] : NULL;
     if (sl != NULL && e->state.play == SEL_PLAYING) {
+        uint32_t want_mute = e->state.mute_mask;
+        if (sl->rp_render == NULL) {
+            sl->mixer.mute_mask = want_mute;
+        } else if (sl->rp_mute != NULL && sl->applied_mute != want_mute) {
+            uint32_t k;
+            for (k = 0; k < 32u; k++) {
+                if (((sl->applied_mute ^ want_mute) >> k) & 1u) {
+                    sl->rp_mute(sl->rp_state, k, (want_mute >> k) & 1u);
+                }
+            }
+            sl->applied_mute = want_mute;
+        }
         while (sl->rp_render != NULL && done < frames && !sl->ended) {
             uint32_t want = frames - done;
             uint32_t got = sl->rp_render(sl->rp_state, stereo + (size_t)done * 2u, want);

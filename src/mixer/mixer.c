@@ -79,10 +79,19 @@ void sel_mixer_mix(sel_mixer* m, int16_t* stereo, uint32_t frames) {
             uint32_t base = m->viz_head + done;
             int16_t* scope = m->viz_scope[k];
             int32_t peak = v->viz_peak;
+            int muted = (int)((m->mute_mask >> k) & 1u);
             for (i = 0; i < n && v->playing; i++) {
                 int32_t s, mono;
                 uint32_t phase;
                 if (!settle(v)) break;
+                if (muted) {
+                    /* a muted voice keeps its clock so unmuting rejoins the song in time */
+                    phase = v->frac + v->step;
+                    v->position += phase >> 16;
+                    v->frac = phase & 0xFFFFu;
+                    scope[(base + i) & (SEL_MIXER_SCOPE - 1u)] = 0;
+                    continue;
+                }
                 s = sel_resample(&v->current, v->position, v->frac, m->resampler);
                 acc[i * 2] += (s * gl) >> 15;
                 acc[i * 2 + 1] += (s * gr) >> 15;

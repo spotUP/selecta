@@ -88,6 +88,13 @@ add_custom_command(OUTPUT "${SEL_BREAKMOD}"
   COMMAND gen_testmod --break --format mk "${SEL_BREAKMOD}"
   DEPENDS gen_testmod
   COMMENT "Generating selecta-break-mk.mod")
+# T42: selecta-test.mod with sample 1 (channel 0 only) zeroed; the golden for MUTE 1.
+set(SEL_ZERO1MOD "${CMAKE_CURRENT_BINARY_DIR}/songs/selecta-test-zero1.mod")
+add_custom_command(OUTPUT "${SEL_ZERO1MOD}"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/songs"
+  COMMAND gen_testmod --zero-sample 1 "${SEL_ZERO1MOD}"
+  DEPENDS gen_testmod
+  COMMENT "Generating selecta-test-zero1.mod")
 # T31: copies of the test module in album directories a, b and c.
 set(SEL_ALBUM_STAMP "${CMAKE_CURRENT_BINARY_DIR}/songs/album.stamp")
 add_custom_command(OUTPUT "${SEL_ALBUM_STAMP}"
@@ -103,7 +110,7 @@ add_custom_command(OUTPUT "${SEL_ALBUM_STAMP}"
   COMMAND "${CMAKE_COMMAND}" -E touch "${SEL_ALBUM_STAMP}"
   DEPENDS "${SEL_TESTMOD}" "${CMAKE_CURRENT_SOURCE_DIR}/m12/list.prg" "${CMAKE_CURRENT_SOURCE_DIR}/m12/rel.m3u"
   COMMENT "Copying album test songs")
-add_custom_target(testmod ALL DEPENDS "${SEL_TESTMOD}" "${SEL_SHORTMOD}" "${SEL_MKMOD}" "${SEL_BREAKMOD}" "${SEL_ALBUM_STAMP}")
+add_custom_target(testmod ALL DEPENDS "${SEL_TESTMOD}" "${SEL_SHORTMOD}" "${SEL_MKMOD}" "${SEL_BREAKMOD}" "${SEL_ZERO1MOD}" "${SEL_ALBUM_STAMP}")
 add_test(NAME testmod-sha
   COMMAND "${CMAKE_COMMAND}" "-DMOD=${SEL_TESTMOD}"
     "-DPINNED=${CMAKE_CURRENT_SOURCE_DIR}/songs/selecta-test.mod.sha256"
@@ -511,4 +518,14 @@ if(NOT SEL_AMIGA)
       -P "${SEL_EXPECT}")
   set_tests_properties(pattern-cells PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/songs")
+endif()
+
+# T42 (rows I90, I91, I92): mute mask, SOLO, PITCH, TEMPO through render --script, nuade and openmpt.
+if(NOT SEL_AMIGA)
+  add_test(NAME voice-control
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DNUADE_MOD=${SEL_TESTMOD}" "-DMK_MOD=${SEL_MKMOD}"
+      "-DZERO1_MOD=${SEL_ZERO1MOD}" "-DOUT_DIR=${SEL_RENDER_OUT}/voice"
+      "-DSCRIPTS=${CMAKE_CURRENT_SOURCE_DIR}/m13"
+      "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/golden/nuade/selecta-test-mute1.sha256"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m13/voice_check.cmake")
 endif()

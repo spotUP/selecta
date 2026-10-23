@@ -3,6 +3,7 @@
  * adapter only forwards: probe, open, start (subsong + rate), render, seek,
  * position and metadata. The engine never feeds it voices. */
 #include <libopenmpt/libopenmpt.h>
+#include <libopenmpt/libopenmpt_ext.h>
 
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
@@ -17,7 +18,10 @@
 
 typedef struct openmpt_state {
     const sel_host* host;
+    openmpt_module_ext* ext;
     openmpt_module* mod;
+    openmpt_module_ext_interface_interactive inter;
+    int have_inter;
     uint32_t rate;
     uint32_t size;
     char title[META_LEN];
@@ -44,23 +48,28 @@ static int rp_probe(const uint8_t* data, size_t size, const char* name) {
 
 static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_info* info) {
     openmpt_state* s;
-    openmpt_module* mod =
-        openmpt_module_create_from_memory2(src->data, src->size, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
-    if (mod == NULL) {
+    openmpt_module_ext* ext = openmpt_module_ext_create_from_memory(src->data, src->size, NULL, NULL, NULL, NULL,
+                                                                    NULL, NULL, NULL);
+    openmpt_module* mod;
+    if (ext == NULL) {
         return NULL;
     }
+    mod = openmpt_module_ext_get_module(ext);
     /* libopenmpt dithers integer output from a randomly seeded generator by
        default, so two renders of one song differ by up to 2 LSB. Golden WAVs
        need byte-identical output: turn dither off. */
     openmpt_module_ctl_set_integer(mod, "dither", 0);
     s = (openmpt_state*)host->mem_alloc(host, sizeof *s, SEL_MEM_FAST);
     if (s == NULL) {
-        openmpt_module_destroy(mod);
+        openmpt_module_ext_destroy(ext);
         return NULL;
     }
     memset(s, 0, sizeof *s);
     s->host = host;
+    s->ext = ext;
     s->mod = mod;
+    s->have_inter = openmpt_module_ext_get_interface(ext, LIBOPENMPT_EXT_C_INTERFACE_INTERACTIVE, &s->inter,
+                                                     sizeof s->inter);
     s->size = (uint32_t)src->size;
     info->voice_count = 0; /* RENDER kind: no voices, no tick timebase */
     info->subsong_count = (uint32_t)openmpt_module_get_num_subsongs(mod);
@@ -73,7 +82,7 @@ static void rp_close(void* state) {
     openmpt_state* s = (openmpt_state*)state;
     if (s != NULL) {
         const sel_host* host = s->host;
-        openmpt_module_destroy(s->mod);
+        openmpt_module_ext_destroy(s->ext);
         host->mem_free(host, s);
     }
 }
@@ -89,6 +98,14 @@ static int rp_start(void* state, uint32_t subsong, uint32_t rate, const sel_voic
     openmpt_module_set_repeat_count(s->mod, 0); /* play once, then report the end */
     s->rate = rate;
     return 1;
+}
+
+/* RP_MUTE: libopenmpt mixes itself, so its own channel mute does the work. */
+static void rp_mute(void* state, uint32_t channel, uint32_t muted) {
+    openmpt_state* s = (openmpt_state*)state;
+    if (s->have_inter && (int32_t)channel < openmpt_module_get_num_channels(s->mod)) {
+        s->inter.set_channel_mute_status(s->ext, (int32_t)channel, muted != 0u);
+    }
 }
 
 static uint32_t rp_render(void* state, int16_t* out, uint32_t frames) {
@@ -259,7 +276,7 @@ static const sel_tag* rp_metadata(void* state) {
 
 /* Filled at run time: a function pointer cast to an integer is not a
  * constant expression in C99. */
-static sel_tag g_hooks[16];
+static sel_tag g_hooks[17];
 static sel_tag g_desc[5];
 static char g_extensions[LIST_LEN];
 
@@ -307,7 +324,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[11], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
     set(&g_hooks[12], SEL_RP_TRACKER_INFO, SEL_TAG_FN(rp_tracker_info));
     set(&g_hooks[13], SEL_RP_TRACKER_CELLS, SEL_TAG_FN(rp_tracker_cells));
-    set(&g_hooks[14], SEL_TAG_END, 0);
+    set(&g_hooks[14], SEL_RP_MUTE, SEL_TAG_FN(rp_mute));
+    set(&g_hooks[15], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "openmpt");
