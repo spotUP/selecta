@@ -401,7 +401,7 @@ Tests T62 to T97 are defined in the plan's finish-line table. T8 ratchet target 
 | I188 | [ ] | 9 | Gain store per song key; DEViLBOX GET/PUT loudness by hash | T90 fetch part green |
 | I189 | [ ] | 9 | Mixer 16.16 per-song gain and -1 dBFS limiter, `mix.loudness` pref (D-M3-9) | T90 gain and limiter parts green |
 | I190 | [ ] | 9 | Integer adaptive leveler, provisional gain write-back | T90 green |
-| I188a | [ ] | 9 | DEViLBOX server (~/Code/DEViLBOX): GET/PUT /api/loudness/<hash>, Bearer JWT for PUT; Johan approved 2026-10-23 | live GET answers; I188 fetch uses it |
+| I188a | [ ] | 9 | DEViLBOX server (~/Code/DEViLBOX): GET/PUT /api/loudness/<hash>, Bearer JWT for PUT; Johan approved 2026-10-23 | live GET answers; I188 fetch uses it | branch selecta-loudness (c4abd1293, 8772f2ad2), 13 route tests pass; PR spotUP/DEViLBOX#80 open, not deployed (merge deploys live); report m3-I188a-report.md |
 | I180a | [ ] | 8 | DEViLBOX web app (~/Code/DEViLBOX src/App.tsx): open ?song=<source/path>&sub=&t= and ?playlist= links from Selecta SHARE; Johan approved 2026-10-23 | DEViLBOX test opens a Selecta link |
 | I191 | [ ] | 10 | Home view source: recently played, jump back in, new this week | T91 green |
 | I192 | [ ] | 10 | Stats SQL views and text UI stats screen | T92 green |
