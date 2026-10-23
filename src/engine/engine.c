@@ -20,6 +20,7 @@
 #include "mixer.h"
 #include "history.h"
 #include "queue.h"
+#include "playlist/playlist.h"
 #include "shuffle.h"
 #include "local.h"
 #include "prefs.h"
@@ -66,6 +67,8 @@
     X(SCOPE)                                                                                  \
     X(NEXT_ALBUM)                                                                             \
     X(PREV_ALBUM)                                                                             \
+    X(PLAYLIST_LOAD)                                                                          \
+    X(PLAYLIST_SAVE)                                                                          \
     X(QUEUE_PLAY_NEXT)                                                                        \
     X(LIBRARY_BROWSE)                                                                         \
     X(VIEW_SHOW)                                                                              \
@@ -171,6 +174,12 @@ struct sel_engine {
     uint32_t order_n;
     uint32_t order_done;
     uint32_t order_qver;
+    /* PLAYLIST_LOAD / PLAYLIST_SAVE scratch, allocated once in create: the
+     * codecs fill pl_entries and pl_text, a file is read whole into pl_file.
+     * pl_text and pl_file hold queue text bytes + 16. */
+    sel_pl_entry* pl_entries;
+    char* pl_text;
+    char* pl_file;
     uint32_t q_playing; /* id of the playing queue entry, 0: none */
     uint32_t q_hint;    /* position NEXT and PLAY start from while q_playing is 0 */
     uint32_t song_over; /* the open song ended or the queue ran out: PLAY restarts the queue */
@@ -1072,7 +1081,8 @@ static int queue_start(sel_engine* e, uint32_t idx) {
     }
     e->q_playing = e->queue.entries[idx].id;
     e->q_hint = idx;
-    if (!begin_song(e, SEL_BEGIN_OPEN, sel_queue_path(&e->queue, idx), SEL_SUBSONG_DEFAULT, 0)) {
+    if (!begin_song(e, SEL_BEGIN_OPEN, sel_queue_path(&e->queue, idx),
+                    e->queue.entries[idx].subsong_plus1 ? e->queue.entries[idx].subsong_plus1 - 1u : SEL_SUBSONG_DEFAULT, 0)) {
         e->q_playing = 0;
         return 0;
     }
@@ -1220,6 +1230,149 @@ static void queue_insert(sel_engine* e, uint32_t at, const char* path, const cha
 
 static void cmd_QUEUE_ADD(sel_engine* e, const sel_message* m) {
     queue_insert(e, e->queue.count, m->args[0].v.s, "QUEUE_ADD");
+}
+
+/* ---- playlist files --------------------------------------------------- */
+
+/* A key is resolved against the playlist's directory unless it is already
+ * absolute: a URL (scheme://), a Unix path, or an Amiga volume path (Work:x).
+ * The result is false when it does not fit. */
+static int playlist_resolve(char* out, size_t cap, const char* plpath, const char* key) {
+    size_t dirlen = 0, i, klen = strlen(key);
+    int absolute = key[0] == '/' || strstr(key, "://") != NULL;
+    for (i = 0; key[i] != '\0' && key[i] != '/' && !absolute; i++) {
+        if (key[i] == ':') {
+            absolute = 1;
+        }
+    }
+    if (!absolute) {
+        for (i = 0; plpath[i] != '\0'; i++) {
+            if (plpath[i] == '/' || plpath[i] == ':') {
+                dirlen = i + 1u;
+            }
+        }
+    }
+    if (dirlen + klen + 1u > cap) {
+        return 0;
+    }
+    memcpy(out, plpath, dirlen);
+    memcpy(out + dirlen, key, klen + 1u);
+    return 1;
+}
+
+static void playlist_warn(void* ctx, const char* msg) {
+    emit_log((sel_engine*)ctx, "playlist", msg);
+}
+
+static void cmd_PLAYLIST_LOAD(sel_engine* e, const sel_message* m) {
+    const char* path = m->args[0].v.s;
+    int replace = 0;
+    sel_playlist pl;
+    sel_pl_format fmt;
+    FILE* f;
+    size_t n;
+    uint32_t i, text_cap = e->queue.text_bytes + 16u;
+    char full[SEL_DEFERRED_PATH_MAX];
+    int rc;
+
+    if (m->argc > 1) {
+        if (strcmp(m->args[1].v.s, "replace") == 0) {
+            replace = 1;
+        } else if (strcmp(m->args[1].v.s, "append") != 0) {
+            sel_engine_report_error(e, "range", "PLAYLIST_LOAD");
+            return;
+        }
+    }
+    f = fopen(path, "rb");
+    if (f == NULL) {
+        sel_engine_report_error(e, "open_failed", "PLAYLIST_LOAD");
+        return;
+    }
+    n = fread(e->pl_file, 1, text_cap, f);
+    rc = fgetc(f); /* anything left means the file does not fit the buffer */
+    fclose(f);
+    if (rc != EOF) {
+        sel_engine_report_error(e, "queue_full", "PLAYLIST_LOAD");
+        return;
+    }
+    fmt = sel_playlist_format_from_name(path);
+    sel_playlist_init(&pl, e->pl_entries, e->queue.capacity, e->pl_text, text_cap);
+    rc = sel_playlist_read(fmt, e->pl_file, n, &pl, playlist_warn, e);
+    if (rc != SEL_PL_OK) {
+        sel_engine_report_error(e, rc == SEL_PL_RANGE ? "queue_full" : "bad_format", "PLAYLIST_LOAD");
+        return;
+    }
+    sel_history_record(&e->history, &e->queue);
+    if (replace) {
+        sel_history_bury(&e->history, &e->queue, SEL_QUEUE_NONE);
+        sel_queue_clear(&e->queue);
+        e->q_playing = 0;
+        e->q_hint = 0;
+    }
+    for (i = 0; i < pl.count; i++) {
+        const sel_pl_entry* pe = &pl.entries[i];
+        const char* key = sel_playlist_str(&pl, pe->key);
+        const char* shown = pe->kind == SEL_PL_DIVIDER ? sel_playlist_str(&pl, pe->name) : full;
+        uint32_t id, at;
+        if (pe->kind != SEL_PL_DIVIDER && !playlist_resolve(full, sizeof full, path, key)) {
+            sel_engine_report_error(e, "range", "PLAYLIST_LOAD");
+            break;
+        }
+        if (!sel_queue_insert(&e->queue, e->queue.count, shown, &id)) {
+            sel_engine_report_error(e, "queue_full", "PLAYLIST_LOAD");
+            break;
+        }
+        at = sel_queue_index_of(&e->queue, id);
+        e->queue.entries[at].subsong_plus1 = pe->subsong;
+        e->queue.entries[at].flags = pe->kind == SEL_PL_DIVIDER ? SEL_QUEUE_FLAG_DIVIDER
+                                     : pe->kind == SEL_PL_STEALTH ? SEL_QUEUE_FLAG_HIDDEN
+                                                                  : 0u;
+    }
+    emit_queue_changed(e);
+}
+
+static int playlist_sink(void* ctx, const char* bytes, uint32_t len) {
+    return fwrite(bytes, 1, len, (FILE*)ctx) == len;
+}
+
+static void cmd_PLAYLIST_SAVE(sel_engine* e, const sel_message* m) {
+    const char* path = m->args[0].v.s;
+    sel_playlist pl;
+    sel_pl_format fmt = sel_playlist_format_from_name(path);
+    uint32_t i;
+    FILE* f;
+    int rc;
+
+    if (fmt == SEL_PL_AUTO) {
+        sel_engine_report_error(e, "bad_format", "PLAYLIST_SAVE");
+        return;
+    }
+    sel_playlist_init(&pl, e->pl_entries, e->queue.capacity, e->pl_text, e->queue.text_bytes + 16u);
+    for (i = 0; i < e->queue.count; i++) {
+        const sel_queue_entry* en = &e->queue.entries[i];
+        const char* text = sel_queue_path(&e->queue, i);
+        size_t len = strlen(text);
+        int divider = (en->flags & SEL_QUEUE_FLAG_DIVIDER) != 0;
+        sel_pl_kind kind = divider ? SEL_PL_DIVIDER : (en->flags & SEL_QUEUE_FLAG_HIDDEN) ? SEL_PL_STEALTH : SEL_PL_SONG;
+        uint8_t sub = en->subsong_plus1 > 255u ? 255u : (uint8_t)en->subsong_plus1;
+        if (sel_playlist_add(&pl, kind, divider ? NULL : text, divider ? 0 : len, divider ? text : NULL, divider ? len : 0, sub,
+                             0) != 0) {
+            sel_engine_report_error(e, "queue_full", "PLAYLIST_SAVE");
+            return;
+        }
+    }
+    f = fopen(path, "wb");
+    if (f == NULL) {
+        sel_engine_report_error(e, "open_failed", "PLAYLIST_SAVE");
+        return;
+    }
+    rc = sel_playlist_write(fmt, &pl, playlist_sink, f, playlist_warn, e);
+    if (fclose(f) != 0 && rc == SEL_PL_OK) {
+        rc = SEL_PL_SINK;
+    }
+    if (rc != SEL_PL_OK) {
+        sel_engine_report_error(e, "open_failed", "PLAYLIST_SAVE");
+    }
 }
 
 static void cmd_QUEUE_PLAY_NEXT(sel_engine* e, const sel_message* m) {
@@ -1606,6 +1759,9 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         !sel_history_init(&e->history, host, queue_cap, queue_text) ||
         (e->order = host->mem_alloc(host, (size_t)queue_cap * sizeof *e->order, SEL_MEM_FAST)) == NULL ||
         (e->order_seen = host->mem_alloc(host, queue_cap, SEL_MEM_FAST)) == NULL ||
+        (e->pl_entries = host->mem_alloc(host, (size_t)queue_cap * sizeof *e->pl_entries, SEL_MEM_FAST)) == NULL ||
+        (e->pl_text = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
+        (e->pl_file = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
         !sel_browse_init(&e->browse, host, cfg && cfg->browse_entries ? cfg->browse_entries : queue_cap,
                          cfg && cfg->browse_text_bytes ? cfg->browse_text_bytes : queue_text) ||
         !sel_view_init(&e->view, host, SEL_VIEW_WINDOW_MAX)) {
@@ -1637,6 +1793,15 @@ void sel_engine_destroy(sel_engine* e) {
         }
         if (e->order_seen) {
             e->host->mem_free(e->host, e->order_seen);
+        }
+        if (e->pl_entries) {
+            e->host->mem_free(e->host, e->pl_entries);
+        }
+        if (e->pl_text) {
+            e->host->mem_free(e->host, e->pl_text);
+        }
+        if (e->pl_file) {
+            e->host->mem_free(e->host, e->pl_file);
         }
         sel_browse_free(&e->browse, e->host);
         sel_view_free(&e->view, e->host);
