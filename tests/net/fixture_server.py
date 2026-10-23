@@ -52,6 +52,8 @@ FIXTURES = os.path.join(HERE, "fixtures")
 LOG = []
 LOG_LOCK = threading.Lock()
 LOG_FILE = None
+VOTES = {}  # (mkey, token) -> r, the HippoPlayer vote store (row I174)
+VOTE_MODE = {"missing": False}  # POST /__fixture/votes_missing makes both vote endpoints answer 404 (T80)
 RATINGS = {}  # (token, source, itemKey) -> stars, the DEViLBOX rating store (row I173)
 KEEP_HEADERS = ("range", "authorization", "content-type", "content-length", "user-agent")
 
@@ -104,6 +106,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 LOG.clear()
                 RATINGS.clear()
             return self.send_bytes(200, b"{}", {"Content-Type": "application/json"})
+        if parsed.path == "/__fixture/votes_missing":
+            VOTE_MODE["missing"] = True
+            return self.send_bytes(200, b"{}", {"Content-Type": "application/json"})
         hdrs = {k: self.headers[k] for k in KEEP_HEADERS if self.headers.get(k)}
         entry = {"method": self.command, "host": host, "path": self.path, "headers": hdrs,
                  "body_sha256": hashlib.sha256(body).hexdigest(), "body_len": len(body)}
@@ -118,10 +123,42 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self.send_bytes(status, json.dumps(obj, separators=(",", ":")).encode(),
                                {"Content-Type": "application/json"})
 
+    def hip_vote(self, path, q):
+        """HippoPlayer votes (row I174): /api/hip/vote?k=<32 hex>&m=<12 hex>&r=0|5 and /api/hip/votes?m=&k=. The reply is
+        text "<count> <yours>". 400 "ERR bad" for malformed parameters, 429 "ERR rate" when the same token repeats the
+        same vote on the same song, 404 once /__fixture/votes_missing was called."""
+        def text(status, line):
+            return self.send_bytes(status, line.encode(), {"Content-Type": "text/plain"})
+        if VOTE_MODE["missing"]:
+            return text(404, "not found\n") or True
+        k, m = (q.get("k") or [""])[0], (q.get("m") or [""])[0]
+        r = (q.get("r") or [""])[0]
+        hexd = "0123456789abcdef"
+        if len(k) != 32 or len(m) != 12 or any(c not in hexd for c in k + m):
+            return text(400, "ERR bad\n") or True
+        rate = False
+        with LOG_LOCK:  # send_bytes takes this lock to log, so reply after leaving it
+            if path == "/api/hip/vote":
+                if r not in ("0", "5"):
+                    rate = None
+                elif VOTES.get((m, k)) == int(r):
+                    rate = True
+                else:
+                    VOTES[(m, k)] = int(r)
+            count = sum(1 for (mm, _), v in VOTES.items() if mm == m and v == 5)
+            yours = VOTES.get((m, k), 0)
+        if rate is None:
+            return text(400, "ERR bad\n") or True
+        if rate:
+            return text(429, "ERR rate\n") or True
+        return text(200, "%d %d\n" % (count, yours)) or True
+
     def devilbox(self, parsed, body):
         """Stateful account and ratings endpoints of row I173 (like DEViLBOX auth.ts and ratings.ts).
         Login password is "fixture-password". True when the request was answered here."""
         path = parsed.path
+        if path in ("/api/hip/vote", "/api/hip/votes") and self.command == "GET":
+            return self.hip_vote(path, urllib.parse.parse_qs(parsed.query))
         if path == "/api/auth/login" and self.command == "POST":
             try:
                 req = json.loads(body or b"{}")

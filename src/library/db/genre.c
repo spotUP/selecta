@@ -210,21 +210,6 @@ int sel_url_encode(const char* name, char* out, size_t cap) {
     return *name == '\0';
 }
 
-/* Reads the head of `path`; returns the full length, or -1 when unreadable. */
-static int64_t read_head(const char* path, uint8_t* buf, size_t cap, size_t* got) {
-    FILE* f = fopen(path, "rb");
-    long size;
-
-    if (f == NULL) return -1;
-    if (fseek(f, 0, SEEK_END) != 0 || (size = ftell(f)) < 0 || fseek(f, 0, SEEK_SET) != 0) {
-        fclose(f);
-        return -1;
-    }
-    *got = fread(buf, 1, cap, f);
-    fclose(f);
-    return size;
-}
-
 static const char* base_name(const char* path) {
     const char* s = path;
     const char* p;
@@ -285,7 +270,7 @@ int sel_library_genre_sync(sel_library* lib, sel_genre_stats* stats) {
         song = buf;
         path = buf + strlen(buf) + 1u;
         stats->songs++;
-        size = read_head(path, head, sizeof head, &got);
+        size = sel_file_head(path, head, sizeof head, &got);
         if (size < 0) {
             stats->unreadable++;
             continue;

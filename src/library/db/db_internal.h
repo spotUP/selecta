@@ -37,7 +37,12 @@ struct sel_library {
     char sm_spec[SEL_SMART_MAX][160]; /* smart download queue (I169): lower priority than pf_spec */
     unsigned sm_n;
     unsigned sm_planned;     /* smart plans made (the handle reports smart_* once a plan ran) */
+    char vote_token[40];     /* queued vote request (vote_push.c, I174); guarded by job_lock when threads exist */
+    char vote_key[16];
+    int vote_r;
+    sel_vote_result vote_res;
 #if !defined(SEL_LIBRARY_NO_THREAD)
+    unsigned job_vote, job_vote_busy; /* one queued vote request, and one running */
     pthread_t job_thread;    /* the one background job thread, created on the first job (job.c, I173d) */
     pthread_mutex_t job_lock; /* guards the job queue (pf_spec, sm_spec, job_rating) and the flags below */
     pthread_cond_t job_wake;
@@ -107,6 +112,7 @@ void sel_worker_stop(sel_library* lib);
  * (fetch.c, queue = pf_spec + sm_spec) and rating flush (rating_push.c, one coalesced flag). */
 #if !defined(SEL_LIBRARY_NO_THREAD)
 int sel_job_start(sel_library* lib);
+void sel_vote_job_run(sel_library* lib);        /* vote_push.c: runs the queued vote request (job_lock NOT held) */
 void sel_job_wake(sel_library* lib);  /* job_lock held: a job was queued */
 void sel_job_wait(sel_library* lib);  /* returns once the queue is empty and nothing runs */
 void sel_job_stop(sel_library* lib);

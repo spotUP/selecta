@@ -1,0 +1,6 @@
+# T80 404 case (I174): the vote endpoints answer 404, @votes prints devilbox_missing=hip_vote, the vote stays local as the
+# sticker "vote".
+OPEN @SONGS@/ambient.mod
+VOTE 5
+@votes
+STICKER_GET @SONGS@/ambient.mod vote

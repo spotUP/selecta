@@ -307,6 +307,7 @@ static void print_event(void* ctx, const sel_message* evt) {
  *   @radio              RADIO radio_appends=N min_ahead=N then one `queue=<path>` line per queue row (T88)
  *   @ratings_wait       the DEViLBOX push thread is idle (I173c; @ratings waits too)
  *   @ratings            RATINGS rating_pushes=N rating_batches=N rating_pending=N (T79)
+ *   @votes              VOTES vote_posts=N status=ok|rate|bad|missing|down|none count=N yours=N m=<key>; waits for the vote request (I174, T80)
  *   @ratings_read <source> <n> [<path>...]  batch-read n ratings from DEViLBOX (named paths first), store the own ones (T79)
  *   @share_stats        SHARE links_parsed=N links_made=N songs_opened=N (T84)
  *   @folder_stats       FOLDERS folders=N playlists_in_folders=N playlists=N entries=N folder_ops=N (T83)
@@ -595,6 +596,18 @@ static int cmd_script_file(FILE* f, int argc, char** argv) {
             if (line[8] != '\0') {
                 continue;
             }
+        }
+        if (strcmp(line, "@votes") == 0) { /* test hook: wait for the vote request (I174), print its outcome */
+            sel_engine_stats es;
+            sel_vote_result vr;
+
+            sel_library_rating_wait(lib);
+            sel_engine_stats_get(e, &es);
+            sel_library_vote_result(lib, &vr);
+            if (vr.done && strcmp(sel_vote_status_name(vr.status), "missing") == 0) printf("devilbox_missing=hip_vote\n");
+            printf("VOTES vote_posts=%u status=%s count=%u yours=%u m=%s\n", (unsigned)es.vote_posts,
+                   vr.done ? sel_vote_status_name(vr.status) : "none", vr.count, vr.yours, vr.mkey);
+            continue;
         }
         if (strcmp(line, "@prefetch_wait") == 0) {
             sel_library_prefetch_wait(lib); /* test hook: the prefetch thread is idle after this */

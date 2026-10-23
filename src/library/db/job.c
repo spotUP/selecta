@@ -15,7 +15,8 @@ static void* job_main(void* arg) {
 
     pthread_mutex_lock(&lib->job_lock);
     for (;;) {
-        while (!lib->job_quit && !lib->job_rating && !sel_fetch_job_pending(lib)) {
+        while (!lib->job_quit && !lib->job_rating && !lib->job_vote &&
+               !sel_fetch_job_pending(lib)) {
             pthread_cond_wait(&lib->job_wake, &lib->job_lock);
         }
         if (lib->job_quit) {
@@ -28,6 +29,16 @@ static void* job_main(void* arg) {
             sel_rating_job_run(lib);
             pthread_mutex_lock(&lib->job_lock);
             lib->job_rating_busy = 0;
+            pthread_cond_broadcast(&lib->job_wake);
+            continue;
+        }
+        if (lib->job_vote) {
+            lib->job_vote = 0;
+            lib->job_vote_busy = 1;
+            pthread_mutex_unlock(&lib->job_lock);
+            sel_vote_job_run(lib);
+            pthread_mutex_lock(&lib->job_lock);
+            lib->job_vote_busy = 0;
             pthread_cond_broadcast(&lib->job_wake);
             continue;
         }
@@ -57,7 +68,7 @@ void sel_job_wake(sel_library* lib) {
 void sel_job_wait(sel_library* lib) {
     if (lib != NULL && lib->job_started) {
         pthread_mutex_lock(&lib->job_lock);
-        while (lib->job_rating || lib->job_rating_busy || sel_fetch_job_pending(lib) || lib->pf_busy) {
+        while (lib->job_rating || lib->job_rating_busy || lib->job_vote || lib->job_vote_busy || sel_fetch_job_pending(lib) || lib->pf_busy) {
             pthread_cond_wait(&lib->job_wake, &lib->job_lock);
         }
         pthread_mutex_unlock(&lib->job_lock);
