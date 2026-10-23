@@ -1,0 +1,12 @@
+# I104c key-level engine state. Browse into songs, play selecta-test.mod (nuade, 4 voices), then
+# solo the cursor voice (S) and clear it again (0), quit.
+Down
+Enter
+Down
+Enter
+wait 500
+S
+wait 100
+0
+wait 200
+q
