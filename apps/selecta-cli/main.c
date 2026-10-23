@@ -40,6 +40,8 @@ static int usage(FILE* to) {
           "                             render a song to a WAV file, print counters\n"
           "  library browse <dir>       list a directory through LIBRARY_BROWSE, print dir_entries=\n"
           "  library search --catalogue <tsv> <q> run a library query through LIBRARY_SEARCH, print key= src_count= fts_queries= (T64)\n"
+          "  library scan [--db <p>] <dir> scan a folder into the library DB, print scanned_files= db_songs= (T71)\n"
+          "  library key <source> <path> print the song key and its URL round trip (T72)\n"
           "  library query --explain <q> compile a library query, print sql= params= query_terms= (T63)\n"
           "  library stats              open the library DB, print db_open= schema_version= sqlite_version= (T62)\n"
           "  fetch <url> [--method M] [--range a-b] [--out file]  one HTTP request, print http_status= and net counters\n"

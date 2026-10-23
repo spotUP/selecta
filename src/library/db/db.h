@@ -23,7 +23,8 @@ enum {
     SEL_LIB_REQ_STOP = 2,
     SEL_LIB_REQ_SEARCH = 3,    /* run a query text; keys come back in sel_lib_job.out (I149) */
     SEL_LIB_REQ_SAVE_VIEW = 4, /* store text2 as the saved query `text` (I150) */
-    SEL_LIB_REQ_IMPORT = 5     /* import a TSV catalogue held in `text` (test and CLI seeding) */
+    SEL_LIB_REQ_IMPORT = 5,    /* import a TSV catalogue held in `text` (test and CLI seeding) */
+    SEL_LIB_REQ_SCAN_BATCH = 6 /* payload: const sel_scan_batch*; writes files and songs rows (I158) */
 };
 
 /* The data of a SEARCH, SAVE_VIEW or IMPORT request. The caller fills the inputs, passes the job to
@@ -40,6 +41,28 @@ typedef struct sel_lib_job {
     uint32_t used_fts;  /* out: 1 when the FTS5 index served the query */
     char error[24];     /* out: "" or a query error code (unknown_key, unknown_view, ...) */
 } sel_lib_job;
+
+/* One catalogue row from a source (design doc 9.2 `files` plus the `songs` columns a scan knows).
+ * Text is NUL-terminated, "" = unknown. */
+typedef struct sel_scan_row {
+    const char* source; /* "local" */
+    const char* path;
+    const char* format;
+    const char* artist;
+    const char* name;
+    const char* md5;
+    int64_t size;
+    int32_t duration_ms; /* 0 = unknown */
+    int32_t year;        /* 0 = unknown */
+} sel_scan_row;
+
+typedef struct sel_scan_batch {
+    const sel_scan_row* rows;
+    uint32_t count;
+    int64_t now; /* epoch seconds stored in songs.added */
+} sel_scan_batch;
+
+/* Reply to SEL_LIB_REQ_SCAN_BATCH: INT [0] rows written, [1] SQLite result code (0 = ok). */
 
 /* Reply to SEL_LIB_REQ_STATS (sel_message.id = the request code, kind SEL_MSG_EVT): args are INT
  * [0] schema_version, [1] fts5 compiled in, [2] fts_hits of the self-check, [3] songs rows,
@@ -67,6 +90,8 @@ void sel_library_close(sel_library* lib);
 
 /* Sends a request and waits for its reply. 1 on success. */
 int sel_library_call(sel_library* lib, uint32_t req, sel_message* reply);
+/* Same with a payload the worker reads while the caller waits (carried in args[0].v.s). */
+int sel_library_request(sel_library* lib, uint32_t req, const void* payload, sel_message* reply);
 
 /* Runs a request that carries a job (SEARCH, SAVE_VIEW, IMPORT). 1 on success; query errors are in job->error. */
 int sel_library_run(sel_library* lib, uint32_t req, sel_lib_job* job);

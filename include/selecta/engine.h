@@ -143,6 +143,9 @@ typedef struct sel_state {
 } sel_state;
 
 struct sel_library;
+/* LIBRARY_SCAN hook (I158): scans `path` into the catalogue; returns 1 and the number of files
+ * scanned, 0 on failure. The engine does not link the library; the front end hands this in. */
+typedef int (*sel_library_scan_fn)(void* ctx, const char* path, uint32_t* files);
 
 typedef struct sel_engine_config {
     uint32_t cmd_queue_depth; /* 0: default 64 */
@@ -168,6 +171,8 @@ typedef struct sel_engine_config {
     /* Library database (src/library/db); the front end opens and closes it. NULL:
      * LIBRARY_SEARCH, PLAY_QUERY, QUEUE_ADD_QUERY and VIEW_SAVE answer ERROR no_library. */
     struct sel_library* library;
+    sel_library_scan_fn library_scan;
+    void* library_ctx;
 } sel_engine_config;
 
 typedef struct sel_engine sel_engine;

@@ -896,3 +896,15 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/view_query.cmake")
   set_tests_properties(view-library-source PROPERTIES LABELS m3)
 endif()
+
+# M3 Phase 4 (plan 2026-10-25-m3-library.md): T71 source-local (scan part), T72 source-modland-key (I157, I158).
+if(NOT SEL_AMIGA)
+  add_test(NAME source-local
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/source_local.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/local.manifest ${SEL_TESTMOD} ${SEL_TESTMOD})
+  set_tests_properties(source-local PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_local_ok")
+
+  add_test(NAME source-modland-key
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/source_key.sh $<TARGET_FILE:selecta-cli>)
+  set_tests_properties(source-modland-key PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_key_ok")
+endif()

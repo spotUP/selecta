@@ -98,6 +98,7 @@
     X(QUEUE_ADD_QUERY)                                                                        \
     X(VIEW_SAVE)                                                                              \
     X(VIEW_SOURCE)                                                                            \
+    X(LIBRARY_SCAN)                                                                           \
     X(VIEW_SHOW)                                                                              \
     X(VIEW_CURSOR)                                                                            \
     X(VIEW_ACTIVATE)                                                                          \
@@ -261,6 +262,8 @@ struct sel_engine {
     uint32_t q_hint;    /* position NEXT and PLAY start from while q_playing is 0 */
     uint32_t song_over; /* the open song ended or the queue ran out: PLAY restarts the queue */
     sel_browse browse;  /* the listing LIBRARY_BROWSE fills */
+    sel_library_scan_fn library_scan; /* LIBRARY_SCAN hook from the front end (I158); NULL: no_library */
+    void* library_ctx;
     uint32_t lib_slot;
     sel_tag lib_tags[4][4];                  /* LIBRARY_RESULT tags, a ring like error_detail */
     char lib_path[4][SEL_BROWSE_PATH_MAX];
@@ -2418,6 +2421,40 @@ static void cmd_VIEW_SAVE(sel_engine* e, const sel_message* m) {
     }
 }
 
+/* LIBRARY_SCAN <dir>: the front end's library hook scans the directory tree into the catalogue
+ * (I158); the answer is a LIBRARY_RESULT carrying the scanned path and the file count. */
+static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
+    uint32_t files = 0;
+    uint32_t slot;
+    sel_tag* t;
+    sel_message r;
+    size_t n;
+
+    if (e->library_scan == NULL) {
+        sel_engine_report_error(e, "no_library", "LIBRARY_SCAN");
+        return;
+    }
+    if (!e->library_scan(e->library_ctx, m->args[0].v.s, &files)) {
+        sel_engine_report_error(e, "scan_failed", m->args[0].v.s);
+        return;
+    }
+    slot = e->lib_slot++ & 3u;
+    t = e->lib_tags[slot];
+    n = strlen(m->args[0].v.s);
+    if (n >= sizeof e->lib_path[slot]) n = sizeof e->lib_path[slot] - 1u;
+    memcpy(e->lib_path[slot], m->args[0].v.s, n);
+    e->lib_path[slot][n] = '\0';
+    t[0].tag = SEL_SRC_PATH;
+    t[0].value = (uintptr_t)e->lib_path[slot];
+    t[1].tag = SEL_SRC_COUNT;
+    t[1].value = files;
+    t[2].tag = SEL_TAG_END;
+    t[2].value = 0;
+    evt_init(&r, SEL_EVT_LIBRARY_RESULT);
+    evt_tags(&r, t);
+    emit(e, &r);
+}
+
 /* ---- view ------------------------------------------------------------ */
 
 static void view_src(const sel_engine* e, sel_view_src* s) {
@@ -2736,6 +2773,10 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         queue_text = cfg->queue_text_bytes;
     }
     sel_prefs_init(&e->prefs);
+    if (cfg) {
+        e->library_scan = cfg->library_scan;
+        e->library_ctx = cfg->library_ctx;
+    }
     if (cfg && cfg->config_dir && strlen(cfg->config_dir) < sizeof e->config_dir) {
         strcpy(e->config_dir, cfg->config_dir);
         (void)sel_prefs_load(&e->prefs, e->config_dir);
