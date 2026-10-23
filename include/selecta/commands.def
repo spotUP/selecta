@@ -84,6 +84,9 @@ SEL_CMD(VIEW_COLLAPSE, "u", "view")
 SEL_CMD(VIEW_DRILL, "us", "view")
 SEL_CMD(UI_SWITCH, "s", "view")
 
+/* dsp (palette area: view, the only settings-like group) */
+SEL_CMD(DSP, "ss", "view")
+
 /* protocol */
 SEL_CMD(BEGIN, "", "protocol")
 SEL_CMD(END, "", "protocol")

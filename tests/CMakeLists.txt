@@ -22,7 +22,7 @@ sel_cli_test(protocol-reflection-tagtypes "tagtypes" "-DLINES=${SEL_COUNT_META}"
 # T5: the registry walked every descriptor and found only known tags.
 # null, wav, nuade, openmpt, the text UI and the nowplaying-test integration (host only), plus coreaudio and the
 # macOS Now Playing plugin on macOS, or MPRIS on Linux when libsystemd was found; the negative tree adds one bad plugin.
-set(SEL_EXPECT_PLUGINS 6)
+set(SEL_EXPECT_PLUGINS 7)
 if(APPLE)
   math(EXPR SEL_EXPECT_PLUGINS "${SEL_EXPECT_PLUGINS} + 2")
 elseif(SEL_HAVE_MPRIS)
@@ -516,7 +516,7 @@ endif()
 # T47 (rows I99, I100): crossfeed DSP. Unit half through the plugin ABI, render
 # half through selecta-cli --dsp.
 if(NOT SEL_AMIGA)
-  add_executable(crossfeed_test EXCLUDE_FROM_ALL dsp/crossfeed_test.c)
+  add_executable(crossfeed_test dsp/crossfeed_test.c)
   target_link_libraries(crossfeed_test PRIVATE selecta_core sel_plugin_crossfeed)
   add_test(NAME crossfeed-unit COMMAND crossfeed_test)
   add_test(NAME crossfeed-render

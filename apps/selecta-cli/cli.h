@@ -36,6 +36,7 @@ typedef struct sel_cli_output {
     sel_out_set_source_fn set_source;
     sel_out_pump_fn pump;
     sel_out_stats_fn stats; /* may be NULL */
+    const sel_tag* hooks;   /* the output plugin's hook list (headphones, voices) */
 } sel_cli_output;
 
 uint32_t sel_cli_engine_pull(void* ctx, int16_t* stereo, uint32_t frames);

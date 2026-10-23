@@ -179,6 +179,12 @@ const char* sel_option_name(sel_option_id id);
  * OPEN. Rate 0 keeps 44100. Defaults: 44100 Hz, linear. */
 void sel_engine_set_mix(sel_engine* e, uint32_t rate, uint32_t resampler);
 
+/* Tells the engine what the chosen output is (its hook list): an output with
+ * SEL_OUT_VOICES plays voices itself, so no DSP chain runs; SEL_OUT_HEADPHONES
+ * turns the crossfeed on unless the pref dsp.crossfeed is "off". Call after
+ * sel_engine_set_mix and the registry hook-up, before the song starts. */
+void sel_engine_set_output(sel_engine* e, const sel_tag* out_hooks);
+
 typedef struct sel_engine_stats {
     uint32_t ticks;        /* replayer ticks run */
     uint32_t voice_ops;    /* calls through the voices API */
@@ -191,6 +197,7 @@ typedef struct sel_engine_stats {
     uint32_t seek_skipped_frames; /* frames the last restart-and-skip ran through */
     uint32_t songs_opened;        /* songs started by OPEN or the queue (T19) */
     uint32_t undo_depth, redo_depth; /* queue edits that UNDO / REDO can step over (T28) */
+    uint32_t dsp_blocks;             /* render blocks that ran at least one DSP plugin (T47) */
 } sel_engine_stats;
 void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out);
 

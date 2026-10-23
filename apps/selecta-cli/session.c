@@ -21,6 +21,7 @@ int sel_cli_find_output(const char* who, const char* id, sel_cli_output* o) {
         fprintf(stderr, "%s: %s output not registered\n", who, id);
         return 0;
     }
+    o->hooks = hooks;
     o->open = (sel_out_open_fn)sel_tag_find(hooks, SEL_OUT_OPEN, 0);
     o->close = (sel_out_close_fn)sel_tag_find(hooks, SEL_OUT_CLOSE, 0);
     o->set_source = (sel_out_set_source_fn)sel_tag_find(hooks, SEL_OUT_SET_SOURCE, 0);

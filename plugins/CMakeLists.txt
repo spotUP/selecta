@@ -4,6 +4,7 @@
 
 sel_add_plugin(null 2 outputs/null/null.c)
 sel_add_plugin(wav 2 outputs/wav/wav.c)
+sel_add_plugin(crossfeed 3 dsp/crossfeed/crossfeed.c)
 # OS headers live under plugins/*/<os>/ (RULES.md rule 3).
 if(APPLE)
   sel_add_plugin(coreaudio 2 outputs/coreaudio/macos/coreaudio.c)

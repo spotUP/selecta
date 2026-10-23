@@ -64,6 +64,7 @@ int sel_cli_play(int argc, char** argv) {
     if (e == NULL) {
         return 1;
     }
+    sel_engine_set_output(e, o.hooks);
     out = o.open(host, (uint32_t)rate, 2);
     if (out == NULL) {
         sel_engine_destroy(e);
