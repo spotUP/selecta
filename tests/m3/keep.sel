@@ -1,0 +1,8 @@
+# T78 KEEP (row I170a): KEEP marks the song being played as kept (table `kept`), which exempts it from the LRU
+# trim that runs after LIBRARY_FETCH. tests/net/keep.cmake puts a KEEP line (or none) at the marker below.
+QUEUE_ADD modland:Protracker/test/play1.mod
+PLAY
+@render 1024
+@KEEP_MARKER
+@budget 10
+LIBRARY_FETCH modland:Protracker/test/play2.mod

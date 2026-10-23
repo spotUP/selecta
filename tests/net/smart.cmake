@@ -28,12 +28,23 @@ endfunction()
 function(run_smart name pre)
   execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/reset --method POST
     OUTPUT_VARIABLE o RESULT_VARIABLE rc)
+  # The history: the engine plays play2 to its end twice (SONG_ENDED writer, I170a) into the run's own DB, with a
+  # throw-away cache so the smart plan below still has to download it.
+  set(db "${WORK}/t77s-${name}.db")
+  file(REMOVE "${db}")
+  file(REMOVE_RECURSE "${WORK}/t77s-hist-${name}")
+  set(ENV{SELECTA_CACHE_DIR} "${WORK}/t77s-hist-${name}")
+  execute_process(COMMAND "${CLI}" script "${M3}/smart_history.sel" --catalogue "${CAT}" --db "${db}"
+    OUTPUT_VARIABLE ho ERROR_VARIABLE he RESULT_VARIABLE hrc)
+  if(NOT hrc EQUAL 0)
+    message(FATAL_ERROR "T77 smart ${name}: history seed failed\n${ho}${he}")
+  endif()
   set(cache "${WORK}/t77s-cache-${name}")
   file(REMOVE_RECURSE "${cache}")
   set(ENV{SELECTA_CACHE_DIR} "${cache}")
   file(READ "${M3}/smart.sel" body)
   file(WRITE "${WORK}/t77s-${name}.sel" "${pre}${body}")
-  execute_process(COMMAND "${CLI}" script "${WORK}/t77s-${name}.sel" --catalogue "${CAT}"
+  execute_process(COMMAND "${CLI}" script "${WORK}/t77s-${name}.sel" --catalogue "${CAT}" --db "${db}"
     OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
   set(last_raw "${o}${e}" PARENT_SCOPE)
   set(cache_dir "${cache}" PARENT_SCOPE)

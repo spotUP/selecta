@@ -54,3 +54,14 @@ RESULTS 0
 VIEW_CHANGED regular {UI_ROW_COUNT=0,UI_CURSOR=0,UI_WINDOW_START=0,UI_WINDOW_ROWS=20}
 VIEW_ROWS {UI_ROW_COUNT=0,UI_CURSOR=0,UI_WINDOW_START=0,UI_WINDOW_ROWS=20}
 LIBRARY searches=7 fts_queries=1 songs_opened=1 history_writes=0 skip_excluded=0
+cache_hits=0
+fetches=0
+companions=0
+md5_mismatches=0
+mirror_tries=0
+trim_runs=0
+prefetches=0
+prefetch_fetches=0
+smart_requests=0
+smart_fetches=0
+smart_skipped=0
