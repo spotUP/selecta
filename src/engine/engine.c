@@ -60,7 +60,11 @@
     X(VIEW_CURSOR)                                                                            \
     X(VIEW_ACTIVATE)                                                                          \
     X(VIEW_WINDOW)                                                                            \
-    X(VIEW_STYLE)
+    X(VIEW_STYLE)                                                                             \
+    X(VIEW_GROUP)                                                                             \
+    X(VIEW_EXPAND)                                                                            \
+    X(VIEW_COLLAPSE)                                                                          \
+    X(VIEW_DRILL)
 
 #define SEL_SLOT_COUNT 2u
 #define SEL_SLOT_NONE 0xFFFFFFFFu
@@ -1065,7 +1069,7 @@ static void emit_view(sel_engine* e, sel_evt_id id) {
     t[4].value = 0;
     evt_init(&m, id);
     if (id == SEL_EVT_VIEW_CHANGED) {
-        evt_str(&m, "regular");
+        evt_str(&m, sel_view_style_name(&e->view));
     }
     evt_tags(&m, t);
     emit(e, &m);
@@ -1112,11 +1116,54 @@ static void cmd_VIEW_WINDOW(sel_engine* e, const sel_message* m) {
 }
 
 static void cmd_VIEW_STYLE(sel_engine* e, const sel_message* m) {
-    if (strcmp(m->args[0].v.s, "regular") != 0) {
+    sel_view_src s;
+    view_src(e, &s);
+    if (!sel_view_set_style(&e->view, &s, m->args[0].v.s)) {
         sel_engine_report_error(e, "unsupported_style", m->args[0].v.s);
         return;
     }
     e->view.active = 1;
+    e->view.force_changed = 1;
+}
+
+static void cmd_VIEW_GROUP(sel_engine* e, const sel_message* m) {
+    sel_view_src s;
+    view_src(e, &s);
+    if (!sel_view_set_group(&e->view, &s, m->args[0].v.s)) {
+        sel_engine_report_error(e, "unsupported", "VIEW_GROUP");
+        return;
+    }
+    e->view.active = 1;
+    e->view.force_changed = 1;
+}
+
+static void view_expand(sel_engine* e, const sel_message* m, int on, const char* name) {
+    sel_view_src s;
+    view_src(e, &s);
+    e->view.active = 1;
+    if (!sel_view_expand(&e->view, &s, m->args[0].v.u, on)) {
+        sel_engine_report_error(e, "range", name);
+        return;
+    }
+    e->view.force_changed = 1;
+}
+
+static void cmd_VIEW_EXPAND(sel_engine* e, const sel_message* m) {
+    view_expand(e, m, 1, "VIEW_EXPAND");
+}
+
+static void cmd_VIEW_COLLAPSE(sel_engine* e, const sel_message* m) {
+    view_expand(e, m, 0, "VIEW_COLLAPSE");
+}
+
+static void cmd_VIEW_DRILL(sel_engine* e, const sel_message* m) {
+    sel_view_src s;
+    view_src(e, &s);
+    e->view.active = 1;
+    if (!sel_view_drill(&e->view, &s, m->args[0].v.u, m->args[1].v.s)) {
+        sel_engine_report_error(e, "range", "VIEW_DRILL");
+        return;
+    }
     e->view.force_changed = 1;
 }
 
@@ -1134,7 +1181,12 @@ static void cmd_VIEW_ACTIVATE(sel_engine* e, const sel_message* m) {
     }
     at = v->cursor;
     if (v->source == SEL_VIEW_QUEUE) {
-        queue_start(e, at);
+        uint32_t qi;
+        if (sel_view_enter(&e->view, &s, &qi)) {
+            queue_start(e, qi);
+        } else {
+            e->view.force_changed = 1;
+        }
         return;
     }
     {

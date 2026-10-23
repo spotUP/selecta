@@ -236,6 +236,8 @@ target_link_libraries(view_test PRIVATE selecta_core selecta_registry)
 add_test(NAME view-unit COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs" browse sort cursor activate window style)
 # T32: grouping, node ids, expand/collapse, drilldown, cursor across styles.
 add_test(NAME view-tree COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs" tree)
+# Both rebuild the same song directory.
+set_tests_properties(view-unit view-tree PROPERTIES RESOURCE_LOCK view_songs_dir)
 
 # T33: title-format resolver and PREF_GET / PREF_SET (src/engine/format.c, prefs.c).
 add_executable(format_test view/format_test.c)

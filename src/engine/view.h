@@ -29,7 +29,22 @@ typedef struct sel_view_src {
 
 typedef struct sel_view_sig {
     uint32_t source, style, row_count, cursor, window_start, window_rows, queue_version, browse_generation, playing, prefs_generation;
+    uint32_t group_key, drill_n;
 } sel_view_sig;
+
+/* Tree and drilldown group table (design doc section 3, VIEW_GROUP): the
+ * distinct values of the grouping key over the queue, sorted by name. The
+ * table is allocated once; a queue with more distinct values than fit folds
+ * the rest into one "(more)" group. */
+#define SEL_VIEW_GROUPS_MAX 512u
+#define SEL_VIEW_GROUP_NAME 96u
+typedef struct sel_vgroup {
+    uint32_t id;       /* node id: 1.. in order of first appearance */
+    uint32_t count;    /* songs in the group (after the drilldown filter) */
+    uint32_t base;     /* index of the node row in the whole list */
+    uint32_t expanded; /* tree only */
+    char name[SEL_VIEW_GROUP_NAME];
+} sel_vgroup;
 
 typedef struct sel_view {
     sel_view_state pub;
@@ -41,6 +56,13 @@ typedef struct sel_view {
     uint32_t land;                   /* cursor for the next browse listing */
     int active;                      /* a VIEW_ command ran: events are wanted */
     int force_changed;               /* emit VIEW_CHANGED at the next sync */
+    sel_vgroup* groups;              /* SEL_VIEW_GROUPS_MAX, sorted by name */
+    uint32_t ngroups, next_node, tbl_mode;
+    uint32_t group_key;   /* 0 folder, 1 format */
+    uint32_t drill_n;     /* values picked in the drilldown */
+    char drill_value[2][SEL_VIEW_GROUP_NAME];
+    uint32_t total;       /* rows in the whole list in tree and drilldown */
+    int anchor_node;      /* pub.cursor_id names a node, not a song */
     sel_view_sig last;
 } sel_view;
 
@@ -61,6 +83,25 @@ int sel_view_window(sel_view* v, const sel_view_src* s, uint32_t rows);
 /* Re-anchors the cursor (a queue row by id), fits the window and fills the
  * rows. Cheap enough to call after every command. */
 void sel_view_refresh(sel_view* v, const sel_view_src* s);
+
+/* Style "regular", "tree" or "drilldown". 0: unknown. The cursor keeps its song. */
+int sel_view_set_style(sel_view* v, const sel_view_src* s, const char* style);
+const char* sel_view_style_name(const sel_view* v);
+
+/* Group key "folder" or "format" (switches a regular view to the tree). 0: no
+ * such key, so far (artist, album, genre, composer and source need the M3 catalogue). */
+int sel_view_set_group(sel_view* v, const sel_view_src* s, const char* key);
+
+/* Tree: show (on) or hide a node's songs. 0: not the tree, or no such node. */
+int sel_view_expand(sel_view* v, const sel_view_src* s, uint32_t node, int on);
+
+/* Drilldown: pick `value` at column `level` (0 first); ".." clears the level and
+ * the deeper ones. 0: not the drilldown, level out of reach or no such value. */
+int sel_view_drill(sel_view* v, const sel_view_src* s, uint32_t level, const char* value);
+
+/* Enter on the cursor row. Returns 1 with *queue_index set when it is a song
+ * to start; 0 when it was a node (toggled in the tree, drilled into in the drilldown). */
+int sel_view_enter(sel_view* v, const sel_view_src* s, uint32_t* queue_index);
 
 /* Refreshes, then compares with the state at the previous call. Returns 1
  * when anything the front end shows changed; *structure is set when the
