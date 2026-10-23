@@ -30,6 +30,7 @@
 #include "playlist/playlist.h"
 #include "shuffle.h"
 #include "local.h"
+#include "song_key.h"
 #include "export/export.h"
 #include "prefs.h"
 #include "view.h"
@@ -227,8 +228,8 @@ struct sel_engine {
     const sel_host* host;
     sel_host rp_host;               /* copy of host whose config_get answers per-replayer options (I134) */
     char rp_song_config[256];       /* per-song override list "plugin.key=value,...", read from the library DB sticker rp.config at OPEN (D-M2-8, I170) */
-    char hist_key[SEL_DEFERRED_PATH_MAX]; /* key of the song being played, "" none: its end or skip goes to the history table (I170) */
-    char vote_song[SEL_DEFERRED_PATH_MAX]; /* song key of the last VOTE request: the count the service answers is stored under it (I174a) */
+    char hist_key[SEL_DEFERRED_PATH_MAX + 8]; /* key of the song being played, "" none: its end or skip goes to the history table (I170) */
+    char vote_song[SEL_DEFERRED_PATH_MAX + 8]; /* song key of the last VOTE request: the count the service answers is stored under it (I174a) */
     char vote_mkey[13];                    /* UADE key of that request, matched against the answer */
     unsigned vote_seen;                    /* vote result sequence already stored */
     uint32_t votes_generation;             /* moves when a count is stored; the view re-reads its vote texts */
@@ -1391,10 +1392,16 @@ static void hist_end(sel_engine* e, int skipped) {
     e->hist_key[0] = '\0';
 }
 
-/* The library key of a song: a "local:" key stays, a plain path gets the prefix. Used by the loudness lookup and
- * by ANALYSE. */
+/* The library key of a song (I211): sel_song_key_of is the one canonical derivation. A path that does not fit
+ * leaves an empty key, which no library call stores. */
 static void song_key(const char* path, char* key, size_t cap) {
-    snprintf(key, cap, strncmp(path, "local:", 6) == 0 ? "%s" : "local:%s", path);
+    if (!sel_song_key_of(path, key, cap)) key[0] = '\0';
+}
+
+/* The path half of a song key, what the loudness row keeps beside the key. */
+static const char* loudness_path(const char* key) {
+    const char* colon = strchr(key, ':');
+    return colon != NULL ? colon + 1 : key;
 }
 
 /* Loudness (I189, I189a, D-M3-9): the gain is a property of the song, so it is fixed per slot here on the command
@@ -1416,7 +1423,7 @@ static void loudness_slot(sel_engine* e, sel_slot* sl, const char* path) {
         return;
     }
     song_key(path, key, sizeof key);
-    if (e->lib != NULL && sel_library_loudness_get_ex(e->lib, key, &cdb, &provisional)) {
+    if (key[0] != '\0' && e->lib != NULL && sel_library_loudness_get_ex(e->lib, key, &cdb, &provisional)) {
         sl->loud_source = provisional ? "provisional" : "stored";
         sl->loud_active = 1;
         sl->loud_gain_q16 = sel_gain_q16_from_cdb(cdb);
@@ -1443,7 +1450,7 @@ static void leveler_writeback(sel_engine* e, sel_slot* sl) {
     }
     sl->lev_done = 1;
     song_key(sl->path, key, sizeof key);
-    if (sel_library_loudness_set_ex(e->lib, key, key + 6, cdb, 1)) {
+    if (key[0] != '\0' && sel_library_loudness_set_ex(e->lib, key, loudness_path(key), cdb, 1)) {
         e->lev_writes++;
     }
 }
@@ -1524,10 +1531,7 @@ static void slot_gain(sel_engine* e, sel_slot* sl, int16_t* stereo, uint32_t fra
 }
 
 static void hist_begin(sel_engine* e, const char* path) {
-    size_t n = strlen(path);
-    if (n >= sizeof e->hist_key) n = sizeof e->hist_key - 1u;
-    memcpy(e->hist_key, path, n);
-    e->hist_key[n] = '\0';
+    song_key(path, e->hist_key, sizeof e->hist_key); /* the canonical song key, I211 */
 }
 
 /* Prepares the idle slot `idx` with the song at `path` (all allocation, file
@@ -1648,6 +1652,8 @@ static void cancel_next(sel_engine* e);
 static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t subsong, uint32_t seek_to) {
     uint32_t idx;
     sel_message ev;
+
+    if (path != NULL && strncmp(path, "local:", 6) == 0) path += 6; /* a library key (I211): the file is the part after "local:" */
     const char* detail = kind == SEL_BEGIN_OPEN     ? path
                          : kind == SEL_BEGIN_SUBSONG ? "SUBSONG"
                          : kind == SEL_BEGIN_SEEK    ? "SEEK"
@@ -3150,7 +3156,7 @@ static void cmd_ANALYSE(sel_engine* e, const sel_message* m) {
     sel_loudness* an;
     sel_loudness_result r;
     int16_t buf[2u * SEL_ANALYSE_CHUNK];
-    char key[SEL_DEFERRED_PATH_MAX];
+    char key[SEL_DEFERRED_PATH_MAX + 8];
     const char* path = m->args[0].v.s;
     uint64_t frames = 0;
     int state = 0;
@@ -3162,8 +3168,12 @@ static void cmd_ANALYSE(sel_engine* e, const sel_message* m) {
         return;
     }
     song_key(path, key, sizeof key);
+    if (key[0] == '\0') {
+        sel_engine_report_error(e, "library_failed", "ANALYSE");
+        return;
+    }
     if (strncmp(path, "local:", 6) == 0) {
-        path += 6;
+        path += 6; /* the job opens the plain path of a local song */
     }
     memset(&cfg, 0, sizeof cfg);
     cfg.registry_count = e->registry_count;
@@ -3205,7 +3215,7 @@ static void cmd_ANALYSE(sel_engine* e, const sel_message* m) {
     }
     sel_loudness_result_get(an, &r);
     sel_loudness_free(an);
-    if (!sel_library_loudness_set(e->lib, key, path, r.gain_cdb)) {
+    if (!sel_library_loudness_set(e->lib, key, loudness_path(key), r.gain_cdb)) {
         sel_engine_report_error(e, "library_failed", "ANALYSE");
         return;
     }
@@ -3432,11 +3442,9 @@ static void cmd_SHARE(sel_engine* e, const sel_message* m) {
         return;
     }
     l.kind = SEL_SHARE_SONG;
-    if (sel_cache_is_remote(e->hist_key)) {
-        sel_share_key_split(e->hist_key, l.source, sizeof l.source, l.path, sizeof l.path);
-    } else {
-        snprintf(l.source, sizeof l.source, "local");
-        snprintf(l.path, sizeof l.path, "%s", e->hist_key);
+    if (!sel_share_key_split(e->hist_key, l.source, sizeof l.source, l.path, sizeof l.path)) {
+        sel_engine_report_error(e, "no_song", "SHARE");
+        return;
     }
     if (cur->subsong != SEL_SUBSONG_DEFAULT && cur->subsong > 0) {
         l.has_sub = 1;
@@ -3449,17 +3457,27 @@ static void cmd_SHARE(sel_engine* e, const sel_message* m) {
     share_answer(e, &l, e->hist_key);
 }
 
+/* The sticker key of a command: the canonical song key of its first argument (I211), so a plain path and its
+ * "local:" key address the same stickers. 0 (error reported) when the key does not fit. */
+static int sticker_key(sel_engine* e, const sel_message* m, const char* cmd, char* key, size_t cap) {
+    if (sel_song_key_of(m->args[0].v.s, key, cap)) return 1;
+    sel_engine_report_error(e, "range", cmd);
+    return 0;
+}
+
 static void cmd_STICKER_SET(sel_engine* e, const sel_message* m) {
-    if (sticker_ready(e, "STICKER_SET") &&
-        !sel_library_sticker_set(e->lib, m->args[0].v.s, m->args[1].v.s, m->args[2].v.s)) {
+    char key[SEL_DEFERRED_PATH_MAX + 8];
+    if (sticker_ready(e, "STICKER_SET") && sticker_key(e, m, "STICKER_SET", key, sizeof key) &&
+        !sel_library_sticker_set(e->lib, key, m->args[1].v.s, m->args[2].v.s)) {
         sel_engine_report_error(e, "library_failed", "STICKER_SET");
     }
 }
 
 static void cmd_STICKER_GET(sel_engine* e, const sel_message* m) {
     char value[SEL_STICKER_VALUE_MAX];
-    if (!sticker_ready(e, "STICKER_GET")) return;
-    if (!sel_library_sticker_get(e->lib, m->args[0].v.s, m->args[1].v.s, value, sizeof value)) {
+    char key[SEL_DEFERRED_PATH_MAX + 8];
+    if (!sticker_ready(e, "STICKER_GET") || !sticker_key(e, m, "STICKER_GET", key, sizeof key)) return;
+    if (!sel_library_sticker_get(e->lib, key, m->args[1].v.s, value, sizeof value)) {
         sel_engine_report_error(e, "no_such_sticker", m->args[1].v.s);
     } else {
         sticker_answer(e, m->args[0].v.s, m->args[1].v.s, value, 1);
@@ -3467,7 +3485,9 @@ static void cmd_STICKER_GET(sel_engine* e, const sel_message* m) {
 }
 
 static void cmd_STICKER_DEL(sel_engine* e, const sel_message* m) {
-    if (sticker_ready(e, "STICKER_DEL") && !sel_library_sticker_del(e->lib, m->args[0].v.s, m->args[1].v.s)) {
+    char key[SEL_DEFERRED_PATH_MAX + 8];
+    if (sticker_ready(e, "STICKER_DEL") && sticker_key(e, m, "STICKER_DEL", key, sizeof key) &&
+        !sel_library_sticker_del(e->lib, key, m->args[1].v.s)) {
         sel_engine_report_error(e, "no_such_sticker", m->args[1].v.s);
     }
 }
@@ -3476,10 +3496,11 @@ static void cmd_STICKER_DEL(sel_engine* e, const sel_message* m) {
  * the number of stickers the key has. No stickers: no answer. */
 static void cmd_STICKER_LIST(sel_engine* e, const sel_message* m) {
     char buf[2048];
+    char key[SEL_DEFERRED_PATH_MAX + 8];
     uint32_t rows = 0, n = 0;
     const char* p = buf;
-    if (!sticker_ready(e, "STICKER_LIST")) return;
-    if (!sel_library_sticker_list(e->lib, m->args[0].v.s, buf, sizeof buf, &rows)) {
+    if (!sticker_ready(e, "STICKER_LIST") || !sticker_key(e, m, "STICKER_LIST", key, sizeof key)) return;
+    if (!sel_library_sticker_list(e->lib, key, buf, sizeof buf, &rows)) {
         sel_engine_report_error(e, "library_failed", "STICKER_LIST");
         return;
     }
@@ -3703,7 +3724,10 @@ static int view_votes(void* ctx, const char* path, char* out) {
     sel_engine* e = ctx;
     char v[SEL_STICKER_VALUE_MAX];
 
-    if (!sel_library_sticker_get(e->lib, path, "votes", v, sizeof v)) return 0;
+    char key[SEL_DEFERRED_PATH_MAX + 8];
+
+    song_key(path, key, sizeof key);
+    if (key[0] == '\0' || !sel_library_sticker_get(e->lib, key, "votes", v, sizeof v)) return 0;
     snprintf(out, SEL_VIEW_VOTES_MAX, "%s", v);
     return 1;
 }

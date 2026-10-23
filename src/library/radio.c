@@ -40,7 +40,7 @@ static void queue_form(const char* key, char* out, size_t cap) {
 static uint32_t admit(radio_pass* p, const char* key, uint32_t weight, char* form, size_t cap) {
     queue_form(key, form, cap);
     if (weight == 0 || (p->avoid != NULL && strcmp(p->avoid, form) == 0)) return 0;
-    if (sel_library_flag_skipped(p->lib, key) || sel_library_flag_skipped(p->lib, form)) return 0;
+    if (sel_library_flag_skipped(p->lib, key)) return 0;
     return weight;
 }
 
@@ -88,22 +88,15 @@ static int run_pass(radio_pass* p, const char* seed) {
 
 int sel_library_radio_next(sel_library* lib, const char* seed, uint32_t draw, const char* avoid, char* out, size_t cap) {
     radio_pass p;
-    char alt[544];
-    const char* use = seed;
+    char use[SEL_SONG_KEY_MAX];
     int attempt;
 
-    if (lib == NULL || seed == NULL || out == NULL || cap < 2u) return 0;
+    if (lib == NULL || seed == NULL || out == NULL || cap < 2u || !sel_song_key_of(seed, use, sizeof use)) return 0;
     for (attempt = 0; attempt < 2; attempt++) {
         memset(&p, 0, sizeof p);
         p.lib = lib;
         p.avoid = attempt == 0 ? avoid : NULL;
-        if (!run_pass(&p, use) && use == seed) {
-            /* a queue path of a local song: the library key is "local:" + path */
-            strcpy(alt, "local:");
-            strncat(alt, seed, sizeof alt - 8u);
-            use = alt;
-            run_pass(&p, use);
-        }
+        run_pass(&p, use);
         if (p.total > 0) break;
     }
     if (p.total == 0) return 0;

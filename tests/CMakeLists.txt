@@ -925,7 +925,7 @@ if(NOT SEL_AMIGA)
 
   add_test(NAME user-data
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/userdata.sh $<TARGET_FILE:selecta-cli>
-            ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/userdata.sel
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue_keys.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/userdata.sel
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/userdata.expected
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/userflags.sel ${CMAKE_CURRENT_SOURCE_DIR}/m3/userflags.expected
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/sounds-wrong.golden
@@ -997,7 +997,7 @@ if(NOT SEL_AMIGA)
   find_program(SEL_SQLITE3_META sqlite3)
   add_test(NAME metadata-panel
     COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>" "-DSELECTA=$<TARGET_FILE:selecta>"
-      "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv"
+      "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue_keys.tsv"
       "-DSEL=${CMAKE_CURRENT_SOURCE_DIR}/m3/meta_empty.sel"
       "-DSQLITE3=${SEL_SQLITE3_META}"
       "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m3/meta.keys"
@@ -1008,9 +1008,18 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/meta_screen.cmake")
   set_tests_properties(metadata-panel PROPERTIES LABELS m3)
 
+  add_test(NAME song-key
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>"
+      "-DSEL=${CMAKE_CURRENT_SOURCE_DIR}/m3/song_key.sel"
+      "-DSQLITE3=${SEL_SQLITE3_META}"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/song_key"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/song_key.cmake")
+  set_tests_properties(song-key PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "song_key_ok")
+
   add_test(NAME home-view
     COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>" "-DSELECTA=$<TARGET_FILE:selecta>"
-      "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv"
+      "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue_keys.tsv"
       "-DSEL=${CMAKE_CURRENT_SOURCE_DIR}/m3/history.sel"
       "-DSQLITE3=${SEL_SQLITE3_META}"
       "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m3/home.keys"

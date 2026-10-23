@@ -8,6 +8,7 @@
 
 #include "cli.h"
 #include "db.h"
+#include "source.h"
 #include "devilbox_loudness.h"
 #include "net/devilbox.h"
 
@@ -183,7 +184,7 @@ int sel_cli_analyse(int argc, char** argv) {
     send_analyse(e, song, &sink);
     if (!sink.failed) {
         print_stats(e);
-        snprintf(key, sizeof key, strncmp(song, "local:", 6) == 0 ? "%s" : "local:%s", song);
+        if (!sel_song_key_of(song, key, sizeof key)) key[0] = '\0';
         have = sel_library_loudness_get(lib, key, &stored);
         printf("stored=%d stored_gain_cdb=%d key=%s\n", have, (int)stored, key);
     }
@@ -284,7 +285,7 @@ int sel_cli_loudness(int argc, char** argv) {
         fputs("usage: selecta-cli loudness [--db <path>] [--machine <name>] [--config-dir <dir>] <song>\n", stderr);
         return 2;
     }
-    snprintf(key, sizeof key, strncmp(song, "local:", 6) == 0 ? "%s" : "local:%s", song);
+    if (!sel_song_key_of(song, key, sizeof key)) key[0] = '\0';
     snprintf(path, sizeof path, "%s", key + 6);
     if (!sel_dvb_loudness_file_hash(path, hash)) {
         fprintf(stderr, "loudness: cannot read %s\n", path);

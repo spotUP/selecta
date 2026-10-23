@@ -1,0 +1,6 @@
+# T97 (row I211): one local song played to its end and given a sticker through the engine. song_key.cmake then checks
+# that loudness (songs.loudness_gain), history and stickers all hold the same key.
+OPEN selecta-test.mod
+PLAY
+@render_until_end
+STICKER_SET selecta-test.mod mood calm

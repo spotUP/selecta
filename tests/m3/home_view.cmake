@@ -23,8 +23,8 @@ function(sql text result)
   set(${result} "${o}" PARENT_SCOPE)
 endfunction()
 string(CONCAT seed
-  "UPDATE songs SET album = 'Hardcore Heroes' WHERE key = 'selecta-test-mk.mod'; "
-  "INSERT INTO history(key, played_at, skipped) VALUES('selecta-test.mod', 4102444800, 0); "
+  "UPDATE songs SET album = 'Hardcore Heroes' WHERE key = 'local:selecta-test-mk.mod'; "
+  "INSERT INTO history(key, played_at, skipped) VALUES('local:selecta-test.mod', 4102444800, 0); "
   "INSERT INTO meta(key, value) VALUES('modland.new_this_week', '7') ON CONFLICT(key) DO UPDATE SET value = '7'")
 sql("${seed}" ignore)
 sql("SELECT COUNT(DISTINCT key) FROM history;" recent)
@@ -82,7 +82,7 @@ endif()
 if(NOT song_out MATCHES "playlist_entries=1 ")
   message(FATAL_ERROR "Enter on a Recently played row did not queue the song:\n${song_out}")
 endif()
-if(NOT newest STREQUAL "selecta-test.mod" OR NOT song_screen MATCHES "Playing  selecta test")
+if(NOT newest STREQUAL "local:selecta-test.mod" OR NOT song_screen MATCHES "Playing  selecta test")
   message(FATAL_ERROR "screen does not show ${newest} (module title selecta test) playing:\n${song_screen}")
 endif()
 # Album row: the album's songs are listed in the library view (query source) and none starts.
@@ -100,7 +100,7 @@ if(album_screen MATCHES "test tune")
 endif()
 # I191b: an album name with a quote and a backslash opens too. The query grammar escapes both inside quotes; the engine
 # escapes the name it takes from the row. The only Jump back in album is renamed in the database.
-sql("UPDATE songs SET album = 'The \"Quoted\" Album \\ Two' WHERE key = 'selecta-test-mk.mod';" ignore)
+sql("UPDATE songs SET album = 'The \"Quoted\" Album \\ Two' WHERE key = 'local:selecta-test-mk.mod';" ignore)
 run_keys("${KEYS_ALBUM}" "${WORK}/quoted.txt" quoted_out)
 file(READ "${WORK}/quoted.txt" quoted_screen)
 if(NOT quoted_out MATCHES "view_source=query " OR NOT quoted_out MATCHES "songs_opened=0 " OR NOT quoted_screen MATCHES "mk tune")
@@ -118,7 +118,7 @@ string(LENGTH "${long_name}" long_len)
 if(NOT long_len EQUAL 127)
   message(FATAL_ERROR "long album name is ${long_len} bytes, want 127")
 endif()
-sql("UPDATE songs SET album = '${long_name}' WHERE key = 'selecta-test-mk.mod';" ignore)
+sql("UPDATE songs SET album = '${long_name}' WHERE key = 'local:selecta-test-mk.mod';" ignore)
 run_keys("${KEYS_ALBUM}" "${WORK}/long.txt" long_out)
 file(READ "${WORK}/long.txt" long_screen)
 if(NOT long_out MATCHES "view_source=query " OR NOT long_out MATCHES "songs_opened=0 " OR NOT long_screen MATCHES "mk tune")

@@ -4,6 +4,7 @@
 #ifndef SELECTA_LIBRARY_SOURCE_H
 #define SELECTA_LIBRARY_SOURCE_H
 
+#include "song_key.h"
 #include <selecta/tags.h>
 #include <stddef.h>
 #include <stdint.h>
