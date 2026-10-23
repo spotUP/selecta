@@ -67,8 +67,9 @@ typedef struct sel_rp_tracker_info {
 } sel_rp_tracker_info;
 typedef int (*sel_rp_tracker_info_fn)(void* state, uint32_t order, sel_rp_tracker_info* out);
 
-/* One pattern cell. note: 0 = none, 1..120 with C-0 = 1 (libopenmpt's
- * numbering), 254 = note cut, 255 = note off; instrument 0 = none; volume the volume column (0 = none);
+/* One pattern cell. note: one scale for every adapter, libopenmpt's: 0 = none,
+ * 1..120 with C-0 = 1, so a MOD period of 428 is note 61 (C-5) whichever
+ * adapter plays it; an adapter whose engine counts differently converts. 254 = note cut, 255 = note off; instrument 0 = none; volume the volume column (0 = none);
  * effect and param as the format stores them (0, 0 = none). */
 typedef struct sel_rp_cell {
     uint8_t note, instrument, volume, effect, param;
