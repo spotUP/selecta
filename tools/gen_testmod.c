@@ -27,8 +27,13 @@
  * order 1 starts after 16 rows and the row before order 1 row 0 is row 15, not row 63
  * (the openmpt seek regression test).
  *
- * usage: gen_testmod [--short] [--break] [--format mk] <output.mod> */
+ * With --zero-sample N (1..4) the data bytes of sample N are all zero, so the
+ * voices playing it are silent (T42: the golden for MUTE 1 is a render of the
+ * module with sample 1, which only channel 0 plays, zeroed).
+ *
+ * usage: gen_testmod [--short] [--break] [--zero-sample N] [--format mk] <output.mod> */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define PATTERNS 4
@@ -48,6 +53,7 @@ typedef struct sample_def {
 static int g_break = 0;
 static const char* g_title = "selecta test";
 static unsigned g_song_length = PATTERNS;
+static unsigned g_zero_sample = 0;
 static sample_def g_samples[4];
 static unsigned char g_patterns[PATTERNS][PATTERN_BYTES];
 
@@ -271,6 +277,14 @@ int main(int argc, char** argv) {
             g_break = 1;
             argv++;
             argc--;
+        } else if (argc >= 3 && strcmp(argv[1], "--zero-sample") == 0) {
+            g_zero_sample = (unsigned)strtoul(argv[2], NULL, 10);
+            if (g_zero_sample < 1 || g_zero_sample > 4) {
+                fputs("gen_testmod: --zero-sample takes 1..4\n", stderr);
+                return 2;
+            }
+            argv += 2;
+            argc -= 2;
         } else if (argc >= 3 && strcmp(argv[1], "--format") == 0 && strcmp(argv[2], "mk") == 0) {
             bare = 1;
             argv += 2;
@@ -280,10 +294,13 @@ int main(int argc, char** argv) {
         }
     }
     if (argc != 2) {
-        fputs("usage: gen_testmod [--short] [--break] [--format mk] <output.mod>\n", stderr);
+        fputs("usage: gen_testmod [--short] [--break] [--zero-sample N] [--format mk] <output.mod>\n", stderr);
         return 2;
     }
     make_samples();
+    if (g_zero_sample != 0) {
+        memset(g_samples[g_zero_sample - 1].data, 0, sizeof g_samples[0].data);
+    }
     make_patterns();
     if (!write_mod(argv[1], bare)) {
         fprintf(stderr, "gen_testmod: cannot write %s\n", argv[1]);
