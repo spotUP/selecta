@@ -292,19 +292,19 @@ Tests T49 to T61 are defined in the plan's finish-line table.
 | I119 | [x] | 3 | Period once per note, volume 0..64, loop registers | T51 register hash; 48d8e4e 3c1dd9d AUD0PER 428 hand-checked; merge 6b44e20 |
 | I120 | [x] | 3 | Shadow register twin for vamos and desktop | T51 green both trees; 76c5b29 paula-shadow aud_writes=53 golden; vamos path fix c395d55; merge 6b44e20 |
 | I121 | [x] | 3 | Routing: VOICE with voice_count <= 4 to `paula` | routing table test; T56 precondition; routing table test in 84bd0fc, >4 voices on paula has no PCM stage until Phase 4; merge fd69b4d |
-| I122 | [ ] | 4 | Portable paula14 split tables, default calibration (D-M2-4) | T52 green desktop |
-| I123 | [ ] | 4 | paula14 Amiga sink, chip RAM double buffer | T52 green vamos; T54 extended |
-| I124 | [ ] | 4 | AHI sink over ahi.device | rig sentinel `ahi_bufs=` |
-| I125 | [ ] | 4 | Buffer length per CPU class in `sel_prefs`, AHI mode and rate defaults (D-M2-5) | T59 green |
-| I126 | [ ] | 4 | Routing: RENDER and VOICE over 4 voices to mixer then paula14 or ahi | routing table test |
+| I122 | [x] | 4 | Portable paula14 split tables, default calibration (D-M2-4) | T52 green desktop; T52 green desktop and vamos, p14_hash equal in 130bb46; merge ebdc57c |
+| I123 | [x] | 4 | paula14 Amiga sink, chip RAM double buffer | T52 green vamos; T54 extended; chip double buffer sink, paula14 and paula14-shadow outputs in 130bb46; T54 extended; hardware pacing unverified until rig; merge ebdc57c |
+| I124 | [ ] | 4 | AHI sink over ahi.device | rig sentinel `ahi_bufs=`; rig-only: AHI sink not started, needs rig (Q49) |
+| I125 | [ ] | 4 | Buffer length per CPU class in `sel_prefs`, AHI mode and rate defaults (D-M2-5) | T59 green; rig-only: needs rig for T59 (Q49) |
+| I126 | [x] | 4 | Routing: RENDER and VOICE over 4 voices to mixer then paula14 or ahi | routing table test; paula14 has no voice backend, so RENDER and VOICE of any count route to mixer; paula14-routing(-vamos), paula14-unit in 130bb46; merge ebdc57c |
 | I127 | [x] | 5 | Integer LED filter stage | T53 LED part green; 6ada682 LED -3 dB 3275 Hz measured; merge 5d60c2c |
 | I128 | [x] | 5 | Integer stereo width stage | T53 width part green; 6ada682 width; width-moves-hash on stereo mk.mod desktop only (Q46); merge 5d60c2c |
 | I129 | [x] | 5 | Commands, prefs keys, text UI controls for LED and width | T53 green both trees; T8 count moves; 2fccb64 verbs FILTER_LED, MIX_STEREO_WIDTH; T8 stays 21; merge 22ff2c9 |
 | I130 | [x] | 6 | `plugins/ui/text/amiga/term.c` raw mode, WaitForChar | T55 partial; term.c raw mode, WaitForChar, CSI size query in c81c48d; interactive path unverified until T56; merge 9c6594a |
-| I131 | [ ] | 6 | `plugins/ui/text/amiga/spawn.c` | spawn test under vamos; partial: amiga/spawn.c (SystemTagList) linked in c81c48d, no vamos spawn test yet |
+| I131 | [ ] | 6 | `plugins/ui/text/amiga/spawn.c` | spawn test under vamos; partial: amiga/spawn.c (SystemTagList) linked in c81c48d, no vamos spawn test yet; vamos (amitools 0.7.1) has no SystemTagList, test is rig-only (Q49) |
 | I132 | [x] | 6 | Build `plugins/ui/text` and `apps/selecta` on Amiga | T55 green; selecta and plugins/ui/text build for Amiga, T55 green (68k ui_hash = desktop) in c81c48d; merge 9c6594a |
 | I133 | [ ] | 6 | Rig run in UP-Term | T56 green |
-| I134 | [ ] | 7 | `SEL_RP_CONFIG` tag list, prefs, per-song override (D-M2-8) | T61 green |
+| I134 | [x] | 7 | `SEL_RP_CONFIG` tag list, prefs, per-song override (D-M2-8) | T61 green; rp.config pref, sel_engine_set_song_config override, render --rp-config/--rp-config-song, T61 uses nuade.gain in 6b9c1e5; merge 3d3310f |
 | I135 | [ ] | 7 | T60 batch on `--a1200 --nofpu`, verdicts recorded, NEEDS_FLOAT tags set | T60 green |
 | I136 | [ ] | 8 | Fix T8 ratchet number for M2 command set | T8 green |
 | I137 | [ ] | 8 | Full finish-line run (reason: landing M2) | all T49 to T61 and T8 green, none skipped |
