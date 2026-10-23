@@ -103,6 +103,7 @@ enum {
     SEL_USER_RATING_SET,   /* I173: at = stars 1..5 (0 removes the rating), to = SEL_RATING_*; replaces the ratings row */
     SEL_USER_RATING_GET,   /* I173: reply [0] = 2 and [2] = stars when the song is rated */
     SEL_USER_RATING_PENDING, /* I173: out = "key\0stars\0" pairs of the ratings not yet on DEViLBOX, then "\0"; reply [2] = rows */
+    SEL_USER_HOME,         /* I191: out = home view lines "H heading", "S entry", "C count entry" per line; reply [2] = lines */
     SEL_USER_RATING_DONE   /* I173: the push of the key's rating is over: drops its pending row, marks the rating synced */
 };
 /* Where a rating came from (sel_user_op.to of SEL_USER_RATING_SET). */
@@ -319,6 +320,10 @@ int sel_library_folder_counts(sel_library* lib, uint32_t* folders, uint32_t* in_
 int sel_library_folder_playlists(sel_library* lib, uint32_t folder, char* out, uint32_t cap, uint32_t* count);
 int sel_library_playlist_keys(sel_library* lib, uint32_t playlist, char* out, uint32_t cap, uint32_t* count);
 int sel_library_folder_tree(sel_library* lib, char* out, uint32_t cap, uint32_t* count);
+/* Home view text (I191): sections Recently played (newest play first), Jump back in (albums with a skipped song
+ * and no finished play of it) and New this week (the modland changelog count stored by the sync), at most `limit`
+ * entries per list section. Lines: `H <heading>`, `S <entry>`, `C <count> <entry>`. 1 on success. */
+int sel_library_home(sel_library* lib, uint32_t limit, char* out, uint32_t cap, uint32_t* lines);
 int sel_library_user_counts(sel_library* lib, uint32_t* history, uint32_t* flags, uint32_t* notes, uint32_t* pending_push);
 /* Marks song key `key` in table "kept" or "liked" (seeding and tests). 1 on success. */
 int sel_library_mark(sel_library* lib, const char* table, const char* key);

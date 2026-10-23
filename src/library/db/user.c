@@ -5,6 +5,7 @@
 #include "folders.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int user_exec(sqlite3* db, const char* sql, const sel_user_op* op, int shape) {
@@ -213,6 +214,71 @@ static int rating_pending(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     return SQLITE_OK;
 }
 
+/* Appends one home line ("<tag> <text>\n") when it fits; counts it either way. */
+static void home_put(const sel_user_op* op, uint32_t* used, int64_t* rows, const char* tag, const char* text) {
+    size_t n = strlen(tag) + 1u + strlen(text) + 1u;
+    (*rows)++;
+    if (*used + n + 1u <= op->out_cap) {
+        *used += (uint32_t)snprintf(op->out + *used, op->out_cap - *used, "%s %s\n", tag, text);
+    }
+}
+
+/* Runs `sql` (one text column, an optional second one for the artist) and puts every row as an `S` line. */
+static int home_list(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t* rows, const char* sql) {
+    sqlite3_stmt* st = NULL;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &st, NULL);
+    if (rc != SQLITE_OK) return rc;
+    sqlite3_bind_int64(st, 1, op->at > 0 ? op->at : 10);
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        const char* name = (const char*)sqlite3_column_text(st, 0);
+        const char* artist = (const char*)sqlite3_column_text(st, 1);
+        char line[160];
+        if (artist != NULL && artist[0] != '\0') {
+            snprintf(line, sizeof line, "%s - %s", name, artist);
+        } else {
+            snprintf(line, sizeof line, "%s", name);
+        }
+        home_put(op, used, rows, "S", line);
+    }
+    sqlite3_finalize(st);
+    return SQLITE_OK;
+}
+
+/* I191: the home view text. */
+static int home_text(sqlite3* db, const sel_user_op* op, int64_t* rows) {
+    uint32_t used = 0;
+    sqlite3_stmt* st = NULL;
+    int rc;
+    long fresh = 0;
+    char tagged[80];
+
+    op->out[0] = '\0';
+    *rows = 0;
+    home_put(op, &used, rows, "H", "Recently played");
+    rc = home_list(db, op, &used, rows,
+                   "SELECT COALESCE(s.name, h.key), s.artist FROM (SELECT key, MAX(played_at) AS last FROM history GROUP BY key) h"
+                   " LEFT JOIN songs s ON s.key = h.key ORDER BY h.last DESC, h.key LIMIT ?1");
+    if (rc != SQLITE_OK) return rc;
+    home_put(op, &used, rows, "H", "Jump back in");
+    rc = home_list(db, op, &used, rows,
+                   "SELECT s.album, s.artist FROM history h JOIN songs s ON s.key = h.key"
+                   " WHERE h.skipped = 1 AND s.album IS NOT NULL AND s.album <> ''"
+                   " AND NOT EXISTS (SELECT 1 FROM history f WHERE f.key = h.key AND f.skipped = 0)"
+                   " GROUP BY s.album ORDER BY MAX(h.played_at) DESC, s.album LIMIT ?1");
+    if (rc != SQLITE_OK) return rc;
+    home_put(op, &used, rows, "H", "New this week");
+    rc = sqlite3_prepare_v2(db, "SELECT value FROM meta WHERE key = 'modland.new_this_week'", -1, &st, NULL);
+    if (rc != SQLITE_OK) return rc;
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        const char* v = (const char*)sqlite3_column_text(st, 0);
+        fresh = v != NULL ? atol(v) : 0;
+    }
+    sqlite3_finalize(st);
+    snprintf(tagged, sizeof tagged, "%ld %ld new songs on Modland", fresh, fresh);
+    home_put(op, &used, rows, "C", tagged);
+    return SQLITE_OK;
+}
+
 void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* reply) {
     int rc = SQLITE_MISUSE;
     int found = 0;
@@ -228,6 +294,8 @@ void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* repl
         user_counts(lib->db, counts);
         have_counts = 1;
         rc = SQLITE_OK;
+    } else if (op->op == SEL_USER_HOME && op->out != NULL && op->out_cap > 0) {
+        rc = home_text(lib->db, op, &rows);
     } else if (op->op == SEL_USER_RATING_PENDING && op->out != NULL && op->out_cap > 0) {
         rc = rating_pending(lib->db, op, &rows);
     } else if (op->op == SEL_USER_FLAG_EXPORT && op->name != NULL) {

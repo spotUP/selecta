@@ -9,16 +9,21 @@ static const uint32_t key_len[2] = {1, 2}; /* columns before the songs */
 static const char* const style_name[3] = {"regular", "tree", "drilldown"};
 #define OVERFLOW_GROUP "(more)"
 
+/* The folders and home sources list prepared text rows (frows): always regular, cursor = row index. */
+static int text_src(const sel_view* v) {
+    return v->pub.source == SEL_VIEW_FOLDERS || v->pub.source == SEL_VIEW_HOME;
+}
+
 /* The browse source is a directory listing: always regular. */
 static uint32_t mode_of(const sel_view* v) {
-    return v->pub.source != SEL_VIEW_BROWSE && v->pub.source != SEL_VIEW_FOLDERS ? v->pub.style : (uint32_t)SEL_VIEW_STYLE_REGULAR;
+    return v->pub.source != SEL_VIEW_BROWSE && !text_src(v) ? v->pub.style : (uint32_t)SEL_VIEW_STYLE_REGULAR;
 }
 
 static uint32_t list_count(const sel_view* v, const sel_view_src* s) {
     if (mode_of(v) != SEL_VIEW_STYLE_REGULAR) {
         return v->total;
     }
-    if (v->pub.source == SEL_VIEW_FOLDERS) {
+    if (text_src(v)) {
         return v->frow_n;
     }
     return v->pub.source != SEL_VIEW_BROWSE ? s->queue->count : s->browse->count;
@@ -30,7 +35,7 @@ static void anchor_styled(sel_view* v, const sel_view_src* s, uint32_t count);
 static void fill_styled(sel_view* v, const sel_view_src* s);
 
 static uint32_t row_id(const sel_view* v, const sel_view_src* s, uint32_t idx) {
-    return v->pub.source != SEL_VIEW_BROWSE && v->pub.source != SEL_VIEW_FOLDERS ? s->queue->entries[idx].id : idx;
+    return v->pub.source != SEL_VIEW_BROWSE && !text_src(v) ? s->queue->entries[idx].id : idx;
 }
 
 int sel_view_init(sel_view* v, const sel_host* host, uint32_t row_cap) {
@@ -575,6 +580,8 @@ int sel_view_show(sel_view* v, const sel_view_src* s, const char* source) {
         want = SEL_VIEW_BROWSE;
     } else if (strcmp(source, "folders") == 0) {
         want = SEL_VIEW_FOLDERS;
+    } else if (strcmp(source, "home") == 0) {
+        want = SEL_VIEW_HOME;
     } else {
         return 0;
     }
@@ -642,7 +649,7 @@ int sel_view_window(sel_view* v, const sel_view_src* s, uint32_t rows) {
 
 static void anchor(sel_view* v, const sel_view_src* s, uint32_t count) {
     sel_view_state* p = &v->pub;
-    if (p->source == SEL_VIEW_FOLDERS) {
+    if (p->source == SEL_VIEW_FOLDERS || p->source == SEL_VIEW_HOME) {
         /* The rows follow the tree order: the cursor is the row index. */
     } else if (p->source != SEL_VIEW_BROWSE) {
         uint32_t at = count ? sel_queue_index_of(s->queue, p->cursor_id) : SEL_QUEUE_NONE;
@@ -747,7 +754,7 @@ void sel_view_refresh(sel_view* v, const sel_view_src* s) {
         sel_view_row* r = &v->rows[i];
         r->depth = 0;
         r->id = row_id(v, s, idx);
-        if (p->source == SEL_VIEW_FOLDERS) {
+        if (p->source == SEL_VIEW_FOLDERS || p->source == SEL_VIEW_HOME) {
             *r = v->frows[idx];
         } else if (p->source != SEL_VIEW_BROWSE) {
             r->kind = SEL_ROW_QUEUE;
@@ -845,4 +852,51 @@ uint32_t sel_view_set_folders(sel_view* v, const char* tree) {
     v->frow_n = n;
     v->fgen++;
     return n;
+}
+
+/* The home source (I191): parses the library's home text. A line is `H <heading>`, `S <entry>` or
+ * `C <count> <entry>`. Returns the number of entries the sections hold: one per `S` line and the count of a
+ * `C` line (the home_rows sentinel). */
+uint32_t sel_view_set_home(sel_view* v, const char* text) {
+    uint32_t n = 0, entries = 0;
+    const char* p = text;
+    while (*p != '\0' && n < SEL_VIEW_FOLDER_ROWS) {
+        char kind = *p;
+        char* t = v->ftext + (size_t)n * SEL_VIEW_FOLDER_NAME;
+        size_t len = 0;
+        uint32_t count = 1;
+        if ((kind == 'H' || kind == 'S' || kind == 'C') && p[1] == ' ') {
+            p += 2;
+            if (kind == 'C') {
+                count = 0;
+                while (*p >= '0' && *p <= '9') {
+                    count = count * 10u + (uint32_t)(*p++ - '0');
+                }
+                if (*p == ' ') {
+                    p++;
+                }
+            }
+            while (*p != '\0' && *p != '\n' && len + 1u < SEL_VIEW_FOLDER_NAME) {
+                t[len++] = *p++;
+            }
+            t[len] = '\0';
+            v->frows[n].kind = kind == 'H' ? SEL_ROW_HEADING : SEL_ROW_HOME;
+            v->frows[n].id = n;
+            v->frows[n].depth = kind == 'H' ? 0u : 1u;
+            v->frows[n].text = t;
+            v->frows[n].count = 0;
+            v->frows[n].expanded = 0;
+            entries += kind == 'H' ? 0u : count;
+            n++;
+        }
+        while (*p != '\0' && *p != '\n') {
+            p++;
+        }
+        if (*p == '\n') {
+            p++;
+        }
+    }
+    v->frow_n = n;
+    v->fgen++;
+    return entries;
 }
