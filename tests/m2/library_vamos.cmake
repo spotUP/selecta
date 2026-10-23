@@ -104,6 +104,18 @@ foreach(q "som" "artist:artist" "song" "long" "a" "s")
   endif()
 endforeach()
 
+# I198d: a one-character non-ASCII word and a punctuation-only word hold the heap too (no hits needed).
+foreach(q "é" "-")
+  m2_exec(out6 rc6 library search --db work:user.db --index work:bigidx.db --machine a1200 -- ${q})
+  if(NOT rc6 EQUAL 0 OR out6 MATCHES "(^|\n)ERROR [a-z_]+")
+    message(FATAL_ERROR "RED[T96]: search '${q}' over a ${big_rows}-row index failed (rc=${rc6}) on 68k.\n${out6}")
+  endif()
+  m2_get("${out6}" db_heap_peak odd_peak)
+  if(odd_peak GREATER 524288)
+    message(FATAL_ERROR "RED[T96]: search '${q}' db_heap_peak=${odd_peak} exceeds the 512 KB tier heap.")
+  endif()
+endforeach()
+
 # sqlite_text_bytes: code size of the SQLite static library in the Amiga build.
 set(sqlite_text "unmeasured")
 if(AMIGA_SIZE AND AMIGA_BUILD_DIR)

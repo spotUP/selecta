@@ -10,3 +10,10 @@ son	1	k-sonata.mod k-songbird.mod k-songwriter.mod
 p	0	k-prosong.mod k-sonata.mod k-songwriter.mod
 s	0	k-sonata.mod k-songbird.mod k-songwriter.mod
 z	0
+# I198d: a non-ASCII word is measured in characters after folding; punctuation-only words match no row
+é	0	k-eclair.mod
+É	0	k-eclair.mod
+écl	1	k-eclair.mod
+café	1	k-eclair.mod
+—	0
+-	0
