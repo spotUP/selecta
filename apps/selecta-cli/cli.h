@@ -29,6 +29,9 @@ int sel_cli_play(int argc, char** argv);
 /* library browse <dir> (T57): LIBRARY_BROWSE through the engine; prints `dir_entries=<n>`. */
 int sel_cli_library(int argc, char** argv);
 
+/* library fetch <source>:<path> (T69): the Mirrors transport; prints mirror_tries= mirror_retries=. */
+int sel_cli_library_fetch(int argc, char** argv);
+
 /* fetch <url> (T67, T68): one HTTP request through the library client; prints counters. */
 int sel_cli_fetch(int argc, char** argv);
 

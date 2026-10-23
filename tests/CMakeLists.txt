@@ -908,3 +908,14 @@ if(NOT SEL_AMIGA)
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/source_key.sh $<TARGET_FILE:selecta-cli>)
   set_tests_properties(source-modland-key PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_key_ok")
 endif()
+
+# T69 mirrors-ranking (row I156): the Mirrors transport through `selecta-cli library fetch`.
+# Runs after ftp-transport because both read the shared request log. Includes one real 3 s
+# first-byte timeout (the 4 s mirror) per ranking round, so the test gets a 60 s budget.
+if(NOT SEL_AMIGA)
+  add_test(NAME mirrors-ranking
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      -P "${SEL_NET_DIR}/mirrors_ranking.cmake")
+  set_tests_properties(mirrors-ranking PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    DEPENDS ftp-transport TIMEOUT 60)
+endif()
