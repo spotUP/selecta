@@ -1,0 +1,8 @@
+# T43: REPEAT all wraps the queue: three song ends open four songs.
+REPEAT all
+QUEUE_ADD selecta-short.mod
+QUEUE_ADD selecta-short.mod
+PLAY
+@render_until_end
+@render_until_end
+@render_until_end

@@ -1,0 +1,5 @@
+# T43: a looping module with REPEAT off and loops 1 fades out and ends with reason loop.
+OPTION loops 1
+QUEUE_ADD selecta-test.mod
+PLAY
+@render_until_end

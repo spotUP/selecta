@@ -31,7 +31,9 @@
  * voices playing it are silent (T42: the golden for MUTE 1 is a render of the
  * module with sample 1, which only channel 0 plays, zeroed).
  *
- * usage: gen_testmod [--short] [--break] [--zero-sample N] [--format mk] <output.mod> */
+ * With --silent the data of all four samples is zero (T43: digital silence).
+ *
+ * usage: gen_testmod [--short] [--break] [--zero-sample N] [--silent] [--format mk] <output.mod> */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,6 +56,7 @@ static int g_break = 0;
 static const char* g_title = "selecta test";
 static unsigned g_song_length = PATTERNS;
 static unsigned g_zero_sample = 0;
+static int g_silent = 0;
 static sample_def g_samples[4];
 static unsigned char g_patterns[PATTERNS][PATTERN_BYTES];
 
@@ -277,6 +280,10 @@ int main(int argc, char** argv) {
             g_break = 1;
             argv++;
             argc--;
+        } else if (strcmp(argv[1], "--silent") == 0) {
+            g_silent = 1;
+            argv++;
+            argc--;
         } else if (argc >= 3 && strcmp(argv[1], "--zero-sample") == 0) {
             g_zero_sample = (unsigned)strtoul(argv[2], NULL, 10);
             if (g_zero_sample < 1 || g_zero_sample > 4) {
@@ -300,6 +307,12 @@ int main(int argc, char** argv) {
     make_samples();
     if (g_zero_sample != 0) {
         memset(g_samples[g_zero_sample - 1].data, 0, sizeof g_samples[0].data);
+    }
+    if (g_silent) {
+        unsigned k;
+        for (k = 0; k < 4; k++) {
+            memset(g_samples[k].data, 0, sizeof g_samples[0].data);
+        }
     }
     make_patterns();
     if (!write_mod(argv[1], bare)) {

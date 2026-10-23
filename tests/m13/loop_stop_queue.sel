@@ -1,0 +1,9 @@
+# T43: stop-after-queue stops at the queue end although REPEAT all would wrap.
+REPEAT all
+OPTION stop-after-queue on
+QUEUE_ADD selecta-short.mod
+QUEUE_ADD selecta-short.mod
+PLAY
+@render_until_end
+@render_until_end
+@queue

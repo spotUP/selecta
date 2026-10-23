@@ -1,0 +1,7 @@
+# T43: stop-after-current stops after the current song; the second song never opens.
+OPTION stop-after-current on
+QUEUE_ADD selecta-short.mod
+QUEUE_ADD selecta-short.mod
+PLAY
+@render_until_end
+@queue

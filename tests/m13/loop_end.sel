@@ -1,0 +1,4 @@
+# T43: a one-pass module with REPEAT off ends with reason end.
+QUEUE_ADD selecta-short.mod
+PLAY
+@render_until_end

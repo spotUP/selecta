@@ -1,0 +1,15 @@
+# T44: crossfade and gapless through `selecta-cli script`. Variables: CLI SCRIPTS SONGS
+function(sel_run tag)
+  execute_process(COMMAND "${CLI}" script "${SCRIPTS}/${tag}.sel"
+    WORKING_DIRECTORY "${SONGS}" OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
+  if(NOT rc EQUAL 0)
+    message(FATAL_ERROR "${tag}: script exited ${rc}\nstdout:\n${out}\nstderr:\n${err}")
+  endif()
+  if(NOT out MATCHES "${EXPECT_${tag}}")
+    message(FATAL_ERROR "${tag}: expected /${EXPECT_${tag}}/ in:\n${out}\nstderr:\n${err}")
+  endif()
+endfunction()
+set(EXPECT_crossfade "xfade_frames=88200 slots_mixed=2")
+set(EXPECT_crossfade_unsupported "ERROR unsupported_path OPTION.*mixed_path=0")
+sel_run(crossfade)
+sel_run(crossfade_unsupported)

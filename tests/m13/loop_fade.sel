@@ -1,0 +1,8 @@
+# T43: the fade gain at the midpoint of fade_ms 3000 is 32768 of 65536 (linear, 16.16).
+# @fade_mid renders until the fade starts, then to its midpoint, and prints
+# FADE gain_q16=G pos=P total=T (frames).
+OPTION loops 1
+OPTION fade_ms 3000
+QUEUE_ADD selecta-test.mod
+PLAY
+@fade_mid

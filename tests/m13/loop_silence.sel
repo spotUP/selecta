@@ -1,0 +1,7 @@
+# T43: 5000 ms of digital silence (all samples |s| < 16) ends the song with reason silence.
+REPEAT one
+OPTION silence_ms 5000
+QUEUE_ADD selecta-silent.mod
+PLAY
+@render_until_end
+@position

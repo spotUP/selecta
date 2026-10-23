@@ -1,0 +1,8 @@
+# T43: max_song_ms ends a never-ending song at 10000 + fade_ms 3000 with reason max_length.
+REPEAT one
+OPTION max_song_ms 10000
+OPTION fade_ms 3000
+QUEUE_ADD selecta-test.mod
+PLAY
+@render_until_end
+@position
