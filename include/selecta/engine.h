@@ -216,6 +216,13 @@ void sel_engine_set_output(sel_engine* e, const sel_tag* out_hooks);
  * the replayer's voice calls then reach it instead of the mixer. NULL restores the mixer. */
 void sel_engine_set_voice_sink(sel_engine* e, const sel_voices* sink);
 
+/* Routing table (I121). The sink is used only when the replayer is VOICE kind (voice_count > 0) and
+ * voice_count <= the output's SEL_OUT_VOICE_MAX (0: no limit; the Paula outputs say 4); else the mixer. */
+enum { SEL_ROUTE_MIXER = 0, SEL_ROUTE_DIRECT = 1 };
+uint32_t sel_engine_voice_route(uint32_t voice_count, int has_sink, uint32_t voice_max);
+/* Where the song started last went: 1 = the output's voice sink, 0 = the mixer. */
+uint32_t sel_engine_routed_direct(const sel_engine* e);
+
 /* LED filter on/off and stereo width percent (0 mono, 100 unchanged), applied
  * to the mixed output before the DSP chain (I127, I128). Call before the
  * audio thread renders. Both stages are bypassed while the output is real

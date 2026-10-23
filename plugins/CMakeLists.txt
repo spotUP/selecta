@@ -4,11 +4,15 @@
 
 sel_add_plugin(null 2 outputs/null/null.c)
 sel_add_plugin(voices_test 2 outputs/voices_test/voices_test.c)
-sel_add_plugin(paula_shadow 2 outputs/paula/shadow.c outputs/paula/paula_voices.c)
+sel_add_plugin(paula_shadow 2 outputs/paula/shadow.c outputs/paula/paula_out.c outputs/paula/paula_voices.c)
+# The hardware output shares paula_out.c and paula_voices.c with the shadow; only the register bus (paula_hw.c) differs.
+if(SEL_AMIGA)
+  sel_add_plugin(paula 2 outputs/paula/paula.c outputs/paula/paula_hw.c outputs/paula/paula_out.c outputs/paula/paula_voices.c)
+endif()
 # The Paula voice sink runs from the audio task on Amiga: integer only. Its objects join the T54 list
 # (src/CMakeLists.txt writes m2-interrupt-objects.txt from the targets).
 if(SEL_AMIGA)
-  add_library(selecta_paula_irq OBJECT outputs/paula/paula_voices.c)
+  add_library(selecta_paula_irq OBJECT outputs/paula/paula_voices.c outputs/paula/paula_hw.c)
   target_include_directories(selecta_paula_irq PRIVATE ${PROJECT_SOURCE_DIR}/include)
 endif()
 sel_add_plugin(wav 2 outputs/wav/wav.c)

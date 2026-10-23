@@ -22,7 +22,7 @@ foreach(o IN LISTS objs)
   endif()
 endforeach()
 # Phase 2 builds audio_int and audio_task; phase 3 added paula_voices; phase 4 adds paula14 and ahi to this list.
-foreach(want audio_int audio_task paula_voices)
+foreach(want audio_int audio_task paula_voices paula_hw)
   if(NOT "${objs}" MATCHES "${want}")
     message(FATAL_ERROR "RED[T54]: no ${want} object in the interrupt path list")
   endif()

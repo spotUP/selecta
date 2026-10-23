@@ -6,9 +6,8 @@
 #include <selecta/output.h>
 #include <selecta/voices.h>
 
-#include "paula_voices.h"
+#include "paula_out.h"
 
-#define SHADOW_BLOCK 512u
 #define SHADOW_LOG_LEVEL SEL_LOG_INFO /* config paula.log = 1 echoes each line through host->log */
 
 /* ---- SHA-256 (FIPS 180-4), streaming, integer only ---- */
@@ -106,16 +105,10 @@ static void sha_hex(const sel_sha256* in, char* out) {
 /* ---- the logging bus ---- */
 typedef struct shadow {
     const sel_host* host;
-    sel_paula paula;
     sel_sha256 sum;
     uint32_t aud_writes;
-    uint32_t frames;
     int echo;
-    sel_pcm_pull pull;
-    void* pull_ctx;
-    int16_t* buf;
     char digest[65];
-    sel_tag stats[5];
 } shadow;
 
 static char* put_hex(char* p, uint32_t v, uint32_t digits) {
@@ -164,123 +157,48 @@ static void bus_set_lc(void* ctx, uint32_t channel, const void* bytes, uint32_t 
     log_line(s, "LC", SEL_PAULA_AUD_LCH + channel * SEL_PAULA_CHANNEL_STRIDE, serial, offset);
 }
 
-/* ---- output hooks ---- */
-static void* shadow_open(const sel_host* host, uint32_t rate, uint32_t channels) {
-    shadow* s;
-    sel_paula_bus bus;
-    (void)rate;
-    if (channels != 2) {
-        return NULL;
-    }
-    s = (shadow*)host->mem_alloc(host, sizeof *s, SEL_MEM_FAST);
+static void* shadow_bus_open(const sel_host* host, sel_paula_bus* bus) {
+    shadow* s = (shadow*)host->mem_alloc(host, sizeof *s, SEL_MEM_FAST);
     if (s == NULL) {
         return NULL;
     }
-    s->buf = (int16_t*)host->mem_alloc(host, SHADOW_BLOCK * 2u * sizeof(int16_t), SEL_MEM_FAST);
-    if (s->buf == NULL) {
-        host->mem_free(host, s);
-        return NULL;
-    }
     s->host = host;
-    s->pull = NULL;
-    s->pull_ctx = NULL;
-    s->frames = 0;
     s->aud_writes = 0;
     s->echo = host->config_get != NULL && host->config_get(host, "paula.log", "0")[0] == '1';
     sha_init(&s->sum);
-    bus.write = bus_write;
-    bus.set_lc = bus_set_lc;
-    bus.ctx = s;
-    sel_paula_init(&s->paula, host, &bus);
+    bus->write = bus_write;
+    bus->set_lc = bus_set_lc;
+    bus->ctx = s;
     return s;
 }
 
-static void shadow_close(void* state) {
-    shadow* s = (shadow*)state;
-    if (s) {
-        const sel_host* host = s->host;
-        sel_paula_shutdown(&s->paula);
-        host->mem_free(host, s->buf);
-        host->mem_free(host, s);
-    }
+static void shadow_bus_close(const sel_host* host, void* ctx) {
+    host->mem_free(host, ctx);
 }
 
-static void shadow_set_source(void* state, sel_pcm_pull fn, void* ctx) {
-    shadow* s = (shadow*)state;
-    s->pull = fn;
-    s->pull_ctx = ctx;
-}
-
-/* Voice replayers drive the registers from the engine's tick; pulling is what advances it. */
-static uint32_t shadow_pump(void* state, uint32_t frames) {
-    shadow* s = (shadow*)state;
-    uint32_t done = 0;
-    if (s->pull == NULL) {
-        return 0;
-    }
-    while (done < frames) {
-        uint32_t want = frames - done, got;
-        if (want > SHADOW_BLOCK) {
-            want = SHADOW_BLOCK;
-        }
-        got = s->pull(s->pull_ctx, s->buf, want);
-        if (got == 0) {
-            break;
-        }
-        done += got;
-    }
-    s->frames += done;
-    return done;
-}
-
-static const sel_tag* shadow_stats(void* state) {
-    shadow* s = (shadow*)state;
+/* The digest is of a copy, so the log can go on after a stats read. */
+static uint32_t shadow_bus_stats(void* ctx, sel_tag* out) {
+    shadow* s = (shadow*)ctx;
     sha_hex(&s->sum, s->digest);
-    s->stats[0].tag = SEL_OUT_STAT_FRAMES;
-    s->stats[0].value = s->frames;
-    s->stats[1].tag = SEL_OUT_STAT_REG_WRITES;
-    s->stats[1].value = s->aud_writes;
-    s->stats[2].tag = SEL_OUT_STAT_LOG_DIGEST;
-    s->stats[2].value = (uintptr_t)s->digest;
-    s->stats[3].tag = SEL_TAG_END;
-    s->stats[3].value = 0;
-    return s->stats;
+    out[0].tag = SEL_OUT_STAT_REG_WRITES;
+    out[0].value = s->aud_writes;
+    out[1].tag = SEL_OUT_STAT_LOG_DIGEST;
+    out[1].value = (uintptr_t)s->digest;
+    return 2;
 }
 
-static const sel_voices* shadow_voice_backend(void* state) {
-    return sel_paula_api(&((shadow*)state)->paula);
-}
-
-static const char g_voices_marker = 1;
-static sel_tag g_hooks[14];
+static const sel_paula_out_kind g_kind = {"paula-shadow", "Paula shadow", 0, shadow_bus_open, shadow_bus_close,
+                                          shadow_bus_stats};
+static sel_tag g_hooks[16];
 static sel_tag g_desc[5];
 
-static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
-    t->tag = tag;
-    t->value = value;
+static void* shadow_open(const sel_host* host, uint32_t rate, uint32_t channels) {
+    return sel_paula_out_open(&g_kind, host, rate, channels);
 }
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     if (host_api < 1u) {
         return NULL;
     }
-    set(&g_hooks[0], SEL_OUT_NAME, (uintptr_t) "Paula shadow");
-    set(&g_hooks[1], SEL_OUT_RATES, (uintptr_t) "any");
-    set(&g_hooks[2], SEL_OUT_CHANNELS, 2);
-    set(&g_hooks[3], SEL_OUT_LATENCY_MS, 0);
-    set(&g_hooks[4], SEL_OUT_OPEN, SEL_TAG_FN(shadow_open));
-    set(&g_hooks[5], SEL_OUT_CLOSE, SEL_TAG_FN(shadow_close));
-    set(&g_hooks[6], SEL_OUT_SET_SOURCE, SEL_TAG_FN(shadow_set_source));
-    set(&g_hooks[7], SEL_OUT_PUMP, SEL_TAG_FN(shadow_pump));
-    set(&g_hooks[8], SEL_OUT_STATS, SEL_TAG_FN(shadow_stats));
-    set(&g_hooks[9], SEL_OUT_VOICES, (uintptr_t)&g_voices_marker);
-    set(&g_hooks[10], SEL_OUT_VOICE_BACKEND, SEL_TAG_FN(shadow_voice_backend));
-    set(&g_hooks[11], SEL_TAG_END, 0);
-
-    set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_OUTPUT);
-    set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "paula-shadow");
-    set(&g_desc[2], SEL_PLUGIN_VERSION, 1);
-    set(&g_desc[3], SEL_PLUGIN_TAGS, (uintptr_t)g_hooks);
-    set(&g_desc[4], SEL_TAG_END, 0);
-    return g_desc;
+    return sel_paula_out_describe(&g_kind, shadow_open, g_hooks, g_desc);
 }
