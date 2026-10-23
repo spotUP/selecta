@@ -84,6 +84,21 @@ if(NOT rc4 EQUAL 0)
 endif()
 m2_check(T96 "${out4}" "index_songs==${big_rows},db_heap_peak>0")
 
+# Multi-hit searches over that index (I198a): an FTS prefix matching every row (3 letters, served by the prefix
+# index) and a compiled field query (full scan of the index) must return hits inside the 512 KB heap, not ERROR
+# out_of_memory/bad_value. A longer prefix with this many hits still fails inside FTS5 (I198b).
+foreach(q "som" "artist:artist")
+  m2_exec(out5 rc5 library search --db work:user.db --index work:bigidx.db --machine a1200 -- ${q})
+  if(NOT rc5 EQUAL 0 OR out5 MATCHES "ERROR")
+    message(FATAL_ERROR "RED[T96]: multi-hit search '${q}' over a ${big_rows}-row index failed (rc=${rc5}) on 68k.\n${out5}")
+  endif()
+  m2_check(T96 "${out5}" "index_songs==${big_rows},src_count>0,db_heap_peak>0")
+  m2_get("${out5}" db_heap_peak multi_peak)
+  if(multi_peak GREATER 524288)
+    message(FATAL_ERROR "RED[T96]: search '${q}' db_heap_peak=${multi_peak} exceeds the 512 KB tier heap.")
+  endif()
+endforeach()
+
 # sqlite_text_bytes: code size of the SQLite static library in the Amiga build.
 set(sqlite_text "unmeasured")
 if(AMIGA_SIZE AND AMIGA_BUILD_DIR)

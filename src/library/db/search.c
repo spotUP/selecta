@@ -1,7 +1,7 @@
 /* Library search on the worker (plan Phase 2, I149 and I150): LIBRARY_SEARCH, saved views and the
  * TSV catalogue import. Query text becomes SQL only through sel_query_compile; bare words are
  * served by the FTS5 index (prefix match per word), everything else by the compiled SQL with
- * `ORDER BY songs.key`. REGEXP is a SQL function backed by src/library/regex.c, so `key:/re/`
+ * keys sorted page by page (I198a). REGEXP is a SQL function backed by src/library/regex.c, so `key:/re/`
  * runs the same on the desktop and the 68k. */
 #include "db_internal.h"
 
@@ -104,26 +104,155 @@ static int is_bare_words(const char* t) {
     return words > 0;
 }
 
-static void collect(sel_library* lib, sqlite3_stmt* st, sel_lib_job* job) {
-    uint32_t used = 0;
-    int rc;
+/* Sorted hits come in pages (I198a): `ORDER BY key LIMIT n` keeps at most n rows in the sorter, and the
+ * next page starts after the last key copied. One sort over every hit holds all of them in the SQLite
+ * heap, and a broad search over the attached index runs out of the 512 KiB heap of a 2 MB machine.
+ * SQLite does not push the LIMIT of a UNION ALL into its arms (it sorts each arm whole, then merges), so
+ * the user DB and the index run as two paged statements and collect() merges their sorted keys. */
+static int page_rows(const sel_library* lib) {
+    uint32_t n = lib->heap_bytes / 2048u;
+    return n < 64u ? 64 : n > 16384u ? 16384 : (int)n;
+}
 
-    while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
-        const char* k = (const char*)sqlite3_column_text(st, 0);
-        size_t n = k != NULL ? strlen(k) + 1u : 0;
-        if (n == 0) {
-            continue;
-        }
-        if (used + n > job->out_cap) {
-            job->truncated++;
-            continue;
-        }
-        memcpy(job->out + used, k, n);
-        used += (uint32_t)n;
-        job->count++;
+/* Binds the FTS match text, or the compiled query's parameters. */
+static void bind_query(sel_library* lib, sqlite3_stmt* st, const char* match) {
+    unsigned i;
+
+    if (match != NULL) {
+        sqlite3_bind_text(st, 1, match, -1, SQLITE_STATIC);
+        return;
     }
-    if (rc != SQLITE_DONE) {
+    for (i = 0; i < lib->query.nparams; i++) {
+        const sel_query_param* p = &lib->query.params[i];
+        if (p->is_int) {
+            sqlite3_bind_int64(st, (int)i + 1, p->i);
+        } else {
+            sqlite3_bind_text(st, (int)i + 1, p->s, -1, SQLITE_STATIC);
+        }
+    }
+}
+
+/* Prepares `sql` with `arm` (one column named key) in its one %s and binds the query. NULL on an error. */
+static sqlite3_stmt* prepare_arm(sel_library* lib, const char* sql, const char* arm, const char* match,
+                                 sel_lib_job* job) {
+    sqlite3_stmt* st = NULL;
+    char* text = sqlite3_mprintf(sql, arm);
+
+    if (text == NULL || sqlite3_prepare_v2(lib->db, text, -1, &st, NULL) != SQLITE_OK) {
         set_sql_error(job, lib->db);
+        sqlite3_finalize(st);
+        st = NULL;
+    } else {
+        bind_query(lib, st, match);
+    }
+    sqlite3_free(text);
+    return st;
+}
+
+/* Adds the hits of `arm` after `after` to job->truncated: the rows of a search whose keys did not fit. */
+static void count_rest(sel_library* lib, const char* arm, const char* match, const char* after, sel_lib_job* job) {
+    sqlite3_stmt* st = prepare_arm(lib, "SELECT count(*) FROM (%s) WHERE key > :after", arm, match, job);
+
+    if (st == NULL) {
+        return;
+    }
+    sqlite3_bind_text(st, sqlite3_bind_parameter_index(st, ":after"), after, -1, SQLITE_STATIC);
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        job->truncated += (uint32_t)sqlite3_column_int64(st, 0);
+    } else {
+        set_sql_error(job, lib->db);
+    }
+    sqlite3_finalize(st);
+}
+
+/* One paged statement over one schema. `after` is the last key taken from it (a copy in job->out). */
+typedef struct {
+    const char* arm;
+    sqlite3_stmt* st;
+    const char* after;
+    int got;  /* rows of the current page stepped */
+    int live; /* st holds a row */
+} sel_page_arm;
+
+/* Steps `a` to its next row, starting the next page when a full page ran out. 0 on an error. */
+static int arm_step(sel_library* lib, sel_page_arm* a, int rows, sel_lib_job* job) {
+    for (;;) {
+        int rc = sqlite3_step(a->st);
+        if (rc == SQLITE_ROW) {
+            a->got++;
+            a->live = 1;
+            return 1;
+        }
+        a->live = 0;
+        if (rc != SQLITE_DONE) {
+            set_sql_error(job, lib->db);
+            return 0;
+        }
+        if (a->got < rows) {
+            return 1;
+        }
+        sqlite3_reset(a->st);
+        sqlite3_bind_text(a->st, sqlite3_bind_parameter_index(a->st, ":after"), a->after, -1, SQLITE_STATIC);
+        a->got = 0;
+    }
+}
+
+/* Copies the sorted keys of `arm` (and of `arm_idx`, the same query over the attached index) into job->out
+ * until they run out or one does not fit. A key equal to the one before it (the same song in the user DB
+ * and the index) is copied once. */
+static void collect(sel_library* lib, const char* arm, const char* arm_idx, const char* match, sel_lib_job* job) {
+    static const char PAGE[] = "SELECT key FROM (%s) WHERE key > :after ORDER BY key LIMIT :rows";
+    sel_page_arm arms[2];
+    const char* last = NULL; /* the last key copied into job->out */
+    unsigned narms = arm_idx != NULL ? 2u : 1u, i;
+    uint32_t used = 0;
+    int rows = page_rows(lib), ok = 1;
+
+    memset(arms, 0, sizeof arms);
+    arms[0].arm = arm;
+    arms[1].arm = arm_idx;
+    for (i = 0; i < narms && ok; i++) {
+        arms[i].after = "";
+        arms[i].st = prepare_arm(lib, PAGE, arms[i].arm, match, job);
+        if (arms[i].st == NULL) {
+            ok = 0;
+            break;
+        }
+        sqlite3_bind_text(arms[i].st, sqlite3_bind_parameter_index(arms[i].st, ":after"), "", -1, SQLITE_STATIC);
+        sqlite3_bind_int(arms[i].st, sqlite3_bind_parameter_index(arms[i].st, ":rows"), rows);
+        ok = arm_step(lib, &arms[i], rows, job);
+    }
+    while (ok && (arms[0].live || arms[1].live)) {
+        sel_page_arm* t = &arms[0];
+        const char* k;
+        size_t n;
+        if (!arms[0].live ||
+            (arms[1].live && strcmp((const char*)sqlite3_column_text(arms[1].st, 0),
+                                    (const char*)sqlite3_column_text(arms[0].st, 0)) < 0)) {
+            t = &arms[1];
+        }
+        k = (const char*)sqlite3_column_text(t->st, 0);
+        n = k != NULL ? strlen(k) + 1u : 0;
+        if (n > 0 && (last == NULL || strcmp(k, last) != 0)) {
+            if (used + n > job->out_cap) {
+                /* the rest of each arm after its last key taken, this key included */
+                for (i = 0; i < narms; i++) {
+                    count_rest(lib, arms[i].arm, match, arms[i].after, job);
+                }
+                break;
+            }
+            memcpy(job->out + used, k, n);
+            last = job->out + used;
+            used += (uint32_t)n;
+            job->count++;
+        }
+        if (last != NULL) {
+            t->after = last; /* this key, or the equal one copied before it */
+        }
+        ok = arm_step(lib, t, rows, job);
+    }
+    for (i = 0; i < narms; i++) {
+        sqlite3_finalize(arms[i].st);
     }
 }
 
@@ -188,10 +317,8 @@ static void collect_meta(sel_library* lib, sel_lib_job* job) {
 }
 
 void sel_library_search(sel_library* lib, sel_lib_job* job) {
-    sqlite3_stmt* st = NULL;
-    char sql[2 * SEL_QUERY_SQL_MAX + 120]; /* the query once per schema when an index is attached */
+    char sql_idx[SEL_QUERY_SQL_MAX + 64]; /* the compiled query over the attached index */
     char match[SEL_QUERY_TEXT_MAX * 2];
-    unsigned i;
 
     job->count = job->truncated = job->used_fts = 0;
     job->error[0] = '\0';
@@ -211,20 +338,12 @@ void sel_library_search(sel_library* lib, sel_lib_job* job) {
             match[o++] = '*';
         }
         match[o] = '\0';
-        if (sqlite3_prepare_v2(lib->db,
-                               lib->has_index
-                                   ? "SELECT key FROM (SELECT songs.key AS key FROM song_fts JOIN songs ON songs.id = song_fts.rowid"
-                                     " WHERE song_fts MATCH ?1 UNION ALL SELECT s.key FROM idx.song_fts"
-                                     " JOIN idx.songs AS s ON s.id = song_fts.rowid WHERE song_fts MATCH ?1)"
-                                     " ORDER BY key"
-                                   : "SELECT songs.key FROM song_fts JOIN songs ON songs.id = song_fts.rowid"
-                                     " WHERE song_fts MATCH ?1 ORDER BY songs.key",
-                               -1, &st, NULL) != SQLITE_OK) {
-            set_sql_error(job, lib->db);
-            return;
-        }
-        sqlite3_bind_text(st, 1, match, -1, SQLITE_STATIC);
         job->used_fts = 1;
+        collect(lib, "SELECT songs.key AS key FROM song_fts JOIN songs ON songs.id = song_fts.rowid WHERE song_fts MATCH ?1",
+                lib->has_index ? "SELECT s.key AS key FROM idx.song_fts JOIN idx.songs AS s ON s.id = song_fts.rowid"
+                                 " WHERE song_fts MATCH ?1"
+                               : NULL,
+                match, job);
     } else {
         lib->view_used = 0;
         if (!sel_query_compile(job->text, job->now, view_lookup, lib, &lib->query)) {
@@ -235,34 +354,11 @@ void sel_library_search(sel_library* lib, sel_lib_job* job) {
             /* The same query once more over the index: only the FROM table changes (the user tables a query
              * joins stay unqualified and resolve to the main DB first). Each copy has its own `?` numbers. */
             const char* where = strstr(lib->query.sql, " WHERE ");
-            sqlite3_snprintf((int)sizeof sql, sql,
-                             "SELECT key FROM (%s UNION ALL SELECT songs.key FROM idx.songs AS songs%s) ORDER BY key",
-                             lib->query.sql, where != NULL ? where : "");
-        } else {
-            sqlite3_snprintf((int)sizeof sql, sql, "%s ORDER BY songs.key", lib->query.sql);
+            sqlite3_snprintf((int)sizeof sql_idx, sql_idx, "SELECT songs.key FROM idx.songs AS songs%s",
+                             where != NULL ? where : "");
         }
-        if (sqlite3_prepare_v2(lib->db, sql, -1, &st, NULL) != SQLITE_OK) {
-            set_sql_error(job, lib->db);
-            return;
-        }
-        for (i = 0; i < lib->query.nparams; i++) {
-            const sel_query_param* p = &lib->query.params[i];
-            if (p->is_int) {
-                sqlite3_bind_int64(st, (int)i + 1, p->i);
-            } else {
-                sqlite3_bind_text(st, (int)i + 1, p->s, -1, SQLITE_STATIC);
-            }
-            if (lib->has_index) {
-                if (p->is_int) {
-                    sqlite3_bind_int64(st, (int)(lib->query.nparams + i) + 1, p->i);
-                } else {
-                    sqlite3_bind_text(st, (int)(lib->query.nparams + i) + 1, p->s, -1, SQLITE_STATIC);
-                }
-            }
-        }
+        collect(lib, lib->query.sql, lib->has_index ? sql_idx : NULL, NULL, job);
     }
-    collect(lib, st, job);
-    sqlite3_finalize(st);
     collect_meta(lib, job);
 }
 

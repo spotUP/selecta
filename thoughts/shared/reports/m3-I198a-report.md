@@ -40,3 +40,24 @@ row bound (out_cap over the smallest key length, or the queue capacity) and a ch
 Prepared in the worktree but not committed because it is red: tests/m2/library_vamos.cmake, after the 20000-row
 stats check, runs `song` and `artist:artist` on bigidx.db and requires hits, no ERROR and db_heap_peak <= 524288.
 It fails now with `ERROR out_of_memory` (verified) and should pass once the sorter is bounded.
+
+## Resolution (2026-10-23)
+Fixed in src/library/db/search.c and third_party/sqlite/CMakeLists.txt:
+- The search runs one paged statement per schema, `SELECT key FROM (<arm>) WHERE key > :after ORDER BY key
+  LIMIT :rows` (rows = heap/2048, 256 at 512 KiB), and merges the two sorted streams in C, dropping a key equal to
+  the one before it. A single `... UNION ALL ... ORDER BY key LIMIT n` does not bound memory: EXPLAIN QUERY PLAN
+  shows a MERGE whose arms each `USE TEMP B-TREE FOR ORDER BY` over all their hits, and a LIMIT inside each arm
+  shifts the numbering of the compiled query's bare `?` parameters.
+- When a key does not fit the result buffer, the rest of each arm is counted into `truncated`.
+- `SQLITE_DEFAULT_PCACHE_INITSZ=0`: the page cache's bulk preallocation took about 200 KB of the 512 KiB heap
+  before the first query (heap in use before a search went from 457088 to 260480 bytes).
+
+Measured on the 20000-row index at --machine a1200 (heap 524288): `artist:artist` src_count=405 peak 358624;
+`som` (prefix index) src_count=405 peak 499296 (95% of the heap); `so` peak 495200.
+
+## Still failing (follow-up I198b)
+An FTS prefix longer than the prefix index lengths (`prefix='2 3'`) with many hits, such as `song` or `long` over
+the 20000-row index: SQLite logs `failed to allocate 65536 bytes` on the first step of the index arm. FTS5 serves a
+prefix with no matching prefix index by merging every matching doclist into one in-memory buffer
+(fts5SetupPrefixIter), so memory grows with the hits, independent of the sorter. The I198a acceptance searches
+(jester, purple, artist:jester, format:xm, year) pass on the full Modland index because they hit few rows.
