@@ -332,7 +332,8 @@ Tests T62 to T97 are defined in the plan's finish-line table. T8 ratchet target 
 | I148 | [x] | 2 | SQL compiler with bound parameters, durations, sizes, relative time, `in:`, `view:` | T63 green; bound params only; T63 query-compile green, 29-row golden tests/m3/query.golden; in: depth and played aliases are Q72/Q73; merge ec86a6b |
 | I149 | [x] | 2 | LIBRARY_SEARCH through the worker, LIBRARY_RESULT row tags in `tags.def`; worker registers a REGEXP SQL function (desktop and 68k) for `key:/re/` | T64 green; T8 count moves; T64/T65 green, unimplemented 21 to 18, T66 red for I151; merge 97ecf05 |
 | I150 | [x] | 2 | PLAY_QUERY, QUEUE_ADD_QUERY, VIEW_SAVE (smart playlists) | T65 green; T8 count moves; T64/T65 green, unimplemented 21 to 18, T66 red for I151; merge 97ecf05 |
-| I151 | [ ] | 2 | View model source = library query (VIEW_SOURCE), style switch keeps the key | T66 green |
+| I151 | [x] | 2 | View model source = library query (VIEW_SOURCE), style switch keeps the key | T66 green; T66 green, query view is a snapshot of last search; merge ad4efc3 |
+| I151a | [ ] | 2 | Query view rows show title/artist columns instead of song keys; VIEW_SOURCE playlist and home | T66 screen shows titles; playlist/home sources answer OK |
 | I152 | [x] | 3 | `src/core/{posix,amiga}/net.c` socket table, guard and host map | T67 green; posix+amiga socket table, guard checks mapped target; T67 net-guard green; Amiga net.c never run (no TCP stack under vamos, rig T97); merge 46596b1 |
 | I153 | [x] | 3 | `src/library/net/http.c` HTTP/1.1: GET/PUT/POST/DELETE, chunked, Range, redirects, 3 s / 30 s timeouts | T68 plain parts green; HTTP/1.1 client + selecta-cli fetch; T68 http-client plain parts green; https returns tls_unavailable until I154; merge 46596b1 |
 | I154 | [x] | 3 | Vendor mbedTLS, TLS stream wrapper, OS CA store, `SELECTA_CA_FILE` (D-M3-4) | T68 green; T70 ftp-transport green, Amiga TLS/FTP runtime untested (rig T97); merge 78ae1e0 |
