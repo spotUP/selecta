@@ -843,6 +843,53 @@ static int library_trim(int argc, char** argv) {
     return 0;
 }
 
+int sel_cli_wrong(int argc, char** argv) {
+    const sel_host* host = sel_host_default();
+    const char* db_path = ":memory:";
+    const char* export_path = NULL;
+    const char* song = NULL;
+    const char* note = NULL;
+    uint32_t rows = 0;
+    uint32_t exported = 0;
+    sel_library* lib;
+    int i, ok = 1;
+
+    for (i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "--db") == 0 && i + 1 < argc) {
+            db_path = argv[++i];
+        } else if (strcmp(argv[i], "--export") == 0 && i + 1 < argc) {
+            export_path = argv[++i];
+        } else if (song == NULL && argv[i][0] != '-') {
+            song = argv[i];
+        } else if (note == NULL && argv[i][0] != '-') {
+            note = argv[i];
+        } else {
+            song = NULL;
+            export_path = NULL;
+            break;
+        }
+    }
+    if (song == NULL && export_path == NULL) {
+        fputs("usage: selecta-cli wrong [--db <path>] [--export <sounds-wrong.txt>] [<song> [<note>]]\n", stderr);
+        return 2;
+    }
+    sel_registry_init(host);
+    lib = sel_library_open(host, sel_machine_probe(host), 0, db_path);
+    if (lib == NULL) {
+        puts("db_open=0");
+        return 1;
+    }
+    if (song != NULL) {
+        ok = sel_library_flag(lib, song, "wrong", note != NULL ? note : "", &rows);
+    }
+    if (ok && export_path != NULL) {
+        ok = sel_library_flags_export(lib, export_path, &exported);
+    }
+    printf("flags=%u wrong_exported=%u\n", (unsigned)rows, (unsigned)exported);
+    sel_library_close(lib);
+    return ok ? 0 : 1;
+}
+
 int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "browse") == 0) {
         return library_browse(argc, argv);

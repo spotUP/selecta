@@ -1,0 +1,11 @@
+RESULTS 1 selecta-test-mk.mod
+RESULTS 1 selecta-test-mk.mod
+QUEUE version=4 playing=1 ids=1,2,3,4
+QUEUE version=4 playing=4 ids=1,2,3,4
+QUEUE version=4 playing=3 ids=1,2,3,4
+QUEUE version=4 playing=2 ids=1,2,3,4
+QUEUE version=4 playing=0 ids=1,2,3,4
+QUEUE version=4 playing=2 ids=1,2,3,4
+QUEUE version=4 playing=4 ids=1,2,3,4
+QUEUE version=4 playing=3 ids=1,2,3,4
+LIBRARY searches=2 fts_queries=0 songs_opened=7 history_writes=6 skip_excluded=1

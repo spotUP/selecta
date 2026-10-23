@@ -51,6 +51,7 @@ static int usage(FILE* to) {
           "  library key <source> <path> print the song key and its URL round trip (T72)\n"
           "  library query --explain <q> compile a library query, print sql= params= query_terms= (T63)\n"
           "  library stats              open the library DB, print db_open= schema_version= sqlite_version= (T62)\n"
+          "  wrong [--db <p>] [--export <file>] [<song> [<note>]]  flag a song as sounding wrong, export sounds-wrong.txt (T78)\n"
           "  fetch <url> [--method M] [--range a-b] [--out file]  one HTTP request, print http_status= and net counters\n"
           "  machine [--tier <name>]    probe the machine, print the sel_machine tags\n",
           to);
@@ -282,7 +283,7 @@ static void print_event(void* ctx, const sel_message* evt) {
  * a script observe and drive what a front end and an audio thread would:
  *   @queue              QUEUE version=V playing=ID ids=a,b,c
  *   @results            RESULTS n key,key,... (the last LIBRARY_SEARCH, PLAY_QUERY or QUEUE_ADD_QUERY result; T65)
- *   @library_stats      LIBRARY searches=N fts_queries=N songs_opened=N history_writes=N (T65, T78)
+ *   @library_stats      LIBRARY searches=N fts_queries=N songs_opened=N history_writes=N skip_excluded=N (T65, T78)
  *   @render N           render N frames on this thread, then pump and print
  *   @fade_mid           render until the end fade runs, then to its midpoint; print FADE gain_q16 pos total
  *   @render_until_end   render until SONG_ENDED is pumped; POSITION events
@@ -367,8 +368,9 @@ static void script_directive(sel_engine* e, const char* line) {
     } else if (strcmp(line, "@library_stats") == 0) {
         sel_engine_stats es;
         sel_engine_stats_get(e, &es);
-        printf("LIBRARY searches=%u fts_queries=%u songs_opened=%u history_writes=%u\n", (unsigned)es.library_searches,
-               (unsigned)es.library_fts_queries, (unsigned)es.songs_opened, (unsigned)es.history_writes);
+        printf("LIBRARY searches=%u fts_queries=%u songs_opened=%u history_writes=%u skip_excluded=%u\n",
+               (unsigned)es.library_searches, (unsigned)es.library_fts_queries, (unsigned)es.songs_opened,
+               (unsigned)es.history_writes, (unsigned)es.skip_excluded);
     } else if (strcmp(line, "@position") == 0) {
         const sel_song_state* so = &sel_engine_state(e)->song;
         printf("SNAPSHOT position_ms=%u order=%u row=%u pattern=%u\n", (unsigned)so->position_ms,
@@ -665,6 +667,9 @@ int main(int argc, char** argv)
     }
     if (strcmp(cmd, "library") == 0) {
         return sel_cli_library(argc - 2, argv + 2);
+    }
+    if (strcmp(cmd, "wrong") == 0) {
+        return sel_cli_wrong(argc - 2, argv + 2);
     }
     if (strcmp(cmd, "fetch") == 0) {
         return sel_cli_fetch(argc - 2, argv + 2);

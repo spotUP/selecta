@@ -34,7 +34,12 @@ enum {
 
 /* One user-data operation (SEL_LIB_REQ_USER). The reply is INT [0] 0 = failed, 1 = done, 2 = done and a
  * STICKER_GET found its value, [1] SQLite result code. `at` is epoch seconds. */
-enum { SEL_USER_HISTORY = 1, SEL_USER_LIKE, SEL_USER_KEEP, SEL_USER_STICKER_SET, SEL_USER_STICKER_GET };
+enum {
+    SEL_USER_HISTORY = 1, SEL_USER_LIKE, SEL_USER_KEEP, SEL_USER_STICKER_SET, SEL_USER_STICKER_GET,
+    SEL_USER_FLAG,         /* I171: name "wrong" (value = note) or "skip" on the song key */
+    SEL_USER_FLAG_SKIPPED, /* I171: reply [0] = 2 when the key carries the skip flag */
+    SEL_USER_FLAG_EXPORT   /* I171: name = path of the sounds-wrong.txt to write */
+};
 typedef struct sel_user_op {
     uint32_t op;       /* SEL_USER_* */
     const char* key;   /* song key */
@@ -188,6 +193,13 @@ int sel_library_keep(sel_library* lib, const char* key, int64_t at);
 int sel_library_song_config_set(sel_library* lib, const char* key, const char* list);
 /* Copies the list into `out` ("" when the song has none); 1 on success. */
 int sel_library_song_config_get(sel_library* lib, const char* key, char* out, uint32_t cap);
+/* FLAG (I171): kind "wrong" with a note, or "skip". 1 on success; *rows = rows now in `flags` (may be NULL). */
+int sel_library_flag(sel_library* lib, const char* key, const char* kind, const char* note, uint32_t* rows);
+/* 1 when the song key carries the skip flag. */
+int sel_library_flag_skipped(sel_library* lib, const char* key);
+/* Writes the wrong-flagged songs to `path` as "key<TAB>note" lines in key order (sounds-wrong.txt). 1 on
+ * success; *rows = lines written (may be NULL). */
+int sel_library_flags_export(sel_library* lib, const char* path, uint32_t* rows);
 /* Marks song key `key` in table "kept" or "liked" (seeding and tests). 1 on success. */
 int sel_library_mark(sel_library* lib, const char* table, const char* key);
 /* Companion rules (sel_companion_rules) the trim honours; every LIBRARY_FETCH sets them. */

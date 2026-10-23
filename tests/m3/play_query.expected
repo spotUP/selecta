@@ -53,4 +53,4 @@ LIBRARY_RESULT {SRC_PATH=nosuchword,SRC_COUNT=0,SRC_FTS=1}
 RESULTS 0 
 VIEW_CHANGED regular {UI_ROW_COUNT=0,UI_CURSOR=0,UI_WINDOW_START=0,UI_WINDOW_ROWS=20}
 VIEW_ROWS {UI_ROW_COUNT=0,UI_CURSOR=0,UI_WINDOW_START=0,UI_WINDOW_ROWS=20}
-LIBRARY searches=7 fts_queries=1 songs_opened=1 history_writes=0
+LIBRARY searches=7 fts_queries=1 songs_opened=1 history_writes=0 skip_excluded=0
