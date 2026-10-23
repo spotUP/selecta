@@ -399,7 +399,9 @@ typedef struct sel_lyrics_result {
     char path[512]; /* the song the answer belongs to */
     char text[SEL_LYRICS_TEXT_MAX];
 } sel_lyrics_result;
-void sel_library_lyrics_fetch(sel_library* lib, const char* song_path);
+/* local_lrc != 0: the song has a .lrc next to it; the answer is not used, but a definite 404 (and a DEViLBOX token)
+ * makes the job POST that file once per session (I193b). */
+void sel_library_lyrics_fetch(sel_library* lib, const char* song_path, int local_lrc);
 unsigned sel_library_lyrics_seq(sel_library* lib);                     /* cheap: result sequence only */
 void sel_library_lyrics_result(sel_library* lib, sel_lyrics_result* out); /* copies the whole result */
 int sel_library_cache_stats(const sel_library* lib, struct sel_cache_stats* out);

@@ -4390,6 +4390,10 @@ static void lyrics_open(sel_engine* e, const sel_slot* sl, const sel_tag* meta) 
         fclose(f);
         if (n > 0) {
             lyrics_take(e, e->lyr_file, n, SEL_LYRIC_LRC);
+            if (e->lib != NULL && strcmp(e->prefs.value[SEL_PREF_LIBRARY_LYRICS], "on") == 0) {
+                e->lyr_fetches++; /* I193b: the job asks the endpoint and uploads this .lrc after a definite 404 */
+                sel_library_lyrics_fetch(e->lib, sl->path, 1);
+            }
             return;
         }
     }
@@ -4400,7 +4404,7 @@ static void lyrics_open(sel_engine* e, const sel_slot* sl, const sel_tag* meta) 
     }
     if (e->lib != NULL && sl->path != NULL && strcmp(e->prefs.value[SEL_PREF_LIBRARY_LYRICS], "on") == 0) {
         e->lyr_fetches++;
-        sel_library_lyrics_fetch(e->lib, sl->path);
+        sel_library_lyrics_fetch(e->lib, sl->path, 0);
     }
 }
 

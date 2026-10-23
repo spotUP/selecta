@@ -42,6 +42,7 @@ struct sel_library {
     char vote_key[16];
     int vote_r;
     sel_vote_result vote_res;
+    int lyr_local;           /* the queued song has a local .lrc: upload it after a definite 404 (I193b) */
     char lyr_path[512];      /* queued lyrics request: the song file whose md5 keys the endpoint (lyrics_fetch.c, I193) */
     sel_lyrics_result lyr_res;
 #if !defined(SEL_LIBRARY_NO_THREAD)

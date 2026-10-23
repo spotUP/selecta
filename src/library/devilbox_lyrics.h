@@ -20,4 +20,12 @@ typedef enum sel_dvb_lyrics_status {
 /* GET /api/lyrics/<hash> into out (NUL terminated, at most cap - 1 bytes; *len optional). */
 sel_dvb_lyrics_status sel_dvb_lyrics_get(const char* hash, char* out, size_t cap, size_t* len);
 
+/* Same, and *http_status (optional) gets the HTTP status of the answer, 0 when no answer came (network error). */
+sel_dvb_lyrics_status sel_dvb_lyrics_get_ex(const char* hash, char* out, size_t cap, size_t* len, int* http_status);
+
+/* I193b: POST <devilbox>/api/lyrics/<hash>, body = raw LRC, Bearer token. Returns the HTTP status (204 stored), 0 on a
+ * network error or when the body is empty or over SEL_DVB_LYRICS_UPLOAD_MAX. */
+#define SEL_DVB_LYRICS_UPLOAD_MAX 65536u
+int sel_dvb_lyrics_put(const char* hash, const char* token, const char* text, size_t len);
+
 #endif
