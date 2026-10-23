@@ -58,8 +58,10 @@ typedef struct sel_queue_entry {
 
 /* The view model (design doc section 9b), regular style: one flat list over
  * the queue or the browse listing, a cursor and the visible window. */
-typedef enum sel_view_source { SEL_VIEW_QUEUE = 0, SEL_VIEW_BROWSE = 1, SEL_VIEW_QUERY = 2 } sel_view_source;
-typedef enum sel_row_kind { SEL_ROW_DIR = 0, SEL_ROW_FILE, SEL_ROW_QUEUE, SEL_ROW_NODE } sel_row_kind;
+typedef enum sel_view_source { SEL_VIEW_QUEUE = 0, SEL_VIEW_BROWSE = 1, SEL_VIEW_QUERY = 2, SEL_VIEW_FOLDERS = 3 } sel_view_source;
+/* SEL_ROW_FOLDER and SEL_ROW_PLAYLIST are the rows of the folders source (I179): id is the database id,
+ * depth the nesting level, text the name. */
+typedef enum sel_row_kind { SEL_ROW_DIR = 0, SEL_ROW_FILE, SEL_ROW_QUEUE, SEL_ROW_NODE, SEL_ROW_FOLDER, SEL_ROW_PLAYLIST } sel_row_kind;
 /* Styles over the queue: regular (flat), tree (group nodes that expand to
  * their songs) and drilldown (columns: pick a value per level, the next
  * column lists what matches). The browse source is always regular. */
@@ -274,6 +276,7 @@ typedef struct sel_engine_stats {
     uint32_t skip_excluded;       /* skip-flagged rows the random order left out (T78 flags sentinel) */
     uint32_t cue_sets;            /* CUE_SET rows stored (I175 sentinel) */
     uint32_t cue_gotos;           /* CUE_GOTO seeks made (I175 sentinel) */
+    uint32_t folder_view_rows;    /* rows the folders view source built from the library tree (I179 sentinel) */
     uint32_t folder_ops;          /* FOLDER_ADD/MOVE/DEL and PLAYLIST_MOVE run against the library (I178 sentinel) */
     uint32_t sticker_ops;         /* STICKER_* commands run against the library (I176 sentinel) */
     uint32_t library_searches;    /* queries sent to the library worker (T64) */

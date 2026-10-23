@@ -134,6 +134,8 @@ SEL_TAG(UI, STAT_HASH,         0x5018, INT)
 /* T98 sentinels: library screen openings and library searches run from it. */
 SEL_TAG(UI, STAT_LIBRARY_OPENS, 0x5019, INT)
 SEL_TAG(UI, STAT_LIBRARY_SEARCHES, 0x501A, INT)
+/* I179 sentinel: openings of the playlist folder tree screen. */
+SEL_TAG(UI, STAT_FOLDER_OPENS, 0x501B, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)

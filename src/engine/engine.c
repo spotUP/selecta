@@ -211,6 +211,7 @@ struct sel_engine {
     char hist_key[SEL_DEFERRED_PATH_MAX]; /* key of the song being played, "" none: its end or skip goes to the history table (I170) */
     uint32_t history_writes; /* history rows written (sentinel of the I170 writer) */
     uint32_t cue_sets, cue_gotos, sticker_ops; /* sentinels of I175 / I176 */
+    uint32_t folder_view_rows;                 /* rows the folders view source built (I179 sentinel) */
     uint32_t folder_ops;                       /* FOLDER_* / PLAYLIST_MOVE commands run against the library (I178) */
     uint32_t skip_excluded;  /* skip-flagged queue rows left out of a random order (sentinel of I171) */
     char rp_value[SEL_PREF_VALUE_MAX]; /* answer of the last rp_config_get */
@@ -2886,6 +2887,19 @@ static int folder_ready(sel_engine* e, const char* who) {
     return 1;
 }
 
+/* I179: rebuilds the rows of the folders view source from the library tree. Called when the source is
+ * selected and after every folder command that changed the tree, so the text UI sees the tree only through
+ * the view model. */
+static void folders_reload(sel_engine* e) {
+    char tree[4096];
+    uint32_t lines = 0;
+    tree[0] = '\0';
+    if (e->lib != NULL && sel_library_folder_tree(e->lib, tree, sizeof tree, &lines) != SEL_FOLDER_OK) {
+        tree[0] = '\0';
+    }
+    e->folder_view_rows += sel_view_set_folders(&e->view, tree);
+}
+
 /* FOLDER_ADD name [parent]: creates the folder (parent 0 or absent = root); the answer carries the new id. */
 static void cmd_FOLDER_ADD(sel_engine* e, const sel_message* m) {
     uint32_t id = 0;
@@ -2898,6 +2912,7 @@ static void cmd_FOLDER_ADD(sel_engine* e, const sel_message* m) {
         return;
     }
     snprintf(text, sizeof text, "%u", (unsigned)id);
+    folders_reload(e);
     sticker_answer(e, "folder", m->args[0].v.s, text, id);
 }
 
@@ -2906,6 +2921,7 @@ static void cmd_FOLDER_MOVE(sel_engine* e, const sel_message* m) {
     if (!folder_ready(e, "FOLDER_MOVE")) return;
     rc = sel_library_folder_move(e->lib, (uint32_t)m->args[0].v.u, (uint32_t)m->args[1].v.u);
     if (rc != SEL_FOLDER_OK) folder_report(e, rc, "FOLDER_MOVE");
+    else folders_reload(e);
 }
 
 static void cmd_FOLDER_DEL(sel_engine* e, const sel_message* m) {
@@ -2913,6 +2929,7 @@ static void cmd_FOLDER_DEL(sel_engine* e, const sel_message* m) {
     if (!folder_ready(e, "FOLDER_DEL")) return;
     rc = sel_library_folder_del(e->lib, (uint32_t)m->args[0].v.u);
     if (rc != SEL_FOLDER_OK) folder_report(e, rc, "FOLDER_DEL");
+    else folders_reload(e);
 }
 
 static void cmd_PLAYLIST_MOVE(sel_engine* e, const sel_message* m) {
@@ -2920,6 +2937,7 @@ static void cmd_PLAYLIST_MOVE(sel_engine* e, const sel_message* m) {
     if (!folder_ready(e, "PLAYLIST_MOVE")) return;
     rc = sel_library_playlist_move(e->lib, (uint32_t)m->args[0].v.u, (uint32_t)m->args[1].v.u);
     if (rc != SEL_FOLDER_OK) folder_report(e, rc, "PLAYLIST_MOVE");
+    else folders_reload(e);
 }
 
 static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
@@ -3120,6 +3138,12 @@ static void cmd_VIEW_SOURCE(sel_engine* e, const sel_message* m) {
                 break;
             }
         }
+    } else if (strcmp(what, "folders") == 0) {
+        if (e->lib == NULL) {
+            sel_engine_report_error(e, "no_library", "VIEW_SOURCE");
+            return;
+        }
+        folders_reload(e);
     } else if (strcmp(what, "queue") != 0 && strcmp(what, "browse") != 0) {
         sel_engine_report_error(e, "unsupported", "VIEW_SOURCE");
         return;
@@ -3141,7 +3165,7 @@ static void cmd_VIEW_SOURCE(sel_engine* e, const sel_message* m) {
 }
 
 const char* sel_view_source_label(uint32_t source) {
-    return source == SEL_VIEW_QUEUE ? "queue" : source == SEL_VIEW_BROWSE ? "browse" : source == SEL_VIEW_QUERY ? "query" : "unknown";
+    return source == SEL_VIEW_QUEUE ? "queue" : source == SEL_VIEW_BROWSE ? "browse" : source == SEL_VIEW_QUERY ? "query" : source == SEL_VIEW_FOLDERS ? "folders" : "unknown";
 }
 
 const char* sel_engine_view_cursor_key(const sel_engine* e) {
@@ -3149,7 +3173,7 @@ const char* sel_engine_view_cursor_key(const sel_engine* e) {
     const sel_queue* q = v->source == SEL_VIEW_QUERY ? &e->qview : &e->queue;
     uint32_t at;
 
-    if (v->source == SEL_VIEW_BROWSE || v->row_count == 0) {
+    if (v->source == SEL_VIEW_BROWSE || v->source == SEL_VIEW_FOLDERS || v->row_count == 0) {
         return NULL;
     }
     at = sel_queue_index_of(q, v->cursor_id);
@@ -3248,6 +3272,25 @@ static void cmd_VIEW_ACTIVATE(sel_engine* e, const sel_message* m) {
         return;
     }
     at = v->cursor;
+    if (v->source == SEL_VIEW_FOLDERS) {
+        /* A playlist row loads the playlist into the queue and starts its first song; a folder row has
+         * nothing to start (the tree is always shown open). */
+        const sel_view_row* r = &e->view.frows[at];
+        char keys[4096];
+        uint32_t n = 0, before = e->queue.count;
+        const char* k;
+        if (r->kind != SEL_ROW_PLAYLIST || e->lib == NULL ||
+            sel_library_playlist_keys(e->lib, r->id, keys, sizeof keys, &n) != SEL_FOLDER_OK) {
+            return;
+        }
+        for (k = keys; *k != '\0'; k += strlen(k) + 1u) {
+            queue_insert(e, e->queue.count, k, "VIEW_ACTIVATE");
+        }
+        if (e->queue.count > before) {
+            queue_start(e, before);
+        }
+        return;
+    }
     if (v->source != SEL_VIEW_BROWSE) {
         uint32_t qi;
         if (sel_view_enter(&e->view, &s, &qi)) {
@@ -3669,6 +3712,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->cue_gotos = e->cue_gotos;
     out->sticker_ops = e->sticker_ops;
     out->folder_ops = e->folder_ops;
+    out->folder_view_rows = e->folder_view_rows;
     out->library_searches = e->searches;
     out->library_fts_queries = e->fts_queries;
     out->result_count = e->res_count;

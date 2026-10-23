@@ -11,12 +11,15 @@ static const char* const style_name[3] = {"regular", "tree", "drilldown"};
 
 /* The browse source is a directory listing: always regular. */
 static uint32_t mode_of(const sel_view* v) {
-    return v->pub.source != SEL_VIEW_BROWSE ? v->pub.style : (uint32_t)SEL_VIEW_STYLE_REGULAR;
+    return v->pub.source != SEL_VIEW_BROWSE && v->pub.source != SEL_VIEW_FOLDERS ? v->pub.style : (uint32_t)SEL_VIEW_STYLE_REGULAR;
 }
 
 static uint32_t list_count(const sel_view* v, const sel_view_src* s) {
     if (mode_of(v) != SEL_VIEW_STYLE_REGULAR) {
         return v->total;
+    }
+    if (v->pub.source == SEL_VIEW_FOLDERS) {
+        return v->frow_n;
     }
     return v->pub.source != SEL_VIEW_BROWSE ? s->queue->count : s->browse->count;
 }
@@ -27,7 +30,7 @@ static void anchor_styled(sel_view* v, const sel_view_src* s, uint32_t count);
 static void fill_styled(sel_view* v, const sel_view_src* s);
 
 static uint32_t row_id(const sel_view* v, const sel_view_src* s, uint32_t idx) {
-    return v->pub.source != SEL_VIEW_BROWSE ? s->queue->entries[idx].id : idx;
+    return v->pub.source != SEL_VIEW_BROWSE && v->pub.source != SEL_VIEW_FOLDERS ? s->queue->entries[idx].id : idx;
 }
 
 int sel_view_init(sel_view* v, const sel_host* host, uint32_t row_cap) {
@@ -50,6 +53,21 @@ int sel_view_init(sel_view* v, const sel_host* host, uint32_t row_cap) {
         v->row_text = NULL;
         return 0;
     }
+    v->frows = host->mem_alloc(host, SEL_VIEW_FOLDER_ROWS * sizeof *v->frows, SEL_MEM_FAST);
+    v->ftext = host->mem_alloc(host, (size_t)SEL_VIEW_FOLDER_ROWS * SEL_VIEW_FOLDER_NAME, SEL_MEM_FAST);
+    if (v->frows == NULL || v->ftext == NULL) {
+        host->mem_free(host, v->groups);
+        host->mem_free(host, v->row_text);
+        host->mem_free(host, v->rows);
+        host->mem_free(host, v->frows);
+        host->mem_free(host, v->ftext);
+        v->rows = NULL;
+        v->row_text = NULL;
+        v->groups = NULL;
+        v->frows = NULL;
+        v->ftext = NULL;
+        return 0;
+    }
     v->next_node = 1;
     v->row_cap = row_cap;
     v->pub.window_rows = row_cap < SEL_VIEW_WINDOW_DEFAULT ? row_cap : SEL_VIEW_WINDOW_DEFAULT;
@@ -66,6 +84,12 @@ void sel_view_free(sel_view* v, const sel_host* host) {
     }
     if (v->groups) {
         host->mem_free(host, v->groups);
+    }
+    if (v->frows) {
+        host->mem_free(host, v->frows);
+    }
+    if (v->ftext) {
+        host->mem_free(host, v->ftext);
     }
     memset(v, 0, sizeof *v);
 }
@@ -530,6 +554,8 @@ int sel_view_show(sel_view* v, const sel_view_src* s, const char* source) {
         want = SEL_VIEW_QUERY;
     } else if (strcmp(source, "browse") == 0) {
         want = SEL_VIEW_BROWSE;
+    } else if (strcmp(source, "folders") == 0) {
+        want = SEL_VIEW_FOLDERS;
     } else {
         return 0;
     }
@@ -597,7 +623,9 @@ int sel_view_window(sel_view* v, const sel_view_src* s, uint32_t rows) {
 
 static void anchor(sel_view* v, const sel_view_src* s, uint32_t count) {
     sel_view_state* p = &v->pub;
-    if (p->source != SEL_VIEW_BROWSE) {
+    if (p->source == SEL_VIEW_FOLDERS) {
+        /* The rows follow the tree order: the cursor is the row index. */
+    } else if (p->source != SEL_VIEW_BROWSE) {
         uint32_t at = count ? sel_queue_index_of(s->queue, p->cursor_id) : SEL_QUEUE_NONE;
         if (at != SEL_QUEUE_NONE) {
             p->cursor = at;
@@ -675,7 +703,9 @@ void sel_view_refresh(sel_view* v, const sel_view_src* s) {
         sel_view_row* r = &v->rows[i];
         r->depth = 0;
         r->id = row_id(v, s, idx);
-        if (p->source != SEL_VIEW_BROWSE) {
+        if (p->source == SEL_VIEW_FOLDERS) {
+            *r = v->frows[idx];
+        } else if (p->source != SEL_VIEW_BROWSE) {
             r->kind = SEL_ROW_QUEUE;
             char* buf = v->row_text + (size_t)i * SEL_VIEW_TEXT_MAX;
             queue_row_text(buf, s, idx);
@@ -712,6 +742,7 @@ int sel_view_changed(sel_view* v, const sel_view_src* s, int* structure) {
     now.prefs_generation = s->prefs_generation;
     now.group_key = v->group_key;
     now.drill_n = v->pub.drill_n;
+    now.folder_generation = v->fgen;
     changed = memcmp(&now, &v->last, sizeof now) != 0;
     *structure = v->force_changed || now.source != v->last.source || now.style != v->last.style ||
                  now.window_rows != v->last.window_rows || now.group_key != v->last.group_key;
@@ -722,4 +753,51 @@ int sel_view_changed(sel_view* v, const sel_view_src* s, int* structure) {
 
 const char* sel_view_style_label(uint32_t style) {
     return style < 3u ? style_name[style] : "unknown";
+}
+
+/* The folders source (I179): parses the FOLDER_TREE text. A line is `F <id> <name>` or `P <id> <name>`
+ * after two spaces of indent per level. */
+uint32_t sel_view_set_folders(sel_view* v, const char* tree) {
+    uint32_t n = 0;
+    const char* p = tree;
+    while (*p != '\0' && n < SEL_VIEW_FOLDER_ROWS) {
+        uint32_t depth = 0, id = 0;
+        char kind;
+        char* text = v->ftext + (size_t)n * SEL_VIEW_FOLDER_NAME;
+        size_t len = 0;
+        while (p[0] == ' ' && p[1] == ' ') {
+            depth++;
+            p += 2;
+        }
+        kind = *p;
+        if ((kind == 'F' || kind == 'P') && p[1] == ' ') {
+            p += 2;
+            while (*p >= '0' && *p <= '9') {
+                id = id * 10u + (uint32_t)(*p++ - '0');
+            }
+            if (*p == ' ') {
+                p++;
+            }
+            while (*p != '\0' && *p != '\n' && len + 1u < SEL_VIEW_FOLDER_NAME) {
+                text[len++] = *p++;
+            }
+            text[len] = '\0';
+            v->frows[n].kind = kind == 'F' ? SEL_ROW_FOLDER : SEL_ROW_PLAYLIST;
+            v->frows[n].id = id;
+            v->frows[n].depth = depth;
+            v->frows[n].text = text;
+            v->frows[n].count = 0;
+            v->frows[n].expanded = kind == 'F';
+            n++;
+        }
+        while (*p != '\0' && *p != '\n') {
+            p++;
+        }
+        if (*p == '\n') {
+            p++;
+        }
+    }
+    v->frow_n = n;
+    v->fgen++;
+    return n;
 }

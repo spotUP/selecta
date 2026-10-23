@@ -17,6 +17,8 @@
 #define SEL_VIEW_WINDOW_DEFAULT 20u
 #define SEL_VIEW_TITLE_DEFAULT "[%author% - ]%title%"
 #define SEL_VIEW_TEXT_MAX 160u /* one formatted row, NUL included */
+#define SEL_VIEW_FOLDER_ROWS 256u /* rows of the folders source (the playlist folder tree, I179) */
+#define SEL_VIEW_FOLDER_NAME 64u
 
 /* The data the view lists; read-only here. */
 typedef struct sel_view_src {
@@ -32,7 +34,7 @@ typedef struct sel_view_src {
 
 typedef struct sel_view_sig {
     uint32_t source, style, row_count, cursor, window_start, window_rows, queue_version, browse_generation, playing, prefs_generation;
-    uint32_t group_key, drill_n;
+    uint32_t group_key, drill_n, folder_generation;
 } sel_view_sig;
 
 /* Tree and drilldown group table (design doc section 3, VIEW_GROUP): the
@@ -54,7 +56,7 @@ typedef struct sel_view {
     sel_view_row* rows;
     char* row_text; /* row_cap * SEL_VIEW_TEXT_MAX: the formatted queue rows */
     uint32_t row_cap;
-    uint32_t cursor_of[3], id_of[3]; /* the cursor each source was left at */
+    uint32_t cursor_of[4], id_of[4]; /* the cursor each source was left at */
     uint32_t browse_seen;            /* browse generation the cursor belongs to */
     uint32_t land;                   /* cursor for the next browse listing */
     int active;                      /* a VIEW_ command ran: events are wanted */
@@ -66,6 +68,9 @@ typedef struct sel_view {
     char drill_value[2][SEL_VIEW_GROUP_NAME];
     uint32_t total;       /* rows in the whole list in tree and drilldown */
     int anchor_node;      /* pub.cursor_id names a node, not a song */
+    sel_view_row* frows;             /* the folders source: SEL_VIEW_FOLDER_ROWS rows, text in ftext */
+    char* ftext;
+    uint32_t frow_n, fgen;           /* rows filled, bumps on every set */
     sel_view_sig last;
 } sel_view;
 
@@ -73,7 +78,11 @@ typedef struct sel_view {
 int sel_view_init(sel_view* v, const sel_host* host, uint32_t row_cap);
 void sel_view_free(sel_view* v, const sel_host* host);
 
-/* "queue" or "browse". 0: unknown source. */
+/* Fills the folders source from the library's FOLDER_TREE text ("F|P <id> <name>" per line, two spaces of
+ * indent per level). Returns the rows kept (at most SEL_VIEW_FOLDER_ROWS). */
+uint32_t sel_view_set_folders(sel_view* v, const char* tree);
+
+/* "queue", "browse", "query" or "folders". 0: unknown source. */
 int sel_view_show(sel_view* v, const sel_view_src* s, const char* source);
 
 /* "N" absolute, "+N" / "-N" relative, "top", "bottom"; clamped to the list.

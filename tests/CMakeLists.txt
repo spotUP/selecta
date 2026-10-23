@@ -941,6 +941,17 @@ if(NOT SEL_AMIGA)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
   set_tests_properties(folders-tree PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "folders_ok")
 
+  add_test(NAME text-ui-folders-tree
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv"
+      "-DSEL=${CMAKE_CURRENT_SOURCE_DIR}/m3/folders.sel"
+      "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m3/folders_screen.keys"
+      "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m3/folders_screen.screen"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/folders_screen"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/folders_screen.cmake")
+  set_tests_properties(text-ui-folders-tree PROPERTIES LABELS m3)
+
   add_test(NAME view-library-source
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
       "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv"

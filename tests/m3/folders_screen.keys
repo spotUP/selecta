@@ -1,0 +1,7 @@
+# T83 text-ui-folders-tree (I179): f opens the playlist folder tree, Down twice reaches Mix_one, Enter loads it and plays.
+f
+wait 300
+Down
+Down
+Enter
+wait 500
