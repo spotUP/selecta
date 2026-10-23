@@ -135,3 +135,9 @@ Visualizer plugins on bitmap surfaces (M4), GPU visualizers (M5), chip register 
 - The openmpt adapter maps effects through a ProTracker-only table; other effect commands read as 0.
 - nuade reports `patterns = 0`; its order count is probed up to 4096.
 - `sel_engine_tracker_info` and `sel_engine_tracker_cells` call the replayer on the caller's thread, so they are valid from the script driver only. The pump-thread request path for a published slot (I56 pattern) lands with the pattern panel in Phase 6 (I101), before any front end with a separate audio thread reads cells.
+- Phase 3a: T42 `SOLO 2` expects mask 0x0d; the plan's 0b1011 was a typo. SOLO clamps the mask to the channel count from tracker geometry, because openmpt reports 0 voices.
+- Phase 3a: `render --script` added to drive verbs mid-render. In script mode ERROR events print to stdout and do not fail the render.
+- Phase 3a: no Paula-direct volume path exists in code, so nothing was done there.
+- Phase 3a: openmpt mute is tested as "differs from unmuted" only, no golden.
+- Phase 3a: red reason was the missing `--script` option, not a wrong mask.
+- Phase 3a: `pitch_factor_q16=65536` is a placeholder in `apps/selecta-cli/render.c`; I92 replaces it with the engine value.

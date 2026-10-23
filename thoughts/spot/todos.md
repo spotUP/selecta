@@ -249,8 +249,8 @@ Tests T39 to T48 are defined in the plan's finish-line table.
 | I88 | [x] | 2 | T41 written and red; RP_TRACKER_INFO/CELLS tags and typedefs | ctest failure; red 2bd9668 `Test #52: pattern-cells ***Failed` |
 | I89 | [x] | 2 | nuade and openmpt tracker hooks, `@cells` directive | T41 green; f5d8fa2, merge d068100, full run 72 of 72, ratchet 27 |
 | I89a | [x] | 2 | One note scale in `sel_rp_cell`: nuade adapter maps to the libopenmpt scale (MOD period 428 = 61); pattern.expected nuade rows updated | T41 green with equal notes for both adapters on the same period; red a74692c `Test #56: pattern-cells ***Failed`, fix dd81a35, merge 72b6d82; other nuade formats unverified (only protracker4 has a cell test) |
-| I90 | [ ] | 3 | T42 written and red; mute golden committed after a listening check of voice 1 removed (agent compares against a render with the voice's samples zeroed) | ctest failure |
-| I91 | [ ] | 3 | Mute mask, MUTE, SOLO, VOICE event mask, RP_MUTE | T42 mute half green, ratchet 25 |
+| I90 | [x] | 3 | T42 written and red; mute golden committed after a listening check of voice 1 removed (agent compares against a render with the voice's samples zeroed) | ctest failure | ab8699d red `Test #57: voice-control ***Failed` (unknown option --script); merge 8012c7e
+| I91 | [x] | 3 | Mute mask, MUTE, SOLO, VOICE event mask, RP_MUTE | T42 mute half green, ratchet 25 | f74a1b1, b2c60d6; ratchet 25; full run 72/73, only voice-control red (pitch, I92); merge 8012c7e
 | I92 | [ ] | 3 | Pitch and tempo tables, PITCH, TEMPO, RP_SET_SPEED | T42 green, ratchet 23 |
 | I93 | [ ] | 4 | T43, T44, T45 written and red; voices-test output | ctest failures |
 | I94 | [ ] | 4 | REPEAT, loops/fade_ms/max_song_ms/silence_ms options, SONG_ENDED reason, stop-after options | T43 green, ratchet 22 |
