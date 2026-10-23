@@ -368,6 +368,15 @@ void sel_library_prefetch_stop(sel_library* lib);
  * caller (the engine command thread). The rating is already stored (sel_library_rating_set). Without threads the push
  * runs inline. _wait returns once the thread is idle (test hook, T79); _stop is called by sel_library_close. */
 void sel_library_rating_push(sel_library* lib);
+
+/* I184a: fills songs.md5 of local files in the background, so OPEN of a remote copy finds its local twin (D-M3-14)
+ * without a `library duplicates` run. The scan only stats files; hashing there would make it many times slower on a
+ * 68020. _kick queues one pass over every unhashed local song (threads: the library job thread, one file at a time,
+ * ended by close; the value is stored per file, so an interrupted pass resumes). _poll is the cooperative half for
+ * builds without threads: each call hashes at most one file and returns 1 when it did, 0 when nothing is left; the
+ * caller invokes it only while it is idle. With threads _poll does nothing and returns 0. */
+void sel_library_hash_kick(sel_library* lib);
+int sel_library_hash_poll(sel_library* lib);
 void sel_library_rating_wait(sel_library* lib);
 
 /* I174: VOTE. Queues one HippoPlayer vote request on the library job thread (the one behind ratings and prefetch);
