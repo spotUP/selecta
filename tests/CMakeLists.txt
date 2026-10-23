@@ -20,10 +20,10 @@ sel_cli_test(protocol-reflection-events   "events"   "-DLINES=${SEL_COUNT_EVT}")
 sel_cli_test(protocol-reflection-tagtypes "tagtypes" "-DLINES=${SEL_COUNT_META}")
 
 # T5: the registry walked every descriptor and found only known tags.
-# null, wav, nuade, openmpt, the crossfeed DSP, the text UI, the nowplaying-test and lastfm integrations and the voices-test, paula-shadow and paula14-shadow
+# null, wav, nuade, openmpt, the minimp3 and stb_vorbis stream decoders, the crossfeed DSP, the text UI, the nowplaying-test and lastfm integrations and the voices-test, paula-shadow and paula14-shadow
 # output (both host only), plus coreaudio and the
 # macOS Now Playing plugin on macOS, or MPRIS on Linux when libsystemd was found; the negative tree adds one bad plugin.
-set(SEL_EXPECT_PLUGINS 11)
+set(SEL_EXPECT_PLUGINS 13)
 if(APPLE)
   math(EXPR SEL_EXPECT_PLUGINS "${SEL_EXPECT_PLUGINS} + 2")
 elseif(SEL_HAVE_MPRIS)
