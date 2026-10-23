@@ -22,6 +22,8 @@ format:mod OR format:xm	SELECT songs.key FROM songs WHERE COALESCE(songs.format,
 (format:mod OR format:xm) artist:foo	SELECT songs.key FROM songs WHERE (COALESCE(songs.format, '') LIKE ? ESCAPE '\' OR COALESCE(songs.format, '') LIKE ? ESCAPE '\') AND COALESCE(songs.artist, '') LIKE ? ESCAPE '\'	s:%mod%|s:%xm%|s:%foo%
 chiptune	SELECT songs.key FROM songs WHERE (COALESCE(songs.name, '') LIKE ? ESCAPE '\' OR COALESCE(songs.artist, '') LIKE ? ESCAPE '\' OR COALESCE(songs.path, '') LIKE ? ESCAPE '\')	s:%chiptune%|s:%chiptune%|s:%chiptune%
 liked:yes	SELECT songs.key FROM songs WHERE EXISTS (SELECT 1 FROM liked WHERE liked.key = songs.key)	-
+kept:yes	SELECT songs.key FROM songs WHERE EXISTS (SELECT 1 FROM kept WHERE kept.key = songs.key)	-
+kept:no	SELECT songs.key FROM songs WHERE NOT EXISTS (SELECT 1 FROM kept WHERE kept.key = songs.key)	-
 wrong:no	SELECT songs.key FROM songs WHERE NOT EXISTS (SELECT 1 FROM flags WHERE flags.key = songs.key AND flags.wrong = 1)	-
 rating:>3	SELECT songs.key FROM songs WHERE (SELECT ratings.rating FROM ratings WHERE ratings.key = songs.key) > ?	i:3
 artist:"Rob Hubbard"	SELECT songs.key FROM songs WHERE COALESCE(songs.artist, '') LIKE ? ESCAPE '\'	s:%Rob Hubbard%

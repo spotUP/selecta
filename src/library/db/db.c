@@ -591,6 +591,15 @@ int sel_library_keep(sel_library* lib, const char* key, int64_t at) {
     return user_call(lib, &op) > 0;
 }
 
+int sel_library_unkeep(sel_library* lib, const char* key, int64_t at) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_UNKEEP;
+    op.key = key;
+    op.at = at;
+    return user_call(lib, &op) > 0;
+}
+
 int sel_library_song_config_set(sel_library* lib, const char* key, const char* list) {
     sel_user_op op;
     memset(&op, 0, sizeof op);

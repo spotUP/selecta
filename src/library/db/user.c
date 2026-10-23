@@ -411,6 +411,8 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
         rc = user_exec(lib->db, "INSERT INTO history(key, played_at, skipped, duration_ms) VALUES(?1, ?2, ?3, ?4)", op, 1);
     } else if (op->op == SEL_USER_LIKE) {
         rc = user_exec(lib->db, "INSERT OR REPLACE INTO liked(key, at) VALUES(?1, ?2)", op, 2);
+    } else if (op->op == SEL_USER_UNKEEP) {
+        rc = user_exec(lib->db, "DELETE FROM kept WHERE key = ?1", op, 0);
     } else if (op->op == SEL_USER_KEEP) {
         rc = user_exec(lib->db, "INSERT OR REPLACE INTO kept(key, at) VALUES(?1, ?2)", op, 2);
     } else if (op->op == SEL_USER_STICKER_SET && op->name != NULL && op->value != NULL) {
