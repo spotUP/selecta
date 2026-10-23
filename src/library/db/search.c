@@ -405,7 +405,8 @@ static int arm_step(sel_library* lib, sel_page_arm* a, int rows, sel_lib_job* jo
 /* Copies the sorted keys of `arm` (and of `arm_idx`, the same query over the attached index) into job->out
  * until they run out or one does not fit. A key equal to the one before it (the same song in the user DB
  * and the index) is copied once. */
-static void collect(sel_library* lib, const char* arm, const char* arm_idx, const char* match, sel_lib_job* job) {
+static void collect(sel_library* lib, const char* arm, const char* arm_idx, const char* match, uint32_t max_hits,
+                    sel_lib_job* job) {
     static const char PAGE[] = "SELECT key FROM (%s) WHERE key > :after ORDER BY key LIMIT :rows";
     sel_page_arm arms[2];
     const char* last = NULL; /* the last key copied into job->out */
@@ -439,6 +440,11 @@ static void collect(sel_library* lib, const char* arm, const char* arm_idx, cons
         k = (const char*)sqlite3_column_text(t->st, 0);
         n = k != NULL ? strlen(k) + 1u : 0;
         if (n > 0 && (last == NULL || strcmp(k, last) != 0)) {
+            if (max_hits > 0 && job->count >= max_hits) {
+                /* A per-row scan stops here: counting the rest would walk every row again (I198e). */
+                job->truncated = 1;
+                break;
+            }
             if (used + n > job->out_cap) {
                 /* the rest of each arm after its last key taken, this key included */
                 for (i = 0; i < narms; i++) {
@@ -628,7 +634,7 @@ void sel_library_search(sel_library* lib, sel_lib_job* job) {
             snprintf(arm_idx, sizeof arm_idx, "SELECT songs.key AS key FROM idx.songs AS songs WHERE 1%s", CHECK);
             job->used_fts = 0;
         }
-        collect(lib, arm, lib->has_index ? arm_idx : NULL, match, job);
+        collect(lib, arm, lib->has_index ? arm_idx : NULL, match, nterms == 0 ? job->scan_max : 0, job);
     } else {
         lib->view_used = 0;
         if (!sel_query_compile(job->text, job->now, view_lookup, lib, &lib->query)) {
@@ -642,7 +648,7 @@ void sel_library_search(sel_library* lib, sel_lib_job* job) {
             sqlite3_snprintf((int)sizeof sql_idx, sql_idx, "SELECT songs.key FROM idx.songs AS songs%s",
                              where != NULL ? where : "");
         }
-        collect(lib, lib->query.sql, lib->has_index ? sql_idx : NULL, NULL, job);
+        collect(lib, lib->query.sql, lib->has_index ? sql_idx : NULL, NULL, 0, job);
     }
     collect_meta(lib, job);
 }

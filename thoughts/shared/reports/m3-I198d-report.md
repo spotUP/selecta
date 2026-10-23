@@ -45,3 +45,9 @@ it is "no rows" at once. The per-row UTF-8 one-character path is therefore prove
 - Real UTF-8 argument under vamos untested (argv arrives as Latin-1); host path covers it.
 - One-letter ASCII search on 516k rows: ~100 s under vamos; a faster path needs a one-letter prefix index (rebuild
   of every shipped index) or a per-row cap, a product decision.
+
+## I198e: one-letter scan capped (timing)
+Same synthetic 516000-row index as above (not the real Modland names), vamos `-C 68020 -m 8192 --machine a1200`,
+`library search --db work:user.db --index work:idx.db -- a`. After the cap: src_count=256, truncated=1,
+db_heap_peak=328672, query_ms=500 (before: ~100000 ms). The first run on a fresh user.db returned
+`ERROR out_of_memory` once and did not reproduce on two reruns (a, s); unexplained, watch for it.

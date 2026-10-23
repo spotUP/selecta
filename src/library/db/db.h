@@ -150,7 +150,8 @@ typedef struct sel_lib_job {
     uint32_t meta_cap;
     uint32_t meta_used; /* out: bytes of `meta` written (whole rows) */
     uint32_t count;     /* out: keys stored (SEARCH), rows imported (IMPORT) */
-    uint32_t truncated; /* out: keys that did not fit */
+    uint32_t scan_max;  /* in, SEARCH: 0 = none; else the most keys a per-row scan (no FTS term, e.g. one letter) returns (I198e) */
+    uint32_t truncated; /* out: keys that did not fit; a scan stopped at scan_max sets 1 (at least one more, not counted) */
     uint32_t used_fts;  /* out: 1 when the FTS5 index served the query */
     char error[24];     /* out: "" or a query error code (unknown_key, unknown_view, ...) */
 } sel_lib_job;

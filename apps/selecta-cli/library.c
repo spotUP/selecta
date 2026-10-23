@@ -83,7 +83,7 @@ static int library_browse(int argc, char** argv) {
 
 typedef struct search_sink {
     int failed;
-    unsigned count, fts;
+    unsigned count, fts, truncated;
 } search_sink;
 
 static void on_search_event(void* ctx, const sel_message* evt) {
@@ -91,6 +91,8 @@ static void on_search_event(void* ctx, const sel_message* evt) {
     if (evt->id == SEL_EVT_ERROR) {
         printf("ERROR %s\n", evt->args[0].v.s);
         s->failed = 1;
+    } else if (evt->id == SEL_EVT_LOG && strncmp(evt->args[0].v.s, "result_truncated ", 17) == 0) {
+        s->truncated = (unsigned)strtoul(evt->args[0].v.s + 17, NULL, 10);
     } else if (evt->id == SEL_EVT_LIBRARY_RESULT) {
         const sel_tag* tags = evt->args[0].v.t;
         s->count = (unsigned)sel_tag_find(tags, SEL_SRC_COUNT, 0);
@@ -177,6 +179,9 @@ static int library_search(int argc, char** argv) {
             printf("key=%s\n", sel_engine_result_key(e, i));
         }
         printf("src_count=%u\nfts_queries=%u\n", sink.count, sink.fts);
+        if (sink.truncated != 0) {
+            printf("truncated=%u\n", sink.truncated);
+        }
         if (index_path != NULL) {
             printf("index_songs=%u heap_bytes=%u db_heap_peak=%u query_ms=%u\n", (unsigned)sel_library_index_songs(lib),
                    (unsigned)sel_library_heap_size(lib), (unsigned)sel_library_heap_peak(), (unsigned)t0);

@@ -2939,6 +2939,7 @@ static int run_search(sel_engine* e, const char* text, const char* who, uint32_t
     job.now = (long long)time(NULL);
     job.out = e->res_text;
     job.out_cap = e->queue.text_bytes;
+    job.scan_max = e->queue.capacity; /* a per-row scan returns at most as many keys as the queue holds (I198e) */
     job.meta = e->res_meta;
     job.meta_cap = e->queue.text_bytes;
     if (!sel_library_run(e->lib, SEL_LIB_REQ_SEARCH, &job)) {
