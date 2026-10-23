@@ -11,6 +11,19 @@ uint32_t sel_shuffle_seed(uint32_t seed) {
     return seed ? seed : 0x9E3779B9u;
 }
 
+uint32_t sel_shuffle_ids(uint32_t* ids, uint32_t n, uint32_t seed) {
+    uint32_t s = sel_shuffle_seed(seed);
+    uint32_t i;
+    for (i = n; i > 1u; i--) {
+        uint32_t j = sel_xorshift32(s) % i;
+        uint32_t t = ids[i - 1u];
+        s = sel_xorshift32(s);
+        ids[i - 1u] = ids[j];
+        ids[j] = t;
+    }
+    return s;
+}
+
 uint32_t sel_queue_shuffle(sel_queue* q, uint32_t first, uint32_t seed) {
     uint32_t s = sel_shuffle_seed(seed);
     uint32_t i;

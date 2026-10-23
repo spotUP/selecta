@@ -513,7 +513,7 @@ int sel_codec_decode(const char* line, uint32_t kind, sel_message* out, char* po
     siglen = strlen(sig);
     required = maximum = siglen;
     if (siglen && sig[siglen - 1] == '?') {
-        required = siglen - 1;
+        required = siglen - 2;
         maximum = siglen - 1;
         siglen--;
     } else if (siglen && sig[siglen - 1] == '*') {

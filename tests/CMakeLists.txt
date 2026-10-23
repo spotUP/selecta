@@ -96,8 +96,10 @@ add_custom_command(OUTPUT "${SEL_ALBUM_STAMP}"
   COMMAND "${CMAKE_COMMAND}" -E copy "${SEL_TESTMOD}" "${CMAKE_CURRENT_BINARY_DIR}/songs/b/three.mod"
   COMMAND "${CMAKE_COMMAND}" -E copy "${SEL_TESTMOD}" "${CMAKE_CURRENT_BINARY_DIR}/songs/b/four.mod"
   COMMAND "${CMAKE_COMMAND}" -E copy "${SEL_TESTMOD}" "${CMAKE_CURRENT_BINARY_DIR}/songs/c/five.mod"
+  COMMAND "${CMAKE_COMMAND}" -E copy "${CMAKE_CURRENT_SOURCE_DIR}/m12/list.prg" "${CMAKE_CURRENT_BINARY_DIR}/songs/b/list.prg"
+  COMMAND "${CMAKE_COMMAND}" -E copy "${CMAKE_CURRENT_SOURCE_DIR}/m12/rel.m3u" "${CMAKE_CURRENT_BINARY_DIR}/songs/b/rel.m3u"
   COMMAND "${CMAKE_COMMAND}" -E touch "${SEL_ALBUM_STAMP}"
-  DEPENDS "${SEL_TESTMOD}"
+  DEPENDS "${SEL_TESTMOD}" "${CMAKE_CURRENT_SOURCE_DIR}/m12/list.prg" "${CMAKE_CURRENT_SOURCE_DIR}/m12/rel.m3u"
   COMMENT "Copying album test songs")
 add_custom_target(testmod ALL DEPENDS "${SEL_TESTMOD}" "${SEL_SHORTMOD}" "${SEL_MKMOD}" "${SEL_BREAKMOD}" "${SEL_ALBUM_STAMP}")
 add_test(NAME testmod-sha
@@ -378,3 +380,21 @@ add_executable(playlist_test playlist/playlist_test.c)
 target_link_libraries(playlist_test PRIVATE selecta_library)
 target_include_directories(playlist_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/playlist)
 add_test(NAME playlist-codecs COMMAND playlist_test)
+
+# T30a: random play order (seeded permutation, each entry once before a repeat).
+add_test(NAME queue-random-order
+  COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}"
+    "-DARGS=script ${CMAKE_CURRENT_SOURCE_DIR}/m12/random.sel"
+    "-DEXPECT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/m12/random.expected"
+    -P "${SEL_EXPECT}")
+set_tests_properties(queue-random-order PROPERTIES
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/songs")
+
+# T29 script half (row I73): PLAYLIST_LOAD and PLAYLIST_SAVE through the real dispatch.
+add_test(NAME playlist-verbs
+  COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}"
+    "-DARGS=script ${CMAKE_CURRENT_SOURCE_DIR}/m12/playlist.sel"
+    "-DEXPECT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/m12/playlist.expected"
+    -P "${SEL_EXPECT}")
+set_tests_properties(playlist-verbs PROPERTIES
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/songs")

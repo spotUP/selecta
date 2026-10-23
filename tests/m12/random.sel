@@ -1,0 +1,62 @@
+# T30a queue-random-order: with `random` on, NEXT, PREV and auto-advance walk a
+# seeded permutation of the queue; every entry plays once before a repeat.
+# Working directory build/host/tests/songs. The playing= sequence is checked
+# against an independent model of xorshift32 Fisher-Yates (see the plan, I71a).
+QUEUE_ADD selecta-test.mod
+QUEUE_ADD selecta-test.mod
+QUEUE_ADD selecta-test.mod
+QUEUE_ADD selecta-test.mod
+QUEUE_ADD selecta-test.mod
+SHUFFLE on 7
+PLAY
+@render 1
+@queue
+NEXT
+@render 1
+@queue
+NEXT
+@render 1
+@queue
+NEXT
+@render 1
+@queue
+NEXT
+@render 1
+@queue
+NEXT
+@queue
+PLAY
+@render 1
+@queue
+NEXT
+@render 1
+@queue
+PREV
+@render 1
+@queue
+NEXT
+@render 1
+@queue
+QUEUE_ADD selecta-test.mod
+RESHUFFLE
+NEXT
+@render 1
+@queue
+NEXT
+@render 1
+@queue
+NEXT
+@render 1
+@queue
+NEXT
+@render 1
+@queue
+NEXT
+@queue
+SHUFFLE off
+PLAY
+@render 1
+@queue
+NEXT
+@render 1
+@queue

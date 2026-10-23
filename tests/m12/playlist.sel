@@ -1,0 +1,40 @@
+# T29 playlist-codecs, script half (row I73): PLAYLIST_LOAD and PLAYLIST_SAVE through the real
+# dispatch. Working directory build/host/tests/songs; b/list.prg and b/rel.m3u are copies of
+# tests/m12/list.prg and rel.m3u (list.prg: song, divider "Side B", song, stealth song).
+PLAYLIST_LOAD b/list.prg
+@queue
+# A divider is never played: PLAY starts row 1, NEXT jumps over row 2 to row 3.
+PLAY
+@render 1
+@queue
+NEXT
+@render 1
+@queue
+# Save to each format and read the lossy ones back: M3U and XSPF drop the divider.
+PLAYLIST_SAVE b/out.prg
+PLAYLIST_SAVE b/out.xspf
+PLAYLIST_SAVE b/out.m3u
+QUEUE_CLEAR
+PLAYLIST_LOAD b/out.prg
+@queue
+QUEUE_CLEAR
+PLAYLIST_LOAD b/out.xspf
+@queue
+QUEUE_CLEAR
+PLAYLIST_LOAD b/out.m3u
+@queue
+# A relative key resolves against the playlist directory: b/rel.m3u names three.mod.
+QUEUE_CLEAR
+PLAYLIST_LOAD b/rel.m3u
+NEXT
+@render 1
+@queue
+# Mode replace clears first; the load is one undo record.
+PLAYLIST_LOAD b/list.prg replace
+@queue
+UNDO
+@queue
+# Errors.
+PLAYLIST_LOAD b/missing.prg
+PLAYLIST_LOAD b/rel.m3u sideways
+PLAYLIST_SAVE b/out.unknown
