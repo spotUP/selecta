@@ -66,7 +66,10 @@ typedef struct tui {
     uint32_t key_count;
     uint32_t pool_next;
     char pool[TUI_POOLS][TUI_POOL_BYTES];
-    sel_tag stats[11];
+    sel_tag stats[13];
+    uint32_t frames;    /* flushes that wrote bytes */
+    uint32_t hash;      /* FNV-1a over every flushed byte */
+    int headless;       /* --size: fixed grid, keys from stdin, no terminal control */
     uint32_t viz_frames, scope_reads, pattern_rows; /* T39 sentinels */
     uint32_t dot_rows, phase_points; /* I104d sentinels */
     uint32_t cmdline_runs, palette_opens; /* T28 sentinels */
@@ -977,6 +980,13 @@ static void tui_present(tui* u) {
     long n;
     tui_draw(u);
     n = txt_grid_flush(&u->grid, u->out, u->out_cap);
+    if (n > 0) {
+        long b;
+        u->frames++;
+        for (b = 0; b < n; b++) {
+            u->hash = (u->hash ^ (uint8_t)u->out[b]) * 16777619u;
+        }
+    }
     if (n > 0 && u->have_term) {
         txt_term_write(&u->term, u->out, (size_t)n);
     }
@@ -1084,6 +1094,15 @@ static void* tui_open(const sel_ui_open_args* a) {
             return NULL;
         }
         u->use_keys_file = 1;
+    } else if (tui_opt(a, "--size") != NULL) {
+        /* Headless: a fixed grid and keys read from stdin, so a run is the same on every OS (tests). */
+        if (sscanf(tui_opt(a, "--size"), "%ux%u", &cols, &rows) != 2 || cols == 0 || rows == 0) {
+            tui_close(u);
+            return NULL;
+        }
+        u->headless = 1;
+        u->term.in_fd = 0;
+        u->term.out_fd = 1;
     } else if (txt_term_open(&u->term, 0, 1) == 0) {
         u->have_term = 1;
         txt_term_size(&u->term, &cols, &rows);
@@ -1102,6 +1121,7 @@ static void* tui_open(const sel_ui_open_args* a) {
         return NULL;
     }
     u->dirty = 1;
+    u->hash = 2166136261u;
     tui_send_window(u);
     return u;
 }
@@ -1146,6 +1166,9 @@ static int tui_wait(void* state, uint32_t timeout_ms) {
         tui_key(u, &k);
         handled = 1;
     }
+    if (u->headless) {
+        return u->quit ? -1 : handled;
+    }
     txt_term_size(&u->term, &cols, &rows);
     if (cols != u->grid.cols || rows != u->grid.rows) {
         char* bigger;
@@ -1187,8 +1210,12 @@ static const sel_tag* tui_stats(void* state) {
     u->stats[8].value = u->dot_rows;
     u->stats[9].tag = SEL_UI_STAT_PHASE_POINTS;
     u->stats[9].value = u->phase_points;
-    u->stats[10].tag = SEL_TAG_END;
-    u->stats[10].value = 0;
+    u->stats[10].tag = SEL_UI_STAT_FRAMES;
+    u->stats[10].value = u->frames;
+    u->stats[11].tag = SEL_UI_STAT_HASH;
+    u->stats[11].value = u->hash;
+    u->stats[12].tag = SEL_TAG_END;
+    u->stats[12].value = 0;
     return u->stats;
 }
 
