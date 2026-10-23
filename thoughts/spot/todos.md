@@ -420,7 +420,9 @@ Tests T62 to T97 are defined in the plan's finish-line table. T8 ratchet target 
 | I192 | [x] | 10 | Stats SQL views and text UI stats screen | T92 green Done: merged with I191, `stats-screen` green, key `b`. |
 | I193 | [x] | 10 | Lyrics: LRC, song message, DEViLBOX lyrics, current line in the snapshot | T93 green Done: LRC, song message, DEViLBOX /api/lyrics/<md5> (opt-in pref library.lyrics_online, default off); `lyrics` and `lrc-unit` green. |
 | I193a | [ ] | Agree the `/api/lyrics/<md5>` route shape with DEViLBOX (invented here, absent upstream) and add it there; default of `library.lyrics_online` is now on (Johan, 2026-10-23). |
-| I194 | [ ] | 11 | minimp3 and stb_vorbis RENDER-kind plugins over a byte stream (D-M3-8) | T94 decode part green |
+| I194 | [x] | 11 | minimp3 and stb_vorbis RENDER-kind plugins over a byte stream (D-M3-8) | T94 decode part green Done: minimp3 and stb_vorbis RENDER replayers (NEEDS_FLOAT), shared resampler stream_pcm.h; `stream-decode` green; Amiga compiles, rig speed unverified. |
+| I194a | [ ] | Ogg decode returns about one block past the granule length (6656 vs 6615 frames); trim output to the final granule position so song length and end-of-song are exact, and tighten the `stream-decode` tolerance to exact. |
+| I194b | [ ] | MP3 ID3v2/ID3v1 and Ogg Vorbis comments into song metadata (title, artist, album) for the library and panels; today the ID3 tag is only skipped. |
 | I195 | [ ] | 11 | URL and pipe paths in OPEN, M3U URL-only import, `PIPE:` on Amiga | T94 URL part green |
 | I196 | [ ] | 11 | Stream-to-disk recording (F36), `selecta-cli record` | T94 green |
 | I197 | [ ] | 12 | Library and SQLite in the 68k build, `library export-index`, read-only ATTACH (D-M3-16) | T96 green |
