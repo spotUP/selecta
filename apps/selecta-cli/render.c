@@ -362,6 +362,12 @@ int sel_cli_render(int argc, char** argv) {
         if (digest != NULL) {
             printf("output=%s aud_writes=%u reg_log_sha256=%s\n", out_id, (unsigned)writes, digest);
         }
+        digest = (const char*)sel_tag_find(st, SEL_OUT_STAT_P14_HASH, 0);
+        if (digest != NULL) {
+            printf("output=%s p14_frames=%u p14_bufs=%u p14_max_err_lsb=%u p14_hash=%s\n", out_id,
+                   (unsigned)sel_tag_find(st, SEL_OUT_STAT_P14_FRAMES, 0), (unsigned)sel_tag_find(st, SEL_OUT_STAT_P14_BUFS, 0),
+                   (unsigned)sel_tag_find(st, SEL_OUT_STAT_P14_MAX_ERR, 0), digest);
+        }
     }
     o.close(out);
     sel_engine_destroy(e);
