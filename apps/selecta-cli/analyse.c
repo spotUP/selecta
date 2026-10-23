@@ -9,6 +9,7 @@
 #include "cli.h"
 #include "db.h"
 #include "devilbox_loudness.h"
+#include "net/devilbox.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -327,7 +328,8 @@ int sel_cli_loudness(int argc, char** argv) {
                 } else if (!sel_config_dir(config, sizeof config)) {
                     config[0] = '\0';
                 }
-                have_token = sel_dvb_loudness_token_read(config, token, sizeof token);
+                sel_devilbox_set_config_dir(config);
+                have_token = sel_devilbox_token(token, sizeof token);
                 if (have_token) put_status = sel_dvb_loudness_put(hash, token, &mine, "selecta-r128");
             }
         } else {

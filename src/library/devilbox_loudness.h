@@ -32,10 +32,6 @@ sel_dvb_loudness_status sel_dvb_loudness_get(const char* hash, sel_dvb_loudness*
 /* PUT /api/loudness/<hash> with the bearer token; returns the HTTP status (200 ok), 0 on transport failure. */
 int sel_dvb_loudness_put(const char* hash, const char* token, const sel_dvb_loudness* in, const char* analyser);
 
-/* Reads <config_dir>/devilbox.token (D-M3-12) trimmed into out; 1 when a non-empty token exists. The one place
- * the token file is read (the login row I173 owns writing it). */
-int sel_dvb_loudness_token_read(const char* config_dir, char* out, size_t cap);
-
 /* Gain in centi-dB for a measured integrated loudness: target - lufs, limited to +-24 dB (the analyser's rule). */
 int32_t sel_dvb_loudness_gain_cdb(int32_t lufs_cdb);
 
