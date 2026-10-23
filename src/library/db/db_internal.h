@@ -67,6 +67,9 @@ void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_messa
 void sel_library_remove(sel_library* lib, const sel_remove_batch* b, sel_message* reply);
 void sel_library_annotate(sel_library* lib, const sel_annotate_batch* b, sel_message* reply);
 
+/* user.c: SEL_LIB_REQ_USER. */
+void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* reply);
+
 /* worker.c */
 int sel_worker_start(sel_library* lib);
 void sel_worker_stop(sel_library* lib);

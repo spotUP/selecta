@@ -199,5 +199,63 @@ void sel_library_handle(sel_library* lib, const sel_message* req, sel_message* r
         sel_library_remove(lib, (const sel_remove_batch*)req->args[0].v.s, reply);
     } else if (req->id == SEL_LIB_REQ_ANNOTATE && req->argc == 1) {
         sel_library_annotate(lib, (const sel_annotate_batch*)req->args[0].v.s, reply);
+    } else if (req->id == SEL_LIB_REQ_USER && req->argc == 1) {
+        sel_library_user(lib, (const sel_user_op*)req->args[0].v.s, reply);
     }
+}
+
+static int user_call(sel_library* lib, const sel_user_op* op) {
+    sel_message reply;
+    memset(&reply, 0, sizeof reply);
+    if (lib == NULL || !sel_library_request(lib, SEL_LIB_REQ_USER, op, &reply) || reply.argc < 1) return 0;
+    return reply.args[0].v.i;
+}
+
+int sel_library_history_add(sel_library* lib, const char* key, int64_t at, int skipped) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_HISTORY;
+    op.key = key;
+    op.at = at;
+    op.skipped = skipped;
+    return user_call(lib, &op) > 0;
+}
+
+int sel_library_like(sel_library* lib, const char* key, int64_t at) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_LIKE;
+    op.key = key;
+    op.at = at;
+    return user_call(lib, &op) > 0;
+}
+
+int sel_library_keep(sel_library* lib, const char* key, int64_t at) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_KEEP;
+    op.key = key;
+    op.at = at;
+    return user_call(lib, &op) > 0;
+}
+
+int sel_library_song_config_set(sel_library* lib, const char* key, const char* list) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_STICKER_SET;
+    op.key = key;
+    op.name = "rp.config";
+    op.value = list != NULL ? list : "";
+    return user_call(lib, &op) > 0;
+}
+
+int sel_library_song_config_get(sel_library* lib, const char* key, char* out, uint32_t cap) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_STICKER_GET;
+    op.key = key;
+    op.name = "rp.config";
+    op.out = out;
+    op.out_cap = cap;
+    return user_call(lib, &op) > 0;
 }
