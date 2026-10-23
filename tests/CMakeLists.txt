@@ -269,6 +269,20 @@ add_test(NAME mixer-stage-unit COMMAND stage_test)
 add_executable(paula_voices_test paula/paula_voices_test.c "${PROJECT_SOURCE_DIR}/plugins/outputs/paula/paula_voices.c")
 target_include_directories(paula_voices_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
 add_test(NAME paula-voices-unit COMMAND paula_voices_test)
+# I118/I121: hardware and shadow outputs share one skeleton; hardware register bus; routing table.
+set(SEL_PAULA_DIR "${PROJECT_SOURCE_DIR}/plugins/outputs/paula")
+add_executable(paula_out_test paula/paula_out_test.c
+  "${SEL_PAULA_DIR}/paula.c" "${SEL_PAULA_DIR}/shadow.c" "${SEL_PAULA_DIR}/paula_hw.c"
+  "${SEL_PAULA_DIR}/paula_out.c" "${SEL_PAULA_DIR}/paula_voices.c")
+set_source_files_properties("${SEL_PAULA_DIR}/paula.c" PROPERTIES COMPILE_DEFINITIONS SEL_PLUGIN_ENTRY=paula_entry)
+set_source_files_properties("${SEL_PAULA_DIR}/shadow.c" PROPERTIES COMPILE_DEFINITIONS SEL_PLUGIN_ENTRY=shadow_entry)
+target_include_directories(paula_out_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
+target_link_libraries(paula_out_test PRIVATE selecta_core)
+add_test(NAME paula-out-unit COMMAND paula_out_test)
+# I118: SEL_MEM_SAMPLE maps to the chip RAM flags (sentinel: chip allocation counter).
+add_executable(mem_class_test host/mem_class_test.c)
+target_link_libraries(mem_class_test PRIVATE selecta_core)
+add_test(NAME mem-class-unit COMMAND mem_class_test)
 
 # T24: browse listing and view model through the engine command queue and
 # snapshot. The temp tree is created inside the generated songs directory.

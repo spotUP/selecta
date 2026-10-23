@@ -78,6 +78,8 @@ SEL_TAG(OUT, MEM_CHIP,         0x200F, INT) /* bytes of chip RAM the output need
 SEL_TAG(OUT, VOICE_BACKEND,    0x2010, PTR) /* const sel_voices* (*)(void* state): the open output's voice sink */
 SEL_TAG(OUT, STAT_REG_WRITES,  0x2011, INT) /* shadow outputs: AUDx register writes logged */
 SEL_TAG(OUT, STAT_LOG_DIGEST,  0x2012, STR) /* shadow outputs: SHA-256 of the register log, lowercase hex */
+SEL_TAG(OUT, VOICE_MAX,        0x2013, INT) /* voice outputs: most voices the backend plays; a replayer with more goes through the mixer */
+SEL_TAG(OUT, PAULA_HW,         0x2014, INT) /* the output drives the real Paula: LED and width stages are bypassed */
 
 /* DSP plugin rows (design doc section 5, include/selecta/dsp.h). */
 SEL_TAG(DSP, NAME,             0x3000, STR)

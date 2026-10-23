@@ -261,6 +261,8 @@ struct sel_engine {
     uint32_t fades; /* end fades started; audio side (T39) */
     uint32_t mixed_path; /* 1: the engine mixes (a DSP chain can run); 0: the output plays voices itself */
     const sel_voices* voice_sink; /* the output's own voice backend (Paula-direct), or NULL: voices go to the mixer */
+    uint32_t voice_max;           /* most voices voice_sink plays (SEL_OUT_VOICE_MAX); 0: no limit */
+    uint32_t route_direct;        /* routing of the song started last: 1 = voice_sink, 0 = mixer (sel_engine_voice_route) */
     /* Pattern window request (I101). The pump writes pat_order/pat_row_lo/pat_rows and then
      * raises pat_req; the audio thread fills pat_res between render calls and sets pat_ack
      * equal to pat_req; the pump copies pat_res to pat_pub and points the snapshot at it.
@@ -1038,8 +1040,8 @@ static int start_subsong(sel_engine* e, sel_slot* sl, uint32_t subsong) {
     sl->last_tick = 0;
     memset(&sl->pol, 0, sizeof sl->pol);
     sl->subsong = subsong;
-    return sl->rp_start(sl->rp_state, subsong, e->rate,
-                        e->voice_sink != NULL ? e->voice_sink : sel_mixer_voices(&sl->mixer));
+    e->route_direct = sel_engine_voice_route(sl->rp_info.voice_count, e->voice_sink != NULL, e->voice_max) == SEL_ROUTE_DIRECT;
+    return sl->rp_start(sl->rp_state, subsong, e->rate, e->route_direct ? e->voice_sink : sel_mixer_voices(&sl->mixer));
 }
 
 /* Reads the whole file into host memory; NULL when it cannot be read. */
@@ -2690,8 +2692,25 @@ void sel_engine_set_voice_sink(sel_engine* e, const sel_voices* sink) {
     e->voice_sink = sink;
 }
 
+/* Routing table (plan M2 phase 3, I121): a VOICE-kind replayer (voice_count > 0) whose voices fit the output's
+ * backend (voice_max, 0 = no limit) plays through it; every other replayer, RENDER kind included, goes through the mixer. */
+uint32_t sel_engine_voice_route(uint32_t voice_count, int has_sink, uint32_t voice_max) {
+    if (!has_sink || voice_count == 0u || (voice_max != 0u && voice_count > voice_max)) {
+        return SEL_ROUTE_MIXER;
+    }
+    return SEL_ROUTE_DIRECT;
+}
+
+uint32_t sel_engine_routed_direct(const sel_engine* e) {
+    return e->route_direct;
+}
+
 void sel_engine_set_output(sel_engine* e, const sel_tag* out_hooks) {
     e->mixed_path = sel_tag_find(out_hooks, SEL_OUT_VOICES, 0) == 0;
+    e->voice_max = (uint32_t)sel_tag_find(out_hooks, SEL_OUT_VOICE_MAX, 0);
+    if (sel_tag_find(out_hooks, SEL_OUT_PAULA_HW, 0) != 0) {
+        sel_engine_set_paula_output(e, 1);
+    }
     if (sel_tag_find(out_hooks, SEL_OUT_HEADPHONES, 0) != 0 && e->mixed_path &&
         strcmp(e->prefs.value[SEL_PREF_DSP_CROSSFEED], "off") != 0) {
         sel_message m;
