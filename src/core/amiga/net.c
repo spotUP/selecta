@@ -57,6 +57,11 @@ const char* sel_net_ca_file(void) {
     return p != NULL && p[0] != '\0' ? p : NULL;
 }
 
+char* sel_net_os_ca_bundle(size_t* len) {
+    *len = 0;
+    return NULL; /* no OS trust store; the Amiga build is plain HTTP (D-M3-4) */
+}
+
 void sel_net_stats_get(sel_net_stats* out) {
     *out = g_stats;
 }

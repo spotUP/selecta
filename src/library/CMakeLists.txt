@@ -26,4 +26,11 @@ endif()
 
 # Network (plan 2026-10-25-m3-library.md Phase 3, D-M3-4): the socket table with the guard and host
 # map (one file per OS under src/core/) and the HTTP/1.1 client on top of it.
-target_sources(selecta_library PRIVATE ${SEL_NET_SOURCE} net/netpolicy.c net/http.c)
+target_sources(selecta_library PRIVATE ${SEL_NET_SOURCE} net/netpolicy.c net/http.c net/tls.c net/ftp.c)
+if(SEL_AMIGA)
+  # Plain HTTP and FTP on the Amiga (D-M3-4): no TLS library, tls.c compiles its stubs.
+  target_compile_definitions(selecta_library PRIVATE SEL_NO_TLS)
+else()
+  add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/mbedtls ${CMAKE_BINARY_DIR}/third_party/mbedtls)
+  target_link_libraries(selecta_library PUBLIC selecta_mbedtls)
+endif()

@@ -1,5 +1,5 @@
-# T68 http-client, plain HTTP parts (row I153; TLS parts arrive with I154).
-# -DCLI=<selecta-cli> -DWORK=<fixture work dir> -DFIXDIR=<tests/net/fixtures>
+# T68 http-client: plain HTTP parts (row I153) and TLS parts (row I154).
+# -DCLI=<selecta-cli> -DWORK=<fixture work dir> -DFIXDIR=<tests/net/fixtures> -DCA_FILE=<test CA pem>
 # Every request goes to the fixture server through the net guard and host map.
 file(READ "${WORK}/port" port)
 string(STRIP "${port}" port)
@@ -123,3 +123,25 @@ foreach(want "PUT /put 21" "POST /post 21" "DELETE /delete 0" "GET /hop3 0" "GET
     message(FATAL_ERROR "T68 request log lacks '${want}': ${seen}")
   endif()
 endforeach()
+
+# 10. TLS (I154): the fixture CA via SELECTA_CA_FILE verifies and one handshake is counted.
+if(EXISTS "${WORK}/tls_port" AND CA_FILE)
+  file(READ "${WORK}/tls_port" tls_port)
+  string(STRIP "${tls_port}" tls_port)
+  set(ENV{SELECTA_NET_ALLOW} "127.0.0.1,localhost")
+  set(ENV{SELECTA_NET_MAP} "")
+  set(ENV{SELECTA_CA_FILE} "${CA_FILE}")
+  fetch(tls tls.bin https://localhost:${tls_port}/plain)
+  expect("tls error" "${tls_http_error}" ok)
+  expect("tls status" "${tls_http_status}" 200)
+  expect("tls handshakes" "${tls_tls_handshakes}" 1)
+  expect("tls length" "${tls_body_bytes}" 20000)
+  expect_body("tls" tls.bin)
+  # An unknown CA (the OS store does not hold the test CA) fails verification, no body.
+  unset(ENV{SELECTA_CA_FILE})
+  fetch(badca badca.bin https://localhost:${tls_port}/plain)
+  expect("unknown CA error" "${badca_http_error}" tls_verify_failed)
+  expect("unknown CA body" "${badca_body_bytes}" 0)
+else()
+  message(FATAL_ERROR "T68 TLS parts need the TLS fixture listener and the test CA (openssl at configure time)")
+endif()

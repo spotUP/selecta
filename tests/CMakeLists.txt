@@ -839,9 +839,17 @@ if(NOT SEL_AMIGA)
   # net-guard because that test counts the whole request log.
   add_test(NAME http-client
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
-      -P "${SEL_NET_DIR}/http_client.cmake")
+      "-DCA_FILE=${SEL_NET_CA}/ca.pem" -P "${SEL_NET_DIR}/http_client.cmake")
   set_tests_properties(http-client PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     DEPENDS net-guard TIMEOUT 120)
+
+  # T70 (row I155): passive FTP through selecta-cli fetch ftp://. After http-client because
+  # that test reads no log but the FTP check reads the request log.
+  add_test(NAME ftp-transport
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      -P "${SEL_NET_DIR}/ftp_transport.cmake")
+  set_tests_properties(ftp-transport PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    DEPENDS http-client TIMEOUT 60)
 endif()
 
 # M3 Phase 1 (plan 2026-10-25-m3-library.md): T62 library-db-open, I144 to I146.
