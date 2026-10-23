@@ -6,5 +6,7 @@ if(SEL_AMIGA)
 else()
   set(SEL_DIR_SOURCE ${PROJECT_SOURCE_DIR}/src/core/macos/dir.c)
 endif()
-add_library(selecta_library STATIC local.c ${SEL_DIR_SOURCE})
+# Playlist codecs (plan M1.2 phase 3): portable C, no OS code.
+add_library(selecta_library STATIC local.c ${SEL_DIR_SOURCE}
+  playlist/playlist.c playlist/formats/hippo.c playlist/formats/stubs.c)
 target_include_directories(selecta_library PUBLIC ${PROJECT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR})

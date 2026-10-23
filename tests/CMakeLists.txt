@@ -310,3 +310,9 @@ add_test(NAME nuade-players
   COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}"
     "-DNUADE_DIR=${PROJECT_SOURCE_DIR}/third_party/nuade"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/nuade_players.cmake")
+
+# T29: playlist codecs (Hippo .prg, M3U, PLS, XSPF), src/library/playlist.
+add_executable(playlist_test playlist/playlist_test.c)
+target_link_libraries(playlist_test PRIVATE selecta_library)
+target_include_directories(playlist_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/playlist)
+add_test(NAME playlist-codecs COMMAND playlist_test)
