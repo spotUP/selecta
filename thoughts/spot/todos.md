@@ -381,12 +381,14 @@ Tests T62 to T97 are defined in the plan's finish-line table. T8 ratchet target 
 | I175 | [x] | 6 | CUE_SET, CUE_GOTO over the `cues` table (SEL_LIB_REQ_USER; CUE_GOTO seeks through SEEK) | T81 cues green across two processes; unimplemented 16 to 10 with I176; merge afd83ab |
 | I176 | [x] | 6 | STICKER_SET/GET/DEL/LIST (D-M3-17): explicit song key, LIBRARY_RESULT answers, ERROR no_such_sticker, LIST capped at 8 answers with SRC_COUNT total, values capped at 255 bytes | T82 stickers green across two processes; merge afd83ab |
 | I177 | [ ] | 6 | Engine emits SCROBBLE_DUE; `plugins/integrations/lastfm` scrobbler, offline queue (D-M3-15) | T95 green |
-| I178 | [ ] | 7 | Playlists and folder tree in the DB, FOLDER_ADD/MOVE/DEL, PLAYLIST_MOVE, folder export | T83 DB part green |
+| I178 | [x] | 7 | Playlists and folder tree in the DB, FOLDER_ADD/MOVE/DEL, PLAYLIST_MOVE, folder export | T83 DB part green (merge 406fc8f, ctest folders-tree) |
+| I178a | [ ] | 7 | I178 follow-ups: no engine verb creates a DB playlist (only the @playlist_add test directive), add save-queue-as-playlist; FOLDER_DEL on a non-empty folder answers folder_not_empty (agent choice, design silent, confirm with Johan) | engine verb test green |
 | I179 | [ ] | 7 | Text UI tree renders the folder tree | T83 green |
 | I180 | [ ] | 7 | SHARE verb, link parse in `selecta` and `selecta-cli open`, DEViLBOX URL form (D-M3-11) | T84 green |
 | I181 | [x] | 8 | xxh32.c, UADE key (hex8 xxh32 of first 256 KB + hex4 length), DEViLBOX genre lookup GET <base>/api/genre/<key> via sel_http_request, genre_cache, `selecta-cli library genre` | T85 genre part green (devilbox-genre: run 2 hits cache, one request for the 503 song); xxh32-unit vectors; merge 26c7005 |
 | I181a | [ ] | 8 | I181 follow-ups: genre fixtures and endpoint shape are synthetic (prove the real DEViLBOX /api/genre reply); key uses on-disk length, packed files need decompressed length and md5; 256 KB static head buffer in genre.c, stream xxh32 on Amiga; check a rescan upsert keeps songs.genre; run the genre pass automatically after a scan | devilbox-genre asserts genre kept after rescan and auto-applied after scan | m3-i181-report.md |
-| I182 | [ ] | 8 | Songdb lookup, composer alias merge, composer page query | T85 green |
+| I182 | [x] | 8 | Songdb lookup, composer alias merge, composer page query | T85 green (merge of 3963fdc) |
+| I182a | [ ] | 8 | I182 follow-ups: remove the invented composer alias seed in composer.c (virgill/jogge, purple motion, skaven pairings unsourced, likely wrong) and source aliases from songdb authors data or the user; case folding is ASCII only; add a unit test and golden for sel_composer_canon; /api/songdb reply shape unproven against the live server; run the full Amiga link | sel_composer_canon unit test green, no hardcoded aliases |
 | I183 | [ ] | 8 | Similar and also-by queries | T86 similar part green |
 | I184 | [ ] | 8 | Duplicates by md5 across sources, best source (D-M3-14) used by OPEN | T86 green |
 | I185 | [ ] | 8 | Metadata panel rows (STIL, composer, release, year, genre, rating, plays) in module info | T87 green |
