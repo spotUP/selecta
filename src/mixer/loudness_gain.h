@@ -30,6 +30,37 @@ void sel_loudness_gain_set(sel_loudness_gain* g, uint32_t active, uint32_t gain_
 /* Gain then limiter, in place, on `frames` interleaved L/R frames. Counts only when active. */
 void sel_loudness_gain_process(sel_loudness_gain* g, int16_t* stereo, uint32_t frames);
 
+/* Integer adaptive leveler (plan M3 I190, design 6a): for a song with no stored gain. It measures the unscaled signal
+ * in short chunks, keeps a running mean-square (a plain running mean for the first LEVELER_TAU_MS, then a slow
+ * exponential average) and moves its gain toward the design target with a slow slew in both directions, inside the
+ * same +-SEL_GAIN_MAX_CDB clamp. A cumulative gated mean-square gives the estimate that is written back as a
+ * provisional gain. State is per song (per slot); no float, no allocation. */
+#define SEL_LEVELER_CHUNK 256u         /* frames per measurement chunk */
+#define SEL_LEVELER_TARGET_CDB (-1800) /* -18 LUFS (D-M3-9), on the unweighted RMS of both channels */
+#define SEL_LEVELER_SLEW_CDB_S 600     /* gain moves at most 6 dB per second */
+#define SEL_LEVELER_TAU_MS 2000u       /* averaging time of the running estimate */
+#define SEL_LEVELER_MIN_MS 3000u       /* gated signal needed before the estimate is worth storing */
+
+typedef struct sel_leveler {
+    uint64_t p;         /* running mean of L^2+R^2 per frame */
+    uint64_t sum_e;     /* cumulative gated energy */
+    uint64_t sum_n;     /* cumulative gated frames */
+    int64_t cur_q16;    /* gain in force, centi-dB in 16.16 */
+    int32_t want_cdb;   /* gain the running estimate asks for */
+    uint32_t frames;    /* frames measured (all, gated or not): the sentinel */
+} sel_leveler;
+
+void sel_leveler_init(sel_leveler* lv);
+/* Measures `frames` (<= SEL_LEVELER_CHUNK) unscaled interleaved frames, advances the gain and returns the 16.16
+ * gain to apply to exactly these frames. */
+uint32_t sel_leveler_chunk(sel_leveler* lv, const int16_t* stereo, uint32_t frames, uint32_t rate);
+/* Upper bound of the gain over the next `frames` frames from now (for the call's headroom reference). */
+uint32_t sel_leveler_ceiling_q16(const sel_leveler* lv, uint32_t frames, uint32_t rate);
+/* Gain in centi-dB the whole gated signal so far asks for; 0 when fewer than SEL_LEVELER_MIN_MS were measured. */
+int sel_leveler_estimate_cdb(const sel_leveler* lv, uint32_t rate, int32_t* cdb);
+/* 10*log10(x) in centi-dB for x >= 1, integer only (within 1 cdb). */
+int32_t sel_db10_cdb(uint64_t x);
+
 SEL_EXTERN_C_END
 
 #endif /* SELECTA_MIXER_LOUDNESS_GAIN_H */

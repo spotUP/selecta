@@ -366,7 +366,11 @@ void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* repl
         }
     } else if (op->op == SEL_USER_LOUDNESS_SET) {
         sqlite3_stmt* st = NULL;
-        rc = sqlite3_prepare_v2(lib->db, "UPDATE songs SET loudness_gain = ?2 WHERE key = ?1", -1, &st, NULL);
+        rc = sqlite3_prepare_v2(lib->db,
+                                op->to ? "UPDATE songs SET loudness_gain = ?2, loudness_prov = 1 WHERE key = ?1"
+                                         " AND (loudness_gain IS NULL OR loudness_prov = 1)"
+                                       : "UPDATE songs SET loudness_gain = ?2, loudness_prov = 0 WHERE key = ?1",
+                                -1, &st, NULL);
         if (rc == SQLITE_OK) {
             sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
             sqlite3_bind_int64(st, 2, op->at);
@@ -376,7 +380,9 @@ void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* repl
         if (rc == SQLITE_OK && sqlite3_changes(lib->db) == 0) {
             st = NULL;
             rc = sqlite3_prepare_v2(lib->db,
-                                    "INSERT INTO songs(key, source, path, loudness_gain) VALUES(?1, 'local', ?3, ?2)",
+                                    op->to ? "INSERT OR IGNORE INTO songs(key, source, path, loudness_gain, loudness_prov)"
+                                             " VALUES(?1, 'local', ?3, ?2, 1)"
+                                           : "INSERT INTO songs(key, source, path, loudness_gain) VALUES(?1, 'local', ?3, ?2)",
                                     -1, &st, NULL);
             if (rc == SQLITE_OK) {
                 sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
@@ -404,12 +410,12 @@ void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* repl
         if (rc == SQLITE_OK) rc = user_exec(lib->db, "UPDATE ratings SET synced = 1 WHERE key = ?1", op, 0);
     } else if (op->op == SEL_USER_LOUDNESS_GET) {
         sqlite3_stmt* st = NULL;
-        rc = sqlite3_prepare_v2(lib->db, "SELECT loudness_gain FROM songs WHERE key = ?1", -1, &st, NULL);
+        rc = sqlite3_prepare_v2(lib->db, "SELECT loudness_gain, loudness_prov FROM songs WHERE key = ?1", -1, &st, NULL);
         if (rc == SQLITE_OK) {
             sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
             if (sqlite3_step(st) == SQLITE_ROW && sqlite3_column_type(st, 0) != SQLITE_NULL) {
                 rows = sqlite3_column_int64(st, 0);
-                found = 1;
+                found = sqlite3_column_int(st, 1) != 0 ? 2 : 1;
             }
             sqlite3_finalize(st);
         }

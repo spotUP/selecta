@@ -163,5 +163,41 @@ awk -v ga="$ga" -v gb="$gb" -v xf="$xf_plain" '
         print "xf_overlap=" len " lead_frames=" fr0 }' lp_xf_plain.txt lp_xf_diff.txt lp_xf_same.txt || fail "crossfade gain at the switch is wrong"
 rm -f lp_b.mod lp_x.wav lp_xf.sel lp_xf_run.sel lp_xf_*.raw lp_xf_*.txt lp3.db* lp4.db*
 
+# adaptive leveler (I190, design 6a, T90 `auto` part): an un-analysed song in auto mode runs the integer leveler,
+# the gain moves toward -18 dBFS, the estimate is stored as a provisional gain when the song ends, a second play
+# uses it, a real gain overrides it, and track mode leaves an un-analysed song at unity.
+lev() { # <wav> <seconds> <args...>
+    w=$1; s=$2; shift 2
+    "$cli" render "$song" --output "$w" --seconds "$s" "$@" 2>/dev/null || fail "render $* failed"
+}
+rm -f lv.db lv.db-wal lv.db-shm lv_none.db lv_none.db-wal lv_none.db-shm
+la=$(lev lp_lev1.wav 6 --loudness auto --db lv.db)
+[ "$(field "$la" loudness_source)" = leveler ] || fail "auto: loudness_source=$(field "$la" loudness_source)"
+[ "$(field "$la" leveler_frames)" -ge 132300 ] || fail "sentinel leveler_frames=$(field "$la" leveler_frames)"
+lq=$(field "$la" gain_q16)
+[ "$lq" -lt 65536 ] || fail "leveler gain $lq did not move toward the target (song is above -18 dBFS)"
+[ "$(field "$la" limiter_hits)" = 0 ] || fail "limiter engaged on an attenuating leveler render"
+# convergence within 5 s: the level after 5 s (both channels summed, as the analyser fallback counts it) sits within 1.5 dB of the target
+samples lp_lev1.wav | awk 'NR > 441000 { s += $1 * $1; n++ } END { if (n == 0) exit 1; db = 10 * log(2 * s / n / 1073676289) / log(10); print "lev_tail_db=" db; exit !(db < -16.5 && db > -19.5) }' || fail "leveled tail is not within 1.5 dB of -18 dBFS"
+lb=$(lev lp_lev2.wav 2 --loudness auto --db lv.db)
+[ "$(field "$lb" loudness_source)" = provisional ] || fail "second play: loudness_source=$(field "$lb" loudness_source)"
+[ "$(field "$lb" leveler_frames)" = 0 ] || fail "second play ran the leveler again"
+pq=$(field "$lb" gain_q16)
+awk -v a="$pq" -v b="$lq" 'BEGIN { r = a / b; exit !(r > 0.85 && r < 1.15) }' || fail "provisional gain $pq far from the leveler gain $lq"
+lt=$(lev lp_lev3.wav 2 --loudness track --db lv.db)
+[ "$(field "$lt" loudness_source)" = provisional ] || fail "track on a provisional gain: loudness_source=$(field "$lt" loudness_source)"
+# a real gain replaces the provisional one, and a later auto render never replaces the real one
+lev lp_lev4.wav 1 --loudness track --db lv.db --gain-cdb -600 > /dev/null
+lr=$(lev lp_lev5.wav 6 --loudness auto --db lv.db)
+[ "$(field "$lr" loudness_source)" = stored ] || fail "real gain: loudness_source=$(field "$lr" loudness_source)"
+[ "$(field "$lr" leveler_frames)" = 0 ] || fail "leveler ran on an analysed song"
+[ "$(field "$lr" gain_q16)" = "$q16" ] || fail "real gain not kept: $(field "$lr" gain_q16)"
+# track mode without a stored gain stays at unity and equals the plain render
+ln=$(lev lp_lev6.wav 2 --loudness track --db lv_none.db)
+[ "$(field "$ln" loudness_source)" = none ] || fail "track unanalysed: loudness_source=$(field "$ln" loudness_source)"
+[ "$(cksum < lp_lev6.wav)" = "$(cksum < lp_plain.wav)" ] || fail "track on an un-analysed song differs from the plain render"
+echo "leveler_q16=$lq provisional_q16=$pq"
+rm -f lv.db* lv_none.db* lp_lev*.wav
+
 rm -f lp_*.wav lp_*.txt lp_*.raw lp_*.sel lp.db lp.db-wal lp.db-shm lp3.db* lp4.db*
 echo loudness_playback_ok

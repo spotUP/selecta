@@ -330,17 +330,26 @@ int sel_library_cue_get(sel_library* lib, const char* key, uint32_t idx, uint32_
     return user_call_rows(lib, &op, pos_ms) == 2;
 }
 
-int sel_library_loudness_set(sel_library* lib, const char* key, const char* path, int32_t gain_cdb) {
+int sel_library_loudness_set_ex(sel_library* lib, const char* key, const char* path, int32_t gain_cdb, int provisional) {
     sel_user_op op;
     memset(&op, 0, sizeof op);
     op.op = SEL_USER_LOUDNESS_SET;
     op.key = key;
     op.value = path;
     op.at = gain_cdb;
+    op.to = provisional ? 1 : 0;
     return user_call(lib, &op) > 0;
 }
 
+int sel_library_loudness_set(sel_library* lib, const char* key, const char* path, int32_t gain_cdb) {
+    return sel_library_loudness_set_ex(lib, key, path, gain_cdb, 0);
+}
+
 int sel_library_loudness_get(sel_library* lib, const char* key, int32_t* gain_cdb) {
+    return sel_library_loudness_get_ex(lib, key, gain_cdb, NULL);
+}
+
+int sel_library_loudness_get_ex(sel_library* lib, const char* key, int32_t* gain_cdb, int* provisional) {
     sel_user_op op;
     sel_message reply;
     memset(&op, 0, sizeof op);
@@ -348,8 +357,9 @@ int sel_library_loudness_get(sel_library* lib, const char* key, int32_t* gain_cd
     op.op = SEL_USER_LOUDNESS_GET;
     op.key = key;
     if (lib == NULL || !sel_library_request(lib, SEL_LIB_REQ_USER, &op, &reply) || reply.argc < 3) return 0;
-    if (reply.args[0].v.i != 2) return 0;
+    if (reply.args[0].v.i != 2 && reply.args[0].v.i != 3) return 0;
     if (gain_cdb != NULL) *gain_cdb = (int32_t)reply.args[2].v.i;
+    if (provisional != NULL) *provisional = reply.args[0].v.i == 3;
     return 1;
 }
 

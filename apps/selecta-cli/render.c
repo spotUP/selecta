@@ -351,8 +351,9 @@ int sel_cli_render(int argc, char** argv) {
                (unsigned)stats.width_mono);
     }
     if (loud_mode != NULL || loud_db != NULL || loud_have_gain) {
-        printf("loudness_source=%s gain_q16=%u limiter_hits=%u leveler_frames=0 loudness_frames=%u\n", stats.loudness_source,
-               (unsigned)stats.loudness_gain_q16, (unsigned)stats.limiter_hits, (unsigned)stats.loudness_frames);
+        printf("loudness_source=%s gain_q16=%u limiter_hits=%u leveler_frames=%u leveler_writes=%u loudness_frames=%u\n",
+               stats.loudness_source, (unsigned)stats.loudness_gain_q16, (unsigned)stats.limiter_hits,
+               (unsigned)stats.leveler_frames, (unsigned)stats.leveler_writes, (unsigned)stats.loudness_frames);
     }
     if (dsp != NULL) {
         printf("dsp=%s blocks=%u\n", dsp, (unsigned)stats.dsp_blocks);
