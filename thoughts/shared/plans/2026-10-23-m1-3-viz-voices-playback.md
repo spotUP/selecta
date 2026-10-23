@@ -164,3 +164,11 @@ Visualizer plugins on bitmap surfaces (M4), GPU visualizers (M5), chip register 
 - Phase 4c: clock code lives in the existing `src/host/clock.c` and `src/core/amiga/clock.c`, not per-platform files under `src/core/`. HOSTQ_LOCAL_TIME is 0xA001 and returns milliseconds since local midnight; the clock is primed in `sel_engine_create` because localtime_r allocates.
 - Phase 4c: the sleep ramp is a separate Q16 gain, so VOLUME state is not changed or re-emitted. T45 was already red, so no separate red commit; `timer_test.c` (sleep-ramp) and `sleep_cancel.sel` came with the code.
 - Phase 4c: defaults: an alarm set inside its own minute fires at once (Q32); sleep expiry while not playing is dropped; an alarm while playing does nothing; manual pause or stop cancels a running down ramp; the alarm ramp starts from 0.
+
+### Phase 6b (I102) deviations
+
+- T39 uses `selecta-test.mod` (Protracker4, plays through nuade, voice kind, 4 voices). The brief assumed the opposite: `selecta-test-mk.mod` (M.K.) is the one routed to libopenmpt (render kind), and the old `ui-panel-viz` golden used it, which is why it showed "No per voice data".
+- New goldens `ui-panel-levels_voices` and `ui-panel-viz_voices` cover real per-voice levels and scopes (Q30).
+- The pattern panel and the viz panel are mutually exclusive (`P` clears viz, `V` clears pattern), so T39 cannot show scope rows and pattern rows on one screen. T39 key order: `P`, wait, `:DSP crossfeed on`, `:SLEEP_TIMER 1`, `V`, `V`, `1`, wait, quit. The final screen is the scope view with voice 1 blank. `pattern_rows>0` is proven by the exit counter; the pattern screen stays covered by `ui-panel-pattern`.
+- `Muted` is drawn only in levels mode, not scope mode (Q34).
+- `fades=` is parsed by T39 but not asserted; the plan names no value.
