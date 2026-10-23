@@ -3,7 +3,9 @@
 # share the POSIX file.
 if(SEL_AMIGA)
   set(SEL_DIR_SOURCE ${PROJECT_SOURCE_DIR}/src/core/amiga/dir.c)
+  set(SEL_NET_SOURCE ${PROJECT_SOURCE_DIR}/src/core/amiga/net.c)
 else()
+  set(SEL_NET_SOURCE ${PROJECT_SOURCE_DIR}/src/core/posix/net.c)
   set(SEL_DIR_SOURCE ${PROJECT_SOURCE_DIR}/src/core/macos/dir.c)
 endif()
 # Playlist codecs (plan M1.2 phase 3): portable C, no OS code.
@@ -21,3 +23,7 @@ target_link_libraries(selecta_library PUBLIC selecta_sqlite)
 if(SEL_AMIGA)
   target_compile_definitions(selecta_library PRIVATE SEL_LIBRARY_NO_THREAD)
 endif()
+
+# Network (plan 2026-10-25-m3-library.md Phase 3, D-M3-4): the socket table with the guard and host
+# map (one file per OS under src/core/) and the HTTP/1.1 client on top of it.
+target_sources(selecta_library PRIVATE ${SEL_NET_SOURCE} net/netpolicy.c net/http.c)
