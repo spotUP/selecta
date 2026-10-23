@@ -417,7 +417,8 @@ Tests T62 to T97 are defined in the plan's finish-line table. T8 ratchet target 
 | I191a | [ ] | 10 | Home view rows act: Enter on a Recently played / New this week row opens the song, on a Jump back in row opens the album (rows carry song or album keys, not display text only); found at I191 merge | home-view key script presses Enter on a row and the snapshot shows that song playing |
 | I210 | [ ] | 10 | Main red: (1) link-warnings: ld "ignoring duplicate libraries: src/libselecta_loudness.a" (loudness lib linked twice); (2) ui-panel-viz, ui-panel-pattern, ui-panel-levels_voices, ui-panel-viz_voices, selecta-m13-reach, ui-viz-dots, ui-viz-phase: player-screen footer goldens stale since d0c5c16 context-aware hotkeys (footer now "Left Right Seek  Up Down Volume ..."); (3) http-client fails under ctest -j2, passes alone (33 s, still DEPENDS net-guard) | all ten green under ctest -j2 |
 | I192 | [x] | 10 | Stats SQL views and text UI stats screen | T92 green Done: merged with I191, `stats-screen` green, key `b`. |
-| I193 | [ ] | 10 | Lyrics: LRC, song message, DEViLBOX lyrics, current line in the snapshot | T93 green |
+| I193 | [x] | 10 | Lyrics: LRC, song message, DEViLBOX lyrics, current line in the snapshot | T93 green Done: LRC, song message, DEViLBOX /api/lyrics/<md5> (opt-in pref library.lyrics_online, default off); `lyrics` and `lrc-unit` green. |
+| I193a | [ ] | Agree the `/api/lyrics/<md5>` route shape with DEViLBOX (invented here, absent upstream) and add it there; decide default of `library.lyrics_online` (Johan). |
 | I194 | [ ] | 11 | minimp3 and stb_vorbis RENDER-kind plugins over a byte stream (D-M3-8) | T94 decode part green |
 | I195 | [ ] | 11 | URL and pipe paths in OPEN, M3U URL-only import, `PIPE:` on Amiga | T94 URL part green |
 | I196 | [ ] | 11 | Stream-to-disk recording (F36), `selecta-cli record` | T94 green |
