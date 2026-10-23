@@ -1,0 +1,8 @@
+# T94 URL part (row I195): an M3U holding only URL lines imports (section 17 quirk). tests/net/stream_url.cmake writes
+# the playlist and substitutes @M3U@. PLAY starts queue entry 1, which must still be the URL (not resolved against
+# the playlist directory), so the stream reader fetches it.
+PLAYLIST_LOAD @M3U@ replace
+@queue
+PLAY
+@render 441
+@stream_stats

@@ -1264,6 +1264,13 @@ if(NOT SEL_AMIGA)
   set_tests_properties(similar-duplicates PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "similar_ok")
 
+  # T94 URL part (row I195): OPEN of an http URL and a pipe path, M3U with only URL lines.
+  add_test(NAME stream-url
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DM3=${PROJECT_SOURCE_DIR}/tests/m3"
+            "-DSONG=${PROJECT_SOURCE_DIR}/tests/net/fixtures/fixture.test/stream.mod" -P "${SEL_NET_DIR}/stream_url.cmake")
+  set_tests_properties(stream-url PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "stream_url_ok")
+
   # T88 (row I186): RADIO from a seed song, steering, skip exclusion, determinism.
   add_test(NAME radio
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DSONGS=${PROJECT_SOURCE_DIR}/tests/m3/genre"

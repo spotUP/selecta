@@ -1,0 +1,20 @@
+# T94 URL part (row I195). tests/net/stream_url.cmake substitutes @PIPE@, @LOCAL@ and @OUT@ and runs this through
+# `selecta-cli script` against the net fixture (fixture.test is mapped to the fixture server). OPEN of an http URL
+# downloads the module through the one HTTP client and plays it; OPEN of pipe:<cmd> reads the command's output; the
+# same file opened from disk is the oracle. Each song renders 1 s into its own raw dump, @stream_stats counts reads.
+@dump @OUT@/url.raw
+OPEN http://fixture.test/stream.mod
+PLAY
+@render 44100
+@stream_stats
+@dump @OUT@/pipe.raw
+OPEN @PIPE@
+PLAY
+@render 44100
+@stream_stats
+@dump @OUT@/local.raw
+OPEN @LOCAL@
+PLAY
+@render 44100
+@stream_stats
+@dump off

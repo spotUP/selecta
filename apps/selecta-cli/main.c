@@ -16,6 +16,7 @@
 #include "db.h"
 #include "integration_host.h"
 #include "share.h"
+#include "stream_open.h"
 #ifndef SEL_NO_CONTROL_SOCKET
 #include "ctlsock.h"
 #endif
@@ -313,6 +314,7 @@ static void print_event(void* ctx, const sel_message* evt) {
  *                       waits for the lyrics request and prints devilbox_missing=lyrics when the endpoint is missing (I193, T93)
  *   @ratings_read <source> <n> [<path>...]  batch-read n ratings from DEViLBOX (named paths first), store the own ones (T79)
  *   @share_stats        SHARE links_parsed=N links_made=N songs_opened=N (T84)
+ *   @stream_stats       STREAM stream_reads=N stream_bytes=N (T94: OPEN of a URL or pipe path, I195)
  *   @folder_stats       FOLDERS folders=N playlists_in_folders=N playlists=N entries=N folder_ops=N (T83)
  *   @folder_tree        the folder tree, one \"F|P <id> <name>\" line per node (T83)
  *   @playlist_add <folder> <name> <key>...  adds a DB playlist (test plumbing; no engine verb creates one yet)
@@ -439,6 +441,8 @@ static void script_directive(sel_engine* e, const char* line) {
         sel_engine_stats_get(e, &es);
         printf("SHARE links_parsed=%u links_made=%u songs_opened=%u\n", (unsigned)es.links_parsed,
                (unsigned)es.links_made, (unsigned)es.songs_opened);
+    } else if (strcmp(line, "@stream_stats") == 0) {
+        printf("STREAM stream_reads=%u stream_bytes=%u\n", (unsigned)sel_stream_reads(), (unsigned)sel_stream_bytes());
     } else if (strcmp(line, "@position") == 0) {
         const sel_song_state* so = &sel_engine_state(e)->song;
         printf("SNAPSHOT position_ms=%u order=%u row=%u pattern=%u\n", (unsigned)so->position_ms,
