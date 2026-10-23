@@ -213,6 +213,41 @@ static int user_call(sel_library* lib, const sel_user_op* op) {
     return reply.args[0].v.i;
 }
 
+/* Like user_call, and the reply's third value (rows) when the caller wants it. */
+static int user_call_rows(sel_library* lib, const sel_user_op* op, uint32_t* rows) {
+    sel_message reply;
+    memset(&reply, 0, sizeof reply);
+    if (lib == NULL || !sel_library_request(lib, SEL_LIB_REQ_USER, op, &reply) || reply.argc < 3) return 0;
+    if (rows != NULL) *rows = reply.args[2].v.i > 0 ? (uint32_t)reply.args[2].v.i : 0;
+    return reply.args[0].v.i;
+}
+
+int sel_library_flag(sel_library* lib, const char* key, const char* kind, const char* note, uint32_t* rows) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_FLAG;
+    op.key = key;
+    op.name = kind;
+    op.value = note;
+    return user_call_rows(lib, &op, rows) > 0;
+}
+
+int sel_library_flag_skipped(sel_library* lib, const char* key) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_FLAG_SKIPPED;
+    op.key = key;
+    return user_call(lib, &op) == 2;
+}
+
+int sel_library_flags_export(sel_library* lib, const char* path, uint32_t* rows) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_FLAG_EXPORT;
+    op.name = path;
+    return user_call_rows(lib, &op, rows) > 0;
+}
+
 int sel_library_history_add(sel_library* lib, const char* key, int64_t at, int skipped) {
     sel_user_op op;
     memset(&op, 0, sizeof op);

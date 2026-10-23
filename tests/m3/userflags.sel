@@ -1,0 +1,41 @@
+# T78 flags part (row I171): FLAG wrong / FLAG skip mark the song being played in the library DB; the
+# query keys wrong:yes and skip:yes find it; SHUFFLE never picks a skip-flagged song (skip_excluded is the
+# sentinel that the order builder ran the check). selecta-test-mk.mod is the flagged song.
+QUEUE_ADD selecta-test-mk.mod
+QUEUE_ADD selecta-test.mod
+QUEUE_ADD selecta-short.mod
+QUEUE_ADD selecta-loop.mod
+PLAY
+@render 1
+FLAG skip
+FLAG wrong stutters
+LIBRARY_SEARCH wrong:yes
+@results
+LIBRARY_SEARCH skip:yes
+@results
+SHUFFLE on 7
+PLAY
+@render 1
+@queue
+NEXT
+@render 1
+@queue
+NEXT
+@render 1
+@queue
+NEXT
+@render 1
+@queue
+NEXT
+@render 1
+@queue
+NEXT
+@render 1
+@queue
+NEXT
+@render 1
+@queue
+NEXT
+@render 1
+@queue
+@library_stats

@@ -29,6 +29,10 @@ int sel_cli_play(int argc, char** argv);
 /* library browse <dir> (T57): LIBRARY_BROWSE through the engine; prints `dir_entries=<n>`. */
 int sel_cli_library(int argc, char** argv);
 
+/* wrong [--db <p>] [--export <file>] [<song> [<note>]] (T78, I171): flags the song wrong with the note in the
+ * library DB, optionally writes sounds-wrong.txt; prints `flags=<rows> wrong_exported=<lines>`. */
+int sel_cli_wrong(int argc, char** argv);
+
 /* library fetch <source>:<path> (T69): the Mirrors transport; prints mirror_tries= mirror_retries=. */
 int sel_cli_library_fetch(int argc, char** argv);
 

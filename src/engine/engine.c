@@ -110,6 +110,7 @@
     X(LIBRARY_SCAN)                                                                           \
     X(LIBRARY_SYNC)                                                                           \
     X(LIKE)                                                                                   \
+    X(FLAG)                                                                                   \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
     X(VIEW_CURSOR)                                                                            \
@@ -206,6 +207,7 @@ struct sel_engine {
     char rp_song_config[256];       /* per-song override list "plugin.key=value,...", read from the library DB sticker rp.config at OPEN (D-M2-8, I170) */
     char hist_key[SEL_DEFERRED_PATH_MAX]; /* key of the song being played, "" none: its end or skip goes to the history table (I170) */
     uint32_t history_writes; /* history rows written (sentinel of the I170 writer) */
+    uint32_t skip_excluded;  /* skip-flagged queue rows left out of a random order (sentinel of I171) */
     char rp_value[SEL_PREF_VALUE_MAX]; /* answer of the last rp_config_get */
     uint32_t rp_config_applied;     /* option values that came from an override layer (T61) */
     sel_state state;
@@ -1602,6 +1604,11 @@ static void order_ensure(sel_engine* e) {
     e->order_done = kept;
     for (i = 0; i < q->count; i++) {
         if (!e->order_seen[i] && !row_is_divider(q, i)) {
+            /* The one place the random candidate set is built: a skip-flagged song is never a candidate (I171). */
+            if (e->lib != NULL && sel_library_flag_skipped(e->lib, sel_queue_path(q, i))) {
+                e->skip_excluded++;
+                continue;
+            }
             e->order[kept++] = q->entries[i].id;
         }
     }
@@ -2708,6 +2715,24 @@ static void cmd_KEEP(sel_engine* e, const sel_message* m) {
     user_mark(e, "KEEP", sel_library_keep);
 }
 
+/* FLAG wrong [note] | FLAG skip: flags the song being played (I171). `wrong` keeps the note for
+ * sounds-wrong.txt; `skip` keeps the song out of the random order. */
+static void cmd_FLAG(sel_engine* e, const sel_message* m) {
+    const char* kind = m->args[0].v.s;
+    int is_wrong = strcmp(kind, "wrong") == 0;
+    if (!is_wrong && strcmp(kind, "skip") != 0) {
+        sel_engine_report_error(e, "range", "FLAG");
+    } else if (e->lib == NULL) {
+        sel_engine_report_error(e, "no_library", "FLAG");
+    } else if (e->hist_key[0] == '\0') {
+        sel_engine_report_error(e, "no_song", "FLAG");
+    } else if (!sel_library_flag(e->lib, e->hist_key, kind, is_wrong && m->argc > 1 ? m->args[1].v.s : NULL, NULL)) {
+        sel_engine_report_error(e, "library_failed", "FLAG");
+    } else {
+        e->order_qver = 0xFFFFFFFFu; /* a skip flag changes the candidates: rebuild the order on next use */
+    }
+}
+
 static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
     sel_local_scan_config scfg;
     sel_modland_sync_stats st;
@@ -3438,6 +3463,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->seek_skipped_frames = e->seek_skipped;
     out->songs_opened = e->songs_opened;
     out->history_writes = e->history_writes;
+    out->skip_excluded = e->skip_excluded;
     out->library_searches = e->searches;
     out->library_fts_queries = e->fts_queries;
     out->result_count = e->res_count;
