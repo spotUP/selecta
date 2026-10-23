@@ -3,6 +3,7 @@
 
 #include "../local.h"
 #include "../source.h"
+#include "sync_util.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -92,14 +93,6 @@ int32_t sel_hvsc_parse_time_ms(const char* t) {
     return (int32_t)((min * 60 + sec) * 1000 + ms);
 }
 
-static void chomp(char* s) {
-    size_t n = strlen(s);
-
-    while (n > 0 && (s[n - 1] == '\n' || s[n - 1] == '\r' || s[n - 1] == ' ')) {
-        s[--n] = '\0';
-    }
-}
-
 /* Strips leading '/' and an optional "C64Music/" root so every path is relative to the HVSC root. */
 static const char* rel_path(const char* p) {
     while (*p == '/') {
@@ -121,21 +114,7 @@ static int send_request(sync_state* s, uint32_t req, const void* payload, sel_me
 }
 
 static int flush_rows(sync_state* s) {
-    sel_scan_batch b;
-    sel_message reply;
-
-    if (s->row_n == 0) {
-        return 1;
-    }
-    b.rows = s->rows;
-    b.count = s->row_n;
-    b.now = s->cfg->now;
-    s->row_n = 0;
-    if (!send_request(s, SEL_LIB_REQ_SCAN_BATCH, &b, &reply)) {
-        return 0;
-    }
-    s->st->batches++;
-    return 1;
+    return sel_sync_flush_scan(s->cfg, s->rows, &s->row_n, &s->st->batches, &s->failed);
 }
 
 static int queue_row(sync_state* s, const char* rel) {
@@ -176,7 +155,7 @@ static int sync_listing(sync_state* s, const char* file) {
         return 0;
     }
     while (!s->failed && fgets(line, sizeof line, f) != NULL) {
-        chomp(line);
+        sel_sync_chomp(line);
         if (line[0] == '\0' || line[0] == ';' || line[0] == '#') {
             continue;
         }
@@ -282,7 +261,7 @@ static int sync_songlengths(sync_state* s, const char* file) {
         len_item* it;
         uint32_t n;
 
-        chomp(line);
+        sel_sync_chomp(line);
         if (line[0] == ';') {
             const char* p = line + 1;
 
@@ -415,7 +394,7 @@ static int sync_stil(sync_state* s, const char* file) {
         const char* field;
         size_t skip;
 
-        chomp(line);
+        sel_sync_chomp(line);
         if (line[0] == '/') {
             stil_commit(s, &matched);
             it = &s->stils[s->item_n];

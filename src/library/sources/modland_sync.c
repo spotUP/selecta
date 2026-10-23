@@ -3,6 +3,7 @@
 
 #include "../local.h"
 #include "../source.h"
+#include "sync_util.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -62,14 +63,6 @@ static int split_listing_line(char* line, const char** md5, const char** path) {
     return line[i] != '\0';
 }
 
-static void chomp(char* s) {
-    size_t n = strlen(s);
-
-    while (n > 0 && (s[n - 1] == '\n' || s[n - 1] == '\r' || s[n - 1] == ' ')) {
-        s[--n] = '\0';
-    }
-}
-
 /* Writes "pub/modules/" + rel (or rel when it already starts with it). */
 static int full_path(const char* rel, char* out, size_t n) {
     int w;
@@ -83,23 +76,7 @@ static int full_path(const char* rel, char* out, size_t n) {
 }
 
 static int flush_rows(sync_state* s) {
-    sel_scan_batch b;
-    sel_message reply;
-
-    if (s->row_n == 0) {
-        return 1;
-    }
-    b.rows = s->rows;
-    b.count = s->row_n;
-    b.now = s->cfg->now;
-    memset(&reply, 0, sizeof reply);
-    s->row_n = 0;
-    if (!sel_library_request(s->cfg->lib, SEL_LIB_REQ_SCAN_BATCH, &b, &reply) || reply.args[1].v.i != 0) {
-        s->failed = 1;
-        return 0;
-    }
-    s->st->batches++;
-    return 1;
+    return sel_sync_flush_scan(s->cfg, s->rows, &s->row_n, &s->st->batches, &s->failed);
 }
 
 /* Queues one row (tags from the source's parse); the caller flushes. */
@@ -149,7 +126,7 @@ static int sync_listing(sync_state* s, const char* file) {
         const char* md5;
         const char* path;
 
-        chomp(line);
+        sel_sync_chomp(line);
         if (line[0] == '\0') {
             continue;
         }
@@ -284,7 +261,7 @@ static int apply_changelog(sync_state* s, const char* file, int in_week) {
         char* p;
         char* key;
 
-        chomp(line);
+        sel_sync_chomp(line);
         key = line;
         while (*key == ' ' || *key == '\t') {
             key++;

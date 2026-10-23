@@ -51,23 +51,17 @@ static int send_request(sync_state* s, uint32_t req, const void* payload) {
 
 /* Writes the queued rows, then their stickers (an annotation needs the song row to exist). */
 static int flush_items(sync_state* s) {
-    sel_scan_batch b;
     sel_annotate_batch a;
 
     if (s->n == 0) {
         return 1;
     }
-    b.rows = s->rows;
-    b.count = s->n;
-    b.now = s->cfg->now;
     a.source = "hippo";
     a.items = s->notes;
     a.count = s->n;
-    s->n = 0;
-    if (!send_request(s, SEL_LIB_REQ_SCAN_BATCH, &b)) {
+    if (!sel_sync_flush_scan(s->cfg, s->rows, &s->n, &s->st->batches, &s->failed)) {
         return 0;
     }
-    s->st->batches++;
     return send_request(s, SEL_LIB_REQ_ANNOTATE, &a);
 }
 
