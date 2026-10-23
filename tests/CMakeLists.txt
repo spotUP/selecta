@@ -846,3 +846,11 @@ if(NOT SEL_AMIGA)
     COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/m3/library_db_open.sh" $<TARGET_FILE:selecta-cli> ${SEL_T62_SHIM})
   set_tests_properties(library-db-open PROPERTIES LABELS m3)
 endif()
+
+# M3 Phase 2 (plan 2026-10-25-m3-library.md): T63 query-compile, I147 and I148.
+if(NOT SEL_AMIGA)
+  add_test(NAME query-compile
+    COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/m3/query_compile.sh" $<TARGET_FILE:selecta-cli>
+      "${CMAKE_CURRENT_SOURCE_DIR}/m3/query.golden")
+  set_tests_properties(query-compile PROPERTIES LABELS m3)
+endif()
