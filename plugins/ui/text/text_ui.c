@@ -441,6 +441,7 @@ static const struct {
     {"Up", "\x1b[A"},   {"Down", "\x1b[B"},  {"Right", "\x1b[C"},    {"Left", "\x1b[D"}, {"Home", "\x1b[H"},
     {"End", "\x1b[F"},  {"PageUp", "\x1b[5~"}, {"PageDown", "\x1b[6~"}, {"Enter", "\r"},   {"Tab", "\t"},
     {"Backspace", "\x7f"}, {"Escape", "\x1b"}, {"Space", " "},        {"Ctrl-P", "\x10"},
+    {"Ctrl-Left", "\x1b[1;5D"}, {"Ctrl-Right", "\x1b[1;5C"},
 };
 
 /* Reads the next line of the keys file; returns 0 at the end of the file. */

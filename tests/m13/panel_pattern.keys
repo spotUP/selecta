@@ -5,6 +5,6 @@ Enter
 Down
 Enter
 wait 2000
-P
+t
 wait 100
 q

@@ -127,19 +127,19 @@ static const struct {
     {":", "@command"},         {"C-p", "@palette"},
     {"?", "@help"},            {"u", "UNDO"},
     {"C-r", "REDO"},           {"m", "@mark"},
-    /* M1.3 I101. Pitch cannot take + and - (volume has them): braces move it a semitone. */
-    {"v", "@viz"},             {"P", "@pattern"},
+    /* M1.3 I101. No default needs Shift: comma and period move pitch a semitone, Ctrl+arrows
+       move tempo, stereo width lives in the palette and command line only. */
+    {"v", "@viz"},             {"t", "@pattern"},
     {"1", "@voice1"},          {"2", "@voice2"},
     {"3", "@voice3"},          {"4", "@voice4"},
     {"5", "@voice5"},          {"6", "@voice6"},
     {"7", "@voice7"},          {"8", "@voice8"},
     {"9", "@voice9"},          {"0", "SOLO 0"},
-    {"S", "@solo"},            {"}", "PITCH +100"},
-    {"{", "PITCH -100"},       {">", "TEMPO +5"},
-    {"<", "TEMPO -5"},
-    {"L", "@library"},          {"/", "@search"},
-    {"M-l", "FILTER_LED toggle"}, {"(", "MIX_STEREO_WIDTH -10"},
-    {")", "MIX_STEREO_WIDTH +10"},
+    {"o", "@solo"},            {".", "PITCH +100"},
+    {",", "PITCH -100"},       {"C-Right", "TEMPO +5"},
+    {"C-Left", "TEMPO -5"},
+    {"l", "@library"},          {"/", "@search"},
+    {"M-l", "FILTER_LED toggle"},
 };
 
 static int find(const txt_bindings* b, uint32_t code, uint32_t mods) {

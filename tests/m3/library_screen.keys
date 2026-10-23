@@ -1,6 +1,6 @@
 # T98 text-ui-library-screen: L opens the Library screen (all songs, tree by format), / searches
 # "lizardking", Enter expands the format node, Down moves to the second song, Enter plays it.
-L
+l
 wait 300
 /
 l

@@ -48,6 +48,14 @@ int main(void) {
     CHECK(is(look(&b, 'p', TXT_MOD_CTRL), "@palette"));
     CHECK(is(look(&b, 'v', 0), "@viz"));
     CHECK(is(look(&b, 'y', 0), "@next_style"));
+    CHECK(is(look(&b, 't', 0), "@pattern"));
+    CHECK(is(look(&b, 'o', 0), "@solo"));
+    CHECK(is(look(&b, 'l', 0), "@library"));
+    CHECK(is(look(&b, '.', 0), "PITCH +100"));
+    CHECK(is(look(&b, ',', 0), "PITCH -100"));
+    CHECK(is(look(&b, TXT_KEY_RIGHT, TXT_MOD_CTRL), "TEMPO +5"));
+    CHECK(is(look(&b, TXT_KEY_LEFT, TXT_MOD_CTRL), "TEMPO -5"));
+    CHECK(look(&b, 'V', 0) == NULL);
     CHECK(look(&b, 'x', 0) == NULL);
 
     /* a file line overrides or adds */

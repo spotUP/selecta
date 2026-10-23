@@ -5,7 +5,7 @@ Enter
 Down
 Enter
 wait 500
-S
+o
 wait 100
 0
 wait 200

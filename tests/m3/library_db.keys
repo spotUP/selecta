@@ -1,4 +1,4 @@
 # T98 db part: the library screen over a persistent DB filled by LIBRARY_SCAN.
 wait 500
-L
+l
 wait 500

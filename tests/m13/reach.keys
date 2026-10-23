@@ -8,7 +8,7 @@ Enter
 Down
 Enter
 wait 500
-P
+t
 wait 300
 :
 D
@@ -43,8 +43,8 @@ R
 Space
 1
 Enter
-V
-V
+v
+v
 1
 wait 1000
 q

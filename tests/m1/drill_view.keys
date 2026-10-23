@@ -13,7 +13,7 @@ Down
 a
 Tab
 # Queue: v twice shows the drilldown; Enter on the first folder picks it.
-v
-v
+y
+y
 Enter
 wait 2000

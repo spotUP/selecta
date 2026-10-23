@@ -1,18 +1,18 @@
 # I104c key-level engine state. Browse into songs, play selecta-test.mod (nuade, 4 voices), then
-# pitch up twice and down once (} } {: +100 cents), tempo up three times and down once
-# (> > > <: +10 percent), solo the cursor voice (S: voice 1 stays, 2..4 muted), quit.
+# pitch up twice and down once (. . ,: +100 cents), tempo up three times and down once
+# (Ctrl+Right x3, Ctrl+Left: +10 percent), solo the cursor voice (o: voice 1 stays, 2..4 muted), quit.
 Down
 Enter
 Down
 Enter
 wait 500
-}
-}
-{
->
->
->
-<
-S
+.
+.
+,
+Ctrl-Right
+Ctrl-Right
+Ctrl-Right
+Ctrl-Left
+o
 wait 200
 q

@@ -2,7 +2,7 @@
 # `--exec "VIEW_SOURCE query"` first; the keys move to the second result and
 # cycle the view style once round (regular, tree, drilldown, regular).
 Down
-v
-v
-v
+y
+y
+y
 wait 500
