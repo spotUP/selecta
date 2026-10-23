@@ -166,6 +166,7 @@ int sel_cli_analyse(int argc, char** argv) {
 #if !defined(SEL_NO_ANALYSE)
         return analyse_sine(sine, seconds < 1 ? 1 : seconds);
 #else
+        (void)seconds;
         fputs("analyse: desktop only\n", stderr);
         return 1;
 #endif
