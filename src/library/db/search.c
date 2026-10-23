@@ -66,6 +66,14 @@ static void set_error(sel_lib_job* job, const char* code) {
     job->error[sizeof job->error - 1u] = '\0';
 }
 
+/* Maps the last SQLite failure on `db` to the engine's error vocabulary: an exhausted library heap is
+ * out_of_memory, never bad_value (which stays for a statement SQLite rejects). */
+static void set_sql_error(sel_lib_job* job, sqlite3* db) {
+    int rc = sqlite3_errcode(db);
+
+    set_error(job, (rc & 0xff) == SQLITE_NOMEM ? "out_of_memory" : "bad_value");
+}
+
 /* Bare words: letters, digits, `_` and blanks only, and none of the query operators. */
 static int is_bare_words(const char* t) {
     int words = 0;
@@ -100,7 +108,6 @@ static void collect(sel_library* lib, sqlite3_stmt* st, sel_lib_job* job) {
     uint32_t used = 0;
     int rc;
 
-    (void)lib;
     while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
         const char* k = (const char*)sqlite3_column_text(st, 0);
         size_t n = k != NULL ? strlen(k) + 1u : 0;
@@ -116,7 +123,7 @@ static void collect(sel_library* lib, sqlite3_stmt* st, sel_lib_job* job) {
         job->count++;
     }
     if (rc != SQLITE_DONE) {
-        set_error(job, "bad_value");
+        set_sql_error(job, lib->db);
     }
 }
 
@@ -213,7 +220,7 @@ void sel_library_search(sel_library* lib, sel_lib_job* job) {
                                    : "SELECT songs.key FROM song_fts JOIN songs ON songs.id = song_fts.rowid"
                                      " WHERE song_fts MATCH ?1 ORDER BY songs.key",
                                -1, &st, NULL) != SQLITE_OK) {
-            set_error(job, "bad_value");
+            set_sql_error(job, lib->db);
             return;
         }
         sqlite3_bind_text(st, 1, match, -1, SQLITE_STATIC);
@@ -235,7 +242,7 @@ void sel_library_search(sel_library* lib, sel_lib_job* job) {
             sqlite3_snprintf((int)sizeof sql, sql, "%s ORDER BY songs.key", lib->query.sql);
         }
         if (sqlite3_prepare_v2(lib->db, sql, -1, &st, NULL) != SQLITE_OK) {
-            set_error(job, "bad_value");
+            set_sql_error(job, lib->db);
             return;
         }
         for (i = 0; i < lib->query.nparams; i++) {
