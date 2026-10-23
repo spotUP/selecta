@@ -1,8 +1,9 @@
 # T18: rule 4 (no floating point in the engine) checked from the 68k object
 # files, not from the source. Runs m68k-amigaos-nm over the objects of the
-# engine (src/engine), the protocol parser, the mixer, the library, the wav output and the null output, and
+# engine (src/engine), the protocol parser, the mixer, the library, the wav output and the null output (the
+# set is derived from the targets, see below), and
 # fails when any of them references a soft-float runtime routine.
-# Inputs: -DNM (m68k-amigaos-nm) -DBUILD_DIR (the 68k build tree)
+# Inputs: -DNM (m68k-amigaos-nm) -DBUILD_DIR (the 68k build tree, with no-float-targets.txt)
 foreach(v NM BUILD_DIR)
   if(NOT DEFINED ${v})
     message(FATAL_ERROR "no_float.cmake: -D${v} is required")
@@ -12,21 +13,77 @@ endforeach()
 set(forbidden __adddf3 __subdf3 __muldf3 __divdf3 __addsf3 __subsf3 __mulsf3 __divsf3
   __floatsidf __floatsisf __fixdfsi __fixsfsi __extendsfdf2 __truncdfsf2)
 
-file(GLOB_RECURSE objs
-  "${BUILD_DIR}/src/CMakeFiles/selecta_core.dir/engine/*.obj"
-  "${BUILD_DIR}/src/CMakeFiles/selecta_core.dir/protocol/*.obj"
-  "${BUILD_DIR}/src/CMakeFiles/selecta_mixer.dir/mixer/*.obj"
-  "${BUILD_DIR}/plugins/CMakeFiles/sel_plugin_wav.dir/*.obj"
-  "${BUILD_DIR}/plugins/CMakeFiles/sel_plugin_null.dir/*.obj"
-  "${BUILD_DIR}/src/library/CMakeFiles/selecta_library.dir/*.obj")
-list(LENGTH objs nobjs)
-# engine (engine, format, history, prefs, queue, shuffle, view, voices, spsc, scheduler, viz, dsp_chain, timer)
-# + protocol (parse)
-# + mixer (mixer, resample, stage) + wav + null
-# + library (local, dir, playlist, hippo, m3u, pls, xspf, export wav, export svx)
-if(NOT nobjs EQUAL 29)
-  message(FATAL_ERROR "expected 29 objects (14 engine, 1 protocol, 3 mixer, wav, null, 9 library), found ${nobjs}:\n${objs}")
+# The expected object set is derived from the build targets: src/CMakeLists.txt writes
+# ${BUILD_DIR}/no-float-targets.txt (name@source dir@binary dir@source filter@sources). Each listed .c file maps to
+# the object CMake gives it: <bindir>/CMakeFiles/<name>.dir/<path relative to the source dir, "../" as "__/">.obj.
+# D-M3-3: SQLite (selecta_sqlite) and the R128 analyser may use double on the library worker, so those targets
+# are not listed there and are excluded by target. Nothing else is excluded: a float reference in any listed
+# object (engine, protocol, mixer, wav, null, the library's own code) is a real bug.
+set(targets_file "${BUILD_DIR}/no-float-targets.txt")
+if(NOT EXISTS "${targets_file}")
+  message(FATAL_ERROR "no_float.cmake: ${targets_file} missing (reconfigure build/amiga)")
 endif()
+file(READ "${targets_file}" targets_txt)
+string(REPLACE "\n" ";" target_lines "${targets_txt}")
+set(expected "")
+set(objs "")
+foreach(line IN LISTS target_lines)
+  if(line STREQUAL "")
+    continue()
+  endif()
+  string(REGEX MATCH "^([^@]*)@([^@]*)@([^@]*)@([^@]*)@(.*)$" m "${line}")
+  set(tname "${CMAKE_MATCH_1}")
+  set(srcdir "${CMAKE_MATCH_2}")
+  set(bindir "${CMAKE_MATCH_3}")
+  set(filter "${CMAKE_MATCH_4}")
+  string(REPLACE "," ";" srcs "${CMAKE_MATCH_5}")
+  set(objdir "${bindir}/CMakeFiles/${tname}.dir")
+  foreach(src IN LISTS srcs)
+    if(NOT src MATCHES "\\.c$")
+      continue()
+    endif()
+    if(NOT IS_ABSOLUTE "${src}")
+      set(src "${srcdir}/${src}")
+    endif()
+    file(RELATIVE_PATH rel "${srcdir}" "${src}")
+    if(filter AND NOT rel MATCHES "${filter}")
+      continue()
+    endif()
+    string(REPLACE "../" "__/" rel "${rel}")
+    list(APPEND expected "${objdir}/${rel}.obj")
+  endforeach()
+  # What the build left on disk for this target (same filter), to catch objects no source list accounts for.
+  file(GLOB_RECURSE found "${objdir}/*.obj")
+  foreach(o IN LISTS found)
+    file(RELATIVE_PATH orel "${objdir}" "${o}")
+    if(filter AND NOT orel MATCHES "${filter}")
+      continue()
+    endif()
+    list(APPEND objs "${o}")
+  endforeach()
+endforeach()
+list(REMOVE_DUPLICATES expected)
+list(REMOVE_DUPLICATES objs)
+list(LENGTH expected nexpected)
+if(nexpected LESS 1)
+  message(FATAL_ERROR "no_float.cmake: no objects derived from ${targets_file}")
+endif()
+set(missing "")
+foreach(o IN LISTS expected)
+  if(NOT o IN_LIST objs)
+    string(APPEND missing "  ${o}\n")
+  endif()
+endforeach()
+set(extra "")
+foreach(o IN LISTS objs)
+  if(NOT o IN_LIST expected)
+    string(APPEND extra "  ${o}\n")
+  endif()
+endforeach()
+if(missing OR extra)
+  message(FATAL_ERROR "object set differs from the targets' sources:\nexpected but not built:\n${missing}built but not in a target's sources:\n${extra}")
+endif()
+list(LENGTH objs nobjs)
 
 set(bad "")
 foreach(obj IN LISTS objs)

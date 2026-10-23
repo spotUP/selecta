@@ -92,6 +92,21 @@ if(SEL_AMIGA)
   target_sources(selecta_core PRIVATE $<TARGET_OBJECTS:selecta_audio_irq>)
   file(GENERATE OUTPUT ${PROJECT_BINARY_DIR}/m2-interrupt-objects.txt
     CONTENT "$<JOIN:$<TARGET_OBJECTS:selecta_audio_irq>,\n>\n$<JOIN:$<TARGET_OBJECTS:selecta_paula_irq>,\n>\n$<JOIN:$<TARGET_OBJECTS:selecta_paula14_irq>,\n>\n")
+  # T18 no-float-engine (cmake/no_float.cmake): the expected object set comes from the targets, not a hand
+  # count. One line per checked target: name@source dir@binary dir@source prefix filter (regex)@sources (comma separated).
+  # D-M3-3: SQLite (selecta_sqlite) and the R128 analyser are library-worker code where double is allowed;
+  # they are excluded by target, simply by not being listed here. Everything listed must stay float-free.
+  set(SEL_NOFLOAT_TARGETS selecta_core selecta_mixer sel_plugin_wav sel_plugin_null selecta_library)
+  set(_nf "")
+  foreach(_t IN LISTS SEL_NOFLOAT_TARGETS)
+    if(_t STREQUAL "selecta_core")
+      set(_filter "^(engine|protocol)/")
+    else()
+      set(_filter "")
+    endif()
+    string(APPEND _nf "${_t}@$<TARGET_PROPERTY:${_t},SOURCE_DIR>@$<TARGET_PROPERTY:${_t},BINARY_DIR>@${_filter}@$<JOIN:$<TARGET_PROPERTY:${_t},SOURCES>,$<COMMA>>\n")
+  endforeach()
+  file(GENERATE OUTPUT ${PROJECT_BINARY_DIR}/no-float-targets.txt CONTENT "${_nf}")
 elseif(APPLE)
   target_sources(selecta_core PRIVATE host/mem.c host/clock.c core/macos/machine.c core/macos/config_mkdir.c core/macos/pal.c)
 else()
