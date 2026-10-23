@@ -21,6 +21,9 @@
 #include "ctlsock.h"
 #endif
 
+#ifndef __amigaos__
+#include <pthread.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -377,6 +380,26 @@ static void script_render(sel_engine* e, uint32_t frames) {
     }
 }
 
+#ifndef __amigaos__
+typedef struct stop_job {
+    sel_engine* e;
+    unsigned ms;
+    int started;
+    pthread_t th;
+} stop_job;
+
+static void* stop_after_main(void* arg) {
+    stop_job* j = (stop_job*)arg;
+    sel_message m;
+    usleep((useconds_t)j->ms * 1000u);
+    memset(&m, 0, sizeof m);
+    m.kind = SEL_MSG_CMD;
+    m.id = SEL_CMD_STOP;
+    sel_engine_send(j->e, &m);
+    return NULL;
+}
+#endif
+
 static void script_directive(sel_engine* e, const char* line) {
     unsigned long n = 0;
     script_sink sink = {0, 0};
@@ -443,6 +466,10 @@ static void script_directive(sel_engine* e, const char* line) {
                (unsigned)es.links_made, (unsigned)es.songs_opened);
     } else if (strcmp(line, "@stream_stats") == 0) {
         printf("STREAM stream_reads=%u stream_bytes=%u\n", (unsigned)sel_stream_reads(), (unsigned)sel_stream_bytes());
+    } else if (strcmp(line, "@cancel_stats") == 0) {
+        sel_engine_stats es;
+        sel_engine_stats_get(e, &es);
+        printf("CANCEL net_cancels=%u\n", (unsigned)es.net_cancels);
     } else if (strcmp(line, "@position") == 0) {
         const sel_song_state* so = &sel_engine_state(e)->song;
         printf("SNAPSHOT position_ms=%u order=%u row=%u pattern=%u\n", (unsigned)so->position_ms,
@@ -657,6 +684,14 @@ static int cmd_script_file(FILE* f, int argc, char** argv) {
 #ifndef __amigaos__
         if (strncmp(line, "@sleep ", 7) == 0) { /* test hook: let a background transfer get going */
             usleep((useconds_t)strtoul(line + 7, NULL, 10) * 1000u);
+            continue;
+        }
+        if (strncmp(line, "@stop_after ", 12) == 0) { /* test hook: STOP sent from a second thread after N ms (I195a) */
+            static stop_job job; /* the thread ends after its one send; the next @stop_after joins it */
+            if (job.started) pthread_join(job.th, NULL);
+            job.e = e;
+            job.ms = (unsigned)strtoul(line + 12, NULL, 10);
+            job.started = pthread_create(&job.th, NULL, stop_after_main, &job) == 0;
             continue;
         }
         if (strncmp(line, "@timed ", 7) == 0) { /* test hook: one protocol line, wall time printed */
