@@ -29,6 +29,7 @@ Toolchains: desktop clang/gcc + CMake + Ninja; Amiga bebbo amiga-gcc at `~/opt/a
 | Open the library DB, print schema and heap (T62) | `build/host/apps/selecta-cli/selecta-cli library stats [--machine a500]` |
 | Scan a folder into the catalogue (T71) | `build/host/apps/selecta-cli/selecta-cli library scan [--db <path>] <dir>` |
 | Measure a song's EBU R128 loudness and store its gain (T89) | `build/host/apps/selecta-cli/selecta-cli analyse [--db <path>] <song>` (`analyse --sine <hz>:<dbfs>` for a generated reference) |
+| Get a song's gain from the DEViLBOX loudness endpoint, or analyse and submit it (T90 fetch part, I188) | `build/host/apps/selecta-cli/selecta-cli loudness [--db <path>] [--machine <name>] [--config-dir <dir>] <song>`; prints `loudness_source=stored\|devilbox\|analysis\|none gain_cdb= hash= loudness_get= loudness_put=ok\|failed\|skipped_no_token\|none`, `devilbox_missing=loudness` when the endpoint is absent; test: `ctest --test-dir build/host -R loudness-fetch` |
 | Analyse every local song in the catalogue (T89) | `build/host/apps/selecta-cli/selecta-cli library analyse [--db <path>] 'source:local'` |
 | Song key and URL round trip for a source (T72) | `build/host/apps/selecta-cli/selecta-cli library key <source> <path>` |
 | Pump the null output | `build/host/apps/selecta-cli/selecta-cli play-null --rate 44100 --frames 4410` |

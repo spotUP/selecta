@@ -1188,6 +1188,13 @@ if(NOT SEL_AMIGA)
   set_tests_properties(devilbox-genre PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "devilbox_genre_ok")
 
+  # T90 fetch part (row I188): the gain from the DEViLBOX loudness endpoint, one PUT after a desktop analysis.
+  add_test(NAME loudness-fetch
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DSONGS=${PROJECT_SOURCE_DIR}/tests/m3/genre"
+            -P "${SEL_NET_DIR}/loudness_fetch.cmake")
+  set_tests_properties(loudness-fetch PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "loudness_fetch_ok")
+
   # T86 similar part (row I183): also-by and similar through selecta-cli; the duplicates part is row I184.
   find_program(SEL_SQLITE3 sqlite3)
   add_test(NAME similar-duplicates
