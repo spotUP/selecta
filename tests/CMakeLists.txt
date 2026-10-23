@@ -500,6 +500,17 @@ if(NOT SEL_AMIGA)
       "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m12/reach.screen"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m12/reach.cmake")
 endif()
+# I101: text UI viz panel and pattern panel screen fixtures (shell, scripted keys, last screen dump).
+if(NOT SEL_AMIGA)
+  foreach(panel viz pattern)
+    add_test(NAME ui-panel-${panel}
+      COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DMOD=${SEL_MKMOD}"
+        "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m13/panel_${panel}.keys"
+        "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m13/panel_${panel}.screen"
+        "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/ui_panel_${panel}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/m13/panel.cmake")
+  endforeach()
+endif()
 # T40, T48 (M1.3 Phase 1): viz taps, VU ballistics, spectrum bands, phase ring.
 if(NOT SEL_AMIGA)
   add_executable(phase_test viz/phase_test.c)

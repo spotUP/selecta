@@ -1,0 +1,11 @@
+# I101 viz panel. Browse into songs, play selecta-test-mk.mod, open the
+# viz panel (V: levels), mute voice 2 (key 2), quit. The last screen is the golden.
+Down
+Enter
+Down
+Enter
+wait 2000
+V
+2
+wait 100
+q
