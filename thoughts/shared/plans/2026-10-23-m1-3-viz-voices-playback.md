@@ -147,3 +147,7 @@ Visualizer plugins on bitmap surfaces (M4), GPU visualizers (M5), chip register 
 - Phase 5b: the engine passes generated Q15 coefficients to the plugin through DSP_PARAM, because plugins compile against `include/` only.
 - Phase 5b: the DSP verb sends no acknowledgement event. Slots reopen on a rate change only through `set_mix`.
 - Phase 5b: the crossfeed golden hash is not pinned; it waits for a listening check.
+- Phase 4a: nuade Protracker reports a loop and never an end, so short.mod ends with reason `loop`; tests/m1/queue.expected updated. T43 loop_end uses selecta-test-mk.mod through openmpt for reason `end` (Q24).
+- Phase 4a: the CLI prints `SONG_ENDED <reason>` through the codec without a `reason=` key; T43 expectations match that.
+- Phase 4a: `SEL_OUT_VOICES` and the `voices-test` output do not exist yet; they move to I95.
+- Phase 4a: fake clock syntax `--clock fake=HH:MM:SS` (Q26). STOP emits no SONG_ENDED, so `stopped` is never sent (Q25).

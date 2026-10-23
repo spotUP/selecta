@@ -252,8 +252,8 @@ Tests T39 to T48 are defined in the plan's finish-line table.
 | I90 | [x] | 3 | T42 written and red; mute golden committed after a listening check of voice 1 removed (agent compares against a render with the voice's samples zeroed) | ctest failure | ab8699d red `Test #57: voice-control ***Failed` (unknown option --script); merge 8012c7e
 | I91 | [x] | 3 | Mute mask, MUTE, SOLO, VOICE event mask, RP_MUTE | T42 mute half green, ratchet 25 | f74a1b1, b2c60d6; ratchet 25; full run 72/73, only voice-control red (pitch, I92); merge 8012c7e
 | I92 | [x] | 3 | Pitch and tempo tables, PITCH, TEMPO, RP_SET_SPEED | T42 green, ratchet 23 | red `Test #57: voice-control ***Failed 0.53 sec`; 86b9689, 51a8b7a, 10ec5f5; ratchet 23; full run 73/73; merge 29239fc
-| I93 | [ ] | 4 | T43, T44, T45 written and red; voices-test output | ctest failures |
-| I94 | [ ] | 4 | REPEAT, loops/fade_ms/max_song_ms/silence_ms options, SONG_ENDED reason, stop-after options | T43 green, ratchet 22 |
+| I93 | [x] | 4 | T43, T44, T45 written and red; voices-test output | ctest failures | faae4ad red `#58 loop-fade`, `#59 crossfade`, `#60 sleep-alarm` ***Failed; merge 19a5dc1
+| I94 | [x] | 4 | REPEAT, loops/fade_ms/max_song_ms/silence_ms options, SONG_ENDED reason, stop-after options | T43 green, ratchet 22 | 108bbed, 78a8391; T43 green, ratchet 22; full run 76/78 (crossfade, sleep-alarm red until I95, I96); merge 19a5dc1
 | I95 | [ ] | 4 | Early prepare, gapless, crossfade table and mix, `mixed_path` | T44 green |
 | I96 | [ ] | 4 | HOSTQ_LOCAL_TIME, fake clock, SLEEP_TIMER, ALARM | T45 green, ratchet 21 |
 | I97 | [ ] | 5 | T46 written and red; RP_SAMPLE_GET; nuade scan catalogue; openmpt sample table | ctest failure then catalogue lines green |
