@@ -9,6 +9,7 @@
 #include <selecta/engine.h>
 #include <selecta/host.h>
 
+#include "../library/query.h"
 #include "format.h"
 #include "local.h"
 #include "queue.h"
@@ -18,7 +19,7 @@
 #define SEL_VIEW_TITLE_DEFAULT "[%author% - ]%title%[  Votes %votes%]"
 #define SEL_VIEW_VOTES_MAX 12u /* a vote count as text, NUL included */
 #define SEL_VIEW_TEXT_MAX 160u /* one formatted row, NUL included */
-#define SEL_VIEW_KEY_MAX 128u    /* bytes of the song key or album name a home row carries (I191a) */
+#define SEL_VIEW_KEY_MAX ((unsigned)SEL_QUERY_TEXT_MAX) /* song key or album name a home row carries, NUL included (I191a); the query bound parameter holds the same (I191c) */
 #define SEL_VIEW_FOLDER_ROWS 256u /* rows of the folders source (the playlist folder tree, I179) */
 #define SEL_VIEW_FOLDER_NAME 64u
 

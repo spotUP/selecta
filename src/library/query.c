@@ -105,7 +105,7 @@ static void bind_text(pq* s, const char* v, size_t n, int like) {
         p->s[o++] = '%';
     }
     for (i = 0; i < n; i++) {
-        if (o + 4 >= sizeof p->s) {
+        if (o + 4 > sizeof p->s) { /* room for an escape pair, the closing % and the NUL */
             fail(s, "too_complex");
             return;
         }

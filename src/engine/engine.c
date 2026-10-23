@@ -3946,14 +3946,19 @@ static void cmd_VIEW_ACTIVATE(sel_engine* e, const sel_message* m) {
             return;
         }
         if (r->album) {
-            char text[SEL_VIEW_KEY_MAX * 2 + 16];
+            /* worst case: every byte escaped, plus album:"" and the NUL */
+            char text[(SEL_VIEW_KEY_MAX - 1) * 2 + 9];
             sel_message q;
             uint32_t fts = 0;
             size_t o = 0;
             const char* k;
             /* The query grammar escapes a quote or backslash inside quotes with a backslash. */
             o += (size_t)snprintf(text, sizeof text, "album:\"");
-            for (k = r->key; *k != '\0' && o + 4 < sizeof text; k++) {
+            for (k = r->key; *k != '\0'; k++) {
+                if (o + 4 > sizeof text) { /* cannot happen for a key within SEL_VIEW_KEY_MAX; never truncate */
+                    sel_engine_report_error(e, "too_complex", "VIEW_ACTIVATE");
+                    return;
+                }
                 if (*k == '"' || *k == '\\') {
                     text[o++] = '\\';
                 }
