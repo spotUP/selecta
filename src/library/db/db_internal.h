@@ -69,6 +69,9 @@ void sel_library_move(sel_library* lib, const sel_move* m, sel_message* reply);
 void sel_library_meta(sel_library* lib, const sel_meta_op* op, sel_message* reply);
 void sel_library_annotate(sel_library* lib, const sel_annotate_batch* b, sel_message* reply);
 
+/* genre.c: SEL_LIB_REQ_GENRE. */
+void sel_library_genre_op(sel_library* lib, const sel_genre_op* op, sel_message* reply);
+
 /* user.c: SEL_LIB_REQ_USER. */
 void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* reply);
 

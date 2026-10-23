@@ -950,7 +950,42 @@ int sel_cli_userdata(int argc, char** argv) {
     return ok ? 0 : 1;
 }
 
+/* `library genre --db <path>` (I181, T85): sel_library_genre_sync over the local songs of the DB. Prints
+ * `songs= genre_lookups= genre_cache_hits= genre_set= unknown= unreadable= http_requests=`. Search the result
+ * with `library search --db <path> genre:<text>`. */
+static int library_genre(int argc, char** argv) {
+    const char* db_path = NULL;
+    const sel_host* host = sel_host_default();
+    sel_genre_stats gs;
+    sel_library* lib;
+    int ok;
+    int i;
+
+    for (i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "--db") == 0 && i + 1 < argc) {
+            db_path = argv[++i];
+        }
+    }
+    if (db_path == NULL) {
+        fputs("usage: selecta-cli library genre --db <path>\n", stderr);
+        return 2;
+    }
+    lib = sel_library_open(host, sel_machine_probe(host), 0, db_path);
+    if (lib == NULL) {
+        return 1;
+    }
+    ok = sel_library_genre_sync(lib, &gs);
+    printf("songs=%u genre_lookups=%u genre_cache_hits=%u genre_set=%u unknown=%u unreadable=%u http_requests=%u\n",
+           (unsigned)gs.songs, (unsigned)gs.genre_lookups, (unsigned)gs.genre_cache_hits, (unsigned)gs.genre_set,
+           (unsigned)gs.unknown, (unsigned)gs.unreadable, (unsigned)gs.http_requests);
+    sel_library_close(lib);
+    return ok ? 0 : 1;
+}
+
 int sel_cli_library(int argc, char** argv) {
+    if (argc >= 1 && strcmp(argv[0], "genre") == 0) {
+        return library_genre(argc - 1, argv + 1);
+    }
     if (argc >= 1 && strcmp(argv[0], "browse") == 0) {
         return library_browse(argc, argv);
     }
@@ -984,6 +1019,6 @@ int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "query") == 0) {
         return library_query(argc - 1, argv + 1);
     }
-    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | sync [--db <path>] [--now <epoch>] [--dump] modland <dir or http(s) url> | meta [--db <path>] <key> | key <source> <path> | trim [--budget <n>] [--machine <name>] | query --explain <q> | stats [--machine <name>] [--db <path>]\n", stderr);
+    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | sync [--db <path>] [--now <epoch>] [--dump] modland <dir or http(s) url> | meta [--db <path>] <key> | key <source> <path> | genre --db <path> | trim [--budget <n>] [--machine <name>] | query --explain <q> | stats [--machine <name>] [--db <path>]\n", stderr);
     return 2;
 }

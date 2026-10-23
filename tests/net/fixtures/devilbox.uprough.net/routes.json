@@ -1,0 +1,6 @@
+{
+  "/api/genre/19fb8b7b1816": {
+    "status": 503,
+    "body": "{\"error\":\"queue full\"}"
+  }
+}
