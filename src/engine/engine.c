@@ -3816,6 +3816,7 @@ static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
         ok = sel_modland_net_sync(&scfg, m->args[1].v.s, now, &st, &ns);
         e->sync_info.net_zip_bytes = ns.zip_bytes;
         e->sync_info.net_listing_bytes = ns.listing_bytes;
+        e->sync_info.net_unpack_peak_heap = ns.unpack_peak_heap;
         e->sync_info.net_changelogs_fetched = ns.changelogs_fetched;
         e->sync_info.net_changelogs_missing = ns.changelogs_missing;
         e->sync_info.net_requests = ns.http_requests;
