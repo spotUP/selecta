@@ -72,17 +72,20 @@ int sel_view_init(sel_view* v, const sel_host* host, uint32_t row_cap) {
     }
     v->frows = host->mem_alloc(host, SEL_VIEW_FOLDER_ROWS * sizeof *v->frows, SEL_MEM_FAST);
     v->ftext = host->mem_alloc(host, (size_t)SEL_VIEW_FOLDER_ROWS * SEL_VIEW_FOLDER_NAME, SEL_MEM_FAST);
-    if (v->frows == NULL || v->ftext == NULL) {
+    v->fkey = host->mem_alloc(host, (size_t)SEL_VIEW_FOLDER_ROWS * SEL_VIEW_KEY_MAX, SEL_MEM_FAST);
+    if (v->frows == NULL || v->ftext == NULL || v->fkey == NULL) {
         host->mem_free(host, v->groups);
         host->mem_free(host, v->row_text);
         host->mem_free(host, v->rows);
         host->mem_free(host, v->frows);
         host->mem_free(host, v->ftext);
+        host->mem_free(host, v->fkey);
         v->rows = NULL;
         v->row_text = NULL;
         v->groups = NULL;
         v->frows = NULL;
         v->ftext = NULL;
+        v->fkey = NULL;
         return 0;
     }
     v->next_node = 1;
@@ -113,6 +116,9 @@ void sel_view_free(sel_view* v, const sel_host* host) {
     }
     if (v->ftext) {
         host->mem_free(host, v->ftext);
+    }
+    if (v->fkey) {
+        host->mem_free(host, v->fkey);
     }
     memset(v, 0, sizeof *v);
 }
@@ -840,6 +846,8 @@ uint32_t sel_view_set_folders(sel_view* v, const char* tree) {
             v->frows[n].text = text;
             v->frows[n].count = 0;
             v->frows[n].expanded = kind == 'F';
+            v->frows[n].key = NULL;
+            v->frows[n].album = 0;
             n++;
         }
         while (*p != '\0' && *p != '\n') {
@@ -863,8 +871,10 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
     while (*p != '\0' && n < SEL_VIEW_FOLDER_ROWS) {
         char kind = *p;
         char* t = v->ftext + (size_t)n * SEL_VIEW_FOLDER_NAME;
-        size_t len = 0;
-        uint32_t count = 1;
+        char* key = v->fkey + (size_t)n * SEL_VIEW_KEY_MAX;
+        size_t len = 0, klen = 0;
+        uint32_t count = 1, album = 0;
+        key[0] = '\0';
         if ((kind == 'H' || kind == 'S' || kind == 'C') && p[1] == ' ') {
             p += 2;
             if (kind == 'C') {
@@ -875,11 +885,29 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
                 if (*p == ' ') {
                     p++;
                 }
+            } else if (kind == 'S') {
+                const char* tab = p;
+                while (*tab != '\0' && *tab != '\n' && *tab != '\t') {
+                    tab++;
+                }
+                if (*tab == '\t') { /* "<key>\t<entry>"; a leading @ marks an album */
+                    if (*p == '@') {
+                        album = 1;
+                        p++;
+                    }
+                    while (p < tab && klen + 1u < SEL_VIEW_KEY_MAX) {
+                        key[klen++] = *p++;
+                    }
+                    key[klen] = '\0';
+                    p = tab + 1;
+                }
             }
             while (*p != '\0' && *p != '\n' && len + 1u < SEL_VIEW_FOLDER_NAME) {
                 t[len++] = *p++;
             }
             t[len] = '\0';
+            v->frows[n].key = key[0] != '\0' ? key : NULL;
+            v->frows[n].album = album;
             v->frows[n].kind = kind == 'H' ? SEL_ROW_HEADING : SEL_ROW_HOME;
             v->frows[n].id = n;
             v->frows[n].depth = kind == 'H' ? 0u : 1u;
