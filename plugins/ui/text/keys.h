@@ -1,5 +1,6 @@
 /* Terminal input parser for the text UI: bytes in, key events out
- * (xterm-256color, UTF-8, SGR mouse). Plan M1.1 phase 5, row I59. Pure C99. */
+ * (xterm-256color, UTF-8, SGR mouse, and the Amiga console's 8-bit CSI keys). Plan M1.1
+ * phase 5, row I59; Amiga console keys row I218. Pure C99. */
 #ifndef SELECTA_TEXT_KEYS_H
 #define SELECTA_TEXT_KEYS_H
 
@@ -47,6 +48,8 @@ typedef struct txt_keys {
     uint32_t utf8_cp;
     int priv; /* '<' seen: SGR mouse */
     int alt;  /* ESC prefix pending for the next key */
+    int amiga; /* the sequence began with the 8-bit CSI (0x9B): Amiga console codes */
+    int space; /* Amiga console: a space came before the final byte (Shift+Left, Shift+Right) */
 } txt_keys;
 
 void txt_keys_init(txt_keys* k);

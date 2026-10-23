@@ -829,6 +829,13 @@ if(NOT SEL_AMIGA)
         "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/amiga-browse-nav-vamos"
         -P "${SEL_M2}/browse_nav.cmake")
     set_tests_properties(amiga-browse-nav-vamos PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos)
+    # I218 Amiga console arrows (8-bit CSI 0x9B) move the browse cursor through the real stdin path.
+    add_test(NAME amiga-console-keys-vamos
+      COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}"
+        "-DAMIGA_SELECTA=${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta/selecta"
+        "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/amiga-console-keys-vamos"
+        -P "${SEL_M2}/amiga_keys.cmake")
+    set_tests_properties(amiga-console-keys-vamos PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos)
   endif()
   # T57 library browse under vamos, T58 ToolTypes = CLI.
   sel_m2_test(amiga-library-browse browse vamos)

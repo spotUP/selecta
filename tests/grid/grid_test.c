@@ -176,6 +176,23 @@ static void test_keys(void) {
     n = feed_all(&k, "\x1b[<0;10;5M\x1b[<0;10;5m\x1b[<64;3;4M", o, 8);
     CHECK(n == 3 && o[0].code == TXT_KEY_MOUSE && o[0].x == 9 && o[0].y == 4 && o[0].button == 0 &&
               o[0].pressed == 1 && o[1].pressed == 0 && o[2].button == 64, "SGR mouse");
+    /* I218: the Amiga console sends keys after the 8-bit CSI 0x9B with its own codes */
+    n = feed_all(&k, "\x9b" "A\x9b" "B\x9b" "C\x9b" "D", o, 8);
+    CHECK(n == 4 && o[0].code == TXT_KEY_UP && o[1].code == TXT_KEY_DOWN &&
+              o[2].code == TXT_KEY_RIGHT && o[3].code == TXT_KEY_LEFT && o[0].mods == 0,
+          "Amiga console arrows");
+    n = feed_all(&k, "\x9b" "T\x9b" "S\x9b A\x9b @", o, 8);
+    CHECK(n == 4 && o[0].code == TXT_KEY_UP && o[1].code == TXT_KEY_DOWN && o[2].code == TXT_KEY_LEFT &&
+              o[3].code == TXT_KEY_RIGHT && o[0].mods == TXT_MOD_SHIFT && o[1].mods == TXT_MOD_SHIFT &&
+              o[2].mods == TXT_MOD_SHIFT && o[3].mods == TXT_MOD_SHIFT,
+          "Amiga console Shift+arrows");
+    n = feed_all(&k, "\x9b" "0~\x9b" "9~\x9b" "10~\x9b" "41~\x9b" "45~\x9b" "54~", o, 8);
+    CHECK(n == 6 && o[0].code == TXT_KEY_F1 && o[1].code == TXT_KEY_F1 + 9u && o[2].code == TXT_KEY_F1 &&
+              o[2].mods == TXT_MOD_SHIFT && o[3].code == TXT_KEY_PAGE_UP && o[4].code == TXT_KEY_END &&
+              o[5].code == TXT_KEY_HOME && o[5].mods == TXT_MOD_SHIFT,
+          "Amiga console function and PC keys");
+    n = feed_all(&k, "\x9b?~q", o, 8);
+    CHECK(n == 1 && o[0].code == 'q', "Amiga Help dropped, next key intact");
     /* an unknown sequence is dropped whole and the parser recovers */
     n = feed_all(&k, "\x1b[99zq", o, 8);
     CHECK(n == 1 && o[0].code == 'q', "unknown CSI dropped, next key intact");

@@ -58,9 +58,64 @@ static uint32_t tilde_key(uint32_t n) {
     }
 }
 
+/* The Amiga console.device sends keys after the 8-bit CSI 0x9B, with its own codes (Amiga ROM
+ * Kernel Reference Manual: Devices, console.device input): Shift+Up is CSI T, Shift+Down CSI S,
+ * Shift+Left CSI space A, Shift+Right CSI space @. 0x9B is never a UTF-8 lead byte, so taking it as
+ * the CSI costs the xterm and UTF-8 input nothing. */
+static uint32_t amiga_final(uint8_t f, int space, uint32_t* mods) {
+    *mods = 0;
+    if (space) {
+        *mods = TXT_MOD_SHIFT;
+        return f == 'A' ? TXT_KEY_LEFT : f == '@' ? TXT_KEY_RIGHT : 0u;
+    }
+    switch (f) {
+    case 'A': return TXT_KEY_UP;
+    case 'B': return TXT_KEY_DOWN;
+    case 'C': return TXT_KEY_RIGHT;
+    case 'D': return TXT_KEY_LEFT;
+    case 'T': *mods = TXT_MOD_SHIFT; return TXT_KEY_UP;
+    case 'S': *mods = TXT_MOD_SHIFT; return TXT_KEY_DOWN;
+    default: return 0;
+    }
+}
+
+/* Amiga console CSI n ~: F1..F10 are 0..9, Shift+F1..F10 10..19; the PC keys of a 105-key
+ * keymap are Insert 40, Page Up 41, Page Down 42, Home 44, End 45, and 50.. with Shift. */
+static uint32_t amiga_tilde(uint32_t n, uint32_t* mods) {
+    *mods = 0;
+    if (n >= 10 && n <= 19) {
+        *mods = TXT_MOD_SHIFT;
+        n -= 10;
+    } else if (n >= 50 && n <= 55) {
+        *mods = TXT_MOD_SHIFT;
+        n -= 10;
+    }
+    switch (n) {
+    case 40: return TXT_KEY_INSERT;
+    case 41: return TXT_KEY_PAGE_UP;
+    case 42: return TXT_KEY_PAGE_DOWN;
+    case 44: return TXT_KEY_HOME;
+    case 45: return TXT_KEY_END;
+    default: return n <= 9 ? TXT_KEY_F1 + n : 0u;
+    }
+}
+
+static void csi_begin(txt_keys* k, int amiga) {
+    k->state = S_CSI;
+    k->nparams = 0;
+    memset(k->params, 0, sizeof k->params);
+    k->priv = 0;
+    k->amiga = amiga;
+    k->space = 0;
+}
+
 static int ground(txt_keys* k, uint8_t b, txt_key* out) {
     if (b == 0x1B) {
         k->state = S_ESC;
+        return 0;
+    }
+    if (b == 0x9B) {
+        csi_begin(k, 1);
         return 0;
     }
     if (b == 13 || b == 10) {
@@ -111,10 +166,7 @@ int txt_keys_feed(txt_keys* k, uint8_t b, txt_key* out) {
         return 0;
     case S_ESC:
         if (b == '[') {
-            k->state = S_CSI;
-            k->nparams = 0;
-            memset(k->params, 0, sizeof k->params);
-            k->priv = 0;
+            csi_begin(k, 0);
             return 0;
         }
         if (b == 'O') {
@@ -143,6 +195,10 @@ int txt_keys_feed(txt_keys* k, uint8_t b, txt_key* out) {
             k->priv = 1;
             return 0;
         }
+        if (b == ' ' && k->amiga) {
+            k->space = 1;
+            return 0;
+        }
         if (b >= '0' && b <= '9') {
             if (k->nparams == 0) k->nparams = 1;
             k->params[k->nparams - 1] = k->params[k->nparams - 1] * 10u + (uint32_t)(b - '0');
@@ -166,10 +222,20 @@ int txt_keys_feed(txt_keys* k, uint8_t b, txt_key* out) {
                 out->pressed = (b == 'M');
                 return 1;
             }
-            code = (b == '~') ? tilde_key(k->params[0]) : final_key(b);
-            if (code) {
-                emit(k, out, code, k->nparams > 1 ? xterm_mods(k->params[1]) : 0u);
-                return 1;
+            if (k->amiga) {
+                uint32_t mods;
+                code = (b == '~') ? (k->nparams > 0 ? amiga_tilde(k->params[0], &mods) : 0u)
+                                  : amiga_final(b, k->space, &mods);
+                if (code) {
+                    emit(k, out, code, mods);
+                    return 1;
+                }
+            } else {
+                code = (b == '~') ? tilde_key(k->params[0]) : final_key(b);
+                if (code) {
+                    emit(k, out, code, k->nparams > 1 ? xterm_mods(k->params[1]) : 0u);
+                    return 1;
+                }
             }
             k->state = S_GROUND; /* unknown sequence: dropped whole */
             k->alt = 0;
