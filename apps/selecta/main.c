@@ -267,6 +267,11 @@ int main(int argc, char** argv) {
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_BINDINGS, 0), (unsigned)sel_engine_state(e)->queue_count,
            (unsigned)est.undo_depth, (unsigned)est.redo_depth, sel_view_style_label(sel_engine_state(e)->view->style));
 
+    printf("viz_frames=%u scope_reads=%u pattern_rows=%u mutes=%u dsp=crossfeed:%s fades=%u sleep_armed=%u\n",
+           (unsigned)sel_tag_find(ust, SEL_UI_STAT_VIZ_FRAMES, 0), (unsigned)sel_tag_find(ust, SEL_UI_STAT_SCOPE_READS, 0),
+           (unsigned)sel_tag_find(ust, SEL_UI_STAT_PATTERN_ROWS, 0), (unsigned)est.mutes,
+           est.crossfeed_on ? "on" : "off", (unsigned)est.fades, (unsigned)est.sleep_armed);
+
     if (ctl_fd >= 0) {
         printf("socket_cmds=%u\n", socket_cmds);
         sel_ctl_close(ctl_fd, ctl_path);
