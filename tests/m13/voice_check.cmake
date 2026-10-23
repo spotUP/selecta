@@ -67,7 +67,7 @@ foreach(song nu mk)
   sel_render(${song}_toggle ${path} toggle 1)
   sel_expect(${song}_toggle "mute_mask=0x00000002")
   sel_render(${song}_solo ${path} solo 1)
-  sel_expect(${song}_solo "mute_mask=0x0000000b")   # SOLO 2: 0b1011 muted
+  sel_expect(${song}_solo "mute_mask=0x0000000d")   # SOLO 2 of 4 voices: 0b1101 muted
   sel_render(${song}_solo0 ${path} solo_clear 1)
   sel_expect(${song}_solo0 "mute_mask=0x00000000")
 

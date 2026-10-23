@@ -83,6 +83,13 @@ typedef struct sel_rp_cell {
 typedef uint32_t (*sel_rp_tracker_cells_fn)(void* state, uint32_t order, uint32_t channel, uint32_t row_lo,
                                             uint32_t row_hi, sel_rp_cell* out, uint32_t cap);
 
+/* RP_MUTE: optional, RENDER kind only. Mutes (`muted` 1) or unmutes (0) the
+ * replayer's channel `channel` (0-based). A RENDER replayer mixes itself, so
+ * the engine cannot silence a voice in its mixer; this hook is the only way.
+ * VOICE-kind replayers need none: the engine mixer skips muted voices. Runs on
+ * the audio thread between render calls. */
+typedef void (*sel_rp_mute_fn)(void* state, uint32_t channel, uint32_t muted);
+
 SEL_EXTERN_C_END
 
 #endif /* SELECTA_REPLAYER_H */
