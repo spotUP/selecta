@@ -48,6 +48,8 @@ static int usage(FILE* to) {
           "                             render a song to a WAV file, print counters\n"
           "  library browse <dir>       list a directory through LIBRARY_BROWSE, print dir_entries=\n"
           "  library search --catalogue <tsv> <q> run a library query through LIBRARY_SEARCH, print key= src_count= fts_queries= (T64)\n"
+          "  analyse [--db <p>] <song>     loudness analysis (R128), stores the gain; --sine <hz>:<dbfs> for a reference (I187, T89)\n"
+          "  library analyse --db <p> ['source:local']  analyse every found song (I187)\n"
           "  library scan [--db <p>] <dir> scan a folder into the library DB, print scanned_files= db_songs= (T71)\n"
           "  library key <source> <path> print the song key and its URL round trip (T72)\n"
           "  library query --explain <q> compile a library query, print sql= params= query_terms= (T63)\n"
@@ -849,6 +851,9 @@ int main(int argc, char** argv)
             return cmd_commands(1);
         }
         return cmd_commands(0);
+    }
+    if (strcmp(cmd, "analyse") == 0) {
+        return sel_cli_analyse(argc - 2, argv + 2);
     }
     if (strcmp(cmd, "script") == 0) {
         if (argc < 3) {

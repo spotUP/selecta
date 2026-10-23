@@ -35,6 +35,9 @@
 #include "db.h"
 #include "cache.h"
 #include "share.h"
+#if !defined(SEL_NO_ANALYSE)
+#include "loudness.h"
+#endif
 #include "sources/local_source.h"
 #include "sources/hippo_publish.h"
 #include "sources/hippo_sync.h"
@@ -113,7 +116,7 @@
     X(LIBRARY_SYNC)                                                                           \
     X(LIKE)                                                                                   \
     X(FLAG)                                                                                   \
-    X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
+    X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
     X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
@@ -214,6 +217,8 @@ struct sel_engine {
     uint32_t scrobble_due;   /* SCROBBLE_DUE events emitted (sentinel of the I177 rule) */
     uint32_t history_writes; /* history rows written (sentinel of the I170 writer) */
     uint32_t cue_sets, cue_gotos, sticker_ops; /* sentinels of I175 / I176 */
+    uint32_t analyse_jobs, analyse_speed, analyse_gated; /* I187 sentinels: jobs stored, x real time, R128 (not fallback) */
+    int32_t analyse_lufs_cdb, analyse_gain_cdb, analyse_peak_cdb;
     uint32_t folder_view_rows;                 /* rows the folders view source built (I179 sentinel) */
     uint32_t folder_ops;                       /* FOLDER_* / PLAYLIST_MOVE commands run against the library (I178) */
     uint32_t links_parsed, links_made;         /* share links OPEN parsed / SHARE wrote (I180 sentinels) */
@@ -2832,6 +2837,108 @@ static uint32_t position_ms(const sel_engine* e) {
     return cur == NULL ? 0u : (uint32_t)((uint64_t)cur->song_frames * 1000u / e->rate);
 }
 
+/* ANALYSE <song>: renders the song faster than real time through a private engine (the same replayers and
+ * mixer as playback) into the desktop loudness analyser and stores the gain under the song key in the library
+ * (I187, design doc 6a). <song> is a "local:<path>" key or a plain path. The Amiga never computes loudness. */
+#if !defined(SEL_NO_ANALYSE)
+#define SEL_ANALYSE_RATE 44100u
+#define SEL_ANALYSE_CHUNK 4096u
+#define SEL_ANALYSE_MAX_SECONDS 1800u /* a module that never ends is cut here */
+static void analyse_sink(void* ctx, const sel_message* evt) {
+    int* state = (int*)ctx;
+    if (evt->id == SEL_EVT_ERROR) {
+        *state = -1;
+    } else if (evt->id == SEL_EVT_SONG_ENDED && *state == 0) {
+        *state = 1;
+    }
+}
+
+static void cmd_ANALYSE(sel_engine* e, const sel_message* m) {
+    sel_engine_config cfg;
+    sel_engine* job;
+    sel_message msg;
+    sel_loudness* an;
+    sel_loudness_result r;
+    int16_t buf[2u * SEL_ANALYSE_CHUNK];
+    char key[SEL_DEFERRED_PATH_MAX];
+    const char* path = m->args[0].v.s;
+    uint64_t frames = 0;
+    int state = 0;
+    clock_t t0;
+    double cpu;
+
+    if (e->lib == NULL) {
+        sel_engine_report_error(e, "no_library", "ANALYSE");
+        return;
+    }
+    if (strncmp(path, "local:", 6) == 0) {
+        snprintf(key, sizeof key, "%s", path);
+        path += 6;
+    } else {
+        snprintf(key, sizeof key, "local:%s", path);
+    }
+    memset(&cfg, 0, sizeof cfg);
+    cfg.registry_count = e->registry_count;
+    cfg.registry_get = e->registry_get;
+    job = sel_engine_create(e->host, &cfg);
+    an = sel_loudness_new(SEL_ANALYSE_RATE);
+    if (job == NULL || an == NULL) {
+        sel_loudness_free(an);
+        sel_engine_destroy(job);
+        sel_engine_report_error(e, "analyse_failed", "alloc");
+        return;
+    }
+    sel_engine_set_mix(job, SEL_ANALYSE_RATE, SEL_MIX_RESAMPLE_LINEAR);
+    memset(&msg, 0, sizeof msg);
+    msg.kind = SEL_MSG_CMD;
+    msg.id = SEL_CMD_OPEN;
+    msg.argc = 1;
+    msg.args[0].type = SEL_ARG_STR;
+    msg.args[0].v.s = path;
+    sel_engine_send(job, &msg);
+    memset(&msg, 0, sizeof msg);
+    msg.kind = SEL_MSG_CMD;
+    msg.id = SEL_CMD_PLAY;
+    sel_engine_send(job, &msg);
+    sel_engine_pump(job, analyse_sink, &state);
+    t0 = clock();
+    while (state == 0 && frames < (uint64_t)SEL_ANALYSE_MAX_SECONDS * SEL_ANALYSE_RATE) {
+        uint32_t n = sel_engine_render(job, buf, SEL_ANALYSE_CHUNK);
+        sel_loudness_add_s16(an, buf, n);
+        frames += n;
+        sel_engine_pump(job, analyse_sink, &state);
+    }
+    cpu = (double)(clock() - t0) / (double)CLOCKS_PER_SEC;
+    sel_engine_destroy(job);
+    if (state < 0 || frames == 0) {
+        sel_loudness_free(an);
+        sel_engine_report_error(e, "analyse_failed", path);
+        return;
+    }
+    sel_loudness_result_get(an, &r);
+    sel_loudness_free(an);
+    if (!sel_library_loudness_set(e->lib, key, path, r.gain_cdb)) {
+        sel_engine_report_error(e, "library_failed", "ANALYSE");
+        return;
+    }
+    e->analyse_jobs++;
+    e->analyse_gated = (uint32_t)r.gated;
+    e->analyse_lufs_cdb = (int32_t)(r.lufs * 100.0 - (r.lufs < 0 ? 0.5 : -0.5));
+    e->analyse_gain_cdb = r.gain_cdb;
+    e->analyse_peak_cdb = (int32_t)(r.peak_db * 100.0 - (r.peak_db < 0 ? 0.5 : -0.5));
+    {
+        double secs = (double)frames / (double)SEL_ANALYSE_RATE;
+        double speed = cpu > 1e-6 ? secs / cpu : 1000000.0;
+        e->analyse_speed = speed > 1000000.0 ? 1000000u : (uint32_t)speed;
+    }
+}
+#else
+static void cmd_ANALYSE(sel_engine* e, const sel_message* m) {
+    (void)m;
+    sel_engine_report_error(e, "no_analyser", "ANALYSE is desktop only");
+}
+#endif
+
 /* CUE_SET n: stores the playing position as cue n of the song being played (I175, table `cues`). */
 static void cmd_CUE_SET(sel_engine* e, const sel_message* m) {
     if (e->lib == NULL) {
@@ -3956,6 +4063,12 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->history_writes = e->history_writes;
     out->scrobble_due = e->scrobble_due;
     out->skip_excluded = e->skip_excluded;
+    out->analyse_jobs = e->analyse_jobs;
+    out->analyse_speed = e->analyse_speed;
+    out->analyse_gated = e->analyse_gated;
+    out->analyse_lufs_cdb = e->analyse_lufs_cdb;
+    out->analyse_gain_cdb = e->analyse_gain_cdb;
+    out->analyse_peak_cdb = e->analyse_peak_cdb;
     out->cue_sets = e->cue_sets;
     out->cue_gotos = e->cue_gotos;
     out->sticker_ops = e->sticker_ops;

@@ -285,6 +285,39 @@ void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* repl
             }
             sqlite3_finalize(st);
         }
+    } else if (op->op == SEL_USER_LOUDNESS_SET) {
+        sqlite3_stmt* st = NULL;
+        rc = sqlite3_prepare_v2(lib->db, "UPDATE songs SET loudness_gain = ?2 WHERE key = ?1", -1, &st, NULL);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+            sqlite3_bind_int64(st, 2, op->at);
+            rc = sqlite3_step(st) == SQLITE_DONE ? SQLITE_OK : SQLITE_ERROR;
+            sqlite3_finalize(st);
+        }
+        if (rc == SQLITE_OK && sqlite3_changes(lib->db) == 0) {
+            st = NULL;
+            rc = sqlite3_prepare_v2(lib->db,
+                                    "INSERT INTO songs(key, source, path, loudness_gain) VALUES(?1, 'local', ?3, ?2)",
+                                    -1, &st, NULL);
+            if (rc == SQLITE_OK) {
+                sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+                sqlite3_bind_int64(st, 2, op->at);
+                sqlite3_bind_text(st, 3, op->value != NULL ? op->value : op->key, -1, SQLITE_STATIC);
+                rc = sqlite3_step(st) == SQLITE_DONE ? SQLITE_OK : SQLITE_ERROR;
+                sqlite3_finalize(st);
+            }
+        }
+    } else if (op->op == SEL_USER_LOUDNESS_GET) {
+        sqlite3_stmt* st = NULL;
+        rc = sqlite3_prepare_v2(lib->db, "SELECT loudness_gain FROM songs WHERE key = ?1", -1, &st, NULL);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+            if (sqlite3_step(st) == SQLITE_ROW && sqlite3_column_type(st, 0) != SQLITE_NULL) {
+                rows = sqlite3_column_int64(st, 0);
+                found = 1;
+            }
+            sqlite3_finalize(st);
+        }
     }
     memset(reply, 0, sizeof *reply);
     reply->kind = SEL_MSG_EVT;

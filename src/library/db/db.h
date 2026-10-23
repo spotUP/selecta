@@ -97,7 +97,9 @@ enum {
     SEL_USER_FOLDER_PLAYLISTS, /* I178: at = folder id (0 = all); out = "id\0name\0" pairs then "\0"; reply [2] = playlists */
     SEL_USER_PLAYLIST_KEYS,/* I178: at = playlist id; out = song keys, each NUL terminated, then "\0"; reply [2] = keys */
     SEL_USER_FOLDER_TREE,  /* I178: out = indented tree text "F|P <id> <name>" per line; reply [2] = lines */
-    SEL_USER_PANEL         /* I185: out = "label\0value\0" rows of the module info panel, then "\0"; reply [2] = rows */
+    SEL_USER_PANEL,        /* I185: out = "label\0value\0" rows of the module info panel, then "\0"; reply [2] = rows */
+    SEL_USER_LOUDNESS_SET, /* I187: at = gain in centi-dB; value = path used when the song row does not exist yet */
+    SEL_USER_LOUDNESS_GET  /* I187: reply [0] = 2 and [2] = gain in centi-dB (signed) when songs.loudness_gain is set */
 };
 /* Why a folder op was refused: reply [0] = 0, [1] = SQLITE_CONSTRAINT, [2] = one of these. */
 enum { SEL_FOLDER_OK = 0, SEL_FOLDER_ERR_NO_FOLDER = 1, SEL_FOLDER_ERR_CYCLE = 2, SEL_FOLDER_ERR_NOT_EMPTY = 3,
@@ -285,6 +287,9 @@ int sel_library_song_panel(sel_library* lib, const char* key, char* out, uint32_
 /* Cue points (I175): cue `idx` of a song key at `pos_ms`. get: 1 and *pos_ms when the cue exists. */
 int sel_library_cue_set(sel_library* lib, const char* key, uint32_t idx, uint32_t pos_ms);
 int sel_library_cue_get(sel_library* lib, const char* key, uint32_t idx, uint32_t* pos_ms);
+/* I187: per-song loudness gain (centi-dB) in songs.loudness_gain; set creates the song row when missing. */
+int sel_library_loudness_set(sel_library* lib, const char* key, const char* path, int32_t gain_cdb);
+int sel_library_loudness_get(sel_library* lib, const char* key, int32_t* gain_cdb);
 /* Row counts of the user tables (any pointer may be NULL). 1 on success. */
 /* I178 folder tree. Each returns SEL_FOLDER_OK or a SEL_FOLDER_ERR_* code; *out_id (when not NULL) = new id. */
 int sel_library_folder_add(sel_library* lib, const char* name, uint32_t parent, uint32_t* out_id);
