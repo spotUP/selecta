@@ -72,6 +72,7 @@ void sel_source_register_builtin(void);
 /* The `local` and `modland` descriptors (sources/local.c, sources/modland.c). */
 const sel_source* sel_source_local(void);
 const sel_source* sel_source_modland(void);
+const sel_source* sel_source_hippo(void);   /* sources/hippo.c, hippoplayer.se playlists */
 const sel_source* sel_source_hvsc(void); /* sources/hvsc.c, hosted by Modland */
 
 /* Song key <source id>:<path>. 0 when it does not fit. */

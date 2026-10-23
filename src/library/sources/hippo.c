@@ -1,0 +1,73 @@
+/* The `hippo` source descriptor (plan Phase 4, I163; design doc 9.1 and 17): hippoplayer.se shared playlists.
+ * A path is the server filename (`LMan_SID_Chip_Club.prg`); the song key is `hippo:<filename>` and the URL is
+ * `https://hippoplayer.se/playlist/<filename>`. Entries are playlists, not tunes. */
+#include "../source.h"
+#include "hippo_sync.h"
+
+#include <stdio.h>
+#include <string.h>
+
+#define FORMAT_NAME "Hippo - Playlists"
+
+static const sel_tag g_tags[] = {
+    {SEL_SRC_HAS_LISTS, 1},
+    {SEL_TAG_END, 0},
+};
+
+static int url_of(const char* path, char* out, size_t n) {
+    int w;
+
+    if (path == NULL || path[0] == '\0' || strchr(path, '/') != NULL) {
+        return 0;
+    }
+    w = snprintf(out, n, SEL_HIPPO_URL "%s", path);
+    return w > 0 && (size_t)w < n;
+}
+
+static int path_in(const char* url, char* path, size_t n) {
+    const char* rel;
+
+    if (strncmp(url, SEL_HIPPO_URL, sizeof SEL_HIPPO_URL - 1u) != 0) {
+        return 0;
+    }
+    rel = url + sizeof SEL_HIPPO_URL - 1u;
+    if (rel[0] == '\0' || strchr(rel, '/') != NULL || strlen(rel) + 1u > n) {
+        return 0;
+    }
+    memcpy(path, rel, strlen(rel) + 1u);
+    return 1;
+}
+
+/* A filename only: format fixed, name = file without extension; the author comes from the list. */
+static int parse(const char* path, char* scratch, size_t n, sel_tag* out) {
+    const char* dot;
+    size_t len, flen = sizeof FORMAT_NAME;
+
+    if (path == NULL || path[0] == '\0' || strchr(path, '/') != NULL) {
+        return 0;
+    }
+    dot = strrchr(path, '.');
+    len = dot != NULL && dot != path ? (size_t)(dot - path) : strlen(path);
+    if (flen + len + 1u > n) {
+        return 0;
+    }
+    memcpy(scratch, FORMAT_NAME, flen);
+    memcpy(scratch + flen, path, len);
+    scratch[flen + len] = '\0';
+    out[0].tag = SEL_SRC_FORMAT;
+    out[0].value = (uintptr_t)scratch;
+    out[1].tag = SEL_SRC_NAME;
+    out[1].value = (uintptr_t)(scratch + flen);
+    out[2].tag = SEL_TAG_END;
+    out[2].value = 0;
+    return 1;
+}
+
+static const sel_source g_hippo = {
+    "hippo", "HippoPlayer", "https://hippoplayer.se/", "Shared HippoPlayer playlists (.prg).", g_tags,
+    NULL, parse, NULL, url_of, path_in, NULL, NULL,
+};
+
+const sel_source* sel_source_hippo(void) {
+    return &g_hippo;
+}

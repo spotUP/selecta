@@ -1050,3 +1050,10 @@ if(NOT SEL_AMIGA)
             ${CMAKE_CURRENT_SOURCE_DIR}/m3)
   set_tests_properties(source-hvsc PROPERTIES LABELS m3 TIMEOUT 120 PASS_REGULAR_EXPRESSION "source_hvsc_ok")
 endif()
+
+if(NOT SEL_AMIGA)
+  add_test(NAME source-hippo
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/source_hippo.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3)
+  set_tests_properties(source-hippo PROPERTIES LABELS m3 TIMEOUT 120 PASS_REGULAR_EXPRESSION "source_hippo_ok")
+endif()
