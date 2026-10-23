@@ -991,7 +991,7 @@ static void composer_row(void* ctx, const char* key, const char* name, const cha
     printf("row=%s|%s\n", key, name);
 }
 
-/* `library composer --db <path> <name>` (I182, T85): the composer page. Any spelling or alias of the composer
+/* `library composer --db <path> <name>` (I182, T85): the composer page. Any spelling of the composer
  * lists the same songs. Prints `composer=<display>`, one `row=<key>|<name>` per song and `composer_rows=N`. */
 static int library_composer(int argc, char** argv) {
     const char* db_path = NULL;

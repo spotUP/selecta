@@ -3,22 +3,6 @@
 
 #include <string.h>
 
-/* Known handles: folded alias -> real name. The real name's own fold is the canonical key, so adding a person is
- * one row per handle. Seed list of well-known tracker scene handles; DEViLBOX songdb authors that match none of
- * these still merge by case and punctuation. */
-typedef struct alias {
-    const char* handle; /* already folded: lowercase words, single spaces */
-    const char* real;
-} alias;
-
-static const alias ALIASES[] = {
-    {"virgill", "Jogeir Liljedahl"},
-    {"jogge", "Jogeir Liljedahl"},
-    {"purple motion", "Jonne Valtonen"},
-    {"skaven", "Peter Hajba"},
-    {"skaven252", "Peter Hajba"},
-};
-
 static int is_alnum(unsigned char c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c >= 0x80u;
 }
@@ -89,52 +73,28 @@ static void fold(const char* text, char* out, size_t cap) {
     out[o] = '\0';
 }
 
-static const alias* find_alias(const char* folded) {
-    size_t i;
-
-    for (i = 0; i < sizeof ALIASES / sizeof ALIASES[0]; i++) {
-        if (strcmp(ALIASES[i].handle, folded) == 0) return &ALIASES[i];
-    }
-    return NULL;
-}
-
 int sel_composer_canon(const char* name, char* out, size_t cap) {
     char cleaned[SEL_COMPOSER_MAX];
     char folded[SEL_COMPOSER_MAX];
-    const alias* a;
 
     if (out == NULL || cap == 0) return 0;
     out[0] = '\0';
     if (name == NULL) return 0;
     clean(name, cleaned, sizeof cleaned);
     fold(cleaned, folded, sizeof folded);
-    a = find_alias(folded);
-    if (a != NULL) {
-        fold(a->real, out, cap);
-    } else {
-        strncpy(out, folded, cap - 1u);
-        out[cap - 1u] = '\0';
-    }
+    strncpy(out, folded, cap - 1u);
+    out[cap - 1u] = '\0';
     return out[0] != '\0';
 }
 
 int sel_composer_display(const char* name, char* out, size_t cap) {
     char cleaned[SEL_COMPOSER_MAX];
-    char folded[SEL_COMPOSER_MAX];
-    const alias* a;
     size_t i, o = 0, start = 0;
 
     if (out == NULL || cap == 0) return 0;
     out[0] = '\0';
     if (name == NULL) return 0;
     clean(name, cleaned, sizeof cleaned);
-    fold(cleaned, folded, sizeof folded);
-    a = find_alias(folded);
-    if (a != NULL) {
-        strncpy(out, a->real, cap - 1u);
-        out[cap - 1u] = '\0';
-        return out[0] != '\0';
-    }
     /* words of four or more letters written in capitals: "LILJEDAHL" -> "Liljedahl" */
     for (i = 0;; i++) {
         if (cleaned[i] == ' ' || cleaned[i] == '\0') {

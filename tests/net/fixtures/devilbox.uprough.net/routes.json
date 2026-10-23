@@ -9,7 +9,7 @@
   },
   "/api/songdb/lookup?hash=736f5e411816": {
     "status": 200,
-    "body": "{\"found\": true, \"format\": \"ProTracker\", \"channels\": 4, \"authors\": [\"Virgill\"], \"publishers\": [], \"album\": \"\", \"year\": 1994, \"subsongs\": []}"
+    "body": "{\"found\": true, \"format\": \"ProTracker\", \"channels\": 4, \"authors\": [\"jogeir  liljedahl.\"], \"publishers\": [], \"album\": \"\", \"year\": 1994, \"subsongs\": []}"
   },
   "/api/songdb/lookup?hash=a3bdc9fb1816": {
     "status": 200,

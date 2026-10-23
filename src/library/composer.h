@@ -4,7 +4,8 @@
  * disagree.
  *
  * Steps: drop "(handle)" groups, turn "Last, First" into "First Last", fold case and punctuation to single spaces,
- * then map known handles through the alias table (virgill -> Jogeir Liljedahl). Only ASCII is case-folded; bytes
+ * There is no built-in handle table: a handle and a real name merge only when DEViLBOX songdb data links them
+ * (I182a; the songdb reply shape for aliases is not yet known). Only ASCII is case-folded; bytes
  * >= 0x80 pass through unchanged (UTF-8 names compare byte-exact). */
 #ifndef SELECTA_LIBRARY_COMPOSER_H
 #define SELECTA_LIBRARY_COMPOSER_H
@@ -16,8 +17,7 @@
 /* Canonical key of `name` (lowercase words joined by one space). Returns 1 when non-empty. */
 int sel_composer_canon(const char* name, char* out, size_t cap);
 
-/* Display name for `name`: the alias table's real name, else the cleaned spelling with all-caps words
- * capitalised. Same canon <=> same display after this call on the canonical entry. Returns 1 when non-empty. */
+/* Display name for `name`: the cleaned spelling with all-caps words capitalised. Same canon <=> same display after this call on the canonical entry. Returns 1 when non-empty. */
 int sel_composer_display(const char* name, char* out, size_t cap);
 
 #endif

@@ -5,7 +5,7 @@
  *   GET <devilbox>/api/songdb/lookup?hash=<12 hex UADE key>
  *   -> {"found":true,"format":..,"authors":["..",".."],..} | {"found":false}
  * The answer is cached by UADE key in songdb_cache (authors one per line; NULL = not in songdb), so a second
- * run asks nothing. Each author goes through composer.h (case, punctuation, "Last, First", handles) and lands in
+ * run asks nothing. Each author goes through composer.h (case, punctuation, "Last, First") and lands in
  * song_composers(song_key, canon, display); the composer page reads that table by canon. The worker half runs the
  * SEL_SONGDB_* ops; the caller half rides on sel_library_genre_sync, which already holds the UADE key. */
 #include "db_internal.h"

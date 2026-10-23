@@ -74,9 +74,9 @@ if(NOT s1 EQUAL 4)
   message(FATAL_ERROR "T85 genre: run 1 sent ${s1} /api/songdb requests, want 4")
 endif()
 
-# ---- composer page: every spelling and alias lists the same 3 songs; the other author lists 1
+# ---- composer page: every spelling lists the same 3 songs; the other author lists 1
 set(page "")
-foreach(nm "Jogeir Liljedahl" "virgill" "liljedahl, jogeir" "JOGEIR LILJEDAHL (Virgill)")
+foreach(nm "Jogeir Liljedahl" "jogeir  liljedahl." "liljedahl, jogeir" "JOGEIR LILJEDAHL (Virgill)")
   run_cli(cp library composer --db "${db}" "${nm}")
   expect_counter("${cp}" composer_rows 3)
   string(REGEX REPLACE "composer=[^\n]*\n" "" rows "${cp}")
@@ -91,6 +91,9 @@ if(NOT cp MATCHES "composer=Jogeir Liljedahl")
 endif()
 run_cli(cp2 library composer --db "${db}" "Dr Awesome")
 expect_counter("${cp2}" composer_rows 1)
+# No built-in handle table (I182a): a handle never merges with a real name unless songdb data says so.
+run_cli(cp3 library composer --db "${db}" "virgill")
+expect_counter("${cp3}" composer_rows 0)
 
 # ---- genre: search finds the right songs
 run_cli(amb library search --db "${db}" genre:ambient)
