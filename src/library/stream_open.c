@@ -586,6 +586,8 @@ static sel_live* live_open(const sel_host* host, const char* url, const volatile
     s->view.read = view_read;
     s->view.read_wait = view_read_wait;
     s->view.ended = view_ended;
+    s->view.total = 0;
+    s->view.seek = NULL;
     if (pthread_create(&s->thread, NULL, download, s) != 0) {
         sel_live_close(s);
         return NULL;
@@ -732,4 +734,129 @@ uint32_t sel_stream_record_taps(void) {
 }
 uint32_t sel_stream_received(void) {
     return g_received;
+}
+
+/* File-backed stream (I184d): a local song of a SEL_RP_STREAMING replayer is read from disk in pieces instead of
+ * being loaded whole. Same sel_byte_stream the live download uses, plus the file length and seek. */
+struct sel_file_stream {
+    const sel_host* host;
+    FILE* f;
+    uint64_t pos;
+    uint64_t size;
+    sel_byte_stream view;
+};
+
+#define SEL_FILE_HEAD_MAX (1024u * 1024u)
+
+static uint32_t g_file_opens;
+static uint32_t g_file_bytes;
+
+static size_t file_read(void* ctx, uint8_t* dst, size_t max) {
+    sel_file_stream* s = (sel_file_stream*)ctx;
+    size_t n = s->pos >= s->size ? 0u : fread(dst, 1, max, s->f);
+    s->pos += n;
+    g_file_bytes += (uint32_t)n;
+    return n;
+}
+
+static int file_ended(void* ctx) {
+    sel_file_stream* s = (sel_file_stream*)ctx;
+    return s->pos >= s->size;
+}
+
+static int file_seek(void* ctx, uint64_t pos) {
+    sel_file_stream* s = (sel_file_stream*)ctx;
+    if (pos > s->size || fseek(s->f, (long)pos, SEEK_SET) != 0) {
+        return 0;
+    }
+    s->pos = pos;
+    return 1;
+}
+
+/* Bytes the probe needs: SEL_STREAM_HEAD, or for a file that starts with an ID3v2 tag the whole tag plus room for
+ * the first frames behind it (cover art makes tags of several hundred KB common), capped at SEL_FILE_HEAD_MAX. */
+static size_t file_head_want(const uint8_t* h, size_t n, uint64_t size) {
+    size_t want = SEL_STREAM_HEAD;
+
+    if (n >= 10u && h[0] == 'I' && h[1] == 'D' && h[2] == '3' && ((h[6] | h[7] | h[8] | h[9]) & 0x80u) == 0u) {
+        size_t tag = 10u + (((size_t)h[6] << 21) | ((size_t)h[7] << 14) | ((size_t)h[8] << 7) | h[9]) +
+                     ((h[5] & 0x10u) != 0u ? 10u : 0u);
+        if (tag + SEL_STREAM_HEAD > want) {
+            want = tag + SEL_STREAM_HEAD;
+        }
+    }
+    if (want > SEL_FILE_HEAD_MAX) {
+        want = SEL_FILE_HEAD_MAX;
+    }
+    return want > size ? (size_t)size : want;
+}
+
+sel_file_stream* sel_file_stream_open(const sel_host* host, const char* path, uint8_t** head, size_t* headn) {
+    sel_file_stream* s;
+    uint8_t first[10];
+    size_t want, got;
+    long len;
+
+    s = (sel_file_stream*)host->mem_alloc(host, sizeof *s, SEL_MEM_FAST);
+    if (s == NULL) {
+        return NULL;
+    }
+    memset(s, 0, sizeof *s);
+    s->host = host;
+    s->f = fopen(path, "rb");
+    if (s->f == NULL || fseek(s->f, 0, SEEK_END) != 0 || (len = ftell(s->f)) <= 0 || fseek(s->f, 0, SEEK_SET) != 0) {
+        sel_file_stream_close(s);
+        return NULL;
+    }
+    s->size = (uint64_t)len;
+    got = fread(first, 1, sizeof first, s->f);
+    want = file_head_want(first, got, s->size);
+    *head = (uint8_t*)host->mem_alloc(host, want + 1u, SEL_MEM_FAST);
+    if (*head == NULL || fseek(s->f, 0, SEEK_SET) != 0) {
+        sel_file_stream_close(s);
+        return NULL;
+    }
+    *headn = fread(*head, 1, want, s->f);
+    (*head)[*headn] = 0;
+    g_file_bytes += (uint32_t)(got + *headn);
+    if (*headn == 0u || fseek(s->f, 0, SEEK_SET) != 0) {
+        host->mem_free(host, *head);
+        *head = NULL;
+        sel_file_stream_close(s);
+        return NULL;
+    }
+    s->view.ctx = s;
+    s->view.read = file_read;
+    s->view.read_wait = file_read; /* a file never makes the reader wait */
+    s->view.ended = file_ended;
+    s->view.total = s->size;
+    s->view.seek = file_seek;
+    g_file_opens++;
+    return s;
+}
+
+const sel_byte_stream* sel_file_stream_source(sel_file_stream* s) {
+    return &s->view;
+}
+
+uint64_t sel_file_stream_size(const sel_file_stream* s) {
+    return s->size;
+}
+
+void sel_file_stream_close(sel_file_stream* s) {
+    if (s != NULL) {
+        const sel_host* host = s->host;
+        if (s->f != NULL) {
+            fclose(s->f);
+        }
+        host->mem_free(host, s);
+    }
+}
+
+uint32_t sel_file_stream_opens(void) {
+    return g_file_opens;
+}
+
+uint32_t sel_file_stream_bytes_read(void) {
+    return g_file_bytes;
 }

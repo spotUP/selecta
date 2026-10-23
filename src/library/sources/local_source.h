@@ -30,6 +30,7 @@ typedef struct sel_local_scan_stats {
     uint32_t archive_lzx;     /* LZX archives opened (I159a) */
     uint32_t depack_pp;       /* PowerPacker files depacked and scanned (I159a) */
     uint32_t rescanned_dirs;  /* directories rescanned by sel_source_rescan (I160) */
+    uint32_t bytes_read;      /* bytes read from song files; a streamed MP3 or Ogg reads far less than its size (I184d) */
 } sel_local_scan_stats;
 
 /* Scans `root` recursively. Returns 0 when the root cannot be listed, memory runs out or the DB

@@ -171,6 +171,7 @@ typedef struct sel_scan_info {
     uint32_t archive_members; /* members written as songs */
     uint32_t archive_lzx;     /* LZX archives opened */
     uint32_t depack_pp;       /* PowerPacker files depacked and scanned */
+    uint32_t bytes_read;      /* bytes read from song files; a streamed MP3 or Ogg reads less than its size (I184d) */
 } sel_scan_info;
 
 typedef struct sel_engine_config {

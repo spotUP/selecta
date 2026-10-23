@@ -205,6 +205,7 @@ typedef struct sel_slot {
     sel_rp_info rp_info;
     uint8_t* song_data;
     sel_live* stream; /* I195b: live download behind song_data's head, closed after rp_close */
+    sel_file_stream* fstream; /* I184d: local file read in pieces behind song_data's head, closed after rp_close */
     uint32_t stream_noted; /* audio side: the first-audio sentinel ran */
     char* path; /* kept for SUBSONG, which reopens the file in the idle slot */
     uint32_t subsong;
@@ -1154,6 +1155,10 @@ static void close_slot(sel_engine* e, sel_slot* sl) {
         sel_live_close(sl->stream); /* ends the download thread; the replayer is already closed */
         sl->stream = NULL;
     }
+    if (sl->fstream != NULL) {
+        sel_file_stream_close(sl->fstream);
+        sl->fstream = NULL;
+    }
     if (sl->song_data != NULL) {
         e->host->mem_free(e->host, sl->song_data);
         sl->song_data = NULL;
@@ -1204,13 +1209,38 @@ static int start_subsong(sel_engine* e, sel_slot* sl, uint32_t subsong) {
     return sl->rp_start(sl->rp_state, subsong, e->rate, e->route_direct ? e->voice_sink : sel_mixer_voices(&sl->mixer));
 }
 
-/* Reads the whole file into host memory; NULL when it cannot be read.
- * With `live` and an http(s) URL on the desktop only the head is read and *live gets the running download (I195b). */
-static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_live** live) {
+/* Reads the whole file into host memory; NULL when it cannot be read. */
+static uint8_t* read_whole_file(sel_engine* e, const char* path, size_t* size) {
     FILE* f;
-    e->open_status = 0;
     long len;
     uint8_t* buf;
+
+    f = fopen(path, "rb");
+    if (f == NULL) {
+        return NULL;
+    }
+    if (fseek(f, 0, SEEK_END) != 0 || (len = ftell(f)) < 0 || fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    buf = e->host->mem_alloc(e->host, (size_t)len + 1u, SEL_MEM_FAST);
+    if (buf == NULL || fread(buf, 1, (size_t)len, f) != (size_t)len) {
+        if (buf != NULL) {
+            e->host->mem_free(e->host, buf);
+        }
+        fclose(f);
+        return NULL;
+    }
+    fclose(f);
+    *size = (size_t)len;
+    return buf;
+}
+
+/* Reads a song for prepare_slot. With `live` and an http(s) URL on the desktop only the head is read and *live gets
+ * the running download (I195b). With `fs` a local file is opened as a file-backed stream and only its head is read (I184d); the caller keeps the
+ * stream for a SEL_RP_STREAMING replayer and closes it before reading the whole file for any other. */
+static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_live** live, sel_file_stream** fs) {
+    e->open_status = 0;
     char cached[SEL_BROWSE_PATH_MAX];
     char best[SEL_BROWSE_PATH_MAX];
     /* D-M3-14 (I184): a library song with twins of the same md5 plays its best source. */
@@ -1268,25 +1298,17 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
         }
         return data;
     }
-    f = fopen(path, "rb");
-    if (f == NULL) {
-        return NULL;
-    }
-    if (fseek(f, 0, SEEK_END) != 0 || (len = ftell(f)) < 0 || fseek(f, 0, SEEK_SET) != 0) {
-        fclose(f);
-        return NULL;
-    }
-    buf = e->host->mem_alloc(e->host, (size_t)len + 1u, SEL_MEM_FAST);
-    if (buf == NULL || fread(buf, 1, (size_t)len, f) != (size_t)len) {
-        if (buf != NULL) {
-            e->host->mem_free(e->host, buf);
+    if (fs != NULL) {
+        uint8_t* head = NULL;
+        size_t headn = 0;
+
+        *fs = sel_file_stream_open(e->host, path, &head, &headn);
+        if (*fs != NULL) {
+            *size = headn;
+            return head;
         }
-        fclose(f);
-        return NULL;
     }
-    fclose(f);
-    *size = (size_t)len;
-    return buf;
+    return read_whole_file(e, path, size);
 }
 
 /* The replayer hook list that claims the data: first YES, else first UNSURE. */
@@ -1584,9 +1606,12 @@ static void hist_begin(sel_engine* e, const char* path) {
 }
 
 /* Frees a song that did not reach a slot, and its live download. */
-static void drop_song(sel_engine* e, uint8_t* data, sel_live* live) {
+static void drop_song(sel_engine* e, uint8_t* data, sel_live* live, sel_file_stream* fs) {
     if (live != NULL) {
         sel_live_close(live);
+    }
+    if (fs != NULL) {
+        sel_file_stream_close(fs);
     }
     e->host->mem_free(e->host, data);
 }
@@ -1615,10 +1640,11 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     size_t size = 0;
     uint8_t* data;
     sel_live* live = NULL;
+    sel_file_stream* fs = NULL;
     sel_message sw;
     uintptr_t kind;
 
-    data = read_song(e, path, &size, &live);
+    data = read_song(e, path, &size, &live, &fs);
     if (data == NULL) {
         report_open_failed(e, err_detail);
         return 0;
@@ -1643,14 +1669,26 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
         }
         hooks = find_replayer(e, data, size, path);
     }
+    if (fs != NULL && (hooks == NULL || sel_tag_find(hooks, SEL_RP_STREAMING, 0) == 0)) {
+        /* The replayer needs the whole file (trackers, archives): drop the head stream and read it all. */
+        sel_file_stream_close(fs);
+        fs = NULL;
+        e->host->mem_free(e->host, data);
+        data = read_whole_file(e, path, &size);
+        if (data == NULL) {
+            report_open_failed(e, err_detail);
+            return 0;
+        }
+        hooks = find_replayer(e, data, size, path);
+    }
     if (hooks == NULL) {
-        drop_song(e, data, live);
+        drop_song(e, data, live, fs);
         sel_engine_report_error(e, "no_replayer", err_detail);
         return 0;
     }
     kind = sel_tag_find(hooks, SEL_RP_KIND, 0);
     if (kind != SEL_RP_KIND_VOICE && kind != SEL_RP_KIND_RENDER) {
-        drop_song(e, data, live);
+        drop_song(e, data, live, fs);
         sel_engine_report_error(e, "unsupported_kind", err_detail);
         return 0;
     }
@@ -1677,23 +1715,24 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
         sl->rp_tick = NULL;
     }
     if (!open || !sl->rp_close || !sl->rp_start || (kind == SEL_RP_KIND_VOICE ? !sl->rp_tick : !sl->rp_render)) {
-        drop_song(e, data, live);
+        drop_song(e, data, live, fs);
         sel_engine_report_error(e, "replayer_incomplete", err_detail);
         return 0;
     }
     src.data = data;
     src.size = size;
     src.path = path;
-    src.stream = live != NULL ? sel_live_source(live) : NULL;
+    src.stream = live != NULL ? sel_live_source(live) : (fs != NULL ? sel_file_stream_source(fs) : NULL);
     memset(&sl->rp_info, 0, sizeof sl->rp_info);
     sl->rp_state = open(&src, &e->rp_host, &sl->rp_info);
     if (sl->rp_state == NULL) {
-        drop_song(e, data, live);
+        drop_song(e, data, live, fs);
         sel_engine_report_error(e, "open_failed", err_detail);
         return 0;
     }
     sl->song_data = data; /* the replayer reads it until close */
     sl->stream = live;
+    sl->fstream = fs;
     sl->stream_noted = 0;
     sl->path = e->host->mem_alloc(e->host, strlen(path) + 1u, SEL_MEM_FAST);
     if (sl->path != NULL) {
@@ -3047,6 +3086,7 @@ static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
     e->scan_info.archive_members = stats.archive_members;
     e->scan_info.archive_lzx = stats.archive_lzx;
     e->scan_info.depack_pp = stats.depack_pp;
+    e->scan_info.bytes_read = stats.bytes_read;
     if (!ok) {
         sel_engine_report_error(e, "scan_failed", m->args[0].v.s);
         return;
