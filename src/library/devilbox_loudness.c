@@ -140,22 +140,6 @@ int sel_dvb_loudness_put(const char* hash, const char* token, const sel_dvb_loud
     return res.status;
 }
 
-int sel_dvb_loudness_token_read(const char* config_dir, char* out, size_t cap) {
-    char path[1024];
-    FILE* f;
-    size_t n;
-
-    if (config_dir == NULL || cap < 2) return 0;
-    snprintf(path, sizeof path, "%s/devilbox.token", config_dir);
-    f = fopen(path, "rb");
-    if (f == NULL) return 0;
-    n = fread(out, 1, cap - 1, f);
-    fclose(f);
-    while (n > 0 && (out[n - 1] == '\n' || out[n - 1] == '\r' || out[n - 1] == ' ' || out[n - 1] == '\t')) n--;
-    out[n] = '\0';
-    return n > 0;
-}
-
 int32_t sel_dvb_loudness_gain_cdb(int32_t lufs_cdb) {
     int32_t g = SEL_DVB_LOUDNESS_TARGET_CDB - lufs_cdb;
 
