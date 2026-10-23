@@ -99,8 +99,14 @@ enum {
     SEL_USER_FOLDER_TREE,  /* I178: out = indented tree text "F|P <id> <name>" per line; reply [2] = lines */
     SEL_USER_PANEL,        /* I185: out = "label\0value\0" rows of the module info panel, then "\0"; reply [2] = rows */
     SEL_USER_LOUDNESS_SET, /* I187: at = gain in centi-dB; value = path used when the song row does not exist yet */
-    SEL_USER_LOUDNESS_GET  /* I187: reply [0] = 2 and [2] = gain in centi-dB (signed) when songs.loudness_gain is set */
+    SEL_USER_LOUDNESS_GET, /* I187: reply [0] = 2 and [2] = gain in centi-dB (signed) when songs.loudness_gain is set */
+    SEL_USER_RATING_SET,   /* I173: at = stars 1..5 (0 removes the rating), to = SEL_RATING_*; replaces the ratings row */
+    SEL_USER_RATING_GET,   /* I173: reply [0] = 2 and [2] = stars when the song is rated */
+    SEL_USER_RATING_PENDING, /* I173: out = "key\0stars\0" pairs of the ratings not yet on DEViLBOX, then "\0"; reply [2] = rows */
+    SEL_USER_RATING_DONE   /* I173: the push of the key's rating is over: drops its pending row, marks the rating synced */
 };
+/* Where a rating came from (sel_user_op.to of SEL_USER_RATING_SET). */
+enum { SEL_RATING_LOCAL = 0, SEL_RATING_QUEUE = 1, SEL_RATING_SERVER = 2 };
 /* Why a folder op was refused: reply [0] = 0, [1] = SQLITE_CONSTRAINT, [2] = one of these. */
 enum { SEL_FOLDER_OK = 0, SEL_FOLDER_ERR_NO_FOLDER = 1, SEL_FOLDER_ERR_CYCLE = 2, SEL_FOLDER_ERR_NOT_EMPTY = 3,
        SEL_FOLDER_ERR_NO_PLAYLIST = 4, SEL_FOLDER_ERR_FAILED = 5 };
@@ -290,6 +296,13 @@ int sel_library_cue_get(sel_library* lib, const char* key, uint32_t idx, uint32_
 /* I187: per-song loudness gain (centi-dB) in songs.loudness_gain; set creates the song row when missing. */
 int sel_library_loudness_set(sel_library* lib, const char* key, const char* path, int32_t gain_cdb);
 int sel_library_loudness_get(sel_library* lib, const char* key, int32_t* gain_cdb);
+/* Ratings (I173): stars 1..5, 0 removes. origin is SEL_RATING_LOCAL / QUEUE / SERVER. _pending fills out with
+ * "key\0stars\0" pairs then "\0" (cap bytes) and *rows with the number of pending ratings; _done drops the key's
+ * pending push. */
+int sel_library_rating_set(sel_library* lib, const char* key, int stars, int origin);
+int sel_library_rating_get(sel_library* lib, const char* key, int* stars);
+int sel_library_rating_pending(sel_library* lib, char* out, uint32_t cap, uint32_t* rows);
+int sel_library_rating_done(sel_library* lib, const char* key);
 /* Row counts of the user tables (any pointer may be NULL). 1 on success. */
 /* I178 folder tree. Each returns SEL_FOLDER_OK or a SEL_FOLDER_ERR_* code; *out_id (when not NULL) = new id. */
 int sel_library_folder_add(sel_library* lib, const char* name, uint32_t parent, uint32_t* out_id);

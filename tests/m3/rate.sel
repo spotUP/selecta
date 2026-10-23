@@ -1,0 +1,8 @@
+# T79 rate-devilbox (plan 2026-10-25-m3-library.md, Phase 6, I173, D-M3-12). tests/net/rate_devilbox.cmake runs this
+# after `selecta-cli devilbox login`: RATE 4 on a Modland song pushes PUT /api/ratings, @ratings_read reads 250 keys
+# in 2 batch requests (cap 200) and stores the user's own rating, @ratings prints rating_pushes= rating_batches=
+# rating_pending=.
+OPEN modland:Protracker/test/play1.mod
+RATE 4
+@ratings_read modland 250 Protracker/test/play1.mod
+@ratings

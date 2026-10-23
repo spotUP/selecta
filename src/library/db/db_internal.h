@@ -73,6 +73,7 @@ void sel_library_annotate(sel_library* lib, const sel_annotate_batch* b, sel_mes
 void sel_library_genre_op(sel_library* lib, const sel_genre_op* op, sel_message* reply);
 /* One genre-op round trip through the worker: the reply's [0] (1 = found/stored), -1 on a library error; *id = [2]. */
 int sel_genre_call(sel_library* lib, const sel_genre_op* op, int64_t* id);
+int sel_url_encode(const char* name, char* out, size_t cap);
 int sel_library_http_json(const char* url, char* text, size_t cap, uint32_t* requests);
 int sel_json_string(const char* json, const char* name, char* out, size_t cap);
 

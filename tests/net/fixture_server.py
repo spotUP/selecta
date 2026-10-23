@@ -52,6 +52,7 @@ FIXTURES = os.path.join(HERE, "fixtures")
 LOG = []
 LOG_LOCK = threading.Lock()
 LOG_FILE = None
+RATINGS = {}  # (token, source, itemKey) -> stars, the DEViLBOX rating store (row I173)
 KEEP_HEADERS = ("range", "authorization", "content-type", "content-length", "user-agent")
 
 
@@ -101,14 +102,96 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if parsed.path == "/__fixture/reset":
             with LOG_LOCK:
                 LOG.clear()
+                RATINGS.clear()
             return self.send_bytes(200, b"{}", {"Content-Type": "application/json"})
         hdrs = {k: self.headers[k] for k in KEEP_HEADERS if self.headers.get(k)}
         entry = {"method": self.command, "host": host, "path": self.path, "headers": hdrs,
                  "body_sha256": hashlib.sha256(body).hexdigest(), "body_len": len(body)}
-        if self.command == "POST":
+        if self.command in ("POST", "PUT", "DELETE"):
             entry["body"] = body[:4096].decode("latin-1")
         self.entry = entry
+        if host == "devilbox.uprough.net" and self.devilbox(parsed, body):
+            return
         self.route(host, parsed, entry)
+
+    def json_reply(self, status, obj):
+        return self.send_bytes(status, json.dumps(obj, separators=(",", ":")).encode(),
+                               {"Content-Type": "application/json"})
+
+    def devilbox(self, parsed, body):
+        """Stateful account and ratings endpoints of row I173 (like DEViLBOX auth.ts and ratings.ts).
+        Login password is "fixture-password". True when the request was answered here."""
+        path = parsed.path
+        if path == "/api/auth/login" and self.command == "POST":
+            try:
+                req = json.loads(body or b"{}")
+            except ValueError:
+                req = {}
+            if not req.get("username") or not req.get("password"):
+                self.json_reply(400, {"error": "Username and password required"})
+            elif req["password"] != "fixture-password":
+                self.json_reply(401, {"error": "Invalid username or password"})
+            else:
+                self.json_reply(200, {"token": "fixture-jwt-" + req["username"],
+                                      "user": {"id": 1, "username": req["username"], "createdAt": 0}})
+            return True
+        if path == "/api/ratings" and self.command in ("PUT", "DELETE"):
+            auth = self.headers.get("Authorization") or ""
+            if not auth.startswith("Bearer "):
+                self.json_reply(401, {"error": "No token provided"})
+                return True
+            token = auth[7:]
+            if not token.startswith("fixture-jwt-"):
+                self.json_reply(403, {"error": "Invalid or expired token"})
+                return True
+            try:
+                req = json.loads(body or b"{}")
+            except ValueError:
+                req = {}
+            source, item, rating = req.get("source"), req.get("itemKey"), req.get("rating")
+            if not source or not item or (self.command == "PUT" and rating is None):
+                self.json_reply(400, {"error": "source, itemKey, and rating are required"})
+            elif source not in ("modland", "hvsc"):
+                self.json_reply(400, {"error": "source must be modland or hvsc"})
+            elif self.command == "PUT" and (type(rating) is not int or rating < 1 or rating > 5):
+                self.json_reply(400, {"error": "rating must be an integer 1-5"})
+            else:
+                with LOG_LOCK:
+                    if self.command == "PUT":
+                        RATINGS[(token, source, item)] = rating
+                    else:
+                        RATINGS.pop((token, source, item), None)
+                    same = [r for (t, s_, i), r in RATINGS.items() if s_ == source and i == item]
+                avg = round(sum(same) / len(same), 2) if same else 0
+                self.json_reply(200, {"ok": True, "avg": avg, "count": len(same),
+                                      "userRating": rating if self.command == "PUT" else None})
+            return True
+        if path == "/api/ratings/batch" and self.command == "GET":
+            q = urllib.parse.parse_qs(parsed.query)
+            source, keys_raw = (q.get("source") or [""])[0], (q.get("keys") or [""])[0]
+            auth = self.headers.get("Authorization") or ""
+            token = auth[7:] if auth.startswith("Bearer ") else None
+            if not source or not keys_raw:
+                self.json_reply(400, {"error": "source and keys query params are required"})
+            elif source not in ("modland", "hvsc"):
+                self.json_reply(400, {"error": "source must be modland or hvsc"})
+            else:
+                keys = [k for k in keys_raw.split(",") if k]
+                if len(keys) > 200:
+                    self.json_reply(400, {"error": "Maximum 200 keys per batch request"})
+                    return True
+                out = {}
+                with LOG_LOCK:
+                    for k in keys:
+                        same = [r for (t, s_, i), r in RATINGS.items() if s_ == source and i == k]
+                        own = RATINGS.get((token, source, k)) if token else None
+                        if same:
+                            out[k] = {"avg": round(sum(same) / len(same), 2), "count": len(same)}
+                            if own is not None:
+                                out[k]["userRating"] = own
+                self.json_reply(200, {"ratings": out})
+            return True
+        return False
 
     def route(self, host, parsed, entry):
         routes = load_routes(host)

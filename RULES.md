@@ -31,6 +31,9 @@ Toolchains: desktop clang/gcc + CMake + Ninja; Amiga bebbo amiga-gcc at `~/opt/a
 | Measure a song's EBU R128 loudness and store its gain (T89) | `build/host/apps/selecta-cli/selecta-cli analyse [--db <path>] <song>` (`analyse --sine <hz>:<dbfs>` for a generated reference) |
 | Analyse every local song in the catalogue (T89) | `build/host/apps/selecta-cli/selecta-cli library analyse [--db <path>] 'source:local'` |
 | Song key and URL round trip for a source (T72) | `build/host/apps/selecta-cli/selecta-cli library key <source> <path>` |
+| Log in to DEViLBOX, password from stdin, token to `<config>/devilbox.token` mode 0600 (I173) | `printf "%s\n" "$PW" \| build/host/apps/selecta-cli/selecta-cli devilbox login <user> --password-stdin [--config-dir <dir>]` |
+| Rate the open song (RATE 0-5), read 250 ratings in batches, print push counters (T79) | `build/host/apps/selecta-cli/selecta-cli script tests/m3/rate.sel --db <db> --config-dir <dir>` (directives `@ratings_read <source> <n> [<path>...]`, `@ratings`) |
+| DEViLBOX rating push, batch read, pending flush test (T79) | `nice -n 19 ctest --test-dir build/host -R rate-devilbox --output-on-failure` |
 | Pump the null output | `build/host/apps/selecta-cli/selecta-cli play-null --rate 44100 --frames 4410` |
 | Render a song to a WAV (golden oracle; prints `ticks= voice_ops= mixed_frames=`) | `build/host/apps/selecta-cli/selecta-cli render build/host/tests/songs/selecta-test.mod --output <wav> --seconds 10 --rate 44100 --resample linear` (resamplers: none, linear, cubic, sinc); compare with `tests/golden/<plugin>/<song>.<resampler>.sha256` (hashes not yet committed, row I34) |
 | Play through the Mac's default output (LOCAL; prints `callbacks= frames=`) | `build/host/apps/selecta-cli/selecta-cli play build/host/tests/songs/selecta-test.mod --output coreaudio --seconds 10` |
