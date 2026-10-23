@@ -1,0 +1,7 @@
+# T81 second process: the cue written by cues.sel is still there; CUE_GOTO seeks to it.
+QUEUE_ADD selecta-test-mk.mod
+PLAY
+@render 441
+CUE_GOTO 1
+@render 441
+@user_stats

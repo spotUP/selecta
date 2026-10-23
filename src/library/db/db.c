@@ -261,6 +261,65 @@ int sel_library_note(sel_library* lib, const char* key, const char* note) {
     return user_call(lib, &op) > 0;
 }
 
+int sel_library_sticker_set(sel_library* lib, const char* key, const char* name, const char* value) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_STICKER_SET;
+    op.key = key;
+    op.name = name;
+    op.value = value != NULL ? value : "";
+    return user_call(lib, &op) > 0;
+}
+
+int sel_library_sticker_get(sel_library* lib, const char* key, const char* name, char* out, uint32_t cap) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_STICKER_GET;
+    op.key = key;
+    op.name = name;
+    op.out = out;
+    op.out_cap = cap;
+    return user_call(lib, &op) == 2;
+}
+
+int sel_library_sticker_del(sel_library* lib, const char* key, const char* name) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_STICKER_DEL;
+    op.key = key;
+    op.name = name;
+    return user_call(lib, &op) == 2;
+}
+
+int sel_library_sticker_list(sel_library* lib, const char* key, char* out, uint32_t cap, uint32_t* rows) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_STICKER_LIST;
+    op.key = key;
+    op.out = out;
+    op.out_cap = cap;
+    return user_call_rows(lib, &op, rows) > 0;
+}
+
+int sel_library_cue_set(sel_library* lib, const char* key, uint32_t idx, uint32_t pos_ms) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_CUE_SET;
+    op.key = key;
+    op.at = idx;
+    op.duration_ms = (int32_t)pos_ms;
+    return user_call(lib, &op) > 0;
+}
+
+int sel_library_cue_get(sel_library* lib, const char* key, uint32_t idx, uint32_t* pos_ms) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_CUE_GET;
+    op.key = key;
+    op.at = idx;
+    return user_call_rows(lib, &op, pos_ms) == 2;
+}
+
 int sel_library_tag_edit(sel_library* lib, const char* key, const char* field, const char* value) {
     sel_user_op op;
     memset(&op, 0, sizeof op);

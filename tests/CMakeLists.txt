@@ -908,6 +908,20 @@ if(NOT SEL_AMIGA)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
   set_tests_properties(user-data PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "userdata_ok")
 
+  add_test(NAME cues
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/cues.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/cues.sel
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/cues2.sel
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
+  set_tests_properties(cues PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "cues_ok")
+
+  add_test(NAME stickers
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/stickers.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/stickers.sel
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/stickers2.sel
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
+  set_tests_properties(stickers PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "stickers_ok")
+
   add_test(NAME view-library-source
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
       "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv"

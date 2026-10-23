@@ -35,7 +35,7 @@ static int usage(FILE* to) {
           "  tagtypes                   list metadata tags and their types\n"
           "  roundtrip                  encode and decode every table row\n"
           "  commands --unimplemented   list verbs the engine answers not_implemented\n"
-          "  script <file> [--integration <id>] [--catalogue <tsv>]  feed command lines to the engine, print events\n"
+          "  script <file> [--integration <id>] [--catalogue <tsv> [--db <path>]]  feed command lines to the engine, print events\n"
           "  send <verb> [args]         send one command line to a running selecta (exit 0 OK, 1 ERROR, 2 none running)\n"
           "  abi [voices]               print sel_host (or sel_voices) size and field offsets\n"
           "  plugins [--lint]           list plugins; --lint counts bad descriptor tags\n"
@@ -292,6 +292,7 @@ static void print_event(void* ctx, const sel_message* evt) {
  *                       before it are not printed (their count depends on
  *                       the song length)
  *   @position           SNAPSHOT position_ms=M order=O row=R pattern=P (song.pattern_pos)
+ *   @user_stats         USERDATA cue_sets=N cue_gotos=N sticker_ops=N (T81, T82)
  *   @integration_poll   call INT_POLL of the --integration plugin once
  *   @alloc_guard on     write SEL_ALLOC_FREEZE/THAW to stderr around every
  *                       sel_engine_render call (pump-side work stays outside
@@ -372,6 +373,11 @@ static void script_directive(sel_engine* e, const char* line) {
         printf("LIBRARY searches=%u fts_queries=%u songs_opened=%u history_writes=%u skip_excluded=%u\n",
                (unsigned)es.library_searches, (unsigned)es.library_fts_queries, (unsigned)es.songs_opened,
                (unsigned)es.history_writes, (unsigned)es.skip_excluded);
+    } else if (strcmp(line, "@user_stats") == 0) {
+        sel_engine_stats es;
+        sel_engine_stats_get(e, &es);
+        printf("USERDATA cue_sets=%u cue_gotos=%u sticker_ops=%u\n", (unsigned)es.cue_sets, (unsigned)es.cue_gotos,
+               (unsigned)es.sticker_ops);
     } else if (strcmp(line, "@position") == 0) {
         const sel_song_state* so = &sel_engine_state(e)->song;
         printf("SNAPSHOT position_ms=%u order=%u row=%u pattern=%u\n", (unsigned)so->position_ms,
@@ -472,7 +478,12 @@ static int cmd_script(const char* path, int argc, char** argv) {
             g_fake_host.query = fake_query;
             host = &g_fake_host;
         } else if (strcmp(argv[i], "--catalogue") == 0) {
-            lib = sel_cli_open_catalogue(argv[i + 1]);
+            const char* db = NULL;
+            int j;
+            for (j = 0; j + 1 < argc; j++) {
+                if (strcmp(argv[j], "--db") == 0) db = argv[j + 1];
+            }
+            lib = db != NULL ? sel_cli_open_catalogue_at(argv[i + 1], db) : sel_cli_open_catalogue(argv[i + 1]);
             if (lib == NULL) {
                 fclose(f);
                 return 1;

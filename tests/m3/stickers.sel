@@ -1,0 +1,11 @@
+# T82 (row I176): STICKER_SET / GET / LIST / DEL (D-M3-17). stickers.sh runs this file and stickers2.sel in two
+# processes on one database file.
+STICKER_SET selecta-test.mod rating 5
+STICKER_SET selecta-test.mod mood calm
+STICKER_SET selecta-test.mod rating 4
+STICKER_GET selecta-test.mod rating
+STICKER_LIST selecta-test.mod
+STICKER_DEL selecta-test.mod mood
+STICKER_GET selecta-test.mod mood
+STICKER_DEL selecta-test.mod mood
+@user_stats

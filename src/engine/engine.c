@@ -112,6 +112,7 @@
     X(LIBRARY_SYNC)                                                                           \
     X(LIKE)                                                                                   \
     X(FLAG)                                                                                   \
+    X(CUE_SET) X(CUE_GOTO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
     X(VIEW_CURSOR)                                                                            \
@@ -208,6 +209,7 @@ struct sel_engine {
     char rp_song_config[256];       /* per-song override list "plugin.key=value,...", read from the library DB sticker rp.config at OPEN (D-M2-8, I170) */
     char hist_key[SEL_DEFERRED_PATH_MAX]; /* key of the song being played, "" none: its end or skip goes to the history table (I170) */
     uint32_t history_writes; /* history rows written (sentinel of the I170 writer) */
+    uint32_t cue_sets, cue_gotos, sticker_ops; /* sentinels of I175 / I176 */
     uint32_t skip_excluded;  /* skip-flagged queue rows left out of a random order (sentinel of I171) */
     char rp_value[SEL_PREF_VALUE_MAX]; /* answer of the last rp_config_get */
     uint32_t rp_config_applied;     /* option values that came from an override layer (T61) */
@@ -284,6 +286,11 @@ struct sel_engine {
     uint32_t lib_slot;
     sel_tag lib_tags[4][4];                  /* LIBRARY_RESULT tags, a ring like error_detail */
     char lib_path[4][SEL_BROWSE_PATH_MAX];
+    uint32_t st_slot;                         /* STICKER answers: ring of 8, like lib_tags */
+    sel_tag st_tags[8][5];
+    char st_key[8][SEL_DEFERRED_PATH_MAX];
+    char st_name[8][128];
+    char st_value[8][SEL_STICKER_VALUE_MAX];
     sel_library* lib;     /* the database of the front end; NULL: no library */
     uint32_t pf_id;       /* queue entry id whose song is being prefetched (I168); 0 = none */
     uint32_t pf_qver;     /* queue version that request was made under */
@@ -2751,6 +2758,116 @@ static void cmd_FLAG(sel_engine* e, const sel_message* m) {
     }
 }
 
+/* Position of the open song in ms, the same figure SEEK +n / -n counts from. */
+static uint32_t position_ms(const sel_engine* e) {
+    const sel_slot* cur = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
+    return cur == NULL ? 0u : (uint32_t)((uint64_t)cur->song_frames * 1000u / e->rate);
+}
+
+/* CUE_SET n: stores the playing position as cue n of the song being played (I175, table `cues`). */
+static void cmd_CUE_SET(sel_engine* e, const sel_message* m) {
+    if (e->lib == NULL) {
+        sel_engine_report_error(e, "no_library", "CUE_SET");
+    } else if (e->hist_key[0] == '\0' || e->cur == SEL_SLOT_NONE) {
+        sel_engine_report_error(e, "no_song", "CUE_SET");
+    } else if (!sel_library_cue_set(e->lib, e->hist_key, m->args[0].v.u, position_ms(e))) {
+        sel_engine_report_error(e, "library_failed", "CUE_SET");
+    } else {
+        e->cue_sets++;
+    }
+}
+
+/* CUE_GOTO n: seeks the song being played to cue n through the SEEK path (SEEKED reports the position). */
+static void cmd_CUE_GOTO(sel_engine* e, const sel_message* m) {
+    uint32_t pos = 0;
+    if (e->lib == NULL) {
+        sel_engine_report_error(e, "no_library", "CUE_GOTO");
+    } else if (e->hist_key[0] == '\0' || e->cur == SEL_SLOT_NONE) {
+        sel_engine_report_error(e, "no_song", "CUE_GOTO");
+    } else if (!sel_library_cue_get(e->lib, e->hist_key, m->args[0].v.u, &pos)) {
+        sel_engine_report_error(e, "no_such_cue", "CUE_GOTO");
+    } else {
+        e->cue_gotos++;
+        reopen_current(e, SEL_BEGIN_SEEK, SEL_SUBSONG_DEFAULT, pos > 4000000u ? 4000000u : pos, "CUE_GOTO");
+    }
+}
+
+/* STICKER_*: per-key name/value pairs in the library (I176, D-M3-17). Answers are LIBRARY_RESULT events with
+ * SRC_KEY (song key), SRC_NAME (sticker name), SRC_PATH (value) and SRC_COUNT (rows). */
+#define SEL_STICKER_ANSWERS 8u
+static void sticker_answer(sel_engine* e, const char* key, const char* name, const char* value, uint32_t count) {
+    uint32_t slot = e->st_slot++ % SEL_STICKER_ANSWERS;
+    sel_tag* t = e->st_tags[slot];
+    sel_message r;
+    snprintf(e->st_key[slot], sizeof e->st_key[slot], "%s", key);
+    snprintf(e->st_name[slot], sizeof e->st_name[slot], "%s", name);
+    snprintf(e->st_value[slot], sizeof e->st_value[slot], "%s", value);
+    t[0].tag = SEL_SRC_KEY;
+    t[0].value = (uintptr_t)e->st_key[slot];
+    t[1].tag = SEL_SRC_NAME;
+    t[1].value = (uintptr_t)e->st_name[slot];
+    t[2].tag = SEL_SRC_PATH;
+    t[2].value = (uintptr_t)e->st_value[slot];
+    t[3].tag = SEL_SRC_COUNT;
+    t[3].value = count;
+    t[4].tag = SEL_TAG_END;
+    t[4].value = 0;
+    evt_init(&r, SEL_EVT_LIBRARY_RESULT);
+    evt_tags(&r, t);
+    emit(e, &r);
+}
+
+static int sticker_ready(sel_engine* e, const char* who) {
+    if (e->lib == NULL) {
+        sel_engine_report_error(e, "no_library", who);
+        return 0;
+    }
+    e->sticker_ops++;
+    return 1;
+}
+
+static void cmd_STICKER_SET(sel_engine* e, const sel_message* m) {
+    if (sticker_ready(e, "STICKER_SET") &&
+        !sel_library_sticker_set(e->lib, m->args[0].v.s, m->args[1].v.s, m->args[2].v.s)) {
+        sel_engine_report_error(e, "library_failed", "STICKER_SET");
+    }
+}
+
+static void cmd_STICKER_GET(sel_engine* e, const sel_message* m) {
+    char value[SEL_STICKER_VALUE_MAX];
+    if (!sticker_ready(e, "STICKER_GET")) return;
+    if (!sel_library_sticker_get(e->lib, m->args[0].v.s, m->args[1].v.s, value, sizeof value)) {
+        sel_engine_report_error(e, "no_such_sticker", m->args[1].v.s);
+    } else {
+        sticker_answer(e, m->args[0].v.s, m->args[1].v.s, value, 1);
+    }
+}
+
+static void cmd_STICKER_DEL(sel_engine* e, const sel_message* m) {
+    if (sticker_ready(e, "STICKER_DEL") && !sel_library_sticker_del(e->lib, m->args[0].v.s, m->args[1].v.s)) {
+        sel_engine_report_error(e, "no_such_sticker", m->args[1].v.s);
+    }
+}
+
+/* STICKER_LIST key: one answer per sticker in name order (the first SEL_STICKER_ANSWERS of them); SRC_COUNT is
+ * the number of stickers the key has. No stickers: no answer. */
+static void cmd_STICKER_LIST(sel_engine* e, const sel_message* m) {
+    char buf[2048];
+    uint32_t rows = 0, n = 0;
+    const char* p = buf;
+    if (!sticker_ready(e, "STICKER_LIST")) return;
+    if (!sel_library_sticker_list(e->lib, m->args[0].v.s, buf, sizeof buf, &rows)) {
+        sel_engine_report_error(e, "library_failed", "STICKER_LIST");
+        return;
+    }
+    while (*p != '\0' && n < SEL_STICKER_ANSWERS) {
+        const char* value = p + strlen(p) + 1;
+        sticker_answer(e, m->args[0].v.s, p, value, rows);
+        p = value + strlen(value) + 1;
+        n++;
+    }
+}
+
 static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
     sel_local_scan_config scfg;
     sel_modland_sync_stats st;
@@ -3494,6 +3611,9 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->songs_opened = e->songs_opened;
     out->history_writes = e->history_writes;
     out->skip_excluded = e->skip_excluded;
+    out->cue_sets = e->cue_sets;
+    out->cue_gotos = e->cue_gotos;
+    out->sticker_ops = e->sticker_ops;
     out->library_searches = e->searches;
     out->library_fts_queries = e->fts_queries;
     out->result_count = e->res_count;

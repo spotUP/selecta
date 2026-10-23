@@ -20,6 +20,8 @@ static int user_exec(sqlite3* db, const char* sql, const sel_user_op* op, int sh
     } else if (shape == 3) { /* sticker set */
         sqlite3_bind_text(st, 2, op->name, -1, SQLITE_STATIC);
         sqlite3_bind_text(st, 3, op->value, -1, SQLITE_STATIC);
+    } else if (shape == 4) { /* sticker delete */
+        sqlite3_bind_text(st, 2, op->name, -1, SQLITE_STATIC);
     }
     rc = sqlite3_step(st);
     sqlite3_finalize(st);
@@ -187,6 +189,56 @@ void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* repl
             }
             sqlite3_finalize(st);
             rc = SQLITE_OK;
+        }
+    } else if (op->op == SEL_USER_STICKER_DEL && op->name != NULL) {
+        rc = user_exec(lib->db, "DELETE FROM stickers WHERE key = ?1 AND name = ?2", op, 4);
+        found = rc == SQLITE_OK && sqlite3_changes(lib->db) > 0;
+    } else if (op->op == SEL_USER_STICKER_LIST && op->out != NULL && op->out_cap > 0) {
+        sqlite3_stmt* st = NULL;
+        uint32_t used = 0;
+        op->out[0] = '\0';
+        rows = 0;
+        rc = sqlite3_prepare_v2(lib->db, "SELECT name, COALESCE(value, '') FROM stickers WHERE key = ?1 ORDER BY name",
+                                -1, &st, NULL);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+            while (sqlite3_step(st) == SQLITE_ROW) {
+                const char* n = (const char*)sqlite3_column_text(st, 0);
+                const char* v = (const char*)sqlite3_column_text(st, 1);
+                size_t ln = strlen(n) + 1u, lv = strlen(v) + 1u;
+                rows++;
+                if (used + ln + lv + 1u <= op->out_cap) { /* +1: the final empty name ends the list */
+                    memcpy(op->out + used, n, ln);
+                    memcpy(op->out + used + ln, v, lv);
+                    used += (uint32_t)(ln + lv);
+                    op->out[used] = '\0';
+                }
+            }
+            sqlite3_finalize(st);
+        }
+    } else if (op->op == SEL_USER_CUE_SET) {
+        sqlite3_stmt* st = NULL;
+        rc = sqlite3_prepare_v2(lib->db, "INSERT OR REPLACE INTO cues(key, idx, pos_ms, label) VALUES(?1, ?2, ?3, ?4)",
+                                -1, &st, NULL);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+            sqlite3_bind_int64(st, 2, op->at);
+            sqlite3_bind_int(st, 3, op->duration_ms);
+            if (op->name != NULL) sqlite3_bind_text(st, 4, op->name, -1, SQLITE_STATIC);
+            rc = sqlite3_step(st) == SQLITE_DONE ? SQLITE_OK : SQLITE_ERROR;
+            sqlite3_finalize(st);
+        }
+    } else if (op->op == SEL_USER_CUE_GET) {
+        sqlite3_stmt* st = NULL;
+        rc = sqlite3_prepare_v2(lib->db, "SELECT pos_ms FROM cues WHERE key = ?1 AND idx = ?2", -1, &st, NULL);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+            sqlite3_bind_int64(st, 2, op->at);
+            if (sqlite3_step(st) == SQLITE_ROW) {
+                rows = sqlite3_column_int64(st, 0);
+                found = 1;
+            }
+            sqlite3_finalize(st);
         }
     }
     memset(reply, 0, sizeof *reply);
