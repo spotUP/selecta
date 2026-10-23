@@ -3942,10 +3942,21 @@ static void cmd_VIEW_ACTIVATE(sel_engine* e, const sel_message* m) {
             return;
         }
         if (r->album) {
-            char text[SEL_VIEW_KEY_MAX + 16];
+            char text[SEL_VIEW_KEY_MAX * 2 + 16];
             sel_message q;
             uint32_t fts = 0;
-            snprintf(text, sizeof text, "album:\"%s\"", r->key);
+            size_t o = 0;
+            const char* k;
+            /* The query grammar escapes a quote or backslash inside quotes with a backslash. */
+            o += (size_t)snprintf(text, sizeof text, "album:\"");
+            for (k = r->key; *k != '\0' && o + 4 < sizeof text; k++) {
+                if (*k == '"' || *k == '\\') {
+                    text[o++] = '\\';
+                }
+                text[o++] = *k;
+            }
+            text[o++] = '"';
+            text[o] = '\0';
             if (!run_search(e, text, "VIEW_ACTIVATE", &fts)) {
                 return;
             }
