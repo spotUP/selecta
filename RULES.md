@@ -36,6 +36,8 @@ Toolchains: desktop clang/gcc + CMake + Ninja; Amiga bebbo amiga-gcc at `~/opt/a
 | List the nuade players (prints `nuade_players=N`) | `build/host/apps/selecta-cli/selecta-cli plugins --formats nuade` |
 | Render an openmpt song (prints `replayer=openmpt render_calls= rendered_frames=`) / seek | `build/host/apps/selecta-cli/selecta-cli render build/host/tests/songs/selecta-test-mk.mod --output <wav> --seconds 10 --rate 44100` ; add `--seek-ms 5000` to seek first (prints `seek_path=`) |
 | Script the engine (queue, view, position) | `build/host/apps/selecta-cli/selecta-cli script tests/m1/queue.sel` |
+| Render with replayer config (prints `rp_config_applied=`) | `build/host/apps/selecta-cli/selecta-cli render <song> --output <wav> --rp-config <key>=<value>` sets a global key (for example `nuade.gain=...`); `--rp-config-song <key>=<value>` sets the per-song override; `rp_config_applied` counts the keys the replayer took (T61) |
+| Render through the paula14 shadow output (prints `p14_frames= p14_bufs= p14_max_err_lsb= p14_hash=`) | `build/host/apps/selecta-cli/selecta-cli render <song> --output paula14-shadow --seconds 2`; `p14_frames` counts frames out (the partial final buffer is flushed at close), `p14_hash` is the split-byte hash compared between desktop and 68k (T52) |
 | Stop / cleanup | `rm -rf build/host build/amiga` |
 
 Every row is real after M1.1. The pinned golden hashes of the nuade resamplers (row I34) are still not committed; the openmpt hash is (`fda8a12`). `lint` and `format` print an install hint when clang-tidy or clang-format is missing. Update this table in the same commit that makes a command real.

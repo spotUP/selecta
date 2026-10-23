@@ -35,5 +35,8 @@ int sel_p14_open(sel_p14* p, const sel_host* host, const sel_paula_bus* bus, uin
 void sel_p14_close(sel_p14* p);
 /* `pcm`: buf_frames stereo frames. Fills the idle half and schedules it. */
 void sel_p14_submit(sel_p14* p, const int16_t* pcm);
+/* A final partial buffer: `pcm` still holds buf_frames frames, the caller having zero-padded after the first
+ * `n`; only `n` count as frames out. */
+void sel_p14_submit_n(sel_p14* p, const int16_t* pcm, uint32_t n);
 
 #endif

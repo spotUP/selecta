@@ -490,6 +490,14 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/browse_play.cmake")
 endif()
 
+# Start-dir predicate: AmigaDOS volume paths count as absolute (M2 Q48).
+if(NOT SEL_AMIGA)
+  add_executable(library_path_test library_path_test.c)
+  target_include_directories(library_path_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(library_path_test PRIVATE selecta_core)
+  add_test(NAME library-path-unit COMMAND library_path_test)
+endif()
+
 # T36: the command line. argdump.sh stands in for `:!program`.
 if(NOT SEL_AMIGA)
   add_executable(cmdline_test ui/cmdline_test.c)

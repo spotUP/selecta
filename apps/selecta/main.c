@@ -20,6 +20,7 @@
 #include "ctlsock.h"
 #endif
 #include "integration_host.h"
+#include "local.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -140,7 +141,10 @@ int main(int argc, char** argv) {
     void* out;
     void* ui;
     void* ctx[3];
-    char cwd[1024], cmd[1100];
+#if !defined(__amigaos__) && !defined(AMIGA)
+    char cwd[1024];
+#endif
+    char cmd[1100];
     uint32_t waits = 0;
     int r;
     int has_keys = option(argc, argv, "--keys", NULL) != NULL;
@@ -249,9 +253,13 @@ int main(int argc, char** argv) {
     }
 
     if (start == NULL) {
+#if defined(__amigaos__) || defined(AMIGA)
+        start = "PROGDIR:";
+#else
         start = getcwd(cwd, sizeof cwd);
+#endif
     }
-    if (start != NULL && start[0] == '/') {
+    if (start != NULL && sel_path_is_absolute(start)) {
         snprintf(cmd, sizeof cmd, "LIBRARY_BROWSE %s", start);
         send_line(e, cmd);
         send_line(e, "VIEW_SHOW browse");

@@ -4,6 +4,7 @@
 #ifndef SELECTA_TEXT_SPAWN_H
 #define SELECTA_TEXT_SPAWN_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -15,6 +16,11 @@ extern "C" {
  * the program. Returns its exit status, or -1 when it cannot be started or
  * ends on a signal. */
 int txt_spawn(const char* line, const char* const* paths, uint32_t n);
+
+/* Writes `s` as one AmigaDOS command-line argument: wrapped in double quotes,
+ * with `"` and `*` escaped by the AmigaDOS escape character `*`. Returns the
+ * length written (excluding the NUL), or 0 when it does not fit in `cap`. */
+size_t txt_quote_arg(char* out, size_t cap, const char* s);
 
 #ifdef __cplusplus
 }

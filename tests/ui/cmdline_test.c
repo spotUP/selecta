@@ -40,6 +40,16 @@ int main(int argc, char** argv) {
     size_t n;
     memset(&g_c, 0, sizeof g_c);
 
+    /* Regression: a double quote inside a path must be escaped for AmigaDOS. */
+    {
+        char q[64];
+        CHECK(txt_quote_arg(q, sizeof q, "Work:My \"Song\".mod") == 22u);
+        CHECK(strcmp(q, "\"Work:My *\"Song*\".mod\"") == 0);
+        CHECK(txt_quote_arg(q, sizeof q, "a*b") == 6u && strcmp(q, "\"a**b\"") == 0);
+        CHECK(txt_quote_arg(q, 6u, "abc\"") == 0); /* too small: refused */
+        CHECK(txt_quote_arg(q, sizeof q, "") == 2u && strcmp(q, "\"\"") == 0);
+    }
+
     /* Tab: one match completes; a second Tab on a single match keeps it. */
     txt_cmdline_open(&g_c);
     type("QUEUE_SH");

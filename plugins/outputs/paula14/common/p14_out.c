@@ -1,5 +1,7 @@
 #include "p14_out.h"
 
+#include <string.h>
+
 typedef struct p14_out {
     const sel_host* host;
     const sel_p14_out_kind* kind;
@@ -63,6 +65,11 @@ static void out_close(void* state) {
     p14_out* s = (p14_out*)state;
     if (s) {
         const sel_host* host = s->host;
+        if (s->have > 0) { /* flush the partial final buffer, padded with silence */
+            memset(s->pcm + s->have * 2u, 0, (s->buf_frames - s->have) * 2u * sizeof(int16_t));
+            sel_p14_submit_n(&s->sink, s->pcm, s->have);
+            s->have = 0;
+        }
         sel_p14_close(&s->sink);
         s->kind->bus_close(host, s->bus_ctx);
         host->mem_free(host, s->pcm);

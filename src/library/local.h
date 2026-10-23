@@ -46,4 +46,11 @@ int sel_browse_join(char* out, size_t cap, const char* dir, const char* name);
 /* Last path component of `path` (the whole string when it has no separator). */
 const char* sel_browse_basename(const char* path);
 
+/* Whether `path` is absolute. "/..." always is; with `amiga_style` (the Amiga
+ * build, or a test) "Volume:dir" and "PROGDIR:" are too. */
+int sel_path_is_absolute_style(const char* path, int amiga_style);
+
+/* The predicate for the platform this binary runs on. */
+int sel_path_is_absolute(const char* path);
+
 #endif /* SELECTA_LIBRARY_LOCAL_H */
