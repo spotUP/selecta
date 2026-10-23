@@ -858,9 +858,9 @@ if(NOT SEL_AMIGA)
   # net_blocked=1 (the guard checks the target after the map, so the mapped
   # fixture address 127.0.0.1 is what SELECTA_NET_ALLOW must list).
   add_test(NAME net-guard
-    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/net-guard"
       -P "${SEL_NET_DIR}/net_guard.cmake")
-  set_tests_properties(net-guard PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture)
+  set_tests_properties(net-guard PROPERTIES LABELS m3)
 
   # T68 (row I153): the HTTP/1.1 client, plain HTTP parts, against the fixture server.
   # Includes the real 30 s total timeout, so the test gets a 120 s budget. It runs after
