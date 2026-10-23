@@ -40,5 +40,8 @@ SEL_PREF(LIBRARY_SMART,      "library.smart_downloads", "on",                   
 #endif
 /* HippoPlayer vote service (I174): this install's random 128-bit device token (32 hex digits), made on the first VOTE */
 SEL_PREF(LIBRARY_VOTE_TOKEN, "library.vote_token", "",                                            SEL_PREF_PLAIN)
+/* DEViLBOX lyrics (I193): "on" asks the endpoint for a song without a .lrc file and without a song message. Off by
+ * default: the request carries the md5 of the file, so it leaves the machine only when the user turns it on. */
+SEL_PREF(LIBRARY_LYRICS,     "library.lyrics_online", "off",                                      SEL_PREF_PLAIN)
 SEL_PREF(LIBRARY_SMART_VIEW, "library.smart_playlist", "smart",                                   SEL_PREF_PLAIN)
 SEL_PREF(LIBRARY_SMART_TOP,  "library.smart_top",  "3",                                           SEL_PREF_PLAIN)

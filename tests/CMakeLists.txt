@@ -1213,6 +1213,18 @@ if(NOT SEL_AMIGA)
   set_tests_properties(loudness-fetch PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "loudness_fetch_ok")
 
+  # T93 (row I193): lyrics from a .lrc, a tracker song message and the DEViLBOX endpoint, current line in the snapshot.
+  add_executable(lyrics_unit_test lyrics_unit_test.c)
+  target_include_directories(lyrics_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(lyrics_unit_test PRIVATE selecta_library)
+  add_test(NAME lrc-unit COMMAND lyrics_unit_test)
+  set_tests_properties(lrc-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "lyrics_unit_ok")
+  add_test(NAME lyrics
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3"
+            -P "${SEL_NET_DIR}/lyrics.cmake")
+  set_tests_properties(lyrics PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "lyrics_ok")
+
   # T86 similar part (row I183): also-by and similar through selecta-cli; the duplicates part is row I184.
   find_program(SEL_SQLITE3 sqlite3)
   add_test(NAME similar-duplicates

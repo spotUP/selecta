@@ -1,0 +1,5 @@
+# T93 lyrics, switch off: library.lyrics_online stays at its default "off", so a song without a .lrc or a message
+# sends no request (lyric_fetches=0) and has no lyrics. tests/net/lyrics.cmake checks the fixture log as well.
+OPEN lyrics/techno.mod
+@render 441
+@lyrics

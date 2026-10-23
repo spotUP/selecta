@@ -1,7 +1,7 @@
 /* The library background job thread (I173d): the one thread behind prefetch, smart downloads and DEViLBOX rating
  * pushes. Before this there were two copies of the same scaffold (fetch.c, rating_push.c). The queue is fixed size
  * and lives in the library handle: one prefetch slot (pf_spec), SEL_SMART_MAX smart slots (sm_spec) and one rating
- * flush flag (job_rating); a repeated request overwrites or sets the same slot, so nothing is allocated per job and
+ * flush flag (job_rating), one vote and one lyrics request (job_vote, job_lyric); a repeated request overwrites or sets the same slot, so nothing is allocated per job and
  * a repeated rating flush coalesces into one. Order: rating flush first (short), then a prefetch, then smart
  * downloads. Close stops accepting work, wakes the thread and joins it; a job in flight ends at its next net poll slice
  * (sel_net_set_cancel on job_quit, ~50 ms; a download also at its next chunk, pf_cancel). Builds without threads (Amiga) run jobs inline, see fetch.c
@@ -17,7 +17,7 @@ static void* job_main(void* arg) {
     sel_net_set_cancel(&lib->job_quit); /* close ends a job stuck on a silent server within one poll slice (I173f) */
     pthread_mutex_lock(&lib->job_lock);
     for (;;) {
-        while (!lib->job_quit && !lib->job_rating && !lib->job_vote &&
+        while (!lib->job_quit && !lib->job_rating && !lib->job_vote && !lib->job_lyric &&
                !sel_fetch_job_pending(lib)) {
             pthread_cond_wait(&lib->job_wake, &lib->job_lock);
         }
@@ -41,6 +41,16 @@ static void* job_main(void* arg) {
             sel_vote_job_run(lib);
             pthread_mutex_lock(&lib->job_lock);
             lib->job_vote_busy = 0;
+            pthread_cond_broadcast(&lib->job_wake);
+            continue;
+        }
+        if (lib->job_lyric) {
+            lib->job_lyric = 0;
+            lib->job_lyric_busy = 1;
+            pthread_mutex_unlock(&lib->job_lock);
+            sel_lyrics_job_run(lib);
+            pthread_mutex_lock(&lib->job_lock);
+            lib->job_lyric_busy = 0;
             pthread_cond_broadcast(&lib->job_wake);
             continue;
         }
@@ -70,7 +80,7 @@ void sel_job_wake(sel_library* lib) {
 void sel_job_wait(sel_library* lib) {
     if (lib != NULL && lib->job_started) {
         pthread_mutex_lock(&lib->job_lock);
-        while (lib->job_rating || lib->job_rating_busy || lib->job_vote || lib->job_vote_busy || sel_fetch_job_pending(lib) || lib->pf_busy) {
+        while (lib->job_rating || lib->job_rating_busy || lib->job_vote || lib->job_vote_busy || lib->job_lyric || lib->job_lyric_busy || sel_fetch_job_pending(lib) || lib->pf_busy) {
             pthread_cond_wait(&lib->job_wake, &lib->job_lock);
         }
         pthread_mutex_unlock(&lib->job_lock);

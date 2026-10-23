@@ -309,6 +309,8 @@ static void print_event(void* ctx, const sel_message* evt) {
  *   @ratings_wait       the DEViLBOX push thread is idle (I173c; @ratings waits too)
  *   @ratings            RATINGS rating_pushes=N rating_batches=N rating_pending=N (T79)
  *   @votes              VOTES vote_posts=N status=ok|rate|bad|missing|down|none count=N yours=N m=<key>; waits for the vote request (I174, T80)
+ *   @lyrics             LYRICS lyric_source=none|lrc|message|devilbox lyric_line=N lyric_lines=N lyric_fetches=N text=<current line or plain text>;
+ *                       waits for the lyrics request and prints devilbox_missing=lyrics when the endpoint is missing (I193, T93)
  *   @ratings_read <source> <n> [<path>...]  batch-read n ratings from DEViLBOX (named paths first), store the own ones (T79)
  *   @share_stats        SHARE links_parsed=N links_made=N songs_opened=N (T84)
  *   @folder_stats       FOLDERS folders=N playlists_in_folders=N playlists=N entries=N folder_ops=N (T83)
@@ -618,6 +620,30 @@ static int cmd_script_file(FILE* f, int argc, char** argv) {
             if (vr.done && strcmp(sel_vote_status_name(vr.status), "missing") == 0) printf("devilbox_missing=hip_vote\n");
             printf("VOTES vote_posts=%u status=%s count=%u yours=%u m=%s\n", (unsigned)es.vote_posts,
                    vr.done ? sel_vote_status_name(vr.status) : "none", vr.count, vr.yours, vr.mkey);
+            continue;
+        }
+        if (strcmp(line, "@lyrics") == 0) { /* test hook: wait for the lyrics request (I193), print the lyrics state */
+            static const char* const names[] = {"none", "lrc", "message", "devilbox"};
+            sel_engine_stats es;
+            sel_lyrics_result lr;
+            const sel_state* st;
+
+            sel_library_rating_wait(lib);
+            sel_engine_pump(e, NULL, NULL); /* takes a finished answer into the snapshot */
+            sel_engine_stats_get(e, &es);
+            sel_library_lyrics_result(lib, &lr);
+            st = sel_engine_state(e);
+            if (lr.seq > 0 && lr.status < 0) printf("devilbox_missing=lyrics\n");
+            printf("LYRICS lyric_source=%s lyric_line=%d lyric_lines=%u lyric_fetches=%u text=",
+                   names[st->lyric_source < 4u ? st->lyric_source : 0u], (int)st->lyric_line, (unsigned)st->lyric_lines,
+                   (unsigned)es.lyric_fetches);
+            if (st->lyric_lines == 0u && st->lyric_text != NULL) { /* plain lyrics: the whole text, line breaks as '|' */
+                const char* t = st->lyric_text;
+                for (; *t != '\0'; t++) putchar(*t == '\r' || *t == '\n' ? '|' : *t);
+                putchar('\n');
+            } else {
+                printf("%s\n", st->lyric_current != NULL ? st->lyric_current : "");
+            }
             continue;
         }
         if (strcmp(line, "@prefetch_wait") == 0) {

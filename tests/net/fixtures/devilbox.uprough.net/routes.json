@@ -27,5 +27,9 @@
     {"key_method": "PUT", "status": 200,
      "body": "{\"hash\":\"d53461365cef8e858993e12b8fcaf1ee\",\"lufs\":-20.0,\"peakDb\":-1.0,\"method\":\"r128\",\"count\":1}"},
     {"key_method": "GET", "status": 404, "body": "{\"error\":\"unknown hash\"}"}
-  ]
+  ],
+  "/api/lyrics/d53461365cef8e858993e12b8fcaf1ee": {
+    "status": 200,
+    "body": "[ti:Endpoint lyrics]\n[00:01.00]Endpoint line one\n[00:02.50]Endpoint line two\n[00:04.00]Endpoint line three\n"
+  }
 }

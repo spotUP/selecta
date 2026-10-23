@@ -35,6 +35,8 @@
 #include "view.h"
 #include "db.h"
 #include "xxh32.h"
+#include "lyrics.h"
+#include "devilbox_lyrics.h"
 #include "cache.h"
 #include "share.h"
 #if !defined(SEL_NO_ANALYSE)
@@ -238,6 +240,13 @@ struct sel_engine {
     char panel[1024];                          /* catalogue rows of the open song, "label\0value\0" pairs (I185) */
     uint32_t panel_rows, panel_loads;          /* rows in `panel` / library lookups made for it (I185 sentinel) */
     const void* panel_state;                   /* replayer state the panel was loaded for (reload on a new song) */
+    sel_lrc lyr;                               /* synced lyrics of the open song (I193), lyr.count 0: none */
+    char lyr_plain[SEL_LYRICS_TEXT_MAX];       /* unsynced lyrics (song message, or endpoint text without stamps) */
+    char lyr_file[SEL_LRC_TEXT_MAX];           /* scratch: the .lrc file as read */
+    uint32_t lyr_source;                       /* SEL_LYRIC_* */
+    char lyr_for[512];                         /* path the lyrics were chosen for; a seek reopens the song, not its lyrics */
+    unsigned lyr_seen;                         /* library lyrics sequence already looked at */
+    uint32_t lyr_fetches;                      /* DEViLBOX lyrics requests queued (sentinel: stays 0 for lrc / message) */
     char radio_seed[SEL_DEFERRED_PATH_MAX]; /* RADIO seed song (queue path or library key), "" radio off (I186) */
     char radio_last[SEL_DEFERRED_PATH_MAX]; /* last song the radio appended, left out of the next draw */
     uint32_t radio_rng;                     /* radio draw state, stepped once per appended song */
@@ -4147,6 +4156,63 @@ int sel_engine_send(sel_engine* e, const sel_message* cmd) {
 }
 
 /* Pump thread: copies the song and queue facts into the snapshot. */
+/* Takes lyrics text for the open song (I193): synced when it carries LRC stamps, plain otherwise. */
+static void lyrics_take(sel_engine* e, const char* text, size_t len, uint32_t source) {
+    e->lyr_source = source;
+    if (len > 0 && sel_lrc_parse(&e->lyr, text, len) > 0) {
+        e->lyr_plain[0] = '\0';
+        return;
+    }
+    if (len >= sizeof e->lyr_plain) len = sizeof e->lyr_plain - 1u;
+    memcpy(e->lyr_plain, text, len);
+    e->lyr_plain[len] = '\0';
+}
+
+/* Chooses the lyrics of a newly opened song on the pump thread: a .lrc next to it, else the tracker's song message,
+ * else (library.lyrics_online) the DEViLBOX endpoint, asked on the library job thread. The answer is taken from the
+ * handle by a later refresh. Local files are read here; the network never. */
+static void lyrics_open(sel_engine* e, const sel_slot* sl, const sel_tag* meta) {
+    char lrc_path[SEL_DEFERRED_PATH_MAX + 8u];
+    FILE* f;
+    const char* msg;
+
+    e->lyr.count = 0;
+    e->lyr_plain[0] = '\0';
+    e->lyr_source = SEL_LYRIC_NONE;
+    if (sl->path != NULL && sel_lrc_path(sl->path, lrc_path, sizeof lrc_path) && (f = fopen(lrc_path, "rb")) != NULL) {
+        size_t n = fread(e->lyr_file, 1, sizeof e->lyr_file, f);
+
+        fclose(f);
+        if (n > 0) {
+            lyrics_take(e, e->lyr_file, n, SEL_LYRIC_LRC);
+            return;
+        }
+    }
+    msg = (const char*)sel_tag_find(meta, SEL_META_MESSAGE, 0);
+    if (msg != NULL && msg[0] != '\0') {
+        lyrics_take(e, msg, strlen(msg), SEL_LYRIC_MESSAGE);
+        return;
+    }
+    if (e->lib != NULL && sl->path != NULL && strcmp(e->prefs.value[SEL_PREF_LIBRARY_LYRICS], "on") == 0) {
+        e->lyr_fetches++;
+        sel_library_lyrics_fetch(e->lib, sl->path);
+    }
+}
+
+/* Takes a finished DEViLBOX answer for the open song, once per answer. */
+static void lyrics_poll(sel_engine* e, const sel_slot* sl) {
+    unsigned seq = sel_library_lyrics_seq(e->lib);
+    static sel_lyrics_result r;
+
+    if (seq == e->lyr_seen) return;
+    e->lyr_seen = seq;
+    sel_library_lyrics_result(e->lib, &r);
+    if (r.status == SEL_DVB_LYRICS_HIT && e->lyr_source == SEL_LYRIC_NONE && sl->path != NULL &&
+        strcmp(r.path, sl->path) == 0) {
+        lyrics_take(e, r.text, strlen(r.text), SEL_LYRIC_DEVILBOX);
+    }
+}
+
 static void refresh_snapshot(sel_engine* e) {
     const sel_slot* sl = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
     sel_song_state* song = &e->state.song;
@@ -4178,6 +4244,12 @@ static void refresh_snapshot(sel_engine* e) {
     }
     e->state.panel = e->panel_rows > 0 ? e->panel : NULL;
     e->state.panel_rows = e->panel_rows;
+    if (sl == NULL || sl->rp_state == NULL) {
+        e->lyr_for[0] = '\0';
+        e->lyr.count = 0;
+        e->lyr_source = SEL_LYRIC_NONE;
+        e->lyr_plain[0] = '\0';
+    }
     if (sl != NULL && sl->rp_state != NULL) {
         song->queue_id = e->q_playing;
         song->subsong = sl->subsong;
@@ -4186,12 +4258,22 @@ static void refresh_snapshot(sel_engine* e) {
         song->meta = sl->rp_metadata ? sl->rp_metadata(sl->rp_state) : NULL;
         song->duration_ms = (uint32_t)sel_tag_find(song->meta, SEL_META_DURATION_MS, 0);
         song->path = sl->path;
+        if (sl->path != NULL && strncmp(sl->path, e->lyr_for, sizeof e->lyr_for) != 0) {
+            snprintf(e->lyr_for, sizeof e->lyr_for, "%s", sl->path);
+            lyrics_open(e, sl, song->meta);
+        }
         if (sl->pos_valid) {
             song->pattern_pos.order = sl->pos_order;
             song->pattern_pos.row = sl->pos_row;
             song->pattern_pos.pattern = sl->pos_pattern;
         }
     }
+    if (sl != NULL && sl->rp_state != NULL && e->lib != NULL) lyrics_poll(e, sl);
+    e->state.lyric_source = e->lyr_source;
+    e->state.lyric_text = e->lyr_plain[0] != '\0' ? e->lyr_plain : NULL;
+    e->state.lyric_lines = e->lyr.count;
+    e->state.lyric_line = e->lyr.count > 0 ? sel_lrc_index_at(&e->lyr, song->position_ms) : -1;
+    e->state.lyric_current = e->state.lyric_line >= 0 ? sel_lrc_text(&e->lyr, (uint32_t)e->state.lyric_line) : NULL;
     e->state.queue = e->queue.entries;
     e->state.queue_text = e->queue.text;
     e->state.queue_count = e->queue.count;
@@ -4385,6 +4467,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->radio_min_ahead = e->radio_min_ahead;
     out->folder_view_rows = e->folder_view_rows;
     out->panel_loads = e->panel_loads;
+    out->lyric_fetches = e->lyr_fetches;
     out->library_searches = e->searches;
     out->library_fts_queries = e->fts_queries;
     out->result_count = e->res_count;

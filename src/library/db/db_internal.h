@@ -41,8 +41,11 @@ struct sel_library {
     char vote_key[16];
     int vote_r;
     sel_vote_result vote_res;
+    char lyr_path[512];      /* queued lyrics request: the song file whose md5 keys the endpoint (lyrics_fetch.c, I193) */
+    sel_lyrics_result lyr_res;
 #if !defined(SEL_LIBRARY_NO_THREAD)
     unsigned job_vote, job_vote_busy; /* one queued vote request, and one running */
+    unsigned job_lyric, job_lyric_busy; /* one queued lyrics request, and one running */
     pthread_t job_thread;    /* the one background job thread, created on the first job (job.c, I173d) */
     pthread_mutex_t job_lock; /* guards the job queue (pf_spec, sm_spec, job_rating) and the flags below */
     pthread_cond_t job_wake;
@@ -112,6 +115,7 @@ void sel_worker_stop(sel_library* lib);
  * (fetch.c, queue = pf_spec + sm_spec) and rating flush (rating_push.c, one coalesced flag). */
 #if !defined(SEL_LIBRARY_NO_THREAD)
 int sel_job_start(sel_library* lib);
+void sel_lyrics_job_run(sel_library* lib);       /* lyrics_fetch.c: runs the queued lyrics request (job_lock NOT held) */
 void sel_vote_job_run(sel_library* lib);        /* vote_push.c: runs the queued vote request (job_lock NOT held) */
 void sel_job_wake(sel_library* lib);  /* job_lock held: a job was queued */
 void sel_job_wait(sel_library* lib);  /* returns once the queue is empty and nothing runs */
