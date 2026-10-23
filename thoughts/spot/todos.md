@@ -225,8 +225,8 @@ Tests T28 to T38 are defined in the plan's finish-line table. A row is ticked on
 | I71a | [ ] | 2 | Random play order: permutation of the entries in scope from xorshift32 when `random` turns on or the queue changes; NEXT and PREV walk it; each entry once before a repeat (plan Deviations) | T30a `queue-random-order` red then green |
 | I72 | [x] | 3 | T29 written and red; four codecs | T29 green; commits 64c6056, 474f15b, merge 630ca11 |
 | I73 | [ ] | 3 | PLAYLIST_LOAD, PLAYLIST_SAVE; divider/stealth queue rows | script check in T29 suite, ratchet 31 |
-| I74 | [ ] | 4 | T32 written and red; view grouping folder/format, node ids | T32 green, ratchet 27 |
-| I75 | [ ] | 4 | Text UI draws tree and drilldown | T24, T32 green; screen fixture |
+| I74 | [x] | 4 | T32 written and red; view grouping folder/format, node ids | T32 green (red fd69a7a segfault); commit b680b06, merge dec988f; ratchet 29 (27 after other phases) |
+| I75 | [x] | 4 | Text UI draws tree and drilldown | T24 selecta-tree-view, selecta-drill-view green; commit 33b55cc, merge dec988f |
 | I76 | [ ] | 5 | T34 written and red; `keybind.c`, `keys.conf`, `--bindings` | T34 green; T19 unchanged |
 | I77 | [ ] | 5 | T36 written and red; `cmdline.c`, history, `:!` spawn | T36 green |
 | I78 | [ ] | 5 | T37 written and red; `SEL_CMD_AREA`, COMMANDS `area`, `palette.c`, help overlay | T37 green, T5/T6 goldens updated |
