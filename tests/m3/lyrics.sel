@@ -5,7 +5,7 @@
 #   techno.mod                 no local lyrics: the fixture endpoint answers, lyric_source=devilbox, synced
 #   nogenre.mod                no route on the fixture: devilbox_missing=lyrics, lyric_source=none
 # lyric_fetches counts endpoint requests: it stays 0 for the first two songs.
-PREF_SET library.lyrics_online on
+# library.lyrics_online is left at its default ("on"), so this script also proves the default.
 OPEN lyrics/ambient.mod
 SEEK 12500
 @render 441
