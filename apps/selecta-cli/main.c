@@ -572,6 +572,9 @@ int main(int argc, char** argv) {
     if (strcmp(cmd, "play") == 0) {
         return sel_cli_play(argc - 2, argv + 2);
     }
+    if (strcmp(cmd, "spsc-selftest") == 0) {
+        return sel_cli_spsc_selftest();
+    }
     if (strcmp(cmd, "library") == 0) {
         return sel_cli_library(argc - 2, argv + 2);
     }

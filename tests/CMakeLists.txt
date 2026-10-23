@@ -710,6 +710,11 @@ if(NOT SEL_AMIGA)
   # T57 library browse under vamos, T58 ToolTypes = CLI.
   sel_m2_test(amiga-library-browse browse vamos)
   sel_m2_test(amiga-tooltypes-cli tooltypes vamos)
+  # I114 SPSC queue: 1000 messages through a wrapping queue, head/tail published inside the pal guard.
+  foreach(mode desktop vamos)
+    sel_m2_test(spsc-queue run ${mode} -DTAG=I114 "-DARGS1=spsc-selftest"
+      "-DCHECKS1=spsc_pushed==1000,spsc_popped==1000,spsc_publishes==2000")
+  endforeach()
   # T61 per-replayer config.
   sel_m2_test(rp-config-taglist rpconfig desktop)
   sel_m2_test(rp-config-taglist rpconfig vamos)
