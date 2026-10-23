@@ -114,6 +114,28 @@ foreach(w ${want})
   math(EXPR i "${i} + 1")
 endforeach()
 
+# I174a: the playlist row carries the count the service answered ("Votes N"), none before the first answer; a rate
+# limited request keeps the stored count; the withdraw stores the new count 0.
+string(REGEX MATCHALL "ROW [^\n]*" rows "${last_out}")
+list(LENGTH rows nrows)
+if(NOT nrows EQUAL 5)
+  fail("want 5 ROW lines, got ${nrows}")
+endif()
+set(want_rows
+  "ROW ambient.mod"
+  "ROW ambient.mod  Votes 1"
+  "ROW ambient.mod  Votes 1"
+  "ROW ambient.mod  Votes 1"
+  "ROW ambient.mod  Votes 0")
+set(i 0)
+foreach(w ${want_rows})
+  list(GET rows ${i} got)
+  if(NOT got STREQUAL "${w}")
+    fail("playlist row ${i}: '${got}', want '${w}'")
+  endif()
+  math(EXPR i "${i} + 1")
+endforeach()
+
 # The requests, byte-exact: three votes (5, repeat 5, 0) and one read.
 execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/log --out "${WORK}/log.json" OUTPUT_VARIABLE o)
 file(READ "${WORK}/log.json" logjson)

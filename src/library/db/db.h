@@ -361,6 +361,7 @@ typedef struct sel_vote_result {
     int status;
     unsigned count, yours;
     char mkey[13];
+    unsigned seq; /* answers stored so far; moves with every finished request (the engine stores the count once per move, I174a) */
 } sel_vote_result;
 void sel_library_vote_result(sel_library* lib, sel_vote_result* out);
 /* "ok", "rate", "bad", "missing" or "down" for a SEL_VOTE_* status. */

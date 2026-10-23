@@ -305,6 +305,7 @@ static void print_event(void* ctx, const sel_message* evt) {
  *   @position           SNAPSHOT position_ms=M order=O row=R pattern=P (song.pattern_pos)
  *   @user_stats         USERDATA cue_sets=N cue_gotos=N sticker_ops=N (T81, T82)
  *   @radio              RADIO radio_appends=N min_ahead=N then one `queue=<path>` line per queue row (T88)
+ *   @playlist           pumps, then prints PLAYLIST rows=N and one `ROW <text>` line per row of the playlist view (VIEW_SOURCE playlist first), the text the UIs draw (I174a)
  *   @ratings_wait       the DEViLBOX push thread is idle (I173c; @ratings waits too)
  *   @ratings            RATINGS rating_pushes=N rating_batches=N rating_pending=N (T79)
  *   @votes              VOTES vote_posts=N status=ok|rate|bad|missing|down|none count=N yours=N m=<key>; waits for the vote request (I174, T80)
@@ -383,6 +384,16 @@ static void script_directive(sel_engine* e, const char* line) {
             printf(i ? ",%u" : "%u", (unsigned)st->queue[i].id);
         }
         printf("\n");
+    } else if (strcmp(line, "@playlist") == 0) {
+        uint32_t i;
+        const sel_view_state* vs;
+
+        sel_engine_pump(e, NULL, NULL); /* stores a finished vote count, then the view reads it */
+        vs = sel_engine_state(e)->view;
+        printf("PLAYLIST rows=%u\n", (unsigned)(vs != NULL ? vs->row_n : 0u));
+        for (i = 0; vs != NULL && i < vs->row_n; i++) {
+            printf("ROW %s\n", vs->rows[i].text);
+        }
     } else if (strcmp(line, "@results") == 0) {
         uint32_t i;
         sel_engine_stats es;

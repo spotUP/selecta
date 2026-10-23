@@ -1,12 +1,20 @@
-# T80 vote-devilbox (plan 2026-10-25-m3-library.md, Phase 6, I174). tests/net/vote_devilbox.cmake runs this against its
-# own fixture server: VOTE 5 posts /api/hip/vote?k=<token>&m=<uade key>&r=5, a repeat is rate limited (ERR rate), VOTE
-# with no argument reads /api/hip/votes, VOTE 0 withdraws. @votes prints vote_posts= status= count= yours= m=.
+# T80 vote-devilbox (plan 2026-10-25-m3-library.md, Phase 6, I174, I174a). tests/net/vote_devilbox.cmake runs this
+# against its own fixture server: VOTE 5 posts /api/hip/vote?k=<token>&m=<uade key>&r=5, a repeat is rate limited
+# (ERR rate), VOTE with no argument reads /api/hip/votes, VOTE 0 withdraws. @votes prints vote_posts= status= count=
+# yours= m=. @playlist prints the playlist view rows; the stored count shows as "Votes N" (I174a).
 OPEN @SONGS@/ambient.mod
+QUEUE_ADD @SONGS@/ambient.mod
+VIEW_SOURCE playlist
+@playlist
 VOTE 5
 @votes
+@playlist
 VOTE 5
 @votes
+@playlist
 VOTE
 @votes
+@playlist
 VOTE 0
 @votes
+@playlist

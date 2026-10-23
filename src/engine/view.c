@@ -45,6 +45,18 @@ int sel_view_init(sel_view* v, const sel_host* host, uint32_t row_cap) {
         v->rows = NULL;
         return 0;
     }
+    v->vote_text = host->mem_alloc(host, (size_t)row_cap * SEL_VIEW_VOTES_MAX, SEL_MEM_FAST);
+    v->vote_id = host->mem_alloc(host, (size_t)row_cap * sizeof *v->vote_id, SEL_MEM_FAST);
+    if (v->vote_text == NULL || v->vote_id == NULL) {
+        host->mem_free(host, v->vote_text);
+        host->mem_free(host, v->vote_id);
+        host->mem_free(host, v->row_text);
+        host->mem_free(host, v->rows);
+        v->rows = NULL;
+        v->row_text = NULL;
+        return 0;
+    }
+    memset(v->vote_id, 0, (size_t)row_cap * sizeof *v->vote_id);
     v->groups = host->mem_alloc(host, SEL_VIEW_GROUPS_MAX * sizeof *v->groups, SEL_MEM_FAST);
     if (v->groups == NULL) {
         host->mem_free(host, v->row_text);
@@ -82,6 +94,12 @@ void sel_view_free(sel_view* v, const sel_host* host) {
     if (v->row_text) {
         host->mem_free(host, v->row_text);
     }
+    if (v->vote_text) {
+        host->mem_free(host, v->vote_text);
+    }
+    if (v->vote_id) {
+        host->mem_free(host, v->vote_id);
+    }
     if (v->groups) {
         host->mem_free(host, v->groups);
     }
@@ -96,7 +114,8 @@ void sel_view_free(sel_view* v, const sel_host* host) {
 
 /* ---- tree and drilldown ------------------------------------------------ */
 
-static void queue_row_text(char* out, const sel_view_src* s, uint32_t idx);
+static void queue_row_text(char* out, const sel_view_src* s, uint32_t idx, const char* votes);
+static const char* row_votes(sel_view* v, const sel_view_src* s, uint32_t slot, uint32_t idx);
 
 /* Lowercase extension of a file name into `out`; empty when there is none. */
 static void lower_ext(const char* base, char* out, size_t cap) {
@@ -422,7 +441,7 @@ static void fill_styled(sel_view* v, const sel_view_src* s) {
             continue;
         }
         r->id = s->queue->entries[qi].id;
-        queue_row_text(buf, s, qi);
+        queue_row_text(buf, s, qi, row_votes(v, s, i, qi));
         r->text = buf;
     }
 }
@@ -642,10 +661,34 @@ static void anchor(sel_view* v, const sel_view_src* s, uint32_t count) {
     p->cursor_id = count ? row_id(v, s, p->cursor) : 0;
 }
 
+/* The vote count text of the row in window slot `slot` showing queue index `idx`: from the service callback, read
+ * again only when the slot shows another entry or votes_generation moved (a row is drawn every pump, a sticker read
+ * is a library call). NULL: none, or the title format has no %votes%. */
+static const char* row_votes(sel_view* v, const sel_view_src* s, uint32_t slot, uint32_t idx) {
+    char* out = v->vote_text + (size_t)slot * SEL_VIEW_VOTES_MAX;
+    uint32_t id = s->queue->entries[idx].id;
+
+    if (s->votes == NULL || s->title_format == NULL || strstr(s->title_format, "%votes%") == NULL) {
+        return NULL;
+    }
+    if (v->vote_seen != s->votes_generation) {
+        memset(v->vote_id, 0, (size_t)v->row_cap * sizeof *v->vote_id);
+        v->vote_seen = s->votes_generation;
+    }
+    if (v->vote_id[slot] != id) {
+        out[0] = '\0';
+        if (!s->votes(s->votes_ctx, sel_queue_path(s->queue, idx), out)) {
+            out[0] = '\0';
+        }
+        v->vote_id[slot] = id;
+    }
+    return out;
+}
+
 /* A queue row's text: the title format over the fields a path alone gives
  * (no metadata store before M3): title and file are the basename, path the
  * whole path, format the lowercase extension. Other fields stay empty. */
-static void queue_row_text(char* out, const sel_view_src* s, uint32_t idx) {
+static void queue_row_text(char* out, const sel_view_src* s, uint32_t idx, const char* votes) {
     const char* path = sel_queue_path(s->queue, idx);
     const char* base = sel_browse_basename(path);
     char ext[16];
@@ -656,6 +699,7 @@ static void queue_row_text(char* out, const sel_view_src* s, uint32_t idx) {
     fv.field[SEL_FMT_FILE] = base;
     fv.field[SEL_FMT_PATH] = path;
     fv.field[SEL_FMT_FORMAT] = ext;
+    fv.field[SEL_FMT_VOTES] = votes;
     if (s->meta != NULL && idx < s->meta_rows && s->meta_off[idx] != UINT32_MAX) {
         const char* m = s->meta + s->meta_off[idx];
         const char* artist = m + strlen(m) + 1u;
@@ -708,7 +752,7 @@ void sel_view_refresh(sel_view* v, const sel_view_src* s) {
         } else if (p->source != SEL_VIEW_BROWSE) {
             r->kind = SEL_ROW_QUEUE;
             char* buf = v->row_text + (size_t)i * SEL_VIEW_TEXT_MAX;
-            queue_row_text(buf, s, idx);
+            queue_row_text(buf, s, idx, row_votes(v, s, i, idx));
             r->text = buf;
         } else {
             r->kind = s->browse->entries[idx].is_dir ? SEL_ROW_DIR : SEL_ROW_FILE;
@@ -743,6 +787,7 @@ int sel_view_changed(sel_view* v, const sel_view_src* s, int* structure) {
     now.group_key = v->group_key;
     now.drill_n = v->pub.drill_n;
     now.folder_generation = v->fgen;
+    now.votes_generation = s->votes_generation;
     changed = memcmp(&now, &v->last, sizeof now) != 0;
     *structure = v->force_changed || now.source != v->last.source || now.style != v->last.style ||
                  now.window_rows != v->last.window_rows || now.group_key != v->last.group_key;

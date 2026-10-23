@@ -21,6 +21,7 @@ typedef enum sel_format_field {
     SEL_FMT_FILE,
     SEL_FMT_CHANNELS,
     SEL_FMT_STATE,
+    SEL_FMT_VOTES, /* HippoPlayer vote count of the song, empty until a VOTE answer is stored (I174a) */
     SEL_FMT_FIELD_COUNT
 } sel_format_field;
 

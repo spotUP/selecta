@@ -223,6 +223,10 @@ struct sel_engine {
     sel_host rp_host;               /* copy of host whose config_get answers per-replayer options (I134) */
     char rp_song_config[256];       /* per-song override list "plugin.key=value,...", read from the library DB sticker rp.config at OPEN (D-M2-8, I170) */
     char hist_key[SEL_DEFERRED_PATH_MAX]; /* key of the song being played, "" none: its end or skip goes to the history table (I170) */
+    char vote_song[SEL_DEFERRED_PATH_MAX]; /* song key of the last VOTE request: the count the service answers is stored under it (I174a) */
+    char vote_mkey[13];                    /* UADE key of that request, matched against the answer */
+    unsigned vote_seen;                    /* vote result sequence already stored */
+    uint32_t votes_generation;             /* moves when a count is stored; the view re-reads its vote texts */
     uint32_t scrobble_due;   /* SCROBBLE_DUE events emitted (sentinel of the I177 rule) */
     uint32_t history_writes; /* history rows written (sentinel of the I170 writer) */
     uint32_t cue_sets, cue_gotos, sticker_ops; /* sentinels of I175 / I176 */
@@ -3084,6 +3088,8 @@ static void cmd_VOTE(sel_engine* e, const sel_message* m) {
             if (e->config_dir[0] != '\0') (void)sel_prefs_save(&e->prefs, e->config_dir);
         }
         if (r >= 0) (void)sel_library_sticker_set(e->lib, e->hist_key, "vote", r == 5 ? "5" : "0");
+        snprintf(e->vote_song, sizeof e->vote_song, "%s", e->hist_key);
+        snprintf(e->vote_mkey, sizeof e->vote_mkey, "%s", mkey);
         sel_library_vote(e->lib, e->prefs.value[SEL_PREF_LIBRARY_VOTE_TOKEN], mkey, r);
     }
 }
@@ -3630,6 +3636,34 @@ static void cmd_LIBRARY_FETCH(sel_engine* e, const sel_message* m) {
 
 /* ---- view ------------------------------------------------------------ */
 
+/* Row callback of the view (I174a): the stored vote count of a song key, as text. The count is the sticker "votes" of
+ * the song key, the same per-song store as the sticker "vote" (the user's own choice). */
+static int view_votes(void* ctx, const char* path, char* out) {
+    sel_engine* e = ctx;
+    char v[SEL_STICKER_VALUE_MAX];
+
+    if (!sel_library_sticker_get(e->lib, path, "votes", v, sizeof v)) return 0;
+    snprintf(out, SEL_VIEW_VOTES_MAX, "%s", v);
+    return 1;
+}
+
+/* Pump thread: a finished vote request that carries a count is stored as the sticker "votes" of the song it was made
+ * for, so the playlist row shows it (and it survives a restart). A failed or refused request keeps the stored value. */
+static void vote_store(sel_engine* e) {
+    sel_vote_result vr;
+
+    if (e->lib == NULL || e->vote_song[0] == '\0') return;
+    sel_library_vote_result(e->lib, &vr);
+    if (vr.seq == e->vote_seen) return;
+    e->vote_seen = vr.seq;
+    if (vr.status == SEL_VOTE_OK && strcmp(vr.mkey, e->vote_mkey) == 0) {
+        char text[SEL_VIEW_VOTES_MAX];
+
+        snprintf(text, sizeof text, "%u", vr.count);
+        if (sel_library_sticker_set(e->lib, e->vote_song, "votes", text)) e->votes_generation++;
+    }
+}
+
 static void view_src(const sel_engine* e, sel_view_src* s) {
     s->queue = e->view.pub.source == SEL_VIEW_QUERY ? &e->qview : &e->queue;
     s->browse = &e->browse;
@@ -3639,6 +3673,9 @@ static void view_src(const sel_engine* e, sel_view_src* s) {
     s->playing = e->q_playing;
     s->title_format = e->prefs.value[SEL_PREF_VIEW_TITLE_FORMAT];
     s->prefs_generation = e->prefs.generation;
+    s->votes = e->lib != NULL ? view_votes : NULL;
+    s->votes_ctx = (void*)e;
+    s->votes_generation = e->votes_generation;
 }
 
 /* VIEW_ROWS carries the window position only; the rows are read from the
@@ -4226,6 +4263,7 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
         }
     }
     refresh_snapshot(e);
+    vote_store(e);
     view_sync(e);
     while (sel_spsc_pop(&e->evt_q, &m)) {
         if (sink) {

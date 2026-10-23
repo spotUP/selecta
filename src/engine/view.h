@@ -15,7 +15,8 @@
 
 #define SEL_VIEW_WINDOW_MAX 256u
 #define SEL_VIEW_WINDOW_DEFAULT 20u
-#define SEL_VIEW_TITLE_DEFAULT "[%author% - ]%title%"
+#define SEL_VIEW_TITLE_DEFAULT "[%author% - ]%title%[  Votes %votes%]"
+#define SEL_VIEW_VOTES_MAX 12u /* a vote count as text, NUL included */
 #define SEL_VIEW_TEXT_MAX 160u /* one formatted row, NUL included */
 #define SEL_VIEW_FOLDER_ROWS 256u /* rows of the folders source (the playlist folder tree, I179) */
 #define SEL_VIEW_FOLDER_NAME 64u
@@ -30,11 +31,16 @@ typedef struct sel_view_src {
     uint32_t playing; /* queue id of the playing entry, 0 none */
     const char* title_format;  /* view.title_format pref, expanded per queue row */
     uint32_t prefs_generation; /* bumps when any pref changes */
+    /* Vote count of a queue path (I174a): copies the text into out[SEL_VIEW_VOTES_MAX], 0 when the song has none.
+     * NULL: no library. The view calls it once per visible row and again only when votes_generation moves. */
+    int (*votes)(void* ctx, const char* path, char* out);
+    void* votes_ctx;
+    uint32_t votes_generation;
 } sel_view_src;
 
 typedef struct sel_view_sig {
     uint32_t source, style, row_count, cursor, window_start, window_rows, queue_version, browse_generation, playing, prefs_generation;
-    uint32_t group_key, drill_n, folder_generation;
+    uint32_t group_key, drill_n, folder_generation, votes_generation;
 } sel_view_sig;
 
 /* Tree and drilldown group table (design doc section 3, VIEW_GROUP): the
@@ -55,6 +61,9 @@ typedef struct sel_view {
     sel_view_state pub;
     sel_view_row* rows;
     char* row_text; /* row_cap * SEL_VIEW_TEXT_MAX: the formatted queue rows */
+    char* vote_text;      /* row_cap * SEL_VIEW_VOTES_MAX: the vote count of each row slot (I174a) */
+    uint32_t* vote_id;    /* queue entry id each vote_text slot was read for, 0 none */
+    uint32_t vote_seen;   /* votes_generation the slots belong to */
     uint32_t row_cap;
     uint32_t cursor_of[4], id_of[4]; /* the cursor each source was left at */
     uint32_t browse_seen;            /* browse generation the cursor belongs to */

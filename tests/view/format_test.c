@@ -54,6 +54,10 @@ static void test_resolver(void) {
     expect(&v, "%path%", "/m/Tune.mod", SEL_FORMAT_OK);
     expect(&v, "%file%", "Tune.mod", SEL_FORMAT_OK);
     expect(&v, "%channels%", "4", SEL_FORMAT_OK);
+    expect(&v, "%title%[  Votes %votes%]", "Tune", SEL_FORMAT_OK); /* no count: the optional section drops (I174a) */
+    v.field[SEL_FMT_VOTES] = "7";
+    expect(&v, "%title%[  Votes %votes%]", "Tune  Votes 7", SEL_FORMAT_OK);
+    v.field[SEL_FMT_VOTES] = NULL;
     expect(&v, "%state%", "playing", SEL_FORMAT_OK);
     expect(&v, "[%author% - ]%title%", "Composer - Tune", SEL_FORMAT_OK);
     expect(&v, "100%% %title%", "100% Tune", SEL_FORMAT_OK);
