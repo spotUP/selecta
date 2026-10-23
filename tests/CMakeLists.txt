@@ -959,3 +959,19 @@ if(NOT SEL_AMIGA)
   set_tests_properties(cache-fetch-shell PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     DEPENDS cache-fetch TIMEOUT 60)
 endif()
+
+# M3 Phase 5 (I205, I206): T98 text-ui-library-screen. The shell drives L, /, a query and Enter over
+# a catalogue, then opens a --db filled by LIBRARY_SCAN.
+if(NOT SEL_AMIGA)
+  add_test(NAME text-ui-library-screen
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv"
+      "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m3/library_screen.keys"
+      "-DDBKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m3/library_db.keys"
+      "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m3/library_screen.screen"
+      "-DSONGS=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/library_screen"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/library_screen.cmake")
+  set_tests_properties(text-ui-library-screen PROPERTIES LABELS m3)
+endif()

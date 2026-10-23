@@ -69,6 +69,21 @@ static const sel_tag* hooks_of(uint32_t kind, const char* id) {
     return desc != NULL ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
 }
 
+/* Default library DB: PROGDIR:library.db on Amiga, else library.db in the config directory
+ * (created when missing). NULL when no location is known. */
+static const char* default_db_path(char* out, size_t cap) {
+#if defined(__amigaos__) || defined(AMIGA)
+    snprintf(out, cap, "PROGDIR:library.db");
+    return out;
+#else
+    char dir[256];
+    if (!sel_config_dir(dir, sizeof dir) || !sel_config_mkdir(dir)) {
+        return NULL;
+    }
+    return snprintf(out, cap, "%s/library.db", dir) < (int)cap ? out : NULL;
+#endif
+}
+
 static const char* option(int argc, char** argv, const char* name, const char* def) {
     int i;
     for (i = 1; i + 1 < argc; i++) {
@@ -221,6 +236,22 @@ int main(int argc, char** argv)
             return 1;
         }
         cfg.library = library;
+    } else {
+        /* The persistent library (I205): --db, else the default path. A scripted or null-output run
+         * never touches the user's default DB, so a test does not depend on the machine it runs on. */
+        const char* db = option(argc, argv, "--db", NULL);
+        char dbpath[300];
+        if (db == NULL && !has_keys && !is_null) {
+            db = default_db_path(dbpath, sizeof dbpath);
+        }
+        if (db != NULL) {
+            library = sel_library_open(host, machine_tags, 0, db);
+            if (library == NULL) {
+                fprintf(stderr, "selecta: cannot open the library database %s\n", db);
+                return 1;
+            }
+            cfg.library = library;
+        }
     }
     cfg.config_dir = option(argc, argv, "--config-dir", NULL);
     if (cfg.config_dir == NULL && sel_config_dir(cfgdir, sizeof cfgdir)) {
@@ -343,6 +374,9 @@ int main(int argc, char** argv)
 
     printf("viz_marks dot_rows=%u phase_points=%u\n", (unsigned)sel_tag_find(ust, SEL_UI_STAT_DOT_ROWS, 0),
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_PHASE_POINTS, 0));
+
+    printf("library_screen opens=%u searches=%u\n", (unsigned)sel_tag_find(ust, SEL_UI_STAT_LIBRARY_OPENS, 0),
+           (unsigned)sel_tag_find(ust, SEL_UI_STAT_LIBRARY_SEARCHES, 0));
 
     printf("engine_state pitch_cents=%d tempo_percent=%d mute_mask=%u mutes=%u\n", (int)sel_engine_state(e)->pitch_cents,
            (int)sel_engine_state(e)->tempo_percent, (unsigned)sel_engine_state(e)->mute_mask, (unsigned)est.mutes);
