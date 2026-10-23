@@ -38,6 +38,8 @@ typedef struct nuade_state {
     uint32_t cat_n;
     sel_sample cat[SAMPLE_CATALOGUE_MAX]; /* distinct samples, order of first use */
     char cat_name[SAMPLE_CATALOGUE_MAX][12];
+    uint32_t loop_wait;                /* I94a: ticks since a LOOPED tick whose landing is not yet known; 0 = none */
+    uint32_t loop_order, loop_row;     /* the position played on that LOOPED tick */
 } nuade_state;
 
 /* A player this adapter can drive: tick players only. Self-rendering
@@ -147,15 +149,58 @@ static void rp_close(void* state) {
 static int rp_start(void* state, uint32_t subsong, uint32_t rate, const sel_voices* voices) {
     nuade_state* s = (nuade_state*)state;
     s->voices.api = voices;
+    s->loop_wait = 0u;
     return s->player->start(s->pdata, subsong, rate, &s->voices) ? 1 : 0;
+}
+
+/* I94a: a song that passes its loop point and starts again at order 0 has played to its end; only a jump
+ * back to a later order is a loop by design. The player reports LOOPED on the tick that plays the last row,
+ * before it is known where the song lands, and its position hook names the row just played. So a LOOPED tick
+ * is held back until the position changes (the first tick of the landing row, at most one row later) and
+ * is then reported as ENDED when the landing order is 0, as LOOPED otherwise. A player without a position
+ * hook, or one that does not scroll in Rows mode (no order), keeps its LOOPED unchanged. */
+#define LOOP_LAND_TICKS 256u
+
+static int rp_pos(nuade_state* s, uint32_t* order, uint32_t* row) {
+    NuadePositionResult at;
+    if (s->player->position == NULL) {
+        return 0;
+    }
+    at = s->player->position(s->pdata);
+    if (!at.valid || at.position.mode != NuadeScroll_Rows) {
+        return 0;
+    }
+    *order = at.position.order;
+    *row = at.position.row;
+    return 1;
 }
 
 static void rp_tick(void* state, sel_tick_result* out) {
     nuade_state* s = (nuade_state*)state;
     NuadeTickResult r = s->player->tick(s->pdata, &s->voices);
+    uint32_t looped = (r.flags & NuadeTick_Looped) ? 1u : 0u;
+    uint32_t ended = (r.flags & NuadeTick_Ended) ? 1u : 0u;
+    uint32_t order, row;
     out->length = r.length;
-    out->flags = ((r.flags & NuadeTick_Looped) ? SEL_TICK_LOOPED : 0u) |
-                 ((r.flags & NuadeTick_Ended) ? SEL_TICK_ENDED : 0u);
+    if (!ended && (looped || s->loop_wait != 0u) && rp_pos(s, &order, &row)) {
+        if (looped) {
+            s->loop_wait = 1u;
+            s->loop_order = order;
+            s->loop_row = row;
+            looped = 0u;
+        } else if (order != s->loop_order || row != s->loop_row) {
+            s->loop_wait = 0u;
+            if (order == 0u) {
+                ended = 1u;
+            } else {
+                looped = 1u;
+            }
+        } else if (++s->loop_wait > LOOP_LAND_TICKS) {
+            s->loop_wait = 0u;
+            looped = 1u;
+        }
+    }
+    out->flags = (looped ? SEL_TICK_LOOPED : 0u) | (ended ? SEL_TICK_ENDED : 0u);
 }
 
 /* RP_TRACKER_INFO / RP_TRACKER_CELLS: the player's tracker_info and

@@ -1,5 +1,5 @@
-# T43: a looping module with REPEAT off and loops 1 fades out and ends with reason loop.
+# T43: a module that loops by design (B01 jump to a later order) with REPEAT off and loops 1 fades out and ends with reason loop.
 OPTION loops 1
-QUEUE_ADD selecta-test.mod
+QUEUE_ADD selecta-loop.mod
 PLAY
 @render_until_end

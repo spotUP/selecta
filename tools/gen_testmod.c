@@ -19,6 +19,10 @@
  * list wraps and the replayer reports a loop (the queue tests need a song
  * that ends). The default output is unchanged.
  *
+ * With --loop the order list holds three patterns and pattern 2 ends in a B01 position jump back to
+ * order 1: the song loops by design (the replayer reports a loop that lands on a later order, not a
+ * restart at order 0), so SONG_ENDED reports `loop` where the other fixtures report `end` (row I94a).
+ *
  * With --format mk the output is the bare ProTracker module (the PTDT payload
  * alone, plain "M.K." header, no IFF wrapper), the same musical content. The
  * protracker4 replayer rejects it; libopenmpt plays it (plan T22).
@@ -33,7 +37,7 @@
  *
  * With --silent the data of all four samples is zero (T43: digital silence).
  *
- * usage: gen_testmod [--short] [--break] [--zero-sample N] [--silent] [--format mk] <output.mod> */
+ * usage: gen_testmod [--short] [--loop] [--break] [--zero-sample N] [--silent] [--format mk] <output.mod> */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -53,6 +57,7 @@ typedef struct sample_def {
 } sample_def;
 
 static int g_break = 0;
+static int g_loop = 0;
 static const char* g_title = "selecta test";
 static unsigned g_song_length = PATTERNS;
 static unsigned g_zero_sample = 0;
@@ -163,6 +168,9 @@ static void make_patterns(void) {
     cell(3, 16, 0, 0, 0, 0x0, 0x47);
     cell(3, 32, 0, 0, 0, 0xF, 4);
     cell(3, 48, 0, 0, 0, 0xF, 6);
+    if (g_loop) {
+        cell(2, 63, 3, 0, 0, 0xB, 0x01); /* position jump from order 2 back to order 1: a loop by design (I94a) */
+    }
     if (g_break) {
         cell(0, 15, 2, 0, 0, 0xD, 0x00); /* break to row 0 of the next order */
     }
@@ -275,6 +283,12 @@ int main(int argc, char** argv) {
             g_song_length = 1;
             argv++;
             argc--;
+        } else if (strcmp(argv[1], "--loop") == 0) {
+            g_title = "selecta loop";
+            g_song_length = 3;
+            g_loop = 1;
+            argv++;
+            argc--;
         } else if (strcmp(argv[1], "--break") == 0) {
             g_title = "selecta break";
             g_break = 1;
@@ -301,7 +315,7 @@ int main(int argc, char** argv) {
         }
     }
     if (argc != 2) {
-        fputs("usage: gen_testmod [--short] [--break] [--zero-sample N] [--format mk] <output.mod>\n", stderr);
+        fputs("usage: gen_testmod [--short] [--loop] [--break] [--zero-sample N] [--format mk] <output.mod>\n", stderr);
         return 2;
     }
     make_samples();
