@@ -206,6 +206,8 @@ Tests T19 to T27 are defined in the plan's finish-line table. A row is ticked on
 | I60 | [x] | 5 | text_ui.c; apps/selecta shell; T19 red then green | T19 green (I60 commit) |
 | I61 | [ ] | 5 | real-terminal check on macOS (plan Verification, manual 1); only the user ticks it | user confirms |
 | I62 | [x] | 6 | RULES.md Commands, README, design doc sections 3/5/14/16, validation doc, plan status done | counts reconciled: ctest 48, ratchet 45, no_float 12, nuade 121; commit 18d24f4 |
+| I64 | [ ] | 5 | shell picks clocked pacing and audio-thread marking by output id (apps/selecta/main.c:83 strcmp "null"); should read the output's capability (SEL_OUT_LATENCY_MS != 0 or a dedicated tag). Latent: the default host has no config, so `--output wav` cannot open in the shell today; fix with the regression test when a second unclocked output becomes reachable | open |
+| I63 | [x] | 5 | fix shell with real output: interactive Enter never opens songs (songs_opened=0), keys-file wait hangs (timeout 0), check termios diff after quit; regression test without sound card | A was a repro error (started one directory too high; works under CoreAudio); B fixed: keys-file wait counts the host clock when the turn budget is 0, host clock now CLOCK_MONOTONIC; C is only the kernel PENDIN bit; test text-ui-keys-wait red then green; commit bdb9e75, merge on main |
 
 ## Open decisions
 
