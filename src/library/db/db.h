@@ -344,7 +344,6 @@ void sel_library_prefetch_stop(sel_library* lib);
  * runs inline. _wait returns once the thread is idle (test hook, T79); _stop is called by sel_library_close. */
 void sel_library_rating_push(sel_library* lib);
 void sel_library_rating_wait(sel_library* lib);
-void sel_library_rating_stop(sel_library* lib);
 int sel_library_cache_stats(const sel_library* lib, struct sel_cache_stats* out);
 /* Prints `cache_hits= fetches= companions= md5_mismatches= mirror_tries=` when a fetch was served. */
 void sel_library_cache_report(const sel_library* lib);

@@ -38,19 +38,17 @@ struct sel_library {
     unsigned sm_n;
     unsigned sm_planned;     /* smart plans made (the handle reports smart_* once a plan ran) */
 #if !defined(SEL_LIBRARY_NO_THREAD)
-    pthread_t pf_thread;     /* prefetch thread, created on the first prefetch (fetch.c, I168) */
-    pthread_mutex_t pf_lock; /* guards the pf_* fields and serialises the file cache between threads */
-    pthread_cond_t pf_wake;
-    pthread_mutex_t cache_lock; /* the file cache's stats and the foreground fetch; never held by the prefetch thread
+    pthread_t job_thread;    /* the one background job thread, created on the first job (job.c, I173d) */
+    pthread_mutex_t job_lock; /* guards the job queue (pf_spec, sm_spec, job_rating) and the flags below */
+    pthread_cond_t job_wake;
+    pthread_mutex_t cache_lock; /* the file cache's stats and the foreground fetch; never held by the job thread
                                  * during a transfer (I168a) */
-    sel_cache* pf_cache;     /* the prefetch thread's own cache handle: same directory, own mirror state and stats */
-    volatile int pf_cancel;  /* set (under pf_lock) to abort the running prefetch download at its next chunk */
-    unsigned pf_started, pf_busy, pf_quit;
+    sel_cache* pf_cache;     /* the prefetch job's own cache handle: same directory, own mirror state and stats */
+    volatile int pf_cancel;  /* set (under job_lock) to abort the running prefetch download at its next chunk */
+    unsigned job_started, job_quit;
+    unsigned pf_busy;        /* a prefetch / smart job is running */
     unsigned pf_busy_smart;  /* the running request is a smart download (a prefetch request cancels it) */
-    pthread_t rp_thread;     /* DEViLBOX rating push thread, created on the first RATE (rating_push.c, I173c) */
-    pthread_mutex_t rp_lock;
-    pthread_cond_t rp_wake;
-    unsigned rp_started, rp_work, rp_busy, rp_quit;
+    unsigned job_rating, job_rating_busy; /* rating flush: one coalesced pending job, and one running (rating_push.c) */
     pthread_mutex_t call_lock; /* recursive: one caller at a time owns job and the reply queue (engine, push thread) */
     pthread_t thread;
     pthread_mutex_t lock;
@@ -104,5 +102,17 @@ void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* repl
 /* worker.c */
 int sel_worker_start(sel_library* lib);
 void sel_worker_stop(sel_library* lib);
+
+/* The library background job thread (job.c, I173d). Threaded builds only; job kinds: prefetch / smart download
+ * (fetch.c, queue = pf_spec + sm_spec) and rating flush (rating_push.c, one coalesced flag). */
+#if !defined(SEL_LIBRARY_NO_THREAD)
+int sel_job_start(sel_library* lib);
+void sel_job_wake(sel_library* lib);  /* job_lock held: a job was queued */
+void sel_job_wait(sel_library* lib);  /* returns once the queue is empty and nothing runs */
+void sel_job_stop(sel_library* lib);
+int sel_fetch_job_pending(sel_library* lib);  /* job_lock held */
+void sel_fetch_job_run(sel_library* lib);     /* job_lock held on entry and exit; drops it around the transfer */
+#endif
+void sel_rating_job_run(sel_library* lib);    /* sends every pending rating (no lock held) */
 
 #endif
