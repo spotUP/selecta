@@ -136,6 +136,8 @@ static const struct {
     {"S", "@solo"},            {"}", "PITCH +100"},
     {"{", "PITCH -100"},       {">", "TEMPO +5"},
     {"<", "TEMPO -5"},
+    {"L", "FILTER_LED toggle"}, {"(", "MIX_STEREO_WIDTH -10"},
+    {")", "MIX_STEREO_WIDTH +10"},
 };
 
 static int find(const txt_bindings* b, uint32_t code, uint32_t mods) {

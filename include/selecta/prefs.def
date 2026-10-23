@@ -18,3 +18,5 @@ SEL_PREF(AUDIO_PRIORITY,     "audio.priority",     "30",                        
 SEL_PREF(OUTPUT_BUFFER,      "output.buffer",      "0",                                           SEL_PREF_PLAIN)
 /* Amiga LED (power) filter: on, off */
 SEL_PREF(OUTPUT_LED,         "output.led",         "off",                                         SEL_PREF_PLAIN)
+/* stereo width percent, 0 (mono) to 100 (unchanged); the LED filter is output.led */
+SEL_PREF(MIX_STEREO_WIDTH,   "mix.stereo_width",   "100",                                         SEL_PREF_PLAIN)

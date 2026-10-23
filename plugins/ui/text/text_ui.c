@@ -486,6 +486,17 @@ static const char* tui_play_word(sel_play_state p) {
     return p == SEL_PLAYING ? "Playing" : p == SEL_PAUSED ? "Paused" : "Stopped";
 }
 
+/* Appends the mixer stage settings that differ from the defaults (LED Filter off, Stereo Width 100). */
+static void tui_stage_status(char* buf, size_t cap, const sel_state* s) {
+    size_t n = strlen(buf);
+    if (s->led_on && n < cap) {
+        n += (size_t)snprintf(buf + n, cap - n, "  LED Filter On");
+    }
+    if (s->stereo_width < 100u && n < cap) {
+        (void)snprintf(buf + n, cap - n, "  Stereo Width %u", (unsigned)s->stereo_width);
+    }
+}
+
 static void tui_header(tui* u, const sel_state* s) {
     char buf[256], pos[16], dur[16];
     const char* title = (const char*)sel_tag_find(s->song.meta, SEL_META_TITLE, 0);
@@ -501,6 +512,7 @@ static void tui_header(tui* u, const sel_state* s) {
     snprintf(buf, sizeof buf, "%s  Subsong %u/%u  %s / %s  Volume %d", format != NULL && format[0] ? format : "-",
              (unsigned)(s->song.path != NULL ? s->song.subsong + 1u : 0u), (unsigned)s->song.subsong_count, pos, dur,
              (int)s->volume);
+    tui_stage_status(buf, sizeof buf, s);
     txt_grid_text(&u->grid, 1, 1, buf, u->grid.cols - 1u, tui_style(u, TXT_ROLE_NORMAL));
 }
 

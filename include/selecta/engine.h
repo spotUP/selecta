@@ -137,6 +137,8 @@ typedef struct sel_state {
     uint32_t mute_mask;         /* bit k set: voice k + 1 is muted (MUTE, SOLO) */
     uint32_t mixed_path;        /* 1: the engine mixes (DSP, crossfade); 0: the output plays voices itself */
     const sel_pattern_view* pattern; /* newest answered pattern window, valid until the next pump */
+    uint32_t led_on;            /* FILTER_LED: 1 when the LED filter stage is on */
+    uint32_t stereo_width;      /* MIX_STEREO_WIDTH: 0 (mono) to 100 (unchanged) */
 } sel_state;
 
 typedef struct sel_engine_config {

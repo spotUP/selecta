@@ -1,0 +1,3 @@
+# I129: the LED filter and the stereo width through the command path.
+FILTER_LED on
+MIX_STEREO_WIDTH 50
