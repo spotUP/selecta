@@ -335,8 +335,8 @@ Tests T62 to T97 are defined in the plan's finish-line table. T8 ratchet target 
 | I151 | [ ] | 2 | View model source = library query (VIEW_SOURCE), style switch keeps the key | T66 green |
 | I152 | [x] | 3 | `src/core/{posix,amiga}/net.c` socket table, guard and host map | T67 green; posix+amiga socket table, guard checks mapped target; T67 net-guard green; Amiga net.c never run (no TCP stack under vamos, rig T97); merge 46596b1 |
 | I153 | [x] | 3 | `src/library/net/http.c` HTTP/1.1: GET/PUT/POST/DELETE, chunked, Range, redirects, 3 s / 30 s timeouts | T68 plain parts green; HTTP/1.1 client + selecta-cli fetch; T68 http-client plain parts green; https returns tls_unavailable until I154; merge 46596b1 |
-| I154 | [ ] | 3 | Vendor mbedTLS, TLS stream wrapper, OS CA store, `SELECTA_CA_FILE` (D-M3-4) | T68 green |
-| I155 | [ ] | 3 | Passive FTP client (D-M3-5) | T70 green |
+| I154 | [x] | 3 | Vendor mbedTLS, TLS stream wrapper, OS CA store, `SELECTA_CA_FILE` (D-M3-4) | T68 green; T70 ftp-transport green, Amiga TLS/FTP runtime untested (rig T97); merge 78ae1e0 |
+| I155 | [x] | 3 | Passive FTP client (D-M3-5) | T70 green; T70 ftp-transport green, Amiga TLS/FTP runtime untested (rig T97); merge 78ae1e0 |
 | I156 | [ ] | 3 | Mirrors: first-byte ranking, retry next, home mirror first, Amiga route to `/api/mirror/<source>/<path>` | T69 green |
 | I157 | [ ] | 4 | `src/library/source.h` (`sel_source`), source registry, song key helpers, Modland format table, `SEL_SRC_*` tags | key round trip in T72; tag lint green |
 | I158 | [ ] | 4 | `local` source over `sel_browse`: scan into files/songs with probe metadata, LIBRARY_SCAN | T71 scan part green |
