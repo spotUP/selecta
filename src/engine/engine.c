@@ -113,6 +113,7 @@
     X(LIKE)                                                                                   \
     X(FLAG)                                                                                   \
     X(CUE_SET) X(CUE_GOTO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
+    X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
     X(VIEW_CURSOR)                                                                            \
@@ -210,6 +211,7 @@ struct sel_engine {
     char hist_key[SEL_DEFERRED_PATH_MAX]; /* key of the song being played, "" none: its end or skip goes to the history table (I170) */
     uint32_t history_writes; /* history rows written (sentinel of the I170 writer) */
     uint32_t cue_sets, cue_gotos, sticker_ops; /* sentinels of I175 / I176 */
+    uint32_t folder_ops;                       /* FOLDER_* / PLAYLIST_MOVE commands run against the library (I178) */
     uint32_t skip_excluded;  /* skip-flagged queue rows left out of a random order (sentinel of I171) */
     char rp_value[SEL_PREF_VALUE_MAX]; /* answer of the last rp_config_get */
     uint32_t rp_config_applied;     /* option values that came from an override layer (T61) */
@@ -2868,6 +2870,58 @@ static void cmd_STICKER_LIST(sel_engine* e, const sel_message* m) {
     }
 }
 
+/* I178 folder tree (design doc 9c): the library answers a refusal with a code; map it to the error text. */
+static void folder_report(sel_engine* e, int code, const char* who) {
+    static const char* const names[] = {"library_failed", "no_such_folder", "folder_cycle", "folder_not_empty",
+                                        "no_such_playlist", "library_failed"};
+    sel_engine_report_error(e, names[code >= 0 && code <= SEL_FOLDER_ERR_FAILED ? code : SEL_FOLDER_ERR_FAILED], who);
+}
+
+static int folder_ready(sel_engine* e, const char* who) {
+    if (e->lib == NULL) {
+        sel_engine_report_error(e, "no_library", who);
+        return 0;
+    }
+    e->folder_ops++;
+    return 1;
+}
+
+/* FOLDER_ADD name [parent]: creates the folder (parent 0 or absent = root); the answer carries the new id. */
+static void cmd_FOLDER_ADD(sel_engine* e, const sel_message* m) {
+    uint32_t id = 0;
+    int rc;
+    char text[16];
+    if (!folder_ready(e, "FOLDER_ADD")) return;
+    rc = sel_library_folder_add(e->lib, m->args[0].v.s, m->argc > 1 ? (uint32_t)m->args[1].v.u : 0u, &id);
+    if (rc != SEL_FOLDER_OK) {
+        folder_report(e, rc, "FOLDER_ADD");
+        return;
+    }
+    snprintf(text, sizeof text, "%u", (unsigned)id);
+    sticker_answer(e, "folder", m->args[0].v.s, text, id);
+}
+
+static void cmd_FOLDER_MOVE(sel_engine* e, const sel_message* m) {
+    int rc;
+    if (!folder_ready(e, "FOLDER_MOVE")) return;
+    rc = sel_library_folder_move(e->lib, (uint32_t)m->args[0].v.u, (uint32_t)m->args[1].v.u);
+    if (rc != SEL_FOLDER_OK) folder_report(e, rc, "FOLDER_MOVE");
+}
+
+static void cmd_FOLDER_DEL(sel_engine* e, const sel_message* m) {
+    int rc;
+    if (!folder_ready(e, "FOLDER_DEL")) return;
+    rc = sel_library_folder_del(e->lib, (uint32_t)m->args[0].v.u);
+    if (rc != SEL_FOLDER_OK) folder_report(e, rc, "FOLDER_DEL");
+}
+
+static void cmd_PLAYLIST_MOVE(sel_engine* e, const sel_message* m) {
+    int rc;
+    if (!folder_ready(e, "PLAYLIST_MOVE")) return;
+    rc = sel_library_playlist_move(e->lib, (uint32_t)m->args[0].v.u, (uint32_t)m->args[1].v.u);
+    if (rc != SEL_FOLDER_OK) folder_report(e, rc, "PLAYLIST_MOVE");
+}
+
 static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
     sel_local_scan_config scfg;
     sel_modland_sync_stats st;
@@ -3614,6 +3668,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->cue_sets = e->cue_sets;
     out->cue_gotos = e->cue_gotos;
     out->sticker_ops = e->sticker_ops;
+    out->folder_ops = e->folder_ops;
     out->library_searches = e->searches;
     out->library_fts_queries = e->fts_queries;
     out->result_count = e->res_count;

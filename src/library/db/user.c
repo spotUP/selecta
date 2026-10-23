@@ -2,6 +2,7 @@
  * `history`, LIKE and KEEP in `liked` and `kept`, per-song replayer options as the sticker "rp.config".
  * One request, SEL_LIB_REQ_USER, runs on the worker like every other library request. */
 #include "db_internal.h"
+#include "folders.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -129,7 +130,10 @@ void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* repl
     int have_counts = 0;
     int i;
 
-    if (op->op == SEL_USER_COUNTS) {
+    if (op->op >= SEL_USER_FOLDER_ADD && op->op <= SEL_USER_FOLDER_TREE) {
+        rc = sel_folder_exec(lib->db, op, &rows, counts);
+        have_counts = op->op == SEL_USER_FOLDER_COUNTS;
+    } else if (op->op == SEL_USER_COUNTS) {
         user_counts(lib->db, counts);
         have_counts = 1;
         rc = SQLITE_OK;

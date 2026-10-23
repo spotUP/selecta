@@ -293,6 +293,9 @@ static void print_event(void* ctx, const sel_message* evt) {
  *                       the song length)
  *   @position           SNAPSHOT position_ms=M order=O row=R pattern=P (song.pattern_pos)
  *   @user_stats         USERDATA cue_sets=N cue_gotos=N sticker_ops=N (T81, T82)
+ *   @folder_stats       FOLDERS folders=N playlists_in_folders=N playlists=N entries=N folder_ops=N (T83)
+ *   @folder_tree        the folder tree, one \"F|P <id> <name>\" line per node (T83)
+ *   @playlist_add <folder> <name> <key>...  adds a DB playlist (test plumbing; no engine verb creates one yet)
  *   @integration_poll   call INT_POLL of the --integration plugin once
  *   @alloc_guard on     write SEL_ALLOC_FREEZE/THAW to stderr around every
  *                       sel_engine_render call (pump-side work stays outside
@@ -548,6 +551,46 @@ static int cmd_script(const char* path, int argc, char** argv) {
                 memcpy(table, line + 6, (size_t)(colon - line - 6));
                 table[colon - line - 6] = '\0';
                 sel_library_mark(lib, table, colon + 1);
+            }
+            continue;
+        }
+        if (strcmp(line, "@folder_stats") == 0 && lib != NULL) {
+            sel_engine_stats es;
+            uint32_t fo = 0, inf = 0, pls = 0, ent = 0;
+            sel_engine_stats_get(e, &es);
+            sel_library_folder_counts(lib, &fo, &inf, &pls, &ent);
+            printf("FOLDERS folders=%u playlists_in_folders=%u playlists=%u entries=%u folder_ops=%u\n", (unsigned)fo,
+                   (unsigned)inf, (unsigned)pls, (unsigned)ent, (unsigned)es.folder_ops);
+            continue;
+        }
+        if (strcmp(line, "@folder_tree") == 0 && lib != NULL) {
+            static char tree[8192];
+            uint32_t n = 0;
+            if (sel_library_folder_tree(lib, tree, sizeof tree, &n) == SEL_FOLDER_OK) fputs(tree, stdout);
+            printf("TREE lines=%u\n", (unsigned)n);
+            continue;
+        }
+        if (strncmp(line, "@playlist_add ", 14) == 0 && lib != NULL) {
+            char keys[2048];
+            char name[128];
+            char* tok;
+            char* rest;
+            uint32_t folder, id = 0;
+            int rc;
+            folder = (uint32_t)strtoul(line + 14, &rest, 10);
+            keys[0] = '\0';
+            name[0] = '\0';
+            tok = strtok(rest, " ");
+            if (tok != NULL) snprintf(name, sizeof name, "%s", tok);
+            while ((tok = strtok(NULL, " ")) != NULL) {
+                strncat(keys, tok, sizeof keys - strlen(keys) - 2u);
+                strncat(keys, "\n", sizeof keys - strlen(keys) - 1u);
+            }
+            rc = sel_library_playlist_add(lib, name, folder, keys, &id);
+            if (rc == SEL_FOLDER_OK) {
+                printf("PLAYLIST id=%u name=%s\n", (unsigned)id, name);
+            } else {
+                printf("ERROR playlist_add code=%d\n", rc);
             }
             continue;
         }

@@ -75,14 +75,27 @@ enum {
     SEL_USER_STICKER_DEL,  /* I176: reply [0] = 2 when a row was deleted */
     SEL_USER_STICKER_LIST, /* I176: out = "name\0value\0" pairs in name order that fit; reply [2] = rows found */
     SEL_USER_CUE_SET,      /* I175: at = cue index, duration_ms = position in ms; name = label or NULL */
-    SEL_USER_CUE_GET       /* I175: at = cue index; reply [0] = 2 and [2] = position in ms when the cue exists */
+    SEL_USER_CUE_GET,      /* I175: at = cue index; reply [0] = 2 and [2] = position in ms when the cue exists */
+    SEL_USER_FOLDER_ADD,   /* I178: name = folder name, at = parent folder id (0 = root); reply [2] = new id */
+    SEL_USER_FOLDER_MOVE,  /* I178: at = folder id, to = new parent id (0 = root) */
+    SEL_USER_FOLDER_DEL,   /* I178: at = folder id; refused while it holds folders or playlists */
+    SEL_USER_PLAYLIST_MOVE,/* I178: at = playlist id, to = folder id (0 = root) */
+    SEL_USER_PLAYLIST_ADD, /* I178: name = title, at = folder id, value = song keys joined by newline; reply [2] = new id */
+    SEL_USER_FOLDER_COUNTS,/* I178: reply [2..5] = folders, playlists in folders, playlists, playlist entries */
+    SEL_USER_FOLDER_PLAYLISTS, /* I178: at = folder id (0 = all); out = "id\0name\0" pairs then "\0"; reply [2] = playlists */
+    SEL_USER_PLAYLIST_KEYS,/* I178: at = playlist id; out = song keys, each NUL terminated, then "\0"; reply [2] = keys */
+    SEL_USER_FOLDER_TREE   /* I178: out = indented tree text "F|P <id> <name>" per line; reply [2] = lines */
 };
+/* Why a folder op was refused: reply [0] = 0, [1] = SQLITE_CONSTRAINT, [2] = one of these. */
+enum { SEL_FOLDER_OK = 0, SEL_FOLDER_ERR_NO_FOLDER = 1, SEL_FOLDER_ERR_CYCLE = 2, SEL_FOLDER_ERR_NOT_EMPTY = 3,
+       SEL_FOLDER_ERR_NO_PLAYLIST = 4, SEL_FOLDER_ERR_FAILED = 5 };
 typedef struct sel_user_op {
     uint32_t op;       /* SEL_USER_* */
     const char* key;   /* song key */
     const char* name;  /* STICKER_*: sticker name */
     const char* value; /* STICKER_SET: value */
     int64_t at;
+    int64_t to;          /* FOLDER_MOVE / PLAYLIST_MOVE: target folder id */
     int32_t skipped;     /* HISTORY: 1 = ended by the user before the natural end */
     int32_t duration_ms; /* HISTORY: 0 = unknown */
     char* out;           /* STICKER_GET: value, "" when absent */
@@ -256,6 +269,17 @@ int sel_library_sticker_list(sel_library* lib, const char* key, char* out, uint3
 int sel_library_cue_set(sel_library* lib, const char* key, uint32_t idx, uint32_t pos_ms);
 int sel_library_cue_get(sel_library* lib, const char* key, uint32_t idx, uint32_t* pos_ms);
 /* Row counts of the user tables (any pointer may be NULL). 1 on success. */
+/* I178 folder tree. Each returns SEL_FOLDER_OK or a SEL_FOLDER_ERR_* code; *out_id (when not NULL) = new id. */
+int sel_library_folder_add(sel_library* lib, const char* name, uint32_t parent, uint32_t* out_id);
+int sel_library_folder_move(sel_library* lib, uint32_t id, uint32_t parent);
+int sel_library_folder_del(sel_library* lib, uint32_t id);
+int sel_library_playlist_move(sel_library* lib, uint32_t id, uint32_t folder);
+int sel_library_playlist_add(sel_library* lib, const char* name, uint32_t folder, const char* keys_nl, uint32_t* out_id);
+int sel_library_folder_counts(sel_library* lib, uint32_t* folders, uint32_t* in_folders, uint32_t* playlists, uint32_t* entries);
+/* Fills `out` per the SEL_USER_FOLDER_PLAYLISTS / PLAYLIST_KEYS / FOLDER_TREE formats; *count = rows found. */
+int sel_library_folder_playlists(sel_library* lib, uint32_t folder, char* out, uint32_t cap, uint32_t* count);
+int sel_library_playlist_keys(sel_library* lib, uint32_t playlist, char* out, uint32_t cap, uint32_t* count);
+int sel_library_folder_tree(sel_library* lib, char* out, uint32_t cap, uint32_t* count);
 int sel_library_user_counts(sel_library* lib, uint32_t* history, uint32_t* flags, uint32_t* notes, uint32_t* pending_push);
 /* Marks song key `key` in table "kept" or "liked" (seeding and tests). 1 on success. */
 int sel_library_mark(sel_library* lib, const char* table, const char* key);

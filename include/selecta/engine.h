@@ -274,6 +274,7 @@ typedef struct sel_engine_stats {
     uint32_t skip_excluded;       /* skip-flagged rows the random order left out (T78 flags sentinel) */
     uint32_t cue_sets;            /* CUE_SET rows stored (I175 sentinel) */
     uint32_t cue_gotos;           /* CUE_GOTO seeks made (I175 sentinel) */
+    uint32_t folder_ops;          /* FOLDER_ADD/MOVE/DEL and PLAYLIST_MOVE run against the library (I178 sentinel) */
     uint32_t sticker_ops;         /* STICKER_* commands run against the library (I176 sentinel) */
     uint32_t library_searches;    /* queries sent to the library worker (T64) */
     uint32_t library_fts_queries; /* of those, queries the FTS5 index served (T64) */

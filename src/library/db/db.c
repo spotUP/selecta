@@ -330,6 +330,107 @@ int sel_library_tag_edit(sel_library* lib, const char* key, const char* field, c
     return user_call(lib, &op) > 0;
 }
 
+/* I178 folder tree: runs one op; returns SEL_FOLDER_OK or the refusal code from reply [2]. */
+static int folder_call(sel_library* lib, const sel_user_op* op, uint32_t* rows) {
+    sel_message reply;
+    memset(&reply, 0, sizeof reply);
+    if (rows != NULL) *rows = 0;
+    if (lib == NULL || !sel_library_request(lib, SEL_LIB_REQ_USER, op, &reply) || reply.argc < 3) {
+        return SEL_FOLDER_ERR_FAILED;
+    }
+    if (reply.args[0].v.i == 0) {
+        return reply.args[1].v.i == SQLITE_CONSTRAINT ? reply.args[2].v.i : SEL_FOLDER_ERR_FAILED;
+    }
+    if (rows != NULL) *rows = reply.args[2].v.i > 0 ? (uint32_t)reply.args[2].v.i : 0;
+    return SEL_FOLDER_OK;
+}
+
+int sel_library_folder_add(sel_library* lib, const char* name, uint32_t parent, uint32_t* out_id) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_FOLDER_ADD;
+    op.name = name;
+    op.at = parent;
+    return folder_call(lib, &op, out_id);
+}
+
+int sel_library_folder_move(sel_library* lib, uint32_t id, uint32_t parent) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_FOLDER_MOVE;
+    op.at = id;
+    op.to = parent;
+    return folder_call(lib, &op, NULL);
+}
+
+int sel_library_folder_del(sel_library* lib, uint32_t id) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_FOLDER_DEL;
+    op.at = id;
+    return folder_call(lib, &op, NULL);
+}
+
+int sel_library_playlist_move(sel_library* lib, uint32_t id, uint32_t folder) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_PLAYLIST_MOVE;
+    op.at = id;
+    op.to = folder;
+    return folder_call(lib, &op, NULL);
+}
+
+int sel_library_playlist_add(sel_library* lib, const char* name, uint32_t folder, const char* keys_nl, uint32_t* out_id) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_PLAYLIST_ADD;
+    op.name = name;
+    op.at = folder;
+    op.value = keys_nl;
+    return folder_call(lib, &op, out_id);
+}
+
+int sel_library_folder_counts(sel_library* lib, uint32_t* folders, uint32_t* in_folders, uint32_t* playlists, uint32_t* entries) {
+    sel_user_op op;
+    sel_message reply;
+    uint32_t* dst[4];
+    int i;
+    memset(&op, 0, sizeof op);
+    memset(&reply, 0, sizeof reply);
+    op.op = SEL_USER_FOLDER_COUNTS;
+    dst[0] = folders; dst[1] = in_folders; dst[2] = playlists; dst[3] = entries;
+    if (lib == NULL || !sel_library_request(lib, SEL_LIB_REQ_USER, &op, &reply) || reply.argc < 6 ||
+        reply.args[0].v.i == 0) {
+        return SEL_FOLDER_ERR_FAILED;
+    }
+    for (i = 0; i < 4; i++) {
+        if (dst[i] != NULL) *dst[i] = reply.args[2 + i].v.i > 0 ? (uint32_t)reply.args[2 + i].v.i : 0;
+    }
+    return SEL_FOLDER_OK;
+}
+
+static int folder_text_call(sel_library* lib, uint32_t op_id, uint32_t at, char* out, uint32_t cap, uint32_t* count) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = op_id;
+    op.at = at;
+    op.out = out;
+    op.out_cap = cap;
+    return folder_call(lib, &op, count);
+}
+
+int sel_library_folder_playlists(sel_library* lib, uint32_t folder, char* out, uint32_t cap, uint32_t* count) {
+    return folder_text_call(lib, SEL_USER_FOLDER_PLAYLISTS, folder, out, cap, count);
+}
+
+int sel_library_playlist_keys(sel_library* lib, uint32_t playlist, char* out, uint32_t cap, uint32_t* count) {
+    return folder_text_call(lib, SEL_USER_PLAYLIST_KEYS, playlist, out, cap, count);
+}
+
+int sel_library_folder_tree(sel_library* lib, char* out, uint32_t cap, uint32_t* count) {
+    return folder_text_call(lib, SEL_USER_FOLDER_TREE, 0, out, cap, count);
+}
+
 int sel_library_user_counts(sel_library* lib, uint32_t* history, uint32_t* flags, uint32_t* notes, uint32_t* pending_push) {
     sel_user_op op;
     sel_message reply;

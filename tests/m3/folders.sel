@@ -1,0 +1,26 @@
+# T83 DB half (row I178): FOLDER_ADD / FOLDER_MOVE / FOLDER_DEL / PLAYLIST_MOVE (D-M3-10). folders.sh runs this
+# file and folders2.sel in two processes on one database file. Folder ids 1..4, playlist ids 1..3 (fresh DB).
+FOLDER_ADD Rock
+FOLDER_ADD Metal 1
+FOLDER_ADD Jazz
+FOLDER_ADD Empty
+@playlist_add 0 Mix_one selecta-test.mod selecta-test-mk.mod
+@playlist_add 0 Mix_two selecta-test-mk.mod
+@playlist_add 0 Mix_three selecta-test.mod modland:p/purple.xm selecta-test-mk.mod
+PLAYLIST_MOVE 1 2
+PLAYLIST_MOVE 2 1
+PLAYLIST_MOVE 3 3
+FOLDER_MOVE 3 1
+# A folder never moves under itself or its own descendants.
+FOLDER_MOVE 1 2
+FOLDER_MOVE 1 1
+FOLDER_MOVE 9 1
+# A non-empty folder is never deleted; an empty one is.
+FOLDER_DEL 2
+FOLDER_DEL 1
+FOLDER_DEL 4
+FOLDER_DEL 4
+PLAYLIST_MOVE 9 1
+PLAYLIST_MOVE 1 9
+@folder_stats
+@folder_tree

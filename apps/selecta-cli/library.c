@@ -1016,9 +1016,12 @@ int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "trim") == 0) {
         return library_trim(argc - 1, argv + 1);
     }
+    if (argc >= 1 && strcmp(argv[0], "export-folder") == 0) {
+        return sel_cli_library_export_folder(argc - 1, argv + 1);
+    }
     if (argc >= 1 && strcmp(argv[0], "query") == 0) {
         return library_query(argc - 1, argv + 1);
     }
-    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | sync [--db <path>] [--now <epoch>] [--dump] modland <dir or http(s) url> | meta [--db <path>] <key> | key <source> <path> | genre --db <path> | trim [--budget <n>] [--machine <name>] | query --explain <q> | stats [--machine <name>] [--db <path>]\n", stderr);
+    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | sync [--db <path>] [--now <epoch>] [--dump] modland <dir or http(s) url> | meta [--db <path>] <key> | key <source> <path> | genre --db <path> | trim [--budget <n>] [--machine <name>] | query --explain <q> | export-folder --db <path> --dir <dir> [--folder <id>] [--format m3u] | stats [--machine <name>] [--db <path>]\n", stderr);
     return 2;
 }
