@@ -1306,7 +1306,11 @@ static void* tui_open(const sel_ui_open_args* a) {
 
 static void tui_on_event(void* state, const sel_message* evt) {
     tui* u = (tui*)state;
-    (void)evt;
+    if (evt->id == SEL_EVT_ERROR && evt->argc > 0) {
+        /* I195g: an engine error (for example "open_failed http_status=404 <url>") shows on the status line. */
+        snprintf(u->cmd.status, sizeof u->cmd.status, "Error: %s%s%s", evt->args[0].v.s, evt->argc > 1 ? " " : "",
+                 evt->argc > 1 ? evt->args[1].v.s : "");
+    }
     u->dirty = 1; /* every event can change what the snapshot shows */
 }
 

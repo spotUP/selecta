@@ -281,6 +281,7 @@ struct sel_engine {
     uint32_t render_calls;
     SEL_THREAD_FIELDS
     uint32_t error_slot;
+    int open_status; /* HTTP status of the last failed URL read in read_song, 0 when none (I195g) */
     char error_detail[8][SEL_ERROR_DETAIL_MAX];
     uint32_t log_slot;
     char log_line[8][SEL_LOG_LINE_MAX];
@@ -1203,6 +1204,7 @@ static int start_subsong(sel_engine* e, sel_slot* sl, uint32_t subsong) {
  * With `live` and an http(s) URL on the desktop only the head is read and *live gets the running download (I195b). */
 static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_live** live) {
     FILE* f;
+    e->open_status = 0;
     long len;
     uint8_t* buf;
     char cached[SEL_BROWSE_PATH_MAX];
@@ -1237,6 +1239,7 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
                 if (e->cancel_gen != e->cancel_served) {
                     e->net_cancels++;
                 }
+                e->open_status = sel_live_status(st);
                 sel_live_close(st);
                 return NULL;
             }
@@ -1254,6 +1257,7 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
     }
     if (sel_stream_is_url(path) || sel_stream_is_pipe(path)) {
         uint8_t* data = sel_stream_read(e->host, path, size); /* I195: URL or pipe, the whole stream in memory */
+        e->open_status = data == NULL && sel_stream_is_url(path) ? sel_stream_status() : 0;
         if (data == NULL && e->cancel_gen != e->cancel_served) {
             e->net_cancels++; /* I195a: the fetch was abandoned for a newer STOP or OPEN */
         }
@@ -1582,6 +1586,18 @@ static void drop_song(sel_engine* e, uint8_t* data, sel_live* live) {
     e->host->mem_free(e->host, data);
 }
 
+/* open_failed for `detail`; after a failed HTTP read the status leads the detail ("http_status=404 <url>") so the
+ * number survives the detail truncation and every consumer of the error event shows it (I195g). */
+static void report_open_failed(sel_engine* e, const char* detail) {
+    if (e->open_status >= 100 && detail != NULL) {
+        char buf[SEL_ERROR_DETAIL_MAX];
+        snprintf(buf, sizeof buf, "http_status=%d %s", e->open_status, detail);
+        sel_engine_report_error(e, "open_failed", buf);
+    } else {
+        sel_engine_report_error(e, "open_failed", detail);
+    }
+}
+
 /* Prepares the idle slot `idx` with the song at `path` (all allocation, file
  * read, RP_OPEN and RP_START happen here) and publishes it through the swap
  * ring. On failure the slot stays free and the error is reported. */
@@ -1599,7 +1615,7 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
 
     data = read_song(e, path, &size, &live);
     if (data == NULL) {
-        sel_engine_report_error(e, "open_failed", err_detail);
+        report_open_failed(e, err_detail);
         return 0;
     }
     hooks = size ? find_replayer(e, data, size, path) : NULL;
@@ -1610,13 +1626,14 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
         if (e->cancel_gen != e->cancel_served && all == NULL) {
             e->net_cancels++;
         }
+        e->open_status = all == NULL ? sel_live_status(live) : 0;
         sel_live_close(live);
         live = NULL;
         e->host->mem_free(e->host, data);
         data = all;
         size = whole;
         if (data == NULL) {
-            sel_engine_report_error(e, "open_failed", err_detail);
+            report_open_failed(e, err_detail);
             return 0;
         }
         hooks = find_replayer(e, data, size, path);
