@@ -125,3 +125,9 @@ Manual (only the user can confirm, never ticked by the agent):
 Everything listed under M1.3; artist/album/genre grouping and smart playlists (M3, need the catalogue); PLAYLIST_PUBLISH (M3); CUE (later); title-format functions such as `$if` (later, on request); Windows SMTC (M5); ARexx (M4); OS-wide global hotkeys (user decision: not built).
 
 ## Deviations
+
+- 2026-10-23, I71: PREV_ALBUM always goes to the first song of the previous album, as T31 and design doc section 3 (F30) say. The "Album navigation" decision above said it first returns to the start of the current album; T31 and the design doc win, the decision text is superseded.
+- 2026-10-23, I70: `SHUFFLE on|off` only sets the `random` option; NEXT does not yet follow a random play order. Added row I71a: random play order (a permutation of the entries in scope, built with the xorshift32 shuffle when `random` turns on or the queue changes, NEXT and PREV walk it, every entry plays once before a repeat), with its own test T30a `queue-random-order`.
+- 2026-10-23, I66: PREF_SET with an invalid title format answers `ERROR bad_format`; only a value loaded from prefs.conf falls back to the default. PREF_GET answers with a `PREFS_CHANGED key value` event.
+- 2026-10-23, I67: queue rows format from the path only (title and file = basename, format = extension) until the M3 metadata store; browse rows are not formatted.
+- 2026-10-23, I72: `sel_playlist_init` binds a caller array instead of an arena parameter; relative path resolution belongs to PLAYLIST_LOAD (I73); Hippo stealth written as 0xA2 plus key (question Q9); Hippo subsongs above 9 are dropped with `lossy subsong`.
