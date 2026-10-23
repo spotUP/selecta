@@ -253,6 +253,8 @@ struct sel_engine {
     char lyr_plain[SEL_LYRICS_TEXT_MAX];       /* unsynced lyrics (song message, or endpoint text without stamps) */
     char lyr_file[SEL_LRC_TEXT_MAX];           /* scratch: the .lrc file as read */
     uint32_t lyr_source;                       /* SEL_LYRIC_* */
+    sel_tag icy_tags[2];                       /* I196a: StreamTitle shadowing the decoder's metadata */
+    char icy_title[256];
     char lyr_for[512];                         /* path the lyrics were chosen for; a seek reopens the song, not its lyrics */
     unsigned lyr_seen;                         /* library lyrics sequence already looked at */
     uint32_t lyr_fetches;                      /* DEViLBOX lyrics requests queued (sentinel: stays 0 for lrc / message) */
@@ -1227,9 +1229,10 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
     }
     if (live != NULL && sel_stream_is_url(path)) {
         /* I195b: start the download and hand back only its head; the rest plays while it arrives. */
-        /* I196b: with OPTION record_to set, the same single request also feeds the record sink (F36). */
+        /* I196b/I196c: with OPTION record_to (a directory) set, the same single request also feeds the record sink (F36):
+         * a new file per OPEN and per ICY title change. */
         const char* rec = e->state.options[SEL_OPT_RECORD_TO];
-        sel_live* st = rec[0] != '\0' ? sel_live_open_record(e->host, path, &e->cancel_gen, e->cancel_served, rec, 0)
+        sel_live* st = rec[0] != '\0' ? sel_live_open_record_dir(e->host, path, &e->cancel_gen, e->cancel_served, rec)
                                        : sel_live_open(e->host, path, &e->cancel_gen, e->cancel_served);
         if (st != NULL) {
             uint8_t head[SEL_STREAM_HEAD];
@@ -4459,6 +4462,14 @@ static void refresh_snapshot(sel_engine* e) {
         song->subsong_count = sl->rp_info.subsong_count;
         song->position_ms = (uint32_t)((uint64_t)sl->song_frames * 1000u / e->rate);
         song->meta = sl->rp_metadata ? sl->rp_metadata(sl->rp_state) : NULL;
+        if (sl->stream != NULL && sel_live_title(sl->stream, e->icy_title, sizeof e->icy_title)) {
+            /* I196a: an ICY stream's current StreamTitle shadows the decoder's title (first match wins). */
+            e->icy_tags[0].tag = SEL_META_TITLE;
+            e->icy_tags[0].value = (uintptr_t)e->icy_title;
+            e->icy_tags[1].tag = song->meta != NULL ? SEL_TAG_MORE : SEL_TAG_END;
+            e->icy_tags[1].value = (uintptr_t)song->meta;
+            song->meta = e->icy_tags;
+        }
         song->duration_ms = (uint32_t)sel_tag_find(song->meta, SEL_META_DURATION_MS, 0);
         song->path = sl->path;
         if (sl->path != NULL && strncmp(sl->path, e->lyr_for, sizeof e->lyr_for) != 0) {

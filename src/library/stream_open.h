@@ -54,6 +54,15 @@ void sel_live_close(sel_live* s);
  * exit path reaches, so it is always a complete prefix of the stream. NULL when the file cannot be created. */
 sel_live* sel_live_open_record(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start,
                                const char* path, unsigned long limit);
+/* Directory mode (I196c): `dir` is created when missing; the first body byte opens "<dir>/<name>.<ext>" (name:
+ * the URL's file name until the stream's first title arrives, then the title), and every later ICY title change
+ * starts another file named by the title (sel_record_name, so an existing file is never overwritten). MP3 files
+ * of an ICY stream begin with a SEL_RECORD_ID3_SIZE ID3v2 block holding the title. */
+sel_live* sel_live_open_record_dir(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start,
+                                   const char* dir);
+/* ICY (I196a): the last StreamTitle the server sent, copied to dst; 0 when none yet. Metadata blocks are removed
+ * from the audio the decoder and the record file see. */
+int sel_live_title(const sel_live* s, char* dst, size_t cap);
 unsigned long sel_live_recorded(const sel_live* s); /* bytes written to the record file so far */
 int sel_live_finished(const sel_live* s);           /* download ended (all bytes in, or failed) */
 int sel_live_status(const sel_live* s);             /* HTTP status once the download ended, else 0 (I195g) */
@@ -66,6 +75,7 @@ uint32_t sel_stream_audio_bytes(void);  /* bytes received when the first audio f
 uint32_t sel_stream_audio_done(void);   /* 1 when the download had already finished at that moment */
 uint32_t sel_stream_received(void);
 uint32_t sel_stream_recorded_total(void); /* bytes in the record file of the last closed stream */
+uint32_t sel_stream_record_files(void); /* record files created (directory mode) */
 uint32_t sel_stream_record_taps(void);  /* sink calls that wrote to a record file (sentinel, T94) */     /* bytes received by the last closed stream */
 
 #endif

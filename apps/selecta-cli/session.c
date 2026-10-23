@@ -49,6 +49,7 @@ static const char* g_rp_global;
 static const char* g_rp_song;
 static sel_library* g_rp_lib;
 static const char* g_loud_mode;
+static const char* g_record_dir; /* play --record <dir>: OPTION record_to before OPEN (I196c) */
 static const char* g_loud_db;
 static int g_loud_have_gain;
 static int32_t g_loud_gain_cdb;
@@ -62,6 +63,10 @@ static void close_rp_lib(void) {
 void sel_cli_set_rp_config(const char* global, const char* song) {
     g_rp_global = global;
     g_rp_song = song;
+}
+
+void sel_cli_set_record_dir(const char* dir) {
+    g_record_dir = dir;
 }
 
 void sel_cli_set_loudness(const char* mode, const char* db, int have_gain, int32_t gain_cdb) {
@@ -135,6 +140,17 @@ sel_engine* sel_cli_start_song_sink(const char* who, const sel_host* host, const
         msg.args[0].v.s = "mix.loudness";
         msg.args[1].type = SEL_ARG_STR;
         msg.args[1].v.s = g_loud_mode;
+        sel_engine_send(e, &msg);
+    }
+    if (g_record_dir != NULL) {
+        memset(&msg, 0, sizeof msg);
+        msg.kind = SEL_MSG_CMD;
+        msg.id = SEL_CMD_OPTION;
+        msg.argc = 2;
+        msg.args[0].type = SEL_ARG_STR;
+        msg.args[0].v.s = "record_to";
+        msg.args[1].type = SEL_ARG_STR;
+        msg.args[1].v.s = g_record_dir;
         sel_engine_send(e, &msg);
     }
     memset(&msg, 0, sizeof msg);

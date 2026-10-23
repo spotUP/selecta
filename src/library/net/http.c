@@ -280,6 +280,8 @@ typedef struct resp_head {
     int status;
     long content_length;
     int chunked;
+    unsigned icy_metaint;
+    char content_type[40];
     char location[URL_CAP];
 } resp_head;
 
@@ -299,16 +301,32 @@ static int parse_head(char* h, resp_head* r) {
             *eol = '\0';
         }
         if (first) {
-            if (strncmp(line, "HTTP/1.", 7) != 0 || strlen(line) < 12) {
+            if (strncmp(line, "ICY ", 4) == 0 && strlen(line) >= 7) { /* Shoutcast v1: "ICY 200 OK" (I196a) */
+                r->status = atoi(line + 4);
+            } else if (strncmp(line, "HTTP/1.", 7) != 0 || strlen(line) < 12) {
                 return 0;
+            } else {
+                r->status = atoi(line + 9);
             }
-            r->status = atoi(line + 9);
             if (r->status < 100) {
                 return 0;
             }
             first = 0;
         } else if (header_is(line, "content-length:")) {
             r->content_length = atol(line + 15);
+        } else if (header_is(line, "icy-metaint:")) {
+            r->icy_metaint = (unsigned)strtoul(line + 12, NULL, 10);
+        } else if (header_is(line, "content-type:")) {
+            const char* v = line + 13;
+            size_t n = 0;
+            while (*v == ' ') {
+                v++;
+            }
+            while (v[n] != '\0' && v[n] != ';' && v[n] != ' ' && n + 1 < sizeof r->content_type) {
+                r->content_type[n] = (char)((v[n] >= 'A' && v[n] <= 'Z') ? v[n] + 32 : v[n]);
+                n++;
+            }
+            r->content_type[n] = '\0';
         } else if (header_is(line, "transfer-encoding:")) {
             const char* v = line + 18;
             while (*v == ' ') {
@@ -483,6 +501,8 @@ static sel_http_err exchange(const sel_http_req* req, const char* method, const 
     }
     res->status = head.status;
     res->content_length = head.chunked ? -1 : head.content_length;
+    res->icy_metaint = head.icy_metaint;
+    memcpy(res->content_type, head.content_type, sizeof res->content_type);
     if (head.status >= 300 && head.status < 400 && head.status != 304 && head.location[0] != '\0') {
         if (!resolve_location(u, head.location, redirect_to, redirect_cap)) {
             err = SEL_HTTP_E_PROTOCOL;
