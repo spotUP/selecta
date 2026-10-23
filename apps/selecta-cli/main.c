@@ -57,6 +57,7 @@ static int usage(FILE* to) {
           "  library stats              open the library DB, print db_open= schema_version= sqlite_version= (T62)\n"
           "  userdata --db <p> [--catalogue <tsv>] [--note <song> <text>] [--tag <song> <field> <value>] [--wrong <song> <note>]  notes, tag edits, row counts (T78)\n"
           "  wrong [--db <p>] [--export <file>] [<song> [<note>]]  flag a song as sounding wrong, export sounds-wrong.txt (T78)\n"
+          "  devilbox login <user> [--password-stdin] [--config-dir <dir>]  log in to DEViLBOX, store the token (password from stdin) (I173)\n"
           "  fetch <url> [--method M] [--range a-b] [--out file]  one HTTP request, print http_status= and net counters\n"
           "  share make song|playlist|view ...  build a share link, print both forms and the parse round trip (T84)\n"
           "  share parse <link>         parse a selecta:// or DEViLBOX link, print its parts (exit 2: ERROR bad_link)\n"
@@ -303,6 +304,8 @@ static void print_event(void* ctx, const sel_message* evt) {
  *   @position           SNAPSHOT position_ms=M order=O row=R pattern=P (song.pattern_pos)
  *   @user_stats         USERDATA cue_sets=N cue_gotos=N sticker_ops=N (T81, T82)
  *   @radio              RADIO radio_appends=N min_ahead=N then one `queue=<path>` line per queue row (T88)
+ *   @ratings            RATINGS rating_pushes=N rating_batches=N rating_pending=N (T79)
+ *   @ratings_read <source> <n> [<path>...]  batch-read n ratings from DEViLBOX (named paths first), store the own ones (T79)
  *   @share_stats        SHARE links_parsed=N links_made=N songs_opened=N (T84)
  *   @folder_stats       FOLDERS folders=N playlists_in_folders=N playlists=N entries=N folder_ops=N (T83)
  *   @folder_tree        the folder tree, one \"F|P <id> <name>\" line per node (T83)
@@ -405,6 +408,11 @@ static void script_directive(sel_engine* e, const char* line) {
         for (i = 0; i < st->queue_count; i++) {
             printf("queue=%s\n", st->queue_text + st->queue[i].path_offset);
         }
+    } else if (strcmp(line, "@ratings") == 0) {
+        sel_engine_stats es;
+        sel_engine_stats_get(e, &es);
+        printf("RATINGS rating_pushes=%u rating_batches=%u rating_pending=%u\n", (unsigned)es.rating_pushes,
+               (unsigned)es.rating_batches, (unsigned)es.rating_pending);
     } else if (strcmp(line, "@share_stats") == 0) {
         sel_engine_stats es;
         sel_engine_stats_get(e, &es);
@@ -512,6 +520,8 @@ static int cmd_script_file(FILE* f, int argc, char** argv) {
             g_fake_host = *sel_host_default();
             g_fake_host.query = fake_query;
             host = &g_fake_host;
+        } else if (strcmp(argv[i], "--config-dir") == 0) {
+            cfg.config_dir = argv[i + 1]; /* prefs.conf and devilbox.token live here (I173) */
         } else if (strcmp(argv[i], "--db") == 0 && lib == NULL && !has_catalogue(argc, argv)) {
             /* A library DB without a catalogue import (I184): OPEN resolves the best source through it. */
             lib = sel_library_open(host, sel_machine_probe(host), 0, argv[i + 1]);
@@ -584,6 +594,10 @@ static int cmd_script_file(FILE* f, int argc, char** argv) {
             continue;
         }
 #endif
+        if (strncmp(line, "@ratings_read ", 14) == 0) {
+            sel_cli_ratings_read(lib, line + 14);
+            continue;
+        }
         if (strncmp(line, "@mark ", 6) == 0 && lib != NULL) {
             char table[8]; /* kept, liked or history */
             const char* colon = strchr(line + 6, ':');
@@ -909,6 +923,9 @@ int main(int argc, char** argv)
     }
     if (strcmp(cmd, "open") == 0) {
         return cmd_open(argc - 2, argv + 2);
+    }
+    if (strcmp(cmd, "devilbox") == 0) {
+        return sel_cli_devilbox(argc - 2, argv + 2);
     }
     if (strcmp(cmd, "fetch") == 0) {
         return sel_cli_fetch(argc - 2, argv + 2);

@@ -190,7 +190,8 @@ int sel_json_string(const char* json, const char* name, char* out, size_t cap) {
     return *p == '"';
 }
 
-static void encode_name(const char* name, char* out, size_t cap) {
+/* Percent-encodes `name` into `out` (unreserved bytes pass). 1 when all of it fit, 0 when cut short. */
+int sel_url_encode(const char* name, char* out, size_t cap) {
     static const char hex[] = "0123456789ABCDEF";
     size_t n = 0;
 
@@ -206,6 +207,7 @@ static void encode_name(const char* name, char* out, size_t cap) {
         }
     }
     out[n] = '\0';
+    return *name == '\0';
 }
 
 /* Reads the head of `path`; returns the full length, or -1 when unreadable. */
@@ -240,7 +242,7 @@ static int lookup(const char* key, const char* path, int64_t size, char* genre, 
     char source[24];
     char text[REPLY_MAX];
 
-    encode_name(base_name(path), enc, sizeof enc);
+    (void)sel_url_encode(base_name(path), enc, sizeof enc);
     snprintf(url, sizeof url, "%s/api/genre/%s?name=%s&size=%lld", sel_devilbox_base(), key, enc, (long long)size);
     st->genre_lookups++;
     genre[0] = '\0';

@@ -11,7 +11,7 @@
 #include <string.h>
 
 #define HDR_CAP 8192
-#define URL_CAP 1536
+#define URL_CAP SEL_HTTP_URL_MAX
 
 typedef struct url_parts {
     char host[256];
@@ -541,7 +541,7 @@ sel_http_err sel_http_request(const sel_http_req* req, sel_http_sink sink, void*
     char cur[URL_CAP];
     char next[URL_CAP];
     const char* method = req->method != NULL ? req->method : "GET";
-    int with_body = strcmp(method, "PUT") == 0 || strcmp(method, "POST") == 0;
+    int with_body = strcmp(method, "PUT") == 0 || strcmp(method, "POST") == 0 || strcmp(method, "DELETE") == 0;
     unsigned total = req->total_ms != 0 ? req->total_ms : SEL_HTTP_TOTAL_MS;
     sel_http_err err;
 

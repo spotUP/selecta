@@ -15,6 +15,13 @@
 #define SEL_HTTP_FIRST_BYTE_MS 3000u
 #define SEL_HTTP_TOTAL_MS 30000u
 #define SEL_HTTP_MAX_REDIRECTS 5
+/* Longest URL (and request path) the client holds. The desktop fits a large ratings batch; the 68k stack
+ * cannot spare more (I173). Callers size a batch by what fits. */
+#if defined(__amigaos__) || defined(AMIGA)
+#define SEL_HTTP_URL_MAX 1536
+#else
+#define SEL_HTTP_URL_MAX 8192
+#endif
 
 typedef enum sel_http_err {
     SEL_HTTP_OK = 0,
@@ -37,7 +44,7 @@ typedef struct sel_http_req {
     const char* method;               /* "GET" when NULL */
     const char* url;                  /* http://host[:port]/path */
     const char* const* headers;       /* NULL-terminated "Name: value" lines, or NULL */
-    const void* body;                 /* request body for PUT/POST, or NULL */
+    const void* body;                 /* request body for PUT/POST/DELETE, or NULL */
     size_t body_len;
     int has_range;                    /* send "Range: bytes=from-to" */
     unsigned long range_from;

@@ -43,6 +43,7 @@
 #include "sources/hippo_sync.h"
 #include "sources/hvsc_sync.h"
 #include "sources/modland_net.h"
+#include "net/devilbox.h"
 #include "sources/modland_sync.h"
 #include "scheduler.h"
 #include "spsc.h"
@@ -116,7 +117,7 @@
     X(LIBRARY_SYNC)                                                                           \
     X(LIKE)                                                                                   \
     X(FLAG)                                                                                   \
-    X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
+    X(RATE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
     X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
@@ -2831,6 +2832,50 @@ static void cmd_FLAG(sel_engine* e, const sel_message* m) {
     }
 }
 
+/* Sends every rating still waiting for DEViLBOX (I173, D-M3-12): the pending pushes of the library, oldest first.
+ * A rejected push (400) is dropped; one that cannot reach the server stays and ends the pass (the next run retries). */
+static void ratings_flush(sel_engine* e) {
+    char buf[2048];
+    uint32_t rows = 0;
+    const char* p = buf;
+
+    if (e->lib == NULL || !sel_library_rating_pending(e->lib, buf, sizeof buf, &rows) || rows == 0) return;
+    while (*p != '\0') {
+        const char* key = p;
+        const char* stars = key + strlen(key) + 1;
+        int r = sel_devilbox_rating_push(key, atoi(stars));
+
+        if (r == 0) break;
+        (void)sel_library_rating_done(e->lib, key);
+        p = stars + strlen(stars) + 1;
+    }
+}
+
+/* RATE <0..5>: rates the song being played (I173). 0 removes the rating. A modland or hvsc song is also pushed to
+ * DEViLBOX (PUT, DELETE for 0); when that cannot happen now the rating stays in the library as pending and goes
+ * out on the next run. A local song is rated in the library only. */
+static void cmd_RATE(sel_engine* e, const sel_message* m) {
+    uint32_t stars = m->args[0].v.u;
+    char source[16];
+    const char* path;
+    int remote;
+
+    if (stars > 5u) {
+        sel_engine_report_error(e, "range", "RATE");
+    } else if (e->lib == NULL) {
+        sel_engine_report_error(e, "no_library", "RATE");
+    } else if (e->hist_key[0] == '\0') {
+        sel_engine_report_error(e, "no_song", "RATE");
+    } else {
+        remote = sel_devilbox_item(e->hist_key, source, sizeof source, &path);
+        if (!sel_library_rating_set(e->lib, e->hist_key, (int)stars, remote ? SEL_RATING_QUEUE : SEL_RATING_LOCAL)) {
+            sel_engine_report_error(e, "library_failed", "RATE");
+        } else if (remote) {
+            ratings_flush(e);
+        }
+    }
+}
+
 /* Position of the open song in ms, the same figure SEEK +n / -n counts from. */
 static uint32_t position_ms(const sel_engine* e) {
     const sel_slot* cur = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
@@ -3759,6 +3804,8 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     if (cfg && cfg->config_dir && strlen(cfg->config_dir) < sizeof e->config_dir) {
         strcpy(e->config_dir, cfg->config_dir);
         (void)sel_prefs_load(&e->prefs, e->config_dir);
+        sel_devilbox_set_config_dir(e->config_dir);
+        ratings_flush(e); /* ratings left over from a run without the server (I173) */
     }
     e->state.led_on = strcmp(e->prefs.value[SEL_PREF_OUTPUT_LED], "on") == 0;
     e->state.stereo_width = (uint32_t)strtoul(e->prefs.value[SEL_PREF_MIX_STEREO_WIDTH], NULL, 10);
@@ -4076,6 +4123,15 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->links_parsed = e->links_parsed;
     out->links_made = e->links_made;
     out->radio_appends = e->radio_appends;
+    out->rating_pushes = sel_devilbox_pushes();
+    out->rating_batches = sel_devilbox_batches();
+    out->rating_pending = 0;
+    if (e->lib != NULL) {
+        char none[4];
+        uint32_t rows = 0;
+
+        if (sel_library_rating_pending(e->lib, none, sizeof none, &rows)) out->rating_pending = rows;
+    }
     out->radio_min_ahead = e->radio_min_ahead;
     out->folder_view_rows = e->folder_view_rows;
     out->panel_loads = e->panel_loads;

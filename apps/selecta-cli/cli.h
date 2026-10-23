@@ -50,6 +50,13 @@ int sel_cli_library_fetch(int argc, char** argv);
 /* I178: library export-folder --db <path> --dir <dir> [--folder <id>] [--format m3u]. */
 int sel_cli_library_export_folder(int argc, char** argv);
 
+/* devilbox login <user> [--password-stdin] [--config-dir <dir>] (I173): logs in, stores <config>/devilbox.token (0600); the
+ * password comes from stdin. Prints `devilbox_login=ok|failed status=<http>`. */
+int sel_cli_devilbox(int argc, char** argv);
+/* Script directive "@ratings_read <source> <n> [<path>...]" (T79): batch-reads DEViLBOX ratings into the library. */
+struct sel_library;
+void sel_cli_ratings_read(struct sel_library* lib, const char* args);
+
 /* fetch <url> (T67, T68): one HTTP request through the library client; prints counters. */
 int sel_cli_fetch(int argc, char** argv);
 

@@ -136,6 +136,83 @@ static void user_counts(sqlite3* db, int32_t out[4]) {
     }
 }
 
+/* RATING_SET: the ratings row, plus (SEL_RATING_QUEUE) the one pending "rating" push of the key. A rating that
+ * came from the server (SEL_RATING_SERVER) never overwrites a local rating still waiting to be pushed. */
+static int rating_set(sqlite3* db, const sel_user_op* op) {
+    sqlite3_stmt* st = NULL;
+    int rc;
+
+    if (op->to == SEL_RATING_SERVER) {
+        int waiting;
+        rc = sqlite3_prepare_v2(db, "SELECT 1 FROM pending_push WHERE kind = 'rating' AND key = ?1", -1, &st, NULL);
+        if (rc != SQLITE_OK) return rc;
+        sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+        waiting = sqlite3_step(st) == SQLITE_ROW;
+        sqlite3_finalize(st);
+        if (waiting) return SQLITE_OK;
+    }
+    if (op->at <= 0) {
+        rc = user_exec(db, "DELETE FROM ratings WHERE key = ?1", op, 0);
+    } else {
+        rc = sqlite3_prepare_v2(db,
+                                "INSERT INTO ratings(key, rating, synced) VALUES(?1, ?2, ?3) "
+                                "ON CONFLICT(key) DO UPDATE SET rating = excluded.rating, synced = excluded.synced",
+                                -1, &st, NULL);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+            sqlite3_bind_int64(st, 2, op->at);
+            sqlite3_bind_int(st, 3, op->to == SEL_RATING_SERVER ? 1 : 0);
+            rc = sqlite3_step(st) == SQLITE_DONE ? SQLITE_OK : SQLITE_ERROR;
+            sqlite3_finalize(st);
+        }
+    }
+    if (rc == SQLITE_OK && op->to == SEL_RATING_QUEUE) {
+        rc = user_exec(db, "DELETE FROM pending_push WHERE kind = 'rating' AND key = ?1", op, 0);
+        st = NULL;
+        if (rc == SQLITE_OK) {
+            rc = sqlite3_prepare_v2(db,
+                                    "INSERT INTO pending_push(kind, key, payload, created) VALUES('rating', ?1, ?2,"
+                                    " CAST(strftime('%s', 'now') AS INTEGER))",
+                                    -1, &st, NULL);
+        }
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+            sqlite3_bind_int64(st, 2, op->at < 0 ? 0 : op->at);
+            rc = sqlite3_step(st) == SQLITE_DONE ? SQLITE_OK : SQLITE_ERROR;
+            sqlite3_finalize(st);
+        }
+    }
+    return rc;
+}
+
+/* RATING_PENDING: "key\0stars\0" pairs in push order that fit, then "\0"; rows = all pending ratings. */
+static int rating_pending(sqlite3* db, const sel_user_op* op, int64_t* rows) {
+    sqlite3_stmt* st = NULL;
+    uint32_t used = 0;
+    int rc;
+
+    op->out[0] = '\0';
+    *rows = 0;
+    rc = sqlite3_prepare_v2(db, "SELECT key, COALESCE(payload, '0') FROM pending_push WHERE kind = 'rating' ORDER BY id",
+                            -1, &st, NULL);
+    if (rc != SQLITE_OK) return rc;
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        const char* k = (const char*)sqlite3_column_text(st, 0);
+        const char* v = (const char*)sqlite3_column_text(st, 1);
+        size_t lk = strlen(k) + 1u, lv = strlen(v) + 1u;
+
+        (*rows)++;
+        if (used + lk + lv + 1u <= op->out_cap) {
+            memcpy(op->out + used, k, lk);
+            memcpy(op->out + used + lk, v, lv);
+            used += (uint32_t)(lk + lv);
+            op->out[used] = '\0';
+        }
+    }
+    sqlite3_finalize(st);
+    return SQLITE_OK;
+}
+
 void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* reply) {
     int rc = SQLITE_MISUSE;
     int found = 0;
@@ -151,6 +228,8 @@ void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* repl
         user_counts(lib->db, counts);
         have_counts = 1;
         rc = SQLITE_OK;
+    } else if (op->op == SEL_USER_RATING_PENDING && op->out != NULL && op->out_cap > 0) {
+        rc = rating_pending(lib->db, op, &rows);
     } else if (op->op == SEL_USER_FLAG_EXPORT && op->name != NULL) {
         rows = 0;
         rc = flags_export(lib->db, op->name, &rows);
@@ -307,6 +386,22 @@ void sel_library_user(sel_library* lib, const sel_user_op* op, sel_message* repl
                 sqlite3_finalize(st);
             }
         }
+    } else if (op->op == SEL_USER_RATING_SET) {
+        rc = rating_set(lib->db, op);
+    } else if (op->op == SEL_USER_RATING_GET) {
+        sqlite3_stmt* st = NULL;
+        rc = sqlite3_prepare_v2(lib->db, "SELECT rating FROM ratings WHERE key = ?1", -1, &st, NULL);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+            if (sqlite3_step(st) == SQLITE_ROW) {
+                rows = sqlite3_column_int64(st, 0);
+                found = 1;
+            }
+            sqlite3_finalize(st);
+        }
+    } else if (op->op == SEL_USER_RATING_DONE) {
+        rc = user_exec(lib->db, "DELETE FROM pending_push WHERE kind = 'rating' AND key = ?1", op, 0);
+        if (rc == SQLITE_OK) rc = user_exec(lib->db, "UPDATE ratings SET synced = 1 WHERE key = ?1", op, 0);
     } else if (op->op == SEL_USER_LOUDNESS_GET) {
         sqlite3_stmt* st = NULL;
         rc = sqlite3_prepare_v2(lib->db, "SELECT loudness_gain FROM songs WHERE key = ?1", -1, &st, NULL);

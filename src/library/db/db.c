@@ -353,6 +353,44 @@ int sel_library_loudness_get(sel_library* lib, const char* key, int32_t* gain_cd
     return 1;
 }
 
+int sel_library_rating_set(sel_library* lib, const char* key, int stars, int origin) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_RATING_SET;
+    op.key = key;
+    op.at = stars;
+    op.to = origin;
+    return user_call(lib, &op) > 0;
+}
+
+int sel_library_rating_get(sel_library* lib, const char* key, int* stars) {
+    sel_user_op op;
+    uint32_t rows = 0;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_RATING_GET;
+    op.key = key;
+    if (user_call_rows(lib, &op, &rows) != 2) return 0;
+    if (stars != NULL) *stars = (int)rows;
+    return 1;
+}
+
+int sel_library_rating_pending(sel_library* lib, char* out, uint32_t cap, uint32_t* rows) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_RATING_PENDING;
+    op.out = out;
+    op.out_cap = cap;
+    return user_call_rows(lib, &op, rows) > 0;
+}
+
+int sel_library_rating_done(sel_library* lib, const char* key) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_RATING_DONE;
+    op.key = key;
+    return user_call(lib, &op) > 0;
+}
+
 int sel_library_tag_edit(sel_library* lib, const char* key, const char* field, const char* value) {
     sel_user_op op;
     memset(&op, 0, sizeof op);
