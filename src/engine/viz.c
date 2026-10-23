@@ -6,6 +6,8 @@
 
 #include <string.h>
 
+#include "viz_table.h"
+
 /* The triple buffer swaps one word. On the 68k (single core, no compare and
  * swap before the 68020) a plain volatile store is enough, as in spsc.c; the
  * audio and pump threads there never run on two cores. Elsewhere the swap is
@@ -125,11 +127,77 @@ int32_t sel_viz_correlation(const int16_t* stereo, uint32_t frames) {
     return (int32_t)c;
 }
 
+#define FFT_N 256u
+
+/* FFT bin nearest to f Hz at the given rate. */
+static uint32_t bin_of(uint32_t hz, uint32_t rate) {
+    return (uint32_t)(((uint64_t)hz * FFT_N + rate / 2u) / rate);
+}
+
+/* 256-point radix-2 decimation-in-time FFT in Q15 with a right shift per
+ * stage, so the result is the true transform divided by 256 and cannot
+ * overflow 32 bits. */
+static void fft256(int32_t* re, int32_t* im) {
+    uint32_t i, j, len, k, step;
+    for (i = 1, j = 0; i < FFT_N; i++) {
+        uint32_t bit = FFT_N >> 1;
+        for (; j & bit; bit >>= 1) j ^= bit;
+        j ^= bit;
+        if (i < j) {
+            int32_t t = re[i];
+            re[i] = re[j];
+            re[j] = t;
+            t = im[i];
+            im[i] = im[j];
+            im[j] = t;
+        }
+    }
+    for (len = 2; len <= FFT_N; len <<= 1) {
+        step = FFT_N / len;
+        for (i = 0; i < FFT_N; i += len) {
+            for (k = 0; k < len / 2u; k++) {
+                int32_t wr = sel_viz_cos[k * step], wi = sel_viz_sin[k * step];
+                uint32_t a = i + k, b = i + k + len / 2u;
+                int32_t tr = (int32_t)(((int64_t)re[b] * wr - (int64_t)im[b] * wi) >> 15);
+                int32_t ti = (int32_t)(((int64_t)re[b] * wi + (int64_t)im[b] * wr) >> 15);
+                int32_t ur = re[a], ui = im[a];
+                re[a] = (ur + tr) >> 1;
+                im[a] = (ui + ti) >> 1;
+                re[b] = (ur - tr) >> 1;
+                im[b] = (ui - ti) >> 1;
+            }
+        }
+    }
+}
+
 void sel_viz_spectrum(const int16_t* stereo, uint32_t frames, uint32_t rate, int16_t band[SEL_VIZ_BANDS]) {
-    (void)stereo;
-    (void)frames;
-    (void)rate;
+    int32_t re[FFT_N], im[FFT_N];
+    int16_t mag[FFT_N / 2u];
+    uint32_t i, b;
     memset(band, 0, SEL_VIZ_BANDS * sizeof band[0]);
+    if (frames < FFT_N || rate == 0) return;
+    stereo += (size_t)(frames - FFT_N) * 2u; /* the newest 256 frames */
+    for (i = 0; i < FFT_N; i++) {
+        int32_t mono = ((int32_t)stereo[i * 2u] + stereo[i * 2u + 1u]) >> 1;
+        re[i] = (mono * sel_viz_hann[i]) >> 15;
+        im[i] = 0;
+    }
+    fft256(re, im);
+    for (i = 0; i < FFT_N / 2u; i++) {
+        uint64_t m = isqrt64((uint64_t)((int64_t)re[i] * re[i] + (int64_t)im[i] * im[i])) * 4u;
+        mag[i] = (int16_t)(m > 32767u ? 32767u : m);
+    }
+    for (b = 0; b < SEL_VIZ_BANDS; b++) {
+        uint32_t lo = bin_of(sel_viz_edge_hz[b], rate), hi = bin_of(sel_viz_edge_hz[b + 1u], rate);
+        int16_t peak = 0;
+        if (lo < 1) lo = 1;
+        if (hi < lo + 1u) hi = lo + 1u;
+        if (hi > FFT_N / 2u) hi = FFT_N / 2u;
+        for (i = lo; i < hi; i++) {
+            if (mag[i] > peak) peak = mag[i];
+        }
+        band[b] = peak;
+    }
 }
 
 void sel_viz_analyse(sel_viz_tap* t, int with_spectrum) {

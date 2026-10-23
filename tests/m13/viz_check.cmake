@@ -2,7 +2,8 @@
 # per-block taps (peaks, VU, bands, scope hashes, correlation) with viz.expected.
 # Variables: CLI MOD OUT DUMP EXPECTED
 get_filename_component(out_dir "${OUT}" DIRECTORY)
-file(MAKE_DIRECTORY "${out_dir}")
+get_filename_component(dump_dir "${DUMP}" DIRECTORY)
+file(MAKE_DIRECTORY "${out_dir}" "${dump_dir}")
 file(REMOVE "${OUT}" "${DUMP}")
 execute_process(
   COMMAND "${CLI}" render "${MOD}" --output "${OUT}" --seconds 2 --viz-dump "${DUMP}"

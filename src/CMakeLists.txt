@@ -37,6 +37,15 @@ add_custom_command(
   COMMAND "${SEL_GEN_DIR}/gen_sinc_table" > "${SEL_GEN_DIR}/sinc_table.h"
   DEPENDS "${PROJECT_SOURCE_DIR}/tools/gen_sinc_table.c"
   VERBATIM)
+add_custom_command(
+  OUTPUT "${SEL_GEN_DIR}/viz_table.h"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${SEL_GEN_DIR}"
+  COMMAND "${SEL_HOST_CC}" -O1 -o "${SEL_GEN_DIR}/gen_viz_table" "${PROJECT_SOURCE_DIR}/tools/gen_viz_table.c" -lm
+  COMMAND "${SEL_GEN_DIR}/gen_viz_table" > "${SEL_GEN_DIR}/viz_table.h"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/gen_viz_table.c"
+  VERBATIM)
+target_sources(selecta_core PRIVATE "${SEL_GEN_DIR}/viz_table.h")
+target_include_directories(selecta_core PRIVATE "${SEL_GEN_DIR}")
 add_library(selecta_mixer STATIC mixer/mixer.c mixer/resample.c "${SEL_GEN_DIR}/sinc_table.h")
 target_include_directories(selecta_mixer PUBLIC ${PROJECT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/mixer)
 target_include_directories(selecta_mixer PRIVATE "${SEL_GEN_DIR}")
