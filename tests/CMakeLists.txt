@@ -512,3 +512,16 @@ if(NOT SEL_AMIGA)
   set_tests_properties(pattern-cells PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/songs")
 endif()
+
+# T47 (rows I99, I100): crossfeed DSP. Unit half through the plugin ABI, render
+# half through selecta-cli --dsp.
+if(NOT SEL_AMIGA)
+  add_executable(crossfeed_test EXCLUDE_FROM_ALL dsp/crossfeed_test.c)
+  target_link_libraries(crossfeed_test PRIVATE selecta_core sel_plugin_crossfeed)
+  add_test(NAME crossfeed-unit COMMAND crossfeed_test)
+  add_test(NAME crossfeed-render
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DMOD=${SEL_TESTMOD}"
+      "-DOUT=${SEL_RENDER_OUT}/crossfeed.wav" "-DPLAIN=${SEL_RENDER_OUT}/crossfeed-plain.wav"
+      "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/golden/dsp/crossfeed.sha256"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/dsp/render_check.cmake")
+endif()
