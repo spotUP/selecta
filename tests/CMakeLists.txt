@@ -241,6 +241,12 @@ if(NOT SEL_AMIGA)
   add_executable(grid_test grid/grid_test.c)
   target_link_libraries(grid_test PRIVATE selecta_textui)
   add_test(NAME grid-unit COMMAND grid_test)
+  # I60 fix: a keys-file `wait` ends under a clockless and a device-clocked
+  # shell (it hung when the shell passed timeout 0).
+  add_executable(text_ui_test ui/text_ui_test.c)
+  target_link_libraries(text_ui_test PRIVATE selecta_core selecta_registry)
+  add_test(NAME text-ui-keys-wait COMMAND text_ui_test "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(text-ui-keys-wait PROPERTIES TIMEOUT 30)
 endif()
 
 # T19: the M1.1 reachability test. The real shell and text UI, driven by a key
