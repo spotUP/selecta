@@ -178,3 +178,12 @@ Visualizer plugins on bitmap surfaces (M4), GPU visualizers (M5), chip register 
 - The `error not_implemented SLEEP_TIMER` seen during I102 came from a stale build; SLEEP_TIMER and ALARM were already in `SEL_CMD_IMPLEMENTED`. The T8 ratchet therefore stays at 21 instead of dropping.
 - Viz frames, scope reads and pattern rows are counted as three new UI stat tags in `include/selecta/tags.def` (same mechanism as the T28 sentinels). Mutes, fades, crossfeed state and sleep armed are engine stats.
 - `fades` counts end fades started (loop count or max length); T39 still does not assert it.
+
+### Phase 7 (I104a-d, validation gaps) deviations
+
+- Nuade sample slot numbers are catalogue positions (1, 2, 4, 3), not module sample numbers (Q27); `sample-export-nuade` pins this.
+- Note dots map voice pitch from the Paula sample rate: index 0 = 2072 Hz, tracker C-2 (8287 Hz) = index 24.
+- `V` now cycles six views (off, Levels, Scope, Spectrum, Note dots, Phase). No ASCII fallback for dots or phase, matching the scope and spectrum panels.
+- The phase view `unsupported_path` branch has no test (null output is always mixed). The spectrum panel still has no golden (Q30).
+- A new `engine_state` exit line in `apps/selecta/main.c` backs the pitch, tempo and solo key tests.
+- Report: `thoughts/shared/plans/m13-phase7-report.md`.
