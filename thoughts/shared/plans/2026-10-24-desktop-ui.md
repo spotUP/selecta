@@ -312,6 +312,7 @@ All eight recommended answers were chosen. They are decisions now; do not reopen
 - D-DUI-7 (Q7): artwork thumbnails stored in the library database as `kind = thumb<size>` rows.
 - D-DUI-8 (Q8): Lucide icons, rasterised at build time into an alpha atlas.
 - D-DUI-9 (Johan 2026-10-24): two token layers, base values plus role tokens that reference them (section 2.2), after the Spotify Encore model.
+- D-DUI-10 (Johan 2026-10-24): one shared C renderer (`src/gui/`) for desktop and Amiga; no React or Chromium shell and no separate web UI to port. Rejected because porting a web UI to C means rewriting it, two codebases drift apart, and a Chromium shell adds about 150-200 MB per platform. The Spotify look comes from tokens, layout and the I230 design gaps.
 
 ## 8. Coverage
 
