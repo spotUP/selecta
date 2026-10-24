@@ -20,10 +20,10 @@ sel_cli_test(protocol-reflection-events   "events"   "-DLINES=${SEL_COUNT_EVT}")
 sel_cli_test(protocol-reflection-tagtypes "tagtypes" "-DLINES=${SEL_COUNT_META}")
 
 # T5: the registry walked every descriptor and found only known tags.
-# null, wav, nuade, openmpt, the minimp3 and stb_vorbis stream decoders, the crossfeed DSP, the text UI, the desktop UI (host only), the nowplaying-test and lastfm integrations and the voices-test, paula-shadow and paula14-shadow
-# output (both host only), plus coreaudio and the
+# null, wav, nuade, openmpt, the minimp3 and stb_vorbis stream decoders, the crossfeed DSP, the text UI, the desktop UI (host only), the nowplaying-test and lastfm integrations and the voices-test, paula-shadow, paula14-shadow and ahi-shadow
+# outputs, plus coreaudio and the
 # macOS Now Playing plugin on macOS, or MPRIS on Linux when libsystemd was found; the negative tree adds one bad plugin.
-set(SEL_EXPECT_PLUGINS 13)
+set(SEL_EXPECT_PLUGINS 14)
 if(NOT SEL_AMIGA)
   math(EXPR SEL_EXPECT_PLUGINS "${SEL_EXPECT_PLUGINS} + 1") # the desktop UI (M3d, headless mem backend needs no SDL)
 endif()
