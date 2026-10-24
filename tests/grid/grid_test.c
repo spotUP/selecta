@@ -7,6 +7,7 @@
 #include "vectors.h"
 
 #include "grid.h"
+#include "sizeprobe.h"
 #include "keys.h"
 #include "term.h"
 #include "theme.h"
@@ -127,6 +128,90 @@ static void test_console_first_frame(void) {
     n = flush_str(&g, buf, sizeof buf - 1);
     CHECK(strcmp(buf, "\x1b[2;2HY") == 0, "console diff frame wrong: %s", buf);
     txt_grid_free(&g);
+}
+
+/* I218g: the AmigaOS console.device understands only SGR 30-37 / 40-47 for colour. A console grid maps
+ * each xterm-256color index to the nearest of the eight pens; the xterm grid keeps 38;5;N / 48;5;N. */
+static void test_console_sgr(void) {
+    txt_grid g;
+    char buf[1024];
+    txt_style header = {231, 24, TXT_ATTR_BOLD}; /* white on dark teal (nearest pen is cyan) */
+    txt_style red = {203, TXT_COLOR_DEFAULT, 0};
+    CHECK(txt_grid_init(&g, 4, 2) == 0, "init");
+    g.console = 1;
+    txt_grid_put(&g, 0, 0, 'A', header);
+    txt_grid_put(&g, 1, 0, 'B', red);
+    flush_str(&g, buf, sizeof buf - 1);
+    CHECK(strstr(buf, "38;5") == NULL && strstr(buf, "48;5") == NULL, "console frame has 256-colour SGR: %s", buf);
+    CHECK(strstr(buf, "\x1b[0;1;37;46mA") != NULL, "console header SGR wrong: %s", buf);
+    CHECK(strstr(buf, "\x1b[0;31mB") != NULL, "console red SGR wrong: %s", buf);
+    txt_grid_free(&g);
+    CHECK(txt_grid_init(&g, 4, 2) == 0, "init xterm");
+    txt_grid_put(&g, 0, 0, 'A', header);
+    flush_str(&g, buf, sizeof buf - 1);
+    CHECK(strstr(buf, "\x1b[0;1;38;5;231;48;5;24mA") != NULL, "xterm SGR changed: %s", buf);
+    txt_grid_free(&g);
+}
+
+/* I218f: a fake console. native=1 answers the Window Status Request; xt=1 answers CSI 18 t. */
+typedef struct fake_con {
+    int native, xt;
+    char wrote[256];
+    size_t wlen;
+    const char* reply;
+    int rows;
+} fake_con;
+static void fc_write(void* ctx, const char* s, size_t n) {
+    fake_con* f = (fake_con*)ctx;
+    static char r[48];
+    memcpy(f->wrote + f->wlen, s, n);
+    f->wlen += n;
+    f->wrote[f->wlen] = 0;
+    f->reply = NULL;
+    if (n == 5 && memcmp(s, "\x1b[0 q", 5) == 0 && f->native) {
+        sprintf(r, "\x9b" "1;1;%d;100 r", f->rows);
+        f->reply = r;
+    } else if (n == 5 && memcmp(s, "\x1b[18t", 5) == 0 && f->xt) {
+        sprintf(r, "\x1b[8;%d;100t", f->rows);
+        f->reply = r;
+    }
+}
+static long fc_read(void* ctx, uint8_t* buf, size_t cap) {
+    fake_con* f = (fake_con*)ctx;
+    size_t n;
+    if (f->reply == NULL) return 0;
+    n = strlen(f->reply);
+    if (n > cap) n = cap;
+    memcpy(buf, f->reply, n);
+    f->reply = NULL;
+    return (long)n;
+}
+static void test_size_probe(void) {
+    fake_con f;
+    txt_probe_io io;
+    txt_probe_result r;
+    io.ctx = &f;
+    io.write = fc_write;
+    io.read = fc_read;
+    memset(&f, 0, sizeof f);
+    f.native = 1;
+    f.xt = 1;
+    f.rows = 40;
+    r = txt_size_probe(&io);
+    CHECK(r.native == 1 && r.rows == 40 && r.cols == 100, "native answer not used: %u %u", r.rows, r.cols);
+    CHECK(strstr(f.wrote, "\x1b[18t") == NULL, "CSI 18 t sent to a console.device that answered: %s", f.wrote);
+    CHECK(strstr(f.wrote, "\x1b[t") != NULL, "page length not handed back to the console");
+    memset(&f, 0, sizeof f);
+    f.xt = 1;
+    f.rows = 30;
+    r = txt_size_probe(&io);
+    CHECK(r.native == 0 && r.rows == 30 && r.cols == 100, "xterm fallback answer not used: %u %u", r.rows, r.cols);
+    CHECK(strstr(f.wrote, "\x1b[18t") != NULL, "CSI 18 t not sent when no native answer came");
+    CHECK(strncmp(f.wrote, "\x1b[0 q", 5) == 0, "native request must come first: %s", f.wrote);
+    CHECK(strstr(f.wrote, "\x1b[t") == NULL, "CSI t sent to a terminal without a console.device");
+    memset(&f, 0, sizeof f);
+    r = txt_size_probe(&io);
+    CHECK(r.rows == 0 && r.cols == 0 && r.native == 0, "silent terminal gives a size");
 }
 
 static void test_full(void) {
@@ -344,6 +429,8 @@ int main(int argc, char** argv) {
     if (want(argc, argv, "full")) {
         test_full();
         test_console_first_frame();
+        test_console_sgr();
+        test_size_probe();
     }
     if (want(argc, argv, "keys")) test_keys();
     if (want(argc, argv, "theme")) test_theme();
