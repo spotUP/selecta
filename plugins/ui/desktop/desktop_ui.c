@@ -112,7 +112,9 @@ typedef struct desk {
     int32_t scroll_q16;      /* songs list scroll offset in logical pixels, Q16: precise wheel deltas are fractions of a pixel */
     int32_t hist[16];        /* view history (DUI-P3-4): the open_tile of each visited view, 0 = home */
     uint32_t hist_n, hist_pos;
-    sel_tag stats[46];
+    uint32_t transport_hits; /* transport button clicks sent to the engine (DUI-P4-1) */
+    uint32_t frame_parts;    /* frame parts drawn: sidebar entries, Now Playing panel and transport buttons */
+    sel_tag stats[52];
 } desk;
 
 static int desk_resize(desk* d, int32_t w, int32_t h);
@@ -233,6 +235,9 @@ static void draw_bar(desk* d, sel_gui_rect box, uint32_t q16) {
  * clock, the remaining time and the progress bar and nothing else. */
 static void queue_title(const sel_state* st, uint32_t i, char* out, size_t cap);
 static void draw_home(desk* d);
+static void draw_transport(desk* d);
+static void draw_sidebar(desk* d);
+static void draw_nowplaying(desk* d);
 
 static void draw_widget(desk* d, uint32_t bit) {
     const sel_uim_frame* f = &d->uim.frame;
@@ -251,21 +256,25 @@ static void draw_widget(desk* d, uint32_t bit) {
         draw_label(d, rect_of(card.x + sp, card.y + sp, card.w - 2 * sp, lpx(d, 16)), f->title);
         draw_label(d, rect_of(card.x + sp, card.y + sp + lpx(d, 20), card.w - 2 * sp, lpx(d, 16)), f->artist);
         sel_gui_dirty_add(d->canvas, card);
+        draw_nowplaying(d);
     } else if (bit == SEL_UIM_DIRTY_QUEUE) {
+        draw_sidebar(d);
         sprintf(buf, "%u", (unsigned)f->queue_count);
         draw_label(d, rect_of(sb.x + sp, sb.y + sp, lpx(d, 120), lpx(d, 16)), buf);
         if (d->home) {
             draw_home(d);
         }
     } else if (bit == SEL_UIM_DIRTY_TRANSPORT) {
-        sel_gui_rect b = rect_of(pl.x + pl.w / 2 - lpx(d, 16), y0 + lpx(d, 24), lpx(d, 32), lpx(d, 32));
-        sel_gui_round_rect(d->canvas, b, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]),
-                           ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
-        sel_gui_dirty_add(d->canvas, b);
+        draw_transport(d);
     } else if (bit == SEL_UIM_DIRTY_PROGRESS) {
-        draw_label(d, rect_of(pl.x + sp, y0, lpx(d, 56), lpx(d, 16)), f->clock);
-        draw_label(d, rect_of(pl.x + pl.w - sp - lpx(d, 56), y0, lpx(d, 56), lpx(d, 16)), f->remaining);
-        draw_bar(d, rect_of(pl.x + 2 * sp + lpx(d, 56), y0 + lpx(d, 6), lpx(d, 480), lpx(d, 4)), f->progress_q16);
+        int32_t lw = lpx(d, 56);
+        draw_label(d, rect_of(pl.x + sp, y0, lw, lpx(d, 16)), f->clock);
+        int32_t bw = pl.w - 4 * sp - 2 * lw;
+        if (bw > lpx(d, 480)) {
+            bw = lpx(d, 480);
+        }
+        draw_bar(d, rect_of(pl.x + 2 * sp + lw, y0 + lpx(d, 6), bw, lpx(d, 4)), f->progress_q16);
+        draw_label(d, rect_of(pl.x + 3 * sp + lw + bw, y0, lw, lpx(d, 16)), f->length);
     } else if (bit == SEL_UIM_DIRTY_VOLUME) {
         int32_t v = f->volume < 0 ? 0 : f->volume > 100 ? 100 : f->volume;
         draw_bar(d, rect_of(pl.x + pl.w - sp - lpx(d, 96), y0 + lpx(d, 36), lpx(d, 96), lpx(d, 8)), (uint32_t)v * 65536u / 100u);
@@ -849,12 +858,16 @@ static int desk_should_draw(const desk* d, int animated) {
 /* ---- Tooltips (DUI-P3-6): a pointer resting 600 ms on a transport button shows the action's tooltip, with its key in
  * brackets; moving off or clicking hides it. The buttons are the actions named here, in this order, centred in the
  * player region ("play" sits where the placeholder play box is drawn). ---- */
-enum { TIP_DELAY_MS = 600, TIP_BTN = 32, TIP_GAP = 8, TIP_H = 24 };
-static const char* const g_transport[] = {"prev", "play", "next"};
-#define TRANSPORT_COUNT ((uint32_t)(sizeof g_transport / sizeof g_transport[0]))
+enum { TIP_DELAY_MS = 600, TIP_BTN = 32, TIP_H = 24 };
+/* The transport row, left to right (DUI-P4-1): previous subsong, shuffle, previous, play or pause, next, repeat, next
+ * subsong. The play slot sits in the middle where the placeholder box was drawn. */
+enum { SLOT_SUB_PREV, SLOT_SHUFFLE, SLOT_PREV, SLOT_PLAY, SLOT_NEXT, SLOT_REPEAT, SLOT_SUB_NEXT, TRANSPORT_COUNT };
 
 static const sel_uim_action* desk_action_by_id(const char* id) {
     uint32_t i, n = sel_uim_action_count();
+    if (id == NULL) {
+        return NULL;
+    }
     for (i = 0; i < n; i++) {
         const sel_uim_action* a = sel_uim_action_at(i);
         if (strcmp(a->id, id) == 0) {
@@ -864,12 +877,36 @@ static const sel_uim_action* desk_action_by_id(const char* id) {
     return NULL;
 }
 
-/* Canvas rectangle of transport button i. */
+/* The action id of transport slot i from the engine state, NULL when the slot is not shown (the subsong buttons need
+ * a song with more than one subsong). Shuffle and repeat name the action a click fires: the next state. */
+static const char* desk_slot_action(const desk* d, uint32_t i) {
+    const sel_state* st = sel_engine_state(d->engine);
+    int repeat_all = strcmp(st->options[SEL_OPT_REPEAT], "all") == 0;
+    int repeat_one = strcmp(st->options[SEL_OPT_REPEAT], "one") == 0;
+    switch (i) {
+    case SLOT_SUB_PREV:
+        return st->song.subsong_count > 1u ? "subsong_prev" : NULL;
+    case SLOT_SHUFFLE:
+        return strcmp(st->options[SEL_OPT_RANDOM], "on") == 0 ? "random_off" : "random_on";
+    case SLOT_PREV:
+        return "prev";
+    case SLOT_PLAY:
+        return st->play == SEL_PLAYING ? "pause" : "play";
+    case SLOT_NEXT:
+        return "next";
+    case SLOT_REPEAT:
+        return repeat_all ? "repeat_one" : repeat_one ? "repeat_off" : "repeat_all";
+    default:
+        return st->song.subsong_count > 1u ? "subsong_next" : NULL;
+    }
+}
+
+/* Canvas rectangle of transport button i: the row is centred in the player region, the gap is the spacing token. */
 static sel_gui_rect desk_button_rect(const desk* d, uint32_t i) {
     sel_gui_rect pl = region_rect(d, "player");
     int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     int32_t cx = pl.x + pl.w / 2;
-    return rect_of(cx - lpx(d, TIP_BTN / 2) + ((int32_t)i - 1) * lpx(d, TIP_BTN + TIP_GAP), pl.y + sp + lpx(d, 24),
+    return rect_of(cx - lpx(d, TIP_BTN / 2) + ((int32_t)i - SLOT_PLAY) * (lpx(d, TIP_BTN) + sp), pl.y + sp + lpx(d, 24),
                    lpx(d, TIP_BTN), lpx(d, TIP_BTN));
 }
 
@@ -877,11 +914,137 @@ static sel_gui_rect desk_button_rect(const desk* d, uint32_t i) {
 static int32_t desk_button_at(const desk* d, int32_t x, int32_t y) {
     uint32_t i;
     for (i = 0; i < TRANSPORT_COUNT; i++) {
-        if (in_rect(desk_button_rect(d, i), x, y)) {
+        if (desk_slot_action(d, i) != NULL && in_rect(desk_button_rect(d, i), x, y)) {
             return (int32_t)i + 1;
         }
     }
     return 0;
+}
+
+/* The sidebar entries (DUI-P4-1): an icon and a label per library door, one row each under the queue count. The
+ * icon-only breakpoint (a narrow sidebar) draws the icons alone. */
+static void draw_sidebar(desk* d) {
+    static const struct {
+        uint32_t icon;
+        const char* label;
+    } entries[] = {{SEL_GUI_ICON_HOUSE, "Home"},
+                   {SEL_GUI_ICON_SEARCH, "Search"},
+                   {SEL_GUI_ICON_LIST, "Library"},
+                   {SEL_GUI_ICON_HEART, "Favourites"}};
+    sel_gui_rect sb = region_rect(d, "sidebar");
+    int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    int32_t row = lpx(d, 32), isz = lpx(d, 20), y = sb.y + sp + lpx(d, 24);
+    uint32_t i;
+    for (i = 0; i < sizeof entries / sizeof entries[0]; i++, y += row) {
+        sel_gui_rect r = rect_of(sb.x + sp, y, sb.w - 2 * sp, row);
+        sel_gui_rect ic = rect_of(r.x + sp, y + (row - isz) / 2, isz, isz);
+        sel_gui_fill_rect(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+        sel_gui_icon_draw(d->canvas, &d->icons, entries[i].icon, ic, isz, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+        if (sb.w > lpx(d, 120)) {
+            draw_text(d, rect_of(ic.x + isz + sp, y, r.x + r.w - (ic.x + isz + sp), row), entries[i].label, 1, 13,
+                      ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        }
+        sel_gui_dirty_add(d->canvas, r);
+        d->frame_parts++;
+    }
+}
+
+/* The Now Playing panel (DUI-P4-1) in the detail region: title, artist and format of the playing song. */
+static void draw_nowplaying(desk* d) {
+    const sel_uim_frame* f = &d->uim.frame;
+    sel_gui_rect dt = region_rect(d, "detail");
+    int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    sel_gui_rect card;
+    if (dt.w <= 0 || dt.h <= 0) {
+        return;
+    }
+    card = rect_of(dt.x + sp, dt.y + sp, dt.w - 2 * sp, lpx(d, 96));
+    sel_gui_round_rect(d->canvas, card, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]),
+                       ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+    draw_text(d, rect_of(card.x + sp, card.y + sp, card.w - 2 * sp, lpx(d, 20)), "Now Playing", 1, 11,
+              ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+    draw_text(d, rect_of(card.x + sp, card.y + sp + lpx(d, 24), card.w - 2 * sp, lpx(d, 20)), f->title, 1, 16,
+              ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    draw_text(d, rect_of(card.x + sp, card.y + sp + lpx(d, 46), card.w - 2 * sp, lpx(d, 16)), f->artist, 0, 13,
+              ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+    draw_text(d, rect_of(card.x + sp, card.y + sp + lpx(d, 64), card.w - 2 * sp, lpx(d, 14)), f->format, 0, 11,
+              ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+    sel_gui_dirty_add(d->canvas, card);
+    d->frame_parts++;
+}
+
+/* The transport row (DUI-P4-1): one round button per slot with its icon. Play is the accent button; shuffle and repeat
+ * take the accent colour while on, previous and next fade when there is nothing to go to, the repeat button carries a
+ * "1" in the repeat-one mode, and the subsong buttons come with an "n/m" label. */
+static void draw_transport(desk* d) {
+    const sel_uim_frame* f = &d->uim.frame;
+    int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    sel_gui_rect first = desk_button_rect(d, SLOT_SUB_PREV);
+    sel_gui_rect label = rect_of(first.x - sp - lpx(d, 56), first.y, lpx(d, 56), first.h);
+    uint32_t i;
+    sel_gui_fill_rect(d->canvas, label, ARGB(d->theme.token[SEL_GUI_TOKEN_BACKGROUND]));
+    if (f->subsong_count > 1u) {
+        char buf[24];
+        snprintf(buf, sizeof buf, "%u/%u", (unsigned)f->subsong, (unsigned)f->subsong_count);
+        draw_text(d, label, buf, 0, 11, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+    }
+    sel_gui_dirty_add(d->canvas, label);
+    for (i = 0; i < TRANSPORT_COUNT; i++) {
+        sel_gui_rect b = desk_button_rect(d, i);
+        uint32_t icon = SEL_GUI_ICON_PLAY;
+        uint32_t fill = d->theme.token[SEL_GUI_TOKEN_SURFACE];
+        uint32_t ink = d->theme.token[SEL_GUI_TOKEN_TEXT];
+        uint32_t off = d->theme.token[SEL_GUI_TOKEN_TEXT_DISABLED];
+        uint32_t on = d->theme.token[SEL_GUI_TOKEN_ACCENT];
+        uint32_t mute = d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED];
+        int32_t isz = lpx(d, 20);
+        sel_gui_rect ic;
+        if (desk_slot_action(d, i) == NULL) {
+            sel_gui_fill_rect(d->canvas, b, ARGB(d->theme.token[SEL_GUI_TOKEN_BACKGROUND]));
+            sel_gui_dirty_add(d->canvas, b);
+            continue;
+        }
+        switch (i) {
+        case SLOT_SUB_PREV:
+            icon = SEL_GUI_ICON_MINUS;
+            ink = f->subsong > 1u ? ink : off;
+            break;
+        case SLOT_SUB_NEXT:
+            icon = SEL_GUI_ICON_PLUS;
+            ink = f->subsong < f->subsong_count ? ink : off;
+            break;
+        case SLOT_SHUFFLE:
+            icon = SEL_GUI_ICON_SHUFFLE;
+            ink = f->random_on ? on : mute;
+            break;
+        case SLOT_PREV:
+            icon = SEL_GUI_ICON_SKIP_BACK;
+            ink = f->can_prev ? ink : off;
+            break;
+        case SLOT_PLAY:
+            icon = f->play == SEL_PLAYING ? SEL_GUI_ICON_PAUSE : SEL_GUI_ICON_PLAY;
+            fill = on;
+            ink = d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT];
+            isz = lpx(d, 24);
+            break;
+        case SLOT_NEXT:
+            icon = SEL_GUI_ICON_SKIP_FORWARD;
+            ink = f->can_next ? ink : off;
+            break;
+        default:
+            icon = SEL_GUI_ICON_REPEAT;
+            ink = f->repeat_mode != 0u ? on : mute;
+            break;
+        }
+        sel_gui_round_rect(d->canvas, b, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(fill));
+        ic = rect_of(b.x + (b.w - isz) / 2, b.y + (b.h - isz) / 2, isz, isz);
+        sel_gui_icon_draw(d->canvas, &d->icons, icon, ic, isz, ARGB(ink));
+        if (i == SLOT_REPEAT && f->repeat_mode == 2u) {
+            draw_text(d, rect_of(b.x + b.w - lpx(d, 12), b.y + lpx(d, 2), lpx(d, 10), lpx(d, 12)), "1", 1, 11, ARGB(ink));
+        }
+        sel_gui_dirty_add(d->canvas, b);
+        d->frame_parts++;
+    }
 }
 
 /* The tooltip text of an action: its tooltip field (the label when that is empty), then the default key in brackets
@@ -972,7 +1135,7 @@ static void desk_tip_tick(desk* d) {
     if (d->tip_btn <= 0 || d->tip_shown > 0 || d->now_ms < d->tip_since + TIP_DELAY_MS) {
         return;
     }
-    a = desk_action_by_id(g_transport[d->tip_btn - 1]);
+    a = desk_action_by_id(desk_slot_action(d, (uint32_t)d->tip_btn - 1u));
     if (a == NULL) {
         return;
     }
@@ -1069,6 +1232,32 @@ static int desk_send(desk* d, const char* line) {
     static uint32_t next;
     char* pool = ring[next++ % 16u];
     return sel_engine_send_line(d->engine, line, pool, sizeof ring[0]) == SEL_CODEC_OK;
+}
+
+/* A click on transport slot i fires the action the button names: its table line, or for the subsong buttons the line
+ * SUBSONG with the neighbouring absolute index. Returns 1 when the engine took the line. */
+static int desk_transport_click(desk* d, uint32_t i) {
+    const sel_uim_action* a = desk_action_by_id(desk_slot_action(d, i));
+    const sel_uim_frame* f = &d->uim.frame;
+    char line[32];
+    if (a == NULL) {
+        return 0;
+    }
+    if (i == SLOT_SUB_PREV || i == SLOT_SUB_NEXT) {
+        uint32_t to = i == SLOT_SUB_PREV ? f->subsong - 2u : f->subsong;
+        if (i == SLOT_SUB_PREV ? f->subsong < 2u : f->subsong >= f->subsong_count) {
+            return 0;
+        }
+        snprintf(line, sizeof line, "SUBSONG %u", (unsigned)to);
+    } else {
+        snprintf(line, sizeof line, "%s", a->line);
+    }
+    if (!desk_send(d, line)) {
+        return 0;
+    }
+    d->transport_hits++;
+    d->actions_fired++;
+    return 1;
 }
 
 /* The keys of the action table become the desktop bindings, loaded through the same txt_bindings the text UI uses. */
@@ -1184,6 +1373,13 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
     int region = sel_uim_hit(&d->layout, ev->x / sc, ev->y / sc);
     const char* rname = region >= 0 ? d->layout.regions[region].name : "";
     int in_main = strcmp(rname, "main") == 0;
+    if (ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u) {
+        int32_t btn = desk_button_at(d, ev->x, ev->y);
+        if (btn > 0) {
+            d->clicks++;
+            return desk_transport_click(d, (uint32_t)btn - 1u);
+        }
+    }
     if (!d->songs) {
         if (ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u) {
             d->clicks++;
@@ -1534,7 +1730,10 @@ static void desk_replay_resizes(desk* d) {
         }
         for (i = 0; i < TRANSPORT_COUNT; i++) {
             sel_gui_rect b = desk_button_rect(d, i);
-            printf("button id=%s x=%d y=%d w=%d h=%d\n", g_transport[i], (int)b.x, (int)b.y, (int)b.w, (int)b.h);
+            if (desk_slot_action(d, i) != NULL) {
+                printf("button id=%s x=%d y=%d w=%d h=%d\n", desk_slot_action(d, i), (int)b.x, (int)b.y, (int)b.w,
+                       (int)b.h);
+            }
         }
         p += used;
         if (*p != ',') {
@@ -2081,7 +2280,19 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[43].value = (uintptr_t)(d->scroll_q16 >> 16);
     d->stats[44].tag = SEL_UI_STAT_OPEN_TILE;
     d->stats[44].value = (uintptr_t)d->open_tile;
-    d->stats[45].tag = SEL_TAG_END;
+    d->stats[45].tag = SEL_UI_STAT_TRANSPORT_HITS;
+    d->stats[45].value = d->transport_hits;
+    d->stats[46].tag = SEL_UI_STAT_PLAY_STATE;
+    d->stats[46].value = (uintptr_t)sel_engine_state(d->engine)->play;
+    d->stats[47].tag = SEL_UI_STAT_REPEAT_MODE;
+    d->stats[47].value = d->uim.frame.repeat_mode;
+    d->stats[48].tag = SEL_UI_STAT_RANDOM_ON;
+    d->stats[48].value = d->uim.frame.random_on;
+    d->stats[49].tag = SEL_UI_STAT_SUBSONG;
+    d->stats[49].value = d->uim.frame.subsong;
+    d->stats[50].tag = SEL_UI_STAT_FRAME_PARTS;
+    d->stats[50].value = d->frame_parts;
+    d->stats[51].tag = SEL_TAG_END;
 
     return d->stats;
 }

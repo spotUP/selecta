@@ -26,12 +26,16 @@ typedef struct sel_uim_frame {
     char format[24];
     char clock[16];     /* elapsed, "m:ss" */
     char remaining[16]; /* "-m:ss", empty when the duration is unknown */
+    char length[16];    /* song length, "m:ss", empty when the duration is unknown */
     char status[96];
     sel_play_state play;
     uint32_t can_prev, can_next;
     uint32_t progress_q16; /* 0 .. 65536, 0 when the duration is unknown */
     uint32_t queue_count, queue_playing;
     int32_t volume;
+    uint32_t subsong, subsong_count; /* 1-based subsong number and how many the song has */
+    uint32_t repeat_mode;            /* 0 off, 1 all, 2 one */
+    uint32_t random_on;              /* 1 when the random option is on */
 } sel_uim_frame;
 
 /* Frame layouts, the values of the pref ui.desktop.mode (full, window, mini). */

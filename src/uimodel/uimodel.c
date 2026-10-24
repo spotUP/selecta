@@ -43,6 +43,7 @@ uint32_t sel_uim_update(sel_uim* uim, const sel_state* st) {
     if (dur != 0u) {
         n.remaining[0] = '-';
         sel_uim_clock(n.remaining + 1, sizeof n.remaining - 1u, dur > pos ? dur - pos : 0u, 1);
+        sel_uim_clock(n.length, sizeof n.length, dur, 1);
         n.progress_q16 = pos >= dur ? 65536u : (uint32_t)(((uint64_t)pos << 16) / dur);
     }
     n.play = st->play;
@@ -55,6 +56,10 @@ uint32_t sel_uim_update(sel_uim* uim, const sel_state* st) {
         }
     }
     n.volume = st->volume;
+    n.subsong = st->song.subsong + 1u;
+    n.subsong_count = st->song.subsong_count;
+    n.repeat_mode = strcmp(st->options[SEL_OPT_REPEAT], "all") == 0 ? 1u : strcmp(st->options[SEL_OPT_REPEAT], "one") == 0 ? 2u : 0u;
+    n.random_on = strcmp(st->options[SEL_OPT_RANDOM], "on") == 0;
     /* The status line carries the play state and the mixer stage settings: the clock and the title have their own regions, so a song change
      * redraws the song and queue widgets and nothing else. */
     snprintf(n.status, sizeof n.status, "%s", sel_uim_play_word(n.play));
@@ -66,10 +71,12 @@ uint32_t sel_uim_update(sel_uim* uim, const sel_state* st) {
     if (n.queue_count != o->queue_count || n.queue_playing != o->queue_playing) {
         changed |= SEL_UIM_DIRTY_QUEUE;
     }
-    if (n.play != o->play || n.can_prev != o->can_prev || n.can_next != o->can_next) {
+    if (n.play != o->play || n.can_prev != o->can_prev || n.can_next != o->can_next ||
+        n.subsong != o->subsong || n.subsong_count != o->subsong_count || n.repeat_mode != o->repeat_mode ||
+        n.random_on != o->random_on) {
         changed |= SEL_UIM_DIRTY_TRANSPORT;
     }
-    if (strcmp(n.clock, o->clock) != 0 || strcmp(n.remaining, o->remaining) != 0 || n.progress_q16 != o->progress_q16) {
+    if (strcmp(n.clock, o->clock) != 0 || strcmp(n.remaining, o->remaining) != 0 || strcmp(n.length, o->length) != 0 || n.progress_q16 != o->progress_q16) {
         changed |= SEL_UIM_DIRTY_PROGRESS;
     }
     if (n.volume != o->volume) {

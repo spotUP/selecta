@@ -13,6 +13,16 @@ static const sel_uim_action k_actions[] = {
     {"stop", "Stop", "Stop playback", "square", "Playback/Stop", "s", "STOP"},
     {"next", "Next Track", "Skip to the next track", "skip-forward", "Playback/Next Track", "n", "NEXT"},
     {"prev", "Previous Track", "Return to the previous track", "skip-back", "Playback/Previous Track", "p", "PREV"},
+    {"random_on", "Turn Shuffle On", "Play the queue in random order", "shuffle", "Playback/Turn Shuffle On", "",
+     "OPTION random on"},
+    {"random_off", "Turn Shuffle Off", "Play the queue in order", "shuffle", "Playback/Turn Shuffle Off", "",
+     "OPTION random off"},
+    {"repeat_off", "Turn Repeat Off", "Stop repeating", "repeat", "Playback/Turn Repeat Off", "", "REPEAT off"},
+    {"repeat_all", "Repeat Queue", "Repeat the whole queue", "repeat", "Playback/Repeat Queue", "", "REPEAT all"},
+    {"repeat_one", "Repeat Song", "Repeat the current song", "repeat", "Playback/Repeat Song", "", "REPEAT one"},
+    {"subsong_prev", "Previous Subsong", "Go to the previous subsong", "minus", "Playback/Previous Subsong", "",
+     "SUBSONG"},
+    {"subsong_next", "Next Subsong", "Go to the next subsong", "plus", "Playback/Next Subsong", "", "SUBSONG"},
     {"next_album", "Next Album", "Skip to the next album", "chevrons-right", "Playback/Next Album", "M-n", "NEXT_ALBUM"},
     {"prev_album", "Previous Album", "Return to the previous album", "chevrons-left", "Playback/Previous Album", "M-p",
      "PREV_ALBUM"},
@@ -73,9 +83,9 @@ static const struct {
     const char* verb;
     const char* reason;
 } k_exempt[] = {
-    {"OPEN", ARG},           {"PAUSE_PLAYBACK", COV}, {"SUBSONG", CTX},          
+    {"OPEN", ARG},           {"PAUSE_PLAYBACK", COV}, 
               {"MUTE", CTX},                         
-               {"REPEAT", CTX},         {"OUTPUT", ARG},          {"OPTION", ARG},
+               {"OUTPUT", ARG},
     {"SLEEP_TIMER", ARG},    {"ALARM", ARG},          {"QUEUE_ADD", ARG},       {"QUEUE_ADD_QUERY", ARG},
     {"QUEUE_REMOVE", CTX},   {"QUEUE_PLAY_NEXT", CTX}, {"QUEUE_MOVE", CTX},     {"QUEUE_SWAP", CTX},
     {"QUEUE_CHANGES", PROTO}, {"SNAPSHOT_QUEUE", PROTO}, {"PLAY_QUERY", ARG},    {"SHUFFLE", ARG},
