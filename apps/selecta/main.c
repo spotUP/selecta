@@ -631,6 +631,8 @@ int main(int argc, char** argv)
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_SUBSONG, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_FRAME_PARTS, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_HOME_PARTS, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_TILE_CARDS, 0));
             printf("ui_tooltip id=%s text=%s\n", g_uis[u].id, (const char*)sel_tag_find(us, SEL_UI_STAT_TOOLTIP_TEXT, (uintptr_t) ""));
+            printf("ui_home id=%s shelves=%u shelf_scroll=%u\n%s", g_uis[u].id, (unsigned)sel_tag_find(us, SEL_UI_STAT_HOME_SHELVES, 0),
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_SHELF_SCROLL, 0), (const char*)sel_tag_find(us, SEL_UI_STAT_HOME_DUMP, (uintptr_t) ""));
         }
     }
 

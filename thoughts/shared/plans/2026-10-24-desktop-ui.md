@@ -225,7 +225,7 @@ IDs `DUI-P<phase>-<item>`. 61 items. Every test has label `dui`; "Test:" names t
 
 ### Phase 4: frame and views
 - [x] DUI-P4-1 Plugin `plugins/ui/desktop/` and the frame: sidebar, content, Now Playing panel, transport bar with shuffle and repeat (from M4-P4-1 plugin part and M4-P4-2). Test: `dui-frame`: `selecta --ui desktop` opens through the plugin registry (kind 5); transport play, pause, next, shuffle change engine state.
-- [ ] DUI-P4-2 Home view. Test: `dui-home`: fixture history gives the "Jump back in" shelf with the last 6 songs in order.
+- [x] DUI-P4-2 Home view. Test: `dui-home`: fixture history gives the "Jump back in" shelf with the last 6 songs in order.
 - [ ] DUI-P4-3 Library and browse: regular, tree, drilldown, column browser, sources, Files, History, Stats (F24) (from M4-P4-3). Test: `dui-library`: drilling into a fixture composer shows its song count from the library; stats page totals equal `selecta-cli stats`.
 - [ ] DUI-P4-4 Engine view styles grid, cover flow, compact, artwork id in `sel_view_row`; registry offers them where the UI allows (from M4-P3-1, M4-P3-2). Test: `dui-styles`: `VIEW_STYLE grid` on the desktop UI accepted, on the text UI refused with the existing error; rows carry artwork ids.
 - [ ] DUI-P4-5 Grid and cover flow views (2D). Test: `dui-grid-coverflow`: goldens for both; arrow right in cover flow moves the centred album by 1.

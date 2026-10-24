@@ -59,6 +59,7 @@ typedef struct desk {
     int textsheet;          /* --view text: specimen lines and the queue names, once (DUI-P2-3) */
     int widgets;            /* --view widgets: the widget gallery, once (DUI-P3-1) */
     sel_gui_widget_stats wstats; /* per-kind draw counts of the gallery */
+    int home_pending;       /* --view home: VIEW_SOURCE home still to send (DUI-P4-2) */
     int home;               /* --view home: the tile grid of the queue entries in the main region (DUI-P2-6) */
     sel_gui_text_stats text; /* glyphs blitted and code points the atlas lacked (DUI-P2-3) */
     sel_gui_atlas* atlas[2][DESK_SIZES]; /* [semibold][size], built on first use */
@@ -120,7 +121,12 @@ typedef struct desk {
     uint32_t home_parts;     /* bit set of the Home frame parts drawn (HP_*), the I230 proof that each is on screen */
     uint32_t tile_cards;     /* tile card surfaces drawn in the Home view */
     uint32_t frame_parts;    /* frame parts drawn: sidebar entries, Now Playing panel and transport buttons */
-    sel_tag stats[54];
+    int32_t shelf_q16[8];    /* horizontal scroll of each Home shelf in logical pixels, Q16 */
+    int32_t ptr_x, ptr_y;    /* the last pointer position: the wheel scrolls the shelf under it */
+    uint32_t shelf_plays;    /* shelf tiles activated (song or album sent to the engine) */
+    uint32_t home_sig;       /* source and row count of the last HOME window drawn: a change redraws */
+    char home_dump[2048];    /* shelves as text for the stats */
+    sel_tag stats[58];
 } desk;
 
 static int desk_resize(desk* d, int32_t w, int32_t h);
@@ -800,7 +806,7 @@ enum { ANIM_KEY_VIEW = 1, ANIM_KEY_HOVER = 2, ANIM_KEY_TIP = 3 };
 
 /* The Home header (Main.dc.html): the tinted band at the top of the main panel, the search field with its icon, the
  * greeting, the filter chips and the section heading. */
-static void draw_home_header(desk* d, sel_gui_rect mn) {
+static void draw_home_header(desk* d, sel_gui_rect mn, int with_section) {
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]);
     uint32_t muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     int32_t rad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]);
@@ -832,8 +838,253 @@ static void draw_home_header(desk* d, sel_gui_rect mn) {
         x += w + sp;
     }
     d->home_parts |= HP_CHIPS;
-    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, HOME_SECTION_Y), mn.w - 2 * mg, lpx(d, HOME_SECTION_H)), "Recently played", 1, 22, text);
-    d->home_parts |= HP_SECTION;
+    if (with_section) {
+        draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, HOME_SECTION_Y), mn.w - 2 * mg, lpx(d, HOME_SECTION_H)), "Recently played", 1, 22, text);
+        d->home_parts |= HP_SECTION;
+    }
+}
+
+/* ---- Home shelves (DUI-P4-2): the HOME view source (engine) as rows of tiles. A heading row starts a shelf; the
+ * song and album rows after it are its tiles; a row without a key (the "new this week" count line) is plain text.
+ * Each shelf scrolls horizontally on its own. ---- */
+enum { SHELF_MAX = 6, SHELF_HEAD_H = 40, SHELF_GAP = 16, SHELF_WINDOW = 32, SHELF_NONE = 0x7FFFFFFF };
+
+typedef struct shelf {
+    uint32_t head;  /* index of the heading in the view window */
+    uint32_t first; /* index of the first row after it */
+    uint32_t tiles; /* rows with a key */
+    uint32_t rows;  /* rows after the heading */
+} shelf;
+
+/* Splits the HOME window into shelves; 0 when the view is not the HOME source. */
+static uint32_t home_shelves(const sel_state* st, shelf* out) {
+    const sel_view_state* v = st->view;
+    uint32_t i, n = 0;
+    if (v == NULL || v->source != SEL_VIEW_HOME) {
+        return 0;
+    }
+    for (i = 0; i < v->row_n; i++) {
+        if (v->rows[i].kind == SEL_ROW_HEADING) {
+            if (n == SHELF_MAX) {
+                break;
+            }
+            out[n].head = i;
+            out[n].first = i + 1u;
+            out[n].tiles = 0;
+            out[n].rows = 0;
+            n++;
+        } else if (n > 0u) {
+            out[n - 1u].rows++;
+            out[n - 1u].tiles += v->rows[i].key != NULL;
+        }
+    }
+    return n;
+}
+
+/* 1 when the HOME source holds at least one tile: the shelves replace the queue grid. */
+static int home_shelf_mode(const sel_state* st) {
+    shelf sh[SHELF_MAX];
+    uint32_t i, n = home_shelves(st, sh);
+    for (i = 0; i < n; i++) {
+        if (sh[i].tiles > 0u) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Window row of tile k of a shelf (keyed rows only), or UINT32_MAX. */
+static uint32_t shelf_tile_row(const sel_state* st, const shelf* sh, uint32_t k) {
+    uint32_t i;
+    for (i = sh->first; i < sh->first + sh->rows; i++) {
+        if (st->view->rows[i].key != NULL) {
+            if (k == 0u) {
+                return i;
+            }
+            k--;
+        }
+    }
+    return 0xFFFFFFFFu;
+}
+
+static int32_t shelf_card_h(desk* d) {
+    int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
+    return pad + lpx(d, g_tile_steps[d->tile_step]) + lpx(d, HOME_TILE_TEXT_GAP + HOME_TITLE_H + HOME_META_H) + pad;
+}
+
+static int32_t shelf_top(desk* d, uint32_t s) {
+    sel_gui_rect mn = region_rect(d, "main");
+    return mn.y + lpx(d, HOME_SECTION_Y) + (int32_t)s * (lpx(d, SHELF_HEAD_H + SHELF_GAP) + shelf_card_h(d));
+}
+
+/* The scroll limit of a shelf in Q16 logical pixels: the tiles' width beyond the visible width. */
+static int32_t shelf_max_q16(desk* d, const shelf* sh) {
+    int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
+    sel_gui_rect mn = region_rect(d, "main");
+    int32_t cw = lpx(d, g_tile_steps[d->tile_step]) + 2 * pad + lpx(d, HOME_TILE_GAP);
+    int32_t total = (int32_t)sh->tiles * cw;
+    int32_t vis = mn.w - 2 * lpx(d, HOME_MARGIN) + 2 * pad;
+    int32_t unit = lpx(d, 1) > 0 ? lpx(d, 1) : 1;
+    return total > vis ? ((total - vis) / unit) << 16 : 0;
+}
+
+static sel_gui_rect shelf_tile_rect(desk* d, uint32_t s, uint32_t k) {
+    int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
+    sel_gui_rect mn = region_rect(d, "main");
+    int32_t cw = lpx(d, g_tile_steps[d->tile_step]) + 2 * pad;
+    return rect_of(mn.x + lpx(d, HOME_MARGIN) - pad + (int32_t)k * (cw + lpx(d, HOME_TILE_GAP)) - lpx(d, d->shelf_q16[s] >> 16),
+                   shelf_top(d, s) + lpx(d, SHELF_HEAD_H) - pad, cw, shelf_card_h(d));
+}
+
+/* Writes "shelf S tile K heading|key|title" lines in order into home_dump; returns the shelf count. */
+static uintptr_t home_dump_build(desk* d) {
+    const sel_state* st = sel_engine_state(d->engine);
+    shelf sh[SHELF_MAX];
+    uint32_t s, k, n = home_shelves(st, sh);
+    size_t o = 0;
+    d->home_dump[0] = '\0';
+    for (s = 0; s < n; s++) {
+        for (k = 0; k < sh[s].tiles && o + 200u < sizeof d->home_dump; k++) {
+            const sel_view_row* r = &st->view->rows[shelf_tile_row(st, &sh[s], k)];
+            o += (size_t)snprintf(d->home_dump + o, sizeof d->home_dump - o, "shelf %u tile %u %s|%s|%s\n", (unsigned)s, (unsigned)k,
+                                  st->view->rows[sh[s].head].text, r->key, r->text);
+        }
+    }
+    return (uintptr_t)n;
+}
+
+/* The shelf and tile under a canvas point, or 0. */
+static int shelf_hit(desk* d, int32_t x, int32_t y, uint32_t* ps, uint32_t* pk) {
+    const sel_state* st = sel_engine_state(d->engine);
+    sel_gui_rect mn = region_rect(d, "main");
+    shelf sh[SHELF_MAX];
+    uint32_t s, k, n = home_shelves(st, sh);
+    for (s = 0; s < n; s++) {
+        for (k = 0; k < sh[s].tiles; k++) {
+            sel_gui_rect t = shelf_tile_rect(d, s, k);
+            if (x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h && x >= mn.x && x < mn.x + mn.w) {
+                *ps = s;
+                *pk = k;
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+/* The shelf whose band holds the canvas row y, or SHELF_NONE. */
+static uint32_t shelf_at_y(desk* d, int32_t y) {
+    shelf sh[SHELF_MAX];
+    uint32_t s, n = home_shelves(sel_engine_state(d->engine), sh);
+    for (s = 0; s < n; s++) {
+        int32_t top = shelf_top(d, s);
+        if (y >= top && y < top + lpx(d, SHELF_HEAD_H) + shelf_card_h(d)) {
+            return s;
+        }
+    }
+    return SHELF_NONE;
+}
+
+/* Activates a shelf tile through the engine's own HOME path: the cursor goes to its row and VIEW_ACTIVATE plays a
+ * song or opens an album search; the HOME source is then asked for again so the shelves follow the new history. */
+static void shelf_activate(desk* d, uint32_t s, uint32_t k) {
+    const sel_state* st = sel_engine_state(d->engine);
+    shelf sh[SHELF_MAX];
+    char line[48];
+    uint32_t row;
+    if (home_shelves(st, sh) <= s) {
+        return;
+    }
+    row = shelf_tile_row(st, &sh[s], k);
+    if (row == 0xFFFFFFFFu) {
+        return;
+    }
+    snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)(st->view->window_start + row));
+    desk_send(d, line);
+    desk_send(d, "VIEW_ACTIVATE");
+    desk_send(d, "VIEW_SOURCE home");
+    d->shelf_plays++;
+}
+
+/* Scrolls the shelf under canvas row y by wheel notches (positive = toward the end). */
+static void shelf_scroll(desk* d, int32_t y, int32_t notches_q16) {
+    shelf sh[SHELF_MAX];
+    uint32_t s = shelf_at_y(d, y);
+    int64_t v;
+    if (s == SHELF_NONE || home_shelves(sel_engine_state(d->engine), sh) <= s) {
+        return;
+    }
+    v = (int64_t)d->shelf_q16[s] + (int64_t)notches_q16 * SCROLL_NOTCH;
+    if (v < 0) {
+        v = 0;
+    }
+    if (v > shelf_max_q16(d, &sh[s])) {
+        v = shelf_max_q16(d, &sh[s]);
+    }
+    d->shelf_q16[s] = (int32_t)v;
+}
+
+static void draw_shelves(desk* d, sel_gui_rect mn) {
+    const sel_state* st = sel_engine_state(d->engine);
+    int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
+    int32_t mg = lpx(d, HOME_MARGIN);
+    int32_t hv = sel_gui_tween_value(&d->tl, ANIM_KEY_HOVER, 65536);
+    uint32_t panel = ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]);
+    shelf sh[SHELF_MAX];
+    uint32_t s, k, flat = 0, n = home_shelves(st, sh);
+    for (s = 0; s < n; s++) {
+        const sel_view_row* head = &st->view->rows[sh[s].head];
+        int32_t top = shelf_top(d, s);
+        if (top >= mn.y + mn.h) {
+            break;
+        }
+        draw_text(d, rect_of(mn.x + mg, top, mn.w - 2 * mg, lpx(d, HOME_SECTION_H)), head->text, 1, 22,
+                  ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        d->home_parts |= HP_SECTION;
+        if (sh[s].tiles == 0u && sh[s].rows > 0u) { /* a count line, no tiles */
+            draw_text(d, rect_of(mn.x + mg, top + lpx(d, SHELF_HEAD_H), mn.w - 2 * mg, lpx(d, HOME_TITLE_H)),
+                      st->view->rows[sh[s].first].text, 0, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+        }
+        for (k = 0; k < sh[s].tiles; k++, flat++) {
+            const sel_view_row* r = &st->view->rows[shelf_tile_row(st, &sh[s], k)];
+            sel_gui_rect t = shelf_tile_rect(d, s, k);
+            sel_gui_rect ar = rect_of(t.x + pad, t.y + pad, t.w - 2 * pad, t.w - 2 * pad);
+            int hovered = d->hover_tile > 0 && (uint32_t)d->hover_tile - 1u == flat;
+            const char* dot = r->key != NULL ? strrchr(r->key, '.') : NULL;
+            char format[16];
+            size_t fi = 0;
+            if (t.x + t.w <= mn.x || t.x >= mn.x + mn.w) {
+                continue;
+            }
+            while (!r->album && dot != NULL && dot[1 + fi] != '\0' && fi + 1u < sizeof format) {
+                format[fi] = dot[1 + fi];
+                fi++;
+            }
+            format[fi] = '\0';
+            sel_gui_fill_rect(d->canvas, t, panel);
+            sel_gui_round_rect(d->canvas, t, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]),
+                               hovered ? desk_mix(panel, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), (uint32_t)hv) : panel);
+            d->tile_cards++;
+            d->home_parts |= HP_TILE_CARD;
+            if (d->shadow_ready) {
+                sel_gui_shadow_draw(d->canvas, &d->shadow, ar);
+            }
+            sel_gui_genart_draw(d->canvas, ar, r->album ? "album" : format, sel_gui_str_hash(r->text));
+            draw_text(d, rect_of(ar.x, ar.y + ar.h + lpx(d, HOME_TILE_TEXT_GAP), ar.w, lpx(d, HOME_TITLE_H)), r->text, 1, 14,
+                      ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+            draw_text(d, rect_of(ar.x, ar.y + ar.h + lpx(d, HOME_TILE_TEXT_GAP + HOME_TITLE_H), ar.w, lpx(d, HOME_META_H)),
+                      r->album ? "Album" : format, 0, 13, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+            d->home_parts |= HP_ARTIST_LINE;
+            if (hovered && hv > 0) {
+                int32_t ps = lpx(d, HOME_PLAY_SIZE), in = lpx(d, HOME_PLAY_INSET);
+                sel_gui_rect pb = rect_of(ar.x + ar.w - in - ps, ar.y + ar.h - in - ps, ps, ps);
+                sel_gui_round_rect(d->canvas, pb, ps / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+                sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_PLAY, rect_of(pb.x + ps / 4, pb.y + ps / 4, ps / 2, ps / 2),
+                                  ps / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+                d->home_parts |= HP_PLAY_HOVER;
+            }
+        }
+    }
 }
 
 static void draw_home_content(desk* d) {
@@ -854,7 +1105,14 @@ static void draw_home_content(desk* d) {
     }
     load_tile_art(d, st);
     sel_gui_clip_push(d->canvas, mn);
-    draw_home_header(d, mn);
+    if (home_shelf_mode(st)) {
+        draw_home_header(d, mn, 0);
+        draw_shelves(d, mn);
+        sel_gui_clip_pop(d->canvas);
+        sel_gui_dirty_add(d->canvas, mn);
+        return;
+    }
+    draw_home_header(d, mn, 1);
     for (i = 0; i < st->queue_count; i++) {
         sel_gui_rect t = tile_rect(d, i);
         sel_gui_rect ar = rect_of(t.x + pad, t.y + pad, t.w - 2 * pad, t.w - 2 * pad);
@@ -954,6 +1212,15 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
     uint32_t i;
     if (!d->home || d->songs || d->open_tile > 0 || x < mn.x || y < mn.y || x >= mn.x + mn.w || y >= mn.y + mn.h) {
         return 0;
+    }
+    if (home_shelf_mode(st)) { /* a shelf tile: the engine plays the song or opens the album */
+        uint32_t s, k;
+        if (!shelf_hit(d, x, y, &s, &k)) {
+            return 0;
+        }
+        shelf_activate(d, s, k);
+        draw_home(d);
+        return 1;
     }
     for (i = 0; i < st->queue_count; i++) {
         sel_gui_rect t = tile_rect(d, i);
@@ -1628,7 +1895,12 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
 
 /* A pointer event: the view handles it, and the tooltip tracker follows the transport buttons (DUI-P3-6). */
 static int desk_pointer(desk* d, const sel_gui_input* ev) {
-    int tip = desk_tip_pointer(d, ev->kind == SEL_GUI_IN_MOVE ? ev->x : -1, ev->y);
+    int tip;
+    if (ev->kind == SEL_GUI_IN_MOVE) {
+        d->ptr_x = ev->x;
+        d->ptr_y = ev->y;
+    }
+    tip = desk_tip_pointer(d, ev->kind == SEL_GUI_IN_MOVE ? ev->x : -1, ev->y);
     return desk_pointer_view(d, ev) | tip;
 }
 
@@ -1647,6 +1919,12 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
                 max_q16 = 0;
             }
             d->scroll_q16 = v < 0 ? 0 : (v > max_q16 ? max_q16 : (int32_t)v);
+            draw_home(d);
+            return 1;
+        }
+        if (d->home && d->open_tile == 0 && home_shelf_mode(sel_engine_state(d->engine))) { /* the shelf under the pointer */
+            int32_t amount = ev->dx != 0 ? ev->dx : ev->dy;
+            shelf_scroll(d, d->ptr_y, -amount);
             draw_home(d);
             return 1;
         }
@@ -1713,6 +1991,14 @@ static int desk_replay_input(desk* d) {
             }
         } else if (sscanf(line, "tile %u", &n) == 1) {
             sel_gui_rect t = tile_rect(d, n);
+            if (home_shelf_mode(sel_engine_state(d->engine))) { /* n counts the tiles over all shelves in order */
+                shelf sh[SHELF_MAX];
+                uint32_t s, cnt = home_shelves(sel_engine_state(d->engine), sh), left = n;
+                for (s = 0; s < cnt && left >= sh[s].tiles; s++) {
+                    left -= sh[s].tiles;
+                }
+                t = s < cnt ? shelf_tile_rect(d, s, left) : rect_of(-1, -1, 0, 0);
+            }
             opened |= desk_event_frame(d, desk_click(d, t.x + t.w / 2, t.y + t.h / 2));
         } else if (sscanf(line, "hover %u", &n) == 1 && d->home && d->open_tile == 0) {
             d->hover_tile = (int32_t)n + 1;
@@ -2154,6 +2440,7 @@ static void* desk_open(const sel_ui_open_args* a) {
             d->widgets = 1;
         } else if (strcmp(view, "home") == 0) {
             d->home = 1;
+            d->home_pending = 1; /* the shell sends VIEW_SHOW browse after open: ask for HOME on the first turn */
         } else if (strcmp(view, "songs") == 0) {
             d->home = 1;
             d->songs = 1;
@@ -2294,6 +2581,27 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
         d->dirty_total = d->dirty_pixels;
         d->frames++;
         return 1;
+    }
+    if (d->home_pending == 2) { /* no history to show (no library or an empty one): the queue grid keeps the view source it had */
+        d->home_pending = 0;
+        if (!home_shelf_mode(sel_engine_state(d->engine))) {
+            desk_send(d, "VIEW_SOURCE browse");
+            return 1;
+        }
+    }
+    if (d->home_pending == 1 && d->frames > 0u) { /* after the shell's own VIEW_SHOW browse, which came before this turn */
+        d->home_pending = 2;
+        desk_send(d, "VIEW_SOURCE home"); /* the shelves read the engine's HOME rows (DUI-P4-2) */
+        desk_send(d, "VIEW_WINDOW 32");
+        return 1; /* let the engine pump the two lines before the next turn replays input or draws */
+    }
+    if (d->home && sel_engine_state(d->engine)->view != NULL) { /* HOME rows arrived or changed: redraw */
+        const sel_view_state* hv = sel_engine_state(d->engine)->view;
+        uint32_t sig = hv->source == SEL_VIEW_HOME ? 1u + hv->row_n : 0u;
+        if (sig != d->home_sig) {
+            d->home_sig = sig;
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        }
     }
     sel_uim_update(&d->uim, sel_engine_state(d->engine));
     if (d->ticks > 0u && d->uim.dirty == 0u) { /* --ticks N: the mem backend has no clock, so it replays N seconds */
@@ -2460,7 +2768,13 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[51].value = d->home_parts;
     d->stats[52].tag = SEL_UI_STAT_TILE_CARDS;
     d->stats[52].value = d->tile_cards;
-    d->stats[53].tag = SEL_TAG_END;
+    d->stats[53].tag = SEL_UI_STAT_HOME_SHELVES;
+    d->stats[53].value = home_dump_build(d);
+    d->stats[54].tag = SEL_UI_STAT_SHELF_SCROLL;
+    d->stats[54].value = (uintptr_t)(((uint32_t)d->shelf_q16[0] >> 16) | (((uint32_t)d->shelf_q16[1] >> 16) << 16));
+    d->stats[55].tag = SEL_UI_STAT_HOME_DUMP;
+    d->stats[55].value = (uintptr_t)d->home_dump;
+    d->stats[56].tag = SEL_TAG_END;
 
     return d->stats;
 }
