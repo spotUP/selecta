@@ -105,3 +105,13 @@ foreach(case "cycle|gui.base.grey_2" "missing-ref|gui.base.nope")
     message(FATAL_ERROR "the ${file}.theme error must name the token ${token}:\n${err}")
   endif()
 endforeach()
+# (5) A role whose resolved base value is outside the role's range is refused with its own message naming the role.
+file(WRITE "${WORK}/range-ref.theme" "gui.radius = @gui.base.grey_9\n")
+execute_process(COMMAND "${SELECTA}" --output null --size 80x25 --config-dir "${WORK}/cfg" ${base}
+  --theme "${WORK}/range-ref.theme" --exec STATUS RESULT_VARIABLE rc OUTPUT_QUIET ERROR_VARIABLE err)
+if(rc EQUAL 0)
+  message(FATAL_ERROR "range-ref.theme must make the desktop UI refuse to open")
+endif()
+if(NOT err MATCHES "token 'gui.radius' resolves to a value outside its range" OR err MATCHES "circular")
+  message(FATAL_ERROR "an out-of-range base value needs its own message naming gui.radius:\n${err}")
+endif()

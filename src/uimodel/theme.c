@@ -34,12 +34,20 @@ void txt_theme_default(txt_theme* t) {
         t->ref[i] = (int8_t)sel_gui_token_default_ref((sel_gui_token)i);
     }
     t->bad_token[0] = '\0';
+    t->bad_range = 0;
 }
 
 static int fail_token(txt_theme* t, const char* name, size_t n) {
     if (n >= sizeof t->bad_token) n = sizeof t->bad_token - 1u;
     memcpy(t->bad_token, name, n);
     t->bad_token[n] = '\0';
+    return 0;
+}
+
+/* A resolved value v outside [lo, hi] (a cycle is v < 0 and stays a reference failure): names the token, flags range. */
+static int fail_value(txt_theme* t, const char* key, int64_t v) {
+    fail_token(t, key, strlen(key));
+    t->bad_range = v >= 0;
     return 0;
 }
 
@@ -70,14 +78,14 @@ static int apply_ref(txt_theme* t, int tok, int is_base, const char* w, size_t n
         hi = sel_gui_base_max((sel_gui_base)tok);
         if (v < (int64_t)lo || v > (int64_t)hi) {
             t->base_ref[tok] = keep;
-            return fail_token(t, key, strlen(key));
+            return fail_value(t, key, v);
         }
         return 1;
     }
     v = base_value(t, b);
     lo = sel_gui_token_min((sel_gui_token)tok);
     hi = sel_gui_token_max((sel_gui_token)tok);
-    if (v < (int64_t)lo || v > (int64_t)hi) return fail_token(t, key, strlen(key));
+    if (v < (int64_t)lo || v > (int64_t)hi) return fail_value(t, key, v);
     t->ref[tok] = (int8_t)b;
     t->token[tok] = (uint32_t)v;
     return 1;
@@ -193,9 +201,7 @@ static int resolve_roles(txt_theme* t) {
         if (t->ref[i] < 0) continue;
         v = base_value(t, t->ref[i]);
         if (v < (int64_t)sel_gui_token_min((sel_gui_token)i) || v > (int64_t)sel_gui_token_max((sel_gui_token)i)) {
-            const char* key = sel_gui_token_name((sel_gui_token)i);
-            fail_token(t, key, strlen(key));
-            return 0;
+            return fail_value(t, sel_gui_token_name((sel_gui_token)i), v);
         }
         t->token[i] = (uint32_t)v;
     }
@@ -205,6 +211,7 @@ static int resolve_roles(txt_theme* t) {
 int txt_theme_parse(txt_theme* t, const char* text, int* bad_line) {
     int line = 0, applied = 0;
     t->bad_token[0] = '\0';
+    t->bad_range = 0;
     const char* p = text;
     while (*p) {
         const char* e = p;
