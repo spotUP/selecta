@@ -179,19 +179,15 @@ static int app_main(int argc, char** argv)
 int main(int argc, char** argv)
 #endif
 {
-#ifdef __APPLE__
-    const char* default_output = "coreaudio";
-#else
-    const char* default_output = "null";
-#endif
     const sel_host* host = sel_host_default();
-    const char* out_id = option(argc, argv, "--output", default_output);
+    const sel_tag* machine_tags = sel_machine_probe(host); /* probed once; the registry hides what it cannot run */
+    const char* out_id;
     const char* ui_id = option(argc, argv, "--ui", "text");
     const char* start = option(argc, argv, "--start-dir", NULL);
     const char* catalogue = option(argc, argv, "--catalogue", NULL);
     sel_library* library = NULL;
     int a;
-    int is_null = strcmp(out_id, "null") == 0;
+    int is_null;
     int clockless;
     const sel_tag* oh;
     const sel_tag* uh;
@@ -225,7 +221,7 @@ int main(int argc, char** argv)
 #else
     const char* default_int = "mpris";
 #endif
-    const char* int_id = option(argc, argv, "--integration", (is_null || has_keys) ? "none" : default_int);
+    const char* int_id;
     sel_int_session* isess = NULL;
     int ctl_fd = -1;
     unsigned socket_cmds = 0;
@@ -236,9 +232,10 @@ int main(int argc, char** argv)
     ctl_ctx cc;
 #endif
 
-    const sel_tag* machine_tags = sel_machine_probe(host); /* probed once; the registry hides what it cannot run */
-
     sel_registry_init_machine(host, machine_tags);
+    out_id = option(argc, argv, "--output", sel_registry_default_output(machine_tags));
+    is_null = strcmp(out_id, "null") == 0;
+    int_id = option(argc, argv, "--integration", (is_null || has_keys) ? "none" : default_int);
     oh = hooks_of(SEL_PLUGIN_KIND_OUTPUT, out_id);
     uh = hooks_of(SEL_PLUGIN_KIND_UI, ui_id);
     if (oh == NULL || uh == NULL) {

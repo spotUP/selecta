@@ -21,4 +21,5 @@ void sel_machine_probe_platform(sel_machine_raw* raw) {
     raw->fast_ram = physical_memory();
     raw->chip_ram = 0;
     raw->tier = SEL_TIER_GPU;
+    raw->audio = "coreaudio";
 }

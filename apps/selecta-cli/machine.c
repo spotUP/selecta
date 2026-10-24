@@ -1,6 +1,7 @@
 /* `selecta-cli machine [--tier <name>]`: runs the probe once and prints the sentinel
  * counter, then one NAME=value line per SEL_MACHINE_* tag. */
 #include <selecta/machine.h>
+#include <selecta/registry.h>
 
 #include "cli.h"
 
@@ -27,6 +28,8 @@ int sel_cli_machine(int argc, char** argv) {
     }
     list = sel_machine_probe(sel_host_default());
     iter = list;
+    sel_registry_init_machine(sel_host_default(), list);
+    printf("default_output=%s\n", sel_registry_default_output(list));
 
     printf("probe_calls=%u\n", (unsigned)sel_machine_probe_calls());
     printf("clock.source=%s\n", sel_clock_source());

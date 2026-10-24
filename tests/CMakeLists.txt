@@ -352,6 +352,10 @@ add_test(NAME paula-out-unit COMMAND paula_out_test)
 add_executable(mem_class_test host/mem_class_test.c)
 target_link_libraries(mem_class_test PRIVATE selecta_core)
 add_test(NAME mem-class-unit COMMAND mem_class_test)
+# I222: the default output follows the machine's SEL_MACHINE_AUDIO list and the registry.
+add_executable(default_output_test host/default_output_test.c)
+target_link_libraries(default_output_test PRIVATE selecta_registry)
+add_test(NAME default-output-unit COMMAND default_output_test)
 
 # T24: browse listing and view model through the engine command queue and
 # snapshot. The temp tree is created inside the generated songs directory.
@@ -815,6 +819,9 @@ if(NOT SEL_AMIGA)
   # T49 registry machine filter, desktop and vamos.
   sel_m2_test(registry-machine-filter registry desktop)
   sel_m2_test(registry-machine-filter registry vamos)
+  # I222: the real probe plus the registry pick the machine's output (vamos: paula).
+  sel_m2_test(default-output run desktop -DTAG=I222 "-DARGS1=machine" "-DCHECKS1=default_output~^(coreaudio|null)$")
+  sel_m2_test(default-output run vamos -DTAG=I222 "-DARGS1=machine" "-DCHECKS1=default_output==paula")
   # T50 machine probe under vamos. I217: the AHI probe request is a struct AHIRequest (80 bytes,
   # ahir_Version 4); a plain IOStdReq made ahi.device raise alert #00080000 on the Replay.
   sel_m2_test(amiga-machine-probe run vamos -DTAG=T50 "-DARGS1=machine"

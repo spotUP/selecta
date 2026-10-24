@@ -38,6 +38,10 @@ uint32_t sel_registry_count(void);
 const sel_tag* sel_registry_get(uint32_t index);
 /* First plugin with this kind and PLUGIN_ID; NULL when absent. */
 const sel_tag* sel_registry_find(uint32_t kind, const char* id);
+/* Output a player opens when the user names none: the first entry of the machine's
+ * SEL_MACHINE_AUDIO list ("paula,ahi") that is a registered output, else "null". Call after
+ * sel_registry_init_machine; the string is the plugin's own PLUGIN_ID. */
+const char* sel_registry_default_output(const sel_tag* machine);
 /* Walks every descriptor and its PLUGIN_TAGS list; names each problem
  * through the host log. */
 void sel_registry_lint(sel_lint_report* report);

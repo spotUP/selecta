@@ -151,6 +151,24 @@ const sel_tag* sel_registry_find(uint32_t kind, const char* id) {
     return NULL;
 }
 
+const char* sel_registry_default_output(const sel_tag* machine) {
+    const char* list = (const char*)sel_tag_find(machine, SEL_MACHINE_AUDIO, 0);
+    while (list && *list) {
+        const char* end = strchr(list, ',');
+        size_t len = end ? (size_t)(end - list) : strlen(list);
+        uint32_t i;
+        for (i = 0; i < g_count; i++) {
+            const char* pid = (const char*)sel_tag_find(g_desc[i], SEL_PLUGIN_ID, 0);
+            if (sel_tag_find(g_desc[i], SEL_PLUGIN_KIND, 0) == SEL_PLUGIN_KIND_OUTPUT && pid &&
+                strlen(pid) == len && strncmp(pid, list, len) == 0) {
+                return pid;
+            }
+        }
+        list = end ? end + 1 : NULL;
+    }
+    return "null";
+}
+
 static void problem(const char* plugin, const char* what, uint32_t tag) {
     char msg[96];
     snprintf(msg, sizeof msg, "plugin %s: %s tag 0x%04lX", plugin, what, (unsigned long)tag);
