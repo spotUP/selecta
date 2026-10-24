@@ -31,6 +31,7 @@
 #include "db.h"
 #include "local.h"
 #include "share.h"
+#include "../../src/engine/options.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,16 +42,36 @@
 #define SHELL_TURN_MS 20u
 #define SHELL_RESAMPLER 1u /* linear */
 
-static sel_ui_on_event_fn g_on_event;
+/* The open UIs (DUI-P1-2): every `--ui <id>` opens one, each sees every event and takes its turn in the wait loop.
+ * Slot 0 is the primary UI; its stats fill the exit lines and UI_SWITCH replaces it (DUI-P1-1). */
+#define SHELL_MAX_UIS 4
+typedef struct shell_ui {
+    const char* id;
+    void* state;
+    sel_ui_open_fn open;
+    sel_ui_on_event_fn on_event;
+    sel_ui_wait_fn wait;
+    sel_ui_close_fn close;
+    sel_ui_stats_fn stats;
+} shell_ui;
 
-/* ctx[0] unused, ctx[1] = UI state, ctx[2] = integration session. */
+static shell_ui g_uis[SHELL_MAX_UIS];
+static unsigned g_ui_count;
+static int g_stats; /* --stats: the shell reports what the UIs and prefs did on stdout */
+
+/* ctx[0] unused, ctx[1] = primary UI state, ctx[2] = integration session. */
 static void sink(void* ctx, const sel_message* evt) {
-    sel_ui_on_event_fn on_event = g_on_event;
+    unsigned u;
     if (evt->id == SEL_EVT_ERROR) {
         fprintf(stderr, "error %s %s\n", evt->args[0].v.s, evt->argc > 1 ? evt->args[1].v.s : "");
     }
-    if (on_event != NULL) {
-        on_event(((void**)ctx)[1], evt);
+    if (g_stats && evt->id == SEL_EVT_PREFS_CHANGED && evt->argc > 1) { /* the reply to PREF_GET and PREF_SET */
+        printf("pref %s=%s\n", evt->args[0].v.s, evt->args[1].v.s);
+    }
+    for (u = 0; u < g_ui_count; u++) {
+        if (g_uis[u].on_event != NULL) {
+            g_uis[u].on_event(g_uis[u].state, evt);
+        }
     }
     sel_int_session_event((sel_int_session*)((void**)ctx)[2], evt);
 }
@@ -127,6 +148,82 @@ static const char* option(int argc, char** argv, const char* name, const char* d
     return def;
 }
 
+/* Fill a slot from the registry; 0 when the id is no UI or lacks a hook. */
+static int ui_resolve(const char* id, shell_ui* u) {
+    const sel_tag* h = hooks_of(SEL_PLUGIN_KIND_UI, id);
+    if (h == NULL) {
+        return 0;
+    }
+    u->id = id;
+    u->open = (sel_ui_open_fn)sel_tag_find(h, SEL_UI_OPEN, 0);
+    u->on_event = (sel_ui_on_event_fn)sel_tag_find(h, SEL_UI_ON_EVENT, 0);
+    u->wait = (sel_ui_wait_fn)sel_tag_find(h, SEL_UI_WAIT, 0);
+    u->close = (sel_ui_close_fn)sel_tag_find(h, SEL_UI_CLOSE, 0);
+    u->stats = (sel_ui_stats_fn)sel_tag_find(h, SEL_UI_STATS, 0);
+    return u->open != NULL && u->wait != NULL && u->close != NULL;
+}
+
+static const sel_tag* ui_stats_of(const shell_ui* u) {
+    return u->stats != NULL && u->state != NULL ? u->stats(u->state) : NULL;
+}
+
+static void send_line(sel_engine* e, const char* line);
+
+/* Start options as KEY=VALUE words (MODE=mini, DUI-P1-3): the one parser (src/engine/options.c, the same as
+ * ToolTypes and selecta-cli) validates each word against a scratch prefs table, and the prefs it changed reach the
+ * engine as PREF_SET, so the engine and every UI see them as an ordinary pref change. */
+static void apply_option_words(sel_engine* e, int argc, char** argv) {
+    sel_prefs defaults;
+    sel_prefs set;
+    sel_opts o;
+    int a, id;
+    char cmd[300];
+    sel_prefs_init(&defaults);
+    for (a = 1; a < argc; a++) {
+        int r;
+        if (argv[a][0] == '-' || strchr(argv[a], '=') == NULL || strpbrk(argv[a], "/:") != NULL) {
+            continue;
+        }
+        sel_prefs_init(&set);
+        memset(&o, 0, sizeof o);
+        r = sel_opts_apply_word(&set, &o, argv[a]);
+        if (r == SEL_OPTS_BAD_VALUE) {
+            fprintf(stderr, "selecta: bad option value in '%s'\n", argv[a]);
+        }
+        for (id = 0; r == SEL_OPTS_OK && id < SEL_PREF_COUNT; id++) {
+            if (strcmp(set.value[id], defaults.value[id]) != 0) {
+                snprintf(cmd, sizeof cmd, "PREF_SET %s %s", sel_prefs_key(id), set.value[id]);
+                send_line(e, cmd);
+            }
+        }
+    }
+}
+
+/* UI_SWITCH <id> (DUI-P1-1): the primary UI closes and the named one opens in its place. The engine, the queue and
+ * the playing song are untouched, so playback continues across the switch. A closed UI's frame count is reported
+ * as `ui_closed` because its state is gone at exit. Returns 1 switched, 0 unknown id (nothing changed), -1 the new
+ * UI could not open. */
+static int ui_switch(const char* id, const sel_ui_open_args* args, void** ctx) {
+    shell_ui next;
+    shell_ui* cur = &g_uis[0];
+    memset(&next, 0, sizeof next);
+    if (!ui_resolve(id, &next)) {
+        fprintf(stderr, "error ui_unknown %s\n", id);
+        return 0;
+    }
+    printf("ui_closed id=%s frames=%u\n", cur->id, (unsigned)sel_tag_find(ui_stats_of(cur), SEL_UI_STAT_FRAMES, 0));
+    cur->close(cur->state);
+    cur->state = NULL; /* no event reaches a closed UI while the next one opens */
+    next.state = next.open(args);
+    if (next.state == NULL) {
+        fprintf(stderr, "selecta: the UI '%s' could not open\n", id);
+        return -1;
+    }
+    *cur = next;
+    ctx[1] = next.state;
+    return 1;
+}
+
 static void send_line(sel_engine* e, const char* line) {
     char pool[1024];
     if (sel_engine_send_line(e, line, pool, sizeof pool) == SEL_CODEC_OK) {
@@ -190,7 +287,6 @@ int main(int argc, char** argv)
     int is_null;
     int clockless;
     const sel_tag* oh;
-    const sel_tag* uh;
     sel_engine_config cfg;
     char cfgdir[256];
     sel_engine* e;
@@ -198,17 +294,14 @@ int main(int argc, char** argv)
     sel_out_close_fn out_close;
     sel_out_set_source_fn out_set_source;
     sel_out_pump_fn out_pump;
-    sel_ui_open_fn ui_open;
-    sel_ui_wait_fn ui_wait;
-    sel_ui_close_fn ui_close;
-    sel_ui_stats_fn ui_stats;
     sel_ui_open_args args;
     sel_engine_stats est;
     const sel_tag* ust;
     void* out;
     shell_output so;
-    void* ui;
     void* ctx[3];
+    unsigned u;
+    int has_stats = 0;
 #if !defined(__amigaos__) && !defined(AMIGA)
     char cwd[1024];
 #endif
@@ -237,10 +330,29 @@ int main(int argc, char** argv)
     is_null = strcmp(out_id, "null") == 0;
     int_id = option(argc, argv, "--integration", (is_null || has_keys) ? "none" : default_int);
     oh = hooks_of(SEL_PLUGIN_KIND_OUTPUT, out_id);
-    uh = hooks_of(SEL_PLUGIN_KIND_UI, ui_id);
-    if (oh == NULL || uh == NULL) {
-        fprintf(stderr, "selecta: %s '%s' is not registered\n", oh == NULL ? "output" : "ui",
-                oh == NULL ? out_id : ui_id);
+    for (a = 1; a < argc; a++) {
+        if (strcmp(argv[a], "--ui") == 0 && a + 1 < argc) {
+            if (g_ui_count >= SHELL_MAX_UIS) {
+                fputs("selecta: too many --ui\n", stderr);
+                return 2;
+            }
+            if (!ui_resolve(argv[a + 1], &g_uis[g_ui_count])) {
+                fprintf(stderr, "selecta: ui '%s' is not registered\n", argv[a + 1]);
+                return 2;
+            }
+            g_ui_count++;
+        }
+        if (strcmp(argv[a], "--stats") == 0) {
+            has_stats = 1;
+            g_stats = 1;
+        }
+    }
+    if (g_ui_count == 0 && !ui_resolve(ui_id, &g_uis[g_ui_count++])) {
+        fprintf(stderr, "selecta: ui '%s' is not registered\n", ui_id);
+        return 2;
+    }
+    if (oh == NULL) {
+        fprintf(stderr, "selecta: output '%s' is not registered\n", out_id);
         return 2;
     }
     out_open = (sel_out_open_fn)sel_tag_find(oh, SEL_OUT_OPEN, 0);
@@ -248,13 +360,8 @@ int main(int argc, char** argv)
     out_set_source = (sel_out_set_source_fn)sel_tag_find(oh, SEL_OUT_SET_SOURCE, 0);
     out_pump = (sel_out_pump_fn)sel_tag_find(oh, SEL_OUT_PUMP, 0);
     clockless = sel_tag_find(oh, SEL_OUT_CLOCKLESS, 0) != 0;
-    ui_open = (sel_ui_open_fn)sel_tag_find(uh, SEL_UI_OPEN, 0);
-    g_on_event = (sel_ui_on_event_fn)sel_tag_find(uh, SEL_UI_ON_EVENT, 0);
     ctx[0] = NULL;
-    ui_wait = (sel_ui_wait_fn)sel_tag_find(uh, SEL_UI_WAIT, 0);
-    ui_close = (sel_ui_close_fn)sel_tag_find(uh, SEL_UI_CLOSE, 0);
-    ui_stats = (sel_ui_stats_fn)sel_tag_find(uh, SEL_UI_STATS, 0);
-    if (!out_open || !out_close || !out_set_source || !out_pump || !ui_open || !ui_wait || !ui_close) {
+    if (!out_open || !out_close || !out_set_source || !out_pump) {
         fputs("selecta: a plugin lacks a hook\n", stderr);
         return 2;
     }
@@ -318,16 +425,21 @@ int main(int argc, char** argv)
     args.host = host;
     args.argc = argc;
     args.argv = (const char* const*)argv;
-    ui = ui_open(&args);
-    if (ui == NULL) {
-        fputs("selecta: the UI could not open (no terminal?)\n", stderr);
-        if (so.out != NULL) {
-        out_close(so.out);
+    for (u = 0; u < g_ui_count; u++) {
+        g_uis[u].state = g_uis[u].open(&args);
+        if (g_uis[u].state == NULL) {
+            fputs("selecta: the UI could not open (no terminal?)\n", stderr);
+            while (u-- > 0) {
+                g_uis[u].close(g_uis[u].state);
+            }
+            if (so.out != NULL) {
+                out_close(so.out);
+            }
+            sel_engine_destroy(e);
+            return 1;
+        }
     }
-        sel_engine_destroy(e);
-        return 1;
-    }
-    ctx[1] = ui;
+    ctx[1] = g_uis[0].state;
     ctx[2] = NULL;
 
 #ifndef SEL_NO_CONTROL_SOCKET
@@ -339,10 +451,12 @@ int main(int argc, char** argv)
         ctl_fd = sel_ctl_listen(ctl_path);
         if (ctl_fd == SEL_CTL_ALREADY_RUNNING) {
             fprintf(stderr, "selecta: already running (%s)\n", ctl_path);
-            ui_close(ui);
+            for (u = 0; u < g_ui_count; u++) {
+                g_uis[u].close(g_uis[u].state);
+            }
             if (so.out != NULL) {
-        out_close(so.out);
-    }
+                out_close(so.out);
+            }
             sel_engine_destroy(e);
             return 1;
         }
@@ -368,6 +482,7 @@ int main(int argc, char** argv)
         send_line(e, cmd);
         send_line(e, "VIEW_SHOW browse");
     }
+    apply_option_words(e, argc, argv);
     sel_engine_pump(e, sink, ctx);
     for (a = 1; a < argc; a++) { /* `selecta <share link>` opens the song, playlist or view the link names (I180) */
         if (sel_share_is_link(argv[a])) {
@@ -381,7 +496,11 @@ int main(int argc, char** argv)
     for (a = 1; a + 1 < argc; a++) {
         if (strcmp(argv[a], "--exec") == 0) {
             char pool[1024];
-            if (sel_engine_send_line(e, argv[a + 1], pool, sizeof pool) == SEL_CODEC_OK) {
+            if (strncmp(argv[a + 1], "UI_SWITCH ", 10) == 0) { /* the shell owns the UIs, not the engine */
+                if (ui_switch(argv[a + 1] + 10, &args, ctx) < 0) {
+                    return 1;
+                }
+            } else if (sel_engine_send_line(e, argv[a + 1], pool, sizeof pool) == SEL_CODEC_OK) {
                 sel_engine_pump(e, sink, ctx);
             }
         }
@@ -389,7 +508,17 @@ int main(int argc, char** argv)
 
     /* A clockless output (null, wav): each turn pumps exactly one UI_WAIT's worth
      * of frames, so a run is deterministic. A real output paces the loop. */
-    while ((r = ui_wait(ui, clockless ? SHELL_TURN_MS : 0u)) >= 0) {
+    for (;;) {
+        r = -1;
+        for (u = 0; u < g_ui_count; u++) { /* the loop runs while any UI still has a turn to take */
+            int wr = g_uis[u].wait(g_uis[u].state, clockless ? SHELL_TURN_MS : 0u);
+            if (wr > r) {
+                r = wr;
+            }
+        }
+        if (r < 0) {
+            break;
+        }
         waits++;
         if (so.out != NULL) {
             out_pump(so.out, SHELL_RATE * SHELL_TURN_MS / 1000u);
@@ -403,7 +532,7 @@ int main(int argc, char** argv)
 #endif
     }
 
-    ust = ui_stats != NULL ? ui_stats(ui) : NULL;
+    ust = ui_stats_of(&g_uis[0]);
     sel_engine_stats_get(e, &est);
     printf("ui_waits=%u flushes=%u keys=%u\n", (unsigned)waits, (unsigned)sel_tag_find(ust, SEL_UI_STAT_FLUSHES, 0),
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_KEYS, 0));
@@ -433,6 +562,16 @@ int main(int argc, char** argv)
     printf("ui_frames=%u ui_hash=%08x\n", (unsigned)sel_tag_find(ust, SEL_UI_STAT_FRAMES, 0),
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_HASH, 0));
 
+    if (has_stats) { /* one line per open UI (DUI-P1-4) */
+        for (u = 0; u < g_ui_count; u++) {
+            const sel_tag* us = ui_stats_of(&g_uis[u]);
+            printf("ui_stats id=%s frames=%u widget_draws=%u uim_updates=%u uim_dirty=%u uim_layout=%u\n", g_uis[u].id,
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_FRAMES, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_WIDGET_DRAWS, 0),
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_UPDATES, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_DIRTY, 0),
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_LAYOUT, 0));
+        }
+    }
+
     printf("viz_marks dot_rows=%u phase_points=%u\n", (unsigned)sel_tag_find(ust, SEL_UI_STAT_DOT_ROWS, 0),
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_PHASE_POINTS, 0));
 
@@ -455,7 +594,9 @@ int main(int argc, char** argv)
     }
 #endif
     sel_int_session_close(isess);
-    ui_close(ui);
+    for (u = 0; u < g_ui_count; u++) {
+        g_uis[u].close(g_uis[u].state);
+    }
     if (so.out != NULL) {
         out_close(so.out);
     }

@@ -152,6 +152,13 @@ SEL_TAG(UI, STAT_LIBRARY_SEARCHES, 0x501A, INT)
 SEL_TAG(UI, STAT_FOLDER_OPENS, 0x501B, INT)
 /* I185 sentinel: catalogue rows the module info panel drew in the latest frame. */
 SEL_TAG(UI, STAT_META_PANEL_ROWS, 0x501C, INT)
+/* Desktop UI sentinels (plan 2026-10-24-desktop-ui.md section 4.1): widgets drawn in total (one per dirty region per
+ * frame), sel_uim_update calls, and the regions the latest changing update touched (SEL_UIM_DIRTY_* bits). */
+SEL_TAG(UI, STAT_WIDGET_DRAWS, 0x501D, INT)
+SEL_TAG(UI, STAT_UIM_UPDATES,  0x501E, INT)
+SEL_TAG(UI, STAT_UIM_DIRTY,    0x501F, INT)
+/* The frame layout id (SEL_UIM_LAYOUT_*) the desktop UI draws with. */
+SEL_TAG(UI, STAT_UIM_LAYOUT,   0x5020, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)

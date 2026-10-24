@@ -13,13 +13,15 @@ typedef struct opt_def {
     const char* pref; /* prefs.def key it sets */
     const char* verb; /* commands.def verb with the same meaning, or NULL */
     opt_kind kind;
+    const char* choices; /* OPT_TEXT only: the accepted values, '|' separated, or NULL for any */
 } opt_def;
 
 static const opt_def k_opts[] = {
-    {"OUTPUT", "output.id", "OUTPUT", OPT_TEXT},
-    {"PRI", "audio.priority", NULL, OPT_INT},
-    {"BUFFER", "output.buffer", NULL, OPT_UINT},
-    {"LED", "output.led", NULL, OPT_ONOFF},
+    {"OUTPUT", "output.id", "OUTPUT", OPT_TEXT, NULL},
+    {"PRI", "audio.priority", NULL, OPT_INT, NULL},
+    {"BUFFER", "output.buffer", NULL, OPT_UINT, NULL},
+    {"LED", "output.led", NULL, OPT_ONOFF, NULL},
+    {"MODE", "ui.desktop.mode", NULL, OPT_TEXT, "full|window|mini"},
 };
 
 static int ieq(const char* a, const char* b) {
@@ -46,6 +48,28 @@ static int all_digits(const char* s, int allow_sign) {
     return 1;
 }
 
+/* `value` is one of the '|' separated words of `choices` (case-insensitive). */
+static int in_choices(const char* choices, const char* value) {
+    size_t n = strlen(value);
+    while (*choices != '\0') {
+        size_t w = strcspn(choices, "|");
+        size_t i = 0;
+        if (w == n) {
+            while (i < n && toupper((unsigned char)choices[i]) == toupper((unsigned char)value[i])) {
+                i++;
+            }
+        }
+        if (w == n && i == n) {
+            return 1;
+        }
+        choices += w;
+        if (*choices == '|') {
+            choices++;
+        }
+    }
+    return 0;
+}
+
 int sel_opts_apply(sel_prefs* p, sel_opts* o, const char* key, const char* value) {
     char norm[SEL_PREF_VALUE_MAX];
     size_t i, n;
@@ -67,6 +91,9 @@ int sel_opts_apply(sel_prefs* p, sel_opts* o, const char* key, const char* value
             return SEL_OPTS_BAD_VALUE;
         }
         if (d->kind == OPT_ONOFF && !ieq(value, "on") && !ieq(value, "off")) {
+            return SEL_OPTS_BAD_VALUE;
+        }
+        if (d->choices != NULL && !in_choices(d->choices, value)) {
             return SEL_OPTS_BAD_VALUE;
         }
         for (n = 0; value[n] != '\0'; n++) { /* ids and switches are stored lower case */

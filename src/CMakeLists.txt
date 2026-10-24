@@ -89,6 +89,7 @@ target_include_directories(selecta_mixer PRIVATE "${SEL_GEN_DIR}")
 target_link_libraries(selecta_core PUBLIC selecta_mixer)
 add_subdirectory(library)
 target_link_libraries(selecta_core PUBLIC selecta_library)
+add_subdirectory(uimodel)
 
 # One clock source and one machine probe per platform. OS headers live only
 # under src/core/<os>/ (RULES.md rule 3): C clock() plus sysctl (macOS) or

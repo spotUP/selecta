@@ -20,10 +20,13 @@ sel_cli_test(protocol-reflection-events   "events"   "-DLINES=${SEL_COUNT_EVT}")
 sel_cli_test(protocol-reflection-tagtypes "tagtypes" "-DLINES=${SEL_COUNT_META}")
 
 # T5: the registry walked every descriptor and found only known tags.
-# null, wav, nuade, openmpt, the minimp3 and stb_vorbis stream decoders, the crossfeed DSP, the text UI, the nowplaying-test and lastfm integrations and the voices-test, paula-shadow and paula14-shadow
+# null, wav, nuade, openmpt, the minimp3 and stb_vorbis stream decoders, the crossfeed DSP, the text UI, the desktop UI (host only), the nowplaying-test and lastfm integrations and the voices-test, paula-shadow and paula14-shadow
 # output (both host only), plus coreaudio and the
 # macOS Now Playing plugin on macOS, or MPRIS on Linux when libsystemd was found; the negative tree adds one bad plugin.
 set(SEL_EXPECT_PLUGINS 13)
+if(NOT SEL_AMIGA)
+  math(EXPR SEL_EXPECT_PLUGINS "${SEL_EXPECT_PLUGINS} + 1") # the desktop UI (M3d, headless mem backend needs no SDL)
+endif()
 if(APPLE)
   math(EXPR SEL_EXPECT_PLUGINS "${SEL_EXPECT_PLUGINS} + 2")
 elseif(SEL_HAVE_MPRIS)
@@ -1636,4 +1639,8 @@ if(NOT SEL_AMIGA)
 endif()
 
 # M3d desktop UI: red tests, ratchet and dependency check (DUI-P0-1, DUI-P0-2).
+if(NOT SEL_AMIGA)
+  # Generated modules the shell-driven dui-* tests run on (custom command outputs are only visible in this directory).
+  add_custom_target(dui-songs ALL DEPENDS "${SEL_TESTMOD}" "${SEL_SHORTMOD}" "${SEL_LOOPMOD}")
+endif()
 add_subdirectory(dui)

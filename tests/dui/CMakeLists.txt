@@ -3,7 +3,7 @@
 # replaces its red entry with the real test and removes its id from tests/ratchet/unimplemented.txt. Red entries also
 # carry label dui-red, so a run of the finished milestones (M3 finish line) can leave them out with -LE dui-red while
 # dui-ratchet keeps the red count honest.
-set(SEL_DUI_REAL dui-ratchet dui-build-deps)
+set(SEL_DUI_REAL dui-ratchet dui-build-deps dui-uim-frame)
 
 add_test(NAME dui-ratchet
   COMMAND "${CMAKE_COMMAND}"
@@ -20,6 +20,19 @@ add_test(NAME dui-build-deps
     "-DGEN=${CMAKE_GENERATOR}" "-DCMAKE=${CMAKE_COMMAND}"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/dui_build_deps.cmake")
 set_tests_properties(dui-build-deps PROPERTIES LABELS dui RUN_SERIAL TRUE)
+
+# The shell-driven tests (DUI-P1-1 to P1-4) run the real selecta binary on the generated modules.
+if(NOT SEL_AMIGA)
+  foreach(spec "dui-uim-frame:uim_frame")
+    string(REPLACE ":" ";" pair "${spec}")
+    list(GET pair 0 tname)
+    list(GET pair 1 script)
+    add_test(NAME ${tname}
+      COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSONGS=${PROJECT_BINARY_DIR}/tests/songs"
+        "-DWORK=${PROJECT_BINARY_DIR}/tests/${tname}" -P "${CMAKE_CURRENT_SOURCE_DIR}/${script}.cmake")
+    set_tests_properties(${tname} PROPERTIES LABELS dui)
+  endforeach()
+endif()
 
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/items.txt" SEL_DUI_ITEMS)
 foreach(item IN LISTS SEL_DUI_ITEMS)
