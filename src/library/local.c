@@ -113,9 +113,9 @@ static int has_archive_ext(const char* name) {
     return 0;
 }
 
-/* A file the browser may list when songs_only: a song format, a playlist or an archive. */
+/* A file the browser may list: any when no name_ok is set, else one name_ok accepts, a playlist or an archive. */
 static int is_listed_file(const sel_browse* b, const char* name) {
-    return !b->songs_only || sel_format_known_file(name) || has_archive_ext(name) ||
+    return b->name_ok == NULL || b->name_ok(b->name_ctx, name) || has_archive_ext(name) ||
            sel_playlist_format_from_name(name) != SEL_PL_AUTO;
 }
 
