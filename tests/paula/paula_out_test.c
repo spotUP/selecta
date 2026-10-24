@@ -68,6 +68,12 @@ int main(void) {
     CHECK(sel_engine_voice_route(0, 1, 4) == SEL_ROUTE_MIXER, "RENDER kind mixer");
     CHECK(sel_engine_voice_route(4, 0, 4) == SEL_ROUTE_MIXER, "no sink mixer");
     CHECK(sel_engine_voice_route(32, 1, 0) == SEL_ROUTE_DIRECT, "no limit direct");
+    /* I219: a HW-kind replayer (KPlayer) takes the hardware over with or without a voice sink. */
+    CHECK(sel_engine_route(SEL_RP_KIND_HW, 0, 1, 4) == SEL_ROUTE_HANDOVER, "HW kind handover with sink");
+    CHECK(sel_engine_route(SEL_RP_KIND_HW, 4, 0, 0) == SEL_ROUTE_HANDOVER, "HW kind handover without sink");
+    CHECK(sel_engine_route(SEL_RP_KIND_VOICE, 4, 1, 4) == SEL_ROUTE_DIRECT, "VOICE row direct");
+    CHECK(sel_engine_route(SEL_RP_KIND_RENDER, 4, 1, 4) == SEL_ROUTE_MIXER, "RENDER row mixer");
+    CHECK(sel_engine_route(99, 4, 1, 4) == SEL_ROUTE_MIXER, "unknown kind mixer");
 
     printf("paula_out hw_writes=%u failures=%d\n", (unsigned)sel_paula_hw_writes(), failures);
     return failures != 0;

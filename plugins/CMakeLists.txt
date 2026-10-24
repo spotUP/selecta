@@ -44,6 +44,11 @@ add_subdirectory(replayers/nuade)
 add_subdirectory(replayers/minimp3)
 add_subdirectory(replayers/stb_vorbis)
 
+# KPlayer v33 (HippoPlayer, MIT): ProTracker M.K. on Amiga, HW kind, drives Paula through the CIA timer (I219).
+if(SEL_AMIGA)
+  add_subdirectory(replayers/kplayer)
+endif()
+
 # libopenmpt is C++17 and desktop only (plan M1.1, no 68k build of it).
 if(NOT SEL_AMIGA)
   add_subdirectory(replayers/openmpt)

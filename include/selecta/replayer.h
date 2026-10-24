@@ -118,6 +118,13 @@ typedef void (*sel_rp_mute_fn)(void* state, uint32_t channel, uint32_t muted);
  * Runs on the audio thread between render calls. */
 typedef void (*sel_rp_set_speed_fn)(void* state, uint32_t pitch_q16, uint32_t tempo_q16);
 
+/* HW kind (I219). RP_START (voices NULL) takes the sound hardware and starts the replayer's own clock; the engine
+ * has handed the output over first. RP_HW_PAUSE: `paused` 1 stops the clock and silences the hardware, 0 resumes.
+ * RP_HW_RELEASE: stops playback and gives the hardware back; idempotent, and RP_CLOSE releases too. Both run on
+ * the audio thread (pause) or the command thread (release), never both at once. */
+typedef void (*sel_rp_hw_pause_fn)(void* state, uint32_t paused);
+typedef void (*sel_rp_hw_release_fn)(void* state);
+
 /* One sample of the open song (RP_SAMPLE_GET). `data` points at `length` frames
  * of `channels` interleaved signed PCM, 8-bit (`bits` 8) or 16-bit native
  * endian (`bits` 16), owned by the replayer and valid until the song closes.

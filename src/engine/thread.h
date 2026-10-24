@@ -20,6 +20,8 @@
         (e)->audio_thread = pthread_self(); \
         (e)->audio_marked = 1; \
     } while (0)
+/* The output that pulled audio is gone (I219 handover): no thread is the audio thread until one marks again. */
+#define SEL_THREAD_UNMARK_AUDIO(e) ((e)->audio_marked = 0)
 /* SEL_THREAD_AUDIO: this code runs on the audio thread. */
 #define SEL_THREAD_AUDIO(e) assert(!(e)->audio_marked || pthread_equal((e)->audio_thread, pthread_self()))
 /* SEL_THREAD_NOT_AUDIO: this code must stay off the audio thread. */
@@ -28,6 +30,7 @@
 #else
 #define SEL_THREAD_FIELDS
 #define SEL_THREAD_MARK_AUDIO(e) ((void)(e))
+#define SEL_THREAD_UNMARK_AUDIO(e) ((void)(e))
 #define SEL_THREAD_AUDIO(e) ((void)(e))
 #define SEL_THREAD_NOT_AUDIO(e) ((void)(e))
 #endif
