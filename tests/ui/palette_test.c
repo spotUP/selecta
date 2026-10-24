@@ -1,9 +1,9 @@
 /* T37: command palette and help overlay model (plugins/ui/text/palette.c).
  * Fuzzy ranking, every COMMANDS verb exactly once, grouping by the area
  * field of commands.def, current bindings shown. */
-#include "keybind.h"
-#include "keys.h"
-#include "palette.h"
+#include <selecta/uimodel/keybind.h>
+#include <selecta/uimodel/keys.h>
+#include <selecta/uimodel/palette.h>
 
 #include <selecta/protocol.h>
 

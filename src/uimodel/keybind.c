@@ -1,7 +1,7 @@
 /* Key bindings of the text UI, plan M1.2 phase 5 (row I76). */
-#include "keybind.h"
+#include <selecta/uimodel/keybind.h>
 
-#include "keys.h"
+#include <selecta/uimodel/keys.h>
 
 #include <selecta/protocol.h>
 

@@ -9,9 +9,9 @@
 #include "grid.h"
 #include "sizeprobe.h"
 #include "locale.h"
-#include "keys.h"
+#include <selecta/uimodel/keys.h>
 #include "term.h"
-#include "theme.h"
+#include <selecta/uimodel/theme.h>
 
 #include <fcntl.h>
 #include <stdio.h>

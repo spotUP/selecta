@@ -6,9 +6,9 @@
 #include <selecta/uimodel.h>
 
 #include "atlas_build.h"
-#include "gui_draw.h"
-#include "gui_text.h"
-#include "theme.h"
+#include <selecta/gui/gui_draw.h>
+#include <selecta/gui/gui_text.h>
+#include <selecta/uimodel/theme.h>
 
 #include <stdio.h>
 #include <stdlib.h>

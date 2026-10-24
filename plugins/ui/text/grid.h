@@ -11,7 +11,7 @@
 extern "C" {
 #endif
 
-#include "style.h"
+#include <selecta/uimodel/style.h>
 
 typedef struct txt_cell {
     uint32_t cp; /* Unicode code point; ' ' for empty */

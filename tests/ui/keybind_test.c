@@ -1,7 +1,7 @@
 /* T34: key bindings table (plugins/ui/text/keybind.c). Defaults, keys.conf
  * lines, unbind, rejected verbs with line numbers, key names. */
-#include "keybind.h"
-#include "keys.h"
+#include <selecta/uimodel/keybind.h>
+#include <selecta/uimodel/keys.h>
 
 #include <stdio.h>
 #include <string.h>

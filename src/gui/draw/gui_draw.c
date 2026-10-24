@@ -1,5 +1,5 @@
 /* Integer rasterizer (plan DUI-P2-1) and dirty-rectangle list (DUI-P2-2). See gui_draw.h. */
-#include "gui_draw.h"
+#include <selecta/gui/gui_draw.h>
 
 #include <string.h>
 

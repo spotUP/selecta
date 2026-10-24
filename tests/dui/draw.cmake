@@ -33,7 +33,7 @@ foreach(fmt rgba32 index8)
   endif()
 endforeach()
 
-file(GLOB_RECURSE gui_files "${GUISRC}/*.c" "${GUISRC}/*.h")
+file(GLOB_RECURSE gui_files "${GUISRC}/*.c" "${GUISRC}/*.h" "${GUIHDR}/*.h")
 list(LENGTH gui_files gui_count)
 if(gui_count LESS 2)
   message(FATAL_ERROR "lint found no source under ${GUISRC}")

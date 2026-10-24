@@ -1,7 +1,7 @@
 /* Command line of the text UI, plan M1.2 phase 5 (row I77). */
-#include "cmdline.h"
+#include <selecta/uimodel/cmdline.h>
 
-#include "keys.h"
+#include <selecta/uimodel/keys.h>
 
 #include <selecta/protocol.h>
 

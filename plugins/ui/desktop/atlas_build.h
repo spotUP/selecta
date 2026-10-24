@@ -4,7 +4,7 @@
 #ifndef SEL_DESKTOP_ATLAS_BUILD_H
 #define SEL_DESKTOP_ATLAS_BUILD_H
 
-#include "gui_text.h"
+#include <selecta/gui/gui_text.h>
 
 /* Code points the atlas holds: Basic Latin, Latin-1 Supplement and Latin Extended-A, and the general punctuation
  * the player texts use. Returns NULL on a bad font or no memory. */

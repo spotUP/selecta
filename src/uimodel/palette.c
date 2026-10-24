@@ -1,7 +1,7 @@
 /* Command palette model of the text UI, plan M1.2 phase 5 (row I78). */
-#include "palette.h"
+#include <selecta/uimodel/palette.h>
 
-#include "keys.h"
+#include <selecta/uimodel/keys.h>
 
 #include <string.h>
 

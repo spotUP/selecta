@@ -1,8 +1,8 @@
 /* T36: command line (plugins/ui/text/cmdline.c, spawn.c). Tab completion from
  * the COMMANDS table, status-line match list, history recall and its 100-line
  * cap, and `!program` with the selected paths as arguments. */
-#include "cmdline.h"
-#include "keys.h"
+#include <selecta/uimodel/cmdline.h>
+#include <selecta/uimodel/keys.h>
 #include "spawn.h"
 
 #include <stdio.h>

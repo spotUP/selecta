@@ -1,5 +1,5 @@
 /* Glyph-atlas text layout and blit (DUI-P2-3). Integer only (plan 2.5, 2.11); see gui_text.h. */
-#include "gui_text.h"
+#include <selecta/gui/gui_text.h>
 
 #include <string.h>
 

@@ -3,8 +3,8 @@
 #ifndef SELECTA_TEXT_THEME_H
 #define SELECTA_TEXT_THEME_H
 
-#include "style.h"
-#include "tokens.h"
+#include <selecta/uimodel/style.h>
+#include <selecta/uimodel/tokens.h>
 
 #ifdef __cplusplus
 extern "C" {

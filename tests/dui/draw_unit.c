@@ -1,6 +1,6 @@
 /* Unit test of the integer rasterizer (DUI-P2-1) and its dirty list (DUI-P2-2): each primitive checked where it
  * lives, on both canvas formats. The wiring through the shell is proved by dui-draw's test card. */
-#include "gui_draw.h"
+#include <selecta/gui/gui_draw.h>
 
 #include <stdio.h>
 #include <stdlib.h>

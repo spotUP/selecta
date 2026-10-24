@@ -1,5 +1,5 @@
 /* Terminal input parser, plan M1.1 phase 5 (row I59). */
-#include "keys.h"
+#include <selecta/uimodel/keys.h>
 
 #include <string.h>
 

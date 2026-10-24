@@ -1,5 +1,5 @@
 /* Text UI theme tokens, plan M1.1 phase 5 (row I59). */
-#include "theme.h"
+#include <selecta/uimodel/theme.h>
 
 #include <string.h>
 

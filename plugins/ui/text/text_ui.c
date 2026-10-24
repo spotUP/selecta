@@ -15,14 +15,14 @@
 #include <string.h>
 
 #include "grid.h"
-#include "cmdline.h"
-#include "keybind.h"
+#include <selecta/uimodel/cmdline.h>
+#include <selecta/uimodel/keybind.h>
 #include <selecta/uimodel.h>
-#include "keys.h"
-#include "palette.h"
+#include <selecta/uimodel/keys.h>
+#include <selecta/uimodel/palette.h>
 #include "spawn.h"
 #include "term.h"
-#include "theme.h"
+#include <selecta/uimodel/theme.h>
 
 #define TUI_POOLS 4u
 #define TUI_POOL_BYTES 1024u

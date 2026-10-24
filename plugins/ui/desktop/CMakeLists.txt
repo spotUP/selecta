@@ -21,8 +21,7 @@ foreach(spec "Inter-Regular:sel_font_inter_regular" "Inter-SemiBold:sel_font_int
 endforeach()
 
 sel_add_plugin(desktop_ui 5 desktop_ui.c atlas_build.c stb_impl.c ${FONT_GEN}
-  THIRD_PARTY_INCLUDES "${PROJECT_SOURCE_DIR}/src/gui/draw" "${PROJECT_SOURCE_DIR}/src/gui/text"
-    "${PROJECT_SOURCE_DIR}/src/uimodel" "${PROJECT_SOURCE_DIR}/third_party/stb")
+  THIRD_PARTY_INCLUDES "${PROJECT_SOURCE_DIR}/third_party/stb")
 target_link_libraries(sel_plugin_desktop_ui PUBLIC selecta_uimodel selecta_gui)
 if(UNIX)
   target_link_libraries(sel_plugin_desktop_ui PUBLIC m)

@@ -34,7 +34,7 @@ if(NOT SEL_AMIGA)
     add_test(NAME ${tname}
       COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSONGS=${PROJECT_BINARY_DIR}/tests/songs"
         "-DWORK=${PROJECT_BINARY_DIR}/tests/${tname}" "-DGOLDEN=${PROJECT_SOURCE_DIR}/tests/golden"
-        "-DUNIT=$<TARGET_FILE:dui_draw_unit>" "-DGUISRC=${PROJECT_SOURCE_DIR}/src/gui" -P "${CMAKE_CURRENT_SOURCE_DIR}/${script}.cmake")
+        "-DUNIT=$<TARGET_FILE:dui_draw_unit>" "-DGUISRC=${PROJECT_SOURCE_DIR}/src/gui" "-DGUIHDR=${PROJECT_SOURCE_DIR}/include/selecta/gui" -P "${CMAKE_CURRENT_SOURCE_DIR}/${script}.cmake")
     # Each test owns its default control socket path ($TMPDIR/selecta-<uid>.sock): two tests sharing
     # the per-user default collide under ctest -j ("selecta: already running"). TMPDIR, not
     # SELECTA_SOCKET, because SELECTA_SOCKET also forces the socket on and keeps --exec runs alive.

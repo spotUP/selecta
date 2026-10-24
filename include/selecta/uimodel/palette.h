@@ -6,7 +6,7 @@
 #ifndef SELECTA_TEXT_PALETTE_H
 #define SELECTA_TEXT_PALETTE_H
 
-#include "keybind.h"
+#include <selecta/uimodel/keybind.h>
 
 #include <selecta/protocol.h>
 

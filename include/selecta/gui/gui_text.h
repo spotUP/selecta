@@ -4,7 +4,7 @@
 #ifndef SEL_GUI_TEXT_H
 #define SEL_GUI_TEXT_H
 
-#include "gui_draw.h"
+#include <selecta/gui/gui_draw.h>
 
 #include <stdint.h>
 

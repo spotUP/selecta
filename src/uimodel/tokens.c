@@ -1,5 +1,5 @@
 /* Design token tables (DUI-P1-10); the parser lives in theme.c next to the role parser. */
-#include "tokens.h"
+#include <selecta/uimodel/tokens.h>
 
 #include <string.h>
 
