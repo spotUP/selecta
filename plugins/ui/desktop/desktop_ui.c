@@ -15,6 +15,8 @@ typedef struct desk {
     uint32_t frames;
     uint32_t widget_draws;
     uint32_t hash;
+    const char* resize; /* --resize WxH[,WxH...]: resize events the mem backend replays at open */
+    sel_uim_layout layout;
     int actions; /* --actions: the close hook prints the action table and the help rows */
     int report; /* --stats: the close hook prints its sentinel line */
     sel_tag stats[7];
@@ -79,12 +81,40 @@ static void desk_print_actions(void) {
            sel_uim_actions_check(msg, sizeof msg) == 0 ? "ok" : msg);
 }
 
+/* Each WxH is one resize event: the layout is recomputed and the result printed, regions with their rectangles. */
+static void desk_replay_resizes(desk* d) {
+    const char* p = d->resize;
+    unsigned w, h;
+    int used;
+    char msg[96];
+    while (sscanf(p, "%ux%u%n", &w, &h, &used) == 2) {
+        uint32_t i;
+        sel_uim_layout_compute(&d->layout, w, h);
+        printf("layout width=%u height=%u id=%s regions=%u check=%s\n", w, h,
+               sel_uim_breakpoint_name(d->layout.breakpoint), (unsigned)d->layout.count,
+               sel_uim_layout_check(&d->layout, msg, sizeof msg) == 0 ? "ok" : msg);
+        for (i = 0; i < d->layout.count; i++) {
+            const sel_uim_region* r = &d->layout.regions[i];
+            printf("region name=%s x=%d y=%d w=%u h=%u\n", r->name, (int)r->x, (int)r->y, (unsigned)r->w,
+                   (unsigned)r->h);
+        }
+        p += used;
+        if (*p != ',') {
+            break;
+        }
+        p++;
+    }
+}
+
 static void desk_close(void* state) {
     desk* d = (desk*)state;
     if (d != NULL) {
         if (d->report) {
             printf("desktop_ui closed frames=%u title=%s clock=%s status=%s\n", (unsigned)d->frames, d->uim.frame.title,
                    d->uim.frame.clock, d->uim.frame.status);
+        }
+        if (d->resize != NULL) {
+            desk_replay_resizes(d);
         }
         if (d->actions) {
             desk_print_actions();
@@ -112,6 +142,9 @@ static void* desk_open(const sel_ui_open_args* a) {
     for (i = 0; i < a->argc; i++) {
         if (strcmp(a->argv[i], "--stats") == 0) {
             d->report = 1;
+        }
+        if (strcmp(a->argv[i], "--resize") == 0 && i + 1 < a->argc) {
+            d->resize = a->argv[i + 1];
         }
         if (strcmp(a->argv[i], "--actions") == 0) {
             d->actions = 1;

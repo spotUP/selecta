@@ -93,6 +93,35 @@ void sel_uim_help_row(uint32_t i, char* out, size_t cap);
 /* 0 when every line is a COMMANDS verb or a PREF_SET of a prefs.def key and every verb has a row or an exemption. */
 int sel_uim_actions_check(char* msg, size_t cap);
 
+/* Layout tree and breakpoints (plan DUI-P1-7). A canvas width picks the breakpoint; the regions tile the canvas. */
+enum {
+    SEL_UIM_BP_THREE_COLUMN = 0,   /* 1200 wide and up */
+    SEL_UIM_BP_TWO_COLUMN = 1,     /* 900 to 1199 */
+    SEL_UIM_BP_ICON_SIDEBAR = 2,   /* 700 to 899 */
+    SEL_UIM_BP_MINI_SUGGESTION = 3, /* below 700: main list plus a banner suggesting the mini layout */
+    SEL_UIM_BP_COUNT = 4
+};
+#define SEL_UIM_LAYOUT_REGIONS 5u
+
+typedef struct sel_uim_region {
+    const char* name;
+    int32_t x, y;
+    uint32_t w, h;
+    uint32_t min_w, min_h;
+} sel_uim_region;
+
+typedef struct sel_uim_layout {
+    uint32_t width, height;
+    uint32_t breakpoint; /* SEL_UIM_BP_* */
+    uint32_t count;
+    sel_uim_region regions[SEL_UIM_LAYOUT_REGIONS];
+} sel_uim_layout;
+
+const char* sel_uim_breakpoint_name(uint32_t bp);
+uint32_t sel_uim_breakpoint_for(uint32_t width);
+void sel_uim_layout_compute(sel_uim_layout* l, uint32_t width, uint32_t height);
+int sel_uim_layout_check(const sel_uim_layout* l, char* msg, size_t cap);
+
 SEL_EXTERN_C_END
 
 #endif /* SELECTA_UIMODEL_H */
