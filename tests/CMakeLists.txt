@@ -601,6 +601,8 @@ if(NOT SEL_AMIGA)
   set_tests_properties(engine-hw-song-not-cut-by-early-prepare PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "hw_prepare: ok")
   add_test(NAME engine-hw-song-ends-on-loop COMMAND hw_prepare_test loop)
   set_tests_properties(engine-hw-song-ends-on-loop PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "hw_prepare: ok")
+  add_test(NAME engine-hw-song-seeks-natively COMMAND hw_prepare_test seek)
+  set_tests_properties(engine-hw-song-seeks-natively PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "hw_prepare: ok")
   set_tests_properties(browse-hides-unrecognised-files PROPERTIES PASS_REGULAR_EXPRESSION "browse_filter_ok")
 endif()
 
@@ -1443,6 +1445,11 @@ if(NOT SEL_AMIGA)
   target_link_libraries(xxh32_test PRIVATE selecta_library)
   add_test(NAME xxh32-unit COMMAND xxh32_test)
   set_tests_properties(xxh32-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "xxh32_ok")
+  # I219g: the KPlayer timing walker behind the native .mod seek on Amiga (pure C, so the host runs it).
+  add_executable(kplayer_modwalk_test kplayer_modwalk_test.c ${PROJECT_SOURCE_DIR}/plugins/replayers/kplayer/modwalk.c)
+  target_include_directories(kplayer_modwalk_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/replayers/kplayer)
+  add_test(NAME kplayer-modwalk COMMAND kplayer_modwalk_test)
+  set_tests_properties(kplayer-modwalk PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "kplayer_modwalk_ok")
   add_test(NAME devilbox-genre
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DSONGS=${PROJECT_SOURCE_DIR}/tests/m3/genre"
             -P "${SEL_NET_DIR}/devilbox_genre.cmake")

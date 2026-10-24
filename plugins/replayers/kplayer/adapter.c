@@ -11,6 +11,8 @@
 
 #include <string.h>
 
+#include "modwalk.h"
+
 extern uint8_t sel_kpl_code[];
 extern const uint32_t sel_kpl_size;
 
@@ -23,12 +25,30 @@ enum {
      * area: kpl_offsets.S:74. Measured, not counted: vasmm68k_mot assembling the rs block of kpl_offsets.S
      * (k_counter..k_songover) and dumping `dc.l k_songover` gives 0x0000001d = 29. */
     KP_SONGOVER_AT = 29,
+    /* The other work area fields rp_seek writes, from the same rs block (kpl14.s:150-197). k_songpos, k_pbreakpos
+     * and k_patternpos are words, k_timerhi/k_timerlo one big-endian word, k_timervalue and k_cia longs. */
+    KP_COUNTER_AT = 0,
+    KP_SPEED_AT = 1,
+    KP_POSJUMPFLAG_AT = 2, /* k_posjumpflag, k_pbreakflag, k_pattdeltime, k_pattdeltime2: bytes 2..5 */
+    KP_SONGPOS_AT = 6,
+    KP_PBREAKPOS_AT = 8,
+    KP_PATTERNPOS_AT = 10,
+    KP_TEMPO_AT = 24,
+    KP_USETEMPO_AT = 25,
+    KP_WHICHTIMER_AT = 32,
+    KP_TIMERHI_AT = 34,
+    KP_TIMERVALUE_AT = 36,
+    KP_CIA_AT = 44,
+    KP_CIATALO = 0x400, /* hardware/cia.i: timer A low byte, relative to the CIA base in k_cia */
+    KP_CIATBLO = 0x600, /* timer B low byte; the high byte of either is 0x100 above */
     KP_MAGIC_AT = 1080
 };
 
 typedef struct kp_state {
     const sel_host* host;
-    uint8_t* module; /* SEL_MEM_SAMPLE copy */
+    uint8_t* module; /* SEL_MEM_SAMPLE copy, converted in place by KP_INIT */
+    const uint8_t* source; /* the engine's unconverted song data, valid until RP_CLOSE; rp_seek walks it */
+    size_t source_size;
     uint8_t* work;   /* SEL_MEM_SAMPLE, KP_WORK_SIZE bytes */
     uint32_t playing;
     uint8_t last_songover; /* k_songover as last seen by rp_hw_poll */
@@ -99,6 +119,8 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
         return NULL;
     }
     memcpy(s->module, src->data, src->size);
+    s->source = src->data;
+    s->source_size = src->size;
     memset(s->work, 0, KP_WORK_SIZE);
     info->voice_count = 4;
     info->subsong_count = 1;
@@ -159,11 +181,57 @@ static uint32_t rp_hw_poll(void* state) {
     return SEL_TICK_LOOPED;
 }
 
+static void put_word(volatile uint8_t* p, uint32_t v) {
+    p[0] = (uint8_t)(v >> 8);
+    p[1] = (uint8_t)v;
+}
+
+/* RP_SEEK (I219g): finds the row playing at `ms` with the timing walker, then points the paused replayer at it the
+ * way its own position jump would: order and row, a clean break/jump/delay state, the speed in force, and the
+ * counter one tick before the row's prefetch (k_music reads the row at counter speed-1 and plays it at speed). The
+ * tempo goes through the same steps as k_settempo2 (kpl14.s:2084): k_tempo, k_timerhi = k_timervalue / tempo, and
+ * the CIA timer latch. The landing is the row start, at most one row before `ms`; E6x loop counters in the channel
+ * blocks are not rewound, so a seek into a loop body plays the rest of that loop once. Returns 0 (the engine falls
+ * back to restart-and-skip) when the walker finds no row, that is past the song end. */
+static int rp_seek(void* state, uint32_t ms) {
+    kp_state* s = (kp_state*)state;
+    volatile uint8_t* w;
+    kp_walk_pos pos;
+    if (!s->playing || g_owner != s || !kp_walk_find(s->source, s->source_size, ms, &pos)) {
+        return 0;
+    }
+    w = (volatile uint8_t*)s->work;
+    kp_call(KP_PLAYSTOP, 1, 0, 0, NULL, NULL);
+    put_word(w + KP_SONGPOS_AT, pos.songpos);
+    put_word(w + KP_PATTERNPOS_AT, pos.row);
+    put_word(w + KP_PBREAKPOS_AT, 0);
+    w[KP_POSJUMPFLAG_AT] = 0;
+    w[KP_POSJUMPFLAG_AT + 1] = 0;
+    w[KP_POSJUMPFLAG_AT + 2] = 0;
+    w[KP_POSJUMPFLAG_AT + 3] = 0;
+    w[KP_SPEED_AT] = pos.speed;
+    w[KP_COUNTER_AT] = pos.speed > 1u ? (uint8_t)(pos.speed - 2u) : 0u;
+    if (w[KP_USETEMPO_AT] == 0) {
+        uint32_t value = ((uint32_t)w[KP_TIMERVALUE_AT] << 24) | ((uint32_t)w[KP_TIMERVALUE_AT + 1] << 16) |
+                         ((uint32_t)w[KP_TIMERVALUE_AT + 2] << 8) | w[KP_TIMERVALUE_AT + 3];
+        uint32_t cia = ((uint32_t)w[KP_CIA_AT] << 24) | ((uint32_t)w[KP_CIA_AT + 1] << 16) |
+                       ((uint32_t)w[KP_CIA_AT + 2] << 8) | w[KP_CIA_AT + 3];
+        uint32_t hi = (value / pos.tempo) & 0xffffu; /* divu: the 16-bit quotient */
+        volatile uint8_t* lo = (volatile uint8_t*)(uintptr_t)(cia + (w[KP_WHICHTIMER_AT] ? KP_CIATBLO : KP_CIATALO));
+        w[KP_TEMPO_AT] = pos.tempo;
+        put_word(w + KP_TIMERHI_AT, hi);
+        lo[0] = (uint8_t)hi;
+        lo[0x100] = (uint8_t)(hi >> 8);
+    }
+    kp_call(KP_PLAYSTOP, 0, 0, 0, NULL, NULL);
+    return 1;
+}
+
 static void rp_hw_release(void* state) {
     stop((kp_state*)state);
 }
 
-static sel_tag g_hooks[14];
+static sel_tag g_hooks[15];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -188,7 +256,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[10], SEL_RP_HW_POLL, SEL_TAG_FN(rp_hw_poll));
     set(&g_hooks[11], SEL_RP_MIN_CPU, 68000);
     set(&g_hooks[12], SEL_RP_PRIORITY, 10); /* the native player outranks nuade for M.K. on Amiga */
-    set(&g_hooks[13], SEL_TAG_END, 0);
+    set(&g_hooks[13], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
+    set(&g_hooks[14], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "kplayer");

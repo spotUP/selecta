@@ -21,4 +21,4 @@ add_custom_command(OUTPUT "${KPL_C}"
   COMMAND "${CMAKE_COMMAND}" -DIN="${KPL_BIN}" -DOUT="${KPL_C}" -P "${CMAKE_CURRENT_SOURCE_DIR}/bin2c.cmake"
   DEPENDS "${KPL_BIN}" "${CMAKE_CURRENT_SOURCE_DIR}/bin2c.cmake"
   COMMENT "Embedding KPlayer v33")
-sel_add_plugin(kplayer 1 adapter.c "${KPL_C}")
+sel_add_plugin(kplayer 1 adapter.c modwalk.c "${KPL_C}")

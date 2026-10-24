@@ -7,7 +7,9 @@
  * next song once the first one ended (max_song_ms).
  * Regression (I219d): while handed over, the pump clocked the HW song by local time, which the host reports in whole
  * seconds; song time stalled and then jumped a second, so the end policy fired early. The test host's local time has
- * that resolution and its clock_ms steps with drive(), so the song position after 400 ms tells the two clocks apart. */
+ * that resolution and its clock_ms steps with drive(), so the song position after 400 ms tells the two clocks apart.
+ * I219g (`seek` argument): SEEK on a HW song restarts it on the hardware and hands the target to the replayer's
+ * RP_SEEK; the fake's seek call and its ms are the sentinel, seek_path 1 (native) and the song position the result. */
 #include <selecta/engine.h>
 #include <selecta/host.h>
 #include <selecta/plugin.h>
@@ -31,6 +33,7 @@ static int g_fail;
 
 static uint32_t g_hw_starts, g_hw_releases;
 static uint32_t g_polls, g_loop_after; /* fake HW poll: calls so far, and the call that reports LOOPED (0 = never) */
+static uint32_t g_seeks, g_seek_ms; /* fake HW seek: calls and the last target */
 static int g_state; /* any non-NULL state will do: the fakes keep no per-song data */
 
 static int ends_with(const char* name, const char* ext) {
@@ -82,6 +85,13 @@ static uint32_t hw_poll(void* state) {
     return g_loop_after != 0u && g_polls == g_loop_after ? SEL_TICK_LOOPED : 0u;
 }
 
+static int hw_seek(void* state, uint32_t ms) {
+    (void)state;
+    g_seeks++;
+    g_seek_ms = ms;
+    return 1;
+}
+
 static int rnd_start(void* state, uint32_t subsong, uint32_t rate, const sel_voices* voices) {
     (void)state;
     (void)subsong;
@@ -104,6 +114,7 @@ static sel_tag g_hw_hooks[] = {{SEL_RP_KIND, SEL_RP_KIND_HW},
                                {SEL_RP_START, SEL_TAG_FN(hw_start)},
                                {SEL_RP_HW_RELEASE, SEL_TAG_FN(hw_release)},
                                {SEL_RP_HW_POLL, SEL_TAG_FN(hw_poll)},
+                               {SEL_RP_SEEK, SEL_TAG_FN(hw_seek)},
                                {SEL_TAG_END, 0}};
 static sel_tag g_rnd_hooks[] = {{SEL_RP_KIND, SEL_RP_KIND_RENDER},
                                 {SEL_RP_EXTENSIONS, (uintptr_t) "rnd"},
@@ -211,6 +222,7 @@ static void drive(uint32_t ms, uint32_t stop_at) {
 
 int main(int argc, char** argv) {
     int loop_only = argc > 1 && strcmp(argv[1], "loop") == 0; /* ctest engine-hw-song-ends-on-loop */
+    int seek_only = argc > 1 && strcmp(argv[1], "seek") == 0; /* ctest engine-hw-song-seeks-natively */
     char dir[] = "/tmp/selecta_hw_prepare_XXXXXX";
     sel_engine_stats st;
     CHECK(mkdtemp(dir) != NULL);
@@ -218,7 +230,26 @@ int main(int argc, char** argv) {
     touch(dir, "b.hwm");
     touch(dir, "c.rnd");
 
-    if (!loop_only) {
+    if (seek_only) {
+        start(dir, "a.hwm", "b.hwm");
+        run("OPTION max_song_ms 120000");
+        drive(200u, 9u);
+        CHECK(g_hw_starts == 1u);
+        g_seeks = 0;
+        run("SEEK 30000");
+        drive(100u, 9u);
+        CHECK(g_seeks == 1u);
+        CHECK(g_seek_ms == 30000u);
+        CHECK(g_hw_starts == 2u); /* the song restarted on the hardware before the seek */
+        CHECK(sel_engine_handed_over(eng) == 1u);
+        sel_engine_stats_get(eng, &st);
+        CHECK(st.seek_path == 1u);
+        CHECK(sel_engine_state(eng)->song.position_ms >= 30000u);
+        CHECK(sel_engine_state(eng)->song.position_ms <= 30300u);
+        sel_engine_destroy(eng);
+    }
+
+    if (!loop_only && !seek_only) {
     /* HW song then HW song: the prepare window opens at once, yet the playing song keeps the hardware. */
     start(dir, "a.hwm", "b.hwm");
     drive(400u, 2u);
@@ -247,6 +278,7 @@ int main(int argc, char** argv) {
     sel_engine_destroy(eng);
     }
 
+    if (!seek_only) {
     /* Regression (I219b): HW slots never ticked, so a HW song ended only at max_song_ms. The fake's poll reports
      * LOOPED on its 40th call (about 40 render chunks, 256 frames each: ~230 ms); loops is 1 and the fade 0, so the
      * song ends then and the queue starts the next one, far before the 5000 ms cap. The poll count is the sentinel. */
@@ -260,6 +292,7 @@ int main(int argc, char** argv) {
     CHECK(g_ms < 1200u); /* the second song started on the poll's LOOPED, not at the 5000 ms cap */
     g_loop_after = 0u;
     sel_engine_destroy(eng);
+    }
 
     {
         char p[1024];
