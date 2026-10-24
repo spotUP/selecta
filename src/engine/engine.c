@@ -398,7 +398,7 @@ struct sel_engine {
     sel_engine_handover_fn handover; /* app hook that closes and reopens the output (I219), or NULL */
     void* handover_ctx;
     uint32_t handed_over;         /* 1: the output is closed, a HW-kind replayer owns the hardware */
-    uint32_t hw_clock_ms;         /* local_ms of the last self-clocked render while handed over */
+    uint32_t hw_clock_ms;         /* host clock_ms of the last self-clocked render while handed over */
     uint32_t hw_handovers;        /* stats: output handed over (I219) */
     uint32_t hw_starts;           /* stats: HW RP_START successes (I219) */
     uint32_t route_direct;        /* routing of the song started last: 1 = voice_sink, 0 = mixer (sel_engine_voice_route) */
@@ -1211,7 +1211,7 @@ static void handover_for(sel_engine* e, const sel_slot* sl, uint32_t route) {
         }
         e->handed_over = 1;
         SEL_THREAD_UNMARK_AUDIO(e); /* no output thread now: the pump renders (hw_clock) */
-        e->hw_clock_ms = local_ms(e);
+        e->hw_clock_ms = e->host->clock_ms(e->host);
         e->hw_handovers++;
     } else if (route != SEL_ROUTE_HANDOVER && e->handed_over) {
         if (e->handover == NULL || e->handover(e->handover_ctx, 0)) {
@@ -1799,6 +1799,12 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     if (kind != SEL_RP_KIND_VOICE) {
         sl->rp_tick = NULL;
     }
+    if (queued == 1u && kind == SEL_RP_KIND_HW) {
+        /* RP_START of a HW-kind replayer plays at once and the handover closes the output (I219a), so it is
+         * never prepared early: the playing song keeps sounding and this one starts when it ended. */
+        drop_song(e, data, live, fs);
+        return 0;
+    }
     if (!open || !sl->rp_close || !sl->rp_start || (kind == SEL_RP_KIND_VOICE && !sl->rp_tick) ||
         (kind == SEL_RP_KIND_RENDER && !sl->rp_render)) {
         drop_song(e, data, live, fs);
@@ -2362,7 +2368,9 @@ static void prepare_next(sel_engine* e) {
         return;
     }
     sl = &e->slot[e->cur];
-    if (sl->ended || e->deferred) {
+    /* A HW-kind song owns the hardware on its own clock (I219a): starting any next song early would take the
+     * hardware from it or reopen the output under it, so its successor starts only after it ended. */
+    if (sl->ended || e->deferred || sl->hw) {
         return;
     }
     {
@@ -4722,7 +4730,7 @@ static void refresh_snapshot(sel_engine* e) {
  * by the wall clock (I219): swaps, song time, end policy and the queue advance as with an output. */
 static void hw_clock(sel_engine* e) {
     int16_t scratch[256u * 2u];
-    uint32_t now = local_ms(e);
+    uint32_t now = e->host->clock_ms(e->host); /* monotonic: local time is whole seconds on the host and jumps at midnight (I219d) */
     uint32_t ms = now - e->hw_clock_ms;
     uint32_t frames;
     if (ms > 1000u) {
