@@ -203,7 +203,7 @@ int txt_keys_feed(txt_keys* k, uint8_t b, txt_key* out) {
             k->priv = 1;
             return 0;
         }
-        if (b == ' ' && k->amiga) {
+        if (b == ' ' && (k->amiga || k->amiga_console)) {
             k->space = 1;
             return 0;
         }
@@ -214,11 +214,22 @@ int txt_keys_feed(txt_keys* k, uint8_t b, txt_key* out) {
         }
         if (b == ';') {
             if (k->nparams == 0) k->nparams = 1;
-            if (k->nparams < 4) k->nparams++;
+            if (k->nparams < 8) k->nparams++;
             return 0;
         }
         if (b >= 0x40 && b <= 0x7E) {
             uint32_t code;
+            if (k->amiga_console && b == '|' && k->nparams >= 1 && k->params[0] == 12) {
+                emit(k, out, TXT_KEY_RESIZE, 0); /* raw input event, class 12: window resized */
+                return 1;
+            }
+            if (k->amiga_console && b == 'r' && k->space && k->nparams >= 4 && k->params[0] == 1 &&
+                k->params[1] == 1) { /* window bounds report: CSI 1;1;rows;cols SPACE r */
+                emit(k, out, TXT_KEY_WINDOW, 0);
+                out->x = k->params[3];
+                out->y = k->params[2];
+                return 1;
+            }
             if (k->priv && (b == 'M' || b == 'm') && k->nparams >= 3) {
                 uint32_t bt = k->params[0];
                 uint32_t mods = ((bt & 4u) ? TXT_MOD_SHIFT : 0u) | ((bt & 8u) ? TXT_MOD_ALT : 0u) |

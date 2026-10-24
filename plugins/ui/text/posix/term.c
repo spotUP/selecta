@@ -50,6 +50,15 @@ void txt_term_size(const txt_term* t, uint32_t* cols, uint32_t* rows) {
     }
 }
 
+/* The size comes from ioctl on every call, so there is nothing to ask or to record. */
+void txt_term_ask_size(txt_term* t) { (void)t; }
+
+void txt_term_set_size(txt_term* t, uint32_t cols, uint32_t rows) {
+    (void)t;
+    (void)cols;
+    (void)rows;
+}
+
 long txt_term_read(txt_term* t, uint8_t* buf, size_t cap, int timeout_ms) {
     struct pollfd p;
     int r;
