@@ -481,6 +481,16 @@ Tests T62 to T97 are defined in the plan's finish-line table. T8 ratchet target 
 | I219b | [ ] | I219 | HW-kind songs: song end is not detected (KPlayer's song-over byte is not read; the default duration policy ends the song) and seek is refused. Read the song-over flag through the adapter and report end to the engine. | .mod ends at the module's real end on the Replay; test covers the adapter flag path |
 | I219c | [ ] | I219 | Under vamos the KPlayer HW start fails (hw_handovers=1, hw_starts=0); suspected cause is no ciab.resource in vamos, unverified. Confirm the cause and either fake the resource in the test or record the exemption. | cause recorded with evidence; test asserts the expected path |
 | I219d | [x] | HW song clock: hw_clock used local time (whole seconds on the host, midnight wrap), so song time stalled then jumped 1000 ms and the end policy fired early. Now host clock_ms (monotonic). Regression in engine-hw-song-not-cut-by-early-prepare (test host with second-resolution local time). |
+| I220 | [x] | - | Desktop UI milestone plan (M3d) written: thoughts/shared/plans/2026-10-24-desktop-ui.md, 61 items DUI-P0-1..DUI-P7-2, Coverage 280 rows counted twice. Answers D-DUI-1..8 recorded in its section 7.1 (SDL3, 8-unit 3-column grid, dark plus light, Inter, Lucide, thumbs in the database, 2D grid and cover flow pulled from M5). |
+| I220a | [ ] | I220 | Apply the desktop plan section 6 design doc text (D5 to SDL3, milestone M3d between M3c and M4, desktop UI out of M5 at line 520) and revise the M4 plan per desktop plan section 9 and D-M4-6 (M4 sections 3, 4, 6; 33 M4 IDs move to DUI). |
+| I220b | [ ] | I220a | DUI Phase 0: red tests and SDL3 dependency (DUI-P0-1, DUI-P0-2). |
+| I220c | [ ] | I220b | DUI Phase 1: shell and uimodel (DUI-P1-*). |
+| I220d | [ ] | I220c | DUI Phase 2: drawing, text, images, backends (DUI-P2-*). |
+| I220e | [ ] | I220d | DUI Phase 3: widgets and input (DUI-P3-*). |
+| I220f | [ ] | I220e | DUI Phase 4: frame and views (DUI-P4-*). |
+| I220g | [ ] | I220f | DUI Phase 5: desktop features (DUI-P5-*). |
+| I220h | [ ] | I220g | DUI Phase 6: performance and Amiga readiness (DUI-P6-*). |
+| I220i | [ ] | I220h | DUI Phase 7: landing (DUI-P7-*). |
 | I202 | [ ] | 13 | Full finish-line run (reason: landing M3) | all T62 to T97 and T8 green, none skipped |
 | I203 | [ ] | 13 | Manual checks 1 to 6 confirmed by Johan | Johan's confirmation recorded in ledger |
 | I212 | [ ] | After the app is finished (post I202/I203): survey the fastest MP3 and Ogg Vorbis decoders for 68k (fixed-point and integer-only candidates, existing Amiga players such as mpega/MPEGA.library and their decode cores, Tremor/Tremolo for Vorbis), pick by measured rig speed, then hand-optimise the hot paths (IMDCT, synthesis filterbank, Huffman/bit reader, Vorbis floor/residue) in 68k asm so MP3 and Ogg play in real time on slower Amigas (68020/68030). Baseline numbers: thoughts/shared/reports/m3-I194-rig-timing-report.md. | rig: real-time factor below 1.0 at 22050 Hz on 68020 14 MHz for MP3, and the measured Ogg figure, both recorded in a report Johan 2026-10-23: no GPL Helix; path is optimising minimp3 in 68k asm (MIT kept). |

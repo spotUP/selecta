@@ -297,6 +297,19 @@ Each has a recommended answer; the decisive trade-off is in the last sentence.
 - Q7 Artwork thumbnails in the library database? Recommended: yes, `kind = thumb<size>` rows. Trade-off: the database grows by about 30 KB per album, in return the Amiga never decodes a full JPEG.
 - Q8 Icon set? Recommended: Lucide (ISC), rasterised at build time into an alpha atlas. Trade-off: a build-time SVG rasteriser step (one small tool under `tools/`), no runtime vector code.
 
+### 7.1 Answers (Johan, 2026-10-24)
+
+All eight recommended answers were chosen. They are decisions now; do not reopen them.
+
+- D-DUI-1 (Q1): SDL3. The D5 text changes as section 6 proposes.
+- D-DUI-2 (Q2): 8-unit grid with a 4-unit half step, three columns, breakpoints 1100 and 900 logical px. Every size is a token.
+- D-DUI-3 (Q3): neutral near-black surfaces in three steps, one Selecta accent colour, artwork tint on the Now Playing header.
+- D-DUI-4 (Q4): Inter regular and semibold, five size tokens (11, 13, 16, 24, 32), one `stb_truetype` atlas builder. No HarfBuzz in this milestone.
+- D-DUI-5 (Q5): dark and light themes, Selecta Dark the default, `ui.desktop.appearance = dark | light | system`.
+- D-DUI-6 (Q6): grid and 2D cover flow move forward from M5; the 3D GPU variant stays in M5.
+- D-DUI-7 (Q7): artwork thumbnails stored in the library database as `kind = thumb<size>` rows.
+- D-DUI-8 (Q8): Lucide icons, rasterised at build time into an alpha atlas.
+
 ## 8. Coverage
 
 One row per UI-relevant source item. Mapping is a DUI ID or `not in this milestone: <reason>`.
