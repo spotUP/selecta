@@ -166,7 +166,7 @@ SEL_TAG(UI, STAT_EFFECT_PRIMS, 0x5022, INT)
  * canvas hash and the drawing primitives run. */
 SEL_TAG(UI, STAT_DIRTY_PIXELS, 0x5023, INT)
 SEL_TAG(UI, STAT_DIRTY_TOTAL,  0x5024, INT)
-SEL_TAG(UI, STAT_CANVAS_HASH,  0x5025, INT)
+SEL_TAG(UI, STAT_CANVAS_HASH,  0x5025, STR)
 SEL_TAG(UI, STAT_DRAW_PRIMS,   0x5026, INT)
 /* Text sentinels (DUI-P2-3): code points the glyph atlas lacked (the missing glyph box was drawn) and non-blank glyphs
  * blitted. */
@@ -177,9 +177,9 @@ SEL_TAG(UI, STAT_GLYPHS_DRAWN,   0x5029, INT)
 /* Covers decoded by the artwork worker (DUI-P2-4): thumb rows already in the library are not decoded again. */
 SEL_TAG(UI, STAT_ART_DECODES,    0x502A, INT)
 /* FNV-1a of the first home tile square, to compare generated artwork per format (DUI-P2-5). */
-SEL_TAG(UI, STAT_ART_TILE_HASH,  0x502B, INT)
+SEL_TAG(UI, STAT_ART_TILE_HASH,  0x502B, STR)
 /* sdl backend (DUI-P2-7): hash of the frame read back from the renderer, pixels uploaded to the texture, presents. */
-SEL_TAG(UI, STAT_PRESENT_HASH,   0x502C, INT)
+SEL_TAG(UI, STAT_PRESENT_HASH,   0x502C, STR)
 SEL_TAG(UI, STAT_UPLOAD_PIXELS,  0x502D, INT)
 SEL_TAG(UI, STAT_PRESENTS,       0x502E, INT)
 /* HiDPI (DUI-P2-8): the integer pixel scale, text atlas builds, scale changes that dropped the built atlases and

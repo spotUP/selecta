@@ -112,14 +112,44 @@ uint32_t sel_gui_pixel(const sel_gui_canvas* c, int32_t x, int32_t y) {
     return c->format == SEL_GUI_RGBA32 ? (*px32(c, x, y) & 0xFFFFFFu) : c->palette[*px8(c, x, y)];
 }
 
-uint32_t sel_gui_hash(const sel_gui_canvas* c) {
-    uint32_t h = 2166136261u;
-    size_t i, n = (size_t)c->w * (size_t)c->h;
+uint64_t sel_gui_fnv64(uint64_t h, const void* bytes, size_t n) {
+    const uint8_t* p = (const uint8_t*)bytes;
+    size_t i;
     for (i = 0; i < n; i++) {
-        uint32_t v = c->format == SEL_GUI_RGBA32 ? ((const uint32_t*)c->pixels)[i] : ((const uint8_t*)c->pixels)[i];
-        h = (h ^ v) * 16777619u;
+        h = (h ^ p[i]) * SEL_GUI_FNV64_PRIME;
     }
     return h;
+}
+
+uint64_t sel_gui_fnv64_word(uint64_t h, uint32_t word) {
+    uint8_t b[4];
+    b[0] = (uint8_t)word;
+    b[1] = (uint8_t)(word >> 8);
+    b[2] = (uint8_t)(word >> 16);
+    b[3] = (uint8_t)(word >> 24);
+    return sel_gui_fnv64(h, b, 4u);
+}
+
+uint64_t sel_gui_hash(const sel_gui_canvas* c) {
+    uint64_t h = SEL_GUI_FNV64_BASIS;
+    size_t i, n = (size_t)c->w * (size_t)c->h;
+    for (i = 0; i < n; i++) {
+        if (c->format == SEL_GUI_RGBA32) {
+            h = sel_gui_fnv64_word(h, ((const uint32_t*)c->pixels)[i]);
+        } else {
+            h = sel_gui_fnv64(h, (const uint8_t*)c->pixels + i, 1u);
+        }
+    }
+    return h;
+}
+
+void sel_gui_hash_hex(uint64_t h, char out[17]) {
+    static const char digits[] = "0123456789abcdef";
+    int i;
+    for (i = 0; i < 16; i++) {
+        out[i] = digits[(h >> (60 - 4 * i)) & 0xFu];
+    }
+    out[16] = '\0';
 }
 
 /* ---- clip stack ---- */

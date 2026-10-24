@@ -12,7 +12,7 @@ struct desk_sdl {
     int32_t w, h;
     int32_t scale; /* the scale the canvas was last sized for */
     int headless;
-    uint32_t present_hash;
+    uint64_t present_hash;
     uint32_t upload_pixels;
     uint32_t presents;
 };
@@ -103,10 +103,10 @@ int desk_sdl_resize(desk_sdl* b, int32_t w, int32_t h) {
 }
 
 /* Hashes a rendered frame with the one canvas hash, by putting it in a canvas value. */
-static uint32_t hash_surface(const SDL_Surface* s, int32_t w, int32_t h) {
+static uint64_t hash_surface(const SDL_Surface* s, int32_t w, int32_t h) {
     sel_gui_canvas* tmp = (sel_gui_canvas*)SDL_malloc(sizeof *tmp);
     uint32_t* copy = (uint32_t*)SDL_malloc(sel_gui_pixel_bytes(SEL_GUI_RGBA32, w, h));
-    uint32_t hash = 0u;
+    uint64_t hash = 0u;
     if (tmp != NULL && copy != NULL) {
         int32_t y;
         sel_gui_canvas_init(tmp, SEL_GUI_RGBA32, w, h, copy);
@@ -145,7 +145,7 @@ void desk_sdl_present(desk_sdl* b, const sel_gui_canvas* c, int readback) {
     b->presents++;
 }
 
-uint32_t desk_sdl_present_hash(const desk_sdl* b) {
+uint64_t desk_sdl_present_hash(const desk_sdl* b) {
     return b->present_hash;
 }
 

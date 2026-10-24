@@ -48,8 +48,17 @@ void sel_gui_set_palette(sel_gui_canvas* c, const uint32_t* rgb, uint32_t first,
 void sel_gui_palette_default(uint32_t* rgb256, uint32_t accent, uint32_t surface, uint32_t text);
 /* Colour as 0xRRGGBB of pixel (x, y); 0 outside the canvas. */
 uint32_t sel_gui_pixel(const sel_gui_canvas* c, int32_t x, int32_t y);
-/* FNV-1a hash of the pixel words (same function as ui_hash). */
-uint32_t sel_gui_hash(const sel_gui_canvas* c);
+/* 64-bit FNV-1a, the one hash of every golden render (plan 4.2). */
+#define SEL_GUI_FNV64_BASIS 0xcbf29ce484222325ull
+#define SEL_GUI_FNV64_PRIME 0x00000100000001b3ull
+/* Folds `n` bytes into `h` (start from SEL_GUI_FNV64_BASIS); "a" from the basis gives af63dc4c8601ec8c. */
+uint64_t sel_gui_fnv64(uint64_t h, const void* bytes, size_t n);
+/* Folds a 32-bit word as its four bytes, least significant first (the same on every host byte order). */
+uint64_t sel_gui_fnv64_word(uint64_t h, uint32_t word);
+/* Hash of the canvas pixels: every pixel word through sel_gui_fnv64_word (INDEX8: the index byte). */
+uint64_t sel_gui_hash(const sel_gui_canvas* c);
+/* `h` as 16 lower-case hex digits and a NUL, the form golden files and the stats carry. */
+void sel_gui_hash_hex(uint64_t h, char out[17]);
 
 /* Clip stack: push intersects with the current clip; every primitive draws inside it. 0 when full. */
 int sel_gui_clip_push(sel_gui_canvas* c, sel_gui_rect r);

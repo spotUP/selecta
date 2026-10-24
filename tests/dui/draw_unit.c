@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static int g_fail;
 
@@ -210,7 +211,20 @@ static void test_dirty(void) {
     drop(c);
 }
 
+/* The published FNV-1a 64 vectors, and the hex form the goldens use. */
+static void test_fnv64(void) {
+    char hex[17];
+    sel_gui_hash_hex(sel_gui_fnv64(SEL_GUI_FNV64_BASIS, "", 0u), hex);
+    CHECK(strcmp(hex, "cbf29ce484222325") == 0);
+    sel_gui_hash_hex(sel_gui_fnv64(SEL_GUI_FNV64_BASIS, "a", 1u), hex);
+    CHECK(strcmp(hex, "af63dc4c8601ec8c") == 0);
+    sel_gui_hash_hex(sel_gui_fnv64(SEL_GUI_FNV64_BASIS, "foobar", 6u), hex);
+    CHECK(strcmp(hex, "85944171f73967e8") == 0);
+    CHECK(sel_gui_fnv64_word(SEL_GUI_FNV64_BASIS, 0x64636261u) == sel_gui_fnv64(SEL_GUI_FNV64_BASIS, "abcd", 4u));
+}
+
 int main(void) {
+    test_fnv64();
     test_fill_and_clip(SEL_GUI_RGBA32);
     test_fill_and_clip(SEL_GUI_INDEX8);
     test_round_rect();

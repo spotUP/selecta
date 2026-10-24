@@ -23,7 +23,7 @@ int desk_sdl_resize(desk_sdl* b, int32_t w, int32_t h);
 /* Uploads canvas->dirty (call before sel_gui_present empties the list), renders and presents. With `readback` the
  * rendered frame is read back and hashed (sel_gui_hash) for desk_sdl_present_hash. */
 void desk_sdl_present(desk_sdl* b, const sel_gui_canvas* c, int readback);
-uint32_t desk_sdl_present_hash(const desk_sdl* b);
+uint64_t desk_sdl_present_hash(const desk_sdl* b);
 uint32_t desk_sdl_upload_pixels(const desk_sdl* b);
 uint32_t desk_sdl_presents(const desk_sdl* b);
 /* Waits up to timeout_ms for an event (0 = poll) and handles every queued one. Returns DESK_SDL_QUIT, DESK_SDL_RESIZE

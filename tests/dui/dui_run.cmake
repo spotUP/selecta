@@ -14,7 +14,7 @@ function(dui_run outvar)
 endfunction()
 
 function(dui_stat outvar out ui key)
-  if(NOT "${out}" MATCHES "ui_stats id=${ui} [^\n]*${key}=([0-9]+)")
+  if(NOT "${out}" MATCHES "ui_stats id=${ui} [^\n]*${key}=([0-9a-f]+)")
     message(FATAL_ERROR "no ${key} for ui '${ui}' in:\n${out}")
   endif()
   set(${outvar} "${CMAKE_MATCH_1}" PARENT_SCOPE)

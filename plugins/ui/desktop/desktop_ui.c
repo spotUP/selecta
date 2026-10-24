@@ -68,7 +68,10 @@ typedef struct desk {
     int input_done;
     int* input_consumed;    /* the shell's once-per-process flag for the --input script */
     desk_art* art;          /* tile artwork from the library, NULL without one (DUI-P2-4) */
-    uint32_t art_tile_hash; /* pixels of the first home tile, STAT_ART_TILE_HASH (DUI-P2-5) */
+    uint64_t art_tile_hash; /* pixels of the first home tile, STAT_ART_TILE_HASH (DUI-P2-5) */
+    char canvas_hash_hex[17]; /* the 64-bit hashes as 16 hex digits: the stats carry strings, a tag value may be 32 bits */
+    char art_tile_hash_hex[17];
+    char present_hash_hex[17];
 #ifdef SELECTA_DESKTOP_SDL
     desk_sdl* sdl;          /* --backend sdl: the window the canvas is presented in (DUI-P2-7) */
 #endif
@@ -516,13 +519,13 @@ static void queue_format(const sel_state* st, uint32_t i, char* out, size_t cap)
     strcpy(out, dot + 1);
 }
 
-/* FNV-1a over the pixels of r. */
-static uint32_t rect_hash(const sel_gui_canvas* c, sel_gui_rect r) {
-    uint32_t h = 2166136261u;
+/* 64-bit FNV-1a over the pixels of r. */
+static uint64_t rect_hash(const sel_gui_canvas* c, sel_gui_rect r) {
+    uint64_t h = SEL_GUI_FNV64_BASIS;
     int32_t x, y;
     for (y = r.y; y < r.y + r.h; y++) {
         for (x = r.x; x < r.x + r.w; x++) {
-            h = (h ^ sel_gui_pixel(c, x, y)) * 16777619u;
+            h = sel_gui_fnv64_word(h, sel_gui_pixel(c, x, y));
         }
     }
     return h;
@@ -2001,7 +2004,8 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[9].tag = SEL_UI_STAT_DIRTY_TOTAL;
     d->stats[9].value = d->dirty_total;
     d->stats[10].tag = SEL_UI_STAT_CANVAS_HASH;
-    d->stats[10].value = sel_gui_hash(d->canvas);
+    sel_gui_hash_hex(sel_gui_hash(d->canvas), d->canvas_hash_hex);
+    d->stats[10].value = (uintptr_t)d->canvas_hash_hex;
     d->stats[11].tag = SEL_UI_STAT_DRAW_PRIMS;
     d->stats[11].value = d->canvas->prims;
     d->stats[12].tag = SEL_UI_STAT_MISSING_GLYPHS;
@@ -2013,13 +2017,16 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[15].tag = SEL_UI_STAT_ART_DECODES;
     d->stats[15].value = art_decodes(d->art);
     d->stats[16].tag = SEL_UI_STAT_ART_TILE_HASH;
-    d->stats[16].value = d->art_tile_hash;
+    sel_gui_hash_hex(d->art_tile_hash, d->art_tile_hash_hex);
+    d->stats[16].value = (uintptr_t)d->art_tile_hash_hex;
+    sel_gui_hash_hex(0u, d->present_hash_hex);
+    d->stats[17].value = (uintptr_t)d->present_hash_hex;
     d->stats[17].tag = SEL_UI_STAT_PRESENT_HASH;
     d->stats[18].tag = SEL_UI_STAT_UPLOAD_PIXELS;
     d->stats[19].tag = SEL_UI_STAT_PRESENTS;
 #ifdef SELECTA_DESKTOP_SDL
     if (d->sdl != NULL) {
-        d->stats[17].value = desk_sdl_present_hash(d->sdl);
+        sel_gui_hash_hex(desk_sdl_present_hash(d->sdl), d->present_hash_hex);
         d->stats[18].value = desk_sdl_upload_pixels(d->sdl);
         d->stats[19].value = desk_sdl_presents(d->sdl);
     }
