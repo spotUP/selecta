@@ -2780,6 +2780,28 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
     return 0;
 }
 
+/* one pointer or gesture event, from the --input script or the live window */
+static int desk_route_input(desk* d, const sel_gui_input* ev) {
+    if (ev->kind == SEL_GUI_IN_CLICK || ev->kind == SEL_GUI_IN_MOVE || ev->kind == SEL_GUI_IN_DRAG) {
+        int changed = desk_pointer(d, ev);
+        if (changed && d->songs) {
+            draw_home(d);
+        }
+        return desk_event_frame(d, changed);
+    }
+    return desk_event_frame(d, desk_gesture(d, ev));
+}
+
+#ifdef SELECTA_DESKTOP_SDL
+/* the pointer and gesture events the window queued since the last poll */
+static void desk_sdl_route(desk* d) {
+    sel_gui_input ev;
+    while (desk_sdl_next_input(d->sdl, &ev)) {
+        (void)desk_route_input(d, &ev);
+    }
+}
+#endif
+
 static int desk_replay_input(desk* d) {
     char* line = d->input_at != NULL ? d->input_at : d->input;
     uint32_t sent = d->sends;
@@ -2805,15 +2827,11 @@ static int desk_replay_input(desk* d) {
             desk_advance(d, ev.ms);
         } else if (sel_gui_input_parse(line, &ev) &&
                    (ev.kind == SEL_GUI_IN_CLICK || ev.kind == SEL_GUI_IN_MOVE || ev.kind == SEL_GUI_IN_DRAG)) {
-            int changed = desk_pointer(d, &ev);
-            if (changed && d->songs) {
-                draw_home(d);
-            }
-            opened |= desk_event_frame(d, changed);
+            opened |= desk_route_input(d, &ev);
             pointer_sent = d->sends != sent;
         } else if (sel_gui_input_parse(line, &ev) &&
                    (ev.kind == SEL_GUI_IN_WHEEL || ev.kind == SEL_GUI_IN_PINCH || ev.kind == SEL_GUI_IN_SWIPE)) {
-            opened |= desk_event_frame(d, desk_gesture(d, &ev));
+            opened |= desk_route_input(d, &ev);
         } else if (sscanf(line, "resize %d %d", &x, &y) == 2) { /* the window was resized: relayout and repaint */
             opened |= desk_resize(d, x, y);
         } else if (sscanf(line, "scale %d", &x) == 1) { /* the window moved to a screen of another scale */
@@ -3407,6 +3425,7 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
             desk_set_scale(d, desk_sdl_scale(d->sdl));
             desk_resize(d, w, h);
         }
+        desk_sdl_route(d);
     }
 #endif
     if (d->widgets) { /* the gallery is one frame, drawn on the first turn */
@@ -3470,6 +3489,7 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
             desk_set_scale(d, desk_sdl_scale(d->sdl));
             desk_resize(d, w, h);
         }
+        desk_sdl_route(d);
         return ev == DESK_SDL_NONE ? 0 : 1;
     }
 #endif
