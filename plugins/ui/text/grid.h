@@ -34,6 +34,7 @@ typedef struct txt_grid {
     uint32_t flushes;
     uint32_t bytes; /* total bytes produced by flush */
     int latin1;     /* set by the caller after init: flush writes Latin-1, '?' above U+00FF (row I218a) */
+    int console;    /* set by the caller after init: the Amiga console.device (row I218e): no CSI ? 2026 frame, never writes the bottom right cell */
 } txt_grid;
 
 txt_style txt_style_make(uint16_t fg, uint16_t bg, uint8_t attr);
@@ -58,7 +59,7 @@ void txt_grid_fill(txt_grid* g, uint32_t col, uint32_t row, uint32_t w, uint32_t
 /* Writes the escape sequences that turn the terminal's picture into the back
  * buffer: a cursor move before every run of changed cells, SGR only when the
  * style changes, and a trailing reset when a non-default style was left active.
- * A full redraw is wrapped in synchronized output (CSI ? 2026 h ... l).
+ * A full redraw is wrapped in synchronized output (CSI ? 2026 h ... l), except on a console grid.
  * Returns the byte count, 0 for an unchanged frame, or -1 when cap is too small
  * (then nothing is committed). txt_grid_flush_bound() is a cap that always suffices. */
 long txt_grid_flush(txt_grid* g, char* out, size_t cap);

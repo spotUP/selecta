@@ -106,6 +106,29 @@ static void test_flush(void) {
     txt_grid_free(&g);
 }
 
+/* I218e amiga-console-first-frame: the Amiga console.device shows no list lines after start. The full
+ * first frame must hold only sequences the console understands: no CSI ? 2026 h/l frame (the one
+ * private mode that only full frames carry) and no write to the bottom right cell (the console scrolls
+ * the window when it is written). Every other cell, and a later diff frame, stay as on any terminal. */
+static void test_console_first_frame(void) {
+    txt_grid g;
+    char buf[1024];
+    long n;
+    CHECK(txt_grid_init(&g, 3, 2) == 0, "init 3x2");
+    g.console = 1;
+    txt_grid_text(&g, 0, 0, "abc", 0, PLAIN);
+    txt_grid_text(&g, 0, 1, "def", 0, PLAIN);
+    n = flush_str(&g, buf, sizeof buf - 1);
+    CHECK(n > 0 && strstr(buf, "?2026") == NULL, "console frame carries CSI ? 2026: %s", buf);
+    CHECK(strcmp(buf, "\x1b[1;1Habc\x1b[2;1Hde") == 0, "console first frame wrong: %s", buf);
+    txt_grid_put(&g, 2, 1, 'X', PLAIN);
+    CHECK(txt_grid_flush(&g, buf, sizeof buf) == 0, "corner cell is never written");
+    txt_grid_put(&g, 1, 1, 'Y', PLAIN);
+    n = flush_str(&g, buf, sizeof buf - 1);
+    CHECK(strcmp(buf, "\x1b[2;2HY") == 0, "console diff frame wrong: %s", buf);
+    txt_grid_free(&g);
+}
+
 static void test_full(void) {
     txt_grid g;
     char buf[1024];
@@ -318,7 +341,10 @@ static void test_term(void) {
 
 int main(int argc, char** argv) {
     if (want(argc, argv, "flush")) test_flush();
-    if (want(argc, argv, "full")) test_full();
+    if (want(argc, argv, "full")) {
+        test_full();
+        test_console_first_frame();
+    }
     if (want(argc, argv, "keys")) test_keys();
     if (want(argc, argv, "theme")) test_theme();
     if (want(argc, argv, "term")) test_term();

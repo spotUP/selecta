@@ -1306,6 +1306,8 @@ static void* tui_open(const sel_ui_open_args* a) {
         return NULL;
     }
     u->grid.latin1 = txt_term_amiga_console;
+    /* --console-frames 1 gives a host run the Amiga console's frames, so tests can compare byte streams (row I218e). */
+    u->grid.console = txt_term_amiga_console || tui_opt(a, "--console-frames") != NULL;
     u->out_cap = txt_grid_flush_bound(&u->grid);
     u->out = (char*)a->host->mem_alloc(a->host, u->out_cap, SEL_MEM_FAST);
     if (u->out == NULL) {
