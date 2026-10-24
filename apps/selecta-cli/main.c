@@ -48,7 +48,7 @@ static int usage(FILE* to) {
           "  plugins --formats <id>     list the formats (player ids) a plugin reports\n"
           "  play-null --rate <hz> --frames <n>  pump the null output, print counters\n"
           "  play <song> --output <id> --seconds <n> [--record <dir>]  play through a real output, print counters\n"
-          "  render <song> --output <wav> --seconds <n> --rate <hz> --resample <name>\n"
+          "  render <song> --output <wav> --seconds <n> [--rate <hz>] --resample <name>\n"
           "                             render a song to a WAV file, print counters\n"
           "  library browse <dir>       list a directory through LIBRARY_BROWSE, print dir_entries=\n"
           "  library search --catalogue <tsv> <q> run a library query through LIBRARY_SEARCH, print key= src_count= fts_queries= (T64)\n"

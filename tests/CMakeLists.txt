@@ -875,12 +875,14 @@ if(NOT SEL_AMIGA)
     sel_m2_test(paula14-routing run ${mode} -DTAG=T52
       "-DARGS1=render --output paula14-shadow @MOD@ --seconds 2" "-DCHECKS1=mixed_frames>0,p14_bufs>0")
   endforeach()
-  # I124/I125 (T58/T59): OUTPUT=AHI routing; the shadow twin counts buffer swaps (2 s at 44100 Hz / 1024 frames = 86).
-  foreach(mode desktop vamos)
-    sel_m2_test(ahi-routing run ${mode} -DTAG=T59
-      "-DARGS1=render --output ahi-shadow @MOD@ --seconds 2"
-      "-DCHECKS1=ahi_bufs>=78,ahi_bufs<=95,underruns==0,ahi_buffer_frames==1024,ahi_rate==44100")
-  endforeach()
+  # I124/I125 (T58/T59): OUTPUT=AHI routing, no --rate: the output's SEL_OUT_RATE_FOR picks the rate (D-M2-5). The shadow twin
+  # counts buffer swaps: desktop 2 s at 44100 Hz / 1024 frames = 86; 68020 2 s at 28150 Hz / 4096 frames = 13.7.
+  sel_m2_test(ahi-routing run desktop -DTAG=T59
+    "-DARGS1=render --output ahi-shadow @MOD@ --seconds 2"
+    "-DCHECKS1=ahi_bufs>=78,ahi_bufs<=95,underruns==0,ahi_buffer_frames==1024,ahi_rate==44100")
+  sel_m2_test(ahi-routing run vamos -DTAG=T59
+    "-DARGS1=render --output ahi-shadow @MOD@ --seconds 2"
+    "-DCHECKS1=ahi_bufs>=12,ahi_bufs<=15,underruns==0,ahi_buffer_frames==4096,ahi_rate==28150")
   # T53 LED filter and stereo width.
   # selecta-test.mod is mono (the protracker4 replayer does not pan), so a width knob cannot
   # move its hash; the desktop run also renders the stereo mk module (libopenmpt pans it).

@@ -1,4 +1,5 @@
 #include <selecta/machine.h>
+#include <selecta/output.h>
 #include <selecta/registry.h>
 
 #include <stdio.h>
@@ -173,6 +174,12 @@ const char* sel_registry_default_output(const sel_tag* machine) {
     const char* list = (const char*)sel_tag_find(machine, SEL_MACHINE_AUDIO, 0);
     const char* pid = first_registered(SEL_PLUGIN_KIND_OUTPUT, list);
     return pid ? pid : "null";
+}
+
+uint32_t sel_registry_output_rate(const sel_tag* hooks, const sel_tag* machine) {
+    sel_out_rate_for_fn fn = hooks ? (sel_out_rate_for_fn)sel_tag_find(hooks, SEL_OUT_RATE_FOR, 0) : NULL;
+    uint32_t rate = fn ? fn(machine) : 0u;
+    return rate != 0u ? rate : SEL_DEFAULT_OUTPUT_RATE;
 }
 
 const char* sel_registry_default_integration(const char* preferred) {

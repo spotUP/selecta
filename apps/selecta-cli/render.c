@@ -124,7 +124,7 @@ int sel_cli_render(int argc, char** argv) {
     int32_t loud_gain_cdb = 0;
     FILE* dump = NULL;
     uint32_t viz_blocks = 0, viz_seen = 0;
-    unsigned long rate = 44100, seconds = 10;
+    unsigned long rate = 0, seconds = 10; /* 0: the output's preferred rate */
     uint32_t resampler = SEL_MIX_RESAMPLE_LINEAR;
     uint32_t led_on = 0, width = 100, stage_flag = 0;
     sel_engine* e;
@@ -210,8 +210,8 @@ int sel_cli_render(int argc, char** argv) {
         fputs("render: song path missing\n", stderr);
         return 2;
     }
-    if ((wav == NULL && out_id == NULL) || rate == 0) {
-        fputs("render: --output <wav or output id> and a nonzero --rate are required\n", stderr);
+    if (wav == NULL && out_id == NULL) {
+        fputs("render: --output <wav or output id> is required\n", stderr);
         return 2;
     }
 
@@ -224,6 +224,9 @@ int sel_cli_render(int argc, char** argv) {
     sel_registry_init(&host);
     if (!sel_cli_find_output("render", out_id != NULL ? out_id : "wav", &o)) {
         return 1;
+    }
+    if (rate == 0) {
+        rate = sel_registry_output_rate(o.hooks, sel_machine_probe(&host));
     }
     out = NULL;
     if (out_id != NULL) {

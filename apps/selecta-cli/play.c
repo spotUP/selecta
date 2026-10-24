@@ -32,7 +32,7 @@ int sel_cli_play(int argc, char** argv) {
     void* out;
     const char* id = NULL;
     const char* record = NULL;
-    unsigned long rate = 44100, seconds = 10;
+    unsigned long rate = 0, seconds = 10; /* 0: the output's preferred rate */
     uint32_t resampler = 1; /* linear */
     uint32_t total, played = 0, callbacks = 0, frames = 0;
     const sel_tag* st;
@@ -56,8 +56,8 @@ int sel_cli_play(int argc, char** argv) {
             return 2;
         }
     }
-    if (id == NULL || rate == 0) {
-        fputs("play: --output <id> and a nonzero --rate are required\n", stderr);
+    if (id == NULL) {
+        fputs("play: --output <id> is required\n", stderr);
         return 2;
     }
 
@@ -66,6 +66,9 @@ int sel_cli_play(int argc, char** argv) {
         return 1;
     }
     sel_cli_set_record_dir(record);
+    if (rate == 0) {
+        rate = sel_registry_output_rate(o.hooks, sel_machine_probe(host));
+    }
     e = sel_cli_start_song("play", host, argv[0], (uint32_t)rate, resampler);
     if (e == NULL) {
         return 1;

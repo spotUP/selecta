@@ -20,6 +20,9 @@ typedef uint32_t (*sel_out_pump_fn)(void* state, uint32_t frames);
 typedef const sel_tag* (*sel_out_stats_fn)(void* state); /* OUT_STATS: OUT_STAT_* tags */
 typedef const struct sel_voices* (*sel_out_voice_backend_fn)(void* state); /* OUT_VOICE_BACKEND */
 
+/* OUT_RATE_FOR: the output rate the app should mix and open at on `machine` (a sel_machine tag list). */
+typedef uint32_t (*sel_out_rate_for_fn)(const sel_tag* machine);
+
 SEL_EXTERN_C_END
 
 #endif /* SELECTA_OUTPUT_H */

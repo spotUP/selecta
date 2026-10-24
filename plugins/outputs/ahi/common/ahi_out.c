@@ -129,6 +129,10 @@ static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
     t->value = value;
 }
 
+static uint32_t out_rate_for(const sel_tag* machine) {
+    return sel_ahi_default_rate((uint32_t)sel_tag_find(machine, SEL_MACHINE_CPU, SEL_CPU_UNKNOWN));
+}
+
 const sel_tag* sel_ahi_out_describe(const sel_ahi_backend* be, sel_out_open_fn open, sel_tag* hooks, sel_tag* desc) {
     uint32_t n = 0;
     set(&hooks[n++], SEL_OUT_NAME, (uintptr_t)be->name);
@@ -140,6 +144,7 @@ const sel_tag* sel_ahi_out_describe(const sel_ahi_backend* be, sel_out_open_fn o
     set(&hooks[n++], SEL_OUT_SET_SOURCE, SEL_TAG_FN(out_set_source));
     set(&hooks[n++], SEL_OUT_PUMP, SEL_TAG_FN(out_pump));
     set(&hooks[n++], SEL_OUT_STATS, SEL_TAG_FN(out_stats));
+    set(&hooks[n++], SEL_OUT_RATE_FOR, SEL_TAG_FN(out_rate_for));
     set(&hooks[n++], SEL_TAG_END, 0);
 
     set(&desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_OUTPUT);

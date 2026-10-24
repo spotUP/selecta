@@ -38,7 +38,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#define SHELL_RATE 44100u
 #define SHELL_TURN_MS 20u
 #define SHELL_RESAMPLER 1u /* linear */
 
@@ -95,6 +94,7 @@ typedef struct shell_output {
     sel_out_set_source_fn set_source;
     const sel_host* host;
     sel_engine* engine;
+    uint32_t rate; /* sel_registry_output_rate: the one rate for set_mix, open and the turn length */
     void* out; /* NULL while handed over */
 } shell_output;
 
@@ -108,7 +108,7 @@ static int shell_handover(void* ctx, uint32_t release) {
         return 1;
     }
     if (so->out == NULL) {
-        so->out = so->open(so->host, SHELL_RATE, 2);
+        so->out = so->open(so->host, so->rate, 2);
         if (so->out == NULL) {
             return 0;
         }
@@ -307,6 +307,7 @@ int main(int argc, char** argv)
     const sel_tag* ust;
     void* out;
     shell_output so;
+    uint32_t rate;
     void* ctx[3];
     unsigned u;
     int has_stats = 0;
@@ -415,9 +416,10 @@ int main(int argc, char** argv)
         fputs("selecta: engine allocation failed\n", stderr);
         return 1;
     }
-    sel_engine_set_mix(e, SHELL_RATE, SHELL_RESAMPLER);
+    rate = sel_registry_output_rate(oh, machine_tags);
+    sel_engine_set_mix(e, rate, SHELL_RESAMPLER);
     sel_engine_set_output(e, oh);
-    out = out_open(host, SHELL_RATE, 2);
+    out = out_open(host, rate, 2);
     if (out == NULL) {
         fputs("selecta: no output device\n", stderr);
         sel_engine_destroy(e);
@@ -425,6 +427,7 @@ int main(int argc, char** argv)
     }
     g_mark_audio = !clockless;
     out_set_source(out, audio_pull, e);
+    so.rate = rate;
     so.open = out_open;
     so.close = out_close;
     so.set_source = out_set_source;
@@ -559,7 +562,7 @@ int main(int argc, char** argv)
         }
         waits++;
         if (so.out != NULL) {
-            out_pump(so.out, SHELL_RATE * SHELL_TURN_MS / 1000u);
+            out_pump(so.out, so.rate * SHELL_TURN_MS / 1000u);
         }
         sel_engine_pump(e, sink, ctx);
         sel_int_session_poll(isess);
