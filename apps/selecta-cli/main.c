@@ -766,6 +766,21 @@ static int cmd_script_file(FILE* f, int argc, char** argv) {
                    (unsigned)inf, (unsigned)pls, (unsigned)ent, (unsigned)es.folder_ops);
             continue;
         }
+        if (strcmp(line, "@stats_show") == 0 && lib != NULL) { /* the stats screen rows, F24 / DUI-P4-3 */
+            static char stats[2048];
+            uint32_t rows = 0;
+            const char* p = stats;
+            stats[0] = '\0';
+            if (sel_library_stats(lib, stats, sizeof stats, &rows)) {
+                while (*p != '\0') {
+                    const char* val = p + strlen(p) + 1u;
+                    printf("STAT %s=%s\n", p, val);
+                    p = val + strlen(val) + 1u;
+                }
+            }
+            printf("STATS_ROWS %u\n", (unsigned)rows);
+            continue;
+        }
         if (strcmp(line, "@folder_tree") == 0 && lib != NULL) {
             static char tree[8192];
             uint32_t n = 0;

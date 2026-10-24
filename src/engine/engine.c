@@ -36,6 +36,7 @@
 #include "prefs.h"
 #include "view.h"
 #include "db.h"
+#include "composer.h"
 #include "xxh32.h"
 #include "lyrics.h"
 #include "devilbox_lyrics.h"
@@ -130,7 +131,7 @@
     X(NOTE)                                                                                   \
     X(RATE) X(VOTE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
     X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) \
-    X(STATS_SHOW) X(STATS_HIDE) \
+    X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(COMPOSERS_HIDE) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
     X(VIEW_CURSOR)                                                                            \
@@ -257,6 +258,9 @@ struct sel_engine {
     uint32_t folder_ops;                       /* FOLDER_* / PLAYLIST_MOVE commands run against the library (I178) */
     uint32_t links_parsed, links_made;         /* share links OPEN parsed / SHARE wrote (I180 sentinels) */
     char stats[2048];                          /* rows of the open stats screen, "label\0value\0" pairs (I192) */
+    char composers[4096];                      /* DUI-P4-3 library page: "canon\0display\0songs\0" per composer, then "\0" */
+    char composer_page[4096];                  /* the drilled-into composer: "display\0songs\0" then "key\0name\0" per song, then "\0" */
+    uint32_t composers_open, composer_queries; /* the Library page is up / queries made against the library for it */
     uint32_t stats_open, stats_queries;        /* the screen is up / queries made against the stats views (I192 sentinel) */
     char panel[1024];                          /* catalogue rows of the open song, "label\0value\0" pairs (I185) */
     uint32_t panel_rows, panel_loads;          /* rows in `panel` / library lookups made for it (I185 sentinel) */
@@ -3824,6 +3828,91 @@ static void cmd_STATS_SHOW(sel_engine* e, const sel_message* m) {
     e->stats_open = 1;
 }
 
+typedef struct composer_fill {
+    char* buf;
+    size_t cap, used;
+    uint32_t n;
+} composer_fill;
+
+static void composer_put(composer_fill* f, const char* const* parts, unsigned count) {
+    size_t need = 1u, i;
+    for (i = 0; i < count; i++) need += strlen(parts[i]) + 1u;
+    if (f->used + need > f->cap) return;
+    for (i = 0; i < count; i++) {
+        size_t l = strlen(parts[i]) + 1u;
+        memcpy(f->buf + f->used, parts[i], l);
+        f->used += l;
+    }
+    f->buf[f->used] = '\0';
+}
+
+static void composer_list_row(void* ctx, const char* canon, const char* display, uint32_t songs) {
+    char num[16];
+    const char* parts[3];
+    snprintf(num, sizeof num, "%u", (unsigned)songs);
+    parts[0] = canon;
+    parts[1] = display;
+    parts[2] = num;
+    composer_put((composer_fill*)ctx, parts, 3);
+}
+
+static void composer_page_row(void* ctx, const char* key, const char* name, const char* disp) {
+    composer_fill* f = (composer_fill*)ctx;
+    const char* parts[2];
+    (void)disp;
+    parts[0] = key;
+    parts[1] = name;
+    composer_put(f, parts, 2);
+    f->n++;
+}
+
+/* COMPOSERS_SHOW [name]: opens the Library page (DUI-P4-3): every composer with its song count, and with a name the
+ * drilldown page of that composer (its songs and their count, from the library's composer page). */
+static void cmd_COMPOSERS_SHOW(sel_engine* e, const sel_message* m) {
+    composer_fill f;
+    if (e->lib == NULL) {
+        sel_engine_report_error(e, "no_library", "COMPOSERS_SHOW");
+        return;
+    }
+    e->composer_queries++;
+    e->composers[0] = e->composers[1] = '\0';
+    f.buf = e->composers;
+    f.cap = sizeof e->composers - 1u;
+    f.used = 0;
+    f.n = 0;
+    if (sel_library_composer_list(e->lib, composer_list_row, &f) < 0) e->composers[0] = '\0';
+    e->composer_page[0] = '\0';
+    if (m->argc > 0 && m->args[0].v.s[0] != '\0') {
+        const char* name = m->args[0].v.s;
+        char num[16], disp[SEL_COMPOSER_MAX], body[sizeof e->composer_page];
+        const char* parts[2];
+        composer_fill p;
+        p.buf = body;
+        p.cap = sizeof body - 1u;
+        p.used = 0;
+        p.n = 0;
+        body[0] = '\0';
+        sel_library_composer_page(e->lib, name, composer_page_row, &p);
+        if (p.n > 0) {
+            if (!sel_composer_display(name, disp, sizeof disp)) snprintf(disp, sizeof disp, "%s", name);
+            snprintf(num, sizeof num, "%u", (unsigned)p.n);
+            parts[0] = disp;
+            parts[1] = num;
+            f.buf = e->composer_page;
+            f.cap = sizeof e->composer_page - 1u;
+            f.used = 0;
+            composer_put(&f, parts, 2);
+            if (f.used + p.used + 1u <= sizeof e->composer_page) memcpy(e->composer_page + f.used, body, p.used + 1u);
+        }
+    }
+    e->composers_open = 1;
+}
+
+static void cmd_COMPOSERS_HIDE(sel_engine* e, const sel_message* m) {
+    (void)m;
+    e->composers_open = 0;
+}
+
 static void cmd_STATS_HIDE(sel_engine* e, const sel_message* m) {
     (void)m;
     e->stats_open = 0;
@@ -4702,6 +4791,8 @@ static void refresh_snapshot(sel_engine* e) {
         }
     }
     e->state.stats = e->stats_open ? e->stats : NULL;
+    e->state.composers = e->composers_open ? e->composers : NULL;
+    e->state.composer_page = e->composers_open && e->composer_page[0] != '\0' ? e->composer_page : NULL;
     e->state.panel = e->panel_rows > 0 ? e->panel : NULL;
     e->state.panel_rows = e->panel_rows;
     if (sl == NULL || sl->rp_state == NULL) {

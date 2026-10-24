@@ -51,7 +51,8 @@ enum {
     SEL_DUP_NEXT,       /* I184: duplicate group at row offset `after` (same md5, two or more songs): `out` = md5 NUL member count NUL best key NUL, reply [2] = after + 1 (0: none) */
     SEL_BEST_SOURCE,    /* I184: best song among those sharing the md5 of song key `key` (D-M3-14): `out` = key NUL, reply [2] = 1 (0: key unknown or no md5) */
     SEL_DUP_PICK,       /* I184b: next local song with id > `after` that has no md5, not hashed: `out` = key NUL path NUL, reply [2] = its id (0: none left) */
-    SEL_DUP_STORE       /* I184b: store md5 `value` for local song key `key` (songs and files tables) */
+    SEL_DUP_STORE,      /* I184b: store md5 `value` for local song key `key` (songs and files tables) */
+    SEL_COMPOSER_LIST   /* DUI-P4-3: composer at row offset `after` (by display name): `out` = canon NUL display NUL song count (decimal) NUL, reply [2] = after + 1 (0: none) */
 };
 /* One albums/artwork operation (SEL_LIB_REQ_ART, DUI-P2-4). Reply INT [0]: SEL_ART_FIND the id of the albums row the song belongs to (0: none),
  * SEL_ART_GET the blob size (0: none; `data` holds min(size, cap) bytes), SEL_ART_PUT 1 when stored. */
@@ -464,6 +465,11 @@ int sel_library_genre_sync(sel_library* lib, sel_genre_stats* stats);
  * step (GET /api/songdb/lookup?hash=<uade key>, cached in songdb_cache). */
 typedef void (*sel_composer_row_fn)(void* ctx, const char* song_key, const char* song_name, const char* composer);
 int sel_library_composer_page(sel_library* lib, const char* name, sel_composer_row_fn fn, void* ctx);
+
+/* Every composer with its song count (DUI-P4-3), by display name: calls `fn(ctx, canon, display, songs)` each. Returns the
+ * rows, -1 on a library error. */
+typedef void (*sel_composer_list_fn)(void* ctx, const char* canon, const char* display, uint32_t songs);
+int sel_library_composer_list(sel_library* lib, sel_composer_list_fn fn, void* ctx);
 
 /* Also-by (I183, T86): the other songs that share a composer with song `song_key` (song_composers, canonical
  * spelling), in library order. Same row callback as the composer page (`composer` = the shared display name).

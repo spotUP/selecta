@@ -132,6 +132,38 @@ static int op_composer_next(sqlite3* db, const sel_genre_op* op, int64_t* id) {
     return rc == SQLITE_DONE ? SQLITE_OK : rc;
 }
 
+/* SEL_COMPOSER_LIST: the composer at offset `after`, one row per canonical spelling with its distinct song count. */
+static int op_composer_list(sqlite3* db, const sel_genre_op* op, int64_t* id) {
+    sqlite3_stmt* st = NULL;
+    int rc = sqlite3_prepare_v2(db,
+                                "SELECT canon, MIN(display), COUNT(DISTINCT song_key) FROM song_composers"
+                                " GROUP BY canon ORDER BY MIN(display), canon LIMIT 1 OFFSET ?1",
+                                -1, &st, NULL);
+
+    *id = 0;
+    if (rc != SQLITE_OK) return rc;
+    sqlite3_bind_int64(st, 1, op->after);
+    rc = sqlite3_step(st);
+    if (rc == SQLITE_ROW) {
+        char num[16];
+        const char* canon = (const char*)sqlite3_column_text(st, 0);
+        const char* disp = (const char*)sqlite3_column_text(st, 1);
+        size_t cl = strlen(canon), dl = strlen(disp), nl;
+
+        snprintf(num, sizeof num, "%d", sqlite3_column_int(st, 2));
+        nl = strlen(num);
+        if (cl + dl + nl + 3u <= op->out_cap) {
+            memcpy(op->out, canon, cl + 1u);
+            memcpy(op->out + cl + 1u, disp, dl + 1u);
+            memcpy(op->out + cl + dl + 2u, num, nl + 1u);
+            *id = op->after + 1;
+        }
+        rc = SQLITE_DONE;
+    }
+    sqlite3_finalize(st);
+    return rc == SQLITE_DONE ? SQLITE_OK : rc;
+}
+
 int sel_library_songdb_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id) {
     int rc = SQLITE_MISUSE;
 
@@ -146,6 +178,9 @@ int sel_library_songdb_op(sel_library* lib, const sel_genre_op* op, int* found, 
         rc = op_apply(lib->db, op, found);
     } else if (op->op == SEL_COMPOSER_NEXT && op->out != NULL) {
         rc = op_composer_next(lib->db, op, id);
+        *found = *id != 0;
+    } else if (op->op == SEL_COMPOSER_LIST && op->out != NULL) {
+        rc = op_composer_list(lib->db, op, id);
         *found = *id != 0;
     }
     return rc;
@@ -255,6 +290,31 @@ int sel_library_composer_page(sel_library* lib, const char* name, sel_composer_r
         name_text = buf + strlen(buf) + 1u;
         disp = name_text + strlen(name_text) + 1u;
         if (fn != NULL) fn(ctx, buf, name_text, disp);
+        rows++;
+    }
+    return rows;
+}
+
+int sel_library_composer_list(sel_library* lib, sel_composer_list_fn fn, void* ctx) {
+    char buf[SEL_COMPOSER_MAX * 2u + 64u];
+    int64_t after = 0, id = 0;
+    int rows = 0;
+
+    if (lib == NULL) return -1;
+    for (;;) {
+        sel_genre_op op;
+        const char* disp;
+
+        memset(&op, 0, sizeof op);
+        op.op = SEL_COMPOSER_LIST;
+        op.after = after;
+        op.out = buf;
+        op.out_cap = sizeof buf;
+        if (sel_genre_call(lib, &op, &id) < 0) return -1;
+        if (id == 0) break;
+        after = id;
+        disp = buf + strlen(buf) + 1u;
+        if (fn != NULL) fn(ctx, buf, disp, (uint32_t)strtoul(disp + strlen(disp) + 1u, NULL, 10));
         rows++;
     }
     return rows;

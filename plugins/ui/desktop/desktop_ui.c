@@ -128,7 +128,9 @@ typedef struct desk {
     uint32_t tile_queued;    /* tiles sent to the engine as queue next through the tile menu */
     uint32_t home_sig;       /* source and row count of the last HOME window drawn: a change redraws */
     char home_dump[2048];    /* shelves as text for the stats */
-    sel_tag stats[60];
+    sel_tag stats[64];
+    char library_dump[3072]; /* the Library page as text for the stats (DUI-P4-3) */
+    uint32_t library_sig;    /* hash of the Library page last drawn: a change redraws */
 } desk;
 
 static int desk_resize(desk* d, int32_t w, int32_t h);
@@ -1157,6 +1159,138 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
     }
 }
 
+/* ---- Library page (DUI-P4-3 slice A): the engine's composers with their song counts, a composer drilldown and the
+ * Stats page (F24) beside them. Every number comes from the engine state (COMPOSERS_SHOW, STATS_SHOW).
+ * TODO DUI-P4-3 slice B/C: the tree, column browser, sources, Files and History pages hook in here, as further pages
+ * of this view chosen by a segmented control above the list. */
+enum { LIB_MARGIN = 24, LIB_TITLE_Y = 24, LIB_TITLE_H = 40, LIB_LIST_Y = 88, LIB_ROW_H = 48, LIB_STATS_W = 300 };
+
+/* Next NUL-separated field after `p`. */
+static const char* lib_next(const char* p) {
+    return p + strlen(p) + 1u;
+}
+
+static sel_gui_rect lib_row_rect(desk* d, sel_gui_rect mn, uint32_t i) {
+    int32_t mg = lpx(d, LIB_MARGIN);
+    int32_t w = mn.w - 3 * mg - lpx(d, LIB_STATS_W);
+    return rect_of(mn.x + mg, mn.y + lpx(d, LIB_LIST_Y) + (int32_t)i * lpx(d, LIB_ROW_H), w > 0 ? w : 0, lpx(d, LIB_ROW_H));
+}
+
+static uint32_t lib_hash(const sel_state* st) {
+    uint32_t h = st->composer_page != NULL ? 5381u : 0u;
+    const char* p = st->composer_page;
+    for (; p != NULL && *p != '\0'; p++) {
+        h = h * 33u + (uint8_t)*p;
+    }
+    return h + (st->composers != NULL ? 1u : 0u) + (st->stats != NULL ? 2u : 0u);
+}
+
+/* Writes "composer I canon|display|songs", "drill display|songs" and "stat label|value" lines into library_dump. */
+static const char* library_dump_build(desk* d) {
+    const sel_state* st = sel_engine_state(d->engine);
+    size_t o = 0;
+    uint32_t i = 0;
+    const char* p;
+    d->library_dump[0] = '\0';
+    for (p = st->composers; p != NULL && *p != '\0' && o + 400u < sizeof d->library_dump; i++) {
+        const char* disp = lib_next(p);
+        const char* cnt = lib_next(disp);
+        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "composer %u %s|%s|%s\n", (unsigned)i, p, disp, cnt);
+        p = lib_next(cnt);
+    }
+    p = st->composer_page;
+    if (p != NULL && o + 400u < sizeof d->library_dump) {
+        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "drill %s|%s\n", p, lib_next(p));
+    }
+    for (p = st->stats; p != NULL && *p != '\0' && o + 400u < sizeof d->library_dump;) {
+        const char* val = lib_next(p);
+        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "stat %s|%s\n", p, val);
+        p = lib_next(val);
+    }
+    return d->library_dump;
+}
+
+static void draw_library(desk* d) {
+    const sel_state* st = sel_engine_state(d->engine);
+    sel_gui_rect mn = draw_panel(d, "main");
+    int32_t mg = lpx(d, LIB_MARGIN), sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+    uint32_t i = 0;
+    const char* p;
+    sel_gui_rect col = rect_of(mn.x + mg, mn.y + lpx(d, LIB_TITLE_Y), mn.w - 2 * mg, lpx(d, LIB_TITLE_H));
+    sel_gui_clip_push(d->canvas, mn);
+    d->library_sig = lib_hash(st);
+    if (st->composer_page != NULL) { /* drilldown: the composer, its song count and its songs */
+        const char* cnt = lib_next(st->composer_page);
+        char line[96];
+        draw_text(d, col, st->composer_page, 1, 32, text);
+        snprintf(line, sizeof line, "%s songs", cnt);
+        draw_text(d, rect_of(col.x, col.y + col.h, col.w, lpx(d, 24)), line, 0, 14, muted);
+        draw_text(d, rect_of(col.x, col.y + col.h + lpx(d, 24), col.w, lpx(d, 24)), "Back to all composers", 0, 14,
+                  ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+        for (p = lib_next(cnt); *p != '\0'; i++) {
+            const char* name = lib_next(p);
+            sel_gui_rect r = lib_row_rect(d, mn, i + 1u);
+            draw_text(d, r, name, 0, 15, text);
+            p = lib_next(name);
+        }
+    } else {
+        draw_text(d, col, "Library", 1, 32, text);
+        for (p = st->composers; p != NULL && *p != '\0'; i++) {
+            const char* disp = lib_next(p);
+            const char* cnt = lib_next(disp);
+            sel_gui_rect r = lib_row_rect(d, mn, i);
+            char line[48];
+            draw_text(d, rect_of(r.x, r.y, r.w * 2 / 3, r.h), disp, 1, 15, text);
+            snprintf(line, sizeof line, "%s songs", cnt);
+            draw_text(d, rect_of(r.x + r.w * 2 / 3, r.y, r.w / 3, r.h), line, 0, 14, muted);
+            sel_gui_dirty_add(d->canvas, r);
+            p = lib_next(cnt);
+        }
+    }
+    if (st->stats != NULL) { /* the Stats page (F24): the library totals as label and value */
+        sel_gui_rect sr = rect_of(mn.x + mn.w - mg - lpx(d, LIB_STATS_W), mn.y + lpx(d, LIB_LIST_Y), lpx(d, LIB_STATS_W), lpx(d, 28));
+        draw_text(d, sr, "Statistics", 1, 18, text);
+        sr.y += lpx(d, 28) + sp;
+        for (p = st->stats; *p != '\0'; sr.y += lpx(d, 24)) {
+            const char* val = lib_next(p);
+            draw_text(d, rect_of(sr.x, sr.y, sr.w * 2 / 3, lpx(d, 24)), p, 0, 14, muted);
+            draw_text(d, rect_of(sr.x + sr.w * 2 / 3, sr.y, sr.w / 3, lpx(d, 24)), val, 1, 14, text);
+            p = lib_next(val);
+        }
+    }
+    sel_gui_clip_pop(d->canvas);
+    d->home_parts |= HP_SECTION;
+}
+
+/* A click on a composer row drills into it (COMPOSERS_SHOW canon); on the back line it returns to the list. */
+static int library_click(desk* d, int32_t x, int32_t y) {
+    const sel_state* st = sel_engine_state(d->engine);
+    sel_gui_rect mn = region_rect(d, "main");
+    uint32_t i = 0;
+    const char* p;
+    char line[256];
+    if (st->composers == NULL) {
+        return 0;
+    }
+    if (st->composer_page != NULL) {
+        sel_gui_rect back = rect_of(mn.x + lpx(d, LIB_MARGIN), mn.y + lpx(d, LIB_TITLE_Y + LIB_TITLE_H + 24), mn.w / 2, lpx(d, 24));
+        if (in_rect(back, x, y)) {
+            return desk_send(d, "COMPOSERS_SHOW");
+        }
+        return 0;
+    }
+    for (p = st->composers; *p != '\0'; i++) {
+        const char* disp = lib_next(p);
+        if (in_rect(lib_row_rect(d, mn, i), x, y)) {
+            snprintf(line, sizeof line, "COMPOSERS_SHOW %s", p);
+            return desk_send(d, line);
+        }
+        p = lib_next(lib_next(disp));
+    }
+    return 0;
+}
+
 static void draw_home_content(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     sel_gui_rect mn = draw_panel(d, "main");
@@ -1164,6 +1298,10 @@ static void draw_home_content(desk* d) {
     int32_t hv = sel_gui_tween_value(&d->tl, ANIM_KEY_HOVER, 65536);
     uint32_t i;
     char name[256];
+    if (st->composers != NULL) {
+        draw_library(d);
+        return;
+    }
     if (d->songs) {
         draw_songs(d);
         draw_songs_targets(d);
@@ -1929,6 +2067,9 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
     if (ev->kind != SEL_GUI_IN_CLICK) {
         return 0;
     }
+    if (library_click(d, ev->x, ev->y)) {
+        return 1;
+    }
     if (d->menu_row > 0) { /* a click while the context menu is open picks an item or dismisses it */
         uint32_t k;
         int32_t row = d->menu_row - 1;
@@ -2532,13 +2673,13 @@ static void* desk_open(const sel_ui_open_args* a) {
             d->textsheet = 1;
         } else if (strcmp(view, "widgets") == 0) {
             d->widgets = 1;
-        } else if (strcmp(view, "home") == 0) {
+        } else if (strcmp(view, "home") == 0 || strcmp(view, "library") == 0) { /* library: the Home frame with the Library page (DUI-P4-3) */
             d->home = 1;
         } else if (strcmp(view, "songs") == 0) {
             d->home = 1;
             d->songs = 1;
         } else {
-            fprintf(stderr, "selecta: desktop view '%s' is not testcard, text, home, songs or widgets\n", view);
+            fprintf(stderr, "selecta: desktop view '%s' is not testcard, text, home, library, songs or widgets\n", view);
             a->host->mem_free(a->host, d);
             return NULL;
         }
@@ -2674,6 +2815,10 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
         d->dirty_total = d->dirty_pixels;
         d->frames++;
         return 1;
+    }
+    if (lib_hash(sel_engine_state(d->engine)) != d->library_sig && sel_engine_state(d->engine)->composers != NULL) {
+        d->library_sig = lib_hash(sel_engine_state(d->engine)); /* the Library page changed: redraw */
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
     }
     if (d->home && sel_engine_state(d->engine)->view != NULL) { /* HOME rows arrived or changed: redraw */
         const sel_view_state* hv = sel_engine_state(d->engine)->view;
@@ -2858,7 +3003,9 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[56].value = (uintptr_t)(uint32_t)(d->home_y_q16 >> 16);
     d->stats[57].tag = SEL_UI_STAT_TILE_QUEUED;
     d->stats[57].value = d->tile_queued;
-    d->stats[58].tag = SEL_TAG_END;
+    d->stats[58].tag = SEL_UI_STAT_LIBRARY_DUMP;
+    d->stats[58].value = (uintptr_t)library_dump_build(d);
+    d->stats[59].tag = SEL_TAG_END;
 
     return d->stats;
 }

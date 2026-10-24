@@ -505,6 +505,10 @@ int main(int argc, char** argv)
             if (sel_engine_state(e)->view->row_count == 0u) { /* no history to show (no library or an empty one): the view source it had before */
                 send_line(e, "VIEW_SOURCE browse");
             }
+        } else if (strcmp(option(argc, argv, "--view", ""), "library") == 0) { /* the Library page: composers and the stats (DUI-P4-3) */
+            send_line(e, "VIEW_SHOW browse");
+            send_line(e, "COMPOSERS_SHOW");
+            send_line(e, "STATS_SHOW");
         } else {
             send_line(e, "VIEW_SHOW browse");
         }
@@ -639,6 +643,7 @@ int main(int argc, char** argv)
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_REPEAT_MODE, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_RANDOM_ON, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_SUBSONG, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_FRAME_PARTS, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_HOME_PARTS, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_TILE_CARDS, 0));
+            printf("ui_library id=%s\n%s", g_uis[u].id, (const char*)sel_tag_find(us, SEL_UI_STAT_LIBRARY_DUMP, (uintptr_t) ""));
             printf("ui_tooltip id=%s text=%s\n", g_uis[u].id, (const char*)sel_tag_find(us, SEL_UI_STAT_TOOLTIP_TEXT, (uintptr_t) ""));
             printf("ui_home id=%s shelves=%u shelf_scroll=%u scroll_y=%u tile_queued=%u\n%s", g_uis[u].id,
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_HOME_SHELVES, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_SHELF_SCROLL, 0),
