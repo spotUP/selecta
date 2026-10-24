@@ -223,6 +223,13 @@ if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
     COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DAMIGA_CLI=${SEL_AMIGA_CLI}"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_config_dir.cmake")
   set_tests_properties(amiga-config-dir PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 120)
+
+  # I218d: Latin-1 file names listed as UTF-8 and opened by that name, through library browse --names.
+  add_test(NAME amiga-latin1-name
+    COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DAMIGA_CLI=${SEL_AMIGA_CLI}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_latin1_name.cmake"
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+  set_tests_properties(amiga-latin1-name PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 120)
 endif()
 
 # T10: the machine probe through `selecta-cli machine`. FAST_RAM is the
@@ -565,6 +572,11 @@ endif()
 add_executable(composer_test library/composer_test.c "${PROJECT_SOURCE_DIR}/src/library/composer.c")
 target_include_directories(composer_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
 add_test(NAME composer-unit COMMAND composer_test)
+
+# I218d: Latin-1 <-> UTF-8 at the OS boundary.
+add_executable(latin1_test library/latin1_test.c "${PROJECT_SOURCE_DIR}/src/library/latin1.c")
+target_include_directories(latin1_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+add_test(NAME latin1-unit COMMAND latin1_test)
 
 # T36: the command line. argdump.sh stands in for `:!program`.
 if(NOT SEL_AMIGA)
