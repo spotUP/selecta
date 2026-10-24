@@ -1,0 +1,10 @@
+DH0:C/Assign >NIL: SYS: DH0:
+DH0:C/Assign >NIL: C: DH0:C
+DH0:C/Assign >NIL: S: DH0:S
+DH0:C/Assign >NIL: LIBS: DH0:Libs
+DH0:C/Assign >NIL: DEVS: DH0:Devs
+DH0:C/Assign >NIL: T: RAM:
+DH0:C/Assign >NIL: WORK: WORKX:
+DH0:C/Assign >NIL: ENVARC: WORKX:
+DH0:C/Assign >NIL: ENV: RAM:
+C:Execute WORKX:run

@@ -1,0 +1,15 @@
+Echo >WORK:out.txt "START"
+Copy WORK:songs2/zz.mod "WORK:songs2/Björk Ärger.mod" >>WORK:out.txt
+Delete WORK:songs2/zz.mod >NIL:
+Echo >>WORK:out.txt "--browse-nolc"
+WORK:selecta-cli library browse WORK:songs2 --names >>WORK:out.txt
+Echo >>WORK:out.txt "--A first frame, no LC"
+WORK:selecta --size 80x24 --keys WORK:keys0.txt --screen-dump WORK:dumpA.txt --start-dir WORK:songs2 >>WORK:out.txt
+Echo >>WORK:out.txt "--B play, no LC"
+WORK:selecta --size 80x24 --keys WORK:keys1.txt --screen-dump WORK:dumpB.txt --start-dir WORK:songs2 >>WORK:out.txt
+SetEnv LC_CTYPE C.UTF-8
+Echo >>WORK:out.txt "--C first frame, LC_CTYPE=C.UTF-8"
+WORK:selecta --size 80x24 --keys WORK:keys0.txt --screen-dump WORK:dumpC.txt --start-dir WORK:songs2 >>WORK:out.txt
+Echo >>WORK:out.txt "--D play, UTF8"
+WORK:selecta --size 80x24 --keys WORK:keys1.txt --screen-dump WORK:dumpD.txt --start-dir WORK:songs2 >>WORK:out.txt
+Echo >>WORK:out.txt ALLDONE

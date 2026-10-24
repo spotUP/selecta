@@ -1,0 +1,23 @@
+[fs-uae]
+amiga_model = A1200
+cpu = 68020
+fpu = 68882
+fast_memory = 8192
+jit_compiler = 0
+uae_cpu_speed = real
+uae_cpu_cycle_exact = true
+uae_cpu_compatible = true
+logs_dir = /private/tmp/claude-501/-Users-spot-Code-MusicPlayer/d21f2148-ebf4-461d-8876-9851ed290fe3/scratchpad/uae-rig/logs
+hard_drive_0 = /Users/spot/Code/UP-Term/vtcon/build/rig4/sys.hdf
+hard_drive_0_read_only = 1
+hard_drive_1 = /private/tmp/claude-501/-Users-spot-Code-MusicPlayer/d21f2148-ebf4-461d-8876-9851ed290fe3/scratchpad/uae-rig/work
+hard_drive_1_label = WORKX
+hard_drive_2 = /private/tmp/claude-501/-Users-spot-Code-MusicPlayer/d21f2148-ebf4-461d-8876-9851ed290fe3/scratchpad/uae-rig/boot
+hard_drive_2_label = BOOTX
+hard_drive_2_priority = 10
+joystick_port_1 = none
+kickstart_file = /Users/spot/Code/UP-Term/roms/kick40068-a1200.rom
+volume = 0
+initial_input_grab = 0
+window_width = 640
+window_height = 512

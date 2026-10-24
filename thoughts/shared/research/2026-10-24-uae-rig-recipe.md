@@ -44,3 +44,7 @@ Machine: CPU=68020 CPU_SPEED=185 FPU=1 FAST_RAM=8 MB CHIP_RAM=2096128 GFX=ECS AU
 - Cycle exact 020 is about 1x host speed: renders take minutes (2 s of mp3 render about 2 min).
 - Earlier I213 hang with -m68881 link was never explained; this recipe ran the current binary fine.
 - Windows are opened on the host (FS-UAE window); no input grab needed.
+
+## Durable copies
+`thoughts/shared/research/uae-rig/`: `cfg.fs-uae` (paths point at the 2026-10-24 scratchpad; edit them), `boot/s/startup-sequence`, `run.example-latin1` (Latin-1 name copy, browse, headless runs with and without LC_CTYPE; needs keys0.txt = `wait 300`,`q` and keys1.txt = `Down`,`Enter`,`wait 3000`,`i`,`q`). No ROM, hdf or binaries.
+Note: `--screen-dump` text is always UTF-8 (grid text), so it cannot show which charset the console bytes use; a run with `--size` also bypasses the real console. A play run takes about 3 minutes on cycle-exact 020 (keep the wait loop above 5 minutes).
