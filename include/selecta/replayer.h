@@ -124,6 +124,9 @@ typedef void (*sel_rp_set_speed_fn)(void* state, uint32_t pitch_q16, uint32_t te
  * the audio thread (pause) or the command thread (release), never both at once. */
 typedef void (*sel_rp_hw_pause_fn)(void* state, uint32_t paused);
 typedef void (*sel_rp_hw_release_fn)(void* state);
+/* RP_HW_POLL (I219b): optional. Returns SEL_TICK_LOOPED / SEL_TICK_ENDED when the song wrapped or ended since the
+ * last call, else 0. HW slots never tick, so this is their only way to end before max_song_ms. Audio thread. */
+typedef uint32_t (*sel_rp_hw_poll_fn)(void* state);
 
 /* One sample of the open song (RP_SAMPLE_GET). `data` points at `length` frames
  * of `channels` interleaved signed PCM, 8-bit (`bits` 8) or 16-bit native

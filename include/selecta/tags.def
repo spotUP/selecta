@@ -69,6 +69,9 @@ SEL_TAG(RP, STREAMING,         0x101C, INT)
  * hardware back before another song takes it (sel_rp_hw_release_fn). Both optional; RP_CLOSE always releases. */
 SEL_TAG(RP, HW_PAUSE,          0x101D, PTR)
 SEL_TAG(RP, HW_RELEASE,        0x101E, PTR)
+/* HW_POLL (I219b): optional, HW kind. Called once per engine render chunk while the song plays; returns SEL_TICK_*
+ * flags (sel_rp_hw_poll_fn), 0 when nothing happened. LOOPED and ENDED take the same end policy as a tick's flags. */
+SEL_TAG(RP, HW_POLL,           0x101F, PTR)
 
 SEL_TAG(OUT, NAME,             0x2000, STR)
 SEL_TAG(OUT, SINK,             0x2001, INT)

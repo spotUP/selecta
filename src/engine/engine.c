@@ -202,6 +202,7 @@ typedef struct sel_slot {
     uint32_t hw;                              /* 1: HW kind, the replayer drives the sound hardware (I219) */
     sel_rp_hw_pause_fn rp_hw_pause;           /* optional, HW kind */
     sel_rp_hw_release_fn rp_hw_release;       /* optional, HW kind */
+    sel_rp_hw_poll_fn rp_hw_poll;             /* optional, HW kind: song end flags (I219b) */
     uint32_t applied_pause;                   /* audio side: pause state last handed to rp_hw_pause */
     uint32_t pos_order, pos_row, pos_pattern, pos_valid; /* audio side writes after each render */
     sel_rp_render_fn rp_render; /* RENDER kind: the replayer mixes, rp_tick is NULL */
@@ -1795,6 +1796,7 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     sl->hw = kind == SEL_RP_KIND_HW;
     sl->rp_hw_pause = sl->hw ? (sel_rp_hw_pause_fn)sel_tag_find(hooks, SEL_RP_HW_PAUSE, 0) : NULL;
     sl->rp_hw_release = sl->hw ? (sel_rp_hw_release_fn)sel_tag_find(hooks, SEL_RP_HW_RELEASE, 0) : NULL;
+    sl->rp_hw_poll = sl->hw ? (sel_rp_hw_poll_fn)sel_tag_find(hooks, SEL_RP_HW_POLL, 0) : NULL;
     sl->applied_pause = 0;
     if (kind != SEL_RP_KIND_VOICE) {
         sl->rp_tick = NULL;
@@ -5168,6 +5170,17 @@ static void policy_loop(sel_engine* e, sel_slot* sl) {
     p->fade_reason = SEL_END_LOOP;
 }
 
+/* The SEL_TICK_* flags of a replayer tick (or of a HW poll, I219b) enter the end policy here: ENDED ends after the
+ * tick, LOOPED counts a pass. */
+static void policy_tick_flags(sel_engine* e, sel_slot* sl, uint32_t flags) {
+    if (flags & SEL_TICK_ENDED) {
+        sl->last_tick = 1;
+        sl->pol.reason = SEL_END_END;
+    } else if (flags & SEL_TICK_LOOPED) {
+        policy_loop(e, sl);
+    }
+}
+
 int sel_engine_fade(const sel_engine* e, uint32_t* pos, uint32_t* total) {
     const sel_slot* sl = e->audio_slot < SEL_SLOT_COUNT ? &e->slot[e->audio_slot] : NULL;
     if (sl == NULL || !sl->pol.fade_on) {
@@ -5221,7 +5234,14 @@ static uint32_t render_slot(sel_engine* e, sel_slot* sl, int16_t* stereo, uint32
             uint32_t got = frames - done;
             memset(stereo + (size_t)done * 2u, 0, (size_t)got * 2u * sizeof(int16_t));
             sl->song_frames += got;
+            if (sl->rp_hw_poll != NULL) { /* the replayer's own song end, once per render chunk (I219b) */
+                policy_tick_flags(e, sl, sl->rp_hw_poll(sl->rp_state));
+            }
             done += policy_chunk(e, sl, stereo + (size_t)done * 2u, got);
+            if (!sl->ended && sl->last_tick) { /* no tick length to wait out on the hardware */
+                sl->last_tick = 0;
+                sl->ended = 1;
+            }
         }
         while (sl->rp_render != NULL && done < frames && !sl->ended) {
             uint32_t want = frames - done;
@@ -5255,12 +5275,7 @@ static uint32_t render_slot(sel_engine* e, sel_slot* sl, int16_t* stereo, uint32
                         sl->frames_left = 1u;
                     }
                 }
-                if (r.flags & SEL_TICK_ENDED) {
-                    sl->last_tick = 1;
-                    sl->pol.reason = SEL_END_END;
-                } else if (r.flags & SEL_TICK_LOOPED) {
-                    policy_loop(e, sl);
-                }
+                policy_tick_flags(e, sl, r.flags);
             }
             n = frames - done < sl->frames_left ? frames - done : sl->frames_left;
             sel_mixer_mix(&sl->mixer, stereo + (size_t)done * 2u, n);

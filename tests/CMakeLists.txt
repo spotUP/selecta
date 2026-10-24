@@ -589,6 +589,8 @@ if(NOT SEL_AMIGA)
   target_link_libraries(hw_prepare_test PRIVATE selecta_core)
   add_test(NAME engine-hw-song-not-cut-by-early-prepare COMMAND hw_prepare_test)
   set_tests_properties(engine-hw-song-not-cut-by-early-prepare PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "hw_prepare: ok")
+  add_test(NAME engine-hw-song-ends-on-loop COMMAND hw_prepare_test loop)
+  set_tests_properties(engine-hw-song-ends-on-loop PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "hw_prepare: ok")
   set_tests_properties(browse-hides-unrecognised-files PROPERTIES PASS_REGULAR_EXPRESSION "browse_filter_ok")
 endif()
 

@@ -19,6 +19,10 @@ enum {
     KP_END = 8,
     KP_PLAYSTOP = 20,
     KP_WORK_SIZE = 2000, /* k_sizeof */
+    /* Offset of k_songover (byte, "Song played n times", incremented when the song wraps to position 0) in the work
+     * area: kpl_offsets.S:74. Measured, not counted: vasmm68k_mot assembling the rs block of kpl_offsets.S
+     * (k_counter..k_songover) and dumping `dc.l k_songover` gives 0x0000001d = 29. */
+    KP_SONGOVER_AT = 29,
     KP_MAGIC_AT = 1080
 };
 
@@ -27,6 +31,7 @@ typedef struct kp_state {
     uint8_t* module; /* SEL_MEM_SAMPLE copy */
     uint8_t* work;   /* SEL_MEM_SAMPLE, KP_WORK_SIZE bytes */
     uint32_t playing;
+    uint8_t last_songover; /* k_songover as last seen by rp_hw_poll */
 } kp_state;
 
 static kp_state* g_owner;
@@ -126,6 +131,7 @@ static int rp_start(void* state, uint32_t subsong, uint32_t rate, const sel_voic
     if (kp_call(KP_INIT, 0, 1, 1, s->work, s->module) != 0) {
         return 0;
     }
+    s->last_songover = 0; /* the work area was just cleared */
     s->playing = 1;
     g_owner = s;
     return 1;
@@ -138,11 +144,26 @@ static void rp_hw_pause(void* state, uint32_t paused) {
     }
 }
 
+/* HW_POLL (I219b): the 68k routine bumps k_songover from the CIA interrupt; a change since the last poll is a loop. */
+static uint32_t rp_hw_poll(void* state) {
+    kp_state* s = (kp_state*)state;
+    uint8_t now;
+    if (!s->playing) {
+        return 0;
+    }
+    now = ((volatile uint8_t*)s->work)[KP_SONGOVER_AT];
+    if (now == s->last_songover) {
+        return 0;
+    }
+    s->last_songover = now;
+    return SEL_TICK_LOOPED;
+}
+
 static void rp_hw_release(void* state) {
     stop((kp_state*)state);
 }
 
-static sel_tag g_hooks[13];
+static sel_tag g_hooks[14];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -164,9 +185,10 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[7], SEL_RP_START, SEL_TAG_FN(rp_start));
     set(&g_hooks[8], SEL_RP_HW_PAUSE, SEL_TAG_FN(rp_hw_pause));
     set(&g_hooks[9], SEL_RP_HW_RELEASE, SEL_TAG_FN(rp_hw_release));
-    set(&g_hooks[10], SEL_RP_MIN_CPU, 68000);
-    set(&g_hooks[11], SEL_RP_PRIORITY, 10); /* the native player outranks nuade for M.K. on Amiga */
-    set(&g_hooks[12], SEL_TAG_END, 0);
+    set(&g_hooks[10], SEL_RP_HW_POLL, SEL_TAG_FN(rp_hw_poll));
+    set(&g_hooks[11], SEL_RP_MIN_CPU, 68000);
+    set(&g_hooks[12], SEL_RP_PRIORITY, 10); /* the native player outranks nuade for M.K. on Amiga */
+    set(&g_hooks[13], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "kplayer");

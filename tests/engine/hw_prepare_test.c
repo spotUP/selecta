@@ -30,6 +30,7 @@ static int g_fail;
     } while (0)
 
 static uint32_t g_hw_starts, g_hw_releases;
+static uint32_t g_polls, g_loop_after; /* fake HW poll: calls so far, and the call that reports LOOPED (0 = never) */
 static int g_state; /* any non-NULL state will do: the fakes keep no per-song data */
 
 static int ends_with(const char* name, const char* ext) {
@@ -75,6 +76,12 @@ static void hw_release(void* state) {
     g_hw_releases++;
 }
 
+static uint32_t hw_poll(void* state) {
+    (void)state;
+    g_polls++;
+    return g_loop_after != 0u && g_polls == g_loop_after ? SEL_TICK_LOOPED : 0u;
+}
+
 static int rnd_start(void* state, uint32_t subsong, uint32_t rate, const sel_voices* voices) {
     (void)state;
     (void)subsong;
@@ -96,6 +103,7 @@ static sel_tag g_hw_hooks[] = {{SEL_RP_KIND, SEL_RP_KIND_HW},
                                {SEL_RP_CLOSE, SEL_TAG_FN(fake_close)},
                                {SEL_RP_START, SEL_TAG_FN(hw_start)},
                                {SEL_RP_HW_RELEASE, SEL_TAG_FN(hw_release)},
+                               {SEL_RP_HW_POLL, SEL_TAG_FN(hw_poll)},
                                {SEL_TAG_END, 0}};
 static sel_tag g_rnd_hooks[] = {{SEL_RP_KIND, SEL_RP_KIND_RENDER},
                                 {SEL_RP_EXTENSIONS, (uintptr_t) "rnd"},
@@ -201,7 +209,8 @@ static void drive(uint32_t ms, uint32_t stop_at) {
     }
 }
 
-int main(void) {
+int main(int argc, char** argv) {
+    int loop_only = argc > 1 && strcmp(argv[1], "loop") == 0; /* ctest engine-hw-song-ends-on-loop */
     char dir[] = "/tmp/selecta_hw_prepare_XXXXXX";
     sel_engine_stats st;
     CHECK(mkdtemp(dir) != NULL);
@@ -209,6 +218,7 @@ int main(void) {
     touch(dir, "b.hwm");
     touch(dir, "c.rnd");
 
+    if (!loop_only) {
     /* HW song then HW song: the prepare window opens at once, yet the playing song keeps the hardware. */
     start(dir, "a.hwm", "b.hwm");
     drive(400u, 2u);
@@ -234,6 +244,21 @@ int main(void) {
     drive(3000u, 1u);
     CHECK(g_hw_starts == 1u);
     CHECK(sel_engine_handed_over(eng) == 1u);
+    sel_engine_destroy(eng);
+    }
+
+    /* Regression (I219b): HW slots never ticked, so a HW song ended only at max_song_ms. The fake's poll reports
+     * LOOPED on its 40th call (about 40 render chunks, 256 frames each: ~230 ms); loops is 1 and the fade 0, so the
+     * song ends then and the queue starts the next one, far before the 5000 ms cap. The poll count is the sentinel. */
+    start(dir, "a.hwm", "b.hwm");
+    run("OPTION max_song_ms 5000");
+    g_polls = 0;
+    g_loop_after = 40u;
+    drive(1500u, 2u);
+    CHECK(g_polls >= 40u);
+    CHECK(g_hw_starts == 2u);
+    CHECK(g_ms < 1200u); /* the second song started on the poll's LOOPED, not at the 5000 ms cap */
+    g_loop_after = 0u;
     sel_engine_destroy(eng);
 
     {
