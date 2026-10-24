@@ -1,0 +1,22 @@
+# dui-dirty (DUI-P2-2): partial redraw. One clock second (a PROGRESS-only turn) redraws at most 4000 pixels of the
+# 1280x800@1 canvas, while the first frame paints it whole. -DSELECTA -DSONGS -DWORK.
+get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+include("${HERE}/dui_run.cmake")
+file(REMOVE_RECURSE "${WORK}")
+foreach(fmt rgba32 index8)
+  dui_run(out --ui desktop --backend mem --stats --format ${fmt} --canvas 1280x800 --ticks 1
+    --exec "QUEUE_ADD ${SONGS}/selecta-test.mod" --exec PLAY)
+  dui_stat(dirty "${out}" desktop dirty_pixels)
+  dui_stat(total "${out}" desktop dirty_total)
+  dui_stat(uim "${out}" desktop uim_dirty)
+  if(NOT uim EQUAL 8)
+    message(FATAL_ERROR "${fmt}: the last turn must dirty PROGRESS only (uim_dirty=${uim})")
+  endif()
+  if(dirty LESS 1 OR dirty GREATER 4000)
+    message(FATAL_ERROR "${fmt}: one clock second redrew ${dirty} pixels; the limit is 4000 (and the sentinel needs > 0)")
+  endif()
+  math(EXPR full "1280 * 800")
+  if(total LESS full)
+    message(FATAL_ERROR "${fmt}: the first frame must paint the whole canvas (total ${total} < ${full})")
+  endif()
+endforeach()
