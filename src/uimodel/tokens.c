@@ -48,3 +48,46 @@ uint32_t sel_gui_tokens_diff(const uint32_t* a, const uint32_t* b) {
     }
     return mask;
 }
+
+static const char* const b_name[SEL_GUI_BASE_COUNT] = {
+#define X(id, name, def, lo, hi) name,
+    SEL_GUI_BASE_TOKENS(X)
+#undef X
+};
+static const uint32_t b_def[SEL_GUI_BASE_COUNT] = {
+#define X(id, name, def, lo, hi) def,
+    SEL_GUI_BASE_TOKENS(X)
+#undef X
+};
+static const uint32_t b_min[SEL_GUI_BASE_COUNT] = {
+#define X(id, name, def, lo, hi) lo,
+    SEL_GUI_BASE_TOKENS(X)
+#undef X
+};
+static const uint32_t b_max[SEL_GUI_BASE_COUNT] = {
+#define X(id, name, def, lo, hi) hi,
+    SEL_GUI_BASE_TOKENS(X)
+#undef X
+};
+static const int k_ref[SEL_GUI_TOKEN_COUNT] = {
+#define X(role, base) [SEL_GUI_TOKEN_##role] = SEL_GUI_BASE_##base,
+    SEL_GUI_TOKEN_REFS(X)
+#undef X
+};
+
+const char* sel_gui_base_name(sel_gui_base b) { return (unsigned)b < SEL_GUI_BASE_COUNT ? b_name[b] : ""; }
+uint32_t sel_gui_base_default(sel_gui_base b) { return (unsigned)b < SEL_GUI_BASE_COUNT ? b_def[b] : 0u; }
+uint32_t sel_gui_base_min(sel_gui_base b) { return (unsigned)b < SEL_GUI_BASE_COUNT ? b_min[b] : 0u; }
+uint32_t sel_gui_base_max(sel_gui_base b) { return (unsigned)b < SEL_GUI_BASE_COUNT ? b_max[b] : 0u; }
+
+int sel_gui_base_find(const char* name, uint32_t len) {
+    int i;
+    for (i = 0; i < (int)SEL_GUI_BASE_COUNT; i++) {
+        if (strlen(b_name[i]) == len && memcmp(b_name[i], name, len) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int sel_gui_token_default_ref(sel_gui_token t) { return (unsigned)t < SEL_GUI_TOKEN_COUNT ? k_ref[t] : -1; }

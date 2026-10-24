@@ -66,3 +66,42 @@ foreach(bad "${GOLDEN}/desktop/radius-range.theme" "${WORK}/missing.theme" "${WO
     message(FATAL_ERROR "--theme ${bad} must make the desktop UI refuse to open")
   endif()
 endforeach()
+
+# Two token layers (I237, D-DUI-9). Roles follow base tokens; `@name` references resolve once at parse time.
+# (1) A theme that swaps only the base layer recolours the roles that follow it (surface follows gui.base.grey_2).
+file(WRITE "${WORK}/base-only.theme" "gui.base.grey_2 = 0x123456\n")
+dui_run(baseonly ${base} --theme "${WORK}/base-only.theme")
+if(NOT "${baseonly}" MATCHES "pixel widget=panel rgb=0x123456")
+  message(FATAL_ERROR "a base-only theme must recolour gui.surface:\n${baseonly}")
+endif()
+if(NOT "${baseonly}" MATCHES "tokens count=20 changed=1" OR NOT "${baseonly}" MATCHES "token changed=gui.surface")
+  message(FATAL_ERROR "a base-only theme must change exactly gui.surface:\n${baseonly}")
+endif()
+# (2) A reference on a role line resolves to the base value, and a later base line still moves it.
+file(WRITE "${WORK}/ref.theme" "gui.accent = @gui.base.grey_9\ngui.base.grey_9 = 0xABCDEF\n")
+dui_run(ref ${base} --theme "${WORK}/ref.theme")
+if(NOT "${ref}" MATCHES "pixel widget=play_button rgb=0xabcdef")
+  message(FATAL_ERROR "gui.accent = @gui.base.grey_9 must resolve to 0xabcdef:\n${ref}")
+endif()
+# (3) A literal role line cuts the reference: the base layer no longer moves it.
+file(WRITE "${WORK}/literal.theme" "gui.surface = 0x010203\ngui.base.grey_2 = 0x123456\n")
+dui_run(literal ${base} --theme "${WORK}/literal.theme")
+if(NOT "${literal}" MATCHES "pixel widget=panel rgb=0x010203")
+  message(FATAL_ERROR "a literal role value must not follow the base layer:\n${literal}")
+endif()
+# (4) A cycle and a missing reference are refused and the error names the token.
+file(WRITE "${WORK}/cycle.theme" "gui.base.grey_1 = @gui.base.grey_2\ngui.base.grey_2 = @gui.base.grey_1\n")
+file(WRITE "${WORK}/missing-ref.theme" "gui.surface = @gui.base.nope\n")
+foreach(case "cycle|gui.base.grey_2" "missing-ref|gui.base.nope")
+  string(REPLACE "|" ";" parts "${case}")
+  list(GET parts 0 file)
+  list(GET parts 1 token)
+  execute_process(COMMAND "${SELECTA}" --output null --size 80x25 --config-dir "${WORK}/cfg" ${base}
+    --theme "${WORK}/${file}.theme" --exec STATUS RESULT_VARIABLE rc OUTPUT_QUIET ERROR_VARIABLE err)
+  if(rc EQUAL 0)
+    message(FATAL_ERROR "${file}.theme must make the desktop UI refuse to open")
+  endif()
+  if(NOT err MATCHES "'${token}'")
+    message(FATAL_ERROR "the ${file}.theme error must name the token ${token}:\n${err}")
+  endif()
+endforeach()

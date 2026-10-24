@@ -879,7 +879,12 @@ static int desk_load_theme(desk* d, const char* path) {
     fclose(f);
     buf[n] = '\0';
     if (txt_theme_parse(&d->theme, buf, &bad) < 0) {
-        fprintf(stderr, "selecta: desktop theme '%s' line %d is not a role or token line in range\n", path, bad);
+        if (d->theme.bad_token[0] != '\0') {
+            fprintf(stderr, "selecta: desktop theme '%s' line %d: token '%s' has a missing or circular reference\n",
+                    path, bad, d->theme.bad_token);
+        } else {
+            fprintf(stderr, "selecta: desktop theme '%s' line %d is not a role or token line in range\n", path, bad);
+        }
         return 0;
     }
     return 1;

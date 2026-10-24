@@ -33,6 +33,61 @@ extern "C" {
     X(RADIUS_SMALL, "gui.radius_small", 4u, 0u, 32u)                 \
     X(RADIUS_LARGE, "gui.radius_large", 8u, 0u, 32u)
 
+/* Layer 1 (D-DUI-9): base tokens. A theme swaps these and the role tokens above follow. X(id, file key, default, min,
+ * max). A value may be written as `@gui.base.<name>` (a reference to another base token). Widgets read roles only. */
+#define SEL_GUI_BASE_TOKENS(X)                                  \
+    X(GREY_0, "gui.base.grey_0", 0x000000u, 0u, 0xFFFFFFu)      \
+    X(GREY_1, "gui.base.grey_1", 0x121214u, 0u, 0xFFFFFFu)      \
+    X(GREY_2, "gui.base.grey_2", 0x1E1E24u, 0u, 0xFFFFFFu)      \
+    X(GREY_3, "gui.base.grey_3", 0x2A2A32u, 0u, 0xFFFFFFu)      \
+    X(GREY_4, "gui.base.grey_4", 0x2C2C34u, 0u, 0xFFFFFFu)      \
+    X(GREY_5, "gui.base.grey_5", 0x34343Eu, 0u, 0xFFFFFFu)      \
+    X(GREY_6, "gui.base.grey_6", 0x3E3E4Au, 0u, 0xFFFFFFu)      \
+    X(GREY_7, "gui.base.grey_7", 0x62626Eu, 0u, 0xFFFFFFu)      \
+    X(GREY_8, "gui.base.grey_8", 0xA0A0ACu, 0u, 0xFFFFFFu)      \
+    X(GREY_9, "gui.base.grey_9", 0xE6E6EBu, 0u, 0xFFFFFFu)      \
+    X(GREY_10, "gui.base.grey_10", 0xFFFFFFu, 0u, 0xFFFFFFu)    \
+    X(ACCENT_0, "gui.base.accent_0", 0x3B82F6u, 0u, 0xFFFFFFu)  \
+    X(ACCENT_1, "gui.base.accent_1", 0x93C5FDu, 0u, 0xFFFFFFu)  \
+    X(ERROR_0, "gui.base.error_0", 0xEF4444u, 0u, 0xFFFFFFu)    \
+    X(WARNING_0, "gui.base.warning_0", 0xF59E0Bu, 0u, 0xFFFFFFu) \
+    X(SUCCESS_0, "gui.base.success_0", 0x22C55Eu, 0u, 0xFFFFFFu) \
+    X(SPACING_1, "gui.base.spacing_1", 4u, 0u, 64u)             \
+    X(SPACING_2, "gui.base.spacing_2", 8u, 0u, 64u)             \
+    X(RADIUS_1, "gui.base.radius_1", 4u, 0u, 32u)               \
+    X(RADIUS_2, "gui.base.radius_2", 6u, 0u, 32u)               \
+    X(RADIUS_3, "gui.base.radius_3", 8u, 0u, 32u)
+
+typedef enum sel_gui_base {
+#define X(id, name, def, lo, hi) SEL_GUI_BASE_##id,
+    SEL_GUI_BASE_TOKENS(X)
+#undef X
+    SEL_GUI_BASE_COUNT
+} sel_gui_base;
+
+/* Default references of the Selecta Dark preset: X(role id, base id). Every role follows a base token by default. */
+#define SEL_GUI_TOKEN_REFS(X)            \
+    X(ACCENT, ACCENT_0)                  \
+    X(SURFACE, GREY_2)                   \
+    X(TEXT, GREY_9)                      \
+    X(RADIUS, RADIUS_2)                  \
+    X(SPACING, SPACING_2)                \
+    X(BACKGROUND, GREY_1)                \
+    X(SURFACE_RAISED, GREY_3)            \
+    X(SURFACE_HOVER, GREY_5)             \
+    X(SURFACE_PRESSED, GREY_6)           \
+    X(TEXT_MUTED, GREY_8)                \
+    X(TEXT_DISABLED, GREY_7)             \
+    X(ACCENT_TEXT, GREY_10)              \
+    X(DIVIDER, GREY_4)                   \
+    X(FOCUS_RING, ACCENT_1)              \
+    X(ERROR, ERROR_0)                    \
+    X(WARNING, WARNING_0)                \
+    X(SUCCESS, SUCCESS_0)                \
+    X(SCRIM, GREY_0)                     \
+    X(RADIUS_SMALL, RADIUS_1)            \
+    X(RADIUS_LARGE, RADIUS_3)
+
 typedef enum sel_gui_token {
 #define X(id, name, def, lo, hi) SEL_GUI_TOKEN_##id,
     SEL_GUI_TOKENS(X)
@@ -46,6 +101,14 @@ uint32_t sel_gui_token_min(sel_gui_token t);
 uint32_t sel_gui_token_max(sel_gui_token t);
 /* Index of the token with this file key, or -1. */
 int sel_gui_token_find(const char* name, uint32_t len);
+const char* sel_gui_base_name(sel_gui_base b);
+uint32_t sel_gui_base_default(sel_gui_base b);
+uint32_t sel_gui_base_min(sel_gui_base b);
+uint32_t sel_gui_base_max(sel_gui_base b);
+/* Index of the base token with this file key, or -1. */
+int sel_gui_base_find(const char* name, uint32_t len);
+/* Base token a role follows in the Selecta Dark preset. */
+int sel_gui_token_default_ref(sel_gui_token t);
 /* Bit mask (1 << token) of the tokens that differ between two token arrays. */
 uint32_t sel_gui_tokens_diff(const uint32_t* a, const uint32_t* b);
 

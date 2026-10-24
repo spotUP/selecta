@@ -1,17 +1,18 @@
-# Light theme preset of the widget gallery (DUI-P3-1): the same gui.* tokens as the dark defaults, light values.
-gui.background = 0xF4F4F6
-gui.surface = 0xFFFFFF
-gui.surface_raised = 0xEDEDF1
-gui.surface_hover = 0xE2E2E8
-gui.surface_pressed = 0xD4D4DC
-gui.text = 0x16161A
-gui.text_muted = 0x5C5C68
-gui.text_disabled = 0xA4A4AE
-gui.accent = 0x2563EB
-gui.accent_text = 0xFFFFFF
-gui.divider = 0xDADAE0
-gui.focus_ring = 0x1D4ED8
-gui.error = 0xDC2626
-gui.warning = 0xD97706
-gui.success = 0x16A34A
-gui.scrim = 0x000000
+# Light theme preset of the widget gallery (DUI-P3-1), base plus role form (D-DUI-9): it swaps layer 1 only, the
+# gui.* role tokens follow their base tokens (Selecta Dark references, tokens.h SEL_GUI_TOKEN_REFS).
+gui.base.grey_0 = 0x000000
+gui.base.grey_1 = 0xF4F4F6
+gui.base.grey_2 = 0xFFFFFF
+gui.base.grey_3 = 0xEDEDF1
+gui.base.grey_4 = 0xDADAE0
+gui.base.grey_5 = 0xE2E2E8
+gui.base.grey_6 = 0xD4D4DC
+gui.base.grey_7 = 0xA4A4AE
+gui.base.grey_8 = 0x5C5C68
+gui.base.grey_9 = 0x16161A
+gui.base.grey_10 = 0xFFFFFF
+gui.base.accent_0 = 0x2563EB
+gui.base.accent_1 = 0x1D4ED8
+gui.base.error_0 = 0xDC2626
+gui.base.warning_0 = 0xD97706
+gui.base.success_0 = 0x16A34A
