@@ -18,7 +18,11 @@ static sel_cache* cache_get(sel_library* lib) {
 }
 
 /* Runs one prefetch request on `c` (sel_cache_fetch_song, the code LIBRARY_FETCH uses: no second downloader).
- * Returns 1 when the request named a valid song. The stats of `c` moved by the work done. */
+ * Returns 1 when the request named a valid song and is finished, 2 when a sliced fetch (c->slice_ms) used its time
+ * budget and the request goes on with the next call (I168b), 0 for an invalid request. The stats of `c` moved by the work done. */
+/* One tick of the cooperative prefetch downloads for at most this long (milliseconds of body). */
+#define SEL_PREFETCH_SLICE_MS 100u
+
 static int prefetch_run(sel_cache* c, const char* spec, const char* rules) {
     char path[SEL_CACHE_PATH_MAX];
     char out[SEL_CACHE_PATH_MAX];
@@ -31,8 +35,7 @@ static int prefetch_run(sel_cache* c, const char* spec, const char* rules) {
     memcpy(source, spec, (size_t)(colon - spec));
     source[colon - spec] = '\0';
     snprintf(path, sizeof path, "%s", colon + 1);
-    sel_cache_fetch_song(c, source, path, NULL, rules, out, sizeof out);
-    return 1;
+    return sel_cache_fetch_song(c, source, path, NULL, rules, out, sizeof out) == SEL_CACHE_PENDING ? 2 : 1;
 }
 
 /* Smart downloads respect the LRU budget (I169): one is not started once the cache already holds the budget. The
@@ -215,18 +218,24 @@ static void cache_unlock(sel_library* lib) {
     (void)lib;
 }
 
+/* A foreground fetch drops the queued requests and the one in progress, but not the partial download: the
+ * foreground fetch of the same file adopts it (resumes after the bytes already on disk), a fetch of another file
+ * discards it (sel_cache_fetch, I168b). */
 static void prefetch_preempt(sel_library* lib) {
-    lib->pf_spec[0] = '\0'; /* single task: nothing runs in the background, the pending request is just dropped */
+    lib->pf_spec[0] = '\0';
+    lib->pf_cur[0] = '\0';
     lib->sm_n = 0;
 }
 
 /* No threads (Amiga build): the request is parked and run cooperatively by sel_library_prefetch_poll, called
- * from the engine's tick right after playback started. The transfer is one blocking call; a foreground fetch
- * cannot overlap it, it only drops a request that has not started yet. */
+ * from the engine's tick right after playback started. Each call transfers for at most SEL_PREFETCH_SLICE_MS of
+ * body (and SEL_CACHE_SLICE_STALL_MS before the first byte) and resumes with a Range request on the next call, so
+ * the pump is never blocked for a whole download. */
 int sel_library_prefetch(sel_library* lib, const char* spec, const char* rules) {
     if (lib == NULL || spec == NULL || spec[0] == '\0' || strlen(spec) >= sizeof lib->pf_spec || cache_get(lib) == NULL) {
         return 0;
     }
+    lib->pf_cur[0] = '\0'; /* a newer request supersedes the one in progress */
     snprintf(lib->pf_spec, sizeof lib->pf_spec, "%s", spec);
     snprintf(lib->pf_rules, sizeof lib->pf_rules, "%s", rules != NULL ? rules : "");
     return 1;
@@ -249,43 +258,54 @@ static void smart_enqueue(sel_library* lib, char cand[][160], unsigned n, const 
 }
 
 int sel_library_prefetch_poll(sel_library* lib) {
-    char spec[sizeof lib->pf_spec];
     char rules[sizeof lib->pf_rules];
-    unsigned before;
-    int smart;
+    int st;
 
-    if (lib == NULL || (lib->pf_spec[0] == '\0' && lib->sm_n == 0) || lib->cache == NULL) {
+    if (lib == NULL || lib->cache == NULL) {
         return 0;
     }
-    smart = lib->pf_spec[0] == '\0';
-    if (smart) {
-        memcpy(spec, lib->sm_spec[0], sizeof spec);
-        memmove(lib->sm_spec[0], lib->sm_spec[1], sizeof lib->sm_spec[0] * (SEL_SMART_MAX - 1u));
-        lib->sm_n--;
-    } else {
-        memcpy(spec, lib->pf_spec, sizeof spec);
-        lib->pf_spec[0] = '\0';
+    if (lib->pf_cur[0] == '\0') {
+        if (lib->pf_spec[0] == '\0' && lib->sm_n == 0) {
+            return 0;
+        }
+        lib->pf_cur_smart = lib->pf_spec[0] == '\0';
+        if (lib->pf_cur_smart) {
+            memcpy(lib->pf_cur, lib->sm_spec[0], sizeof lib->pf_cur);
+            memmove(lib->sm_spec[0], lib->sm_spec[1], sizeof lib->sm_spec[0] * (SEL_SMART_MAX - 1u));
+            lib->sm_n--;
+        } else {
+            memcpy(lib->pf_cur, lib->pf_spec, sizeof lib->pf_cur);
+            lib->pf_spec[0] = '\0';
+        }
+        if (lib->pf_cur_smart && smart_over_budget(lib->cache, lib->cache_budget)) {
+            lib->cache->stats.smart_skipped++;
+            lib->pf_cur[0] = '\0';
+            return 1;
+        }
+        lib->pf_cur_before = lib->cache->stats.fetches;
     }
     memcpy(rules, lib->pf_rules, sizeof rules);
-    if (smart && smart_over_budget(lib->cache, lib->cache_budget)) {
-        lib->cache->stats.smart_skipped++;
-        return 1;
+    lib->cache->slice_ms = SEL_PREFETCH_SLICE_MS;
+    st = prefetch_run(lib->cache, lib->pf_cur, rules);
+    lib->cache->slice_ms = 0;
+    if (st == 2) {
+        return 1; /* more to download: the next tick resumes */
     }
-    before = lib->cache->stats.fetches;
-    if (prefetch_run(lib->cache, spec, rules)) {
-        if (smart) {
+    if (st == 1) {
+        if (lib->pf_cur_smart) {
             lib->cache->stats.smart_requests++;
         } else {
             lib->cache->stats.prefetches++;
         }
-        if (lib->cache->stats.fetches != before) {
-            if (smart) {
+        if (lib->cache->stats.fetches != lib->pf_cur_before) {
+            if (lib->pf_cur_smart) {
                 lib->cache->stats.smart_fetches++;
             } else {
                 lib->cache->stats.prefetch_fetches++;
             }
         }
     }
+    lib->pf_cur[0] = '\0';
     return 1;
 }
 
@@ -297,7 +317,11 @@ void sel_library_prefetch_wait(sel_library* lib) {
 void sel_library_prefetch_stop(sel_library* lib) {
     if (lib != NULL) {
         lib->pf_spec[0] = '\0';
+        lib->pf_cur[0] = '\0';
         lib->sm_n = 0;
+        if (lib->cache != NULL) {
+            sel_cache_slice_drop(lib->cache); /* close: nothing is left to resume */
+        }
     }
 }
 #endif

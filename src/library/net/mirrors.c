@@ -137,10 +137,21 @@ typedef struct attempt {
     unsigned long start;
     unsigned ttfb;
     unsigned long bytes;
+    unsigned long from;          /* resume offset of this attempt, 0 = whole body */
+    sel_mirror_restart restart;
+    void* rctx;
+    const sel_http_res* hr;      /* final status, readable once the body flows */
+    int checked;                 /* the resume answer was looked at */
 } attempt;
 
 static int on_body(void* c, const void* data, size_t len) {
     attempt* a = c;
+    if (!a->checked && a->from > 0 && len > 0) {
+        a->checked = 1;
+        if ((a->hr == NULL || a->hr->status != 206) && a->restart != NULL) {
+            a->restart(a->rctx); /* the server (or FTP) sent the whole body: start over */
+        }
+    }
     if (a->bytes == 0 && len > 0) {
         unsigned long d = sel_net_now_ms() - a->start;
         a->ttfb = d > 0 ? (unsigned)d : 1u;
@@ -169,21 +180,38 @@ static int encode_path(const char* path, char* out, size_t cap) {
     return 1;
 }
 
-static int try_one(const char* url, attempt* a) {
+static int try_one(const char* url, attempt* a, const sel_mirror_opts* o) {
     if (strncmp(url, "ftp://", 6) == 0) {
         sel_ftp_res fr;
+        if (o != NULL && o->resumable != NULL) {
+            *o->resumable = 0;
+        }
         return sel_ftp_get(url, 0, on_body, a, &fr) == SEL_FTP_OK;
     } else {
         sel_http_req req;
         sel_http_res hr;
         memset(&req, 0, sizeof req);
+        memset(&hr, 0, sizeof hr);
         req.url = url;
+        if (o != NULL && o->resumable != NULL) {
+            *o->resumable = 1;
+        }
+        if (o != NULL && o->stall_ms > 0) {
+            req.connect_ms = o->stall_ms;
+            req.first_byte_ms = o->stall_ms;
+        }
+        if (a->from > 0) {
+            req.has_range = 1;
+            req.range_from = a->from;
+            req.range_to = -1;
+        }
+        a->hr = &hr;
         return sel_http_request(&req, on_body, a, &hr) == SEL_HTTP_OK && hr.status >= 200 && hr.status < 300;
     }
 }
 
-int sel_mirrors_fetch_verified(sel_mirror_set* s, const char* path, sel_mirror_sink sink, sel_mirror_restart restart,
-                               sel_mirror_verify verify, void* ctx, sel_mirror_res* res) {
+int sel_mirrors_fetch_opts(sel_mirror_set* s, const char* path, const sel_mirror_opts* o, sel_mirror_sink sink,
+                           sel_mirror_restart restart, sel_mirror_verify verify, void* ctx, sel_mirror_res* res) {
     char enc[SEL_MIRROR_PATH_MAX];
     unsigned k;
     memset(res, 0, sizeof *res);
@@ -195,7 +223,7 @@ int sel_mirrors_fetch_verified(sel_mirror_set* s, const char* path, sel_mirror_s
         return 0;
     }
     sel_mirrors_rank(s, res->order);
-    for (k = 0; k < s->count; k++) {
+    for (k = 0; k < s->count && (o == NULL || o->max_tries == 0 || k < o->max_tries); k++) {
         unsigned i = res->order[k];
         attempt a;
         if (k > 0 && restart != NULL) {
@@ -207,8 +235,13 @@ int sel_mirrors_fetch_verified(sel_mirror_set* s, const char* path, sel_mirror_s
         a.start = sel_net_now_ms();
         a.ttfb = 0;
         a.bytes = 0;
+        a.from = (k == 0 && o != NULL) ? o->from : 0;
+        a.restart = restart;
+        a.rctx = ctx;
+        a.hr = NULL;
+        a.checked = 0;
         res->tries++;
-        if (try_one(res->url, &a) && (verify == NULL || verify(ctx) || (res->rejected++, 0))) {
+        if (try_one(res->url, &a, o) && (verify == NULL || verify(ctx) || (res->rejected++, 0))) {
             if (a.ttfb > 0) {
                 s->ttfb_ms[i] = a.ttfb;
             }
@@ -218,10 +251,18 @@ int sel_mirrors_fetch_verified(sel_mirror_set* s, const char* path, sel_mirror_s
             res->retries = res->tries - 1u;
             return 1;
         }
+        if (o != NULL && o->yielded != NULL && *o->yielded) {
+            break; /* the sink stopped on purpose: not a failure of the mirror */
+        }
         s->failures[i]++;
     }
     res->retries = res->tries > 0 ? res->tries - 1u : 0u;
     return 0;
+}
+
+int sel_mirrors_fetch_verified(sel_mirror_set* s, const char* path, sel_mirror_sink sink, sel_mirror_restart restart,
+                               sel_mirror_verify verify, void* ctx, sel_mirror_res* res) {
+    return sel_mirrors_fetch_opts(s, path, NULL, sink, restart, verify, ctx, res);
 }
 
 int sel_mirrors_fetch(sel_mirror_set* s, const char* path, sel_mirror_sink sink, sel_mirror_restart restart,

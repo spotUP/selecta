@@ -1410,6 +1410,12 @@ if(NOT SEL_AMIGA)
   add_test(NAME lrc-unit COMMAND lyrics_unit_test)
   set_tests_properties(lrc-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "lyrics_unit_ok")
   # I196d: the recording split walker cuts at MP3 frame and Ogg page starts.
+  # I168b: the no-thread prefetch downloads in resumable slices; one test per defect, named after the symptom.
+  add_executable(cache_slice_test library/cache_slice_test.c)
+  target_include_directories(cache_slice_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(cache_slice_test PRIVATE selecta_library selecta_core)
+  add_test(NAME cache-slice COMMAND cache_slice_test)
+  set_tests_properties(cache-slice PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "cache_slice_ok")
   add_executable(record_cut_unit_test record_cut_unit_test.c)
   target_include_directories(record_cut_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
   target_link_libraries(record_cut_unit_test PRIVATE selecta_library)

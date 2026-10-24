@@ -13,6 +13,7 @@
 #ifndef SELECTA_LIBRARY_CACHE_H
 #define SELECTA_LIBRARY_CACHE_H
 
+#include "md5.h"
 #include "net/mirrors.h"
 
 #include <selecta/tags.h>
@@ -27,6 +28,7 @@
 
 typedef enum sel_cache_result {
     SEL_CACHE_OK = 1,
+    SEL_CACHE_PENDING = 2, /* sliced fetch (slice_ms > 0): time budget used, call again with the same arguments (I168b) */
     SEL_CACHE_FAILED = 0,
     SEL_CACHE_MD5 = -1
 } sel_cache_result;
@@ -46,6 +48,19 @@ typedef struct sel_cache_stats {
     unsigned smart_skipped;    /* requests dropped because the cache was at its budget */
 } sel_cache_stats;
 
+/* The state of a download that stopped at its time budget (I168b): the partial body stays in `<file>.part` and the
+ * next fetch of the same file resumes it with a Range request. Any fetch of the same file adopts it, a fetch of
+ * another file discards it. */
+typedef struct sel_cache_slice {
+    int active;
+    char key[SEL_CACHE_PATH_MAX]; /* cache path of the file being downloaded */
+    unsigned long offset;         /* bytes of the body in the .part file */
+    sel_md5 md5;                  /* hash state over those bytes */
+    unsigned fails;               /* mirrors that failed this file so far (a restart from zero each) */
+} sel_cache_slice;
+
+#define SEL_CACHE_SLICE_STALL_MS 1000u /* connect and first-byte limit of one sliced attempt */
+
 typedef struct sel_cache {
     char dir[SEL_CACHE_DIR_MAX];
     int amiga_route;
@@ -54,11 +69,16 @@ typedef struct sel_cache {
     unsigned set_count;
     const char* part_tag;   /* inserted before ".part" in the temporary name; "" or ".pf" (prefetch, I168a) so two
                              * downloads of one file never share a temporary */
+    unsigned slice_ms;      /* > 0: a fetch returns SEL_CACHE_PENDING after about this many milliseconds of body, and a
+                             * stalled attempt after SEL_CACHE_SLICE_STALL_MS; one mirror per call (I168b) */
+    sel_cache_slice slice;
     volatile int* cancel;   /* non-NULL: a download stops at its next body chunk once *cancel is set (I168a) */
 } sel_cache;
 
 /* dir NULL or empty: $SELECTA_CACHE_DIR, else $XDG_CACHE_HOME/selecta, else $HOME/.cache/selecta. */
 void sel_cache_init(sel_cache* c, const char* dir, int amiga_route);
+/* Throw away the partial download a sliced fetch left (the .part file and the resume state). */
+void sel_cache_slice_drop(sel_cache* c);
 /* Full path of source:path inside the cache. 0 when it does not fit or the path climbs out. */
 int sel_cache_path(const sel_cache* c, const char* source, const char* path, char* out, size_t cap);
 /* Fetch one file; md5 is 32 hex characters or NULL. out receives the cache path. */
