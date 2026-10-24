@@ -1730,6 +1730,7 @@ static void draw_transport(desk* d) {
             ink = f->repeat_mode != 0u ? on : mute;
             break;
         }
+        sel_gui_fill_rect(d->canvas, b, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME])); /* a redraw must not blend the edges twice */
         sel_gui_round_rect(d->canvas, b, i == SLOT_PLAY ? b.h / 2 : lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(fill));
         ic = rect_of(b.x + (b.w - isz) / 2, b.y + (b.h - isz) / 2, isz, isz);
         sel_gui_icon_draw(d->canvas, &d->icons, icon, ic, isz, ARGB(ink));
