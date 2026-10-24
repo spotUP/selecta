@@ -570,7 +570,7 @@ int main(int argc, char** argv)
     if (has_stats) { /* one line per open UI (DUI-P1-4) */
         for (u = 0; u < g_ui_count; u++) {
             const sel_tag* us = ui_stats_of(&g_uis[u]);
-            printf("ui_stats id=%s frames=%u widget_draws=%u uim_updates=%u uim_dirty=%u uim_layout=%u tweens=%u effect_prims=%u dirty_pixels=%u dirty_total=%u canvas_hash=%u draw_prims=%u missing_glyphs=%u glyphs=%u view_opens=%u art_decodes=%u art_tile_hash=%u present_hash=%u upload_pixels=%u presents=%u\n", g_uis[u].id,
+            printf("ui_stats id=%s frames=%u widget_draws=%u uim_updates=%u uim_dirty=%u uim_layout=%u tweens=%u effect_prims=%u dirty_pixels=%u dirty_total=%u canvas_hash=%u draw_prims=%u missing_glyphs=%u glyphs=%u view_opens=%u art_decodes=%u art_tile_hash=%u present_hash=%u upload_pixels=%u presents=%u scale=%u atlas_rebuilds=%u icon_rebuilds=%u atlas_builds=%u\n", g_uis[u].id,
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_FRAMES, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_WIDGET_DRAWS, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_UPDATES, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_DIRTY, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_LAYOUT, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_TWEENS, 0),
@@ -586,7 +586,9 @@ int main(int argc, char** argv)
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_ART_TILE_HASH, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_PRESENT_HASH, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_UPLOAD_PIXELS, 0),
-                   (unsigned)sel_tag_find(us, SEL_UI_STAT_PRESENTS, 0));
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_PRESENTS, 0),
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_SCALE, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_ATLAS_REBUILDS, 0),
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_ICON_REBUILDS, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_ATLAS_BUILDS, 0));
         }
     }
 

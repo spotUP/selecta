@@ -16,6 +16,8 @@ desk_sdl* desk_sdl_open(int32_t w, int32_t h);
 void desk_sdl_close(desk_sdl* b);
 /* True for the offscreen and dummy drivers: no human can close or resize the window. */
 int desk_sdl_headless(const desk_sdl* b);
+/* The integer pixel scale 1 to 3 of the window: its pixel density rounded up (DUI-P2-8). */
+int32_t desk_sdl_scale(const desk_sdl* b);
 /* New canvas size: window and texture follow. 0 on failure. */
 int desk_sdl_resize(desk_sdl* b, int32_t w, int32_t h);
 /* Uploads canvas->dirty (call before sel_gui_present empties the list), renders and presents. With `readback` the

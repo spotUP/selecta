@@ -12,8 +12,9 @@
 
 #define MAXSEG 4096
 #define MAXICON 128
-static const int k_sizes[] = {16, 20, 24, 32};
-#define NSIZE 4
+/* Every logical size 16, 20, 24 and 32 times the integer scales 1, 2 and 3 (DUI-P2-8), ascending. */
+static const int k_sizes[] = {16, 20, 24, 32, 40, 48, 60, 64, 72, 96};
+#define NSIZE 10
 
 typedef struct seg {
     double x0, y0, x1, y1;
@@ -326,7 +327,7 @@ static void raster(int size, unsigned char* out) {
 
 int main(int argc, char** argv) {
     static char names[MAXICON][64];
-    static unsigned char masks[MAXICON][NSIZE][32 * 32];
+    static unsigned char masks[MAXICON][NSIZE][96 * 96];
     char line[512];
     int n = 0, s, i, j;
     FILE* f;

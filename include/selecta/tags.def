@@ -182,6 +182,12 @@ SEL_TAG(UI, STAT_ART_TILE_HASH,  0x502B, INT)
 SEL_TAG(UI, STAT_PRESENT_HASH,   0x502C, INT)
 SEL_TAG(UI, STAT_UPLOAD_PIXELS,  0x502D, INT)
 SEL_TAG(UI, STAT_PRESENTS,       0x502E, INT)
+/* HiDPI (DUI-P2-8): the integer pixel scale, text atlas builds, scale changes that dropped the built atlases and
+ * scale changes that rebuilt the icon atlas. */
+SEL_TAG(UI, STAT_SCALE,          0x502F, INT)
+SEL_TAG(UI, STAT_ATLAS_REBUILDS, 0x5030, INT)
+SEL_TAG(UI, STAT_ICON_REBUILDS,  0x5031, INT)
+SEL_TAG(UI, STAT_ATLAS_BUILDS,   0x5032, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)

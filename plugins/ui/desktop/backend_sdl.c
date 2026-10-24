@@ -10,6 +10,7 @@ struct desk_sdl {
     SDL_Renderer* renderer;
     SDL_Texture* texture;
     int32_t w, h;
+    int32_t scale; /* the scale the canvas was last sized for */
     int headless;
     uint32_t present_hash;
     uint32_t upload_pixels;
@@ -45,6 +46,7 @@ desk_sdl* desk_sdl_open(int32_t w, int32_t h) {
     if (b == NULL) {
         return NULL;
     }
+    b->scale = 1;
     drv = SDL_GetCurrentVideoDriver();
     b->headless = drv != NULL && (strcmp(drv, "offscreen") == 0 || strcmp(drv, "dummy") == 0);
     b->window = SDL_CreateWindow("Selecta", w, h, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
@@ -82,13 +84,21 @@ int desk_sdl_headless(const desk_sdl* b) {
     return b->headless;
 }
 
+int32_t desk_sdl_scale(const desk_sdl* b) {
+    float density = SDL_GetWindowPixelDensity(b->window);
+    int32_t scale = density > 1.0f ? (int32_t)density + (density > (float)(int32_t)density ? 1 : 0) : 1;
+    return scale > 3 ? 3 : scale; /* a fractional density rounds the layout scale up and SDL scales the texture down */
+}
+
 int desk_sdl_resize(desk_sdl* b, int32_t w, int32_t h) {
     int pw = 0, ph = 0;
+    int32_t scale = desk_sdl_scale(b);
     SDL_GetWindowSizeInPixels(b->window, &pw, &ph);
     if (pw != w || ph != h) { /* a user resize already sized the window; only a scripted one changes it */
-        SDL_SetWindowSize(b->window, w, h);
+        SDL_SetWindowSize(b->window, w / scale, h / scale);
         SDL_SyncWindow(b->window);
     }
+    b->scale = scale;
     return make_texture(b, w, h);
 }
 
@@ -161,7 +171,7 @@ int desk_sdl_poll(desk_sdl* b, uint32_t timeout_ms, int32_t* w, int32_t* h) {
         case SDL_EVENT_WINDOW_RESIZED: {
             int pw = 0, ph = 0;
             SDL_GetWindowSizeInPixels(b->window, &pw, &ph);
-            if (pw > 0 && ph > 0 && (pw != b->w || ph != b->h)) {
+            if (pw > 0 && ph > 0 && (pw != b->w || ph != b->h || desk_sdl_scale(b) != b->scale)) {
                 *w = pw;
                 *h = ph;
                 result = DESK_SDL_RESIZE;

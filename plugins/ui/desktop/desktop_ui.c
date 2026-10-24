@@ -24,6 +24,9 @@
 /* The text size tokens (plan 2.6) as pixel sizes; each gets one atlas per weight. */
 #define DESK_SIZES 5
 static const int g_sizes[DESK_SIZES] = {11, 13, 16, 24, 32};
+/* The logical icon sizes (DUI-P3-1); at scale k the icon atlas holds each at k times the size (DUI-P2-8). */
+#define DESK_ICON_SIZES 4
+static const int g_icon_sizes[DESK_ICON_SIZES] = {16, 20, 24, 32};
 
 typedef struct desk {
     sel_engine* engine;
@@ -66,10 +69,18 @@ typedef struct desk {
 #endif
     int live;               /* sdl on a real display without --input: the window stays until it is closed */
     int repaint;            /* the next present paints the whole canvas (first frame, resize) */
-    sel_tag stats[21];
+    int32_t scale;          /* integer pixel scale 1, 2 or 3 (DUI-P2-8): layout is in logical units, drawn times scale */
+    uint32_t atlas_builds;   /* text atlases built */
+    uint32_t atlas_rebuilds; /* scale changes that dropped the built text atlases */
+    uint32_t icon_rebuilds;  /* scale changes that rebuilt the icon atlas view */
+    sel_gui_icons icons;     /* the icon atlas at the current scale: the baked masks of size k * logical */
+    int32_t icon_px[DESK_ICON_SIZES];
+    const uint8_t* icon_alpha[DESK_ICON_SIZES];
+    sel_tag stats[25];
 } desk;
 
 static int desk_resize(desk* d, int32_t w, int32_t h);
+static int desk_set_scale(desk* d, int32_t scale);
 static int desk_present(desk* d);
 
 /* Hands the dirty rectangles to the backend, then empties the list; returns the pixels repainted. The sdl backend
@@ -110,12 +121,17 @@ static sel_gui_rect rect_of(int32_t x, int32_t y, int32_t w, int32_t h) {
     return r;
 }
 
+/* A logical length in canvas pixels. */
+static int32_t lpx(const desk* d, int32_t logical) {
+    return logical * d->scale;
+}
+
 static sel_gui_rect region_rect(const desk* d, const char* name) {
     uint32_t i;
     for (i = 0; i < d->layout.count; i++) {
         const sel_uim_region* r = &d->layout.regions[i];
         if (strcmp(r->name, name) == 0) {
-            return rect_of(r->x, r->y, (int32_t)r->w, (int32_t)r->h);
+            return rect_of(lpx(d, r->x), lpx(d, r->y), lpx(d, (int32_t)r->w), lpx(d, (int32_t)r->h));
         }
     }
     return rect_of(0, 0, 0, 0);
@@ -123,12 +139,14 @@ static sel_gui_rect region_rect(const desk* d, const char* name) {
 
 /* The atlas for a weight and a size token (pixel size), built from the embedded Inter on first use; NULL when
  * the size is not a token or memory ran out. */
-static const sel_gui_atlas* desk_font(desk* d, int semibold, int px) {
+static const sel_gui_atlas* desk_font(desk* d, int semibold, int size) {
     int i;
     for (i = 0; i < DESK_SIZES; i++) {
-        if (g_sizes[i] == px) {
+        if (g_sizes[i] == size) {
             if (d->atlas[semibold][i] == NULL) {
-                d->atlas[semibold][i] = desk_atlas_build(semibold ? sel_font_inter_semibold : sel_font_inter_regular, px);
+                d->atlas[semibold][i] =
+                    desk_atlas_build(semibold ? sel_font_inter_semibold : sel_font_inter_regular, size * d->scale);
+                d->atlas_builds++;
             }
             return d->atlas[semibold][i];
         }
@@ -169,41 +187,41 @@ static void draw_home(desk* d);
 
 static void draw_widget(desk* d, uint32_t bit) {
     const sel_uim_frame* f = &d->uim.frame;
-    int32_t sp = (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING];
+    int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     sel_gui_rect pl = region_rect(d, "player"), mn = region_rect(d, "main"), sb = region_rect(d, "sidebar");
     int32_t y0 = pl.y + sp;
     char buf[32];
     if (bit == SEL_UIM_DIRTY_SONG) {
-        sel_gui_rect card = rect_of(mn.x + sp, mn.y + sp, mn.w - 2 * sp < 400 ? mn.w - 2 * sp : 400, 48);
+        sel_gui_rect card = rect_of(mn.x + sp, mn.y + sp, mn.w - 2 * sp < lpx(d, 400) ? mn.w - 2 * sp : lpx(d, 400), lpx(d, 48));
         if (d->shadow_ready) {
             sel_gui_shadow_draw(d->canvas, &d->shadow, card);
-            sel_gui_dirty_add(d->canvas, rect_of(card.x - 8, card.y - 8, card.w + 16, card.h + 16));
+            sel_gui_dirty_add(d->canvas, rect_of(card.x - lpx(d, 8), card.y - lpx(d, 8), card.w + lpx(d, 16), card.h + lpx(d, 16)));
         }
-        sel_gui_round_rect(d->canvas, card, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS],
+        sel_gui_round_rect(d->canvas, card, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]),
                            ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
-        draw_label(d, rect_of(card.x + sp, card.y + sp, card.w - 2 * sp, 16), f->title);
-        draw_label(d, rect_of(card.x + sp, card.y + sp + 20, card.w - 2 * sp, 16), f->artist);
+        draw_label(d, rect_of(card.x + sp, card.y + sp, card.w - 2 * sp, lpx(d, 16)), f->title);
+        draw_label(d, rect_of(card.x + sp, card.y + sp + lpx(d, 20), card.w - 2 * sp, lpx(d, 16)), f->artist);
         sel_gui_dirty_add(d->canvas, card);
     } else if (bit == SEL_UIM_DIRTY_QUEUE) {
         sprintf(buf, "%u", (unsigned)f->queue_count);
-        draw_label(d, rect_of(sb.x + sp, sb.y + sp, 120, 16), buf);
+        draw_label(d, rect_of(sb.x + sp, sb.y + sp, lpx(d, 120), lpx(d, 16)), buf);
         if (d->home) {
             draw_home(d);
         }
     } else if (bit == SEL_UIM_DIRTY_TRANSPORT) {
-        sel_gui_rect b = rect_of(pl.x + pl.w / 2 - 16, y0 + 24, 32, 32);
-        sel_gui_round_rect(d->canvas, b, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS],
+        sel_gui_rect b = rect_of(pl.x + pl.w / 2 - lpx(d, 16), y0 + lpx(d, 24), lpx(d, 32), lpx(d, 32));
+        sel_gui_round_rect(d->canvas, b, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]),
                            ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
         sel_gui_dirty_add(d->canvas, b);
     } else if (bit == SEL_UIM_DIRTY_PROGRESS) {
-        draw_label(d, rect_of(pl.x + sp, y0, 56, 16), f->clock);
-        draw_label(d, rect_of(pl.x + pl.w - sp - 56, y0, 56, 16), f->remaining);
-        draw_bar(d, rect_of(pl.x + 2 * sp + 56, y0 + 6, 480, 4), f->progress_q16);
+        draw_label(d, rect_of(pl.x + sp, y0, lpx(d, 56), lpx(d, 16)), f->clock);
+        draw_label(d, rect_of(pl.x + pl.w - sp - lpx(d, 56), y0, lpx(d, 56), lpx(d, 16)), f->remaining);
+        draw_bar(d, rect_of(pl.x + 2 * sp + lpx(d, 56), y0 + lpx(d, 6), lpx(d, 480), lpx(d, 4)), f->progress_q16);
     } else if (bit == SEL_UIM_DIRTY_VOLUME) {
         int32_t v = f->volume < 0 ? 0 : f->volume > 100 ? 100 : f->volume;
-        draw_bar(d, rect_of(pl.x + pl.w - sp - 96, y0 + 36, 96, 8), (uint32_t)v * 65536u / 100u);
+        draw_bar(d, rect_of(pl.x + pl.w - sp - lpx(d, 96), y0 + lpx(d, 36), lpx(d, 96), lpx(d, 8)), (uint32_t)v * 65536u / 100u);
     } else if (bit == SEL_UIM_DIRTY_STATUS) {
-        draw_label(d, rect_of(pl.x + sp, y0 + 30, 200, 16), f->status);
+        draw_label(d, rect_of(pl.x + sp, y0 + lpx(d, 30), lpx(d, 200), lpx(d, 16)), f->status);
     }
 }
 
@@ -327,7 +345,7 @@ static void draw_widgets(desk* d) {
     st.body = desk_font(d, 0, 13);
     st.semibold = desk_font(d, 1, 13);
     st.caption = desk_font(d, 0, 11);
-    st.icons = &sel_gui_icons_baked;
+    st.icons = &d->icons;
     st.shadow = d->shadow_ready ? &d->shadow : NULL;
     if (st.body == NULL || st.semibold == NULL || st.caption == NULL) {
         return;
@@ -382,28 +400,29 @@ static void draw_widgets(desk* d) {
     sel_gui_dirty_add(c, rect_of(0, 0, c->w, c->h));
 }
 
-#define TILE_ART 144
+#define TILE_ART 144 /* logical */
 #define HOME_MAX_LINES 2
 
 /* Where tile i sits (DUI-P2-6): a grid below the song card in the main region, columns as many as fit. */
 static sel_gui_rect tile_rect(desk* d, uint32_t i) {
-    int32_t sp = (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING];
+    int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     sel_gui_rect mn = region_rect(d, "main");
     const sel_gui_atlas* at = desk_font(d, 1, 13);
     int32_t title_h = HOME_MAX_LINES * (at != NULL ? at->line_height : 16);
-    int32_t cols = (mn.w - sp) / (TILE_ART + sp);
-    int32_t h = TILE_ART + 4 + title_h;
+    int32_t art = lpx(d, TILE_ART);
+    int32_t cols = (mn.w - sp) / (art + sp);
+    int32_t h = art + lpx(d, 4) + title_h;
     if (cols < 1) {
         cols = 1;
     }
-    return rect_of(mn.x + sp + (int32_t)(i % (uint32_t)cols) * (TILE_ART + sp),
-                   mn.y + sp + 48 + 2 * sp + (int32_t)(i / (uint32_t)cols) * (h + sp), TILE_ART, h);
+    return rect_of(mn.x + sp + (int32_t)(i % (uint32_t)cols) * (art + sp),
+                   mn.y + sp + lpx(d, 48) + 2 * sp + (int32_t)(i / (uint32_t)cols) * (h + sp), art, h);
 }
 
 /* The detail view of an opened tile: the main region cleared, the title large. */
 static void draw_detail(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
-    int32_t sp = (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING];
+    int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     sel_gui_rect mn = region_rect(d, "main");
     const sel_gui_atlas* big = desk_font(d, 1, 24);
     char name[256];
@@ -464,7 +483,7 @@ static void load_tile_art(desk* d, const sel_state* st) {
 static void draw_home(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     sel_gui_rect mn = region_rect(d, "main");
-    int32_t sp = (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING];
+    int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     const sel_gui_atlas* semi = desk_font(d, 1, 13);
     uint32_t i;
     char name[256];
@@ -477,7 +496,7 @@ static void draw_home(desk* d) {
     }
     load_tile_art(d, st);
     sel_gui_clip_push(d->canvas, mn);
-    sel_gui_fill_rect(d->canvas, rect_of(mn.x, mn.y + sp + 48 + sp, mn.w, mn.h - (sp + 48 + sp)),
+    sel_gui_fill_rect(d->canvas, rect_of(mn.x, mn.y + sp + lpx(d, 48) + sp, mn.w, mn.h - (sp + lpx(d, 48) + sp)),
                       ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
     for (i = 0; i < st->queue_count; i++) {
         sel_gui_rect t = tile_rect(d, i);
@@ -485,18 +504,18 @@ static void draw_home(desk* d) {
         queue_title(st, i, name, sizeof name);
         art = art_tile(d->art, st->queue_text + st->queue[i].path_offset);
         if (art != NULL) {
-            sel_gui_blit_image(d->canvas, rect_of(t.x, t.y, TILE_ART, TILE_ART), art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE,
+            sel_gui_blit_image(d->canvas, rect_of(t.x, t.y, t.w, t.w), art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE,
                                DESK_ART_TILE_EDGE, 0);
         } else {
             /* No cover: the generated art of the song's format and chip (gui_genart.h). */
             char format[16];
             queue_format(st, i, format, sizeof format);
-            sel_gui_genart_draw(d->canvas, rect_of(t.x, t.y, TILE_ART, TILE_ART), format, sel_gui_str_hash(name));
+            sel_gui_genart_draw(d->canvas, rect_of(t.x, t.y, t.w, t.w), format, sel_gui_str_hash(name));
         }
         if (i == 0u) {
-            d->art_tile_hash = rect_hash(d->canvas, rect_of(t.x, t.y, TILE_ART, TILE_ART));
+            d->art_tile_hash = rect_hash(d->canvas, rect_of(t.x, t.y, t.w, t.w));
         }
-        sel_gui_text_wrap(d->canvas, semi, rect_of(t.x, t.y + TILE_ART + 4, TILE_ART, HOME_MAX_LINES * semi->line_height),
+        sel_gui_text_wrap(d->canvas, semi, rect_of(t.x, t.y + t.w + lpx(d, 4), t.w, HOME_MAX_LINES * semi->line_height),
                           name, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), HOME_MAX_LINES, &d->text);
     }
     sel_gui_clip_pop(d->canvas);
@@ -537,6 +556,10 @@ static int desk_replay_input(desk* d) {
         }
         if (sscanf(line, "resize %d %d", &x, &y) == 2) { /* the window was resized: relayout and repaint */
             opened |= desk_resize(d, x, y);
+        } else if (sscanf(line, "scale %d", &x) == 1) { /* the window moved to a screen of another scale */
+            if (desk_set_scale(d, x)) {
+                desk_resize(d, d->canvas->w, d->canvas->h);
+            }
         } else if (sscanf(line, "click %d %d", &x, &y) == 2) {
             opened |= desk_click(d, x, y);
         } else if (sscanf(line, "tile %u", &n) == 1) {
@@ -833,10 +856,52 @@ static int desk_make_canvas(desk* d, const char* size) {
         sel_gui_set_palette(d->canvas, pal, 0u, 256u);
     }
     if (sel_uim_budget_allows(&d->budget, SEL_UIM_FX_SHADOW)) {
-        sel_gui_shadow_bake(&d->shadow, 8u, 0x000000u, 96u);
+        sel_gui_shadow_bake(&d->shadow, (uint32_t)lpx(d, 8), 0x000000u, 96u);
         d->shadow_ready = 1;
     }
-    sel_uim_layout_compute(&d->layout, w, h);
+    sel_uim_layout_compute(&d->layout, w / (unsigned)d->scale, h / (unsigned)d->scale);
+    return 1;
+}
+
+/* The icon atlas for the current scale (DUI-P2-8): each logical icon size at k times the size, picked from the
+ * baked masks (tools/gui_iconbake.c bakes every logical size times 1, 2 and 3). Counts one icon rebuild. */
+static void desk_build_icons(desk* d) {
+    int i;
+    uint32_t s;
+    for (i = 0; i < DESK_ICON_SIZES; i++) {
+        d->icon_px[i] = g_icon_sizes[i] * d->scale;
+        d->icon_alpha[i] = sel_gui_icons_baked.alpha[0];
+        for (s = 0; s < sel_gui_icons_baked.size_n; s++) {
+            if (sel_gui_icons_baked.sizes[s] == d->icon_px[i]) {
+                d->icon_alpha[i] = sel_gui_icons_baked.alpha[s];
+            }
+        }
+    }
+    d->icons.count = sel_gui_icons_baked.count;
+    d->icons.size_n = DESK_ICON_SIZES;
+    d->icons.sizes = d->icon_px;
+    d->icons.alpha = d->icon_alpha;
+    d->icon_rebuilds++;
+}
+
+/* A new integer pixel scale (DUI-P2-8): the text atlases are dropped (desk_font rebuilds them at the new pixel
+ * size on first use), the icon atlas and the shadow are rebuilt, and the next resize relays out and repaints. The
+ * same scale again does nothing. */
+static int desk_set_scale(desk* d, int32_t scale) {
+    int i;
+    if (scale < 1 || scale > 3 || scale == d->scale) {
+        return 0;
+    }
+    d->scale = scale;
+    for (i = 0; i < 2 * DESK_SIZES; i++) {
+        desk_atlas_free(d->atlas[i / DESK_SIZES][i % DESK_SIZES]);
+        d->atlas[i / DESK_SIZES][i % DESK_SIZES] = NULL;
+    }
+    d->atlas_rebuilds++;
+    desk_build_icons(d);
+    if (d->shadow_ready) {
+        sel_gui_shadow_bake(&d->shadow, (uint32_t)lpx(d, 8), 0x000000u, 96u);
+    }
     return 1;
 }
 
@@ -859,7 +924,7 @@ static int desk_resize(desk* d, int32_t w, int32_t h) {
         return 0;
     }
 #endif
-    sel_uim_layout_compute(&d->layout, (uint32_t)w, (uint32_t)h);
+    sel_uim_layout_compute(&d->layout, (uint32_t)(w / d->scale), (uint32_t)(h / d->scale));
     d->repaint = 1;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
     desk_present(d);
@@ -915,6 +980,18 @@ static void* desk_open(const sel_ui_open_args* a) {
             return NULL;
         }
     }
+    d->scale = 1;
+    if (desk_opt(a, "--scale") != NULL) {
+        int sc = atoi(desk_opt(a, "--scale"));
+        if (sc < 1 || sc > 3) {
+            fprintf(stderr, "selecta: desktop scale '%s' is not 1, 2 or 3\n", desk_opt(a, "--scale"));
+            a->host->mem_free(a->host, d);
+            return NULL;
+        }
+        d->scale = sc;
+    }
+    desk_build_icons(d);
+    d->icon_rebuilds = 0u; /* the first build is not a rebuild */
     if (!desk_make_canvas(d, desk_opt(a, "--canvas"))) {
         desk_close(d);
         return NULL;
@@ -1016,6 +1093,7 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
             return -1;
         }
         if (ev == DESK_SDL_RESIZE) {
+            desk_set_scale(d, desk_sdl_scale(d->sdl));
             desk_resize(d, w, h);
         }
     }
@@ -1052,6 +1130,7 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
             return -1;
         }
         if (ev == DESK_SDL_RESIZE) {
+            desk_set_scale(d, desk_sdl_scale(d->sdl));
             desk_resize(d, w, h);
         }
         return ev == DESK_SDL_NONE ? 0 : 1;
@@ -1106,8 +1185,16 @@ static const sel_tag* desk_stats(void* state) {
         d->stats[19].value = desk_sdl_presents(d->sdl);
     }
 #endif
-    d->stats[20].tag = SEL_TAG_END;
-    d->stats[20].value = 0;
+    d->stats[20].tag = SEL_UI_STAT_SCALE;
+    d->stats[20].value = (uintptr_t)d->scale;
+    d->stats[21].tag = SEL_UI_STAT_ATLAS_REBUILDS;
+    d->stats[21].value = d->atlas_rebuilds;
+    d->stats[22].tag = SEL_UI_STAT_ICON_REBUILDS;
+    d->stats[22].value = d->icon_rebuilds;
+    d->stats[23].tag = SEL_UI_STAT_ATLAS_BUILDS;
+    d->stats[23].value = d->atlas_builds;
+    d->stats[24].tag = SEL_TAG_END;
+    d->stats[24].value = 0;
     return d->stats;
 }
 
