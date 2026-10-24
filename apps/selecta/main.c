@@ -526,6 +526,16 @@ int main(int argc, char** argv)
                 r = wr;
             }
         }
+        sel_engine_pump(e, sink, ctx); /* a UI_SWITCH key sent during the wait is waiting in the engine */
+        {
+            char want[16];
+            if (sel_engine_take_ui_switch(e, want, sizeof want)) { /* the shell owns the UIs: switch between turns */
+                if (ui_switch(want, &args, ctx) < 0) {
+                    return 1;
+                }
+                continue;
+            }
+        }
         if (r < 0) {
             break;
         }

@@ -67,6 +67,7 @@
 /* The verbs with real behaviour in M0a. Adding a row here is how a later
  * plan lowers tests/ratchet/unimplemented.txt. */
 #define SEL_CMD_IMPLEMENTED(X)                                                                \
+    X(UI_SWITCH)                                                                              \
     X(PREF_GET)                                                                               \
     X(PREF_SET)                                                                               \
     X(FILTER_LED)                                                                             \
@@ -245,6 +246,7 @@ struct sel_engine {
     char vote_mkey[13];                    /* UADE key of that request, matched against the answer */
     unsigned vote_seen;                    /* vote result sequence already stored */
     uint32_t votes_generation;             /* moves when a count is stored; the view re-reads its vote texts */
+    char ui_switch[16];      /* id named by the last UI_SWITCH, "" none: the shell owns the UIs and takes it (I238) */
     uint32_t scrobble_due;   /* SCROBBLE_DUE events emitted (sentinel of the I177 rule) */
     uint32_t history_writes; /* history rows written (sentinel of the I170 writer) */
     uint32_t cue_sets, cue_gotos, sticker_ops; /* sentinels of I175 / I176 */
@@ -4194,6 +4196,25 @@ static void cmd_VIEW_SHOW(sel_engine* e, const sel_message* m) {
     if (!sel_view_show(&e->view, &s, m->args[0].v.s)) {
         sel_engine_report_error(e, "unknown_view", m->args[0].v.s);
     }
+}
+
+/* UI_SWITCH <id>: the engine owns no UI, so it only holds the request; the shell takes it after its next pump. */
+static void cmd_UI_SWITCH(sel_engine* e, const sel_message* m) {
+    const char* id = m->args[0].v.s;
+    if (id == NULL || strlen(id) >= sizeof e->ui_switch) {
+        sel_engine_report_error(e, "range", "UI_SWITCH");
+        return;
+    }
+    strcpy(e->ui_switch, id);
+}
+
+int sel_engine_take_ui_switch(sel_engine* e, char* id, size_t cap) {
+    if (e->ui_switch[0] == '\0' || strlen(e->ui_switch) >= cap) {
+        return 0;
+    }
+    strcpy(id, e->ui_switch);
+    e->ui_switch[0] = '\0';
+    return 1;
 }
 
 static void cmd_VIEW_CURSOR(sel_engine* e, const sel_message* m) {

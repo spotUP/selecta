@@ -410,6 +410,10 @@ uint32_t sel_engine_pattern_request(sel_engine* e, uint32_t order, uint32_t row_
  * replies ERROR not_implemented. The ratchet (T8) counts the zeros. */
 int sel_engine_cmd_implemented(uint32_t cmd_id);
 
+/* The id a UI_SWITCH command asked for (UI or socket line): copied to id and cleared; 0 when none is pending. The
+ * engine owns no UI, so the shell takes the request after a pump and switches (apps/selecta ui_switch). */
+int sel_engine_take_ui_switch(sel_engine* e, char* id, size_t cap);
+
 SEL_EXTERN_C_END
 
 #endif /* SELECTA_ENGINE_H */
