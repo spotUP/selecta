@@ -1632,3 +1632,6 @@ if(NOT SEL_AMIGA)
   set_tests_properties(scrobble PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 180 PASS_REGULAR_EXPRESSION "scrobble_ok")
 endif()
+
+# M3d desktop UI: red tests, ratchet and dependency check (DUI-P0-1, DUI-P0-2).
+add_subdirectory(dui)

@@ -1,0 +1,36 @@
+# Desktop UI milestone (M3d, plan 2026-10-24-desktop-ui.md section 5). tests/dui/items.txt is "<id> <test name>" per
+# item. Every item without a real test here is registered red by dui_red.cmake; the commit that implements an item
+# replaces its red entry with the real test and removes its id from tests/ratchet/unimplemented.txt.
+set(SEL_DUI_REAL dui-ratchet dui-build-deps)
+
+add_test(NAME dui-ratchet
+  COMMAND "${CMAKE_COMMAND}"
+    "-DPLAN=${PROJECT_SOURCE_DIR}/thoughts/shared/plans/2026-10-24-desktop-ui.md"
+    "-DRATCHET=${PROJECT_SOURCE_DIR}/tests/ratchet/unimplemented.txt"
+    "-DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/fixture_library.sql"
+    "-DBUILD_DIR=${PROJECT_BINARY_DIR}" "-DCTEST=${CMAKE_CTEST_COMMAND}"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/dui_ratchet.cmake")
+set_tests_properties(dui-ratchet PROPERTIES LABELS dui)
+
+# The nested configures share nothing with this build tree; serial so only one runs at a time.
+add_test(NAME dui-build-deps
+  COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/dui-build-deps"
+    "-DGEN=${CMAKE_GENERATOR}" "-DCMAKE=${CMAKE_COMMAND}"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/dui_build_deps.cmake")
+set_tests_properties(dui-build-deps PROPERTIES LABELS dui RUN_SERIAL TRUE)
+
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/items.txt" SEL_DUI_ITEMS)
+foreach(item IN LISTS SEL_DUI_ITEMS)
+  string(REPLACE " " ";" parts "${item}")
+  list(GET parts 0 id)
+  list(GET parts 1 name)
+  if(NOT name IN_LIST SEL_DUI_REAL)
+    add_test(NAME ${name}
+      COMMAND "${CMAKE_COMMAND}" "-DID=${id}" "-DNAME=${name}" -P "${CMAKE_CURRENT_SOURCE_DIR}/dui_red.cmake")
+    set(labels dui)
+    if(name STREQUAL "dui-perf")
+      list(APPEND labels dui-perf)
+    endif()
+    set_tests_properties(${name} PROPERTIES LABELS "${labels}")
+  endif()
+endforeach()

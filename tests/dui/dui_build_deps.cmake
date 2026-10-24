@@ -1,0 +1,32 @@
+# DUI-P0-2: configure with SELECTA_UI_DESKTOP=ON prints the SDL3 version and builds plugins/ui/desktop; configure
+# without it still works and has no desktop target. Inputs: SRC, WORK, GEN (generator name), CMAKE.
+file(REMOVE_RECURSE "${WORK}")
+foreach(mode on off)
+  if(mode STREQUAL "on")
+    set(flag -DSELECTA_UI_DESKTOP=ON)
+  else()
+    set(flag -DSELECTA_UI_DESKTOP=OFF)
+  endif()
+  execute_process(COMMAND "${CMAKE}" -S "${SRC}" -B "${WORK}/${mode}" -G "${GEN}" -DSEL_BUILD_TESTS=OFF ${flag}
+    OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
+  if(NOT rc EQUAL 0)
+    message(FATAL_ERROR "configure (desktop ${mode}) failed:\n${out}\n${err}")
+  endif()
+  if(mode STREQUAL "on")
+    if(NOT out MATCHES "SDL3 3\\.")
+      message(FATAL_ERROR "configure did not print the SDL3 version:\n${out}")
+    endif()
+    execute_process(COMMAND "${CMAKE}" --build "${WORK}/on" --target selecta_ui_desktop
+      OUTPUT_VARIABLE bout ERROR_VARIABLE berr RESULT_VARIABLE brc)
+    if(NOT brc EQUAL 0)
+      message(FATAL_ERROR "building selecta_ui_desktop failed:\n${bout}\n${berr}")
+    endif()
+  else()
+    execute_process(COMMAND "${CMAKE}" --build "${WORK}/off" --target help
+      OUTPUT_VARIABLE hout RESULT_VARIABLE hrc)
+    if(hout MATCHES "selecta_ui_desktop")
+      message(FATAL_ERROR "desktop target exists with the option off")
+    endif()
+  endif()
+endforeach()
+message(STATUS "dui-build-deps ok")

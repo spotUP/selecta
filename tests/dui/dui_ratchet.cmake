@@ -1,0 +1,38 @@
+# DUI-P0-1: the count of `-L dui` tests equals the number of DUI ids in the plan, the fixture library carries
+# artwork rows, and every id in the ratchet file is an id of the plan. Inputs: PLAN, RATCHET, FIXTURE, BUILD_DIR, CTEST.
+file(STRINGS "${PLAN}" plan_lines REGEX "^- \\[[ x]\\] DUI-P[0-9]+-[0-9]+ ")
+set(plan_ids "")
+foreach(line IN LISTS plan_lines)
+  string(REGEX REPLACE "^- \\[[ x]\\] (DUI-P[0-9]+-[0-9]+) .*$" "\\1" id "${line}")
+  list(APPEND plan_ids "${id}")
+endforeach()
+list(LENGTH plan_ids plan_count)
+if(plan_count EQUAL 0)
+  message(FATAL_ERROR "no DUI ids parsed from ${PLAN}")
+endif()
+
+execute_process(COMMAND "${CTEST}" --test-dir "${BUILD_DIR}" -L dui -N
+  OUTPUT_VARIABLE listing RESULT_VARIABLE rc)
+if(NOT rc EQUAL 0 OR NOT listing MATCHES "Total Tests: ([0-9]+)")
+  message(FATAL_ERROR "ctest -L dui -N failed (${rc}):\n${listing}")
+endif()
+set(test_count "${CMAKE_MATCH_1}")
+if(NOT test_count EQUAL plan_count)
+  message(FATAL_ERROR "dui tests: ${test_count}, plan ids: ${plan_count}")
+endif()
+
+file(STRINGS "${RATCHET}" ratchet_lines REGEX "^DUI-")
+foreach(id IN LISTS ratchet_lines)
+  if(NOT id IN_LIST plan_ids)
+    message(FATAL_ERROR "ratchet lists ${id}, which is not an id of the plan")
+  endif()
+endforeach()
+
+file(READ "${FIXTURE}" fixture)
+string(REGEX MATCHALL "INSERT INTO artwork" art "${fixture}")
+list(LENGTH art art_rows)
+if(art_rows LESS 1)
+  message(FATAL_ERROR "${FIXTURE} has no artwork rows")
+endif()
+list(LENGTH ratchet_lines listed)
+message(STATUS "dui tests ${test_count} = plan ids ${plan_count}; ratchet lists ${listed}; fixture artwork rows ${art_rows}")

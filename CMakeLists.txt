@@ -28,6 +28,7 @@ option(SEL_TEST_BAD_PLUGIN "Compile a deliberately broken plugin descriptor (T5 
 include(cmake/selecta_defs.cmake)
 include(cmake/selecta_plugin.cmake)
 include(cmake/selecta_lint.cmake)
+include(cmake/selecta_desktop.cmake)
 
 add_subdirectory(src)
 add_subdirectory(plugins)
