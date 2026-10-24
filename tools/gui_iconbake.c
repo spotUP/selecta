@@ -193,10 +193,15 @@ static const char* attr(const char* t, const char* e, const char* name, char* bu
     char key[32];
     const char* p = t;
     size_t n;
-    snprintf(key, sizeof key, " %s=\"", name);
+    snprintf(key, sizeof key, "%s=\"", name);
     while ((p = strstr(p, key)) != NULL && p < e) {
         const char* v = p + strlen(key);
-        const char* q = strchr(v, '"');
+        const char* q;
+        if (p == t || !isspace((unsigned char)p[-1])) { /* "rx=" must not match "x=" */
+            p++;
+            continue;
+        }
+        q = strchr(v, '"');
         n = (size_t)(q - v);
         if (n >= cap) {
             n = cap - 1;
@@ -259,10 +264,28 @@ static void elements(const char* svg) {
             }
         } else if (strncmp(p, "<rect", 5) == 0) {
             double x = anum(p, e, "x", 0), y = anum(p, e, "y", 0), w = anum(p, e, "width", 0), h = anum(p, e, "height", 0);
-            add_seg(x, y, x + w, y);
-            add_seg(x + w, y, x + w, y + h);
-            add_seg(x + w, y + h, x, y + h);
-            add_seg(x, y + h, x, y);
+            double rx = anum(p, e, "rx", 0), ry = anum(p, e, "ry", rx);
+            if (rx <= 0 || ry <= 0) {
+                rx = ry = 0;
+            }
+            rx = rx > w / 2 ? w / 2 : rx;
+            ry = ry > h / 2 ? h / 2 : ry;
+            add_seg(x + rx, y, x + w - rx, y);
+            add_seg(x + w, y + ry, x + w, y + h - ry);
+            add_seg(x + w - rx, y + h, x + rx, y + h);
+            add_seg(x, y + h - ry, x, y + ry);
+            if (rx > 0) { /* rounded corners: quarter ellipses, 8 segments each */
+                static const double cxs[4] = {1, 1, 0, 0}, cys[4] = {0, 1, 1, 0}; /* corner centre selectors */
+                int c, i;
+                for (c = 0; c < 4; c++) {
+                    double ccx = x + (cxs[c] != 0 ? w - rx : rx), ccy = y + (cys[c] != 0 ? h - ry : ry);
+                    double base = (c - 1) * M_PI / 2; /* corner 0 (top right) sweeps -90..0 degrees */
+                    for (i = 0; i < 8; i++) {
+                        double a0 = base + i * M_PI / 16, a1 = base + (i + 1) * M_PI / 16;
+                        add_seg(ccx + rx * cos(a0), ccy + ry * sin(a0), ccx + rx * cos(a1), ccy + ry * sin(a1));
+                    }
+                }
+            }
         }
         p = e;
     }

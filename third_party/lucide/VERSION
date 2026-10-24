@@ -1,1 +1,1 @@
-Lucide icon geometry (24x24, stroke 2) for the subset listed in include/selecta/gui/gui_icons.h; https://lucide.dev, ISC.
+lucide-static 1.54.0 (npm, published 2026-10-09), icons/*.svg copied unmodified from https://unpkg.com/lucide-static@1.54.0/icons/; geometry 24x24, stroke 2; subset listed in include/selecta/gui/gui_icons.h; https://lucide.dev, ISC (Feather portions MIT, see LICENSE).
