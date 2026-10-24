@@ -188,6 +188,14 @@ SEL_TAG(UI, STAT_SCALE,          0x502F, INT)
 SEL_TAG(UI, STAT_ATLAS_REBUILDS, 0x5030, INT)
 SEL_TAG(UI, STAT_ICON_REBUILDS,  0x5031, INT)
 SEL_TAG(UI, STAT_ATLAS_BUILDS,   0x5032, INT)
+/* Keyboard parity (DUI-P3-3): actions fired through key bindings, distinct action rows among them, focus moves, searches
+ * sent by type-to-search, arrow-navigation steps and the focus stop (0 = none). */
+SEL_TAG(UI, STAT_ACTIONS_FIRED,    0x5033, INT)
+SEL_TAG(UI, STAT_ACTIONS_DISTINCT, 0x5034, INT)
+SEL_TAG(UI, STAT_FOCUS_MOVES,      0x5035, INT)
+SEL_TAG(UI, STAT_SEARCHES,         0x5036, INT)
+SEL_TAG(UI, STAT_ARROWS,           0x5037, INT)
+SEL_TAG(UI, STAT_FOCUS,            0x5038, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)

@@ -12,6 +12,9 @@
 #include <selecta/gui/gui_draw.h>
 #include <selecta/gui/gui_text.h>
 #include <selecta/gui/gui_widget.h>
+#include <selecta/gui/gui_input.h>
+#include <selecta/uimodel/keybind.h>
+#include <selecta/uimodel/keys.h>
 #include <selecta/uimodel/theme.h>
 
 #ifdef SELECTA_DESKTOP_SDL
@@ -80,12 +83,19 @@ typedef struct desk {
     sel_gui_icons icons;     /* the icon atlas at the current scale: the baked masks of size k * logical */
     int32_t icon_px[DESK_ICON_SIZES];
     const uint8_t* icon_alpha[DESK_ICON_SIZES];
-    sel_tag stats[25];
+    txt_bindings binds;      /* the keys of the action table (DUI-P3-3) */
+    uint32_t keys_in, actions_fired, actions_distinct, focus_moves, searches, arrows;
+    uint32_t fired_seen[4];  /* one bit per action row that fired */
+    int32_t focus;           /* focus stop: layout regions in order, then the search field; -1 = none */
+    char query[64];          /* the type-to-search text */
+    size_t qlen;
+    sel_tag stats[32];
 } desk;
 
 static int desk_resize(desk* d, int32_t w, int32_t h);
 static int desk_set_scale(desk* d, int32_t scale);
 static int desk_present(desk* d);
+static void desk_draw_focus(desk* d);
 
 /* Hands the dirty rectangles to the backend, then empties the list; returns the pixels repainted. The sdl backend
  * must see the list before sel_gui_present clears it. */
@@ -637,7 +647,139 @@ static void desk_advance(desk* d, uint32_t ms) {
     }
 }
 
-/* Replays the --input script once: `resize W H`, `click X Y`, `tile N` (the centre of tile N, 0-based), `#` comments. */
+/* Focus stops (DUI-P3-3): the layout regions in order, then the search field. */
+static int32_t desk_stops(const desk* d) {
+    return (int32_t)d->layout.count + 1;
+}
+
+/* Moves the focus ring one stop (dir +1 Tab, -1 Shift+Tab); the whole canvas repaints so the old ring is gone. */
+static void desk_focus_move(desk* d, int32_t dir) {
+    int32_t n = desk_stops(d);
+    d->focus = d->focus < 0 ? (dir > 0 ? 0 : n - 1) : (d->focus + dir + n) % n;
+    d->focus_moves++;
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+}
+
+/* The ring of the focused stop: two logical pixels in the focus-ring token. The search stop is the field at the top
+ * of the main region. */
+static void desk_draw_focus(desk* d) {
+    sel_gui_rect r;
+    int32_t t = lpx(d, 2);
+    uint32_t col = ARGB(d->theme.token[SEL_GUI_TOKEN_FOCUS_RING]);
+    if (d->focus < 0 || d->layout.count == 0u) {
+        return;
+    }
+    if ((uint32_t)d->focus < d->layout.count) {
+        const sel_uim_region* g = &d->layout.regions[d->focus];
+        r = rect_of(lpx(d, g->x), lpx(d, g->y), lpx(d, (int32_t)g->w), lpx(d, (int32_t)g->h));
+    } else {
+        r = region_rect(d, "main");
+        r = rect_of(r.x + lpx(d, 8), r.y + lpx(d, 8), r.w - lpx(d, 16), lpx(d, 32));
+    }
+    if (r.w <= 2 * t || r.h <= 2 * t) {
+        return;
+    }
+    sel_gui_fill_rect(d->canvas, rect_of(r.x, r.y, r.w, t), col);
+    sel_gui_fill_rect(d->canvas, rect_of(r.x, r.y + r.h - t, r.w, t), col);
+    sel_gui_fill_rect(d->canvas, rect_of(r.x, r.y, t, r.h), col);
+    sel_gui_fill_rect(d->canvas, rect_of(r.x + r.w - t, r.y, t, r.h), col);
+    sel_gui_dirty_add(d->canvas, r);
+}
+
+/* Sends one protocol line to the engine; 1 when it parsed. */
+static int desk_send(desk* d, const char* line) {
+    char pool[512];
+    return sel_engine_send_line(d->engine, line, pool, sizeof pool) == SEL_CODEC_OK;
+}
+
+/* The keys of the action table become the desktop bindings, loaded through the same txt_bindings the text UI uses. */
+static void desk_bind_actions(desk* d) {
+    uint32_t i, n = sel_uim_action_count();
+    memset(&d->binds, 0, sizeof d->binds);
+    for (i = 0; i < n; i++) {
+        const sel_uim_action* a = sel_uim_action_at(i);
+        char row[160];
+        if (a->key[0] == '\0') {
+            continue;
+        }
+        snprintf(row, sizeof row, "%s %s\n", a->key, a->line);
+        txt_bindings_load(&d->binds, row, NULL);
+    }
+}
+
+/* A key event (DUI-P3-3). Order: the search field takes printable keys while focused; Tab moves the focus; `/` focuses
+ * the search; a bound key fires its action; Up and Down move the list cursor. Returns 1 when the picture changed. */
+static int desk_key(desk* d, const sel_gui_input* ev) {
+    const char* act;
+    d->keys_in++;
+    if (d->focus == (int32_t)d->layout.count) { /* the search field is focused */
+        if (ev->code == 27u) {
+            d->focus = 0;
+        } else if (ev->code == 13u) {
+            char line[96];
+            if (d->qlen > 0u) {
+                snprintf(line, sizeof line, "LIBRARY_SEARCH %s", d->query);
+                desk_send(d, line);
+                d->searches++;
+            }
+            d->focus = 0;
+        } else if (ev->code == 127u) {
+            if (d->qlen > 0u) {
+                d->query[--d->qlen] = '\0';
+            }
+            return desk_event_frame(d, 0);
+        } else if (ev->code >= 32u && ev->code < 127u && (ev->mods & (TXT_MOD_CTRL | TXT_MOD_ALT)) == 0u) {
+            if (d->qlen + 1u < sizeof d->query) {
+                d->query[d->qlen++] = (char)ev->code;
+                d->query[d->qlen] = '\0';
+            }
+            return 0;
+        } else {
+            return 0;
+        }
+        d->repaint = 1;
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        return desk_present(d);
+    }
+    if (ev->code == 9u && (ev->mods & ~TXT_MOD_SHIFT) == 0u) {
+        desk_focus_move(d, (ev->mods & TXT_MOD_SHIFT) != 0u ? -1 : 1);
+        return desk_present(d);
+    }
+    if (ev->code == '/' && ev->mods == 0u) {
+        d->focus = (int32_t)d->layout.count;
+        d->qlen = 0u;
+        d->query[0] = '\0';
+        d->repaint = 1;
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        return desk_present(d);
+    }
+    act = txt_bindings_lookup(&d->binds, TXT_CTX_ANY, ev->code, ev->mods);
+    if (act != NULL) {
+        uint32_t i, n = sel_uim_action_count();
+        for (i = 0; i < n; i++) {
+            const sel_uim_action* a = sel_uim_action_at(i);
+            if (strcmp(a->line, act) == 0) {
+                if (desk_send(d, a->line)) {
+                    d->actions_fired++;
+                    if ((d->fired_seen[i / 32u] & (1u << (i % 32u))) == 0u) {
+                        d->fired_seen[i / 32u] |= 1u << (i % 32u);
+                        d->actions_distinct++;
+                    }
+                }
+                break;
+            }
+        }
+        return 0;
+    }
+    if (ev->code == TXT_KEY_UP || ev->code == TXT_KEY_DOWN) { /* arrow navigation in lists */
+        desk_send(d, ev->code == TXT_KEY_UP ? "VIEW_CURSOR -1" : "VIEW_CURSOR +1");
+        d->arrows++;
+    }
+    return 0;
+}
+
+/* Replays the --input script once:`resize W H`, `click X Y`, `tile N` (the centre of tile N, 0-based), `#` comments. */
 static int desk_replay_input(desk* d) {
     char* line = d->input;
     int opened = 0;
@@ -646,10 +788,15 @@ static int desk_replay_input(desk* d) {
         char* nl = strchr(line, '\n');
         int x, y;
         unsigned n;
+        sel_gui_input ev;
         if (nl != NULL) {
             *nl = '\0';
         }
-        if (sscanf(line, "resize %d %d", &x, &y) == 2) { /* the window was resized: relayout and repaint */
+        if (sel_gui_input_parse(line, &ev) && ev.kind == SEL_GUI_IN_KEY) {
+            opened |= desk_key(d, &ev);
+        } else if (sel_gui_input_parse(line, &ev) && ev.kind == SEL_GUI_IN_WAIT) {
+            desk_advance(d, ev.ms);
+        } else if (sscanf(line, "resize %d %d", &x, &y) == 2) { /* the window was resized: relayout and repaint */
             opened |= desk_resize(d, x, y);
         } else if (sscanf(line, "scale %d", &x) == 1) { /* the window moved to a screen of another scale */
             if (desk_set_scale(d, x)) {
@@ -796,6 +943,7 @@ static int desk_present(desk* d) {
             desk_hash(d, f->status);
         }
     }
+    desk_draw_focus(d);
     d->dirty_pixels = desk_flush(d);
     d->dirty_total += d->dirty_pixels;
     d->frames++;
@@ -1088,6 +1236,8 @@ static void* desk_open(const sel_ui_open_args* a) {
         }
     }
     d->scale = 1;
+    d->focus = -1;
+    desk_bind_actions(d);
     if (desk_opt(a, "--scale") != NULL) {
         int sc = atoi(desk_opt(a, "--scale"));
         if (sc < 1 || sc > 3) {
@@ -1319,8 +1469,20 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[22].value = d->icon_rebuilds;
     d->stats[23].tag = SEL_UI_STAT_ATLAS_BUILDS;
     d->stats[23].value = d->atlas_builds;
-    d->stats[24].tag = SEL_TAG_END;
-    d->stats[24].value = 0;
+    d->stats[24].tag = SEL_UI_STAT_ACTIONS_FIRED;
+    d->stats[24].value = d->actions_fired;
+    d->stats[25].tag = SEL_UI_STAT_ACTIONS_DISTINCT;
+    d->stats[25].value = d->actions_distinct;
+    d->stats[26].tag = SEL_UI_STAT_FOCUS_MOVES;
+    d->stats[26].value = d->focus_moves;
+    d->stats[27].tag = SEL_UI_STAT_SEARCHES;
+    d->stats[27].value = d->searches;
+    d->stats[28].tag = SEL_UI_STAT_ARROWS;
+    d->stats[28].value = d->arrows;
+    d->stats[29].tag = SEL_UI_STAT_FOCUS;
+    d->stats[29].value = (uintptr_t)(d->focus + 1);
+    d->stats[30].tag = SEL_TAG_END;
+
     return d->stats;
 }
 
