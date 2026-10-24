@@ -162,6 +162,12 @@ SEL_TAG(UI, STAT_UIM_LAYOUT,   0x5020, INT)
 /* Effects governor sentinels (DUI-P1-9): tweens started and blur or shadow primitives run by the desktop UI. */
 SEL_TAG(UI, STAT_TWEENS,       0x5021, INT)
 SEL_TAG(UI, STAT_EFFECT_PRIMS, 0x5022, INT)
+/* Rasterizer sentinels (DUI-P2-1, DUI-P2-2): pixels the latest present repainted, pixels over all presents, the
+ * canvas hash and the drawing primitives run. */
+SEL_TAG(UI, STAT_DIRTY_PIXELS, 0x5023, INT)
+SEL_TAG(UI, STAT_DIRTY_TOTAL,  0x5024, INT)
+SEL_TAG(UI, STAT_CANVAS_HASH,  0x5025, INT)
+SEL_TAG(UI, STAT_DRAW_PRIMS,   0x5026, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)
