@@ -15,6 +15,7 @@ typedef struct desk {
     uint32_t frames;
     uint32_t widget_draws;
     uint32_t hash;
+    int actions; /* --actions: the close hook prints the action table and the help rows */
     int report; /* --stats: the close hook prints its sentinel line */
     sel_tag stats[7];
 } desk;
@@ -64,12 +65,29 @@ static int desk_present(desk* d) {
     return 1;
 }
 
+static void desk_print_actions(void) {
+    uint32_t i, n = sel_uim_action_count();
+    char row[96], msg[160];
+    for (i = 0; i < n; i++) {
+        const sel_uim_action* a = sel_uim_action_at(i);
+        printf("action id=%s label=%s icon=%s menu=%s key=%s line=%s tooltip=%s\n", a->id, a->label, a->icon, a->menu,
+               a->key[0] != '\0' ? a->key : "-", a->line, a->tooltip);
+        sel_uim_help_row(i, row, sizeof row);
+        printf("help %s\n", row);
+    }
+    printf("actions count=%u exemptions=%u check=%s\n", (unsigned)n, (unsigned)sel_uim_exemption_count(),
+           sel_uim_actions_check(msg, sizeof msg) == 0 ? "ok" : msg);
+}
+
 static void desk_close(void* state) {
     desk* d = (desk*)state;
     if (d != NULL) {
         if (d->report) {
             printf("desktop_ui closed frames=%u title=%s clock=%s status=%s\n", (unsigned)d->frames, d->uim.frame.title,
                    d->uim.frame.clock, d->uim.frame.status);
+        }
+        if (d->actions) {
+            desk_print_actions();
         }
         d->host->mem_free(d->host, d);
     }
@@ -94,6 +112,9 @@ static void* desk_open(const sel_ui_open_args* a) {
     for (i = 0; i < a->argc; i++) {
         if (strcmp(a->argv[i], "--stats") == 0) {
             d->report = 1;
+        }
+        if (strcmp(a->argv[i], "--actions") == 0) {
+            d->actions = 1;
         }
     }
     sel_uim_init(&d->uim);

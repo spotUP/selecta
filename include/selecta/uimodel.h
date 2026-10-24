@@ -73,6 +73,26 @@ uint32_t sel_uim_level_glyph(uint32_t q15);
 /* Pattern note cell: "C-4", "^^^" (note off), "===" (cut), "..." (empty); out holds 4 bytes. */
 void sel_uim_note_name(uint8_t n, char* out);
 
+/* Action table (plan DUI-P1-6). */
+typedef struct sel_uim_action {
+    const char* id;
+    const char* label;   /* full English words */
+    const char* tooltip;
+    const char* icon;    /* icon id, lucide name */
+    const char* menu;    /* "Menu/Item" path */
+    const char* key;     /* default key name of keybind.c, "" when none */
+    const char* line;    /* protocol line: a COMMANDS verb, or PREF_SET of a prefs.def key */
+} sel_uim_action;
+
+uint32_t sel_uim_action_count(void);
+const sel_uim_action* sel_uim_action_at(uint32_t i);
+uint32_t sel_uim_exemption_count(void);
+const char* sel_uim_exemption_at(uint32_t i, const char** reason);
+/* One help overlay row per action: menu path and default key. */
+void sel_uim_help_row(uint32_t i, char* out, size_t cap);
+/* 0 when every line is a COMMANDS verb or a PREF_SET of a prefs.def key and every verb has a row or an exemption. */
+int sel_uim_actions_check(char* msg, size_t cap);
+
 SEL_EXTERN_C_END
 
 #endif /* SELECTA_UIMODEL_H */
