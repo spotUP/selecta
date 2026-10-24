@@ -5237,6 +5237,7 @@ static uint32_t render_slot(sel_engine* e, sel_slot* sl, int16_t* stereo, uint32
             if (sl->rp_hw_poll != NULL) { /* the replayer's own song end, once per render chunk (I219b) */
                 policy_tick_flags(e, sl, sl->rp_hw_poll(sl->rp_state));
             }
+            sample_position(sl); /* the hardware player's order and row, as for a rendering replayer (I219h) */
             done += policy_chunk(e, sl, stereo + (size_t)done * 2u, got);
             if (!sl->ended && sl->last_tick) { /* no tick length to wait out on the hardware */
                 sl->last_tick = 0;

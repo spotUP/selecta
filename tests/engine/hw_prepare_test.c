@@ -92,6 +92,16 @@ static int hw_seek(void* state, uint32_t ms) {
     return 1;
 }
 
+/* RP_POSITION of the fake HW player: order = the poll count, so a readout equal to the latest poll count proves the
+ * engine sampled the position in its HW render loop, not only once when the song started (I219h). */
+static int hw_position(void* state, sel_rp_position* out) {
+    (void)state;
+    out->order = g_polls;
+    out->row = 7u;
+    out->pattern = 3u;
+    return 1;
+}
+
 static int rnd_start(void* state, uint32_t subsong, uint32_t rate, const sel_voices* voices) {
     (void)state;
     (void)subsong;
@@ -115,6 +125,7 @@ static sel_tag g_hw_hooks[] = {{SEL_RP_KIND, SEL_RP_KIND_HW},
                                {SEL_RP_HW_RELEASE, SEL_TAG_FN(hw_release)},
                                {SEL_RP_HW_POLL, SEL_TAG_FN(hw_poll)},
                                {SEL_RP_SEEK, SEL_TAG_FN(hw_seek)},
+                               {SEL_RP_POSITION, SEL_TAG_FN(hw_position)},
                                {SEL_TAG_END, 0}};
 static sel_tag g_rnd_hooks[] = {{SEL_RP_KIND, SEL_RP_KIND_RENDER},
                                 {SEL_RP_EXTENSIONS, (uintptr_t) "rnd"},
@@ -246,6 +257,16 @@ int main(int argc, char** argv) {
         CHECK(st.seek_path == 1u);
         CHECK(sel_engine_state(eng)->song.position_ms >= 30000u);
         CHECK(sel_engine_state(eng)->song.position_ms <= 30300u);
+        {
+            int16_t buf[441u * 2u];
+            uint32_t i;
+            for (i = 0; i < 3u; i++) { /* an output that keeps pulling while the hardware plays */
+                sel_engine_render(eng, buf, 441u);
+                sel_engine_pump(eng, NULL, NULL);
+            }
+        }
+        CHECK(sel_engine_state(eng)->song.pattern_pos.order == g_polls); /* RP_POSITION on the HW path (I219h) */
+        CHECK(sel_engine_state(eng)->song.pattern_pos.row == 7u);
         sel_engine_destroy(eng);
     }
 

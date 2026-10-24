@@ -41,6 +41,7 @@ enum {
     KP_CIA_AT = 44,
     KP_CIATALO = 0x400, /* hardware/cia.i: timer A low byte, relative to the CIA base in k_cia */
     KP_CIATBLO = 0x600, /* timer B low byte; the high byte of either is 0x100 above */
+    KP_ORDERS_AT = 952, /* the 128-byte order table of a 31-sample module */
     KP_MAGIC_AT = 1080
 };
 
@@ -227,11 +228,29 @@ static int rp_seek(void* state, uint32_t ms) {
     return 1;
 }
 
+/* RP_POSITION from the work area: k_songpos and k_patternpos are row indices (kpl14.s:1533 compares the row with
+ * 64), and k_patternpos already names the row after the one last played, so the readout runs at most one row ahead.
+ * The pattern number comes from the order table of the unconverted song data (offset 952). */
+static int rp_position(void* state, sel_rp_position* out) {
+    kp_state* s = (kp_state*)state;
+    const volatile uint8_t* w;
+    uint32_t songpos;
+    if (!s->playing || g_owner != s) {
+        return 0;
+    }
+    w = (const volatile uint8_t*)s->work;
+    songpos = ((uint32_t)w[KP_SONGPOS_AT] << 8) | w[KP_SONGPOS_AT + 1];
+    out->order = songpos;
+    out->row = ((uint32_t)w[KP_PATTERNPOS_AT] << 8) | w[KP_PATTERNPOS_AT + 1];
+    out->pattern = songpos < 128u && s->source_size > KP_ORDERS_AT + 128u ? s->source[KP_ORDERS_AT + songpos] : 0u;
+    return 1;
+}
+
 static void rp_hw_release(void* state) {
     stop((kp_state*)state);
 }
 
-static sel_tag g_hooks[15];
+static sel_tag g_hooks[16];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -257,7 +276,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[11], SEL_RP_MIN_CPU, 68000);
     set(&g_hooks[12], SEL_RP_PRIORITY, 10); /* the native player outranks nuade for M.K. on Amiga */
     set(&g_hooks[13], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
-    set(&g_hooks[14], SEL_TAG_END, 0);
+    set(&g_hooks[14], SEL_RP_POSITION, SEL_TAG_FN(rp_position));
+    set(&g_hooks[15], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "kplayer");
