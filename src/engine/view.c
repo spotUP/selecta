@@ -6,7 +6,7 @@ enum { KEY_FOLDER = 0, KEY_FORMAT = 1 };
 static const char* const key_name[2] = {"folder", "format"};
 static const uint8_t key_seq[2][2] = {{KEY_FOLDER, KEY_FOLDER}, {KEY_FORMAT, KEY_FOLDER}};
 static const uint32_t key_len[2] = {1, 2}; /* columns before the songs */
-static const char* const style_name[3] = {"regular", "tree", "drilldown"};
+static const char* const style_name[SEL_VIEW_STYLE_COUNT] = {"regular", "tree", "drilldown", "grid", "coverflow", "compact"};
 #define OVERFLOW_GROUP "(more)"
 
 /* The folders and home sources list prepared text rows (frows): always regular, cursor = row index. */
@@ -16,7 +16,8 @@ static int text_src(const sel_view* v) {
 
 /* The browse source is a directory listing: always regular. */
 static uint32_t mode_of(const sel_view* v) {
-    return v->pub.source != SEL_VIEW_BROWSE && !text_src(v) ? v->pub.style : (uint32_t)SEL_VIEW_STYLE_REGULAR;
+    /* Grid, cover flow and compact list the flat rows of the regular style, with artwork ids. */
+    return v->pub.source != SEL_VIEW_BROWSE && !text_src(v) && v->pub.style <= SEL_VIEW_STYLE_DRILLDOWN ? v->pub.style : (uint32_t)SEL_VIEW_STYLE_REGULAR;
 }
 
 static uint32_t list_count(const sel_view* v, const sel_view_src* s) {
@@ -52,7 +53,9 @@ int sel_view_init(sel_view* v, const sel_host* host, uint32_t row_cap) {
     }
     v->vote_text = host->mem_alloc(host, (size_t)row_cap * SEL_VIEW_VOTES_MAX, SEL_MEM_FAST);
     v->vote_id = host->mem_alloc(host, (size_t)row_cap * sizeof *v->vote_id, SEL_MEM_FAST);
-    if (v->vote_text == NULL || v->vote_id == NULL) {
+    v->art_cache = host->mem_alloc(host, (size_t)row_cap * 2u * sizeof *v->art_cache, SEL_MEM_FAST);
+    if (v->vote_text == NULL || v->vote_id == NULL || v->art_cache == NULL) {
+        host->mem_free(host, v->art_cache);
         host->mem_free(host, v->vote_text);
         host->mem_free(host, v->vote_id);
         host->mem_free(host, v->row_text);
@@ -62,6 +65,7 @@ int sel_view_init(sel_view* v, const sel_host* host, uint32_t row_cap) {
         return 0;
     }
     memset(v->vote_id, 0, (size_t)row_cap * sizeof *v->vote_id);
+    memset(v->art_cache, 0, (size_t)row_cap * 2u * sizeof *v->art_cache);
     v->groups = host->mem_alloc(host, SEL_VIEW_GROUPS_MAX * sizeof *v->groups, SEL_MEM_FAST);
     if (v->groups == NULL) {
         host->mem_free(host, v->row_text);
@@ -105,6 +109,9 @@ void sel_view_free(sel_view* v, const sel_host* host) {
     if (v->vote_text) {
         host->mem_free(host, v->vote_text);
     }
+    if (v->art_cache) {
+        host->mem_free(host, v->art_cache);
+    }
     if (v->vote_id) {
         host->mem_free(host, v->vote_id);
     }
@@ -127,6 +134,7 @@ void sel_view_free(sel_view* v, const sel_host* host) {
 
 static void queue_row_text(char* out, const sel_view_src* s, uint32_t idx, const char* votes);
 static const char* row_votes(sel_view* v, const sel_view_src* s, uint32_t slot, uint32_t idx);
+static uint32_t row_art(sel_view* v, const sel_view_src* s, uint32_t slot, uint32_t idx);
 
 /* Lowercase extension of a file name into `out`; empty when there is none. */
 static void lower_ext(const char* base, char* out, size_t cap) {
@@ -459,22 +467,23 @@ static void fill_styled(sel_view* v, const sel_view_src* s) {
 
 int sel_view_set_style(sel_view* v, const sel_view_src* s, const char* style) {
     uint32_t want;
-    for (want = 0; want < 3u && strcmp(style, style_name[want]) != 0; want++) {
+    for (want = 0; want < SEL_VIEW_STYLE_COUNT && strcmp(style, style_name[want]) != 0; want++) {
     }
-    if (want == 3u) {
+    if (want == SEL_VIEW_STYLE_COUNT) {
         return 0;
     }
     sel_view_refresh(v, s);
     if (want != v->pub.style) {
         anchor_to_song(v, s);
         v->pub.style = want;
+        memset(v->art_cache, 0, (size_t)v->row_cap * 2u * sizeof *v->art_cache);
     }
     sel_view_refresh(v, s);
     return 1;
 }
 
 const char* sel_view_style_name(const sel_view* v) {
-    return style_name[v->pub.style < 3u ? v->pub.style : 0u];
+    return style_name[v->pub.style < SEL_VIEW_STYLE_COUNT ? v->pub.style : 0u];
 }
 
 int sel_view_set_group(sel_view* v, const sel_view_src* s, const char* key) {
@@ -491,7 +500,7 @@ int sel_view_set_group(sel_view* v, const sel_view_src* s, const char* key) {
         v->drill_n = 0;
         reset_table(v);
     }
-    if (v->pub.style == SEL_VIEW_STYLE_REGULAR) {
+    if (v->pub.style != SEL_VIEW_STYLE_TREE && v->pub.style != SEL_VIEW_STYLE_DRILLDOWN) {
         v->pub.style = SEL_VIEW_STYLE_TREE;
     }
     sel_view_refresh(v, s);
@@ -698,6 +707,22 @@ static const char* row_votes(sel_view* v, const sel_view_src* s, uint32_t slot, 
     return out;
 }
 
+/* The artwork id of the row in window slot `slot` showing queue index `idx`: from the service callback, read again
+ * only when the slot shows another entry (a row is drawn every pump, a lookup is a library call). */
+static uint32_t row_art(sel_view* v, const sel_view_src* s, uint32_t slot, uint32_t idx) {
+    uint32_t* c = v->art_cache + (size_t)slot * 2u;
+    uint32_t id = s->queue->entries[idx].id;
+
+    if (s->art_id == NULL) {
+        return 0;
+    }
+    if (c[0] != id) {
+        c[1] = s->art_id(s->art_ctx, sel_queue_path(s->queue, idx));
+        c[0] = id;
+    }
+    return c[1];
+}
+
 /* A queue row's text: the title format over the fields a path alone gives
  * (no metadata store before M3): title and file are the basename, path the
  * whole path, format the lowercase extension. Other fields stay empty. */
@@ -759,6 +784,7 @@ void sel_view_refresh(sel_view* v, const sel_view_src* s) {
         uint32_t idx = p->window_start + i;
         sel_view_row* r = &v->rows[i];
         r->depth = 0;
+        r->art_id = 0;
         r->id = row_id(v, s, idx);
         if (p->source == SEL_VIEW_FOLDERS || p->source == SEL_VIEW_HOME) {
             *r = v->frows[idx];
@@ -767,6 +793,9 @@ void sel_view_refresh(sel_view* v, const sel_view_src* s) {
             char* buf = v->row_text + (size_t)i * SEL_VIEW_TEXT_MAX;
             queue_row_text(buf, s, idx, row_votes(v, s, i, idx));
             r->text = buf;
+            if (v->pub.style >= SEL_VIEW_STYLE_GRID) {
+                r->art_id = row_art(v, s, i, idx);
+            }
         } else {
             r->kind = s->browse->entries[idx].is_dir ? SEL_ROW_DIR : SEL_ROW_FILE;
             r->text = sel_browse_name(s->browse, idx);
@@ -811,7 +840,7 @@ int sel_view_changed(sel_view* v, const sel_view_src* s, int* structure) {
 }
 
 const char* sel_view_style_label(uint32_t style) {
-    return style < 3u ? style_name[style] : "unknown";
+    return style < SEL_VIEW_STYLE_COUNT ? style_name[style] : "unknown";
 }
 
 /* The folders source (I179): parses the FOLDER_TREE text. A line is `F <id> <name>` or `P <id> <name>`

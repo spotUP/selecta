@@ -2,6 +2,7 @@
  * (include/selecta/uimodel.h): one widget per region, redrawn only when the region's dirty bit is set. Drawing goes
  * to a backend: `mem` (headless, no SDL, DUI-P2-6) or `sdl` (a window, DUI-P2-7), selected with `--backend`. */
 #include <selecta/plugin.h>
+#include <selecta/engine.h>
 #include <selecta/ui.h>
 #include <selecta/uimodel.h>
 
@@ -1288,6 +1289,14 @@ static const char* library_dump_build(desk* d) {
                                   lib_kind_name(vr->kind), (unsigned)vr->depth, (unsigned)vr->count,
                                   (unsigned)vr->expanded, vr->text != NULL ? vr->text : "");
             o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "vrect %u %d %d %d %d\n", (unsigned)i, (int)rr.x, (int)rr.y, (int)rr.w, (int)rr.h);
+        }
+    }
+    if (st->view != NULL && st->view->style >= SEL_VIEW_STYLE_GRID) { /* grid, cover flow, compact: the rows and their artwork ids */
+        const sel_view_state* v = st->view;
+        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "vstyle %s\n", sel_view_style_label(v->style));
+        for (i = 0; i < v->row_n && o + 400u < sizeof d->library_dump; i++) {
+            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "srow %u %u|%s\n", (unsigned)i,
+                                  (unsigned)v->rows[i].art_id, v->rows[i].text != NULL ? v->rows[i].text : "");
         }
     }
     for (p = st->stats; p != NULL && *p != '\0' && o + 400u < sizeof d->library_dump;) {
@@ -3240,7 +3249,7 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[3], SEL_UI_WAIT, SEL_TAG_FN(desk_wait));
     set(&g_hooks[4], SEL_UI_CLOSE, SEL_TAG_FN(desk_close));
     set(&g_hooks[5], SEL_UI_STATS, SEL_TAG_FN(desk_stats));
-    set(&g_hooks[6], SEL_UI_VIEW_STYLES, 1);
+    set(&g_hooks[6], SEL_UI_VIEW_STYLES, SEL_VIEW_STYLES_ALL);
     set(&g_hooks[7], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_UI);

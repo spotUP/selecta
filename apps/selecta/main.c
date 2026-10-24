@@ -52,13 +52,14 @@ typedef struct shell_ui {
     sel_ui_wait_fn wait;
     sel_ui_close_fn close;
     sel_ui_stats_fn stats;
+    uint32_t view_styles; /* SEL_UI_VIEW_STYLES: sel_view_style bits the UI offers, 0 the classic three */
 } shell_ui;
 
 static shell_ui g_uis[SHELL_MAX_UIS];
 static unsigned g_ui_count;
 static int g_stats; /* --stats: the shell reports what the UIs and prefs did on stdout */
 
-/* ctx[0] unused, ctx[1] = primary UI state, ctx[2] = integration session. */
+/* ctx[0] = engine (set once it exists), ctx[1] = primary UI state, ctx[2] = integration session. */
 static void sink(void* ctx, const sel_message* evt) {
     unsigned u;
     if (evt->id == SEL_EVT_ERROR) {
@@ -160,6 +161,7 @@ static int ui_resolve(const char* id, shell_ui* u) {
     u->wait = (sel_ui_wait_fn)sel_tag_find(h, SEL_UI_WAIT, 0);
     u->close = (sel_ui_close_fn)sel_tag_find(h, SEL_UI_CLOSE, 0);
     u->stats = (sel_ui_stats_fn)sel_tag_find(h, SEL_UI_STATS, 0);
+    u->view_styles = (uint32_t)sel_tag_find(h, SEL_UI_VIEW_STYLES, 0);
     return u->open != NULL && u->wait != NULL && u->close != NULL;
 }
 
@@ -226,6 +228,7 @@ static int ui_switch(const char* id, const sel_ui_open_args* args, void** ctx) {
         return -1;
     }
     *cur = next;
+    sel_engine_set_ui_view_styles((sel_engine*)ctx[0], next.view_styles);
     ctx[1] = next.state;
     return 1;
 }
@@ -460,6 +463,8 @@ int main(int argc, char** argv)
             return 1;
         }
     }
+    ctx[0] = e;
+    sel_engine_set_ui_view_styles(e, g_uis[0].view_styles);
     ctx[1] = g_uis[0].state;
     ctx[2] = NULL;
 

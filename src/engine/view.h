@@ -38,6 +38,9 @@ typedef struct sel_view_src {
     int (*votes)(void* ctx, const char* path, char* out);
     void* votes_ctx;
     uint32_t votes_generation;
+    /* Artwork id (albums.id) of a queue path for the grid, cover flow and compact rows; 0 none. NULL: no library. */
+    uint32_t (*art_id)(void* ctx, const char* path);
+    void* art_ctx;
 } sel_view_src;
 
 typedef struct sel_view_sig {
@@ -66,6 +69,7 @@ typedef struct sel_view {
     char* vote_text;      /* row_cap * SEL_VIEW_VOTES_MAX: the vote count of each row slot (I174a) */
     uint32_t* vote_id;    /* queue entry id each vote_text slot was read for, 0 none */
     uint32_t vote_seen;   /* votes_generation the slots belong to */
+    uint32_t* art_cache;  /* 2 * row_cap: queue entry id and artwork id per window slot, entry id 0 none */
     uint32_t row_cap;
     uint32_t cursor_of[4], id_of[4]; /* the cursor each source was left at */
     uint32_t browse_seen;            /* browse generation the cursor belongs to */
@@ -112,7 +116,7 @@ int sel_view_window(sel_view* v, const sel_view_src* s, uint32_t rows);
  * rows. Cheap enough to call after every command. */
 void sel_view_refresh(sel_view* v, const sel_view_src* s);
 
-/* Style "regular", "tree" or "drilldown". 0: unknown. The cursor keeps its song. */
+/* Style by name (sel_view_style_label). 0: unknown. The cursor keeps its song. */
 int sel_view_set_style(sel_view* v, const sel_view_src* s, const char* style);
 const char* sel_view_style_name(const sel_view* v);
 

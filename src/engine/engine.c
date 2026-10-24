@@ -17,6 +17,7 @@
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
 #include <selecta/tags.h>
+#include <selecta/ui.h>
 
 #include "mixer.h"
 #include "claims.h"
@@ -247,6 +248,7 @@ struct sel_engine {
     char vote_mkey[13];                    /* UADE key of that request, matched against the answer */
     unsigned vote_seen;                    /* vote result sequence already stored */
     uint32_t votes_generation;             /* moves when a count is stored; the view re-reads its vote texts */
+    uint32_t ui_view_styles; /* sel_view_style bits the active UI offers (SEL_UI_VIEW_STYLES), set by the shell */
     char ui_switch[16];      /* id named by the last UI_SWITCH, "" none: the shell owns the UIs and takes it (I238) */
     uint32_t scrobble_due;   /* SCROBBLE_DUE events emitted (sentinel of the I177 rule) */
     uint32_t history_writes; /* history rows written (sentinel of the I170 writer) */
@@ -4147,6 +4149,19 @@ static void vote_store(sel_engine* e) {
     }
 }
 
+/* Row callback of the view (DUI-P4-4): the artwork id of a queue path, albums.id of its songs row's album, through the
+ * same provider the UI's artwork worker uses; 0 when the song has no album. */
+static uint32_t view_art_id(void* ctx, const char* path) {
+    sel_engine* e = ctx;
+    sel_ui_art art;
+    int64_t id;
+
+    memset(&art, 0, sizeof art);
+    sel_library_art_provider(e->lib, &art);
+    id = art.find != NULL ? art.find(art.ctx, path) : 0;
+    return id > 0 ? (uint32_t)id : 0u;
+}
+
 static void view_src(const sel_engine* e, sel_view_src* s) {
     s->queue = e->view.pub.source == SEL_VIEW_QUERY ? &e->qview : &e->queue;
     s->browse = &e->browse;
@@ -4159,6 +4174,8 @@ static void view_src(const sel_engine* e, sel_view_src* s) {
     s->votes = e->lib != NULL ? view_votes : NULL;
     s->votes_ctx = (void*)e;
     s->votes_generation = e->votes_generation;
+    s->art_id = e->lib != NULL ? view_art_id : NULL;
+    s->art_ctx = (void*)e;
 }
 
 /* VIEW_ROWS carries the window position only; the rows are read from the
@@ -4306,6 +4323,10 @@ static void cmd_UI_SWITCH(sel_engine* e, const sel_message* m) {
     strcpy(e->ui_switch, id);
 }
 
+void sel_engine_set_ui_view_styles(sel_engine* e, uint32_t mask) {
+    e->ui_view_styles = mask != 0u ? mask : SEL_VIEW_STYLES_CLASSIC;
+}
+
 int sel_engine_take_ui_switch(sel_engine* e, char* id, size_t cap) {
     if (e->ui_switch[0] == '\0' || strlen(e->ui_switch) >= cap) {
         return 0;
@@ -4333,10 +4354,21 @@ static void cmd_VIEW_WINDOW(sel_engine* e, const sel_message* m) {
     }
 }
 
+/* 1 when the active UI offers the style named `name` (an unknown name is left to sel_view_set_style to refuse). */
+static int view_style_offered(const sel_engine* e, const char* name) {
+    uint32_t i;
+    for (i = 0; i < SEL_VIEW_STYLE_COUNT; i++) {
+        if (strcmp(name, sel_view_style_label(i)) == 0) {
+            return (e->ui_view_styles & SEL_VIEW_STYLE_BIT(i)) != 0u;
+        }
+    }
+    return 1;
+}
+
 static void cmd_VIEW_STYLE(sel_engine* e, const sel_message* m) {
     sel_view_src s;
     view_src(e, &s);
-    if (!sel_view_set_style(&e->view, &s, m->args[0].v.s)) {
+    if (!view_style_offered(e, m->args[0].v.s) || !sel_view_set_style(&e->view, &s, m->args[0].v.s)) {
         sel_engine_report_error(e, "unsupported_style", m->args[0].v.s);
         return;
     }
@@ -4550,6 +4582,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         return NULL;
     }
     memset(e, 0, sizeof *e);
+    e->ui_view_styles = SEL_VIEW_STYLES_CLASSIC;
     e->host = host;
     e->rp_host = *host;
     e->rp_host.config_get = rp_config_get;

@@ -1363,7 +1363,7 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[3], SEL_UI_WAIT, SEL_TAG_FN(tui_wait));
     set(&g_hooks[4], SEL_UI_CLOSE, SEL_TAG_FN(tui_close));
     set(&g_hooks[5], SEL_UI_STATS, SEL_TAG_FN(tui_stats));
-    set(&g_hooks[6], SEL_UI_VIEW_STYLES, 1);
+    set(&g_hooks[6], SEL_UI_VIEW_STYLES, SEL_VIEW_STYLES_CLASSIC);
     set(&g_hooks[7], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_UI);

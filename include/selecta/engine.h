@@ -67,8 +67,23 @@ typedef enum sel_row_kind { SEL_ROW_DIR = 0, SEL_ROW_FILE, SEL_ROW_QUEUE, SEL_RO
                SEL_ROW_HEADING, SEL_ROW_HOME } sel_row_kind;
 /* Styles over the queue: regular (flat), tree (group nodes that expand to
  * their songs) and drilldown (columns: pick a value per level, the next
- * column lists what matches). The browse source is always regular. */
-typedef enum sel_view_style { SEL_VIEW_STYLE_REGULAR = 0, SEL_VIEW_STYLE_TREE, SEL_VIEW_STYLE_DRILLDOWN } sel_view_style;
+ * column lists what matches). Grid, cover flow and compact (DUI-P4-4) list the same flat rows as regular and
+ * fill sel_view_row.art_id; how they are drawn is up to the UI, and a UI offers only the styles its
+ * SEL_UI_VIEW_STYLES mask names (sel_engine_set_ui_view_styles). The browse source is always regular. */
+typedef enum sel_view_style {
+    SEL_VIEW_STYLE_REGULAR = 0,
+    SEL_VIEW_STYLE_TREE,
+    SEL_VIEW_STYLE_DRILLDOWN,
+    SEL_VIEW_STYLE_GRID,
+    SEL_VIEW_STYLE_COVERFLOW,
+    SEL_VIEW_STYLE_COMPACT,
+    SEL_VIEW_STYLE_COUNT
+} sel_view_style;
+/* Bit of a style in a SEL_UI_VIEW_STYLES mask. The classic mask is what a UI without the tag offers. */
+#define SEL_VIEW_STYLE_BIT(s) (1u << (s))
+#define SEL_VIEW_STYLES_CLASSIC \
+    (SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_REGULAR) | SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_TREE) | SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_DRILLDOWN))
+#define SEL_VIEW_STYLES_ALL ((1u << SEL_VIEW_STYLE_COUNT) - 1u)
 
 typedef struct sel_view_row {
     uint32_t kind;  /* sel_row_kind */
@@ -80,6 +95,7 @@ typedef struct sel_view_row {
     uint32_t expanded; /* SEL_ROW_NODE: 1 when its songs are listed below it */
     const char* key;   /* SEL_ROW_HOME: the song key to play or, when album is 1, the album name to open; NULL else (I191a) */
     uint32_t album;    /* SEL_ROW_HOME: 1 when key names an album, 0 when it names a song */
+    uint32_t art_id;   /* grid, cover flow and compact queue rows: albums.id of the song's album (the artwork id), 0 none */
 } sel_view_row;
 
 /* rows[0..row_n) are the visible window: listing indices window_start and up.
@@ -372,7 +388,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out);
 /* Key `i` of the last LIBRARY_SEARCH, PLAY_QUERY or QUEUE_ADD_QUERY result (byte order of the key), NULL past the end. */
 const char* sel_engine_result_key(const sel_engine* e, uint32_t i);
 
-/* "regular", "tree" or "drilldown" for a sel_view_style value; "unknown" otherwise. */
+/* The name of a sel_view_style value ("regular", "tree", "drilldown", "grid", "coverflow", "compact"); "unknown" otherwise. */
 const char* sel_view_style_label(uint32_t style);
 /* "queue", "browse" or "query" for a sel_view_source value; "unknown" otherwise. */
 const char* sel_view_source_label(uint32_t source);
@@ -414,6 +430,9 @@ int sel_engine_cmd_implemented(uint32_t cmd_id);
 
 /* The id a UI_SWITCH command asked for (UI or socket line): copied to id and cleared; 0 when none is pending. The
  * engine owns no UI, so the shell takes the request after a pump and switches (apps/selecta ui_switch). */
+/* The view styles the active UI offers (its SEL_UI_VIEW_STYLES mask); VIEW_STYLE names outside it are refused with
+ * ERROR unsupported_style. Default SEL_VIEW_STYLES_CLASSIC; the shell sets it when a UI opens or replaces the primary. */
+void sel_engine_set_ui_view_styles(sel_engine* e, uint32_t mask);
 int sel_engine_take_ui_switch(sel_engine* e, char* id, size_t cap);
 
 SEL_EXTERN_C_END
