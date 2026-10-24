@@ -5,6 +5,7 @@
  * descriptor numbers, the streams are Input() and Output(). */
 #include "../term.h"
 #include "../sizeprobe.h"
+#include "../locale.h"
 
 #include <dos/dos.h>
 #include <proto/dos.h>
@@ -21,6 +22,17 @@ typedef struct amiga_state {
     int was_raw; /* stdin was an interactive stream we switched to raw */
     int native;  /* the console.device answered the Window Status Request: resize events are on */
 } amiga_state;
+
+/* The value of a shell variable, local first then global (GetVar flags 0), or NULL when unset. */
+static const char* env_value(const char* name, char* buf, LONG cap) {
+    return GetVar((STRPTR)name, (STRPTR)buf, cap, 0) > 0 ? buf : NULL;
+}
+
+int txt_term_latin1(void) {
+    char all[64], ctype[64], lang[64];
+    return !txt_locale_utf8(env_value("LC_ALL", all, sizeof all), env_value("LC_CTYPE", ctype, sizeof ctype),
+                            env_value("LANG", lang, sizeof lang));
+}
 
 static amiga_state* st(txt_term* t) { return (amiga_state*)(void*)t->saved_bytes; }
 static const amiga_state* cst(const txt_term* t) { return (const amiga_state*)(const void*)t->saved_bytes; }

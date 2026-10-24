@@ -12,6 +12,8 @@ const int txt_term_amiga_console = 0;
 const char txt_term_enter_seq[] = "\x1b[?1049h\x1b[?25l\x1b[?1000h\x1b[?1006h";
 const char txt_term_leave_seq[] = "\x1b[?1006l\x1b[?1000l\x1b[?25h\x1b[0m\x1b[?1049l";
 
+int txt_term_latin1(void) { return 0; }
+
 int txt_term_open(txt_term* t, int in_fd, int out_fd) {
     struct termios raw;
     memset(t, 0, sizeof *t);

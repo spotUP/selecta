@@ -2,12 +2,13 @@
  * terminal device (plan M1.1 phase 5, row I59). Behaviour is tested where it
  * lives; the reachability test of the whole UI is T19.
  * Usage: grid_test [group...]
- * groups: flush full keys theme term   (none: all) */
+ * groups: flush full keys theme term locale   (none: all) */
 #define _XOPEN_SOURCE 600
 #include "vectors.h"
 
 #include "grid.h"
 #include "sizeprobe.h"
+#include "locale.h"
 #include "keys.h"
 #include "term.h"
 #include "theme.h"
@@ -311,10 +312,16 @@ static void test_keys(void) {
     CHECK(n == 1 && o[0].code == 'q', "Amiga Help dropped, next key intact");
     /* I218a: the Amiga console sends Latin-1 bytes, Backspace 0x08 and Del 0x7F */
     k.amiga_console = 1;
+    k.latin1 = 1;
     n = feed_all(&k, "\xe4q\x08\x7f\x85q", o, 8);
     CHECK(n == 6 && o[0].code == 0xE4u && o[1].code == 'q' && o[2].code == 127u && o[3].code == TXT_KEY_DELETE &&
               o[4].code == 0xFFFDu && o[5].code == 'q',
           "Amiga console Latin-1, Backspace and Del");
+    /* I218d: an Amiga console in a UTF-8 window (UP-Term xterm personality) decodes UTF-8 */
+    k.latin1 = 0;
+    n = feed_all(&k, "\xc3\xa4q\x7f", o, 8);
+    CHECK(n == 3 && o[0].code == 0xE4u && o[1].code == 'q' && o[2].code == TXT_KEY_DELETE,
+          "Amiga console UTF-8 input keeps Del");
     /* I218c: the console reports a resize event and the window bounds, 8-bit and 7-bit CSI */
     n = feed_all(&k, "\x9b" "12;0;0;0;0;0;0;0|\x9b" "1;1;50;120 r", o, 8);
     CHECK(n == 2 && o[0].code == TXT_KEY_RESIZE && o[1].code == TXT_KEY_WINDOW && o[1].x == 120u &&
@@ -424,6 +431,17 @@ static void test_term(void) {
     close(master);
 }
 
+/* I218d: the terminal character set follows the POSIX locale precedence */
+static void test_locale(void) {
+    CHECK(txt_locale_utf8(NULL, "C.UTF-8", NULL) == 1, "LC_CTYPE=C.UTF-8 is UTF-8");
+    CHECK(txt_locale_utf8(NULL, NULL, "sv_SE.utf8") == 1, "LANG=sv_SE.utf8 is UTF-8");
+    CHECK(txt_locale_utf8(NULL, NULL, NULL) == 0, "no locale is not UTF-8");
+    CHECK(txt_locale_utf8("C", "C.UTF-8", NULL) == 0, "LC_ALL wins over LC_CTYPE");
+    CHECK(txt_locale_utf8("", "C.UTF-8", NULL) == 1, "empty LC_ALL is unset");
+    CHECK(txt_locale_utf8(NULL, "sv_SE.ISO8859-1", "en_US.UTF-8") == 0, "LC_CTYPE wins over LANG");
+    CHECK(txt_locale_utf8(NULL, NULL, "UTF") == 0, "UTF without 8 is not UTF-8");
+}
+
 int main(int argc, char** argv) {
     if (want(argc, argv, "flush")) test_flush();
     if (want(argc, argv, "full")) {
@@ -435,6 +453,7 @@ int main(int argc, char** argv) {
     if (want(argc, argv, "keys")) test_keys();
     if (want(argc, argv, "theme")) test_theme();
     if (want(argc, argv, "term")) test_term();
+    if (want(argc, argv, "locale")) test_locale();
     if (failures) {
         printf("grid_test: %d failure(s)\n", failures);
         return 1;

@@ -1284,6 +1284,7 @@ static void* tui_open(const sel_ui_open_args* a) {
     txt_theme_default(&u->theme);
     txt_keys_init(&u->keys);
     u->keys.amiga_console = txt_term_amiga_console;
+    u->keys.latin1 = txt_term_latin1();
     if (!tui_load_bindings(u, a, keys_path != NULL)) {
         tui_close(u);
         return NULL;
@@ -1315,7 +1316,7 @@ static void* tui_open(const sel_ui_open_args* a) {
         tui_close(u);
         return NULL;
     }
-    u->grid.latin1 = txt_term_amiga_console;
+    u->grid.latin1 = txt_term_latin1();
     /* --console-frames 1 gives a host run the Amiga console's frames, so tests can compare byte streams (row I218e). */
     u->grid.console = txt_term_amiga_console || tui_opt(a, "--console-frames") != NULL;
     u->out_cap = txt_grid_flush_bound(&u->grid);

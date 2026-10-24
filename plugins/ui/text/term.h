@@ -26,6 +26,10 @@ extern const char txt_term_leave_seq[];
  * Latin-1 both ways, Backspace sends 0x08 and Del sends 0x7F. 0 means xterm: UTF-8, and
  * Backspace sends 0x7F. Each backend defines it next to txt_term_enter_seq. */
 extern const int txt_term_amiga_console;
+/* 1 when bytes to and from the terminal are Latin-1, 0 when they are UTF-8 (row I218d). POSIX: always
+ * 0. AmigaOS: 0 when the locale variables name UTF-8 (txt_locale_utf8; UP-Term sets LC_CTYPE=C.UTF-8
+ * for an xterm personality), else 1 (the Shell console and the UP-Term amiga personality). */
+int txt_term_latin1(void);
 
 /* Saves the terminal state, switches to raw mode and writes txt_term_enter_seq.
  * Returns 0, or -1 when in_fd is not a terminal. */

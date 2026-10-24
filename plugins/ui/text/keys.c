@@ -138,7 +138,7 @@ static int ground(txt_keys* k, uint8_t b, txt_key* out) {
         emit(k, out, b, 0);
         return 1;
     }
-    if (k->amiga_console) { /* Latin-1: one byte is one code point; C1 controls carry no key */
+    if (k->latin1) { /* Latin-1: one byte is one code point; C1 controls carry no key */
         emit(k, out, b >= 0xA0 ? (uint32_t)b : 0xFFFDu, 0);
         return 1;
     }

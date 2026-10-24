@@ -52,8 +52,9 @@ typedef struct txt_keys {
     int alt;  /* ESC prefix pending for the next key */
     int amiga; /* the sequence began with the 8-bit CSI (0x9B): Amiga console codes */
     int space; /* Amiga console: a space came before the final byte (Shift+Left, Shift+Right) */
-    int amiga_console; /* set by the caller after init: bytes are Latin-1, 0x08 is Backspace and
-                        * 0x7F is Del (txt_term_amiga_console, row I218a) */
+    int amiga_console; /* set by the caller after init: 0x08 is Backspace and 0x7F is Del
+                        * (txt_term_amiga_console, row I218a) */
+    int latin1;        /* set by the caller after init: bytes are Latin-1, not UTF-8 (txt_term_latin1, row I218d) */
 } txt_keys;
 
 void txt_keys_init(txt_keys* k);
