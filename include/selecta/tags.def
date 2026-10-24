@@ -102,6 +102,10 @@ SEL_TAG(OUT, STAT_P14_BUFS,    0x2018, INT) /* paula14 outputs: chip buffer swap
 /* CLOCKLESS: 1 = the sink has no clock of its own; the caller paces it and OUT_PUMP pulls on the caller's thread,
  * which therefore is not marked as the audio thread (I64, I216). Absent = the output plays from its own clock. */
 SEL_TAG(OUT, CLOCKLESS,        0x2019, INT)
+SEL_TAG(OUT, STAT_AHI_BUFS,     0x201A, INT) /* ahi outputs: buffers handed to ahi.device (double-buffer swaps) */
+SEL_TAG(OUT, STAT_AHI_UNDERRUNS, 0x201B, INT) /* ahi outputs: submits that found the device already out of data */
+SEL_TAG(OUT, STAT_AHI_BUFFER,   0x201C, INT) /* ahi outputs: frames per buffer in use (sel_prefs per CPU class) */
+SEL_TAG(OUT, STAT_AHI_RATE,     0x201D, INT) /* ahi outputs: sample rate in Hz */
 
 /* DSP plugin rows (design doc section 5, include/selecta/dsp.h). */
 SEL_TAG(DSP, NAME,             0x3000, STR)

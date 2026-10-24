@@ -875,6 +875,12 @@ if(NOT SEL_AMIGA)
     sel_m2_test(paula14-routing run ${mode} -DTAG=T52
       "-DARGS1=render --output paula14-shadow @MOD@ --seconds 2" "-DCHECKS1=mixed_frames>0,p14_bufs>0")
   endforeach()
+  # I124/I125 (T58/T59): OUTPUT=AHI routing; the shadow twin counts buffer swaps (2 s at 44100 Hz / 1024 frames = 86).
+  foreach(mode desktop vamos)
+    sel_m2_test(ahi-routing run ${mode} -DTAG=T59
+      "-DARGS1=render --output ahi-shadow @MOD@ --seconds 2"
+      "-DCHECKS1=ahi_bufs>=78,ahi_bufs<=95,underruns==0,ahi_buffer_frames==1024,ahi_rate==44100")
+  endforeach()
   # T53 LED filter and stereo width.
   # selecta-test.mod is mono (the protracker4 replayer does not pan), so a width knob cannot
   # move its hash; the desktop run also renders the stereo mk module (libopenmpt pans it).
@@ -976,6 +982,15 @@ set_source_files_properties("${SEL_P14_DIR}/shadow.c" PROPERTIES COMPILE_DEFINIT
 target_include_directories(p14_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
 target_link_libraries(p14_test PRIVATE selecta_core selecta_plugin_shared)
 add_test(NAME paula14-unit COMMAND p14_test)
+
+# I124/I125: AHI buffer/rate table per CPU class, output.buffer override, shadow double-buffer bookkeeping.
+set(SEL_AHI_DIR "${PROJECT_SOURCE_DIR}/plugins/outputs/ahi")
+add_executable(ahi_test paula/ahi_test.c "${SEL_AHI_DIR}/shadow.c" "${SEL_AHI_DIR}/common/ahi_cfg.c"
+  "${SEL_AHI_DIR}/common/ahi_out.c")
+set_source_files_properties("${SEL_AHI_DIR}/shadow.c" PROPERTIES COMPILE_DEFINITIONS SEL_PLUGIN_ENTRY=shadow_entry)
+target_include_directories(ahi_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
+target_link_libraries(ahi_test PRIVATE selecta_core selecta_plugin_shared)
+add_test(NAME ahi-unit COMMAND ahi_test)
 
 # I141 (D-M3-6): net fixture server. Setup/cleanup tests start and stop it for
 # every test that REQUIRES the net-fixture fixture; all share RESOURCE_LOCK

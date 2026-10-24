@@ -32,6 +32,13 @@ if(SEL_AMIGA)
     outputs/paula14/common/p14_out.c)
   target_include_directories(selecta_paula14_irq PRIVATE ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/plugins/shared)
 endif()
+# ahi (M2 phase 4, I124/I125): per-CPU buffer table and double-buffer bookkeeping in common/, the shadow twin counts
+# the hand-offs, the Amiga output sends CMD_WRITE requests to ahi.device. Not in the interrupt path (rig-only).
+set(SEL_AHI_COMMON outputs/ahi/common/ahi_cfg.c outputs/ahi/common/ahi_out.c)
+sel_add_plugin(ahi_shadow 2 outputs/ahi/shadow.c ${SEL_AHI_COMMON})
+if(SEL_AMIGA)
+  sel_add_plugin(ahi 2 outputs/ahi/amiga/ahi.c ${SEL_AHI_COMMON})
+endif()
 sel_add_plugin(wav 2 outputs/wav/wav.c)
 sel_add_plugin(crossfeed 3 dsp/crossfeed/crossfeed.c)
 # OS headers live under plugins/*/<os>/ (RULES.md rule 3).
