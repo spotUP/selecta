@@ -5,12 +5,18 @@
 #include <selecta/ui.h>
 #include <selecta/uimodel.h>
 
+#include "atlas_build.h"
 #include "gui_draw.h"
+#include "gui_text.h"
 #include "theme.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* The text size tokens (plan 2.6) as pixel sizes; each gets one atlas per weight. */
+#define DESK_SIZES 5
+static const int g_sizes[DESK_SIZES] = {11, 13, 16, 24, 32};
 
 typedef struct desk {
     sel_engine* engine;
@@ -35,7 +41,16 @@ typedef struct desk {
     uint32_t dirty_pixels;  /* pixels the latest present repainted (DUI-P2-2) */
     uint32_t dirty_total;   /* pixels repainted over all presents */
     uint32_t ticks;         /* --ticks N: clock seconds the mem backend replays after the quiet turn */
-    sel_tag stats[13];
+    int textsheet;          /* --view text: specimen lines and the queue names, once (DUI-P2-3) */
+    int home;               /* --view home: the tile grid of the queue entries in the main region (DUI-P2-6) */
+    sel_gui_text_stats text; /* glyphs blitted and code points the atlas lacked (DUI-P2-3) */
+    sel_gui_atlas* atlas[2][DESK_SIZES]; /* [semibold][size], built on first use */
+    uint32_t view_opens;    /* tiles opened by input (DUI-P2-6) */
+    int32_t open_tile;      /* 1-based queue index of the opened tile, 0 = home */
+    const char* frame_dump; /* --frame-dump <file>: the canvas as PPM at close */
+    char* input;            /* --input <file>: scripted clicks, replayed once on the first quiet turn */
+    int input_done;
+    sel_tag stats[16];
 } desk;
 
 static const char* desk_opt(const sel_ui_open_args* a, const char* name) {
@@ -76,17 +91,36 @@ static sel_gui_rect region_rect(const desk* d, const char* name) {
     return rect_of(0, 0, 0, 0);
 }
 
-/* Fill the box with the surface colour, then draw one cell per visible character (real glyphs come with the text
- * renderer, DUI-P2-3), and mark the box dirty. */
-static void draw_label(desk* d, sel_gui_rect box, const char* s) {
-    int32_t i;
-    sel_gui_fill_rect(d->canvas, box, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
-    for (i = 0; s[i] != '\0' && (i + 1) * 6 <= box.w; i++) {
-        if (s[i] != ' ') {
-            sel_gui_fill_rect(d->canvas, rect_of(box.x + i * 6, box.y + 3, 5, 10),
-                              ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+/* The atlas for a weight and a size token (pixel size), built from the embedded Inter on first use; NULL when
+ * the size is not a token or memory ran out. */
+static const sel_gui_atlas* desk_font(desk* d, int semibold, int px) {
+    int i;
+    for (i = 0; i < DESK_SIZES; i++) {
+        if (g_sizes[i] == px) {
+            if (d->atlas[semibold][i] == NULL) {
+                d->atlas[semibold][i] = desk_atlas_build(semibold ? sel_font_inter_semibold : sel_font_inter_regular, px);
+            }
+            return d->atlas[semibold][i];
         }
     }
+    return NULL;
+}
+
+/* One line of text at the top left of the box, ellipsized to the box width. */
+static void draw_text(desk* d, sel_gui_rect box, const char* s, int semibold, int px, uint32_t argb) {
+    const sel_gui_atlas* at = desk_font(d, semibold, px);
+    if (at != NULL) {
+        sel_gui_clip_push(d->canvas, box);
+        sel_gui_text_draw(d->canvas, at, box.x, box.y + (box.h - at->line_height) / 2, s, argb, box.w, &d->text);
+        sel_gui_clip_pop(d->canvas);
+    }
+}
+
+/* Fill the box with the surface colour, then draw the text (regular 13 pixel Inter, ellipsized), and mark the box
+ * dirty. */
+static void draw_label(desk* d, sel_gui_rect box, const char* s) {
+    sel_gui_fill_rect(d->canvas, box, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+    draw_text(d, box, s, 0, 13, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
     sel_gui_dirty_add(d->canvas, box);
 }
 
@@ -100,6 +134,9 @@ static void draw_bar(desk* d, sel_gui_rect box, uint32_t q16) {
 
 /* One widget in its rectangle inside its layout region. Only the dirty widgets run, so a clock tick touches the
  * clock, the remaining time and the progress bar and nothing else. */
+static void queue_title(const sel_state* st, uint32_t i, char* out, size_t cap);
+static void draw_home(desk* d);
+
 static void draw_widget(desk* d, uint32_t bit) {
     const sel_uim_frame* f = &d->uim.frame;
     int32_t sp = (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING];
@@ -120,6 +157,9 @@ static void draw_widget(desk* d, uint32_t bit) {
     } else if (bit == SEL_UIM_DIRTY_QUEUE) {
         sprintf(buf, "%u", (unsigned)f->queue_count);
         draw_label(d, rect_of(sb.x + sp, sb.y + sp, 120, 16), buf);
+        if (d->home) {
+            draw_home(d);
+        }
     } else if (bit == SEL_UIM_DIRTY_TRANSPORT) {
         sel_gui_rect b = rect_of(pl.x + pl.w / 2 - 16, y0 + 24, 32, 32);
         sel_gui_round_rect(d->canvas, b, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS],
@@ -135,6 +175,223 @@ static void draw_widget(desk* d, uint32_t bit) {
     } else if (bit == SEL_UIM_DIRTY_STATUS) {
         draw_label(d, rect_of(pl.x + sp, y0 + 30, 200, 16), f->status);
     }
+}
+
+/* The display title of queue entry i: the file name without directory and extension, UTF-8 as stored. */
+static void queue_title(const sel_state* st, uint32_t i, char* out, size_t cap) {
+    const char* path = st->queue_text + st->queue[i].path_offset;
+    const char* base = path;
+    const char* p;
+    size_t n;
+    for (p = path; *p != '\0'; p++) {
+        if (*p == '/' || *p == ':') {
+            base = p + 1;
+        }
+    }
+    n = strlen(base);
+    for (p = base + n; p > base; p--) {
+        if (p[-1] == '.') {
+            n = (size_t)(p - 1 - base);
+            break;
+        }
+    }
+    if (n >= cap) {
+        n = cap - 1u;
+        while (n > 0u && (((unsigned char)base[n]) & 0xC0u) == 0x80u) { /* never cut a UTF-8 sequence */
+            n--;
+        }
+    }
+    memcpy(out, base, n);
+    out[n] = '\0';
+}
+
+/* The text sheet (DUI-P2-3): every size in both weights, then each queue name once ellipsized to one narrow line and
+ * once wrapped into three lines, so the golden hash covers glyphs, kerning, ellipsis and wrap. */
+static void draw_textsheet(desk* d) {
+    sel_gui_canvas* c = d->canvas;
+    const sel_state* st = sel_engine_state(d->engine);
+    uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]);
+    int32_t y = 8, row;
+    uint32_t i;
+    int k, w;
+    char name[256];
+    sel_gui_fill_rect(c, rect_of(0, 0, c->w, c->h), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+    for (k = 0; k < DESK_SIZES; k++) {
+        for (w = 0; w < 2; w++) {
+            const sel_gui_atlas* at = desk_font(d, w, g_sizes[k]);
+            if (at != NULL) {
+                sel_gui_text_draw(c, at, 8, y, "Selecta: the quick brown fox jumps over 0123456789", text, 500, &d->text);
+                y += at->line_height + 2;
+            }
+        }
+    }
+    for (i = 0, row = 0; i < st->queue_count && i < 12u; i++, row++) {
+        const sel_gui_atlas* semi = desk_font(d, 1, 13);
+        const sel_gui_atlas* reg = desk_font(d, 0, 13);
+        queue_title(st, i, name, sizeof name);
+        if (semi != NULL && reg != NULL) {
+            sel_gui_text_draw(c, semi, 520, 8 + row * 60, name, text, 200, &d->text);
+            sel_gui_text_wrap(c, reg, rect_of(740, 8 + row * 60, 140, 3 * reg->line_height), name, text, 3, &d->text);
+        }
+    }
+    sel_gui_dirty_add(c, rect_of(0, 0, c->w, c->h));
+}
+
+#define TILE_ART 144
+#define HOME_MAX_LINES 2
+
+/* Where tile i sits (DUI-P2-6): a grid below the song card in the main region, columns as many as fit. */
+static sel_gui_rect tile_rect(desk* d, uint32_t i) {
+    int32_t sp = (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING];
+    sel_gui_rect mn = region_rect(d, "main");
+    const sel_gui_atlas* at = desk_font(d, 1, 13);
+    int32_t title_h = HOME_MAX_LINES * (at != NULL ? at->line_height : 16);
+    int32_t cols = (mn.w - sp) / (TILE_ART + sp);
+    int32_t h = TILE_ART + 4 + title_h;
+    if (cols < 1) {
+        cols = 1;
+    }
+    return rect_of(mn.x + sp + (int32_t)(i % (uint32_t)cols) * (TILE_ART + sp),
+                   mn.y + sp + 48 + 2 * sp + (int32_t)(i / (uint32_t)cols) * (h + sp), TILE_ART, h);
+}
+
+/* The detail view of an opened tile: the main region cleared, the title large. */
+static void draw_detail(desk* d) {
+    const sel_state* st = sel_engine_state(d->engine);
+    int32_t sp = (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING];
+    sel_gui_rect mn = region_rect(d, "main");
+    const sel_gui_atlas* big = desk_font(d, 1, 24);
+    char name[256];
+    sel_gui_fill_rect(d->canvas, mn, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+    if (big != NULL && d->open_tile >= 1 && (uint32_t)d->open_tile <= st->queue_count) {
+        queue_title(st, (uint32_t)d->open_tile - 1u, name, sizeof name);
+        sel_gui_clip_push(d->canvas, mn);
+        sel_gui_text_wrap(d->canvas, big, rect_of(mn.x + sp, mn.y + sp, mn.w - 2 * sp, 3 * big->line_height), name,
+                          ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), 3, &d->text);
+        sel_gui_clip_pop(d->canvas);
+    }
+    sel_gui_dirty_add(d->canvas, mn);
+}
+
+/* The home view (DUI-P2-6): one tile per queue entry, an accent art square with the first letter and the title
+ * wrapped under it. The library is not handed to UIs yet (DUI-P2-4), so the queue is the tile source. */
+static void draw_home(desk* d) {
+    const sel_state* st = sel_engine_state(d->engine);
+    sel_gui_rect mn = region_rect(d, "main");
+    int32_t sp = (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING];
+    const sel_gui_atlas* semi = desk_font(d, 1, 13);
+    const sel_gui_atlas* big = desk_font(d, 1, 32);
+    uint32_t i;
+    char name[256];
+    if (d->open_tile > 0) {
+        draw_detail(d);
+        return;
+    }
+    if (semi == NULL || big == NULL) {
+        return;
+    }
+    sel_gui_clip_push(d->canvas, mn);
+    sel_gui_fill_rect(d->canvas, rect_of(mn.x, mn.y + sp + 48 + sp, mn.w, mn.h - (sp + 48 + sp)),
+                      ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+    for (i = 0; i < st->queue_count; i++) {
+        sel_gui_rect t = tile_rect(d, i);
+        char letter[8];
+        size_t used;
+        queue_title(st, i, name, sizeof name);
+        sel_gui_round_rect(d->canvas, rect_of(t.x, t.y, TILE_ART, TILE_ART), (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS],
+                           ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+        (void)sel_gui_utf8_next(name, strlen(name), &used);
+        memcpy(letter, name, used);
+        letter[used] = '\0';
+        sel_gui_text_draw(d->canvas, big, t.x + (TILE_ART - sel_gui_text_width(big, letter, used)) / 2,
+                          t.y + (TILE_ART - big->line_height) / 2, letter, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]),
+                          TILE_ART, &d->text);
+        sel_gui_text_wrap(d->canvas, semi, rect_of(t.x, t.y + TILE_ART + 4, TILE_ART, HOME_MAX_LINES * semi->line_height),
+                          name, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), HOME_MAX_LINES, &d->text);
+    }
+    sel_gui_clip_pop(d->canvas);
+    sel_gui_dirty_add(d->canvas, mn);
+}
+
+/* A click at (x, y): opens the tile under it. Returns 1 when a tile opened. */
+static int desk_click(desk* d, int32_t x, int32_t y) {
+    const sel_state* st = sel_engine_state(d->engine);
+    sel_gui_rect mn = region_rect(d, "main");
+    uint32_t i;
+    if (!d->home || d->open_tile > 0 || x < mn.x || y < mn.y || x >= mn.x + mn.w || y >= mn.y + mn.h) {
+        return 0;
+    }
+    for (i = 0; i < st->queue_count; i++) {
+        sel_gui_rect t = tile_rect(d, i);
+        if (x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h) {
+            d->open_tile = (int32_t)i + 1;
+            d->view_opens++;
+            draw_detail(d);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Replays the --input script once: `click X Y`, `tile N` (the centre of tile N, 0-based), `#` comments. */
+static int desk_replay_input(desk* d) {
+    char* line = d->input;
+    int opened = 0;
+    d->input_done = 1;
+    while (line != NULL && *line != '\0') {
+        char* nl = strchr(line, '\n');
+        int x, y;
+        unsigned n;
+        if (nl != NULL) {
+            *nl = '\0';
+        }
+        if (sscanf(line, "click %d %d", &x, &y) == 2) {
+            opened |= desk_click(d, x, y);
+        } else if (sscanf(line, "tile %u", &n) == 1) {
+            sel_gui_rect t = tile_rect(d, n);
+            opened |= desk_click(d, t.x + t.w / 2, t.y + t.h / 2);
+        }
+        line = nl != NULL ? nl + 1 : NULL;
+    }
+    return opened;
+}
+
+/* Reads --input <file> (at most 4096 bytes) into a heap copy; 0 when unreadable. */
+static int desk_load_input(desk* d, const char* path) {
+    FILE* f = fopen(path, "rb");
+    size_t n;
+    if (f == NULL) {
+        return 0;
+    }
+    d->input = (char*)d->host->mem_alloc(d->host, 4097u, SEL_MEM_FAST);
+    if (d->input == NULL) {
+        fclose(f);
+        return 0;
+    }
+    n = fread(d->input, 1, 4096u, f);
+    d->input[n] = '\0';
+    fclose(f);
+    return 1;
+}
+
+/* Writes the canvas as a binary PPM (P6, 0xRRGGBB per pixel). */
+static void desk_write_frame(const desk* d, const char* path) {
+    FILE* f = fopen(path, "wb");
+    int32_t x, y;
+    if (f == NULL) {
+        fprintf(stderr, "selecta: cannot write frame dump '%s'\n", path);
+        return;
+    }
+    fprintf(f, "P6\n%d %d\n255\n", (int)d->canvas->w, (int)d->canvas->h);
+    for (y = 0; y < d->canvas->h; y++) {
+        for (x = 0; x < d->canvas->w; x++) {
+            uint32_t rgb = sel_gui_pixel(d->canvas, x, y);
+            fputc((int)((rgb >> 16) & 0xFFu), f);
+            fputc((int)((rgb >> 8) & 0xFFu), f);
+            fputc((int)(rgb & 0xFFu), f);
+        }
+    }
+    fclose(f);
 }
 
 /* The primitive test card (DUI-P2-1): every rasterizer primitive in fixed places, for the golden hash. */
@@ -312,6 +569,7 @@ static int desk_load_theme(desk* d, const char* path) {
 
 static void desk_close(void* state) {
     desk* d = (desk*)state;
+    int i;
     if (d != NULL) {
         if (d->report) {
             printf("desktop_ui closed frames=%u title=%s clock=%s status=%s\n", (unsigned)d->frames, d->uim.frame.title,
@@ -325,6 +583,15 @@ static void desk_close(void* state) {
         }
         if (d->actions) {
             desk_print_actions();
+        }
+        if (d->frame_dump != NULL && d->canvas != NULL) {
+            desk_write_frame(d, d->frame_dump);
+        }
+        if (d->input != NULL) {
+            d->host->mem_free(d->host, d->input);
+        }
+        for (i = 0; i < 2 * DESK_SIZES; i++) {
+            desk_atlas_free(d->atlas[i / DESK_SIZES][i % DESK_SIZES]);
         }
         if (d->canvas != NULL) {
             d->host->mem_free(d->host, d->canvas->pixels);
@@ -397,12 +664,18 @@ static void* desk_open(const sel_ui_open_args* a) {
         return NULL;
     }
     if (desk_opt(a, "--view") != NULL) {
-        if (strcmp(desk_opt(a, "--view"), "testcard") != 0) {
-            fprintf(stderr, "selecta: desktop view '%s' is not testcard\n", desk_opt(a, "--view"));
+        const char* view = desk_opt(a, "--view");
+        if (strcmp(view, "testcard") == 0) {
+            d->testcard = 1;
+        } else if (strcmp(view, "text") == 0) {
+            d->textsheet = 1;
+        } else if (strcmp(view, "home") == 0) {
+            d->home = 1;
+        } else {
+            fprintf(stderr, "selecta: desktop view '%s' is not testcard, text or home\n", view);
             a->host->mem_free(a->host, d);
             return NULL;
         }
-        d->testcard = 1;
     }
     if (!desk_make_canvas(d, desk_opt(a, "--canvas"))) {
         desk_close(d);
@@ -421,6 +694,19 @@ static void* desk_open(const sel_ui_open_args* a) {
         if (strcmp(a->argv[i], "--ticks") == 0 && i + 1 < a->argc) {
             d->ticks = (uint32_t)atoi(a->argv[i + 1]);
         }
+        if (strcmp(a->argv[i], "--frame-dump") == 0 && i + 1 < a->argc) {
+            d->frame_dump = a->argv[i + 1];
+        }
+        if (strcmp(a->argv[i], "--input") == 0 && i + 1 < a->argc && !desk_load_input(d, a->argv[i + 1])) {
+            fprintf(stderr, "selecta: cannot read input script '%s'\n", a->argv[i + 1]);
+            desk_close(d);
+            return NULL;
+        }
+        if (strcmp(a->argv[i], "--clock") == 0 && i + 1 < a->argc && strcmp(a->argv[i + 1], "fixed") != 0) {
+            fprintf(stderr, "selecta: desktop clock '%s' is not fixed\n", a->argv[i + 1]);
+            desk_close(d);
+            return NULL;
+        }
         if (strcmp(a->argv[i], "--actions") == 0) {
             d->actions = 1;
         }
@@ -431,6 +717,8 @@ static void* desk_open(const sel_ui_open_args* a) {
         draw_testcard(d);
         d->dirty_pixels = sel_gui_present(d->canvas);
         d->dirty_total = d->dirty_pixels;
+    } else if (d->textsheet) {
+        d->dirty_total = 0; /* drawn on the first turn, after the --exec commands queued their names */
     } else {
         desk_present(d);
     }
@@ -454,12 +742,31 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
     if (d->testcard) {
         return -1; /* the test card is one frame */
     }
+    if (d->textsheet) { /* the text sheet is one frame, drawn on the first turn */
+        if (d->frames > 0u) {
+            return -1;
+        }
+        draw_textsheet(d);
+        d->dirty_pixels = sel_gui_present(d->canvas);
+        d->dirty_total = d->dirty_pixels;
+        d->frames++;
+        return 1;
+    }
     sel_uim_update(&d->uim, sel_engine_state(d->engine));
     if (d->ticks > 0u && d->uim.dirty == 0u) { /* --ticks N: the mem backend has no clock, so it replays N seconds */
         d->ticks--;
         d->uim.dirty |= SEL_UIM_DIRTY_PROGRESS;
     }
-    return desk_present(d) ? 1 : -1;
+    if (desk_present(d)) {
+        return 1;
+    }
+    if (d->input != NULL && !d->input_done && d->ticks == 0u && desk_replay_input(d)) { /* scripted input, once */
+        d->dirty_pixels = sel_gui_present(d->canvas);
+        d->dirty_total += d->dirty_pixels;
+        d->frames++;
+        return 1;
+    }
+    return -1;
 }
 
 static const sel_tag* desk_stats(void* state) {
@@ -488,8 +795,14 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[10].value = sel_gui_hash(d->canvas);
     d->stats[11].tag = SEL_UI_STAT_DRAW_PRIMS;
     d->stats[11].value = d->canvas->prims;
-    d->stats[12].tag = SEL_TAG_END;
-    d->stats[12].value = 0;
+    d->stats[12].tag = SEL_UI_STAT_MISSING_GLYPHS;
+    d->stats[12].value = d->text.missing;
+    d->stats[13].tag = SEL_UI_STAT_GLYPHS_DRAWN;
+    d->stats[13].value = d->text.glyphs;
+    d->stats[14].tag = SEL_UI_STAT_VIEW_OPENS;
+    d->stats[14].value = d->view_opens;
+    d->stats[15].tag = SEL_TAG_END;
+    d->stats[15].value = 0;
     return d->stats;
 }
 
