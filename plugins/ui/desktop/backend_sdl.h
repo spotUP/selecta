@@ -30,5 +30,6 @@ uint32_t desk_sdl_presents(const desk_sdl* b);
  * (window pixel size changed by the user or by a scale change; *w and *h are the new size), DESK_SDL_ACTIVITY or
  * DESK_SDL_NONE. */
 int desk_sdl_poll(desk_sdl* b, uint32_t timeout_ms, int32_t* w, int32_t* h);
+uint32_t desk_sdl_ticks(void);
 
 #endif

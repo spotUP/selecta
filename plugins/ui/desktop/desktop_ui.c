@@ -8,6 +8,7 @@
 #include "art.h"
 #include <selecta/gui/gui_genart.h>
 #include "atlas_build.h"
+#include <selecta/gui/gui_anim.h>
 #include <selecta/gui/gui_draw.h>
 #include <selecta/gui/gui_text.h>
 #include <selecta/gui/gui_widget.h>
@@ -67,6 +68,9 @@ typedef struct desk {
 #ifdef SELECTA_DESKTOP_SDL
     desk_sdl* sdl;          /* --backend sdl: the window the canvas is presented in (DUI-P2-7) */
 #endif
+    sel_gui_timeline tl;    /* the animation timeline (DUI-P3-5): at most 16 tweens, Q16 values, ms */
+    uint32_t now_ms;        /* the UI clock: virtual in the mem backend (--input `wait N`), SDL ticks when live */
+    int32_t hover_tile;     /* 1-based tile under the pointer, 0 = none */
     int live;               /* sdl on a real display without --input: the window stays until it is closed */
     int repaint;            /* the next present paints the whole canvas (first frame, resize) */
     int32_t scale;          /* integer pixel scale 1, 2 or 3 (DUI-P2-8): layout is in logical units, drawn times scale */
@@ -491,7 +495,23 @@ static void load_tile_art(desk* d, const sel_state* st) {
     free((void*)ptrs);
 }
 
-static void draw_home(desk* d) {
+/* The pref ui.desktop.reduce_motion and the format governor together decide whether a tween may start. */
+static int desk_motion(const desk* d) {
+    const sel_host* h = sel_engine_plugin_host(d->engine);
+    const char* v = h != NULL && h->config_get != NULL ? h->config_get(h, "ui.desktop.reduce_motion", "0") : "0";
+    return sel_uim_motion_allowed(&d->budget, v != NULL && strcmp(v, "1") == 0);
+}
+
+/* Starts a tween when the governor allows it; returns 1 when it runs. */
+static int desk_tween(desk* d, uint32_t key, uint32_t ms, uint32_t ease) {
+    if (!desk_motion(d) || !sel_gui_tween_start(&d->tl, key, 0, 65536, ms, ease)) {
+        return 0;
+    }
+    d->tweens++;
+    return 1;
+}
+
+static void draw_home_content(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     sel_gui_rect mn = region_rect(d, "main");
     int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
@@ -533,6 +553,25 @@ static void draw_home(desk* d) {
     sel_gui_dirty_add(d->canvas, mn);
 }
 
+enum { ANIM_KEY_VIEW = 1, ANIM_KEY_HOVER = 2, HOVER_ALPHA = 36 };
+
+/* The main region with the running tweens on top: the hover fade of one tile (a light veil, full strength at rest)
+ * and the view cross-fade (the new view fades in from the surface colour). At rest both are the plain view. */
+static void draw_home(desk* d) {
+    sel_gui_rect mn = region_rect(d, "main");
+    int32_t view = sel_gui_tween_value(&d->tl, ANIM_KEY_VIEW, 65536);
+    draw_home_content(d);
+    if (d->hover_tile > 0 && d->open_tile == 0) {
+        int32_t hv = sel_gui_tween_value(&d->tl, ANIM_KEY_HOVER, 65536);
+        sel_gui_scrim(d->canvas, tile_rect(d, (uint32_t)d->hover_tile - 1u), 0xFFFFFFu,
+                      (uint32_t)(((int64_t)hv * HOVER_ALPHA) >> 16));
+    }
+    if (view < 65536) {
+        sel_gui_scrim(d->canvas, mn, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]) & 0xFFFFFFu,
+                      255u - (uint32_t)(((int64_t)view * 255) >> 16));
+    }
+}
+
 /* A click at (x, y): opens the tile under it. Returns 1 when a tile opened. */
 static int desk_click(desk* d, int32_t x, int32_t y) {
     const sel_state* st = sel_engine_state(d->engine);
@@ -546,11 +585,56 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
         if (x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h) {
             d->open_tile = (int32_t)i + 1;
             d->view_opens++;
-            draw_detail(d);
+            desk_tween(d, ANIM_KEY_VIEW, SEL_GUI_ANIM_NORMAL_MS, SEL_GUI_EASE_OUT);
+            draw_home(d);
             return 1;
         }
     }
     return 0;
+}
+
+/* An input event changed the picture: flush it as one frame. */
+static int desk_event_frame(desk* d, int changed) {
+    if (changed) {
+        d->dirty_pixels = desk_flush(d);
+        d->dirty_total += d->dirty_pixels;
+        d->frames++;
+    }
+    return changed;
+}
+
+/* A frame is drawn only when a dirty bit is set or a tween runs (plan 2.9); this is the idle block. */
+static int desk_should_draw(const desk* d, int animated) {
+    return d->uim.dirty != 0u || animated;
+}
+
+/* Moves the UI clock ms forward the way the live loop would: 16 ms steps while a tween runs, otherwise one jump to the
+ * next visible-clock second boundary (the idle block). Draws a frame per step that has a reason. */
+static void desk_advance(desk* d, uint32_t ms) {
+    uint32_t end = d->now_ms + ms;
+    while (d->now_ms < end) {
+        uint32_t step = end - d->now_ms;
+        int animated = sel_gui_timeline_running(&d->tl) > 0u;
+        if (animated) {
+            if (step > 16u) {
+                step = 16u;
+            }
+        } else if (step > 1000u - d->now_ms % 1000u) {
+            step = 1000u - d->now_ms % 1000u;
+        }
+        d->now_ms += step;
+        sel_gui_timeline_advance(&d->tl, d->now_ms);
+        sel_uim_update(&d->uim, sel_engine_state(d->engine));
+        if (!desk_should_draw(d, animated)) {
+            continue;
+        }
+        if (animated && d->home) {
+            draw_home(d);
+        }
+        if (!desk_present(d)) {
+            desk_event_frame(d, 1);
+        }
+    }
 }
 
 /* Replays the --input script once: `resize W H`, `click X Y`, `tile N` (the centre of tile N, 0-based), `#` comments. */
@@ -572,10 +656,17 @@ static int desk_replay_input(desk* d) {
                 desk_resize(d, d->canvas->w, d->canvas->h);
             }
         } else if (sscanf(line, "click %d %d", &x, &y) == 2) {
-            opened |= desk_click(d, x, y);
+            opened |= desk_event_frame(d, desk_click(d, x, y));
         } else if (sscanf(line, "tile %u", &n) == 1) {
             sel_gui_rect t = tile_rect(d, n);
-            opened |= desk_click(d, t.x + t.w / 2, t.y + t.h / 2);
+            opened |= desk_event_frame(d, desk_click(d, t.x + t.w / 2, t.y + t.h / 2));
+        } else if (sscanf(line, "hover %u", &n) == 1 && d->home && d->open_tile == 0) {
+            d->hover_tile = (int32_t)n + 1;
+            desk_tween(d, ANIM_KEY_HOVER, SEL_GUI_ANIM_FAST_MS, SEL_GUI_EASE_OUT);
+            draw_home(d);
+            opened |= desk_event_frame(d, 1);
+        } else if (sscanf(line, "wait %u", &n) == 1) {
+            desk_advance(d, n);
         }
         line = nl != NULL ? nl + 1 : NULL;
     }
@@ -695,7 +786,7 @@ static int desk_present(desk* d) {
             if (sel_uim_budget_allows(&d->budget, SEL_UIM_FX_SHADOW)) {
                 d->effect_prims++;
             }
-            if (d->frames > 0u && sel_uim_budget_allows(&d->budget, SEL_UIM_FX_TWEEN)) {
+            if (d->frames > 0u && desk_motion(d)) {
                 d->tweens++;
             }
         } else if (bit == SEL_UIM_DIRTY_PROGRESS) {
@@ -1053,6 +1144,7 @@ static void* desk_open(const sel_ui_open_args* a) {
     }
 #endif
     d->art = art_open(a->art);
+    sel_gui_timeline_init(&d->tl);
     sel_uim_init(&d->uim);
     sel_uim_update(&d->uim, sel_engine_state(d->engine));
     if (d->testcard) {
@@ -1128,15 +1220,25 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
         return 1;
     }
     if (d->input != NULL && !d->input_done && d->ticks == 0u && desk_replay_input(d)) { /* scripted input, once */
-        d->dirty_pixels = desk_flush(d);
-        d->dirty_total += d->dirty_pixels;
-        d->frames++;
-        return 1;
+        return 1; /* every event flushed its own frame */
     }
 #ifdef SELECTA_DESKTOP_SDL
-    if (d->live) { /* a window on a real display: idle until an event or the next turn */
+    if (d->live) { /* a window on a real display: idle until an event or the next second boundary */
         int32_t w = 0, h = 0;
-        int ev = desk_sdl_poll(d->sdl, timeout_ms > 0u ? timeout_ms : 50u, &w, &h);
+        int ev;
+        uint32_t wait_ms;
+        d->now_ms = desk_sdl_ticks();
+        sel_gui_timeline_advance(&d->tl, d->now_ms);
+        wait_ms = 1000u - d->now_ms % 1000u;
+        if (sel_gui_timeline_running(&d->tl) > 0u) { /* a tween runs: one frame per 16 ms step */
+            wait_ms = 16u;
+            if (d->home) {
+                draw_home(d);
+            }
+            desk_event_frame(d, 1);
+        }
+        (void)timeout_ms;
+        ev = desk_sdl_poll(d->sdl, wait_ms, &w, &h);
         if (ev == DESK_SDL_QUIT) {
             return -1;
         }
@@ -1147,6 +1249,14 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
         return ev == DESK_SDL_NONE ? 0 : 1;
     }
 #endif
+    if (sel_gui_timeline_running(&d->tl) > 0u) { /* the run ends while a tween runs: show the end state once */
+        sel_gui_timeline_finish(&d->tl);
+        if (d->home) {
+            draw_home(d);
+        }
+        desk_event_frame(d, 1);
+        return 1;
+    }
     return -1;
 }
 

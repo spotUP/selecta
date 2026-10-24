@@ -220,7 +220,7 @@ IDs `DUI-P<phase>-<item>`. 61 items. Every test has label `dui`; "Test:" names t
 - [ ] DUI-P3-2 Mouse: hit test, hover, click, double-click plays, drag and drop to queue and playlist, column sort, context menu (from M4-P4-4). Test: `dui-mouse`: scripted double-click on a row starts that song (`song` path equals the row), drag to queue adds 1 entry, header click sorts descending.
 - [ ] DUI-P3-3 Keyboard parity, focus ring, Tab order, type-to-search (from M4-P4-5). Test: `dui-keys`: every action of the action table is invoked once by its binding through `--input`; the count of fired actions equals the table count.
 - [ ] DUI-P3-4 Touchpad: precise scroll, pinch tile size, swipe back and forward. Test: `dui-gestures`: `pinch 1.5` in grid view moves the tile size one step; `swipe right` returns to the previous view; `STAT_GESTURES=2`.
-- [ ] DUI-P3-5 Animation timeline, easing tables, reduce-motion pref, idle blocking. Test: `dui-anim`: with no input and no song the run of 10 s draws 1 frame; with `ui.desktop.reduce_motion=1` a view change draws 1 frame instead of the tween frames.
+- [x] DUI-P3-5 Animation timeline, easing tables, reduce-motion pref, idle blocking. Test: `dui-anim`: with no input and no song the run of 10 s draws 1 frame; with `ui.desktop.reduce_motion=1` a view change draws 1 frame instead of the tween frames.
 - [ ] DUI-P3-6 Tooltips from the action label (from M4-P12-4). Test: `dui-tooltips`: hover of 600 ms over each transport button shows a tooltip whose text equals the action label.
 
 ### Phase 4: frame and views

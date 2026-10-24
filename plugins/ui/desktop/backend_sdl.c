@@ -187,3 +187,8 @@ int desk_sdl_poll(desk_sdl* b, uint32_t timeout_ms, int32_t* w, int32_t* h) {
     }
     return result;
 }
+
+/* Milliseconds since SDL started: the live UI clock (DUI-P3-5). */
+uint32_t desk_sdl_ticks(void) {
+    return (uint32_t)SDL_GetTicks();
+}

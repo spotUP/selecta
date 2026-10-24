@@ -27,3 +27,7 @@ int sel_uim_budget_allows(const sel_uim_budget* b, uint32_t effect) {
     default: return 0;
     }
 }
+
+int sel_uim_motion_allowed(const sel_uim_budget* b, int reduce_motion) {
+    return reduce_motion == 0 && sel_uim_budget_allows(b, SEL_UIM_FX_TWEEN);
+}

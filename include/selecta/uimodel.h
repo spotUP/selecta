@@ -135,6 +135,8 @@ typedef struct sel_uim_budget {
 int sel_uim_budget_for(sel_uim_budget* b, const char* format);
 /* 1 when the effect (SEL_UIM_FX_*) may run. Every effect asks before it starts. */
 int sel_uim_budget_allows(const sel_uim_budget* b, uint32_t effect);
+/* 1 when tweens may run: the format allows them and the pref ui.desktop.reduce_motion is not set (DUI-P3-5). */
+int sel_uim_motion_allowed(const sel_uim_budget* b, int reduce_motion);
 
 SEL_EXTERN_C_END
 
