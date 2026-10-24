@@ -220,6 +220,8 @@ SEL_TAG(UI, STAT_REPEAT_MODE,      0x504A, INT)
 SEL_TAG(UI, STAT_RANDOM_ON,        0x504B, INT)
 SEL_TAG(UI, STAT_SUBSONG,          0x504C, INT)
 SEL_TAG(UI, STAT_FRAME_PARTS,      0x504D, INT)
+SEL_TAG(UI, STAT_HOME_PARTS,       0x504E, INT)
+SEL_TAG(UI, STAT_TILE_CARDS,       0x504F, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)

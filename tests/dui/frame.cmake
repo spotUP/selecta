@@ -122,3 +122,27 @@ foreach(spec "800:icon-sidebar" "600:mini-suggestion")
   endif()
 endforeach()
 message(STATUS "dui-frame: transport clicks, golden ${hash} and narrow layouts pass")
+
+# 5. The Home view chrome (I230, Main.dc.html): each drawn part raises one bit of home_parts, so a missing part fails
+#    here. Bits: 1 nav, 2 brand, 4 tile card, 8 play affordance (hover only), 16 player art, 32 player title,
+#    64 seek bar with times, 128 greeting, 256 section heading, 512 tile artist line, 1024 header search icon,
+#    2048 header tint, 4096 panels, 8192 chips. tile_cards counts the card surfaces (one per queued song).
+function(home_run outvar input)
+  file(REMOVE_RECURSE "${WORK}/cfg")
+  file(WRITE "${WORK}/in.txt" "${input}")
+  dui_run(o --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats ${queue} --input "${WORK}/in.txt")
+  set(${outvar} "${o}" PARENT_SCOPE)
+endfunction()
+home_run(homeidle "")
+dui_stat(hp "${homeidle}" desktop home_parts)
+math(EXPR rest "${hp} & 16375")
+if(NOT rest EQUAL 16375 OR NOT hp EQUAL 16375)
+  message(FATAL_ERROR "home_parts=${hp}, expected 16375 (every chrome part but the hover play affordance):\n${homeidle}")
+endif()
+expect("${homeidle}" tile_cards 3)
+home_run(homehover "move 300 260\nmove 302 262\n")
+dui_stat(hp2 "${homehover}" desktop home_parts)
+math(EXPR hover_bit "${hp2} & 8")
+if(NOT hover_bit EQUAL 8)
+  message(FATAL_ERROR "home_parts=${hp2}: hovering a tile did not draw the play affordance:\n${homehover}")
+endif()

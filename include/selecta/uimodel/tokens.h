@@ -31,7 +31,12 @@ extern "C" {
     X(SUCCESS, "gui.success", 0x22C55Eu, 0u, 0xFFFFFFu)              \
     X(SCRIM, "gui.scrim", 0x000000u, 0u, 0xFFFFFFu)                  \
     X(RADIUS_SMALL, "gui.radius_small", 4u, 0u, 32u)                 \
-    X(RADIUS_LARGE, "gui.radius_large", 8u, 0u, 32u)
+    X(RADIUS_LARGE, "gui.radius_large", 8u, 0u, 32u)                 \
+    X(FRAME, "gui.frame", 0x09090Bu, 0u, 0xFFFFFFu)                  \
+    X(PANEL, "gui.panel", 0x141418u, 0u, 0xFFFFFFu)                  \
+    X(HEADER_TINT, "gui.header_tint", 0x2B2350u, 0u, 0xFFFFFFu)      \
+    X(TRACK, "gui.track", 0x3A3A44u, 0u, 0xFFFFFFu)                  \
+    X(TILE_PAD, "gui.tile_pad", 10u, 0u, 64u)
 
 /* Layer 1 (D-DUI-9): base tokens. A theme swaps these and the role tokens above follow. X(id, file key, default, min,
  * max). A value may be written as `@gui.base.<name>` (a reference to another base token). Widgets read roles only. */
@@ -56,7 +61,12 @@ extern "C" {
     X(SPACING_2, "gui.base.spacing_2", 8u, 0u, 64u)             \
     X(RADIUS_1, "gui.base.radius_1", 4u, 0u, 32u)               \
     X(RADIUS_2, "gui.base.radius_2", 6u, 0u, 32u)               \
-    X(RADIUS_3, "gui.base.radius_3", 8u, 0u, 32u)
+    X(RADIUS_3, "gui.base.radius_3", 8u, 0u, 32u)               \
+    X(FRAME_0, "gui.base.frame_0", 0x09090Bu, 0u, 0xFFFFFFu)    \
+    X(PANEL_0, "gui.base.panel_0", 0x141418u, 0u, 0xFFFFFFu)    \
+    X(TINT_0, "gui.base.tint_0", 0x2B2350u, 0u, 0xFFFFFFu)      \
+    X(TRACK_0, "gui.base.track_0", 0x3A3A44u, 0u, 0xFFFFFFu)    \
+    X(SPACING_3, "gui.base.spacing_3", 10u, 0u, 64u)
 
 typedef enum sel_gui_base {
 #define X(id, name, def, lo, hi) SEL_GUI_BASE_##id,
@@ -86,7 +96,12 @@ typedef enum sel_gui_base {
     X(SUCCESS, SUCCESS_0)                \
     X(SCRIM, GREY_0)                     \
     X(RADIUS_SMALL, RADIUS_1)            \
-    X(RADIUS_LARGE, RADIUS_3)
+    X(RADIUS_LARGE, RADIUS_3)            \
+    X(FRAME, FRAME_0)                    \
+    X(PANEL, PANEL_0)                    \
+    X(HEADER_TINT, TINT_0)               \
+    X(TRACK, TRACK_0)                    \
+    X(TILE_PAD, SPACING_3)
 
 typedef enum sel_gui_token {
 #define X(id, name, def, lo, hi) SEL_GUI_TOKEN_##id,

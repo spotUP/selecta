@@ -16,3 +16,7 @@ gui.base.accent_1 = 0x1D4ED8
 gui.base.error_0 = 0xDC2626
 gui.base.warning_0 = 0xD97706
 gui.base.success_0 = 0x16A34A
+gui.base.frame_0 = 0xE8E8EE
+gui.base.panel_0 = 0xFFFFFF
+gui.base.tint_0 = 0xC9C2F0
+gui.base.track_0 = 0xD0D0D8

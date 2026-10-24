@@ -26,8 +26,9 @@
 #include <string.h>
 
 /* The text size tokens (plan 2.6) as pixel sizes; each gets one atlas per weight. */
-#define DESK_SIZES 5
-static const int g_sizes[DESK_SIZES] = {11, 13, 16, 24, 32};
+#define DESK_SIZES 10
+/* The type scale tokens (Main.dc.html): caption 11/12, body 13/14, nav 15, subtitle 16, brand 18, heading 22, 24, 32. */
+static const int g_sizes[DESK_SIZES] = {11, 12, 13, 14, 15, 16, 18, 22, 24, 32};
 /* The logical icon sizes (DUI-P3-1); at scale k the icon atlas holds each at k times the size (DUI-P2-8). */
 #define DESK_ICON_SIZES 4
 static const int g_icon_sizes[DESK_ICON_SIZES] = {16, 20, 24, 32};
@@ -113,8 +114,10 @@ typedef struct desk {
     int32_t hist[16];        /* view history (DUI-P3-4): the open_tile of each visited view, 0 = home */
     uint32_t hist_n, hist_pos;
     uint32_t transport_hits; /* transport button clicks sent to the engine (DUI-P4-1) */
+    uint32_t home_parts;     /* bit set of the Home frame parts drawn (HP_*), the I230 proof that each is on screen */
+    uint32_t tile_cards;     /* tile card surfaces drawn in the Home view */
     uint32_t frame_parts;    /* frame parts drawn: sidebar entries, Now Playing panel and transport buttons */
-    sel_tag stats[52];
+    sel_tag stats[54];
 } desk;
 
 static int desk_resize(desk* d, int32_t w, int32_t h);
@@ -223,12 +226,47 @@ static void draw_label(desk* d, sel_gui_rect box, const char* s) {
     sel_gui_dirty_add(d->canvas, box);
 }
 
+/* Same as draw_label but on the frame colour with a type size and an ink: the player bar texts. */
+static void draw_frame_text(desk* d, sel_gui_rect box, const char* s, int px) {
+    sel_gui_fill_rect(d->canvas, box, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
+    draw_text(d, box, s, 0, px, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+    sel_gui_dirty_add(d->canvas, box);
+}
+
+/* A slim rounded bar (seek, volume): the track token behind, the text colour in front, as in the mockup player. */
 static void draw_bar(desk* d, sel_gui_rect box, uint32_t q16) {
     uint32_t fill = (uint32_t)(((uint64_t)q16 * (uint32_t)box.w) >> 16);
-    sel_gui_fill_rect(d->canvas, box, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
-    sel_gui_fill_rect(d->canvas, rect_of(box.x, box.y, (int32_t)fill, box.h),
-                      ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
-    sel_gui_dirty_add(d->canvas, box);
+    int32_t m = lpx(d, 2);
+    sel_gui_rect wide = rect_of(box.x, box.y - m, box.w, box.h + 2 * m);
+    sel_gui_fill_rect(d->canvas, wide, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
+    sel_gui_round_rect(d->canvas, box, box.h / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]));
+    if ((int32_t)fill >= box.h) {
+        sel_gui_round_rect(d->canvas, rect_of(box.x, box.y, (int32_t)fill, box.h), box.h / 2,
+                           ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    }
+    sel_gui_dirty_add(d->canvas, wide);
+}
+
+/* Bits of desk.home_parts. */
+enum {
+    HP_NAV = 1, HP_BRAND = 2, HP_TILE_CARD = 4, HP_PLAY_HOVER = 8, HP_PLAYER_ART = 16, HP_PLAYER_TITLE = 32,
+    HP_SEEK = 64, HP_GREETING = 128, HP_SECTION = 256, HP_ARTIST_LINE = 512, HP_SEARCH_ICON = 1024,
+    HP_HEADER_TINT = 2048, HP_PANELS = 4096, HP_CHIPS = 8192
+};
+
+/* A region as a raised panel (Main.dc.html: panels on the frame colour, large radius): half the spacing token off each
+ * side leaves one spacing token of frame colour between neighbours. */
+static sel_gui_rect draw_panel(desk* d, const char* name) {
+    sel_gui_rect r = region_rect(d, name);
+    int32_t g = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]) / 2;
+    sel_gui_rect pr = rect_of(r.x + g, r.y + g, r.w - 2 * g, r.h - 2 * g);
+    if (pr.w > 0 && pr.h > 0) {
+        sel_gui_round_rect(d->canvas, pr, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]),
+                           ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
+        sel_gui_dirty_add(d->canvas, pr);
+        d->home_parts |= HP_PANELS;
+    }
+    return pr;
 }
 
 /* One widget in its rectangle inside its layout region. Only the dirty widgets run, so a clock tick touches the
@@ -238,14 +276,19 @@ static void draw_home(desk* d);
 static void draw_transport(desk* d);
 static void draw_sidebar(desk* d);
 static void draw_nowplaying(desk* d);
+static void draw_player_left(desk* d);
 
 static void draw_widget(desk* d, uint32_t bit) {
     const sel_uim_frame* f = &d->uim.frame;
     int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
-    sel_gui_rect pl = region_rect(d, "player"), mn = region_rect(d, "main"), sb = region_rect(d, "sidebar");
+    sel_gui_rect pl = region_rect(d, "player"), mn = region_rect(d, "main");
     int32_t y0 = pl.y + sp;
-    char buf[32];
     if (bit == SEL_UIM_DIRTY_SONG) {
+        draw_player_left(d);
+        if (d->home && !d->songs && d->open_tile == 0) { /* the Home header replaces the song card */
+            draw_nowplaying(d);
+            return;
+        }
         sel_gui_rect card = rect_of(mn.x + sp, mn.y + sp, mn.w - 2 * sp < lpx(d, 400) ? mn.w - 2 * sp : lpx(d, 400), lpx(d, 48));
         if (d->shadow_ready) {
             sel_gui_shadow_draw(d->canvas, &d->shadow, card);
@@ -259,27 +302,31 @@ static void draw_widget(desk* d, uint32_t bit) {
         draw_nowplaying(d);
     } else if (bit == SEL_UIM_DIRTY_QUEUE) {
         draw_sidebar(d);
-        sprintf(buf, "%u", (unsigned)f->queue_count);
-        draw_label(d, rect_of(sb.x + sp, sb.y + sp, lpx(d, 120), lpx(d, 16)), buf);
         if (d->home) {
             draw_home(d);
         }
     } else if (bit == SEL_UIM_DIRTY_TRANSPORT) {
         draw_transport(d);
     } else if (bit == SEL_UIM_DIRTY_PROGRESS) {
-        int32_t lw = lpx(d, 56);
-        draw_label(d, rect_of(pl.x + sp, y0, lw, lpx(d, 16)), f->clock);
-        int32_t bw = pl.w - 4 * sp - 2 * lw;
-        if (bw > lpx(d, 480)) {
-            bw = lpx(d, 480);
+        /* The seek row (mockup): times at both ends of a slim bar, centred over the transport buttons. */
+        int32_t lw = lpx(d, 40), tw = lpx(d, 560), x0;
+        if (tw > pl.w - 2 * lpx(d, 300)) {
+            tw = pl.w - 2 * lpx(d, 300);
         }
-        draw_bar(d, rect_of(pl.x + 2 * sp + lw, y0 + lpx(d, 6), bw, lpx(d, 4)), f->progress_q16);
-        draw_label(d, rect_of(pl.x + 3 * sp + lw + bw, y0, lw, lpx(d, 16)), f->length);
+        if (tw < 4 * lw) {
+            tw = 4 * lw;
+        }
+        x0 = pl.x + pl.w / 2 - tw / 2;
+        draw_frame_text(d, rect_of(x0, y0, lw, lpx(d, 16)), f->clock, 12);
+        draw_bar(d, rect_of(x0 + lw + sp, y0 + lpx(d, 6), tw - 2 * lw - 2 * sp, lpx(d, 4)), f->progress_q16);
+        draw_frame_text(d, rect_of(x0 + tw - lw, y0, lw, lpx(d, 16)), f->length, 12);
+        d->home_parts |= HP_SEEK;
     } else if (bit == SEL_UIM_DIRTY_VOLUME) {
         int32_t v = f->volume < 0 ? 0 : f->volume > 100 ? 100 : f->volume;
-        draw_bar(d, rect_of(pl.x + pl.w - sp - lpx(d, 96), y0 + lpx(d, 36), lpx(d, 96), lpx(d, 8)), (uint32_t)v * 65536u / 100u);
+        draw_bar(d, rect_of(pl.x + pl.w - sp - lpx(d, 96), y0 + lpx(d, 40), lpx(d, 96), lpx(d, 4)),
+                 (uint32_t)v * 65536u / 100u);
     } else if (bit == SEL_UIM_DIRTY_STATUS) {
-        draw_label(d, rect_of(pl.x + sp, y0 + lpx(d, 30), lpx(d, 200), lpx(d, 16)), f->status);
+        draw_frame_text(d, rect_of(pl.x + pl.w - sp - lpx(d, 200), y0, lpx(d, 200), lpx(d, 16)), f->status, 12);
     }
 }
 
@@ -476,20 +523,28 @@ static const int32_t g_tile_steps[] = {96, 120, 144, 176, 208}; /* the tile size
 #define TILE_STEPS ((uint32_t)(sizeof g_tile_steps / sizeof g_tile_steps[0]))
 #define HOME_MAX_LINES 2
 
-/* Where tile i sits (DUI-P2-6): a grid below the song card in the main region, columns as many as fit. */
+/* Home layout (Main.dc.html), logical pixels from the main panel's top: the header with the search field, the
+ * greeting, the filter chips, the section heading, then the tile grid. */
+enum { HOME_MARGIN = 24, HOME_SEARCH_Y = 16, HOME_SEARCH_H = 40, HOME_SEARCH_MAX = 360, HOME_GREET_Y = 72,
+       HOME_GREET_H = 40, HOME_CHIPS_Y = 124, HOME_CHIP_H = 32, HOME_SECTION_Y = 172, HOME_SECTION_H = 32,
+       HOME_TILES_Y = 212, HOME_TILE_GAP = 4, HOME_TINT_H = 300, HOME_PLAY_SIZE = 40, HOME_PLAY_INSET = 8,
+       HOME_TILE_TEXT_GAP = 8, HOME_TITLE_H = 18, HOME_META_H = 16, HOME_BRAND = 28 };
+
+/* Where tile card i sits (DUI-P2-6, Main.dc.html): a grid of cards, each the art plus the tile padding token on every
+ * side and the title and meta lines below, columns as many as fit. */
 static sel_gui_rect tile_rect(desk* d, uint32_t i) {
-    int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
     sel_gui_rect mn = region_rect(d, "main");
-    const sel_gui_atlas* at = desk_font(d, 1, 13);
-    int32_t title_h = HOME_MAX_LINES * (at != NULL ? at->line_height : 16);
     int32_t art = lpx(d, g_tile_steps[d->tile_step]);
-    int32_t cols = (mn.w - sp) / (art + sp);
-    int32_t h = art + lpx(d, 4) + title_h;
+    int32_t gap = lpx(d, HOME_TILE_GAP);
+    int32_t cw = art + 2 * pad;
+    int32_t cols = (mn.w - 2 * lpx(d, HOME_MARGIN) + 2 * pad + gap) / (cw + gap);
+    int32_t h = pad + art + lpx(d, HOME_TILE_TEXT_GAP + HOME_TITLE_H + HOME_META_H) + pad;
     if (cols < 1) {
         cols = 1;
     }
-    return rect_of(mn.x + sp + (int32_t)(i % (uint32_t)cols) * (art + sp),
-                   mn.y + sp + lpx(d, 48) + 2 * sp + (int32_t)(i / (uint32_t)cols) * (h + sp), art, h);
+    return rect_of(mn.x + lpx(d, HOME_MARGIN) - pad + (int32_t)(i % (uint32_t)cols) * (cw + gap),
+                   mn.y + lpx(d, HOME_TILES_Y) - pad + (int32_t)(i / (uint32_t)cols) * (h + gap), cw, h);
 }
 
 /* The detail view of an opened tile: the main region cleared, the title large. */
@@ -718,11 +773,51 @@ static void draw_songs_targets(desk* d) {
     }
 }
 
+enum { ANIM_KEY_VIEW = 1, ANIM_KEY_HOVER = 2, ANIM_KEY_TIP = 3 };
+
+/* The Home header (Main.dc.html): the tinted band at the top of the main panel, the search field with its icon, the
+ * greeting, the filter chips and the section heading. */
+static void draw_home_header(desk* d, sel_gui_rect mn) {
+    uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]);
+    uint32_t muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+    int32_t rad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]);
+    int32_t mg = lpx(d, HOME_MARGIN), sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    int32_t sw = mn.w - 2 * mg < lpx(d, HOME_SEARCH_MAX) ? mn.w - 2 * mg : lpx(d, HOME_SEARCH_MAX);
+    sel_gui_rect sr = rect_of(mn.x + mg, mn.y + lpx(d, HOME_SEARCH_Y), sw, lpx(d, HOME_SEARCH_H));
+    const sel_gui_atlas* chip = desk_font(d, 1, 13);
+    static const char* const chips[] = {"All", "Songs", "Composers", "Playlists"};
+    int32_t x, k, ic = lpx(d, 18);
+    sel_gui_round_rect(d->canvas, rect_of(mn.x, mn.y, mn.w, 2 * rad), rad, ARGB(d->theme.token[SEL_GUI_TOKEN_HEADER_TINT]));
+    sel_gui_gradient(d->canvas, rect_of(mn.x, mn.y + rad, mn.w, lpx(d, HOME_TINT_H) - rad), 1,
+                     ARGB(d->theme.token[SEL_GUI_TOKEN_HEADER_TINT]), ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
+    d->home_parts |= HP_HEADER_TINT;
+    sel_gui_round_rect(d->canvas, sr, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+    sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_SEARCH, rect_of(sr.x + lpx(d, 14), sr.y + (sr.h - ic) / 2, ic, ic), ic,
+                      muted);
+    d->home_parts |= HP_SEARCH_ICON;
+    draw_text(d, rect_of(sr.x + lpx(d, 42), sr.y, sr.w - lpx(d, 56), sr.h), "Search songs, composers, playlists", 0, 14, muted);
+    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, HOME_GREET_Y), mn.w - 2 * mg, lpx(d, HOME_GREET_H)), "Welcome back", 1, 32, text);
+    d->home_parts |= HP_GREETING;
+    x = mn.x + mg;
+    for (k = 0; k < 4 && chip != NULL; k++) {
+        int32_t w = sel_gui_text_width(chip, chips[k], strlen(chips[k])) + 2 * lpx(d, 14);
+        sel_gui_rect cr = rect_of(x, mn.y + lpx(d, HOME_CHIPS_Y), w, lpx(d, HOME_CHIP_H));
+        sel_gui_round_rect(d->canvas, cr, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]),
+                           ARGB(d->theme.token[k == 0 ? SEL_GUI_TOKEN_ACCENT : SEL_GUI_TOKEN_SURFACE_RAISED]));
+        draw_text(d, rect_of(cr.x + lpx(d, 14), cr.y, w, cr.h), chips[k], 1, 13,
+                  ARGB(d->theme.token[k == 0 ? SEL_GUI_TOKEN_ACCENT_TEXT : SEL_GUI_TOKEN_TEXT]));
+        x += w + sp;
+    }
+    d->home_parts |= HP_CHIPS;
+    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, HOME_SECTION_Y), mn.w - 2 * mg, lpx(d, HOME_SECTION_H)), "Recently played", 1, 22, text);
+    d->home_parts |= HP_SECTION;
+}
+
 static void draw_home_content(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
-    sel_gui_rect mn = region_rect(d, "main");
-    int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
-    const sel_gui_atlas* semi = desk_font(d, 1, 13);
+    sel_gui_rect mn = draw_panel(d, "main");
+    int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
+    int32_t hv = sel_gui_tween_value(&d->tl, ANIM_KEY_HOVER, 65536);
     uint32_t i;
     char name[256];
     if (d->songs) {
@@ -734,38 +829,52 @@ static void draw_home_content(desk* d) {
         draw_detail(d);
         return;
     }
-    if (semi == NULL) {
-        return;
-    }
     load_tile_art(d, st);
     sel_gui_clip_push(d->canvas, mn);
-    sel_gui_fill_rect(d->canvas, rect_of(mn.x, mn.y + sp + lpx(d, 48) + sp, mn.w, mn.h - (sp + lpx(d, 48) + sp)),
-                      ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+    draw_home_header(d, mn);
     for (i = 0; i < st->queue_count; i++) {
         sel_gui_rect t = tile_rect(d, i);
+        sel_gui_rect ar = rect_of(t.x + pad, t.y + pad, t.w - 2 * pad, t.w - 2 * pad);
         const uint32_t* art;
+        char format[16];
+        int hovered = d->hover_tile > 0 && (uint32_t)d->hover_tile - 1u == i;
+        uint32_t panel = ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]);
         queue_title(st, i, name, sizeof name);
+        queue_format(st, i, format, sizeof format);
+        sel_gui_round_rect(d->canvas, t, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]),
+                           hovered ? desk_mix(panel, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), (uint32_t)hv) : panel);
+        d->tile_cards++;
+        d->home_parts |= HP_TILE_CARD;
         art = art_tile(d->art, st->queue_text + st->queue[i].path_offset);
+        if (d->shadow_ready) {
+            sel_gui_shadow_draw(d->canvas, &d->shadow, ar);
+        }
         if (art != NULL) {
-            sel_gui_blit_image(d->canvas, rect_of(t.x, t.y, t.w, t.w), art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE,
-                               DESK_ART_TILE_EDGE, 0);
+            sel_gui_blit_image(d->canvas, ar, art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, 0);
         } else {
             /* No cover: the generated art of the song's format and chip (gui_genart.h). */
-            char format[16];
-            queue_format(st, i, format, sizeof format);
-            sel_gui_genart_draw(d->canvas, rect_of(t.x, t.y, t.w, t.w), format, sel_gui_str_hash(name));
+            sel_gui_genart_draw(d->canvas, ar, format, sel_gui_str_hash(name));
         }
         if (i == 0u) {
-            d->art_tile_hash = rect_hash(d->canvas, rect_of(t.x, t.y, t.w, t.w));
+            d->art_tile_hash = rect_hash(d->canvas, ar);
         }
-        sel_gui_text_wrap(d->canvas, semi, rect_of(t.x, t.y + t.w + lpx(d, 4), t.w, HOME_MAX_LINES * semi->line_height),
-                          name, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), HOME_MAX_LINES, &d->text);
+        draw_text(d, rect_of(ar.x, ar.y + ar.h + lpx(d, HOME_TILE_TEXT_GAP), ar.w, lpx(d, HOME_TITLE_H)), name, 1, 14,
+                  ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        draw_text(d, rect_of(ar.x, ar.y + ar.h + lpx(d, HOME_TILE_TEXT_GAP + HOME_TITLE_H), ar.w, lpx(d, HOME_META_H)), format, 0,
+                  13, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+        d->home_parts |= HP_ARTIST_LINE;
+        if (hovered && hv > 0) { /* the play affordance */
+            int32_t ps = lpx(d, HOME_PLAY_SIZE), in = lpx(d, HOME_PLAY_INSET);
+            sel_gui_rect pb = rect_of(ar.x + ar.w - in - ps, ar.y + ar.h - in - ps, ps, ps);
+            sel_gui_round_rect(d->canvas, pb, ps / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+            sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_PLAY, rect_of(pb.x + ps / 4, pb.y + ps / 4, ps / 2, ps / 2),
+                              ps / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+            d->home_parts |= HP_PLAY_HOVER;
+        }
     }
     sel_gui_clip_pop(d->canvas);
     sel_gui_dirty_add(d->canvas, mn);
 }
-
-enum { ANIM_KEY_VIEW = 1, ANIM_KEY_HOVER = 2, ANIM_KEY_TIP = 3, HOVER_ALPHA = 36 };
 
 /* The main region with the running tweens on top: the hover fade of one tile (a light veil, full strength at rest)
  * and the view cross-fade (the new view fades in from the surface colour). At rest both are the plain view. */
@@ -773,11 +882,6 @@ static void draw_home(desk* d) {
     sel_gui_rect mn = region_rect(d, "main");
     int32_t view = sel_gui_tween_value(&d->tl, ANIM_KEY_VIEW, 65536);
     draw_home_content(d);
-    if (d->hover_tile > 0 && d->open_tile == 0) {
-        int32_t hv = sel_gui_tween_value(&d->tl, ANIM_KEY_HOVER, 65536);
-        sel_gui_scrim(d->canvas, tile_rect(d, (uint32_t)d->hover_tile - 1u), 0xFFFFFFu,
-                      (uint32_t)(((int64_t)hv * HOVER_ALPHA) >> 16));
-    }
     if (view < 65536) {
         sel_gui_scrim(d->canvas, rect_of(mn.x, songs_top(d), mn.w, mn.y + mn.h - songs_top(d)),
                       ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]) & 0xFFFFFFu,
@@ -927,26 +1031,58 @@ static void draw_sidebar(desk* d) {
     static const struct {
         uint32_t icon;
         const char* label;
-    } entries[] = {{SEL_GUI_ICON_HOUSE, "Home"},
-                   {SEL_GUI_ICON_SEARCH, "Search"},
-                   {SEL_GUI_ICON_LIST, "Library"},
-                   {SEL_GUI_ICON_HEART, "Favourites"}};
-    sel_gui_rect sb = region_rect(d, "sidebar");
+    } entries[] = {{SEL_GUI_ICON_HOUSE, "Home"}, {SEL_GUI_ICON_SEARCH, "Search"}, {SEL_GUI_ICON_LIST, "Your Library"}};
+    sel_gui_rect sb = draw_panel(d, "sidebar");
     int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
-    int32_t row = lpx(d, 32), isz = lpx(d, 20), y = sb.y + sp + lpx(d, 24);
+    int32_t row = lpx(d, 40), isz = lpx(d, 22), br = lpx(d, HOME_BRAND), y = sb.y + 2 * sp;
+    int32_t pad = lpx(d, 12), lab = lpx(d, 16);
+    sel_gui_rect logo = rect_of(sb.x + pad + sp, y, br, br);
     uint32_t i;
+    sel_gui_round_rect(d->canvas, logo, lpx(d, 7), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+    sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_PLAY, rect_of(logo.x + lpx(d, 6), logo.y + lpx(d, 6), lab, lab), lab,
+                      ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+    if (sb.w > lpx(d, 120)) {
+        draw_text(d, rect_of(logo.x + br + lpx(d, 10), y, sb.x + sb.w - (logo.x + br + lpx(d, 10)), br), "Selecta", 1, 18,
+                  ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    }
+    d->home_parts |= HP_BRAND;
+    y += br + pad;
     for (i = 0; i < sizeof entries / sizeof entries[0]; i++, y += row) {
         sel_gui_rect r = rect_of(sb.x + sp, y, sb.w - 2 * sp, row);
-        sel_gui_rect ic = rect_of(r.x + sp, y + (row - isz) / 2, isz, isz);
-        sel_gui_fill_rect(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
-        sel_gui_icon_draw(d->canvas, &d->icons, entries[i].icon, ic, isz, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+        sel_gui_rect ic = rect_of(r.x + pad, y + (row - isz) / 2, isz, isz);
+        uint32_t ink = ARGB(d->theme.token[i == 0u ? SEL_GUI_TOKEN_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]);
+        sel_gui_icon_draw(d->canvas, &d->icons, entries[i].icon, ic, isz, ink);
         if (sb.w > lpx(d, 120)) {
-            draw_text(d, rect_of(ic.x + isz + sp, y, r.x + r.w - (ic.x + isz + sp), row), entries[i].label, 1, 13,
-                      ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+            draw_text(d, rect_of(ic.x + isz + lab, y, r.x + r.w - (ic.x + isz + lab), row), entries[i].label, 1, 15, ink);
         }
         sel_gui_dirty_add(d->canvas, r);
         d->frame_parts++;
+        d->home_parts |= HP_NAV;
     }
+}
+
+/* The player bar's left block (mockup footer): artwork of the playing song with its title and artist beside it. Hidden
+ * when the bar is too narrow to share the row with the transport. */
+static void draw_player_left(desk* d) {
+    const sel_uim_frame* f = &d->uim.frame;
+    sel_gui_rect pl = region_rect(d, "player");
+    int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    int32_t as = lpx(d, 56), gap = lpx(d, 12);
+    sel_gui_rect ar, box, all;
+    if (pl.w < lpx(d, 900) || pl.h < as) {
+        return;
+    }
+    ar = rect_of(pl.x + sp, pl.y + (pl.h - as) / 2, as, as);
+    box = rect_of(ar.x + as + gap, ar.y, lpx(d, 300) - as - gap - sp, as);
+    all = rect_of(pl.x, pl.y, lpx(d, 300) + sp, pl.h);
+    sel_gui_fill_rect(d->canvas, all, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
+    sel_gui_genart_draw(d->canvas, ar, f->format, sel_gui_str_hash(f->title));
+    d->home_parts |= HP_PLAYER_ART;
+    draw_text(d, rect_of(box.x, box.y + lpx(d, 10), box.w, lpx(d, 18)), f->title, 1, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    draw_text(d, rect_of(box.x, box.y + lpx(d, 30), box.w, lpx(d, 16)), f->artist, 0, 12,
+              ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+    d->home_parts |= HP_PLAYER_TITLE;
+    sel_gui_dirty_add(d->canvas, all);
 }
 
 /* The Now Playing panel (DUI-P4-1) in the detail region: title, artist and format of the playing song. */
@@ -958,6 +1094,7 @@ static void draw_nowplaying(desk* d) {
     if (dt.w <= 0 || dt.h <= 0) {
         return;
     }
+    draw_panel(d, "detail");
     card = rect_of(dt.x + sp, dt.y + sp, dt.w - 2 * sp, lpx(d, 96));
     sel_gui_round_rect(d->canvas, card, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]),
                        ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
@@ -982,7 +1119,7 @@ static void draw_transport(desk* d) {
     sel_gui_rect first = desk_button_rect(d, SLOT_SUB_PREV);
     sel_gui_rect label = rect_of(first.x - sp - lpx(d, 56), first.y, lpx(d, 56), first.h);
     uint32_t i;
-    sel_gui_fill_rect(d->canvas, label, ARGB(d->theme.token[SEL_GUI_TOKEN_BACKGROUND]));
+    sel_gui_fill_rect(d->canvas, label, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
     if (f->subsong_count > 1u) {
         char buf[24];
         snprintf(buf, sizeof buf, "%u/%u", (unsigned)f->subsong, (unsigned)f->subsong_count);
@@ -992,7 +1129,7 @@ static void draw_transport(desk* d) {
     for (i = 0; i < TRANSPORT_COUNT; i++) {
         sel_gui_rect b = desk_button_rect(d, i);
         uint32_t icon = SEL_GUI_ICON_PLAY;
-        uint32_t fill = d->theme.token[SEL_GUI_TOKEN_SURFACE];
+        uint32_t fill = d->theme.token[SEL_GUI_TOKEN_FRAME];
         uint32_t ink = d->theme.token[SEL_GUI_TOKEN_TEXT];
         uint32_t off = d->theme.token[SEL_GUI_TOKEN_TEXT_DISABLED];
         uint32_t on = d->theme.token[SEL_GUI_TOKEN_ACCENT];
@@ -1000,7 +1137,7 @@ static void draw_transport(desk* d) {
         int32_t isz = lpx(d, 20);
         sel_gui_rect ic;
         if (desk_slot_action(d, i) == NULL) {
-            sel_gui_fill_rect(d->canvas, b, ARGB(d->theme.token[SEL_GUI_TOKEN_BACKGROUND]));
+            sel_gui_fill_rect(d->canvas, b, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
             sel_gui_dirty_add(d->canvas, b);
             continue;
         }
@@ -1023,8 +1160,8 @@ static void draw_transport(desk* d) {
             break;
         case SLOT_PLAY:
             icon = f->play == SEL_PLAYING ? SEL_GUI_ICON_PAUSE : SEL_GUI_ICON_PLAY;
-            fill = on;
-            ink = d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT];
+            fill = d->theme.token[SEL_GUI_TOKEN_TEXT];
+            ink = d->theme.token[SEL_GUI_TOKEN_FRAME];
             isz = lpx(d, 24);
             break;
         case SLOT_NEXT:
@@ -1036,7 +1173,7 @@ static void draw_transport(desk* d) {
             ink = f->repeat_mode != 0u ? on : mute;
             break;
         }
-        sel_gui_round_rect(d->canvas, b, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(fill));
+        sel_gui_round_rect(d->canvas, b, i == SLOT_PLAY ? b.h / 2 : lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(fill));
         ic = rect_of(b.x + (b.w - isz) / 2, b.y + (b.h - isz) / 2, isz, isz);
         sel_gui_icon_draw(d->canvas, &d->icons, icon, ic, isz, ARGB(ink));
         if (i == SLOT_REPEAT && f->repeat_mode == 2u) {
@@ -1657,7 +1794,7 @@ static int desk_present(desk* d) {
     if (d->frames == 0u || d->repaint) { /* the first frame and a resize paint the whole canvas */
         d->repaint = 0;
         sel_gui_fill_rect(d->canvas, rect_of(0, 0, d->canvas->w, d->canvas->h),
-                          ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+                          ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
         sel_gui_dirty_add(d->canvas, rect_of(0, 0, d->canvas->w, d->canvas->h));
     }
     for (bit = 1u; bit <= SEL_UIM_DIRTY_STATUS; bit <<= 1) {
@@ -2292,7 +2429,11 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[49].value = d->uim.frame.subsong;
     d->stats[50].tag = SEL_UI_STAT_FRAME_PARTS;
     d->stats[50].value = d->frame_parts;
-    d->stats[51].tag = SEL_TAG_END;
+    d->stats[51].tag = SEL_UI_STAT_HOME_PARTS;
+    d->stats[51].value = d->home_parts;
+    d->stats[52].tag = SEL_UI_STAT_TILE_CARDS;
+    d->stats[52].value = d->tile_cards;
+    d->stats[53].tag = SEL_TAG_END;
 
     return d->stats;
 }
