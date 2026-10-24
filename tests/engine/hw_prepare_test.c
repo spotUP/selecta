@@ -234,6 +234,7 @@ static void drive(uint32_t ms, uint32_t stop_at) {
 int main(int argc, char** argv) {
     int loop_only = argc > 1 && strcmp(argv[1], "loop") == 0; /* ctest engine-hw-song-ends-on-loop */
     int seek_only = argc > 1 && strcmp(argv[1], "seek") == 0; /* ctest engine-hw-song-seeks-natively */
+    int silence_only = argc > 1 && strcmp(argv[1], "silence") == 0; /* ctest engine-hw-song-not-cut-by-silence */
     char dir[] = "/tmp/selecta_hw_prepare_XXXXXX";
     sel_engine_stats st;
     CHECK(mkdtemp(dir) != NULL);
@@ -270,7 +271,19 @@ int main(int argc, char** argv) {
         sel_engine_destroy(eng);
     }
 
-    if (!loop_only && !seek_only) {
+    if (silence_only) {
+        /* Regression (I250): the silence detector read the zeros a HW slot renders while the hardware plays, so
+         * every HW song ended with SONG_ENDED silence after silence_ms (5000 ms on the Replay). */
+        start(dir, "a.hwm", "b.hwm");
+        run("OPTION max_song_ms 120000");
+        run("OPTION silence_ms 1000");
+        drive(3000u, 9u);
+        CHECK(g_hw_starts == 1u); /* still the first song: not cut at 1000 ms of zeros */
+        CHECK(sel_engine_state(eng)->song.position_ms >= 2500u);
+        sel_engine_destroy(eng);
+    }
+
+    if (!loop_only && !seek_only && !silence_only) {
     /* HW song then HW song: the prepare window opens at once, yet the playing song keeps the hardware. */
     start(dir, "a.hwm", "b.hwm");
     drive(400u, 2u);
@@ -299,7 +312,7 @@ int main(int argc, char** argv) {
     sel_engine_destroy(eng);
     }
 
-    if (!seek_only) {
+    if (!seek_only && !silence_only) {
     /* Regression (I219b): HW slots never ticked, so a HW song ended only at max_song_ms. The fake's poll reports
      * LOOPED on its 40th call (about 40 render chunks, 256 frames each: ~230 ms); loops is 1 and the fade 0, so the
      * song ends then and the queue starts the next one, far before the 5000 ms cap. The poll count is the sentinel. */

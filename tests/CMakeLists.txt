@@ -617,6 +617,8 @@ if(NOT SEL_AMIGA)
   set_tests_properties(engine-hw-song-ends-on-loop PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "hw_prepare: ok")
   add_test(NAME engine-hw-song-seeks-natively COMMAND hw_prepare_test seek)
   set_tests_properties(engine-hw-song-seeks-natively PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "hw_prepare: ok")
+  add_test(NAME engine-hw-song-not-cut-by-silence COMMAND hw_prepare_test silence)
+  set_tests_properties(engine-hw-song-not-cut-by-silence PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "hw_prepare: ok")
   set_tests_properties(browse-hides-unrecognised-files PROPERTIES PASS_REGULAR_EXPRESSION "browse_filter_ok")
 endif()
 

@@ -5212,7 +5212,7 @@ static uint32_t policy_chunk(sel_engine* e, sel_slot* sl, int16_t* buf, uint32_t
     uint32_t reason = SEL_END_NONE;
     uint32_t fade_at = p->fade_on ? 0u : n;
     uint32_t i;
-    if (e->silence_ms != 0u) {
+    if (e->silence_ms != 0u && !sl->hw) { /* a HW slot's buffer is zeros, not the song: nothing to judge (I250) */
         uint32_t need = (uint32_t)((uint64_t)e->silence_ms * e->rate / 1000u);
         for (i = 0; i < n; i++) {
             int32_t l = buf[i * 2u], r = buf[i * 2u + 1u];
