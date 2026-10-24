@@ -138,6 +138,11 @@ static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
     t->value = value;
 }
 
+static uint32_t out_rate_for(const sel_tag* machine) {
+    (void)machine;
+    return sel_p14_max_rate();
+}
+
 const sel_tag* sel_p14_out_describe(const sel_p14_out_kind* kind, sel_out_open_fn open, sel_tag* hooks, sel_tag* desc) {
     uint32_t n = 0;
     set(&hooks[n++], SEL_OUT_NAME, (uintptr_t)kind->name);
@@ -149,6 +154,7 @@ const sel_tag* sel_p14_out_describe(const sel_p14_out_kind* kind, sel_out_open_f
     set(&hooks[n++], SEL_OUT_SET_SOURCE, SEL_TAG_FN(out_set_source));
     set(&hooks[n++], SEL_OUT_PUMP, SEL_TAG_FN(out_pump));
     set(&hooks[n++], SEL_OUT_STATS, SEL_TAG_FN(out_stats));
+    set(&hooks[n++], SEL_OUT_RATE_FOR, SEL_TAG_FN(out_rate_for));
     set(&hooks[n++], SEL_OUT_MEM_CHIP, 4u * 2u * SEL_P14_BUF_FRAMES);
     set(&hooks[n++], SEL_TAG_END, 0);
 

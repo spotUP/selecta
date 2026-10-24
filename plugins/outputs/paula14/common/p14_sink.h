@@ -29,6 +29,8 @@ typedef struct sel_p14 {
 
 /* round(clock / rate); 0 when the period falls outside the hardware range. */
 uint32_t sel_p14_period_for_rate(uint32_t rate);
+/* The highest rate the chip takes: clock / minimum period. What the output answers SEL_OUT_RATE_FOR with (D-M2-5). */
+uint32_t sel_p14_max_rate(void);
 /* Allocates the chip halves, writes LEN/PER/VOL, starts the DMA on silence. 0 on success. `strict`: a rate
  * needing a period under the hardware minimum fails (the real chip); else the period clamps (the shadow twin). */
 int sel_p14_open(sel_p14* p, const sel_host* host, const sel_paula_bus* bus, uint32_t rate, uint32_t buf_frames,

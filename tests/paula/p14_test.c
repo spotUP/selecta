@@ -175,6 +175,15 @@ int main(void) {
     bus.set_lc = b_lc;
     bus.ctx = NULL;
     CHECK(sel_p14_open(&p, &host, &bus, 44100, 64, 1) != 0, "strict open at 44100 must fail");
+    /* I252: the output answers SEL_OUT_RATE_FOR with the chip maximum, not 44100, and a strict open at it succeeds. */
+    {
+        sel_out_rate_for_fn rate_for = (sel_out_rate_for_fn)sel_tag_find(hooks, SEL_OUT_RATE_FOR, 0);
+        uint32_t want = rate_for != NULL ? rate_for(NULL) : 44100u;
+        CHECK(want == sel_p14_max_rate() && want != 44100u, "rate for %u", (unsigned)want);
+        CHECK(sel_p14_open(&p, &host, &bus, want, 64, 1) == 0, "strict open at the output's own rate %u", (unsigned)want);
+        sel_p14_close(&p);
+        g_chip_allocs = 0;
+    }
     CHECK(sel_p14_open(&p, &host, &bus, 22050, 64, 1) == 0, "open");
     CHECK(g_chip_allocs == 8, "8 chip halves, got %d", g_chip_allocs);
     CHECK(g_bus.per[0] == 161u && g_bus.len[3] == 32u && g_bus.vol[0] == 64u && g_bus.vol[1] == 64u &&

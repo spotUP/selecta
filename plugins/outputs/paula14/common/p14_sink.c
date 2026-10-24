@@ -9,6 +9,10 @@ uint32_t sel_p14_period_for_rate(uint32_t rate) {
     return period < SEL_PAULA_PERIOD_MIN || period > SEL_PAULA_PERIOD_MAX ? 0u : period;
 }
 
+uint32_t sel_p14_max_rate(void) {
+    return SEL_PAULA_CLOCK / SEL_PAULA_PERIOD_MIN;
+}
+
 static void reg(sel_p14* p, uint32_t ch, uint32_t off, uint32_t value) {
     p->bus.write(p->bus.ctx, off + ch * SEL_PAULA_CHANNEL_STRIDE, value);
 }
