@@ -23,6 +23,10 @@ typedef struct sel_browse {
     uint32_t capacity, text_bytes, text_used, count;
     uint32_t truncated;  /* entries dropped from the current listing */
     uint32_t generation; /* bumped by every successful listing */
+    /* Non-NULL: a file is listed only when name_ok(name_ctx, name) is non-zero, or it is a playlist or an archive
+     * (I218i). The engine installs the replayers' claim; the library scan leaves NULL and sees every file. */
+    int (*name_ok)(void* ctx, const char* name);
+    void* name_ctx;
     const sel_host* host; /* memory for reading archives (I159a) */
     char path[SEL_BROWSE_PATH_MAX];
 } sel_browse;

@@ -19,6 +19,7 @@
 #include <selecta/tags.h>
 
 #include "mixer.h"
+#include "claims.h"
 #include "stage.h"
 #include "loudness_gain.h"
 #include "dsp_chain.h"
@@ -4331,6 +4332,12 @@ int sel_engine_cmd_implemented(uint32_t cmd_id) {
 
 /* ---- lifecycle ------------------------------------------------------- */
 
+static int browse_name_claimed(void* ctx, const char* name) {
+    const sel_engine* e = ctx;
+
+    return sel_registry_claims_name(e->registry_count, e->registry_get, name);
+}
+
 sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg) {
     sel_engine* e = host->mem_alloc(host, sizeof *e, SEL_MEM_FAST);
     uint32_t cmd_depth = cfg && cfg->cmd_queue_depth ? cfg->cmd_queue_depth : 64;
@@ -4432,6 +4439,8 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         sel_engine_destroy(e);
         return NULL;
     }
+    e->browse.name_ok = browse_name_claimed; /* the folder browser lists folders and files a replayer claims (I218i) */
+    e->browse.name_ctx = e;
     return e;
 }
 

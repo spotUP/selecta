@@ -1,6 +1,7 @@
 /* Modland format names (plan Phase 4, I157; design doc 9.1). The names are Modland's directory names
  * under pub/modules, shared by every source; the replayer for a name is found through the plugin
  * registry (sel_registry_format_owner), not stored here. */
+#include "local.h"
 #include "source.h"
 
 #include <ctype.h>

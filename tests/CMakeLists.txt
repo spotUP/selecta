@@ -566,6 +566,12 @@ if(NOT SEL_AMIGA)
   target_include_directories(library_path_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
   target_link_libraries(library_path_test PRIVATE selecta_core)
   add_test(NAME library-path-unit COMMAND library_path_test)
+  # I218i: the folder browser hides files with no recognised format.
+  add_executable(browse_filter_test library/browse_filter_test.c)
+  target_include_directories(browse_filter_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(browse_filter_test PRIVATE selecta_core)
+  add_test(NAME browse-hides-unrecognised-files COMMAND browse_filter_test)
+  set_tests_properties(browse-hides-unrecognised-files PROPERTIES PASS_REGULAR_EXPRESSION "browse_filter_ok")
 endif()
 
 # I182a: composer canonical key and display name golden cases.
