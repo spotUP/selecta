@@ -503,6 +503,7 @@ Round 5 picks decided 2026-10-22 (AskUserQuestion, two calls): in = F19, F20, F2
 - [x] D-M4-1 (Johan, 2026-10-24, AskUserQuestion): M3 finishes first (I202 green, I203 confirmed), then the M4 plan is written. No M4 code before that.
 - [x] D-M4-2 (Johan, 2026-10-24): M4 leads with the most modern Amiga UI possible, built to modern UI standards from the references in the design doc (modern players are the bar), and the other Amiga UIs (MUI, GadTools, ReAction) are downscaled from it afterwards. M4 adds a new UI plugin not in the design doc: a hardware-banging custom UI, one variant for AGA (direct chipset, copper/blitter, maximum speed and fast graphics content) and one for RTG. Total custom, no toolkit limits. The M4 plan must add it to design doc sections 1a and 14.
 - [x] D-M4-3 (Johan, 2026-10-24): every Amiga UI, Workbench window UIs included, opens using the full screen area by default (modern players are big; use all available screen space). Each UI also offers switchable compact modes for when Selecta should not cover the whole screen. The M4 plan specifies the compact modes and how to switch between them. The text UI already fills the window it gets once I218c lands.
+- [x] D-M4-4 (Johan, 2026-10-24, AskUserQuestion): amends D-M4-1. The M4 Amiga UI plan may be written now, in parallel with the end of M3; still no M4 code before M3 finishes (I202 green, I203 confirmed). Plan file: thoughts/shared/plans/2026-10-24-m4-amiga-ui.md.
 
 Protocol additions from M1d are already in design doc section 3 (not a decision, engine protocol detail).
 
