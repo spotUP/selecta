@@ -57,3 +57,26 @@ style_run(textok text tree)
 if(textok MATCHES "unsupported_style")
   message(FATAL_ERROR "text UI should accept VIEW_STYLE tree:\n${textok}")
 endif()
+
+# Row artwork id follows a rescan: the rows are read (ids 1 2 3 4 1), then LIBRARY_SCAN stores a song, and a trigger on that
+# insert moves every fixture song to an album that no albums row names (the scan changing the catalogue). The dumped ids
+# must follow to 0; a row cache keyed by queue entry id alone keeps the stale 1 2 3 4 1.
+set(scandir "${WORK}/scandir")
+file(MAKE_DIRECTORY "${scandir}")
+file(COPY "${HERE}/../m3/genre/ambient.mod" DESTINATION "${scandir}")
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db}"
+  "CREATE TRIGGER rescan_moves_albums AFTER INSERT ON songs WHEN NEW.path NOT LIKE 'fixture/%' BEGIN UPDATE songs SET album = 'Renamed' WHERE path LIKE 'fixture/%'; END;"
+  RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "creating the rescan trigger failed: ${err}")
+endif()
+file(REMOVE_RECURSE "${WORK}/cfg")
+dui_run(rs --db "${db}" --ui desktop --backend mem --view library --canvas 900x600 --clock fixed --stats ${queue}
+  --exec "VIEW_SOURCE queue" --exec "VIEW_WINDOW 8" --exec "VIEW_STYLE grid" --exec "LIBRARY_SCAN \"${scandir}\""
+  --input "${WORK}/in.txt")
+set(rs "${rs}\n${rs_err}")
+foreach(i 0 1 2 3 4)
+  if(NOT rs MATCHES "srow ${i} 0\\|")
+    message(FATAL_ERROR "row ${i} artwork id should follow the rescan to 0:\n${rs}")
+  endif()
+endforeach()

@@ -248,6 +248,7 @@ struct sel_engine {
     char vote_mkey[13];                    /* UADE key of that request, matched against the answer */
     unsigned vote_seen;                    /* vote result sequence already stored */
     uint32_t votes_generation;             /* moves when a count is stored; the view re-reads its vote texts */
+    uint32_t art_generation;               /* moves when a scan or sync may have added or renamed albums; the view re-reads its artwork ids */
     uint32_t ui_view_styles; /* sel_view_style bits the active UI offers (SEL_UI_VIEW_STYLES), set by the shell */
     char ui_switch[16];      /* id named by the last UI_SWITCH, "" none: the shell owns the UIs and takes it (I238) */
     uint32_t scrobble_due;   /* SCROBBLE_DUE events emitted (sentinel of the I177 rule) */
@@ -3181,6 +3182,7 @@ static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
     scfg.registry_get = e->registry_get;
     scfg.now = (int64_t)time(NULL);
     ok = sel_local_scan(&scfg, m->args[0].v.s, &stats);
+    e->art_generation++; /* a failed scan may still have stored albums */
     files = stats.scanned_files;
     e->scan_info.scanned_files = stats.scanned_files;
     e->scan_info.skipped_files = stats.skipped_files;
@@ -4072,6 +4074,7 @@ static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
     } else {
         ok = sel_modland_sync(&scfg, m->args[1].v.s, now, &st);
     }
+    e->art_generation++; /* a failed sync may still have stored albums */
     if (ok && !is_hvsc && !is_hippo) {
         persist_new_this_week(e, st.new_this_week);
     }
@@ -4174,6 +4177,7 @@ static void view_src(const sel_engine* e, sel_view_src* s) {
     s->votes = e->lib != NULL ? view_votes : NULL;
     s->votes_ctx = (void*)e;
     s->votes_generation = e->votes_generation;
+    s->art_generation = e->art_generation;
     s->art_id = e->lib != NULL ? view_art_id : NULL;
     s->art_ctx = (void*)e;
 }

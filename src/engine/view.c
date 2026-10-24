@@ -708,13 +708,17 @@ static const char* row_votes(sel_view* v, const sel_view_src* s, uint32_t slot, 
 }
 
 /* The artwork id of the row in window slot `slot` showing queue index `idx`: from the service callback, read again
- * only when the slot shows another entry (a row is drawn every pump, a lookup is a library call). */
+ * only when the slot shows another entry or art_generation moved (a row is drawn every pump, a lookup is a library call). */
 static uint32_t row_art(sel_view* v, const sel_view_src* s, uint32_t slot, uint32_t idx) {
     uint32_t* c = v->art_cache + (size_t)slot * 2u;
     uint32_t id = s->queue->entries[idx].id;
 
     if (s->art_id == NULL) {
         return 0;
+    }
+    if (v->art_seen != s->art_generation) {
+        memset(v->art_cache, 0, (size_t)v->row_cap * 2u * sizeof *v->art_cache);
+        v->art_seen = s->art_generation;
     }
     if (c[0] != id) {
         c[1] = s->art_id(s->art_ctx, sel_queue_path(s->queue, idx));
@@ -831,6 +835,7 @@ int sel_view_changed(sel_view* v, const sel_view_src* s, int* structure) {
     now.drill_n = v->pub.drill_n;
     now.folder_generation = v->fgen;
     now.votes_generation = s->votes_generation;
+    now.art_generation = s->art_generation;
     changed = memcmp(&now, &v->last, sizeof now) != 0;
     *structure = v->force_changed || now.source != v->last.source || now.style != v->last.style ||
                  now.window_rows != v->last.window_rows || now.group_key != v->last.group_key;

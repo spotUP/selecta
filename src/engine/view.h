@@ -41,11 +41,12 @@ typedef struct sel_view_src {
     /* Artwork id (albums.id) of a queue path for the grid, cover flow and compact rows; 0 none. NULL: no library. */
     uint32_t (*art_id)(void* ctx, const char* path);
     void* art_ctx;
+    uint32_t art_generation; /* moves when the albums or their artwork change; the view reads art_id again for every row */
 } sel_view_src;
 
 typedef struct sel_view_sig {
     uint32_t source, style, row_count, cursor, window_start, window_rows, queue_version, browse_generation, playing, prefs_generation;
-    uint32_t group_key, drill_n, folder_generation, votes_generation;
+    uint32_t group_key, drill_n, folder_generation, votes_generation, art_generation;
 } sel_view_sig;
 
 /* Tree and drilldown group table (design doc section 3, VIEW_GROUP): the
@@ -69,6 +70,7 @@ typedef struct sel_view {
     char* vote_text;      /* row_cap * SEL_VIEW_VOTES_MAX: the vote count of each row slot (I174a) */
     uint32_t* vote_id;    /* queue entry id each vote_text slot was read for, 0 none */
     uint32_t vote_seen;   /* votes_generation the slots belong to */
+    uint32_t art_seen;    /* art_generation art_cache belongs to */
     uint32_t* art_cache;  /* 2 * row_cap: queue entry id and artwork id per window slot, entry id 0 none */
     uint32_t row_cap;
     uint32_t cursor_of[4], id_of[4]; /* the cursor each source was left at */
