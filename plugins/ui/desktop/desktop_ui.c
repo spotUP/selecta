@@ -100,6 +100,8 @@ typedef struct desk {
     uint32_t search_since;   /* UI clock of the last typed character (DUI-P4-6) */
     int search_pending;      /* 1 when the query changed since the last search sent: the debounce is running */
     int search_on;           /* 1 when the main region shows the search results */
+    int queue_page;          /* --view queue: the main region shows the Queue page (DUI-P4-8) */
+    uint32_t queue_draws, queue_rows, queue_cmds; /* Queue page frames drawn (sentinel), rows in the last one, verbs it sent */
     uint32_t np_rows;        /* metadata pairs the Now Playing panel drew: STAT_META_PANEL_ROWS (DUI-P4-7) */
     uint32_t np_draws;       /* Now Playing panel draws (sentinel) */
     sel_gui_rect np_like, np_rate[5]; /* click targets of the like button and the five rating marks */
@@ -141,7 +143,7 @@ typedef struct desk {
     sel_tag stats[64];
     char* input_at;         /* where the scripted input resumes after a turn that sent an engine line */
     uint32_t sends;         /* engine lines sent so far: the replay yields a turn so the shell pumps them */
-    char library_dump[4096]; /* the Library page as text for the stats (DUI-P4-3) */
+    char library_dump[8192]; /* the Library page as text for the stats (DUI-P4-3) */
     uint32_t library_sig;    /* hash of the Library page last drawn: a change redraws */
     uint32_t grid_draws, grid_tiles, grid_cols;   /* grid view frames drawn, tiles in the last one, columns of the last one (DUI-P4-5) */
     uint32_t flow_draws, flow_centre;             /* cover flow frames drawn and the listing index of the centred album in the last one */
@@ -331,7 +333,7 @@ static void draw_widget(desk* d, uint32_t bit) {
     int32_t y0 = pl.y + sp;
     if (bit == SEL_UIM_DIRTY_SONG) {
         draw_player_left(d);
-        if (d->home && !d->songs && d->open_tile == 0) { /* the Home header replaces the song card */
+        if (d->home && !d->songs && !d->queue_page && d->open_tile == 0) { /* the Home header replaces the song card */
             draw_nowplaying(d);
             return;
         }
@@ -1266,6 +1268,172 @@ static uint32_t lib_hash(const desk* d, const sel_state* st) {
     return h + (st->composers != NULL ? 1u : 0u) + (st->stats != NULL ? 2u : 0u);
 }
 
+/* ---- Queue page (DUI-P4-8, F30, F49): the engine's play queue as a list with its groups (divider rows), a Play Next and a
+ * Remove action per row, drag reorder, and the Undo, Redo, Reshuffle and Scope buttons. The engine owns the queue, the
+ * undo history and the shuffle (QUEUE_MOVE, QUEUE_REMOVE, QUEUE_PLAY_NEXT, UNDO, REDO, RESHUFFLE, SCOPE); the page only
+ * draws and sends those verbs. */
+enum { QUEUE_BTN_Y = 64, QUEUE_BTN_H = 32, QUEUE_BTN_W = 128, QUEUE_BTN_GAP = 8, QUEUE_LIST_Y = 112, QUEUE_ROW_H = 40,
+       QUEUE_NEXT_W = 104, QUEUE_DEL_W = 40, QUEUE_BUTTONS = 4 };
+static const char* const queue_scope_name[3] = {"library", "album", "playlist"};
+static const char* const queue_scope_label[3] = {"Scope: Library", "Scope: Album", "Scope: Playlist"};
+
+static uint32_t queue_scope_index(const sel_state* st) {
+    uint32_t k;
+    for (k = 0; k < 3u; k++) {
+        if (strcmp(st->options[SEL_OPT_SCOPE], queue_scope_name[k]) == 0) {
+            return k;
+        }
+    }
+    return 0u;
+}
+
+static sel_gui_rect queue_btn_rect(desk* d, sel_gui_rect mn, uint32_t k) {
+    return rect_of(mn.x + lpx(d, HOME_MARGIN) + (int32_t)k * lpx(d, QUEUE_BTN_W + QUEUE_BTN_GAP), mn.y + lpx(d, QUEUE_BTN_Y),
+                   lpx(d, QUEUE_BTN_W), lpx(d, QUEUE_BTN_H));
+}
+
+/* 1 when row i fits in the main region: the page shows the first rows that fit and does not scroll. */
+static int queue_row_visible(desk* d, sel_gui_rect mn, uint32_t i) {
+    return mn.y + lpx(d, QUEUE_LIST_Y) + ((int32_t)i + 1) * lpx(d, QUEUE_ROW_H) <= mn.y + mn.h;
+}
+
+static sel_gui_rect queue_row_rect(desk* d, sel_gui_rect mn, uint32_t i) {
+    return rect_of(mn.x + lpx(d, HOME_MARGIN), mn.y + lpx(d, QUEUE_LIST_Y) + (int32_t)i * lpx(d, QUEUE_ROW_H),
+                   mn.w - 2 * lpx(d, HOME_MARGIN), lpx(d, QUEUE_ROW_H));
+}
+
+static sel_gui_rect queue_del_rect(desk* d, sel_gui_rect mn, uint32_t i) {
+    sel_gui_rect r = queue_row_rect(d, mn, i);
+    return rect_of(r.x + r.w - lpx(d, QUEUE_DEL_W), r.y, lpx(d, QUEUE_DEL_W), r.h);
+}
+
+static sel_gui_rect queue_next_rect(desk* d, sel_gui_rect mn, uint32_t i) {
+    sel_gui_rect r = queue_del_rect(d, mn, i);
+    return rect_of(r.x - lpx(d, QUEUE_NEXT_W), r.y, lpx(d, QUEUE_NEXT_W), r.h);
+}
+
+/* The row under (x, y), -1 for none. */
+static int32_t queue_row_at(desk* d, sel_gui_rect mn, int32_t x, int32_t y) {
+    const sel_state* st = sel_engine_state(d->engine);
+    uint32_t i;
+    for (i = 0; i < st->queue_count && queue_row_visible(d, mn, i); i++) {
+        if (in_rect(queue_row_rect(d, mn, i), x, y)) {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
+/* FNV-1a over every entry's id, flags and path in queue order: equal hashes mean the same queue in the same order. */
+static uint32_t queue_hash(const sel_state* st) {
+    uint32_t h = 2166136261u, i;
+    const char* p;
+    for (i = 0; i < st->queue_count; i++) {
+        uint32_t v[2], k;
+        v[0] = st->queue[i].id;
+        v[1] = st->queue[i].flags;
+        for (k = 0; k < 8u; k++) {
+            h = (h ^ (uint32_t)((const unsigned char*)v)[k]) * 16777619u;
+        }
+        for (p = st->queue_text + st->queue[i].path_offset; *p != '\0'; p++) {
+            h = (h ^ (uint32_t)(unsigned char)*p) * 16777619u;
+        }
+        h = (h ^ 0xFFu) * 16777619u;
+    }
+    return h;
+}
+
+static void draw_queue(desk* d) {
+    const sel_state* st = sel_engine_state(d->engine);
+    sel_gui_rect mn = draw_panel(d, "main");
+    int32_t mg = lpx(d, HOME_MARGIN), rad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ic = lpx(d, 18);
+    uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+    uint32_t accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
+    sel_engine_stats es;
+    uint32_t i, shown = 0;
+    char buf[300];
+    sel_engine_stats_get(d->engine, &es);
+    sel_gui_clip_push(d->canvas, mn);
+    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Queue", 1, 28, text);
+    for (i = 0; i < QUEUE_BUTTONS; i++) {
+        sel_gui_rect b = queue_btn_rect(d, mn, i);
+        const char* label = i == 0u ? "Undo" : i == 1u ? "Redo" : i == 2u ? "Reshuffle" : queue_scope_label[queue_scope_index(st)];
+        int live = i == 0u ? es.undo_depth > 0u : i == 1u ? es.redo_depth > 0u : 1;
+        sel_gui_round_rect(d->canvas, b, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+        draw_text(d, b, label, 1, 13, live ? text : muted);
+    }
+    for (i = 0; i < st->queue_count && queue_row_visible(d, mn, i); i++, shown++) {
+        sel_gui_rect r = queue_row_rect(d, mn, i);
+        int divider = (st->queue[i].flags & SEL_QUEUE_FLAG_DIVIDER) != 0u;
+        int playing = st->queue[i].id == st->queue_playing;
+        sel_gui_rect nx = queue_next_rect(d, mn, i), dl = queue_del_rect(d, mn, i);
+        if (divider) { /* a group header: its name in the muted bold face, nothing to play next */
+            draw_text(d, rect_of(r.x, r.y, nx.x - r.x, r.h), st->queue_text + st->queue[i].path_offset, 1, 13, muted);
+        } else {
+            queue_title(st, i, buf, sizeof buf);
+            if (playing) {
+                sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_PLAY, rect_of(r.x, r.y + (r.h - ic) / 2, ic, ic), ic, accent);
+            }
+            draw_text(d, rect_of(r.x + ic + lpx(d, 12), r.y, nx.x - r.x - ic - lpx(d, 12), r.h), buf, playing, 14, playing ? accent : text);
+            draw_text(d, nx, "Play Next", 1, 12, muted);
+        }
+        sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_X, rect_of(dl.x + (dl.w - ic) / 2, dl.y + (dl.h - ic) / 2, ic, ic), ic, muted);
+    }
+    d->queue_draws++;
+    d->queue_rows = shown;
+    sel_gui_clip_pop(d->canvas);
+    sel_gui_dirty_add(d->canvas, mn);
+}
+
+/* One pointer event on the Queue page. A click on a button or a row action, or a drag from one row onto another,
+ * becomes one engine verb. Returns 1 when the picture may have changed. */
+static int queue_pointer(desk* d, const sel_gui_input* ev) {
+    const sel_state* st = sel_engine_state(d->engine);
+    sel_gui_rect mn = region_rect(d, "main");
+    char line[340];
+    uint32_t k;
+    int32_t row, to;
+    if (ev->kind == SEL_GUI_IN_DRAG) {
+        row = queue_row_at(d, mn, ev->x, ev->y);
+        to = queue_row_at(d, mn, ev->x2, ev->y2);
+        if (row < 0 || to < 0 || row == to) {
+            return 0;
+        }
+        snprintf(line, sizeof line, "QUEUE_MOVE %u %u", (unsigned)st->queue[row].id, (unsigned)st->queue[to].id); /* entry ids */
+        d->queue_cmds++;
+        return desk_send(d, line);
+    }
+    if (ev->kind != SEL_GUI_IN_CLICK || ev->button != 0u) {
+        return 0;
+    }
+    for (k = 0; k < QUEUE_BUTTONS; k++) {
+        if (in_rect(queue_btn_rect(d, mn, k), ev->x, ev->y)) {
+            if (k == 3u) {
+                snprintf(line, sizeof line, "SCOPE %s", queue_scope_name[(queue_scope_index(st) + 1u) % 3u]);
+            } else {
+                snprintf(line, sizeof line, "%s", k == 0u ? "UNDO" : k == 1u ? "REDO" : "RESHUFFLE");
+            }
+            d->queue_cmds++;
+            return desk_send(d, line);
+        }
+    }
+    row = queue_row_at(d, mn, ev->x, ev->y);
+    if (row < 0) {
+        return 0;
+    }
+    if (in_rect(queue_del_rect(d, mn, (uint32_t)row), ev->x, ev->y)) {
+        snprintf(line, sizeof line, "QUEUE_REMOVE %u", (unsigned)st->queue[row].id);
+        d->queue_cmds++;
+        return desk_send(d, line);
+    }
+    if (in_rect(queue_next_rect(d, mn, (uint32_t)row), ev->x, ev->y) && (st->queue[row].flags & SEL_QUEUE_FLAG_DIVIDER) == 0u) {
+        snprintf(line, sizeof line, "QUEUE_PLAY_NEXT %s", st->queue_text + st->queue[row].path_offset);
+        d->queue_cmds++;
+        return desk_send(d, line);
+    }
+    return 0;
+}
+
 static const char* lib_kind_name(uint32_t kind) {
     switch (kind) {
     case SEL_ROW_NODE: return "node";
@@ -1337,6 +1505,29 @@ static const char* library_dump_build(desk* d) {
     }
     o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "search draws %u rows %u query %s\n",
                           (unsigned)d->search_draws, (unsigned)d->search_rows, d->query);
+    if (d->queue_page) { /* the Queue page geometry and queue state (DUI-P4-8) */
+        sel_engine_stats qs;
+        sel_gui_rect qmn = region_rect(d, "main");
+        sel_engine_stats_get(d->engine, &qs);
+        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o,
+                              "queue draws %u rows %u cmds %u hash %08x count %u undo %u redo %u scope %s\n", (unsigned)d->queue_draws,
+                              (unsigned)d->queue_rows, (unsigned)d->queue_cmds, (unsigned)queue_hash(st), (unsigned)st->queue_count,
+                              (unsigned)qs.undo_depth, (unsigned)qs.redo_depth, queue_scope_name[queue_scope_index(st)]);
+        for (i = 0; i < QUEUE_BUTTONS; i++) {
+            sel_gui_rect b = queue_btn_rect(d, qmn, i);
+            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "qbtn %u %d %d %d %d\n", (unsigned)i, (int)b.x,
+                                  (int)b.y, (int)b.w, (int)b.h);
+        }
+        for (i = 0; i < st->queue_count && queue_row_visible(d, qmn, i) && o + 400u < sizeof d->library_dump; i++) {
+            sel_gui_rect r = queue_row_rect(d, qmn, i), nx = queue_next_rect(d, qmn, i), dl = queue_del_rect(d, qmn, i);
+            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o,
+                                  "qrow %u %d %d %d %d %s\nqnext %u %d %d %d %d\nqdel %u %d %d %d %d\nqpath %u %s\n", (unsigned)i,
+                                  (int)r.x, (int)r.y, (int)r.w, (int)r.h,
+                                  (st->queue[i].flags & SEL_QUEUE_FLAG_DIVIDER) != 0u ? "divider" : "song", (unsigned)i, (int)nx.x,
+                                  (int)nx.y, (int)nx.w, (int)nx.h, (unsigned)i, (int)dl.x, (int)dl.y, (int)dl.w, (int)dl.h,
+                                  (unsigned)i, st->queue_text + st->queue[i].path_offset);
+        }
+    }
     for (p = st->stats; p != NULL && *p != '\0' && o + 400u < sizeof d->library_dump;) {
         const char* val = lib_next(p);
         o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "stat %s|%s\n", p, val);
@@ -1727,6 +1918,10 @@ static void draw_home_content(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     if (d->search_on) {
         draw_search(d);
+        return;
+    }
+    if (d->queue_page) {
+        draw_queue(d);
         return;
     }
     sel_gui_rect mn = draw_panel(d, "main");
@@ -2619,6 +2814,9 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         d->clicks++;
         return 1;
     }
+    if (d->queue_page) {
+        return in_main ? queue_pointer(d, ev) : 0;
+    }
     if (!d->songs) {
         if (ev->kind == SEL_GUI_IN_CLICK && d->tile_menu > 0) {
             return shelf_menu_click(d, ev->x, ev->y);
@@ -3299,8 +3497,11 @@ static void* desk_open(const sel_ui_open_args* a) {
         } else if (strcmp(view, "songs") == 0) {
             d->home = 1;
             d->songs = 1;
+        } else if (strcmp(view, "queue") == 0) { /* the Queue page (DUI-P4-8) */
+            d->home = 1;
+            d->queue_page = 1;
         } else {
-            fprintf(stderr, "selecta: desktop view '%s' is not testcard, text, home, library, songs or widgets\n", view);
+            fprintf(stderr, "selecta: desktop view '%s' is not testcard, text, home, library, songs, queue or widgets\n", view);
             a->host->mem_free(a->host, d);
             return NULL;
         }
