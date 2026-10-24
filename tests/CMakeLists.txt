@@ -1445,6 +1445,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(xxh32_test PRIVATE selecta_library)
   add_test(NAME xxh32-unit COMMAND xxh32_test)
   set_tests_properties(xxh32-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "xxh32_ok")
+  # I227: the library heap falls back to a smaller block when fast RAM is fragmented.
+  add_executable(library_heap_fallback_test library_heap_fallback_test.c)
+  target_include_directories(library_heap_fallback_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_heap_fallback_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-opens-on-fragmented-ram COMMAND library_heap_fallback_test)
+  set_tests_properties(library-opens-on-fragmented-ram PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_heap_fallback_ok")
   # I219g: the KPlayer timing walker behind the native .mod seek on Amiga (pure C, so the host runs it).
   add_executable(kplayer_modwalk_test kplayer_modwalk_test.c ${PROJECT_SOURCE_DIR}/plugins/replayers/kplayer/modwalk.c)
   target_include_directories(kplayer_modwalk_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/replayers/kplayer)

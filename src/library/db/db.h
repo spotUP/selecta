@@ -235,7 +235,9 @@ enum {
 #define SEL_LIB_SCHEMA_VERSION 3
 
 /* Heap bytes for SQLite on a machine: the scaling table of D-M3-2 over fast + chip RAM
- * (<= 4 MiB: 512 KiB, <= 16 MiB: 2 MiB, <= 128 MiB: 8 MiB, above: 32 MiB). */
+ * (<= 4 MiB: 512 KiB, <= 16 MiB: 2 MiB, <= 128 MiB: 8 MiB, above: 32 MiB). This is the ceiling:
+ * sel_library_open halves it until the host grants one block, down to 512 KiB (sel_library_heap_size
+ * reports what it got). */
 uint32_t sel_library_heap_bytes(const sel_tag* machine);
 
 /* Opens a library for `account` at `path` (":memory:" for a throwaway DB), allocates the heap

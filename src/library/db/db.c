@@ -35,9 +35,19 @@ const char* sel_library_sqlite_version(void) {
     return sqlite3_libversion();
 }
 
+/* The smallest heap of the D-M3-2 table; SQLite still works in it. */
+#define HEAP_FLOOR_BYTES (512u * 1024u)
+
+/* The table size is a ceiling, not a demand: memsys5 needs one contiguous block, and on an Amiga
+ * whose fast RAM is fragmented the largest free block can be far below the free total (I227: 50 MB
+ * free, 16 MB largest, 32 MB asked). Halve until a block is granted, down to the floor. */
 static int heap_acquire(const sel_host* host, uint32_t bytes) {
     if (g_heap_users == 0) {
         g_heap = host->mem_alloc(host, bytes, SEL_MEM_FAST);
+        while (g_heap == NULL && bytes / 2 >= HEAP_FLOOR_BYTES) {
+            bytes /= 2;
+            g_heap = host->mem_alloc(host, bytes, SEL_MEM_FAST);
+        }
         if (g_heap == NULL) {
             return 0;
         }
