@@ -6,7 +6,7 @@
 #include <string.h>
 
 #define ART_TITLES 256u
-#define ART_TITLE_MAX 128u
+#define ART_TITLE_MAX 512u /* a queue path */
 #define ART_THUMB_MAX (SEL_GUI_THUMB_HEAD + 4u * DESK_ART_TILE_EDGE * DESK_ART_TILE_EDGE)
 
 typedef struct art_entry {

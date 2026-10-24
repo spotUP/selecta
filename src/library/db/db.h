@@ -53,12 +53,12 @@ enum {
     SEL_DUP_PICK,       /* I184b: next local song with id > `after` that has no md5, not hashed: `out` = key NUL path NUL, reply [2] = its id (0: none left) */
     SEL_DUP_STORE       /* I184b: store md5 `value` for local song key `key` (songs and files tables) */
 };
-/* One albums/artwork operation (SEL_LIB_REQ_ART, DUI-P2-4). Reply INT [0]: SEL_ART_FIND the album id (0: none),
+/* One albums/artwork operation (SEL_LIB_REQ_ART, DUI-P2-4). Reply INT [0]: SEL_ART_FIND the id of the albums row the song belongs to (0: none),
  * SEL_ART_GET the blob size (0: none; `data` holds min(size, cap) bytes), SEL_ART_PUT 1 when stored. */
 enum { SEL_ART_FIND = 1, SEL_ART_GET, SEL_ART_PUT };
 typedef struct sel_art_op {
     uint32_t op;       /* SEL_ART_* */
-    const char* name;  /* FIND: album name */
+    const char* ref;   /* FIND: a queue path or song key; resolved to source + path of the songs row */
     int64_t album;     /* GET, PUT: albums.id */
     const char* kind;  /* GET, PUT: artwork.kind */
     uint8_t* data;     /* GET: out buffer; PUT: bytes to store */

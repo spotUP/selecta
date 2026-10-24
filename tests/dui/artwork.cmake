@@ -1,5 +1,5 @@
 # dui-artwork (DUI-P2-4): the artwork worker over the fixture library. -DSELECTA -DSONGS -DWORK
-# Albums 1 to 3 carry a cover, album 4 has none (tests/dui/fixture_library.sql). The home view queues all four.
+# Albums 1 to 3 carry a cover, album 4 has none (tests/dui/fixture_library.sql). The home view queues the songs fixture/1.mod .. fixture/4.it (basenames 1..4, none an album name).
 # 1. Run 1 decodes the three covers (STAT_ART_DECODES = art_decodes) and writes a thumb144 row for each.
 # 2. Run 2 over the same database decodes nothing: the tiles come from the thumb rows.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
@@ -21,17 +21,27 @@ if(NOT rc EQUAL 0)
   message(FATAL_ERROR "loading the fixture failed: ${err}")
 endif()
 
+# The queue holds the fixture songs' real paths (fixture/1.mod ...). A path's basename is never an album name, so
+# a cover found for it proves the lookup goes songs(source, path) -> albums(name, artist, source).
 file(STRINGS "${HERE}/fixture_library.sql" album_lines REGEX "^INSERT INTO albums")
+file(STRINGS "${HERE}/fixture_library.sql" song_lines REGEX "^INSERT INTO songs")
 set(execs "")
-foreach(line IN LISTS album_lines)
-  string(FIND "${line}" "VALUES(" at)
-  string(SUBSTRING "${line}" ${at} -1 rest)
-  string(FIND "${rest}" "'" q1)
-  math(EXPR from "${q1} + 1")
-  string(SUBSTRING "${rest}" ${from} -1 rest)
-  string(FIND "${rest}" "'" q2)
-  string(SUBSTRING "${rest}" 0 ${q2} title)
-  list(APPEND execs --exec "QUEUE_ADD \"fixture/${title}.mod\"")
+set(queued 0)
+foreach(line IN LISTS song_lines)
+  if(NOT line MATCHES "VALUES\\([0-9]+, '[^']*', 'local', '([^']+)'")
+    message(FATAL_ERROR "cannot read the song path in: ${line}")
+  endif()
+  set(path "${CMAKE_MATCH_1}")
+  get_filename_component(base "${path}" NAME_WE)
+  foreach(album IN LISTS album_lines)
+    if(album MATCHES "VALUES\\([0-9]+, '${base}'")
+      message(FATAL_ERROR "fixture song ${path} has an album named like its basename; the test would not tell the lookups apart")
+    endif()
+  endforeach()
+  if(queued LESS 4)
+    list(APPEND execs --exec "QUEUE_ADD \"${path}\"")
+    math(EXPR queued "${queued} + 1")
+  endif()
 endforeach()
 set(common --db "${db}" --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats ${execs})
 

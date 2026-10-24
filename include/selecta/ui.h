@@ -12,7 +12,7 @@ SEL_EXTERN_C_BEGIN
  * blobs are the encoded cover (kind "cover") and the written-back thumbnails (kind "thumb<size>"). */
 typedef struct sel_ui_art {
     void* ctx;
-    int64_t (*find)(void* ctx, const char* album_name);                                        /* album id, 0 = none */
+    int64_t (*find)(void* ctx, const char* song_ref);                                          /* album id of the song a queue path (or song key) names, 0 = none */
     uint32_t (*get)(void* ctx, int64_t album, const char* kind, uint8_t* out, uint32_t cap);   /* blob size, 0 = none */
     int (*put)(void* ctx, int64_t album, const char* kind, const uint8_t* data, uint32_t len); /* 1 = stored */
 } sel_ui_art;

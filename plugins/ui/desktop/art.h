@@ -15,12 +15,12 @@ typedef struct desk_art desk_art;
 /* NULL when `src` is NULL (no library) or out of memory. */
 desk_art* art_open(const sel_ui_art* src);
 void art_close(desk_art* a);
-/* Resolves the albums named `titles[0..n)` that are not resolved yet and loads their tile artwork on the worker
+/* Resolves the albums of the songs at the queue paths `titles[0..n)` that are not resolved yet and loads their tile artwork on the worker
  * thread: from the thumb row when the library has one (no decode), else by decoding the cover and writing the
  * thumb row back. Returns when the worker is done, so the frame that follows is deterministic; the interactive
  * backend will poll instead (DUI-P2-7). */
 void art_load(desk_art* a, const char* const* titles, uint32_t n);
-/* The tile pixels (DESK_ART_TILE_EDGE squared) of the album named `title`, NULL when it has no artwork. */
+/* The tile pixels (DESK_ART_TILE_EDGE squared) of the album of the song at queue path `title`, NULL when it has no artwork. */
 const uint32_t* art_tile(desk_art* a, const char* title);
 /* Covers decoded since open (STAT_ART_DECODES). */
 uint32_t art_decodes(const desk_art* a);

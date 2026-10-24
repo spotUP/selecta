@@ -303,24 +303,20 @@ static uint32_t rect_hash(const sel_gui_canvas* c, sel_gui_rect r) {
     return h;
 }
 
-/* Loads the artwork of every queue title on the worker (art.h) before the tiles are drawn. */
+/* Loads the artwork of every queue path on the worker (art.h) before the tiles are drawn. */
 static void load_tile_art(desk* d, const sel_state* st) {
-    char (*names)[256];
     const char** ptrs;
     uint32_t i;
     if (d->art == NULL || st->queue_count == 0u) {
         return;
     }
-    names = (char(*)[256])malloc((size_t)st->queue_count * 256u);
     ptrs = (const char**)malloc((size_t)st->queue_count * sizeof *ptrs);
-    if (names != NULL && ptrs != NULL) {
+    if (ptrs != NULL) {
         for (i = 0; i < st->queue_count; i++) {
-            queue_title(st, i, names[i], 256u);
-            ptrs[i] = names[i];
+            ptrs[i] = st->queue_text + st->queue[i].path_offset;
         }
         art_load(d->art, ptrs, st->queue_count);
     }
-    free(names);
     free((void*)ptrs);
 }
 
@@ -346,7 +342,7 @@ static void draw_home(desk* d) {
         sel_gui_rect t = tile_rect(d, i);
         const uint32_t* art;
         queue_title(st, i, name, sizeof name);
-        art = art_tile(d->art, name);
+        art = art_tile(d->art, st->queue_text + st->queue[i].path_offset);
         if (art != NULL) {
             sel_gui_blit_image(d->canvas, rect_of(t.x, t.y, TILE_ART, TILE_ART), art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE,
                                DESK_ART_TILE_EDGE, 0);
