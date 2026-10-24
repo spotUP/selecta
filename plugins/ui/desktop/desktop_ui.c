@@ -888,6 +888,21 @@ static uint32_t home_shelves(const sel_state* st, shelf* out) {
 }
 
 /* 1 when the HOME source holds at least one tile: the shelves replace the queue grid. */
+static int home_shelf_mode(const sel_state* st);
+
+/* 1 when Home has nothing to show: the HOME source holds no tile (an empty library still lists its shelf headings)
+ * and no song is queued. The view stays on Home and draws the empty state (one line and a Browse files action). */
+static int home_empty(const sel_state* st) {
+    return st->view != NULL && st->view->source == SEL_VIEW_HOME && !home_shelf_mode(st) && st->queue_count == 0u;
+}
+
+/* The Browse files action of the empty Home state. */
+static sel_gui_rect home_empty_button(desk* d) {
+    sel_gui_rect mn = region_rect(d, "main");
+    return rect_of(mn.x + lpx(d, HOME_MARGIN), mn.y + lpx(d, HOME_SECTION_Y + 40), lpx(d, 140), lpx(d, HOME_CHIP_H));
+}
+
+/* 1 when the HOME source holds at least one tile: the shelves replace the queue grid. */
 static int home_shelf_mode(const sel_state* st) {
     shelf sh[SHELF_MAX];
     uint32_t i, n = home_shelves(st, sh);
@@ -1276,6 +1291,7 @@ static int library_click(desk* d, int32_t x, int32_t y) {
     uint32_t i = 0;
     const char* p;
     char line[256];
+    size_t o;
     if (st->composers == NULL) {
         return 0;
     }
@@ -1289,7 +1305,16 @@ static int library_click(desk* d, int32_t x, int32_t y) {
     for (p = st->composers; *p != '\0'; i++) {
         const char* disp = lib_next(p);
         if (in_rect(lib_row_rect(d, mn, i), x, y)) {
-            snprintf(line, sizeof line, "COMPOSERS_SHOW \"%s\"", p); /* a canon holds spaces: one quoted argument */
+            /* A canon holds spaces: one quoted argument; the codec reads a backslash as the escape of the next character. */
+            o = (size_t)snprintf(line, sizeof line, "COMPOSERS_SHOW \"");
+            for (const char* c = p; *c != '\0' && o + 3u < sizeof line; c++) {
+                if (*c == '"' || *c == '\\') {
+                    line[o++] = '\\';
+                }
+                line[o++] = *c;
+            }
+            line[o++] = '"';
+            line[o] = '\0';
             return desk_send(d, line);
         }
         p = lib_next(lib_next(disp));
@@ -1331,6 +1356,17 @@ static void draw_home_content(desk* d) {
             sel_gui_text_wrap(d->canvas, semi, rect_of(m.x + pad, m.y + lpx(d, 4), m.w - 2 * pad, semi->line_height),
                               g_menu_items[1], ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), 1, &d->text);
         }
+        sel_gui_clip_pop(d->canvas);
+        sel_gui_dirty_add(d->canvas, mn);
+        return;
+    }
+    if (home_empty(st)) {
+        sel_gui_rect b = home_empty_button(d);
+        draw_home_header(d, mn, 0);
+        draw_text(d, rect_of(mn.x + lpx(d, HOME_MARGIN), mn.y + lpx(d, HOME_SECTION_Y), mn.w - 2 * lpx(d, HOME_MARGIN), lpx(d, HOME_SECTION_H)),
+                  "Nothing played yet. Songs you play show up here.", 0, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+        sel_gui_round_rect(d->canvas, b, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+        draw_text(d, rect_of(b.x + lpx(d, 14), b.y, b.w, b.h), "Browse files", 1, 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
         sel_gui_clip_pop(d->canvas);
         sel_gui_dirty_add(d->canvas, mn);
         return;
@@ -1434,6 +1470,13 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
     sel_gui_rect mn = region_rect(d, "main");
     uint32_t i;
     if (!d->home || d->songs || d->open_tile > 0 || x < mn.x || y < mn.y || x >= mn.x + mn.w || y >= mn.y + mn.h) {
+        return 0;
+    }
+    if (home_empty(st)) { /* the empty state's only action */
+        if (in_rect(home_empty_button(d), x, y)) {
+            desk_send(d, "VIEW_SOURCE browse");
+            return 1;
+        }
         return 0;
     }
     if (home_shelf_mode(st)) { /* a shelf tile: the engine plays the song or opens the album */
@@ -3023,7 +3066,9 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[57].value = d->tile_queued;
     d->stats[58].tag = SEL_UI_STAT_LIBRARY_DUMP;
     d->stats[58].value = (uintptr_t)library_dump_build(d);
-    d->stats[59].tag = SEL_TAG_END;
+    d->stats[59].tag = SEL_UI_STAT_HOME_EMPTY;
+    d->stats[59].value = (uintptr_t)home_empty(sel_engine_state(d->engine));
+    d->stats[60].tag = SEL_TAG_END;
 
     return d->stats;
 }

@@ -228,6 +228,7 @@ SEL_TAG(UI, STAT_HOME_DUMP,        0x5052, STR)
 SEL_TAG(UI, STAT_HOME_SCROLL_Y,    0x5053, INT)
 SEL_TAG(UI, STAT_TILE_QUEUED,      0x5054, INT)
 SEL_TAG(UI, STAT_LIBRARY_DUMP,     0x5055, STR)
+SEL_TAG(UI, STAT_HOME_EMPTY,       0x5056, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)
