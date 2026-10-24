@@ -5,6 +5,7 @@
 #define SELECTA_DESKTOP_BACKEND_SDL_H
 
 #include <selecta/gui/gui_draw.h>
+#include <selecta/gui/gui_input.h>
 #include <stdint.h>
 
 typedef struct desk_sdl desk_sdl;
@@ -31,5 +32,9 @@ uint32_t desk_sdl_presents(const desk_sdl* b);
  * DESK_SDL_NONE. */
 int desk_sdl_poll(desk_sdl* b, uint32_t timeout_ms, int32_t* w, int32_t* h);
 uint32_t desk_sdl_ticks(void);
+/* Live pointer and touchpad input (I242): desk_sdl_poll maps SDL mouse button, motion, wheel and pinch events (and the
+ * back and forward buttons as a swipe) through sel_gui_input_map and queues the result. This pops the oldest queued
+ * event into *ev; returns 0 when the queue is empty. The queue holds 64 events and drops the newest beyond that. */
+int desk_sdl_next_input(desk_sdl* b, sel_gui_input* ev);
 
 #endif

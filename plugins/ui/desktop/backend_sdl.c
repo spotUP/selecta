@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#define DESK_SDL_QUEUE 64u
+
 struct desk_sdl {
     SDL_Window* window;
     SDL_Renderer* renderer;
@@ -15,6 +17,9 @@ struct desk_sdl {
     uint64_t present_hash;
     uint32_t upload_pixels;
     uint32_t presents;
+    sel_gui_input_map_state map; /* press state of the pointer buttons */
+    sel_gui_input queue[DESK_SDL_QUEUE];
+    uint32_t q_head, q_count;
 };
 
 static int make_texture(desk_sdl* b, int32_t w, int32_t h) {
@@ -157,6 +162,31 @@ uint32_t desk_sdl_presents(const desk_sdl* b) {
     return b->presents;
 }
 
+static int32_t q16_of(float v) {
+    return (int32_t)SDL_lroundf(v * 65536.0f);
+}
+
+/* One raw pointer event through the shared mapping into the queue; returns 1 when an event was queued. */
+static int queue_raw(desk_sdl* b, const sel_gui_raw* raw) {
+    sel_gui_input in;
+    if (!sel_gui_input_map(&b->map, raw, &in) || b->q_count >= DESK_SDL_QUEUE) {
+        return 0;
+    }
+    b->queue[(b->q_head + b->q_count) % DESK_SDL_QUEUE] = in;
+    b->q_count++;
+    return 1;
+}
+
+int desk_sdl_next_input(desk_sdl* b, sel_gui_input* ev) {
+    if (b->q_count == 0u) {
+        return 0;
+    }
+    *ev = b->queue[b->q_head];
+    b->q_head = (b->q_head + 1u) % DESK_SDL_QUEUE;
+    b->q_count--;
+    return 1;
+}
+
 int desk_sdl_poll(desk_sdl* b, uint32_t timeout_ms, int32_t* w, int32_t* h) {
     SDL_Event ev;
     int result = DESK_SDL_NONE;
@@ -176,6 +206,38 @@ int desk_sdl_poll(desk_sdl* b, uint32_t timeout_ms, int32_t* w, int32_t* h) {
                 *h = ph;
                 result = DESK_SDL_RESIZE;
             } else if (result == DESK_SDL_NONE) {
+                result = DESK_SDL_ACTIVITY;
+            }
+            break;
+        }
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+        case SDL_EVENT_MOUSE_MOTION:
+        case SDL_EVENT_MOUSE_WHEEL:
+        case SDL_EVENT_PINCH_UPDATE: {
+            sel_gui_raw raw;
+            memset(&raw, 0, sizeof raw);
+            SDL_ConvertEventToRenderCoordinates(b->renderer, &ev);
+            if (ev.type == SDL_EVENT_MOUSE_MOTION) {
+                raw.kind = SEL_GUI_RAW_MOTION;
+                raw.x = (int32_t)ev.motion.x;
+                raw.y = (int32_t)ev.motion.y;
+            } else if (ev.type == SDL_EVENT_MOUSE_WHEEL) {
+                float dir = ev.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -1.0f : 1.0f;
+                raw.kind = SEL_GUI_RAW_WHEEL;
+                raw.dx = q16_of(ev.wheel.x * dir);
+                raw.dy = q16_of(ev.wheel.y * dir);
+            } else if (ev.type == SDL_EVENT_PINCH_UPDATE) {
+                raw.kind = SEL_GUI_RAW_PINCH;
+                raw.scale = q16_of(ev.pinch.scale);
+            } else {
+                raw.kind = ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? SEL_GUI_RAW_BUTTON_DOWN : SEL_GUI_RAW_BUTTON_UP;
+                raw.x = (int32_t)ev.button.x;
+                raw.y = (int32_t)ev.button.y;
+                raw.button = ev.button.button;
+                raw.clicks = ev.button.clicks;
+            }
+            if (queue_raw(b, &raw) && result == DESK_SDL_NONE) {
                 result = DESK_SDL_ACTIVITY;
             }
             break;

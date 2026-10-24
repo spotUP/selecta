@@ -47,6 +47,41 @@ int sel_gui_input_parse(const char* line, sel_gui_input* ev);
  * down, left, right, home, end, pageup, pagedown, insert, delete, f1..f12) or one character. Returns 1 on success. */
 int sel_gui_key_parse(const char* spec, uint32_t* code, uint32_t* mods);
 
+/* Live pointer and touchpad input (I242). A backend reads its window events and hands plain integers to
+ * sel_gui_input_map, which builds the same sel_gui_input the `--input` script builds, so the shell has one path from
+ * pointer events to the mouse, tooltip and gesture code. No SDL type is needed here. */
+typedef enum sel_gui_raw_kind {
+    SEL_GUI_RAW_NONE = 0,
+    SEL_GUI_RAW_BUTTON_DOWN, /* x, y, button (1 left, 2 middle, 3 right, 4 back, 5 forward: SDL numbering), clicks */
+    SEL_GUI_RAW_BUTTON_UP,   /* the same fields */
+    SEL_GUI_RAW_MOTION,      /* x, y */
+    SEL_GUI_RAW_WHEEL,       /* dx, dy in Q16 notches (positive dy scrolls up) */
+    SEL_GUI_RAW_PINCH,       /* scale Q16: the change since the last update, above Q16 one is zoom in */
+    SEL_GUI_RAW_SWIPE        /* dx: positive swipes right (Back), negative left (Forward) */
+} sel_gui_raw_kind;
+
+typedef struct sel_gui_raw {
+    uint32_t kind; /* sel_gui_raw_kind */
+    int32_t x, y;
+    uint32_t button, clicks;
+    int32_t dx, scale, dy;
+} sel_gui_raw;
+
+/* Press state between a button down and its up. */
+typedef struct sel_gui_input_map_state {
+    int32_t down_x, down_y;
+    uint32_t down_button; /* 0 when no button is held */
+} sel_gui_input_map_state;
+
+/* Pixels the pointer may travel between press and release for the release to still be a click. */
+#define SEL_GUI_DRAG_SLOP 4
+
+/* Translates one raw event. Returns 1 and fills *out, or 0 when the raw event produces nothing (a button down, which
+ * waits for its up; the middle button; a zero wheel; a pinch of scale 0 or less; an unknown kind). Left and right up
+ * give SEL_GUI_IN_CLICK (button 0 and 1, the click count passed through, at least 1), or SEL_GUI_IN_DRAG when the
+ * pointer moved more than SEL_GUI_DRAG_SLOP since the press. Back and forward up give SEL_GUI_IN_SWIPE (+1 and -1). */
+int sel_gui_input_map(sel_gui_input_map_state* st, const sel_gui_raw* raw, sel_gui_input* out);
+
 #ifdef __cplusplus
 }
 #endif

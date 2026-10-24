@@ -167,3 +167,74 @@ int sel_gui_input_parse(const char* line, sel_gui_input* ev) {
     ev->kind = SEL_GUI_IN_NONE;
     return 0;
 }
+
+static int32_t absdiff(int32_t a, int32_t b) {
+    return a > b ? a - b : b - a;
+}
+
+int sel_gui_input_map(sel_gui_input_map_state* st, const sel_gui_raw* raw, sel_gui_input* out) {
+    memset(out, 0, sizeof *out);
+    switch (raw->kind) {
+    case SEL_GUI_RAW_BUTTON_DOWN:
+        if (raw->button == 1u || raw->button == 3u) {
+            st->down_x = raw->x;
+            st->down_y = raw->y;
+            st->down_button = raw->button;
+        }
+        return 0;
+    case SEL_GUI_RAW_BUTTON_UP:
+        if (raw->button == 4u || raw->button == 5u) { /* the back and forward buttons are the swipe */
+            out->kind = SEL_GUI_IN_SWIPE;
+            out->x = raw->button == 4u ? 1 : -1;
+            return 1;
+        }
+        if (raw->button != 1u && raw->button != 3u) {
+            return 0;
+        }
+        out->x = raw->x;
+        out->y = raw->y;
+        out->button = raw->button == 3u ? 1u : 0u;
+        if (st->down_button == raw->button &&
+            (absdiff(raw->x, st->down_x) > SEL_GUI_DRAG_SLOP || absdiff(raw->y, st->down_y) > SEL_GUI_DRAG_SLOP)) {
+            out->kind = SEL_GUI_IN_DRAG;
+            out->x = st->down_x;
+            out->y = st->down_y;
+            out->x2 = raw->x;
+            out->y2 = raw->y;
+        } else {
+            out->kind = SEL_GUI_IN_CLICK;
+            out->clicks = raw->clicks > 0u ? raw->clicks : 1u;
+        }
+        st->down_button = 0u;
+        return 1;
+    case SEL_GUI_RAW_MOTION:
+        out->kind = SEL_GUI_IN_MOVE;
+        out->x = raw->x;
+        out->y = raw->y;
+        return 1;
+    case SEL_GUI_RAW_WHEEL:
+        if (raw->dx == 0 && raw->dy == 0) {
+            return 0;
+        }
+        out->kind = SEL_GUI_IN_WHEEL;
+        out->dx = raw->dx;
+        out->dy = raw->dy;
+        return 1;
+    case SEL_GUI_RAW_PINCH:
+        if (raw->scale <= 0) {
+            return 0;
+        }
+        out->kind = SEL_GUI_IN_PINCH;
+        out->scale = raw->scale;
+        return 1;
+    case SEL_GUI_RAW_SWIPE:
+        if (raw->dx == 0) {
+            return 0;
+        }
+        out->kind = SEL_GUI_IN_SWIPE;
+        out->x = raw->dx > 0 ? 1 : -1;
+        return 1;
+    default:
+        return 0;
+    }
+}

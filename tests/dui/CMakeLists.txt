@@ -76,3 +76,9 @@ foreach(item IN LISTS SEL_DUI_ITEMS)
     set_tests_properties(${name} PROPERTIES LABELS "${labels}")
   endif()
 endforeach()
+
+# Pure unit test of the raw pointer to sel_gui_input mapping the sdl backend uses (I242).
+add_executable(dui_input_map_unit input_map_unit.c)
+target_link_libraries(dui_input_map_unit PRIVATE selecta_gui)
+add_test(NAME dui-input-map COMMAND dui_input_map_unit)
+set_tests_properties(dui-input-map PROPERTIES LABELS dui TIMEOUT 60)
