@@ -176,6 +176,8 @@ SEL_TAG(UI, STAT_MISSING_GLYPHS, 0x5028, INT)
 SEL_TAG(UI, STAT_GLYPHS_DRAWN,   0x5029, INT)
 /* Covers decoded by the artwork worker (DUI-P2-4): thumb rows already in the library are not decoded again. */
 SEL_TAG(UI, STAT_ART_DECODES,    0x502A, INT)
+/* FNV-1a of the first home tile square, to compare generated artwork per format (DUI-P2-5). */
+SEL_TAG(UI, STAT_ART_TILE_HASH,  0x502B, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)

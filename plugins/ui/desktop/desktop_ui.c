@@ -6,6 +6,7 @@
 #include <selecta/uimodel.h>
 
 #include "art.h"
+#include <selecta/gui/gui_genart.h>
 #include "atlas_build.h"
 #include <selecta/gui/gui_draw.h>
 #include <selecta/gui/gui_text.h>
@@ -52,7 +53,8 @@ typedef struct desk {
     char* input;            /* --input <file>: scripted clicks, replayed once on the first quiet turn */
     int input_done;
     desk_art* art;          /* tile artwork from the library, NULL without one (DUI-P2-4) */
-    sel_tag stats[17];
+    uint32_t art_tile_hash; /* pixels of the first home tile, STAT_ART_TILE_HASH (DUI-P2-5) */
+    sel_tag stats[18];
 } desk;
 
 static const char* desk_opt(const sel_ui_open_args* a, const char* name) {
@@ -275,8 +277,32 @@ static void draw_detail(desk* d) {
     sel_gui_dirty_add(d->canvas, mn);
 }
 
-/* The home view (DUI-P2-6): one tile per queue entry, an accent art square with the first letter and the title
- * wrapped under it. The library is not handed to UIs yet (DUI-P2-4), so the queue is the tile source. */
+/* The home view (DUI-P2-6): one tile per queue entry, its album artwork (DUI-P2-4) or else generated art of its
+ * format (DUI-P2-5), and the title wrapped under it. The queue is the tile source. */
+/* The format of queue entry i: its file extension, "" without one. */
+static void queue_format(const sel_state* st, uint32_t i, char* out, size_t cap) {
+    const char* path = st->queue_text + st->queue[i].path_offset;
+    const char* dot = strrchr(path, '.');
+    const char* slash = strrchr(path, '/');
+    if (dot == NULL || (slash != NULL && dot < slash) || strlen(dot + 1) >= cap) {
+        out[0] = '\0';
+        return;
+    }
+    strcpy(out, dot + 1);
+}
+
+/* FNV-1a over the pixels of r. */
+static uint32_t rect_hash(const sel_gui_canvas* c, sel_gui_rect r) {
+    uint32_t h = 2166136261u;
+    int32_t x, y;
+    for (y = r.y; y < r.y + r.h; y++) {
+        for (x = r.x; x < r.x + r.w; x++) {
+            h = (h ^ sel_gui_pixel(c, x, y)) * 16777619u;
+        }
+    }
+    return h;
+}
+
 /* Loads the artwork of every queue title on the worker (art.h) before the tiles are drawn. */
 static void load_tile_art(desk* d, const sel_state* st) {
     char (*names)[256];
@@ -303,14 +329,13 @@ static void draw_home(desk* d) {
     sel_gui_rect mn = region_rect(d, "main");
     int32_t sp = (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING];
     const sel_gui_atlas* semi = desk_font(d, 1, 13);
-    const sel_gui_atlas* big = desk_font(d, 1, 32);
     uint32_t i;
     char name[256];
     if (d->open_tile > 0) {
         draw_detail(d);
         return;
     }
-    if (semi == NULL || big == NULL) {
+    if (semi == NULL) {
         return;
     }
     load_tile_art(d, st);
@@ -319,8 +344,6 @@ static void draw_home(desk* d) {
                       ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
     for (i = 0; i < st->queue_count; i++) {
         sel_gui_rect t = tile_rect(d, i);
-        char letter[8];
-        size_t used;
         const uint32_t* art;
         queue_title(st, i, name, sizeof name);
         art = art_tile(d->art, name);
@@ -328,14 +351,13 @@ static void draw_home(desk* d) {
             sel_gui_blit_image(d->canvas, rect_of(t.x, t.y, TILE_ART, TILE_ART), art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE,
                                DESK_ART_TILE_EDGE, 0);
         } else {
-            sel_gui_round_rect(d->canvas, rect_of(t.x, t.y, TILE_ART, TILE_ART),
-                               (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS], ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
-            (void)sel_gui_utf8_next(name, strlen(name), &used);
-            memcpy(letter, name, used);
-            letter[used] = '\0';
-            sel_gui_text_draw(d->canvas, big, t.x + (TILE_ART - sel_gui_text_width(big, letter, used)) / 2,
-                              t.y + (TILE_ART - big->line_height) / 2, letter, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]),
-                              TILE_ART, &d->text);
+            /* No cover: the generated art of the song's format and chip (gui_genart.h). */
+            char format[16];
+            queue_format(st, i, format, sizeof format);
+            sel_gui_genart_draw(d->canvas, rect_of(t.x, t.y, TILE_ART, TILE_ART), format, sel_gui_str_hash(name));
+        }
+        if (i == 0u) {
+            d->art_tile_hash = rect_hash(d->canvas, rect_of(t.x, t.y, TILE_ART, TILE_ART));
         }
         sel_gui_text_wrap(d->canvas, semi, rect_of(t.x, t.y + TILE_ART + 4, TILE_ART, HOME_MAX_LINES * semi->line_height),
                           name, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), HOME_MAX_LINES, &d->text);
@@ -836,8 +858,10 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[14].value = d->view_opens;
     d->stats[15].tag = SEL_UI_STAT_ART_DECODES;
     d->stats[15].value = art_decodes(d->art);
-    d->stats[16].tag = SEL_TAG_END;
-    d->stats[16].value = 0;
+    d->stats[16].tag = SEL_UI_STAT_ART_TILE_HASH;
+    d->stats[16].value = d->art_tile_hash;
+    d->stats[17].tag = SEL_TAG_END;
+    d->stats[17].value = 0;
     return d->stats;
 }
 
