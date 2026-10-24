@@ -65,6 +65,8 @@ Same look by construction: views never call a backend; they draw into a `sel_gui
 
 The token file uses the existing `txt_theme_parse` line syntax (`role = value`), so one parser serves the text UI, the desktop UI and the Amiga UIs. Presets: Selecta Dark (default), Selecta Light, plus the four Amiga presets of M4 8a Q21, which load and render on desktop too. Colours are stored as 8-bit RGBA. Sizes are stored in logical units; the backend scale factor is applied once at layout time, in integers.
 
+Two token layers (D-DUI-9, Johan 2026-10-24, after the Spotify Encore model). Layer 1 holds base values: a colour ramp (`gui.base.grey_0` .. `grey_10`, `gui.base.accent_0` .. `accent_4`, error, warning and success steps), the spacing steps, the radius steps and the type sizes. Layer 2 holds the role tokens listed above (`gui.surface`, `gui.accent`, `gui.spacing_3`, and so on); each role either references a base token (`gui.surface = @gui.base.grey_1`) or keeps a literal value. Widgets read role tokens only and never read base tokens. A theme, a preset or an Amiga palette normally swaps layer 1 only, and the roles follow it. The reference is resolved once at parse time (no lookup per frame), and a missing or circular reference makes the parse fail with the token name. The same table serves desktop, RTG and AGA, so the Amiga UI matches the desktop look through shared tokens and the shared renderer, not through a copy.
+
 ### 2.3 Widget set
 
 Retained tree of fixed-size widget records in an arena allocated at `open`; no allocation per frame. Each widget has: id, kind, rect (Q16 not needed: integer logical pixels), state bits (hover, pressed, focus, selected, disabled), action id (from the action table, which supplies label, tooltip text, icon and binding), and a dirty bit.
@@ -309,6 +311,7 @@ All eight recommended answers were chosen. They are decisions now; do not reopen
 - D-DUI-6 (Q6): grid and 2D cover flow move forward from M5; the 3D GPU variant stays in M5.
 - D-DUI-7 (Q7): artwork thumbnails stored in the library database as `kind = thumb<size>` rows.
 - D-DUI-8 (Q8): Lucide icons, rasterised at build time into an alpha atlas.
+- D-DUI-9 (Johan 2026-10-24): two token layers, base values plus role tokens that reference them (section 2.2), after the Spotify Encore model.
 
 ## 8. Coverage
 
