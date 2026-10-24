@@ -4432,6 +4432,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         sel_engine_destroy(e);
         return NULL;
     }
+    e->browse.songs_only = 1; /* the folder browser lists folders and recognised files only (I218i) */
     return e;
 }
 
