@@ -1,7 +1,7 @@
 /* paula output (plan M2 phase 3, I118): the Paula voice sink over the real custom chip. Shares every line of
  * output and sink code with paula-shadow (paula_out.c, paula_voices.c); only the bus differs. The bus is
  * paula_hw.c, integer only, because the sink writes from the audio task. */
-#include "paula_hw.h"
+#include "paula/paula_hw.h"
 #include "paula_out.h"
 
 static void* hw_open(const sel_host* host, sel_paula_bus* bus) {

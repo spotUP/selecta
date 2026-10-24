@@ -14,7 +14,7 @@
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
 
-#include "../stream/stream_pcm.h"
+#include "stream/stream_pcm.h"
 
 #include <stdlib.h>
 #include <string.h>

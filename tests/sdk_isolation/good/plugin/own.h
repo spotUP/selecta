@@ -1,0 +1,1 @@
+#define SEL_FIXTURE_OWN 1

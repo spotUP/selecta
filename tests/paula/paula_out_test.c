@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../../plugins/outputs/paula/paula_hw.h"
+#include "paula/paula_hw.h"
 
 const sel_tag* paula_entry(uint32_t host_api);
 const sel_tag* shadow_entry(uint32_t host_api);

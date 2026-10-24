@@ -199,6 +199,10 @@ add_test(NAME registry-tags-negative
 # T7: every plugin compiles with include/ as its only project include path.
 add_test(NAME sdk-isolation
   COMMAND "${CMAKE_COMMAND}" --build "${PROJECT_BINARY_DIR}" --target sdk-isolation)
+# I228: the include check rejects "../other/x.h" (fixture plugin) and accepts a clean plugin.
+add_test(NAME sdk-isolation-fixture
+  COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}" -P "${CMAKE_CURRENT_SOURCE_DIR}/sdk_isolation/check_fixture.cmake")
+set_tests_properties(sdk-isolation-fixture PROPERTIES PASS_REGULAR_EXPRESSION "sdk_isolation_fixture_ok")
 
 # T9: the 68k build runs under vamos and agrees with the host. Registered
 # only when vamos is installed and build/amiga holds a selecta-cli.
@@ -348,18 +352,18 @@ target_link_libraries(loudness_gain_test PRIVATE selecta_core m)
 add_test(NAME mixer-loudness-gain-unit COMMAND loudness_gain_test)
 set_tests_properties(mixer-loudness-gain-unit PROPERTIES PASS_REGULAR_EXPRESSION "loudness_gain_unit_ok")
 # T50: Paula voice sink conformance (chip copy, AUDxPER/AUDxVOL, loop registers).
-add_executable(paula_voices_test paula/paula_voices_test.c "${PROJECT_SOURCE_DIR}/plugins/outputs/paula/paula_voices.c")
+add_executable(paula_voices_test paula/paula_voices_test.c)
+target_link_libraries(paula_voices_test PRIVATE selecta_plugin_shared)
 target_include_directories(paula_voices_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
 add_test(NAME paula-voices-unit COMMAND paula_voices_test)
 # I118/I121: hardware and shadow outputs share one skeleton; hardware register bus; routing table.
 set(SEL_PAULA_DIR "${PROJECT_SOURCE_DIR}/plugins/outputs/paula")
 add_executable(paula_out_test paula/paula_out_test.c
-  "${SEL_PAULA_DIR}/paula.c" "${SEL_PAULA_DIR}/shadow.c" "${SEL_PAULA_DIR}/paula_hw.c"
-  "${SEL_PAULA_DIR}/paula_out.c" "${SEL_PAULA_DIR}/paula_voices.c")
+  "${SEL_PAULA_DIR}/paula.c" "${SEL_PAULA_DIR}/shadow.c" "${SEL_PAULA_DIR}/paula_out.c")
 set_source_files_properties("${SEL_PAULA_DIR}/paula.c" PROPERTIES COMPILE_DEFINITIONS SEL_PLUGIN_ENTRY=paula_entry)
 set_source_files_properties("${SEL_PAULA_DIR}/shadow.c" PROPERTIES COMPILE_DEFINITIONS SEL_PLUGIN_ENTRY=shadow_entry)
 target_include_directories(paula_out_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
-target_link_libraries(paula_out_test PRIVATE selecta_core)
+target_link_libraries(paula_out_test PRIVATE selecta_core selecta_plugin_shared)
 add_test(NAME paula-out-unit COMMAND paula_out_test)
 # I118: SEL_MEM_SAMPLE maps to the chip RAM flags (sentinel: chip allocation counter).
 add_executable(mem_class_test host/mem_class_test.c)
@@ -961,7 +965,7 @@ add_executable(p14_test paula/p14_test.c "${SEL_P14_DIR}/shadow.c" "${SEL_P14_DI
   "${SEL_P14_DIR}/common/p14_sink.c" "${SEL_P14_DIR}/common/p14_out.c")
 set_source_files_properties("${SEL_P14_DIR}/shadow.c" PROPERTIES COMPILE_DEFINITIONS SEL_PLUGIN_ENTRY=shadow_entry)
 target_include_directories(p14_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
-target_link_libraries(p14_test PRIVATE selecta_core)
+target_link_libraries(p14_test PRIVATE selecta_core selecta_plugin_shared)
 add_test(NAME paula14-unit COMMAND p14_test)
 
 # I141 (D-M3-6): net fixture server. Setup/cleanup tests start and stop it for
@@ -1559,7 +1563,7 @@ if(NOT SEL_AMIGA)
       target_compile_definitions(stb_vorbis_arena${_variant}_test PRIVATE VORBIS_ARENA_BYTES=4096u)
     endif()
     set_source_files_properties("${PROJECT_SOURCE_DIR}/third_party/stb_vorbis/stb_vorbis.c" PROPERTIES COMPILE_OPTIONS "-w" COMPILE_DEFINITIONS STB_VORBIS_NO_STDIO)
-    target_link_libraries(stb_vorbis_arena${_variant}_test PRIVATE m)
+    target_link_libraries(stb_vorbis_arena${_variant}_test PRIVATE m selecta_plugin_shared)
     set(_sv_args "${PROJECT_SOURCE_DIR}/tests/m3/stream/chained.ogg")
     if(_variant STREQUAL "_tiny")
       list(APPEND _sv_args tiny)

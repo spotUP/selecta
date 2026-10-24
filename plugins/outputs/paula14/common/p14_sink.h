@@ -8,7 +8,7 @@
 
 #include <selecta/host.h>
 
-#include "../../paula/paula_voices.h"
+#include "paula/paula_voices.h"
 #include "p14_split.h"
 
 #define SEL_P14_CHANNELS 4u

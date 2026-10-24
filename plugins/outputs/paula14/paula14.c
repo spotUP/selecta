@@ -1,6 +1,6 @@
 /* paula14 output (plan M2 phase 4, I123): 14-bit PCM over four Paula channels. Same skeleton as the shadow;
- * the bus is the custom chip (../paula/paula_hw.c). Amiga only. */
-#include "../paula/paula_hw.h"
+ * the bus is the custom chip (plugins/shared/paula/paula_hw.c). Amiga only. */
+#include "paula/paula_hw.h"
 #include "common/p14_out.h"
 
 static void* hw_open(const sel_host* host, sel_paula_bus* bus) {

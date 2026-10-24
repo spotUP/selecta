@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../../plugins/outputs/paula/paula_voices.h"
+#include "paula/paula_voices.h"
 
 static int failures;
 

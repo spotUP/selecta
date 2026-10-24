@@ -11,10 +11,17 @@
 # nothing else). They are added to both targets; no other project directory is
 # ever visible to a plugin.
 #
-# Two targets per plugin:
+# plugins/shared is the one other directory a plugin may include from: an internal static helper library
+# (selecta_plugin_shared, include root plugins/shared, e.g. "paula/paula_voices.h") that is not public SDK. Plugins that
+# need its code link selecta_plugin_shared. A plugin reaching into a sibling plugin directory ("../stream/x.h") breaks
+# isolation and fails sel_incheck_<name> (cmake/sel_check_includes.cmake, I228).
+#
+# Three targets per plugin:
 #   sel_plugin_<name>    the library the apps link
 #   sel_sdkcheck_<name>  the same sources compiled against include/ only,
 #                        collected under the sdk-isolation target (T7)
+#   sel_incheck_<name>   resolves every quoted include and rejects any outside the plugin's own directory,
+#                        include/selecta, plugins/shared and THIRD_PARTY_INCLUDES (I228)
 
 define_property(GLOBAL PROPERTY SEL_PLUGINS
   BRIEF_DOCS "Names of plugins registered with sel_add_plugin"
@@ -46,7 +53,38 @@ function(sel_add_plugin name kind)
     target_include_directories(sel_plugin_${name} PRIVATE ${SELP_THIRD_PARTY_INCLUDES})
     target_include_directories(sel_sdkcheck_${name} PRIVATE ${SELP_THIRD_PARTY_INCLUDES})
   endif()
+  foreach(t sel_plugin_${name} sel_sdkcheck_${name})
+    target_include_directories(${t} PRIVATE "${PROJECT_SOURCE_DIR}/plugins/shared")
+  endforeach()
   add_dependencies(sdk-isolation sel_sdkcheck_${name})
+
+  # Own directory: plugins/<kind>/<name> for a plugin under plugins/, else the first source's directory.
+  set(own_dir "")
+  foreach(src IN LISTS sources)
+    cmake_path(ABSOLUTE_PATH src BASE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" NORMALIZE OUTPUT_VARIABLE abs_src)
+    if(abs_src MATCHES "^${PROJECT_SOURCE_DIR}/")
+      if(abs_src MATCHES "^(${PROJECT_SOURCE_DIR}/plugins/[^/]+/[^/]+)/")
+        set(own_dir "${CMAKE_MATCH_1}")
+      else()
+        cmake_path(GET abs_src PARENT_PATH own_dir)
+      endif()
+      break()
+    endif()
+  endforeach()
+  set(abs_sources "")
+  foreach(src IN LISTS sources)
+    cmake_path(ABSOLUTE_PATH src BASE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" NORMALIZE OUTPUT_VARIABLE abs_src)
+    list(APPEND abs_sources "${abs_src}")
+  endforeach()
+  list(JOIN abs_sources "|" sources_arg)
+  list(JOIN SELP_THIRD_PARTY_INCLUDES "|" tp_arg)
+  add_custom_target(sel_incheck_${name}
+    COMMAND "${CMAKE_COMMAND}" -DPLUGIN=${name} "-DOWN_DIR=${own_dir}" "-DSOURCES=${sources_arg}"
+      "-DTHIRD_PARTY=${tp_arg}" "-DSDK_DIR=${PROJECT_SOURCE_DIR}/include/selecta"
+      "-DSHARED_DIR=${PROJECT_SOURCE_DIR}/plugins/shared"
+      -P "${PROJECT_SOURCE_DIR}/cmake/sel_check_includes.cmake"
+    VERBATIM COMMENT "Include isolation of plugin ${name}")
+  add_dependencies(sdk-isolation sel_incheck_${name})
 
   set_property(GLOBAL APPEND PROPERTY SEL_PLUGINS ${name})
 endfunction()

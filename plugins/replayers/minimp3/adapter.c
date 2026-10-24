@@ -12,8 +12,8 @@
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
 
-#include "../stream/id3.h"
-#include "../stream/stream_pcm.h"
+#include "stream/id3.h"
+#include "stream/stream_pcm.h"
 
 #include <stdlib.h>
 #include <string.h>

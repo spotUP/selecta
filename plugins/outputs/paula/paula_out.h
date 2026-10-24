@@ -6,7 +6,7 @@
 
 #include <selecta/output.h>
 
-#include "paula_voices.h"
+#include "paula/paula_voices.h"
 
 typedef struct sel_paula_out_kind {
     const char* id;    /* plugin id */
