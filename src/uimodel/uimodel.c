@@ -4,11 +4,6 @@
 #include <stdio.h>
 #include <string.h>
 
-static void put_clock(char* out, size_t cap, uint32_t ms, const char* sign) {
-    uint32_t s = ms / 1000u;
-    snprintf(out, cap, "%s%u:%02u", sign, (unsigned)(s / 60u), (unsigned)(s % 60u));
-}
-
 static const char* basename_of(const char* path) {
     const char* b = path;
     const char* p;
@@ -18,10 +13,6 @@ static const char* basename_of(const char* path) {
         }
     }
     return b;
-}
-
-static const char* state_label(sel_play_state s) {
-    return s == SEL_PLAYING ? "Playing" : s == SEL_PAUSED ? "Paused" : "Stopped";
 }
 
 void sel_uim_init(sel_uim* uim) {
@@ -48,9 +39,10 @@ uint32_t sel_uim_update(sel_uim* uim, const sel_state* st) {
     snprintf(n.title, sizeof n.title, "%s", title != NULL ? title : "");
     snprintf(n.artist, sizeof n.artist, "%s", artist != NULL ? artist : "");
     snprintf(n.format, sizeof n.format, "%s", format != NULL ? format : "");
-    put_clock(n.clock, sizeof n.clock, pos, "");
+    sel_uim_clock(n.clock, sizeof n.clock, pos, st->song.path != NULL);
     if (dur != 0u) {
-        put_clock(n.remaining, sizeof n.remaining, dur > pos ? dur - pos : 0u, "-");
+        n.remaining[0] = '-';
+        sel_uim_clock(n.remaining + 1, sizeof n.remaining - 1u, dur > pos ? dur - pos : 0u, 1);
         n.progress_q16 = pos >= dur ? 65536u : (uint32_t)(((uint64_t)pos << 16) / dur);
     }
     n.play = st->play;
@@ -63,9 +55,10 @@ uint32_t sel_uim_update(sel_uim* uim, const sel_state* st) {
         }
     }
     n.volume = st->volume;
-    /* The status line carries the play state alone: the clock and the title have their own regions, so a song change
+    /* The status line carries the play state and the mixer stage settings: the clock and the title have their own regions, so a song change
      * redraws the song and queue widgets and nothing else. */
-    snprintf(n.status, sizeof n.status, "%s", state_label(n.play));
+    snprintf(n.status, sizeof n.status, "%s", sel_uim_play_word(n.play));
+    sel_uim_stage_status(n.status, sizeof n.status, st);
 
     if (strcmp(n.title, o->title) != 0 || strcmp(n.artist, o->artist) != 0 || strcmp(n.format, o->format) != 0) {
         changed |= SEL_UIM_DIRTY_SONG;

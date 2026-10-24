@@ -7,14 +7,6 @@
 #define SYNC_BEGIN "\x1b[?2026h"
 #define SYNC_END "\x1b[?2026l"
 
-txt_style txt_style_make(uint16_t fg, uint16_t bg, uint8_t attr) {
-    txt_style s;
-    s.fg = fg;
-    s.bg = bg;
-    s.attr = attr;
-    return s;
-}
-
 static int style_eq(txt_style a, txt_style b) {
     return a.fg == b.fg && a.bg == b.bg && a.attr == b.attr;
 }

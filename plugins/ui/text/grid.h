@@ -11,15 +11,7 @@
 extern "C" {
 #endif
 
-#define TXT_COLOR_DEFAULT 256u /* terminal default foreground or background */
-#define TXT_ATTR_BOLD 1u
-#define TXT_ATTR_REVERSE 2u
-
-typedef struct txt_style {
-    uint16_t fg; /* xterm-256color index or TXT_COLOR_DEFAULT */
-    uint16_t bg;
-    uint8_t attr; /* TXT_ATTR_* */
-} txt_style;
+#include "style.h"
 
 typedef struct txt_cell {
     uint32_t cp; /* Unicode code point; ' ' for empty */
@@ -36,8 +28,6 @@ typedef struct txt_grid {
     int latin1;     /* set by the caller after init: flush writes Latin-1, '?' above U+00FF (row I218a) */
     int console;    /* set by the caller after init: the Amiga console.device (row I218e): no CSI ? 2026 frame, never writes the bottom right cell */
 } txt_grid;
-
-txt_style txt_style_make(uint16_t fg, uint16_t bg, uint8_t attr);
 
 /* Allocates both buffers (UI thread, never the audio thread). Returns 0 or -1. */
 int txt_grid_init(txt_grid* g, uint32_t cols, uint32_t rows);

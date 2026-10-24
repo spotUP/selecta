@@ -54,6 +54,25 @@ int sel_uim_set_layout(sel_uim* uim, const char* mode);
 /* The regions to redraw; clears them. */
 uint32_t sel_uim_take_dirty(sel_uim* uim);
 
+/* Display strings and panel models (lifted from the text UI, DUI-P1-5); every UI formats these the same way. */
+/* "mm:ss", or "--:--" when `known` is 0. */
+void sel_uim_clock(char* out, size_t cap, uint32_t ms, int known);
+/* "Playing", "Paused" or "Stopped". */
+const char* sel_uim_play_word(sel_play_state p);
+/* Appends the mixer stage settings that differ from the defaults ("  LED Filter On", "  Stereo Width 40"). */
+void sel_uim_stage_status(char* buf, size_t cap, const sel_state* s);
+/* Queue heading: the entry count, or the grouping key and the drilldown breadcrumb. `library` names a query view
+ * "Library" instead of "Query". */
+void sel_uim_queue_title(char* buf, size_t cap, const sel_view_state* v, int library);
+/* A tag name as a label: the META_ prefix dropped, underscores to spaces, lower case after the first letter. */
+void sel_uim_tag_label(uint32_t tag, char* out, size_t cap);
+/* Semitone 0..95 of a Q8 pitch value (piano-roll rows). */
+uint32_t sel_uim_semitone(uint32_t pitch_q8);
+/* The block glyph (U+2581..U+2588) for a Q15 level. */
+uint32_t sel_uim_level_glyph(uint32_t q15);
+/* Pattern note cell: "C-4", "^^^" (note off), "===" (cut), "..." (empty); out holds 4 bytes. */
+void sel_uim_note_name(uint8_t n, char* out);
+
 SEL_EXTERN_C_END
 
 #endif /* SELECTA_UIMODEL_H */

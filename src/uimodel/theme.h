@@ -3,7 +3,7 @@
 #ifndef SELECTA_TEXT_THEME_H
 #define SELECTA_TEXT_THEME_H
 
-#include "grid.h"
+#include "style.h"
 
 #ifdef __cplusplus
 extern "C" {

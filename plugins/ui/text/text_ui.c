@@ -17,6 +17,7 @@
 #include "grid.h"
 #include "cmdline.h"
 #include "keybind.h"
+#include <selecta/uimodel.h>
 #include "keys.h"
 #include "palette.h"
 #include "spawn.h"
@@ -592,28 +593,8 @@ static txt_style tui_style(const tui* u, txt_role r) {
     return u->theme.role[r];
 }
 
-static void tui_clock(char* out, size_t cap, uint32_t ms, int known) {
-    if (!known) {
-        snprintf(out, cap, "--:--");
-    } else {
-        snprintf(out, cap, "%02u:%02u", (unsigned)(ms / 60000u), (unsigned)((ms / 1000u) % 60u));
-    }
-}
 
-static const char* tui_play_word(sel_play_state p) {
-    return p == SEL_PLAYING ? "Playing" : p == SEL_PAUSED ? "Paused" : "Stopped";
-}
 
-/* Appends the mixer stage settings that differ from the defaults (LED Filter off, Stereo Width 100). */
-static void tui_stage_status(char* buf, size_t cap, const sel_state* s) {
-    size_t n = strlen(buf);
-    if (s->led_on && n < cap) {
-        n += (size_t)snprintf(buf + n, cap - n, "  LED Filter On");
-    }
-    if (s->stereo_width < 100u && n < cap) {
-        (void)snprintf(buf + n, cap - n, "  Stereo Width %u", (unsigned)s->stereo_width);
-    }
-}
 
 static void tui_header(tui* u, const sel_state* s) {
     char buf[256], pos[16], dur[16];
@@ -622,34 +603,18 @@ static void tui_header(tui* u, const sel_state* s) {
     const char* format = (const char*)sel_tag_find(s->song.meta, SEL_META_FORMAT, 0);
     txt_style hs = tui_style(u, TXT_ROLE_HEADER);
     txt_grid_fill(&u->grid, 0, 0, u->grid.cols, 1, ' ', hs);
-    snprintf(buf, sizeof buf, "%s  %s  %s", tui_play_word(s->play), title != NULL && title[0] ? title : "-",
+    snprintf(buf, sizeof buf, "%s  %s  %s", sel_uim_play_word(s->play), title != NULL && title[0] ? title : "-",
              author != NULL ? author : "");
     txt_grid_text(&u->grid, 1, 0, buf, u->grid.cols - 1u, hs);
-    tui_clock(pos, sizeof pos, s->song.position_ms, s->song.path != NULL);
-    tui_clock(dur, sizeof dur, s->song.duration_ms, s->song.duration_ms != 0);
+    sel_uim_clock(pos, sizeof pos, s->song.position_ms, s->song.path != NULL);
+    sel_uim_clock(dur, sizeof dur, s->song.duration_ms, s->song.duration_ms != 0);
     snprintf(buf, sizeof buf, "%s  Subsong %u/%u  %s / %s  Volume %d", format != NULL && format[0] ? format : "-",
              (unsigned)(s->song.path != NULL ? s->song.subsong + 1u : 0u), (unsigned)s->song.subsong_count, pos, dur,
              (int)s->volume);
-    tui_stage_status(buf, sizeof buf, s);
+    sel_uim_stage_status(buf, sizeof buf, s);
     txt_grid_text(&u->grid, 1, 1, buf, u->grid.cols - 1u, tui_style(u, TXT_ROLE_NORMAL));
 }
 
-/* Queue heading: the entry count, or the grouping key and the drilldown
- * breadcrumb of picked values. */
-static void tui_queue_title(char* buf, size_t cap, const sel_view_state* v, int u_lib) {
-    uint32_t i;
-    size_t n;
-    const char* what = v->source == SEL_VIEW_QUERY ? (u_lib ? "Library" : "Query") : "Queue";
-    if (v->style == SEL_VIEW_STYLE_REGULAR || v->group == NULL) {
-        snprintf(buf, cap, "%s  %u %s", what, (unsigned)v->row_count, v->source == SEL_VIEW_QUERY ? "results" : "entries");
-        return;
-    }
-    snprintf(buf, cap, "%s by %s%s", what, v->group, v->style == SEL_VIEW_STYLE_TREE ? "  Tree" : "  Drilldown");
-    for (i = 0; v->style == SEL_VIEW_STYLE_DRILLDOWN && i < v->drill_n && i < 2u; i++) {
-        n = strlen(buf);
-        snprintf(buf + n, cap - n, " > %s", v->drill[i]);
-    }
-}
 
 static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
     const sel_view_state* v = s->view;
@@ -667,7 +632,7 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
     } else if (v->source == SEL_VIEW_HOME) {
         snprintf(buf, sizeof buf, "Home");
     } else {
-        tui_queue_title(buf, sizeof buf, v, u->lib_screen);
+        sel_uim_queue_title(buf, sizeof buf, v, u->lib_screen);
     }
     txt_grid_text(&u->grid, 1, 2, buf, width - 1u, title);
     if (v->source == SEL_VIEW_HOME && v->row_count == 0) {
@@ -709,22 +674,6 @@ static void tui_pane(tui* u, const sel_state* s, uint32_t width) {
     }
 }
 
-/* Label for a META tag: META_TITLE becomes Title. */
-static void tui_label(uint32_t tag, char* out, size_t cap) {
-    const char* name = sel_tag_name(tag);
-    size_t i = 0;
-    if (name != NULL && strncmp(name, "META_", 5) == 0) {
-        name += 5;
-    }
-    for (; name != NULL && name[i] != '\0' && i + 1 < cap; i++) {
-        char c = name[i];
-        out[i] = i == 0 ? c : (char)(c >= 'A' && c <= 'Z' ? c + 32 : c);
-        if (c == '_') {
-            out[i] = ' ';
-        }
-    }
-    out[i] = '\0';
-}
 
 /* Every META tag the replayer reported, in tags.def order. */
 static void tui_info(tui* u, const sel_state* s, uint32_t x) {
@@ -750,7 +699,7 @@ static void tui_info(tui* u, const sel_state* s, uint32_t x) {
         } else {
             snprintf(val, sizeof val, "%lu", (unsigned long)v);
         }
-        tui_label(tag, label, sizeof label);
+        sel_uim_tag_label(tag, label, sizeof label);
         txt_grid_text(&u->grid, x, y, label, w, tui_style(u, TXT_ROLE_LABEL));
         txt_grid_text(&u->grid, x + 12u, y, val, w > 12u ? w - 12u : 1u, tui_style(u, TXT_ROLE_VALUE));
         y++;
@@ -823,22 +772,6 @@ static void tui_overlay(tui* u) {
 
 static const char* const k_viz_title[] = {"", "Levels", "Scope", "Spectrum", "Note dots", "Phase"};
 
-/* Semitone index 0..95 of a voice rate in Hz (24.8), integer only: climbs the equal tempered
- * ladder, each step times 2^(1/12) = 69433 / 65536. The voice rate is the sample rate Paula plays
- * at, so tracker C-2 (period 428) is 8287 Hz and tracker C-0 (period 1712) is 2072 Hz = index 0. */
-static uint32_t tui_semitone(uint32_t pitch_q8) {
-    uint64_t t = 2072ull << 24, p = (uint64_t)pitch_q8 << 16;
-    uint32_t semi = 0;
-    while (semi < 95u) {
-        uint64_t next = (t * 69433ull) >> 16;
-        if (p < next) {
-            break;
-        }
-        t = next;
-        semi++;
-    }
-    return semi;
-}
 
 /* Phase panel: the last post-mix frames as an L (x) against R (y) plot in 2x4 braille cells, plus
  * the Q15 correlation as a percentage. Only the mixed path has a post-mix signal. */
@@ -877,11 +810,6 @@ static void tui_phase_panel(tui* u, const sel_state* s, uint32_t width) {
     txt_grid_text(&u->grid, 2, 3u + ph, buf, width - 2u, dim);
 }
 
-/* Eight-step block glyph for a Q15 magnitude. */
-static uint32_t tui_block(uint32_t q15) {
-    uint32_t step = (q15 * 8u) >> 15;
-    return 0x2581u + (step > 7u ? 7u : step);
-}
 
 static void tui_viz_panel(tui* u, const sel_state* s, uint32_t width) {
     const sel_viz_frame* f = s->viz;
@@ -940,7 +868,7 @@ static void tui_viz_panel(tui* u, const sel_state* s, uint32_t width) {
             u->dot_rows++;
             if (f->pitch_q8[i] != 0 && !muted) {
                 uint32_t span = width > 13u ? width - 13u : 1u;
-                txt_grid_put(&u->grid, 11u + tui_semitone(f->pitch_q8[i]) * span / 96u, y, 0x25CFu,
+                txt_grid_put(&u->grid, 11u + sel_uim_semitone(f->pitch_q8[i]) * span / 96u, y, 0x25CFu,
                              f->note_on[i] ? norm : dim);
             }
         } else { /* scope: peak magnitude of each 4 sample span as a block glyph */
@@ -952,24 +880,12 @@ static void tui_viz_panel(tui* u, const sel_state* s, uint32_t width) {
                     uint32_t m = (uint32_t)(v < 0 ? -v : v);
                     peak = m > peak ? m : peak;
                 }
-                txt_grid_put(&u->grid, 11u + x, y, muted ? ' ' : tui_block(peak > 32767u ? 32767u : peak), norm);
+                txt_grid_put(&u->grid, 11u + x, y, muted ? ' ' : sel_uim_level_glyph(peak > 32767u ? 32767u : peak), norm);
             }
         }
     }
 }
 
-/* Note name of the pattern scale (1 = C-0) into out[4]. */
-static void tui_note(uint8_t n, char* out) {
-    static const char names[] = "C-C#D-D#E-F-F#G-G#A-A#B-";
-    if (n >= 1u && n <= 120u) {
-        out[0] = names[((n - 1u) % 12u) * 2u];
-        out[1] = names[((n - 1u) % 12u) * 2u + 1u];
-        out[2] = (char)('0' + (n - 1u) / 12u % 10u);
-        out[3] = '\0';
-    } else {
-        memcpy(out, n == 254u ? "^^^" : n == 255u ? "===" : "...", 4);
-    }
-}
 
 #define TUI_CELL_COLS 14u
 
@@ -1002,7 +918,7 @@ static void tui_pattern_panel(tui* u, const sel_state* s, uint32_t width) {
         for (c = 0; c < v->channels && c < cols_fit; c++) {
             const sel_rp_cell* cell = &v->cell[r][c];
             char note[4], ins[4], vol[4], fx[8];
-            tui_note(cell->note, note);
+            sel_uim_note_name(cell->note, note);
             if (cell->instrument != 0) {
                 snprintf(ins, sizeof ins, "%02X", (unsigned)cell->instrument);
             } else {

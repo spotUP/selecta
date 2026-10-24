@@ -3,7 +3,7 @@
 # replaces its red entry with the real test and removes its id from tests/ratchet/unimplemented.txt. Red entries also
 # carry label dui-red, so a run of the finished milestones (M3 finish line) can leave them out with -LE dui-red while
 # dui-ratchet keeps the red count honest.
-set(SEL_DUI_REAL dui-ratchet dui-build-deps dui-uim-frame dui-ui-switch dui-ui-multi dui-mode-pref)
+set(SEL_DUI_REAL dui-ratchet dui-build-deps dui-uim-frame dui-ui-switch dui-ui-multi dui-mode-pref dui-lift-parity)
 
 add_test(NAME dui-ratchet
   COMMAND "${CMAKE_COMMAND}"
@@ -32,6 +32,17 @@ if(NOT SEL_AMIGA)
         "-DWORK=${PROJECT_BINARY_DIR}/tests/${tname}" -P "${CMAKE_CURRENT_SOURCE_DIR}/${script}.cmake")
     set_tests_properties(${tname} PROPERTIES LABELS dui)
   endforeach()
+endif()
+
+# DUI-P1-5: the lift out of plugins/ui/text, counted from the archives with nm.
+if(NOT SEL_AMIGA)
+  find_program(SEL_NM nm)
+  add_test(NAME dui-lift-parity
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSONGS=${PROJECT_BINARY_DIR}/tests/songs"
+      "-DWORK=${PROJECT_BINARY_DIR}/tests/dui-lift-parity" "-DNM=${SEL_NM}" "-DTEXTUI=$<TARGET_FILE:sel_plugin_text_ui>"
+      "-DTEXTGRID=$<TARGET_FILE:selecta_textui>" "-DUIMODEL=$<TARGET_FILE:selecta_uimodel>"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/lift_parity.cmake")
+  set_tests_properties(dui-lift-parity PROPERTIES LABELS dui)
 endif()
 
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/items.txt" SEL_DUI_ITEMS)

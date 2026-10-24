@@ -68,7 +68,8 @@ static void desk_close(void* state) {
     desk* d = (desk*)state;
     if (d != NULL) {
         if (d->report) {
-            printf("desktop_ui closed frames=%u title=%s\n", (unsigned)d->frames, d->uim.frame.title);
+            printf("desktop_ui closed frames=%u title=%s clock=%s status=%s\n", (unsigned)d->frames, d->uim.frame.title,
+                   d->uim.frame.clock, d->uim.frame.status);
         }
         d->host->mem_free(d->host, d);
     }
