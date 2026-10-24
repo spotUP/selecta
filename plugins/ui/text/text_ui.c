@@ -2,7 +2,8 @@
  * sel_engine_state() into the cell grid and turns keys into engine commands.
  * It holds no playback logic. Input comes from the terminal, or from a keys
  * file (--keys) so a test drives the whole UI with no terminal; --screen-dump
- * writes the last frame as UTF-8 text. */
+ * writes the last frame as UTF-8 text. --frame-dump appends every flushed frame's terminal bytes, so a
+ * test sees exactly what the console is sent (row I218d2). */
 #include <selecta/engine.h>
 #include <selecta/host.h>
 #include <selecta/plugin.h>
@@ -56,6 +57,7 @@ typedef struct tui {
     uint32_t wait_left; /* ms of a `wait` line still to burn */
     uint32_t turn_mark; /* host clock at the previous keys-file step */
     const char* dump_path;
+    const char* frame_dump_path; /* --frame-dump: raw frame bytes appended (row I218d2) */
     int dirty;
     int info;
     uint32_t meta_panel_rows; /* catalogue rows the info panel drew in the latest frame (I185 sentinel) */
@@ -1176,6 +1178,13 @@ static void tui_present(tui* u) {
         for (b = 0; b < n; b++) {
             u->hash = (u->hash ^ (uint8_t)u->out[b]) * 16777619u;
         }
+        if (u->frame_dump_path != NULL) {
+            FILE* f = fopen(u->frame_dump_path, "ab");
+            if (f != NULL) {
+                fwrite(u->out, 1, (size_t)n, f);
+                fclose(f);
+            }
+        }
     }
     if (n > 0 && u->have_term) {
         txt_term_write(&u->term, u->out, (size_t)n);
@@ -1271,6 +1280,7 @@ static void* tui_open(const sel_ui_open_args* a) {
     u->engine = a->engine;
     u->host = a->host;
     u->dump_path = tui_opt(a, "--screen-dump");
+    u->frame_dump_path = tui_opt(a, "--frame-dump");
     txt_theme_default(&u->theme);
     txt_keys_init(&u->keys);
     u->keys.amiga_console = txt_term_amiga_console;
