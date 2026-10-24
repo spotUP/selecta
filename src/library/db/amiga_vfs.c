@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L /* ftruncate, pread, pwrite in libnix unistd.h */
 /* SQLite file names on AmigaOS (I197/T96). SQLite's unix VFS turns a name that does not start with '/' into
  * "<getcwd()>/<name>". An AmigaDOS path never starts with '/' ("work:user.db", "Songs/a.db") and libnix
  * getcwd() needs dos.library GetCurrentDirName, so every file database failed to open with "unable to open
@@ -6,13 +7,16 @@
  * the unix-none VFS (no file locking). This wraps it and replaces xFullPathname and xRandomness.
  * The unix xRandomness opens "/dev/urandom", which libnix maps to the volume "dev:": every library open showed
  * the requester "Please insert volume dev:" (I223). The seed mixes the time of day and two addresses instead, which
- * is what the unix VFS itself falls back to without /dev/urandom. */
+ * is what the unix VFS itself falls back to without /dev/urandom.
+ * libnix ftruncate() returns the new size on success, not 0, and SQLite takes any nonzero result as
+ * SQLITE_IOERR_TRUNCATE (I225): the syscall table gets a wrapper that returns 0 or -1. */
 #include "db_internal.h"
 
 #ifdef __amigaos__
 #include "../xxh32.h"
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 static sqlite3_vfs g_amiga_vfs;
 
@@ -25,6 +29,10 @@ static int amiga_full_pathname(sqlite3_vfs* vfs, const char* name, int n, char* 
     }
     memcpy(out, name, len + 1);
     return SQLITE_OK;
+}
+
+static int amiga_ftruncate(int fd, off_t length) {
+    return ftruncate(fd, length) < 0 ? -1 : 0;
 }
 
 static int amiga_randomness(sqlite3_vfs* vfs, int n, char* out) {
@@ -48,19 +56,23 @@ static int amiga_randomness(sqlite3_vfs* vfs, int n, char* out) {
 void sel_library_vfs_init(void) {
     sqlite3_vfs* base;
 
-    /* sqlite3_shutdown() (last library closed) drops every registered VFS: register again on the next open. */
-    if (sqlite3_vfs_find("amiga") != NULL) {
-        return;
+    /* sqlite3_shutdown() (last library closed) keeps registered VFSes, but the next sqlite3_initialize() registers
+     * the unix VFSes again with "unix" as the default, and the unix xFullPathname needs getcwd(): a library opened
+     * again in the same process failed with SQLITE_CANTOPEN. Make "amiga" the default on every open. */
+    if (sqlite3_vfs_find("amiga") == NULL) {
+        base = sqlite3_vfs_find("unix-none");
+        if (base == NULL) {
+            return;
+        }
+        g_amiga_vfs = *base;
+        g_amiga_vfs.zName = "amiga";
+        g_amiga_vfs.pNext = NULL;
+        g_amiga_vfs.xFullPathname = amiga_full_pathname;
+        g_amiga_vfs.xRandomness = amiga_randomness;
     }
-    base = sqlite3_vfs_find("unix-none");
-    if (base == NULL) {
-        return;
+    if (g_amiga_vfs.xSetSystemCall != NULL) {
+        g_amiga_vfs.xSetSystemCall(&g_amiga_vfs, "ftruncate", (sqlite3_syscall_ptr)amiga_ftruncate);
     }
-    g_amiga_vfs = *base;
-    g_amiga_vfs.zName = "amiga";
-    g_amiga_vfs.pNext = NULL;
-    g_amiga_vfs.xFullPathname = amiga_full_pathname;
-    g_amiga_vfs.xRandomness = amiga_randomness;
     sqlite3_vfs_register(&g_amiga_vfs, 1);
 }
 #else

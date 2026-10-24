@@ -242,6 +242,16 @@ if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
   set_tests_properties(amiga-library-opens-on-low-file-descriptor PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 120)
 endif()
 
+# I225: a new database on libnix (lseek past the end grows the file with junk; ftruncate returns the size).
+set(SEL_AMIGA_DBCREATE "${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta-cli/selecta-dbcreate-test")
+if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
+  add_test(NAME amiga-new-library-database-is-not-junk
+    COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DDBCREATE_TEST=${SEL_AMIGA_DBCREATE}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_dbcreate.cmake"
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+  set_tests_properties(amiga-new-library-database-is-not-junk PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 150)
+endif()
+
 # T10: the machine probe through `selecta-cli machine`. FAST_RAM is the
 # machine's physical memory, read at test time by machine.cmake.
 add_test(NAME machine-probe

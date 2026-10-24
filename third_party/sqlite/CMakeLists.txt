@@ -12,4 +12,7 @@ if(SEL_AMIGA)
   target_sources(selecta_sqlite PRIVATE amiga_stubs.c)
   # libnix has no inherited stdio to protect: SQLite's fd < 3 guard reopens /dev/null, which is the volume "dev:" (requester).
   target_compile_definitions(selecta_sqlite PRIVATE SQLITE_MINIMUM_FILE_DESCRIPTOR=0)
+  # I225: read and write through pread/pwrite (amiga_stubs.c). SQLite's lseek fallback seeks past the end of the
+  # file, and libnix lseek grows the file with junk there.
+  target_compile_definitions(selecta_sqlite PRIVATE HAVE_PREAD=1 HAVE_PWRITE=1)
 endif()
