@@ -81,6 +81,9 @@ typedef struct desk {
     int32_t hover_tile;     /* 1-based tile under the pointer, 0 = none */
     int live;               /* sdl on a real display without --input: the window stays until it is closed */
     int repaint;            /* the next present paints the whole canvas (first frame, resize) */
+    int32_t seek_fill;      /* pixel width of the seek bar fill last drawn; -1 = not drawn since the last full repaint */
+    int32_t vol_fill;       /* the same for the volume bar */
+    char seek_length[16];   /* the length text last drawn, so a clock tick marks it dirty only when it changed */
     int32_t scale;          /* integer pixel scale 1, 2 or 3 (DUI-P2-8): layout is in logical units, drawn times scale */
     uint32_t atlas_builds;   /* text atlases built */
     uint32_t atlas_rebuilds; /* scale changes that dropped the built text atlases */
@@ -227,24 +230,38 @@ static void draw_label(desk* d, sel_gui_rect box, const char* s) {
 }
 
 /* Same as draw_label but on the frame colour with a type size and an ink: the player bar texts. */
-static void draw_frame_text(desk* d, sel_gui_rect box, const char* s, int px) {
+static void draw_frame_text(desk* d, sel_gui_rect box, const char* s, int px, int mark) {
     sel_gui_fill_rect(d->canvas, box, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
     draw_text(d, box, s, 0, px, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
-    sel_gui_dirty_add(d->canvas, box);
+    if (mark) {
+        sel_gui_dirty_add(d->canvas, box);
+    }
 }
 
-/* A slim rounded bar (seek, volume): the track token behind, the text colour in front, as in the mockup player. */
-static void draw_bar(desk* d, sel_gui_rect box, uint32_t q16) {
-    uint32_t fill = (uint32_t)(((uint64_t)q16 * (uint32_t)box.w) >> 16);
-    int32_t m = lpx(d, 2);
+/* A slim rounded bar (seek, volume): the track token behind, the text colour in front, as in the mockup player. The
+ * whole bar is repainted into the canvas (the result is the same pixels wherever it did not change), but only the span
+ * between the previous and the new fill, plus one bar height of rounded cap on each side, is marked dirty (plan 2.11).
+ * *prev is the fill drawn last, or -1 when the bar was not drawn since the last full repaint. */
+static void draw_bar(desk* d, sel_gui_rect box, uint32_t q16, int32_t* prev) {
+    int32_t fill = (int32_t)(((uint64_t)q16 * (uint32_t)box.w) >> 16);
+    int32_t m = lpx(d, 2), lo = 0, hi = box.w;
     sel_gui_rect wide = rect_of(box.x, box.y - m, box.w, box.h + 2 * m);
     sel_gui_fill_rect(d->canvas, wide, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
     sel_gui_round_rect(d->canvas, box, box.h / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]));
-    if ((int32_t)fill >= box.h) {
-        sel_gui_round_rect(d->canvas, rect_of(box.x, box.y, (int32_t)fill, box.h), box.h / 2,
+    if (fill >= box.h) {
+        sel_gui_round_rect(d->canvas, rect_of(box.x, box.y, fill, box.h), box.h / 2,
                            ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
     }
-    sel_gui_dirty_add(d->canvas, wide);
+    if (*prev >= 0) {
+        lo = (*prev < fill ? *prev : fill) - box.h;
+        hi = (*prev < fill ? fill : *prev) + box.h;
+        lo = lo < 0 ? 0 : lo;
+        hi = hi > box.w ? box.w : hi;
+    }
+    *prev = fill;
+    if (hi > lo) {
+        sel_gui_dirty_add(d->canvas, rect_of(box.x + lo, wide.y, hi - lo, wide.h));
+    }
 }
 
 /* Bits of desk.home_parts. */
@@ -261,9 +278,12 @@ static sel_gui_rect draw_panel(desk* d, const char* name) {
     int32_t g = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]) / 2;
     sel_gui_rect pr = rect_of(r.x + g, r.y + g, r.w - 2 * g, r.h - 2 * g);
     if (pr.w > 0 && pr.h > 0) {
+        /* The frame colour first: the rounded corners blend with what is under them, so painting a panel again over
+         * its own earlier corners would change them. The region is repainted whole each time (idempotent). */
+        sel_gui_fill_rect(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
         sel_gui_round_rect(d->canvas, pr, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]),
                            ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
-        sel_gui_dirty_add(d->canvas, pr);
+        sel_gui_dirty_add(d->canvas, r);
         d->home_parts |= HP_PANELS;
     }
     return pr;
@@ -317,16 +337,19 @@ static void draw_widget(desk* d, uint32_t bit) {
             tw = 4 * lw;
         }
         x0 = pl.x + pl.w / 2 - tw / 2;
-        draw_frame_text(d, rect_of(x0, y0, lw, lpx(d, 16)), f->clock, 12);
-        draw_bar(d, rect_of(x0 + lw + sp, y0 + lpx(d, 6), tw - 2 * lw - 2 * sp, lpx(d, 4)), f->progress_q16);
-        draw_frame_text(d, rect_of(x0 + tw - lw, y0, lw, lpx(d, 16)), f->length, 12);
+        int len_changed = strncmp(d->seek_length, f->length, sizeof d->seek_length) != 0;
+        draw_frame_text(d, rect_of(x0, y0, lw, lpx(d, 16)), f->clock, 12, 1);
+        draw_bar(d, rect_of(x0 + lw + sp, y0 + lpx(d, 6), tw - 2 * lw - 2 * sp, lpx(d, 4)), f->progress_q16,
+                 &d->seek_fill);
+        draw_frame_text(d, rect_of(x0 + tw - lw, y0, lw, lpx(d, 16)), f->length, 12, len_changed);
+        snprintf(d->seek_length, sizeof d->seek_length, "%s", f->length);
         d->home_parts |= HP_SEEK;
     } else if (bit == SEL_UIM_DIRTY_VOLUME) {
         int32_t v = f->volume < 0 ? 0 : f->volume > 100 ? 100 : f->volume;
         draw_bar(d, rect_of(pl.x + pl.w - sp - lpx(d, 96), y0 + lpx(d, 40), lpx(d, 96), lpx(d, 4)),
-                 (uint32_t)v * 65536u / 100u);
+                 (uint32_t)v * 65536u / 100u, &d->vol_fill);
     } else if (bit == SEL_UIM_DIRTY_STATUS) {
-        draw_frame_text(d, rect_of(pl.x + pl.w - sp - lpx(d, 200), y0, lpx(d, 200), lpx(d, 16)), f->status, 12);
+        draw_frame_text(d, rect_of(pl.x + pl.w - sp - lpx(d, 200), y0, lpx(d, 200), lpx(d, 16)), f->status, 12, 1);
     }
 }
 
@@ -841,6 +864,7 @@ static void draw_home_content(desk* d) {
         uint32_t panel = ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]);
         queue_title(st, i, name, sizeof name);
         queue_format(st, i, format, sizeof format);
+        sel_gui_fill_rect(d->canvas, t, panel); /* the corners blend with the panel, not with the last frame's card */
         sel_gui_round_rect(d->canvas, t, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]),
                            hovered ? desk_mix(panel, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), (uint32_t)hv) : panel);
         d->tile_cards++;
@@ -1793,6 +1817,9 @@ static int desk_present(desk* d) {
     }
     if (d->frames == 0u || d->repaint) { /* the first frame and a resize paint the whole canvas */
         d->repaint = 0;
+        d->seek_fill = -1;
+        d->vol_fill = -1;
+        d->seek_length[0] = '\0';
         sel_gui_fill_rect(d->canvas, rect_of(0, 0, d->canvas->w, d->canvas->h),
                           ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
         sel_gui_dirty_add(d->canvas, rect_of(0, 0, d->canvas->w, d->canvas->h));
