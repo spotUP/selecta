@@ -19,7 +19,8 @@ typedef enum sel_gui_input_kind {
     SEL_GUI_IN_RESIZE, /* x = width, y = height */
     SEL_GUI_IN_WAIT,   /* ms */
     SEL_GUI_IN_MOVE,   /* x, y: the pointer moved */
-    SEL_GUI_IN_DRAG    /* x, y to x2, y2: press, move, release */
+    SEL_GUI_IN_DRAG,   /* x, y to x2, y2: press, move, release */
+    SEL_GUI_IN_SWIPE   /* x = +1 swipe right (Back), -1 swipe left (Forward) */
 } sel_gui_input_kind;
 
 #define SEL_GUI_INPUT_PATH 256u
@@ -38,7 +39,7 @@ typedef struct sel_gui_input {
     char path[SEL_GUI_INPUT_PATH];
 } sel_gui_input;
 
-/* Parses one script line (`key ctrl+f`, `click 640 120 [count]`, `dclick 640 120`, `rclick 640 120`, `move 640 120`, `drag 10 20 30 40`, `wheel 0 -3`, `pinch 1.25`, `drop /a.mod`, `resize 900 600`,
+/* Parses one script line (`key ctrl+f`, `click 640 120 [count]`, `dclick 640 120`, `rclick 640 120`, `move 640 120`, `drag 10 20 30 40`, `wheel 0 -3`, `pinch 1.25`, `swipe left|right`, `drop /a.mod`, `resize 900 600`,
  * `wait 200`). Returns 1 and fills *ev, or 0 for a blank, comment or unknown line. */
 int sel_gui_input_parse(const char* line, sel_gui_input* ev);
 

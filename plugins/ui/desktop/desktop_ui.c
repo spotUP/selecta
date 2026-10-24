@@ -103,7 +103,12 @@ typedef struct desk {
     uint32_t tip_since;      /* UI clock when the pointer came to tip_btn */
     uint32_t tooltips;       /* tooltips shown over the run */
     char tip_text[96];
-    sel_tag stats[42];
+    uint32_t gestures;       /* pinch and swipe events handled (DUI-P3-4) */
+    uint32_t tile_step;      /* index into g_tile_steps: the tile size token step, pinch moves it */
+    int32_t scroll_q16;      /* songs list scroll offset in logical pixels, Q16: precise wheel deltas are fractions of a pixel */
+    int32_t hist[16];        /* view history (DUI-P3-4): the open_tile of each visited view, 0 = home */
+    uint32_t hist_n, hist_pos;
+    sel_tag stats[46];
 } desk;
 
 static int desk_resize(desk* d, int32_t w, int32_t h);
@@ -451,7 +456,11 @@ static void draw_widgets(desk* d) {
     sel_gui_dirty_add(c, rect_of(0, 0, c->w, c->h));
 }
 
-#define TILE_ART 144 /* logical */
+#define TILE_ART 144 /* logical, the default step */
+#define TILE_STEP_DEFAULT 2u
+#define SCROLL_NOTCH 16 /* logical pixels one wheel notch scrolls */
+static const int32_t g_tile_steps[] = {96, 120, 144, 176, 208}; /* the tile size token steps, logical pixels */
+#define TILE_STEPS ((uint32_t)(sizeof g_tile_steps / sizeof g_tile_steps[0]))
 #define HOME_MAX_LINES 2
 
 /* Where tile i sits (DUI-P2-6): a grid below the song card in the main region, columns as many as fit. */
@@ -460,7 +469,7 @@ static sel_gui_rect tile_rect(desk* d, uint32_t i) {
     sel_gui_rect mn = region_rect(d, "main");
     const sel_gui_atlas* at = desk_font(d, 1, 13);
     int32_t title_h = HOME_MAX_LINES * (at != NULL ? at->line_height : 16);
-    int32_t art = lpx(d, TILE_ART);
+    int32_t art = lpx(d, g_tile_steps[d->tile_step]);
     int32_t cols = (mn.w - sp) / (art + sp);
     int32_t h = art + lpx(d, 4) + title_h;
     if (cols < 1) {
@@ -570,7 +579,7 @@ static sel_gui_rect songs_header_col(const desk* d, uint32_t col) {
 
 static sel_gui_rect songs_row_rect(const desk* d, uint32_t row) {
     sel_gui_rect mn = region_rect(d, "main");
-    return rect_of(mn.x, songs_top(d) + lpx(d, SONG_HEADER_H) + (int32_t)row * lpx(d, SONG_ROW_H), mn.w, lpx(d, SONG_ROW_H));
+    return rect_of(mn.x, songs_top(d) + lpx(d, SONG_HEADER_H) + (int32_t)row * lpx(d, SONG_ROW_H) - (int32_t)(((int64_t)d->scroll_q16 * (d->scale > 0 ? d->scale : 1)) >> 16), mn.w, lpx(d, SONG_ROW_H));
 }
 
 /* Drop target 0 = Queue, 1 = Playlist, stacked under the queue count in the sidebar. */
@@ -649,6 +658,9 @@ static void draw_songs(desk* d) {
         uint32_t q = d->order[i];
         if (r.y >= mn.y + mn.h) {
             break;
+        }
+        if (r.y < songs_top(d) + lpx(d, SONG_HEADER_H)) { /* scrolled under the header */
+            continue;
         }
         if ((int32_t)i + 1 == d->hover_row) {
             sel_gui_scrim(d->canvas, r, 0xFFFFFFu, 36u);
@@ -755,6 +767,40 @@ static void draw_home(desk* d) {
     }
 }
 
+/* Enters a view (DUI-P3-4): the forward history is dropped and the view is appended; the oldest entry falls off. */
+static void view_goto(desk* d, int32_t tile) {
+    if (d->hist_n == 0u) {
+        d->hist[0] = d->open_tile;
+        d->hist_n = 1u;
+        d->hist_pos = 0u;
+    }
+    d->hist_n = d->hist_pos + 1u;
+    if (d->hist_n == sizeof d->hist / sizeof d->hist[0]) {
+        memmove(d->hist, d->hist + 1, (d->hist_n - 1u) * sizeof d->hist[0]);
+        d->hist_n--;
+        d->hist_pos--;
+    }
+    d->hist[d->hist_n++] = tile;
+    d->hist_pos = d->hist_n - 1u;
+    d->open_tile = tile;
+}
+
+/* Swipe (DUI-P3-4): right is Back, left is Forward in the view history. Returns 1 when the view changed. */
+static int view_swipe(desk* d, int32_t dir) {
+    if (d->hist_n == 0u) {
+        return 0;
+    }
+    if (dir > 0 && d->hist_pos > 0u) {
+        d->hist_pos--;
+    } else if (dir < 0 && d->hist_pos + 1u < d->hist_n) {
+        d->hist_pos++;
+    } else {
+        return 0;
+    }
+    d->open_tile = d->hist[d->hist_pos];
+    return 1;
+}
+
 /* A click at (x, y): opens the tile under it. Returns 1 when a tile opened. */
 static int desk_click(desk* d, int32_t x, int32_t y) {
     const sel_state* st = sel_engine_state(d->engine);
@@ -766,7 +812,7 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
     for (i = 0; i < st->queue_count; i++) {
         sel_gui_rect t = tile_rect(d, i);
         if (x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h) {
-            d->open_tile = (int32_t)i + 1;
+            view_goto(d, (int32_t)i + 1);
             d->view_opens++;
             desk_tween(d, ANIM_KEY_VIEW, SEL_GUI_ANIM_NORMAL_MS, SEL_GUI_EASE_OUT);
             draw_home(d);
@@ -1220,6 +1266,50 @@ static int desk_pointer(desk* d, const sel_gui_input* ev) {
     return desk_pointer_view(d, ev) | tip;
 }
 
+/* Touchpad events (DUI-P3-4). Wheel scrolls the songs list by Q16 logical pixels (negative dy scrolls down), clamped to
+ * the list; pinch in the tile grid moves the tile size one token step (clamped); swipe is Back and Forward. Returns 1
+ * when the picture changed. */
+static int desk_gesture(desk* d, const sel_gui_input* ev) {
+    if (ev->kind == SEL_GUI_IN_WHEEL) {
+        if (d->songs) {
+            sel_gui_rect mn = region_rect(d, "main");
+            int32_t sc = d->scale > 0 ? d->scale : 1;
+            int32_t view_h = (mn.y + mn.h - songs_top(d) - lpx(d, SONG_HEADER_H)) / sc;
+            int32_t max_q16 = ((int32_t)d->order_n * SONG_ROW_H - view_h) << 16;
+            int64_t v = (int64_t)d->scroll_q16 - (int64_t)ev->dy * SCROLL_NOTCH;
+            if (max_q16 < 0) {
+                max_q16 = 0;
+            }
+            d->scroll_q16 = v < 0 ? 0 : (v > max_q16 ? max_q16 : (int32_t)v);
+            draw_home(d);
+            return 1;
+        }
+        return 0;
+    }
+    if (ev->kind == SEL_GUI_IN_PINCH) {
+        if (!d->home || d->songs || d->open_tile > 0) {
+            return 0;
+        }
+        d->gestures++;
+        if (ev->scale > SEL_GUI_Q16_ONE && d->tile_step + 1u < TILE_STEPS) {
+            d->tile_step++;
+        } else if (ev->scale < SEL_GUI_Q16_ONE && d->tile_step > 0u) {
+            d->tile_step--;
+        }
+        draw_home(d);
+        return 1;
+    }
+    if (ev->kind == SEL_GUI_IN_SWIPE) {
+        d->gestures++;
+        if (view_swipe(d, ev->x)) {
+            desk_tween(d, ANIM_KEY_VIEW, SEL_GUI_ANIM_NORMAL_MS, SEL_GUI_EASE_OUT);
+            draw_home(d);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int desk_replay_input(desk* d) {
     char* line = d->input;
     int opened = 0;
@@ -1243,6 +1333,9 @@ static int desk_replay_input(desk* d) {
                 draw_home(d);
             }
             opened |= desk_event_frame(d, changed);
+        } else if (sel_gui_input_parse(line, &ev) &&
+                   (ev.kind == SEL_GUI_IN_WHEEL || ev.kind == SEL_GUI_IN_PINCH || ev.kind == SEL_GUI_IN_SWIPE)) {
+            opened |= desk_event_frame(d, desk_gesture(d, &ev));
         } else if (sscanf(line, "resize %d %d", &x, &y) == 2) { /* the window was resized: relayout and repaint */
             opened |= desk_resize(d, x, y);
         } else if (sscanf(line, "scale %d", &x) == 1) { /* the window moved to a screen of another scale */
@@ -1656,6 +1749,7 @@ static void* desk_open(const sel_ui_open_args* a) {
         return NULL;
     }
     memset(d, 0, sizeof *d);
+    d->tile_step = TILE_STEP_DEFAULT;
     d->engine = a->engine;
     d->host = a->host;
     d->hash = 2166136261u;
@@ -1956,7 +2050,15 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[39].value = d->tooltips;
     d->stats[40].tag = SEL_UI_STAT_TOOLTIP_TEXT;
     d->stats[40].value = (uintptr_t)(d->tip_shown > 0 ? d->tip_text : "");
-    d->stats[41].tag = SEL_TAG_END;
+    d->stats[41].tag = SEL_UI_STAT_GESTURES;
+    d->stats[41].value = d->gestures;
+    d->stats[42].tag = SEL_UI_STAT_TILE_SIZE;
+    d->stats[42].value = (uintptr_t)g_tile_steps[d->tile_step];
+    d->stats[43].tag = SEL_UI_STAT_SCROLL_PX;
+    d->stats[43].value = (uintptr_t)(d->scroll_q16 >> 16);
+    d->stats[44].tag = SEL_UI_STAT_OPEN_TILE;
+    d->stats[44].value = (uintptr_t)d->open_tile;
+    d->stats[45].tag = SEL_TAG_END;
 
     return d->stats;
 }

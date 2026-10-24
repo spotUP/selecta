@@ -150,6 +150,11 @@ int sel_gui_input_parse(const char* line, sel_gui_input* ev) {
         ev->kind = SEL_GUI_IN_PINCH;
         return q16(a, &ev->scale);
     }
+    if (strcmp(verb, "swipe") == 0 && n == 2) {
+        ev->kind = SEL_GUI_IN_SWIPE;
+        ev->x = strcmp(a, "right") == 0 ? 1 : -1;
+        return strcmp(a, "right") == 0 || strcmp(a, "left") == 0;
+    }
     if (strcmp(verb, "drop") == 0 && n >= 2) {
         ev->kind = SEL_GUI_IN_DROP;
         strncpy(ev->path, a, sizeof ev->path - 1u);
