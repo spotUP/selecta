@@ -241,7 +241,9 @@ static void d_table_header(const ctx* x, const sel_gui_widget* w) {
 static void d_artwork(const ctx* x, const sel_gui_widget* w) {
     const sel_gui_style* s = x->s;
     int32_t rad = w->r.h < w->r.w ? w->r.h : w->r.w, i, n = w->r.h;
-    uint32_t a = mix(s->accent, s->raised, 40 + (w->top * 53) % 160), b = mix(s->raised, s->background, 90);
+    /* Both ends are tones of the accent darkened towards the scrim token, never towards the surface tokens: in a light
+     * theme those are near white, which washed the tile out against its card. The icon uses the on-accent colour. */
+    uint32_t a = mix(s->accent, s->scrim, 10 + (w->top * 53) % 90), b = mix(a, s->scrim, 150);
     rad = s->radius_large < rad / 2 ? s->radius_large : rad / 2;
     for (i = 0; i < n; i++) {
         int32_t edge = i < rad ? i : (i >= n - rad ? n - 1 - i : rad), inset = 0, dy2;
@@ -252,7 +254,7 @@ static void d_artwork(const ctx* x, const sel_gui_widget* w) {
         sel_gui_fill_rect(x->c, rc(w->r.x + inset, w->r.y + i, w->r.w - 2 * inset, 1),
                           mix(a, b, i * 256 / (n > 1 ? n - 1 : 1)));
     }
-    icon_in(x, w->icon >= 0 ? w->icon : SEL_GUI_ICON_MUSIC, w->r, w->r.h / 3, s->text);
+    icon_in(x, w->icon >= 0 ? w->icon : SEL_GUI_ICON_MUSIC, w->r, w->r.h / 3, s->accent_text);
 }
 
 static void art_at(const ctx* x, sel_gui_rect r, int32_t tone, int32_t icon) {
@@ -266,6 +268,7 @@ static void art_at(const ctx* x, sel_gui_rect r, int32_t tone, int32_t icon) {
     a.extent = 0;
     a.items = NULL;
     a.item_n = 0;
+    a.item_icons = NULL;
     a.sel = 0;
     a.top = tone;
     d_artwork(x, &a);
@@ -328,7 +331,7 @@ static void d_sidebar_list(const ctx* x, const sel_gui_widget* w) {
         if (cur) {
             sel_gui_round_rect(x->c, row, s->radius, s->hover);
         }
-        icon_in(x, w->icon + (int32_t)i, rc(row.x + s->spacing, row.y, 24, rh), 24, col);
+        icon_in(x, w->item_icons != NULL ? w->item_icons[i] : w->icon + (int32_t)i, rc(row.x + s->spacing, row.y, 24, rh), 24, col);
         text_at(x, cur ? s->semibold : s->body, row, row.x + s->spacing * 3 + 24, w->items[i], col,
                 row.w - 24 - s->spacing * 4);
     }

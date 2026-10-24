@@ -62,11 +62,12 @@ typedef struct sel_gui_widget {
     sel_gui_rect r;
     uint32_t state;
     const char* label;
-    int32_t icon;  /* sel_gui_icon, or -1 for none; sidebar rows use icon + row */
+    int32_t icon;  /* sel_gui_icon, or -1 for none; sidebar rows use item_icons[row] when set, else icon + row */
     int32_t value; /* Q16.16: slider, progress, scroll position, split fraction, scrim alpha, viz phase */
     int32_t extent; /* Q16.16: scroll thumb length as a fraction of the track */
     const char* const* items;
     uint32_t item_n;
+    const int32_t* item_icons; /* sidebar: one sel_gui_icon per item, or NULL */
     int32_t sel; /* current item */
     int32_t top; /* first visible row, artwork tone */
 } sel_gui_widget;

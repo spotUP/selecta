@@ -287,9 +287,9 @@ static void draw_textsheet(desk* d) {
 
 /* The widget gallery (DUI-P3-1): every widget kind drawn once on the background token, in a grid of surface cards.
  * The style comes from the theme tokens, so the golden hash covers a dark and a light theme. */
-static void gallery_put(desk* d, const sel_gui_style* st, uint32_t kind, int32_t x, int32_t y, int32_t w, int32_t h,
-                        uint32_t state, const char* label, int32_t icon, int32_t value, const char* const* items,
-                        uint32_t item_n, int32_t sel) {
+static void gallery_put_ex(desk* d, const sel_gui_style* st, uint32_t kind, int32_t x, int32_t y, int32_t w, int32_t h,
+                           uint32_t state, const char* label, int32_t icon, int32_t value, const char* const* items,
+                           uint32_t item_n, int32_t sel, const int32_t* icons) {
     sel_gui_widget wd;
     memset(&wd, 0, sizeof wd);
     wd.kind = kind;
@@ -302,9 +302,16 @@ static void gallery_put(desk* d, const sel_gui_style* st, uint32_t kind, int32_t
     wd.items = items;
     wd.item_n = item_n;
     wd.sel = sel;
+    wd.item_icons = icons;
     wd.top = 1;
     sel_gui_widget_draw(d->canvas, st, &wd, &d->wstats);
     d->widget_draws++;
+}
+
+static void gallery_put(desk* d, const sel_gui_style* st, uint32_t kind, int32_t x, int32_t y, int32_t w, int32_t h,
+                        uint32_t state, const char* label, int32_t icon, int32_t value, const char* const* items,
+                        uint32_t item_n, int32_t sel) {
+    gallery_put_ex(d, st, kind, x, y, w, h, state, label, icon, value, items, item_n, sel, NULL);
 }
 
 static void draw_widgets(desk* d) {
@@ -312,6 +319,9 @@ static void draw_widgets(desk* d) {
     static const char* const tabs[] = {"Songs", "Albums", "Artists"};
     static const char* const head[] = {"Title", "Artist", "Time"};
     static const char* const side[] = {"Home", "Search", "Library", "Favourites"};
+    static const int32_t side_icons[] = {SEL_GUI_ICON_HOUSE, SEL_GUI_ICON_SEARCH, SEL_GUI_ICON_LIST, SEL_GUI_ICON_HEART};
+    static const char* const panes[] = {"Library", "Details"};
+    static const char* const ask[] = {"This removes the song from your library. The file stays on disk.", "Cancel", "Remove"};
     static const char* const menu[] = {"Play next", "Add to queue", "-", "Show in library"};
     static const char* const seg[] = {"Day", "Week", "Month"};
     static const char* const tiles[] = {"Amiga Classics", "Chip Hits", "Tracker Night", "Deep Focus"};
@@ -375,11 +385,12 @@ static void draw_widgets(desk* d) {
                 NULL, 0, 0);
     gallery_put(d, &st, SEL_GUI_WIDGET_TABS, c1, 450, cw, 36, 0, NULL, -1, 0, tabs, 3, 0);
     gallery_put(d, &st, SEL_GUI_WIDGET_TABLE_HEADER, c1, 502, cw, 28, 0, NULL, -1, 0, head, 3, 0);
-    gallery_put(d, &st, SEL_GUI_WIDGET_SPLIT_PANE, c1, 550, cw - 24, 200, 0, NULL, -1, half, NULL, 0, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_SPLIT_PANE, c1, 550, cw - 24, 200, 0, NULL, -1, half, panes, 2, 0);
     gallery_put(d, &st, SEL_GUI_WIDGET_SCROLL_BAR, c1 + cw - 12, 550, 12, 200, 0, NULL, -1, half, NULL, 0, 0);
     /* column 2: lists and menus */
     gallery_put(d, &st, SEL_GUI_WIDGET_VIRTUAL_LIST, c2, 24, cw, 200, 0, NULL, -1, 0, songs, 5, 1);
-    gallery_put(d, &st, SEL_GUI_WIDGET_SIDEBAR_LIST, c2, 244, cw, 200, 0, NULL, SEL_GUI_ICON_HOUSE, 0, side, 4, 0);
+    gallery_put_ex(d, &st, SEL_GUI_WIDGET_SIDEBAR_LIST, c2, 244, cw, 200, 0, NULL, SEL_GUI_ICON_HOUSE, 0, side, 4, 0,
+                   side_icons);
     gallery_put(d, &st, SEL_GUI_WIDGET_MENU, c2, 464, cw, 140, 0, NULL, -1, 0, menu, 4, 1);
     gallery_put(d, &st, SEL_GUI_WIDGET_TOOLTIP, c2, 630, 140, 28, 0, "Add to favourites", -1, 0, NULL, 0, 0);
     gallery_put(d, &st, SEL_GUI_WIDGET_TOAST, c2, 680, cw, 56, 0, "Added to queue", -1, 0, NULL, 0, 0);
@@ -390,9 +401,9 @@ static void draw_widgets(desk* d) {
     gallery_put(d, &st, SEL_GUI_WIDGET_VIZ_SURFACE, c3 + 150, 524, 150, 130, 0, NULL, -1, 7 << 16, NULL, 0, 0);
     /* column 4: an overlay stack, a scrim and a dialog over a tile grid */
     gallery_put(d, &st, SEL_GUI_WIDGET_TILE_GRID, c4, 24, cw, 270, 0, "Playlist", -1, 0, tiles, 2, 0);
-    gallery_put(d, &st, SEL_GUI_WIDGET_SCRIM, c4 - 10, 10, cw + 20, 400, 0, NULL, -1, SEL_GUI_Q16_ONE * 3 / 5, NULL, 0, 0);
-    gallery_put(d, &st, SEL_GUI_WIDGET_MODAL_DIALOG, c4 + 10, 80, cw - 20, 190, 0, "Remove from library", -1, 0, NULL, 0,
-                0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_SCRIM, 0, 0, c->w, c->h, 0, NULL, -1, SEL_GUI_Q16_ONE * 3 / 5, NULL, 0, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_MODAL_DIALOG, (c->w - 280) / 2, (c->h - 190) / 2, 280, 190, 0, "Remove from library",
+                -1, 0, ask, 3, 0);
     d->text.glyphs += d->wstats.text.glyphs;
     d->text.missing += d->wstats.text.missing;
     d->wstats.text.glyphs = 0;
