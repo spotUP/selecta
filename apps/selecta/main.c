@@ -310,10 +310,14 @@ int main(int argc, char** argv)
     uint32_t waits = 0;
     int r;
     int has_keys = option(argc, argv, "--keys", NULL) != NULL;
-#ifdef __APPLE__
-    const char* default_int = "nowplaying";
+    /* Preferred media-session integration per OS; sel_registry_default_integration falls back
+     * to "none" when it is not built (Amiga, Linux without libsystemd, Windows). */
+#if defined(__APPLE__)
+    const char* prefer_int = "nowplaying";
+#elif defined(__linux__)
+    const char* prefer_int = "mpris";
 #else
-    const char* default_int = "mpris";
+    const char* prefer_int = "";
 #endif
     const char* int_id;
     sel_int_session* isess = NULL;
@@ -329,7 +333,8 @@ int main(int argc, char** argv)
     sel_registry_init_machine(host, machine_tags);
     out_id = option(argc, argv, "--output", sel_registry_default_output(machine_tags));
     is_null = strcmp(out_id, "null") == 0;
-    int_id = option(argc, argv, "--integration", (is_null || has_keys) ? "none" : default_int);
+    int_id = option(argc, argv, "--integration",
+                    (is_null || has_keys) ? "none" : sel_registry_default_integration(prefer_int));
     oh = hooks_of(SEL_PLUGIN_KIND_OUTPUT, out_id);
     for (a = 1; a < argc; a++) {
         if (strcmp(argv[a], "--ui") == 0 && a + 1 < argc) {

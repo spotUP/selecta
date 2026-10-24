@@ -42,6 +42,10 @@ const sel_tag* sel_registry_find(uint32_t kind, const char* id);
  * SEL_MACHINE_AUDIO list ("paula,ahi") that is a registered output, else "null". Call after
  * sel_registry_init_machine; the string is the plugin's own PLUGIN_ID. */
 const char* sel_registry_default_output(const sel_tag* machine);
+/* Integration a player opens when the user names none: the first entry of the comma list
+ * `preferred` ("nowplaying") that is a registered integration, else "none". A target whose
+ * integration plugin is not built (Amiga, Linux without libsystemd) gets "none". */
+const char* sel_registry_default_integration(const char* preferred);
 /* Walks every descriptor and its PLUGIN_TAGS list; names each problem
  * through the host log. */
 void sel_registry_lint(sel_lint_report* report);

@@ -151,22 +151,33 @@ const sel_tag* sel_registry_find(uint32_t kind, const char* id) {
     return NULL;
 }
 
-const char* sel_registry_default_output(const sel_tag* machine) {
-    const char* list = (const char*)sel_tag_find(machine, SEL_MACHINE_AUDIO, 0);
+/* First entry of the comma list `list` that is a registered plugin of `kind`; NULL when none. */
+static const char* first_registered(uint32_t kind, const char* list) {
     while (list && *list) {
         const char* end = strchr(list, ',');
         size_t len = end ? (size_t)(end - list) : strlen(list);
         uint32_t i;
         for (i = 0; i < g_count; i++) {
             const char* pid = (const char*)sel_tag_find(g_desc[i], SEL_PLUGIN_ID, 0);
-            if (sel_tag_find(g_desc[i], SEL_PLUGIN_KIND, 0) == SEL_PLUGIN_KIND_OUTPUT && pid &&
-                strlen(pid) == len && strncmp(pid, list, len) == 0) {
+            if (sel_tag_find(g_desc[i], SEL_PLUGIN_KIND, 0) == kind && pid && strlen(pid) == len &&
+                strncmp(pid, list, len) == 0) {
                 return pid;
             }
         }
         list = end ? end + 1 : NULL;
     }
-    return "null";
+    return NULL;
+}
+
+const char* sel_registry_default_output(const sel_tag* machine) {
+    const char* list = (const char*)sel_tag_find(machine, SEL_MACHINE_AUDIO, 0);
+    const char* pid = first_registered(SEL_PLUGIN_KIND_OUTPUT, list);
+    return pid ? pid : "null";
+}
+
+const char* sel_registry_default_integration(const char* preferred) {
+    const char* pid = first_registered(SEL_PLUGIN_KIND_INTEGRATION, preferred);
+    return pid ? pid : "none";
 }
 
 static void problem(const char* plugin, const char* what, uint32_t tag) {

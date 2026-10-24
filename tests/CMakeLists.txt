@@ -373,6 +373,13 @@ add_test(NAME mem-class-unit COMMAND mem_class_test)
 add_executable(default_output_test host/default_output_test.c)
 target_link_libraries(default_output_test PRIVATE selecta_registry)
 add_test(NAME default-output-unit COMMAND default_output_test)
+# The default integration follows the OS preference list and the registry ("none" when not built).
+add_executable(default_integration_test host/default_integration_test.c)
+target_link_libraries(default_integration_test PRIVATE selecta_registry)
+if(SEL_HAVE_MPRIS)
+  target_compile_definitions(default_integration_test PRIVATE SEL_HAVE_MPRIS=1)
+endif()
+add_test(NAME default-integration-unit COMMAND default_integration_test)
 
 # T24: browse listing and view model through the engine command queue and
 # snapshot. The temp tree is created inside the generated songs directory.
