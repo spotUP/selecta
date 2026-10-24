@@ -1,8 +1,10 @@
 /* AmigaOS terminal device (UP-Term or the Shell console), plan M2 phase 6, row I130.
  * Raw mode is SetMode(Input(), 1); a timed key wait is WaitForChar; the window size is asked of
- * the terminal at open (xterm CSI 18 t and console CSI 0 SPACE q) and again on each resize event. in_fd and out_fd are ignored: the Amiga has no
+ * the terminal at open (console CSI 0 SPACE q, xterm CSI 18 t only when unanswered, row I218f) and again on each resize event.
+ * in_fd and out_fd are ignored: the Amiga has no
  * descriptor numbers, the streams are Input() and Output(). */
 #include "../term.h"
+#include "../sizeprobe.h"
 
 #include <dos/dos.h>
 #include <proto/dos.h>
@@ -23,43 +25,35 @@ typedef struct amiga_state {
 static amiga_state* st(txt_term* t) { return (amiga_state*)(void*)t->saved_bytes; }
 static const amiga_state* cst(const txt_term* t) { return (const amiga_state*)(const void*)t->saved_bytes; }
 
-/* The size is asked two ways at once: xterm CSI 18 t (UP-Term) answers "CSI 8;rows;cols t", and
- * the console.device Window Status Request CSI 0 SPACE q answers "CSI 1;1;rows;cols SPACE r" (the
- * CSI may be the 8-bit 0x9B). A terminal knows only one of them and ignores the other; 80x24 stays
- * when nothing answers. The native answer also turns on the window-resized raw input event
- * CSI 12 {, so a resize reaches the key stream (row I218c). */
+static void probe_write(void* ctx, const char* s, size_t n) { (void)txt_term_write((txt_term*)ctx, s, n); }
+
+static long probe_read(void* ctx, uint8_t* buf, size_t cap) {
+    LONG got;
+    (void)ctx;
+    if (!WaitForChar(Input(), 200000)) return 0;
+    got = Read(Input(), buf, (LONG)cap);
+    return got > 0 ? (long)got : 0;
+}
+
+/* The size is asked of the console.device first (Window Status Request CSI 0 SPACE q, answer
+ * "CSI 1;1;rows;cols SPACE r"; the CSI may be the 8-bit 0x9B). Only when it does not answer is the
+ * xterm CSI 18 t sent (UP-Term): the console.device reads CSI n t as Set Page Length (row I218f).
+ * 80x24 stays when nothing answers. The native answer also turns on the window-resized raw input
+ * event CSI 12 { (row I218c). */
 static void query_size(txt_term* t) {
-    static const char ask[] = "\x1b[18t\x1b[0 q";
     static const char events_on[] = "\x1b[12{";
-    uint8_t b[48];
-    long n = 0, got;
-    uint32_t v[5] = {0, 0, 0, 0, 0};
-    uint32_t k = 0, i;
+    txt_probe_io io;
+    txt_probe_result r;
     amiga_state* s = st(t);
-    txt_term_write(t, ask, sizeof ask - 1);
-    while (n < (long)sizeof b && WaitForChar(Input(), 200000)) {
-        got = Read(Input(), b + n, (LONG)(sizeof b - (size_t)n));
-        if (got <= 0) break;
-        n += got;
-        if (b[n - 1] == 't' || b[n - 1] == 'r') break;
+    io.ctx = t;
+    io.write = probe_write;
+    io.read = probe_read;
+    r = txt_size_probe(&io);
+    if (r.rows > 0 && r.cols > 0) {
+        s->rows = r.rows;
+        s->cols = r.cols;
     }
-    for (i = 0; i < (uint32_t)n; i++) {
-        if (b[i] >= '0' && b[i] <= '9') {
-            if (k < 5) v[k] = v[k] * 10u + (uint32_t)(b[i] - '0');
-        } else if (b[i] == '[' || b[i] == 0x9B) {
-            k = 0;
-            memset(v, 0, sizeof v);
-        } else if (b[i] == ';') {
-            k++;
-        } else if (b[i] == 't' && v[0] == 8 && v[1] > 0 && v[2] > 0) {
-            s->rows = v[1];
-            s->cols = v[2];
-        } else if (b[i] == 'r' && v[0] == 1 && v[1] == 1 && v[2] > 0 && v[3] > 0) {
-            s->rows = v[2];
-            s->cols = v[3];
-            s->native = 1;
-        }
-    }
+    s->native = r.native;
     if (s->native) txt_term_write(t, events_on, sizeof events_on - 1);
 }
 

@@ -202,18 +202,69 @@ static void put_move(out_buf* o, uint32_t row, uint32_t col) {
     put_str(o, "H");
 }
 
-/* SGR that selects exactly this style from a reset state. */
-static void put_sgr(out_buf* o, txt_style s) {
+/* RGB of an xterm-256color index: 0-15 the standard colours, 16-231 the 6x6x6 cube, 232-255 greys. */
+static void xterm_rgb(uint32_t n, int rgb[3]) {
+    static const int base[16][3] = {{0, 0, 0},       {205, 0, 0},     {0, 205, 0},     {205, 205, 0},
+                                    {0, 0, 238},     {205, 0, 205},   {0, 205, 205},   {229, 229, 229},
+                                    {127, 127, 127}, {255, 0, 0},     {0, 255, 0},     {255, 255, 0},
+                                    {92, 92, 255},   {255, 0, 255},   {0, 255, 255},   {255, 255, 255}};
+    static const int lv[6] = {0, 95, 135, 175, 215, 255};
+    if (n < 16u) {
+        memcpy(rgb, base[n], sizeof base[n]);
+    } else if (n < 232u) {
+        n -= 16u;
+        rgb[0] = lv[n / 36u];
+        rgb[1] = lv[(n / 6u) % 6u];
+        rgb[2] = lv[n % 6u];
+    } else {
+        rgb[0] = rgb[1] = rgb[2] = 8 + (int)(n - 232u) * 10;
+    }
+}
+
+/* The console.device knows only the system colours 0-7 (SGR 30-37 / 40-47; Amiga ROM Kernel Reference,
+ * console.device, Select Graphic Rendition). The pen of an xterm-256color index is the nearest of the
+ * eight ANSI colours (black, red, green, yellow, blue, magenta, cyan, white by pen number 0-7). */
+static uint32_t console_pen(uint32_t n) {
+    static const int pen[8][3] = {{0, 0, 0},     {205, 0, 0},   {0, 205, 0},   {205, 205, 0},
+                                  {0, 0, 238},   {205, 0, 205}, {0, 205, 205}, {229, 229, 229}};
+    int c[3];
+    uint32_t i, best = 0;
+    long bd = -1;
+    xterm_rgb(n, c);
+    for (i = 0; i < 8u; i++) {
+        long d = 0;
+        int k;
+        for (k = 0; k < 3; k++) d += (long)(c[k] - pen[i][k]) * (c[k] - pen[i][k]);
+        if (bd < 0 || d < bd) {
+            bd = d;
+            best = i;
+        }
+    }
+    return best;
+}
+
+/* SGR that selects exactly this style from a reset state. A console grid gets SGR 30-37 / 40-47 only. */
+static void put_sgr(out_buf* o, txt_style s, int console) {
     put_str(o, "\x1b[0");
     if (s.attr & TXT_ATTR_BOLD) put_str(o, ";1");
     if (s.attr & TXT_ATTR_REVERSE) put_str(o, ";7");
     if (s.fg != TXT_COLOR_DEFAULT) {
-        put_str(o, ";38;5;");
-        put_num(o, s.fg);
+        if (console) {
+            put_str(o, ";");
+            put_num(o, 30u + console_pen(s.fg));
+        } else {
+            put_str(o, ";38;5;");
+            put_num(o, s.fg);
+        }
     }
     if (s.bg != TXT_COLOR_DEFAULT) {
-        put_str(o, ";48;5;");
-        put_num(o, s.bg);
+        if (console) {
+            put_str(o, ";");
+            put_num(o, 40u + console_pen(s.bg));
+        } else {
+            put_str(o, ";48;5;");
+            put_num(o, s.bg);
+        }
     }
     put_str(o, "m");
 }
@@ -247,7 +298,7 @@ long txt_grid_flush(txt_grid* g, char* out, size_t cap) {
             any = 1;
             if (next_pos != (long)i || x == 0) put_move(&o, y, x);
             if (!style_eq(b->style, cur)) {
-                put_sgr(&o, b->style);
+                put_sgr(&o, b->style, g->console);
                 cur = b->style;
             }
             put_cp(&o, b->cp, g->latin1);
