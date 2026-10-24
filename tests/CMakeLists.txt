@@ -855,6 +855,13 @@ if(NOT SEL_AMIGA)
         "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/amiga-console-keys-vamos"
         -P "${SEL_M2}/amiga_keys.cmake")
     set_tests_properties(amiga-console-keys-vamos PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos)
+    # I218d2 the Latin-1 name row on the Amiga console: the console is sent 0xF6 / 0xC4, not UTF-8 or U+FFFD.
+    add_test(NAME amiga-console-latin1-name-box-glyph-vamos
+      COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}"
+        "-DAMIGA_SELECTA=${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta/selecta"
+        "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/amiga-console-latin1-name-box-glyph-vamos"
+        -P "${SEL_M2}/latin1_row_bytes.cmake")
+    set_tests_properties(amiga-console-latin1-name-box-glyph-vamos PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos)
   endif()
   # T57 library browse under vamos, T58 ToolTypes = CLI.
   sel_m2_test(amiga-library-browse browse vamos)
