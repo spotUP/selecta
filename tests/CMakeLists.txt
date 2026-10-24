@@ -1413,7 +1413,7 @@ if(NOT SEL_AMIGA)
   # I168b: the no-thread prefetch downloads in resumable slices; one test per defect, named after the symptom.
   add_executable(cache_slice_test library/cache_slice_test.c)
   target_include_directories(cache_slice_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
-  target_link_libraries(cache_slice_test PRIVATE selecta_library selecta_core)
+  target_link_libraries(cache_slice_test PRIVATE selecta_library)
   add_test(NAME cache-slice COMMAND cache_slice_test)
   set_tests_properties(cache-slice PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "cache_slice_ok")
   add_executable(record_cut_unit_test record_cut_unit_test.c)
