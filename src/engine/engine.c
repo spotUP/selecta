@@ -4879,6 +4879,8 @@ static void refresh_snapshot(sel_engine* e) {
     e->state.lyric_lines = e->lyr.count;
     e->state.lyric_line = e->lyr.count > 0 ? sel_lrc_index_at(&e->lyr, song->position_ms) : -1;
     e->state.lyric_current = e->state.lyric_line >= 0 ? sel_lrc_text(&e->lyr, (uint32_t)e->state.lyric_line) : NULL;
+    e->state.lyric_prev = e->state.lyric_line > 0 ? sel_lrc_text(&e->lyr, (uint32_t)e->state.lyric_line - 1u) : NULL;
+    e->state.lyric_next = e->lyr.count > 0 ? sel_lrc_text(&e->lyr, (uint32_t)(e->state.lyric_line + 1)) : NULL;
     e->state.queue = e->queue.entries;
     e->state.queue_text = e->queue.text;
     e->state.queue_count = e->queue.count;

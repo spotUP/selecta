@@ -179,6 +179,8 @@ typedef struct sel_state {
     uint32_t lyric_lines;       /* timed lines of synced lyrics (LRC), 0: none */
     int32_t lyric_line;         /* index of the line at the play position, -1: before the first line or no synced lyrics */
     const char* lyric_current;  /* text of that line, NULL when lyric_line is -1 */
+    const char* lyric_prev;     /* DUI-P4-7: text of the line before the current one, NULL when there is none */
+    const char* lyric_next;     /* DUI-P4-7: text of the line after the current one (the first line while lyric_line is -1), NULL when none */
 } sel_state;
 
 struct sel_library;

@@ -36,6 +36,7 @@ typedef struct sel_uim_frame {
     uint32_t subsong, subsong_count; /* 1-based subsong number and how many the song has */
     uint32_t repeat_mode;            /* 0 off, 1 all, 2 one */
     uint32_t random_on;              /* 1 when the random option is on */
+    int32_t lyric_slot;              /* synced lyric line index plus one at the play position, 0 none (zero start state) (DUI-P4-7: a new line redraws the song) */
 } sel_uim_frame;
 
 /* Frame layouts, the values of the pref ui.desktop.mode (full, window, mini). */

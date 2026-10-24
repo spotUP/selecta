@@ -100,6 +100,9 @@ typedef struct desk {
     uint32_t search_since;   /* UI clock of the last typed character (DUI-P4-6) */
     int search_pending;      /* 1 when the query changed since the last search sent: the debounce is running */
     int search_on;           /* 1 when the main region shows the search results */
+    uint32_t np_rows;        /* metadata pairs the Now Playing panel drew: STAT_META_PANEL_ROWS (DUI-P4-7) */
+    uint32_t np_draws;       /* Now Playing panel draws (sentinel) */
+    sel_gui_rect np_like, np_rate[5]; /* click targets of the like button and the five rating marks */
     uint32_t lib_searches;   /* LIBRARY_SEARCH lines sent for typed queries: STAT_LIBRARY_SEARCHES */
     uint32_t search_draws, search_rows;  /* search view frames drawn, result rows in the last one */
     uint32_t search_facet;   /* the facet chip in force: 0 All, 1 Songs, 2 Formats */
@@ -138,7 +141,7 @@ typedef struct desk {
     sel_tag stats[64];
     char* input_at;         /* where the scripted input resumes after a turn that sent an engine line */
     uint32_t sends;         /* engine lines sent so far: the replay yields a turn so the shell pumps them */
-    char library_dump[3072]; /* the Library page as text for the stats (DUI-P4-3) */
+    char library_dump[4096]; /* the Library page as text for the stats (DUI-P4-3) */
     uint32_t library_sig;    /* hash of the Library page last drawn: a change redraws */
     uint32_t grid_draws, grid_tiles, grid_cols;   /* grid view frames drawn, tiles in the last one, columns of the last one (DUI-P4-5) */
     uint32_t flow_draws, flow_centre;             /* cover flow frames drawn and the listing index of the centred album in the last one */
@@ -1325,6 +1328,13 @@ static const char* library_dump_build(desk* d) {
     o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "grid draws %u tiles %u cols %u\nflow draws %u centre %u\n",
                           (unsigned)d->grid_draws, (unsigned)d->grid_tiles, (unsigned)d->grid_cols, (unsigned)d->flow_draws,
                           (unsigned)d->flow_centre);
+    o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "nowplaying draws %u pairs %u\nlyrics line %d at %u\n",
+                          (unsigned)d->np_draws, (unsigned)d->np_rows, (int)st->lyric_line, (unsigned)st->song.position_ms);
+    for (p = st->panel, i = 0; p != NULL && *p != '\0' && i < 16u && o + 400u < sizeof d->library_dump; i++) {
+        const char* v = p + strlen(p) + 1;
+        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "meta %u %s|%s\n", (unsigned)i, p, v);
+        p = v + strlen(v) + 1;
+    }
     o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "search draws %u rows %u query %s\n",
                           (unsigned)d->search_draws, (unsigned)d->search_rows, d->query);
     for (p = st->stats; p != NULL && *p != '\0' && o + 400u < sizeof d->library_dump;) {
@@ -1864,6 +1874,16 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
     const sel_state* st = sel_engine_state(d->engine);
     sel_gui_rect mn = region_rect(d, "main");
     uint32_t i;
+    if (d->np_draws > 0u && in_rect(d->np_like, x, y)) { /* Now Playing: like the playing song, or set its rating */
+        return desk_send(d, "LIKE");
+    }
+    for (i = 0; d->np_draws > 0u && i < 5u; i++) {
+        if (in_rect(d->np_rate[i], x, y)) {
+            char line[16];
+            snprintf(line, sizeof line, "RATE %u", (unsigned)i + 1u);
+            return desk_send(d, line);
+        }
+    }
     if (!d->home || d->songs || d->open_tile > 0 || x < mn.x || y < mn.y || x >= mn.x + mn.w || y >= mn.y + mn.h) {
         return 0;
     }
@@ -2037,28 +2057,127 @@ static void draw_player_left(desk* d) {
     sel_gui_dirty_add(d->canvas, all);
 }
 
-/* The Now Playing panel (DUI-P4-1) in the detail region: title, artist and format of the playing song. */
+/* The Now Playing panel (DUI-P4-1, DUI-P4-7) in the detail region, after Spotify's Now Playing view: a header tinted from the
+ * artwork, the artwork, title and artist, the catalogue pairs the engine reports for the song (the text UI's information
+ * panel data), the synced lyrics with the current line highlighted, the next queue entries, and like and rating marks. */
+#define NP_PAIRS_MAX 6u
+#define NP_UPNEXT_MAX 3u
+static uint32_t np_art_average(const desk* d, sel_gui_rect ar) {
+    const uint32_t* px = (const uint32_t*)d->canvas->pixels;
+    uint32_t r = 0, g = 0, b = 0, n = 0;
+    int32_t ix, iy;
+    if (d->canvas->format != SEL_GUI_RGBA32) {
+        return ARGB(d->theme.token[SEL_GUI_TOKEN_HEADER_TINT]);
+    }
+    for (iy = 1; iy < 8; iy++) {
+        for (ix = 1; ix < 8; ix++) {
+            int32_t x = ar.x + ar.w * ix / 8, y = ar.y + ar.h * iy / 8;
+            uint32_t c;
+            if (x < 0 || y < 0 || x >= d->canvas->w || y >= d->canvas->h) {
+                continue;
+            }
+            c = px[(size_t)y * (size_t)d->canvas->w + (size_t)x];
+            r += (c >> 16) & 255u;
+            g += (c >> 8) & 255u;
+            b += c & 255u;
+            n++;
+        }
+    }
+    return n == 0u ? ARGB(d->theme.token[SEL_GUI_TOKEN_HEADER_TINT]) : 0xFF000000u | ((r / n) << 16) | ((g / n) << 8) | (b / n);
+}
+
+static const char* np_basename(const char* path) {
+    const char* slash = strrchr(path, '/');
+    return slash != NULL ? slash + 1 : path;
+}
+
 static void draw_nowplaying(desk* d) {
     const sel_uim_frame* f = &d->uim.frame;
+    const sel_state* st = sel_engine_state(d->engine);
     sel_gui_rect dt = region_rect(d, "detail");
     int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
-    sel_gui_rect card;
+    uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+    uint32_t accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
+    int32_t side = dt.w - 2 * sp, y, rating = 0, ic = lpx(d, 20);
+    sel_gui_rect ar, band;
+    uint32_t k, first;
     if (dt.w <= 0 || dt.h <= 0) {
         return;
     }
     draw_panel(d, "detail");
-    card = rect_of(dt.x + sp, dt.y + sp, dt.w - 2 * sp, lpx(d, 96));
-    sel_gui_round_rect(d->canvas, card, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]),
-                       ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
-    draw_text(d, rect_of(card.x + sp, card.y + sp, card.w - 2 * sp, lpx(d, 20)), "Now Playing", 1, 11,
-              ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
-    draw_text(d, rect_of(card.x + sp, card.y + sp + lpx(d, 24), card.w - 2 * sp, lpx(d, 20)), f->title, 1, 16,
-              ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
-    draw_text(d, rect_of(card.x + sp, card.y + sp + lpx(d, 46), card.w - 2 * sp, lpx(d, 16)), f->artist, 0, 13,
-              ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
-    draw_text(d, rect_of(card.x + sp, card.y + sp + lpx(d, 64), card.w - 2 * sp, lpx(d, 14)), f->format, 0, 11,
-              ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
-    sel_gui_dirty_add(d->canvas, card);
+    if (side > dt.h / 3) {
+        side = dt.h / 3;
+    }
+    ar = rect_of(dt.x + (dt.w - side) / 2, dt.y + 2 * sp, side, side);
+    sel_gui_genart_draw(d->canvas, ar, f->format, sel_gui_str_hash(f->title));
+    /* The header tint is the artwork's own average colour blended into the header token, fading to the panel colour. */
+    band = rect_of(dt.x, dt.y, dt.w, 2 * sp + side / 2);
+    {
+        uint32_t tint = desk_mix(ARGB(d->theme.token[SEL_GUI_TOKEN_HEADER_TINT]), np_art_average(d, ar), 32768);
+        sel_gui_dirty_add(d->canvas, band);
+        sel_gui_gradient(d->canvas, rect_of(band.x, band.y, band.w, band.h), 1, tint, ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
+        sel_gui_genart_draw(d->canvas, ar, f->format, sel_gui_str_hash(f->title));
+    }
+    y = ar.y + ar.h + sp;
+    draw_text(d, rect_of(dt.x + sp, y, side, lpx(d, 22)), f->title, 1, 16, text);
+    draw_text(d, rect_of(dt.x + sp, y + lpx(d, 22), side, lpx(d, 18)), f->artist, 0, 13, muted);
+    /* Like and rating: the library's rating row gives the filled marks; a click sends LIKE or RATE n like the text UI. */
+    y += lpx(d, 44);
+    d->np_like = rect_of(dt.x + sp, y, ic, ic);
+    sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_HEART, d->np_like, ic, accent);
+    if (st->panel != NULL) {
+        const char* p = st->panel;
+        while (*p != '\0') {
+            const char* v = p + strlen(p) + 1;
+            if (strcmp(p, "Rating") == 0) {
+                rating = atoi(v);
+            }
+            p = v + strlen(v) + 1;
+        }
+    }
+    for (k = 0; k < 5u; k++) {
+        int32_t m = lpx(d, 12);
+        d->np_rate[k] = rect_of(dt.x + sp + ic + lpx(d, 12) + (int32_t)k * (m + lpx(d, 6)), y + (ic - m) / 2, m, m);
+        sel_gui_round_rect(d->canvas, d->np_rate[k], m / 2,
+                           (int32_t)k < rating ? accent : ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+    }
+    y += ic + sp;
+    /* Metadata pairs. */
+    d->np_rows = 0;
+    if (st->panel != NULL) {
+        const char* p = st->panel;
+        while (*p != '\0' && d->np_rows < NP_PAIRS_MAX) {
+            const char* v = p + strlen(p) + 1;
+            int32_t half = side * 2 / 5;
+            draw_text(d, rect_of(dt.x + sp, y, half, lpx(d, 16)), p, 0, 11, muted);
+            draw_text(d, rect_of(dt.x + sp + half, y, side - half, lpx(d, 16)), v, 0, 12, text);
+            y += lpx(d, 16);
+            d->np_rows++;
+            p = v + strlen(v) + 1;
+        }
+    }
+    y += sp;
+    /* Lyrics: the previous and next lines muted around the current line in the accent colour. */
+    if (st->lyric_lines > 0u) {
+        draw_text(d, rect_of(dt.x + sp, y, side, lpx(d, 16)), st->lyric_prev != NULL ? st->lyric_prev : "", 0, 12, muted);
+        draw_text(d, rect_of(dt.x + sp, y + lpx(d, 18), side, lpx(d, 20)), st->lyric_current != NULL ? st->lyric_current : "", 1, 15, accent);
+        draw_text(d, rect_of(dt.x + sp, y + lpx(d, 40), side, lpx(d, 16)), st->lyric_next != NULL ? st->lyric_next : "", 0, 12, muted);
+        y += lpx(d, 62);
+    } else if (st->lyric_text != NULL) {
+        draw_text(d, rect_of(dt.x + sp, y, side, lpx(d, 16)), st->lyric_text, 0, 12, muted);
+        y += lpx(d, 22);
+    }
+    /* Up next: the queue entries after the playing one. */
+    for (k = 0; k < st->queue_count && st->queue[k].id != st->queue_playing; k++) {
+    }
+    draw_text(d, rect_of(dt.x + sp, y, side, lpx(d, 16)), "Next in Queue", 1, 11, muted);
+    y += lpx(d, 18);
+    for (first = ++k; k < st->queue_count && k - first < NP_UPNEXT_MAX && y + lpx(d, 16) < dt.y + dt.h; k++) {
+        draw_text(d, rect_of(dt.x + sp, y, side, lpx(d, 16)), np_basename(st->queue_text + st->queue[k].path_offset), 0, 12, text);
+        y += lpx(d, 18);
+    }
+    sel_gui_dirty_add(d->canvas, dt);
+    d->np_draws++;
     d->frame_parts++;
 }
 
@@ -3497,7 +3616,9 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[59].value = (uintptr_t)home_empty(sel_engine_state(d->engine));
     d->stats[60].tag = SEL_UI_STAT_LIBRARY_SEARCHES;
     d->stats[60].value = d->lib_searches;
-    d->stats[61].tag = SEL_TAG_END;
+    d->stats[61].tag = SEL_UI_STAT_META_PANEL_ROWS;
+    d->stats[61].value = d->np_rows;
+    d->stats[62].tag = SEL_TAG_END;
 
     return d->stats;
 }
