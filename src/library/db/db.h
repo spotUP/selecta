@@ -30,7 +30,8 @@ enum {
     SEL_LIB_REQ_MOVE = 9,       /* payload: const sel_move*; re-keys one song row in place (I161b) */
     SEL_LIB_REQ_USER = 10,      /* payload: const sel_user_op*; history, liked, kept, per-song stickers (I170) */
     SEL_LIB_REQ_META = 11,      /* payload: sel_meta_op*; reads or writes one row of the meta table (I161a) */
-    SEL_LIB_REQ_GENRE = 12      /* payload: sel_genre_op*; genre_cache and songs.genre (I181) */
+    SEL_LIB_REQ_GENRE = 12,     /* payload: sel_genre_op*; genre_cache and songs.genre (I181) */
+    SEL_LIB_REQ_ART = 13        /* payload: sel_art_op*; albums and artwork rows (DUI-P2-4) */
 };
 
 /* One genre_cache operation (SEL_LIB_REQ_GENRE). The reply is INT [0] 1 = done and found/stored, 0 = not found
@@ -52,6 +53,19 @@ enum {
     SEL_DUP_PICK,       /* I184b: next local song with id > `after` that has no md5, not hashed: `out` = key NUL path NUL, reply [2] = its id (0: none left) */
     SEL_DUP_STORE       /* I184b: store md5 `value` for local song key `key` (songs and files tables) */
 };
+/* One albums/artwork operation (SEL_LIB_REQ_ART, DUI-P2-4). Reply INT [0]: SEL_ART_FIND the album id (0: none),
+ * SEL_ART_GET the blob size (0: none; `data` holds min(size, cap) bytes), SEL_ART_PUT 1 when stored. */
+enum { SEL_ART_FIND = 1, SEL_ART_GET, SEL_ART_PUT };
+typedef struct sel_art_op {
+    uint32_t op;       /* SEL_ART_* */
+    const char* name;  /* FIND: album name */
+    int64_t album;     /* GET, PUT: albums.id */
+    const char* kind;  /* GET, PUT: artwork.kind */
+    uint8_t* data;     /* GET: out buffer; PUT: bytes to store */
+    uint32_t len;      /* PUT: byte count */
+    uint32_t cap;      /* GET: buffer size */
+} sel_art_op;
+
 typedef struct sel_genre_op {
     uint32_t op;       /* SEL_GENRE_* */
     const char* key;
@@ -242,6 +256,9 @@ uint32_t sel_library_heap_bytes(const sel_tag* machine);
 
 /* Opens a library for `account` at `path` (":memory:" for a throwaway DB), allocates the heap
  * once, starts the worker, runs the schema and migrations. NULL on failure. */
+struct sel_ui_art;
+/* Fills the UI artwork table (include/selecta/ui.h) backed by the library's albums and artwork rows. */
+void sel_library_art_provider(sel_library* lib, struct sel_ui_art* out);
 sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint32_t account, const char* path);
 void sel_library_close(sel_library* lib);
 

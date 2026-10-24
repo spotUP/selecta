@@ -20,11 +20,14 @@ foreach(spec "Inter-Regular:sel_font_inter_regular" "Inter-SemiBold:sel_font_int
   list(APPEND FONT_GEN "${CMAKE_CURRENT_BINARY_DIR}/${sym}.c")
 endforeach()
 
-sel_add_plugin(desktop_ui 5 desktop_ui.c atlas_build.c stb_impl.c ${FONT_GEN}
+# Artwork (DUI-P2-4): art.c turns library blobs into tile pixels, stb_impl.c decodes them, posix/art_thread.c is the
+# worker thread (the only file with thread headers). The plugin is desktop only, so there is no Amiga branch.
+sel_add_plugin(desktop_ui 5 desktop_ui.c atlas_build.c art.c posix/art_thread.c stb_impl.c ${FONT_GEN}
   THIRD_PARTY_INCLUDES "${PROJECT_SOURCE_DIR}/third_party/stb")
 target_link_libraries(sel_plugin_desktop_ui PUBLIC selecta_uimodel selecta_gui)
 if(UNIX)
-  target_link_libraries(sel_plugin_desktop_ui PUBLIC m)
+  find_package(Threads REQUIRED)
+  target_link_libraries(sel_plugin_desktop_ui PUBLIC m Threads::Threads)
 endif()
 
 if(SELECTA_UI_DESKTOP)

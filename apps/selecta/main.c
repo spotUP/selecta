@@ -295,6 +295,7 @@ int main(int argc, char** argv)
     sel_out_set_source_fn out_set_source;
     sel_out_pump_fn out_pump;
     sel_ui_open_args args;
+    sel_ui_art art_src;
     sel_engine_stats est;
     const sel_tag* ust;
     void* out;
@@ -425,6 +426,10 @@ int main(int argc, char** argv)
     args.host = host;
     args.argc = argc;
     args.argv = (const char* const*)argv;
+    if (library != NULL) {
+        sel_library_art_provider(library, &art_src);
+        args.art = &art_src;
+    }
     for (u = 0; u < g_ui_count; u++) {
         g_uis[u].state = g_uis[u].open(&args);
         if (g_uis[u].state == NULL) {
@@ -565,7 +570,7 @@ int main(int argc, char** argv)
     if (has_stats) { /* one line per open UI (DUI-P1-4) */
         for (u = 0; u < g_ui_count; u++) {
             const sel_tag* us = ui_stats_of(&g_uis[u]);
-            printf("ui_stats id=%s frames=%u widget_draws=%u uim_updates=%u uim_dirty=%u uim_layout=%u tweens=%u effect_prims=%u dirty_pixels=%u dirty_total=%u canvas_hash=%u draw_prims=%u missing_glyphs=%u glyphs=%u view_opens=%u\n", g_uis[u].id,
+            printf("ui_stats id=%s frames=%u widget_draws=%u uim_updates=%u uim_dirty=%u uim_layout=%u tweens=%u effect_prims=%u dirty_pixels=%u dirty_total=%u canvas_hash=%u draw_prims=%u missing_glyphs=%u glyphs=%u view_opens=%u art_decodes=%u\n", g_uis[u].id,
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_FRAMES, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_WIDGET_DRAWS, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_UPDATES, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_DIRTY, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_LAYOUT, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_TWEENS, 0),
@@ -576,7 +581,8 @@ int main(int argc, char** argv)
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_DRAW_PRIMS, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_MISSING_GLYPHS, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_GLYPHS_DRAWN, 0),
-                   (unsigned)sel_tag_find(us, SEL_UI_STAT_VIEW_OPENS, 0));
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_VIEW_OPENS, 0),
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_ART_DECODES, 0));
         }
     }
 

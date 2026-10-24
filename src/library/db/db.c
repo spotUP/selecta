@@ -226,6 +226,8 @@ void sel_library_handle(sel_library* lib, const sel_message* req, sel_message* r
         sel_library_user(lib, (const sel_user_op*)req->args[0].v.s, reply);
     } else if (req->id == SEL_LIB_REQ_GENRE && req->argc == 1) {
         sel_library_genre_op(lib, (const sel_genre_op*)req->args[0].v.s, reply);
+    } else if (req->id == SEL_LIB_REQ_ART && req->argc == 1) {
+        sel_library_art_op(lib, (const sel_art_op*)req->args[0].v.s, reply);
     }
 }
 

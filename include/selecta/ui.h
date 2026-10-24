@@ -8,6 +8,15 @@
 
 SEL_EXTERN_C_BEGIN
 
+/* Album artwork source the shell fills from the library (design doc 2.7). Calls may come from any thread. The
+ * blobs are the encoded cover (kind "cover") and the written-back thumbnails (kind "thumb<size>"). */
+typedef struct sel_ui_art {
+    void* ctx;
+    int64_t (*find)(void* ctx, const char* album_name);                                        /* album id, 0 = none */
+    uint32_t (*get)(void* ctx, int64_t album, const char* kind, uint8_t* out, uint32_t cap);   /* blob size, 0 = none */
+    int (*put)(void* ctx, int64_t album, const char* kind, const uint8_t* data, uint32_t len); /* 1 = stored */
+} sel_ui_art;
+
 /* Passed to UI_OPEN. `library` is reserved and NULL until M3 creates
  * sel_library. `argv` carries the UI's own options. */
 typedef struct sel_ui_open_args {
@@ -16,6 +25,7 @@ typedef struct sel_ui_open_args {
     int argc;
     const char* const* argv;
     void* library;
+    const sel_ui_art* art; /* NULL without a library */
 } sel_ui_open_args;
 
 typedef void* (*sel_ui_open_fn)(const sel_ui_open_args* args);               /* UI_OPEN: state or NULL */
