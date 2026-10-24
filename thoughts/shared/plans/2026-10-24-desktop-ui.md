@@ -652,7 +652,7 @@ Moved (M4 ID to DUI ID):
 | M4-P4-5 | keyboard | DUI-P3-3 |
 | M4-P12-1 | settings | DUI-P4-14 |
 | M4-P12-2 | about and help | DUI-P4-13 |
-| M4-P12-3 | fonts | DUI-P5-6 |
+| M4-P12-3 | fonts (desktop part; the Amiga part stays an open M4 item) | DUI-P5-6 |
 | M4-P12-4 | tooltips | DUI-P3-6 |
 | M4-P12-5 | remembered state | DUI-P5-1 |
 | M4-P12-6 | viz windows | DUI-P4-11 |
