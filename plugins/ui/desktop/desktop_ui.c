@@ -480,21 +480,25 @@ static sel_gui_rect tile_rect(desk* d, uint32_t i) {
 }
 
 /* The detail view of an opened tile: the main region cleared, the title large. */
+static int32_t songs_top(const desk* d);
 static void draw_detail(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     sel_gui_rect mn = region_rect(d, "main");
     const sel_gui_atlas* big = desk_font(d, 1, 24);
     char name[256];
-    sel_gui_fill_rect(d->canvas, mn, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+    /* Below the now-playing card strip, like the home and songs views: the card is a widget with its own dirty bit,
+     * so a view that wipes it leaves a hole on the way back (I245). */
+    sel_gui_rect body = rect_of(mn.x, songs_top(d), mn.w, mn.y + mn.h - songs_top(d));
+    sel_gui_fill_rect(d->canvas, body, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
     if (big != NULL && d->open_tile >= 1 && (uint32_t)d->open_tile <= st->queue_count) {
         queue_title(st, (uint32_t)d->open_tile - 1u, name, sizeof name);
-        sel_gui_clip_push(d->canvas, mn);
-        sel_gui_text_wrap(d->canvas, big, rect_of(mn.x + sp, mn.y + sp, mn.w - 2 * sp, 3 * big->line_height), name,
+        sel_gui_clip_push(d->canvas, body);
+        sel_gui_text_wrap(d->canvas, big, rect_of(mn.x + sp, body.y, mn.w - 2 * sp, 3 * big->line_height), name,
                           ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), 3, &d->text);
         sel_gui_clip_pop(d->canvas);
     }
-    sel_gui_dirty_add(d->canvas, mn);
+    sel_gui_dirty_add(d->canvas, body);
 }
 
 /* The home view (DUI-P2-6): one tile per queue entry, its album artwork (DUI-P2-4) or else generated art of its
@@ -762,7 +766,8 @@ static void draw_home(desk* d) {
                       (uint32_t)(((int64_t)hv * HOVER_ALPHA) >> 16));
     }
     if (view < 65536) {
-        sel_gui_scrim(d->canvas, mn, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]) & 0xFFFFFFu,
+        sel_gui_scrim(d->canvas, rect_of(mn.x, songs_top(d), mn.w, mn.y + mn.h - songs_top(d)),
+                      ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]) & 0xFFFFFFu,
                       255u - (uint32_t)(((int64_t)view * 255) >> 16));
     }
 }
