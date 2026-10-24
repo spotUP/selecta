@@ -17,7 +17,7 @@ Goals
 - A desktop-class player first: the feature bar is set by Spotify, Apple Music, foobar2000 and Open Cubic Player, not by what a stock A1200 can draw. The Amiga is one target tier; every feature has a desktop implementation and scales down or hides itself at run time (section 12, `sel_machine`).
 - One engine, portable C, builds for AmigaOS 3.x (68k), Linux, macOS, Windows.
 - Engine is headless and is the single source of truth. UIs render engine state and send commands; they hold no playback logic.
-- UIs are plugins, switchable at run time without stopping playback: text mode, GadTools, MUI, an SDL2 desktop GUI, remote clients.
+- UIs are plugins, switchable at run time without stopping playback: text mode, GadTools, MUI, an SDL3 desktop GUI, remote clients.
 - Replayers, audio outputs, visualizers, DSP, converters and UIs are plugins with a published C SDK and a tag-list ABI that extends without breaking (section 10).
 - Amiga: every replayer reaches Paula and AHI. Voice-driven replayers reach Paula with zero mixing. Native 68k UADE/Eagleplayer players run as hardware-exclusive plugins through the UpRough UADE glue.
 - Library: every music source bbmp supports plus local files and streaming radio; browse by source, format, artist, album, genre; rate and vote through the DEViLBOX API.
@@ -309,7 +309,7 @@ A UI plugin is a tag list: `SEL_UI_NAME`, `SEL_UI_OPEN (state, sel_engine*, sel_
 
 The shell (`apps/selecta`) owns the main loop: `wait` on the active UI, pump engine, dispatch events. `UI_SWITCH` closes the active UI plugin and opens another; the engine is untouched, so playback continues. Several UIs may be attached at once (GadTools window + text UI over serial), since each is only an event consumer. The shell also owns global hotkeys, OS file integration hooks (drag-drop, AppWindow/AppIcon, open-with) delegated to the per-OS UI plugin, and the list of view styles offered: the intersection of what the active UI declares and what `sel_machine` allows.
 
-Planned UIs: text (first), GadTools, MUI, SDL2 desktop (decision D5: SDL2 + own widget set in C).
+Planned UIs: text (first), GadTools, MUI, desktop (SDL3, D5, M3d).
 
 Machine-scaled layouts: Amiga GUI plugins (MUI, GadTools) carry an RTG-aware rich layout (artwork panel, truecolor visualizer window, scaled fonts, grid and cover flow views) and a planar fallback layout (8 to 256 colours, flat/tree/drilldown views), chosen from `sel_machine` at open. The text UI scales the same way: sixel/kitty artwork and bitmap scopes when the terminal reports graphics, glyph scopes and plain lists otherwise.
 
@@ -516,8 +516,9 @@ Runtime machine scaling (decision 2026-10-22; Johan: "we shall not let amiga/020
 - M3b Sources: asma, sndh, zxart, keygenmusic (same interface, one file each, no new mechanism); Modland published lists.
 - M2b Replayer classes 2: zxtune, adplug, libvgm, libkss, libxmp adapters (F14 coverage doc: 102 formats with no owner in v1 of this doc). Each is one adapter plugin plus golden WAVs; no engine change.
 - M3c Replayer classes 3: furnace, protrekkr, sndh adapters and the bbmp `csrc/` single-format helpers wrapped one plugin each (about 30). After M3c the only formats without an owner are the 22 bbmp itself cannot play.
-- M4 Amiga UIs and native players: GadTools, MUI with RTG and planar layouts, `LoadSeg` loader, UADE-native HW replayer plugin (lifted out of UpRough), viz plugins on bitmap surfaces, chip register panels, ARexx port, OS file integration.
-- M5 Remote protocol server, HTTP/JSON API + web remote + party queue, device hand-off, MCP, SDL desktop UI with grid and cover flow, GPU visualizers, DSP chain, network outputs, more replayers (openmpt, gme, sid, bbmp helpers, stream decoders), radio stations, converters, integration plugins (MPRIS, Now Playing, SMTC, Discord), Lua, skins, BPM detect.
+- M3d Desktop UI: shared GUI library `src/gui/` (widget set, layout tree, design tokens, fixed-point rasterizer, glyph atlases, artwork pipeline) over `src/uimodel/`, with a headless `mem` backend and an SDL3 backend; plugin `plugins/ui/desktop/`. All views of sections 9a to 9c including grid and 2D cover flow, Spotify-style layout, dark and light themes, HiDPI, touchpad gestures. The M4 custom Amiga UI adds only RTG and AGA backends to the same library (D-M4-5, D-M4-6).
+- M4 Amiga UIs and native players: custom Amiga UI = RTG and AGA backends of `src/gui/` (M3d), GadTools, MUI with RTG and planar layouts, `LoadSeg` loader, UADE-native HW replayer plugin (lifted out of UpRough), viz plugins on bitmap surfaces, chip register panels, ARexx port, OS file integration.
+- M5 Remote protocol server, HTTP/JSON API + web remote + party queue, device hand-off, MCP, GPU tier of the desktop UI (3D cover flow, `sel_gpu_ctx`), bitmap skin loader, GPU visualizers, DSP chain, network outputs, more replayers (openmpt, gme, sid, bbmp helpers, stream decoders), radio stations, converters, integration plugins (MPRIS, Now Playing, SMTC, Discord), Lua, skins, BPM detect.
 
 Round 5 picks (section 1a rows F19 to F52) land in the milestone each row names; M5+ marks desktop-tier features scheduled after M5.
 
@@ -546,10 +547,10 @@ Decided 2026-10-22 (Johan, AskUserQuestion):
 - Playlist abstraction: playlist, folder tree and library view kept apart; file formats are adapters. Why: Spotify-style organisation without tying the model to any file format.
 - Loudness normalisation is in: per-song gain computed offline on desktop, shared via DEViLBOX, applied in the integer mixer. Why: modern players do it; the Amiga only needs to fetch a number.
 - Visual tiers text / planar / RTG / GPU with plugins tagged by tier. Why: "from text to 3D" with one plugin data model.
-- D5 Desktop GUI = SDL2 + own widget set in C. Why: one codebase on three OSes, GPU visualizers and skins; native look is not a goal.
+- D5 Desktop GUI = SDL3 + own widget set in C, shared with the custom Amiga UI: one widget set, layout and token layer with backends `mem`, `sdl`, `rtg`, `aga`. Why: one codebase on three desktop OSes and the Amiga, the same look by construction, golden renders headless; native look is not a goal. GPU visualizers and skins come later on the same widget set.
 - D6 Library DB = SQLite everywhere. Why: bbmp's proven model, smart playlists are SQL; the 68000 tier gets a read-only prebuilt index.
 - D7 Scripting = Lua runtime plugin over the command/event protocol, plus an ARexx port on Amiga mapping 1:1 to the same commands. Why: koobo's "plugins get a runtime", and HippoPlayer ARexx scripts port by renaming the port.
-- D8 Theming = design tokens in a theme file for every UI, bitmap skin loader in the SDL UI later. Why: no hardcoded colours, Winamp/AmigaAMP skins are a known want.
+- D8 Theming = design tokens in a theme file for every UI, bitmap skin loader in the SDL UI later. Tokens are one X-macro table in `src/gui/theme/`, parsed with the text UI theme syntax; presets Selecta Dark and Selecta Light plus the Amiga presets. Why: no hardcoded colours, Winamp/AmigaAMP skins are a known want.
 - Parity with HippoPlayer and bbmp is a v1 goal; nothing of theirs is out of scope. Format coverage = union of both.
 - Feature picks rounds 1 to 4 recorded in section 1a. Out of scope: two-deck DJ mode. Also out of scope: HippoPlayer keyfile/registration (Selecta is MIT, there is nothing to unlock).
 - Feature picks round 5 (2026-10-22, from the feature catalogue Unhomed list): F19 to F21, F23 to F25, F29 to F31, F33 to F41, F43 to F46, F48 and F49 are in (rows in section 1a). Restored into scope: multi-zone sync (F50), server transcoding (F51), multi-user / multi-library (F52), all at M5+ on the desktop tier. Not picked: CD audio (F32), rippers (F42), device sync (F47). Still out: Atmos, mpd-style client messaging, Tidal/Qobuz paid sources. Why: Johan picked them; the design is not capped by the Amiga baseline, each scales or hides by `sel_machine`.
