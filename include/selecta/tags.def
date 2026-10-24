@@ -159,6 +159,9 @@ SEL_TAG(UI, STAT_UIM_UPDATES,  0x501E, INT)
 SEL_TAG(UI, STAT_UIM_DIRTY,    0x501F, INT)
 /* The frame layout id (SEL_UIM_LAYOUT_*) the desktop UI draws with. */
 SEL_TAG(UI, STAT_UIM_LAYOUT,   0x5020, INT)
+/* Effects governor sentinels (DUI-P1-9): tweens started and blur or shadow primitives run by the desktop UI. */
+SEL_TAG(UI, STAT_TWEENS,       0x5021, INT)
+SEL_TAG(UI, STAT_EFFECT_PRIMS, 0x5022, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)

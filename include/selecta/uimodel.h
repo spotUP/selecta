@@ -122,6 +122,20 @@ uint32_t sel_uim_breakpoint_for(uint32_t width);
 void sel_uim_layout_compute(sel_uim_layout* l, uint32_t width, uint32_t height);
 int sel_uim_layout_check(const sel_uim_layout* l, char* msg, size_t cap);
 
+/* Effects governor (plan DUI-P1-9): what the canvas format can afford. INDEX8 runs no tween, blur or shadow. */
+enum { SEL_UIM_FMT_RGBA32 = 0, SEL_UIM_FMT_INDEX8 = 1 };
+enum { SEL_UIM_FX_TWEEN = 1, SEL_UIM_FX_BLUR = 2, SEL_UIM_FX_SHADOW = 3 };
+
+typedef struct sel_uim_budget {
+    uint32_t format; /* SEL_UIM_FMT_* */
+    uint32_t tweens, blur, shadow; /* 1 when the effect may run */
+} sel_uim_budget;
+
+/* Budget for a backend format name ("rgba32", "index8"; NULL means rgba32); returns 0 for an unknown name. */
+int sel_uim_budget_for(sel_uim_budget* b, const char* format);
+/* 1 when the effect (SEL_UIM_FX_*) may run. Every effect asks before it starts. */
+int sel_uim_budget_allows(const sel_uim_budget* b, uint32_t effect);
+
 SEL_EXTERN_C_END
 
 #endif /* SELECTA_UIMODEL_H */

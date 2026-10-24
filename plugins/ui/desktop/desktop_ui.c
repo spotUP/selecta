@@ -19,7 +19,10 @@ typedef struct desk {
     sel_uim_layout layout;
     int actions; /* --actions: the close hook prints the action table and the help rows */
     int report; /* --stats: the close hook prints its sentinel line */
-    sel_tag stats[7];
+    sel_uim_budget budget; /* --format: the effects the canvas format affords */
+    uint32_t tweens;       /* tweens started (title cross-fade on a song change) */
+    uint32_t effect_prims; /* blur and shadow primitives run */
+    sel_tag stats[9];
 } desk;
 
 static const char* desk_opt(const sel_ui_open_args* a, const char* name) {
@@ -56,6 +59,17 @@ static int desk_present(desk* d) {
             desk_hash(d, f->title);
             desk_hash(d, f->artist);
             desk_hash(d, f->format);
+            /* Every effect asks the governor first (DUI-P1-9): the cover backdrop blur, the panel shadow and, from
+             * the second frame on, a title cross-fade. */
+            if (sel_uim_budget_allows(&d->budget, SEL_UIM_FX_BLUR)) {
+                d->effect_prims++;
+            }
+            if (sel_uim_budget_allows(&d->budget, SEL_UIM_FX_SHADOW)) {
+                d->effect_prims++;
+            }
+            if (d->frames > 0u && sel_uim_budget_allows(&d->budget, SEL_UIM_FX_TWEEN)) {
+                d->tweens++;
+            }
         } else if (bit == SEL_UIM_DIRTY_PROGRESS) {
             desk_hash(d, f->clock);
             desk_hash(d, f->remaining);
@@ -139,6 +153,11 @@ static void* desk_open(const sel_ui_open_args* a) {
     d->engine = a->engine;
     d->host = a->host;
     d->hash = 2166136261u;
+    if (!sel_uim_budget_for(&d->budget, desk_opt(a, "--format"))) {
+        fprintf(stderr, "selecta: desktop format '%s' is not rgba32 or index8\n", desk_opt(a, "--format"));
+        a->host->mem_free(a->host, d);
+        return NULL;
+    }
     for (i = 0; i < a->argc; i++) {
         if (strcmp(a->argv[i], "--stats") == 0) {
             d->report = 1;
@@ -188,8 +207,12 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[4].value = d->uim.last_taken;
     d->stats[5].tag = SEL_UI_STAT_UIM_LAYOUT;
     d->stats[5].value = d->uim.layout;
-    d->stats[6].tag = SEL_TAG_END;
-    d->stats[6].value = 0;
+    d->stats[6].tag = SEL_UI_STAT_TWEENS;
+    d->stats[6].value = d->tweens;
+    d->stats[7].tag = SEL_UI_STAT_EFFECT_PRIMS;
+    d->stats[7].value = d->effect_prims;
+    d->stats[8].tag = SEL_TAG_END;
+    d->stats[8].value = 0;
     return d->stats;
 }
 

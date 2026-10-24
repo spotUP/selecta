@@ -565,10 +565,11 @@ int main(int argc, char** argv)
     if (has_stats) { /* one line per open UI (DUI-P1-4) */
         for (u = 0; u < g_ui_count; u++) {
             const sel_tag* us = ui_stats_of(&g_uis[u]);
-            printf("ui_stats id=%s frames=%u widget_draws=%u uim_updates=%u uim_dirty=%u uim_layout=%u\n", g_uis[u].id,
+            printf("ui_stats id=%s frames=%u widget_draws=%u uim_updates=%u uim_dirty=%u uim_layout=%u tweens=%u effect_prims=%u\n", g_uis[u].id,
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_FRAMES, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_WIDGET_DRAWS, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_UPDATES, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_DIRTY, 0),
-                   (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_LAYOUT, 0));
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_LAYOUT, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_TWEENS, 0),
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_EFFECT_PRIMS, 0));
         }
     }
 
