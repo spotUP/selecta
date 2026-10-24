@@ -208,6 +208,8 @@ SEL_TAG(UI, STAT_SORT_DIR,         0x503E, INT)
 SEL_TAG(UI, STAT_TOP_ROW,          0x503F, INT)
 SEL_TAG(UI, STAT_MENUS,            0x5040, INT)
 SEL_TAG(UI, STAT_ROW_PLAYS,        0x5041, INT)
+SEL_TAG(UI, STAT_TOOLTIPS,         0x5042, INT)
+SEL_TAG(UI, STAT_TOOLTIP_TEXT,     0x5043, STR)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)

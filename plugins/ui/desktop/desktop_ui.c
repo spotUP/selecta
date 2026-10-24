@@ -98,13 +98,19 @@ typedef struct desk {
     int32_t menu_row;        /* 1-based display row of the open context menu, 0 = closed */
     int32_t menu_x, menu_y;  /* canvas pixels, top left of the menu */
     uint32_t hovers, clicks, double_clicks, drags, sorts, menus, row_plays;
-    sel_tag stats[40];
+    int32_t tip_btn;         /* 1-based transport button under the pointer, 0 = none (DUI-P3-6) */
+    int32_t tip_shown;       /* 1-based button whose tooltip is visible, 0 = none */
+    uint32_t tip_since;      /* UI clock when the pointer came to tip_btn */
+    uint32_t tooltips;       /* tooltips shown over the run */
+    char tip_text[96];
+    sel_tag stats[42];
 } desk;
 
 static int desk_resize(desk* d, int32_t w, int32_t h);
 static int desk_set_scale(desk* d, int32_t scale);
 static int desk_present(desk* d);
 static void desk_draw_focus(desk* d);
+static void desk_draw_tip(desk* d);
 
 /* Hands the dirty rectangles to the backend, then empties the list; returns the pixels repainted. The sdl backend
  * must see the list before sel_gui_present clears it. */
@@ -175,6 +181,17 @@ static const sel_gui_atlas* desk_font(desk* d, int semibold, int size) {
         }
     }
     return NULL;
+}
+
+/* Blend of two 0xAARRGGBB colours, q16 = 0 gives a, 65536 gives b. */
+static uint32_t desk_mix(uint32_t a, uint32_t b, int32_t q16) {
+    uint32_t out = 0xFF000000u;
+    int sh;
+    for (sh = 0; sh < 24; sh += 8) {
+        int64_t ca = (a >> sh) & 0xFFu, cb = (b >> sh) & 0xFFu;
+        out |= (uint32_t)(ca + (((cb - ca) * q16) >> 16)) << sh;
+    }
+    return out;
 }
 
 /* One line of text at the top left of the box, ellipsized to the box width. */
@@ -719,7 +736,7 @@ static void draw_home_content(desk* d) {
     sel_gui_dirty_add(d->canvas, mn);
 }
 
-enum { ANIM_KEY_VIEW = 1, ANIM_KEY_HOVER = 2, HOVER_ALPHA = 36 };
+enum { ANIM_KEY_VIEW = 1, ANIM_KEY_HOVER = 2, ANIM_KEY_TIP = 3, HOVER_ALPHA = 36 };
 
 /* The main region with the running tweens on top: the hover fade of one tile (a light veil, full strength at rest)
  * and the view cross-fade (the new view fades in from the surface colour). At rest both are the plain view. */
@@ -774,6 +791,144 @@ static int desk_should_draw(const desk* d, int animated) {
     return d->uim.dirty != 0u || animated;
 }
 
+/* ---- Tooltips (DUI-P3-6): a pointer resting 600 ms on a transport button shows the action's tooltip, with its key in
+ * brackets; moving off or clicking hides it. The buttons are the actions named here, in this order, centred in the
+ * player region ("play" sits where the placeholder play box is drawn). ---- */
+enum { TIP_DELAY_MS = 600, TIP_BTN = 32, TIP_GAP = 8, TIP_H = 24 };
+static const char* const g_transport[] = {"prev", "play", "next"};
+#define TRANSPORT_COUNT ((uint32_t)(sizeof g_transport / sizeof g_transport[0]))
+
+static const sel_uim_action* desk_action_by_id(const char* id) {
+    uint32_t i, n = sel_uim_action_count();
+    for (i = 0; i < n; i++) {
+        const sel_uim_action* a = sel_uim_action_at(i);
+        if (strcmp(a->id, id) == 0) {
+            return a;
+        }
+    }
+    return NULL;
+}
+
+/* Canvas rectangle of transport button i. */
+static sel_gui_rect desk_button_rect(const desk* d, uint32_t i) {
+    sel_gui_rect pl = region_rect(d, "player");
+    int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    int32_t cx = pl.x + pl.w / 2;
+    return rect_of(cx - lpx(d, TIP_BTN / 2) + ((int32_t)i - 1) * lpx(d, TIP_BTN + TIP_GAP), pl.y + sp + lpx(d, 24),
+                   lpx(d, TIP_BTN), lpx(d, TIP_BTN));
+}
+
+/* 1-based transport button under the canvas point, 0 = none. */
+static int32_t desk_button_at(const desk* d, int32_t x, int32_t y) {
+    uint32_t i;
+    for (i = 0; i < TRANSPORT_COUNT; i++) {
+        if (in_rect(desk_button_rect(d, i), x, y)) {
+            return (int32_t)i + 1;
+        }
+    }
+    return 0;
+}
+
+/* The tooltip text of an action: its tooltip field (the label when that is empty), then the default key in brackets
+ * the Spotify way: "C-Right" becomes "(Ctrl+Right)", a single letter is upper case, "M-" is "Alt+", "S-" is "Shift+". */
+static void desk_tip_text_of(const sel_uim_action* a, char* out, size_t cap) {
+    const char* body = a->tooltip != NULL && a->tooltip[0] != '\0' ? a->tooltip : a->label;
+    char key[48];
+    const char* k = a->key;
+    size_t n = 0;
+    key[0] = '\0';
+    while (k[0] != '\0' && k[1] == '-' && n + 8u < sizeof key) {
+        const char* mod = k[0] == 'C' ? "Ctrl+" : k[0] == 'M' ? "Alt+" : k[0] == 'S' ? "Shift+" : NULL;
+        if (mod == NULL) {
+            break;
+        }
+        strcpy(key + n, mod);
+        n += strlen(mod);
+        k += 2;
+    }
+    snprintf(key + n, sizeof key - n, "%s", k);
+    if (k[0] >= 'a' && k[0] <= 'z' && k[1] == '\0') {
+        key[n] = (char)(k[0] - 'a' + 'A');
+    }
+    if (key[0] != '\0') {
+        snprintf(out, cap, "%s (%s)", body, key);
+    } else {
+        snprintf(out, cap, "%s", body);
+    }
+}
+
+/* The tooltip box above its button; the fade tween moves the box and the text from the surface to their final
+ * colours. */
+static void desk_draw_tip(desk* d) {
+    sel_gui_rect b, box;
+    const sel_gui_atlas* at;
+    int32_t w, pad, q;
+    if (d->tip_shown <= 0) {
+        return;
+    }
+    at = desk_font(d, 0, 13);
+    if (at == NULL) {
+        return;
+    }
+    q = sel_gui_tween_value(&d->tl, ANIM_KEY_TIP, 65536);
+    b = desk_button_rect(d, (uint32_t)d->tip_shown - 1u);
+    pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    w = sel_gui_text_width(at, d->tip_text, strlen(d->tip_text)) + 2 * pad;
+    box = rect_of(b.x + b.w / 2 - w / 2, b.y - lpx(d, TIP_H + 4), w, lpx(d, TIP_H));
+    sel_gui_round_rect(d->canvas, box, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_SMALL]),
+                       desk_mix(d->theme.token[SEL_GUI_TOKEN_SURFACE], d->theme.token[SEL_GUI_TOKEN_SURFACE_PRESSED], q));
+    draw_text(d, rect_of(box.x + pad, box.y, w - 2 * pad, box.h), d->tip_text, 0, 13,
+              desk_mix(d->theme.token[SEL_GUI_TOKEN_SURFACE_PRESSED], d->theme.token[SEL_GUI_TOKEN_TEXT], q));
+    sel_gui_dirty_add(d->canvas, box);
+}
+
+/* The pointer moved to canvas (x, y), or clicked (x < 0): a tooltip that is up goes away when the button changes;
+ * the delay restarts at the new button. Returns 1 when the picture changed. */
+static int desk_tip_pointer(desk* d, int32_t x, int32_t y) {
+    int32_t btn = x < 0 ? 0 : desk_button_at(d, x, y);
+    int hide = d->tip_shown > 0 && btn != d->tip_shown;
+    if (btn != d->tip_btn) {
+        d->tip_btn = btn;
+        d->tip_since = d->now_ms;
+    }
+    if (!hide) {
+        return 0;
+    }
+    d->tip_shown = 0;
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    desk_present(d);
+    if (d->home || d->songs) {
+        draw_home(d);
+        desk_event_frame(d, 1);
+    }
+    return 1;
+}
+
+/* Milliseconds until the pending tooltip is due, 0 when none is pending (or it is due now). */
+static uint32_t desk_tip_wait(const desk* d) {
+    uint32_t due = d->tip_since + TIP_DELAY_MS;
+    return d->tip_btn > 0 && d->tip_shown == 0 && due > d->now_ms ? due - d->now_ms : 0u;
+}
+
+/* Shows the tooltip when the pointer has rested long enough. */
+static void desk_tip_tick(desk* d) {
+    const sel_uim_action* a;
+    if (d->tip_btn <= 0 || d->tip_shown > 0 || d->now_ms < d->tip_since + TIP_DELAY_MS) {
+        return;
+    }
+    a = desk_action_by_id(g_transport[d->tip_btn - 1]);
+    if (a == NULL) {
+        return;
+    }
+    desk_tip_text_of(a, d->tip_text, sizeof d->tip_text);
+    d->tip_shown = d->tip_btn;
+    d->tooltips++;
+    desk_tween(d, ANIM_KEY_TIP, SEL_GUI_ANIM_FAST_MS, SEL_GUI_EASE_OUT);
+    desk_draw_tip(d);
+    desk_event_frame(d, 1);
+}
+
 /* Moves the UI clock ms forward the way the live loop would: 16 ms steps while a tween runs, otherwise one jump to the
  * next visible-clock second boundary (the idle block). Draws a frame per step that has a reason. */
 static void desk_advance(desk* d, uint32_t ms) {
@@ -781,6 +936,7 @@ static void desk_advance(desk* d, uint32_t ms) {
     while (d->now_ms < end) {
         uint32_t step = end - d->now_ms;
         int animated = sel_gui_timeline_running(&d->tl) > 0u;
+        uint32_t tw = desk_tip_wait(d);
         if (animated) {
             if (step > 16u) {
                 step = 16u;
@@ -788,14 +944,21 @@ static void desk_advance(desk* d, uint32_t ms) {
         } else if (step > 1000u - d->now_ms % 1000u) {
             step = 1000u - d->now_ms % 1000u;
         }
+        if (tw > 0u && step > tw) {
+            step = tw;
+        }
         d->now_ms += step;
         sel_gui_timeline_advance(&d->tl, d->now_ms);
         sel_uim_update(&d->uim, sel_engine_state(d->engine));
+        desk_tip_tick(d);
         if (!desk_should_draw(d, animated)) {
             continue;
         }
         if (animated && d->home) {
             draw_home(d);
+        }
+        if (animated) {
+            desk_draw_tip(d);
         }
         if (!desk_present(d)) {
             desk_event_frame(d, 1);
@@ -961,7 +1124,7 @@ static int songs_send_path(desk* d, const char* verb, int32_t row) {
 
 /* One pointer event (DUI-P3-2): the region is found on the layout tree first, then the part inside it. Returns 1 when
  * the picture changed. */
-static int desk_pointer(desk* d, const sel_gui_input* ev) {
+static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
     int32_t sc = d->scale > 0 ? d->scale : 1;
     int region = sel_uim_hit(&d->layout, ev->x / sc, ev->y / sc);
     const char* rname = region >= 0 ? d->layout.regions[region].name : "";
@@ -1049,6 +1212,12 @@ static int desk_pointer(desk* d, const sel_gui_input* ev) {
         }
     }
     return 0;
+}
+
+/* A pointer event: the view handles it, and the tooltip tracker follows the transport buttons (DUI-P3-6). */
+static int desk_pointer(desk* d, const sel_gui_input* ev) {
+    int tip = desk_tip_pointer(d, ev->kind == SEL_GUI_IN_MOVE ? ev->x : -1, ev->y);
+    return desk_pointer_view(d, ev) | tip;
 }
 
 static int desk_replay_input(desk* d) {
@@ -1220,6 +1389,7 @@ static int desk_present(desk* d) {
         }
     }
     desk_draw_focus(d);
+    desk_draw_tip(d);
     d->dirty_pixels = desk_flush(d);
     d->dirty_total += d->dirty_pixels;
     d->frames++;
@@ -1256,6 +1426,10 @@ static void desk_replay_resizes(desk* d) {
             const sel_uim_region* r = &d->layout.regions[i];
             printf("region name=%s x=%d y=%d w=%u h=%u\n", r->name, (int)r->x, (int)r->y, (unsigned)r->w,
                    (unsigned)r->h);
+        }
+        for (i = 0; i < TRANSPORT_COUNT; i++) {
+            sel_gui_rect b = desk_button_rect(d, i);
+            printf("button id=%s x=%d y=%d w=%d h=%d\n", g_transport[i], (int)b.x, (int)b.y, (int)b.w, (int)b.h);
         }
         p += used;
         if (*p != ',') {
@@ -1778,7 +1952,11 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[37].value = d->menus;
     d->stats[38].tag = SEL_UI_STAT_ROW_PLAYS;
     d->stats[38].value = d->row_plays;
-    d->stats[39].tag = SEL_TAG_END;
+    d->stats[39].tag = SEL_UI_STAT_TOOLTIPS;
+    d->stats[39].value = d->tooltips;
+    d->stats[40].tag = SEL_UI_STAT_TOOLTIP_TEXT;
+    d->stats[40].value = (uintptr_t)(d->tip_shown > 0 ? d->tip_text : "");
+    d->stats[41].tag = SEL_TAG_END;
 
     return d->stats;
 }
