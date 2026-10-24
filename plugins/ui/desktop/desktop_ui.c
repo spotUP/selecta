@@ -59,7 +59,6 @@ typedef struct desk {
     int textsheet;          /* --view text: specimen lines and the queue names, once (DUI-P2-3) */
     int widgets;            /* --view widgets: the widget gallery, once (DUI-P3-1) */
     sel_gui_widget_stats wstats; /* per-kind draw counts of the gallery */
-    int home_pending;       /* --view home: VIEW_SOURCE home still to send (DUI-P4-2) */
     int home;               /* --view home: the tile grid of the queue entries in the main region (DUI-P2-6) */
     sel_gui_text_stats text; /* glyphs blitted and code points the atlas lacked (DUI-P2-3) */
     sel_gui_atlas* atlas[2][DESK_SIZES]; /* [semibold][size], built on first use */
@@ -2440,7 +2439,6 @@ static void* desk_open(const sel_ui_open_args* a) {
             d->widgets = 1;
         } else if (strcmp(view, "home") == 0) {
             d->home = 1;
-            d->home_pending = 1; /* the shell sends VIEW_SHOW browse after open: ask for HOME on the first turn */
         } else if (strcmp(view, "songs") == 0) {
             d->home = 1;
             d->songs = 1;
@@ -2581,19 +2579,6 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
         d->dirty_total = d->dirty_pixels;
         d->frames++;
         return 1;
-    }
-    if (d->home_pending == 2) { /* no history to show (no library or an empty one): the queue grid keeps the view source it had */
-        d->home_pending = 0;
-        if (!home_shelf_mode(sel_engine_state(d->engine))) {
-            desk_send(d, "VIEW_SOURCE browse");
-            return 1;
-        }
-    }
-    if (d->home_pending == 1 && d->frames > 0u) { /* after the shell's own VIEW_SHOW browse, which came before this turn */
-        d->home_pending = 2;
-        desk_send(d, "VIEW_SOURCE home"); /* the shelves read the engine's HOME rows (DUI-P4-2) */
-        desk_send(d, "VIEW_WINDOW 32");
-        return 1; /* let the engine pump the two lines before the next turn replays input or draws */
     }
     if (d->home && sel_engine_state(d->engine)->view != NULL) { /* HOME rows arrived or changed: redraw */
         const sel_view_state* hv = sel_engine_state(d->engine)->view;

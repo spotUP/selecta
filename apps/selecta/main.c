@@ -498,7 +498,16 @@ int main(int argc, char** argv)
     if (start != NULL && sel_path_is_absolute(start)) {
         snprintf(cmd, sizeof cmd, "LIBRARY_BROWSE %s", start);
         send_line(e, cmd);
-        send_line(e, "VIEW_SHOW browse");
+        if (strcmp(option(argc, argv, "--view", ""), "home") == 0) { /* the start view the user named: Home, not the folder list */
+            send_line(e, "VIEW_SOURCE home");
+            send_line(e, "VIEW_WINDOW 32");
+            sel_engine_pump(e, sink, ctx);
+            if (sel_engine_state(e)->view->row_count == 0u) { /* no history to show (no library or an empty one): the view source it had before */
+                send_line(e, "VIEW_SOURCE browse");
+            }
+        } else {
+            send_line(e, "VIEW_SHOW browse");
+        }
     }
     apply_option_words(e, argc, argv);
     sel_engine_pump(e, sink, ctx);

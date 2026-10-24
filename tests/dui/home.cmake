@@ -88,6 +88,13 @@ shelf_scrolls(a0 a1 "${idle}")
 expect_eq("idle scroll shelf 0" "${a0}" 0)
 expect_eq("idle scroll shelf 1" "${a1}" 0)
 
+# 2b. Home is the start view itself: the shelves are in the dump of a run that replays no input at all, so the
+# shell's start-view logic (not a later UI turn) selected HOME before the first frame was drawn.
+home_run(first "")
+if(NOT "${first}" MATCHES "ui_home id=desktop shelves=([0-9]+)" OR CMAKE_MATCH_1 LESS 2)
+  message(FATAL_ERROR "Home shelves missing on the first frame in:\n${first}")
+endif()
+
 # 5. Revert check: the reversed order must not equal what the engine gave (the assertion is not vacuous).
 set(reversed "fixture:3;fixture:1;fixture:5;fixture:2;fixture:6;${WORK}/a.mod")
 if("${recent}" STREQUAL "${reversed}")
