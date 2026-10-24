@@ -3,7 +3,7 @@
 # replaces its red entry with the real test and removes its id from tests/ratchet/unimplemented.txt. Red entries also
 # carry label dui-red, so a run of the finished milestones (M3 finish line) can leave them out with -LE dui-red while
 # dui-ratchet keeps the red count honest.
-set(SEL_DUI_REAL dui-ratchet dui-build-deps dui-uim-frame dui-ui-switch dui-ui-multi dui-mode-pref dui-lift-parity dui-actions dui-layout)
+set(SEL_DUI_REAL dui-ratchet dui-build-deps dui-uim-frame dui-ui-switch dui-ui-multi dui-mode-pref dui-lift-parity dui-actions dui-layout dui-parity-matrix)
 
 add_test(NAME dui-ratchet
   COMMAND "${CMAKE_COMMAND}"
@@ -49,6 +49,12 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/lift_parity.cmake")
   set_tests_properties(dui-lift-parity PROPERTIES LABELS dui)
 endif()
+
+# DUI-P1-8: the parity matrix against plan section 8.2 (text only, no binary).
+add_test(NAME dui-parity-matrix
+  COMMAND "${CMAKE_COMMAND}" "-DPLAN=${PROJECT_SOURCE_DIR}/thoughts/shared/plans/2026-10-24-desktop-ui.md"
+    "-DMATRIX=${CMAKE_CURRENT_SOURCE_DIR}/parity_matrix.tsv" -P "${CMAKE_CURRENT_SOURCE_DIR}/parity_matrix.cmake")
+set_tests_properties(dui-parity-matrix PROPERTIES LABELS dui)
 
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/items.txt" SEL_DUI_ITEMS)
 foreach(item IN LISTS SEL_DUI_ITEMS)

@@ -1,0 +1,139 @@
+# Parity matrix of HippoPlayer (hippo) and bbmp (bbmp) UI features (plan DUI-P1-8, M4-P2-5).
+# Tab separated: source:row, feature, desktop UI column. The desktop column is a DUI item ID (several allowed) or
+# "not in this milestone: <reason>"; it must equal the Mapping column of the same row in plan section 8.2.
+# Text UI and Amiga UI columns stay in the M4 plan (M4 mapping column of section 8.2).
+hippo:25	Play mode button next to position slider	DUI-P4-1 (shuffle and repeat buttons in the transport bar); Amiga gadget stays M4-P12-12
+hippo:37	Alarm (timed start)	not in this milestone: engine scheduler, not UI (F13a NEW, unhomed)
+hippo:45	Doublebuffering of sample data	not in this milestone: output layer, M2
+hippo:70	F1-F10 stored programs	DUI-P5-8
+hippo:77	Module comment file	not in this milestone: engine metadata (see 9.5); shown by DUI-P4-3
+hippo:78	Hide window hotkey H	not in this milestone: Amiga-only, stays M4-P12-12 (Amiga)
+hippo:82	Archives LhA, LZX, Zip, gzip	not in this milestone: engine loader, M2
+hippo:83	XPK, PowerPacker, XFDmaster	not in this milestone: engine loader, M2
+hippo:92	Search source remembered	DUI-P5-1
+hippo:96	Infobox downloaded byte count	DUI-P5-2
+hippo:99	UHCBIN network transport	not in this milestone: source layer, not UI
+hippo:105	Resizable main and info windows	DUI-P2-7 (window resize relayout); Amiga NEWSIZE stays M4-P10-1
+hippo:106	Window shrink / expand (zip)	DUI-P4-15 (mini mode); Amiga zoom gadget stays M4-P5-3
+hippo:107	Any font for list and infobox/buttons	DUI-P5-6
+hippo:108	Big buttons	DUI-P5-6
+hippo:109	Button tooltips	DUI-P3-6
+hippo:110	Public screen selection	not in this milestone: Amiga-only, stays M4-P7-1 (Amiga)
+hippo:111	Own screen option	not in this milestone: Amiga-only, stays M4-P6-1 (Amiga), M4-P5-3 (Amiga)
+hippo:112	Filebox display and zoom	M4-P5-3 (Amiga), DUI-P1-7
+hippo:113	Disable info scroll	DUI-P5-2
+hippo:114	Info-line modes 7/8/9/0	DUI-P5-2
+hippo:115	Module info window with wheel scroll	DUI-P4-3, DUI-P3-2
+hippo:116	Info window: SID chip, instruments, channels	DUI-P4-3
+hippo:117	Info window: author, publisher, album, year	DUI-P4-3
+hippo:118	Info window: STIL trivia	DUI-P4-3
+hippo:119	AHI indicator	DUI-P5-2
+hippo:120	Keep window positions and open states	DUI-P5-1
+hippo:121	About window	DUI-P4-13
+hippo:122	Prefs window	DUI-P4-14
+hippo:127	Quadra scope	DUI-P4-11
+hippo:128	Filled quadra scope	DUI-P4-11
+hippo:129	Hippo scope	DUI-P4-11
+hippo:130	Bars scope	DUI-P4-11
+hippo:131	Spectrum analyzer	DUI-P4-11
+hippo:132	Patternscope 4-18 channels, XL rows	DUI-P4-11 (pattern plugin)
+hippo:133	PSID register scope	DUI-P4-12
+hippo:134	Several scopes at once	DUI-P4-11
+hippo:135	Scope size, priority, bars settings	DUI-P4-11
+hippo:136	Z toggles scopes	DUI-P4-11
+hippo:137	External scope plugins	DUI-P4-11 (viz plugin ABI)
+hippo:138	Module info window (I)	DUI-P4-3, DUI-P3-3
+hippo:139	Per-sample listing	DUI-P4-3 (tracker tabs)
+hippo:140	Synth sample / size counts	DUI-P4-3 (tracker tabs)
+hippo:145	Prefs page Play	DUI-P4-14
+hippo:146	Prefs page Show	DUI-P4-14
+hippo:157	MHI decoder hardware	not in this milestone UI plan: players plan (F26)
+hippo:158	AmiGUS mixer	not in this milestone UI plan: players plan (F26)
+hippo:159	Trinity audio	not in this milestone UI plan: players plan (F26)
+hippo:160	Load / save prefs	DUI-P4-14
+hippo:162	Hotkeys enable	not in this milestone: Amiga-only, stays M4-P12-12 (Amiga)
+hippo:163	Double-click play toggle	DUI-P3-2 (double-click plays)
+hippo:164	Task priority setting	not in this milestone: Amiga-only, stays M4-P12-12 (Amiga)
+hippo:165	HippoPlayer.group location	not in this milestone: Selecta has no group file; replayer set comes from the plugin registry
+hippo:211	ToolType parsing	not in this milestone: Amiga-only, stays M4-P7-5 (Amiga)
+hippo:212	UHCBIN environment variable	not in this milestone: source layer
+hippo:213	PIPE: streaming names	not in this milestone: source layer
+hippo:219	R opens prefs	DUI-P4-14, DUI-P3-3
+hippo:228	ESC exit	DUI-P3-3
+hippo:233	HELP about	DUI-P4-13
+hippo:235	` window shrink / expand	M4-P5-3 (Amiga), DUI-P3-3
+hippo:236	7/8/9/0 info-line modes	DUI-P5-2
+hippo:237	I module info	DUI-P3-3
+hippo:238	F1-F10 stored programs	DUI-P5-8
+hippo:240	H hide window; [ join program	M4-P12-12 (Amiga); join program = DUI-P3-3 (playlist append action)
+hippo:242	Z scope toggle	DUI-P4-11
+hippo:269	STIL.txt trivia	DUI-P4-3 (engine done M3)
+hippo:270	Hardware outputs	not in this milestone UI plan: players plan (F26)
+hippo:275	reqtools file requesters	DUI-P5-11 (desktop file dialogs); asl stays M4-P7-3
+hippo:276	Keyfile / registration	not in this milestone: out of scope, Selecta has no registration
+hippo:278	Prefs file location	DUI-P4-14 (prefs store done M1)
+hippo:279	PS3M config file	not in this milestone UI plan: players plan
+hippo:280	Iconify to AppIcon	not in this milestone: Amiga-only, stays M4-P5-3 (Amiga)
+hippo:281	Mouse wheel in lists and info window	DUI-P3-2
+hippo:282	Kickstart 1.2, 68000 baseline	not in this milestone: runtime tier, later (cat:255)
+bbmp:41	Loudness on Info with applied gain; off switch	DUI-P4-3, DUI-P4-14
+bbmp:46	Last visualiser remembered	DUI-P5-1
+bbmp:51	Per-format status line (verified / faults / does not play)	DUI-P4-3 (Song info view)
+bbmp:60	Queue tab; Enter jumps to song	DUI-P4-3, DUI-P3-3
+bbmp:69	Playlists tab; queue a whole playlist	DUI-P4-3, DUI-P3-3
+bbmp:72	Import via Files (.m3u)	DUI-P4-3 (Files view; import engine done M3)
+bbmp:85	Three-column Browse	DUI-P4-4, M4-P10-2 (Amiga) (drilldown style)
+bbmp:86	First list: All plus each collection	DUI-P4-4 (engine done M3)
+bbmp:87	Per-collection Formats, Platforms, Chips, Artists, New	DUI-P4-4 (engine done M3)
+bbmp:88	Formats > artists > songs	DUI-P4-4 (engine done M3)
+bbmp:89	Platforms drill	DUI-P4-4 (engine done M3)
+bbmp:90	Sound chips drill	DUI-P4-4 (engine done M3)
+bbmp:91	Artists A-Z	DUI-P4-4 (engine done M3)
+bbmp:93	HVSC layout view	DUI-P4-4 (engine done M3)
+bbmp:94	Sizes at every Browse level	DUI-P4-4
+bbmp:95	Narrow width drops the parent column; reopens where left	DUI-P1-7 (breakpoints), DUI-P5-1
+bbmp:96	Go to playing song	DUI-P3-3
+bbmp:99	Search tab / box	DUI-P4-3
+bbmp:102	Search scope next collection / all	DUI-P3-3
+bbmp:103	Search box Enter / Down / Esc	DUI-P3-3
+bbmp:104	Artist page	DUI-P4-3 (composer pages)
+bbmp:107	Web and Demozoo search	DUI-P5-7
+bbmp:108	Song info page	DUI-P4-3
+bbmp:109	Info tab: format notes, failure reason, loudness	DUI-P4-3
+bbmp:110	Page Up / Page Down	DUI-P3-3
+bbmp:111	Collection filter setting	DUI-P4-14, DUI-P5-1
+bbmp:112	Remembered browse view	DUI-P5-1
+bbmp:138	Not prepared upstream (archives, MP3/Ogg/FLAC)	not in this milestone: sources, not UI
+bbmp:149	Files tab	DUI-P4-3
+bbmp:169	History tab	DUI-P4-3
+bbmp:171	Stats tab	DUI-P4-3
+bbmp:175	Kept marker in lists	DUI-P5-2
+bbmp:183	Saved on this computer list	DUI-P4-3
+bbmp:184	Activity panel	DUI-P5-5
+bbmp:196	Tabs 1-0 and Help tab	DUI-P4-3, DUI-P3-3
+bbmp:197	All keys remappable	DUI-P4-14
+bbmp:198	Help tab listing all keys	DUI-P4-13
+bbmp:199	Quit	DUI-P3-3
+bbmp:200	Collection switch, view switch, go to playing	DUI-P3-3
+bbmp:201	Right / left enter and leave	DUI-P3-3
+bbmp:202	Update catalogues	DUI-P3-3
+bbmp:203	Sounds wrong key with note dialog	DUI-P5-4 (report storage unverified, engine side)
+bbmp:204	Activity key	DUI-P5-5
+bbmp:205	Theme preview while scrolling	DUI-P5-3
+bbmp:206	26 themes incl. 4 Amiga	DUI-P5-3 (Amiga four plus Selecta default; the rest Q21)
+bbmp:207	Viz and meters take theme colours	DUI-P5-3
+bbmp:208	Dialogs: collections, confirm, prompt, playlist picker	DUI-P5-4
+bbmp:209	First-start flow	DUI-P5-4
+bbmp:210	Guard on destructive actions	DUI-P5-4
+bbmp:211	Visualiser area, meters, now-playing bar	DUI-P4-1, DUI-P4-11
+bbmp:218	Command plays files / folders / archives	M4-P7-5 (Amiga), DUI-P1-3
+bbmp:234	`wrong` CLI	not in this milestone: CLI, not UI
+bbmp:242	Subsongs all / first only	DUI-P4-14
+bbmp:246	Browse and search scope setting	DUI-P4-14
+bbmp:248	Theme setting	DUI-P4-14, DUI-P5-3
+bbmp:257	Downloads and Extra files panels	DUI-P5-5
+bbmp:258	Saved on this computer panel	DUI-P4-3
+bbmp:259	Key remapping	DUI-P4-14
+bbmp:261	Settings saved the moment they change	DUI-P4-14
+bbmp:262	Environment variables	not in this milestone: host configuration, M1
+bbmp:287	Testers guide	not in this milestone: documentation, not UI
