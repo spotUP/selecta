@@ -3,7 +3,10 @@
 # 2. A click on a composer row drills in: the drill line carries the composer's song count from the library (3).
 # 3. The Statistics totals in the dump equal `selecta-cli script` @stats_show over the same database.
 # 4. A click on the back line leaves the drilldown.
-# Slices B and C (tree, column browser, sources, Files, History) are not covered here.
+# 5. (slice B) A click on the Tree tab lists the library's songs grouped by format, the nodes with their fixture song
+#    counts; a click on a node expands it. A click on the Columns tab lists the same values; a click on a value row drills
+#    in and the next column lists that format's songs; the crumb click returns.
+# Slice C (sources, Files, History) is not covered here.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -88,4 +91,105 @@ math(EXPR by "${cy} + 6")
 lib_run(back "wait 1\nmove ${cx} ${cy}\nclick ${cx} ${cy}\nwait 1\nmove ${bx} ${by}\nclick ${bx} ${by}\nwait 1\n")
 if("${back}" MATCHES "drill ")
   message(FATAL_ERROR "back line did not leave the drilldown:\n${back}")
+endif()
+
+# ---- Slice B: tree and column browser ----
+# The tab rectangles come from the "tab I x y w h" dump lines.
+# The fixture songs carry keys like fixture:1 (no file extension), so the engine groups them under (none). Three more songs
+# keyed by path give the format groups mod and xm, the keys a scanned library has.
+string(CONCAT seed2
+  "INSERT INTO songs(key, source, path, name, artist, album, format, year, genre, duration_ms, added) VALUES('/music/a/one.mod', 'local', '/music/a/one.mod', 'One', 'Anon', 'Disk', 'mod', 1990, 'Chiptune', 1000, 1700000010); "
+  "INSERT INTO songs(key, source, path, name, artist, album, format, year, genre, duration_ms, added) VALUES('/music/a/two.xm', 'local', '/music/a/two.xm', 'Two', 'Anon', 'Disk', 'xm', 1990, 'Chiptune', 1000, 1700000011); "
+  "INSERT INTO songs(key, source, path, name, artist, album, format, year, genre, duration_ms, added) VALUES('/music/b/three.mod', 'local', '/music/b/three.mod', 'Three', 'Anon', 'Disk', 'mod', 1990, 'Chiptune', 1000, 1700000012)")
+execute_process(COMMAND "${SQLITE3}" "${db}" "PRAGMA trusted_schema = 1; ${seed2}" RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "seeding the path-keyed songs failed: ${err}")
+endif()
+foreach(t 1 2)
+  if(NOT "${list}" MATCHES "tab ${t} ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)\n")
+    message(FATAL_ERROR "no tab ${t} rectangle in the library dump:\n${list}")
+  endif()
+  math(EXPR tab${t}x "${CMAKE_MATCH_1} + 10")
+  math(EXPR tab${t}y "${CMAKE_MATCH_2} + 8")
+endforeach()
+string(FIND "${list}" "mode Composers\n" at)
+if(at LESS 0)
+  message(FATAL_ERROR "the Library page does not start in the composers mode:\n${list}")
+endif()
+
+# Six fixture songs (no extension in the key) and three path-keyed songs: (none) 6, mod 2, xm 1, sorted by name.
+set(want_groups "(none)|6" "mod|2" "xm|1")
+lib_run(tree "wait 2\nmove ${tab1x} ${tab1y}\nclick ${tab1x} ${tab1y}\nwait 2\n")
+string(FIND "${tree}" "mode Tree\n" at)
+if(at LESS 0)
+  message(FATAL_ERROR "a click on the Tree tab did not switch the mode:\n${tree}")
+endif()
+set(i 0)
+foreach(g IN LISTS want_groups)
+  string(REPLACE "|" ";" gp "${g}")
+  list(GET gp 0 gname)
+  list(GET gp 1 gcount)
+  string(FIND "${tree}" "vrow ${i} node|0|${gcount}|0|${gname}\n" at)
+  if(at LESS 0)
+    message(FATAL_ERROR "tree row ${i} is not group ${gname} with ${gcount} songs:\n${tree}")
+  endif()
+  math(EXPR i "${i} + 1")
+endforeach()
+if("${tree}" MATCHES "vrow [0-9]+ song")
+  message(FATAL_ERROR "the tree shows songs before any node is expanded:\n${tree}")
+endif()
+
+# Expand the "mod" node (row 1): its two songs appear below it.
+if(NOT "${tree}" MATCHES "vrect 1 ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)\n")
+  message(FATAL_ERROR "no row 1 rectangle in the tree dump:\n${tree}")
+endif()
+math(EXPR rx "${CMAKE_MATCH_1} + 10")
+math(EXPR ry "${CMAKE_MATCH_2} + 8")
+lib_run(open "wait 2\nmove ${tab1x} ${tab1y}\nclick ${tab1x} ${tab1y}\nwait 2\nmove ${rx} ${ry}\nclick ${rx} ${ry}\nwait 2\n")
+string(FIND "${open}" "vrow 1 node|0|2|1|mod\n" at)
+if(at LESS 0)
+  message(FATAL_ERROR "a click on the mod node did not expand it:\n${open}")
+endif()
+if(NOT "${open}" MATCHES "vrow 2 song\\|1\\|[0-9]+\\|[0-9]+\\|[^\n]*\nvrect 2 [^\n]*\nvrow 3 song\\|1\\|")
+  message(FATAL_ERROR "the expanded mod node does not list its two songs:\n${open}")
+endif()
+
+# Column browser: the same values; a click on "mod" drills in and the next column lists its songs.
+lib_run(cols "wait 2\nmove ${tab2x} ${tab2y}\nclick ${tab2x} ${tab2y}\nwait 2\n")
+string(FIND "${cols}" "mode Columns\n" at)
+string(FIND "${cols}" "vrow 1 node|0|2|0|mod\n" at2)
+if(at LESS 0 OR at2 LESS 0)
+  message(FATAL_ERROR "the Columns tab does not list the format values:\n${cols}")
+endif()
+if("${cols}" MATCHES "picked ")
+  message(FATAL_ERROR "the column browser shows a picked value before any click:\n${cols}")
+endif()
+lib_run(drill "wait 2\nmove ${tab2x} ${tab2y}\nclick ${tab2x} ${tab2y}\nwait 2\nmove ${rx} ${ry}\nclick ${rx} ${ry}\nwait 2\n")
+string(FIND "${drill}" "picked 0|mod\n" at)
+if(at LESS 0)
+  message(FATAL_ERROR "a click on the mod value did not drill in:\n${drill}")
+endif()
+# The second column of the format drilldown is the folder: the two mod songs sit in /music/a and /music/b, one each.
+foreach(want "vrow 0 node|0|1|0|/music/a\n" "vrow 1 node|0|1|0|/music/b\n")
+  string(FIND "${drill}" "${want}" at)
+  if(at LESS 0)
+    message(FATAL_ERROR "the drilled column lacks '${want}':\n${drill}")
+  endif()
+endforeach()
+if("${drill}" MATCHES "vrow 2 ")
+  message(FATAL_ERROR "the drilled column lists more than the two mod folders:\n${drill}")
+endif()
+
+# The crumb click clears the pick: the format values are back.
+if(NOT "${drill}" MATCHES "picked 0\\|mod\n")
+  message(FATAL_ERROR "no picked value before the crumb click")
+endif()
+math(EXPR cbx "${tab2x} + 3 * 120")
+lib_run(back2 "wait 2\nmove ${tab2x} ${tab2y}\nclick ${tab2x} ${tab2y}\nwait 2\nmove ${rx} ${ry}\nclick ${rx} ${ry}\nwait 2\nmove ${cbx} ${tab2y}\nclick ${cbx} ${tab2y}\nwait 2\n")
+if("${back2}" MATCHES "picked ")
+  message(FATAL_ERROR "the crumb click did not clear the picked value:\n${back2}")
+endif()
+string(FIND "${back2}" "vrow 1 node|0|2|0|mod\n" at)
+if(at LESS 0)
+  message(FATAL_ERROR "the format values are not back after the crumb click:\n${back2}")
 endif()

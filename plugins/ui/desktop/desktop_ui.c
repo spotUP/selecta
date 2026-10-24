@@ -133,6 +133,7 @@ typedef struct desk {
     uint32_t sends;         /* engine lines sent so far: the replay yields a turn so the shell pumps them */
     char library_dump[3072]; /* the Library page as text for the stats (DUI-P4-3) */
     uint32_t library_sig;    /* hash of the Library page last drawn: a change redraws */
+    uint32_t lib_mode;       /* Library page mode: 0 composers, 1 tree, 2 column browser (DUI-P4-3 slice B) */
 } desk;
 
 static int desk_resize(desk* d, int32_t w, int32_t h);
@@ -1193,11 +1194,38 @@ static sel_gui_rect lib_row_rect(desk* d, sel_gui_rect mn, uint32_t i) {
     return rect_of(mn.x + mg, mn.y + lpx(d, LIB_LIST_Y) + (int32_t)i * lpx(d, LIB_ROW_H), w > 0 ? w : 0, lpx(d, LIB_ROW_H));
 }
 
-static uint32_t lib_hash(const sel_state* st) {
+/* The Library page modes (slice B): the composers list, the tree and the column browser. The last two show the engine's
+ * own view rows (VIEW_STYLE tree / drilldown over a LIBRARY_SEARCH result), the same commands the text UI sends. */
+enum { LIB_MODES = 3, LIB_TAB_Y = LIB_TITLE_Y + LIB_TITLE_H, LIB_TAB_W = 120, LIB_TAB_H = 24, LIB_WINDOW_ROWS = 12 };
+static const char* const lib_mode_name[LIB_MODES] = {"Composers", "Tree", "Columns"};
+
+static sel_gui_rect lib_tab_rect(desk* d, sel_gui_rect mn, uint32_t i) {
+    return rect_of(mn.x + lpx(d, LIB_MARGIN) + (int32_t)i * lpx(d, LIB_TAB_W), mn.y + lpx(d, LIB_TAB_Y), lpx(d, LIB_TAB_W), lpx(d, LIB_TAB_H));
+}
+
+/* The crumb after the tabs: the values picked in the column browser; a click on it clears them. */
+static sel_gui_rect lib_crumb_rect(desk* d, sel_gui_rect mn) {
+    return rect_of(mn.x + lpx(d, LIB_MARGIN) + LIB_MODES * lpx(d, LIB_TAB_W), mn.y + lpx(d, LIB_TAB_Y), lpx(d, 300), lpx(d, LIB_TAB_H));
+}
+
+static int lib_view_on(const desk* d, const sel_state* st) {
+    return d->lib_mode != 0u && st->view != NULL && st->view->source == SEL_VIEW_QUERY &&
+           st->view->style == (d->lib_mode == 1u ? (uint32_t)SEL_VIEW_STYLE_TREE : (uint32_t)SEL_VIEW_STYLE_DRILLDOWN);
+}
+
+static uint32_t lib_hash(const desk* d, const sel_state* st) {
     uint32_t h = st->composer_page != NULL ? 5381u : 0u;
     const char* p = st->composer_page;
     for (; p != NULL && *p != '\0'; p++) {
         h = h * 33u + (uint8_t)*p;
+    }
+    h += d->lib_mode * 977u;
+    if (lib_view_on(d, st)) {
+        uint32_t k;
+        h += st->view->row_count * 31u + st->view->drill_n * 131u + st->view->cursor;
+        for (k = 0; k < st->view->row_n; k++) {
+            h += st->view->rows[k].expanded * (k + 7u) + st->view->rows[k].count * (k + 3u);
+        }
     }
     return h + (st->composers != NULL ? 1u : 0u) + (st->stats != NULL ? 2u : 0u);
 }
@@ -1223,6 +1251,25 @@ static const char* library_dump_build(desk* d) {
     if (p != NULL && o + 400u < sizeof d->library_dump) {
         o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "drill %s|%s\n", p, lib_next(p));
     }
+    o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "mode %s\n", lib_mode_name[d->lib_mode]);
+    for (i = 0; i < LIB_MODES; i++) {
+        sel_gui_rect tr = lib_tab_rect(d, region_rect(d, "main"), i);
+        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "tab %u %d %d %d %d\n", (unsigned)i, (int)tr.x, (int)tr.y, (int)tr.w, (int)tr.h);
+    }
+    if (lib_view_on(d, st)) {
+        const sel_view_state* v = st->view;
+        for (i = 0; i < v->drill_n && i < 2u; i++) {
+            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "picked %u|%s\n", (unsigned)i, v->drill[i]);
+        }
+        for (i = 0; i < v->row_n && o + 400u < sizeof d->library_dump; i++) {
+            const sel_view_row* vr = &v->rows[i];
+            sel_gui_rect rr = lib_row_rect(d, region_rect(d, "main"), i);
+            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "vrow %u %s|%u|%u|%u|%s\n", (unsigned)i,
+                                  vr->kind == (uint32_t)SEL_ROW_NODE ? "node" : "song", (unsigned)vr->depth, (unsigned)vr->count,
+                                  (unsigned)vr->expanded, vr->text != NULL ? vr->text : "");
+            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "vrect %u %d %d %d %d\n", (unsigned)i, (int)rr.x, (int)rr.y, (int)rr.w, (int)rr.h);
+        }
+    }
     for (p = st->stats; p != NULL && *p != '\0' && o + 400u < sizeof d->library_dump;) {
         const char* val = lib_next(p);
         o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "stat %s|%s\n", p, val);
@@ -1240,7 +1287,7 @@ static void draw_library(desk* d) {
     const char* p;
     sel_gui_rect col = rect_of(mn.x + mg, mn.y + lpx(d, LIB_TITLE_Y), mn.w - 2 * mg, lpx(d, LIB_TITLE_H));
     sel_gui_clip_push(d->canvas, mn);
-    d->library_sig = lib_hash(st);
+    d->library_sig = lib_hash(d, st);
     if (st->composer_page != NULL) { /* drilldown: the composer, its song count and its songs */
         const char* cnt = lib_next(st->composer_page);
         char line[96];
@@ -1256,7 +1303,35 @@ static void draw_library(desk* d) {
             p = lib_next(name);
         }
     } else {
+        uint32_t m;
         draw_text(d, col, "Library", 1, 32, text);
+        for (m = 0; m < LIB_MODES; m++) { /* the mode tabs: the active one in the accent colour */
+            sel_gui_rect tr = lib_tab_rect(d, mn, m);
+            draw_text(d, tr, lib_mode_name[m], m == d->lib_mode, 14, m == d->lib_mode ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : muted);
+        }
+        if (lib_view_on(d, st) && d->lib_mode == 2u && st->view->drill_n > 0u) {
+            char crumb[160];
+            snprintf(crumb, sizeof crumb, "Back from %s", st->view->drill[st->view->drill_n - 1u]);
+            draw_text(d, lib_crumb_rect(d, mn), crumb, 0, 14, muted);
+        }
+        if (lib_view_on(d, st)) { /* the engine's tree or column rows: node rows with their song count, songs indented */
+            uint32_t k;
+            for (k = 0; k < st->view->row_n; k++) {
+                const sel_view_row* vr = &st->view->rows[k];
+                sel_gui_rect r = lib_row_rect(d, mn, k);
+                char line[48];
+                int node = vr->kind == (uint32_t)SEL_ROW_NODE;
+                int32_t ind = (int32_t)vr->depth * lpx(d, 24);
+                draw_text(d, rect_of(r.x + ind, r.y, r.w * 2 / 3 - ind, r.h), vr->text != NULL ? vr->text : "", node, 15,
+                          node && vr->expanded ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : text);
+                if (node) {
+                    snprintf(line, sizeof line, "%u songs", (unsigned)vr->count);
+                    draw_text(d, rect_of(r.x + r.w * 2 / 3, r.y, r.w / 3, r.h), line, 0, 14, muted);
+                }
+                sel_gui_dirty_add(d->canvas, r);
+            }
+            p = NULL;
+        } else {
         for (p = st->composers; p != NULL && *p != '\0'; i++) {
             const char* disp = lib_next(p);
             const char* cnt = lib_next(disp);
@@ -1267,6 +1342,7 @@ static void draw_library(desk* d) {
             draw_text(d, rect_of(r.x + r.w * 2 / 3, r.y, r.w / 3, r.h), line, 0, 14, muted);
             sel_gui_dirty_add(d->canvas, r);
             p = lib_next(cnt);
+        }
         }
     }
     if (st->stats != NULL) { /* the Stats page (F24): the library totals as label and value */
@@ -1284,6 +1360,28 @@ static void draw_library(desk* d) {
     d->home_parts |= HP_SECTION;
 }
 
+/* Switches the Library page mode. Tree and columns list the library's songs through the engine view, the sequence the
+ * text UI's library screen sends (LIBRARY_SEARCH, VIEW_SOURCE query, VIEW_STYLE, VIEW_GROUP format). */
+static int lib_set_mode(desk* d, uint32_t mode) {
+    char line[64];
+    if (mode == d->lib_mode) {
+        return 0;
+    }
+    d->lib_mode = mode;
+    if (mode == 0u) {
+        desk_send(d, "VIEW_STYLE regular");
+        desk_send(d, "VIEW_SOURCE queue");
+    } else {
+        desk_send(d, "LIBRARY_SEARCH \"\"");
+        desk_send(d, "VIEW_SOURCE query");
+        snprintf(line, sizeof line, "VIEW_WINDOW %u", (unsigned)LIB_WINDOW_ROWS);
+        desk_send(d, line);
+        desk_send(d, mode == 1u ? "VIEW_STYLE tree" : "VIEW_STYLE drilldown");
+        desk_send(d, "VIEW_GROUP format");
+    }
+    return 1;
+}
+
 /* A click on a composer row drills into it (COMPOSERS_SHOW canon); on the back line it returns to the list. */
 static int library_click(desk* d, int32_t x, int32_t y) {
     const sel_state* st = sel_engine_state(d->engine);
@@ -1294,6 +1392,28 @@ static int library_click(desk* d, int32_t x, int32_t y) {
     size_t o;
     if (st->composers == NULL) {
         return 0;
+    }
+    if (st->composer_page == NULL) {
+        uint32_t m;
+        for (m = 0; m < LIB_MODES; m++) {
+            if (in_rect(lib_tab_rect(d, mn, m), x, y)) {
+                return lib_set_mode(d, m);
+            }
+        }
+        if (lib_view_on(d, st)) {
+            uint32_t k;
+            if (d->lib_mode == 2u && st->view->drill_n > 0u && in_rect(lib_crumb_rect(d, mn), x, y)) {
+                return desk_send(d, "VIEW_DRILL 0 ..");
+            }
+            for (k = 0; k < st->view->row_n; k++) {
+                if (in_rect(lib_row_rect(d, mn, k), x, y)) {
+                    snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)(st->view->window_start + k));
+                    desk_send(d, line);
+                    return desk_send(d, "VIEW_ACTIVATE"); /* a node expands or drills in, a song plays */
+                }
+            }
+            return 0;
+        }
     }
     if (st->composer_page != NULL) {
         sel_gui_rect back = rect_of(mn.x + lpx(d, LIB_MARGIN), mn.y + lpx(d, LIB_TITLE_Y + LIB_TITLE_H + 24), mn.w / 2, lpx(d, 24));
@@ -2878,8 +2998,8 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
         d->frames++;
         return 1;
     }
-    if (lib_hash(sel_engine_state(d->engine)) != d->library_sig && sel_engine_state(d->engine)->composers != NULL) {
-        d->library_sig = lib_hash(sel_engine_state(d->engine)); /* the Library page changed: redraw */
+    if (lib_hash(d, sel_engine_state(d->engine)) != d->library_sig && sel_engine_state(d->engine)->composers != NULL) {
+        d->library_sig = lib_hash(d, sel_engine_state(d->engine)); /* the Library page changed: redraw */
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
     }
     if (d->home && sel_engine_state(d->engine)->view != NULL) { /* HOME rows arrived or changed: redraw */
