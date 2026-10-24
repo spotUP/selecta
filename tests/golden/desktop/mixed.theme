@@ -1,0 +1,4 @@
+# Role lines and token lines share one parser; the roles stay valid.
+dim = 244 default
+gui.spacing = 12
+gui.radius = 0x10

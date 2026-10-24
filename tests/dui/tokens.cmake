@@ -1,0 +1,68 @@
+# dui-tokens (DUI-P1-10, M4-P2-1): through the real shell, the desktop UI paints with design tokens read from a theme file.
+#   -DSELECTA=<exe> -DSONGS=<dir> -DWORK=<dir> -DGOLDEN=<tests/golden>
+# The red-accent fixture overrides one token. The play button pixel must take it, every other pixel and metric must stay,
+# and the reported change set must be exactly that one token. A value outside a token's range, a missing file and an
+# unknown gui key must refuse to open; a theme with role lines and token lines together must load.
+get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+include("${HERE}/dui_run.cmake")
+file(REMOVE_RECURSE "${WORK}")
+set(base --ui desktop --backend mem --tokens)
+dui_run(dflt ${base})
+dui_run(red ${base} --theme "${GOLDEN}/desktop/accent-red.theme")
+
+function(pixel_lines out text)
+  string(REPLACE "\n" ";" lines "${text}")
+  set(keep "")
+  foreach(l IN LISTS lines)
+    if(l MATCHES "^(pixel|metric) ")
+      list(APPEND keep "${l}")
+    endif()
+  endforeach()
+  set(${out} "${keep}" PARENT_SCOPE)
+endfunction()
+pixel_lines(dflt_px "${dflt}")
+pixel_lines(red_px "${red}")
+list(LENGTH dflt_px npx)
+if(npx LESS 5)
+  message(FATAL_ERROR "the desktop UI printed ${npx} pixel and metric lines, expected 5:\n${dflt}")
+endif()
+if(NOT "${dflt}" MATCHES "pixel widget=play_button rgb=0x3b82f6")
+  message(FATAL_ERROR "default play button is not the default accent 0x3b82f6:\n${dflt}")
+endif()
+if(NOT "${red}" MATCHES "pixel widget=play_button rgb=0xe53935")
+  message(FATAL_ERROR "red theme did not repaint the play button 0xe53935:\n${red}")
+endif()
+if(NOT "${dflt}" MATCHES "tokens count=5 changed=0")
+  message(FATAL_ERROR "defaults must report no changed token:\n${dflt}")
+endif()
+if(NOT "${red}" MATCHES "tokens count=5 changed=1" OR NOT "${red}" MATCHES "token changed=gui.accent")
+  message(FATAL_ERROR "red theme must change exactly gui.accent:\n${red}")
+endif()
+# Every pixel and metric line except the play button is identical in both runs.
+foreach(l IN LISTS dflt_px)
+  if(NOT l MATCHES "widget=play_button")
+    list(FIND red_px "${l}" at)
+    if(at LESS 0)
+      message(FATAL_ERROR "the accent theme moved another pixel: '${l}' is gone from:\n${red}")
+    endif()
+  endif()
+endforeach()
+
+# Role lines and token lines together.
+dui_run(mixed ${base} --theme "${GOLDEN}/desktop/mixed.theme")
+if(NOT "${mixed}" MATCHES "metric name=gap px=12" OR NOT "${mixed}" MATCHES "metric name=corner_radius px=16")
+  message(FATAL_ERROR "mixed theme: decimal and hex token values not applied:\n${mixed}")
+endif()
+if(NOT "${mixed}" MATCHES "tokens count=5 changed=2")
+  message(FATAL_ERROR "mixed theme must change exactly two tokens:\n${mixed}")
+endif()
+
+# Refusals: out of range, missing file, unknown gui key.
+file(WRITE "${WORK}/unknown.theme" "gui.glow = 3\n")
+foreach(bad "${GOLDEN}/desktop/radius-range.theme" "${WORK}/missing.theme" "${WORK}/unknown.theme")
+  execute_process(COMMAND "${SELECTA}" --output null --size 80x25 --config-dir "${WORK}/cfg" ${base} --theme "${bad}"
+    --exec STATUS RESULT_VARIABLE rc OUTPUT_QUIET ERROR_QUIET)
+  if(rc EQUAL 0)
+    message(FATAL_ERROR "--theme ${bad} must make the desktop UI refuse to open")
+  endif()
+endforeach()

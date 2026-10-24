@@ -1,0 +1,2 @@
+# Desktop token fixture (DUI-P1-10): one accent override, every other token keeps its default.
+gui.accent = 0xe53935

@@ -5,6 +5,8 @@
 #include <selecta/ui.h>
 #include <selecta/uimodel.h>
 
+#include "theme.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -19,6 +21,8 @@ typedef struct desk {
     sel_uim_layout layout;
     int actions; /* --actions: the close hook prints the action table and the help rows */
     int report; /* --stats: the close hook prints its sentinel line */
+    txt_theme theme;       /* design tokens (DUI-P1-10): defaults, then --theme <file> over them */
+    int tokens;            /* --tokens: the close hook prints what the mem backend painted with the tokens */
     sel_uim_budget budget; /* --format: the effects the canvas format affords */
     uint32_t tweens;       /* tweens started (title cross-fade on a song change) */
     uint32_t effect_prims; /* blur and shadow primitives run */
@@ -120,12 +124,59 @@ static void desk_replay_resizes(desk* d) {
     }
 }
 
+/* What the mem backend paints: every widget takes its colour and size from a token, never from a literal. */
+static void desk_print_tokens(const desk* d) {
+    static const uint32_t none[SEL_GUI_TOKEN_COUNT] = {
+#define X(id, name, def, lo, hi) def,
+        SEL_GUI_TOKENS(X)
+#undef X
+    };
+    uint32_t changed = sel_gui_tokens_diff(d->theme.token, none), i, n = 0u;
+    printf("pixel widget=play_button rgb=0x%06x\n", (unsigned)d->theme.token[SEL_GUI_TOKEN_ACCENT]);
+    printf("pixel widget=panel rgb=0x%06x\n", (unsigned)d->theme.token[SEL_GUI_TOKEN_SURFACE]);
+    printf("pixel widget=label rgb=0x%06x\n", (unsigned)d->theme.token[SEL_GUI_TOKEN_TEXT]);
+    printf("metric name=corner_radius px=%u\n", (unsigned)d->theme.token[SEL_GUI_TOKEN_RADIUS]);
+    printf("metric name=gap px=%u\n", (unsigned)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    for (i = 0; i < SEL_GUI_TOKEN_COUNT; i++) {
+        n += (changed >> i) & 1u;
+    }
+    printf("tokens count=%u changed=%u\n", (unsigned)SEL_GUI_TOKEN_COUNT, (unsigned)n);
+    for (i = 0; i < SEL_GUI_TOKEN_COUNT; i++) {
+        if ((changed >> i) & 1u) {
+            printf("token changed=%s\n", sel_gui_token_name((sel_gui_token)i));
+        }
+    }
+}
+
+/* Reads the --theme file over the defaults; 0 with a message on a missing file or a bad line. */
+static int desk_load_theme(desk* d, const char* path) {
+    char buf[4096];
+    size_t n;
+    int bad = 0;
+    FILE* f = fopen(path, "rb");
+    if (f == NULL) {
+        fprintf(stderr, "selecta: desktop theme '%s' cannot be read\n", path);
+        return 0;
+    }
+    n = fread(buf, 1, sizeof buf - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    if (txt_theme_parse(&d->theme, buf, &bad) < 0) {
+        fprintf(stderr, "selecta: desktop theme '%s' line %d is not a role or token line in range\n", path, bad);
+        return 0;
+    }
+    return 1;
+}
+
 static void desk_close(void* state) {
     desk* d = (desk*)state;
     if (d != NULL) {
         if (d->report) {
             printf("desktop_ui closed frames=%u title=%s clock=%s status=%s\n", (unsigned)d->frames, d->uim.frame.title,
                    d->uim.frame.clock, d->uim.frame.status);
+        }
+        if (d->tokens) {
+            desk_print_tokens(d);
         }
         if (d->resize != NULL) {
             desk_replay_resizes(d);
@@ -158,7 +209,15 @@ static void* desk_open(const sel_ui_open_args* a) {
         a->host->mem_free(a->host, d);
         return NULL;
     }
+    txt_theme_default(&d->theme);
+    if (desk_opt(a, "--theme") != NULL && !desk_load_theme(d, desk_opt(a, "--theme"))) {
+        a->host->mem_free(a->host, d);
+        return NULL;
+    }
     for (i = 0; i < a->argc; i++) {
+        if (strcmp(a->argv[i], "--tokens") == 0) {
+            d->tokens = 1;
+        }
         if (strcmp(a->argv[i], "--stats") == 0) {
             d->report = 1;
         }

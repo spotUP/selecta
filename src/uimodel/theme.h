@@ -4,6 +4,7 @@
 #define SELECTA_TEXT_THEME_H
 
 #include "style.h"
+#include "tokens.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,12 +33,14 @@ typedef enum txt_role {
 
 typedef struct txt_theme {
     txt_style role[TXT_ROLE_COUNT];
+    uint32_t token[SEL_GUI_TOKEN_COUNT]; /* desktop design tokens (tokens.h), file keys gui.<name> */
 } txt_theme;
 
 /* Built-in dark theme. */
 void txt_theme_default(txt_theme* t);
 /* Applies a theme file over *t. Lines: `role = fg bg [bold] [reverse]` where fg and
- * bg are 0..255 or `default`; `#` starts a comment. Returns the number of lines
+ * bg are 0..255 or `default`; `#` starts a comment. Token lines: `gui.<name> = value`, decimal or 0x hex, inside the
+ * token's range (tokens.h); colours are 0xRRGGBB because `#` starts a comment. Returns the number of lines
  * applied, or -1 with the 1-based line number in *bad_line on the first bad line
  * (earlier lines stay applied). */
 int txt_theme_parse(txt_theme* t, const char* text, int* bad_line);
