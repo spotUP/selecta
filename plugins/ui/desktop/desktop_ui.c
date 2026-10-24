@@ -10,6 +10,7 @@
 #include "atlas_build.h"
 #include <selecta/gui/gui_draw.h>
 #include <selecta/gui/gui_text.h>
+#include <selecta/gui/gui_widget.h>
 #include <selecta/uimodel/theme.h>
 
 #ifdef SELECTA_DESKTOP_SDL
@@ -48,6 +49,8 @@ typedef struct desk {
     uint32_t dirty_total;   /* pixels repainted over all presents */
     uint32_t ticks;         /* --ticks N: clock seconds the mem backend replays after the quiet turn */
     int textsheet;          /* --view text: specimen lines and the queue names, once (DUI-P2-3) */
+    int widgets;            /* --view widgets: the widget gallery, once (DUI-P3-1) */
+    sel_gui_widget_stats wstats; /* per-kind draw counts of the gallery */
     int home;               /* --view home: the tile grid of the queue entries in the main region (DUI-P2-6) */
     sel_gui_text_stats text; /* glyphs blitted and code points the atlas lacked (DUI-P2-3) */
     sel_gui_atlas* atlas[2][DESK_SIZES]; /* [semibold][size], built on first use */
@@ -261,6 +264,121 @@ static void draw_textsheet(desk* d) {
             sel_gui_text_wrap(c, reg, rect_of(740, 8 + row * 60, 140, 3 * reg->line_height), name, text, 3, &d->text);
         }
     }
+    sel_gui_dirty_add(c, rect_of(0, 0, c->w, c->h));
+}
+
+/* The widget gallery (DUI-P3-1): every widget kind drawn once on the background token, in a grid of surface cards.
+ * The style comes from the theme tokens, so the golden hash covers a dark and a light theme. */
+static void gallery_put(desk* d, const sel_gui_style* st, uint32_t kind, int32_t x, int32_t y, int32_t w, int32_t h,
+                        uint32_t state, const char* label, int32_t icon, int32_t value, const char* const* items,
+                        uint32_t item_n, int32_t sel) {
+    sel_gui_widget wd;
+    memset(&wd, 0, sizeof wd);
+    wd.kind = kind;
+    wd.r = rect_of(x, y, w, h);
+    wd.state = state;
+    wd.label = label;
+    wd.icon = icon;
+    wd.value = value;
+    wd.extent = SEL_GUI_Q16_ONE / 4;
+    wd.items = items;
+    wd.item_n = item_n;
+    wd.sel = sel;
+    wd.top = 1;
+    sel_gui_widget_draw(d->canvas, st, &wd, &d->wstats);
+    d->widget_draws++;
+}
+
+static void draw_widgets(desk* d) {
+    static const char* const songs[] = {"Axel F", "Cannon Fodder", "Stardust Memories", "Hybris", "Elysium"};
+    static const char* const tabs[] = {"Songs", "Albums", "Artists"};
+    static const char* const head[] = {"Title", "Artist", "Time"};
+    static const char* const side[] = {"Home", "Search", "Library", "Favourites"};
+    static const char* const menu[] = {"Play next", "Add to queue", "-", "Show in library"};
+    static const char* const seg[] = {"Day", "Week", "Month"};
+    static const char* const tiles[] = {"Amiga Classics", "Chip Hits", "Tracker Night", "Deep Focus"};
+    sel_gui_canvas* c = d->canvas;
+    sel_gui_style st;
+    const int32_t half = SEL_GUI_Q16_ONE / 2, c1 = 20, c2 = 330, c3 = 640, c4 = 950, cw = 300;
+    const uint32_t hov = SEL_GUI_WS_HOVER, sl = SEL_GUI_WS_SELECTED;
+    int32_t cardr = (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE];
+    int32_t i;
+    memset(&st, 0, sizeof st);
+    st.background = ARGB(d->theme.token[SEL_GUI_TOKEN_BACKGROUND]);
+    st.surface = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]);
+    st.raised = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]);
+    st.hover = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_HOVER]);
+    st.pressed = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_PRESSED]);
+    st.text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]);
+    st.muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+    st.disabled = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_DISABLED]);
+    st.accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
+    st.accent_text = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]);
+    st.divider = ARGB(d->theme.token[SEL_GUI_TOKEN_DIVIDER]);
+    st.focus = ARGB(d->theme.token[SEL_GUI_TOKEN_FOCUS_RING]);
+    st.error = ARGB(d->theme.token[SEL_GUI_TOKEN_ERROR]);
+    st.warning = ARGB(d->theme.token[SEL_GUI_TOKEN_WARNING]);
+    st.success = ARGB(d->theme.token[SEL_GUI_TOKEN_SUCCESS]);
+    st.scrim = ARGB(d->theme.token[SEL_GUI_TOKEN_SCRIM]);
+    st.radius_small = (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_SMALL];
+    st.radius = (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS];
+    st.radius_large = cardr;
+    st.spacing = (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING];
+    st.body = desk_font(d, 0, 13);
+    st.semibold = desk_font(d, 1, 13);
+    st.caption = desk_font(d, 0, 11);
+    st.icons = &sel_gui_icons_baked;
+    st.shadow = d->shadow_ready ? &d->shadow : NULL;
+    if (st.body == NULL || st.semibold == NULL || st.caption == NULL) {
+        return;
+    }
+    sel_gui_fill_rect(c, rect_of(0, 0, c->w, c->h), st.background);
+    for (i = 0; i < 4; i++) { /* the four column cards */
+        sel_gui_round_rect(c, rect_of(10 + i * 310, 10, cw + 20, c->h - 20), cardr, st.surface);
+    }
+    /* column 1: controls */
+    gallery_put(d, &st, SEL_GUI_WIDGET_LABEL, c1, 24, cw, 22, 0, "Now playing", -1, 0, NULL, 0, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_ICON, c1, 60, 24, 24, 0, NULL, SEL_GUI_ICON_MUSIC, 0, NULL, 0, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_ICON_BUTTON, c1 + 40, 52, 40, 40, sl, NULL, SEL_GUI_ICON_PLAY, 0, NULL, 0, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_ICON_BUTTON, c1 + 90, 52, 40, 40, hov, NULL, SEL_GUI_ICON_SHUFFLE, 0, NULL, 0, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_ICON_BUTTON, c1 + 140, 52, 40, 40, SEL_GUI_WS_DISABLED, NULL, SEL_GUI_ICON_REPEAT, 0,
+                NULL, 0, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_TEXT_BUTTON, c1, 108, 130, 36, sl, "Play", -1, 0, NULL, 0, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_TEXT_BUTTON, c1 + 140, 108, 130, 36, hov, "Follow", -1, 0, NULL, 0, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_TOGGLE, c1, 160, 44, 24, sl, NULL, -1, 0, NULL, 0, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_TOGGLE, c1 + 60, 160, 44, 24, 0, NULL, -1, 0, NULL, 0, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_SLIDER, c1, 200, cw, 20, hov, NULL, -1, SEL_GUI_Q16_ONE * 2 / 5, NULL, 0, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_PROGRESS, c1, 236, cw, 6, 0, NULL, -1, SEL_GUI_Q16_ONE * 13 / 20, NULL, 0, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_CHECKBOX, c1, 258, 140, 24, sl, "Shuffle", -1, 0, NULL, 0, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_RADIO, c1 + 150, 258, 140, 24, sl, "Repeat", -1, 0, NULL, 0, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_SEGMENTED, c1, 298, cw, 32, 0, NULL, -1, 0, seg, 3, 1);
+    gallery_put(d, &st, SEL_GUI_WIDGET_DROPDOWN, c1, 346, cw, 36, 0, "Sort by recent", -1, 0, NULL, 0, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_TEXT_FIELD, c1, 398, cw, 36, SEL_GUI_WS_FOCUS, "Search", SEL_GUI_ICON_SEARCH, 0,
+                NULL, 0, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_TABS, c1, 450, cw, 36, 0, NULL, -1, 0, tabs, 3, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_TABLE_HEADER, c1, 502, cw, 28, 0, NULL, -1, 0, head, 3, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_SPLIT_PANE, c1, 550, cw - 24, 200, 0, NULL, -1, half, NULL, 0, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_SCROLL_BAR, c1 + cw - 12, 550, 12, 200, 0, NULL, -1, half, NULL, 0, 0);
+    /* column 2: lists and menus */
+    gallery_put(d, &st, SEL_GUI_WIDGET_VIRTUAL_LIST, c2, 24, cw, 200, 0, NULL, -1, 0, songs, 5, 1);
+    gallery_put(d, &st, SEL_GUI_WIDGET_SIDEBAR_LIST, c2, 244, cw, 200, 0, NULL, SEL_GUI_ICON_HOUSE, 0, side, 4, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_MENU, c2, 464, cw, 140, 0, NULL, -1, 0, menu, 4, 1);
+    gallery_put(d, &st, SEL_GUI_WIDGET_TOOLTIP, c2, 630, 140, 28, 0, "Add to favourites", -1, 0, NULL, 0, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_TOAST, c2, 680, cw, 56, 0, "Added to queue", -1, 0, NULL, 0, 0);
+    /* column 3: artwork */
+    gallery_put(d, &st, SEL_GUI_WIDGET_TILE_GRID, c3, 24, cw, 270, 0, "Playlist", -1, 0, tiles, 2, 1);
+    gallery_put(d, &st, SEL_GUI_WIDGET_COVER_FLOW, c3, 314, cw, 190, 0, NULL, -1, 0, NULL, 0, 3);
+    gallery_put(d, &st, SEL_GUI_WIDGET_ARTWORK, c3, 524, 130, 130, 0, NULL, SEL_GUI_ICON_DISC, 0, NULL, 0, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_VIZ_SURFACE, c3 + 150, 524, 150, 130, 0, NULL, -1, 7 << 16, NULL, 0, 0);
+    /* column 4: an overlay stack, a scrim and a dialog over a tile grid */
+    gallery_put(d, &st, SEL_GUI_WIDGET_TILE_GRID, c4, 24, cw, 270, 0, "Playlist", -1, 0, tiles, 2, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_SCRIM, c4 - 10, 10, cw + 20, 400, 0, NULL, -1, SEL_GUI_Q16_ONE * 3 / 5, NULL, 0, 0);
+    gallery_put(d, &st, SEL_GUI_WIDGET_MODAL_DIALOG, c4 + 10, 80, cw - 20, 190, 0, "Remove from library", -1, 0, NULL, 0,
+                0);
+    d->text.glyphs += d->wstats.text.glyphs;
+    d->text.missing += d->wstats.text.missing;
+    d->wstats.text.glyphs = 0;
+    d->wstats.text.missing = 0;
     sel_gui_dirty_add(c, rect_of(0, 0, c->w, c->h));
 }
 
@@ -650,6 +768,12 @@ static void desk_close(void* state) {
             printf("desktop_ui closed frames=%u title=%s clock=%s status=%s\n", (unsigned)d->frames, d->uim.frame.title,
                    d->uim.frame.clock, d->uim.frame.status);
         }
+        if (d->report && d->widgets) {
+            for (i = 0; i < (int)SEL_GUI_WIDGET_KIND_COUNT; i++) {
+                printf("widget_kind name=%s draws=%u\n", sel_gui_widget_kind_name((uint32_t)i),
+                       (unsigned)d->wstats.draws[i]);
+            }
+        }
         if (d->tokens) {
             desk_print_tokens(d);
         }
@@ -781,10 +905,12 @@ static void* desk_open(const sel_ui_open_args* a) {
             d->testcard = 1;
         } else if (strcmp(view, "text") == 0) {
             d->textsheet = 1;
+        } else if (strcmp(view, "widgets") == 0) {
+            d->widgets = 1;
         } else if (strcmp(view, "home") == 0) {
             d->home = 1;
         } else {
-            fprintf(stderr, "selecta: desktop view '%s' is not testcard, text or home\n", view);
+            fprintf(stderr, "selecta: desktop view '%s' is not testcard, text, home or widgets\n", view);
             a->host->mem_free(a->host, d);
             return NULL;
         }
@@ -845,7 +971,7 @@ static void* desk_open(const sel_ui_open_args* a) {
         draw_testcard(d);
         d->dirty_pixels = desk_flush(d);
         d->dirty_total = d->dirty_pixels;
-    } else if (d->textsheet) {
+    } else if (d->textsheet || d->widgets) {
         d->dirty_total = 0; /* drawn on the first turn, after the --exec commands queued their names */
     } else {
         desk_present(d);
@@ -894,6 +1020,16 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
         }
     }
 #endif
+    if (d->widgets) { /* the gallery is one frame, drawn on the first turn */
+        if (d->frames > 0u) {
+            return -1;
+        }
+        draw_widgets(d);
+        d->dirty_pixels = desk_flush(d);
+        d->dirty_total = d->dirty_pixels;
+        d->frames++;
+        return 1;
+    }
     sel_uim_update(&d->uim, sel_engine_state(d->engine));
     if (d->ticks > 0u && d->uim.dirty == 0u) { /* --ticks N: the mem backend has no clock, so it replays N seconds */
         d->ticks--;

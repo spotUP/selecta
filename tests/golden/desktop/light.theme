@@ -1,0 +1,17 @@
+# Light theme preset of the widget gallery (DUI-P3-1): the same gui.* tokens as the dark defaults, light values.
+gui.background = 0xF4F4F6
+gui.surface = 0xFFFFFF
+gui.surface_raised = 0xEDEDF1
+gui.surface_hover = 0xE2E2E8
+gui.surface_pressed = 0xD4D4DC
+gui.text = 0x16161A
+gui.text_muted = 0x5C5C68
+gui.text_disabled = 0xA4A4AE
+gui.accent = 0x2563EB
+gui.accent_text = 0xFFFFFF
+gui.divider = 0xDADAE0
+gui.focus_ring = 0x1D4ED8
+gui.error = 0xDC2626
+gui.warning = 0xD97706
+gui.success = 0x16A34A
+gui.scrim = 0x000000

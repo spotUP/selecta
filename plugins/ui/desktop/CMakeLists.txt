@@ -20,6 +20,19 @@ foreach(spec "Inter-Regular:sel_font_inter_regular" "Inter-SemiBold:sel_font_int
   list(APPEND FONT_GEN "${CMAKE_CURRENT_BINARY_DIR}/${sym}.c")
 endforeach()
 
+# Icons (DUI-P3-1): tools/gui_iconbake.c (host tool, floating point allowed outside src/gui) rasterises the Lucide SVGs of
+# third_party/lucide listed in include/selecta/gui/gui_icons.h into alpha masks; the plugin links the generated tables.
+add_executable(gui_iconbake "${PROJECT_SOURCE_DIR}/tools/gui_iconbake.c")
+target_link_libraries(gui_iconbake PRIVATE m)
+file(GLOB LUCIDE_SVGS "${PROJECT_SOURCE_DIR}/third_party/lucide/icons/*.svg")
+add_custom_command(
+  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/gui_icons_baked.c"
+  COMMAND gui_iconbake "${PROJECT_SOURCE_DIR}/include/selecta/gui/gui_icons.h"
+    "${PROJECT_SOURCE_DIR}/third_party/lucide/icons" "${CMAKE_CURRENT_BINARY_DIR}/gui_icons_baked.c"
+  DEPENDS gui_iconbake "${PROJECT_SOURCE_DIR}/include/selecta/gui/gui_icons.h" ${LUCIDE_SVGS}
+  COMMENT "Baking the icon atlas")
+list(APPEND FONT_GEN "${CMAKE_CURRENT_BINARY_DIR}/gui_icons_baked.c")
+
 # Artwork (DUI-P2-4): art.c turns library blobs into tile pixels, stb_impl.c decodes them, posix/art_thread.c is the
 # worker thread (the only file with thread headers). The plugin is desktop only, so there is no Amiga branch.
 sel_add_plugin(desktop_ui 5 desktop_ui.c atlas_build.c art.c posix/art_thread.c stb_impl.c ${FONT_GEN}

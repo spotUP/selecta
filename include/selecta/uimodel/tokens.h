@@ -16,7 +16,22 @@ extern "C" {
     X(SURFACE, "gui.surface", 0x1E1E24u, 0u, 0xFFFFFFu)  \
     X(TEXT, "gui.text", 0xE6E6EBu, 0u, 0xFFFFFFu)        \
     X(RADIUS, "gui.radius", 6u, 0u, 32u)                 \
-    X(SPACING, "gui.spacing", 8u, 0u, 64u)
+    X(SPACING, "gui.spacing", 8u, 0u, 64u)               \
+    X(BACKGROUND, "gui.background", 0x121214u, 0u, 0xFFFFFFu)        \
+    X(SURFACE_RAISED, "gui.surface_raised", 0x2A2A32u, 0u, 0xFFFFFFu) \
+    X(SURFACE_HOVER, "gui.surface_hover", 0x34343Eu, 0u, 0xFFFFFFu)   \
+    X(SURFACE_PRESSED, "gui.surface_pressed", 0x3E3E4Au, 0u, 0xFFFFFFu) \
+    X(TEXT_MUTED, "gui.text_muted", 0xA0A0ACu, 0u, 0xFFFFFFu)        \
+    X(TEXT_DISABLED, "gui.text_disabled", 0x62626Eu, 0u, 0xFFFFFFu)  \
+    X(ACCENT_TEXT, "gui.accent_text", 0xFFFFFFu, 0u, 0xFFFFFFu)      \
+    X(DIVIDER, "gui.divider", 0x2C2C34u, 0u, 0xFFFFFFu)              \
+    X(FOCUS_RING, "gui.focus_ring", 0x93C5FDu, 0u, 0xFFFFFFu)        \
+    X(ERROR, "gui.error", 0xEF4444u, 0u, 0xFFFFFFu)                  \
+    X(WARNING, "gui.warning", 0xF59E0Bu, 0u, 0xFFFFFFu)              \
+    X(SUCCESS, "gui.success", 0x22C55Eu, 0u, 0xFFFFFFu)              \
+    X(SCRIM, "gui.scrim", 0x000000u, 0u, 0xFFFFFFu)                  \
+    X(RADIUS_SMALL, "gui.radius_small", 4u, 0u, 32u)                 \
+    X(RADIUS_LARGE, "gui.radius_large", 8u, 0u, 32u)
 
 typedef enum sel_gui_token {
 #define X(id, name, def, lo, hi) SEL_GUI_TOKEN_##id,
