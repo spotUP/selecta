@@ -102,3 +102,14 @@ int sel_uim_layout_check(const sel_uim_layout* l, char* msg, size_t cap) {
     }
     return 0;
 }
+
+int sel_uim_hit(const sel_uim_layout* l, int32_t x, int32_t y) {
+    uint32_t i;
+    for (i = 0; i < l->count; i++) {
+        const sel_uim_region* r = &l->regions[i];
+        if (x >= r->x && y >= r->y && x < r->x + (int32_t)r->w && y < r->y + (int32_t)r->h) {
+            return (int)i;
+        }
+    }
+    return -1;
+}

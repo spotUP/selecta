@@ -120,9 +120,23 @@ int sel_gui_input_parse(const char* line, sel_gui_input* ev) {
         ev->kind = SEL_GUI_IN_KEY;
         return sel_gui_key_parse(a, &ev->code, &ev->mods);
     }
-    if (strcmp(verb, "click") == 0 && n == 3) {
+    if ((strcmp(verb, "click") == 0 || strcmp(verb, "dclick") == 0 || strcmp(verb, "rclick") == 0) && n == 3) {
+        int count = 1;
         ev->kind = SEL_GUI_IN_CLICK;
+        ev->clicks = verb[0] == 'd' ? 2u : 1u;
+        ev->button = verb[0] == 'r' ? 1u : 0u;
+        if (verb[0] == 'c' && sscanf(line, "%*s %*s %*s %d", &count) == 1 && count >= 1) { /* click X Y COUNT */
+            ev->clicks = (uint32_t)count;
+        }
         return sscanf(a, "%d", &ev->x) == 1 && sscanf(b, "%d", &ev->y) == 1;
+    }
+    if (strcmp(verb, "move") == 0 && n == 3) {
+        ev->kind = SEL_GUI_IN_MOVE;
+        return sscanf(a, "%d", &ev->x) == 1 && sscanf(b, "%d", &ev->y) == 1;
+    }
+    if (strcmp(verb, "drag") == 0) {
+        ev->kind = SEL_GUI_IN_DRAG;
+        return sscanf(line, "%*s %d %d %d %d", &ev->x, &ev->y, &ev->x2, &ev->y2) == 4;
     }
     if (strcmp(verb, "resize") == 0 && n == 3) {
         ev->kind = SEL_GUI_IN_RESIZE;

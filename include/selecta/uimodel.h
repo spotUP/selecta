@@ -121,6 +121,9 @@ const char* sel_uim_breakpoint_name(uint32_t bp);
 uint32_t sel_uim_breakpoint_for(uint32_t width);
 void sel_uim_layout_compute(sel_uim_layout* l, uint32_t width, uint32_t height);
 int sel_uim_layout_check(const sel_uim_layout* l, char* msg, size_t cap);
+/* Hit test (DUI-P3-2): the index of the region of the layout tree that holds the point (x, y) in layout units, or -1
+ * outside every region. The regions tile the canvas, so a point belongs to at most one. */
+int sel_uim_hit(const sel_uim_layout* l, int32_t x, int32_t y);
 
 /* Effects governor (plan DUI-P1-9): what the canvas format can afford. INDEX8 runs no tween, blur or shadow. */
 enum { SEL_UIM_FMT_RGBA32 = 0, SEL_UIM_FMT_INDEX8 = 1 };

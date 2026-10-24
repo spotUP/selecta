@@ -196,6 +196,18 @@ SEL_TAG(UI, STAT_FOCUS_MOVES,      0x5035, INT)
 SEL_TAG(UI, STAT_SEARCHES,         0x5036, INT)
 SEL_TAG(UI, STAT_ARROWS,           0x5037, INT)
 SEL_TAG(UI, STAT_FOCUS,            0x5038, INT)
+/* Mouse (DUI-P3-2): pointer moves that changed the hovered row, primary clicks, double-clicks, drags dropped on the
+ * queue, header clicks that sorted, the sort direction (0 none, 1 ascending, 2 descending), the queue position + 1 of
+ * the first list row, context menus opened, rows played by a double-click or a menu item. */
+SEL_TAG(UI, STAT_HOVERS,           0x5039, INT)
+SEL_TAG(UI, STAT_CLICKS,           0x503A, INT)
+SEL_TAG(UI, STAT_DOUBLE_CLICKS,    0x503B, INT)
+SEL_TAG(UI, STAT_DRAGS,            0x503C, INT)
+SEL_TAG(UI, STAT_SORTS,            0x503D, INT)
+SEL_TAG(UI, STAT_SORT_DIR,         0x503E, INT)
+SEL_TAG(UI, STAT_TOP_ROW,          0x503F, INT)
+SEL_TAG(UI, STAT_MENUS,            0x5040, INT)
+SEL_TAG(UI, STAT_ROW_PLAYS,        0x5041, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)
