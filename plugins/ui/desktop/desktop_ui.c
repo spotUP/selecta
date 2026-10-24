@@ -1,6 +1,6 @@
 /* Desktop UI plugin (M3d, DUI-P1-4). It renders the engine snapshot through the shared UI model
  * (include/selecta/uimodel.h): one widget per region, redrawn only when the region's dirty bit is set. Drawing goes
- * to a backend; the only backend so far is `mem` (headless, no SDL), selected with `--backend mem`. */
+ * to a backend: `mem` (headless, no SDL, DUI-P2-6) or `sdl` (a window, DUI-P2-7), selected with `--backend`. */
 #include <selecta/plugin.h>
 #include <selecta/ui.h>
 #include <selecta/uimodel.h>
@@ -11,6 +11,10 @@
 #include <selecta/gui/gui_draw.h>
 #include <selecta/gui/gui_text.h>
 #include <selecta/uimodel/theme.h>
+
+#ifdef SELECTA_DESKTOP_SDL
+#include "backend_sdl.h"
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,8 +58,27 @@ typedef struct desk {
     int input_done;
     desk_art* art;          /* tile artwork from the library, NULL without one (DUI-P2-4) */
     uint32_t art_tile_hash; /* pixels of the first home tile, STAT_ART_TILE_HASH (DUI-P2-5) */
-    sel_tag stats[18];
+#ifdef SELECTA_DESKTOP_SDL
+    desk_sdl* sdl;          /* --backend sdl: the window the canvas is presented in (DUI-P2-7) */
+#endif
+    int live;               /* sdl on a real display without --input: the window stays until it is closed */
+    int repaint;            /* the next present paints the whole canvas (first frame, resize) */
+    sel_tag stats[21];
 } desk;
+
+static int desk_resize(desk* d, int32_t w, int32_t h);
+static int desk_present(desk* d);
+
+/* Hands the dirty rectangles to the backend, then empties the list; returns the pixels repainted. The sdl backend
+ * must see the list before sel_gui_present clears it. */
+static uint32_t desk_flush(desk* d) {
+#ifdef SELECTA_DESKTOP_SDL
+    if (d->sdl != NULL) {
+        desk_sdl_present(d->sdl, d->canvas, d->report);
+    }
+#endif
+    return sel_gui_present(d->canvas);
+}
 
 static const char* desk_opt(const sel_ui_open_args* a, const char* name) {
     int i;
@@ -382,7 +405,7 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
     return 0;
 }
 
-/* Replays the --input script once: `click X Y`, `tile N` (the centre of tile N, 0-based), `#` comments. */
+/* Replays the --input script once: `resize W H`, `click X Y`, `tile N` (the centre of tile N, 0-based), `#` comments. */
 static int desk_replay_input(desk* d) {
     char* line = d->input;
     int opened = 0;
@@ -394,7 +417,9 @@ static int desk_replay_input(desk* d) {
         if (nl != NULL) {
             *nl = '\0';
         }
-        if (sscanf(line, "click %d %d", &x, &y) == 2) {
+        if (sscanf(line, "resize %d %d", &x, &y) == 2) { /* the window was resized: relayout and repaint */
+            opened |= desk_resize(d, x, y);
+        } else if (sscanf(line, "click %d %d", &x, &y) == 2) {
             opened |= desk_click(d, x, y);
         } else if (sscanf(line, "tile %u", &n) == 1) {
             sel_gui_rect t = tile_rect(d, n);
@@ -493,7 +518,8 @@ static int desk_present(desk* d) {
     if (dirty == 0u) {
         return 0;
     }
-    if (d->frames == 0u) { /* the first frame paints the whole canvas */
+    if (d->frames == 0u || d->repaint) { /* the first frame and a resize paint the whole canvas */
+        d->repaint = 0;
         sel_gui_fill_rect(d->canvas, rect_of(0, 0, d->canvas->w, d->canvas->h),
                           ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
         sel_gui_dirty_add(d->canvas, rect_of(0, 0, d->canvas->w, d->canvas->h));
@@ -527,7 +553,7 @@ static int desk_present(desk* d) {
             desk_hash(d, f->status);
         }
     }
-    d->dirty_pixels = sel_gui_present(d->canvas);
+    d->dirty_pixels = desk_flush(d);
     d->dirty_total += d->dirty_pixels;
     d->frames++;
     return 1;
@@ -643,6 +669,9 @@ static void desk_close(void* state) {
         for (i = 0; i < 2 * DESK_SIZES; i++) {
             desk_atlas_free(d->atlas[i / DESK_SIZES][i % DESK_SIZES]);
         }
+#ifdef SELECTA_DESKTOP_SDL
+        desk_sdl_close(d->sdl);
+#endif
         if (d->canvas != NULL) {
             d->host->mem_free(d->host, d->canvas->pixels);
             d->host->mem_free(d->host, d->canvas);
@@ -687,14 +716,47 @@ static int desk_make_canvas(desk* d, const char* size) {
     return 1;
 }
 
+/* The window changed size (a scripted `resize W H`, or the user or a scale change on the sdl backend): the canvas
+ * takes the new pixel size, the layout is recomputed and the whole canvas is repainted and presented. Returns 0: the
+ * repaint is already presented, so the caller has nothing left to flush. */
+static int desk_resize(desk* d, int32_t w, int32_t h) {
+    void* pixels;
+    if (w < 64 || h < 64 || w > 4096 || h > 4096 || d->canvas->format != SEL_GUI_RGBA32) {
+        return 0;
+    }
+    pixels = d->host->mem_alloc(d->host, sel_gui_pixel_bytes(SEL_GUI_RGBA32, w, h), SEL_MEM_FAST);
+    if (pixels == NULL) {
+        return 0;
+    }
+    d->host->mem_free(d->host, d->canvas->pixels);
+    sel_gui_canvas_init(d->canvas, SEL_GUI_RGBA32, w, h, pixels);
+#ifdef SELECTA_DESKTOP_SDL
+    if (d->sdl != NULL && !desk_sdl_resize(d->sdl, w, h)) {
+        return 0;
+    }
+#endif
+    sel_uim_layout_compute(&d->layout, (uint32_t)w, (uint32_t)h);
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    desk_present(d);
+    return 0;
+}
+
 static void* desk_open(const sel_ui_open_args* a) {
     const char* backend = desk_opt(a, "--backend");
     desk* d;
     int i;
-    if (backend != NULL && strcmp(backend, "mem") != 0) {
-        fprintf(stderr, "selecta: desktop backend '%s' is not available in this build\n", backend);
+    int want_sdl = backend != NULL && strcmp(backend, "sdl") == 0;
+    if (backend != NULL && strcmp(backend, "mem") != 0 && !want_sdl) {
+        fprintf(stderr, "selecta: desktop backend '%s' is not mem or sdl\n", backend);
         return NULL;
     }
+#ifndef SELECTA_DESKTOP_SDL
+    if (want_sdl) {
+        fprintf(stderr, "selecta: desktop backend 'sdl' is not available in this build (configure with -DSELECTA_UI_DESKTOP=ON)\n");
+        return NULL;
+    }
+#endif
     d = (desk*)a->host->mem_alloc(a->host, sizeof *d, SEL_MEM_FAST);
     if (d == NULL) {
         return NULL;
@@ -761,12 +823,27 @@ static void* desk_open(const sel_ui_open_args* a) {
             d->actions = 1;
         }
     }
+#ifdef SELECTA_DESKTOP_SDL
+    if (want_sdl) {
+        if (d->canvas->format != SEL_GUI_RGBA32) {
+            fprintf(stderr, "selecta: the sdl backend shows an rgba32 canvas, not index8\n");
+            desk_close(d);
+            return NULL;
+        }
+        d->sdl = desk_sdl_open(d->canvas->w, d->canvas->h);
+        if (d->sdl == NULL) {
+            desk_close(d);
+            return NULL;
+        }
+        d->live = d->input == NULL && !desk_sdl_headless(d->sdl);
+    }
+#endif
     d->art = art_open(a->art);
     sel_uim_init(&d->uim);
     sel_uim_update(&d->uim, sel_engine_state(d->engine));
     if (d->testcard) {
         draw_testcard(d);
-        d->dirty_pixels = sel_gui_present(d->canvas);
+        d->dirty_pixels = desk_flush(d);
         d->dirty_total = d->dirty_pixels;
     } else if (d->textsheet) {
         d->dirty_total = 0; /* drawn on the first turn, after the --exec commands queued their names */
@@ -789,7 +866,9 @@ static void desk_on_event(void* state, const sel_message* evt) {
 /* The mem backend has no input source: a turn with something to draw is handled, a quiet turn ends the run. */
 static int desk_wait(void* state, uint32_t timeout_ms) {
     desk* d = (desk*)state;
+#ifndef SELECTA_DESKTOP_SDL
     (void)timeout_ms;
+#endif
     if (d->testcard) {
         return -1; /* the test card is one frame */
     }
@@ -798,11 +877,23 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
             return -1;
         }
         draw_textsheet(d);
-        d->dirty_pixels = sel_gui_present(d->canvas);
+        d->dirty_pixels = desk_flush(d);
         d->dirty_total = d->dirty_pixels;
         d->frames++;
         return 1;
     }
+#ifdef SELECTA_DESKTOP_SDL
+    if (d->sdl != NULL) {
+        int32_t w = 0, h = 0;
+        int ev = desk_sdl_poll(d->sdl, 0u, &w, &h);
+        if (ev == DESK_SDL_QUIT) {
+            return -1;
+        }
+        if (ev == DESK_SDL_RESIZE) {
+            desk_resize(d, w, h);
+        }
+    }
+#endif
     sel_uim_update(&d->uim, sel_engine_state(d->engine));
     if (d->ticks > 0u && d->uim.dirty == 0u) { /* --ticks N: the mem backend has no clock, so it replays N seconds */
         d->ticks--;
@@ -812,11 +903,24 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
         return 1;
     }
     if (d->input != NULL && !d->input_done && d->ticks == 0u && desk_replay_input(d)) { /* scripted input, once */
-        d->dirty_pixels = sel_gui_present(d->canvas);
+        d->dirty_pixels = desk_flush(d);
         d->dirty_total += d->dirty_pixels;
         d->frames++;
         return 1;
     }
+#ifdef SELECTA_DESKTOP_SDL
+    if (d->live) { /* a window on a real display: idle until an event or the next turn */
+        int32_t w = 0, h = 0;
+        int ev = desk_sdl_poll(d->sdl, timeout_ms > 0u ? timeout_ms : 50u, &w, &h);
+        if (ev == DESK_SDL_QUIT) {
+            return -1;
+        }
+        if (ev == DESK_SDL_RESIZE) {
+            desk_resize(d, w, h);
+        }
+        return ev == DESK_SDL_NONE ? 0 : 1;
+    }
+#endif
     return -1;
 }
 
@@ -856,8 +960,18 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[15].value = art_decodes(d->art);
     d->stats[16].tag = SEL_UI_STAT_ART_TILE_HASH;
     d->stats[16].value = d->art_tile_hash;
-    d->stats[17].tag = SEL_TAG_END;
-    d->stats[17].value = 0;
+    d->stats[17].tag = SEL_UI_STAT_PRESENT_HASH;
+    d->stats[18].tag = SEL_UI_STAT_UPLOAD_PIXELS;
+    d->stats[19].tag = SEL_UI_STAT_PRESENTS;
+#ifdef SELECTA_DESKTOP_SDL
+    if (d->sdl != NULL) {
+        d->stats[17].value = desk_sdl_present_hash(d->sdl);
+        d->stats[18].value = desk_sdl_upload_pixels(d->sdl);
+        d->stats[19].value = desk_sdl_presents(d->sdl);
+    }
+#endif
+    d->stats[20].tag = SEL_TAG_END;
+    d->stats[20].value = 0;
     return d->stats;
 }
 

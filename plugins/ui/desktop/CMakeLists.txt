@@ -1,6 +1,6 @@
 # Desktop UI plugin (M3d, plan 2026-10-24-desktop-ui.md section 2.1). The plugin entry and the headless `mem`
-# backend build everywhere on the desktop and need no SDL; backend_sdl.c and input_sdl.c arrive with DUI-P2-7 and
-# DUI-P4-1 inside selecta_ui_desktop, which only exists with -DSELECTA_UI_DESKTOP=ON.
+# backend build everywhere on the desktop and need no SDL; backend_sdl.c (DUI-P2-7) and input_sdl.c (DUI-P4-1) live in
+#  selecta_ui_desktop, which only exists with -DSELECTA_UI_DESKTOP=ON.
 #
 # Text (DUI-P2-3): the Inter fonts are embedded in the plugin as C arrays generated here from third_party/fonts, so
 # no font file is read at run time. atlas_build.c turns a font and a pixel size into the integer atlas tables of
@@ -30,7 +30,12 @@ if(UNIX)
   target_link_libraries(sel_plugin_desktop_ui PUBLIC m Threads::Threads)
 endif()
 
+# The sdl backend (DUI-P2-7) is a separate library so the plugin's own sources stay SDK-clean; it needs SDL3 and the
+# gui headers only. The plugin sees it through SELECTA_DESKTOP_SDL.
 if(SELECTA_UI_DESKTOP)
-  add_library(selecta_ui_desktop STATIC deps_probe.c)
-  target_link_libraries(selecta_ui_desktop PUBLIC SDL3::SDL3)
+  add_library(selecta_ui_desktop STATIC backend_sdl.c)
+  target_include_directories(selecta_ui_desktop PRIVATE "${PROJECT_SOURCE_DIR}/include")
+  target_link_libraries(selecta_ui_desktop PUBLIC SDL3::SDL3 selecta_gui)
+  target_link_libraries(sel_plugin_desktop_ui PUBLIC selecta_ui_desktop)
+  target_compile_definitions(sel_plugin_desktop_ui PRIVATE SELECTA_DESKTOP_SDL=1)
 endif()

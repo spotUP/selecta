@@ -178,6 +178,10 @@ SEL_TAG(UI, STAT_GLYPHS_DRAWN,   0x5029, INT)
 SEL_TAG(UI, STAT_ART_DECODES,    0x502A, INT)
 /* FNV-1a of the first home tile square, to compare generated artwork per format (DUI-P2-5). */
 SEL_TAG(UI, STAT_ART_TILE_HASH,  0x502B, INT)
+/* sdl backend (DUI-P2-7): hash of the frame read back from the renderer, pixels uploaded to the texture, presents. */
+SEL_TAG(UI, STAT_PRESENT_HASH,   0x502C, INT)
+SEL_TAG(UI, STAT_UPLOAD_PIXELS,  0x502D, INT)
+SEL_TAG(UI, STAT_PRESENTS,       0x502E, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)
