@@ -272,8 +272,19 @@ void sel_engine_set_voice_sink(sel_engine* e, const sel_voices* sink);
 
 /* Routing table (I121). The sink is used only when the replayer is VOICE kind (voice_count > 0) and
  * voice_count <= the output's SEL_OUT_VOICE_MAX (0: no limit; the Paula outputs say 4); else the mixer. */
-enum { SEL_ROUTE_MIXER = 0, SEL_ROUTE_DIRECT = 1 };
+/* HW kind (I219) gets SEL_ROUTE_HANDOVER: the replayer owns the sound hardware, the output is handed over to it. */
+enum { SEL_ROUTE_MIXER = 0, SEL_ROUTE_DIRECT = 1, SEL_ROUTE_HANDOVER = 2 };
+uint32_t sel_engine_route(uint32_t kind, uint32_t voice_count, int has_sink, uint32_t voice_max);
+/* sel_engine_route for a VOICE or RENDER replayer (kind from voice_count). */
 uint32_t sel_engine_voice_route(uint32_t voice_count, int has_sink, uint32_t voice_max);
+/* Output handover (I219). Before a HW-kind song starts the engine calls fn(ctx, 1): the app closes its output so
+ * the replayer can take the hardware. Before the next non-HW song starts it calls fn(ctx, 0): the app reopens the
+ * output and sets its source again; fn returns 1 on success. While the output is handed over, sel_engine_pump
+ * runs sel_engine_render itself by the wall clock, so position, pause and end of song keep working. */
+typedef int (*sel_engine_handover_fn)(void* ctx, uint32_t release);
+void sel_engine_set_handover(sel_engine* e, sel_engine_handover_fn fn, void* ctx);
+/* 1 while the output is handed over to a HW-kind replayer. */
+uint32_t sel_engine_handed_over(const sel_engine* e);
 /* Where the song started last went: 1 = the output's voice sink, 0 = the mixer. */
 uint32_t sel_engine_routed_direct(const sel_engine* e);
 
@@ -352,6 +363,8 @@ typedef struct sel_engine_stats {
     uint32_t loudness_frames;     /* frames that ran through the gain stage (sentinel) */
     uint32_t leveler_frames;      /* frames the adaptive leveler measured and scaled (sentinel of I190) */
     uint32_t leveler_writes;      /* provisional gains the leveler wrote back to the library (I190) */
+    uint32_t hw_handovers;        /* times the output was handed over to a HW-kind replayer (I219) */
+    uint32_t hw_starts;           /* HW-kind RP_START calls that succeeded (sentinel of I219) */
 } sel_engine_stats;
 void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out);
 /* Key `i` of the last LIBRARY_SEARCH, PLAY_QUERY or QUEUE_ADD_QUERY result (byte order of the key), NULL past the end. */

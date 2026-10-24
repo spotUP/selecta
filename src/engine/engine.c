@@ -199,6 +199,10 @@ typedef struct sel_slot {
     sel_rp_set_speed_fn rp_set_speed;         /* optional, RENDER kind: pitch and tempo factors */
     uint32_t applied_pitch, applied_tempo;    /* audio side: factors last handed to rp_set_speed */
     uint32_t applied_mute;                    /* audio side: mask last handed to rp_mute */
+    uint32_t hw;                              /* 1: HW kind, the replayer drives the sound hardware (I219) */
+    sel_rp_hw_pause_fn rp_hw_pause;           /* optional, HW kind */
+    sel_rp_hw_release_fn rp_hw_release;       /* optional, HW kind */
+    uint32_t applied_pause;                   /* audio side: pause state last handed to rp_hw_pause */
     uint32_t pos_order, pos_row, pos_pattern, pos_valid; /* audio side writes after each render */
     sel_rp_render_fn rp_render; /* RENDER kind: the replayer mixes, rp_tick is NULL */
     const char* rp_name;
@@ -391,6 +395,12 @@ struct sel_engine {
     uint32_t mixed_path; /* 1: the engine mixes (a DSP chain can run); 0: the output plays voices itself */
     const sel_voices* voice_sink; /* the output's own voice backend (Paula-direct), or NULL: voices go to the mixer */
     uint32_t voice_max;           /* most voices voice_sink plays (SEL_OUT_VOICE_MAX); 0: no limit */
+    sel_engine_handover_fn handover; /* app hook that closes and reopens the output (I219), or NULL */
+    void* handover_ctx;
+    uint32_t handed_over;         /* 1: the output is closed, a HW-kind replayer owns the hardware */
+    uint32_t hw_clock_ms;         /* local_ms of the last self-clocked render while handed over */
+    uint32_t hw_handovers;        /* stats: output handed over (I219) */
+    uint32_t hw_starts;           /* stats: HW RP_START successes (I219) */
     uint32_t route_direct;        /* routing of the song started last: 1 = voice_sink, 0 = mixer (sel_engine_voice_route) */
     /* Pattern window request (I101). The pump writes pat_order/pat_row_lo/pat_rows and then
      * raises pat_req; the audio thread fills pat_res between render calls and sets pat_ack
@@ -1176,13 +1186,69 @@ static void close_slot(sel_engine* e, sel_slot* sl) {
     sl->scrobbled = 0;
     sl->last_tick = 0;
     memset(&sl->pol, 0, sizeof sl->pol);
+    sl->hw = 0;
     sl->busy = 0;
+}
+
+/* Gives the sound hardware back from every HW-kind slot but `keep` (I219): one replayer owns Paula at a time. */
+static void release_hw_slots(sel_engine* e, const sel_slot* keep) {
+    uint32_t i;
+    for (i = 0; i < SEL_SLOT_COUNT; i++) {
+        sel_slot* o = &e->slot[i];
+        if (o != keep && o->busy && o->hw && o->rp_state != NULL && o->rp_hw_release != NULL) {
+            o->rp_hw_release(o->rp_state);
+        }
+    }
+}
+
+/* Output handover before a song starts (I219): routing SEL_ROUTE_HANDOVER closes the app's output, any other
+ * routing reopens it once the HW replayer has given the hardware back. */
+static void handover_for(sel_engine* e, const sel_slot* sl, uint32_t route) {
+    release_hw_slots(e, sl);
+    if (route == SEL_ROUTE_HANDOVER && !e->handed_over) {
+        if (e->handover != NULL) {
+            e->handover(e->handover_ctx, 1);
+        }
+        e->handed_over = 1;
+        SEL_THREAD_UNMARK_AUDIO(e); /* no output thread now: the pump renders (hw_clock) */
+        e->hw_clock_ms = local_ms(e);
+        e->hw_handovers++;
+    } else if (route != SEL_ROUTE_HANDOVER && e->handed_over) {
+        if (e->handover == NULL || e->handover(e->handover_ctx, 0)) {
+            e->handed_over = 0;
+        }
+    }
 }
 
 /* Fresh mixer and scheduler, then the replayer's start. */
 static int start_subsong(sel_engine* e, sel_slot* sl, uint32_t subsong) {
     sl->rp_render_calls = 0;
     sl->rendered_frames = 0;
+    handover_for(e, sl,
+                 sel_engine_route(sl->hw ? SEL_RP_KIND_HW : (sl->rp_render != NULL ? SEL_RP_KIND_RENDER : SEL_RP_KIND_VOICE),
+                                  sl->rp_info.voice_count, e->voice_sink != NULL, e->voice_max));
+    if (sl->hw) { /* the replayer plays through the hardware on its own clock; the engine only counts time */
+        int rc;
+        sl->frames_left = 0;
+        sl->ticks = 0;
+        sl->song_frames = 0;
+        sl->pos_emitted = 0;
+        sl->ended = 0;
+        sl->reported = 0;
+        sl->scrobbled = 0;
+        sl->last_tick = 0;
+        sl->applied_pause = 0;
+        memset(&sl->pol, 0, sizeof sl->pol);
+        sl->subsong = subsong;
+        e->route_direct = 0;
+        rc = sl->rp_start(sl->rp_state, subsong, e->rate, NULL);
+        if (rc) {
+            e->hw_starts++;
+        } else {
+            handover_for(e, sl, SEL_ROUTE_MIXER); /* the hardware stays free: give the output back */
+        }
+        return rc;
+    }
     if (sl->rp_render != NULL) {
         sl->frames_left = 0;
         sl->ticks = 0;
@@ -1374,6 +1440,9 @@ static int find_free_slot(const sel_engine* e, uint32_t* idx) {
  * deterministic, so the voices end up where a full render would have left them.
  * Pump thread; the slot is not yet published. Returns the frames skipped. */
 static uint32_t skip_frames(sel_slot* sl, uint32_t target) {
+    if (sl->hw) { /* the hardware plays from the start; nothing to skip (I219) */
+        return 0;
+    }
     if (sl->rp_render != NULL) {
         /* A RENDER replayer without RP_SEEK has no voices to advance:
          * render and discard. */
@@ -1699,7 +1768,7 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
         return 0;
     }
     kind = sel_tag_find(hooks, SEL_RP_KIND, 0);
-    if (kind != SEL_RP_KIND_VOICE && kind != SEL_RP_KIND_RENDER) {
+    if (kind != SEL_RP_KIND_VOICE && kind != SEL_RP_KIND_RENDER && kind != SEL_RP_KIND_HW) {
         drop_song(e, data, live, fs);
         sel_engine_report_error(e, "unsupported_kind", err_detail);
         return 0;
@@ -1723,10 +1792,15 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     sl->applied_pitch = 0;
     sl->applied_tempo = 0;
     sl->pos_valid = 0;
-    if (kind == SEL_RP_KIND_RENDER) {
+    sl->hw = kind == SEL_RP_KIND_HW;
+    sl->rp_hw_pause = sl->hw ? (sel_rp_hw_pause_fn)sel_tag_find(hooks, SEL_RP_HW_PAUSE, 0) : NULL;
+    sl->rp_hw_release = sl->hw ? (sel_rp_hw_release_fn)sel_tag_find(hooks, SEL_RP_HW_RELEASE, 0) : NULL;
+    sl->applied_pause = 0;
+    if (kind != SEL_RP_KIND_VOICE) {
         sl->rp_tick = NULL;
     }
-    if (!open || !sl->rp_close || !sl->rp_start || (kind == SEL_RP_KIND_VOICE ? !sl->rp_tick : !sl->rp_render)) {
+    if (!open || !sl->rp_close || !sl->rp_start || (kind == SEL_RP_KIND_VOICE && !sl->rp_tick) ||
+        (kind == SEL_RP_KIND_RENDER && !sl->rp_render)) {
         drop_song(e, data, live, fs);
         sel_engine_report_error(e, "replayer_incomplete", err_detail);
         return 0;
@@ -4644,10 +4718,35 @@ static void refresh_snapshot(sel_engine* e) {
     e->state.queue_version = e->queue.version;
 }
 
+/* While the output is handed over to a HW-kind replayer no output pulls sel_engine_render, so the pump runs it
+ * by the wall clock (I219): swaps, song time, end policy and the queue advance as with an output. */
+static void hw_clock(sel_engine* e) {
+    int16_t scratch[256u * 2u];
+    uint32_t now = local_ms(e);
+    uint32_t ms = now - e->hw_clock_ms;
+    uint32_t frames;
+    if (ms > 1000u) {
+        ms = 1000u;
+    }
+    frames = (uint32_t)(((uint64_t)ms * e->rate) / 1000u);
+    if (frames == 0u) {
+        return;
+    }
+    e->hw_clock_ms = now;
+    while (frames > 0u) {
+        uint32_t n = frames < 256u ? frames : 256u;
+        sel_engine_render(e, scratch, n);
+        frames -= n;
+    }
+}
+
 uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
     sel_message m;
     uint32_t delivered = 0;
     SEL_THREAD_NOT_AUDIO(e);
+    if (e->handed_over) {
+        hw_clock(e);
+    }
     sel_net_set_cancel(&e->cancel_gen, e->cancel_served); /* this thread's net waits end when send counts a newer STOP or OPEN (I195a) */
     while (sel_spsc_pop(&e->cmd_q, &m)) {
         if (m.kind == SEL_MSG_CMD && (m.id == SEL_CMD_STOP || m.id == SEL_CMD_OPEN)) {
@@ -4771,10 +4870,40 @@ void sel_engine_set_voice_sink(sel_engine* e, const sel_voices* sink) {
 /* Routing table (plan M2 phase 3, I121): a VOICE-kind replayer (voice_count > 0) whose voices fit the output's
  * backend (voice_max, 0 = no limit) plays through it; every other replayer, RENDER kind included, goes through the mixer. */
 uint32_t sel_engine_voice_route(uint32_t voice_count, int has_sink, uint32_t voice_max) {
-    if (!has_sink || voice_count == 0u || (voice_max != 0u && voice_count > voice_max)) {
-        return SEL_ROUTE_MIXER;
+    return sel_engine_route(voice_count > 0u ? SEL_RP_KIND_VOICE : SEL_RP_KIND_RENDER, voice_count, has_sink, voice_max);
+}
+
+/* One row per replayer kind (I219): HW kind always takes the hardware over, whatever the output. */
+uint32_t sel_engine_route(uint32_t kind, uint32_t voice_count, int has_sink, uint32_t voice_max) {
+    static const struct {
+        uint32_t kind;
+        uint32_t route; /* the route when the voices fit the sink */
+    } k_routes[] = {
+        {SEL_RP_KIND_VOICE, SEL_ROUTE_DIRECT},
+        {SEL_RP_KIND_RENDER, SEL_ROUTE_MIXER},
+        {SEL_RP_KIND_HW, SEL_ROUTE_HANDOVER},
+    };
+    uint32_t i;
+    for (i = 0; i < sizeof k_routes / sizeof k_routes[0]; i++) {
+        if (k_routes[i].kind != kind) {
+            continue;
+        }
+        if (k_routes[i].route == SEL_ROUTE_DIRECT &&
+            (!has_sink || voice_count == 0u || (voice_max != 0u && voice_count > voice_max))) {
+            return SEL_ROUTE_MIXER;
+        }
+        return k_routes[i].route;
     }
-    return SEL_ROUTE_DIRECT;
+    return SEL_ROUTE_MIXER;
+}
+
+void sel_engine_set_handover(sel_engine* e, sel_engine_handover_fn fn, void* ctx) {
+    e->handover = fn;
+    e->handover_ctx = ctx;
+}
+
+uint32_t sel_engine_handed_over(const sel_engine* e) {
+    return e->handed_over;
 }
 
 uint32_t sel_engine_routed_direct(const sel_engine* e) {
@@ -4814,6 +4943,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->seek_path = e->seek_path;
     out->seek_skipped_frames = e->seek_skipped;
     out->songs_opened = e->songs_opened;
+    out->hw_handovers = e->hw_handovers;
+    out->hw_starts = e->hw_starts;
     out->dup_redirects = e->dup_redirects;
     out->dup_played = e->dup_played;
     if (e->lib != NULL) {
@@ -5078,6 +5209,12 @@ static uint32_t render_slot(sel_engine* e, sel_slot* sl, int16_t* stereo, uint32
                 sl->applied_tempo = tq;
             }
         }
+        while (sl->hw && done < frames && !sl->ended) { /* HW kind: silence here, the hardware plays (I219) */
+            uint32_t got = frames - done;
+            memset(stereo + (size_t)done * 2u, 0, (size_t)got * 2u * sizeof(int16_t));
+            sl->song_frames += got;
+            done += policy_chunk(e, sl, stereo + (size_t)done * 2u, got);
+        }
         while (sl->rp_render != NULL && done < frames && !sl->ended) {
             uint32_t want = frames - done;
             uint32_t got = sl->rp_render(sl->rp_state, stereo + (size_t)done * 2u, want);
@@ -5096,7 +5233,7 @@ static uint32_t render_slot(sel_engine* e, sel_slot* sl, int16_t* stereo, uint32
                 sl->pol.reason = SEL_END_END;
             }
         }
-        while (sl->rp_render == NULL && done < frames && !sl->ended) {
+        while (sl->rp_render == NULL && !sl->hw && done < frames && !sl->ended) {
             uint32_t n;
             if (sl->frames_left == 0) {
                 sel_tick_result r;
@@ -5254,6 +5391,10 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
                    (uint32_t)((uint64_t)SEL_SLEEP_RAMP_MS * e->rate / 1000u));
     {
         sl = e->act < SEL_SLOT_COUNT ? &e->slot[e->act] : NULL;
+        if (sl != NULL && sl->hw && sl->rp_hw_pause != NULL && sl->applied_pause != (e->state.play != SEL_PLAYING)) {
+            sl->applied_pause = e->state.play != SEL_PLAYING;
+            sl->rp_hw_pause(sl->rp_state, sl->applied_pause); /* the replayer's own clock follows PAUSE (I219) */
+        }
         if (sl != NULL && e->state.play == SEL_PLAYING) {
             e->loud_ref = loud_reference(e, frames);
             done = render_mix(e, stereo, frames);

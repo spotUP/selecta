@@ -14,8 +14,10 @@ file(WRITE "${WORK}/in_sub.keys" "${down}q\n")
 # ".." from sub lands in songs on the sub row; Up + Enter on ".." from songs reaches the volume root.
 file(WRITE "${WORK}/in_songs.keys" "${down}Enter\nwait 200\nq\n")
 file(WRITE "${WORK}/in_root.keys" "${down}Enter\nUp\nEnter\nwait 200\nq\n")
-# Down from songs lands on a file at the volume root (the .keys files live there): its path joins
-# without a "/" ("work:in_root.keys", not "work:/in_root.keys"; I138c).
+# Down from songs lands on a file at the volume root: its path joins without a "/" ("work:root.mod",
+# not "work:/root.mod"; I138c). The .keys files also live there but are hidden: no replayer claims
+# them (I218i), so the fixture is a .mod, which the Amiga KPlayer claims (I219).
+file(WRITE "${WORK}/root.mod" "x")
 file(WRITE "${WORK}/root_file.keys" "Down\nwait 200\nq\n")
 function(run name expect_title expect_rows forbid_rows)
   execute_process(COMMAND "${VAMOS}" -C 68020 -m 8192 -V work:${WORK} -- "${AMIGA_SELECTA}" --size 80x25
@@ -47,5 +49,5 @@ endfunction()
 run(in_sub "sub" "\\.\\.;z.mod" "")
 run(in_songs "songs" "\\.\\.;sub" "z.mod")
 run(in_root "work:" "songs" "\\.\\.;sub")
-run(root_file "work:" "songs" "\\.\\." "work:[a-z_]+\\.keys")
+run(root_file "work:" "songs;root\\.mod" "\\.\\." "work:root\\.mod")
 message(STATUS "[OK] I138b")

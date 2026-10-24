@@ -64,6 +64,11 @@ SEL_TAG(RP, COMPANIONS,        0x101B, STR)
 /* STREAMING: 1 = the replayer can open from a growing byte stream (sel_song_source.stream, I195b) instead of the
  * whole file; it then plays an http(s) URL while the download runs. Others get the whole file. */
 SEL_TAG(RP, STREAMING,         0x101C, INT)
+/* HW kind (I219): the replayer drives the sound hardware itself (Paula, CIA timer), so the engine hands the output
+ * over to it. HW_PAUSE stops and resumes the replayer's own clock (sel_rp_hw_pause_fn); HW_RELEASE gives the
+ * hardware back before another song takes it (sel_rp_hw_release_fn). Both optional; RP_CLOSE always releases. */
+SEL_TAG(RP, HW_PAUSE,          0x101D, PTR)
+SEL_TAG(RP, HW_RELEASE,        0x101E, PTR)
 
 SEL_TAG(OUT, NAME,             0x2000, STR)
 SEL_TAG(OUT, SINK,             0x2001, INT)

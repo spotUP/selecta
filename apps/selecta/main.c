@@ -56,14 +56,45 @@ static void sink(void* ctx, const sel_message* evt) {
 }
 
 static int g_mark_audio;
+static int g_marked; /* the output's pull thread is marked as the audio thread */
 
 static uint32_t audio_pull(void* ctx, int16_t* stereo, uint32_t frames) {
-    static int marked;
-    if (g_mark_audio && !marked) { /* a clockless output pumps on the main thread */
+    if (g_mark_audio && !g_marked) { /* a clockless output pumps on the main thread */
         sel_engine_mark_audio_thread((sel_engine*)ctx);
-        marked = 1;
+        g_marked = 1;
     }
     return sel_engine_render((sel_engine*)ctx, stereo, frames);
+}
+
+/* Output handover (I219): a HW-kind replayer (KPlayer) drives Paula itself, so the output closes while it plays
+ * and reopens before the next song that needs it. */
+typedef struct shell_output {
+    sel_out_open_fn open;
+    sel_out_close_fn close;
+    sel_out_set_source_fn set_source;
+    const sel_host* host;
+    sel_engine* engine;
+    void* out; /* NULL while handed over */
+} shell_output;
+
+static int shell_handover(void* ctx, uint32_t release) {
+    shell_output* so = (shell_output*)ctx;
+    if (release) {
+        if (so->out != NULL) {
+            so->close(so->out);
+            so->out = NULL;
+        }
+        return 1;
+    }
+    if (so->out == NULL) {
+        so->out = so->open(so->host, SHELL_RATE, 2);
+        if (so->out == NULL) {
+            return 0;
+        }
+        g_marked = 0; /* a new pull thread marks itself on its first call */
+        so->set_source(so->out, audio_pull, so->engine);
+    }
+    return 1;
 }
 
 static const sel_tag* hooks_of(uint32_t kind, const char* id) {
@@ -179,6 +210,7 @@ int main(int argc, char** argv)
     sel_engine_stats est;
     const sel_tag* ust;
     void* out;
+    shell_output so;
     void* ui;
     void* ctx[3];
 #if !defined(__amigaos__) && !defined(AMIGA)
@@ -276,6 +308,13 @@ int main(int argc, char** argv)
     }
     g_mark_audio = !clockless;
     out_set_source(out, audio_pull, e);
+    so.open = out_open;
+    so.close = out_close;
+    so.set_source = out_set_source;
+    so.host = host;
+    so.engine = e;
+    so.out = out;
+    sel_engine_set_handover(e, shell_handover, &so);
 
     memset(&args, 0, sizeof args);
     args.engine = e;
@@ -285,7 +324,9 @@ int main(int argc, char** argv)
     ui = ui_open(&args);
     if (ui == NULL) {
         fputs("selecta: the UI could not open (no terminal?)\n", stderr);
-        out_close(out);
+        if (so.out != NULL) {
+        out_close(so.out);
+    }
         sel_engine_destroy(e);
         return 1;
     }
@@ -302,7 +343,9 @@ int main(int argc, char** argv)
         if (ctl_fd == SEL_CTL_ALREADY_RUNNING) {
             fprintf(stderr, "selecta: already running (%s)\n", ctl_path);
             ui_close(ui);
-            out_close(out);
+            if (so.out != NULL) {
+        out_close(so.out);
+    }
             sel_engine_destroy(e);
             return 1;
         }
@@ -351,7 +394,9 @@ int main(int argc, char** argv)
      * of frames, so a run is deterministic. A real output paces the loop. */
     while ((r = ui_wait(ui, clockless ? SHELL_TURN_MS : 0u)) >= 0) {
         waits++;
-        out_pump(out, SHELL_RATE * SHELL_TURN_MS / 1000u);
+        if (so.out != NULL) {
+            out_pump(so.out, SHELL_RATE * SHELL_TURN_MS / 1000u);
+        }
         sel_engine_pump(e, sink, ctx);
         sel_int_session_poll(isess);
 #ifndef SEL_NO_CONTROL_SOCKET
@@ -365,6 +410,8 @@ int main(int argc, char** argv)
     sel_engine_stats_get(e, &est);
     printf("ui_waits=%u flushes=%u keys=%u\n", (unsigned)waits, (unsigned)sel_tag_find(ust, SEL_UI_STAT_FLUSHES, 0),
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_KEYS, 0));
+    printf("hw_handovers=%u hw_starts=%u replayer=%s\n", (unsigned)est.hw_handovers, (unsigned)est.hw_starts,
+           est.replayer != NULL ? est.replayer : "none");
     printf("songs_opened=%u queue_version=%u\n", (unsigned)est.songs_opened,
            (unsigned)sel_engine_state(e)->queue_version);
     printf("links_parsed=%u links_made=%u\n", (unsigned)est.links_parsed, (unsigned)est.links_made);
@@ -412,7 +459,9 @@ int main(int argc, char** argv)
 #endif
     sel_int_session_close(isess);
     ui_close(ui);
-    out_close(out);
+    if (so.out != NULL) {
+        out_close(so.out);
+    }
     sel_engine_destroy(e);
     if (library != NULL) {
         sel_library_cache_report(library); /* cache_hits= fetches= ... after LIBRARY_FETCH (I166a) */

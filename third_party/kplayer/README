@@ -1,0 +1,6 @@
+KPlayer v33 (kpl14.s) by Kari-Pekka Koljonen, from HippoPlayer-68k (code/kpl14.s, code/kpl_offsets.S,
+code/mucro.i). License: MIT, see LICENSE (copied from HippoPlayer code/LICENSE.md).
+
+Files are copied unmodified. plugins/replayers/kplayer/CMakeLists.txt assembles kpl14.s with
+vasmm68k_mot -m68000 -no-opt -Fbin, the same flags HippoPlayer's Makefile uses; the result was checked
+byte-identical (6080 bytes) to HippoPlayer's own `kpl` build.
