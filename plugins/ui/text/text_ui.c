@@ -106,6 +106,25 @@ static void tui_send_window(tui* u) {
     tui_send(u, line);
 }
 
+/* Regrows the grid and the flush buffer to cols x rows, tells the engine the new list height and
+ * forces a full redraw. Returns 0, or -1 when memory is out. */
+static int tui_resize(tui* u, uint32_t cols, uint32_t rows) {
+    char* bigger;
+    if (txt_grid_resize(&u->grid, cols, rows) != 0) {
+        return -1;
+    }
+    bigger = (char*)u->host->mem_alloc(u->host, txt_grid_flush_bound(&u->grid), SEL_MEM_FAST);
+    if (bigger == NULL) {
+        return -1;
+    }
+    u->host->mem_free(u->host, u->out);
+    u->out = bigger;
+    u->out_cap = txt_grid_flush_bound(&u->grid);
+    tui_send_window(u);
+    u->dirty = 1;
+    return 0;
+}
+
 /* ---- keys ---- */
 
 static void tui_cursor(tui* u, const char* where) {
@@ -414,6 +433,17 @@ static uint32_t tui_bind_ctx(const tui* u) {
 
 static void tui_key(tui* u, const txt_key* k) {
     const char* action;
+    if (k->code == TXT_KEY_RESIZE) { /* the console says the window changed: ask its size (row I218c) */
+        txt_term_ask_size(&u->term);
+        return;
+    }
+    if (k->code == TXT_KEY_WINDOW) { /* the answer; the step loop regrows the grid from txt_term_size */
+        txt_term_set_size(&u->term, k->x, k->y);
+        if (!u->have_term && k->x > 0 && k->y > 0 && (k->x != u->grid.cols || k->y != u->grid.rows)) {
+            (void)tui_resize(u, k->x, k->y); /* headless and keys-file runs have no terminal to ask */
+        }
+        return;
+    }
     if (u->overlay) {
         u->key_count++;
         u->dirty = 1;
@@ -1337,18 +1367,9 @@ static int tui_wait(void* state, uint32_t timeout_ms) {
     }
     txt_term_size(&u->term, &cols, &rows);
     if (cols != u->grid.cols || rows != u->grid.rows) {
-        char* bigger;
-        if (txt_grid_resize(&u->grid, cols, rows) != 0) {
+        if (tui_resize(u, cols, rows) != 0) {
             return -1;
         }
-        bigger = (char*)u->host->mem_alloc(u->host, txt_grid_flush_bound(&u->grid), SEL_MEM_FAST);
-        if (bigger == NULL) {
-            return -1;
-        }
-        u->host->mem_free(u->host, u->out);
-        u->out = bigger;
-        u->out_cap = txt_grid_flush_bound(&u->grid);
-        tui_send_window(u);
         u->dirty = 1;
     }
     return u->quit ? -1 : handled;

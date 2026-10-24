@@ -34,6 +34,12 @@ int txt_term_open(txt_term* t, int in_fd, int out_fd);
 void txt_term_close(txt_term* t);
 /* Window size in cells; falls back to 80x24 when the terminal does not say. */
 void txt_term_size(const txt_term* t, uint32_t* cols, uint32_t* rows);
+/* Asks the terminal for its size again (row I218c). The answer arrives later in the key stream
+ * (TXT_KEY_WINDOW) and goes to txt_term_set_size. A no-op where txt_term_size reads the size itself. */
+void txt_term_ask_size(txt_term* t);
+/* Records a size learned from the key stream, so the next txt_term_size returns it. A no-op where
+ * txt_term_size reads the size itself. */
+void txt_term_set_size(txt_term* t, uint32_t cols, uint32_t rows);
 /* Waits up to timeout_ms (-1 = forever) for input; returns bytes read, 0 on
  * timeout, -1 on error or end of input. */
 long txt_term_read(txt_term* t, uint8_t* buf, size_t cap, int timeout_ms);

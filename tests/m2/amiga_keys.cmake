@@ -25,3 +25,16 @@ if(NOT rc EQUAL 0)
 endif()
 m2_check(I218 "${out}${err}" "ui_frames>=1,view_cursor==3")
 message(STATUS "[OK] I218")
+
+# I218c: a window-resized event then the bounds report (rows 50, cols 120) reach the same decoder;
+# the text UI regrows its grid and tells the engine the new list height: 80x25 gives 21 list rows,
+# 120x50 gives 46. Sentinel view_window= (the engine's requested window height).
+file(WRITE "${WORK}/resize.keys" "${csi}12;0;0;0;0;0;0;0|\n${csi}1;1;50;120 r\nq\n")
+execute_process(COMMAND "${VAMOS}" -C 68020 -m 8192 -V work:${WORK} -- "${AMIGA_SELECTA}" --size 80x25
+    --start-dir work:songs --keys work:resize.keys
+  OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "RED[I218c]: Selecta under vamos exited ${rc}\n${out}${err}")
+endif()
+m2_check(I218c "${out}${err}" "view_window==46")
+message(STATUS "[OK] I218c")

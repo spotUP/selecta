@@ -207,7 +207,18 @@ static void test_keys(void) {
     CHECK(n == 6 && o[0].code == 0xE4u && o[1].code == 'q' && o[2].code == 127u && o[3].code == TXT_KEY_DELETE &&
               o[4].code == 0xFFFDu && o[5].code == 'q',
           "Amiga console Latin-1, Backspace and Del");
+    /* I218c: the console reports a resize event and the window bounds, 8-bit and 7-bit CSI */
+    n = feed_all(&k, "\x9b" "12;0;0;0;0;0;0;0|\x9b" "1;1;50;120 r", o, 8);
+    CHECK(n == 2 && o[0].code == TXT_KEY_RESIZE && o[1].code == TXT_KEY_WINDOW && o[1].x == 120u &&
+              o[1].y == 50u,
+          "Amiga console resize event and window bounds");
+    n = feed_all(&k, "\x1b[12;0;0;0;0;0;0;0|\x1b[1;1;30;100 rq", o, 8);
+    CHECK(n == 3 && o[0].code == TXT_KEY_RESIZE && o[1].code == TXT_KEY_WINDOW && o[1].x == 100u &&
+              o[1].y == 30u && o[2].code == 'q',
+          "Amiga console resize reports with the 7-bit CSI");
     k.amiga_console = 0;
+    n = feed_all(&k, "\x9b" "12;0;0;0;0;0;0;0|\x9b" "1;1;50;120 rq\x1b[12;0;0;0;0;0;0;0|q", o, 8);
+    CHECK(n == 2 && o[0].code == 'q' && o[1].code == 'q', "resize reports are not keys without the Amiga console");
     n = feed_all(&k, "\x7f\xc3\xa4", o, 8);
     CHECK(n == 2 && o[0].code == 127u && o[1].code == 0xE4u, "xterm Backspace 0x7F and UTF-8 stay");
     /* an unknown sequence is dropped whole and the parser recovers */

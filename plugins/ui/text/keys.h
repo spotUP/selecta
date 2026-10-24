@@ -25,6 +25,8 @@ enum {
     TXT_KEY_INSERT,
     TXT_KEY_DELETE,
     TXT_KEY_MOUSE,
+    TXT_KEY_RESIZE, /* Amiga console: the window was resized (raw input event class 12); ask its size again */
+    TXT_KEY_WINDOW, /* Amiga console: window bounds report; x = columns, y = rows */
     TXT_KEY_F1 /* F1 .. F12 are TXT_KEY_F1 + 0 .. 11 */
 };
 
@@ -42,7 +44,7 @@ typedef struct txt_key {
 
 typedef struct txt_keys {
     int state;
-    uint32_t params[4];
+    uint32_t params[8]; /* the Amiga raw input event report has eight fields */
     uint32_t nparams;
     uint32_t utf8_left;
     uint32_t utf8_cp;
