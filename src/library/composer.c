@@ -64,6 +64,15 @@ static void fold(const char* text, char* out, size_t cap) {
         if (!is_alnum(c)) {
             if (!space) out[o++] = ' ';
             space = 1;
+        } else if (c == 0xc3u && (unsigned char)text[1] >= 0x80u && (unsigned char)text[1] <= 0x9eu &&
+                   (unsigned char)text[1] != 0x97u) {
+            /* UTF-8 U+00C0..U+00DE (Latin-1 capitals such as A-ring, A-umlaut, O-umlaut; not U+00D7 the
+             * multiplication sign) fold to their lowercase letter 0x20 code points higher. */
+            if (o + 2 >= cap) break;
+            out[o++] = (char)c;
+            out[o++] = (char)((unsigned char)text[1] + 0x20u);
+            text++;
+            space = 0;
         } else {
             out[o++] = (char)(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c);
             space = 0;

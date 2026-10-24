@@ -42,7 +42,11 @@ int main(void) {
     CANON("4-Mat", "4 mat");
     CANON("a, b, c", "a b c");                 /* two commas: no swap */
     CANON("J\xc3\xb6rg Stra\xc3\x9f", "j\xc3\xb6rg stra\xc3\x9f"); /* UTF-8 bytes pass through, ASCII folds */
-    CANON("\xc3\x96RJAN", "\xc3\x96rjan");     /* only ASCII is case-folded */
+    CANON("\xc3\x96RJAN", "\xc3\xb6rjan");     /* I182b: Latin-1 capitals fold in UTF-8 */
+    CANON("\xc3\x85SA \xc3\x84NG", "\xc3\xa5sa \xc3\xa4ng");
+    CANON("\xc3\xb6rjan", "\xc3\xb6rjan");     /* lowercase stays */
+    CANON("A\xc3\x97" "B", "a\xc3\x97" "b");    /* U+00D7 multiplication sign is not a letter pair */
+    CANON("\xc3\x96 \xc3\xb6", "\xc3\xb6 \xc3\xb6");
     CANON("", "");
     CANON("(handle)", "");
     CANON(" -- ", "");
