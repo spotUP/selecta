@@ -112,6 +112,27 @@ static uint32_t count_pull(void* ctx, int16_t* stereo, uint32_t frames) {
     return n;
 }
 
+/* I138a: close waits for the last queued half before it stops the DMA or frees a buffer. The fake clock advances
+ * 1 ms per read; the bus records the clock when the DMA stop arrives, the host when the first buffer is freed. */
+static uint32_t g_now, g_stop_at, g_free_at, g_clock_step;
+static uint32_t fake_clock(const sel_host* h) {
+    (void)h;
+    g_now += g_clock_step;
+    return g_now;
+}
+static void drain_write(void* ctx, uint32_t reg, uint32_t value) {
+    (void)ctx;
+    if (reg == SEL_PAULA_DMACON && (value & SEL_PAULA_DMA_SETCLR) == 0 && g_stop_at == 0) {
+        g_stop_at = g_now + 1u;
+    }
+}
+static void drain_free(const sel_host* h, void* p) {
+    if (g_free_at == 0) {
+        g_free_at = g_now + 1u;
+    }
+    h_free(h, p);
+}
+
 int main(void) {
     sel_p14_table t;
     sel_p14 p;
@@ -205,6 +226,35 @@ int main(void) {
                   (unsigned)in_frames);
         }
     }
+
+    /* I138a: 512 frames at period 161 = 23 ms per half; the last queued half ends within two halves. */
+    memset(&host, 0, sizeof host);
+    host.mem_alloc = h_alloc;
+    host.mem_free = drain_free;
+    host.clock_ms = fake_clock;
+    bus.write = drain_write;
+    bus.set_lc = b_lc;
+    bus.ctx = NULL;
+    for (i = 0; i < 2; i++) {
+        uint32_t half_ms, before;
+        g_now = 0;
+        g_stop_at = g_free_at = 0;
+        g_clock_step = i == 0 ? 1u : 0u; /* second pass: the clock never advances, close must still return */
+        CHECK(sel_p14_open(&p, &host, &bus, 22050, 512, 1) == 0, "drain open");
+        half_ms = p.buf_frames * p.period / (SEL_PAULA_CLOCK / 1000u);
+        sel_p14_submit(&p, pcm);
+        before = g_now;
+        sel_p14_close(&p);
+        if (i == 0) {
+            CHECK(g_stop_at - before >= half_ms, "DMA stopped after %u ms, the queued half needs %u", (unsigned)(g_stop_at - before),
+                  (unsigned)half_ms);
+            CHECK(g_free_at >= g_stop_at, "buffer freed at %u before DMA stop at %u", (unsigned)g_free_at, (unsigned)g_stop_at);
+        } else {
+            CHECK(g_stop_at != 0 && p.half[0][0] == NULL, "bounded close with a stalled clock still stops and frees");
+        }
+    }
+    host.mem_free = h_free;
+    host.clock_ms = NULL;
 
     /* I126: paula14 is a PCM output: no voice backend, so every kind and voice count goes to the mixer. */
     CHECK(sel_tag_find(hooks, SEL_OUT_VOICE_BACKEND, 0) == 0 && sel_tag_find(hooks, SEL_OUT_VOICES, 0) == 0,

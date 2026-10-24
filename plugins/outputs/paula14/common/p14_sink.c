@@ -20,8 +20,23 @@ static void point(sel_p14* p, uint32_t half) {
     }
 }
 
+/* The queued half is only picked up when the playing half ends, so the last submit is audible after at most two
+ * half durations (the playing one, then the queued one). The bus has no interrupt or status read, so the drain is
+ * bounded by the host clock (and by a spin cap, in case the clock never advances). */
+static void drain(sel_p14* p) {
+    uint32_t wait_ms, start, spins = 0;
+    if (p->bufs == 0u || p->host == NULL || p->host->clock_ms == NULL) {
+        return;
+    }
+    wait_ms = 2u * (p->buf_frames * p->period / (SEL_PAULA_CLOCK / 1000u)) + 2u;
+    start = p->host->clock_ms(p->host);
+    while ((uint32_t)(p->host->clock_ms(p->host) - start) < wait_ms && ++spins < SEL_P14_DRAIN_SPINS) {
+    }
+}
+
 void sel_p14_close(sel_p14* p) {
     uint32_t c, h;
+    drain(p);
     p->bus.write(p->bus.ctx, SEL_PAULA_DMACON, 0x000Fu);
     for (c = 0; c < SEL_P14_CHANNELS; c++) {
         for (h = 0; h < 2u; h++) {

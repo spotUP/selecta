@@ -12,6 +12,7 @@
 #include "p14_split.h"
 
 #define SEL_P14_CHANNELS 4u
+#define SEL_P14_DRAIN_SPINS 50000000u /* cap on the close drain loop if the host clock stands still */
 
 typedef struct sel_p14 {
     const sel_host* host;
