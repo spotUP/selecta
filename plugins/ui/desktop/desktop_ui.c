@@ -133,7 +133,7 @@ typedef struct desk {
     uint32_t sends;         /* engine lines sent so far: the replay yields a turn so the shell pumps them */
     char library_dump[3072]; /* the Library page as text for the stats (DUI-P4-3) */
     uint32_t library_sig;    /* hash of the Library page last drawn: a change redraws */
-    uint32_t lib_mode;       /* Library page mode: 0 composers, 1 tree, 2 column browser (DUI-P4-3 slice B) */
+    uint32_t lib_mode;       /* Library page mode: 0 composers, 1 tree, 2 column browser, 3 files, 4 history (DUI-P4-3 slices B, C) */
 } desk;
 
 static int desk_resize(desk* d, int32_t w, int32_t h);
@@ -1196,8 +1196,8 @@ static sel_gui_rect lib_row_rect(desk* d, sel_gui_rect mn, uint32_t i) {
 
 /* The Library page modes (slice B): the composers list, the tree and the column browser. The last two show the engine's
  * own view rows (VIEW_STYLE tree / drilldown over a LIBRARY_SEARCH result), the same commands the text UI sends. */
-enum { LIB_MODES = 3, LIB_TAB_Y = LIB_TITLE_Y + LIB_TITLE_H, LIB_TAB_W = 120, LIB_TAB_H = 24, LIB_WINDOW_ROWS = 12 };
-static const char* const lib_mode_name[LIB_MODES] = {"Composers", "Tree", "Columns"};
+enum { LIB_MODES = 5, LIB_TAB_Y = LIB_TITLE_Y + LIB_TITLE_H, LIB_TAB_W = 120, LIB_TAB_H = 24, LIB_WINDOW_ROWS = 12 };
+static const char* const lib_mode_name[LIB_MODES] = {"Composers", "Tree", "Columns", "Files", "History"};
 
 static sel_gui_rect lib_tab_rect(desk* d, sel_gui_rect mn, uint32_t i) {
     return rect_of(mn.x + lpx(d, LIB_MARGIN) + (int32_t)i * lpx(d, LIB_TAB_W), mn.y + lpx(d, LIB_TAB_Y), lpx(d, LIB_TAB_W), lpx(d, LIB_TAB_H));
@@ -1209,7 +1209,16 @@ static sel_gui_rect lib_crumb_rect(desk* d, sel_gui_rect mn) {
 }
 
 static int lib_view_on(const desk* d, const sel_state* st) {
-    return d->lib_mode != 0u && st->view != NULL && st->view->source == SEL_VIEW_QUERY &&
+    if (d->lib_mode == 0u || st->view == NULL) {
+        return 0;
+    }
+    if (d->lib_mode == 3u) { /* Files: the folder listing of the browse source */
+        return st->view->source == SEL_VIEW_BROWSE;
+    }
+    if (d->lib_mode == 4u) { /* History: the home source, whose first section lists the recently played songs */
+        return st->view->source == SEL_VIEW_HOME;
+    }
+    return st->view->source == SEL_VIEW_QUERY &&
            st->view->style == (d->lib_mode == 1u ? (uint32_t)SEL_VIEW_STYLE_TREE : (uint32_t)SEL_VIEW_STYLE_DRILLDOWN);
 }
 
@@ -1228,6 +1237,17 @@ static uint32_t lib_hash(const desk* d, const sel_state* st) {
         }
     }
     return h + (st->composers != NULL ? 1u : 0u) + (st->stats != NULL ? 2u : 0u);
+}
+
+static const char* lib_kind_name(uint32_t kind) {
+    switch (kind) {
+    case SEL_ROW_NODE: return "node";
+    case SEL_ROW_DIR: return "dir";
+    case SEL_ROW_FILE: return "file";
+    case SEL_ROW_HEADING: return "heading";
+    case SEL_ROW_HOME: return "play";
+    default: return "song";
+    }
 }
 
 /* Writes "composer I canon|display|songs", "row I x y w h" (the click rectangle), "drill display|songs" and "stat label|value" lines into library_dump. */
@@ -1265,7 +1285,7 @@ static const char* library_dump_build(desk* d) {
             const sel_view_row* vr = &v->rows[i];
             sel_gui_rect rr = lib_row_rect(d, region_rect(d, "main"), i);
             o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "vrow %u %s|%u|%u|%u|%s\n", (unsigned)i,
-                                  vr->kind == (uint32_t)SEL_ROW_NODE ? "node" : "song", (unsigned)vr->depth, (unsigned)vr->count,
+                                  lib_kind_name(vr->kind), (unsigned)vr->depth, (unsigned)vr->count,
                                   (unsigned)vr->expanded, vr->text != NULL ? vr->text : "");
             o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "vrect %u %d %d %d %d\n", (unsigned)i, (int)rr.x, (int)rr.y, (int)rr.w, (int)rr.h);
         }
@@ -1321,12 +1341,15 @@ static void draw_library(desk* d) {
                 sel_gui_rect r = lib_row_rect(d, mn, k);
                 char line[48];
                 int node = vr->kind == (uint32_t)SEL_ROW_NODE;
+                int head = vr->kind == (uint32_t)SEL_ROW_HEADING || vr->kind == (uint32_t)SEL_ROW_DIR;
                 int32_t ind = (int32_t)vr->depth * lpx(d, 24);
-                draw_text(d, rect_of(r.x + ind, r.y, r.w * 2 / 3 - ind, r.h), vr->text != NULL ? vr->text : "", node, 15,
-                          node && vr->expanded ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : text);
+                draw_text(d, rect_of(r.x + ind, r.y, r.w * 2 / 3 - ind, r.h), vr->text != NULL ? vr->text : "", node || head, 15,
+                          node && vr->expanded ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : vr->kind == (uint32_t)SEL_ROW_HEADING ? muted : text);
                 if (node) {
                     snprintf(line, sizeof line, "%u songs", (unsigned)vr->count);
                     draw_text(d, rect_of(r.x + r.w * 2 / 3, r.y, r.w / 3, r.h), line, 0, 14, muted);
+                } else if (vr->kind == (uint32_t)SEL_ROW_DIR) {
+                    draw_text(d, rect_of(r.x + r.w * 2 / 3, r.y, r.w / 3, r.h), "Folder", 0, 14, muted);
                 }
                 sel_gui_dirty_add(d->canvas, r);
             }
@@ -1371,6 +1394,11 @@ static int lib_set_mode(desk* d, uint32_t mode) {
     if (mode == 0u) {
         desk_send(d, "VIEW_STYLE regular");
         desk_send(d, "VIEW_SOURCE queue");
+    } else if (mode >= 3u) { /* Files and History show the browse and home sources as the text UI does */
+        desk_send(d, "VIEW_STYLE regular");
+        desk_send(d, mode == 3u ? "VIEW_SOURCE browse" : "VIEW_SOURCE home");
+        snprintf(line, sizeof line, "VIEW_WINDOW %u", (unsigned)LIB_WINDOW_ROWS);
+        desk_send(d, line);
     } else {
         desk_send(d, "LIBRARY_SEARCH \"\"");
         desk_send(d, "VIEW_SOURCE query");

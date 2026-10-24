@@ -6,7 +6,10 @@
 # 5. (slice B) A click on the Tree tab lists the library's songs grouped by format, the nodes with their fixture song
 #    counts; a click on a node expands it. A click on the Columns tab lists the same values; a click on a value row drills
 #    in and the next column lists that format's songs; the crumb click returns.
-# Slice C (sources, Files, History) is not covered here.
+# 6. (slice C) The Files tab lists the start directory (the test songs) through the browse source: its folders a, b and c as
+#    dir rows; a click on the folder a enters it and lists one.mod and two.mod as file rows. The History tab lists the
+#    recently played songs of the seeded history, the newest first.
+# The Sources page is not built: the engine has no command that lists the configured sources (reported, not added).
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -38,7 +41,7 @@ endif()
 function(lib_run outvar input)
   file(REMOVE_RECURSE "${WORK}/cfg")
   file(WRITE "${WORK}/in.txt" "${input}")
-  dui_run(o --db "${db}" --ui desktop --backend mem --view library --canvas 900x600 --clock fixed --stats --input "${WORK}/in.txt")
+  dui_run(o --start-dir "${SONGS}" --db "${db}" --ui desktop --backend mem --view library --canvas 900x600 --clock fixed --stats --input "${WORK}/in.txt")
   set(${outvar} "${o}" PARENT_SCOPE)
 endfunction()
 
@@ -192,4 +195,60 @@ endif()
 string(FIND "${back2}" "vrow 1 node|0|2|0|mod\n" at)
 if(at LESS 0)
   message(FATAL_ERROR "the format values are not back after the crumb click:\n${back2}")
+endif()
+
+# ---- Slice C: Files and History ----
+foreach(t 3 4)
+  if(NOT "${list}" MATCHES "tab ${t} ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)\n")
+    message(FATAL_ERROR "no tab ${t} rectangle in the library dump:\n${list}")
+  endif()
+  math(EXPR tab${t}x "${CMAKE_MATCH_1} + 10")
+  math(EXPR tab${t}y "${CMAKE_MATCH_2} + 8")
+endforeach()
+
+# Files: the start directory lists the folders a, b and c of the test songs; the parent row comes first.
+lib_run(files "wait 2\nmove ${tab3x} ${tab3y}\nclick ${tab3x} ${tab3y}\nwait 2\n")
+string(FIND "${files}" "mode Files\n" at)
+if(at LESS 0)
+  message(FATAL_ERROR "a click on the Files tab did not switch the mode:\n${files}")
+endif()
+foreach(f a b c)
+  if(NOT "${files}" MATCHES "vrow ([0-9]+) dir\\|0\\|0\\|0\\|${f}\n")
+    message(FATAL_ERROR "the Files page lacks the folder ${f}:\n${files}")
+  endif()
+  set(row_${f} ${CMAKE_MATCH_1})
+endforeach()
+if(NOT "${files}" MATCHES "vrow 0 dir\\|0\\|0\\|0\\|\\.\\.\n")
+  message(FATAL_ERROR "the Files page does not start with the parent row:\n${files}")
+endif()
+if(NOT "${files}" MATCHES "vrect ${row_a} ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)\n")
+  message(FATAL_ERROR "no rectangle of the folder row a:\n${files}")
+endif()
+math(EXPR fx "${CMAKE_MATCH_1} + 10")
+math(EXPR fy "${CMAKE_MATCH_2} + 8")
+lib_run(entered "wait 2\nmove ${tab3x} ${tab3y}\nclick ${tab3x} ${tab3y}\nwait 2\nmove ${fx} ${fy}\nclick ${fx} ${fy}\nwait 2\n")
+foreach(f one.mod two.mod)
+  if(NOT "${entered}" MATCHES "vrow [0-9]+ file\\|0\\|0\\|0\\|${f}\n")
+    message(FATAL_ERROR "a click on the folder a did not list ${f}:\n${entered}")
+  endif()
+endforeach()
+if("${entered}" MATCHES "dir\\|0\\|0\\|0\\|b\n")
+  message(FATAL_ERROR "the folder a still lists its sibling folder b:\n${entered}")
+endif()
+
+# History: the seeded plays, newest first (Main Theme at 4000, Intro at 2000).
+string(CONCAT seed3
+  "INSERT INTO history(key, played_at, skipped) VALUES('fixture:1', 2000, 0); "
+  "INSERT INTO history(key, played_at, skipped) VALUES('fixture:2', 4000, 0)")
+execute_process(COMMAND "${SQLITE3}" "${db}" "PRAGMA trusted_schema = 1; ${seed3}" RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "seeding the history failed: ${err}")
+endif()
+lib_run(hist "wait 2\nmove ${tab4x} ${tab4y}\nclick ${tab4x} ${tab4y}\nwait 2\n")
+string(FIND "${hist}" "mode History\n" at)
+if(at LESS 0)
+  message(FATAL_ERROR "a click on the History tab did not switch the mode:\n${hist}")
+endif()
+if(NOT "${hist}" MATCHES "vrow [0-9]+ heading\\|[^\n]*Recently played\nvrect [^\n]*\nvrow [0-9]+ play\\|[^\n]*Main Theme[^\n]*\nvrect [^\n]*\nvrow [0-9]+ play\\|[^\n]*Intro")
+  message(FATAL_ERROR "the History page does not list Main Theme then Intro under Recently played:\n${hist}")
 endif()
