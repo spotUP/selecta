@@ -23,6 +23,7 @@ typedef struct sel_browse {
     uint32_t capacity, text_bytes, text_used, count;
     uint32_t truncated;  /* entries dropped from the current listing */
     uint32_t generation; /* bumped by every successful listing */
+    uint32_t songs_only; /* 1: files are listed only when song, playlist or archive (I218i); the scan leaves 0 */
     const sel_host* host; /* memory for reading archives (I159a) */
     char path[SEL_BROWSE_PATH_MAX];
 } sel_browse;
@@ -34,6 +35,11 @@ void sel_browse_free(sel_browse* b, const sel_host* host);
 /* Lists `path` (empty: "/"). Returns 0, keeping the previous listing, when
  * the directory cannot be read. Hidden entries (leading '.') are skipped. */
 int sel_browse_list(sel_browse* b, const char* path);
+
+/* 1 when a file name is a song format Selecta recognises: extension ("x.mod") or Amiga prefix ("mod.x",
+ * "mdat.x"), case-insensitive, through the format table plus the replayers' extra names. The folder
+ * browser hides files for which this is 0 (I218i). Defined in formats_table.c. */
+int sel_format_known_file(const char* name);
 
 const char* sel_browse_name(const sel_browse* b, uint32_t index);
 

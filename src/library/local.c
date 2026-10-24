@@ -1,6 +1,7 @@
 #include "local.h"
 
 #include "dir.h"
+#include "playlist/playlist.h"
 #include "sources/archive.h"
 
 #include <stdio.h>
@@ -112,9 +113,15 @@ static int has_archive_ext(const char* name) {
     return 0;
 }
 
+/* A file the browser may list when songs_only: a song format, a playlist or an archive. */
+static int is_listed_file(const sel_browse* b, const char* name) {
+    return !b->songs_only || sel_format_known_file(name) || has_archive_ext(name) ||
+           sel_playlist_format_from_name(name) != SEL_PL_AUTO;
+}
+
 static int on_entry(void* ctx, const char* name, int is_dir) {
     const list_ctx* lc = ctx;
-    if (name[0] != '.') {
+    if (name[0] != '.' && (is_dir || is_listed_file(lc->b, name))) {
         add_entry(lc->b, lc->first, name, is_dir ? 1 : (has_archive_ext(name) ? 2 : 0));
     }
     return 1;
@@ -170,7 +177,9 @@ static int on_arch_member(void* vctx, const char* name, const uint8_t* data, siz
     }
     slash = strchr(rest, '/');
     if (slash == NULL) {
-        add_entry(a->b, 1, rest, 0);
+        if (is_listed_file(a->b, rest)) {
+            add_entry(a->b, 1, rest, 0);
+        }
         return 1;
     }
     n = (size_t)(slash - rest);
