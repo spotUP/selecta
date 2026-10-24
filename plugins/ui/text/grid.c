@@ -234,12 +234,15 @@ long txt_grid_flush(txt_grid* g, char* out, size_t cap) {
     o.cap = cap;
     o.len = 0;
     o.over = 0;
-    if (full) put_str(&o, SYNC_BEGIN);
+    if (full && !g->console) put_str(&o, SYNC_BEGIN);
     for (y = 0; y < g->rows; y++) {
         for (x = 0; x < g->cols; x++) {
             size_t i = (size_t)y * g->cols + x;
             const txt_cell* b = &g->back[i];
             const txt_cell* f = &g->front[i];
+            /* The console.device scrolls the window when its last cell is written, which shifts the
+             * whole picture one row up; the corner stays blank there (row I218e). */
+            if (g->console && y + 1u == g->rows && x + 1u == g->cols) continue;
             if (!full && b->cp == f->cp && style_eq(b->style, f->style)) continue;
             any = 1;
             if (next_pos != (long)i || x == 0) put_move(&o, y, x);
@@ -253,7 +256,7 @@ long txt_grid_flush(txt_grid* g, char* out, size_t cap) {
     }
     if (!any && !full) return 0;
     if (!style_is_default(cur)) put_str(&o, "\x1b[0m");
-    if (full) put_str(&o, SYNC_END);
+    if (full && !g->console) put_str(&o, SYNC_END);
     if (o.over) return -1;
     memcpy(g->front, g->back, (size_t)g->cols * g->rows * sizeof *g->front);
     g->dirty_all = 0;

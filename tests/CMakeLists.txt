@@ -822,6 +822,13 @@ if(NOT SEL_AMIGA)
         "-DDESKTOP_SELECTA=$<TARGET_FILE:selecta>" "-DKEYS=${SEL_M2}/quit.keys"
         -P "${SEL_M2}/ui.cmake")
     set_tests_properties(amiga-text-ui-vamos PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos)
+    # I218e the first frame on the Amiga console: same test script, registered under the symptom's name.
+    add_test(NAME amiga-console-first-frame-vamos
+      COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}"
+        "-DAMIGA_SELECTA=${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta/selecta"
+        "-DDESKTOP_SELECTA=$<TARGET_FILE:selecta>" "-DKEYS=${SEL_M2}/quit.keys"
+        -P "${SEL_M2}/ui.cmake")
+    set_tests_properties(amiga-console-first-frame-vamos PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos)
     # I138b AmigaDOS browse join and parent through the Amiga text UI.
     add_test(NAME amiga-browse-nav-vamos
       COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}"
