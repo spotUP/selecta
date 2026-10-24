@@ -134,6 +134,9 @@ typedef struct desk {
     uint32_t sends;         /* engine lines sent so far: the replay yields a turn so the shell pumps them */
     char library_dump[3072]; /* the Library page as text for the stats (DUI-P4-3) */
     uint32_t library_sig;    /* hash of the Library page last drawn: a change redraws */
+    uint32_t grid_draws, grid_tiles, grid_cols;   /* grid view frames drawn, tiles in the last one, columns of the last one (DUI-P4-5) */
+    uint32_t flow_draws, flow_centre;             /* cover flow frames drawn and the listing index of the centred album in the last one */
+    uint32_t flow_from;                           /* the centre the glide started from */
     uint32_t lib_mode;       /* Library page mode: 0 composers, 1 tree, 2 column browser, 3 files, 4 history (DUI-P4-3 slices B, C) */
 } desk;
 
@@ -810,7 +813,7 @@ static void draw_songs_targets(desk* d) {
     }
 }
 
-enum { ANIM_KEY_VIEW = 1, ANIM_KEY_HOVER = 2, ANIM_KEY_TIP = 3 };
+enum { ANIM_KEY_VIEW = 1, ANIM_KEY_HOVER = 2, ANIM_KEY_TIP = 3, ANIM_KEY_FLOW = 4 };
 
 /* The Home header (Main.dc.html): the tinted band at the top of the main panel, the search field with its icon, the
  * greeting, the filter chips and the section heading. */
@@ -1237,6 +1240,9 @@ static uint32_t lib_hash(const desk* d, const sel_state* st) {
             h += st->view->rows[k].expanded * (k + 7u) + st->view->rows[k].count * (k + 3u);
         }
     }
+    if (st->view != NULL && (st->view->style == (uint32_t)SEL_VIEW_STYLE_GRID || st->view->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW)) {
+        h += st->view->style * 7919u + st->view->cursor * 131u + st->view->row_n * 17u; /* the grid and the cover flow redraw on a move */
+    }
     return h + (st->composers != NULL ? 1u : 0u) + (st->stats != NULL ? 2u : 0u);
 }
 
@@ -1299,12 +1305,116 @@ static const char* library_dump_build(desk* d) {
                                   (unsigned)v->rows[i].art_id, v->rows[i].text != NULL ? v->rows[i].text : "");
         }
     }
+    o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "grid draws %u tiles %u cols %u\nflow draws %u centre %u\n",
+                          (unsigned)d->grid_draws, (unsigned)d->grid_tiles, (unsigned)d->grid_cols, (unsigned)d->flow_draws,
+                          (unsigned)d->flow_centre);
     for (p = st->stats; p != NULL && *p != '\0' && o + 400u < sizeof d->library_dump;) {
         const char* val = lib_next(p);
         o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "stat %s|%s\n", p, val);
         p = lib_next(val);
     }
     return d->library_dump;
+}
+
+/* ---- Library grid and cover flow (DUI-P4-5): the engine's flat rows (VIEW_STYLE grid / coverflow) as artwork tiles.
+ * Integer geometry only. Sizes are logical units on the 8-unit grid (the artwork size tokens of plan 2.2 are not in the
+ * token table yet: tile and cover flow art are these constants). The art is the generated tile of the Home shelves. */
+enum { GRID_ART = 160, GRID_GAP = 16, FLOW_ART = 240 };
+
+static int lib_grid_on(const desk* d, const sel_state* st) {
+    (void)d;
+    return st->composers != NULL && st->view != NULL &&
+           (st->view->style == (uint32_t)SEL_VIEW_STYLE_GRID || st->view->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW);
+}
+
+/* Tiles per row for the Library main region: the tile size plus gap against the width. */
+static uint32_t lib_grid_cols(const desk* d, sel_gui_rect mn) {
+    int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
+    int32_t tw = lpx(d, GRID_ART) + 2 * pad, gap = lpx(d, GRID_GAP);
+    int32_t avail = mn.w - 2 * lpx(d, LIB_MARGIN) + gap;
+    return avail >= tw + gap ? (uint32_t)(avail / (tw + gap)) : 1u;
+}
+
+static void lib_tile_text(desk* d, sel_gui_rect ar, int32_t y, const sel_view_row* r, uint32_t text, uint32_t muted) {
+    char line[32];
+    draw_text(d, rect_of(ar.x, y, ar.w, lpx(d, HOME_TITLE_H)), r->text != NULL ? r->text : "", 1, 14, text);
+    snprintf(line, sizeof line, r->art_id > 0u ? "Album %u" : "Single", (unsigned)r->art_id);
+    draw_text(d, rect_of(ar.x, y + lpx(d, HOME_TITLE_H), ar.w, lpx(d, HOME_META_H)), line, 0, 13, muted);
+}
+
+static void draw_lib_grid(desk* d, sel_gui_rect mn) {
+    const sel_view_state* v = sel_engine_state(d->engine)->view;
+    int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]), gap = lpx(d, GRID_GAP), art = lpx(d, GRID_ART);
+    int32_t tw = art + 2 * pad, th = pad + art + lpx(d, HOME_TILE_TEXT_GAP) + lpx(d, HOME_TITLE_H) + lpx(d, HOME_META_H) + pad;
+    int32_t y0 = mn.y + lpx(d, LIB_LIST_Y), vis = (mn.y + mn.h - y0 + gap) / (th + gap);
+    uint32_t cols = lib_grid_cols(d, mn), i, first, panel = ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]);
+    uint32_t cur_row = v->cursor / cols;
+    first = vis > 0 && cur_row >= (uint32_t)vis ? cur_row - (uint32_t)vis + 1u : 0u;
+    d->grid_draws++;
+    d->grid_cols = cols;
+    d->grid_tiles = 0u;
+    for (i = 0; i < v->row_n; i++) {
+        uint32_t g = v->window_start + i, row = g / cols, col = g % cols;
+        const sel_view_row* r = &v->rows[i];
+        sel_gui_rect t, ar;
+        int sel = g == v->cursor;
+        if (row < first || (int32_t)(row - first) >= vis) {
+            continue;
+        }
+        t = rect_of(mn.x + lpx(d, LIB_MARGIN) + (int32_t)col * (tw + gap), y0 + (int32_t)(row - first) * (th + gap), tw, th);
+        ar = rect_of(t.x + pad, t.y + pad, art, art);
+        if (sel) {
+            sel_gui_round_rect(d->canvas, rect_of(t.x - 2, t.y - 2, t.w + 4, t.h + 4),
+                               lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]) + 2, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+        }
+        sel_gui_round_rect(d->canvas, t, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]),
+                           sel ? ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]) : panel);
+        sel_gui_genart_draw(d->canvas, ar, "album", sel_gui_str_hash(r->text != NULL ? r->text : ""));
+        lib_tile_text(d, ar, ar.y + ar.h + lpx(d, HOME_TILE_TEXT_GAP), r, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]),
+                      ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+        sel_gui_dirty_add(d->canvas, t);
+        d->grid_tiles++;
+    }
+}
+
+/* Stacked tiles: the centre at full size, neighbours smaller (integer fifths of it) and offset towards the sides, a scrim
+ * darkening the far ones. No perspective. The glide shifts every tile by the distance the centre moved, shrinking to 0. */
+static void draw_lib_flow(desk* d, sel_gui_rect mn) {
+    const sel_view_state* v = sel_engine_state(d->engine)->view;
+    int32_t big = lpx(d, FLOW_ART), step = big * 2 / 3, cx = mn.x + mn.w / 2, y0 = mn.y + lpx(d, LIB_LIST_Y), k, shift = 0;
+    int32_t gl = sel_gui_tween_value(&d->tl, ANIM_KEY_FLOW, 65536);
+    uint32_t side;
+    const sel_view_row* cr = v->cursor >= v->window_start && v->cursor - v->window_start < v->row_n ? &v->rows[v->cursor - v->window_start] : NULL;
+    if (gl < 65536) {
+        shift = (int32_t)(((int64_t)((int32_t)d->flow_from - (int32_t)v->cursor) * step * (65536 - gl)) >> 16);
+    }
+    d->flow_draws++;
+    d->flow_centre = v->cursor;
+    for (k = 3; k >= 0; k--) {
+        for (side = 0; side < 2u; side++) {
+            int32_t sgn = side == 0u ? -1 : 1, sz = big - k * big / 5, off = k == 0 ? 0 : (k == 3 ? step * 2 : k == 2 ? step * 3 / 2 : step);
+            int64_t g = (int64_t)v->cursor + sgn * k;
+            sel_gui_rect r;
+            const sel_view_row* row;
+            if (g < 0 || g < (int64_t)v->window_start || g >= (int64_t)v->window_start + (int64_t)v->row_n || (k == 0 && side == 1u)) {
+                continue;
+            }
+            row = &v->rows[g - (int64_t)v->window_start];
+            r = rect_of(cx + sgn * off - sz / 2 + shift, y0 + (big - sz) / 2, sz, sz);
+            if (k == 0) {
+                sel_gui_shadow_draw(d->canvas, &d->shadow, r);
+            }
+            sel_gui_genart_draw(d->canvas, r, "album", sel_gui_str_hash(row->text != NULL ? row->text : ""));
+            if (k > 0) {
+                sel_gui_scrim(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_SCRIM]) & 0xFFFFFFu, k >= 2 ? 150u : 90u);
+            }
+        }
+    }
+    if (cr != NULL) {
+        lib_tile_text(d, rect_of(cx - big / 2, y0 + big + lpx(d, HOME_TILE_TEXT_GAP), big, 0), y0 + big + lpx(d, HOME_TILE_TEXT_GAP), cr,
+                      ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+    }
+    sel_gui_dirty_add(d->canvas, rect_of(mn.x, y0, mn.w, big + lpx(d, HOME_TILE_TEXT_GAP + HOME_TITLE_H + HOME_META_H)));
 }
 
 static void draw_library(desk* d) {
@@ -1343,7 +1453,14 @@ static void draw_library(desk* d) {
             snprintf(crumb, sizeof crumb, "Back from %s", st->view->drill[st->view->drill_n - 1u]);
             draw_text(d, lib_crumb_rect(d, mn), crumb, 0, 14, muted);
         }
-        if (lib_view_on(d, st)) { /* the engine's tree or column rows: node rows with their song count, songs indented */
+        if (lib_grid_on(d, st)) {
+            if (st->view->style == (uint32_t)SEL_VIEW_STYLE_GRID) {
+                draw_lib_grid(d, mn);
+            } else {
+                draw_lib_flow(d, mn);
+            }
+            p = NULL;
+        } else if (lib_view_on(d, st)) { /* the engine's tree or column rows: node rows with their song count, songs indented */
             uint32_t k;
             for (k = 0; k < st->view->row_n; k++) {
                 const sel_view_row* vr = &st->view->rows[k];
@@ -2174,6 +2291,27 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         return desk_present(d);
     }
+    if (ev->mods == 0u && lib_grid_on(d, sel_engine_state(d->engine)) &&
+        (ev->code == TXT_KEY_LEFT || ev->code == TXT_KEY_RIGHT || ev->code == TXT_KEY_UP || ev->code == TXT_KEY_DOWN)) {
+        const sel_view_state* v = sel_engine_state(d->engine)->view;
+        int flow = v->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW;
+        uint32_t by = 1u;
+        char line[32];
+        if (flow && (ev->code == TXT_KEY_UP || ev->code == TXT_KEY_DOWN)) {
+            return 0;
+        }
+        if (!flow && (ev->code == TXT_KEY_UP || ev->code == TXT_KEY_DOWN)) {
+            by = lib_grid_cols(d, region_rect(d, "main")); /* a row of tiles */
+        }
+        snprintf(line, sizeof line, "VIEW_CURSOR %c%u", ev->code == TXT_KEY_LEFT || ev->code == TXT_KEY_UP ? '-' : '+', (unsigned)by);
+        d->flow_from = v->cursor;
+        if (flow) {
+            desk_tween(d, ANIM_KEY_FLOW, SEL_GUI_ANIM_NORMAL_MS, SEL_GUI_EASE_OUT);
+        }
+        desk_send(d, line);
+        d->arrows++;
+        return 0;
+    }
     act = txt_bindings_lookup(&d->binds, TXT_CTX_ANY, ev->code, ev->mods);
     if (act != NULL) {
         uint32_t i, n = sel_uim_action_count();
@@ -2417,6 +2555,8 @@ static int desk_replay_input(desk* d) {
         }
         if (sel_gui_input_parse(line, &ev) && ev.kind == SEL_GUI_IN_KEY) {
             opened |= desk_key(d, &ev);
+            /* a grid or cover flow move sent VIEW_CURSOR: the engine answers on the next pump, so resume the script then */
+            pointer_sent = d->sends != sent && lib_grid_on(d, sel_engine_state(d->engine));
         } else if (sel_gui_input_parse(line, &ev) && ev.kind == SEL_GUI_IN_WAIT) {
             desk_advance(d, ev.ms);
         } else if (sel_gui_input_parse(line, &ev) &&

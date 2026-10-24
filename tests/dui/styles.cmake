@@ -2,7 +2,7 @@
 # 1. VIEW_STYLE grid, coverflow and compact are accepted on the desktop UI (it offers them through SEL_UI_VIEW_STYLES).
 # 2. The rows carry artwork ids: albums.id of each fixture song's album (the songs fixture/1..5 (1.mod 2.mod 3.xm 4.it 5.sid) sit on albums 1,2,3,4,1).
 # 3. The text UI offers the classic three styles only: VIEW_STYLE grid is refused with the existing unsupported_style error.
-# The desktop draws the new styles as a list for now (grid and cover flow drawing is DUI-P4-5).
+# The desktop draws grid and coverflow as artwork tiles (DUI-P4-5, test dui-grid-coverflow); compact stays a list.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
