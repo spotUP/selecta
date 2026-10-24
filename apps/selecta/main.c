@@ -295,6 +295,7 @@ int main(int argc, char** argv)
     sel_out_set_source_fn out_set_source;
     sel_out_pump_fn out_pump;
     sel_ui_open_args args;
+    int input_consumed = 0; /* the --input script is consumed once per process, whichever UI replays it (I246) */
     sel_ui_art art_src;
     sel_engine_stats est;
     const sel_tag* ust;
@@ -429,6 +430,7 @@ int main(int argc, char** argv)
     memset(&args, 0, sizeof args);
     args.engine = e;
     args.host = host;
+    args.input_consumed = &input_consumed;
     args.argc = argc;
     args.argv = (const char* const*)argv;
     if (library != NULL) {

@@ -26,6 +26,8 @@ typedef struct sel_ui_open_args {
     const char* const* argv;
     void* library;
     const sel_ui_art* art; /* NULL without a library */
+    int* input_consumed;   /* shell-owned, NULL when absent: a UI sets it when it starts replaying a scripted --input, and a UI
+                            * opened later in the same process (UI_SWITCH) skips the script, so each event fires once */
 } sel_ui_open_args;
 
 typedef void* (*sel_ui_open_fn)(const sel_ui_open_args* args);               /* UI_OPEN: state or NULL */

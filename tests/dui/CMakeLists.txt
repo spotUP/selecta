@@ -40,7 +40,7 @@ if(NOT SEL_AMIGA)
     # SELECTA_SOCKET, because SELECTA_SOCKET also forces the socket on and keeps --exec runs alive.
     set(tmpdir "${PROJECT_BINARY_DIR}/tests/${tname}.tmp")
     file(MAKE_DIRECTORY "${tmpdir}")
-    set_tests_properties(${tname} PROPERTIES LABELS dui ENVIRONMENT "TMPDIR=${tmpdir}")
+    set_tests_properties(${tname} PROPERTIES LABELS dui TIMEOUT 120 ENVIRONMENT "TMPDIR=${tmpdir}")
   endforeach()
 endif()
 

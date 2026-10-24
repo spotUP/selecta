@@ -66,6 +66,7 @@ typedef struct desk {
     const char* frame_dump; /* --frame-dump <file>: the canvas as PPM at close */
     char* input;            /* --input <file>: scripted clicks, replayed once on the first quiet turn */
     int input_done;
+    int* input_consumed;    /* the shell's once-per-process flag for the --input script */
     desk_art* art;          /* tile artwork from the library, NULL without one (DUI-P2-4) */
     uint32_t art_tile_hash; /* pixels of the first home tile, STAT_ART_TILE_HASH (DUI-P2-5) */
 #ifdef SELECTA_DESKTOP_SDL
@@ -1319,6 +1320,9 @@ static int desk_replay_input(desk* d) {
     char* line = d->input;
     int opened = 0;
     d->input_done = 1;
+    if (d->input_consumed != NULL) {
+        *d->input_consumed = 1;
+    }
     while (line != NULL && *line != '\0') {
         char* nl = strchr(line, '\n');
         int x, y;
@@ -1762,6 +1766,7 @@ static void* desk_open(const sel_ui_open_args* a) {
     d->tile_step = TILE_STEP_DEFAULT;
     d->engine = a->engine;
     d->host = a->host;
+    d->input_consumed = a->input_consumed;
     d->hash = 2166136261u;
     if (!sel_uim_budget_for(&d->budget, desk_opt(a, "--format"))) {
         fprintf(stderr, "selecta: desktop format '%s' is not rgba32 or index8\n", desk_opt(a, "--format"));
@@ -1826,7 +1831,8 @@ static void* desk_open(const sel_ui_open_args* a) {
         if (strcmp(a->argv[i], "--frame-dump") == 0 && i + 1 < a->argc) {
             d->frame_dump = a->argv[i + 1];
         }
-        if (strcmp(a->argv[i], "--input") == 0 && i + 1 < a->argc && !desk_load_input(d, a->argv[i + 1])) {
+        if (strcmp(a->argv[i], "--input") == 0 && i + 1 < a->argc && !(a->input_consumed != NULL && *a->input_consumed) &&
+            !desk_load_input(d, a->argv[i + 1])) {
             fprintf(stderr, "selecta: cannot read input script '%s'\n", a->argv[i + 1]);
             desk_close(d);
             return NULL;
