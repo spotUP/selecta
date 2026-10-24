@@ -129,6 +129,8 @@ typedef struct desk {
     uint32_t home_sig;       /* source and row count of the last HOME window drawn: a change redraws */
     char home_dump[2048];    /* shelves as text for the stats */
     sel_tag stats[64];
+    char* input_at;         /* where the scripted input resumes after a turn that sent an engine line */
+    uint32_t sends;         /* engine lines sent so far: the replay yields a turn so the shell pumps them */
     char library_dump[3072]; /* the Library page as text for the stats (DUI-P4-3) */
     uint32_t library_sig;    /* hash of the Library page last drawn: a change redraws */
 } desk;
@@ -1185,7 +1187,7 @@ static uint32_t lib_hash(const sel_state* st) {
     return h + (st->composers != NULL ? 1u : 0u) + (st->stats != NULL ? 2u : 0u);
 }
 
-/* Writes "composer I canon|display|songs", "drill display|songs" and "stat label|value" lines into library_dump. */
+/* Writes "composer I canon|display|songs", "row I x y w h" (the click rectangle), "drill display|songs" and "stat label|value" lines into library_dump. */
 static const char* library_dump_build(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     size_t o = 0;
@@ -1196,6 +1198,10 @@ static const char* library_dump_build(desk* d) {
         const char* disp = lib_next(p);
         const char* cnt = lib_next(disp);
         o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "composer %u %s|%s|%s\n", (unsigned)i, p, disp, cnt);
+        {
+            sel_gui_rect rr = lib_row_rect(d, region_rect(d, "main"), i);
+            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "row %u %d %d %d %d\n", (unsigned)i, (int)rr.x, (int)rr.y, (int)rr.w, (int)rr.h);
+        }
         p = lib_next(cnt);
     }
     p = st->composer_page;
@@ -1283,7 +1289,7 @@ static int library_click(desk* d, int32_t x, int32_t y) {
     for (p = st->composers; *p != '\0'; i++) {
         const char* disp = lib_next(p);
         if (in_rect(lib_row_rect(d, mn, i), x, y)) {
-            snprintf(line, sizeof line, "COMPOSERS_SHOW %s", p);
+            snprintf(line, sizeof line, "COMPOSERS_SHOW \"%s\"", p); /* a canon holds spaces: one quoted argument */
             return desk_send(d, line);
         }
         p = lib_next(lib_next(disp));
@@ -1875,6 +1881,7 @@ static int desk_send(desk* d, const char* line) {
      * pool outlives the call, a ring so several lines queued before one pump keep their text. */
     static char ring[16][512];
     static uint32_t next;
+    d->sends++;
     char* pool = ring[next++ % 16u];
     return sel_engine_send_line(d->engine, line, pool, sizeof ring[0]) == SEL_CODEC_OK;
 }
@@ -2025,6 +2032,10 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
             return desk_transport_click(d, (uint32_t)btn - 1u);
         }
     }
+    if (ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u && in_main && library_click(d, ev->x, ev->y)) { /* the Library page */
+        d->clicks++;
+        return 1;
+    }
     if (!d->songs) {
         if (ev->kind == SEL_GUI_IN_CLICK && d->tile_menu > 0) {
             return shelf_menu_click(d, ev->x, ev->y);
@@ -2066,9 +2077,6 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
     }
     if (ev->kind != SEL_GUI_IN_CLICK) {
         return 0;
-    }
-    if (library_click(d, ev->x, ev->y)) {
-        return 1;
     }
     if (d->menu_row > 0) { /* a click while the context menu is open picks an item or dismisses it */
         uint32_t k;
@@ -2190,9 +2198,11 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
 }
 
 static int desk_replay_input(desk* d) {
-    char* line = d->input;
-    int opened = 0;
+    char* line = d->input_at != NULL ? d->input_at : d->input;
+    uint32_t sent = d->sends;
+    int opened = 0, pointer_sent = 0;
     d->input_done = 1;
+    d->input_at = NULL;
     if (d->input_consumed != NULL) {
         *d->input_consumed = 1;
     }
@@ -2215,6 +2225,7 @@ static int desk_replay_input(desk* d) {
                 draw_home(d);
             }
             opened |= desk_event_frame(d, changed);
+            pointer_sent = d->sends != sent;
         } else if (sel_gui_input_parse(line, &ev) &&
                    (ev.kind == SEL_GUI_IN_WHEEL || ev.kind == SEL_GUI_IN_PINCH || ev.kind == SEL_GUI_IN_SWIPE)) {
             opened |= desk_event_frame(d, desk_gesture(d, &ev));
@@ -2244,6 +2255,13 @@ static int desk_replay_input(desk* d) {
             desk_advance(d, n);
         }
         line = nl != NULL ? nl + 1 : NULL;
+        if (pointer_sent && line != NULL && *line != '\0') { /* the engine answers on the shell's next pump: resume then */
+            d->input_at = line;
+            d->input_done = 0;
+            return 1;
+        }
+        sent = d->sends;
+        pointer_sent = 0;
     }
     return opened;
 }

@@ -3894,7 +3894,16 @@ static void cmd_COMPOSERS_SHOW(sel_engine* e, const sel_message* m) {
         body[0] = '\0';
         sel_library_composer_page(e->lib, name, composer_page_row, &p);
         if (p.n > 0) {
-            if (!sel_composer_display(name, disp, sizeof disp)) snprintf(disp, sizeof disp, "%s", name);
+            const char* r;
+            snprintf(disp, sizeof disp, "%s", name);
+            for (r = e->composers; *r != '\0'; r += strlen(r) + 1u) { /* the library's own display text for this canon */
+                const char* shown = r + strlen(r) + 1u;
+                if (strcmp(r, name) == 0) {
+                    snprintf(disp, sizeof disp, "%s", shown);
+                    break;
+                }
+                r = shown + strlen(shown) + 1u; /* skip display; the loop step skips the count */
+            }
             snprintf(num, sizeof num, "%u", (unsigned)p.n);
             parts[0] = disp;
             parts[1] = num;

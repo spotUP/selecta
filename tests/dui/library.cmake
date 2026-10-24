@@ -50,8 +50,14 @@ if("${list}" MATCHES "drill ")
   message(FATAL_ERROR "drilldown shown before any click:\n${list}")
 endif()
 
-# The first composer row sits at the main panel's left margin below the title.
-lib_run(drilled "wait 1\nmove 320 120\nclick 320 120\nwait 1\n")
+# The click point comes from the "row 0 x y w h" line the page itself dumps (the rectangle library_click tests); the back
+# line occupies the same top row in the drilldown.
+if(NOT "${list}" MATCHES "row 0 ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)\n")
+  message(FATAL_ERROR "no row rectangle in the library dump:\n${list}")
+endif()
+math(EXPR cx "${CMAKE_MATCH_1} + 10")
+math(EXPR cy "${CMAKE_MATCH_2} + 8")
+lib_run(drilled "wait 1\nmove ${cx} ${cy}\nclick ${cx} ${cy}\nwait 1\n")
 if(NOT "${drilled}" MATCHES "drill Chris Huelsbeck\\|3\n")
   message(FATAL_ERROR "click on the first composer row did not drill in to 3 songs:\n${drilled}")
 endif()
@@ -76,7 +82,10 @@ foreach(r IN LISTS cli_rows)
 endforeach()
 
 # Back to the list.
-lib_run(back "wait 1\nmove 320 120\nclick 320 120\nwait 1\nmove 320 108\nclick 320 108\nwait 1\n")
+# The second click lands elsewhere on the back line so the fixed clock does not fold the two clicks into a double click.
+math(EXPR bx "${cx} + 60")
+math(EXPR by "${cy} + 6")
+lib_run(back "wait 1\nmove ${cx} ${cy}\nclick ${cx} ${cy}\nwait 1\nmove ${bx} ${by}\nclick ${bx} ${by}\nwait 1\n")
 if("${back}" MATCHES "drill ")
   message(FATAL_ERROR "back line did not leave the drilldown:\n${back}")
 endif()
