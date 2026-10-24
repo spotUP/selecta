@@ -1,6 +1,8 @@
 /* Requester suppression and silent existence probe for AmigaDOS names (I214). See dos_quiet.h. */
 #include "dos_quiet.h"
 
+#include "dos_name.h"
+
 #include <dos/dosextens.h>
 #include <proto/dos.h>
 #include <proto/exec.h>
@@ -25,8 +27,15 @@ void sel_amiga_dos_quiet_end(void* saved) {
 }
 
 int sel_amiga_name_exists(const char* name) {
-    void* saved = sel_amiga_dos_quiet_begin();
-    BPTR lock = Lock((CONST_STRPTR)name, ACCESS_READ);
+    char dos[SEL_DOS_PATH_MAX];
+    void* saved;
+    BPTR lock;
+
+    if (!sel_dos_path(dos, sizeof dos, name)) {
+        return 0;
+    }
+    saved = sel_amiga_dos_quiet_begin();
+    lock = Lock((CONST_STRPTR)dos, ACCESS_READ);
     sel_amiga_dos_quiet_end(saved);
     if (lock == 0) {
         return 0;

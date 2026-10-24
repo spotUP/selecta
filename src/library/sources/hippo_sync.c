@@ -1,6 +1,7 @@
 /* See hippo_sync.h. No float, no allocation after the start (blocks from the host). */
 #include "hippo_sync.h"
 
+#include "../latin1.h"
 #include "../local.h"
 #include "../source.h"
 #include "hippo_prg.h"
@@ -104,29 +105,6 @@ static void clear_item(list_item* it) {
     it->file[0] = it->title[0] = it->author[0] = it->genre[0] = it->id[0] = '\0';
 }
 
-/* Latin-1 bytes to UTF-8 (the catalogue stores UTF-8); truncates at n - 1. */
-static void latin1_to_utf8(char* dst, size_t n, const char* src, size_t len) {
-    size_t o = 0, i;
-
-    for (i = 0; i < len; i++) {
-        unsigned char c = (unsigned char)src[i];
-
-        if (c < 0x80u) {
-            if (o + 1u >= n) {
-                break;
-            }
-            dst[o++] = (char)c;
-        } else {
-            if (o + 2u >= n) {
-                break;
-            }
-            dst[o++] = (char)(0xC0u | (c >> 6));
-            dst[o++] = (char)(0x80u | (c & 0x3Fu));
-        }
-    }
-    dst[o] = '\0';
-}
-
 /* Legacy feed: `Filename\tPath\tTitle\tAuthor\tGenre` per line, Latin-1. The Path column is the old
  * server path and unused. `#` lines are comments (fixture provenance). */
 static int sync_tsv(sync_state* s, const char* file) {
@@ -158,10 +136,10 @@ static int sync_tsv(sync_state* s, const char* file) {
             continue;
         }
         clear_item(it);
-        latin1_to_utf8(it->file, sizeof it->file, col[0], len[0]);
-        latin1_to_utf8(it->title, sizeof it->title, col[2], len[2]);
-        latin1_to_utf8(it->author, sizeof it->author, col[3], len[3]);
-        latin1_to_utf8(it->genre, sizeof it->genre, col[4], len[4]);
+        sel_latin1_to_utf8(it->file, sizeof it->file, col[0], len[0]);
+        sel_latin1_to_utf8(it->title, sizeof it->title, col[2], len[2]);
+        sel_latin1_to_utf8(it->author, sizeof it->author, col[3], len[3]);
+        sel_latin1_to_utf8(it->genre, sizeof it->genre, col[4], len[4]);
         if (!commit_item(s)) {
             break;
         }

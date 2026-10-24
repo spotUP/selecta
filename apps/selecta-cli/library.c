@@ -51,6 +51,37 @@ static void on_event(void* ctx, const sel_message* evt) {
     }
 }
 
+/* I218d: `--names` lists the directory through the library again and prints each name as the engine sees it
+ * (UTF-8) as `entry=<name>`, then opens every file by that name: `open=<name> ok|fail`. On the Amiga the names
+ * are Latin-1 on disk, so this proves the OS layer converts both ways. */
+static void browse_names(const char* dir) {
+    sel_browse br;
+    const sel_host* host = sel_host_default();
+    uint32_t i;
+
+    if (!sel_browse_init(&br, host, 512u, 16384u)) {
+        return;
+    }
+    if (sel_browse_list(&br, dir)) {
+        for (i = 0; i < br.count; i++) {
+            const char* name = sel_browse_name(&br, i);
+            char path[SEL_BROWSE_PATH_MAX];
+            FILE* f;
+
+            printf("entry=%s\n", name);
+            if (br.entries[i].is_dir || !sel_browse_join(path, sizeof path, dir, name)) {
+                continue;
+            }
+            f = fopen(path, "rb");
+            printf("open=%s %s\n", name, f != NULL ? "ok" : "fail");
+            if (f != NULL) {
+                fclose(f);
+            }
+        }
+    }
+    sel_browse_free(&br, host);
+}
+
 static int library_browse(int argc, char** argv) {
     browse_sink sink;
     sel_engine_config cfg;
@@ -78,6 +109,9 @@ static int library_browse(int argc, char** argv) {
     sel_engine_pump(e, on_event, &sink);
     printf("dir_entries=%u\n", sink.entries);
     sel_engine_destroy(e);
+    if (argc > 2 && strcmp(argv[2], "--names") == 0) {
+        browse_names(argv[1]);
+    }
     return sink.failed ? 1 : 0;
 }
 

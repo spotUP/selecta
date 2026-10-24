@@ -96,7 +96,11 @@ target_include_directories(selecta_core PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/core ${CMAKE_CURRENT_SOURCE_DIR}/host)
 if(SEL_AMIGA)
   target_sources(selecta_core PRIVATE core/amiga/clock.c core/amiga/machine.c core/amiga/config_mkdir.c core/amiga/dos_quiet.c core/amiga/pal.c
-    core/amiga/loop.c core/amiga/mem.c)
+    core/amiga/loop.c core/amiga/mem.c core/amiga/stdio_latin1.c)
+  # I218d: libnix path calls take UTF-8 (src/core/amiga/stdio_latin1.c). Every libc name wrapped there is listed here.
+  target_link_options(selecta_core PUBLIC -Wl,--wrap=fopen -Wl,--wrap=open -Wl,--wrap=remove -Wl,--wrap=rename -Wl,--wrap=unlink
+    -Wl,--wrap=mkdir -Wl,--wrap=rmdir -Wl,--wrap=stat -Wl,--wrap=access
+    -Wl,--wrap=lstat -Wl,--wrap=utimes -Wl,--wrap=readlink -Wl,--wrap=getcwd)
   # The interrupt and audio-task path: integer only (T54 no-float-interrupt). The object list is generated from
   # the target, so the test counts what the build produced. Phase 3 adds the Paula sink (selecta_paula_irq in plugins); phase 4 adds paula14 (selecta_paula14_irq); the ahi output is rig-only.
   add_library(selecta_audio_irq OBJECT core/amiga/audio_int.c core/amiga/audio_task.c)
