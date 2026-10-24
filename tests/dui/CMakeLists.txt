@@ -3,7 +3,7 @@
 # replaces its red entry with the real test and removes its id from tests/ratchet/unimplemented.txt. Red entries also
 # carry label dui-red, so a run of the finished milestones (M3 finish line) can leave them out with -LE dui-red while
 # dui-ratchet keeps the red count honest.
-set(SEL_DUI_REAL dui-ratchet dui-build-deps dui-uim-frame dui-ui-switch)
+set(SEL_DUI_REAL dui-ratchet dui-build-deps dui-uim-frame dui-ui-switch dui-ui-multi)
 
 add_test(NAME dui-ratchet
   COMMAND "${CMAKE_COMMAND}"
@@ -23,7 +23,7 @@ set_tests_properties(dui-build-deps PROPERTIES LABELS dui RUN_SERIAL TRUE)
 
 # The shell-driven tests (DUI-P1-1 to P1-4) run the real selecta binary on the generated modules.
 if(NOT SEL_AMIGA)
-  foreach(spec "dui-uim-frame:uim_frame" "dui-ui-switch:ui_switch")
+  foreach(spec "dui-uim-frame:uim_frame" "dui-ui-switch:ui_switch" "dui-ui-multi:ui_multi")
     string(REPLACE ":" ";" pair "${spec}")
     list(GET pair 0 tname)
     list(GET pair 1 script)
