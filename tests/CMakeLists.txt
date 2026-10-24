@@ -232,6 +232,16 @@ if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
   set_tests_properties(amiga-latin1-name PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 120)
 endif()
 
+# Library open on a low file descriptor (libnix hands SQLite fd 0 after close(0); SQLite must not reopen /dev/null).
+set(SEL_AMIGA_LOWFD "${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta-cli/selecta-lowfd-test")
+if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
+  add_test(NAME amiga-library-opens-on-low-file-descriptor
+    COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DLOWFD_TEST=${SEL_AMIGA_LOWFD}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_lowfd.cmake"
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+  set_tests_properties(amiga-library-opens-on-low-file-descriptor PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 120)
+endif()
+
 # T10: the machine probe through `selecta-cli machine`. FAST_RAM is the
 # machine's physical memory, read at test time by machine.cmake.
 add_test(NAME machine-probe

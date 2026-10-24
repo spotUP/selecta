@@ -10,4 +10,6 @@ target_compile_definitions(selecta_sqlite PRIVATE
 target_compile_options(selecta_sqlite PRIVATE -w)
 if(SEL_AMIGA)
   target_sources(selecta_sqlite PRIVATE amiga_stubs.c)
+  # libnix has no inherited stdio to protect: SQLite's fd < 3 guard reopens /dev/null, which is the volume "dev:" (requester).
+  target_compile_definitions(selecta_sqlite PRIVATE SQLITE_MINIMUM_FILE_DESCRIPTOR=0)
 endif()

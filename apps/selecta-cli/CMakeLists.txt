@@ -12,3 +12,10 @@ if(SEL_AMIGA)
 else()
   target_sources(selecta-cli PRIVATE ../common/ctlsock.c)
 endif()
+
+# Regression test program for amiga-library-opens-on-low-file-descriptor (tests/amiga/run_lowfd.cmake).
+if(SEL_AMIGA)
+  add_executable(selecta-lowfd-test ../../tests/amiga/lowfd_test.c ../common/amiga_start.c)
+  target_include_directories(selecta-lowfd-test PRIVATE ../common)
+  target_link_libraries(selecta-lowfd-test PRIVATE selecta_library selecta_registry)
+endif()
