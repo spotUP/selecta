@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Selecta Home</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#09090B}
+a{color:#F2F2F5;text-decoration:none}a:hover{color:#FFFFFF;text-decoration:underline}
+button{font-family:inherit}
+.nav{display:flex;align-items:center;gap:16px;height:40px;padding:0 12px;border-radius:6px;color:#A0A0AC;font-size:15px;font-weight:600;background:none;border:0;cursor:pointer;text-align:left}
+.nav:hover{color:#F2F2F5}
+.pl{display:flex;align-items:center;gap:12px;padding:6px 8px;border-radius:6px;background:none;border:0;cursor:pointer;text-align:left;width:100%}
+.pl:hover{background:#1E1E24}
+.quick{display:flex;align-items:center;gap:12px;height:56px;border-radius:6px;background:#1E1E24;overflow:hidden;border:0;padding:0;cursor:pointer;text-align:left}
+.quick:hover{background:#2A2A32}
+.tile{display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:8px;background:none;border:0;cursor:pointer;text-align:left}
+.tile:hover{background:#1E1E24}
+.icon{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:6px;background:none;border:0;color:#A0A0AC;cursor:pointer}
+.icon:hover{color:#F2F2F5}
+.chip{height:32px;padding:0 14px;border-radius:6px;border:0;font-size:13px;font-weight:600;cursor:pointer}
+.row{display:flex;align-items:center;gap:12px;padding:6px 8px;border-radius:6px}
+.row:hover{background:#1E1E24}
+</style>
+</helmet>
+<div style="width:1280px;height:800px;box-sizing:border-box;padding:8px;display:grid;grid-template-columns:232px minmax(0,1fr) 312px;grid-template-rows:minmax(0,1fr) 80px;gap:8px;background:#09090B;font-family:Inter,system-ui,sans-serif;color:#F2F2F5;overflow:hidden">
+
+<nav aria-label="Main" style="grid-row:1;grid-column:1;display:flex;flex-direction:column;gap:8px;min-height:0">
+<div style="background:#141418;border-radius:8px;padding:16px 12px;display:flex;flex-direction:column;gap:4px">
+<div style="display:flex;align-items:center;gap:10px;padding:0 12px 12px">
+<div style="width:28px;height:28px;border-radius:7px;background:{{accent}};display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="#FFFFFF" aria-hidden="true"><polygon points="7 4 19 12 7 20 7 4"></polygon></svg></div>
+<span style="font-size:18px;font-weight:700;letter-spacing:-0.01em">Selecta</span>
+</div>
+<button class="nav" style="color:#F2F2F5"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"></path><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>Home</button>
+<button class="nav"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>Search</button>
+<button class="nav"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h.01"></path><path d="M3 18h.01"></path><path d="M3 6h.01"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M8 6h13"></path></svg>Queue</button>
+</div>
+<div style="background:#141418;border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px;flex:1;min-height:0;overflow:hidden">
+<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 4px 4px 12px">
+<span style="display:flex;align-items:center;gap:12px;font-size:15px;font-weight:600;color:#A0A0AC"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 6 4 14"></path><path d="M12 6v14"></path><path d="M8 8v12"></path><path d="M4 4v16"></path></svg>Library</span>
+<button class="icon" aria-label="New playlist"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg></button>
+</div>
+<div style="display:flex;gap:8px;padding:0 4px">
+<button class="chip" style="background:#2A2A32;color:#F2F2F5">Playlists</button>
+<button class="chip" style="background:#1E1E24;color:#C8C8D0">Composers</button>
+</div>
+<sc-for list="{{playlists}}" as="p" hint-placeholder-count="7">
+<button class="pl">
+<span style="width:44px;height:44px;border-radius:4px;flex:none;background:{{p.art}}"></span>
+<span style="display:flex;flex-direction:column;gap:2px;min-width:0">
+<span style="font-size:14px;font-weight:500;color:#F2F2F5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{p.name}}</span>
+<span style="font-size:12px;color:#A0A0AC">{{p.meta}}</span>
+</span>
+</button>
+</sc-for>
+</div>
+</nav>
+
+<main style="grid-row:1;grid-column:2;background:#141418;border-radius:8px;overflow:hidden;min-height:0;position:relative">
+<div style="position:absolute;inset:0 0 auto 0;height:300px;background:linear-gradient(180deg,#2B2350 0%,#141418 100%)"></div>
+<div style="position:relative;padding:16px 24px;display:flex;flex-direction:column;gap:24px">
+<div style="display:flex;align-items:center;gap:8px">
+<button class="icon" aria-label="Back" style="background:#00000066;border-radius:18px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg></button>
+<button class="icon" aria-label="Forward" style="background:#00000066;border-radius:18px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></button>
+<label style="margin-left:8px;flex:1;max-width:360px;height:40px;display:flex;align-items:center;gap:10px;padding:0 14px;border-radius:8px;background:#1E1E24;color:#A0A0AC;font-size:14px">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+<span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Search</span>
+<input type="search" placeholder="Search songs, composers, playlists" style="flex:1;min-width:0;background:none;border:0;outline:none;color:#F2F2F5;font:inherit">
+</label>
+</div>
+
+<div style="display:flex;gap:8px">
+<button class="chip" style="background:{{accent}};color:#FFFFFF">All</button>
+<button class="chip" style="background:#FFFFFF1A;color:#F2F2F5">Songs</button>
+<button class="chip" style="background:#FFFFFF1A;color:#F2F2F5">Composers</button>
+<button class="chip" style="background:#FFFFFF1A;color:#F2F2F5">Playlists</button>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px">
+<sc-for list="{{quick}}" as="q" hint-placeholder-count="8">
+<button class="quick">
+<span style="width:56px;height:56px;flex:none;background:{{q.art}}"></span>
+<span style="font-size:13px;font-weight:600;color:#F2F2F5;padding-right:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{q.name}}</span>
+</button>
+</sc-for>
+</div>
+
+<section style="display:flex;flex-direction:column;gap:8px">
+<div style="display:flex;align-items:baseline;justify-content:space-between">
+<h2 style="margin:0;font-size:22px;font-weight:700;letter-spacing:-0.01em">Recently played</h2>
+<a href="#" style="font-size:13px;font-weight:600;color:#A0A0AC">Show all</a>
+</div>
+<div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;margin:0 -10px">
+<sc-for list="{{recent}}" as="t" hint-placeholder-count="5">
+<button class="tile">
+<span style="display:block;width:100%;aspect-ratio:1;border-radius:6px;background:{{t.art}};box-shadow:0 8px 24px #00000080"></span>
+<span style="display:flex;flex-direction:column;gap:2px;min-width:0;width:100%">
+<span style="font-size:14px;font-weight:600;color:#F2F2F5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{t.name}}</span>
+<span style="font-size:13px;color:#A0A0AC;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{t.meta}}</span>
+</span>
+</button>
+</sc-for>
+</div>
+</section>
+
+<section style="display:flex;flex-direction:column;gap:8px">
+<h2 style="margin:0;font-size:22px;font-weight:700;letter-spacing:-0.01em">Your composers</h2>
+<div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;margin:0 -10px">
+<sc-for list="{{composers}}" as="c" hint-placeholder-count="5">
+<button class="tile" style="align-items:center">
+<span style="display:flex;align-items:center;justify-content:center;width:100%;aspect-ratio:1;border-radius:50%;background:{{c.art}};font-size:32px;font-weight:700;color:#FFFFFFCC">{{c.initials}}</span>
+<span style="font-size:14px;font-weight:600;color:#F2F2F5">{{c.name}}</span>
+<span style="font-size:13px;color:#A0A0AC;margin-top:-6px">Composer</span>
+</button>
+</sc-for>
+</div>
+</section>
+</div>
+</main>
+
+<aside aria-label="Now playing" style="grid-row:1;grid-column:3;background:#141418;border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:16px;overflow:hidden;min-height:0">
+<div style="display:flex;align-items:center;justify-content:space-between">
+<span style="font-size:15px;font-weight:700">Space Debris</span>
+<button class="icon" aria-label="Close panel"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
+</div>
+<div style="width:280px;height:280px;border-radius:8px;background:linear-gradient(135deg,#6D5BD0 0%,#2B2350 55%,#0F0C24 100%);box-shadow:0 12px 32px #00000099"></div>
+<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+<div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+<a href="#" style="font-size:22px;font-weight:700;letter-spacing:-0.01em">Space Debris</a>
+<a href="#" style="font-size:14px;color:#A0A0AC">Captain</a>
+</div>
+<button class="icon" aria-label="Liked" style="color:{{accent}}"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path></svg></button>
+</div>
+<div style="background:#1E1E24;border-radius:8px;padding:14px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px">
+<div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:12px;color:#A0A0AC">Format</span><span style="font-size:14px;font-weight:500">ProTracker</span></div>
+<div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:12px;color:#A0A0AC">Channels</span><span style="font-size:14px;font-weight:500">4</span></div>
+<div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:12px;color:#A0A0AC">Player</span><span style="font-size:14px;font-weight:500">Native 68k</span></div>
+<div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:12px;color:#A0A0AC">Length</span><span style="font-size:14px;font-weight:500">6:12</span></div>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px">
+<span style="font-size:15px;font-weight:700;padding:0 8px 4px">Next up</span>
+<sc-for list="{{upnext}}" as="u" hint-placeholder-count="2">
+<div class="row">
+<span style="width:40px;height:40px;border-radius:4px;flex:none;background:{{u.art}}"></span>
+<span style="display:flex;flex-direction:column;gap:2px;min-width:0">
+<span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{u.name}}</span>
+<span style="font-size:12px;color:#A0A0AC">{{u.meta}}</span>
+</span>
+</div>
+</sc-for>
+</div>
+</aside>
+
+<footer aria-label="Player" style="grid-row:2;grid-column:1 / span 3;display:grid;grid-template-columns:300px minmax(0,1fr) 300px;align-items:center;padding:0 8px">
+<div style="display:flex;align-items:center;gap:12px;min-width:0">
+<span style="width:56px;height:56px;border-radius:4px;flex:none;background:linear-gradient(135deg,#6D5BD0 0%,#2B2350 55%,#0F0C24 100%)"></span>
+<span style="display:flex;flex-direction:column;gap:2px;min-width:0">
+<a href="#" style="font-size:14px;font-weight:600">Space Debris</a>
+<a href="#" style="font-size:12px;color:#A0A0AC">Captain</a>
+</span>
+</div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+<div style="display:flex;align-items:center;gap:12px">
+<button class="icon" aria-label="Shuffle"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 14 4 4-4 4"></path><path d="m18 2 4 4-4 4"></path><path d="M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-8.6a4 4 0 0 1 3.3-1.7H22"></path><path d="M2 6h1.972a4 4 0 0 1 3.6 2.2"></path><path d="M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45"></path></svg></button>
+<button class="icon" aria-label="Previous"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" x2="5" y1="19" y2="5"></line></svg></button>
+<button aria-label="{{playLabel}}" onClick="{{togglePlay}}" style="width:36px;height:36px;border-radius:50%;border:0;background:#F2F2F5;color:#09090B;display:flex;align-items:center;justify-content:center;cursor:pointer">
+<sc-if value="{{playing}}" hint-placeholder-val="{{ true }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="14" y="4" width="4" height="16" rx="1"></rect><rect x="6" y="4" width="4" height="16" rx="1"></rect></svg></sc-if>
+<sc-if value="{{paused}}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="7 4 20 12 7 20 7 4"></polygon></svg></sc-if>
+</button>
+<button class="icon" aria-label="Next"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" x2="19" y1="5" y2="19"></line></svg></button>
+<button class="icon" aria-label="Repeat" style="color:{{accent}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 2 4 4-4 4"></path><path d="M3 11v-1a4 4 0 0 1 4-4h14"></path><path d="m7 22-4-4 4-4"></path><path d="M21 13v1a4 4 0 0 1-4 4H3"></path></svg></button>
+</div>
+<div style="display:flex;align-items:center;gap:10px;width:100%;max-width:560px;font-size:12px;color:#A0A0AC">
+<span>2:14</span>
+<div style="flex:1;height:4px;border-radius:2px;background:#3A3A44;position:relative"><div style="position:absolute;left:0;top:0;bottom:0;width:36%;border-radius:2px;background:#F2F2F5"></div></div>
+<span>6:12</span>
+</div>
+</div>
+<div style="display:flex;align-items:center;justify-content:flex-end;gap:4px">
+<button class="icon" aria-label="Visualizer"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg></button>
+<button class="icon" aria-label="Queue"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h.01"></path><path d="M3 18h.01"></path><path d="M3 6h.01"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M8 6h13"></path></svg></button>
+<button class="icon" aria-label="Volume"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg></button>
+<div style="width:96px;height:4px;border-radius:2px;background:#3A3A44;position:relative"><div style="position:absolute;left:0;top:0;bottom:0;width:70%;border-radius:2px;background:#F2F2F5"></div></div>
+</div>
+</footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#3B82F6","options":["#3B82F6","#2DD4BF","#F59E0B","#E0457B"]},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const g = (a, b) => 'linear-gradient(135deg,' + a + ' 0%,' + b + ' 100%)';
+    const playing = this.state && this.state.playing === false ? false : true;
+    return {
+      accent: this.props.accent ?? '#3B82F6',
+      playing: playing,
+      paused: !playing,
+      playLabel: playing ? 'Pause' : 'Play',
+      togglePlay: () => this.setState({ playing: !playing }),
+      playlists: [
+        { name: 'Liked songs', meta: 'Playlist, 214 songs', art: g('#4F46E5', '#A5B4FC') },
+        { name: 'Demoscene classics', meta: 'Playlist, 48 songs', art: g('#B45309', '#FCD34D') },
+        { name: 'Game soundtracks', meta: 'Playlist, 96 songs', art: g('#047857', '#6EE7B7') },
+        { name: 'Late night trackers', meta: 'Playlist, 31 songs', art: g('#1E3A8A', '#60A5FA') },
+        { name: 'Jester', meta: 'Composer', art: g('#9D174D', '#F9A8D4') },
+        { name: 'Chip tunes', meta: 'Playlist, 120 songs', art: g('#7C2D12', '#FB923C') },
+        { name: 'Purple Motion', meta: 'Composer', art: g('#581C87', '#C084FC') }
+      ],
+      quick: [
+        { name: 'Liked songs', art: g('#4F46E5', '#A5B4FC') },
+        { name: 'Demoscene classics', art: g('#B45309', '#FCD34D') },
+        { name: 'Second Reality', art: g('#0F766E', '#5EEAD4') },
+        { name: 'Game soundtracks', art: g('#047857', '#6EE7B7') },
+        { name: 'Stardust Memories', art: g('#9D174D', '#F9A8D4') },
+        { name: 'Late night trackers', art: g('#1E3A8A', '#60A5FA') },
+        { name: 'Turrican 2', art: g('#991B1B', '#FCA5A5') },
+        { name: 'Chip tunes', art: g('#7C2D12', '#FB923C') }
+      ],
+      recent: [
+        { name: 'Space Debris', meta: 'Captain, MOD', art: g('#2B2350', '#6D5BD0') },
+        { name: 'Elysium', meta: 'Jester, MOD', art: g('#164E63', '#22D3EE') },
+        { name: 'Unreal II', meta: 'Purple Motion, S3M', art: g('#3B0764', '#A855F7') },
+        { name: 'Guitar Slinger', meta: 'Jogeir Liljedahl, MOD', art: g('#78350F', '#F59E0B') },
+        { name: 'Hymn to Aurora', meta: 'Horace Wimp, MOD', art: g('#064E3B', '#34D399') }
+      ],
+      composers: [
+        { name: 'Jester', initials: 'J', art: g('#831843', '#F472B6') },
+        { name: 'Purple Motion', initials: 'PM', art: g('#4C1D95', '#A78BFA') },
+        { name: 'Chris Huelsbeck', initials: 'CH', art: g('#7F1D1D', '#F87171') },
+        { name: 'Captain', initials: 'C', art: g('#1E3A8A', '#93C5FD') },
+        { name: 'Lizardking', initials: 'L', art: g('#14532D', '#86EFAC') }
+      ],
+      upnext: [
+        { name: 'Elysium', meta: 'Jester', art: g('#164E63', '#22D3EE') },
+        { name: 'Klisje paa klisje', meta: 'Walkman', art: g('#713F12', '#FDE047') }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

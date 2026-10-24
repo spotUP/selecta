@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Selecta Library</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#09090B}
+a{color:#F2F2F5;text-decoration:none}a:hover{text-decoration:underline}
+button{font-family:inherit}
+.nav{display:flex;align-items:center;gap:16px;height:40px;padding:0 12px;border-radius:6px;color:#A0A0AC;font-size:15px;font-weight:600;background:none;border:0;cursor:pointer;text-align:left}
+.nav:hover{color:#F2F2F5}
+.icon{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:6px;background:none;border:0;color:#A0A0AC;cursor:pointer}
+.icon:hover{color:#F2F2F5}
+.chip{height:32px;padding:0 14px;border-radius:6px;border:0;font-size:13px;font-weight:600;cursor:pointer}
+.grid{display:grid;grid-template-columns:40px minmax(0,2.4fr) minmax(0,1.4fr) minmax(0,1fr) 80px 64px;align-items:center;gap:16px;padding:0 16px}
+.trow{height:56px;border-radius:6px}
+.trow:hover{background:#FFFFFF0F}
+</style>
+</helmet>
+<div style="width:1280px;height:800px;box-sizing:border-box;padding:8px;display:grid;grid-template-columns:232px minmax(0,1fr);grid-template-rows:minmax(0,1fr) 80px;gap:8px;background:#09090B;font-family:Inter,system-ui,sans-serif;color:#F2F2F5;overflow:hidden">
+
+<nav aria-label="Main" style="grid-row:1;grid-column:1;background:#141418;border-radius:8px;padding:16px 12px;display:flex;flex-direction:column;gap:4px">
+<div style="display:flex;align-items:center;gap:10px;padding:0 12px 12px">
+<div style="width:28px;height:28px;border-radius:7px;background:{{accent}};display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="#FFFFFF" aria-hidden="true"><polygon points="7 4 19 12 7 20 7 4"></polygon></svg></div>
+<span style="font-size:18px;font-weight:700">Selecta</span>
+</div>
+<button class="nav"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"></path><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>Home</button>
+<button class="nav"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>Search</button>
+<button class="nav" style="color:#F2F2F5;background:#1E1E24"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 6 4 14"></path><path d="M12 6v14"></path><path d="M8 8v12"></path><path d="M4 4v16"></path></svg>Library</button>
+<button class="nav"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h.01"></path><path d="M3 18h.01"></path><path d="M3 6h.01"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M8 6h13"></path></svg>Queue</button>
+<div style="height:1px;background:#2C2C34;margin:12px 4px"></div>
+<span style="font-size:12px;font-weight:600;color:#A0A0AC;padding:0 12px 4px">Sources</span>
+<sc-for list="{{sources}}" as="s" hint-placeholder-count="4">
+<button class="nav" style="height:34px;font-size:14px;font-weight:500"><span style="width:8px;height:8px;border-radius:50%;background:{{s.dot}}"></span>{{s.name}}<span style="margin-left:auto;font-size:12px;color:#62626E">{{s.count}}</span></button>
+</sc-for>
+</nav>
+
+<main style="grid-row:1;grid-column:2;background:#141418;border-radius:8px;overflow:hidden;min-height:0;position:relative;display:flex;flex-direction:column">
+<div style="position:absolute;inset:0 0 auto 0;height:280px;background:linear-gradient(180deg,#123B4A 0%,#141418 100%)"></div>
+<div style="position:relative;padding:24px 28px 16px;display:flex;align-items:flex-end;gap:24px">
+<div style="width:180px;height:180px;flex:none;border-radius:8px;background:linear-gradient(135deg,#0E7490 0%,#22D3EE 100%);box-shadow:0 16px 40px #00000099;display:flex;align-items:center;justify-content:center"><svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="#FFFFFFCC" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg></div>
+<div style="display:flex;flex-direction:column;gap:8px;padding-bottom:6px">
+<span style="font-size:13px;font-weight:600;color:#C8C8D0">Playlist</span>
+<h1 style="margin:0;font-size:52px;line-height:1;font-weight:700;letter-spacing:-0.03em">Demoscene classics</h1>
+<span style="font-size:14px;color:#C8C8D0">48 songs, 4 h 12 min, from Modland and local disk</span>
+</div>
+</div>
+
+<div style="position:relative;display:flex;align-items:center;gap:12px;padding:8px 28px 16px">
+<button aria-label="Play playlist" style="width:52px;height:52px;border-radius:50%;border:0;background:{{accent}};color:#FFFFFF;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 8px 20px #00000066"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="7 4 20 12 7 20 7 4"></polygon></svg></button>
+<button class="icon" aria-label="Shuffle playlist"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 14 4 4-4 4"></path><path d="m18 2 4 4-4 4"></path><path d="M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-8.6a4 4 0 0 1 3.3-1.7H22"></path><path d="M2 6h1.972a4 4 0 0 1 3.6 2.2"></path><path d="M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45"></path></svg></button>
+<button class="icon" aria-label="More options"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg></button>
+<div style="margin-left:auto;display:flex;gap:8px">
+<button class="chip" style="background:#FFFFFF1A;color:#F2F2F5">All formats</button>
+<button class="chip" style="background:#FFFFFF1A;color:#F2F2F5">Sort: Date added</button>
+</div>
+</div>
+
+<div style="position:relative;flex:1;min-height:0;overflow:hidden;padding:0 12px">
+<div class="grid" style="height:36px;font-size:12px;font-weight:600;color:#A0A0AC;border-bottom:1px solid #2C2C34;margin-bottom:8px">
+<span style="text-align:right">#</span><span>Title</span><span>Composer</span><span>Format</span><span>Source</span><span style="text-align:right">Length</span>
+</div>
+<sc-for list="{{songs}}" as="s" hint-placeholder-count="8">
+<div class="grid trow" style="background:{{s.bg}}">
+<span style="text-align:right;font-size:14px;color:{{s.numColor}}">{{s.n}}</span>
+<span style="display:flex;align-items:center;gap:12px;min-width:0">
+<span style="width:40px;height:40px;border-radius:4px;flex:none;background:{{s.art}}"></span>
+<span style="font-size:14px;font-weight:500;color:{{s.titleColor}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{s.name}}</span>
+</span>
+<a href="#" style="font-size:14px;color:#A0A0AC;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{s.composer}}</a>
+<span style="font-size:13px;color:#A0A0AC">{{s.format}}</span>
+<span style="font-size:13px;color:#A0A0AC">{{s.source}}</span>
+<span style="text-align:right;font-size:14px;color:#A0A0AC">{{s.len}}</span>
+</div>
+</sc-for>
+</div>
+</main>
+
+<footer aria-label="Player" style="grid-row:2;grid-column:1 / span 2;display:grid;grid-template-columns:300px minmax(0,1fr) 300px;align-items:center;padding:0 8px">
+<div style="display:flex;align-items:center;gap:12px;min-width:0">
+<span style="width:56px;height:56px;border-radius:4px;flex:none;background:linear-gradient(135deg,#164E63 0%,#22D3EE 100%)"></span>
+<span style="display:flex;flex-direction:column;gap:2px;min-width:0">
+<a href="#" style="font-size:14px;font-weight:600">Elysium</a>
+<a href="#" style="font-size:12px;color:#A0A0AC">Jester</a>
+</span>
+</div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+<div style="display:flex;align-items:center;gap:12px">
+<button class="icon" aria-label="Shuffle"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 14 4 4-4 4"></path><path d="m18 2 4 4-4 4"></path><path d="M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-8.6a4 4 0 0 1 3.3-1.7H22"></path><path d="M2 6h1.972a4 4 0 0 1 3.6 2.2"></path><path d="M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45"></path></svg></button>
+<button class="icon" aria-label="Previous"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" x2="5" y1="19" y2="5"></line></svg></button>
+<button aria-label="Pause" style="width:36px;height:36px;border-radius:50%;border:0;background:#F2F2F5;color:#09090B;display:flex;align-items:center;justify-content:center;cursor:pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="14" y="4" width="4" height="16" rx="1"></rect><rect x="6" y="4" width="4" height="16" rx="1"></rect></svg></button>
+<button class="icon" aria-label="Next"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" x2="19" y1="5" y2="19"></line></svg></button>
+<button class="icon" aria-label="Repeat"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 2 4 4-4 4"></path><path d="M3 11v-1a4 4 0 0 1 4-4h14"></path><path d="m7 22-4-4 4-4"></path><path d="M21 13v1a4 4 0 0 1-4 4H3"></path></svg></button>
+</div>
+<div style="display:flex;align-items:center;gap:10px;width:100%;max-width:560px;font-size:12px;color:#A0A0AC">
+<span>1:02</span>
+<div style="flex:1;height:4px;border-radius:2px;background:#3A3A44;position:relative"><div style="position:absolute;left:0;top:0;bottom:0;width:18%;border-radius:2px;background:#F2F2F5"></div></div>
+<span>5:48</span>
+</div>
+</div>
+<div style="display:flex;align-items:center;justify-content:flex-end;gap:4px">
+<button class="icon" aria-label="Queue"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h.01"></path><path d="M3 18h.01"></path><path d="M3 6h.01"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M8 6h13"></path></svg></button>
+<button class="icon" aria-label="Volume"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg></button>
+<div style="width:96px;height:4px;border-radius:2px;background:#3A3A44;position:relative"><div style="position:absolute;left:0;top:0;bottom:0;width:70%;border-radius:2px;background:#F2F2F5"></div></div>
+</div>
+</footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#3B82F6","options":["#3B82F6","#2DD4BF","#F59E0B","#E0457B"]},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? '#3B82F6';
+    const g = (a, b) => 'linear-gradient(135deg,' + a + ' 0%,' + b + ' 100%)';
+    const raw = [
+      ['Space Debris', 'Captain', 'ProTracker', 'Modland', '6:12', '#2B2350', '#6D5BD0'],
+      ['Elysium', 'Jester', 'ProTracker', 'Modland', '5:48', '#164E63', '#22D3EE'],
+      ['Unreal II', 'Purple Motion', 'Scream Tracker 3', 'Local', '7:21', '#3B0764', '#A855F7'],
+      ['Second Reality', 'Purple Motion', 'Scream Tracker 3', 'Local', '9:40', '#0F766E', '#5EEAD4'],
+      ['Stardust Memories', 'Jester', 'ProTracker', 'Modland', '4:40', '#9D174D', '#F9A8D4'],
+      ['Turrican 2 title', 'Chris Huelsbeck', 'TFMX', 'AMP', '4:17', '#991B1B', '#FCA5A5'],
+      ['Enigma', 'Tip and Firefox', 'ProTracker', 'Modland', '5:02', '#1E3A8A', '#60A5FA'],
+      ['Klisje paa klisje', 'Walkman', 'ProTracker', 'Local', '3:56', '#713F12', '#FDE047'],
+      ['Guitar Slinger', 'Jogeir Liljedahl', 'ProTracker', 'Modland', '3:33', '#78350F', '#F59E0B']
+    ];
+    return {
+      accent: accent,
+      sources: [
+        { name: 'Local disk', count: '1 204', dot: '#A0A0AC' },
+        { name: 'Modland', count: '320 k', dot: '#2DD4BF' },
+        { name: 'AMP', count: '140 k', dot: '#F59E0B' },
+        { name: 'Aminet', count: '52 k', dot: '#E0457B' }
+      ],
+      songs: raw.map((r, i) => {
+        const current = i === 1;
+        return {
+          n: String(i + 1), name: r[0], composer: r[1], format: r[2], source: r[3], len: r[4], art: g(r[5], r[6]),
+          bg: current ? '#FFFFFF14' : 'transparent',
+          titleColor: current ? accent : '#F2F2F5',
+          numColor: current ? accent : '#A0A0AC'
+        };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>
