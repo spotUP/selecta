@@ -3,6 +3,7 @@
 
 #include "dir.h"
 #include "md5.h"
+#include "net/net.h"
 #include "source.h"
 
 #include <selecta/engine.h>
@@ -91,6 +92,10 @@ typedef struct sink {
     sel_md5 md5;
     const char* want;
     volatile int* cancel;
+    unsigned long offset;      /* body bytes written to the part file */
+    unsigned long deadline;    /* sel_net_now_ms() at which a sliced fetch yields, 0 = never */
+    volatile int yielded;      /* the sink stopped the transfer at the deadline */
+    volatile int resumable;    /* the attempt runs over HTTP: a yield can be resumed */
 } sink;
 
 static int on_body(void* ctx, const void* data, size_t len) {
@@ -99,7 +104,15 @@ static int on_body(void* ctx, const void* data, size_t len) {
         return 0;
     }
     sel_md5_update(&s->md5, data, len);
-    return s->f != NULL && fwrite(data, 1, len, s->f) == len;
+    if (s->f == NULL || fwrite(data, 1, len, s->f) != len) {
+        return 0;
+    }
+    s->offset += len;
+    if (s->deadline != 0 && s->resumable && sel_net_now_ms() >= s->deadline) {
+        s->yielded = 1; /* chunk boundary: the bytes are on disk and hashed, the next call resumes after them */
+        return 0;
+    }
+    return 1;
 }
 
 static void on_restart(void* ctx) {
@@ -109,6 +122,8 @@ static void on_restart(void* ctx) {
     }
     s->f = (s->cancel != NULL && *s->cancel) ? NULL : fopen(s->part, "wb");
     sel_md5_init(&s->md5);
+    s->offset = 0;
+    s->yielded = 0;
 }
 
 static int on_verify(void* ctx) {
@@ -144,6 +159,8 @@ sel_cache_result sel_cache_fetch(sel_cache* c, const char* source, const char* p
     sel_mirror_set* set;
     sel_mirror_res res;
     sink s;
+    sel_mirror_opts o;
+    unsigned long from = 0;
     int ok;
 
     if (!sel_cache_path(c, source, path, out, cap) || strlen(out) + 10 > sizeof part) {
@@ -163,22 +180,75 @@ sel_cache_result sel_cache_fetch(sel_cache* c, const char* source, const char* p
     s.part = part;
     s.cancel = c->cancel;
     s.want = (md5 != NULL && strlen(md5) == 32u) ? md5 : NULL;
-    on_restart(&s);
+    if (c->slice.active && strcmp(c->slice.key, out) != 0) {
+        sel_cache_slice_drop(c); /* a partial download of another file is not wanted any more */
+    }
+    if (c->slice.active && c->slice.offset > 0) {
+        /* adopt the partial download (a prefetch that ran out of its slice, or a foreground fetch taking it over) */
+        s.f = fopen(part, "ab");
+        s.md5 = c->slice.md5;
+        s.offset = c->slice.offset;
+        from = c->slice.offset;
+    } else {
+        on_restart(&s);
+    }
     if (s.f == NULL) {
+        sel_cache_slice_drop(c);
         return SEL_CACHE_FAILED;
     }
-    ok = sel_mirrors_fetch_verified(set, path, on_body, on_restart, on_verify, &s, &res);
+    memset(&o, 0, sizeof o);
+    o.from = from;
+    o.yielded = &s.yielded;
+    o.resumable = &s.resumable;
+    if (c->slice_ms > 0) {
+        s.deadline = sel_net_now_ms() + c->slice_ms;
+        o.stall_ms = SEL_CACHE_SLICE_STALL_MS;
+        o.max_tries = 1;
+    }
+    ok = sel_mirrors_fetch_opts(set, path, &o, on_body, on_restart, on_verify, &s, &res);
     c->stats.mirror_tries += res.tries;
     c->stats.md5_mismatches += res.rejected;
     if (s.f != NULL) {
         fclose(s.f);
     }
     if (ok && rename(part, out) == 0) {
+        c->slice.active = 0;
+        c->slice.fails = 0;
         c->stats.fetches++;
         return SEL_CACHE_OK;
     }
+    if (!ok && s.yielded) {
+        c->slice.active = 1;
+        snprintf(c->slice.key, sizeof c->slice.key, "%s", out);
+        c->slice.offset = s.offset;
+        c->slice.md5 = s.md5;
+        return SEL_CACHE_PENDING;
+    }
+    if (c->slice_ms > 0 && !ok && ++c->slice.fails < set->count) {
+        /* one mirror per call: the next call tries the next ranked mirror from byte zero */
+        c->slice.active = 1;
+        snprintf(c->slice.key, sizeof c->slice.key, "%s", out);
+        c->slice.offset = 0;
+        remove(part);
+        return SEL_CACHE_PENDING;
+    }
+    c->slice.fails = 0;
+    c->slice.active = 0;
     remove(part);
     return res.rejected > 0 ? SEL_CACHE_MD5 : SEL_CACHE_FAILED;
+}
+
+void sel_cache_slice_drop(sel_cache* c) {
+    if (c->slice.active) {
+        char part[SEL_CACHE_PATH_MAX + 8];
+        if (strlen(c->slice.key) + 10 <= sizeof part) {
+            snprintf(part, sizeof part, "%s%s.part", c->slice.key, c->part_tag != NULL ? c->part_tag : "");
+            remove(part);
+        }
+    }
+    c->slice.active = 0;
+    c->slice.offset = 0;
+    c->slice.fails = 0;
 }
 
 /* ---- companions ------------------------------------------------------ */
@@ -303,7 +373,11 @@ sel_cache_result sel_cache_fetch_song(sel_cache* c, const char* source, const ch
     }
     n = sel_companion_paths(rules, path, comp, SEL_CACHE_COMPANIONS_MAX);
     for (i = 0; i < n && !(c->cancel != NULL && *c->cancel); i++) {
-        if (sel_cache_fetch(c, source, comp[i], NULL, cpath, sizeof cpath) == SEL_CACHE_OK) {
+        sel_cache_result cr = sel_cache_fetch(c, source, comp[i], NULL, cpath, sizeof cpath);
+        if (cr == SEL_CACHE_PENDING) {
+            return SEL_CACHE_PENDING; /* the next call finds the song cached and resumes this companion */
+        }
+        if (cr == SEL_CACHE_OK) {
             c->stats.companions++;
         }
     }

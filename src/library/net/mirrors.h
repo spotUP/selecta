@@ -61,6 +61,23 @@ int sel_mirrors_fetch(sel_mirror_set* set, const char* path, sel_mirror_sink sin
 int sel_mirrors_fetch_verified(sel_mirror_set* set, const char* path, sel_mirror_sink sink, sel_mirror_restart restart,
                                sel_mirror_verify verify, void* ctx, sel_mirror_res* res);
 
+/* Sliced transfer options (I168b; the Amiga prefetch has no thread, so one tick may block only briefly). `from` > 0
+ * resumes the first attempt with a Range request: a 206 answer appends, a server that answers 200 anyway makes the
+ * sink restart from zero (the restart callback runs before its first body byte). `stall_ms` > 0 bounds connect and
+ * first byte of every attempt. `max_tries` > 0 limits the attempts of one call. `yielded` points at a flag the
+ * sink raises when it aborts on purpose: the call then returns 0 without marking the mirror as failed.
+ * `resumable` receives 1 for an attempt over HTTP, 0 for FTP (no resume there): a sink only yields when it is 1. */
+typedef struct sel_mirror_opts {
+    unsigned long from;
+    unsigned stall_ms;
+    unsigned max_tries;
+    const volatile int* yielded;
+    volatile int* resumable;
+} sel_mirror_opts;
+
+int sel_mirrors_fetch_opts(sel_mirror_set* set, const char* path, const sel_mirror_opts* opts, sel_mirror_sink sink,
+                           sel_mirror_restart restart, sel_mirror_verify verify, void* ctx, sel_mirror_res* res);
+
 /* DEViLBOX base URL without a trailing path: SELECTA_DEVILBOX_URL, else http://devilbox.uprough.net. */
 const char* sel_devilbox_base(void);
 
