@@ -79,7 +79,10 @@ void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_messa
         if (rc != SQLITE_DONE) {
             break;
         }
-        rc = SQLITE_OK;
+        rc = sel_library_tag_composer(lib->db, key, r->artist);
+        if (rc != SQLITE_OK) {
+            break;
+        }
         written++;
     }
     sqlite3_finalize(sf);

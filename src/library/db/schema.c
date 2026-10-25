@@ -114,7 +114,10 @@ static const char SCHEMA_V5[] =
     "UPDATE OR IGNORE playlist_entries SET key = 'local:' || key WHERE " V5_RAW_KEY ";"
     "DELETE FROM playlist_entries WHERE " V5_RAW_KEY ";";
 
-static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5};
+/* v6 (I296): 1 marks a song_composers row written from the scanned file's author tag; the songdb sync replaces it. */
+static const char SCHEMA_V6[] = "ALTER TABLE song_composers ADD COLUMN tag INTEGER NOT NULL DEFAULT 0;";
+
+static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 

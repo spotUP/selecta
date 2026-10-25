@@ -61,14 +61,47 @@ static int op_put(sqlite3* db, const sel_genre_op* op) {
     return rc == SQLITE_DONE ? SQLITE_OK : rc;
 }
 
-/* Replaces the composer rows of song `op->key` with one row per author line of `op->value`. found = rows kept. */
+/* I296: the scanned file's author tag becomes the composer row of song `key` (tag = 1) until the songdb sync knows the
+ * song; a song with songdb rows keeps them. An untagged song gets no row. Same canon/display as op_apply. */
+int sel_library_tag_composer(sqlite3* db, const char* key, const char* author) {
+    sqlite3_stmt* st = NULL;
+    char canon[SEL_COMPOSER_MAX];
+    char display[SEL_COMPOSER_MAX];
+    int rc;
+
+    rc = sqlite3_prepare_v2(db, "DELETE FROM song_composers WHERE song_key = ?1 AND tag = 1", -1, &st, NULL);
+    if (rc != SQLITE_OK) return rc;
+    sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
+    rc = sqlite3_step(st);
+    sqlite3_finalize(st);
+    if (rc != SQLITE_DONE) return rc;
+    if (author == NULL || !sel_composer_canon(author, canon, sizeof canon) ||
+        !sel_composer_display(author, display, sizeof display)) {
+        return SQLITE_OK;
+    }
+    st = NULL;
+    rc = sqlite3_prepare_v2(db,
+                            "INSERT OR IGNORE INTO song_composers(song_key, canon, display, tag)"
+                            " SELECT ?1, ?2, ?3, 1 WHERE NOT EXISTS (SELECT 1 FROM song_composers WHERE song_key = ?1)",
+                            -1, &st, NULL);
+    if (rc != SQLITE_OK) return rc;
+    sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
+    sqlite3_bind_text(st, 2, canon, -1, SQLITE_STATIC);
+    sqlite3_bind_text(st, 3, display, -1, SQLITE_STATIC);
+    rc = sqlite3_step(st);
+    sqlite3_finalize(st);
+    return rc == SQLITE_DONE ? SQLITE_OK : rc;
+}
+
+/* Replaces the composer rows of song `op->key` with one row per author line of `op->value`. found = rows kept.
+ * Tag rows (I296) go only when songdb knows the song; an unknown song keeps its tag row. */
 static int op_apply(sqlite3* db, const sel_genre_op* op, int* found) {
     sqlite3_stmt* st = NULL;
     const char* p = op->value != NULL ? op->value : "";
     int rc;
 
     *found = 0;
-    rc = sqlite3_prepare_v2(db, "DELETE FROM song_composers WHERE song_key = ?1", -1, &st, NULL);
+    rc = sqlite3_prepare_v2(db, "DELETE FROM song_composers WHERE song_key = ?1 AND tag = 0", -1, &st, NULL);
     if (rc != SQLITE_OK) return rc;
     sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
     rc = sqlite3_step(st);
@@ -87,7 +120,7 @@ static int op_apply(sqlite3* db, const sel_genre_op* op, int* found) {
             continue;
         }
         st = NULL;
-        rc = sqlite3_prepare_v2(db, "INSERT OR IGNORE INTO song_composers(song_key, canon, display) VALUES(?1, ?2, ?3)", -1,
+        rc = sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO song_composers(song_key, canon, display, tag) VALUES(?1, ?2, ?3, 0)", -1,
                                 &st, NULL);
         if (rc != SQLITE_OK) return rc;
         sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
@@ -97,6 +130,15 @@ static int op_apply(sqlite3* db, const sel_genre_op* op, int* found) {
         sqlite3_finalize(st);
         if (rc != SQLITE_DONE) return rc;
         *found = 1;
+    }
+    if (*found) {
+        st = NULL;
+        rc = sqlite3_prepare_v2(db, "DELETE FROM song_composers WHERE song_key = ?1 AND tag = 1", -1, &st, NULL);
+        if (rc != SQLITE_OK) return rc;
+        sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+        rc = sqlite3_step(st);
+        sqlite3_finalize(st);
+        if (rc != SQLITE_DONE) return rc;
     }
     return SQLITE_OK;
 }

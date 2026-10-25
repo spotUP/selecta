@@ -1508,6 +1508,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_heap_fallback_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-opens-on-fragmented-ram COMMAND library_heap_fallback_test)
   set_tests_properties(library-opens-on-fragmented-ram PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_heap_fallback_ok")
+  # I296: a scan writes the author tag into song_composers; the songdb sync overrides it.
+  add_executable(library_scan_composers_test library_scan_composers_test.c)
+  target_include_directories(library_scan_composers_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_scan_composers_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-scan-composers COMMAND library_scan_composers_test)
+  set_tests_properties(library-scan-composers PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_scan_composers_ok")
   # I219g: the KPlayer timing walker behind the native .mod seek on Amiga (pure C, so the host runs it).
   add_executable(kplayer_modwalk_test kplayer_modwalk_test.c ${PROJECT_SOURCE_DIR}/plugins/replayers/kplayer/modwalk.c)
   target_include_directories(kplayer_modwalk_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/replayers/kplayer)
