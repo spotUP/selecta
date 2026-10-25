@@ -3,6 +3,13 @@
  * cybergraphics.library. The offsets and tag values are those of Picasso96API's fd file and Picasso96.h. */
 #include "backend_rtg.h"
 
+/* The library bases are renamed: libnix opens a library at program start when its base symbol (GfxBase, ...) is
+ * referenced, which made every binary linking this file (selecta-cli too) need graphics.library and keymap.library
+ * even without a UI. This backend opens and closes its libraries itself in desk_rtg_open / desk_rtg_close. */
+#define IntuitionBase sel_rtg_IntuitionBase
+#define GfxBase sel_rtg_GfxBase
+#define KeymapBase sel_rtg_KeymapBase
+
 #include <selecta/uimodel/keys.h>
 
 #include <devices/timer.h>
