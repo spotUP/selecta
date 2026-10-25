@@ -231,7 +231,15 @@ int sel_net_send(int h, const void* data, size_t len, unsigned timeout_ms) {
     while (len > 0) {
         unsigned long now = sel_net_now_ms();
         ssize_t n;
-        if (now >= end || wait_fd(g_fd[h], POLLOUT, (unsigned)(end - now)) <= 0) {
+        int w;
+        if (now >= end) {
+            return SEL_NET_E_TIMEOUT;
+        }
+        w = wait_fd(g_fd[h], POLLOUT, (unsigned)(end - now));
+        if (w < 0) {
+            return SEL_NET_E_IO; /* cancelled or poll error: not a timeout, or a TLS handshake retries until its deadline */
+        }
+        if (w == 0) {
             return SEL_NET_E_TIMEOUT;
         }
         n = send(g_fd[h], p, len, 0);

@@ -160,8 +160,9 @@ typedef struct desk {
     int pg_walk;             /* 1 while Back or Forward re-enters a page: desk_page_goto must not append it again */
     uint32_t nav_arrow_clicks; /* history arrow clicks */
     int search_keep;         /* 1 while the Home field click enters Search: the typed query stays */
-    sel_gui_rect ring, field; /* the last focus ring and the search field it hugs (stats line) */
+    sel_gui_rect ring, field, caret; /* the last focus ring, the search field it hugs and the caret bar (stats line) */
     uint32_t caret_draws;
+    uint32_t lit_doors;      /* bit i set: sidebar door i was drawn raised in the last frame (nav sentinel) */
     int np_page;             /* the main region shows the Now Playing page */
     int view_pending;        /* --view named a page: desk_wait enters it through desk_page_goto before the first frame */
     desk_page view_pg;
@@ -953,7 +954,8 @@ static void desk_draw_query(desk* d, sel_gui_rect sr) {
         const sel_gui_atlas* at = desk_font(d, 0, 14);
         int32_t tw = at != NULL ? sel_gui_text_width(at, d->query, d->qlen) : 0;
         int32_t ch = lpx(d, 18), cw = lpx(d, 2) > 0 ? lpx(d, 2) : 1;
-        sel_gui_fill_rect(d->canvas, rect_of(tb.x + tw, sr.y + (sr.h - ch) / 2, cw, ch), ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        d->caret = rect_of(tb.x + tw, sr.y + (sr.h - ch) / 2, cw, ch);
+        sel_gui_fill_rect(d->canvas, d->caret, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
         d->caret_draws++;
     }
 }
@@ -2279,10 +2281,10 @@ static const char* library_dump_build(desk* d) {
         }
     }
     if (o + 400u < sizeof d->library_dump) { /* the page navigation (I262) */
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "nav page=%s nav_clicks=%u nav_keys=%u doors=%u hist=%u pos=%u np_page_draws=%u arrow_clicks=%u\nfocus_ring %d %d %d %d\nsearch_field %d %d %d %d caret_draws=%u\nnav_arrows %d %d %d %d %d %d %d %d\n",
+        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "nav page=%s nav_clicks=%u nav_keys=%u doors=%u hist=%u pos=%u np_page_draws=%u arrow_clicks=%u lit=%u\nfocus_ring %d %d %d %d\nsearch_field %d %d %d %d caret_draws=%u caret_rect %d %d %d %d\nnav_arrows %d %d %d %d %d %d %d %d\n",
                               g_page_name[d->page], (unsigned)d->nav_clicks, (unsigned)d->nav_keys, (unsigned)DOOR_COUNT,
-                              (unsigned)d->pg_n, (unsigned)d->pg_pos, (unsigned)d->np_page_draws, (unsigned)d->nav_arrow_clicks, (int)d->ring.x, (int)d->ring.y, (int)d->ring.w, (int)d->ring.h,
-                              (int)d->field.x, (int)d->field.y, (int)d->field.w, (int)d->field.h, (unsigned)d->caret_draws, (int)d->nav_back.x, (int)d->nav_back.y, (int)d->nav_back.w,
+                              (unsigned)d->pg_n, (unsigned)d->pg_pos, (unsigned)d->np_page_draws, (unsigned)d->nav_arrow_clicks, (unsigned)d->lit_doors, (int)d->ring.x, (int)d->ring.y, (int)d->ring.w, (int)d->ring.h,
+                              (int)d->field.x, (int)d->field.y, (int)d->field.w, (int)d->field.h, (unsigned)d->caret_draws, (int)d->caret.x, (int)d->caret.y, (int)d->caret.w, (int)d->caret.h, (int)d->nav_back.x, (int)d->nav_back.y, (int)d->nav_back.w,
                               (int)d->nav_back.h, (int)d->nav_fwd.x, (int)d->nav_fwd.y, (int)d->nav_fwd.w, (int)d->nav_fwd.h);
     }
     if (o + 900u < sizeof d->library_dump) { /* the overlays (DUI-P4-13) */
@@ -3189,12 +3191,14 @@ static void draw_sidebar(desk* d) {
     }
     d->home_parts |= HP_BRAND;
     y += br + pad;
+    d->lit_doors = 0u;
     for (i = 0; i < DOOR_COUNT; i++, y += row) {
         sel_gui_rect r = sidebar_door_rect(d, i);
         sel_gui_rect ic = rect_of(r.x + pad, y + (row - isz) / 2, isz, isz);
         int here = g_doors[i].page == d->page;
         uint32_t ink = ARGB(d->theme.token[here ? SEL_GUI_TOKEN_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]);
         if (here) { /* the current page: a raised row behind it */
+            d->lit_doors |= 1u << i;
             sel_gui_round_rect(d->canvas, r, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
         }
         sel_gui_icon_draw(d->canvas, &d->icons, g_doors[i].icon, ic, isz, ink);

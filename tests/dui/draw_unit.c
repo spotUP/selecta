@@ -88,6 +88,32 @@ static void test_round_rect(void) {
     drop(c);
 }
 
+/* sel_gui_round_frame: a ring of the given width along the rounded edge, hollow inside, corners cut by the radius. */
+static void test_round_frame(void) {
+    sel_gui_canvas* c = make(SEL_GUI_RGBA32, 48, 48);
+    int32_t i;
+    sel_gui_round_frame(c, R(4, 4, 40, 40), 10, 3, 0xFF00FF00u);
+    for (i = 14; i < 34; i++) { /* the straight edges: the three ring pixels are solid, the pixel just inside and outside are not */
+        CHECK(sel_gui_pixel(c, i, 4) == 0x00FF00u && sel_gui_pixel(c, i, 6) == 0x00FF00u);
+        CHECK(sel_gui_pixel(c, i, 41) == 0x00FF00u && sel_gui_pixel(c, i, 43) == 0x00FF00u);
+        CHECK(sel_gui_pixel(c, 4, i) == 0x00FF00u && sel_gui_pixel(c, 6, i) == 0x00FF00u);
+        CHECK(sel_gui_pixel(c, 41, i) == 0x00FF00u && sel_gui_pixel(c, 43, i) == 0x00FF00u);
+        CHECK(sel_gui_pixel(c, i, 7) == 0u && sel_gui_pixel(c, i, 40) == 0u); /* inside the band edge */
+        CHECK(sel_gui_pixel(c, i, 3) == 0u && sel_gui_pixel(c, i, 44) == 0u); /* outside the rect */
+    }
+    CHECK(sel_gui_pixel(c, 24, 24) == 0u);              /* the centre is untouched */
+    CHECK(sel_gui_pixel(c, 12, 12) == 0u);              /* so is the inner corner area */
+    CHECK(sel_gui_pixel(c, 4, 4) == 0u);                /* the sharp corner is cut by the radius */
+    CHECK(sel_gui_pixel(c, 43, 4) == 0u && sel_gui_pixel(c, 4, 43) == 0u && sel_gui_pixel(c, 43, 43) == 0u);
+    CHECK(sel_gui_pixel(c, 5, 5) == 0u);
+    CHECK(sel_gui_pixel(c, 9, 5) != 0u);                /* the arc itself carries ring pixels near the corner */
+    drop(c);
+    c = make(SEL_GUI_RGBA32, 16, 16);
+    sel_gui_round_frame(c, R(2, 2, 12, 12), 4, 0, 0xFF00FF00u); /* width 0 draws nothing */
+    CHECK(sel_gui_pixel(c, 2, 8) == 0u && sel_gui_pixel(c, 8, 2) == 0u);
+    drop(c);
+}
+
 static void test_gradient(void) {
     sel_gui_canvas* c = make(SEL_GUI_RGBA32, 64, 8);
     uint32_t mid;
@@ -228,6 +254,7 @@ int main(void) {
     test_fill_and_clip(SEL_GUI_RGBA32);
     test_fill_and_clip(SEL_GUI_INDEX8);
     test_round_rect();
+    test_round_frame();
     test_gradient();
     test_line_mask_image();
     test_scrim_shadow();
