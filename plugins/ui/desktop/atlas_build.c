@@ -1,10 +1,14 @@
 /* Atlas builder (DUI-P2-3); see atlas_build.h. */
 #include "atlas_build.h"
 
+#ifdef __clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wnewline-eof"
+#endif
 #include "stb_truetype.h"
+#ifdef __clang__
 #pragma GCC diagnostic pop
+#endif
 
 #include <stdlib.h>
 #include <string.h>

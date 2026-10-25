@@ -22,23 +22,43 @@ endforeach()
 
 # Icons (DUI-P3-1): tools/gui_iconbake.c (host tool, floating point allowed outside src/gui) rasterises the Lucide SVGs of
 # third_party/lucide listed in include/selecta/gui/gui_icons.h into alpha masks; the plugin links the generated tables.
-add_executable(gui_iconbake "${PROJECT_SOURCE_DIR}/tools/gui_iconbake.c")
-target_link_libraries(gui_iconbake PRIVATE m)
+# The Amiga cross build cannot run a tool it builds, so it takes a host-built one: -DSELECTA_ICONBAKE_EXE=<path to the
+# host gui_iconbake>.
+if(SEL_AMIGA)
+  if(NOT SELECTA_ICONBAKE_EXE)
+    message(FATAL_ERROR "The Amiga desktop UI needs -DSELECTA_ICONBAKE_EXE=<host gui_iconbake>")
+  endif()
+  set(ICONBAKE_CMD "${SELECTA_ICONBAKE_EXE}")
+  set(ICONBAKE_DEP "")
+else()
+  add_executable(gui_iconbake "${PROJECT_SOURCE_DIR}/tools/gui_iconbake.c")
+  target_link_libraries(gui_iconbake PRIVATE m)
+  set(ICONBAKE_CMD gui_iconbake)
+  set(ICONBAKE_DEP gui_iconbake)
+endif()
 file(GLOB LUCIDE_SVGS "${PROJECT_SOURCE_DIR}/third_party/lucide/icons/*.svg")
 add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/gui_icons_baked.c"
-  COMMAND gui_iconbake "${PROJECT_SOURCE_DIR}/include/selecta/gui/gui_icons.h"
+  COMMAND ${ICONBAKE_CMD} "${PROJECT_SOURCE_DIR}/include/selecta/gui/gui_icons.h"
     "${PROJECT_SOURCE_DIR}/third_party/lucide/icons" "${CMAKE_CURRENT_BINARY_DIR}/gui_icons_baked.c"
-  DEPENDS gui_iconbake "${PROJECT_SOURCE_DIR}/include/selecta/gui/gui_icons.h" ${LUCIDE_SVGS}
+  DEPENDS ${ICONBAKE_DEP} "${PROJECT_SOURCE_DIR}/include/selecta/gui/gui_icons.h" ${LUCIDE_SVGS}
   COMMENT "Baking the icon atlas")
 list(APPEND FONT_GEN "${CMAKE_CURRENT_BINARY_DIR}/gui_icons_baked.c")
 
 # Artwork (DUI-P2-4): art.c turns library blobs into tile pixels, stb_impl.c decodes them, posix/art_thread.c is the
 # worker thread (the only file with thread headers). The plugin is desktop only, so there is no Amiga branch.
-sel_add_plugin(desktop_ui 5 desktop_ui.c atlas_build.c art.c posix/art_thread.c stb_impl.c ${FONT_GEN}
+if(SEL_AMIGA)
+  set(ART_THREAD amiga/art_thread.c amiga/backend_rtg.c)
+else()
+  set(ART_THREAD posix/art_thread.c)
+endif()
+sel_add_plugin(desktop_ui 5 desktop_ui.c atlas_build.c art.c ${ART_THREAD} stb_impl.c ${FONT_GEN}
   THIRD_PARTY_INCLUDES "${PROJECT_SOURCE_DIR}/third_party/stb")
+if(SEL_AMIGA)
+  target_compile_definitions(sel_plugin_desktop_ui PRIVATE SELECTA_DESKTOP_RTG=1)
+endif()
 target_link_libraries(sel_plugin_desktop_ui PUBLIC selecta_uimodel selecta_gui)
-if(UNIX)
+if(UNIX AND NOT SEL_AMIGA)
   find_package(Threads REQUIRED)
   target_link_libraries(sel_plugin_desktop_ui PUBLIC m Threads::Threads)
 endif()

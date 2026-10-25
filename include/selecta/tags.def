@@ -239,6 +239,8 @@ SEL_TAG(UI, STAT_HOME_EMPTY,       0x5056, INT)
 /* DUI-P5-11 sentinels: files and folders dropped or chosen in Add Folder, and LIBRARY_SCAN answers the UI saw. */
 SEL_TAG(UI, STAT_DROPS,            0x5057, INT)
 SEL_TAG(UI, STAT_SCANS,            0x5058, INT)
+SEL_TAG(UI, STAT_BACKEND,          0x5059, STR)
+SEL_TAG(UI, STAT_SCREEN_DEPTH,     0x505A, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)

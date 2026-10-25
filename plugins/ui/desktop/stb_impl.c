@@ -8,7 +8,9 @@
 #pragma GCC diagnostic ignored "-Wpedantic"
 #pragma GCC diagnostic ignored "-Wcomment"
 #define STB_TRUETYPE_IMPLEMENTATION
+#ifdef __clang__
 #pragma GCC diagnostic ignored "-Wnewline-eof"
+#endif
 #include "stb_truetype.h"
 
 /* stb_image: PNG and JPEG from memory only (design doc 2.7). */

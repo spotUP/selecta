@@ -77,9 +77,7 @@ endif()
 # POSIX terminal device. Library for grid-unit; the UI plugin entry
 # (text_ui.c, row I60) registers from ui/text/CMakeLists.txt. Desktop only until M2.
 add_subdirectory(ui/text)
-if(NOT SEL_AMIGA)
-  add_subdirectory(ui/desktop)
-endif()
+add_subdirectory(ui/desktop)
 if(NOT SEL_AMIGA)
   add_subdirectory(integrations)
 endif()
