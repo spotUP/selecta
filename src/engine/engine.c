@@ -1553,12 +1553,19 @@ static void song_config_load(sel_engine* e, const char* path) {
     }
 }
 
+/* A library write changed a field the Now Playing panel shows (rating, play count, a sticker): forget the loaded panel so
+ * the next state publish reads it again (I288). The panel is otherwise loaded once per opened song. */
+static void panel_reload(sel_engine* e) {
+    e->panel_state = NULL;
+}
+
 /* History (I170): the song that was playing ended. skipped = 0: it reached its natural end (a play);
  * skipped = 1: the user replaced it first. One row per song, written through the library worker. */
 static void hist_end(sel_engine* e, int skipped) {
     if (e->hist_key[0] != '\0' && e->lib != NULL) {
         if (sel_library_history_add(e->lib, e->hist_key, (int64_t)time(NULL), skipped)) {
             e->history_writes++;
+            panel_reload(e);
         }
     }
     e->hist_key[0] = '\0';
@@ -3338,8 +3345,11 @@ static void cmd_RATE(sel_engine* e, const sel_message* m) {
         remote = sel_devilbox_item(e->hist_key, source, sizeof source, &path);
         if (!sel_library_rating_set(e->lib, e->hist_key, (int)stars, remote ? SEL_RATING_QUEUE : SEL_RATING_LOCAL)) {
             sel_engine_report_error(e, "library_failed", "RATE");
-        } else if (remote) {
-            sel_library_rating_push(e->lib); /* the HTTP push runs on the library side, not on this thread (I173c) */
+        } else {
+            panel_reload(e);
+            if (remote) {
+                sel_library_rating_push(e->lib); /* the HTTP push runs on the library side, not on this thread (I173c) */
+            }
         }
     }
 }
@@ -3812,9 +3822,12 @@ static int sticker_key(sel_engine* e, const sel_message* m, const char* cmd, cha
 
 static void cmd_STICKER_SET(sel_engine* e, const sel_message* m) {
     char key[SEL_DEFERRED_PATH_MAX + 8];
-    if (sticker_ready(e, "STICKER_SET") && sticker_key(e, m, "STICKER_SET", key, sizeof key) &&
-        !sel_library_sticker_set(e->lib, key, m->args[1].v.s, m->args[2].v.s)) {
-        sel_engine_report_error(e, "library_failed", "STICKER_SET");
+    if (sticker_ready(e, "STICKER_SET") && sticker_key(e, m, "STICKER_SET", key, sizeof key)) {
+        if (sel_library_sticker_set(e->lib, key, m->args[1].v.s, m->args[2].v.s)) {
+            panel_reload(e);
+        } else {
+            sel_engine_report_error(e, "library_failed", "STICKER_SET");
+        }
     }
 }
 
@@ -3831,9 +3844,12 @@ static void cmd_STICKER_GET(sel_engine* e, const sel_message* m) {
 
 static void cmd_STICKER_DEL(sel_engine* e, const sel_message* m) {
     char key[SEL_DEFERRED_PATH_MAX + 8];
-    if (sticker_ready(e, "STICKER_DEL") && sticker_key(e, m, "STICKER_DEL", key, sizeof key) &&
-        !sel_library_sticker_del(e->lib, key, m->args[1].v.s)) {
-        sel_engine_report_error(e, "no_such_sticker", m->args[1].v.s);
+    if (sticker_ready(e, "STICKER_DEL") && sticker_key(e, m, "STICKER_DEL", key, sizeof key)) {
+        if (sel_library_sticker_del(e->lib, key, m->args[1].v.s)) {
+            panel_reload(e);
+        } else {
+            sel_engine_report_error(e, "no_such_sticker", m->args[1].v.s);
+        }
     }
 }
 
@@ -4952,6 +4968,7 @@ static void refresh_snapshot(sel_engine* e) {
     e->state.composer_page = e->composers_open && e->composer_page[0] != '\0' ? e->composer_page : NULL;
     e->state.panel = e->panel_rows > 0 ? e->panel : NULL;
     e->state.panel_rows = e->panel_rows;
+    e->state.panel_serial = e->panel_loads;
     if (sl == NULL || sl->rp_state == NULL) {
         e->lyr_for[0] = '\0';
         e->lyr.count = 0;

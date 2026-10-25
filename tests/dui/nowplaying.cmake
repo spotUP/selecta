@@ -5,6 +5,8 @@
 # 2. STAT_META_PANEL_ROWS (the meta_panel line) equals the panel pair count the dump prints and the number of `meta` lines,
 #    and equals the number of metadata fields the script set (one RATE).
 # 3. The panel drew (sentinel `nowplaying draws`) and a golden hash pins the frame.
+# 4. I288: a click on the fourth rating mark of an unrated song fills four marks in the same run (`rating N` in the dump is
+#    the count the last Now Playing draw filled). Run A reads the mark rectangles, run B clicks there.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 set(fx "${HERE}/../m3/lyrics")
@@ -92,4 +94,30 @@ endif()
 file(STRINGS "${gfile}" want LIMIT_COUNT 1)
 if(NOT s12500_hash STREQUAL want)
   message(FATAL_ERROR "nowplaying hash ${s12500_hash} differs from golden ${want} (${gfile})")
+endif()
+
+function(np_rate_run tag input)
+  file(REMOVE_RECURSE "${WORK}/cfg" "${WORK}/${tag}.db")
+  file(WRITE "${WORK}/${tag}.txt" "${input}")
+  dui_run(o --db "${WORK}/${tag}.db" --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats
+    --exec "LIBRARY_SCAN ${fx}" --exec "OPEN ${fx}/ambient.mod" --exec "SEEK 1000" --input "${WORK}/${tag}.txt")
+  if(NOT "${o}" MATCHES "rating (-?[0-9]+) mark (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+) step ([0-9]+)")
+    message(FATAL_ERROR "no rating sentinel in:\n${o}")
+  endif()
+  set(${tag}_rating "${CMAKE_MATCH_1}" PARENT_SCOPE)
+  set(${tag}_x "${CMAKE_MATCH_2}" PARENT_SCOPE)
+  set(${tag}_y "${CMAKE_MATCH_3}" PARENT_SCOPE)
+  set(${tag}_w "${CMAKE_MATCH_4}" PARENT_SCOPE)
+  set(${tag}_step "${CMAKE_MATCH_6}" PARENT_SCOPE)
+endfunction()
+
+np_rate_run(ra "wait 30\n")
+if(NOT ra_rating EQUAL 0)
+  message(FATAL_ERROR "an unrated song shows ${ra_rating} filled rating marks")
+endif()
+math(EXPR cx "${ra_x} + 3 * ${ra_step} + ${ra_w} / 2")
+math(EXPR cy "${ra_y} + ${ra_w} / 2")
+np_rate_run(rb "wait 30\nmove ${cx} ${cy}\nclick ${cx} ${cy}\nwait 30\n")
+if(NOT rb_rating EQUAL 4)
+  message(FATAL_ERROR "after a click on the fourth rating mark at ${cx},${cy} the panel fills ${rb_rating} marks, want 4")
 endif()

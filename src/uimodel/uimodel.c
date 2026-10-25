@@ -61,12 +61,13 @@ uint32_t sel_uim_update(sel_uim* uim, const sel_state* st) {
     n.repeat_mode = strcmp(st->options[SEL_OPT_REPEAT], "all") == 0 ? 1u : strcmp(st->options[SEL_OPT_REPEAT], "one") == 0 ? 2u : 0u;
     n.random_on = strcmp(st->options[SEL_OPT_RANDOM], "on") == 0;
     n.lyric_slot = st->lyric_lines > 0u ? st->lyric_line + 1 : 0;
+    n.panel_serial = st->panel_serial;
     /* The status line carries the play state and the mixer stage settings: the clock and the title have their own regions, so a song change
      * redraws the song and queue widgets and nothing else. */
     snprintf(n.status, sizeof n.status, "%s", sel_uim_play_word(n.play));
     sel_uim_stage_status(n.status, sizeof n.status, st);
 
-    if (n.lyric_slot != o->lyric_slot || strcmp(n.title, o->title) != 0 || strcmp(n.artist, o->artist) != 0 || strcmp(n.format, o->format) != 0) {
+    if (n.lyric_slot != o->lyric_slot || n.panel_serial != o->panel_serial || strcmp(n.title, o->title) != 0 || strcmp(n.artist, o->artist) != 0 || strcmp(n.format, o->format) != 0) {
         changed |= SEL_UIM_DIRTY_SONG;
     }
     if (n.queue_count != o->queue_count || n.queue_playing != o->queue_playing) {

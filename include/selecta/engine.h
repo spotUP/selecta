@@ -171,6 +171,7 @@ typedef struct sel_state {
     const char* panel;          /* I185: catalogue rows of the open song, "label\0value\0" pairs (library data: STIL note,
                                  * composer, release, year, genre, rating, play count; absent data has no row), NULL: none */
     uint32_t panel_rows;        /* rows in `panel` */
+    uint32_t panel_serial;      /* I288: counts panel loads; a change means `panel` was read again (a rating or sticker write) */
     const char* stats;          /* I192: the stats screen is open: "label\0value\0" pairs read from the stats SQL views, then "\0"; NULL: closed */
     const char* composers;      /* DUI-P4-3: the Library page is open: "canon\0display\0songs\0" per composer (decimal count), then "\0"; NULL: closed */
     const char* composer_page;  /* the composer drilled into: "display\0songs\0", then "key\0name\0" per song, then "\0"; NULL: none */

@@ -142,6 +142,7 @@ typedef struct desk {
     uint32_t lib_off_page;   /* Library page draws while another page is current (sentinel, must stay 0: I274) */
     uint32_t np_draws;       /* Now Playing panel draws (sentinel) */
     sel_gui_rect np_like, np_rate[5]; /* click targets of the like button and the five rating marks */
+    int32_t np_rating;                /* filled rating marks of the last Now Playing draw (I288) */
     uint32_t lib_searches;   /* LIBRARY_SEARCH lines sent for typed queries: STAT_LIBRARY_SEARCHES */
     uint32_t search_draws, search_rows;  /* search view frames drawn, result rows in the last one */
     uint32_t search_facet;   /* the facet chip in force: 0 All, 1 Songs, 2 Formats */
@@ -2513,6 +2514,9 @@ static const char* library_dump_build(desk* d) {
                           (unsigned)d->flow_centre);
     o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "nowplaying draws %u pairs %u\nlyrics line %d at %u\n",
                           (unsigned)d->np_draws, (unsigned)d->np_rows, (int)st->lyric_line, (unsigned)st->song.position_ms);
+    o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "rating %d mark %d %d %d %d step %d\n", (int)d->np_rating,
+                          (int)d->np_rate[0].x, (int)d->np_rate[0].y, (int)d->np_rate[0].w, (int)d->np_rate[0].h,
+                          (int)(d->np_rate[1].x - d->np_rate[0].x));
     o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o,
                           "viz frames %u song_ms %u plugin %s plugins %u layout %u panes %u sigpath %u prims %u visual %u strip %d\n",
                           (unsigned)d->viz_frames, (unsigned)d->viz_song_ms, d->viz_n > 0u ? d->viz_id[d->viz_sel] : "none",
@@ -3700,6 +3704,7 @@ static void draw_nowplaying(desk* d) {
             p = v + strlen(v) + 1;
         }
     }
+    d->np_rating = rating;
     for (k = 0; k < 5u; k++) {
         int32_t m = lpx(d, 12);
         d->np_rate[k] = rect_of(dt.x + sp + ic + lpx(d, 12) + (int32_t)k * (m + lpx(d, 6)), y + (ic - m) / 2, m, m);
