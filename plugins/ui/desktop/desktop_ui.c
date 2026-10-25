@@ -131,6 +131,7 @@ typedef struct desk {
     uint32_t queue_draws, queue_rows, queue_cmds; /* Queue page frames drawn (sentinel), rows in the last one, verbs it sent */
     uint32_t np_rows;        /* metadata pairs the Now Playing panel drew: STAT_META_PANEL_ROWS (DUI-P4-7) */
     uint32_t np_page_draws;  /* Now Playing page draws (sentinel) */
+    uint32_t lib_off_page;   /* Library page draws while another page is current (sentinel, must stay 0: I274) */
     uint32_t np_draws;       /* Now Playing panel draws (sentinel) */
     sel_gui_rect np_like, np_rate[5]; /* click targets of the like button and the five rating marks */
     uint32_t lib_searches;   /* LIBRARY_SEARCH lines sent for typed queries: STAT_LIBRARY_SEARCHES */
@@ -2541,9 +2542,9 @@ static const char* library_dump_build(desk* d) {
         }
     }
     if (o + 400u < sizeof d->library_dump) { /* the page navigation (I262) */
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "nav page=%s nav_clicks=%u nav_keys=%u doors=%u hist=%u pos=%u np_page_draws=%u arrow_clicks=%u lit=%u\nfocus_ring %d %d %d %d\nsearch_field %d %d %d %d caret_draws=%u caret_rect %d %d %d %d\nnav_arrows %d %d %d %d %d %d %d %d\n",
+        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "nav page=%s nav_clicks=%u nav_keys=%u doors=%u hist=%u pos=%u np_page_draws=%u arrow_clicks=%u lit=%u lib_off_page=%u\nfocus_ring %d %d %d %d\nsearch_field %d %d %d %d caret_draws=%u caret_rect %d %d %d %d\nnav_arrows %d %d %d %d %d %d %d %d\n",
                               g_page_name[d->page], (unsigned)d->nav_clicks, (unsigned)d->nav_keys, (unsigned)DOOR_COUNT,
-                              (unsigned)d->pg_n, (unsigned)d->pg_pos, (unsigned)d->np_page_draws, (unsigned)d->nav_arrow_clicks, (unsigned)d->lit_doors, (int)d->ring.x, (int)d->ring.y, (int)d->ring.w, (int)d->ring.h,
+                              (unsigned)d->pg_n, (unsigned)d->pg_pos, (unsigned)d->np_page_draws, (unsigned)d->nav_arrow_clicks, (unsigned)d->lit_doors, (unsigned)d->lib_off_page, (int)d->ring.x, (int)d->ring.y, (int)d->ring.w, (int)d->ring.h,
                               (int)d->field.x, (int)d->field.y, (int)d->field.w, (int)d->field.h, (unsigned)d->caret_draws, (int)d->caret.x, (int)d->caret.y, (int)d->caret.w, (int)d->caret.h, (int)d->nav_back.x, (int)d->nav_back.y, (int)d->nav_back.w,
                               (int)d->nav_back.h, (int)d->nav_fwd.x, (int)d->nav_fwd.y, (int)d->nav_fwd.w, (int)d->nav_fwd.h);
     }
@@ -2677,6 +2678,9 @@ static void draw_lib_flow(desk* d, sel_gui_rect mn) {
 
 static void draw_library(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
+    if (d->page != PG_LIBRARY) {
+        d->lib_off_page++;
+    }
     sel_gui_rect mn = draw_panel(d, "main");
     int32_t mg = lpx(d, LIB_MARGIN), sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
@@ -2986,7 +2990,9 @@ static void draw_home_content(desk* d) {
     int32_t hv = sel_gui_tween_value(&d->tl, ANIM_KEY_HOVER, 65536);
     uint32_t i;
     char name[256];
-    if (st->composers != NULL) {
+    /* The page picks the content. The engine state lags a page change (COMPOSERS_HIDE is read on the engine's next pump), so
+     * a Library page drawn on st->composers alone stays over the page just entered (I274). */
+    if (d->page == PG_LIBRARY && st->composers != NULL) {
         draw_library(d);
         return;
     }
