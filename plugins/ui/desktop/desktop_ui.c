@@ -122,6 +122,8 @@ typedef struct desk {
     size_t pl_nlen;
     int tr_page;             /* --view tracker: the main region shows the Tracker page (DUI-P4-12) */
     uint32_t tr_tab, tr_draws, tr_rows, tr_cmds, tr_sig; /* tab, frames drawn (sentinel), rows in the last one, verbs sent, redraw hash */
+    uint32_t tr_bar;                                     /* the slot the playing-row bar drew in, TR_NO_BAR when none (I283) */
+    uint32_t tr_pos, tr_moves; /* order << 16 | row of the last pattern frame, and how many frames moved it: the roll sentinel (I282) */
     uint32_t tr_asked, tr_order, tr_row, tr_qid;         /* the last pattern window asked for */
     int si_page;             /* --view songinfo: the main region shows the Song Information page (DUI-P4-10) */
     int si_edit;             /* 1 while the note field has the keyboard */
@@ -442,6 +444,7 @@ static void draw_sidebar(desk* d);
 static void draw_nowplaying(desk* d);
 static void draw_nowplaypage(desk* d);
 static void draw_nav_arrows(desk* d, sel_gui_rect mn);
+static sel_gui_rect nav_arrow_rect(desk* d, sel_gui_rect mn, int32_t k);
 static void draw_player_left(desk* d);
 
 static void draw_widget(desk* d, uint32_t bit) {
@@ -1389,10 +1392,11 @@ static sel_gui_rect lib_tab_rect(desk* d, sel_gui_rect mn, uint32_t i) {
     return rect_of(mn.x + lpx(d, LIB_MARGIN) + (int32_t)i * lpx(d, LIB_TAB_W), mn.y + lpx(d, LIB_TAB_Y), lpx(d, LIB_TAB_W), lpx(d, LIB_TAB_H));
 }
 
-/* The Add Folder button, right aligned on the title row of the Library page. */
+/* The Add Folder button on the title row of the Library page, right aligned up to the history arrows, which own
+ * the top right corner of the main pane. */
 static sel_gui_rect lib_add_rect(desk* d, sel_gui_rect mn) {
-    int32_t w = lpx(d, 140);
-    return rect_of(mn.x + mn.w - lpx(d, LIB_MARGIN) - w, mn.y + lpx(d, LIB_TITLE_Y) + lpx(d, 4), w, lpx(d, 32));
+    int32_t w = lpx(d, 120), right = nav_arrow_rect(d, mn, 0).x - lpx(d, 16);
+    return rect_of(right - w, mn.y + lpx(d, LIB_TITLE_Y) + lpx(d, 4), w, lpx(d, 32));
 }
 
 /* The crumb after the tabs: the values picked in the column browser; a click on it clears them. */
@@ -2113,7 +2117,7 @@ static int viz_tick(desk* d) {
 
 /* ---- Tracker page (DUI-P4-12): pattern view and sample list with click-to-play ---- */
 enum { TR_TAB_W = 120, TR_TAB_H = 32, TR_TAB_GAP = 8, TR_TAB_Y = 64, TR_HEAD_Y = 110, TR_ROW_H = 20, TR_NUM_W = 44, TR_CH_W = 150,
-       TR_NOTE_X = 0, TR_INS_X = 44, TR_VOL_X = 72, TR_FX_X = 100, TR_TABS = 2 };
+       TR_NOTE_X = 0, TR_INS_X = 44, TR_VOL_X = 72, TR_FX_X = 100, TR_TABS = 2, TR_NO_BAR = 0xFFFF };
 
 static sel_gui_rect tr_tab_rect(desk* d, sel_gui_rect mn, uint32_t k) {
     return rect_of(mn.x + lpx(d, HOME_MARGIN) + (int32_t)k * lpx(d, TR_TAB_W + TR_TAB_GAP), mn.y + lpx(d, TR_TAB_Y), lpx(d, TR_TAB_W),
@@ -2168,6 +2172,7 @@ static void draw_trackerpage(desk* d) {
         draw_text_centered(d, b, tab_name[k], 1, 13, k == d->tr_tab ? acct : text);
     }
     d->tr_rows = 0;
+    d->tr_bar = TR_NO_BAR;
     if (d->tr_tab == 0u) {
         if (v == NULL || !v->valid) {
             draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, TR_HEAD_Y), mn.w - 2 * mg, lpx(d, TR_ROW_H)), "No pattern data", 0, 13, muted);
@@ -2182,15 +2187,20 @@ static void draw_trackerpage(desk* d) {
                 snprintf(buf, sizeof buf, off ? "Channel %u Muted" : "Channel %u", (unsigned)(c + 1u));
                 draw_text(d, tr_chan_rect(d, mn, c), buf, 1, 13, off ? muted : text);
             }
-            for (r = 0; r < v->row_n && r < fit; r++) {
-                uint32_t row = v->row_lo + r;
+            /* The playing row holds the middle slot and the pattern scrolls past it; slots before row 0 or past the last
+             * row stay blank, and rows the answered window does not hold (yet) are skipped (I283). */
+            for (r = 0; r < fit; r++) {
+                int64_t srow = (int64_t)st->song.pattern_pos.row + (int64_t)r - (int64_t)(fit / 2u);
+                uint32_t row = (uint32_t)srow;
                 sel_gui_rect rr = tr_row_rect(d, mn, r);
-                int at = v->order == st->song.pattern_pos.order && row == st->song.pattern_pos.row;
-                if (row >= v->info.rows) {
-                    break;
-                }
+                int at = r == fit / 2u;
                 if (at) {
                     sel_gui_round_rect(d->canvas, rr, rad, acc);
+                    d->tr_bar = r;
+                }
+                if (srow < 0 || row >= v->info.rows || v->order != st->song.pattern_pos.order || row < v->row_lo ||
+                    row >= v->row_lo + v->row_n) {
+                    continue;
                 }
                 snprintf(buf, sizeof buf, "%02X", (unsigned)row);
                 draw_text(d, rect_of(rr.x, rr.y, lpx(d, TR_NUM_W), rr.h), buf, 0, 13, at ? acct : muted);
@@ -2198,7 +2208,7 @@ static void draw_trackerpage(desk* d) {
                     char note[4], ins[4], vol[4], fx[8];
                     int32_t x = mn.x + mg + lpx(d, TR_NUM_W) + (int32_t)c * lpx(d, TR_CH_W);
                     uint32_t col = at ? acct : ((st->mute_mask >> c) & 1u) ? muted : text;
-                    sel_uim_cell_fields(&v->cell[r][c], note, ins, vol, fx);
+                    sel_uim_cell_fields(&v->cell[row - v->row_lo][c], note, ins, vol, fx);
                     draw_text(d, rect_of(x + lpx(d, TR_NOTE_X), rr.y, lpx(d, 44), rr.h), note, 0, 13, col);
                     draw_text(d, rect_of(x + lpx(d, TR_INS_X), rr.y, lpx(d, 28), rr.h), ins, 0, 13, col);
                     draw_text(d, rect_of(x + lpx(d, TR_VOL_X), rr.y, lpx(d, 28), rr.h), vol, 0, 13, col);
@@ -2226,6 +2236,13 @@ static void draw_trackerpage(desk* d) {
             draw_text(d, rect_of(rr.x + rr.w / 2, rr.y, rr.w / 2, rr.h), buf, 0, 13, muted);
             d->tr_rows++;
         }
+    }
+    if (d->tr_tab == 0u && v != NULL && v->valid) {
+        uint32_t pos = (uint32_t)st->song.pattern_pos.order << 16 | st->song.pattern_pos.row;
+        if (d->tr_draws > 0u && pos != d->tr_pos) {
+            d->tr_moves++;
+        }
+        d->tr_pos = pos;
     }
     d->tr_draws++;
     sel_gui_clip_pop(d->canvas);
@@ -2511,11 +2528,11 @@ static const char* library_dump_build(desk* d) {
             shown = 1u;
         }
         o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o,
-                              "tracker draws %u tab %u order %u row %u rows %u channels %u muted %u samples %u plays %u frames %u cmds %u shown %u\n",
+                              "tracker draws %u tab %u order %u row %u rows %u channels %u muted %u samples %u plays %u frames %u cmds %u shown %u bar %u fit %u moves %u\n",
                               (unsigned)d->tr_draws, (unsigned)d->tr_tab, (unsigned)st->song.pattern_pos.order,
                               (unsigned)st->song.pattern_pos.row, (unsigned)d->tr_rows, (unsigned)(tv != NULL ? tv->channels : 0u),
                               (unsigned)st->mute_mask, (unsigned)tn, (unsigned)ts.sample_plays, (unsigned)ts.sample_frames,
-                              (unsigned)d->tr_cmds, (unsigned)shown);
+                              (unsigned)d->tr_cmds, (unsigned)shown, (unsigned)d->tr_bar, (unsigned)tfit, (unsigned)d->tr_moves);
         for (i = 0; i < TR_TABS; i++) {
             sel_gui_rect b = tr_tab_rect(d, tmn, i);
             o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "trtab %u %d %d %d %d\n", (unsigned)i, (int)b.x,
@@ -2729,8 +2746,8 @@ static void draw_library(desk* d) {
         draw_text(d, col, "Library", 1, 32, text);
         {
             sel_gui_rect ab = lib_add_rect(d, mn);
-            sel_gui_round_rect(d->canvas, ab, ab.h / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]));
-            draw_text(d, ab, "Add Folder", 1, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+            sel_gui_round_rect(d->canvas, ab, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]));
+            draw_text_centered(d, ab, "Add Folder", 1, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
         }
         for (m = 0; m < LIB_MODES; m++) { /* the mode tabs: the active one in the accent colour */
             sel_gui_rect tr = lib_tab_rect(d, mn, m);
@@ -3109,10 +3126,16 @@ static void draw_home_content(desk* d) {
     sel_gui_dirty_add(d->canvas, mn);
 }
 
+/* History arrow k (0 back, 1 forward) at the top right of the main pane; page controls on that row end left of it. */
+static sel_gui_rect nav_arrow_rect(desk* d, sel_gui_rect mn, int32_t k) {
+    int32_t bs = lpx(d, 28), gap = lpx(d, 8);
+    return rect_of(mn.x + mn.w - lpx(d, HOME_MARGIN) - 2 * bs - gap + k * (bs + gap), mn.y + lpx(d, 8), bs, bs);
+}
+
 /* The history arrows (I266) at the top right of the main pane, after Spotify's back and forward buttons: a round
  * button each, the text colour while the history can move that way and the muted colour when it cannot. */
 static void draw_nav_arrows(desk* d, sel_gui_rect mn) {
-    int32_t bs = lpx(d, 28), gap = lpx(d, 8), mg = lpx(d, HOME_MARGIN), y = mn.y + lpx(d, 8), k;
+    int32_t bs = lpx(d, 28), k;
     int can[2] = {d->pg_pos > 0u, d->pg_pos + 1u < d->pg_n};
     sel_gui_rect* slot[2] = {&d->nav_back, &d->nav_fwd};
     if (d->uim.layout != SEL_UIM_LAYOUT_FULL || mn.w < lpx(d, 400)) {
@@ -3121,7 +3144,7 @@ static void draw_nav_arrows(desk* d, sel_gui_rect mn) {
         return;
     }
     for (k = 0; k < 2; k++) {
-        sel_gui_rect b = rect_of(mn.x + mn.w - mg - 2 * bs - gap + k * (bs + gap), y, bs, bs);
+        sel_gui_rect b = nav_arrow_rect(d, mn, k);
         uint32_t ink = ARGB(d->theme.token[can[k] ? SEL_GUI_TOKEN_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]);
         int32_t cx = b.x + bs / 2, cy = b.y + bs / 2, a = bs / 5, t, dir = k == 0 ? -1 : 1;
         *slot[k] = b;

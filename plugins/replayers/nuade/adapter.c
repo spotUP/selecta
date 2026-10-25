@@ -176,6 +176,17 @@ static int rp_pos(nuade_state* s, uint32_t* order, uint32_t* row) {
 }
 
 static int rp_tracker_info(void* state, uint32_t order, sel_rp_tracker_info* out);
+
+/* RP_POSITION: the row the player is on, so the Tracker view scrolls with the song (I282). The engine calls
+ * it on the thread that ticks the player. nuade reports no pattern number; the Tracker asks by order. */
+static int rp_position(void* state, sel_rp_position* out) {
+    if (!rp_pos((nuade_state*)state, &out->order, &out->row)) {
+        return 0;
+    }
+    out->pattern = 0u;
+    return 1;
+}
+
 static uint32_t rp_tracker_cells(void* state, uint32_t order, uint32_t channel, uint32_t row_lo, uint32_t row_hi,
                                  sel_rp_cell* out, uint32_t cap);
 
@@ -535,7 +546,7 @@ static const sel_tag* rp_metadata(void* state) {
 
 /* Filled at run time: a function pointer cast to an integer is not a
  * constant expression in C99. */
-static sel_tag g_hooks[21];
+static sel_tag g_hooks[22];
 /* SEL_RP_COMPANIONS (I166): TFMX keeps its samples in a second file. */
 static const char g_companions[] = "mdat.*>smpl.*;*.tfx>*.sam";
 static sel_tag g_config[2]; /* SEL_RP_CONFIG list: one entry per option, value = the host config key */
@@ -631,7 +642,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[17], SEL_RP_MEMORY, 2097152);
     set(&g_hooks[18], SEL_RP_CONFIG, (uintptr_t)g_config);
     set(&g_hooks[19], SEL_RP_COMPANIONS, (uintptr_t)g_companions);
-    set(&g_hooks[20], SEL_TAG_END, 0);
+    set(&g_hooks[20], SEL_RP_POSITION, SEL_TAG_FN(rp_position));
+    set(&g_hooks[21], SEL_TAG_END, 0);
     set(&g_config[0], SEL_TAG_USER, (uintptr_t)k_cfg_gain);
     set(&g_config[1], SEL_TAG_END, 0);
 

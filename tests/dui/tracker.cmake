@@ -101,7 +101,7 @@ function(expect_eq what got want)
   endif()
 endfunction()
 
-# tr_run(<tag> <seek ms> <input script>) runs the tracker page; sets <tag>_out and the sentinel fields.
+# tr_run(<tag> <seek ms> <input script> [extra args...]) runs the tracker page; sets <tag>_out and the sentinel fields.
 function(tr_run tag seek input)
   file(WRITE "${WORK}/${tag}.txt" "${input}")
   file(REMOVE_RECURSE "${WORK}/cfg" "${WORK}/${tag}.db")
@@ -110,12 +110,12 @@ function(tr_run tag seek input)
   if(seek GREATER 0)
     list(APPEND args --exec "SEEK ${seek}")
   endif()
-  dui_run(o ${args} --input "${WORK}/${tag}.txt")
+  dui_run(o ${args} ${ARGN} --input "${WORK}/${tag}.txt")
   if(NOT "${o}" MATCHES "(^|\n)(tracker draws [^\n]*)")
     message(FATAL_ERROR "no tracker sentinel in:\n${o}")
   endif()
   set(tline "${CMAKE_MATCH_2}")
-  foreach(k draws tab order row rows channels muted samples plays frames cmds shown)
+  foreach(k draws tab order row rows channels muted samples plays frames cmds shown bar fit moves)
     if(NOT "${tline}" MATCHES "[ ]${k} ([0-9]+)")
       message(FATAL_ERROR "no '${k}' in the tracker line:\n${o}")
     endif()
@@ -168,6 +168,27 @@ endif()
 if(real_notes LESS 1)
   message(FATAL_ERROR "no checked cell carried a note, the oracle compares nothing")
 endif()
+# 1b. the row rolls while the song plays, with no SEEK (I282): the position comes from the replayer's own
+#     RP_POSITION, sampled by the engine every tick, not from the seek path. The mem backend plays the song to its
+#     end, so the sentinel counts the pattern frames that drew a new order:row; a frozen position draws none.
+#     selecta-test.mod plays through nuade (a voice replayer, the path that froze); the generated MOD goes to openmpt.
+set(gen_mod "${MOD}")
+set(MOD "${SONGS}/selecta-test.mod")
+tr_run(roll 0 "wait 1\n" --exec PLAY --ticks 300)
+set(MOD "${gen_mod}")
+if(NOT "${roll_out}" MATCHES "replayer=nuade")
+  message(FATAL_ERROR "the roll run did not play through nuade:\n${roll_out}")
+endif()
+if(roll_moves LESS 32)
+  message(FATAL_ERROR "the playing row moved ${roll_moves} times over the song, want at least 32:\n${roll_out}")
+endif()
+# 1c. the playing-row bar holds the middle slot while the pattern scrolls past it (I283), also at row 0
+#     where the old window clamp put it in the top slot.
+math(EXPR mid "${p1000_fit} / 2")
+expect_eq("the bar slot at row ${p1000_row}" "${p1000_bar}" "${mid}")
+tr_run(top 0 "wait 1\n")
+math(EXPR mid "${top_fit} / 2")
+expect_eq("the bar slot at order 0 row 0" "${top_bar}" "${mid}")
 expect_eq("an idle page plays samples" "${p1000_plays}" 0)
 expect_eq("an idle page sends verbs" "${p1000_cmds}" 0)
 

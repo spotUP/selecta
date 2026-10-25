@@ -5541,6 +5541,7 @@ static uint32_t render_slot(sel_engine* e, sel_slot* sl, int16_t* stereo, uint32
                 sel_tick_result r;
                 sl->rp_tick(sl->rp_state, &r);
                 sl->ticks++;
+                sample_position(sl); /* a voice replayer's order and row, once per tick (I282) */
                 sl->frames_left = sel_scheduler_frames(&sl->sched, r.length);
                 if (e->state.tempo_percent != 0) { /* TEMPO: tick rate is (100 + percent) percent */
                     sl->frames_left =
