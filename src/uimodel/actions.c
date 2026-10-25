@@ -97,7 +97,7 @@ static const struct {
     {"ANALYSE", CTX},        {"CUE_SET", CTX},        {"CUE_GOTO", CTX},        {"SHARE", ARG},
     {"RADIO", ARG},          {"STICKER_SET", PROTO},  {"STICKER_GET", PROTO},   {"STICKER_DEL", PROTO},
     {"FOLDER_ADD", ARG},     {"FOLDER_MOVE", CTX},    {"FOLDER_DEL", CTX},      {"PLAYLIST_MOVE", CTX},
-    {"PLAYLIST_CREATE", ARG}, {"STICKER_LIST", PROTO}, {"PREF_GET", PROTO},     
+    {"PLAYLIST_CREATE", ARG}, {"PLAYLIST_ADD_SONG", CTX}, {"PLAYLIST_RENAME", ARG}, {"PLAYLIST_DEL", CTX}, {"STICKER_LIST", PROTO}, {"PREF_GET", PROTO},     
     {"VIEW_STYLE", CTX},     {"VIEW_SHOW", CTX},      {"VIEW_SAVE", ARG},       {"VIEW_SOURCE", CTX},
     {"VIEW_WINDOW", PROTO},  {"VIEW_GROUP", CTX},     {"VIEW_EXPAND", CTX},     {"VIEW_COLLAPSE", CTX},
     {"VIEW_DRILL", CTX},     {"MIX_STEREO_WIDTH", ARG}, {"DSP", ARG},           {"BEGIN", PROTO},

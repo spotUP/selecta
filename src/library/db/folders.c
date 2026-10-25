@@ -137,6 +137,47 @@ static int playlist_add(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     return SQLITE_OK;
 }
 
+static int playlist_exists(sqlite3* db, int64_t id) {
+    return id > 0 && scalar(db, "SELECT COUNT(*) FROM playlists WHERE id = ?1", id, 0) == 1;
+}
+
+/* at = playlist, value = one song key; appended after the last entry. */
+static int playlist_add_song(sqlite3* db, const sel_user_op* op, int64_t* rows) {
+    sqlite3_stmt* st;
+    if (op->value == NULL || op->value[0] == '\0') return SQLITE_MISUSE;
+    if (!playlist_exists(db, op->at)) return refuse(rows, SEL_FOLDER_ERR_NO_PLAYLIST);
+    st = prep(db, "INSERT INTO playlist_entries(playlist_id, pos, key)"
+                  " VALUES(?1, (SELECT COALESCE(MAX(pos) + 1, 0) FROM playlist_entries WHERE playlist_id = ?1), ?2)");
+    if (st == NULL) return SQLITE_ERROR;
+    sqlite3_bind_int64(st, 1, op->at);
+    sqlite3_bind_text(st, 2, op->value, -1, SQLITE_STATIC);
+    return step_done(st);
+}
+
+static int playlist_rename(sqlite3* db, const sel_user_op* op, int64_t* rows) {
+    sqlite3_stmt* st;
+    if (op->name == NULL || op->name[0] == '\0') return SQLITE_MISUSE;
+    if (!playlist_exists(db, op->at)) return refuse(rows, SEL_FOLDER_ERR_NO_PLAYLIST);
+    st = prep(db, "UPDATE playlists SET name = ?2 WHERE id = ?1");
+    if (st == NULL) return SQLITE_ERROR;
+    sqlite3_bind_int64(st, 1, op->at);
+    sqlite3_bind_text(st, 2, op->name, -1, SQLITE_STATIC);
+    return step_done(st);
+}
+
+static int playlist_del(sqlite3* db, const sel_user_op* op, int64_t* rows) {
+    sqlite3_stmt* st;
+    if (!playlist_exists(db, op->at)) return refuse(rows, SEL_FOLDER_ERR_NO_PLAYLIST);
+    st = prep(db, "DELETE FROM playlist_entries WHERE playlist_id = ?1");
+    if (st == NULL) return SQLITE_ERROR;
+    sqlite3_bind_int64(st, 1, op->at);
+    if (step_done(st) != SQLITE_OK) return SQLITE_ERROR;
+    st = prep(db, "DELETE FROM playlists WHERE id = ?1");
+    if (st == NULL) return SQLITE_ERROR;
+    sqlite3_bind_int64(st, 1, op->at);
+    return step_done(st);
+}
+
 /* Appends `a` NUL `b` NUL to out; false when it does not fit (leaving room for the final empty string). */
 static int put_pair(char* out, uint32_t cap, uint32_t* used, const char* a, const char* b) {
     size_t la = strlen(a) + 1u, lb = b != NULL ? strlen(b) + 1u : 0u;
@@ -235,6 +276,9 @@ int sel_folder_exec(sqlite3* db, const sel_user_op* op, int64_t* rows, int32_t c
     case SEL_USER_FOLDER_DEL: return folder_del(db, op, rows);
     case SEL_USER_PLAYLIST_MOVE: return playlist_move(db, op, rows);
     case SEL_USER_PLAYLIST_ADD: return playlist_add(db, op, rows);
+    case SEL_USER_PLAYLIST_ADD_SONG: return playlist_add_song(db, op, rows);
+    case SEL_USER_PLAYLIST_RENAME: return playlist_rename(db, op, rows);
+    case SEL_USER_PLAYLIST_DEL: return playlist_del(db, op, rows);
     case SEL_USER_FOLDER_PLAYLISTS: return folder_playlists(db, op, rows);
     case SEL_USER_PLAYLIST_KEYS: return playlist_keys(db, op, rows);
     case SEL_USER_FOLDER_TREE: return folder_tree(db, op, rows);

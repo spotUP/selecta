@@ -131,7 +131,7 @@
     X(FLAG)                                                                                   \
     X(NOTE)                                                                                   \
     X(RATE) X(VOTE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
-    X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) \
+    X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(PLAYLIST_ADD_SONG) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) \
     X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(COMPOSERS_HIDE) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
@@ -4004,6 +4004,31 @@ static void cmd_PLAYLIST_CREATE(sel_engine* e, const sel_message* m) {
     snprintf(text, sizeof text, "%u", (unsigned)id);
     folders_reload(e);
     sticker_answer(e, "playlist", m->args[0].v.s, text, id);
+}
+
+/* PLAYLIST_ADD_SONG id path (I241): appends one song to a saved playlist. */
+static void cmd_PLAYLIST_ADD_SONG(sel_engine* e, const sel_message* m) {
+    int rc;
+    if (!folder_ready(e, "PLAYLIST_ADD_SONG")) return;
+    rc = sel_library_playlist_add_song(e->lib, (uint32_t)m->args[0].v.u, m->args[1].v.s);
+    if (rc != SEL_FOLDER_OK) folder_report(e, rc, "PLAYLIST_ADD_SONG");
+    else folders_reload(e);
+}
+
+static void cmd_PLAYLIST_RENAME(sel_engine* e, const sel_message* m) {
+    int rc;
+    if (!folder_ready(e, "PLAYLIST_RENAME")) return;
+    rc = sel_library_playlist_rename(e->lib, (uint32_t)m->args[0].v.u, m->args[1].v.s);
+    if (rc != SEL_FOLDER_OK) folder_report(e, rc, "PLAYLIST_RENAME");
+    else folders_reload(e);
+}
+
+static void cmd_PLAYLIST_DEL(sel_engine* e, const sel_message* m) {
+    int rc;
+    if (!folder_ready(e, "PLAYLIST_DEL")) return;
+    rc = sel_library_playlist_del(e->lib, (uint32_t)m->args[0].v.u);
+    if (rc != SEL_FOLDER_OK) folder_report(e, rc, "PLAYLIST_DEL");
+    else folders_reload(e);
 }
 
 static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {

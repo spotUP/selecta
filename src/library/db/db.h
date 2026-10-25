@@ -110,6 +110,9 @@ enum {
     SEL_USER_FOLDER_DEL,   /* I178: at = folder id; refused while it holds folders or playlists */
     SEL_USER_PLAYLIST_MOVE,/* I178: at = playlist id, to = folder id (0 = root) */
     SEL_USER_PLAYLIST_ADD, /* I178: name = title, at = folder id, value = song keys joined by newline; reply [2] = new id */
+    SEL_USER_PLAYLIST_ADD_SONG, /* I241: at = playlist id, value = one song key appended at the next position */
+    SEL_USER_PLAYLIST_RENAME,   /* DUI-P4-9: at = playlist id, name = new title */
+    SEL_USER_PLAYLIST_DEL,      /* DUI-P4-9: at = playlist id; removes its entries and the row */
     SEL_USER_FOLDER_COUNTS,/* I178: reply [2..5] = folders, playlists in folders, playlists, playlist entries */
     SEL_USER_FOLDER_PLAYLISTS, /* I178: at = folder id (0 = all); out = "id\0name\0" pairs then "\0"; reply [2] = playlists */
     SEL_USER_PLAYLIST_KEYS,/* I178: at = playlist id; out = song keys, each NUL terminated, then "\0"; reply [2] = keys */
@@ -356,6 +359,9 @@ int sel_library_folder_add(sel_library* lib, const char* name, uint32_t parent, 
 int sel_library_folder_move(sel_library* lib, uint32_t id, uint32_t parent);
 int sel_library_folder_del(sel_library* lib, uint32_t id);
 int sel_library_playlist_move(sel_library* lib, uint32_t id, uint32_t folder);
+int sel_library_playlist_add_song(sel_library* lib, uint32_t id, const char* key);
+int sel_library_playlist_rename(sel_library* lib, uint32_t id, const char* name);
+int sel_library_playlist_del(sel_library* lib, uint32_t id);
 int sel_library_playlist_add(sel_library* lib, const char* name, uint32_t folder, const char* keys_nl, uint32_t* out_id);
 int sel_library_folder_counts(sel_library* lib, uint32_t* folders, uint32_t* in_folders, uint32_t* playlists, uint32_t* entries);
 /* Fills `out` per the SEL_USER_FOLDER_PLAYLISTS / PLAYLIST_KEYS / FOLDER_TREE formats; *count = rows found. */

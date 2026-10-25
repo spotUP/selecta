@@ -491,6 +491,32 @@ int sel_library_playlist_move(sel_library* lib, uint32_t id, uint32_t folder) {
     return folder_call(lib, &op, NULL);
 }
 
+int sel_library_playlist_add_song(sel_library* lib, uint32_t id, const char* key) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_PLAYLIST_ADD_SONG;
+    op.at = id;
+    op.value = key;
+    return folder_call(lib, &op, NULL);
+}
+
+int sel_library_playlist_rename(sel_library* lib, uint32_t id, const char* name) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_PLAYLIST_RENAME;
+    op.at = id;
+    op.name = name;
+    return folder_call(lib, &op, NULL);
+}
+
+int sel_library_playlist_del(sel_library* lib, uint32_t id) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_PLAYLIST_DEL;
+    op.at = id;
+    return folder_call(lib, &op, NULL);
+}
+
 int sel_library_playlist_add(sel_library* lib, const char* name, uint32_t folder, const char* keys_nl, uint32_t* out_id) {
     sel_user_op op;
     memset(&op, 0, sizeof op);
