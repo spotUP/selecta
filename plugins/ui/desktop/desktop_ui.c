@@ -137,6 +137,9 @@ typedef struct desk {
     uint32_t drops;          /* files and folders dropped on the window or chosen in Add Folder: STAT_DROPS (DUI-P5-11) */
     uint32_t scans;          /* LIBRARY_SCAN answers seen: STAT_SCANS */
     const char* dialog_answer; /* --dialog-answer <path>: what the folder dialog answers in a test (DUI-P5-11) */
+    uint32_t scan_done, scan_total; /* I315: scan progress last drawn on the Library page (files started, files in the folder) */
+    char scan_file[SEL_SCAN_FILE_MAX]; /* I315: path of the file the progress shows */
+    uint32_t scan_draws;     /* I315: partial redraws of the Add Folder area while a scan ran (sentinel) */
     int scan_pending;        /* 1 between sending LIBRARY_SCAN and its LIBRARY_RESULT: searches answer with the same event */
     int drop_playing;        /* 1 after a dropped file was sent as OPEN: an open_failed error then toasts */
     uint32_t np_rows;        /* metadata pairs the Now Playing panel drew: STAT_META_PANEL_ROWS (DUI-P4-7) */
@@ -255,6 +258,7 @@ static void desk_draw_overlay(desk* d);
 static uint32_t desk_toast_wait(const desk* d);
 static void desk_toast(desk* d, const char* text);
 static int desk_add_folder(desk* d);
+static sel_gui_rect toast_rect(desk* d);
 static void desk_toast_tick(desk* d);
 
 /* Hands the dirty rectangles to the backend, then empties the list; returns the pixels repainted. The sdl backend
@@ -1565,6 +1569,40 @@ static sel_gui_rect lib_add_rect(desk* d, sel_gui_rect mn) {
     return rect_of(right - w, mn.y + lpx(d, LIB_TITLE_Y) + lpx(d, 4), w, lpx(d, 32));
 }
 
+/* I315: while a scan runs the Add Folder button gives way to the file being added and a progress bar. Same row and
+ * right edge as the button, wider so a file name fits. */
+static sel_gui_rect lib_scan_rect(desk* d, sel_gui_rect mn) {
+    sel_gui_rect ab = lib_add_rect(d, mn);
+    int32_t w = lpx(d, 360);
+    return rect_of(ab.x + ab.w - w, ab.y, w, ab.h);
+}
+
+static const char* path_base(const char* p) {
+    const char* b = strrchr(p, '/');
+    return b != NULL ? b + 1 : p;
+}
+
+/* Draws the scan progress into its rectangle (the panel colour first, so it repaints in place) and marks only that
+ * rectangle dirty (plan 2.9, dirty rectangles). */
+static void lib_scan_draw(desk* d, sel_gui_rect mn) {
+    sel_gui_rect r = lib_scan_rect(d, mn), bar;
+    int32_t bh = lpx(d, 4), fill = d->scan_total > 0u ? (int32_t)(((uint64_t)d->scan_done * (uint32_t)r.w) / d->scan_total) : 0;
+    char line[SEL_SCAN_FILE_MAX + 40];
+    sel_gui_fill_rect(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
+    if (d->scan_total > 0u) {
+        snprintf(line, sizeof line, "%u of %u  %s", (unsigned)d->scan_done, (unsigned)d->scan_total, path_base(d->scan_file));
+    } else {
+        snprintf(line, sizeof line, "Reading folder");
+    }
+    draw_text(d, rect_of(r.x, r.y, r.w, r.h - bh - lpx(d, 4)), line, 0, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    bar = rect_of(r.x, r.y + r.h - bh, r.w, bh);
+    sel_gui_round_rect(d->canvas, bar, bh / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]));
+    if (fill >= bh) {
+        sel_gui_round_rect(d->canvas, rect_of(bar.x, bar.y, fill, bh), bh / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+    }
+    sel_gui_dirty_add(d->canvas, r);
+}
+
 /* The crumb after the tabs: the values picked in the column browser; a click on it clears them. */
 static sel_gui_rect lib_crumb_rect(desk* d, sel_gui_rect mn) {
     return rect_of(mn.x + lpx(d, LIB_MARGIN) + LIB_MODES * lpx(d, LIB_TAB_W), mn.y + lpx(d, LIB_TAB_Y), lpx(d, 300), lpx(d, LIB_TAB_H));
@@ -2776,6 +2814,13 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "addfolder %d %d %d %d\nscan probed %u files %u scans %u\n",
                               (int)ab.x, (int)ab.y, (int)ab.w, (int)ab.h, (unsigned)si.probed, (unsigned)si.scanned_files, (unsigned)d->scans);
     }
+    {
+        sel_gui_rect pm = panel_rect(d, "main"), tr = toast_rect(d), sr = lib_scan_rect(d, pm), ab = lib_add_rect(d, pm);
+        o = dump_put(d, o, "scan_ui page=%d done=%u total=%u file=%s draws=%u pending=%d toast_rect %d %d %d %d add_rect %d %d %d %d scan_rect %d %d %d %d\n",
+                              (int)d->page, (unsigned)d->scan_done, (unsigned)d->scan_total, path_base(d->scan_file), (unsigned)d->scan_draws,
+                              d->scan_pending, (int)tr.x, (int)tr.y, (int)tr.w, (int)tr.h, (int)ab.x, (int)ab.y, (int)ab.w, (int)ab.h,
+                              (int)sr.x, (int)sr.y, (int)sr.w, (int)sr.h);
+    }
     o = dump_put(d, o, "search draws %u rows %u query %s\n",
                           (unsigned)d->search_draws, (unsigned)d->search_rows, d->query);
     o = dump_put(d, o, "search groups songs=%u albums=%u artists=%u facet=%u drawn=%u\n",
@@ -3067,7 +3112,11 @@ static void draw_library(desk* d) {
         draw_text(d, col, "Library", 1, 32, text);
         {
             sel_gui_rect ab = lib_add_rect(d, mn);
-            draw_button(d, ab, ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Add Folder", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+            if (d->scan_pending) {
+                lib_scan_draw(d, mn);
+            } else {
+                draw_button(d, ab, ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Add Folder", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+            }
         }
         for (m = 0; m < LIB_MODES; m++) { /* the mode tabs: the active one in the accent colour */
             sel_gui_rect tr = lib_tab_rect(d, mn, m);
@@ -3219,7 +3268,7 @@ static int library_click(desk* d, int32_t x, int32_t y) {
     uint32_t i = 0;
     const char* p;
     char line[256];
-    if (d->page == PG_LIBRARY && st->composer_page == NULL && in_rect(lib_add_rect(d, mn), x, y)) {
+    if (d->page == PG_LIBRARY && st->composer_page == NULL && !d->scan_pending && in_rect(lib_add_rect(d, mn), x, y)) {
         return desk_add_folder(d);
     }
     if (st->composers == NULL) {
@@ -4565,7 +4614,7 @@ static sel_gui_rect overlay_row(const desk* d, uint32_t i) {
     return rect_of(b.x + lpx(d, 8), b.y + lpx(d, OV_HEAD_H) + (int32_t)i * lpx(d, OV_ROW_H), b.w - lpx(d, 16), lpx(d, OV_ROW_H));
 }
 
-static sel_gui_rect toast_rect(const desk* d) {
+static sel_gui_rect toast_rect(desk* d) {
     sel_gui_rect mn = region_rect(d, "main");
     return rect_of(mn.x + mn.w - lpx(d, 260 + 16), mn.y + mn.h - lpx(d, 40 + 16) - lpx(d, CMD_BAR_H), lpx(d, 260), lpx(d, 40));
 }
@@ -5285,8 +5334,15 @@ static int desk_drop_path(desk* d, const char* path, int more) {
         return 1;
     }
     if (S_ISDIR(sb.st_mode)) {
-        desk_toast(d, "Adding folder");
         d->scan_pending = 1;
+        d->scan_done = d->scan_total = 0u;
+        d->scan_file[0] = '\0';
+        if (d->page == PG_LIBRARY) { /* the Add Folder button turns into the progress bar */
+            d->repaint = 1;
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        } else {
+            desk_toast(d, "Adding folder");
+        }
         desk_send_path(d, "LIBRARY_SCAN", path);
         return 1;
     }
@@ -5301,6 +5357,30 @@ static int desk_drop_path(desk* d, const char* path, int more) {
 }
 
 /* Add Folder: the native folder dialog; a test answers with --dialog-answer. The chosen folder comes back as a drop. */
+/* I315: reads the engine's live scan progress; when it moved, redraws just the Add Folder area of the Library page.
+ * Returns 1 when something was drawn. The finish handler calls it once more, so the last state is seen. */
+static int desk_scan_sync(desk* d) {
+    sel_scan_progress sp;
+    int shown;
+    if (!d->scan_pending) {
+        return 0;
+    }
+    sel_engine_scan_progress(d->engine, &sp);
+    if (sp.done == d->scan_done && sp.total == d->scan_total && strcmp(sp.file, d->scan_file) == 0) {
+        return 0;
+    }
+    d->scan_done = sp.done;
+    d->scan_total = sp.total;
+    snprintf(d->scan_file, sizeof d->scan_file, "%s", sp.file);
+    shown = d->page == PG_LIBRARY && sel_engine_state(d->engine)->composer_page == NULL && d->frames > 0u && !d->repaint;
+    if (shown) {
+        lib_scan_draw(d, panel_rect(d, "main"));
+        d->scan_draws++;
+        desk_event_frame(d, 1);
+    }
+    return shown;
+}
+
 static int desk_add_folder(desk* d) {
     if (d->dialog_answer != NULL) {
         return desk_drop_path(d, d->dialog_answer, 0);
@@ -5999,11 +6079,12 @@ static void desk_on_event(void* state, const sel_message* evt) {
         sel_scan_info si;
         char msg[64];
         sel_engine_scan_info(d->engine, &si);
+        desk_scan_sync(d); /* the last progress state, so the bar was seen full */
         d->scan_pending = 0;
         d->scans++;
         snprintf(msg, sizeof msg, "Added %u songs to the library", (unsigned)si.scanned_files);
+        desk_page_load(d, d->page); /* I316: the page you are on shows what the scan added; a drilldown stays (I302) */
         desk_toast(d, msg);
-        desk_page_load(d, d->page);
         if (d->page == PG_LIBRARY && (d->lib_mode == 1u || d->lib_mode == 2u)) {
             desk_send(d, "LIBRARY_SEARCH \"\"");
         }
@@ -6011,6 +6092,8 @@ static void desk_on_event(void* state, const sel_message* evt) {
     }
     if (evt->id == SEL_EVT_ERROR && d->scan_pending) { /* no_library or scan_failed */
         d->scan_pending = 0;
+        d->repaint = 1;
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL; /* the progress bar turns back into the button */
         desk_toast(d, "Cannot add that folder");
         d->repaint = 1;
     }
@@ -6070,6 +6153,7 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
         d->frames++;
         return 1;
     }
+    desk_scan_sync(d); /* I315: a running scan moves the Add Folder progress bar */
     if (lib_hash(d, sel_engine_state(d->engine)) != d->library_sig && sel_engine_state(d->engine)->composers != NULL) {
         d->library_sig = lib_hash(d, sel_engine_state(d->engine)); /* the Library page changed: redraw */
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;

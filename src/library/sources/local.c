@@ -41,6 +41,9 @@ typedef struct scan_state {
     uint32_t row_n;
     int failed;
     int flat; /* rescan: list the directory without entering its subdirectories */
+    int count_only;     /* I315 pre-pass: count the files the walk will visit, scan none of them */
+    uint32_t total;     /* files counted by the pre-pass */
+    uint32_t visited;   /* files handed to scan_file so far */
 } scan_state;
 
 static void copy_text(char* dst, size_t n, const char* src) {
@@ -321,10 +324,14 @@ static void scan_dir(scan_state* s, const char* dir) {
     char full[SEL_BROWSE_PATH_MAX];
 
     if (!sel_browse_list(&s->browse, dir)) {
-        s->stats->skipped_files++;
+        if (!s->count_only) {
+            s->stats->skipped_files++;
+        }
         return;
     }
-    s->stats->dirs++;
+    if (!s->count_only) {
+        s->stats->dirs++;
+    }
     for (i = 0; i < s->browse.count && !s->failed; i++) {
         const char* name = sel_browse_name(&s->browse, i);
 
@@ -335,7 +342,13 @@ static void scan_dir(scan_state* s, const char* dir) {
             if (!s->flat) {
                 push_dir(s, full);
             }
+        } else if (s->count_only) {
+            s->total++;
         } else {
+            s->visited++;
+            if (s->cfg->progress != NULL) {
+                s->cfg->progress(s->cfg->progress_ctx, full, s->visited, s->total);
+            }
             scan_file(s, full);
         }
     }
@@ -374,19 +387,29 @@ static int scan_with(const sel_local_scan_config* cfg, sel_local_scan_stats* sta
     return ok;
 }
 
-static void run_tree(scan_state* s, const void* root) {
+static void walk_tree(scan_state* s, const char* root) {
     char first[SEL_BROWSE_PATH_MAX];
 
-    if (!sel_browse_list(&s->browse, (const char*)root)) {
-        s->failed = 1;
-        return;
-    }
-    copy_text(first, sizeof first, (const char*)root);
+    copy_text(first, sizeof first, root);
     push_dir(s, first);
     while (s->stack_n > 0 && !s->failed) {
         copy_text(first, sizeof first, s->stack[--s->stack_n]);
         scan_dir(s, first);
     }
+}
+
+static void run_tree(scan_state* s, const void* root) {
+    if (!sel_browse_list(&s->browse, (const char*)root)) {
+        s->failed = 1;
+        return;
+    }
+    if (s->cfg->progress != NULL) { /* I315: a listing-only pass first, so the progress callback knows the total */
+        s->count_only = 1;
+        walk_tree(s, (const char*)root);
+        s->count_only = 0;
+        s->stack_n = 0;
+    }
+    walk_tree(s, (const char*)root);
 }
 
 int sel_local_scan(const sel_local_scan_config* cfg, const char* root, sel_local_scan_stats* stats) {

@@ -17,6 +17,10 @@ typedef struct sel_local_scan_config {
     uint32_t (*registry_count)(void);
     const sel_tag* (*registry_get)(uint32_t index);
     int64_t now; /* epoch seconds for songs.added */
+    /* I315: optional. sel_local_scan counts the files first, then calls this before each one with the path, the
+     * number visited so far (from 1) and the total. Rescans do not call it. */
+    void (*progress)(void* ctx, const char* path, uint32_t done, uint32_t total);
+    void* progress_ctx;
 } sel_local_scan_config;
 
 typedef struct sel_local_scan_stats {

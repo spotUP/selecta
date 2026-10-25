@@ -225,6 +225,16 @@ typedef struct sel_engine sel_engine;
 
 void sel_engine_scan_info(const sel_engine* e, sel_scan_info* out);
 
+/* I315: live progress of a LIBRARY_SCAN, readable from any thread while the scan runs. `file` is the path being
+ * scanned, `done` the files started so far, `total` the files the folder holds (counted first). `active` is 1 while
+ * a scan runs; the last values stay after it ends. */
+#define SEL_SCAN_FILE_MAX 160u
+typedef struct sel_scan_progress {
+    uint32_t active, done, total;
+    char file[SEL_SCAN_FILE_MAX];
+} sel_scan_progress;
+void sel_engine_scan_progress(const sel_engine* e, sel_scan_progress* out);
+
 /* Counters of the last LIBRARY_SYNC (I161; test sentinels: listing_rows > 0 proves the sync code ran). */
 typedef struct sel_sync_info {
     uint32_t listing_rows, skipped_rows, changelogs;

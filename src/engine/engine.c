@@ -369,6 +369,9 @@ struct sel_engine {
     sel_browse browse;  /* the listing LIBRARY_BROWSE fills */
     char browse_cursor[SEL_BROWSE_PATH_MAX]; /* path of the browse file row under the cursor (sel_engine_view_cursor_key) */
     sel_scan_info scan_info; /* counters of the last LIBRARY_SCAN */
+    /* I315 live scan progress: the command thread writes under an odd scan_seq, readers retry until they see the same even value twice */
+    volatile uint32_t scan_seq, scan_active, scan_done, scan_total;
+    char scan_file[SEL_SCAN_FILE_MAX];
     sel_sync_info sync_info; /* counters of the last LIBRARY_SYNC */
     uint32_t lib_slot;
     sel_tag lib_tags[4][4];                  /* LIBRARY_RESULT tags, a ring like error_detail */
@@ -3218,6 +3221,32 @@ static void emit_library_path(sel_engine* e, const char* path, uint32_t count) {
     emit(e, &r);
 }
 
+static void scan_progress_set(sel_engine* e, uint32_t active, const char* path, uint32_t done, uint32_t total) {
+    e->scan_seq++; /* odd: writing */
+    e->scan_active = active;
+    e->scan_done = done;
+    e->scan_total = total;
+    if (path != NULL) {
+        snprintf(e->scan_file, sizeof e->scan_file, "%s", path);
+    }
+    e->scan_seq++;
+}
+
+static void scan_progress_cb(void* ctx, const char* path, uint32_t done, uint32_t total) {
+    scan_progress_set((sel_engine*)ctx, 1u, path, done, total);
+}
+
+void sel_engine_scan_progress(const sel_engine* e, sel_scan_progress* out) {
+    uint32_t a;
+    do {
+        a = e->scan_seq;
+        out->active = e->scan_active;
+        out->done = e->scan_done;
+        out->total = e->scan_total;
+        memcpy(out->file, e->scan_file, sizeof out->file);
+    } while ((a & 1u) != 0u || a != e->scan_seq);
+}
+
 /* LIBRARY_SCAN <dir>: scans the directory tree (and the archives in it) into the catalogue through
  * cfg.library (I158, I158a, I159); the answer is a LIBRARY_RESULT carrying the scanned path and the file count. */
 static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
@@ -3236,7 +3265,11 @@ static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
     scfg.registry_count = e->registry_count;
     scfg.registry_get = e->registry_get;
     scfg.now = (int64_t)time(NULL);
+    scfg.progress = scan_progress_cb;
+    scfg.progress_ctx = e;
+    scan_progress_set(e, 1u, "", 0u, 0u);
     ok = sel_local_scan(&scfg, m->args[0].v.s, &stats);
+    scan_progress_set(e, 0u, NULL, e->scan_done, e->scan_total);
     e->art_generation++; /* a failed scan may still have stored albums */
     files = stats.scanned_files;
     e->scan_info.scanned_files = stats.scanned_files;
