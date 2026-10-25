@@ -13,13 +13,24 @@ mkdir -p "$root/sub"
 cp "$modA" "$root/one.mod"
 cp "$modB" "$root/sub/two.mod"
 printf 'not a module\n' > "$root/readme.txt"
+# I301: files that are not songs but look plausible to a loose probe. None may become a row.
+#  - hunk.exe: an Amiga hunk executable (HUNK_HEADER 0x3F3, hunk table, HUNK_CODE). The old Sound Factory
+#    header check read 0x3F3 as the module length and the hunk sizes as channel offsets and accepted it.
+#  - notes.cpp: source text.  - noise.bin: arbitrary binary bytes.
+#  - truncated.mod: passes the module probe but the replayer cannot open it (no row, never an empty format).
+printf '\000\000\003\363\000\000\000\000\000\000\000\002\000\000\000\000\000\000\000\001' > "$root/hunk.exe"
+printf '\000\000\001\120\000\000\001\120\000\000\003\351\000\000\001\120\000\000\002\360' >> "$root/hunk.exe"
+dd if=/dev/zero bs=1 count=1460 >> "$root/hunk.exe" 2>/dev/null
+printf '#include <stdio.h>\nint main(void) { return 0; }\n' > "$root/notes.cpp"
+head -c 2000 "$modA" > "$root/truncated.mod"
+dd if="$cli" bs=1 skip=4096 count=3000 of="$root/noise.bin" 2>/dev/null
 expect=$(grep -c . "$manifest")
 out=$("$cli" library scan --db "$root/lib.db" "$root")
 echo "$out"
 field() { echo "$out" | tr ' ' '\n' | sed -n "s/^$1=//p"; }
 [ "$(field scanned_files)" = "$expect" ] || { echo "FAIL scanned_files != $expect"; exit 1; }
 [ "$(field db_songs)" = "$expect" ] || { echo "FAIL db_songs != $expect"; exit 1; }
-[ "$(field skipped_files)" -ge 1 ] || { echo "FAIL skipped_files"; exit 1; }
+[ "$(field skipped_files)" -ge 5 ] || { echo "FAIL skipped_files < 5 (readme, hunk.exe, notes.cpp, noise.bin, truncated.mod)"; exit 1; }
 [ "$(field probed)" -gt 0 ] || { echo "FAIL probed (scan code did not run)"; exit 1; }
 [ "$(field scan_batches)" -ge 1 ] || { echo "FAIL scan_batches"; exit 1; }
 [ "$(field dirs)" = 2 ] || { echo "FAIL dirs != 2"; exit 1; }
@@ -33,6 +44,14 @@ echo "$hits"
 [ "$(echo "$hits" | sed -n 's/^src_count=//p')" = "$expect" ] || { echo "FAIL search src_count != $expect"; exit 1; }
 echo "$hits" | grep -q "^key=local:$root/one.mod\$" || { echo "FAIL search missing one.mod"; exit 1; }
 echo "$hits" | grep -q "^key=local:$root/sub/two.mod\$" || { echo "FAIL search missing two.mod"; exit 1; }
+for junk in hunk.exe notes.cpp noise.bin readme.txt truncated.mod; do
+  ! echo "$hits" | grep -q "$junk" || { echo "FAIL junk row for $junk"; exit 1; }
+done
+# No row without a format (a replayer that could not open the file leaves it empty).
+if command -v sqlite3 >/dev/null 2>&1; then
+  empty=$(sqlite3 "$root/lib.db" "SELECT count(*) FROM songs WHERE format IS NULL OR format = ''")
+  [ "$empty" = 0 ] || { echo "FAIL $empty rows with empty format"; exit 1; }
+fi
 none=$("$cli" library search --db "$root/lib.db" "source:modland")
 [ "$(echo "$none" | sed -n 's/^src_count=//p')" = 0 ] || { echo "FAIL source:modland should have no hits"; exit 1; }
 echo "source_local_ok scanned=$expect"

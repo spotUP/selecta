@@ -175,7 +175,13 @@ static int scan_blob_ex(scan_state* s, const uint8_t* data, size_t size, const s
     src.stream = stream;
     memset(&info, 0, sizeof info);
     state = open_fn != NULL ? open_fn(&src, s->cfg->host, &info) : NULL;
-    if (state != NULL) {
+    if (state == NULL) {
+        /* A probe only says the file might be this format. When the replayer cannot open it, it is
+         * not a song: no row (a row without format would also be unplayable). */
+        s->stats->skipped_files++;
+        return 0;
+    }
+    {
         const sel_tag* meta = meta_fn != NULL ? meta_fn(state) : NULL;
         const char* title = meta != NULL ? (const char*)sel_tag_find(meta, SEL_META_TITLE, 0) : NULL;
 
