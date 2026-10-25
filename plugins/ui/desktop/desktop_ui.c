@@ -884,6 +884,7 @@ enum { SONG_HEADER_H = 24, SONG_ROW_H = 32, SONG_TARGET_H = 32, SONG_MENU_ITEM_H
 static const char* const g_menu_items[SONG_MENU_ITEMS] = {"Play", "Play Next", "Add to Queue", "Remove"};
 
 static int desk_send(desk* d, const char* line);
+static int desk_send_path(desk* d, const char* verb, const char* path);
 static const sel_uim_action* desk_action_by_id(const char* id);
 
 static int32_t songs_top(const desk* d) {
@@ -3091,6 +3092,15 @@ static int library_click(desk* d, int32_t x, int32_t y) {
         sel_gui_rect back = rect_of(mn.x + lpx(d, LIB_MARGIN), mn.y + lpx(d, LIB_TITLE_Y + LIB_TITLE_H + 24), mn.w / 2, lpx(d, 24));
         if (in_rect(back, x, y)) {
             return desk_send(d, "COMPOSERS_SHOW");
+        }
+        /* A song row of the drilldown (drawn at row i + 1, below the back line) plays its song: OPEN with the song's key,
+         * the path a scanned song is keyed by, as the Songs page sends it (I299). */
+        for (p = lib_next(lib_next(st->composer_page)); *p != '\0'; i++) {
+            const char* name = lib_next(p);
+            if (in_rect(lib_row_rect(d, mn, i + 1u), x, y)) {
+                return desk_send_path(d, "OPEN", p);
+            }
+            p = lib_next(name);
         }
         return 0;
     }
