@@ -331,6 +331,13 @@ int main(int argc, char** argv)
     ctl_ctx cc;
 #endif
 
+    {
+        /* --log <file>: stderr (all startup errors) goes to the file; the Amiga shell cannot redirect libnix stderr. */
+        const char* log_path = option(argc, argv, "--log", "");
+        if (log_path[0] != '\0' && freopen(log_path, "w", stderr) == NULL) {
+            return 1;
+        }
+    }
     sel_registry_init_machine(host, machine_tags);
     out_id = option(argc, argv, "--output", sel_registry_default_output(machine_tags));
     is_null = strcmp(out_id, "null") == 0;

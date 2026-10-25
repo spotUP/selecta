@@ -1,3 +1,10 @@
+# The Amiga cross build cannot run a tool it builds, so the desktop UI plugin is built only when a host-built
+# gui_iconbake is given (-DSELECTA_ICONBAKE_EXE=<path>); the canonical Amiga configure leaves the plugin out.
+if(SEL_AMIGA AND NOT SELECTA_ICONBAKE_EXE)
+  message(STATUS "Desktop UI plugin skipped for Amiga: pass -DSELECTA_ICONBAKE_EXE=<host gui_iconbake> to build it")
+  return()
+endif()
+
 # Desktop UI plugin (M3d, plan 2026-10-24-desktop-ui.md section 2.1). The plugin entry and the headless `mem`
 # backend build everywhere on the desktop and need no SDL; backend_sdl.c (DUI-P2-7) and input_sdl.c (DUI-P4-1) live in
 #  selecta_ui_desktop, which only exists with -DSELECTA_UI_DESKTOP=ON.
@@ -25,9 +32,6 @@ endforeach()
 # The Amiga cross build cannot run a tool it builds, so it takes a host-built one: -DSELECTA_ICONBAKE_EXE=<path to the
 # host gui_iconbake>.
 if(SEL_AMIGA)
-  if(NOT SELECTA_ICONBAKE_EXE)
-    message(FATAL_ERROR "The Amiga desktop UI needs -DSELECTA_ICONBAKE_EXE=<host gui_iconbake>")
-  endif()
   set(ICONBAKE_CMD "${SELECTA_ICONBAKE_EXE}")
   set(ICONBAKE_DEP "")
 else()

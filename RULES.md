@@ -19,6 +19,7 @@ Toolchains: desktop clang/gcc + CMake + Ninja; Amiga bebbo amiga-gcc at `~/opt/a
 |------|---------|
 | Configure + build (desktop, debug) | `cmake -S . -B build/host -G Ninja -DCMAKE_BUILD_TYPE=Debug && cmake --build build/host` |
 | Build (Amiga 68020) | `cmake -S . -B build/amiga -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/amiga-68020.cmake && cmake --build build/amiga` |
+| Build (Amiga 68020) with the desktop UI (RTG) | build the host `gui_iconbake` first (`cmake --build build/host --target gui_iconbake`), then `cmake -S . -B build/amiga -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/amiga-68020.cmake -DSELECTA_ICONBAKE_EXE=$PWD/build/host/plugins/ui/desktop/gui_iconbake && cmake --build build/amiga`; without the option the desktop plugin is skipped (status message). Run: `Selecta --ui desktop --backend rtg --log <file>` (`--log` redirects stderr; the Amiga shell cannot) |
 | Type/static check | `cmake --build build/host --target lint` (clang-tidy + `-Werror` build; the SDK lint checks plugins compile against `include/selecta/` alone) |
 | Format | `cmake --build build/host --target format` (clang-format, `.clang-format` at root) |
 | Test, one suite | `nice -n 19 ctest --test-dir build/host -R <name> --output-on-failure` |

@@ -124,7 +124,9 @@ void sel_machine_probe_platform(sel_machine_raw* raw) {
     }
     raw->fpu = (flags & (AFF_68881 | AFF_68882 | AFF_FPU40)) ? 1u : 0u;
     raw->chip_ram = (uintptr_t)AvailMem(MEMF_CHIP | MEMF_TOTAL);
-    raw->fast_ram = (uintptr_t)AvailMem(MEMF_FAST | MEMF_TOTAL);
+    /* Free fast RAM, not the installed total: the engine sizes its queues from this tag, and a Replay with 192 MB
+     * installed but 13 MB free (RAM disk, other programs) failed its 2 MB queue allocations (I287). */
+    raw->fast_ram = (uintptr_t)AvailMem(MEMF_FAST);
 
     gfx = OpenLibrary((CONST_STRPTR) "graphics.library", 36);
     if (gfx) {

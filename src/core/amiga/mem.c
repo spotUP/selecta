@@ -5,6 +5,7 @@
 
 #include <exec/memory.h>
 #include <proto/exec.h>
+#include <stdio.h>
 
 static void* alloc_vec(void* ctx, size_t size, uint32_t flags) {
     (void)ctx;
@@ -13,7 +14,14 @@ static void* alloc_vec(void* ctx, size_t size, uint32_t flags) {
 
 void* sel_host_mem_alloc(const sel_host* h, size_t size, uint32_t kind) {
     (void)h;
-    return sel_mem_alloc_classed(alloc_vec, NULL, size, kind);
+    void* p = sel_mem_alloc_classed(alloc_vec, NULL, size, kind);
+    if (p == NULL) {
+        /* The only trace of a failed allocation: the callers just return NULL (stderr goes to --log). */
+        fprintf(stderr, "selecta: alloc of %lu bytes (kind %lu) failed, largest public block %lu, free %lu\n",
+                (unsigned long)size, (unsigned long)kind, (unsigned long)AvailMem(MEMF_PUBLIC | MEMF_LARGEST),
+                (unsigned long)AvailMem(MEMF_PUBLIC));
+    }
+    return p;
 }
 
 void sel_host_mem_free(const sel_host* h, void* p) {
