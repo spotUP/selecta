@@ -177,6 +177,7 @@ typedef struct desk {
     uint32_t pg_n, pg_pos;
     int pg_walk;             /* 1 while Back or Forward re-enters a page: desk_page_goto must not append it again */
     uint32_t nav_arrow_clicks; /* history arrow clicks */
+    uint32_t vol_clicks, seek_clicks; /* footer bar clicks and drags sent as VOLUME and SEEK (I312) */
     int search_keep;         /* 1 while the Home field click enters Search: the typed query stays */
     sel_gui_rect ring, field, caret; /* the last focus ring, the search field it hugs and the caret bar (stats line) */
     uint32_t caret_draws;
@@ -530,6 +531,35 @@ static void draw_nav_arrows(desk* d, sel_gui_rect mn);
 static sel_gui_rect nav_arrow_rect(desk* d, sel_gui_rect mn, int32_t k);
 static void draw_player_left(desk* d);
 
+/* The footer bars (I312). The seek row spans tw pixels from x0, centred over the transport buttons, with the times at
+ * both ends; the volume bar sits at the right end under the status text, its speaker icon to its left. Drawing and
+ * the pointer hit test both take their boxes from here. */
+static void seek_span(const desk* d, int32_t* x0, int32_t* tw) {
+    sel_gui_rect pl = region_rect(d, "player");
+    int32_t lw = lpx(d, 40), w = lpx(d, 560);
+    if (w > pl.w - 2 * lpx(d, 300)) {
+        w = pl.w - 2 * lpx(d, 300);
+    }
+    if (w < 4 * lw) {
+        w = 4 * lw;
+    }
+    *x0 = pl.x + pl.w / 2 - w / 2;
+    *tw = w;
+}
+
+static sel_gui_rect seek_bar_rect(const desk* d) {
+    sel_gui_rect pl = region_rect(d, "player");
+    int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]), lw = lpx(d, 40), x0, tw;
+    seek_span(d, &x0, &tw);
+    return rect_of(x0 + lw + sp, pl.y + sp + lpx(d, 6), tw - 2 * lw - 2 * sp, lpx(d, 4));
+}
+
+static sel_gui_rect vol_bar_rect(const desk* d) {
+    sel_gui_rect pl = region_rect(d, "player");
+    int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    return rect_of(pl.x + pl.w - sp - lpx(d, 96), pl.y + sp + lpx(d, 40), lpx(d, 96), lpx(d, 4));
+}
+
 static void draw_widget(desk* d, uint32_t bit) {
     const sel_uim_frame* f = &d->uim.frame;
     int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
@@ -564,25 +594,23 @@ static void draw_widget(desk* d, uint32_t bit) {
         draw_transport(d);
     } else if (bit == SEL_UIM_DIRTY_PROGRESS) {
         /* The seek row (mockup): times at both ends of a slim bar, centred over the transport buttons. */
-        int32_t lw = lpx(d, 40), tw = lpx(d, 560), x0;
-        if (tw > pl.w - 2 * lpx(d, 300)) {
-            tw = pl.w - 2 * lpx(d, 300);
-        }
-        if (tw < 4 * lw) {
-            tw = 4 * lw;
-        }
-        x0 = pl.x + pl.w / 2 - tw / 2;
+        int32_t lw = lpx(d, 40), tw, x0;
+        seek_span(d, &x0, &tw);
         int len_changed = strncmp(d->seek_length, f->length, sizeof d->seek_length) != 0;
         draw_frame_text(d, rect_of(x0, y0, lw, lpx(d, 16)), f->clock, 12, 1);
-        draw_bar(d, rect_of(x0 + lw + sp, y0 + lpx(d, 6), tw - 2 * lw - 2 * sp, lpx(d, 4)), f->progress_q16,
-                 &d->seek_fill);
+        draw_bar(d, seek_bar_rect(d), f->progress_q16, &d->seek_fill);
         draw_frame_text(d, rect_of(x0 + tw - lw, y0, lw, lpx(d, 16)), f->length, 12, len_changed);
         snprintf(d->seek_length, sizeof d->seek_length, "%s", f->length);
         d->home_parts |= HP_SEEK;
     } else if (bit == SEL_UIM_DIRTY_VOLUME) {
         int32_t v = f->volume < 0 ? 0 : f->volume > 100 ? 100 : f->volume;
-        draw_bar(d, rect_of(pl.x + pl.w - sp - lpx(d, 96), y0 + lpx(d, 40), lpx(d, 96), lpx(d, 4)),
-                 (uint32_t)v * 65536u / 100u, &d->vol_fill);
+        sel_gui_rect vb = vol_bar_rect(d);
+        int32_t ic = lpx(d, 16);
+        sel_gui_rect ir = rect_of(vb.x - sp - ic, vb.y + vb.h / 2 - ic / 2, ic, ic);
+        sel_gui_fill_rect(d->canvas, ir, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
+        sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_VOLUME_2, ir, ic, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+        sel_gui_dirty_add(d->canvas, ir);
+        draw_bar(d, vb, (uint32_t)v * 65536u / 100u, &d->vol_fill);
     } else if (bit == SEL_UIM_DIRTY_STATUS) {
         draw_frame_text(d, rect_of(pl.x + pl.w - sp - lpx(d, 200), y0, lpx(d, 200), lpx(d, 16)), f->status, 12, 1);
     }
@@ -2864,6 +2892,12 @@ static const char* library_dump_build(desk* d) {
                               (int)d->field.x, (int)d->field.y, (int)d->field.w, (int)d->field.h, (unsigned)d->caret_draws, (int)d->caret.x, (int)d->caret.y, (int)d->caret.w, (int)d->caret.h, (int)d->nav_back.x, (int)d->nav_back.y, (int)d->nav_back.w,
                               (int)d->nav_back.h, (int)d->nav_fwd.x, (int)d->nav_fwd.y, (int)d->nav_fwd.w, (int)d->nav_fwd.h);
     }
+    if (o + 200u < sizeof d->library_dump) { /* the footer bars (I312) */
+        sel_gui_rect vb = vol_bar_rect(d), skb = seek_bar_rect(d);
+        o = dump_put(d, o, "footer vol_bar %d %d %d %d seek_bar %d %d %d %d vol_clicks=%u seek_clicks=%u\n", (int)vb.x,
+                     (int)vb.y, (int)vb.w, (int)vb.h, (int)skb.x, (int)skb.y, (int)skb.w, (int)skb.h,
+                     (unsigned)d->vol_clicks, (unsigned)d->seek_clicks);
+    }
     if (o + 200u < sizeof d->library_dump) { /* the hover state (I272) */
         o = dump_put(d, o,
                               "hover_box %d %d %d %d fill=%08x token=%08x paints=%u tile=%d\n", (int)d->hover_box.x, (int)d->hover_box.y,
@@ -4877,6 +4911,42 @@ static int songs_play_row(desk* d, int32_t row) {
 
 /* One pointer event (DUI-P3-2): the region is found on the layout tree first, then the part inside it. Returns 1 when
  * the picture changed. */
+/* A press on a footer bar (I312): a click sets the value under the pointer, a drag that starts on the bar sets the
+ * value where it is released. The bars are 4 pixels tall, so the hit band is 16 logical pixels high around the bar.
+ * Returns 1 when the event was on a bar, 0 otherwise (the caller keeps routing it). */
+static int footer_bar_pointer(desk* d, const sel_gui_input* ev) {
+    sel_gui_rect bars[2] = {vol_bar_rect(d), seek_bar_rect(d)};
+    int32_t x = ev->kind == SEL_GUI_IN_DRAG ? ev->x2 : ev->x;
+    char line[32];
+    if (!(ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u) && ev->kind != SEL_GUI_IN_DRAG) {
+        return 0;
+    }
+    for (uint32_t k = 0; k < 2u; k++) {
+        sel_gui_rect b = bars[k];
+        int32_t band = lpx(d, 16);
+        int64_t at;
+        if (b.w <= 0 || !in_rect(rect_of(b.x, b.y + b.h / 2 - band / 2, b.w, band), ev->x, ev->y)) {
+            continue;
+        }
+        at = x < b.x ? 0 : x > b.x + b.w ? b.w : x - b.x;
+        if (k == 0u) {
+            snprintf(line, sizeof line, "VOLUME %u", (unsigned)(at * 100 / b.w));
+            d->vol_clicks++;
+        } else {
+            uint32_t dur = sel_engine_state(d->engine)->song.duration_ms;
+            if (dur == 0u) { /* no length known: nothing to seek to, but the press stays on the bar */
+                return 1;
+            }
+            snprintf(line, sizeof line, "SEEK %u", (unsigned)(at * dur / b.w));
+            d->seek_clicks++;
+        }
+        d->clicks++;
+        desk_send(d, line);
+        return 1;
+    }
+    return 0;
+}
+
 static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
     int32_t sc = d->scale > 0 ? d->scale : 1;
     int region = sel_uim_hit(&d->layout, ev->x / sc, ev->y / sc);
@@ -4884,6 +4954,9 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
     int in_main = strcmp(rname, "main") == 0;
     if (d->overlay != OV_NONE) { /* a click with an overlay open picks a palette row or closes it */
         return ev->kind == SEL_GUI_IN_CLICK ? overlay_click(d, ev) : 0;
+    }
+    if (footer_bar_pointer(d, ev)) {
+        return 1;
     }
     if (ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u) {
         int32_t btn = desk_button_at(d, ev->x, ev->y);
