@@ -6464,7 +6464,9 @@ static const sel_tag* desk_stats(void* state) {
         d->stats[67].value = (uintptr_t)desk_backend_depth(d->sdl);
     }
 #endif
-    d->stats[68].tag = SEL_TAG_END;
+    d->stats[68].tag = SEL_UI_STAT_KEYS; /* keys the window delivered, for the one-line check after Ctrl-C */
+    d->stats[68].value = d->keys_in;
+    d->stats[69].tag = SEL_TAG_END;
 
     return d->stats;
 }
