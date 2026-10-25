@@ -48,3 +48,10 @@ Then: I285 YouTube design (needs Johan approval), I230 slices 2-3, I202.
 Mac: hover on chips, buttons, tabs, doors, tiles (I272); Now Playing sample names as lines (I290); tracker roll and centred bar; Add Folder layout and toast; drag and drop; channel header mute; Add to Queue toast and Queue page; viz switch buttons; P4-6 to P4-9 looks.
 Amiga: name an M.K. module that stutters (I124).
 Others: I219h, I218d, I218e, I242, I248, R10 retest, PR #81 in ~/Code/devilbox-selecta, mpris error, detail-view title shift, I138, I203, Monday BMS pass.
+
+## Update 2026-10-25 evening
+
+- Johan's "hover does nothing" report narrowed to the Search chips only: they had no click handler (I256, never built). Hover and clicks work elsewhere. I256 landed in c22a6a4: engine view source `search` (SEL_VIEW_SEARCH) gives Songs, Albums and Artists groups with counts; chips All/Songs/Albums/Artists filter; Home chips navigate. Johan has not yet confirmed it live (Mac).
+- Known gaps from I256: artist rows have no key (activating does nothing); album and artist distinct counts saturate at 256; each group lists at most 16 entries. Fixed an existing overflow: `cursor_of`/`id_of` in src/engine/view.h were [4] with home at index 4.
+- I291 measurement: SDL present takes median 0 ms, p95 1 ms, max 6 ms over 4440 frames, so the lag is between input and redraw (loop wait, tween frames), not in present.
+- da744c9: three more m12 goldens (history, album, random) were stale for POSITION order/row/pattern, same class as I294.
