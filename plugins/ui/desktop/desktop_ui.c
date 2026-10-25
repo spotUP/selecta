@@ -3152,6 +3152,8 @@ static void draw_search(desk* d) {
             }
         }
         d->search_drawn = drawn_all;
+    } else if (!d->search_on) { /* no query yet: a muted hint under the chips */
+        draw_text(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, 28)), "Type to search songs, albums and artists", 0, 14, muted);
     }
     d->search_draws++;
     d->search_rows = shown;
@@ -3162,7 +3164,7 @@ static void draw_search(desk* d) {
 static void draw_home_content(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     hover_prune(d, region_rect(d, "main")); /* the main region lists its controls afresh: a page change leaves none behind */
-    if (d->search_on) {
+    if (d->search_on || d->page == PG_SEARCH) { /* the Search page always draws its own field and facet chips, also before a query */
         draw_search(d);
         return;
     }
@@ -3491,7 +3493,7 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
     const sel_state* st = sel_engine_state(d->engine);
     sel_gui_rect mn = region_rect(d, "main");
     uint32_t i;
-    if (d->page == PG_SEARCH && d->search_on && in_rect(mn, x, y)) { /* a facet chip filters the drawn groups */
+    if (d->page == PG_SEARCH && in_rect(mn, x, y)) { /* a facet chip filters the drawn groups; without results it is kept for the next ones */
         for (i = 0; i < SEARCH_FACETS; i++) {
             if (in_rect(search_facet_rect(d, panel_rect(d, "main"), i), x, y)) {
                 int changed = d->search_facet != i;

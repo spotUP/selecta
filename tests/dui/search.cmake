@@ -115,6 +115,26 @@ chip_click("Songs" 1 ${songs_drawn})
 chip_click("Albums" 2 ${albums_drawn})
 chip_click("Artists" 3 ${artists_drawn})
 
+# Chips before a query (I256 follow-up): the Search page draws its own facet chips with an empty query, and a click on one
+# keeps the facet. The Home chips (All, Songs, Composers, Playlists) must not be what is drawn there.
+search_run(empty "key /\nwait 100\n")
+# The stats keep the labels of the Home page drawn first; the chips of the page showing now are the last four drawn.
+string(REGEX REPLACE "^.*text All\n" "" empty_tail "${empty_out}")
+expect("${empty_tail}" "text Songs\n.*text Albums\n.*text Artists\n" "the empty Search page draws All, Songs, Albums, Artists")
+if(empty_tail MATCHES "text Composers\n" OR empty_tail MATCHES "text Playlists\n")
+  message(FATAL_ERROR "the empty Search page draws the Home chips:\n${empty_tail}")
+endif()
+string(REGEX MATCHALL "label (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) ink [-0-9]+ [-0-9]+ text Songs\n" found "${empty_out}")
+list(GET found -1 last)
+string(REGEX MATCH "label (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+)" unused "${last}")
+math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+search_run(empty_click "key /\nwait 100\nclick ${cx} ${cy}\nwait 100\n")
+expect("${empty_click_out}" "search groups songs=0 albums=0 artists=0 facet=1 drawn=" "clicking Songs without a query keeps the facet")
+if(empty_click_hash STREQUAL empty_hash)
+  message(FATAL_ERROR "clicking Songs without a query left the frame unchanged")
+endif()
+
 set(gfile "${GOLDEN}/desktop/search-rgba32-1280x800@1.hash")
 if("$ENV{SELECTA_GOLDEN_UPDATE}" STREQUAL "1")
   file(WRITE "${gfile}" "${burst_hash}\n")
