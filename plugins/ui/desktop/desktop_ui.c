@@ -3426,6 +3426,28 @@ static void desk_page_push(desk* d, desk_page from, desk_page pg) {
     d->pg_pos = d->pg_n - 1u;
 }
 
+/* The engine requests that fill a page: the view source and window, the Library screens, the kept search query. Entering
+ * a page and a finished scan both end here, so the list of requests exists once (I296). */
+static void desk_page_load(desk* d, desk_page pg) {
+    if (pg == PG_HOME) {
+        desk_send(d, "VIEW_SOURCE home");
+        desk_send(d, "VIEW_WINDOW 32");
+    } else if (pg == PG_LIBRARY) {
+        desk_send(d, "VIEW_SHOW browse");
+        desk_send(d, "COMPOSERS_SHOW");
+        desk_send(d, "STATS_SHOW");
+    } else if (pg == PG_PLAYLISTS || pg == PG_SONGS) { /* the folders source holds the saved playlists */
+        desk_send(d, "VIEW_SOURCE folders");
+        desk_send(d, "VIEW_WINDOW 64");
+        d->folder_opens++;
+    } else if (pg == PG_SEARCH) {
+        if (d->qlen > 0u) { /* the kept query shows its results again */
+            d->search_pending = 1;
+            d->search_since = d->now_ms;
+        }
+    }
+}
+
 /* Enters a page (I262) with the engine verbs the page reads: the view source and window, and the Library screens
  * opened and closed. Every way into a page ends here (doors, keys, --view, Back and Forward), so the history is kept
  * here. Does not draw. */
@@ -3445,24 +3467,10 @@ static void desk_page_apply(desk* d, desk_page pg) {
     }
     desk_page_flags(d, pg);
     d->focus = -1;
-    if (pg == PG_HOME) {
-        desk_send(d, "VIEW_SOURCE home");
-        desk_send(d, "VIEW_WINDOW 32");
-    } else if (pg == PG_LIBRARY) {
-        desk_send(d, "VIEW_SHOW browse");
-        desk_send(d, "COMPOSERS_SHOW");
-        desk_send(d, "STATS_SHOW");
-    } else if (pg == PG_PLAYLISTS || pg == PG_SONGS) { /* the folders source holds the saved playlists */
-        desk_send(d, "VIEW_SOURCE folders");
-        desk_send(d, "VIEW_WINDOW 64");
-        d->folder_opens++;
-    } else if (pg == PG_SEARCH) {
+    if (pg == PG_SEARCH) {
         desk_search_focus(d, d->pg_walk || d->search_keep);
-        if (d->qlen > 0u) { /* the kept query shows its results again */
-            d->search_pending = 1;
-            d->search_since = d->now_ms;
-        }
     }
+    desk_page_load(d, pg);
     d->repaint = 1;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
 }
@@ -5694,12 +5702,9 @@ static void desk_on_event(void* state, const sel_message* evt) {
         d->scans++;
         snprintf(msg, sizeof msg, "Added %u songs to the library", (unsigned)si.scanned_files);
         desk_toast(d, msg);
-        if (d->page == PG_LIBRARY) {
-            desk_send(d, "COMPOSERS_SHOW");
-            desk_send(d, "STATS_SHOW");
-            if (d->lib_mode == 1u || d->lib_mode == 2u) {
-                desk_send(d, "LIBRARY_SEARCH \"\"");
-            }
+        desk_page_load(d, d->page);
+        if (d->page == PG_LIBRARY && (d->lib_mode == 1u || d->lib_mode == 2u)) {
+            desk_send(d, "LIBRARY_SEARCH \"\"");
         }
         d->repaint = 1;
     }
