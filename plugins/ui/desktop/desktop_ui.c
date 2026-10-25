@@ -415,7 +415,8 @@ static uint32_t hover_fill_of(desk* d, sel_gui_rect box, uint32_t base) {
     return out;
 }
 
-/* Drops the listed controls inside a region before it is painted again. */
+/* Drops the listed controls and their recorded labels inside a region before it is painted again. The labels are "as last
+ * drawn": left over from the page that was replaced they would describe controls that are no longer on screen. */
 static void hover_prune(desk* d, sel_gui_rect area) {
     uint32_t i, k = 0;
     for (i = 0; i < d->hbox_n; i++) {
@@ -425,6 +426,12 @@ static void hover_prune(desk* d, sel_gui_rect area) {
         }
     }
     d->hbox_n = k;
+    for (i = 0, k = 0; i < d->label_n; i++) {
+        if (!rect_inside(d->labels[i].box, area)) {
+            d->labels[k++] = d->labels[i];
+        }
+    }
+    d->label_n = k;
 }
 
 /* The one button primitive (I272): a rounded fill and a centred label, with the hover state from the pointer. Every
