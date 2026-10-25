@@ -52,6 +52,7 @@ if(NOT CMAKE_MATCH_1 STREQUAL "${WORK}/banana.mod")
 endif()
 expect("${dbl}" double_clicks 1)
 expect("${dbl}" row_plays 1)
+expect("${dbl}" play_state 1)
 
 # 2. Drag a row to the queue.
 mouse_run(drag "drag 600 142 50 50\n")

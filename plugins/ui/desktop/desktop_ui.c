@@ -892,6 +892,7 @@ static const char* const g_menu_items[SONG_MENU_ITEMS] = {"Play", "Play Next", "
 
 static int desk_send(desk* d, const char* line);
 static int desk_send_path(desk* d, const char* verb, const char* path);
+static int desk_play_path(desk* d, const char* path);
 static const sel_uim_action* desk_action_by_id(const char* id);
 
 static int32_t songs_top(const desk* d) {
@@ -3105,7 +3106,7 @@ static int library_click(desk* d, int32_t x, int32_t y) {
         for (p = lib_next(lib_next(st->composer_page)); *p != '\0'; i++) {
             const char* name = lib_next(p);
             if (in_rect(lib_row_rect(d, mn, i + 1u), x, y)) {
-                return desk_send_path(d, "OPEN", p);
+                return desk_play_path(d, p);
             }
             p = lib_next(name);
         }
@@ -4744,12 +4745,16 @@ static int32_t songs_row_at(desk* d, int32_t x, int32_t y) {
     return -1;
 }
 
-/* Sends "<verb> <path>" for a display row. */
+/* Sends `<verb> "<path>"` for a display row. */
 static int songs_send_path(desk* d, const char* verb, int32_t row) {
     const sel_state* st = sel_engine_state(d->engine);
-    char line[320];
-    snprintf(line, sizeof line, "%s %s", verb, st->queue_text + st->queue[d->order[row]].path_offset);
-    return desk_send(d, line);
+    return desk_send_path(d, verb, st->queue_text + st->queue[d->order[row]].path_offset);
+}
+
+/* Plays a display row: OPEN only loads, so the play intent sends OPEN then PLAY. */
+static int songs_play_row(desk* d, int32_t row) {
+    const sel_state* st = sel_engine_state(d->engine);
+    return desk_play_path(d, st->queue_text + st->queue[d->order[row]].path_offset);
 }
 
 /* One pointer event (DUI-P3-2): the region is found on the layout tree first, then the part inside it. Returns 1 when
@@ -4868,8 +4873,10 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
                     char line[48];
                     snprintf(line, sizeof line, "QUEUE_REMOVE %u", (unsigned)sel_engine_state(d->engine)->queue[d->order[row]].id);
                     desk_send(d, line);
+                } else if (k == 0u) {
+                    songs_play_row(d, row);
                 } else {
-                    songs_send_path(d, k == 0u ? "OPEN" : k == 1u ? "QUEUE_PLAY_NEXT" : "QUEUE_ADD", row);
+                    songs_send_path(d, k == 1u ? "QUEUE_PLAY_NEXT" : "QUEUE_ADD", row);
                 }
                 d->row_plays += k == 0u;
                 d->menu_picks[k]++;
@@ -4909,7 +4916,7 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         if (row >= 0 && ev->clicks >= 2u) { /* double-click plays the row */
             d->double_clicks++;
             d->row_plays++;
-            songs_send_path(d, "OPEN", row);
+            songs_play_row(d, row);
             return 1;
         }
     }
@@ -5068,6 +5075,12 @@ static int desk_send_path(desk* d, const char* verb, const char* path) {
     return desk_send(d, line);
 }
 
+/* The play intent for one song: OPEN loads it (the engine leaves the transport stopped), PLAY starts it. */
+static int desk_play_path(desk* d, const char* path) {
+    desk_send_path(d, "OPEN", path);
+    return desk_send(d, "PLAY");
+}
+
 /* A dropped file or folder (DUI-P5-11). A folder runs the LIBRARY_SCAN that Add Folder runs; a lone file
  * plays (OPEN) and each file of a drop of several joins the queue (QUEUE_ADD). A path that is neither gives a toast. */
 static int desk_drop_path(desk* d, const char* path, int more) {
@@ -5087,7 +5100,7 @@ static int desk_drop_path(desk* d, const char* path, int more) {
         desk_toast(d, "Added to queue");
     } else {
         d->drop_playing = 1;
-        desk_send_path(d, "OPEN", path);
+        desk_play_path(d, path);
     }
     return 1;
 }

@@ -285,3 +285,8 @@ endif()
 if(NOT "${played}" MATCHES "songs_opened=1")
   message(FATAL_ERROR "a click on the song row did not open the song:\n${played}")
 endif()
+# The engine's OPEN only loads; the click is a play intent, so the transport must be playing (play_state 1) from a stopped start.
+dui_stat(pstate "${played}" desktop play_state)
+if(NOT pstate EQUAL 1)
+  message(FATAL_ERROR "a click on the song row loaded the song but did not play it (play_state=${pstate}):\n${played}")
+endif()
