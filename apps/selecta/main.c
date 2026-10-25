@@ -514,6 +514,9 @@ int main(int argc, char** argv)
             send_line(e, "VIEW_SHOW browse");
             send_line(e, "COMPOSERS_SHOW");
             send_line(e, "STATS_SHOW");
+        } else if (strcmp(option(argc, argv, "--view", ""), "playlists") == 0 || strcmp(option(argc, argv, "--view", ""), "songs") == 0) {
+            send_line(e, "VIEW_SOURCE folders"); /* the saved playlists: the Playlists page lists them, the Songs page drops onto them */
+            send_line(e, "VIEW_WINDOW 64");
         } else {
             send_line(e, "VIEW_SHOW browse");
         }
