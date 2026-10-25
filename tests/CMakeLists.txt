@@ -1125,6 +1125,14 @@ if(NOT SEL_AMIGA)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
   set_tests_properties(user-data PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "userdata_ok")
 
+  # I306: LIKE toggles, LIKE <key> and RATE <n> <key> address any song, RATE 0 <key> clears; read back through LIBRARY_SEARCH.
+  add_test(NAME likes
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/likes.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue_keys.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/likes.sel
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/likes.expected
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
+  set_tests_properties(likes PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "likes_ok")
+
   add_test(NAME cues
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/cues.sh $<TARGET_FILE:selecta-cli>
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/cues.sel

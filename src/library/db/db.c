@@ -620,6 +620,23 @@ int sel_library_like(sel_library* lib, const char* key, int64_t at) {
     return user_call(lib, &op) > 0;
 }
 
+int sel_library_unlike(sel_library* lib, const char* key, int64_t at) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_UNLIKE;
+    op.key = key;
+    op.at = at;
+    return user_call(lib, &op) > 0;
+}
+
+int sel_library_liked(sel_library* lib, const char* key) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_LIKE_GET;
+    op.key = key;
+    return user_call(lib, &op) > 1;
+}
+
 int sel_library_keep(sel_library* lib, const char* key, int64_t at) {
     sel_user_op op;
     memset(&op, 0, sizeof op);

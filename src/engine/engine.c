@@ -3385,9 +3385,35 @@ static void user_mark(sel_engine* e, const char* who, int (*mark)(sel_library*, 
     }
 }
 
+/* The song a LIKE or RATE addresses (I306): the canonical key of the optional argument `idx`, else the song being played.
+ * 0 with the error reported. */
+static int target_key(sel_engine* e, const sel_message* m, uint32_t idx, const char* who, char* key, size_t cap) {
+    if (m->argc > idx) {
+        if (!sel_song_key_of(m->args[idx].v.s, key, cap)) {
+            sel_engine_report_error(e, "range", who);
+            return 0;
+        }
+    } else if (e->hist_key[0] == '\0') {
+        sel_engine_report_error(e, "no_song", who);
+        return 0;
+    } else {
+        snprintf(key, cap, "%s", e->hist_key);
+    }
+    return 1;
+}
+
+/* LIKE [key]: toggles the like of the song `key`, the one being played without it (I306). */
 static void cmd_LIKE(sel_engine* e, const sel_message* m) {
-    (void)m;
-    user_mark(e, "LIKE", sel_library_like);
+    char key[SEL_SONG_KEY_MAX];
+    if (e->lib == NULL) {
+        sel_engine_report_error(e, "no_library", "LIKE");
+    } else if (target_key(e, m, 0, "LIKE", key, sizeof key)) {
+        int64_t now = (int64_t)time(NULL);
+        int ok = sel_library_liked(e->lib, key) ? sel_library_unlike(e->lib, key, now) : sel_library_like(e->lib, key, now);
+        if (!ok) {
+            sel_engine_report_error(e, "library_failed", "LIKE");
+        }
+    }
 }
 
 /* KEEP [on|off]: no argument is on. */
@@ -3435,12 +3461,13 @@ static void cmd_NOTE(sel_engine* e, const sel_message* m) {
     }
 }
 
-/* RATE <0..5>: rates the song being played (I173). 0 removes the rating. A modland or hvsc song is also pushed to
+/* RATE <0..5> [key]: rates the song `key`, the one being played without it (I173, I306). 0 removes the rating. A modland or hvsc song is also pushed to
  * DEViLBOX (PUT, DELETE for 0); when that cannot happen now the rating stays in the library as pending and goes
  * out on the next run. A local song is rated in the library only. */
 static void cmd_RATE(sel_engine* e, const sel_message* m) {
     uint32_t stars = m->args[0].v.u;
     char source[16];
+    char key[SEL_SONG_KEY_MAX];
     const char* path;
     int remote;
 
@@ -3448,11 +3475,9 @@ static void cmd_RATE(sel_engine* e, const sel_message* m) {
         sel_engine_report_error(e, "range", "RATE");
     } else if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", "RATE");
-    } else if (e->hist_key[0] == '\0') {
-        sel_engine_report_error(e, "no_song", "RATE");
-    } else {
-        remote = sel_devilbox_item(e->hist_key, source, sizeof source, &path);
-        if (!sel_library_rating_set(e->lib, e->hist_key, (int)stars, remote ? SEL_RATING_QUEUE : SEL_RATING_LOCAL)) {
+    } else if (target_key(e, m, 1, "RATE", key, sizeof key)) {
+        remote = sel_devilbox_item(key, source, sizeof source, &path);
+        if (!sel_library_rating_set(e->lib, key, (int)stars, remote ? SEL_RATING_QUEUE : SEL_RATING_LOCAL)) {
             sel_engine_report_error(e, "library_failed", "RATE");
         } else {
             panel_reload(e);

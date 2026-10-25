@@ -425,6 +425,16 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
         rc = user_exec(lib->db, "INSERT INTO history(key, played_at, skipped, duration_ms) VALUES(?1, ?2, ?3, ?4)", op, 1);
     } else if (op->op == SEL_USER_LIKE) {
         rc = user_exec(lib->db, "INSERT OR REPLACE INTO liked(key, at) VALUES(?1, ?2)", op, 2);
+    } else if (op->op == SEL_USER_UNLIKE) {
+        rc = user_exec(lib->db, "DELETE FROM liked WHERE key = ?1", op, 0);
+    } else if (op->op == SEL_USER_LIKE_GET) {
+        sqlite3_stmt* st = NULL;
+        rc = sqlite3_prepare_v2(lib->db, "SELECT 1 FROM liked WHERE key = ?1", -1, &st, NULL);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+            found = sqlite3_step(st) == SQLITE_ROW;
+            sqlite3_finalize(st);
+        }
     } else if (op->op == SEL_USER_UNKEEP) {
         rc = user_exec(lib->db, "DELETE FROM kept WHERE key = ?1", op, 0);
     } else if (op->op == SEL_USER_KEEP) {

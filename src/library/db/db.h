@@ -127,7 +127,9 @@ enum {
     SEL_USER_RATING_PENDING, /* I173: out = "key\0stars\0" pairs of the ratings not yet on DEViLBOX, then "\0"; reply [2] = rows */
     SEL_USER_HOME,         /* I191: out = home view lines "H heading", "S entry", "C count entry" per line; reply [2] = lines */
     SEL_USER_RATING_DONE,  /* I173: the push of the key's rating is over: drops its pending row, marks the rating synced */
-    SEL_USER_UNKEEP        /* I170b: KEEP off, deletes the key from kept */
+    SEL_USER_UNKEEP,       /* I170b: KEEP off, deletes the key from kept */
+    SEL_USER_UNLIKE,       /* I306: deletes the key from liked */
+    SEL_USER_LIKE_GET      /* I306: reply [0] = 2 when the key is liked */
 };
 /* Where a rating came from (sel_user_op.to of SEL_USER_RATING_SET). */
 enum { SEL_RATING_LOCAL = 0, SEL_RATING_QUEUE = 1, SEL_RATING_SERVER = 2 };
@@ -301,6 +303,9 @@ unsigned sel_library_cache_trim(sel_library* lib, uint32_t budget, struct sel_ca
 /* User data (I170): 1 on success. A finished play or a skip goes to `history`; like and keep to their tables. */
 int sel_library_history_add(sel_library* lib, const char* key, int64_t at, int skipped);
 int sel_library_like(sel_library* lib, const char* key, int64_t at);
+/* I306: takes the like back (1 on success, also when the song was not liked). sel_library_liked: 1 when `key` is liked. */
+int sel_library_unlike(sel_library* lib, const char* key, int64_t at);
+int sel_library_liked(sel_library* lib, const char* key);
 int sel_library_keep(sel_library* lib, const char* key, int64_t at);
 /* KEEP off: removes `key` from the kept table (`at` unused); the next cache trim may evict its file. */
 int sel_library_unkeep(sel_library* lib, const char* key, int64_t at);
