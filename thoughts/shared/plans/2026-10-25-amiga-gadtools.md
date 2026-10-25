@@ -16,12 +16,19 @@ Sibling of the MUI plan (`2026-10-25-amiga-mui.md`). Shared findings C1-C6 are n
 
 Finish line, measurable:
 1. `selecta --ui gadtools` on the rig `a1200-aga-020` (68020, AGA, 2 MB chip plus fast RAM) opens a window covering the Workbench screen area below the title bar; the sentinel stat `ui_open_gadtools=1` is read back (GT-P1-5). This is the one reachability test.
+   Decision (Johan 2026-10-26): OS 3.0 with gadtools.library 39, as recommended.
 2. NewMenu entry count equals the count of `sel_uim_action_at` rows with a non-empty `menu` path (GT-P2-3).
+   Decision (Johan 2026-10-26): custom-drawn info strip, as recommended.
 3. Gadget rectangles equal the rectangles solved by `sel_uim_layout_compute` for the Workbench size; they are recomputed on IDCMP_NEWSIZE with no gadget leaked (GT-P2-1, GT-P2-2).
+   Decision (Johan 2026-10-26): drag reorder (not the recommended answer). The queue list supports drag reorder of rows; this needs the custom list gadget of Q4 (GT-P3-9) and amends GT-P4-4.
 4. 640x256 PAL hires is fully laid out in the compact one-column layout with the bottom icon row (Home, Library, Search, Queue, Now Playing) above the transport; 640x200 scrolls; below 640 px wide the plugin refuses and the shell keeps the text UI (Q24, Q26; GT-P6-2, GT-P6-3).
+   Decision (Johan 2026-10-26): custom-drawn list with true columns (not the recommended answer). LISTVIEW_KIND is replaced by one custom list gadget `gt_list` (GT-P3-9) with real columns from the F48 set, proportional font support, its own keyboard handling and drag reorder; GT-P3-1, GT-P3-4 and GT-P3-8 are amended to it.
 5. Offered view styles are exactly 4 on every tier: regular, tree, drilldown, compact. Grid, cover flow and artwork are never offered (GT-P3-5).
+   Decision (Johan 2026-10-26): land M4 Phase 6 AGA pen mapping first and reuse it, as recommended.
 6. Display modes full, window, mini, micro, icon switch through `ui.gadtools.mode` with cursor, selection and playback kept; lowered is refused (GT-P6-1).
+   Decision (Johan 2026-10-26): the shared layout tree gets a viz region, as recommended.
 7. Every Selecta colour token maps to a pen obtained with `ObtainBestPen` and released at close, `ui_pens_held=0` after close (GT-P7-1).
+   Decision (Johan 2026-10-26): the status line shows the tooltip text on focus, as recommended.
 
 Commands (rig tests only on the caller's go-ahead; nothing here runs on any Amiga or rig until then):
 ```
@@ -71,7 +78,7 @@ Searches done: `grep -rn "gadtools\|GTLV_\|CreateGadget\|CreateContext" src plug
 - Grid, cover flow, artwork, generated cover art in lists: no chunky pixels and no per-row graphics in ListView; the plugin offers four styles only (Q10, section 5). Now Playing shows text metadata only.
 - Columns in lists: ListView is one text column; the plugin pads fields to character cells with the screen font (monospace only) or the list shows title and artist in one string. Sortable column headers are not carried; sort is a menu action.
 - Real tree widget: tree style is indented rows; expand and collapse is an action on the cursor row, not a click on a twisty.
-- Drag and drop between rows: ListView has no row drag. Queue reorder uses menu actions or keys (move up, move down). Drop of files onto the window works through AppWindow.
+- Drag and drop between rows: provided by the custom list gadget `gt_list` (GT-P3-9, Johan 2026-10-26); the ListView limitation no longer applies. Drop of files onto the window works through AppWindow.
 - Tooltips: GadTools has no bubble help. The action label is the gadget label; the full tooltip text is in the status line on focus and in the help window.
 - Right-mouse context menu on a row: Intuition owns the right button for the menu bar; the song menu is a menu entry set under a "Song" menu acting on the cursor row.
 - Proportional fonts in lists: ListView uses the screen font; a proportional font works but columns will not align.
@@ -122,20 +129,21 @@ Each desktop feature is either carried (GT-id in section 5) or listed in 2.3. Th
 - [ ] GT-P2-8 Keyboard focus and Tab order = layout tree order (`sel_uim_hit` region order); Tab, Shift-Tab, Enter in the search string, Escape. Test: `gadtools-focus`: host; asserts the focus ring order equals region order and Escape in the string sends no search line.
 
 ### Phase 3: lists and view styles
-- [ ] GT-P3-1 Regular list from `sel_view_state` rows into one LISTVIEW_KIND, windowed by `window_start`/`row_n`; cursor in sync via `GTLV_Selected` and `GTLV_MakeVisible`. Test: `gadtools-list-regular`: host; fake state with 5000 rows; asserts only `window_rows` nodes are built and the node strings equal the golden for rows 0..2.
+- [ ] GT-P3-1 Regular list from `sel_view_state` rows into one `gt_list` gadget (GT-P3-9; LISTVIEW_KIND dropped by the Q4 decision), windowed by `window_start`/`row_n`; cursor in sync via `GTLV_Selected` and `GTLV_MakeVisible`. Test: `gadtools-list-regular`: host; fake state with 5000 rows; asserts only `window_rows` nodes are built and the node strings equal the golden for rows 0..2.
 - [ ] GT-P3-2 Tree style: indented rows from `sel_view_row.depth` (two spaces per level), expand or collapse is an action on the cursor row sending the engine command. Test: `gadtools-list-tree`: host; asserts depth 0/1/2 indent and the toggle line.
 - [ ] GT-P3-3 Drilldown style: two or three side-by-side ListViews from `drill[]`, plus a breadcrumb text. Test: `gadtools-list-drill`: host; asserts list count for `drill_n` 0, 1, 2 and the breadcrumb text.
-- [ ] GT-P3-4 Compact style: one column list with title and artist in one string per row, fields padded to character cells. Test: `gadtools-list-compact`: host; asserts row width <= list width / cell width for widths 80 and 60 characters.
+- [ ] GT-P3-4 Compact style: title and artist in one row of `gt_list` as two columns (Q4 decision; no character-cell padding). Test: `gadtools-list-compact`: host; asserts row width <= list width / cell width for widths 80 and 60 characters.
 - [ ] GT-P3-5 `gt_style_mask`: always 4 styles; `set_ui_view_styles` refuses grid and cover flow. Test: `gadtools-style-mask`: host; asserts popcount 4 on planar and RTG tiers and that grid is refused.
 - [ ] GT-P3-6 Cursor key kept across style switches (property). Test: `gadtools-style-keep`: host; for each offered pair asserts `sel_engine_view_cursor_key` unchanged. Rig reachability: `rig-m4-gadtools-styles` asserts the same and offered count = 4.
 - [ ] GT-P3-7 List scrolling and page keys; large lists never build more than `window_rows` nodes and `GTLV_ScrollWidth` follows the list. Test: `gadtools-list-scroll`: host; 10 000 rows, 100 page-downs, asserts `window_start` arithmetic and node count stays constant.
-- [ ] GT-P3-8 Sort and column set (F48): sort is a menu action; fields shown follow the F48 column set within the single text column. Test: `gadtools-columns`: host; asserts the field set per breakpoint and sort command line.
+- [ ] GT-P3-9 Custom list gadget `gt_list` (Q3 and Q4 decisions): one BOOPSI gadget class drawn by the plugin: rows from the `sel_view_state` window, true columns from the F48 column set with per-column widths measured with the screen font (proportional fonts allowed), cursor and selection pens from the pen table, scroller through a PROPGADGET, keyboard handling (Up, Down, Page keys, Home, End, Return) on the gadget, and drag reorder (press and hold on a row, drag past another row, release sends QUEUE_MOVE with the two ids; Escape cancels). It replaces LISTVIEW_KIND in GT-P3-1, GT-P3-3, GT-P3-4, GT-P3-8, GT-P4-4 and GT-P4-17. Test: `gadtools-list-gadget`: host; a fake state of 5000 rows with a measured fake font asserts the column widths, that only `window_rows` rows are laid out, the cursor row after each key, and that a drag from row 2 to row 5 yields QUEUE_MOVE(id2, id5) and an Escape mid-drag yields nothing. Rig reachability: `rig-m4-gadtools-drag` on rig 2 drags a queue row with `ami.py` mouse events and asserts the queue order changed.
+- [ ] GT-P3-8 Sort and column set (F48): sort is a menu action; fields shown follow the F48 column set as true columns of `gt_list` (Q4 decision). Test: `gadtools-columns`: host; asserts the field set per breakpoint and sort command line.
 
 ### Phase 4: views and features
 - [ ] GT-P4-1 Home view from SEL_ROW_HOME rows. Test: `gadtools-home`: host; asserts rows map to play-song versus open-album.
 - [ ] GT-P4-2 Library view with breadcrumbs (`browse_path`, `browse_leaf`). Test: `gadtools-library`: host; asserts leaf split on "/" and ":".
 - [ ] GT-P4-3 Search view: STRING_KIND, live filter sends the search command. Test: `gadtools-search`: host; typing "abc" sends one search line with "abc".
-- [ ] GT-P4-4 Queue view: move up, move down, remove, clear, add as buttons and menu actions (no drag). Test: `gadtools-queue`: host; asserts QUEUE_MOVE with ids.
+- [ ] GT-P4-4 Queue view: drag reorder in `gt_list` (Q3 decision, GT-P3-9) plus move up, move down, remove, clear, add as buttons and menu actions. Test: `gadtools-queue`: host; asserts QUEUE_MOVE with ids.
 - [ ] GT-P4-5 Playlists view: list, open, rename, delete. Test: `gadtools-playlists`: host; asserts commands per action.
 - [ ] GT-P4-6 Song menu: a "Song" menu acting on the cursor row from the same action subset as the desktop (DUI-P4-16). Test: `gadtools-song-menu`: host; asserts entry set equals the desktop's.
 - [ ] GT-P4-7 Likes and ratings: Like toggle button and menu entry; rating via CYCLE_KIND 0..5. Test: `gadtools-like-rating`: host; asserts LIKE command and rating 0..5 mapping.
@@ -190,7 +198,7 @@ C1-C6 of the MUI plan apply unchanged: C1 no compact breakpoint in `src/uimodel/
 - C9: M4-P10-1 asserts a "layout golden for the Workbench size"; no layout goldens exist yet for 640x256 (`uimodel` layout tests are for the matrix of M4-P2-4 / DUI-P1-7). GT-P2-1 depends on those goldens.
 - C10: M4 line 258 and M4-P6-6 assume the AGA pen mapping lives in the custom UI AGA backend (M4 Phase 6), which does not exist yet; GT-P7-1 should consume its pen table. If Phase 6 lands later, `gt_pen_for_token` must be written first and the AGA backend reuse it instead (open question 5).
 
-## 7. Open questions (not asked; recommended answer first)
+## 7. Open questions (decided by Johan 2026-10-26; recommended answer first, decision below each)
 1. Minimum OS 3.0 with gadtools.library 39. Recommended: 3.0 (Q10 stands). Trade-off: ObtainBestPen and the V39 tags only; 2.0 users would need a second pen path.
 2. Info strip custom-drawn versus TEXT_KIND gadgets. Recommended: custom-drawn strip. Trade-off: no flicker at clock rate and one redraw per dirty bit; text is not a GadTools gadget so GadTools key navigation cannot focus it.
 3. Queue reorder without drag. Recommended: move up and move down actions on keys and buttons. Trade-off: simple; drag reorder needs a custom list gadget, which is a second list implementation.
@@ -199,6 +207,7 @@ C1-C6 of the MUI plan apply unchanged: C1 no compact breakpoint in `src/uimodel/
 6. Viz region ownership. Recommended: add a viz region to the shared layout tree. Trade-off: all UIs get the slot, tests need new goldens; carving it in the plugin is quicker but private.
 7. Tooltip substitute. Recommended: status line shows the tooltip text on focus. Trade-off: no bubble help; works with the keyboard.
 8. Order of the three toolkit phases (Q16 accepted MUI, ReAction, GadTools). Recommended: keep. Trade-off: the A1200 AGA machine in this plan is a GadTools-first target; MUI waits on RTG users.
+   Decision (Johan 2026-10-26): keep the order MUI, ReAction, GadTools, as recommended.
 
 ## 8. Coverage
 - 8.1 Design rows: M4 section 5 GadTools column: baseline (P1-3, P1-4), layout (P2-1, P2-2), lists (P3-1..P3-8), grid and cover flow hidden (P3-5, 2.3), viz (P5-1..P5-4), Now Playing text (P4-8), menus (P2-3, P2-4), display modes (P6-1), theme (P7-1, P7-2).

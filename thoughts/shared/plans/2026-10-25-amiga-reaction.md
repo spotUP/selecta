@@ -20,10 +20,15 @@ Targets (Johan, 2026-10-24 and 2026-10-25, M4 section 8a): the window covers the
 Finish line, measurable. This plan is done when all of these hold:
 
 1. Every ID in section 6 (RA-P0-1 to RA-P7-3) is ticked with its test green. Host tests are labelled `ra`; rig tests are named `rig-ra-*` and run on FS-UAE rig 2 (OS 3.2, uaegfx) and, for the final check, on the Replay (Johan's machine).
+   Decision (Johan 2026-10-26): OS 3.2 only, as recommended.
 2. One reachability test, `rig-ra-open` (RA-P1-3), drives `selecta --ui reaction` on the rig and asserts the sentinel `ui_open_reaction=1` (section 4.1), the window size equal to the public screen area, and the menu item count equal to the action-table rows with a menu path. It is the only test that proves WIRED; every other behaviour is tested where it lives (host tests of the mapping functions, section 4.3).
+   Decision (Johan 2026-10-26): yes, Johan runs `rig-ra-facts` and `rig-ra-probe` on the Replay once (Amiga, his own run).
 3. The ratchet `tests/ratchet/unimplemented.txt` holds zero RA IDs and M4-P9-1 to M4-P9-3 stay `[>]`.
+   Decision (Johan 2026-10-26): yes, all OS 3.2 ReAction classes, as recommended.
 4. Every feature of the desktop plan that ReAction cannot carry is named in section 5 with the reason, and that list matches what the plugin hides at run time (RA-P3-12).
+   Decision (Johan 2026-10-26): narrow column with full-word labels at 700 to 899 px, as recommended.
 5. Johan has run the manual check RA-P7-3 on the Replay and said yes.
+   Decision (Johan 2026-10-26): popup at the pointer (not the recommended answer). Right click opens a custom popup window at the pointer position (RA-P3-8 amended); the screen menu strip keeps the Song menu too.
 
 Commands (from RULES.md `## Commands`; host part only, nothing runs on a rig from this plan):
 
@@ -196,7 +201,7 @@ IDs are stable. Host tests are labelled `ra`; every item names its test and the 
 - [ ] RA-P3-5 Search: debounced string gadget, scope chooser, grouped results. Test: `rig-ra-search`: typing `format:mod` gives the fixture mod count; `STAT_LIBRARY_SEARCHES` grows by the debounced count (1 per pause), the same numbers as `dui-search`.
 - [ ] RA-P3-6 Queue view with group headings (Now playing, Next up, Later), play next, remove, undo and redo, reshuffle; reorder by drag or Move Up / Move Down (RA-P0-3). Test: `rig-ra-queue`: play next then undo restores the queue order (queue hash equal), same assertion as `dui-queue`.
 - [ ] RA-P3-7 Playlists: folder tree as listbrowser generations, create, rename, delete with confirm, smart playlists. Test: `rig-ra-playlists`: create in a folder, reload; the folder holds it; `STAT_FOLDER_OPENS` counts the open.
-- [ ] RA-P3-8 Song context menu (I305 shape): every page that lists a song opens one menu built from one table. Method on Amiga: the screen menu strip gets a "Song" menu rebuilt for the selected row, plus a popup `chooser.gadget` opened by the Song Menu action. Test: `ra-song-menu` (host): the item list equals the desktop `g_menu_items` order for the same row kind; `rig-ra-song-menu` asserts the Play Next item changes the queue by 1.
+- [ ] RA-P3-8 Song context menu (I305 shape): every page that lists a song opens one menu built from one table. Method on Amiga: the screen menu strip gets a "Song" menu rebuilt for the selected row, plus a popup opened by the Song Menu action and by the right mouse button over a row (Q5 decision: a borderless custom window at the pointer position holding one listbrowser of the menu items, closed on select, Escape or a click outside; it does not replace the screen menu strip). Test: `ra-song-menu` (host): the item list equals the desktop `g_menu_items` order for the same row kind; `rig-ra-song-menu` asserts the Play Next item changes the queue by 1.
 - [ ] RA-P3-9 Now Playing panel: artwork area, metadata list, synced lyrics (selected row = `lyric_slot` minus 1), up next, rating and like. Test: `rig-ra-nowplaying`: the LRC fixture advances the selected lyric row at the fixture times; `STAT_META_PANEL_ROWS` equals the metadata list row count.
 - [ ] RA-P3-10 Likes and ratings (I306 shape): heart shown for liked songs in lists (a column mark) and the Now Playing like button reflects the state in the same pump as a LIKE toggle; five rating marks via a `chooser.gadget` with stored value and a second pick clearing it. Test: `rig-ra-likes`: toggle LIKE, assert the button state and the row mark change within one pump (`STAT_FRAMES` plus 1); rating 4 then 4 again clears to 0.
 - [ ] RA-P3-11 Song info page: module info, STIL, composer, wrong and skip flags, notes. Test: `rig-ra-songinfo`: setting the wrong flag with a note writes the row `selecta-cli wrong` lists.
@@ -234,6 +239,7 @@ IDs are stable. Host tests are labelled `ra`; every item names its test and the 
 - [ ] RA-P6-2 asl requesters for Add Files, Add Folder, Save Playlist. Test: `rig-m4-asl` with `--ui reaction`; asserts `QUEUE_ADD` count equals files chosen.
 - [ ] RA-P6-3 Workbench start: no stdout; messages as requesters (M4-P7-6). Test: `rig-m4-wbstart` with `--ui reaction` and `reaction.library`-class missing (RA-P1-2 reason shown).
 - [ ] RA-P6-4 Commodity and hide: global hotkeys, Hide Window key H, commodity Show (M4-P12-12) for this window. Test: `rig-m4-commodity` with `--ui reaction`: hotkey triggers `NEXT`; H gives open window count 0, Show restores.
+- [ ] RA-P6-6 Clipboard URL watch (DUI-P5-10, Q7 decision): a timer.device poll of clipboard.device unit 0 every 2 s while the window is active, FTXT chunk read only when the clip id changes, URL detection through the shared desktop matcher; pref `ui.reaction.clipboard_watch` (default on) in `prefs.def`. Test: `ra-clipboard-poll` (host): the poll step with a fake clip sequence fires once per changed clip and never for an unchanged id; `rig-ra-clipboard`: writing a URL to the clipboard on rig 2 shows the add-URL prompt within 3 s and `STAT_CLIP_POLLS` grows by at most 2 per 4 s.
 - [ ] RA-P6-5 Pause drawing when the screen is behind (M4-P7-4 shape, applies to the window being inactive on a covered screen). Test: `rig-ra-screen-back`: with the screen sent behind for 5 s `STAT_FRAMES` grows by at most 1 and viz taps keep counting.
 
 ### Phase 7: performance, regressions, landing
@@ -255,7 +261,7 @@ Count: Phase 0: 7, Phase 1: 6, Phase 2: 10, Phase 3: 15, Phase 4: 6, Phase 5: 11
 - F5 Rig name. M4 plan tests say `rtg-060`; the real RTG targets are rig 2 and the Replay. M4 plan rows are not edited here beyond Phase 9.
 - F6 Icon sidebar breakpoint. `uimodel.h:108` names an icon sidebar for 700 to 899 px; the project requires full English words for labels, and lucide icons do not exist on the Amiga. RA-P2-1 therefore maps that breakpoint to labelled entries in a narrow column (decision in Q5).
 
-## 8. Open questions for Johan
+## 8. Open questions for Johan (decided 2026-10-26; decision below each)
 
 Each has a recommended answer; the decisive trade-off is in the last sentence. Not asked, to be put to him by the caller.
 
@@ -265,10 +271,15 @@ Each has a recommended answer; the decisive trade-off is in the last sentence. N
 4. Sidebar at 700 to 899 px (icon sidebar breakpoint). Recommended: a narrow column with full-word labels, no icons (F6). Trade-off: the column is wider than the model's icon width, so the main region loses about 80 px; the alternative, icons made from the first letter, breaks the full-words rule.
 5. Context menu on right click. Recommended: the right mouse button opens the screen menu strip (Amiga convention), with a "Song" menu rebuilt for the selected row, as M4 3.2 says for toolkit UIs. Trade-off: no popup at the pointer.
 6. Gradient/rounded look in custom areas. Recommended: custom areas (grid, cover flow, viz, artwork) use the desktop draw code with rounded corners on RTG; gadgets keep the OS look. Trade-off: a window that mixes two styles; making gadgets match would need custom gadget classes, which is the custom UI's job.
+   Decision (Johan 2026-10-26): desktop draw code with rounded corners on RTG for custom areas, as recommended.
 7. Clipboard URL watch (DUI-P5-10) in the ReAction UI. Recommended: not in this plan. Trade-off: one feature fewer than the desktop; clipboard.device has no change notification, so it needs polling that costs CPU on a 68020.
+   Decision (Johan 2026-10-26): poll the clipboard (not the recommended answer). The clipboard URL watch ships in this plan as a timer poll (RA-P6-6).
 8. Colour budget for a custom area on 256-colour screens. Recommended: 64 colours for the area (viz or artwork) from the shared pen table, leaving the rest to the Workbench palette. Trade-off: fewer colours for artwork; more would steal pens from Workbench (RA-P4-2 uses the number).
+   Decision (Johan 2026-10-26): 64 pens for a custom area on 256-colour screens, as recommended.
 9. Sentinel mechanism shared with MUI and custom UI. Recommended: derive `ui_open_<id>=1` in one test helper from `STAT_BACKEND`, `STAT_FRAMES` and the registry (4.1), used by M4-P8-1 too. Trade-off: a small helper change in the MUI plan; a per-plugin new stat tag adds a tag for each UI.
+   Decision (Johan 2026-10-26): one test helper derives `ui_open_<id>=1` from `STAT_BACKEND`, `STAT_FRAMES` and the registry, as recommended; MUI-P1-5 drops its own stat tag and uses the same helper.
 10. Replay manual check timing. Recommended: RA-P7-4 only when RA-P1 to RA-P3 are green on rig 2. Trade-off: later feedback; earlier checks would test an unfinished window.
+   Decision (Johan 2026-10-26): RA-P7-4 Replay check only after RA-P1 to RA-P3 are green on rig 2, as recommended.
 
 ## 9. Coverage
 
