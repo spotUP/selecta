@@ -75,7 +75,7 @@ typedef struct sel_view {
     uint32_t art_seen;    /* art_generation art_cache belongs to */
     uint32_t* art_cache;  /* 2 * row_cap: queue entry id and artwork id per window slot, entry id 0 none */
     uint32_t row_cap;
-    uint32_t cursor_of[4], id_of[4]; /* the cursor each source was left at */
+    uint32_t cursor_of[6], id_of[6]; /* the cursor each source was left at */
     uint32_t browse_seen;            /* browse generation the cursor belongs to */
     uint32_t land;                   /* cursor for the next browse listing */
     int active;                      /* a VIEW_ command ran: events are wanted */
@@ -107,7 +107,7 @@ uint32_t sel_view_set_folders(sel_view* v, const char* tree);
  * "S <key>\t<entry>" for a song row and "S @<album>\t<entry>" for an album row; the key lands in the row (I191a). */
 uint32_t sel_view_set_home(sel_view* v, const char* text);
 
-/* "queue", "browse", "query", "folders" or "home". 0: unknown source. */
+/* "queue", "browse", "query", "folders", "home" or "search". 0: unknown source. */
 int sel_view_show(sel_view* v, const sel_view_src* s, const char* source);
 
 /* "N" absolute, "+N" / "-N" relative, "top", "bottom"; clamped to the list.

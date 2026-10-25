@@ -11,7 +11,7 @@ static const char* const style_name[SEL_VIEW_STYLE_COUNT] = {"regular", "tree", 
 
 /* The folders and home sources list prepared text rows (frows): always regular, cursor = row index. */
 static int text_src(const sel_view* v) {
-    return v->pub.source == SEL_VIEW_FOLDERS || v->pub.source == SEL_VIEW_HOME;
+    return v->pub.source == SEL_VIEW_FOLDERS || v->pub.source == SEL_VIEW_HOME || v->pub.source == SEL_VIEW_SEARCH;
 }
 
 /* The browse source is a directory listing: always regular. */
@@ -603,6 +603,8 @@ int sel_view_show(sel_view* v, const sel_view_src* s, const char* source) {
         want = SEL_VIEW_FOLDERS;
     } else if (strcmp(source, "home") == 0) {
         want = SEL_VIEW_HOME;
+    } else if (strcmp(source, "search") == 0) {
+        want = SEL_VIEW_SEARCH;
     } else {
         return 0;
     }
@@ -670,7 +672,7 @@ int sel_view_window(sel_view* v, const sel_view_src* s, uint32_t rows) {
 
 static void anchor(sel_view* v, const sel_view_src* s, uint32_t count) {
     sel_view_state* p = &v->pub;
-    if (p->source == SEL_VIEW_FOLDERS || p->source == SEL_VIEW_HOME) {
+    if (text_src(v)) {
         /* The rows follow the tree order: the cursor is the row index. */
     } else if (p->source != SEL_VIEW_BROWSE) {
         uint32_t at = count ? sel_queue_index_of(s->queue, p->cursor_id) : SEL_QUEUE_NONE;
@@ -796,7 +798,7 @@ void sel_view_refresh(sel_view* v, const sel_view_src* s) {
         r->depth = 0;
         r->art_id = 0;
         r->id = row_id(v, s, idx);
-        if (p->source == SEL_VIEW_FOLDERS || p->source == SEL_VIEW_HOME) {
+        if (text_src(v)) {
             *r = v->frows[idx];
         } else if (p->source != SEL_VIEW_BROWSE) {
             r->kind = SEL_ROW_QUEUE;

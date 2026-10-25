@@ -467,8 +467,8 @@ static void collect(sel_library* lib, const char* arm, const char* arm_idx, cons
     }
 }
 
-/* Fills job->meta with title, artist, format and duration for each key collected into job->out.
- * A row that does not fit, or has no match, gets four empty fields so the rows stay aligned. */
+/* Fills job->meta with title, artist, format, duration and album for each key collected into job->out.
+ * A row that does not fit, or has no match, gets five empty fields so the rows stay aligned. */
 static void collect_meta(sel_library* lib, sel_lib_job* job) {
     sqlite3_stmt* st = NULL;
     const char* key = job->out;
@@ -480,14 +480,14 @@ static void collect_meta(sel_library* lib, sel_lib_job* job) {
     }
     if (sqlite3_prepare_v2(lib->db,
                            lib->has_index
-                               ? "SELECT name, artist, format, duration_ms FROM songs WHERE key = ?1"
-                                 " UNION ALL SELECT name, artist, format, duration_ms FROM idx.songs WHERE key = ?1"
-                               : "SELECT name, artist, format, duration_ms FROM songs WHERE key = ?1",
+                               ? "SELECT name, artist, format, duration_ms, album FROM songs WHERE key = ?1"
+                                 " UNION ALL SELECT name, artist, format, duration_ms, album FROM idx.songs WHERE key = ?1"
+                               : "SELECT name, artist, format, duration_ms, album FROM songs WHERE key = ?1",
                            -1, &st, NULL) != SQLITE_OK) {
         st = NULL;
     }
     for (i = 0; i < job->count; i++) {
-        const char* f[3] = {"", "", ""};
+        const char* f[3] = {"", "", ""}, *album = "";
         char dur[16] = "";
         size_t need;
         int k;
@@ -499,20 +499,22 @@ static void collect_meta(sel_library* lib, sel_lib_job* job) {
                     const char* t = (const char*)sqlite3_column_text(st, k);
                     f[k] = t != NULL ? t : "";
                 }
+                album = (const char*)sqlite3_column_text(st, 4);
+                album = album != NULL ? album : "";
                 if (sqlite3_column_int64(st, 3) > 0) {
                     long long s = sqlite3_column_int64(st, 3) / 1000;
                     snprintf(dur, sizeof dur, "%lld:%02lld", s / 60, s % 60);
                 }
             }
         }
-        need = strlen(f[0]) + strlen(f[1]) + strlen(f[2]) + strlen(dur) + 4u;
+        need = strlen(f[0]) + strlen(f[1]) + strlen(f[2]) + strlen(dur) + strlen(album) + 5u;
         if (used + need > job->meta_cap) {
-            if (used + 4u > job->meta_cap) {
+            if (used + 5u > job->meta_cap) {
                 break;
             }
-            f[0] = f[1] = f[2] = "";
+            f[0] = f[1] = f[2] = album = "";
             dur[0] = '\0';
-            need = 4u;
+            need = 5u;
         }
         for (k = 0; k < 3; k++) {
             size_t n = strlen(f[k]) + 1u;
@@ -521,6 +523,8 @@ static void collect_meta(sel_library* lib, sel_lib_job* job) {
         }
         memcpy(job->meta + used, dur, strlen(dur) + 1u);
         used += (uint32_t)strlen(dur) + 1u;
+        memcpy(job->meta + used, album, strlen(album) + 1u);
+        used += (uint32_t)strlen(album) + 1u;
         key += strlen(key) + 1u;
         job->meta_used = used;
     }

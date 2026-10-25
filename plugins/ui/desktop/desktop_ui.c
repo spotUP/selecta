@@ -146,7 +146,8 @@ typedef struct desk {
     int32_t np_rating;                /* filled rating marks of the last Now Playing draw (I288) */
     uint32_t lib_searches;   /* LIBRARY_SEARCH lines sent for typed queries: STAT_LIBRARY_SEARCHES */
     uint32_t search_draws, search_rows;  /* search view frames drawn, result rows in the last one */
-    uint32_t search_facet;   /* the facet chip in force: 0 All, 1 Songs, 2 Formats */
+    uint32_t search_facet;   /* the facet chip in force: 0 All, 1 Songs, 2 Albums, 3 Artists */
+    uint32_t search_groups[3], search_drawn;  /* group counts read from the drawn headings, rows drawn in the last search frame */
     size_t qlen;
     desk_page page;          /* the page in the main region: the sidebar highlight and the nav sentinel (I262) */
     uint32_t nav_clicks, nav_keys; /* sidebar door clicks and page keys handled (I262) */
@@ -1075,15 +1076,29 @@ static void desk_draw_query(desk* d, sel_gui_rect sr) {
     }
 }
 
+/* The Home header chips: All and Songs open Search with that facet, Composers opens the Library, Playlists the
+ * Playlists page (desk_click). */
+enum { HOME_CHIPS = 4 };
+static const char* const home_chip_name[HOME_CHIPS] = {"All", "Songs", "Composers", "Playlists"};
+
+static sel_gui_rect home_chip_rect(desk* d, sel_gui_rect mn, uint32_t k) {
+    const sel_gui_atlas* chip = desk_font(d, 1, 13);
+    int32_t x = mn.x + lpx(d, HOME_MARGIN), i;
+    for (i = 0; i < (int32_t)k && chip != NULL; i++) {
+        x += sel_gui_text_width(chip, home_chip_name[i], strlen(home_chip_name[i])) + 2 * lpx(d, 14) + lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    }
+    return rect_of(x, mn.y + lpx(d, HOME_CHIPS_Y),
+                   (chip != NULL ? sel_gui_text_width(chip, home_chip_name[k], strlen(home_chip_name[k])) : 40) + 2 * lpx(d, 14), lpx(d, HOME_CHIP_H));
+}
+
 static void draw_home_header(desk* d, sel_gui_rect mn, int with_section) {
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]);
     uint32_t muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     int32_t rad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]);
-    int32_t mg = lpx(d, HOME_MARGIN), sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    int32_t mg = lpx(d, HOME_MARGIN);
     sel_gui_rect sr = search_field_rect(d, mn);
     const sel_gui_atlas* chip = desk_font(d, 1, 13);
-    static const char* const chips[] = {"All", "Songs", "Composers", "Playlists"};
-    int32_t x, k, ic = lpx(d, 18);
+    int32_t k, ic = lpx(d, 18);
     sel_gui_round_rect(d->canvas, rect_of(mn.x, mn.y, mn.w, 2 * rad), rad, ARGB(d->theme.token[SEL_GUI_TOKEN_HEADER_TINT]));
     sel_gui_gradient(d->canvas, rect_of(mn.x, mn.y + rad, mn.w, lpx(d, HOME_TINT_H) - rad), 1,
                      ARGB(d->theme.token[SEL_GUI_TOKEN_HEADER_TINT]), ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
@@ -1095,13 +1110,10 @@ static void draw_home_header(desk* d, sel_gui_rect mn, int with_section) {
     desk_draw_query(d, sr);
     draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, HOME_GREET_Y), mn.w - 2 * mg, lpx(d, HOME_GREET_H)), "Welcome back", 1, 32, text);
     d->home_parts |= HP_GREETING;
-    x = mn.x + mg;
-    for (k = 0; k < 4 && chip != NULL; k++) {
-        int32_t w = sel_gui_text_width(chip, chips[k], strlen(chips[k])) + 2 * lpx(d, 14);
-        sel_gui_rect cr = rect_of(x, mn.y + lpx(d, HOME_CHIPS_Y), w, lpx(d, HOME_CHIP_H));
-        draw_button(d, cr, ARGB(d->theme.token[k == 0 ? SEL_GUI_TOKEN_ACCENT : SEL_GUI_TOKEN_SURFACE_RAISED]), chips[k], 13,
+    for (k = 0; k < HOME_CHIPS && chip != NULL; k++) {
+        sel_gui_rect cr = home_chip_rect(d, mn, (uint32_t)k);
+        draw_button(d, cr, ARGB(d->theme.token[k == 0 ? SEL_GUI_TOKEN_ACCENT : SEL_GUI_TOKEN_SURFACE_RAISED]), home_chip_name[k], 13,
                     ARGB(d->theme.token[k == 0 ? SEL_GUI_TOKEN_ACCENT_TEXT : SEL_GUI_TOKEN_TEXT]));
-        x += w + sp;
     }
     d->home_parts |= HP_CHIPS;
     if (with_section) {
@@ -2600,6 +2612,9 @@ static const char* library_dump_build(desk* d) {
     }
     o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "search draws %u rows %u query %s\n",
                           (unsigned)d->search_draws, (unsigned)d->search_rows, d->query);
+    o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "search groups songs=%u albums=%u artists=%u facet=%u drawn=%u\n",
+                          (unsigned)d->search_groups[0], (unsigned)d->search_groups[1], (unsigned)d->search_groups[2],
+                          (unsigned)d->search_facet, (unsigned)d->search_drawn);
     if (d->pl_page) { /* the Playlists page geometry and tree rows (DUI-P4-9) */
         const sel_view_state* pv = pl_view(st);
         sel_gui_rect pmn = region_rect(d, "main"), pn = pl_name_rect(d, pmn);
@@ -3034,8 +3049,8 @@ static int library_click(desk* d, int32_t x, int32_t y) {
 /* ---- Search (DUI-P4-6): the query field on top, facet chips, and the engine's QUERY rows grouped by type. The engine
  * does the search (LIBRARY_SEARCH, the query language incl. `format:mod`); the debounce reuses the tooltip delay pattern
  * (a UI clock stamp, a wait hint for the idle block, a tick that fires once). */
-enum { SEARCH_DEBOUNCE_MS = 250, SEARCH_ROW_H = 32, SEARCH_FACETS = 3 };
-static const char* const search_facet_name[SEARCH_FACETS] = {"All", "Songs", "Formats"};
+enum { SEARCH_DEBOUNCE_MS = 250, SEARCH_ROW_H = 32, SEARCH_FACETS = 4, SEARCH_WINDOW_ROWS = 64 };
+static const char* const search_facet_name[SEARCH_FACETS] = {"All", "Songs", "Albums", "Artists"};
 
 /* Sends the pending query to the engine as the text UI's library screen does; an empty query leaves the results. */
 static void desk_search_fire(desk* d) {
@@ -3058,9 +3073,9 @@ static void desk_search_fire(desk* d) {
     line[n++] = '"';
     line[n] = '\0';
     desk_send(d, line);
-    desk_send(d, "VIEW_SOURCE query");
+    desk_send(d, "VIEW_SOURCE search"); /* the engine groups the result by type: Songs, Albums, Artists */
     desk_send(d, "VIEW_STYLE regular");
-    snprintf(line, sizeof line, "VIEW_WINDOW %u", (unsigned)LIB_WINDOW_ROWS);
+    snprintf(line, sizeof line, "VIEW_WINDOW %u", (unsigned)SEARCH_WINDOW_ROWS);
     desk_send(d, line);
     d->searches++;
     d->lib_searches++;
@@ -3100,7 +3115,7 @@ static void draw_search(desk* d) {
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     uint32_t k, shown = 0;
     int32_t y;
-    const sel_view_state* v = st->view != NULL && st->view->source == SEL_VIEW_QUERY ? st->view : NULL;
+    const sel_view_state* v = st->view != NULL && st->view->source == SEL_VIEW_SEARCH ? st->view : NULL;
     sel_gui_clip_push(d->canvas, mn);
     sel_gui_round_rect(d->canvas, sr, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
     sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_SEARCH, rect_of(sr.x + lpx(d, 14), sr.y + (sr.h - ic) / 2, ic, ic), ic, muted);
@@ -3112,14 +3127,31 @@ static void draw_search(desk* d) {
                     on ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]) : text);
     }
     y = mn.y + lpx(d, SEARCH_FIELD_Y + SEARCH_FIELD_H + 16) + lpx(d, HOME_CHIP_H + 16);
-    if (v != NULL && d->search_facet != 2u) { /* the Songs group: the engine rows of the query */
-        char head[48];
-        snprintf(head, sizeof head, "Songs (%u)", (unsigned)v->row_count);
-        draw_text(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, 28)), head, 1, 18, text);
-        y += lpx(d, 32);
-        for (k = 0; k < v->row_n && y + lpx(d, SEARCH_ROW_H) < mn.y + mn.h; k++, y += lpx(d, SEARCH_ROW_H), shown++) {
-            draw_text(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H)), v->rows[k].text != NULL ? v->rows[k].text : "", 0, 14, text);
+    d->search_groups[0] = d->search_groups[1] = d->search_groups[2] = 0;
+    if (v != NULL) { /* the engine's groups: a heading row (type and count) starts each, its entries follow */
+        uint32_t group = 0, drawn_all = 0;
+        int show = 0;
+        for (k = 0; k < v->row_n; k++) {
+            const sel_view_row* r = &v->rows[k];
+            const char* t = r->text != NULL ? r->text : "";
+            if (r->kind == SEL_ROW_HEADING) {
+                const char* par = strchr(t, '(');
+                group = strncmp(t, "Songs", 5) == 0 ? 1u : strncmp(t, "Albums", 6) == 0 ? 2u : 3u;
+                show = d->search_facet == 0u || d->search_facet == group;
+                d->search_groups[group - 1u] = (uint32_t)strtoul(par != NULL ? par + 1 : "0", NULL, 10);
+                if (show && y + lpx(d, 32) < mn.y + mn.h) {
+                    draw_text(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, 28)), t, 1, 18, text);
+                    y += lpx(d, 32);
+                    drawn_all++;
+                }
+            } else if (show && y + lpx(d, SEARCH_ROW_H) < mn.y + mn.h) {
+                draw_text(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H)), t, 0, 14, text);
+                y += lpx(d, SEARCH_ROW_H);
+                drawn_all++;
+                shown += group == 1u;
+            }
         }
+        d->search_drawn = drawn_all;
     }
     d->search_draws++;
     d->search_rows = shown;
@@ -3459,6 +3491,31 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
     const sel_state* st = sel_engine_state(d->engine);
     sel_gui_rect mn = region_rect(d, "main");
     uint32_t i;
+    if (d->page == PG_SEARCH && d->search_on && in_rect(mn, x, y)) { /* a facet chip filters the drawn groups */
+        for (i = 0; i < SEARCH_FACETS; i++) {
+            if (in_rect(search_facet_rect(d, panel_rect(d, "main"), i), x, y)) {
+                int changed = d->search_facet != i;
+                d->search_facet = i;
+                d->repaint = 1;
+                d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+                return changed;
+            }
+        }
+    }
+    if (d->page == PG_HOME && d->open_tile == 0 && !d->songs && st->composers == NULL && in_rect(mn, x, y)) {
+        for (i = 0; i < HOME_CHIPS; i++) { /* the Home header chips */
+            if (in_rect(home_chip_rect(d, panel_rect(d, "main"), i), x, y)) {
+                int moved;
+                if (i < 2u) {
+                    d->search_facet = i;
+                    d->search_keep = 1;
+                }
+                moved = desk_page_goto(d, i < 2u ? PG_SEARCH : i == 2u ? PG_LIBRARY : PG_PLAYLISTS);
+                d->search_keep = 0;
+                return moved;
+            }
+        }
+    }
     if (d->page == PG_SEARCH && in_rect(mn, x, y)) { /* a click in the field focuses it; elsewhere in main drops focus */
         int32_t want = in_rect(search_field_rect(d, panel_rect(d, "main")), x, y) ? (int32_t)d->layout.count : -1;
         if (want >= 0 || d->focus == (int32_t)d->layout.count) {
@@ -5722,7 +5779,7 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
     }
     if (d->home && sel_engine_state(d->engine)->view != NULL) { /* HOME rows arrived or changed: redraw */
         const sel_view_state* hv = sel_engine_state(d->engine)->view;
-        uint32_t sig = hv->source == SEL_VIEW_HOME ? 1u + hv->row_n : d->search_on && hv->source == SEL_VIEW_QUERY ? 0x10000u + hv->row_count * 64u + hv->row_n : 0u;
+        uint32_t sig = hv->source == SEL_VIEW_HOME ? 1u + hv->row_n : d->search_on && hv->source == SEL_VIEW_SEARCH ? 0x10000u + hv->row_count * 64u + hv->row_n : 0u;
         if (hv->source == SEL_VIEW_FOLDERS && (d->pl_page || hv->row_n > 0u)) { /* the saved playlists arrived or changed */
             sig = 0x20000u + pl_hash(hv);
         }

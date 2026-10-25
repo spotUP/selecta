@@ -386,7 +386,7 @@ struct sel_engine {
     uint32_t sm_key;      /* smart download plan made for this queue version, playing entry and prefs generation (I169); 0 = none */
     char* res_text;       /* last query result: keys, each NUL terminated */
     uint32_t res_count;
-    char* res_meta;       /* last query result: title, artist, format, duration per key, each NUL terminated */
+    char* res_meta;       /* last query result: title, artist, format, duration, album per key, each NUL terminated */
     uint32_t res_meta_used;
     char* qmeta;          /* snapshot of res_meta taken with qview (VIEW_SOURCE query) */
     uint32_t* qmeta_off;  /* qmeta offset of each qview row; UINT32_MAX: no metadata */
@@ -3927,6 +3927,96 @@ static void home_reload(sel_engine* e) {
     e->home_rows += sel_view_set_home(&e->view, text);
 }
 
+/* DUI-P4-6: the search source. The last library search grouped by type (Songs, Albums, Artists) as heading rows
+ * with the true distinct count in the heading and the first SEARCH_GROUP_ROWS entries of each group below it. Same
+ * text format and rows as the home source. Albums and artists are distinct over the result metadata (title, artist,
+ * album, duration per row); the distinct set is a fixed table, so a result with more than SEARCH_DISTINCT_MAX
+ * distinct albums or artists counts only that many. */
+enum { SEARCH_GROUP_ROWS = 16, SEARCH_DISTINCT_MAX = 256 };
+
+static uint32_t search_hash(const char* s) {
+    uint32_t h = 2166136261u;
+    for (; *s != '\0'; s++) {
+        h = (h ^ (uint8_t)*s) * 16777619u;
+    }
+    return h;
+}
+
+/* Adds the value to the set (table of offsets into qmeta, UINT32_MAX empty). Returns 1 when it was new. */
+static int search_distinct_add(const char* meta, uint32_t* table, uint32_t* used, const char* value) {
+    uint32_t at = search_hash(value) % (2u * SEARCH_DISTINCT_MAX);
+    uint32_t probes;
+    for (probes = 0; probes < 2u * SEARCH_DISTINCT_MAX; probes++, at = (at + 1u) % (2u * SEARCH_DISTINCT_MAX)) {
+        if (table[at] == UINT32_MAX) {
+            if (*used >= SEARCH_DISTINCT_MAX) {
+                return 0;
+            }
+            table[at] = (uint32_t)(value - meta);
+            (*used)++;
+            return 1;
+        }
+        if (strcmp(meta + table[at], value) == 0) {
+            return 0;
+        }
+    }
+    return 0;
+}
+
+static void search_reload(sel_engine* e) {
+    char* text = e->view.htext;
+    uint32_t albums[2u * SEARCH_DISTINCT_MAX], artists[2u * SEARCH_DISTINCT_MAX];
+    uint32_t n_album = 0, n_artist = 0, i, listed_album = 0, listed_artist = 0;
+    size_t cap = SEL_VIEW_HOME_TEXT_MAX, o = 0;
+    char alb[SEL_VIEW_HOME_TEXT_MAX / 8], art[SEL_VIEW_HOME_TEXT_MAX / 8];
+    size_t la = 0, lr = 0;
+    if (text == NULL) {
+        return;
+    }
+    for (i = 0; i < 2u * SEARCH_DISTINCT_MAX; i++) {
+        albums[i] = artists[i] = UINT32_MAX;
+    }
+    alb[0] = art[0] = '\0';
+    o += (size_t)snprintf(text + o, cap - o, "H Songs (%u)\n", (unsigned)e->res_count);
+    for (i = 0; i < e->res_count; i++) {
+        const char* name = "";
+        const char* artist = "";
+        const char* album = "";
+        const char* key = sel_engine_result_key(e, i);
+        if (i < e->qmeta_rows && e->qmeta_off[i] != UINT32_MAX) {
+            name = e->qmeta + e->qmeta_off[i];
+            artist = name + strlen(name) + 1u;
+            album = artist + strlen(artist) + 1u; /* format */
+            album += strlen(album) + 1u;           /* duration */
+            album += strlen(album) + 1u;           /* album */
+        }
+        if (i < SEARCH_GROUP_ROWS && key != NULL && o + strlen(key) + strlen(name) + strlen(artist) + 8u < cap / 2u) {
+            o += (size_t)snprintf(text + o, cap - o, "S %s\t%s  %s\n", key, name, artist);
+        }
+        if (album[0] != '\0' && search_distinct_add(e->qmeta, albums, &n_album, album) && listed_album < SEARCH_GROUP_ROWS &&
+            la + strlen(album) + strlen(artist) + 8u < sizeof alb) {
+            la += (size_t)snprintf(alb + la, sizeof alb - la, "S @%s\t%s  %s\n", album, album, artist);
+            listed_album++;
+        }
+        if (artist[0] != '\0' && search_distinct_add(e->qmeta, artists, &n_artist, artist) && listed_artist < SEARCH_GROUP_ROWS &&
+            lr + strlen(artist) + 8u < sizeof art) {
+            lr += (size_t)snprintf(art + lr, sizeof art - lr, "S %s\n", artist);
+            listed_artist++;
+        }
+    }
+    o += (size_t)snprintf(text + o, cap - o, "H Albums (%u)\n", (unsigned)n_album);
+    if (o + la < cap) {
+        memcpy(text + o, alb, la);
+        o += la;
+    }
+    o += (size_t)snprintf(text + o, cap - o, "H Artists (%u)\n", (unsigned)n_artist);
+    if (o + lr < cap) {
+        memcpy(text + o, art, lr);
+        o += lr;
+    }
+    text[o < cap ? o : cap - 1u] = '\0';
+    (void)sel_view_set_home(&e->view, text);
+}
+
 /* STATS_SHOW: reads the stats screen rows from the library (the stats_* SQL views, F24) and publishes them in
  * the state; STATS_HIDE closes the screen. The text UI only renders what the views returned. */
 static void cmd_STATS_SHOW(sel_engine* e, const sel_message* m) {
@@ -4365,10 +4455,10 @@ static void snapshot_meta(sel_engine* e) {
     e->qmeta_rows = e->res_count;
     for (i = 0; i < e->res_count; i++) {
         uint32_t f, start = at;
-        for (f = 0; f < 4u && at < e->res_meta_used; f++) {
+        for (f = 0; f < 5u && at < e->res_meta_used; f++) {
             at += (uint32_t)strlen(e->qmeta + at) + 1u;
         }
-        e->qmeta_off[i] = f == 4u ? start : UINT32_MAX;
+        e->qmeta_off[i] = f == 5u ? start : UINT32_MAX;
     }
 }
 
@@ -4394,6 +4484,9 @@ static void cmd_VIEW_SOURCE(sel_engine* e, const sel_message* m) {
         }
     } else if (strcmp(what, "home") == 0) {
         home_reload(e);
+    } else if (strcmp(what, "search") == 0) {
+        snapshot_meta(e);
+        search_reload(e);
     } else if (strcmp(what, "folders") == 0) {
         if (e->lib == NULL) {
             sel_engine_report_error(e, "no_library", "VIEW_SOURCE");
@@ -4421,7 +4514,7 @@ static void cmd_VIEW_SOURCE(sel_engine* e, const sel_message* m) {
 }
 
 const char* sel_view_source_label(uint32_t source) {
-    return source == SEL_VIEW_QUEUE ? "queue" : source == SEL_VIEW_BROWSE ? "browse" : source == SEL_VIEW_QUERY ? "query" : source == SEL_VIEW_FOLDERS ? "folders" : source == SEL_VIEW_HOME ? "home" : "unknown";
+    return source == SEL_VIEW_QUEUE ? "queue" : source == SEL_VIEW_BROWSE ? "browse" : source == SEL_VIEW_QUERY ? "query" : source == SEL_VIEW_FOLDERS ? "folders" : source == SEL_VIEW_HOME ? "home" : source == SEL_VIEW_SEARCH ? "search" : "unknown";
 }
 
 const char* sel_engine_view_cursor_key(sel_engine* e) {
@@ -4438,7 +4531,7 @@ const char* sel_engine_view_cursor_key(sel_engine* e) {
         }
         return e->browse_cursor;
     }
-    if (v->source == SEL_VIEW_FOLDERS || v->source == SEL_VIEW_HOME || v->row_count == 0) {
+    if (v->source == SEL_VIEW_FOLDERS || v->source == SEL_VIEW_HOME || v->source == SEL_VIEW_SEARCH || v->row_count == 0) {
         return NULL;
     }
     at = sel_queue_index_of(q, v->cursor_id);
@@ -4571,7 +4664,7 @@ static void cmd_VIEW_ACTIVATE(sel_engine* e, const sel_message* m) {
         return;
     }
     at = v->cursor;
-    if (v->source == SEL_VIEW_HOME) {
+    if (v->source == SEL_VIEW_HOME || v->source == SEL_VIEW_SEARCH) {
         /* I191a: a song row joins the queue and starts (like a query row); an album row runs the album search
          * and shows it through VIEW_SOURCE query. Headings and the count line carry no key. */
         const sel_view_row* r = &e->view.frows[at];

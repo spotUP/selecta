@@ -59,7 +59,7 @@ typedef struct sel_queue_entry {
 
 /* The view model (design doc section 9b), regular style: one flat list over
  * the queue or the browse listing, a cursor and the visible window. */
-typedef enum sel_view_source { SEL_VIEW_QUEUE = 0, SEL_VIEW_BROWSE = 1, SEL_VIEW_QUERY = 2, SEL_VIEW_FOLDERS = 3, SEL_VIEW_HOME = 4 } sel_view_source;
+typedef enum sel_view_source { SEL_VIEW_QUEUE = 0, SEL_VIEW_BROWSE = 1, SEL_VIEW_QUERY = 2, SEL_VIEW_FOLDERS = 3, SEL_VIEW_HOME = 4, SEL_VIEW_SEARCH = 5 } sel_view_source;
 /* SEL_ROW_HEADING and SEL_ROW_HOME are the section headings and entries of the home source (I191).
  * SEL_ROW_FOLDER and SEL_ROW_PLAYLIST are the rows of the folders source (I179): id is the database id,
  * depth the nesting level, text the name. */
