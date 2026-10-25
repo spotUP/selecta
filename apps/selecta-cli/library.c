@@ -548,7 +548,8 @@ static void library_dump_local(const char* db_path) {
 
 static int library_scan(int argc, char** argv) {
     const sel_host* host = sel_host_default();
-    const char* db_path = ":memory:";
+    const char* db_path = NULL; /* default: the app's library.db (I276); --db :memory: scans into a throwaway DB */
+    char db_default[300];
     const char* dir = NULL;
     browse_sink sink;
     sel_scan_info info;
@@ -583,6 +584,13 @@ static int library_scan(int argc, char** argv) {
     if (dir == NULL) {
         fputs("usage: selecta-cli library scan [--db <path>] [--dump] <dir>\n", stderr);
         return 2;
+    }
+    if (db_path == NULL) {
+        db_path = sel_default_db_path(db_default, sizeof db_default);
+        if (db_path == NULL) {
+            fputs("selecta-cli: no default library.db location; pass --db <path>\n", stderr);
+            return 1;
+        }
     }
     memset(&sink, 0, sizeof sink);
     memset(&cfg, 0, sizeof cfg);

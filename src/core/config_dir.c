@@ -33,3 +33,18 @@ int sel_config_dir(char* out, size_t cap) {
 #endif
     return n > 0 && (size_t)n < cap;
 }
+
+/* The default library DB (I276): PROGDIR:library.db on the Amiga, else library.db in the config directory, which is
+ * created when missing. selecta and selecta-cli share this one rule. */
+const char* sel_default_db_path(char* out, size_t cap) {
+#if defined(__amigaos__) || defined(AMIGA)
+    snprintf(out, cap, "PROGDIR:library.db");
+    return out;
+#else
+    char dir[256];
+    if (!sel_config_dir(dir, sizeof dir) || !sel_config_mkdir(dir)) {
+        return NULL;
+    }
+    return snprintf(out, cap, "%s/library.db", dir) < (int)cap ? out : NULL;
+#endif
+}

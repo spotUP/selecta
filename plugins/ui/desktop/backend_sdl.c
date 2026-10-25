@@ -23,6 +23,11 @@ struct desk_sdl {
     sel_gui_input_map_state map; /* press state of the pointer buttons */
     sel_gui_input queue[DESK_SDL_QUEUE];
     uint32_t q_head, q_count;
+    uint32_t drop_n;          /* files of the drop in progress so far (SDL_EVENT_DROP_BEGIN resets it) */
+    char drop_hold[SEL_GUI_INPUT_PATH]; /* the newest file of the drop, sent at the next file or at DROP_COMPLETE */
+    int drop_held;
+    char dlg_path[SEL_GUI_INPUT_PATH]; /* the folder the open dialog answered; read on the main thread in desk_sdl_poll */
+    SDL_AtomicInt dlg_ready;
 };
 
 static int make_texture(desk_sdl* b, int32_t w, int32_t h) {
@@ -214,6 +219,39 @@ static int queue_raw(desk_sdl* b, const sel_gui_raw* raw) {
     return 1;
 }
 
+/* A dropped file or folder as a SEL_GUI_IN_DROP: x is 0 for a lone file (the UI plays it) and 1 for a file of a drop of
+ * several (the UI queues each). */
+static int queue_drop(desk_sdl* b, const char* path, int32_t more) {
+    sel_gui_input in;
+    if (path == NULL || b->q_count >= DESK_SDL_QUEUE) {
+        return 0;
+    }
+    memset(&in, 0, sizeof in);
+    in.kind = SEL_GUI_IN_DROP;
+    in.x = more;
+    SDL_strlcpy(in.path, path, sizeof in.path);
+    b->queue[(b->q_head + b->q_count) % DESK_SDL_QUEUE] = in;
+    b->q_count++;
+    return 1;
+}
+
+static void SDLCALL folder_chosen(void* userdata, const char* const* list, int filter) {
+    desk_sdl* b = (desk_sdl*)userdata;
+    (void)filter;
+    if (list != NULL && list[0] != NULL) {
+        SDL_strlcpy(b->dlg_path, list[0], sizeof b->dlg_path);
+        SDL_SetAtomicInt(&b->dlg_ready, 1);
+    }
+}
+
+int desk_sdl_open_folder_dialog(desk_sdl* b) {
+    if (b == NULL || b->window == NULL || b->headless) {
+        return 0;
+    }
+    SDL_ShowOpenFolderDialog(folder_chosen, b, b->window, NULL, 0);
+    return 1;
+}
+
 int desk_sdl_next_input(desk_sdl* b, sel_gui_input* ev) {
     if (b->q_count == 0u) {
         return 0;
@@ -367,10 +405,42 @@ int desk_sdl_poll(desk_sdl* b, uint32_t timeout_ms, int32_t* w, int32_t* h) {
                 result = DESK_SDL_ACTIVITY;
             }
             break;
+        case SDL_EVENT_DROP_BEGIN:
+            b->drop_n = 0u;
+            b->drop_held = 0;
+            break;
+        case SDL_EVENT_DROP_FILE: /* hold one path back: a lone file plays, so it is sent only once DROP_COMPLETE says it is alone */
+            if (ev.drop.data != NULL) {
+                if (b->drop_held) {
+                    (void)queue_drop(b, b->drop_hold, 1);
+                }
+                SDL_strlcpy(b->drop_hold, ev.drop.data, sizeof b->drop_hold);
+                b->drop_held = 1;
+                b->drop_n++;
+                if (result == DESK_SDL_NONE) {
+                    result = DESK_SDL_ACTIVITY;
+                }
+            }
+            break;
+        case SDL_EVENT_DROP_COMPLETE:
+            if (b->drop_held) {
+                (void)queue_drop(b, b->drop_hold, b->drop_n > 1u ? 1 : 0);
+                b->drop_held = 0;
+            }
+            if (result == DESK_SDL_NONE) {
+                result = DESK_SDL_ACTIVITY;
+            }
+            break;
         default:
             break;
         }
         got = SDL_PollEvent(&ev);
+    }
+    if (SDL_GetAtomicInt(&b->dlg_ready) != 0) { /* the folder dialog answered: the same event a dropped folder gives */
+        SDL_SetAtomicInt(&b->dlg_ready, 0);
+        if (queue_drop(b, b->dlg_path, 0) && result == DESK_SDL_NONE) {
+            result = DESK_SDL_ACTIVITY;
+        }
     }
     return result;
 }

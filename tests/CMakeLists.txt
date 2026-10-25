@@ -1262,6 +1262,11 @@ if(NOT SEL_AMIGA)
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/local.manifest ${SEL_TESTMOD} ${SEL_TESTMOD})
   set_tests_properties(source-local PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_local_ok")
 
+  # I276: library scan without --db fills the app's library.db in the config directory.
+  add_test(NAME library-scan-default-db
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/scan_default_db.sh $<TARGET_FILE:selecta-cli> ${SEL_TESTMOD})
+  set_tests_properties(library-scan-default-db PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "scan_default_db_ok")
+
   # I184d: a local MP3 / Ogg is scanned and played through a file-backed byte stream, not read whole.
   add_test(NAME file-stream-local
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/file_stream.sh $<TARGET_FILE:selecta-cli>

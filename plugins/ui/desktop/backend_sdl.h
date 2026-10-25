@@ -35,6 +35,9 @@ uint32_t desk_sdl_ticks(void);
 /* Live input (I242, I268): desk_sdl_poll maps SDL mouse button, motion, wheel and pinch events (and the
  * back and forward buttons as a swipe), key presses and typed text through sel_gui_input_map and queues the result. This pops the oldest queued
  * event into *ev; returns 0 when the queue is empty. The queue holds 64 events and drops the newest beyond that. */
+/* Add Folder: opens the native folder dialog (SDL_ShowOpenFolderDialog); the chosen folder arrives later through
+ * desk_sdl_next_input as a SEL_GUI_IN_DROP. Returns 0 when there is no window to attach it to. */
+int desk_sdl_open_folder_dialog(desk_sdl* b);
 int desk_sdl_next_input(desk_sdl* b, sel_gui_input* ev);
 
 #endif

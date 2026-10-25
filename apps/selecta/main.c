@@ -124,19 +124,9 @@ static const sel_tag* hooks_of(uint32_t kind, const char* id) {
     return desc != NULL ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
 }
 
-/* Default library DB: PROGDIR:library.db on Amiga, else library.db in the config directory
- * (created when missing). NULL when no location is known. */
+/* Default library DB: sel_default_db_path (src/core/config_dir.c), shared with selecta-cli. */
 static const char* default_db_path(char* out, size_t cap) {
-#if defined(__amigaos__) || defined(AMIGA)
-    snprintf(out, cap, "PROGDIR:library.db");
-    return out;
-#else
-    char dir[256];
-    if (!sel_config_dir(dir, sizeof dir) || !sel_config_mkdir(dir)) {
-        return NULL;
-    }
-    return snprintf(out, cap, "%s/library.db", dir) < (int)cap ? out : NULL;
-#endif
+    return sel_default_db_path(out, cap);
 }
 
 static const char* option(int argc, char** argv, const char* name, const char* def) {
@@ -659,6 +649,8 @@ int main(int argc, char** argv)
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_SUBSONG, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_FRAME_PARTS, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_HOME_PARTS, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_TILE_CARDS, 0));
             printf("ui_library id=%s\n%s", g_uis[u].id, (const char*)sel_tag_find(us, SEL_UI_STAT_LIBRARY_DUMP, (uintptr_t) ""));
+            printf("ui_drop id=%s drops=%u scans=%u\n", g_uis[u].id, (unsigned)sel_tag_find(us, SEL_UI_STAT_DROPS, 0),
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_SCANS, 0));
             printf("ui_tooltip id=%s text=%s\n", g_uis[u].id, (const char*)sel_tag_find(us, SEL_UI_STAT_TOOLTIP_TEXT, (uintptr_t) ""));
             printf("ui_home id=%s shelves=%u shelf_scroll=%u scroll_y=%u tile_queued=%u empty=%u\n%s", g_uis[u].id,
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_HOME_SHELVES, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_SHELF_SCROLL, 0),

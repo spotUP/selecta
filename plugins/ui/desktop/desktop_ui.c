@@ -25,6 +25,7 @@
 #endif
 
 #include <stdio.h>
+#include <sys/stat.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -129,6 +130,11 @@ typedef struct desk {
     char si_note[96];
     size_t si_nlen;
     uint32_t queue_draws, queue_rows, queue_cmds; /* Queue page frames drawn (sentinel), rows in the last one, verbs it sent */
+    uint32_t drops;          /* files and folders dropped on the window or chosen in Add Folder: STAT_DROPS (DUI-P5-11) */
+    uint32_t scans;          /* LIBRARY_SCAN answers seen: STAT_SCANS */
+    const char* dialog_answer; /* --dialog-answer <path>: what the folder dialog answers in a test (DUI-P5-11) */
+    int scan_pending;        /* 1 between sending LIBRARY_SCAN and its LIBRARY_RESULT: searches answer with the same event */
+    int drop_playing;        /* 1 after a dropped file was sent as OPEN: an open_failed error then toasts */
     uint32_t np_rows;        /* metadata pairs the Now Playing panel drew: STAT_META_PANEL_ROWS (DUI-P4-7) */
     uint32_t np_page_draws;  /* Now Playing page draws (sentinel) */
     uint32_t lib_off_page;   /* Library page draws while another page is current (sentinel, must stay 0: I274) */
@@ -231,6 +237,8 @@ static void desk_draw_focus(desk* d);
 static void desk_draw_tip(desk* d);
 static void desk_draw_overlay(desk* d);
 static uint32_t desk_toast_wait(const desk* d);
+static void desk_toast(desk* d, const char* text);
+static int desk_add_folder(desk* d);
 static void desk_toast_tick(desk* d);
 
 /* Hands the dirty rectangles to the backend, then empties the list; returns the pixels repainted. The sdl backend
@@ -1381,6 +1389,12 @@ static sel_gui_rect lib_tab_rect(desk* d, sel_gui_rect mn, uint32_t i) {
     return rect_of(mn.x + lpx(d, LIB_MARGIN) + (int32_t)i * lpx(d, LIB_TAB_W), mn.y + lpx(d, LIB_TAB_Y), lpx(d, LIB_TAB_W), lpx(d, LIB_TAB_H));
 }
 
+/* The Add Folder button, right aligned on the title row of the Library page. */
+static sel_gui_rect lib_add_rect(desk* d, sel_gui_rect mn) {
+    int32_t w = lpx(d, 140);
+    return rect_of(mn.x + mn.w - lpx(d, LIB_MARGIN) - w, mn.y + lpx(d, LIB_TITLE_Y) + lpx(d, 4), w, lpx(d, 32));
+}
+
 /* The crumb after the tabs: the values picked in the column browser; a click on it clears them. */
 static sel_gui_rect lib_crumb_rect(desk* d, sel_gui_rect mn) {
     return rect_of(mn.x + lpx(d, LIB_MARGIN) + LIB_MODES * lpx(d, LIB_TAB_W), mn.y + lpx(d, LIB_TAB_Y), lpx(d, 300), lpx(d, LIB_TAB_H));
@@ -2438,6 +2452,13 @@ static const char* library_dump_build(desk* d) {
         o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "meta %u %s|%s\n", (unsigned)i, p, v);
         p = v + strlen(v) + 1;
     }
+    {
+        sel_gui_rect ab = lib_add_rect(d, region_rect(d, "main"));
+        sel_scan_info si;
+        sel_engine_scan_info(d->engine, &si);
+        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "addfolder %d %d %d %d\nscan probed %u files %u scans %u\n",
+                              (int)ab.x, (int)ab.y, (int)ab.w, (int)ab.h, (unsigned)si.probed, (unsigned)si.scanned_files, (unsigned)d->scans);
+    }
     o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "search draws %u rows %u query %s\n",
                           (unsigned)d->search_draws, (unsigned)d->search_rows, d->query);
     if (d->pl_page) { /* the Playlists page geometry and tree rows (DUI-P4-9) */
@@ -2706,6 +2727,11 @@ static void draw_library(desk* d) {
     } else {
         uint32_t m;
         draw_text(d, col, "Library", 1, 32, text);
+        {
+            sel_gui_rect ab = lib_add_rect(d, mn);
+            sel_gui_round_rect(d->canvas, ab, ab.h / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]));
+            draw_text(d, ab, "Add Folder", 1, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+        }
         for (m = 0; m < LIB_MODES; m++) { /* the mode tabs: the active one in the accent colour */
             sel_gui_rect tr = lib_tab_rect(d, mn, m);
             draw_text(d, tr, lib_mode_name[m], m == d->lib_mode, 14, m == d->lib_mode ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : muted);
@@ -2806,6 +2832,9 @@ static int library_click(desk* d, int32_t x, int32_t y) {
     const char* p;
     char line[256];
     size_t o;
+    if (d->page == PG_LIBRARY && st->composer_page == NULL && in_rect(lib_add_rect(d, mn), x, y)) {
+        return desk_add_folder(d);
+    }
     if (st->composers == NULL) {
         return 0;
     }
@@ -4615,8 +4644,64 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
     return 0;
 }
 
+/* Sends `<verb> "<path>"` with the codec's quoting: a path holds spaces, and a backslash escapes the next character. */
+static int desk_send_path(desk* d, const char* verb, const char* path) {
+    char line[512];
+    size_t o = (size_t)snprintf(line, sizeof line, "%s \"", verb);
+    for (const char* c = path; *c != '\0' && o + 4u < sizeof line; c++) {
+        if (*c == '"' || *c == '\\') {
+            line[o++] = '\\';
+        }
+        line[o++] = *c;
+    }
+    line[o++] = '"';
+    line[o] = '\0';
+    return desk_send(d, line);
+}
+
+/* A dropped file or folder (DUI-P5-11). A folder runs the LIBRARY_SCAN that Add Folder runs; a lone file
+ * plays (OPEN) and each file of a drop of several joins the queue (QUEUE_ADD). A path that is neither gives a toast. */
+static int desk_drop_path(desk* d, const char* path, int more) {
+    struct stat sb;
+    d->drops++;    if (path == NULL || stat(path, &sb) != 0) {
+        desk_toast(d, "Cannot find that file");
+        return 1;
+    }
+    if (S_ISDIR(sb.st_mode)) {
+        desk_toast(d, "Adding folder");
+        d->scan_pending = 1;
+        desk_send_path(d, "LIBRARY_SCAN", path);
+        return 1;
+    }
+    if (more) {
+        desk_send_path(d, "QUEUE_ADD", path);
+        desk_toast(d, "Added to queue");
+    } else {
+        d->drop_playing = 1;
+        desk_send_path(d, "OPEN", path);
+    }
+    return 1;
+}
+
+/* Add Folder: the native folder dialog; a test answers with --dialog-answer. The chosen folder comes back as a drop. */
+static int desk_add_folder(desk* d) {
+    if (d->dialog_answer != NULL) {
+        return desk_drop_path(d, d->dialog_answer, 0);
+    }
+#ifdef SELECTA_DESKTOP_SDL
+    if (d->sdl != NULL && desk_sdl_open_folder_dialog(d->sdl)) {
+        return 1;
+    }
+#endif
+    desk_toast(d, "No folder dialog here");
+    return 1;
+}
+
 /* one pointer or gesture event, from the --input script or the live window */
 static int desk_route_input(desk* d, const sel_gui_input* ev) {
+    if (ev->kind == SEL_GUI_IN_DROP) {
+        return desk_event_frame(d, desk_drop_path(d, ev->path, ev->x != 0));
+    }
     if (ev->kind == SEL_GUI_IN_CLICK || ev->kind == SEL_GUI_IN_MOVE || ev->kind == SEL_GUI_IN_DRAG) {
         int changed = desk_pointer(d, ev);
         if (changed && d->songs) {
@@ -4658,7 +4743,20 @@ static int desk_replay_input(desk* d) {
         if (nl != NULL) {
             *nl = '\0';
         }
-        if (sel_gui_input_parse(line, &ev) && ev.kind == SEL_GUI_IN_KEY) {
+        if (strncmp(line, "drop ", 5) == 0) { /* `drop /a /b`: one drop of several files, all queue */
+            char* sp = line + 5;
+            int more = strchr(sp, ' ') != NULL; /* a lone file plays; each file of several queues */
+            while (*sp != '\0') {
+                char* e = strchr(sp, ' ');
+                memset(&ev, 0, sizeof ev);
+                ev.kind = SEL_GUI_IN_DROP;
+                ev.x = more;
+                snprintf(ev.path, sizeof ev.path, "%.*s", e != NULL ? (int)(e - sp) : (int)strlen(sp), sp);
+                opened |= desk_route_input(d, &ev);
+                sp = e != NULL ? e + 1 : sp + strlen(sp);
+            }
+            pointer_sent = d->sends != sent;
+        } else if (sel_gui_input_parse(line, &ev) && ev.kind == SEL_GUI_IN_KEY) {
             opened |= desk_key(d, &ev);
             /* a grid or cover flow move sent VIEW_CURSOR: the engine answers on the next pump, so resume the script then */
             pointer_sent = d->sends != sent && lib_grid_on(d, sel_engine_state(d->engine));
@@ -5198,6 +5296,9 @@ static void* desk_open(const sel_ui_open_args* a) {
         if (strcmp(a->argv[i], "--resize") == 0 && i + 1 < a->argc) {
             d->resize = a->argv[i + 1];
         }
+        if (strcmp(a->argv[i], "--dialog-answer") == 0 && i + 1 < a->argc) {
+            d->dialog_answer = a->argv[i + 1];
+        }
         if (strcmp(a->argv[i], "--ticks") == 0 && i + 1 < a->argc) {
             d->ticks = (uint32_t)atoi(a->argv[i + 1]);
             d->ticks_given = 1;
@@ -5267,6 +5368,33 @@ static void desk_on_event(void* state, const sel_message* evt) {
     }
     if (evt->id == SEL_EVT_PREFS_CHANGED && strcmp(evt->args[0].v.s, "ui.desktop.viz") == 0) {
         viz_select(d, evt->args[1].v.s);
+    }
+    if (evt->id == SEL_EVT_LIBRARY_RESULT && d->scan_pending) { /* a LIBRARY_SCAN finished: tell the user and refresh what the Library page lists */
+        sel_scan_info si;
+        char msg[64];
+        sel_engine_scan_info(d->engine, &si);
+        d->scan_pending = 0;
+        d->scans++;
+        snprintf(msg, sizeof msg, "Added %u songs to the library", (unsigned)si.scanned_files);
+        desk_toast(d, msg);
+        if (d->page == PG_LIBRARY) {
+            desk_send(d, "COMPOSERS_SHOW");
+            desk_send(d, "STATS_SHOW");
+            if (d->lib_mode == 1u || d->lib_mode == 2u) {
+                desk_send(d, "LIBRARY_SEARCH \"\"");
+            }
+        }
+        d->repaint = 1;
+    }
+    if (evt->id == SEL_EVT_ERROR && d->scan_pending) { /* no_library or scan_failed */
+        d->scan_pending = 0;
+        desk_toast(d, "Cannot add that folder");
+        d->repaint = 1;
+    }
+    if (evt->id == SEL_EVT_ERROR && d->drop_playing && strcmp(evt->args[0].v.s, "open_failed") == 0) {
+        d->drop_playing = 0;
+        desk_toast(d, "That file cannot be played");
+        d->repaint = 1;
     }
     sel_uim_update(&d->uim, sel_engine_state(d->engine));
 }
@@ -5544,7 +5672,11 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[62].value = d->folder_opens;
     d->stats[63].tag = SEL_UI_STAT_VIZ_FRAMES;
     d->stats[63].value = d->viz_frames;
-    d->stats[64].tag = SEL_TAG_END;
+    d->stats[64].tag = SEL_UI_STAT_DROPS;
+    d->stats[64].value = d->drops;
+    d->stats[65].tag = SEL_UI_STAT_SCANS;
+    d->stats[65].value = d->scans;
+    d->stats[66].tag = SEL_TAG_END;
 
     return d->stats;
 }

@@ -242,6 +242,10 @@ void sel_engine_sync_info(const sel_engine* e, sel_sync_info* out);
  * determined or does not fit. The directory is not created. */
 int sel_config_dir(char* out, size_t cap);
 
+/* The default library DB: PROGDIR:library.db on the Amiga, else library.db in the config directory (created when
+ * missing). NULL when no location is known. The shell and selecta-cli library scan share it. */
+const char* sel_default_db_path(char* out, size_t cap);
+
 /* Creates `dir` and missing parents (src/core/<os>/config_mkdir.c). 1 when it exists afterwards. */
 int sel_config_mkdir(const char* dir);
 
