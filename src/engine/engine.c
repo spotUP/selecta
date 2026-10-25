@@ -127,6 +127,7 @@
     X(LIBRARY_FETCH)                                                                          \
     X(LIBRARY_SCAN)                                                                           \
     X(LIBRARY_SYNC)                                                                           \
+    X(SOURCES)                                                                                \
     X(LIKE)                                                                                   \
     X(FLAG)                                                                                   \
     X(NOTE)                                                                                   \
@@ -373,6 +374,8 @@ struct sel_engine {
     char lib_path[4][SEL_BROWSE_PATH_MAX];
     uint32_t st_slot;                         /* STICKER answers: ring of 8, like lib_tags */
     sel_tag st_tags[8][5];
+    uint32_t sources_listed;                  /* SOURCES rows answered (DUI-P4-3) */
+    sel_tag src_tags[16][8];                  /* one SOURCES row per registered source (registry holds 16) */
     char st_key[8][SEL_DEFERRED_PATH_MAX];
     char st_name[8][128];
     char st_value[8][SEL_STICKER_VALUE_MAX];
@@ -3550,6 +3553,51 @@ static void sticker_answer(sel_engine* e, const char* key, const char* name, con
     evt_init(&r, SEL_EVT_LIBRARY_RESULT);
     evt_tags(&r, t);
     emit(e, &r);
+}
+
+/* SOURCES: one LIBRARY_RESULT per registered source for the Library page's Sources tab (DUI-P4-3): SRC_KEY id,
+ * SRC_KIND local or remote, SRC_NAME, SRC_PATH the home, SRC_ENABLED, SRC_COUNT the songs rows of that source (0
+ * without a library). A registered source is the configured one; there is no per-source switch yet. */
+typedef struct sources_fill {
+    sel_engine* e;
+    uint32_t n;
+} sources_fill;
+
+static void sources_row(void* ctx, const char* id, const char* name, const char* home, int remote) {
+    sources_fill* f = (sources_fill*)ctx;
+    sel_engine* e = f->e;
+    sel_tag* t;
+    sel_message r;
+    int songs;
+    if (f->n >= 16u) return;
+    t = e->src_tags[f->n++];
+    songs = e->lib != NULL ? sel_library_source_songs(e->lib, id) : 0;
+    t[0].tag = SEL_SRC_KEY;
+    t[0].value = (uintptr_t)id;
+    t[1].tag = SEL_SRC_KIND;
+    t[1].value = (uintptr_t)(remote ? "remote" : "local");
+    t[2].tag = SEL_SRC_NAME;
+    t[2].value = (uintptr_t)name;
+    t[3].tag = SEL_SRC_PATH;
+    t[3].value = (uintptr_t)(home != NULL ? home : "");
+    t[4].tag = SEL_SRC_ENABLED;
+    t[4].value = 1;
+    t[5].tag = SEL_SRC_COUNT;
+    t[5].value = songs > 0 ? (uintptr_t)songs : 0;
+    t[6].tag = SEL_TAG_END;
+    t[6].value = 0;
+    evt_init(&r, SEL_EVT_LIBRARY_RESULT);
+    evt_tags(&r, t);
+    emit(e, &r);
+    e->sources_listed++;
+}
+
+static void cmd_SOURCES(sel_engine* e, const sel_message* m) {
+    sources_fill f;
+    (void)m;
+    f.e = e;
+    f.n = 0;
+    (void)sel_source_each(sources_row, &f);
 }
 
 static int sticker_ready(sel_engine* e, const char* who) {

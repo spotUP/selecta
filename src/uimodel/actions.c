@@ -92,7 +92,7 @@ static const struct {
     {"SCOPE", ARG},          {"PLAYLIST_LOAD", ARG},  {"PLAYLIST_SAVE", ARG},   {"SAMPLE_LIST", CTX},
     {"COMPOSERS_SHOW", CTX}, {"COMPOSERS_HIDE", CTX},
     {"SAMPLE_EXPORT", CTX},  {"PLAYLIST_PUBLISH", ARG}, {"LIBRARY_BROWSE", ARG}, {"LIBRARY_SEARCH", ARG},
-    {"LIBRARY_FETCH", ARG},  {"LIBRARY_SCAN", ARG},   {"LIBRARY_SYNC", ARG},    {"KEEP", CTX},
+    {"LIBRARY_FETCH", ARG},  {"LIBRARY_SCAN", ARG},   {"LIBRARY_SYNC", ARG},    {"SOURCES", PROTO},    {"KEEP", CTX},
     {"FLAG", CTX},           {"NOTE", ARG},           {"RATE", ARG},            {"VOTE", CTX},
     {"ANALYSE", CTX},        {"CUE_SET", CTX},        {"CUE_GOTO", CTX},        {"SHARE", ARG},
     {"RADIO", ARG},          {"STICKER_SET", PROTO},  {"STICKER_GET", PROTO},   {"STICKER_DEL", PROTO},

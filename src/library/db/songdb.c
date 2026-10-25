@@ -164,6 +164,27 @@ static int op_composer_list(sqlite3* db, const sel_genre_op* op, int64_t* id) {
     return rc == SQLITE_DONE ? SQLITE_OK : rc;
 }
 
+/* SEL_SOURCE_SONGS: how many songs rows carry source id `key`, as decimal text in `out`. */
+static int op_source_songs(sqlite3* db, const sel_genre_op* op, int* found) {
+    sqlite3_stmt* st = NULL;
+    int rc = sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM songs WHERE source = ?1", -1, &st, NULL);
+
+    if (rc != SQLITE_OK) return rc;
+    sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+    rc = sqlite3_step(st);
+    if (rc == SQLITE_ROW) {
+        char num[16];
+        snprintf(num, sizeof num, "%d", sqlite3_column_int(st, 0));
+        if (strlen(num) + 1u <= op->out_cap) {
+            memcpy(op->out, num, strlen(num) + 1u);
+            *found = 1;
+        }
+        rc = SQLITE_DONE;
+    }
+    sqlite3_finalize(st);
+    return rc == SQLITE_DONE ? SQLITE_OK : rc;
+}
+
 int sel_library_songdb_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id) {
     int rc = SQLITE_MISUSE;
 
@@ -182,6 +203,8 @@ int sel_library_songdb_op(sel_library* lib, const sel_genre_op* op, int* found, 
     } else if (op->op == SEL_COMPOSER_LIST && op->out != NULL) {
         rc = op_composer_list(lib->db, op, id);
         *found = *id != 0;
+    } else if (op->op == SEL_SOURCE_SONGS && op->key != NULL && op->out != NULL) {
+        rc = op_source_songs(lib->db, op, found);
     }
     return rc;
 }
@@ -318,4 +341,18 @@ int sel_library_composer_list(sel_library* lib, sel_composer_list_fn fn, void* c
         rows++;
     }
     return rows;
+}
+
+int sel_library_source_songs(sel_library* lib, const char* source) {
+    char buf[16];
+    sel_genre_op op;
+
+    if (lib == NULL || source == NULL) return -1;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_SOURCE_SONGS;
+    op.key = source;
+    op.out = buf;
+    op.out_cap = sizeof buf;
+    if (sel_genre_call(lib, &op, NULL) != 1) return -1;
+    return (int)strtol(buf, NULL, 10);
 }

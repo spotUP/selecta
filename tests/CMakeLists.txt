@@ -1098,6 +1098,14 @@ if(NOT SEL_AMIGA)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
   set_tests_properties(play-query PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "play_query_ok")
 
+  # DUI-P4-3 / I220f: SOURCES lists every registered source with its songs count, through `selecta-cli script`.
+  add_test(NAME sources
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/play_query.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/sources.sel
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/sources.expected
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
+  set_tests_properties(sources PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "play_query_ok")
+
   add_test(NAME user-data
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/userdata.sh $<TARGET_FILE:selecta-cli>
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue_keys.tsv ${CMAKE_CURRENT_SOURCE_DIR}/m3/userdata.sel

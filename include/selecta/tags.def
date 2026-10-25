@@ -252,6 +252,9 @@ SEL_TAG(SRC, HOSTED_BY,        0x7011, STR)
 SEL_TAG(SRC, HAS_MD5,          0x7012, INT)
 SEL_TAG(SRC, TRANSPORTS,       0x7013, INT)
 SEL_TAG(SRC, FTS,              0x7014, INT)
+/* SOURCES rows: "local" or "remote" (where the songs live), and 1 when the source is registered and usable. */
+SEL_TAG(SRC, KIND,             0x7015, STR)
+SEL_TAG(SRC, ENABLED,          0x7016, INT)
 
 SEL_TAG(META, TITLE,           0x8000, STR)
 SEL_TAG(META, AUTHOR,          0x8001, STR)

@@ -36,6 +36,15 @@ const sel_source* sel_source_get(uint32_t index) {
     return index < g_count ? g_sources[index] : NULL;
 }
 
+uint32_t sel_source_each(sel_source_each_fn fn, void* ctx) {
+    uint32_t i;
+    sel_source_register_builtin();
+    for (i = 0; i < g_count; i++) {
+        fn(ctx, g_sources[i]->id, g_sources[i]->name, g_sources[i]->home, sel_source_is_remote(g_sources[i]->id));
+    }
+    return g_count;
+}
+
 void sel_source_register_builtin(void) {
     if (sel_source_find("local") == NULL) {
         (void)sel_source_register(sel_source_local());
