@@ -60,7 +60,7 @@ endif()
 if(builds_s LESS_EQUAL builds_d)
   message(FATAL_ERROR "atlases were not built again at the new size: ${builds_s} builds, direct 2x ${builds_d}")
 endif()
-if(NOT hash_s EQUAL hash2)
+if(NOT hash_s STREQUAL hash2)
   message(FATAL_ERROR "1 to 2 frame hash ${hash_s} differs from the direct 2x hash ${hash2}")
 endif()
 
@@ -82,7 +82,7 @@ endif()
 
 dui_run(one ${common} --canvas 2560x1600 --scale 1)
 dui_stat(hash1 "${one}" desktop canvas_hash)
-if(hash1 EQUAL hash2)
+if(hash1 STREQUAL hash2)
   message(FATAL_ERROR "scale 1 and scale 2 painted the same frame")
 endif()
 

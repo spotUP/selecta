@@ -66,7 +66,7 @@ expect("${back}" open_tile 0)
 expect("${back}" gestures 1)
 dui_stat(fresh_hash "${fresh}" desktop canvas_hash)
 dui_stat(back_hash "${back}" desktop canvas_hash)
-if(NOT fresh_hash EQUAL back_hash)
+if(NOT fresh_hash STREQUAL back_hash)
   message(FATAL_ERROR "canvas_hash after swipe back ${back_hash} differs from a fresh Home ${fresh_hash}")
 endif()
 

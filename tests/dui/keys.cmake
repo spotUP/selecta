@@ -118,7 +118,7 @@ endif()
 if(NOT focus EQUAL 1)
   message(FATAL_ERROR "Tab, Tab, Shift+Tab must leave the focus on stop 0 (stat 1), got stat ${focus}")
 endif()
-if(tab_hash EQUAL base_hash)
+if(tab_hash STREQUAL base_hash)
   message(FATAL_ERROR "the focus ring did not change the canvas")
 endif()
 
