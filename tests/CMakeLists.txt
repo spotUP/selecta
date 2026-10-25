@@ -249,6 +249,15 @@ if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
   set_tests_properties(amiga-library-opens-on-low-file-descriptor PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 120)
 endif()
 
+# I287: selecta (68k) overrides libnix's Ctrl-C exit so the desktop UI closes its RTG screen.
+set(SEL_AMIGA_SELECTA "${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta/CMakeFiles/selecta.dir/main.c.obj")
+find_program(SEL_AMIGA_NM m68k-amigaos-nm HINTS "$ENV{HOME}/opt/amiga/bin" /opt/amiga/bin)
+if(SEL_AMIGA_NM AND EXISTS "${SEL_AMIGA_SELECTA}")
+  add_test(NAME amiga-selecta-overrides-libnix-ctrl-c-exit
+    COMMAND "${CMAKE_COMMAND}" "-DNM=${SEL_AMIGA_NM}" "-DMAIN_OBJ=${SEL_AMIGA_SELECTA}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/check_no_libnix_abort.cmake")
+endif()
+
 # I225: a new database on libnix (lseek past the end grows the file with junk; ftruncate returns the size).
 set(SEL_AMIGA_DBCREATE "${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta-cli/selecta-dbcreate-test")
 if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")

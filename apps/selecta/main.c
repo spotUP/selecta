@@ -264,6 +264,10 @@ static int ctl_handle(void* ctx, const char* line, char* reply, size_t cap) {
 #endif
 
 #ifdef __amigaos__
+/* libnix polls Ctrl-C inside stdio and exit()s on it, which skips the UI close and leaves the RTG screen open (I287).
+ * An empty override keeps the signal for the UI's own Wait/SetSignal, which quits through its normal close path. */
+void __chkabort(void) {}
+
 static int app_main(int argc, char** argv);
 
 int main(int argc, char** argv) {
