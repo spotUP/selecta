@@ -247,3 +247,41 @@ nav_run(le home "wait 100\ndoor 2\nwait 100\ndoor 1\nwait 600\n")
 expect_eq("I274: the Library page is not drawn over the Search page (empty query)" "${le_liboff}" 0)
 nav_run(lf library "wait 100\ndoor 1\nwait 600\n")
 expect_eq("I274: the Library page is not drawn over Search entered from the Library view" "${lf_liboff}" 0)
+
+# 10. I272: every control has a hover state. A pointer move over a button or chip (the SDL path's SEL_GUI_IN_MOVE, the same
+# event the scripted `move x y` feeds the desktop's pointer handler) must make that control the hovered one and paint its
+# fill with the surface-hover token once the fade has run. The stats line `hover_box x y w h fill=F token=T paints=N`
+# carries the hovered box, the last hovered fill and the token. A control that is not wired to the hover state leaves
+# paints at 0 and the box empty.
+function(expect_hover what view prelude label)
+  file(REMOVE_RECURSE "${WORK}/cfg")
+  file(WRITE "${WORK}/hv0.txt" "${prelude}")
+  dui_run(o0 --ui desktop --backend mem --view ${view} --canvas 1280x800 --clock fixed --stats ${NAV_ARGS}
+    --exec "QUEUE_ADD ${WORK}/banana.mod" --input "${WORK}/hv0.txt")
+  string(REGEX MATCH "label (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) ink [-0-9]+ [-0-9]+ text ${label}\n" _m "${o0}")
+  if(_m STREQUAL "")
+    message(FATAL_ERROR "${what}: no '${label}' label in the stats")
+  endif()
+  set(box "${CMAKE_MATCH_1} ${CMAKE_MATCH_2} ${CMAKE_MATCH_3} ${CMAKE_MATCH_4}")
+  centre_of(cx cy "${box}")
+  file(REMOVE_RECURSE "${WORK}/cfg")
+  file(WRITE "${WORK}/hv1.txt" "${prelude}move ${cx} ${cy}\nwait 400\n")
+  dui_run(o1 --ui desktop --backend mem --view ${view} --canvas 1280x800 --clock fixed --stats ${NAV_ARGS}
+    --exec "QUEUE_ADD ${WORK}/banana.mod" --input "${WORK}/hv1.txt")
+  string(REGEX MATCH "hover_box (-?[0-9]+ -?[0-9]+ -?[0-9]+ -?[0-9]+) fill=([0-9a-f]+) token=([0-9a-f]+) paints=([0-9]+)" _m "${o1}")
+  if(_m STREQUAL "")
+    message(FATAL_ERROR "${what}: no hover_box line in:\n${o1}")
+  endif()
+  expect_eq("${what}: the hovered control is '${label}'" "${CMAKE_MATCH_1}" "${box}")
+  expect_eq("${what}: the hovered fill is the surface-hover token" "${CMAKE_MATCH_2}" "${CMAKE_MATCH_3}")
+  if(CMAKE_MATCH_4 EQUAL 0)
+    message(FATAL_ERROR "${what}: the hovered control was never painted hovered")
+  endif()
+  # and with no pointer nothing is hovered
+  string(REGEX MATCH "hover_box (-?[0-9]+ -?[0-9]+ -?[0-9]+ -?[0-9]+) fill=[0-9a-f]+ token=[0-9a-f]+ paints=([0-9]+)" _m "${o0}")
+  expect_eq("${what}: no pointer, no hovered control" "${CMAKE_MATCH_1}" "0 0 0 0")
+  expect_eq("${what}: no pointer, nothing painted hovered" "${CMAKE_MATCH_2}" 0)
+endfunction()
+
+expect_hover("Playlists button" playlists "wait 100\n" "New Playlist")
+expect_hover("Search chip" home "wait 100\nkey /\nwait 300\n" "Songs")

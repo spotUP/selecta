@@ -178,6 +178,11 @@ typedef struct desk {
     uint32_t caret_draws;
     struct { sel_gui_rect box; int32_t ink_x, ink_w; char text[24]; } labels[48]; /* the centred labels as last drawn, by box and text (stats line) */
     uint32_t label_n;
+    sel_gui_rect hbox[64];   /* the hoverable controls as last drawn (buttons, chips, tabs, doors): the pointer hit-test list (I272) */
+    uint32_t hbox_n;
+    sel_gui_rect hover_box;  /* the control under the pointer, w = 0 for none; its fill fades to the surface-hover token */
+    uint32_t hover_fill;     /* the fill the hovered control was last painted with (stats line) */
+    uint32_t hover_paints;   /* paints of a hovered control (sentinel) */
     uint32_t lit_doors;      /* bit i set: sidebar door i was drawn raised in the last frame (nav sentinel) */
     int np_page;             /* the main region shows the Now Playing page */
     int view_pending;        /* --view named a page: desk_wait enters it through desk_page_goto before the first frame */
@@ -363,6 +368,69 @@ static void draw_text_centered(desk* d, sel_gui_rect box, const char* s, int sem
             d->label_n++;
         }
     }
+}
+
+enum { ANIM_KEY_VIEW = 1, ANIM_KEY_HOVER = 2, ANIM_KEY_TIP = 3, ANIM_KEY_FLOW = 4 };
+
+static int rect_inside(sel_gui_rect b, sel_gui_rect area) {
+    return b.x >= area.x && b.y >= area.y && b.x + b.w <= area.x + area.w && b.y + b.h <= area.y + area.h;
+}
+
+static int rect_same(sel_gui_rect a, sel_gui_rect b) {
+    return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h;
+}
+
+/* Registers a hoverable control box for the pointer hit-test (a box is listed once). */
+static void hover_reg(desk* d, sel_gui_rect box) {
+    uint32_t i;
+    for (i = 0; i < d->hbox_n; i++) {
+        if (rect_same(d->hbox[i], box)) {
+            return;
+        }
+    }
+    if (d->hbox_n < sizeof d->hbox / sizeof d->hbox[0]) {
+        d->hbox[d->hbox_n++] = box;
+    }
+}
+
+/* Weight (Q16) of the surface-hover blend for a control: the ANIM_KEY_HOVER tween while the pointer is on it, else 0. */
+static int32_t hover_weight(const desk* d, sel_gui_rect box) {
+    return d->hover_box.w > 0 && rect_same(d->hover_box, box) ? sel_gui_tween_value(&d->tl, ANIM_KEY_HOVER, 65536) : 0;
+}
+
+/* The fill of a control under the pointer: a plain surface fill fades to the surface-hover token; an accent fill brightens
+ * toward white (the surface-hover token would dull it). */
+static uint32_t hover_fill_of(desk* d, sel_gui_rect box, uint32_t base) {
+    int32_t w = hover_weight(d, box);
+    uint32_t out = base;
+    if (w > 0) {
+        out = base == ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT])
+                  ? desk_mix(base, 0xFFFFFFFFu, w / 6)
+                  : desk_mix(base, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_HOVER]), w);
+        d->hover_fill = out;
+        d->hover_paints++;
+    }
+    return out;
+}
+
+/* Drops the listed controls inside a region before it is painted again. */
+static void hover_prune(desk* d, sel_gui_rect area) {
+    uint32_t i, k = 0;
+    for (i = 0; i < d->hbox_n; i++) {
+        sel_gui_rect b = d->hbox[i];
+        if (!rect_inside(b, area)) {
+            d->hbox[k++] = b;
+        }
+    }
+    d->hbox_n = k;
+}
+
+/* The one button primitive (I272): a rounded fill and a centred label, with the hover state from the pointer. Every
+ * button, chip and tab goes through here. */
+static void draw_button(desk* d, sel_gui_rect box, uint32_t base, const char* label, int px, uint32_t ink) {
+    hover_reg(d, box);
+    sel_gui_round_rect(d->canvas, box, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), hover_fill_of(d, box, base));
+    draw_text_centered(d, box, label, 1, px, ink);
 }
 
 /* Fill the box with the surface colour, then draw the text (regular 13 pixel Inter, ellipsized), and mark the box
@@ -976,7 +1044,6 @@ static void draw_songs_targets(desk* d) {
     }
 }
 
-enum { ANIM_KEY_VIEW = 1, ANIM_KEY_HOVER = 2, ANIM_KEY_TIP = 3, ANIM_KEY_FLOW = 4 };
 
 enum { SEARCH_FIELD_Y = 16, SEARCH_FIELD_H = 40 };
 
@@ -1032,10 +1099,8 @@ static void draw_home_header(desk* d, sel_gui_rect mn, int with_section) {
     for (k = 0; k < 4 && chip != NULL; k++) {
         int32_t w = sel_gui_text_width(chip, chips[k], strlen(chips[k])) + 2 * lpx(d, 14);
         sel_gui_rect cr = rect_of(x, mn.y + lpx(d, HOME_CHIPS_Y), w, lpx(d, HOME_CHIP_H));
-        sel_gui_round_rect(d->canvas, cr, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]),
-                           ARGB(d->theme.token[k == 0 ? SEL_GUI_TOKEN_ACCENT : SEL_GUI_TOKEN_SURFACE_RAISED]));
-        draw_text_centered(d, cr, chips[k], 1, 13,
-                  ARGB(d->theme.token[k == 0 ? SEL_GUI_TOKEN_ACCENT_TEXT : SEL_GUI_TOKEN_TEXT]));
+        draw_button(d, cr, ARGB(d->theme.token[k == 0 ? SEL_GUI_TOKEN_ACCENT : SEL_GUI_TOKEN_SURFACE_RAISED]), chips[k], 13,
+                    ARGB(d->theme.token[k == 0 ? SEL_GUI_TOKEN_ACCENT_TEXT : SEL_GUI_TOKEN_TEXT]));
         x += w + sp;
     }
     d->home_parts |= HP_CHIPS;
@@ -1521,7 +1586,7 @@ static uint32_t queue_hash(const sel_state* st) {
 static void draw_queue(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     sel_gui_rect mn = draw_panel(d, "main");
-    int32_t mg = lpx(d, HOME_MARGIN), rad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ic = lpx(d, 18);
+    int32_t mg = lpx(d, HOME_MARGIN), ic = lpx(d, 18);
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     uint32_t accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
     sel_engine_stats es;
@@ -1534,8 +1599,7 @@ static void draw_queue(desk* d) {
         sel_gui_rect b = queue_btn_rect(d, mn, i);
         const char* label = i == 0u ? "Undo" : i == 1u ? "Redo" : i == 2u ? "Reshuffle" : queue_scope_label[queue_scope_index(st)];
         int live = i == 0u ? es.undo_depth > 0u : i == 1u ? es.redo_depth > 0u : 1;
-        sel_gui_round_rect(d->canvas, b, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
-        draw_text_centered(d, b, label, 1, 13, live ? text : muted);
+        draw_button(d, b, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), label, 13, live ? text : muted);
     }
     for (i = 0; i < st->queue_count && queue_row_visible(d, mn, i); i++, shown++) {
         sel_gui_rect r = queue_row_rect(d, mn, i);
@@ -1711,8 +1775,7 @@ static void draw_playlists(desk* d) {
     for (i = 0; i < PL_BUTTONS; i++) {
         sel_gui_rect b = queue_btn_rect(d, mn, i);
         int live = i < 2u || i == 4u ? 1 : sel >= 0 && (i == 3u || v->rows[sel].kind == (uint32_t)SEL_ROW_PLAYLIST);
-        sel_gui_round_rect(d->canvas, b, rad, d->pl_confirm && i == 3u ? accent : surf);
-        draw_text_centered(d, b, pl_button_label(d, i), 1, 13, live ? text : muted);
+        draw_button(d, b, d->pl_confirm && i == 3u ? accent : surf, pl_button_label(d, i), 13, live ? text : muted);
     }
     sel_gui_round_rect(d->canvas, nm, rad, surf);
     draw_text(d, rect_of(nm.x + lpx(d, 12), nm.y, nm.w - lpx(d, 24), nm.h), d->pl_nlen > 0u ? d->pl_name : "Name", d->pl_edit, 13,
@@ -2080,10 +2143,8 @@ static void viz_switch_draw(desk* d, uint32_t slot, sel_gui_rect r) {
         sel_gui_rect b = rect_of(r.x + (int32_t)k * (w + gap), r.y, w, r.h);
         int on = k == d->viz_sel;
         d->viz_btn[slot][k] = b;
-        sel_gui_round_rect(d->canvas, b, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]),
-                           ARGB(d->theme.token[on ? SEL_GUI_TOKEN_ACCENT : SEL_GUI_TOKEN_SURFACE_RAISED]));
-        draw_text_centered(d, b, d->viz_name[k], 1, 12,
-                           ARGB(d->theme.token[on ? SEL_GUI_TOKEN_ACCENT_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]));
+        draw_button(d, b, ARGB(d->theme.token[on ? SEL_GUI_TOKEN_ACCENT : SEL_GUI_TOKEN_SURFACE_RAISED]), d->viz_name[k], 12,
+                    ARGB(d->theme.token[on ? SEL_GUI_TOKEN_ACCENT_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]));
     }
     sel_gui_dirty_add(d->canvas, r);
 }
@@ -2224,8 +2285,7 @@ static void draw_trackerpage(desk* d) {
     draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Tracker", 1, 28, text);
     for (k = 0; k < TR_TABS; k++) {
         sel_gui_rect b = tr_tab_rect(d, mn, k);
-        sel_gui_round_rect(d->canvas, b, rad, k == d->tr_tab ? acc : surf);
-        draw_text_centered(d, b, tab_name[k], 1, 13, k == d->tr_tab ? acct : text);
+        draw_button(d, b, k == d->tr_tab ? acc : surf, tab_name[k], 13, k == d->tr_tab ? acct : text);
     }
     d->tr_rows = 0;
     d->tr_bar = TR_NO_BAR;
@@ -2385,8 +2445,7 @@ static void draw_songinfo(desk* d) {
     draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Song Information", 1, 28, text);
     for (i = 0; i < SI_BUTTONS; i++) {
         sel_gui_rect b = queue_btn_rect(d, mn, i);
-        sel_gui_round_rect(d->canvas, b, rad, surf);
-        draw_text_centered(d, b, si_button_label(i), 1, 13, text);
+        draw_button(d, b, surf, si_button_label(i), 13, text);
     }
     sel_gui_round_rect(d->canvas, nm, rad, surf);
     draw_text(d, rect_of(nm.x + lpx(d, 12), nm.y, nm.w - lpx(d, 24), nm.h), d->si_nlen > 0u ? d->si_note : "Note", d->si_edit, 13,
@@ -2649,6 +2708,12 @@ static const char* library_dump_build(desk* d) {
                               (int)d->field.x, (int)d->field.y, (int)d->field.w, (int)d->field.h, (unsigned)d->caret_draws, (int)d->caret.x, (int)d->caret.y, (int)d->caret.w, (int)d->caret.h, (int)d->nav_back.x, (int)d->nav_back.y, (int)d->nav_back.w,
                               (int)d->nav_back.h, (int)d->nav_fwd.x, (int)d->nav_fwd.y, (int)d->nav_fwd.w, (int)d->nav_fwd.h);
     }
+    if (o + 200u < sizeof d->library_dump) { /* the hover state (I272) */
+        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o,
+                              "hover_box %d %d %d %d fill=%08x token=%08x paints=%u tile=%d\n", (int)d->hover_box.x, (int)d->hover_box.y,
+                              (int)d->hover_box.w, (int)d->hover_box.h, (unsigned)d->hover_fill,
+                              (unsigned)ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_HOVER]), (unsigned)d->hover_paints, (int)d->hover_tile);
+    }
     for (i = 0; i < d->label_n && o + 200u < sizeof d->library_dump; i++) { /* centred button and chip labels (I270) */
         o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "label %d %d %d %d ink %d %d text %s\n",
                               (int)d->labels[i].box.x, (int)d->labels[i].box.y, (int)d->labels[i].box.w, (int)d->labels[i].box.h,
@@ -2809,8 +2874,7 @@ static void draw_library(desk* d) {
         draw_text(d, col, "Library", 1, 32, text);
         {
             sel_gui_rect ab = lib_add_rect(d, mn);
-            sel_gui_round_rect(d->canvas, ab, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]));
-            draw_text_centered(d, ab, "Add Folder", 1, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+            draw_button(d, ab, ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Add Folder", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
         }
         for (m = 0; m < LIB_MODES; m++) { /* the mode tabs: the active one in the accent colour */
             sel_gui_rect tr = lib_tab_rect(d, mn, m);
@@ -3044,9 +3108,8 @@ static void draw_search(desk* d) {
     for (k = 0; k < SEARCH_FACETS; k++) { /* facet chips: the active one filled with the accent */
         sel_gui_rect cr = search_facet_rect(d, mn, k);
         int on = k == d->search_facet;
-        sel_gui_round_rect(d->canvas, cr, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]),
-                           ARGB(d->theme.token[on ? SEL_GUI_TOKEN_ACCENT : SEL_GUI_TOKEN_SURFACE]));
-        draw_text_centered(d, cr, search_facet_name[k], 1, 13, on ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]) : text);
+        draw_button(d, cr, ARGB(d->theme.token[on ? SEL_GUI_TOKEN_ACCENT : SEL_GUI_TOKEN_SURFACE]), search_facet_name[k], 13,
+                    on ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]) : text);
     }
     y = mn.y + lpx(d, SEARCH_FIELD_Y + SEARCH_FIELD_H + 16) + lpx(d, HOME_CHIP_H + 16);
     if (v != NULL && d->search_facet != 2u) { /* the Songs group: the engine rows of the query */
@@ -3066,6 +3129,7 @@ static void draw_search(desk* d) {
 
 static void draw_home_content(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
+    hover_prune(d, region_rect(d, "main")); /* the main region lists its controls afresh: a page change leaves none behind */
     if (d->search_on) {
         draw_search(d);
         return;
@@ -3137,8 +3201,7 @@ static void draw_home_content(desk* d) {
         draw_home_header(d, mn, 0);
         draw_text(d, rect_of(mn.x + lpx(d, HOME_MARGIN), mn.y + lpx(d, HOME_SECTION_Y), mn.w - 2 * lpx(d, HOME_MARGIN), lpx(d, HOME_SECTION_H)),
                   "Nothing played yet. Songs you play show up here.", 0, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
-        sel_gui_round_rect(d->canvas, b, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
-        draw_text_centered(d, b, "Browse files", 1, 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+        draw_button(d, b, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), "Browse files", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
         sel_gui_clip_pop(d->canvas);
         sel_gui_dirty_add(d->canvas, mn);
         return;
@@ -3589,9 +3652,14 @@ static void draw_sidebar(desk* d) {
         sel_gui_rect ic = rect_of(r.x + pad, y + (row - isz) / 2, isz, isz);
         int here = g_doors[i].page == d->page;
         uint32_t ink = ARGB(d->theme.token[here ? SEL_GUI_TOKEN_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]);
+        hover_reg(d, r);
         if (here) { /* the current page: a raised row behind it */
             d->lit_doors |= 1u << i;
             sel_gui_round_rect(d->canvas, r, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+        } else if (hover_weight(d, r) > 0) { /* the pointer on another door: the surface-hover fill fades in behind it */
+            sel_gui_round_rect(d->canvas, r, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]),
+                               hover_fill_of(d, r, ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL])));
+            ink = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]);
         }
         sel_gui_icon_draw(d->canvas, &d->icons, g_doors[i].icon, ic, isz, ink);
         if (sb.w > lpx(d, 120)) {
@@ -3992,6 +4060,19 @@ static void desk_tip_tick(desk* d) {
     desk_event_frame(d, 1);
 }
 
+/* Repaints the region that holds the hovered control, so its fill follows the fade. The main region of a tile view is
+ * repainted by the caller's own tween step; every other region and page is repainted here. */
+static void hover_repaint(desk* d) {
+    if (d->hover_box.w <= 0) {
+        return;
+    }
+    if (rect_inside(d->hover_box, region_rect(d, "sidebar"))) {
+        draw_sidebar(d);
+    } else if (rect_inside(d->hover_box, region_rect(d, "main")) && !d->home) {
+        draw_home(d);
+    }
+}
+
 /* Moves the UI clock ms forward the way the live loop would: 16 ms steps while a tween runs, otherwise one jump to the
  * next visible-clock second boundary (the idle block). Draws a frame per step that has a reason. */
 static void desk_advance(desk* d, uint32_t ms) {
@@ -4030,6 +4111,7 @@ static void desk_advance(desk* d, uint32_t ms) {
             draw_home(d);
         }
         if (animated) {
+            hover_repaint(d);
             desk_draw_tip(d);
         }
         if (!desk_present(d)) {
@@ -4681,15 +4763,76 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
     return 0;
 }
 
+/* The pointer moved to (x, y) (I272): finds the listed control under it (button, chip, tab, sidebar door) and the Home tile
+ * under it, and starts the hover fade when either changed. Returns 1 when the picture changed. The hover state is shared
+ * by every control through ANIM_KEY_HOVER, the tween the Home tiles already use. */
+static int desk_hover_move(desk* d, int32_t x, int32_t y) {
+    sel_gui_rect hit = rect_of(0, 0, 0, 0);
+    int32_t tile = 0;
+    const sel_state* st = sel_engine_state(d->engine);
+    uint32_t i;
+    int changed = 0;
+    if (d->overlay == OV_NONE) {
+        for (i = 0; i < d->hbox_n; i++) {
+            if (in_rect(d->hbox[i], x, y)) {
+                hit = d->hbox[i];
+            }
+        }
+        if (d->page == PG_HOME && d->home && d->open_tile == 0 && !d->songs && !home_empty(st)) {
+            sel_gui_rect mn = region_rect(d, "main");
+            if (!in_rect(mn, x, y)) {
+                tile = 0;
+            } else if (home_shelf_mode(st)) {
+                shelf sh[SHELF_MAX];
+                uint32_t s, k, cnt = home_shelves(st, sh), flat = 0;
+                if (shelf_hit(d, x, y, &s, &k)) {
+                    for (i = 0; i < s && i < cnt; i++) {
+                        flat += sh[i].tiles;
+                    }
+                    tile = (int32_t)(flat + k) + 1;
+                }
+            } else {
+                for (i = 0; i < st->queue_count; i++) {
+                    if (in_rect(tile_rect(d, i), x, y)) {
+                        tile = (int32_t)i + 1;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if (!rect_same(hit, d->hover_box) && !(hit.w <= 0 && d->hover_box.w <= 0)) {
+        d->hover_box = hit;
+        changed = 1;
+    }
+    if (tile != d->hover_tile) {
+        d->hover_tile = tile;
+        changed = 1;
+    }
+    if (!changed) {
+        return 0;
+    }
+    desk_tween(d, ANIM_KEY_HOVER, SEL_GUI_ANIM_FAST_MS, SEL_GUI_EASE_OUT);
+    d->hovers++;
+    if (d->home) {
+        draw_home(d);
+    }
+    draw_sidebar(d);
+    hover_repaint(d);
+    return 1;
+}
+
 /* A pointer event: the view handles it, and the tooltip tracker follows the transport buttons (DUI-P3-6). */
 static int desk_pointer(desk* d, const sel_gui_input* ev) {
     int tip;
+    int hover = 0;
     if (ev->kind == SEL_GUI_IN_MOVE) {
         d->ptr_x = ev->x;
         d->ptr_y = ev->y;
+        hover = desk_hover_move(d, ev->x, ev->y);
     }
     tip = desk_tip_pointer(d, ev->kind == SEL_GUI_IN_MOVE ? ev->x : -1, ev->y);
-    return desk_pointer_view(d, ev) | tip;
+    return desk_pointer_view(d, ev) | tip | hover;
 }
 
 /* Touchpad events (DUI-P3-4). Wheel scrolls the songs list by Q16 logical pixels (negative dy scrolls down), clamped to
@@ -5616,6 +5759,7 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
             if (d->home) {
                 draw_home(d);
             }
+            hover_repaint(d);
             desk_event_frame(d, 1);
         }
         if (viz_visible(d) != 0 && wait_ms > 20u) { /* a visualizer on screen: one frame per engine block */
