@@ -55,7 +55,7 @@ expect_eq("history rows joined to the song with a gain" "${joined}" "1")
 set(mdb "${WORK}/m.db")
 execute_process(COMMAND "${CLI}" analyse --db "${mdb}" selecta-test.mod WORKING_DIRECTORY "${CWD}" OUTPUT_VARIABLE a)
 string(CONCAT seed
-  "PRAGMA user_version = 4; "
+  "PRAGMA user_version = 4; ALTER TABLE song_composers DROP COLUMN tag; "
   "INSERT INTO history(key, played_at, skipped) VALUES('selecta-test.mod', 10, 0), ('local:selecta-test.mod', 11, 0), "
   "('modland:p/purple.xm', 12, 0), ('http://x.test/a.mp3', 13, 0); "
   "INSERT INTO liked(key, at) VALUES('selecta-test.mod', 1), ('local:selecta-test.mod', 2); "
@@ -68,7 +68,7 @@ if(NOT rc EQUAL 0)
   message(FATAL_ERROR "userdata (migration open) failed rc=${rc}\n${o}${e}")
 endif()
 sql("${mdb}" "PRAGMA user_version;" ver)
-expect_eq("schema version" "${ver}" "5")
+expect_eq("schema version" "${ver}" "6")
 sql("${mdb}" "SELECT group_concat(key || '/' || played_at, ' ') FROM (SELECT * FROM history ORDER BY played_at);" h)
 expect_eq("history" "${h}" "local:selecta-test.mod/10 local:selecta-test.mod/11 modland:p/purple.xm/12 http://x.test/a.mp3/13")
 sql("${mdb}" "SELECT group_concat(key || '/' || at, ' ') FROM (SELECT * FROM liked ORDER BY at);" l)
