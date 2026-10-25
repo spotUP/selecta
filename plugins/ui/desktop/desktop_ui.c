@@ -3072,10 +3072,12 @@ static void draw_library(desk* d) {
             const char* cnt = lib_next(disp);
             sel_gui_rect r = lib_row_rect(d, mn, i);
             char line[48];
-            draw_text(d, rect_of(r.x, r.y, r.w * 2 / 3, r.h), disp, 1, 15, text);
-            snprintf(line, sizeof line, "%s songs", cnt);
-            draw_text(d, rect_of(r.x + r.w * 2 / 3, r.y, r.w / 3, r.h), line, 0, 14, muted);
-            sel_gui_dirty_add(d->canvas, r);
+            if (r.y + r.h > lib_list_top(d, mn, st) && r.y < mn.y + mn.h) { /* only the rows in view are drawn (I310) */
+                draw_text(d, rect_of(r.x, r.y, r.w * 2 / 3, r.h), disp, 1, 15, text);
+                snprintf(line, sizeof line, "%s songs", cnt);
+                draw_text(d, rect_of(r.x + r.w * 2 / 3, r.y, r.w / 3, r.h), line, 0, 14, muted);
+                sel_gui_dirty_add(d->canvas, r);
+            }
             p = lib_next(cnt);
         }
         sel_gui_clip_pop(d->canvas);
@@ -3166,8 +3168,7 @@ static int lib_wheel(desk* d, int32_t dy) {
         snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)(cur > last ? last : cur));
         desk_send(d, line);
     }
-    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
-    d->repaint = 1;
+    draw_home(d); /* the main region only, as the Songs wheel does (I310): no full canvas repaint per wheel event */
     return 1;
 }
 

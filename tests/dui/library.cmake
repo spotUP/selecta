@@ -358,3 +358,25 @@ math(EXPR sfloor "115 * ${sh}")
 if(CMAKE_MATCH_1 LESS sfloor)
   message(FATAL_ERROR "the Library list scrolled only ${CMAKE_MATCH_1} pixels: fewer than 115 of the 200 composers reached the page")
 endif()
+
+# ---- I310: a wheel notch on Library redraws the main area only, like Songs ----
+# One notch used to take the resize path (a full canvas clear and every widget redrawn) on each wheel event, which made the
+# scroll lag on a Retina trackpad. The same input with and without the notch must differ by less than the 900x600 canvas
+# and draw no extra widgets.
+lib_run(snone "wait 1\nmove 450 300\nwait 1\n")
+lib_run(snotch "wait 1\nmove 450 300\nwheel 0 -1\nwait 1\n")
+if(NOT "${snotch}" MATCHES "scroll 16\n")
+  message(FATAL_ERROR "one wheel notch did not scroll the Library list by 16 pixels:\n${snotch}")
+endif()
+dui_stat(none_total "${snone}" desktop dirty_total)
+dui_stat(notch_total "${snotch}" desktop dirty_total)
+dui_stat(none_widgets "${snone}" desktop widget_draws)
+dui_stat(notch_widgets "${snotch}" desktop widget_draws)
+math(EXPR notch_px "${notch_total} - ${none_total}")
+math(EXPR canvas_px "900 * 600")
+if(notch_px LESS 1 OR NOT notch_px LESS canvas_px)
+  message(FATAL_ERROR "one Library wheel notch redrew ${notch_px} pixels; it must redraw more than 0 and less than the ${canvas_px} pixel canvas")
+endif()
+if(NOT notch_widgets EQUAL none_widgets)
+  message(FATAL_ERROR "one Library wheel notch redrew widgets: ${none_widgets} before, ${notch_widgets} after")
+endif()
