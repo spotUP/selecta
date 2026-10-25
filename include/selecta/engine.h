@@ -335,6 +335,8 @@ typedef struct sel_engine_stats {
     uint32_t hash_chunks;         /* file reads of the pass: without threads one chunk per idle tick */
     uint32_t hash_tick_max;       /* most bytes one idle tick read (without threads <= SEL_HASH_CHUNK) */
     uint32_t scrobble_due;        /* SCROBBLE_DUE events the engine emitted (T95 sentinel) */
+    uint32_t sample_plays;        /* SAMPLE_PLAY commands taken (DUI-P4-12 sentinel) */
+    uint32_t sample_frames;       /* frames of audition samples the audio thread mixed (DUI-P4-12) */
     uint32_t history_writes;      /* history rows the engine wrote on song end or skip (T78 sentinel) */
     uint32_t skip_excluded;       /* skip-flagged rows the random order left out (T78 flags sentinel) */
     uint32_t analyse_jobs;        /* ANALYSE jobs that stored a gain (I187 sentinel, T89) */
@@ -424,6 +426,11 @@ uint32_t sel_engine_tracker_cells(const sel_engine* e, uint32_t order, uint32_t 
  * the answer in sel_state.pattern (same `seq` as the return value). Returns the
  * request number, or 0 when the previous request is still unanswered (ask
  * again after the next pump). */
+/* Sample slot n (1-based) of the open song, for a front end that lists samples (DUI-P4-12). Pump thread only, like
+ * the SAMPLE_LIST command. Returns 1 and fills `out`, or 0 when the song has no sample table or the slot is empty;
+ * out->count is the number of slots when the song has a table. */
+int sel_engine_sample_get(const sel_engine* e, uint32_t n, sel_rp_sample* out);
+
 uint32_t sel_engine_pattern_request(sel_engine* e, uint32_t order, uint32_t row_lo, uint32_t rows);
 
 /* 1 when the engine answers this verb with real behaviour, 0 when it

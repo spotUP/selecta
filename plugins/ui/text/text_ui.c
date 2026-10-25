@@ -918,22 +918,7 @@ static void tui_pattern_panel(tui* u, const sel_state* s, uint32_t width) {
         for (c = 0; c < v->channels && c < cols_fit; c++) {
             const sel_rp_cell* cell = &v->cell[r][c];
             char note[4], ins[4], vol[4], fx[8];
-            sel_uim_note_name(cell->note, note);
-            if (cell->instrument != 0) {
-                snprintf(ins, sizeof ins, "%02X", (unsigned)cell->instrument);
-            } else {
-                memcpy(ins, "..", 3);
-            }
-            if (cell->volume != 0) {
-                snprintf(vol, sizeof vol, "%02X", (unsigned)cell->volume);
-            } else {
-                memcpy(vol, "..", 3);
-            }
-            if (cell->effect != 0 || cell->param != 0) {
-                snprintf(fx, sizeof fx, "%X%02X", (unsigned)(cell->effect & 15u), (unsigned)cell->param);
-            } else {
-                memcpy(fx, "...", 4);
-            }
+            sel_uim_cell_fields(cell, note, ins, vol, fx);
             snprintf(buf, sizeof buf, "%s %s %s %s", note, ins, vol, fx);
             txt_grid_put(&u->grid, 4u + c * TUI_CELL_COLS, y, 0x2502u, tui_style(u, TXT_ROLE_BORDER));
             txt_grid_text(&u->grid, 5u + c * TUI_CELL_COLS, y, buf, TUI_CELL_COLS - 1u, st);

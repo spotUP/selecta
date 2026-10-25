@@ -39,8 +39,8 @@ static const int g_icon_sizes[DESK_ICON_SIZES] = {16, 20, 24, 32};
 /* The pages the sidebar doors and --view reach (I262). One list: --view names, door clicks, keys and the stats sentinel
  * all use it. */
 #define PG_HIST_MAX 16u
-typedef enum { PG_HOME, PG_SEARCH, PG_LIBRARY, PG_PLAYLISTS, PG_QUEUE, PG_NOWPLAYING, PG_SONGS, PG_SONGINFO, PG_VIZ, PG_COUNT } desk_page;
-static const char* const g_page_name[PG_COUNT] = {"home", "search", "library", "playlists", "queue", "nowplaying", "songs", "songinfo", "viz"};
+typedef enum { PG_HOME, PG_SEARCH, PG_LIBRARY, PG_PLAYLISTS, PG_QUEUE, PG_NOWPLAYING, PG_SONGS, PG_SONGINFO, PG_VIZ, PG_TRACKER, PG_COUNT } desk_page;
+static const char* const g_page_name[PG_COUNT] = {"home", "search", "library", "playlists", "queue", "nowplaying", "songs", "songinfo", "viz", "tracker"};
 /* The sidebar doors in order: Spotify's Home, Search and Your Library, then Playlists, Queue and Now Playing. */
 #define DOOR_COUNT 7u
 
@@ -119,6 +119,9 @@ typedef struct desk {
     int pl_edit;             /* 1 while the name field has the keyboard */
     char pl_name[64];
     size_t pl_nlen;
+    int tr_page;             /* --view tracker: the main region shows the Tracker page (DUI-P4-12) */
+    uint32_t tr_tab, tr_draws, tr_rows, tr_cmds, tr_sig; /* tab, frames drawn (sentinel), rows in the last one, verbs sent, redraw hash */
+    uint32_t tr_asked, tr_order, tr_row, tr_qid;         /* the last pattern window asked for */
     int si_page;             /* --view songinfo: the main region shows the Song Information page (DUI-P4-10) */
     int si_edit;             /* 1 while the note field has the keyboard */
     uint32_t si_sig, si_acc; /* hash of the info rows: a change redraws the page */
@@ -2093,6 +2096,196 @@ static int viz_tick(desk* d) {
     return 1;
 }
 
+/* ---- Tracker page (DUI-P4-12): pattern view and sample list with click-to-play ---- */
+enum { TR_TAB_W = 120, TR_TAB_H = 32, TR_TAB_GAP = 8, TR_TAB_Y = 64, TR_HEAD_Y = 110, TR_ROW_H = 20, TR_NUM_W = 44, TR_CH_W = 150,
+       TR_NOTE_X = 0, TR_INS_X = 44, TR_VOL_X = 72, TR_FX_X = 100, TR_TABS = 2 };
+
+static sel_gui_rect tr_tab_rect(desk* d, sel_gui_rect mn, uint32_t k) {
+    return rect_of(mn.x + lpx(d, HOME_MARGIN) + (int32_t)k * lpx(d, TR_TAB_W + TR_TAB_GAP), mn.y + lpx(d, TR_TAB_Y), lpx(d, TR_TAB_W),
+                   lpx(d, TR_TAB_H));
+}
+
+/* Rows that fit under the header line of the main region, at most one pattern window. */
+static uint32_t tr_rows_fit(desk* d, sel_gui_rect mn) {
+    int32_t room = mn.h - lpx(d, TR_HEAD_Y + 2 * TR_ROW_H + 8);
+    uint32_t n = room > 0 ? (uint32_t)(room / lpx(d, TR_ROW_H)) : 0u;
+    return n > SEL_PATTERN_ROWS ? SEL_PATTERN_ROWS : n;
+}
+
+/* Row i below the column header line (pattern tab) or below the header line (sample tab). */
+static sel_gui_rect tr_row_rect(desk* d, sel_gui_rect mn, uint32_t i) {
+    return rect_of(mn.x + lpx(d, HOME_MARGIN), mn.y + lpx(d, TR_HEAD_Y + 2 * TR_ROW_H) + (int32_t)i * lpx(d, TR_ROW_H),
+                   mn.w - 2 * lpx(d, HOME_MARGIN), lpx(d, TR_ROW_H));
+}
+
+static sel_gui_rect tr_chan_rect(desk* d, sel_gui_rect mn, uint32_t c) {
+    return rect_of(mn.x + lpx(d, HOME_MARGIN + TR_NUM_W) + (int32_t)c * lpx(d, TR_CH_W), mn.y + lpx(d, TR_HEAD_Y + TR_ROW_H),
+                   lpx(d, TR_CH_W), lpx(d, TR_ROW_H));
+}
+
+static uint32_t tr_cols_fit(desk* d, sel_gui_rect mn) {
+    int32_t room = mn.w - 2 * lpx(d, HOME_MARGIN) - lpx(d, TR_NUM_W);
+    return room > 0 ? (uint32_t)(room / lpx(d, TR_CH_W)) : 0u;
+}
+
+static uint32_t tr_sample_count(desk* d) {
+    sel_rp_sample s;
+    memset(&s, 0, sizeof s);
+    return sel_engine_sample_get(d->engine, 1u, &s) ? s.count : 0u;
+}
+
+static void draw_trackerpage(desk* d) {
+    const sel_state* st = sel_engine_state(d->engine);
+    const sel_pattern_view* v = st->pattern;
+    sel_gui_rect mn = draw_panel(d, "main");
+    int32_t mg = lpx(d, HOME_MARGIN), rad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]);
+    uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+    uint32_t surf = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), acc = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
+    uint32_t acct = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]);
+    static const char* const tab_name[TR_TABS] = {"Pattern", "Samples"};
+    char buf[160];
+    uint32_t k, r, c, fit = tr_rows_fit(d, mn);
+    sel_gui_clip_push(d->canvas, mn);
+    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Tracker", 1, 28, text);
+    for (k = 0; k < TR_TABS; k++) {
+        sel_gui_rect b = tr_tab_rect(d, mn, k);
+        sel_gui_round_rect(d->canvas, b, rad, k == d->tr_tab ? acc : surf);
+        draw_text_centered(d, b, tab_name[k], 1, 13, k == d->tr_tab ? acct : text);
+    }
+    d->tr_rows = 0;
+    if (d->tr_tab == 0u) {
+        if (v == NULL || !v->valid) {
+            draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, TR_HEAD_Y), mn.w - 2 * mg, lpx(d, TR_ROW_H)), "No pattern data", 0, 13, muted);
+        } else {
+            uint32_t cols = v->channels < tr_cols_fit(d, mn) ? v->channels : tr_cols_fit(d, mn);
+            snprintf(buf, sizeof buf, "Order %u of %u, Pattern %u, Row %u of %u", (unsigned)(st->song.pattern_pos.order + 1u),
+                     (unsigned)v->info.orders, (unsigned)st->song.pattern_pos.pattern, (unsigned)(st->song.pattern_pos.row + 1u),
+                     (unsigned)v->info.rows);
+            draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, TR_HEAD_Y), mn.w - 2 * mg, lpx(d, TR_ROW_H)), buf, 0, 13, muted);
+            for (c = 0; c < cols; c++) {
+                int off = (st->mute_mask >> c) & 1u;
+                snprintf(buf, sizeof buf, off ? "Channel %u Muted" : "Channel %u", (unsigned)(c + 1u));
+                draw_text(d, tr_chan_rect(d, mn, c), buf, 1, 13, off ? muted : text);
+            }
+            for (r = 0; r < v->row_n && r < fit; r++) {
+                uint32_t row = v->row_lo + r;
+                sel_gui_rect rr = tr_row_rect(d, mn, r);
+                int at = v->order == st->song.pattern_pos.order && row == st->song.pattern_pos.row;
+                if (row >= v->info.rows) {
+                    break;
+                }
+                if (at) {
+                    sel_gui_round_rect(d->canvas, rr, rad, acc);
+                }
+                snprintf(buf, sizeof buf, "%02X", (unsigned)row);
+                draw_text(d, rect_of(rr.x, rr.y, lpx(d, TR_NUM_W), rr.h), buf, 0, 13, at ? acct : muted);
+                for (c = 0; c < cols; c++) {
+                    char note[4], ins[4], vol[4], fx[8];
+                    int32_t x = mn.x + mg + lpx(d, TR_NUM_W) + (int32_t)c * lpx(d, TR_CH_W);
+                    uint32_t col = at ? acct : ((st->mute_mask >> c) & 1u) ? muted : text;
+                    sel_uim_cell_fields(&v->cell[r][c], note, ins, vol, fx);
+                    draw_text(d, rect_of(x + lpx(d, TR_NOTE_X), rr.y, lpx(d, 44), rr.h), note, 0, 13, col);
+                    draw_text(d, rect_of(x + lpx(d, TR_INS_X), rr.y, lpx(d, 28), rr.h), ins, 0, 13, col);
+                    draw_text(d, rect_of(x + lpx(d, TR_VOL_X), rr.y, lpx(d, 28), rr.h), vol, 0, 13, col);
+                    draw_text(d, rect_of(x + lpx(d, TR_FX_X), rr.y, lpx(d, 44), rr.h), fx, 0, 13, col);
+                }
+                d->tr_rows++;
+            }
+        }
+    } else {
+        uint32_t n = tr_sample_count(d);
+        draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, TR_HEAD_Y), mn.w - 2 * mg, lpx(d, TR_ROW_H)),
+                  n > 0u ? "Click a sample to play it" : "No samples", 0, 13, muted);
+        for (k = 0; k < n && k < fit; k++) {
+            sel_rp_sample s;
+            sel_gui_rect rr = tr_row_rect(d, mn, k);
+            memset(&s, 0, sizeof s);
+            if (!sel_engine_sample_get(d->engine, k + 1u, &s)) {
+                continue;
+            }
+            snprintf(buf, sizeof buf, "%02u", (unsigned)(k + 1u));
+            draw_text(d, rect_of(rr.x, rr.y, lpx(d, 36), rr.h), buf, 0, 13, muted);
+            draw_text(d, rect_of(rr.x + lpx(d, 40), rr.y, rr.w / 2, rr.h), s.name != NULL && s.name[0] != '\0' ? s.name : "(unnamed)", 0, 13,
+                      text);
+            snprintf(buf, sizeof buf, "%u frames  %u Hz", (unsigned)s.length, (unsigned)s.rate);
+            draw_text(d, rect_of(rr.x + rr.w / 2, rr.y, rr.w / 2, rr.h), buf, 0, 13, muted);
+            d->tr_rows++;
+        }
+    }
+    d->tr_draws++;
+    sel_gui_clip_pop(d->canvas);
+    sel_gui_dirty_add(d->canvas, mn);
+}
+
+/* Asks for the pattern window around the playing row when the position moved, and flags a redraw when what the page
+ * shows changed (answered window, position, mute mask, sample count, tab). */
+static void tr_tick(desk* d) {
+    const sel_state* st = sel_engine_state(d->engine);
+    sel_gui_rect mn = region_rect(d, "main");
+    uint32_t n = tr_rows_fit(d, mn), row = st->song.pattern_pos.row, order = st->song.pattern_pos.order, sig;
+    if (n > 0u && (!d->tr_asked || d->tr_order != order || d->tr_row != row || d->tr_qid != st->song.queue_id)) {
+        uint32_t lo = row > n / 2u ? row - n / 2u : 0u;
+        if (sel_engine_pattern_request(d->engine, order, lo, n) != 0) {
+            d->tr_asked = 1;
+            d->tr_order = order;
+            d->tr_row = row;
+            d->tr_qid = st->song.queue_id;
+        }
+    }
+    sig = 2166136261u;
+    sig = (sig ^ (st->pattern != NULL ? st->pattern->seq : 0u)) * 16777619u;
+    sig = (sig ^ order) * 16777619u;
+    sig = (sig ^ row) * 16777619u;
+    sig = (sig ^ st->mute_mask) * 16777619u;
+    sig = (sig ^ tr_sample_count(d)) * 16777619u;
+    sig = (sig ^ d->tr_tab) * 16777619u;
+    if (sig != d->tr_sig) {
+        d->tr_sig = sig;
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    }
+}
+
+static int tr_send(desk* d, const char* line) {
+    d->tr_cmds++;
+    return desk_send(d, line);
+}
+
+/* A click: a tab, a channel header (mutes the channel) or a sample row (plays the sample). */
+static int tr_pointer(desk* d, const sel_gui_input* ev) {
+    sel_gui_rect mn = region_rect(d, "main");
+    const sel_state* st = sel_engine_state(d->engine);
+    char line[48];
+    uint32_t k, fit = tr_rows_fit(d, mn);
+    if (ev->kind != SEL_GUI_IN_CLICK || ev->button != 0u) {
+        return 0;
+    }
+    for (k = 0; k < TR_TABS; k++) {
+        if (in_rect(tr_tab_rect(d, mn, k), ev->x, ev->y)) {
+            d->tr_tab = k;
+            d->repaint = 1;
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+            return 1;
+        }
+    }
+    if (d->tr_tab == 0u && st->pattern != NULL) {
+        for (k = 0; k < st->pattern->channels && k < tr_cols_fit(d, mn); k++) {
+            if (in_rect(tr_chan_rect(d, mn, k), ev->x, ev->y)) {
+                snprintf(line, sizeof line, "MUTE %u toggle", (unsigned)(k + 1u));
+                return tr_send(d, line);
+            }
+        }
+    } else if (d->tr_tab == 1u) {
+        uint32_t n = tr_sample_count(d);
+        for (k = 0; k < n && k < fit; k++) {
+            if (in_rect(tr_row_rect(d, mn, k), ev->x, ev->y)) {
+                snprintf(line, sizeof line, "SAMPLE_PLAY %u", (unsigned)(k + 1u));
+                return tr_send(d, line);
+            }
+        }
+    }
+    return 0;
+}
+
 static void draw_songinfo(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     sel_gui_rect mn = draw_panel(d, "main"), nm = pl_name_rect(d, mn);
@@ -2283,6 +2476,45 @@ static const char* library_dump_build(desk* d) {
         o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "sinote 0 %d %d %d %d\n", (int)sn.x, (int)sn.y, (int)sn.w,
                               (int)sn.h);
         si_walk(d, st, si_dump_row);
+        o = strlen(d->library_dump);
+    }
+    if (d->tr_page) { /* the Tracker page geometry, position and playing row (DUI-P4-12) */
+        sel_gui_rect tmn = region_rect(d, "main");
+        const sel_pattern_view* tv = st->pattern;
+        sel_engine_stats ts;
+        uint32_t tn = tr_sample_count(d), tfit = tr_rows_fit(d, tmn), shown = 0u;
+        sel_engine_stats_get(d->engine, &ts);
+        if (tv != NULL && tv->valid && tv->order == st->song.pattern_pos.order && st->song.pattern_pos.row >= tv->row_lo &&
+            st->song.pattern_pos.row < tv->row_lo + tv->row_n) {
+            shown = 1u;
+        }
+        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o,
+                              "tracker draws %u tab %u order %u row %u rows %u channels %u muted %u samples %u plays %u frames %u cmds %u shown %u\n",
+                              (unsigned)d->tr_draws, (unsigned)d->tr_tab, (unsigned)st->song.pattern_pos.order,
+                              (unsigned)st->song.pattern_pos.row, (unsigned)d->tr_rows, (unsigned)(tv != NULL ? tv->channels : 0u),
+                              (unsigned)st->mute_mask, (unsigned)tn, (unsigned)ts.sample_plays, (unsigned)ts.sample_frames,
+                              (unsigned)d->tr_cmds, (unsigned)shown);
+        for (i = 0; i < TR_TABS; i++) {
+            sel_gui_rect b = tr_tab_rect(d, tmn, i);
+            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "trtab %u %d %d %d %d\n", (unsigned)i, (int)b.x,
+                                  (int)b.y, (int)b.w, (int)b.h);
+        }
+        for (i = 0; tv != NULL && i < tv->channels && i < tr_cols_fit(d, tmn); i++) {
+            sel_gui_rect b = tr_chan_rect(d, tmn, i);
+            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "trchan %u %d %d %d %d\n", (unsigned)i, (int)b.x,
+                                  (int)b.y, (int)b.w, (int)b.h);
+        }
+        for (i = 0; i < tn && i < tfit; i++) {
+            sel_gui_rect b = tr_row_rect(d, tmn, i);
+            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "trsample %u %d %d %d %d\n", (unsigned)(i + 1u),
+                                  (int)b.x, (int)b.y, (int)b.w, (int)b.h);
+        }
+        for (i = 0; shown && i < tv->channels; i++) {
+            char tnote[4], tins[4], tvol[4], tfx[8];
+            sel_uim_cell_fields(&tv->cell[st->song.pattern_pos.row - tv->row_lo][i], tnote, tins, tvol, tfx);
+            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "trcell %u %s %s %s %s\n", (unsigned)i, tnote, tins,
+                                  tvol, tfx);
+        }
         o = strlen(d->library_dump);
     }
     if (d->queue_page) { /* the Queue page geometry and queue state (DUI-P4-8) */
@@ -2737,6 +2969,10 @@ static void draw_home_content(desk* d) {
         draw_songinfo(d);
         return;
     }
+    if (d->tr_page) {
+        draw_trackerpage(d);
+        return;
+    }
     if (d->viz_page) {
         draw_vizpage(d);
         return;
@@ -2921,6 +3157,8 @@ static void desk_page_flags(desk* d, desk_page pg) {
     d->pl_page = pg == PG_PLAYLISTS;
     d->si_page = pg == PG_SONGINFO;
     d->viz_page = pg == PG_VIZ;
+    d->tr_page = pg == PG_TRACKER;
+    d->tr_asked = 0u;
     d->np_page = pg == PG_NOWPLAYING;
     d->search_on = 0;
     d->open_tile = 0;
@@ -4084,8 +4322,9 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         return desk_page_walk(d, act[1] == 'b' ? -1 : 1);
     }
     if (act != NULL && (strcmp(act, "@home") == 0 || strcmp(act, "@library") == 0 || strcmp(act, "@folders") == 0 ||
-                        strcmp(act, "@info") == 0 || strcmp(act, "@viz") == 0)) { /* the text UI's page keys open the matching page (I262, DUI-P4-11) */
-        desk_page pg = act[1] == 'h' ? PG_HOME : act[1] == 'l' ? PG_LIBRARY : act[1] == 'f' ? PG_PLAYLISTS : act[1] == 'v' ? PG_VIZ : PG_SONGINFO;
+                        strcmp(act, "@info") == 0 || strcmp(act, "@viz") == 0 ||
+                        strcmp(act, "@pattern") == 0)) { /* the text UI's page keys open the matching page (I262, DUI-P4-11) */
+        desk_page pg = act[1] == 'h' ? PG_HOME : act[1] == 'l' ? PG_LIBRARY : act[1] == 'f' ? PG_PLAYLISTS : act[1] == 'v' ? PG_VIZ : act[1] == 'p' ? PG_TRACKER : PG_SONGINFO;
         d->nav_keys++;
         return desk_page_goto(d, pg);
     }
@@ -4174,6 +4413,9 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
     }
     if (d->si_page) {
         return in_main ? si_pointer(d, ev) : 0;
+    }
+    if (d->tr_page) {
+        return in_main ? tr_pointer(d, ev) : 0;
     }
     if (!d->songs) {
         if (ev->kind == SEL_GUI_IN_CLICK && d->tile_menu > 0) {
@@ -5064,6 +5306,9 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
     if (lib_hash(d, sel_engine_state(d->engine)) != d->library_sig && sel_engine_state(d->engine)->composers != NULL) {
         d->library_sig = lib_hash(d, sel_engine_state(d->engine)); /* the Library page changed: redraw */
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    }
+    if (d->tr_page) {
+        tr_tick(d);
     }
     if (d->si_page) { /* the metadata and panel rows arrive after the song opens: redraw when they change */
         d->si_acc = 2166136261u;

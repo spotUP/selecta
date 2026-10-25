@@ -77,6 +77,8 @@ uint32_t sel_uim_semitone(uint32_t pitch_q8);
 uint32_t sel_uim_level_glyph(uint32_t q15);
 /* Pattern note cell: "C-4", "^^^" (note off), "===" (cut), "..." (empty); out holds 4 bytes. */
 void sel_uim_note_name(uint8_t n, char* out);
+/* Pattern cell fields as text: note[4], instrument[4] and volume[4] (".." when empty), effect[8] ("..." when empty). */
+void sel_uim_cell_fields(const sel_rp_cell* cell, char* note, char* ins, char* vol, char* fx);
 
 /* Action table (plan DUI-P1-6). */
 typedef struct sel_uim_action {

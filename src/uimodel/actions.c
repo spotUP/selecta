@@ -99,7 +99,7 @@ static const struct {
     {"QUEUE_CHANGES", PROTO}, {"SNAPSHOT_QUEUE", PROTO}, {"PLAY_QUERY", ARG},    {"SHUFFLE", ARG},
     {"SCOPE", ARG},          {"PLAYLIST_LOAD", ARG},  {"PLAYLIST_SAVE", ARG},   {"SAMPLE_LIST", CTX},
     {"COMPOSERS_SHOW", CTX}, {"COMPOSERS_HIDE", CTX},
-    {"SAMPLE_EXPORT", CTX},  {"PLAYLIST_PUBLISH", ARG}, {"LIBRARY_BROWSE", ARG}, {"LIBRARY_SEARCH", ARG},
+    {"SAMPLE_EXPORT", CTX},  {"SAMPLE_PLAY", CTX},  {"PLAYLIST_PUBLISH", ARG}, {"LIBRARY_BROWSE", ARG}, {"LIBRARY_SEARCH", ARG},
     {"LIBRARY_FETCH", ARG},  {"LIBRARY_SCAN", ARG},   {"LIBRARY_SYNC", ARG},    {"SOURCES", PROTO},    {"KEEP", CTX},
     {"FLAG", CTX},           {"NOTE", ARG},           {"RATE", ARG},            {"VOTE", CTX},
     {"ANALYSE", CTX},        {"CUE_SET", CTX},        {"CUE_GOTO", CTX},        {"SHARE", ARG},

@@ -117,6 +117,7 @@
     X(PLAYLIST_PUBLISH)                                                                       \
     X(SAMPLE_LIST)                                                                            \
     X(SAMPLE_EXPORT)                                                                          \
+    X(SAMPLE_PLAY)                                                                            \
     X(QUEUE_PLAY_NEXT)                                                                        \
     X(LIBRARY_BROWSE)                                                                         \
     X(LIBRARY_SEARCH)                                                                         \
@@ -422,6 +423,13 @@ struct sel_engine {
      * never reads torn parameters. */
     volatile uint32_t pat_req, pat_ack;
     uint32_t pat_order, pat_row_lo, pat_rows;
+    /* Sample audition (DUI-P4-12). SAMPLE_PLAY writes smp_want and raises smp_gen; the audio thread, which owns the
+     * replayer, starts the voice at its next render call (smp_seen) and re-reads the sample from the replayer every
+     * block, so a closed song stops the voice instead of leaving a dangling pointer. */
+    volatile uint32_t smp_want, smp_gen;
+    uint32_t smp_seen, smp_n, smp_slot, smp_active;
+    uint64_t smp_pos_q16; /* read position in source frames, 16.16 */
+    uint32_t sample_plays, sample_frames;
     sel_pattern_view pat_res; /* audio writes while pat_ack != pat_req, pump copies after */
     sel_pattern_view pat_pub; /* what the snapshot points at */
     sel_prefs prefs;
@@ -2771,6 +2779,33 @@ static void cmd_SAMPLE_LIST(sel_engine* e, const sel_message* m) {
         count = smp.count;
         n++;
     }
+}
+
+/* SAMPLE_PLAY n (DUI-P4-12): audition sample slot n once. The command only validates the slot and hands it to the audio
+ * thread (sample_mix), which mixes the sample over the song. */
+static void cmd_SAMPLE_PLAY(sel_engine* e, const sel_message* m) {
+    const sel_slot* sl = sample_slot(e, "SAMPLE_PLAY");
+    sel_rp_sample smp;
+    if (sl == NULL) {
+        return;
+    }
+    memset(&smp, 0, sizeof smp);
+    if (!sl->rp_sample_get(sl->rp_state, m->args[0].v.u, &smp) || smp.data == NULL || smp.length == 0u) {
+        sel_engine_report_error(e, "range", "SAMPLE_PLAY");
+        return;
+    }
+    e->smp_want = m->args[0].v.u;
+    e->smp_gen++;
+    e->sample_plays++;
+}
+
+int sel_engine_sample_get(const sel_engine* e, uint32_t n, sel_rp_sample* out) {
+    const sel_slot* sl = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
+    memset(out, 0, sizeof *out);
+    if (sl == NULL || sl->rp_state == NULL || sl->rp_sample_get == NULL) {
+        return 0;
+    }
+    return sl->rp_sample_get(sl->rp_state, n, out);
 }
 
 static int sample_sink(void* ctx, const void* bytes, uint32_t len) {
@@ -5205,6 +5240,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     }
     out->history_writes = e->history_writes;
     out->scrobble_due = e->scrobble_due;
+    out->sample_plays = e->sample_plays;
+    out->sample_frames = e->sample_frames;
     out->skip_excluded = e->skip_excluded;
     out->analyse_jobs = e->analyse_jobs;
     out->analyse_speed = e->analyse_speed;
@@ -5617,6 +5654,55 @@ static uint32_t render_mix(sel_engine* e, int16_t* stereo, uint32_t frames) {
 
 static void answer_pattern(sel_engine* e, const sel_slot* sl);
 
+/* Audio thread: mixes the audition sample (SAMPLE_PLAY) into the block, nearest-frame resampled from the sample's base
+ * rate to the output rate, once through (loops are ignored), added with saturation. */
+static void sample_mix(sel_engine* e, const sel_slot* sl, int16_t* stereo, uint32_t frames) {
+    sel_rp_sample s;
+    uint32_t i;
+    uint64_t step;
+    if (e->smp_seen != e->smp_gen) {
+        e->smp_seen = e->smp_gen;
+        e->smp_n = e->smp_want;
+        e->smp_slot = e->act;
+        e->smp_pos_q16 = 0;
+        e->smp_active = 1;
+    }
+    if (!e->smp_active) {
+        return;
+    }
+    memset(&s, 0, sizeof s);
+    if (sl == NULL || e->act != e->smp_slot || sl->rp_state == NULL || sl->rp_sample_get == NULL ||
+        !sl->rp_sample_get(sl->rp_state, e->smp_n, &s) || s.data == NULL || s.length == 0u || s.rate == 0u ||
+        e->rate == 0u || (s.bits != 8u && s.bits != 16u) || s.channels == 0u) {
+        e->smp_active = 0;
+        return;
+    }
+    step = ((uint64_t)s.rate << 16) / e->rate;
+    for (i = 0; i < frames; i++) {
+        uint64_t at = e->smp_pos_q16 >> 16;
+        int32_t l, r, v;
+        if (at >= s.length) {
+            e->smp_active = 0;
+            break;
+        }
+        if (s.bits == 8u) {
+            const int8_t* p = (const int8_t*)s.data + at * s.channels;
+            l = p[0] * 256;
+            r = s.channels > 1u ? p[1] * 256 : l;
+        } else {
+            const int16_t* p = (const int16_t*)s.data + at * s.channels;
+            l = p[0];
+            r = s.channels > 1u ? p[1] : l;
+        }
+        v = stereo[i * 2u] + l;
+        stereo[i * 2u] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+        v = stereo[i * 2u + 1u] + r;
+        stereo[i * 2u + 1u] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+        e->smp_pos_q16 += step;
+        e->sample_frames++;
+    }
+}
+
 uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
     uint32_t done = 0;
     sel_message sw;
@@ -5670,6 +5756,7 @@ uint32_t sel_engine_render(sel_engine* e, int16_t* stereo, uint32_t frames) {
     if (done < frames) {
         memset(stereo + (size_t)done * 2u, 0, (size_t)(frames - done) * 2u * sizeof(int16_t));
     }
+    sample_mix(e, sl, stereo, frames);
     sel_mix_stage_process(&e->stage, stereo, frames);
     sel_dsp_chain_process(&e->dsp, stereo, frames);
     e->loud.active = e->loud_mixed;

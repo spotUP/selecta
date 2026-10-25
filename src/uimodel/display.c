@@ -98,3 +98,23 @@ void sel_uim_note_name(uint8_t n, char* out) {
         memcpy(out, n == 254u ? "^^^" : n == 255u ? "===" : "...", 4);
     }
 }
+
+/* The four text fields of a pattern cell, shared by the text UI and the desktop tracker page. */
+void sel_uim_cell_fields(const sel_rp_cell* cell, char* note, char* ins, char* vol, char* fx) {
+    sel_uim_note_name(cell->note, note);
+    if (cell->instrument != 0) {
+        snprintf(ins, 4, "%02X", (unsigned)cell->instrument);
+    } else {
+        memcpy(ins, "..", 3);
+    }
+    if (cell->volume != 0) {
+        snprintf(vol, 4, "%02X", (unsigned)cell->volume);
+    } else {
+        memcpy(vol, "..", 3);
+    }
+    if (cell->effect != 0 || cell->param != 0) {
+        snprintf(fx, 8, "%X%02X", (unsigned)(cell->effect & 15u), (unsigned)cell->param);
+    } else {
+        memcpy(fx, "...", 4);
+    }
+}

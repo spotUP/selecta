@@ -60,6 +60,7 @@ SEL_CMD(PLAYLIST_LOAD, "ss?", "playlists")
 SEL_CMD(PLAYLIST_SAVE, "s", "playlists")
 SEL_CMD(SAMPLE_LIST, "", "playlists")
 SEL_CMD(SAMPLE_EXPORT, "us", "playlists")
+SEL_CMD(SAMPLE_PLAY, "u", "playlists") /* DUI-P4-12: audition sample slot n of the open song once, mixed over the song */
 SEL_CMD(PLAYLIST_PUBLISH, "ssss", "playlists")
 SEL_CMD(LIBRARY_BROWSE, "s", "playlists")
 SEL_CMD(LIBRARY_SEARCH, "s", "playlists")
