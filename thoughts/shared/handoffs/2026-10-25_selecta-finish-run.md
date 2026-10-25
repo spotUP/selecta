@@ -11,7 +11,7 @@ status: draft
 
 - Goal from Johan: finish all of Selecta.
 - Finish line: I202 (finish-line run) is green, and every ledger row is closed except the Johan-only rows I138, I203 and I248.
-- Ledger: `thoughts/spot/todos.md`. Count at handover: 331/391. I266 is not ticked yet.
+- Ledger: `thoughts/spot/todos.md`. Count at handover: 332/392.
   - Recount: `grep -E '^\| I[0-9]+[a-z]? \| \[' thoughts/spot/todos.md | awk -F'|' '{t++; if($3~/x/)d++} END{print d"/"t}'`
 - Current phase: M3d desktop UI, Phase 4 (plan `thoughts/shared/plans/2026-10-24-desktop-ui.md`, lines ~227-241).
   - Ticked: P4-4, P4-5.
@@ -21,44 +21,26 @@ status: draft
 
 ## State at handover
 
-- Branch main. Origin (spotUP/selecta, private) is at 5eb4dea.
-- Local main is ahead of origin and NOT pushed:
-  - 1dbe525 ledger: Johan's visualizer look check in I269
-  - 240963d ledger: search field ring cause in I266
-  - e35b76b ledger: new row I270
-  - bd68454 I266: Now Playing page, page history, Song Information door, one search-field rect
-- The "Push now" standing approval from Johan covers main pushes. Push after the I266 follow-up merges.
-- Running at handover: one sonnet worktree agent (I266 follow-up), worktree `.claude/worktrees/agent-a61fc50669663529a`, branch `worktree-agent-a61fc50669663529a`.
-  - If its report is lost in the account switch, check `git log main..worktree-agent-a61fc50669663529a`. Merge any finished commit; respawn the brief below for anything missing.
+- Branch main, everything pushed to origin (spotUP/selecta, private) at handover. Ledger 332/392.
+- I266 is DONE: bd68454, 8f8edfa (revert-checked dui-nav, round_frame unit check, sel_net_send cancelled wait returns SEL_NET_E_IO), fff8600 (net-cancel-send regression test, revert-checked). SDL `-L dui` 38/38 passed.
+  - dui-viz timeout cause: the test OPEN starts an online lyrics job; library close cancels it; sel_net_send reported the cancelled wait as TIMEOUT, so TLS retried the handshake at 100% CPU until its deadline.
+- No agents running. No worktrees of this session left.
 - Worktree `.claude/worktrees/agent-aa732a611176357ff` (b725b89) is of unknown origin. Do not remove it.
-- Live window: I launched selecta pid 15740 myself with the binary from before I266.
-  - Started with `SELECTA_SOCKET=<scratchpad>/live/ctl.sock`, `--db <scratchpad>/live/live.db`, `--view viz`.
-  - The old session scratchpad is `/private/tmp/claude-501/-Users-spot-Code-MusicPlayer/d21f2148-ebf4-461d-8876-9851ed290fe3/scratchpad`. A new account gets a new scratchpad; that is fine.
-  - Kill only that pid when relaunching. Never kill Johan's own selecta windows.
+- Live window: selecta pid 15740 (my launch, binary from before I266, socket and db in the old scratchpad `/private/tmp/claude-501/-Users-spot-Code-MusicPlayer/d21f2148-ebf4-461d-8876-9851ed290fe3/scratchpad/live/`). Kill only that pid when relaunching. Never kill Johan's own selecta windows.
+- Small leftover: apps/selecta/main.c ~507 has an empty `if (own) {}` branch (skips shell VIEW sends for the desktop UI with --view home/library/playlists/songs). Tidy it in the next desktop agent.
 
-## I266 follow-up (in flight)
+## Open failures (I271, blocks I202)
 
-bd68454 landed with these gaps:
-- No revert-checks for the tests/dui/nav.cmake assertions.
-- The Search door highlight bug was never reproduced on the old code.
-- No assertion that clicking the Home search field keeps the query.
-- No unit test for the new `sel_gui_round_frame` (include/selecta/gui/gui_draw.h, src/gui/draw/gui_draw.c).
-- apps/selecta/main.c ~507 has an empty `if (own) {}` branch (skips shell VIEW sends for the desktop UI with --view home/library/playlists/songs). Tidy it.
-
-Four tests fail on main after bd68454. Logs are in the old scratchpad (m266-host-test.log, m266-sdl-test.log, m266-3.log). It is unknown whether they fail before bd68454.
-- dui-viz: Timeout 120 s (SDL build). It passed at f5b3050 (P4-11 merge). Suspect: `--view viz` now goes through desk_page_apply in plugins/ui/desktop/desktop_ui.c.
-- source-archive: "FAIL browse pack.zip: expected songs/ and readme.txt" (tests/m3/source_archive.sh).
+- source-archive: "FAIL browse pack.zip: expected songs/ and readme.txt" (tests/m3/source_archive.sh). Fails at bd68454 and at bd68454~1, so it predates I266.
 - hash-idle-vamos: "Internal Vamos Error: [alloc: NO MEMORY for 04d000 bytes]" (tests/m3/hash_idle_vamos.cmake:33).
-- rp-config-taglist-vamos: "Internal Vamos Error: FreeVec: Unknown memory to free" (tests/m2/lib.cmake:115). The ledger note at line ~618 says it passed at 6b9d32a.
-- build/amiga/apps/selecta/selecta had a 13:57 timestamp I did not build. Another session may have rebuilt it; check before blaming bd68454.
-
-The agent brief covers: run the 4 tests at bd68454 and bd68454~1; fix any regression at the root with a test; revert-check each nav fix; add the query-kept assertion; add a round_frame unit test (not -L dui). After merge: tick I266 (python3 -I edit of the ledger), commit, push.
+- rp-config-taglist-vamos: "Internal Vamos Error: FreeVec: Unknown memory to free" (tests/m2/lib.cmake:115). The ledger says it passed at 6b9d32a.
+- The vamos pair was not run at bd68454~1. build/amiga/apps/selecta/selecta had an unexplained 13:57 rebuild. Bisect in a worktree with its own build/amiga.
 
 ## Next steps (ordered)
 
-1. Merge the I266 follow-up (merge pattern below). Tick I266. Push.
-2. Relaunch the live window on the new binary (own socket and db in the scratchpad, in the background). Ask Johan to check: search field ring and caret, back/forward arrows (top right of main pane), Now Playing page, right-click then Add to Queue, Now Playing strip.
-3. Spawn I270: button and chip labels are left-flush (Playlists page buttons at desktop_ui.c ~1619, Search facet chips in draw_search). Fix: one centred-label helper (sel_gui_text_width, ellipsize) used by every button and chip. Needs a stats-based centring test, a revert-check, and moved goldens.
+1. Relaunch the live window on the new binary (own socket and db in the scratchpad, in the background). Ask Johan to check: search field ring and caret, back/forward arrows (top right of the main pane), Now Playing page, right-click then Add to Queue, Now Playing strip.
+2. Spawn I270: button and chip labels are left-flush (Playlists page buttons at desktop_ui.c ~1619, Search facet chips in draw_search). Fix: one centred-label helper (sel_gui_text_width, ellipsize) used by every button and chip. Needs a stats-based centring test, a revert-check, and moved goldens.
+3. I271 (sonnet agent, bisect the three host failures). It touches no desktop_ui.c, so it can run next to I270, but only one test run on the machine at a time.
 4. P4-12, P4-14, P4-15, I265(a) Sources tab. Only one desktop_ui.c agent at a time. Fold in I244, I253-I255, I256-I261, I264, I267, I269.
 5. I251 FS-UAE probe (own rig, only when other sessions' rigs are idle), I230 slices 2-3.
 6. I202 finish-line run.
