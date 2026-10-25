@@ -3,7 +3,7 @@
 # replaces its red entry with the real test and removes its id from tests/ratchet/unimplemented.txt. Red entries also
 # carry label dui-red, so a run of the finished milestones (M3 finish line) can leave them out with -LE dui-red while
 # dui-ratchet keeps the red count honest.
-set(SEL_DUI_REAL dui-ratchet dui-build-deps dui-uim-frame dui-ui-switch dui-ui-multi dui-mode-pref dui-lift-parity dui-actions dui-layout dui-parity-matrix dui-governor dui-tokens dui-draw dui-dirty dui-text dui-artwork dui-genart dui-golden-home dui-sdl dui-widgets dui-hidpi dui-anim dui-keys dui-mouse dui-tooltips dui-gestures dui-frame dui-home dui-library dui-styles dui-grid-coverflow dui-search dui-nowplaying dui-queue dui-playlists dui-songinfo dui-overlays dui-nav dui-viz dui-tracker dui-drop dui-m68k-nofloat)
+set(SEL_DUI_REAL dui-ratchet dui-build-deps dui-uim-frame dui-ui-switch dui-ui-multi dui-mode-pref dui-lift-parity dui-actions dui-layout dui-parity-matrix dui-governor dui-tokens dui-draw dui-dirty dui-text dui-artwork dui-genart dui-golden-home dui-sdl dui-widgets dui-hidpi dui-anim dui-keys dui-mouse dui-tooltips dui-gestures dui-frame dui-home dui-library dui-styles dui-grid-coverflow dui-search dui-nowplaying dui-queue dui-playlists dui-songinfo dui-overlays dui-nav dui-viz dui-tracker dui-drop dui-m68k-nofloat dui-hover-live)
 
 add_test(NAME dui-ratchet
   COMMAND "${CMAKE_COMMAND}"
@@ -42,7 +42,7 @@ if(NOT SEL_AMIGA)
     file(MAKE_DIRECTORY "${tmpdir}")
     # dui-nav is ledger row I262, not a plan item: label nav, not dui or dui-extra: dui-ratchet counts tests whose label matches the regex dui against the plan ids.
     set(tlabel dui)
-    if(tname STREQUAL "dui-nav" OR tname STREQUAL "dui-footer" OR tname STREQUAL "dui-screen" OR tname STREQUAL "dui-hover-live" OR tname STREQUAL "dui-scan-ui") # dui-footer is ledger row I312, not a plan item
+    if(tname STREQUAL "dui-nav" OR tname STREQUAL "dui-footer" OR tname STREQUAL "dui-screen" OR tname STREQUAL "dui-scan-ui") # dui-footer is ledger row I312, not a plan item
       set(tlabel nav)
     elseif(tname STREQUAL "keys-live") # I268: real SDL key events through desk_sdl_poll; not a plan item, so no dui label
       set(tlabel keys-live)
@@ -73,9 +73,16 @@ foreach(item IN LISTS SEL_DUI_ITEMS)
   string(REPLACE " " ";" parts "${item}")
   list(GET parts 0 id)
   list(GET parts 1 name)
+  # Words after the test name are the reason a red test gives: the behaviour the plan's test asserts and what is missing.
+  list(LENGTH parts nparts)
+  set(why "")
+  if(nparts GREATER 2)
+    list(SUBLIST parts 2 -1 whyparts)
+    string(REPLACE ";" " " why "${whyparts}")
+  endif()
   if(NOT name IN_LIST SEL_DUI_REAL)
     add_test(NAME ${name}
-      COMMAND "${CMAKE_COMMAND}" "-DID=${id}" "-DNAME=${name}" -P "${CMAKE_CURRENT_SOURCE_DIR}/dui_red.cmake")
+      COMMAND "${CMAKE_COMMAND}" "-DID=${id}" "-DNAME=${name}" "-DWHY=${why}" -P "${CMAKE_CURRENT_SOURCE_DIR}/dui_red.cmake")
     set(labels dui dui-red)
     if(name STREQUAL "dui-perf")
       list(APPEND labels dui-perf)
