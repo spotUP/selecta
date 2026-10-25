@@ -1523,6 +1523,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(lyrics_unit_test PRIVATE selecta_library)
   add_test(NAME lrc-unit COMMAND lyrics_unit_test)
   set_tests_properties(lrc-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "lyrics_unit_ok")
+  # I266: a cancelled job thread's send is SEL_NET_E_IO, not a timeout (TLS retried until its deadline).
+  add_executable(net_cancel_send_test net_cancel_send_test.c)
+  target_include_directories(net_cancel_send_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(net_cancel_send_test PRIVATE selecta_library)
+  add_test(NAME net-cancel-send COMMAND net_cancel_send_test)
+  set_tests_properties(net-cancel-send PROPERTIES LABELS m3 TIMEOUT 20 PASS_REGULAR_EXPRESSION "net_cancel_send_ok")
   # I196d: the recording split walker cuts at MP3 frame and Ogg page starts.
   # I168b: the no-thread prefetch downloads in resumable slices; one test per defect, named after the symptom.
   add_executable(cache_slice_test library/cache_slice_test.c)
