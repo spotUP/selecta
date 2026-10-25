@@ -18,3 +18,11 @@ status: built, not yet shown on the Replay
 - An earlier run with `--ticks 3` printed `desktop_ui closed frames=0`, with exit 0.
 - Debug blocker: wasabi/amiga_run does not capture stderr (libnix stderr), AmigaDOS has no `2>`. All error messages of desk_open are lost. Next step: a `--log <file>` or stdout copy of errors, or wasabi `debug` (KPrintF).
 - Soft float on 68020 not measured (nm of undefined libgcc symbols still to do).
+
+## Update 2026-10-25 (exit 1 root cause, rig 2 run)
+- Added `--log <file>` (freopen stderr; the Amiga shell cannot redirect libnix stderr) and an allocation failure trace in src/core/amiga/mem.c.
+- Error text on the Replay: `selecta: engine allocation failed`, trace `alloc of 2097152 bytes ... largest public block 1661048, free ~13 MB`. Cause: src/core/amiga/machine.c reported TOTAL fast RAM (192 MB), so the engine picked the 64 MB tier (8192 entries, 2 MB text buffers x ~8) that did not fit the 13 MB / 1.6 MB-block free memory. Not a single-instance lock. Fix: the probe reports free fast RAM (commit 989734c). With it `--backend mem` ran: `desktop_ui closed frames=2`. Also: a 15 MB Selecta in RAM: leaves too little memory; run it from a disk drawer (Rushhours:selecta-test).
+- Replay then had no RTG mode (per coordinator) and wasabid hung; no further Replay work.
+- Rig 2 (uaegfx, Workbench 800x600x24): `--backend rtg --canvas 640x400 --ticks 3 --stats` printed `rtg: screen 640x400 depth 16`, `ui_backend id=desktop backend=rtg depth=16`, `desktop_ui closed frames=4`; one Ctrl-C closed the screen, Workbench front again.
+- Second run with keys `down down return` then Ctrl-C twice: process vanished without stats and the 640x400 screen stayed open (screen leak or crash on that path), unresolved. Page change by key not verified.
+- selecta-cli under vamos failed to load graphics/keymap: the backend defined GfxBase etc., which libnix auto-opens; renamed to sel_rtg_* (eaea4ea). source-local-scan-vamos passes; hash-idle-vamos fails later on the host `library duplicates` md5 grouping (RED[I184b], not the library load).
