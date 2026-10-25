@@ -11,6 +11,13 @@
 #include <exec/memory.h>
 #include <exec/tasks.h>
 #include <proto/exec.h>
+#include <stdio.h>
+#include <string.h>
+
+/* A guard above the stack top, checked after the body: a store through A7 while it still points at the new stack
+ * top (I271c) hits the guard instead of a neighbouring heap block, and is reported instead of corrupting it. */
+#define SEL_STACK_GUARD 64u
+#define SEL_STACK_GUARD_BYTE 0xA5u
 
 static struct StackSwapStruct g_sss;
 static int (*g_body)(int, char**);
@@ -24,30 +31,57 @@ static void run_body(void) {
     g_rc = g_body(g_argc, g_argv);
 }
 
+/* Swap to g_sss, run run_body, swap back, as ONE asm block (I271c). Written as C, the compiler spills the
+ * StackSwap argument (&g_sss) into an A7-relative temp: the second call then ran with A7 on the NEW stack and
+ * stored &g_sss at stack top + 16, i.e. into whatever block sits right above the stack (the first AllocVec,
+ * the library, whose queue pointer it overwrote; the atexit close then freed it). No compiler code runs
+ * between the swaps now, and only absolute addresses are used. a6 and the scratch registers are declared
+ * clobbered so the compiler saves and restores them on the old stack, outside the swapped region. */
+static void __attribute__((noinline)) run_swapped(void) {
+    __asm__ volatile("move.l %0,%%a0\n\t"
+                     "move.l %1,%%a6\n\t"
+                     "jsr -732(%%a6)\n\t"
+                     "move.l %2,%%a1\n\t"
+                     "jsr (%%a1)\n\t"
+                     "move.l %0,%%a0\n\t"
+                     "move.l %1,%%a6\n\t"
+                     "jsr -732(%%a6)\n\t"
+                     :
+                     : "i"(&g_sss), "m"(SysBase), "i"(run_body)
+                     : "d0", "d1", "a0", "a1", "a6", "cc", "memory");
+}
+
 int sel_amiga_run_with_stack(int (*body)(int, char**), int argc, char** argv, unsigned long bytes) {
     struct Task* me = FindTask(NULL);
     unsigned long have = (unsigned long)me->tc_SPUpper - (unsigned long)me->tc_SPLower;
     UBYTE* mem;
+    unsigned long i;
 
     if (me->tc_SPLower != NULL && me->tc_SPUpper != NULL && have >= bytes) {
         return body(argc, argv);
     }
-    mem = (UBYTE*)AllocMem(bytes, MEMF_PUBLIC | MEMF_CLEAR);
+    mem = (UBYTE*)AllocMem(bytes + SEL_STACK_GUARD, MEMF_PUBLIC | MEMF_CLEAR);
     if (mem == NULL) {
         return body(argc, argv); /* no memory for a big stack: run on the one we have */
     }
     g_body = body;
     g_argc = argc;
     g_argv = argv;
+    memset(mem + bytes, SEL_STACK_GUARD_BYTE, SEL_STACK_GUARD);
     g_sss.stk_Lower = mem;
     g_sss.stk_Upper = (ULONG)(mem + bytes);
     g_sss.stk_Pointer = (APTR)(mem + bytes);
     g_swaps++;
     g_last_bytes = bytes;
-    StackSwap(&g_sss);
-    run_body();
-    StackSwap(&g_sss);
-    FreeMem(mem, bytes);
+    run_swapped();
+    for (i = 0; i < SEL_STACK_GUARD; i++) {
+        if (mem[bytes + i] != SEL_STACK_GUARD_BYTE) {
+            fputs("amiga_start: stack top overwritten (a store through A7 after StackSwap)\n", stderr);
+            g_rc = 1;
+            break;
+        }
+    }
+    FreeMem(mem, bytes + SEL_STACK_GUARD);
     return g_rc;
 }
 
