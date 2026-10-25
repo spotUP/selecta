@@ -100,6 +100,8 @@ int sel_uim_set_layout(sel_uim* uim, const char* mode) {
         layout = SEL_UIM_LAYOUT_WINDOW;
     } else if (strcmp(mode, "mini") == 0) {
         layout = SEL_UIM_LAYOUT_MINI;
+    } else if (strcmp(mode, "visual") == 0) {
+        layout = SEL_UIM_LAYOUT_VISUAL;
     } else {
         return 0;
     }

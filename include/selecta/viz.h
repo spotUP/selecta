@@ -84,6 +84,37 @@ int32_t sel_viz_correlation(const int16_t* stereo, uint32_t frames);
  * `stereo` (Hann window, Q15), reduced to 16 log-spaced bands, Q15. */
 void sel_viz_spectrum(const int16_t* stereo, uint32_t frames, uint32_t rate, int16_t band[SEL_VIZ_BANDS]);
 
+/* ---- Render target of the viz plugins (design doc section 8; plan DUI-P4-11, moved from M4-P3-3) ----
+ * A viz plugin (kind VIZ) draws one sel_viz_frame into a sel_surface. The host owns the pixels and the colours: the
+ * desktop UI hands an RGBA32 surface and pixel values taken from its theme tokens, an Amiga UI hands an INDEX8
+ * (chunky or planar-converted) surface and palette indices. The plugin never learns which; it only writes the `pixel`
+ * values it is given. Tags: VIZ_NAME (STR), VIZ_FRAME (render hook, sel_viz_render_fn), VIZ_OPEN / VIZ_CLOSE (optional). */
+typedef enum sel_pixfmt {
+    SEL_PIX_INDEX8 = 0, /* one byte per pixel, palette index */
+    SEL_PIX_RGBA32 = 1  /* one uint32_t per pixel, 0xAARRGGBB */
+} sel_pixfmt;
+
+typedef struct sel_surface {
+    uint32_t w, h;
+    uint32_t pitch; /* bytes per row */
+    sel_pixfmt fmt;
+    void* pixels;
+    const uint32_t* palette; /* INDEX8: 0xAARRGGBB per index, NULL for RGBA32 */
+} sel_surface;
+
+/* Pixel values for the plugin, already in the surface's format (palette index or 0xAARRGGBB). */
+typedef struct sel_viz_colors {
+    uint32_t background; /* the plugin clears to this */
+    uint32_t grid;       /* centre lines, bar tracks */
+    uint32_t primary;    /* main trace or bars */
+    uint32_t secondary;  /* second channel, peaks */
+    uint32_t accent;     /* markers */
+} sel_viz_colors;
+
+/* VIZ_FRAME hook: draws `f` over the whole surface. Returns the number of primitives drawn (0: nothing, e.g. no frame
+ * yet). Integer only; runs on the UI thread. */
+typedef uint32_t (*sel_viz_render_fn)(const sel_viz_frame* f, sel_surface* s, const sel_viz_colors* c);
+
 SEL_EXTERN_C_END
 
 #endif /* SELECTA_VIZ_H */

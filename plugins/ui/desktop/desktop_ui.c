@@ -38,8 +38,8 @@ static const int g_icon_sizes[DESK_ICON_SIZES] = {16, 20, 24, 32};
 
 /* The pages the sidebar doors and --view reach (I262). One list: --view names, door clicks, keys and the stats sentinel
  * all use it. */
-typedef enum { PG_HOME, PG_SEARCH, PG_LIBRARY, PG_PLAYLISTS, PG_QUEUE, PG_NOWPLAYING, PG_SONGS, PG_SONGINFO, PG_COUNT } desk_page;
-static const char* const g_page_name[PG_COUNT] = {"home", "search", "library", "playlists", "queue", "nowplaying", "songs", "songinfo"};
+typedef enum { PG_HOME, PG_SEARCH, PG_LIBRARY, PG_PLAYLISTS, PG_QUEUE, PG_NOWPLAYING, PG_SONGS, PG_SONGINFO, PG_VIZ, PG_COUNT } desk_page;
+static const char* const g_page_name[PG_COUNT] = {"home", "search", "library", "playlists", "queue", "nowplaying", "songs", "songinfo", "viz"};
 /* The sidebar doors in order: Spotify's Home, Search and Your Library, then Playlists, Queue and Now Playing. */
 #define DOOR_COUNT 6u
 
@@ -65,6 +65,7 @@ typedef struct desk {
     int testcard;           /* --view testcard: draw the primitive test card once, no widgets */
     uint32_t dirty_pixels;  /* pixels the latest present repainted (DUI-P2-2) */
     uint32_t dirty_total;   /* pixels repainted over all presents */
+    int ticks_given;        /* --ticks was passed: only such mem runs drive visualizer frames (DUI-P4-11) */
     uint32_t ticks;         /* --ticks N: clock seconds the mem backend replays after the quiet turn */
     int textsheet;          /* --view text: specimen lines and the queue names, once (DUI-P2-3) */
     int widgets;            /* --view widgets: the widget gallery, once (DUI-P3-1) */
@@ -164,7 +165,7 @@ typedef struct desk {
     uint32_t tile_queued;    /* tiles sent to the engine as queue next through the tile menu */
     uint32_t home_sig;       /* source and row count of the last HOME window drawn: a change redraws */
     char home_dump[2048];    /* shelves as text for the stats */
-    sel_tag stats[64];
+    sel_tag stats[72];
     char* input_at;         /* where the scripted input resumes after a turn that sent an engine line */
     uint32_t sends;         /* engine lines sent so far: the replay yields a turn so the shell pumps them */
     char library_dump[8192]; /* the Library page as text for the stats (DUI-P4-3) */
@@ -183,11 +184,29 @@ typedef struct desk {
     uint32_t toast_until;    /* UI clock when the toast goes away */
     char toast_text[64];
     char last_verb[64];      /* the line the palette or the command line sent last */
+    const sel_tag* (*find_plugin)(uint32_t kind, const char* id); /* registry lookup the app hands over (DUI-P4-11) */
+    sel_viz_render_fn viz_fn[3]; /* the viz plugins found at open: scope, levels, spectrum */
+    const char* viz_id[3];
+    const char* viz_name[3];
+    uint32_t viz_n, viz_sel;     /* plugins found, index of the one the Now Playing strip and the visual layout draw */
+    uint32_t* viz_px;            /* RGBA32 target the plugins render into */
+    uint32_t viz_cap;            /* pixels viz_px holds */
+    uint32_t viz_seq;            /* sequence number of the newest frame drawn */
+    uint32_t viz_frames;         /* frames drawn to screen, one per new engine frame (sentinel) */
+    uint32_t viz_prims;          /* primitives the last render reported */
+    uint32_t viz_panes;          /* panes the last Visualizer page drew */
+    uint32_t viz_sigpath;        /* signal path texts drawn */
+    uint32_t viz_visual_draws;   /* visual layout frames drawn */
+    uint32_t viz_song_ms;        /* song position at the newest frame drawn */
+    int viz_page;                /* --view viz: the main region shows the Visualizer page */
+    sel_gui_rect np_viz;         /* the strip Now Playing gave the visualizer, w 0 = none */
+    sel_gui_rect viz_pane[3];    /* the panes of the Visualizer page */
 } desk;
 
 static int desk_resize(desk* d, int32_t w, int32_t h);
 static int desk_set_scale(desk* d, int32_t scale);
 static int desk_present(desk* d);
+static int desk_event_frame(desk* d, int changed);
 static void desk_draw_focus(desk* d);
 static void desk_draw_tip(desk* d);
 static void desk_draw_overlay(desk* d);
@@ -1818,6 +1837,193 @@ static void si_dump_row(desk* d, const char* label, const char* value, uint32_t 
     }
 }
 
+/* ---- Visualizer (DUI-P4-11) ----
+ * The viz plugins (scope, levels, spectrum) render the engine's newest frame into an RGBA32 target the desktop owns; the
+ * desktop blits it. Three places show it: the strip in Now Playing, the Visualizer page (one pane per plugin) and the
+ * visual layout (full canvas with the signal path). viz_tick draws once per new engine frame. */
+#define VIZ_MAX 3u
+enum { VIZ_NONE = 0, VIZ_STRIP = 1, VIZ_PAGE = 2, VIZ_VISUAL = 3 };
+
+static void viz_load(desk* d) {
+    static const char* const ids[VIZ_MAX] = {"viz_scope", "viz_levels", "viz_spectrum"};
+    uint32_t i;
+    d->viz_n = 0u;
+    for (i = 0; d->find_plugin != NULL && i < VIZ_MAX; i++) {
+        const sel_tag* desc = d->find_plugin(SEL_PLUGIN_KIND_VIZ, ids[i]);
+        const sel_tag* hooks = desc != NULL ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
+        uintptr_t fn = hooks != NULL ? sel_tag_find(hooks, SEL_VIZ_FRAME, 0) : 0;
+        if (fn == 0) {
+            continue;
+        }
+        d->viz_fn[d->viz_n] = (sel_viz_render_fn)fn;
+        d->viz_id[d->viz_n] = ids[i];
+        d->viz_name[d->viz_n] = (const char*)sel_tag_find(hooks, SEL_VIZ_NAME, 0);
+        d->viz_n++;
+    }
+}
+
+/* The ui.desktop.viz pref: a plugin id picks the plugin the strip and the visual layout draw. */
+static void viz_select(desk* d, const char* id) {
+    uint32_t i;
+    for (i = 0; i < d->viz_n; i++) {
+        if (strcmp(d->viz_id[i], id) == 0) {
+            d->viz_sel = i;
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        }
+    }
+}
+
+/* Which place shows the visualizer now. */
+static int viz_visible(const desk* d) {
+    if (d->viz_n == 0u) {
+        return VIZ_NONE;
+    }
+    if (d->uim.layout == SEL_UIM_LAYOUT_VISUAL) {
+        return VIZ_VISUAL;
+    }
+    if (d->uim.layout != SEL_UIM_LAYOUT_FULL || d->overlay != 0) {
+        return VIZ_NONE;
+    }
+    if (d->viz_page) {
+        return VIZ_PAGE;
+    }
+    return d->np_viz.w > 0 ? VIZ_STRIP : VIZ_NONE;
+}
+
+/* Renders plugin `idx` for the newest frame into `r` and blits it. */
+static void viz_draw_area(desk* d, sel_gui_rect r, uint32_t idx) {
+    const sel_state* st = sel_engine_state(d->engine);
+    sel_surface s;
+    sel_viz_colors c;
+    uint32_t need;
+    if (r.w <= 0 || r.h <= 0 || idx >= d->viz_n) {
+        return;
+    }
+    need = (uint32_t)r.w * (uint32_t)r.h;
+    if (need > d->viz_cap) {
+        if (d->viz_px != NULL) {
+            d->host->mem_free(d->host, d->viz_px);
+        }
+        d->viz_px = (uint32_t*)d->host->mem_alloc(d->host, (size_t)need * sizeof(uint32_t), SEL_MEM_FAST);
+        d->viz_cap = d->viz_px != NULL ? need : 0u;
+        if (d->viz_px == NULL) {
+            return;
+        }
+    }
+    s.w = (uint32_t)r.w;
+    s.h = (uint32_t)r.h;
+    s.pitch = (uint32_t)r.w * (uint32_t)sizeof(uint32_t);
+    s.fmt = SEL_PIX_RGBA32;
+    s.pixels = d->viz_px;
+    s.palette = NULL;
+    c.background = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]);
+    c.grid = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]);
+    c.primary = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
+    c.secondary = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+    c.accent = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]);
+    d->viz_prims = d->viz_fn[idx](st->viz, &s, &c);
+    sel_gui_blit_image(d->canvas, r, d->viz_px, r.w, r.h, r.w, 0);
+    sel_gui_dirty_add(d->canvas, r);
+}
+
+/* F38: the signal path as text, from the engine state the song goes through: replayer, mixer or voice output, the
+ * stages that are on, the output. */
+static void viz_sigpath_text(desk* d, char* out, size_t n) {
+    const sel_state* st = sel_engine_state(d->engine);
+    sel_engine_stats es;
+    size_t o;
+    sel_engine_stats_get(d->engine, &es);
+    o = (size_t)snprintf(out, n, "Signal Path: %s > %s", es.replayer != NULL ? es.replayer : "No Song",
+                         st->mixed_path != 0u ? "Mixer" : "Voice Output");
+    if (st->led_on != 0u && o < n) {
+        o += (size_t)snprintf(out + o, n - o, " > LED Filter");
+    }
+    if (st->stereo_width < 100u && o < n) {
+        o += (size_t)snprintf(out + o, n - o, " > Stereo Width %u Percent", (unsigned)st->stereo_width);
+    }
+    if (es.crossfeed_on != 0u && o < n) {
+        o += (size_t)snprintf(out + o, n - o, " > Crossfeed");
+    }
+    if (o < n) {
+        (void)snprintf(out + o, n - o, " > Output %s", st->output);
+    }
+}
+
+static void viz_sigpath_draw(desk* d, sel_gui_rect r) {
+    char line[200];
+    viz_sigpath_text(d, line, sizeof line);
+    draw_text(d, r, line, 0, 13, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+    d->viz_sigpath++;
+}
+
+/* The visual layout: the whole canvas, the visualizer above the signal path. */
+static void draw_visual(desk* d) {
+    int32_t mg = lpx(d, HOME_MARGIN), th = lpx(d, 24);
+    sel_gui_rect all = rect_of(0, 0, d->canvas->w, d->canvas->h);
+    sel_gui_fill_rect(d->canvas, all, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
+    viz_draw_area(d, rect_of(mg, mg, all.w - 2 * mg, all.h - 3 * mg - th), d->viz_sel);
+    viz_sigpath_draw(d, rect_of(mg, all.h - mg - th, all.w - 2 * mg, th));
+    sel_gui_dirty_add(d->canvas, all);
+    d->viz_visual_draws++;
+}
+
+/* The Visualizer page: one pane per plugin, then the signal path. */
+static void viz_panes_draw(desk* d) {
+    uint32_t k;
+    uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]);
+    for (k = 0; k < d->viz_n; k++) {
+        sel_gui_rect p = d->viz_pane[k];
+        draw_text(d, rect_of(p.x, p.y - lpx(d, 20), p.w, lpx(d, 18)), d->viz_name[k], 1, 12, text);
+        viz_draw_area(d, p, k);
+    }
+}
+
+static void draw_vizpage(desk* d) {
+    sel_gui_rect mn = draw_panel(d, "main");
+    int32_t mg = lpx(d, HOME_MARGIN), top = mn.y + lpx(d, 64), gap = lpx(d, 28);
+    int32_t ph = (mn.h - lpx(d, 64) - lpx(d, 40) - 3 * gap) / 3;
+    uint32_t k;
+    sel_gui_clip_push(d->canvas, mn);
+    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Visualizer", 1, 28,
+              ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    for (k = 0; k < VIZ_MAX; k++) {
+        d->viz_pane[k] = rect_of(mn.x + mg, top + gap + (int32_t)k * (ph + gap), mn.w - 2 * mg, ph);
+    }
+    viz_panes_draw(d);
+    d->viz_panes = d->viz_n;
+    viz_sigpath_draw(d, rect_of(mn.x + mg, mn.y + mn.h - lpx(d, 36), mn.w - 2 * mg, lpx(d, 24)));
+    sel_gui_clip_pop(d->canvas);
+    sel_gui_dirty_add(d->canvas, mn);
+}
+
+/* One draw per new engine frame while a visualizer is on screen. Returns 1 when a frame was drawn. */
+static int viz_tick(desk* d) {
+    const sel_state* st = sel_engine_state(d->engine);
+    int where = viz_visible(d);
+    if (where == VIZ_NONE || st->viz == NULL || st->viz->seq == 0u || st->viz->seq == d->viz_seq || d->frames == 0u ||
+        d->repaint) {
+        return 0;
+    }
+    if (!d->live && (!d->ticks_given || (d->ticks == 0u && (d->input == NULL || d->input_done)))) {
+        return 0; /* the mem backend pumps the engine without a clock: only a run with --ticks drives visualizer frames, so scripted runs without ticks keep their frame counts and hashes */
+    }
+    /* The mem backend has no song clock: it pumps one 20 ms block per turn, and the engine numbers its frames by block,
+     * so the song time of a frame there is its sequence number times 20 ms. */
+    d->viz_frames++;
+    d->viz_seq = st->viz->seq;
+    d->viz_song_ms = st->song.position_ms != 0u ? st->song.position_ms : st->viz->seq * 20u;
+    if (where == VIZ_VISUAL) {
+        draw_visual(d);
+    } else if (where == VIZ_PAGE) {
+        viz_panes_draw(d);
+    } else {
+        viz_draw_area(d, d->np_viz, d->viz_sel);
+    }
+    d->dirty_pixels = desk_flush(d); /* a visualizer frame is counted in viz_frames, not in frames: frames count state changes */
+    d->dirty_total += d->dirty_pixels;
+    return 1;
+}
+
 static void draw_songinfo(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     sel_gui_rect mn = draw_panel(d, "main"), nm = pl_name_rect(d, mn);
@@ -1959,6 +2165,11 @@ static const char* library_dump_build(desk* d) {
                           (unsigned)d->flow_centre);
     o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "nowplaying draws %u pairs %u\nlyrics line %d at %u\n",
                           (unsigned)d->np_draws, (unsigned)d->np_rows, (int)st->lyric_line, (unsigned)st->song.position_ms);
+    o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o,
+                          "viz frames %u song_ms %u plugin %s plugins %u layout %u panes %u sigpath %u prims %u visual %u strip %d\n",
+                          (unsigned)d->viz_frames, (unsigned)d->viz_song_ms, d->viz_n > 0u ? d->viz_id[d->viz_sel] : "none",
+                          (unsigned)d->viz_n, (unsigned)d->uim.layout, (unsigned)d->viz_panes, (unsigned)d->viz_sigpath,
+                          (unsigned)d->viz_prims, (unsigned)d->viz_visual_draws, d->np_viz.w > 0);
     for (p = st->panel, i = 0; p != NULL && *p != '\0' && i < 16u && o + 400u < sizeof d->library_dump; i++) {
         const char* v = p + strlen(p) + 1;
         o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "meta %u %s|%s\n", (unsigned)i, p, v);
@@ -2456,6 +2667,10 @@ static void draw_home_content(desk* d) {
         draw_songinfo(d);
         return;
     }
+    if (d->viz_page) {
+        draw_vizpage(d);
+        return;
+    }
     sel_gui_rect mn = draw_panel(d, "main");
     int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
     int32_t hv = sel_gui_tween_value(&d->tl, ANIM_KEY_HOVER, 65536);
@@ -2605,6 +2820,7 @@ static void desk_page_flags(desk* d, desk_page pg) {
     d->queue_page = pg == PG_QUEUE;
     d->pl_page = pg == PG_PLAYLISTS;
     d->si_page = pg == PG_SONGINFO;
+    d->viz_page = pg == PG_VIZ;
     d->search_on = 0;
     d->open_tile = 0;
 }
@@ -2981,6 +3197,14 @@ static void draw_nowplaying(desk* d) {
                            (int32_t)k < rating ? accent : ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
     }
     y += ic + sp;
+    /* The visualizer strip (DUI-P4-11): the selected viz plugin's picture of the newest frame. */
+    d->np_viz = rect_of(dt.x + sp, y, side, lpx(d, 72));
+    if (st->song.path != NULL && d->np_viz.y + d->np_viz.h < dt.y + dt.h && d->viz_n > 0u) {
+        viz_draw_area(d, d->np_viz, d->viz_sel);
+        y += d->np_viz.h + sp;
+    } else {
+        d->np_viz = rect_of(0, 0, 0, 0);
+    }
     /* Metadata pairs. */
     d->np_rows = 0;
     if (st->panel != NULL) {
@@ -3332,7 +3556,7 @@ static void desk_bind_actions(desk* d) {
         txt_bindings_load(&d->binds, row, NULL);
     }
     { /* The overlay keys (DUI-P4-13) are the text UI's: its default table names them, so each key lives in one place. */
-        static const char* const overlay_actions[] = {"@command", "@palette", "@help", "@home", "@library", "@folders", "@info"};
+        static const char* const overlay_actions[] = {"@command", "@palette", "@help", "@home", "@library", "@folders", "@info", "@viz"};
         txt_bindings def;
         uint32_t k;
         txt_bindings_default(&def);
@@ -3650,8 +3874,8 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         return overlay_refresh(d);
     }
     if (act != NULL && (strcmp(act, "@home") == 0 || strcmp(act, "@library") == 0 || strcmp(act, "@folders") == 0 ||
-                        strcmp(act, "@info") == 0)) { /* the text UI's page keys open the matching page (I262) */
-        desk_page pg = act[1] == 'h' ? PG_HOME : act[1] == 'l' ? PG_LIBRARY : act[1] == 'f' ? PG_PLAYLISTS : PG_SONGINFO;
+                        strcmp(act, "@info") == 0 || strcmp(act, "@viz") == 0)) { /* the text UI's page keys open the matching page (I262, DUI-P4-11) */
+        desk_page pg = act[1] == 'h' ? PG_HOME : act[1] == 'l' ? PG_LIBRARY : act[1] == 'f' ? PG_PLAYLISTS : act[1] == 'v' ? PG_VIZ : PG_SONGINFO;
         d->nav_keys++;
         return desk_page_goto(d, pg);
     }
@@ -4116,6 +4340,14 @@ static int desk_present(desk* d) {
                           ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
         sel_gui_dirty_add(d->canvas, rect_of(0, 0, d->canvas->w, d->canvas->h));
     }
+    if (d->uim.layout == SEL_UIM_LAYOUT_VISUAL) { /* the visual layout: the visualizer and the signal path fill the canvas */
+        draw_visual(d);
+        d->hash = (d->hash ^ 0x56495355u) * 16777619u;
+        d->dirty_pixels = desk_flush(d);
+        d->dirty_total += d->dirty_pixels;
+        d->frames++;
+        return 1;
+    }
     for (bit = 1u; bit <= SEL_UIM_DIRTY_STATUS; bit <<= 1) {
         if ((dirty & bit) == 0u) {
             continue;
@@ -4291,6 +4523,9 @@ static void desk_close(void* state) {
         desk_sdl_close(d->sdl);
 #endif
         if (d->canvas != NULL) {
+            if (d->viz_px != NULL) {
+                d->host->mem_free(d->host, d->viz_px);
+            }
             d->host->mem_free(d->host, d->canvas->pixels);
             d->host->mem_free(d->host, d->canvas);
         }
@@ -4425,6 +4660,8 @@ static void* desk_open(const sel_ui_open_args* a) {
     d->tile_step = TILE_STEP_DEFAULT;
     d->engine = a->engine;
     d->host = a->host;
+    d->find_plugin = a->find_plugin;
+    viz_load(d);
     d->input_consumed = a->input_consumed;
     d->hash = 2166136261u;
     if (!sel_uim_budget_for(&d->budget, desk_opt(a, "--format"))) {
@@ -4483,6 +4720,7 @@ static void* desk_open(const sel_ui_open_args* a) {
         }
         if (strcmp(a->argv[i], "--ticks") == 0 && i + 1 < a->argc) {
             d->ticks = (uint32_t)atoi(a->argv[i + 1]);
+            d->ticks_given = 1;
         }
         if (strcmp(a->argv[i], "--frame-dump") == 0 && i + 1 < a->argc) {
             d->frame_dump = a->argv[i + 1];
@@ -4543,7 +4781,12 @@ static void* desk_open(const sel_ui_open_args* a) {
 static void desk_on_event(void* state, const sel_message* evt) {
     desk* d = (desk*)state;
     if (evt->id == SEL_EVT_PREFS_CHANGED && strcmp(evt->args[0].v.s, "ui.desktop.mode") == 0) {
+        uint32_t before = d->uim.layout;
         sel_uim_set_layout(&d->uim, evt->args[1].v.s);
+        d->repaint |= before != d->uim.layout; /* a layout change repaints the whole canvas */
+    }
+    if (evt->id == SEL_EVT_PREFS_CHANGED && strcmp(evt->args[0].v.s, "ui.desktop.viz") == 0) {
+        viz_select(d, evt->args[1].v.s);
     }
     sel_uim_update(&d->uim, sel_engine_state(d->engine));
 }
@@ -4551,6 +4794,7 @@ static void desk_on_event(void* state, const sel_message* evt) {
 /* The mem backend has no input source: a turn with something to draw is handled, a quiet turn ends the run. */
 static int desk_wait(void* state, uint32_t timeout_ms) {
     desk* d = (desk*)state;
+    int vz;
 #ifndef SELECTA_DESKTOP_SDL
     (void)timeout_ms;
 #endif
@@ -4619,11 +4863,15 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
         d->ticks--;
         d->uim.dirty |= SEL_UIM_DIRTY_PROGRESS;
     }
+    vz = viz_tick(d); /* one visualizer frame per new engine block; the turn goes on, so ticks and the script still advance */
     if (desk_present(d)) {
         return 1;
     }
     if (d->input != NULL && !d->input_done && d->ticks == 0u && desk_replay_input(d)) { /* scripted input, once */
         return 1; /* every event flushed its own frame */
+    }
+    if (vz) {
+        return 1;
     }
 #ifdef SELECTA_DESKTOP_SDL
     if (d->live) { /* a window on a real display: idle until an event or the next second boundary */
@@ -4639,6 +4887,9 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
                 draw_home(d);
             }
             desk_event_frame(d, 1);
+        }
+        if (viz_visible(d) != 0 && wait_ms > 20u) { /* a visualizer on screen: one frame per engine block */
+            wait_ms = 20u;
         }
         if (desk_search_wait(d) > 0u && desk_search_wait(d) < wait_ms) {
             wait_ms = desk_search_wait(d);
@@ -4804,7 +5055,9 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[61].value = d->np_rows;
     d->stats[62].tag = SEL_UI_STAT_FOLDER_OPENS;
     d->stats[62].value = d->folder_opens;
-    d->stats[63].tag = SEL_TAG_END;
+    d->stats[63].tag = SEL_UI_STAT_VIZ_FRAMES;
+    d->stats[63].value = d->viz_frames;
+    d->stats[64].tag = SEL_TAG_END;
 
     return d->stats;
 }

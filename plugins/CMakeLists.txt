@@ -41,6 +41,11 @@ if(SEL_AMIGA)
 endif()
 sel_add_plugin(wav 2 outputs/wav/wav.c)
 sel_add_plugin(crossfeed 3 dsp/crossfeed/crossfeed.c)
+# Viz plugins (DUI-P4-11): render one sel_viz_frame into a sel_surface; the pixel helpers are header-only in shared/viz.
+foreach(viz scope levels spectrum)
+  sel_add_plugin(viz_${viz} 4 viz/${viz}/${viz}.c)
+  target_link_libraries(sel_plugin_viz_${viz} PUBLIC selecta_plugin_shared)
+endforeach()
 # OS headers live under plugins/*/<os>/ (RULES.md rule 3).
 if(APPLE)
   sel_add_plugin(coreaudio 2 outputs/coreaudio/macos/coreaudio.c)

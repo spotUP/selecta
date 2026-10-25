@@ -443,6 +443,7 @@ int main(int argc, char** argv)
     args.engine = e;
     args.host = host;
     args.input_consumed = &input_consumed;
+    args.find_plugin = sel_registry_find;
     args.argc = argc;
     args.argv = (const char* const*)argv;
     if (library != NULL) {

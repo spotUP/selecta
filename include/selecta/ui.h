@@ -28,6 +28,8 @@ typedef struct sel_ui_open_args {
     const sel_ui_art* art; /* NULL without a library */
     int* input_consumed;   /* shell-owned, NULL when absent: a UI sets it when it starts replaying a scripted --input, and a UI
                             * opened later in the same process (UI_SWITCH) skips the script, so each event fires once */
+    /* Plugin lookup (sel_registry_find): a UI finds the viz plugins it renders with. NULL when the shell has no registry. */
+    const sel_tag* (*find_plugin)(uint32_t kind, const char* id);
 } sel_ui_open_args;
 
 typedef void* (*sel_ui_open_fn)(const sel_ui_open_args* args);               /* UI_OPEN: state or NULL */

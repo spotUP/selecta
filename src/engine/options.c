@@ -21,7 +21,7 @@ static const opt_def k_opts[] = {
     {"PRI", "audio.priority", NULL, OPT_INT, NULL},
     {"BUFFER", "output.buffer", NULL, OPT_UINT, NULL},
     {"LED", "output.led", NULL, OPT_ONOFF, NULL},
-    {"MODE", "ui.desktop.mode", NULL, OPT_TEXT, "full|window|mini"},
+    {"MODE", "ui.desktop.mode", NULL, OPT_TEXT, "full|window|mini|visual"},
 };
 
 static int ieq(const char* a, const char* b) {

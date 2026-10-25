@@ -39,8 +39,8 @@ typedef struct sel_uim_frame {
     int32_t lyric_slot;              /* synced lyric line index plus one at the play position, 0 none (zero start state) (DUI-P4-7: a new line redraws the song) */
 } sel_uim_frame;
 
-/* Frame layouts, the values of the pref ui.desktop.mode (full, window, mini). */
-enum { SEL_UIM_LAYOUT_FULL = 0, SEL_UIM_LAYOUT_WINDOW = 1, SEL_UIM_LAYOUT_MINI = 2 };
+/* Frame layouts, the values of the pref ui.desktop.mode (full, window, mini, visual). */
+enum { SEL_UIM_LAYOUT_FULL = 0, SEL_UIM_LAYOUT_WINDOW = 1, SEL_UIM_LAYOUT_MINI = 2, SEL_UIM_LAYOUT_VISUAL = 3 };
 
 typedef struct sel_uim {
     sel_uim_frame frame;
