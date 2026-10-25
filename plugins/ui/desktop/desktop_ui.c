@@ -24,6 +24,7 @@
 #include "backend_sdl.h"
 #endif
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <stdlib.h>
@@ -168,6 +169,7 @@ typedef struct desk {
     char tip_text[96];
     uint32_t gestures;       /* pinch and swipe events handled (DUI-P3-4) */
     uint32_t tile_step;      /* index into g_tile_steps: the tile size token step, pinch moves it */
+    int32_t lib_q16;         /* Library page scroll offset in logical pixels, Q16: the composer list, a drilldown, or the engine view's top row (I303) */
     int32_t scroll_q16;      /* songs list scroll offset in logical pixels, Q16: precise wheel deltas are fractions of a pixel */
     int32_t hist[16];        /* view history (DUI-P3-4): the open_tile of each visited view, 0 = home */
     uint32_t hist_n, hist_pos;
@@ -1469,10 +1471,48 @@ static const char* lib_next(const char* p) {
     return p + strlen(p) + 1u;
 }
 
+static int lib_view_on(const desk* d, const sel_state* st);
+
+/* The Library lists the UI draws itself (the composers and a composer's songs) scroll by a pixel offset, lib_q16, as the
+ * Songs page does (I303); the engine view modes scroll the engine's window instead (lib_wheel) and draw at offset 0. */
+static int lib_ui_list(const desk* d, const sel_state* st) {
+    return st->composer_page != NULL || !lib_view_on(d, st);
+}
+
+/* Rows of the UI-drawn list: the composers, or the songs of the drilled-into composer. */
+static uint32_t lib_list_n(const sel_state* st) {
+    uint32_t n = 0;
+    const char* p = st->composer_page != NULL ? lib_next(lib_next(st->composer_page)) : st->composers;
+    for (; p != NULL && *p != '\0'; n++) {
+        p = lib_next(lib_next(p));
+        if (st->composer_page == NULL) {
+            p = lib_next(p);
+        }
+    }
+    return n;
+}
+
+/* Top edge of the scrolling rows: under the title block, and under the back line of a drilldown. Rows scrolled above it
+ * are clipped and not clickable. */
+static int32_t lib_list_top(desk* d, sel_gui_rect mn, const sel_state* st) {
+    return mn.y + lpx(d, LIB_LIST_Y) + (st->composer_page != NULL ? lpx(d, LIB_ROW_H) : 0);
+}
+
+static int32_t lib_off_px(desk* d, const sel_state* st) {
+    return lib_ui_list(d, st) ? (int32_t)(((int64_t)d->lib_q16 * (d->scale > 0 ? d->scale : 1)) >> 16) : 0;
+}
+
+/* The one row rectangle of the Library page: drawing, hit-testing and the dump all go through it. */
 static sel_gui_rect lib_row_rect(desk* d, sel_gui_rect mn, uint32_t i) {
     int32_t mg = lpx(d, LIB_MARGIN);
     int32_t w = mn.w - 3 * mg - lpx(d, LIB_STATS_W);
-    return rect_of(mn.x + mg, mn.y + lpx(d, LIB_LIST_Y) + (int32_t)i * lpx(d, LIB_ROW_H), w > 0 ? w : 0, lpx(d, LIB_ROW_H));
+    return rect_of(mn.x + mg, mn.y + lpx(d, LIB_LIST_Y) + (int32_t)i * lpx(d, LIB_ROW_H) - lib_off_px(d, sel_engine_state(d->engine)),
+                   w > 0 ? w : 0, lpx(d, LIB_ROW_H));
+}
+
+/* 1 when (x, y) is on row i of the Library list and not on a part of it scrolled out above the list top. */
+static int lib_row_hit(desk* d, sel_gui_rect mn, uint32_t i, int32_t x, int32_t y) {
+    return y >= lib_list_top(d, mn, sel_engine_state(d->engine)) && in_rect(lib_row_rect(d, mn, i), x, y);
 }
 
 /* The Library page modes (slice B): the composers list, the tree and the column browser. The last two show the engine's
@@ -2607,6 +2647,20 @@ static const char* lib_kind_name(uint32_t kind) {
     }
 }
 
+/* Appends one formatted line to library_dump at offset o and returns the new offset, never past the buffer: snprintf
+ * returns the length it wanted, so a long Library (I303) would push o beyond the end and the next write below it. */
+static size_t dump_put(desk* d, size_t o, const char* fmt, ...) {
+    va_list ap;
+    int n;
+    if (o >= sizeof d->library_dump) return sizeof d->library_dump - 1u;
+    va_start(ap, fmt);
+    n = vsnprintf(d->library_dump + o, sizeof d->library_dump - o, fmt, ap);
+    va_end(ap);
+    if (n < 0) return o;
+    o += (size_t)n;
+    return o < sizeof d->library_dump ? o : sizeof d->library_dump - 1u;
+}
+
 /* Writes "composer I canon|display|songs", "row I x y w h" (the click rectangle), "drill display|songs" and "stat label|value" lines into library_dump. */
 static const char* library_dump_build(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
@@ -2614,118 +2668,122 @@ static const char* library_dump_build(desk* d) {
     uint32_t i = 0;
     const char* p;
     d->library_dump[0] = '\0';
+    p = st->composer_page; /* before the rows: a long list fills the dump and must not cut the drilled composer */
+    if (p != NULL && o + 400u < sizeof d->library_dump) {
+        o = dump_put(d, o, "drill %s|%s\n", p, lib_next(p));
+    }
     for (p = st->composers; p != NULL && *p != '\0' && o + 400u < sizeof d->library_dump; i++) {
         const char* disp = lib_next(p);
         const char* cnt = lib_next(disp);
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "composer %u %s|%s|%s\n", (unsigned)i, p, disp, cnt);
+        o = dump_put(d, o, "composer %u %s|%s|%s\n", (unsigned)i, p, disp, cnt);
         {
             sel_gui_rect rr = lib_row_rect(d, region_rect(d, "main"), i);
-            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "row %u %d %d %d %d\n", (unsigned)i, (int)rr.x, (int)rr.y, (int)rr.w, (int)rr.h);
+            o = dump_put(d, o, "row %u %d %d %d %d\n", (unsigned)i, (int)rr.x, (int)rr.y, (int)rr.w, (int)rr.h);
         }
         p = lib_next(cnt);
     }
     p = st->composer_page;
-    if (p != NULL && o + 400u < sizeof d->library_dump) {
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "drill %s|%s\n", lib_next(p), lib_next(lib_next(p)));
+    if (p != NULL) {
+        o = dump_put(d, o, "drill %s|%s\n", lib_next(p), lib_next(lib_next(p)));
     }
-    o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "mode %s\n", lib_mode_name[d->lib_mode]);
+    o = dump_put(d, o, "mode %s\nscroll %d\n", lib_mode_name[d->lib_mode], (int)(d->lib_q16 >> 16));
     for (i = 0; i < LIB_MODES; i++) {
         sel_gui_rect tr = lib_tab_rect(d, region_rect(d, "main"), i);
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "tab %u %d %d %d %d\n", (unsigned)i, (int)tr.x, (int)tr.y, (int)tr.w, (int)tr.h);
+        o = dump_put(d, o, "tab %u %d %d %d %d\n", (unsigned)i, (int)tr.x, (int)tr.y, (int)tr.w, (int)tr.h);
     }
     if (lib_view_on(d, st)) {
         const sel_view_state* v = st->view;
         for (i = 0; i < v->drill_n && i < 2u; i++) {
-            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "picked %u|%s\n", (unsigned)i, v->drill[i]);
+            o = dump_put(d, o, "picked %u|%s\n", (unsigned)i, v->drill[i]);
         }
         for (i = 0; i < v->row_n && o + 400u < sizeof d->library_dump; i++) {
             const sel_view_row* vr = &v->rows[i];
             sel_gui_rect rr = lib_row_rect(d, region_rect(d, "main"), i);
-            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "vrow %u %s|%u|%u|%u|%s\n", (unsigned)i,
+            o = dump_put(d, o, "vrow %u %s|%u|%u|%u|%s\n", (unsigned)i,
                                   lib_kind_name(vr->kind), (unsigned)vr->depth, (unsigned)vr->count,
                                   (unsigned)vr->expanded, vr->text != NULL ? vr->text : "");
-            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "vrect %u %d %d %d %d\n", (unsigned)i, (int)rr.x, (int)rr.y, (int)rr.w, (int)rr.h);
+            o = dump_put(d, o, "vrect %u %d %d %d %d\n", (unsigned)i, (int)rr.x, (int)rr.y, (int)rr.w, (int)rr.h);
         }
     }
     if (st->view != NULL && st->view->style >= SEL_VIEW_STYLE_GRID) { /* grid, cover flow, compact: the rows and their artwork ids */
         const sel_view_state* v = st->view;
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "vstyle %s\n", sel_view_style_label(v->style));
+        o = dump_put(d, o, "vstyle %s\n", sel_view_style_label(v->style));
         for (i = 0; i < v->row_n && o + 400u < sizeof d->library_dump; i++) {
-            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "srow %u %u|%s\n", (unsigned)i,
+            o = dump_put(d, o, "srow %u %u|%s\n", (unsigned)i,
                                   (unsigned)v->rows[i].art_id, v->rows[i].text != NULL ? v->rows[i].text : "");
         }
     }
-    o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "grid draws %u tiles %u cols %u\nflow draws %u centre %u\n",
+    o = dump_put(d, o, "grid draws %u tiles %u cols %u\nflow draws %u centre %u\n",
                           (unsigned)d->grid_draws, (unsigned)d->grid_tiles, (unsigned)d->grid_cols, (unsigned)d->flow_draws,
                           (unsigned)d->flow_centre);
-    o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "nowplaying draws %u pairs %u\nlyrics line %d at %u\nmessage lines %u\n",
+    o = dump_put(d, o, "nowplaying draws %u pairs %u\nlyrics line %d at %u\nmessage lines %u\n",
                           (unsigned)d->np_draws, (unsigned)d->np_rows, (int)st->lyric_line, (unsigned)st->song.position_ms, (unsigned)d->np_msg_lines);
-    o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "rating %d mark %d %d %d %d step %d\n", (int)d->np_rating,
+    o = dump_put(d, o, "rating %d mark %d %d %d %d step %d\n", (int)d->np_rating,
                           (int)d->np_rate[0].x, (int)d->np_rate[0].y, (int)d->np_rate[0].w, (int)d->np_rate[0].h,
                           (int)(d->np_rate[1].x - d->np_rate[0].x));
-    o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o,
+    o = dump_put(d, o,
                           "viz frames %u song_ms %u plugin %s plugins %u layout %u panes %u sigpath %u prims %u visual %u strip %d\n",
                           (unsigned)d->viz_frames, (unsigned)d->viz_song_ms, d->viz_n > 0u ? d->viz_id[d->viz_sel] : "none",
                           (unsigned)d->viz_n, (unsigned)d->uim.layout, (unsigned)d->viz_panes, (unsigned)d->viz_sigpath,
                           (unsigned)d->viz_prims, (unsigned)d->viz_visual_draws, d->np_viz.w > 0);
-    o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "viz_switch clicks %u strip %d %d %d %d page %d %d %d %d\n",
+    o = dump_put(d, o, "viz_switch clicks %u strip %d %d %d %d page %d %d %d %d\n",
                           (unsigned)d->viz_clicks, (int)d->viz_btn[0][0].x, (int)d->viz_btn[0][0].y, (int)d->viz_btn[0][0].w,
                           (int)d->viz_btn[0][0].h, (int)d->viz_btn[1][0].x, (int)d->viz_btn[1][0].y, (int)d->viz_btn[1][0].w,
                           (int)d->viz_btn[1][0].h);
     for (p = st->panel, i = 0; p != NULL && *p != '\0' && i < 16u && o + 400u < sizeof d->library_dump; i++) {
         const char* v = p + strlen(p) + 1;
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "meta %u %s|%s\n", (unsigned)i, p, v);
+        o = dump_put(d, o, "meta %u %s|%s\n", (unsigned)i, p, v);
         p = v + strlen(v) + 1;
     }
     {
         sel_gui_rect ab = lib_add_rect(d, region_rect(d, "main"));
         sel_scan_info si;
         sel_engine_scan_info(d->engine, &si);
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "addfolder %d %d %d %d\nscan probed %u files %u scans %u\n",
+        o = dump_put(d, o, "addfolder %d %d %d %d\nscan probed %u files %u scans %u\n",
                               (int)ab.x, (int)ab.y, (int)ab.w, (int)ab.h, (unsigned)si.probed, (unsigned)si.scanned_files, (unsigned)d->scans);
     }
-    o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "search draws %u rows %u query %s\n",
+    o = dump_put(d, o, "search draws %u rows %u query %s\n",
                           (unsigned)d->search_draws, (unsigned)d->search_rows, d->query);
-    o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "search groups songs=%u albums=%u artists=%u facet=%u drawn=%u\n",
+    o = dump_put(d, o, "search groups songs=%u albums=%u artists=%u facet=%u drawn=%u\n",
                           (unsigned)d->search_groups[0], (unsigned)d->search_groups[1], (unsigned)d->search_groups[2],
                           (unsigned)d->search_facet, (unsigned)d->search_drawn);
     if (d->pl_page) { /* the Playlists page geometry and tree rows (DUI-P4-9) */
         const sel_view_state* pv = pl_view(st);
         sel_gui_rect pmn = region_rect(d, "main"), pn = pl_name_rect(d, pmn);
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o,
+        o = dump_put(d, o,
                               "pl draws %u rows %u cmds %u opens %u count %u hash %08x sel %u confirm %d queue %u\n", (unsigned)d->pl_draws,
                               (unsigned)d->pl_rows, (unsigned)d->pl_cmds, (unsigned)d->folder_opens, pv != NULL ? (unsigned)pv->row_n : 0u,
                               (unsigned)pl_hash(pv), (unsigned)d->pl_sel_id, d->pl_confirm, (unsigned)st->queue_count);
         for (i = 0; i < PL_BUTTONS; i++) {
             sel_gui_rect b = queue_btn_rect(d, pmn, i);
-            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "plbtn %u %d %d %d %d\n", (unsigned)i, (int)b.x,
+            o = dump_put(d, o, "plbtn %u %d %d %d %d\n", (unsigned)i, (int)b.x,
                                   (int)b.y, (int)b.w, (int)b.h);
         }
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "plname 0 %d %d %d %d\n", (int)pn.x, (int)pn.y, (int)pn.w,
+        o = dump_put(d, o, "plname 0 %d %d %d %d\n", (int)pn.x, (int)pn.y, (int)pn.w,
                               (int)pn.h);
         for (i = 0; i < PL_SLOTS; i++) { /* the first row slots, rows or not: the geometry a script clicks before a row exists */
             sel_gui_rect r = pl_row_rect(d, pmn, i);
-            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "plslot %u %d %d %d %d\n", (unsigned)i, (int)r.x,
+            o = dump_put(d, o, "plslot %u %d %d %d %d\n", (unsigned)i, (int)r.x,
                                   (int)r.y, (int)r.w, (int)r.h);
         }
         for (i = 0; pv != NULL && i < pv->row_n && pl_row_visible(d, pmn, i) && o + 400u < sizeof d->library_dump; i++) {
-            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "plrow %u %s %u %u %s\n", (unsigned)i,
+            o = dump_put(d, o, "plrow %u %s %u %u %s\n", (unsigned)i,
                                   pv->rows[i].kind == (uint32_t)SEL_ROW_FOLDER ? "folder" : "playlist", (unsigned)pv->rows[i].id,
                                   (unsigned)pv->rows[i].depth, pv->rows[i].text);
         }
     }
     if (d->si_page) { /* the Song Information page geometry and rows (DUI-P4-10) */
         sel_gui_rect smn = region_rect(d, "main"), sn = pl_name_rect(d, smn);
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "si draws %u rows %u cmds %u\n", (unsigned)d->si_draws,
+        o = dump_put(d, o, "si draws %u rows %u cmds %u\n", (unsigned)d->si_draws,
                               (unsigned)d->si_rows, (unsigned)d->si_cmds);
         for (i = 0; i < SI_BUTTONS; i++) {
             sel_gui_rect b = queue_btn_rect(d, smn, i);
-            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "sibtn %u %d %d %d %d\n", (unsigned)i, (int)b.x,
+            o = dump_put(d, o, "sibtn %u %d %d %d %d\n", (unsigned)i, (int)b.x,
                                   (int)b.y, (int)b.w, (int)b.h);
         }
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "sinote 0 %d %d %d %d\n", (int)sn.x, (int)sn.y, (int)sn.w,
+        o = dump_put(d, o, "sinote 0 %d %d %d %d\n", (int)sn.x, (int)sn.y, (int)sn.w,
                               (int)sn.h);
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "sipanel %d %d\n", (int)si_list_top(d, smn),
+        o = dump_put(d, o, "sipanel %d %d\n", (int)si_list_top(d, smn),
                               (int)(smn.y + smn.h));
         d->si_cy = 0;
         si_walk(d, st, si_dump_row);
@@ -2741,7 +2799,7 @@ static const char* library_dump_build(desk* d) {
             st->song.pattern_pos.row < tv->row_lo + tv->row_n) {
             shown = 1u;
         }
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o,
+        o = dump_put(d, o,
                               "tracker draws %u tab %u order %u row %u rows %u channels %u muted %u samples %u plays %u frames %u cmds %u shown %u bar %u fit %u moves %u\n",
                               (unsigned)d->tr_draws, (unsigned)d->tr_tab, (unsigned)st->song.pattern_pos.order,
                               (unsigned)st->song.pattern_pos.row, (unsigned)d->tr_rows, (unsigned)(tv != NULL ? tv->channels : 0u),
@@ -2749,23 +2807,23 @@ static const char* library_dump_build(desk* d) {
                               (unsigned)d->tr_cmds, (unsigned)shown, (unsigned)d->tr_bar, (unsigned)tfit, (unsigned)d->tr_moves);
         for (i = 0; i < TR_TABS; i++) {
             sel_gui_rect b = tr_tab_rect(d, tmn, i);
-            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "trtab %u %d %d %d %d\n", (unsigned)i, (int)b.x,
+            o = dump_put(d, o, "trtab %u %d %d %d %d\n", (unsigned)i, (int)b.x,
                                   (int)b.y, (int)b.w, (int)b.h);
         }
         for (i = 0; tv != NULL && i < tv->channels && i < tr_cols_fit(d, tmn); i++) {
             sel_gui_rect b = tr_chan_rect(d, tmn, i);
-            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "trchan %u %d %d %d %d\n", (unsigned)i, (int)b.x,
+            o = dump_put(d, o, "trchan %u %d %d %d %d\n", (unsigned)i, (int)b.x,
                                   (int)b.y, (int)b.w, (int)b.h);
         }
         for (i = 0; i < tn && i < tfit; i++) {
             sel_gui_rect b = tr_row_rect(d, tmn, i);
-            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "trsample %u %d %d %d %d\n", (unsigned)(i + 1u),
+            o = dump_put(d, o, "trsample %u %d %d %d %d\n", (unsigned)(i + 1u),
                                   (int)b.x, (int)b.y, (int)b.w, (int)b.h);
         }
         for (i = 0; shown && i < tv->channels; i++) {
             char tnote[4], tins[4], tvol[4], tfx[8];
             sel_uim_cell_fields(&tv->cell[st->song.pattern_pos.row - tv->row_lo][i], tnote, tins, tvol, tfx);
-            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "trcell %u %s %s %s %s\n", (unsigned)i, tnote, tins,
+            o = dump_put(d, o, "trcell %u %s %s %s %s\n", (unsigned)i, tnote, tins,
                                   tvol, tfx);
         }
         o = strlen(d->library_dump);
@@ -2774,18 +2832,18 @@ static const char* library_dump_build(desk* d) {
         sel_engine_stats qs;
         sel_gui_rect qmn = region_rect(d, "main");
         sel_engine_stats_get(d->engine, &qs);
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o,
+        o = dump_put(d, o,
                               "queue draws %u rows %u cmds %u hash %08x count %u undo %u redo %u scope %s\n", (unsigned)d->queue_draws,
                               (unsigned)d->queue_rows, (unsigned)d->queue_cmds, (unsigned)queue_hash(st), (unsigned)st->queue_count,
                               (unsigned)qs.undo_depth, (unsigned)qs.redo_depth, queue_scope_name[queue_scope_index(st)]);
         for (i = 0; i < QUEUE_BUTTONS; i++) {
             sel_gui_rect b = queue_btn_rect(d, qmn, i);
-            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "qbtn %u %d %d %d %d\n", (unsigned)i, (int)b.x,
+            o = dump_put(d, o, "qbtn %u %d %d %d %d\n", (unsigned)i, (int)b.x,
                                   (int)b.y, (int)b.w, (int)b.h);
         }
         for (i = 0; i < st->queue_count && queue_row_visible(d, qmn, i) && o + 400u < sizeof d->library_dump; i++) {
             sel_gui_rect r = queue_row_rect(d, qmn, i), nx = queue_next_rect(d, qmn, i), dl = queue_del_rect(d, qmn, i);
-            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o,
+            o = dump_put(d, o,
                                   "qrow %u %d %d %d %d %s\nqnext %u %d %d %d %d\nqdel %u %d %d %d %d\nqpath %u %s\n", (unsigned)i,
                                   (int)r.x, (int)r.y, (int)r.w, (int)r.h,
                                   (st->queue[i].flags & SEL_QUEUE_FLAG_DIVIDER) != 0u ? "divider" : "song", (unsigned)i, (int)nx.x,
@@ -2794,26 +2852,26 @@ static const char* library_dump_build(desk* d) {
         }
     }
     if (o + 400u < sizeof d->library_dump) { /* the page navigation (I262) */
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "nav page=%s nav_clicks=%u nav_keys=%u doors=%u hist=%u pos=%u np_page_draws=%u arrow_clicks=%u lit=%u lib_off_page=%u\nfocus_ring %d %d %d %d\nsearch_field %d %d %d %d caret_draws=%u caret_rect %d %d %d %d\nnav_arrows %d %d %d %d %d %d %d %d\n",
+        o = dump_put(d, o, "nav page=%s nav_clicks=%u nav_keys=%u doors=%u hist=%u pos=%u np_page_draws=%u arrow_clicks=%u lit=%u lib_off_page=%u\nfocus_ring %d %d %d %d\nsearch_field %d %d %d %d caret_draws=%u caret_rect %d %d %d %d\nnav_arrows %d %d %d %d %d %d %d %d\n",
                               g_page_name[d->page], (unsigned)d->nav_clicks, (unsigned)d->nav_keys, (unsigned)DOOR_COUNT,
                               (unsigned)d->pg_n, (unsigned)d->pg_pos, (unsigned)d->np_page_draws, (unsigned)d->nav_arrow_clicks, (unsigned)d->lit_doors, (unsigned)d->lib_off_page, (int)d->ring.x, (int)d->ring.y, (int)d->ring.w, (int)d->ring.h,
                               (int)d->field.x, (int)d->field.y, (int)d->field.w, (int)d->field.h, (unsigned)d->caret_draws, (int)d->caret.x, (int)d->caret.y, (int)d->caret.w, (int)d->caret.h, (int)d->nav_back.x, (int)d->nav_back.y, (int)d->nav_back.w,
                               (int)d->nav_back.h, (int)d->nav_fwd.x, (int)d->nav_fwd.y, (int)d->nav_fwd.w, (int)d->nav_fwd.h);
     }
     if (o + 200u < sizeof d->library_dump) { /* the hover state (I272) */
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o,
+        o = dump_put(d, o,
                               "hover_box %d %d %d %d fill=%08x token=%08x paints=%u tile=%d\n", (int)d->hover_box.x, (int)d->hover_box.y,
                               (int)d->hover_box.w, (int)d->hover_box.h, (unsigned)d->hover_fill,
                               (unsigned)ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_HOVER]), (unsigned)d->hover_paints, (int)d->hover_tile);
     }
     for (i = 0; i < d->label_n && o + 200u < sizeof d->library_dump; i++) { /* centred button and chip labels (I270) */
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "label %d %d %d %d ink %d %d text %s\n",
+        o = dump_put(d, o, "label %d %d %d %d ink %d %d text %s\n",
                               (int)d->labels[i].box.x, (int)d->labels[i].box.y, (int)d->labels[i].box.w, (int)d->labels[i].box.h,
                               (int)d->labels[i].ink_x, (int)d->labels[i].ink_w, d->labels[i].text);
     }
     if (o + 900u < sizeof d->library_dump) { /* the overlays (DUI-P4-13) */
         uint32_t k;
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o,
+        o = dump_put(d, o,
                               "overlay kind=%d palette_opens=%u palette_runs=%u help_opens=%u cmdline_opens=%u cmdline_runs=%u sends_ok=%u "
                               "toasts=%u toast_on=%d menu_picks=%u,%u,%u,%u last_verb=%s pal_count=%u queue=%u status=%s\n",
                               d->overlay, (unsigned)d->palette_opens, (unsigned)d->palette_runs, (unsigned)d->help_opens,
@@ -2822,12 +2880,12 @@ static const char* library_dump_build(desk* d) {
                               (unsigned)d->menu_picks[3], d->last_verb[0] != '\0' ? d->last_verb : "-", (unsigned)d->pal.count,
                               (unsigned)st->queue_count, d->cmd.status[0] != '\0' ? d->cmd.status : "-");
         for (k = 0; k < 5u && k < d->pal.count; k++) {
-            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "palitem %u %s\n", (unsigned)k, d->pal.items[k].name);
+            o = dump_put(d, o, "palitem %u %s\n", (unsigned)k, d->pal.items[k].name);
         }
     }
     for (p = st->stats; p != NULL && *p != '\0' && o + 400u < sizeof d->library_dump;) {
         const char* val = lib_next(p);
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "stat %s|%s\n", p, val);
+        o = dump_put(d, o, "stat %s|%s\n", p, val);
         p = lib_next(val);
     }
     return d->library_dump;
@@ -2956,12 +3014,14 @@ static void draw_library(desk* d) {
         draw_text(d, rect_of(col.x, col.y + col.h, col.w, lpx(d, 24)), line, 0, 14, muted);
         draw_text(d, rect_of(col.x, col.y + col.h + lpx(d, 24), col.w, lpx(d, 24)), "Back to all composers", 0, 14,
                   ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+        sel_gui_clip_push(d->canvas, rect_of(mn.x, lib_list_top(d, mn, st), mn.w, mn.y + mn.h - lib_list_top(d, mn, st)));
         for (p = lib_next(cnt); *p != '\0'; i++) {
             const char* name = lib_next(p);
             sel_gui_rect r = lib_row_rect(d, mn, i + 1u);
             draw_text(d, r, name, 0, 15, text);
             p = lib_next(name);
         }
+        sel_gui_clip_pop(d->canvas);
     } else {
         uint32_t m;
         draw_text(d, col, "Library", 1, 32, text);
@@ -3006,6 +3066,7 @@ static void draw_library(desk* d) {
             }
             p = NULL;
         } else {
+        sel_gui_clip_push(d->canvas, rect_of(mn.x, lib_list_top(d, mn, st), mn.w, mn.y + mn.h - lib_list_top(d, mn, st)));
         for (p = st->composers; p != NULL && *p != '\0'; i++) {
             const char* disp = lib_next(p);
             const char* cnt = lib_next(disp);
@@ -3017,6 +3078,7 @@ static void draw_library(desk* d) {
             sel_gui_dirty_add(d->canvas, r);
             p = lib_next(cnt);
         }
+        sel_gui_clip_pop(d->canvas);
         }
     }
     if (st->stats != NULL) { /* the Stats page (F24): the library totals as label and value */
@@ -3042,6 +3104,7 @@ static int lib_set_mode(desk* d, uint32_t mode) {
         return 0;
     }
     d->lib_mode = mode;
+    d->lib_q16 = 0;
     if (mode == 0u) {
         desk_send(d, "VIEW_STYLE regular");
         desk_send(d, "VIEW_SOURCE queue");
@@ -3075,6 +3138,39 @@ static void desk_composer_request(char* line, size_t cap, const char* canon) {
     line[o] = '\0';
 }
 
+/* Largest Library scroll offset in logical pixels, Q16: the UI-drawn list's content height minus the room under the list
+ * top, or for the engine view modes the rows beyond its window. */
+static int32_t lib_max_q16(desk* d, const sel_state* st) {
+    sel_gui_rect mn = region_rect(d, "main");
+    int32_t sc = d->scale > 0 ? d->scale : 1, max;
+    if (lib_ui_list(d, st)) {
+        max = (int32_t)lib_list_n(st) * LIB_ROW_H - (mn.y + mn.h - lib_list_top(d, mn, st)) / sc;
+    } else {
+        max = ((int32_t)st->view->row_count - (int32_t)st->view->window_rows) * LIB_ROW_H;
+    }
+    return max > 0 ? max << 16 : 0;
+}
+
+/* A wheel over the Library page (DUI-P3-4, DUI-P4-3): the Songs pattern, a clamped Q16 pixel offset. The UI-drawn lists
+ * draw at the offset; the engine view modes (tree, columns, Files, History) move the engine's window instead, by a
+ * VIEW_CURSOR on the row that brings the wanted top row into the window (the view keeps its cursor in view). */
+static int lib_wheel(desk* d, int32_t dy) {
+    const sel_state* st = sel_engine_state(d->engine);
+    int64_t v = (int64_t)d->lib_q16 - (int64_t)dy * SCROLL_NOTCH;
+    int32_t max_q16 = lib_max_q16(d, st);
+    d->lib_q16 = v < 0 ? 0 : (v > max_q16 ? max_q16 : (int32_t)v);
+    if (!lib_ui_list(d, st)) {
+        uint32_t top = (uint32_t)(d->lib_q16 >> 16) / LIB_ROW_H, last = st->view->row_count > 0u ? st->view->row_count - 1u : 0u;
+        uint32_t cur = top > st->view->window_start ? top + st->view->window_rows - 1u : top;
+        char line[48];
+        snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)(cur > last ? last : cur));
+        desk_send(d, line);
+    }
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    d->repaint = 1;
+    return 1;
+}
+
 /* A click on a composer row drills into it (COMPOSERS_SHOW canon); on the back line it returns to the list. */
 static int library_click(desk* d, int32_t x, int32_t y) {
     const sel_state* st = sel_engine_state(d->engine);
@@ -3101,7 +3197,7 @@ static int library_click(desk* d, int32_t x, int32_t y) {
                 return desk_send(d, "VIEW_DRILL 0 ..");
             }
             for (k = 0; k < st->view->row_n; k++) {
-                if (in_rect(lib_row_rect(d, mn, k), x, y)) {
+                if (lib_row_hit(d, mn, k, x, y)) {
                     snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)(st->view->window_start + k));
                     desk_send(d, line);
                     return desk_send(d, "VIEW_ACTIVATE"); /* a node expands or drills in, a song plays */
@@ -3113,13 +3209,14 @@ static int library_click(desk* d, int32_t x, int32_t y) {
     if (st->composer_page != NULL) {
         sel_gui_rect back = rect_of(mn.x + lpx(d, LIB_MARGIN), mn.y + lpx(d, LIB_TITLE_Y + LIB_TITLE_H + 24), mn.w / 2, lpx(d, 24));
         if (in_rect(back, x, y)) {
+            d->lib_q16 = 0;
             return desk_send(d, "COMPOSERS_SHOW");
         }
         /* A song row of the drilldown (drawn at row i + 1, below the back line) plays its song: OPEN with the song's key,
          * the path a scanned song is keyed by, as the Songs page sends it (I299). */
         for (p = lib_next(lib_next(lib_next(st->composer_page))); *p != '\0'; i++) {
             const char* name = lib_next(p);
-            if (in_rect(lib_row_rect(d, mn, i + 1u), x, y)) {
+            if (lib_row_hit(d, mn, i + 1u, x, y)) {
                 return desk_play_path(d, p);
             }
             p = lib_next(name);
@@ -3128,7 +3225,8 @@ static int library_click(desk* d, int32_t x, int32_t y) {
     }
     for (p = st->composers; *p != '\0'; i++) {
         const char* disp = lib_next(p);
-        if (in_rect(lib_row_rect(d, mn, i), x, y)) {
+        if (lib_row_hit(d, mn, i, x, y)) {
+            d->lib_q16 = 0;
             desk_composer_request(line, sizeof line, p);
             return desk_send(d, line);
         }
@@ -3525,6 +3623,7 @@ static void desk_page_load(desk* d, desk_page pg) {
         desk_send(d, "VIEW_SOURCE home");
         desk_send(d, "VIEW_WINDOW 32");
     } else if (pg == PG_LIBRARY) {
+        d->lib_q16 = 0;
         desk_send(d, "VIEW_SHOW browse");
         const sel_state* st = sel_engine_state(d->engine);
         if (st->composer_page != NULL) { /* inside a drilldown (a finished scan lands here): re-issue it, so the user stays and sees new songs */
@@ -5018,6 +5117,9 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
             d->si_y_q16 = v < 0 ? 0 : (v > max_q16 ? max_q16 : (int32_t)v);
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
             return 1;
+        }
+        if (d->page == PG_LIBRARY && sel_engine_state(d->engine)->composers != NULL) {
+            return lib_wheel(d, ev->dy);
         }
         if (d->songs) {
             sel_gui_rect mn = region_rect(d, "main");

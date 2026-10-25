@@ -263,8 +263,8 @@ struct sel_engine {
     uint32_t folder_ops;                       /* FOLDER_* / PLAYLIST_MOVE commands run against the library (I178) */
     uint32_t links_parsed, links_made;         /* share links OPEN parsed / SHARE wrote (I180 sentinels) */
     char stats[2048];                          /* rows of the open stats screen, "label\0value\0" pairs (I192) */
-    char composers[4096];                      /* DUI-P4-3 library page: "canon\0display\0songs\0" per composer, then "\0" */
-    char composer_page[4096];                  /* the drilled-into composer: "canon\0display\0songs\0" then "key\0name\0" per song, then "\0" */
+    char* composers;                           /* DUI-P4-3 library page: "canon\0display\0songs\0" per composer, then "\0"; grown to the library (I303), NULL before the first COMPOSERS_SHOW */
+    char* composer_page;                       /* the drilled-into composer: "canon\0display\0songs\0" then "key\0name\0" per song, then "\0"; grown to its songs (I303), NULL: none */
     uint32_t composers_open, composer_queries; /* the Library page is up / queries made against the library for it */
     uint32_t stats_open, stats_queries;        /* the screen is up / queries made against the stats views (I192 sentinel) */
     char panel[1024];                          /* catalogue rows of the open song, "label\0value\0" pairs (I185) */
@@ -4034,22 +4034,58 @@ static void cmd_STATS_SHOW(sel_engine* e, const sel_message* m) {
     e->stats_open = 1;
 }
 
+/* A composer string block grows with the library: a fixed buffer cut a large library silently (I303), so the fill
+ * doubles its heap block on demand. A failed allocation keeps what fits. */
 typedef struct composer_fill {
+    const sel_host* host;
     char* buf;
     size_t cap, used;
     uint32_t n;
 } composer_fill;
 
+/* The shared empty block ("\0\0") of a library with no composers; never freed. */
+static char k_composers_empty[2];
+
+static void composer_release(const sel_host* host, char** blk) {
+    if (*blk != NULL && *blk != k_composers_empty) {
+        host->mem_free(host, *blk);
+    }
+    *blk = NULL;
+}
+
+/* Room for `need` more bytes plus the closing NUL; 0 when the host has no memory. */
+static int composer_reserve(composer_fill* f, size_t need) {
+    size_t want = f->used + need + 1u, cap;
+    char* nb;
+    if (want <= f->cap) return 1;
+    cap = f->cap ? f->cap * 2u : 1024u;
+    while (cap < want) cap *= 2u;
+    nb = f->host->mem_alloc(f->host, cap, SEL_MEM_FAST);
+    if (nb == NULL) return 0;
+    if (f->buf != NULL) {
+        memcpy(nb, f->buf, f->used + 1u);
+        f->host->mem_free(f->host, f->buf);
+    }
+    f->buf = nb;
+    f->cap = cap;
+    return 1;
+}
+
 static void composer_put(composer_fill* f, const char* const* parts, unsigned count) {
-    size_t need = 1u, i;
+    size_t need = 0u, i;
     for (i = 0; i < count; i++) need += strlen(parts[i]) + 1u;
-    if (f->used + need > f->cap) return;
+    if (!composer_reserve(f, need)) return;
     for (i = 0; i < count; i++) {
         size_t l = strlen(parts[i]) + 1u;
         memcpy(f->buf + f->used, parts[i], l);
         f->used += l;
     }
     f->buf[f->used] = '\0';
+}
+
+/* The finished block, or the shared empty one when nothing was written. */
+static char* composer_take(composer_fill* f) {
+    return f->buf != NULL ? f->buf : k_composers_empty;
 }
 
 static void composer_list_row(void* ctx, const char* canon, const char* display, uint32_t songs) {
@@ -4076,28 +4112,28 @@ static void composer_page_row(void* ctx, const char* key, const char* name, cons
  * drilldown page of that composer (its songs and their count, from the library's composer page). */
 static void cmd_COMPOSERS_SHOW(sel_engine* e, const sel_message* m) {
     composer_fill f;
+    char want[SEL_COMPOSER_MAX]; /* the argument may point into the blocks released below */
     if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", "COMPOSERS_SHOW");
         return;
     }
     e->composer_queries++;
-    e->composers[0] = e->composers[1] = '\0';
-    f.buf = e->composers;
-    f.cap = sizeof e->composers - 1u;
-    f.used = 0;
-    f.n = 0;
-    if (sel_library_composer_list(e->lib, composer_list_row, &f) < 0) e->composers[0] = '\0';
-    e->composer_page[0] = '\0';
-    if (m->argc > 0 && m->args[0].v.s[0] != '\0') {
-        const char* name = m->args[0].v.s;
-        char num[16], disp[SEL_COMPOSER_MAX], body[sizeof e->composer_page];
+    snprintf(want, sizeof want, "%s", m->argc > 0 ? m->args[0].v.s : "");
+    composer_release(e->host, &e->composers);
+    composer_release(e->host, &e->composer_page);
+    memset(&f, 0, sizeof f);
+    f.host = e->host;
+    if (sel_library_composer_list(e->lib, composer_list_row, &f) < 0) {
+        composer_release(e->host, &f.buf);
+    }
+    e->composers = composer_take(&f);
+    if (want[0] != '\0') {
+        const char* name = want;
+        char num[16], disp[SEL_COMPOSER_MAX];
         const char* parts[3];
         composer_fill p;
-        p.buf = body;
-        p.cap = sizeof body - 1u;
-        p.used = 0;
-        p.n = 0;
-        body[0] = '\0';
+        memset(&p, 0, sizeof p);
+        p.host = e->host;
         sel_library_composer_page(e->lib, name, composer_page_row, &p);
         if (p.n > 0) {
             const char* r;
@@ -4114,12 +4150,17 @@ static void cmd_COMPOSERS_SHOW(sel_engine* e, const sel_message* m) {
             parts[0] = name; /* the canon first: a refresh re-issues COMPOSERS_SHOW with it (I302) */
             parts[1] = disp;
             parts[2] = num;
-            f.buf = e->composer_page;
-            f.cap = sizeof e->composer_page - 1u;
-            f.used = 0;
+            memset(&f, 0, sizeof f);
+            f.host = e->host;
             composer_put(&f, parts, 3);
-            if (f.used + p.used + 1u <= sizeof e->composer_page) memcpy(e->composer_page + f.used, body, p.used + 1u);
+            if (f.buf != NULL && composer_reserve(&f, p.used)) {
+                memcpy(f.buf + f.used, p.buf, p.used + 1u);
+                e->composer_page = f.buf;
+            } else {
+                composer_release(e->host, &f.buf);
+            }
         }
+        composer_release(e->host, &p.buf);
     }
     e->composers_open = 1;
 }
@@ -4932,6 +4973,8 @@ void sel_engine_destroy(sel_engine* e) {
         sel_spsc_free(&e->ret_q, e->host);
         sel_queue_free(&e->queue, e->host);
         sel_history_free(&e->history, e->host);
+        composer_release(e->host, &e->composers);
+        composer_release(e->host, &e->composer_page);
         if (e->order) {
             e->host->mem_free(e->host, e->order);
         }
@@ -5069,7 +5112,7 @@ static void refresh_snapshot(sel_engine* e) {
     }
     e->state.stats = e->stats_open ? e->stats : NULL;
     e->state.composers = e->composers_open ? e->composers : NULL;
-    e->state.composer_page = e->composers_open && e->composer_page[0] != '\0' ? e->composer_page : NULL;
+    e->state.composer_page = e->composers_open ? e->composer_page : NULL;
     e->state.panel = e->panel_rows > 0 ? e->panel : NULL;
     e->state.panel_rows = e->panel_rows;
     e->state.panel_serial = e->panel_loads;
