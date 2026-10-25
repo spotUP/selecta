@@ -108,6 +108,12 @@ typedef struct desk {
     int pl_edit;             /* 1 while the name field has the keyboard */
     char pl_name[64];
     size_t pl_nlen;
+    int si_page;             /* --view songinfo: the main region shows the Song Information page (DUI-P4-10) */
+    int si_edit;             /* 1 while the note field has the keyboard */
+    uint32_t si_sig, si_acc; /* hash of the info rows: a change redraws the page */
+    uint32_t si_draws, si_rows, si_cmds; /* frames drawn (sentinel), info rows in the last one, verbs sent */
+    char si_note[96];
+    size_t si_nlen;
     uint32_t queue_draws, queue_rows, queue_cmds; /* Queue page frames drawn (sentinel), rows in the last one, verbs it sent */
     uint32_t np_rows;        /* metadata pairs the Now Playing panel drew: STAT_META_PANEL_ROWS (DUI-P4-7) */
     uint32_t np_draws;       /* Now Playing panel draws (sentinel) */
@@ -1705,6 +1711,166 @@ static int pl_key(desk* d, const sel_gui_input* ev) {
     return desk_present(d);
 }
 
+/* ---- Song Information page (DUI-P4-10): module info (the replayer's metadata tags), the catalogue rows of the open song
+ * (STIL note, composer, release, year, genre, rating, play count: sel_state.panel) and the flag buttons. The engine owns
+ * the flags and the note (FLAG wrong, FLAG skip, NOTE: the library flags table, the rows `selecta-cli wrong` lists); the
+ * page draws the data and sends those verbs for the song being played. */
+enum { SI_BUTTONS = 3, SI_ROW_H = 20 };
+
+static const char* si_button_label(uint32_t k) {
+    return k == 0u ? "Mark Wrong" : k == 1u ? "Skip Song" : "Save Note";
+}
+
+static void si_clean(char* val) {
+    uint32_t i;
+    for (i = 0; val[i] != '\0'; i++) {
+        if ((unsigned char)val[i] < 32u) {
+            val[i] = ' ';
+        }
+    }
+}
+
+/* Calls emit(d, label, value, row index) for every info row in order: the metadata tags, then the panel pairs. The
+ * drawing and the geometry dump share this walk, so the dumped rows are the drawn rows. */
+static uint32_t si_walk(desk* d, const sel_state* st, void (*emit)(desk*, const char*, const char*, uint32_t)) {
+    const uintptr_t absent = (uintptr_t)-1;
+    uint32_t n = 0, tag;
+    char label[32], val[160];
+    for (tag = SEL_META_TITLE; sel_tag_name(tag) != NULL; tag++) {
+        uintptr_t v = sel_tag_find(st->song.meta, tag, absent);
+        sel_tag_type type = SEL_TT_INT;
+        if (v == absent || !sel_tag_type_of(tag, &type)) {
+            continue;
+        }
+        if (type == SEL_TT_STR) {
+            snprintf(val, sizeof val, "%s", (const char*)v);
+        } else {
+            snprintf(val, sizeof val, "%lu", (unsigned long)v);
+        }
+        si_clean(val);
+        sel_uim_tag_label(tag, label, sizeof label);
+        emit(d, label, val, n++);
+    }
+    if (st->panel != NULL) {
+        const char* p = st->panel;
+        while (*p != '\0') {
+            const char* value = p + strlen(p) + 1;
+            snprintf(val, sizeof val, "%s", value);
+            si_clean(val);
+            emit(d, p, val, n++);
+            p = value + strlen(value) + 1;
+        }
+    }
+    return n;
+}
+
+static void si_draw_row(desk* d, const char* label, const char* value, uint32_t i) {
+    sel_gui_rect mn = region_rect(d, "main");
+    int32_t y = mn.y + lpx(d, PL_LIST_Y) + (int32_t)i * lpx(d, SI_ROW_H), half = lpx(d, 160);
+    if (y + lpx(d, SI_ROW_H) > mn.y + mn.h) {
+        return;
+    }
+    draw_text(d, rect_of(mn.x + lpx(d, HOME_MARGIN), y, half, lpx(d, SI_ROW_H)), label, 0, 12, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+    draw_text(d, rect_of(mn.x + lpx(d, HOME_MARGIN) + half, y, mn.w - 2 * lpx(d, HOME_MARGIN) - half, lpx(d, SI_ROW_H)), value, 0, 13,
+              ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    d->si_rows++;
+}
+
+static void si_hash_row(desk* d, const char* label, const char* value, uint32_t i) {
+    const char* s;
+    for (s = label; *s != '\0'; s++) {
+        d->si_acc = (d->si_acc ^ (unsigned char)*s) * 16777619u;
+    }
+    for (s = value; *s != '\0'; s++) {
+        d->si_acc = (d->si_acc ^ (unsigned char)*s) * 16777619u;
+    }
+    d->si_acc = (d->si_acc ^ i) * 16777619u;
+}
+
+static void si_dump_row(desk* d, const char* label, const char* value, uint32_t i) {
+    size_t o = strlen(d->library_dump);
+    if (o + 400u < sizeof d->library_dump) {
+        snprintf(d->library_dump + o, sizeof d->library_dump - o, "sirow %u %s|%s\n", (unsigned)i, label, value);
+    }
+}
+
+static void draw_songinfo(desk* d) {
+    const sel_state* st = sel_engine_state(d->engine);
+    sel_gui_rect mn = draw_panel(d, "main"), nm = pl_name_rect(d, mn);
+    int32_t mg = lpx(d, HOME_MARGIN), rad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]);
+    uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+    uint32_t surf = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]);
+    uint32_t i;
+    sel_gui_clip_push(d->canvas, mn);
+    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Song Information", 1, 28, text);
+    for (i = 0; i < SI_BUTTONS; i++) {
+        sel_gui_rect b = queue_btn_rect(d, mn, i);
+        sel_gui_round_rect(d->canvas, b, rad, surf);
+        draw_text(d, b, si_button_label(i), 1, 13, text);
+    }
+    sel_gui_round_rect(d->canvas, nm, rad, surf);
+    draw_text(d, rect_of(nm.x + lpx(d, 12), nm.y, nm.w - lpx(d, 24), nm.h), d->si_nlen > 0u ? d->si_note : "Note", d->si_edit, 13,
+              d->si_nlen > 0u ? text : muted);
+    d->si_rows = 0;
+    si_walk(d, st, si_draw_row);
+    d->si_draws++;
+    sel_gui_clip_pop(d->canvas);
+    sel_gui_dirty_add(d->canvas, mn);
+}
+
+static int si_send(desk* d, const char* line) {
+    d->si_cmds++;
+    return desk_send(d, line);
+}
+
+/* A click: a flag button (the note field's text goes with Mark Wrong and Save Note) or the note field. */
+static int si_pointer(desk* d, const sel_gui_input* ev) {
+    sel_gui_rect mn = region_rect(d, "main");
+    char line[160];
+    uint32_t k;
+    if (ev->kind != SEL_GUI_IN_CLICK || ev->button != 0u) {
+        return 0;
+    }
+    for (k = 0; k < SI_BUTTONS; k++) {
+        if (in_rect(queue_btn_rect(d, mn, k), ev->x, ev->y)) {
+            if (k == 1u) {
+                snprintf(line, sizeof line, "FLAG skip");
+            } else if (k == 0u) {
+                snprintf(line, sizeof line, d->si_nlen > 0u ? "FLAG wrong \"%s\"" : "FLAG wrong", d->si_note);
+            } else {
+                snprintf(line, sizeof line, d->si_nlen > 0u ? "NOTE \"%s\"" : "NOTE", d->si_note);
+            }
+            d->si_edit = 0;
+            return si_send(d, line);
+        }
+    }
+    d->si_edit = in_rect(pl_name_rect(d, mn), ev->x, ev->y);
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    return 1;
+}
+
+/* A typed key while the note field is focused: printable keys append, Backspace deletes, Enter and Escape leave. */
+static int si_key(desk* d, const sel_gui_input* ev) {
+    if (ev->code == 13u || ev->code == 27u) {
+        d->si_edit = 0;
+    } else if (ev->code == 127u) {
+        if (d->si_nlen > 0u) {
+            d->si_note[--d->si_nlen] = '\0';
+        }
+    } else if (ev->code >= 32u && ev->code < 127u && ev->code != '"' && (ev->mods & (TXT_MOD_CTRL | TXT_MOD_ALT)) == 0u) {
+        if (d->si_nlen + 1u < sizeof d->si_note) {
+            d->si_note[d->si_nlen++] = (char)ev->code;
+            d->si_note[d->si_nlen] = '\0';
+        }
+    } else {
+        return 0;
+    }
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    return desk_present(d);
+}
+
 static const char* lib_kind_name(uint32_t kind) {
     switch (kind) {
     case SEL_ROW_NODE: return "node";
@@ -1800,6 +1966,20 @@ static const char* library_dump_build(desk* d) {
                                   pv->rows[i].kind == (uint32_t)SEL_ROW_FOLDER ? "folder" : "playlist", (unsigned)pv->rows[i].id,
                                   (unsigned)pv->rows[i].depth, pv->rows[i].text);
         }
+    }
+    if (d->si_page) { /* the Song Information page geometry and rows (DUI-P4-10) */
+        sel_gui_rect smn = region_rect(d, "main"), sn = pl_name_rect(d, smn);
+        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "si draws %u rows %u cmds %u\n", (unsigned)d->si_draws,
+                              (unsigned)d->si_rows, (unsigned)d->si_cmds);
+        for (i = 0; i < SI_BUTTONS; i++) {
+            sel_gui_rect b = queue_btn_rect(d, smn, i);
+            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "sibtn %u %d %d %d %d\n", (unsigned)i, (int)b.x,
+                                  (int)b.y, (int)b.w, (int)b.h);
+        }
+        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "sinote 0 %d %d %d %d\n", (int)sn.x, (int)sn.y, (int)sn.w,
+                              (int)sn.h);
+        si_walk(d, st, si_dump_row);
+        o = strlen(d->library_dump);
     }
     if (d->queue_page) { /* the Queue page geometry and queue state (DUI-P4-8) */
         sel_engine_stats qs;
@@ -2222,6 +2402,10 @@ static void draw_home_content(desk* d) {
     }
     if (d->pl_page) {
         draw_playlists(d);
+        return;
+    }
+    if (d->si_page) {
+        draw_songinfo(d);
         return;
     }
     sel_gui_rect mn = draw_panel(d, "main");
@@ -2992,6 +3176,9 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
     if (d->pl_page && d->pl_edit) { /* the name field of the Playlists page has the keyboard */
         return pl_key(d, ev);
     }
+    if (d->si_page && d->si_edit) { /* the note field of the Song Information page has the keyboard */
+        return si_key(d, ev);
+    }
     if (d->focus == (int32_t)d->layout.count) { /* the search field is focused */
         if (ev->code == 27u) {
             d->search_pending = 0; /* Escape leaves without a search */
@@ -3122,6 +3309,9 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
     }
     if (d->pl_page) {
         return in_main ? pl_pointer(d, ev) : 0;
+    }
+    if (d->si_page) {
+        return in_main ? si_pointer(d, ev) : 0;
     }
     if (!d->songs) {
         if (ev->kind == SEL_GUI_IN_CLICK && d->tile_menu > 0) {
@@ -3820,8 +4010,11 @@ static void* desk_open(const sel_ui_open_args* a) {
         } else if (strcmp(view, "playlists") == 0) { /* the Playlists page (DUI-P4-9) */
             d->home = 1;
             d->pl_page = 1;
+        } else if (strcmp(view, "songinfo") == 0) { /* the Song Information page (DUI-P4-10) */
+            d->home = 1;
+            d->si_page = 1;
         } else {
-            fprintf(stderr, "selecta: desktop view '%s' is not testcard, text, home, library, songs, queue, playlists or widgets\n", view);
+            fprintf(stderr, "selecta: desktop view '%s' is not testcard, text, home, library, songs, queue, playlists, songinfo or widgets\n", view);
             a->host->mem_free(a->host, d);
             return NULL;
         }
@@ -3967,6 +4160,14 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
     if (lib_hash(d, sel_engine_state(d->engine)) != d->library_sig && sel_engine_state(d->engine)->composers != NULL) {
         d->library_sig = lib_hash(d, sel_engine_state(d->engine)); /* the Library page changed: redraw */
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    }
+    if (d->si_page) { /* the metadata and panel rows arrive after the song opens: redraw when they change */
+        d->si_acc = 2166136261u;
+        si_walk(d, sel_engine_state(d->engine), si_hash_row);
+        if (d->si_acc != d->si_sig) {
+            d->si_sig = d->si_acc;
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        }
     }
     if (d->home && sel_engine_state(d->engine)->view != NULL) { /* HOME rows arrived or changed: redraw */
         const sel_view_state* hv = sel_engine_state(d->engine)->view;

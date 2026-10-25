@@ -1,0 +1,110 @@
+# dui-songinfo (DUI-P4-10): the desktop Song Information page, through the real shell and the scripted --input feeder.
+#   -DSELECTA -DSONGS -DWORK -DGOLDEN
+# 1. The page draws the open song's module info (sentinel `si draws`, `sirow` lines) and sends no verb while idle.
+# 2. Typing a note and clicking Mark Wrong sends exactly one FLAG verb (sentinel `si cmds`) and the row lands in the library:
+#    `selecta-cli wrong --export` lists the song with that note. Skip Song and Save Note each send one verb too.
+# 3. Without a note the Mark Wrong button still flags the song (empty note), so the export is a pure effect of the clicks.
+# 4. A golden pins the frame of the untouched page.
+get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+include("${HERE}/dui_run.cmake")
+get_filename_component(BINDIR "${SELECTA}" DIRECTORY)
+set(CLI "${BINDIR}/../selecta-cli/selecta-cli")
+file(REMOVE_RECURSE "${WORK}")
+file(MAKE_DIRECTORY "${WORK}")
+configure_file("${SONGS}/selecta-test.mod" "${WORK}/one.mod" COPYONLY)
+
+function(expect_eq what got want)
+  if(NOT "${got}" STREQUAL "${want}")
+    message(FATAL_ERROR "${what}: got '${got}', expected '${want}'")
+  endif()
+endfunction()
+
+# si_run(<tag> <input script>) opens the song on the library file DB and runs the page; sets <tag>_out, _draws, _rows, _cmds.
+function(si_run tag input)
+  file(WRITE "${WORK}/${tag}.txt" "${input}")
+  dui_run(o --ui desktop --backend mem --view songinfo --canvas 1280x800 --clock fixed --stats --db "${DB}"
+    --exec "OPEN ${WORK}/one.mod" --input "${WORK}/${tag}.txt")
+  if(NOT "${o}" MATCHES "si draws ([0-9]+) rows ([0-9]+) cmds ([0-9]+)")
+    message(FATAL_ERROR "no si sentinel in:\n${o}")
+  endif()
+  set(${tag}_draws "${CMAKE_MATCH_1}" PARENT_SCOPE)
+  set(${tag}_rows "${CMAKE_MATCH_2}" PARENT_SCOPE)
+  set(${tag}_cmds "${CMAKE_MATCH_3}" PARENT_SCOPE)
+  set(${tag}_out "${o}" PARENT_SCOPE)
+  dui_stat(h "${o}" desktop canvas_hash)
+  set(${tag}_canvas "${h}" PARENT_SCOPE)
+endfunction()
+
+function(centre_of outvar dump key idx)
+  if(NOT "${dump}" MATCHES "${key} ${idx} ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)")
+    message(FATAL_ERROR "no ${key} ${idx} geometry in:\n${dump}")
+  endif()
+  math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+  math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+  set(${outvar} "${cx} ${cy}" PARENT_SCOPE)
+endfunction()
+
+function(type_text outvar word)
+  set(s "")
+  string(LENGTH "${word}" n)
+  math(EXPR last "${n} - 1")
+  foreach(i RANGE 0 ${last})
+    string(SUBSTRING "${word}" ${i} 1 c)
+    string(APPEND s "key ${c}\n")
+  endforeach()
+  set(${outvar} "${s}" PARENT_SCOPE)
+endfunction()
+
+# wrong_list(<out var> <db>) is the text selecta-cli wrong exports for the library file.
+function(wrong_list outvar db)
+  set(f "${WORK}/sounds-wrong.txt")
+  file(REMOVE "${f}")
+  execute_process(COMMAND "${CLI}" wrong --db "${db}" --export "${f}" RESULT_VARIABLE rc ERROR_VARIABLE err OUTPUT_VARIABLE so)
+  if(NOT rc EQUAL 0 OR NOT EXISTS "${f}")
+    message(FATAL_ERROR "selecta-cli wrong failed (${rc}): ${err}${so}")
+  endif()
+  file(READ "${f}" txt)
+  set(${outvar} "${txt}" PARENT_SCOPE)
+endfunction()
+
+set(DB "${WORK}/lib.db")
+si_run(a "wait 100\n")
+if(a_draws LESS 1)
+  message(FATAL_ERROR "the Song Information page did not draw (si draws ${a_draws})")
+endif()
+expect_eq("verbs sent by an idle page" "${a_cmds}" 0)
+if(a_rows LESS 1 OR NOT "${a_out}" MATCHES "\nsirow 0 ")
+  message(FATAL_ERROR "the page shows no module info rows (rows ${a_rows}) in:\n${a_out}")
+endif()
+wrong_list(none "${DB}")
+if(NOT "${none}" STREQUAL "")
+  message(FATAL_ERROR "the idle page flagged a song: ${none}")
+endif()
+centre_of(btn_wrong "${a_out}" sibtn 0)
+centre_of(btn_skip "${a_out}" sibtn 1)
+centre_of(btn_note "${a_out}" sibtn 2)
+centre_of(note "${a_out}" sinote 0)
+type_text(t_note hiss)
+
+# 2. a note, then Mark Wrong: one verb, and the CLI lists the row with the note
+si_run(b "click ${note}\n${t_note}key 13\nclick ${btn_wrong}\nwait 100\n")
+expect_eq("verbs sent by typing a note and Mark Wrong" "${b_cmds}" 1)
+wrong_list(listed "${DB}")
+if(NOT "${listed}" MATCHES "one\\.mod\thiss\n")
+  message(FATAL_ERROR "selecta-cli wrong does not list the flagged song with its note, it printed: '${listed}'")
+endif()
+
+# Skip Song and Save Note: one verb each
+si_run(c "click ${btn_skip}\nwait 100\nclick ${note}\n${t_note}key 13\nclick ${btn_note}\nwait 100\n")
+expect_eq("verbs sent by Skip Song and Save Note" "${c_cmds}" 2)
+
+# 4. the golden of the untouched page
+set(gfile "${GOLDEN}/desktop/songinfo-rgba32-1280x800@1.hash")
+if("$ENV{SELECTA_GOLDEN_UPDATE}" STREQUAL "1")
+  file(WRITE "${gfile}" "${a_canvas}\n")
+endif()
+if(NOT EXISTS "${gfile}")
+  message(FATAL_ERROR "missing golden ${gfile} (hash ${a_canvas}); create it with SELECTA_GOLDEN_UPDATE=1")
+endif()
+file(STRINGS "${gfile}" want LIMIT_COUNT 1)
+expect_eq("songinfo frame hash vs golden ${gfile}" "${a_canvas}" "${want}")
