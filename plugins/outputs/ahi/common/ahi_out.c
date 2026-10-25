@@ -16,7 +16,9 @@ typedef struct ahi_out {
     int16_t* pcm[2];
     sel_pcm_pull pull;
     void* pull_ctx;
-    sel_tag stats[6];
+    uint32_t decode_ms;
+    uint32_t wait_ms;
+    sel_tag stats[8];
 } ahi_out;
 
 void* sel_ahi_out_open(const sel_ahi_backend* be, const sel_host* host, uint32_t rate, uint32_t channels) {
@@ -57,7 +59,11 @@ static void submit(ahi_out* s, uint32_t frames) {
     s->frames += frames;
     s->cur ^= 1u;
     s->have = 0;
-    s->be->wait(s->dev, s->cur); /* the buffer to fill next must be free: this paces the pump */
+    { /* the buffer to fill next must be free: this paces the pump (STAT_AHI_WAIT_MS sums the time blocked here, I124) */
+        uint32_t t0 = s->host->clock_ms != NULL ? s->host->clock_ms(s->host) : 0u;
+        s->be->wait(s->dev, s->cur);
+        s->wait_ms += s->host->clock_ms != NULL ? s->host->clock_ms(s->host) - t0 : 0u;
+    }
 }
 
 static void out_close(void* state) {
@@ -93,7 +99,9 @@ static uint32_t out_pump(void* state, uint32_t frames) {
         if (want > s->buf_frames - s->have) {
             want = s->buf_frames - s->have;
         }
+        uint32_t t0 = s->host->clock_ms != NULL ? s->host->clock_ms(s->host) : 0u;
         got = s->pull(s->pull_ctx, s->pcm[s->cur] + s->have * 2u, want);
+        s->decode_ms += s->host->clock_ms != NULL ? s->host->clock_ms(s->host) - t0 : 0u;
         if (got == 0) {
             break;
         }
@@ -119,6 +127,10 @@ static const sel_tag* out_stats(void* state) {
     s->stats[n++].value = s->buf_frames;
     s->stats[n].tag = SEL_OUT_STAT_AHI_RATE;
     s->stats[n++].value = s->rate;
+    s->stats[n].tag = SEL_OUT_STAT_AHI_DECODE_MS;
+    s->stats[n++].value = s->decode_ms;
+    s->stats[n].tag = SEL_OUT_STAT_AHI_WAIT_MS;
+    s->stats[n++].value = s->wait_ms;
     s->stats[n].tag = SEL_TAG_END;
     s->stats[n].value = 0;
     return s->stats;

@@ -129,7 +129,7 @@ int sel_cli_render(int argc, char** argv) {
     uint32_t led_on = 0, width = 100, stage_flag = 0;
     sel_engine* e;
     void* out;
-    uint32_t total, pumped = 0;
+    uint32_t total, pumped = 0, pump_t0;
     int i;
 
     /* Options are `--name value` pairs in any order; the first other argument is the song. */
@@ -308,6 +308,7 @@ int sel_cli_render(int argc, char** argv) {
         }
     }
     total = (uint32_t)(seconds * rate);
+    pump_t0 = host.clock_ms(&host);
     fputs("SEL_ALLOC_FREEZE\n", stderr);
     fflush(stderr);
     while (pumped < total) {
@@ -336,6 +337,8 @@ int sel_cli_render(int argc, char** argv) {
         }
     }
     fputs("SEL_ALLOC_THAW\n", stderr);
+    /* Wall time of the pump loop, on stderr: stdout carries only deterministic counters (render_check.cmake) (I124). */
+    fprintf(stderr, "pump_ms=%u frames=%u\n", (unsigned)(host.clock_ms(&host) - pump_t0), (unsigned)pumped);
     fflush(stderr);
 
     sel_engine_pump(e, render_sink, &ctx);
@@ -390,6 +393,8 @@ int sel_cli_render(int argc, char** argv) {
             printf("output=%s ahi_bufs=%u underruns=%u ahi_buffer_frames=%u ahi_rate=%u\n", out_id,
                    (unsigned)sel_tag_find(st, SEL_OUT_STAT_AHI_BUFS, 0), (unsigned)sel_tag_find(st, SEL_OUT_STAT_AHI_UNDERRUNS, 0),
                    (unsigned)sel_tag_find(st, SEL_OUT_STAT_AHI_BUFFER, 0), (unsigned)sel_tag_find(st, SEL_OUT_STAT_AHI_RATE, 0));
+            printf("output=%s ahi_decode_ms=%u ahi_wait_ms=%u\n", out_id, (unsigned)sel_tag_find(st, SEL_OUT_STAT_AHI_DECODE_MS, 0),
+                   (unsigned)sel_tag_find(st, SEL_OUT_STAT_AHI_WAIT_MS, 0));
         }
         digest = (const char*)sel_tag_find(st, SEL_OUT_STAT_P14_HASH, 0);
         if (digest != NULL) {
