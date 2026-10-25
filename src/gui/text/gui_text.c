@@ -123,7 +123,7 @@ static int32_t draw_run(sel_gui_canvas* c, const sel_gui_atlas* at, int32_t x, i
         if (prev != 0u) {
             pen += kern_of(at, prev, cp);
         }
-        if (g->w > 0u && g->h > 0u) {
+        if (c != NULL && g->w > 0u && g->h > 0u) {
             sel_gui_blit_mask(c, pen + g->bx, y + at->ascent + g->by, at->alpha + (size_t)g->y * (size_t)at->page_w + g->x,
                               g->w, g->h, at->page_w, argb);
             if (st != NULL && g != &at->missing) {

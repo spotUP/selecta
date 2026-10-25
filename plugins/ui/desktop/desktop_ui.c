@@ -128,6 +128,7 @@ typedef struct desk {
     int si_page;             /* --view songinfo: the main region shows the Song Information page (DUI-P4-10) */
     int si_edit;             /* 1 while the note field has the keyboard */
     uint32_t si_sig, si_acc; /* hash of the info rows: a change redraws the page */
+    int32_t si_y_q16, si_cy; /* I298: the info list scroll offset (Q16 logical pixels) and the walk's running content y (device px) */
     uint32_t si_draws, si_rows, si_cmds; /* frames drawn (sentinel), info rows in the last one, verbs sent */
     char si_note[96];
     size_t si_nlen;
@@ -1938,7 +1939,7 @@ static const char* si_button_label(uint32_t k) {
 static void si_clean(char* val) {
     uint32_t i;
     for (i = 0; val[i] != '\0'; i++) {
-        if ((unsigned char)val[i] < 32u) {
+        if ((unsigned char)val[i] < 32u && val[i] != '\n') { /* I298: a newline stays, the page wraps at it */
             val[i] = ' ';
         }
     }
@@ -1949,7 +1950,7 @@ static void si_clean(char* val) {
 static uint32_t si_walk(desk* d, const sel_state* st, void (*emit)(desk*, const char*, const char*, uint32_t)) {
     const uintptr_t absent = (uintptr_t)-1;
     uint32_t n = 0, tag;
-    char label[32], val[160];
+    char label[32], val[2048];
     for (tag = SEL_META_TITLE; sel_tag_name(tag) != NULL; tag++) {
         uintptr_t v = sel_tag_find(st->song.meta, tag, absent);
         sel_tag_type type = SEL_TT_INT;
@@ -1978,15 +1979,47 @@ static uint32_t si_walk(desk* d, const sel_state* st, void (*emit)(desk*, const 
     return n;
 }
 
+/* I298: a value wraps into the value column and the row grows to its lines; the list scrolls by wheel. */
+static int32_t si_value_w(desk* d, sel_gui_rect mn) {
+    return mn.w - 2 * lpx(d, HOME_MARGIN) - lpx(d, 160);
+}
+
+static int32_t si_lines(desk* d, sel_gui_rect mn, const char* value) {
+    const sel_gui_atlas* at = desk_font(d, 0, 13);
+    int32_t n = sel_gui_text_wrap(NULL, at, rect_of(0, 0, si_value_w(d, mn), 0), value, 0u, 1 << 20, NULL); /* NULL canvas: count only */
+    return n < 1 ? 1 : n;
+}
+
+static int32_t si_row_h(desk* d, sel_gui_rect mn, const char* value) {
+    int32_t h = si_lines(d, mn, value) * desk_font(d, 0, 13)->line_height;
+    return h > lpx(d, SI_ROW_H) ? h : lpx(d, SI_ROW_H);
+}
+
+static int32_t si_list_top(desk* d, sel_gui_rect mn) {
+    return mn.y + lpx(d, PL_LIST_Y);
+}
+
+/* Screen top of the row the walk is at (si_cy is the content y above it), after the scroll. */
+static int32_t si_row_y(desk* d, sel_gui_rect mn) {
+    return si_list_top(d, mn) + d->si_cy - (d->si_y_q16 >> 16) * (d->scale > 0 ? d->scale : 1);
+}
+
 static void si_draw_row(desk* d, const char* label, const char* value, uint32_t i) {
     sel_gui_rect mn = region_rect(d, "main");
-    int32_t y = mn.y + lpx(d, PL_LIST_Y) + (int32_t)i * lpx(d, SI_ROW_H), half = lpx(d, 160);
-    if (y + lpx(d, SI_ROW_H) > mn.y + mn.h) {
+    int32_t h = si_row_h(d, mn, value), y = si_row_y(d, mn), half = lpx(d, 160);
+    (void)i;
+    d->si_cy += h;
+    if (y + h <= si_list_top(d, mn) || y >= mn.y + mn.h) {
         return;
     }
     draw_text(d, rect_of(mn.x + lpx(d, HOME_MARGIN), y, half, lpx(d, SI_ROW_H)), label, 0, 12, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
-    draw_text(d, rect_of(mn.x + lpx(d, HOME_MARGIN) + half, y, mn.w - 2 * lpx(d, HOME_MARGIN) - half, lpx(d, SI_ROW_H)), value, 0, 13,
-              ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    if (si_lines(d, mn, value) > 1) {
+        sel_gui_text_wrap(d->canvas, desk_font(d, 0, 13), rect_of(mn.x + lpx(d, HOME_MARGIN) + half, y, si_value_w(d, mn), h), value,
+                          ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), 1 << 20, &d->text);
+    } else {
+        draw_text(d, rect_of(mn.x + lpx(d, HOME_MARGIN) + half, y, si_value_w(d, mn), lpx(d, SI_ROW_H)), value, 0, 13,
+                  ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    }
     d->si_rows++;
 }
 
@@ -2001,11 +2034,41 @@ static void si_hash_row(desk* d, const char* label, const char* value, uint32_t 
     d->si_acc = (d->si_acc ^ i) * 16777619u;
 }
 
+/* Dumps `sirow i label|value` (newlines flattened) and `sigeo i y h lines`: y is the row's screen top after the scroll. */
 static void si_dump_row(desk* d, const char* label, const char* value, uint32_t i) {
-    size_t o = strlen(d->library_dump);
-    if (o + 400u < sizeof d->library_dump) {
-        snprintf(d->library_dump + o, sizeof d->library_dump - o, "sirow %u %s|%s\n", (unsigned)i, label, value);
+    size_t o = strlen(d->library_dump), k;
+    sel_gui_rect mn = region_rect(d, "main");
+    int32_t h = si_row_h(d, mn, value), y = si_row_y(d, mn);
+    char flat[2048];
+    snprintf(flat, sizeof flat, "%s", value);
+    for (k = 0; flat[k] != '\0'; k++) {
+        flat[k] = flat[k] == '\n' ? ' ' : flat[k];
     }
+    d->si_cy += h;
+    if (o + 2600u < sizeof d->library_dump) {
+        snprintf(d->library_dump + o, sizeof d->library_dump - o, "sirow %u %s|%s\nsigeo %u %d %d %d\n", (unsigned)i, label, flat,
+                 (unsigned)i, (int)y, (int)h, (int)si_lines(d, mn, value));
+    }
+}
+
+static void si_walk_from_top(desk* d, const sel_state* st, void (*emit)(desk*, const char*, const char*, uint32_t)) {
+    d->si_cy = 0;
+    si_walk(d, st, emit);
+}
+
+static void si_count_row(desk* d, const char* label, const char* value, uint32_t i) {
+    (void)label;
+    (void)i;
+    d->si_cy += si_row_h(d, region_rect(d, "main"), value);
+}
+
+/* Largest scroll offset (logical px, Q16): the whole list height less the room under the list top. */
+static int32_t si_max_q16(desk* d) {
+    sel_gui_rect mn = region_rect(d, "main");
+    int32_t sc = d->scale > 0 ? d->scale : 1, room = mn.y + mn.h - si_list_top(d, mn), over;
+    si_walk_from_top(d, sel_engine_state(d->engine), si_count_row);
+    over = (d->si_cy - room + sc - 1) / sc;
+    return over > 0 ? over * 65536 : 0;
 }
 
 /* ---- Visualizer (DUI-P4-11) ----
@@ -2463,7 +2526,9 @@ static void draw_songinfo(desk* d) {
     draw_text(d, rect_of(nm.x + lpx(d, 12), nm.y, nm.w - lpx(d, 24), nm.h), d->si_nlen > 0u ? d->si_note : "Note", d->si_edit, 13,
               d->si_nlen > 0u ? text : muted);
     d->si_rows = 0;
-    si_walk(d, st, si_draw_row);
+    sel_gui_clip_push(d->canvas, rect_of(mn.x, si_list_top(d, mn), mn.w, mn.y + mn.h - si_list_top(d, mn)));
+    si_walk_from_top(d, st, si_draw_row);
+    sel_gui_clip_pop(d->canvas);
     d->si_draws++;
     sel_gui_clip_pop(d->canvas);
     sel_gui_dirty_add(d->canvas, mn);
@@ -2651,6 +2716,9 @@ static const char* library_dump_build(desk* d) {
         }
         o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "sinote 0 %d %d %d %d\n", (int)sn.x, (int)sn.y, (int)sn.w,
                               (int)sn.h);
+        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "sipanel %d %d\n", (int)si_list_top(d, smn),
+                              (int)(smn.y + smn.h));
+        d->si_cy = 0;
         si_walk(d, st, si_dump_row);
         o = strlen(d->library_dump);
     }
@@ -3374,6 +3442,7 @@ static void desk_page_flags(desk* d, desk_page pg) {
     d->queue_page = pg == PG_QUEUE;
     d->pl_page = pg == PG_PLAYLISTS;
     d->si_page = pg == PG_SONGINFO;
+    d->si_y_q16 = 0; /* I298: the info list starts at the top on every entry */
     d->viz_page = pg == PG_VIZ;
     d->tr_page = pg == PG_TRACKER;
     d->tr_asked = 0u;
@@ -4907,6 +4976,13 @@ static int desk_pointer(desk* d, const sel_gui_input* ev) {
  * when the picture changed. */
 static int desk_gesture(desk* d, const sel_gui_input* ev) {
     if (ev->kind == SEL_GUI_IN_WHEEL) {
+        if (d->si_page) { /* I298: the Song Information list scrolls when its rows overflow the panel */
+            int32_t max_q16 = si_max_q16(d);
+            int64_t v = (int64_t)d->si_y_q16 - (int64_t)ev->dy * SCROLL_NOTCH;
+            d->si_y_q16 = v < 0 ? 0 : (v > max_q16 ? max_q16 : (int32_t)v);
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+            return 1;
+        }
         if (d->songs) {
             sel_gui_rect mn = region_rect(d, "main");
             int32_t sc = d->scale > 0 ? d->scale : 1;
@@ -5778,9 +5854,12 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
     }
     if (d->si_page) { /* the metadata and panel rows arrive after the song opens: redraw when they change */
         d->si_acc = 2166136261u;
-        si_walk(d, sel_engine_state(d->engine), si_hash_row);
+        si_walk_from_top(d, sel_engine_state(d->engine), si_hash_row);
         if (d->si_acc != d->si_sig) {
             d->si_sig = d->si_acc;
+            if (d->si_y_q16 > si_max_q16(d)) { /* a shorter list (a new song): keep the scroll inside it */
+                d->si_y_q16 = si_max_q16(d);
+            }
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         }
     }

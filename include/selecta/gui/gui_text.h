@@ -57,7 +57,8 @@ int32_t sel_gui_text_draw(sel_gui_canvas* c, const sel_gui_atlas* at, int32_t x,
                           uint32_t argb, int32_t max_w, sel_gui_text_stats* st);
 
 /* Wraps s at spaces (a word longer than the box breaks between characters) into the box, at most max_lines lines
- * of at.line_height; the last line is ellipsized when text remains. Returns the lines drawn. */
+ * of at.line_height; the last line is ellipsized when text remains. Returns the lines drawn. A NULL canvas
+ * draws nothing and only counts the lines (I298). */
 int32_t sel_gui_text_wrap(sel_gui_canvas* c, const sel_gui_atlas* at, sel_gui_rect box, const char* s,
                           uint32_t argb, int32_t max_lines, sel_gui_text_stats* st);
 
