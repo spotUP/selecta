@@ -1146,10 +1146,11 @@ typedef struct shelf {
     uint32_t rows;  /* rows after the heading */
 } shelf;
 
-/* Splits the HOME window into shelves; 0 when the view is not the HOME source. */
+/* Splits the HOME window into shelves; 0 when the view is not the HOME source. A heading with no row under it is not a
+ * shelf (I311): it draws nothing and the shelves below move up. */
 static uint32_t home_shelves(const sel_state* st, shelf* out) {
     const sel_view_state* v = st->view;
-    uint32_t i, n = 0;
+    uint32_t i, k, n = 0;
     if (v == NULL || v->source != SEL_VIEW_HOME) {
         return 0;
     }
@@ -1168,7 +1169,12 @@ static uint32_t home_shelves(const sel_state* st, shelf* out) {
             out[n - 1u].tiles += v->rows[i].key != NULL;
         }
     }
-    return n;
+    for (i = 0, k = 0; i < n; i++) {
+        if (out[i].rows > 0u) {
+            out[k++] = out[i];
+        }
+    }
+    return k;
 }
 
 /* 1 when the HOME source holds at least one tile: the shelves replace the queue grid. */
@@ -5136,10 +5142,11 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
             return 1;
         }
         if (d->home && d->open_tile == 0 && home_shelf_mode(sel_engine_state(d->engine))) { /* the shelf under the pointer */
-            /* Rule (I247): a horizontal wheel (dx) always scrolls the shelf under the pointer sideways; a vertical wheel
-             * (dy) scrolls that shelf sideways over its tile cards and the whole Home content vertically everywhere
-             * else (shelf headings, gaps, the header block), so a tall Home stays reachable with a plain mouse wheel. */
-            if (ev->dx != 0 || shelf_over_cards(d, d->ptr_y)) {
+            /* Rule (I247, I311): a horizontal wheel (dx) always scrolls the shelf under the pointer sideways; a vertical
+             * wheel (dy) scrolls the whole Home content vertically whenever it overflows the panel, wherever the pointer
+             * is, so a tall Home stays reachable with a plain mouse wheel (the tile cards cover most of it). Only on a
+             * Home that fits does a vertical wheel over tile cards scroll that shelf sideways instead. */
+            if (ev->dx != 0 || (shelf_over_cards(d, d->ptr_y) && home_max_y_q16(d) == 0)) {
                 shelf_scroll(d, d->ptr_y, -(ev->dx != 0 ? ev->dx : ev->dy));
             } else {
                 home_scroll_y(d, -ev->dy);

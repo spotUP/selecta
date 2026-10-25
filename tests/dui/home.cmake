@@ -168,9 +168,15 @@ if(NOT y1 GREATER 0)
 endif()
 shelf_scrolls(v0 v1 "${vscroll}")
 expect_eq("vertical wheel leaves shelf 0 alone" "${v0}" 0)
+# I311: the same vertical wheel over tile cards scrolls the overflowing Home too (the cards cover most of the panel);
+# the shelf's own horizontal scroll stays 0.
 home_run(hover_cards "move 400 300\nwheel 0 -3\n")
 home_stat(y2 "${hover_cards}" scroll_y)
-expect_eq("vertical wheel over tile cards does not scroll vertically" "${y2}" 0)
+if(NOT y2 GREATER 0)
+  message(FATAL_ERROR "vertical wheel over tile cards did not scroll the overflowing Home: ${y2}")
+endif()
+shelf_scrolls(h0 h1 "${hover_cards}")
+expect_eq("vertical wheel over cards leaves shelf 0 alone" "${h0}" 0)
 
 # 8. Empty Home (I249): an empty library stays on Home and draws the empty state (ui_home empty=1) instead of the
 # shell switching to the folder list; the Browse files action then switches the view source to browse. Revert check:
@@ -200,3 +206,47 @@ expect_eq("Browse files leaves the empty state" "${em1}" 0)
 if(NOT "${e1}" MATCHES "view_source=browse ")
   message(FATAL_ERROR "the Browse files click did not switch to the browse source:\n${e1}")
 endif()
+
+# 9. Shelves of the live library (I311), on a copy of the fixture db with two more songs: song 7 has no album and a
+# skipped play, song 8 was added just now. Before the fix: an empty shelf kept its heading, Jump back in listed albums
+# only, and New this week held only a Modland count line, so the base db reported 3 shelves and these tiles were absent.
+# (a) Empty shelf: the base db has no song added in the last 7 days, so New this week is not a shelf at all.
+if(NOT "${idle}" MATCHES "ui_home id=desktop shelves=2 ")
+  message(FATAL_ERROR "an empty New this week shelf must not be drawn (expected shelves=2) in:\n${idle}")
+endif()
+set(db2 "${WORK}/library2.db")
+file(COPY_FILE "${db}" "${db2}")
+string(CONCAT seed2
+  "INSERT INTO songs(id, key, source, path, name, artist, album, format, added) VALUES(7, 'fixture:7', 'local', 'fixture/7.mod', 'Albumless', 'Nobody', '', 'mod', 1700000007); "
+  "INSERT INTO songs(id, key, source, path, name, artist, album, format, added) VALUES(8, 'fixture:8', 'local', 'fixture/8.mod', 'Fresh Song', 'Somebody', 'Fresh Album', 'mod', CAST(strftime('%s', 'now') AS INTEGER)); "
+  "INSERT INTO history(key, played_at, skipped) VALUES('fixture:7', 7000, 1)")
+execute_process(COMMAND "${SQLITE3}" "${db2}" "PRAGMA trusted_schema = 1; ${seed2}" RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "seeding the second library failed: ${err}")
+endif()
+function(home2_run outvar input)
+  file(REMOVE_RECURSE "${WORK}/cfg")
+  file(WRITE "${WORK}/in.txt" "${input}")
+  dui_run(o --db "${db2}" --ui desktop --backend mem --view home --canvas 700x600 --clock fixed --stats --input "${WORK}/in.txt")
+  set(${outvar} "${o}" PARENT_SCOPE)
+endfunction()
+home2_run(two "wait 1\n")
+# (b) Jump back in lists the albumless skipped song itself, newest first.
+shelf_keys(jump2 "${two}" 1)
+expect_eq("Jump back in with a song without an album" "${jump2}" "fixture:7;Ünïcødé Álbum åäö;Monkey Island Theme (Extended Remaster Edition With A Very Long Title);Lotus Turbo Challenge;Strange Sounds from Beyond")
+# (c) New this week lists the song added today.
+shelf_keys(fresh2 "${two}" 2)
+expect_eq("New this week holds the song added today" "${fresh2}" "fixture:8")
+if(NOT "${two}" MATCHES "shelf 2 tile 0 New this week\\|" OR NOT "${two}" MATCHES "ui_home id=desktop shelves=3 ")
+  message(FATAL_ERROR "New this week is not the third shelf in:\n${two}")
+endif()
+# (d) A Home taller than the canvas: the wheel over tile cards scrolls it to the same limit as the wheel over the
+# header block, and that limit is the bottom of the last shelf (home_max_y_q16 = content height minus panel height).
+home2_run(top_max "move 400 20\nwheel 0 -200\n")
+home_stat(ymax "${top_max}" scroll_y)
+if(NOT ymax GREATER 0)
+  message(FATAL_ERROR "Home with three shelves does not overflow a 600 high canvas: ${ymax}")
+endif()
+home2_run(card_max "move 400 300\nwheel 0 -200\n")
+home_stat(ycard "${card_max}" scroll_y)
+expect_eq("wheel over cards reaches the last shelf" "${ycard}" "${ymax}")

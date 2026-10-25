@@ -282,9 +282,9 @@ static void home_put(const sel_user_op* op, uint32_t* used, int64_t* rows, const
     }
 }
 
-/* Runs `sql` (display name, artist, key) and puts every row as an `S <key>\t<entry>` line; `album` marks the key as an
- * album name with a leading @ (I191a). */
-static int home_list(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t* rows, const char* sql, int album) {
+/* Runs `sql` (display name, artist, key, is-album) and puts every row as an `S <key>\t<entry>` line; a row whose fourth
+ * column is non-zero carries an album name as its key, marked with a leading @ (I191a, I311). */
+static int home_list(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t* rows, const char* sql) {
     sqlite3_stmt* st = NULL;
     int rc = sqlite3_prepare_v2(db, sql, -1, &st, NULL);
     if (rc != SQLITE_OK) return rc;
@@ -293,6 +293,7 @@ static int home_list(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t
         const char* name = (const char*)sqlite3_column_text(st, 0);
         const char* artist = (const char*)sqlite3_column_text(st, 1);
         const char* key = (const char*)sqlite3_column_text(st, 2);
+        int album = sqlite3_column_int(st, 3) != 0;
         char line[SEL_SONG_KEY_MAX + 2 + 256]; /* "@" + key + tab + "name - artist" */
         size_t at = (size_t)snprintf(line, sizeof line, "%s%s\t", album ? "@" : "", key != NULL ? key : "");
         if (at >= sizeof line) at = sizeof line - 1u;
@@ -319,17 +320,28 @@ static int home_text(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     *rows = 0;
     home_put(op, &used, rows, "H", "Recently played");
     rc = home_list(db, op, &used, rows,
-                   "SELECT COALESCE(s.name, h.key), s.artist, h.key FROM (SELECT key, MAX(played_at) AS last FROM history GROUP BY key) h"
-                   " LEFT JOIN songs s ON s.key = h.key ORDER BY h.last DESC, h.key LIMIT ?1", 0);
+                   "SELECT COALESCE(s.name, h.key), s.artist, h.key, 0 FROM (SELECT key, MAX(played_at) AS last FROM history GROUP BY key) h"
+                   " LEFT JOIN songs s ON s.key = h.key ORDER BY h.last DESC, h.key LIMIT ?1");
     if (rc != SQLITE_OK) return rc;
+    /* I311: Jump back in lists every song with a skipped play and no finished play: as its album when the song has
+     * one (one entry per album), as the song itself otherwise. */
     home_put(op, &used, rows, "H", "Jump back in");
     rc = home_list(db, op, &used, rows,
-                   "SELECT s.album, s.artist, s.album FROM history h JOIN songs s ON s.key = h.key"
-                   " WHERE h.skipped = 1 AND s.album IS NOT NULL AND s.album <> ''"
-                   " AND NOT EXISTS (SELECT 1 FROM history f WHERE f.key = h.key AND f.skipped = 0)"
-                   " GROUP BY s.album ORDER BY MAX(h.played_at) DESC, s.album LIMIT ?1", 1);
+                   "SELECT CASE WHEN a THEN album ELSE COALESCE(name, key) END, artist, CASE WHEN a THEN album ELSE key END, a,"
+                   " MAX(last) AS recent FROM ("
+                   "SELECT h.key AS key, s.name AS name, s.artist AS artist, s.album AS album,"
+                   " (s.album IS NOT NULL AND s.album <> '') AS a, MAX(h.played_at) AS last"
+                   " FROM history h LEFT JOIN songs s ON s.key = h.key WHERE h.skipped = 1"
+                   " AND NOT EXISTS (SELECT 1 FROM history f WHERE f.key = h.key AND f.skipped = 0) GROUP BY h.key)"
+                   " GROUP BY CASE WHEN a THEN album ELSE key END ORDER BY recent DESC, 3 LIMIT ?1");
     if (rc != SQLITE_OK) return rc;
+    /* I311: New this week lists the songs added to the library in the last 7 days, newest first, then the Modland
+     * count line when one is stored. */
     home_put(op, &used, rows, "H", "New this week");
+    rc = home_list(db, op, &used, rows,
+                   "SELECT COALESCE(name, key), artist, key, 0 FROM songs WHERE added >= CAST(strftime('%s', 'now') AS INTEGER) - 604800"
+                   " ORDER BY added DESC, key LIMIT ?1");
+    if (rc != SQLITE_OK) return rc;
     rc = sqlite3_prepare_v2(db, "SELECT value FROM meta WHERE key = 'modland.new_this_week'", -1, &st, NULL);
     if (rc != SQLITE_OK) return rc;
     if (sqlite3_step(st) == SQLITE_ROW) {
@@ -337,8 +349,10 @@ static int home_text(sqlite3* db, const sel_user_op* op, int64_t* rows) {
         fresh = v != NULL ? atol(v) : 0;
     }
     sqlite3_finalize(st);
-    snprintf(tagged, sizeof tagged, "%ld %ld new songs on Modland", fresh, fresh);
-    home_put(op, &used, rows, "C", tagged);
+    if (fresh > 0) {
+        snprintf(tagged, sizeof tagged, "%ld %ld new songs on Modland", fresh, fresh);
+        home_put(op, &used, rows, "C", tagged);
+    }
     return SQLITE_OK;
 }
 
