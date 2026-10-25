@@ -14,8 +14,10 @@
 #include <selecta/gui/gui_text.h>
 #include <selecta/gui/gui_widget.h>
 #include <selecta/gui/gui_input.h>
+#include <selecta/uimodel/cmdline.h>
 #include <selecta/uimodel/keybind.h>
 #include <selecta/uimodel/keys.h>
+#include <selecta/uimodel/palette.h>
 #include <selecta/uimodel/theme.h>
 
 #ifdef SELECTA_DESKTOP_SDL
@@ -162,6 +164,16 @@ typedef struct desk {
     uint32_t flow_draws, flow_centre;             /* cover flow frames drawn and the listing index of the centred album in the last one */
     uint32_t flow_from;                           /* the centre the glide started from */
     uint32_t lib_mode;       /* Library page mode: 0 composers, 1 tree, 2 column browser, 3 files, 4 history (DUI-P4-3 slices B, C) */
+    int overlay;             /* the open overlay: OV_NONE, OV_PALETTE, OV_HELP or OV_CMDLINE (DUI-P4-13) */
+    txt_palette pal;         /* the palette and help model of the text UI, over the same verbs and keys */
+    txt_cmdline cmd;         /* the command line model of the text UI: Tab completes the verb */
+    uint32_t palette_opens, help_opens, palette_runs, cmdline_opens, cmdline_runs, overlay_sends_ok;
+    uint32_t menu_picks[4];  /* context menu items picked: Play, Play Next, Add to Queue, Remove */
+    uint32_t toasts;         /* toasts shown */
+    int toast_on;            /* 1 while a toast is on screen */
+    uint32_t toast_until;    /* UI clock when the toast goes away */
+    char toast_text[64];
+    char last_verb[64];      /* the line the palette or the command line sent last */
 } desk;
 
 static int desk_resize(desk* d, int32_t w, int32_t h);
@@ -169,6 +181,9 @@ static int desk_set_scale(desk* d, int32_t scale);
 static int desk_present(desk* d);
 static void desk_draw_focus(desk* d);
 static void desk_draw_tip(desk* d);
+static void desk_draw_overlay(desk* d);
+static uint32_t desk_toast_wait(const desk* d);
+static void desk_toast_tick(desk* d);
 
 /* Hands the dirty rectangles to the backend, then empties the list; returns the pixels repainted. The sdl backend
  * must see the list before sel_gui_present clears it. */
@@ -695,8 +710,8 @@ static int desk_tween(desk* d, uint32_t key, uint32_t ms, uint32_t ease) {
 
 /* ---- Song list (DUI-P3-2): header row, one row per queue entry, drop targets in the sidebar. All geometry in canvas
  * pixels; a pointer position is mapped to a region of the layout tree first (sel_uim_hit), then to a part of it. ---- */
-enum { SONG_HEADER_H = 24, SONG_ROW_H = 32, SONG_TARGET_H = 32, SONG_MENU_ITEM_H = 24, SONG_MENU_W = 140, SONG_MENU_ITEMS = 3, SONG_PLAYLIST_TARGETS = 4 };
-static const char* const g_menu_items[SONG_MENU_ITEMS] = {"Play", "Play Next", "Add to Queue"};
+enum { SONG_HEADER_H = 24, SONG_ROW_H = 32, SONG_TARGET_H = 32, SONG_MENU_ITEM_H = 24, SONG_MENU_W = 140, SONG_MENU_ITEMS = 4, SONG_PLAYLIST_TARGETS = 4 };
+static const char* const g_menu_items[SONG_MENU_ITEMS] = {"Play", "Play Next", "Add to Queue", "Remove"};
 
 static int desk_send(desk* d, const char* line);
 
@@ -2004,6 +2019,20 @@ static const char* library_dump_build(desk* d) {
                                   (unsigned)i, st->queue_text + st->queue[i].path_offset);
         }
     }
+    if (o + 900u < sizeof d->library_dump) { /* the overlays (DUI-P4-13) */
+        uint32_t k;
+        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o,
+                              "overlay kind=%d palette_opens=%u palette_runs=%u help_opens=%u cmdline_opens=%u cmdline_runs=%u sends_ok=%u "
+                              "toasts=%u toast_on=%d menu_picks=%u,%u,%u,%u last_verb=%s pal_count=%u queue=%u status=%s\n",
+                              d->overlay, (unsigned)d->palette_opens, (unsigned)d->palette_runs, (unsigned)d->help_opens,
+                              (unsigned)d->cmdline_opens, (unsigned)d->cmdline_runs, (unsigned)d->overlay_sends_ok, (unsigned)d->toasts,
+                              d->toast_on, (unsigned)d->menu_picks[0], (unsigned)d->menu_picks[1], (unsigned)d->menu_picks[2],
+                              (unsigned)d->menu_picks[3], d->last_verb[0] != '\0' ? d->last_verb : "-", (unsigned)d->pal.count,
+                              (unsigned)st->queue_count, d->cmd.status[0] != '\0' ? d->cmd.status : "-");
+        for (k = 0; k < 5u && k < d->pal.count; k++) {
+            o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "palitem %u %s\n", (unsigned)k, d->pal.items[k].name);
+        }
+    }
     for (p = st->stats; p != NULL && *p != '\0' && o + 400u < sizeof d->library_dump;) {
         const char* val = lib_next(p);
         o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "stat %s|%s\n", p, val);
@@ -3046,6 +3075,10 @@ static void desk_advance(desk* d, uint32_t ms) {
         if (sw > 0u && (tw == 0u || sw < tw)) {
             tw = sw;
         }
+        sw = desk_toast_wait(d);
+        if (sw > 0u && (tw == 0u || sw < tw)) {
+            tw = sw;
+        }
         if (animated) {
             if (step > 16u) {
                 step = 16u;
@@ -3061,6 +3094,7 @@ static void desk_advance(desk* d, uint32_t ms) {
         sel_uim_update(&d->uim, sel_engine_state(d->engine));
         desk_tip_tick(d);
         desk_search_tick(d);
+        desk_toast_tick(d);
         if (!desk_should_draw(d, animated)) {
             continue;
         }
@@ -3166,6 +3200,236 @@ static void desk_bind_actions(desk* d) {
         snprintf(row, sizeof row, "%s %s\n", a->key, a->line);
         txt_bindings_load(&d->binds, row, NULL);
     }
+    { /* The overlay keys (DUI-P4-13) are the text UI's: its default table names them, so each key lives in one place. */
+        static const char* const overlay_actions[] = {"@command", "@palette", "@help"};
+        txt_bindings def;
+        uint32_t k;
+        txt_bindings_default(&def);
+        for (k = 0; k < sizeof overlay_actions / sizeof overlay_actions[0]; k++) {
+            char key[24], row[64];
+            if (txt_bindings_key_for(&def, overlay_actions[k], key, sizeof key) != NULL) {
+                snprintf(row, sizeof row, "%s %s\n", key, overlay_actions[k]);
+                txt_bindings_load(&d->binds, row, NULL);
+            }
+        }
+    }
+}
+
+/* Overlays (DUI-P4-13): the command palette, the shortcut help and the command line share the text UI's models
+ * (txt_palette, txt_cmdline), so the ranking, the completion and the key names exist once. Toasts report a pick. */
+enum { OV_NONE, OV_PALETTE, OV_HELP, OV_CMDLINE };
+enum { OV_W = 560, OV_ROW_H = 28, OV_ROWS = 10, OV_HEAD_H = 40, OV_TOP = 72, TOAST_MS = 2500, CMD_BAR_H = 36 };
+
+static sel_gui_rect overlay_box(const desk* d) {
+    int32_t w = lpx(d, OV_W) < d->canvas->w ? lpx(d, OV_W) : d->canvas->w;
+    return rect_of((d->canvas->w - w) / 2, lpx(d, OV_TOP), w, lpx(d, OV_HEAD_H) + (int32_t)OV_ROWS * lpx(d, OV_ROW_H) + lpx(d, 8));
+}
+
+static uint32_t overlay_first(const desk* d) {
+    return d->pal.cursor >= (uint32_t)OV_ROWS ? d->pal.cursor - (uint32_t)OV_ROWS + 1u : 0u;
+}
+
+static sel_gui_rect overlay_row(const desk* d, uint32_t i) {
+    sel_gui_rect b = overlay_box(d);
+    return rect_of(b.x + lpx(d, 8), b.y + lpx(d, OV_HEAD_H) + (int32_t)i * lpx(d, OV_ROW_H), b.w - lpx(d, 16), lpx(d, OV_ROW_H));
+}
+
+static sel_gui_rect toast_rect(const desk* d) {
+    sel_gui_rect mn = region_rect(d, "main");
+    return rect_of(mn.x + mn.w - lpx(d, 260 + 16), mn.y + mn.h - lpx(d, 40 + 16) - lpx(d, CMD_BAR_H), lpx(d, 260), lpx(d, 40));
+}
+
+static void desk_draw_overlay(desk* d) {
+    uint32_t tx = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), mu = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+    int32_t rad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]);
+    sel_gui_rect b;
+    if (d->overlay == OV_PALETTE || d->overlay == OV_HELP) {
+        uint32_t i, first = overlay_first(d);
+        sel_gui_rect hd;
+        b = overlay_box(d);
+        sel_gui_round_rect(d->canvas, b, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+        hd = rect_of(b.x + lpx(d, 16), b.y, b.w - lpx(d, 32), lpx(d, OV_HEAD_H));
+        draw_text(d, hd, d->pal.len > 0u ? d->pal.query : d->overlay == OV_PALETTE ? "Search commands" : "Keyboard shortcuts", 1, 15,
+                  d->pal.len > 0u ? tx : mu);
+        sel_gui_fill_rect(d->canvas, rect_of(b.x, b.y + lpx(d, OV_HEAD_H) - 1, b.w, 1), ARGB(d->theme.token[SEL_GUI_TOKEN_DIVIDER]));
+        if (d->pal.count == 0u) {
+            draw_text(d, overlay_row(d, 0), "No matching command", 0, 13, mu);
+        }
+        for (i = 0; i < (uint32_t)OV_ROWS && first + i < d->pal.count; i++) {
+            const txt_palette_item* it = &d->pal.items[first + i];
+            sel_gui_rect r = overlay_row(d, i);
+            int hot = first + i == d->pal.cursor;
+            int32_t kw = it->key[0] != '\0' ? sel_gui_text_width(desk_font(d, 0, 12), it->key, strlen(it->key)) : 0;
+            if (hot) {
+                sel_gui_round_rect(d->canvas, r, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_SMALL]),
+                                   ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+            }
+            draw_text(d, rect_of(r.x + lpx(d, 8), r.y, r.w / 2, r.h), it->name, 0, 13, hot ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]) : tx);
+            draw_text(d, rect_of(r.x + r.w / 2, r.y, r.w / 2 - kw - lpx(d, 24), r.h), txt_palette_area_title(it->area), 0, 12,
+                      hot ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]) : mu);
+            if (kw > 0) {
+                draw_text(d, rect_of(r.x + r.w - kw - lpx(d, 8), r.y, kw + lpx(d, 8), r.h), it->key, 0, 12,
+                          hot ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]) : mu);
+            }
+        }
+        sel_gui_dirty_add(d->canvas, b);
+    } else if (d->overlay == OV_CMDLINE) {
+        sel_gui_rect mn = region_rect(d, "main");
+        char line[TXT_CMD_LINE + 4];
+        b = rect_of(mn.x, mn.y + mn.h - lpx(d, CMD_BAR_H), mn.w, lpx(d, CMD_BAR_H));
+        sel_gui_fill_rect(d->canvas, b, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+        snprintf(line, sizeof line, ":%s_", d->cmd.text);
+        draw_text(d, rect_of(b.x + lpx(d, 16), b.y, b.w - lpx(d, 32), b.h), line, 0, 14, tx);
+        sel_gui_dirty_add(d->canvas, b);
+        if (d->cmd.status[0] != '\0') {
+            sel_gui_rect s = rect_of(mn.x, b.y - lpx(d, 28), mn.w, lpx(d, 28));
+            sel_gui_fill_rect(d->canvas, s, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+            draw_text(d, rect_of(s.x + lpx(d, 16), s.y, s.w - lpx(d, 32), s.h), d->cmd.status, 0, 12, mu);
+            sel_gui_dirty_add(d->canvas, s);
+        }
+    }
+    if (d->toast_on) {
+        b = toast_rect(d);
+        sel_gui_round_rect(d->canvas, b, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+        draw_text(d, rect_of(b.x + lpx(d, 16), b.y, b.w - lpx(d, 32), b.h), d->toast_text, 1, 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+        sel_gui_dirty_add(d->canvas, b);
+    }
+}
+
+/* Repaints the whole canvas so a closed overlay leaves no pixels behind. */
+static int overlay_refresh(desk* d) {
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    return desk_present(d);
+}
+
+static void desk_toast(desk* d, const char* text) {
+    snprintf(d->toast_text, sizeof d->toast_text, "%s", text);
+    d->toast_on = 1;
+    d->toast_until = d->now_ms + TOAST_MS;
+    d->toasts++;
+    overlay_refresh(d);
+}
+
+static uint32_t desk_toast_wait(const desk* d) {
+    return d->toast_on && d->toast_until > d->now_ms ? d->toast_until - d->now_ms : 0u;
+}
+
+static void desk_toast_tick(desk* d) {
+    if (d->toast_on && d->now_ms >= d->toast_until) {
+        d->toast_on = 0;
+        d->repaint = 1;
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    }
+}
+
+/* A verb that needs an argument cannot run bare: its signature has no trailing '?' or '*' covering every letter. */
+static int verb_needs_args(const char* verb) {
+    uint32_t id;
+    const char* sig;
+    size_t n;
+    if (!sel_cmd_by_name(verb, &id)) {
+        return 0;
+    }
+    sig = sel_cmd_args(id);
+    n = strlen(sig);
+    if (n > 0u && sig[n - 1u] == '?') {
+        return n > 2u;
+    }
+    if (n > 0u && sig[n - 1u] == '*') {
+        return n > 1u;
+    }
+    return n > 0u;
+}
+
+static void overlay_close(desk* d) {
+    d->overlay = OV_NONE;
+    overlay_refresh(d);
+}
+
+/* Enter on a palette row: a bare verb runs, a verb with arguments opens the command line with the verb typed. */
+static void palette_pick(desk* d) {
+    const char* verb = txt_palette_picked(&d->pal);
+    char line[64];
+    if (verb == NULL) {
+        return;
+    }
+    if (verb_needs_args(verb)) {
+        txt_cmdline_open(&d->cmd);
+        snprintf(d->cmd.text, sizeof d->cmd.text, "%s ", verb);
+        d->cmd.len = (uint32_t)strlen(d->cmd.text);
+        d->overlay = OV_CMDLINE;
+        d->cmdline_opens++;
+        overlay_refresh(d);
+        return;
+    }
+    snprintf(line, sizeof line, "%s", verb);
+    d->palette_runs++;
+    snprintf(d->last_verb, sizeof d->last_verb, "%s", verb);
+    d->overlay = OV_NONE;
+    if (desk_send(d, line)) {
+        d->overlay_sends_ok++;
+        desk_toast(d, "Command sent");
+    } else {
+        desk_toast(d, "Not a command");
+    }
+}
+
+/* A key while an overlay is open: it owns the keyboard. */
+static int overlay_key(desk* d, const sel_gui_input* ev) {
+    if (d->overlay == OV_CMDLINE) {
+        txt_cmd_result r = txt_cmdline_key(&d->cmd, ev->code, ev->mods);
+        if (r == TXT_CMD_SUBMIT) {
+            const char* line = txt_cmdline_text(&d->cmd);
+            d->overlay = OV_NONE;
+            if (line[0] != '\0') {
+                char copy[TXT_CMD_LINE];
+                snprintf(copy, sizeof copy, "%s", line);
+                d->cmdline_runs++;
+                snprintf(d->last_verb, sizeof d->last_verb, "%s", copy);
+                if (desk_send(d, copy)) {
+                    d->overlay_sends_ok++;
+                    desk_toast(d, "Command sent");
+                    return 1;
+                }
+                desk_toast(d, "Not a command");
+                return 1;
+            }
+            return overlay_refresh(d);
+        }
+        if (r == TXT_CMD_CANCEL) {
+            overlay_close(d);
+            return 1;
+        }
+        return overlay_refresh(d);
+    } else {
+        txt_pal_result r = txt_palette_key(&d->pal, ev->code, ev->mods);
+        if (r == TXT_PAL_CANCEL || (r == TXT_PAL_RUN && d->overlay == OV_HELP)) {
+            overlay_close(d);
+            return 1;
+        }
+        if (r == TXT_PAL_RUN) {
+            palette_pick(d);
+            return 1;
+        }
+        return overlay_refresh(d);
+    }
+}
+
+/* A click while an overlay is open: a palette row picks, anything else closes. */
+static int overlay_click(desk* d, const sel_gui_input* ev) {
+    if (d->overlay == OV_PALETTE) {
+        uint32_t i, first = overlay_first(d);
+        for (i = 0; i < (uint32_t)OV_ROWS && first + i < d->pal.count; i++) {
+            if (in_rect(overlay_row(d, i), ev->x, ev->y)) {
+                d->pal.cursor = first + i;
+                palette_pick(d);
+                return 1;
+            }
+        }
+    }
+    overlay_close(d);
+    return 1;
 }
 
 /* A key event (DUI-P3-3). Order: the search field takes printable keys while focused; Tab moves the focus; `/` focuses
@@ -3173,6 +3437,9 @@ static void desk_bind_actions(desk* d) {
 static int desk_key(desk* d, const sel_gui_input* ev) {
     const char* act;
     d->keys_in++;
+    if (d->overlay != OV_NONE) { /* an open overlay owns the keyboard */
+        return overlay_key(d, ev);
+    }
     if (d->pl_page && d->pl_edit) { /* the name field of the Playlists page has the keyboard */
         return pl_key(d, ev);
     }
@@ -3242,6 +3509,19 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         return 0;
     }
     act = txt_bindings_lookup(&d->binds, TXT_CTX_ANY, ev->code, ev->mods);
+    if (act != NULL && strcmp(act, "@command") == 0) {
+        txt_cmdline_open(&d->cmd);
+        d->overlay = OV_CMDLINE;
+        d->cmdline_opens++;
+        return overlay_refresh(d);
+    }
+    if (act != NULL && (strcmp(act, "@palette") == 0 || strcmp(act, "@help") == 0)) {
+        txt_palette_open(&d->pal, &d->binds);
+        d->overlay = act[1] == 'p' ? OV_PALETTE : OV_HELP;
+        d->palette_opens += d->overlay == OV_PALETTE;
+        d->help_opens += d->overlay == OV_HELP;
+        return overlay_refresh(d);
+    }
     if (act != NULL) {
         uint32_t i, n = sel_uim_action_count();
         for (i = 0; i < n; i++) {
@@ -3293,6 +3573,9 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
     int region = sel_uim_hit(&d->layout, ev->x / sc, ev->y / sc);
     const char* rname = region >= 0 ? d->layout.regions[region].name : "";
     int in_main = strcmp(rname, "main") == 0;
+    if (d->overlay != OV_NONE) { /* a click with an overlay open picks a palette row or closes it */
+        return ev->kind == SEL_GUI_IN_CLICK ? overlay_click(d, ev) : 0;
+    }
     if (ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u) {
         int32_t btn = desk_button_at(d, ev->x, ev->y);
         if (btn > 0) {
@@ -3373,8 +3656,17 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         for (k = 0; k < SONG_MENU_ITEMS; k++) {
             sel_gui_rect m = rect_of(d->menu_x, d->menu_y + (int32_t)k * lpx(d, SONG_MENU_ITEM_H), lpx(d, SONG_MENU_W), lpx(d, SONG_MENU_ITEM_H));
             if (in_rect(m, ev->x, ev->y)) {
-                songs_send_path(d, k == 0u ? "OPEN" : k == 1u ? "QUEUE_PLAY_NEXT" : "QUEUE_ADD", row);
+                static const char* const done[SONG_MENU_ITEMS] = {"Playing", "Playing next", "Added to queue", "Removed from queue"};
+                if (k == 3u) { /* Remove needs the entry id, not the path */
+                    char line[48];
+                    snprintf(line, sizeof line, "QUEUE_REMOVE %u", (unsigned)sel_engine_state(d->engine)->queue[d->order[row]].id);
+                    desk_send(d, line);
+                } else {
+                    songs_send_path(d, k == 0u ? "OPEN" : k == 1u ? "QUEUE_PLAY_NEXT" : "QUEUE_ADD", row);
+                }
                 d->row_plays += k == 0u;
+                d->menu_picks[k]++;
+                desk_toast(d, done[k]);
             }
         }
         return 1;
@@ -3702,6 +3994,7 @@ static int desk_present(desk* d) {
     }
     desk_draw_focus(d);
     desk_draw_tip(d);
+    desk_draw_overlay(d);
     d->dirty_pixels = desk_flush(d);
     d->dirty_total += d->dirty_pixels;
     d->frames++;
