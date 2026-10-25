@@ -7,8 +7,8 @@
 
 #define SEL_QUERY_SQL_MAX 3072
 #define SEL_QUERY_PARAMS_MAX 32
-/* Longest bound text value incl. NUL. It is the longest value a home row carries (SEL_VIEW_KEY_MAX in
- * engine/view.h derives from it): a 127-byte album name must open (I191c). Stack cost on Amiga: the view-cycle
+/* Longest bound text value incl. NUL. It is the longest album name a home row opens (I191c); a song key is
+ * bound by SEL_SONG_KEY_MAX instead (I263). Stack cost on Amiga: the view-cycle
  * stack is VIEW_DEPTH_MAX x this (1 KB), plus one copy each in parse_term and view_cond. */
 #define SEL_QUERY_TEXT_MAX 128
 

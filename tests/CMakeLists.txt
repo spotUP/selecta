@@ -605,6 +605,11 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_path_test PRIVATE selecta_core)
   add_test(NAME library-path-unit COMMAND library_path_test)
   # I218i: the folder browser hides files with no recognised format.
+  # I263: a Home song key longer than 127 bytes crosses library, view parser and row whole.
+  add_executable(home_key_test engine/home_key_test.c)
+  target_include_directories(home_key_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db ${PROJECT_SOURCE_DIR}/src/engine)
+  target_link_libraries(home_key_test PRIVATE selecta_core)
+  add_test(NAME home-key-long-path COMMAND home_key_test)
   add_executable(browse_filter_test library/browse_filter_test.c)
   target_include_directories(browse_filter_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
   target_link_libraries(browse_filter_test PRIVATE selecta_core)

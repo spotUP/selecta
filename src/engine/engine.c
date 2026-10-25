@@ -3854,10 +3854,13 @@ static void folders_reload(sel_engine* e) {
 /* I191: rebuilds the rows of the home view source (recently played, jump back in, new this week) from the
  * library. Without a library the home view is empty. */
 static void home_reload(sel_engine* e) {
-    char text[4096];
+    char* text = e->view.htext;
     uint32_t lines = 0;
+    if (text == NULL) {
+        return;
+    }
     text[0] = '\0';
-    if (e->lib != NULL && !sel_library_home(e->lib, 10, text, sizeof text, &lines)) {
+    if (e->lib != NULL && !sel_library_home(e->lib, 10, text, SEL_VIEW_HOME_TEXT_MAX, &lines)) {
         text[0] = '\0';
     }
     e->home_rows += sel_view_set_home(&e->view, text);
@@ -4516,7 +4519,7 @@ static void cmd_VIEW_ACTIVATE(sel_engine* e, const sel_message* m) {
         }
         if (r->album) {
             /* worst case: every byte escaped, plus album:"" and the NUL */
-            char text[(SEL_VIEW_KEY_MAX - 1) * 2 + 9];
+            char text[(SEL_QUERY_TEXT_MAX - 1) * 2 + 9];
             sel_message q;
             uint32_t fts = 0;
             size_t o = 0;
@@ -4524,7 +4527,7 @@ static void cmd_VIEW_ACTIVATE(sel_engine* e, const sel_message* m) {
             /* The query grammar escapes a quote or backslash inside quotes with a backslash. */
             o += (size_t)snprintf(text, sizeof text, "album:\"");
             for (k = r->key; *k != '\0'; k++) {
-                if (o + 4 > sizeof text) { /* cannot happen for a key within SEL_VIEW_KEY_MAX; never truncate */
+                if (o + 4 > sizeof text) { /* an album name over SEL_QUERY_TEXT_MAX; never truncate */
                     sel_engine_report_error(e, "too_complex", "VIEW_ACTIVATE");
                     return;
                 }

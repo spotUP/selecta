@@ -10,6 +10,7 @@
 #include <selecta/host.h>
 
 #include "../library/query.h"
+#include "../library/song_key.h"
 #include "format.h"
 #include "local.h"
 #include "queue.h"
@@ -19,7 +20,8 @@
 #define SEL_VIEW_TITLE_DEFAULT "[%author% - ]%title%[  Votes %votes%]"
 #define SEL_VIEW_VOTES_MAX 12u /* a vote count as text, NUL included */
 #define SEL_VIEW_TEXT_MAX 160u /* one formatted row, NUL included */
-#define SEL_VIEW_KEY_MAX ((unsigned)SEL_QUERY_TEXT_MAX) /* song key or album name a home row carries, NUL included (I191a); the query bound parameter holds the same (I191c) */
+#define SEL_VIEW_KEY_MAX ((unsigned)SEL_SONG_KEY_MAX) /* longest song key a home row carries, NUL included: the library song key limit (I263); an album name is bound by SEL_QUERY_TEXT_MAX (I191c) */
+#define SEL_VIEW_HOME_TEXT_MAX 16384u /* the home text the library writes and the pool its row keys are packed into (I263) */
 #define SEL_VIEW_FOLDER_ROWS 256u /* rows of the folders source (the playlist folder tree, I179) */
 #define SEL_VIEW_FOLDER_NAME 64u
 
@@ -87,7 +89,8 @@ typedef struct sel_view {
     int anchor_node;      /* pub.cursor_id names a node, not a song */
     sel_view_row* frows;             /* the folders source: SEL_VIEW_FOLDER_ROWS rows, text in ftext */
     char* ftext;
-    char* fkey;                      /* SEL_VIEW_FOLDER_ROWS * SEL_VIEW_KEY_MAX: the key of each home row */
+    char* fkey;                      /* SEL_VIEW_HOME_TEXT_MAX bytes: the keys of the home rows, packed one after the other (I263) */
+    char* htext;                     /* SEL_VIEW_HOME_TEXT_MAX bytes: scratch for the home text the library writes */
     uint32_t frow_n, fgen;           /* rows filled, bumps on every set */
     sel_view_sig last;
 } sel_view;

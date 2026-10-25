@@ -293,7 +293,7 @@ static int home_list(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t
         const char* name = (const char*)sqlite3_column_text(st, 0);
         const char* artist = (const char*)sqlite3_column_text(st, 1);
         const char* key = (const char*)sqlite3_column_text(st, 2);
-        char line[320];
+        char line[SEL_SONG_KEY_MAX + 2 + 256]; /* "@" + key + tab + "name - artist" */
         size_t at = (size_t)snprintf(line, sizeof line, "%s%s\t", album ? "@" : "", key != NULL ? key : "");
         if (at >= sizeof line) at = sizeof line - 1u;
         if (artist != NULL && artist[0] != '\0') {

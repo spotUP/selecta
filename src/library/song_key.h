@@ -6,6 +6,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Longest song key incl. NUL: id + ':' + path. Every buffer that carries a song key (library, home view rows) is sized
+ * from this one number (I263). */
+#define SEL_SONG_KEY_MAX 1200u
+
 /* THE canonical song key of anything a caller holds (D-M3 key rule, I211): a queue path or a key. A string that
  * starts with a registered source id and ':' is a key and stays; a URL ("://") stays; anything else is a local path and gets "local:".
  * Idempotent. Every writer and reader of history, loudness, stickers, votes, ratings, liked, kept, cues, notes and

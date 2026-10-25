@@ -76,20 +76,23 @@ int sel_view_init(sel_view* v, const sel_host* host, uint32_t row_cap) {
     }
     v->frows = host->mem_alloc(host, SEL_VIEW_FOLDER_ROWS * sizeof *v->frows, SEL_MEM_FAST);
     v->ftext = host->mem_alloc(host, (size_t)SEL_VIEW_FOLDER_ROWS * SEL_VIEW_FOLDER_NAME, SEL_MEM_FAST);
-    v->fkey = host->mem_alloc(host, (size_t)SEL_VIEW_FOLDER_ROWS * SEL_VIEW_KEY_MAX, SEL_MEM_FAST);
-    if (v->frows == NULL || v->ftext == NULL || v->fkey == NULL) {
+    v->fkey = host->mem_alloc(host, SEL_VIEW_HOME_TEXT_MAX, SEL_MEM_FAST);
+    v->htext = host->mem_alloc(host, SEL_VIEW_HOME_TEXT_MAX, SEL_MEM_FAST);
+    if (v->frows == NULL || v->ftext == NULL || v->fkey == NULL || v->htext == NULL) {
         host->mem_free(host, v->groups);
         host->mem_free(host, v->row_text);
         host->mem_free(host, v->rows);
         host->mem_free(host, v->frows);
         host->mem_free(host, v->ftext);
         host->mem_free(host, v->fkey);
+        host->mem_free(host, v->htext);
         v->rows = NULL;
         v->row_text = NULL;
         v->groups = NULL;
         v->frows = NULL;
         v->ftext = NULL;
         v->fkey = NULL;
+        v->htext = NULL;
         return 0;
     }
     v->next_node = 1;
@@ -126,6 +129,9 @@ void sel_view_free(sel_view* v, const sel_host* host) {
     }
     if (v->fkey) {
         host->mem_free(host, v->fkey);
+    }
+    if (v->htext) {
+        host->mem_free(host, v->htext);
     }
     memset(v, 0, sizeof *v);
 }
@@ -902,11 +908,12 @@ uint32_t sel_view_set_folders(sel_view* v, const char* tree) {
  * `C` line (the home_rows sentinel). */
 uint32_t sel_view_set_home(sel_view* v, const char* text) {
     uint32_t n = 0, entries = 0;
+    size_t pool = 0; /* bytes of fkey used: keys are packed, a row costs its key length */
     const char* p = text;
     while (*p != '\0' && n < SEL_VIEW_FOLDER_ROWS) {
         char kind = *p;
         char* t = v->ftext + (size_t)n * SEL_VIEW_FOLDER_NAME;
-        char* key = v->fkey + (size_t)n * SEL_VIEW_KEY_MAX;
+        char* key = v->fkey + pool;
         size_t len = 0, klen = 0;
         uint32_t count = 1, album = 0;
         key[0] = '\0';
@@ -930,10 +937,14 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
                         album = 1;
                         p++;
                     }
-                    while (p < tab && klen + 1u < SEL_VIEW_KEY_MAX) {
-                        key[klen++] = *p++;
+                    /* A key is never cut: one that does not fit the pool or the key limit leaves the row without a key. */
+                    if ((size_t)(tab - p) + 1u <= SEL_VIEW_KEY_MAX && pool + (size_t)(tab - p) + 2u <= SEL_VIEW_HOME_TEXT_MAX) {
+                        while (p < tab) {
+                            key[klen++] = *p++;
+                        }
+                        key[klen] = '\0';
+                        pool += klen + 1u;
                     }
-                    key[klen] = '\0';
                     p = tab + 1;
                 }
             }
