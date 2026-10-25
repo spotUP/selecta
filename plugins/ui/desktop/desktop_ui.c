@@ -229,6 +229,8 @@ typedef struct desk {
     int viz_page;                /* --view viz: the main region shows the Visualizer page */
     sel_gui_rect np_viz;         /* the strip Now Playing gave the visualizer, w 0 = none */
     sel_gui_rect viz_pane[3];    /* the panes of the Visualizer page */
+    sel_gui_rect viz_btn[2][3];  /* the visualizer switch buttons: [0] under the Now Playing strip, [1] on the Visualizer page; w 0 = not drawn */
+    uint32_t viz_clicks;         /* switch button clicks that fired an action (sentinel) */
 } desk;
 
 static int desk_resize(desk* d, int32_t w, int32_t h);
@@ -810,6 +812,7 @@ enum { SONG_HEADER_H = 24, SONG_ROW_H = 32, SONG_TARGET_H = 32, SONG_MENU_ITEM_H
 static const char* const g_menu_items[SONG_MENU_ITEMS] = {"Play", "Play Next", "Add to Queue", "Remove"};
 
 static int desk_send(desk* d, const char* line);
+static const sel_uim_action* desk_action_by_id(const char* id);
 
 static int32_t songs_top(const desk* d) {
     sel_gui_rect mn = region_rect(d, "main");
@@ -1960,6 +1963,7 @@ static void viz_select(desk* d, const char* id) {
         if (strcmp(d->viz_id[i], id) == 0) {
             d->viz_sel = i;
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+            d->repaint = 1; /* the switch shows the selected plugin */
         }
     }
 }
@@ -2058,6 +2062,55 @@ static void draw_visual(desk* d) {
     d->viz_visual_draws++;
 }
 
+/* The visualizer switch: one segment per plugin found, the selected one in the accent colour. Slot is 0 for the strip in
+ * Now Playing and 1 for the Visualizer page; the rects the segments took are what a click is tested against. */
+static void viz_switch_draw(desk* d, uint32_t slot, sel_gui_rect r) {
+    uint32_t k;
+    int32_t gap = lpx(d, 4), w;
+    for (k = 0; k < 3u; k++) {
+        d->viz_btn[slot][k] = rect_of(0, 0, 0, 0);
+    }
+    if (d->viz_n == 0u || r.w <= 0 || r.h <= 0) {
+        return;
+    }
+    w = (r.w - ((int32_t)d->viz_n - 1) * gap) / (int32_t)d->viz_n;
+    for (k = 0; k < d->viz_n; k++) {
+        sel_gui_rect b = rect_of(r.x + (int32_t)k * (w + gap), r.y, w, r.h);
+        int on = k == d->viz_sel;
+        d->viz_btn[slot][k] = b;
+        sel_gui_round_rect(d->canvas, b, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]),
+                           ARGB(d->theme.token[on ? SEL_GUI_TOKEN_ACCENT : SEL_GUI_TOKEN_SURFACE_RAISED]));
+        draw_text_centered(d, b, d->viz_name[k], 1, 12,
+                           ARGB(d->theme.token[on ? SEL_GUI_TOKEN_ACCENT_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]));
+    }
+    sel_gui_dirty_add(d->canvas, r);
+}
+
+/* The switch button under a point as (slot, plugin index) packed slot * 3 + k, -1 for none. */
+static int32_t viz_switch_at(const desk* d, int32_t x, int32_t y) {
+    uint32_t s, k;
+    for (s = 0; s < 2u; s++) {
+        for (k = 0; k < d->viz_n; k++) {
+            if (d->viz_btn[s][k].w > 0 && in_rect(d->viz_btn[s][k], x, y)) {
+                return (int32_t)(s * 3u + k);
+            }
+        }
+    }
+    return -1;
+}
+
+/* A click on a switch button runs the plugin's row of the action table (the line the View/Visualizer menu and its key
+ * run); the action id equals the plugin id. */
+static int viz_switch_click(desk* d, int32_t hit) {
+    const sel_uim_action* a = desk_action_by_id(d->viz_id[(uint32_t)hit % 3u]);
+    if (a == NULL || !desk_send(d, a->line)) {
+        return 0;
+    }
+    d->viz_clicks++;
+    d->actions_fired++;
+    return 1;
+}
+
 /* The Visualizer page: one pane per plugin, then the signal path. */
 static void viz_panes_draw(desk* d) {
     uint32_t k;
@@ -2077,6 +2130,7 @@ static void draw_vizpage(desk* d) {
     sel_gui_clip_push(d->canvas, mn);
     draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Visualizer", 1, 28,
               ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    viz_switch_draw(d, 1u, rect_of(mn.x + mn.w - mg - lpx(d, 360), mn.y + lpx(d, 22), lpx(d, 360), lpx(d, 28)));
     for (k = 0; k < VIZ_MAX; k++) {
         d->viz_pane[k] = rect_of(mn.x + mg, top + gap + (int32_t)k * (ph + gap), mn.w - 2 * mg, ph);
     }
@@ -2464,6 +2518,10 @@ static const char* library_dump_build(desk* d) {
                           (unsigned)d->viz_frames, (unsigned)d->viz_song_ms, d->viz_n > 0u ? d->viz_id[d->viz_sel] : "none",
                           (unsigned)d->viz_n, (unsigned)d->uim.layout, (unsigned)d->viz_panes, (unsigned)d->viz_sigpath,
                           (unsigned)d->viz_prims, (unsigned)d->viz_visual_draws, d->np_viz.w > 0);
+    o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "viz_switch clicks %u strip %d %d %d %d page %d %d %d %d\n",
+                          (unsigned)d->viz_clicks, (int)d->viz_btn[0][0].x, (int)d->viz_btn[0][0].y, (int)d->viz_btn[0][0].w,
+                          (int)d->viz_btn[0][0].h, (int)d->viz_btn[1][0].x, (int)d->viz_btn[1][0].y, (int)d->viz_btn[1][0].w,
+                          (int)d->viz_btn[1][0].h);
     for (p = st->panel, i = 0; p != NULL && *p != '\0' && i < 16u && o + 400u < sizeof d->library_dump; i++) {
         const char* v = p + strlen(p) + 1;
         o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "meta %u %s|%s\n", (unsigned)i, p, v);
@@ -3653,9 +3711,12 @@ static void draw_nowplaying(desk* d) {
     d->np_viz = rect_of(dt.x + sp, y, side, lpx(d, 72));
     if (st->song.path != NULL && d->np_viz.y + d->np_viz.h < dt.y + dt.h && d->viz_n > 0u) {
         viz_draw_area(d, d->np_viz, d->viz_sel);
-        y += d->np_viz.h + sp;
+        y += d->np_viz.h + sp / 2;
+        viz_switch_draw(d, 0u, rect_of(dt.x + sp, y, side, lpx(d, 24)));
+        y += lpx(d, 24) + sp;
     } else {
         d->np_viz = rect_of(0, 0, 0, 0);
+        viz_switch_draw(d, 0u, rect_of(0, 0, 0, 0));
     }
     /* Metadata pairs. */
     d->np_rows = 0;
@@ -4473,6 +4534,12 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         d->clicks++;
         return 1;
     }
+    if (ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u) { /* the visualizer switch */
+        int32_t vb = viz_switch_at(d, ev->x, ev->y);
+        if (vb >= 0) {
+            return viz_switch_click(d, vb);
+        }
+    }
     if (d->queue_page) {
         return in_main ? queue_pointer(d, ev) : 0;
     }
@@ -4811,6 +4878,15 @@ static int desk_replay_input(desk* d) {
             opened |= desk_event_frame(d, desk_click(d, t.x + t.w / 2, t.y + t.h / 2));
         } else if (sscanf(line, "door %u", &n) == 1 && n < DOOR_COUNT) { /* a click on the centre of door n */
             sel_gui_rect r = sidebar_door_rect(d, n);
+            sel_gui_input ck;
+            memset(&ck, 0, sizeof ck);
+            ck.kind = SEL_GUI_IN_CLICK;
+            ck.x = r.x + r.w / 2;
+            ck.y = r.y + r.h / 2;
+            opened |= desk_route_input(d, &ck);
+            pointer_sent = d->sends != sent;
+        } else if (sscanf(line, "viz %u", &n) == 1 && n < 3u) { /* a click on the centre of visualizer switch button n (the page's, else the strip's) */
+            sel_gui_rect r = d->viz_btn[d->viz_btn[1][n].w > 0 ? 1 : 0][n];
             sel_gui_input ck;
             memset(&ck, 0, sizeof ck);
             ck.kind = SEL_GUI_IN_CLICK;

@@ -5,6 +5,7 @@
 # 2. The layout id is 0 by default, 3 after Visual Layout (C-4), 0 again after Full Layout (C-1); the visual layout drew.
 # 3. The Visualizer page (--view viz, and the "v" key) draws one pane per plugin (3) and the signal path text.
 # 4. The levels and spectrum plugins are selectable (ui.desktop.viz) and render too.
+# 5. The on-screen switch (I280): `viz N` clicks switch button N through the pointer path; the click runs the action table line.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 set(fx "${HERE}/../m3/lyrics")
@@ -101,6 +102,24 @@ foreach(id viz_levels viz_spectrum)
   endif()
   if(sel_${id}_prims EQUAL 0 OR sel_${id}_frames EQUAL 0)
     message(FATAL_ERROR "${id} drew ${sel_${id}_frames} frames with ${sel_${id}_prims} primitives")
+  endif()
+endforeach()
+# 5. The switch: on Now Playing and on the Visualizer page, a click on Levels then Spectrum changes the rendering plugin.
+foreach(where home viz)
+  viz_run(sw_${where} ${where} "wait 100\nviz 1\nwait 100\n")
+  if(NOT "${sw_${where}_out}" MATCHES "viz_switch clicks ([0-9]+) strip ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+) page ([-0-9]+) ([-0-9]+) ([-0-9]+) ([-0-9]+)")
+    message(FATAL_ERROR "no viz_switch sentinel on ${where}")
+  endif()
+  if(NOT CMAKE_MATCH_1 EQUAL 1 OR NOT sw_${where}_plugin STREQUAL "viz_levels")
+    message(FATAL_ERROR "${where}: switch click gave ${CMAKE_MATCH_1} clicks and plugin ${sw_${where}_plugin}, want 1 and viz_levels")
+  endif()
+  if(sw_${where}_prims EQUAL 0)
+    message(FATAL_ERROR "${where}: Levels drew no primitives after the switch click")
+  endif()
+  viz_run(sw2_${where} ${where} "wait 100\nviz 1\nwait 100\nviz 2\nwait 100\n")
+  string(REGEX MATCH "viz_switch clicks ([0-9]+)" _m "${sw2_${where}_out}")
+  if(NOT CMAKE_MATCH_1 EQUAL 2 OR NOT sw2_${where}_plugin STREQUAL "viz_spectrum")
+    message(FATAL_ERROR "${where}: two switch clicks gave ${CMAKE_MATCH_1} clicks and plugin ${sw2_${where}_plugin}, want 2 and viz_spectrum")
   endif()
 endforeach()
 message(STATUS "dui-viz ok: ${np_frames} frames in ${np_ms} ms, layout 0/3/0, 3 panes")
