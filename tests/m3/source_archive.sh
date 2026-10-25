@@ -28,10 +28,11 @@ echo "$hits" | grep -q "^key=local:$root/pack.lzh/songs/inlha.mod\$" || { echo "
 echo "$hits" | grep -q "^key=local:$root/pack.lzx/songs/instore.mod\$" || { echo "FAIL missing stored lzx member"; exit 1; }
 echo "$hits" | grep -q "^key=local:$root/packc.lzx/songs/inlzx.mod\$" || { echo "FAIL missing compressed lzx member"; exit 1; }
 echo "$hits" | grep -q "^key=local:$root/song.pp\$" || { echo "FAIL missing depacked PowerPacker file"; exit 1; }
-# LIBRARY_BROWSE into archives: members list as a folder, nested folders are synthesised.
+# LIBRARY_BROWSE into archives: members list as a folder, nested folders are synthesised. The browser hides files
+# with no recognised format (I218i), so readme.txt is not listed and only songs/ remains.
 for a in pack.zip pack.lzh pack.lzx packc.lzx; do
     b=$("$cli" library browse "$root/$a")
-    echo "$b" | grep -q "dir_entries=2" || { echo "FAIL browse $a: expected songs/ and readme.txt"; echo "$b"; exit 1; }
+    echo "$b" | grep -q "dir_entries=1" || { echo "FAIL browse $a: expected songs/ only (readme.txt hidden)"; echo "$b"; exit 1; }
     b=$("$cli" library browse "$root/$a/songs")
     echo "$b" | grep -q "dir_entries=1" || { echo "FAIL browse $a/songs: expected one module"; echo "$b"; exit 1; }
 done
