@@ -27,7 +27,7 @@ target_link_libraries(dui_draw_unit PRIVATE selecta_gui)
 
 # The shell-driven tests (DUI-P1-1 to P1-4) run the real selecta binary on the generated modules.
 if(NOT SEL_AMIGA)
-  foreach(spec "dui-uim-frame:uim_frame" "dui-ui-switch:ui_switch" "dui-ui-multi:ui_multi" "dui-mode-pref:mode_pref" "dui-actions:actions" "dui-layout:layout" "dui-governor:governor" "dui-tokens:tokens" "dui-draw:draw" "dui-dirty:dirty" "dui-text:text" "dui-artwork:artwork" "dui-genart:genart" "dui-golden-home:golden_home" "dui-sdl:sdl" "dui-widgets:widgets" "dui-hidpi:hidpi" "dui-anim:anim" "dui-keys:keys" "dui-mouse:mouse" "dui-tooltips:tooltips" "dui-gestures:gestures" "dui-frame:frame" "dui-home:home" "dui-library:library" "dui-styles:styles" "dui-grid-coverflow:grid_coverflow" "dui-search:search" "dui-nowplaying:nowplaying" "dui-queue:queue" "dui-playlists:playlists" "dui-songinfo:songinfo" "dui-overlays:overlays" "dui-nav:nav")
+  foreach(spec "dui-uim-frame:uim_frame" "dui-ui-switch:ui_switch" "dui-ui-multi:ui_multi" "dui-mode-pref:mode_pref" "dui-actions:actions" "dui-layout:layout" "dui-governor:governor" "dui-tokens:tokens" "dui-draw:draw" "dui-dirty:dirty" "dui-text:text" "dui-artwork:artwork" "dui-genart:genart" "dui-golden-home:golden_home" "dui-sdl:sdl" "dui-widgets:widgets" "dui-hidpi:hidpi" "dui-anim:anim" "dui-keys:keys" "dui-mouse:mouse" "dui-tooltips:tooltips" "dui-gestures:gestures" "dui-frame:frame" "dui-home:home" "dui-library:library" "dui-styles:styles" "dui-grid-coverflow:grid_coverflow" "dui-search:search" "dui-nowplaying:nowplaying" "dui-queue:queue" "dui-playlists:playlists" "dui-songinfo:songinfo" "dui-overlays:overlays" "dui-nav:nav" "keys-live:keys_live")
     string(REPLACE ":" ";" pair "${spec}")
     list(GET pair 0 tname)
     list(GET pair 1 script)
@@ -44,6 +44,8 @@ if(NOT SEL_AMIGA)
     set(tlabel dui)
     if(tname STREQUAL "dui-nav")
       set(tlabel nav)
+    elseif(tname STREQUAL "keys-live") # I268: real SDL key events through desk_sdl_poll; not a plan item, so no dui label
+      set(tlabel keys-live)
     endif()
     set_tests_properties(${tname} PROPERTIES LABELS ${tlabel} TIMEOUT 120 ENVIRONMENT "TMPDIR=${tmpdir}")
   endforeach()

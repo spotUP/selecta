@@ -2395,12 +2395,18 @@ static sel_gui_rect search_facet_rect(desk* d, sel_gui_rect mn, uint32_t k) {
                    lpx(d, HOME_CHIP_H));
 }
 
+/* The search field of the Search page inside the main region mn. */
+static sel_gui_rect search_field_rect(const desk* d, sel_gui_rect mn) {
+    int32_t mg = lpx(d, HOME_MARGIN);
+    int32_t sw = mn.w - 2 * mg < lpx(d, HOME_SEARCH_MAX) ? mn.w - 2 * mg : lpx(d, HOME_SEARCH_MAX);
+    return rect_of(mn.x + mg, mn.y + lpx(d, SEARCH_FIELD_Y), sw, lpx(d, SEARCH_FIELD_H));
+}
+
 static void draw_search(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     sel_gui_rect mn = draw_panel(d, "main");
     int32_t mg = lpx(d, HOME_MARGIN), rad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]), ic = lpx(d, 18);
-    int32_t sw = mn.w - 2 * mg < lpx(d, HOME_SEARCH_MAX) ? mn.w - 2 * mg : lpx(d, HOME_SEARCH_MAX);
-    sel_gui_rect sr = rect_of(mn.x + mg, mn.y + lpx(d, SEARCH_FIELD_Y), sw, lpx(d, SEARCH_FIELD_H));
+    sel_gui_rect sr = search_field_rect(d, mn);
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     uint32_t k, shown = 0;
     int32_t y;
@@ -2669,6 +2675,16 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
     const sel_state* st = sel_engine_state(d->engine);
     sel_gui_rect mn = region_rect(d, "main");
     uint32_t i;
+    if (d->page == PG_SEARCH && in_rect(mn, x, y)) { /* a click in the field focuses it; elsewhere in main drops focus */
+        int32_t want = in_rect(search_field_rect(d, mn), x, y) ? (int32_t)d->layout.count : -1;
+        if (want >= 0 || d->focus == (int32_t)d->layout.count) {
+            int changed = d->focus != want;
+            d->focus = want;
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+            d->repaint = 1;
+            return changed || want >= 0;
+        }
+    }
     if (d->np_draws > 0u && in_rect(d->np_like, x, y)) { /* Now Playing: like the playing song, or set its rating */
         return desk_send(d, "LIKE");
     }
@@ -3914,10 +3930,14 @@ static int desk_route_input(desk* d, const sel_gui_input* ev) {
 }
 
 #ifdef SELECTA_DESKTOP_SDL
-/* the pointer and gesture events the window queued since the last poll */
+/* the pointer, gesture and key events the window queued since the last poll */
 static void desk_sdl_route(desk* d) {
     sel_gui_input ev;
     while (desk_sdl_next_input(d->sdl, &ev)) {
+        if (ev.kind == SEL_GUI_IN_KEY) {
+            (void)desk_key(d, &ev);
+            continue;
+        }
         (void)desk_route_input(d, &ev);
     }
 }

@@ -234,6 +234,15 @@ int sel_gui_input_map(sel_gui_input_map_state* st, const sel_gui_raw* raw, sel_g
         out->kind = SEL_GUI_IN_SWIPE;
         out->x = raw->dx > 0 ? 1 : -1;
         return 1;
+    case SEL_GUI_RAW_KEY:
+    case SEL_GUI_RAW_TEXT:
+        if (raw->code == 0u) {
+            return 0;
+        }
+        out->kind = SEL_GUI_IN_KEY;
+        out->code = raw->code;
+        out->mods = raw->kind == SEL_GUI_RAW_KEY ? raw->mods : 0u;
+        return 1;
     default:
         return 0;
     }

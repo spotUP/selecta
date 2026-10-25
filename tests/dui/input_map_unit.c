@@ -1,5 +1,6 @@
 /* Unit test of sel_gui_input_map (I242): the pure translation from raw pointer values to sel_gui_input. */
 #include <selecta/gui/gui_input.h>
+#include <selecta/uimodel/keys.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -91,5 +92,31 @@ int main(void) {
     if (fails == 0) {
         printf("input_map_unit: ok\n");
     }
+    /* raw key and text (I268): the same sel_gui_input the `key` script line builds */
+    {
+        sel_gui_raw r;
+        memset(&r, 0, sizeof r);
+        r.kind = SEL_GUI_RAW_KEY;
+        r.code = 'p';
+        r.mods = TXT_MOD_CTRL;
+        CHECK(sel_gui_input_map(&st, &r, &in) && in.kind == SEL_GUI_IN_KEY);
+        CHECK(sel_gui_input_parse("key ctrl+p", &scripted) && scripted.kind == in.kind && scripted.code == in.code &&
+              scripted.mods == in.mods);
+        r.code = TXT_KEY_DOWN;
+        r.mods = TXT_MOD_SHIFT | TXT_MOD_ALT;
+        CHECK(sel_gui_input_map(&st, &r, &in));
+        CHECK(sel_gui_input_parse("key shift+alt+down", &scripted) && scripted.code == in.code && scripted.mods == in.mods);
+        memset(&r, 0, sizeof r);
+        r.kind = SEL_GUI_RAW_TEXT;
+        r.code = ':';
+        r.mods = TXT_MOD_CTRL; /* ignored: typed text has no modifiers */
+        CHECK(sel_gui_input_map(&st, &r, &in) && in.kind == SEL_GUI_IN_KEY && in.code == ':' && in.mods == 0u);
+        CHECK(sel_gui_input_parse("key :", &scripted) && scripted.code == in.code && scripted.mods == in.mods);
+        r.code = 0u;
+        CHECK(!sel_gui_input_map(&st, &r, &in)); /* no code, no event */
+        r.kind = SEL_GUI_RAW_KEY;
+        CHECK(!sel_gui_input_map(&st, &r, &in));
+    }
+
     return fails == 0 ? 0 : 1;
 }

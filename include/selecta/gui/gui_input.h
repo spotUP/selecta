@@ -57,7 +57,9 @@ typedef enum sel_gui_raw_kind {
     SEL_GUI_RAW_MOTION,      /* x, y */
     SEL_GUI_RAW_WHEEL,       /* dx, dy in Q16 notches (positive dy scrolls up) */
     SEL_GUI_RAW_PINCH,       /* scale Q16: the change since the last update, above Q16 one is zoom in */
-    SEL_GUI_RAW_SWIPE        /* dx: positive swipes right (Back), negative left (Forward) */
+    SEL_GUI_RAW_SWIPE,       /* dx: positive swipes right (Back), negative left (Forward) */
+    SEL_GUI_RAW_KEY,         /* code (TXT_KEY_* or a code point), mods (TXT_MOD_*): a key press, same space as sel_gui_key_parse */
+    SEL_GUI_RAW_TEXT         /* code: one typed code point, already layout and shift translated; no modifiers */
 } sel_gui_raw_kind;
 
 typedef struct sel_gui_raw {
@@ -65,6 +67,7 @@ typedef struct sel_gui_raw {
     int32_t x, y;
     uint32_t button, clicks;
     int32_t dx, scale, dy;
+    uint32_t code, mods; /* SEL_GUI_RAW_KEY and SEL_GUI_RAW_TEXT */
 } sel_gui_raw;
 
 /* Press state between a button down and its up. */
@@ -79,7 +82,8 @@ typedef struct sel_gui_input_map_state {
 /* Translates one raw event. Returns 1 and fills *out, or 0 when the raw event produces nothing (a button down, which
  * waits for its up; the middle button; a zero wheel; a pinch of scale 0 or less; an unknown kind). Left and right up
  * give SEL_GUI_IN_CLICK (button 0 and 1, the click count passed through, at least 1), or SEL_GUI_IN_DRAG when the
- * pointer moved more than SEL_GUI_DRAG_SLOP since the press. Back and forward up give SEL_GUI_IN_SWIPE (+1 and -1). */
+ * pointer moved more than SEL_GUI_DRAG_SLOP since the press. A key or text raw event gives SEL_GUI_IN_KEY with the same
+ * code and mods the `key` script line builds (text: mods 0; a zero code gives nothing). Back and forward up give SEL_GUI_IN_SWIPE (+1 and -1). */
 int sel_gui_input_map(sel_gui_input_map_state* st, const sel_gui_raw* raw, sel_gui_input* out);
 
 #ifdef __cplusplus

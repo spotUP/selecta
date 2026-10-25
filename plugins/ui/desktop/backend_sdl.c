@@ -1,8 +1,11 @@
 /* The `sdl` backend of the desktop UI (DUI-P2-7); see backend_sdl.h. */
 #include "backend_sdl.h"
 
+#include <selecta/uimodel/keys.h>
+
 #include <SDL3/SDL.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define DESK_SDL_QUEUE 64u
@@ -40,6 +43,38 @@ static int make_texture(desk_sdl* b, int32_t w, int32_t h) {
     return 1;
 }
 
+/* Test hook: SELECTA_SDL_TEST_EVENTS is a space separated list of events pushed on the SDL queue at open, so a test can
+ * drive the real desk_sdl_poll. `k<keycode hex>/<keymod hex>` is a KEY_DOWN, `t<text>` a TEXT_INPUT. */
+static void push_test_events(const char* list) {
+    char buf[256];
+    char* save = NULL;
+    char* tok;
+    if (list == NULL) {
+        return;
+    }
+    snprintf(buf, sizeof buf, "%s", list);
+    for (tok = strtok_r(buf, " ", &save); tok != NULL; tok = strtok_r(NULL, " ", &save)) {
+        SDL_Event ev;
+        memset(&ev, 0, sizeof ev);
+        if (tok[0] == 'k') {
+            unsigned long key = 0ul, mod = 0ul;
+            if (sscanf(tok + 1, "%lx/%lx", &key, &mod) < 1) {
+                continue;
+            }
+            ev.type = SDL_EVENT_KEY_DOWN;
+            ev.key.down = true;
+            ev.key.key = (SDL_Keycode)key;
+            ev.key.mod = (SDL_Keymod)mod;
+        } else if (tok[0] == 't') {
+            ev.type = SDL_EVENT_TEXT_INPUT;
+            ev.text.text = SDL_strdup(tok + 1); /* the test hook never frees: it runs once per process */
+        } else {
+            continue;
+        }
+        SDL_PushEvent(&ev);
+    }
+}
+
 desk_sdl* desk_sdl_open(int32_t w, int32_t h) {
     desk_sdl* b;
     const char* drv;
@@ -65,6 +100,8 @@ desk_sdl* desk_sdl_open(int32_t w, int32_t h) {
         desk_sdl_close(b);
         return NULL;
     }
+    SDL_StartTextInput(b->window); /* typed characters arrive as SDL_EVENT_TEXT_INPUT, layout and shift already applied */
+    push_test_events(getenv("SELECTA_SDL_TEST_EVENTS"));
     return b;
 }
 
@@ -187,6 +224,88 @@ int desk_sdl_next_input(desk_sdl* b, sel_gui_input* ev) {
     return 1;
 }
 
+/* TXT_MOD_* of an SDL modifier state. Command counts as Control on macOS (the platform's shortcut key); the key grammar
+ * has no meta modifier. */
+static uint32_t txt_mods_of(SDL_Keymod m) {
+    uint32_t mods = 0u;
+    if ((m & SDL_KMOD_SHIFT) != 0) {
+        mods |= TXT_MOD_SHIFT;
+    }
+    if ((m & SDL_KMOD_ALT) != 0) {
+        mods |= TXT_MOD_ALT;
+    }
+    if ((m & SDL_KMOD_CTRL) != 0) {
+        mods |= TXT_MOD_CTRL;
+    }
+#ifdef __APPLE__
+    if ((m & SDL_KMOD_GUI) != 0) {
+        mods |= TXT_MOD_CTRL;
+    }
+#endif
+    return mods;
+}
+
+/* The key code (TXT_KEY_* or a code point) a KEY_DOWN delivers, or 0 when the key is a modifier, unknown, or a
+ * printable one that arrives as text instead. Printable keys are delivered here only under Control or Alt. */
+static uint32_t txt_code_of(SDL_Keycode k, uint32_t mods) {
+    switch (k) {
+    case SDLK_RETURN:
+    case SDLK_KP_ENTER: return 13u;
+    case SDLK_ESCAPE: return 27u;
+    case SDLK_TAB: return 9u;
+    case SDLK_BACKSPACE: return 127u;
+    case SDLK_UP: return TXT_KEY_UP;
+    case SDLK_DOWN: return TXT_KEY_DOWN;
+    case SDLK_LEFT: return TXT_KEY_LEFT;
+    case SDLK_RIGHT: return TXT_KEY_RIGHT;
+    case SDLK_HOME: return TXT_KEY_HOME;
+    case SDLK_END: return TXT_KEY_END;
+    case SDLK_PAGEUP: return TXT_KEY_PAGE_UP;
+    case SDLK_PAGEDOWN: return TXT_KEY_PAGE_DOWN;
+    case SDLK_INSERT: return TXT_KEY_INSERT;
+    case SDLK_DELETE: return TXT_KEY_DELETE;
+    default: break;
+    }
+    if (k >= SDLK_F1 && k <= SDLK_F12) {
+        return TXT_KEY_F1 + (uint32_t)(k - SDLK_F1);
+    }
+    if (k >= 0x20 && k <= 0x7e && (mods & (TXT_MOD_CTRL | TXT_MOD_ALT)) != 0u) {
+        return (uint32_t)k;
+    }
+    return 0u;
+}
+
+/* One KEY_DOWN or TEXT_INPUT event through the shared mapping into the queue. */
+static int queue_key(desk_sdl* b, const SDL_Event* ev) {
+    sel_gui_raw raw;
+    memset(&raw, 0, sizeof raw);
+    if (ev->type == SDL_EVENT_KEY_DOWN) {
+        raw.kind = SEL_GUI_RAW_KEY;
+        raw.mods = txt_mods_of(ev->key.mod);
+        raw.code = txt_code_of(ev->key.key, raw.mods);
+        return queue_raw(b, &raw);
+    }
+    /* Text typed while Control, Command or Alt is held is the key chord, which KEY_DOWN already delivered. */
+    if ((SDL_GetModState() & (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI)) != 0 || ev->text.text == NULL) {
+        return 0;
+    }
+    {
+        const char* t = ev->text.text;
+        int queued = 0;
+        while (*t != '\0') {
+            size_t len = SDL_strlen(t);
+            Uint32 cp = SDL_StepUTF8(&t, &len);
+            if (cp == 0u) {
+                break;
+            }
+            raw.kind = SEL_GUI_RAW_TEXT;
+            raw.code = cp;
+            queued |= queue_raw(b, &raw);
+        }
+        return queued;
+    }
+}
+
 int desk_sdl_poll(desk_sdl* b, uint32_t timeout_ms, int32_t* w, int32_t* h) {
     SDL_Event ev;
     int result = DESK_SDL_NONE;
@@ -242,6 +361,12 @@ int desk_sdl_poll(desk_sdl* b, uint32_t timeout_ms, int32_t* w, int32_t* h) {
             }
             break;
         }
+        case SDL_EVENT_KEY_DOWN:
+        case SDL_EVENT_TEXT_INPUT:
+            if (queue_key(b, &ev) && result == DESK_SDL_NONE) {
+                result = DESK_SDL_ACTIVITY;
+            }
+            break;
         default:
             break;
         }
