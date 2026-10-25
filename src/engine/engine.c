@@ -1401,10 +1401,13 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
     return read_whole_file(e, path, size);
 }
 
-/* The replayer hook list that claims the data: first YES, else first UNSURE. */
+/* The replayer hook list that claims the data: the highest SEL_RP_PRIORITY among the YES answers, else among the
+ * UNSURE ones; ties keep registration order (as sel_registry_format_owner does). */
 static const sel_tag* find_replayer(const sel_engine* e, const uint8_t* data, size_t size,
                                     const char* path) {
     const sel_tag* best = NULL;
+    const sel_tag* best_yes = NULL;
+    intptr_t best_pri = 0, best_yes_pri = 0;
     uint32_t i, n;
     if (e->registry_count == NULL || e->registry_get == NULL) {
         return NULL;
@@ -1425,13 +1428,20 @@ static const sel_tag* find_replayer(const sel_engine* e, const uint8_t* data, si
         }
         r = probe(data, size, path);
         if (r == SEL_PROBE_YES) {
-            return hooks;
-        }
-        if (r == SEL_PROBE_UNSURE && best == NULL) {
-            best = hooks;
+            intptr_t pri = (intptr_t)sel_tag_find(hooks, SEL_RP_PRIORITY, 0);
+            if (best_yes == NULL || pri > best_yes_pri) {
+                best_yes = hooks;
+                best_yes_pri = pri;
+            }
+        } else if (r == SEL_PROBE_UNSURE) {
+            intptr_t pri = (intptr_t)sel_tag_find(hooks, SEL_RP_PRIORITY, 0);
+            if (best == NULL || pri > best_pri) {
+                best = hooks;
+                best_pri = pri;
+            }
         }
     }
-    return best;
+    return best_yes != NULL ? best_yes : best;
 }
 
 /* Hands finished slots back: every index the audio thread returned gets its
