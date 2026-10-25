@@ -14,7 +14,7 @@ extern "C" {
 #define SEL_GUI_TOKENS(X)                                \
     X(ACCENT, "gui.accent", 0x3B82F6u, 0u, 0xFFFFFFu)    \
     X(SURFACE, "gui.surface", 0x1E1E24u, 0u, 0xFFFFFFu)  \
-    X(TEXT, "gui.text", 0xE6E6EBu, 0u, 0xFFFFFFu)        \
+    X(TEXT, "gui.text", 0xC8C8D0u, 0u, 0xFFFFFFu)        \
     X(RADIUS, "gui.radius", 6u, 0u, 32u)                 \
     X(SPACING, "gui.spacing", 8u, 0u, 64u)               \
     X(BACKGROUND, "gui.background", 0x121214u, 0u, 0xFFFFFFu)        \
@@ -23,7 +23,7 @@ extern "C" {
     X(SURFACE_PRESSED, "gui.surface_pressed", 0x3E3E4Au, 0u, 0xFFFFFFu) \
     X(TEXT_MUTED, "gui.text_muted", 0xA0A0ACu, 0u, 0xFFFFFFu)        \
     X(TEXT_DISABLED, "gui.text_disabled", 0x62626Eu, 0u, 0xFFFFFFu)  \
-    X(ACCENT_TEXT, "gui.accent_text", 0xFFFFFFu, 0u, 0xFFFFFFu)      \
+    X(ACCENT_TEXT, "gui.accent_text", 0xE4E4EAu, 0u, 0xFFFFFFu)      \
     X(DIVIDER, "gui.divider", 0x2C2C34u, 0u, 0xFFFFFFu)              \
     X(FOCUS_RING, "gui.focus_ring", 0x93C5FDu, 0u, 0xFFFFFFu)        \
     X(ERROR, "gui.error", 0xEF4444u, 0u, 0xFFFFFFu)                  \
@@ -36,6 +36,7 @@ extern "C" {
     X(PANEL, "gui.panel", 0x141418u, 0u, 0xFFFFFFu)                  \
     X(HEADER_TINT, "gui.header_tint", 0x2B2350u, 0u, 0xFFFFFFu)      \
     X(TRACK, "gui.track", 0x3A3A44u, 0u, 0xFFFFFFu)                  \
+    X(HOVER_LIGHT, "gui.hover_light", 0xE4E4EAu, 0u, 0xFFFFFFu)      \
     X(TILE_PAD, "gui.tile_pad", 10u, 0u, 64u)
 
 /* Layer 1 (D-DUI-9): base tokens. A theme swaps these and the role tokens above follow. X(id, file key, default, min,
@@ -50,8 +51,8 @@ extern "C" {
     X(GREY_6, "gui.base.grey_6", 0x3E3E4Au, 0u, 0xFFFFFFu)      \
     X(GREY_7, "gui.base.grey_7", 0x62626Eu, 0u, 0xFFFFFFu)      \
     X(GREY_8, "gui.base.grey_8", 0xA0A0ACu, 0u, 0xFFFFFFu)      \
-    X(GREY_9, "gui.base.grey_9", 0xE6E6EBu, 0u, 0xFFFFFFu)      \
-    X(GREY_10, "gui.base.grey_10", 0xFFFFFFu, 0u, 0xFFFFFFu)    \
+    X(GREY_9, "gui.base.grey_9", 0xC8C8D0u, 0u, 0xFFFFFFu)      \
+    X(GREY_10, "gui.base.grey_10", 0xE4E4EAu, 0u, 0xFFFFFFu)    \
     X(ACCENT_0, "gui.base.accent_0", 0x3B82F6u, 0u, 0xFFFFFFu)  \
     X(ACCENT_1, "gui.base.accent_1", 0x93C5FDu, 0u, 0xFFFFFFu)  \
     X(ERROR_0, "gui.base.error_0", 0xEF4444u, 0u, 0xFFFFFFu)    \
@@ -101,6 +102,7 @@ typedef enum sel_gui_base {
     X(PANEL, PANEL_0)                    \
     X(HEADER_TINT, TINT_0)               \
     X(TRACK, TRACK_0)                    \
+    X(HOVER_LIGHT, GREY_10)              \
     X(TILE_PAD, SPACING_3)
 
 typedef enum sel_gui_token {

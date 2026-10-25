@@ -423,7 +423,7 @@ static uint32_t hover_fill_of(desk* d, sel_gui_rect box, uint32_t base) {
     uint32_t out = base;
     if (w > 0) {
         out = base == ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT])
-                  ? desk_mix(base, 0xFFFFFFFFu, w / 6)
+                  ? desk_mix(base, ARGB(d->theme.token[SEL_GUI_TOKEN_HOVER_LIGHT]), w / 6)
                   : desk_mix(base, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_HOVER]), w);
         d->hover_fill = out;
         d->hover_paints++;
@@ -1053,7 +1053,7 @@ static void draw_songs(desk* d) {
             continue;
         }
         if ((int32_t)i + 1 == d->hover_row) {
-            sel_gui_scrim(d->canvas, r, 0xFFFFFFu, 36u);
+            sel_gui_scrim(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_HOVER_LIGHT]) & 0xFFFFFFu, 36u);
         }
         queue_title(st, q, name, sizeof name);
         queue_format(st, q, format, sizeof format);
