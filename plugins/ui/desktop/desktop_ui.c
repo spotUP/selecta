@@ -157,6 +157,7 @@ typedef struct desk {
     uint32_t np_draws;       /* Now Playing panel draws (sentinel) */
     sel_gui_rect np_like, np_rate[5]; /* click targets of the like button and the five rating marks */
     uint32_t np_msg_lines;            /* lines of the song message the last Now Playing draw laid out (I290) */
+    int32_t np_liked;                 /* 1 when the last Now Playing draw showed the heart as liked (I306) */
     int32_t np_rating;                /* filled rating marks of the last Now Playing draw (I288) */
     uint32_t lib_searches;   /* LIBRARY_SEARCH lines sent for typed queries: STAT_LIBRARY_SEARCHES */
     uint32_t search_draws, search_rows;  /* search view frames drawn, result rows in the last one */
@@ -2799,7 +2800,7 @@ static const char* library_dump_build(desk* d) {
                           (unsigned)d->flow_centre);
     o = dump_put(d, o, "nowplaying draws %u pairs %u\nlyrics line %d at %u\nmessage lines %u\n",
                           (unsigned)d->np_draws, (unsigned)d->np_rows, (int)st->lyric_line, (unsigned)st->song.position_ms, (unsigned)d->np_msg_lines);
-    o = dump_put(d, o, "rating %d mark %d %d %d %d step %d\n", (int)d->np_rating,
+    o = dump_put(d, o, "rating %d liked %d mark %d %d %d %d step %d\n", (int)d->np_rating, (int)d->np_liked,
                           (int)d->np_rate[0].x, (int)d->np_rate[0].y, (int)d->np_rate[0].w, (int)d->np_rate[0].h,
                           (int)(d->np_rate[1].x - d->np_rate[0].x));
     o = dump_put(d, o,
@@ -4103,7 +4104,7 @@ static void draw_nowplaying(desk* d) {
     int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     uint32_t accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
-    int32_t side = dt.w - 2 * sp, y, rating = 0, ic = lpx(d, 20);
+    int32_t side = dt.w - 2 * sp, y, rating = 0, liked = 0, ic = lpx(d, 20);
     sel_gui_rect ar, band;
     uint32_t k, first;
     if (dt.w <= 0 || dt.h <= 0) {
@@ -4129,18 +4130,21 @@ static void draw_nowplaying(desk* d) {
     /* Like and rating: the library's rating row gives the filled marks; a click sends LIKE or RATE n like the text UI. */
     y += lpx(d, 44);
     d->np_like = rect_of(dt.x + sp, y, ic, ic);
-    sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_HEART, d->np_like, ic, accent);
     if (st->panel != NULL) {
         const char* p = st->panel;
         while (*p != '\0') {
             const char* v = p + strlen(p) + 1;
             if (strcmp(p, "Rating") == 0) {
                 rating = atoi(v);
+            } else if (strcmp(p, "Liked") == 0) {
+                liked = 1;
             }
             p = v + strlen(v) + 1;
         }
     }
     d->np_rating = rating;
+    d->np_liked = liked;
+    sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_HEART, d->np_like, ic, liked ? accent : muted);
     for (k = 0; k < 5u; k++) {
         int32_t m = lpx(d, 12);
         d->np_rate[k] = rect_of(dt.x + sp + ic + lpx(d, 12) + (int32_t)k * (m + lpx(d, 6)), y + (ic - m) / 2, m, m);

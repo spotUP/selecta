@@ -3436,6 +3436,7 @@ static void cmd_LIKE(sel_engine* e, const sel_message* m) {
         if (!ok) {
             sel_engine_report_error(e, "library_failed", "LIKE");
         } else {
+            panel_reload(e); /* the Now Playing heart reads the liked state from the panel (I306) */
             like_sync(e, key, was ? 0 : 5);
         }
     }

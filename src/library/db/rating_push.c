@@ -11,8 +11,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Sends every rating still waiting for DEViLBOX (D-M3-12), oldest first. A rejected push (400) is dropped; one that
- * cannot reach the server stays and ends the pass (the next run retries). */
 /* The likes in the same queue (I306): payload "token mkey r", sent through sel_devilbox_vote. A refused vote (bad key
  * or token) is dropped like a rejected rating; an unreachable or rate limiting service keeps the row for the next run. */
 static void like_flush(sel_library* lib) {
@@ -41,6 +39,8 @@ static void like_flush(sel_library* lib) {
     }
 }
 
+/* Sends every rating still waiting for DEViLBOX (D-M3-12), oldest first. A rejected push (400) is dropped; one that
+ * cannot reach the server stays and ends the pass (the next run retries). */
 void sel_rating_job_run(sel_library* lib) {
     char buf[2048];
     uint32_t rows = 0;
