@@ -162,6 +162,8 @@ typedef struct desk {
     int search_keep;         /* 1 while the Home field click enters Search: the typed query stays */
     sel_gui_rect ring, field, caret; /* the last focus ring, the search field it hugs and the caret bar (stats line) */
     uint32_t caret_draws;
+    struct { sel_gui_rect box; int32_t ink_x, ink_w; char text[24]; } labels[48]; /* the centred labels as last drawn, by box and text (stats line) */
+    uint32_t label_n;
     uint32_t lit_doors;      /* bit i set: sidebar door i was drawn raised in the last frame (nav sentinel) */
     int np_page;             /* the main region shows the Now Playing page */
     int view_pending;        /* --view named a page: desk_wait enters it through desk_page_goto before the first frame */
@@ -316,6 +318,32 @@ static void draw_text(desk* d, sel_gui_rect box, const char* s, int semibold, in
         sel_gui_clip_push(d->canvas, box);
         sel_gui_text_draw(d->canvas, at, box.x, box.y + (box.h - at->line_height) / 2, s, argb, box.w, &d->text);
         sel_gui_clip_pop(d->canvas);
+    }
+}
+
+/* One line of text centred in a button or chip box, ellipsized to the box width minus a pad on each side. Every button
+ * and chip label goes through here (I270). The ink span is recorded per box for the stats line. */
+static void draw_text_centered(desk* d, sel_gui_rect box, const char* s, int semibold, int px, uint32_t argb) {
+    const sel_gui_atlas* at = desk_font(d, semibold, px);
+    int32_t avail = box.w - 2 * lpx(d, 8), tw, ink, x;
+    uint32_t i;
+    if (at == NULL || avail <= 0) {
+        return;
+    }
+    tw = sel_gui_text_width(at, s, strlen(s));
+    ink = tw < avail ? tw : avail;
+    x = box.x + (box.w - ink) / 2;
+    draw_text(d, rect_of(x, box.y, ink, box.h), s, semibold, px, argb);
+    for (i = 0; i < d->label_n && (d->labels[i].box.x != box.x || d->labels[i].box.y != box.y || strncmp(d->labels[i].text, s, sizeof d->labels[i].text - 1u) != 0); i++) {
+    }
+    if (i < sizeof d->labels / sizeof d->labels[0]) {
+        d->labels[i].box = box;
+        d->labels[i].ink_x = x;
+        d->labels[i].ink_w = ink;
+        snprintf(d->labels[i].text, sizeof d->labels[i].text, "%s", s);
+        if (i == d->label_n) {
+            d->label_n++;
+        }
     }
 }
 
@@ -986,7 +1014,7 @@ static void draw_home_header(desk* d, sel_gui_rect mn, int with_section) {
         sel_gui_rect cr = rect_of(x, mn.y + lpx(d, HOME_CHIPS_Y), w, lpx(d, HOME_CHIP_H));
         sel_gui_round_rect(d->canvas, cr, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]),
                            ARGB(d->theme.token[k == 0 ? SEL_GUI_TOKEN_ACCENT : SEL_GUI_TOKEN_SURFACE_RAISED]));
-        draw_text(d, rect_of(cr.x + lpx(d, 14), cr.y, w, cr.h), chips[k], 1, 13,
+        draw_text_centered(d, cr, chips[k], 1, 13,
                   ARGB(d->theme.token[k == 0 ? SEL_GUI_TOKEN_ACCENT_TEXT : SEL_GUI_TOKEN_TEXT]));
         x += w + sp;
     }
@@ -1480,7 +1508,7 @@ static void draw_queue(desk* d) {
         const char* label = i == 0u ? "Undo" : i == 1u ? "Redo" : i == 2u ? "Reshuffle" : queue_scope_label[queue_scope_index(st)];
         int live = i == 0u ? es.undo_depth > 0u : i == 1u ? es.redo_depth > 0u : 1;
         sel_gui_round_rect(d->canvas, b, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
-        draw_text(d, b, label, 1, 13, live ? text : muted);
+        draw_text_centered(d, b, label, 1, 13, live ? text : muted);
     }
     for (i = 0; i < st->queue_count && queue_row_visible(d, mn, i); i++, shown++) {
         sel_gui_rect r = queue_row_rect(d, mn, i);
@@ -1657,7 +1685,7 @@ static void draw_playlists(desk* d) {
         sel_gui_rect b = queue_btn_rect(d, mn, i);
         int live = i < 2u || i == 4u ? 1 : sel >= 0 && (i == 3u || v->rows[sel].kind == (uint32_t)SEL_ROW_PLAYLIST);
         sel_gui_round_rect(d->canvas, b, rad, d->pl_confirm && i == 3u ? accent : surf);
-        draw_text(d, b, pl_button_label(d, i), 1, 13, live ? text : muted);
+        draw_text_centered(d, b, pl_button_label(d, i), 1, 13, live ? text : muted);
     }
     sel_gui_round_rect(d->canvas, nm, rad, surf);
     draw_text(d, rect_of(nm.x + lpx(d, 12), nm.y, nm.w - lpx(d, 24), nm.h), d->pl_nlen > 0u ? d->pl_name : "Name", d->pl_edit, 13,
@@ -2077,7 +2105,7 @@ static void draw_songinfo(desk* d) {
     for (i = 0; i < SI_BUTTONS; i++) {
         sel_gui_rect b = queue_btn_rect(d, mn, i);
         sel_gui_round_rect(d->canvas, b, rad, surf);
-        draw_text(d, b, si_button_label(i), 1, 13, text);
+        draw_text_centered(d, b, si_button_label(i), 1, 13, text);
     }
     sel_gui_round_rect(d->canvas, nm, rad, surf);
     draw_text(d, rect_of(nm.x + lpx(d, 12), nm.y, nm.w - lpx(d, 24), nm.h), d->si_nlen > 0u ? d->si_note : "Note", d->si_edit, 13,
@@ -2286,6 +2314,11 @@ static const char* library_dump_build(desk* d) {
                               (unsigned)d->pg_n, (unsigned)d->pg_pos, (unsigned)d->np_page_draws, (unsigned)d->nav_arrow_clicks, (unsigned)d->lit_doors, (int)d->ring.x, (int)d->ring.y, (int)d->ring.w, (int)d->ring.h,
                               (int)d->field.x, (int)d->field.y, (int)d->field.w, (int)d->field.h, (unsigned)d->caret_draws, (int)d->caret.x, (int)d->caret.y, (int)d->caret.w, (int)d->caret.h, (int)d->nav_back.x, (int)d->nav_back.y, (int)d->nav_back.w,
                               (int)d->nav_back.h, (int)d->nav_fwd.x, (int)d->nav_fwd.y, (int)d->nav_fwd.w, (int)d->nav_fwd.h);
+    }
+    for (i = 0; i < d->label_n && o + 200u < sizeof d->library_dump; i++) { /* centred button and chip labels (I270) */
+        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "label %d %d %d %d ink %d %d text %s\n",
+                              (int)d->labels[i].box.x, (int)d->labels[i].box.y, (int)d->labels[i].box.w, (int)d->labels[i].box.h,
+                              (int)d->labels[i].ink_x, (int)d->labels[i].ink_w, d->labels[i].text);
     }
     if (o + 900u < sizeof d->library_dump) { /* the overlays (DUI-P4-13) */
         uint32_t k;
@@ -2668,7 +2701,7 @@ static void draw_search(desk* d) {
         int on = k == d->search_facet;
         sel_gui_round_rect(d->canvas, cr, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]),
                            ARGB(d->theme.token[on ? SEL_GUI_TOKEN_ACCENT : SEL_GUI_TOKEN_SURFACE]));
-        draw_text(d, cr, search_facet_name[k], 1, 13, on ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]) : text);
+        draw_text_centered(d, cr, search_facet_name[k], 1, 13, on ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]) : text);
     }
     y = mn.y + lpx(d, SEARCH_FIELD_Y + SEARCH_FIELD_H + 16) + lpx(d, HOME_CHIP_H + 16);
     if (v != NULL && d->search_facet != 2u) { /* the Songs group: the engine rows of the query */
@@ -2754,7 +2787,7 @@ static void draw_home_content(desk* d) {
         draw_text(d, rect_of(mn.x + lpx(d, HOME_MARGIN), mn.y + lpx(d, HOME_SECTION_Y), mn.w - 2 * lpx(d, HOME_MARGIN), lpx(d, HOME_SECTION_H)),
                   "Nothing played yet. Songs you play show up here.", 0, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
         sel_gui_round_rect(d->canvas, b, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
-        draw_text(d, rect_of(b.x + lpx(d, 14), b.y, b.w, b.h), "Browse files", 1, 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+        draw_text_centered(d, b, "Browse files", 1, 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
         sel_gui_clip_pop(d->canvas);
         sel_gui_dirty_add(d->canvas, mn);
         return;

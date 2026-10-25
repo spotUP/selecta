@@ -510,20 +510,22 @@ int main(int argc, char** argv)
         const char* view = option(argc, argv, "--view", "");
         int own = strcmp(ui_id, "desktop") == 0 && (strcmp(view, "home") == 0 || strcmp(view, "library") == 0 ||
                                                      strcmp(view, "playlists") == 0 || strcmp(view, "songs") == 0);
-        if (own) { /* the desktop UI enters these pages itself (desk_page_goto), the one place their engine verbs live (I266) */
-        } else if (strcmp(option(argc, argv, "--view", ""), "home") == 0) { /* the start view the user named: Home, not the folder list */
-            send_line(e, "VIEW_SOURCE home");
-            send_line(e, "VIEW_WINDOW 32");
-            sel_engine_pump(e, sink, ctx);
-        } else if (strcmp(option(argc, argv, "--view", ""), "library") == 0) { /* the Library page: composers and the stats (DUI-P4-3) */
-            send_line(e, "VIEW_SHOW browse");
-            send_line(e, "COMPOSERS_SHOW");
-            send_line(e, "STATS_SHOW");
-        } else if (strcmp(option(argc, argv, "--view", ""), "playlists") == 0 || strcmp(option(argc, argv, "--view", ""), "songs") == 0) {
-            send_line(e, "VIEW_SOURCE folders"); /* the saved playlists: the Playlists page lists them, the Songs page drops onto them */
-            send_line(e, "VIEW_WINDOW 64");
-        } else {
-            send_line(e, "VIEW_SHOW browse");
+        /* the desktop UI enters these pages itself (desk_page_goto), the one place their engine verbs live (I266) */
+        if (!own) {
+            if (strcmp(option(argc, argv, "--view", ""), "home") == 0) { /* the start view the user named: Home, not the folder list */
+                send_line(e, "VIEW_SOURCE home");
+                send_line(e, "VIEW_WINDOW 32");
+                sel_engine_pump(e, sink, ctx);
+            } else if (strcmp(option(argc, argv, "--view", ""), "library") == 0) { /* the Library page: composers and the stats (DUI-P4-3) */
+                send_line(e, "VIEW_SHOW browse");
+                send_line(e, "COMPOSERS_SHOW");
+                send_line(e, "STATS_SHOW");
+            } else if (strcmp(option(argc, argv, "--view", ""), "playlists") == 0 || strcmp(option(argc, argv, "--view", ""), "songs") == 0) {
+                send_line(e, "VIEW_SOURCE folders"); /* the saved playlists: the Playlists page lists them, the Songs page drops onto them */
+                send_line(e, "VIEW_WINDOW 64");
+            } else {
+                send_line(e, "VIEW_SHOW browse");
+            }
         }
     }
     apply_option_words(e, argc, argv);
