@@ -53,6 +53,11 @@ typedef enum { PG_HOME, PG_SEARCH, PG_LIBRARY, PG_PLAYLISTS, PG_QUEUE, PG_NOWPLA
 static const char* const g_page_name[PG_COUNT] = {"home", "search", "library", "playlists", "queue", "nowplaying", "songs", "songinfo", "viz", "tracker"};
 /* The sidebar doors in order: Spotify's Home, Search and Your Library, then Playlists, Queue and Now Playing. */
 #define DOOR_COUNT 7u
+/* Capacity of the hover hit-test list (I345). Worst case on one page: the Songs rows at SONG_ROW_H 32 px in a 4K tall main
+ * region (2160 / 32 = 67.5 -> 68 rows, plus one row half scrolled out = 69), 7 doors, 8 transport buttons and 16 chips,
+ * tabs and page buttons: 69 + 7 + 8 + 16 = 100, rounded up to 128. Library rows at 48 px need 46, queue and playlist rows
+ * at 40 px need 54, so Songs is the maximum. */
+#define HBOX_MAX 128
 
 typedef struct desk {
     sel_engine* engine;
@@ -172,7 +177,6 @@ typedef struct desk {
     uint32_t order_n;
     uint32_t sort_col;       /* 0 title, 1 format */
     uint32_t sort_dir;       /* 0 queue order, 1 ascending, 2 descending */
-    int32_t hover_row;       /* 1-based display row under the pointer, 0 = none */
     int32_t menu_row;        /* 1-based display row of the open context menu, 0 = closed */
     int32_t menu_x, menu_y;  /* canvas pixels, top left of the menu */
     uint32_t hovers, clicks, double_clicks, drags, sorts, menus, row_plays;
@@ -197,11 +201,14 @@ typedef struct desk {
     uint32_t caret_draws;
     struct { sel_gui_rect box; int32_t ink_x, ink_w; char text[24]; } labels[48]; /* the centred labels as last drawn, by box and text (stats line) */
     uint32_t label_n;
-    sel_gui_rect hbox[64];   /* the hoverable controls as last drawn (buttons, chips, tabs, doors): the pointer hit-test list (I272) */
+    sel_gui_rect hbox[HBOX_MAX]; /* the hoverable controls and list rows as last drawn (buttons, chips, tabs, doors, rows): the pointer hit-test list (I272, I345) */
     uint32_t hbox_n;
     sel_gui_rect hover_box;  /* the control under the pointer, w = 0 for none; its fill fades to the surface-hover token */
     uint32_t hover_fill;     /* the fill the hovered control was last painted with (stats line) */
     uint32_t hover_paints;   /* paints of a hovered control (sentinel) */
+    sel_gui_rect hover_prev; /* the box the pointer left, w = 0 for none: its ink fades back over the same tween (I346) */
+    uint32_t hover_prev_ms;  /* UI clock when the pointer left hover_prev */
+    int32_t ink_in, ink_out; /* the in and out weights hover_ink_of last used for the hovered box and the box it left (stats line hover_ink) */
     uint32_t lit_doors;      /* bit i set: sidebar door i was drawn raised in the last frame (nav sentinel) */
     int np_page;             /* the main region shows the Now Playing page */
     int view_pending;        /* --view named a page: desk_wait enters it through desk_page_goto before the first frame */
@@ -418,6 +425,34 @@ static int32_t hover_weight(const desk* d, sel_gui_rect box) {
     return d->hover_box.w > 0 && rect_same(d->hover_box, box) ? sel_gui_tween_value(&d->tl, ANIM_KEY_HOVER, 65536) : 0;
 }
 
+/* Weight (Q16) of the fade-out of the box the pointer just left: the mirror of the in tween, same ANIM_KEY_HOVER and FAST_MS
+ * (desk_hover_move restarts the tween on every change, so 65536 - value is the way back from full). 0 for any other box. */
+static int32_t hover_weight_out(const desk* d, sel_gui_rect box) {
+    return d->hover_prev.w > 0 && rect_same(d->hover_prev, box) && !rect_same(d->hover_box, box)
+               ? 65536 - sel_gui_tween_value(&d->tl, ANIM_KEY_HOVER, 65536)
+               : 0;
+}
+
+/* The ink of a hoverable row or door (I345, I346): `muted` at rest, blending to `full` as the pointer enters and back as it
+ * leaves. The one mechanism for the sidebar doors and every list row; they take no background for hover. */
+static uint32_t hover_ink_of(desk* d, sel_gui_rect box, uint32_t muted, uint32_t full) {
+    int32_t win = hover_weight(d, box), wout = hover_weight_out(d, box);
+    hover_reg(d, box);
+    if (d->hover_box.w > 0 && rect_same(d->hover_box, box)) {
+        d->ink_in = win;
+    } else if (d->hover_prev.w > 0 && rect_same(d->hover_prev, box)) {
+        d->ink_out = wout;
+    }
+    return desk_mix(muted, full, win > wout ? win : wout);
+}
+
+/* The ink of a list row (I345): a muted row warms to the text ink, a text row to the accent, an accent row (the selected or
+ * playing one) stays. Only the ink moves; no list row takes a hover background. */
+static uint32_t row_ink(desk* d, sel_gui_rect row, uint32_t rest) {
+    uint32_t muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]), accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
+    return hover_ink_of(d, row, rest, rest == muted ? ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]) : accent);
+}
+
 /* The fill of a control under the pointer: a plain surface fill fades to the surface-hover token; an accent fill brightens
  * toward white (the surface-hover token would dull it). */
 static uint32_t hover_fill_of(desk* d, sel_gui_rect box, uint32_t base) {
@@ -544,6 +579,7 @@ static void draw_nowplaying(desk* d);
 static void draw_nowplaypage(desk* d);
 static void draw_nav_arrows(desk* d, sel_gui_rect mn);
 static sel_gui_rect nav_arrow_rect(desk* d, sel_gui_rect mn, int32_t k);
+static sel_gui_rect sidebar_door_rect(const desk* d, uint32_t i);
 static void draw_player_left(desk* d);
 
 /* The footer bars (I312). The seek row spans tw pixels from x0, centred over the transport buttons, with the times at
@@ -1047,22 +1083,20 @@ static void draw_songs(desk* d) {
     for (i = 0; i < d->order_n; i++) {
         sel_gui_rect r = songs_row_rect(d, i);
         char name[256], format[16];
-        uint32_t q = d->order[i];
+        uint32_t q = d->order[i], rink;
         if (r.y >= mn.y + mn.h) {
             break;
         }
         if (r.y < songs_top(d) + lpx(d, SONG_HEADER_H)) { /* scrolled under the header */
             continue;
         }
-        if ((int32_t)i + 1 == d->hover_row) {
-            sel_gui_scrim(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_HOVER_LIGHT]) & 0xFFFFFFu, 36u);
-        }
+        rink = row_ink(d, r, text);
         queue_title(st, q, name, sizeof name);
         queue_format(st, q, format, sizeof format);
         sel_gui_text_wrap(d->canvas, semi, rect_of(r.x + pad, r.y + lpx(d, 8), songs_header_col(d, 0).w - 2 * pad, semi->line_height),
-                          name, text, 1, &d->text);
+                          name, rink, 1, &d->text);
         sel_gui_text_wrap(d->canvas, semi, rect_of(songs_header_col(d, 1).x + pad, r.y + lpx(d, 8), songs_header_col(d, 1).w - 2 * pad, semi->line_height),
-                          format, text, 1, &d->text);
+                          format, rink, 1, &d->text);
     }
     if (d->menu_row > 0) {
         uint32_t k;
@@ -1751,6 +1785,7 @@ static void draw_queue(desk* d) {
         int divider = (st->queue[i].flags & SEL_QUEUE_FLAG_DIVIDER) != 0u;
         int playing = st->queue[i].id == st->queue_playing;
         sel_gui_rect nx = queue_next_rect(d, mn, i), dl = queue_del_rect(d, mn, i);
+        uint32_t qink = divider ? muted : row_ink(d, r, playing ? accent : text), qmuted = divider ? muted : row_ink(d, r, muted);
         if (divider) { /* a group header: its name in the muted bold face, nothing to play next */
             draw_text(d, rect_of(r.x, r.y, nx.x - r.x, r.h), st->queue_text + st->queue[i].path_offset, 1, 13, muted);
         } else {
@@ -1758,10 +1793,10 @@ static void draw_queue(desk* d) {
             if (playing) {
                 sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_PLAY, rect_of(r.x, r.y + (r.h - ic) / 2, ic, ic), ic, accent);
             }
-            draw_text(d, rect_of(r.x + ic + lpx(d, 12), r.y, nx.x - r.x - ic - lpx(d, 12), r.h), buf, playing, 14, playing ? accent : text);
-            draw_text(d, nx, "Play Next", 1, 12, muted);
+            draw_text(d, rect_of(r.x + ic + lpx(d, 12), r.y, nx.x - r.x - ic - lpx(d, 12), r.h), buf, playing, 14, qink);
+            draw_text(d, nx, "Play Next", 1, 12, qmuted);
         }
-        sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_X, rect_of(dl.x + (dl.w - ic) / 2, dl.y + (dl.h - ic) / 2, ic, ic), ic, muted);
+        sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_X, rect_of(dl.x + (dl.w - ic) / 2, dl.y + (dl.h - ic) / 2, ic, ic), ic, qmuted);
     }
     d->queue_draws++;
     d->queue_rows = shown;
@@ -1933,7 +1968,7 @@ static void draw_playlists(desk* d) {
             sel_gui_round_rect(d->canvas, r, rad, surf);
         }
         draw_text(d, rect_of(r.x + lpx(d, 12) + ind, r.y, r.w - lpx(d, 24) - ind, r.h), v->rows[i].text, folder, 14,
-                  (int32_t)i == sel ? accent : folder ? text : muted);
+                  row_ink(d, r, (int32_t)i == sel ? accent : folder ? text : muted));
     }
     d->pl_draws++;
     d->pl_rows = shown;
@@ -2552,11 +2587,11 @@ static void draw_trackerpage(desk* d) {
                 continue;
             }
             snprintf(buf, sizeof buf, "%02u", (unsigned)(k + 1u));
-            draw_text(d, rect_of(rr.x, rr.y, lpx(d, 36), rr.h), buf, 0, 13, muted);
+            draw_text(d, rect_of(rr.x, rr.y, lpx(d, 36), rr.h), buf, 0, 13, row_ink(d, rr, muted));
             draw_text(d, rect_of(rr.x + lpx(d, 40), rr.y, rr.w / 2, rr.h), s.name != NULL && s.name[0] != '\0' ? s.name : "(unnamed)", 0, 13,
-                      text);
+                      row_ink(d, rr, text));
             snprintf(buf, sizeof buf, "%u frames  %u Hz", (unsigned)s.length, (unsigned)s.rate);
-            draw_text(d, rect_of(rr.x + rr.w / 2, rr.y, rr.w / 2, rr.h), buf, 0, 13, muted);
+            draw_text(d, rect_of(rr.x + rr.w / 2, rr.y, rr.w / 2, rr.h), buf, 0, 13, row_ink(d, rr, muted));
             d->tr_rows++;
         }
     }
@@ -2960,6 +2995,11 @@ static const char* library_dump_build(desk* d) {
                               "hover_box %d %d %d %d fill=%08x token=%08x paints=%u tile=%d\n", (int)d->hover_box.x, (int)d->hover_box.y,
                               (int)d->hover_box.w, (int)d->hover_box.h, (unsigned)d->hover_fill,
                               (unsigned)ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_HOVER]), (unsigned)d->hover_paints, (int)d->hover_tile);
+        o = dump_put(d, o, "hover_ink=%d,%d\n", (int)d->ink_in, (int)d->ink_out);
+        for (i = 0; i < DOOR_COUNT && o + 200u < sizeof d->library_dump; i++) { /* the door rectangles, where a test moves the pointer */
+            sel_gui_rect dr = sidebar_door_rect(d, i);
+            o = dump_put(d, o, "door %u %d %d %d %d\n", (unsigned)i, (int)dr.x, (int)dr.y, (int)dr.w, (int)dr.h);
+        }
     }
     for (i = 0; i < d->label_n && o + 200u < sizeof d->library_dump; i++) { /* centred button and chip labels (I270) */
         o = dump_put(d, o, "label %d %d %d %d ink %d %d text %s\n",
@@ -3115,7 +3155,7 @@ static void draw_library(desk* d) {
         for (p = lib_next(cnt); *p != '\0'; i++) {
             const char* name = lib_next(p);
             sel_gui_rect r = lib_row_rect(d, mn, i + 1u);
-            draw_text(d, r, name, 0, 15, text);
+            draw_text(d, r, name, 0, 15, row_ink(d, r, text));
             p = lib_next(name);
         }
         sel_gui_clip_pop(d->canvas);
@@ -3156,12 +3196,12 @@ static void draw_library(desk* d) {
                 int head = vr->kind == (uint32_t)SEL_ROW_HEADING || vr->kind == (uint32_t)SEL_ROW_DIR;
                 int32_t ind = (int32_t)vr->depth * lpx(d, 24);
                 draw_text(d, rect_of(r.x + ind, r.y, r.w * 2 / 3 - ind, r.h), vr->text != NULL ? vr->text : "", node || head, 15,
-                          node && vr->expanded ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : vr->kind == (uint32_t)SEL_ROW_HEADING ? muted : text);
+                          row_ink(d, r, node && vr->expanded ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : vr->kind == (uint32_t)SEL_ROW_HEADING ? muted : text));
                 if (node) {
                     snprintf(line, sizeof line, "%u songs", (unsigned)vr->count);
-                    draw_text(d, rect_of(r.x + r.w * 2 / 3, r.y, r.w / 3, r.h), line, 0, 14, muted);
+                    draw_text(d, rect_of(r.x + r.w * 2 / 3, r.y, r.w / 3, r.h), line, 0, 14, row_ink(d, r, muted));
                 } else if (vr->kind == (uint32_t)SEL_ROW_DIR) {
-                    draw_text(d, rect_of(r.x + r.w * 2 / 3, r.y, r.w / 3, r.h), "Folder", 0, 14, muted);
+                    draw_text(d, rect_of(r.x + r.w * 2 / 3, r.y, r.w / 3, r.h), "Folder", 0, 14, row_ink(d, r, muted));
                 }
                 sel_gui_dirty_add(d->canvas, r);
             }
@@ -3174,9 +3214,9 @@ static void draw_library(desk* d) {
             sel_gui_rect r = lib_row_rect(d, mn, i);
             char line[48];
             if (r.y + r.h > lib_list_top(d, mn, st) && r.y < mn.y + mn.h) { /* only the rows in view are drawn (I310) */
-                draw_text(d, rect_of(r.x, r.y, r.w * 2 / 3, r.h), disp, 1, 15, text);
+                draw_text(d, rect_of(r.x, r.y, r.w * 2 / 3, r.h), disp, 1, 15, row_ink(d, r, text));
                 snprintf(line, sizeof line, "%s songs", cnt);
-                draw_text(d, rect_of(r.x + r.w * 2 / 3, r.y, r.w / 3, r.h), line, 0, 14, muted);
+                draw_text(d, rect_of(r.x + r.w * 2 / 3, r.y, r.w / 3, r.h), line, 0, 14, row_ink(d, r, muted));
                 sel_gui_dirty_add(d->canvas, r);
             }
             p = lib_next(cnt);
@@ -4020,14 +4060,12 @@ static void draw_sidebar(desk* d) {
         sel_gui_rect ic = rect_of(r.x + pad, y + (row - isz) / 2, isz, isz);
         int here = g_doors[i].page == d->page;
         uint32_t ink = ARGB(d->theme.token[here ? SEL_GUI_TOKEN_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]);
-        hover_reg(d, r);
         if (here) { /* the current page: a raised row behind it */
             d->lit_doors |= 1u << i;
+            hover_reg(d, r);
             sel_gui_round_rect(d->canvas, r, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
-        } else if (hover_weight(d, r) > 0) { /* the pointer on another door: the surface-hover fill fades in behind it */
-            sel_gui_round_rect(d->canvas, r, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]),
-                               hover_fill_of(d, r, ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL])));
-            ink = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]);
+        } else { /* another door: no background, its ink fades up as the pointer enters and back down as it leaves (I346) */
+            ink = hover_ink_of(d, r, ink, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
         }
         sel_gui_icon_draw(d->canvas, &d->icons, g_doors[i].icon, ic, isz, ink);
         if (sb.w > lpx(d, 120)) {
@@ -5084,15 +5122,6 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
     if (d->order_n != sel_engine_state(d->engine)->queue_count) {
         songs_resort(d);
     }
-    if (ev->kind == SEL_GUI_IN_MOVE) {
-        int32_t row = in_main ? songs_row_at(d, ev->x, ev->y) : -1;
-        if (row + 1 == d->hover_row) {
-            return 0;
-        }
-        d->hover_row = row + 1;
-        d->hovers++;
-        return 1;
-    }
     if (ev->kind == SEL_GUI_IN_DRAG) {
         int32_t row = in_main ? songs_row_at(d, ev->x, ev->y) : -1;
         int end = sel_uim_hit(&d->layout, ev->x2 / sc, ev->y2 / sc);
@@ -5220,10 +5249,15 @@ static int desk_hover_move(desk* d, int32_t x, int32_t y) {
         }
     }
     if (!rect_same(hit, d->hover_box) && !(hit.w <= 0 && d->hover_box.w <= 0)) {
+        d->hover_prev = d->hover_box;
+        d->hover_prev_ms = d->now_ms;
         d->hover_box = hit;
         changed = 1;
     }
     if (tile != d->hover_tile) {
+        if (!rect_same(d->hover_prev, d->hover_box)) { /* a tile-only change restarts the tween: no box is fading out */
+            d->hover_prev = rect_of(0, 0, 0, 0);
+        }
         d->hover_tile = tile;
         changed = 1;
     }
