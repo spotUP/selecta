@@ -4431,8 +4431,8 @@ static void desk_tip_tick(desk* d) {
     desk_event_frame(d, 1);
 }
 
-/* Repaints the region that holds the hovered control, so its fill follows the fade. The main region of a tile view is
- * repainted by the caller's own tween step; every other region and page is repainted here. */
+/* Repaints the region that holds the hovered control (sidebar, main or the player footer), so its fill follows the fade.
+ * The main region of a tile view is repainted by the caller's own tween step. */
 static void hover_repaint(desk* d) {
     if (d->hover_box.w <= 0) {
         return;
@@ -4441,6 +4441,8 @@ static void hover_repaint(desk* d) {
         draw_sidebar(d);
     } else if (rect_inside(d->hover_box, region_rect(d, "main")) && !d->home) {
         draw_home(d);
+    } else if (rect_inside(d->hover_box, region_rect(d, "player"))) { /* the transport buttons are draw_button boxes too */
+        draw_transport(d);
     }
 }
 
@@ -6196,6 +6198,18 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
             desk_resize(d, w, h);
         }
         desk_sdl_route(d);
+        /* I341: a running tween is drawn on every turn, and the end state of one that ended is drawn once, whatever else the
+         * turn does. During playback with a visualizer the turn returns early (new engine block, or a presented frame), so
+         * this must not live in the idle branch below: the hover fade would never get a step frame and stayed at weight 0.
+         * desk_sdl_route has just brought the clock up to date (desk_live_tick). */
+        if (d->live && (sel_gui_timeline_running(&d->tl) > 0u || d->tween_ended)) {
+            d->tween_ended = 0;
+            if (d->home) {
+                draw_home(d);
+            }
+            hover_repaint(d);
+            desk_event_frame(d, 1);
+        }
     }
 #endif
     if (d->widgets) { /* the gallery is one frame, drawn on the first turn */
@@ -6263,18 +6277,9 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
         int32_t w = 0, h = 0;
         int ev;
         uint32_t wait_ms;
-        desk_live_tick(d);
         wait_ms = 1000u - d->now_ms % 1000u;
-        if (sel_gui_timeline_running(&d->tl) > 0u || d->tween_ended) { /* a tween runs: one frame per 16 ms step; one that just ended: its end state */
-            if (sel_gui_timeline_running(&d->tl) > 0u) {
-                wait_ms = 16u;
-            }
-            d->tween_ended = 0;
-            if (d->home) {
-                draw_home(d);
-            }
-            hover_repaint(d);
-            desk_event_frame(d, 1);
+        if (sel_gui_timeline_running(&d->tl) > 0u) { /* a tween runs: the next step is due in 16 ms (the frame itself is drawn at the top of the turn) */
+            wait_ms = 16u;
         }
         if (viz_visible(d) != 0 && wait_ms > 20u) { /* a visualizer on screen: one frame per engine block */
             wait_ms = 20u;
