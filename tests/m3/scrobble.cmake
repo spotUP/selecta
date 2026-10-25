@@ -62,7 +62,13 @@ function(expect_due_between text)
 endfunction()
 
 function(fixture_posts var)
-  execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/log --out "${WORK}/t95-log.json" OUTPUT_VARIABLE o)
+  # Remove the previous log first and check the fetch: a failed fetch leaves a stale or truncated file that reads as an
+  # empty post log (I304, seen once under ctest -j2), which must fail here with the fetch output, not later as "no post".
+  file(REMOVE "${WORK}/t95-log.json")
+  execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/log --out "${WORK}/t95-log.json" OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
+  if(NOT rc EQUAL 0)
+    message(FATAL_ERROR "T95 scrobble: fixture log fetch failed rc=${rc}\n${o}${e}")
+  endif()
   file(READ "${WORK}/t95-log.json" logjson)
   set(${var} "${logjson}" PARENT_SCOPE)
 endfunction()
