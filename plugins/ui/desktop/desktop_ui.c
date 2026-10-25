@@ -3993,6 +3993,13 @@ static int desk_transport_click(desk* d, uint32_t i) {
 }
 
 /* The keys of the action table become the desktop bindings, loaded through the same txt_bindings the text UI uses. */
+/* The text UI's page keys and the page each opens: the one table both the key load and the key dispatch read (I279). */
+static const struct {
+    const char* action;
+    desk_page page;
+} k_page_keys[] = {{"@home", PG_HOME},       {"@library", PG_LIBRARY}, {"@folders", PG_PLAYLISTS},
+                   {"@info", PG_SONGINFO},   {"@viz", PG_VIZ},         {"@pattern", PG_TRACKER}};
+
 static void desk_bind_actions(desk* d) {
     uint32_t i, n = sel_uim_action_count();
     memset(&d->binds, 0, sizeof d->binds);
@@ -4006,14 +4013,15 @@ static void desk_bind_actions(desk* d) {
         txt_bindings_load(&d->binds, row, NULL);
     }
     { /* The overlay keys (DUI-P4-13) are the text UI's: its default table names them, so each key lives in one place. */
-        static const char* const overlay_actions[] = {"@command", "@palette", "@help", "@home", "@library", "@folders", "@info", "@viz", "@back"};
+        static const char* const overlay_actions[] = {"@command", "@palette", "@help", "@back"};
         txt_bindings def;
         uint32_t k;
         txt_bindings_default(&def);
-        for (k = 0; k < sizeof overlay_actions / sizeof overlay_actions[0]; k++) {
+        for (k = 0; k < sizeof overlay_actions / sizeof overlay_actions[0] + sizeof k_page_keys / sizeof k_page_keys[0]; k++) {
+            const char* action = k < sizeof overlay_actions / sizeof overlay_actions[0] ? overlay_actions[k] : k_page_keys[k - sizeof overlay_actions / sizeof overlay_actions[0]].action;
             char key[24], row[64];
-            if (txt_bindings_key_for(&def, overlay_actions[k], key, sizeof key) != NULL) {
-                snprintf(row, sizeof row, "%s %s\n", key, overlay_actions[k]);
+            if (txt_bindings_key_for(&def, action, key, sizeof key) != NULL) {
+                snprintf(row, sizeof row, "%s %s\n", key, action);
                 txt_bindings_load(&d->binds, row, NULL);
             }
         }
@@ -4327,12 +4335,14 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         d->nav_keys++;
         return desk_page_walk(d, act[1] == 'b' ? -1 : 1);
     }
-    if (act != NULL && (strcmp(act, "@home") == 0 || strcmp(act, "@library") == 0 || strcmp(act, "@folders") == 0 ||
-                        strcmp(act, "@info") == 0 || strcmp(act, "@viz") == 0 ||
-                        strcmp(act, "@pattern") == 0)) { /* the text UI's page keys open the matching page (I262, DUI-P4-11) */
-        desk_page pg = act[1] == 'h' ? PG_HOME : act[1] == 'l' ? PG_LIBRARY : act[1] == 'f' ? PG_PLAYLISTS : act[1] == 'v' ? PG_VIZ : act[1] == 'p' ? PG_TRACKER : PG_SONGINFO;
-        d->nav_keys++;
-        return desk_page_goto(d, pg);
+    if (act != NULL) { /* the text UI's page keys open the matching page (I262, DUI-P4-11) */
+        uint32_t k;
+        for (k = 0; k < sizeof k_page_keys / sizeof k_page_keys[0]; k++) {
+            if (strcmp(act, k_page_keys[k].action) == 0) {
+                d->nav_keys++;
+                return desk_page_goto(d, k_page_keys[k].page);
+            }
+        }
     }
     if (act != NULL) {
         uint32_t i, n = sel_uim_action_count();

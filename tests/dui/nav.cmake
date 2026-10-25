@@ -3,7 +3,7 @@
 # The desktop dumps a `nav page=<name> nav_clicks=N nav_keys=N doors=N` line in its stats. Each door is clicked from the
 # Home frame (the script's `door N` command clicks the centre of door N through the pointer path, the same one a mouse
 # takes), and the page name after the click is checked against the door. A door that is not wired to the click leaves
-# the page at home and nav_clicks at zero. The page keys (the text UI's default table: H, l, f, i) go through the key
+# the page at home and nav_clicks at zero. The page keys (the text UI's default table: H, l, f, i, v, t) go through the key
 # path and are counted in nav_keys. --view is checked to land on the same page names the doors reach.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
@@ -89,7 +89,7 @@ expect_eq("walk ends at Home" "${w_page}" "home")
 expect_eq("walk counted four clicks" "${w_clicks}" 4)
 
 # 3. the page keys of the text UI's table
-foreach(spec "H:home" "l:library" "f:playlists" "i:songinfo")
+foreach(spec "H:home" "l:library" "f:playlists" "i:songinfo" "v:viz" "t:tracker")
   string(REPLACE ":" ";" pair "${spec}")
   list(GET pair 0 k)
   list(GET pair 1 pg)
