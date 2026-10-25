@@ -290,3 +290,20 @@ dui_stat(pstate "${played}" desktop play_state)
 if(NOT pstate EQUAL 1)
   message(FATAL_ERROR "a click on the song row loaded the song but did not play it (play_state=${pstate}):\n${played}")
 endif()
+
+# ---- I302: a scan finishing inside a composer drilldown keeps the drilldown ----
+# Same database: click the composer, then drop a folder (the scan finishes and the Library page reloads). The drilldown must
+# still be shown (drill line), and the back line must still return to the composer list.
+file(MAKE_DIRECTORY "${WORK}/scandrop")
+file(COPY_FILE "${SONGS}/selecta-test.mod" "${WORK}/scandrop/New.mod")
+lib_run(scanned "wait 1\nmove ${px} ${py}\nclick ${px} ${py}\nwait 2\ndrop ${WORK}/scandrop\nwait 20\n")
+if(NOT "${scanned}" MATCHES "scans 1")
+  message(FATAL_ERROR "the dropped folder was not scanned:\n${scanned}")
+endif()
+if(NOT "${scanned}" MATCHES "drill Play Composer\\|1\n")
+  message(FATAL_ERROR "a finished scan moved the user out of the composer drilldown:\n${scanned}")
+endif()
+lib_run(scanback "wait 1\nmove ${px} ${py}\nclick ${px} ${py}\nwait 2\ndrop ${WORK}/scandrop\nwait 20\nmove ${bx} ${py}\nclick ${bx} ${py}\nwait 2\n")
+if("${scanback}" MATCHES "drill " OR NOT "${scanback}" MATCHES "composer 0 play composer")
+  message(FATAL_ERROR "Back after a scan inside the drilldown did not return to the composer list:\n${scanback}")
+endif()

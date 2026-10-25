@@ -3060,6 +3060,20 @@ static int lib_set_mode(desk* d, uint32_t mode) {
     return 1;
 }
 
+/* The COMPOSERS_SHOW request that drills into one composer. A canon holds spaces: one quoted argument; the codec reads a
+ * backslash as the escape of the next character. A click on a composer row and a refresh inside a drilldown both build it here. */
+static void desk_composer_request(char* line, size_t cap, const char* canon) {
+    size_t o = (size_t)snprintf(line, cap, "COMPOSERS_SHOW \"");
+    for (const char* c = canon; *c != '\0' && o + 3u < cap; c++) {
+        if (*c == '"' || *c == '\\') {
+            line[o++] = '\\';
+        }
+        line[o++] = *c;
+    }
+    line[o++] = '"';
+    line[o] = '\0';
+}
+
 /* A click on a composer row drills into it (COMPOSERS_SHOW canon); on the back line it returns to the list. */
 static int library_click(desk* d, int32_t x, int32_t y) {
     const sel_state* st = sel_engine_state(d->engine);
@@ -3067,7 +3081,6 @@ static int library_click(desk* d, int32_t x, int32_t y) {
     uint32_t i = 0;
     const char* p;
     char line[256];
-    size_t o;
     if (d->page == PG_LIBRARY && st->composer_page == NULL && in_rect(lib_add_rect(d, mn), x, y)) {
         return desk_add_folder(d);
     }
@@ -3115,16 +3128,7 @@ static int library_click(desk* d, int32_t x, int32_t y) {
     for (p = st->composers; *p != '\0'; i++) {
         const char* disp = lib_next(p);
         if (in_rect(lib_row_rect(d, mn, i), x, y)) {
-            /* A canon holds spaces: one quoted argument; the codec reads a backslash as the escape of the next character. */
-            o = (size_t)snprintf(line, sizeof line, "COMPOSERS_SHOW \"");
-            for (const char* c = p; *c != '\0' && o + 3u < sizeof line; c++) {
-                if (*c == '"' || *c == '\\') {
-                    line[o++] = '\\';
-                }
-                line[o++] = *c;
-            }
-            line[o++] = '"';
-            line[o] = '\0';
+            desk_composer_request(line, sizeof line, p);
             return desk_send(d, line);
         }
         p = lib_next(lib_next(disp));
@@ -3521,7 +3525,14 @@ static void desk_page_load(desk* d, desk_page pg) {
         desk_send(d, "VIEW_WINDOW 32");
     } else if (pg == PG_LIBRARY) {
         desk_send(d, "VIEW_SHOW browse");
-        desk_send(d, "COMPOSERS_SHOW");
+        const sel_state* st = sel_engine_state(d->engine);
+        if (st->composer_page != NULL) { /* inside a drilldown (a finished scan lands here): re-issue it, so the user stays and sees new songs */
+            char line[256];
+            desk_composer_request(line, sizeof line, st->composer_page);
+            desk_send(d, line);
+        } else {
+            desk_send(d, "COMPOSERS_SHOW");
+        }
         desk_send(d, "STATS_SHOW");
     } else if (pg == PG_PLAYLISTS || pg == PG_SONGS) { /* the folders source holds the saved playlists */
         desk_send(d, "VIEW_SOURCE folders");
