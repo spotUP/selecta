@@ -76,6 +76,7 @@ typedef struct desk {
     int testcard;           /* --view testcard: draw the primitive test card once, no widgets */
     uint32_t dirty_pixels;  /* pixels the latest present repainted (DUI-P2-2) */
     uint32_t dirty_total;   /* pixels repainted over all presents */
+    int tween_ended;        /* a tween ended between live turns: the next live turn draws its end state once (I341) */
     int ticks_given;        /* --ticks was passed: only such mem runs drive visualizer frames (DUI-P4-11) */
     uint32_t ticks;         /* --ticks N: clock seconds the mem backend replays after the quiet turn */
     int textsheet;          /* --view text: specimen lines and the queue names, once (DUI-P2-3) */
@@ -5439,8 +5440,24 @@ static int desk_route_input(desk* d, const sel_gui_input* ev) {
 
 #ifdef SELECTA_DESKTOP_SDL
 /* the pointer, gesture and key events the window queued since the last poll */
+/* I341: the live UI clock. A tween starts at the clock the desktop holds when the input that starts it is routed, so the
+ * clock must be current there: poll can wait up to a second, and a hover tween started on the clock of the turn before
+ * would already be over on the next turn and its end state never drawn. A tween that ends between two ticks sets
+ * tween_ended, so the next live turn draws the end state once. */
+static void desk_live_tick(desk* d) {
+    uint32_t before = sel_gui_timeline_running(&d->tl);
+    d->now_ms = desk_sdl_ticks();
+    sel_gui_timeline_advance(&d->tl, d->now_ms);
+    if (before > 0u && sel_gui_timeline_running(&d->tl) == 0u) {
+        d->tween_ended = 1;
+    }
+}
+
 static void desk_sdl_route(desk* d) {
     sel_gui_input ev;
+    if (d->live) {
+        desk_live_tick(d);
+    }
     while (desk_sdl_next_input(d->sdl, &ev)) {
         if (ev.kind == SEL_GUI_IN_KEY) {
             (void)desk_key(d, &ev);
@@ -6246,11 +6263,13 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
         int32_t w = 0, h = 0;
         int ev;
         uint32_t wait_ms;
-        d->now_ms = desk_sdl_ticks();
-        sel_gui_timeline_advance(&d->tl, d->now_ms);
+        desk_live_tick(d);
         wait_ms = 1000u - d->now_ms % 1000u;
-        if (sel_gui_timeline_running(&d->tl) > 0u) { /* a tween runs: one frame per 16 ms step */
-            wait_ms = 16u;
+        if (sel_gui_timeline_running(&d->tl) > 0u || d->tween_ended) { /* a tween runs: one frame per 16 ms step; one that just ended: its end state */
+            if (sel_gui_timeline_running(&d->tl) > 0u) {
+                wait_ms = 16u;
+            }
+            d->tween_ended = 0;
             if (d->home) {
                 draw_home(d);
             }

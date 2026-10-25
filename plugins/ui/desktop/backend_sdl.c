@@ -80,6 +80,45 @@ static void push_test_events(const char* list) {
     }
 }
 
+/* Test hook: SELECTA_SDL_TEST_TIMED is a space separated list of events pushed from an SDL timer thread while the live
+ * loop waits in poll: `m<x>,<y>@<ms>` a mouse motion, `q@<ms>` a quit, <ms> after open. SELECTA_SDL_TEST_LIVE=1 makes the
+ * dummy driver count as a live display, so a test runs the real live loop (I341). */
+static Uint32 SDLCALL timed_event(void* param, SDL_TimerID id, Uint32 interval) {
+    SDL_Event* ev = (SDL_Event*)param;
+    (void)id;
+    (void)interval;
+    SDL_PushEvent(ev);
+    return 0u;
+}
+
+static void push_timed_events(const char* list) {
+    char buf[256];
+    char* save = NULL;
+    char* tok;
+    if (list == NULL) {
+        return;
+    }
+    snprintf(buf, sizeof buf, "%s", list);
+    for (tok = strtok_r(buf, " ", &save); tok != NULL; tok = strtok_r(NULL, " ", &save)) {
+        SDL_Event* ev = (SDL_Event*)SDL_calloc(1, sizeof *ev); /* the test hook never frees: it runs once per process */
+        float x = 0.0f, y = 0.0f;
+        unsigned ms = 0u;
+        if (ev == NULL) {
+            return;
+        }
+        if (tok[0] == 'm' && sscanf(tok + 1, "%f,%f@%u", &x, &y, &ms) == 3) {
+            ev->type = SDL_EVENT_MOUSE_MOTION;
+            ev->motion.x = x;
+            ev->motion.y = y;
+        } else if (tok[0] == 'q' && sscanf(tok + 1, "@%u", &ms) == 1) {
+            ev->type = SDL_EVENT_QUIT;
+        } else {
+            continue;
+        }
+        (void)SDL_AddTimer(ms, timed_event, ev);
+    }
+}
+
 void desk_sdl_default_size(int32_t* w, int32_t* h) {
     const char* env = getenv("SELECTA_SDL_SCREEN");
     int ew, eh;
@@ -118,6 +157,7 @@ desk_sdl* desk_sdl_open(int32_t w, int32_t h) {
     }
     SDL_StartTextInput(b->window); /* typed characters arrive as SDL_EVENT_TEXT_INPUT, layout and shift already applied */
     push_test_events(getenv("SELECTA_SDL_TEST_EVENTS"));
+    push_timed_events(getenv("SELECTA_SDL_TEST_TIMED"));
     return b;
 }
 
@@ -139,7 +179,8 @@ void desk_sdl_close(desk_sdl* b) {
 }
 
 int desk_sdl_headless(const desk_sdl* b) {
-    return b->headless;
+    const char* live = getenv("SELECTA_SDL_TEST_LIVE");
+    return b->headless && !(live != NULL && live[0] == '1');
 }
 
 int32_t desk_sdl_scale(const desk_sdl* b) {

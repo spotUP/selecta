@@ -27,7 +27,7 @@ target_link_libraries(dui_draw_unit PRIVATE selecta_gui)
 
 # The shell-driven tests (DUI-P1-1 to P1-4) run the real selecta binary on the generated modules.
 if(NOT SEL_AMIGA)
-  foreach(spec "dui-uim-frame:uim_frame" "dui-ui-switch:ui_switch" "dui-ui-multi:ui_multi" "dui-mode-pref:mode_pref" "dui-actions:actions" "dui-layout:layout" "dui-governor:governor" "dui-tokens:tokens" "dui-draw:draw" "dui-dirty:dirty" "dui-text:text" "dui-artwork:artwork" "dui-genart:genart" "dui-golden-home:golden_home" "dui-sdl:sdl" "dui-widgets:widgets" "dui-hidpi:hidpi" "dui-anim:anim" "dui-keys:keys" "dui-mouse:mouse" "dui-tooltips:tooltips" "dui-gestures:gestures" "dui-frame:frame" "dui-home:home" "dui-library:library" "dui-styles:styles" "dui-grid-coverflow:grid_coverflow" "dui-search:search" "dui-nowplaying:nowplaying" "dui-queue:queue" "dui-playlists:playlists" "dui-songinfo:songinfo" "dui-overlays:overlays" "dui-nav:nav" "dui-viz:viz" "dui-tracker:tracker" "dui-drop:drop" "dui-footer:footer" "dui-screen:screen" "dui-scan-ui:scan_ui" "keys-live:keys_live")
+  foreach(spec "dui-uim-frame:uim_frame" "dui-ui-switch:ui_switch" "dui-ui-multi:ui_multi" "dui-mode-pref:mode_pref" "dui-actions:actions" "dui-layout:layout" "dui-governor:governor" "dui-tokens:tokens" "dui-draw:draw" "dui-dirty:dirty" "dui-text:text" "dui-artwork:artwork" "dui-genart:genart" "dui-golden-home:golden_home" "dui-sdl:sdl" "dui-widgets:widgets" "dui-hidpi:hidpi" "dui-anim:anim" "dui-keys:keys" "dui-mouse:mouse" "dui-tooltips:tooltips" "dui-gestures:gestures" "dui-frame:frame" "dui-home:home" "dui-library:library" "dui-styles:styles" "dui-grid-coverflow:grid_coverflow" "dui-search:search" "dui-nowplaying:nowplaying" "dui-queue:queue" "dui-playlists:playlists" "dui-songinfo:songinfo" "dui-overlays:overlays" "dui-nav:nav" "dui-viz:viz" "dui-tracker:tracker" "dui-drop:drop" "dui-footer:footer" "dui-screen:screen" "dui-hover-live:hover_live" "dui-scan-ui:scan_ui" "keys-live:keys_live")
     string(REPLACE ":" ";" pair "${spec}")
     list(GET pair 0 tname)
     list(GET pair 1 script)
@@ -42,7 +42,7 @@ if(NOT SEL_AMIGA)
     file(MAKE_DIRECTORY "${tmpdir}")
     # dui-nav is ledger row I262, not a plan item: label nav, not dui or dui-extra: dui-ratchet counts tests whose label matches the regex dui against the plan ids.
     set(tlabel dui)
-    if(tname STREQUAL "dui-nav" OR tname STREQUAL "dui-footer" OR tname STREQUAL "dui-screen" OR tname STREQUAL "dui-scan-ui") # dui-footer is ledger row I312, not a plan item
+    if(tname STREQUAL "dui-nav" OR tname STREQUAL "dui-footer" OR tname STREQUAL "dui-screen" OR tname STREQUAL "dui-hover-live" OR tname STREQUAL "dui-scan-ui") # dui-footer is ledger row I312, not a plan item
       set(tlabel nav)
     elseif(tname STREQUAL "keys-live") # I268: real SDL key events through desk_sdl_poll; not a plan item, so no dui label
       set(tlabel keys-live)
