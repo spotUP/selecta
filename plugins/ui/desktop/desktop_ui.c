@@ -81,6 +81,7 @@ typedef struct desk {
     int testcard;           /* --view testcard: draw the primitive test card once, no widgets */
     uint32_t dirty_pixels;  /* pixels the latest present repainted (DUI-P2-2) */
     uint32_t dirty_total;   /* pixels repainted over all presents */
+    uint32_t hover_dirty_max; /* most pixels one present repainted while a hover fade ran (DUI-P3-8, stats line hover_dirty) */
     int tween_ended;        /* a tween ended between live turns: the next live turn draws its end state once (I341) */
     int ticks_given;        /* --ticks was passed: only such mem runs drive visualizer frames (DUI-P4-11) */
     uint32_t ticks;         /* --ticks N: clock seconds the mem backend replays after the quiet turn */
@@ -207,7 +208,7 @@ typedef struct desk {
     uint32_t hover_fill;     /* the fill the hovered control was last painted with (stats line) */
     uint32_t hover_paints;   /* paints of a hovered control (sentinel) */
     sel_gui_rect hover_prev; /* the box the pointer left, w = 0 for none: its ink fades back over the same tween (I346) */
-    uint32_t hover_prev_ms;  /* UI clock when the pointer left hover_prev */
+    int32_t hover_prev_w;    /* Q16 in-weight hover_prev had when the pointer left it: its out tween starts from there, not from full ink */
     int32_t ink_in, ink_out; /* the in and out weights hover_ink_of last used for the hovered box and the box it left (stats line hover_ink) */
     uint32_t lit_doors;      /* bit i set: sidebar door i was drawn raised in the last frame (nav sentinel) */
     int np_page;             /* the main region shows the Now Playing page */
@@ -279,6 +280,12 @@ static int desk_add_folder(desk* d);
 static sel_gui_rect toast_rect(desk* d);
 static void desk_toast_tick(desk* d);
 
+enum { ANIM_KEY_VIEW = 1, ANIM_KEY_HOVER = 2, ANIM_KEY_TIP = 3, ANIM_KEY_FLOW = 4 };
+enum { HR_NONE, HR_SIDEBAR, HR_MAIN, HR_DETAIL, HR_PLAYER };
+static int hover_region_of(const desk* d, sel_gui_rect box);
+enum { SLOT_SUB_PREV, SLOT_SHUFFLE, SLOT_PREV, SLOT_PLAY, SLOT_NEXT, SLOT_REPEAT, SLOT_SUB_NEXT, TRANSPORT_COUNT };
+static sel_gui_rect desk_button_rect(const desk* d, uint32_t i);
+
 /* Hands the dirty rectangles to the backend, then empties the list; returns the pixels repainted. The sdl backend
  * must see the list before sel_gui_present clears it. */
 static uint32_t desk_flush(desk* d) {
@@ -287,7 +294,13 @@ static uint32_t desk_flush(desk* d) {
         desk_sdl_present(d->sdl, d->canvas, d->report);
     }
 #endif
-    return sel_gui_present(d->canvas);
+    {
+        uint32_t px = sel_gui_present(d->canvas);
+        if (sel_gui_tween_value(&d->tl, ANIM_KEY_HOVER, 65536) < 65536 && px > d->hover_dirty_max) {
+            d->hover_dirty_max = px;
+        }
+        return px;
+    }
 }
 
 static const char* desk_opt(const sel_ui_open_args* a, const char* name) {
@@ -397,7 +410,6 @@ static void draw_text_centered(desk* d, sel_gui_rect box, const char* s, int sem
     }
 }
 
-enum { ANIM_KEY_VIEW = 1, ANIM_KEY_HOVER = 2, ANIM_KEY_TIP = 3, ANIM_KEY_FLOW = 4 };
 
 static int rect_inside(sel_gui_rect b, sel_gui_rect area) {
     return b.x >= area.x && b.y >= area.y && b.x + b.w <= area.x + area.w && b.y + b.h <= area.y + area.h;
@@ -425,11 +437,12 @@ static int32_t hover_weight(const desk* d, sel_gui_rect box) {
     return d->hover_box.w > 0 && rect_same(d->hover_box, box) ? sel_gui_tween_value(&d->tl, ANIM_KEY_HOVER, 65536) : 0;
 }
 
-/* Weight (Q16) of the fade-out of the box the pointer just left: the mirror of the in tween, same ANIM_KEY_HOVER and FAST_MS
- * (desk_hover_move restarts the tween on every change, so 65536 - value is the way back from full). 0 for any other box. */
+/* Weight (Q16) of the fade-out of the box the pointer just left: it starts at the weight the in fade had reached when the
+ * pointer left (hover_prev_w, full after a finished fade) and runs to 0 over the same ANIM_KEY_HOVER tween and FAST_MS
+ * (desk_hover_move restarts the tween on every change, so 65536 - value is the way back). 0 for any other box. */
 static int32_t hover_weight_out(const desk* d, sel_gui_rect box) {
     return d->hover_prev.w > 0 && rect_same(d->hover_prev, box) && !rect_same(d->hover_box, box)
-               ? 65536 - sel_gui_tween_value(&d->tl, ANIM_KEY_HOVER, 65536)
+               ? (int32_t)(((int64_t)d->hover_prev_w * (65536 - sel_gui_tween_value(&d->tl, ANIM_KEY_HOVER, 65536))) >> 16)
                : 0;
 }
 
@@ -2996,6 +3009,28 @@ static const char* library_dump_build(desk* d) {
                               (int)d->hover_box.w, (int)d->hover_box.h, (unsigned)d->hover_fill,
                               (unsigned)ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_HOVER]), (unsigned)d->hover_paints, (int)d->hover_tile);
         o = dump_put(d, o, "hover_ink=%d,%d\n", (int)d->ink_in, (int)d->ink_out);
+        {
+            static const char* const rn[] = {"", "sidebar", "main", "detail", "player"};
+            int hr = hover_region_of(d, d->hover_box);
+            sel_gui_rect rr = hr != HR_NONE ? region_rect(d, rn[hr]) : rect_of(0, 0, 0, 0);
+            o = dump_put(d, o, "hover_dirty=%u region=%s %d %d %d %d\n", (unsigned)d->hover_dirty_max, rn[hr], (int)rr.x, (int)rr.y,
+                         (int)rr.w, (int)rr.h);
+        }
+        if (o + 300u < sizeof d->library_dump) { /* one control per layout region, where dui-hover-regions moves the pointer (DUI-P3-8) */
+            sel_gui_rect dr = sidebar_door_rect(d, 2u), pb = desk_button_rect(d, SLOT_PLAY), tl;
+            tl = home_shelf_mode(sel_engine_state(d->engine)) ? shelf_tile_rect(d, 0u, 0u) : tile_rect(d, 0u);
+            o = dump_put(d, o, "hover_ctl sidebar %d %d %d %d main %d %d %d %d player %d %d %d %d detail %d %d %d %d nav %d %d %d %d\n",
+                         (int)dr.x, (int)dr.y, (int)dr.w, (int)dr.h, (int)tl.x, (int)tl.y, (int)tl.w, (int)tl.h, (int)pb.x, (int)pb.y,
+                         (int)pb.w, (int)pb.h, (int)d->np_like.x, (int)d->np_like.y, (int)d->np_like.w, (int)d->np_like.h,
+                         (int)d->nav_back.x, (int)d->nav_back.y, (int)d->nav_back.w, (int)d->nav_back.h);
+        }
+        if (o + 300u < sizeof d->library_dump) { /* the region rectangles the hover repaint may touch */
+            sel_gui_rect rs = region_rect(d, "sidebar"), rm = region_rect(d, "main"), rd = region_rect(d, "detail"),
+                         rp = region_rect(d, "player");
+            o = dump_put(d, o, "hover_regions sidebar %d %d %d %d main %d %d %d %d detail %d %d %d %d player %d %d %d %d\n", (int)rs.x,
+                         (int)rs.y, (int)rs.w, (int)rs.h, (int)rm.x, (int)rm.y, (int)rm.w, (int)rm.h, (int)rd.x, (int)rd.y,
+                         (int)rd.w, (int)rd.h, (int)rp.x, (int)rp.y, (int)rp.w, (int)rp.h);
+        }
         for (i = 0; i < DOOR_COUNT && o + 200u < sizeof d->library_dump; i++) { /* the door rectangles, where a test moves the pointer */
             sel_gui_rect dr = sidebar_door_rect(d, i);
             o = dump_put(d, o, "door %u %d %d %d %d\n", (unsigned)i, (int)dr.x, (int)dr.y, (int)dr.w, (int)dr.h);
@@ -3639,7 +3674,8 @@ static void draw_nav_arrows(desk* d, sel_gui_rect mn) {
         uint32_t ink = ARGB(d->theme.token[can[k] ? SEL_GUI_TOKEN_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]);
         int32_t cx = b.x + bs / 2, cy = b.y + bs / 2, a = bs / 5, t, dir = k == 0 ? -1 : 1;
         *slot[k] = b;
-        sel_gui_round_rect(d->canvas, b, bs / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+        hover_reg(d, b);
+        sel_gui_round_rect(d->canvas, b, bs / 2, hover_fill_of(d, b, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE])));
         for (t = 0; t < 2; t++) { /* a chevron of two strokes, drawn twice a pixel apart for weight */
             sel_gui_line(d->canvas, cx - dir * a / 2 + t, cy - a, cx + dir * a / 2 + t, cy, ink);
             sel_gui_line(d->canvas, cx + dir * a / 2 + t, cy, cx - dir * a / 2 + t, cy + a, ink);
@@ -3947,7 +3983,6 @@ static int desk_should_draw(const desk* d, int animated) {
 enum { TIP_DELAY_MS = 600, TIP_BTN = 32, TIP_H = 24 };
 /* The transport row, left to right (DUI-P4-1): previous subsong, shuffle, previous, play or pause, next, repeat, next
  * subsong. The play slot sits in the middle where the placeholder box was drawn. */
-enum { SLOT_SUB_PREV, SLOT_SHUFFLE, SLOT_PREV, SLOT_PLAY, SLOT_NEXT, SLOT_REPEAT, SLOT_SUB_NEXT, TRANSPORT_COUNT };
 
 static const sel_uim_action* desk_action_by_id(const char* id) {
     uint32_t i, n = sel_uim_action_count();
@@ -4183,7 +4218,7 @@ static void draw_nowplaying(desk* d) {
     }
     d->np_rating = rating;
     d->np_liked = liked;
-    sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_HEART, d->np_like, ic, liked ? accent : muted);
+    sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_HEART, d->np_like, ic, row_ink(d, d->np_like, liked ? accent : muted));
     for (k = 0; k < 5u; k++) {
         int32_t m = lpx(d, 12);
         d->np_rate[k] = rect_of(dt.x + sp + ic + lpx(d, 12) + (int32_t)k * (m + lpx(d, 6)), y + (ic - m) / 2, m, m);
@@ -4358,7 +4393,9 @@ static void draw_transport(desk* d) {
             break;
         }
         sel_gui_fill_rect(d->canvas, b, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME])); /* a redraw must not blend the edges twice */
-        sel_gui_round_rect(d->canvas, b, i == SLOT_PLAY ? b.h / 2 : lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(fill));
+        hover_reg(d, b); /* a transport button fades its fill like any other control (DUI-P3-8) */
+        sel_gui_round_rect(d->canvas, b, i == SLOT_PLAY ? b.h / 2 : lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]),
+                           hover_fill_of(d, b, ARGB(fill)));
         ic = rect_of(b.x + (b.w - isz) / 2, b.y + (b.h - isz) / 2, isz, isz);
         sel_gui_icon_draw(d->canvas, &d->icons, icon, ic, isz, ARGB(ink));
         if (i == SLOT_REPEAT && f->repeat_mode == 2u) {
@@ -4469,19 +4506,51 @@ static void desk_tip_tick(desk* d) {
     desk_event_frame(d, 1);
 }
 
-/* Repaints the region that holds the hovered control (sidebar, main or the player footer), so its fill follows the fade.
- * The main region of a tile view is repainted by the caller's own tween step. */
-static void hover_repaint(desk* d) {
-    if (d->hover_box.w <= 0) {
-        return;
+/* The layout region that holds a control box. */
+static int hover_region_of(const desk* d, sel_gui_rect box) {
+    if (box.w <= 0) {
+        return HR_NONE;
     }
-    if (rect_inside(d->hover_box, region_rect(d, "sidebar"))) {
+    if (rect_inside(box, region_rect(d, "sidebar"))) {
+        return HR_SIDEBAR;
+    }
+    if (rect_inside(box, region_rect(d, "detail"))) {
+        return HR_DETAIL;
+    }
+    if (rect_inside(box, region_rect(d, "player"))) {
+        return HR_PLAYER;
+    }
+    return rect_inside(box, region_rect(d, "main")) ? HR_MAIN : HR_NONE;
+}
+
+/* Repaints a layout region so the fill or ink of a control in it follows its fade (DUI-P3-8). The main region of a
+ * Home-mode page is painted by the callers' own draw_home. */
+static void hover_paint_region(desk* d, int region) {
+    if (region == HR_SIDEBAR) {
         draw_sidebar(d);
-    } else if (rect_inside(d->hover_box, region_rect(d, "main")) && !d->home) {
-        draw_home(d);
-    } else if (rect_inside(d->hover_box, region_rect(d, "player"))) { /* the transport buttons are draw_button boxes too */
+    } else if (region == HR_DETAIL) { /* the Now Playing panel: the like heart */
+        draw_nowplaying(d);
+    } else if (region == HR_PLAYER) { /* the transport buttons are draw_button boxes too */
         draw_transport(d);
+    } else if (region == HR_MAIN && !d->home) {
+        draw_home(d);
     }
+}
+
+/* Repaints the regions of the hovered control and of the one the pointer just left, each once, and no other region. */
+static void hover_repaint(desk* d) {
+    int a = hover_region_of(d, d->hover_box), b = hover_region_of(d, d->hover_prev);
+    hover_paint_region(d, a);
+    if (b != a) {
+        hover_paint_region(d, b);
+    }
+}
+
+/* True when a running tween repaints the main region: a hovered control or tile in it, one the pointer left, or the view or
+ * list cross-fade. A fade confined to another region leaves the main region (and its dirty rectangle) alone. */
+static int hover_main_painted(const desk* d) {
+    return d->hover_tile > 0 || hover_region_of(d, d->hover_box) == HR_MAIN || hover_region_of(d, d->hover_prev) == HR_MAIN ||
+           sel_gui_tween_value(&d->tl, ANIM_KEY_VIEW, 65536) < 65536 || sel_gui_tween_value(&d->tl, ANIM_KEY_FLOW, 65536) < 65536;
 }
 
 /* Moves the UI clock ms forward the way the live loop would: 16 ms steps while a tween runs, otherwise one jump to the
@@ -4509,6 +4578,7 @@ static void desk_advance(desk* d, uint32_t ms) {
         if (tw > 0u && step > tw) {
             step = tw;
         }
+        int main_moves = animated && d->home && hover_main_painted(d); /* asked before the advance: the step that ends a tween still paints it */
         d->now_ms += step;
         sel_gui_timeline_advance(&d->tl, d->now_ms);
         sel_uim_update(&d->uim, sel_engine_state(d->engine));
@@ -4518,7 +4588,7 @@ static void desk_advance(desk* d, uint32_t ms) {
         if (!desk_should_draw(d, animated)) {
             continue;
         }
-        if (animated && d->home) {
+        if (main_moves) {
             draw_home(d);
         }
         if (animated) {
@@ -5218,7 +5288,7 @@ static int desk_hover_move(desk* d, int32_t x, int32_t y) {
     int32_t tile = 0;
     const sel_state* st = sel_engine_state(d->engine);
     uint32_t i;
-    int changed = 0;
+    int changed = 0, tile_moved = 0;
     if (d->overlay == OV_NONE) {
         for (i = 0; i < d->hbox_n; i++) {
             if (in_rect(d->hbox[i], x, y)) {
@@ -5249,12 +5319,13 @@ static int desk_hover_move(desk* d, int32_t x, int32_t y) {
         }
     }
     if (!rect_same(hit, d->hover_box) && !(hit.w <= 0 && d->hover_box.w <= 0)) {
+        d->hover_prev_w = hover_weight(d, d->hover_box); /* before hover_box moves: the in fade may be mid-way */
         d->hover_prev = d->hover_box;
-        d->hover_prev_ms = d->now_ms;
         d->hover_box = hit;
         changed = 1;
     }
     if (tile != d->hover_tile) {
+        tile_moved = 1;
         if (!rect_same(d->hover_prev, d->hover_box)) { /* a tile-only change restarts the tween: no box is fading out */
             d->hover_prev = rect_of(0, 0, 0, 0);
         }
@@ -5266,10 +5337,9 @@ static int desk_hover_move(desk* d, int32_t x, int32_t y) {
     }
     desk_tween(d, ANIM_KEY_HOVER, SEL_GUI_ANIM_FAST_MS, SEL_GUI_EASE_OUT);
     d->hovers++;
-    if (d->home) {
+    if (d->home && (tile_moved || hover_main_painted(d))) {
         draw_home(d);
     }
-    draw_sidebar(d);
     hover_repaint(d);
     return 1;
 }
@@ -6237,8 +6307,10 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
          * this must not live in the idle branch below: the hover fade would never get a step frame and stayed at weight 0.
          * desk_sdl_route has just brought the clock up to date (desk_live_tick). */
         if (d->live && (sel_gui_timeline_running(&d->tl) > 0u || d->tween_ended)) {
+            int ended = d->tween_ended;
             d->tween_ended = 0;
-            if (d->home) {
+            /* The main region is repainted only for a tween that changes it (DUI-P3-8); the end state of any tween once. */
+            if (d->home && (ended || hover_main_painted(d))) {
                 draw_home(d);
             }
             hover_repaint(d);

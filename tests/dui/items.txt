@@ -61,7 +61,7 @@ DUI-P7-1 dui-manual-check
 DUI-P7-2 dui-ratchet-zero
 DUI-P1-11 dui-breakpoints sel_uim_breakpoint_for uses 1200/900/700, the plan decides 1100/900 as tokens; resize to 1100, 1099, 900, 899 must give three-column, two-column, two-column, icon-sidebar
 DUI-P3-7 dui-hover-live
-DUI-P3-8 dui-hover-regions hover_repaint repaints only sidebar, main and player; detail (Now Playing panel) and the top bar navigation arrows are not repainted by the hover fade
+DUI-P3-8 dui-hover-regions
 DUI-P3-9 dui-wheel there is no STAT_DIRTY_PIXELS / STAT_FULL_REPAINTS check per scrolling surface and no 16 ms wheel frame budget test; wheel repaint is not proven region-only on Library, Songs, Home, Queue, Search, Settings, Song info, lyrics and palette
 DUI-P3-10 dui-widget-states no widget gallery with enabled, hover, pressed, focused and disabled states; no focus trap in dialogs or menus and no Escape focus return to the opener
 DUI-P3-11 dui-hover-rows
