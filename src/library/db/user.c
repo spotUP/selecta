@@ -247,15 +247,17 @@ static int rating_set(sqlite3* db, const sel_user_op* op) {
 
 /* RATING_PENDING: "key\0stars\0" pairs in push order that fit, then "\0"; rows = all pending ratings. */
 static int rating_pending(sqlite3* db, const sel_user_op* op, int64_t* rows) {
+    const char* kind = op->name != NULL ? op->name : "rating"; /* I306: "like" lists the likes */
     sqlite3_stmt* st = NULL;
     uint32_t used = 0;
     int rc;
 
     op->out[0] = '\0';
     *rows = 0;
-    rc = sqlite3_prepare_v2(db, "SELECT key, COALESCE(payload, '0') FROM pending_push WHERE kind = 'rating' ORDER BY id",
+    rc = sqlite3_prepare_v2(db, "SELECT key, COALESCE(payload, '0') FROM pending_push WHERE kind = ?1 ORDER BY id",
                             -1, &st, NULL);
     if (rc != SQLITE_OK) return rc;
+    sqlite3_bind_text(st, 1, kind, -1, SQLITE_STATIC);
     while (sqlite3_step(st) == SQLITE_ROW) {
         const char* k = (const char*)sqlite3_column_text(st, 0);
         const char* v = (const char*)sqlite3_column_text(st, 1);
@@ -579,6 +581,23 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
     } else if (op->op == SEL_USER_RATING_DONE) {
         rc = user_exec(lib->db, "DELETE FROM pending_push WHERE kind = 'rating' AND key = ?1", op, 0);
         if (rc == SQLITE_OK) rc = user_exec(lib->db, "UPDATE ratings SET synced = 1 WHERE key = ?1", op, 0);
+    } else if (op->op == SEL_USER_LIKE_DONE) {
+        rc = user_exec(lib->db, "DELETE FROM pending_push WHERE kind = 'like' AND key = ?1", op, 0);
+    } else if (op->op == SEL_USER_LIKE_QUEUE) {
+        sqlite3_stmt* st = NULL;
+        rc = user_exec(lib->db, "DELETE FROM pending_push WHERE kind = 'like' AND key = ?1", op, 0);
+        if (rc == SQLITE_OK) {
+            rc = sqlite3_prepare_v2(lib->db,
+                                    "INSERT INTO pending_push(kind, key, payload, created) VALUES('like', ?1, ?2,"
+                                    " CAST(strftime('%s', 'now') AS INTEGER))",
+                                    -1, &st, NULL);
+        }
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+            sqlite3_bind_text(st, 2, op->value, -1, SQLITE_STATIC);
+            rc = sqlite3_step(st) == SQLITE_DONE ? SQLITE_OK : SQLITE_ERROR;
+            sqlite3_finalize(st);
+        }
     } else if (op->op == SEL_USER_LOUDNESS_GET) {
         sqlite3_stmt* st = NULL;
         rc = sqlite3_prepare_v2(lib->db, "SELECT loudness_gain, loudness_prov FROM songs WHERE key = ?1", -1, &st, NULL);

@@ -122,6 +122,12 @@ if(NOT rb_rating EQUAL 4)
   message(FATAL_ERROR "after a click on the fourth rating mark at ${cx},${cy} the panel fills ${rb_rating} marks, want 4")
 endif()
 
+# I306: a click on the mark of the stored rating sends RATE 0 and clears it; the heart click is LIKE, which toggles.
+np_rate_run(rc "wait 30\nmove ${cx} ${cy}\nclick ${cx} ${cy}\nwait 30\nclick ${cx} ${cy}\nwait 30\n")
+if(NOT rc_rating EQUAL 0)
+  message(FATAL_ERROR "a second click on the fourth rating mark leaves ${rc_rating} marks filled, want 0 (RATE 0)")
+endif()
+
 # 5. I290: a tracker song message has several lines (message.it: three, libopenmpt joins them with a newline). The panel lays
 #    them out as wrapped lines (`message lines 3`) and no control character reaches a glyph (missing_glyphs 0).
 file(REMOVE_RECURSE "${WORK}/cfg" "${WORK}/msg.db")

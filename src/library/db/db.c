@@ -431,6 +431,33 @@ int sel_library_rating_done(sel_library* lib, const char* key) {
     return user_call(lib, &op) > 0;
 }
 
+int sel_library_like_queue(sel_library* lib, const char* key, const char* payload) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_LIKE_QUEUE;
+    op.key = key;
+    op.value = payload;
+    return user_call(lib, &op) > 0;
+}
+
+int sel_library_like_pending(sel_library* lib, char* out, uint32_t cap, uint32_t* rows) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_RATING_PENDING;
+    op.name = "like";
+    op.out = out;
+    op.out_cap = cap;
+    return user_call_rows(lib, &op, rows) > 0;
+}
+
+int sel_library_like_done(sel_library* lib, const char* key) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_LIKE_DONE;
+    op.key = key;
+    return user_call(lib, &op) > 0;
+}
+
 int sel_library_tag_edit(sel_library* lib, const char* key, const char* field, const char* value) {
     sel_user_op op;
     memset(&op, 0, sizeof op);

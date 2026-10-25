@@ -3402,6 +3402,28 @@ static int target_key(sel_engine* e, const sel_message* m, uint32_t idx, const c
     return 1;
 }
 
+static int vote_token_ensure(sel_engine* e);
+
+/* I306: the like (r 5) or unlike (r 0) of `key` goes to DEViLBOX /api/hip/vote through the pending_push queue. The song
+ * is named there by its UADE key, which needs the file: the playing song's file, or the file of a local song. A song
+ * with no readable file stays a local like. */
+static void like_sync(sel_engine* e, const char* key, int r) {
+    const sel_slot* cur = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
+    char mkey[SEL_UADE_KEY_CHARS + 1u];
+    char source[16], path[SEL_SONG_KEY_MAX];
+
+    if (cur != NULL && cur->path[0] != '\0' && strcmp(key, e->hist_key) == 0) {
+        if (!sel_uade_key_file(cur->path, mkey)) return;
+    } else if (sel_song_key_split(key, source, sizeof source, path, sizeof path) && strcmp(source, "local") == 0) {
+        if (!sel_uade_key_file(path, mkey)) return;
+    } else {
+        return;
+    }
+    if (vote_token_ensure(e)) {
+        sel_library_like_push(e->lib, key, e->prefs.value[SEL_PREF_LIBRARY_VOTE_TOKEN], mkey, r);
+    }
+}
+
 /* LIKE [key]: toggles the like of the song `key`, the one being played without it (I306). */
 static void cmd_LIKE(sel_engine* e, const sel_message* m) {
     char key[SEL_SONG_KEY_MAX];
@@ -3409,9 +3431,12 @@ static void cmd_LIKE(sel_engine* e, const sel_message* m) {
         sel_engine_report_error(e, "no_library", "LIKE");
     } else if (target_key(e, m, 0, "LIKE", key, sizeof key)) {
         int64_t now = (int64_t)time(NULL);
-        int ok = sel_library_liked(e->lib, key) ? sel_library_unlike(e->lib, key, now) : sel_library_like(e->lib, key, now);
+        int was = sel_library_liked(e->lib, key);
+        int ok = was ? sel_library_unlike(e->lib, key, now) : sel_library_like(e->lib, key, now);
         if (!ok) {
             sel_engine_report_error(e, "library_failed", "LIKE");
+        } else {
+            like_sync(e, key, was ? 0 : 5);
         }
     }
 }
@@ -3528,6 +3553,18 @@ static void vote_token_make(const sel_engine* e, char out[33]) {
     out[32] = '\0';
 }
 
+/* The device token of the vote service (32 hex) in the prefs, made and saved on first use. 0 when it cannot be stored. */
+static int vote_token_ensure(sel_engine* e) {
+    if (strlen(e->prefs.value[SEL_PREF_LIBRARY_VOTE_TOKEN]) != 32u) {
+        char fresh[33];
+
+        vote_token_make(e, fresh);
+        if (sel_prefs_set(&e->prefs, "library.vote_token", fresh) != 0) return 0;
+        if (e->config_dir[0] != '\0') (void)sel_prefs_save(&e->prefs, e->config_dir);
+    }
+    return 1;
+}
+
 /* VOTE [0|5] (I174, design doc section 17 "Remote": DEViLBOX votes): votes for (5), withdraws the vote on (0), or with
  * no argument reads the votes of the song being played, through the HippoPlayer service. The song is named by its
  * UADE key (xxh32 of the file, xxh32.h). The request is queued on the library job thread; the answer is read with
@@ -3554,15 +3591,9 @@ static void cmd_VOTE(sel_engine* e, const sel_message* m) {
     } else if (!sel_uade_key_file(cur->path, mkey)) {
         sel_engine_report_error(e, "unreadable", "VOTE");
     } else {
-        if (strlen(e->prefs.value[SEL_PREF_LIBRARY_VOTE_TOKEN]) != 32u) {
-            char fresh[33];
-
-            vote_token_make(e, fresh);
-            if (sel_prefs_set(&e->prefs, "library.vote_token", fresh) != 0) {
-                sel_engine_report_error(e, "library_failed", "VOTE");
-                return;
-            }
-            if (e->config_dir[0] != '\0') (void)sel_prefs_save(&e->prefs, e->config_dir);
+        if (!vote_token_ensure(e)) {
+            sel_engine_report_error(e, "library_failed", "VOTE");
+            return;
         }
         if (r >= 0) (void)sel_library_sticker_set(e->lib, e->hist_key, "vote", r == 5 ? "5" : "0");
         snprintf(e->vote_song, sizeof e->vote_song, "%s", e->hist_key);

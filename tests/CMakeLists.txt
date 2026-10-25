@@ -1685,6 +1685,13 @@ if(NOT SEL_AMIGA)
   set_tests_properties(radio PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "radio_ok")
 
+  # T79b (row I306): LIKE and unlike queue pending_push kind like rows, flushed through /api/hip/vote.
+  add_test(NAME like-devilbox
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3"
+            "-DSONGS=${PROJECT_SOURCE_DIR}/tests/m3/genre" "-DSQLITE3=${SEL_SQLITE3}" -P "${SEL_NET_DIR}/like_devilbox.cmake")
+  set_tests_properties(like-devilbox PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "like_devilbox_ok")
+
   # T79 (row I173): RATE pushes PUT/DELETE /api/ratings with the Bearer token, batch reads, pending flush.
   add_test(NAME rate-devilbox
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3"

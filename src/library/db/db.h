@@ -129,7 +129,9 @@ enum {
     SEL_USER_RATING_DONE,  /* I173: the push of the key's rating is over: drops its pending row, marks the rating synced */
     SEL_USER_UNKEEP,       /* I170b: KEEP off, deletes the key from kept */
     SEL_USER_UNLIKE,       /* I306: deletes the key from liked */
-    SEL_USER_LIKE_GET      /* I306: reply [0] = 2 when the key is liked */
+    SEL_USER_LIKE_GET,     /* I306: reply [0] = 2 when the key is liked */
+    SEL_USER_LIKE_DONE,    /* I306: the push of the key's like is over: drops its pending row */
+    SEL_USER_LIKE_QUEUE    /* I306: queues the pending_push "like" row of the key (value = "token mkey r"), replacing an older one */
 };
 /* Where a rating came from (sel_user_op.to of SEL_USER_RATING_SET). */
 enum { SEL_RATING_LOCAL = 0, SEL_RATING_QUEUE = 1, SEL_RATING_SERVER = 2 };
@@ -359,6 +361,14 @@ int sel_library_rating_set(sel_library* lib, const char* key, int stars, int ori
 int sel_library_rating_get(sel_library* lib, const char* key, int* stars);
 int sel_library_rating_pending(sel_library* lib, char* out, uint32_t cap, uint32_t* rows);
 int sel_library_rating_done(sel_library* lib, const char* key);
+/* I306: the same queue holds likes (pending_push kind 'like', payload "token mkey r": the device token, the UADE key and
+ * the vote 5 or 0 for /api/hip/vote). _pending lists "key\0payload\0" pairs like sel_library_rating_pending. */
+int sel_library_like_queue(sel_library* lib, const char* key, const char* payload);
+int sel_library_like_pending(sel_library* lib, char* out, uint32_t cap, uint32_t* rows);
+int sel_library_like_done(sel_library* lib, const char* key);
+/* Queues the vote r (5 like, 0 unlike) of the song `key` for DEViLBOX and wakes the library job thread, which flushes
+ * it beside the ratings (sel_devilbox_vote). */
+void sel_library_like_push(sel_library* lib, const char* key, const char* token, const char* mkey, int r);
 /* Row counts of the user tables (any pointer may be NULL). 1 on success. */
 /* I178 folder tree. Each returns SEL_FOLDER_OK or a SEL_FOLDER_ERR_* code; *out_id (when not NULL) = new id. */
 int sel_library_folder_add(sel_library* lib, const char* name, uint32_t parent, uint32_t* out_id);

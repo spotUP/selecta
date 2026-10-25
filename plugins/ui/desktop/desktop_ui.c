@@ -3847,7 +3847,8 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
     for (i = 0; d->np_draws > 0u && i < 5u; i++) {
         if (in_rect(d->np_rate[i], x, y)) {
             char line[16];
-            snprintf(line, sizeof line, "RATE %u", (unsigned)i + 1u);
+            /* The mark of the stored rating clicked again takes the rating back (I306). */
+            snprintf(line, sizeof line, "RATE %u", d->np_rating == (int)i + 1 ? 0u : (unsigned)i + 1u);
             return desk_send(d, line);
         }
     }

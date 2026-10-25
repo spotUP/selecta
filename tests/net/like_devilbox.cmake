@@ -1,0 +1,97 @@
+# T79b like-devilbox (row I306): LIKE and an unlike queue pending_push rows of kind like and the library job thread
+# flushes them through GET /api/hip/vote (r=5 sets, r=0 removes; the vote path of VOTE). A fixture that is down keeps the
+# row pending; the next run flushes it. -DCLI -DWORK -DM3 -DSONGS (tests/m3/genre) -DSQLITE3
+file(READ "${WORK}/port" port)
+string(STRIP "${port}" port)
+set(fx "http://127.0.0.1:${port}")
+set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
+set(ENV{SELECTA_DEVILBOX_URL} "http://devilbox.uprough.net")
+set(cfg "${WORK}/t79b-cfg")
+set(db "${WORK}/t79b.db")
+file(REMOVE_RECURSE "${cfg}")
+file(REMOVE "${db}" "${db}-wal" "${db}-shm")
+set(last_raw "")
+
+function(devilbox_up up)
+  if(up)
+    set(ENV{SELECTA_NET_MAP} "devilbox.uprough.net=${fx},fixture.test=${fx}" PARENT_SCOPE)
+  else()
+    set(ENV{SELECTA_NET_MAP} "devilbox.uprough.net=http://127.0.0.1:1,fixture.test=${fx}" PARENT_SCOPE)
+  endif()
+endfunction()
+
+function(fail what)
+  message(FATAL_ERROR "T79b ${what}\n${last_raw}")
+endfunction()
+
+function(run_script text)
+  file(WRITE "${WORK}/t79b.sel" "${text}")
+  execute_process(COMMAND "${CLI}" script "${WORK}/t79b.sel" --db "${db}" --config-dir "${cfg}"
+    OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
+  set(last_raw "${o}${e}" PARENT_SCOPE)
+  if(NOT rc EQUAL 0)
+    set(last_raw "${o}${e}")
+    fail("script failed rc=${rc}")
+  endif()
+endfunction()
+
+# The nth fixture log entry of the devilbox host whose path starts with /api/hip/vote?, as its query string.
+function(vote_queries var)
+  execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/log --out "${WORK}/t79b-log.json" OUTPUT_VARIABLE o)
+  file(READ "${WORK}/t79b-log.json" logjson)
+  set(qs "")
+  string(JSON len LENGTH "${logjson}")
+  if(len GREATER 0)
+    math(EXPR last "${len} - 1")
+    foreach(i RANGE ${last})
+      string(JSON h GET "${logjson}" ${i} host)
+      string(JSON p GET "${logjson}" ${i} path)
+      if(h STREQUAL "devilbox.uprough.net" AND p MATCHES "^/api/hip/vote\\?")
+        string(REGEX REPLACE "^.*&r=([0-9]+).*$" "r=\\1" rr "${p}")
+        list(APPEND qs "${rr}")
+      endif()
+    endforeach()
+  endif()
+  set(${var} "${qs}" PARENT_SCOPE)
+endfunction()
+
+function(pending_likes var)
+  execute_process(COMMAND "${SQLITE3}" "${db}" "SELECT count(*) FROM pending_push WHERE kind = 'like'"
+    OUTPUT_VARIABLE n OUTPUT_STRIP_TRAILING_WHITESPACE)
+  set(${var} "${n}" PARENT_SCOPE)
+endfunction()
+
+execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/reset --method POST OUTPUT_VARIABLE o)
+set(song "${SONGS}/ambient.mod")
+
+# 1. fixture down: LIKE stores the like and leaves one pending like row; nothing reached the service.
+devilbox_up(FALSE)
+run_script("OPEN ${song}\nLIKE\n@ratings\n")
+pending_likes(n)
+if(NOT n EQUAL 1)
+  fail("after LIKE with the service down, pending like rows = ${n}, want 1")
+endif()
+
+# 2. service up: the next run flushes it through the vote path, r=5, and the row is gone.
+devilbox_up(TRUE)
+run_script("@ratings\n")
+vote_queries(qs)
+if(NOT qs STREQUAL "r=5")
+  fail("votes after the flush: '${qs}', want r=5")
+endif()
+pending_likes(n)
+if(NOT n EQUAL 0)
+  fail("pending like rows after the flush = ${n}, want 0")
+endif()
+
+# 3. the second LIKE of the same song is an unlike: r=0 goes out through the same queue.
+run_script("OPEN ${song}\nLIKE\n@ratings\n")
+vote_queries(qs)
+if(NOT qs STREQUAL "r=5;r=0")
+  fail("votes after the unlike: '${qs}', want r=5;r=0")
+endif()
+pending_likes(n)
+if(NOT n EQUAL 0)
+  fail("pending like rows after the unlike = ${n}, want 0")
+endif()
+message("like_devilbox_ok")
