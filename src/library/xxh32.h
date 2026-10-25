@@ -21,6 +21,10 @@ void sel_uade_key(const void* head, size_t head_len, uint64_t total_len, char ou
  * length, or -1 when the file cannot be read. */
 long sel_file_head(const char* path, void* buf, size_t cap, size_t* got);
 
+/* The UADE key of the file at `path` into out; returns the full file length, or -1 when unreadable (or no memory
+ * for the head buffer, which is allocated per call). */
+long sel_file_key(const char* path, char out[SEL_UADE_KEY_CHARS + 1u]);
+
 /* The UADE key of the file at `path` (head read, then sel_uade_key). 1 = done, 0 = unreadable. */
 int sel_uade_key_file(const char* path, char out[SEL_UADE_KEY_CHARS + 1u]);
 

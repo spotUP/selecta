@@ -2,6 +2,7 @@
 #include "xxh32.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 
 #define P1 2654435761u
 #define P2 2246822519u
@@ -87,12 +88,19 @@ long sel_file_head(const char* path, void* buf, size_t cap, size_t* got) {
     return size;
 }
 
-int sel_uade_key_file(const char* path, char out[SEL_UADE_KEY_CHARS + 1u]) {
-    static unsigned char head[SEL_UADE_KEY_HASH_BYTES]; /* the engine command thread is the only caller */
+long sel_file_key(const char* path, char out[SEL_UADE_KEY_CHARS + 1u]) {
+    /* On demand, not a 256 KB static: a resident bss buffer is image size on an Amiga (I271). */
+    unsigned char* head = malloc(SEL_UADE_KEY_HASH_BYTES);
     size_t got = 0;
-    long size = sel_file_head(path, head, sizeof head, &got);
+    long size;
 
-    if (size < 0) return 0;
-    sel_uade_key(head, got, (uint64_t)size, out);
-    return 1;
+    if (head == NULL) return -1;
+    size = sel_file_head(path, head, SEL_UADE_KEY_HASH_BYTES, &got);
+    if (size >= 0) sel_uade_key(head, got, (uint64_t)size, out);
+    free(head);
+    return size;
+}
+
+int sel_uade_key_file(const char* path, char out[SEL_UADE_KEY_CHARS + 1u]) {
+    return sel_file_key(path, out) >= 0;
 }

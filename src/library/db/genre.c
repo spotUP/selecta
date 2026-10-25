@@ -242,7 +242,6 @@ static int lookup(const char* key, const char* path, int64_t size, char* genre, 
 }
 
 int sel_library_genre_sync(sel_library* lib, sel_genre_stats* stats) {
-    static uint8_t head[SEL_UADE_KEY_HASH_BYTES];
     sel_genre_stats local;
     char buf[1400];
     int64_t after = 0, id = 0;
@@ -256,7 +255,6 @@ int sel_library_genre_sync(sel_library* lib, sel_genre_stats* stats) {
         const char* path;
         char ukey[SEL_UADE_KEY_CHARS + 1u];
         char genre[GENRE_MAX];
-        size_t got = 0;
         int64_t size;
         int cached;
 
@@ -271,12 +269,11 @@ int sel_library_genre_sync(sel_library* lib, sel_genre_stats* stats) {
         song = buf;
         path = buf + strlen(buf) + 1u;
         stats->songs++;
-        size = sel_file_head(path, head, sizeof head, &got);
+        size = sel_file_key(path, ukey);
         if (size < 0) {
             stats->unreadable++;
             continue;
         }
-        sel_uade_key(head, got, (uint64_t)size, ukey);
         if (!sel_library_songdb_resolve(lib, ukey, song, stats)) return 0;
         memset(&op, 0, sizeof op);
         op.op = SEL_GENRE_GET;
