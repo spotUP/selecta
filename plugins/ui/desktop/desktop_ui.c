@@ -70,7 +70,7 @@ typedef struct desk {
     sel_uim_budget budget; /* --format: the effects the canvas format affords */
     uint32_t tweens;       /* tweens started (title cross-fade on a song change) */
     uint32_t effect_prims; /* blur and shadow primitives run */
-    sel_gui_canvas* canvas; /* the drawing surface (DUI-P2-1), --canvas WxH, default 1280x800 */
+    sel_gui_canvas* canvas; /* the drawing surface (DUI-P2-1), --canvas WxH, else the backend's size (1280x800) */
     sel_gui_shadow shadow;  /* baked once when the governor allows shadows */
     int shadow_ready;
     int testcard;           /* --view testcard: draw the primitive test card once, no widgets */
@@ -5844,9 +5844,11 @@ static void desk_close(void* state) {
     }
 }
 
-/* Allocates the canvas from --canvas WxH (default 1280x800) in the --format; 0 on a bad size or no memory. */
-static int desk_make_canvas(desk* d, const char* size) {
-    unsigned w = 1280u, h = 800u;
+/* Allocates the canvas from --canvas WxH in the --format; 0 on a bad size or no memory. Without --canvas the size is
+ * the backend's own (def_w x def_h: the sdl window default 1280x800, the Workbench screen on rtg, I340), and the mem
+ * backend keeps 1280x800. */
+static int desk_make_canvas(desk* d, const char* size, int32_t def_w, int32_t def_h) {
+    unsigned w = (unsigned)def_w, h = (unsigned)def_h;
     uint32_t pal[256];
     void* pixels;
     uint32_t format = d->budget.format == SEL_UIM_FMT_INDEX8 ? SEL_GUI_INDEX8 : SEL_GUI_RGBA32;
@@ -6016,9 +6018,17 @@ static void* desk_open(const sel_ui_open_args* a) {
     }
     desk_build_icons(d);
     d->icon_rebuilds = 0u; /* the first build is not a rebuild */
-    if (!desk_make_canvas(d, desk_opt(a, "--canvas"))) {
-        desk_close(d);
-        return NULL;
+    {
+        int32_t def_w = 1280, def_h = 800;
+#ifdef SELECTA_DESKTOP_SDL
+        if (want_sdl) {
+            desk_sdl_default_size(&def_w, &def_h);
+        }
+#endif
+        if (!desk_make_canvas(d, desk_opt(a, "--canvas"), def_w, def_h)) {
+            desk_close(d);
+            return NULL;
+        }
     }
     for (i = 0; i < a->argc; i++) {
         if (strcmp(a->argv[i], "--tokens") == 0) {

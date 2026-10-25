@@ -16,6 +16,9 @@ typedef struct desk_rtg desk_rtg;
 
 enum { DESK_RTG_NONE = 0, DESK_RTG_QUIT = 1, DESK_RTG_RESIZE = 2, DESK_RTG_ACTIVITY = 3 };
 
+/* The canvas size when none is asked for: the size of the Workbench (default public) screen, so the UI opens full
+ * screen (D-M4-3, I340). 1280x800 when intuition cannot be opened. */
+void desk_rtg_default_size(int32_t* w, int32_t* h);
 /* Opens the screen and window. w and h are the wanted size; 0 and 0 pick the largest RTG mode up to 1920 x 1080. NULL
  * (with a message on stderr) when Picasso96 or the mode is missing. */
 desk_rtg* desk_rtg_open(int32_t w, int32_t h);
@@ -42,6 +45,7 @@ int desk_rtg_next_input(desk_rtg* b, sel_gui_input* ev);
 #define DESK_SDL_QUIT DESK_RTG_QUIT
 #define DESK_SDL_RESIZE DESK_RTG_RESIZE
 #define DESK_SDL_ACTIVITY DESK_RTG_ACTIVITY
+#define desk_sdl_default_size desk_rtg_default_size
 #define desk_sdl_open(w, h) desk_rtg_open((w), (h))
 #define desk_sdl_close desk_rtg_close
 #define desk_sdl_headless(b) ((void)(b), 0)

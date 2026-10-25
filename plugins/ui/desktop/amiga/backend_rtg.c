@@ -123,6 +123,25 @@ static ULONG pick_mode(int32_t* w, int32_t* h, ULONG* depth) {
     return 0;
 }
 
+void desk_rtg_default_size(int32_t* w, int32_t* h) {
+    struct IntuitionBase* ib = (struct IntuitionBase*)OpenLibrary((CONST_STRPTR) "intuition.library", 37);
+    *w = 1280;
+    *h = 800;
+    if (ib != NULL) {
+        struct IntuitionBase* saved = IntuitionBase;
+        struct Screen* wb;
+        IntuitionBase = ib;
+        wb = LockPubScreen(NULL);
+        if (wb != NULL) {
+            *w = wb->Width;
+            *h = wb->Height;
+            UnlockPubScreen(NULL, wb);
+        }
+        IntuitionBase = saved;
+        CloseLibrary((struct Library*)ib);
+    }
+}
+
 desk_rtg* desk_rtg_open(int32_t w, int32_t h) {
     desk_rtg* b = (desk_rtg*)AllocVec(sizeof *b, MEMF_CLEAR);
     ULONG mode, depth = 0;

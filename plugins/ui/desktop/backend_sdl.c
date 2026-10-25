@@ -80,6 +80,17 @@ static void push_test_events(const char* list) {
     }
 }
 
+void desk_sdl_default_size(int32_t* w, int32_t* h) {
+    const char* env = getenv("SELECTA_SDL_SCREEN");
+    int ew, eh;
+    *w = 1280;
+    *h = 800;
+    if (env != NULL && sscanf(env, "%dx%d", &ew, &eh) == 2 && ew >= 64 && eh >= 64) {
+        *w = ew;
+        *h = eh;
+    }
+}
+
 desk_sdl* desk_sdl_open(int32_t w, int32_t h) {
     desk_sdl* b;
     const char* drv;

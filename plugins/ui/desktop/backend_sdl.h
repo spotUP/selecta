@@ -12,6 +12,9 @@ typedef struct desk_sdl desk_sdl;
 
 enum { DESK_SDL_NONE = 0, DESK_SDL_QUIT = 1, DESK_SDL_RESIZE = 2, DESK_SDL_ACTIVITY = 3 };
 
+/* The canvas size used when --canvas is not given: 1280x800, or WxH from SELECTA_SDL_SCREEN (a test hook for a small
+ * screen, like SELECTA_SDL_TEST_EVENTS). */
+void desk_sdl_default_size(int32_t* w, int32_t* h);
 /* Window of w x h pixels; NULL (with a message on stderr) when SDL or the video driver fails. */
 desk_sdl* desk_sdl_open(int32_t w, int32_t h);
 void desk_sdl_close(desk_sdl* b);
