@@ -345,6 +345,10 @@ static void scan_dir(scan_state* s, const char* dir) {
         } else if (s->count_only) {
             s->total++;
         } else {
+            if (s->cfg->cancelled != NULL && s->cfg->cancelled(s->cfg->cancelled_ctx)) {
+                s->stack_n = 0; /* I336: the walk ends; files already probed are flushed by the caller as usual */
+                return;
+            }
             s->visited++;
             if (s->cfg->progress != NULL) {
                 s->cfg->progress(s->cfg->progress_ctx, full, s->visited, s->total);

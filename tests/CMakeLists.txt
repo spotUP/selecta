@@ -1514,6 +1514,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_scan_composers_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-scan-composers COMMAND library_scan_composers_test)
   set_tests_properties(library-scan-composers PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_scan_composers_ok")
+  # I336: the library job thread runs the folder scan task off the caller's thread.
+  add_executable(library_task_test library_task_test.c)
+  target_include_directories(library_task_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_task_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-task-thread COMMAND library_task_test)
+  set_tests_properties(library-task-thread PROPERTIES LABELS "m3;library" PASS_REGULAR_EXPRESSION "library_task_ok")
   # I219g: the KPlayer timing walker behind the native .mod seek on Amiga (pure C, so the host runs it).
   add_executable(kplayer_modwalk_test kplayer_modwalk_test.c ${PROJECT_SOURCE_DIR}/plugins/replayers/kplayer/modwalk.c)
   target_include_directories(kplayer_modwalk_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/replayers/kplayer)

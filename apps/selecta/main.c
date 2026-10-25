@@ -538,6 +538,7 @@ int main(int argc, char** argv)
                 }
             } else if (sel_engine_send_line(e, argv[a + 1], pool, sizeof pool) == SEL_CODEC_OK) {
                 sel_engine_pump(e, sink, ctx);
+                sel_engine_scan_wait(e, sink, ctx); /* a --exec LIBRARY_SCAN finishes before the next option (I336) */
             }
         }
     }
@@ -651,6 +652,9 @@ int main(int argc, char** argv)
             printf("ui_library id=%s\n%s", g_uis[u].id, (const char*)sel_tag_find(us, SEL_UI_STAT_LIBRARY_DUMP, (uintptr_t) ""));
             printf("ui_drop id=%s drops=%u scans=%u\n", g_uis[u].id, (unsigned)sel_tag_find(us, SEL_UI_STAT_DROPS, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_SCANS, 0));
+            printf("ui_backend id=%s backend=%s depth=%u\n", g_uis[u].id,
+                   (const char*)sel_tag_find(us, SEL_UI_STAT_BACKEND, (uintptr_t)""),
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_SCREEN_DEPTH, 0));
             printf("ui_tooltip id=%s text=%s\n", g_uis[u].id, (const char*)sel_tag_find(us, SEL_UI_STAT_TOOLTIP_TEXT, (uintptr_t) ""));
             printf("ui_home id=%s shelves=%u shelf_scroll=%u scroll_y=%u tile_queued=%u empty=%u\n%s", g_uis[u].id,
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_HOME_SHELVES, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_SHELF_SCROLL, 0),

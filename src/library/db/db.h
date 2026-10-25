@@ -409,6 +409,13 @@ void sel_library_rating_push(sel_library* lib);
  * builds without threads: each call hashes at most one file and returns 1 when it did, 0 when nothing is left; the
  * caller invokes it only while it is idle. With threads _poll does nothing and returns 0. */
 void sel_library_hash_kick(sel_library* lib);
+/* I336: runs one long caller task (the engine's folder scan) on the library job thread; builds without threads run it
+ * inline inside _start. _start: 1 = accepted, 0 = a task is running or its end is uncollected. _take: 1 once per
+ * finished task. _cancelled: the task polls it between items. _cancel: stops a running task and waits for it. */
+int sel_library_task_start(sel_library* lib, void (*fn)(void* ctx), void* ctx);
+int sel_library_task_take(sel_library* lib);
+int sel_library_task_cancelled(sel_library* lib);
+void sel_library_task_cancel(sel_library* lib);
 int sel_library_hash_poll(sel_library* lib);
 /* I184b: counters of the md5 pass. files = files hashed, chunks = file reads (builds without threads read one
  * chunk of at most SEL_HASH_CHUNK bytes per _poll; with threads one per file), tick_max = most bytes one _poll read. */

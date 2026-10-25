@@ -53,12 +53,17 @@ struct sel_library {
     unsigned hash_pending;   /* cooperative build: the idle md5 pass has songs left; threads: a kick restarts the
                               * pass from id 0 (under job_lock) */
     uint32_t hash_files, hash_chunks, hash_tick_max; /* sel_hash_stats (I184b) */
+    void (*task_fn)(void* ctx); /* I336: the queued caller task (job.c) */
+    void* task_ctx;
+    volatile int task_cancel;
+    unsigned task_done;      /* a task ended and _task_take has not collected it */
 #if defined(SEL_LIBRARY_NO_THREAD)
     char pf_cur[160];        /* the request the poll is working on across ticks (I168b); "" = none */
     int pf_cur_smart;
     unsigned pf_cur_before;  /* cache stats.fetches when the request started */
 #endif
 #if !defined(SEL_LIBRARY_NO_THREAD)
+    unsigned job_task, job_task_busy; /* I336: the queued caller task, and one running */
     unsigned job_vote, job_vote_busy; /* one queued vote request, and one running */
     unsigned job_lyric, job_lyric_busy; /* one queued lyrics request, and one running */
     unsigned job_hash, job_hash_busy;   /* local md5 pass: one coalesced pending job, and one running (duplicates.c, I184a) */

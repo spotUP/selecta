@@ -613,6 +613,7 @@ static int library_scan(int argc, char** argv) {
     snprintf(line, sizeof line, "LIBRARY_SCAN %s", dir);
     sel_engine_send_line(e, line, pool, sizeof pool);
     sel_engine_pump(e, on_event, &sink);
+    sel_engine_scan_wait(e, on_event, &sink); /* the scan runs on the job thread (I336) */
     sel_engine_scan_info(e, &info);
     if (watch_ms > 0) {
         memset(&scfg, 0, sizeof scfg);

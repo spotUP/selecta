@@ -372,6 +372,13 @@ struct sel_engine {
     /* I315 live scan progress: the command thread writes under an odd scan_seq, readers retry until they see the same even value twice */
     volatile uint32_t scan_seq, scan_active, scan_done, scan_total;
     char scan_file[SEL_SCAN_FILE_MAX];
+    /* I336: the scan runs on the library job thread; it owns these while scan_running, the pump reads them after the task ends */
+    sel_local_scan_config scan_cfg;
+    sel_local_scan_stats scan_stats;
+    char scan_root[SEL_BROWSE_PATH_MAX];
+    int scan_ok;
+    int scan_running;
+    uint32_t scan_delay_ms; /* test hook SELECTA_SCAN_DELAY_MS: the scan thread sleeps this long before each file (I336) */
     sel_sync_info sync_info; /* counters of the last LIBRARY_SYNC */
     uint32_t lib_slot;
     sel_tag lib_tags[4][4];                  /* LIBRARY_RESULT tags, a ring like error_detail */
@@ -579,6 +586,18 @@ static void copy_str(char* dst, size_t cap, const char* src) {
     }
     memcpy(dst, src ? src : "", n);
     dst[n] = '\0';
+}
+
+void sel_engine_scan_wait(sel_engine* e, sel_event_sink sink, void* ctx) {
+    while (e->scan_running) {
+#if defined(__unix__) || defined(__APPLE__)
+        struct timespec ts;
+        ts.tv_sec = 0;
+        ts.tv_nsec = 1000000L;
+        nanosleep(&ts, NULL);
+#endif
+        sel_engine_pump(e, sink, ctx);
+    }
 }
 
 void sel_engine_report_error(sel_engine* e, const char* code, const char* detail) {
@@ -3233,7 +3252,17 @@ static void scan_progress_set(sel_engine* e, uint32_t active, const char* path, 
 }
 
 static void scan_progress_cb(void* ctx, const char* path, uint32_t done, uint32_t total) {
-    scan_progress_set((sel_engine*)ctx, 1u, path, done, total);
+    sel_engine* e = ctx;
+
+#if defined(__unix__) || defined(__APPLE__)
+    if (e->scan_delay_ms > 0u) {
+        struct timespec ts;
+        ts.tv_sec = 0;
+        ts.tv_nsec = (long)e->scan_delay_ms * 1000000L;
+        nanosleep(&ts, NULL);
+    }
+#endif
+    scan_progress_set(e, 1u, path, done, total);
 }
 
 void sel_engine_scan_progress(const sel_engine* e, sel_scan_progress* out) {
@@ -3247,47 +3276,84 @@ void sel_engine_scan_progress(const sel_engine* e, sel_scan_progress* out) {
     } while ((a & 1u) != 0u || a != e->scan_seq);
 }
 
-/* LIBRARY_SCAN <dir>: scans the directory tree (and the archives in it) into the catalogue through
- * cfg.library (I158, I158a, I159); the answer is a LIBRARY_RESULT carrying the scanned path and the file count. */
-static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
-    uint32_t files = 0;
-    int ok;
-    sel_local_scan_config scfg;
-    sel_local_scan_stats stats;
+int sel_engine_scan_busy(const sel_engine* e) {
+    return e->scan_running;
+}
 
+static int scan_cancelled_cb(void* ctx) {
+    return sel_library_task_cancelled(((sel_engine*)ctx)->lib);
+}
+
+/* The scan itself, on the library job thread (I336); the only writer of the scan progress while it runs. */
+static void scan_task(void* ctx) {
+    sel_engine* e = ctx;
+
+    e->scan_ok = sel_local_scan(&e->scan_cfg, e->scan_root, &e->scan_stats);
+}
+
+/* LIBRARY_SCAN <dir>: starts the scan of the directory tree (and the archives in it) on the library job thread (I158,
+ * I158a, I159, I336). The shell loop never waits for it: scan_collect answers with a LIBRARY_RESULT carrying the
+ * scanned path and the file count once the task ended. A second LIBRARY_SCAN while one runs answers ERROR scan_busy. */
+static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
     if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", "LIBRARY_SCAN");
         return;
     }
-    memset(&scfg, 0, sizeof scfg);
-    scfg.host = e->host;
-    scfg.lib = e->lib;
-    scfg.registry_count = e->registry_count;
-    scfg.registry_get = e->registry_get;
-    scfg.now = (int64_t)time(NULL);
-    scfg.progress = scan_progress_cb;
-    scfg.progress_ctx = e;
+    if (e->scan_running) {
+        sel_engine_report_error(e, "scan_busy", m->args[0].v.s);
+        return;
+    }
+    memset(&e->scan_cfg, 0, sizeof e->scan_cfg);
+    memset(&e->scan_stats, 0, sizeof e->scan_stats);
+    e->scan_cfg.host = e->host;
+    e->scan_cfg.lib = e->lib;
+    e->scan_cfg.registry_count = e->registry_count;
+    e->scan_cfg.registry_get = e->registry_get;
+    e->scan_cfg.now = (int64_t)time(NULL);
+    e->scan_cfg.progress = scan_progress_cb;
+    e->scan_cfg.progress_ctx = e;
+    e->scan_cfg.cancelled = scan_cancelled_cb;
+    e->scan_cfg.cancelled_ctx = e;
+    snprintf(e->scan_root, sizeof e->scan_root, "%s", m->args[0].v.s);
+    e->scan_ok = 0;
+    {
+        const char* delay = getenv("SELECTA_SCAN_DELAY_MS");
+        e->scan_delay_ms = delay != NULL ? (uint32_t)strtoul(delay, NULL, 10) : 0u;
+    }
     scan_progress_set(e, 1u, "", 0u, 0u);
-    ok = sel_local_scan(&scfg, m->args[0].v.s, &stats);
+    e->scan_running = 1;
+    if (!sel_library_task_start(e->lib, scan_task, e)) {
+        e->scan_running = 0;
+        scan_progress_set(e, 0u, NULL, 0u, 0u);
+        sel_engine_report_error(e, "scan_failed", e->scan_root);
+    }
+}
+
+/* Pump side of LIBRARY_SCAN: once the task ended, everything the old synchronous command did after the scan runs here, on
+ * the shell thread, because events are emitted only from the pump. */
+static void scan_collect(sel_engine* e) {
+    if (!e->scan_running || e->lib == NULL || !sel_library_task_take(e->lib)) {
+        return;
+    }
+    e->scan_running = 0;
     scan_progress_set(e, 0u, NULL, e->scan_done, e->scan_total);
     e->art_generation++; /* a failed scan may still have stored albums */
-    files = stats.scanned_files;
-    e->scan_info.scanned_files = stats.scanned_files;
-    e->scan_info.skipped_files = stats.skipped_files;
-    e->scan_info.scan_batches = stats.scan_batches;
-    e->scan_info.probed = stats.probed;
-    e->scan_info.dirs = stats.dirs;
-    e->scan_info.archives = stats.archives;
-    e->scan_info.archive_members = stats.archive_members;
-    e->scan_info.archive_lzx = stats.archive_lzx;
-    e->scan_info.depack_pp = stats.depack_pp;
-    e->scan_info.bytes_read = stats.bytes_read;
-    if (!ok) {
-        sel_engine_report_error(e, "scan_failed", m->args[0].v.s);
+    e->scan_info.scanned_files = e->scan_stats.scanned_files;
+    e->scan_info.skipped_files = e->scan_stats.skipped_files;
+    e->scan_info.scan_batches = e->scan_stats.scan_batches;
+    e->scan_info.probed = e->scan_stats.probed;
+    e->scan_info.dirs = e->scan_stats.dirs;
+    e->scan_info.archives = e->scan_stats.archives;
+    e->scan_info.archive_members = e->scan_stats.archive_members;
+    e->scan_info.archive_lzx = e->scan_stats.archive_lzx;
+    e->scan_info.depack_pp = e->scan_stats.depack_pp;
+    e->scan_info.bytes_read = e->scan_stats.bytes_read;
+    if (!e->scan_ok) {
+        sel_engine_report_error(e, "scan_failed", e->scan_root);
         return;
     }
     sel_library_hash_kick(e->lib); /* the new local songs get their md5 in the background (I184a) */
-    emit_library_path(e, m->args[0].v.s, files);
+    emit_library_path(e, e->scan_root, e->scan_stats.scanned_files);
 }
 
 /* Stores the "new this week" count of a modland sync in the DB meta table, so it survives a restart (I161a). */
@@ -4997,6 +5063,9 @@ void sel_engine_destroy(sel_engine* e) {
     if (e) {
         SEL_THREAD_NOT_AUDIO(e);
         uint32_t i;
+        if (e->scan_running) {
+            sel_library_task_cancel(e->lib); /* the scan task uses this engine; end it first (I336) */
+        }
         for (i = 0; i < SEL_SLOT_COUNT; i++) {
             close_slot(e, &e->slot[i]);
         }
@@ -5238,6 +5307,7 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
             dispatch(e, &m);
         }
     }
+    scan_collect(e);
     timer_pump(e);
     reclaim_slots(e);
     if (e->deferred) {

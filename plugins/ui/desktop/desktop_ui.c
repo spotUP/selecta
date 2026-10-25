@@ -20,11 +20,19 @@
 #include <selecta/uimodel/palette.h>
 #include <selecta/uimodel/theme.h>
 
-#ifdef SELECTA_DESKTOP_SDL
+#if defined(SELECTA_DESKTOP_RTG) && !defined(SELECTA_DESKTOP_SDL)
+#define SELECTA_DESKTOP_SDL 1
+#include "amiga/backend_rtg.h"
+#define DESK_BACKEND_NAME "rtg"
+#define desk_backend_depth(b) desk_rtg_depth(b)
+#elif defined(SELECTA_DESKTOP_SDL)
 #include "backend_sdl.h"
+#define DESK_BACKEND_NAME "sdl"
+#define desk_backend_depth(b) ((void)(b), 32)
 #endif
 
 #include <stdarg.h>
+#include <time.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <stdlib.h>
@@ -139,6 +147,7 @@ typedef struct desk {
     const char* dialog_answer; /* --dialog-answer <path>: what the folder dialog answers in a test (DUI-P5-11) */
     uint32_t scan_done, scan_total; /* I315: scan progress last drawn on the Library page (files started, files in the folder) */
     char scan_file[SEL_SCAN_FILE_MAX]; /* I315: path of the file the progress shows */
+    uint32_t scan_mid;       /* I336: progress snapshots seen while the scan was still running (done < total), proof the shell kept turning */
     uint32_t scan_draws;     /* I315: partial redraws of the Add Folder area while a scan ran (sentinel) */
     int scan_pending;        /* 1 between sending LIBRARY_SCAN and its LIBRARY_RESULT: searches answer with the same event */
     int drop_playing;        /* 1 after a dropped file was sent as OPEN: an open_failed error then toasts */
@@ -2821,6 +2830,7 @@ static const char* library_dump_build(desk* d) {
                               d->scan_pending, (int)tr.x, (int)tr.y, (int)tr.w, (int)tr.h, (int)ab.x, (int)ab.y, (int)ab.w, (int)ab.h,
                               (int)sr.x, (int)sr.y, (int)sr.w, (int)sr.h);
     }
+    o = dump_put(d, o, "scan_mid %u\n", (unsigned)d->scan_mid);
     o = dump_put(d, o, "search draws %u rows %u query %s\n",
                           (unsigned)d->search_draws, (unsigned)d->search_rows, d->query);
     o = dump_put(d, o, "search groups songs=%u albums=%u artists=%u facet=%u drawn=%u\n",
@@ -5369,6 +5379,9 @@ static int desk_scan_sync(desk* d) {
     if (sp.done == d->scan_done && sp.total == d->scan_total && strcmp(sp.file, d->scan_file) == 0) {
         return 0;
     }
+    if (sp.active && sp.total > 0u && sp.done < sp.total) {
+        d->scan_mid++;
+    }
     d->scan_done = sp.done;
     d->scan_total = sp.total;
     snprintf(d->scan_file, sizeof d->scan_file, "%s", sp.file);
@@ -5379,6 +5392,16 @@ static int desk_scan_sync(desk* d) {
         desk_event_frame(d, 1);
     }
     return shown;
+}
+
+/* A headless turn that waits for a running scan gives the scan thread the core for a moment instead of spinning. */
+static void desk_scan_nap(void) {
+#if defined(__unix__) || defined(__APPLE__)
+    struct timespec ts;
+    ts.tv_sec = 0;
+    ts.tv_nsec = 1000000L;
+    nanosleep(&ts, NULL);
+#endif
 }
 
 static int desk_add_folder(desk* d) {
@@ -5924,7 +5947,7 @@ static void* desk_open(const sel_ui_open_args* a) {
     const char* backend = desk_opt(a, "--backend");
     desk* d;
     int i;
-    int want_sdl = backend != NULL && strcmp(backend, "sdl") == 0;
+    int want_sdl = backend != NULL && (strcmp(backend, "sdl") == 0 || strcmp(backend, "rtg") == 0);
     if (backend != NULL && strcmp(backend, "mem") != 0 && !want_sdl) {
         fprintf(stderr, "selecta: desktop backend '%s' is not mem or sdl\n", backend);
         return NULL;
@@ -6192,6 +6215,11 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
     if (desk_present(d)) {
         return 1;
     }
+    if (!d->live && d->scan_pending) { /* I336: the scan runs on a job thread; a scripted or headless run keeps turning (and drawing the
+                                        * progress) until its LIBRARY_RESULT arrives, so the script's next line sees the finished scan */
+        desk_scan_nap();
+        return 1;
+    }
     if (d->input != NULL && !d->input_done && d->ticks == 0u && desk_replay_input(d)) { /* scripted input, once */
         return 1; /* every event flushed its own frame */
     }
@@ -6387,7 +6415,17 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[64].value = d->drops;
     d->stats[65].tag = SEL_UI_STAT_SCANS;
     d->stats[65].value = d->scans;
-    d->stats[66].tag = SEL_TAG_END;
+    d->stats[66].tag = SEL_UI_STAT_BACKEND;
+    d->stats[66].value = (uintptr_t)"mem";
+    d->stats[67].tag = SEL_UI_STAT_SCREEN_DEPTH;
+    d->stats[67].value = 0;
+#ifdef SELECTA_DESKTOP_SDL
+    if (d->sdl != NULL) {
+        d->stats[66].value = (uintptr_t)DESK_BACKEND_NAME;
+        d->stats[67].value = (uintptr_t)desk_backend_depth(d->sdl);
+    }
+#endif
+    d->stats[68].tag = SEL_TAG_END;
 
     return d->stats;
 }

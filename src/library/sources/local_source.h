@@ -21,6 +21,9 @@ typedef struct sel_local_scan_config {
      * number visited so far (from 1) and the total. Rescans do not call it. */
     void (*progress)(void* ctx, const char* path, uint32_t done, uint32_t total);
     void* progress_ctx;
+    /* I336: optional. Polled before each file; non-zero ends the scan early (ok is still returned with the stats so far). */
+    int (*cancelled)(void* ctx);
+    void* cancelled_ctx;
 } sel_local_scan_config;
 
 typedef struct sel_local_scan_stats {

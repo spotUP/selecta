@@ -262,6 +262,10 @@ int sel_config_mkdir(const char* dir);
 
 /* Called by sel_engine_pump once per delivered event. */
 typedef void (*sel_event_sink)(void* ctx, const sel_message* evt);
+/* I336: LIBRARY_SCAN runs on the library job thread and answers on a later pump. A caller with no loop of its own (the
+ * CLI, --exec) pumps through this until the running scan has answered; 0 when no scan runs. */
+int sel_engine_scan_busy(const sel_engine* e);
+void sel_engine_scan_wait(sel_engine* e, sel_event_sink sink, void* ctx);
 
 sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg);
 void sel_engine_destroy(sel_engine* e);

@@ -86,3 +86,27 @@ endif()
 if(NOT "${home}" MATCHES "scan probed [1-9][0-9]* files 3 scans 1")
   message(FATAL_ERROR "Home drop did not scan:\n${home}")
 endif()
+
+# 3. I336: the scan runs on the library job thread, so the shell keeps turning while it runs. With the scan thread slowed to
+#    20 ms a file over 12 files the UI sees progress snapshots with done < total (scan_mid) and still ends at 12 of 12; a
+#    synchronous scan inside the engine pump never shows a snapshot in the middle.
+file(MAKE_DIRECTORY "${WORK}/many")
+foreach(n a b c d e f g h i j k l)
+  file(COPY_FILE "${SONGS}/selecta-test.mod" "${WORK}/many/${n}.mod")
+endforeach()
+file(REMOVE_RECURSE "${WORK}/cfg")
+file(REMOVE "${WORK}/library.db")
+file(WRITE "${WORK}/in.txt" "wait 1\nmove ${cx} ${cy}\nclick ${cx} ${cy}\nwait 5\n")
+set(ENV{SELECTA_SCAN_DELAY_MS} 20)
+dui_run(slow --start-dir "${WORK}/many" --db "${WORK}/library.db" --ui desktop --backend mem --view library --canvas 900x600
+  --clock fixed --stats --dialog-answer "${WORK}/many" --input "${WORK}/in.txt")
+unset(ENV{SELECTA_SCAN_DELAY_MS})
+if(NOT "${slow}" MATCHES "scan_mid ([0-9]+)\n")
+  message(FATAL_ERROR "no scan_mid line:\n${slow}")
+endif()
+if(CMAKE_MATCH_1 LESS 3)
+  message(FATAL_ERROR "the UI saw only ${CMAKE_MATCH_1} mid-scan snapshots; the scan blocked the shell loop:\n${slow}")
+endif()
+if(NOT "${slow}" MATCHES "scan_ui page=2 done=12 total=12 ")
+  message(FATAL_ERROR "scan did not end at 12 of 12:\n${slow}")
+endif()
