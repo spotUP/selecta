@@ -29,6 +29,31 @@ jobs:
       - name: Test
         run: ctest --test-dir build/host --output-on-failure
 
-  # TODO I21: needs a verified bebbo toolchain image (m68k-amigaos-gcc 6.5
-  # plus vamos). Not added until an image is verified; the local
-  # cross-build and the amiga-roundtrip ctest (T9) are the gate meanwhile.
+  # Amiga 68020 cross build plus the vamos ctest rows. Image liv2/amiga-gcc
+  # (bebbo m68k-amigaos-gcc 6.5.0b, amitools vamos, Ubuntu 24.04), pinned by
+  # digest. vamos runs Kickstart-free, so no ROM is needed.
+  # The host side builds only selecta-cli (the vamos rows compare against it).
+  # The -Wno-error flags and _DEFAULT_SOURCE are needed because the full host
+  # build is red on Linux gcc (M_PI under -std=c99, format-truncation);
+  # that is tracked separately from this job.
+  # Excluded rows: amiga-machine expects vamos's 8384512 byte FAST_RAM (the
+  # image's vamos reports 4123444), render-golden-amiga* need the host test
+  # song, and the two desktop-console frame rows need host targets not built here.
+  amiga-68020:
+    runs-on: ubuntu-latest
+    container:
+      image: liv2/amiga-gcc:main@sha256:570461426e8eabdde4f7507da62ed985a9c07147ecb12d0754d85678255eb34d
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cmake and ninja
+        run: apt-get update && apt-get install -y cmake ninja-build
+      - name: Configure (68020)
+        run: cmake -S . -B build/amiga -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/amiga-68020.cmake -DCMAKE_BUILD_TYPE=Debug -DAMIGA_GCC_ROOT=/opt/amiga
+      - name: Build (68020)
+        run: cmake --build build/amiga -j2
+      - name: Configure (host selecta-cli)
+        run: cmake -S . -B build/host -G Ninja "-DCMAKE_C_FLAGS=-D_DEFAULT_SOURCE -Wno-error=format-truncation -Wno-error=stringop-truncation"
+      - name: Build (host selecta-cli)
+        run: cmake --build build/host --target selecta-cli
+      - name: Test (vamos)
+        run: ctest --test-dir build/host -R amiga -E 'render-golden|amiga-machine$|amiga-text-ui-vamos|amiga-console-first-frame-vamos' --output-on-failure
