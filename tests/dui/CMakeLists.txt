@@ -3,7 +3,7 @@
 # replaces its red entry with the real test and removes its id from tests/ratchet/unimplemented.txt. Red entries also
 # carry label dui-red, so a run of the finished milestones (M3 finish line) can leave them out with -LE dui-red while
 # dui-ratchet keeps the red count honest.
-set(SEL_DUI_REAL dui-ratchet dui-build-deps dui-uim-frame dui-ui-switch dui-ui-multi dui-mode-pref dui-lift-parity dui-actions dui-layout dui-parity-matrix dui-governor dui-tokens dui-draw dui-dirty dui-text dui-artwork dui-genart dui-golden-home dui-sdl dui-widgets dui-hidpi dui-anim dui-keys dui-mouse dui-tooltips dui-gestures dui-frame dui-home dui-library dui-styles dui-grid-coverflow dui-search dui-nowplaying dui-queue dui-playlists dui-songinfo dui-overlays dui-nav dui-viz dui-tracker dui-drop)
+set(SEL_DUI_REAL dui-ratchet dui-build-deps dui-uim-frame dui-ui-switch dui-ui-multi dui-mode-pref dui-lift-parity dui-actions dui-layout dui-parity-matrix dui-governor dui-tokens dui-draw dui-dirty dui-text dui-artwork dui-genart dui-golden-home dui-sdl dui-widgets dui-hidpi dui-anim dui-keys dui-mouse dui-tooltips dui-gestures dui-frame dui-home dui-library dui-styles dui-grid-coverflow dui-search dui-nowplaying dui-queue dui-playlists dui-songinfo dui-overlays dui-nav dui-viz dui-tracker dui-drop dui-m68k-nofloat)
 
 add_test(NAME dui-ratchet
   COMMAND "${CMAKE_COMMAND}"
@@ -89,3 +89,12 @@ add_executable(dui_input_map_unit input_map_unit.c)
 target_link_libraries(dui_input_map_unit PRIVATE selecta_gui)
 add_test(NAME gui-input-map COMMAND dui_input_map_unit)
 set_tests_properties(gui-input-map PROPERTIES TIMEOUT 60)
+
+# DUI-P6-3: the Amiga cross build of src/gui and src/uimodel, counted with the m68k nm. Needs the bebbo toolchain.
+if(NOT SEL_AMIGA)
+  find_program(SEL_M68K_NM m68k-amigaos-nm HINTS "$ENV{AMIGA_GCC_ROOT}/bin" "$ENV{HOME}/opt/amiga/bin" /opt/amiga/bin)
+  add_test(NAME dui-m68k-nofloat
+    COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/dui-m68k" "-DGEN=${CMAKE_GENERATOR}"
+      "-DCMAKE=${CMAKE_COMMAND}" "-DNM=${SEL_M68K_NM}" -P "${CMAKE_CURRENT_SOURCE_DIR}/m68k_nofloat.cmake")
+  set_tests_properties(dui-m68k-nofloat PROPERTIES LABELS dui RUN_SERIAL TRUE TIMEOUT 300)
+endif()
