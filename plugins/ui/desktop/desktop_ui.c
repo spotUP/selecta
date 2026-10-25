@@ -142,6 +142,7 @@ typedef struct desk {
     uint32_t lib_off_page;   /* Library page draws while another page is current (sentinel, must stay 0: I274) */
     uint32_t np_draws;       /* Now Playing panel draws (sentinel) */
     sel_gui_rect np_like, np_rate[5]; /* click targets of the like button and the five rating marks */
+    uint32_t np_msg_lines;            /* lines of the song message the last Now Playing draw laid out (I290) */
     int32_t np_rating;                /* filled rating marks of the last Now Playing draw (I288) */
     uint32_t lib_searches;   /* LIBRARY_SEARCH lines sent for typed queries: STAT_LIBRARY_SEARCHES */
     uint32_t search_draws, search_rows;  /* search view frames drawn, result rows in the last one */
@@ -2512,8 +2513,8 @@ static const char* library_dump_build(desk* d) {
     o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "grid draws %u tiles %u cols %u\nflow draws %u centre %u\n",
                           (unsigned)d->grid_draws, (unsigned)d->grid_tiles, (unsigned)d->grid_cols, (unsigned)d->flow_draws,
                           (unsigned)d->flow_centre);
-    o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "nowplaying draws %u pairs %u\nlyrics line %d at %u\n",
-                          (unsigned)d->np_draws, (unsigned)d->np_rows, (int)st->lyric_line, (unsigned)st->song.position_ms);
+    o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "nowplaying draws %u pairs %u\nlyrics line %d at %u\nmessage lines %u\n",
+                          (unsigned)d->np_draws, (unsigned)d->np_rows, (int)st->lyric_line, (unsigned)st->song.position_ms, (unsigned)d->np_msg_lines);
     o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "rating %d mark %d %d %d %d step %d\n", (int)d->np_rating,
                           (int)d->np_rate[0].x, (int)d->np_rate[0].y, (int)d->np_rate[0].w, (int)d->np_rate[0].h,
                           (int)(d->np_rate[1].x - d->np_rate[0].x));
@@ -3631,6 +3632,7 @@ static void draw_player_left(desk* d) {
  * panel data), the synced lyrics with the current line highlighted, the next queue entries, and like and rating marks. */
 #define NP_PAIRS_MAX 6u
 #define NP_UPNEXT_MAX 3u
+#define NP_MESSAGE_LINES 6
 static uint32_t np_art_average(const desk* d, sel_gui_rect ar) {
     const uint32_t* px = (const uint32_t*)d->canvas->pixels;
     uint32_t r = 0, g = 0, b = 0, n = 0;
@@ -3725,6 +3727,7 @@ static void draw_nowplaying(desk* d) {
     }
     /* Metadata pairs. */
     d->np_rows = 0;
+    d->np_msg_lines = 0;
     if (st->panel != NULL) {
         const char* p = st->panel;
         while (*p != '\0' && d->np_rows < NP_PAIRS_MAX) {
@@ -3745,8 +3748,16 @@ static void draw_nowplaying(desk* d) {
         draw_text(d, rect_of(dt.x + sp, y + lpx(d, 40), side, lpx(d, 16)), st->lyric_next != NULL ? st->lyric_next : "", 0, 12, muted);
         y += lpx(d, 62);
     } else if (st->lyric_text != NULL) {
-        draw_text(d, rect_of(dt.x + sp, y, side, lpx(d, 16)), st->lyric_text, 0, 12, muted);
-        y += lpx(d, 22);
+        /* A tracker song message is several lines (a MOD's sample names, '\n' apart): laid out as wrapped lines, at most
+         * NP_MESSAGE_LINES, so it never reaches the queue below (I290). */
+        const sel_gui_atlas* at = desk_font(d, 0, 12);
+        if (at != NULL) {
+            sel_gui_rect box = rect_of(dt.x + sp, y, side, NP_MESSAGE_LINES * at->line_height);
+            sel_gui_clip_push(d->canvas, box);
+            d->np_msg_lines = (uint32_t)sel_gui_text_wrap(d->canvas, at, box, st->lyric_text, muted, NP_MESSAGE_LINES, &d->text);
+            sel_gui_clip_pop(d->canvas);
+            y += (int32_t)d->np_msg_lines * at->line_height + lpx(d, 6);
+        }
     }
     /* Up next: the queue entries after the playing one. */
     for (k = 0; k < st->queue_count && st->queue[k].id != st->queue_playing; k++) {

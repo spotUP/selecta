@@ -121,3 +121,20 @@ np_rate_run(rb "wait 30\nmove ${cx} ${cy}\nclick ${cx} ${cy}\nwait 30\n")
 if(NOT rb_rating EQUAL 4)
   message(FATAL_ERROR "after a click on the fourth rating mark at ${cx},${cy} the panel fills ${rb_rating} marks, want 4")
 endif()
+
+# 5. I290: a tracker song message has several lines (message.it: three, libopenmpt joins them with a newline). The panel lays
+#    them out as wrapped lines (`message lines 3`) and no control character reaches a glyph (missing_glyphs 0).
+file(REMOVE_RECURSE "${WORK}/cfg" "${WORK}/msg.db")
+file(WRITE "${WORK}/msg.txt" "wait 300\n")
+dui_run(om --db "${WORK}/msg.db" --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats
+  --exec "LIBRARY_SCAN ${fx}" --exec "OPEN ${fx}/message.it" --input "${WORK}/msg.txt")
+if(NOT "${om}" MATCHES "message lines ([0-9]+)")
+  message(FATAL_ERROR "no message-lines sentinel in:\n${om}")
+endif()
+if(NOT CMAKE_MATCH_1 EQUAL 3)
+  message(FATAL_ERROR "the three-line song message laid out ${CMAKE_MATCH_1} lines, want 3")
+endif()
+dui_stat(msg_missing "${om}" desktop missing_glyphs)
+if(NOT msg_missing EQUAL 0)
+  message(FATAL_ERROR "the song message painted ${msg_missing} missing-glyph boxes (a control character reached a glyph)")
+endif()

@@ -68,13 +68,25 @@ static int32_t kern_of(const sel_gui_atlas* at, uint32_t a, uint32_t b) {
     return lo < at->kern_n && at->kerns[lo].a == a && at->kerns[lo].b == b ? at->kerns[lo].amount : 0;
 }
 
+/* I290: a code point below 0x20 (or DEL) is layout, not ink. The single-line paths (width, draw, ellipsis) skip it: it
+ * has no glyph and no advance, so a stray newline never paints the missing-glyph box. Only sel_gui_text_wrap gives
+ * a newline a meaning: a hard line break. */
+static int is_control(uint32_t cp) {
+    return cp < 0x20u || cp == 0x7Fu;
+}
+
 int32_t sel_gui_text_width(const sel_gui_atlas* at, const char* s, size_t len) {
     size_t i = 0, used;
     int32_t w = 0;
     uint32_t prev = 0;
     while (i < len) {
         uint32_t cp = sel_gui_utf8_next(s + i, len - i, &used);
-        const sel_gui_glyph* g = sel_gui_atlas_glyph(at, cp);
+        const sel_gui_glyph* g;
+        if (is_control(cp)) { /* never a glyph, never an advance */
+            i += used;
+            continue;
+        }
+        g = sel_gui_atlas_glyph(at, cp);
         if (g == NULL) {
             g = &at->missing;
         }
@@ -96,7 +108,12 @@ static int32_t draw_run(sel_gui_canvas* c, const sel_gui_atlas* at, int32_t x, i
     uint32_t prev = 0;
     while (i < len) {
         uint32_t cp = sel_gui_utf8_next(s + i, len - i, &used);
-        const sel_gui_glyph* g = sel_gui_atlas_glyph(at, cp);
+        const sel_gui_glyph* g;
+        if (is_control(cp)) { /* I290: a control character never reaches a glyph */
+            i += used;
+            continue;
+        }
+        g = sel_gui_atlas_glyph(at, cp);
         if (g == NULL) {
             g = &at->missing;
             if (st != NULL) {
@@ -138,7 +155,12 @@ int32_t sel_gui_text_draw(sel_gui_canvas* c, const sel_gui_atlas* at, int32_t x,
     /* The longest prefix that leaves room for the ellipsis; trailing spaces are not kept. */
     while (i < len) {
         uint32_t cp = sel_gui_utf8_next(s + i, len - i, &used);
-        const sel_gui_glyph* g = sel_gui_atlas_glyph(at, cp);
+        const sel_gui_glyph* g;
+        if (is_control(cp)) {
+            i += used;
+            continue;
+        }
+        g = sel_gui_atlas_glyph(at, cp);
         if (g == NULL) {
             g = &at->missing;
         }
@@ -165,7 +187,7 @@ int32_t sel_gui_text_wrap(sel_gui_canvas* c, const sel_gui_atlas* at, sel_gui_re
         size_t i, used, last_space = 0, brk;
         int32_t pen = 0;
         uint32_t prev = 0;
-        int have_space = 0, fits = 1;
+        int have_space = 0, fits = 1, hard = 0;
         while (start < len && s[start] == ' ') {
             start++;
         }
@@ -178,6 +200,15 @@ int32_t sel_gui_text_wrap(sel_gui_canvas* c, const sel_gui_atlas* at, sel_gui_re
             uint32_t cp = sel_gui_utf8_next(s + i, len - i, &used);
             const sel_gui_glyph* g = sel_gui_atlas_glyph(at, cp);
             int32_t w;
+            if (cp == '\n' || cp == '\r') { /* a hard break; "\r\n" is one break (consumed below) */
+                hard = 1;
+                brk = i;
+                break;
+            }
+            if (is_control(cp)) {
+                i += used;
+                continue;
+            }
             if (g == NULL) {
                 g = &at->missing;
             }
@@ -206,6 +237,9 @@ int32_t sel_gui_text_wrap(sel_gui_canvas* c, const sel_gui_atlas* at, sel_gui_re
         draw_run(c, at, box.x, box.y + line * at->line_height, s + start, brk - start, argb, st);
         line++;
         start = brk;
+        if (hard) {
+            start += s[start] == '\r' && s[start + 1] == '\n' ? 2u : 1u;
+        }
     }
     return line;
 }
