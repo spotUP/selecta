@@ -2626,7 +2626,7 @@ static const char* library_dump_build(desk* d) {
     }
     p = st->composer_page;
     if (p != NULL && o + 400u < sizeof d->library_dump) {
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "drill %s|%s\n", p, lib_next(p));
+        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "drill %s|%s\n", lib_next(p), lib_next(lib_next(p)));
     }
     o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "mode %s\n", lib_mode_name[d->lib_mode]);
     for (i = 0; i < LIB_MODES; i++) {
@@ -2948,9 +2948,10 @@ static void draw_library(desk* d) {
     sel_gui_clip_push(d->canvas, mn);
     d->library_sig = lib_hash(d, st);
     if (st->composer_page != NULL) { /* drilldown: the composer, its song count and its songs */
-        const char* cnt = lib_next(st->composer_page);
+        const char* shown = lib_next(st->composer_page); /* the header leads with the canon */
+        const char* cnt = lib_next(shown);
         char line[96];
-        draw_text(d, col, st->composer_page, 1, 32, text);
+        draw_text(d, col, shown, 1, 32, text);
         snprintf(line, sizeof line, "%s songs", cnt);
         draw_text(d, rect_of(col.x, col.y + col.h, col.w, lpx(d, 24)), line, 0, 14, muted);
         draw_text(d, rect_of(col.x, col.y + col.h + lpx(d, 24), col.w, lpx(d, 24)), "Back to all composers", 0, 14,
@@ -3116,7 +3117,7 @@ static int library_click(desk* d, int32_t x, int32_t y) {
         }
         /* A song row of the drilldown (drawn at row i + 1, below the back line) plays its song: OPEN with the song's key,
          * the path a scanned song is keyed by, as the Songs page sends it (I299). */
-        for (p = lib_next(lib_next(st->composer_page)); *p != '\0'; i++) {
+        for (p = lib_next(lib_next(lib_next(st->composer_page))); *p != '\0'; i++) {
             const char* name = lib_next(p);
             if (in_rect(lib_row_rect(d, mn, i + 1u), x, y)) {
                 return desk_play_path(d, p);

@@ -264,7 +264,7 @@ struct sel_engine {
     uint32_t links_parsed, links_made;         /* share links OPEN parsed / SHARE wrote (I180 sentinels) */
     char stats[2048];                          /* rows of the open stats screen, "label\0value\0" pairs (I192) */
     char composers[4096];                      /* DUI-P4-3 library page: "canon\0display\0songs\0" per composer, then "\0" */
-    char composer_page[4096];                  /* the drilled-into composer: "display\0songs\0" then "key\0name\0" per song, then "\0" */
+    char composer_page[4096];                  /* the drilled-into composer: "canon\0display\0songs\0" then "key\0name\0" per song, then "\0" */
     uint32_t composers_open, composer_queries; /* the Library page is up / queries made against the library for it */
     uint32_t stats_open, stats_queries;        /* the screen is up / queries made against the stats views (I192 sentinel) */
     char panel[1024];                          /* catalogue rows of the open song, "label\0value\0" pairs (I185) */
@@ -4091,7 +4091,7 @@ static void cmd_COMPOSERS_SHOW(sel_engine* e, const sel_message* m) {
     if (m->argc > 0 && m->args[0].v.s[0] != '\0') {
         const char* name = m->args[0].v.s;
         char num[16], disp[SEL_COMPOSER_MAX], body[sizeof e->composer_page];
-        const char* parts[2];
+        const char* parts[3];
         composer_fill p;
         p.buf = body;
         p.cap = sizeof body - 1u;
@@ -4111,12 +4111,13 @@ static void cmd_COMPOSERS_SHOW(sel_engine* e, const sel_message* m) {
                 r = shown + strlen(shown) + 1u; /* skip display; the loop step skips the count */
             }
             snprintf(num, sizeof num, "%u", (unsigned)p.n);
-            parts[0] = disp;
-            parts[1] = num;
+            parts[0] = name; /* the canon first: a refresh re-issues COMPOSERS_SHOW with it (I302) */
+            parts[1] = disp;
+            parts[2] = num;
             f.buf = e->composer_page;
             f.cap = sizeof e->composer_page - 1u;
             f.used = 0;
-            composer_put(&f, parts, 2);
+            composer_put(&f, parts, 3);
             if (f.used + p.used + 1u <= sizeof e->composer_page) memcpy(e->composer_page + f.used, body, p.used + 1u);
         }
     }
