@@ -26,7 +26,7 @@ status: draft
   - dui-viz timeout cause: the test OPEN starts an online lyrics job; library close cancels it; sel_net_send reported the cancelled wait as TIMEOUT, so TLS retried the handshake at 100% CPU until its deadline.
 - No agents running. No worktrees of this session left.
 - Worktree `.claude/worktrees/agent-aa732a611176357ff` (b725b89) is of unknown origin. Do not remove it.
-- Live window: selecta pid 15740 (my launch, binary from before I266, socket and db in the old scratchpad `/private/tmp/claude-501/-Users-spot-Code-MusicPlayer/d21f2148-ebf4-461d-8876-9851ed290fe3/scratchpad/live/`). Kill only that pid when relaunching. Never kill Johan's own selecta windows.
+- Live window: selecta pid 70102 (my launch, binary with I266, --view home, socket and db in the old scratchpad `/private/tmp/claude-501/-Users-spot-Code-MusicPlayer/d21f2148-ebf4-461d-8876-9851ed290fe3/scratchpad/live/`). Kill only that pid when relaunching. Never kill Johan's own selecta windows.
 - Small leftover: apps/selecta/main.c ~507 has an empty `if (own) {}` branch (skips shell VIEW sends for the desktop UI with --view home/library/playlists/songs). Tidy it in the next desktop agent.
 
 ## Open failures (I271, blocks I202)
@@ -38,7 +38,7 @@ status: draft
 
 ## Next steps (ordered)
 
-1. Relaunch the live window on the new binary (own socket and db in the scratchpad, in the background). Ask Johan to check: search field ring and caret, back/forward arrows (top right of the main pane), Now Playing page, right-click then Add to Queue, Now Playing strip.
+1. Live window pid 70102 already runs the I266 binary. Get Johan's answers to check: search field ring and caret, back/forward arrows (top right of the main pane), Now Playing page, right-click then Add to Queue, Now Playing strip.
 2. Spawn I270: button and chip labels are left-flush (Playlists page buttons at desktop_ui.c ~1619, Search facet chips in draw_search). Fix: one centred-label helper (sel_gui_text_width, ellipsize) used by every button and chip. Needs a stats-based centring test, a revert-check, and moved goldens.
 3. I271 (sonnet agent, bisect the three host failures). It touches no desktop_ui.c, so it can run next to I270, but only one test run on the machine at a time.
 4. P4-12, P4-14, P4-15, I265(a) Sources tab. Only one desktop_ui.c agent at a time. Fold in I244, I253-I255, I256-I261, I264, I267, I269.
