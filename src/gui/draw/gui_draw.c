@@ -365,6 +365,53 @@ void sel_gui_round_rect(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, uint3
     }
 }
 
+/* Coverage 0..16 of pixel (x, y) by the rounded rectangle r with corner radius rad (already clamped). */
+static uint32_t round_cov(sel_gui_rect r, int32_t rad, int32_t x, int32_t y) {
+    int32_t cx, cy;
+    if (x < r.x || x >= r.x + r.w || y < r.y || y >= r.y + r.h) {
+        return 0u;
+    }
+    cx = x < r.x + rad ? r.x + rad : x >= r.x + r.w - rad ? r.x + r.w - rad : -1;
+    cy = y < r.y + rad ? r.y + rad : y >= r.y + r.h - rad ? r.y + r.h - rad : -1;
+    return cx >= 0 && cy >= 0 ? coverage(x, y, cx, cy, rad) : 16u;
+}
+
+void sel_gui_round_frame(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, int32_t width, uint32_t argb) {
+    sel_gui_rect v, in;
+    int32_t x, y, rad = imin(radius, imin(r.w, r.h) / 2), irad;
+    c->prims++;
+    if (rad < 0) {
+        rad = 0;
+    }
+    if (width < 1) {
+        return;
+    }
+    in = (sel_gui_rect){r.x + width, r.y + width, r.w - 2 * width, r.h - 2 * width};
+    irad = rad > width ? rad - width : 0;
+    if (in.w > 0 && in.h > 0) {
+        irad = imin(irad, imin(in.w, in.h) / 2);
+    }
+    v = cur_clip(c, r);
+    for (y = v.y; y < v.y + v.h; y++) {
+        for (x = v.x; x < v.x + v.w; x++) {
+            uint32_t o = round_cov(r, rad, x, y);
+            uint32_t i = in.w > 0 && in.h > 0 ? round_cov(in, irad, x, y) : 0u;
+            uint32_t a = argb >> 24, cov = o > i ? o - i : 0u;
+            if (cov == 0u) {
+                continue;
+            }
+            if (c->format == SEL_GUI_INDEX8) {
+                if (cov < 8u) {
+                    continue;
+                }
+            } else {
+                a = (a * cov + 8u) / 16u;
+            }
+            put(c, x, y, (a << 24) | (argb & 0xFFFFFFu), 0);
+        }
+    }
+}
+
 void sel_gui_gradient(sel_gui_canvas* c, sel_gui_rect r, int vertical, uint32_t a, uint32_t b) {
     sel_gui_rect v;
     int32_t x, y, n = vertical ? r.h : r.w;

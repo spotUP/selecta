@@ -13,7 +13,7 @@ static const char* const k_actions[] = {
     "remove_entry", "play_pause", "next_style",   "next_group",    "back",         "switch_view",
     "subsong_prev", "subsong_next", "page_up",    "page_down",    "mark",
     "library",    "search",       "show_list",    "folders",     "home",
-    "stats",
+    "stats",      "forward",
     "viz",        "pattern",    "solo",         "voice1",        "voice2",       "voice3",
     "voice4",     "voice5",     "voice6",       "voice7",        "voice8",       "voice9",
 };

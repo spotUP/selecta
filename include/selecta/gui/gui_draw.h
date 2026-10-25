@@ -77,6 +77,9 @@ sel_gui_rect sel_gui_rect_intersect(sel_gui_rect a, sel_gui_rect b);
 void sel_gui_fill_rect(sel_gui_canvas* c, sel_gui_rect r, uint32_t argb);
 /* Rounded rectangle: 4x4 coverage anti-aliasing on RGBA32; INDEX8 keeps the pixels covered by half or more. */
 void sel_gui_round_rect(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, uint32_t argb);
+/* Outline of a rounded rectangle: the band `width` pixels wide just inside r, same corner radius and anti-aliasing
+ * as sel_gui_round_rect, so a ring drawn on the rect a pill was filled with hugs the pill. */
+void sel_gui_round_frame(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, int32_t width, uint32_t argb);
 /* Gradient from `a` to `b` along x (vertical = 0) or y (vertical = 1); Q16 step. INDEX8 dithers with an ordered
  * 4x4 matrix. */
 void sel_gui_gradient(sel_gui_canvas* c, sel_gui_rect r, int vertical, uint32_t a, uint32_t b);

@@ -27,9 +27,10 @@ endforeach()
 # Runs the desktop with VIEW_STYLE ${style} and the key script ${script}; sets <tag>_out and <tag>_hash.
 function(flow_run tag style script)
   file(REMOVE_RECURSE "${WORK}/cfg")
-  file(WRITE "${WORK}/${tag}.txt" "${script}")
+  # --view library enters the page in the first turn and the page sets its own source: the test's source follows it (I266).
+  file(WRITE "${WORK}/${tag}.txt" "exec VIEW_SOURCE queue\nexec VIEW_WINDOW 8\nexec VIEW_STYLE ${style}\nexec COMPOSERS_SHOW\nwait 100\n${script}")
   dui_run(o --db "${db}" --ui desktop --backend mem --view library --canvas 1280x800 --clock fixed --stats ${queue}
-    --exec "VIEW_SOURCE queue" --exec "VIEW_WINDOW 8" --exec "VIEW_STYLE ${style}" --input "${WORK}/${tag}.txt")
+    --input "${WORK}/${tag}.txt")
   set(out "${o}\n${o_err}")
   dui_stat(hash "${o}" desktop canvas_hash)
   set(${tag}_out "${out}" PARENT_SCOPE)

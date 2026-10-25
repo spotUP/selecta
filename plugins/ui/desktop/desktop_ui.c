@@ -38,10 +38,11 @@ static const int g_icon_sizes[DESK_ICON_SIZES] = {16, 20, 24, 32};
 
 /* The pages the sidebar doors and --view reach (I262). One list: --view names, door clicks, keys and the stats sentinel
  * all use it. */
+#define PG_HIST_MAX 16u
 typedef enum { PG_HOME, PG_SEARCH, PG_LIBRARY, PG_PLAYLISTS, PG_QUEUE, PG_NOWPLAYING, PG_SONGS, PG_SONGINFO, PG_VIZ, PG_COUNT } desk_page;
 static const char* const g_page_name[PG_COUNT] = {"home", "search", "library", "playlists", "queue", "nowplaying", "songs", "songinfo", "viz"};
 /* The sidebar doors in order: Spotify's Home, Search and Your Library, then Playlists, Queue and Now Playing. */
-#define DOOR_COUNT 6u
+#define DOOR_COUNT 7u
 
 typedef struct desk {
     sel_engine* engine;
@@ -126,6 +127,7 @@ typedef struct desk {
     size_t si_nlen;
     uint32_t queue_draws, queue_rows, queue_cmds; /* Queue page frames drawn (sentinel), rows in the last one, verbs it sent */
     uint32_t np_rows;        /* metadata pairs the Now Playing panel drew: STAT_META_PANEL_ROWS (DUI-P4-7) */
+    uint32_t np_page_draws;  /* Now Playing page draws (sentinel) */
     uint32_t np_draws;       /* Now Playing panel draws (sentinel) */
     sel_gui_rect np_like, np_rate[5]; /* click targets of the like button and the five rating marks */
     uint32_t lib_searches;   /* LIBRARY_SEARCH lines sent for typed queries: STAT_LIBRARY_SEARCHES */
@@ -153,6 +155,17 @@ typedef struct desk {
     int32_t scroll_q16;      /* songs list scroll offset in logical pixels, Q16: precise wheel deltas are fractions of a pixel */
     int32_t hist[16];        /* view history (DUI-P3-4): the open_tile of each visited view, 0 = home */
     uint32_t hist_n, hist_pos;
+    desk_page pg_hist[PG_HIST_MAX]; /* page history (I266): the pages visited, desk_page_goto appends, Back and Forward move */
+    uint32_t pg_n, pg_pos;
+    int pg_walk;             /* 1 while Back or Forward re-enters a page: desk_page_goto must not append it again */
+    uint32_t nav_arrow_clicks; /* history arrow clicks */
+    int search_keep;         /* 1 while the Home field click enters Search: the typed query stays */
+    sel_gui_rect ring, field; /* the last focus ring and the search field it hugs (stats line) */
+    uint32_t caret_draws;
+    int np_page;             /* the main region shows the Now Playing page */
+    int view_pending;        /* --view named a page: desk_wait enters it through desk_page_goto before the first frame */
+    desk_page view_pg;
+    sel_gui_rect nav_back, nav_fwd; /* the history arrows at the top of the main pane */
     uint32_t transport_hits; /* transport button clicks sent to the engine (DUI-P4-1) */
     uint32_t home_parts;     /* bit set of the Home frame parts drawn (HP_*), the I230 proof that each is on screen */
     uint32_t tile_cards;     /* tile card surfaces drawn in the Home view */
@@ -357,10 +370,16 @@ enum {
 
 /* A region as a raised panel (Main.dc.html: panels on the frame colour, large radius): half the spacing token off each
  * side leaves one spacing token of frame colour between neighbours. */
-static sel_gui_rect draw_panel(desk* d, const char* name) {
+/* The panel of a region: the region inset by half the spacing. Drawing, hit tests and focus rings all start here. */
+static sel_gui_rect panel_rect(const desk* d, const char* name) {
     sel_gui_rect r = region_rect(d, name);
     int32_t g = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]) / 2;
-    sel_gui_rect pr = rect_of(r.x + g, r.y + g, r.w - 2 * g, r.h - 2 * g);
+    return rect_of(r.x + g, r.y + g, r.w - 2 * g, r.h - 2 * g);
+}
+
+static sel_gui_rect draw_panel(desk* d, const char* name) {
+    sel_gui_rect r = region_rect(d, name);
+    sel_gui_rect pr = panel_rect(d, name);
     if (pr.w > 0 && pr.h > 0) {
         /* The frame colour first: the rounded corners blend with what is under them, so painting a panel again over
          * its own earlier corners would change them. The region is repainted whole each time (idempotent). */
@@ -380,6 +399,8 @@ static void draw_home(desk* d);
 static void draw_transport(desk* d);
 static void draw_sidebar(desk* d);
 static void draw_nowplaying(desk* d);
+static void draw_nowplaypage(desk* d);
+static void draw_nav_arrows(desk* d, sel_gui_rect mn);
 static void draw_player_left(desk* d);
 
 static void draw_widget(desk* d, uint32_t bit) {
@@ -390,6 +411,9 @@ static void draw_widget(desk* d, uint32_t bit) {
     if (bit == SEL_UIM_DIRTY_SONG) {
         draw_player_left(d);
         if (d->home && !d->songs && !d->queue_page && !d->pl_page && d->open_tile == 0) { /* the Home header replaces the song card */
+            if (d->np_page) { /* the Now Playing page follows the song */
+                draw_home(d);
+            }
             draw_nowplaying(d);
             return;
         }
@@ -632,7 +656,7 @@ static const int32_t g_tile_steps[] = {96, 120, 144, 176, 208}; /* the tile size
 
 /* Home layout (Main.dc.html), logical pixels from the main panel's top: the header with the search field, the
  * greeting, the filter chips, the section heading, then the tile grid. */
-enum { HOME_MARGIN = 24, HOME_SEARCH_Y = 16, HOME_SEARCH_H = 40, HOME_SEARCH_MAX = 360, HOME_GREET_Y = 72,
+enum { HOME_MARGIN = 24, HOME_SEARCH_MAX = 360, HOME_GREET_Y = 72,
        HOME_GREET_H = 40, HOME_CHIPS_Y = 124, HOME_CHIP_H = 32, HOME_SECTION_Y = 172, HOME_SECTION_H = 32,
        HOME_TILES_Y = 212, HOME_TILE_GAP = 4, HOME_TINT_H = 300, HOME_PLAY_SIZE = 40, HOME_PLAY_INSET = 8,
        HOME_TILE_TEXT_GAP = 8, HOME_TITLE_H = 18, HOME_META_H = 16, HOME_BRAND = 28 };
@@ -905,16 +929,32 @@ static void draw_songs_targets(desk* d) {
 
 enum { ANIM_KEY_VIEW = 1, ANIM_KEY_HOVER = 2, ANIM_KEY_TIP = 3, ANIM_KEY_FLOW = 4 };
 
+enum { SEARCH_FIELD_Y = 16, SEARCH_FIELD_H = 40 };
+
+/* The one rect of the search field, on Home (the header field) and on the Search page alike, inside the main region mn:
+ * drawn by both pages, hit by the Home click and ringed by desk_draw_focus. */
+static sel_gui_rect search_field_rect(const desk* d, sel_gui_rect mn) {
+    int32_t mg = lpx(d, HOME_MARGIN);
+    int32_t sw = mn.w - 2 * mg < lpx(d, HOME_SEARCH_MAX) ? mn.w - 2 * mg : lpx(d, HOME_SEARCH_MAX);
+    return rect_of(mn.x + mg, mn.y + lpx(d, SEARCH_FIELD_Y), sw, lpx(d, SEARCH_FIELD_H));
+}
+
 /* The Home header (Main.dc.html): the tinted band at the top of the main panel, the search field with its icon, the
  * greeting, the filter chips and the section heading. */
 static void desk_draw_query(desk* d, sel_gui_rect sr) {
     sel_gui_rect tb = rect_of(sr.x + lpx(d, 42), sr.y, sr.w - lpx(d, 56), sr.h);
+    d->field = sr; /* the field as last drawn, for the stats line */
     if (d->qlen > 0u) { /* the typed query (I239); a caret follows it while the field has the focus */
-        char shown[sizeof d->query + 2];
-        snprintf(shown, sizeof shown, "%s%s", d->query, d->focus == (int32_t)d->layout.count ? "|" : "");
-        draw_text(d, tb, shown, 0, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        draw_text(d, tb, d->query, 0, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
     } else {
         draw_text(d, tb, "Search songs, composers, playlists", 0, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+    }
+    if (d->focus == (int32_t)d->layout.count) { /* the caret: a thin bar at the text end, also in the empty field */
+        const sel_gui_atlas* at = desk_font(d, 0, 14);
+        int32_t tw = at != NULL ? sel_gui_text_width(at, d->query, d->qlen) : 0;
+        int32_t ch = lpx(d, 18), cw = lpx(d, 2) > 0 ? lpx(d, 2) : 1;
+        sel_gui_fill_rect(d->canvas, rect_of(tb.x + tw, sr.y + (sr.h - ch) / 2, cw, ch), ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        d->caret_draws++;
     }
 }
 
@@ -923,8 +963,7 @@ static void draw_home_header(desk* d, sel_gui_rect mn, int with_section) {
     uint32_t muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     int32_t rad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]);
     int32_t mg = lpx(d, HOME_MARGIN), sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
-    int32_t sw = mn.w - 2 * mg < lpx(d, HOME_SEARCH_MAX) ? mn.w - 2 * mg : lpx(d, HOME_SEARCH_MAX);
-    sel_gui_rect sr = rect_of(mn.x + mg, mn.y + lpx(d, HOME_SEARCH_Y), sw, lpx(d, HOME_SEARCH_H));
+    sel_gui_rect sr = search_field_rect(d, mn);
     const sel_gui_atlas* chip = desk_font(d, 1, 13);
     static const char* const chips[] = {"All", "Songs", "Composers", "Playlists"};
     int32_t x, k, ic = lpx(d, 18);
@@ -2239,9 +2278,12 @@ static const char* library_dump_build(desk* d) {
                                   (unsigned)i, st->queue_text + st->queue[i].path_offset);
         }
     }
-    if (o + 200u < sizeof d->library_dump) { /* the page navigation (I262) */
-        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "nav page=%s nav_clicks=%u nav_keys=%u doors=%u\n",
-                              g_page_name[d->page], (unsigned)d->nav_clicks, (unsigned)d->nav_keys, (unsigned)DOOR_COUNT);
+    if (o + 400u < sizeof d->library_dump) { /* the page navigation (I262) */
+        o += (size_t)snprintf(d->library_dump + o, sizeof d->library_dump - o, "nav page=%s nav_clicks=%u nav_keys=%u doors=%u hist=%u pos=%u np_page_draws=%u arrow_clicks=%u\nfocus_ring %d %d %d %d\nsearch_field %d %d %d %d caret_draws=%u\nnav_arrows %d %d %d %d %d %d %d %d\n",
+                              g_page_name[d->page], (unsigned)d->nav_clicks, (unsigned)d->nav_keys, (unsigned)DOOR_COUNT,
+                              (unsigned)d->pg_n, (unsigned)d->pg_pos, (unsigned)d->np_page_draws, (unsigned)d->nav_arrow_clicks, (int)d->ring.x, (int)d->ring.y, (int)d->ring.w, (int)d->ring.h,
+                              (int)d->field.x, (int)d->field.y, (int)d->field.w, (int)d->field.h, (unsigned)d->caret_draws, (int)d->nav_back.x, (int)d->nav_back.y, (int)d->nav_back.w,
+                              (int)d->nav_back.h, (int)d->nav_fwd.x, (int)d->nav_fwd.y, (int)d->nav_fwd.w, (int)d->nav_fwd.h);
     }
     if (o + 900u < sizeof d->library_dump) { /* the overlays (DUI-P4-13) */
         uint32_t k;
@@ -2548,7 +2590,7 @@ static int library_click(desk* d, int32_t x, int32_t y) {
 /* ---- Search (DUI-P4-6): the query field on top, facet chips, and the engine's QUERY rows grouped by type. The engine
  * does the search (LIBRARY_SEARCH, the query language incl. `format:mod`); the debounce reuses the tooltip delay pattern
  * (a UI clock stamp, a wait hint for the idle block, a tick that fires once). */
-enum { SEARCH_DEBOUNCE_MS = 250, SEARCH_FIELD_Y = 16, SEARCH_FIELD_H = 40, SEARCH_ROW_H = 32, SEARCH_FACETS = 3 };
+enum { SEARCH_DEBOUNCE_MS = 250, SEARCH_ROW_H = 32, SEARCH_FACETS = 3 };
 static const char* const search_facet_name[SEARCH_FACETS] = {"All", "Songs", "Formats"};
 
 /* Sends the pending query to the engine as the text UI's library screen does; an empty query leaves the results. */
@@ -2604,13 +2646,6 @@ static sel_gui_rect search_facet_rect(desk* d, sel_gui_rect mn, uint32_t k) {
     return rect_of(x, mn.y + lpx(d, SEARCH_FIELD_Y + SEARCH_FIELD_H + 16),
                    (chip != NULL ? sel_gui_text_width(chip, search_facet_name[k], strlen(search_facet_name[k])) : 40) + 2 * lpx(d, 14),
                    lpx(d, HOME_CHIP_H));
-}
-
-/* The search field of the Search page inside the main region mn. */
-static sel_gui_rect search_field_rect(const desk* d, sel_gui_rect mn) {
-    int32_t mg = lpx(d, HOME_MARGIN);
-    int32_t sw = mn.w - 2 * mg < lpx(d, HOME_SEARCH_MAX) ? mn.w - 2 * mg : lpx(d, HOME_SEARCH_MAX);
-    return rect_of(mn.x + mg, mn.y + lpx(d, SEARCH_FIELD_Y), sw, lpx(d, SEARCH_FIELD_H));
 }
 
 static void draw_search(desk* d) {
@@ -2669,6 +2704,10 @@ static void draw_home_content(desk* d) {
     }
     if (d->viz_page) {
         draw_vizpage(d);
+        return;
+    }
+    if (d->np_page) {
+        draw_nowplaypage(d);
         return;
     }
     sel_gui_rect mn = draw_panel(d, "main");
@@ -2764,12 +2803,38 @@ static void draw_home_content(desk* d) {
     sel_gui_dirty_add(d->canvas, mn);
 }
 
+/* The history arrows (I266) at the top right of the main pane, after Spotify's back and forward buttons: a round
+ * button each, the text colour while the history can move that way and the muted colour when it cannot. */
+static void draw_nav_arrows(desk* d, sel_gui_rect mn) {
+    int32_t bs = lpx(d, 28), gap = lpx(d, 8), mg = lpx(d, HOME_MARGIN), y = mn.y + lpx(d, 8), k;
+    int can[2] = {d->pg_pos > 0u, d->pg_pos + 1u < d->pg_n};
+    sel_gui_rect* slot[2] = {&d->nav_back, &d->nav_fwd};
+    if (d->uim.layout != SEL_UIM_LAYOUT_FULL || mn.w < lpx(d, 400)) {
+        d->nav_back = rect_of(0, 0, 0, 0);
+        d->nav_fwd = rect_of(0, 0, 0, 0);
+        return;
+    }
+    for (k = 0; k < 2; k++) {
+        sel_gui_rect b = rect_of(mn.x + mn.w - mg - 2 * bs - gap + k * (bs + gap), y, bs, bs);
+        uint32_t ink = ARGB(d->theme.token[can[k] ? SEL_GUI_TOKEN_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]);
+        int32_t cx = b.x + bs / 2, cy = b.y + bs / 2, a = bs / 5, t, dir = k == 0 ? -1 : 1;
+        *slot[k] = b;
+        sel_gui_round_rect(d->canvas, b, bs / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+        for (t = 0; t < 2; t++) { /* a chevron of two strokes, drawn twice a pixel apart for weight */
+            sel_gui_line(d->canvas, cx - dir * a / 2 + t, cy - a, cx + dir * a / 2 + t, cy, ink);
+            sel_gui_line(d->canvas, cx + dir * a / 2 + t, cy, cx - dir * a / 2 + t, cy + a, ink);
+        }
+        sel_gui_dirty_add(d->canvas, b);
+    }
+}
+
 /* The main region with the running tweens on top: the hover fade of one tile (a light veil, full strength at rest)
  * and the view cross-fade (the new view fades in from the surface colour). At rest both are the plain view. */
 static void draw_home(desk* d) {
     sel_gui_rect mn = region_rect(d, "main");
     int32_t view = sel_gui_tween_value(&d->tl, ANIM_KEY_VIEW, 65536);
     draw_home_content(d);
+    draw_nav_arrows(d, mn);
     if (view < 65536) {
         sel_gui_scrim(d->canvas, rect_of(mn.x, songs_top(d), mn.w, mn.y + mn.h - songs_top(d)),
                       ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]) & 0xFFFFFFu,
@@ -2821,8 +2886,10 @@ static void desk_page_flags(desk* d, desk_page pg) {
     d->pl_page = pg == PG_PLAYLISTS;
     d->si_page = pg == PG_SONGINFO;
     d->viz_page = pg == PG_VIZ;
+    d->np_page = pg == PG_NOWPLAYING;
     d->search_on = 0;
     d->open_tile = 0;
+    d->hist_n = 0u; /* the view history is per page */
 }
 
 /* The page of a --view name, PG_COUNT when the name is not a page. library is the Home frame with the Library page. */
@@ -2837,19 +2904,46 @@ static desk_page desk_page_named(const char* name) {
 }
 
 /* The "/" key and the Search door: the search field takes the keyboard with an empty query. */
-static void desk_search_focus(desk* d) {
+static void desk_search_focus(desk* d, int keep_query) {
     d->focus = (int32_t)d->layout.count;
-    d->qlen = 0u;
-    d->query[0] = '\0';
+    if (!keep_query) {
+        d->qlen = 0u;
+        d->query[0] = '\0';
+    }
     d->page = PG_SEARCH;
     d->repaint = 1;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
 }
 
-/* Enters a page (I262) with the engine verbs the shell sends at launch for the same --view: the view source and window
- * the page reads, and the Library screens opened and closed. Returns 1 when the picture changed. */
-static int desk_page_goto(desk* d, desk_page pg) {
+/* Appends a page to the history (I266): the forward pages are dropped, the oldest falls off at the bound, a page equal
+ * to the current one is not repeated. The first entry seeds the history with the page the window was on. */
+static void desk_page_push(desk* d, desk_page from, desk_page pg) {
+    if (d->pg_n == 0u) {
+        d->pg_hist[0] = from;
+        d->pg_n = 1u;
+        d->pg_pos = 0u;
+    }
+    d->pg_n = d->pg_pos + 1u;
+    if (d->pg_hist[d->pg_pos] == pg) {
+        return;
+    }
+    if (d->pg_n == PG_HIST_MAX) {
+        memmove(d->pg_hist, d->pg_hist + 1, (d->pg_n - 1u) * sizeof d->pg_hist[0]);
+        d->pg_n--;
+    }
+    d->pg_hist[d->pg_n++] = pg;
+    d->pg_pos = d->pg_n - 1u;
+}
+
+/* Enters a page (I262) with the engine verbs the page reads: the view source and window, and the Library screens
+ * opened and closed. Every way into a page ends here (doors, keys, --view, Back and Forward), so the history is kept
+ * here. Does not draw. */
+static void desk_page_apply(desk* d, desk_page pg) {
     const sel_state* st = sel_engine_state(d->engine);
+    desk_page from = d->page;
+    if (!d->pg_walk) {
+        desk_page_push(d, from, pg);
+    }
     if (pg != PG_LIBRARY) {
         if (st->composers != NULL) {
             desk_send(d, "COMPOSERS_HIDE");
@@ -2872,18 +2966,35 @@ static int desk_page_goto(desk* d, desk_page pg) {
         desk_send(d, "VIEW_WINDOW 64");
         d->folder_opens++;
     } else if (pg == PG_SEARCH) {
-        desk_search_focus(d);
-    } else if (pg == PG_NOWPLAYING) { /* the detail of the playing song, the first one when none plays */
-        uint32_t k;
-        for (k = 0; k < st->queue_count && st->queue[k].id != st->queue_playing; k++) {
-        }
-        if (k < st->queue_count) {
-            view_goto(d, (int32_t)k + 1);
+        desk_search_focus(d, d->pg_walk || d->search_keep);
+        if (d->qlen > 0u) { /* the kept query shows its results again */
+            d->search_pending = 1;
+            d->search_since = d->now_ms;
         }
     }
     d->repaint = 1;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+}
+
+static int desk_page_goto(desk* d, desk_page pg) {
+    desk_page_apply(d, pg);
     return desk_present(d);
+}
+
+/* Back (dir -1) and Forward (+1) in the page history. Returns 1 when the picture changed. */
+static int desk_page_walk(desk* d, int dir) {
+    int moved;
+    if (dir < 0 && d->pg_pos > 0u) {
+        d->pg_pos--;
+    } else if (dir > 0 && d->pg_pos + 1u < d->pg_n) {
+        d->pg_pos++;
+    } else {
+        return 0;
+    }
+    d->pg_walk = 1;
+    moved = desk_page_goto(d, d->pg_hist[d->pg_pos]);
+    d->pg_walk = 0;
+    return moved;
 }
 
 /* A click at (x, y): opens the tile under it. Returns 1 when a tile opened. */
@@ -2892,7 +3003,7 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
     sel_gui_rect mn = region_rect(d, "main");
     uint32_t i;
     if (d->page == PG_SEARCH && in_rect(mn, x, y)) { /* a click in the field focuses it; elsewhere in main drops focus */
-        int32_t want = in_rect(search_field_rect(d, mn), x, y) ? (int32_t)d->layout.count : -1;
+        int32_t want = in_rect(search_field_rect(d, panel_rect(d, "main")), x, y) ? (int32_t)d->layout.count : -1;
         if (want >= 0 || d->focus == (int32_t)d->layout.count) {
             int changed = d->focus != want;
             d->focus = want;
@@ -2900,6 +3011,13 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
             d->repaint = 1;
             return changed || want >= 0;
         }
+    }
+    if (d->page == PG_HOME && d->open_tile == 0 && !d->songs && st->composers == NULL && in_rect(search_field_rect(d, panel_rect(d, "main")), x, y)) {
+        int moved; /* the Home search field is the Search page's field: the click goes there with the query kept */
+        d->search_keep = 1;
+        moved = desk_page_goto(d, PG_SEARCH);
+        d->search_keep = 0;
+        return moved;
     }
     if (d->np_draws > 0u && in_rect(d->np_like, x, y)) { /* Now Playing: like the playing song, or set its rating */
         return desk_send(d, "LIKE");
@@ -3032,7 +3150,8 @@ static const struct {
     desk_page page;
 } g_doors[DOOR_COUNT] = {{SEL_GUI_ICON_HOUSE, "Home", PG_HOME},          {SEL_GUI_ICON_SEARCH, "Search", PG_SEARCH},
                          {SEL_GUI_ICON_LIST, "Your Library", PG_LIBRARY}, {SEL_GUI_ICON_DISC, "Playlists", PG_PLAYLISTS},
-                         {SEL_GUI_ICON_LIST, "Queue", PG_QUEUE},          {SEL_GUI_ICON_MUSIC, "Now Playing", PG_NOWPLAYING}};
+                         {SEL_GUI_ICON_LIST, "Queue", PG_QUEUE},          {SEL_GUI_ICON_MUSIC, "Now Playing", PG_NOWPLAYING},
+                         {SEL_GUI_ICON_USER, "Song Information", PG_SONGINFO}};
 
 /* The row of door i, shared by the drawing and the click: the panel inset of draw_panel, the brand, then the rows. */
 static sel_gui_rect sidebar_door_rect(const desk* d, uint32_t i) {
@@ -3241,6 +3360,50 @@ static void draw_nowplaying(desk* d) {
     }
     sel_gui_dirty_add(d->canvas, dt);
     d->np_draws++;
+    d->frame_parts++;
+}
+
+/* The Now Playing page (I266), after Spotify's Now Playing view: the artwork large on the left, the title and composer,
+ * the format, and the queue after the playing song on the right. The visualizer strip stays in the detail panel. */
+static void draw_nowplaypage(desk* d) {
+    const sel_uim_frame* f = &d->uim.frame;
+    const sel_state* st = sel_engine_state(d->engine);
+    sel_gui_rect mn = draw_panel(d, "main");
+    int32_t mg = lpx(d, HOME_MARGIN), sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    int32_t side = mn.h - lpx(d, 96), x, y;
+    uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+    uint32_t k, first;
+    sel_gui_rect ar;
+    if (side > mn.w / 2 - mg) {
+        side = mn.w / 2 - mg;
+    }
+    if (side < lpx(d, 80)) {
+        side = lpx(d, 80);
+    }
+    sel_gui_clip_push(d->canvas, mn);
+    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 12), mn.w - 2 * mg - lpx(d, 80), lpx(d, 36)), "Now Playing", 1, 28, text);
+    ar = rect_of(mn.x + mg, mn.y + lpx(d, 64), side, side);
+    sel_gui_genart_draw(d->canvas, ar, f->format, sel_gui_str_hash(f->title));
+    x = ar.x + ar.w + mg;
+    y = ar.y;
+    if (st->song.path != NULL) {
+        draw_text(d, rect_of(x, y, mn.x + mn.w - x - mg, lpx(d, 36)), f->title, 1, 28, text);
+        draw_text(d, rect_of(x, y + lpx(d, 38), mn.x + mn.w - x - mg, lpx(d, 22)), f->artist, 0, 16, muted);
+        draw_text(d, rect_of(x, y + lpx(d, 64), mn.x + mn.w - x - mg, lpx(d, 20)), f->format, 0, 13, muted);
+    } else {
+        draw_text(d, rect_of(x, y, mn.x + mn.w - x - mg, lpx(d, 36)), "Nothing is playing", 1, 20, muted);
+    }
+    y += lpx(d, 104);
+    draw_text(d, rect_of(x, y, mn.x + mn.w - x - mg, lpx(d, 20)), "Next in Queue", 1, 13, muted);
+    y += lpx(d, 26);
+    for (k = 0; k < st->queue_count && st->queue[k].id != st->queue_playing; k++) {
+    }
+    for (first = ++k; k < st->queue_count && k - first < 8u && y + lpx(d, 24) < mn.y + mn.h; k++, y += lpx(d, 26) + sp / 4) {
+        draw_text(d, rect_of(x, y, mn.x + mn.w - x - mg, lpx(d, 24)), np_basename(st->queue_text + st->queue[k].path_offset), 0, 14, text);
+    }
+    sel_gui_clip_pop(d->canvas);
+    sel_gui_dirty_add(d->canvas, mn);
+    d->np_page_draws++;
     d->frame_parts++;
 }
 
@@ -3483,7 +3646,7 @@ static void desk_focus_move(desk* d, int32_t dir) {
  * of the main region. */
 static void desk_draw_focus(desk* d) {
     sel_gui_rect r;
-    int32_t t = lpx(d, 2);
+    int32_t t = lpx(d, 2), rad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]);
     uint32_t col = ARGB(d->theme.token[SEL_GUI_TOKEN_FOCUS_RING]);
     if (d->focus < 0 || d->layout.count == 0u) {
         return;
@@ -3492,16 +3655,22 @@ static void desk_draw_focus(desk* d) {
         const sel_uim_region* g = &d->layout.regions[d->focus];
         r = rect_of(lpx(d, g->x), lpx(d, g->y), lpx(d, (int32_t)g->w), lpx(d, (int32_t)g->h));
     } else {
-        r = region_rect(d, "main");
-        r = rect_of(r.x + lpx(d, 8), r.y + lpx(d, 8), r.w - lpx(d, 16), lpx(d, 32));
+        sel_gui_rect f = search_field_rect(d, panel_rect(d, "main")); /* the ring hugs the pill: the field grown by the ring */
+        r = rect_of(f.x - t, f.y - t, f.w + 2 * t, f.h + 2 * t);
+        rad += t;
+        d->ring = r;
     }
     if (r.w <= 2 * t || r.h <= 2 * t) {
         return;
     }
-    sel_gui_fill_rect(d->canvas, rect_of(r.x, r.y, r.w, t), col);
-    sel_gui_fill_rect(d->canvas, rect_of(r.x, r.y + r.h - t, r.w, t), col);
-    sel_gui_fill_rect(d->canvas, rect_of(r.x, r.y, t, r.h), col);
-    sel_gui_fill_rect(d->canvas, rect_of(r.x + r.w - t, r.y, t, r.h), col);
+    if ((uint32_t)d->focus < d->layout.count) {
+        sel_gui_fill_rect(d->canvas, rect_of(r.x, r.y, r.w, t), col);
+        sel_gui_fill_rect(d->canvas, rect_of(r.x, r.y + r.h - t, r.w, t), col);
+        sel_gui_fill_rect(d->canvas, rect_of(r.x, r.y, t, r.h), col);
+        sel_gui_fill_rect(d->canvas, rect_of(r.x + r.w - t, r.y, t, r.h), col);
+    } else {
+        sel_gui_round_frame(d->canvas, r, rad, t, col);
+    }
     sel_gui_dirty_add(d->canvas, r);
 }
 
@@ -3549,14 +3718,14 @@ static void desk_bind_actions(desk* d) {
     for (i = 0; i < n; i++) {
         const sel_uim_action* a = sel_uim_action_at(i);
         char row[160];
-        if (a->key[0] == '\0') {
-            continue;
+        if (a->key[0] == '\0' || strcmp(a->key, "M-Left") == 0 || strcmp(a->key, "M-Right") == 0) {
+            continue; /* Alt+Left and Alt+Right are the browser history keys on the desktop, not the seek keys */
         }
         snprintf(row, sizeof row, "%s %s\n", a->key, a->line);
         txt_bindings_load(&d->binds, row, NULL);
     }
     { /* The overlay keys (DUI-P4-13) are the text UI's: its default table names them, so each key lives in one place. */
-        static const char* const overlay_actions[] = {"@command", "@palette", "@help", "@home", "@library", "@folders", "@info", "@viz"};
+        static const char* const overlay_actions[] = {"@command", "@palette", "@help", "@home", "@library", "@folders", "@info", "@viz", "@back"};
         txt_bindings def;
         uint32_t k;
         txt_bindings_default(&def);
@@ -3567,6 +3736,7 @@ static void desk_bind_actions(desk* d) {
                 txt_bindings_load(&d->binds, row, NULL);
             }
         }
+        txt_bindings_load(&d->binds, "M-Left @back\nM-Right @forward\n", NULL); /* the browser keys: Alt+Left and Alt+Right */
     }
 }
 
@@ -3835,8 +4005,7 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         return desk_present(d);
     }
     if (ev->code == '/' && ev->mods == 0u) {
-        desk_search_focus(d);
-        return desk_present(d);
+        return desk_page_goto(d, PG_SEARCH);
     }
     if (ev->mods == 0u && lib_grid_on(d, sel_engine_state(d->engine)) &&
         (ev->code == TXT_KEY_LEFT || ev->code == TXT_KEY_RIGHT || ev->code == TXT_KEY_UP || ev->code == TXT_KEY_DOWN)) {
@@ -3872,6 +4041,10 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         d->palette_opens += d->overlay == OV_PALETTE;
         d->help_opens += d->overlay == OV_HELP;
         return overlay_refresh(d);
+    }
+    if (act != NULL && (strcmp(act, "@back") == 0 || strcmp(act, "@forward") == 0)) { /* page history (I266) */
+        d->nav_keys++;
+        return desk_page_walk(d, act[1] == 'b' ? -1 : 1);
     }
     if (act != NULL && (strcmp(act, "@home") == 0 || strcmp(act, "@library") == 0 || strcmp(act, "@folders") == 0 ||
                         strcmp(act, "@info") == 0 || strcmp(act, "@viz") == 0)) { /* the text UI's page keys open the matching page (I262, DUI-P4-11) */
@@ -3939,6 +4112,11 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
             d->clicks++;
             return desk_transport_click(d, (uint32_t)btn - 1u);
         }
+    }
+    if (ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u && in_main &&
+        (in_rect(d->nav_back, ev->x, ev->y) || in_rect(d->nav_fwd, ev->x, ev->y))) { /* the history arrows */
+        d->nav_arrow_clicks++;
+        return desk_page_walk(d, in_rect(d->nav_back, ev->x, ev->y) ? -1 : 1);
     }
     if (ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u) { /* a sidebar door opens its page */
         int32_t door = sidebar_door_at(d, ev->x, ev->y);
@@ -4137,6 +4315,7 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
             draw_home(d);
             return 1;
         }
+        return desk_page_walk(d, ev->x > 0 ? -1 : 1); /* no tile view to go back to: the page history */
     }
     return 0;
 }
@@ -4223,6 +4402,11 @@ static int desk_replay_input(desk* d) {
             ck.y = r.y + r.h / 2;
             opened |= desk_route_input(d, &ck);
             pointer_sent = d->sends != sent;
+        } else if (strncmp(line, "exec ", 5) == 0) { /* an engine line after the first page entry, so a test can set the source the page asked for */
+            desk_send(d, line + 5);
+            d->repaint = 1;
+            opened = 1;
+            pointer_sent = 1; /* the engine answers on the next pump: the script resumes then */
         } else if (sscanf(line, "hover %u", &n) == 1 && d->home && d->open_tile == 0) {
             d->hover_tile = (int32_t)n + 1;
             desk_tween(d, ANIM_KEY_HOVER, SEL_GUI_ANIM_FAST_MS, SEL_GUI_EASE_OUT);
@@ -4682,8 +4866,9 @@ static void* desk_open(const sel_ui_open_args* a) {
             d->textsheet = 1;
         } else if (strcmp(view, "widgets") == 0) {
             d->widgets = 1;
-        } else if (desk_page_named(view) != PG_COUNT) { /* the pages the doors open, through the same flags (I262) */
-            desk_page_flags(d, desk_page_named(view));
+        } else if (desk_page_named(view) != PG_COUNT) { /* the pages the doors open: entered by desk_page_goto before the first frame (I266) */
+            d->view_pending = 1;
+            d->view_pg = desk_page_named(view);
         } else {
             fprintf(stderr, "selecta: desktop view '%s' is not testcard, text, home, library, songs, queue, playlists, songinfo or widgets\n", view);
             a->host->mem_free(a->host, d);
@@ -4800,6 +4985,10 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
 #endif
     if (d->testcard) {
         return -1; /* the test card is one frame */
+    }
+    if (d->view_pending) { /* --view named a page: the one entry every door uses, before the first frame */
+        d->view_pending = 0;
+        desk_page_apply(d, d->view_pg);
     }
     if (d->textsheet) { /* the text sheet is one frame, drawn on the first turn */
         if (d->frames > 0u) {

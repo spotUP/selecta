@@ -507,7 +507,11 @@ int main(int argc, char** argv)
     if (start != NULL && sel_path_is_absolute(start)) {
         snprintf(cmd, sizeof cmd, "LIBRARY_BROWSE %s", start);
         send_line(e, cmd);
-        if (strcmp(option(argc, argv, "--view", ""), "home") == 0) { /* the start view the user named: Home, not the folder list */
+        const char* view = option(argc, argv, "--view", "");
+        int own = strcmp(ui_id, "desktop") == 0 && (strcmp(view, "home") == 0 || strcmp(view, "library") == 0 ||
+                                                     strcmp(view, "playlists") == 0 || strcmp(view, "songs") == 0);
+        if (own) { /* the desktop UI enters these pages itself (desk_page_goto), the one place their engine verbs live (I266) */
+        } else if (strcmp(option(argc, argv, "--view", ""), "home") == 0) { /* the start view the user named: Home, not the folder list */
             send_line(e, "VIEW_SOURCE home");
             send_line(e, "VIEW_WINDOW 32");
             sel_engine_pump(e, sink, ctx);

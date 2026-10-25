@@ -27,7 +27,13 @@ file(WRITE "${WORK}/in.txt" "wait 2\n")
 
 function(style_run outvar ui style)
   file(REMOVE_RECURSE "${WORK}/cfg")
-  dui_run(o --db "${db}" --ui ${ui} --backend mem --view library --canvas 900x600 --clock fixed --stats ${queue}
+  # The desktop enters the named pages itself, in its first turn after every --exec (I266); the view source these
+  # tests set by --exec must win, so the desktop gets no --view.
+  set(view --view library)
+  if(ui STREQUAL "desktop")
+    set(view "")
+  endif()
+  dui_run(o --db "${db}" --ui ${ui} --backend mem ${view} --canvas 900x600 --clock fixed --stats ${queue}
     --exec "VIEW_SOURCE queue" --exec "VIEW_WINDOW 8" --exec "VIEW_STYLE ${style}" --input "${WORK}/in.txt")
   set(${outvar} "${o}\n${o_err}" PARENT_SCOPE)
 endfunction()
@@ -71,7 +77,7 @@ if(NOT rc EQUAL 0)
   message(FATAL_ERROR "creating the rescan trigger failed: ${err}")
 endif()
 file(REMOVE_RECURSE "${WORK}/cfg")
-dui_run(rs --db "${db}" --ui desktop --backend mem --view library --canvas 900x600 --clock fixed --stats ${queue}
+dui_run(rs --db "${db}" --ui desktop --backend mem --canvas 900x600 --clock fixed --stats ${queue}
   --exec "VIEW_SOURCE queue" --exec "VIEW_WINDOW 8" --exec "VIEW_STYLE grid" --exec "LIBRARY_SCAN \"${scandir}\""
   --input "${WORK}/in.txt")
 set(rs "${rs}\n${rs_err}")
