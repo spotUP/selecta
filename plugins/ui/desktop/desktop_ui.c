@@ -413,7 +413,7 @@ static uint32_t desk_flush(desk* d) {
     t_flush = ch->clock_ms(ch);
 #ifdef SELECTA_DESKTOP_SDL
     if (d->sdl != NULL) {
-        desk_sdl_present(d->sdl, d->canvas, d->report);
+        desk_sdl_present(d->sdl, d->canvas);
     }
 #endif
     {
@@ -7783,6 +7783,14 @@ static const sel_tag* desk_stats(void* state) {
         }
         d->stats[n].tag = SEL_UI_STAT_SPAN_PIXELS;
         d->stats[n++].value = d->canvas != NULL ? d->canvas->span_px : 0u;
+        d->stats[n].tag = SEL_UI_STAT_READBACKS;
+        d->stats[n].value = 0u;
+#ifdef SELECTA_DESKTOP_SDL
+        if (d->sdl != NULL) {
+            d->stats[n].value = desk_sdl_readbacks(d->sdl);
+        }
+#endif
+        n++;
         d->stats[n].tag = SEL_TAG_END;
     }
 

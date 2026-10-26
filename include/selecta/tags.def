@@ -320,6 +320,8 @@ SEL_TAG(UI, STAT_FLOW_PAINT_SLIDE,  0x50C4, INT)
 SEL_TAG(UI, STAT_FLOW_MAX_SLIDE,    0x50C5, INT)
 /* I401: pixels the rasterizer wrote as run-length spans. */
 SEL_TAG(UI, STAT_SPAN_PIXELS,       0x50D0, INT)
+/* I401: GPU readbacks of the presented frame (the present hash); report time only. */
+SEL_TAG(UI, STAT_READBACKS,         0x50D1, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)

@@ -29,8 +29,8 @@ int32_t desk_rtg_width(const desk_rtg* b);
 int32_t desk_rtg_height(const desk_rtg* b);
 /* Bits per pixel of the screen: the sentinel that the screen is RTG (16 or more). */
 int32_t desk_rtg_depth(const desk_rtg* b);
-/* Writes canvas->dirty (call before sel_gui_present empties the list). `readback` is ignored: there is no readback. */
-void desk_rtg_present(desk_rtg* b, const sel_gui_canvas* c, int readback);
+/* Writes canvas->dirty (call before sel_gui_present empties the list). */
+void desk_rtg_present(desk_rtg* b, const sel_gui_canvas* c);
 uint32_t desk_rtg_upload_pixels(const desk_rtg* b);
 uint32_t desk_rtg_presents(const desk_rtg* b);
 /* Waits up to timeout_ms for window input, a timer or Ctrl-C (0 = poll) and queues every input message. Returns
@@ -54,6 +54,7 @@ int desk_rtg_next_input(desk_rtg* b, sel_gui_input* ev);
 #define desk_sdl_resize(b, w, h) ((void)(b), (w) == desk_rtg_width(b) && (h) == desk_rtg_height(b))
 #define desk_sdl_present desk_rtg_present
 #define desk_sdl_present_hash(b) ((void)(b), 0u)
+#define desk_sdl_readbacks(b) ((void)(b), 0u)
 #define desk_sdl_upload_pixels desk_rtg_upload_pixels
 #define desk_sdl_presents desk_rtg_presents
 #define desk_sdl_poll(b, ms, w, h) ((void)(w), (void)(h), desk_rtg_poll((b), (ms)))

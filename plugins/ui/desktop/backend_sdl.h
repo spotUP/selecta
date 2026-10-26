@@ -24,10 +24,13 @@ int desk_sdl_headless(const desk_sdl* b);
 int32_t desk_sdl_scale(const desk_sdl* b);
 /* New canvas size: window and texture follow. 0 on failure. */
 int desk_sdl_resize(desk_sdl* b, int32_t w, int32_t h);
-/* Uploads canvas->dirty (call before sel_gui_present empties the list), renders and presents. With `readback` the
- * rendered frame is read back and hashed (sel_gui_hash) for desk_sdl_present_hash. */
-void desk_sdl_present(desk_sdl* b, const sel_gui_canvas* c, int readback);
-uint64_t desk_sdl_present_hash(const desk_sdl* b);
+/* Uploads canvas->dirty (call before sel_gui_present empties the list), renders and presents. */
+void desk_sdl_present(desk_sdl* b, const sel_gui_canvas* c);
+/* Renders the last presented canvas again, reads it back and hashes it (sel_gui_hash). A GPU readback stalls the
+ * frame, so only a report calls it, never the frame loop; a call with no new present since the last one reuses that
+ * hash. desk_sdl_readbacks counts the readbacks (I401). */
+uint64_t desk_sdl_present_hash(desk_sdl* b);
+uint32_t desk_sdl_readbacks(const desk_sdl* b);
 uint32_t desk_sdl_upload_pixels(const desk_sdl* b);
 uint32_t desk_sdl_presents(const desk_sdl* b);
 /* I291: input-to-present latency of click, key and wheel events (SDL event timestamp to the end of the present that shows

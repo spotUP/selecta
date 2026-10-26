@@ -5,6 +5,8 @@
 # 2. With it, mem and sdl run the same script: the sdl presented frame hash (read back from the renderer) equals the
 #    mem canvas hash, and equals the sdl canvas hash.
 # 3. Sentinels: presents > 0 (the sdl path ran), upload_pixels == dirty_total (only dirty rectangles went to the texture).
+# 4. I401: --stats reads the frame back from the GPU only for the report (readbacks == 1), never per present: a
+#    per-frame readback stalled every Mac frame by about 100 ms.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -32,6 +34,13 @@ dui_stat(shown "${sdl}" desktop present_hash)
 dui_stat(presents "${sdl}" desktop presents)
 dui_stat(uploaded "${sdl}" desktop upload_pixels)
 dui_stat(painted "${sdl}" desktop dirty_total)
+if(NOT "${sdl}" MATCHES "ui_paint id=desktop [^\n]*readbacks=([0-9]+)")
+  message(FATAL_ERROR "no readbacks on the ui_paint line:\n${sdl}")
+endif()
+set(readbacks "${CMAKE_MATCH_1}")
+if(NOT readbacks EQUAL 1)
+  message(FATAL_ERROR "sdl read the frame back ${readbacks} times over ${presents} presents; only the report may (I401)")
+endif()
 if(presents LESS 3)
   message(FATAL_ERROR "sdl presented ${presents} frames; the script needs at least 3 (sentinel)")
 endif()

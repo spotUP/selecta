@@ -248,10 +248,9 @@ int32_t desk_rtg_depth(const desk_rtg* b) { return b->depth; }
 uint32_t desk_rtg_upload_pixels(const desk_rtg* b) { return b->upload; }
 uint32_t desk_rtg_presents(const desk_rtg* b) { return b->presents; }
 
-void desk_rtg_present(desk_rtg* b, const sel_gui_canvas* c, int readback) {
+void desk_rtg_present(desk_rtg* b, const sel_gui_canvas* c) {
     struct rtg_render_info ri;
     uint32_t i;
-    (void)readback;
     ri.memory = (APTR)c->pixels;
     ri.pad = 0;
     if (b->index8 && c->format == SEL_GUI_INDEX8) {

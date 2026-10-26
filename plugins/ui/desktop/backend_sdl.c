@@ -19,7 +19,9 @@ struct desk_sdl {
     int32_t w, h;
     int32_t scale; /* the scale the canvas was last sized for */
     int headless;
-    uint64_t present_hash;
+    uint64_t present_hash;    /* hash of the frame read back after present number hash_presents */
+    uint32_t hash_presents;
+    uint32_t readbacks;       /* GPU readbacks: report time only, never per frame (I401) */
     uint32_t upload_pixels;
     uint32_t presents;
     sel_gui_input_map_state map; /* press state of the pointer buttons */
@@ -238,7 +240,7 @@ static uint64_t hash_surface(const SDL_Surface* s, int32_t w, int32_t h) {
     return hash;
 }
 
-void desk_sdl_present(desk_sdl* b, const sel_gui_canvas* c, int readback) {
+void desk_sdl_present(desk_sdl* b, const sel_gui_canvas* c) {
     const uint32_t* px = (const uint32_t*)c->pixels;
     uint32_t i;
     for (i = 0; i < c->dirty_n; i++) {
@@ -252,13 +254,6 @@ void desk_sdl_present(desk_sdl* b, const sel_gui_canvas* c, int readback) {
     }
     SDL_RenderClear(b->renderer);
     SDL_RenderTexture(b->renderer, b->texture, NULL, NULL);
-    if (readback) {
-        SDL_Surface* s = SDL_RenderReadPixels(b->renderer, NULL);
-        SDL_Surface* conv = s != NULL ? SDL_ConvertSurface(s, SDL_PIXELFORMAT_ARGB8888) : NULL;
-        b->present_hash = conv != NULL && conv->w == c->w && conv->h == c->h ? hash_surface(conv, c->w, c->h) : 0u;
-        SDL_DestroySurface(conv);
-        SDL_DestroySurface(s);
-    }
     SDL_RenderPresent(b->renderer);
     b->presents++;
     if (b->pending_ns != 0u) { /* the present that shows the result of the input event (I291) */
@@ -269,8 +264,29 @@ void desk_sdl_present(desk_sdl* b, const sel_gui_canvas* c, int readback) {
     }
 }
 
-uint64_t desk_sdl_present_hash(const desk_sdl* b) {
+/* The texture holds the last presented canvas, so rendering it again without a present reads back the frame the
+ * window shows. The GPU readback waits for the render to finish (about 100 ms at 2560x1600 on an M1), so it runs only
+ * here, when a report asks for the hash (I401). */
+uint64_t desk_sdl_present_hash(desk_sdl* b) {
+    SDL_Surface* s;
+    SDL_Surface* conv;
+    if (b->readbacks != 0u && b->hash_presents == b->presents) { /* no new frame since the last readback */
+        return b->present_hash;
+    }
+    b->readbacks++;
+    b->hash_presents = b->presents;
+    SDL_RenderClear(b->renderer);
+    SDL_RenderTexture(b->renderer, b->texture, NULL, NULL);
+    s = SDL_RenderReadPixels(b->renderer, NULL);
+    conv = s != NULL ? SDL_ConvertSurface(s, SDL_PIXELFORMAT_ARGB8888) : NULL;
+    b->present_hash = conv != NULL && conv->w == b->w && conv->h == b->h ? hash_surface(conv, b->w, b->h) : 0u;
+    SDL_DestroySurface(conv);
+    SDL_DestroySurface(s);
     return b->present_hash;
+}
+
+uint32_t desk_sdl_readbacks(const desk_sdl* b) {
+    return b->readbacks;
 }
 
 uint32_t desk_sdl_upload_pixels(const desk_sdl* b) {
