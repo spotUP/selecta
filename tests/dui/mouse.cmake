@@ -1,7 +1,7 @@
 # dui-mouse (DUI-P3-2): the mouse in the desktop songs view, through the real shell and the scripted --input feeder.
 #   -DSELECTA -DSONGS -DWORK
 # Three copies of the test module are queued as banana, apple and cherry. At 1280x800, scale 1: the rows of the songs
-# list start at y=110 (32 high), the title column header is at y=84, the sidebar Queue drop target is at (50, 50).
+# list start at y=110 (32 high), the title column header is at y=84, the Queue drop target (shown while a row is held, I448) is at (792..952, 96..128).
 # 1. A double-click on row 0 starts that song: the engine's `song` path equals the row's path.
 # 2. Dragging row 1 onto the Queue target adds one entry (3 queued, 4 after).
 # 3. A header click sorts ascending (apple first), a second one descending (cherry first), as the plan states.
@@ -42,6 +42,22 @@ endfunction()
 mouse_run(base "move 5 5\n")
 expect("${base}" playlist_entries 3)
 
+# I448: the drop targets sit inside the songs content and never touch the rail (logo and Home row).
+if(NOT "${base}" MATCHES "rail (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)")
+  message(FATAL_ERROR "no rail line in:\n${base}")
+endif()
+math(EXPR rail_r "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3}")
+string(REGEX MATCHALL "songs_target [0-9]+ -?[0-9]+" targets "${base}")
+if(NOT targets)
+  message(FATAL_ERROR "no songs_target lines in:\n${base}")
+endif()
+foreach(t ${targets})
+  string(REGEX REPLACE "^songs_target [0-9]+ " "" tx "${t}")
+  if(tx LESS rail_r)
+    message(FATAL_ERROR "a songs drop target starts at x=${tx}, inside the rail (right edge ${rail_r})")
+  endif()
+endforeach()
+
 # 1. Double-click on row 0 plays it.
 mouse_run(dbl "dclick 600 110\n")
 if(NOT dbl MATCHES "song=([^\n]*)\n")
@@ -55,7 +71,7 @@ expect("${dbl}" row_plays 1)
 expect("${dbl}" play_state 1)
 
 # 2. Drag a row to the queue.
-mouse_run(drag "drag 600 142 50 50\n")
+mouse_run(drag "drag 600 142 870 110\n")
 expect("${drag}" drags 1)
 expect("${drag}" playlist_entries 4)
 

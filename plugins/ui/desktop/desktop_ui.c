@@ -184,6 +184,7 @@ typedef struct desk {
     uint32_t si_draws, si_rows, si_cmds; /* frames drawn (sentinel), info rows in the last one, verbs sent */
     char si_note[96];
     size_t si_nlen;
+    int32_t songs_drag;      /* I448: the songs row held by the primary button, -1 when none; the drop targets show only then */
     int32_t qdrag_from, qdrag_gap, qdrag_x, qdrag_y; /* I258e: a held queue row drag; from -1 when none, gap = the index it would land at */
     uint32_t qdrag_paints;                           /* frames that drew the lifted row and the insertion line */
     uint32_t queue_draws, queue_rows, queue_cmds; /* Queue page frames drawn (sentinel), rows in the last one, verbs it sent */
@@ -1157,7 +1158,7 @@ static int desk_tween(desk* d, uint32_t key, uint32_t ms, uint32_t ease) {
 
 /* ---- Song list (DUI-P3-2): header row, one row per queue entry, drop targets in the sidebar. All geometry in canvas
  * pixels; a pointer position is mapped to a region of the layout tree first (sel_uim_hit), then to a part of it. ---- */
-enum { SONG_HEADER_H = 24, SONG_ROW_H = 32, SONG_TARGET_H = 32, SONG_MENU_ITEM_H = 24, SONG_MENU_W = 140, SONG_MENU_ITEMS = 5, SONG_PLAYLIST_TARGETS = 4 };
+enum { SONG_HEADER_H = 24, SONG_ROW_H = 32, SONG_TARGET_H = 32, SONG_MENU_ITEM_H = 24, SONG_MENU_W = 140, SONG_MENU_ITEMS = 5, SONG_PLAYLIST_TARGETS = 4, SONG_TARGET_W = 160 };
 static const char* const g_menu_items[SONG_MENU_ITEMS] = {"Play", "Play Next", "Add to Queue", "Add to Playlist", "Remove from Library"};
 
 static int desk_send(desk* d, const char* line);
@@ -1183,11 +1184,13 @@ static sel_gui_rect songs_row_rect(const desk* d, uint32_t row) {
     return rect_of(mn.x, songs_top(d) + lpx(d, SONG_HEADER_H) + (int32_t)row * lpx(d, SONG_ROW_H) - (int32_t)(((int64_t)d->scroll_q16 * (d->scale > 0 ? d->scale : 1)) >> 16), mn.w, lpx(d, SONG_ROW_H));
 }
 
-/* Drop target 0 = Queue, 1 = Playlist, stacked under the queue count in the sidebar. */
+/* Drop target 0 = Queue, then the saved playlists: stacked at the right edge of the main pane under the column header,
+ * inside the songs content and never over the rail (I448). They are drawn only while a song row is held (songs_drag). */
 static sel_gui_rect songs_target_rect(const desk* d, uint32_t t) {
-    sel_gui_rect sb = region_rect(d, "sidebar");
+    sel_gui_rect mn = region_rect(d, "main");
     int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
-    return rect_of(sb.x + sp, sb.y + sp + lpx(d, 24) + (int32_t)t * (lpx(d, SONG_TARGET_H) + sp), sb.w - 2 * sp, lpx(d, SONG_TARGET_H));
+    int32_t w = lpx(d, SONG_TARGET_W) < mn.w - 2 * sp ? lpx(d, SONG_TARGET_W) : mn.w - 2 * sp;
+    return rect_of(mn.x + mn.w - sp - w, songs_top(d) + lpx(d, SONG_HEADER_H) + sp + (int32_t)t * (lpx(d, SONG_TARGET_H) + sp), w, lpx(d, SONG_TARGET_H));
 }
 
 /* The k-th saved playlist of the folders source (the drop targets of the songs view, the rows of the Playlists page):
@@ -1292,11 +1295,11 @@ static void draw_songs(desk* d) {
     sel_gui_dirty_add(d->canvas, mn);
 }
 
-/* The sidebar drop targets, drawn over the queue count. */
+/* The songs drop targets, drawn over the content while a row is held (I448). */
 static void draw_songs_targets(desk* d) {
     const sel_gui_atlas* semi = desk_font(d, 1, 13);
     uint32_t t;
-    if (semi == NULL) {
+    if (semi == NULL || d->songs_drag < 0) {
         return;
     }
     for (t = 0; t < 1u + SONG_PLAYLIST_TARGETS; t++) {
@@ -3682,6 +3685,14 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "nowplaying title %d %d like %d artist %u\n", (int)d->np_title.y, (int)d->np_title.h, (int)d->np_like.y,
                  (unsigned)(d->np_text_artist[0] != '\0'));
     o = dump_put(d, o, "nowplaying keys end %d value %d\n", (int)d->np_key_end, (int)d->np_val_x);
+    for (uint32_t tg = 0; tg <= SONG_PLAYLIST_TARGETS; tg += SONG_PLAYLIST_TARGETS) { /* I448: first and last drop target, then the rail */
+        sel_gui_rect tr = songs_target_rect(d, tg);
+        o = dump_put(d, o, "songs_target %u %d %d %d %d\n", (unsigned)tg, (int)tr.x, (int)tr.y, (int)tr.w, (int)tr.h);
+    }
+    {
+        sel_gui_rect rl = region_rect(d, "sidebar");
+        o = dump_put(d, o, "rail %d %d %d %d\n", (int)rl.x, (int)rl.y, (int)rl.w, (int)rl.h);
+    }
     o = dump_put(d, o, "rating %d liked %d mark %d %d %d %d step %d\n", (int)d->np_rating, (int)d->np_liked,
                           (int)d->np_rate[0].x, (int)d->np_rate[0].y, (int)d->np_rate[0].w, (int)d->np_rate[0].h,
                           (int)(d->np_rate[1].x - d->np_rate[0].x));
@@ -6403,10 +6414,26 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
     if (d->order_n != sel_engine_state(d->engine)->queue_count) {
         songs_resort(d);
     }
+    if (ev->kind == SEL_GUI_IN_MOVE) { /* I448: a held primary button over a song row shows the drop targets */
+        int was = d->songs_drag >= 0;
+        d->songs_drag = ev->code == 1u ? songs_row_at(d, ev->x2, ev->y2) : -1;
+        if (d->songs_drag >= 0 || was) {
+            draw_home(d);
+            return 1;
+        }
+        return 0;
+    }
+    if (ev->kind == SEL_GUI_IN_DRAG || ev->kind == SEL_GUI_IN_CLICK) {
+        int was = d->songs_drag >= 0;
+        d->songs_drag = -1; /* the release hides the targets */
+        if (was) {
+            draw_home(d);
+        }
+    }
     if (ev->kind == SEL_GUI_IN_DRAG) {
         int32_t row = in_main ? songs_row_at(d, ev->x, ev->y) : -1;
         int end = sel_uim_hit(&d->layout, ev->x2 / sc, ev->y2 / sc);
-        if (row < 0 || end < 0 || strcmp(d->layout.regions[end].name, "sidebar") != 0) {
+        if (row < 0 || end < 0 || strcmp(d->layout.regions[end].name, "main") != 0) {
             return 0;
         }
         if (in_rect(songs_target_rect(d, 0), ev->x2, ev->y2)) { /* drop on Queue: the dragged song is queued again */
@@ -7347,6 +7374,7 @@ static void* desk_open(const sel_ui_open_args* a) {
     }
     memset(d, 0, sizeof *d);
     d->lib_serial_seen = UINT32_MAX;
+    d->songs_drag = -1;
     d->qdrag_from = -1;
     d->qdrag_gap = -1;
     d->tile_step = TILE_STEP_DEFAULT;

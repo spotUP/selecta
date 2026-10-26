@@ -148,7 +148,7 @@ set(PLDB "${WORK}/drop.db")
 pl_run(s0 "click ${name}\n${t_new}click ${btn1}\nwait 100\n" --exec "QUEUE_ADD ${WORK}/one.mod")
 pl_run(s1 "click ${slot0}\nwait 100\nclick ${btn4}\nwait 100\n")
 expect_eq("entries of the new playlist before the drop" "${s1_queue}" 1)
-file(WRITE "${WORK}/drop.txt" "drag 600 142 50 90\nwait 100\n")
+file(WRITE "${WORK}/drop.txt" "drag 600 142 870 150\nwait 100\n")
 dui_run(drop --ui desktop --backend mem --view songs --canvas 1280x800 --clock fixed --stats --db "${PLDB}"
   --exec "QUEUE_ADD ${WORK}/one.mod" --exec "QUEUE_ADD ${WORK}/two.mod" --exec "QUEUE_ADD ${WORK}/three.mod"
   --input "${WORK}/drop.txt")
