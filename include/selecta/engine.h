@@ -235,6 +235,10 @@ void sel_engine_scan_info(const sel_engine* e, sel_scan_info* out);
  * scanned, `done` the files started so far, `total` the files the folder holds (counted first). `active` is 1 while
  * a scan runs; the last values stay after it ends. */
 #define SEL_SCAN_FILE_MAX 160u
+
+/* I488: longest composer name or canonical key a library row carries, NUL included. Public so a UI plugin sizes a
+ * COMPOSERS_SHOW request from it; src/library/composer.h includes this header and adds no second value. */
+#define SEL_COMPOSER_MAX 160u
 typedef struct sel_scan_progress {
     uint32_t active, done, total;
     char file[SEL_SCAN_FILE_MAX];

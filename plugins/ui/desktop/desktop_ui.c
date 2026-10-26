@@ -1762,7 +1762,7 @@ static void shelf_activate_row(desk* d, uint32_t row) {
         return;
     }
     if (st->view->rows[row].composer) { /* I479: a composer tile opens that composer on the Library page, through the page's own request */
-        char req[256 * 2u + 32u];
+        char req[SEL_COMPOSER_MAX * 2u + 32u]; /* every byte may be escaped, plus the verb and quotes (I488) */
         desk_composer_request(req, sizeof req, st->view->rows[row].key); /* built first: the page change replaces the view */
         desk_page_goto(d, PG_LIBRARY);
         d->lib_q16 = 0;

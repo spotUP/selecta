@@ -656,7 +656,7 @@ endif()
 
 # I182a: composer canonical key and display name golden cases.
 add_executable(composer_test library/composer_test.c "${PROJECT_SOURCE_DIR}/src/library/composer.c")
-target_include_directories(composer_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+target_include_directories(composer_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/include)
 add_test(NAME composer-unit COMMAND composer_test)
 
 # I437: embedded cover readers (ID3v2 APIC, FLAC PICTURE).

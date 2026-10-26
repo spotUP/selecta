@@ -11,8 +11,7 @@
 #define SELECTA_LIBRARY_COMPOSER_H
 
 #include <stddef.h>
-
-#define SEL_COMPOSER_MAX 160u
+#include <selecta/engine.h> /* SEL_COMPOSER_MAX (I488): one public definition */
 
 /* I353: songs with no song_composers row form one group, listed last. Its key is a canon that sel_composer_canon can never
  * produce (it drops "(handle)" groups and folds punctuation), so no real composer collides with it. */
