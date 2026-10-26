@@ -1,0 +1,1 @@
+subsongs3.nsf is tests/m3/fixtures/gme_test.nsf (see its .SOURCE: libgme test.nsf, LGPL 2.1 or later) with the single header byte 6 (total songs) changed from 1 to 3, so the engine reports three subsongs and the desktop UI shows the subsong previous and next buttons. Used only by dui-tooltips (row I475).
