@@ -1,8 +1,8 @@
-# dui-hover-sidebar-ink (DUI-P3-12, I346): the sidebar hover moves the ink only and fades both ways. -DSELECTA -DSONGS -DWORK
+# dui-hover-sidebar-ink (DUI-P3-12, I346): the sidebar hover moves the ink only and the door the pointer left fades out. The instant light-in is dui-hover-instant. -DSELECTA -DSONGS -DWORK
 # A mem run lists the door rectangles (`door I x y w h`). A live run moves the pointer onto door 2 at 500 ms, onto door 3
 # at 550 ms and quits at 610 ms, 60 ms into the 100 ms fade: the stats line `hover_ink=<new>,<old>` is the weight last
-# painted for the hovered door and for the door the pointer left, both strictly between 0 and 65536 (before the fix the
-# left door lost its fill at once: no out weight existed). A second run quits 400 ms after the last move: 65536,0.
+# painted for the hovered door and for the door the pointer left, which is strictly between 0 and 65536 (before the fix
+# the left door lost its fill at once: no out weight existed). A second run quits 400 ms after the last move: 65536,0.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -33,9 +33,6 @@ foreach(run "610;mid" "950;end")
   set(wnew "${CMAKE_MATCH_1}")
   set(wold "${CMAKE_MATCH_2}")
   if(which STREQUAL "mid")
-    if(NOT wnew GREATER 0 OR NOT wnew LESS 65536)
-      message(FATAL_ERROR "mid-fade: the entering door weight ${wnew} is not strictly between 0 and 65536")
-    endif()
     if(NOT wold GREATER 0 OR NOT wold LESS 65536)
       message(FATAL_ERROR "mid-fade: the leaving door weight ${wold} is not strictly between 0 and 65536 (no fade-out)")
     endif()

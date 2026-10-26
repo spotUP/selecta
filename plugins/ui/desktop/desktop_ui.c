@@ -204,11 +204,11 @@ typedef struct desk {
     uint32_t label_n;
     sel_gui_rect hbox[HBOX_MAX]; /* the hoverable controls and list rows as last drawn (buttons, chips, tabs, doors, rows): the pointer hit-test list (I272, I345) */
     uint32_t hbox_n;
-    sel_gui_rect hover_box;  /* the control under the pointer, w = 0 for none; its fill fades to the surface-hover token */
+    sel_gui_rect hover_box;  /* the control under the pointer, w = 0 for none; it is lit at once (surface-hover fill or full ink) */
     uint32_t hover_fill;     /* the fill the hovered control was last painted with (stats line) */
     uint32_t hover_paints;   /* paints of a hovered control (sentinel) */
-    sel_gui_rect hover_prev; /* the box the pointer left, w = 0 for none: its ink fades back over the same tween (I346) */
-    int32_t hover_prev_w;    /* Q16 in-weight hover_prev had when the pointer left it: its out tween starts from there, not from full ink */
+    sel_gui_rect hover_prev; /* the box the pointer left, w = 0 for none: its ink fades back over the ANIM_KEY_HOVER tween; the in side is instant (I346, I351) */
+    int32_t hover_prev_w;    /* Q16 weight hover_prev had when the pointer left it (full: hover lights instantly): its out fade starts from there */
     int32_t ink_in, ink_out; /* the in and out weights hover_ink_of last used for the hovered box and the box it left (stats line hover_ink) */
     uint32_t lit_doors;      /* bit i set: sidebar door i was drawn raised in the last frame (nav sentinel) */
     int np_page;             /* the main region shows the Now Playing page */
@@ -432,22 +432,24 @@ static void hover_reg(desk* d, sel_gui_rect box) {
     }
 }
 
-/* Weight (Q16) of the surface-hover blend for a control: the ANIM_KEY_HOVER tween while the pointer is on it, else 0. */
+/* Weight (Q16) of the hover blend for a control: full (65536) the instant the pointer is on it, else 0. Hover lights at once,
+ * as macOS and Spotify do; only the control the pointer left fades (hover_weight_out). A fade-in restarted on every box change
+ * left a row swept over at 0% to 50% and never fully lit (I351). */
 static int32_t hover_weight(const desk* d, sel_gui_rect box) {
-    return d->hover_box.w > 0 && rect_same(d->hover_box, box) ? sel_gui_tween_value(&d->tl, ANIM_KEY_HOVER, 65536) : 0;
+    return d->hover_box.w > 0 && rect_same(d->hover_box, box) ? 65536 : 0;
 }
 
-/* Weight (Q16) of the fade-out of the box the pointer just left: it starts at the weight the in fade had reached when the
- * pointer left (hover_prev_w, full after a finished fade) and runs to 0 over the same ANIM_KEY_HOVER tween and FAST_MS
- * (desk_hover_move restarts the tween on every change, so 65536 - value is the way back). 0 for any other box. */
+/* Weight (Q16) of the fade-out of the box the pointer just left: it starts at the weight it had when the pointer left (hover_prev_w,
+ * always full, as the in side is instant) and runs to 0 over the ANIM_KEY_HOVER tween and FAST_MS (desk_hover_move restarts the
+ * tween on every change, so it now drives only this fade; 65536 - value is the way back). 0 for any other box. */
 static int32_t hover_weight_out(const desk* d, sel_gui_rect box) {
     return d->hover_prev.w > 0 && rect_same(d->hover_prev, box) && !rect_same(d->hover_box, box)
                ? (int32_t)(((int64_t)d->hover_prev_w * (65536 - sel_gui_tween_value(&d->tl, ANIM_KEY_HOVER, 65536))) >> 16)
                : 0;
 }
 
-/* The ink of a hoverable row or door (I345, I346): `muted` at rest, blending to `full` as the pointer enters and back as it
- * leaves. The one mechanism for the sidebar doors and every list row; they take no background for hover. */
+/* The ink of a hoverable row or door (I345, I346, I351): `muted` at rest, `full` the instant the pointer enters, fading back to
+ * `muted` over FAST_MS as it leaves. The one mechanism for the sidebar doors and every list row; they take no background for hover. */
 static uint32_t hover_ink_of(desk* d, sel_gui_rect box, uint32_t muted, uint32_t full) {
     int32_t win = hover_weight(d, box), wout = hover_weight_out(d, box);
     hover_reg(d, box);
@@ -1497,7 +1499,7 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
     const sel_state* st = sel_engine_state(d->engine);
     int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
     int32_t mg = lpx(d, HOME_MARGIN);
-    int32_t hv = sel_gui_tween_value(&d->tl, ANIM_KEY_HOVER, 65536);
+    int32_t hv = 65536; /* a hovered tile is lit at once (I351); no tile fades out */
     uint32_t panel = ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]);
     shelf sh[SHELF_MAX];
     uint32_t s, k, flat = 0, n = home_shelves(st, sh);
@@ -3560,7 +3562,7 @@ static void draw_home_content(desk* d) {
     }
     sel_gui_rect mn = draw_panel(d, "main");
     int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
-    int32_t hv = sel_gui_tween_value(&d->tl, ANIM_KEY_HOVER, 65536);
+    int32_t hv = 65536; /* a hovered tile is lit at once (I351); no tile fades out */
     uint32_t i;
     char name[256];
     /* The page picks the content. The engine state lags a page change (COMPOSERS_HIDE is read on the engine's next pump), so
