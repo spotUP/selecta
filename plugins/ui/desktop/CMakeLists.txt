@@ -1,7 +1,9 @@
 # The Amiga cross build cannot run a tool it builds, so the desktop UI plugin is built only when a host-built
 # gui_iconbake is given (-DSELECTA_ICONBAKE_EXE=<path>); the canonical Amiga configure leaves the plugin out.
-if(SEL_AMIGA AND (NOT SELECTA_ICONBAKE_EXE OR NOT SELECTA_FONTBAKE_EXE))
-  message(STATUS "Desktop UI plugin skipped for Amiga: pass -DSELECTA_ICONBAKE_EXE=<host gui_iconbake> and -DSELECTA_FONTBAKE_EXE=<host gui_fontbake> to build it")
+option(SEL_DESKTOP_AGA "Amiga: the desktop plugin draws through the AGA c2p backend instead of RTG (I439, M4-P6-1a)" OFF)
+include(${PROJECT_SOURCE_DIR}/cmake/desktop_bake_check.cmake)
+sel_desktop_bake_check()
+if(SEL_DESKTOP_SKIP)
   return()
 endif()
 
@@ -86,7 +88,6 @@ else()
 endif()
 sel_add_plugin(desktop_ui 5 desktop_ui.c atlas_build.c art.c ${ART_THREAD} stb_impl.c ${FONT_GEN}
   THIRD_PARTY_INCLUDES "${PROJECT_SOURCE_DIR}/third_party/stb")
-option(SEL_DESKTOP_AGA "Amiga: the desktop plugin draws through the AGA c2p backend instead of RTG (I439, M4-P6-1a)" OFF)
 if(SEL_AMIGA AND NOT SEL_DESKTOP_AGA)
   target_compile_definitions(sel_plugin_desktop_ui PRIVATE SELECTA_DESKTOP_RTG=1)
 endif()

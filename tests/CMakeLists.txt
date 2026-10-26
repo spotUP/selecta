@@ -67,6 +67,12 @@ add_test(NAME link-warnings
     -P "${CMAKE_CURRENT_SOURCE_DIR}/link_warnings.cmake")
 set_tests_properties(link-warnings PROPERTIES RUN_SERIAL TRUE)
 
+# I494: the Amiga desktop plugin gate (cmake/desktop_bake_check.cmake) stops configure for SEL_DESKTOP_AGA without
+# the host bake tools instead of silently building selecta without the desktop plugin.
+add_test(NAME desktop-bake-check
+  COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/tests/desktop-bake-check.tmp"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/dui/desktop_bake_check.cmake")
+
 # T13: render the generated test module, four resamplers. The module comes
 # from tools/gen_testmod.c (host build tool); hashes pinned per resampler in
 # tests/golden/nuade/ once the linear render has been listened to. A missing

@@ -1,0 +1,26 @@
+# I494: the Amiga desktop plugin gate. Inputs: -DSRC=<source dir> -DWORK=<scratch dir>.
+# Runs cmake/desktop_bake_check.cmake in child -P scripts: AGA without the bake tools must fail configure naming
+# both variables; the canonical Amiga configure must skip quietly; a host configure and a full tool set must pass.
+set(MOD "${SRC}/cmake/desktop_bake_check.cmake")
+if(NOT EXISTS "${MOD}")
+  message(FATAL_ERROR "desktop-bake-check: ${MOD} is missing")
+endif()
+function(run_case name vars expect_rc expect_text)
+  file(MAKE_DIRECTORY "${WORK}")
+  file(WRITE "${WORK}/${name}.cmake" "${vars}\ninclude(\"${MOD}\")\nsel_desktop_bake_check()\nmessage(STATUS \"skip=\${SEL_DESKTOP_SKIP}\")\n")
+  execute_process(COMMAND "${CMAKE_COMMAND}" -P "${WORK}/${name}.cmake"
+    RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err)
+  set(all "${out}${err}")
+  if(expect_rc EQUAL 0 AND NOT rc EQUAL 0 OR NOT expect_rc EQUAL 0 AND rc EQUAL 0)
+    message(FATAL_ERROR "desktop-bake-check ${name}: rc=${rc}, wanted ${expect_rc}\n${all}")
+  endif()
+  if(NOT "${expect_text}" STREQUAL "" AND NOT all MATCHES "${expect_text}")
+    message(FATAL_ERROR "desktop-bake-check ${name}: output lacks '${expect_text}'\n${all}")
+  endif()
+endfunction()
+run_case(aga_no_tools "set(SEL_AMIGA ON)\nset(SEL_DESKTOP_AGA ON)" 1 "SELECTA_ICONBAKE_EXE=.*SELECTA_FONTBAKE_EXE=")
+run_case(aga_one_tool "set(SEL_AMIGA ON)\nset(SEL_DESKTOP_AGA ON)\nset(SELECTA_ICONBAKE_EXE /x)" 1 "SELECTA_FONTBAKE_EXE=")
+run_case(canonical "set(SEL_AMIGA ON)" 0 "skip=TRUE")
+run_case(aga_tools "set(SEL_AMIGA ON)\nset(SEL_DESKTOP_AGA ON)\nset(SELECTA_ICONBAKE_EXE /x)\nset(SELECTA_FONTBAKE_EXE /y)" 0 "skip=FALSE")
+run_case(host "set(SEL_DESKTOP_AGA ON)" 0 "skip=FALSE")
+message(STATUS "desktop-bake-check: all cases passed")
