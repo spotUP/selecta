@@ -205,6 +205,8 @@ typedef struct desk {
     uint32_t scan_draws;     /* I315: partial redraws of the Add Folder area while a scan ran (sentinel) */
     int scan_pending;        /* 1 between sending LIBRARY_SCAN and its LIBRARY_RESULT: searches answer with the same event */
     int drop_playing;        /* 1 after a dropped file was sent as OPEN: an open_failed error then toasts */
+    int32_t np_key_end;      /* right edge of the Now Playing label column; the values start np_val_x (I447) */
+    int32_t np_val_x;
     uint32_t np_rows;        /* metadata pairs the Now Playing panel drew: STAT_META_PANEL_ROWS (DUI-P4-7) */
     uint32_t np_page_draws;  /* Now Playing page draws (sentinel) */
     uint32_t font_misses;    /* text draws whose size is not in g_sizes, so nothing was drawn (I361) */
@@ -3679,6 +3681,7 @@ static const char* library_dump_build(desk* d) {
                           (int)d->np_art.h, (int)d->np_panel.x, (int)d->np_panel.y, (int)d->np_panel.w, (int)d->np_panel.h);
     o = dump_put(d, o, "nowplaying title %d %d like %d artist %u\n", (int)d->np_title.y, (int)d->np_title.h, (int)d->np_like.y,
                  (unsigned)(d->np_text_artist[0] != '\0'));
+    o = dump_put(d, o, "nowplaying keys end %d value %d\n", (int)d->np_key_end, (int)d->np_val_x);
     o = dump_put(d, o, "rating %d liked %d mark %d %d %d %d step %d\n", (int)d->np_rating, (int)d->np_liked,
                           (int)d->np_rate[0].x, (int)d->np_rate[0].y, (int)d->np_rate[0].w, (int)d->np_rate[0].h,
                           (int)(d->np_rate[1].x - d->np_rate[0].x));
@@ -5360,13 +5363,29 @@ static void draw_nowplaying(desk* d) {
     /* Metadata pairs. */
     d->np_rows = 0;
     d->np_msg_lines = 0;
+    d->np_key_end = 0;
+    d->np_val_x = 0;
     if (st->panel != NULL) {
         const char* p = st->panel;
+        const sel_gui_atlas* kat = desk_font(d, 0, 11);
+        int32_t kw = 0, kmax = side * 2 / 5;
+        uint32_t n = 0;
+        /* The label column is as wide as the widest label (capped at two fifths of the panel) and the value starts one
+         * spacing token after it, so a label and its value stay together on a wide panel (I447). */
+        for (; *p != '\0' && n < NP_PAIRS_MAX; n++) {
+            int32_t w = kat != NULL ? sel_gui_text_width(kat, p, strlen(p)) : 0;
+            kw = w > kw ? w : kw;
+            p += strlen(p) + 1;
+            p += strlen(p) + 1;
+        }
+        kw = kw < kmax ? kw : kmax;
+        d->np_key_end = pn.x + sp + kw;
+        d->np_val_x = d->np_key_end + sp;
+        p = st->panel;
         while (*p != '\0' && d->np_rows < NP_PAIRS_MAX) {
             const char* v = p + strlen(p) + 1;
-            int32_t half = side * 2 / 5;
-            draw_text(d, rect_of(pn.x + sp, y, half, lpx(d, 16)), p, 0, 11, muted);
-            draw_text(d, rect_of(pn.x + sp + half, y, side - half, lpx(d, 16)), v, 0, 12, text);
+            draw_text(d, rect_of(pn.x + sp, y, kw, lpx(d, 16)), p, 0, 11, muted);
+            draw_text(d, rect_of(d->np_val_x, y, pn.x + sp + side - d->np_val_x, lpx(d, 16)), v, 0, 12, text);
             y += lpx(d, 16);
             d->np_rows++;
             p = v + strlen(v) + 1;
