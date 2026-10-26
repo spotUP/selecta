@@ -2073,7 +2073,22 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
  * Stats page (F24) beside them. Every number comes from the engine state (COMPOSERS_SHOW, STATS_SHOW).
  * TODO DUI-P4-3 slice B/C: the tree, column browser, sources, Files and History pages hook in here, as further pages
  * of this view chosen by a segmented control above the list. */
-enum { LIB_MARGIN = 24, LIB_TITLE_Y = 24, LIB_TITLE_H = 40, LIB_LIST_Y = 88, LIB_ROW_H = 48, LIB_STATS_W = 300 };
+enum { LIB_MARGIN = 24, LIB_TITLE_Y = 24, LIB_TITLE_H = 40, LIB_TAB_H = 32, LIB_ROW_H = 48, LIB_STATS_W = 300 };
+
+/* I445: the Library header is three rows, the title, the tab row and the list, with a gap of two theme spacings between
+ * each, so the title descenders, the buttons and the tabs never touch. A composer drilldown puts its song count and
+ * back line where the tabs are. */
+static int32_t lib_gap(desk* d) {
+    return 2 * lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+}
+
+static int32_t lib_tab_y(desk* d) {
+    return lpx(d, LIB_TITLE_Y + LIB_TITLE_H) + lib_gap(d);
+}
+
+static int32_t lib_list_y(desk* d) {
+    return lib_tab_y(d) + lpx(d, LIB_TAB_H) + lib_gap(d);
+}
 
 /* Next NUL-separated field after `p`. */
 static const char* lib_next(const char* p) {
@@ -2101,10 +2116,11 @@ static uint32_t lib_list_n(const sel_state* st) {
     return n;
 }
 
-/* Top edge of the scrolling rows: under the title block, and under the back line of a drilldown. Rows scrolled above it
- * are clipped and not clickable. */
+/* Top edge of the scrolling rows: under the tab row, or under the back line of a drilldown, which ends above the same
+ * edge. Rows scrolled above it are clipped and not clickable. */
 static int32_t lib_list_top(desk* d, sel_gui_rect mn, const sel_state* st) {
-    return mn.y + lpx(d, LIB_LIST_Y) + (st->composer_page != NULL ? lpx(d, LIB_ROW_H) : 0);
+    (void)st;
+    return mn.y + lib_list_y(d);
 }
 
 static int32_t lib_off_px(desk* d, const sel_state* st) {
@@ -2115,7 +2131,7 @@ static int32_t lib_off_px(desk* d, const sel_state* st) {
 static sel_gui_rect lib_row_rect(desk* d, sel_gui_rect mn, uint32_t i) {
     int32_t mg = lpx(d, LIB_MARGIN);
     int32_t w = mn.w - 3 * mg - lpx(d, LIB_STATS_W);
-    return rect_of(mn.x + mg, mn.y + lpx(d, LIB_LIST_Y) + (int32_t)i * lpx(d, LIB_ROW_H) - lib_off_px(d, sel_engine_state(d->engine)),
+    return rect_of(mn.x + mg, mn.y + lib_list_y(d) + (int32_t)i * lpx(d, LIB_ROW_H) - lib_off_px(d, sel_engine_state(d->engine)),
                    w > 0 ? w : 0, lpx(d, LIB_ROW_H));
 }
 
@@ -2123,7 +2139,7 @@ static sel_gui_rect lib_row_rect(desk* d, sel_gui_rect mn, uint32_t i) {
  * the list and the grid lay out beside (I379). Zero width when there are no statistics and in cover flow, which uses the
  * whole main width (I391). */
 static sel_gui_rect lib_stats_rect(desk* d, sel_gui_rect mn, const sel_state* st) {
-    int32_t mg = lpx(d, LIB_MARGIN), y = mn.y + lpx(d, LIB_LIST_Y);
+    int32_t mg = lpx(d, LIB_MARGIN), y = mn.y + lib_list_y(d);
     int flow = st->view != NULL && st->view->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW;
     return st->stats != NULL && !flow ? rect_of(mn.x + mn.w - mg - lpx(d, LIB_STATS_W), y, lpx(d, LIB_STATS_W), mn.y + mn.h - y)
                              : rect_of(mn.x + mn.w, y, 0, 0);
@@ -2136,7 +2152,7 @@ static int lib_row_hit(desk* d, sel_gui_rect mn, uint32_t i, int32_t x, int32_t 
 
 /* The Library page modes (slice B): the composers list, the tree and the column browser. The last two show the engine's
  * own view rows (VIEW_STYLE tree / drilldown over a LIBRARY_SEARCH result), the same commands the text UI sends. */
-enum { LIB_MODES = 5, LIB_TAB_Y = LIB_TITLE_Y + LIB_TITLE_H, LIB_TAB_PAD = 12, LIB_TAB_H = 24, LIB_WINDOW_ROWS = 12 };
+enum { LIB_MODES = 5, LIB_TAB_PAD = 10, LIB_WINDOW_ROWS = 12 };
 static const char* const lib_mode_name[LIB_MODES] = {"Composers", "Tree", "Columns", "Files", "History"};
 
 /* I440: a tab is as wide as its label (bold, the active look) plus a pad on each side, so the right end of the tab row
@@ -2149,16 +2165,16 @@ static int32_t lib_tab_w(desk* d, uint32_t i) {
 static sel_gui_rect lib_tab_rect(desk* d, sel_gui_rect mn, uint32_t i) {
     int32_t x = mn.x + lpx(d, LIB_MARGIN);
     uint32_t k;
-    for (k = 0; k < i; k++) {
-        x += lib_tab_w(d, k);
+    for (k = 0; k < i; k++) { /* I445: one theme spacing between tabs */
+        x += lib_tab_w(d, k) + lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     }
-    return rect_of(x, mn.y + lpx(d, LIB_TAB_Y), lib_tab_w(d, i), lpx(d, LIB_TAB_H));
+    return rect_of(x, mn.y + lib_tab_y(d), lib_tab_w(d, i), lpx(d, LIB_TAB_H));
 }
 
 /* The Add Folder button on the title row of the Library page, right aligned up to the history arrows, which own
  * the top right corner of the main pane. */
 static sel_gui_rect lib_add_rect(desk* d, sel_gui_rect mn) {
-    int32_t w = lpx(d, 120), right = nav_arrow_rect(d, mn, 0).x - lpx(d, 16);
+    int32_t w = lpx(d, 120), right = nav_arrow_rect(d, mn, 0).x - lib_gap(d) - lib_gap(d) / 2;
     return rect_of(right - w, mn.y + lpx(d, LIB_TITLE_Y) + lpx(d, 4), w, lpx(d, 32));
 }
 
@@ -2166,7 +2182,7 @@ static sel_gui_rect lib_add_rect(desk* d, sel_gui_rect mn) {
 static sel_gui_rect lib_clear_rect(desk* d, sel_gui_rect mn) {
     sel_gui_rect ab = lib_add_rect(d, mn);
     int32_t w = lpx(d, 132);
-    return rect_of(ab.x - lpx(d, 12) - w, ab.y, w, ab.h);
+    return rect_of(ab.x - lib_gap(d) - w, ab.y, w, ab.h);
 }
 
 /* I390: the Library style chooser, a segmented control of three buttons (Grid, Cover Flow, List). It is the only
@@ -2223,7 +2239,7 @@ static sel_gui_rect lib_style_rect(desk* d, sel_gui_rect mn, uint32_t i) {
         w = lead + (compact ? lpx(d, LIB_STYLE_PAD) : lib_style_label_w(d, k));
         x -= w + (k + 1u < (uint32_t)LIB_STYLES ? gap : 0);
     }
-    return rect_of(x, mn.y + lpx(d, LIB_TAB_Y), w, lpx(d, LIB_TAB_H));
+    return rect_of(x, mn.y + lib_tab_y(d), w, lpx(d, LIB_TAB_H));
 }
 
 /* I315: while a scan runs the Add Folder button gives way to the file being added and a progress bar. Same row and
@@ -2263,7 +2279,12 @@ static void lib_scan_draw(desk* d, sel_gui_rect mn) {
 /* The crumb after the tabs: the values picked in the column browser; a click on it clears them. */
 static sel_gui_rect lib_crumb_rect(desk* d, sel_gui_rect mn) {
     int32_t x = lib_tabs_end(d, mn) + lpx(d, LIB_TAB_PAD), w = lib_style_rect(d, mn, 0).x - lpx(d, LIB_TAB_PAD) - x;
-    return rect_of(x, mn.y + lpx(d, LIB_TAB_Y), w > 0 ? w : 0, lpx(d, LIB_TAB_H));
+    return rect_of(x, mn.y + lib_tab_y(d), w > 0 ? w : 0, lpx(d, LIB_TAB_H));
+}
+
+/* The "Back to all composers" line of a drilldown: under the song count, above the rows (I445). */
+static sel_gui_rect lib_back_rect(desk* d, sel_gui_rect mn) {
+    return rect_of(mn.x + lpx(d, LIB_MARGIN), mn.y + lpx(d, LIB_TITLE_Y + LIB_TITLE_H + 24), mn.w / 2, lpx(d, 24));
 }
 
 static int lib_view_on(const desk* d, const sel_state* st) {
@@ -3588,7 +3609,9 @@ static const char* library_dump_build(desk* d) {
     }
     p = st->composer_page;
     if (p != NULL) {
-        o = dump_put(d, o, "drill %s|%s\n", lib_next(p), lib_next(lib_next(p)));
+        sel_gui_rect br = lib_back_rect(d, panel_rect(d, "main"));
+        o = dump_put(d, o, "drill %s|%s\nback %d %d %d %d\n", lib_next(p), lib_next(lib_next(p)), (int)br.x, (int)br.y, (int)br.w,
+                     (int)br.h);
     }
     o = dump_put(d, o, "mode %s\nscroll %d\n", lib_mode_name[d->lib_mode], (int)(d->lib_q16 >> 16));
     for (i = 0; i < LIB_MODES; i++) {
@@ -4009,7 +4032,7 @@ static void draw_lib_grid(desk* d, sel_gui_rect mn) {
     const sel_view_state* v = sel_engine_state(d->engine)->view;
     int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]), gap = lpx(d, GRID_GAP), art = lpx(d, GRID_ART);
     int32_t tw = art + 2 * pad, th = pad + art + lpx(d, HOME_TILE_TEXT_GAP) + lpx(d, HOME_TITLE_H) + lpx(d, HOME_META_H) + pad;
-    int32_t y0 = mn.y + lpx(d, LIB_LIST_Y), vis = (mn.y + mn.h - y0 + gap) / (th + gap);
+    int32_t y0 = mn.y + lib_list_y(d), vis = (mn.y + mn.h - y0 + gap) / (th + gap);
     uint32_t cols = lib_grid_cols(d, mn), i, first, panel = ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]);
     uint32_t cur_row = v->cursor / cols;
     first = vis > 0 && cur_row >= (uint32_t)vis ? cur_row - (uint32_t)vis + 1u : 0u;
@@ -4078,7 +4101,7 @@ static void draw_lib_flow(desk* d, sel_gui_rect mn) {
     int32_t mg = lpx(d, LIB_MARGIN), right = sr.w > 0 ? sr.x - mg : mn.x + mn.w; /* the flow centres beside the Statistics column (I382) */
     int32_t ref = lpx(d, FLOW_ART), avail = right - mn.x - 2 * mg, cx = (mn.x + right) / 2, y0;
     int32_t capt = lpx(d, HOME_TILE_TEXT_GAP + HOME_TITLE_H + HOME_META_H); /* the caption block under the centre cover */
-    int32_t top = mn.y + lpx(d, LIB_LIST_Y) + mg, area_h = mn.y + mn.h - mg - top; /* free height: below the tab row to the panel bottom */
+    int32_t top = mn.y + lib_list_y(d) + mg, area_h = mn.y + mn.h - mg - top; /* free height: below the tab row to the panel bottom */
     int32_t full = flow_stack_w(ref); /* width of the whole stack at the reference size */
     int32_t fit_w = ref * (avail > 0 ? avail : 0) / full, fit_h = area_h - capt; /* the centre cover that fills the width / the height */
     int32_t big = fit_w < fit_h ? fit_w : fit_h;
@@ -4168,7 +4191,7 @@ static void draw_library(desk* d) {
         sel_gui_clip_push(d->canvas, rect_of(mn.x, lib_list_top(d, mn, st), mn.w, mn.y + mn.h - lib_list_top(d, mn, st)));
         for (p = lib_next(cnt); *p != '\0'; i++) {
             const char* name = lib_next(p);
-            sel_gui_rect r = lib_row_rect(d, mn, i + 1u);
+            sel_gui_rect r = lib_row_rect(d, mn, i);
             draw_text(d, r, name, 0, 15, row_ink(d, r, text));
             song_row_reg(d, r, p, 0, 0, 0);
             p = lib_next(name);
@@ -4192,7 +4215,7 @@ static void draw_library(desk* d) {
             if (m == d->lib_mode) { /* the active tab is filled like the selected Home and Search chips (I362) */
                 draw_button(d, tr, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), lib_mode_name[m], 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
             } else {
-                draw_text(d, tr, lib_mode_name[m], 0, 14, muted);
+                draw_text_centered(d, tr, lib_mode_name[m], 0, 14, muted); /* centred as on the active pill (I445) */
             }
         }
         if (lib_view_on(d, st) && d->lib_mode == 2u && st->view->drill_n > 0u) {
@@ -4397,16 +4420,15 @@ static int library_click(desk* d, int32_t x, int32_t y) {
         }
     }
     if (st->composer_page != NULL) {
-        sel_gui_rect back = rect_of(mn.x + lpx(d, LIB_MARGIN), mn.y + lpx(d, LIB_TITLE_Y + LIB_TITLE_H + 24), mn.w / 2, lpx(d, 24));
-        if (in_rect(back, x, y)) {
+        if (in_rect(lib_back_rect(d, mn), x, y)) {
             d->lib_q16 = 0;
             return desk_send(d, "COMPOSERS_SHOW");
         }
-        /* A song row of the drilldown (drawn at row i + 1, below the back line) plays its song: OPEN with the song's key,
+        /* A song row of the drilldown (row i, below the back line) plays its song: OPEN with the song's key,
          * the path a scanned song is keyed by, as the Songs page sends it (I299). */
         for (p = lib_next(lib_next(lib_next(st->composer_page))); *p != '\0'; i++) {
             const char* name = lib_next(p);
-            if (lib_row_hit(d, mn, i + 1u, x, y)) {
+            if (lib_row_hit(d, mn, i, x, y)) {
                 return desk_play_path(d, p);
             }
             p = lib_next(name);

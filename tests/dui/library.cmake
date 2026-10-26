@@ -56,8 +56,36 @@ if("${list}" MATCHES "drill ")
   message(FATAL_ERROR "drilldown shown before any click:\n${list}")
 endif()
 
-# The click point comes from the "row 0 x y w h" line the page itself dumps (the rectangle library_click tests); the back
-# line occupies the same top row in the drilldown.
+# I445: the page header breathes. The tab row starts two theme spacings (16 px) below the title row, which ends 36 px
+# under the Add Folder button's top (the button sits 4 px into the 40 px row), so neither the title descenders nor the
+# buttons touch the tabs; neighbouring tabs keep at least one spacing (8 px) between them, so the active pill never
+# touches the next label.
+if(NOT "${list}" MATCHES "addfolder (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)\n")
+  message(FATAL_ERROR "no addfolder rectangle in the library dump:\n${list}")
+endif()
+math(EXPR title_end "${CMAKE_MATCH_2} + 36")
+string(REGEX MATCHALL "tab [0-9]+ -?[0-9]+ -?[0-9]+ [0-9]+ [0-9]+" tabs "${list}")
+set(prev_end "")
+foreach(t ${tabs})
+  string(REGEX MATCH "tab ([0-9]+) (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)" _ "${t}")
+  math(EXPR top_gap "${CMAKE_MATCH_3} - ${title_end}")
+  if(top_gap LESS 16)
+    message(FATAL_ERROR "tab ${CMAKE_MATCH_1} starts ${top_gap} px under the title row, want at least 16:\n${list}")
+  endif()
+  if(NOT prev_end STREQUAL "")
+    math(EXPR side_gap "${CMAKE_MATCH_2} - ${prev_end}")
+    if(side_gap LESS 8)
+      message(FATAL_ERROR "tab ${CMAKE_MATCH_1} sits ${side_gap} px after the previous tab, want at least 8:\n${list}")
+    endif()
+  endif()
+  math(EXPR prev_end "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4}")
+endforeach()
+list(LENGTH tabs ntabs)
+if(NOT ntabs EQUAL 5)
+  message(FATAL_ERROR "want 5 tab rectangles, got ${ntabs}:\n${list}")
+endif()
+
+# The click point comes from the "row 0 x y w h" line the page itself dumps (the rectangle library_click tests).
 if(NOT "${list}" MATCHES "row 0 ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)\n")
   message(FATAL_ERROR "no row rectangle in the library dump:\n${list}")
 endif()
@@ -88,9 +116,13 @@ foreach(r IN LISTS cli_rows)
 endforeach()
 
 # Back to the list.
-# The second click lands elsewhere on the back line so the fixed clock does not fold the two clicks into a double click.
-math(EXPR bx "${cx} + 60")
-math(EXPR by "${cy} + 6")
+# The back line's rectangle comes from the drilldown's own "back x y w h" dump line; it sits above the song rows (I445).
+# The second click lands elsewhere than the first so the fixed clock does not fold the two clicks into a double click.
+if(NOT "${drilled}" MATCHES "back ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)\n")
+  message(FATAL_ERROR "no back rectangle in the drilldown dump:\n${drilled}")
+endif()
+math(EXPR bx "${CMAKE_MATCH_1} + 60")
+math(EXPR by "${CMAKE_MATCH_2} + 8")
 lib_run(back "wait 1\nmove ${cx} ${cy}\nclick ${cx} ${cy}\nwait 1\nmove ${bx} ${by}\nclick ${bx} ${by}\nwait 1\n")
 if("${back}" MATCHES "drill ")
   message(FATAL_ERROR "back line did not leave the drilldown:\n${back}")
@@ -276,8 +308,9 @@ if(NOT "${plist}" MATCHES "row 0 ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)\n")
 endif()
 math(EXPR px "${CMAKE_MATCH_1} + 10")
 math(EXPR py "${CMAKE_MATCH_2} + 8")
-# the first song row of the drilldown is drawn one row below row 0 (rows are as tall as the dump says)
-math(EXPR sy "${py} + ${CMAKE_MATCH_4}")
+# I445: the first song row of the drilldown is drawn where row 0 of the composer list was (the back line sits above
+# the rows, not in row 0); the second click moves sideways so it is not read as a double click
+set(sy "${py}")
 if(NOT "${plist}" MATCHES "songs_opened=0")
   message(FATAL_ERROR "a song was open before the click:\n${plist}")
 endif()
@@ -307,7 +340,13 @@ endif()
 if(NOT "${scanned}" MATCHES "drill Play Composer\\|1\n")
   message(FATAL_ERROR "a finished scan moved the user out of the composer drilldown:\n${scanned}")
 endif()
-lib_run(scanback "wait 1\nmove ${px} ${py}\nclick ${px} ${py}\nwait 2\ndrop ${WORK}/scandrop\nwait 20\nmove ${bx} ${py}\nclick ${bx} ${py}\nwait 2\n")
+# I445: the back line has its own rectangle above the rows; click it where the drilldown dump puts it
+if(NOT "${scanned}" MATCHES "\nback ([0-9]+) ([0-9]+) [0-9]+ [0-9]+\n")
+  message(FATAL_ERROR "the drilldown after the scan dumped no back line:\n${scanned}")
+endif()
+math(EXPR sbx "${CMAKE_MATCH_1} + 60")
+math(EXPR sby "${CMAKE_MATCH_2} + 8")
+lib_run(scanback "wait 1\nmove ${px} ${py}\nclick ${px} ${py}\nwait 2\ndrop ${WORK}/scandrop\nwait 20\nmove ${sbx} ${sby}\nclick ${sbx} ${sby}\nwait 2\n")
 if("${scanback}" MATCHES "drill " OR NOT "${scanback}" MATCHES "composer 0 play composer")
   message(FATAL_ERROR "Back after a scan inside the drilldown did not return to the composer list:\n${scanback}")
 endif()
