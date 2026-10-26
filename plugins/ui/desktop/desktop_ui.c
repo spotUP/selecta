@@ -281,6 +281,8 @@ typedef struct desk {
     uint32_t poll_ms;        /* I377: poll wait accumulated inside the running turn */
     uint32_t frame_ms_min, frame_ms_max; /* I368: ms per paint (one desk_flush), host clock; min is valid once frame_ms_n > 0 */
     uint32_t frame_ms_sum, frame_ms_n;   /* I368: the avg is sum / n */
+    uint32_t frame_t0;       /* I385: host clock ms when the frame's paint began; valid while frame_open */
+    int frame_open;          /* I385: a paint has begun and its desk_flush has not yet closed the frame */
     uint32_t page_seen;      /* I368: the page the last paint showed, +1 (0 = nothing painted yet) */
     uint32_t page_dirty;     /* I368: pixels the first paint after the latest page change repainted */
     sel_tag stats[86];
@@ -347,19 +349,32 @@ static int hover_region_of(const desk* d, sel_gui_rect box);
 enum { SLOT_SUB_PREV, SLOT_SHUFFLE, SLOT_PREV, SLOT_PLAY, SLOT_NEXT, SLOT_REPEAT, SLOT_SUB_NEXT, TRANSPORT_COUNT };
 static sel_gui_rect desk_button_rect(const desk* d, uint32_t i);
 
+/* I385: marks the start of a frame's paint. The first call after a flush wins, so one frame has one start. */
+static void desk_frame_begin(desk* d) {
+    if (!d->frame_open) {
+        const sel_host* ch = sel_engine_plugin_host(d->engine);
+        d->frame_t0 = ch->clock_ms(ch);
+        d->frame_open = 1;
+    }
+}
+
 /* Hands the dirty rectangles to the backend, then empties the list; returns the pixels repainted. The sdl backend
- * must see the list before sel_gui_present clears it. */
+ * must see the list before sel_gui_present clears it. frame_ms covers the whole frame: paint start (desk_frame_begin)
+ * through the backend blit and sel_gui_present. */
 static uint32_t desk_flush(desk* d) {
+    const sel_host* ch = sel_engine_plugin_host(d->engine);
+    if (!d->frame_open) { /* a flush with no marked paint still times its blit and present */
+        desk_frame_begin(d);
+    }
 #ifdef SELECTA_DESKTOP_SDL
     if (d->sdl != NULL) {
         desk_sdl_present(d->sdl, d->canvas, d->report);
     }
 #endif
     {
-        const sel_host* ch = sel_engine_plugin_host(d->engine);
-        uint32_t t0 = ch->clock_ms(ch), dt;
         uint32_t px = sel_gui_present(d->canvas);
-        dt = ch->clock_ms(ch) - t0;
+        uint32_t dt = ch->clock_ms(ch) - d->frame_t0;
+        d->frame_open = 0;
         if (d->frame_ms_n == 0u || dt < d->frame_ms_min) {
             d->frame_ms_min = dt;
         }
@@ -3070,6 +3085,7 @@ static int viz_tick(desk* d) {
     }
     /* The mem backend has no song clock: it pumps one 20 ms block per turn, and the engine numbers its frames by block,
      * so the song time of a frame there is its sequence number times 20 ms. */
+    desk_frame_begin(d);
     d->viz_frames++;
     d->viz_seq = st->viz->seq;
     d->viz_song_ms = st->song.position_ms != 0u ? st->song.position_ms : st->viz->seq * 20u;
@@ -6339,6 +6355,8 @@ static int desk_add_folder(desk* d) {
 
 /* one pointer or gesture event, from the --input script or the live window */
 static int desk_route_input(desk* d, const sel_gui_input* ev) {
+    d->frame_open = 0; /* an input that changes nothing never flushes: its stamp must not leak into the next frame */
+    desk_frame_begin(d);
     if (ev->kind == SEL_GUI_IN_DROP) {
         return desk_event_frame(d, desk_drop_path(d, ev->path, ev->x != 0));
     }
@@ -6579,6 +6597,7 @@ static int desk_present(desk* d) {
     if (dirty == 0u) {
         return 0;
     }
+    desk_frame_begin(d);
     if (d->frames == 0u || d->repaint) { /* the first frame and a resize paint the whole canvas */
         d->repaint = 0;
         d->seek_fill = -1;
