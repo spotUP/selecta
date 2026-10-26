@@ -2059,10 +2059,12 @@ static sel_gui_rect lib_row_rect(desk* d, sel_gui_rect mn, uint32_t i) {
 }
 
 /* The Statistics column of the Library page, right of the rows and the tile grid: the one rectangle the panel draws in and
- * the list and the grid lay out beside (I379). Zero width when there are no statistics. */
+ * the list and the grid lay out beside (I379). Zero width when there are no statistics and in cover flow, which uses the
+ * whole main width (I391). */
 static sel_gui_rect lib_stats_rect(desk* d, sel_gui_rect mn, const sel_state* st) {
     int32_t mg = lpx(d, LIB_MARGIN), y = mn.y + lpx(d, LIB_LIST_Y);
-    return st->stats != NULL ? rect_of(mn.x + mn.w - mg - lpx(d, LIB_STATS_W), y, lpx(d, LIB_STATS_W), mn.y + mn.h - y)
+    int flow = st->view != NULL && st->view->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW;
+    return st->stats != NULL && !flow ? rect_of(mn.x + mn.w - mg - lpx(d, LIB_STATS_W), y, lpx(d, LIB_STATS_W), mn.y + mn.h - y)
                              : rect_of(mn.x + mn.w, y, 0, 0);
 }
 
@@ -4012,7 +4014,7 @@ static void draw_library(desk* d) {
         sel_gui_clip_pop(d->canvas);
         }
     }
-    if (st->stats != NULL) { /* the Stats page (F24): the library totals as label and value */
+    if (st->stats != NULL && lib_stats_rect(d, mn, st).w > 0) { /* the Stats page (F24): the library totals as label and value */
         sel_gui_rect sr = lib_stats_rect(d, mn, st);
         sr.h = lpx(d, 28);
         draw_text(d, sr, "Statistics", 1, 18, text);

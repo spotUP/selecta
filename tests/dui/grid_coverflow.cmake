@@ -124,7 +124,19 @@ function(no_stats_overlap out what)
   endif()
 endfunction()
 no_stats_overlap("${grid_out}" "grid")
-no_stats_overlap("${flow0_out}" "cover flow")
+
+# I391 (Johan's decision): the cover flow hides the Statistics column and uses the whole main width. The flow run still passes
+# --stats, yet its "stats rect" is empty (the panel draws only in a non-empty rect) and its free area runs to the same right edge the grid's Statistics column ends at.
+string(REGEX MATCH "stats rect ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)" _gs "${grid_out}")
+math(EXPR grid_stats_right "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3}")
+expect("${flow0_out}" "stats rect [0-9]+ [0-9]+ 0 0\n" "the cover flow run must not show the Statistics column")
+string(REGEX MATCH "flow cover [0-9]+ [0-9]+ [0-9]+ [0-9]+ area ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)" _fa "${flow0_out}")
+math(EXPR flow_area_right "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3}")
+math(EXPR dright "${grid_stats_right} - ${flow_area_right}")
+# the dump takes the main region, the draw its panel inset (4 px narrower); a Statistics column would cost 300 px or more
+if(dright GREATER 4 OR dright LESS -4)
+  message(FATAL_ERROR "cover flow area ends at x ${flow_area_right}, expected the full main width (x ${grid_stats_right})")
+endif()
 
 # I391: the centre cover follows the free area (below the tab row to the panel bottom, beside the Statistics column), the
 # stack plus caption is centred vertically in it, and the caption is centred under the cover. The dump line
