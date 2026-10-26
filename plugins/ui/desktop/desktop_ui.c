@@ -276,7 +276,10 @@ typedef struct desk {
     uint32_t tile_queued;    /* tiles sent to the engine as queue next through the tile menu */
     uint32_t home_sig;       /* source and row count of the last HOME window drawn: a change redraws */
     char home_dump[2048];    /* shelves as text for the stats */
-    sel_tag stats[80];
+    uint32_t art_ms_max;     /* I377: longest single art_load on the UI thread, host clock ms */
+    uint32_t turn_ms_max;    /* I377: longest turn of desk_wait without its poll wait, host clock ms */
+    uint32_t poll_ms;        /* I377: poll wait accumulated inside the running turn */
+    sel_tag stats[82];
     char* input_at;         /* where the scripted input resumes after a turn that sent an engine line */
     uint32_t sends;         /* engine lines sent so far: the replay yields a turn so the shell pumps them */
     char library_dump[8192]; /* the Library page as text for the stats (DUI-P4-3) */
@@ -1003,7 +1006,15 @@ static void load_tile_art(desk* d, const sel_state* st) {
         for (i = 0; i < st->queue_count; i++) {
             ptrs[i] = st->queue_text + st->queue[i].path_offset;
         }
-        art_load(d->art, ptrs, st->queue_count);
+        {
+            const sel_host* ch = sel_engine_plugin_host(d->engine);
+            uint32_t t0 = ch->clock_ms(ch), dt;
+            art_load(d->art, ptrs, st->queue_count);
+            dt = ch->clock_ms(ch) - t0;
+            if (dt > d->art_ms_max) {
+                d->art_ms_max = dt;
+            }
+        }
     }
     free((void*)ptrs);
 }
@@ -7020,8 +7031,23 @@ static void desk_on_event(void* state, const sel_message* evt) {
 }
 
 /* The mem backend has no input source: a turn with something to draw is handled, a quiet turn ends the run. */
+static int desk_wait_turn(desk* d, uint32_t timeout_ms);
 static int desk_wait(void* state, uint32_t timeout_ms) {
     desk* d = (desk*)state;
+    const sel_host* ch = sel_engine_plugin_host(d->engine);
+    uint32_t t0 = ch->clock_ms(ch), dt;
+    int r;
+    d->poll_ms = 0u;
+    r = desk_wait_turn(d, timeout_ms);
+    dt = ch->clock_ms(ch) - t0;
+    dt = dt > d->poll_ms ? dt - d->poll_ms : 0u;
+    if (dt > d->turn_ms_max) {
+        d->turn_ms_max = dt;
+    }
+    return r;
+}
+
+static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
     int vz;
 #ifndef SELECTA_DESKTOP_SDL
     (void)timeout_ms;
@@ -7151,7 +7177,11 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
             wait_ms = desk_timers_wait(d);
         }
         (void)timeout_ms;
-        ev = desk_sdl_poll(d->sdl, wait_ms, &w, &h);
+        {
+            uint32_t p0 = desk_sdl_ticks();
+            ev = desk_sdl_poll(d->sdl, wait_ms, &w, &h);
+            d->poll_ms += desk_sdl_ticks() - p0;
+        }
         if (ev == DESK_SDL_QUIT) {
             return -1;
         }
@@ -7343,7 +7373,11 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[73].value = sel_gui_region_colours(d->canvas, SEL_GUI_RGN_FLOW);
     d->stats[74].tag = SEL_UI_STAT_QUANT_CALLS;
     d->stats[74].value = d->quant_calls;
-    d->stats[75].tag = SEL_TAG_END;
+    d->stats[75].tag = SEL_UI_STAT_ART_MS_MAX;
+    d->stats[75].value = d->art_ms_max;
+    d->stats[76].tag = SEL_UI_STAT_TURN_MS_MAX;
+    d->stats[76].value = d->turn_ms_max;
+    d->stats[77].tag = SEL_TAG_END;
 
     return d->stats;
 }
