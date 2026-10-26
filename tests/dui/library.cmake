@@ -423,3 +423,35 @@ endif()
 if(NOT notch_widgets EQUAL none_widgets)
   message(FATAL_ERROR "one Library wheel notch redrew widgets: ${none_widgets} before, ${notch_widgets} after")
 endif()
+
+# ---- I481: a composer whose name holds a double quote ----
+# The canon folds every non-alphanumeric to a space (sel_composer_canon), so a stored canon never holds a quote: the quote
+# lives in the display text only. The Composers page must show the name, and a click on the row must drill in to that
+# composer's songs. (The quote escape in desk_composer_request is therefore defensive; no scanned library can reach it.)
+set(db "${WORK}/composer_quote.db")
+dui_run(init3 --db "${db}" --ui desktop --backend mem --view home --canvas 900x600 --clock fixed --stats)
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db}" INPUT_FILE "${HERE}/fixture_library.sql"
+  RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "loading the fixture for the quoted composer failed: ${err}")
+endif()
+string(CONCAT seed5
+  "INSERT INTO song_composers(song_key, canon, display) VALUES('fixture:1', 'big b smith', 'Big \"B\" Smith'); "
+  "INSERT INTO song_composers(song_key, canon, display) VALUES('fixture:2', 'big b smith', 'Big \"B\" Smith')")
+execute_process(COMMAND "${SQLITE3}" "${db}" "PRAGMA trusted_schema = 1; ${seed5}" RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "seeding the quoted composer failed: ${err}")
+endif()
+lib_run(qlist "wait 1\n")
+if(NOT "${qlist}" MATCHES "composer 0 big b smith\\|Big \"B\" Smith\\|2\n")
+  message(FATAL_ERROR "the Composers page lacks the quoted composer with 2 songs:\n${qlist}")
+endif()
+if(NOT "${qlist}" MATCHES "row 0 ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)\n")
+  message(FATAL_ERROR "no row 0 rectangle in the quoted composer dump:\n${qlist}")
+endif()
+math(EXPR qx "${CMAKE_MATCH_1} + 10")
+math(EXPR qy "${CMAKE_MATCH_2} + 8")
+lib_run(qdrill "wait 1\nmove ${qx} ${qy}\nclick ${qx} ${qy}\nwait 1\n")
+if(NOT "${qdrill}" MATCHES "drill Big \"B\" Smith\\|2\n")
+  message(FATAL_ERROR "a click on the quoted composer did not drill in to its 2 songs:\n${qdrill}")
+endif()
