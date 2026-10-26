@@ -1405,7 +1405,7 @@ static void desk_draw_query(desk* d, sel_gui_rect sr, const char* hint) {
     }
 }
 
-/* The Home header chips: All and Songs open Search with that facet, Composers opens the Library, Playlists the
+/* The Home header chips: All opens Search, Songs the Songs page, Composers the Library, Playlists the
  * Playlists page (desk_click). */
 enum { HOME_CHIPS = 4 };
 static const char* const home_chip_name[HOME_CHIPS] = {"All", "Songs", "Composers", "Playlists"};
@@ -5439,11 +5439,11 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
         for (i = 0; i < HOME_CHIPS; i++) { /* the Home header chips */
             if (in_rect(home_chip_rect(d, panel_rect(d, "main"), i), x, y)) {
                 int moved;
-                if (i < 2u) {
+                if (i == 0u) {
                     d->search_facet = i;
                     d->search_keep = 1;
                 }
-                moved = desk_page_goto(d, i < 2u ? PG_SEARCH : i == 2u ? PG_LIBRARY : PG_PLAYLISTS);
+                moved = desk_page_goto(d, i == 0u ? PG_SEARCH : i == 1u ? PG_SONGS : i == 2u ? PG_LIBRARY : PG_PLAYLISTS);
                 d->search_keep = 0;
                 return moved;
             }
