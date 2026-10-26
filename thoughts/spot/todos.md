@@ -78,7 +78,7 @@ Session 2026-10-22 (2). Finish line: RULES.md rule 0 (plans and ledger never sta
 | F29 | [x] | Analysis-driven smart fade and MixRamp overlap points, computed on desktop, shared via DEViLBOX like loudness; round 5 pick | section 3, 6a, 1a |
 | F30 | [x] | Reshuffle, play scope; round 5 pick | section 3, 9c, 1a |
 | F31 | [x] | Direct; round 5 pick | section 5, 1a |
-| F33 | [x] | Aminet, Modules.pl and AMP as `sel_source` modules; round 5 pick | section 9, 1a |
+| F33 | [ ] | Aminet, Modules.pl and AMP as `sel_source` modules; round 5 pick | section 9, 1a. Reopened 2026-10-26: no source module exists; see I405+ |
 | F34 | [x] | Smart downloads: cache prefetch policy driven by history and smart playlists; round 5 pick | section 9, 1a |
 | F35 | [x] | Podcasts: RSS feeds as a source with per-episode state; round 5 pick | section 9, 1a |
 | F36 | [x] | Stream-to-disk recording of radio and streams; round 5 pick | section 5, 1a |
@@ -759,3 +759,11 @@ b6f2 | Johan 2026-10-25 (Mac): "the home page looks like it should be scrollable
 | I402 | [ ] | I396 | Clip the page-switch repaint to its dirty rect (split from I396). | Rig 2 --stats dirty_pixels on a page switch equals the changed area, not the full canvas; goldens byte equal; a dui test asserts the dirty count and fails with the clip reverted. |
 | I403 | [ ] | - | dui-keys fails on main (found by the I396 agent; fails the same with the old gui_draw.c). Find the cause and fix it at its root. | ctest -R dui-keys passes on build-sdl; the cause is named in the commit message. |
 | I404 | [ ] | I401 | Next in Queue right panel: content sits ~4 px from the left edge (Johan, via vtcon session, shot ~/Desktop/upterm-shots/CleanShot 2026-10-26 at 10.46.43@2x.png). Give art tile, heart, dots menu and heading one left/right inset from spacing tokens; align heading and icons on it. | Golden of Now Playing panel shows equal left/right inset from a token; dump line reports inset; Johan confirms on Mac |
+| I405 | [ ] | I140 | Aminet source `aminet` (listing from `https://aminet.net/INDEX` filtered to module dirs, file via LHA archive.c); capture fixture first (online-sources plan 5.1, D-OS-6/7). | `selecta` reachability test syncs the fixture INDEX, plays one archived module, sentinel shows the parser ran; parser unit test; registry lists `aminet`; PROVENANCE.md row |
+| I406 | [ ] | I140 | Modules.pl source `modulespl` (search; request shape UNVERIFIED, confirm from the live site and record) (plan 5.2). Needs the SOURCE_SEARCH engine command (D-OS-3). | `selecta` reachability test searches a recorded response and plays a result; parser unit test; PROVENANCE.md row |
+| I407 | [ ] | I140 | AMP (Amiga Music Preservation) source `amp` (plan 5.3; site answered 403 to curl, D-OS-9). | `selecta` reachability test from a recorded fixture, or a written finding that the site refuses non-browser clients and Johan's decision (question OS-4) |
+| I408 | [ ] | I406 | amigaremix.com source `amigaremix` (MP3 search plus stream, plan 5.4). | `selecta` reachability test searches a fixture and streams a result via `sel_live_open`; parser unit test |
+| I409 | [ ] | I406 | remix.kwed.org source `kwed` (MP3 search plus stream, plan 5.4). | Same as I408 for kwed |
+| I410 | [ ] | I406 | Radio stations source `radio` (station list, stream playback, plan 5.5; list origin is question OS-5). | `selecta` opens a stream from the fixture server, sentinel shows `sel_live_open` ran |
+| I411 | [ ] | I405-I410 | Other online services after the HippoPlayer set: The Mod Archive, Demozoo, Nectarine, SceneSat (plan 5.6; order and API key per questions OS-1, OS-6). One row per service once chosen. | Each chosen service has its own row and ticks as I405 does |
+| I412 | [ ] | - | Parity check: find bbmp's online services from a primary source and compare with the online-sources plan section 1 and 2 (plan 5.7). | Table of every bbmp service marked exists or row ID, added to the plan |
