@@ -89,6 +89,14 @@ shelf_scrolls(a0 a1 "${idle}")
 if(NOT "${idle}" MATCHES "shelf 0 tile [0-9]+ [^\n|]*\\|[^\n|]*a\\.mod\\|[^\n|]*\\|Zoë Björk\n")
   message(FATAL_ERROR "the song tile of song 4 must carry its artist as its last dump field in:\n${idle}")
 endif()
+# I485: the artist is drawn on its own line, so a tile title is the name alone. Dump line: heading|key|title|artist. Song 4 is
+# "Cafe Del Mar - Cafe Mix" by Zoe Bjork (title field ends at the | before the artist), the Lotus album tile is by Chris Huelsbeck.
+if(NOT "${idle}" MATCHES "a\\.mod\\|Cafe Del Mar – Café Mix\\|Zoë Björk\n")
+  message(FATAL_ERROR "the song tile title must be the song name alone (no \" - artist\" suffix) in:\n${idle}")
+endif()
+if(NOT "${idle}" MATCHES "shelf 1 tile [0-9]+ Jump back in\\|Lotus Turbo Challenge\\|Lotus Turbo Challenge\\|Chris Huelsbeck\n")
+  message(FATAL_ERROR "the album tile title must be the album name alone (no \" - artist\" suffix) in:\n${idle}")
+endif()
 expect_eq("idle scroll shelf 0" "${a0}" 0)
 expect_eq("idle scroll shelf 1" "${a1}" 0)
 
