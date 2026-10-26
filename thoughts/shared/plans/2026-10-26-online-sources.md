@@ -77,6 +77,58 @@ Other services, beyond both parity targets. Candidate services, all "after Hippo
 | SceneSat, other radio | Streams | UNVERIFIED |
 | ZXArt, Bitfire, C64.com | Chip music beyond SID | UNVERIFIED |
 
+## 2a. Player gap table (I422)
+
+Policy (Johan 2026-10-26): where Selecta lacks a replayer for a format an online source serves, use the player bbmp uses.
+Method: Selecta side read from the five replayer plugins' declared extension hooks (`plugins/replayers/*/adapter.c`
+`SEL_RP_EXTENSIONS`); the openmpt list is built at run time from `openmpt_get_supported_extensions()`
+(openmpt/adapter.c:321-347), the nuade list is the union of every compiled player's `.extensions`
+(nuade/adapter.c:596-626; 128 `.extensions` rows under third_party/nuade/players, counted by grep). bbmp side from
+`src/bbmp/backends/formats.py` (format name to backend) and `backends/__init__.py` (ZX, TIATracker, Audio file).
+Selecta has no gme, sidplayfp, zxtune, sc68/sndh, flac or wav replayer plugin today (the five dirs are kplayer,
+minimp3, nuade, openmpt, stb_vorbis); the architecture doc plans them for M2b/M3c but none exists, so they count as gaps.
+UNVERIFIED: the exact file mix each Amiga site serves (only the source's main formats are listed).
+
+| Source | Format | Selecta plugin (file:line of extension list) | bbmp player | Gap |
+|--------|--------|-----------------------------------------------|-------------|-----|
+| Aminet (mods dirs) | Amiga native modules (.mod, .med, .ahx-class, etc.) in .lha | nuade `plugins/replayers/nuade/adapter.c:626` (union of third_party/nuade/players/*_nuade.c `.extensions`); kplayer `plugins/replayers/kplayer/adapter.c:268` (mod) | uade (formats.py), openmpt for PT/XM | no (the 17 formats nuade skips need native UADE, M4, already in the format-coverage doc) |
+| Aminet | XM, S3M, IT, MOD | openmpt `plugins/replayers/openmpt/adapter.c:347` | openmpt | no |
+| Aminet | mp3 / ogg in the mus dirs | minimp3 `plugins/replayers/minimp3/adapter.c:426`; stb_vorbis `plugins/replayers/stb_vorbis/adapter.c:494` | sndfile ("Audio file") | no |
+| Aminet | .lha/.lzx/.zip archives | not a replayer: `archive.c` (plan 5.1) | n/a | no (check lzx in archive.c at I405) |
+| Modules.pl | MOD, XM, S3M, IT (tracker modules) | openmpt `openmpt/adapter.c:347`, kplayer `kplayer/adapter.c:268` | openmpt | no |
+| Modules.pl | radio stream (mp3 or aac via listen.pls) | minimp3 `minimp3/adapter.c:426`; AAC has no plugin | sndfile / pipe (ffmpeg-class) | UNVERIFIED: stream codec not probed; if AAC, yes |
+| AMP | Amiga native modules (uploads in .lha) | nuade `nuade/adapter.c:626`, openmpt `openmpt/adapter.c:347` | uade, openmpt | no |
+| amigaremix | MP3 | minimp3 `minimp3/adapter.c:426` | sndfile | no |
+| kwed | MP3 | minimp3 `minimp3/adapter.c:426` | sndfile | no |
+| Radio | MP3 / Ogg streams | minimp3 `minimp3/adapter.c:426`, stb_vorbis `stb_vorbis/adapter.c:494` | sndfile, pipe | no for mp3/ogg; AAC and Opus UNVERIFIED (no plugin, station list unknown) |
+| asma | .sap (Slight Atari Player) | none (nuade `.sid,.sid1,.sd1` at third_party/nuade/players/sidmon1 area is SidMon 1, not C64 SID, not SAP) | zxtune (formats.py:315 'Slight Atari Player') | yes |
+| asma | .ttt (TIATracker, Atari 2600) | none | tiatracker (backends/__init__.py:31) | yes |
+| sndh | .sndh (Atari ST) | none | sndh (formats.py:300; libs sc68) | yes |
+| zxart | ZX AY/PT3/PT2/STC/ASC/VTX/PSG/SQT/FTC and other Spectrum trackers, SNA snapshots | none | zxtune (backends/__init__.py:25-34) | yes (row I421) |
+| zxart | .ay (AY Emul), .ym | none | gme ('AY Emul', formats.py:13), ym ('YM', formats.py:423) | yes (gme not in I421's zxtune scope; ym is separate) |
+| zxart | beeper tunes (TFM, Furnace, VGM, CHIPNSFX, ArkosTracker, Sam Coupe COP) | none | furnace (TFM, .fur), vgm (.vgm), chipnsfx, aks (ArkosTracker), zxtune (COP) | yes |
+| keygenmusic | XM, MOD, IT, S3M | openmpt `openmpt/adapter.c:347` | openmpt | no |
+| Mod Archive | MOD, XM, S3M, IT, MPTM, 669 etc. | openmpt `openmpt/adapter.c:347` | openmpt | no |
+| Modland (exists) / HVSC (exists) | C64 SID (HVSC) | none | sidplayfp | yes, but outside this plan's source list (HVSC source already exists; owner planned M2b in architecture doc) |
+| Demozoo, Nectarine, SceneSat (I411 candidates) | links to mixed modules, MP3/Ogg radio | openmpt, nuade, minimp3, stb_vorbis | as above | no, formats UNVERIFIED |
+
+### Gaps, one proposed ledger row per missing player
+
+1. ZX Spectrum AY / trackers via ZXTune: already row **I421**. ZXTune also plays .sap (asma) and COP; I421 should list SAP and snapshots in its scope so the asma and zxart sources need no second ZXTune row.
+2. Proposed: "Game Music Emu replayer plugin (`plugins/replayers/gme`): AY Emul .ay for zxart, plus the 14 console formats of the architecture doc; wraps third_party libgme, bbmp backend gme. Test: top-level play of a real .ay fixture from zxart, sentinel = adapter open call."
+3. Proposed: "SNDH replayer plugin (Atari ST, sc68-based, bbmp backend sndh/sc68): for source `sndh` (I414); wrap libsc68, golden WAV from a real SNDH fixture."
+4. Proposed: "YM replayer plugin (.ym, bbmp backend ym, csrc helper): for zxart/Atari YM files."
+5. Proposed: "TIATracker replayer plugin (.ttt, bbmp backend tiatracker): for source `asma` (I413) Atari 2600 songs."
+6. Proposed: "Furnace/TFM replayer plugin (.fur, .tfd/.tfc/.tfe, bbmp backend furnace): for zxart TFM and Furnace tunes."
+7. Proposed: "libvgm replayer plugin (.vgm/.vgz, bbmp backend vgm): for zxart Spectrum VGM."
+8. Proposed: "CHIPNSFX replayer plugin (.chp, bbmp backend chipnsfx): zxart CHIPNSFX songs."
+9. Proposed: "ArkosTracker replayer plugin (.aks, bbmp backend aks): zxart Arkos songs."
+10. Proposed: "sidplayfp replayer plugin (C64 SID): not required by this plan's sources, needed by existing HVSC source; confirm it has its own row."
+11. Proposed (verify first): "Radio stream codec check: station list (I410) decides whether an AAC or Opus decoder plugin is needed; bbmp plays them through sndfile/pipe."
+
+Rows 4-9 are small single-format helpers (bbmp `csrc/` pattern); the architecture doc (line 277) already lists them as M2b/M3c owners, so each proposed row is a pull-forward of an existing planned plugin, and none of the online sources works end to end for its format until its row is done.
+
+
 ## 3. Registry comparison
 
 | Source id | Exists in src/library/sources | Missing |
