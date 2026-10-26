@@ -423,6 +423,10 @@ const char* sel_view_source_label(uint32_t source);
 const char* sel_engine_view_cursor_key(sel_engine* e);
 /* Path of the song on visible view row `row` (index into view.rows) written to out; 0 on a non-song row or a path that does not fit. */
 int sel_engine_view_row_path(sel_engine* e, uint32_t row, char* out, size_t cap);
+/* DUI-P4-18: playlists in the library now (the Clear Library dialog names the count it deletes); 0 without a library. */
+uint32_t sel_engine_library_playlists(sel_engine* e);
+/* DUI-P4-18: the catalogue title of the song at `ref` (path or key) into out; 1 when it has one, else 0 (callers fall back to the file name). */
+int sel_engine_song_title(sel_engine* e, const char* ref, char* out, size_t cap);
 
 /* Fills `frames` stereo frames: the open song's mix while PLAYING, else
  * silence. Counts calls. Never allocates. */

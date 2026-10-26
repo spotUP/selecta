@@ -211,15 +211,37 @@ static int song_remove(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     return sqlite3_exec(db, "COMMIT", NULL, NULL, NULL) == SQLITE_OK ? SQLITE_OK : SQLITE_ERROR;
 }
 
-/* DUI-P4-18: Clear Library. Everything a scan or a sync put in the catalogue goes; folders, playlists and user data stay. */
+/* DUI-P4-18 (Q16): Clear Library. Everything a scan or a sync put in the catalogue goes, and so does everything the user
+ * keyed to those songs or built from them: playlists and their entries, folders, ratings, notes and the other per-song user
+ * data. Settings (meta) stay. One transaction. */
 static int library_clear(sqlite3* db, int64_t* rows) {
     int64_t n = scalar(db, "SELECT COUNT(*) FROM songs", 0, 0);
-    if (sqlite3_exec(db, "BEGIN;DELETE FROM artwork;DELETE FROM albums;DELETE FROM song_composers;DELETE FROM files;DELETE FROM songs;COMMIT;",
+    if (sqlite3_exec(db, "BEGIN;DELETE FROM artwork;DELETE FROM albums;DELETE FROM song_composers;DELETE FROM files;DELETE FROM songs;"
+                     "DELETE FROM playlist_entries;DELETE FROM playlists;DELETE FROM folders;DELETE FROM ratings;DELETE FROM notes;"
+                     "DELETE FROM liked;DELETE FROM kept;DELETE FROM cues;DELETE FROM flags;DELETE FROM stickers;DELETE FROM history;COMMIT;",
                      NULL, NULL, NULL) != SQLITE_OK) {
         sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
         return SQLITE_ERROR;
     }
     *rows = n > 0 ? n : 0;
+    return SQLITE_OK;
+}
+
+/* DUI-P4-18: the catalogue title of one song (value = key or path); out = the title, rows = 1 when it has one. */
+static int song_title(sqlite3* db, const sel_user_op* op, int64_t* rows) {
+    char key[SEL_SONG_KEY_MAX];
+    sqlite3_stmt* st;
+    *rows = 0;
+    if (op->value == NULL || op->out == NULL || op->out_cap < 2u || !sel_song_key_of(op->value, key, sizeof key)) return SQLITE_MISUSE;
+    op->out[0] = '\0';
+    st = prep(db, "SELECT name FROM songs WHERE key = ?1 AND name IS NOT NULL AND name <> ''");
+    if (st == NULL) return SQLITE_ERROR;
+    sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        snprintf(op->out, op->out_cap, "%s", (const char*)sqlite3_column_text(st, 0));
+        *rows = 1;
+    }
+    sqlite3_finalize(st);
     return SQLITE_OK;
 }
 
@@ -329,6 +351,7 @@ int sel_folder_exec(sqlite3* db, const sel_user_op* op, int64_t* rows, int32_t c
         *rows = scalar(db, "SELECT COUNT(*) FROM songs", 0, 0);
         return *rows >= 0 ? SQLITE_OK : SQLITE_ERROR;
     case SEL_USER_LIBRARY_CLEAR: return library_clear(db, rows);
+    case SEL_USER_SONG_TITLE: return song_title(db, op, rows);
     case SEL_USER_FOLDER_PLAYLISTS: return folder_playlists(db, op, rows);
     case SEL_USER_PLAYLIST_KEYS: return playlist_keys(db, op, rows);
     case SEL_USER_FOLDER_TREE: return folder_tree(db, op, rows);

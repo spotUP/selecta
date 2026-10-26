@@ -212,6 +212,7 @@ typedef struct desk {
     int dlg_open;            /* DUI-P4-18: the confirm dialog is up: 1 = Remove from Library, 2 = Clear Library */
     char dlg_path[512];      /* the song a Remove from Library dialog names */
     char dlg_text[640];      /* the question the dialog shows */
+    uint32_t dlg_playlists;  /* playlists the Clear Library dialog names */
     uint32_t dlg_opens, dlg_confirms, dlg_cancels; /* sentinels: dialogs opened / confirmed / cancelled */
     int sm_step;             /* 0 the items, 1 the playlist chooser */
     song_ref sm_ref;         /* the song it was opened on */
@@ -1629,15 +1630,22 @@ static sel_gui_rect dlg_button_rect(const desk* d, uint32_t i) {
 
 static void dlg_open_remove(desk* d, const char* path) {
     snprintf(d->dlg_path, sizeof d->dlg_path, "%s", path);
-    snprintf(d->dlg_text, sizeof d->dlg_text, "Remove \"%s\" from the library? The audio file on disk is not touched.", path_base(path));
+    char title[256];
+    if (!sel_engine_song_title(d->engine, path, title, sizeof title)) {
+        snprintf(title, sizeof title, "%s", path_base(path));
+    }
+    snprintf(d->dlg_text, sizeof d->dlg_text, "Remove \"%s\" from the library? The audio file on disk is not touched.", title);
     d->dlg_open = DLG_REMOVE;
     d->dlg_opens++;
 }
 
 static void dlg_open_clear(desk* d) {
     uint32_t n = sel_engine_state(d->engine)->library_songs;
+    uint32_t pl = sel_engine_library_playlists(d->engine);
+    d->dlg_playlists = pl;
     snprintf(d->dlg_text, sizeof d->dlg_text,
-             "Remove all %u songs from the library? Playlists stay. Audio files on disk are not touched.", (unsigned)n);
+             "Remove %u songs and %u playlists, with all ratings and notes? This cannot be undone. Files on disk are not touched.",
+             (unsigned)n, (unsigned)pl);
     d->dlg_open = DLG_CLEAR;
     d->dlg_opens++;
 }
@@ -3398,7 +3406,7 @@ static const char* library_dump_build(desk* d) {
                               "overlay kind=%d palette_opens=%u palette_runs=%u help_opens=%u cmdline_opens=%u cmdline_runs=%u sends_ok=%u "
                               "toasts=%u toast_on=%d menu_picks=%u,%u,%u,%u last_verb=%s pal_count=%u queue=%u status=%s\n"
                               "song_menu open=%d items=%d opens=%u picks=%u playlist_adds=%u rows=%u accent=%06x raised=%06x\n"
-                              "dialog open=%d opens=%u confirms=%u cancels=%u songs=%u cancel=%d,%d,%d,%d confirm=%d,%d,%d,%d clear=%d,%d,%d,%d\n",
+                              "dialog open=%d opens=%u confirms=%u cancels=%u songs=%u playlists=%u cancel=%d,%d,%d,%d confirm=%d,%d,%d,%d clear=%d,%d,%d,%d\n",
                               d->overlay, (unsigned)d->palette_opens, (unsigned)d->palette_runs, (unsigned)d->help_opens,
                               (unsigned)d->cmdline_opens, (unsigned)d->cmdline_runs, (unsigned)d->overlay_sends_ok, (unsigned)d->toasts,
                               d->toast_on, (unsigned)d->menu_picks[0], (unsigned)d->menu_picks[1], (unsigned)d->menu_picks[2],
@@ -3408,7 +3416,7 @@ static const char* library_dump_build(desk* d) {
                               (unsigned)(ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) & 0xFFFFFFu),
                               (unsigned)(ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]) & 0xFFFFFFu),
                               d->dlg_open, (unsigned)d->dlg_opens, (unsigned)d->dlg_confirms, (unsigned)d->dlg_cancels,
-                              (unsigned)st->library_songs, dlg_button_rect(d, 0u).x, dlg_button_rect(d, 0u).y,
+                              (unsigned)st->library_songs, (unsigned)d->dlg_playlists, dlg_button_rect(d, 0u).x, dlg_button_rect(d, 0u).y,
                               dlg_button_rect(d, 0u).w, dlg_button_rect(d, 0u).h, dlg_button_rect(d, 1u).x,
                               dlg_button_rect(d, 1u).y, dlg_button_rect(d, 1u).w, dlg_button_rect(d, 1u).h,
                               lib_clear_rect(d, region_rect(d, "main")).x, lib_clear_rect(d, region_rect(d, "main")).y,

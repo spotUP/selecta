@@ -4452,8 +4452,8 @@ static void cmd_LIBRARY_REMOVE(sel_engine* e, const sel_message* m) {
     else library_catalogue_changed(e);
 }
 
-/* DUI-P4-18: Clear Library. Playback stops and the queue empties (its entries point into the catalogue being
- * dropped); playlists and the user data stay. */
+/* DUI-P4-18 (Q16): Clear Library. Playback stops and the queue empties (its entries point into the catalogue being
+ * dropped); playlists, ratings and notes go with the songs, settings stay. */
 static void cmd_LIBRARY_CLEAR(sel_engine* e, const sel_message* m) {
     uint32_t removed = 0;
     int rc;
@@ -4777,6 +4777,16 @@ const char* sel_engine_view_cursor_key(sel_engine* e) {
  * is looked up by its entry id in the list the view shows, a browse file row is joined by sel_browse_join (the one place
  * the platform's path rules live). 0 for a directory, node, heading or home row, or when the path does not fit. A UI that
  * paints song rows (the desktop song menu, I371) asks for each row it registers. */
+uint32_t sel_engine_library_playlists(sel_engine* e) {
+    uint32_t playlists = 0;
+    if (e->lib == NULL || sel_library_folder_counts(e->lib, NULL, NULL, &playlists, NULL) != SEL_FOLDER_OK) return 0u;
+    return playlists;
+}
+
+int sel_engine_song_title(sel_engine* e, const char* ref, char* out, size_t cap) {
+    return e->lib != NULL && sel_library_song_title(e->lib, ref, out, cap);
+}
+
 int sel_engine_view_row_path(sel_engine* e, uint32_t row, char* out, size_t cap) {
     const sel_view_state* v = &e->view.pub;
     const sel_queue* q = v->source == SEL_VIEW_QUERY ? &e->qview : &e->queue;

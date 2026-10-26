@@ -559,6 +559,19 @@ int sel_library_song_total(sel_library* lib, uint32_t* total) {
     return folder_call(lib, &op, total);
 }
 
+int sel_library_song_title(sel_library* lib, const char* ref, char* out, size_t cap) {
+    sel_user_op op;
+    uint32_t found = 0;
+    if (out == NULL || cap < 2u) return 0;
+    out[0] = '\0';
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_SONG_TITLE;
+    op.value = ref;
+    op.out = out;
+    op.out_cap = (uint32_t)cap;
+    return folder_call(lib, &op, &found) == SEL_FOLDER_OK && found == 1u;
+}
+
 int sel_library_clear(sel_library* lib, uint32_t* removed) {
     sel_user_op op;
     memset(&op, 0, sizeof op);
