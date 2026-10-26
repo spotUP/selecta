@@ -169,3 +169,15 @@ dui_stat(msg_missing "${om}" desktop missing_glyphs)
 if(NOT msg_missing EQUAL 0)
   message(FATAL_ERROR "the song message painted ${msg_missing} missing-glyph boxes (a control character reached a glyph)")
 endif()
+
+# 5. (I361) The Now Playing page draws the open song's title line, and no text draw asks for a size outside the type scale:
+#    a draw with an unknown size gets no atlas and paints nothing (the 28 px headings and title were invisible on every
+#    backend). `font_misses` counts those draws; it must be 0.
+dui_run(op --db "${WORK}/page.db" --ui desktop --backend mem --view nowplaying --canvas 1280x800 --clock fixed --stats
+  --exec "OPEN ${fx}/ambient.mod")
+if(NOT "${op}" MATCHES "np_page_text title=\\[([^]]+)\\] artist=\\[[^]]*\\] font_misses=([0-9]+)")
+  message(FATAL_ERROR "the Now Playing page drew no title for the open song in:\n${op}")
+endif()
+if(NOT CMAKE_MATCH_2 EQUAL 0)
+  message(FATAL_ERROR "${CMAKE_MATCH_2} text draws used a size outside the type scale and painted nothing")
+endif()

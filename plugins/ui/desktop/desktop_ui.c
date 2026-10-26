@@ -182,6 +182,9 @@ typedef struct desk {
     int drop_playing;        /* 1 after a dropped file was sent as OPEN: an open_failed error then toasts */
     uint32_t np_rows;        /* metadata pairs the Now Playing panel drew: STAT_META_PANEL_ROWS (DUI-P4-7) */
     uint32_t np_page_draws;  /* Now Playing page draws (sentinel) */
+    uint32_t font_misses;    /* text draws whose size is not in g_sizes, so nothing was drawn (I361) */
+    char np_title[96];       /* the title line the Now Playing page last drew (I361) */
+    char np_artist[96];
     uint32_t lib_off_page;   /* Library page draws while another page is current (sentinel, must stay 0: I274) */
     uint32_t np_draws;       /* Now Playing panel draws (sentinel) */
     sel_gui_rect np_title;      /* the Now Playing title and artist lines, w 0 = not drawn: a song row of the song menu (I372) */
@@ -390,6 +393,7 @@ static const sel_gui_atlas* desk_font(desk* d, int semibold, int size) {
             return d->atlas[semibold][i];
         }
     }
+    d->font_misses++;
     return NULL;
 }
 
@@ -1986,7 +1990,7 @@ static void draw_queue(desk* d) {
     char buf[300];
     sel_engine_stats_get(d->engine, &es);
     sel_gui_clip_push(d->canvas, mn);
-    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Queue", 1, 28, text);
+    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Queue", 1, 32, text);
     for (i = 0; i < QUEUE_BUTTONS; i++) {
         sel_gui_rect b = queue_btn_rect(d, mn, i);
         const char* label = i == 0u ? "Undo" : i == 1u ? "Redo" : i == 2u ? "Reshuffle" : queue_scope_label[queue_scope_index(st)];
@@ -2167,7 +2171,7 @@ static void draw_playlists(desk* d) {
     int32_t sel = pl_sel_row(d, v);
     uint32_t i, shown = 0;
     sel_gui_clip_push(d->canvas, mn);
-    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Playlists", 1, 28, text);
+    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Playlists", 1, 32, text);
     for (i = 0; i < PL_BUTTONS; i++) {
         sel_gui_rect b = queue_btn_rect(d, mn, i);
         int live = i < 2u || i == 4u ? 1 : sel >= 0 && (i == 3u || v->rows[sel].kind == (uint32_t)SEL_ROW_PLAYLIST);
@@ -2649,7 +2653,7 @@ static void draw_vizpage(desk* d) {
     int32_t ph = (mn.h - lpx(d, 64) - lpx(d, 40) - 3 * gap) / 3;
     uint32_t k;
     sel_gui_clip_push(d->canvas, mn);
-    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Visualizer", 1, 28,
+    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Visualizer", 1, 32,
               ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
     viz_switch_draw(d, 1u, rect_of(mn.x + mn.w - mg - lpx(d, 360), mn.y + lpx(d, 22), lpx(d, 360), lpx(d, 28)));
     for (k = 0; k < VIZ_MAX; k++) {
@@ -2740,7 +2744,7 @@ static void draw_trackerpage(desk* d) {
     char buf[160];
     uint32_t k, r, c, fit = tr_rows_fit(d, mn);
     sel_gui_clip_push(d->canvas, mn);
-    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Tracker", 1, 28, text);
+    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Tracker", 1, 32, text);
     for (k = 0; k < TR_TABS; k++) {
         sel_gui_rect b = tr_tab_rect(d, mn, k);
         draw_button(d, b, k == d->tr_tab ? acc : surf, tab_name[k], 13, k == d->tr_tab ? acct : text);
@@ -2900,7 +2904,7 @@ static void draw_songinfo(desk* d) {
     uint32_t surf = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]);
     uint32_t i;
     sel_gui_clip_push(d->canvas, mn);
-    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Song Information", 1, 28, text);
+    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Song Information", 1, 32, text);
     song_row_reg(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), st->song.path, 0, 0, 0); /* the open song (I372) */
     for (i = 0; i < SI_BUTTONS; i++) {
         sel_gui_rect b = queue_btn_rect(d, mn, i);
@@ -3200,6 +3204,9 @@ static const char* library_dump_build(desk* d) {
                               (unsigned)d->pg_n, (unsigned)d->pg_pos, (unsigned)d->np_page_draws, (unsigned)d->nav_arrow_clicks, (unsigned)d->lit_doors, (unsigned)d->lib_off_page, (int)d->ring.x, (int)d->ring.y, (int)d->ring.w, (int)d->ring.h,
                               (int)d->field.x, (int)d->field.y, (int)d->field.w, (int)d->field.h, (unsigned)d->caret_draws, (int)d->caret.x, (int)d->caret.y, (int)d->caret.w, (int)d->caret.h, (int)d->nav_back.x, (int)d->nav_back.y, (int)d->nav_back.w,
                               (int)d->nav_back.h, (int)d->nav_fwd.x, (int)d->nav_fwd.y, (int)d->nav_fwd.w, (int)d->nav_fwd.h);
+    }
+    if (o + 300u < sizeof d->library_dump) { /* the Now Playing page text (I361) */
+        o = dump_put(d, o, "np_page_text title=[%s] artist=[%s] font_misses=%u\n", d->np_title, d->np_artist, (unsigned)d->font_misses);
     }
     if (o + 200u < sizeof d->library_dump) { /* the footer bars (I312) */
         sel_gui_rect vb = vol_bar_rect(d), skb = seek_bar_rect(d);
@@ -4584,17 +4591,19 @@ static void draw_nowplaypage(desk* d) {
         side = lpx(d, 80);
     }
     sel_gui_clip_push(d->canvas, mn);
-    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 12), mn.w - 2 * mg - lpx(d, 80), lpx(d, 36)), "Now Playing", 1, 28, text);
+    draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 12), mn.w - 2 * mg - lpx(d, 80), lpx(d, 40)), "Now Playing", 1, 32, text);
     ar = rect_of(mn.x + mg, mn.y + lpx(d, 64), side, side);
     sel_gui_genart_draw(d->canvas, ar, f->format, sel_gui_str_hash(f->title));
     x = ar.x + ar.w + mg;
     y = ar.y;
+    snprintf(d->np_title, sizeof d->np_title, "%s", st->song.path != NULL ? f->title : "");
+    snprintf(d->np_artist, sizeof d->np_artist, "%s", st->song.path != NULL ? f->artist : "");
     if (st->song.path != NULL) {
-        draw_text(d, rect_of(x, y, mn.x + mn.w - x - mg, lpx(d, 36)), f->title, 1, 28, text);
-        draw_text(d, rect_of(x, y + lpx(d, 38), mn.x + mn.w - x - mg, lpx(d, 22)), f->artist, 0, 16, muted);
-        draw_text(d, rect_of(x, y + lpx(d, 64), mn.x + mn.w - x - mg, lpx(d, 20)), f->format, 0, 13, muted);
+        draw_text(d, rect_of(x, y, mn.x + mn.w - x - mg, lpx(d, 40)), f->title, 1, 32, text);
+        draw_text(d, rect_of(x, y + lpx(d, 42), mn.x + mn.w - x - mg, lpx(d, 22)), f->artist, 0, 16, muted);
+        draw_text(d, rect_of(x, y + lpx(d, 66), mn.x + mn.w - x - mg, lpx(d, 20)), f->format, 0, 13, muted);
     } else {
-        draw_text(d, rect_of(x, y, mn.x + mn.w - x - mg, lpx(d, 36)), "Nothing is playing", 1, 20, muted);
+        draw_text(d, rect_of(x, y, mn.x + mn.w - x - mg, lpx(d, 36)), "Nothing is playing", 1, 22, muted);
     }
     y += lpx(d, 104);
     draw_text(d, rect_of(x, y, mn.x + mn.w - x - mg, lpx(d, 20)), "Next in Queue", 1, 13, muted);
