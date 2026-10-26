@@ -285,7 +285,8 @@ static void home_put(const sel_user_op* op, uint32_t* used, int64_t* rows, const
 }
 
 /* Runs `sql` (display name, artist, key, is-album) and puts every row as an `S <key>\t<entry>` line; a row whose fourth
- * column is non-zero carries an album name as its key, marked with a leading @ (I191a, I311). */
+ * column is non-zero carries an album name as its key, marked with a leading @ (I191a, I311), followed by 0x1f and the
+ * artist when there is one (I471). */
 static int home_list(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t* rows, const char* sql) {
     sqlite3_stmt* st = NULL;
     int rc = sqlite3_prepare_v2(db, sql, -1, &st, NULL);
@@ -297,7 +298,9 @@ static int home_list(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t
         const char* key = (const char*)sqlite3_column_text(st, 2);
         int album = sqlite3_column_int(st, 3) != 0;
         char line[SEL_SONG_KEY_MAX + 2 + 256]; /* "@" + key + tab + "name - artist" */
-        size_t at = (size_t)snprintf(line, sizeof line, "%s%s\t", album ? "@" : "", key != NULL ? key : "");
+        int with_artist = album && artist != NULL && artist[0] != '\0'; /* I471: an album key carries its artist after 0x1f */
+        size_t at = (size_t)snprintf(line, sizeof line, "%s%s%s%s\t", album ? "@" : "", key != NULL ? key : "", with_artist ? "\x1f" : "",
+                                     with_artist ? artist : "");
         if (at >= sizeof line) at = sizeof line - 1u;
         if (artist != NULL && artist[0] != '\0') {
             snprintf(line + at, sizeof line - at, "%s - %s", name, artist);
@@ -339,7 +342,7 @@ static int home_text(sqlite3* db, const sel_user_op* op, int64_t* rows) {
                    " (s.album IS NOT NULL AND s.album <> '') AS a, MAX(h.played_at) AS last"
                    " FROM history h LEFT JOIN songs s ON s.key = h.key WHERE h.skipped = 1"
                    " AND NOT EXISTS (SELECT 1 FROM history f WHERE f.key = h.key AND f.skipped = 0) GROUP BY h.key)"
-                   " GROUP BY CASE WHEN a THEN album ELSE key END ORDER BY recent DESC, 3 LIMIT ?1");
+                   " GROUP BY CASE WHEN a THEN album || char(31) || COALESCE(artist, '') ELSE key END ORDER BY recent DESC, 3, 2 LIMIT ?1");
     if (rc != SQLITE_OK) return rc;
     /* I311: New this week lists the songs added to the library in the last 7 days, newest first, then the Modland
      * count line when one is stored. */

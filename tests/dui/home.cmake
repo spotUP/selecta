@@ -257,6 +257,31 @@ home2_run(card_max "move 400 300\nwheel 0 -200\n")
 home_stat(ycard "${card_max}" scroll_y)
 expect_eq("wheel over cards reaches the last shelf" "${ycard}" "${ymax}")
 
+# 10. I471: two albums with the same name by different artists keep their own covers on the Jump back in shelf. Song 9 is a
+# skipped play on a second "Lotus Turbo Challenge" (album 5, artist Other Artist, a copy of album 3's cover); fixture album 1
+# carries the same name by Chris Huelsbeck. Before the fix the shelf grouped by album name alone (one Lotus tile, so album 5
+# never loaded: shelf_album_art_draws 3, no thumb144 row for album 5) and art_find matched the name only (lowest id wins).
+set(db3 "${WORK}/library3.db")
+file(COPY_FILE "${db}" "${db3}")
+string(CONCAT seed3
+  "INSERT INTO songs(id, key, source, path, name, artist, album, format, added) VALUES(9, 'fixture:9', 'local', 'fixture/9.mod', 'Lotus Again', 'Other Artist', 'Lotus Turbo Challenge', 'mod', 1700000009); "
+  "INSERT INTO albums(id, name, artist, year, source) VALUES(5, 'Lotus Turbo Challenge', 'Other Artist', 1993, 'local'); "
+  "INSERT INTO artwork(album_id, kind, data) SELECT 5, 'cover', data FROM artwork WHERE album_id = 3 AND kind = 'cover'; "
+  "INSERT INTO history(key, played_at, skipped) VALUES('fixture:9', 7500, 1)")
+execute_process(COMMAND "${SQLITE3}" "${db3}" "PRAGMA trusted_schema = 1; ${seed3}" RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "seeding the third library failed: ${err}")
+endif()
+file(REMOVE_RECURSE "${WORK}/cfg")
+file(WRITE "${WORK}/in.txt" "wait 1\n")
+dui_run(same --db "${db3}" --ui desktop --backend mem --view home --canvas 1000x600 --clock fixed --stats --input "${WORK}/in.txt")
+dui_stat(same_draws "${same}" desktop shelf_album_art_draws)
+expect_eq("same-named albums each draw a cover (Lotus x2, Monkey Island, Strange Sounds)" "${same_draws}" 4)
+execute_process(COMMAND "${SQLITE3}" "${db3}" "SELECT count(*) FROM artwork WHERE album_id = 5 AND kind = 'thumb144'"
+  OUTPUT_VARIABLE own_thumb RESULT_VARIABLE rc)
+string(STRIP "${own_thumb}" own_thumb)
+expect_eq("the second Lotus album loaded its own cover" "${own_thumb}" 1)
+
 # ---- I314: a wheel notch on Home redraws the main area only, like Songs and Library (I310) ----
 # The same input with and without one vertical notch must differ by less than the 700x600 canvas and draw no extra
 # widgets: a full canvas clear plus every widget per notch is what made the scroll lag.

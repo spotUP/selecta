@@ -5036,7 +5036,7 @@ static void cmd_VIEW_ACTIVATE(sel_engine* e, const sel_message* m) {
             const char* k;
             /* The query grammar escapes a quote or backslash inside quotes with a backslash. */
             o += (size_t)snprintf(text, sizeof text, "album:\"");
-            for (k = r->key; *k != '\0'; k++) {
+            for (k = r->key; *k != '\0'; k++) { /* r->key is the album name alone (the artist lives in art_ref, I471) */
                 if (o + 4 > sizeof text) { /* an album name over SEL_QUERY_TEXT_MAX; never truncate */
                     sel_engine_report_error(e, "too_complex", "VIEW_ACTIVATE");
                     return;

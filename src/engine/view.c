@@ -891,6 +891,7 @@ uint32_t sel_view_set_folders(sel_view* v, const char* tree) {
             v->frows[n].expanded = kind == 'F';
             v->frows[n].key = NULL;
             v->frows[n].album = 0;
+            v->frows[n].art_ref = NULL;
             n++;
         }
         while (*p != '\0' && *p != '\n') {
@@ -918,6 +919,7 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
         char* key = v->fkey + pool;
         size_t len = 0, klen = 0;
         uint32_t count = 1, album = 0;
+        char* art = NULL;
         key[0] = '\0';
         if ((kind == 'H' || kind == 'S' || kind == 'C') && p[1] == ' ') {
             p += 2;
@@ -935,16 +937,36 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
                     tab++;
                 }
                 if (*tab == '\t') { /* "<key>\t<entry>"; a leading @ marks an album */
+                    size_t raw, name;
+                    const char* us;
                     if (*p == '@') {
                         album = 1;
                         p++;
                     }
-                    /* A key is never cut: one that does not fit the pool or the key limit leaves the row without a key. */
-                    if ((size_t)(tab - p) + 1u <= SEL_VIEW_KEY_MAX && pool + (size_t)(tab - p) + 2u <= SEL_VIEW_HOME_TEXT_MAX) {
-                        while (p < tab) {
-                            key[klen++] = *p++;
+                    /* A key is never cut: one that does not fit the pool or the key limit leaves the row without a key.
+                     * I471: an album key may carry its artist after a 0x1f byte ("<album>\x1f<artist>"); the row key is the album
+                     * name alone and art_ref the whole string, so the artwork provider can tell same-named albums apart. */
+                    raw = name = (size_t)(tab - p);
+                    us = p;
+                    while (us < tab && *us != '\x1f') {
+                        us++;
+                    }
+                    if (album && us < tab) {
+                        name = (size_t)(us - p);
+                    }
+                    if (raw + 1u <= SEL_VIEW_KEY_MAX && pool + name + raw + 3u <= SEL_VIEW_HOME_TEXT_MAX) {
+                        size_t i;
+                        for (i = 0; i < name; i++) {
+                            key[klen++] = p[i];
                         }
                         key[klen] = '\0';
+                        art = key;
+                        if (name != raw) {
+                            art = key + klen + 1u;
+                            memcpy(art, p, raw);
+                            art[raw] = '\0';
+                            pool += raw + 1u;
+                        }
                         pool += klen + 1u;
                     }
                     p = tab + 1;
@@ -956,6 +978,7 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
             t[len] = '\0';
             v->frows[n].key = key[0] != '\0' ? key : NULL;
             v->frows[n].album = album;
+            v->frows[n].art_ref = key[0] != '\0' ? art : NULL;
             v->frows[n].kind = kind == 'H' ? SEL_ROW_HEADING : SEL_ROW_HOME;
             v->frows[n].id = n;
             v->frows[n].depth = kind == 'H' ? 0u : 1u;

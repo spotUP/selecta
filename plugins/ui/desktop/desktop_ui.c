@@ -1535,7 +1535,7 @@ static uint32_t art_keys(const sel_state* st, const char** out, uint32_t cap) {
         uint32_t s, k, ns = home_shelves(st, sh);
         for (s = 0; s < ns; s++) {
             for (k = 0; k < sh[s].tiles && n < cap; k++) {
-                const char* key = st->view->rows[shelf_tile_row(st, &sh[s], k)].key;
+                const char* key = st->view->rows[shelf_tile_row(st, &sh[s], k)].art_ref;
                 if (key != NULL) {
                     out[n++] = key;
                 }
@@ -2116,7 +2116,7 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
             if (d->shadow_ready) {
                 sel_gui_shadow_draw(d->canvas, &d->shadow, ar);
             }
-            art = r->key != NULL ? art_tile(d->art, r->key) : NULL;
+            art = r->art_ref != NULL ? art_tile(d->art, r->art_ref) : NULL;
             if (art != NULL) { /* the library cover; generated art only when the song or album has none (design 2.7) */
                 d->shelf_album_art_draws += r->album ? 1u : 0u;
                 sel_gui_set_region(d->canvas, SEL_GUI_RGN_TILE);

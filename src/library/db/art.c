@@ -12,17 +12,21 @@
 
 /* The album of a song: queue ref -> canonical key -> (source, path) or the stored songs.key -> songs row -> albums row with the song's album
  * name and artist (source matched when the albums row sets one). The basename of a file is never an album name. */
-/* I469: a Home shelf album tile names its album by name only (sel_view_row.key with album set), so a ref that names no song
- * resolves to the albums row of that name; the one holding a cover wins, then the lowest id. */
-static int art_find_album(sqlite3* db, const char* name) {
+/* I469, I471: a Home shelf album tile names its album as "<album>" or, when the shelf row knows the artist, "<album>\x1f<artist>"
+ * (sel_view_row.art_ref). A ref that names no song resolves to the albums row of that name and artist; a bare name matches any
+ * artist. The row holding a cover wins, then the lowest id. */
+static int art_find_album(sqlite3* db, const char* ref) {
     sqlite3_stmt* st = NULL;
+    const char* us = strchr(ref, '\x1f');
     int id = 0;
 
     if (sqlite3_prepare_v2(db,
-                           "SELECT a.id FROM albums a WHERE a.name = ?1"
+                           "SELECT a.id FROM albums a WHERE a.name = ?1 AND (?2 IS NULL OR a.artist IS ?2)"
                            " ORDER BY EXISTS(SELECT 1 FROM artwork w WHERE w.album_id = a.id AND w.kind = 'cover') DESC, a.id LIMIT 1",
                            -1, &st, NULL) != SQLITE_OK) return 0;
-    sqlite3_bind_text(st, 1, name, -1, SQLITE_STATIC);
+    sqlite3_bind_text(st, 1, ref, us != NULL ? (int)(us - ref) : -1, SQLITE_STATIC);
+    if (us != NULL) sqlite3_bind_text(st, 2, us + 1, -1, SQLITE_STATIC);
+    else sqlite3_bind_null(st, 2);
     if (sqlite3_step(st) == SQLITE_ROW) id = sqlite3_column_int(st, 0);
     sqlite3_finalize(st);
     return id;
