@@ -1,7 +1,9 @@
-/* I413: the asma list reader, the artist rule, the source URL round trip and parse (src/library/sources/asma*.c).
+/* I413: the asma list reader, the artist rule, the source URL round trip and parse (plugins/sources/asma).
  * The list is the recorded excerpt tests/net/fixtures/asma.atari.org/asmadb/asmadb.js (SEL_ASMA_FIXTURE). */
-#include "sources/asma_sync.h"
-#include "source.h"
+#include "asma_sync.h"
+
+#include <selecta/plugin.h>
+#include <selecta/source.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -80,8 +82,13 @@ int main(void) {
     artist("", "- unknown");
     artist("<?>", "- unknown");
 
-    sel_source_register_builtin();
-    src = sel_source_find("asma");
+    {
+        const sel_tag* desc = sel_plugin_entry(1);
+        const sel_tag* hooks = (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0);
+
+        CHECK(sel_tag_find(desc, SEL_PLUGIN_KIND, 0) == SEL_PLUGIN_KIND_SOURCE);
+        src = (const sel_source*)sel_tag_find(hooks, SEL_SRC_DESCRIPTOR, 0);
+    }
     CHECK(src != NULL);
     if (src != NULL) {
         CHECK(src->url("Composers/Aki/Atari_Style.sap", buf, sizeof buf));

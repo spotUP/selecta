@@ -28,7 +28,6 @@ const sel_source* sel_source_local(void);
 const sel_source* sel_source_modland(void);
 const sel_source* sel_source_hippo(void);   /* sources/hippo.c, hippoplayer.se playlists */
 const sel_source* sel_source_hvsc(void); /* sources/hvsc.c, hosted by Modland */
-const sel_source* sel_source_asma(void); /* sources/asma.c, the Atari SAP Music Archive */
 const sel_source* sel_source_keygenmusic(void); /* sources/keygenmusic.c, keygen and crack music from keygenmusic.tk */
 
 /* Song key <source id>:<path>. 0 when it does not fit. */

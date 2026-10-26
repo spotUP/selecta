@@ -1733,10 +1733,13 @@ if(NOT SEL_AMIGA)
   add_test(NAME devilbox-default-https COMMAND devilbox_base_test)
   # I413: the asma list reader, artist rule and source descriptor, on the recorded asmadb.js excerpt.
   add_executable(asma_unit_test asma_unit_test.c)
-  target_include_directories(asma_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_sources(asma_unit_test PRIVATE
+    ${PROJECT_SOURCE_DIR}/plugins/sources/asma/asma.c ${PROJECT_SOURCE_DIR}/plugins/sources/asma/asma_sync.c
+    ${PROJECT_SOURCE_DIR}/plugins/sources/asma/asma_net.c)
+  target_include_directories(asma_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/sources/asma)
   target_compile_definitions(asma_unit_test PRIVATE
     SEL_ASMA_FIXTURE="${PROJECT_SOURCE_DIR}/tests/net/fixtures/asma.atari.org/asmadb/asmadb.js")
-  target_link_libraries(asma_unit_test PRIVATE selecta_library selecta_core)
+  target_link_libraries(asma_unit_test PRIVATE selecta_shared_source selecta_core)
   add_test(NAME asma-unit COMMAND asma_unit_test)
   set_tests_properties(asma-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "asma_unit_ok")
 

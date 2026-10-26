@@ -4,10 +4,10 @@
  * streams that file (2.2 MB on the real site) without holding it in memory and writes one catalogue row per song
  * through the same SCAN_BATCH request as the other sources. Format names follow bbmp: "Slight Atari Player" for
  * .sap, "TIATracker" for .ttt. A path is relative to the /asma/ root, the song key is `asma:<path>`. */
-#ifndef SELECTA_LIBRARY_SOURCES_ASMA_SYNC_H
-#define SELECTA_LIBRARY_SOURCES_ASMA_SYNC_H
+#ifndef SELECTA_PLUGINS_SOURCES_ASMA_SYNC_H
+#define SELECTA_PLUGINS_SOURCES_ASMA_SYNC_H
 
-#include "local_source.h"
+#include <selecta/host.h>
 
 #include <stdio.h>
 
@@ -29,7 +29,7 @@ typedef struct sel_asma_sync_stats {
     uint32_t entries;      /* fileInfos objects read from the list */
     uint32_t listing_rows; /* rows written to the catalogue */
     uint32_t skipped_rows; /* entries with an unsafe or missing path */
-    uint32_t batches;      /* SEL_LIB_REQ_SCAN_BATCH requests sent */
+    uint32_t batches;      /* unused; kept at 0 (the engine batches the catalogue rows) */
 } sel_asma_sync_stats;
 
 /* Calls `fn` once per object of the "fileInfos" array of `f`; `fn` returns 0 to stop. Long strings are cut to the
@@ -42,6 +42,6 @@ int sel_asma_artist(const char* author, char* out, size_t n);
 
 /* Reads <dir>/asmadb.js into the catalogue. Returns 0 when the file cannot be read or has no "fileInfos", memory
  * runs out or the DB rejects a batch. */
-int sel_asma_sync(const sel_local_scan_config* cfg, const char* dir, sel_asma_sync_stats* stats);
+int sel_asma_sync(const sel_host* host, const char* dir, sel_asma_sync_stats* stats);
 
 #endif

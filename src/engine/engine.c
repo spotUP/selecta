@@ -52,8 +52,6 @@
 #include "sources/local_source.h"
 #include "sources/hippo_publish.h"
 #include "sources/hippo_sync.h"
-#include "sources/asma_net.h"
-#include "sources/asma_sync.h"
 #include "sources/hvsc_net.h"
 #include "sources/keygenmusic_net.h"
 #include "sources/keygenmusic_sync.h"
