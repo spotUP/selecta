@@ -4368,13 +4368,24 @@ static int lib_set_mode(desk* d, uint32_t mode) {
     return 1;
 }
 
-/* I390: a click on a chooser segment. Grid and Cover Flow draw the Composers list, so they enter that mode as its tab does
- * (the queue source); List returns to the regular rows. The same VIEW_STYLE command the --exec and --input paths send. */
+/* I453: Grid and Cover Flow show the library's songs, the query source Tree and Columns list (LIBRARY_SEARCH "" then
+ * VIEW_SOURCE query), never the play queue or the browse folder. The style click and the Library page entry both end here. */
+static void lib_grid_source(desk* d) {
+    char line[64];
+    desk_send(d, "LIBRARY_SEARCH \"\"");
+    desk_send(d, "VIEW_SOURCE query");
+    snprintf(line, sizeof line, "VIEW_WINDOW %u", (unsigned)LIB_WINDOW_ROWS);
+    desk_send(d, line);
+}
+
+/* I390: a click on a chooser segment. Grid and Cover Flow draw the Composers list, so they enter that mode as its tab does,
+ * over the library's songs (I453); List returns to the regular rows. The same VIEW_STYLE command the --exec and --input
+ * paths send. */
 static int lib_style_click(desk* d, uint32_t i) {
-    if (i != 2u && d->lib_mode != 0u) {
+    if (i != 2u) {
         d->lib_mode = 0u;
         d->lib_q16 = 0;
-        desk_send(d, "VIEW_SOURCE queue");
+        lib_grid_source(d);
     }
     desk_send(d, lib_style_cmd[i]);
     return 1;
@@ -4949,6 +4960,10 @@ static void desk_page_load(desk* d, desk_page pg) {
             desk_send(d, line);
         } else {
             desk_send(d, "COMPOSERS_SHOW");
+        }
+        if (st->view != NULL && (st->view->style == (uint32_t)SEL_VIEW_STYLE_GRID || st->view->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW)) {
+            /* VIEW_SHOW browse took the source: a kept Grid or Cover Flow lists the library again */
+            lib_grid_source(d);
         }
         desk_send(d, "STATS_SHOW");
     } else if (pg == PG_PLAYLISTS || pg == PG_SONGS) { /* the folders source holds the saved playlists */

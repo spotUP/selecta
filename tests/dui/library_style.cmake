@@ -139,3 +139,17 @@ click_run(c "m${cx0},${cy0}@400 d1,${cx0},${cy0}@500 u1,${cx0},${cy0}@550 m${cx2
 if(NOT c MATCHES "style_chooser 2 List [-0-9]+ [-0-9]+ [-0-9]+ [-0-9]+ selected=1")
   message(FATAL_ERROR "run C: the List segment is not selected after the click:\n${c}")
 endif()
+
+# Run D (I453): a library with songs and an empty queue. A click on Grid lists the library's songs, one tile per song,
+# through the query source; it read the play queue (and the browse folder on page entry), so the grid stayed empty.
+execute_process(COMMAND "${SQLITE3}" "${db}" "SELECT count(*) FROM songs" OUTPUT_VARIABLE songs OUTPUT_STRIP_TRAILING_WHITESPACE)
+file(REMOVE_RECURSE "${WORK}/cfg")
+set(ENV{SELECTA_SDL_TEST_TIMED} "m${cx0},${cy0}@400 d1,${cx0},${cy0}@500 u1,${cx0},${cy0}@550 q@1500")
+dui_run(d --db "${db}" --ui desktop --backend sdl --view library --canvas 1280x800 --stats)
+string(REGEX MATCH "grid draws ([0-9]+) tiles ([0-9]+) cols" _m "${d}")
+if(_m STREQUAL "" OR NOT CMAKE_MATCH_1 GREATER 0 OR NOT CMAKE_MATCH_2 EQUAL songs)
+  message(FATAL_ERROR "run D: Grid on a library of ${songs} songs with an empty queue must draw ${songs} tiles: '${_m}'")
+endif()
+if(NOT d MATCHES "view_source=query")
+  message(FATAL_ERROR "run D: the grid must list the query source:\n${d}")
+endif()
