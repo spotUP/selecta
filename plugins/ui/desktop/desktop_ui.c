@@ -2378,15 +2378,24 @@ static int lib_ui_list(const desk* d, const sel_state* st) {
     return st->composer_page != NULL || !lib_view_on(d, st);
 }
 
+/* The one source of the UI-drawn Library list's layout (I505): a composer row is canon, display, count (3 fields); a
+ * drilldown starts after its header (canon, display, count: 3 fields) and a song row is key, name (2 fields). The draw
+ * code, lib_ui_row and lib_list_n all walk the rows through these two. */
+static const char* lib_rows_first(const sel_state* st) {
+    return st->composer_page != NULL ? lib_next(lib_next(lib_next(st->composer_page))) : st->composers;
+}
+
+static const char* lib_rows_next(const sel_state* st, const char* p) {
+    p = lib_next(lib_next(p));
+    return st->composer_page != NULL ? p : lib_next(p);
+}
+
 /* Rows of the UI-drawn list: the composers, or the songs of the drilled-into composer. */
 static uint32_t lib_list_n(const sel_state* st) {
     uint32_t n = 0;
-    const char* p = st->composer_page != NULL ? lib_next(lib_next(st->composer_page)) : st->composers;
-    for (; p != NULL && *p != '\0'; n++) {
-        p = lib_next(lib_next(p));
-        if (st->composer_page == NULL) {
-            p = lib_next(p);
-        }
+    const char* p;
+    for (p = lib_rows_first(st); p != NULL && *p != '\0'; n++) {
+        p = lib_rows_next(st, p);
     }
     return n;
 }
@@ -4542,7 +4551,7 @@ static void draw_library(desk* d) {
         draw_text(d, rect_of(col.x, col.y + col.h + lpx(d, 24), col.w, lpx(d, 24)), "Back to all composers", 0, 14,
                   ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
         sel_gui_clip_push(d->canvas, rect_of(mn.x, lib_list_top(d, mn, st), mn.w, mn.y + mn.h - lib_list_top(d, mn, st)));
-        for (p = lib_next(cnt); *p != '\0'; i++) {
+        for (p = lib_rows_first(st); *p != '\0'; i++) {
             const char* name = lib_next(p);
             sel_gui_rect r = lib_row_rect(d, mn, i);
             if ((int32_t)i == d->lib_focus) { /* the keyboard focus row (I498) */
@@ -4550,7 +4559,7 @@ static void draw_library(desk* d) {
             }
             draw_text(d, r, name, 0, 15, row_ink(d, r, text));
             song_row_reg(d, r, p, 0, 0, 0);
-            p = lib_next(name);
+            p = lib_rows_next(st, p);
         }
         sel_gui_clip_pop(d->canvas);
     } else {
@@ -4612,7 +4621,7 @@ static void draw_library(desk* d) {
             p = NULL;
         } else {
         sel_gui_clip_push(d->canvas, rect_of(mn.x, lib_list_top(d, mn, st), mn.w, mn.y + mn.h - lib_list_top(d, mn, st)));
-        for (p = st->composers; p != NULL && *p != '\0'; i++) {
+        for (p = lib_rows_first(st); p != NULL && *p != '\0'; i++) {
             const char* disp = lib_next(p);
             const char* cnt = lib_next(disp);
             sel_gui_rect r = lib_row_rect(d, mn, i);
@@ -4626,7 +4635,7 @@ static void draw_library(desk* d) {
                 draw_text(d, rect_of(r.x + r.w * 2 / 3, r.y, r.w / 3, r.h), line, 0, 14, row_ink(d, r, muted));
                 sel_gui_dirty_add(d->canvas, r);
             }
-            p = lib_next(cnt);
+            p = lib_rows_next(st, p);
         }
         sel_gui_clip_pop(d->canvas);
         }
@@ -6641,10 +6650,10 @@ static int desk_zoom_key(desk* d, const sel_gui_input* ev) {
 
 /* Shared focus movement of the desktop lists (DUI-P3-3, I423, I498). */
 enum { LIST_NAV_NONE = -2 };
-/* The focus row after a list key: Down, Up, Page Down, Page Up, Home, End, clamped to 0..n-1. The first key starts from the
- * top row (cur < 0). LIST_NAV_NONE when the key is not a list key. */
+/* The focus row after a list key: Down, Up, Page Down, Page Up, Home, End, clamped to 0..n-1. With no focus row
+ * (cur < 0) the first Down lands on row 0 and the first Up stays on it (I505). LIST_NAV_NONE when the key is not a list key. */
 static int32_t list_nav(uint32_t code, int32_t cur, int32_t n, int32_t page) {
-    int32_t to = cur < 0 ? 0 : cur;
+    int32_t to = cur < 0 ? -1 : cur;
     if (code == TXT_KEY_DOWN) {
         to += 1;
     } else if (code == TXT_KEY_UP) {
@@ -6749,13 +6758,13 @@ static int queue_list_key(desk* d, const sel_gui_input* ev) {
 /* The entry idx of the UI-drawn Library list (a composer: canon, display, count; a drilldown song: key, name), NULL past the
  * end; *total gets the entry count. */
 static const char* lib_ui_row(const sel_state* st, int32_t idx, int32_t* total) {
-    const char* p = st->composer_page != NULL ? lib_next(lib_next(lib_next(st->composer_page))) : st->composers, *hit = NULL;
+    const char* p = lib_rows_first(st), *hit = NULL;
     int32_t i = 0;
     for (; p != NULL && *p != '\0'; i++) {
         if (i == idx) {
             hit = p;
         }
-        p = st->composer_page != NULL ? lib_next(lib_next(p)) : lib_next(lib_next(lib_next(p)));
+        p = lib_rows_next(st, p);
     }
     *total = i;
     return hit;
@@ -6823,6 +6832,18 @@ static int pl_list_key(desk* d, const sel_gui_input* ev) {
     d->pl_sel_id = v->rows[to].id;
     d->arrows++;
     draw_home(d);
+    return 1;
+}
+
+/* The first Down on an engine-cursor list (Library tree, search results) focuses the absolute row 0 instead of moving the
+ * cursor on from wherever it stood (I505). Returns 1 when it sent that request. */
+static int view_first_down(desk* d, const sel_gui_input* ev) {
+    if (d->kb_list || ev->code != TXT_KEY_DOWN) {
+        return 0;
+    }
+    d->kb_list = 1;
+    desk_send(d, "VIEW_CURSOR 0");
+    d->arrows++;
     return 1;
 }
 
@@ -6898,6 +6919,9 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         sel_engine_state(d->engine)->view->source == SEL_VIEW_SEARCH && (ev->code == TXT_KEY_UP || ev->code == TXT_KEY_DOWN || ev->code == 13u)) {
         const sel_view_state* sv = sel_engine_state(d->engine)->view;
         const sel_view_row* sr = sv->cursor >= sv->window_start && sv->cursor - sv->window_start < sv->row_n ? &sv->rows[sv->cursor - sv->window_start] : NULL;
+        if (view_first_down(d, ev)) {
+            return 0;
+        }
         d->kb_list = 1; /* the engine cursor is the focus row (I498) */
         if (ev->code == 13u && sr != NULL && sr->kind != (uint32_t)SEL_ROW_HEADING && !sr->album && sr->key != NULL) {
             d->kb_activates++;
@@ -6908,6 +6932,9 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
     }
     if (d->page == PG_LIBRARY && ev->mods == 0u && lib_view_on(d, sel_engine_state(d->engine)) &&
         (ev->code == TXT_KEY_UP || ev->code == TXT_KEY_DOWN || ev->code == 13u)) { /* the engine cursor is the focus row (I423) */
+        if (view_first_down(d, ev)) {
+            return 0;
+        }
         d->kb_list = 1;
         d->kb_activates += ev->code == 13u;
     }
