@@ -58,6 +58,34 @@ static int art_put(sqlite3* db, const sel_art_op* op) {
     return ok;
 }
 
+/* I437: the scan found an embedded cover. The albums row is the one art_find joins on (name, artist, source local);
+ * created when the scan is the first to see the album. Raw image bytes (PNG / JPEG), as the fixture rows hold them. */
+static int art_store(sqlite3* db, const sel_art_op* op) {
+    sqlite3_stmt* st = NULL;
+    sel_art_op put = *op;
+    int id = 0;
+
+    if (op->name == NULL || op->name[0] == '\0') return 0;
+    if (sqlite3_prepare_v2(db, "SELECT id FROM albums WHERE name = ?1 AND artist IS ?2 AND (source IS NULL OR source = 'local') ORDER BY id LIMIT 1",
+                           -1, &st, NULL) != SQLITE_OK) return 0;
+    sqlite3_bind_text(st, 1, op->name, -1, SQLITE_STATIC);
+    if (op->artist != NULL && op->artist[0] != '\0') sqlite3_bind_text(st, 2, op->artist, -1, SQLITE_STATIC);
+    else sqlite3_bind_null(st, 2);
+    if (sqlite3_step(st) == SQLITE_ROW) id = sqlite3_column_int(st, 0);
+    sqlite3_finalize(st);
+    if (id == 0) {
+        if (sqlite3_prepare_v2(db, "INSERT INTO albums(name, artist, source) VALUES(?1, ?2, 'local')", -1, &st, NULL) != SQLITE_OK) return 0;
+        sqlite3_bind_text(st, 1, op->name, -1, SQLITE_STATIC);
+        if (op->artist != NULL && op->artist[0] != '\0') sqlite3_bind_text(st, 2, op->artist, -1, SQLITE_STATIC);
+        else sqlite3_bind_null(st, 2);
+        if (sqlite3_step(st) == SQLITE_DONE) id = (int)sqlite3_last_insert_rowid(db);
+        sqlite3_finalize(st);
+        if (id == 0) return 0;
+    }
+    put.album = id;
+    return art_put(db, &put);
+}
+
 void sel_library_art_op(sel_library* lib, const sel_art_op* op, sel_message* reply) {
     int v = 0;
 
@@ -67,6 +95,8 @@ void sel_library_art_op(sel_library* lib, const sel_art_op* op, sel_message* rep
         v = art_get(lib->db, op);
     } else if (op->op == SEL_ART_PUT && op->kind != NULL && op->data != NULL) {
         v = art_put(lib->db, op);
+    } else if (op->op == SEL_ART_STORE && op->kind != NULL && op->data != NULL) {
+        v = art_store(lib->db, op);
     }
     memset(reply, 0, sizeof *reply);
     reply->kind = SEL_MSG_EVT;

@@ -543,6 +543,25 @@ static void library_dump_local(const char* db_path) {
         }
     }
     sqlite3_finalize(st);
+    st = NULL;
+    /* I437: one `art=<album>|<artist>|<kind>|<bytes>|<w>x<h>` line per artwork row; w and h from the PNG IHDR (0x0: not a PNG). */
+    if (db != NULL &&
+        sqlite3_prepare_v2(db, "SELECT a.name, COALESCE(a.artist,''), w.kind, w.data FROM artwork w JOIN albums a ON a.id = w.album_id"
+                               " ORDER BY a.name", -1, &st, NULL) == SQLITE_OK) {
+        while (sqlite3_step(st) == SQLITE_ROW) {
+            const unsigned char* p = (const unsigned char*)sqlite3_column_blob(st, 3);
+            int n = sqlite3_column_bytes(st, 3);
+            unsigned w = 0, h = 0;
+
+            if (n >= 24 && memcmp(p, "\x89PNG", 4) == 0) {
+                w = (unsigned)p[18] << 8 | p[19];
+                h = (unsigned)p[22] << 8 | p[23];
+            }
+            printf("art=%s|%s|%s|%d|%ux%u\n", (const char*)sqlite3_column_text(st, 0),
+                   (const char*)sqlite3_column_text(st, 1), (const char*)sqlite3_column_text(st, 2), n, w, h);
+        }
+    }
+    sqlite3_finalize(st);
     sqlite3_close(db);
 }
 #endif

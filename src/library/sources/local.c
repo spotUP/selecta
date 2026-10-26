@@ -9,6 +9,8 @@
 #include "local.h"
 #include "../stream_open.h"
 
+#include "../../../plugins/shared/stream/flac_meta.h"
+
 #include <selecta/plugin.h>
 #include <selecta/replayer.h>
 #include <stdio.h>
@@ -39,6 +41,8 @@ typedef struct scan_state {
     scan_row_text* text;
     sel_scan_row* rows;
     uint32_t row_n;
+    uint8_t* cover_work; /* I437: unsynchronisation scratch for the ID3 cover reader, allocated on first need */
+    size_t cover_work_cap;
     int failed;
     int flat; /* rescan: list the directory without entering its subdirectories */
     int count_only;     /* I315 pre-pass: count the files the walk will visit, scan none of them */
@@ -137,6 +141,47 @@ static const sel_tag* find_replayer(scan_state* s, const uint8_t* data, size_t s
     return best;
 }
 
+/* I437: the embedded cover of an mp3 (ID3v2 APIC) or flac (PICTURE) file goes to the artwork table through
+ * SEL_ART_STORE, under the album and artist the scan row carries (flac: the file's own comments when the replayer
+ * gave none). The image is bounded by SEL_COVER_MAX; `data` is the file head the scan already holds. */
+static void scan_cover(scan_state* s, const uint8_t* data, size_t size, scan_row_text* t) {
+    sel_cover c;
+    sel_art_op op;
+    sel_message reply;
+    char album[TEXT_NAME], artist[TEXT_NAME];
+    int found = 0;
+
+    album[0] = artist[0] = '\0';
+    if (size >= 4u && memcmp(data, "fLaC", 4) == 0) {
+        found = sel_flac_meta(data, size, SEL_COVER_MAX, &c, album, artist, TEXT_NAME);
+    } else if (size >= 10u && memcmp(data, "ID3", 3) == 0) {
+        found = sel_id3_cover(data, size, s->cover_work, s->cover_work_cap, SEL_COVER_MAX, &c);
+        if (!found && c.work_need > 0u && c.work_need <= SEL_COVER_MAX + 16u && s->cover_work == NULL) {
+            s->cover_work = s->cfg->host->mem_alloc(s->cfg->host, SEL_COVER_MAX + 16u, SEL_MEM_FAST);
+            if (s->cover_work != NULL) {
+                s->cover_work_cap = SEL_COVER_MAX + 16u;
+                found = sel_id3_cover(data, size, s->cover_work, s->cover_work_cap, SEL_COVER_MAX, &c);
+            }
+        }
+    }
+    if (!found) {
+        return;
+    }
+    if (t->album[0] == '\0') copy_text(t->album, sizeof t->album, album);
+    if (t->artist[0] == '\0') copy_text(t->artist, sizeof t->artist, artist);
+    memset(&op, 0, sizeof op);
+    memset(&reply, 0, sizeof reply);
+    op.op = SEL_ART_STORE;
+    op.name = t->album;
+    op.artist = t->artist;
+    op.kind = "cover";
+    op.data = (uint8_t*)c.data;
+    op.len = (uint32_t)c.len;
+    if (sel_library_request(s->cfg->lib, SEL_LIB_REQ_ART, &op, &reply) && reply.argc >= 1 && reply.args[0].v.i == 1) {
+        s->stats->covers_read++;
+    }
+}
+
 /* Probes, opens and describes one module held in memory and queues its catalogue row. `probe_path`
  * is what the replayers see (the extension matters), `row_path` is the path stored in the catalogue
  * (for an archive member: "<archive>/<member>"). Does not free `data`. Returns 1 when a row was
@@ -201,6 +246,7 @@ static int scan_blob_ex(scan_state* s, const uint8_t* data, size_t size, const s
             close_fn(state);
         }
     }
+    scan_cover(s, data, size, t);
     r->source = "local";
     r->path = t->path;
     r->name = t->name;
@@ -378,6 +424,9 @@ static int scan_with(const sel_local_scan_config* cfg, sel_local_scan_stats* sta
         run(&s, arg);
         ok = !s.failed && flush_rows(&s);
         sel_browse_free(&s.browse, host);
+    }
+    if (s.cover_work != NULL) {
+        host->mem_free(host, s.cover_work);
     }
     if (s.stack != NULL) {
         host->mem_free(host, s.stack);

@@ -659,6 +659,11 @@ add_executable(composer_test library/composer_test.c "${PROJECT_SOURCE_DIR}/src/
 target_include_directories(composer_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
 add_test(NAME composer-unit COMMAND composer_test)
 
+# I437: embedded cover readers (ID3v2 APIC, FLAC PICTURE).
+add_executable(cover_tag_test library/cover_tag_test.c)
+add_test(NAME cover-tag-unit COMMAND cover_tag_test)
+set_tests_properties(cover-tag-unit PROPERTIES PASS_REGULAR_EXPRESSION "cover_tag_ok")
+
 # I218d: Latin-1 <-> UTF-8 at the OS boundary.
 add_executable(latin1_test library/latin1_test.c "${PROJECT_SOURCE_DIR}/src/library/latin1.c")
 target_include_directories(latin1_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
@@ -1313,6 +1318,12 @@ if(NOT SEL_AMIGA)
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/file_stream.sh $<TARGET_FILE:selecta-cli>
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/stream)
   set_tests_properties(file-stream-local PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "file_stream_ok")
+
+  # I437: the scan stores the embedded cover of a tagged mp3 as a 200x200 artwork row.
+  add_test(NAME library-embedded-cover
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/embedded_cover.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/library/fixtures)
+  set_tests_properties(library-embedded-cover PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "embedded_cover_ok")
 
   add_test(NAME source-modland-key
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/source_key.sh $<TARGET_FILE:selecta-cli>)

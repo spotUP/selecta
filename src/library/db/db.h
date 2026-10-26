@@ -56,8 +56,10 @@ enum {
     SEL_SOURCE_SONGS    /* DUI-P4-3: songs rows of source id `key`: `out` = decimal count NUL, reply [0] = 1 */
 };
 /* One albums/artwork operation (SEL_LIB_REQ_ART, DUI-P2-4). Reply INT [0]: SEL_ART_FIND the id of the albums row the song belongs to (0: none),
- * SEL_ART_GET the blob size (0: none; `data` holds min(size, cap) bytes), SEL_ART_PUT 1 when stored. */
-enum { SEL_ART_FIND = 1, SEL_ART_GET, SEL_ART_PUT };
+ * SEL_ART_GET the blob size (0: none; `data` holds min(size, cap) bytes), SEL_ART_PUT 1 when stored,
+ * SEL_ART_STORE (I437, embedded cover found by the scan) finds or creates the albums row (`album`, `artist`, source local) and stores the
+ * raw image bytes as its `kind` artwork row, replying 1 when stored. */
+enum { SEL_ART_FIND = 1, SEL_ART_GET, SEL_ART_PUT, SEL_ART_STORE };
 typedef struct sel_art_op {
     uint32_t op;       /* SEL_ART_* */
     const char* ref;   /* FIND: a queue path or song key; resolved to source + path of the songs row */
@@ -66,6 +68,8 @@ typedef struct sel_art_op {
     uint8_t* data;     /* GET: out buffer; PUT: bytes to store */
     uint32_t len;      /* PUT: byte count */
     uint32_t cap;      /* GET: buffer size */
+    const char* name;  /* STORE: album name */
+    const char* artist;/* STORE: album artist, NULL = none */
 } sel_art_op;
 
 typedef struct sel_genre_op {
