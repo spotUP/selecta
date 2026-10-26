@@ -10,6 +10,8 @@
 
 #define DESK_SDL_QUEUE 64u
 
+enum { DESK_SDL_LAT_MAX = 512 };
+
 struct desk_sdl {
     SDL_Window* window;
     SDL_Renderer* renderer;
@@ -28,6 +30,11 @@ struct desk_sdl {
     int drop_held;
     char dlg_path[SEL_GUI_INPUT_PATH]; /* the folder the open dialog answered; read on the main thread in desk_sdl_poll */
     SDL_AtomicInt dlg_ready;
+    uint64_t pending_ns;                    /* SDL timestamp of the first click, key or wheel event of this turn, until a present shows it (I291) */
+    uint32_t lat_us[DESK_SDL_LAT_MAX];      /* event-to-present latencies, microseconds */
+    uint32_t lat_n;
+    uint32_t cost_us[DESK_SDL_LAT_MAX];     /* wheel notch cost (route, draw and present), microseconds */
+    uint32_t cost_n;
 };
 
 static int make_texture(desk_sdl* b, int32_t w, int32_t h) {
@@ -82,7 +89,7 @@ static void push_test_events(const char* list) {
 
 /* Test hook: SELECTA_SDL_TEST_TIMED is a space separated list of events pushed from an SDL timer thread while the live
  * loop waits in poll: `m<x>,<y>@<ms>` a mouse motion, `d<btn>,<x>,<y>@<ms>` a mouse button down, `u<btn>,<x>,<y>@<ms>` a button up (1 left, 3 right),
- * `q@<ms>` a quit, <ms> after open. SELECTA_SDL_TEST_LIVE=1 makes the
+ * `w<dx>,<dy>@<ms>` a wheel notch, `q@<ms>` a quit, <ms> after open. SELECTA_SDL_TEST_LIVE=1 makes the
  * dummy driver count as a live display, so a test runs the real live loop (I341). */
 static Uint32 SDLCALL timed_event(void* param, SDL_TimerID id, Uint32 interval) {
     SDL_Event* ev = (SDL_Event*)param;
@@ -118,6 +125,10 @@ static void push_timed_events(const char* list) {
             ev->button.clicks = 1;
             ev->button.x = x;
             ev->button.y = y;
+        } else if (tok[0] == 'w' && sscanf(tok + 1, "%f,%f@%u", &x, &y, &ms) == 3) { /* a wheel notch: dx, dy */
+            ev->type = SDL_EVENT_MOUSE_WHEEL;
+            ev->wheel.x = x;
+            ev->wheel.y = y;
         } else if (tok[0] == 'q' && sscanf(tok + 1, "@%u", &ms) == 1) {
             ev->type = SDL_EVENT_QUIT;
         } else {
@@ -250,6 +261,12 @@ void desk_sdl_present(desk_sdl* b, const sel_gui_canvas* c, int readback) {
     }
     SDL_RenderPresent(b->renderer);
     b->presents++;
+    if (b->pending_ns != 0u) { /* the present that shows the result of the input event (I291) */
+        if (b->lat_n < DESK_SDL_LAT_MAX) {
+            b->lat_us[b->lat_n++] = (uint32_t)((SDL_GetTicksNS() - b->pending_ns) / 1000u);
+        }
+        b->pending_ns = 0u;
+    }
 }
 
 uint64_t desk_sdl_present_hash(const desk_sdl* b) {
@@ -407,8 +424,16 @@ static int queue_key(desk_sdl* b, const SDL_Event* ev) {
 int desk_sdl_poll(desk_sdl* b, uint32_t timeout_ms, int32_t* w, int32_t* h) {
     SDL_Event ev;
     int result = DESK_SDL_NONE;
-    int got = timeout_ms > 0u ? SDL_WaitEventTimeout(&ev, (int32_t)timeout_ms) : SDL_PollEvent(&ev);
+    int got;
+    if (timeout_ms > 0u) { /* the loop is about to idle: the events of the turns before are routed and drawn (a tween frame may follow
+                            * on the next turn's poll(0), so only a waiting poll closes them); one that drew nothing has no latency */
+        b->pending_ns = 0u;
+    }
+    got = timeout_ms > 0u ? SDL_WaitEventTimeout(&ev, (int32_t)timeout_ms) : SDL_PollEvent(&ev);
     while (got) {
+        if (b->pending_ns == 0u && (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev.type == SDL_EVENT_MOUSE_WHEEL || ev.type == SDL_EVENT_KEY_DOWN)) {
+            b->pending_ns = ev.common.timestamp;
+        }
         switch (ev.type) {
         case SDL_EVENT_QUIT:
         case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
@@ -503,6 +528,42 @@ int desk_sdl_poll(desk_sdl* b, uint32_t timeout_ms, int32_t* w, int32_t* h) {
         }
     }
     return result;
+}
+
+static int cmp_u32(const void* a, const void* b) {
+    uint32_t x = *(const uint32_t*)a, y = *(const uint32_t*)b;
+    return x < y ? -1 : x > y;
+}
+
+static void sample_stats(const uint32_t* v, uint32_t n, uint32_t* med, uint32_t* p95, uint32_t* max) {
+    uint32_t tmp[DESK_SDL_LAT_MAX];
+    *med = *p95 = *max = 0u;
+    if (n == 0u) {
+        return;
+    }
+    memcpy(tmp, v, n * sizeof tmp[0]);
+    qsort(tmp, n, sizeof tmp[0], cmp_u32);
+    *med = tmp[n / 2u];
+    *p95 = tmp[(n * 95u) / 100u < n ? (n * 95u) / 100u : n - 1u];
+    *max = tmp[n - 1u];
+}
+
+void desk_sdl_latency(const desk_sdl* b, desk_sdl_lat* out) {
+    memset(out, 0, sizeof *out);
+    out->n = b->lat_n;
+    sample_stats(b->lat_us, b->lat_n, &out->med_us, &out->p95_us, &out->max_us);
+    out->cost_n = b->cost_n;
+    sample_stats(b->cost_us, b->cost_n, &out->cost_med_us, &out->cost_p95_us, &out->cost_max_us);
+}
+
+uint64_t desk_sdl_now_ns(void) {
+    return SDL_GetTicksNS();
+}
+
+void desk_sdl_note_cost(desk_sdl* b, uint64_t start_ns) {
+    if (b->cost_n < DESK_SDL_LAT_MAX) {
+        b->cost_us[b->cost_n++] = (uint32_t)((SDL_GetTicksNS() - start_ns) / 1000u);
+    }
 }
 
 /* Milliseconds since SDL started: the live UI clock (DUI-P3-5). */

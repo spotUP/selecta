@@ -30,6 +30,15 @@ void desk_sdl_present(desk_sdl* b, const sel_gui_canvas* c, int readback);
 uint64_t desk_sdl_present_hash(const desk_sdl* b);
 uint32_t desk_sdl_upload_pixels(const desk_sdl* b);
 uint32_t desk_sdl_presents(const desk_sdl* b);
+/* I291: input-to-present latency of click, key and wheel events (SDL event timestamp to the end of the present that shows
+ * the result) and the cost of a wheel notch (route, draw, present), in microseconds. */
+typedef struct {
+    uint32_t n, med_us, p95_us, max_us;
+    uint32_t cost_n, cost_med_us, cost_p95_us, cost_max_us;
+} desk_sdl_lat;
+void desk_sdl_latency(const desk_sdl* b, desk_sdl_lat* out);
+uint64_t desk_sdl_now_ns(void);
+void desk_sdl_note_cost(desk_sdl* b, uint64_t start_ns);
 /* Waits up to timeout_ms for an event (0 = poll) and handles every queued one. Returns DESK_SDL_QUIT, DESK_SDL_RESIZE
  * (window pixel size changed by the user or by a scale change; *w and *h are the new size), DESK_SDL_ACTIVITY or
  * DESK_SDL_NONE. */
