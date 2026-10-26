@@ -20,7 +20,14 @@
 #include <selecta/uimodel/palette.h>
 #include <selecta/uimodel/theme.h>
 
-#if defined(SELECTA_DESKTOP_RTG) && !defined(SELECTA_DESKTOP_SDL)
+#if defined(SELECTA_DESKTOP_AGA) && !defined(SELECTA_DESKTOP_SDL)
+#define SELECTA_DESKTOP_SDL 1
+#include "amiga/backend_aga.h"
+#define DESK_BACKEND_NAME "aga"
+#define desk_backend_depth(b) desk_aga_depth(b)
+#define DESK_BACKEND_INDEX8 1 /* the aga screen is always 8 bitplanes, 256 colours (design doc 2.1) */
+#define desk_backend_open(w, h, i8) desk_aga_open((w), (h), (i8))
+#elif defined(SELECTA_DESKTOP_RTG) && !defined(SELECTA_DESKTOP_SDL)
 #define SELECTA_DESKTOP_SDL 1
 #include "amiga/backend_rtg.h"
 #define DESK_BACKEND_NAME "rtg"
@@ -3849,7 +3856,7 @@ static const char* library_dump_build(desk* d) {
                               (int)d->hover_box.w, (int)d->hover_box.h, (unsigned)d->hover_fill,
                               (unsigned)ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_HOVER]), (unsigned)d->hover_paints, (int)d->hover_tile);
         o = dump_put(d, o, "hover_ink=%d\n", (int)d->ink_in);
-#if defined(SELECTA_DESKTOP_SDL) && !defined(SELECTA_DESKTOP_RTG)
+#if defined(SELECTA_DESKTOP_SDL) && !defined(SELECTA_DESKTOP_RTG) && !defined(SELECTA_DESKTOP_AGA)
         if (d->sdl != NULL) { /* I291: input to present, and the cost of a wheel notch, in microseconds */
             desk_sdl_lat lt;
             desk_sdl_latency(d->sdl, &lt);
