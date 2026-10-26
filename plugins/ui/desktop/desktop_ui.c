@@ -279,7 +279,11 @@ typedef struct desk {
     uint32_t art_ms_max;     /* I377: longest single art_load on the UI thread, host clock ms */
     uint32_t turn_ms_max;    /* I377: longest turn of desk_wait without its poll wait, host clock ms */
     uint32_t poll_ms;        /* I377: poll wait accumulated inside the running turn */
-    sel_tag stats[82];
+    uint32_t frame_ms_min, frame_ms_max; /* I368: ms per paint (one desk_flush), host clock; min is valid once frame_ms_n > 0 */
+    uint32_t frame_ms_sum, frame_ms_n;   /* I368: the avg is sum / n */
+    uint32_t page_seen;      /* I368: the page the last paint showed, +1 (0 = nothing painted yet) */
+    uint32_t page_dirty;     /* I368: pixels the first paint after the latest page change repainted */
+    sel_tag stats[86];
     char* input_at;         /* where the scripted input resumes after a turn that sent an engine line */
     uint32_t sends;         /* engine lines sent so far: the replay yields a turn so the shell pumps them */
     char library_dump[8192]; /* the Library page as text for the stats (DUI-P4-3) */
@@ -352,7 +356,22 @@ static uint32_t desk_flush(desk* d) {
     }
 #endif
     {
+        const sel_host* ch = sel_engine_plugin_host(d->engine);
+        uint32_t t0 = ch->clock_ms(ch), dt;
         uint32_t px = sel_gui_present(d->canvas);
+        dt = ch->clock_ms(ch) - t0;
+        if (d->frame_ms_n == 0u || dt < d->frame_ms_min) {
+            d->frame_ms_min = dt;
+        }
+        if (dt > d->frame_ms_max) {
+            d->frame_ms_max = dt;
+        }
+        d->frame_ms_sum += dt;
+        d->frame_ms_n++;
+        if (d->page_seen != (uint32_t)d->page + 1u) { /* the first paint after a page change: its dirty pixels are the page's cost */
+            d->page_seen = (uint32_t)d->page + 1u;
+            d->page_dirty = px;
+        }
         if (d->hover_frame && px > d->hover_dirty_max) {
             d->hover_dirty_max = px;
         }
@@ -7419,7 +7438,15 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[75].value = d->art_ms_max;
     d->stats[76].tag = SEL_UI_STAT_TURN_MS_MAX;
     d->stats[76].value = d->turn_ms_max;
-    d->stats[77].tag = SEL_TAG_END;
+    d->stats[77].tag = SEL_UI_STAT_FRAME_MS_MIN;
+    d->stats[77].value = d->frame_ms_n != 0u ? d->frame_ms_min : 0u;
+    d->stats[78].tag = SEL_UI_STAT_FRAME_MS_AVG;
+    d->stats[78].value = d->frame_ms_n != 0u ? d->frame_ms_sum / d->frame_ms_n : 0u;
+    d->stats[79].tag = SEL_UI_STAT_FRAME_MS_MAX;
+    d->stats[79].value = d->frame_ms_max;
+    d->stats[80].tag = SEL_UI_STAT_PAGE_DIRTY;
+    d->stats[80].value = d->page_dirty;
+    d->stats[81].tag = SEL_TAG_END;
 
     return d->stats;
 }

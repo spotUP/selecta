@@ -151,3 +151,21 @@ math(EXPR hover_bit "${hp2} & 8")
 if(NOT hover_bit EQUAL 8)
   message(FATAL_ERROR "home_parts=${hp2}: hovering a tile did not draw the play affordance:\n${homehover}")
 endif()
+
+# 5 (I368). Frame timing and the page cost in the stats: frame_ms_min <= frame_ms_avg <= frame_ms_max, and a Home to
+# Library door switch reports the pixels its first paint repainted: above 0 and at most the canvas (1280 x 800).
+# The fixed clock does not advance, so the three times are 0 here; the live values are read on the rigs.
+file(REMOVE_RECURSE "${WORK}/cfg")
+file(WRITE "${WORK}/in.txt" "wait 100\ndoor 2\nwait 100\n")
+dui_run(lib --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats ${queue} --input "${WORK}/in.txt")
+dui_stat(fmin "${lib}" desktop frame_ms_min)
+dui_stat(favg "${lib}" desktop frame_ms_avg)
+dui_stat(fmax "${lib}" desktop frame_ms_max)
+dui_stat(pdirty "${lib}" desktop page_dirty_pixels)
+if(fmin GREATER favg OR favg GREATER fmax)
+  message(FATAL_ERROR "frame ms not ordered: min=${fmin} avg=${favg} max=${fmax}")
+endif()
+math(EXPR canvas_px "1280 * 800")
+if(pdirty LESS 1 OR pdirty GREATER canvas_px)
+  message(FATAL_ERROR "Home to Library repainted ${pdirty} pixels; want 1..${canvas_px}")
+endif()
