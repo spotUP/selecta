@@ -5,6 +5,15 @@
 
 #include <string.h>
 
+/* The format a backend opens with when --format is absent: the AGA screen shows an 8-bitplane CLUT, so aga defaults to
+ * index8 (I522); every other backend keeps rgba32 (NULL). */
+const char* sel_uim_default_format(const char* backend) {
+    if (backend != NULL && strcmp(backend, "aga") == 0) {
+        return "index8";
+    }
+    return NULL;
+}
+
 int sel_uim_budget_for(sel_uim_budget* b, const char* format) {
     memset(b, 0, sizeof *b);
     if (format == NULL || strcmp(format, "rgba32") == 0) {

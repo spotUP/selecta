@@ -41,8 +41,7 @@ uint32_t desk_aga_c2p_calls(const desk_aga* b);
 uint32_t desk_aga_c2p_kind(const desk_aga* b);
 size_t desk_aga_chip_held(const desk_aga* b);
 /* Waits up to timeout_ms for window input, a timer or Ctrl-C (0 = poll). Returns DESK_AGA_QUIT on Ctrl-C,
- * DESK_AGA_ACTIVITY when input was queued, else DESK_AGA_NONE. First light queues no input yet: the IDCMP to
- * sel_gui_raw translation moves out of backend_rtg.c into a shared amiga/input.c (open item, design doc 2.6). */
+ * DESK_AGA_ACTIVITY when input was queued, else DESK_AGA_NONE. The IDCMP translation is the shared amiga/input.c. */
 int desk_aga_poll(desk_aga* b, uint32_t timeout_ms);
 uint32_t desk_aga_ticks(void);
 int desk_aga_next_input(desk_aga* b, sel_gui_input* ev);

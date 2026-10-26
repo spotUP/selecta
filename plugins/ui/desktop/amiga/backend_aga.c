@@ -1,6 +1,7 @@
 /* The `aga` backend of the desktop UI (I439, M4-P6-1); see backend_aga.h and
  * thoughts/shared/plans/2026-10-26-aga-c2p-backend.md. */
 #include "backend_aga.h"
+#include "input.h"
 
 #include "aga_planar.h"
 
@@ -53,6 +54,7 @@ struct desk_aga {
     struct MsgPort* tport;
     struct timerequest* treq;
     uint32_t upload_pixels, presents, c2p_calls, c2p_kind;
+    desk_amiga_input in;
 };
 
 static void c2p_bands(desk_aga* b, const uint8_t* chunky, const desk_aga_band* band, uint32_t n) {
@@ -124,8 +126,8 @@ void desk_aga_default_size(int32_t* w, int32_t* h) {
 }
 
 static int fail(desk_aga* b, const char* why) {
-    fprintf(stdout, "aga: %s\n", why);
-    fflush(stdout);
+    fprintf(stderr, "aga: %s\n", why); /* stderr: --log redirects it, stdout would hide the reason (I522) */
+    fflush(stderr);
     desk_aga_close(b);
     return 0;
 }
@@ -136,7 +138,8 @@ desk_aga* desk_aga_open(int32_t w, int32_t h, int index8) {
     size_t bytes;
     int i, p;
     if (!index8) {
-        fprintf(stdout, "aga: the AGA screen shows an INDEX8 canvas only\n");
+        fprintf(stderr, "aga: the AGA screen shows an INDEX8 canvas only; use --format index8 or leave --format out\n");
+        fflush(stderr);
         return NULL;
     }
     b = (desk_aga*)AllocVec(sizeof *b, MEMF_CLEAR);
@@ -145,6 +148,7 @@ desk_aga* desk_aga_open(int32_t w, int32_t h, int index8) {
     GfxBase = (struct GfxBase*)OpenLibrary((CONST_STRPTR) "graphics.library", 39);
     IntuitionBase = (struct IntuitionBase*)OpenLibrary((CONST_STRPTR) "intuition.library", 39);
     if (GfxBase == NULL || IntuitionBase == NULL) return fail(b, "needs graphics and intuition v39"), NULL;
+    if (!desk_amiga_input_open(&b->in)) return fail(b, "needs keymap.library v37"), NULL;
     if ((GfxBase->ChipRevBits0 & GFXF_AA_ALICE) == 0) return fail(b, "no AGA chipset"), NULL;
     mode = pick_mode(&w, &h);
     if (mode == AGA_NO_MODE || w < 32 || h < 1) return fail(b, "no 8-bitplane native mode"), NULL;
@@ -178,6 +182,9 @@ desk_aga* desk_aga_open(int32_t w, int32_t h, int index8) {
         b->window = OpenWindowTagList(NULL, wt);
     }
     if (b->window == NULL) return fail(b, "OpenWindow failed"), NULL;
+    /* A screen opened while another screen (Directory Opus) is in front stays behind it (I524a): bring it up. */
+    ScreenToFront(b->screen);
+    ActivateWindow(b->window);
     b->sb[0] = AllocScreenBuffer(b->screen, &b->bm[0], 0); /* SB_SCREEN_BITMAP fails on a screen opened with SA_BitMap */
     b->sb[1] = AllocScreenBuffer(b->screen, &b->bm[1], 0);
     b->safe_port = CreateMsgPort();
@@ -217,6 +224,7 @@ void desk_aga_close(desk_aga* b) {
     for (i = 0; i < 2; i++) {
         if (b->buf[i] != NULL) FreeMem(b->buf[i], (ULONG)desk_aga_buffer_bytes(b->w, b->h));
     }
+    desk_amiga_input_close(&b->in);
     if (IntuitionBase != NULL) CloseLibrary((struct Library*)IntuitionBase);
     if (GfxBase != NULL) CloseLibrary((struct Library*)GfxBase);
     IntuitionBase = NULL;
@@ -286,16 +294,10 @@ int desk_aga_poll(desk_aga* b, uint32_t timeout_ms) {
         return DESK_AGA_QUIT;
     }
     while ((m = (struct IntuiMessage*)GetMsg(wp)) != NULL) {
-        /* First light: the input translation stays in backend_rtg.c until it moves to amiga/input.c; only the
-         * right mouse button ends the screen, so a rig check can close it. */
-        if (m->Class == IDCMP_MOUSEBUTTONS && m->Code == MENUDOWN) result = DESK_AGA_QUIT;
+        if (desk_amiga_input_handle(&b->in, m)) result = DESK_AGA_ACTIVITY;
         ReplyMsg((struct Message*)m);
     }
     return result;
 }
 
-int desk_aga_next_input(desk_aga* b, sel_gui_input* ev) {
-    (void)b;
-    (void)ev;
-    return 0;
-}
+int desk_aga_next_input(desk_aga* b, sel_gui_input* ev) { return desk_amiga_input_next(&b->in, ev); }

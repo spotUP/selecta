@@ -2,7 +2,7 @@
  * desktop UI palette (a gradient, theme bars and one moving box so later presents are dirty-rect bands), presents
  * 50 frames and prints the counters a rig check asserts:
  *   backend=aga depth=8 w=.. h=.. chip_bytes=.. c2p=kalms040|ref presents=.. c2p_calls=.. upload_pixels=.. ms=..
- * Ends early on Ctrl-C or the right mouse button. */
+ * Ends early on Ctrl-C. */
 #include "backend_aga.h"
 
 #include <selecta/gui/gui_draw.h>

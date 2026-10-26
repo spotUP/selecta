@@ -58,6 +58,9 @@ extern const sel_gui_icons sel_gui_icons_baked;
  * coverage of a partial one is kept. Used when the UI scale asks for an icon size that is not baked. */
 void sel_gui_icon_resample(const uint8_t* src, int32_t n, uint8_t* dst, int32_t m);
 
+/* I468: the same, to m columns and mh rows (tall pixels: mh = m / ydiv). */
+void sel_gui_icon_resample_tall(const uint8_t* src, int32_t n, uint8_t* dst, int32_t m, int32_t mh);
+
 /* Draws icon `id` at the largest baked size not above `px` (the smallest when none fits), centred in `box`,
  * tinted with `argb`. Returns the size drawn, 0 when the id is unknown. */
 int32_t sel_gui_icon_draw(sel_gui_canvas* c, const sel_gui_icons* ic, uint32_t id, sel_gui_rect box, int32_t px,
