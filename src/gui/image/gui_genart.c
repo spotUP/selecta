@@ -93,14 +93,16 @@ static void genart_draw(sel_gui_canvas* c, sel_gui_rect r, const char* format, u
     b = hsv((hue + 128u + (fh >> 5) % 128u) % 1536u, 200u, 200u + ((title_hash >> 16) & 31u));
     sel_gui_gradient(c, r, 1, a, b);
 
-    /* The glyph: a mirrored 5x5 pattern from the format hash, centred. */
+    /* The glyph: a mirrored 5x5 pattern from the format hash and the title hash, centred. The title
+     * must reach the glyph, not only the gradient: tiles of one format (a shelf of .mod files) would
+     * otherwise all carry the same glyph (I360). */
     cell = r.w / 8;
     if (cell < 1) {
         return;
     }
     ox = r.x + (r.w - 5 * cell) / 2;
     oy = r.y + (r.h - 5 * cell) / 2;
-    bits = fh ^ (fh >> 15);
+    bits = fh ^ (fh >> 15) ^ (title_hash * 2654435761u >> 11);
     for (y = 0; y < 5; y++) {
         for (x = 0; x < 3; x++) {
             if (((bits >> (uint32_t)(y * 3 + x)) & 1u) != 0u) {
