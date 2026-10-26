@@ -244,6 +244,8 @@ typedef struct desk {
     uint32_t sort_col;       /* 0 title, 1 format */
     uint32_t sort_dir;       /* 0 queue order, 1 ascending, 2 descending */
     int sm_open;             /* the shared song menu is open (I305) */
+    int stats_open;          /* the Library Statistics panel (More) is expanded over the grid (I455) */
+    uint32_t stats_panel_draws, stats_panel_rows; /* panels painted, and the statistics rows in the last one */
     int dlg_open;            /* DUI-P4-18: the confirm dialog is up: 1 = Remove from Library, 2 = Clear Library */
     char dlg_path[512];      /* the song a Remove from Library dialog names */
     char dlg_text[640];      /* the question the dialog shows */
@@ -2121,7 +2123,7 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
  * Stats page (F24) beside them. Every number comes from the engine state (COMPOSERS_SHOW, STATS_SHOW).
  * TODO DUI-P4-3 slice B/C: the tree, column browser, sources, Files and History pages hook in here, as further pages
  * of this view chosen by a segmented control above the list. */
-enum { LIB_MARGIN = 24, LIB_TITLE_Y = 24, LIB_TITLE_H = 40, LIB_TAB_H = 32, LIB_ROW_H = 48, LIB_STATS_H = 48, LIB_STATS_LINE = 24 };
+enum { LIB_MARGIN = 24, LIB_TITLE_Y = 24, LIB_TITLE_H = 40, LIB_TAB_H = 32, LIB_ROW_H = 48, LIB_STATS_H = 48, LIB_STATS_LINE = 24, LIB_STATS_MORE_W = 72, LIB_STATS_PANEL_COLS = 2 };
 
 /* I445: the Library header is three rows, the title, the tab row and the list, with a gap of two theme spacings between
  * each, so the title descenders, the buttons and the tabs never touch. A composer drilldown puts its song count and
@@ -2199,6 +2201,35 @@ static sel_gui_rect lib_row_rect(desk* d, sel_gui_rect mn, uint32_t i) {
 static sel_gui_rect lib_stats_rect(desk* d, sel_gui_rect mn, const sel_state* st) {
     int32_t mg = lpx(d, LIB_MARGIN), y = mn.y + lib_list_y(d);
     return lib_stats_on(st) ? rect_of(mn.x + mg, y, mn.w - 2 * mg > 0 ? mn.w - 2 * mg : 0, lpx(d, LIB_STATS_H)) : rect_of(mn.x + mn.w, y, 0, 0);
+}
+
+/* I455: the More control at the right end of the strip, and the panel it expands over the grid: every statistics row (up
+ * to 18) as label and value in two columns, under the strip. The grid keeps its full height while the panel is closed. */
+static sel_gui_rect lib_stats_more_rect(desk* d, sel_gui_rect sr) {
+    int32_t w = lpx(d, LIB_STATS_MORE_W);
+    return rect_of(sr.x + sr.w - w, sr.y, w, sr.h);
+}
+
+static uint32_t lib_stats_rows(const sel_state* st) {
+    uint32_t n = 0;
+    const char* p;
+    for (p = st->stats; p != NULL && *p != '\0'; n++) {
+        p = lib_next(lib_next(p));
+    }
+    return n;
+}
+
+static sel_gui_rect lib_stats_panel_rect(desk* d, sel_gui_rect sr, const sel_state* st) {
+    uint32_t per = (lib_stats_rows(st) + LIB_STATS_PANEL_COLS - 1u) / LIB_STATS_PANEL_COLS;
+    int32_t pad = 2 * lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    return rect_of(sr.x, sr.y + sr.h + lib_gap(d) / 2, sr.w, (int32_t)per * lpx(d, LIB_STATS_LINE) + 2 * pad);
+}
+
+static void lib_stats_toggle(desk* d, int open) {
+    if (d->stats_open != open) {
+        d->stats_open = open;
+        draw_home(d);
+    }
 }
 
 /* 1 when (x, y) is on row i of the Library list and not on a part of it scrolled out above the list top. */
@@ -3728,7 +3759,10 @@ static const char* library_dump_build(desk* d) {
     }
     if (st->stats != NULL) {
         sel_gui_rect sr = lib_stats_rect(d, panel_rect(d, "main"), st);
+        sel_gui_rect mr = lib_stats_more_rect(d, sr), pr = lib_stats_panel_rect(d, sr, st);
         o = dump_put(d, o, "stats rect %d %d %d %d\n", (int)sr.x, (int)sr.y, (int)sr.w, (int)sr.h);
+        o = dump_put(d, o, "stats_more %d %d %d %d open=%d\nstats_panel draws=%u rows=%u rect %d %d %d %d\n", (int)mr.x, (int)mr.y, (int)mr.w, (int)mr.h,
+                     d->stats_open, (unsigned)d->stats_panel_draws, (unsigned)d->stats_panel_rows, (int)pr.x, (int)pr.y, (int)pr.w, (int)pr.h);
     }
     o = dump_put(d, o, "nowplaying inset left %d right %d token %d\nnowplaying draws %u pairs %u genart %u\nlyrics line %d at %u\nmessage lines %u\n",
                           (int)d->np_inset_l, (int)d->np_inset_r, (int)lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]),
@@ -4356,6 +4390,7 @@ static void draw_library(desk* d) {
             int32_t hw = sel_gui_text_width(hd, "Statistics", 10u);
             draw_text(d, rect_of(x, sr.y, hw, line), "Statistics", 1, 18, text);
             x += hw + lib_gap(d);
+            end -= lpx(d, LIB_STATS_MORE_W) + lib_gap(d); /* the More control keeps the right end (I455) */
             for (p = st->stats; *p != '\0';) { /* as many cells as the strip holds, in the order of the statistics */
                 const char* val = lib_next(p);
                 int32_t lw = sel_gui_text_width(la, p, strlen(p)), vw = sel_gui_text_width(va, val, strlen(val)), cw = lw > vw ? lw : vw;
@@ -4366,6 +4401,32 @@ static void draw_library(desk* d) {
                 draw_text(d, rect_of(x, sr.y + line, cw, line), val, 1, 14, text);
                 x += cw + lib_gap(d);
                 p = lib_next(val);
+            }
+            {
+                sel_gui_rect mr = lib_stats_more_rect(d, sr);
+                hover_reg(d, mr);
+                draw_text_centered(d, mr, d->stats_open ? "Less" : "More", 1, 14, hover_ink_of(d, mr, muted, text));
+                sel_gui_dirty_add(d->canvas, mr);
+            }
+            if (d->stats_open) { /* the expanded panel over the grid: one raised surface, label left and value right in two columns */
+                sel_gui_rect pr = lib_stats_panel_rect(d, sr, st);
+                int32_t pad = 2 * lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]), colw = (pr.w - 2 * pad) / LIB_STATS_PANEL_COLS;
+                uint32_t n = 0, per = (lib_stats_rows(st) + LIB_STATS_PANEL_COLS - 1u) / LIB_STATS_PANEL_COLS;
+                if (d->shadow_ready) {
+                    sel_gui_shadow_draw(d->canvas, &d->shadow, pr);
+                }
+                sel_gui_round_rect(d->canvas, pr, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+                for (p = st->stats; *p != '\0'; n++) {
+                    const char* val = lib_next(p);
+                    int32_t cx = pr.x + pad + (int32_t)(n / per) * colw, cy = pr.y + pad + (int32_t)(n % per) * line;
+                    int32_t vw = sel_gui_text_width(va, val, strlen(val)), cw = colw - lib_gap(d);
+                    draw_text(d, rect_of(cx, cy, cw - vw > 0 ? cw - vw : 0, line), p, 0, 14, muted);
+                    draw_text(d, rect_of(cx + cw - vw, cy, vw, line), val, 1, 14, text);
+                    p = lib_next(val);
+                }
+                d->stats_panel_rows = n;
+                d->stats_panel_draws++;
+                sel_gui_dirty_add(d->canvas, pr);
             }
         }
     }
@@ -4477,6 +4538,20 @@ static int library_click(desk* d, int32_t x, int32_t y) {
     uint32_t i = 0;
     const char* p;
     char line[256];
+    if (d->page == PG_LIBRARY && lib_stats_on(st)) { /* I455: More toggles the panel; the open panel owns clicks on it, any other click closes it */
+        sel_gui_rect sr = lib_stats_rect(d, mn, st);
+        if (in_rect(lib_stats_more_rect(d, sr), x, y)) {
+            lib_stats_toggle(d, !d->stats_open);
+            return 1;
+        }
+        if (d->stats_open) {
+            int inside = in_rect(lib_stats_panel_rect(d, sr, st), x, y);
+            lib_stats_toggle(d, 0);
+            if (inside) {
+                return 1;
+            }
+        }
+    }
     if (d->page == PG_LIBRARY && st->composer_page == NULL && !d->scan_pending && in_rect(lib_add_rect(d, mn), x, y)) {
         return desk_add_folder(d);
     }
@@ -5021,6 +5096,7 @@ static void desk_page_apply(desk* d, desk_page pg) {
         desk_page_push(d, from, pg);
     }
     if (pg != PG_LIBRARY) {
+        d->stats_open = 0;
         if (st->composers != NULL) {
             desk_send(d, "COMPOSERS_HIDE");
         }
@@ -6272,6 +6348,10 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
     }
     if (d->dlg_open) { /* the confirm dialog owns the keyboard */
         return dlg_key(d, ev);
+    }
+    if (d->stats_open && ev->code == 27u) { /* Escape collapses the Library statistics panel (I455) */
+        lib_stats_toggle(d, 0);
+        return 1;
     }
     if (d->overlay != OV_NONE) { /* an open overlay owns the keyboard */
         return overlay_key(d, ev);
