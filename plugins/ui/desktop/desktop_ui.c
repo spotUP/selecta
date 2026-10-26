@@ -68,6 +68,9 @@ typedef struct song_ref {
     int home;   /* 1 = a Home shelf tile: Play Next also counts as a tile_queued */
 } song_ref;
 
+/* Rows a frame registers (song_row_reg): the Queue page lists the rows that fit (at most ~30 at 1080p), the Library lists hold
+ * the view window (12 rows, LIB_WINDOW_ROWS; 64 on Search), the Library grid at most that window of tiles, the Home tile grid
+ * the tiles that fit under the header before the registry is full, and the Now Playing title and the Song info header one each. */
 enum { SM_ROWS = 96 };
 
 typedef struct song_row {
@@ -181,6 +184,7 @@ typedef struct desk {
     uint32_t np_page_draws;  /* Now Playing page draws (sentinel) */
     uint32_t lib_off_page;   /* Library page draws while another page is current (sentinel, must stay 0: I274) */
     uint32_t np_draws;       /* Now Playing panel draws (sentinel) */
+    sel_gui_rect np_title;      /* the Now Playing title and artist lines, w 0 = not drawn: a song row of the song menu (I372) */
     sel_gui_rect np_like, np_rate[5]; /* click targets of the like button and the five rating marks */
     uint32_t np_msg_lines;            /* lines of the song message the last Now Playing draw laid out (I290) */
     int32_t np_liked;                 /* 1 when the last Now Playing draw showed the heart as liked (I306) */
@@ -1479,24 +1483,62 @@ static void song_menu_open(desk* d, int32_t x, int32_t y, const song_ref* ref) {
 
 /* Registers one song row drawn this frame and, while the pointer is over it, draws its trailing "..." button. A row
  * taller than a list row (a Home tile) puts the button at its top right corner. */
-static void song_row_reg(desk* d, sel_gui_rect r, const char* path, uint32_t qid, int removable, int home) {
-    song_row* e;
+/* Adds a song row to the registry: the one list every page feeds while it draws. A row with the rectangle of an earlier one
+ * replaces it, so a panel drawn on its own (Now Playing) can register again without filling the list. The trailing "..."
+ * button sits inside the row's right end. NULL when the path is empty or too long, or the registry is full. */
+static song_row* song_row_add(desk* d, sel_gui_rect r, const char* path, uint32_t qid, int removable, int home) {
+    song_row* e = NULL;
     int32_t eh = lpx(d, 20), in = lpx(d, 8);
-    if (d->sm_n >= SM_ROWS || path == NULL || path[0] == '\0' || strlen(path) >= sizeof e->ref.path) {
-        return;
+    uint32_t i;
+    if (path == NULL || path[0] == '\0' || strlen(path) >= sizeof e->ref.path) {
+        return NULL;
     }
-    e = &d->sm_rows[d->sm_n++];
+    for (i = 0; i < d->sm_n; i++) {
+        if (rect_same(d->sm_rows[i].r, r)) {
+            e = &d->sm_rows[i];
+        }
+    }
+    if (e == NULL) {
+        if (d->sm_n >= SM_ROWS) {
+            return NULL;
+        }
+        e = &d->sm_rows[d->sm_n++];
+    }
     e->r = r;
     snprintf(e->ref.path, sizeof e->ref.path, "%s", path);
     e->ref.qid = qid;
     e->ref.removable = removable;
     e->ref.home = home;
     e->more = rect_of(r.x + r.w - eh - in, r.h > lpx(d, 64) ? r.y + in : r.y + (r.h - eh) / 2, eh, eh);
+    return e;
+}
+
+static void song_row_reg(desk* d, sel_gui_rect r, const char* path, uint32_t qid, int removable, int home) {
+    song_row* e = song_row_add(d, r, path, qid, removable, home);
+    int32_t eh = lpx(d, 20);
+    if (e == NULL) {
+        return;
+    }
     hover_reg(d, r);
     if (in_rect(r, d->ptr_x, d->ptr_y) || (d->sm_open && strcmp(d->sm_ref.path, path) == 0)) {
         hover_reg(d, e->more);
         sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_ELLIPSIS, e->more, eh,
                           row_ink(d, e->more, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED])));
+    }
+}
+
+/* The playing song's title lines in the Now Playing panel (I372, DUI-P4-16). The panel is drawn on its own and the main
+ * region clears the registry before it draws, so both call this: the row is added without a trailing button (the panel
+ * title has no room for one) and an earlier row with the same rectangle is replaced. */
+static void np_title_reg(desk* d) {
+    const char* path = sel_engine_state(d->engine)->song.path;
+    song_row* e;
+    if (d->np_title.w <= 0 || path == NULL) {
+        return;
+    }
+    e = song_row_add(d, d->np_title, path, 0, 0, 0);
+    if (e != NULL) {
+        e->more = rect_of(0, 0, 0, 0);
     }
 }
 
@@ -1580,7 +1622,7 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
         draw_home(d);
         return 1;
     }
-    if (!in_rect(mn, ev->x, ev->y)) {
+    if (!in_rect(mn, ev->x, ev->y) && !in_rect(d->np_title, ev->x, ev->y)) {
         return 0;
     }
     for (i = 0; i < d->sm_n; i++) {
@@ -2841,6 +2883,7 @@ static void draw_songinfo(desk* d) {
     uint32_t i;
     sel_gui_clip_push(d->canvas, mn);
     draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Song Information", 1, 28, text);
+    song_row_reg(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), st->song.path, 0, 0, 0); /* the open song (I372) */
     for (i = 0; i < SI_BUTTONS; i++) {
         sel_gui_rect b = queue_btn_rect(d, mn, i);
         draw_button(d, b, surf, si_button_label(i), 13, text);
@@ -3228,6 +3271,25 @@ static uint32_t lib_grid_cols(const desk* d, sel_gui_rect mn) {
     return avail >= tw + gap ? (uint32_t)(avail / (tw + gap)) : 1u;
 }
 
+/* Registers view row k of the Library page with the song menu when it is a song (I371, DUI-P4-16): a tree leaf or a column
+ * song (queue kind, path from the engine), a Files row that is a file, a History row naming a song (home kind, album 0).
+ * Folders, nodes, headings and albums are not songs. Only rows whose top is in the list are registered, so the registry
+ * and the hover list hold the visible rows: the view window is at most 64 rows (SEARCH_WINDOW_ROWS), under SM_ROWS. */
+static void lib_view_row_reg(desk* d, sel_gui_rect mn, const sel_state* st, uint32_t k, sel_gui_rect r) {
+    const sel_view_row* vr = &st->view->rows[k];
+    char path[sizeof((song_ref*)0)->path];
+    if (r.y < lib_list_top(d, mn, st) || r.y >= mn.y + mn.h) {
+        return;
+    }
+    if (vr->kind == (uint32_t)SEL_ROW_HOME) {
+        if (vr->album == 0u && vr->key != NULL) {
+            song_row_reg(d, r, vr->key, 0, 0, 0);
+        }
+    } else if (sel_engine_view_row_path(d->engine, k, path, sizeof path)) {
+        song_row_reg(d, r, path, 0, 0, 0);
+    }
+}
+
 static void lib_tile_text(desk* d, sel_gui_rect ar, int32_t y, const sel_view_row* r, uint32_t text, uint32_t muted) {
     char line[32];
     draw_text(d, rect_of(ar.x, y, ar.w, lpx(d, HOME_TITLE_H)), r->text != NULL ? r->text : "", 1, 14, text);
@@ -3265,6 +3327,7 @@ static void draw_lib_grid(desk* d, sel_gui_rect mn) {
         sel_gui_genart_draw(d->canvas, ar, "album", sel_gui_str_hash(r->text != NULL ? r->text : ""));
         lib_tile_text(d, ar, ar.y + ar.h + lpx(d, HOME_TILE_TEXT_GAP), r, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]),
                       ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+        lib_view_row_reg(d, mn, sel_engine_state(d->engine), i, t);
         sel_gui_dirty_add(d->canvas, t);
         d->grid_tiles++;
     }
@@ -3300,6 +3363,8 @@ static void draw_lib_flow(desk* d, sel_gui_rect mn) {
             sel_gui_genart_draw(d->canvas, r, "album", sel_gui_str_hash(row->text != NULL ? row->text : ""));
             if (k > 0) {
                 sel_gui_scrim(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_SCRIM]) & 0xFFFFFFu, k >= 2 ? 150u : 90u);
+            } else {
+                lib_view_row_reg(d, mn, sel_engine_state(d->engine), (uint32_t)(g - (int64_t)v->window_start), r);
             }
         }
     }
@@ -3308,25 +3373,6 @@ static void draw_lib_flow(desk* d, sel_gui_rect mn) {
                       ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
     }
     sel_gui_dirty_add(d->canvas, rect_of(mn.x, y0, mn.w, big + lpx(d, HOME_TILE_TEXT_GAP + HOME_TITLE_H + HOME_META_H)));
-}
-
-/* Registers view row k of the Library page with the song menu when it is a song (I371, DUI-P4-16): a tree leaf or a column
- * song (queue kind, path from the engine), a Files row that is a file, a History row naming a song (home kind, album 0).
- * Folders, nodes, headings and albums are not songs. Only rows whose top is in the list are registered, so the registry
- * and the hover list hold the visible rows: the view window is at most 64 rows (SEARCH_WINDOW_ROWS), under SM_ROWS. */
-static void lib_view_row_reg(desk* d, sel_gui_rect mn, const sel_state* st, uint32_t k, sel_gui_rect r) {
-    const sel_view_row* vr = &st->view->rows[k];
-    char path[sizeof((song_ref*)0)->path];
-    if (r.y < lib_list_top(d, mn, st) || r.y >= mn.y + mn.h) {
-        return;
-    }
-    if (vr->kind == (uint32_t)SEL_ROW_HOME) {
-        if (vr->album == 0u && vr->key != NULL) {
-            song_row_reg(d, r, vr->key, 0, 0, 0);
-        }
-    } else if (sel_engine_view_row_path(d->engine, k, path, sizeof path)) {
-        song_row_reg(d, r, path, 0, 0, 0);
-    }
 }
 
 static void draw_library(desk* d) {
@@ -3700,6 +3746,7 @@ static void draw_search(desk* d) {
 static void draw_home_content(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     d->sm_n = 0;
+    np_title_reg(d);
     hover_prune(d, region_rect(d, "main")); /* the main region lists its controls afresh: a page change leaves none behind */
     if (d->search_on || d->page == PG_SEARCH) { /* the Search page always draws its own field and facet chips, also before a query */
         draw_search(d);
@@ -3806,6 +3853,7 @@ static void draw_home_content(desk* d) {
         draw_text(d, rect_of(ar.x, ar.y + ar.h + lpx(d, HOME_TILE_TEXT_GAP + HOME_TITLE_H), ar.w, lpx(d, HOME_META_H)), format, 0,
                   13, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
         d->home_parts |= HP_ARTIST_LINE;
+        song_row_reg(d, t, st->queue_text + st->queue[i].path_offset, st->queue[i].id, 0, 1); /* I372: the queue tile is a song */
         if (hovered && hv > 0) { /* the play affordance */
             int32_t ps = lpx(d, HOME_PLAY_SIZE), in = lpx(d, HOME_PLAY_INSET);
             sel_gui_rect pb = rect_of(ar.x + ar.w - in - ps, ar.y + ar.h - in - ps, ps, ps);
@@ -4379,6 +4427,7 @@ static void draw_nowplaying(desk* d) {
     int32_t side = dt.w - 2 * sp, y, rating = 0, liked = 0, ic = lpx(d, 20);
     sel_gui_rect ar, band;
     uint32_t k, first;
+    d->np_title = rect_of(0, 0, 0, 0);
     if (dt.w <= 0 || dt.h <= 0) {
         return;
     }
@@ -4399,6 +4448,8 @@ static void draw_nowplaying(desk* d) {
     y = ar.y + ar.h + sp;
     draw_text(d, rect_of(dt.x + sp, y, side, lpx(d, 22)), f->title, 1, 16, text);
     draw_text(d, rect_of(dt.x + sp, y + lpx(d, 22), side, lpx(d, 18)), f->artist, 0, 13, muted);
+    d->np_title = rect_of(dt.x + sp, y, side, lpx(d, 40));
+    np_title_reg(d);
     /* Like and rating: the library's rating row gives the filled marks; a click sends LIKE or RATE n like the text UI. */
     y += lpx(d, 44);
     d->np_like = rect_of(dt.x + sp, y, ic, ic);
