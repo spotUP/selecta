@@ -336,6 +336,21 @@ static int home_text(sqlite3* db, const sel_user_op* op, int64_t* rows) {
 
     op->out[0] = '\0';
     *rows = 0;
+    /* I478: Quick picks leads Home: the most recent distinct albums from the play history, at most 8 (two rows of four).
+     * Playlists carry no play history, so they never appear here. No played album: no heading, no grid. */
+    rc = sqlite3_prepare_v2(db, "SELECT EXISTS(SELECT 1 FROM history h JOIN songs s ON s.key = h.key WHERE s.album IS NOT NULL AND s.album <> '')", -1, &st, NULL);
+    if (rc != SQLITE_OK) return rc;
+    fill = sqlite3_step(st) == SQLITE_ROW && sqlite3_column_int(st, 0) != 0;
+    sqlite3_finalize(st);
+    st = NULL;
+    if (fill) {
+        home_put(op, &used, rows, "Q", "Quick picks");
+        rc = home_list(db, op, &used, rows,
+                       "SELECT s.album, s.artist, s.album, 1 FROM history h JOIN songs s ON s.key = h.key"
+                       " WHERE s.album IS NOT NULL AND s.album <> ''"
+                       " GROUP BY s.album, COALESCE(s.artist, '') ORDER BY MAX(h.played_at) DESC, s.album LIMIT MIN(?1, 8)");
+        if (rc != SQLITE_OK) return rc;
+    }
     home_put(op, &used, rows, "H", "Recently played");
     rc = home_list(db, op, &used, rows,
                    "SELECT COALESCE(s.name, h.key), s.artist, h.key, 0 FROM (SELECT key, MAX(played_at) AS last FROM history GROUP BY key) h"

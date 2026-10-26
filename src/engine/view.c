@@ -922,7 +922,7 @@ uint32_t sel_view_set_folders(sel_view* v, const char* tree) {
     return n;
 }
 
-/* The home source (I191): parses the library's home text. A line is `H <heading>`, `S <entry>` or
+/* The home source (I191): parses the library's home text. A line is `H <heading>`, `Q <heading>` (the quick-pick grid, I478), `S <entry>` or
  * `C <count> <entry>`. Returns the number of entries the sections hold: one per `S` line and the count of a
  * `C` line (the home_rows sentinel). */
 uint32_t sel_view_set_home(sel_view* v, const char* text) {
@@ -937,7 +937,7 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
         uint32_t count = 1, album = 0, composer = 0;
         char *art = NULL, *sart = NULL;
         key[0] = '\0';
-        if ((kind == 'H' || kind == 'S' || kind == 'C') && p[1] == ' ') {
+        if ((kind == 'H' || kind == 'Q' || kind == 'S' || kind == 'C') && p[1] == ' ') {
             p += 2;
             if (kind == 'C') {
                 count = 0;
@@ -1004,6 +1004,7 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
             v->frows[n].key = key[0] != '\0' ? key : NULL;
             v->frows[n].album = album;
             v->frows[n].composer = composer;
+            v->frows[n].quick = kind == 'Q';
             v->frows[n].art_ref = key[0] != '\0' && !composer ? art : NULL;
             /* I476: an album tile's artist is the part of its art_ref after the 0x1f byte. */
             v->frows[n].artist = NULL;
@@ -1013,13 +1014,13 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
             if (album && key[0] != '\0' && art != key && strchr(art, '\x1f') != NULL && strchr(art, '\x1f')[1] != '\0') {
                 v->frows[n].artist = strchr(art, '\x1f') + 1;
             }
-            v->frows[n].kind = kind == 'H' ? SEL_ROW_HEADING : SEL_ROW_HOME;
+            v->frows[n].kind = kind == 'H' || kind == 'Q' ? SEL_ROW_HEADING : SEL_ROW_HOME;
             v->frows[n].id = n;
-            v->frows[n].depth = kind == 'H' ? 0u : 1u;
+            v->frows[n].depth = kind == 'H' || kind == 'Q' ? 0u : 1u;
             v->frows[n].text = t;
             v->frows[n].count = 0;
             v->frows[n].expanded = 0;
-            entries += kind == 'H' ? 0u : count;
+            entries += kind == 'H' || kind == 'Q' ? 0u : count;
             n++;
         }
         while (*p != '\0' && *p != '\n') {

@@ -302,7 +302,7 @@ typedef struct desk {
     int32_t home_y_q16;      /* vertical scroll of the whole Home content in logical pixels, Q16 (I247) */
     uint32_t tile_queued;    /* tiles sent to the engine as queue next through the tile menu */
     uint32_t home_sig;       /* source and row count of the last HOME window drawn: a change redraws */
-    char home_dump[2048];    /* shelves as text for the stats */
+    char home_dump[3072];    /* shelves as text for the stats */
     uint32_t art_ms_max;     /* I377: longest single art_load on the UI thread, host clock ms */
     uint32_t turn_ms_max;    /* I377: longest turn of desk_wait without its poll wait, host clock ms */
     uint32_t poll_ms;        /* I377: poll wait accumulated inside the running turn */
@@ -1459,11 +1459,16 @@ typedef struct shelf {
 static uint32_t home_shelves(const sel_state* st, shelf* out) {
     const sel_view_state* v = st->view;
     uint32_t i, k, n = 0;
+    int in_quick = 0;
     if (v == NULL || v->source != SEL_VIEW_HOME) {
         return 0;
     }
     for (i = 0; i < v->row_n; i++) {
         if (v->rows[i].kind == SEL_ROW_HEADING) {
+            in_quick = (int)v->rows[i].quick; /* I478: the quick-pick grid is not a shelf; home_quick reads it */
+            if (in_quick) {
+                continue;
+            }
             if (n == SHELF_MAX) {
                 break;
             }
@@ -1472,7 +1477,7 @@ static uint32_t home_shelves(const sel_state* st, shelf* out) {
             out[n].tiles = 0;
             out[n].rows = 0;
             n++;
-        } else if (n > 0u) {
+        } else if (n > 0u && !in_quick) {
             out[n - 1u].rows++;
             out[n - 1u].tiles += v->rows[i].key != NULL;
         }
@@ -1526,13 +1531,75 @@ static uint32_t shelf_tile_row(const sel_state* st, const shelf* sh, uint32_t k)
     return 0xFFFFFFFFu;
 }
 
+/* ---- I478: the Spotify-style quick-pick grid at the top of Home: compact horizontal tiles (art left, name right) of
+ * the most recent albums. The engine marks its rows with a Quick picks heading (row.quick); a tile opens through the
+ * same activation path as a shelf tile. 4 columns when each cell keeps QUICK_MIN_W, else 2 columns. ---- */
+enum { QUICK_ART = 56, QUICK_MIN_W = 160, QUICK_COLS_WIDE = 4, QUICK_COLS_NARROW = 2 };
+
+/* Fills q with the quick-pick rows (first, rows, tiles); returns the tile count, 0 when Home has no grid. */
+static uint32_t home_quick(const sel_state* st, shelf* q) {
+    const sel_view_state* v = st->view;
+    uint32_t i;
+    if (v == NULL || v->source != SEL_VIEW_HOME) {
+        return 0;
+    }
+    for (i = 0; i < v->row_n; i++) {
+        if (v->rows[i].kind == SEL_ROW_HEADING && v->rows[i].quick) {
+            q->head = i;
+            q->first = i + 1u;
+            q->rows = 0;
+            q->tiles = 0;
+            while (q->first + q->rows < v->row_n && v->rows[q->first + q->rows].kind != SEL_ROW_HEADING) {
+                q->tiles += v->rows[q->first + q->rows].key != NULL;
+                q->rows++;
+            }
+            return q->tiles;
+        }
+    }
+    return 0;
+}
+
+static uint32_t quick_cols(desk* d) {
+    sel_gui_rect mn = region_rect(d, "main");
+    int32_t gap = lpx(d, HOME_TILE_GAP) * 2;
+    int32_t cell = (mn.w - 2 * lpx(d, HOME_MARGIN) - 3 * gap) / 4;
+    return cell >= lpx(d, QUICK_MIN_W) ? QUICK_COLS_WIDE : QUICK_COLS_NARROW;
+}
+
+/* Height of the grid plus the gap under it in canvas pixels, 0 without a grid. */
+static int32_t quick_h(desk* d) {
+    shelf q;
+    uint32_t tiles = home_quick(sel_engine_state(d->engine), &q), cols = quick_cols(d), rows;
+    if (tiles == 0u) {
+        return 0;
+    }
+    rows = (tiles + cols - 1u) / cols;
+    return (int32_t)rows * (lpx(d, QUICK_ART) + lpx(d, HOME_TILE_GAP) * 2) + lpx(d, SHELF_GAP);
+}
+
+static sel_gui_rect quick_tile_rect(desk* d, uint32_t k) {
+    sel_gui_rect mn = region_rect(d, "main");
+    uint32_t cols = quick_cols(d);
+    int32_t gap = lpx(d, HOME_TILE_GAP) * 2;
+    int32_t w = (mn.w - 2 * lpx(d, HOME_MARGIN) - ((int32_t)cols - 1) * gap) / (int32_t)cols;
+    return rect_of(mn.x + lpx(d, HOME_MARGIN) + (int32_t)(k % cols) * (w + gap),
+                   mn.y - lpx(d, d->home_y_q16 >> 16) + lpx(d, HOME_SECTION_Y) + (int32_t)(k / cols) * (lpx(d, QUICK_ART) + gap), w,
+                   lpx(d, QUICK_ART));
+}
+
 /* The art keys of what Home shows: the queue paths of the tile grid, or the song keys of the shelf tiles (shelf mode).
  * Returns how many were written to out[0..cap). */
 static uint32_t art_keys(const sel_state* st, const char** out, uint32_t cap) {
     uint32_t i, n = 0;
     if (home_shelf_mode(st)) {
-        shelf sh[SHELF_MAX];
+        shelf sh[SHELF_MAX], qs;
         uint32_t s, k, ns = home_shelves(st, sh);
+        for (k = 0; k < home_quick(st, &qs) && n < cap; k++) {
+            const char* key = st->view->rows[shelf_tile_row(st, &qs, k)].art_ref;
+            if (key != NULL) {
+                out[n++] = key;
+            }
+        }
         for (s = 0; s < ns; s++) {
             for (k = 0; k < sh[s].tiles && n < cap; k++) {
                 const char* key = st->view->rows[shelf_tile_row(st, &sh[s], k)].art_ref;
@@ -1556,7 +1623,7 @@ static int32_t shelf_card_h(desk* d) {
 
 /* Whole Home content height in logical pixels: the header, then every shelf. */
 static int32_t home_content_h(desk* d, uint32_t shelves) {
-    return HOME_SECTION_Y + (int32_t)shelves * (SHELF_HEAD_H + SHELF_GAP + shelf_card_h(d) / (lpx(d, 1) > 0 ? lpx(d, 1) : 1));
+    return HOME_SECTION_Y + quick_h(d) / (lpx(d, 1) > 0 ? lpx(d, 1) : 1) + (int32_t)shelves * (SHELF_HEAD_H + SHELF_GAP + shelf_card_h(d) / (lpx(d, 1) > 0 ? lpx(d, 1) : 1));
 }
 
 /* The vertical scroll limit in Q16 logical pixels: the content beyond the main panel height, 0 when it fits. */
@@ -1570,7 +1637,7 @@ static int32_t home_max_y_q16(desk* d) {
 
 static int32_t shelf_top(desk* d, uint32_t s) {
     sel_gui_rect mn = region_rect(d, "main");
-    return mn.y - lpx(d, d->home_y_q16 >> 16) + lpx(d, HOME_SECTION_Y) + (int32_t)s * (lpx(d, SHELF_HEAD_H + SHELF_GAP) + shelf_card_h(d));
+    return mn.y - lpx(d, d->home_y_q16 >> 16) + lpx(d, HOME_SECTION_Y) + quick_h(d) + (int32_t)s * (lpx(d, SHELF_HEAD_H + SHELF_GAP) + shelf_card_h(d));
 }
 
 /* The scroll limit of a shelf in Q16 logical pixels: the tiles' width beyond the visible width. */
@@ -1598,7 +1665,14 @@ static uintptr_t home_dump_build(desk* d) {
     shelf sh[SHELF_MAX];
     uint32_t s, k, n = home_shelves(st, sh);
     size_t o = 0;
+    shelf qs;
+    uint32_t qn = home_quick(st, &qs);
     d->home_dump[0] = '\0';
+    for (k = 0; k < qn && o + 200u < sizeof d->home_dump; k++) { /* I478: "quick K cols=C key|title|artist" */
+        const sel_view_row* r = &st->view->rows[shelf_tile_row(st, &qs, k)];
+        o += (size_t)snprintf(d->home_dump + o, sizeof d->home_dump - o, "quick %u cols=%u %s|%s|%s\n", (unsigned)k, (unsigned)quick_cols(d),
+                              r->key, r->text, r->artist != NULL ? r->artist : "");
+    }
     for (s = 0; s < n; s++) {
         for (k = 0; k < sh[s].tiles && o + 200u < sizeof d->home_dump; k++) {
             const sel_view_row* r = &st->view->rows[shelf_tile_row(st, &sh[s], k)];
@@ -1628,6 +1702,21 @@ static int shelf_hit(desk* d, int32_t x, int32_t y, uint32_t* ps, uint32_t* pk) 
     return 0;
 }
 
+/* The quick-pick tile under a canvas point, or 0. */
+static int quick_hit(desk* d, int32_t x, int32_t y, uint32_t* pk) {
+    shelf q;
+    uint32_t k, n = home_quick(sel_engine_state(d->engine), &q);
+    sel_gui_rect mn = region_rect(d, "main");
+    for (k = 0; k < n; k++) {
+        sel_gui_rect t = quick_tile_rect(d, k);
+        if (x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h && x >= mn.x && x < mn.x + mn.w) {
+            *pk = k;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* The shelf whose band holds the canvas row y, or SHELF_NONE. */
 static uint32_t shelf_at_y(desk* d, int32_t y) {
     shelf sh[SHELF_MAX];
@@ -1646,15 +1735,29 @@ static uint32_t shelf_at_y(desk* d, int32_t y) {
 static int desk_page_goto(desk* d, desk_page pg);
 static void desk_composer_request(char* line, size_t cap, const char* canon);
 
+static void shelf_activate_row(desk* d, uint32_t row);
+
 static void shelf_activate(desk* d, uint32_t s, uint32_t k) {
     const sel_state* st = sel_engine_state(d->engine);
     shelf sh[SHELF_MAX];
-    char line[48];
-    uint32_t row;
     if (home_shelves(st, sh) <= s) {
         return;
     }
-    row = shelf_tile_row(st, &sh[s], k);
+    shelf_activate_row(d, shelf_tile_row(st, &sh[s], k));
+}
+
+/* I478: a quick-pick tile opens through the same row activation as a shelf tile. */
+static void quick_activate(desk* d, uint32_t k) {
+    const sel_state* st = sel_engine_state(d->engine);
+    shelf q;
+    if (home_quick(st, &q) > k) {
+        shelf_activate_row(d, shelf_tile_row(st, &q, k));
+    }
+}
+
+static void shelf_activate_row(desk* d, uint32_t row) {
+    const sel_state* st = sel_engine_state(d->engine);
+    char line[48];
     if (row == 0xFFFFFFFFu) {
         return;
     }
@@ -2081,8 +2184,41 @@ static void shelf_scroll(desk* d, int32_t y, int32_t notches_q16) {
     d->shelf_q16[s] = (int32_t)v;
 }
 
+/* I478: the quick-pick grid: a card of the shelf tiles' surface and radius, small square art on the left, the name beside it. */
+static void draw_quick(desk* d, sel_gui_rect mn) {
+    const sel_state* st = sel_engine_state(d->engine);
+    uint32_t panel = ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]);
+    int32_t radius = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]);
+    int32_t gap = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    shelf q;
+    uint32_t k, n = home_quick(st, &q);
+    for (k = 0; k < n; k++) {
+        const sel_view_row* r = &st->view->rows[shelf_tile_row(st, &q, k)];
+        sel_gui_rect t = quick_tile_rect(d, k);
+        sel_gui_rect ar = rect_of(t.x, t.y, t.h, t.h);
+        const uint32_t* art;
+        if (t.y + t.h <= mn.y || t.y >= mn.y + mn.h) {
+            continue;
+        }
+        sel_gui_fill_rect(d->canvas, t, panel);
+        sel_gui_round_rect(d->canvas, t, radius, panel);
+        d->tile_cards++;
+        d->home_parts |= HP_TILE_CARD;
+        art = r->art_ref != NULL ? art_tile(d->art, r->art_ref) : NULL;
+        if (art != NULL) {
+            sel_gui_set_region(d->canvas, SEL_GUI_RGN_TILE);
+            sel_gui_blit_image(d->canvas, ar, art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, 0);
+            sel_gui_set_region(d->canvas, SEL_GUI_RGN_UI);
+        } else {
+            sel_gui_genart_draw(d->canvas, ar, "album", sel_gui_str_hash(r->text));
+        }
+        draw_text(d, rect_of(t.x + t.h + gap, t.y, t.w - t.h - 2 * gap, t.h), r->text, 1, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    }
+}
+
 static void draw_shelves(desk* d, sel_gui_rect mn) {
     d->shelf_album_art_draws = 0u; /* the stat counts the album covers of the last shelf paint */
+    draw_quick(d, mn);
     const sel_state* st = sel_engine_state(d->engine);
     int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
     int32_t mg = lpx(d, HOME_MARGIN);
@@ -5271,6 +5407,11 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
     }
     if (home_shelf_mode(st)) { /* a shelf tile: the engine plays the song or opens the album */
         uint32_t s, k;
+        if (quick_hit(d, x, y, &k)) {
+            quick_activate(d, k);
+            draw_home(d);
+            return 1;
+        }
         if (!shelf_hit(d, x, y, &s, &k)) {
             return 0;
         }
@@ -7155,6 +7296,9 @@ static int desk_replay_input(desk* d) {
                 }
                 t = s < cnt ? shelf_tile_rect(d, s, left) : rect_of(-1, -1, 0, 0);
             }
+            opened |= desk_event_frame(d, desk_click(d, t.x + t.w / 2, t.y + t.h / 2));
+        } else if (sscanf(line, "quicktile %u", &n) == 1) { /* I478: a click on the centre of quick-pick tile n */
+            sel_gui_rect t = quick_tile_rect(d, n);
             opened |= desk_event_frame(d, desk_click(d, t.x + t.w / 2, t.y + t.h / 2));
         } else if (sscanf(line, "door %u", &n) == 1 && n < DOOR_COUNT) { /* a click on the centre of door n */
             sel_gui_rect r = sidebar_door_rect(d, n);
