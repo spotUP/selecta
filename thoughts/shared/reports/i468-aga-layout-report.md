@@ -16,21 +16,24 @@ mechanism to desktop_ui.c, where 384 `lpx()` call sites use one scale for both a
   and 20 drawn rows on both canvas formats; layout y 8 maps to row 4; fill and clip map. Revert check: with `ydv()`
   forced to 1 the test reports 6 failed checks; restored, it passes.
 
-## Open (all needed before I468 closes)
-1. Remaining primitives with ydiv: gradient, line, scrim, round_frame, blit_image(_round), shadows, genart, icons.
-2. `round_cov` (frame, image-round, shadow) is still circular.
-3. Text: atlas builder (plugins/ui/desktop/atlas_build.c, src/gui/text) needs separate x/y scale; `tools/gui_fontbake.c`
-   must bake Inter at half height and `desk_font()` pick them; text metrics in layout space vs drawn.
-4. Icons: `gui_iconbake` half-height bakes and the icon draw sites.
-5. desktop_ui.c: choose ydiv=2 and a 640x512 layout size for backend aga at height <= 300 (canvas 640x256 vs layout
-   640x512); mouse y doubled in the input path; present/dirty mapping.
-6. I457: with the 640x512 layout space the full layout applies, so the left rail should appear; re-measure the
-   Statistics clipping after item 5.
-7. Golden at 640x256 through `selecta --ui desktop --backend mem --canvas 640x256` with a round play button measured
-   (width == 2 * rows); AGA build (`-DSEL_DESKTOP_AGA=ON`, build/amiga-aga) and rig 640x256 check.
-8. One reachability test through the shell proving ydiv reached the draw (sentinel).
+## Final state (2026-10-26)
+Design doc: thoughts/shared/plans/2026-10-24-desktop-ui.md Q14 (640x256 is the design target, fully laid out, goldens at
+640x256), Q2 (AGA 640x512 unit) and section 2.11 (68020 and AGA constraints).
 
-## Not done in this run
-No Amiga build and no rig run: nothing in the shell sets ydiv yet, so a rig check would show the old layout.
-The fresh worktree had no submodules; I ran `git submodule update --init --reference <main checkout>` for
-third_party/nuade and third_party/libopenmpt.
+Commits: 0386628 (canvas ydiv), 54a4b2b (all primitives, baked fonts, icons, desktop layout in square pixels at ydiv 2,
+mouse y doubled, `--ydiv N` option; aga backend picks ydiv 2 at height <= 300), b603359 (test dui-tall-pixels + golden).
+
+Done: open items 1-8 of the earlier list. The play button is square in layout space and measures width = 2 * rows on
+screen (14 columns x 7 rows walked from its centre; with ydiv forced to 1 the same test fails: 14x20). I457: the sidebar
+region exists at 640x256, the Statistics strip lies inside the 512-row layout, missing_glyphs=0. ydiv 1 goldens are
+byte-identical. `ctest -L dui -LE dui-red`: 55 of 56 pass.
+
+Open:
+- dui-keys fails (the `all` run: no `ui_stats id=desktop` after the UI switch closes the desktop). Cause unproven;
+  my diff touches pointer routing (KEY events are copied unchanged), canvas creation, fonts and icons. Needs a bisect
+  against 0386628~1 (d63e790).
+- AGA cross build (`-DSEL_DESKTOP_AGA=ON`, build/amiga-aga) and the rig 640x256 check NOT run: `df -h /` showed 2.0 GiB
+  free, the build needs about 3 GiB. Question for the rig: is the play button round, does the left rail show.
+- Merge risk: another agent edits desktop_ui.c (Sources page); conflicts likely near desk_font, desk_make_canvas,
+  desk_build_icons, desk_route_input and the desk_open options.
+
