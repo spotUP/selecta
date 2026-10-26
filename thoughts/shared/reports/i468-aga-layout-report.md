@@ -48,3 +48,20 @@ own SEL_PLUGIN_ID string. dui-keys is the regression test: fails with the fix re
 (11 of 11 runs after the fix; one run early on ended in a 120 s Timeout that did not recur, unverified cause).
 Result: `ctest -L dui -LE dui-red` 56 of 56 in build/host (reconfigured with SELECTA_UI_DESKTOP=ON; it was OFF).
 Open: AGA cross build and rig check (disk).
+
+## I468 rig check
+
+Run 2026-10-26 on rig 2 (FS-UAE A1200, 68020 `--a1200`, Workbench on native AGA via `rig.py aga`, window title purpose "MusicPlayer AGA agent: 640x256 desktop layout check"). Build: `build/amiga-aga` from b0ed7ec, `-DSEL_DESKTOP_AGA=ON` with the host gui_iconbake and gui_fontbake, 746 steps, no errors. Rig stopped afterwards.
+
+Answers (screen 640x256, Selecta 8-bitplane AGA screen, ui_logical=1024x819, ydiv 2):
+- Play button round: YES (circle at the transport centre, seen in both screenshots).
+- Left rail visible: YES (Selecta header and seven entries Home to Song Information; stats line `rail 0 0 125 467`).
+- Statistics strip clipped: NO (Library page, `--view library`: Statistics, Songs in library, Total plays, Total play time and the More control all inside the main region).
+- Glyphs missing: NO (`missing_glyphs=0` on Home and Library; `glyphs=79` on Home).
+
+Evidence: screenshots /private/tmp/claude-501/-Users-spot-Code-MusicPlayer/cbd1c5e4-7b39-4744-b423-20042bbd174d/scratchpad/i468-rig-aga3.png (Home) and /private/tmp/claude-501/-Users-spot-Code-MusicPlayer/cbd1c5e4-7b39-4744-b423-20042bbd174d/scratchpad/i468-rig-lib.png (Library), stats /private/tmp/claude-501/-Users-spot-Code-MusicPlayer/cbd1c5e4-7b39-4744-b423-20042bbd174d/scratchpad/i468-rig-home.out and /private/tmp/claude-501/-Users-spot-Code-MusicPlayer/cbd1c5e4-7b39-4744-b423-20042bbd174d/scratchpad/i468-rig-lib.out. Home first frame took 9.4 s on the 020 (present_ms 9028, paint_ms 380); atlas_baked_hits=5, atlas_builds=0.
+
+Defects found (not fixed):
+1. `--backend aga` alone does not open. `sel_uim_budget_for` (plugins/ui/desktop/desktop_ui.c:8233) takes the format from `--format` only, so the default is rgba32; `desk_aga_open` (plugins/ui/desktop/amiga/backend_aga.c:~137) then refuses with "the AGA screen shows an INDEX8 canvas only" on stdout (not the --log file) and the shell prints "the UI could not open". It works with `--format index8`. Root fix: default the budget format to index8 when the backend is aga (the rtg line in RULES.md has no such flag either). Not fixed here: the AGA branch is compiled only in the Amiga build, so a regression test needs the vamos/rig path; left for a row.
+2. The default 16 KiB shell stack overflows (`amiga_start: stack overflow, canary`): the run needs `Stack 262144` first. RULES.md run line does not say so.
+3. The backend open failure message goes to stdout, so `--log` (stderr only) hides the reason.
