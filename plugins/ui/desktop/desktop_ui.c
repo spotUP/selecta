@@ -322,7 +322,7 @@ typedef struct desk {
     int toast_on;            /* 1 while a toast is on screen */
     int toast_out;           /* 1 while the toast fades out (toast_until is then the end of the fade) */
     uint32_t toast_until;    /* UI clock when the toast goes away */
-    char toast_text[64];
+    char toast_text[160];
     char last_verb[64];      /* the line the palette or the command line sent last */
     const sel_tag* (*find_plugin)(uint32_t kind, const char* id); /* registry lookup the app hands over (DUI-P4-11) */
     sel_viz_render_fn viz_fn[3]; /* the viz plugins found at open: scope, levels, spectrum */
@@ -1937,7 +1937,15 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
                 }
                 d->menu_picks[slot]++;
                 d->sm_picks++;
-                desk_toast(d, done[k]);
+                {
+                    /* I442: the toast names the song, not only the action. */
+                    char title[128], text[160];
+                    if (!sel_engine_song_title(d->engine, d->sm_ref.path, title, sizeof title)) {
+                        snprintf(title, sizeof title, "%s", path_base(d->sm_ref.path));
+                    }
+                    snprintf(text, sizeof text, "%s: %s", done[k], title);
+                    desk_toast(d, text);
+                }
             }
             break;
         }
@@ -3667,6 +3675,7 @@ static const char* library_dump_build(desk* d) {
                               d->scan_pending, (int)tr.x, (int)tr.y, (int)tr.w, (int)tr.h, (int)ab.x, (int)ab.y, (int)ab.w, (int)ab.h,
                               (int)sr.x, (int)sr.y, (int)sr.w, (int)sr.h);
     }
+    o = dump_put(d, o, "toast_text %s\n", d->toast_text[0] != '\0' ? d->toast_text : "-");
     o = dump_put(d, o, "scan_mid %u\n", (unsigned)d->scan_mid);
     o = dump_put(d, o, "search draws %u rows %u query %s\n",
                           (unsigned)d->search_draws, (unsigned)d->search_rows, d->query);
@@ -5859,9 +5868,9 @@ static sel_gui_rect overlay_row(const desk* d, uint32_t i) {
     return rect_of(b.x + lpx(d, 8), b.y + lpx(d, OV_HEAD_H) + (int32_t)i * lpx(d, OV_ROW_H), b.w - lpx(d, 16), lpx(d, OV_ROW_H));
 }
 
+/* I442: the toast sits in the bottom right corner of the app window, 16 px in from both edges. */
 static sel_gui_rect toast_rect(desk* d) {
-    sel_gui_rect mn = region_rect(d, "main");
-    return rect_of(mn.x + mn.w - lpx(d, 260 + 16), mn.y + mn.h - lpx(d, 40 + 16) - lpx(d, CMD_BAR_H), lpx(d, 260), lpx(d, 40));
+    return rect_of(d->canvas->w - lpx(d, 320 + 16), d->canvas->h - lpx(d, 40 + 16), lpx(d, 320), lpx(d, 40));
 }
 
 static void desk_draw_overlay(desk* d) {
@@ -5923,12 +5932,10 @@ static void desk_draw_overlay(desk* d) {
         b.y += (int32_t)(((int64_t)(65536 - q) * lpx(d, TOAST_SLIDE)) >> 16); /* slides up into place, back down on the way out */
         fill = desk_mix(d->theme.token[SEL_GUI_TOKEN_SURFACE], d->theme.token[SEL_GUI_TOKEN_ACCENT], q);
         ink = desk_mix(d->theme.token[SEL_GUI_TOKEN_SURFACE], d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT], q);
-        if (d->shadow_ready) {
-            sel_gui_shadow_draw(d->canvas, &d->shadow, b);
-        }
+        /* I442: no drop shadow; it read as a heavy black outline around the toast. */
         sel_gui_round_rect(d->canvas, b, rad, fill);
         draw_text(d, rect_of(b.x + lpx(d, 16), b.y, b.w - lpx(d, 32), b.h), d->toast_text, 1, 13, ink);
-        sel_gui_dirty_add(d->canvas, rect_of(b.x - lpx(d, 24), b.y - lpx(d, 24), b.w + lpx(d, 48), b.h + lpx(d, 48 + TOAST_SLIDE)));
+        sel_gui_dirty_add(d->canvas, rect_of(b.x, b.y, b.w, b.h + lpx(d, TOAST_SLIDE)));
     }
 }
 
@@ -7506,6 +7513,11 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
             desk_resize(d, w, h);
         }
         desk_sdl_route(d);
+        /* I442: the UI timers (toast, tooltip delay, search debounce) run here for the same reason as the tweens below: a
+         * turn that returns early during playback would otherwise never reach them, and a toast stayed on screen for good. */
+        if (d->live && desk_timers_tick(d)) {
+            overlay_refresh(d);
+        }
         /* I341: a running tween is drawn on every turn, and the end state of one that ended is drawn once, whatever else the
          * turn does. During playback with a visualizer the turn returns early (new engine block, or a presented frame), so
          * this must not live in the idle branch below: the hover fade would never get a step frame and stayed at weight 0.
@@ -7614,9 +7626,6 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
             desk_resize(d, w, h);
         }
         desk_sdl_route(d);
-        if (desk_timers_tick(d)) { /* the clock is fresh after the route: a toast that is due leaves the screen */
-            overlay_refresh(d);
-        }
         return ev == DESK_SDL_NONE ? 0 : 1;
     }
 #endif
