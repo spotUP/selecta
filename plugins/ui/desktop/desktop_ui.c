@@ -208,6 +208,7 @@ typedef struct desk {
     uint32_t np_genart;      /* genart_draw runs by the Now Playing panel: one per draw (DUI-P4-7) */
     sel_gui_rect np_title;      /* the Now Playing title and artist lines, w 0 = not drawn: a song row of the song menu (I372) */
     sel_gui_rect np_like, np_rate[5]; /* click targets of the like button and the five rating marks */
+    int32_t np_inset_l, np_inset_r; /* gap between the Now Playing panel edge and its content, left and right: one spacing token (I404) */
     uint32_t np_msg_lines;            /* lines of the song message the last Now Playing draw laid out (I290) */
     int32_t np_liked;                 /* 1 when the last Now Playing draw showed the heart as liked (I306) */
     int32_t np_rating;                /* filled rating marks of the last Now Playing draw (I288) */
@@ -3575,7 +3576,8 @@ static const char* library_dump_build(desk* d) {
         sel_gui_rect sr = lib_stats_rect(d, region_rect(d, "main"), st);
         o = dump_put(d, o, "stats rect %d %d %d %d\n", (int)sr.x, (int)sr.y, (int)sr.w, (int)sr.h);
     }
-    o = dump_put(d, o, "nowplaying draws %u pairs %u genart %u\nlyrics line %d at %u\nmessage lines %u\n",
+    o = dump_put(d, o, "nowplaying inset left %d right %d token %d\nnowplaying draws %u pairs %u genart %u\nlyrics line %d at %u\nmessage lines %u\n",
+                          (int)d->np_inset_l, (int)d->np_inset_r, (int)lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]),
                           (unsigned)d->np_draws, (unsigned)d->np_rows, (unsigned)d->np_genart, (int)st->lyric_line, (unsigned)st->song.position_ms, (unsigned)d->np_msg_lines);
     o = dump_put(d, o, "rating %d liked %d mark %d %d %d %d step %d\n", (int)d->np_rating, (int)d->np_liked,
                           (int)d->np_rate[0].x, (int)d->np_rate[0].y, (int)d->np_rate[0].w, (int)d->np_rate[0].h,
@@ -5163,11 +5165,11 @@ static const char* np_basename(const char* path) {
 static void draw_nowplaying(desk* d) {
     const sel_uim_frame* f = &d->uim.frame;
     const sel_state* st = sel_engine_state(d->engine);
-    sel_gui_rect dt = region_rect(d, "detail");
+    sel_gui_rect dt = region_rect(d, "detail"), pn = panel_rect(d, "detail");
     int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     uint32_t accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
-    int32_t side = dt.w - 2 * sp, y, rating = 0, liked = 0, ic = lpx(d, 20);
+    int32_t side = pn.w - 2 * sp, asz, y, rating = 0, liked = 0, ic = lpx(d, 20);
     sel_gui_rect ar, band;
     uint32_t k, first;
     d->np_title = rect_of(0, 0, 0, 0);
@@ -5175,15 +5177,15 @@ static void draw_nowplaying(desk* d) {
         return;
     }
     draw_panel(d, "detail");
-    if (side > dt.h / 3) {
-        side = dt.h / 3;
-    }
-    ar = rect_of(dt.x + (dt.w - side) / 2, dt.y + 2 * sp, side, side);
+    /* The artwork is capped by the panel height but starts on the same inset as every other line; the text lines keep the
+     * full width between the two insets (I404). */
+    asz = side > dt.h / 3 ? dt.h / 3 : side;
+    ar = rect_of(pn.x + sp, dt.y + 2 * sp, asz, asz);
     sel_gui_genart_draw(d->canvas, ar, f->format, sel_gui_str_hash(f->title));
     d->np_genart++;
     /* The header tint is the artwork's own average colour blended into the header token, fading to the panel colour. The
      * artwork is drawn once, so the gradient is clipped to the band around it: above the artwork and on both sides. */
-    band = rect_of(dt.x, dt.y, dt.w, 2 * sp + side / 2);
+    band = rect_of(dt.x, dt.y, dt.w, 2 * sp + asz / 2);
     {
         uint32_t tint = desk_mix(ARGB(d->theme.token[SEL_GUI_TOKEN_HEADER_TINT]), np_art_average(d, ar), 32768);
         sel_gui_rect around[3];
@@ -5200,13 +5202,13 @@ static void draw_nowplaying(desk* d) {
         }
     }
     y = ar.y + ar.h + sp;
-    draw_text(d, rect_of(dt.x + sp, y, side, lpx(d, 22)), f->title, 1, 16, text);
-    draw_text(d, rect_of(dt.x + sp, y + lpx(d, 22), side, lpx(d, 18)), f->artist, 0, 13, muted);
-    d->np_title = rect_of(dt.x + sp, y, side, lpx(d, 40));
+    draw_text(d, rect_of(pn.x + sp, y, side, lpx(d, 22)), f->title, 1, 16, text);
+    draw_text(d, rect_of(pn.x + sp, y + lpx(d, 22), side, lpx(d, 18)), f->artist, 0, 13, muted);
+    d->np_title = rect_of(pn.x + sp, y, side, lpx(d, 40));
     np_title_reg(d);
     /* Like and rating: the library's rating row gives the filled marks; a click sends LIKE or RATE n like the text UI. */
     y += lpx(d, 44);
-    d->np_like = rect_of(dt.x + sp, y, ic, ic);
+    d->np_like = rect_of(pn.x + sp, y, ic, ic);
     if (st->panel != NULL) {
         const char* p = st->panel;
         while (*p != '\0') {
@@ -5220,11 +5222,13 @@ static void draw_nowplaying(desk* d) {
         }
     }
     d->np_rating = rating;
+    d->np_inset_l = d->np_like.x - pn.x;
+    d->np_inset_r = pn.x + pn.w - (d->np_title.x + d->np_title.w);
     d->np_liked = liked;
     sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_HEART, d->np_like, ic, row_ink(d, d->np_like, liked ? accent : muted));
     for (k = 0; k < 5u; k++) {
         int32_t m = lpx(d, 12);
-        d->np_rate[k] = rect_of(dt.x + sp + ic + lpx(d, 12) + (int32_t)k * (m + lpx(d, 6)), y + (ic - m) / 2, m, m);
+        d->np_rate[k] = rect_of(pn.x + sp + ic + lpx(d, 12) + (int32_t)k * (m + lpx(d, 6)), y + (ic - m) / 2, m, m);
         /* A rating mark lights under the pointer (I357): a set mark brightens like an accent fill, an empty one warms to muted. */
         hover_reg(d, d->np_rate[k]);
         sel_gui_round_rect(d->canvas, d->np_rate[k], m / 2,
@@ -5233,11 +5237,11 @@ static void draw_nowplaying(desk* d) {
     }
     y += ic + sp;
     /* The visualizer strip (DUI-P4-11): the selected viz plugin's picture of the newest frame. */
-    d->np_viz = rect_of(dt.x + sp, y, side, lpx(d, 72));
+    d->np_viz = rect_of(pn.x + sp, y, side, lpx(d, 72));
     if (st->song.path != NULL && d->np_viz.y + d->np_viz.h < dt.y + dt.h && d->viz_n > 0u) {
         viz_draw_area(d, d->np_viz, d->viz_sel);
         y += d->np_viz.h + sp / 2;
-        viz_switch_draw(d, 0u, rect_of(dt.x + sp, y, side, lpx(d, 24)));
+        viz_switch_draw(d, 0u, rect_of(pn.x + sp, y, side, lpx(d, 24)));
         y += lpx(d, 24) + sp;
     } else {
         d->np_viz = rect_of(0, 0, 0, 0);
@@ -5251,8 +5255,8 @@ static void draw_nowplaying(desk* d) {
         while (*p != '\0' && d->np_rows < NP_PAIRS_MAX) {
             const char* v = p + strlen(p) + 1;
             int32_t half = side * 2 / 5;
-            draw_text(d, rect_of(dt.x + sp, y, half, lpx(d, 16)), p, 0, 11, muted);
-            draw_text(d, rect_of(dt.x + sp + half, y, side - half, lpx(d, 16)), v, 0, 12, text);
+            draw_text(d, rect_of(pn.x + sp, y, half, lpx(d, 16)), p, 0, 11, muted);
+            draw_text(d, rect_of(pn.x + sp + half, y, side - half, lpx(d, 16)), v, 0, 12, text);
             y += lpx(d, 16);
             d->np_rows++;
             p = v + strlen(v) + 1;
@@ -5261,16 +5265,16 @@ static void draw_nowplaying(desk* d) {
     y += sp;
     /* Lyrics: the previous and next lines muted around the current line in the accent colour. */
     if (st->lyric_lines > 0u) {
-        draw_text(d, rect_of(dt.x + sp, y, side, lpx(d, 16)), st->lyric_prev != NULL ? st->lyric_prev : "", 0, 12, muted);
-        draw_text(d, rect_of(dt.x + sp, y + lpx(d, 18), side, lpx(d, 20)), st->lyric_current != NULL ? st->lyric_current : "", 1, 15, accent);
-        draw_text(d, rect_of(dt.x + sp, y + lpx(d, 40), side, lpx(d, 16)), st->lyric_next != NULL ? st->lyric_next : "", 0, 12, muted);
+        draw_text(d, rect_of(pn.x + sp, y, side, lpx(d, 16)), st->lyric_prev != NULL ? st->lyric_prev : "", 0, 12, muted);
+        draw_text(d, rect_of(pn.x + sp, y + lpx(d, 18), side, lpx(d, 20)), st->lyric_current != NULL ? st->lyric_current : "", 1, 15, accent);
+        draw_text(d, rect_of(pn.x + sp, y + lpx(d, 40), side, lpx(d, 16)), st->lyric_next != NULL ? st->lyric_next : "", 0, 12, muted);
         y += lpx(d, 62);
     } else if (st->lyric_text != NULL) {
         /* A tracker song message is several lines (a MOD's sample names, '\n' apart): laid out as wrapped lines, at most
          * NP_MESSAGE_LINES, so it never reaches the queue below (I290). */
         const sel_gui_atlas* at = desk_font(d, 0, 12);
         if (at != NULL) {
-            sel_gui_rect box = rect_of(dt.x + sp, y, side, NP_MESSAGE_LINES * at->line_height);
+            sel_gui_rect box = rect_of(pn.x + sp, y, side, NP_MESSAGE_LINES * at->line_height);
             sel_gui_clip_push(d->canvas, box);
             d->np_msg_lines = (uint32_t)sel_gui_text_wrap(d->canvas, at, box, st->lyric_text, muted, NP_MESSAGE_LINES, &d->text);
             sel_gui_clip_pop(d->canvas);
@@ -5280,10 +5284,10 @@ static void draw_nowplaying(desk* d) {
     /* Up next: the queue entries after the playing one. */
     for (k = 0; k < st->queue_count && st->queue[k].id != st->queue_playing; k++) {
     }
-    draw_text(d, rect_of(dt.x + sp, y, side, lpx(d, 16)), "Next in Queue", 1, 11, muted);
+    draw_text(d, rect_of(pn.x + sp, y, side, lpx(d, 16)), "Next in Queue", 1, 11, muted);
     y += lpx(d, 18);
     for (first = ++k; k < st->queue_count && k - first < NP_UPNEXT_MAX && y + lpx(d, 16) < dt.y + dt.h; k++) {
-        draw_text(d, rect_of(dt.x + sp, y, side, lpx(d, 16)), np_basename(st->queue_text + st->queue[k].path_offset), 0, 12, text);
+        draw_text(d, rect_of(pn.x + sp, y, side, lpx(d, 16)), np_basename(st->queue_text + st->queue[k].path_offset), 0, 12, text);
         y += lpx(d, 18);
     }
     sel_gui_dirty_add(d->canvas, dt);

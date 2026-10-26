@@ -5,6 +5,7 @@
 # 2. STAT_META_PANEL_ROWS (the meta_panel line) equals the panel pair count the dump prints and the number of `meta` lines,
 #    and equals the number of metadata fields the script set (one RATE).
 # 3. The panel drew (sentinel `nowplaying draws`) and a golden hash pins the frame.
+# 2b. I404: the dump line `nowplaying inset left L right R token T` has L == R == T.
 # 3b. I257: genart runs once per Now Playing draw (`genart N` equals `draws N` in the dump).
 # 4. I288: a click on the fourth rating mark of an unrated song fills four marks in the same run (`rating N` in the dump is
 #    the count the last Now Playing draw filled). Run A reads the mark rectangles, run B clicks there.
@@ -45,6 +46,13 @@ function(np_run tag seek_ms)
   set(${tag}_draws "${CMAKE_MATCH_1}" PARENT_SCOPE)
   set(${tag}_pairs "${CMAKE_MATCH_2}" PARENT_SCOPE)
   set(${tag}_genart "${CMAKE_MATCH_3}" PARENT_SCOPE)
+  # I404: art tile, heart, title and metadata sit one spacing token from the panel edge, left and right alike.
+  if(NOT "${o}" MATCHES "nowplaying inset left (-?[0-9]+) right (-?[0-9]+) token ([0-9]+)")
+    message(FATAL_ERROR "no nowplaying inset line in:\n${o}")
+  endif()
+  if(NOT CMAKE_MATCH_1 EQUAL CMAKE_MATCH_3 OR NOT CMAKE_MATCH_2 EQUAL CMAKE_MATCH_3 OR CMAKE_MATCH_3 LESS 1)
+    message(FATAL_ERROR "Now Playing inset left ${CMAKE_MATCH_1} right ${CMAKE_MATCH_2}, want both equal to the spacing token ${CMAKE_MATCH_3}")
+  endif()
   if(NOT "${o}" MATCHES "meta_panel panel_loads=[0-9]+ meta_panel_rows=([0-9]+)")
     message(FATAL_ERROR "no meta_panel stat in:\n${o}")
   endif()
