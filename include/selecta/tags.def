@@ -357,6 +357,8 @@ SEL_TAG(SRC, FTS,              0x7014, INT)
 /* SOURCES rows: "local" or "remote" (where the songs live), and 1 when the source is registered and usable. */
 SEL_TAG(SRC, KIND,             0x7015, STR)
 SEL_TAG(SRC, ENABLED,          0x7016, INT)
+/* A source plugin's hooks list carries its sel_source descriptor (source.h) under this tag (I517 phase 3). */
+SEL_TAG(SRC, DESCRIPTOR,       0x7017, PTR)
 
 /* META STR values come from the song file. The host stores and draws UTF-8: a value that is valid UTF-8 is kept,
  * anything else is read as ISO-8859-1 (Amiga module text) and converted where it enters the host (I444,

@@ -1,7 +1,9 @@
-/* I415: the zxart page reader, format table, length parser and source descriptor (src/library/sources/zxart*.c).
+/* I415: the zxart page reader, format table, length parser and source descriptor (plugins/sources/zxart).
  * SEL_ZXART_FIX_TUNES and SEL_ZXART_FIX_PEOPLE are the recorded API answers under tests/net/fixtures/zxart.ee. */
-#include "sources/zxart_sync.h"
-#include "source.h"
+#include "zxart_sync.h"
+
+#include <selecta/plugin.h>
+#include <selecta/source.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -69,8 +71,13 @@ int main(void) {
     CHECK(sel_zxart_millis("0:07.00") == 7000);
     CHECK(sel_zxart_millis("") == 0 && sel_zxart_millis("x:yy") == 0);
 
-    sel_source_register_builtin();
-    src = sel_source_find("zxart");
+    {
+        const sel_tag* desc = sel_plugin_entry(1);
+        const sel_tag* hooks = (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0);
+
+        CHECK(sel_tag_find(desc, SEL_PLUGIN_KIND, 0) == SEL_PLUGIN_KIND_SOURCE);
+        src = (const sel_source*)sel_tag_find(hooks, SEL_SRC_DESCRIPTOR, 0);
+    }
     CHECK(src != NULL && src->url != NULL && src->path_in != NULL);
     if (src != NULL) {
         CHECK(src->url("19636/A B(1).pt3", url, sizeof url) &&

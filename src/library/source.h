@@ -5,6 +5,7 @@
 #define SELECTA_LIBRARY_SOURCE_H
 
 #include "song_key.h"
+#include <selecta/host.h>
 #include <selecta/source.h>
 #include <selecta/tags.h>
 #include <stddef.h>
@@ -18,6 +19,9 @@ uint32_t sel_source_count(void);
 const sel_source* sel_source_get(uint32_t index);
 /* Registers the sources this build ships (local, modland, hvsc). Idempotent. */
 void sel_source_register_builtin(void);
+/* Hands in the plugin enumeration (sel_registry_count / sel_registry_get) and the host for log lines; the
+ * registry walk in sel_source_register_builtin adds every kind 7 plugin. NULL: no plugin sources. */
+void sel_source_set_plugins(uint32_t (*count)(void), const sel_tag* (*get)(uint32_t), const sel_host* host);
 
 /* The `local` and `modland` descriptors (sources/local.c, sources/modland.c). */
 const sel_source* sel_source_local(void);
@@ -26,7 +30,6 @@ const sel_source* sel_source_hippo(void);   /* sources/hippo.c, hippoplayer.se p
 const sel_source* sel_source_hvsc(void); /* sources/hvsc.c, hosted by Modland */
 const sel_source* sel_source_asma(void); /* sources/asma.c, the Atari SAP Music Archive */
 const sel_source* sel_source_sndh(void); /* sources/sndh.c, the Atari ST SNDH archive */
-const sel_source* sel_source_zxart(void); /* sources/zxart.c, ZX Spectrum music from zxart.ee */
 const sel_source* sel_source_keygenmusic(void); /* sources/keygenmusic.c, keygen and crack music from keygenmusic.tk */
 
 /* Song key <source id>:<path>. 0 when it does not fit. */

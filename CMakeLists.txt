@@ -38,6 +38,9 @@ include(cmake/selecta_desktop.cmake)
 
 add_subdirectory(src)
 add_subdirectory(plugins)
+if(SEL_BUILD_TESTS)
+  add_subdirectory(tests/sources/testsrc) # the source plugin reachability probe (I517 phase 3)
+endif()
 include(cmake/selecta_registry.cmake)
 add_subdirectory(apps)
 

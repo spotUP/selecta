@@ -5,11 +5,12 @@
  * file based sync reads them. A path is `<id>/<file name>` (the name percent-decoded); the song key is
  * `zxart:<path>`. A tune is filed under the format Modland gives its kind ("PT3" is "Spectrum - Pro Tracker 3"),
  * then under its composers, joined with " & ". Recordings (MP3, Ogg, WAV, FLAC) are not chip music and are left out. */
-#ifndef SELECTA_LIBRARY_SOURCES_ZXART_SYNC_H
-#define SELECTA_LIBRARY_SOURCES_ZXART_SYNC_H
+#ifndef SELECTA_PLUGINS_SOURCES_ZXART_SYNC_H
+#define SELECTA_PLUGINS_SOURCES_ZXART_SYNC_H
 
-#include "local_source.h"
+#include <selecta/host.h>
 
+#include <stdint.h>
 #include <stdio.h>
 
 #define SEL_ZXART_PAGE 1000u                 /* the most the API gives in one answer */
@@ -35,7 +36,6 @@ typedef struct sel_zxart_sync_stats {
     uint32_t people;       /* people read */
     uint32_t listing_rows; /* rows written to the catalogue */
     uint32_t skipped_rows; /* tunes left out: a recording, no file, an unsafe path */
-    uint32_t batches;      /* SEL_LIB_REQ_SCAN_BATCH requests sent */
 } sel_zxart_sync_stats;
 
 /* Reads one page of an API answer: calls `fn` once per object of the list `what` ("zxMusic" or "author"), stopping
@@ -50,8 +50,8 @@ const char* sel_zxart_format(const char* kind, const char* ext, char* scratch, s
 /* The tune's length in milliseconds from "3:14.88"; 0 when not said. */
 int32_t sel_zxart_millis(const char* time);
 
-/* Reads <dir>/zxauthor_*.json and <dir>/zxmusic_*.json into the catalogue. Returns 0 when the first page of either
- * cannot be read, memory runs out or the DB rejects a batch. */
-int sel_zxart_sync(const sel_local_scan_config* cfg, const char* dir, sel_zxart_sync_stats* stats);
+/* Reads <dir>/zxauthor_*.json and <dir>/zxmusic_*.json into the catalogue service. Returns 0 when the first page of
+ * either cannot be read, memory runs out, the host has no catalogue or the library rejects a batch. */
+int sel_zxart_sync(const sel_host* host, const char* dir, sel_zxart_sync_stats* stats);
 
 #endif

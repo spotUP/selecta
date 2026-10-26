@@ -3,7 +3,7 @@
 # the SDL dummy driver a live display, SELECTA_SDL_TEST_TIMED pushes the mouse tokens); the rectangles come from the stats
 # dump ("tab 5 x y w h", "sourcetoggle i x y w h"). The sentinels are the "sources N draws M" line (the Sources painter ran)
 # and the "source i key|kind|name|enabled|count" lines, which print what the engine's SOURCES reply said.
-#   run A: click the Sources tab -> one row per registered source (8, none named in the UI), local holds the fixture songs,
+#   run A: click the Sources tab -> one row per registered source (9, the last a test-only plugin, none named in the UI), local holds the fixture songs,
 #          every source enabled, the painter ran, a golden hash of the page.
 #   run B: click the Sources tab, then the switch of row 1 -> the engine's SOURCES reply reports that source disabled (the
 #          pref library.sources_off was stored and read back) while the others stay enabled.
@@ -63,7 +63,7 @@ if(_s STREQUAL "" OR NOT CMAKE_MATCH_2 GREATER 0)
   message(FATAL_ERROR "run A: the Sources painter did not run:\n${a}")
 endif()
 set(n_src "${CMAKE_MATCH_1}")
-set(want_keys local modland hvsc hippo asma sndh zxart keygenmusic)
+set(want_keys local modland hvsc hippo asma sndh keygenmusic zxart testsrc)
 list(LENGTH want_keys want_n)
 if(NOT n_src EQUAL want_n)
   message(FATAL_ERROR "run A: ${n_src} source rows, expected one per registered source (${want_n}):\n${a}")
@@ -103,7 +103,7 @@ click_run(b "${tab_click} ${tg_click} q@1800")
 if(NOT b MATCHES "source 1 modland\\|remote\\|[^|]+\\|0\\|[0-9]+\n")
   message(FATAL_ERROR "run B: the switch did not turn modland off in the engine's SOURCES reply:\n${b}")
 endif()
-foreach(k local hvsc hippo asma sndh zxart keygenmusic)
+foreach(k local hvsc hippo asma sndh keygenmusic zxart testsrc)
   if(NOT b MATCHES "source [0-9] ${k}\\|[a-z]+\\|[^|]+\\|1\\|")
     message(FATAL_ERROR "run B: source '${k}' should stay enabled:\n${b}")
   endif()

@@ -21,10 +21,14 @@ sel_cli_test(protocol-reflection-tagtypes "tagtypes" "-DLINES=${SEL_COUNT_META}"
 
 # T5: the registry walked every descriptor and found only known tags. The expected count is the plugin list the registry
 # is generated from (cmake/selecta_registry.cmake, every sel_add_plugin call), not a hand count: I512, the literal said 20
-# after dr_flac, gme and ym joined and the registry held 23. The negative tree adds one bad plugin.
+# after dr_flac, gme and ym joined and the registry held 23. The negative tree adds one bad plugin and is configured
+# with SEL_BUILD_TESTS=OFF, so it lacks the test-only source plugin testsrc (tests/sources/testsrc).
 get_property(_sel_expect_plugins GLOBAL PROPERTY SEL_PLUGINS)
 list(LENGTH _sel_expect_plugins SEL_EXPECT_PLUGINS)
-math(EXPR SEL_EXPECT_BAD_PLUGINS "${SEL_EXPECT_PLUGINS} + 1")
+set(_sel_bad_plugins ${_sel_expect_plugins})
+list(REMOVE_ITEM _sel_bad_plugins testsrc)
+list(LENGTH _sel_bad_plugins SEL_EXPECT_BAD_BASE)
+math(EXPR SEL_EXPECT_BAD_PLUGINS "${SEL_EXPECT_BAD_BASE} + 1")
 sel_cli_test(registry-tags "plugins --lint" "-DEXPECT=plugins=${SEL_EXPECT_PLUGINS} unknown_tags=0 duplicate_tags=0")
 
 # T6: sel_host layout golden per architecture.
@@ -1748,11 +1752,14 @@ if(NOT SEL_AMIGA)
 
   # I415: the zxart page reader, format table, length parser and source descriptor, on the recorded API answers.
   add_executable(zxart_unit_test zxart_unit_test.c)
-  target_include_directories(zxart_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_sources(zxart_unit_test PRIVATE
+    ${PROJECT_SOURCE_DIR}/plugins/sources/zxart/zxart.c ${PROJECT_SOURCE_DIR}/plugins/sources/zxart/zxart_sync.c
+    ${PROJECT_SOURCE_DIR}/plugins/sources/zxart/zxart_net.c)
+  target_include_directories(zxart_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/sources/zxart)
   target_compile_definitions(zxart_unit_test PRIVATE
     SEL_ZXART_FIX_TUNES="${PROJECT_SOURCE_DIR}/tests/net/fixtures/zxart.ee/api/language:eng/export:zxMusic/start:0/limit:1000"
     SEL_ZXART_FIX_PEOPLE="${PROJECT_SOURCE_DIR}/tests/net/fixtures/zxart.ee/api/language:eng/export:author/start:0/limit:1000")
-  target_link_libraries(zxart_unit_test PRIVATE selecta_library selecta_core)
+  target_link_libraries(zxart_unit_test PRIVATE selecta_shared_source selecta_core)
   add_test(NAME zxart-unit COMMAND zxart_unit_test)
   set_tests_properties(zxart-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "zxart_unit_ok")
 
@@ -1905,6 +1912,18 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_sync_dispatch_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-sync-dispatch COMMAND library_sync_dispatch_test)
   set_tests_properties(library-sync-dispatch PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_sync_dispatch_ok")
+
+  # I517 phase 3: a source that exists only as a plugin (tests/sources/testsrc) reaches SOURCES, LIBRARY_SYNC and the Sources page.
+  add_executable(src_plugin_reach_test engine/src_plugin_reach_test.c)
+  target_include_directories(src_plugin_reach_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(src_plugin_reach_test PRIVATE selecta_library selecta_registry selecta_core)
+  add_test(NAME src-plugin-reach
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${PROJECT_BINARY_DIR}/tests/src-plugin-reach"
+      "-DGOLDEN=${PROJECT_SOURCE_DIR}/tests/golden" "-DSDL_BUILT=${SELECTA_UI_DESKTOP}" "-DREACH_TEST=$<TARGET_FILE:src_plugin_reach_test>"
+      "-DSRC=${PROJECT_SOURCE_DIR}" -P "${PROJECT_SOURCE_DIR}/tests/dui/src_plugin_reach.cmake")
+  file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/src-plugin-reach.tmp")
+  set_tests_properties(src-plugin-reach PROPERTIES LABELS m3 TIMEOUT 120 PASS_REGULAR_EXPRESSION "src_plugin_reach_ok"
+    ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/src-plugin-reach.tmp")
 
   # I195c: STOP sends racing the pump never lose their net cancel (threads, many iterations).
   add_executable(cancel_race_test engine/cancel_race_test.c)

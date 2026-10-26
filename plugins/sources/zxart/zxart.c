@@ -2,11 +2,14 @@
  * music. A path is `<id>/<file name>` (`19636/MmcM_-_Beyond_Time_(2013).mt3`); the song key is `zxart:<path>` and
  * the canonical URL is https://zxart.ee/file/id:<id>/filename:<name>, the name percent-encoded. The format and artist
  * come from the site's list, not from the path, so parse gives bbmp's fallback ("Spectrum", "- unknown"). */
-#include "../source.h"
 #include "zxart_net.h"
-#include "modland_net.h"
-#include "sync_host.h"
+
+#include <selecta/plugin.h>
+#include <selecta/source.h>
+#include "source/descriptor.h"
 #include "source/url_path.h"
+
+#include "source/sync_stat.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -95,21 +98,20 @@ static int parse(const char* path, char* scratch, size_t n, sel_tag* out) {
 
 /* LIBRARY_SYNC dispatch (I517): a URL runs the network sync, anything else reads a local mirror copy. */
 static int zxart_sync_host(const sel_host* host, const char* arg, int64_t now, sel_tag* stats, uint32_t cap) {
-    const sel_local_scan_config* cfg = sel_sync_cfg(host);
     sel_zxart_sync_stats st;
     int ok;
 
     (void)now;
     memset(&st, 0, sizeof st);
-    if (sel_modland_is_url(arg)) {
+    if (strncmp(arg, "http://", 7) == 0 || strncmp(arg, "https://", 8) == 0) {
         sel_zxart_net_stats nt;
 
         memset(&nt, 0, sizeof nt);
-        ok = sel_zxart_net_sync(cfg, arg, &st, &nt);
+        ok = sel_zxart_net_sync(host, arg, &st, &nt);
         sel_sync_stat(stats, cap, SEL_SYNC_NET_BYTES, nt.list_bytes);
         sel_sync_stat(stats, cap, SEL_SYNC_NET_REQUESTS, nt.http_requests);
     } else {
-        ok = sel_zxart_sync(cfg, arg, &st);
+        ok = sel_zxart_sync(host, arg, &st);
     }
     sel_sync_stat(stats, cap, SEL_SYNC_LISTING_ROWS, st.listing_rows);
     sel_sync_stat(stats, cap, SEL_SYNC_SKIPPED_ROWS, st.skipped_rows);
@@ -121,6 +123,7 @@ static const sel_source g_zxart = {
     g_tags, NULL, parse, NULL, url_of, path_in, NULL, NULL, zxart_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL,
 };
 
-const sel_source* sel_source_zxart(void) {
-    return &g_zxart;
+const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
+    (void)host_api;
+    return sel_source_plugin_descriptor("zxart", &g_zxart);
 }

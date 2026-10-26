@@ -1,11 +1,11 @@
 /* See zxart_sync.h. */
 #include "zxart_sync.h"
 
-#include "../local.h"
-#include "../source.h"
 #include "source/json_scan.h"
-#include "sync_util.h"
+#include "source/sync_text.h"
 #include "source/url_path.h"
+
+#include <selecta/catalogue.h>
 
 #include <ctype.h>
 #include <stdlib.h>
@@ -431,12 +431,11 @@ typedef struct row_text {
 } row_text;
 
 typedef struct sync_state {
-    const sel_local_scan_config* cfg;
+    const sel_host* host;
+    const sel_catalogue* cat;
     sel_zxart_sync_stats* st;
     const people* ppl;
     row_text* text;
-    sel_scan_row* rows;
-    uint32_t row_n;
     int failed;
 } sync_state;
 
@@ -448,8 +447,8 @@ static void upper(char* s) {
 
 static int on_tune(void* ctx, const sel_zxart_item* it) {
     sync_state* s = ctx;
-    row_text* t = &s->text[s->row_n];
-    sel_scan_row* r = &s->rows[s->row_n];
+    row_text* t = s->text;
+    sel_catalogue_song song;
     char file[1024], kind[16], ext[16], fmt_scratch[40];
     const char* dot;
     const char* title = it->title;
@@ -523,18 +522,17 @@ static int on_tune(void* ctx, const sel_zxart_item* it) {
     } else {
         snprintf(t->name, sizeof t->name, "%s.%s", title, ext);
     }
-    memset(r, 0, sizeof *r);
-    r->source = "zxart";
-    r->path = t->path;
-    r->format = t->format;
-    r->artist = t->artist;
-    r->name = t->name;
-    r->album = r->md5 = "";
-    r->duration_ms = sel_zxart_millis(it->time);
-    r->year = it->year > 0 && it->year < 10000 ? (int32_t)it->year : 0;
-    s->row_n++;
+    memset(&song, 0, sizeof song);
+    song.path = t->path;
+    song.format = t->format;
+    song.artist = t->artist;
+    song.name = t->name;
+    song.album = song.md5 = "";
+    song.duration_ms = sel_zxart_millis(it->time);
+    song.year = it->year > 0 && it->year < 10000 ? (int32_t)it->year : 0;
     s->st->listing_rows++;
-    if (s->row_n == SYNC_BATCH && !sel_sync_flush_scan(s->cfg, s->rows, &s->row_n, &s->st->batches, &s->failed)) {
+    if (!s->cat->song(s->host, &song)) {
+        s->failed = 1;
         return 0;
     }
     return 1;
@@ -547,13 +545,13 @@ static int read_pages(const char* dir, const char* fmt, const char* what, int (*
     unsigned k;
 
     for (k = 0; k < SEL_ZXART_PAGES_MAX; k++) {
-        char name[32], path[SEL_BROWSE_PATH_MAX];
+        char name[32], path[1100];
         FILE* f;
         uint32_t total;
         int32_t n;
 
         snprintf(name, sizeof name, fmt, k);
-        if (!sel_browse_join(path, sizeof path, dir, name) || (f = fopen(path, "rb")) == NULL) {
+        if (snprintf(path, sizeof path, "%s/%s", dir, name) >= (int)sizeof path || (f = fopen(path, "rb")) == NULL) {
             return (int)k;
         }
         n = sel_zxart_read_page(f, what, fn, ctx, &total);
@@ -565,37 +563,40 @@ static int read_pages(const char* dir, const char* fmt, const char* what, int (*
     return (int)k;
 }
 
-int sel_zxart_sync(const sel_local_scan_config* cfg, const char* dir, sel_zxart_sync_stats* stats) {
+int sel_zxart_sync(const sel_host* host, const char* dir, sel_zxart_sync_stats* stats) {
     sync_state s;
     people ppl;
-    const sel_host* host = cfg->host;
-    int ok = 0;
+    const sel_catalogue* cat = host->catalogue != NULL ? host->catalogue(host) : NULL;
+    int ok = 0, open = 0;
 
     memset(&s, 0, sizeof s);
     memset(&ppl, 0, sizeof ppl);
     memset(stats, 0, sizeof *stats);
-    s.cfg = cfg;
+    s.host = host;
+    s.cat = cat;
     s.st = stats;
     s.ppl = &ppl;
-    sel_source_register_builtin();
-    s.text = host->mem_alloc(host, (size_t)SYNC_BATCH * sizeof *s.text, SEL_MEM_FAST);
-    s.rows = host->mem_alloc(host, (size_t)SYNC_BATCH * sizeof *s.rows, SEL_MEM_FAST);
+    s.text = host->mem_alloc(host, sizeof *s.text, SEL_MEM_FAST);
     ppl.list = host->mem_alloc(host, (size_t)PEOPLE_MAX * sizeof *ppl.list, SEL_MEM_FAST);
     ppl.pool = host->mem_alloc(host, POOL_BYTES, SEL_MEM_FAST);
-    if (s.text != NULL && s.rows != NULL && ppl.list != NULL && ppl.pool != NULL && sel_source_find("zxart") != NULL &&
-        read_pages(dir, SEL_ZXART_PEOPLE, "author", add_person, &ppl) > 0) {
+    if (s.text != NULL && ppl.list != NULL && ppl.pool != NULL && cat != NULL && cat->begin(host, "zxart") &&
+        (open = 1) && read_pages(dir, SEL_ZXART_PEOPLE, "author", add_person, &ppl) > 0) {
         int pages;
 
         stats->people = ppl.n;
         qsort(ppl.list, ppl.n, sizeof *ppl.list, by_id);
         pages = read_pages(dir, SEL_ZXART_MUSIC, "zxMusic", on_tune, &s);
-        ok = pages > 0 && !s.failed && sel_sync_flush_scan(cfg, s.rows, &s.row_n, &stats->batches, &s.failed);
+        ok = pages > 0 && !s.failed;
+    }
+    if (open) {
+        if (ok) {
+            ok = cat->commit(host);
+        } else {
+            cat->abort(host);
+        }
     }
     if (s.text != NULL) {
         host->mem_free(host, s.text);
-    }
-    if (s.rows != NULL) {
-        host->mem_free(host, s.rows);
     }
     if (ppl.list != NULL) {
         host->mem_free(host, ppl.list);
@@ -603,5 +604,5 @@ int sel_zxart_sync(const sel_local_scan_config* cfg, const char* dir, sel_zxart_
     if (ppl.pool != NULL) {
         host->mem_free(host, ppl.pool);
     }
-    return ok && !s.failed;
+    return ok;
 }

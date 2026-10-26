@@ -1,6 +1,9 @@
 /* Source registry and song keys (plan Phase 4, I157; design doc 9.1). */
 #include "source.h"
 
+#include <selecta/plugin.h>
+
+#include <stdio.h>
 #include <string.h>
 
 #define SOURCE_MAX 16u
@@ -45,6 +48,60 @@ uint32_t sel_source_each(sel_source_each_fn fn, void* ctx) {
     return g_count;
 }
 
+/* The plugin enumeration the front end hands in (sel_source_set_plugins). The library does not link the registry:
+ * the registry links the engine core, which links the library, so a direct call would close a link cycle. */
+static uint32_t (*g_reg_count)(void);
+static const sel_tag* (*g_reg_get)(uint32_t);
+static const sel_host* g_reg_host;
+
+void sel_source_set_plugins(uint32_t (*count)(void), const sel_tag* (*get)(uint32_t), const sel_host* host) {
+    g_reg_count = count;
+    g_reg_get = get;
+    g_reg_host = host;
+}
+
+static void reject(const char* id, const char* why) {
+    char msg[96];
+    const sel_host* host = g_reg_host;
+
+    snprintf(msg, sizeof msg, "source plugin '%.24s' rejected: %s", id != NULL ? id : "(none)", why);
+    if (host != NULL && host->log != NULL) {
+        host->log(host, SEL_LOG_ERROR, msg);
+    } else {
+        fprintf(stderr, "[ERROR] %s\n", msg);
+    }
+}
+
+/* Registers the source plugins (kind 7) of the plugin registry (I517 phase 3). A plugin whose descriptor is
+ * registered already is skipped silently (the walk runs on every lookup); a clashing or over-long id is logged. */
+static void register_plugins(void) {
+    uint32_t i, n = g_reg_count != NULL && g_reg_get != NULL ? g_reg_count() : 0;
+
+    for (i = 0; i < n; i++) {
+        const sel_tag* desc = g_reg_get(i);
+        const sel_tag* hooks;
+        const sel_source* src;
+        const sel_source* have;
+
+        if (desc == NULL || sel_tag_find(desc, SEL_PLUGIN_KIND, 0) != (uintptr_t)SEL_PLUGIN_KIND_SOURCE) {
+            continue;
+        }
+        hooks = (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0);
+        src = hooks != NULL ? (const sel_source*)sel_tag_find(hooks, SEL_SRC_DESCRIPTOR, 0) : NULL;
+        if (src == NULL || src->id == NULL) {
+            reject(NULL, "no source descriptor");
+        } else if ((have = sel_source_find(src->id)) == src) {
+            continue;
+        } else if (have != NULL) {
+            reject(src->id, "id already registered");
+        } else if (strlen(src->id) >= SEL_SOURCE_ID_MAX) {
+            reject(src->id, "id too long");
+        } else if (!sel_source_register(src)) {
+            reject(src->id, "invalid id or registry full");
+        }
+    }
+}
+
 void sel_source_register_builtin(void) {
     if (sel_source_find("local") == NULL) {
         (void)sel_source_register(sel_source_local());
@@ -64,12 +121,10 @@ void sel_source_register_builtin(void) {
     if (sel_source_find("sndh") == NULL) {
         (void)sel_source_register(sel_source_sndh());
     }
-    if (sel_source_find("zxart") == NULL) {
-        (void)sel_source_register(sel_source_zxart());
-    }
     if (sel_source_find("keygenmusic") == NULL) {
         (void)sel_source_register(sel_source_keygenmusic());
     }
+    register_plugins();
 }
 
 int sel_song_key(const char* source, const char* path, char* out, size_t n) {

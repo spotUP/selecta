@@ -57,10 +57,8 @@
 #include "sources/hvsc_net.h"
 #include "sources/sndh_net.h"
 #include "sources/sndh_sync.h"
-#include "sources/zxart_net.h"
 #include "sources/keygenmusic_net.h"
 #include "sources/keygenmusic_sync.h"
-#include "sources/zxart_sync.h"
 #include "sources/hvsc_sync.h"
 #include "sources/modland_net.h"
 #include "sources/sync_host.h"
@@ -5252,6 +5250,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     if (cfg) {
         e->registry_count = cfg->registry_count;
         e->registry_get = cfg->registry_get;
+        sel_source_set_plugins(cfg->registry_count, cfg->registry_get, host);
         e->lib = cfg->library;
     }
     {

@@ -4,6 +4,7 @@
 #ifndef SELECTA_LIBRARY_SOURCES_SYNC_HOST_H
 #define SELECTA_LIBRARY_SOURCES_SYNC_HOST_H
 
+#include "source/sync_stat.h"
 #include "local_source.h"
 
 #include <selecta/source.h>
@@ -23,22 +24,6 @@ void sel_sync_ctx_release(sel_sync_ctx* ctx);
 
 static inline const sel_local_scan_config* sel_sync_cfg(const sel_host* host) {
     return &((const sel_sync_ctx*)host->ctx)->scfg;
-}
-
-/* Appends one counter to a stats list that starts with SEL_TAG_END at [0]. A list that is full drops the counter. */
-static inline void sel_sync_stat(sel_tag* stats, uint32_t cap, uint32_t tag, uintptr_t value) {
-    uint32_t n = 0;
-
-    while (stats[n].tag != SEL_TAG_END) {
-        n++;
-    }
-    if (n + 2u > cap) {
-        return;
-    }
-    stats[n].tag = tag;
-    stats[n].value = value;
-    stats[n + 1u].tag = SEL_TAG_END;
-    stats[n + 1u].value = 0;
 }
 
 #endif
