@@ -808,9 +808,7 @@ void sel_view_refresh(sel_view* v, const sel_view_src* s) {
     for (i = 0; mode == SEL_VIEW_STYLE_REGULAR && i < p->row_n; i++) {
         uint32_t idx = p->window_start + i;
         sel_view_row* r = &v->rows[i];
-        r->depth = 0;
-        r->art_id = 0;
-        r->artist = NULL;
+        memset(r, 0, sizeof *r); /* every field fresh: a Files row must not keep the count of the page shown before */
         r->id = row_id(v, s, idx);
         if (text_src(v)) {
             *r = v->frows[idx];
