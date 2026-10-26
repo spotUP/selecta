@@ -1016,6 +1016,16 @@ if(NOT SEL_AMIGA)
     set_tests_properties(${name} PROPERTIES LABELS rig RESOURCE_LOCK rig
       SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
   endforeach()
+  # I450 / M4-P5-1: RTG first light with a real library, on rig 2 (uaegfx), through Selecta --ui desktop --backend rtg.
+  add_test(NAME rig-m4-rtg-first-light
+    COMMAND "${CMAKE_COMMAND}" -DTAG=M4RTG "-DRIG_DIR=${SEL_RIG_DIR}"
+      "-DSELECTA=${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta/selecta" "-DMOD=${SEL_TESTMOD}"
+      "-DSELECTA_CLI=${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta-cli/selecta-cli"
+      "-DGENRE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/m3/genre"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-rtg-first-light"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
+  set_tests_properties(rig-m4-rtg-first-light PROPERTIES LABELS rig RESOURCE_LOCK rig
+    ENVIRONMENT "UPTERM_RIG=2" SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
 endif()
 # I122/I123/I126: paula14 split tables, chip double buffer through a recording bus, routing of PCM outputs.
 set(SEL_P14_DIR "${PROJECT_SOURCE_DIR}/plugins/outputs/paula14")
