@@ -488,7 +488,7 @@ static void collect_meta(sel_library* lib, sel_lib_job* job) {
     }
     for (i = 0; i < job->count; i++) {
         const char* f[3] = {"", "", ""}, *album = "";
-        char dur[16] = "";
+        char dur[32] = ""; /* two long long fields: 19 + 1 + 19 digits would not fit 16 */
         size_t need;
         int k;
         if (st != NULL) {

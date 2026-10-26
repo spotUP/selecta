@@ -7,6 +7,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* M_PI is not in strict -std=c99 on glibc. */
+#define LOUD_PI 3.14159265358979323846
+
 typedef struct biquad {
     double b0, b1, b2, a1, a2;
     double z1, z2; /* transposed direct form II state */
@@ -28,7 +31,7 @@ struct sel_loudness {
 
 static void make_shelf(biquad* b, double fs) {
     const double f0 = 1681.974450955533, g = 3.999843853973347, q = 0.7071752369554196;
-    double k = tan(M_PI * f0 / fs);
+    double k = tan(LOUD_PI * f0 / fs);
     double vh = pow(10.0, g / 20.0);
     double vb = pow(vh, 0.4996667741545416);
     double a0 = 1.0 + k / q + k * k;
@@ -42,7 +45,7 @@ static void make_shelf(biquad* b, double fs) {
 
 static void make_hp(biquad* b, double fs) {
     const double f0 = 38.13547087602444, q = 0.5003270373238773;
-    double k = tan(M_PI * f0 / fs);
+    double k = tan(LOUD_PI * f0 / fs);
     double a0 = 1.0 + k / q + k * k;
     memset(b, 0, sizeof *b);
     b->b0 = 1.0;

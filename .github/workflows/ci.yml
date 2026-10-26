@@ -33,9 +33,6 @@ jobs:
   # (bebbo m68k-amigaos-gcc 6.5.0b, amitools vamos, Ubuntu 24.04), pinned by
   # digest. vamos runs Kickstart-free, so no ROM is needed.
   # The host side builds only selecta-cli (the vamos rows compare against it).
-  # The -Wno-error flags and _DEFAULT_SOURCE are needed because the full host
-  # build is red on Linux gcc (M_PI under -std=c99, format-truncation);
-  # that is tracked separately from this job.
   # Excluded rows: amiga-machine expects vamos's 8384512 byte FAST_RAM (the
   # image's vamos reports 4123444), render-golden-amiga* need the host test
   # song, and the two desktop-console frame rows need host targets not built here.
@@ -52,7 +49,7 @@ jobs:
       - name: Build (68020)
         run: cmake --build build/amiga -j2
       - name: Configure (host selecta-cli)
-        run: cmake -S . -B build/host -G Ninja "-DCMAKE_C_FLAGS=-D_DEFAULT_SOURCE -Wno-error=format-truncation -Wno-error=stringop-truncation"
+        run: cmake -S . -B build/host -G Ninja
       - name: Build (host selecta-cli)
         run: cmake --build build/host --target selecta-cli
       - name: Test (vamos)
