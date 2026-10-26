@@ -10,7 +10,7 @@
 
 #include <string.h>
 
-/* The album of a song: queue ref -> canonical key -> (source, path) -> songs row -> albums row with the song's album
+/* The album of a song: queue ref -> canonical key -> (source, path) or the stored songs.key -> songs row -> albums row with the song's album
  * name and artist (source matched when the albums row sets one). The basename of a file is never an album name. */
 static int art_find(sqlite3* db, const sel_art_op* op) {
     char key[1024], source[64], path[1024];
@@ -21,10 +21,11 @@ static int art_find(sqlite3* db, const sel_art_op* op) {
     if (sqlite3_prepare_v2(db,
                            "SELECT a.id FROM songs s JOIN albums a ON a.name = s.album AND a.artist IS s.artist"
                            " AND (a.source IS NULL OR a.source = s.source)"
-                           " WHERE s.source = ?1 AND s.path = ?2 ORDER BY a.id LIMIT 1",
+                           " WHERE (s.source = ?1 AND s.path = ?2) OR s.key = ?3 ORDER BY a.id LIMIT 1",
                            -1, &st, NULL) != SQLITE_OK) return 0;
     sqlite3_bind_text(st, 1, source, -1, SQLITE_STATIC);
     sqlite3_bind_text(st, 2, path, -1, SQLITE_STATIC);
+    sqlite3_bind_text(st, 3, op->ref, -1, SQLITE_STATIC); /* a shelf tile names its song by the stored key, which need not be source:path */
     if (sqlite3_step(st) == SQLITE_ROW) id = sqlite3_column_int(st, 0);
     sqlite3_finalize(st);
     return id;
