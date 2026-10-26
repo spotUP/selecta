@@ -3,7 +3,7 @@
 #   ambient.mod + ambient.lrc  local file: lyric_source=lrc, at 12.5 s the line is index 3 (the 00:12.00 line)
 #   message.it                 tracker song message, plain text: lyric_source=message
 #   techno.mod                 no local lyrics: the fixture endpoint answers, lyric_source=devilbox, synced
-#   nogenre.mod                no route on the fixture: devilbox_missing=lyrics, lyric_source=none
+#   nogenre.mod                the fixture answers 503 (a 404 is "unknown md5", not missing): devilbox_missing=lyrics, lyric_source=none
 # lyric_fetches counts endpoint requests (cumulative): ambient.lrc asks once for the upload decision (I193b), message.it never.
 # library.lyrics_online is left at its default ("on"), so this script also proves the default.
 OPEN lyrics/ambient.mod

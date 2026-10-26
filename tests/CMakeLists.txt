@@ -1665,6 +1665,16 @@ if(NOT SEL_AMIGA)
   set_tests_properties(lyrics PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "lyrics_ok")
 
+  # I419: the server answers 404 {"error":"unknown md5"} for a hash without lyrics; any 404 is SEL_DVB_LYRICS_UNKNOWN.
+  add_executable(lyrics_status_test lyrics_status_test.c)
+  target_include_directories(lyrics_status_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(lyrics_status_test PRIVATE selecta_library)
+  add_test(NAME lyrics-status
+    COMMAND "${CMAKE_COMMAND}" "-DEXE=$<TARGET_FILE:lyrics_status_test>" "-DWORK=${SEL_NET_WORK}"
+            -P "${SEL_NET_DIR}/lyrics_status.cmake")
+  set_tests_properties(lyrics-status PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "lyrics_status_ok")
+
   # T86 similar part (row I183): also-by and similar through selecta-cli; the duplicates part is row I184.
   find_program(SEL_SQLITE3 sqlite3)
   add_test(NAME similar-duplicates

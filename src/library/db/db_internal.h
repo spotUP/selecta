@@ -120,7 +120,8 @@ int sel_json_string(const char* json, const char* name, char* out, size_t cap);
  * resolves one song (cache or endpoint, then song_composers). 0 on a library error. */
 int sel_library_tag_composer(sqlite3* db, const char* key, const char* author); /* I296: scan's author tag row */
 int sel_library_songdb_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id);
-int sel_library_songdb_resolve(sel_library* lib, const char* ukey, const char* song_key, sel_genre_stats* stats);
+int sel_library_songdb_resolve(sel_library* lib, const char* ukey, const char* path, const char* song_key,
+                               sel_genre_stats* stats);
 
 /* similar.c (I183): worker half of SEL_SIMILAR_NEXT / SEL_ALSOBY_NEXT. 0 on a library error. */
 int sel_library_similar_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id);

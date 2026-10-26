@@ -42,7 +42,7 @@ sel_dvb_lyrics_status sel_dvb_lyrics_get_ex(const char* hash, char* out, size_t 
     req.url = url;
     if (sel_http_request(&req, lyrics_sink, &s, &res) != SEL_HTTP_OK) return SEL_DVB_LYRICS_MISSING;
     if (http_status != NULL) *http_status = res.status;
-    if (res.status == 404 && strstr(out, "unknown hash") != NULL) {
+    if (res.status == 404) { /* server body is {"error":"unknown md5"}; the status alone says no lyrics */
         out[0] = '\0';
         return SEL_DVB_LYRICS_UNKNOWN;
     }

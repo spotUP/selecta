@@ -274,7 +274,7 @@ int sel_library_genre_sync(sel_library* lib, sel_genre_stats* stats) {
             stats->unreadable++;
             continue;
         }
-        if (!sel_library_songdb_resolve(lib, ukey, song, stats)) return 0;
+        if (!sel_library_songdb_resolve(lib, ukey, path, song, stats)) return 0;
         memset(&op, 0, sizeof op);
         op.op = SEL_GENRE_GET;
         op.key = ukey;

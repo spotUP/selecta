@@ -1,0 +1,12 @@
+# I419: runs lyrics_status_test against the devilbox fixture (-DEXE=<test binary> -DWORK=<fixture work dir>).
+file(READ "${WORK}/port" port)
+string(STRIP "${port}" port)
+set(fx "http://127.0.0.1:${port}")
+set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
+set(ENV{SELECTA_NET_MAP} "devilbox.uprough.net=${fx}")
+set(ENV{SELECTA_DEVILBOX_URL} "http://devilbox.uprough.net")
+execute_process(COMMAND "${EXE}" OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "lyrics_status_test failed rc=${rc}\n${o}${e}")
+endif()
+message(STATUS "${o}")

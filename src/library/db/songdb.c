@@ -11,6 +11,7 @@
 #include "db_internal.h"
 
 #include "../composer.h"
+#include "../devilbox_loudness.h"
 #include "../net/mirrors.h"
 
 #include <stdio.h>
@@ -287,12 +288,17 @@ static int json_authors(const char* json, char* out, size_t cap) {
     return 1;
 }
 
-/* Asks the endpoint. 1 when the reply is final (authors in `authors`, "" = not in songdb), 0 when unknown. */
-static int songdb_lookup(const char* ukey, char* authors, sel_genre_stats* st) {
+/* Asks the endpoint. The route takes the first 12 lower-case hex characters of the md5 of the file bytes (server
+ * routes/songdb.ts), not the uade key; the uade key stays the cache and vote key. 1 when the reply is final (authors in
+ * `authors`, "" = not in songdb), 0 when unknown (including an unreadable file). */
+static int songdb_lookup(const char* path, char* authors, sel_genre_stats* st) {
     char url[URL_MAX + 64u];
     char text[SONGDB_TEXT_MAX];
+    char md5[33];
 
-    snprintf(url, sizeof url, "%s/api/songdb/lookup?hash=%s", sel_devilbox_base(), ukey);
+    authors[0] = '\0';
+    if (!sel_dvb_loudness_file_hash(path, md5)) return 0;
+    snprintf(url, sizeof url, "%s/api/songdb/lookup?hash=%.12s", sel_devilbox_base(), md5);
     st->songdb_lookups++;
     authors[0] = '\0';
     if (!sel_library_http_json(url, text, sizeof text, &st->http_requests)) return 0;
@@ -302,7 +308,8 @@ static int songdb_lookup(const char* ukey, char* authors, sel_genre_stats* st) {
     return 1;
 }
 
-int sel_library_songdb_resolve(sel_library* lib, const char* ukey, const char* song_key, sel_genre_stats* stats) {
+int sel_library_songdb_resolve(sel_library* lib, const char* ukey, const char* path, const char* song_key,
+                               sel_genre_stats* stats) {
     char authors[AUTHORS_MAX];
     sel_genre_op op;
     int cached;
@@ -316,7 +323,7 @@ int sel_library_songdb_resolve(sel_library* lib, const char* ukey, const char* s
     if (cached < 0) return 0;
     if (cached == 1) {
         stats->songdb_cache_hits++;
-    } else if (!songdb_lookup(ukey, authors, stats)) {
+    } else if (!songdb_lookup(path, authors, stats)) {
         return 1; /* 503, 404, transport: unknown, nothing cached, not an error */
     } else {
         memset(&op, 0, sizeof op);
