@@ -333,7 +333,8 @@ static int library_stats(int argc, char** argv) {
                (unsigned)sel_library_heap_peak(), (unsigned)t0);
     }
 #ifdef __amigaos__
-    printf("stack_swaps=%u stack_bytes=%lu\n", sel_amiga_stack_swaps(), sel_amiga_stack_bytes());
+    printf("stack_swaps=%u stack_bytes=%lu stack_untouched=%lu stack_canary %s\n", sel_amiga_stack_swaps(),
+           sel_amiga_stack_bytes(), sel_amiga_stack_untouched(), sel_amiga_stack_canary_ok() ? "ok" : "broken");
 #endif
     sel_library_close(lib);
     return 0;

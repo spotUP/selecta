@@ -7,6 +7,7 @@
  * After StackSwap the A7-relative locals of the swapping function are no longer reachable, so every value
  * the code needs on both sides of a swap lives in statics (single threaded: main runs once). */
 #include "amiga_start.h"
+#include "stack_canary.h"
 
 #include <exec/memory.h>
 #include <exec/tasks.h>
@@ -26,6 +27,7 @@ static char** g_argv;
 static int g_rc;
 static unsigned g_swaps;
 static unsigned long g_last_bytes;
+static UBYTE* g_stack_low; /* the swapped stack while the body runs, NULL otherwise */
 
 static void run_body(void) {
     g_rc = g_body(g_argc, g_argv);
@@ -68,6 +70,8 @@ int sel_amiga_run_with_stack(int (*body)(int, char**), int argc, char** argv, un
     g_argc = argc;
     g_argv = argv;
     memset(mem + bytes, SEL_STACK_GUARD_BYTE, SEL_STACK_GUARD);
+    sel_stack_canary_fill(mem, bytes); /* I376: canary at the low end, fill pattern above for the high-water mark */
+    g_stack_low = mem;
     g_sss.stk_Lower = mem;
     g_sss.stk_Upper = (ULONG)(mem + bytes);
     g_sss.stk_Pointer = (APTR)(mem + bytes);
@@ -81,6 +85,11 @@ int sel_amiga_run_with_stack(int (*body)(int, char**), int argc, char** argv, un
             break;
         }
     }
+    if (!sel_stack_canary_ok(mem)) {
+        fputs("amiga_start: stack overflow, canary at the stack bottom overwritten (stack too small)\n", stderr);
+        g_rc = 1;
+    }
+    g_stack_low = NULL;
     FreeMem(mem, bytes + SEL_STACK_GUARD);
     return g_rc;
 }
@@ -91,4 +100,12 @@ unsigned sel_amiga_stack_swaps(void) {
 
 unsigned long sel_amiga_stack_bytes(void) {
     return g_last_bytes;
+}
+
+int sel_amiga_stack_canary_ok(void) {
+    return g_stack_low == NULL || sel_stack_canary_ok(g_stack_low);
+}
+
+unsigned long sel_amiga_stack_untouched(void) {
+    return g_stack_low == NULL ? 0 : sel_stack_untouched(g_stack_low, g_last_bytes);
 }

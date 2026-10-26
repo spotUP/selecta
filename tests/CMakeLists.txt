@@ -1570,6 +1570,11 @@ if(NOT SEL_AMIGA)
   target_include_directories(lyrics_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
   target_link_libraries(lyrics_unit_test PRIVATE selecta_library)
   add_test(NAME lrc-unit COMMAND lyrics_unit_test)
+  # I376: the bottom-of-stack canary (apps/common/stack_canary.c, used by amiga_start.c on the Amiga).
+  add_executable(stack_canary_test stack_canary_test.c ${PROJECT_SOURCE_DIR}/apps/common/stack_canary.c)
+  target_include_directories(stack_canary_test PRIVATE ${PROJECT_SOURCE_DIR}/apps/common)
+  add_test(NAME stack-canary COMMAND stack_canary_test)
+  set_tests_properties(stack-canary PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "stack_canary_unit_ok")
   set_tests_properties(lrc-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "lyrics_unit_ok")
   # I266: a cancelled job thread's send is SEL_NET_E_IO, not a timeout (TLS retried until its deadline).
   add_executable(net_cancel_send_test net_cancel_send_test.c)

@@ -16,4 +16,10 @@ int sel_amiga_run_with_stack(int (*body)(int, char**), int argc, char** argv, un
 unsigned sel_amiga_stack_swaps(void);
 unsigned long sel_amiga_stack_bytes(void);
 
+/* I376: state of the canary at the bottom of the swapped stack, read live (1 = intact or no swap), and the bytes
+ * of that stack never touched so far. The exit check in sel_amiga_run_with_stack prints an error line and makes
+ * the result 1 when the canary is broken. */
+int sel_amiga_stack_canary_ok(void);
+unsigned long sel_amiga_stack_untouched(void);
+
 #endif
