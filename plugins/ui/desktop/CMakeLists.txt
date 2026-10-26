@@ -1,7 +1,7 @@
 # The Amiga cross build cannot run a tool it builds, so the desktop UI plugin is built only when a host-built
 # gui_iconbake is given (-DSELECTA_ICONBAKE_EXE=<path>); the canonical Amiga configure leaves the plugin out.
-if(SEL_AMIGA AND NOT SELECTA_ICONBAKE_EXE)
-  message(STATUS "Desktop UI plugin skipped for Amiga: pass -DSELECTA_ICONBAKE_EXE=<host gui_iconbake> to build it")
+if(SEL_AMIGA AND (NOT SELECTA_ICONBAKE_EXE OR NOT SELECTA_FONTBAKE_EXE))
+  message(STATUS "Desktop UI plugin skipped for Amiga: pass -DSELECTA_ICONBAKE_EXE=<host gui_iconbake> and -DSELECTA_FONTBAKE_EXE=<host gui_fontbake> to build it")
   return()
 endif()
 
@@ -49,6 +49,34 @@ add_custom_command(
   COMMENT "Baking the icon atlas")
 list(APPEND FONT_GEN "${CMAKE_CURRENT_BINARY_DIR}/gui_icons_baked.c")
 
+# Baked text atlases (I463): the 68020 tier has no floating point, so tools/gui_fontbake.c runs the atlas builder
+# (atlas_build.c, the same code the host runs at run time) at build time and writes the tables desk_font() uses. Same
+# pattern as the icons: the Amiga cross build takes a host-built tool, -DSELECTA_FONTBAKE_EXE=<path to the host gui_fontbake>.
+if(SEL_AMIGA)
+  set(FONTBAKE_CMD "${SELECTA_FONTBAKE_EXE}")
+  set(FONTBAKE_DEP "")
+else()
+  add_executable(gui_fontbake "${PROJECT_SOURCE_DIR}/tools/gui_fontbake.c" atlas_build.c)
+  target_include_directories(gui_fontbake PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop"
+    "${PROJECT_SOURCE_DIR}/third_party/stb")
+  target_link_libraries(gui_fontbake PRIVATE m)
+  set(FONTBAKE_CMD gui_fontbake)
+  set(FONTBAKE_DEP gui_fontbake)
+endif()
+add_custom_command(
+  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/font_baked.c"
+  COMMAND ${FONTBAKE_CMD} "${FONT_SRC}/Inter-Regular.ttf" "${FONT_SRC}/Inter-SemiBold.ttf" "${CMAKE_CURRENT_BINARY_DIR}/font_baked.c"
+  DEPENDS ${FONTBAKE_DEP} "${FONT_SRC}/Inter-Regular.ttf" "${FONT_SRC}/Inter-SemiBold.ttf"
+  COMMENT "Baking the text atlases")
+list(APPEND FONT_GEN "${CMAKE_CURRENT_BINARY_DIR}/font_baked.c")
+if(NOT SEL_AMIGA)
+  # dui-font-baked (DUI-P4-25): the baked tables equal the runtime builder's atlases.
+  add_executable(dui_font_baked_unit "${PROJECT_SOURCE_DIR}/tests/dui/font_baked_unit.c" atlas_build.c ${FONT_GEN})
+  target_include_directories(dui_font_baked_unit PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop"
+    "${PROJECT_SOURCE_DIR}/third_party/stb")
+  target_link_libraries(dui_font_baked_unit PRIVATE m)
+endif()
+
 # Artwork (DUI-P2-4): art.c turns library blobs into tile pixels, stb_impl.c decodes them, posix/art_thread.c is the
 # worker thread (the only file with thread headers). The plugin is desktop only, so there is no Amiga branch.
 if(SEL_AMIGA)
@@ -62,6 +90,8 @@ option(SEL_DESKTOP_AGA "Amiga: the desktop plugin draws through the AGA c2p back
 if(SEL_AMIGA AND NOT SEL_DESKTOP_AGA)
   target_compile_definitions(sel_plugin_desktop_ui PRIVATE SELECTA_DESKTOP_RTG=1)
 endif()
+# font_baked.c is generated in the binary directory and includes atlas_build.h from the source directory.
+target_include_directories(sel_plugin_desktop_ui PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(sel_plugin_desktop_ui PUBLIC selecta_uimodel selecta_gui)
 
 # The aga backend (I439, M4-P6-1, thoughts/shared/plans/2026-10-26-aga-c2p-backend.md): an 8-bitplane Intuition

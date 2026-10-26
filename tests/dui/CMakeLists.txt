@@ -3,7 +3,7 @@
 # replaces its red entry with the real test and removes its id from tests/ratchet/unimplemented.txt. Red entries also
 # carry label dui-red, so a run of the finished milestones (M3 finish line) can leave them out with -LE dui-red while
 # dui-ratchet keeps the red count honest.
-set(SEL_DUI_REAL dui-ratchet dui-build-deps dui-uim-frame dui-ui-switch dui-ui-multi dui-mode-pref dui-lift-parity dui-actions dui-layout dui-parity-matrix dui-governor dui-tokens dui-draw dui-dirty dui-text dui-artwork dui-genart dui-golden-home dui-sdl dui-widgets dui-hidpi dui-anim dui-keys dui-mouse dui-tooltips dui-gestures dui-frame dui-home dui-library dui-styles dui-grid-coverflow dui-search dui-nowplaying dui-queue dui-playlists dui-songinfo dui-overlays dui-nav dui-viz dui-tracker dui-drop dui-m68k-nofloat dui-hover-live dui-hover-rows dui-hover-sidebar-ink dui-hover-instant dui-hover-nowplaying dui-hover-regions dui-library-reload dui-library-unknown-composer dui-song-menu dui-library-remove dui-aga-budget dui-library-style dui-coverflow-slide)
+set(SEL_DUI_REAL dui-font-baked dui-ratchet dui-build-deps dui-uim-frame dui-ui-switch dui-ui-multi dui-mode-pref dui-lift-parity dui-actions dui-layout dui-parity-matrix dui-governor dui-tokens dui-draw dui-dirty dui-text dui-artwork dui-genart dui-golden-home dui-sdl dui-widgets dui-hidpi dui-anim dui-keys dui-mouse dui-tooltips dui-gestures dui-frame dui-home dui-library dui-styles dui-grid-coverflow dui-search dui-nowplaying dui-queue dui-playlists dui-songinfo dui-overlays dui-nav dui-viz dui-tracker dui-drop dui-m68k-nofloat dui-hover-live dui-hover-rows dui-hover-sidebar-ink dui-hover-instant dui-hover-nowplaying dui-hover-regions dui-library-reload dui-library-unknown-composer dui-song-menu dui-library-remove dui-aga-budget dui-library-style dui-coverflow-slide)
 
 add_test(NAME dui-ratchet
   COMMAND "${CMAKE_COMMAND}"
@@ -26,6 +26,14 @@ add_executable(dui_draw_unit draw_unit.c)
 target_link_libraries(dui_draw_unit PRIVATE selecta_gui)
 
 # The shell-driven tests (DUI-P1-1 to P1-4) run the real selecta binary on the generated modules.
+if(NOT SEL_AMIGA)
+  add_test(NAME dui-font-baked
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSONGS=${PROJECT_BINARY_DIR}/tests/songs"
+      "-DWORK=${PROJECT_BINARY_DIR}/tests/dui-font-baked" "-DBAKED_UNIT=$<TARGET_FILE:dui_font_baked_unit>"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/font_baked.cmake")
+  file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/dui-font-baked.tmp")
+  set_tests_properties(dui-font-baked PROPERTIES LABELS dui TIMEOUT 120 ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/dui-font-baked.tmp")
+endif()
 if(NOT SEL_AMIGA)
   foreach(spec "dui-uim-frame:uim_frame" "dui-ui-switch:ui_switch" "dui-ui-multi:ui_multi" "dui-mode-pref:mode_pref" "dui-actions:actions" "dui-layout:layout" "dui-governor:governor" "dui-tokens:tokens" "dui-draw:draw" "dui-dirty:dirty" "dui-text:text" "dui-artwork:artwork" "dui-genart:genart" "dui-golden-home:golden_home" "dui-sdl:sdl" "dui-widgets:widgets" "dui-hidpi:hidpi" "dui-anim:anim" "dui-keys:keys" "dui-mouse:mouse" "dui-tooltips:tooltips" "dui-gestures:gestures" "dui-frame:frame" "dui-home:home" "dui-library:library" "dui-styles:styles" "dui-grid-coverflow:grid_coverflow" "dui-search:search" "dui-nowplaying:nowplaying" "dui-queue:queue" "dui-queue-scroll:queue_scroll" "dui-playlists:playlists" "dui-songinfo:songinfo" "dui-overlays:overlays" "dui-nav:nav" "dui-viz:viz" "dui-tracker:tracker" "dui-drop:drop" "dui-footer:footer" "dui-screen:screen" "dui-hover-live:hover_live" "dui-hover-rows:hover_rows" "dui-hover-sidebar-ink:hover_sidebar_ink" "dui-hover-instant:hover_instant" "dui-hover-nowplaying:hover_nowplaying" "dui-hover-regions:hover_regions" "dui-scan-ui:scan_ui" "dui-library-reload:library_reload" "dui-library-unknown-composer:library_unknown_composer" "dui-song-menu:song_menu" "dui-library-remove:library_remove" "dui-song-menu-live:song_menu_live" "dui-song-menu-lists:song_menu_lists" "keys-live:keys_live" "dui-aga-budget:aga_budget" "dui-library-style:library_style" "dui-coverflow-slide:coverflow_slide" "dui-view-exec-order:view_exec_order" "dui-zoom:zoom")
     string(REPLACE ":" ";" pair "${spec}")

@@ -50,9 +50,9 @@
 #include <string.h>
 
 /* The text size tokens (plan 2.6) as pixel sizes; each gets one atlas per weight. */
-#define DESK_SIZES 10
+#define DESK_SIZES DESK_FONT_SIZE_N
 /* The type scale tokens (Main.dc.html): caption 11/12, body 13/14, nav 15, subtitle 16, brand 18, heading 22, 24, 32. */
-static const int g_sizes[DESK_SIZES] = {11, 12, 13, 14, 15, 16, 18, 22, 24, 32};
+static const int g_sizes[DESK_SIZES] = {DESK_FONT_SIZES};
 /* The logical icon sizes (DUI-P3-1); at scale k the icon atlas holds each at k times the size (DUI-P2-8). */
 #define DESK_ICON_SIZES 4
 static const int g_icon_sizes[DESK_ICON_SIZES] = {16, 20, 24, 32};
@@ -125,7 +125,7 @@ typedef struct desk {
     sel_gui_widget_stats wstats; /* per-kind draw counts of the gallery */
     int home;               /* --view home: the tile grid of the queue entries in the main region (DUI-P2-6) */
     sel_gui_text_stats text; /* glyphs blitted and code points the atlas lacked (DUI-P2-3) */
-    sel_gui_atlas* atlas[2][DESK_SIZES]; /* [semibold][size], built on first use */
+    const sel_gui_atlas* atlas[2][DESK_SIZES]; /* [semibold][size]: baked (I463) or built on first use */
     uint32_t view_opens;    /* tiles opened by input (DUI-P2-6) */
     int32_t open_tile;      /* 1-based queue index of the opened tile, 0 = home */
     const char* frame_dump; /* --frame-dump <file>: the canvas as PPM at close */
@@ -153,7 +153,9 @@ typedef struct desk {
     int32_t scale_q16;      /* density times zoom, Q16.16 (I458): layout is in logical units, drawn times this */
     int32_t zoom_pct;       /* UI Zoom percent 75, 100, 125, 150; 0 = fit */
     int32_t zoom_default;   /* the zoom the backend starts at: 0 (fit) on rtg and aga, 100 otherwise */
-    uint32_t atlas_builds;   /* text atlases built */
+    uint32_t atlas_builds;   /* text atlases built at run time */
+    uint32_t atlas_baked_hits; /* text atlases taken from the baked tables (I463) */
+    uint32_t atlas_ms;       /* host clock ms spent in desk_atlas_build (I463): the soft-float cost on the 68020 tier */
     uint32_t atlas_rebuilds; /* scale changes that dropped the built text atlases */
     uint32_t icon_rebuilds;  /* scale changes that rebuilt the icon atlas view */
     sel_gui_icons icons;     /* the icon atlas at the current scale: the baked masks of size k * logical */
@@ -315,7 +317,7 @@ typedef struct desk {
     uint32_t fl_n[2], fl_paint[2], fl_max[2], fl_prof[2][SEL_GUI_PROF_COUNT];
     uint32_t frame_prof0[SEL_GUI_PROF_COUNT]; /* canvas->prof_ms when the open frame began */
     int frame_flow;                           /* 0 not a cover flow frame, 1 rest, 2 slide */
-    sel_tag stats[88 + 2 * (SEL_GUI_PROF_COUNT + PT_COUNT) + 2 * SEL_GUI_PROF_COUNT + 8];
+    sel_tag stats[88 + 2 * (SEL_GUI_PROF_COUNT + PT_COUNT) + 2 * SEL_GUI_PROF_COUNT + 10];
     char* input_at;         /* where the scripted input resumes after a turn that sent an engine line */
     uint32_t sends;         /* engine lines sent so far: the replay yields a turn so the shell pumps them */
     char library_dump[8192]; /* the Library page as text for the stats (DUI-P4-3) */
@@ -553,9 +555,17 @@ static const sel_gui_atlas* desk_font(desk* d, int semibold, int size) {
     for (i = 0; i < DESK_SIZES; i++) {
         if (g_sizes[i] == size) {
             if (d->atlas[semibold][i] == NULL) {
-                d->atlas[semibold][i] =
-                    desk_atlas_build(semibold ? sel_font_inter_semibold : sel_font_inter_regular, lpx(d, size));
-                d->atlas_builds++;
+                d->atlas[semibold][i] = desk_atlas_baked(semibold, lpx(d, size));
+                if (d->atlas[semibold][i] != NULL) {
+                    d->atlas_baked_hits++;
+                } else {
+                    const sel_host* ch = sel_engine_plugin_host(d->engine);
+                    uint32_t t0 = ch->clock_ms(ch);
+                    d->atlas[semibold][i] =
+                        desk_atlas_build(semibold ? sel_font_inter_semibold : sel_font_inter_regular, lpx(d, size));
+                    d->atlas_ms += ch->clock_ms(ch) - t0;
+                    d->atlas_builds++;
+                }
             }
             return d->atlas[semibold][i];
         }
@@ -8170,6 +8180,10 @@ static const sel_tag* desk_stats(void* state) {
         d->stats[n++].value = (uintptr_t)d->zoom_str;
         d->stats[n].tag = SEL_UI_STAT_ICON_RESAMPLED;
         d->stats[n++].value = d->icon_resampled;
+        d->stats[n].tag = SEL_UI_STAT_ATLAS_MS;
+        d->stats[n++].value = d->atlas_ms;
+        d->stats[n].tag = SEL_UI_STAT_ATLAS_BAKED_HITS;
+        d->stats[n++].value = d->atlas_baked_hits;
         d->stats[n].tag = SEL_TAG_END;
     }
 

@@ -149,11 +149,28 @@ sel_gui_atlas* desk_atlas_build(const unsigned char* ttf, int pixel_size) {
     return at;
 }
 
-void desk_atlas_free(sel_gui_atlas* at) {
-    if (at != NULL) {
-        free((void*)at->glyphs);
-        free((void*)at->kerns);
-        free((void*)at->alpha);
-        free(at);
+const sel_gui_atlas* desk_atlas_baked(int semibold, int pixel_size) {
+    uint32_t i;
+    for (i = 0; i < sel_font_baked_n; i++) {
+        if (sel_font_baked[i].semibold == semibold && sel_font_baked[i].px == pixel_size) {
+            return &sel_font_baked[i].at;
+        }
     }
+    return NULL;
+}
+
+void desk_atlas_free(const sel_gui_atlas* at) {
+    uint32_t i;
+    if (at == NULL) {
+        return;
+    }
+    for (i = 0; i < sel_font_baked_n; i++) {
+        if (at == &sel_font_baked[i].at) {
+            return; /* static data */
+        }
+    }
+    free((void*)at->glyphs);
+    free((void*)at->kerns);
+    free((void*)at->alpha);
+    free((void*)at);
 }
