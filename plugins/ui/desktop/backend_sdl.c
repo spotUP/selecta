@@ -81,7 +81,8 @@ static void push_test_events(const char* list) {
 }
 
 /* Test hook: SELECTA_SDL_TEST_TIMED is a space separated list of events pushed from an SDL timer thread while the live
- * loop waits in poll: `m<x>,<y>@<ms>` a mouse motion, `q@<ms>` a quit, <ms> after open. SELECTA_SDL_TEST_LIVE=1 makes the
+ * loop waits in poll: `m<x>,<y>@<ms>` a mouse motion, `d<btn>,<x>,<y>@<ms>` a mouse button down, `u<btn>,<x>,<y>@<ms>` a button up (1 left, 3 right),
+ * `q@<ms>` a quit, <ms> after open. SELECTA_SDL_TEST_LIVE=1 makes the
  * dummy driver count as a live display, so a test runs the real live loop (I341). */
 static Uint32 SDLCALL timed_event(void* param, SDL_TimerID id, Uint32 interval) {
     SDL_Event* ev = (SDL_Event*)param;
@@ -102,7 +103,7 @@ static void push_timed_events(const char* list) {
     for (tok = strtok_r(buf, " ", &save); tok != NULL; tok = strtok_r(NULL, " ", &save)) {
         SDL_Event* ev = (SDL_Event*)SDL_calloc(1, sizeof *ev); /* the test hook never frees: it runs once per process */
         float x = 0.0f, y = 0.0f;
-        unsigned ms = 0u;
+        unsigned ms = 0u, btn = 0u;
         if (ev == NULL) {
             return;
         }
@@ -110,6 +111,13 @@ static void push_timed_events(const char* list) {
             ev->type = SDL_EVENT_MOUSE_MOTION;
             ev->motion.x = x;
             ev->motion.y = y;
+        } else if ((tok[0] == 'd' || tok[0] == 'u') && sscanf(tok + 1, "%u,%f,%f@%u", &btn, &x, &y, &ms) == 4) {
+            ev->type = tok[0] == 'd' ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+            ev->button.button = (Uint8)btn;
+            ev->button.down = tok[0] == 'd';
+            ev->button.clicks = 1;
+            ev->button.x = x;
+            ev->button.y = y;
         } else if (tok[0] == 'q' && sscanf(tok + 1, "@%u", &ms) == 1) {
             ev->type = SDL_EVENT_QUIT;
         } else {
