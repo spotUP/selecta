@@ -2145,6 +2145,23 @@ static sel_gui_rect lib_clear_rect(desk* d, sel_gui_rect mn) {
     return rect_of(ab.x - lpx(d, 12) - w, ab.y, w, ab.h);
 }
 
+/* I390: the Library style chooser, a segmented control of three icon buttons (Grid, Cover Flow, List) on the title row,
+ * left of Clear Library. It is the only desktop control for VIEW_STYLE. While a scan runs the wide scan bar takes the
+ * row and the chooser is not drawn. */
+enum { LIB_STYLES = 3, LIB_STYLE_W = 36, LIB_STYLE_GAP = 4, LIB_STYLE_ICON = 18, LIB_STYLE_CLEAR_GAP = 12 };
+static const char* const lib_style_name[LIB_STYLES] = {"Grid", "Cover Flow", "List"};
+static const int32_t lib_style_icon[LIB_STYLES] = {SEL_GUI_ICON_LAYOUT_GRID, SEL_GUI_ICON_GALLERY_HORIZONTAL, SEL_GUI_ICON_LIST};
+static const char* const lib_style_cmd[LIB_STYLES] = {"VIEW_STYLE grid", "VIEW_STYLE coverflow", "VIEW_STYLE regular"};
+
+static uint32_t lib_style_selected(const sel_state* st);
+
+static sel_gui_rect lib_style_rect(desk* d, sel_gui_rect mn, uint32_t i) {
+    sel_gui_rect cl = lib_clear_rect(d, mn);
+    int32_t w = lpx(d, LIB_STYLE_W), gap = lpx(d, LIB_STYLE_GAP);
+    int32_t left = cl.x - lpx(d, LIB_STYLE_CLEAR_GAP) - LIB_STYLES * w - (LIB_STYLES - 1) * gap;
+    return rect_of(left + (int32_t)i * (w + gap), cl.y, w, cl.h);
+}
+
 /* I315: while a scan runs the Add Folder button gives way to the file being added and a progress bar. Same row and
  * right edge as the button, wider so a file name fits. */
 static sel_gui_rect lib_scan_rect(desk* d, sel_gui_rect mn) {
@@ -2212,7 +2229,7 @@ static uint32_t lib_hash(const desk* d, const sel_state* st) {
             h += st->view->rows[k].expanded * (k + 7u) + st->view->rows[k].count * (k + 3u);
         }
     }
-    if (st->view != NULL && (st->view->style == (uint32_t)SEL_VIEW_STYLE_GRID || st->view->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW)) {
+    if (st->view != NULL) {
         h += st->view->style * 7919u + st->view->cursor * 131u + st->view->row_n * 17u; /* the grid and the cover flow redraw on a move */
     }
     return h + (st->composers != NULL ? 1u : 0u) + (st->stats != NULL ? 2u : 0u);
@@ -3535,6 +3552,11 @@ static const char* library_dump_build(desk* d) {
                                   (unsigned)v->rows[i].art_id, v->rows[i].text != NULL ? v->rows[i].text : "");
         }
     }
+    for (i = 0; i < (uint32_t)LIB_STYLES; i++) {
+        sel_gui_rect sr = lib_style_rect(d, region_rect(d, "main"), i);
+        o = dump_put(d, o, "style_chooser %u %s %d %d %d %d selected=%d\n", (unsigned)i, lib_style_name[i], (int)sr.x, (int)sr.y,
+                     (int)sr.w, (int)sr.h, lib_style_selected(st) == i);
+    }
     o = dump_put(d, o, "grid draws %u tiles %u cols %u\nflow draws %u centre %u\n",
                           (unsigned)d->grid_draws, (unsigned)d->grid_tiles, (unsigned)d->grid_cols, (unsigned)d->flow_draws,
                           (unsigned)d->flow_centre);
@@ -3828,6 +3850,32 @@ static sel_gui_rect rect_union(sel_gui_rect a, sel_gui_rect b) {
     return u;
 }
 
+/* The chooser segment that shows the engine's current style: Grid, Cover Flow, or List for every row style. */
+static uint32_t lib_style_selected(const sel_state* st) {
+    if (st->view != NULL && st->view->style == (uint32_t)SEL_VIEW_STYLE_GRID) {
+        return 0u;
+    }
+    return st->view != NULL && st->view->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW ? 1u : 2u;
+}
+
+static void draw_lib_styles(desk* d, sel_gui_rect mn, const sel_state* st) {
+    uint32_t i, sel = lib_style_selected(st);
+    uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+    for (i = 0; i < (uint32_t)LIB_STYLES; i++) {
+        sel_gui_rect r = lib_style_rect(d, mn, i);
+        uint32_t ink;
+        if (i == sel) { /* the selected look is the filled surface of the selected sidebar door */
+            hover_reg(d, r);
+            sel_gui_round_rect(d->canvas, r, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), d->theme.token[SEL_GUI_TOKEN_SURFACE]);
+            ink = text;
+        } else {
+            ink = hover_ink_of(d, r, muted, text);
+        }
+        sel_gui_icon_draw(d->canvas, &d->icons, (uint32_t)lib_style_icon[i], r, lpx(d, LIB_STYLE_ICON), ink);
+        sel_gui_dirty_add(d->canvas, r);
+    }
+}
+
 static int lib_grid_on(const desk* d, const sel_state* st) {
     (void)d;
     return st->composers != NULL && st->view != NULL &&
@@ -4013,6 +4061,7 @@ static void draw_library(desk* d) {
             } else {
                 draw_button(d, ab, ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Add Folder", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
                 draw_button(d, lib_clear_rect(d, mn), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Clear Library", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+                draw_lib_styles(d, mn, st);
             }
         }
         for (m = 0; m < LIB_MODES; m++) { /* the mode tabs: the active one in the accent colour */
@@ -4118,6 +4167,18 @@ static int lib_set_mode(desk* d, uint32_t mode) {
     return 1;
 }
 
+/* I390: a click on a chooser segment. Grid and Cover Flow draw the Composers list, so they enter that mode as its tab does
+ * (the queue source); List returns to the regular rows. The same VIEW_STYLE command the --exec and --input paths send. */
+static int lib_style_click(desk* d, uint32_t i) {
+    if (i != 2u && d->lib_mode != 0u) {
+        d->lib_mode = 0u;
+        d->lib_q16 = 0;
+        desk_send(d, "VIEW_SOURCE queue");
+    }
+    desk_send(d, lib_style_cmd[i]);
+    return 1;
+}
+
 /* The COMPOSERS_SHOW request that drills into one composer. A canon holds spaces: one quoted argument; the codec reads a
  * backslash as the escape of the next character. A click on a composer row and a refresh inside a drilldown both build it here. */
 static void desk_composer_request(char* line, size_t cap, const char* canon) {
@@ -4178,6 +4239,14 @@ static int library_click(desk* d, int32_t x, int32_t y) {
         dlg_open_clear(d);
         draw_home(d);
         return 1;
+    }
+    if (d->page == PG_LIBRARY && st->composer_page == NULL && !d->scan_pending) {
+        uint32_t sg;
+        for (sg = 0; sg < (uint32_t)LIB_STYLES; sg++) {
+            if (in_rect(lib_style_rect(d, mn, sg), x, y)) {
+                return lib_style_click(d, sg);
+            }
+        }
     }
     if (d->page != PG_LIBRARY || st->composers == NULL) { /* the rows and tabs below are drawn on the Library page only (dui-search) */
         return 0;
@@ -5341,7 +5410,10 @@ static void desk_draw_tip(desk* d) {
     door = d->tip_shown - 1 - (int32_t)TRANSPORT_COUNT;
     pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     w = sel_gui_text_width(at, d->tip_text, strlen(d->tip_text)) + 2 * pad;
-    if (door >= 0) { /* a rail door: the box sits to the right of the rail, level with the door (I363) */
+    if (door >= (int32_t)DOOR_COUNT) { /* a Library style segment: the box sits below it, centred */
+        b = lib_style_rect(d, region_rect(d, "main"), (uint32_t)(door - (int32_t)DOOR_COUNT));
+        box = rect_of(b.x + b.w / 2 - w / 2, b.y + b.h + lpx(d, 4), w, lpx(d, TIP_H));
+    } else if (door >= 0) { /* a rail door: the box sits to the right of the rail, level with the door (I363) */
         b = sidebar_door_rect(d, (uint32_t)door);
         box = rect_of(b.x + b.w + lpx(d, 4), b.y + (b.h - lpx(d, TIP_H)) / 2, w, lpx(d, TIP_H));
     } else {
@@ -5362,6 +5434,13 @@ static int desk_tip_pointer(desk* d, int32_t x, int32_t y) {
     if (btn == 0 && x >= 0 && region_rect(d, "sidebar").w <= lpx(d, 120)) { /* the icon-only rail has no labels: its doors get the tooltip */
         int32_t door = sidebar_door_at(d, x, y);
         btn = door < 0 ? 0 : (int32_t)TRANSPORT_COUNT + 1 + door;
+    }
+    if (btn == 0 && x >= 0 && d->page == PG_LIBRARY && sel_engine_state(d->engine)->composer_page == NULL && !d->scan_pending) {
+        for (uint32_t i = 0; i < (uint32_t)LIB_STYLES; i++) { /* I390: the chooser segments follow the rail doors in the tooltip index */
+            if (in_rect(lib_style_rect(d, region_rect(d, "main"), i), x, y)) {
+                btn = (int32_t)TRANSPORT_COUNT + 1 + (int32_t)DOOR_COUNT + (int32_t)i;
+            }
+        }
     }
     int hide = d->tip_shown > 0 && btn != d->tip_shown;
     if (btn != d->tip_btn) {
@@ -5394,7 +5473,9 @@ static void desk_tip_tick(desk* d) {
     if (d->tip_btn <= 0 || d->tip_shown > 0 || d->now_ms < d->tip_since + TIP_DELAY_MS) {
         return;
     }
-    if (d->tip_btn > (int32_t)TRANSPORT_COUNT) { /* a rail door: its full label */
+    if (d->tip_btn > (int32_t)(TRANSPORT_COUNT + DOOR_COUNT)) { /* a Library style segment */
+        snprintf(d->tip_text, sizeof d->tip_text, "%s", lib_style_name[d->tip_btn - 1 - (int32_t)(TRANSPORT_COUNT + DOOR_COUNT)]);
+    } else if (d->tip_btn > (int32_t)TRANSPORT_COUNT) { /* a rail door: its full label */
         snprintf(d->tip_text, sizeof d->tip_text, "%s", g_doors[d->tip_btn - 1 - (int32_t)TRANSPORT_COUNT].label);
     } else {
         a = desk_action_by_id(desk_slot_action(d, (uint32_t)d->tip_btn - 1u));
@@ -7329,7 +7410,7 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
         return 1;
     }
     desk_scan_sync(d); /* I315: a running scan moves the Add Folder progress bar */
-    if (lib_hash(d, sel_engine_state(d->engine)) != d->library_sig && sel_engine_state(d->engine)->composers != NULL) {
+    if (lib_hash(d, sel_engine_state(d->engine)) != d->library_sig && (sel_engine_state(d->engine)->composers != NULL || d->page == PG_LIBRARY)) { /* I390: the style chooser shows the style even on an empty library */
         d->library_sig = lib_hash(d, sel_engine_state(d->engine)); /* the Library page changed: redraw */
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
     }

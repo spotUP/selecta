@@ -1,0 +1,91 @@
+# dui-library-style (DUI-P4-22, I390): the Library style chooser. -DSELECTA -DWORK -DSDL_BUILT
+# Before this item no desktop control reached VIEW_STYLE; only --exec / --input did. The test drives the live loop
+# (SELECTA_SDL_TEST_LIVE=1 makes the SDL dummy driver a live display, SELECTA_SDL_TEST_TIMED pushes real mouse tokens) and
+# clicks the chooser segments, whose rectangles it reads from the stats dump ("style_chooser <i> <name> x y w h selected=S").
+# The sentinels are the draw counters the grid and cover flow painters bump: "grid draws N ..." and "flow draws N ...".
+#   run A: click Cover Flow  -> flow draws > 0, grid draws 0, the Cover Flow segment is selected.
+#   run B: click Cover Flow, then Grid -> grid draws > 0, the Grid segment is selected.
+# The dump is printed at exit, so each scenario is one run. The tooltip names of the segments are checked in the dump too.
+get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+include("${HERE}/dui_run.cmake")
+file(REMOVE_RECURSE "${WORK}")
+file(MAKE_DIRECTORY "${WORK}")
+if(NOT SDL_BUILT)
+  return()
+endif()
+set(ENV{SDL_VIDEODRIVER} dummy)
+# The fixture library and a queue: the grid and the cover flow paint tiles only when the library has rows.
+find_program(SQLITE3 sqlite3)
+if(NOT SQLITE3)
+  message(FATAL_ERROR "dui-library-style needs the sqlite3 command line tool to load the fixture library")
+endif()
+set(db "${WORK}/library.db")
+dui_run(init --db "${db}" --ui desktop --backend mem --view home --canvas 900x600 --clock fixed --stats)
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db}" INPUT_FILE "${HERE}/fixture_library.sql"
+  RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "loading the fixture failed: ${err}")
+endif()
+set(queue "")
+foreach(p 1.mod 2.mod 3.xm 4.it 5.sid)
+  list(APPEND queue --exec "QUEUE_ADD \"fixture/${p}\"")
+endforeach()
+dui_run(o0 --ui desktop --backend mem --view library --canvas 1280x800 --clock fixed --stats)
+foreach(i 0 1 2)
+  string(REGEX MATCH "style_chooser ${i} ([A-Za-z ]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) selected=([01])\n" _m "${o0}")
+  if(_m STREQUAL "")
+    message(FATAL_ERROR "no style_chooser ${i} line in the stats:\n${o0}")
+  endif()
+  set(name${i} "${CMAKE_MATCH_1}")
+  math(EXPR cx${i} "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+  math(EXPR cy${i} "${CMAKE_MATCH_3} + ${CMAKE_MATCH_5} / 2")
+  set(sel${i} "${CMAKE_MATCH_6}")
+endforeach()
+if(NOT name0 STREQUAL "Grid" OR NOT name1 STREQUAL "Cover Flow" OR NOT name2 STREQUAL "List")
+  message(FATAL_ERROR "the chooser order is '${name0}', '${name1}', '${name2}'; expected Grid, Cover Flow, List")
+endif()
+if(NOT sel2 EQUAL 1 OR NOT sel0 EQUAL 0 OR NOT sel1 EQUAL 0)
+  message(FATAL_ERROR "the regular style must show List selected: ${sel0} ${sel1} ${sel2}")
+endif()
+
+set(ENV{SELECTA_SDL_TEST_LIVE} 1)
+# A private control socket: a Selecta that is already running on this machine must not make these runs exit at once.
+set(ENV{SELECTA_SOCKET} "/tmp/selecta-dui-library-style.sock")
+function(click_run tag tokens)
+  file(REMOVE_RECURSE "${WORK}/cfg")
+  set(ENV{SELECTA_SDL_TEST_TIMED} "${tokens}")
+  dui_run(${tag} --db "${db}" --ui desktop --backend sdl --view library --canvas 1280x800 --stats ${queue})
+  set(${tag} "${${tag}}" PARENT_SCOPE)
+endfunction()
+
+# Run A: one click on Cover Flow.
+click_run(a "m${cx1},${cy1}@400 d1,${cx1},${cy1}@500 u1,${cx1},${cy1}@550 q@1500")
+string(REGEX MATCH "grid draws ([0-9]+) tiles [0-9]+ cols [0-9]+\nflow draws ([0-9]+) centre" _m "${a}")
+if(_m STREQUAL "")
+  message(FATAL_ERROR "no draw counters in run A:\n${a}")
+endif()
+if(NOT CMAKE_MATCH_2 GREATER 0 OR NOT CMAKE_MATCH_1 EQUAL 0)
+  message(FATAL_ERROR "run A: clicking Cover Flow must draw the cover flow and not the grid: grid draws ${CMAKE_MATCH_1}, flow draws ${CMAKE_MATCH_2}")
+endif()
+if(NOT a MATCHES "style_chooser 1 Cover Flow [-0-9]+ [-0-9]+ [-0-9]+ [-0-9]+ selected=1")
+  message(FATAL_ERROR "run A: the Cover Flow segment is not selected after the click:\n${a}")
+endif()
+if(NOT a MATCHES "vstyle coverflow")
+  message(FATAL_ERROR "run A: the engine view style is not coverflow:\n${a}")
+endif()
+
+# Run B: Cover Flow, then Grid.
+click_run(b "m${cx1},${cy1}@400 d1,${cx1},${cy1}@500 u1,${cx1},${cy1}@550 m${cx0},${cy0}@800 d1,${cx0},${cy0}@900 u1,${cx0},${cy0}@950 q@1800")
+string(REGEX MATCH "grid draws ([0-9]+) tiles [0-9]+ cols [0-9]+\nflow draws ([0-9]+) centre" _m "${b}")
+if(_m STREQUAL "" OR NOT CMAKE_MATCH_1 GREATER 0)
+  message(FATAL_ERROR "run B: clicking Grid after Cover Flow must draw the grid:\n${b}")
+endif()
+if(NOT b MATCHES "style_chooser 0 Grid [-0-9]+ [-0-9]+ [-0-9]+ [-0-9]+ selected=1" OR NOT b MATCHES "vstyle grid")
+  message(FATAL_ERROR "run B: the Grid segment is not selected after the click:\n${b}")
+endif()
+
+# Run C: Grid then List returns to the regular rows (the grid stops drawing after the click).
+click_run(c "m${cx0},${cy0}@400 d1,${cx0},${cy0}@500 u1,${cx0},${cy0}@550 m${cx2},${cy2}@800 d1,${cx2},${cy2}@900 u1,${cx2},${cy2}@950 q@1800")
+if(NOT c MATCHES "style_chooser 2 List [-0-9]+ [-0-9]+ [-0-9]+ [-0-9]+ selected=1")
+  message(FATAL_ERROR "run C: the List segment is not selected after the click:\n${c}")
+endif()

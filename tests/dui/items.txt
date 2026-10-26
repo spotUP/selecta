@@ -76,4 +76,5 @@ DUI-P4-18 dui-library-remove the song menu has no Remove from Library and Librar
 DUI-P4-19 dui-like-rate the Now Playing heart and rating marks are covered by dui-nowplaying; missing: heart on hover for rows and tiles, library row liked=1 check and one pending_push row after a click
 DUI-P4-20 dui-compact a canvas under 700 px takes the 40 px mini strip; there is no compact single-column layout for 640x400 and 680x270
 DUI-P4-21 dui-empty-errors no empty state per list view (STAT_EMPTY_STATES) and no error toast for a corrupt LOAD
+DUI-P4-22 dui-library-style the Library page has no style chooser: no control picks grid, cover flow or list
 DUI-P6-7 dui-budgets the missing numbers (cold start, resize relayout, artwork cache cap, thumbnail sizes, peak memory, scroll momentum, toast and tooltip delays) are not measured and no budget_<name>= lines are printed

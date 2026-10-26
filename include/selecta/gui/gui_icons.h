@@ -31,7 +31,9 @@
     X(MUSIC, "music") \
     X(DISC, "disc") \
     X(USER, "user") \
-    X(ELLIPSIS, "ellipsis")
+    X(ELLIPSIS, "ellipsis") \
+    X(LAYOUT_GRID, "layout-grid") \
+    X(GALLERY_HORIZONTAL, "gallery-horizontal")
 
 typedef enum sel_gui_icon {
 #define X(id, file) SEL_GUI_ICON_##id,
