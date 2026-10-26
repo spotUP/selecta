@@ -8,6 +8,7 @@
 #    tooltip code ran: tooltips=1 and the text stat).
 # 2. move + wait 300 shows none.
 # 3. move + wait 600 + move away hides it (text empty, tooltips stays 1).
+# 4. I515: for the first button, the tooltip is still gone 300 ms after moving away (no re-show from a stale timer).
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -84,6 +85,10 @@ foreach(line IN LISTS laylines)
     check("${early}" 0 "" "${id} after 300 ms")
     tip_run(gone "move ${cx} ${cy}\nwait 600\nmove 5 5\n")
     check("${gone}" 1 "" "${id} after moving away")
+    if(buttons EQUAL 1) # I515: one button is enough, the hide path is shared
+      tip_run(later "move ${cx} ${cy}\nwait 600\nmove 5 5\nwait 300\n")
+      check("${later}" 1 "" "${id} 300 ms after moving away")
+    endif()
   endif()
 endforeach()
 if(buttons LESS 1)
