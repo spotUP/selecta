@@ -31,6 +31,8 @@ void desk_sdl_present(desk_sdl* b, const sel_gui_canvas* c);
  * hash. desk_sdl_readbacks counts the readbacks (I401). */
 uint64_t desk_sdl_present_hash(desk_sdl* b);
 uint32_t desk_sdl_readbacks(const desk_sdl* b);
+/* I501: SDL_RaiseWindow calls made when the window opened (one per open). */
+uint32_t desk_sdl_raises(const desk_sdl* b);
 uint32_t desk_sdl_upload_pixels(const desk_sdl* b);
 uint32_t desk_sdl_presents(const desk_sdl* b);
 /* I291: input-to-present latency of click, key and wheel events (SDL event timestamp to the end of the present that shows

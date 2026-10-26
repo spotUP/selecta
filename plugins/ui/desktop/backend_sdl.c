@@ -21,6 +21,7 @@ struct desk_sdl {
     int headless;
     uint64_t present_hash;    /* hash of the frame read back after present number hash_presents */
     uint32_t hash_presents;
+    uint32_t raises;          /* SDL_RaiseWindow calls at open (I501) */
     uint32_t readbacks;       /* GPU readbacks: report time only, never per frame (I401) */
     uint32_t upload_pixels;
     uint32_t presents;
@@ -176,6 +177,9 @@ desk_sdl* desk_sdl_open(int32_t w, int32_t h) {
         desk_sdl_close(b);
         return NULL;
     }
+    if (SDL_RaiseWindow(b->window)) { /* I501: the window takes focus when it opens, so the first key and click reach it */
+        b->raises++;
+    }
     SDL_StartTextInput(b->window); /* typed characters arrive as SDL_EVENT_TEXT_INPUT, layout and shift already applied */
     push_test_events(getenv("SELECTA_SDL_TEST_EVENTS"));
     push_timed_events(getenv("SELECTA_SDL_TEST_TIMED"));
@@ -283,6 +287,10 @@ uint64_t desk_sdl_present_hash(desk_sdl* b) {
     SDL_DestroySurface(conv);
     SDL_DestroySurface(s);
     return b->present_hash;
+}
+
+uint32_t desk_sdl_raises(const desk_sdl* b) {
+    return b->raises;
 }
 
 uint32_t desk_sdl_readbacks(const desk_sdl* b) {

@@ -4270,6 +4270,9 @@ static const char* library_dump_build(desk* d) {
                               dlg_button_rect(d, 1u).y, dlg_button_rect(d, 1u).w, dlg_button_rect(d, 1u).h,
                               lib_clear_rect(d, panel_rect(d, "main")).x, lib_clear_rect(d, panel_rect(d, "main")).y,
                               lib_clear_rect(d, panel_rect(d, "main")).w, lib_clear_rect(d, panel_rect(d, "main")).h);
+#ifdef SELECTA_DESKTOP_SDL
+        o = dump_put(d, o, "window raise_count=%u\n", d->sdl != NULL ? (unsigned)desk_sdl_raises(d->sdl) : 0u); /* I501 */
+#endif
         for (k = 0; k < 5u && k < d->pal.count; k++) {
             o = dump_put(d, o, "palitem %u %s\n", (unsigned)k, d->pal.items[k].name);
         }
