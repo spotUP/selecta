@@ -1616,6 +1616,11 @@ if(NOT SEL_AMIGA)
   target_include_directories(lyrics_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
   target_link_libraries(lyrics_unit_test PRIVATE selecta_library)
   add_test(NAME lrc-unit COMMAND lyrics_unit_test)
+  # I420: the DEViLBOX default base is https on every build with TLS (this block is the non-Amiga build).
+  add_executable(devilbox_base_test net/devilbox_base_test.c)
+  target_include_directories(devilbox_base_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(devilbox_base_test PRIVATE selecta_library)
+  add_test(NAME devilbox-default-https COMMAND devilbox_base_test)
   # I413: the asma list reader, artist rule and source descriptor, on the recorded asmadb.js excerpt.
   add_executable(asma_unit_test asma_unit_test.c)
   target_include_directories(asma_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)

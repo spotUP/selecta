@@ -78,7 +78,7 @@ typedef struct sel_mirror_opts {
 int sel_mirrors_fetch_opts(sel_mirror_set* set, const char* path, const sel_mirror_opts* opts, sel_mirror_sink sink,
                            sel_mirror_restart restart, sel_mirror_verify verify, void* ctx, sel_mirror_res* res);
 
-/* DEViLBOX base URL without a trailing path: SELECTA_DEVILBOX_URL, else http://devilbox.uprough.net. */
+/* DEViLBOX base URL without a trailing path: SELECTA_DEVILBOX_URL, else https://devilbox.uprough.net (http on builds without TLS). */
 const char* sel_devilbox_base(void);
 
 #endif
