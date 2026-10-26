@@ -27,6 +27,7 @@ typedef struct builtin {
 static const builtin BUILTIN[] = {
     {"modland", "http://ftp.amigascne.org/mirrors/ftp.modland.com/pub/modules/,ftp://ftp.modland.com/pub/modules/"},
     {"hvsc", "https://hvsc.c64.org/download/"},
+    {"asma", "https://asma.atari.org/asma/"},
 };
 
 static int add_base(sel_mirror_set* s, const char* base, size_t n) {

@@ -15,6 +15,7 @@ All files fetched 2026-10-23 by HTTP GET. None are synthetic. JSON and .prg cann
 | devilbox.uprough.net/api/modland/list_virgill.json | /api/modland/list?dir=pub/modules/Protracker/Virgill | first 30 files |
 | devilbox.uprough.net/api/songdb/lookup_notfound.json | /api/songdb/lookup?hash=000000000000 | full |
 | devilbox.uprough.net/api/hip/votes_400.txt | /api/hip/votes | body `ERR bad`, HTTP 400 |
+| asma.atari.org/asmadb/asmadb.js | https://asma.atari.org/asmadb/asmadb.js (the list endpoint bbmp's asma.py reads), fetched 2026-10-26, Last-Modified Sun, 11 Oct 2026 10:50:45 GMT | 2.2 MB JavaScript object trimmed to 2 of the composerInfos entries and 10 of the 6,400+ fileInfos entries (6 Aki SAPs, 2 TIATracker .ttt with escaped newlines in the comment, one three-author entry (Black_Flock), one with an empty author (Games/221B_Baker_Street)); groupInfos and demozoo sections dropped; each kept line is unmodified |
 
 Synthetic (T69, I156): fast.mirror.test, slow.mirror.test (4 s first byte via routes.json), home.mirror.test and devilbox.uprough.net/api/mirror/modland carry copies of fixture.test/data.bin as Protracker/test/song.mod; they stand in for mirrors, not for real Modland content.
 

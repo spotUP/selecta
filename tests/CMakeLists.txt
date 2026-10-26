@@ -1514,6 +1514,15 @@ if(NOT SEL_AMIGA)
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "hvsc_net_ok")
 endif()
 
+# Row I413: LIBRARY_SYNC asma <url> over the asma.atari.org fixture.
+if(NOT SEL_AMIGA)
+  add_test(NAME source-asma-net
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      -P "${SEL_NET_DIR}/asma_net.cmake")
+  set_tests_properties(source-asma-net PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "asma_net_ok")
+endif()
+
 # M3 Phase 4 (I164): T74 publish part. PLAYLIST_PUBLISH through selecta-cli script against the fixture.
 if(NOT SEL_AMIGA)
   add_test(NAME hippo-publish
@@ -1580,6 +1589,14 @@ if(NOT SEL_AMIGA)
   target_include_directories(lyrics_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
   target_link_libraries(lyrics_unit_test PRIVATE selecta_library)
   add_test(NAME lrc-unit COMMAND lyrics_unit_test)
+  # I413: the asma list reader, artist rule and source descriptor, on the recorded asmadb.js excerpt.
+  add_executable(asma_unit_test asma_unit_test.c)
+  target_include_directories(asma_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_compile_definitions(asma_unit_test PRIVATE
+    SEL_ASMA_FIXTURE="${PROJECT_SOURCE_DIR}/tests/net/fixtures/asma.atari.org/asmadb/asmadb.js")
+  target_link_libraries(asma_unit_test PRIVATE selecta_library selecta_core)
+  add_test(NAME asma-unit COMMAND asma_unit_test)
+  set_tests_properties(asma-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "asma_unit_ok")
   # I376: the bottom-of-stack canary (apps/common/stack_canary.c, used by amiga_start.c on the Amiga).
   add_executable(stack_canary_test stack_canary_test.c ${PROJECT_SOURCE_DIR}/apps/common/stack_canary.c)
   target_include_directories(stack_canary_test PRIVATE ${PROJECT_SOURCE_DIR}/apps/common)

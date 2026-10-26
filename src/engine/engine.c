@@ -51,6 +51,8 @@
 #include "sources/local_source.h"
 #include "sources/hippo_publish.h"
 #include "sources/hippo_sync.h"
+#include "sources/asma_net.h"
+#include "sources/asma_sync.h"
 #include "sources/hvsc_net.h"
 #include "sources/hvsc_sync.h"
 #include "sources/modland_net.h"
@@ -4473,9 +4475,10 @@ static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
     sel_modland_sync_stats st;
     sel_hvsc_sync_stats hv;
     sel_hippo_sync_stats hp;
+    sel_asma_sync_stats as;
     int64_t now;
     int ok;
-    int is_hvsc, is_hippo;
+    int is_hvsc, is_hippo, is_asma;
 
     if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", "LIBRARY_SYNC");
@@ -4483,7 +4486,8 @@ static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
     }
     is_hvsc = strcmp(m->args[0].v.s, "hvsc") == 0;
     is_hippo = strcmp(m->args[0].v.s, "hippo") == 0;
-    if (!is_hvsc && !is_hippo && strcmp(m->args[0].v.s, "modland") != 0) {
+    is_asma = strcmp(m->args[0].v.s, "asma") == 0;
+    if (!is_hvsc && !is_hippo && !is_asma && strcmp(m->args[0].v.s, "modland") != 0) {
         sel_engine_report_error(e, "unknown_source", m->args[0].v.s);
         return;
     }
@@ -4506,6 +4510,18 @@ static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
         e->sync_info.prg_dividers = hp.prg_dividers;
         e->sync_info.prg_stealth = hp.prg_stealth;
         e->sync_info.prg_subsongs = hp.prg_subsongs;
+    } else if (is_asma) {
+        if (sel_modland_is_url(m->args[1].v.s)) {
+            sel_asma_net_stats an;
+
+            ok = sel_asma_net_sync(&scfg, m->args[1].v.s, &as, &an);
+            e->sync_info.net_listing_bytes = an.list_bytes;
+            e->sync_info.net_requests = an.http_requests;
+        } else {
+            ok = sel_asma_sync(&scfg, m->args[1].v.s, &as);
+        }
+        st.listing_rows = as.listing_rows;
+        st.skipped_rows = as.skipped_rows;
     } else if (is_hvsc) {
         if (sel_modland_is_url(m->args[1].v.s)) {
             sel_hvsc_net_stats hn;
@@ -4537,7 +4553,7 @@ static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
         ok = sel_modland_sync(&scfg, m->args[1].v.s, now, &st);
     }
     e->art_generation++; /* a failed sync may still have stored albums */
-    if (ok && !is_hvsc && !is_hippo) {
+    if (ok && !is_hvsc && !is_hippo && !is_asma) {
         persist_new_this_week(e, st.new_this_week);
     }
     e->sync_info.listing_rows = st.listing_rows;
