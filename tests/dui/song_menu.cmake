@@ -60,8 +60,8 @@ sm_run(opened "${drill}move ${sx} ${sy}\nrclick ${sx} ${sy}\nwait 1\n")
 sm_field(open1 "${opened}" open)
 sm_field(items "${opened}" items)
 sm_field(opens1 "${opened}" opens)
-if(NOT open1 EQUAL 1 OR NOT items EQUAL 4 OR NOT opens1 EQUAL 1)
-  message(FATAL_ERROR "right-click opened open=${open1} items=${items} opens=${opens1}, expected 1/4/1:\n${opened}")
+if(NOT open1 EQUAL 1 OR NOT items EQUAL 5 OR NOT opens1 EQUAL 1)
+  message(FATAL_ERROR "right-click opened open=${open1} items=${items} opens=${opens1}, expected 1/5/1:\n${opened}")
 endif()
 
 # Add to Queue is the third item: the engine queue grows by 1.

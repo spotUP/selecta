@@ -1203,6 +1203,12 @@ if(NOT SEL_AMIGA)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
   set_tests_properties(playlist-create PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "plc_ok")
 
+  add_test(NAME library-remove
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/library_remove.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv ${CMAKE_CURRENT_BINARY_DIR}/songs/selecta-test.mod
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/songs)
+  set_tests_properties(library-remove PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "lrm_ok")
+
   add_test(NAME text-ui-folders-tree
     COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>" "-DSELECTA=$<TARGET_FILE:selecta>"
       "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv"

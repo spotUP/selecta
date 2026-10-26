@@ -209,6 +209,10 @@ typedef struct desk {
     uint32_t sort_col;       /* 0 title, 1 format */
     uint32_t sort_dir;       /* 0 queue order, 1 ascending, 2 descending */
     int sm_open;             /* the shared song menu is open (I305) */
+    int dlg_open;            /* DUI-P4-18: the confirm dialog is up: 1 = Remove from Library, 2 = Clear Library */
+    char dlg_path[512];      /* the song a Remove from Library dialog names */
+    char dlg_text[640];      /* the question the dialog shows */
+    uint32_t dlg_opens, dlg_confirms, dlg_cancels; /* sentinels: dialogs opened / confirmed / cancelled */
     int sm_step;             /* 0 the items, 1 the playlist chooser */
     song_ref sm_ref;         /* the song it was opened on */
     song_row sm_rows[SM_ROWS]; /* the song rows drawn in the main region this frame: the one registry every page feeds */
@@ -1011,7 +1015,7 @@ static int desk_tween(desk* d, uint32_t key, uint32_t ms, uint32_t ease) {
 /* ---- Song list (DUI-P3-2): header row, one row per queue entry, drop targets in the sidebar. All geometry in canvas
  * pixels; a pointer position is mapped to a region of the layout tree first (sel_uim_hit), then to a part of it. ---- */
 enum { SONG_HEADER_H = 24, SONG_ROW_H = 32, SONG_TARGET_H = 32, SONG_MENU_ITEM_H = 24, SONG_MENU_W = 140, SONG_MENU_ITEMS = 5, SONG_PLAYLIST_TARGETS = 4 };
-static const char* const g_menu_items[SONG_MENU_ITEMS] = {"Play", "Play Next", "Add to Queue", "Add to Playlist", "Remove"};
+static const char* const g_menu_items[SONG_MENU_ITEMS] = {"Play", "Play Next", "Add to Queue", "Add to Playlist", "Remove from Library"};
 
 static int desk_send(desk* d, const char* line);
 static int desk_send_path(desk* d, const char* verb, const char* path);
@@ -1458,8 +1462,15 @@ static int shelf_over_cards(desk* d, int32_t y) {
 /* ---- The shared song menu (I305, DUI-P3-16): every page that shows a song row registers it while drawing
  * (song_row_reg); one opener serves right-click, ctrl-click, the trailing "..." button and Shift+F10. ---- */
 
+/* Every song row offers five items. The last removes the queue entry on the Queue page and the song from the library
+ * everywhere else (DUI-P4-18). */
 static int song_menu_count(const desk* d) {
-    return d->sm_ref.removable ? SONG_MENU_ITEMS : SONG_MENU_ITEMS - 1;
+    (void)d;
+    return SONG_MENU_ITEMS;
+}
+
+static const char* song_menu_label(const desk* d, int32_t k) {
+    return k == 4 && d->sm_ref.removable ? "Remove from Queue" : g_menu_items[k];
 }
 
 static sel_gui_rect song_menu_item_rect(const desk* d, int32_t k) {
@@ -1578,7 +1589,7 @@ static void song_menu_draw(desk* d) {
         for (k = 0; k < n; k++) {
             sel_gui_rect m = song_menu_item_rect(d, k);
             int lit = hover_weight(d, m) > 0;
-            const char* label = d->sm_step == 0 ? g_menu_items[k] : "No playlists";
+            const char* label = d->sm_step == 0 ? song_menu_label(d, k) : "No playlists";
             hover_reg(d, m);
             if (lit) {
                 sel_gui_round_rect(d->canvas, rect_of(m.x + inset, m.y, m.w - 2 * inset, m.h),
@@ -1594,6 +1605,108 @@ static void song_menu_draw(desk* d) {
         sel_gui_dirty_add(d->canvas, panel);
     }
     sel_gui_clip_pop(d->canvas);
+}
+
+/* ---- The confirm dialog of the two library removals (DUI-P4-18): Remove from Library names the song, Clear Library names
+ * the song count. Nothing is sent until Confirm; Cancel, Escape or a click outside close it. ---- */
+
+enum { DLG_NONE = 0, DLG_REMOVE = 1, DLG_CLEAR = 2 };
+
+static const char* path_base(const char* p);
+
+static sel_gui_rect dlg_panel_rect(const desk* d) {
+    sel_gui_rect mn = region_rect(d, "main");
+    int32_t w = lpx(d, 440), h = lpx(d, 168);
+    return rect_of(mn.x + (mn.w - w) / 2, mn.y + (mn.h - h) / 3, w, h);
+}
+
+/* Button 0 is Cancel, button 1 is the confirming one; both sit on the bottom row, right aligned. */
+static sel_gui_rect dlg_button_rect(const desk* d, uint32_t i) {
+    sel_gui_rect p = dlg_panel_rect(d);
+    int32_t w = lpx(d, 132), h = lpx(d, 32), gap = lpx(d, 12), m = lpx(d, 20);
+    return rect_of(p.x + p.w - m - w - (int32_t)(1u - i) * (w + gap), p.y + p.h - m - h, w, h);
+}
+
+static void dlg_open_remove(desk* d, const char* path) {
+    snprintf(d->dlg_path, sizeof d->dlg_path, "%s", path);
+    snprintf(d->dlg_text, sizeof d->dlg_text, "Remove \"%s\" from the library? The audio file on disk is not touched.", path_base(path));
+    d->dlg_open = DLG_REMOVE;
+    d->dlg_opens++;
+}
+
+static void dlg_open_clear(desk* d) {
+    uint32_t n = sel_engine_state(d->engine)->library_songs;
+    snprintf(d->dlg_text, sizeof d->dlg_text,
+             "Remove all %u songs from the library? Playlists stay. Audio files on disk are not touched.", (unsigned)n);
+    d->dlg_open = DLG_CLEAR;
+    d->dlg_opens++;
+}
+
+static void dlg_close(desk* d, int confirm) {
+    int kind = d->dlg_open;
+    d->dlg_open = DLG_NONE;
+    if (confirm && kind == DLG_REMOVE) {
+        desk_send_path(d, "LIBRARY_REMOVE", d->dlg_path);
+        desk_toast(d, "Removed from library");
+    } else if (confirm && kind == DLG_CLEAR) {
+        desk_send(d, "LIBRARY_CLEAR");
+        desk_toast(d, "Library cleared");
+    }
+    if (confirm) {
+        d->dlg_confirms++;
+    } else {
+        d->dlg_cancels++;
+    }
+    draw_home(d);
+}
+
+static void dlg_draw(desk* d) {
+    sel_gui_rect p, tr;
+    const sel_gui_atlas* head = desk_font(d, 1, 16);
+    const sel_gui_atlas* body = desk_font(d, 0, 14);
+    int32_t m = lpx(d, 20), rad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]);
+    if (!d->dlg_open || head == NULL || body == NULL) {
+        return;
+    }
+    p = dlg_panel_rect(d);
+    if (d->shadow_ready) {
+        sel_gui_shadow_draw(d->canvas, &d->shadow, p);
+    }
+    sel_gui_round_rect(d->canvas, p, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+    tr = rect_of(p.x + m, p.y + m, p.w - 2 * m, head->line_height);
+    sel_gui_text_wrap(d->canvas, head, tr, d->dlg_open == DLG_CLEAR ? "Clear Library" : "Remove from Library",
+                      ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), 1, &d->text);
+    tr = rect_of(p.x + m, p.y + m + head->line_height + lpx(d, 10), p.w - 2 * m, body->line_height * 3);
+    sel_gui_text_wrap(d->canvas, body, tr, d->dlg_text, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), 3, &d->text);
+    draw_button(d, dlg_button_rect(d, 0u), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Cancel", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    draw_button(d, dlg_button_rect(d, 1u), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), d->dlg_open == DLG_CLEAR ? "Clear Library" : "Remove",
+                14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+    sel_gui_dirty_add(d->canvas, p);
+}
+
+/* While the dialog is open it owns every click: Confirm and Cancel act, a click outside cancels, the rest is swallowed. */
+static int dlg_pointer(desk* d, const sel_gui_input* ev) {
+    if (!d->dlg_open) {
+        return 0;
+    }
+    if (ev->kind == SEL_GUI_IN_CLICK) {
+        if (in_rect(dlg_button_rect(d, 1u), ev->x, ev->y)) {
+            dlg_close(d, 1);
+        } else if (in_rect(dlg_button_rect(d, 0u), ev->x, ev->y) || !in_rect(dlg_panel_rect(d), ev->x, ev->y)) {
+            dlg_close(d, 0);
+        }
+        return 1;
+    }
+    return ev->kind == SEL_GUI_IN_WHEEL;
+}
+
+static int dlg_key(desk* d, const sel_gui_input* ev) {
+    if (ev->code == 13u) {
+        dlg_close(d, 1);
+    } else if (ev->code == 27u) {
+        dlg_close(d, 0);
+    }
+    return 1;
 }
 
 /* A click while the menu is open picks an item or dismisses it; otherwise right-click, ctrl-click or a click on a
@@ -1627,6 +1740,12 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
             } else {
                 static const char* const done[SONG_MENU_ITEMS] = {"Playing", "Playing next", "Added to queue", "", "Removed from queue"};
                 uint32_t slot = k == 4 ? 3u : (uint32_t)k;
+                if (k == 4 && !d->sm_ref.removable) { /* the song leaves the library: ask first */
+                    dlg_open_remove(d, d->sm_ref.path);
+                    d->sm_open = 0;
+                    draw_home(d);
+                    return 1;
+                }
                 if (k == 4) {
                     char line[48];
                     snprintf(line, sizeof line, "QUEUE_REMOVE %u", (unsigned)d->sm_ref.qid);
@@ -1833,6 +1952,13 @@ static sel_gui_rect lib_tab_rect(desk* d, sel_gui_rect mn, uint32_t i) {
 static sel_gui_rect lib_add_rect(desk* d, sel_gui_rect mn) {
     int32_t w = lpx(d, 120), right = nav_arrow_rect(d, mn, 0).x - lpx(d, 16);
     return rect_of(right - w, mn.y + lpx(d, LIB_TITLE_Y) + lpx(d, 4), w, lpx(d, 32));
+}
+
+/* DUI-P4-18: the Clear Library button sits left of Add Folder on the same row. */
+static sel_gui_rect lib_clear_rect(desk* d, sel_gui_rect mn) {
+    sel_gui_rect ab = lib_add_rect(d, mn);
+    int32_t w = lpx(d, 132);
+    return rect_of(ab.x - lpx(d, 12) - w, ab.y, w, ab.h);
 }
 
 /* I315: while a scan runs the Add Folder button gives way to the file being added and a progress bar. Same row and
@@ -3271,7 +3397,8 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o,
                               "overlay kind=%d palette_opens=%u palette_runs=%u help_opens=%u cmdline_opens=%u cmdline_runs=%u sends_ok=%u "
                               "toasts=%u toast_on=%d menu_picks=%u,%u,%u,%u last_verb=%s pal_count=%u queue=%u status=%s\n"
-                              "song_menu open=%d items=%d opens=%u picks=%u playlist_adds=%u rows=%u accent=%06x raised=%06x\n",
+                              "song_menu open=%d items=%d opens=%u picks=%u playlist_adds=%u rows=%u accent=%06x raised=%06x\n"
+                              "dialog open=%d opens=%u confirms=%u cancels=%u songs=%u cancel=%d,%d,%d,%d confirm=%d,%d,%d,%d clear=%d,%d,%d,%d\n",
                               d->overlay, (unsigned)d->palette_opens, (unsigned)d->palette_runs, (unsigned)d->help_opens,
                               (unsigned)d->cmdline_opens, (unsigned)d->cmdline_runs, (unsigned)d->overlay_sends_ok, (unsigned)d->toasts,
                               d->toast_on, (unsigned)d->menu_picks[0], (unsigned)d->menu_picks[1], (unsigned)d->menu_picks[2],
@@ -3279,7 +3406,13 @@ static const char* library_dump_build(desk* d) {
                               (unsigned)st->queue_count, d->cmd.status[0] != '\0' ? d->cmd.status : "-", d->sm_open, d->sm_open ? song_menu_count(d) : 0,
                               (unsigned)d->sm_opens, (unsigned)d->sm_picks, (unsigned)d->sm_pl_adds, (unsigned)d->sm_n,
                               (unsigned)(ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) & 0xFFFFFFu),
-                              (unsigned)(ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]) & 0xFFFFFFu));
+                              (unsigned)(ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]) & 0xFFFFFFu),
+                              d->dlg_open, (unsigned)d->dlg_opens, (unsigned)d->dlg_confirms, (unsigned)d->dlg_cancels,
+                              (unsigned)st->library_songs, dlg_button_rect(d, 0u).x, dlg_button_rect(d, 0u).y,
+                              dlg_button_rect(d, 0u).w, dlg_button_rect(d, 0u).h, dlg_button_rect(d, 1u).x,
+                              dlg_button_rect(d, 1u).y, dlg_button_rect(d, 1u).w, dlg_button_rect(d, 1u).h,
+                              lib_clear_rect(d, region_rect(d, "main")).x, lib_clear_rect(d, region_rect(d, "main")).y,
+                              lib_clear_rect(d, region_rect(d, "main")).w, lib_clear_rect(d, region_rect(d, "main")).h);
         for (k = 0; k < 5u && k < d->pal.count; k++) {
             o = dump_put(d, o, "palitem %u %s\n", (unsigned)k, d->pal.items[k].name);
         }
@@ -3455,6 +3588,7 @@ static void draw_library(desk* d) {
                 lib_scan_draw(d, mn);
             } else {
                 draw_button(d, ab, ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Add Folder", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+                draw_button(d, lib_clear_rect(d, mn), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Clear Library", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
             }
         }
         for (m = 0; m < LIB_MODES; m++) { /* the mode tabs: the active one in the accent colour */
@@ -3610,6 +3744,11 @@ static int library_click(desk* d, int32_t x, int32_t y) {
     char line[256];
     if (d->page == PG_LIBRARY && st->composer_page == NULL && !d->scan_pending && in_rect(lib_add_rect(d, mn), x, y)) {
         return desk_add_folder(d);
+    }
+    if (d->page == PG_LIBRARY && st->composer_page == NULL && !d->scan_pending && in_rect(lib_clear_rect(d, mn), x, y)) {
+        dlg_open_clear(d);
+        draw_home(d);
+        return 1;
     }
     if (st->composers == NULL) {
         return 0;
@@ -3976,6 +4115,7 @@ static void draw_home(desk* d) {
     int32_t view = sel_gui_tween_value(&d->tl, ANIM_KEY_VIEW, 65536);
     draw_home_content(d);
     song_menu_draw(d);
+    dlg_draw(d);
     draw_nav_arrows(d, mn);
     if (view < 65536) {
         sel_gui_scrim(d->canvas, rect_of(mn.x, songs_top(d), mn.w, mn.y + mn.h - songs_top(d)),
@@ -5278,6 +5418,9 @@ static int overlay_click(desk* d, const sel_gui_input* ev) {
 static int desk_key(desk* d, const sel_gui_input* ev) {
     const char* act;
     d->keys_in++;
+    if (d->dlg_open) { /* the confirm dialog owns the keyboard */
+        return dlg_key(d, ev);
+    }
     if (d->overlay != OV_NONE) { /* an open overlay owns the keyboard */
         return overlay_key(d, ev);
     }
@@ -5465,6 +5608,9 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
     int region = sel_uim_hit(&d->layout, ev->x / sc, ev->y / sc);
     const char* rname = region >= 0 ? d->layout.regions[region].name : "";
     int in_main = strcmp(rname, "main") == 0;
+    if (dlg_pointer(d, ev)) {
+        return 1;
+    }
     if (d->overlay != OV_NONE) { /* a click with an overlay open picks a palette row or closes it */
         return ev->kind == SEL_GUI_IN_CLICK ? overlay_click(d, ev) : 0;
     }

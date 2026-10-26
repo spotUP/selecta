@@ -133,7 +133,7 @@
     X(FLAG)                                                                                   \
     X(NOTE)                                                                                   \
     X(RATE) X(VOTE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
-    X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(PLAYLIST_ADD_SONG) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) \
+    X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(PLAYLIST_ADD_SONG) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
     X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(COMPOSERS_HIDE) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
@@ -268,6 +268,7 @@ struct sel_engine {
     uint32_t composers_open, composer_queries; /* the Library page is up / queries made against the library for it */
     uint32_t stats_open, stats_queries;        /* the screen is up / queries made against the stats views (I192 sentinel) */
     char panel[1024];                          /* catalogue rows of the open song, "label\0value\0" pairs (I185) */
+    uint32_t songs_counted_at;                 /* DUI-P4-18: library_changes + 1 when state.library_songs was counted */
     uint32_t library_changes;                  /* I348: emit_library_path calls (scan, sync, fetch finished): state.library_serial */
     uint32_t panel_rows, panel_loads;          /* rows in `panel` / library lookups made for it (I185 sentinel) */
     const void* panel_state;                   /* replayer state the panel was loaded for (reload on a new song) */
@@ -4434,6 +4435,39 @@ static void cmd_PLAYLIST_DEL(sel_engine* e, const sel_message* m) {
     else folders_reload(e);
 }
 
+/* DUI-P4-18: the catalogue changed under every listing; the pages reload on the new serial (I348). */
+static void library_catalogue_changed(sel_engine* e) {
+    e->library_changes++;
+    e->state.library_serial = e->library_changes;
+    e->art_generation++;
+}
+
+/* DUI-P4-18: Remove from Library. The song leaves the catalogue; its audio file is never touched. */
+static void cmd_LIBRARY_REMOVE(sel_engine* e, const sel_message* m) {
+    uint32_t removed = 0;
+    int rc;
+    if (!folder_ready(e, "LIBRARY_REMOVE")) return;
+    rc = sel_library_song_remove(e->lib, m->args[0].v.s, &removed);
+    if (rc != SEL_FOLDER_OK) folder_report(e, rc, "LIBRARY_REMOVE");
+    else library_catalogue_changed(e);
+}
+
+/* DUI-P4-18: Clear Library. Playback stops and the queue empties (its entries point into the catalogue being
+ * dropped); playlists and the user data stay. */
+static void cmd_LIBRARY_CLEAR(sel_engine* e, const sel_message* m) {
+    uint32_t removed = 0;
+    int rc;
+    if (!folder_ready(e, "LIBRARY_CLEAR")) return;
+    rc = sel_library_clear(e->lib, &removed);
+    if (rc != SEL_FOLDER_OK) {
+        folder_report(e, rc, "LIBRARY_CLEAR");
+        return;
+    }
+    cmd_STOP(e, m);
+    cmd_QUEUE_CLEAR(e, m);
+    library_catalogue_changed(e);
+}
+
 static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
     sel_local_scan_config scfg;
     sel_modland_sync_stats st;
@@ -5309,6 +5343,11 @@ static void refresh_snapshot(sel_engine* e) {
     e->state.panel_rows = e->panel_rows;
     e->state.panel_serial = e->panel_loads;
     e->state.library_serial = e->library_changes;
+    if (e->lib != NULL && e->songs_counted_at != e->library_changes + 1u) {
+        uint32_t total = 0;
+        e->songs_counted_at = e->library_changes + 1u;
+        e->state.library_songs = sel_library_song_total(e->lib, &total) == SEL_FOLDER_OK ? total : 0u;
+    }
     if (sl == NULL || sl->rp_state == NULL) {
         e->lyr_for[0] = '\0';
         e->lyr.count = 0;

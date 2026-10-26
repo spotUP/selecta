@@ -114,6 +114,9 @@ enum {
     SEL_USER_PLAYLIST_ADD_SONG, /* I241: at = playlist id, value = one song key appended at the next position */
     SEL_USER_PLAYLIST_RENAME,   /* DUI-P4-9: at = playlist id, name = new title */
     SEL_USER_PLAYLIST_DEL,      /* DUI-P4-9: at = playlist id; removes its entries and the row */
+    SEL_USER_SONG_REMOVE,       /* DUI-P4-18: value = song key or path; drops the catalogue rows of the song, its composers and the artwork of an album left without songs; reply [2] = songs removed */
+    SEL_USER_LIBRARY_COUNT,     /* DUI-P4-18: reply [2] = songs in the catalogue */
+    SEL_USER_LIBRARY_CLEAR,     /* DUI-P4-18: drops every catalogue row (songs, files, albums, artwork, composers); playlists and user data stay; reply [2] = songs removed */
     SEL_USER_FOLDER_COUNTS,/* I178: reply [2..5] = folders, playlists in folders, playlists, playlist entries */
     SEL_USER_FOLDER_PLAYLISTS, /* I178: at = folder id (0 = all); out = "id\0name\0" pairs then "\0"; reply [2] = playlists */
     SEL_USER_PLAYLIST_KEYS,/* I178: at = playlist id; out = song keys, each NUL terminated, then "\0"; reply [2] = keys */
@@ -378,6 +381,10 @@ int sel_library_playlist_move(sel_library* lib, uint32_t id, uint32_t folder);
 int sel_library_playlist_add_song(sel_library* lib, uint32_t id, const char* key);
 int sel_library_playlist_rename(sel_library* lib, uint32_t id, const char* name);
 int sel_library_playlist_del(sel_library* lib, uint32_t id);
+/* DUI-P4-18: remove one song (key or path) / every song from the catalogue; *removed = songs dropped. The audio files are never touched. */
+int sel_library_song_remove(sel_library* lib, const char* ref, uint32_t* removed);
+int sel_library_clear(sel_library* lib, uint32_t* removed);
+int sel_library_song_total(sel_library* lib, uint32_t* total);
 int sel_library_playlist_add(sel_library* lib, const char* name, uint32_t folder, const char* keys_nl, uint32_t* out_id);
 int sel_library_folder_counts(sel_library* lib, uint32_t* folders, uint32_t* in_folders, uint32_t* playlists, uint32_t* entries);
 /* Fills `out` per the SEL_USER_FOLDER_PLAYLISTS / PLAYLIST_KEYS / FOLDER_TREE formats; *count = rows found. */

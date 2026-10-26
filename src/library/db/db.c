@@ -544,6 +544,28 @@ int sel_library_playlist_del(sel_library* lib, uint32_t id) {
     return folder_call(lib, &op, NULL);
 }
 
+int sel_library_song_remove(sel_library* lib, const char* ref, uint32_t* removed) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_SONG_REMOVE;
+    op.value = ref;
+    return folder_call(lib, &op, removed);
+}
+
+int sel_library_song_total(sel_library* lib, uint32_t* total) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_LIBRARY_COUNT;
+    return folder_call(lib, &op, total);
+}
+
+int sel_library_clear(sel_library* lib, uint32_t* removed) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_LIBRARY_CLEAR;
+    return folder_call(lib, &op, removed);
+}
+
 int sel_library_playlist_add(sel_library* lib, const char* name, uint32_t folder, const char* keys_nl, uint32_t* out_id) {
     sel_user_op op;
     memset(&op, 0, sizeof op);

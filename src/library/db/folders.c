@@ -5,6 +5,7 @@
  *   - a folder with child folders or playlists is not deleted (SEL_FOLDER_ERR_NOT_EMPTY): the user moves the
  *     contents out first, so no delete ever loses a playlist. */
 #include "folders.h"
+#include "../song_key.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -178,6 +179,50 @@ static int playlist_del(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     return step_done(st);
 }
 
+/* DUI-P4-18: the catalogue rows of one song. The album row and its artwork (cover and thumbnails) go with the last song of
+ * that album. Playlists, history and the other user data are keyed by song key and stay. */
+static int song_remove(sqlite3* db, const sel_user_op* op, int64_t* rows) {
+    static const char* const sql[] = {
+        "DELETE FROM artwork WHERE album_id IN (SELECT a.id FROM albums a JOIN songs s ON a.name = s.album AND a.artist IS s.artist"
+        " WHERE s.key = ?1 AND NOT EXISTS(SELECT 1 FROM songs o WHERE o.key <> ?1 AND o.album = a.name AND o.artist IS a.artist))",
+        "DELETE FROM albums WHERE id IN (SELECT a.id FROM albums a JOIN songs s ON a.name = s.album AND a.artist IS s.artist"
+        " WHERE s.key = ?1 AND NOT EXISTS(SELECT 1 FROM songs o WHERE o.key <> ?1 AND o.album = a.name AND o.artist IS a.artist))",
+        "DELETE FROM song_composers WHERE song_key = ?1",
+        "DELETE FROM files WHERE (source, path) IN (SELECT source, path FROM songs WHERE key = ?1)",
+        "DELETE FROM songs WHERE key = ?1"};
+    char key[SEL_SONG_KEY_MAX];
+    size_t i;
+    if (op->value == NULL || !sel_song_key_of(op->value, key, sizeof key)) return SQLITE_MISUSE;
+    if (sqlite3_exec(db, "BEGIN", NULL, NULL, NULL) != SQLITE_OK) return SQLITE_ERROR;
+    for (i = 0; i < sizeof sql / sizeof sql[0]; i++) {
+        sqlite3_stmt* st = NULL;
+        int ok = sqlite3_prepare_v2(db, sql[i], -1, &st, NULL) == SQLITE_OK;
+        if (ok) {
+            sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
+            ok = sqlite3_step(st) == SQLITE_DONE;
+        }
+        sqlite3_finalize(st);
+        if (!ok) {
+            sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+            return SQLITE_ERROR;
+        }
+    }
+    *rows = sqlite3_changes(db);
+    return sqlite3_exec(db, "COMMIT", NULL, NULL, NULL) == SQLITE_OK ? SQLITE_OK : SQLITE_ERROR;
+}
+
+/* DUI-P4-18: Clear Library. Everything a scan or a sync put in the catalogue goes; folders, playlists and user data stay. */
+static int library_clear(sqlite3* db, int64_t* rows) {
+    int64_t n = scalar(db, "SELECT COUNT(*) FROM songs", 0, 0);
+    if (sqlite3_exec(db, "BEGIN;DELETE FROM artwork;DELETE FROM albums;DELETE FROM song_composers;DELETE FROM files;DELETE FROM songs;COMMIT;",
+                     NULL, NULL, NULL) != SQLITE_OK) {
+        sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+        return SQLITE_ERROR;
+    }
+    *rows = n > 0 ? n : 0;
+    return SQLITE_OK;
+}
+
 /* Appends `a` NUL `b` NUL to out; false when it does not fit (leaving room for the final empty string). */
 static int put_pair(char* out, uint32_t cap, uint32_t* used, const char* a, const char* b) {
     size_t la = strlen(a) + 1u, lb = b != NULL ? strlen(b) + 1u : 0u;
@@ -279,6 +324,11 @@ int sel_folder_exec(sqlite3* db, const sel_user_op* op, int64_t* rows, int32_t c
     case SEL_USER_PLAYLIST_ADD_SONG: return playlist_add_song(db, op, rows);
     case SEL_USER_PLAYLIST_RENAME: return playlist_rename(db, op, rows);
     case SEL_USER_PLAYLIST_DEL: return playlist_del(db, op, rows);
+    case SEL_USER_SONG_REMOVE: return song_remove(db, op, rows);
+    case SEL_USER_LIBRARY_COUNT:
+        *rows = scalar(db, "SELECT COUNT(*) FROM songs", 0, 0);
+        return *rows >= 0 ? SQLITE_OK : SQLITE_ERROR;
+    case SEL_USER_LIBRARY_CLEAR: return library_clear(db, rows);
     case SEL_USER_FOLDER_PLAYLISTS: return folder_playlists(db, op, rows);
     case SEL_USER_PLAYLIST_KEYS: return playlist_keys(db, op, rows);
     case SEL_USER_FOLDER_TREE: return folder_tree(db, op, rows);
