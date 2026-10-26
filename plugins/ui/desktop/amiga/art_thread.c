@@ -1,10 +1,8 @@
-/* Amiga art worker (art.h): no thread is started, so art.c runs fn inline on the caller, the same path the mem backend
- * takes when a thread is not wanted. */
+/* Amiga art worker (art.h): there is no thread, so the job runs inline on the caller and no handle is returned (the contract of art_thread_start). */
 #include "../art.h"
 
 void* art_thread_start(void (*fn)(void*), void* ctx) {
-    (void)fn;
-    (void)ctx;
+    fn(ctx);
     return NULL;
 }
 
