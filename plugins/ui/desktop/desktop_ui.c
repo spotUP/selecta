@@ -267,7 +267,7 @@ typedef struct desk {
     int32_t ink_in;          /* the weight hover_ink_of last used for the hovered box (stats line hover_ink) */
     uint32_t lit_doors;      /* bit i set: sidebar door i was drawn raised in the last frame (nav sentinel) */
     int np_page;             /* the main region shows the Now Playing page */
-    int view_pending;        /* --view named a page: desk_wait enters it through desk_page_goto before the first frame */
+    int view_pending;        /* --view named a page: desk_open enters it through desk_page_apply, before the --exec lines */
     desk_page view_pg;
     sel_gui_rect nav_back, nav_fwd; /* the history arrows at the top of the main pane */
     uint32_t transport_hits; /* transport button clicks sent to the engine (DUI-P4-1) */
@@ -7342,6 +7342,10 @@ static void* desk_open(const sel_ui_open_args* a) {
         desk_send(d, "VIEW_WINDOW 64");
         d->folder_opens++;
     }
+    if (d->view_pending) { /* --view named a page: entered here, before the shell's --exec lines, so their setup (source, rows, cursor) survives (I398) */
+        d->view_pending = 0;
+        desk_page_apply(d, d->view_pg);
+    }
     if (d->testcard) {
         draw_testcard(d);
         d->dirty_pixels = desk_flush(d);
@@ -7416,10 +7420,6 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
 #endif
     if (d->testcard) {
         return -1; /* the test card is one frame */
-    }
-    if (d->view_pending) { /* --view named a page: the one entry every door uses, before the first frame */
-        d->view_pending = 0;
-        desk_page_apply(d, d->view_pg);
     }
     desk_library_follow(d);
     if (d->textsheet) { /* the text sheet is one frame, drawn on the first turn */
