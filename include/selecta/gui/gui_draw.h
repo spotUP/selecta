@@ -30,7 +30,9 @@ enum { SEL_GUI_RGN_UI = 0, SEL_GUI_RGN_ART, SEL_GUI_RGN_TILE, SEL_GUI_RGN_PANEL,
 /* I389: paint profile classes, one per kind of primitive. */
 enum { SEL_GUI_PROF_FILL = 0, SEL_GUI_PROF_SCRIM, SEL_GUI_PROF_ROUND, SEL_GUI_PROF_GRADIENT, SEL_GUI_PROF_LINE,
        SEL_GUI_PROF_TEXT, SEL_GUI_PROF_MASK, SEL_GUI_PROF_IMAGE, SEL_GUI_PROF_SHADOW, SEL_GUI_PROF_ICON,
-       SEL_GUI_PROF_GENART, SEL_GUI_PROF_COUNT };
+       SEL_GUI_PROF_GENART,
+       /* I395: the non-primitive paint costs: dirty-rect merge, clip and region set, palette rebuild (cube), tile quantise, art lookup */
+       SEL_GUI_PROF_DIRTY, SEL_GUI_PROF_CLIP, SEL_GUI_PROF_PALETTE, SEL_GUI_PROF_QUANT, SEL_GUI_PROF_ART, SEL_GUI_PROF_COUNT };
 
 typedef struct sel_gui_canvas {
     uint32_t format; /* SEL_GUI_RGBA32 or SEL_GUI_INDEX8 */

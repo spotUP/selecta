@@ -293,7 +293,11 @@ typedef struct desk {
     uint32_t page_dirty;     /* I368: pixels the first paint after the latest page change repainted */
     uint32_t pt_t0;           /* I389: clock at the last painter lap */
     uint32_t pt_ms[PT_COUNT]; /* I389: ms per painter (host clock deltas); the primitive classes live in canvas->prof_ms */
-    sel_tag stats[88 + 2 * (SEL_GUI_PROF_COUNT + PT_COUNT)];
+    /* I395: cover flow frames by kind (0 rest, 1 slide): frame count, paint ms sum and max, and the primitive-class ms inside them. */
+    uint32_t fl_n[2], fl_paint[2], fl_max[2], fl_prof[2][SEL_GUI_PROF_COUNT];
+    uint32_t frame_prof0[SEL_GUI_PROF_COUNT]; /* canvas->prof_ms when the open frame began */
+    int frame_flow;                           /* 0 not a cover flow frame, 1 rest, 2 slide */
+    sel_tag stats[88 + 2 * (SEL_GUI_PROF_COUNT + PT_COUNT) + 2 * SEL_GUI_PROF_COUNT + 8];
     char* input_at;         /* where the scripted input resumes after a turn that sent an engine line */
     uint32_t sends;         /* engine lines sent so far: the replay yields a turn so the shell pumps them */
     char library_dump[8192]; /* the Library page as text for the stats (DUI-P4-3) */
@@ -364,6 +368,10 @@ static void desk_frame_begin(desk* d) {
         const sel_host* ch = sel_engine_plugin_host(d->engine);
         d->frame_t0 = ch->clock_ms(ch);
         d->frame_open = 1;
+        d->frame_flow = 0;
+        if (d->report && d->canvas != NULL) {
+            memcpy(d->frame_prof0, d->canvas->prof_ms, sizeof d->frame_prof0);
+        }
     }
 }
 
@@ -411,6 +419,17 @@ static uint32_t desk_flush(desk* d) {
         uint32_t dt = t_end - d->frame_t0;
         uint32_t paint = t_flush - d->frame_t0, present = t_end - t_flush;
         d->frame_open = 0;
+        if (d->frame_flow != 0 && d->report) { /* I395: a cover flow frame, rest or slide */
+            uint32_t kind = (uint32_t)d->frame_flow - 1u, k;
+            d->fl_n[kind]++;
+            d->fl_paint[kind] += paint;
+            if (paint > d->fl_max[kind]) {
+                d->fl_max[kind] = paint;
+            }
+            for (k = 0; k < SEL_GUI_PROF_COUNT; k++) {
+                d->fl_prof[kind][k] += d->canvas->prof_ms[k] - d->frame_prof0[k];
+            }
+        }
         if (d->frame_ms_n == 0u || paint < d->paint_ms_min) {
             d->paint_ms_min = paint;
         }
@@ -3918,6 +3937,7 @@ static void draw_lib_flow(desk* d, sel_gui_rect mn) {
         shift = (int32_t)(((int64_t)((int32_t)d->flow_from - (int32_t)v->cursor) * step * (65536 - gl)) >> 16);
     }
     d->flow_draws++;
+    d->frame_flow = gl < 65536 ? 2 : 1;
     d->flow_centre = v->cursor;
     d->grid_box = rect_of(0, 0, 0, 0);
     d->flow_cover = rect_of(0, 0, 0, 0);
@@ -4424,7 +4444,11 @@ static void draw_home_content(desk* d) {
                            hovered ? desk_mix(panel, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), (uint32_t)hv) : panel);
         d->tile_cards++;
         d->home_parts |= HP_TILE_CARD;
-        art = art_tile(d->art, st->queue_text + st->queue[i].path_offset);
+        {
+            uint32_t t_art = sel_gui_prof_begin(d->canvas);
+            art = art_tile(d->art, st->queue_text + st->queue[i].path_offset);
+            sel_gui_prof_end(d->canvas, SEL_GUI_PROF_ART, t_art);
+        }
         if (d->shadow_ready) {
             sel_gui_shadow_draw(d->canvas, &d->shadow, ar);
         }
@@ -4492,7 +4516,15 @@ static void draw_nav_arrows(desk* d, sel_gui_rect mn) {
 
 /* INDEX8 only (DUI-P6-4): the 64 tile-row entries (64-127) come from a median cut over 8x8 thumbnails of the visible
  * cover arts, so the row of covers shares one palette. Rewritten only when the colours change. */
+static void tile_palette_raw(desk* d, const sel_state* st);
+/* I395: the whole tile palette step (art lookup, 8x8 scale, quantise, palette rebuild) is one profiled class. */
 static void tile_palette(desk* d, const sel_state* st) {
+    uint32_t t0 = sel_gui_prof_begin(d->canvas);
+    tile_palette_raw(d, st);
+    sel_gui_prof_end(d->canvas, SEL_GUI_PROF_QUANT, t0);
+}
+
+static void tile_palette_raw(desk* d, const sel_state* st) {
     uint32_t px[SEL_GUI_QUANT_MAX], thumb[64], q[64], rgb[64], i, n = 0, m;
     static uint32_t last[64];
     if (d->canvas->format != SEL_GUI_INDEX8) {
@@ -7593,6 +7625,20 @@ static const sel_tag* desk_stats(void* state) {
         for (k = 0; k < PT_COUNT; k++) {
             d->stats[n].tag = SEL_UI_STAT_PT_MS_CANVAS + k;
             d->stats[n++].value = d->pt_ms[k];
+        }
+        for (k = 0; k < SEL_GUI_PROF_COUNT; k++) {
+            d->stats[n].tag = SEL_UI_STAT_FLOW_MS_REST + k;
+            d->stats[n++].value = d->fl_prof[0][k];
+            d->stats[n].tag = SEL_UI_STAT_FLOW_MS_SLIDE + k;
+            d->stats[n++].value = d->fl_prof[1][k];
+        }
+        for (k = 0; k < 2u; k++) {
+            d->stats[n].tag = SEL_UI_STAT_FLOW_N_REST + 3u * k;
+            d->stats[n++].value = d->fl_n[k];
+            d->stats[n].tag = SEL_UI_STAT_FLOW_PAINT_REST + 3u * k;
+            d->stats[n++].value = d->fl_paint[k];
+            d->stats[n].tag = SEL_UI_STAT_FLOW_MAX_REST + 3u * k;
+            d->stats[n++].value = d->fl_max[k];
         }
         d->stats[n].tag = SEL_TAG_END;
     }

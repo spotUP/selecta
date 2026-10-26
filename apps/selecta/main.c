@@ -673,7 +673,7 @@ int main(int argc, char** argv)
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_PAINT_MS_MAX, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_PRESENT_MS_MIN, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_PRESENT_MS_AVG, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_PRESENT_MS_MAX, 0));
             {
-                static const char* const pcls[] = {"fill", "scrim", "round", "gradient", "line", "text", "mask", "image", "shadow", "icon", "genart"};
+                static const char* const pcls[] = {"fill", "scrim", "round", "gradient", "line", "text", "mask", "image", "shadow", "icon", "genart", "dirty", "clip", "palette", "quant", "art"};
                 static const char* const ppt[] = {"canvas", "song", "sidebar", "main", "transport", "progress", "volume", "status", "focus", "tip", "overlay", "visual"};
                 size_t k;
                 printf("ui_paint id=%s", g_uis[u].id);
@@ -683,6 +683,16 @@ int main(int argc, char** argv)
                 }
                 for (k = 0; k < sizeof ppt / sizeof ppt[0]; k++) {
                     printf(" painter_ms_%s=%u", ppt[k], (unsigned)sel_tag_find(us, SEL_UI_STAT_PT_MS_CANVAS + (uint32_t)k, 0));
+                }
+                printf("\n");
+                printf("ui_flow id=%s", g_uis[u].id);
+                printf(" rest_n=%u rest_paint_ms=%u rest_max_ms=%u slide_n=%u slide_paint_ms=%u slide_max_ms=%u",
+                       (unsigned)sel_tag_find(us, SEL_UI_STAT_FLOW_N_REST, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_FLOW_PAINT_REST, 0),
+                       (unsigned)sel_tag_find(us, SEL_UI_STAT_FLOW_MAX_REST, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_FLOW_N_SLIDE, 0),
+                       (unsigned)sel_tag_find(us, SEL_UI_STAT_FLOW_PAINT_SLIDE, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_FLOW_MAX_SLIDE, 0));
+                for (k = 0; k < sizeof pcls / sizeof pcls[0]; k++) {
+                    printf(" rest_%s=%u slide_%s=%u", pcls[k], (unsigned)sel_tag_find(us, SEL_UI_STAT_FLOW_MS_REST + (uint32_t)k, 0), pcls[k],
+                           (unsigned)sel_tag_find(us, SEL_UI_STAT_FLOW_MS_SLIDE + (uint32_t)k, 0));
                 }
                 printf("\n");
             }

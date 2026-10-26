@@ -72,7 +72,7 @@ static void build_cube(uint8_t* cube, const uint32_t* pal, uint32_t n) {
     }
 }
 
-void sel_gui_set_palette(sel_gui_canvas* c, const uint32_t* rgb, uint32_t first, uint32_t n) {
+static void set_palette_raw(sel_gui_canvas* c, const uint32_t* rgb, uint32_t first, uint32_t n) {
     uint32_t i, k, last;
     for (i = 0; i < n && first + i < 256u; i++) {
         c->palette[first + i] = rgb[i] & 0xFFFFFFu;
@@ -92,8 +92,16 @@ void sel_gui_set_palette(sel_gui_canvas* c, const uint32_t* rgb, uint32_t first,
     }
 }
 
+void sel_gui_set_palette(sel_gui_canvas* c, const uint32_t* rgb, uint32_t first, uint32_t n) {
+    uint32_t t0 = sel_gui_prof_begin(c);
+    set_palette_raw(c, rgb, first, n);
+    sel_gui_prof_end(c, SEL_GUI_PROF_PALETTE, t0);
+}
+
 void sel_gui_set_region(sel_gui_canvas* c, uint32_t region) {
+    uint32_t t0 = sel_gui_prof_begin(c);
     c->region = region < SEL_GUI_RGN_COUNT ? region : SEL_GUI_RGN_UI;
+    sel_gui_prof_end(c, SEL_GUI_PROF_CLIP, t0);
 }
 
 uint32_t sel_gui_region_colours(const sel_gui_canvas* c, uint32_t region) {
@@ -216,7 +224,7 @@ sel_gui_rect sel_gui_rect_intersect(sel_gui_rect a, sel_gui_rect b) {
     return r;
 }
 
-int sel_gui_clip_push(sel_gui_canvas* c, sel_gui_rect r) {
+static int clip_push_raw(sel_gui_canvas* c, sel_gui_rect r) {
     if (c->clip_n >= SEL_GUI_CLIP_DEPTH) {
         return 0;
     }
@@ -225,10 +233,19 @@ int sel_gui_clip_push(sel_gui_canvas* c, sel_gui_rect r) {
     return 1;
 }
 
+int sel_gui_clip_push(sel_gui_canvas* c, sel_gui_rect r) {
+    uint32_t t0 = sel_gui_prof_begin(c);
+    int ok = clip_push_raw(c, r);
+    sel_gui_prof_end(c, SEL_GUI_PROF_CLIP, t0);
+    return ok;
+}
+
 void sel_gui_clip_pop(sel_gui_canvas* c) {
+    uint32_t t0 = sel_gui_prof_begin(c);
     if (c->clip_n > 1u) {
         c->clip_n--;
     }
+    sel_gui_prof_end(c, SEL_GUI_PROF_CLIP, t0);
 }
 
 /* ---- dirty list ---- */
@@ -243,7 +260,7 @@ static sel_gui_rect bbox(sel_gui_rect a, sel_gui_rect b) {
     return r;
 }
 
-void sel_gui_dirty_add(sel_gui_canvas* c, sel_gui_rect r) {
+static void dirty_add_raw(sel_gui_canvas* c, sel_gui_rect r) {
     uint32_t i;
     r = sel_gui_rect_intersect(r, c->clip[0]);
     if (r.w <= 0 || r.h <= 0) {
@@ -285,10 +302,16 @@ void sel_gui_dirty_add(sel_gui_canvas* c, sel_gui_rect r) {
             }
         }
         c->dirty_n = k;
-        sel_gui_dirty_add(c, r); /* the union may now overlap others: the normal path merges, then fits */
+        dirty_add_raw(c, r); /* the union may now overlap others: the normal path merges, then fits */
         return;
     }
     c->dirty[c->dirty_n++] = r;
+}
+
+void sel_gui_dirty_add(sel_gui_canvas* c, sel_gui_rect r) {
+    uint32_t t0 = sel_gui_prof_begin(c);
+    dirty_add_raw(c, r);
+    sel_gui_prof_end(c, SEL_GUI_PROF_DIRTY, t0);
 }
 
 uint32_t sel_gui_dirty_pixels(const sel_gui_canvas* c) {
