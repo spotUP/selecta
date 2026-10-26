@@ -19,6 +19,7 @@
 #define SEL_VIEW_WINDOW_DEFAULT 20u
 #define SEL_VIEW_TITLE_DEFAULT "[%author% - ]%title%[  Votes %votes%]"
 #define SEL_VIEW_VOTES_MAX 12u /* a vote count as text, NUL included */
+#define SEL_VIEW_ARTIST_MAX 96u /* one album artist, NUL included (I476) */
 #define SEL_VIEW_TEXT_MAX 160u /* one formatted row, NUL included */
 #define SEL_VIEW_KEY_MAX ((unsigned)SEL_SONG_KEY_MAX) /* longest song key a home row carries, NUL included: the library song key limit (I263); an album name is bound by SEL_QUERY_TEXT_MAX (I191c) */
 #define SEL_VIEW_HOME_TEXT_MAX 16384u /* the home text the library writes and the pool its row keys are packed into (I263) */
@@ -42,6 +43,8 @@ typedef struct sel_view_src {
     uint32_t votes_generation;
     /* Artwork id (albums.id) of a queue path for the grid, cover flow and compact rows; 0 none. NULL: no library. */
     uint32_t (*art_id)(void* ctx, const char* path);
+    /* I476: albums.artist of an artwork id into out (cap bytes, NUL-terminated); 0 when the album has none. NULL: no library. */
+    int (*art_artist)(void* ctx, uint32_t album, char* out, uint32_t cap);
     void* art_ctx;
     uint32_t art_generation; /* moves when the albums or their artwork change; the view reads art_id again for every row */
 } sel_view_src;
@@ -73,6 +76,7 @@ typedef struct sel_view {
     uint32_t* vote_id;    /* queue entry id each vote_text slot was read for, 0 none */
     uint32_t vote_seen;   /* votes_generation the slots belong to */
     uint32_t art_seen;    /* art_generation art_cache belongs to */
+    char* art_artist;     /* row_cap * SEL_VIEW_ARTIST_MAX: the album artist of each window slot, read with its artwork id (I476) */
     uint32_t* art_cache;  /* 2 * row_cap: queue entry id and artwork id per window slot, entry id 0 none */
     uint32_t row_cap;
     uint32_t cursor_of[6], id_of[6]; /* the cursor each source was left at */

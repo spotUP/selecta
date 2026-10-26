@@ -281,6 +281,16 @@ file(WRITE "${WORK}/in.txt" "wait 1\n")
 dui_run(same --db "${db3}" --ui desktop --backend mem --view home --canvas 1000x600 --clock fixed --stats --input "${WORK}/in.txt")
 dui_stat(same_draws "${same}" desktop shelf_album_art_draws)
 expect_eq("same-named albums each draw a cover (Lotus x2, Monkey Island, Strange Sounds)" "${same_draws}" 4)
+# I476: the dump's last tile field is the artist line a tile draws; each Lotus album tile carries its own album artist, an album
+# without a known artist carries none (an empty field, no placeholder).
+foreach(who "Other Artist" "Chris Huelsbeck")
+  if(NOT "${same}" MATCHES "shelf [0-9]+ tile [0-9]+ [^\n|]*\\|Lotus Turbo Challenge\\|[^\n|]*\\|${who}\n")
+    message(FATAL_ERROR "the Lotus album tile by ${who} must carry that artist as its last dump field in:\n${same}")
+  endif()
+endforeach()
+if("${same}" MATCHES "\\|Album\n")
+  message(FATAL_ERROR "a Home tile must not carry the placeholder 'Album' as its artist in:\n${same}")
+endif()
 execute_process(COMMAND "${SQLITE3}" "${db3}" "SELECT count(*) FROM artwork WHERE album_id = 5 AND kind = 'thumb144'"
   OUTPUT_VARIABLE own_thumb RESULT_VARIABLE rc)
 string(STRIP "${own_thumb}" own_thumb)

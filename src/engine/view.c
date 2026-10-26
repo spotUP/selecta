@@ -54,7 +54,9 @@ int sel_view_init(sel_view* v, const sel_host* host, uint32_t row_cap) {
     v->vote_text = host->mem_alloc(host, (size_t)row_cap * SEL_VIEW_VOTES_MAX, SEL_MEM_FAST);
     v->vote_id = host->mem_alloc(host, (size_t)row_cap * sizeof *v->vote_id, SEL_MEM_FAST);
     v->art_cache = host->mem_alloc(host, (size_t)row_cap * 2u * sizeof *v->art_cache, SEL_MEM_FAST);
-    if (v->vote_text == NULL || v->vote_id == NULL || v->art_cache == NULL) {
+    v->art_artist = host->mem_alloc(host, (size_t)row_cap * SEL_VIEW_ARTIST_MAX, SEL_MEM_FAST);
+    if (v->vote_text == NULL || v->vote_id == NULL || v->art_cache == NULL || v->art_artist == NULL) {
+        host->mem_free(host, v->art_artist);
         host->mem_free(host, v->art_cache);
         host->mem_free(host, v->vote_text);
         host->mem_free(host, v->vote_id);
@@ -66,6 +68,7 @@ int sel_view_init(sel_view* v, const sel_host* host, uint32_t row_cap) {
     }
     memset(v->vote_id, 0, (size_t)row_cap * sizeof *v->vote_id);
     memset(v->art_cache, 0, (size_t)row_cap * 2u * sizeof *v->art_cache);
+    memset(v->art_artist, 0, (size_t)row_cap * SEL_VIEW_ARTIST_MAX);
     v->groups = host->mem_alloc(host, SEL_VIEW_GROUPS_MAX * sizeof *v->groups, SEL_MEM_FAST);
     if (v->groups == NULL) {
         host->mem_free(host, v->row_text);
@@ -114,6 +117,9 @@ void sel_view_free(sel_view* v, const sel_host* host) {
     }
     if (v->art_cache) {
         host->mem_free(host, v->art_cache);
+    }
+    if (v->art_artist) {
+        host->mem_free(host, v->art_artist);
     }
     if (v->vote_id) {
         host->mem_free(host, v->vote_id);
@@ -445,6 +451,7 @@ static void fill_styled(sel_view* v, const sel_view_src* s) {
         }
         if (!songs && idx == v->groups[g].base) {
             r->kind = SEL_ROW_NODE;
+            r->artist = NULL;
             r->id = v->groups[g].id;
             r->text = v->groups[g].name;
             r->count = v->groups[g].count;
@@ -459,6 +466,7 @@ static void fill_styled(sel_view* v, const sel_view_src* s) {
         }
         in_group = songs ? 0u : g;
         r->kind = SEL_ROW_QUEUE;
+        r->artist = NULL;
         r->depth = tree ? 1u : 0u;
         if (qi == SEL_QUEUE_NONE) {
             buf[0] = '\0';
@@ -729,8 +737,13 @@ static uint32_t row_art(sel_view* v, const sel_view_src* s, uint32_t slot, uint3
         v->art_seen = s->art_generation;
     }
     if (c[0] != id) {
+        char* artist = v->art_artist + (size_t)slot * SEL_VIEW_ARTIST_MAX;
         c[1] = s->art_id(s->art_ctx, sel_queue_path(s->queue, idx));
         c[0] = id;
+        artist[0] = '\0';
+        if (c[1] != 0 && s->art_artist != NULL) {
+            s->art_artist(s->art_ctx, c[1], artist, SEL_VIEW_ARTIST_MAX);
+        }
     }
     return c[1];
 }
@@ -797,6 +810,7 @@ void sel_view_refresh(sel_view* v, const sel_view_src* s) {
         sel_view_row* r = &v->rows[i];
         r->depth = 0;
         r->art_id = 0;
+        r->artist = NULL;
         r->id = row_id(v, s, idx);
         if (text_src(v)) {
             *r = v->frows[idx];
@@ -807,6 +821,9 @@ void sel_view_refresh(sel_view* v, const sel_view_src* s) {
             r->text = buf;
             if (v->pub.style >= SEL_VIEW_STYLE_GRID) {
                 r->art_id = row_art(v, s, i, idx);
+                if (v->art_artist[(size_t)i * SEL_VIEW_ARTIST_MAX] != '\0') {
+                    r->artist = v->art_artist + (size_t)i * SEL_VIEW_ARTIST_MAX;
+                }
             }
         } else {
             r->kind = s->browse->entries[idx].is_dir ? SEL_ROW_DIR : SEL_ROW_FILE;
@@ -892,6 +909,7 @@ uint32_t sel_view_set_folders(sel_view* v, const char* tree) {
             v->frows[n].key = NULL;
             v->frows[n].album = 0;
             v->frows[n].art_ref = NULL;
+            v->frows[n].artist = NULL;
             n++;
         }
         while (*p != '\0' && *p != '\n') {
@@ -979,6 +997,11 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
             v->frows[n].key = key[0] != '\0' ? key : NULL;
             v->frows[n].album = album;
             v->frows[n].art_ref = key[0] != '\0' ? art : NULL;
+            /* I476: an album tile's artist is the part of its art_ref after the 0x1f byte. */
+            v->frows[n].artist = NULL;
+            if (album && key[0] != '\0' && art != key && strchr(art, '\x1f') != NULL && strchr(art, '\x1f')[1] != '\0') {
+                v->frows[n].artist = strchr(art, '\x1f') + 1;
+            }
             v->frows[n].kind = kind == 'H' ? SEL_ROW_HEADING : SEL_ROW_HOME;
             v->frows[n].id = n;
             v->frows[n].depth = kind == 'H' ? 0u : 1u;

@@ -59,7 +59,7 @@ enum {
  * SEL_ART_GET the blob size (0: none; `data` holds min(size, cap) bytes), SEL_ART_PUT 1 when stored,
  * SEL_ART_STORE (I437, embedded cover found by the scan) finds or creates the albums row (`album`, `artist`, source local) and stores the
  * raw image bytes as its `kind` artwork row, replying 1 when stored. */
-enum { SEL_ART_FIND = 1, SEL_ART_GET, SEL_ART_PUT, SEL_ART_STORE };
+enum { SEL_ART_FIND = 1, SEL_ART_GET, SEL_ART_PUT, SEL_ART_STORE, SEL_ART_ARTIST /* I476: albums.artist of `album` into data/cap, reply 1 when it has one */ };
 typedef struct sel_art_op {
     uint32_t op;       /* SEL_ART_* */
     const char* ref;   /* FIND: a queue path or song key; resolved to source + path of the songs row */
@@ -277,6 +277,8 @@ uint32_t sel_library_heap_bytes(const sel_tag* machine);
 struct sel_ui_art;
 /* Fills the UI artwork table (include/selecta/ui.h) backed by the library's albums and artwork rows. */
 void sel_library_art_provider(sel_library* lib, struct sel_ui_art* out);
+/* I476: the album artist of albums.id `album` into out (NUL-terminated, cut to cap); 0 when the album has none. */
+int sel_library_album_artist(sel_library* lib, int64_t album, char* out, uint32_t cap);
 sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint32_t account, const char* path);
 void sel_library_close(sel_library* lib);
 

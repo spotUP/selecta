@@ -1602,8 +1602,8 @@ static uintptr_t home_dump_build(desk* d) {
     for (s = 0; s < n; s++) {
         for (k = 0; k < sh[s].tiles && o + 200u < sizeof d->home_dump; k++) {
             const sel_view_row* r = &st->view->rows[shelf_tile_row(st, &sh[s], k)];
-            o += (size_t)snprintf(d->home_dump + o, sizeof d->home_dump - o, "shelf %u tile %u %s|%s|%s\n", (unsigned)s, (unsigned)k,
-                                  st->view->rows[sh[s].head].text, r->key, r->text);
+            o += (size_t)snprintf(d->home_dump + o, sizeof d->home_dump - o, "shelf %u tile %u %s|%s|%s|%s\n", (unsigned)s, (unsigned)k,
+                                  st->view->rows[sh[s].head].text, r->key, r->text, r->artist != NULL ? r->artist : "");
         }
     }
     return (uintptr_t)n;
@@ -2127,9 +2127,11 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
             }
             draw_text(d, rect_of(ar.x, ar.y + ar.h + lpx(d, HOME_TILE_TEXT_GAP), ar.w, lpx(d, HOME_TITLE_H)), r->text, 1, 14,
                       ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
-            draw_text(d, rect_of(ar.x, ar.y + ar.h + lpx(d, HOME_TILE_TEXT_GAP + HOME_TITLE_H), ar.w, lpx(d, HOME_META_H)),
-                      r->album ? "Album" : format, 0, 13, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
-            d->home_parts |= HP_ARTIST_LINE;
+            if (r->artist != NULL) { /* I476: the album artist; a tile without one draws no line */
+                draw_text(d, rect_of(ar.x, ar.y + ar.h + lpx(d, HOME_TILE_TEXT_GAP + HOME_TITLE_H), ar.w, lpx(d, HOME_META_H)),
+                          r->artist, 0, 13, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+                d->home_parts |= HP_ARTIST_LINE;
+            }
             if (!r->album && r->key != NULL) {
                 song_row_reg(d, t, r->key, 0, 0, 1);
             }
@@ -3758,8 +3760,9 @@ static const char* library_dump_build(desk* d) {
         const sel_view_state* v = st->view;
         o = dump_put(d, o, "vstyle %s\n", sel_view_style_label(v->style));
         for (i = 0; i < v->row_n && o + 400u < sizeof d->library_dump; i++) {
-            o = dump_put(d, o, "srow %u %u|%s\n", (unsigned)i,
-                                  (unsigned)v->rows[i].art_id, v->rows[i].text != NULL ? v->rows[i].text : "");
+            o = dump_put(d, o, "srow %u %u|%s|%s\n", (unsigned)i,
+                                  (unsigned)v->rows[i].art_id, v->rows[i].text != NULL ? v->rows[i].text : "",
+                                  v->rows[i].artist != NULL ? v->rows[i].artist : "");
         }
     }
     for (i = 0; i < (uint32_t)LIB_STYLES; i++) {
@@ -4166,16 +4169,18 @@ static void lib_view_row_reg(desk* d, sel_gui_rect mn, const sel_state* st, uint
 
 /* The caption under a tile: left-aligned for the grid, centred under the cover for the cover flow (I391). */
 static void lib_tile_text(desk* d, sel_gui_rect ar, int32_t y, const sel_view_row* r, uint32_t text, uint32_t muted, int centre) {
-    char line[32];
     const char* title = r->text != NULL ? r->text : "";
-    snprintf(line, sizeof line, r->art_id > 0u ? "Album %u" : "Single", (unsigned)r->art_id);
     if (centre) {
         draw_text_centered(d, rect_of(ar.x, y, ar.w, lpx(d, HOME_TITLE_H)), title, 1, 14, text);
-        draw_text_centered(d, rect_of(ar.x, y + lpx(d, HOME_TITLE_H), ar.w, lpx(d, HOME_META_H)), line, 0, 13, muted);
+        if (r->artist != NULL) {
+            draw_text_centered(d, rect_of(ar.x, y + lpx(d, HOME_TITLE_H), ar.w, lpx(d, HOME_META_H)), r->artist, 0, 13, muted);
+        }
         return;
     }
     draw_text(d, rect_of(ar.x, y, ar.w, lpx(d, HOME_TITLE_H)), title, 1, 14, text);
-    draw_text(d, rect_of(ar.x, y + lpx(d, HOME_TITLE_H), ar.w, lpx(d, HOME_META_H)), line, 0, 13, muted);
+    if (r->artist != NULL) {
+        draw_text(d, rect_of(ar.x, y + lpx(d, HOME_TITLE_H), ar.w, lpx(d, HOME_META_H)), r->artist, 0, 13, muted);
+    }
 }
 
 static void draw_lib_grid(desk* d, sel_gui_rect mn) {

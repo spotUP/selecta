@@ -4737,6 +4737,12 @@ static uint32_t view_art_id(void* ctx, const char* path) {
     return id > 0 ? (uint32_t)id : 0u;
 }
 
+static int view_art_artist(void* ctx, uint32_t album, char* out, uint32_t cap) {
+    sel_engine* e = ctx;
+
+    return sel_library_album_artist(e->lib, (int64_t)album, out, cap);
+}
+
 static void view_src(const sel_engine* e, sel_view_src* s) {
     s->queue = e->view.pub.source == SEL_VIEW_QUERY ? &e->qview : &e->queue;
     s->browse = &e->browse;
@@ -4751,6 +4757,7 @@ static void view_src(const sel_engine* e, sel_view_src* s) {
     s->votes_generation = e->votes_generation;
     s->art_generation = e->art_generation;
     s->art_id = e->lib != NULL ? view_art_id : NULL;
+    s->art_artist = e->lib != NULL ? view_art_artist : NULL;
     s->art_ctx = (void*)e;
 }
 

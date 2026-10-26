@@ -113,11 +113,29 @@ static int art_store(sqlite3* db, const sel_art_op* op) {
     return art_put(db, &put);
 }
 
+static int art_artist(sqlite3* db, const sel_art_op* op) {
+    sqlite3_stmt* st = NULL;
+    int ok = 0;
+
+    if (op->data == NULL || op->cap == 0) return 0;
+    op->data[0] = '\0';
+    if (sqlite3_prepare_v2(db, "SELECT artist FROM albums WHERE id = ?1", -1, &st, NULL) != SQLITE_OK) return 0;
+    sqlite3_bind_int64(st, 1, op->album);
+    if (sqlite3_step(st) == SQLITE_ROW && sqlite3_column_type(st, 0) == SQLITE_TEXT) {
+        snprintf((char*)op->data, op->cap, "%s", (const char*)sqlite3_column_text(st, 0));
+        ok = op->data[0] != '\0';
+    }
+    sqlite3_finalize(st);
+    return ok;
+}
+
 void sel_library_art_op(sel_library* lib, const sel_art_op* op, sel_message* reply) {
     int v = 0;
 
     if (op->op == SEL_ART_FIND && op->ref != NULL) {
         v = art_find(lib->db, op);
+    } else if (op->op == SEL_ART_ARTIST) {
+        v = art_artist(lib->db, op);
     } else if (op->op == SEL_ART_GET && op->kind != NULL) {
         v = art_get(lib->db, op);
     } else if (op->op == SEL_ART_PUT && op->kind != NULL && op->data != NULL) {
@@ -174,6 +192,17 @@ static int prov_put(void* ctx, int64_t album, const char* kind, const uint8_t* d
     op.data = (uint8_t*)data;
     op.len = len;
     return art_call((sel_library*)ctx, &op);
+}
+
+int sel_library_album_artist(sel_library* lib, int64_t album, char* out, uint32_t cap) {
+    sel_art_op op;
+
+    memset(&op, 0, sizeof op);
+    op.op = SEL_ART_ARTIST;
+    op.album = album;
+    op.data = (uint8_t*)out;
+    op.cap = cap;
+    return art_call(lib, &op) > 0;
 }
 
 void sel_library_art_provider(sel_library* lib, sel_ui_art* out) {
