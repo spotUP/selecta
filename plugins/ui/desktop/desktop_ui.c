@@ -248,7 +248,7 @@ typedef struct desk {
     uint32_t tile_queued;    /* tiles sent to the engine as queue next through the tile menu */
     uint32_t home_sig;       /* source and row count of the last HOME window drawn: a change redraws */
     char home_dump[2048];    /* shelves as text for the stats */
-    sel_tag stats[72];
+    sel_tag stats[80];
     char* input_at;         /* where the scripted input resumes after a turn that sent an engine line */
     uint32_t sends;         /* engine lines sent so far: the replay yields a turn so the shell pumps them */
     char library_dump[8192]; /* the Library page as text for the stats (DUI-P4-3) */
@@ -260,6 +260,7 @@ typedef struct desk {
     int overlay;             /* the open overlay: OV_NONE, OV_PALETTE, OV_HELP or OV_CMDLINE (DUI-P4-13) */
     txt_palette pal;         /* the palette and help model of the text UI, over the same verbs and keys */
     txt_cmdline cmd;         /* the command line model of the text UI: Tab completes the verb */
+    uint32_t quant_calls;    /* median-cut runs over the tile thumbnails (INDEX8) */
     uint32_t palette_opens, help_opens, palette_runs, cmdline_opens, cmdline_runs, overlay_sends_ok;
     uint32_t menu_picks[4];  /* context menu items picked: Play, Play Next, Add to Queue, Remove */
     uint32_t toasts;         /* toasts shown */
@@ -610,6 +611,7 @@ static sel_gui_rect draw_panel(desk* d, const char* name) {
  * clock, the remaining time and the progress bar and nothing else. */
 static void queue_title(const sel_state* st, uint32_t i, char* out, size_t cap);
 static void draw_home(desk* d);
+static void tile_palette(desk* d, const sel_state* st);
 static void draw_transport(desk* d);
 static void draw_sidebar(desk* d);
 static void draw_nowplaying(desk* d);
@@ -3760,6 +3762,7 @@ static void draw_home_content(desk* d) {
         return;
     }
     draw_home_header(d, mn, 1);
+    tile_palette(d, st);
     for (i = 0; i < st->queue_count; i++) {
         sel_gui_rect t = tile_rect(d, i);
         sel_gui_rect ar = rect_of(t.x + pad, t.y + pad, t.w - 2 * pad, t.w - 2 * pad);
@@ -3779,7 +3782,9 @@ static void draw_home_content(desk* d) {
             sel_gui_shadow_draw(d->canvas, &d->shadow, ar);
         }
         if (art != NULL) {
+            sel_gui_set_region(d->canvas, SEL_GUI_RGN_TILE);
             sel_gui_blit_image(d->canvas, ar, art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, 0);
+            sel_gui_set_region(d->canvas, SEL_GUI_RGN_UI);
         } else {
             /* No cover: the generated art of the song's format and chip (gui_genart.h). */
             sel_gui_genart_draw(d->canvas, ar, format, sel_gui_str_hash(name));
@@ -3834,6 +3839,36 @@ static void draw_nav_arrows(desk* d, sel_gui_rect mn) {
             sel_gui_line(d->canvas, cx + dir * a / 2 + t, cy, cx - dir * a / 2 + t, cy + a, ink);
         }
         sel_gui_dirty_add(d->canvas, b);
+    }
+}
+
+/* INDEX8 only (DUI-P6-4): the 64 tile-row entries (64-127) come from a median cut over 8x8 thumbnails of the visible
+ * cover arts, so the row of covers shares one palette. Rewritten only when the colours change. */
+static void tile_palette(desk* d, const sel_state* st) {
+    uint32_t px[SEL_GUI_QUANT_MAX], thumb[64], q[64], rgb[64], i, n = 0, m;
+    static uint32_t last[64];
+    if (d->canvas->format != SEL_GUI_INDEX8) {
+        return;
+    }
+    for (i = 0; i < st->queue_count && n + 64u <= SEL_GUI_QUANT_MAX; i++) {
+        const uint32_t* art = art_tile(d->art, st->queue_text + st->queue[i].path_offset);
+        if (art != NULL) {
+            sel_gui_image_scale(art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, thumb, 8, 8);
+            memcpy(px + n, thumb, sizeof thumb);
+            n += 64u;
+        }
+    }
+    if (n == 0u) {
+        return;
+    }
+    m = sel_gui_quantise(px, n, q, 64u);
+    d->quant_calls++;
+    for (i = 0; i < 64u; i++) {
+        rgb[i] = q[i < m ? i : m - 1u];
+    }
+    if (memcmp(rgb, last, sizeof rgb) != 0) {
+        memcpy(last, rgb, sizeof rgb);
+        sel_gui_set_palette(d->canvas, rgb, 64u, 64u);
     }
 }
 
@@ -6136,8 +6171,17 @@ static int desk_make_canvas(desk* d, const char* size, int32_t def_w, int32_t de
     }
     sel_gui_canvas_init(d->canvas, format, (int32_t)w, (int32_t)h, pixels);
     if (format == SEL_GUI_INDEX8) {
-        sel_gui_palette_default(pal, d->theme.token[SEL_GUI_TOKEN_ACCENT], d->theme.token[SEL_GUI_TOKEN_SURFACE],
-                                d->theme.token[SEL_GUI_TOKEN_TEXT]);
+        static const int ui_tokens[] = {SEL_GUI_TOKEN_ACCENT, SEL_GUI_TOKEN_SURFACE, SEL_GUI_TOKEN_TEXT,
+            SEL_GUI_TOKEN_BACKGROUND, SEL_GUI_TOKEN_SURFACE_RAISED, SEL_GUI_TOKEN_SURFACE_HOVER,
+            SEL_GUI_TOKEN_SURFACE_PRESSED, SEL_GUI_TOKEN_TEXT_MUTED, SEL_GUI_TOKEN_TEXT_DISABLED,
+            SEL_GUI_TOKEN_ACCENT_TEXT, SEL_GUI_TOKEN_DIVIDER, SEL_GUI_TOKEN_FOCUS_RING, SEL_GUI_TOKEN_ERROR,
+            SEL_GUI_TOKEN_WARNING, SEL_GUI_TOKEN_SUCCESS, SEL_GUI_TOKEN_SCRIM, SEL_GUI_TOKEN_FRAME,
+            SEL_GUI_TOKEN_PANEL, SEL_GUI_TOKEN_HEADER_TINT, SEL_GUI_TOKEN_TRACK, SEL_GUI_TOKEN_HOVER_LIGHT};
+        uint32_t ui[32], k;
+        for (k = 0; k < sizeof ui_tokens / sizeof ui_tokens[0]; k++) { /* the 32 UI colours: the theme's colour tokens, then steps */
+            ui[k] = d->theme.token[ui_tokens[k]];
+        }
+        sel_gui_palette_budget(pal, ui, k);
         sel_gui_set_palette(d->canvas, pal, 0u, 256u);
     }
     if (sel_uim_budget_allows(&d->budget, SEL_UIM_FX_SHADOW)) {
@@ -6713,7 +6757,19 @@ static const sel_tag* desk_stats(void* state) {
 #endif
     d->stats[68].tag = SEL_UI_STAT_KEYS; /* keys the window delivered, for the one-line check after Ctrl-C */
     d->stats[68].value = d->keys_in;
-    d->stats[69].tag = SEL_TAG_END;
+    d->stats[69].tag = SEL_UI_STAT_PALETTE_COLOURS_UI;
+    d->stats[69].value = sel_gui_region_colours(d->canvas, SEL_GUI_RGN_UI);
+    d->stats[70].tag = SEL_UI_STAT_PALETTE_COLOURS_ART;
+    d->stats[70].value = sel_gui_region_colours(d->canvas, SEL_GUI_RGN_ART);
+    d->stats[71].tag = SEL_UI_STAT_PALETTE_COLOURS_TILE;
+    d->stats[71].value = sel_gui_region_colours(d->canvas, SEL_GUI_RGN_TILE);
+    d->stats[72].tag = SEL_UI_STAT_PALETTE_COLOURS_PANEL;
+    d->stats[72].value = sel_gui_region_colours(d->canvas, SEL_GUI_RGN_PANEL);
+    d->stats[73].tag = SEL_UI_STAT_PALETTE_COLOURS_FLOW;
+    d->stats[73].value = sel_gui_region_colours(d->canvas, SEL_GUI_RGN_FLOW);
+    d->stats[74].tag = SEL_UI_STAT_QUANT_CALLS;
+    d->stats[74].value = d->quant_calls;
+    d->stats[75].tag = SEL_TAG_END;
 
     return d->stats;
 }

@@ -626,7 +626,7 @@ int main(int argc, char** argv)
     if (has_stats) { /* one line per open UI (DUI-P1-4) */
         for (u = 0; u < g_ui_count; u++) {
             const sel_tag* us = ui_stats_of(&g_uis[u]);
-            printf("ui_stats id=%s frames=%u widget_draws=%u uim_updates=%u uim_dirty=%u uim_layout=%u tweens=%u effect_prims=%u dirty_pixels=%u dirty_total=%u canvas_hash=%s draw_prims=%u missing_glyphs=%u glyphs=%u view_opens=%u art_decodes=%u art_tile_hash=%s present_hash=%s upload_pixels=%u presents=%u scale=%u atlas_rebuilds=%u icon_rebuilds=%u atlas_builds=%u actions_fired=%u actions_distinct=%u focus_moves=%u searches=%u arrows=%u focus=%u hovers=%u clicks=%u double_clicks=%u drags=%u sorts=%u sort_dir=%u top_row=%u menus=%u row_plays=%u tooltips=%u gestures=%u tile_size=%u scroll_px=%u open_tile=%u transport_hits=%u play_state=%u repeat_mode=%u random_on=%u subsong=%u frame_parts=%u home_parts=%u tile_cards=%u\n", g_uis[u].id,
+            printf("ui_stats id=%s frames=%u widget_draws=%u uim_updates=%u uim_dirty=%u uim_layout=%u tweens=%u effect_prims=%u dirty_pixels=%u dirty_total=%u canvas_hash=%s draw_prims=%u missing_glyphs=%u glyphs=%u view_opens=%u art_decodes=%u art_tile_hash=%s present_hash=%s upload_pixels=%u presents=%u scale=%u atlas_rebuilds=%u icon_rebuilds=%u atlas_builds=%u actions_fired=%u actions_distinct=%u focus_moves=%u searches=%u arrows=%u focus=%u hovers=%u clicks=%u double_clicks=%u drags=%u sorts=%u sort_dir=%u top_row=%u menus=%u row_plays=%u tooltips=%u gestures=%u tile_size=%u scroll_px=%u open_tile=%u transport_hits=%u play_state=%u repeat_mode=%u random_on=%u subsong=%u frame_parts=%u home_parts=%u tile_cards=%u palette_colours_ui=%u palette_colours_art=%u palette_colours_tile=%u palette_colours_panel=%u palette_colours_flow=%u quant_calls=%u\n", g_uis[u].id,
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_FRAMES, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_WIDGET_DRAWS, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_UPDATES, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_DIRTY, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_LAYOUT, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_TWEENS, 0),
@@ -659,7 +659,13 @@ int main(int argc, char** argv)
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_TRANSPORT_HITS, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_PLAY_STATE, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_REPEAT_MODE, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_RANDOM_ON, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_SUBSONG, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_FRAME_PARTS, 0),
-                   (unsigned)sel_tag_find(us, SEL_UI_STAT_HOME_PARTS, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_TILE_CARDS, 0));
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_HOME_PARTS, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_TILE_CARDS, 0),
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_PALETTE_COLOURS_UI, 0),
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_PALETTE_COLOURS_ART, 0),
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_PALETTE_COLOURS_TILE, 0),
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_PALETTE_COLOURS_PANEL, 0),
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_PALETTE_COLOURS_FLOW, 0),
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_QUANT_CALLS, 0));
             printf("ui_library id=%s\n%s", g_uis[u].id, (const char*)sel_tag_find(us, SEL_UI_STAT_LIBRARY_DUMP, (uintptr_t) ""));
             printf("ui_drop id=%s drops=%u scans=%u\n", g_uis[u].id, (unsigned)sel_tag_find(us, SEL_UI_STAT_DROPS, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_SCANS, 0));

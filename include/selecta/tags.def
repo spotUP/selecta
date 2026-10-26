@@ -243,6 +243,13 @@ SEL_TAG(UI, STAT_BACKEND,          0x5059, STR)
 SEL_TAG(UI, STAT_SCREEN_DEPTH,     0x505A, INT)
 /* I355: flushes that carried the text UI start screen. */
 SEL_TAG(UI, STAT_SPLASH_FRAMES,    0x505B, INT)
+/* DUI-P6-4: distinct INDEX8 palette entries written per budget region, and median-cut quantiser runs. */
+SEL_TAG(UI, STAT_PALETTE_COLOURS_UI,    0x505C, INT)
+SEL_TAG(UI, STAT_PALETTE_COLOURS_ART,   0x505D, INT)
+SEL_TAG(UI, STAT_PALETTE_COLOURS_TILE,  0x505E, INT)
+SEL_TAG(UI, STAT_PALETTE_COLOURS_PANEL, 0x505F, INT)
+SEL_TAG(UI, STAT_PALETTE_COLOURS_FLOW,  0x5060, INT)
+SEL_TAG(UI, STAT_QUANT_CALLS,           0x5061, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)
