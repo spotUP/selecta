@@ -150,6 +150,8 @@ typedef struct desk {
     size_t si_nlen;
     uint32_t queue_draws, queue_rows, queue_cmds; /* Queue page frames drawn (sentinel), rows in the last one, verbs it sent */
     uint32_t drops;          /* files and folders dropped on the window or chosen in Add Folder: STAT_DROPS (DUI-P5-11) */
+    uint32_t lib_serial_seen; /* I348: sel_state.library_serial the page was last loaded for (UINT32_MAX: not seen yet) */
+    uint32_t lib_reloads;    /* I348: page reloads the library serial caused (stats line library_reloads) */
     uint32_t scans;          /* LIBRARY_SCAN answers seen: STAT_SCANS */
     const char* dialog_answer; /* --dialog-answer <path>: what the folder dialog answers in a test (DUI-P5-11) */
     uint32_t scan_done, scan_total; /* I315: scan progress last drawn on the Library page (files started, files in the folder) */
@@ -3011,6 +3013,7 @@ static const char* library_dump_build(desk* d) {
                               (int)d->hover_box.w, (int)d->hover_box.h, (unsigned)d->hover_fill,
                               (unsigned)ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_HOVER]), (unsigned)d->hover_paints, (int)d->hover_tile);
         o = dump_put(d, o, "hover_ink=%d,%d\n", (int)d->ink_in, (int)d->ink_out);
+        o = dump_put(d, o, "library_serial=%u library_reloads=%u\n", (unsigned)sel_engine_state(d->engine)->library_serial, (unsigned)d->lib_reloads);
         {
             static const char* const rn[] = {"", "sidebar", "main", "detail", "player"};
             int hr = hover_region_of(d, d->hover_box);
@@ -5483,6 +5486,32 @@ static int desk_drop_path(desk* d, const char* path, int more) {
 /* Add Folder: the native folder dialog; a test answers with --dialog-answer. The chosen folder comes back as a drop. */
 /* I315: reads the engine's live scan progress; when it moved, redraws just the Add Folder area of the Library page.
  * Returns 1 when something was drawn. The finish handler calls it once more, so the last state is seen. */
+/* 1 while the engine runs a LIBRARY_SCAN, whoever sent it. */
+static int desk_scan_active(const desk* d) {
+    sel_scan_progress sp;
+    sel_engine_scan_progress(d->engine, &sp);
+    return sp.active != 0u;
+}
+
+/* I348: the engine's library serial moved (a scan, sync or fetch finished, whoever asked): the page lists what the library holds now.
+ * LIBRARY_RESULT is no signal for this: searches and browses answer with the same event. */
+static void desk_library_follow(desk* d) {
+    uint32_t serial = sel_engine_state(d->engine)->library_serial;
+
+    if (d->lib_serial_seen == serial) {
+        return;
+    }
+    if (d->lib_serial_seen != UINT32_MAX) {
+        d->lib_reloads++;
+        desk_page_load(d, d->page); /* I316: a drilldown stays (I302) */
+        if (d->page == PG_LIBRARY && (d->lib_mode == 1u || d->lib_mode == 2u)) {
+            desk_send(d, "LIBRARY_SEARCH \"\"");
+        }
+        d->repaint = 1;
+    }
+    d->lib_serial_seen = serial;
+}
+
 static int desk_scan_sync(desk* d) {
     sel_scan_progress sp;
     int shown;
@@ -6095,6 +6124,7 @@ static void* desk_open(const sel_ui_open_args* a) {
         return NULL;
     }
     memset(d, 0, sizeof *d);
+    d->lib_serial_seen = UINT32_MAX;
     d->tile_step = TILE_STEP_DEFAULT;
     d->engine = a->engine;
     d->host = a->host;
@@ -6246,11 +6276,7 @@ static void desk_on_event(void* state, const sel_message* evt) {
         d->scan_pending = 0;
         d->scans++;
         snprintf(msg, sizeof msg, "Added %u songs to the library", (unsigned)si.scanned_files);
-        desk_page_load(d, d->page); /* I316: the page you are on shows what the scan added; a drilldown stays (I302) */
-        desk_toast(d, msg);
-        if (d->page == PG_LIBRARY && (d->lib_mode == 1u || d->lib_mode == 2u)) {
-            desk_send(d, "LIBRARY_SEARCH \"\"");
-        }
+        desk_toast(d, msg); /* the page reload follows the library serial (desk_library_follow) */
         d->repaint = 1;
     }
     if (evt->id == SEL_EVT_ERROR && d->scan_pending) { /* no_library or scan_failed */
@@ -6282,6 +6308,7 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
         d->view_pending = 0;
         desk_page_apply(d, d->view_pg);
     }
+    desk_library_follow(d);
     if (d->textsheet) { /* the text sheet is one frame, drawn on the first turn */
         if (d->frames > 0u) {
             return -1;
@@ -6369,7 +6396,7 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
     if (desk_present(d)) {
         return 1;
     }
-    if (!d->live && d->scan_pending) { /* I336: the scan runs on a job thread; a scripted or headless run keeps turning (and drawing the
+    if (!d->live && (d->scan_pending || desk_scan_active(d))) { /* I336: the scan runs on a job thread; a scripted or headless run keeps turning (and drawing the
                                         * progress) until its LIBRARY_RESULT arrives, so the script's next line sees the finished scan */
         desk_scan_nap();
         return 1;

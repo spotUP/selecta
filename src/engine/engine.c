@@ -268,6 +268,7 @@ struct sel_engine {
     uint32_t composers_open, composer_queries; /* the Library page is up / queries made against the library for it */
     uint32_t stats_open, stats_queries;        /* the screen is up / queries made against the stats views (I192 sentinel) */
     char panel[1024];                          /* catalogue rows of the open song, "label\0value\0" pairs (I185) */
+    uint32_t library_changes;                  /* I348: emit_library_path calls (scan, sync, fetch finished): state.library_serial */
     uint32_t panel_rows, panel_loads;          /* rows in `panel` / library lookups made for it (I185 sentinel) */
     const void* panel_state;                   /* replayer state the panel was loaded for (reload on a new song) */
     sel_lrc lyr;                               /* synced lyrics of the open song (I193), lyr.count 0: none */
@@ -3223,6 +3224,8 @@ static void cmd_VIEW_SAVE(sel_engine* e, const sel_message* m) {
 static void emit_library_path(sel_engine* e, const char* path, uint32_t count) {
     uint32_t slot = e->lib_slot++ & 3u;
     sel_tag* t = e->lib_tags[slot];
+    e->library_changes++; /* I348: every caller of this function (scan, sync, fetch) changed the library: listings read before are stale */
+    e->state.library_serial = e->library_changes;
     sel_message r;
     size_t n = strlen(path);
 
@@ -5275,6 +5278,7 @@ static void refresh_snapshot(sel_engine* e) {
     e->state.panel = e->panel_rows > 0 ? e->panel : NULL;
     e->state.panel_rows = e->panel_rows;
     e->state.panel_serial = e->panel_loads;
+    e->state.library_serial = e->library_changes;
     if (sl == NULL || sl->rp_state == NULL) {
         e->lyr_for[0] = '\0';
         e->lyr.count = 0;
