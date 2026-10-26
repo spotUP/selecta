@@ -95,6 +95,18 @@ Other services, beyond both parity targets. Candidate services, all "after Hippo
 
 ## 4. Decisions
 
+Johan's answers 2026-10-26 (OS-1 to OS-5):
+
+- OS-1 order: the bbmp four first (I413 asma, I414 sndh, I415 zxart, I416 keygenmusic; bbmp's Python is the reference),
+  then Aminet, Modules.pl, AMP, then amigaremix, kwed, radio, then the other services.
+- OS-2/OS-3 Amiga: every source runs on Amiga and Mac, MP3 streams included. MP3 decode cost on 68020 still needs a
+  measured number; it is a done-when on the MP3 rows, not a reason to drop them.
+- OS-4 AMP: honest Selecta User-Agent; if still 403, mark AMP unavailable and ask the AMP admins for an endpoint.
+- OS-5 radio: public directory (radio-browser.info is the candidate; check its terms before I410 starts), not a curated
+  list.
+- OS-6 Mod Archive key: default kept (defer to after the Hippo set, ask for a key then).
+
+
 | ID | Decision | Why |
 |----|----------|-----|
 | D-OS-1 | One `sel_source` per service, own file pair `src/library/sources/<id>.c` plus `<id>_net.c` for fetching, registered in `sel_source_register_builtin`. No shared "web scraper" source. | Matches modland/hvsc/hippo (source.h:46-60). Each service has its own page format. |
