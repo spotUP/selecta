@@ -862,6 +862,43 @@ static void shadow_draw_raw(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_
     }
 }
 
+/* I507: the shadow of a rounded box (a Home cover). The shape the falloff follows is the box inset by `lift` on every side and
+ * moved down by 2 * lift, so its top edge sits 2 * lift below the box top (no ring above or beside the cover) and its bottom
+ * edge meets the box bottom (the soft shadow shows under it). Distance is measured to that rounded shape with the baked
+ * falloff table (corner[0][k], k = pixels outside the edge, as in the square draw); the shape's own pixels are skipped
+ * because the cover covers them. */
+static void shadow_round_raw(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_rect box, int32_t radius, int32_t lift) {
+    sel_gui_rect sh, out, v;
+    int32_t x, y, r = (int32_t)s->radius, rad;
+    c->prims++;
+    sh = (sel_gui_rect){box.x + lift, box.y + 2 * lift, box.w - 2 * lift, box.h - 2 * lift};
+    if (sh.w <= 0 || sh.h <= 0 || c->format == SEL_GUI_INDEX8) {
+        return; /* the governor never asks for a shadow on a palette canvas */
+    }
+    rad = imax(0, imin(radius - lift, imin(sh.w, sh.h) / 2));
+    out = (sel_gui_rect){sh.x - r, sh.y - r, sh.w + 2 * r, sh.h + 2 * r};
+    v = cur_clip(c, out);
+    for (y = v.y; y < v.y + v.h; y++) {
+        int32_t dy = y < sh.y + rad ? sh.y + rad - y : y >= sh.y + sh.h - rad ? y - (sh.y + sh.h - rad - 1) : 0;
+        for (x = v.x; x < v.x + v.w; x++) {
+            int32_t dx = x < sh.x + rad ? sh.x + rad - x : x >= sh.x + sh.w - rad ? x - (sh.x + sh.w - rad - 1) : 0;
+            uint32_t d256, k;
+            if (dx == 0 && dy == 0) {
+                continue;
+            }
+            d256 = isqrt((uint32_t)(dx * dx + dy * dy) * 65536u); /* 256 * distance to the inner (radius-shrunk) rectangle */
+            if (d256 <= (uint32_t)rad * 256u) {
+                continue; /* inside the rounded shape */
+            }
+            k = d256 >= ((uint32_t)rad + 1u) * 256u ? (d256 - ((uint32_t)rad + 1u) * 256u) / 256u : 0u;
+            if (k >= (uint32_t)r) {
+                continue;
+            }
+            put(c, x, y, ((uint32_t)s->corner[k] << 24) | s->rgb, 0);
+        }
+    }
+}
+
 /* I389: profiled entry points; the raw functions above hold the drawing. */
 void sel_gui_fill_rect(sel_gui_canvas* c, sel_gui_rect r, uint32_t argb) {
     uint32_t t0 = sel_gui_prof_begin(c);
@@ -909,6 +946,12 @@ void sel_gui_blit_image_round(sel_gui_canvas* c, sel_gui_rect dst, const uint32_
     uint32_t t0 = sel_gui_prof_begin(c);
     blit_image_round_raw(c, dst, src, sw, sh, sstride, radius);
     sel_gui_prof_end(c, SEL_GUI_PROF_IMAGE, t0);
+}
+
+void sel_gui_shadow_draw_round(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_rect box, int32_t radius, int32_t lift) {
+    uint32_t t0 = sel_gui_prof_begin(c);
+    shadow_round_raw(c, s, box, radius, lift);
+    sel_gui_prof_end(c, SEL_GUI_PROF_SHADOW, t0);
 }
 
 void sel_gui_shadow_draw(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_rect box) {
