@@ -98,7 +98,11 @@ expect_eq("help opens" "${h_help_opens}" 1)
 
 # 4. context menu: each item fires, Remove drops one entry, the toast shows then expires
 foreach(k 0 1 2 3)
-  math(EXPR my "142 + ${k} * 24 + 12")
+  set(slot ${k})
+  if(k EQUAL 3)
+    set(slot 4) # Remove is the fifth item since Add to Playlist joined the shared song menu (I305)
+  endif()
+  math(EXPR my "142 + ${slot} * 24 + 12")
   ov_run(m${k} songs "wait 100\nmove 600 110\nrclick 600 142\nclick 610 ${my}\n")
   expect_eq("menu item ${k} picked" "${m${k}_pick${k}}" 1)
   expect_eq("menu item ${k} toast" "${m${k}_toast_on}" 1)

@@ -147,7 +147,7 @@ if(NOT m1 GREATER 0)
 endif()
 home_stat(q1 "${menu_only}" tile_queued)
 expect_eq("tile_queued with the menu open only" "${q1}" 0)
-home_run(queued "move 100 300\nrclick 100 300\nclick 110 310\nwait 1\n")
+home_run(queued "move 100 300\nrclick 100 300\nclick 110 336\nwait 1\n")
 # The engine queue length (playlist_entries on the cmdline_runs line) is what Play Next must change, not a send count.
 function(queue_len outvar out)
   if(NOT "${out}" MATCHES "playlist_entries=([0-9]+)")

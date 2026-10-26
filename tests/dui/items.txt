@@ -69,7 +69,7 @@ DUI-P3-12 dui-hover-sidebar-ink
 DUI-P3-13 dui-hover-instant
 DUI-P3-14 dui-library-reload
 DUI-P3-15 dui-library-unknown-composer
-DUI-P4-16 dui-song-menu g_menu_items is not the single menu on every page: Home tiles offer Play Next only, and Remove is not split into Remove from Queue and Remove from Library
+DUI-P4-16 dui-song-menu
 DUI-P4-17 dui-overflow no STAT_TEXT_OUTSIDE_RECT sentinel, no middle-ellipsis for paths, no wrapped rows, and list row count is not floor(room / row height) at 640x400
 DUI-P4-18 dui-library-remove the song menu has no Remove from Library and Library and Settings have no Clear Library, no engine commands for either
 DUI-P4-19 dui-like-rate the Now Playing heart and rating marks are covered by dui-nowplaying; missing: heart on hover for rows and tiles, library row liked=1 check and one pending_push row after a click
