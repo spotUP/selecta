@@ -614,6 +614,7 @@ int main(int argc, char** argv)
     printf("view_source=%s view_style=%s cursor_key=%s\n", sel_view_source_label(sel_engine_state(e)->view->source),
            sel_view_style_label(sel_engine_state(e)->view->style),
            sel_engine_view_cursor_key(e) != NULL ? sel_engine_view_cursor_key(e) : "");
+    printf("view_rows=%u\n", (unsigned)sel_engine_state(e)->view->row_count); /* I473: how many rows the view lists */
 
     printf("viz_frames=%u scope_reads=%u pattern_rows=%u mutes=%u dsp=crossfeed:%s fades=%u sleep_armed=%u\n",
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_VIZ_FRAMES, 0), (unsigned)sel_tag_find(ust, SEL_UI_STAT_SCOPE_READS, 0),

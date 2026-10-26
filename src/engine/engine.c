@@ -4143,6 +4143,38 @@ static int search_distinct_add(const char* meta, uint32_t* table, uint32_t* used
     return 0;
 }
 
+/* I473: an album is its name and its artist. Same set as search_distinct_add, but the table holds result row numbers and two
+ * rows are the same album when name and artist both match, so same-named albums by different artists stay two rows. */
+static void search_row_album(const sel_engine* e, uint32_t i, const char** artist, const char** album) {
+    const char* name = e->qmeta + e->qmeta_off[i];
+    *artist = name + strlen(name) + 1u;
+    *album = *artist + strlen(*artist) + 1u; /* format */
+    *album += strlen(*album) + 1u;           /* duration */
+    *album += strlen(*album) + 1u;           /* album */
+}
+
+static int search_distinct_album_add(const sel_engine* e, uint32_t* table, uint32_t* used, uint32_t row, const char* artist, const char* album) {
+    uint32_t at = (search_hash(album) ^ (search_hash(artist) * 31u)) % (2u * SEARCH_DISTINCT_MAX);
+    uint32_t probes;
+    for (probes = 0; probes < 2u * SEARCH_DISTINCT_MAX; probes++, at = (at + 1u) % (2u * SEARCH_DISTINCT_MAX)) {
+        if (table[at] == UINT32_MAX) {
+            if (*used >= SEARCH_DISTINCT_MAX) {
+                return 0;
+            }
+            table[at] = row;
+            (*used)++;
+            return 1;
+        } else {
+            const char *a, *b;
+            search_row_album(e, table[at], &a, &b);
+            if (strcmp(b, album) == 0 && strcmp(a, artist) == 0) {
+                return 0;
+            }
+        }
+    }
+    return 0;
+}
+
 static void search_reload(sel_engine* e) {
     char* text = e->view.htext;
     uint32_t albums[2u * SEARCH_DISTINCT_MAX], artists[2u * SEARCH_DISTINCT_MAX];
@@ -4173,9 +4205,10 @@ static void search_reload(sel_engine* e) {
         if (i < SEARCH_GROUP_ROWS && key != NULL && o + strlen(key) + strlen(name) + strlen(artist) + 8u < cap / 2u) {
             o += (size_t)snprintf(text + o, cap - o, "S %s\t%s  %s\n", key, name, artist);
         }
-        if (album[0] != '\0' && search_distinct_add(e->qmeta, albums, &n_album, album) && listed_album < SEARCH_GROUP_ROWS &&
-            la + strlen(album) + strlen(artist) + 8u < sizeof alb) {
-            la += (size_t)snprintf(alb + la, sizeof alb - la, "S @%s\t%s  %s\n", album, album, artist);
+        if (album[0] != '\0' && search_distinct_album_add(e, albums, &n_album, i, artist, album) && listed_album < SEARCH_GROUP_ROWS &&
+            la + 2u * strlen(album) + 2u * strlen(artist) + 8u < sizeof alb) {
+            /* I473: the key carries the artist after 0x1f, like a Home shelf album key (I471) */
+            la += (size_t)snprintf(alb + la, sizeof alb - la, "S @%s%s%s\t%s  %s\n", album, artist[0] != '\0' ? "\x1f" : "", artist, album, artist);
             listed_album++;
         }
         if (artist[0] != '\0' && search_distinct_add(e->qmeta, artists, &n_artist, artist) && listed_artist < SEARCH_GROUP_ROWS &&
@@ -5028,15 +5061,20 @@ static void cmd_VIEW_ACTIVATE(sel_engine* e, const sel_message* m) {
             return;
         }
         if (r->album) {
-            /* worst case: every byte escaped, plus album:"" and the NUL */
-            char text[(SEL_QUERY_TEXT_MAX - 1) * 2 + 9];
+            /* worst case: two quoted terms with every byte escaped, plus album:"" artist:"" and the NUL */
+            char text[(SEL_QUERY_TEXT_MAX - 1) * 2 + 20];
             sel_message q;
             uint32_t fts = 0;
             size_t o = 0;
             const char* k;
+            /* I473: the album identity is name and artist, the art_ref "<album>\x1f<artist>" the row carries (I471). A row without an
+             * artist opens the name alone. */
+            const char* ref = r->art_ref != NULL ? r->art_ref : r->key;
+            const char* us = strchr(ref, '\x1f');
+            const char* part_end = us != NULL ? us : ref + strlen(ref);
             /* The query grammar escapes a quote or backslash inside quotes with a backslash. */
             o += (size_t)snprintf(text, sizeof text, "album:\"");
-            for (k = r->key; *k != '\0'; k++) { /* r->key is the album name alone (the artist lives in art_ref, I471) */
+            for (k = ref; k < part_end; k++) {
                 if (o + 4 > sizeof text) { /* an album name over SEL_QUERY_TEXT_MAX; never truncate */
                     sel_engine_report_error(e, "too_complex", "VIEW_ACTIVATE");
                     return;
@@ -5047,6 +5085,20 @@ static void cmd_VIEW_ACTIVATE(sel_engine* e, const sel_message* m) {
                 text[o++] = *k;
             }
             text[o++] = '"';
+            if (us != NULL && us[1] != '\0') {
+                o += (size_t)snprintf(text + o, sizeof text - o, " artist:\"");
+                for (k = us + 1; *k != '\0'; k++) {
+                    if (o + 4 > sizeof text) {
+                        sel_engine_report_error(e, "too_complex", "VIEW_ACTIVATE");
+                        return;
+                    }
+                    if (*k == '"' || *k == '\\') {
+                        text[o++] = '\\';
+                    }
+                    text[o++] = *k;
+                }
+                text[o++] = '"';
+            }
             text[o] = '\0';
             if (!run_search(e, text, "VIEW_ACTIVATE", &fts)) {
                 return;

@@ -272,6 +272,10 @@ execute_process(COMMAND "${SQLITE3}" "${db3}" "PRAGMA trusted_schema = 1; ${seed
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "seeding the third library failed: ${err}")
 endif()
+set(db4 "${WORK}/library4.db")
+file(COPY_FILE "${db3}" "${db4}") # runs consume the seeded history, so each run below gets its own copy
+file(COPY_FILE "${db3}" "${WORK}/library5.db")
+file(COPY_FILE "${db3}" "${WORK}/library6.db")
 file(REMOVE_RECURSE "${WORK}/cfg")
 file(WRITE "${WORK}/in.txt" "wait 1\n")
 dui_run(same --db "${db3}" --ui desktop --backend mem --view home --canvas 1000x600 --clock fixed --stats --input "${WORK}/in.txt")
@@ -333,3 +337,38 @@ foreach(empty "Recently played" "Jump back in" "New this week")
     message(FATAL_ERROR "empty shelf '${empty}' was drawn for a 4-song library:\n${small}")
   endif()
 endforeach()
+
+# 10b. I473: the album is its name and artist when it is opened too. Shelf 0 holds 7 tiles, so tile 7 is the first tile of Jump
+# back in: "Lotus Turbo Challenge - Other Artist" (the dump above). Activating it runs the album search; the query source then
+# lists that album's songs only (fixture:9). Before the fix it ran album:"Lotus Turbo Challenge" alone and listed 3 songs
+# (this album's one and the other album's two). The run uses a fresh copy of the seeded db (a run consumes the home history).
+function(album_run outvar db_path script)
+  file(REMOVE_RECURSE "${WORK}/cfg")
+  file(WRITE "${WORK}/in.txt" "${script}")
+  dui_run(o --db "${db_path}" --ui desktop --backend mem --view home --canvas 1000x1400 --clock fixed --stats --input "${WORK}/in.txt")
+  set(${outvar} "${o}" PARENT_SCOPE)
+endfunction()
+function(expect_album_rows out what rows key)
+  dui_stat_line_rows("${out}" got_rows)
+  expect_eq("${what}: songs listed" "${got_rows}" "${rows}")
+  if(NOT "${out}" MATCHES "view_source=query [^\n]*cursor_key=${key}\n")
+    message(FATAL_ERROR "${what}: the query view does not start at ${key}:\n${out}")
+  endif()
+endfunction()
+function(dui_stat_line_rows out var)
+  if(NOT "${out}" MATCHES "\nview_rows=([0-9]+)\n")
+    message(FATAL_ERROR "no view_rows line in:\n${out}")
+  endif()
+  set(${var} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+endfunction()
+album_run(act "${db4}" "tile 7\nexec VIEW_SOURCE query\nwait 1\n")
+expect_album_rows("${act}" "the Other Artist shelf tile opens its own album" 1 "fixture:9")
+
+# 10c. I473: the same for Search album rows. album:Lotus lists both albums; the Albums group has one row per name and artist
+# (rows: heading, 4 songs, heading, 2 albums, ...). Row 5 is the Chris Huelsbeck album (2 songs: fixture:1 first) and row 6 the
+# Other Artist album (1 song). Before the fix the row key carried the name alone: each opened 3 songs.
+set(search_open "exec LIBRARY_SEARCH album:Lotus\nexec VIEW_SOURCE search\nwait 1\nexec VIEW_CURSOR")
+album_run(srch_other "${WORK}/library5.db" "${search_open} 6\nwait 1\nexec VIEW_ACTIVATE\nwait 1\n")
+expect_album_rows("${srch_other}" "the Other Artist Search album row opens its own album" 1 "fixture:9")
+album_run(srch_first "${WORK}/library6.db" "${search_open} 5\nwait 1\nexec VIEW_ACTIVATE\nwait 1\n")
+expect_album_rows("${srch_first}" "the Chris Huelsbeck Search album row opens its own album" 2 "fixture:1")
