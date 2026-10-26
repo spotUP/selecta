@@ -14,8 +14,9 @@ function(dui_run outvar)
 endfunction()
 
 function(dui_stat outvar out ui key)
-  if(NOT "${out}" MATCHES "ui_stats id=${ui} [^\n]*${key}=([0-9a-f]+)")
+  # The key must start a field: "dirty_pixels" must not match the tail of "page_dirty_pixels=" (greedy [^\n]* took the last).
+  if(NOT "${out}" MATCHES "ui_stats id=${ui} ([^\n]* )?${key}=([0-9a-f]+)")
     message(FATAL_ERROR "no ${key} for ui '${ui}' in:\n${out}")
   endif()
-  set(${outvar} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+  set(${outvar} "${CMAKE_MATCH_2}" PARENT_SCOPE)
 endfunction()
