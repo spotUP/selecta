@@ -37,7 +37,7 @@ Home tiles have a third path (`hover_tile`, `draw_home_content` ~3488) that alre
   while drawn. Same rule as the sidebar doors (Johan): the SELECTED row (playing song, chosen composer, focused tree
   node, the row a keyboard cursor sits on) gets the `SURFACE` round-rect background; a hovered unselected row gets NO
   background, its text ink blends `TEXT_MUTED -> TEXT` (or `TEXT -> ACCENT` where the row already uses TEXT; pick one per
-  list and name it in the plan item) by the hover weight, fading in and out like the doors (I346 `hover_weight_out`).
+  list and name it in the plan item) by the hover weight, switching instantly like the doors (I356; the I346 `hover_weight_out` fade is gone).
   Where a list has no selection concept today (files, history), add none: hover ink only.
 - Shared helper: `hover_ink_of(d, box, muted, full)` returns the blended ink from the in and out weights; `draw_sidebar`
   and every row painter call it. One mechanism, no per-view hover state.
@@ -48,12 +48,12 @@ Home tiles have a third path (`hover_tile`, `draw_home_content` ~3488) that alre
   count with a comment naming the sum. `hover_prune` already drops boxes inside a region before it is painted again.
 - Hit-test cost: `desk_hover_move` is a linear scan; a few hundred boxes per move is fine.
 
-### I346: sidebar hover is foreground only, and fades both ways
+### I346: sidebar hover is foreground only (the fade-out below is SUPERSEDED by I356: Johan wants instant both ways)
 
 - Selected door: keeps the `SURFACE` round-rect background (unchanged).
 - Unselected hovered door: NO background. Its icon and label ink blends `TEXT_MUTED -> TEXT` by the hover weight.
   Remove the `hover_fill_of` background branch in `draw_sidebar` (~4027-4029).
-- Smooth flow: keep `hover_prev` (the box the pointer left) and `hover_prev_ms` (clock when it left). Its ink weight is
+- SUPERSEDED by I356 (Johan 2026-10-26: hover switches instantly both ways, no fade; `hover_weight_out`, `hover_prev_ms` and the out weight are gone, `hover_prev` stays only to repaint the old box's region once). Original text: keep `hover_prev` (the box the pointer left) and `hover_prev_ms` (clock when it left). Its ink weight is
   `65536 - tween value` over the same FAST_MS, so the old door fades back while the new one fades in. `hover_weight`
   grows a sibling `hover_weight_out(d, box)` for that; only `draw_sidebar` uses it in this item.
 - Between items (gap rows of the door column): nothing is highlighted, by Johan's macOS reference; the fade-out covers
@@ -68,7 +68,7 @@ Home tiles have a third path (`hover_tile`, `draw_home_content` ~3488) that alre
 - `tests/dui/hover_sidebar_ink.cmake` (DUI-P3-12): timed move onto door B, 50 ms later onto door C, quit at 60 ms; a
   new `--stats` line `hover_ink=<new weight>,<old weight>` (or a debug dump) asserts the new door's weight is above 0
   and below 65536 and the old door's weight is above 0 and below 65536 at that frame; then a second run at +200 ms
-  asserts new 65536, old 0.
+  asserts new 65536, old 0. (I356: the stats line is now `hover_ink=<weight>` and the old door's frame-dump pixels at 60 ms equal the rest frame.)
 - Both tests fail on 45c034b (no hover on library rows; no fade-out).
 
 ## Out of scope

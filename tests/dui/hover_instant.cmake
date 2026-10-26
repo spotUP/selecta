@@ -1,7 +1,7 @@
-# dui-hover-instant (DUI-P3-13, I351): hover lights instantly and only the control the pointer left fades out. -DSELECTA -DSONGS -DWORK
+# dui-hover-instant (DUI-P3-13, I351, I356, I359): hover switches instantly both ways. -DSELECTA -DSONGS -DWORK
 # A mem run lists the door rectangles. A live run moves the pointer onto door 2 at 500 ms, onto door 3 at 550 ms and quits at
-# 610 ms, 60 ms into the 100 ms fade: the stats line `hover_ink=<new>,<old>` has new == 65536 (the in tween restarted at 550 ms
-# would give about 85% here, 31558 before the fix at the last painted frame) and old strictly between 0 and 65536 (the out fade runs).
+# 610 ms: the stats line `hover_ink=<weight>` has weight == 65536 (the in tween restarted at 550 ms would give about 85% at the
+# last painted frame, 31558 before I351). Left-door ink at 60 ms is dui-hover-sidebar-ink.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -23,14 +23,9 @@ set(ENV{SELECTA_SDL_TEST_LIVE} 1)
 file(REMOVE_RECURSE "${WORK}/cfg")
 set(ENV{SELECTA_SDL_TEST_TIMED} "m${x2},${y2}@500 m${x3},${y3}@550 q@610")
 dui_run(o1 ${args} --backend sdl --stats)
-if(NOT "${o1}" MATCHES "hover_ink=([0-9]+),([0-9]+)\n")
+if(NOT "${o1}" MATCHES "hover_ink=([0-9]+)\n")
   message(FATAL_ERROR "no hover_ink line in:\n${o1}")
 endif()
-set(wnew "${CMAKE_MATCH_1}")
-set(wold "${CMAKE_MATCH_2}")
-if(NOT wnew EQUAL 65536)
-  message(FATAL_ERROR "the entering door weight ${wnew} is not 65536 (hover lights instantly, I351)")
-endif()
-if(NOT wold GREATER 0 OR NOT wold LESS 65536)
-  message(FATAL_ERROR "the leaving door weight ${wold} is not strictly between 0 and 65536 (no fade-out)")
+if(NOT "${CMAKE_MATCH_1}" EQUAL 65536)
+  message(FATAL_ERROR "the entering door weight ${CMAKE_MATCH_1} is not 65536 (hover lights instantly, I351)")
 endif()
