@@ -107,6 +107,38 @@ expect_eq("entries after Remove" "${d_count}" 3)
 queue_run(du "click ${del1}\nwait 100\nclick ${undo_xy}\nwait 100\n" ${adds})
 expect_eq("queue hash after Remove then Undo" "${du_hash}" "${a_hash}")
 
+# 2b. I258e: a held drag shows a live preview. SDL timed events press on row 0 and move over row 3 without a release: the
+# dump names the lifted row and the gap, and the paint counter shows the preview was drawn; a release then reorders as in 2.
+if(SDL_BUILT)
+  set(ENV{SDL_VIDEODRIVER} dummy)
+  set(ENV{SELECTA_SDL_TEST_LIVE} 1)
+  string(REPLACE " " "," r0 "${row0}")
+  string(REPLACE " " "," r3 "${row3}")
+  set(ENV{SELECTA_SDL_TEST_TIMED} "d1,${r0}@600 m${r3}@900 q@1800")
+  file(REMOVE_RECURSE "${WORK}/cfg")
+  dui_run(ld --ui desktop --backend sdl --view queue --canvas 1280x800 --stats ${adds})
+  if(NOT "${ld}" MATCHES "qdrag from 0 gap 3 paints ([0-9]+)")
+    message(FATAL_ERROR "a held drag from row 0 over row 3 shows no preview state:\n${ld}")
+  endif()
+  if(CMAKE_MATCH_1 LESS 1)
+    message(FATAL_ERROR "the held drag never painted the lifted row and the insertion line\n${ld}")
+  endif()
+  set(ENV{SELECTA_SDL_TEST_TIMED} "d1,${r0}@600 m${r3}@900 u1,${r3}@1200 q@1800")
+  file(REMOVE_RECURSE "${WORK}/cfg")
+  dui_run(lr --ui desktop --backend sdl --view queue --canvas 1280x800 --stats ${adds})
+  if(NOT "${lr}" MATCHES "qdrag from -1 gap")
+    message(FATAL_ERROR "the release did not end the drag preview:\n${lr}")
+  endif()
+  string(REGEX MATCH "qpath 3 ([^\n]*)" _p "${lr}")
+  expect_eq("the released entry is last" "${CMAKE_MATCH_1}" "${path0}")
+  unset(ENV{SELECTA_SDL_TEST_LIVE})
+  unset(ENV{SELECTA_SDL_TEST_TIMED})
+endif()
+# no drag held: the preview state is idle
+if(NOT "${a_out}" MATCHES "qdrag from -1 gap -1 paints 0")
+  message(FATAL_ERROR "an idle Queue page reports a drag:\n${a_out}")
+endif()
+
 # 3. scope and reshuffle
 # I258 (d): the Scope button opens a menu of the three choices; nothing is sent until one is picked, and the pick sends the
 # same SCOPE verb the old cycle button sent.

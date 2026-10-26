@@ -211,6 +211,11 @@ int sel_gui_input_map(sel_gui_input_map_state* st, const sel_gui_raw* raw, sel_g
         out->kind = SEL_GUI_IN_MOVE;
         out->x = raw->x;
         out->y = raw->y;
+        if (st->down_button == 1u) { /* the primary button is held: a drag in progress (code 1, x2 y2 = where it was pressed) */
+            out->code = 1u;
+            out->x2 = st->down_x;
+            out->y2 = st->down_y;
+        }
         return 1;
     case SEL_GUI_RAW_WHEEL:
         if (raw->dx == 0 && raw->dy == 0) {

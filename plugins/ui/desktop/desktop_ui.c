@@ -172,6 +172,8 @@ typedef struct desk {
     uint32_t si_draws, si_rows, si_cmds; /* frames drawn (sentinel), info rows in the last one, verbs sent */
     char si_note[96];
     size_t si_nlen;
+    int32_t qdrag_from, qdrag_gap, qdrag_x, qdrag_y; /* I258e: a held queue row drag; from -1 when none, gap = the index it would land at */
+    uint32_t qdrag_paints;                           /* frames that drew the lifted row and the insertion line */
     uint32_t queue_draws, queue_rows, queue_cmds; /* Queue page frames drawn (sentinel), rows in the last one, verbs it sent */
     struct {                 /* I258: the Queue page album groups, rebuilt when the queue changes */
         uint32_t hash, count, headers, valid;
@@ -2310,6 +2312,19 @@ static void draw_queue(desk* d) {
         }
         sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_X, rect_of(dl.x + (dl.w - ic) / 2, dl.y + (dl.h - ic) / 2, ic, ic), ic, qmuted);
     }
+    if (d->qdrag_from >= 0 && d->qdrag_from < (int32_t)st->queue_count) { /* I258e: the lifted row at the pointer and the insertion line */
+        uint32_t f = (uint32_t)d->qdrag_from, g = (uint32_t)d->qdrag_gap;
+        sel_gui_rect fr = queue_row_rect(d, mn, f), gr = queue_row_rect(d, mn, g);
+        int32_t ly = g > f ? gr.y + gr.h : gr.y; /* the line sits below the target row when moving down, above it when moving up */
+        sel_gui_rect lift = rect_of(fr.x, d->qdrag_y - fr.h / 2, fr.w, fr.h);
+        if (g != f) {
+            sel_gui_fill_rect(d->canvas, rect_of(gr.x, ly - lpx(d, 1), gr.w, lpx(d, 2)), accent);
+        }
+        sel_gui_fill_rect(d->canvas, lift, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_HOVER]));
+        queue_title(st, f, buf, sizeof buf);
+        draw_text(d, rect_of(lift.x + ic + lpx(d, 12), lift.y, lift.w - ic - lpx(d, 12), lift.h), buf, 1, 14, text);
+        d->qdrag_paints++;
+    }
     sel_gui_clip_pop(d->canvas);
     d->queue_draws++;
     d->queue_rows = shown;
@@ -2326,6 +2341,30 @@ static int queue_pointer(desk* d, const sel_gui_input* ev) {
     uint32_t k;
     int32_t row, to;
     queue_groups_sync(d);
+    if (ev->kind == SEL_GUI_IN_MOVE) { /* I258e: a held primary button over a queue row lifts it and shows where it would land */
+        int was = d->qdrag_from >= 0;
+        row = ev->code == 1u ? queue_row_at(d, mn, ev->x2, ev->y2) : -1;
+        if (row >= 0 && (st->queue[row].flags & SEL_QUEUE_FLAG_DIVIDER) != 0u) {
+            row = -1;
+        }
+        to = row >= 0 ? queue_row_at(d, mn, ev->x, ev->y) : -1;
+        d->qdrag_from = row;
+        d->qdrag_gap = to >= 0 ? to : row;
+        d->qdrag_x = ev->x;
+        d->qdrag_y = ev->y;
+        if (row >= 0 || was) {
+            draw_home(d); /* the preview follows the pointer, as the wheel scroll redraws the page */
+            return 1;
+        }
+        return 0;
+    }
+    if (ev->kind == SEL_GUI_IN_DRAG || ev->kind == SEL_GUI_IN_CLICK) {
+        int was = d->qdrag_from >= 0;
+        d->qdrag_from = -1; /* the release ends the preview */
+        if (was && ev->kind == SEL_GUI_IN_CLICK) {
+            return 1;
+        }
+    }
     if (ev->kind == SEL_GUI_IN_DRAG) {
         row = queue_row_at(d, mn, ev->x, ev->y);
         to = queue_row_at(d, mn, ev->x2, ev->y2);
@@ -3480,6 +3519,7 @@ static const char* library_dump_build(desk* d) {
                               "queue draws %u rows %u cmds %u hash %08x count %u undo %u redo %u scope %s\n", (unsigned)d->queue_draws,
                               (unsigned)d->queue_rows, (unsigned)d->queue_cmds, (unsigned)queue_hash(st), (unsigned)st->queue_count,
                               (unsigned)qs.undo_depth, (unsigned)qs.redo_depth, queue_scope_name[queue_scope_index(st)]);
+        o = dump_put(d, o, "qdrag from %d gap %d paints %u\n", (int)d->qdrag_from, (int)d->qdrag_gap, (unsigned)d->qdrag_paints);
         for (i = 0; i < QUEUE_BUTTONS; i++) {
             sel_gui_rect b = queue_btn_rect(d, qmn, i);
             o = dump_put(d, o, "qbtn %u %d %d %d %d\n", (unsigned)i, (int)b.x,
@@ -6783,6 +6823,8 @@ static void* desk_open(const sel_ui_open_args* a) {
     }
     memset(d, 0, sizeof *d);
     d->lib_serial_seen = UINT32_MAX;
+    d->qdrag_from = -1;
+    d->qdrag_gap = -1;
     d->tile_step = TILE_STEP_DEFAULT;
     d->engine = a->engine;
     d->host = a->host;
