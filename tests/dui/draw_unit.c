@@ -156,6 +156,57 @@ static void test_line_mask_image(void) {
     drop(c);
 }
 
+/* sel_gui_blit_image_round: the source image clipped to a rounded rect. INDEX8 keeps or drops an edge pixel at half
+ * coverage (no blending); RGBA32 scales the source alpha by the coverage. */
+static void test_blit_image_round(void) {
+    uint32_t img[16 * 16];
+    uint32_t partial = 0u, red8, bg8;
+    sel_gui_canvas* ref = make(SEL_GUI_INDEX8, 4, 4);
+    sel_gui_canvas *c, *ic;
+    int32_t i, x, y;
+    for (i = 0; i < 16 * 16; i++) {
+        img[i] = 0xFFFF0000u;
+    }
+    sel_gui_fill_rect(ref, R(0, 0, 4, 4), 0xFFFF0000u);
+    red8 = sel_gui_pixel(ref, 0, 0);
+    drop(ref);
+    c = make(SEL_GUI_INDEX8, 40, 40);
+    bg8 = sel_gui_pixel(c, 0, 0);
+    CHECK(red8 != bg8);
+    sel_gui_blit_image_round(c, R(4, 4, 32, 32), img, 16, 16, 16, 8);
+    CHECK(sel_gui_pixel(c, 4, 4) == bg8);              /* the sharp corner keeps the destination index */
+    CHECK(sel_gui_pixel(c, 35, 35) == bg8 && sel_gui_pixel(c, 35, 4) == bg8 && sel_gui_pixel(c, 4, 35) == bg8);
+    CHECK(sel_gui_pixel(c, 20, 20) == red8);           /* the centre takes the source colour index */
+    CHECK(sel_gui_pixel(c, 20, 4) == red8);            /* straight edge is solid */
+    CHECK(sel_gui_pixel(c, 3, 20) == bg8);             /* outside the rect is untouched */
+    ic = c;
+    c = make(SEL_GUI_RGBA32, 40, 40);
+    partial = 0u;
+    sel_gui_blit_image_round(c, R(4, 4, 32, 32), img, 16, 16, 16, 8);
+    CHECK(sel_gui_pixel(c, 4, 4) == 0u);
+    CHECK(sel_gui_pixel(c, 20, 20) == 0xFF0000u);
+    for (y = 4; y < 12; y++) {
+        for (x = 4; x < 12; x++) {
+            uint32_t p = sel_gui_pixel(c, x, y);
+            partial += p != 0u && p != 0xFF0000u;
+        }
+    }
+    CHECK(partial > 4u);                               /* RGBA32 anti-aliases the edge */
+    /* Over a zero destination the RGBA32 red channel equals the coverage alpha, so INDEX8 must be red exactly where
+     * that alpha reaches one half, and the destination index everywhere else. */
+    partial = 0u;
+    for (y = 4; y < 12; y++) {
+        for (x = 4; x < 12; x++) {
+            uint32_t want = chan(sel_gui_pixel(c, x, y), 16) >= 128u ? red8 : bg8;
+            CHECK(sel_gui_pixel(ic, x, y) == want);
+            partial += want == red8;
+        }
+    }
+    CHECK(partial > 20u && partial < 64u);             /* the arc keeps some corner pixels and drops others */
+    drop(ic);
+    drop(c);
+}
+
 static void test_scrim_shadow(void) {
     sel_gui_canvas* c = make(SEL_GUI_RGBA32, 64, 64);
     sel_gui_shadow s;
@@ -483,6 +534,7 @@ int main(void) {
     test_round_frame();
     test_gradient();
     test_line_mask_image();
+    test_blit_image_round();
     test_scrim_shadow();
     test_index8_text_blend();
     test_cube();
