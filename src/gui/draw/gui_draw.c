@@ -464,15 +464,34 @@ void sel_gui_scrim(sel_gui_canvas* c, sel_gui_rect r, uint32_t rgb, uint32_t alp
 /* Coverage 0..16 of pixel (px, py) by a circle of radius rad centred on pixel-edge coordinates (cx, cy), 4x4
  * subsamples at eighth-pixel positions. */
 static uint32_t coverage(int32_t px, int32_t py, int32_t cx, int32_t cy, int32_t rad) {
-    uint32_t n = 0u, sx, sy;
-    int64_t lim = (int64_t)8 * rad * 8 * rad;
-    for (sy = 0; sy < 4u; sy++) {
-        for (sx = 0; sx < 4u; sx++) {
-            int64_t dx = (int64_t)px * 8 + (int64_t)sx * 2 + 1 - (int64_t)cx * 8;
-            int64_t dy = (int64_t)py * 8 + (int64_t)sy * 2 + 1 - (int64_t)cy * 8;
-            if (dx * dx + dy * dy <= lim) {
-                n++;
-            }
+    /* 32-bit integer only (the 68020 has no 64-bit multiply): the squared offsets of the four sample columns and rows
+     * are formed once, the 16 samples then only add and compare. A pixel wholly inside or outside the circle is
+     * decided from the extreme sums. The count equals the 64-bit form for rad up to 1000. */
+    int32_t lim = 64 * rad * rad, ax = (px - cx) * 8, ay = (py - cy) * 8, i, j;
+    int32_t xs[4], ys[4], xmin, xmax, ymin, ymax;
+    uint32_t n = 0u;
+    for (i = 0; i < 4; i++) {
+        int32_t dx = ax + 2 * i + 1, dy = ay + 2 * i + 1;
+        xs[i] = dx * dx;
+        ys[i] = dy * dy;
+    }
+    xmin = xmax = xs[0];
+    ymin = ymax = ys[0];
+    for (i = 1; i < 4; i++) {
+        xmin = imin(xmin, xs[i]);
+        xmax = imax(xmax, xs[i]);
+        ymin = imin(ymin, ys[i]);
+        ymax = imax(ymax, ys[i]);
+    }
+    if (xmax + ymax <= lim) {
+        return 16u;
+    }
+    if (xmin + ymin > lim) {
+        return 0u;
+    }
+    for (j = 0; j < 4; j++) {
+        for (i = 0; i < 4; i++) {
+            n += (xs[i] + ys[j] <= lim) ? 1u : 0u;
         }
     }
     return n;
@@ -682,6 +701,8 @@ static void blit_mask_raw(sel_gui_canvas* c, int32_t x, int32_t y, const uint8_t
                        int32_t mstride, uint32_t tint) {
     sel_gui_rect box = {0, 0, 0, 0}, v;
     int32_t px, py;
+    uint32_t ta = tint >> 24, memo_key = 0xFFFFFFFFu;
+    uint8_t memo_val = 0u;
     box.x = x;
     box.y = y;
     box.w = mw;
@@ -689,9 +710,30 @@ static void blit_mask_raw(sel_gui_canvas* c, int32_t x, int32_t y, const uint8_t
     c->prims++;
     v = cur_clip(c, box);
     for (py = v.y; py < v.y + v.h; py++) {
+        const uint8_t* row = mask + (size_t)(py - y) * (size_t)mstride + (size_t)(v.x - x);
         for (px = v.x; px < v.x + v.w; px++) {
-            uint32_t cov = mask[(size_t)(py - y) * (size_t)mstride + (size_t)(px - x)];
-            uint32_t a = div255(cov * (tint >> 24));
+            uint32_t cov = *row++, a;
+            if (cov == 0u) {
+                continue;
+            }
+            a = div255(cov * ta);
+            if (c->format == SEL_GUI_INDEX8) {
+                /* The result depends on the alpha and, below full alpha, on the destination byte only: remember the
+                 * last pair (text runs repeat the same edge values over the same background). */
+                uint8_t* d = px8(c, px, py);
+                uint32_t key = (a << 8) | (a < 255u ? *d : 0u);
+                if (a == 0u) {
+                    continue;
+                }
+                if (key != memo_key) {
+                    put(c, px, py, (a << 24) | (tint & 0xFFFFFFu), 0);
+                    memo_val = *d;
+                    memo_key = key;
+                } else {
+                    *d = memo_val;
+                }
+                continue;
+            }
             put(c, px, py, (a << 24) | (tint & 0xFFFFFFu), 0);
         }
     }
