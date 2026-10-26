@@ -216,12 +216,33 @@ static void test_scrim_shadow(void) {
     CHECK(chan(sel_gui_pixel(c, 2, 2), 16) >= 127u && chan(sel_gui_pixel(c, 2, 2), 16) <= 128u);
     CHECK(sel_gui_pixel(c, 20, 20) == 0xFFFFFFu);
     sel_gui_shadow_bake(&s, 8u, 0x000000u, 200u);
-    sel_gui_shadow_draw(c, &s, R(24, 24, 16, 16));
+    sel_gui_shadow_draw(c, &s, R(24, 24, 16, 16), 0);
     CHECK(sel_gui_pixel(c, 30, 30) == 0xFFFFFFu);      /* the box itself is untouched */
     near_a = 255u - chan(sel_gui_pixel(c, 30, 23), 16); /* just outside the top edge */
     far_a = 255u - chan(sel_gui_pixel(c, 30, 17), 16);  /* seven pixels out */
     CHECK(near_a > far_a && near_a > 20u);
     CHECK(sel_gui_pixel(c, 30, 10) == 0xFFFFFFu);       /* beyond the radius */
+    drop(c);
+}
+
+/* I513: the shadow of a rounded card follows its corners. The square ring left the box corner outside the arc at the
+ * background colour, a light notch inside a dark square bracket. */
+static void test_shadow_round_card(void) {
+    sel_gui_canvas* c = make(SEL_GUI_RGBA32, 80, 80);
+    sel_gui_shadow s;
+    uint32_t bg, notch, side, diag;
+    sel_gui_fill_rect(c, R(0, 0, 80, 80), 0xFF404040u);
+    bg = sel_gui_pixel(c, 2, 2);
+    sel_gui_shadow_bake(&s, 8u, 0x000000u, 96u);
+    sel_gui_shadow_draw(c, &s, R(20, 20, 40, 40), 12);
+    sel_gui_round_rect(c, R(20, 20, 40, 40), 12, 0xFFC0C0C0u);
+    notch = chan(sel_gui_pixel(c, 21, 21), 16); /* inside the box corner, outside the arc */
+    side = chan(sel_gui_pixel(c, 19, 40), 16);  /* just outside the left edge */
+    diag = chan(sel_gui_pixel(c, 19, 19), 16);  /* just outside the box corner, farther from the arc */
+    CHECK(notch < chan(bg, 16));                /* the notch carries shadow */
+    CHECK(side < chan(bg, 16));                 /* the straight edge still has its ring */
+    CHECK(diag > side);                         /* the corner fades with the distance to the arc */
+    CHECK(sel_gui_pixel(c, 40, 40) == 0xC0C0C0u);
     drop(c);
 }
 
@@ -536,6 +557,7 @@ int main(void) {
     test_line_mask_image();
     test_blit_image_round();
     test_scrim_shadow();
+    test_shadow_round_card();
     test_index8_text_blend();
     test_cube();
     test_dirty();

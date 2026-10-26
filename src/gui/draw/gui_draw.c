@@ -868,16 +868,20 @@ static void shadow_draw_raw(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_
  * the cover: the visible shadow starts faint and fades out, with no dark step against the cover edge (the first version
  * showed the falloff from its darkest value, which read as a dark border on the dark theme). Distance is measured to that
  * rounded shape with the baked falloff table (corner[0][k], k = pixels outside the edge, as in the square draw); the
- * shape's own pixels are skipped because the cover covers them. */
-static void shadow_round_raw(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_rect box, int32_t radius, int32_t lift) {
+ * shape's own pixels are skipped because the cover covers them.
+ * I513: the shape is the box inset by `inset` on the top and sides. A cover passes the shadow radius (above); a floating
+ * rounded card (menu, tooltip, toast, dialog) passes 0, so the ring runs all around the card and follows its rounded
+ * corners instead of leaving a square bracket with a light notch at each corner. */
+static void shadow_round_raw(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_rect box, int32_t radius, int32_t inset,
+                             int32_t lift) {
     sel_gui_rect sh, out, v;
     int32_t x, y, r = (int32_t)s->radius, rad;
     c->prims++;
-    sh = (sel_gui_rect){box.x + r, box.y + r, box.w - 2 * r, box.h + lift - 2 * r};
+    sh = (sel_gui_rect){box.x + inset, box.y + inset, box.w - 2 * inset, box.h + lift - 2 * inset};
     if (sh.w <= 0 || sh.h <= 0 || c->format == SEL_GUI_INDEX8) {
         return; /* the governor never asks for a shadow on a palette canvas */
     }
-    rad = imax(0, imin(radius - r, imin(sh.w, sh.h) / 2));
+    rad = imax(0, imin(radius - inset, imin(sh.w, sh.h) / 2));
     out = (sel_gui_rect){sh.x - r, sh.y - r, sh.w + 2 * r, sh.h + 2 * r};
     v = cur_clip(c, out);
     for (y = v.y; y < v.y + v.h; y++) {
@@ -952,13 +956,17 @@ void sel_gui_blit_image_round(sel_gui_canvas* c, sel_gui_rect dst, const uint32_
 
 void sel_gui_shadow_draw_round(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_rect box, int32_t radius, int32_t lift) {
     uint32_t t0 = sel_gui_prof_begin(c);
-    shadow_round_raw(c, s, box, radius, lift);
+    shadow_round_raw(c, s, box, radius, (int32_t)s->radius, lift);
     sel_gui_prof_end(c, SEL_GUI_PROF_SHADOW, t0);
 }
 
-void sel_gui_shadow_draw(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_rect box) {
+void sel_gui_shadow_draw(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_rect box, int32_t radius) {
     uint32_t t0 = sel_gui_prof_begin(c);
-    shadow_draw_raw(c, s, box);
+    if (radius > 0) {
+        shadow_round_raw(c, s, box, radius, 0, 0);
+    } else {
+        shadow_draw_raw(c, s, box);
+    }
     sel_gui_prof_end(c, SEL_GUI_PROF_SHADOW, t0);
 }
 

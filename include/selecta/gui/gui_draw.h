@@ -138,8 +138,9 @@ typedef struct sel_gui_shadow {
     uint8_t corner[SEL_GUI_SHADOW_MAX * SEL_GUI_SHADOW_MAX]; /* alpha at offset (i, j) from the box corner */
 } sel_gui_shadow;
 void sel_gui_shadow_bake(sel_gui_shadow* s, uint32_t radius, uint32_t rgb, uint32_t peak_alpha);
-/* Draws the shadow ring around `box` (the box itself is left alone). */
-void sel_gui_shadow_draw(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_rect box);
+/* Draws the shadow ring around `box` (the box itself is left alone). With `radius` > 0 the ring follows the rounded
+ * corners of a box drawn with that corner radius (I513); 0 gives the square ring of a square box. */
+void sel_gui_shadow_draw(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_rect box, int32_t radius);
 /* Soft shadow of a rounded box (corner `radius`), I507: follows the rounded corners and shows only as a faint `lift` px tail
  * under the box; nothing shows above or at the sides of the box edge. Nothing on a palette canvas. */
 void sel_gui_shadow_draw_round(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_rect box, int32_t radius, int32_t lift);

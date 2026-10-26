@@ -114,7 +114,7 @@ static void icon_in(const ctx* x, int32_t icon, sel_gui_rect box, int32_t px, ui
 
 static void card(const ctx* x, sel_gui_rect r, int32_t radius, uint32_t col, int shadow) {
     if (shadow && x->s->shadow != NULL) {
-        sel_gui_shadow_draw(x->c, x->s->shadow, r);
+        sel_gui_shadow_draw(x->c, x->s->shadow, r, radius);
     }
     sel_gui_round_rect(x->c, r, radius, col);
 }

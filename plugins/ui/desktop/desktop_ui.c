@@ -854,7 +854,7 @@ static void draw_widget(desk* d, uint32_t bit) {
         }
         sel_gui_rect card = rect_of(mn.x + sp, mn.y + sp, mn.w - 2 * sp < lpx(d, 400) ? mn.w - 2 * sp : lpx(d, 400), lpx(d, 48));
         if (d->shadow_ready) {
-            sel_gui_shadow_draw(d->canvas, &d->shadow, card);
+            sel_gui_shadow_draw(d->canvas, &d->shadow, card, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]));
             sel_gui_dirty_add(d->canvas, rect_of(card.x - lpx(d, 8), card.y - lpx(d, 8), card.w + lpx(d, 16), card.h + lpx(d, 16)));
         }
         sel_gui_round_rect(d->canvas, card, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]),
@@ -1961,7 +1961,7 @@ static void song_menu_draw(desk* d) {
         sel_gui_rect first = song_menu_item_rect(d, 0), panel = rect_of(first.x, first.y, first.w, first.h * n);
         int32_t rad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), inset = lpx(d, 4);
         if (d->shadow_ready) {
-            sel_gui_shadow_draw(d->canvas, &d->shadow, panel);
+            sel_gui_shadow_draw(d->canvas, &d->shadow, panel, rad);
         }
         sel_gui_round_rect(d->canvas, panel, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
         for (k = 0; k < n; k++) {
@@ -2055,7 +2055,7 @@ static void dlg_draw(desk* d) {
     }
     p = dlg_panel_rect(d);
     if (d->shadow_ready) {
-        sel_gui_shadow_draw(d->canvas, &d->shadow, p);
+        sel_gui_shadow_draw(d->canvas, &d->shadow, p, rad);
     }
     sel_gui_round_rect(d->canvas, p, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
     tr = rect_of(p.x + m, p.y + m, p.w - 2 * m, head->line_height);
@@ -4510,7 +4510,7 @@ static void draw_lib_flow(desk* d, sel_gui_rect mn) {
         d->grid_box = rect_union(d->grid_box, r);
         if (j + 1u == n) { /* the cover nearest the centre carries the shadow and the click target */
             d->flow_cover = r;
-            sel_gui_shadow_draw(d->canvas, &d->shadow, r);
+            sel_gui_shadow_draw(d->canvas, &d->shadow, r, 0); /* the cover flow art is square */
         }
         sel_gui_genart_draw(d->canvas, r, "album", sel_gui_str_hash(row->text != NULL ? row->text : ""));
         if (alpha > 0) {
@@ -4677,7 +4677,7 @@ static void draw_library(desk* d) {
                 int32_t pad = 2 * lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]), colw = (pr.w - 2 * pad) / LIB_STATS_PANEL_COLS;
                 uint32_t n = 0, per = (lib_stats_rows(st) + LIB_STATS_PANEL_COLS - 1u) / LIB_STATS_PANEL_COLS;
                 if (d->shadow_ready) {
-                    sel_gui_shadow_draw(d->canvas, &d->shadow, pr);
+                    sel_gui_shadow_draw(d->canvas, &d->shadow, pr, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]));
                 }
                 sel_gui_round_rect(d->canvas, pr, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
                 for (p = st->stats; *p != '\0'; n++) {
@@ -7749,7 +7749,7 @@ static void draw_testcard(desk* d) {
     sel_gui_blit_image(c, rect_of(10, 140, 64, 64), src, 32, 32, 32, 0);
     sel_gui_blit_image(c, rect_of(90, 140, 16, 16), src, 32, 32, 32, 1);
     if (d->shadow_ready) {
-        sel_gui_shadow_draw(c, &d->shadow, rect_of(320, 140, 100, 60));
+        sel_gui_shadow_draw(c, &d->shadow, rect_of(320, 140, 100, 60), 8);
     }
     sel_gui_round_rect(c, rect_of(320, 140, 100, 60), 8, accent);
     sel_gui_scrim(c, rect_of(0, 220, c->w, 60), 0x000000u, 128u);
