@@ -19,19 +19,11 @@ sel_cli_test(protocol-reflection-commands "commands" "-DLINES=${SEL_COUNT_CMD}")
 sel_cli_test(protocol-reflection-events   "events"   "-DLINES=${SEL_COUNT_EVT}")
 sel_cli_test(protocol-reflection-tagtypes "tagtypes" "-DLINES=${SEL_COUNT_META}")
 
-# T5: the registry walked every descriptor and found only known tags.
-# null, wav, nuade, openmpt, the minimp3 and stb_vorbis stream decoders, the crossfeed DSP, the text UI, the desktop UI (host only), the nowplaying-test and lastfm integrations and the voices-test, paula-shadow, paula14-shadow and ahi-shadow
-# outputs, plus coreaudio and the
-# macOS Now Playing plugin on macOS, or MPRIS on Linux when libsystemd was found; the negative tree adds one bad plugin.
-set(SEL_EXPECT_PLUGINS 17) # 14 + the scope, levels and spectrum viz plugins (DUI-P4-11)
-if(NOT SEL_AMIGA)
-  math(EXPR SEL_EXPECT_PLUGINS "${SEL_EXPECT_PLUGINS} + 1") # the desktop UI (M3d, headless mem backend needs no SDL)
-endif()
-if(APPLE)
-  math(EXPR SEL_EXPECT_PLUGINS "${SEL_EXPECT_PLUGINS} + 2")
-elseif(SEL_HAVE_MPRIS)
-  math(EXPR SEL_EXPECT_PLUGINS "${SEL_EXPECT_PLUGINS} + 1")
-endif()
+# T5: the registry walked every descriptor and found only known tags. The expected count is the plugin list the registry
+# is generated from (cmake/selecta_registry.cmake, every sel_add_plugin call), not a hand count: I512, the literal said 20
+# after dr_flac, gme and ym joined and the registry held 23. The negative tree adds one bad plugin.
+get_property(_sel_expect_plugins GLOBAL PROPERTY SEL_PLUGINS)
+list(LENGTH _sel_expect_plugins SEL_EXPECT_PLUGINS)
 math(EXPR SEL_EXPECT_BAD_PLUGINS "${SEL_EXPECT_PLUGINS} + 1")
 sel_cli_test(registry-tags "plugins --lint" "-DEXPECT=plugins=${SEL_EXPECT_PLUGINS} unknown_tags=0 duplicate_tags=0")
 
