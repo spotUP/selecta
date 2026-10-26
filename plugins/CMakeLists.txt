@@ -64,6 +64,11 @@ add_subdirectory(replayers/minimp3)
 add_subdirectory(replayers/stb_vorbis)
 add_subdirectory(replayers/dr_flac) # I436: FLAC, integer decoder
 
+# Game Music Emu (I426): C++ library, desktop first (no 68k build yet).
+if(NOT SEL_AMIGA)
+  add_subdirectory(replayers/gme)
+endif()
+
 # KPlayer v33 (HippoPlayer, MIT): ProTracker M.K. on Amiga, HW kind, drives Paula through the CIA timer (I219).
 if(SEL_AMIGA)
   add_subdirectory(replayers/kplayer)

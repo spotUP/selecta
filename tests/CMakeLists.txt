@@ -1327,6 +1327,14 @@ if(NOT SEL_AMIGA)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/flac-decode)
   set_tests_properties(flac-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "flac_decode_ok")
 
+  # I426: a NES NSF plays through the render entry point (gme replayer).
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/gme-decode)
+  add_test(NAME gme-decode
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/gme_decode.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/gme_test.nsf
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/gme-decode)
+  set_tests_properties(gme-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "gme_decode_ok")
+
   # I437: the scan stores the embedded cover of a tagged mp3 as a 200x200 artwork row.
   add_test(NAME library-embedded-cover
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/embedded_cover.sh $<TARGET_FILE:selecta-cli>
