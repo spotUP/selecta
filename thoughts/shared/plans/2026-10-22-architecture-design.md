@@ -354,7 +354,7 @@ Device hand-off (F4, Spotify Connect model): every running engine announces itse
 
 ### 9.1 Sources
 
-Every place music comes from is a `sel_source`, modelled on bbmp's `Collection` (research doc `2026-10-22_bbmp-sources.md`). One C file per source under `src/library/sources/<id>.c`; adding a source never touches the engine, the UI or the replayers.
+Every place music comes from is a `sel_source`, modelled on bbmp's `Collection` (research doc `2026-10-22_bbmp-sources.md`). One directory per source under `plugins/sources/<id>/`, built with `sel_add_plugin` as kind 7 (plan 2026-10-26-source-plugins.md, I517); `local` stays in core. Adding a source never touches the engine, the UI or the replayers.
 
 ```c
 typedef struct sel_source {
