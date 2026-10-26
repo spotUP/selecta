@@ -127,7 +127,8 @@ elseif(TAG STREQUAL "M4RTG")
   # (uaegfx; ctest sets UPTERM_RIG=2). A real library (the genre test modules scanned on the Amiga) is shown on the
   # Library page. Sentinels printed by the product: `rtg: screen WxH depth D` (the backend opened a Picasso96 screen),
   # `ui_backend ... backend=rtg` (the stats name the backend that ran), the composer row `|Unknown composer|4`
-  # (the library rows reached the page). The product runs until Ctrl-C (Break), which closes the screen cleanly.
+  # (the library rows reached the page), and `ui_scale_q16=51200 ui_zoom=fit ui_logical=1024x768` (I458: the 1024x768
+  # logical UI fits the 800x600 screen at scale 0.78125). The product runs until Ctrl-C (Break), which closes the screen cleanly.
   set(B "SYS:selecta-test")
   file(WRITE "${WORK}/rtg.script" "Stack 200000\n${B}/Selecta --ui desktop --backend rtg --canvas 800x600 --view library --stats --db ${B}/library.db >RAM:rtg-out.txt\n")
   ami(ignored exec "MakeDir ${B} ${B}/mods" 10)
@@ -154,7 +155,7 @@ elseif(TAG STREQUAL "M4RTG")
   ami(ignored exec "Break ${CMAKE_MATCH_1} C" 10)
   execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 5)
   fetch(out "RAM:rtg-out.txt")
-  foreach(want "rtg: screen 800x600 depth" "ui_backend id=desktop backend=rtg" "|Unknown composer|4" "desktop_ui closed frames=")
+  foreach(want "rtg: screen 800x600 depth" "ui_backend id=desktop backend=rtg" "|Unknown composer|4" "desktop_ui closed frames=" "ui_scale_q16=51200 ui_zoom=fit ui_logical=1024x768")
     string(FIND "${out}" "${want}" pos)
     if(pos EQUAL -1)
       message(FATAL_ERROR "RED[M4RTG]: sentinel '${want}' missing in:\n${out}")
