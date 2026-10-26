@@ -269,6 +269,7 @@ typedef struct desk {
     uint32_t menu_picks[4];  /* context menu items picked: Play, Play Next, Add to Queue, Remove */
     uint32_t toasts;         /* toasts shown */
     int toast_on;            /* 1 while a toast is on screen */
+    int toast_out;           /* 1 while the toast fades out (toast_until is then the end of the fade) */
     uint32_t toast_until;    /* UI clock when the toast goes away */
     char toast_text[64];
     char last_verb[64];      /* the line the palette or the command line sent last */
@@ -305,9 +306,10 @@ static uint32_t desk_toast_wait(const desk* d);
 static void desk_toast(desk* d, const char* text);
 static int desk_add_folder(desk* d);
 static sel_gui_rect toast_rect(desk* d);
-static void desk_toast_tick(desk* d);
+static int desk_toast_tick(desk* d);
+static int overlay_refresh(desk* d);
 
-enum { ANIM_KEY_VIEW = 1, ANIM_KEY_TIP = 3, ANIM_KEY_FLOW = 4 };
+enum { ANIM_KEY_VIEW = 1, ANIM_KEY_TIP = 3, ANIM_KEY_FLOW = 4, ANIM_KEY_TOAST = 5 };
 enum { HR_NONE, HR_SIDEBAR, HR_MAIN, HR_DETAIL, HR_PLAYER };
 static int hover_region_of(const desk* d, sel_gui_rect box);
 enum { SLOT_SUB_PREV, SLOT_SHUFFLE, SLOT_PREV, SLOT_PLAY, SLOT_NEXT, SLOT_REPEAT, SLOT_SUB_NEXT, TRANSPORT_COUNT };
@@ -1556,16 +1558,32 @@ static void song_menu_draw(desk* d) {
         n = n > 0 ? n : 1;
     }
     sel_gui_clip_push(d->canvas, region_rect(d, "main"));
-    for (k = 0; k < n; k++) {
-        sel_gui_rect m = song_menu_item_rect(d, k);
-        const char* label = d->sm_step == 0 ? g_menu_items[k == 4 || (k == 3 && !d->sm_ref.removable && 0) ? 4 : k] : "No playlists";
-        sel_gui_fill_rect(d->canvas, m, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
-        if (d->sm_step == 1 && playlist_nth(sel_engine_state(d->engine), (uint32_t)k, &name) != 0u) {
-            label = name;
+    {
+        /* One raised panel with the overlay shadow; items are text on it, and only the item under the pointer takes the accent
+         * fill (the macOS menu convention, switching at once like the sidebar doors: I356, I373). */
+        sel_gui_rect first = song_menu_item_rect(d, 0), panel = rect_of(first.x, first.y, first.w, first.h * n);
+        int32_t rad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), inset = lpx(d, 4);
+        if (d->shadow_ready) {
+            sel_gui_shadow_draw(d->canvas, &d->shadow, panel);
         }
-        sel_gui_text_wrap(d->canvas, semi, rect_of(m.x + lpx(d, 8), m.y + lpx(d, 4), m.w - lpx(d, 16), semi->line_height), label,
-                          ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]), 1, &d->text);
-        sel_gui_dirty_add(d->canvas, m);
+        sel_gui_round_rect(d->canvas, panel, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+        for (k = 0; k < n; k++) {
+            sel_gui_rect m = song_menu_item_rect(d, k);
+            int lit = hover_weight(d, m) > 0;
+            const char* label = d->sm_step == 0 ? g_menu_items[k] : "No playlists";
+            hover_reg(d, m);
+            if (lit) {
+                sel_gui_round_rect(d->canvas, rect_of(m.x + inset, m.y, m.w - 2 * inset, m.h),
+                                   lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_SMALL]),
+                                   ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+            }
+            if (d->sm_step == 1 && playlist_nth(sel_engine_state(d->engine), (uint32_t)k, &name) != 0u) {
+                label = name;
+            }
+            sel_gui_text_wrap(d->canvas, semi, rect_of(m.x + lpx(d, 8), m.y + lpx(d, 4), m.w - lpx(d, 16), semi->line_height), label,
+                              ARGB(d->theme.token[lit ? SEL_GUI_TOKEN_ACCENT_TEXT : SEL_GUI_TOKEN_TEXT]), 1, &d->text);
+        }
+        sel_gui_dirty_add(d->canvas, panel);
     }
     sel_gui_clip_pop(d->canvas);
 }
@@ -3233,13 +3251,15 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o,
                               "overlay kind=%d palette_opens=%u palette_runs=%u help_opens=%u cmdline_opens=%u cmdline_runs=%u sends_ok=%u "
                               "toasts=%u toast_on=%d menu_picks=%u,%u,%u,%u last_verb=%s pal_count=%u queue=%u status=%s\n"
-                              "song_menu open=%d items=%d opens=%u picks=%u playlist_adds=%u rows=%u\n",
+                              "song_menu open=%d items=%d opens=%u picks=%u playlist_adds=%u rows=%u accent=%06x raised=%06x\n",
                               d->overlay, (unsigned)d->palette_opens, (unsigned)d->palette_runs, (unsigned)d->help_opens,
                               (unsigned)d->cmdline_opens, (unsigned)d->cmdline_runs, (unsigned)d->overlay_sends_ok, (unsigned)d->toasts,
                               d->toast_on, (unsigned)d->menu_picks[0], (unsigned)d->menu_picks[1], (unsigned)d->menu_picks[2],
                               (unsigned)d->menu_picks[3], d->last_verb[0] != '\0' ? d->last_verb : "-", (unsigned)d->pal.count,
                               (unsigned)st->queue_count, d->cmd.status[0] != '\0' ? d->cmd.status : "-", d->sm_open, d->sm_open ? song_menu_count(d) : 0,
-                              (unsigned)d->sm_opens, (unsigned)d->sm_picks, (unsigned)d->sm_pl_adds, (unsigned)d->sm_n);
+                              (unsigned)d->sm_opens, (unsigned)d->sm_picks, (unsigned)d->sm_pl_adds, (unsigned)d->sm_n,
+                              (unsigned)(ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) & 0xFFFFFFu),
+                              (unsigned)(ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]) & 0xFFFFFFu));
         for (k = 0; k < 5u && k < d->pal.count; k++) {
             o = dump_put(d, o, "palitem %u %s\n", (unsigned)k, d->pal.items[k].name);
         }
@@ -4805,6 +4825,27 @@ static int hover_main_painted(const desk* d) {
            sel_gui_tween_value(&d->tl, ANIM_KEY_VIEW, 65536) < 65536 || sel_gui_tween_value(&d->tl, ANIM_KEY_FLOW, 65536) < 65536;
 }
 
+/* The next due time of the three UI timers (tooltip delay, search debounce, toast), 0 when none is pending. One place for
+ * the test clock (desk_advance) and the live loop, so a timer cannot be ticked in one and forgotten in the other. */
+static uint32_t desk_timers_wait(const desk* d) {
+    uint32_t w = desk_tip_wait(d), s = desk_search_wait(d);
+    if (s > 0u && (w == 0u || s < w)) {
+        w = s;
+    }
+    s = desk_toast_wait(d);
+    if (s > 0u && (w == 0u || s < w)) {
+        w = s;
+    }
+    return w;
+}
+
+/* Runs every timer that is due at the current UI clock. Returns 1 when the toast changed and the picture needs a frame. */
+static int desk_timers_tick(desk* d) {
+    desk_tip_tick(d);
+    desk_search_tick(d);
+    return desk_toast_tick(d);
+}
+
 /* Moves the UI clock ms forward the way the live loop would: 16 ms steps while a tween runs, otherwise one jump to the
  * next visible-clock second boundary (the idle block). Draws a frame per step that has a reason. */
 static void desk_advance(desk* d, uint32_t ms) {
@@ -4812,14 +4853,7 @@ static void desk_advance(desk* d, uint32_t ms) {
     while (d->now_ms < end) {
         uint32_t step = end - d->now_ms;
         int animated = sel_gui_timeline_running(&d->tl) > 0u;
-        uint32_t tw = desk_tip_wait(d), sw = desk_search_wait(d);
-        if (sw > 0u && (tw == 0u || sw < tw)) {
-            tw = sw;
-        }
-        sw = desk_toast_wait(d);
-        if (sw > 0u && (tw == 0u || sw < tw)) {
-            tw = sw;
-        }
+        uint32_t tw = desk_timers_wait(d);
         if (animated) {
             if (step > 16u) {
                 step = 16u;
@@ -4834,9 +4868,7 @@ static void desk_advance(desk* d, uint32_t ms) {
         d->now_ms += step;
         sel_gui_timeline_advance(&d->tl, d->now_ms);
         sel_uim_update(&d->uim, sel_engine_state(d->engine));
-        desk_tip_tick(d);
-        desk_search_tick(d);
-        desk_toast_tick(d);
+        desk_timers_tick(d);
         if (!desk_should_draw(d, animated)) {
             continue;
         }
@@ -4846,6 +4878,12 @@ static void desk_advance(desk* d, uint32_t ms) {
         if (animated) {
             hover_repaint(d);
             desk_draw_tip(d);
+        }
+        if (d->toast_on && animated) { /* the toast slides and fades with the tween: one full frame per step */
+            if (!overlay_refresh(d)) {
+                desk_event_frame(d, 1);
+            }
+            continue;
         }
         if (!desk_present(d)) {
             desk_event_frame(d, 1);
@@ -4976,7 +5014,7 @@ static void desk_bind_actions(desk* d) {
 /* Overlays (DUI-P4-13): the command palette, the shortcut help and the command line share the text UI's models
  * (txt_palette, txt_cmdline), so the ranking, the completion and the key names exist once. Toasts report a pick. */
 enum { OV_NONE, OV_PALETTE, OV_HELP, OV_CMDLINE };
-enum { OV_W = 560, OV_ROW_H = 28, OV_ROWS = 10, OV_HEAD_H = 40, OV_TOP = 72, TOAST_MS = 2500, CMD_BAR_H = 36 };
+enum { OV_W = 560, OV_ROW_H = 28, OV_ROWS = 10, OV_HEAD_H = 40, OV_TOP = 72, TOAST_MS = 2500, TOAST_SLIDE = 12, CMD_BAR_H = 36 };
 
 static sel_gui_rect overlay_box(const desk* d) {
     int32_t w = lpx(d, OV_W) < d->canvas->w ? lpx(d, OV_W) : d->canvas->w;
@@ -5047,10 +5085,21 @@ static void desk_draw_overlay(desk* d) {
         }
     }
     if (d->toast_on) {
+        int32_t q = sel_gui_tween_value(&d->tl, ANIM_KEY_TOAST, 65536); /* 0 hidden .. 65536 shown */
+        uint32_t fill, ink;
+        if (d->toast_out) {
+            q = 65536 - q;
+        }
         b = toast_rect(d);
-        sel_gui_round_rect(d->canvas, b, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
-        draw_text(d, rect_of(b.x + lpx(d, 16), b.y, b.w - lpx(d, 32), b.h), d->toast_text, 1, 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
-        sel_gui_dirty_add(d->canvas, b);
+        b.y += (int32_t)(((int64_t)(65536 - q) * lpx(d, TOAST_SLIDE)) >> 16); /* slides up into place, back down on the way out */
+        fill = desk_mix(d->theme.token[SEL_GUI_TOKEN_SURFACE], d->theme.token[SEL_GUI_TOKEN_ACCENT], q);
+        ink = desk_mix(d->theme.token[SEL_GUI_TOKEN_SURFACE], d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT], q);
+        if (d->shadow_ready) {
+            sel_gui_shadow_draw(d->canvas, &d->shadow, b);
+        }
+        sel_gui_round_rect(d->canvas, b, rad, fill);
+        draw_text(d, rect_of(b.x + lpx(d, 16), b.y, b.w - lpx(d, 32), b.h), d->toast_text, 1, 13, ink);
+        sel_gui_dirty_add(d->canvas, rect_of(b.x - lpx(d, 24), b.y - lpx(d, 24), b.w + lpx(d, 48), b.h + lpx(d, 48 + TOAST_SLIDE)));
     }
 }
 
@@ -5064,8 +5113,10 @@ static int overlay_refresh(desk* d) {
 static void desk_toast(desk* d, const char* text) {
     snprintf(d->toast_text, sizeof d->toast_text, "%s", text);
     d->toast_on = 1;
+    d->toast_out = 0;
     d->toast_until = d->now_ms + TOAST_MS;
     d->toasts++;
+    desk_tween(d, ANIM_KEY_TOAST, SEL_GUI_ANIM_FAST_MS, SEL_GUI_EASE_OUT);
     overlay_refresh(d);
 }
 
@@ -5073,12 +5124,22 @@ static uint32_t desk_toast_wait(const desk* d) {
     return d->toast_on && d->toast_until > d->now_ms ? d->toast_until - d->now_ms : 0u;
 }
 
-static void desk_toast_tick(desk* d) {
-    if (d->toast_on && d->now_ms >= d->toast_until) {
-        d->toast_on = 0;
-        d->repaint = 1;
-        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+/* A toast that has been up TOAST_MS fades out over the fast tween, then goes (with no motion it goes at once). Returns 1
+ * when the toast left the screen, so the caller repaints the whole canvas. */
+static int desk_toast_tick(desk* d) {
+    if (!d->toast_on || d->now_ms < d->toast_until) {
+        return 0;
     }
+    if (!d->toast_out && desk_tween(d, ANIM_KEY_TOAST, SEL_GUI_ANIM_FAST_MS, SEL_GUI_EASE_OUT)) {
+        d->toast_out = 1;
+        d->toast_until = d->now_ms + SEL_GUI_ANIM_FAST_MS;
+        return 0;
+    }
+    d->toast_on = 0;
+    d->toast_out = 0;
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    return 1;
 }
 
 /* A verb that needs an argument cannot run bare: its signature has no trailing '?' or '*' covering every letter. */
@@ -6561,6 +6622,9 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
             }
             hover_repaint(d);
             desk_event_frame(d, 1);
+            if (d->toast_on) { /* the toast animates over the page: a full frame draws the overlay */
+                overlay_refresh(d);
+            }
         }
     }
 #endif
@@ -6636,10 +6700,9 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
         if (viz_visible(d) != 0 && wait_ms > 20u) { /* a visualizer on screen: one frame per engine block */
             wait_ms = 20u;
         }
-        if (desk_search_wait(d) > 0u && desk_search_wait(d) < wait_ms) {
-            wait_ms = desk_search_wait(d);
+        if (desk_timers_wait(d) > 0u && desk_timers_wait(d) < wait_ms) {
+            wait_ms = desk_timers_wait(d);
         }
-        desk_search_tick(d);
         (void)timeout_ms;
         ev = desk_sdl_poll(d->sdl, wait_ms, &w, &h);
         if (ev == DESK_SDL_QUIT) {
@@ -6650,6 +6713,9 @@ static int desk_wait(void* state, uint32_t timeout_ms) {
             desk_resize(d, w, h);
         }
         desk_sdl_route(d);
+        if (desk_timers_tick(d)) { /* the clock is fresh after the route: a toast that is due leaves the screen */
+            overlay_refresh(d);
+        }
         return ev == DESK_SDL_NONE ? 0 : 1;
     }
 #endif
