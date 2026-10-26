@@ -146,9 +146,11 @@ static int op_apply(sqlite3* db, const sel_genre_op* op, int* found) {
 static int op_composer_next(sqlite3* db, const sel_genre_op* op, int64_t* id) {
     sqlite3_stmt* st = NULL;
     int rc = sqlite3_prepare_v2(db,
-                                "SELECT songs.id, songs.key, COALESCE(songs.name, ''), c.display FROM songs"
-                                " JOIN song_composers c ON c.song_key = songs.key"
-                                " WHERE c.canon = ?1 AND songs.id > ?2 ORDER BY songs.id LIMIT 1",
+                                "SELECT songs.id, songs.key, COALESCE(songs.name, ''), COALESCE(c.display, '"
+                                SEL_COMPOSER_UNKNOWN_DISPLAY "') FROM songs"
+                                " LEFT JOIN song_composers c ON c.song_key = songs.key"
+                                " WHERE (c.canon = ?1 OR (?1 = '" SEL_COMPOSER_UNKNOWN_CANON "' AND c.song_key IS NULL))"
+                                " AND songs.id > ?2 ORDER BY songs.id LIMIT 1",
                                 -1, &st, NULL);
 
     *id = 0;
@@ -178,8 +180,14 @@ static int op_composer_next(sqlite3* db, const sel_genre_op* op, int64_t* id) {
 static int op_composer_list(sqlite3* db, const sel_genre_op* op, int64_t* id) {
     sqlite3_stmt* st = NULL;
     int rc = sqlite3_prepare_v2(db,
-                                "SELECT canon, MIN(display), COUNT(DISTINCT song_key) FROM song_composers"
-                                " GROUP BY canon ORDER BY MIN(display), canon LIMIT 1 OFFSET ?1",
+                                "SELECT canon, disp, n FROM ("
+                                " SELECT canon, MIN(display) AS disp, COUNT(DISTINCT song_key) AS n, 0 AS last"
+                                "  FROM song_composers GROUP BY canon"
+                                " UNION ALL"
+                                " SELECT '" SEL_COMPOSER_UNKNOWN_CANON "', '" SEL_COMPOSER_UNKNOWN_DISPLAY "', COUNT(*), 1"
+                                "  FROM songs WHERE NOT EXISTS (SELECT 1 FROM song_composers c WHERE c.song_key = songs.key)"
+                                "  HAVING COUNT(*) > 0)"
+                                " ORDER BY last, disp, canon LIMIT 1 OFFSET ?1",
                                 -1, &st, NULL);
 
     *id = 0;
@@ -337,7 +345,12 @@ int sel_library_composer_page(sel_library* lib, const char* name, sel_composer_r
     int64_t after = 0, id = 0;
     int rows = 0;
 
-    if (lib == NULL || !sel_composer_canon(name, canon, sizeof canon)) return -1;
+    if (lib == NULL) return -1;
+    if (strcmp(name, SEL_COMPOSER_UNKNOWN_CANON) == 0) { /* the group of songs without a composer: no spelling to normalise */
+        snprintf(canon, sizeof canon, "%s", name);
+    } else if (!sel_composer_canon(name, canon, sizeof canon)) {
+        return -1;
+    }
     for (;;) {
         sel_genre_op op;
         const char* name_text;

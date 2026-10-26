@@ -14,6 +14,11 @@
 
 #define SEL_COMPOSER_MAX 160u
 
+/* I353: songs with no song_composers row form one group, listed last. Its key is a canon that sel_composer_canon can never
+ * produce (it drops "(handle)" groups and folds punctuation), so no real composer collides with it. */
+#define SEL_COMPOSER_UNKNOWN_CANON "(unknown)"
+#define SEL_COMPOSER_UNKNOWN_DISPLAY "Unknown composer"
+
 /* Canonical key of `name` (lowercase words joined by one space). Returns 1 when non-empty. */
 int sel_composer_canon(const char* name, char* out, size_t cap);
 

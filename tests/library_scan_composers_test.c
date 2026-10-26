@@ -1,5 +1,6 @@
 /* I296: a scan writes each file's author tag into song_composers, so the Composers list is not empty after Add Folder.
- * The songdb sync replaces the tag row when it knows the song and leaves it when it does not; an untagged song stays out.
+ * The songdb sync replaces the tag row when it knows the song and leaves it when it does not; an untagged song stays out of the
+ * named composers and lands in the "Unknown composer" group (I353).
  * Drives the same SEL_LIB_REQ_SCAN_BATCH request the folder scan sends. */
 #include <selecta/host.h>
 #include <selecta/machine.h>
@@ -76,19 +77,19 @@ int main(void) {
     scan(lib, "a.mod", "Lizardking");
     scan(lib, "b.mod", "Lizardking");
     scan(lib, "c.mod", "");
-    check(strcmp(composers(lib, &c), "Lizardking=2;") == 0, "tag names the composer, untagged song stays out");
+    check(strcmp(composers(lib, &c), "Lizardking=2;Unknown composer=1;") == 0, "tag names the composer, untagged song is the Unknown composer group");
 
     scan(lib, "a.mod", "Lizardking"); /* a rescan keeps one row */
-    check(strcmp(composers(lib, &c), "Lizardking=2;") == 0, "rescan is idempotent");
+    check(strcmp(composers(lib, &c), "Lizardking=2;Unknown composer=1;") == 0, "rescan is idempotent");
 
     apply(lib, "local:a.mod", "Dr Awesome\n"); /* songdb knows a.mod: its answer replaces the tag */
-    check(strcmp(composers(lib, &c), "Dr Awesome=1;Lizardking=1;") == 0, "songdb replaces the tag row");
+    check(strcmp(composers(lib, &c), "Dr Awesome=1;Lizardking=1;Unknown composer=1;") == 0, "songdb replaces the tag row");
 
     scan(lib, "a.mod", "Lizardking"); /* a rescan does not bring the tag back over songdb data */
-    check(strcmp(composers(lib, &c), "Dr Awesome=1;Lizardking=1;") == 0, "rescan keeps songdb data");
+    check(strcmp(composers(lib, &c), "Dr Awesome=1;Lizardking=1;Unknown composer=1;") == 0, "rescan keeps songdb data");
 
     apply(lib, "local:b.mod", ""); /* songdb does not know b.mod: the tag stays */
-    check(strcmp(composers(lib, &c), "Dr Awesome=1;Lizardking=1;") == 0, "unknown to songdb keeps the tag");
+    check(strcmp(composers(lib, &c), "Dr Awesome=1;Lizardking=1;Unknown composer=1;") == 0, "unknown to songdb keeps the tag");
 
     sel_library_close(lib);
     if (fails == 0) printf("library_scan_composers_ok\n");
