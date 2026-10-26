@@ -71,6 +71,13 @@ function(sel_add_plugin name kind)
       break()
     endif()
   endforeach()
+  # A plugin may include headers from its own directory (rule 3). Sources generated in the binary directory
+  # (desktop_ui font_baked.c) need it on the include path; both targets get it so the SDK check builds them too.
+  if(own_dir)
+    foreach(t sel_plugin_${name} sel_sdkcheck_${name})
+      target_include_directories(${t} PRIVATE "${own_dir}")
+    endforeach()
+  endif()
   set(abs_sources "")
   foreach(src IN LISTS sources)
     cmake_path(ABSOLUTE_PATH src BASE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" NORMALIZE OUTPUT_VARIABLE abs_src)

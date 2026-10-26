@@ -91,8 +91,6 @@ sel_add_plugin(desktop_ui 5 desktop_ui.c atlas_build.c art.c ${ART_THREAD} stb_i
 if(SEL_AMIGA AND NOT SEL_DESKTOP_AGA)
   target_compile_definitions(sel_plugin_desktop_ui PRIVATE SELECTA_DESKTOP_RTG=1)
 endif()
-# font_baked.c is generated in the binary directory and includes atlas_build.h from the source directory.
-target_include_directories(sel_plugin_desktop_ui PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(sel_plugin_desktop_ui PUBLIC selecta_uimodel selecta_gui)
 
 # The aga backend (I439, M4-P6-1, thoughts/shared/plans/2026-10-26-aga-c2p-backend.md): an 8-bitplane Intuition
