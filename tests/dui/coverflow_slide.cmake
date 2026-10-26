@@ -43,6 +43,9 @@ function(flow_sample tag script)
     math(EXPR si "${si} + 1")
   endforeach()
   set(${tag}_n ${si} PARENT_SCOPE)
+  if("${o}" MATCHES "ui_paint id=desktop span_px=([0-9]+)")
+    set(${tag}_span "${CMAKE_MATCH_1}" PARENT_SCOPE)
+  endif()
   if(NOT "${o}" MATCHES "flow covers ([0-9]+)([^\n]*)\n")
     message(FATAL_ERROR "${tag}: no 'flow covers' line in:\n${o}")
   endif()
@@ -79,6 +82,12 @@ endfunction()
 
 flow_sample(rest0 "wait 600\n")
 flow_sample(rest1 "key right\nwait 600\n")
+# I401: the frame cost of the slide is the rasterizer. Fills, rounded bodies and vertical gradient rows write pixel runs; a run per row
+# instead of a put() per pixel made the whole UI about 5x cheaper at 2560x1600. A 1280x800 run of the slide writes millions of span pixels;
+# 0 means the per-pixel path is back.
+if(NOT DEFINED rest1_span OR rest1_span LESS 1000000)
+  message(FATAL_ERROR "I401: the rasterizer wrote only ${rest1_span} span pixels in the slide run (want >= 1000000): fills are not running as spans")
+endif()
 # One run: Right, then a snapshot of the frame being shown every 20 ms of the glide (the run's own end shows the end state).
 set(script "key right\nwait 1\nflowsnap\n")
 foreach(i RANGE 1 11)

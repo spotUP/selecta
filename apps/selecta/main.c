@@ -676,7 +676,7 @@ int main(int argc, char** argv)
                 static const char* const pcls[] = {"fill", "scrim", "round", "gradient", "line", "text", "mask", "image", "shadow", "icon", "genart", "dirty", "clip", "palette", "quant", "art"};
                 static const char* const ppt[] = {"canvas", "song", "sidebar", "main", "transport", "progress", "volume", "status", "focus", "tip", "overlay", "visual"};
                 size_t k;
-                printf("ui_paint id=%s", g_uis[u].id);
+                printf("ui_paint id=%s span_px=%u", g_uis[u].id, (unsigned)sel_tag_find(us, SEL_UI_STAT_SPAN_PIXELS, 0));
                 for (k = 0; k < sizeof pcls / sizeof pcls[0]; k++) {
                     printf(" paint_ms_%s=%u paint_n_%s=%u", pcls[k], (unsigned)sel_tag_find(us, SEL_UI_STAT_PROF_MS_FILL + (uint32_t)k, 0),
                            pcls[k], (unsigned)sel_tag_find(us, SEL_UI_STAT_PROF_N_FILL + (uint32_t)k, 0));

@@ -48,6 +48,7 @@ typedef struct sel_gui_canvas {
     uint32_t clip_n;
     sel_gui_rect dirty[SEL_GUI_DIRTY_MAX];
     uint32_t dirty_n;
+    uint32_t span_px; /* pixels written by run-length spans (fills, rounded bodies, vertical gradient rows): the sentinel for I401 */
     uint32_t prims; /* primitives run since init: the sentinel that the rasterizer was reached */
     /* I389: optional paint profile. With `clock` set, each outermost primitive adds its elapsed ms (clock deltas) and
      * a call to prof_ms / prof_n by class; a primitive nested in another counts for the outer one only. Draw output is

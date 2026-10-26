@@ -7,7 +7,13 @@ set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-  set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
+  # I401: an unspecified host build is Release. The Debug default (no -O) made the live Mac window run the rasterizer unoptimised,
+  # about 6 fps at 2560x1600. Debug stays one flag away (-DCMAKE_BUILD_TYPE=Debug, RULES.md) and cross builds keep their old default.
+  if(CMAKE_CROSSCOMPILING)
+    set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
+  else()
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+  endif()
 endif()
 
 # Rule 1 of RULES.md: C99, every warning an error, no VLAs or alloca.

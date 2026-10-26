@@ -7781,6 +7781,8 @@ static const sel_tag* desk_stats(void* state) {
             d->stats[n].tag = SEL_UI_STAT_FLOW_MAX_REST + 3u * k;
             d->stats[n++].value = d->fl_max[k];
         }
+        d->stats[n].tag = SEL_UI_STAT_SPAN_PIXELS;
+        d->stats[n++].value = d->canvas != NULL ? d->canvas->span_px : 0u;
         d->stats[n].tag = SEL_TAG_END;
     }
 

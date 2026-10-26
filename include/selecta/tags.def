@@ -318,6 +318,8 @@ SEL_TAG(UI, STAT_FLOW_MAX_REST,     0x50C2, INT)
 SEL_TAG(UI, STAT_FLOW_N_SLIDE,      0x50C3, INT)
 SEL_TAG(UI, STAT_FLOW_PAINT_SLIDE,  0x50C4, INT)
 SEL_TAG(UI, STAT_FLOW_MAX_SLIDE,    0x50C5, INT)
+/* I401: pixels the rasterizer wrote as run-length spans. */
+SEL_TAG(UI, STAT_SPAN_PIXELS,       0x50D0, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)

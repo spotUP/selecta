@@ -408,6 +408,7 @@ static void fill_span(fill_ctx* f, int32_t x0, int32_t x1, int32_t y) {
     if (x1 <= x0 || (f->argb >> 24) == 0u) {
         return;
     }
+    c->span_px += (uint32_t)(x1 - x0);
     if (f->solid) {
         if (!f->ready) {
             f->val = c->format == SEL_GUI_RGBA32
