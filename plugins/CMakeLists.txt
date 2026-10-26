@@ -62,6 +62,7 @@ add_subdirectory(replayers/nuade)
 # Stream decoders (M3 phase 11, D-M3-8): single-header libraries, float inside, tagged SEL_RP_NEEDS_FLOAT.
 add_subdirectory(replayers/minimp3)
 add_subdirectory(replayers/stb_vorbis)
+add_subdirectory(replayers/dr_flac) # I436: FLAC, integer decoder
 
 # KPlayer v33 (HippoPlayer, MIT): ProTracker M.K. on Amiga, HW kind, drives Paula through the CIA timer (I219).
 if(SEL_AMIGA)
