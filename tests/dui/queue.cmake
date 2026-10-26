@@ -58,6 +58,14 @@ set(adds --exec "QUEUE_ADD ${WORK}/banana.mod" --exec "QUEUE_ADD ${WORK}/apple.m
   --exec "QUEUE_ADD ${WORK}/dates.mod")
 
 queue_run(a "wait 100\n" ${adds})
+# I364: with songs queued the empty state is not drawn; an empty queue draws its one-line empty state.
+if("${a_out}" MATCHES "\nempty [^\n]")
+  message(FATAL_ERROR "a queue with rows must not draw the empty state in:\n${a_out}")
+endif()
+queue_run(e "wait 100\n")
+if(NOT "${e_out}" MATCHES "\nempty The queue is empty. Add songs from the Library.\n")
+  message(FATAL_ERROR "an empty queue must draw its empty state in:\n${e_out}")
+endif()
 expect_eq("queued entries" "${a_count}" 4)
 set(base "${a_undo}") # the four QUEUE_ADD verbs are undoable edits too
 if(base LESS 1)

@@ -154,6 +154,7 @@ typedef struct desk {
     int search_on;           /* 1 when the main region shows the search results */
     int queue_page;          /* --view queue: the main region shows the Queue page (DUI-P4-8) */
     int pl_page;             /* --view playlists: the main region shows the Playlists page (DUI-P4-9) */
+    char empty_text[64];     /* the one-line empty state the last page frame drew; empty when it drew none */
     uint32_t pl_draws, pl_rows, pl_cmds, folder_opens; /* frames drawn (sentinel), rows in the last one, verbs sent, folders source opens */
     uint32_t pl_sel_kind, pl_sel_id; /* the selected row: SEL_ROW_FOLDER or SEL_ROW_PLAYLIST and its database id (0 = none) */
     int pl_confirm;          /* 1 while the Delete button waits for its confirmation */
@@ -2260,6 +2261,14 @@ static void queue_groups_sync(desk* d) {
     d->qg.valid = 1;
 }
 
+/* The one-line empty state of a page: a muted line at y under the page heading. Search, Queue, Playlists and Song Information
+ * share it; the text is kept for the dump so a test sees what was drawn. */
+static void draw_empty_state(desk* d, sel_gui_rect mn, int32_t y, const char* text) {
+    draw_text(d, rect_of(mn.x + lpx(d, HOME_MARGIN), y, mn.w - 2 * lpx(d, HOME_MARGIN), lpx(d, 28)), text, 0, 14,
+              ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+    snprintf(d->empty_text, sizeof d->empty_text, "%s", text);
+}
+
 static void draw_queue(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     sel_gui_rect mn = draw_panel(d, "main");
@@ -2271,6 +2280,7 @@ static void draw_queue(desk* d) {
     char buf[300];
     sel_engine_stats_get(d->engine, &es);
     queue_groups_sync(d);
+    d->empty_text[0] = '\0';
     sel_gui_clip_push(d->canvas, mn);
     draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Queue", 1, 32, text);
     for (i = 0; i < QUEUE_BUTTONS; i++) {
@@ -2326,6 +2336,9 @@ static void draw_queue(desk* d) {
         d->qdrag_paints++;
     }
     sel_gui_clip_pop(d->canvas);
+    if (st->queue_count == 0u) {
+        draw_empty_state(d, mn, mn.y + lpx(d, QUEUE_LIST_Y), "The queue is empty. Add songs from the Library.");
+    }
     d->queue_draws++;
     d->queue_rows = shown;
     sel_gui_clip_pop(d->canvas);
@@ -2505,6 +2518,7 @@ static void draw_playlists(desk* d) {
     uint32_t surf = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
     int32_t sel = pl_sel_row(d, v);
     uint32_t i, shown = 0;
+    d->empty_text[0] = '\0';
     sel_gui_clip_push(d->canvas, mn);
     draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Playlists", 1, 32, text);
     for (i = 0; i < PL_BUTTONS; i++) {
@@ -2524,6 +2538,9 @@ static void draw_playlists(desk* d) {
         }
         draw_text(d, rect_of(r.x + lpx(d, 12) + ind, r.y, r.w - lpx(d, 24) - ind, r.h), v->rows[i].text, folder, 14,
                   row_ink(d, r, (int32_t)i == sel ? accent : folder ? text : muted));
+    }
+    if (shown == 0u) {
+        draw_empty_state(d, mn, pl_row_rect(d, mn, 0).y, "No playlists yet. Type a name and choose New Playlist.");
     }
     d->pl_draws++;
     d->pl_rows = shown;
@@ -3238,6 +3255,7 @@ static void draw_songinfo(desk* d) {
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     uint32_t surf = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]);
     uint32_t i;
+    d->empty_text[0] = '\0';
     sel_gui_clip_push(d->canvas, mn);
     draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Song Information", 1, 32, text);
     song_row_reg(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), st->song.path, 0, 0, 0); /* the open song (I372) */
@@ -3252,6 +3270,9 @@ static void draw_songinfo(desk* d) {
     sel_gui_clip_push(d->canvas, rect_of(mn.x, si_list_top(d, mn), mn.w, mn.y + mn.h - si_list_top(d, mn)));
     si_walk_from_top(d, st, si_draw_row);
     sel_gui_clip_pop(d->canvas);
+    if (d->si_rows == 0u) {
+        draw_empty_state(d, mn, si_list_top(d, mn), "Nothing is playing. Play a song to see its details.");
+    }
     d->si_draws++;
     sel_gui_clip_pop(d->canvas);
     sel_gui_dirty_add(d->canvas, mn);
@@ -3441,6 +3462,7 @@ static const char* library_dump_build(desk* d) {
             o = dump_put(d, o, "plbtn %u %d %d %d %d\n", (unsigned)i, (int)b.x,
                                   (int)b.y, (int)b.w, (int)b.h);
         }
+        o = dump_put(d, o, "empty %s\n", d->empty_text);
         o = dump_put(d, o, "plname 0 %d %d %d %d\n", (int)pn.x, (int)pn.y, (int)pn.w,
                               (int)pn.h);
         for (i = 0; i < PL_SLOTS; i++) { /* the first row slots, rows or not: the geometry a script clicks before a row exists */
@@ -3458,6 +3480,7 @@ static const char* library_dump_build(desk* d) {
         sel_gui_rect smn = region_rect(d, "main"), sn = pl_name_rect(d, smn);
         o = dump_put(d, o, "si draws %u rows %u cmds %u\n", (unsigned)d->si_draws,
                               (unsigned)d->si_rows, (unsigned)d->si_cmds);
+        o = dump_put(d, o, "empty %s\n", d->empty_text);
         for (i = 0; i < SI_BUTTONS; i++) {
             sel_gui_rect b = queue_btn_rect(d, smn, i);
             o = dump_put(d, o, "sibtn %u %d %d %d %d\n", (unsigned)i, (int)b.x,
@@ -3525,6 +3548,7 @@ static const char* library_dump_build(desk* d) {
             o = dump_put(d, o, "qbtn %u %d %d %d %d\n", (unsigned)i, (int)b.x,
                                   (int)b.y, (int)b.w, (int)b.h);
         }
+        o = dump_put(d, o, "empty %s\n", d->empty_text);
         o = dump_put(d, o, "qgroups %u\n", (unsigned)(d->qg.valid ? d->qg.headers : 0u));
         for (i = 0; d->sm_open && d->sm_step == 2 && i < 3u; i++) { /* the open Scope menu's items */
             sel_gui_rect m = song_menu_item_rect(d, (int32_t)i);
@@ -4093,6 +4117,7 @@ static void draw_search(desk* d) {
     uint32_t k, shown = 0;
     int32_t y;
     char hint[64];
+    d->empty_text[0] = '\0';
     const sel_view_state* v = st->view != NULL && st->view->source == SEL_VIEW_SEARCH ? st->view : NULL;
     sel_gui_clip_push(d->canvas, mn);
     sel_gui_round_rect(d->canvas, sr, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
@@ -4135,7 +4160,7 @@ static void draw_search(desk* d) {
         }
         d->search_drawn = drawn_all;
     } else if (!d->search_on) { /* no query yet: a muted hint under the chips */
-        draw_text(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, 28)), "Type to search songs, albums and artists", 0, 14, muted);
+        draw_empty_state(d, mn, y, "Type to search songs, albums and artists");
     }
     d->search_draws++;
     d->search_rows = shown;
