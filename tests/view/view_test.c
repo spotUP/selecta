@@ -180,6 +180,17 @@ static void test_activate(void) {
     CHECK(view()->cursor == 1u, "cursor lands on the directory left: %u", view()->cursor);
 }
 
+/* No output thread here: pulls a few short blocks as an output would, so the audio side swaps in a prepared song and
+ * returns the slot it left, then pumps the engine's reply. */
+static void settle(void) {
+    static int16_t buf[441 * 2];
+    int i;
+    for (i = 0; i < 6; i++) {
+        sel_engine_render(eng, buf, 441u);
+        sel_engine_pump(eng, sink, NULL);
+    }
+}
+
 static void test_activate_file(const char* songs) {
     char cmd[PATH_MAX];
     uint32_t i, found = 0;
@@ -202,6 +213,22 @@ static void test_activate_file(const char* songs) {
     CHECK(sel_engine_state(eng)->queue_count == 1u && sel_engine_state(eng)->queue_playing == sel_engine_state(eng)->queue[0].id &&
               sel_engine_state(eng)->queue_playing != 0u,
           "queue_playing %u", sel_engine_state(eng)->queue_playing);
+    /* I254: Enter on the row that is already playing starts that song over from 0. */
+    {
+        uint32_t id = sel_engine_state(eng)->queue_playing, opened;
+        settle();
+        run("SEEK 1500");
+        settle();
+        CHECK(sel_engine_state(eng)->song.position_ms >= 1500u, "seek did not move: %u", sel_engine_state(eng)->song.position_ms);
+        run("VIEW_SHOW queue");
+        run("VIEW_CURSOR 0");
+        opened = sel_engine_state(eng)->song.position_ms;
+        run("VIEW_ACTIVATE");
+        settle();
+        CHECK(sel_engine_state(eng)->queue_playing == id, "same row still playing: %u vs %u", sel_engine_state(eng)->queue_playing, id);
+        CHECK(sel_engine_state(eng)->song.position_ms < opened && sel_engine_state(eng)->song.position_ms < 500u,
+              "Enter on the playing row did not restart: position %u ms (was %u)", sel_engine_state(eng)->song.position_ms, opened);
+    }
 }
 
 static void test_window(void) {
