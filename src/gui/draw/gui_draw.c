@@ -862,20 +862,22 @@ static void shadow_draw_raw(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_
     }
 }
 
-/* I507: the shadow of a rounded box (a Home cover). The shape the falloff follows is the box inset by `lift` on every side and
- * moved down by 2 * lift, so its top edge sits 2 * lift below the box top (no ring above or beside the cover) and its bottom
- * edge meets the box bottom (the soft shadow shows under it). Distance is measured to that rounded shape with the baked
- * falloff table (corner[0][k], k = pixels outside the edge, as in the square draw); the shape's own pixels are skipped
- * because the cover covers them. */
+/* I507: the shadow of a rounded box (a Home cover). The shape the falloff follows is the box inset by the shadow radius r on
+ * the top and sides, so the whole falloff there ends at the box edge and hides under the cover (no ring or hairline above or
+ * beside it). Its bottom edge sits r - lift above the box bottom, so only the last `lift` pixels of the falloff show under
+ * the cover: the visible shadow starts faint and fades out, with no dark step against the cover edge (the first version
+ * showed the falloff from its darkest value, which read as a dark border on the dark theme). Distance is measured to that
+ * rounded shape with the baked falloff table (corner[0][k], k = pixels outside the edge, as in the square draw); the
+ * shape's own pixels are skipped because the cover covers them. */
 static void shadow_round_raw(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_rect box, int32_t radius, int32_t lift) {
     sel_gui_rect sh, out, v;
     int32_t x, y, r = (int32_t)s->radius, rad;
     c->prims++;
-    sh = (sel_gui_rect){box.x + lift, box.y + 2 * lift, box.w - 2 * lift, box.h - 2 * lift};
+    sh = (sel_gui_rect){box.x + r, box.y + r, box.w - 2 * r, box.h + lift - 2 * r};
     if (sh.w <= 0 || sh.h <= 0 || c->format == SEL_GUI_INDEX8) {
         return; /* the governor never asks for a shadow on a palette canvas */
     }
-    rad = imax(0, imin(radius - lift, imin(sh.w, sh.h) / 2));
+    rad = imax(0, imin(radius - r, imin(sh.w, sh.h) / 2));
     out = (sel_gui_rect){sh.x - r, sh.y - r, sh.w + 2 * r, sh.h + 2 * r};
     v = cur_clip(c, out);
     for (y = v.y; y < v.y + v.h; y++) {

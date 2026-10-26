@@ -1,9 +1,11 @@
 # dui-home-cover-shadow (I507): home cover has no dark ring at top edge. -DSELECTA -DWORK
 # Johan, Mac: Home covers showed a black border. The cause was the tile shadow, drawn as a square ring around the rounded
 # cover with no offset (darkest 1 px outside the edge). A flat one-colour cover is drawn on Home (frame dump); then
-# 1. the pixel 1 px above the cover's top middle equals the card fill within 2 levels (no ring), and so does the one 1 px
-#    left of its left middle;
-# 2. the pixel just below the cover's bottom middle is darker than the card fill (the soft shadow is still there).
+# 1. the pixels 1 px above the cover's top middle, left of its left middle and right of its right middle equal the card
+#    fill exactly (no ring, no hairline at the sides);
+# 2. the pixel just below the cover's bottom middle is darker than the card fill (the soft shadow is still there), but by
+#    at most 3 levels: the second Mac check still saw a dark border, the shadow starting at its darkest value under the
+#    cover edge (8 levels below the fill).
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 include("${HERE}/ppm.cmake")
@@ -62,7 +64,7 @@ math(EXPR fr "0x${fr}")
 math(EXPR fg "0x${fg}")
 math(EXPR fb "0x${fb}")
 
-function(expect_near what x y)
+function(expect_near what x y tol)
   pixel(p ${x} ${y})
   list(GET p 0 r)
   list(GET p 1 g)
@@ -72,7 +74,7 @@ function(expect_near what x y)
     list(GET ab 0 got)
     list(GET ab 1 want)
     math(EXPR d "${got} - ${want}")
-    if(d LESS -2 OR d GREATER 2)
+    if(d LESS -${tol} OR d GREATER ${tol})
       message(FATAL_ERROR "${what}: pixel (${x},${y}) is ${r},${g},${b}, card fill is ${fr},${fg},${fb} (dark ring)")
     endif()
   endforeach()
@@ -83,8 +85,12 @@ math(EXPR my "${ay} + ${ah} / 2")
 math(EXPR above "${ay} - 1")
 math(EXPR beside "${ax} - 1")
 math(EXPR below "${ay} + ${ah}")
-expect_near("1 px above the cover top middle" ${mx} ${above})
-expect_near("1 px left of the cover left middle" ${beside} ${my})
+expect_near("1 px above the cover top middle" ${mx} ${above} 0)
+expect_near("1 px left of the cover left middle" ${beside} ${my} 0)
+math(EXPR beside "${ax} + ${aw}")
+expect_near("1 px right of the cover right middle" ${beside} ${my} 0)
+# I507 follow-up: the shadow starts faint under the cover; a step of more than 3 levels reads as a dark border.
+expect_near("1 px below the cover bottom middle" ${mx} ${below} 3)
 pixel(under ${mx} ${below})
 list(GET under 0 ur)
 if(NOT ur LESS ${fr})
