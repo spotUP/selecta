@@ -341,7 +341,12 @@ typedef struct desk {
     struct { int32_t g, x, w, a; } flow_rec[2 * 3 + 4]; /* the covers of the last cover flow frame in draw order: index, x, size, scrim alpha */
     uint32_t flow_rec_n;
     char flow_snaps[2048];                        /* script `flowsnap` lines: the covers of the frame drawn so far, one line per snap (I400 test) */
-    uint32_t lib_mode;       /* Library page mode: 0 composers, 1 tree, 2 column browser, 3 files, 4 history (DUI-P4-3 slices B, C) */
+    uint32_t lib_mode;       /* Library page mode: 0 composers, 1 tree, 2 column browser, 3 files, 4 history, 5 sources (DUI-P4-3 slices B, C; I265) */
+    struct { char key[24], kind[12], name[40], path[96]; int enabled; uint32_t count; } src[16]; /* the SOURCES rows of the Sources tab (I265) */
+    uint32_t src_n;          /* rows held in src */
+    int src_wait;            /* a SOURCES request is out: its first row replaces the held rows */
+    uint32_t src_draws;      /* Sources tab frames drawn (the test's sentinel) */
+    char src_syncing[40];    /* name of the source a Sync was sent for; the SOURCES reply that follows it toasts */
     int overlay;             /* the open overlay: OV_NONE, OV_PALETTE, OV_HELP or OV_CMDLINE (DUI-P4-13) */
     txt_palette pal;         /* the palette and help model of the text UI, over the same verbs and keys */
     txt_cmdline cmd;         /* the command line model of the text UI: Tab completes the verb */
@@ -2373,6 +2378,9 @@ static const char* lib_next(const char* p) {
 
 static int lib_view_on(const desk* d, const sel_state* st);
 static int lib_grid_on(const desk* d, const sel_state* st);
+static void draw_lib_sources(desk* d, sel_gui_rect mn);
+static sel_gui_rect src_toggle_rect(desk* d, sel_gui_rect r);
+static sel_gui_rect src_sync_rect(desk* d, sel_gui_rect r);
 /* The Library lists the UI draws itself (the composers and a composer's songs) scroll by a pixel offset, lib_q16, as the
  * Songs page does (I303); the engine view modes scroll the engine's window instead (lib_wheel) and draw at offset 0. */
 static int lib_ui_list(const desk* d, const sel_state* st) {
@@ -2463,8 +2471,8 @@ static int lib_row_hit(desk* d, sel_gui_rect mn, uint32_t i, int32_t x, int32_t 
 
 /* The Library page modes (slice B): the composers list, the tree and the column browser. The last two show the engine's
  * own view rows (VIEW_STYLE tree / drilldown over a LIBRARY_SEARCH result), the same commands the text UI sends. */
-enum { LIB_MODES = 5, LIB_TAB_PAD = 10, LIB_WINDOW_ROWS = 12 };
-static const char* const lib_mode_name[LIB_MODES] = {"Composers", "Tree", "Columns", "Files", "History"};
+enum { LIB_MODES = 6, LIB_TAB_PAD = 10, LIB_WINDOW_ROWS = 12 };
+static const char* const lib_mode_name[LIB_MODES] = {"Composers", "Tree", "Columns", "Files", "History", "Sources"};
 
 /* I440: a tab is as wide as its label (bold, the active look) plus a pad on each side, so the right end of the tab row
  * is free for the style chooser. */
@@ -2599,7 +2607,7 @@ static sel_gui_rect lib_back_rect(desk* d, sel_gui_rect mn) {
 }
 
 static int lib_view_on(const desk* d, const sel_state* st) {
-    if (d->lib_mode == 0u || st->view == NULL) {
+    if (d->lib_mode == 0u || d->lib_mode == 5u || st->view == NULL) {
         return 0;
     }
     if (d->lib_mode == 3u) { /* Files: the folder listing of the browse source */
@@ -2619,6 +2627,12 @@ static uint32_t lib_hash(const desk* d, const sel_state* st) {
         h = h * 33u + (uint8_t)*p;
     }
     h += d->lib_mode * 977u;
+    if (d->lib_mode == 5u) { /* the Sources tab redraws when a row, its count or its switch changes */
+        uint32_t k;
+        for (k = 0; k < d->src_n; k++) {
+            h += (d->src[k].enabled ? 17u : 3u) * (k + 1u) + d->src[k].count * (k + 5u) + (uint32_t)(uint8_t)d->src[k].key[0];
+        }
+    }
     if (lib_view_on(d, st)) {
         uint32_t k;
         h += st->view->row_count * 31u + st->view->drill_n * 131u + st->view->cursor;
@@ -3937,6 +3951,15 @@ static const char* library_dump_build(desk* d) {
         sel_gui_rect tr = lib_tab_rect(d, panel_rect(d, "main"), i);
         o = dump_put(d, o, "tab %u %d %d %d %d\n", (unsigned)i, (int)tr.x, (int)tr.y, (int)tr.w, (int)tr.h);
     }
+    if (d->lib_mode == 5u) { /* the Sources tab: the held SOURCES rows and the rects of their switches (I265) */
+        o = dump_put(d, o, "sources %u draws %u\n", (unsigned)d->src_n, (unsigned)d->src_draws);
+        for (i = 0; i < d->src_n; i++) {
+            sel_gui_rect rr = lib_row_rect(d, panel_rect(d, "main"), i), tg = src_toggle_rect(d, rr), sy = src_sync_rect(d, rr);
+            o = dump_put(d, o, "source %u %s|%s|%s|%d|%u\nsourcetoggle %u %d %d %d %d\nsourcesync %u %d %d %d %d\n", (unsigned)i, d->src[i].key,
+                         d->src[i].kind, d->src[i].name, d->src[i].enabled, (unsigned)d->src[i].count, (unsigned)i, (int)tg.x, (int)tg.y,
+                         (int)tg.w, (int)tg.h, (unsigned)i, (int)sy.x, (int)sy.y, (int)sy.w, (int)sy.h);
+        }
+    }
     {
         sel_gui_rect cr = lib_crumb_rect(d, panel_rect(d, "main"));
         o = dump_put(d, o, "crumb %d %d %d %d\n", (int)cr.x, (int)cr.y, (int)cr.w, (int)cr.h);
@@ -4347,8 +4370,7 @@ static void draw_lib_styles(desk* d, sel_gui_rect mn, const sel_state* st) {
 }
 
 static int lib_grid_on(const desk* d, const sel_state* st) {
-    (void)d;
-    return st->composers != NULL && st->view != NULL &&
+    return d->lib_mode != 5u && st->composers != NULL && st->view != NULL &&
            (st->view->style == (uint32_t)SEL_VIEW_STYLE_GRID || st->view->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW);
 }
 
@@ -4592,7 +4614,10 @@ static void draw_library(desk* d) {
             snprintf(crumb, sizeof crumb, "Back from %s", st->view->drill[st->view->drill_n - 1u]);
             draw_text(d, lib_crumb_rect(d, mn), crumb, 0, 14, muted);
         }
-        if (lib_grid_on(d, st)) {
+        if (d->lib_mode == 5u) {
+            draw_lib_sources(d, mn);
+            p = NULL;
+        } else if (lib_grid_on(d, st)) {
             if (st->view->style == (uint32_t)SEL_VIEW_STYLE_GRID) {
                 draw_lib_grid(d, mn);
             } else {
@@ -4700,6 +4725,96 @@ static void draw_library(desk* d) {
 
 /* Switches the Library page mode. Tree and columns list the library's songs through the engine view, the sequence the
  * text UI's library screen sends (LIBRARY_SEARCH, VIEW_SOURCE query, VIEW_STYLE, VIEW_GROUP format). */
+/* ---- Sources tab (I265): one card per row of the engine's SOURCES reply, generic over the registered sources. The
+ * switch writes the library.sources_off pref (PREF_SET) and asks SOURCES again; Sync of a remote source sends
+ * LIBRARY_SYNC with the home the engine reported. Rects come from these helpers: drawing, hit-testing and the dump. */
+enum { SRC_TOGGLE_W = 44, SRC_TOGGLE_H = 24, SRC_SYNC_W = 96, SRC_ICON = 20 };
+
+static sel_gui_rect src_toggle_rect(desk* d, sel_gui_rect r) {
+    return rect_of(r.x + r.w - lpx(d, 16 + SRC_TOGGLE_W), r.y + (r.h - lpx(d, SRC_TOGGLE_H)) / 2, lpx(d, SRC_TOGGLE_W), lpx(d, SRC_TOGGLE_H));
+}
+
+static sel_gui_rect src_sync_rect(desk* d, sel_gui_rect r) {
+    return rect_of(src_toggle_rect(d, r).x - lpx(d, 16 + SRC_SYNC_W), r.y + (r.h - lpx(d, 32)) / 2, lpx(d, SRC_SYNC_W), lpx(d, 32));
+}
+
+static int src_remote(const desk* d, uint32_t i) {
+    return strcmp(d->src[i].kind, "remote") == 0;
+}
+
+/* Sends the switch-off list with source `flip` toggled, then asks SOURCES for the stored state. */
+static int src_toggle_send(desk* d, uint32_t flip) {
+    char line[256], csv[160];
+    size_t n = 0;
+    uint32_t k;
+    csv[0] = '\0';
+    for (k = 0; k < d->src_n; k++) {
+        int off = k == flip ? d->src[k].enabled : !d->src[k].enabled;
+        if (off) {
+            n += (size_t)snprintf(csv + n, sizeof csv - n, "%s%s", n > 0 ? "," : "", d->src[k].key);
+            if (n >= sizeof csv) {
+                n = sizeof csv - 1u;
+            }
+        }
+    }
+    snprintf(line, sizeof line, "PREF_SET library.sources_off \"%s\"", csv);
+    desk_send(d, line);
+    d->src_wait = 1;
+    return desk_send(d, "SOURCES");
+}
+
+static int src_click(desk* d, sel_gui_rect mn, int32_t x, int32_t y) {
+    uint32_t i;
+    for (i = 0; i < d->src_n; i++) {
+        sel_gui_rect r = lib_row_rect(d, mn, i);
+        if (in_rect(src_toggle_rect(d, r), x, y)) {
+            return src_toggle_send(d, i);
+        }
+        if (src_remote(d, i) && d->src[i].enabled && in_rect(src_sync_rect(d, r), x, y)) {
+            char line[256], msg[64];
+            snprintf(line, sizeof line, "LIBRARY_SYNC %s \"%s\"", d->src[i].key, d->src[i].path);
+            snprintf(d->src_syncing, sizeof d->src_syncing, "%s", d->src[i].name);
+            snprintf(msg, sizeof msg, "Syncing %s", d->src[i].name);
+            desk_toast(d, msg);
+            desk_send(d, line);
+            d->src_wait = 1;
+            return desk_send(d, "SOURCES");
+        }
+    }
+    return 0;
+}
+
+static void draw_lib_sources(desk* d, sel_gui_rect mn) {
+    uint32_t i;
+    sel_gui_rect clip = rect_of(mn.x, mn.y + lib_body_y(d, sel_engine_state(d->engine)), mn.w, mn.h);
+    uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+    int32_t ic = lpx(d, SRC_ICON), pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    d->src_draws++;
+    sel_gui_clip_push(d->canvas, clip);
+    for (i = 0; i < d->src_n; i++) {
+        sel_gui_rect r = lib_row_rect(d, mn, i), card = rect_of(r.x, r.y + lpx(d, 2), r.w, r.h - lpx(d, 4));
+        sel_gui_rect tg = src_toggle_rect(d, r), kn;
+        char line[48];
+        int on = d->src[i].enabled;
+        int32_t kd = tg.h - lpx(d, 6), cx = r.x + pad + ic + pad, cw = r.w - 2 * pad - ic;
+        sel_gui_round_rect(d->canvas, card, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+        sel_gui_icon_draw(d->canvas, &d->icons, src_remote(d, i) ? SEL_GUI_ICON_DISC : SEL_GUI_ICON_LIBRARY,
+                          rect_of(r.x + pad, r.y + (r.h - ic) / 2, ic, ic), ic, on ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : muted);
+        draw_text(d, rect_of(cx, r.y, cw * 3 / 10, r.h), d->src[i].name, 1, 15, on ? text : muted);
+        draw_text(d, rect_of(cx + cw * 3 / 10, r.y, cw / 8, r.h), src_remote(d, i) ? "Remote" : "Local", 0, 14, muted);
+        snprintf(line, sizeof line, "%u songs", (unsigned)d->src[i].count);
+        draw_text(d, rect_of(cx + cw * 3 / 10 + cw / 8, r.y, cw / 6, r.h), line, 0, 14, muted);
+        if (src_remote(d, i) && on) {
+            draw_button(d, src_sync_rect(d, r), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Sync", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        }
+        sel_gui_round_rect(d->canvas, tg, tg.h / 2, on ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]));
+        kn = rect_of(on ? tg.x + tg.w - kd - lpx(d, 3) : tg.x + lpx(d, 3), tg.y + lpx(d, 3), kd, kd);
+        sel_gui_round_rect(d->canvas, kn, kd / 2, on ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]) : muted);
+        sel_gui_dirty_add(d->canvas, r);
+    }
+    sel_gui_clip_pop(d->canvas);
+}
+
 static int lib_set_mode(desk* d, uint32_t mode) {
     char line[64];
     if (mode == d->lib_mode) {
@@ -4707,7 +4822,10 @@ static int lib_set_mode(desk* d, uint32_t mode) {
     }
     d->lib_mode = mode;
     d->lib_q16 = 0;
-    if (mode == 0u) {
+    if (mode == 5u) { /* Sources: the engine's registered sources, one row each (I265) */
+        d->src_wait = 1;
+        desk_send(d, "SOURCES");
+    } else if (mode == 0u) {
         desk_send(d, "VIEW_STYLE regular");
         desk_send(d, "VIEW_SOURCE queue");
     } else if (mode >= 3u) { /* Files and History show the browse and home sources as the text UI does */
@@ -4841,6 +4959,9 @@ static int library_click(desk* d, int32_t x, int32_t y) {
             if (in_rect(lib_tab_rect(d, mn, m), x, y)) {
                 return lib_set_mode(d, m);
             }
+        }
+        if (d->lib_mode == 5u) {
+            return src_click(d, mn, x, y);
         }
         if (lib_view_on(d, st)) {
             uint32_t k;
@@ -8369,6 +8490,7 @@ static void* desk_open(const sel_ui_open_args* a) {
  * pump left: an event here and the wait below together never miss a change. */
 static void desk_on_event(void* state, const sel_message* evt) {
     desk* d = (desk*)state;
+    int src_row = 0;
     if (evt->id == SEL_EVT_PREFS_CHANGED && strcmp(evt->args[0].v.s, "ui.desktop.mode") == 0) {
         uint32_t before = d->uim.layout;
         sel_uim_set_layout(&d->uim, evt->args[1].v.s);
@@ -8377,7 +8499,31 @@ static void desk_on_event(void* state, const sel_message* evt) {
     if (evt->id == SEL_EVT_PREFS_CHANGED && strcmp(evt->args[0].v.s, "ui.desktop.viz") == 0) {
         viz_select(d, evt->args[1].v.s);
     }
-    if (evt->id == SEL_EVT_LIBRARY_RESULT && d->scan_pending) { /* a LIBRARY_SCAN finished: tell the user and refresh what the Library page lists */
+    if (evt->id == SEL_EVT_LIBRARY_RESULT && evt->argc > 0 && evt->args[0].type == SEL_ARG_TAGS && sel_tag_find(evt->args[0].v.t, SEL_SRC_KEY, 0) != 0) {
+        const sel_tag* t = evt->args[0].v.t; /* a SOURCES row (I265): not the end of a scan */
+        if (d->src_wait) {
+            d->src_wait = 0;
+            d->src_n = 0;
+            if (d->src_syncing[0] != '\0') {
+                char msg[64];
+                snprintf(msg, sizeof msg, "Synced %s", d->src_syncing);
+                desk_toast(d, msg);
+                d->src_syncing[0] = '\0';
+            }
+        }
+        if (d->src_n < sizeof d->src / sizeof d->src[0]) {
+            uint32_t n = d->src_n++;
+            snprintf(d->src[n].key, sizeof d->src[n].key, "%s", (const char*)sel_tag_find(t, SEL_SRC_KEY, (uintptr_t)""));
+            snprintf(d->src[n].kind, sizeof d->src[n].kind, "%s", (const char*)sel_tag_find(t, SEL_SRC_KIND, (uintptr_t)""));
+            snprintf(d->src[n].name, sizeof d->src[n].name, "%s", (const char*)sel_tag_find(t, SEL_SRC_NAME, (uintptr_t)""));
+            snprintf(d->src[n].path, sizeof d->src[n].path, "%s", (const char*)sel_tag_find(t, SEL_SRC_PATH, (uintptr_t)""));
+            d->src[n].enabled = sel_tag_find(t, SEL_SRC_ENABLED, 1) != 0;
+            d->src[n].count = (uint32_t)sel_tag_find(t, SEL_SRC_COUNT, 0);
+        }
+        d->repaint = 1;
+        src_row = 1;
+    }
+    if (evt->id == SEL_EVT_LIBRARY_RESULT && d->scan_pending && !src_row) { /* a LIBRARY_SCAN finished: tell the user and refresh what the Library page lists */
         sel_scan_info si;
         char msg[64];
         sel_engine_scan_info(d->engine, &si);

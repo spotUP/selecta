@@ -81,8 +81,8 @@ foreach(t ${tabs})
   math(EXPR prev_end "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4}")
 endforeach()
 list(LENGTH tabs ntabs)
-if(NOT ntabs EQUAL 5)
-  message(FATAL_ERROR "want 5 tab rectangles, got ${ntabs}:\n${list}")
+if(NOT ntabs EQUAL 6)
+  message(FATAL_ERROR "want 6 tab rectangles, got ${ntabs}:\n${list}")
 endif()
 
 # The click point comes from the "row 0 x y w h" line the page itself dumps (the rectangle library_click tests).
