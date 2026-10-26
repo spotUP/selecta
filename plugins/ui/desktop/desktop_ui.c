@@ -137,6 +137,7 @@ typedef struct desk {
     char canvas_hash_hex[17]; /* the 64-bit hashes as 16 hex digits: the stats carry strings, a tag value may be 32 bits */
     char art_tile_hash_hex[17];
     char present_hash_hex[17];
+    char zoom_str[8];       /* the zoom setting for the stats line: fit, 75, 100, 125 or 150 */
 #ifdef SELECTA_DESKTOP_SDL
     desk_sdl* sdl;          /* --backend sdl: the window the canvas is presented in (DUI-P2-7) */
 #endif
@@ -148,7 +149,10 @@ typedef struct desk {
     int32_t seek_fill;      /* pixel width of the seek bar fill last drawn; -1 = not drawn since the last full repaint */
     int32_t vol_fill;       /* the same for the volume bar */
     char seek_length[16];   /* the length text last drawn, so a clock tick marks it dirty only when it changed */
-    int32_t scale;          /* integer pixel scale 1, 2 or 3 (DUI-P2-8): layout is in logical units, drawn times scale */
+    int32_t scale;          /* the backend pixel density 1, 2 or 3 (DUI-P2-8) */
+    int32_t scale_q16;      /* density times zoom, Q16.16 (I458): layout is in logical units, drawn times this */
+    int32_t zoom_pct;       /* UI Zoom percent 75, 100, 125, 150; 0 = fit */
+    int32_t zoom_default;   /* the zoom the backend starts at: 0 (fit) on rtg and aga, 100 otherwise */
     uint32_t atlas_builds;   /* text atlases built */
     uint32_t atlas_rebuilds; /* scale changes that dropped the built text atlases */
     uint32_t icon_rebuilds;  /* scale changes that rebuilt the icon atlas view */
@@ -357,7 +361,10 @@ typedef struct desk {
 } desk;
 
 static int desk_resize(desk* d, int32_t w, int32_t h);
-static int desk_set_scale(desk* d, int32_t scale);
+static int desk_set_scale(desk* d, int32_t scale_q16);
+static void desk_relayout(desk* d);
+static int desk_set_density(desk* d, int32_t density);
+static int32_t desk_scale_for(const desk* d, int32_t w, int32_t h);
 static int desk_present(desk* d);
 static int desk_event_frame(desk* d, int changed);
 static void desk_draw_focus(desk* d);
@@ -508,7 +515,22 @@ static sel_gui_rect rect_of(int32_t x, int32_t y, int32_t w, int32_t h) {
 
 /* A logical length in canvas pixels. */
 static int32_t lpx(const desk* d, int32_t logical) {
-    return logical * d->scale;
+    return (int32_t)(((int64_t)logical * d->scale_q16 + 32768) >> 16);
+}
+
+/* A logical Q16 length (a scroll offset) in whole canvas pixels, rounded down: the one helper for the q16 scroll
+ * sites (I458). For an integer scale it is (q16 * scale) >> 16, as before. */
+static int32_t lpx_q16(const desk* d, int32_t q16) {
+    return (int32_t)(((int64_t)q16 * d->scale_q16) >> 32);
+}
+
+/* A canvas pixel length in logical units (truncating, as the integer division by the scale did), and rounding up. */
+static int32_t px_to_logical(const desk* d, int32_t px) {
+    return (int32_t)(((int64_t)px * 65536) / d->scale_q16);
+}
+
+static int32_t px_to_logical_ceil(const desk* d, int32_t px) {
+    return (int32_t)(((int64_t)px * 65536 + d->scale_q16 - 1) / d->scale_q16);
 }
 
 static sel_gui_rect region_rect(const desk* d, const char* name) {
@@ -530,7 +552,7 @@ static const sel_gui_atlas* desk_font(desk* d, int semibold, int size) {
         if (g_sizes[i] == size) {
             if (d->atlas[semibold][i] == NULL) {
                 d->atlas[semibold][i] =
-                    desk_atlas_build(semibold ? sel_font_inter_semibold : sel_font_inter_regular, size * d->scale);
+                    desk_atlas_build(semibold ? sel_font_inter_semibold : sel_font_inter_regular, lpx(d, size));
                 d->atlas_builds++;
             }
             return d->atlas[semibold][i];
@@ -1182,7 +1204,7 @@ static sel_gui_rect songs_header_col(const desk* d, uint32_t col) {
 
 static sel_gui_rect songs_row_rect(const desk* d, uint32_t row) {
     sel_gui_rect mn = region_rect(d, "main");
-    return rect_of(mn.x, songs_top(d) + lpx(d, SONG_HEADER_H) + (int32_t)row * lpx(d, SONG_ROW_H) - (int32_t)(((int64_t)d->scroll_q16 * (d->scale > 0 ? d->scale : 1)) >> 16), mn.w, lpx(d, SONG_ROW_H));
+    return rect_of(mn.x, songs_top(d) + lpx(d, SONG_HEADER_H) + (int32_t)row * lpx(d, SONG_ROW_H) - lpx_q16(d, d->scroll_q16), mn.w, lpx(d, SONG_ROW_H));
 }
 
 /* Drop target 0 = Queue, then the saved playlists: stacked at the right edge of the main pane under the column header,
@@ -2148,7 +2170,7 @@ static int32_t lib_list_top(desk* d, sel_gui_rect mn, const sel_state* st) {
 }
 
 static int32_t lib_off_px(desk* d, const sel_state* st) {
-    return lib_ui_list(d, st) ? (int32_t)(((int64_t)d->lib_q16 * (d->scale > 0 ? d->scale : 1)) >> 16) : 0;
+    return lib_ui_list(d, st) ? lpx_q16(d, d->lib_q16) : 0;
 }
 
 /* The one row rectangle of the Library page: drawing, hit-testing and the dump all go through it. */
@@ -2367,8 +2389,7 @@ static sel_gui_rect queue_btn_rect(desk* d, sel_gui_rect mn, uint32_t k) {
 
 /* Largest Queue scroll offset in logical pixels, Q16: the rows' height beyond the room under the list top (I258). */
 static int32_t queue_max_q16(desk* d, sel_gui_rect mn, const sel_state* st) {
-    int32_t sc = d->scale > 0 ? d->scale : 1;
-    int32_t max = (int32_t)(st->queue_count + (d->qg.valid ? d->qg.headers : 0u)) * QUEUE_ROW_H - (mn.h - lpx(d, QUEUE_LIST_Y)) / sc;
+    int32_t max = (int32_t)(st->queue_count + (d->qg.valid ? d->qg.headers : 0u)) * QUEUE_ROW_H - px_to_logical(d, mn.h - lpx(d, QUEUE_LIST_Y));
     return max > 0 ? max << 16 : 0;
 }
 
@@ -2378,7 +2399,7 @@ static int32_t queue_scroll_px(desk* d, sel_gui_rect mn) {
     if (d->queue_q16 > max) {
         d->queue_q16 = max;
     }
-    return (int32_t)(((int64_t)d->queue_q16 * (d->scale > 0 ? d->scale : 1)) >> 16);
+    return lpx_q16(d, d->queue_q16);
 }
 
 /* The rows' area under the buttons: rows scrolled above it or past the panel bottom are clipped to it. */
@@ -2991,7 +3012,7 @@ static int32_t si_list_top(desk* d, sel_gui_rect mn) {
 
 /* Screen top of the row the walk is at (si_cy is the content y above it), after the scroll. */
 static int32_t si_row_y(desk* d, sel_gui_rect mn) {
-    return si_list_top(d, mn) + d->si_cy - (d->si_y_q16 >> 16) * (d->scale > 0 ? d->scale : 1);
+    return si_list_top(d, mn) + d->si_cy - lpx(d, d->si_y_q16 >> 16);
 }
 
 static void si_draw_row(desk* d, const char* label, const char* value, uint32_t i) {
@@ -3055,9 +3076,9 @@ static void si_count_row(desk* d, const char* label, const char* value, uint32_t
 /* Largest scroll offset (logical px, Q16): the whole list height less the room under the list top. */
 static int32_t si_max_q16(desk* d) {
     sel_gui_rect mn = region_rect(d, "main");
-    int32_t sc = d->scale > 0 ? d->scale : 1, room = mn.y + mn.h - si_list_top(d, mn), over;
+    int32_t room = mn.y + mn.h - si_list_top(d, mn), over;
     si_walk_from_top(d, sel_engine_state(d->engine), si_count_row);
-    over = (d->si_cy - room + sc - 1) / sc;
+    over = px_to_logical_ceil(d, d->si_cy - room);
     return over > 0 ? over * 65536 : 0;
 }
 
@@ -4409,9 +4430,9 @@ static void desk_composer_request(char* line, size_t cap, const char* canon) {
  * top, or for the engine view modes the rows beyond its window. */
 static int32_t lib_max_q16(desk* d, const sel_state* st) {
     sel_gui_rect mn = panel_rect(d, "main");
-    int32_t sc = d->scale > 0 ? d->scale : 1, max;
+    int32_t max;
     if (lib_ui_list(d, st)) {
-        max = (int32_t)lib_list_n(st) * LIB_ROW_H - (mn.y + mn.h - lib_list_top(d, mn, st)) / sc;
+        max = (int32_t)lib_list_n(st) * LIB_ROW_H - px_to_logical(d, mn.y + mn.h - lib_list_top(d, mn, st));
     } else {
         max = ((int32_t)st->view->row_count - (int32_t)st->view->window_rows) * LIB_ROW_H;
     }
@@ -6202,9 +6223,41 @@ static int overlay_click(desk* d, const sel_gui_input* ev) {
 
 /* A key event (DUI-P3-3). Order: the search field takes printable keys while focused; Tab moves the focus; `/` focuses
  * the search; a bound key fires its action; Up and Down move the list cursor. Returns 1 when the picture changed. */
+/* Ctrl+Plus, Ctrl+Minus and Ctrl+0 step the UI Zoom through 75, 100, 125, 150 and back to the backend default (I458).
+ * The change lasts for the session (there is no host pref write path yet, ledger row I459). Returns 1 when the key was
+ * a zoom key. */
+static int desk_zoom_key(desk* d, const sel_gui_input* ev) {
+    static const int32_t steps[] = {75, 100, 125, 150};
+    int32_t cur = d->zoom_pct == 0 ? 100 : d->zoom_pct, next = d->zoom_pct;
+    int i, at = 1;
+    if ((ev->mods & TXT_MOD_CTRL) == 0u || (ev->code != '+' && ev->code != '=' && ev->code != '-' && ev->code != '0')) {
+        return 0;
+    }
+    for (i = 0; i < 4; i++) {
+        if (steps[i] == cur) {
+            at = i;
+        }
+    }
+    if (ev->code == '0') {
+        next = d->zoom_default;
+    } else if (ev->code == '-') {
+        next = steps[at > 0 ? at - 1 : 0];
+    } else {
+        next = steps[at < 3 ? at + 1 : 3];
+    }
+    d->zoom_pct = next;
+    if (desk_set_scale(d, desk_scale_for(d, d->canvas->w, d->canvas->h))) {
+        desk_resize(d, d->canvas->w, d->canvas->h);
+    }
+    return 1;
+}
+
 static int desk_key(desk* d, const sel_gui_input* ev) {
     const char* act;
     d->keys_in++;
+    if (desk_zoom_key(d, ev)) {
+        return 1;
+    }
     if (d->dlg_open) { /* the confirm dialog owns the keyboard */
         return dlg_key(d, ev);
     }
@@ -6391,8 +6444,7 @@ static int footer_bar_pointer(desk* d, const sel_gui_input* ev) {
 }
 
 static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
-    int32_t sc = d->scale > 0 ? d->scale : 1;
-    int region = sel_uim_hit(&d->layout, ev->x / sc, ev->y / sc);
+    int region = sel_uim_hit(&d->layout, px_to_logical(d, ev->x), px_to_logical(d, ev->y));
     const char* rname = region >= 0 ? d->layout.regions[region].name : "";
     int in_main = strcmp(rname, "main") == 0;
     if (dlg_pointer(d, ev)) {
@@ -6476,7 +6528,7 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
     }
     if (ev->kind == SEL_GUI_IN_DRAG) {
         int32_t row = in_main ? songs_row_at(d, ev->x, ev->y) : -1;
-        int end = sel_uim_hit(&d->layout, ev->x2 / sc, ev->y2 / sc);
+        int end = sel_uim_hit(&d->layout, px_to_logical(d, ev->x2), px_to_logical(d, ev->y2));
         if (row < 0 || end < 0 || strcmp(d->layout.regions[end].name, "main") != 0) {
             return 0;
         }
@@ -6630,8 +6682,7 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
         }
         if (d->songs) {
             sel_gui_rect mn = region_rect(d, "main");
-            int32_t sc = d->scale > 0 ? d->scale : 1;
-            int32_t view_h = (mn.y + mn.h - songs_top(d) - lpx(d, SONG_HEADER_H)) / sc;
+            int32_t view_h = px_to_logical(d, mn.y + mn.h - songs_top(d) - lpx(d, SONG_HEADER_H));
             int32_t max_q16 = ((int32_t)d->order_n * SONG_ROW_H - view_h) << 16;
             int64_t v = (int64_t)d->scroll_q16 - (int64_t)ev->dy * SCROLL_NOTCH;
             if (max_q16 < 0) {
@@ -6910,7 +6961,7 @@ static int desk_replay_input(desk* d) {
         } else if (sscanf(line, "resize %d %d", &x, &y) == 2) { /* the window was resized: relayout and repaint */
             opened |= desk_resize(d, x, y);
         } else if (sscanf(line, "scale %d", &x) == 1) { /* the window moved to a screen of another scale */
-            if (desk_set_scale(d, x)) {
+            if (desk_set_density(d, x)) {
                 desk_resize(d, d->canvas->w, d->canvas->h);
             }
         } else if (sscanf(line, "tile %u", &n) == 1) {
@@ -7324,8 +7375,37 @@ static int desk_make_canvas(desk* d, const char* size, int32_t def_w, int32_t de
         sel_gui_shadow_bake(&d->shadow, (uint32_t)lpx(d, HOME_SHADOW_R), 0x000000u, 96u);
         d->shadow_ready = 1;
     }
-    sel_uim_layout_compute(&d->layout, w / (unsigned)d->scale, h / (unsigned)d->scale);
+    desk_relayout(d);
     return 1;
+}
+
+/* The fit zoom (design 10.3), Q16: the canvas in logical units of the density against the 1024x640 reference, never
+ * enlarging and never below 0.625 (the compact layout takes over below that). */
+static int32_t desk_fit_q16(const desk* d, int32_t w, int32_t h) {
+    int64_t fw = (int64_t)w * 65536 / (1024 * (int64_t)d->scale), fh = (int64_t)h * 65536 / (640 * (int64_t)d->scale);
+    int64_t f = fw < fh ? fw : fh;
+    return (int32_t)(f > 65536 ? 65536 : f < 40960 ? 40960 : f);
+}
+
+/* The scale (density times zoom, Q16) for a canvas size. Integer for density times 100 percent: pixel-identical to the
+ * old integer scale. */
+static int32_t desk_scale_for(const desk* d, int32_t w, int32_t h) {
+    int32_t zoom = d->zoom_pct == 0 ? desk_fit_q16(d, w, h) : (int32_t)((int64_t)d->zoom_pct * 65536 / 100);
+    return (int32_t)((int64_t)d->scale * zoom);
+}
+
+/* The layout runs at the logical size: the canvas divided by the scale. */
+static void desk_relayout(desk* d) {
+    sel_uim_layout_compute(&d->layout, (uint32_t)px_to_logical(d, d->canvas->w), (uint32_t)px_to_logical(d, d->canvas->h));
+}
+
+/* The backend density changed (a window moved to another screen): the scale follows, the zoom stays. */
+static int desk_set_density(desk* d, int32_t density) {
+    if (density < 1 || density > 3) {
+        return 0;
+    }
+    d->scale = density;
+    return desk_set_scale(d, desk_scale_for(d, d->canvas->w, d->canvas->h));
 }
 
 /* The icon atlas for the current scale (DUI-P2-8): each logical icon size at k times the size, picked from the
@@ -7334,7 +7414,7 @@ static void desk_build_icons(desk* d) {
     int i;
     uint32_t s;
     for (i = 0; i < DESK_ICON_SIZES; i++) {
-        d->icon_px[i] = g_icon_sizes[i] * d->scale;
+        d->icon_px[i] = lpx(d, g_icon_sizes[i]);
         d->icon_alpha[i] = sel_gui_icons_baked.alpha[0];
         for (s = 0; s < sel_gui_icons_baked.size_n; s++) {
             if (sel_gui_icons_baked.sizes[s] == d->icon_px[i]) {
@@ -7352,12 +7432,12 @@ static void desk_build_icons(desk* d) {
 /* A new integer pixel scale (DUI-P2-8): the text atlases are dropped (desk_font rebuilds them at the new pixel
  * size on first use), the icon atlas and the shadow are rebuilt, and the next resize relays out and repaints. The
  * same scale again does nothing. */
-static int desk_set_scale(desk* d, int32_t scale) {
+static int desk_set_scale(desk* d, int32_t scale_q16) {
     int i;
-    if (scale < 1 || scale > 3 || scale == d->scale) {
+    if (scale_q16 < 32768 || scale_q16 > 196608 || scale_q16 == d->scale_q16) {
         return 0;
     }
-    d->scale = scale;
+    d->scale_q16 = scale_q16;
     for (i = 0; i < 2 * DESK_SIZES; i++) {
         desk_atlas_free(d->atlas[i / DESK_SIZES][i % DESK_SIZES]);
         d->atlas[i / DESK_SIZES][i % DESK_SIZES] = NULL;
@@ -7390,7 +7470,8 @@ static int desk_resize(desk* d, int32_t w, int32_t h) {
         return 0;
     }
 #endif
-    sel_uim_layout_compute(&d->layout, (uint32_t)(w / d->scale), (uint32_t)(h / d->scale));
+    desk_set_scale(d, desk_scale_for(d, w, h)); /* a fit zoom follows the new size before the layout runs */
+    desk_relayout(d);
     d->repaint = 1;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
     desk_present(d);
@@ -7459,6 +7540,27 @@ static void* desk_open(const sel_ui_open_args* a) {
         }
     }
     d->scale = 1;
+    d->scale_q16 = 65536;
+    d->zoom_default = backend != NULL && (strcmp(backend, "rtg") == 0 || strcmp(backend, "aga") == 0) ? 0 : 100;
+    d->zoom_pct = d->zoom_default;
+    {
+        /* UI Zoom (I458): the pref ui.desktop.zoom, overridden by --zoom; fit, 75, 100, 125 or 150. */
+        const char* zv = a->host != NULL && a->host->config_get != NULL ? a->host->config_get(a->host, "ui.desktop.zoom", "") : "";
+        if (desk_opt(a, "--zoom") != NULL) {
+            zv = desk_opt(a, "--zoom");
+        }
+        if (zv != NULL && zv[0] != '\0') {
+            if (strcmp(zv, "fit") == 0) {
+                d->zoom_pct = 0;
+            } else if (strcmp(zv, "75") == 0 || strcmp(zv, "100") == 0 || strcmp(zv, "125") == 0 || strcmp(zv, "150") == 0) {
+                d->zoom_pct = atoi(zv);
+            } else if (desk_opt(a, "--zoom") != NULL) {
+                fprintf(stderr, "selecta: desktop zoom '%s' is not fit, 75, 100, 125 or 150\n", zv);
+                a->host->mem_free(a->host, d);
+                return NULL;
+            }
+        }
+    }
     d->focus = -1;
     desk_bind_actions(d);
     if (desk_opt(a, "--scale") != NULL) {
@@ -7469,6 +7571,7 @@ static void* desk_open(const sel_ui_open_args* a) {
             return NULL;
         }
         d->scale = sc;
+        d->scale_q16 = sc * 65536;
     }
     desk_build_icons(d);
     d->icon_rebuilds = 0u; /* the first build is not a rebuild */
@@ -7535,6 +7638,11 @@ static void* desk_open(const sel_ui_open_args* a) {
         d->live = d->input == NULL && !desk_sdl_headless(d->sdl);
     }
 #endif
+    if (desk_set_scale(d, desk_scale_for(d, d->canvas->w, d->canvas->h))) { /* the zoom (fit on rtg and aga) applies before the first frame */
+        d->atlas_rebuilds = 0u;
+        d->icon_rebuilds = 0u;
+        desk_relayout(d);
+    }
     d->art = art_open(a->art);
     sel_gui_timeline_init(&d->tl);
     sel_uim_init(&d->uim);
@@ -7642,7 +7750,7 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
             return -1;
         }
         if (ev == DESK_SDL_RESIZE) {
-            desk_set_scale(d, desk_sdl_scale(d->sdl));
+            desk_set_density(d, desk_sdl_scale(d->sdl));
             desk_resize(d, w, h);
         }
         desk_sdl_route(d);
@@ -7755,7 +7863,7 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
             return -1;
         }
         if (ev == DESK_SDL_RESIZE) {
-            desk_set_scale(d, desk_sdl_scale(d->sdl));
+            desk_set_density(d, desk_sdl_scale(d->sdl));
             desk_resize(d, w, h);
         }
         desk_sdl_route(d);
@@ -7999,6 +8107,19 @@ static const sel_tag* desk_stats(void* state) {
         }
 #endif
         n++;
+        d->stats[n].tag = SEL_UI_STAT_SCALE_Q16;
+        d->stats[n++].value = (uintptr_t)d->scale_q16;
+        if (d->zoom_pct == 0) {
+            strcpy(d->zoom_str, "fit");
+        } else {
+            snprintf(d->zoom_str, sizeof d->zoom_str, "%d", (int)d->zoom_pct);
+        }
+        d->stats[n].tag = SEL_UI_STAT_LOGICAL_W;
+        d->stats[n++].value = (uintptr_t)px_to_logical(d, d->canvas->w);
+        d->stats[n].tag = SEL_UI_STAT_LOGICAL_H;
+        d->stats[n++].value = (uintptr_t)px_to_logical(d, d->canvas->h);
+        d->stats[n].tag = SEL_UI_STAT_ZOOM;
+        d->stats[n++].value = (uintptr_t)d->zoom_str;
         d->stats[n].tag = SEL_TAG_END;
     }
 

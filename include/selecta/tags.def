@@ -322,6 +322,11 @@ SEL_TAG(UI, STAT_FLOW_MAX_SLIDE,    0x50C5, INT)
 SEL_TAG(UI, STAT_SPAN_PIXELS,       0x50D0, INT)
 /* I401: GPU readbacks of the presented frame (the present hash); report time only. */
 SEL_TAG(UI, STAT_READBACKS,         0x50D1, INT)
+/* I458: the desktop scale (density times UI Zoom) as Q16.16, and the zoom setting (fit, 75, 100, 125, 150). */
+SEL_TAG(UI, STAT_SCALE_Q16,         0x50D2, INT)
+SEL_TAG(UI, STAT_ZOOM,              0x50D3, STR)
+SEL_TAG(UI, STAT_LOGICAL_W,         0x50D4, INT)
+SEL_TAG(UI, STAT_LOGICAL_H,         0x50D5, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)
