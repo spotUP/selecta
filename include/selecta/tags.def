@@ -332,6 +332,8 @@ SEL_TAG(UI, STAT_ATLAS_MS,          0x50D7, INT)
 SEL_TAG(UI, STAT_ATLAS_BAKED_HITS,  0x50D8, INT)
 /* I469: Home shelf album tiles drawn with a library cover. */
 SEL_TAG(UI, STAT_SHELF_ALBUM_ART_DRAWS, 0x50D9, INT)
+/* I244: tooltip-bound controls on screen: the transport buttons shown plus the visualizer switch segments and the heart. */
+SEL_TAG(UI, STAT_TOOLTIP_TARGETS, 0x50DA, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)

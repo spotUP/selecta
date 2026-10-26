@@ -48,7 +48,7 @@ static const sel_uim_action k_actions[] = {
      "RESHUFFLE"},
     {"undo", "Undo", "Undo the last queue change", "undo-2", "Edit/Undo", "u", "UNDO"},
     {"redo", "Redo", "Redo the undone queue change", "redo-2", "Edit/Redo", "C-r", "REDO"},
-    {"like", "Like Song", "Like the playing song, or take the like back when it is liked (a song key names another song)", "heart", "Library/Like Song", "M-h", "LIKE"},
+    {"like", "Like Song", "Like the playing song, or take the like back", "heart", "Library/Like Song", "M-h", "LIKE"},
     {"cursor_up", "Cursor Up", "Move the cursor up one row", "chevron-up", "View/Cursor Up", "k", "VIEW_CURSOR -1"},
     {"cursor_down", "Cursor Down", "Move the cursor down one row", "chevron-down", "View/Cursor Down", "j",
      "VIEW_CURSOR +1"},

@@ -3684,6 +3684,12 @@ static const char* lib_kind_name(uint32_t kind) {
     }
 }
 
+/* I244: the action-bound controls besides the transport row (see desk_ctl_rect). */
+enum { CTL_VIZ_N = 6, CTL_LIKE = 6, CTL_COUNT = 7 };
+#define TIP_CTL_BASE ((int32_t)(TRANSPORT_COUNT + DOOR_COUNT + LIB_STYLES))
+static sel_gui_rect desk_ctl_rect(const desk* d, uint32_t c); /* defined with the tooltip tracker */
+static const char* desk_ctl_action(const desk* d, uint32_t c);
+
 /* Appends one formatted line to library_dump at offset o and returns the new offset, never past the buffer: snprintf
  * returns the length it wanted, so a long Library (I303) would push o beyond the end and the next write below it. */
 static size_t dump_put(desk* d, size_t o, const char* fmt, ...) {
@@ -4014,6 +4020,12 @@ static const char* library_dump_build(desk* d) {
             o = dump_put(d, o, "hover_regions sidebar %d %d %d %d main %d %d %d %d detail %d %d %d %d player %d %d %d %d\n", (int)rs.x,
                          (int)rs.y, (int)rs.w, (int)rs.h, (int)rm.x, (int)rm.y, (int)rm.w, (int)rm.h, (int)rd.x, (int)rd.y,
                          (int)rd.w, (int)rd.h, (int)rp.x, (int)rp.y, (int)rp.w, (int)rp.h);
+        }
+        for (i = 0; i < (uint32_t)CTL_COUNT && o + 200u < sizeof d->library_dump; i++) { /* I244: the action-bound controls drawn now */
+            sel_gui_rect cr = desk_ctl_rect(d, i);
+            if (cr.w > 0) {
+                o = dump_put(d, o, "tipctl id=%s %d %d %d %d\n", desk_ctl_action(d, i), (int)cr.x, (int)cr.y, (int)cr.w, (int)cr.h);
+            }
         }
         for (i = 0; i < DOOR_COUNT && o + 200u < sizeof d->library_dump; i++) { /* the door rectangles, where a test moves the pointer */
             sel_gui_rect dr = sidebar_door_rect(d, i);
@@ -5794,7 +5806,10 @@ static void desk_draw_tip(desk* d) {
     door = d->tip_shown - 1 - (int32_t)TRANSPORT_COUNT;
     pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     w = sel_gui_text_width(at, d->tip_text, strlen(d->tip_text)) + 2 * pad;
-    if (door >= (int32_t)DOOR_COUNT) { /* a Library style segment: the box sits below it, centred */
+    if (d->tip_shown > TIP_CTL_BASE) { /* I244: the box sits above its control */
+        b = desk_ctl_rect(d, (uint32_t)(d->tip_shown - TIP_CTL_BASE - 1));
+        box = rect_of(b.x + b.w / 2 - w / 2, b.y - lpx(d, TIP_H + 4), w, lpx(d, TIP_H));
+    } else if (door >= (int32_t)DOOR_COUNT) { /* a Library style segment: the box sits below it, centred */
         b = lib_style_rect(d, panel_rect(d, "main"), (uint32_t)(door - (int32_t)DOOR_COUNT));
         box = rect_of(b.x + b.w / 2 - w / 2, b.y + b.h + lpx(d, 4), w, lpx(d, TIP_H));
     } else if (door >= 0) { /* a rail door: the box sits to the right of the rail, level with the door (I363) */
@@ -5811,6 +5826,44 @@ static void desk_draw_tip(desk* d) {
     sel_gui_dirty_add(d->canvas, box);
 }
 
+/* I244: the action-bound controls besides the transport row share its tooltip path. Control c: 0..5 are the visualizer
+ * switch segments (slot * 3 + plugin; the action id is the plugin id), 6 is the Now Playing heart ("like"). The tooltip
+ * index of control c is TIP_CTL_BASE + c. */
+static sel_gui_rect desk_ctl_rect(const desk* d, uint32_t c) {
+    if (c == (uint32_t)CTL_LIKE) {
+        return d->np_draws > 0u ? d->np_like : rect_of(0, 0, 0, 0);
+    }
+    return c % 3u < d->viz_n ? d->viz_btn[c / 3u][c % 3u] : rect_of(0, 0, 0, 0);
+}
+
+static const char* desk_ctl_action(const desk* d, uint32_t c) {
+    return c == (uint32_t)CTL_LIKE ? "like" : d->viz_id[c % 3u];
+}
+
+/* Tooltip index (1-based within the control block, 0 = none) of the control under a canvas point. */
+static int32_t desk_ctl_at(const desk* d, int32_t x, int32_t y) {
+    uint32_t c;
+    for (c = 0; c < (uint32_t)CTL_COUNT; c++) {
+        sel_gui_rect r = desk_ctl_rect(d, c);
+        if (r.w > 0 && in_rect(r, x, y)) {
+            return (int32_t)c + 1;
+        }
+    }
+    return 0;
+}
+
+/* The tooltip-bound controls on screen now: the transport buttons shown plus the other controls drawn (stat tooltip_targets). */
+static uint32_t desk_tip_targets(const desk* d) {
+    uint32_t i, c, n = 0u;
+    for (i = 0; i < TRANSPORT_COUNT; i++) {
+        n += desk_slot_action(d, i) != NULL;
+    }
+    for (c = 0; c < (uint32_t)CTL_COUNT; c++) {
+        n += desk_ctl_rect(d, c).w > 0;
+    }
+    return n;
+}
+
 /* The pointer moved to canvas (x, y), or clicked (x < 0): a tooltip that is up goes away when the button changes;
  * the delay restarts at the new button. Returns 1 when the picture changed. */
 static int desk_tip_pointer(desk* d, int32_t x, int32_t y) {
@@ -5825,6 +5878,10 @@ static int desk_tip_pointer(desk* d, int32_t x, int32_t y) {
                 btn = (int32_t)TRANSPORT_COUNT + 1 + (int32_t)DOOR_COUNT + (int32_t)i;
             }
         }
+    }
+    if (btn == 0 && x >= 0) { /* I244: the visualizer switch and the Now Playing heart */
+        int32_t c = desk_ctl_at(d, x, y);
+        btn = c > 0 ? TIP_CTL_BASE + c : 0;
     }
     int hide = d->tip_shown > 0 && btn != d->tip_shown;
     if (btn != d->tip_btn) {
@@ -5857,7 +5914,13 @@ static void desk_tip_tick(desk* d) {
     if (d->tip_btn <= 0 || d->tip_shown > 0 || d->now_ms < d->tip_since + TIP_DELAY_MS) {
         return;
     }
-    if (d->tip_btn > (int32_t)(TRANSPORT_COUNT + DOOR_COUNT)) { /* a Library style segment */
+    if (d->tip_btn > TIP_CTL_BASE) { /* I244: an action-bound control: the action's tooltip text */
+        a = desk_action_by_id(desk_ctl_action(d, (uint32_t)(d->tip_btn - TIP_CTL_BASE - 1)));
+        if (a == NULL) {
+            return;
+        }
+        desk_tip_text_of(a, d->tip_text, sizeof d->tip_text);
+    } else if (d->tip_btn > (int32_t)(TRANSPORT_COUNT + DOOR_COUNT)) { /* a Library style segment */
         snprintf(d->tip_text, sizeof d->tip_text, "%s", lib_style_name[d->tip_btn - 1 - (int32_t)(TRANSPORT_COUNT + DOOR_COUNT)]);
     } else if (d->tip_btn > (int32_t)TRANSPORT_COUNT) { /* a rail door: its full label */
         snprintf(d->tip_text, sizeof d->tip_text, "%s", g_doors[d->tip_btn - 1 - (int32_t)TRANSPORT_COUNT].label);
@@ -8303,6 +8366,8 @@ static const sel_tag* desk_stats(void* state) {
         d->stats[n++].value = d->atlas_baked_hits;
         d->stats[n].tag = SEL_UI_STAT_SHELF_ALBUM_ART_DRAWS;
         d->stats[n++].value = d->shelf_album_art_draws;
+        d->stats[n].tag = SEL_UI_STAT_TOOLTIP_TARGETS;
+        d->stats[n++].value = desk_tip_targets(d);
         d->stats[n].tag = SEL_TAG_END;
     }
 
