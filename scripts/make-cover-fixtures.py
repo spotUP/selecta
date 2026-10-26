@@ -48,7 +48,7 @@ def main():
                             "-i", cover, "-map", "0:a", "-map", "1:v", *codec, "-c:v", "copy", "-ac", "1",
                             "-metadata", "title=Cover Fixture", "-metadata", "artist=Selecta Test", "-metadata", "album=Cover Fixture",
                             "-metadata:s:v", "title=Album cover", "-disposition:v", "attached_pic",
-                            "-map_metadata", "-1" if False else "0", os.path.join(out, "cover_tagged." + ext)], check=True)
+                            os.path.join(out, "cover_tagged." + ext)], check=True)
 
 
 main()
