@@ -281,11 +281,13 @@ typedef struct desk {
     uint32_t poll_ms;        /* I377: poll wait accumulated inside the running turn */
     uint32_t frame_ms_min, frame_ms_max; /* I368: ms per paint (one desk_flush), host clock; min is valid once frame_ms_n > 0 */
     uint32_t frame_ms_sum, frame_ms_n;   /* I368: the avg is sum / n */
+    uint32_t paint_ms_min, paint_ms_max, paint_ms_sum;     /* I387: the paint share of a frame (frame start to desk_flush), host clock ms */
+    uint32_t present_ms_min, present_ms_max, present_ms_sum; /* I387: the present share (backend blit plus sel_gui_present); paint + present = frame */
     uint32_t frame_t0;       /* I385: host clock ms when the frame's paint began; valid while frame_open */
     int frame_open;          /* I385: a paint has begun and its desk_flush has not yet closed the frame */
     uint32_t page_seen;      /* I368: the page the last paint showed, +1 (0 = nothing painted yet) */
     uint32_t page_dirty;     /* I368: pixels the first paint after the latest page change repainted */
-    sel_tag stats[86];
+    sel_tag stats[88];
     char* input_at;         /* where the scripted input resumes after a turn that sent an engine line */
     uint32_t sends;         /* engine lines sent so far: the replay yields a turn so the shell pumps them */
     char library_dump[8192]; /* the Library page as text for the stats (DUI-P4-3) */
@@ -363,9 +365,11 @@ static void desk_frame_begin(desk* d) {
  * through the backend blit and sel_gui_present. */
 static uint32_t desk_flush(desk* d) {
     const sel_host* ch = sel_engine_plugin_host(d->engine);
+    uint32_t t_flush;
     if (!d->frame_open) { /* a flush with no marked paint still times its blit and present */
         desk_frame_begin(d);
     }
+    t_flush = ch->clock_ms(ch);
 #ifdef SELECTA_DESKTOP_SDL
     if (d->sdl != NULL) {
         desk_sdl_present(d->sdl, d->canvas, d->report);
@@ -373,8 +377,24 @@ static uint32_t desk_flush(desk* d) {
 #endif
     {
         uint32_t px = sel_gui_present(d->canvas);
-        uint32_t dt = ch->clock_ms(ch) - d->frame_t0;
+        uint32_t t_end = ch->clock_ms(ch);
+        uint32_t dt = t_end - d->frame_t0;
+        uint32_t paint = t_flush - d->frame_t0, present = t_end - t_flush;
         d->frame_open = 0;
+        if (d->frame_ms_n == 0u || paint < d->paint_ms_min) {
+            d->paint_ms_min = paint;
+        }
+        if (d->frame_ms_n == 0u || present < d->present_ms_min) {
+            d->present_ms_min = present;
+        }
+        if (paint > d->paint_ms_max) {
+            d->paint_ms_max = paint;
+        }
+        if (present > d->present_ms_max) {
+            d->present_ms_max = present;
+        }
+        d->paint_ms_sum += paint;
+        d->present_ms_sum += present;
         if (d->frame_ms_n == 0u || dt < d->frame_ms_min) {
             d->frame_ms_min = dt;
         }
@@ -7481,7 +7501,19 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[79].value = d->frame_ms_max;
     d->stats[80].tag = SEL_UI_STAT_PAGE_DIRTY;
     d->stats[80].value = d->page_dirty;
-    d->stats[81].tag = SEL_TAG_END;
+    d->stats[81].tag = SEL_UI_STAT_PAINT_MS_MIN;
+    d->stats[81].value = d->frame_ms_n != 0u ? d->paint_ms_min : 0u;
+    d->stats[82].tag = SEL_UI_STAT_PAINT_MS_AVG;
+    d->stats[82].value = d->frame_ms_n != 0u ? d->paint_ms_sum / d->frame_ms_n : 0u;
+    d->stats[83].tag = SEL_UI_STAT_PAINT_MS_MAX;
+    d->stats[83].value = d->paint_ms_max;
+    d->stats[84].tag = SEL_UI_STAT_PRESENT_MS_MIN;
+    d->stats[84].value = d->frame_ms_n != 0u ? d->present_ms_min : 0u;
+    d->stats[85].tag = SEL_UI_STAT_PRESENT_MS_AVG;
+    d->stats[85].value = d->frame_ms_n != 0u ? d->present_ms_sum / d->frame_ms_n : 0u;
+    d->stats[86].tag = SEL_UI_STAT_PRESENT_MS_MAX;
+    d->stats[86].value = d->present_ms_max;
+    d->stats[87].tag = SEL_TAG_END;
 
     return d->stats;
 }
