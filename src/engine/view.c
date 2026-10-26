@@ -935,7 +935,7 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
         char* key = v->fkey + pool;
         size_t len = 0, klen = 0;
         uint32_t count = 1, album = 0;
-        char* art = NULL;
+        char *art = NULL, *sart = NULL;
         key[0] = '\0';
         if ((kind == 'H' || kind == 'S' || kind == 'C') && p[1] == ' ') {
             p += 2;
@@ -967,8 +967,8 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
                     while (us < tab && *us != '\x1f') {
                         us++;
                     }
-                    if (album && us < tab) {
-                        name = (size_t)(us - p);
+                    if (us < tab) {
+                        name = (size_t)(us - p); /* I482: a song key carries its artist after 0x1f too; the key is the part before it */
                     }
                     if (raw + 1u <= SEL_VIEW_KEY_MAX && pool + name + raw + 3u <= SEL_VIEW_HOME_TEXT_MAX) {
                         size_t i;
@@ -977,7 +977,13 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
                         }
                         key[klen] = '\0';
                         art = key;
-                        if (name != raw) {
+                        if (name != raw && !album) {
+                            /* I482: a song row keeps the artist after its key, the key alone is the row key and art_ref. */
+                            sart = key + klen + 1u;
+                            memcpy(sart, p + name + 1u, raw - name - 1u);
+                            sart[raw - name - 1u] = '\0';
+                            pool += raw - name;
+                        } else if (name != raw) {
                             art = key + klen + 1u;
                             memcpy(art, p, raw);
                             art[raw] = '\0';
@@ -997,6 +1003,9 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
             v->frows[n].art_ref = key[0] != '\0' ? art : NULL;
             /* I476: an album tile's artist is the part of its art_ref after the 0x1f byte. */
             v->frows[n].artist = NULL;
+            if (sart != NULL && sart[0] != '\0') {
+                v->frows[n].artist = sart;
+            }
             if (album && key[0] != '\0' && art != key && strchr(art, '\x1f') != NULL && strchr(art, '\x1f')[1] != '\0') {
                 v->frows[n].artist = strchr(art, '\x1f') + 1;
             }

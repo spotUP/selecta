@@ -298,7 +298,7 @@ static int home_list(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t
         const char* key = (const char*)sqlite3_column_text(st, 2);
         int album = sqlite3_column_int(st, 3) != 0;
         char line[SEL_SONG_KEY_MAX + 2 + 256]; /* "@" + key + tab + "name - artist" */
-        int with_artist = album && artist != NULL && artist[0] != '\0'; /* I471: an album key carries its artist after 0x1f */
+        int with_artist = artist != NULL && artist[0] != '\0'; /* I471/I482: a key carries its artist after 0x1f, album and song rows alike */
         size_t at = (size_t)snprintf(line, sizeof line, "%s%s%s%s\t", album ? "@" : "", key != NULL ? key : "", with_artist ? "\x1f" : "",
                                      with_artist ? artist : "");
         if (at >= sizeof line) at = sizeof line - 1u;

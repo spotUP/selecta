@@ -85,6 +85,10 @@ if(NOT idle MATCHES "shelf 0 tile 0 Recently played\\|" OR NOT idle MATCHES "she
   message(FATAL_ERROR "shelf headings missing in:\n${idle}")
 endif()
 shelf_scrolls(a0 a1 "${idle}")
+# I482: a song tile (not an album) carries its artist as the last dump field, like an album tile (I476). Song 4 is Zoe Bjork's.
+if(NOT "${idle}" MATCHES "shelf 0 tile [0-9]+ [^\n|]*\\|[^\n|]*a\\.mod\\|[^\n|]*\\|Zoë Björk\n")
+  message(FATAL_ERROR "the song tile of song 4 must carry its artist as its last dump field in:\n${idle}")
+endif()
 expect_eq("idle scroll shelf 0" "${a0}" 0)
 expect_eq("idle scroll shelf 1" "${a1}" 0)
 
