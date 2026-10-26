@@ -299,8 +299,20 @@ static int home_list(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t
         int album = sqlite3_column_int(st, 3) != 0;
         char line[SEL_SONG_KEY_MAX + 2 + 256]; /* "@" + key + tab + "name" */
         int with_artist = artist != NULL && artist[0] != '\0'; /* I471/I482: a key carries its artist after 0x1f, album and song rows alike */
-        size_t at = (size_t)snprintf(line, sizeof line, "%s%s%s%s\t", album ? "@" : "", key != NULL ? key : "", with_artist ? "\x1f" : "",
-                                     with_artist ? artist : "");
+        size_t klen = key != NULL ? strlen(key) : 0u, alen = 0u;
+        if (with_artist) {
+            /* I486: the view takes "<key>\x1f<artist>" only while it fits SEL_SONG_KEY_MAX with its NUL, else the row loses its key.
+             * The key is never cut; the artist is, on a UTF-8 boundary, to what room the key leaves. */
+            size_t room = klen + 2u < SEL_SONG_KEY_MAX ? SEL_SONG_KEY_MAX - klen - 2u : 0u;
+            alen = strlen(artist);
+            if (alen > room) {
+                alen = room;
+                while (alen > 0u && ((unsigned char)artist[alen] & 0xC0u) == 0x80u) alen--;
+            }
+            with_artist = alen > 0u;
+        }
+        size_t at = (size_t)snprintf(line, sizeof line, "%s%s%s%.*s\t", album ? "@" : "", key != NULL ? key : "", with_artist ? "\x1f" : "",
+                                     (int)alen, with_artist ? artist : "");
         if (at >= sizeof line) at = sizeof line - 1u;
         /* I485: the entry text is the name alone; the artist travels in the key after 0x1f and the tile draws it on its own line. */
         snprintf(line + at, sizeof line - at, "%s", name);

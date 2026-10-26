@@ -17,6 +17,60 @@ static void check(int ok, const char* what) {
     }
 }
 
+/* I486: a key near the limit plus a long multi-byte artist. The key must survive whole (activation opens it), the artist is cut
+ * on a UTF-8 boundary to the room the key leaves. */
+static void long_artist(const sel_host* host) {
+    sel_library* lib = sel_library_open(host, sel_machine_fake("a060"), 0, ":memory:");
+    sel_view v;
+    sel_scan_row row;
+    sel_scan_batch b;
+    sel_message reply;
+    char path[1200], key[1210], artist[200];
+    uint32_t lines = 0, i, seen = 0;
+    size_t al = 0;
+
+    check(lib != NULL, "i486 library opens");
+    if (lib == NULL) return;
+    memset(&v, 0, sizeof v);
+    check(sel_view_init(&v, host, 20u), "i486 view init");
+    path[0] = '/';
+    memset(path + 1, 'c', 1178);
+    memcpy(path + 1179, ".mod", 5);
+    snprintf(key, sizeof key, "local:%s", path); /* 1189 bytes */
+    for (i = 0; i < 40u; i++) {
+        artist[al++] = (char)0xC3; /* A with diaeresis, two bytes each: 80 bytes */
+        artist[al++] = (char)0x84;
+    }
+    artist[al] = '\0';
+    memset(&row, 0, sizeof row);
+    row.source = "local";
+    row.path = path;
+    row.format = "mod";
+    row.artist = artist;
+    row.name = "Long Song";
+    memset(&b, 0, sizeof b);
+    b.rows = &row;
+    b.count = 1;
+    b.now = 1;
+    check(sel_library_request(lib, SEL_LIB_REQ_SCAN_BATCH, &b, &reply) && reply.args[1].v.i == 0, "i486 scan");
+    check(sel_library_history_add(lib, key, 100, 0), "i486 history add");
+    check(sel_library_home(lib, 10, v.htext, SEL_VIEW_HOME_TEXT_MAX, &lines), "i486 home text");
+    sel_view_set_home(&v, v.htext);
+    for (i = 0; i < v.frow_n; i++) {
+        if (v.frows[i].key != NULL && strcmp(v.frows[i].key, key) == 0) {
+            const char* a = v.frows[i].artist;
+            size_t n = a != NULL ? strlen(a) : 0u;
+            seen++;
+            check(a != NULL && n > 0u && n < al, "i486 artist kept but cut");
+            check(n % 2u == 0u, "i486 artist cut on a UTF-8 boundary");
+            check(v.frows[i].art_ref != NULL && strcmp(v.frows[i].art_ref, key) == 0, "i486 art_ref is the whole key");
+        }
+    }
+    check(seen == 1u, "i486 long key with long artist keeps its key");
+    sel_view_free(&v, host);
+    sel_library_close(lib);
+}
+
 int main(void) {
     const sel_host* host = sel_host_default();
     sel_library* lib = sel_library_open(host, sel_machine_fake("a060"), 0, ":memory:");
@@ -47,6 +101,7 @@ int main(void) {
     check(seen2 == 1u, "1190-byte key round-trips exactly");
     sel_view_free(&v, host);
     sel_library_close(lib);
+    long_artist(host);
     printf(fails ? "home-key: %d failure(s)\n" : "home-key: ok\n", fails);
     return fails ? 1 : 0;
 }
