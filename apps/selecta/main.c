@@ -672,6 +672,20 @@ int main(int argc, char** argv)
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_PAINT_MS_MIN, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_PAINT_MS_AVG, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_PAINT_MS_MAX, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_PRESENT_MS_MIN, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_PRESENT_MS_AVG, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_PRESENT_MS_MAX, 0));
+            {
+                static const char* const pcls[] = {"fill", "scrim", "round", "gradient", "line", "text", "mask", "image", "shadow", "icon", "genart"};
+                static const char* const ppt[] = {"canvas", "song", "sidebar", "main", "transport", "progress", "volume", "status", "focus", "tip", "overlay", "visual"};
+                size_t k;
+                printf("ui_paint id=%s", g_uis[u].id);
+                for (k = 0; k < sizeof pcls / sizeof pcls[0]; k++) {
+                    printf(" paint_ms_%s=%u paint_n_%s=%u", pcls[k], (unsigned)sel_tag_find(us, SEL_UI_STAT_PROF_MS_FILL + (uint32_t)k, 0),
+                           pcls[k], (unsigned)sel_tag_find(us, SEL_UI_STAT_PROF_N_FILL + (uint32_t)k, 0));
+                }
+                for (k = 0; k < sizeof ppt / sizeof ppt[0]; k++) {
+                    printf(" painter_ms_%s=%u", ppt[k], (unsigned)sel_tag_find(us, SEL_UI_STAT_PT_MS_CANVAS + (uint32_t)k, 0));
+                }
+                printf("\n");
+            }
             printf("ui_library id=%s\n%s", g_uis[u].id, (const char*)sel_tag_find(us, SEL_UI_STAT_LIBRARY_DUMP, (uintptr_t) ""));
             printf("ui_drop id=%s drops=%u scans=%u\n", g_uis[u].id, (unsigned)sel_tag_find(us, SEL_UI_STAT_DROPS, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_SCANS, 0));

@@ -141,7 +141,7 @@ static const char* ellipsis_of(const sel_gui_atlas* at) {
     return sel_gui_atlas_glyph(at, ELLIPSIS_CP) != NULL ? "\xE2\x80\xA6" : "...";
 }
 
-int32_t sel_gui_text_draw(sel_gui_canvas* c, const sel_gui_atlas* at, int32_t x, int32_t y, const char* s,
+static int32_t text_draw_raw(sel_gui_canvas* c, const sel_gui_atlas* at, int32_t x, int32_t y, const char* s,
                           uint32_t argb, int32_t max_w, sel_gui_text_stats* st) {
     size_t len = strlen(s), i = 0, used, keep = 0;
     const char* ell;
@@ -243,3 +243,12 @@ int32_t sel_gui_text_wrap(sel_gui_canvas* c, const sel_gui_atlas* at, sel_gui_re
     }
     return line;
 }
+
+/* I389: profiled entry points; the raw functions above hold the drawing. */
+int32_t sel_gui_text_draw(sel_gui_canvas* c, const sel_gui_atlas* at, int32_t x, int32_t y, const char* s, uint32_t argb, int32_t max_w, sel_gui_text_stats* st) {
+    uint32_t t0 = sel_gui_prof_begin(c);
+    int32_t r = text_draw_raw(c, at, x, y, s, argb, max_w, st);
+    sel_gui_prof_end(c, SEL_GUI_PROF_TEXT, t0);
+    return r;
+}
+

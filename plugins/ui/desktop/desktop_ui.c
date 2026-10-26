@@ -82,6 +82,10 @@ typedef struct song_row {
     song_ref ref;
 } song_row;
 
+/* I389: the painters timed in desk_present; the slot names are the --stats suffixes. */
+enum { PT_CANVAS = 0, PT_SONG, PT_SIDEBAR, PT_MAIN, PT_TRANSPORT, PT_PROGRESS, PT_VOLUME, PT_STATUS, PT_FOCUS, PT_TIP,
+       PT_OVERLAY, PT_VISUAL, PT_COUNT };
+
 typedef struct desk {
     sel_engine* engine;
     const sel_host* host;
@@ -287,7 +291,9 @@ typedef struct desk {
     int frame_open;          /* I385: a paint has begun and its desk_flush has not yet closed the frame */
     uint32_t page_seen;      /* I368: the page the last paint showed, +1 (0 = nothing painted yet) */
     uint32_t page_dirty;     /* I368: pixels the first paint after the latest page change repainted */
-    sel_tag stats[88];
+    uint32_t pt_t0;           /* I389: clock at the last painter lap */
+    uint32_t pt_ms[PT_COUNT]; /* I389: ms per painter (host clock deltas); the primitive classes live in canvas->prof_ms */
+    sel_tag stats[88 + 2 * (SEL_GUI_PROF_COUNT + PT_COUNT)];
     char* input_at;         /* where the scripted input resumes after a turn that sent an engine line */
     uint32_t sends;         /* engine lines sent so far: the replay yields a turn so the shell pumps them */
     char library_dump[8192]; /* the Library page as text for the stats (DUI-P4-3) */
@@ -358,6 +364,29 @@ static void desk_frame_begin(desk* d) {
         const sel_host* ch = sel_engine_plugin_host(d->engine);
         d->frame_t0 = ch->clock_ms(ch);
         d->frame_open = 1;
+    }
+}
+
+/* I389: the paint profile (per primitive class in the canvas, per painter in pt_ms) runs only under --stats. */
+static uint32_t desk_prof_clock(void* ctx) {
+    desk* d = (desk*)ctx;
+    const sel_host* ch = sel_engine_plugin_host(d->engine);
+    return ch->clock_ms(ch);
+}
+
+static void desk_prof_attach(desk* d) {
+    if (d->report && d->canvas != NULL) {
+        d->canvas->clock = desk_prof_clock;
+        d->canvas->clock_ctx = d;
+    }
+}
+
+/* Adds the ms since pt_t0 to painter slot `pt` and restarts pt_t0, so consecutive painters chain with one clock read each. */
+static void desk_pt_lap(desk* d, uint32_t pt) {
+    if (d->report) {
+        uint32_t now = desk_prof_clock(d);
+        d->pt_ms[pt] += now - d->pt_t0;
+        d->pt_t0 = now;
     }
 }
 
@@ -756,6 +785,7 @@ static void draw_widget(desk* d, uint32_t bit) {
         draw_nowplaying(d);
     } else if (bit == SEL_UIM_DIRTY_QUEUE) {
         draw_sidebar(d);
+        desk_pt_lap(d, PT_SIDEBAR);
         if (d->home) {
             draw_home(d);
         }
@@ -6651,6 +6681,7 @@ static int desk_present(desk* d) {
         return 0;
     }
     desk_frame_begin(d);
+    d->pt_t0 = d->report ? desk_prof_clock(d) : 0u;
     if (d->frames == 0u || d->repaint) { /* the first frame and a resize paint the whole canvas */
         d->repaint = 0;
         d->seek_fill = -1;
@@ -6659,9 +6690,11 @@ static int desk_present(desk* d) {
         sel_gui_fill_rect(d->canvas, rect_of(0, 0, d->canvas->w, d->canvas->h),
                           ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
         sel_gui_dirty_add(d->canvas, rect_of(0, 0, d->canvas->w, d->canvas->h));
+        desk_pt_lap(d, PT_CANVAS);
     }
     if (d->uim.layout == SEL_UIM_LAYOUT_VISUAL) { /* the visual layout: the visualizer and the signal path fill the canvas */
         draw_visual(d);
+        desk_pt_lap(d, PT_VISUAL);
         d->hash = (d->hash ^ 0x56495355u) * 16777619u;
         d->dirty_pixels = desk_flush(d);
         d->dirty_total += d->dirty_pixels;
@@ -6673,6 +6706,9 @@ static int desk_present(desk* d) {
             continue;
         }
         draw_widget(d, bit);
+        desk_pt_lap(d, bit == SEL_UIM_DIRTY_SONG ? PT_SONG : bit == SEL_UIM_DIRTY_QUEUE ? PT_MAIN :
+                    bit == SEL_UIM_DIRTY_TRANSPORT ? PT_TRANSPORT : bit == SEL_UIM_DIRTY_PROGRESS ? PT_PROGRESS :
+                    bit == SEL_UIM_DIRTY_VOLUME ? PT_VOLUME : PT_STATUS);
         d->widget_draws++;
         d->hash = (d->hash ^ bit) * 16777619u;
         if (bit == SEL_UIM_DIRTY_SONG) {
@@ -6698,8 +6734,11 @@ static int desk_present(desk* d) {
         }
     }
     desk_draw_focus(d);
+    desk_pt_lap(d, PT_FOCUS);
     desk_draw_tip(d);
+    desk_pt_lap(d, PT_TIP);
     desk_draw_overlay(d);
+    desk_pt_lap(d, PT_OVERLAY);
     d->dirty_pixels = desk_flush(d);
     d->dirty_total += d->dirty_pixels;
     d->frames++;
@@ -6881,6 +6920,7 @@ static int desk_make_canvas(desk* d, const char* size, int32_t def_w, int32_t de
         return 0;
     }
     sel_gui_canvas_init(d->canvas, format, (int32_t)w, (int32_t)h, pixels);
+    desk_prof_attach(d);
     if (format == SEL_GUI_INDEX8) {
         static const int ui_tokens[] = {SEL_GUI_TOKEN_ACCENT, SEL_GUI_TOKEN_SURFACE, SEL_GUI_TOKEN_TEXT,
             SEL_GUI_TOKEN_BACKGROUND, SEL_GUI_TOKEN_SURFACE_RAISED, SEL_GUI_TOKEN_SURFACE_HOVER,
@@ -6959,6 +6999,7 @@ static int desk_resize(desk* d, int32_t w, int32_t h) {
     }
     d->host->mem_free(d->host, d->canvas->pixels);
     sel_gui_canvas_init(d->canvas, SEL_GUI_RGBA32, w, h, pixels);
+    desk_prof_attach(d);
 #ifdef SELECTA_DESKTOP_SDL
     if (d->sdl != NULL && !desk_sdl_resize(d->sdl, w, h)) {
         return 0;
@@ -7060,6 +7101,7 @@ static void* desk_open(const sel_ui_open_args* a) {
         }
         if (strcmp(a->argv[i], "--stats") == 0) {
             d->report = 1;
+            desk_prof_attach(d);
         }
         if (strcmp(a->argv[i], "--resize") == 0 && i + 1 < a->argc) {
             d->resize = a->argv[i + 1];
@@ -7530,7 +7572,20 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[85].value = d->frame_ms_n != 0u ? d->present_ms_sum / d->frame_ms_n : 0u;
     d->stats[86].tag = SEL_UI_STAT_PRESENT_MS_MAX;
     d->stats[86].value = d->present_ms_max;
-    d->stats[87].tag = SEL_TAG_END;
+    {
+        uint32_t k, n = 87u;
+        for (k = 0; k < SEL_GUI_PROF_COUNT; k++) {
+            d->stats[n].tag = SEL_UI_STAT_PROF_MS_FILL + k;
+            d->stats[n++].value = d->canvas != NULL ? d->canvas->prof_ms[k] : 0u;
+            d->stats[n].tag = SEL_UI_STAT_PROF_N_FILL + k;
+            d->stats[n++].value = d->canvas != NULL ? d->canvas->prof_n[k] : 0u;
+        }
+        for (k = 0; k < PT_COUNT; k++) {
+            d->stats[n].tag = SEL_UI_STAT_PT_MS_CANVAS + k;
+            d->stats[n++].value = d->pt_ms[k];
+        }
+        d->stats[n].tag = SEL_TAG_END;
+    }
 
     return d->stats;
 }

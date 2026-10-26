@@ -74,9 +74,11 @@ static void genart_draw(sel_gui_canvas* c, sel_gui_rect r, const char* format, u
 
 void sel_gui_genart_draw(sel_gui_canvas* c, sel_gui_rect r, const char* format, uint32_t title_hash) {
     uint32_t was = c->region;
+    uint32_t t0 = sel_gui_prof_begin(c);
     c->region = SEL_GUI_RGN_ART;
     genart_draw(c, r, format, title_hash);
     c->region = was;
+    sel_gui_prof_end(c, SEL_GUI_PROF_GENART, t0);
 }
 
 static void genart_draw(sel_gui_canvas* c, sel_gui_rect r, const char* format, uint32_t title_hash) {

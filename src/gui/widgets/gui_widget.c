@@ -19,7 +19,7 @@ const char* sel_gui_widget_kind_name(uint32_t kind) {
     return kind < SEL_GUI_WIDGET_KIND_COUNT ? k_kind_names[kind] : "unknown";
 }
 
-int32_t sel_gui_icon_draw(sel_gui_canvas* c, const sel_gui_icons* ic, uint32_t id, sel_gui_rect box, int32_t px,
+static int32_t icon_draw_raw(sel_gui_canvas* c, const sel_gui_icons* ic, uint32_t id, sel_gui_rect box, int32_t px,
                           uint32_t argb) {
     uint32_t i, pick = 0;
     int32_t n;
@@ -545,3 +545,12 @@ int sel_gui_widget_draw(sel_gui_canvas* c, const sel_gui_style* s, const sel_gui
     st->draws[w->kind]++;
     return 0;
 }
+
+/* I389: profiled entry points; the raw functions above hold the drawing. */
+int32_t sel_gui_icon_draw(sel_gui_canvas* c, const sel_gui_icons* ic, uint32_t id, sel_gui_rect box, int32_t px, uint32_t argb) {
+    uint32_t t0 = sel_gui_prof_begin(c);
+    int32_t r = icon_draw_raw(c, ic, id, box, px, argb);
+    sel_gui_prof_end(c, SEL_GUI_PROF_ICON, t0);
+    return r;
+}
+

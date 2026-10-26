@@ -355,7 +355,7 @@ static sel_gui_rect cur_clip(const sel_gui_canvas* c, sel_gui_rect r) {
 
 /* ---- primitives ---- */
 
-void sel_gui_fill_rect(sel_gui_canvas* c, sel_gui_rect r, uint32_t argb) {
+static void fill_rect_raw(sel_gui_canvas* c, sel_gui_rect r, uint32_t argb) {
     int32_t x, y;
     c->prims++;
     r = cur_clip(c, r);
@@ -367,7 +367,9 @@ void sel_gui_fill_rect(sel_gui_canvas* c, sel_gui_rect r, uint32_t argb) {
 }
 
 void sel_gui_scrim(sel_gui_canvas* c, sel_gui_rect r, uint32_t rgb, uint32_t alpha) {
+    uint32_t t0 = sel_gui_prof_begin(c);
     sel_gui_fill_rect(c, r, ((alpha > 255u ? 255u : alpha) << 24) | (rgb & 0xFFFFFFu));
+    sel_gui_prof_end(c, SEL_GUI_PROF_SCRIM, t0);
 }
 
 /* Coverage 0..16 of pixel (px, py) by a circle of radius rad centred on pixel-edge coordinates (cx, cy), 4x4
@@ -387,7 +389,7 @@ static uint32_t coverage(int32_t px, int32_t py, int32_t cx, int32_t cy, int32_t
     return n;
 }
 
-void sel_gui_round_rect(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, uint32_t argb) {
+static void round_rect_raw(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, uint32_t argb) {
     sel_gui_rect v;
     int32_t x, y, rad = imin(radius, imin(r.w, r.h) / 2);
     c->prims++;
@@ -428,7 +430,7 @@ static uint32_t round_cov(sel_gui_rect r, int32_t rad, int32_t x, int32_t y) {
     return cx >= 0 && cy >= 0 ? coverage(x, y, cx, cy, rad) : 16u;
 }
 
-void sel_gui_round_frame(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, int32_t width, uint32_t argb) {
+static void round_frame_raw(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, int32_t width, uint32_t argb) {
     sel_gui_rect v, in;
     int32_t x, y, rad = imin(radius, imin(r.w, r.h) / 2), irad;
     c->prims++;
@@ -464,7 +466,7 @@ void sel_gui_round_frame(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, int3
     }
 }
 
-void sel_gui_gradient(sel_gui_canvas* c, sel_gui_rect r, int vertical, uint32_t a, uint32_t b) {
+static void gradient_raw(sel_gui_canvas* c, sel_gui_rect r, int vertical, uint32_t a, uint32_t b) {
     sel_gui_rect v;
     int32_t x, y, n = vertical ? r.h : r.w;
     int32_t step = n > 1 ? (int32_t)(65536 / (n - 1)) : 0; /* Q16 position change per pixel */
@@ -487,7 +489,7 @@ void sel_gui_gradient(sel_gui_canvas* c, sel_gui_rect r, int vertical, uint32_t 
     }
 }
 
-void sel_gui_line(sel_gui_canvas* c, int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t argb) {
+static void line_raw(sel_gui_canvas* c, int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t argb) {
     int32_t dx = x1 > x0 ? x1 - x0 : x0 - x1, dy = y1 > y0 ? y0 - y1 : y1 - y0;
     int32_t sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, err = dx + dy;
     const sel_gui_rect k = c->clip[c->clip_n - 1u];
@@ -512,7 +514,7 @@ void sel_gui_line(sel_gui_canvas* c, int32_t x0, int32_t y0, int32_t x1, int32_t
     }
 }
 
-void sel_gui_blit_mask(sel_gui_canvas* c, int32_t x, int32_t y, const uint8_t* mask, int32_t mw, int32_t mh,
+static void blit_mask_raw(sel_gui_canvas* c, int32_t x, int32_t y, const uint8_t* mask, int32_t mw, int32_t mh,
                        int32_t mstride, uint32_t tint) {
     sel_gui_rect box = {0, 0, 0, 0}, v;
     int32_t px, py;
@@ -531,7 +533,7 @@ void sel_gui_blit_mask(sel_gui_canvas* c, int32_t x, int32_t y, const uint8_t* m
     }
 }
 
-void sel_gui_blit_image(sel_gui_canvas* c, sel_gui_rect dst, const uint32_t* src, int32_t sw, int32_t sh,
+static void blit_image_raw(sel_gui_canvas* c, sel_gui_rect dst, const uint32_t* src, int32_t sw, int32_t sh,
                         int32_t sstride, int box) {
     sel_gui_rect v;
     int32_t x, y;
@@ -588,7 +590,7 @@ void sel_gui_shadow_bake(sel_gui_shadow* s, uint32_t radius, uint32_t rgb, uint3
     }
 }
 
-void sel_gui_shadow_draw(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_rect box) {
+static void shadow_draw_raw(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_rect box) {
     sel_gui_rect out, v;
     int32_t x, y, r = (int32_t)s->radius;
     c->prims++;
@@ -612,5 +614,73 @@ void sel_gui_shadow_draw(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_rec
             }
             put(c, x, y, (a << 24) | s->rgb, 0);
         }
+    }
+}
+
+/* I389: profiled entry points; the raw functions above hold the drawing. */
+void sel_gui_fill_rect(sel_gui_canvas* c, sel_gui_rect r, uint32_t argb) {
+    uint32_t t0 = sel_gui_prof_begin(c);
+    fill_rect_raw(c, r, argb);
+    sel_gui_prof_end(c, SEL_GUI_PROF_FILL, t0);
+}
+
+void sel_gui_round_rect(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, uint32_t argb) {
+    uint32_t t0 = sel_gui_prof_begin(c);
+    round_rect_raw(c, r, radius, argb);
+    sel_gui_prof_end(c, SEL_GUI_PROF_ROUND, t0);
+}
+
+void sel_gui_round_frame(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, int32_t width, uint32_t argb) {
+    uint32_t t0 = sel_gui_prof_begin(c);
+    round_frame_raw(c, r, radius, width, argb);
+    sel_gui_prof_end(c, SEL_GUI_PROF_ROUND, t0);
+}
+
+void sel_gui_gradient(sel_gui_canvas* c, sel_gui_rect r, int vertical, uint32_t a, uint32_t b) {
+    uint32_t t0 = sel_gui_prof_begin(c);
+    gradient_raw(c, r, vertical, a, b);
+    sel_gui_prof_end(c, SEL_GUI_PROF_GRADIENT, t0);
+}
+
+void sel_gui_line(sel_gui_canvas* c, int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t argb) {
+    uint32_t t0 = sel_gui_prof_begin(c);
+    line_raw(c, x0, y0, x1, y1, argb);
+    sel_gui_prof_end(c, SEL_GUI_PROF_LINE, t0);
+}
+
+void sel_gui_blit_mask(sel_gui_canvas* c, int32_t x, int32_t y, const uint8_t* mask, int32_t mw, int32_t mh, int32_t mstride, uint32_t tint) {
+    uint32_t t0 = sel_gui_prof_begin(c);
+    blit_mask_raw(c, x, y, mask, mw, mh, mstride, tint);
+    sel_gui_prof_end(c, SEL_GUI_PROF_MASK, t0);
+}
+
+void sel_gui_blit_image(sel_gui_canvas* c, sel_gui_rect dst, const uint32_t* src, int32_t sw, int32_t sh, int32_t sstride, int box) {
+    uint32_t t0 = sel_gui_prof_begin(c);
+    blit_image_raw(c, dst, src, sw, sh, sstride, box);
+    sel_gui_prof_end(c, SEL_GUI_PROF_IMAGE, t0);
+}
+
+void sel_gui_shadow_draw(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_rect box) {
+    uint32_t t0 = sel_gui_prof_begin(c);
+    shadow_draw_raw(c, s, box);
+    sel_gui_prof_end(c, SEL_GUI_PROF_SHADOW, t0);
+}
+
+uint32_t sel_gui_prof_begin(sel_gui_canvas* c) {
+    if (c->clock == NULL) {
+        return 0u;
+    }
+    c->prof_depth++;
+    return c->clock(c->clock_ctx);
+}
+
+void sel_gui_prof_end(sel_gui_canvas* c, uint32_t cls, uint32_t t0) {
+    if (c->clock == NULL) {
+        return;
+    }
+    c->prof_depth--;
+    if (c->prof_depth == 0u) {
+        c->prof_ms[cls] += c->clock(c->clock_ctx) - t0;
+        c->prof_n[cls]++;
     }
 }

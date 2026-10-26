@@ -27,6 +27,11 @@ enum { SEL_GUI_RGBA32 = 0, SEL_GUI_INDEX8 = 1 };
  * each resolve in their own 64-entry sub-palette. */
 enum { SEL_GUI_RGN_UI = 0, SEL_GUI_RGN_ART, SEL_GUI_RGN_TILE, SEL_GUI_RGN_PANEL, SEL_GUI_RGN_FLOW, SEL_GUI_RGN_COUNT };
 
+/* I389: paint profile classes, one per kind of primitive. */
+enum { SEL_GUI_PROF_FILL = 0, SEL_GUI_PROF_SCRIM, SEL_GUI_PROF_ROUND, SEL_GUI_PROF_GRADIENT, SEL_GUI_PROF_LINE,
+       SEL_GUI_PROF_TEXT, SEL_GUI_PROF_MASK, SEL_GUI_PROF_IMAGE, SEL_GUI_PROF_SHADOW, SEL_GUI_PROF_ICON,
+       SEL_GUI_PROF_GENART, SEL_GUI_PROF_COUNT };
+
 typedef struct sel_gui_canvas {
     uint32_t format; /* SEL_GUI_RGBA32 or SEL_GUI_INDEX8 */
     int32_t w, h;
@@ -42,6 +47,14 @@ typedef struct sel_gui_canvas {
     sel_gui_rect dirty[SEL_GUI_DIRTY_MAX];
     uint32_t dirty_n;
     uint32_t prims; /* primitives run since init: the sentinel that the rasterizer was reached */
+    /* I389: optional paint profile. With `clock` set, each outermost primitive adds its elapsed ms (clock deltas) and
+     * a call to prof_ms / prof_n by class; a primitive nested in another counts for the outer one only. Draw output is
+     * not affected. */
+    uint32_t (*clock)(void* ctx);
+    void* clock_ctx;
+    uint32_t prof_depth;
+    uint32_t prof_ms[SEL_GUI_PROF_COUNT];
+    uint32_t prof_n[SEL_GUI_PROF_COUNT];
 } sel_gui_canvas;
 
 /* Bytes of pixel storage for a format and size. */
@@ -125,3 +138,7 @@ void sel_gui_shadow_draw(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_rec
 }
 #endif
 #endif
+
+/* I389: profile bracket for a primitive; pairs with sel_gui_prof_end. Returns the start time (0 when profiling is off). */
+uint32_t sel_gui_prof_begin(sel_gui_canvas* c);
+void sel_gui_prof_end(sel_gui_canvas* c, uint32_t cls, uint32_t t0);
