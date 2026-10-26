@@ -1,8 +1,8 @@
 # T90 fetch part (row I188): the gain of a song comes from the DEViLBOX loudness endpoint on an Amiga machine
 # (no analysis), and a desktop analysis is submitted with one PUT carrying the bearer token.
 # -DCLI=<selecta-cli> -DWORK=<fixture work dir> -DSONGS=<tests/m3/genre>
-# ambient.mod (md5 1074d265...): GET 200, lufs -23.4, so gain +5.40 dB (540 centi-dB) from the -18 LUFS target.
-# techno.mod  (md5 d5346136...): GET 404 unknown hash, PUT 200.
+# ambient.mod (md5 b0ecddaa...): GET 200, lufs -23.4, so gain +5.40 dB (540 centi-dB) from the -18 LUFS target.
+# techno.mod  (md5 67baee51...): GET 404 unknown hash, PUT 200.
 # nogenre.mod (md5 3c6d327f...): no route, text/plain 404 = endpoint missing.
 file(READ "${WORK}/port" port)
 string(STRIP "${port}" port)
@@ -80,7 +80,7 @@ endfunction()
 # ---- 1. Amiga machine: the gain comes from the endpoint, no analysis, no PUT
 reset_log()
 run_loudness(r1 "${WORK}/t90-1.db" --machine a1200 --config-dir "${cfg}" "${SONGS}/ambient.mod")
-expect_match("${r1}" "loudness_source=devilbox gain_cdb=540 hash=1074d265f7f122c4c6d3d4df65f86ed9" "fetch on a1200")
+expect_match("${r1}" "loudness_source=devilbox gain_cdb=540 hash=b0ecddaa870b6f7a22733786136fb5b0" "fetch on a1200")
 expect_match("${r1}" "loudness_put=none" "no PUT after a fetch")
 loudness_log(l1)
 expect_eq(${l1_get} 1 "ambient GET requests")
@@ -113,7 +113,7 @@ foreach(i RANGE ${last3})
     string(JSON body GET "${l3_json}" ${i} body)
     string(JSON ppath GET "${l3_json}" ${i} path)
     expect_match("${auth}" "^Bearer fixture-jwt-loudness$" "PUT authorization")
-    expect_match("${ppath}" "^/api/loudness/d53461365cef8e858993e12b8fcaf1ee$" "PUT path")
+    expect_match("${ppath}" "^/api/loudness/67baee51cbdbd1acb02379d33abeb108$" "PUT path")
     expect_match("${body}" "\"lufs\":-?[0-9]+\\.[0-9][0-9]" "PUT body lufs")
     expect_match("${body}" "\"peakDb\":-?[0-9]+\\.[0-9][0-9]" "PUT body peakDb")
     expect_match("${body}" "\"method\":\"(r128|rms)\"" "PUT body method")

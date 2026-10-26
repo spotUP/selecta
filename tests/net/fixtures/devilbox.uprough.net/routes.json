@@ -1,13 +1,13 @@
 {
-  "/api/genre/19fb8b7b1816": {
+  "/api/genre/c077578a1816": {
     "status": 503,
     "body": "{\"error\":\"queue full\"}"
   },
-  "/api/songdb/lookup?hash=1074d265f7f1": {
+  "/api/songdb/lookup?hash=b0ecddaa870b": {
     "status": 200,
     "body": "{\"found\": true, \"format\": \"ProTracker\", \"channels\": 4, \"authors\": [\"Jogeir Liljedahl\"], \"publishers\": [], \"album\": \"\", \"year\": 1994, \"subsongs\": []}"
   },
-  "/api/songdb/lookup?hash=d53461365cef": {
+  "/api/songdb/lookup?hash=67baee51cbdb": {
     "status": 200,
     "body": "{\"found\": true, \"format\": \"ProTracker\", \"channels\": 4, \"authors\": [\"jogeir  liljedahl.\"], \"publishers\": [], \"album\": \"\", \"year\": 1994, \"subsongs\": []}"
   },
@@ -15,17 +15,17 @@
     "status": 200,
     "body": "{\"found\": true, \"format\": \"ProTracker\", \"channels\": 4, \"authors\": [\"LILJEDAHL, Jogeir\", \"Dr. Awesome\"], \"publishers\": [], \"album\": \"\", \"year\": 1994, \"subsongs\": []}"
   },
-  "/api/songdb/lookup?hash=642411a3f16b": {
+  "/api/songdb/lookup?hash=21dfb2fe98d2": {
     "status": 503,
     "body": "{\"error\":\"queue full\"}"
   },
-  "/api/loudness/1074d265f7f122c4c6d3d4df65f86ed9": {
+  "/api/loudness/b0ecddaa870b6f7a22733786136fb5b0": {
     "status": 200,
-    "body": "{\"hash\":\"1074d265f7f122c4c6d3d4df65f86ed9\",\"lufs\":-23.4,\"peakDb\":-3.2,\"method\":\"r128\",\"count\":3}"
+    "body": "{\"hash\":\"b0ecddaa870b6f7a22733786136fb5b0\",\"lufs\":-23.4,\"peakDb\":-3.2,\"method\":\"r128\",\"count\":3}"
   },
-  "/api/loudness/d53461365cef8e858993e12b8fcaf1ee": [
+  "/api/loudness/67baee51cbdbd1acb02379d33abeb108": [
     {"key_method": "PUT", "status": 200,
-     "body": "{\"hash\":\"d53461365cef8e858993e12b8fcaf1ee\",\"lufs\":-20.0,\"peakDb\":-1.0,\"method\":\"r128\",\"count\":1}"},
+     "body": "{\"hash\":\"67baee51cbdbd1acb02379d33abeb108\",\"lufs\":-20.0,\"peakDb\":-1.0,\"method\":\"r128\",\"count\":1}"},
     {"key_method": "GET", "status": 404, "body": "{\"error\":\"unknown hash\"}"}
   ],
   "/api/lyrics/3c6d327f1a19f3e22cb0d6433a50fc4f": {
