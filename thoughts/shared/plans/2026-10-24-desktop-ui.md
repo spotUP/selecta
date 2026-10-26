@@ -257,6 +257,7 @@ IDs `DUI-P<phase>-<item>`. 73 items. Every test has label `dui`; "Test:" names t
 - [ ] DUI-P4-20 Compact full-screen layout (I343). Today a canvas under 700 px wide takes the 40 px mini strip (`sel_uim_breakpoint_for` returns mini-suggestion, layout.c:32; navigation arrows hidden under 400 px, desktop_ui.c:3592), so a 640x400 RTG screen or a 680x270 Replay mode has no pages. A compact layout is added: single column, the active page full width, the sidebar entries as one icon row, the transport as one footer row; the mini strip is only the user choice `MODE=mini`. Minimum supported canvas and the row and icon sizes are open (Q14, Q15). Test: `dui-compact`: `resize` to 640x400 and 680x270: layout id compact, every page of section 3 reachable by click and key, no widget rect outside the canvas, goldens for Home, Library, Now Playing, Queue in both sizes.
 - [ ] DUI-P4-21 Empty states, loading states and error toasts. Each list view has an empty state (icon, one line, one action): empty library, empty queue, no search results, empty playlist, no lyrics, no artwork (generated art, DUI-P2-5), no liked songs. A slow source shows a loading row, never a blank page. Failures toast through the one toast widget: song failed to load, library write failed, remote fetch failed, bad format string (DUI-P5-9), drop of an unsupported file. Toast time on screen and stacking are open (Q12). Test: `dui-empty-errors`: an empty fixture library shows the empty state of each view (golden per view, `STAT_EMPTY_STATES` = 7); a `LOAD` of a corrupt fixture shows one error toast naming the file and the engine state stays stopped.
 - [x] DUI-P4-22 Library style chooser (I390). A segmented control of three icon buttons at the right end of the Library title row, left of Clear Library: Grid, Cover Flow, List (tooltips with those names, Lucide icons layout-grid, gallery-horizontal, list). The current style shows the filled surface of the selected sidebar door; hover follows the one hover path. A click sends the same VIEW_STYLE command the --exec path uses. Test: `dui-library-style`: the live loop (SDL dummy driver, timed mouse tokens) clicks the Cover Flow segment found in the stats dump and the cover flow sentinel `flow draws` counts up while `grid draws` stays 0; a second run clicks Cover Flow then Grid and `grid draws` counts up; the dump marks the clicked segment selected.
+- [x] DUI-P4-23 Fit scale and UI Zoom (I458, section 10). Q16 scale = density x zoom; fit clamps to [0.625, 1.0] from the 1024x640 reference; pref `ui.desktop.zoom` fit|75|100|125|150; icons resampled at fractional scale (I460). Test: `dui-zoom`: fit at 800x600 gives `ui_scale_q16=51200` and logical 1024x768, 640x480 gives 40960, 125% at 1280x800 gives 81920; `icon_resampled=3` at fit, 0 at 100%.
 
 ### Phase 5: desktop features
 - [ ] DUI-P5-1 Remembered state: window position and size per mode, last view, browse style, search scope, panel widths (from M4-P12-5). Test: `dui-state`: run 1 changes them, run 2 opens with them (layout hash equal).
@@ -706,3 +707,34 @@ M4 sections to revise after this plan is accepted (list only, not edited here):
 - M4 section 7.2 and section 9 coverage: remap moved rows to DUI IDs.
 - M4 section 8a answers Q13 (font atlases: one builder, DUI-P2-3) and Q21 (theme presets live in `src/gui/theme/`).
 - Design doc section 14 milestone list (section 6 of this plan).
+
+## 10. Fit scale and UI Zoom (I458, Johan 2026-10-26: "Fit scale + zoom")
+
+Problem: the desktop UI draws at a whole-number scale (`d->scale` 1-3). An 800x600 RTG screen gets scale 1 and the full 1280-class layout, so content clips (the Composers list shows about 6 rows). The Mac window looks right only because the window is large. This section replaces line 66 ("scale is applied in integers") and line 139 ("fractional scales round up").
+
+### 10.1 Scale model
+- `d->scale_q16` (Q16.16) replaces `d->scale`. Scale = backend density (integer, 1-3) times zoom.
+- `lpx(v) = (v * scale_q16 + 32768) >> 16`. One helper `lpx_q16()` serves the q16 scroll sites that today multiply by `d->scale`.
+- Layout runs at logical size `w * 65536 / scale_q16` by `h * 65536 / scale_q16`.
+- Font atlas pixel size and icon pixel size are `lpx(size)`, rounded. Atlases and icons rebuild when the scale changes (desk_set_scale already frees and rebuilds them).
+- Invariant: for integer scales (65536, 131072, 196608) every pixel stays identical. The existing goldens at scale 1 and 2 do not change. A golden diff is a defect, not a refresh.
+
+### 10.2 Zoom setting
+- Pref `ui.desktop.zoom`, read with `config_get` at open: `fit`, `75`, `100`, `125`, `150`.
+- Default: `fit` on the rtg and aga backends, `100` on sdl and mem.
+- Option `--zoom fit|75|100|125|150` overrides the pref.
+- Keys Ctrl+Plus / Ctrl+Minus / Ctrl+0 (Cmd on the Mac) step through 75, 100, 125, 150 and back to the default. The change lasts for the session. Persisting it needs a host pref write path, which does not exist yet (ledger row I459).
+
+### 10.3 Fit rule
+- Reference logical size 1024x640.
+- Fit zoom = min(w / 1024, h / 640), clamped to [0.625, 1.0]. Fit never enlarges.
+- 800x600 gives 0.78125 (scale_q16 51200), logical 1024x768, body text about 11 px.
+- 640x480 gives 0.625 (logical 1024x768).
+- Below the floor the layout does not shrink more; the compact layout (I343, I457) takes over.
+- On resize the fit zoom is recomputed before the layout runs.
+
+### 10.4 Proof
+- Stats line reports `ui_scale_q16=<n>` and `ui_zoom=<fit|75|...>`; the sentinel for the tests.
+- Reachability ctest (mem backend, top-level `selecta` entry point): `--zoom fit --canvas 800x600 --stats` asserts `ui_scale_q16=51200`, logical 1024x768 and the body atlas pixel size; `--zoom 125 --canvas 1280x800` asserts 81920.
+- Existing dui goldens at scale 1 and 2 pass unchanged.
+- Amiga (rig 2, UAE RTG 800x600): the rig-m4-rtg run's stats show `ui_scale_q16=51200`.
