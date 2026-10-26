@@ -436,6 +436,30 @@ if(NOT SEL_AMIGA)
   set_tests_properties(text-ui-keys-wait PROPERTIES TIMEOUT 30)
 endif()
 
+# Amiga MUI UI (plan 2026-10-25-amiga-mui.md): MUI-P0-4 sentinel tag, MUI-P1-2 descriptor, MUI-P1-1 build split,
+# MUI-P0-6 SDK probe. Host only; the plugin entry is compiled straight into the test (it is not registered on the host).
+if(NOT SEL_AMIGA)
+  add_executable(mui_test ui/mui_test.c "${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c")
+  target_include_directories(mui_test PRIVATE "${PROJECT_SOURCE_DIR}/plugins/ui/mui/map")
+  target_compile_definitions(mui_test PRIVATE SEL_PLUGIN_ENTRY=sel_plugin_entry_mui_test SEL_PLUGIN_KIND_BUILD=5)
+  target_link_libraries(mui_test PRIVATE selecta_registry mui_map)
+  add_test(NAME mui-descriptor COMMAND mui_test "${CMAKE_CURRENT_BINARY_DIR}")
+  add_test(NAME mui-stat-tag COMMAND mui_test "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(mui-descriptor mui-stat-tag PROPERTIES TIMEOUT 30 LABELS mui)
+  set(_mui_has_ui 0)
+  if(TARGET sel_plugin_mui_ui)
+    set(_mui_has_ui 1)
+  endif()
+  add_test(NAME mui-build-split COMMAND "${CMAKE_COMMAND}" -DHAS_MAP=$<TARGET_EXISTS:mui_map> -DHAS_UI=${_mui_has_ui}
+    -DAMIGA=0 -P "${CMAKE_CURRENT_SOURCE_DIR}/ui/mui_build_split.cmake")
+  set_tests_properties(mui-build-split PROPERTIES LABELS mui)
+  set(SEL_MUI_INCLUDE "" CACHE PATH "MUI 3.8 developer headers (libraries/mui.h, proto/muimaster.h) for the m68k cross build")
+  set(SEL_M68K_CC "$ENV{HOME}/opt/amiga/bin/m68k-amigaos-gcc" CACHE FILEPATH "m68k cross compiler for mui-sdk-probe")
+  add_test(NAME mui-sdk-probe COMMAND "${CMAKE_COMMAND}" "-DCC=${SEL_M68K_CC}" "-DMUI_INCLUDE=${SEL_MUI_INCLUDE}"
+    "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/mui-sdk-probe" -P "${CMAKE_CURRENT_SOURCE_DIR}/ui/mui_sdk_probe.cmake")
+  set_tests_properties(mui-sdk-probe PROPERTIES LABELS mui)
+endif()
+
 # T19: the M1.1 reachability test. The real shell and text UI, driven by a key
 # file through the same key decoder as a terminal: browse, play, info panel.
 if(NOT SEL_AMIGA)

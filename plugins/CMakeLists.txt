@@ -89,6 +89,7 @@ endif()
 # (text_ui.c, row I60) registers from ui/text/CMakeLists.txt. Desktop only until M2.
 add_subdirectory(ui/text)
 add_subdirectory(ui/desktop)
+add_subdirectory(ui/mui)
 if(NOT SEL_AMIGA)
   add_subdirectory(integrations)
 endif()

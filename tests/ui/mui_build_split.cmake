@@ -1,0 +1,10 @@
+# mui-build-split (MUI-P1-1): -DHAS_MAP=<0|1> -DHAS_UI=<0|1> -DAMIGA=<0|1> are the target facts at configure time.
+if(NOT HAS_MAP)
+  message(FATAL_ERROR "RED[mui-build-split]: target mui_map is missing")
+endif()
+if(NOT AMIGA AND HAS_UI)
+  message(FATAL_ERROR "RED[mui-build-split]: the host target list has mui_ui")
+endif()
+if(AMIGA AND NOT HAS_UI)
+  message(FATAL_ERROR "RED[mui-build-split]: the Amiga target list lacks mui_ui")
+endif()
