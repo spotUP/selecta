@@ -3729,6 +3729,21 @@ static const char* library_dump_build(desk* d) {
  * token table yet: tile and cover flow art are these constants). The art is the generated tile of the Home shelves. */
 enum { GRID_ART = 160, GRID_GAP = 16, FLOW_ART = 240 };
 
+/* Smallest rectangle holding a and b; a zero-width a is "nothing yet" (the tile boxes of the grid and the cover flow, I379, I382). */
+static sel_gui_rect rect_union(sel_gui_rect a, sel_gui_rect b) {
+    sel_gui_rect u;
+    int32_t x1, y1;
+    if (a.w == 0) {
+        return b;
+    }
+    x1 = a.x + a.w > b.x + b.w ? a.x + a.w : b.x + b.w;
+    y1 = a.y + a.h > b.y + b.h ? a.y + a.h : b.y + b.h;
+    u = rect_of(a.x < b.x ? a.x : b.x, a.y < b.y ? a.y : b.y, 0, 0);
+    u.w = x1 - u.x;
+    u.h = y1 - u.y;
+    return u;
+}
+
 static int lib_grid_on(const desk* d, const sel_state* st) {
     (void)d;
     return st->composers != NULL && st->view != NULL &&
@@ -3804,16 +3819,7 @@ static void draw_lib_grid(desk* d, sel_gui_rect mn) {
         lib_view_row_reg(d, mn, sel_engine_state(d->engine), i, t);
         sel_gui_dirty_add(d->canvas, t);
         d->grid_tiles++;
-        if (d->grid_box.w == 0) {
-            d->grid_box = t;
-        } else {
-            int32_t x1 = d->grid_box.x + d->grid_box.w > t.x + t.w ? d->grid_box.x + d->grid_box.w : t.x + t.w;
-            int32_t y1 = d->grid_box.y + d->grid_box.h > t.y + t.h ? d->grid_box.y + d->grid_box.h : t.y + t.h;
-            d->grid_box.x = d->grid_box.x < t.x ? d->grid_box.x : t.x;
-            d->grid_box.y = d->grid_box.y < t.y ? d->grid_box.y : t.y;
-            d->grid_box.w = x1 - d->grid_box.x;
-            d->grid_box.h = y1 - d->grid_box.y;
-        }
+        d->grid_box = rect_union(d->grid_box, t);
     }
 }
 
@@ -3821,7 +3827,15 @@ static void draw_lib_grid(desk* d, sel_gui_rect mn) {
  * darkening the far ones. No perspective. The glide shifts every tile by the distance the centre moved, shrinking to 0. */
 static void draw_lib_flow(desk* d, sel_gui_rect mn) {
     const sel_view_state* v = sel_engine_state(d->engine)->view;
-    int32_t big = lpx(d, FLOW_ART), step = big * 2 / 3, cx = mn.x + mn.w / 2, y0 = mn.y + lpx(d, LIB_LIST_Y), k, shift = 0;
+    sel_gui_rect sr = lib_stats_rect(d, mn, sel_engine_state(d->engine));
+    int32_t mg = lpx(d, LIB_MARGIN), right = sr.w > 0 ? sr.x - mg : mn.x + mn.w; /* the flow centres beside the Statistics column (I382) */
+    int32_t big = lpx(d, FLOW_ART), avail = right - mn.x - 2 * mg, step, cx = (mn.x + right) / 2, y0 = mn.y + lpx(d, LIB_LIST_Y), k, shift = 0;
+    int32_t full = 2 * (big * 4 / 3 + (big - 3 * big / 5) / 2); /* width of the whole stack at full size: two outer covers at 2 steps */
+    if (full > avail) { /* the stack shrinks to fit beside the Statistics column instead of running under it (I382) */
+        big = big * (avail > 0 ? avail : 0) / full;
+        big = big > lpx(d, 48) ? big : lpx(d, 48);
+    }
+    step = big * 2 / 3;
     int32_t gl = sel_gui_tween_value(&d->tl, ANIM_KEY_FLOW, 65536);
     uint32_t side;
     const sel_view_row* cr = v->cursor >= v->window_start && v->cursor - v->window_start < v->row_n ? &v->rows[v->cursor - v->window_start] : NULL;
@@ -3830,6 +3844,7 @@ static void draw_lib_flow(desk* d, sel_gui_rect mn) {
     }
     d->flow_draws++;
     d->flow_centre = v->cursor;
+    d->grid_box = rect_of(0, 0, 0, 0);
     for (k = 3; k >= 0; k--) {
         for (side = 0; side < 2u; side++) {
             int32_t sgn = side == 0u ? -1 : 1, sz = big - k * big / 5, off = k == 0 ? 0 : (k == 3 ? step * 2 : k == 2 ? step * 3 / 2 : step);
@@ -3841,6 +3856,7 @@ static void draw_lib_flow(desk* d, sel_gui_rect mn) {
             }
             row = &v->rows[g - (int64_t)v->window_start];
             r = rect_of(cx + sgn * off - sz / 2 + shift, y0 + (big - sz) / 2, sz, sz);
+            d->grid_box = rect_union(d->grid_box, r);
             if (k == 0) {
                 sel_gui_shadow_draw(d->canvas, &d->shadow, r);
             }
@@ -3856,7 +3872,7 @@ static void draw_lib_flow(desk* d, sel_gui_rect mn) {
         lib_tile_text(d, rect_of(cx - big / 2, y0 + big + lpx(d, HOME_TILE_TEXT_GAP), big, 0), y0 + big + lpx(d, HOME_TILE_TEXT_GAP), cr,
                       ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
     }
-    sel_gui_dirty_add(d->canvas, rect_of(mn.x, y0, mn.w, big + lpx(d, HOME_TILE_TEXT_GAP + HOME_TITLE_H + HOME_META_H)));
+    sel_gui_dirty_add(d->canvas, rect_of(mn.x, y0, right - mn.x, big + lpx(d, HOME_TILE_TEXT_GAP + HOME_TITLE_H + HOME_META_H)));
 }
 
 static void draw_library(desk* d) {
