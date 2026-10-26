@@ -34,17 +34,24 @@ typedef struct ui_hooks {
     sel_ui_close_fn close;
 } ui_hooks;
 
+static const char* dump_path; /* --screen-dump target, "" when the run needs no dump */
+
 static void* open_ui(const sel_host* host, sel_engine* e, const ui_hooks* h, const char* keys) {
-    static const char* argv[4];
+    static const char* argv[6];
     sel_ui_open_args a;
     argv[0] = "text_ui_test";
     argv[1] = "--keys";
     argv[2] = keys;
     argv[3] = NULL;
+    if (dump_path != NULL) {
+        argv[3] = "--screen-dump";
+        argv[4] = dump_path;
+        argv[5] = NULL;
+    }
     memset(&a, 0, sizeof a);
     a.engine = e;
     a.host = host;
-    a.argc = 3;
+    a.argc = dump_path != NULL ? 5 : 3;
     a.argv = argv;
     return h->open(&a);
 }
@@ -72,6 +79,29 @@ static uint32_t run(const sel_host* host, sel_engine* e, const ui_hooks* h, void
             nanosleep(&turn, NULL);
         }
     }
+}
+
+/* Reads the last screen dump (24 rows) into buf; returns the byte count. */
+static size_t read_dump(char* buf, size_t cap) {
+    FILE* f = fopen(dump_path, "rb");
+    size_t n = 0;
+    if (f != NULL) {
+        n = fread(buf, 1, cap - 1u, f);
+        fclose(f);
+    }
+    buf[n] = '\0';
+    return n;
+}
+
+/* Row 24 of a dump, or NULL. */
+static const char* last_row(const char* dump) {
+    const char* p = dump;
+    int row;
+    for (row = 1; row < 24 && p != NULL; row++) {
+        p = strchr(p, '\n');
+        p = p != NULL ? p + 1 : NULL;
+    }
+    return p;
 }
 
 int main(int argc, char** argv) {
@@ -136,6 +166,45 @@ int main(int argc, char** argv) {
         CHECK(calls == 0u || elapsed >= WAIT_MS, "clocked: quit after %u ms, before the %u ms wait",
               (unsigned)elapsed, (unsigned)WAIT_MS);
         h.close(ui);
+    }
+
+    /* I355: with no song and no --exec the first frame is the start screen; any key ends it and is handled as
+     * usual (Space runs its normal binding), and the header row returns. */
+    {
+        static char dump[8192], keys2[1024], dpath[1024];
+        const char* row24;
+        uint32_t i;
+        snprintf(keys2, sizeof keys2, "%s/text_ui_splash.keys", argv[1]);
+        snprintf(dpath, sizeof dpath, "%s/text_ui_splash.dump", argv[1]);
+        f = fopen(keys2, "wb");
+        if (f == NULL) {
+            return 2;
+        }
+        fprintf(f, "wait 60\nSpace\nwait 60\nq\n");
+        fclose(f);
+        remove(dpath);
+        dump_path = dpath;
+        ui = open_ui(host, e, &h, keys2);
+        CHECK(ui != NULL, "splash: open failed");
+        if (ui != NULL) {
+            int r = h.wait(ui, TURN_MS); /* the first frame */
+            read_dump(dump, sizeof dump);
+            row24 = last_row(dump);
+            CHECK(row24 != NULL && strstr(row24, "sPACE t0 sTART!") != NULL, "splash: row 24 of the first frame is '%s'",
+                  row24 != NULL ? row24 : "(none)");
+            CHECK(strstr(dump, "Subsong") == NULL, "splash: the player header shows on the first frame");
+            for (i = 0; r >= 0 && i < 40u; i++) {
+                r = h.wait(ui, TURN_MS);
+                read_dump(dump, sizeof dump);
+                if (strstr(dump, "sPACE t0 sTART!") == NULL) {
+                    break;
+                }
+            }
+            CHECK(strstr(dump, "sPACE t0 sTART!") == NULL, "splash: still shown after Space");
+            CHECK(strstr(dump, "Subsong") != NULL, "splash: the header row did not return after Space");
+            h.close(ui);
+        }
+        dump_path = NULL;
     }
 
     sel_engine_destroy(e);

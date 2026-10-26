@@ -21,6 +21,7 @@
 #include <selecta/uimodel/keys.h>
 #include <selecta/uimodel/palette.h>
 #include "spawn.h"
+#include "splash.h"
 #include "term.h"
 #include <selecta/uimodel/theme.h>
 
@@ -61,6 +62,10 @@ typedef struct tui {
     const char* frame_dump_path; /* --frame-dump: raw frame bytes appended (row I218d2) */
     int dirty;
     int info;
+    int splash_wanted;  /* no --exec was given: the start screen may show (row I355) */
+    int splash_off;     /* a key or a song ended the start screen for good */
+    int splash_shown;   /* the frame being drawn is the start screen */
+    uint32_t splash_frames; /* flushes that carried the start screen: STAT_SPLASH_FRAMES */
     uint32_t meta_panel_rows; /* catalogue rows the info panel drew in the latest frame (I185 sentinel) */
     int viz;     /* viz panel: 0 off, 1 levels, 2 scope, 3 spectrum, 4 note dots, 5 phase (V cycles) */
     int pattern; /* pattern panel shown (P toggles); excludes the viz panel */
@@ -70,7 +75,7 @@ typedef struct tui {
     uint32_t key_count;
     uint32_t pool_next;
     char pool[TUI_POOLS][TUI_POOL_BYTES];
-    sel_tag stats[17];
+    sel_tag stats[18];
     uint32_t frames;    /* flushes that wrote bytes */
     uint32_t hash;      /* FNV-1a over every flushed byte */
     int headless;       /* --size: fixed grid, keys from stdin, no terminal control */
@@ -459,6 +464,7 @@ static void tui_key(tui* u, const txt_key* k) {
         tui_cmd_key(u, k);
         return;
     }
+    u->splash_off = 1; /* any key ends the start screen and is then handled as usual (row I355) */
     u->cmd.status[0] = '\0';
     if (sel_engine_state(u->engine)->stats != NULL && ((k->code == 27u || k->code == 127u) && k->mods == 0)) {
         u->key_count++;
@@ -965,10 +971,35 @@ static void tui_stats_pane(tui* u, const sel_state* s, uint32_t width) {
     }
 }
 
+/* Row I355: the start screen is the whole frame until a key or a song ends it. */
+static void tui_splash_draw(tui* u) {
+    uint32_t y, x0 = (u->grid.cols - TUI_SPLASH_COLS) / 2u, y0 = (u->grid.rows - TUI_SPLASH_ROWS) / 2u;
+    txt_style st = tui_style(u, TXT_ROLE_NORMAL);
+    txt_grid_clear(&u->grid, st);
+    for (y = 0; y < TUI_SPLASH_ROWS; y++) {
+        const unsigned char* p = (const unsigned char*)tui_splash[y];
+        uint32_t x;
+        for (x = 0; p[x] != '\0'; x++) {
+            if (p[x] != ' ') {
+                txt_grid_put(&u->grid, x0 + x, y0 + y, p[x], st); /* a Latin-1 byte is its own code point */
+            }
+        }
+    }
+}
+
 static void tui_draw(tui* u) {
     const sel_state* s = sel_engine_state(u->engine);
     uint32_t width = u->info && u->grid.cols > TUI_INFO_COLS + 20u ? u->grid.cols - TUI_INFO_COLS : u->grid.cols;
     uint32_t y;
+    if (s->song.path != NULL) {
+        u->splash_off = 1;
+    }
+    u->splash_shown = u->splash_wanted && !u->splash_off && u->grid.cols >= TUI_SPLASH_COLS + 1u &&
+                      u->grid.rows >= TUI_SPLASH_ROWS;
+    if (u->splash_shown) {
+        tui_splash_draw(u);
+        return;
+    }
     txt_grid_clear(&u->grid, tui_style(u, TXT_ROLE_NORMAL));
     tui_header(u, s);
     if (s->stats != NULL) {
@@ -1076,6 +1107,7 @@ static void tui_present(tui* u) {
     if (n > 0) {
         long b;
         u->frames++;
+        u->splash_frames += (uint32_t)u->splash_shown;
         for (b = 0; b < n; b++) {
             u->hash = (u->hash ^ (uint8_t)u->out[b]) * 16777619u;
         }
@@ -1180,6 +1212,15 @@ static void* tui_open(const sel_ui_open_args* a) {
     memset(u, 0, sizeof *u);
     u->engine = a->engine;
     u->host = a->host;
+    u->splash_wanted = 1; /* a scripted --exec run starts on the player, not the start screen (row I355) */
+    {
+        int i;
+        for (i = 0; i < a->argc; i++) {
+            if (strcmp(a->argv[i], "--exec") == 0) {
+                u->splash_wanted = 0;
+            }
+        }
+    }
     u->dump_path = tui_opt(a, "--screen-dump");
     u->frame_dump_path = tui_opt(a, "--frame-dump");
     txt_theme_default(&u->theme);
@@ -1220,6 +1261,9 @@ static void* tui_open(const sel_ui_open_args* a) {
     u->grid.latin1 = txt_term_latin1();
     /* --console-frames 1 gives a host run the Amiga console's frames, so tests can compare byte streams (row I218e). */
     u->grid.console = txt_term_amiga_console || tui_opt(a, "--console-frames") != NULL;
+    if (tui_opt(a, "--console-frames") != NULL) {
+        u->grid.latin1 = 1; /* the Amiga console is Latin-1, so the start screen's high bytes match byte for byte (row I355) */
+    }
     u->out_cap = txt_grid_flush_bound(&u->grid);
     u->out = (char*)a->host->mem_alloc(a->host, u->out_cap, SEL_MEM_FAST);
     if (u->out == NULL) {
@@ -1323,8 +1367,10 @@ static const sel_tag* tui_stats(void* state) {
     u->stats[14].value = u->folder_opens;
     u->stats[15].tag = SEL_UI_STAT_META_PANEL_ROWS;
     u->stats[15].value = u->meta_panel_rows;
-    u->stats[16].tag = SEL_TAG_END;
-    u->stats[16].value = 0;
+    u->stats[16].tag = SEL_UI_STAT_SPLASH_FRAMES;
+    u->stats[16].value = u->splash_frames;
+    u->stats[17].tag = SEL_TAG_END;
+    u->stats[17].value = 0;
     return u->stats;
 }
 
