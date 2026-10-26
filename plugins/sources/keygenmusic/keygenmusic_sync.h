@@ -5,10 +5,10 @@
  * per song through the same SCAN_BATCH request as the other sources. A path is relative to /kgm/ and decoded
  * (`!Others/DOT.EXE - Alcohol 120% 1.9.5.4327 crk.xm`), the song key is `keygenmusic:<path>`. Formats are Modland's
  * names for the four tracker kinds (bbmp keygenmusic.py FORMATS), so the engine finds the replayer as for Modland. */
-#ifndef SELECTA_LIBRARY_SOURCES_KEYGENMUSIC_SYNC_H
-#define SELECTA_LIBRARY_SOURCES_KEYGENMUSIC_SYNC_H
+#ifndef SELECTA_PLUGINS_SOURCES_KEYGENMUSIC_SYNC_H
+#define SELECTA_PLUGINS_SOURCES_KEYGENMUSIC_SYNC_H
 
-#include "local_source.h"
+#include <selecta/host.h>
 
 #include <stdio.h>
 
@@ -28,7 +28,7 @@ typedef struct sel_keygen_sync_stats {
     uint32_t entries;      /* list objects read */
     uint32_t listing_rows; /* rows written to the catalogue */
     uint32_t skipped_rows; /* entries outside /kgm/, with a bad escape or an unsafe path */
-    uint32_t batches;      /* SEL_LIB_REQ_SCAN_BATCH requests sent */
+    uint32_t batches;      /* unused; kept at 0 (the engine batches the catalogue rows) */
 } sel_keygen_sync_stats;
 
 /* Calls `fn` once per object of the top-level array of `f`; `fn` returns 0 to stop. Long strings are cut to the
@@ -49,6 +49,6 @@ int sel_keygen_path(const char* listed, char* out, size_t n);
 
 /* Reads <dir>/lib.txt into the catalogue. Returns 0 when the file cannot be read or holds no array, memory runs
  * out or the DB rejects a batch. */
-int sel_keygen_sync(const sel_local_scan_config* cfg, const char* dir, sel_keygen_sync_stats* stats);
+int sel_keygen_sync(const sel_host* host, const char* dir, sel_keygen_sync_stats* stats);
 
 #endif

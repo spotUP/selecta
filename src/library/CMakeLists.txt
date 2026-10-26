@@ -43,7 +43,7 @@ endif()
 
 # Sources (plan Phase 4, I157, I158): the sel_source interface and registry, song keys, the Modland
 # format table and the local source (scan over sel_browse).
-target_sources(selecta_library PRIVATE source.c formats_table.c sources/local.c sources/modland.c sources/modland_sync.c sources/modland_net.c sources/hvsc.c sources/hvsc_sync.c sources/hvsc_net.c sources/keygenmusic.c sources/keygenmusic_sync.c sources/keygenmusic_net.c  sources/sync_net.c sources/sync_services.c sources/hippo.c sources/hippo_sync.c sources/hippo_prg.c sources/hippo_publish.c ${SEL_WATCH_SOURCE})
+target_sources(selecta_library PRIVATE source.c formats_table.c sources/local.c sources/modland.c sources/modland_sync.c sources/modland_net.c sources/hvsc.c sources/hvsc_sync.c sources/hvsc_net.c sources/sync_net.c sources/sync_services.c sources/hippo.c sources/hippo_sync.c sources/hippo_prg.c sources/hippo_publish.c ${SEL_WATCH_SOURCE})
 if(APPLE)
   target_link_libraries(selecta_library PUBLIC "-framework CoreServices")
 endif()

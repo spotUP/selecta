@@ -1771,10 +1771,13 @@ if(NOT SEL_AMIGA)
 
   # I416: the keygenmusic list reader, path decoding, format and group rules and source descriptor.
   add_executable(keygenmusic_unit_test keygenmusic_unit_test.c)
-  target_include_directories(keygenmusic_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_sources(keygenmusic_unit_test PRIVATE
+    ${PROJECT_SOURCE_DIR}/plugins/sources/keygenmusic/keygenmusic.c ${PROJECT_SOURCE_DIR}/plugins/sources/keygenmusic/keygenmusic_sync.c
+    ${PROJECT_SOURCE_DIR}/plugins/sources/keygenmusic/keygenmusic_net.c)
+  target_include_directories(keygenmusic_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/sources/keygenmusic)
   target_compile_definitions(keygenmusic_unit_test PRIVATE
     SEL_KEYGEN_FIX_LIST="${PROJECT_SOURCE_DIR}/tests/net/fixtures/keygenmusic.tk/kgm/lib.txt")
-  target_link_libraries(keygenmusic_unit_test PRIVATE selecta_library selecta_core)
+  target_link_libraries(keygenmusic_unit_test PRIVATE selecta_shared_source selecta_core)
   add_test(NAME keygenmusic-unit COMMAND keygenmusic_unit_test)
   set_tests_properties(keygenmusic-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "keygenmusic_unit_ok")
   # I376: the bottom-of-stack canary (apps/common/stack_canary.c, used by amiga_start.c on the Amiga).

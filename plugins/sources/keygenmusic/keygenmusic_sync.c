@@ -1,16 +1,15 @@
 /* See keygenmusic_sync.h. No float, no allocation after the start (blocks from the host). */
 #include "keygenmusic_sync.h"
 
-#include "../local.h"
-#include "../source.h"
 #include "source/json_scan.h"
-#include "sync_util.h"
+#include "source/sync_text.h"
 #include "source/url_path.h"
+
+#include <selecta/catalogue.h>
 
 #include <stdio.h>
 #include <string.h>
 
-#define SCAN_BATCH 32u
 #define UNKNOWN_ARTIST "- unknown"
 
 /* ---- the list ---- */
@@ -147,18 +146,17 @@ typedef struct row_text {
 } row_text;
 
 typedef struct sync_state {
-    const sel_local_scan_config* cfg;
+    const sel_host* host;
+    const sel_catalogue* cat;
     sel_keygen_sync_stats* st;
     row_text* text;
-    sel_scan_row* rows;
-    uint32_t row_n;
     int failed;
 } sync_state;
 
 static int on_entry(void* ctx, const sel_keygen_entry* e) {
     sync_state* s = ctx;
-    row_text* t = &s->text[s->row_n];
-    sel_scan_row* r = &s->rows[s->row_n];
+    row_text* t = s->text;
+    sel_catalogue_song song;
 
     s->st->entries++;
     if (!sel_keygen_path(e->path, t->path, sizeof t->path)) {
@@ -184,51 +182,51 @@ static int on_entry(void* ctx, const sel_keygen_entry* e) {
         memcpy(t->name, file, len);
         t->name[len] = '\0';
     }
-    memset(r, 0, sizeof *r);
-    r->source = "keygenmusic";
-    r->path = t->path;
-    r->format = sel_keygen_format(t->path);
-    r->artist = t->artist;
-    r->album = r->md5 = "";
-    r->name = t->name;
-    r->size = 0; /* the list has no sizes */
-    s->row_n++;
+    memset(&song, 0, sizeof song);
+    song.path = t->path;
+    song.format = sel_keygen_format(t->path);
+    song.artist = t->artist;
+    song.album = song.md5 = "";
+    song.name = t->name;
+    song.size = 0; /* the list has no sizes */
     s->st->listing_rows++;
-    if (s->row_n == SCAN_BATCH &&
-        !sel_sync_flush_scan(s->cfg, s->rows, &s->row_n, &s->st->batches, &s->failed)) {
+    if (!s->cat->song(s->host, &song)) {
+        s->failed = 1;
         return 0;
     }
     return 1;
 }
 
-int sel_keygen_sync(const sel_local_scan_config* cfg, const char* dir, sel_keygen_sync_stats* stats) {
+int sel_keygen_sync(const sel_host* host, const char* dir, sel_keygen_sync_stats* stats) {
     sync_state s;
-    const sel_host* host = cfg->host;
-    char path[SEL_BROWSE_PATH_MAX];
+    const sel_catalogue* cat = host->catalogue != NULL ? host->catalogue(host) : NULL;
+    char path[1100];
     FILE* f = NULL;
-    int ok = 0;
+    int ok = 0, open = 0;
 
     memset(&s, 0, sizeof s);
     memset(stats, 0, sizeof *stats);
-    s.cfg = cfg;
+    s.host = host;
+    s.cat = cat;
     s.st = stats;
-    sel_source_register_builtin();
-    s.text = host->mem_alloc(host, (size_t)SCAN_BATCH * sizeof *s.text, SEL_MEM_FAST);
-    s.rows = host->mem_alloc(host, (size_t)SCAN_BATCH * sizeof *s.rows, SEL_MEM_FAST);
-    if (s.text != NULL && s.rows != NULL && sel_source_find("keygenmusic") != NULL &&
-        sel_browse_join(path, sizeof path, dir, SEL_KEYGEN_LIST)) {
-        f = fopen(path, "rb");
-    }
-    if (f != NULL) {
-        ok = sel_keygen_read_list(f, on_entry, &s) >= 0 && !s.failed &&
-             sel_sync_flush_scan(cfg, s.rows, &s.row_n, &stats->batches, &s.failed);
+    s.text = host->mem_alloc(host, sizeof *s.text, SEL_MEM_FAST);
+    if (s.text != NULL && cat != NULL && snprintf(path, sizeof path, "%s/%s", dir, SEL_KEYGEN_LIST) < (int)sizeof path &&
+        (f = fopen(path, "rb")) != NULL) {
+        open = cat->begin(host, "keygenmusic");
+        if (open) {
+            ok = sel_keygen_read_list(f, on_entry, &s) >= 0 && !s.failed;
+        }
         fclose(f);
+    }
+    if (open) {
+        if (ok) {
+            ok = cat->commit(host);
+        } else {
+            cat->abort(host);
+        }
     }
     if (s.text != NULL) {
         host->mem_free(host, s.text);
     }
-    if (s.rows != NULL) {
-        host->mem_free(host, s.rows);
-    }
-    return ok && !s.failed;
+    return ok;
 }

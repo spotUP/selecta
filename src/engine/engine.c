@@ -53,8 +53,6 @@
 #include "sources/hippo_publish.h"
 #include "sources/hippo_sync.h"
 #include "sources/hvsc_net.h"
-#include "sources/keygenmusic_net.h"
-#include "sources/keygenmusic_sync.h"
 #include "sources/hvsc_sync.h"
 #include "sources/modland_net.h"
 #include "sources/sync_host.h"

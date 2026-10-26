@@ -1,7 +1,9 @@
 /* I416: the keygenmusic list reader, path decoding, format and group rules and source descriptor
- * (src/library/sources/keygenmusic*.c). SEL_KEYGEN_FIX_LIST is the recorded lib.txt under tests/net/fixtures. */
-#include "sources/keygenmusic_sync.h"
-#include "source.h"
+ * (plugins/sources/keygenmusic). SEL_KEYGEN_FIX_LIST is the recorded lib.txt under tests/net/fixtures. */
+#include "keygenmusic_sync.h"
+
+#include <selecta/plugin.h>
+#include <selecta/source.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -81,8 +83,13 @@ int main(void) {
     CHECK(sel_keygen_group("!Others/NoSeparator.xm", "", buf, sizeof buf) && strcmp(buf, "- unknown") == 0);
     CHECK(!sel_keygen_group("TSRh/x.xm", "", buf, 3));
 
-    sel_source_register_builtin();
-    src = sel_source_find("keygenmusic");
+    {
+        const sel_tag* desc = sel_plugin_entry(1);
+        const sel_tag* hooks = (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0);
+
+        CHECK(sel_tag_find(desc, SEL_PLUGIN_KIND, 0) == SEL_PLUGIN_KIND_SOURCE);
+        src = (const sel_source*)sel_tag_find(hooks, SEL_SRC_DESCRIPTOR, 0);
+    }
     CHECK(src != NULL && src->url != NULL && src->path_in != NULL && src->parse != NULL);
     if (src != NULL) {
         sel_tag tags[4];
