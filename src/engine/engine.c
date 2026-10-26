@@ -5067,6 +5067,14 @@ static void cmd_VIEW_ACTIVATE(sel_engine* e, const sel_message* m) {
         if (r->kind != SEL_ROW_HOME || r->key == NULL) {
             return;
         }
+        if (r->composer) { /* I479: the Composers page's own request opens the composer's songs */
+            sel_message q;
+            memset(&q, 0, sizeof q);
+            q.argc = 1;
+            q.args[0].v.s = r->key;
+            cmd_COMPOSERS_SHOW(e, &q);
+            return;
+        }
         if (r->album) {
             /* worst case: two quoted terms with every byte escaped, plus album:"" artist:"" and the NUL */
             char text[(SEL_QUERY_TEXT_MAX - 1) * 2 + 20];

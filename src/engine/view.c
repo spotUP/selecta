@@ -934,7 +934,7 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
         char* t = v->ftext + (size_t)n * SEL_VIEW_FOLDER_NAME;
         char* key = v->fkey + pool;
         size_t len = 0, klen = 0;
-        uint32_t count = 1, album = 0;
+        uint32_t count = 1, album = 0, composer = 0;
         char *art = NULL, *sart = NULL;
         key[0] = '\0';
         if ((kind == 'H' || kind == 'S' || kind == 'C') && p[1] == ' ') {
@@ -957,6 +957,9 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
                     const char* us;
                     if (*p == '@') {
                         album = 1;
+                        p++;
+                    } else if (*p == '&') { /* I479: "&<canon>" is a composer tile; the key is the canon, there is no artwork to resolve */
+                        composer = 1;
                         p++;
                     }
                     /* A key is never cut: one that does not fit the pool or the key limit leaves the row without a key.
@@ -1000,7 +1003,8 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
             t[len] = '\0';
             v->frows[n].key = key[0] != '\0' ? key : NULL;
             v->frows[n].album = album;
-            v->frows[n].art_ref = key[0] != '\0' ? art : NULL;
+            v->frows[n].composer = composer;
+            v->frows[n].art_ref = key[0] != '\0' && !composer ? art : NULL;
             /* I476: an album tile's artist is the part of its art_ref after the 0x1f byte. */
             v->frows[n].artist = NULL;
             if (sart != NULL && sart[0] != '\0') {

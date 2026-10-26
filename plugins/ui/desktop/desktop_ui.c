@@ -1643,6 +1643,9 @@ static uint32_t shelf_at_y(desk* d, int32_t y) {
 
 /* Activates a shelf tile through the engine's own HOME path: the cursor goes to its row and VIEW_ACTIVATE plays a
  * song or opens an album search; the HOME source is then asked for again so the shelves follow the new history. */
+static int desk_page_goto(desk* d, desk_page pg);
+static void desk_composer_request(char* line, size_t cap, const char* canon);
+
 static void shelf_activate(desk* d, uint32_t s, uint32_t k) {
     const sel_state* st = sel_engine_state(d->engine);
     shelf sh[SHELF_MAX];
@@ -1653,6 +1656,15 @@ static void shelf_activate(desk* d, uint32_t s, uint32_t k) {
     }
     row = shelf_tile_row(st, &sh[s], k);
     if (row == 0xFFFFFFFFu) {
+        return;
+    }
+    if (st->view->rows[row].composer) { /* I479: a composer tile opens that composer on the Library page, through the page's own request */
+        char req[256 * 2u + 32u];
+        desk_composer_request(req, sizeof req, st->view->rows[row].key); /* built first: the page change replaces the view */
+        desk_page_goto(d, PG_LIBRARY);
+        d->lib_q16 = 0;
+        desk_send(d, req);
+        d->shelf_plays++;
         return;
     }
     snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)(st->view->window_start + row));
@@ -2103,7 +2115,7 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
             if (t.x + t.w <= mn.x || t.x >= mn.x + mn.w) {
                 continue;
             }
-            while (!r->album && dot != NULL && dot[1 + fi] != '\0' && fi + 1u < sizeof format) {
+            while (!r->album && !r->composer && dot != NULL && dot[1 + fi] != '\0' && fi + 1u < sizeof format) {
                 format[fi] = dot[1 + fi];
                 fi++;
             }
@@ -2123,7 +2135,7 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
                 sel_gui_blit_image(d->canvas, ar, art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, 0);
                 sel_gui_set_region(d->canvas, SEL_GUI_RGN_UI);
             } else {
-                sel_gui_genart_draw(d->canvas, ar, r->album ? "album" : format, sel_gui_str_hash(r->text));
+                sel_gui_genart_draw(d->canvas, ar, r->album || r->composer ? "album" : format, sel_gui_str_hash(r->text));
             }
             draw_text(d, rect_of(ar.x, ar.y + ar.h + lpx(d, HOME_TILE_TEXT_GAP), ar.w, lpx(d, HOME_TITLE_H)), r->text, 1, 14,
                       ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
@@ -2132,7 +2144,7 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
                           r->artist, 0, 13, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
                 d->home_parts |= HP_ARTIST_LINE;
             }
-            if (!r->album && r->key != NULL) {
+            if (!r->album && !r->composer && r->key != NULL) {
                 song_row_reg(d, t, r->key, 0, 0, 1);
             }
             if (hovered && hv > 0) {

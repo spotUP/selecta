@@ -296,7 +296,7 @@ static int home_list(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t
         const char* name = (const char*)sqlite3_column_text(st, 0);
         const char* artist = (const char*)sqlite3_column_text(st, 1);
         const char* key = (const char*)sqlite3_column_text(st, 2);
-        int album = sqlite3_column_int(st, 3) != 0;
+        int kind = sqlite3_column_int(st, 3), album = kind == 1; /* 1: an album, 2: a composer (I479) */
         char line[SEL_SONG_KEY_MAX + 2 + 256]; /* "@" + key + tab + "name" */
         int with_artist = artist != NULL && artist[0] != '\0'; /* I471/I482: a key carries its artist after 0x1f, album and song rows alike */
         size_t klen = key != NULL ? strlen(key) : 0u, alen = 0u;
@@ -311,7 +311,7 @@ static int home_list(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t
             }
             with_artist = alen > 0u;
         }
-        size_t at = (size_t)snprintf(line, sizeof line, "%s%s%s%.*s\t", album ? "@" : "", key != NULL ? key : "", with_artist ? "\x1f" : "",
+        size_t at = (size_t)snprintf(line, sizeof line, "%s%s%s%.*s\t", album ? "@" : kind == 2 ? "&" : "", key != NULL ? key : "", with_artist ? "\x1f" : "",
                                      (int)alen, with_artist ? artist : "");
         if (at >= sizeof line) at = sizeof line - 1u;
         /* I485: the entry text is the name alone; the artist travels in the key after 0x1f and the tile draws it on its own line. */
@@ -383,6 +383,18 @@ static int home_text(sqlite3* db, const sel_user_op* op, int64_t* rows) {
         rc = home_list(db, op, &used, rows,
                        "SELECT COALESCE(name, key), artist, key, 0" HOME_FILL_FROM
                        " ORDER BY added DESC, key LIMIT ?1");
+        if (rc != SQLITE_OK) return rc;
+    }
+    /* I479: Your composers lists the composers with the most songs, key = canon, name = display. No composer: no heading, no empty shelf. */
+    rc = sqlite3_prepare_v2(db, "SELECT EXISTS(SELECT 1 FROM song_composers)", -1, &st, NULL);
+    if (rc != SQLITE_OK) return rc;
+    fill = sqlite3_step(st) == SQLITE_ROW && sqlite3_column_int(st, 0) != 0;
+    sqlite3_finalize(st);
+    if (fill) {
+        home_put(op, &used, rows, "H", "Your composers");
+        rc = home_list(db, op, &used, rows,
+                       "SELECT MIN(display), NULL, canon, 2 FROM song_composers GROUP BY canon"
+                       " ORDER BY COUNT(DISTINCT song_key) DESC, canon LIMIT ?1");
         if (rc != SQLITE_OK) return rc;
     }
     return SQLITE_OK;

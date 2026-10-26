@@ -360,6 +360,48 @@ foreach(empty "Recently played" "Jump back in" "New this week")
   endif()
 endforeach()
 
+# ---- I479 (DUI-P4-2): the "Your composers" shelf ----
+# A copy of the 4-song library with composers: Huelsbeck has 3 songs, Galway 1. The fill shelf is shelf 0 and the composers shelf
+# is shelf 1, tile 0 = the composer with the most songs (key = canon, title = display name). Activating tile 4 (flat index: the 4
+# fill tiles come first) must open that composer's songs on the Library page (drill line: display|3). The library with no composer
+# (db3 above) draws no such shelf. Revert check: without the shelf the dump has shelves=1 and no tile 4.
+set(db7 "${WORK}/library7.db")
+file(COPY_FILE "${db3}" "${db7}")
+string(CONCAT seed7
+  "INSERT INTO song_composers(song_key, canon, display) VALUES('fixture:1', 'chris huelsbeck', 'Chris Huelsbeck'); "
+  "INSERT INTO song_composers(song_key, canon, display) VALUES('fixture:2', 'chris huelsbeck', 'Chris Huelsbeck'); "
+  "INSERT INTO song_composers(song_key, canon, display) VALUES('fixture:3', 'chris huelsbeck', 'Chris Huelsbeck'); "
+  "INSERT INTO song_composers(song_key, canon, display) VALUES('fixture:3', 'rob hubbard', 'Rob Hubbard')")
+execute_process(COMMAND "${SQLITE3}" "${db7}" "PRAGMA trusted_schema = 1; ${seed7}" RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "seeding the composers library failed: ${err}")
+endif()
+if("${small}" MATCHES "Your composers")
+  message(FATAL_ERROR "a library without composers drew the Your composers shelf:\n${small}")
+endif()
+function(comp_run outvar script)
+  file(REMOVE_RECURSE "${WORK}/cfg")
+  file(WRITE "${WORK}/in.txt" "${script}")
+  dui_run(o --db "${db7}" --ui desktop --backend mem --view home --canvas 1000x1400 --clock fixed --stats --input "${WORK}/in.txt")
+  set(${outvar} "${o}" PARENT_SCOPE)
+endfunction()
+comp_run(comps "wait 1\n")
+if(NOT "${comps}" MATCHES "ui_home id=desktop shelves=2 ")
+  message(FATAL_ERROR "expected the fill shelf and Your composers (shelves=2) in:\n${comps}")
+endif()
+if(NOT "${comps}" MATCHES "shelf 1 tile 0 Your composers\\|")
+  message(FATAL_ERROR "the Your composers heading is not shelf 1 in:\n${comps}")
+endif()
+shelf_keys(comp_keys "${comps}" 1)
+expect_eq("Your composers tiles, most songs first" "${comp_keys}" "chris huelsbeck;rob hubbard")
+if(NOT "${comps}" MATCHES "Chris Huelsbeck")
+  message(FATAL_ERROR "the composer display name is not the tile title in:\n${comps}")
+endif()
+comp_run(comp_open "tile 4\nwait 1\n")
+if(NOT "${comp_open}" MATCHES "drill Chris Huelsbeck\\|3")
+  message(FATAL_ERROR "activating the composer tile did not open its 3 songs in:\n${comp_open}")
+endif()
+
 # 10b. I473: the album is its name and artist when it is opened too. Shelf 0 holds 7 tiles, so tile 7 is the first tile of Jump
 # back in: "Lotus Turbo Challenge - Other Artist" (the dump above). Activating it runs the album search; the query source then
 # lists that album's songs only (fixture:9). Before the fix it ran album:"Lotus Turbo Challenge" alone and listed 3 songs

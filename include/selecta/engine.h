@@ -95,6 +95,7 @@ typedef struct sel_view_row {
     uint32_t expanded; /* SEL_ROW_NODE: 1 when its songs are listed below it */
     const char* key;   /* SEL_ROW_HOME: the song key to play or, when album is 1, the album name to open; NULL else (I191a) */
     uint32_t album;    /* SEL_ROW_HOME: 1 when key names an album, 0 when it names a song */
+    uint32_t composer; /* I479: SEL_ROW_HOME: 1 when key is a composer canon (the Your composers shelf); activating it opens that composer's songs */
     const char* art_ref; /* SEL_ROW_HOME: what the artwork provider resolves: key, or "<album>\x1f<artist>" for an album with a known artist (I471); NULL else */
     const char* artist; /* I476: the album artist the tile draws under its title (Home album tiles, grid and cover flow rows); NULL when unknown */
     uint32_t art_id;   /* grid, cover flow and compact queue rows: albums.id of the song's album (the artwork id), 0 none */
