@@ -191,6 +191,7 @@ typedef struct desk {
     char np_text_artist[96];
     uint32_t lib_off_page;   /* Library page draws while another page is current (sentinel, must stay 0: I274) */
     uint32_t np_draws;       /* Now Playing panel draws (sentinel) */
+    uint32_t np_genart;      /* genart_draw runs by the Now Playing panel: one per draw (DUI-P4-7) */
     sel_gui_rect np_title;      /* the Now Playing title and artist lines, w 0 = not drawn: a song row of the song menu (I372) */
     sel_gui_rect np_like, np_rate[5]; /* click targets of the like button and the five rating marks */
     uint32_t np_msg_lines;            /* lines of the song message the last Now Playing draw laid out (I290) */
@@ -3222,8 +3223,8 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "grid draws %u tiles %u cols %u\nflow draws %u centre %u\n",
                           (unsigned)d->grid_draws, (unsigned)d->grid_tiles, (unsigned)d->grid_cols, (unsigned)d->flow_draws,
                           (unsigned)d->flow_centre);
-    o = dump_put(d, o, "nowplaying draws %u pairs %u\nlyrics line %d at %u\nmessage lines %u\n",
-                          (unsigned)d->np_draws, (unsigned)d->np_rows, (int)st->lyric_line, (unsigned)st->song.position_ms, (unsigned)d->np_msg_lines);
+    o = dump_put(d, o, "nowplaying draws %u pairs %u genart %u\nlyrics line %d at %u\nmessage lines %u\n",
+                          (unsigned)d->np_draws, (unsigned)d->np_rows, (unsigned)d->np_genart, (int)st->lyric_line, (unsigned)st->song.position_ms, (unsigned)d->np_msg_lines);
     o = dump_put(d, o, "rating %d liked %d mark %d %d %d %d step %d\n", (int)d->np_rating, (int)d->np_liked,
                           (int)d->np_rate[0].x, (int)d->np_rate[0].y, (int)d->np_rate[0].w, (int)d->np_rate[0].h,
                           (int)(d->np_rate[1].x - d->np_rate[0].x));
@@ -4657,13 +4658,24 @@ static void draw_nowplaying(desk* d) {
     }
     ar = rect_of(dt.x + (dt.w - side) / 2, dt.y + 2 * sp, side, side);
     sel_gui_genart_draw(d->canvas, ar, f->format, sel_gui_str_hash(f->title));
-    /* The header tint is the artwork's own average colour blended into the header token, fading to the panel colour. */
+    d->np_genart++;
+    /* The header tint is the artwork's own average colour blended into the header token, fading to the panel colour. The
+     * artwork is drawn once, so the gradient is clipped to the band around it: above the artwork and on both sides. */
     band = rect_of(dt.x, dt.y, dt.w, 2 * sp + side / 2);
     {
         uint32_t tint = desk_mix(ARGB(d->theme.token[SEL_GUI_TOKEN_HEADER_TINT]), np_art_average(d, ar), 32768);
+        sel_gui_rect around[3];
+        uint32_t i;
+        around[0] = rect_of(band.x, band.y, band.w, ar.y - band.y);
+        around[1] = rect_of(band.x, ar.y, ar.x - band.x, band.y + band.h - ar.y);
+        around[2] = rect_of(ar.x + ar.w, ar.y, band.x + band.w - ar.x - ar.w, band.y + band.h - ar.y);
         sel_gui_dirty_add(d->canvas, band);
-        sel_gui_gradient(d->canvas, rect_of(band.x, band.y, band.w, band.h), 1, tint, ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
-        sel_gui_genart_draw(d->canvas, ar, f->format, sel_gui_str_hash(f->title));
+        for (i = 0; i < 3u; i++) {
+            if (around[i].w > 0 && around[i].h > 0 && sel_gui_clip_push(d->canvas, around[i])) {
+                sel_gui_gradient(d->canvas, band, 1, tint, ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
+                sel_gui_clip_pop(d->canvas);
+            }
+        }
     }
     y = ar.y + ar.h + sp;
     draw_text(d, rect_of(dt.x + sp, y, side, lpx(d, 22)), f->title, 1, 16, text);

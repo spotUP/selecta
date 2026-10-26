@@ -5,6 +5,7 @@
 # 2. STAT_META_PANEL_ROWS (the meta_panel line) equals the panel pair count the dump prints and the number of `meta` lines,
 #    and equals the number of metadata fields the script set (one RATE).
 # 3. The panel drew (sentinel `nowplaying draws`) and a golden hash pins the frame.
+# 3b. I257: genart runs once per Now Playing draw (`genart N` equals `draws N` in the dump).
 # 4. I288: a click on the fourth rating mark of an unrated song fills four marks in the same run (`rating N` in the dump is
 #    the count the last Now Playing draw filled). Run A reads the mark rectangles, run B clicks there.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
@@ -38,11 +39,12 @@ function(np_run tag seek_ms)
     message(FATAL_ERROR "no lyrics sentinel in:\n${o}")
   endif()
   set(${tag}_line "${CMAKE_MATCH_1}" PARENT_SCOPE)
-  if(NOT "${o}" MATCHES "nowplaying draws ([0-9]+) pairs ([0-9]+)")
+  if(NOT "${o}" MATCHES "nowplaying draws ([0-9]+) pairs ([0-9]+) genart ([0-9]+)")
     message(FATAL_ERROR "no nowplaying sentinel in:\n${o}")
   endif()
   set(${tag}_draws "${CMAKE_MATCH_1}" PARENT_SCOPE)
   set(${tag}_pairs "${CMAKE_MATCH_2}" PARENT_SCOPE)
+  set(${tag}_genart "${CMAKE_MATCH_3}" PARENT_SCOPE)
   if(NOT "${o}" MATCHES "meta_panel panel_loads=[0-9]+ meta_panel_rows=([0-9]+)")
     message(FATAL_ERROR "no meta_panel stat in:\n${o}")
   endif()
@@ -75,6 +77,10 @@ foreach(seek 1000 5000 12500)
   set(prev ${s${seek}_line})
   if(s${seek}_draws LESS 1)
     message(FATAL_ERROR "the Now Playing panel did not draw at ${seek} ms")
+  endif()
+  # The artwork is generated once per Now Playing draw: the tint is sampled from that one drawing.
+  if(NOT s${seek}_genart EQUAL s${seek}_draws)
+    message(FATAL_ERROR "at ${seek} ms the panel drew ${s${seek}_draws} times and ran genart ${s${seek}_genart} times, want one per draw")
   endif()
   if(NOT s${seek}_rows EQUAL expected_pairs OR NOT s${seek}_pairs EQUAL expected_pairs OR NOT s${seek}_mlines EQUAL expected_pairs)
     message(FATAL_ERROR "at ${seek} ms: META_PANEL_ROWS=${s${seek}_rows} dump pairs=${s${seek}_pairs} meta lines=${s${seek}_mlines}, want ${expected_pairs}")
