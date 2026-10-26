@@ -25,6 +25,7 @@
     X(CHEVRON_DOWN, "chevron-down") \
     X(CHEVRON_RIGHT, "chevron-right") \
     X(LIST, "list") \
+    X(LIBRARY, "library") \
     X(HEART, "heart") \
     X(HOUSE, "house") \
     X(MUSIC, "music") \

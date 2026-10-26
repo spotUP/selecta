@@ -4732,7 +4732,7 @@ static const struct {
     const char* label;
     desk_page page;
 } g_doors[DOOR_COUNT] = {{SEL_GUI_ICON_HOUSE, "Home", PG_HOME},          {SEL_GUI_ICON_SEARCH, "Search", PG_SEARCH},
-                         {SEL_GUI_ICON_LIST, "Your Library", PG_LIBRARY}, {SEL_GUI_ICON_DISC, "Playlists", PG_PLAYLISTS},
+                         {SEL_GUI_ICON_LIBRARY, "Your Library", PG_LIBRARY}, {SEL_GUI_ICON_DISC, "Playlists", PG_PLAYLISTS},
                          {SEL_GUI_ICON_LIST, "Queue", PG_QUEUE},          {SEL_GUI_ICON_MUSIC, "Now Playing", PG_NOWPLAYING},
                          {SEL_GUI_ICON_USER, "Song Information", PG_SONGINFO}};
 
@@ -5140,6 +5140,7 @@ static void desk_tip_text_of(const sel_uim_action* a, char* out, size_t cap) {
  * colours. */
 static void desk_draw_tip(desk* d) {
     sel_gui_rect b, box;
+    int32_t door;
     const sel_gui_atlas* at;
     int32_t w, pad, q;
     if (d->tip_shown <= 0) {
@@ -5150,10 +5151,16 @@ static void desk_draw_tip(desk* d) {
         return;
     }
     q = sel_gui_tween_value(&d->tl, ANIM_KEY_TIP, 65536);
-    b = desk_button_rect(d, (uint32_t)d->tip_shown - 1u);
+    door = d->tip_shown - 1 - (int32_t)TRANSPORT_COUNT;
     pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     w = sel_gui_text_width(at, d->tip_text, strlen(d->tip_text)) + 2 * pad;
-    box = rect_of(b.x + b.w / 2 - w / 2, b.y - lpx(d, TIP_H + 4), w, lpx(d, TIP_H));
+    if (door >= 0) { /* a rail door: the box sits to the right of the rail, level with the door (I363) */
+        b = sidebar_door_rect(d, (uint32_t)door);
+        box = rect_of(b.x + b.w + lpx(d, 4), b.y + (b.h - lpx(d, TIP_H)) / 2, w, lpx(d, TIP_H));
+    } else {
+        b = desk_button_rect(d, (uint32_t)d->tip_shown - 1u);
+        box = rect_of(b.x + b.w / 2 - w / 2, b.y - lpx(d, TIP_H + 4), w, lpx(d, TIP_H));
+    }
     sel_gui_round_rect(d->canvas, box, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_SMALL]),
                        desk_mix(d->theme.token[SEL_GUI_TOKEN_SURFACE], d->theme.token[SEL_GUI_TOKEN_SURFACE_PRESSED], q));
     draw_text(d, rect_of(box.x + pad, box.y, w - 2 * pad, box.h), d->tip_text, 0, 13,
@@ -5165,6 +5172,10 @@ static void desk_draw_tip(desk* d) {
  * the delay restarts at the new button. Returns 1 when the picture changed. */
 static int desk_tip_pointer(desk* d, int32_t x, int32_t y) {
     int32_t btn = x < 0 ? 0 : desk_button_at(d, x, y);
+    if (btn == 0 && x >= 0 && region_rect(d, "sidebar").w <= lpx(d, 120)) { /* the icon-only rail has no labels: its doors get the tooltip */
+        int32_t door = sidebar_door_at(d, x, y);
+        btn = door < 0 ? 0 : (int32_t)TRANSPORT_COUNT + 1 + door;
+    }
     int hide = d->tip_shown > 0 && btn != d->tip_shown;
     if (btn != d->tip_btn) {
         d->tip_btn = btn;
@@ -5196,11 +5207,15 @@ static void desk_tip_tick(desk* d) {
     if (d->tip_btn <= 0 || d->tip_shown > 0 || d->now_ms < d->tip_since + TIP_DELAY_MS) {
         return;
     }
-    a = desk_action_by_id(desk_slot_action(d, (uint32_t)d->tip_btn - 1u));
-    if (a == NULL) {
-        return;
+    if (d->tip_btn > (int32_t)TRANSPORT_COUNT) { /* a rail door: its full label */
+        snprintf(d->tip_text, sizeof d->tip_text, "%s", g_doors[d->tip_btn - 1 - (int32_t)TRANSPORT_COUNT].label);
+    } else {
+        a = desk_action_by_id(desk_slot_action(d, (uint32_t)d->tip_btn - 1u));
+        if (a == NULL) {
+            return;
+        }
+        desk_tip_text_of(a, d->tip_text, sizeof d->tip_text);
     }
-    desk_tip_text_of(a, d->tip_text, sizeof d->tip_text);
     d->tip_shown = d->tip_btn;
     d->tooltips++;
     desk_tween(d, ANIM_KEY_TIP, SEL_GUI_ANIM_FAST_MS, SEL_GUI_EASE_OUT);
