@@ -244,6 +244,8 @@ typedef struct desk {
     int32_t row_focus;       /* keyboard focus row of the songs list (display index), -1 until a list key is pressed (DUI-P3-3, I423) */
     int kb_list;             /* 1 once a list key moved the Library view cursor: its row then draws as the focus row */
     uint32_t kb_activates;   /* Enter presses that activated a list row */
+    int32_t q_focus;         /* keyboard focus row of the Queue page (queue index), -1 until a list key is pressed (I498) */
+    int32_t lib_focus;       /* keyboard focus row of the Library composer list or drilldown, -1 until a list key is pressed (I498) */
     uint32_t sort_col;       /* 0 title, 1 format */
     uint32_t sort_dir;       /* 0 queue order, 1 ascending, 2 descending */
     int sm_open;             /* the shared song menu is open (I305) */
@@ -2369,7 +2371,7 @@ static const char* lib_next(const char* p) {
 }
 
 static int lib_view_on(const desk* d, const sel_state* st);
-
+static int lib_grid_on(const desk* d, const sel_state* st);
 /* The Library lists the UI draws itself (the composers and a composer's songs) scroll by a pixel offset, lib_q16, as the
  * Songs page does (I303); the engine view modes scroll the engine's window instead (lib_wheel) and draw at offset 0. */
 static int lib_ui_list(const desk* d, const sel_state* st) {
@@ -2834,6 +2836,9 @@ static void draw_queue(desk* d) {
         int playing = st->queue[i].id == st->queue_playing;
         sel_gui_rect nx = queue_next_rect(d, mn, i), dl = queue_del_rect(d, mn, i);
         uint32_t qink = divider ? muted : row_ink(d, r, playing ? accent : text), qmuted = divider ? muted : row_ink(d, r, muted);
+        if ((int32_t)i == d->q_focus) { /* the keyboard focus row (I498) */
+            sel_gui_fill_rect(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+        }
         if (!divider) {
             song_row_reg(d, rect_of(r.x, r.y, nx.x - r.x, r.h), st->queue_text + st->queue[i].path_offset, st->queue[i].id, 1, 0);
         }
@@ -4001,6 +4006,12 @@ static const char* library_dump_build(desk* d) {
                      (unsigned)(ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]) & 0xFFFFFFu), (unsigned)d->kb_activates, (unsigned)d->row_plays,
                      d->row_focus >= 0 && (uint32_t)d->row_focus < d->order_n && st->song.path != NULL &&
                          strcmp(st->song.path, st->queue_text + st->queue[d->order[d->row_focus]].path_offset) == 0);
+        {
+            const sel_view_state* pv = pl_view(st);
+            int32_t row = d->queue_page ? d->q_focus : d->pl_page ? pl_sel_row(d, pv) : d->page == PG_LIBRARY && lib_ui_list(d, st) && !lib_grid_on(d, st) ? d->lib_focus
+                          : d->kb_list && st->view != NULL ? (int32_t)st->view->cursor : -1;
+            o = dump_put(d, o, "list_focus page %d row %d activates %u plays %u\n", (int)d->page, (int)row, (unsigned)d->kb_activates, (unsigned)d->row_plays);
+        }
         o = dump_put(d, o, "rail %d %d %d %d\n", (int)rl.x, (int)rl.y, (int)rl.w, (int)rl.h);
     }
     o = dump_put(d, o, "rating %d liked %d mark %d %d %d %d step %d\n", (int)d->np_rating, (int)d->np_liked,
@@ -4534,6 +4545,9 @@ static void draw_library(desk* d) {
         for (p = lib_next(cnt); *p != '\0'; i++) {
             const char* name = lib_next(p);
             sel_gui_rect r = lib_row_rect(d, mn, i);
+            if ((int32_t)i == d->lib_focus) { /* the keyboard focus row (I498) */
+                sel_gui_fill_rect(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+            }
             draw_text(d, r, name, 0, 15, row_ink(d, r, text));
             song_row_reg(d, r, p, 0, 0, 0);
             p = lib_next(name);
@@ -4604,6 +4618,9 @@ static void draw_library(desk* d) {
             sel_gui_rect r = lib_row_rect(d, mn, i);
             char line[48];
             if (r.y + r.h > lib_list_top(d, mn, st) && r.y < mn.y + mn.h) { /* only the rows in view are drawn (I310) */
+                if ((int32_t)i == d->lib_focus) { /* the keyboard focus row (I498) */
+                    sel_gui_fill_rect(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+                }
                 draw_text(d, rect_of(r.x, r.y, r.w * 2 / 3, r.h), disp, 1, 15, row_ink(d, r, text));
                 snprintf(line, sizeof line, "%s songs", cnt);
                 draw_text(d, rect_of(r.x + r.w * 2 / 3, r.y, r.w / 3, r.h), line, 0, 14, row_ink(d, r, muted));
@@ -4830,6 +4847,7 @@ static int library_click(desk* d, int32_t x, int32_t y) {
     if (st->composer_page != NULL) {
         if (in_rect(lib_back_rect(d, mn), x, y)) {
             d->lib_q16 = 0;
+            d->lib_focus = -1;
             return desk_send(d, "COMPOSERS_SHOW");
         }
         /* A song row of the drilldown (row i, below the back line) plays its song: OPEN with the song's key,
@@ -4847,6 +4865,7 @@ static int library_click(desk* d, int32_t x, int32_t y) {
         const char* disp = lib_next(p);
         if (lib_row_hit(d, mn, i, x, y)) {
             d->lib_q16 = 0;
+            d->lib_focus = -1;
             desk_composer_request(line, sizeof line, p);
             return desk_send(d, line);
         }
@@ -4957,6 +4976,9 @@ static void draw_search(desk* d) {
                     drawn_all++;
                 }
             } else if (show && y + lpx(d, SEARCH_ROW_H) < mn.y + mn.h) {
+                if (d->kb_list && v->window_start + k == v->cursor) { /* the keyboard focus row (I498) */
+                    sel_gui_fill_rect(d->canvas, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H)), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+                }
                 draw_text(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H)), t, 0, 14, text);
                 if (group == 1u && !r->album && r->key != NULL) {
                     song_row_reg(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H)), r->key, 0, 0, 0);
@@ -5242,6 +5264,8 @@ static void desk_page_flags(desk* d, desk_page pg) {
     d->page = pg;
     d->songs = pg == PG_SONGS;
     d->row_focus = -1;
+    d->q_focus = -1;
+    d->lib_focus = -1;
     d->kb_list = 0;
     d->queue_page = pg == PG_QUEUE;
     d->pl_page = pg == PG_PLAYLISTS;
@@ -6615,6 +6639,41 @@ static int desk_zoom_key(desk* d, const sel_gui_input* ev) {
     return 1;
 }
 
+/* Shared focus movement of the desktop lists (DUI-P3-3, I423, I498). */
+enum { LIST_NAV_NONE = -2 };
+/* The focus row after a list key: Down, Up, Page Down, Page Up, Home, End, clamped to 0..n-1. The first key starts from the
+ * top row (cur < 0). LIST_NAV_NONE when the key is not a list key. */
+static int32_t list_nav(uint32_t code, int32_t cur, int32_t n, int32_t page) {
+    int32_t to = cur < 0 ? 0 : cur;
+    if (code == TXT_KEY_DOWN) {
+        to += 1;
+    } else if (code == TXT_KEY_UP) {
+        to -= 1;
+    } else if (code == TXT_KEY_PAGE_DOWN) {
+        to += page;
+    } else if (code == TXT_KEY_PAGE_UP) {
+        to -= page;
+    } else if (code == TXT_KEY_HOME) {
+        to = 0;
+    } else if (code == TXT_KEY_END) {
+        to = n - 1;
+    } else {
+        return LIST_NAV_NONE;
+    }
+    return to < 0 ? 0 : (to > n - 1 ? n - 1 : to);
+}
+
+/* The scroll offset (Q16 logical pixels) that brings the row at top..top+h inside a view of view_h pixels. */
+static int32_t list_scroll_into(int32_t q16, int32_t top, int32_t h, int32_t view_h) {
+    if (top < q16 >> 16) {
+        return top << 16;
+    }
+    if (top + h > (q16 >> 16) + view_h) {
+        return (top + h - view_h) << 16;
+    }
+    return q16;
+}
+
 static int songs_play_row(desk* d, int32_t row);
 
 /* List keys of the songs page (DUI-P3-3, I423): Up and Down move the focus row, Page Up and Page Down a page, Home and End
@@ -6623,7 +6682,7 @@ static int songs_play_row(desk* d, int32_t row);
 static int songs_list_key(desk* d, const sel_gui_input* ev) {
     sel_gui_rect mn = region_rect(d, "main");
     int32_t view_h = px_to_logical(d, mn.y + mn.h - songs_top(d) - lpx(d, SONG_HEADER_H));
-    int32_t page = view_h / SONG_ROW_H > 1 ? view_h / SONG_ROW_H - 1 : 1, last = (int32_t)d->order_n - 1, to = d->row_focus, max_q16;
+    int32_t page = view_h / SONG_ROW_H > 1 ? view_h / SONG_ROW_H - 1 : 1, last = (int32_t)d->order_n - 1, to, max_q16;
     if (ev->mods != 0u || d->order_n == 0u) {
         return 0;
     }
@@ -6636,33 +6695,132 @@ static int songs_list_key(desk* d, const sel_gui_input* ev) {
         songs_play_row(d, d->row_focus);
         return 1;
     }
-    if (to < 0) {
-        to = 0; /* the first list key starts from the top row */
-    }
-    if (ev->code == TXT_KEY_DOWN) {
-        to += 1;
-    } else if (ev->code == TXT_KEY_UP) {
-        to -= 1;
-    } else if (ev->code == TXT_KEY_PAGE_DOWN) {
-        to += page;
-    } else if (ev->code == TXT_KEY_PAGE_UP) {
-        to -= page;
-    } else if (ev->code == TXT_KEY_HOME) {
-        to = 0;
-    } else if (ev->code == TXT_KEY_END) {
-        to = last;
-    } else {
+    to = list_nav(ev->code, d->row_focus, (int32_t)d->order_n, page);
+    if (to == LIST_NAV_NONE) {
         return 0;
     }
-    d->row_focus = to < 0 ? 0 : (to > last ? last : to);
+    d->row_focus = to;
     max_q16 = (last + 1) * SONG_ROW_H - view_h;
     max_q16 = max_q16 < 0 ? 0 : max_q16 << 16;
-    if (d->row_focus * SONG_ROW_H < d->scroll_q16 >> 16) {
-        d->scroll_q16 = d->row_focus * SONG_ROW_H << 16;
-    } else if ((d->row_focus + 1) * SONG_ROW_H > (d->scroll_q16 >> 16) + view_h) {
-        d->scroll_q16 = ((d->row_focus + 1) * SONG_ROW_H - view_h) << 16;
-    }
+    d->scroll_q16 = list_scroll_into(d->scroll_q16, d->row_focus * SONG_ROW_H, SONG_ROW_H, view_h);
     d->scroll_q16 = d->scroll_q16 > max_q16 ? max_q16 : d->scroll_q16;
+    d->arrows++;
+    draw_home(d);
+    return 1;
+}
+
+/* Queue page list keys (I498): the focus row skips the album group dividers; Enter plays it as a double-click on it does. */
+static int queue_list_key(desk* d, const sel_gui_input* ev) {
+    const sel_state* st = sel_engine_state(d->engine);
+    sel_gui_rect mn = panel_rect(d, "main");
+    int32_t view_h = px_to_logical(d, queue_list_rect(d, mn).h), n = (int32_t)st->queue_count, to, step;
+    int32_t page = view_h / QUEUE_ROW_H > 1 ? view_h / QUEUE_ROW_H - 1 : 1;
+    if (ev->mods != 0u || n == 0) {
+        return 0;
+    }
+    if (ev->code == 13u) {
+        if (d->q_focus < 0 || d->q_focus >= n || (st->queue[d->q_focus].flags & SEL_QUEUE_FLAG_DIVIDER) != 0u) {
+            return 0;
+        }
+        d->kb_activates++;
+        d->row_plays++;
+        desk_play_path(d, st->queue_text + st->queue[d->q_focus].path_offset);
+        return 1;
+    }
+    to = list_nav(ev->code, d->q_focus, n, page);
+    if (to == LIST_NAV_NONE) {
+        return 0;
+    }
+    step = to >= d->q_focus ? 1 : -1;
+    while (to >= 0 && to < n && (st->queue[to].flags & SEL_QUEUE_FLAG_DIVIDER) != 0u) {
+        to += step;
+    }
+    if (to < 0 || to >= n) {
+        return 1; /* only dividers beyond: the focus stays */
+    }
+    d->q_focus = to;
+    queue_groups_sync(d);
+    d->queue_q16 = list_scroll_into(d->queue_q16, (int32_t)queue_slot(d, (uint32_t)to) * QUEUE_ROW_H, QUEUE_ROW_H, view_h);
+    d->arrows++;
+    draw_home(d);
+    return 1;
+}
+
+/* The entry idx of the UI-drawn Library list (a composer: canon, display, count; a drilldown song: key, name), NULL past the
+ * end; *total gets the entry count. */
+static const char* lib_ui_row(const sel_state* st, int32_t idx, int32_t* total) {
+    const char* p = st->composer_page != NULL ? lib_next(lib_next(lib_next(st->composer_page))) : st->composers, *hit = NULL;
+    int32_t i = 0;
+    for (; p != NULL && *p != '\0'; i++) {
+        if (i == idx) {
+            hit = p;
+        }
+        p = st->composer_page != NULL ? lib_next(lib_next(p)) : lib_next(lib_next(lib_next(p)));
+    }
+    *total = i;
+    return hit;
+}
+
+/* Library composer list and drilldown list keys (I498): Enter opens the composer or plays the song, as a click on it does. */
+static int lib_ui_key(desk* d, const sel_gui_input* ev) {
+    const sel_state* st = sel_engine_state(d->engine);
+    sel_gui_rect mn = panel_rect(d, "main");
+    int32_t view_h = px_to_logical(d, mn.y + mn.h - lib_list_top(d, mn, st)), n, to, max_q16;
+    const char* p;
+    char line[256];
+    (void)lib_ui_row(st, 0, &n);
+    if (ev->mods != 0u || n == 0) {
+        return 0;
+    }
+    if (ev->code == 13u) {
+        p = d->lib_focus >= 0 ? lib_ui_row(st, d->lib_focus, &n) : NULL;
+        if (p == NULL) {
+            return 0;
+        }
+        d->kb_activates++;
+        if (st->composer_page != NULL) {
+            d->row_plays++;
+            return desk_play_path(d, p);
+        }
+        d->lib_q16 = 0;
+        d->lib_focus = -1;
+        desk_composer_request(line, sizeof line, p);
+        return desk_send(d, line);
+    }
+    to = list_nav(ev->code, d->lib_focus, n, view_h / LIB_ROW_H > 1 ? view_h / LIB_ROW_H - 1 : 1);
+    if (to == LIST_NAV_NONE) {
+        return 0;
+    }
+    d->lib_focus = to;
+    max_q16 = n * LIB_ROW_H - view_h;
+    max_q16 = max_q16 < 0 ? 0 : max_q16 << 16;
+    d->lib_q16 = list_scroll_into(d->lib_q16, to * LIB_ROW_H, LIB_ROW_H, view_h);
+    d->lib_q16 = d->lib_q16 > max_q16 ? max_q16 : d->lib_q16;
+    d->arrows++;
+    draw_home(d);
+    return 1;
+}
+
+/* Playlists page list keys (I498): the focus row is the selected row; Enter opens the selected playlist as the Open button does. */
+static int pl_list_key(desk* d, const sel_gui_input* ev) {
+    const sel_view_state* v = pl_view(sel_engine_state(d->engine));
+    int32_t sel = pl_sel_row(d, v), to;
+    if (ev->mods != 0u || v == NULL || v->row_n == 0u || d->pl_confirm) {
+        return 0;
+    }
+    if (ev->code == 13u) {
+        if (sel < 0) {
+            return 0;
+        }
+        d->kb_activates++;
+        return pl_button_click(d, v, 4u);
+    }
+    to = list_nav(ev->code, sel, (int32_t)v->row_n, 5);
+    if (to == LIST_NAV_NONE) {
+        return 0;
+    }
+    d->pl_sel_kind = v->rows[to].kind;
+    d->pl_sel_id = v->rows[to].id;
     d->arrows++;
     draw_home(d);
     return 1;
@@ -6732,6 +6890,22 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
     if (d->songs && songs_list_key(d, ev)) {
         return 1;
     }
+    if ((d->queue_page && queue_list_key(d, ev)) || (d->pl_page && pl_list_key(d, ev)) ||
+        (d->page == PG_LIBRARY && sel_engine_state(d->engine)->composers != NULL && lib_ui_list(d, sel_engine_state(d->engine)) && !lib_grid_on(d, sel_engine_state(d->engine)) && lib_ui_key(d, ev))) {
+        return 1;
+    }
+    if (d->page == PG_SEARCH && ev->mods == 0u && sel_engine_state(d->engine)->view != NULL &&
+        sel_engine_state(d->engine)->view->source == SEL_VIEW_SEARCH && (ev->code == TXT_KEY_UP || ev->code == TXT_KEY_DOWN || ev->code == 13u)) {
+        const sel_view_state* sv = sel_engine_state(d->engine)->view;
+        const sel_view_row* sr = sv->cursor >= sv->window_start && sv->cursor - sv->window_start < sv->row_n ? &sv->rows[sv->cursor - sv->window_start] : NULL;
+        d->kb_list = 1; /* the engine cursor is the focus row (I498) */
+        if (ev->code == 13u && sr != NULL && sr->kind != (uint32_t)SEL_ROW_HEADING && !sr->album && sr->key != NULL) {
+            d->kb_activates++;
+            d->row_plays++;
+            return desk_play_path(d, sr->key);
+        }
+        d->kb_activates += ev->code == 13u;
+    }
     if (d->page == PG_LIBRARY && ev->mods == 0u && lib_view_on(d, sel_engine_state(d->engine)) &&
         (ev->code == TXT_KEY_UP || ev->code == TXT_KEY_DOWN || ev->code == 13u)) { /* the engine cursor is the focus row (I423) */
         d->kb_list = 1;
@@ -6746,6 +6920,7 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         if (flow && (ev->code == TXT_KEY_UP || ev->code == TXT_KEY_DOWN)) {
             return 0;
         }
+        d->kb_list = 1; /* the engine cursor tile is the focus tile (I498) */
         if (!flow && (ev->code == TXT_KEY_UP || ev->code == TXT_KEY_DOWN)) {
             by = lib_grid_cols(d, region_rect(d, "main")); /* a row of tiles */
         }
@@ -6757,6 +6932,10 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         desk_send(d, line);
         d->arrows++;
         return 0;
+    }
+    if (ev->mods == 0u && ev->code == 13u && lib_grid_on(d, sel_engine_state(d->engine))) { /* Enter opens the cursor tile through the bound VIEW_ACTIVATE (I498) */
+        d->kb_list = 1;
+        d->kb_activates++;
     }
     act = txt_bindings_lookup(&d->binds, TXT_CTX_ANY, ev->code, ev->mods);
     if (act != NULL && strcmp(act, "@command") == 0) {
