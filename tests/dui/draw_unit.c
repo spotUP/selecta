@@ -1,6 +1,7 @@
 /* Unit test of the integer rasterizer (DUI-P2-1) and its dirty list (DUI-P2-2): each primitive checked where it
  * lives, on both canvas formats. The wiring through the shell is proved by dui-draw's test card. */
 #include <selecta/gui/gui_draw.h>
+#include <selecta/gui/gui_icons.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -446,7 +447,31 @@ static void test_gradient_span(uint32_t format) {
     }
 }
 
+/* I460: the icon area resample keeps coverage: an opaque mask stays opaque, a half mask stays about half. */
+static void test_icon_resample(void) {
+    uint8_t src[16 * 16];
+    uint8_t dst[13 * 13];
+    uint32_t sum = 0u;
+    int i;
+    memset(src, 255, sizeof src);
+    memset(dst, 0, sizeof dst);
+    sel_gui_icon_resample(src, 16, dst, 13);
+    for (i = 0; i < 13 * 13; i++) {
+        CHECK(dst[i] == 255);
+    }
+    for (i = 0; i < 16 * 16; i++) {
+        src[i] = (uint8_t)((i % 16) < 8 ? 255 : 0);
+    }
+    sel_gui_icon_resample(src, 16, dst, 13);
+    for (i = 0; i < 13 * 13; i++) {
+        sum += dst[i];
+    }
+    CHECK(sum / (13u * 13u) >= 125u && sum / (13u * 13u) <= 130u);
+    CHECK(dst[0] == 255 && dst[12] == 0);
+}
+
 int main(void) {
+    test_icon_resample();
     test_span_equals_pixel(SEL_GUI_RGBA32);
     test_span_equals_pixel(SEL_GUI_INDEX8);
     test_gradient_span(SEL_GUI_RGBA32);

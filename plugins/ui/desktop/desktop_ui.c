@@ -159,6 +159,8 @@ typedef struct desk {
     sel_gui_icons icons;     /* the icon atlas at the current scale: the baked masks of size k * logical */
     int32_t icon_px[DESK_ICON_SIZES];
     const uint8_t* icon_alpha[DESK_ICON_SIZES];
+    uint8_t* icon_buf[DESK_ICON_SIZES]; /* resampled masks (I460) for sizes that are not baked; NULL when baked */
+    uint32_t icon_resampled; /* sizes of the current icon atlas that were resampled */
     txt_bindings binds;      /* the keys of the action table (DUI-P3-3) */
     uint32_t keys_in, actions_fired, actions_distinct, focus_moves, searches, arrows;
     uint32_t fired_seen[4];  /* one bit per action row that fired */
@@ -7281,6 +7283,8 @@ static int desk_load_theme(desk* d, const char* path) {
     return 1;
 }
 
+static void desk_free_icons(desk* d);
+
 static void desk_close(void* state) {
     desk* d = (desk*)state;
     int i;
@@ -7314,6 +7318,7 @@ static void desk_close(void* state) {
         free(d->qg.name);
         free(d->qg.pool);
         art_close(d->art);
+        desk_free_icons(d);
         for (i = 0; i < 2 * DESK_SIZES; i++) {
             desk_atlas_free(d->atlas[i / DESK_SIZES][i % DESK_SIZES]);
         }
@@ -7410,16 +7415,59 @@ static int desk_set_density(desk* d, int32_t density) {
 
 /* The icon atlas for the current scale (DUI-P2-8): each logical icon size at k times the size, picked from the
  * baked masks (tools/gui_iconbake.c bakes every logical size times 1, 2 and 3). Counts one icon rebuild. */
+static void desk_free_icons(desk* d) {
+    int i;
+    for (i = 0; i < DESK_ICON_SIZES; i++) {
+        if (d->icon_buf[i] != NULL) {
+            d->host->mem_free(d->host, d->icon_buf[i]);
+            d->icon_buf[i] = NULL;
+        }
+    }
+}
+
 static void desk_build_icons(desk* d) {
     int i;
     uint32_t s;
+    desk_free_icons(d);
+    d->icon_resampled = 0u;
     for (i = 0; i < DESK_ICON_SIZES; i++) {
-        d->icon_px[i] = lpx(d, g_icon_sizes[i]);
-        d->icon_alpha[i] = sel_gui_icons_baked.alpha[0];
+        int32_t px = lpx(d, g_icon_sizes[i]);
+        int exact = 0;
+        uint32_t from = 0u;
+        int have = 0;
+        d->icon_px[i] = px;
         for (s = 0; s < sel_gui_icons_baked.size_n; s++) {
-            if (sel_gui_icons_baked.sizes[s] == d->icon_px[i]) {
+            int32_t bs = sel_gui_icons_baked.sizes[s];
+            if (bs == px) {
                 d->icon_alpha[i] = sel_gui_icons_baked.alpha[s];
+                exact = 1;
+                break;
             }
+            /* the source: the smallest baked size above the target (sizes ascend), else the largest */
+            if (bs > px && !have) {
+                from = s;
+                have = 1;
+            }
+        }
+        if (!have) {
+            from = sel_gui_icons_baked.size_n - 1u;
+        }
+        if (!exact) {
+            int32_t n = sel_gui_icons_baked.sizes[from];
+            size_t src_sz = (size_t)n * (size_t)n;
+            size_t dst_sz = (size_t)px * (size_t)px;
+            uint32_t k;
+            d->icon_buf[i] = (uint8_t*)d->host->mem_alloc(d->host, dst_sz * sel_gui_icons_baked.count, SEL_MEM_FAST);
+            if (d->icon_buf[i] == NULL) {
+                d->icon_alpha[i] = sel_gui_icons_baked.alpha[0];
+                d->icon_px[i] = sel_gui_icons_baked.sizes[0];
+                continue;
+            }
+            for (k = 0; k < sel_gui_icons_baked.count; k++) {
+                sel_gui_icon_resample(sel_gui_icons_baked.alpha[from] + k * src_sz, n, d->icon_buf[i] + k * dst_sz, px);
+            }
+            d->icon_alpha[i] = d->icon_buf[i];
+            d->icon_resampled++;
         }
     }
     d->icons.count = sel_gui_icons_baked.count;
@@ -8120,6 +8168,8 @@ static const sel_tag* desk_stats(void* state) {
         d->stats[n++].value = (uintptr_t)px_to_logical(d, d->canvas->h);
         d->stats[n].tag = SEL_UI_STAT_ZOOM;
         d->stats[n++].value = (uintptr_t)d->zoom_str;
+        d->stats[n].tag = SEL_UI_STAT_ICON_RESAMPLED;
+        d->stats[n++].value = d->icon_resampled;
         d->stats[n].tag = SEL_TAG_END;
     }
 

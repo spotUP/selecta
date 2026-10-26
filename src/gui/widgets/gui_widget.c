@@ -546,6 +546,37 @@ int sel_gui_widget_draw(sel_gui_canvas* c, const sel_gui_style* s, const sel_gui
     return 0;
 }
 
+/* I460: exact-coverage box filter, n x n to m x m. Destination pixel (x,y) covers source [x*n/m, (x+1)*n/m); with
+ * everything scaled by m, source pixel i spans [i*m, (i+1)*m) and the destination spans [x*n, (x+1)*n), so the
+ * weights are integers and sum to n per axis. */
+void sel_gui_icon_resample(const uint8_t* src, int32_t n, uint8_t* dst, int32_t m) {
+    int32_t x, y, i, j;
+    uint32_t area = (uint32_t)n * (uint32_t)n;
+    for (y = 0; y < m; y++) {
+        int32_t y0 = (int32_t)(((int64_t)y * n) / m);
+        int32_t y1 = (int32_t)((((int64_t)(y + 1) * n) + m - 1) / m);
+        for (x = 0; x < m; x++) {
+            int32_t x0 = (int32_t)(((int64_t)x * n) / m);
+            int32_t x1 = (int32_t)((((int64_t)(x + 1) * n) + m - 1) / m);
+            uint32_t sum = 0u;
+            for (j = y0; j < y1 && j < n; j++) {
+                int32_t lo = j * m > y * n ? j * m : y * n;
+                int32_t hi = (j + 1) * m < (y + 1) * n ? (j + 1) * m : (y + 1) * n;
+                uint32_t wy = hi > lo ? (uint32_t)(hi - lo) : 0u;
+                for (i = x0; i < x1 && i < n; i++) {
+                    int32_t l2 = i * m > x * n ? i * m : x * n;
+                    int32_t h2 = (i + 1) * m < (x + 1) * n ? (i + 1) * m : (x + 1) * n;
+                    uint32_t wx = h2 > l2 ? (uint32_t)(h2 - l2) : 0u;
+                    sum += wx * wy * (uint32_t)src[j * n + i];
+                }
+            }
+            /* total weight is n*n only when scaled by m*m: each axis sums to n, product n*n, but weights are in
+             * units of 1/m per axis, so normalise by n*n. */
+            dst[y * m + x] = (uint8_t)((sum + area / 2u) / area);
+        }
+    }
+}
+
 /* I389: profiled entry points; the raw functions above hold the drawing. */
 int32_t sel_gui_icon_draw(sel_gui_canvas* c, const sel_gui_icons* ic, uint32_t id, sel_gui_rect box, int32_t px, uint32_t argb) {
     uint32_t t0 = sel_gui_prof_begin(c);

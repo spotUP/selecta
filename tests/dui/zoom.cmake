@@ -22,6 +22,12 @@ check_zoom(fit-large fit 1280x800 65536 1280x800)
 check_zoom(zoom-125 125 1280x800 81920 1024x640)
 check_zoom(zoom-75 75 1280x800 49152 1706x1066)
 
+# I460: a fit scale asks for icon sizes that are not baked (13, 19, 25 at 0.78125); each is area-resampled, not
+# borrowed from the 16 px masks. Integer scales use the baked masks only.
+dui_run(fit_icons --ui desktop --backend mem --view home --clock fixed --stats --zoom fit --canvas 800x600)
+if(NOT fit_icons MATCHES "icon_resampled=3[^0-9]")
+  message(FATAL_ERROR "fit 800x600 must resample 3 icon sizes:\n${fit_icons}")
+endif()
 dui_run(def --ui desktop --backend mem --view home --clock fixed --stats --canvas 1280x800)
 if(NOT def MATCHES "ui_scale_q16=65536 ui_zoom=100 ui_logical=1280x800\n")
   message(FATAL_ERROR "mem default zoom must be 100:\n${def}")
@@ -37,4 +43,7 @@ file(WRITE "${WORK}/keys.txt" "key ctrl+plus\nkey ctrl++\nkey ctrl+-\nkey ctrl+-
 dui_run(keyed --ui desktop --backend mem --view home --clock fixed --stats --canvas 1280x800 --input "${WORK}/keys.txt")
 if(NOT keyed MATCHES "ui_scale_q16=81920 ui_zoom=125 ui_logical=1024x640\n")
   message(FATAL_ERROR "ctrl+plus twice then minus twice then 0 then plus must end at 125:\n${keyed}")
+endif()
+if(NOT def MATCHES "icon_resampled=0[^0-9]")
+  message(FATAL_ERROR "100% must use baked icons only:\n${def}")
 endif()

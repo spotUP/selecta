@@ -327,6 +327,7 @@ SEL_TAG(UI, STAT_SCALE_Q16,         0x50D2, INT)
 SEL_TAG(UI, STAT_ZOOM,              0x50D3, STR)
 SEL_TAG(UI, STAT_LOGICAL_W,         0x50D4, INT)
 SEL_TAG(UI, STAT_LOGICAL_H,         0x50D5, INT)
+SEL_TAG(UI, STAT_ICON_RESAMPLED,    0x50D6, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)
