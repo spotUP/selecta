@@ -88,6 +88,12 @@ shelf_scrolls(a0 a1 "${idle}")
 expect_eq("idle scroll shelf 0" "${a0}" 0)
 expect_eq("idle scroll shelf 1" "${a1}" 0)
 
+# 1b. I469: the album tiles of "Jump back in" draw the library cover of their albums row (fixture albums 1 to 3 carry a
+# cover, the Unicode album has none and keeps generated art). The shelf_album_art_draws counter proves the cover path ran;
+# without the album lookup in the art provider (art_find) every album tile falls back to generated art and it stays 0.
+dui_stat(album_art "${idle}" desktop shelf_album_art_draws)
+expect_eq("shelf album tiles drawn with a library cover" "${album_art}" 3)
+
 # 2b. Home is the start view itself: the shelves are in the dump of a run that replays no input at all, so the
 # shell's start-view logic (not a later UI turn) selected HOME before the first frame was drawn.
 home_run(first "")

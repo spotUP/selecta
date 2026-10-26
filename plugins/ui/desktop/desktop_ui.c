@@ -298,6 +298,7 @@ typedef struct desk {
     int32_t shelf_q16[8];    /* horizontal scroll of each Home shelf in logical pixels, Q16 */
     int32_t ptr_x, ptr_y;    /* the last pointer position: the wheel scrolls the shelf under it */
     uint32_t shelf_plays;    /* shelf tiles activated (song or album sent to the engine) */
+    uint32_t shelf_album_art_draws; /* I469: shelf ALBUM tiles drawn with a library cover in the last shelf paint */
     int32_t home_y_q16;      /* vertical scroll of the whole Home content in logical pixels, Q16 (I247) */
     uint32_t tile_queued;    /* tiles sent to the engine as queue next through the tile menu */
     uint32_t home_sig;       /* source and row count of the last HOME window drawn: a change redraws */
@@ -319,7 +320,7 @@ typedef struct desk {
     uint32_t fl_n[2], fl_paint[2], fl_max[2], fl_prof[2][SEL_GUI_PROF_COUNT];
     uint32_t frame_prof0[SEL_GUI_PROF_COUNT]; /* canvas->prof_ms when the open frame began */
     int frame_flow;                           /* 0 not a cover flow frame, 1 rest, 2 slide */
-    sel_tag stats[88 + 2 * (SEL_GUI_PROF_COUNT + PT_COUNT) + 2 * SEL_GUI_PROF_COUNT + 10];
+    sel_tag stats[90 + 2 * (SEL_GUI_PROF_COUNT + PT_COUNT) + 2 * SEL_GUI_PROF_COUNT + 10];
     char* input_at;         /* where the scripted input resumes after a turn that sent an engine line */
     uint32_t sends;         /* engine lines sent so far: the replay yields a turn so the shell pumps them */
     char library_dump[8192]; /* the Library page as text for the stats (DUI-P4-3) */
@@ -2069,6 +2070,7 @@ static void shelf_scroll(desk* d, int32_t y, int32_t notches_q16) {
 }
 
 static void draw_shelves(desk* d, sel_gui_rect mn) {
+    d->shelf_album_art_draws = 0u; /* the stat counts the album covers of the last shelf paint */
     const sel_state* st = sel_engine_state(d->engine);
     int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
     int32_t mg = lpx(d, HOME_MARGIN);
@@ -2115,7 +2117,8 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
                 sel_gui_shadow_draw(d->canvas, &d->shadow, ar);
             }
             art = r->key != NULL ? art_tile(d->art, r->key) : NULL;
-            if (art != NULL) { /* the library cover; generated art only when the song has none (design 2.7) */
+            if (art != NULL) { /* the library cover; generated art only when the song or album has none (design 2.7) */
+                d->shelf_album_art_draws += r->album ? 1u : 0u;
                 sel_gui_set_region(d->canvas, SEL_GUI_RGN_TILE);
                 sel_gui_blit_image(d->canvas, ar, art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, 0);
                 sel_gui_set_region(d->canvas, SEL_GUI_RGN_UI);
@@ -8298,6 +8301,8 @@ static const sel_tag* desk_stats(void* state) {
         d->stats[n++].value = d->atlas_ms;
         d->stats[n].tag = SEL_UI_STAT_ATLAS_BAKED_HITS;
         d->stats[n++].value = d->atlas_baked_hits;
+        d->stats[n].tag = SEL_UI_STAT_SHELF_ALBUM_ART_DRAWS;
+        d->stats[n++].value = d->shelf_album_art_draws;
         d->stats[n].tag = SEL_TAG_END;
     }
 

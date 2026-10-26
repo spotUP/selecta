@@ -19,6 +19,8 @@ struct desk_art {
     sel_gui_art_cache* cache;
     art_entry entry[ART_TITLES];
     uint32_t count;
+    int64_t bad[ART_TITLES]; /* albums whose cover failed to load */
+    uint32_t bad_n;
     uint32_t decodes;
     /* The current load: written by the caller before the worker starts, read by the worker, quiet after the
      * join. The cache is touched by one thread at a time. */
@@ -52,6 +54,16 @@ void art_close(desk_art* a) {
         sel_gui_art_cache_close(a->cache);
         free(a);
     }
+}
+
+static int is_bad(const desk_art* a, int64_t album) {
+    uint32_t i;
+    for (i = 0; i < a->bad_n; i++) {
+        if (a->bad[i] == album) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static art_entry* find_entry(desk_art* a, const char* title) {
@@ -143,7 +155,12 @@ static void worker(void* ctx) {
             e = &a->entry[a->count++];
             strcpy(e->title, a->titles[i]);
             e->album = a->src->find(a->src->ctx, e->title);
-            if (e->album != 0 && !load_album(a, e->album, kind)) {
+            if (e->album != 0 && is_bad(a, e->album)) {
+                e->album = 0; /* another title already found this album without a usable cover */
+            } else if (e->album != 0 && !load_album(a, e->album, kind)) {
+                if (a->bad_n < ART_TITLES) {
+                    a->bad[a->bad_n++] = e->album; /* its cache slot stays zeroed and would read as cached for the next title (I469) */
+                }
                 e->album = 0; /* an album without a usable cover */
             }
         }

@@ -330,6 +330,8 @@ SEL_TAG(UI, STAT_LOGICAL_H,         0x50D5, INT)
 SEL_TAG(UI, STAT_ICON_RESAMPLED,    0x50D6, INT)
 SEL_TAG(UI, STAT_ATLAS_MS,          0x50D7, INT)
 SEL_TAG(UI, STAT_ATLAS_BAKED_HITS,  0x50D8, INT)
+/* I469: Home shelf album tiles drawn with a library cover. */
+SEL_TAG(UI, STAT_SHELF_ALBUM_ART_DRAWS, 0x50D9, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)
