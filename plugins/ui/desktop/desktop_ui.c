@@ -284,6 +284,7 @@ typedef struct desk {
     uint32_t sends;         /* engine lines sent so far: the replay yields a turn so the shell pumps them */
     char library_dump[8192]; /* the Library page as text for the stats (DUI-P4-3) */
     uint32_t library_sig;    /* hash of the Library page last drawn: a change redraws */
+    sel_gui_rect grid_box;                       /* bounding box of the tiles of the last grid frame (I379) */
     uint32_t grid_draws, grid_tiles, grid_cols;   /* grid view frames drawn, tiles in the last one, columns of the last one (DUI-P4-5) */
     uint32_t flow_draws, flow_centre;             /* cover flow frames drawn and the listing index of the centred album in the last one */
     uint32_t flow_from;                           /* the centre the glide started from */
@@ -2002,6 +2003,14 @@ static sel_gui_rect lib_row_rect(desk* d, sel_gui_rect mn, uint32_t i) {
                    w > 0 ? w : 0, lpx(d, LIB_ROW_H));
 }
 
+/* The Statistics column of the Library page, right of the rows and the tile grid: the one rectangle the panel draws in and
+ * the list and the grid lay out beside (I379). Zero width when there are no statistics. */
+static sel_gui_rect lib_stats_rect(desk* d, sel_gui_rect mn, const sel_state* st) {
+    int32_t mg = lpx(d, LIB_MARGIN), y = mn.y + lpx(d, LIB_LIST_Y);
+    return st->stats != NULL ? rect_of(mn.x + mn.w - mg - lpx(d, LIB_STATS_W), y, lpx(d, LIB_STATS_W), mn.y + mn.h - y)
+                             : rect_of(mn.x + mn.w, y, 0, 0);
+}
+
 /* 1 when (x, y) is on row i of the Library list and not on a part of it scrolled out above the list top. */
 static int lib_row_hit(desk* d, sel_gui_rect mn, uint32_t i, int32_t x, int32_t y) {
     return y >= lib_list_top(d, mn, sel_engine_state(d->engine)) && in_rect(lib_row_rect(d, mn, i), x, y);
@@ -3422,6 +3431,11 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "grid draws %u tiles %u cols %u\nflow draws %u centre %u\n",
                           (unsigned)d->grid_draws, (unsigned)d->grid_tiles, (unsigned)d->grid_cols, (unsigned)d->flow_draws,
                           (unsigned)d->flow_centre);
+    o = dump_put(d, o, "grid box %d %d %d %d\n", (int)d->grid_box.x, (int)d->grid_box.y, (int)d->grid_box.w, (int)d->grid_box.h);
+    if (st->stats != NULL) {
+        sel_gui_rect sr = lib_stats_rect(d, region_rect(d, "main"), st);
+        o = dump_put(d, o, "stats rect %d %d %d %d\n", (int)sr.x, (int)sr.y, (int)sr.w, (int)sr.h);
+    }
     o = dump_put(d, o, "nowplaying draws %u pairs %u genart %u\nlyrics line %d at %u\nmessage lines %u\n",
                           (unsigned)d->np_draws, (unsigned)d->np_rows, (unsigned)d->np_genart, (int)st->lyric_line, (unsigned)st->song.position_ms, (unsigned)d->np_msg_lines);
     o = dump_put(d, o, "rating %d liked %d mark %d %d %d %d step %d\n", (int)d->np_rating, (int)d->np_liked,
@@ -3690,7 +3704,8 @@ static int lib_grid_on(const desk* d, const sel_state* st) {
 static uint32_t lib_grid_cols(const desk* d, sel_gui_rect mn) {
     int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
     int32_t tw = lpx(d, GRID_ART) + 2 * pad, gap = lpx(d, GRID_GAP);
-    int32_t avail = mn.w - 2 * lpx(d, LIB_MARGIN) + gap;
+    sel_gui_rect sr = lib_stats_rect((desk*)d, mn, sel_engine_state(d->engine));
+    int32_t avail = (sr.w > 0 ? sr.x - lpx(d, LIB_MARGIN) - mn.x : mn.w - lpx(d, LIB_MARGIN)) - lpx(d, LIB_MARGIN) + gap;
     return avail >= tw + gap ? (uint32_t)(avail / (tw + gap)) : 1u;
 }
 
@@ -3731,6 +3746,7 @@ static void draw_lib_grid(desk* d, sel_gui_rect mn) {
     d->grid_draws++;
     d->grid_cols = cols;
     d->grid_tiles = 0u;
+    d->grid_box = rect_of(0, 0, 0, 0);
     for (i = 0; i < v->row_n; i++) {
         uint32_t g = v->window_start + i, row = g / cols, col = g % cols;
         const sel_view_row* r = &v->rows[i];
@@ -3753,6 +3769,16 @@ static void draw_lib_grid(desk* d, sel_gui_rect mn) {
         lib_view_row_reg(d, mn, sel_engine_state(d->engine), i, t);
         sel_gui_dirty_add(d->canvas, t);
         d->grid_tiles++;
+        if (d->grid_box.w == 0) {
+            d->grid_box = t;
+        } else {
+            int32_t x1 = d->grid_box.x + d->grid_box.w > t.x + t.w ? d->grid_box.x + d->grid_box.w : t.x + t.w;
+            int32_t y1 = d->grid_box.y + d->grid_box.h > t.y + t.h ? d->grid_box.y + d->grid_box.h : t.y + t.h;
+            d->grid_box.x = d->grid_box.x < t.x ? d->grid_box.x : t.x;
+            d->grid_box.y = d->grid_box.y < t.y ? d->grid_box.y : t.y;
+            d->grid_box.w = x1 - d->grid_box.x;
+            d->grid_box.h = y1 - d->grid_box.y;
+        }
     }
 }
 
@@ -3901,7 +3927,8 @@ static void draw_library(desk* d) {
         }
     }
     if (st->stats != NULL) { /* the Stats page (F24): the library totals as label and value */
-        sel_gui_rect sr = rect_of(mn.x + mn.w - mg - lpx(d, LIB_STATS_W), mn.y + lpx(d, LIB_LIST_Y), lpx(d, LIB_STATS_W), lpx(d, 28));
+        sel_gui_rect sr = lib_stats_rect(d, mn, st);
+        sr.h = lpx(d, 28);
         draw_text(d, sr, "Statistics", 1, 18, text);
         sr.y += lpx(d, 28) + sp;
         for (p = st->stats; *p != '\0'; sr.y += lpx(d, 24)) {
