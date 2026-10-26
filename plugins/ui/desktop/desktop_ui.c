@@ -187,8 +187,8 @@ typedef struct desk {
     uint32_t np_rows;        /* metadata pairs the Now Playing panel drew: STAT_META_PANEL_ROWS (DUI-P4-7) */
     uint32_t np_page_draws;  /* Now Playing page draws (sentinel) */
     uint32_t font_misses;    /* text draws whose size is not in g_sizes, so nothing was drawn (I361) */
-    char np_title[96];       /* the title line the Now Playing page last drew (I361) */
-    char np_artist[96];
+    char np_text_title[96]; /* the title line the Now Playing page last drew (I361) */
+    char np_text_artist[96];
     uint32_t lib_off_page;   /* Library page draws while another page is current (sentinel, must stay 0: I274) */
     uint32_t np_draws;       /* Now Playing panel draws (sentinel) */
     sel_gui_rect np_title;      /* the Now Playing title and artist lines, w 0 = not drawn: a song row of the song menu (I372) */
@@ -3210,7 +3210,7 @@ static const char* library_dump_build(desk* d) {
                               (int)d->nav_back.h, (int)d->nav_fwd.x, (int)d->nav_fwd.y, (int)d->nav_fwd.w, (int)d->nav_fwd.h);
     }
     if (o + 300u < sizeof d->library_dump) { /* the Now Playing page text (I361) */
-        o = dump_put(d, o, "np_page_text title=[%s] artist=[%s] font_misses=%u\n", d->np_title, d->np_artist, (unsigned)d->font_misses);
+        o = dump_put(d, o, "np_page_text title=[%s] artist=[%s] font_misses=%u\n", d->np_text_title, d->np_text_artist, (unsigned)d->font_misses);
     }
     if (o + 200u < sizeof d->library_dump) { /* the footer bars (I312) */
         sel_gui_rect vb = vol_bar_rect(d), skb = seek_bar_rect(d);
@@ -4600,8 +4600,8 @@ static void draw_nowplaypage(desk* d) {
     sel_gui_genart_draw(d->canvas, ar, f->format, sel_gui_str_hash(f->title));
     x = ar.x + ar.w + mg;
     y = ar.y;
-    snprintf(d->np_title, sizeof d->np_title, "%s", st->song.path != NULL ? f->title : "");
-    snprintf(d->np_artist, sizeof d->np_artist, "%s", st->song.path != NULL ? f->artist : "");
+    snprintf(d->np_text_title, sizeof d->np_text_title, "%s", st->song.path != NULL ? f->title : "");
+    snprintf(d->np_text_artist, sizeof d->np_text_artist, "%s", st->song.path != NULL ? f->artist : "");
     if (st->song.path != NULL) {
         draw_text(d, rect_of(x, y, mn.x + mn.w - x - mg, lpx(d, 40)), f->title, 1, 32, text);
         draw_text(d, rect_of(x, y + lpx(d, 42), mn.x + mn.w - x - mg, lpx(d, 22)), f->artist, 0, 16, muted);
