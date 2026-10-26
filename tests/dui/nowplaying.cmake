@@ -9,6 +9,7 @@
 # 3b. I257: genart runs once per Now Playing draw (`genart N` equals `draws N` in the dump).
 # 4. I288: a click on the fourth rating mark of an unrated song fills four marks in the same run (`rating N` in the dump is
 #    the count the last Now Playing draw filled). Run A reads the mark rectangles, run B clicks there.
+# 4b. I446: `nowplaying title Y H like L artist A`: H is 22 with no artist (40 with one), and L - Y - H is 4.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 set(fx "${HERE}/../m3/lyrics")
@@ -61,6 +62,19 @@ function(np_run tag seek_ms)
   math(EXPR want "${CMAKE_MATCH_7} - 2 * ${tok}")
   if(NOT CMAKE_MATCH_3 EQUAL want OR NOT CMAKE_MATCH_4 EQUAL CMAKE_MATCH_3)
     message(FATAL_ERROR "Now Playing cover is ${CMAKE_MATCH_3}x${CMAKE_MATCH_4}, want a ${want}x${want} square spanning the panel width ${CMAKE_MATCH_7}")
+  endif()
+  # I446: with no artist the title block is one line high, and the like row sits 4 px under the title block either way.
+  if(NOT "${o}" MATCHES "nowplaying title (-?[0-9]+) ([0-9]+) like (-?[0-9]+) artist ([01])")
+    message(FATAL_ERROR "no nowplaying title line in:\n${o}")
+  endif()
+  if(CMAKE_MATCH_4 EQUAL 0)
+    set(want_h 22)
+  else()
+    set(want_h 40)
+  endif()
+  math(EXPR gap "${CMAKE_MATCH_3} - ${CMAKE_MATCH_1} - ${CMAKE_MATCH_2}")
+  if(NOT CMAKE_MATCH_2 EQUAL want_h OR NOT gap EQUAL 4)
+    message(FATAL_ERROR "Now Playing title block is ${CMAKE_MATCH_2} px high with the like row ${gap} px under it (artist ${CMAKE_MATCH_4}); want ${want_h} px and 4 px")
   endif()
   if(NOT "${o}" MATCHES "meta_panel panel_loads=[0-9]+ meta_panel_rows=([0-9]+)")
     message(FATAL_ERROR "no meta_panel stat in:\n${o}")

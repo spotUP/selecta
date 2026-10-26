@@ -3670,6 +3670,8 @@ static const char* library_dump_build(desk* d) {
                           (unsigned)d->np_draws, (unsigned)d->np_rows, (unsigned)d->np_genart, (int)st->lyric_line, (unsigned)st->song.position_ms, (unsigned)d->np_msg_lines);
     o = dump_put(d, o, "nowplaying art %d %d %d %d panel %d %d %d %d\n", (int)d->np_art.x, (int)d->np_art.y, (int)d->np_art.w,
                           (int)d->np_art.h, (int)d->np_panel.x, (int)d->np_panel.y, (int)d->np_panel.w, (int)d->np_panel.h);
+    o = dump_put(d, o, "nowplaying title %d %d like %d artist %u\n", (int)d->np_title.y, (int)d->np_title.h, (int)d->np_like.y,
+                 (unsigned)(d->np_text_artist[0] != '\0'));
     o = dump_put(d, o, "rating %d liked %d mark %d %d %d %d step %d\n", (int)d->np_rating, (int)d->np_liked,
                           (int)d->np_rate[0].x, (int)d->np_rate[0].y, (int)d->np_rate[0].w, (int)d->np_rate[0].h,
                           (int)(d->np_rate[1].x - d->np_rate[0].x));
@@ -5301,11 +5303,14 @@ static void draw_nowplaying(desk* d) {
     }
     y = ar.y + ar.h + sp;
     draw_text(d, rect_of(pn.x + sp, y, side, lpx(d, 22)), f->title, 1, 16, text);
-    draw_text(d, rect_of(pn.x + sp, y + lpx(d, 22), side, lpx(d, 18)), f->artist, 0, 13, muted);
-    d->np_title = rect_of(pn.x + sp, y, side, lpx(d, 40));
+    /* No artist: the artist line takes no height, so the like row follows the title (I446). */
+    if (f->artist[0] != '\0') {
+        draw_text(d, rect_of(pn.x + sp, y + lpx(d, 22), side, lpx(d, 18)), f->artist, 0, 13, muted);
+    }
+    d->np_title = rect_of(pn.x + sp, y, side, lpx(d, f->artist[0] != '\0' ? 40 : 22));
     np_title_reg(d);
     /* Like and rating: the library's rating row gives the filled marks; a click sends LIKE or RATE n like the text UI. */
-    y += lpx(d, 44);
+    y += d->np_title.h + lpx(d, 4);
     d->np_like = rect_of(pn.x + sp, y, ic, ic);
     if (st->panel != NULL) {
         const char* p = st->panel;
