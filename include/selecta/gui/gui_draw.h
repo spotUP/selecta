@@ -58,6 +58,11 @@ typedef struct sel_gui_canvas {
     uint32_t prof_depth;
     uint32_t prof_ms[SEL_GUI_PROF_COUNT];
     uint32_t prof_n[SEL_GUI_PROF_COUNT];
+    /* I468: vertical pixel aspect. 0 or 1 = square pixels. 2 = pixels twice as tall as wide (PAL hires, non-laced
+     * 640x256): callers lay out in a square-pixel space of twice the height and every y and height given to
+     * fill_rect, round_rect, clip_push, dirty_add and blit_mask is halved here, so a round shape stays round on the
+     * display. A mask is blitted as given (it is baked at half height) at the halved y. */
+    int32_t ydiv;
 } sel_gui_canvas;
 
 /* Bytes of pixel storage for a format and size. */

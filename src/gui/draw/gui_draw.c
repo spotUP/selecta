@@ -224,6 +224,22 @@ sel_gui_rect sel_gui_rect_intersect(sel_gui_rect a, sel_gui_rect b) {
     return r;
 }
 
+/* I468: a rect given in the square-pixel layout space as canvas pixels (rows halved for ydiv 2; a non-empty rect
+ * keeps at least one row). */
+static int32_t ydv(const sel_gui_canvas* c) { return c->ydiv > 1 ? c->ydiv : 1; }
+
+static sel_gui_rect to_canvas(const sel_gui_canvas* c, sel_gui_rect r) {
+    int32_t k = ydv(c), y0, y1;
+    if (k == 1) {
+        return r;
+    }
+    y0 = r.y >= 0 ? r.y / k : -((-r.y + k - 1) / k);
+    y1 = r.y + r.h >= 0 ? (r.y + r.h) / k : -((-(r.y + r.h) + k - 1) / k);
+    r.y = y0;
+    r.h = y1 - y0 < 1 && r.h > 0 ? 1 : y1 - y0;
+    return r;
+}
+
 static int clip_push_raw(sel_gui_canvas* c, sel_gui_rect r) {
     if (c->clip_n >= SEL_GUI_CLIP_DEPTH) {
         return 0;
@@ -235,7 +251,7 @@ static int clip_push_raw(sel_gui_canvas* c, sel_gui_rect r) {
 
 int sel_gui_clip_push(sel_gui_canvas* c, sel_gui_rect r) {
     uint32_t t0 = sel_gui_prof_begin(c);
-    int ok = clip_push_raw(c, r);
+    int ok = clip_push_raw(c, to_canvas(c, r));
     sel_gui_prof_end(c, SEL_GUI_PROF_CLIP, t0);
     return ok;
 }
@@ -310,7 +326,7 @@ static void dirty_add_raw(sel_gui_canvas* c, sel_gui_rect r) {
 
 void sel_gui_dirty_add(sel_gui_canvas* c, sel_gui_rect r) {
     uint32_t t0 = sel_gui_prof_begin(c);
-    dirty_add_raw(c, r);
+    dirty_add_raw(c, to_canvas(c, r));
     sel_gui_prof_end(c, SEL_GUI_PROF_DIRTY, t0);
 }
 
@@ -463,15 +479,15 @@ void sel_gui_scrim(sel_gui_canvas* c, sel_gui_rect r, uint32_t rgb, uint32_t alp
 
 /* Coverage 0..16 of pixel (px, py) by a circle of radius rad centred on pixel-edge coordinates (cx, cy), 4x4
  * subsamples at eighth-pixel positions. */
-static uint32_t coverage(int32_t px, int32_t py, int32_t cx, int32_t cy, int32_t rad) {
+static uint32_t coverage(int32_t px, int32_t py, int32_t cx, int32_t cy, int32_t rad, int32_t k) {
     /* 32-bit integer only (the 68020 has no 64-bit multiply): the squared offsets of the four sample columns and rows
      * are formed once, the 16 samples then only add and compare. A pixel wholly inside or outside the circle is
      * decided from the extreme sums. The count equals the 64-bit form for rad up to 1000. */
-    int32_t lim = 64 * rad * rad, ax = (px - cx) * 8, ay = (py - cy) * 8, i, j;
+    int32_t lim = 64 * rad * rad, ax = (px - cx) * 8, ay = (py - cy) * 8 * k, i, j; /* k: row height in columns (I468) */
     int32_t xs[4], ys[4], xmin, xmax, ymin, ymax;
     uint32_t n = 0u;
     for (i = 0; i < 4; i++) {
-        int32_t dx = ax + 2 * i + 1, dy = ay + 2 * i + 1;
+        int32_t dx = ax + 2 * i + 1, dy = ay + (2 * i + 1) * k;
         xs[i] = dx * dx;
         ys[i] = dy * dy;
     }
@@ -499,11 +515,11 @@ static uint32_t coverage(int32_t px, int32_t py, int32_t cx, int32_t cy, int32_t
 
 /* One pixel of a corner row: cy is the corner centre row; the corner centre column follows from x. */
 static void corner_px(sel_gui_canvas* c, sel_gui_rect r, int32_t rad, int32_t x, int32_t y, int32_t cy,
-                      uint32_t argb) {
+                      uint32_t argb, int32_t k) {
     int32_t cx = x < r.x + rad ? r.x + rad : x >= r.x + r.w - rad ? r.x + r.w - rad : -1;
     uint32_t a = argb >> 24;
     if (cx >= 0) {
-        uint32_t cov = coverage(x, y, cx, cy, rad);
+        uint32_t cov = coverage(x, y, cx, cy, rad, k);
         if (c->format == SEL_GUI_INDEX8) {
             if (cov < 8u) {
                 return;
@@ -517,10 +533,11 @@ static void corner_px(sel_gui_canvas* c, sel_gui_rect r, int32_t rad, int32_t x,
     put(c, x, y, argb, 0);
 }
 
-static void round_rect_raw(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, uint32_t argb) {
+static void round_rect_raw(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, uint32_t argb, int32_t k) {
     sel_gui_rect v;
     fill_ctx f;
-    int32_t x, y, rad = imin(radius, imin(r.w, r.h) / 2);
+    /* k = row height in columns: the corners are ellipses rad wide and rad / k rows tall (I468). */
+    int32_t x, y, rad = imin(radius, imin(r.w, r.h * k) / 2), ry = (rad + k - 1) / k;
     c->prims++;
     if (rad < 0) {
         rad = 0;
@@ -528,7 +545,7 @@ static void round_rect_raw(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, ui
     v = cur_clip(c, r);
     fill_ctx_init(&f, c, argb);
     for (y = v.y; y < v.y + v.h; y++) {
-        int32_t cy = y < r.y + rad ? r.y + rad : y >= r.y + r.h - rad ? r.y + r.h - rad : -1;
+        int32_t cy = y < r.y + ry ? r.y + ry : y >= r.y + r.h - ry ? r.y + r.h - ry : -1;
         int32_t m0 = imax(v.x, r.x + rad), m1 = imin(v.x + v.w, r.x + r.w - rad);
         if (cy < 0) {
             fill_span(&f, v.x, v.x + v.w, y);
@@ -539,11 +556,11 @@ static void round_rect_raw(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, ui
             m0 = m1 = imin(imax(m0, v.x), v.x + v.w);
         }
         for (x = v.x; x < m0; x++) {
-            corner_px(c, r, rad, x, y, cy, argb);
+            corner_px(c, r, rad, x, y, cy, argb, k);
         }
         fill_span(&f, m0, m1, y);
         for (x = imax(m1, m0); x < v.x + v.w; x++) {
-            corner_px(c, r, rad, x, y, cy, argb);
+            corner_px(c, r, rad, x, y, cy, argb, k);
         }
     }
 }
@@ -556,7 +573,7 @@ static uint32_t round_cov(sel_gui_rect r, int32_t rad, int32_t x, int32_t y) {
     }
     cx = x < r.x + rad ? r.x + rad : x >= r.x + r.w - rad ? r.x + r.w - rad : -1;
     cy = y < r.y + rad ? r.y + rad : y >= r.y + r.h - rad ? r.y + r.h - rad : -1;
-    return cx >= 0 && cy >= 0 ? coverage(x, y, cx, cy, rad) : 16u;
+    return cx >= 0 && cy >= 0 ? coverage(x, y, cx, cy, rad, 1) : 16u;
 }
 
 static void round_frame_raw(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, int32_t width, uint32_t argb) {
@@ -908,13 +925,13 @@ static void shadow_round_raw(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui
 /* I389: profiled entry points; the raw functions above hold the drawing. */
 void sel_gui_fill_rect(sel_gui_canvas* c, sel_gui_rect r, uint32_t argb) {
     uint32_t t0 = sel_gui_prof_begin(c);
-    fill_rect_raw(c, r, argb);
+    fill_rect_raw(c, to_canvas(c, r), argb);
     sel_gui_prof_end(c, SEL_GUI_PROF_FILL, t0);
 }
 
 void sel_gui_round_rect(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, uint32_t argb) {
     uint32_t t0 = sel_gui_prof_begin(c);
-    round_rect_raw(c, r, radius, argb);
+    round_rect_raw(c, to_canvas(c, r), radius, argb, ydv(c));
     sel_gui_prof_end(c, SEL_GUI_PROF_ROUND, t0);
 }
 
@@ -938,7 +955,7 @@ void sel_gui_line(sel_gui_canvas* c, int32_t x0, int32_t y0, int32_t x1, int32_t
 
 void sel_gui_blit_mask(sel_gui_canvas* c, int32_t x, int32_t y, const uint8_t* mask, int32_t mw, int32_t mh, int32_t mstride, uint32_t tint) {
     uint32_t t0 = sel_gui_prof_begin(c);
-    blit_mask_raw(c, x, y, mask, mw, mh, mstride, tint);
+    blit_mask_raw(c, x, y / ydv(c), mask, mw, mh, mstride, tint);
     sel_gui_prof_end(c, SEL_GUI_PROF_MASK, t0);
 }
 

@@ -542,6 +542,41 @@ static void test_icon_resample(void) {
     CHECK(dst[0] == 255 && dst[12] == 0);
 }
 
+/* I468: on a canvas with ydiv 2 (PAL hires pixels, twice as tall as wide) a shape laid out as a circle in the
+ * square-pixel space is drawn half as many rows, so on the display it measures the same width and height. */
+static void test_tall_pixels(uint32_t format) {
+    sel_gui_canvas* c = make(format, 64, 32);
+    uint32_t bg = sel_gui_pixel(c, 0, 0);
+    int32_t x, y, x0 = 99, x1 = -1, y0 = 99, y1 = -1;
+    c->ydiv = 2;
+    sel_gui_round_rect(c, R(10, 8, 40, 40), 20, 0xFFFFFFFFu); /* a 40x40 circle in layout space */
+    for (y = 0; y < 32; y++) {
+        for (x = 0; x < 64; x++) {
+            if (sel_gui_pixel(c, x, y) != bg) {
+                x0 = x < x0 ? x : x0;
+                x1 = x > x1 ? x : x1;
+                y0 = y < y0 ? y : y0;
+                y1 = y > y1 ? y : y1;
+            }
+        }
+    }
+    CHECK(x1 - x0 + 1 == 40);
+    CHECK(y1 - y0 + 1 == 20); /* drawn height = width / 2: round on a 1:2 pixel display */
+    CHECK(y0 == 4);           /* layout y 8 maps to row 4 */
+    /* a fill and a clip map the same way */
+    sel_gui_canvas_init(c, format, 64, 32, c->pixels);
+    c->ydiv = 2;
+    if (format == SEL_GUI_INDEX8) {
+        uint32_t pal[256];
+        sel_gui_palette_default(pal, 0x3B82F6u, 0x1E1E24u, 0xE6E6EBu);
+        sel_gui_set_palette(c, pal, 0u, 256u);
+    }
+    CHECK(sel_gui_clip_push(c, R(0, 0, 64, 20)));
+    sel_gui_fill_rect(c, R(0, 0, 64, 64), 0xFFFFFFFFu);
+    CHECK(sel_gui_pixel(c, 3, 9) != bg && sel_gui_pixel(c, 3, 10) == bg);
+    drop(c);
+}
+
 int main(void) {
     test_icon_resample();
     test_span_equals_pixel(SEL_GUI_RGBA32);
@@ -552,6 +587,8 @@ int main(void) {
     test_fill_and_clip(SEL_GUI_RGBA32);
     test_fill_and_clip(SEL_GUI_INDEX8);
     test_round_rect();
+    test_tall_pixels(SEL_GUI_RGBA32);
+    test_tall_pixels(SEL_GUI_INDEX8);
     test_round_frame();
     test_gradient();
     test_line_mask_image();
