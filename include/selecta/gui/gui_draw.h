@@ -22,13 +22,21 @@ enum { SEL_GUI_RGBA32 = 0, SEL_GUI_INDEX8 = 1 };
 #define SEL_GUI_DIRTY_MAX 64u
 #define SEL_GUI_SHADOW_MAX 32u
 
+/* INDEX8 colour budget (DUI-P6-4, AGA): entries 0-31 UI, 32-63 generated art, 64-127 tile row, 128-191 panel,
+ * 192-255 cover flow. Draws in the UI and art regions resolve colours in entries 0-63; the three artwork regions
+ * each resolve in their own 64-entry sub-palette. */
+enum { SEL_GUI_RGN_UI = 0, SEL_GUI_RGN_ART, SEL_GUI_RGN_TILE, SEL_GUI_RGN_PANEL, SEL_GUI_RGN_FLOW, SEL_GUI_RGN_COUNT };
+
 typedef struct sel_gui_canvas {
     uint32_t format; /* SEL_GUI_RGBA32 or SEL_GUI_INDEX8 */
     int32_t w, h;
     void* pixels;    /* w*h uint32_t (RGBA32) or uint8_t (INDEX8), row stride = w */
     uint32_t palette[256]; /* 0xRRGGBB, INDEX8 only */
     uint32_t colours;      /* palette entries in use */
-    uint8_t cube[32768];   /* INDEX8: nearest palette index for each 5-bit-per-channel colour */
+    uint8_t cube[32768];   /* INDEX8: nearest of entries 0-31 (the UI region) for each 5-bit-per-channel colour */
+    uint8_t rcube[4][32768]; /* INDEX8: nearest within each region sub-palette (art 32-63, tile, panel, flow) */
+    uint32_t region;         /* SEL_GUI_RGN_*: the budget region the draws below belong to */
+    uint32_t used[SEL_GUI_RGN_COUNT][8]; /* INDEX8: bitmap of palette indices written per region */
     sel_gui_rect clip[SEL_GUI_CLIP_DEPTH];
     uint32_t clip_n;
     sel_gui_rect dirty[SEL_GUI_DIRTY_MAX];
@@ -43,8 +51,16 @@ size_t sel_gui_pixel_bytes(uint32_t format, int32_t w, int32_t h);
 void sel_gui_canvas_init(sel_gui_canvas* c, uint32_t format, int32_t w, int32_t h, void* pixels);
 /* INDEX8: sets palette entries first .. first+n-1 (0xRRGGBB) and rebuilds the lookup cube. */
 void sel_gui_set_palette(sel_gui_canvas* c, const uint32_t* rgb, uint32_t first, uint32_t n);
+/* Selects the budget region for the draws that follow (INDEX8; harmless on RGBA32). */
+void sel_gui_set_region(sel_gui_canvas* c, uint32_t region);
+/* Distinct palette indices written in a region since init. */
+uint32_t sel_gui_region_colours(const sel_gui_canvas* c, uint32_t region);
+/* The budget palette: `ui` holds n theme colours (0xRRGGBB; ui[0] accent, ui[1] surface, ui[2] text, n >= 3, n <= 32)
+ * for entries 0-31, the rest of those 32 are steps from the surface to the accent and the text; entries 32-63 are
+ * the generated-art colours (sel_gui_genart_palette); each artwork sub-palette starts as a grey ramp. */
+void sel_gui_palette_budget(uint32_t* rgb256, const uint32_t* ui, uint32_t n);
 /* The default 256-colour UI palette from three theme colours: 3 theme entries, 24 greys, a 6x6x6 cube, then
- * surface-to-accent steps. */
+ * surface-to-accent steps (now: sel_gui_palette_budget over the three colours). */
 void sel_gui_palette_default(uint32_t* rgb256, uint32_t accent, uint32_t surface, uint32_t text);
 /* Colour as 0xRRGGBB of pixel (x, y); 0 outside the canvas. */
 uint32_t sel_gui_pixel(const sel_gui_canvas* c, int32_t x, int32_t y);

@@ -1,6 +1,7 @@
 /* Integer rasterizer (plan DUI-P2-1) and dirty-rectangle list (DUI-P2-2). See gui_draw.h. */
 #include <selecta/gui/gui_draw.h>
 
+#include <selecta/gui/gui_genart.h>
 #include <string.h>
 
 static uint32_t div255(uint32_t x) {
@@ -47,54 +48,100 @@ void sel_gui_canvas_init(sel_gui_canvas* c, uint32_t format, int32_t w, int32_t 
     c->colours = 1u;
 }
 
-void sel_gui_set_palette(sel_gui_canvas* c, const uint32_t* rgb, uint32_t first, uint32_t n) {
+/* Nearest of pal[0 .. n-1] for every 5-bit-per-channel colour. */
+/* The first palette entry and size of the art, tile, panel and cover-flow regions (the UI region is entries 0-31). */
+static const uint32_t g_rgn_base[4] = {32u, 64u, 128u, 192u};
+static const uint32_t g_rgn_size[4] = {32u, 64u, 64u, 64u};
+
+static void build_cube(uint8_t* cube, const uint32_t* pal, uint32_t n) {
     uint32_t i, k;
-    for (i = 0; i < n && first + i < 256u; i++) {
-        c->palette[first + i] = rgb[i] & 0xFFFFFFu;
-    }
-    if (first + n > c->colours) {
-        c->colours = first + n > 256u ? 256u : first + n;
-    }
     for (i = 0; i < 32768u; i++) {
         int32_t r = (int32_t)(((i >> 10) & 31u) * 8u + 4u), g = (int32_t)(((i >> 5) & 31u) * 8u + 4u),
                 b = (int32_t)((i & 31u) * 8u + 4u);
         uint32_t best = 0u, bestd = 0xFFFFFFFFu;
-        for (k = 0; k < c->colours; k++) {
-            int32_t dr = r - (int32_t)((c->palette[k] >> 16) & 255u), dg = g - (int32_t)((c->palette[k] >> 8) & 255u),
-                    db = b - (int32_t)(c->palette[k] & 255u);
+        for (k = 0; k < n; k++) {
+            int32_t dr = r - (int32_t)((pal[k] >> 16) & 255u), dg = g - (int32_t)((pal[k] >> 8) & 255u),
+                    db = b - (int32_t)(pal[k] & 255u);
             uint32_t d = (uint32_t)(dr * dr + dg * dg + db * db);
             if (d < bestd) {
                 bestd = d;
                 best = k;
             }
         }
-        c->cube[i] = (uint8_t)best;
+        cube[i] = (uint8_t)best;
+    }
+}
+
+void sel_gui_set_palette(sel_gui_canvas* c, const uint32_t* rgb, uint32_t first, uint32_t n) {
+    uint32_t i, k, last;
+    for (i = 0; i < n && first + i < 256u; i++) {
+        c->palette[first + i] = rgb[i] & 0xFFFFFFu;
+    }
+    if (first + n > c->colours) {
+        c->colours = first + n > 256u ? 256u : first + n;
+    }
+    last = first + n > 256u ? 256u : first + n;
+    if (first < 32u) { /* the UI colours */
+        build_cube(c->cube, c->palette, c->colours < 32u ? c->colours : 32u);
+    }
+    for (k = 0; k < 4u; k++) { /* a region sub-palette whose entries moved */
+        uint32_t lo = g_rgn_base[k], hi = lo + g_rgn_size[k];
+        if (first < hi && last > lo && c->colours > lo) {
+            build_cube(c->rcube[k], c->palette + lo, c->colours - lo < g_rgn_size[k] ? c->colours - lo : g_rgn_size[k]);
+        }
+    }
+}
+
+void sel_gui_set_region(sel_gui_canvas* c, uint32_t region) {
+    c->region = region < SEL_GUI_RGN_COUNT ? region : SEL_GUI_RGN_UI;
+}
+
+uint32_t sel_gui_region_colours(const sel_gui_canvas* c, uint32_t region) {
+    uint32_t i, n = 0u, v;
+    if (region >= SEL_GUI_RGN_COUNT) {
+        return 0u;
+    }
+    for (i = 0; i < 8u; i++) {
+        for (v = c->used[region][i]; v != 0u; v &= v - 1u) {
+            n++;
+        }
+    }
+    return n;
+}
+
+static uint32_t mix(uint32_t a, uint32_t b, uint32_t t, uint32_t of) {
+    uint32_t r = (((a >> 16) & 255u) * (of - t) + ((b >> 16) & 255u) * t) / of;
+    uint32_t g = (((a >> 8) & 255u) * (of - t) + ((b >> 8) & 255u) * t) / of;
+    uint32_t bl = ((a & 255u) * (of - t) + (b & 255u) * t) / of;
+    return (r << 16) | (g << 8) | bl;
+}
+
+void sel_gui_palette_budget(uint32_t* p, const uint32_t* ui, uint32_t n) {
+    uint32_t i, k = 0u, left;
+    for (i = 0; i < n && i < 30u; i++) { /* entries 30 and 31 stay black and white: the extremes of scrims and gradients */
+        p[k++] = ui[i] & 0xFFFFFFu;
+    }
+    left = 30u - k; /* the rest: steps from the surface toward the accent, then toward the text */
+    for (i = 0; i < left; i++) {
+        uint32_t toward = i < left / 2u ? ui[0] : ui[2];
+        uint32_t j = i < left / 2u ? i : i - left / 2u, of = i < left / 2u ? left / 2u + 1u : left - left / 2u + 1u;
+        p[k++] = mix(ui[1], toward, j + 1u, of);
+    }
+    p[30] = 0x000000u;
+    p[31] = 0xFFFFFFu;
+    sel_gui_genart_palette(p + 32);
+    for (i = 0; i < 192u; i++) { /* three artwork sub-palettes, grey ramps until a quantiser fills them */
+        uint32_t v = ((i & 63u) * 255u) / 63u;
+        p[64u + i] = (v << 16) | (v << 8) | v;
     }
 }
 
 void sel_gui_palette_default(uint32_t* p, uint32_t accent, uint32_t surface, uint32_t text) {
-    uint32_t i, r, g, b, n = 0u;
-    p[n++] = accent & 0xFFFFFFu;
-    p[n++] = surface & 0xFFFFFFu;
-    p[n++] = text & 0xFFFFFFu;
-    for (i = 0; i < 24u; i++) {
-        uint32_t v = (i * 255u) / 23u;
-        p[n++] = (v << 16) | (v << 8) | v;
-    }
-    for (r = 0; r < 6u; r++) {
-        for (g = 0; g < 6u; g++) {
-            for (b = 0; b < 6u; b++) {
-                p[n++] = ((r * 51u) << 16) | ((g * 51u) << 8) | (b * 51u);
-            }
-        }
-    }
-    for (i = 0; n < 256u; i++) {
-        uint32_t t = (i + 1u) * 255u / 14u;
-        uint32_t cr = (((surface >> 16) & 255u) * (255u - t) + ((accent >> 16) & 255u) * t) / 255u;
-        uint32_t cg = (((surface >> 8) & 255u) * (255u - t) + ((accent >> 8) & 255u) * t) / 255u;
-        uint32_t cb = ((surface & 255u) * (255u - t) + (accent & 255u) * t) / 255u;
-        p[n++] = (cr << 16) | (cg << 8) | cb;
-    }
+    uint32_t ui[3];
+    ui[0] = accent;
+    ui[1] = surface;
+    ui[2] = text;
+    sel_gui_palette_budget(p, ui, 3u);
 }
 
 static uint32_t* px32(const sel_gui_canvas* c, int32_t x, int32_t y) {
@@ -262,8 +309,13 @@ uint32_t sel_gui_present(sel_gui_canvas* c) {
 
 static const uint8_t g_bayer[16] = {0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5};
 
-static uint32_t cube_index(const sel_gui_canvas* c, uint32_t r, uint32_t g, uint32_t b) {
-    return c->cube[((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3)];
+static uint32_t cube_index(sel_gui_canvas* c, uint32_t r, uint32_t g, uint32_t b) {
+    uint32_t at = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3), idx;
+    idx = c->region >= SEL_GUI_RGN_ART
+              ? g_rgn_base[c->region - SEL_GUI_RGN_ART] + c->rcube[c->region - SEL_GUI_RGN_ART][at]
+              : c->cube[at];
+    c->used[c->region][idx >> 5] |= 1u << (idx & 31u);
+    return idx;
 }
 
 static uint32_t clampc(int32_t v) { return v < 0 ? 0u : v > 255 ? 255u : (uint32_t)v; }

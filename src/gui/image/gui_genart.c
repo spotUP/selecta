@@ -62,7 +62,24 @@ static uint32_t hsv(uint32_t hue, uint32_t s, uint32_t v) {
     return 0xFF000000u | (r << 16) | (g << 8) | b;
 }
 
+void sel_gui_genart_palette(uint32_t out[32]) {
+    uint32_t i;
+    for (i = 0; i < 16u; i++) {
+        out[i] = hsv(i * 96u, 185u, 85u) & 0xFFFFFFu;       /* the gradient's start: saturation 170-201, value 70-101 */
+        out[16u + i] = hsv(i * 96u, 200u, 215u) & 0xFFFFFFu; /* its end: saturation 200, value 200-231 */
+    }
+}
+
+static void genart_draw(sel_gui_canvas* c, sel_gui_rect r, const char* format, uint32_t title_hash);
+
 void sel_gui_genart_draw(sel_gui_canvas* c, sel_gui_rect r, const char* format, uint32_t title_hash) {
+    uint32_t was = c->region;
+    c->region = SEL_GUI_RGN_ART;
+    genart_draw(c, r, format, title_hash);
+    c->region = was;
+}
+
+static void genart_draw(sel_gui_canvas* c, sel_gui_rect r, const char* format, uint32_t title_hash) {
     char f[16];
     uint32_t fh, ch, hue, a, b, bits;
     int32_t cell, ox, oy, x, y;

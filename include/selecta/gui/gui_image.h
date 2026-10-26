@@ -20,6 +20,12 @@ void sel_gui_image_scale(const uint32_t* src, int32_t sw, int32_t sh, uint32_t* 
 uint32_t sel_gui_thumb_pack(const uint32_t* px, int32_t w, int32_t h, uint8_t* out, uint32_t cap);
 int sel_gui_thumb_unpack(const uint8_t* in, uint32_t len, uint32_t* px, uint32_t cap_px, int32_t* w, int32_t* h);
 
+/* Median-cut quantiser (DUI-P6-4): reduces `n` words (n <= SEL_GUI_QUANT_MAX, alpha ignored) to at most `slots`
+ * 0xRRGGBB colours in `out`, the average of each box. Boxes split along the channel with the widest range at the
+ * median, the box with most pixels first; deterministic, integer only. Returns the colour count (0 for n = 0). */
+#define SEL_GUI_QUANT_MAX 1024u
+uint32_t sel_gui_quantise(const uint32_t* px, uint32_t n, uint32_t* out, uint32_t slots);
+
 /* Artwork cache: a fixed pool of square slots per size token, allocated at open; the least recently used
  * slot of a size is reused. Not thread safe: the UI thread owns it. */
 enum { SEL_GUI_ART_TILE = 0, SEL_GUI_ART_PANEL, SEL_GUI_ART_FLOW, SEL_GUI_ART_TINT, SEL_GUI_ART_SIZES };

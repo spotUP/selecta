@@ -17,6 +17,8 @@ uint32_t sel_gui_str_hash(const char* s);
  * format is a file extension without the dot, any case. */
 const char* sel_gui_genart_chip(const char* format);
 /* Fills `r` with the generated tile of (format, chip of the format, title_hash). */
+/* The 32 colours the generated art is drawn from, for the INDEX8 budget: 16 hues at the gradient's dark and bright ends. */
+void sel_gui_genart_palette(uint32_t out[32]);
 void sel_gui_genart_draw(sel_gui_canvas* c, sel_gui_rect r, const char* format, uint32_t title_hash);
 
 #ifdef __cplusplus
