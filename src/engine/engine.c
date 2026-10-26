@@ -4739,6 +4739,36 @@ const char* sel_engine_view_cursor_key(sel_engine* e) {
     return at == SEL_QUEUE_NONE ? NULL : sel_queue_path(q, at);
 }
 
+/* Path of the song on visible view row `row` (index into view.rows, not the listing), written to out: a queue or query row
+ * is looked up by its entry id in the list the view shows, a browse file row is joined by sel_browse_join (the one place
+ * the platform's path rules live). 0 for a directory, node, heading or home row, or when the path does not fit. A UI that
+ * paints song rows (the desktop song menu, I371) asks for each row it registers. */
+int sel_engine_view_row_path(sel_engine* e, uint32_t row, char* out, size_t cap) {
+    const sel_view_state* v = &e->view.pub;
+    const sel_queue* q = v->source == SEL_VIEW_QUERY ? &e->qview : &e->queue;
+    const char* path;
+    uint32_t at;
+
+    if (row >= v->row_n || cap == 0u) {
+        return 0;
+    }
+    if (v->source == SEL_VIEW_BROWSE) {
+        at = v->window_start + row;
+        return at < e->browse.count && !e->browse.entries[at].is_dir &&
+               sel_browse_join(out, cap, e->browse.path, sel_browse_name(&e->browse, at));
+    }
+    if (v->rows[row].kind != (uint32_t)SEL_ROW_QUEUE) {
+        return 0;
+    }
+    at = sel_queue_index_of(q, v->rows[row].id);
+    path = at == SEL_QUEUE_NONE ? NULL : sel_queue_path(q, at);
+    if (path == NULL || strlen(path) >= cap) {
+        return 0;
+    }
+    memcpy(out, path, strlen(path) + 1u);
+    return 1;
+}
+
 static void cmd_VIEW_SHOW(sel_engine* e, const sel_message* m) {
     sel_view_src s;
     view_src(e, &s);

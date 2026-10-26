@@ -420,6 +420,8 @@ const char* sel_view_source_label(uint32_t source);
  * the browse listing (joined with the platform's path rules); NULL on a directory or node row or an empty list.
  * The browse path stays valid until the next call. */
 const char* sel_engine_view_cursor_key(sel_engine* e);
+/* Path of the song on visible view row `row` (index into view.rows) written to out; 0 on a non-song row or a path that does not fit. */
+int sel_engine_view_row_path(sel_engine* e, uint32_t row, char* out, size_t cap);
 
 /* Fills `frames` stereo frames: the open song's mix while PLAYING, else
  * silence. Counts calls. Never allocates. */

@@ -3310,6 +3310,25 @@ static void draw_lib_flow(desk* d, sel_gui_rect mn) {
     sel_gui_dirty_add(d->canvas, rect_of(mn.x, y0, mn.w, big + lpx(d, HOME_TILE_TEXT_GAP + HOME_TITLE_H + HOME_META_H)));
 }
 
+/* Registers view row k of the Library page with the song menu when it is a song (I371, DUI-P4-16): a tree leaf or a column
+ * song (queue kind, path from the engine), a Files row that is a file, a History row naming a song (home kind, album 0).
+ * Folders, nodes, headings and albums are not songs. Only rows whose top is in the list are registered, so the registry
+ * and the hover list hold the visible rows: the view window is at most 64 rows (SEARCH_WINDOW_ROWS), under SM_ROWS. */
+static void lib_view_row_reg(desk* d, sel_gui_rect mn, const sel_state* st, uint32_t k, sel_gui_rect r) {
+    const sel_view_row* vr = &st->view->rows[k];
+    char path[sizeof((song_ref*)0)->path];
+    if (r.y < lib_list_top(d, mn, st) || r.y >= mn.y + mn.h) {
+        return;
+    }
+    if (vr->kind == (uint32_t)SEL_ROW_HOME) {
+        if (vr->album == 0u && vr->key != NULL) {
+            song_row_reg(d, r, vr->key, 0, 0, 0);
+        }
+    } else if (sel_engine_view_row_path(d->engine, k, path, sizeof path)) {
+        song_row_reg(d, r, path, 0, 0, 0);
+    }
+}
+
 static void draw_library(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     if (d->page != PG_LIBRARY) {
@@ -3386,6 +3405,7 @@ static void draw_library(desk* d) {
                     draw_text(d, rect_of(r.x + r.w * 2 / 3, r.y, r.w / 3, r.h), "Folder", 0, 14, row_ink(d, r, muted));
                 }
                 sel_gui_dirty_add(d->canvas, r);
+                lib_view_row_reg(d, mn, st, k, r);
             }
             p = NULL;
         } else {
