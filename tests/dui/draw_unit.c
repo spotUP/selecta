@@ -249,6 +249,26 @@ static void test_fnv64(void) {
     CHECK(sel_gui_fnv64_word(SEL_GUI_FNV64_BASIS, 0x64636261u) == sel_gui_fnv64(SEL_GUI_FNV64_BASIS, "abcd", 4u));
 }
 
+/* I375: antialiased text on INDEX8. Edge coverage must blend to intermediate palette entries, not threshold to 2. */
+static void test_index8_text_blend(void) {
+    sel_gui_canvas* c = make(SEL_GUI_INDEX8, 16, 4);
+    uint8_t mask[8] = {0, 32, 64, 96, 128, 160, 192, 255};
+    uint32_t seen[8], n = 0u, i, j;
+    sel_gui_fill_rect(c, R(0, 0, 16, 4), 0xFF1E1E24u);
+    sel_gui_blit_mask(c, 0, 0, mask, 8, 1, 8, 0xFFE6E6EBu);
+    for (i = 0u; i < 8u; i++) {
+        uint32_t px = sel_gui_pixel(c, (int32_t)i, 0), dup = 0u;
+        for (j = 0u; j < n; j++) {
+            dup |= seen[j] == px;
+        }
+        if (!dup) {
+            seen[n++] = px;
+        }
+    }
+    CHECK(n > 2u);
+    drop(c);
+}
+
 int main(void) {
     test_fnv64();
     test_fill_and_clip(SEL_GUI_RGBA32);
@@ -258,6 +278,7 @@ int main(void) {
     test_gradient();
     test_line_mask_image();
     test_scrim_shadow();
+    test_index8_text_blend();
     test_cube();
     test_dirty();
     if (g_fail != 0) {

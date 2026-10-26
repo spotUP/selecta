@@ -526,9 +526,6 @@ void sel_gui_blit_mask(sel_gui_canvas* c, int32_t x, int32_t y, const uint8_t* m
         for (px = v.x; px < v.x + v.w; px++) {
             uint32_t cov = mask[(size_t)(py - y) * (size_t)mstride + (size_t)(px - x)];
             uint32_t a = div255(cov * (tint >> 24));
-            if (c->format == SEL_GUI_INDEX8) {
-                a = a >= 128u ? 255u : 0u;
-            }
             put(c, px, py, (a << 24) | (tint & 0xFFFFFFu), 0);
         }
     }
