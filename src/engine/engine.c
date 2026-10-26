@@ -56,6 +56,8 @@
 #include "sources/hvsc_net.h"
 #include "sources/sndh_net.h"
 #include "sources/sndh_sync.h"
+#include "sources/zxart_net.h"
+#include "sources/zxart_sync.h"
 #include "sources/hvsc_sync.h"
 #include "sources/modland_net.h"
 #include "net/devilbox.h"
@@ -4479,9 +4481,10 @@ static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
     sel_hippo_sync_stats hp;
     sel_asma_sync_stats as;
     sel_sndh_sync_stats sn;
+    sel_zxart_sync_stats zx;
     int64_t now;
     int ok;
-    int is_hvsc, is_hippo, is_asma, is_sndh;
+    int is_hvsc, is_hippo, is_asma, is_sndh, is_zxart;
 
     if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", "LIBRARY_SYNC");
@@ -4491,7 +4494,8 @@ static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
     is_hippo = strcmp(m->args[0].v.s, "hippo") == 0;
     is_asma = strcmp(m->args[0].v.s, "asma") == 0;
     is_sndh = strcmp(m->args[0].v.s, "sndh") == 0;
-    if (!is_hvsc && !is_hippo && !is_asma && !is_sndh && strcmp(m->args[0].v.s, "modland") != 0) {
+    is_zxart = strcmp(m->args[0].v.s, "zxart") == 0;
+    if (!is_hvsc && !is_hippo && !is_asma && !is_sndh && !is_zxart && strcmp(m->args[0].v.s, "modland") != 0) {
         sel_engine_report_error(e, "unknown_source", m->args[0].v.s);
         return;
     }
@@ -4538,6 +4542,18 @@ static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
         }
         st.listing_rows = sn.listing_rows;
         st.skipped_rows = sn.skipped_rows;
+    } else if (is_zxart) {
+        if (sel_modland_is_url(m->args[1].v.s)) {
+            sel_zxart_net_stats zn;
+
+            ok = sel_zxart_net_sync(&scfg, m->args[1].v.s, &zx, &zn);
+            e->sync_info.net_listing_bytes = zn.list_bytes;
+            e->sync_info.net_requests = zn.http_requests;
+        } else {
+            ok = sel_zxart_sync(&scfg, m->args[1].v.s, &zx);
+        }
+        st.listing_rows = zx.listing_rows;
+        st.skipped_rows = zx.skipped_rows;
     } else if (is_hvsc) {
         if (sel_modland_is_url(m->args[1].v.s)) {
             sel_hvsc_net_stats hn;
@@ -4569,7 +4585,7 @@ static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
         ok = sel_modland_sync(&scfg, m->args[1].v.s, now, &st);
     }
     e->art_generation++; /* a failed sync may still have stored albums */
-    if (ok && !is_hvsc && !is_hippo && !is_asma && !is_sndh) {
+    if (ok && !is_hvsc && !is_hippo && !is_asma && !is_sndh && !is_zxart) {
         persist_new_this_week(e, st.new_this_week);
     }
     e->sync_info.listing_rows = st.listing_rows;

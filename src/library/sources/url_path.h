@@ -13,4 +13,7 @@ int sel_url_path_encode(const char* root, const char* path, char* out, size_t n)
  * empty after the root or does not fit `n`. */
 int sel_url_path_decode(const char* root, const char* url, char* path, size_t n);
 
+/* `s` with its %XX escapes decoded into `out`. 0 on a bad escape or when it does not fit `n`. */
+int sel_url_unquote(const char* s, char* out, size_t n);
+
 #endif

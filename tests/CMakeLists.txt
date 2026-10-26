@@ -1523,6 +1523,15 @@ if(NOT SEL_AMIGA)
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "sndh_net_ok")
 endif()
 
+# Row I415: LIBRARY_SYNC zxart <url> over the zxart.ee fixture.
+if(NOT SEL_AMIGA)
+  add_test(NAME source-zxart-net
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      -P "${SEL_NET_DIR}/zxart_net.cmake")
+  set_tests_properties(source-zxart-net PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "zxart_net_ok")
+endif()
+
 # Row I413: LIBRARY_SYNC asma <url> over the asma.atari.org fixture.
 if(NOT SEL_AMIGA)
   add_test(NAME source-asma-net
@@ -1616,6 +1625,16 @@ if(NOT SEL_AMIGA)
   target_link_libraries(sndh_unit_test PRIVATE selecta_library selecta_core)
   add_test(NAME sndh-unit COMMAND sndh_unit_test)
   set_tests_properties(sndh-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sndh_unit_ok")
+
+  # I415: the zxart page reader, format table, length parser and source descriptor, on the recorded API answers.
+  add_executable(zxart_unit_test zxart_unit_test.c)
+  target_include_directories(zxart_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_compile_definitions(zxart_unit_test PRIVATE
+    SEL_ZXART_FIX_TUNES="${PROJECT_SOURCE_DIR}/tests/net/fixtures/zxart.ee/api/language:eng/export:zxMusic/start:0/limit:1000"
+    SEL_ZXART_FIX_PEOPLE="${PROJECT_SOURCE_DIR}/tests/net/fixtures/zxart.ee/api/language:eng/export:author/start:0/limit:1000")
+  target_link_libraries(zxart_unit_test PRIVATE selecta_library selecta_core)
+  add_test(NAME zxart-unit COMMAND zxart_unit_test)
+  set_tests_properties(zxart-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "zxart_unit_ok")
   # I376: the bottom-of-stack canary (apps/common/stack_canary.c, used by amiga_start.c on the Amiga).
   add_executable(stack_canary_test stack_canary_test.c ${PROJECT_SOURCE_DIR}/apps/common/stack_canary.c)
   target_include_directories(stack_canary_test PRIVATE ${PROJECT_SOURCE_DIR}/apps/common)

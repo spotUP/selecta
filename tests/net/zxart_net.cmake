@@ -1,0 +1,65 @@
+# Row I415: `selecta-cli library sync zxart <url>` over the zxart.ee fixture (the real API answers for 6 tunes and
+# their 6 authors, see fixtures/PROVENANCE.md). Reachability test of the zxart source: the sync runs through the
+# engine entry point LIBRARY_SYNC and asks the site for two pages (people, tunes). Expected numbers are counted from
+# the fixture here.
+# -DCLI=<selecta-cli> -DWORK=<fixture work dir> -DFIXDIR=<tests/net/fixtures>
+file(READ "${WORK}/port" port)
+string(STRIP "${port}" port)
+set(fx "http://127.0.0.1:${port}")
+set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
+set(ENV{SELECTA_NET_MAP} "zxart.ee=${fx},fixture.test=${fx}")
+set(cache "${WORK}/i415-cache")
+file(REMOVE_RECURSE "${cache}")
+set(ENV{SELECTA_CACHE_DIR} "${cache}")
+set(db "${WORK}/i415.db")
+file(REMOVE "${db}")
+set(api "${FIXDIR}/zxart.ee/api/language:eng/export:")
+
+function(expect what got want)
+  if(NOT "${got}" STREQUAL "${want}")
+    message(FATAL_ERROR "I415 net ${what}: got '${got}', want '${want}'\n${raw}")
+  endif()
+endfunction()
+
+function(counter var key)
+  if(raw MATCHES "(^|[ \n])${key}=([^ \n]*)")
+    set(${var} "${CMAKE_MATCH_2}" PARENT_SCOPE)
+  else()
+    set(${var} "" PARENT_SCOPE)
+  endif()
+endfunction()
+
+# Expected values from the fixture: one song per tune object, bytes of the two pages.
+file(READ "${api}zxMusic/start:0/limit:1000" tunes)
+string(REGEX MATCHALL "\"originalFileName\"" songs "${tunes}")
+list(LENGTH songs want_rows)
+file(SIZE "${api}zxMusic/start:0/limit:1000" tune_bytes)
+file(SIZE "${api}author/start:0/limit:1000" author_bytes)
+math(EXPR want_bytes "${tune_bytes} + ${author_bytes}")
+if(want_rows LESS 1)
+  message(FATAL_ERROR "I415 net: fixture is empty")
+endif()
+
+execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/reset --method POST OUTPUT_VARIABLE o)
+execute_process(COMMAND "${CLI}" library sync --db "${db}" --now 1792756800 --dump zxart http://zxart.ee
+  OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
+set(raw "${o}${e}")
+expect("exit code" "${rc}" 0)
+counter(v listing_rows)
+expect("listing_rows" "${v}" "${want_rows}")
+counter(v db_songs)
+expect("db_songs" "${v}" "${want_rows}")
+counter(v skipped_rows)
+expect("skipped_rows" "${v}" 0)
+# Sentinel: the zxart network path ran: one author page, one tune page.
+counter(v net_requests)
+expect("net_requests (sentinel: zxart network path ran)" "${v}" 2)
+counter(v net_listing_bytes)
+expect("net_listing_bytes" "${v}" "${want_bytes}")
+if(NOT raw MATCHES "zxart_row=19636/MmcM_-_Beyond_Time_\\(2013\\)[^|]*\\|Spectrum - Pro Tracker 3\\|MmcM\\|[^|]*\\.[a-z0-9]+\\|")
+  message(FATAL_ERROR "I415 net: first tune row missing or wrong\n${raw}")
+endif()
+if(NOT raw MATCHES "zxart_row=19721/[^|]*\\|Spectrum - Pro Tracker 3\\|nq\\|")
+  message(FATAL_ERROR "I415 net: TS tune row missing or wrong\n${raw}")
+endif()
+message(STATUS "zxart_net_ok rows=${want_rows}")

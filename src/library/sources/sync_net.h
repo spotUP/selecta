@@ -2,6 +2,7 @@
 #ifndef SELECTA_LIBRARY_SOURCES_SYNC_NET_H
 #define SELECTA_LIBRARY_SOURCES_SYNC_NET_H
 
+#include <selecta/host.h>
 #include <stdint.h>
 
 /* GETs `url` into `path` through the HTTP client. Returns the HTTP status (0 on a transport failure); any result
@@ -15,5 +16,9 @@ int sel_sync_net_get_range(const char* url, const char* path, unsigned long from
 
 /* HEAD `url`; 1 and `*length` = Content-Length on a 200 that carries one, else 0. */
 int sel_sync_net_head_length(const char* url, uint32_t* requests, unsigned long* length);
+
+/* Waits `ms` milliseconds between two requests to one host (a sync that reads many pages stays gentle). Sleeps on a
+ * POSIX host; elsewhere it polls the host clock (the Amiga build has no sleep call in this layer). */
+void sel_sync_net_pause(const sel_host* host, uint32_t ms);
 
 #endif

@@ -44,30 +44,36 @@ static int hex_value(char c) {
     return -1;
 }
 
-int sel_url_path_decode(const char* root, const char* url, char* path, size_t n) {
-    size_t used = 0, root_len = strlen(root);
+int sel_url_unquote(const char* s, char* out, size_t n) {
+    size_t used = 0;
 
-    if (url == NULL || strncmp(url, root, root_len) != 0) {
-        return 0;
-    }
-    for (url += root_len; *url != '\0'; url++) {
-        char c = *url;
+    for (; *s != '\0'; s++) {
+        char c = *s;
 
         if (c == '%') {
-            int hi = hex_value(url[1]);
-            int lo = hi >= 0 ? hex_value(url[2]) : -1;
+            int hi = hex_value(s[1]);
+            int lo = hi >= 0 ? hex_value(s[2]) : -1;
 
             if (lo < 0) {
                 return 0;
             }
             c = (char)(hi * 16 + lo);
-            url += 2;
+            s += 2;
         }
         if (used + 1u >= n) {
             return 0;
         }
-        path[used++] = c;
+        out[used++] = c;
     }
-    path[used] = '\0';
-    return used > 0;
+    out[used] = '\0';
+    return 1;
+}
+
+int sel_url_path_decode(const char* root, const char* url, char* path, size_t n) {
+    size_t root_len = strlen(root);
+
+    if (url == NULL || strncmp(url, root, root_len) != 0 || url[root_len] == '\0') {
+        return 0;
+    }
+    return sel_url_unquote(url + root_len, path, n);
 }

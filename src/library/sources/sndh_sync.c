@@ -115,10 +115,6 @@ typedef struct sync_state {
     int failed;
 } sync_state;
 
-static int safe_path(const char* p) {
-    return p[0] != '\0' && p[0] != '/' && strchr(p, '\\') == NULL && strstr(p, "..") == NULL;
-}
-
 static int ends_with_sndh(const char* s) {
     size_t n = strlen(s), i;
     static const char ext[] = ".sndh";
@@ -165,7 +161,7 @@ static int on_entry(void* ctx, const sel_sndh_entry* e) {
     }
     t = &s->text[s->row_n];
     r = &s->rows[s->row_n];
-    if (!safe_path(rel) || !s->src->parse(rel, t->scratch, sizeof t->scratch, tags)) {
+    if (!sel_sync_safe_path(rel) || !s->src->parse(rel, t->scratch, sizeof t->scratch, tags)) {
         s->st->skipped_rows++;
         return 1;
     }

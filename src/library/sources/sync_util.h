@@ -16,6 +16,12 @@ static inline void sel_sync_chomp(char* s) {
     }
 }
 
+/* Is `p` a path inside a source (not empty, not absolute, no backslash, no "..")? A song's path can become a file's
+ * place on this computer, so a server's list line that names "../x" or "/x" is not taken. */
+static inline int sel_sync_safe_path(const char* p) {
+    return p[0] != '\0' && p[0] != '/' && strchr(p, '\\') == NULL && strstr(p, "..") == NULL;
+}
+
 /* Sends one library request; 0 when it fails or the worker answers a nonzero status. */
 static inline int sel_sync_request(const sel_local_scan_config* cfg, uint32_t req, const void* payload) {
     sel_message reply;

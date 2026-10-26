@@ -4,6 +4,9 @@
 #include "../net/http.h"
 
 #include <stdio.h>
+#if defined(__unix__) || defined(__APPLE__)
+#include <time.h>
+#endif
 #include <string.h>
 
 typedef struct net_ctx {
@@ -81,4 +84,20 @@ int sel_sync_net_head_length(const char* url, uint32_t* requests, unsigned long*
     }
     *length = (unsigned long)res.content_length;
     return 1;
+}
+
+void sel_sync_net_pause(const sel_host* host, uint32_t ms) {
+#if defined(__unix__) || defined(__APPLE__)
+    struct timespec ts;
+
+    (void)host;
+    ts.tv_sec = (time_t)(ms / 1000u);
+    ts.tv_nsec = (long)(ms % 1000u) * 1000000L;
+    nanosleep(&ts, NULL);
+#else
+    uint32_t start = host->clock_ms(host);
+
+    while (host->clock_ms(host) - start < ms) {
+    }
+#endif
 }
