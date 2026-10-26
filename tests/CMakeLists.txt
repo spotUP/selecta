@@ -454,6 +454,10 @@ if(NOT SEL_AMIGA)
     -DAMIGA=0 -P "${CMAKE_CURRENT_SOURCE_DIR}/ui/mui_build_split.cmake")
   set_tests_properties(mui-build-split PROPERTIES LABELS mui)
   set(SEL_MUI_INCLUDE "$ENV{HOME}/opt/amiga/m68k-amigaos/ndk-include" CACHE PATH "MUI 3.8 developer headers (libraries/mui.h, proto/muimaster.h) for the m68k cross build")
+  if(SEL_MUI_INCLUDE STREQUAL "")
+    # A build dir configured before this default holds an empty cache entry; empty is never a valid header path.
+    set_property(CACHE SEL_MUI_INCLUDE PROPERTY VALUE "$ENV{HOME}/opt/amiga/m68k-amigaos/ndk-include")
+  endif()
   set(SEL_M68K_CC "$ENV{HOME}/opt/amiga/bin/m68k-amigaos-gcc" CACHE FILEPATH "m68k cross compiler for mui-sdk-probe")
   add_test(NAME mui-sdk-probe COMMAND "${CMAKE_COMMAND}" "-DCC=${SEL_M68K_CC}" "-DMUI_INCLUDE=${SEL_MUI_INCLUDE}"
     "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/mui-sdk-probe" -P "${CMAKE_CURRENT_SOURCE_DIR}/ui/mui_sdk_probe.cmake")
