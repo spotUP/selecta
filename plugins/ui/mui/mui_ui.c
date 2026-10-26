@@ -63,7 +63,13 @@ static void* mui_open(const sel_ui_open_args* a) {
     s->app = ApplicationObject, MUIA_Application_Title, (ULONG) "Selecta", MUIA_Application_Base, (ULONG) "SELECTA",
         MUIA_Application_Version, (ULONG) "$VER: Selecta MUI 1.0",
         SubWindow, s->win = WindowObject, MUIA_Window_Title, (ULONG) "Selecta", MUIA_Window_ID, SEL_MAKE_ID('S', 'E', 'L', 'M'),
-            WindowContents, VGroup, Child, TextObject, MUIA_Text_Contents, (ULONG) "Selecta", End, End, End, End;
+            /* D-M4-3: full screen by default; width and height are 100 percent of the public screen area MUI can use.
+             * The HVSpace child gives the group unbounded height: a lone Text object has a fixed maximum height and MUI
+             * never sizes a window beyond its contents' maximum, which left the window 41 pixels high. */
+            MUIA_Window_Width, MUIV_Window_Width_Screen(100), MUIA_Window_Height, MUIV_Window_Height_Screen(100),
+            MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Centered,
+            WindowContents, VGroup, Child, TextObject, MUIA_Text_Contents, (ULONG) "Selecta", End,
+                Child, HVSpace, End, End, End;
     if (s->app == NULL) {
         CloseLibrary(MUIMasterBase);
         MUIMasterBase = NULL;

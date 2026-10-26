@@ -198,6 +198,20 @@ elseif(TAG STREQUAL "M4MUI")
     ami(ignored exec "Break ${pid} C" 10)
     message(FATAL_ERROR "RED[M4MUI]: no MUI window \"Selecta\" with its label in the window list:\n${tree}")
   endif()
+  # I511 / MUI-P1-3 / D-M4-3: the window opens at the size of the public screen (full screen default; MUI places a
+  # 100 percent window over the whole screen). The screen size comes from the `screens` record (first screen: width and
+  # height as big-endian words after a count byte and a flag byte); a window of any other size, such as the 49x41 a lone
+  # Text object gave, fails.
+  ami(scr screens)
+  if(NOT scr MATCHES "^[0-9a-f][0-9a-f][0-9a-f][0-9a-f]([0-9a-f][0-9a-f][0-9a-f][0-9a-f])([0-9a-f][0-9a-f][0-9a-f][0-9a-f])")
+    message(FATAL_ERROR "RED[M4MUI]: cannot parse the screens record: ${scr}")
+  endif()
+  math(EXPR scr_w "0x${CMAKE_MATCH_1}")
+  math(EXPR scr_h "0x${CMAKE_MATCH_2}")
+  if(NOT tree MATCHES "W [0-9]+ [0-9]+ [0-9]+ ${scr_w}x${scr_h} active \"Selecta\"")
+    ami(ignored exec "Break ${pid} C" 10)
+    message(FATAL_ERROR "RED[M4MUI]: the MUI window is not the screen area ${scr_w}x${scr_h}:\n${tree}")
+  endif()
   ami(ignored exec "Break ${pid} C" 10)
   # MUI_DisposeObject, the stats print and the exit take a few seconds on the 68020: poll up to 30 s.
   foreach(i RANGE 1 6)
