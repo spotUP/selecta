@@ -61,6 +61,7 @@ int desk_aga_next_input(desk_aga* b, sel_gui_input* ev);
 #define desk_sdl_present desk_aga_present
 #define desk_sdl_present_hash(b) ((void)(b), 0u)
 #define desk_sdl_readbacks(b) ((void)(b), 0u)
+#define desk_sdl_raises(b) ((void)(b), 0u) /* a new Amiga screen opens in front; nothing raises it (I501) */
 #define desk_sdl_upload_pixels desk_aga_upload_pixels
 #define desk_sdl_presents desk_aga_presents
 #define desk_sdl_poll(b, ms, w, h) ((void)(w), (void)(h), desk_aga_poll((b), (ms)))
