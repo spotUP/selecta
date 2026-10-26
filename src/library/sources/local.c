@@ -7,6 +7,7 @@
 #include "archive.h"
 #include "dir.h"
 #include "local.h"
+#include "../latin1.h"
 #include "../stream_open.h"
 
 #include "../../../plugins/shared/stream/flac_meta.h"
@@ -49,6 +50,11 @@ typedef struct scan_state {
     uint32_t total;     /* files counted by the pre-pass */
     uint32_t visited;   /* files handed to scan_file so far */
 } scan_state;
+
+/* Song text from a replayer or a tag reader: the library stores UTF-8, module text is Latin-1 (I444). */
+static void copy_meta(char* dst, size_t n, const char* src) {
+    sel_text_to_utf8(dst, n, src != NULL ? src : "");
+}
 
 static void copy_text(char* dst, size_t n, const char* src) {
     size_t l = src != NULL ? strlen(src) : 0;
@@ -167,8 +173,8 @@ static void scan_cover(scan_state* s, const uint8_t* data, size_t size, scan_row
     if (!found) {
         return;
     }
-    if (t->album[0] == '\0') copy_text(t->album, sizeof t->album, album);
-    if (t->artist[0] == '\0') copy_text(t->artist, sizeof t->artist, artist);
+    if (t->album[0] == '\0') copy_meta(t->album, sizeof t->album, album);
+    if (t->artist[0] == '\0') copy_meta(t->artist, sizeof t->artist, artist);
     memset(&op, 0, sizeof op);
     memset(&reply, 0, sizeof reply);
     op.op = SEL_ART_STORE;
@@ -234,12 +240,12 @@ static int scan_blob_ex(scan_state* s, const uint8_t* data, size_t size, const s
         const char* title = meta != NULL ? (const char*)sel_tag_find(meta, SEL_META_TITLE, 0) : NULL;
 
         if (title != NULL && title[0] != '\0') {
-            copy_text(t->name, sizeof t->name, title);
+            copy_meta(t->name, sizeof t->name, title);
         }
         if (meta != NULL) {
-            copy_text(t->artist, sizeof t->artist, (const char*)sel_tag_find(meta, SEL_META_AUTHOR, 0));
-            copy_text(t->album, sizeof t->album, (const char*)sel_tag_find(meta, SEL_META_RELEASE, 0));
-            copy_text(t->format, sizeof t->format, (const char*)sel_tag_find(meta, SEL_META_FORMAT, 0));
+            copy_meta(t->artist, sizeof t->artist, (const char*)sel_tag_find(meta, SEL_META_AUTHOR, 0));
+            copy_meta(t->album, sizeof t->album, (const char*)sel_tag_find(meta, SEL_META_RELEASE, 0));
+            copy_meta(t->format, sizeof t->format, (const char*)sel_tag_find(meta, SEL_META_FORMAT, 0));
             r->duration_ms = (int32_t)sel_tag_find(meta, SEL_META_DURATION_MS, 0);
         }
         if (close_fn != NULL) {

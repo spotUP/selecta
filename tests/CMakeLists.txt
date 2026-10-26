@@ -668,6 +668,10 @@ set_tests_properties(cover-tag-unit PROPERTIES PASS_REGULAR_EXPRESSION "cover_ta
 add_executable(latin1_test library/latin1_test.c "${PROJECT_SOURCE_DIR}/src/library/latin1.c")
 target_include_directories(latin1_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
 add_test(NAME latin1-unit COMMAND latin1_test)
+add_executable(meta_utf8_test library/meta_utf8_test.c "${PROJECT_SOURCE_DIR}/src/library/latin1.c"
+               "${PROJECT_SOURCE_DIR}/src/library/meta_utf8.c" "${PROJECT_SOURCE_DIR}/src/core/tag.c")
+target_include_directories(meta_utf8_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/include)
+add_test(NAME meta-utf8-latin1-composer-name-unit COMMAND meta_utf8_test)
 
 # T36: the command line. argdump.sh stands in for `:!program`.
 if(NOT SEL_AMIGA)

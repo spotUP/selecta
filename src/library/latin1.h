@@ -16,6 +16,15 @@ size_t sel_latin1_to_utf8(char* dst, size_t n, const char* src, size_t len);
  * caller fails the call instead. */
 int sel_utf8_to_latin1(char* dst, size_t n, const char* src);
 
+/* 1 when NUL terminated `s` is well-formed UTF-8: no stray continuation bytes, no truncated sequence, no overlong
+ * form, no surrogate, nothing above U+10FFFF. */
+int sel_utf8_valid(const char* s);
+
+/* NUL terminated text of unknown encoding to UTF-8 in `dst` (capacity n > 0), always NUL terminated: valid UTF-8 is
+ * copied, cut at the last whole character that fits; anything else is read as Latin-1 and converted. Returns the
+ * bytes written, without the NUL. This is the host's rule for plugin metadata text (tags.def SEL_META_*). */
+size_t sel_text_to_utf8(char* dst, size_t n, const char* src);
+
 /* 1 when every byte of `s` is below 0x80 (conversion is the identity). */
 int sel_latin1_is_ascii(const char* s);
 

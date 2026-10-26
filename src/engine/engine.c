@@ -38,6 +38,7 @@
 #include "view.h"
 #include "db.h"
 #include "composer.h"
+#include "meta_utf8.h"
 #include "xxh32.h"
 #include "lyrics.h"
 #include "devilbox_lyrics.h"
@@ -203,6 +204,8 @@ typedef struct sel_slot {
     sel_rp_start_fn rp_start;
     sel_rp_tick_fn rp_tick;
     sel_rp_metadata_fn rp_metadata;
+    sel_tag meta_out[SEL_META_UTF8_TAGS]; /* I444: SONG_OPENED tags with Latin-1 text converted (slot_meta) */
+    char meta_text[SEL_META_UTF8_TEXT];
     sel_rp_seek_fn rp_seek;         /* optional: native seek, else restart-and-skip */
     sel_rp_position_fn rp_position; /* optional: order/row/pattern */
     sel_rp_tracker_info_fn rp_tracker_info;   /* optional: pattern geometry */
@@ -285,6 +288,8 @@ struct sel_engine {
     char lyr_file[SEL_LRC_TEXT_MAX];           /* scratch: the .lrc file as read */
     uint32_t lyr_source;                       /* SEL_LYRIC_* */
     sel_tag icy_tags[2];                       /* I196a: StreamTitle shadowing the decoder's metadata */
+    sel_tag state_meta[SEL_META_UTF8_TAGS];    /* I444: song.meta with Latin-1 text converted */
+    char state_text[SEL_META_UTF8_TEXT];
     char icy_title[256];
     char lyr_for[512];                         /* path the lyrics were chosen for; a seek reopens the song, not its lyrics */
     unsigned lyr_seen;                         /* library lyrics sequence already looked at */
@@ -510,6 +515,14 @@ static void evt_tags(sel_message* m, const sel_tag* t) {
     sel_arg* a = &m->args[m->argc++];
     a->type = SEL_ARG_TAGS;
     a->v.t = t;
+}
+
+/* The slot's metadata as engine UTF-8 (I444). The event queue holds the pointer, so the copy lives in the slot. */
+static const sel_tag* slot_meta(sel_slot* sl) {
+    const sel_tag* meta = sl->rp_metadata != NULL ? sl->rp_metadata(sl->rp_state) : NULL;
+
+    return meta != NULL ? sel_meta_utf8(meta, sl->meta_out, SEL_META_UTF8_TAGS, sl->meta_text, sizeof sl->meta_text)
+                        : NULL;
 }
 
 static void emit(sel_engine* e, const sel_message* m) {
@@ -1981,7 +1994,7 @@ static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t s
         hist_begin(e, path);
         e->songs_opened++;
         evt_init(&ev, SEL_EVT_SONG_OPENED);
-        evt_tags(&ev, e->slot[idx].rp_metadata ? e->slot[idx].rp_metadata(e->slot[idx].rp_state) : NULL);
+        evt_tags(&ev, slot_meta(&e->slot[idx]));
         emit(e, &ev);
         if (seek_to > 0) { /* a share link with t=<ms> opens at that position (I180) */
             evt_init(&ev, SEL_EVT_SEEKED);
@@ -2354,7 +2367,7 @@ static void commit_next(sel_engine* e) {
     e->songs_opened++;
     e->song_over = 0;
     evt_init(&ev, SEL_EVT_SONG_OPENED);
-    evt_tags(&ev, sl->rp_metadata ? sl->rp_metadata(sl->rp_state) : NULL);
+    evt_tags(&ev, slot_meta(sl));
     emit(e, &ev);
     emit_position(e, sl);
 }
@@ -5445,6 +5458,9 @@ static void refresh_snapshot(sel_engine* e) {
             e->icy_tags[1].tag = song->meta != NULL ? SEL_TAG_MORE : SEL_TAG_END;
             e->icy_tags[1].value = (uintptr_t)song->meta;
             song->meta = e->icy_tags;
+        }
+        if (song->meta != NULL) {
+            song->meta = sel_meta_utf8(song->meta, e->state_meta, SEL_META_UTF8_TAGS, e->state_text, sizeof e->state_text);
         }
         song->duration_ms = (uint32_t)sel_tag_find(song->meta, SEL_META_DURATION_MS, 0);
         song->path = sl->path;

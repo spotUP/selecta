@@ -344,6 +344,9 @@ SEL_TAG(SRC, FTS,              0x7014, INT)
 SEL_TAG(SRC, KIND,             0x7015, STR)
 SEL_TAG(SRC, ENABLED,          0x7016, INT)
 
+/* META STR values come from the song file. The host stores and draws UTF-8: a value that is valid UTF-8 is kept,
+ * anything else is read as ISO-8859-1 (Amiga module text) and converted where it enters the host (I444,
+ * src/library/meta_utf8.h). Replayers pass the file's bytes through unchanged. */
 SEL_TAG(META, TITLE,           0x8000, STR)
 SEL_TAG(META, AUTHOR,          0x8001, STR)
 SEL_TAG(META, FORMAT,          0x8002, STR)
