@@ -21,3 +21,7 @@ sndh-unit, asma-unit, source-sndh-net, source-asma-net, src-plugin-reach, source
 
 ## Unverified
 clang-format not installed. Amiga only via cross build / amiga-build, no rig run.
+
+## keygenmusic (9712537)
+Moved to plugins/sources/keygenmusic (keygenmusic.c, _sync, _net) as kind 7, same pattern as asma: host net and catalogue services, cache_dir "keygenmusic", catalogue begin/song/commit instead of SCAN_BATCH. Removed from selecta_library, engine.c includes, source.c/source.h registration; sel_plugin_keygenmusic added to SEL_NOFLOAT_TARGETS. Registry order is now local, modland, hvsc, hippo, asma, keygenmusic, sndh, zxart, testsrc; sources.expected, sources_off.expected, want_keys and the library-sources golden updated.
+Results: keygenmusic-unit, source-keygenmusic-net, src-plugin-reach, sources, sources-off, sdk-isolation, no-float-engine, amiga-build, sel_incheck_keygenmusic green on build/host; dui-library-sources green on build/sdl after golden update. Stale build/amiga keygenmusic*.obj deleted first. Not run on a rig.
