@@ -1,0 +1,11 @@
+Upstream: https://github.com/Kalmalyzer/kalms-c2p
+Upstream commit: d8ecf79a3325615305dd800ae7704b518e0d9dda (2022-03-20)
+Copied from the Up Rough Demo System vendor copy (amiga/vendor/kalms-c2p), which
+redirects NDK includes to c2p_equates.i (lines tagged "*--- PORT") and wraps the
+BPLX/BPLY/BPLSIZE/CHUNKYXMAX/CHUNKYYMAX equates in IFND guards. No routine logic
+is changed.
+
+Vendored subset (Selecta I439, M4-P6-1): normal/c2p1x1_8_c5_040 (68040/68060,
+runtime bplsize, used by backend_aga.c), normal/c2p1x1_8_c5_030 and
+normal/c2p1x1_8_c5_gen (68030 and 68020; BPLSIZE is an assembly-time equate,
+not wired yet), readme.txt, howto.txt, history.txt, c2p_equates.i.

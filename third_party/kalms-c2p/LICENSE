@@ -1,0 +1,16 @@
+Mikael Kalms' C2P collection - licence
+
+The routines in this directory are Public Domain. From the upstream readme.txt
+(kept here unchanged):
+
+  All files except in the "others" directory are Public Domain: Anyone can
+  do as they please with the code, feel free to use it for non-commercial
+  as well as commercial purposes, change and redistribute the contents
+  as you please.
+
+Each vendored .s file repeats this in its own header ("This routine is
+released into the public domain. It may be freely used for non-commercial as
+well as commercial purposes."). Nothing from the upstream "others" directory is
+vendored. Public Domain code may be included in this MIT-licensed project
+without conditions; the credit to Mikael Kalms (mikael@kalms.org) is kept as a
+courtesy, and the author asks for a short notice by email when the code is used.
