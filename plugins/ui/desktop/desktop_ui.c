@@ -225,9 +225,9 @@ typedef struct desk {
     uint32_t np_draws;       /* Now Playing panel draws (sentinel) */
     uint32_t np_genart;      /* genart_draw runs by the Now Playing panel: one per draw (DUI-P4-7) */
     sel_gui_rect np_title;      /* the Now Playing title and artist lines, w 0 = not drawn: a song row of the song menu (I372) */
-    sel_gui_rect np_like, np_rate[5]; /* click targets of the like button and the five rating marks */
     int32_t np_inset_l, np_inset_r; /* gap between the Now Playing panel edge and its content, left and right: one spacing token (I404) */
     sel_gui_rect np_art, np_panel; /* the Now Playing cover and the panel it spans, for the dump (I443) */
+    sel_gui_rect np_like, np_rate[5]; /* click targets of the like button and the five rating marks */
     uint32_t np_msg_lines;            /* lines of the song message the last Now Playing draw laid out (I290) */
     int32_t np_liked;                 /* 1 when the last Now Playing draw showed the heart as liked (I306) */
     int32_t np_rating;                /* filled rating marks of the last Now Playing draw (I288) */
@@ -5908,9 +5908,9 @@ static void draw_nowplaying(desk* d) {
             p = v + strlen(v) + 1;
         }
     }
-    d->np_rating = rating;
     d->np_inset_l = d->np_like.x - pn.x;
     d->np_inset_r = pn.x + pn.w - (d->np_title.x + d->np_title.w);
+    d->np_rating = rating;
     d->np_liked = liked;
     sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_HEART, d->np_like, ic, row_ink(d, d->np_like, liked ? accent : muted));
     for (k = 0; k < 5u; k++) {
