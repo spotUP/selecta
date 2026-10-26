@@ -1,3 +1,4 @@
 {
-  "/api/v1/playlists/publish": {"body": "OK 181 acid.prg https://hippoplayer.se/playlist/acid.prg\n"}
+  "/api/v1/playlists": {"key_method": "POST", "body": "OK 181 acid.prg https://hippoplayer.se/playlist/acid.prg\n"},
+  "/api/v1/playlists/exists": {"key_method": "POST", "status": 409, "body": "ERROR filename_taken\n"}
 }

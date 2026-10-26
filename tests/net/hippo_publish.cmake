@@ -7,7 +7,9 @@ string(STRIP "${port}" port)
 set(fx "http://127.0.0.1:${port}")
 set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
 set(ENV{SELECTA_NET_MAP} "hippoplayer.se=${fx},fixture.test=${fx}")
-set(ENV{SELECTA_HIPPO_PUBLISH_URL} "http://hippoplayer.se/api/v1/playlists/publish")
+# Main case: only the ORIGIN is overridden (fixture is plain http); the PATH is the default constant, so a wrong
+# default path 404s here (I417).
+set(ENV{SELECTA_HIPPO_PUBLISH_ORIGIN} "http://hippoplayer.se")
 
 function(post_log var)
   execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/log --out "${WORK}/t74p-log.json"
@@ -20,7 +22,7 @@ function(post_log var)
     foreach(i RANGE ${last})
       string(JSON m GET "${logjson}" ${i} method)
       string(JSON p GET "${logjson}" ${i} path)
-      if(m STREQUAL "POST" AND p MATCHES "^/api/v1/playlists/publish")
+      if(m STREQUAL "POST" AND p MATCHES "^/api/v1/playlists\\?")
         list(APPEND posts "${i}")
       endif()
     endforeach()
@@ -69,6 +71,17 @@ file(SHA256 "${WORK}/t74p-small.prg" want)
 string(JSON got GET "${logjson}" ${idx} body_sha256)
 if(NOT got STREQUAL want)
   message(FATAL_ERROR "T74 publish: posted body sha ${got} differs from the exported .prg ${want}")
+endif()
+
+# ---- server rejection: 409 `ERROR filename_taken` must surface as publish_rejected, never as a success
+execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/reset --method POST OUTPUT_VARIABLE o)
+set(ENV{SELECTA_HIPPO_PUBLISH_URL} "http://hippoplayer.se/api/v1/playlists/exists")
+file(WRITE "${WORK}/t74p-409.sel" "QUEUE_ADD songs/one.mod\nPLAYLIST_PUBLISH dup Spot Acid acid.prg\n")
+execute_process(COMMAND "${CLI}" script "${WORK}/t74p-409.sel" OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
+unset(ENV{SELECTA_HIPPO_PUBLISH_URL})
+set(raw "${o}${e}")
+if(NOT raw MATCHES "ERROR publish_rejected PLAYLIST_PUBLISH" OR raw MATCHES "publish posts=")
+  message(FATAL_ERROR "T74 publish: 409 ERROR reply not reported as publish_rejected\n${raw}")
 endif()
 
 # ---- oversized list: 5600 entries of ~110 characters is over 512 KB of .prg

@@ -6,10 +6,15 @@
 
 #include <stddef.h>
 
-/* ASSUMED: POST <url>?title=..&author=..&genre=..&filename=.. with the `.prg` bytes as the body
+/* Server contract (cygnus-server PlaylistRoutes.ts): POST <url>?title=..&author=..&genre=..&filename=.. with the `.prg` bytes as the body
  * (Content-Type application/octet-stream). The environment variable replaces the URL (tests point it at the
  * fixture; SELECTA_NET_MAP does the host rewrite). */
-#define SEL_HIPPO_PUBLISH_URL "https://hippoplayer.se/api/v1/playlists/publish"
+#define SEL_HIPPO_PUBLISH_ORIGIN "https://hippoplayer.se"
+#define SEL_HIPPO_PUBLISH_PATH "/api/v1/playlists"
+#define SEL_HIPPO_PUBLISH_URL SEL_HIPPO_PUBLISH_ORIGIN SEL_HIPPO_PUBLISH_PATH
+/* Replaces ONLY the scheme and host of the default URL; the path always comes from SEL_HIPPO_PUBLISH_PATH.
+ * The fixture is plain http, so tests set this to `http://hippoplayer.se` and the default path is exercised. */
+#define SEL_HIPPO_PUBLISH_ORIGIN_ENV "SELECTA_HIPPO_PUBLISH_ORIGIN"
 #define SEL_HIPPO_PUBLISH_ENV "SELECTA_HIPPO_PUBLISH_URL"
 #define SEL_HIPPO_PUBLISH_MAX 524288u /* 512 KB: the server limit, checked before any request */
 /* ASSUMED reply, one line: `OK <id> <filename> <url>`; anything else is a rejection. */

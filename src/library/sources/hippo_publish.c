@@ -115,12 +115,21 @@ int sel_hippo_publish(const char* body, size_t len, const char* title, const cha
         return SEL_HIPPO_PUB_ARGS;
     }
     if (base == NULL || base[0] == '\0') {
-        base = SEL_HIPPO_PUBLISH_URL;
+        const char* origin = getenv(SEL_HIPPO_PUBLISH_ORIGIN_ENV);
+        if (origin == NULL || origin[0] == '\0') {
+            origin = SEL_HIPPO_PUBLISH_ORIGIN;
+        }
+        if (strlen(origin) + sizeof SEL_HIPPO_PUBLISH_PATH >= sizeof url) {
+            return SEL_HIPPO_PUB_ARGS;
+        }
+        strcpy(url, origin);
+        strcat(url, SEL_HIPPO_PUBLISH_PATH);
+    } else {
+        if (strlen(base) >= sizeof url) {
+            return SEL_HIPPO_PUB_ARGS;
+        }
+        strcpy(url, base);
     }
-    if (strlen(base) >= sizeof url) {
-        return SEL_HIPPO_PUB_ARGS;
-    }
-    strcpy(url, base);
     if (!add_param(url, sizeof url, "title", title) || !add_param(url, sizeof url, "author", author) ||
         !add_param(url, sizeof url, "genre", genre) || !add_param(url, sizeof url, "filename", filename)) {
         return SEL_HIPPO_PUB_ARGS;
