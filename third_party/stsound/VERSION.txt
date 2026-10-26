@@ -1,0 +1,2 @@
+StSound (YM player by Arnaud Carre), https://github.com/arnaud-carre/StSound, upstream commit a27c29339bed5076cd3342cae8270d2e813b914c (the pin bbmp uses). License: MIT, text in LICENSE (copyright 2021 Arnaud Carre).
+Copied: StSoundLibrary/*.cpp *.h and StSoundLibrary/LZH/ (the LH5 unpacker). Not copied: the Windows project files, Ym2Wav, SmallYmPlayer, sample files. Patched as listed in PATCHES.txt.

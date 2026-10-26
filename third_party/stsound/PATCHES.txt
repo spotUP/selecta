@@ -1,0 +1,7 @@
+Patches applied to the upstream sources (taken from bbmp, csrc/chip/StSound-damaged-files.patch and tools/build-chip.sh, a repository owned by the same author). Real songs play byte for byte as before.
+1. LZH/LzhLib.cpp: the LH5 unpacker refuses impossible code tables (code length above 16, bad table, code count above the table size) and stops decoding once an error is set; table writes stay inside the arrays.
+2. Ymload.cpp depackFile: a file too short for the LZH header is not packed; a damaged header (end past the file, unpacked size 0 or above 64 MiB) is refused.
+3. Ymload.cpp ymDecode: every read stays inside the file (YM_NEED / YM_STRING checks) for YM5, YM6, MIX1 and tracker (YMT1/YMT2) files; counts (frames, mix blocks, voices, drums) are range-checked; drum tables are calloc'd; a loop frame past the end restarts at frame 0.
+4. YmMusic.cpp: a YM2 drum sample index and a tracker note are checked against the samples the song has (the built-in drums are 40).
+5. Ym2149Ex.cpp: the envelope step is computed as clock / ((yms64)period * rate); the 32-bit product overflowed for periods above 44739 at 48 kHz and a slow envelope ran fast.
+6. StSoundLibrary.h: ymMusicCreate() is declared ymMusicCreate(void), so the header is a valid prototype under Selecta's C warning set (-Wstrict-prototypes -Werror); no behaviour change. (Selecta addition, not from bbmp.)

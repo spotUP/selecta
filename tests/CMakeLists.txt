@@ -1335,6 +1335,14 @@ if(NOT SEL_AMIGA)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/gme-decode)
   set_tests_properties(gme-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "gme_decode_ok")
 
+  # I428: a YM (Atari ST chip music) file plays through the render entry point (ym replayer, StSound).
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/ym-decode)
+  add_test(NAME ym-decode
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/ym_decode.sh $<TARGET_FILE:selecta-cli>
+            ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/ym_test.ym
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/ym-decode)
+  set_tests_properties(ym-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "ym_decode_ok")
+
   # I437: the scan stores the embedded cover of a tagged mp3 as a 200x200 artwork row.
   add_test(NAME library-embedded-cover
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/embedded_cover.sh $<TARGET_FILE:selecta-cli>

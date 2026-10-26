@@ -69,6 +69,11 @@ if(NOT SEL_AMIGA)
   add_subdirectory(replayers/gme)
 endif()
 
+# StSound (I428): Atari ST / Amstrad YM2149 chip music, C++ library, desktop first (no 68k build yet).
+if(NOT SEL_AMIGA)
+  add_subdirectory(replayers/ym)
+endif()
+
 # KPlayer v33 (HippoPlayer, MIT): ProTracker M.K. on Amiga, HW kind, drives Paula through the CIA timer (I219).
 if(SEL_AMIGA)
   add_subdirectory(replayers/kplayer)
