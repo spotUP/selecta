@@ -261,7 +261,7 @@ typedef struct desk {
     int32_t tip_shown;       /* 1-based button whose tooltip is visible, 0 = none */
     uint32_t tip_since;      /* UI clock when the pointer came to tip_btn */
     uint32_t tooltips;       /* tooltips shown over the run */
-    char tip_text[96];
+    char tip_text[SEL_UIM_TIP_MAX];
     uint32_t gestures;       /* pinch and swipe events handled (DUI-P3-4) */
     uint32_t tile_step;      /* index into g_tile_steps: the tile size token step, pinch moves it */
     int32_t lib_q16;         /* Library page scroll offset in logical pixels, Q16: the composer list, a drilldown, or the engine view's top row (I303) */
@@ -5760,34 +5760,6 @@ static void draw_transport(desk* d) {
     }
 }
 
-/* The tooltip text of an action: its tooltip field (the label when that is empty), then the default key in brackets
- * the Spotify way: "C-Right" becomes "(Ctrl+Right)", a single letter is upper case, "M-" is "Alt+", "S-" is "Shift+". */
-static void desk_tip_text_of(const sel_uim_action* a, char* out, size_t cap) {
-    const char* body = a->tooltip != NULL && a->tooltip[0] != '\0' ? a->tooltip : a->label;
-    char key[48];
-    const char* k = a->key;
-    size_t n = 0;
-    key[0] = '\0';
-    while (k[0] != '\0' && k[1] == '-' && n + 8u < sizeof key) {
-        const char* mod = k[0] == 'C' ? "Ctrl+" : k[0] == 'M' ? "Alt+" : k[0] == 'S' ? "Shift+" : NULL;
-        if (mod == NULL) {
-            break;
-        }
-        strcpy(key + n, mod);
-        n += strlen(mod);
-        k += 2;
-    }
-    snprintf(key + n, sizeof key - n, "%s", k);
-    if (k[0] >= 'a' && k[0] <= 'z' && k[1] == '\0') {
-        key[n] = (char)(k[0] - 'a' + 'A');
-    }
-    if (key[0] != '\0') {
-        snprintf(out, cap, "%s (%s)", body, key);
-    } else {
-        snprintf(out, cap, "%s", body);
-    }
-}
-
 /* The tooltip box above its button; the fade tween moves the box and the text from the surface to their final
  * colours. */
 static void desk_draw_tip(desk* d) {
@@ -5919,7 +5891,7 @@ static void desk_tip_tick(desk* d) {
         if (a == NULL) {
             return;
         }
-        desk_tip_text_of(a, d->tip_text, sizeof d->tip_text);
+        sel_uim_action_tip_text(a, d->tip_text, sizeof d->tip_text);
     } else if (d->tip_btn > (int32_t)(TRANSPORT_COUNT + DOOR_COUNT)) { /* a Library style segment */
         snprintf(d->tip_text, sizeof d->tip_text, "%s", lib_style_name[d->tip_btn - 1 - (int32_t)(TRANSPORT_COUNT + DOOR_COUNT)]);
     } else if (d->tip_btn > (int32_t)TRANSPORT_COUNT) { /* a rail door: its full label */
@@ -5929,7 +5901,7 @@ static void desk_tip_tick(desk* d) {
         if (a == NULL) {
             return;
         }
-        desk_tip_text_of(a, d->tip_text, sizeof d->tip_text);
+        sel_uim_action_tip_text(a, d->tip_text, sizeof d->tip_text);
     }
     d->tip_shown = d->tip_btn;
     d->tooltips++;

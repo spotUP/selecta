@@ -97,6 +97,10 @@ const sel_uim_action* sel_uim_action_at(uint32_t i);
 uint32_t sel_uim_exemption_count(void);
 const char* sel_uim_exemption_at(uint32_t i, const char** reason);
 /* One help overlay row per action: menu path and default key. */
+/* Largest tooltip text a control shows: the action tooltip plus its key hint "(Ctrl+X)", with the terminator.
+ * sel_uim_actions_check fails when any action's formatted text does not fit, so no tooltip is cut silently. */
+#define SEL_UIM_TIP_MAX 112
+size_t sel_uim_action_tip_text(const sel_uim_action* a, char* out, size_t cap);
 void sel_uim_help_row(uint32_t i, char* out, size_t cap);
 /* 0 when every line is a COMMANDS verb or a PREF_SET of a prefs.def key and every verb has a row or an exemption. */
 int sel_uim_actions_check(char* msg, size_t cap);

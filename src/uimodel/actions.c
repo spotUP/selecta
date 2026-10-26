@@ -48,7 +48,7 @@ static const sel_uim_action k_actions[] = {
      "RESHUFFLE"},
     {"undo", "Undo", "Undo the last queue change", "undo-2", "Edit/Undo", "u", "UNDO"},
     {"redo", "Redo", "Redo the undone queue change", "redo-2", "Edit/Redo", "C-r", "REDO"},
-    {"like", "Like Song", "Like the playing song, or take the like back", "heart", "Library/Like Song", "M-h", "LIKE"},
+    {"like", "Like Song", "Like the playing song, or take the like back when it is liked (a song key names another song)", "heart", "Library/Like Song", "M-h", "LIKE"},
     {"cursor_up", "Cursor Up", "Move the cursor up one row", "chevron-up", "View/Cursor Up", "k", "VIEW_CURSOR -1"},
     {"cursor_down", "Cursor Down", "Move the cursor down one row", "chevron-down", "View/Cursor Down", "j",
      "VIEW_CURSOR +1"},
@@ -148,6 +148,34 @@ void sel_uim_help_row(uint32_t i, char* out, size_t cap) {
     snprintf(out, cap, "%s  %s", a->menu, a->key[0] != '\0' ? a->key : "-");
 }
 
+/* The tooltip text of an action: its tooltip field (the label when that is empty), then the default key in brackets
+ * the Spotify way (returns the length the full text needs, like snprintf): "C-Right" becomes "(Ctrl+Right)", a single letter is upper case, "M-" is "Alt+", "S-" is "Shift+". */
+size_t sel_uim_action_tip_text(const sel_uim_action* a, char* out, size_t cap) {
+    const char* body = a->tooltip != NULL && a->tooltip[0] != '\0' ? a->tooltip : a->label;
+    char key[48];
+    const char* k = a->key;
+    size_t n = 0;
+    key[0] = '\0';
+    while (k[0] != '\0' && k[1] == '-' && n + 8u < sizeof key) {
+        const char* mod = k[0] == 'C' ? "Ctrl+" : k[0] == 'M' ? "Alt+" : k[0] == 'S' ? "Shift+" : NULL;
+        if (mod == NULL) {
+            break;
+        }
+        strcpy(key + n, mod);
+        n += strlen(mod);
+        k += 2;
+    }
+    snprintf(key + n, sizeof key - n, "%s", k);
+    if (k[0] >= 'a' && k[0] <= 'z' && k[1] == '\0') {
+        key[n] = (char)(k[0] - 'a' + 'A');
+    }
+    if (key[0] != '\0') {
+        return (size_t)snprintf(out, cap, "%s (%s)", body, key);
+    } else {
+        return (size_t)snprintf(out, cap, "%s", body);
+    }
+}
+
 static int pref_known(const char* key, size_t n) {
 #define SEL_PREF(id, k, def, kind)                     \
     if (strlen(k) == n && strncmp(k, key, n) == 0) {   \
@@ -166,7 +194,11 @@ int sel_uim_actions_check(char* msg, size_t cap) {
     for (i = 0; i < COUNT(k_actions); i++) {
         const char* line = k_actions[i].line;
         size_t n = strcspn(line, " ");
-        char verb[40];
+        char verb[40], tip[SEL_UIM_TIP_MAX];
+        if (sel_uim_action_tip_text(&k_actions[i], tip, sizeof tip) >= sizeof tip) {
+            snprintf(msg, cap, "action %s: tooltip text longer than %u", k_actions[i].id, (unsigned)(SEL_UIM_TIP_MAX - 1));
+            return 1;
+        }
         uint32_t id;
         if (n >= sizeof verb) {
             snprintf(msg, cap, "line too long: %s", line);
