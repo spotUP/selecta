@@ -121,6 +121,12 @@ target_link_libraries(dui_input_map_unit PRIVATE selecta_gui)
 add_test(NAME gui-input-map COMMAND dui_input_map_unit)
 set_tests_properties(gui-input-map PROPERTIES TIMEOUT 60)
 
+# I522: the default format of the aga backend (index8) and of every other backend (rgba32). No dui label: the ratchet count stays.
+add_executable(dui_default_format_unit default_format_unit.c)
+target_link_libraries(dui_default_format_unit PRIVATE selecta_uimodel)
+add_test(NAME dui-default-format COMMAND dui_default_format_unit)
+set_tests_properties(dui-default-format PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "default_format_ok")
+
 # DUI-P6-3: the Amiga cross build of src/gui and src/uimodel, counted with the m68k nm. Needs the bebbo toolchain.
 if(NOT SEL_AMIGA)
   find_program(SEL_M68K_NM m68k-amigaos-nm HINTS "$ENV{AMIGA_GCC_ROOT}/bin" "$ENV{HOME}/opt/amiga/bin" /opt/amiga/bin)

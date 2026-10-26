@@ -65,3 +65,29 @@ Defects found (not fixed):
 1. `--backend aga` alone does not open. `sel_uim_budget_for` (plugins/ui/desktop/desktop_ui.c:8233) takes the format from `--format` only, so the default is rgba32; `desk_aga_open` (plugins/ui/desktop/amiga/backend_aga.c:~137) then refuses with "the AGA screen shows an INDEX8 canvas only" on stdout (not the --log file) and the shell prints "the UI could not open". It works with `--format index8`. Root fix: default the budget format to index8 when the backend is aga (the rtg line in RULES.md has no such flag either). Not fixed here: the AGA branch is compiled only in the Amiga build, so a regression test needs the vamos/rig path; left for a row.
 2. The default 16 KiB shell stack overflows (`amiga_start: stack overflow, canary`): the run needs `Stack 262144` first. RULES.md run line does not say so.
 3. The backend open failure message goes to stdout, so `--log` (stderr only) hides the reason.
+
+## I522 to I526 follow-up (agent a9ef786, worktree branch)
+
+### I522 fixed
+`--backend aga` without `--format` now defaults to index8 (`sel_uim_default_format` in src/uimodel/budget.c, used at desktop_ui.c where `--format` is read). backend_aga.c writes open failures to stderr (flushed), so `--log` shows them. Regression test `dui-default-format` (tests/dui/default_format_unit.c): fails when the function returns NULL for aga, passes with the fix. Found: backend_rtg.c still writes its errors to stdout (not changed).
+
+### I523 open (cause not measured)
+The ledger's "16 KiB default stack" is wrong. apps/selecta/main.c:277 runs app_main through `sel_amiga_run_with_stack` with `SEL_AMIGA_STACK_BYTES` = 128 KiB; the canary message comes from that swap. With a manual `Stack 262144` no swap happens. `-fstack-usage` frames in desktop_ui.c are at most 11.9 KiB (desk_bind_actions), so the 128 KiB overflow is call depth or another file. The high-water mark needs a STACKMEASURE print at exit; Selecta on rig 2 ignores Ctrl-C because frames take seconds, so no exit, so no number yet. RULES.md line 22 NOT yet corrected (waits for the measured value). The temporary measurement edits are reverted. First Home frame on the 020: 9.4 s (present_ms 9028).
+
+### I524a fixed, I524b open
+ScreenToFront + ActivateWindow after OpenWindow in backend_aga.c; rig 2 showed Selecta as the front screen. I524b: the screen appeared about 3 minutes after launch; per-step startup timing is not done.
+
+### I525 root cause found
+`desk_aga_next_input` was a stub returning 0: the AGA backend translated no input at all. Fix: shared module plugins/ui/desktop/amiga/input.c/.h (translation moved verbatim from backend_rtg.c, now used by rtg and aga). Quick rig check: clicks change the screen md5. NOT measured: click latency, queue overflow with MOUSEMOVE under WA_ReportMouse (64-entry queue drops events), hit mapping at 640x256. No off-rig regression test for the input path yet. backend_rtg.c refactor not built or run.
+
+### I526 plan (report only, nothing implemented)
+Today: layout is drawn at ui_logical 1024x819 and scaled to 640x256 (fit floor 0.625, ydiv 2 tall pixels). Text size tokens 11,12,13,14,15,16,18,22,24,32 px (atlas_build.h DESK_FONT_SIZES), Inter Regular and SemiBold, baked at scales 0.625 and 1.0, plus a tall (ydiv 2) set at 0.625 via `desk_atlas_build_tall` (atlas_build.c). So gui_fontbake already has a per-axis step (ydiv); what is new is fixed native sizes instead of scales. Unreadable labels and glyph heights in screen pixels: NOT measured (CleanShot not copied; no native screenshot analysis done).
+
+Bitmap fonts (mini4 4x6/4x8, mini6 6x6/6x8, mini8 8x8, all fixed width, chars 32-255): add a host tool step in gui_fontbake (or a sibling tools/amiga_fontbake.c) that reads the diskfont hunk: parse HUNK_HEADER/CODE/DATA/RELOC32, locate the TextFont struct (tf_YSize, tf_XSize, tf_Baseline, tf_LoChar, tf_HiChar, tf_CharData, tf_Modulo, tf_CharLoc), convert the packed 1-bit strip into a C array per family. Runtime: a glyph source in desk_font that blits 1-bit rows directly to index8, no atlas, no scaling.
+Role proposal: page title Inter SemiBold ~16 rows; section heading Inter SemiBold ~11 rows (Johan, e95de16); body and list text mini8 (8x8); dense list rows mini6; mini4 for tags and captions.
+gui_fontbake needs for the Inter headlines: (1) fixed native pixel sizes (16 and 11 rows) instead of size x scale, (2) a per-axis scale: column size = rows size, row count = size / 2 for tall pixels (reuse the ydiv path in place()), (3) output coverage quantised to N levels (for example 4 or 8) rather than 8-bit alpha, each level mapped to a palette shade index.
+Palette: index8 has 256 entries; the glyph shade ramps must be reserved per text and background colour pair (N levels between the foreground and the background under it). Reserve the ramps for the few text/background pairs of the theme at palette build time (src/uimodel or desktop palette quantiser), pinned so the image quantiser cannot reuse them. Palette code was not read in this pass: unverified.
+Touched: tools/gui_fontbake.c, atlas_build.c/.h, desk_font (new bitmap source), the ydiv 2 layout (layout at native 640x256 pixels, no 0.625 scale), the atlas draw path in gui_draw, the palette builder.
+
+### Host checks
+`ctest -L dui -LE dui-red`: 56 of 56 pass. `lint` target fails with "No rule to make target all" because clang-tidy is not installed (environment, not the change).

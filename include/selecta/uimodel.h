@@ -148,6 +148,8 @@ typedef struct sel_uim_budget {
 
 /* Budget for a backend format name ("rgba32", "index8"; NULL means rgba32); returns 0 for an unknown name. */
 int sel_uim_budget_for(sel_uim_budget* b, const char* format);
+/* The format name a backend uses when --format is absent: "index8" for "aga", NULL (rgba32) otherwise (I522). */
+const char* sel_uim_default_format(const char* backend);
 /* 1 when the effect (SEL_UIM_FX_*) may run. Every effect asks before it starts. */
 int sel_uim_budget_allows(const sel_uim_budget* b, uint32_t effect);
 /* 1 when tweens may run: the format allows them and the pref ui.desktop.reduce_motion is not set (DUI-P3-5). */

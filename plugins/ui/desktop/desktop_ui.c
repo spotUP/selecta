@@ -8230,7 +8230,7 @@ static void* desk_open(const sel_ui_open_args* a) {
     viz_load(d);
     d->input_consumed = a->input_consumed;
     d->hash = 2166136261u;
-    if (!sel_uim_budget_for(&d->budget, desk_opt(a, "--format"))) {
+    if (!sel_uim_budget_for(&d->budget, desk_opt(a, "--format") != NULL ? desk_opt(a, "--format") : sel_uim_default_format(backend))) {
         fprintf(stderr, "selecta: desktop format '%s' is not rgba32 or index8\n", desk_opt(a, "--format"));
         a->host->mem_free(a->host, d);
         return NULL;
