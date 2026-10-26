@@ -25,10 +25,14 @@
 #include "amiga/backend_rtg.h"
 #define DESK_BACKEND_NAME "rtg"
 #define desk_backend_depth(b) desk_rtg_depth(b)
+#define DESK_BACKEND_INDEX8 1 /* --format index8 opens an 8-bit CLUT screen (I369) */
+#define desk_backend_open(w, h, idx) desk_rtg_open((w), (h), (idx))
 #elif defined(SELECTA_DESKTOP_SDL)
 #include "backend_sdl.h"
 #define DESK_BACKEND_NAME "sdl"
 #define desk_backend_depth(b) ((void)(b), 32)
+#define DESK_BACKEND_INDEX8 0
+#define desk_backend_open(w, h, idx) ((void)(idx), desk_sdl_open((w), (h)))
 #endif
 
 #include <stdarg.h>
@@ -6524,12 +6528,12 @@ static void* desk_open(const sel_ui_open_args* a) {
     }
 #ifdef SELECTA_DESKTOP_SDL
     if (want_sdl) {
-        if (d->canvas->format != SEL_GUI_RGBA32) {
-            fprintf(stderr, "selecta: the sdl backend shows an rgba32 canvas, not index8\n");
+        if (d->canvas->format != SEL_GUI_RGBA32 && !DESK_BACKEND_INDEX8) {
+            fprintf(stderr, "selecta: the %s backend shows an rgba32 canvas, not index8\n", DESK_BACKEND_NAME);
             desk_close(d);
             return NULL;
         }
-        d->sdl = desk_sdl_open(d->canvas->w, d->canvas->h);
+        d->sdl = desk_backend_open(d->canvas->w, d->canvas->h, d->canvas->format == SEL_GUI_INDEX8);
         if (d->sdl == NULL) {
             desk_close(d);
             return NULL;

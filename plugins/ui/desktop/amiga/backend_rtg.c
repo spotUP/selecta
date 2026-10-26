@@ -43,6 +43,8 @@ struct rtg_render_info {
     ULONG rgb_format;
 };
 #define RTG_FMT_A8R8G8B8 6u
+#define RTG_FMT_CLUT 1u /* RGBFB_CLUT */
+#define RTG_FORMATS_CLUT 0x2u /* RGBFF_CLUT */
 #define RTG_FORMATS_COLOR 0x3FFCu /* RGBFF_R8G8B8 up to RGBFF_B5G5R5PC: every direct-colour format */
 #define RTG_IDA_WIDTH 0
 #define RTG_IDA_HEIGHT 1
@@ -68,6 +70,9 @@ struct desk_rtg {
     struct MsgPort* tport;
     struct timerequest* treq;
     int32_t w, h, depth;
+    int index8;
+    uint32_t pal[256]; /* the palette last loaded on the screen (0xRRGGBB) */
+    int pal_set;
     uint32_t presents, upload;
     sel_gui_input_map_state map;
     sel_gui_input queue[DESK_RTG_QUEUE];
@@ -85,7 +90,7 @@ uint32_t desk_rtg_ticks(void) {
 }
 
 /* Picks the first size of the wanted list the card offers as a real Picasso96 mode; returns the mode id or 0. */
-static ULONG pick_mode(int32_t* w, int32_t* h, ULONG* depth) {
+static ULONG pick_mode(int32_t* w, int32_t* h, ULONG* depth, int index8) {
     static const int32_t sizes[][2] = {{1920, 1080}, {1600, 900}, {1280, 800}, {1280, 720},
                                        {1024, 768},  {800, 600},  {640, 480}};
     size_t i;
@@ -105,9 +110,9 @@ static ULONG pick_mode(int32_t* w, int32_t* h, ULONG* depth) {
         tags[0].ti_Tag = RTG_BID_DUMMY + 3;
         tags[1].ti_Tag = RTG_BID_DUMMY + 4;
         tags[2].ti_Tag = RTG_BID_DUMMY + 1;
-        tags[2].ti_Data = RTG_FORMATS_COLOR;
+        tags[2].ti_Data = index8 ? RTG_FORMATS_CLUT : RTG_FORMATS_COLOR;
         tags[3].ti_Tag = RTG_BID_DUMMY + 5;
-        tags[3].ti_Data = 16;
+        tags[3].ti_Data = index8 ? 8 : 16;
         tags[4].ti_Tag = TAG_DONE;
         tags[4].ti_Data = 0;
         mode = p96_best_mode(tags);
@@ -142,7 +147,7 @@ void desk_rtg_default_size(int32_t* w, int32_t* h) {
     }
 }
 
-desk_rtg* desk_rtg_open(int32_t w, int32_t h) {
+desk_rtg* desk_rtg_open(int32_t w, int32_t h, int index8) {
     desk_rtg* b = (desk_rtg*)AllocVec(sizeof *b, MEMF_CLEAR);
     ULONG mode, depth = 0;
     if (b == NULL) {
@@ -162,7 +167,7 @@ desk_rtg* desk_rtg_open(int32_t w, int32_t h) {
         desk_rtg_close(b);
         return NULL;
     }
-    mode = pick_mode(&w, &h, &depth);
+    mode = pick_mode(&w, &h, &depth, index8);
     if (mode == 0u) {
         fprintf(stdout, "rtg: no Picasso96 mode of the wanted size\n"); fflush(stdout);
         desk_rtg_close(b);
@@ -194,6 +199,7 @@ desk_rtg* desk_rtg_open(int32_t w, int32_t h) {
     b->w = w;
     b->h = h;
     b->depth = (int32_t)depth;
+    b->index8 = index8;
     fprintf(stdout, "rtg: screen %dx%d depth %d\n", (int)w, (int)h, (int)depth); fflush(stdout);
     return b;
 }
@@ -247,9 +253,28 @@ void desk_rtg_present(desk_rtg* b, const sel_gui_canvas* c, int readback) {
     uint32_t i;
     (void)readback;
     ri.memory = (APTR)c->pixels;
-    ri.bytes_per_row = (WORD)(c->w * 4);
     ri.pad = 0;
-    ri.rgb_format = RTG_FMT_A8R8G8B8;
+    if (b->index8 && c->format == SEL_GUI_INDEX8) {
+        ri.bytes_per_row = (WORD)c->w;
+        ri.rgb_format = RTG_FMT_CLUT;
+        if (!b->pal_set || memcmp(b->pal, c->palette, sizeof b->pal) != 0) { /* LoadRGB32: count<<16|first, r,g,b as left-aligned 32-bit, 0 */
+            static ULONG tab[2 + 256 * 3];
+            uint32_t k;
+            tab[0] = (256UL << 16) | 0UL;
+            for (k = 0; k < 256u; k++) {
+                tab[1 + k * 3] = ((c->palette[k] >> 16) & 0xFFu) * 0x01010101UL;
+                tab[2 + k * 3] = ((c->palette[k] >> 8) & 0xFFu) * 0x01010101UL;
+                tab[3 + k * 3] = (c->palette[k] & 0xFFu) * 0x01010101UL;
+            }
+            tab[1 + 256 * 3] = 0;
+            LoadRGB32(&b->screen->ViewPort, tab);
+            memcpy(b->pal, c->palette, sizeof b->pal);
+            b->pal_set = 1;
+        }
+    } else {
+        ri.bytes_per_row = (WORD)(c->w * 4);
+        ri.rgb_format = RTG_FMT_A8R8G8B8;
+    }
     for (i = 0; i < c->dirty_n; i++) {
         sel_gui_rect r = c->dirty[i];
         if (r.x < 0) {

@@ -19,9 +19,11 @@ enum { DESK_RTG_NONE = 0, DESK_RTG_QUIT = 1, DESK_RTG_RESIZE = 2, DESK_RTG_ACTIV
 /* The canvas size when none is asked for: the size of the Workbench (default public) screen, so the UI opens full
  * screen (D-M4-3, I340). 1280x800 when intuition cannot be opened. */
 void desk_rtg_default_size(int32_t* w, int32_t* h);
-/* Opens the screen and window. w and h are the wanted size; 0 and 0 pick the largest RTG mode up to 1920 x 1080. NULL
+/* index8 != 0 opens an 8-bit CLUT screen (256 colours) and present expects an INDEX8 canvas; its palette is loaded on
+ * the screen whenever it changed (I369). Otherwise a direct-colour screen and an RGBA32 canvas.
+ * Opens the screen and window. w and h are the wanted size; 0 and 0 pick the largest RTG mode up to 1920 x 1080. NULL
  * (with a message on stderr) when Picasso96 or the mode is missing. */
-desk_rtg* desk_rtg_open(int32_t w, int32_t h);
+desk_rtg* desk_rtg_open(int32_t w, int32_t h, int index8);
 void desk_rtg_close(desk_rtg* b);
 int32_t desk_rtg_width(const desk_rtg* b);
 int32_t desk_rtg_height(const desk_rtg* b);
@@ -46,7 +48,6 @@ int desk_rtg_next_input(desk_rtg* b, sel_gui_input* ev);
 #define DESK_SDL_RESIZE DESK_RTG_RESIZE
 #define DESK_SDL_ACTIVITY DESK_RTG_ACTIVITY
 #define desk_sdl_default_size desk_rtg_default_size
-#define desk_sdl_open(w, h) desk_rtg_open((w), (h))
 #define desk_sdl_close desk_rtg_close
 #define desk_sdl_headless(b) ((void)(b), 0)
 #define desk_sdl_scale(b) ((void)(b), 1)
