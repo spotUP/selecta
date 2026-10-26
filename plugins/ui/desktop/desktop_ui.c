@@ -4400,8 +4400,11 @@ static void draw_nowplaying(desk* d) {
     for (k = 0; k < 5u; k++) {
         int32_t m = lpx(d, 12);
         d->np_rate[k] = rect_of(dt.x + sp + ic + lpx(d, 12) + (int32_t)k * (m + lpx(d, 6)), y + (ic - m) / 2, m, m);
+        /* A rating mark lights under the pointer (I357): a set mark brightens like an accent fill, an empty one warms to muted. */
+        hover_reg(d, d->np_rate[k]);
         sel_gui_round_rect(d->canvas, d->np_rate[k], m / 2,
-                           (int32_t)k < rating ? accent : ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+                           (int32_t)k < rating ? hover_fill_of(d, d->np_rate[k], accent)
+                                               : hover_ink_of(d, d->np_rate[k], ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]), muted));
     }
     y += ic + sp;
     /* The visualizer strip (DUI-P4-11): the selected viz plugin's picture of the newest frame. */
