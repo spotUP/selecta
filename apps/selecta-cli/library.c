@@ -711,30 +711,31 @@ static void library_dump_hvsc(const char* db_path) {
     sqlite3_finalize(st);
     sqlite3_close(db);
 }
-/* `--dump` for asma: `asma_row=<path>|<format>|<artist>|<name>|<size>|<url>` per song. */
-static void library_dump_asma(const char* db_path) {
+/* `--dump` for the flat-listing sources (asma, sndh): `<id>_row=<path>|<format>|<artist>|<name>|<size>|<url>` per song. */
+static void library_dump_flat(const char* db_path, const char* id) {
     sqlite3* db = NULL;
     sqlite3_stmt* st = NULL;
     const sel_source* src;
     char url[SEL_BROWSE_PATH_MAX];
 
     sel_source_register_builtin();
-    src = sel_source_find("asma");
+    src = sel_source_find(id);
     if (sqlite3_open_v2(db_path, &db, SQLITE_OPEN_READONLY, NULL) != SQLITE_OK) {
         sqlite3_close(db);
         return;
     }
     if (sqlite3_prepare_v2(db,
                            "SELECT s.path, COALESCE(s.format,''), COALESCE(s.artist,''), COALESCE(s.name,''),"
-                           " COALESCE(s.size,0) FROM songs s WHERE s.source='asma' ORDER BY s.path",
+                           " COALESCE(s.size,0) FROM songs s WHERE s.source=? ORDER BY s.path",
                            -1, &st, NULL) == SQLITE_OK) {
+        sqlite3_bind_text(st, 1, id, -1, SQLITE_STATIC);
         while (sqlite3_step(st) == SQLITE_ROW) {
             const char* path = (const char*)sqlite3_column_text(st, 0);
 
             if (src == NULL || src->url == NULL || !src->url(path, url, sizeof url)) {
                 url[0] = '\0';
             }
-            printf("asma_row=%s|%s|%s|%s|%lld|%s\n", path, (const char*)sqlite3_column_text(st, 1),
+            printf("%s_row=%s|%s|%s|%s|%lld|%s\n", id, path, (const char*)sqlite3_column_text(st, 1),
                    (const char*)sqlite3_column_text(st, 2), (const char*)sqlite3_column_text(st, 3),
                    (long long)sqlite3_column_int64(st, 4), url);
         }
@@ -820,7 +821,7 @@ static int library_sync(int argc, char** argv) {
         }
     }
     if (src == NULL || dir == NULL) {
-        fputs("usage: selecta-cli library sync [--db <path>] [--now <epoch>] [--dump] modland|hvsc|hippo|asma <dir> | modland|hvsc|asma <http(s) url>\n", stderr);
+        fputs("usage: selecta-cli library sync [--db <path>] [--now <epoch>] [--dump] modland|hvsc|hippo|asma|sndh <dir> | modland|hvsc|asma|sndh <http(s) url>\n", stderr);
         return 2;
     }
     memset(&sink, 0, sizeof sink);
@@ -859,7 +860,7 @@ static int library_sync(int argc, char** argv) {
                (unsigned)info.hippo_lists, (unsigned)info.skipped_rows, (unsigned)info.prg_files,
                (unsigned)info.prg_entries, (unsigned)info.prg_dividers, (unsigned)info.prg_stealth,
                (unsigned)info.prg_subsongs, st.args[SEL_LIB_STAT_SONGS].v.i);
-    } else if (strcmp(src, "asma") == 0) {
+    } else if (strcmp(src, "asma") == 0 || strcmp(src, "sndh") == 0) {
         printf("listing_rows=%u skipped_rows=%u db_songs=%d\n", (unsigned)info.listing_rows,
                (unsigned)info.skipped_rows, st.args[SEL_LIB_STAT_SONGS].v.i);
         if (info.net_requests > 0) {
@@ -895,8 +896,8 @@ static int library_sync(int argc, char** argv) {
             library_dump_hippo(db_path);
         } else if (strcmp(src, "hvsc") == 0) {
             library_dump_hvsc(db_path);
-        } else if (strcmp(src, "asma") == 0) {
-            library_dump_asma(db_path);
+        } else if (strcmp(src, "asma") == 0 || strcmp(src, "sndh") == 0) {
+            library_dump_flat(db_path, src);
         } else {
             library_dump_modland(db_path);
         }

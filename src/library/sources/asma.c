@@ -3,6 +3,7 @@
  * the song key is `asma:<path>` and the canonical URL is https://asma.atari.org/asma/<path>, percent-encoded. */
 #include "../source.h"
 #include "asma_sync.h"
+#include "url_path.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -14,72 +15,11 @@ static const sel_tag g_tags[] = {
 };
 
 static int url_of(const char* path, char* out, size_t n) {
-    static const char hex[] = "0123456789ABCDEF";
-    size_t used = sizeof ROOT - 1u;
-
-    if (path == NULL || path[0] == '\0' || path[0] == '/' || n < sizeof ROOT) {
-        return 0;
-    }
-    memcpy(out, ROOT, sizeof ROOT);
-    for (; *path != '\0'; path++) {
-        unsigned char c = (unsigned char)*path;
-        int plain = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '/' ||
-                    c == '-' || c == '_' || c == '.' || c == '~';
-
-        if (used + (plain ? 1u : 3u) + 1u > n) {
-            return 0;
-        }
-        if (plain) {
-            out[used++] = (char)c;
-        } else {
-            out[used++] = '%';
-            out[used++] = hex[c >> 4];
-            out[used++] = hex[c & 15u];
-        }
-    }
-    out[used] = '\0';
-    return 1;
-}
-
-static int hex_value(char c) {
-    if (c >= '0' && c <= '9') {
-        return c - '0';
-    }
-    if (c >= 'A' && c <= 'F') {
-        return c - 'A' + 10;
-    }
-    if (c >= 'a' && c <= 'f') {
-        return c - 'a' + 10;
-    }
-    return -1;
+    return sel_url_path_encode(ROOT, path, out, n);
 }
 
 static int path_in(const char* url, char* path, size_t n) {
-    size_t used = 0;
-
-    if (url == NULL || strncmp(url, ROOT, sizeof ROOT - 1u) != 0) {
-        return 0;
-    }
-    for (url += sizeof ROOT - 1u; *url != '\0'; url++) {
-        char c = *url;
-
-        if (c == '%') {
-            int hi = hex_value(url[1]);
-            int lo = hi >= 0 ? hex_value(url[2]) : -1;
-
-            if (lo < 0) {
-                return 0;
-            }
-            c = (char)(hi * 16 + lo);
-            url += 2;
-        }
-        if (used + 1u >= n) {
-            return 0;
-        }
-        path[used++] = c;
-    }
-    path[used] = '\0';
-    return used > 0;
+    return sel_url_path_decode(ROOT, url, path, n);
 }
 
 /* Format from the extension; the artist of `Composers/<Folder>/...` is the folder ("Bernard_Jeremie" ->

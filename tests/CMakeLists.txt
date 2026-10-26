@@ -1514,6 +1514,15 @@ if(NOT SEL_AMIGA)
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "hvsc_net_ok")
 endif()
 
+# Row I414: LIBRARY_SYNC sndh <url> over the sndh.atari.org fixture.
+if(NOT SEL_AMIGA)
+  add_test(NAME source-sndh-net
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      -P "${SEL_NET_DIR}/sndh_net.cmake")
+  set_tests_properties(source-sndh-net PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "sndh_net_ok")
+endif()
+
 # Row I413: LIBRARY_SYNC asma <url> over the asma.atari.org fixture.
 if(NOT SEL_AMIGA)
   add_test(NAME source-asma-net
@@ -1597,6 +1606,16 @@ if(NOT SEL_AMIGA)
   target_link_libraries(asma_unit_test PRIVATE selecta_library selecta_core)
   add_test(NAME asma-unit COMMAND asma_unit_test)
   set_tests_properties(asma-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "asma_unit_ok")
+
+  # I414: the sndh directory reader, download page parser and source descriptor, on the recorded fixtures.
+  add_executable(sndh_unit_test sndh_unit_test.c)
+  target_include_directories(sndh_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_compile_definitions(sndh_unit_test PRIVATE
+    SEL_SNDH_ZIP="${PROJECT_SOURCE_DIR}/tests/net/fixtures/sndh.atari.org/files/sndh2026_lf.zip"
+    SEL_SNDH_PAGE="${PROJECT_SOURCE_DIR}/tests/net/fixtures/sndh.atari.org/download.php")
+  target_link_libraries(sndh_unit_test PRIVATE selecta_library selecta_core)
+  add_test(NAME sndh-unit COMMAND sndh_unit_test)
+  set_tests_properties(sndh-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sndh_unit_ok")
   # I376: the bottom-of-stack canary (apps/common/stack_canary.c, used by amiga_start.c on the Amiga).
   add_executable(stack_canary_test stack_canary_test.c ${PROJECT_SOURCE_DIR}/apps/common/stack_canary.c)
   target_include_directories(stack_canary_test PRIVATE ${PROJECT_SOURCE_DIR}/apps/common)

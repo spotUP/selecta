@@ -61,6 +61,9 @@ void sel_source_register_builtin(void) {
     if (sel_source_find("asma") == NULL) {
         (void)sel_source_register(sel_source_asma());
     }
+    if (sel_source_find("sndh") == NULL) {
+        (void)sel_source_register(sel_source_sndh());
+    }
 }
 
 int sel_song_key(const char* source, const char* path, char* out, size_t n) {

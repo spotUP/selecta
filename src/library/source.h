@@ -75,6 +75,7 @@ const sel_source* sel_source_modland(void);
 const sel_source* sel_source_hippo(void);   /* sources/hippo.c, hippoplayer.se playlists */
 const sel_source* sel_source_hvsc(void); /* sources/hvsc.c, hosted by Modland */
 const sel_source* sel_source_asma(void); /* sources/asma.c, the Atari SAP Music Archive */
+const sel_source* sel_source_sndh(void); /* sources/sndh.c, the Atari ST SNDH archive */
 
 /* Song key <source id>:<path>. 0 when it does not fit. */
 int sel_song_key(const char* source, const char* path, char* out, size_t n);

@@ -1,0 +1,67 @@
+# Row I414: `selecta-cli library sync sndh <url>` over the sndh.atari.org fixture (the real /download.php and a trimmed
+# sndh2026_lf.zip holding 14 real central-directory records, see fixtures/PROVENANCE.md). Reachability test of the
+# sndh source: the sync runs through the engine entry point LIBRARY_SYNC and asks the site for four things (page,
+# zip length, zip tail, directory). Expected numbers are counted from the fixture here.
+# -DCLI=<selecta-cli> -DWORK=<fixture work dir> -DFIXDIR=<tests/net/fixtures>
+file(READ "${WORK}/port" port)
+string(STRIP "${port}" port)
+set(fx "http://127.0.0.1:${port}")
+set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
+set(ENV{SELECTA_NET_MAP} "sndh.atari.org=${fx},fixture.test=${fx}")
+set(cache "${WORK}/i414-cache")
+file(REMOVE_RECURSE "${cache}")
+set(ENV{SELECTA_CACHE_DIR} "${cache}")
+set(db "${WORK}/i414.db")
+file(REMOVE "${db}")
+set(zip_file "${FIXDIR}/sndh.atari.org/files/sndh2026_lf.zip")
+
+function(expect what got want)
+  if(NOT "${got}" STREQUAL "${want}")
+    message(FATAL_ERROR "I414 net ${what}: got '${got}', want '${want}'\n${raw}")
+  endif()
+endfunction()
+
+function(counter var key)
+  if(raw MATCHES "(^|[ \n])${key}=([^ \n]*)")
+    set(${var} "${CMAKE_MATCH_2}" PARENT_SCOPE)
+  else()
+    set(${var} "" PARENT_SCOPE)
+  endif()
+endfunction()
+
+# Expected values from the fixture: one song per ".sndh" member name (the zip stores names uncompressed).
+file(READ "${zip_file}" zip_hex HEX)
+string(REGEX MATCHALL "2e736e6468" songs "${zip_hex}")
+list(LENGTH songs want_rows)
+file(SIZE "${zip_file}" zip_size)
+math(EXPR want_cd_bytes "${zip_size} - 22")
+if(want_rows LESS 1)
+  message(FATAL_ERROR "I414 net: fixture is empty")
+endif()
+
+execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/reset --method POST OUTPUT_VARIABLE o)
+execute_process(COMMAND "${CLI}" library sync --db "${db}" --now 1792756800 --dump sndh http://sndh.atari.org
+  OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
+set(raw "${o}${e}")
+expect("exit code" "${rc}" 0)
+counter(v listing_rows)
+expect("listing_rows" "${v}" "${want_rows}")
+counter(v db_songs)
+expect("db_songs" "${v}" "${want_rows}")
+counter(v skipped_rows)
+expect("skipped_rows" "${v}" 0)
+# Sentinel: the sndh network path ran: GET download.php, HEAD the zip, Range tail, Range directory.
+counter(v net_requests)
+expect("net_requests (sentinel: sndh network path ran)" "${v}" 4)
+counter(v net_listing_bytes)
+expect("net_listing_bytes" "${v}" "${want_cd_bytes}")
+if(NOT raw MATCHES "sndh_row=Micro_Mr/Magic_Fly.sndh\\|SNDH\\|Micro_Mr\\|Magic_Fly\\|83460\\|https://sndh.atari.org/sndh/sndh_lf/Micro_Mr/Magic_Fly.sndh")
+  message(FATAL_ERROR "I414 net: Magic_Fly row missing or wrong\n${raw}")
+endif()
+if(NOT raw MATCHES "sndh_row=505/Relix/EIL99_testsong.sndh\\|SNDH\\|505\\|EIL99_testsong\\|36496\\|")
+  message(FATAL_ERROR "I414 net: nested 505/Relix row missing or wrong\n${raw}")
+endif()
+if(NOT raw MATCHES "sndh_row=Tao/One_On_One_\\(UCM 11\\).sndh\\|SNDH\\|Tao\\|One_On_One_\\(UCM 11\\)\\|14212\\|https://sndh.atari.org/sndh/sndh_lf/Tao/One_On_One_%28UCM%2011%29.sndh")
+  message(FATAL_ERROR "I414 net: encoded-URL row missing or wrong\n${raw}")
+endif()
+message(STATUS "sndh_net_ok rows=${want_rows}")
