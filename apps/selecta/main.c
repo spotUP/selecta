@@ -141,11 +141,14 @@ static const char* option(int argc, char** argv, const char* name, const char* d
 
 /* Fill a slot from the registry; 0 when the id is no UI or lacks a hook. */
 static int ui_resolve(const char* id, shell_ui* u) {
-    const sel_tag* h = hooks_of(SEL_PLUGIN_KIND_UI, id);
+    const sel_tag* desc = sel_registry_find(SEL_PLUGIN_KIND_UI, id);
+    const sel_tag* h = desc != NULL ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
     if (h == NULL) {
         return 0;
     }
-    u->id = id;
+    /* The registry's own id string: `id` may be a caller's stack buffer (the UI_SWITCH name) that is gone by the next
+     * stats line, which printed an empty or garbage id (I521). */
+    u->id = (const char*)sel_tag_find(desc, SEL_PLUGIN_ID, 0);
     u->open = (sel_ui_open_fn)sel_tag_find(h, SEL_UI_OPEN, 0);
     u->on_event = (sel_ui_on_event_fn)sel_tag_find(h, SEL_UI_ON_EVENT, 0);
     u->wait = (sel_ui_wait_fn)sel_tag_find(h, SEL_UI_WAIT, 0);

@@ -37,3 +37,14 @@ Open:
 - Merge risk: another agent edits desktop_ui.c (Sources page); conflicts likely near desk_font, desk_make_canvas,
   desk_build_icons, desk_route_input and the desk_open options.
 
+
+## I521 dui-keys
+
+Cause: apps/selecta/main.c ui_resolve() stored the caller's `id` pointer in shell_ui.id. For a UI_SWITCH the caller passes
+`want[16]`, a stack buffer inside the wait loop; after the switch the slot's id dangled, so the exit `ui_stats id=<garbage>`
+line no longer read `id=desktop` and dui-keys (keys.cmake:94, dui_stat refired) found no `ui_stats id=desktop`. Not caused by the
+tall-pixel commits (no change in apps/selecta); the stack layout change exposed an old bug. Fix: ui_resolve keeps the registry's
+own SEL_PLUGIN_ID string. dui-keys is the regression test: fails with the fix reverted (checked, rebuilt selecta), passes with it
+(11 of 11 runs after the fix; one run early on ended in a 120 s Timeout that did not recur, unverified cause).
+Result: `ctest -L dui -LE dui-red` 56 of 56 in build/host (reconfigured with SELECTA_UI_DESKTOP=ON; it was OFF).
+Open: AGA cross build and rig check (disk).
