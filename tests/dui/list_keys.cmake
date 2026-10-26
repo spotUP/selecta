@@ -1,0 +1,67 @@
+# dui-list-keys (DUI-P3-3, I423): list keyboard parity on the songs list, through the real shell and the scripted --input feeder.
+#   -DSELECTA -DSONGS -DWORK
+# Six songs are queued. Down x3 moves the focus row from none to display row 3; the dump line `songs_focus` carries the row,
+# the fill token the focus row draws, the Enter counter and the row-play counter. Enter then plays row 3 through the same
+# function a double-click uses: activates 1, plays 1, and the engine's open song is row 3's path (playing 1).
+# A run without a key press shows no focus row (row -1), so the goldens stay unchanged. End and Home move to the ends.
+get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+include("${HERE}/dui_run.cmake")
+file(REMOVE_RECURSE "${WORK}")
+file(MAKE_DIRECTORY "${WORK}")
+set(queue "")
+foreach(n a b c d e f)
+  configure_file("${SONGS}/selecta-test.mod" "${WORK}/${n}.mod" COPYONLY)
+  list(APPEND queue --exec "QUEUE_ADD ${WORK}/${n}.mod")
+endforeach()
+
+function(keys_run outvar input)
+  file(REMOVE_RECURSE "${WORK}/cfg")
+  file(WRITE "${WORK}/in.txt" "${input}")
+  dui_run(o --ui desktop --backend mem --view songs --canvas 1280x800 --clock fixed --stats ${queue} --input "${WORK}/in.txt")
+  set(${outvar} "${o}" PARENT_SCOPE)
+endfunction()
+
+function(focus_line out)
+  if(NOT "${out}" MATCHES "songs_focus row (-?[0-9]+) fill ([0-9a-f]+) activates ([0-9]+) plays ([0-9]+) playing ([01])")
+    message(FATAL_ERROR "no songs_focus line in:\n${out}")
+  endif()
+  set(got_row ${CMAKE_MATCH_1} PARENT_SCOPE)
+  set(got_fill ${CMAKE_MATCH_2} PARENT_SCOPE)
+  set(got_act ${CMAKE_MATCH_3} PARENT_SCOPE)
+  set(got_plays ${CMAKE_MATCH_4} PARENT_SCOPE)
+  set(got_playing ${CMAKE_MATCH_5} PARENT_SCOPE)
+endfunction()
+
+keys_run(none "")
+focus_line("${none}")
+if(NOT got_row EQUAL -1)
+  message(FATAL_ERROR "no key pressed: the focus row must be -1, got ${got_row}")
+endif()
+
+keys_run(moved "key down\nkey down\nkey down\n")
+focus_line("${moved}")
+if(NOT got_row EQUAL 3 OR NOT got_act EQUAL 0)
+  message(FATAL_ERROR "Down x3 must focus row 3 without activating (row ${got_row}, activates ${got_act})")
+endif()
+set(want_fill "${got_fill}")
+
+keys_run(entered "key down\nkey down\nkey down\nkey enter\n")
+focus_line("${entered}")
+if(NOT got_row EQUAL 3 OR NOT got_act EQUAL 1 OR NOT got_plays EQUAL 1 OR NOT got_playing EQUAL 1)
+  message(FATAL_ERROR "Down x3 then Enter must play row 3 once (row ${got_row}, activates ${got_act}, plays ${got_plays}, playing ${got_playing})")
+endif()
+dui_stat(row_plays "${entered}" desktop row_plays)
+if(NOT row_plays EQUAL 1)
+  message(FATAL_ERROR "the stat row_plays must be 1, got ${row_plays}")
+endif()
+
+keys_run(ends "key end\n")
+focus_line("${ends}")
+if(NOT got_row EQUAL 5)
+  message(FATAL_ERROR "End must focus the last row (5), got ${got_row}")
+endif()
+keys_run(home "key end\nkey home\n")
+focus_line("${home}")
+if(NOT got_row EQUAL 0)
+  message(FATAL_ERROR "Home must focus row 0, got ${got_row}")
+endif()
