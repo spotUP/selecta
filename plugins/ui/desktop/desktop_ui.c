@@ -173,6 +173,13 @@ typedef struct desk {
     char si_note[96];
     size_t si_nlen;
     uint32_t queue_draws, queue_rows, queue_cmds; /* Queue page frames drawn (sentinel), rows in the last one, verbs it sent */
+    struct {                 /* I258: the Queue page album groups, rebuilt when the queue changes */
+        uint32_t hash, count, headers, valid;
+        uint32_t* before;    /* count + 1 slots: group headers above entry i, so entry i sits on row i + before[i] */
+        uint32_t* name;      /* count slots: 1 + pool offset of the header text drawn above entry i, 0 for none */
+        char* pool;
+        size_t pool_n, pool_cap;
+    } qg;
     uint32_t drops;          /* files and folders dropped on the window or chosen in Add Folder: STAT_DROPS (DUI-P5-11) */
     uint32_t lib_serial_seen; /* I348: sel_state.library_serial the page was last loaded for (UINT32_MAX: not seen yet) */
     uint32_t lib_reloads;    /* I348: page reloads the library serial caused (stats line library_reloads) */
@@ -215,7 +222,7 @@ typedef struct desk {
     char dlg_text[640];      /* the question the dialog shows */
     uint32_t dlg_playlists;  /* playlists the Clear Library dialog names */
     uint32_t dlg_opens, dlg_confirms, dlg_cancels; /* sentinels: dialogs opened / confirmed / cancelled */
-    int sm_step;             /* 0 the items, 1 the playlist chooser */
+    int sm_step;             /* 0 the items, 1 the playlist chooser, 2 the Queue scope choices (I258) */
     song_ref sm_ref;         /* the song it was opened on */
     song_row sm_rows[SM_ROWS]; /* the song rows drawn in the main region this frame: the one registry every page feeds */
     uint32_t sm_n, sm_opens, sm_picks, sm_pl_adds;
@@ -1467,6 +1474,9 @@ static int shelf_over_cards(desk* d, int32_t y) {
 
 /* Every song row offers five items. The last removes the queue entry on the Queue page and the song from the library
  * everywhere else (DUI-P4-18). */
+static const char* const queue_scope_name[3] = {"library", "album", "playlist"};
+static const char* const queue_scope_label[3] = {"Scope: Library", "Scope: Album", "Scope: Playlist"};
+
 static int song_menu_count(const desk* d) {
     (void)d;
     return SONG_MENU_ITEMS;
@@ -1476,16 +1486,25 @@ static const char* song_menu_label(const desk* d, int32_t k) {
     return k == 4 && d->sm_ref.removable ? "Remove from Queue" : g_menu_items[k];
 }
 
+/* Items on the open menu: the song items, the playlists (at least the "No playlists" line) or the three scope choices. */
+static int32_t song_menu_n(const desk* d) {
+    int32_t n = 1;
+    const char* name;
+    if (d->sm_step == 0) {
+        return song_menu_count(d);
+    }
+    if (d->sm_step == 2) {
+        return 3;
+    }
+    for (n = 0; n < 8 && playlist_nth(sel_engine_state(d->engine), (uint32_t)n, &name) != 0u; n++) {
+    }
+    return n > 0 ? n : 1;
+}
+
 static sel_gui_rect song_menu_item_rect(const desk* d, int32_t k) {
     sel_gui_rect mn = region_rect(d, "main");
     int32_t w = lpx(d, SONG_MENU_W + 40), x = d->menu_x, y = d->menu_y;
-    int32_t n = d->sm_step == 0 ? song_menu_count(d) : 1;
-    if (d->sm_step == 1) {
-        const char* name;
-        for (n = 0; n < 8 && playlist_nth(sel_engine_state(d->engine), (uint32_t)n, &name) != 0u; n++) {
-        }
-        n = n > 0 ? n : 1;
-    }
+    int32_t n = song_menu_n(d);
     if (x + w > mn.x + mn.w) {
         x = mn.x + mn.w - w;
     }
@@ -1503,6 +1522,15 @@ static void song_menu_open(desk* d, int32_t x, int32_t y, const song_ref* ref) {
     d->menu_y = y;
     d->menus++;
     d->sm_opens++;
+}
+
+/* The Queue page Scope button opens the same menu with the three scope choices (I258); a pick sends SCOPE <name>. */
+static void scope_menu_open(desk* d, int32_t x, int32_t y) {
+    d->sm_open = 1;
+    d->sm_step = 2;
+    d->menu_x = x;
+    d->menu_y = y;
+    d->menus++;
 }
 
 /* Registers one song row drawn this frame and, while the pointer is over it, draws its trailing "..." button. A row
@@ -1573,12 +1601,7 @@ static void song_menu_draw(desk* d) {
     if (!d->sm_open || semi == NULL) {
         return;
     }
-    n = d->sm_step == 0 ? song_menu_count(d) : 1;
-    if (d->sm_step == 1) {
-        for (n = 0; n < 8 && playlist_nth(sel_engine_state(d->engine), (uint32_t)n, &name) != 0u; n++) {
-        }
-        n = n > 0 ? n : 1;
-    }
+    n = song_menu_n(d);
     sel_gui_clip_push(d->canvas, region_rect(d, "main"));
     {
         /* One raised panel with the overlay shadow; items are text on it, and only the item under the pointer takes the accent
@@ -1592,7 +1615,7 @@ static void song_menu_draw(desk* d) {
         for (k = 0; k < n; k++) {
             sel_gui_rect m = song_menu_item_rect(d, k);
             int lit = hover_weight(d, m) > 0;
-            const char* label = d->sm_step == 0 ? song_menu_label(d, k) : "No playlists";
+            const char* label = d->sm_step == 0 ? song_menu_label(d, k) : d->sm_step == 2 ? queue_scope_label[k] : "No playlists";
             hover_reg(d, m);
             if (lit) {
                 sel_gui_round_rect(d->canvas, rect_of(m.x + inset, m.y, m.w - 2 * inset, m.h),
@@ -1728,13 +1751,18 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
         return 0;
     }
     if (d->sm_open) {
-        int32_t k, n = d->sm_step == 0 ? song_menu_count(d) : 8;
+        int32_t k, n = d->sm_step == 0 ? song_menu_count(d) : d->sm_step == 2 ? 3 : 8;
         int keep = 0;
         for (k = 0; k < n; k++) {
             if (!in_rect(song_menu_item_rect(d, k), ev->x, ev->y)) {
                 continue;
             }
-            if (d->sm_step == 1) {
+            if (d->sm_step == 2) { /* the same verb the old cycle button sent, now for the chosen scope */
+                char line[32];
+                snprintf(line, sizeof line, "SCOPE %s", queue_scope_name[k]);
+                d->queue_cmds++;
+                desk_send(d, line);
+            } else if (d->sm_step == 1) {
                 const char* name;
                 uint32_t pid = playlist_nth(sel_engine_state(d->engine), (uint32_t)k, &name);
                 if (pid != 0u) {
@@ -2050,8 +2078,6 @@ static uint32_t lib_hash(const desk* d, const sel_state* st) {
  * draws and sends those verbs. */
 enum { QUEUE_BTN_Y = 64, QUEUE_BTN_H = 32, QUEUE_BTN_W = 128, QUEUE_BTN_GAP = 8, QUEUE_LIST_Y = 112, QUEUE_ROW_H = 40,
        QUEUE_NEXT_W = 104, QUEUE_DEL_W = 40, QUEUE_BUTTONS = 4 };
-static const char* const queue_scope_name[3] = {"library", "album", "playlist"};
-static const char* const queue_scope_label[3] = {"Scope: Library", "Scope: Album", "Scope: Playlist"};
 
 static uint32_t queue_scope_index(const sel_state* st) {
     uint32_t k;
@@ -2071,7 +2097,7 @@ static sel_gui_rect queue_btn_rect(desk* d, sel_gui_rect mn, uint32_t k) {
 /* Largest Queue scroll offset in logical pixels, Q16: the rows' height beyond the room under the list top (I258). */
 static int32_t queue_max_q16(desk* d, sel_gui_rect mn, const sel_state* st) {
     int32_t sc = d->scale > 0 ? d->scale : 1;
-    int32_t max = (int32_t)st->queue_count * QUEUE_ROW_H - (mn.h - lpx(d, QUEUE_LIST_Y)) / sc;
+    int32_t max = (int32_t)(st->queue_count + (d->qg.valid ? d->qg.headers : 0u)) * QUEUE_ROW_H - (mn.h - lpx(d, QUEUE_LIST_Y)) / sc;
     return max > 0 ? max << 16 : 0;
 }
 
@@ -2089,8 +2115,13 @@ static sel_gui_rect queue_list_rect(desk* d, sel_gui_rect mn) {
     return rect_of(mn.x, mn.y + lpx(d, QUEUE_LIST_Y), mn.w, mn.h - lpx(d, QUEUE_LIST_Y));
 }
 
+/* Layout slot of entry i: its own index plus the album group headers above it (I258; the cache is rebuilt by queue_groups_sync). */
+static uint32_t queue_slot(const desk* d, uint32_t i) {
+    return d->qg.valid && i <= d->qg.count ? i + d->qg.before[i] : i;
+}
+
 static sel_gui_rect queue_row_rect(desk* d, sel_gui_rect mn, uint32_t i) {
-    return rect_of(mn.x + lpx(d, HOME_MARGIN), mn.y + lpx(d, QUEUE_LIST_Y) + (int32_t)i * lpx(d, QUEUE_ROW_H) - queue_scroll_px(d, mn),
+    return rect_of(mn.x + lpx(d, HOME_MARGIN), mn.y + lpx(d, QUEUE_LIST_Y) + (int32_t)queue_slot(d, i) * lpx(d, QUEUE_ROW_H) - queue_scroll_px(d, mn),
                    mn.w - 2 * lpx(d, HOME_MARGIN), lpx(d, QUEUE_ROW_H));
 }
 
@@ -2141,6 +2172,75 @@ static uint32_t queue_hash(const sel_state* st) {
     return h;
 }
 
+/* Rebuilds the album groups when the queue changed. A queue holding a playlist divider (.prg) keeps its dividers as the
+ * only groups. Otherwise consecutive songs of one album share a header; a song without an album falls back to its
+ * source, one the library does not know gets no header. The engine answers (sel_engine_song_group); the UI reads no
+ * database. */
+static void queue_groups_sync(desk* d) {
+    const sel_state* st = sel_engine_state(d->engine);
+    uint32_t h = queue_hash(st), i, n = st->queue_count, run = 0, cur = 0;
+    int dividers = 0;
+    char grp[160];
+    if (d->qg.valid && d->qg.hash == h && d->qg.count == n) {
+        return;
+    }
+    if (d->qg.before == NULL || d->qg.count < n) { /* grow (never shrinks) */
+        free(d->qg.before);
+        free(d->qg.name);
+        d->qg.before = (uint32_t*)malloc(((size_t)n + 1u) * sizeof *d->qg.before);
+        d->qg.name = (uint32_t*)malloc(((size_t)n + 1u) * sizeof *d->qg.name);
+        if (d->qg.before == NULL || d->qg.name == NULL) {
+            d->qg.valid = 0;
+            return;
+        }
+    }
+    d->qg.pool_n = 0;
+    d->qg.headers = 0;
+    for (i = 0; i < n; i++) {
+        dividers |= (st->queue[i].flags & SEL_QUEUE_FLAG_DIVIDER) != 0u;
+    }
+    for (i = 0; i < n; i++) {
+        d->qg.before[i] = d->qg.headers;
+        d->qg.name[i] = 0;
+        grp[0] = '\0';
+        if (!dividers && (st->queue[i].flags & SEL_QUEUE_FLAG_DIVIDER) == 0u) {
+            sel_engine_song_group(d->engine, st->queue_text + st->queue[i].path_offset, grp, sizeof grp);
+        }
+        if (grp[0] == '\0') {
+            run = 0;
+            continue;
+        }
+        if (run == 0u || strcmp(grp, d->qg.pool + cur) != 0) {
+            size_t need = strlen(grp) + 1u;
+            if (d->qg.pool_n + need > d->qg.pool_cap) {
+                size_t nc = d->qg.pool_cap != 0u ? d->qg.pool_cap * 2u : 4096u;
+                char* np;
+                while (nc < d->qg.pool_n + need) {
+                    nc *= 2u;
+                }
+                np = (char*)realloc(d->qg.pool, nc);
+                if (np == NULL) {
+                    d->qg.valid = 0;
+                    return;
+                }
+                d->qg.pool = np;
+                d->qg.pool_cap = nc;
+            }
+            cur = (uint32_t)d->qg.pool_n;
+            memcpy(d->qg.pool + cur, grp, need);
+            d->qg.pool_n += need;
+            d->qg.name[i] = cur + 1u;
+            d->qg.headers++;
+            d->qg.before[i] = d->qg.headers; /* the header sits above this entry */
+            run = 1;
+        }
+    }
+    d->qg.before[n] = d->qg.headers;
+    d->qg.hash = h;
+    d->qg.count = n;
+    d->qg.valid = 1;
+}
+
 static void draw_queue(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     sel_gui_rect mn = draw_panel(d, "main");
@@ -2151,6 +2251,7 @@ static void draw_queue(desk* d) {
     uint32_t i, shown = 0;
     char buf[300];
     sel_engine_stats_get(d->engine, &es);
+    queue_groups_sync(d);
     sel_gui_clip_push(d->canvas, mn);
     draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, 40)), "Queue", 1, 32, text);
     for (i = 0; i < QUEUE_BUTTONS; i++) {
@@ -2162,6 +2263,13 @@ static void draw_queue(desk* d) {
     sel_gui_clip_push(d->canvas, queue_list_rect(d, mn));
     for (i = 0; i < st->queue_count; i++) {
         sel_gui_rect r = queue_row_rect(d, mn, i);
+        if (d->qg.valid && d->qg.name[i] != 0u) { /* an album group header takes the row above its first song */
+            sel_gui_rect hr = rect_of(r.x, r.y - lpx(d, QUEUE_ROW_H), r.w, r.h), lr = queue_list_rect(d, mn);
+            if (hr.y + hr.h > lr.y && hr.y < lr.y + lr.h) {
+                draw_text(d, hr, d->qg.pool + d->qg.name[i] - 1u, 1, 13, muted);
+                shown++;
+            }
+        }
         if (!queue_row_visible(d, mn, i)) {
             continue;
         }
@@ -2200,6 +2308,7 @@ static int queue_pointer(desk* d, const sel_gui_input* ev) {
     char line[340];
     uint32_t k;
     int32_t row, to;
+    queue_groups_sync(d);
     if (ev->kind == SEL_GUI_IN_DRAG) {
         row = queue_row_at(d, mn, ev->x, ev->y);
         to = queue_row_at(d, mn, ev->x2, ev->y2);
@@ -2215,11 +2324,13 @@ static int queue_pointer(desk* d, const sel_gui_input* ev) {
     }
     for (k = 0; k < QUEUE_BUTTONS; k++) {
         if (in_rect(queue_btn_rect(d, mn, k), ev->x, ev->y)) {
-            if (k == 3u) {
-                snprintf(line, sizeof line, "SCOPE %s", queue_scope_name[(queue_scope_index(st) + 1u) % 3u]);
-            } else {
-                snprintf(line, sizeof line, "%s", k == 0u ? "UNDO" : k == 1u ? "REDO" : "RESHUFFLE");
+            if (k == 3u) { /* Scope opens a menu of the three choices under the button; a pick sends SCOPE <name> */
+                sel_gui_rect b = queue_btn_rect(d, mn, k);
+                scope_menu_open(d, b.x, b.y + b.h);
+                draw_home(d);
+                return 1;
             }
+            snprintf(line, sizeof line, "%s", k == 0u ? "UNDO" : k == 1u ? "REDO" : "RESHUFFLE");
             d->queue_cmds++;
             return desk_send(d, line);
         }
@@ -3347,6 +3458,7 @@ static const char* library_dump_build(desk* d) {
         sel_engine_stats qs;
         sel_gui_rect qmn = region_rect(d, "main");
         sel_engine_stats_get(d->engine, &qs);
+        queue_groups_sync(d);
         o = dump_put(d, o,
                               "queue draws %u rows %u cmds %u hash %08x count %u undo %u redo %u scope %s\n", (unsigned)d->queue_draws,
                               (unsigned)d->queue_rows, (unsigned)d->queue_cmds, (unsigned)queue_hash(st), (unsigned)st->queue_count,
@@ -3355,6 +3467,11 @@ static const char* library_dump_build(desk* d) {
             sel_gui_rect b = queue_btn_rect(d, qmn, i);
             o = dump_put(d, o, "qbtn %u %d %d %d %d\n", (unsigned)i, (int)b.x,
                                   (int)b.y, (int)b.w, (int)b.h);
+        }
+        o = dump_put(d, o, "qgroups %u\n", (unsigned)(d->qg.valid ? d->qg.headers : 0u));
+        for (i = 0; d->sm_open && d->sm_step == 2 && i < 3u; i++) { /* the open Scope menu's items */
+            sel_gui_rect m = song_menu_item_rect(d, (int32_t)i);
+            o = dump_put(d, o, "qscope %u %d %d %d %d\n", (unsigned)i, (int)m.x, (int)m.y, (int)m.w, (int)m.h);
         }
         for (i = 0; i < st->queue_count && o + 400u < sizeof d->library_dump; i++) {
             if (!queue_row_visible(d, qmn, i)) {
@@ -5868,8 +5985,11 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
         }
         if (d->page == PG_QUEUE && d->queue_page) { /* I258: the Queue page scrolls as the songs list does */
             sel_gui_rect mn = region_rect(d, "main");
-            int32_t max_q16 = queue_max_q16(d, mn, sel_engine_state(d->engine));
-            int64_t v = (int64_t)d->queue_q16 - (int64_t)ev->dy * SCROLL_NOTCH;
+            int32_t max_q16;
+            int64_t v;
+            queue_groups_sync(d);
+            max_q16 = queue_max_q16(d, mn, sel_engine_state(d->engine));
+            v = (int64_t)d->queue_q16 - (int64_t)ev->dy * SCROLL_NOTCH;
             d->queue_q16 = v < 0 ? 0 : (v > max_q16 ? max_q16 : (int32_t)v);
             draw_home(d);
             return 1;
@@ -6483,6 +6603,9 @@ static void desk_close(void* state) {
         if (d->input != NULL) {
             d->host->mem_free(d->host, d->input);
         }
+        free(d->qg.before);
+        free(d->qg.name);
+        free(d->qg.pool);
         art_close(d->art);
         for (i = 0; i < 2 * DESK_SIZES; i++) {
             desk_atlas_free(d->atlas[i / DESK_SIZES][i % DESK_SIZES]);

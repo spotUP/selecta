@@ -4787,6 +4787,10 @@ int sel_engine_song_title(sel_engine* e, const char* ref, char* out, size_t cap)
     return e->lib != NULL && sel_library_song_title(e->lib, ref, out, cap);
 }
 
+int sel_engine_song_group(sel_engine* e, const char* ref, char* out, size_t cap) {
+    return e->lib != NULL && sel_library_song_group(e->lib, ref, out, cap);
+}
+
 int sel_engine_view_row_path(sel_engine* e, uint32_t row, char* out, size_t cap) {
     const sel_view_state* v = &e->view.pub;
     const sel_queue* q = v->source == SEL_VIEW_QUERY ? &e->qview : &e->queue;

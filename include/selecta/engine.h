@@ -427,6 +427,8 @@ int sel_engine_view_row_path(sel_engine* e, uint32_t row, char* out, size_t cap)
 uint32_t sel_engine_library_playlists(sel_engine* e);
 /* DUI-P4-18: the catalogue title of the song at `ref` (path or key) into out; 1 when it has one, else 0 (callers fall back to the file name). */
 int sel_engine_song_title(sel_engine* e, const char* ref, char* out, size_t cap);
+/* I258: the Queue page group of the song at `ref`: its album, else its source, into out; 1 when the song is catalogued, else 0 and out empty. */
+int sel_engine_song_group(sel_engine* e, const char* ref, char* out, size_t cap);
 
 /* Fills `frames` stereo frames: the open song's mix while PLAYING, else
  * silence. Counts calls. Never allocates. */

@@ -245,6 +245,24 @@ static int song_title(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     return SQLITE_OK;
 }
 
+/* I258: the Queue page group of one song (value = key or path): its album, else its source; rows = 1 when it is catalogued. */
+static int song_group(sqlite3* db, const sel_user_op* op, int64_t* rows) {
+    char key[SEL_SONG_KEY_MAX];
+    sqlite3_stmt* st;
+    *rows = 0;
+    if (op->value == NULL || op->out == NULL || op->out_cap < 2u || !sel_song_key_of(op->value, key, sizeof key)) return SQLITE_MISUSE;
+    op->out[0] = '\0';
+    st = prep(db, "SELECT CASE WHEN album IS NOT NULL AND album <> '' THEN album ELSE source END FROM songs WHERE key = ?1");
+    if (st == NULL) return SQLITE_ERROR;
+    sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        snprintf(op->out, op->out_cap, "%s", (const char*)sqlite3_column_text(st, 0));
+        *rows = 1;
+    }
+    sqlite3_finalize(st);
+    return SQLITE_OK;
+}
+
 /* Appends `a` NUL `b` NUL to out; false when it does not fit (leaving room for the final empty string). */
 static int put_pair(char* out, uint32_t cap, uint32_t* used, const char* a, const char* b) {
     size_t la = strlen(a) + 1u, lb = b != NULL ? strlen(b) + 1u : 0u;
@@ -352,6 +370,7 @@ int sel_folder_exec(sqlite3* db, const sel_user_op* op, int64_t* rows, int32_t c
         return *rows >= 0 ? SQLITE_OK : SQLITE_ERROR;
     case SEL_USER_LIBRARY_CLEAR: return library_clear(db, rows);
     case SEL_USER_SONG_TITLE: return song_title(db, op, rows);
+    case SEL_USER_SONG_GROUP: return song_group(db, op, rows);
     case SEL_USER_FOLDER_PLAYLISTS: return folder_playlists(db, op, rows);
     case SEL_USER_PLAYLIST_KEYS: return playlist_keys(db, op, rows);
     case SEL_USER_FOLDER_TREE: return folder_tree(db, op, rows);

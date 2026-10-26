@@ -118,6 +118,7 @@ enum {
     SEL_USER_LIBRARY_COUNT,     /* DUI-P4-18: reply [2] = songs in the catalogue */
     SEL_USER_LIBRARY_CLEAR,     /* DUI-P4-18 (Q16): drops every catalogue row and every playlist, folder, rating, note and other per-song user row; settings stay; reply [2] = songs removed */
     SEL_USER_SONG_TITLE,        /* DUI-P4-18: value = song key or path; out = its catalogue title; reply [2] = 1 when it has one */
+    SEL_USER_SONG_GROUP,        /* I258: value = song key or path; out = its album, else its source; reply [2] = 1 when the song is catalogued */
     SEL_USER_FOLDER_COUNTS,/* I178: reply [2..5] = folders, playlists in folders, playlists, playlist entries */
     SEL_USER_FOLDER_PLAYLISTS, /* I178: at = folder id (0 = all); out = "id\0name\0" pairs then "\0"; reply [2] = playlists */
     SEL_USER_PLAYLIST_KEYS,/* I178: at = playlist id; out = song keys, each NUL terminated, then "\0"; reply [2] = keys */
@@ -388,6 +389,8 @@ int sel_library_clear(sel_library* lib, uint32_t* removed);
 int sel_library_song_total(sel_library* lib, uint32_t* total);
 /* DUI-P4-18: the catalogue title of one song (key or path) into out; 1 when the song has one, else 0 and out empty. */
 int sel_library_song_title(sel_library* lib, const char* ref, char* out, size_t cap);
+/* I258: the group a song sits under in the Queue page: its album, else its source; 1 when the song is catalogued, else 0 and out empty. */
+int sel_library_song_group(sel_library* lib, const char* ref, char* out, size_t cap);
 int sel_library_playlist_add(sel_library* lib, const char* name, uint32_t folder, const char* keys_nl, uint32_t* out_id);
 int sel_library_folder_counts(sel_library* lib, uint32_t* folders, uint32_t* in_folders, uint32_t* playlists, uint32_t* entries);
 /* Fills `out` per the SEL_USER_FOLDER_PLAYLISTS / PLAYLIST_KEYS / FOLDER_TREE formats; *count = rows found. */
