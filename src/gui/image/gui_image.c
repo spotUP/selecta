@@ -7,19 +7,24 @@
 #include <string.h>
 
 void sel_gui_image_scale(const uint32_t* src, int32_t sw, int32_t sh, uint32_t* dst, int32_t dw, int32_t dh) {
-    sel_gui_canvas c;
+    sel_gui_canvas* c; /* ~165 KB (palette and lookup cubes): on the heap, the Amiga task stack is 128 KB */
     sel_gui_rect r;
 
     if (src == NULL || dst == NULL || sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0) {
         return;
     }
+    c = (sel_gui_canvas*)malloc(sizeof *c);
+    if (c == NULL) {
+        return;
+    }
     memset(dst, 0, (size_t)dw * (size_t)dh * sizeof *dst);
-    sel_gui_canvas_init(&c, SEL_GUI_RGBA32, dw, dh, dst);
+    sel_gui_canvas_init(c, SEL_GUI_RGBA32, dw, dh, dst);
     r.x = 0;
     r.y = 0;
     r.w = dw;
     r.h = dh;
-    sel_gui_blit_image(&c, r, src, sw, sh, sw, 1); /* the blit's box filter is the one scaler */
+    sel_gui_blit_image(c, r, src, sw, sh, sw, 1); /* the blit's box filter is the one scaler */
+    free(c);
 }
 
 static void put_le(uint8_t* p, uint32_t v, unsigned n) {

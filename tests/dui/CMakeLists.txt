@@ -116,3 +116,12 @@ target_include_directories(dui_art_thread_amiga_unit PRIVATE ${PROJECT_SOURCE_DI
 target_link_libraries(dui_art_thread_amiga_unit PRIVATE selecta_gui)
 add_test(NAME dui-art-thread-amiga COMMAND dui_art_thread_amiga_unit)
 set_tests_properties(dui-art-thread-amiga PROPERTIES TIMEOUT 60)
+
+# I369: the scaler must run on a small stack (the Amiga task stack is 128 KB); a canvas-sized local crashes it.
+if(NOT SEL_AMIGA)
+  find_package(Threads REQUIRED)
+  add_executable(dui_image_scale_stack_unit image_scale_stack_unit.c)
+  target_link_libraries(dui_image_scale_stack_unit PRIVATE selecta_gui Threads::Threads)
+  add_test(NAME dui-image-scale-stack COMMAND dui_image_scale_stack_unit)
+  set_tests_properties(dui-image-scale-stack PROPERTIES TIMEOUT 60)
+endif()
