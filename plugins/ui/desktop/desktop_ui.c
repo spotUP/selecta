@@ -1195,13 +1195,28 @@ static sel_gui_rect search_field_rect(const desk* d, sel_gui_rect mn) {
 
 /* The Home header (Main.dc.html): the tinted band at the top of the main panel, the search field with its icon, the
  * greeting, the filter chips and the section heading. */
-static void desk_draw_query(desk* d, sel_gui_rect sr) {
+/* The empty-field hint, "Search songs, albums, artists": the chip names after the leading All chip, lowercased, so the
+ * hint names what the page's own chips search (I366). */
+static void search_hint(char* out, size_t cap, const char* const* chips, uint32_t n) {
+    size_t o = (size_t)snprintf(out, cap, "Search");
+    uint32_t k;
+    for (k = 1; k < n && o + 2u < cap; k++) {
+        const char* p = chips[k];
+        o += (size_t)snprintf(out + o, cap - o, "%s ", k == 1u ? "" : ",");
+        for (; *p != '\0' && o + 1u < cap; p++) {
+            out[o++] = (char)((*p >= 'A' && *p <= 'Z') ? *p + ('a' - 'A') : *p);
+        }
+        out[o] = '\0';
+    }
+}
+
+static void desk_draw_query(desk* d, sel_gui_rect sr, const char* hint) {
     sel_gui_rect tb = rect_of(sr.x + lpx(d, 42), sr.y, sr.w - lpx(d, 56), sr.h);
     d->field = sr; /* the field as last drawn, for the stats line */
     if (d->qlen > 0u) { /* the typed query (I239); a caret follows it while the field has the focus */
         draw_text(d, tb, d->query, 0, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
     } else {
-        draw_text(d, tb, "Search songs, composers, playlists", 0, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+        draw_text(d, tb, hint, 0, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
     }
     if (d->focus == (int32_t)d->layout.count) { /* the caret: a thin bar at the text end, also in the empty field */
         const sel_gui_atlas* at = desk_font(d, 0, 14);
@@ -1236,6 +1251,7 @@ static void draw_home_header(desk* d, sel_gui_rect mn, int with_section) {
     sel_gui_rect sr = search_field_rect(d, mn);
     const sel_gui_atlas* chip = desk_font(d, 1, 13);
     int32_t k, ic = lpx(d, 18);
+    char hint[64];
     sel_gui_round_rect(d->canvas, rect_of(mn.x, mn.y, mn.w, 2 * rad), rad, ARGB(d->theme.token[SEL_GUI_TOKEN_HEADER_TINT]));
     sel_gui_gradient(d->canvas, rect_of(mn.x, mn.y + rad, mn.w, lpx(d, HOME_TINT_H) - rad), 1,
                      ARGB(d->theme.token[SEL_GUI_TOKEN_HEADER_TINT]), ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
@@ -1244,7 +1260,8 @@ static void draw_home_header(desk* d, sel_gui_rect mn, int with_section) {
     sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_SEARCH, rect_of(sr.x + lpx(d, 14), sr.y + (sr.h - ic) / 2, ic, ic), ic,
                       muted);
     d->home_parts |= HP_SEARCH_ICON;
-    desk_draw_query(d, sr);
+    search_hint(hint, sizeof hint, home_chip_name, HOME_CHIPS);
+    desk_draw_query(d, sr, hint);
     draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, HOME_GREET_Y), mn.w - 2 * mg, lpx(d, HOME_GREET_H)), "Welcome back", 1, 32, text);
     d->home_parts |= HP_GREETING;
     for (k = 0; k < HOME_CHIPS && chip != NULL; k++) {
@@ -3751,7 +3768,11 @@ static void draw_library(desk* d) {
         }
         for (m = 0; m < LIB_MODES; m++) { /* the mode tabs: the active one in the accent colour */
             sel_gui_rect tr = lib_tab_rect(d, mn, m);
-            draw_text(d, tr, lib_mode_name[m], m == d->lib_mode, 14, m == d->lib_mode ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : muted);
+            if (m == d->lib_mode) { /* the active tab is filled like the selected Home and Search chips (I362) */
+                draw_button(d, tr, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), lib_mode_name[m], 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+            } else {
+                draw_text(d, tr, lib_mode_name[m], 0, 14, muted);
+            }
         }
         if (lib_view_on(d, st) && d->lib_mode == 2u && st->view->drill_n > 0u) {
             char crumb[160];
@@ -4031,11 +4052,13 @@ static void draw_search(desk* d) {
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     uint32_t k, shown = 0;
     int32_t y;
+    char hint[64];
     const sel_view_state* v = st->view != NULL && st->view->source == SEL_VIEW_SEARCH ? st->view : NULL;
     sel_gui_clip_push(d->canvas, mn);
     sel_gui_round_rect(d->canvas, sr, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
     sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_SEARCH, rect_of(sr.x + lpx(d, 14), sr.y + (sr.h - ic) / 2, ic, ic), ic, muted);
-    desk_draw_query(d, sr);
+    search_hint(hint, sizeof hint, search_facet_name, SEARCH_FACETS);
+    desk_draw_query(d, sr, hint);
     for (k = 0; k < SEARCH_FACETS; k++) { /* facet chips: the active one filled with the accent */
         sel_gui_rect cr = search_facet_rect(d, mn, k);
         int on = k == d->search_facet;
