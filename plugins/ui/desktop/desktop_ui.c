@@ -1046,7 +1046,8 @@ static const int32_t g_tile_steps[] = {96, 120, 144, 176, 208}; /* the tile size
  * greeting, the filter chips, the section heading, then the tile grid. */
 enum { HOME_MARGIN = 24, HOME_SEARCH_MAX = 360, HOME_GREET_Y = 72,
        HOME_GREET_H = 40, HOME_CHIPS_Y = 124, HOME_CHIP_H = 32, HOME_SECTION_Y = 172, HOME_SECTION_H = 32,
-       HOME_TILES_Y = 212, HOME_TILE_GAP = 4, HOME_TINT_H = 300, HOME_PLAY_SIZE = 40, HOME_PLAY_INSET = 8,
+       HOME_SHADOW_R = 8, HOME_HEAD_GAP = 8, /* tile shadow radius; clear space between a section heading and that shadow (I449) */
+       HOME_TILES_Y = HOME_SECTION_Y + HOME_SECTION_H + HOME_SHADOW_R + HOME_HEAD_GAP, HOME_TILE_GAP = 4, HOME_TINT_H = 300, HOME_PLAY_SIZE = 40, HOME_PLAY_INSET = 8,
        HOME_TILE_TEXT_GAP = 8, HOME_TITLE_H = 18, HOME_META_H = 16, HOME_BRAND = 28 };
 
 /* Where tile card i sits (DUI-P2-6, Main.dc.html): a grid of cards, each the art plus the tile padding token on every
@@ -1415,7 +1416,7 @@ static void draw_home_header(desk* d, sel_gui_rect mn, int with_section) {
 /* ---- Home shelves (DUI-P4-2): the HOME view source (engine) as rows of tiles. A heading row starts a shelf; the
  * song and album rows after it are its tiles; a row without a key (the "new this week" count line) is plain text.
  * Each shelf scrolls horizontally on its own. ---- */
-enum { SHELF_MAX = 6, SHELF_HEAD_H = 40, SHELF_GAP = 16, SHELF_WINDOW = 32, SHELF_NONE = 0x7FFFFFFF };
+enum { SHELF_MAX = 6, SHELF_HEAD_H = HOME_SECTION_H + HOME_SHADOW_R + HOME_HEAD_GAP, SHELF_GAP = 16, SHELF_WINDOW = 32, SHELF_NONE = 0x7FFFFFFF };
 
 typedef struct shelf {
     uint32_t head;  /* index of the heading in the view window */
@@ -3673,6 +3674,17 @@ static const char* library_dump_build(desk* d) {
     }
     o = dump_put(d, o, "\n%s", d->flow_snaps);
     o = dump_put(d, o, "grid box %d %d %d %d\n", (int)d->grid_box.x, (int)d->grid_box.y, (int)d->grid_box.w, (int)d->grid_box.h);
+    {
+        /* I449: the first section heading's bottom edge and the top of the first tile's shadow (the cover top less the shadow
+         * radius), plus the spacing token that gap must reach; shelf mode and the flat tile grid lay out differently. */
+        sel_gui_rect mn = region_rect(d, "main");
+        int shelves = home_shelf_mode(sel_engine_state(d->engine));
+        sel_gui_rect t0 = shelves ? shelf_tile_rect(d, 0u, 0u) : tile_rect(d, 0u);
+        int32_t pad0 = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
+        int32_t head_bottom = (shelves ? shelf_top(d, 0u) : mn.y + lpx(d, HOME_SECTION_Y)) + lpx(d, HOME_SECTION_H);
+        o = dump_put(d, o, "home head bottom %d shadow top %d token %d\n", (int)head_bottom, (int)(t0.y + pad0 - lpx(d, HOME_SHADOW_R)),
+                     (int)lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]));
+    }
     if (st->stats != NULL) {
         sel_gui_rect sr = lib_stats_rect(d, panel_rect(d, "main"), st);
         o = dump_put(d, o, "stats rect %d %d %d %d\n", (int)sr.x, (int)sr.y, (int)sr.w, (int)sr.h);
@@ -7277,7 +7289,7 @@ static int desk_make_canvas(desk* d, const char* size, int32_t def_w, int32_t de
         sel_gui_set_palette(d->canvas, pal, 0u, 256u);
     }
     if (sel_uim_budget_allows(&d->budget, SEL_UIM_FX_SHADOW)) {
-        sel_gui_shadow_bake(&d->shadow, (uint32_t)lpx(d, 8), 0x000000u, 96u);
+        sel_gui_shadow_bake(&d->shadow, (uint32_t)lpx(d, HOME_SHADOW_R), 0x000000u, 96u);
         d->shadow_ready = 1;
     }
     sel_uim_layout_compute(&d->layout, w / (unsigned)d->scale, h / (unsigned)d->scale);
@@ -7321,7 +7333,7 @@ static int desk_set_scale(desk* d, int32_t scale) {
     d->atlas_rebuilds++;
     desk_build_icons(d);
     if (d->shadow_ready) {
-        sel_gui_shadow_bake(&d->shadow, (uint32_t)lpx(d, 8), 0x000000u, 96u);
+        sel_gui_shadow_bake(&d->shadow, (uint32_t)lpx(d, HOME_SHADOW_R), 0x000000u, 96u);
     }
     return 1;
 }
