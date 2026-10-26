@@ -273,3 +273,32 @@ endif()
 if(NOT wn_w1 EQUAL wn_w0)
   message(FATAL_ERROR "one Home wheel notch redrew widgets: ${wn_w0} before, ${wn_w1} after")
 endif()
+
+# ---- I370 (DUI-P4-2): a small library fills Home from the library and hides the empty shelves ----
+# A copy of the fixture db cut to 4 songs with no play history: Recently played, Jump back in and New this week are all
+# empty, so the engine's fill shelf "From your library" is the only shelf, holding the 4 songs newest-added first. The
+# sentinel is the shelf itself (heading text and the 4 tile keys in the dump come only from the fill path); the other
+# three headings are asserted absent. Revert check: without the fill the dump has no shelf and shelves=0.
+set(db3 "${WORK}/library3.db")
+file(COPY_FILE "${db}" "${db3}")
+execute_process(COMMAND "${SQLITE3}" "${db3}" "PRAGMA trusted_schema = 1; DELETE FROM history; DELETE FROM songs WHERE id > 4"
+  RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "cutting the library to 4 songs failed: ${err}")
+endif()
+file(REMOVE_RECURSE "${WORK}/cfg")
+file(WRITE "${WORK}/in.txt" "wait 1\n")
+dui_run(small --db "${db3}" --ui desktop --backend mem --view home --canvas 700x600 --clock fixed --stats --input "${WORK}/in.txt")
+if(NOT "${small}" MATCHES "ui_home id=desktop shelves=1 ")
+  message(FATAL_ERROR "a 4-song library must show exactly one shelf (the fill), empty shelves hidden, in:\n${small}")
+endif()
+if(NOT "${small}" MATCHES "shelf 0 tile 0 From your library\\|")
+  message(FATAL_ERROR "the fill shelf heading is missing in:\n${small}")
+endif()
+shelf_keys(fill "${small}" 0)
+expect_eq("fill shelf holds the 4 songs, newest added first" "${fill}" "${WORK}/a.mod;fixture:3;fixture:2;fixture:1")
+foreach(empty "Recently played" "Jump back in" "New this week")
+  if("${small}" MATCHES "${empty}")
+    message(FATAL_ERROR "empty shelf '${empty}' was drawn for a 4-song library:\n${small}")
+  endif()
+endforeach()

@@ -310,12 +310,16 @@ static int home_list(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t
     return SQLITE_OK;
 }
 
+#define HOME_FILL_FROM \
+    " FROM songs WHERE key NOT IN (SELECT key FROM history) AND added < CAST(strftime('%s', 'now') AS INTEGER) - 604800"
+
 /* I191: the home view text. */
 static int home_text(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     uint32_t used = 0;
     sqlite3_stmt* st = NULL;
     int rc;
     long fresh = 0;
+    int fill;
     char tagged[80];
 
     op->out[0] = '\0';
@@ -354,6 +358,20 @@ static int home_text(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     if (fresh > 0) {
         snprintf(tagged, sizeof tagged, "%ld %ld new songs on Modland", fresh, fresh);
         home_put(op, &used, rows, "C", tagged);
+    }
+    /* I370 (DUI-P4-2): a small library leaves the shelves above nearly empty, so the library fills Home: the newest
+     * songs that were never played and are not on New this week, under their own heading. No such song: no heading, so no empty shelf. */
+    rc = sqlite3_prepare_v2(db, "SELECT EXISTS(SELECT 1" HOME_FILL_FROM ")", -1, &st, NULL);
+    if (rc != SQLITE_OK) return rc;
+    fill = sqlite3_step(st) == SQLITE_ROW && sqlite3_column_int(st, 0) != 0;
+    sqlite3_finalize(st);
+    st = NULL;
+    if (fill) {
+        home_put(op, &used, rows, "H", "From your library");
+        rc = home_list(db, op, &used, rows,
+                       "SELECT COALESCE(name, key), artist, key, 0" HOME_FILL_FROM
+                       " ORDER BY added DESC, key LIMIT ?1");
+        if (rc != SQLITE_OK) return rc;
     }
     return SQLITE_OK;
 }

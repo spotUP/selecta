@@ -4,7 +4,7 @@
 # history.sel writes a finished play and a skip through the engine. sqlite3 then seeds an album on the skipped song, a
 # newer play and the modland "new this week" count a changelog sync stores. The real selecta binary opens that file and
 # key H shows the home view. home_rows= must equal the sum counted from the database here with separate queries:
-# distinct songs played + albums with an unfinished play + the new-this-week count.
+# distinct songs played + albums with an unfinished play + the new-this-week count + the never-played library songs.
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
 set(db "${WORK}/h.db")
@@ -33,9 +33,11 @@ string(CONCAT jumpq
   "AND NOT EXISTS (SELECT 1 FROM history f WHERE f.key = h.key AND f.skipped = 0);")
 sql("${jumpq}" jump)
 sql("SELECT value FROM meta WHERE key = 'modland.new_this_week';" fresh)
-math(EXPR want "${recent} + ${jump} + ${fresh}")
-if(NOT recent EQUAL 2 OR NOT jump EQUAL 1 OR NOT fresh EQUAL 7)
-  message(FATAL_ERROR "seed counts recent=${recent} jump=${jump} new=${fresh}, want 2 1 7")
+# I370: the library fill shelf lists the never-played songs older than a week (at most 10).
+sql("SELECT COUNT(*) FROM (SELECT 1 FROM songs WHERE key NOT IN (SELECT key FROM history) AND added < CAST(strftime('%s', 'now') AS INTEGER) - 604800 LIMIT 10);" fill)
+math(EXPR want "${recent} + ${jump} + ${fresh} + ${fill}")
+if(NOT recent EQUAL 2 OR NOT jump EQUAL 1 OR NOT fresh EQUAL 7 OR NOT fill EQUAL 3)
+  message(FATAL_ERROR "seed counts recent=${recent} jump=${jump} new=${fresh} fill=${fill}, want 2 1 7 3")
 endif()
 execute_process(
   COMMAND "${SELECTA}" --output null --size 80x25 --start-dir "${CWD}" --db "${db}"
