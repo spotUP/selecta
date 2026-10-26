@@ -77,6 +77,22 @@ static void test_id3(void) {
         CHECK(!sel_id3_cover(t, n, NULL, 0, 64, &c) && c.work_need == f1 + 1);
         CHECK(sel_id3_cover(t, n, work, sizeof work, 64, &c) && c.len == 3 && c.data[0] == 0xFF && c.data[1] == 0xE0 && c.data[2] == 0x11);
     }
+    /* a later unsynchronised frame must not overwrite the front cover already decoded into the work buffer */
+    {
+        const uint8_t raw[3] = {0xFF, 0xE0, 0x11};
+        uint8_t uns[64];
+        n = header(t, 4, 0, 0);
+        f1 = apic(b, 3, raw, 3);
+        memcpy(uns, b, f1 - 3);
+        uns[f1 - 3] = 0xFF; uns[f1 - 2] = 0x00; uns[f1 - 1] = 0xE0; uns[f1] = 0x11;
+        n += frame(t + n, 4, 0x02, uns, f1 + 1);
+        f1 = apic(b, 4, raw, 3);
+        memcpy(uns, b, f1 - 3);
+        uns[f1 - 3] = 0xFF; uns[f1 - 2] = 0x00; uns[f1 - 1] = 0xE0; uns[f1] = 0x22;
+        n += frame(t + n, 4, 0x02, uns, f1 + 1);
+        put_ss(t + 6, n - 10);
+        CHECK(sel_id3_cover(t, n, work, sizeof work, 64, &c) && c.type == 3 && c.len == 3 && c.data[2] == 0x11);
+    }
     /* v2.3 whole-tag unsynchronisation flag */
     {
         const uint8_t raw[2] = {0xFF, 0xE0};

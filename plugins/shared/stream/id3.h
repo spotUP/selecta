@@ -279,7 +279,7 @@ static inline int sel_id3_cover(const uint8_t* d, size_t size, uint8_t* work, si
     if ((hflags & 0x40u) != 0u && pos + 4u <= end) { /* extended header */
         pos += ver == 4u ? sel_id3_syncsafe(base + pos) : 4u + sel_id3_be32(base + pos);
     }
-    while (pos + 10u <= end && base[pos] != 0u) {
+    while (pos + 10u <= end && base[pos] != 0u && !(c->data != NULL && c->type == 3)) { /* a front cover ends the search */
         const uint8_t* f = base + pos;
         size_t len = ver == 4u ? sel_id3_syncsafe(f + 4) : sel_id3_be32(f + 4);
         unsigned skip = ver == 4u ? (f[9] & 0x0Cu) : (f[9] & 0xC0u); /* compressed or encrypted */
@@ -291,7 +291,11 @@ static inline int sel_id3_cover(const uint8_t* d, size_t size, uint8_t* work, si
             size_t n = len;
             int ok = 1;
             if (ver == 4u && ((hflags & 0x80u) != 0u || (f[9] & 0x02u) != 0u) && n > 0u) {
-                if (work == NULL || n > work_cap) {
+                if (c->data != NULL && c->data >= work && c->data < work + work_cap) {
+                    /* the picture kept so far lives in work; decoding this frame would overwrite it.
+                       Front preference is lost only when a non-front unsynchronised picture comes first. */
+                    ok = 0;
+                } else if (work == NULL || n > work_cap) {
                     if (n > c->work_need) {
                         c->work_need = n;
                     }
