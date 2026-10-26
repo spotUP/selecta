@@ -209,6 +209,7 @@ typedef struct desk {
     sel_gui_rect np_title;      /* the Now Playing title and artist lines, w 0 = not drawn: a song row of the song menu (I372) */
     sel_gui_rect np_like, np_rate[5]; /* click targets of the like button and the five rating marks */
     int32_t np_inset_l, np_inset_r; /* gap between the Now Playing panel edge and its content, left and right: one spacing token (I404) */
+    sel_gui_rect np_art, np_panel; /* the Now Playing cover and the panel it spans, for the dump (I443) */
     uint32_t np_msg_lines;            /* lines of the song message the last Now Playing draw laid out (I290) */
     int32_t np_liked;                 /* 1 when the last Now Playing draw showed the heart as liked (I306) */
     int32_t np_rating;                /* filled rating marks of the last Now Playing draw (I288) */
@@ -3667,6 +3668,8 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "nowplaying inset left %d right %d token %d\nnowplaying draws %u pairs %u genart %u\nlyrics line %d at %u\nmessage lines %u\n",
                           (int)d->np_inset_l, (int)d->np_inset_r, (int)lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]),
                           (unsigned)d->np_draws, (unsigned)d->np_rows, (unsigned)d->np_genart, (int)st->lyric_line, (unsigned)st->song.position_ms, (unsigned)d->np_msg_lines);
+    o = dump_put(d, o, "nowplaying art %d %d %d %d panel %d %d %d %d\n", (int)d->np_art.x, (int)d->np_art.y, (int)d->np_art.w,
+                          (int)d->np_art.h, (int)d->np_panel.x, (int)d->np_panel.y, (int)d->np_panel.w, (int)d->np_panel.h);
     o = dump_put(d, o, "rating %d liked %d mark %d %d %d %d step %d\n", (int)d->np_rating, (int)d->np_liked,
                           (int)d->np_rate[0].x, (int)d->np_rate[0].y, (int)d->np_rate[0].w, (int)d->np_rate[0].h,
                           (int)(d->np_rate[1].x - d->np_rate[0].x));
@@ -5270,10 +5273,12 @@ static void draw_nowplaying(desk* d) {
         return;
     }
     draw_panel(d, "detail");
-    /* The artwork is capped by the panel height but starts on the same inset as every other line; the text lines keep the
-     * full width between the two insets (I404). */
-    asz = side > dt.h / 3 ? dt.h / 3 : side;
+    /* The artwork spans the full content width between the two insets and stays square, so its height follows the panel
+     * width (I443); the text lines below share the same insets (I404). */
+    asz = side;
     ar = rect_of(pn.x + sp, dt.y + 2 * sp, asz, asz);
+    d->np_art = ar;
+    d->np_panel = pn;
     sel_gui_genart_draw(d->canvas, ar, f->format, sel_gui_str_hash(f->title));
     d->np_genart++;
     /* The header tint is the artwork's own average colour blended into the header token, fading to the panel colour. The
