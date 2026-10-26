@@ -3784,6 +3784,16 @@ static const char* library_dump_build(desk* d) {
  * token table yet: tile and cover flow art are these constants). The art is the generated tile of the Home shelves. */
 enum { GRID_ART = 160, GRID_GAP = 16, FLOW_ART = 240 };
 
+/* Cover flow stack constants (I391): FLOW_SIDES neighbours per side; neighbour k sits k/FLOW_STEP_DIV of the centre size from the
+ * centre line and is k/FLOW_SHRINK_DIV smaller. Each neighbour then shows (1/FLOW_STEP_DIV - 1/(2*FLOW_SHRINK_DIV)) of the centre
+ * size of its own art beside the cover in front of it (0.15: 51 px at a 340 px centre). The stack width follows from the same
+ * two functions, so the width fit is exact. */
+enum { FLOW_SIDES = 3, FLOW_STEP_DIV = 4, FLOW_SHRINK_DIV = 5 };
+static int32_t flow_off(int32_t big, int32_t k) { return k * big / FLOW_STEP_DIV; }
+static int32_t flow_size(int32_t big, int32_t k) { return big - k * big / FLOW_SHRINK_DIV; }
+/* Width of the whole stack at centre size big: the two outermost covers' outer edges. */
+static int32_t flow_stack_w(int32_t big) { return 2 * (flow_off(big, FLOW_SIDES) + flow_size(big, FLOW_SIDES) / 2); }
+
 /* Smallest rectangle holding a and b; a zero-width a is "nothing yet" (the tile boxes of the grid and the cover flow, I379, I382). */
 static sel_gui_rect rect_union(sel_gui_rect a, sel_gui_rect b) {
     sel_gui_rect u;
@@ -3894,13 +3904,13 @@ static void draw_lib_flow(desk* d, sel_gui_rect mn) {
     int32_t ref = lpx(d, FLOW_ART), avail = right - mn.x - 2 * mg, step, cx = (mn.x + right) / 2, k, shift = 0;
     int32_t capt = lpx(d, HOME_TILE_TEXT_GAP + HOME_TITLE_H + HOME_META_H); /* the caption block under the centre cover */
     int32_t top = mn.y + lpx(d, LIB_LIST_Y) + mg, area_h = mn.y + mn.h - mg - top; /* free height: below the tab row to the panel bottom */
-    int32_t full = 2 * (ref * 4 / 3 + (ref - 3 * ref / 5) / 2); /* width of the whole stack at the reference size: two outer covers at 2 steps */
+    int32_t full = flow_stack_w(ref); /* width of the whole stack at the reference size */
     int32_t fit_w = ref * (avail > 0 ? avail : 0) / full, fit_h = area_h - capt; /* the centre cover that fills the width / the height */
     int32_t big = fit_w < fit_h ? fit_w : fit_h, y0;
     big = big > lpx(d, 48) ? big : lpx(d, 48); /* the floor; the cover size follows the free area (I382, I391) */
     y0 = top + (area_h - (big + capt)) / 2;    /* the stack and its caption centred vertically in the free area */
     d->flow_area = rect_of(mn.x + mg, top, avail, area_h);
-    step = big * 2 / 3;
+    step = flow_off(big, 1);
     int32_t gl = sel_gui_tween_value(&d->tl, ANIM_KEY_FLOW, 65536);
     uint32_t side;
     const sel_view_row* cr = v->cursor >= v->window_start && v->cursor - v->window_start < v->row_n ? &v->rows[v->cursor - v->window_start] : NULL;
@@ -3911,9 +3921,9 @@ static void draw_lib_flow(desk* d, sel_gui_rect mn) {
     d->flow_centre = v->cursor;
     d->grid_box = rect_of(0, 0, 0, 0);
     d->flow_cover = rect_of(0, 0, 0, 0);
-    for (k = 3; k >= 0; k--) {
+    for (k = FLOW_SIDES; k >= 0; k--) {
         for (side = 0; side < 2u; side++) {
-            int32_t sgn = side == 0u ? -1 : 1, sz = big - k * big / 5, off = k == 0 ? 0 : (k == 3 ? step * 2 : k == 2 ? step * 3 / 2 : step);
+            int32_t sgn = side == 0u ? -1 : 1, sz = flow_size(big, k), off = flow_off(big, k);
             int64_t g = (int64_t)v->cursor + sgn * k;
             sel_gui_rect r;
             const sel_view_row* row;
