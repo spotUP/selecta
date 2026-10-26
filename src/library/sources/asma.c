@@ -6,7 +6,7 @@
 #include "modland_net.h"
 #include "sync_host.h"
 #include "asma_sync.h"
-#include "url_path.h"
+#include "source/url_path.h"
 
 #include <stdio.h>
 #include <string.h>

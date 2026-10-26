@@ -2,7 +2,7 @@
 
 #include "dir.h"
 #include "playlist/playlist.h"
-#include "sources/archive.h"
+#include "archive/archive.h"
 
 #include <stdio.h>
 #include <string.h>

@@ -1,5 +1,5 @@
 /* I218d: ISO-8859-1 <-> UTF-8 conversion (src/library/latin1.c). */
-#include "latin1.h"
+#include "source/latin1.h"
 
 #include <stdio.h>
 #include <string.h>

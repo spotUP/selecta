@@ -1,7 +1,7 @@
 /* Plugin metadata text to engine UTF-8, declared in meta_utf8.h. */
 #include "meta_utf8.h"
 
-#include "latin1.h"
+#include "source/latin1.h"
 
 #include <string.h>
 

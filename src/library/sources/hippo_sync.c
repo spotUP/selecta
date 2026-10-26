@@ -1,7 +1,7 @@
 /* See hippo_sync.h. No float, no allocation after the start (blocks from the host). */
 #include "hippo_sync.h"
 
-#include "../latin1.h"
+#include "source/latin1.h"
 #include "../local.h"
 #include "../source.h"
 #include "hippo_prg.h"

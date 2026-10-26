@@ -4,7 +4,7 @@
 #include "../cache.h"
 #include "../local.h"
 #include "../net/http.h"
-#include "archive.h"
+#include "archive/archive.h"
 #include "sync_net.h"
 
 #include <selecta/engine.h>

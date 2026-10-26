@@ -2,7 +2,7 @@
  * src/library/dir.h. Paths arrive as UTF-8 and go to DOS as Latin-1; names come back as UTF-8 (I218d). The FileInfoBlock is allocated with AllocDosObject so it
  * is longword aligned as Examine requires. */
 #include "../../library/dir.h"
-#include "../../library/latin1.h"
+#include "source/latin1.h"
 #include "dos_name.h"
 
 #include <dos/dos.h>

@@ -4,10 +4,10 @@
 #include "local_source.h"
 
 #include "../source.h"
-#include "archive.h"
+#include "archive/archive.h"
 #include "dir.h"
 #include "local.h"
-#include "../latin1.h"
+#include "source/latin1.h"
 #include "../stream_open.h"
 
 #include "../../../plugins/shared/stream/flac_meta.h"

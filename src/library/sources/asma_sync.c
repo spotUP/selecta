@@ -3,7 +3,7 @@
 
 #include "../local.h"
 #include "../source.h"
-#include "json_scan.h"
+#include "source/json_scan.h"
 #include "sync_util.h"
 
 #include <stdio.h>

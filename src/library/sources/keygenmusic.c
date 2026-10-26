@@ -8,7 +8,7 @@
 #include "modland_net.h"
 #include "sync_host.h"
 #include "keygenmusic_sync.h"
-#include "url_path.h"
+#include "source/url_path.h"
 
 #include <string.h>
 

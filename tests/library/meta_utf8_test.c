@@ -1,7 +1,7 @@
 /* I444: a Latin-1 composer name from a module ("Andr\xE9 Eickler", Face The Music rock.ftm) reached the library
  * and the screen as raw bytes and drew as "Andr" plus a box. Plugin metadata text is now converted to UTF-8
  * where it enters the host; valid UTF-8 passes through untouched. */
-#include "latin1.h"
+#include "source/latin1.h"
 #include "meta_utf8.h"
 
 #include <stdio.h>

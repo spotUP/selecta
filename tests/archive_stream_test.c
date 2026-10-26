@@ -1,7 +1,7 @@
 /* I161c: sel_archive_extract_file streams a zip member to a file. The zip is written here with miniz (an 8 MB
  * compressible member plus a decoy), the output must be byte-identical and miniz must never hold more than a
  * small fraction of the member on the host heap. */
-#include "sources/archive.h"
+#include "archive/archive.h"
 
 #include <miniz.h>
 #include <stdio.h>

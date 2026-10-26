@@ -3,7 +3,7 @@
 #ifndef SELECTA_CORE_AMIGA_DOS_NAME_H
 #define SELECTA_CORE_AMIGA_DOS_NAME_H
 
-#include "../../library/latin1.h"
+#include "source/latin1.h"
 
 #include <stddef.h>
 

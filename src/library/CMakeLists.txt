@@ -23,7 +23,7 @@ target_include_directories(selecta_library PUBLIC ${PROJECT_SOURCE_DIR}/include 
 # SQLite, schema v1 with migrations, the memsys5 heap and the worker with its SPSC queues. The
 # Amiga build runs requests on the caller's task until the library subtask (Phase 12).
 add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/sqlite ${CMAKE_BINARY_DIR}/third_party/sqlite)
-target_sources(selecta_library PRIVATE db/amiga_vfs.c db/db.c db/index.c db/schema.c db/worker.c db/search.c db/scan.c db/user.c db/folders.c db/fetch.c db/rating_push.c db/vote_push.c db/lyrics_fetch.c db/job.c db/genre.c db/art.c db/songdb.c db/similar.c db/duplicates.c devilbox_loudness.c devilbox_lyrics.c stream_open.c record_name.c latin1.c meta_utf8.c radio.c composer.c xxh32.c lyrics.c query.c regex.c share.c)
+target_sources(selecta_library PRIVATE db/amiga_vfs.c db/db.c db/index.c db/schema.c db/worker.c db/search.c db/scan.c db/user.c db/folders.c db/fetch.c db/rating_push.c db/vote_push.c db/lyrics_fetch.c db/job.c db/genre.c db/art.c db/songdb.c db/similar.c db/duplicates.c devilbox_loudness.c devilbox_lyrics.c stream_open.c record_name.c meta_utf8.c radio.c composer.c xxh32.c lyrics.c query.c regex.c share.c)
 target_include_directories(selecta_library PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/db)
 target_link_libraries(selecta_library PUBLIC selecta_sqlite)
 if(SEL_AMIGA)
@@ -43,7 +43,7 @@ endif()
 
 # Sources (plan Phase 4, I157, I158): the sel_source interface and registry, song keys, the Modland
 # format table and the local source (scan over sel_browse).
-target_sources(selecta_library PRIVATE source.c formats_table.c sources/local.c sources/modland.c sources/modland_sync.c sources/modland_net.c sources/hvsc.c sources/hvsc_sync.c sources/hvsc_net.c sources/asma.c sources/asma_sync.c sources/asma_net.c sources/sndh.c sources/sndh_sync.c sources/sndh_net.c sources/zxart.c sources/zxart_sync.c sources/zxart_net.c sources/keygenmusic.c sources/keygenmusic_sync.c sources/keygenmusic_net.c sources/json_scan.c sources/url_path.c sources/sync_net.c sources/sync_services.c sources/hippo.c sources/hippo_sync.c sources/hippo_prg.c sources/hippo_publish.c sources/archive.c sources/archive_lzx.c sources/archive_pp20.c ${SEL_WATCH_SOURCE})
+target_sources(selecta_library PRIVATE source.c formats_table.c sources/local.c sources/modland.c sources/modland_sync.c sources/modland_net.c sources/hvsc.c sources/hvsc_sync.c sources/hvsc_net.c sources/asma.c sources/asma_sync.c sources/asma_net.c sources/sndh.c sources/sndh_sync.c sources/sndh_net.c sources/zxart.c sources/zxart_sync.c sources/zxart_net.c sources/keygenmusic.c sources/keygenmusic_sync.c sources/keygenmusic_net.c  sources/sync_net.c sources/sync_services.c sources/hippo.c sources/hippo_sync.c sources/hippo_prg.c sources/hippo_publish.c ${SEL_WATCH_SOURCE})
 if(APPLE)
   target_link_libraries(selecta_library PUBLIC "-framework CoreServices")
 endif()
@@ -77,4 +77,4 @@ target_include_directories(selecta_archive PUBLIC ${PROJECT_SOURCE_DIR}/third_pa
 # Third-party source: no project warning flags. miniz without stdio and time (memory in, memory out).
 target_compile_options(selecta_archive PRIVATE -w)
 target_compile_definitions(selecta_archive PUBLIC MINIZ_NO_ZLIB_COMPATIBLE_NAMES)
-target_link_libraries(selecta_library PUBLIC selecta_archive)
+target_link_libraries(selecta_library PUBLIC selecta_archive selecta_shared_archive selecta_shared_source)

@@ -3,9 +3,9 @@
 
 #include "../local.h"
 #include "../source.h"
-#include "json_scan.h"
+#include "source/json_scan.h"
 #include "sync_util.h"
-#include "url_path.h"
+#include "source/url_path.h"
 
 #include <ctype.h>
 #include <stdlib.h>
