@@ -249,6 +249,16 @@ if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
   set_tests_properties(amiga-library-opens-on-low-file-descriptor PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 120)
 endif()
 
+# I376: the bottom-of-stack canary on the 68k binary: a normal run is clean, an overflow prints the error line.
+set(SEL_AMIGA_STACK_CANARY "${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta-cli/selecta-stack-canary-test")
+if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
+  add_test(NAME amiga-stack-canary
+    COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DCANARY_TEST=${SEL_AMIGA_STACK_CANARY}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_stack_canary.cmake"
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+  set_tests_properties(amiga-stack-canary PROPERTIES FIXTURES_REQUIRED amiga_cli RESOURCE_LOCK vamos TIMEOUT 120)
+endif()
+
 # I287: selecta (68k) overrides libnix's Ctrl-C exit so the desktop UI closes its RTG screen.
 set(SEL_AMIGA_SELECTA "${PROJECT_SOURCE_DIR}/build/amiga/apps/selecta/CMakeFiles/selecta.dir/main.c.obj")
 find_program(SEL_AMIGA_NM m68k-amigaos-nm HINTS "$ENV{HOME}/opt/amiga/bin" /opt/amiga/bin)

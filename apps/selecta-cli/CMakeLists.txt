@@ -23,4 +23,7 @@ if(SEL_AMIGA)
   target_include_directories(selecta-dbcreate-test PRIVATE ../common)
   target_link_libraries(selecta-dbcreate-test PRIVATE selecta_library selecta_registry)
   target_link_options(selecta-dbcreate-test PRIVATE -Wl,--wrap=lseek -Wl,--wrap=ftruncate)
+  # I376 (tests/amiga/run_stack_canary.cmake): overflows a small swapped stack on purpose.
+  add_executable(selecta-stack-canary-test ../../tests/amiga/stack_canary_test.c ../common/amiga_start.c ../common/stack_canary.c)
+  target_include_directories(selecta-stack-canary-test PRIVATE ../common)
 endif()
