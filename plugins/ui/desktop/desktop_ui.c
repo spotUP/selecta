@@ -3224,7 +3224,7 @@ static const char* library_dump_build(desk* d) {
                               (int)d->hover_box.w, (int)d->hover_box.h, (unsigned)d->hover_fill,
                               (unsigned)ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_HOVER]), (unsigned)d->hover_paints, (int)d->hover_tile);
         o = dump_put(d, o, "hover_ink=%d\n", (int)d->ink_in);
-#ifdef SELECTA_DESKTOP_SDL
+#if defined(SELECTA_DESKTOP_SDL) && !defined(SELECTA_DESKTOP_RTG)
         if (d->sdl != NULL) { /* I291: input to present, and the cost of a wheel notch, in microseconds */
             desk_sdl_lat lt;
             desk_sdl_latency(d->sdl, &lt);
