@@ -2,7 +2,7 @@
 #include "json_scan.h"
 
 static int utf8_put(char* out, size_t n, size_t* used, unsigned long cp) {
-    char b[4];
+    char b[4] = {0, 0, 0, 0}; /* GCC -O3 cannot see that only the first len bytes are read */
     size_t len, i;
 
     if (cp < 0x80u) {

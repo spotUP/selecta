@@ -14,7 +14,7 @@ typedef struct sel_id3 {
 
 /* Appends code point `cp` as UTF-8 at dst[*o], keeping one byte for the terminator. */
 static inline void sel_id3_put(char* dst, size_t cap, size_t* o, uint32_t cp) {
-    uint8_t b[4];
+    uint8_t b[4] = {0, 0, 0, 0}; /* GCC -O3 cannot see that only the first n bytes are read */
     size_t n, i;
     if (cp < 0x80u) {
         b[0] = (uint8_t)cp;
