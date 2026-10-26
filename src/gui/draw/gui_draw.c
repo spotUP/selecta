@@ -378,14 +378,79 @@ static sel_gui_rect cur_clip(const sel_gui_canvas* c, sel_gui_rect r) {
 
 /* ---- primitives ---- */
 
+/* Span fill context: one colour written along row spans. An opaque colour is resolved to its pixel value (palette
+ * index on INDEX8) once, lazily on the first span so an empty clip marks no palette entry as used, and stored with
+ * memset or a word loop. A translucent colour blends per pixel, but on INDEX8 each distinct destination byte is
+ * resolved once through a 256 entry table. The output equals put() pixel for pixel. */
+typedef struct {
+    sel_gui_canvas* c;
+    uint32_t argb;
+    int solid, ready;
+    uint32_t val;
+    uint16_t lut[256];
+} fill_ctx;
+
+static void fill_ctx_init(fill_ctx* f, sel_gui_canvas* c, uint32_t argb) {
+    f->c = c;
+    f->argb = argb;
+    f->solid = (argb >> 24) == 255u;
+    f->ready = 0;
+    f->val = 0u;
+    if (!f->solid && (argb >> 24) != 0u && c->format == SEL_GUI_INDEX8) {
+        memset(f->lut, 0xFF, sizeof f->lut);
+    }
+}
+
+/* Fills the in-bounds, already clipped pixels [x0, x1) of row y. */
+static void fill_span(fill_ctx* f, int32_t x0, int32_t x1, int32_t y) {
+    sel_gui_canvas* c = f->c;
+    int32_t x;
+    if (x1 <= x0 || (f->argb >> 24) == 0u) {
+        return;
+    }
+    if (f->solid) {
+        if (!f->ready) {
+            f->val = c->format == SEL_GUI_RGBA32
+                         ? (f->argb | 0xFF000000u)
+                         : cube_index(c, (f->argb >> 16) & 255u, (f->argb >> 8) & 255u, f->argb & 255u);
+            f->ready = 1;
+        }
+        if (c->format == SEL_GUI_RGBA32) {
+            uint32_t* p = px32(c, x0, y);
+            for (x = x0; x < x1; x++) {
+                *p++ = f->val;
+            }
+        } else {
+            memset(px8(c, x0, y), (int)f->val, (size_t)(x1 - x0));
+        }
+        return;
+    }
+    if (c->format == SEL_GUI_RGBA32) {
+        for (x = x0; x < x1; x++) {
+            put(c, x, y, f->argb, 0);
+        }
+    } else {
+        uint8_t* p = px8(c, x0, y);
+        for (x = x0; x < x1; x++, p++) {
+            uint8_t d = *p;
+            if (f->lut[d] == 0xFFFFu) {
+                put(c, x, y, f->argb, 0);
+                f->lut[d] = *p;
+            } else {
+                *p = (uint8_t)f->lut[d];
+            }
+        }
+    }
+}
+
 static void fill_rect_raw(sel_gui_canvas* c, sel_gui_rect r, uint32_t argb) {
-    int32_t x, y;
+    fill_ctx f;
+    int32_t y;
     c->prims++;
     r = cur_clip(c, r);
+    fill_ctx_init(&f, c, argb);
     for (y = r.y; y < r.y + r.h; y++) {
-        for (x = r.x; x < r.x + r.w; x++) {
-            put(c, x, y, argb, 0);
-        }
+        fill_span(&f, r.x, r.x + r.w, y);
     }
 }
 
@@ -412,32 +477,53 @@ static uint32_t coverage(int32_t px, int32_t py, int32_t cx, int32_t cy, int32_t
     return n;
 }
 
+/* One pixel of a corner row: cy is the corner centre row; the corner centre column follows from x. */
+static void corner_px(sel_gui_canvas* c, sel_gui_rect r, int32_t rad, int32_t x, int32_t y, int32_t cy,
+                      uint32_t argb) {
+    int32_t cx = x < r.x + rad ? r.x + rad : x >= r.x + r.w - rad ? r.x + r.w - rad : -1;
+    uint32_t a = argb >> 24;
+    if (cx >= 0) {
+        uint32_t cov = coverage(x, y, cx, cy, rad);
+        if (c->format == SEL_GUI_INDEX8) {
+            if (cov < 8u) {
+                return;
+            }
+        } else {
+            a = (a * cov + 8u) / 16u;
+        }
+        put(c, x, y, (a << 24) | (argb & 0xFFFFFFu), 0);
+        return;
+    }
+    put(c, x, y, argb, 0);
+}
+
 static void round_rect_raw(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, uint32_t argb) {
     sel_gui_rect v;
+    fill_ctx f;
     int32_t x, y, rad = imin(radius, imin(r.w, r.h) / 2);
     c->prims++;
     if (rad < 0) {
         rad = 0;
     }
     v = cur_clip(c, r);
+    fill_ctx_init(&f, c, argb);
     for (y = v.y; y < v.y + v.h; y++) {
-        for (x = v.x; x < v.x + v.w; x++) {
-            int32_t cx = x < r.x + rad ? r.x + rad : x >= r.x + r.w - rad ? r.x + r.w - rad : -1;
-            int32_t cy = y < r.y + rad ? r.y + rad : y >= r.y + r.h - rad ? r.y + r.h - rad : -1;
-            uint32_t a = argb >> 24;
-            if (cx >= 0 && cy >= 0) {
-                uint32_t cov = coverage(x, y, cx, cy, rad);
-                if (c->format == SEL_GUI_INDEX8) {
-                    if (cov < 8u) {
-                        continue;
-                    }
-                } else {
-                    a = (a * cov + 8u) / 16u;
-                }
-                put(c, x, y, (a << 24) | (argb & 0xFFFFFFu), 0);
-                continue;
-            }
-            put(c, x, y, argb, 0);
+        int32_t cy = y < r.y + rad ? r.y + rad : y >= r.y + r.h - rad ? r.y + r.h - rad : -1;
+        int32_t m0 = imax(v.x, r.x + rad), m1 = imin(v.x + v.w, r.x + r.w - rad);
+        if (cy < 0) {
+            fill_span(&f, v.x, v.x + v.w, y);
+            continue;
+        }
+        /* Corner rows: only the pixels left of m0 and right of m1 sit in a corner square; the middle is solid. */
+        if (m1 < m0) {
+            m0 = m1 = imin(imax(m0, v.x), v.x + v.w);
+        }
+        for (x = v.x; x < m0; x++) {
+            corner_px(c, r, rad, x, y, cy, argb);
+        }
+        fill_span(&f, m0, m1, y);
+        for (x = imax(m1, m0); x < v.x + v.w; x++) {
+            corner_px(c, r, rad, x, y, cy, argb);
         }
     }
 }
@@ -455,6 +541,7 @@ static uint32_t round_cov(sel_gui_rect r, int32_t rad, int32_t x, int32_t y) {
 
 static void round_frame_raw(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, int32_t width, uint32_t argb) {
     sel_gui_rect v, in;
+    fill_ctx f;
     int32_t x, y, rad = imin(radius, imin(r.w, r.h) / 2), irad;
     c->prims++;
     if (rad < 0) {
@@ -469,11 +556,35 @@ static void round_frame_raw(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, i
         irad = imin(irad, imin(in.w, in.h) / 2);
     }
     v = cur_clip(c, r);
+    fill_ctx_init(&f, c, argb);
     for (y = v.y; y < v.y + v.h; y++) {
-        for (x = v.x; x < v.x + v.w; x++) {
-            uint32_t o = round_cov(r, rad, x, y);
-            uint32_t i = in.w > 0 && in.h > 0 ? round_cov(in, irad, x, y) : 0u;
-            uint32_t a = argb >> 24, cov = o > i ? o - i : 0u;
+        int32_t x1 = v.x + v.w;
+        int32_t o0 = imin(imax(r.x + rad, v.x), x1), o1 = imax(imin(r.x + r.w - rad, x1), o0);
+        int32_t s0 = x1, s1 = x1; /* [s0, s1): inner coverage is 16 here, so the frame has none */
+        int in_rows = in.w > 0 && in.h > 0 && y >= in.y && y < in.y + in.h;
+        if (in_rows) {
+            int band = y >= in.y + irad && y < in.y + in.h - irad;
+            s0 = imin(imax(band ? in.x : in.x + irad, v.x), x1);
+            s1 = imax(imin(band ? in.x + in.w : in.x + in.w - irad, x1), s0);
+        } else if (y >= r.y + rad && y < r.y + r.h - rad) {
+            o0 = v.x; /* outer middle band, no inner: the whole row is covered 16 */
+            o1 = x1;
+        }
+        for (x = v.x; x < x1; x++) {
+            uint32_t o, i, a, cov;
+            if (x == s0 && s1 > s0) {
+                x = s1 - 1;
+                continue;
+            }
+            if (x == o0 && o1 > o0 && !in_rows) {
+                fill_span(&f, o0, o1, y);
+                x = o1 - 1;
+                continue;
+            }
+            o = round_cov(r, rad, x, y);
+            i = in_rows ? round_cov(in, irad, x, y) : 0u;
+            a = argb >> 24;
+            cov = o > i ? o - i : 0u;
             if (cov == 0u) {
                 continue;
             }
@@ -491,7 +602,7 @@ static void round_frame_raw(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, i
 
 static void gradient_raw(sel_gui_canvas* c, sel_gui_rect r, int vertical, uint32_t a, uint32_t b) {
     sel_gui_rect v;
-    int32_t x, y, n = vertical ? r.h : r.w;
+    int32_t n = vertical ? r.h : r.w;
     int32_t step = n > 1 ? (int32_t)(65536 / (n - 1)) : 0; /* Q16 position change per pixel */
     int32_t ch[4], d[4], i;
     c->prims++;
@@ -500,14 +611,43 @@ static void gradient_raw(sel_gui_canvas* c, sel_gui_rect r, int vertical, uint32
         ch[i] = (int32_t)((a >> (24 - 8 * i)) & 255u);
         d[i] = (int32_t)((b >> (24 - 8 * i)) & 255u) - ch[i];
     }
-    for (y = v.y; y < v.y + v.h; y++) {
-        for (x = v.x; x < v.x + v.w; x++) {
-            int32_t t = (vertical ? y - r.y : x - r.x) * step;
+    /* The colour depends on one axis only; the dither on (x & 3, y & 3). Resolve the colour once per line along the
+     * gradient axis and its four dithered indices once, then store the line. */
+    {
+        int32_t lines = vertical ? v.h : v.w, run = vertical ? v.w : v.h, l;
+        for (l = 0; l < lines; l++) {
+            int32_t pos = (vertical ? v.y : v.x) + l, t = (pos - (vertical ? r.y : r.x)) * step, k;
             uint32_t col = 0u;
+            uint32_t idx[4];
+            int opaque;
             for (i = 0; i < 4; i++) {
                 col = (col << 8) | clampc(ch[i] + (int32_t)(((int64_t)d[i] * t + 32768) >> 16));
             }
-            put(c, x, y, col, c->format == SEL_GUI_INDEX8 ? (int32_t)g_bayer[((y & 3) << 2) | (x & 3)] - 8 : 0);
+            opaque = (col >> 24) == 255u;
+            if (opaque && c->format == SEL_GUI_INDEX8) {
+                uint32_t rr = (col >> 16) & 255u, gg = (col >> 8) & 255u, bb = col & 255u;
+                idx[0] = idx[1] = idx[2] = idx[3] = 256u; /* resolved on first use: unused cells mark nothing */
+                for (k = 0; k < run; k++) {
+                    int32_t o = (vertical ? v.x : v.y) + k, q = o & 3;
+                    int32_t cell = vertical ? (((pos & 3) << 2) | q) : ((q << 2) | (pos & 3));
+                    int32_t dv = (int32_t)g_bayer[cell] - 8;
+                    if (idx[q] == 256u) {
+                        idx[q] = cube_index(c, clampc((int32_t)rr + dv), clampc((int32_t)gg + dv),
+                                            clampc((int32_t)bb + dv));
+                    }
+                    if (vertical) {
+                        *px8(c, o, pos) = (uint8_t)idx[q];
+                    } else {
+                        *px8(c, pos, o) = (uint8_t)idx[q];
+                    }
+                }
+            } else {
+                for (k = 0; k < run; k++) {
+                    int32_t o = (vertical ? v.x : v.y) + k;
+                    int32_t x = vertical ? o : pos, y = vertical ? pos : o;
+                    put(c, x, y, col, c->format == SEL_GUI_INDEX8 ? (int32_t)g_bayer[((y & 3) << 2) | (x & 3)] - 8 : 0);
+                }
+            }
         }
     }
 }

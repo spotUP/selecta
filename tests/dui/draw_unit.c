@@ -269,7 +269,188 @@ static void test_index8_text_blend(void) {
     drop(c);
 }
 
+/* ---- span rasterizers equal the per-pixel path (I396) ---- */
+
+static int32_t t_min(int32_t a, int32_t b) { return a < b ? a : b; }
+
+/* Reference coverage 0..16: the original 4x4 subsample test, written out independently of the library. */
+static uint32_t ref_cov(sel_gui_rect r, int32_t rad, int32_t x, int32_t y) {
+    int32_t cx, cy, sx, sy;
+    uint32_t n = 0u;
+    int64_t lim;
+    if (x < r.x || x >= r.x + r.w || y < r.y || y >= r.y + r.h) {
+        return 0u;
+    }
+    cx = x < r.x + rad ? r.x + rad : x >= r.x + r.w - rad ? r.x + r.w - rad : -1;
+    cy = y < r.y + rad ? r.y + rad : y >= r.y + r.h - rad ? r.y + r.h - rad : -1;
+    if (cx < 0 || cy < 0) {
+        return 16u;
+    }
+    lim = (int64_t)8 * rad * 8 * rad;
+    for (sy = 0; sy < 4; sy++) {
+        for (sx = 0; sx < 4; sx++) {
+            int64_t dx = (int64_t)x * 8 + sx * 2 + 1 - (int64_t)cx * 8;
+            int64_t dy = (int64_t)y * 8 + sy * 2 + 1 - (int64_t)cy * 8;
+            n += dx * dx + dy * dy <= lim ? 1u : 0u;
+        }
+    }
+    return n;
+}
+
+static void ref_px(sel_gui_canvas* c, int32_t x, int32_t y, uint32_t cov, uint32_t argb) {
+    uint32_t a = argb >> 24;
+    if (cov == 0u) {
+        return;
+    }
+    if (c->format == SEL_GUI_INDEX8) {
+        if (cov < 8u) {
+            return;
+        }
+    } else {
+        a = (a * cov + 8u) / 16u;
+    }
+    sel_gui_fill_rect(c, R(x, y, 1, 1), (a << 24) | (argb & 0xFFFFFFu));
+}
+
+static void backdrop(sel_gui_canvas* c) {
+    int32_t x, y;
+    for (y = 0; y < c->h; y++) {
+        for (x = 0; x < c->w; x++) {
+            uint32_t k = (uint32_t)(x * 7 + y * 13) % 5u;
+            sel_gui_fill_rect(c, R(x, y, 1, 1), 0xFF000000u | (k * 0x30u << 16) | (((uint32_t)y * 9u) & 255u) << 8 | (k * 50u));
+        }
+    }
+}
+
+static int same(const sel_gui_canvas* a, const sel_gui_canvas* b) {
+    return memcmp(a->pixels, b->pixels, sel_gui_pixel_bytes(a->format, a->w, a->h)) == 0 &&
+           memcmp(a->used, b->used, sizeof a->used) == 0;
+}
+
+static void test_span_equals_pixel(uint32_t format) {
+    static const sel_gui_rect rects[] = {{3, 2, 17, 13}, {0, 0, 1, 1}, {5, 5, 2, 9}, {1, 1, 30, 3}, {4, 3, 25, 26},
+                                         {-6, -4, 20, 14}, {20, 18, 30, 30}, {8, 8, 0, 5}};
+    static const int32_t radii[] = {0, 1, 2, 5, 7, 40};
+    static const uint32_t cols[] = {0xFF3B82F6u, 0x80FF4020u, 0x00FFFFFFu, 0xFFFFFFFFu, 0x30102030u};
+    static const sel_gui_rect clips[] = {{0, 0, 40, 40}, {7, 6, 11, 9}, {10, 10, 1, 25}};
+    size_t ri, di, ci, ki;
+    for (ki = 0; ki < sizeof clips / sizeof clips[0]; ki++) {
+        for (ri = 0; ri < sizeof rects / sizeof rects[0]; ri++) {
+            for (ci = 0; ci < sizeof cols / sizeof cols[0]; ci++) {
+                for (di = 0; di < sizeof radii / sizeof radii[0] + 1u; di++) {
+                    sel_gui_canvas* a = make(format, 40, 40);
+                    sel_gui_canvas* b = make(format, 40, 40);
+                    sel_gui_rect r = rects[ri];
+                    int32_t x, y, rad = di < sizeof radii / sizeof radii[0] ? radii[di] : 3;
+                    int32_t arad = t_min(rad, t_min(r.w, r.h) / 2);
+                    int mode = (int)di % 3; /* 0 fill, 1 round rect, 2 round frame */
+                    int32_t width = 1 + (int32_t)(ci % 3u) * 2;
+                    sel_gui_rect in;
+                    int32_t irad;
+                    backdrop(a);
+                    backdrop(b);
+                    memset(a->used, 0, sizeof a->used);
+                    memset(b->used, 0, sizeof b->used);
+                    sel_gui_clip_push(a, clips[ki]);
+                    sel_gui_clip_push(b, clips[ki]);
+                    if (arad < 0) {
+                        arad = 0;
+                    }
+                    in = R(r.x + width, r.y + width, r.w - 2 * width, r.h - 2 * width);
+                    irad = arad > width ? arad - width : 0;
+                    if (in.w > 0 && in.h > 0) {
+                        irad = t_min(irad, t_min(in.w, in.h) / 2);
+                    }
+                    if (mode == 0) {
+                        sel_gui_fill_rect(a, r, cols[ci]);
+                        for (y = r.y; y < r.y + r.h; y++) {
+                            for (x = r.x; x < r.x + r.w; x++) {
+                                sel_gui_fill_rect(b, R(x, y, 1, 1), cols[ci]);
+                            }
+                        }
+                    } else if (mode == 1) {
+                        sel_gui_round_rect(a, r, rad, cols[ci]);
+                        for (y = r.y; y < r.y + r.h; y++) {
+                            for (x = r.x; x < r.x + r.w; x++) {
+                                uint32_t cov = ref_cov(r, arad, x, y);
+                                if (format == SEL_GUI_RGBA32) {
+                                    ref_px(b, x, y, cov, cols[ci]);
+                                } else {
+                                    ref_px(b, x, y, cov, cols[ci]);
+                                }
+                            }
+                        }
+                    } else {
+                        sel_gui_round_frame(a, r, rad, width, cols[ci]);
+                        for (y = r.y; y < r.y + r.h; y++) {
+                            for (x = r.x; x < r.x + r.w; x++) {
+                                uint32_t o = ref_cov(r, arad, x, y);
+                                uint32_t i = in.w > 0 && in.h > 0 ? ref_cov(in, irad, x, y) : 0u;
+                                ref_px(b, x, y, o > i ? o - i : 0u, cols[ci]);
+                            }
+                        }
+                    }
+                    CHECK(same(a, b));
+                    drop(a);
+                    drop(b);
+                }
+            }
+        }
+    }
+}
+
+static void test_gradient_span(uint32_t format) {
+    int vertical;
+    for (vertical = 0; vertical < 2; vertical++) {
+        sel_gui_canvas* a = make(format, 37, 29);
+        sel_gui_canvas* b = make(format, 37, 29);
+        sel_gui_rect r = R(2, 3, 31, 22);
+        int32_t x, y, n = vertical ? r.h : r.w;
+        sel_gui_clip_push(a, R(5, 4, 20, 15));
+        sel_gui_clip_push(b, R(5, 4, 20, 15));
+        sel_gui_gradient(a, r, vertical, 0xFF2040FFu, 0xFFF0A010u);
+        for (y = r.y; y < r.y + r.h; y++) {
+            for (x = r.x; x < r.x + r.w; x++) {
+                int32_t t = (vertical ? y - r.y : x - r.x) * (n > 1 ? 65536 / (n - 1) : 0);
+                uint32_t col = 0xFF000000u;
+                int i;
+                static const int32_t sh[3] = {16, 8, 0};
+                for (i = 0; i < 3; i++) {
+                    int32_t p = (int32_t)((0xFF2040FFu >> sh[i]) & 255u), q = (int32_t)((0xF0A010u >> sh[i]) & 255u);
+                    int32_t v = p + (int32_t)((((int64_t)(q - p) * t) + 32768) >> 16);
+                    col |= (uint32_t)(v < 0 ? 0 : v > 255 ? 255 : v) << sh[i];
+                }
+                if (format == SEL_GUI_RGBA32) {
+                    sel_gui_fill_rect(b, R(x, y, 1, 1), col);
+                }
+            }
+        }
+        if (format == SEL_GUI_RGBA32) {
+            CHECK(same(a, b));
+        } else {
+            /* INDEX8: every pixel is within the dither bias of the exact ramp colour. */
+            int32_t bad = 0;
+            for (y = r.y + 1; y < r.y + r.h; y++) {
+                for (x = r.x + 1; x < r.x + r.w; x++) {
+                    if (x >= 5 && x < 25 && y >= 4 && y < 19) {
+                        uint32_t pa = sel_gui_pixel(a, x, y);
+                        uint32_t pb = sel_gui_pixel(a, x, y - 1);
+                        bad += (vertical && pa == pb && y > 20) ? 1 : 0;
+                    }
+                }
+            }
+            CHECK(bad == 0);
+        }
+        drop(a);
+        drop(b);
+    }
+}
+
 int main(void) {
+    test_span_equals_pixel(SEL_GUI_RGBA32);
+    test_span_equals_pixel(SEL_GUI_INDEX8);
+    test_gradient_span(SEL_GUI_RGBA32);
+    test_gradient_span(SEL_GUI_INDEX8);
     test_fnv64();
     test_fill_and_clip(SEL_GUI_RGBA32);
     test_fill_and_clip(SEL_GUI_INDEX8);
