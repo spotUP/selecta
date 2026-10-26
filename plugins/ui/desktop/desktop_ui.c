@@ -1092,7 +1092,7 @@ static const int32_t g_tile_steps[] = {96, 120, 144, 176, 208}; /* the tile size
  * greeting, the filter chips, the section heading, then the tile grid. */
 enum { HOME_MARGIN = 24, HOME_SEARCH_MAX = 360, HOME_GREET_Y = 72,
        HOME_GREET_H = 40, HOME_CHIPS_Y = 124, HOME_CHIP_H = 32, HOME_SECTION_Y = 172, HOME_SECTION_H = 32,
-       HOME_SHADOW_R = 8, HOME_HEAD_GAP = 8, /* tile shadow radius; clear space between a section heading and that shadow (I449) */
+       HOME_SHADOW_R = 8, HOME_COVER_SHADOW_LIFT = 4 /* I507: cover shadow sits this far inside the sides and lower */, HOME_HEAD_GAP = 8, /* tile shadow radius; clear space between a section heading and that shadow (I449) */
        HOME_TILES_Y = HOME_SECTION_Y + HOME_SECTION_H + HOME_SHADOW_R + HOME_HEAD_GAP, HOME_TILE_GAP = 4, HOME_TINT_H = 300, HOME_PLAY_SIZE = 40, HOME_PLAY_INSET = 8,
        HOME_TILE_TEXT_GAP = 8, HOME_TITLE_H = 18, HOME_META_H = 16, HOME_BRAND = 28 };
 
@@ -1687,11 +1687,12 @@ static uintptr_t home_dump_build(desk* d) {
     if (d->quick_hover_fill != 0u && o + 64u < sizeof d->home_dump) { /* I490: "quick_hover fill=AARRGGBB", present only while a quick tile is hovered */
         o += (size_t)snprintf(d->home_dump + o, sizeof d->home_dump - o, "quick_hover fill=%08x\n", (unsigned)d->quick_hover_fill);
     }
-    if (d->art_probe.w > 0 && o + 96u < sizeof d->home_dump) { /* I477: "tile_art corner=RRGGBB centre=RRGGBB fill=RRGGBB": the art's rounded corner shows the card, its middle the cover */
+    if (d->art_probe.w > 0 && o + 160u < sizeof d->home_dump) { /* I477: "tile_art corner=RRGGBB centre=RRGGBB fill=RRGGBB": the art's rounded corner shows the card, its middle the cover */
         o += (size_t)snprintf(d->home_dump + o, sizeof d->home_dump - o, "tile_art corner=%06x centre=%06x fill=%06x\n",
                               (unsigned)(sel_gui_pixel(d->canvas, d->art_probe.x, d->art_probe.y) & 0xFFFFFFu),
                               (unsigned)(sel_gui_pixel(d->canvas, d->art_probe.x + d->art_probe.w / 2, d->art_probe.y + d->art_probe.h / 2) & 0xFFFFFFu),
                               (unsigned)(d->art_probe_fill & 0xFFFFFFu));
+        o += (size_t)snprintf(d->home_dump + o, sizeof d->home_dump - o, "tile_art_rect %d %d %d %d\n", (int)d->art_probe.x, (int)d->art_probe.y, (int)d->art_probe.w, (int)d->art_probe.h);
     }
     for (s = 0; s < n; s++) {
         for (k = 0; k < sh[s].tiles && o + 200u < sizeof d->home_dump; k++) {
@@ -2298,7 +2299,7 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
             d->tile_cards++;
             d->home_parts |= HP_TILE_CARD;
             if (d->shadow_ready) {
-                sel_gui_shadow_draw(d->canvas, &d->shadow, ar);
+                sel_gui_shadow_draw_round(d->canvas, &d->shadow, ar, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]), lpx(d, HOME_COVER_SHADOW_LIFT));
             }
             art = r->art_ref != NULL ? art_tile(d->art, r->art_ref) : NULL;
             if (art != NULL) { /* the library cover; generated art only when the song or album has none (design 2.7) */
@@ -5114,7 +5115,7 @@ static void draw_home_content(desk* d) {
             sel_gui_prof_end(d->canvas, SEL_GUI_PROF_ART, t_art);
         }
         if (d->shadow_ready) {
-            sel_gui_shadow_draw(d->canvas, &d->shadow, ar);
+            sel_gui_shadow_draw_round(d->canvas, &d->shadow, ar, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]), lpx(d, HOME_COVER_SHADOW_LIFT));
         }
         if (art != NULL) {
             sel_gui_set_region(d->canvas, SEL_GUI_RGN_TILE);
