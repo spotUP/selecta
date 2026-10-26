@@ -1060,6 +1060,16 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
   set_tests_properties(rig-m4-rtg-first-light PROPERTIES LABELS rig RESOURCE_LOCK rig
     ENVIRONMENT "UPTERM_RIG=2" SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  # I508 / MUI-P1-3, MUI-P1-5: the MUI window opens on rig 2 through Selecta --ui mui (every Amiga build tree carries the
+  # MUI plugin; SEL_MUI_BUILD names the one to run, default build/amiga).
+  set(SEL_MUI_BUILD "${PROJECT_SOURCE_DIR}/build/amiga" CACHE PATH "Amiga build tree whose Selecta rig-m4-mui-open runs")
+  add_test(NAME rig-m4-mui-open
+    COMMAND "${CMAKE_COMMAND}" -DTAG=M4MUI "-DRIG_DIR=${SEL_RIG_DIR}"
+      "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta" "-DMOD=${SEL_TESTMOD}"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-open"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
+  set_tests_properties(rig-m4-mui-open PROPERTIES LABELS rig RESOURCE_LOCK rig
+    ENVIRONMENT "UPTERM_RIG=2" SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
   # I439 / M4-P6-1: AGA c2p first light on rig 2, backend alone and the full AGA Selecta (SEL_DESKTOP_AGA build tree in
   # SEL_AGA_BUILD, default build/amiga-aga).
   set(SEL_AGA_BUILD "${PROJECT_SOURCE_DIR}/build/amiga-aga" CACHE PATH "Amiga build tree configured with -DSEL_DESKTOP_AGA=ON")

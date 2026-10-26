@@ -7,5 +7,6 @@ target_include_directories(mui_map PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/map" PRIV
 if(SEL_AMIGA)
   sel_add_plugin(mui_ui 5 mui_ui.c)
   target_include_directories(sel_plugin_mui_ui PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/map")
-  target_link_libraries(sel_plugin_mui_ui PUBLIC mui_map)
+  # libmui.a (toolchain) holds the out-of-line varargs MUI_NewObject the ApplicationObject/End idiom needs (I508).
+  target_link_libraries(sel_plugin_mui_ui PUBLIC mui_map mui)
 endif()
