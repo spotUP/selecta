@@ -44,7 +44,7 @@ if(NOT SEL_AMIGA)
     set(tlabel dui)
     if(tname STREQUAL "dui-nav" OR tname STREQUAL "dui-footer" OR tname STREQUAL "dui-screen" OR tname STREQUAL "dui-scan-ui") # dui-footer is ledger row I312, not a plan item
       set(tlabel nav)
-    elseif(tname STREQUAL "dui-song-menu-live" OR tname STREQUAL "dui-song-menu-lists") # I371: more cases of DUI-P3-16, whose one dui test is dui-song-menu; label song-menu keeps dui-ratchet at one test per plan id
+    elseif(tname STREQUAL "dui-song-menu-live" OR tname STREQUAL "dui-song-menu-lists") # I371: more cases of DUI-P4-16, whose one dui test is dui-song-menu; label song-menu keeps dui-ratchet at one test per plan id
       set(tlabel song-menu)
     elseif(tname STREQUAL "keys-live") # I268: real SDL key events through desk_sdl_poll; not a plan item, so no dui label
       set(tlabel keys-live)
