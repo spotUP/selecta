@@ -1026,6 +1026,19 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
   set_tests_properties(rig-m4-rtg-first-light PROPERTIES LABELS rig RESOURCE_LOCK rig
     ENVIRONMENT "UPTERM_RIG=2" SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  # I439 / M4-P6-1: AGA c2p first light on rig 2, backend alone and the full AGA Selecta (SEL_DESKTOP_AGA build tree in
+  # SEL_AGA_BUILD, default build/amiga-aga).
+  set(SEL_AGA_BUILD "${PROJECT_SOURCE_DIR}/build/amiga-aga" CACHE PATH "Amiga build tree configured with -DSEL_DESKTOP_AGA=ON")
+  add_test(NAME rig-m4-aga-first-light
+    COMMAND "${CMAKE_COMMAND}" -DTAG=M4AGA "-DRIG_DIR=${SEL_RIG_DIR}"
+      "-DSELECTA=${SEL_AGA_BUILD}/apps/selecta/selecta" "-DMOD=${SEL_TESTMOD}"
+      "-DSELECTA_CLI=${SEL_AGA_BUILD}/apps/selecta-cli/selecta-cli"
+      "-DAGA_FIRST_LIGHT=${SEL_AGA_BUILD}/plugins/ui/desktop/selecta-aga-first-light"
+      "-DGENRE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/m3/genre"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-aga-first-light"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
+  set_tests_properties(rig-m4-aga-first-light PROPERTIES LABELS rig RESOURCE_LOCK rig
+    ENVIRONMENT "UPTERM_RIG=2" SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
 endif()
 # I122/I123/I126: paula14 split tables, chip double buffer through a recording bus, routing of PCM outputs.
 set(SEL_P14_DIR "${PROJECT_SOURCE_DIR}/plugins/outputs/paula14")

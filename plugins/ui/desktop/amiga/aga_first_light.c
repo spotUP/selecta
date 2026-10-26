@@ -46,8 +46,15 @@ int main(void) {
         int32_t bx = (f * 8) % (w - 64), by = h / 2 - 16;
         if (f > 0) {
             sel_gui_rect r = {bx - 8 < 0 ? 0 : bx - 8, by, 80, 32};
+            sel_gui_rect r2 = {bx - 8 < 0 ? 0 : bx - 8, 8, 80, 16};
             c->dirty[0] = r;
-            c->dirty_n = 1;
+            c->dirty[1] = r2;
+            c->dirty_n = 2;
+        }
+        for (y = 8; y < 24; y++) {
+            for (x = (bx - 8 < 0 ? 0 : bx - 8); x < bx + 72 && x < w; x++) {
+                px[(size_t)y * (size_t)w + (size_t)x] = (uint8_t)(x >= bx && x < bx + 64 ? 1 : 3 + (x * 24) / w);
+            }
         }
         for (y = by; y < by + 32; y++) {
             for (x = (bx - 8 < 0 ? 0 : bx - 8); x < bx + 72 && x < w; x++) {

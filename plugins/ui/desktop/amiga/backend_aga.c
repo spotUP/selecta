@@ -141,6 +141,7 @@ desk_aga* desk_aga_open(int32_t w, int32_t h, int index8) {
     }
     b = (desk_aga*)AllocVec(sizeof *b, MEMF_CLEAR);
     if (b == NULL) return NULL;
+    b->safe = 1; /* no ChangeScreenBuffer is pending: close must not wait for a safe message that never comes */
     GfxBase = (struct GfxBase*)OpenLibrary((CONST_STRPTR) "graphics.library", 39);
     IntuitionBase = (struct IntuitionBase*)OpenLibrary((CONST_STRPTR) "intuition.library", 39);
     if (GfxBase == NULL || IntuitionBase == NULL) return fail(b, "needs graphics and intuition v39"), NULL;
@@ -177,7 +178,7 @@ desk_aga* desk_aga_open(int32_t w, int32_t h, int index8) {
         b->window = OpenWindowTagList(NULL, wt);
     }
     if (b->window == NULL) return fail(b, "OpenWindow failed"), NULL;
-    b->sb[0] = AllocScreenBuffer(b->screen, NULL, SB_SCREEN_BITMAP);
+    b->sb[0] = AllocScreenBuffer(b->screen, &b->bm[0], 0); /* SB_SCREEN_BITMAP fails on a screen opened with SA_BitMap */
     b->sb[1] = AllocScreenBuffer(b->screen, &b->bm[1], 0);
     b->safe_port = CreateMsgPort();
     if (b->sb[0] == NULL || b->sb[1] == NULL || b->safe_port == NULL) return fail(b, "screen buffers failed"), NULL;

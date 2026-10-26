@@ -7402,6 +7402,9 @@ static void* desk_open(const sel_ui_open_args* a) {
     desk* d;
     int i;
     int want_sdl = backend != NULL && (strcmp(backend, "sdl") == 0 || strcmp(backend, "rtg") == 0);
+#ifdef SELECTA_DESKTOP_AGA
+    want_sdl = want_sdl || (backend != NULL && strcmp(backend, "aga") == 0);
+#endif
     if (backend != NULL && strcmp(backend, "mem") != 0 && !want_sdl) {
         fprintf(stderr, "selecta: desktop backend '%s' is not mem or sdl\n", backend);
         return NULL;
