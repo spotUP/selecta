@@ -228,6 +228,7 @@ typedef struct desk {
     uint32_t gestures;       /* pinch and swipe events handled (DUI-P3-4) */
     uint32_t tile_step;      /* index into g_tile_steps: the tile size token step, pinch moves it */
     int32_t lib_q16;         /* Library page scroll offset in logical pixels, Q16: the composer list, a drilldown, or the engine view's top row (I303) */
+    int32_t queue_q16;       /* Queue page scroll offset in logical pixels, Q16 (I258), as the songs list's scroll_q16 */
     int32_t scroll_q16;      /* songs list scroll offset in logical pixels, Q16: precise wheel deltas are fractions of a pixel */
     int32_t hist[16];        /* view history (DUI-P3-4): the open_tile of each visited view, 0 = home */
     uint32_t hist_n, hist_pos;
@@ -2066,14 +2067,36 @@ static sel_gui_rect queue_btn_rect(desk* d, sel_gui_rect mn, uint32_t k) {
                    lpx(d, QUEUE_BTN_W), lpx(d, QUEUE_BTN_H));
 }
 
-/* 1 when row i fits in the main region: the page shows the first rows that fit and does not scroll. */
-static int queue_row_visible(desk* d, sel_gui_rect mn, uint32_t i) {
-    return mn.y + lpx(d, QUEUE_LIST_Y) + ((int32_t)i + 1) * lpx(d, QUEUE_ROW_H) <= mn.y + mn.h;
+/* Largest Queue scroll offset in logical pixels, Q16: the rows' height beyond the room under the list top (I258). */
+static int32_t queue_max_q16(desk* d, sel_gui_rect mn, const sel_state* st) {
+    int32_t sc = d->scale > 0 ? d->scale : 1;
+    int32_t max = (int32_t)st->queue_count * QUEUE_ROW_H - (mn.h - lpx(d, QUEUE_LIST_Y)) / sc;
+    return max > 0 ? max << 16 : 0;
+}
+
+/* The scroll offset in device pixels, clamped to the queue (it shrinks when entries are removed). */
+static int32_t queue_scroll_px(desk* d, sel_gui_rect mn) {
+    int32_t max = queue_max_q16(d, mn, sel_engine_state(d->engine));
+    if (d->queue_q16 > max) {
+        d->queue_q16 = max;
+    }
+    return (int32_t)(((int64_t)d->queue_q16 * (d->scale > 0 ? d->scale : 1)) >> 16);
+}
+
+/* The rows' area under the buttons: rows scrolled above it or past the panel bottom are clipped to it. */
+static sel_gui_rect queue_list_rect(desk* d, sel_gui_rect mn) {
+    return rect_of(mn.x, mn.y + lpx(d, QUEUE_LIST_Y), mn.w, mn.h - lpx(d, QUEUE_LIST_Y));
 }
 
 static sel_gui_rect queue_row_rect(desk* d, sel_gui_rect mn, uint32_t i) {
-    return rect_of(mn.x + lpx(d, HOME_MARGIN), mn.y + lpx(d, QUEUE_LIST_Y) + (int32_t)i * lpx(d, QUEUE_ROW_H),
+    return rect_of(mn.x + lpx(d, HOME_MARGIN), mn.y + lpx(d, QUEUE_LIST_Y) + (int32_t)i * lpx(d, QUEUE_ROW_H) - queue_scroll_px(d, mn),
                    mn.w - 2 * lpx(d, HOME_MARGIN), lpx(d, QUEUE_ROW_H));
+}
+
+/* 1 when any part of row i is in the list area (a half scrolled row is drawn clipped). */
+static int queue_row_visible(desk* d, sel_gui_rect mn, uint32_t i) {
+    sel_gui_rect r = queue_row_rect(d, mn, i), l = queue_list_rect(d, mn);
+    return r.y + r.h > l.y && r.y < l.y + l.h;
 }
 
 static sel_gui_rect queue_del_rect(desk* d, sel_gui_rect mn, uint32_t i) {
@@ -2090,8 +2113,8 @@ static sel_gui_rect queue_next_rect(desk* d, sel_gui_rect mn, uint32_t i) {
 static int32_t queue_row_at(desk* d, sel_gui_rect mn, int32_t x, int32_t y) {
     const sel_state* st = sel_engine_state(d->engine);
     uint32_t i;
-    for (i = 0; i < st->queue_count && queue_row_visible(d, mn, i); i++) {
-        if (in_rect(queue_row_rect(d, mn, i), x, y)) {
+    for (i = 0; i < st->queue_count; i++) {
+        if (queue_row_visible(d, mn, i) && in_rect(queue_row_rect(d, mn, i), x, y) && in_rect(queue_list_rect(d, mn), x, y)) {
             return (int32_t)i;
         }
     }
@@ -2135,8 +2158,13 @@ static void draw_queue(desk* d) {
         int live = i == 0u ? es.undo_depth > 0u : i == 1u ? es.redo_depth > 0u : 1;
         draw_button(d, b, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), label, 13, live ? text : muted);
     }
-    for (i = 0; i < st->queue_count && queue_row_visible(d, mn, i); i++, shown++) {
+    sel_gui_clip_push(d->canvas, queue_list_rect(d, mn));
+    for (i = 0; i < st->queue_count; i++) {
         sel_gui_rect r = queue_row_rect(d, mn, i);
+        if (!queue_row_visible(d, mn, i)) {
+            continue;
+        }
+        shown++;
         int divider = (st->queue[i].flags & SEL_QUEUE_FLAG_DIVIDER) != 0u;
         int playing = st->queue[i].id == st->queue_playing;
         sel_gui_rect nx = queue_next_rect(d, mn, i), dl = queue_del_rect(d, mn, i);
@@ -2156,6 +2184,7 @@ static void draw_queue(desk* d) {
         }
         sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_X, rect_of(dl.x + (dl.w - ic) / 2, dl.y + (dl.h - ic) / 2, ic, ic), ic, qmuted);
     }
+    sel_gui_clip_pop(d->canvas);
     d->queue_draws++;
     d->queue_rows = shown;
     sel_gui_clip_pop(d->canvas);
@@ -3326,7 +3355,10 @@ static const char* library_dump_build(desk* d) {
             o = dump_put(d, o, "qbtn %u %d %d %d %d\n", (unsigned)i, (int)b.x,
                                   (int)b.y, (int)b.w, (int)b.h);
         }
-        for (i = 0; i < st->queue_count && queue_row_visible(d, qmn, i) && o + 400u < sizeof d->library_dump; i++) {
+        for (i = 0; i < st->queue_count && o + 400u < sizeof d->library_dump; i++) {
+            if (!queue_row_visible(d, qmn, i)) {
+                continue;
+            }
             sel_gui_rect r = queue_row_rect(d, qmn, i), nx = queue_next_rect(d, qmn, i), dl = queue_del_rect(d, qmn, i);
             o = dump_put(d, o,
                                   "qrow %u %d %d %d %d %s\nqnext %u %d %d %d %d\nqdel %u %d %d %d %d\nqpath %u %s\n", (unsigned)i,
@@ -5821,6 +5853,14 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
         }
         if (d->page == PG_LIBRARY && sel_engine_state(d->engine)->composers != NULL) {
             return lib_wheel(d, ev->dy);
+        }
+        if (d->page == PG_QUEUE && d->queue_page) { /* I258: the Queue page scrolls as the songs list does */
+            sel_gui_rect mn = region_rect(d, "main");
+            int32_t max_q16 = queue_max_q16(d, mn, sel_engine_state(d->engine));
+            int64_t v = (int64_t)d->queue_q16 - (int64_t)ev->dy * SCROLL_NOTCH;
+            d->queue_q16 = v < 0 ? 0 : (v > max_q16 ? max_q16 : (int32_t)v);
+            draw_home(d);
+            return 1;
         }
         if (d->songs) {
             sel_gui_rect mn = region_rect(d, "main");
