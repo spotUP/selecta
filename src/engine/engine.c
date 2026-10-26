@@ -63,6 +63,8 @@
 #include "sources/zxart_sync.h"
 #include "sources/hvsc_sync.h"
 #include "sources/modland_net.h"
+#include "sources/sync_host.h"
+#include "source.h"
 #include "net/devilbox.h"
 #include "sources/modland_sync.h"
 #include "scheduler.h"
@@ -4550,147 +4552,92 @@ static void cmd_LIBRARY_CLEAR(sel_engine* e, const sel_message* m) {
     library_catalogue_changed(e);
 }
 
+/* Copies a source's stats list into the engine's record: the list itself, and the legacy named fields the CLI and
+ * the older tests read (I517: the tags are the contract, the fields stay until their readers move). */
+static void record_sync_stats(sel_engine* e, const sel_tag* stats) {
+    sel_sync_info* si = &e->sync_info;
+    uint32_t i;
+
+    for (i = 0; stats[i].tag != SEL_TAG_END && i + 1u < SEL_SYNC_STATS_MAX; i++) {
+        uint32_t v = (uint32_t)stats[i].value;
+
+        si->stats[i] = stats[i];
+        switch (stats[i].tag) {
+        case SEL_SYNC_LISTING_ROWS: si->listing_rows = v; break;
+        case SEL_SYNC_SKIPPED_ROWS: si->skipped_rows = v; break;
+        case SEL_SYNC_NEW_THIS_WEEK: si->new_this_week = v; break;
+        case SEL_SYNC_NET_REQUESTS: si->net_requests = v; break;
+        case SEL_SYNC_NET_BYTES: si->net_listing_bytes = v; break;
+        case SEL_SYNC_CHANGELOGS: si->changelogs = v; break;
+        case SEL_SYNC_CL_ADDED: si->cl_added = v; break;
+        case SEL_SYNC_CL_REMOVED: si->cl_removed = v; break;
+        case SEL_SYNC_CL_MOVED: si->cl_moved = v; break;
+        case SEL_SYNC_CL_UPDATED: si->cl_updated = v; break;
+        case SEL_SYNC_ZIP_BYTES: si->net_zip_bytes = v; break;
+        case SEL_SYNC_UNPACK_PEAK_HEAP: si->net_unpack_peak_heap = v; break;
+        case SEL_SYNC_CHANGELOGS_FETCHED: si->net_changelogs_fetched = v; break;
+        case SEL_SYNC_CHANGELOGS_MISSING: si->net_changelogs_missing = v; break;
+        case SEL_SYNC_SONGLENGTHS: si->songlengths = v; break;
+        case SEL_SYNC_STIL_ENTRIES: si->stil_entries = v; break;
+        case SEL_SYNC_SUBTUNES: si->subtunes = v; break;
+        case SEL_SYNC_SONGLENGTHS_BYTES: si->net_songlengths_bytes = v; break;
+        case SEL_SYNC_STIL_BYTES: si->net_stil_bytes = v; break;
+        case SEL_SYNC_LISTING_DERIVED: si->net_listing_derived = v; break;
+        case SEL_SYNC_LISTS: si->hippo_lists = v; break;
+        case SEL_SYNC_PRG_FILES: si->prg_files = v; break;
+        case SEL_SYNC_PRG_ENTRIES: si->prg_entries = v; break;
+        case SEL_SYNC_PRG_DIVIDERS: si->prg_dividers = v; break;
+        case SEL_SYNC_PRG_STEALTH: si->prg_stealth = v; break;
+        case SEL_SYNC_PRG_SUBSONGS: si->prg_subsongs = v; break;
+        default: break;
+        }
+    }
+    si->stats[i].tag = SEL_TAG_END;
+    si->stats[i].value = 0;
+}
+
+/* LIBRARY_SYNC <source> <arg> [now]: runs the source's own `sync` (I517); the engine knows no source by name. */
 static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
-    sel_local_scan_config scfg;
-    sel_modland_sync_stats st;
-    sel_hvsc_sync_stats hv;
-    sel_hippo_sync_stats hp;
-    sel_asma_sync_stats as;
-    sel_sndh_sync_stats sn;
-    sel_zxart_sync_stats zx;
-    sel_keygen_sync_stats kg;
+    const sel_source* src;
+    sel_sync_ctx ctx;
+    sel_host host;
+    sel_tag stats[SEL_SYNC_STATS_MAX];
     int64_t now;
     int ok;
-    int is_hvsc, is_hippo, is_asma, is_sndh, is_zxart, is_keygen;
 
     if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", "LIBRARY_SYNC");
         return;
     }
-    is_hvsc = strcmp(m->args[0].v.s, "hvsc") == 0;
-    is_hippo = strcmp(m->args[0].v.s, "hippo") == 0;
-    is_asma = strcmp(m->args[0].v.s, "asma") == 0;
-    is_sndh = strcmp(m->args[0].v.s, "sndh") == 0;
-    is_zxart = strcmp(m->args[0].v.s, "zxart") == 0;
-    is_keygen = strcmp(m->args[0].v.s, "keygenmusic") == 0;
-    if (!is_hvsc && !is_hippo && !is_asma && !is_sndh && !is_zxart && !is_keygen && strcmp(m->args[0].v.s, "modland") != 0) {
+    sel_source_register_builtin();
+    src = sel_source_find(m->args[0].v.s);
+    if (src == NULL || src->sync == NULL) {
         sel_engine_report_error(e, "unknown_source", m->args[0].v.s);
         return;
     }
-    memset(&scfg, 0, sizeof scfg);
-    scfg.host = e->host;
-    scfg.lib = e->lib;
-    scfg.registry_count = e->registry_count;
-    scfg.registry_get = e->registry_get;
     now = m->argc > 2 ? (int64_t)m->args[2].v.u : (int64_t)time(NULL);
-    scfg.now = now;
-    memset(&st, 0, sizeof st);
+    memset(&ctx, 0, sizeof ctx);
+    ctx.scfg.host = e->host;
+    ctx.scfg.lib = e->lib;
+    ctx.scfg.registry_count = e->registry_count;
+    ctx.scfg.registry_get = e->registry_get;
+    ctx.scfg.now = now;
+    sel_sync_host_bind(&host, e->host, &ctx);
+    memset(stats, 0, sizeof stats);
+    stats[0].tag = SEL_TAG_END;
     memset(&e->sync_info, 0, sizeof e->sync_info);
-    if (is_hippo) {
-        ok = sel_hippo_sync(&scfg, m->args[1].v.s, &hp);
-        st.listing_rows = hp.lists;
-        st.skipped_rows = hp.skipped;
-        e->sync_info.hippo_lists = hp.lists;
-        e->sync_info.prg_files = hp.prg_files;
-        e->sync_info.prg_entries = hp.prg_entries;
-        e->sync_info.prg_dividers = hp.prg_dividers;
-        e->sync_info.prg_stealth = hp.prg_stealth;
-        e->sync_info.prg_subsongs = hp.prg_subsongs;
-    } else if (is_asma) {
-        if (sel_modland_is_url(m->args[1].v.s)) {
-            sel_asma_net_stats an;
-
-            ok = sel_asma_net_sync(&scfg, m->args[1].v.s, &as, &an);
-            e->sync_info.net_listing_bytes = an.list_bytes;
-            e->sync_info.net_requests = an.http_requests;
-        } else {
-            ok = sel_asma_sync(&scfg, m->args[1].v.s, &as);
-        }
-        st.listing_rows = as.listing_rows;
-        st.skipped_rows = as.skipped_rows;
-    } else if (is_sndh) {
-        if (sel_modland_is_url(m->args[1].v.s)) {
-            sel_sndh_net_stats sx;
-
-            ok = sel_sndh_net_sync(&scfg, m->args[1].v.s, &sn, &sx);
-            e->sync_info.net_listing_bytes = sx.list_bytes;
-            e->sync_info.net_requests = sx.http_requests;
-        } else {
-            ok = sel_sndh_sync(&scfg, m->args[1].v.s, &sn);
-        }
-        st.listing_rows = sn.listing_rows;
-        st.skipped_rows = sn.skipped_rows;
-    } else if (is_zxart) {
-        if (sel_modland_is_url(m->args[1].v.s)) {
-            sel_zxart_net_stats zn;
-
-            ok = sel_zxart_net_sync(&scfg, m->args[1].v.s, &zx, &zn);
-            e->sync_info.net_listing_bytes = zn.list_bytes;
-            e->sync_info.net_requests = zn.http_requests;
-        } else {
-            ok = sel_zxart_sync(&scfg, m->args[1].v.s, &zx);
-        }
-        st.listing_rows = zx.listing_rows;
-        st.skipped_rows = zx.skipped_rows;
-    } else if (is_keygen) {
-        if (sel_modland_is_url(m->args[1].v.s)) {
-            sel_keygen_net_stats kn;
-
-            ok = sel_keygen_net_sync(&scfg, m->args[1].v.s, &kg, &kn);
-            e->sync_info.net_listing_bytes = kn.list_bytes;
-            e->sync_info.net_requests = kn.http_requests;
-        } else {
-            ok = sel_keygen_sync(&scfg, m->args[1].v.s, &kg);
-        }
-        st.listing_rows = kg.listing_rows;
-        st.skipped_rows = kg.skipped_rows;
-    } else if (is_hvsc) {
-        if (sel_modland_is_url(m->args[1].v.s)) {
-            sel_hvsc_net_stats hn;
-
-            ok = sel_hvsc_net_sync(&scfg, m->args[1].v.s, &hv, &hn);
-            e->sync_info.net_songlengths_bytes = hn.songlengths_bytes;
-            e->sync_info.net_stil_bytes = hn.stil_bytes;
-            e->sync_info.net_listing_derived = hn.listing_derived;
-            e->sync_info.net_requests = hn.http_requests;
-        } else {
-            ok = sel_hvsc_sync(&scfg, m->args[1].v.s, &hv);
-        }
-        st.listing_rows = hv.listing_rows;
-        st.skipped_rows = hv.skipped_rows;
-        e->sync_info.songlengths = hv.songlengths;
-        e->sync_info.stil_entries = hv.stil_entries;
-        e->sync_info.subtunes = hv.subtunes;
-    } else if (sel_modland_is_url(m->args[1].v.s)) {
-        sel_modland_net_stats ns;
-
-        ok = sel_modland_net_sync(&scfg, m->args[1].v.s, now, &st, &ns);
-        e->sync_info.net_zip_bytes = ns.zip_bytes;
-        e->sync_info.net_listing_bytes = ns.listing_bytes;
-        e->sync_info.net_unpack_peak_heap = ns.unpack_peak_heap;
-        e->sync_info.net_changelogs_fetched = ns.changelogs_fetched;
-        e->sync_info.net_changelogs_missing = ns.changelogs_missing;
-        e->sync_info.net_requests = ns.http_requests;
-    } else {
-        ok = sel_modland_sync(&scfg, m->args[1].v.s, now, &st);
-    }
+    ok = src->sync(&host, m->args[1].v.s, now, stats, SEL_SYNC_STATS_MAX);
+    sel_sync_ctx_release(&ctx);
     e->art_generation++; /* a failed sync may still have stored albums */
-    if (ok && !is_hvsc && !is_hippo && !is_asma && !is_sndh && !is_zxart && !is_keygen) {
-        persist_new_this_week(e, st.new_this_week);
+    record_sync_stats(e, stats);
+    if (ok && (src->flags & SEL_SOURCE_NEW_THIS_WEEK)) {
+        persist_new_this_week(e, e->sync_info.new_this_week);
     }
-    e->sync_info.listing_rows = st.listing_rows;
-    e->sync_info.skipped_rows = st.skipped_rows;
-    e->sync_info.changelogs = st.changelogs;
-    e->sync_info.cl_added = st.cl_added;
-    e->sync_info.cl_removed = st.cl_removed;
-    e->sync_info.cl_moved = st.cl_moved;
-    e->sync_info.cl_updated = st.cl_updated;
-    e->sync_info.new_this_week = st.new_this_week;
     if (!ok) {
         sel_engine_report_error(e, "sync_failed", m->args[1].v.s);
         return;
     }
-    emit_library_path(e, m->args[1].v.s, st.listing_rows);
+    emit_library_path(e, m->args[1].v.s, e->sync_info.listing_rows);
 }
 
 /* LIBRARY_FETCH <source>:<path>[#md5=<hex>]: fetches the file and its companions into the library's

@@ -5,6 +5,9 @@
  * and the canonical URL is the Modland URL of the host path. Format names follow bbmp: "HVSC - Musicians",
  * "HVSC - Games", "HVSC - Demos". */
 #include "../source.h"
+#include "hvsc_net.h"
+#include "modland_net.h"
+#include "sync_host.h"
 #include "hvsc_sync.h"
 
 #include <stdio.h>
@@ -120,9 +123,37 @@ static int parse(const char* path, char* scratch, size_t n, sel_tag* out) {
     return 1;
 }
 
+/* LIBRARY_SYNC dispatch (I517): a URL runs the network sync, anything else reads a local mirror copy. */
+static int hvsc_sync_host(const sel_host* host, const char* arg, int64_t now, sel_tag* stats, uint32_t cap) {
+    const sel_local_scan_config* cfg = sel_sync_cfg(host);
+    sel_hvsc_sync_stats st;
+    int ok;
+
+    (void)now;
+    memset(&st, 0, sizeof st);
+    if (sel_modland_is_url(arg)) {
+        sel_hvsc_net_stats nt;
+
+        memset(&nt, 0, sizeof nt);
+        ok = sel_hvsc_net_sync(cfg, arg, &st, &nt);
+        sel_sync_stat(stats, cap, SEL_SYNC_SONGLENGTHS_BYTES, nt.songlengths_bytes);
+        sel_sync_stat(stats, cap, SEL_SYNC_STIL_BYTES, nt.stil_bytes);
+        sel_sync_stat(stats, cap, SEL_SYNC_LISTING_DERIVED, nt.listing_derived);
+        sel_sync_stat(stats, cap, SEL_SYNC_NET_REQUESTS, nt.http_requests);
+    } else {
+        ok = sel_hvsc_sync(cfg, arg, &st);
+    }
+    sel_sync_stat(stats, cap, SEL_SYNC_LISTING_ROWS, st.listing_rows);
+    sel_sync_stat(stats, cap, SEL_SYNC_SKIPPED_ROWS, st.skipped_rows);
+    sel_sync_stat(stats, cap, SEL_SYNC_SONGLENGTHS, st.songlengths);
+    sel_sync_stat(stats, cap, SEL_SYNC_STIL_ENTRIES, st.stil_entries);
+    sel_sync_stat(stats, cap, SEL_SYNC_SUBTUNES, st.subtunes);
+    return ok;
+}
+
 static const sel_source g_hvsc = {
     "hvsc", "HVSC", "https://hvsc.c64.org/", "High Voltage SID Collection, served through Modland.", g_tags,
-    NULL, parse, NULL, url_of, path_in, NULL, NULL,
+    NULL, parse, NULL, url_of, path_in, NULL, NULL, hvsc_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL,
 };
 
 const sel_source* sel_source_hvsc(void) {

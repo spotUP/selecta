@@ -2,6 +2,9 @@
  * Music Archive. A path is relative to the /asma/ root: `Composers/Aki/Atari_Style.sap`, `Games/221B_Baker_Street.sap`;
  * the song key is `asma:<path>` and the canonical URL is https://asma.atari.org/asma/<path>, percent-encoded. */
 #include "../source.h"
+#include "asma_net.h"
+#include "modland_net.h"
+#include "sync_host.h"
 #include "asma_sync.h"
 #include "url_path.h"
 
@@ -72,9 +75,32 @@ static int parse(const char* path, char* scratch, size_t n, sel_tag* out) {
     return 1;
 }
 
+/* LIBRARY_SYNC dispatch (I517): a URL runs the network sync, anything else reads a local mirror copy. */
+static int asma_sync_host(const sel_host* host, const char* arg, int64_t now, sel_tag* stats, uint32_t cap) {
+    const sel_local_scan_config* cfg = sel_sync_cfg(host);
+    sel_asma_sync_stats st;
+    int ok;
+
+    (void)now;
+    memset(&st, 0, sizeof st);
+    if (sel_modland_is_url(arg)) {
+        sel_asma_net_stats nt;
+
+        memset(&nt, 0, sizeof nt);
+        ok = sel_asma_net_sync(cfg, arg, &st, &nt);
+        sel_sync_stat(stats, cap, SEL_SYNC_NET_BYTES, nt.list_bytes);
+        sel_sync_stat(stats, cap, SEL_SYNC_NET_REQUESTS, nt.http_requests);
+    } else {
+        ok = sel_asma_sync(cfg, arg, &st);
+    }
+    sel_sync_stat(stats, cap, SEL_SYNC_LISTING_ROWS, st.listing_rows);
+    sel_sync_stat(stats, cap, SEL_SYNC_SKIPPED_ROWS, st.skipped_rows);
+    return ok;
+}
+
 static const sel_source g_asma = {
     "asma", "ASMA", "https://asma.atari.org/", "Atari SAP Music Archive: music of the Atari 8-bit computers.", g_tags,
-    NULL, parse, NULL, url_of, path_in, NULL, NULL,
+    NULL, parse, NULL, url_of, path_in, NULL, NULL, asma_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL,
 };
 
 const sel_source* sel_source_asma(void) {

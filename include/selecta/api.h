@@ -17,7 +17,7 @@
 
 /* Bumped only for an incompatible change to sel_host or the tag ABI.
  * Appending a field to sel_host does not bump it (the size field covers that). */
-#define SEL_API_VERSION 1u
+#define SEL_API_VERSION 2u
 
 #define SEL_VERSION_STRING "0.0.1"
 

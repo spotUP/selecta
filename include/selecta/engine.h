@@ -255,6 +255,9 @@ typedef struct sel_sync_info {
     uint32_t net_zip_bytes, net_listing_bytes, net_changelogs_fetched, net_changelogs_missing, net_requests,
         net_unpack_peak_heap; /* modland URL sync (I161a, I161c) */
     uint32_t net_songlengths_bytes, net_stil_bytes, net_listing_derived; /* hvsc URL sync (I162a); net_requests too */
+    /* The source's own stats list (SEL_SYNC_* tags, END-terminated), what its `sync` reported (I517). The named
+     * fields above are filled from it for the readers that predate the list. */
+    sel_tag stats[SEL_SYNC_STATS_MAX];
 } sel_sync_info;
 void sel_engine_sync_info(const sel_engine* e, sel_sync_info* out);
 

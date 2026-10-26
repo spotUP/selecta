@@ -4,6 +4,9 @@
  * as Modland files them (bbmp sndh.py parse_path): the artist is the first folder as it is named, the name is the file
  * without its extension. */
 #include "../source.h"
+#include "sndh_net.h"
+#include "modland_net.h"
+#include "sync_host.h"
 #include "sndh_sync.h"
 #include "url_path.h"
 
@@ -66,9 +69,32 @@ static int parse(const char* path, char* scratch, size_t n, sel_tag* out) {
     return 1;
 }
 
+/* LIBRARY_SYNC dispatch (I517): a URL runs the network sync, anything else reads a local mirror copy. */
+static int sndh_sync_host(const sel_host* host, const char* arg, int64_t now, sel_tag* stats, uint32_t cap) {
+    const sel_local_scan_config* cfg = sel_sync_cfg(host);
+    sel_sndh_sync_stats st;
+    int ok;
+
+    (void)now;
+    memset(&st, 0, sizeof st);
+    if (sel_modland_is_url(arg)) {
+        sel_sndh_net_stats nt;
+
+        memset(&nt, 0, sizeof nt);
+        ok = sel_sndh_net_sync(cfg, arg, &st, &nt);
+        sel_sync_stat(stats, cap, SEL_SYNC_NET_BYTES, nt.list_bytes);
+        sel_sync_stat(stats, cap, SEL_SYNC_NET_REQUESTS, nt.http_requests);
+    } else {
+        ok = sel_sndh_sync(cfg, arg, &st);
+    }
+    sel_sync_stat(stats, cap, SEL_SYNC_LISTING_ROWS, st.listing_rows);
+    sel_sync_stat(stats, cap, SEL_SYNC_SKIPPED_ROWS, st.skipped_rows);
+    return ok;
+}
+
 static const sel_source g_sndh = {
     "sndh", "SNDH", "https://sndh.atari.org/", "Atari ST music: the YM2149 chip's SNDH archive.", g_tags,
-    NULL, parse, NULL, url_of, path_in, NULL, NULL,
+    NULL, parse, NULL, url_of, path_in, NULL, NULL, sndh_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL,
 };
 
 const sel_source* sel_source_sndh(void) {

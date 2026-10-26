@@ -3,6 +3,8 @@
  * path is `pub/modules/<format>/<artist>/<file>` relative to the Modland root, so the song key is
  * `modland:pub/modules/<format>/<artist>/<file>`. */
 #include "../source.h"
+#include "modland_net.h"
+#include "sync_host.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -149,9 +151,41 @@ static int parse(const char* path, char* scratch, size_t n, sel_tag* out) {
     return 1;
 }
 
+/* LIBRARY_SYNC dispatch (I517): a URL runs the network sync, anything else applies a local mirror copy. */
+static int modland_sync_host(const sel_host* host, const char* arg, int64_t now, sel_tag* stats, uint32_t cap) {
+    const sel_local_scan_config* cfg = sel_sync_cfg(host);
+    sel_modland_sync_stats st;
+    int ok;
+
+    memset(&st, 0, sizeof st);
+    if (sel_modland_is_url(arg)) {
+        sel_modland_net_stats nt;
+
+        memset(&nt, 0, sizeof nt);
+        ok = sel_modland_net_sync(cfg, arg, now, &st, &nt);
+        sel_sync_stat(stats, cap, SEL_SYNC_ZIP_BYTES, nt.zip_bytes);
+        sel_sync_stat(stats, cap, SEL_SYNC_NET_BYTES, nt.listing_bytes);
+        sel_sync_stat(stats, cap, SEL_SYNC_UNPACK_PEAK_HEAP, nt.unpack_peak_heap);
+        sel_sync_stat(stats, cap, SEL_SYNC_CHANGELOGS_FETCHED, nt.changelogs_fetched);
+        sel_sync_stat(stats, cap, SEL_SYNC_CHANGELOGS_MISSING, nt.changelogs_missing);
+        sel_sync_stat(stats, cap, SEL_SYNC_NET_REQUESTS, nt.http_requests);
+    } else {
+        ok = sel_modland_sync(cfg, arg, now, &st);
+    }
+    sel_sync_stat(stats, cap, SEL_SYNC_LISTING_ROWS, st.listing_rows);
+    sel_sync_stat(stats, cap, SEL_SYNC_SKIPPED_ROWS, st.skipped_rows);
+    sel_sync_stat(stats, cap, SEL_SYNC_CHANGELOGS, st.changelogs);
+    sel_sync_stat(stats, cap, SEL_SYNC_CL_ADDED, st.cl_added);
+    sel_sync_stat(stats, cap, SEL_SYNC_CL_REMOVED, st.cl_removed);
+    sel_sync_stat(stats, cap, SEL_SYNC_CL_MOVED, st.cl_moved);
+    sel_sync_stat(stats, cap, SEL_SYNC_CL_UPDATED, st.cl_updated);
+    sel_sync_stat(stats, cap, SEL_SYNC_NEW_THIS_WEEK, st.new_this_week);
+    return ok;
+}
+
 static const sel_source g_modland = {
     "modland", "Modland", "https://modland.com/", "The largest tracker module archive.", g_tags,
-    NULL, parse, NULL, url_of, path_in, NULL, NULL,
+    NULL, parse, NULL, url_of, path_in, NULL, NULL, modland_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_NEW_THIS_WEEK, NULL,
 };
 
 const sel_source* sel_source_modland(void) {

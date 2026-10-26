@@ -1,4 +1,4 @@
-sel_host size=44
+sel_host size=52
 size offset=0
 api_version offset=4
 mem_alloc offset=8
@@ -10,3 +10,5 @@ voices offset=28
 config_get offset=32
 query offset=36
 ctx offset=40
+net offset=44
+catalogue offset=48

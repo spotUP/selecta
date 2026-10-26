@@ -23,7 +23,9 @@
     X(voices)              \
     X(config_get)          \
     X(query)               \
-    X(ctx)
+    X(ctx)                 \
+    X(net)                 \
+    X(catalogue)
 
 /* Declaration order of struct sel_voices (plan I29). */
 #define SEL_VOICES_FIELDS(X) \

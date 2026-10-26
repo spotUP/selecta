@@ -3,6 +3,8 @@
  * `https://hippoplayer.se/playlist/<filename>`. Entries are playlists, not tunes. */
 #include "../source.h"
 #include "hippo_sync.h"
+#include "sync_host.h"
+#include "hippo_sync.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -63,9 +65,28 @@ static int parse(const char* path, char* scratch, size_t n, sel_tag* out) {
     return 1;
 }
 
+/* LIBRARY_SYNC dispatch (I517): hippo reads a directory of fetched lists and .prg files. */
+static int hippo_sync_host(const sel_host* host, const char* arg, int64_t now, sel_tag* stats, uint32_t cap) {
+    sel_hippo_sync_stats st;
+    int ok;
+
+    (void)now;
+    memset(&st, 0, sizeof st);
+    ok = sel_hippo_sync(sel_sync_cfg(host), arg, &st);
+    sel_sync_stat(stats, cap, SEL_SYNC_LISTING_ROWS, st.lists);
+    sel_sync_stat(stats, cap, SEL_SYNC_SKIPPED_ROWS, st.skipped);
+    sel_sync_stat(stats, cap, SEL_SYNC_LISTS, st.lists);
+    sel_sync_stat(stats, cap, SEL_SYNC_PRG_FILES, st.prg_files);
+    sel_sync_stat(stats, cap, SEL_SYNC_PRG_ENTRIES, st.prg_entries);
+    sel_sync_stat(stats, cap, SEL_SYNC_PRG_DIVIDERS, st.prg_dividers);
+    sel_sync_stat(stats, cap, SEL_SYNC_PRG_STEALTH, st.prg_stealth);
+    sel_sync_stat(stats, cap, SEL_SYNC_PRG_SUBSONGS, st.prg_subsongs);
+    return ok;
+}
+
 static const sel_source g_hippo = {
     "hippo", "HippoPlayer", "https://hippoplayer.se/", "Shared HippoPlayer playlists (.prg).", g_tags,
-    NULL, parse, NULL, url_of, path_in, NULL, NULL,
+    NULL, parse, NULL, url_of, path_in, NULL, NULL, hippo_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL,
 };
 
 const sel_source* sel_source_hippo(void) {

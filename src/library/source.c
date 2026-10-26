@@ -142,9 +142,12 @@ int sel_song_key_split(const char* key, char* source, size_t source_n, char* pat
 }
 
 int sel_source_is_remote(const char* id) {
+    const sel_source* src;
+
     if (id == NULL) {
         return 0;
     }
     sel_source_register_builtin();
-    return sel_source_find(id) != NULL && strcmp(id, "local") != 0 && strcmp(id, "radio") != 0;
+    src = sel_source_find(id);
+    return src != NULL && (src->flags & SEL_SOURCE_REMOTE) != 0;
 }

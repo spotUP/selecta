@@ -13,6 +13,8 @@ enum { SEL_MEM_FAST = 0, SEL_MEM_SAMPLE = 1 };
 enum { SEL_LOG_ERROR = 0, SEL_LOG_WARN, SEL_LOG_INFO, SEL_LOG_DEBUG };
 
 struct sel_voices; /* M0b */
+struct sel_net;       /* net.h (I517) */
+struct sel_catalogue; /* catalogue.h (I517) */
 
 typedef struct sel_host sel_host;
 struct sel_host {
@@ -28,6 +30,8 @@ struct sel_host {
     int (*query)(const sel_host*, const sel_tag* ask, sel_tag* answer);
     void* ctx;
     /* append only below this line; never reorder, never remove */
+    const struct sel_net* (*net)(const sel_host*);             /* NULL accessor or NULL result: no network (I517) */
+    const struct sel_catalogue* (*catalogue)(const sel_host*); /* NULL accessor or NULL result: no library (I517) */
 };
 
 /* The host of this build: malloc-backed memory, stderr log, C clock. */

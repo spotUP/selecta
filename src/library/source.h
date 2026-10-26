@@ -5,60 +5,10 @@
 #define SELECTA_LIBRARY_SOURCE_H
 
 #include "song_key.h"
+#include <selecta/source.h>
 #include <selecta/tags.h>
 #include <stddef.h>
 #include <stdint.h>
-
-#define SEL_SOURCE_ID_MAX 16u   /* longest source id incl. NUL */
-
-/* Receives one catalogue row of a full listing (path, size, md5 or NULL, format, artist). */
-typedef struct sel_listing_sink {
-    void* ctx;
-    int (*row)(void* ctx, const char* path, int64_t size, const char* md5, const char* format, const char* artist);
-} sel_listing_sink;
-
-/* Progress of a long listing; `cancel` is polled by the source. */
-typedef struct sel_progress {
-    void* ctx;
-    void (*report)(void* ctx, uint32_t done, uint32_t total);
-    int (*cancel)(void* ctx);
-} sel_progress;
-
-/* A way to fetch a file: ordered list of base URLs (mirrors) and the scheme. Filled by network sources. */
-typedef struct sel_transport {
-    const char* const* bases;
-    uint32_t count;
-    uint32_t kind; /* SEL_TRANSPORT_* */
-} sel_transport;
-enum { SEL_TRANSPORT_FILE = 0, SEL_TRANSPORT_FTP = 1, SEL_TRANSPORT_HTTP = 2, SEL_TRANSPORT_MIRRORS = 3 };
-
-typedef struct sel_list_sink {
-    void* ctx;
-    int (*list)(void* ctx, const char* id, const char* name);
-} sel_list_sink;
-
-typedef struct sel_playlist {
-    const char* name;
-    const char* const* paths;
-    uint32_t count;
-} sel_playlist;
-
-typedef struct sel_source {
-    const char* id; /* "modland", "hvsc", "asma", "sndh", "zxart", "keygenmusic", "local", "hippo", "radio" */
-    const char* name;
-    const char* home;
-    const char* about;
-    const sel_tag* tags; /* SEL_SRC_HAS_LISTS, SEL_SRC_HOSTED_BY, SEL_SRC_HAS_MD5, SEL_SRC_TRANSPORTS */
-    int (*listing)(void* st, sel_listing_sink* out, sel_progress* p);
-    /* Format / artist / name from a path: fills out[0..3] (SRC_FORMAT, SRC_ARTIST, SRC_NAME, END); the
-     * strings are copied into `scratch` (n bytes). 0 when the path has no such structure. */
-    int (*parse)(const char* path, char* scratch, size_t n, sel_tag* out);
-    const sel_transport* (*transport)(void* st);
-    int (*url)(const char* path, char* out, size_t n);       /* canonical public URL */
-    int (*path_in)(const char* url, char* path, size_t n);   /* inverse of url */
-    int (*published_lists)(void* st, sel_list_sink* out);
-    int (*read_list)(void* st, const char* id, sel_playlist* out);
-} sel_source;
 
 /* Registry. Registration is by static descriptor; ids are unique. Returns 0 on a duplicate id, a
  * full registry or an id longer than SEL_SOURCE_ID_MAX - 1. */

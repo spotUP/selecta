@@ -18,6 +18,7 @@ typedef struct sel_tag {
 #define SEL_TAG_MORE 1u /* value: const sel_tag* to continue in */
 #define SEL_TAG_SKIP 2u /* skip this entry and the next `value` entries */
 #define SEL_TAG_USER 0x80000000u /* plugin-private tag, never in tags.def */
+#define SEL_SYNC_STATS_MAX 32u /* entries a source sync may write into its stats list, END included (I517) */
 
 /* Every public tag, generated from tags.def: SEL_OUT_NAME, SEL_META_TITLE, ... */
 enum sel_tag_id {
