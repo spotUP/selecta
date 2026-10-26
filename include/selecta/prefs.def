@@ -48,6 +48,9 @@ SEL_PREF(LIBRARY_VOTE_TOKEN, "library.vote_token", "",                          
 /* DEViLBOX lyrics (I193): "on" asks the endpoint for a song without a .lrc file and without a song message. On by
  * default (Johan's call): the request carries the md5 of the file; "off" keeps every song hash on the machine. */
 SEL_PREF(LIBRARY_LYRICS,     "library.lyrics_online", "on",                                       SEL_PREF_PLAIN)
+/* Sources page (I265): comma separated ids of the sources switched off. A source in the list is skipped by search, browse
+ * and radio; SOURCES reports SRC_ENABLED=0 for it. Empty: every registered source is on. */
+SEL_PREF(LIBRARY_SOURCES_OFF, "library.sources_off", "",                                       SEL_PREF_PLAIN)
 SEL_PREF(LIBRARY_SMART_VIEW, "library.smart_playlist", "smart",                                   SEL_PREF_PLAIN)
 SEL_PREF(LIBRARY_SMART_TOP,  "library.smart_top",  "3",                                           SEL_PREF_PLAIN)
 #ifndef __amigaos__

@@ -1,0 +1,12 @@
+# I265: the library.sources_off pref switches a source off. SOURCES reports it disabled with the stored value, and the
+# library search skips its songs (the catalogue holds three modland songs, two local ones). Switched back on, the three
+# come back.
+LIBRARY_SEARCH ""
+@results
+PREF_SET library.sources_off "modland"
+SOURCES
+LIBRARY_SEARCH ""
+@results
+PREF_SET library.sources_off ""
+LIBRARY_SEARCH ""
+@results

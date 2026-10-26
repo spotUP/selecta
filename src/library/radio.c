@@ -40,7 +40,7 @@ static void queue_form(const char* key, char* out, size_t cap) {
 static uint32_t admit(radio_pass* p, const char* key, uint32_t weight, char* form, size_t cap) {
     queue_form(key, form, cap);
     if (weight == 0 || (p->avoid != NULL && strcmp(p->avoid, form) == 0)) return 0;
-    if (sel_library_flag_skipped(p->lib, key)) return 0;
+    if (sel_library_flag_skipped(p->lib, key) || sel_library_key_source_off(p->lib, key)) return 0;
     return weight;
 }
 

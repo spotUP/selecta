@@ -402,6 +402,38 @@ static int arm_step(sel_library* lib, sel_page_arm* a, int rows, sel_lib_job* jo
     }
 }
 
+void sel_library_set_sources_off(sel_library* lib, const char* csv) {
+    if (lib == NULL) return;
+    /* one writer (the engine thread), read by the worker: a torn read only skips or admits one row for one search */
+    snprintf(lib->src_off, sizeof lib->src_off, "%s", csv != NULL ? csv : "");
+}
+
+int sel_library_csv_has(const char* csv, const char* id) {
+    const char* p;
+    size_t n;
+    if (csv == NULL || id == NULL || id[0] == '\0') return 0;
+    n = strlen(id);
+    for (p = csv; *p != '\0';) {
+        const char* end = strchr(p, ',');
+        size_t len = end != NULL ? (size_t)(end - p) : strlen(p);
+        if (len == n && strncmp(p, id, n) == 0) return 1;
+        p += len;
+        if (*p == ',') p++;
+    }
+    return 0;
+}
+
+int sel_library_key_source_off(sel_library* lib, const char* key) {
+    char src[32];
+    const char* colon;
+    if (lib == NULL || lib->src_off[0] == '\0' || key == NULL) return 0;
+    colon = strchr(key, ':');
+    if (colon == NULL || (size_t)(colon - key) >= sizeof src) return 0;
+    memcpy(src, key, (size_t)(colon - key));
+    src[colon - key] = '\0';
+    return sel_library_csv_has(lib->src_off, src);
+}
+
 /* Copies the sorted keys of `arm` (and of `arm_idx`, the same query over the attached index) into job->out
  * until they run out or one does not fit. A key equal to the one before it (the same song in the user DB
  * and the index) is copied once. */
@@ -439,6 +471,7 @@ static void collect(sel_library* lib, const char* arm, const char* arm_idx, cons
         }
         k = (const char*)sqlite3_column_text(t->st, 0);
         n = k != NULL ? strlen(k) + 1u : 0;
+        if (n > 0 && sel_library_key_source_off(lib, k)) n = 0; /* a switched-off source (I265) */
         if (n > 0 && (last == NULL || strcmp(k, last) != 0)) {
             if (max_hits > 0 && job->count >= max_hits) {
                 /* A per-row scan stops here: counting the rest would walk every row again (I198e). */

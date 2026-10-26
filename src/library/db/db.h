@@ -520,6 +520,11 @@ typedef void (*sel_composer_list_fn)(void* ctx, const char* canon, const char* d
 int sel_library_composer_list(sel_library* lib, sel_composer_list_fn fn, void* ctx);
 /* Songs rows of source id `source` (the SOURCES command, DUI-P4-3); -1 on a library error. */
 int sel_library_source_songs(sel_library* lib, const char* source);
+/* Switched-off sources (I265): `csv` is the library.sources_off pref, comma separated ids. A song whose key carries one
+ * of those ids is skipped by sel_library_search and the radio pick; this is the one place that owns the filter. */
+void sel_library_set_sources_off(sel_library* lib, const char* csv);
+int sel_library_csv_has(const char* csv, const char* id);
+int sel_library_key_source_off(sel_library* lib, const char* key);
 
 /* Also-by (I183, T86): the other songs that share a composer with song `song_key` (song_composers, canonical
  * spelling), in library order. Same row callback as the composer page (`composer` = the shared display name).

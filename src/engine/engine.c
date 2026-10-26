@@ -1029,6 +1029,7 @@ static void cmd_PREF_SET(sel_engine* e, const sel_message* m) {
     if (e->config_dir[0] != '\0' && !sel_prefs_save(&e->prefs, e->config_dir)) {
         sel_engine_report_error(e, "prefs_save_failed", e->config_dir);
     }
+    if (e->lib != NULL) sel_library_set_sources_off(e->lib, e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF]);
     emit_pref(e, sel_prefs_find(m->args[0].v.s));
 }
 
@@ -3820,7 +3821,7 @@ static void sticker_answer(sel_engine* e, const char* key, const char* name, con
 
 /* SOURCES: one LIBRARY_RESULT per registered source for the Library page's Sources tab (DUI-P4-3): SRC_KEY id,
  * SRC_KIND local or remote, SRC_NAME, SRC_PATH the home, SRC_ENABLED, SRC_COUNT the songs rows of that source (0
- * without a library). A registered source is the configured one; there is no per-source switch yet. */
+ * without a library). SRC_ENABLED is 0 for an id in the library.sources_off pref (I265). */
 typedef struct sources_fill {
     sel_engine* e;
     uint32_t n;
@@ -3844,7 +3845,7 @@ static void sources_row(void* ctx, const char* id, const char* name, const char*
     t[3].tag = SEL_SRC_PATH;
     t[3].value = (uintptr_t)(home != NULL ? home : "");
     t[4].tag = SEL_SRC_ENABLED;
-    t[4].value = 1;
+    t[4].value = sel_library_csv_has(e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF], id) ? 0 : 1;
     t[5].tag = SEL_SRC_COUNT;
     t[5].value = songs > 0 ? (uintptr_t)songs : 0;
     t[6].tag = SEL_TAG_END;
@@ -5324,6 +5325,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     if (cfg && cfg->config_dir && strlen(cfg->config_dir) < sizeof e->config_dir) {
         strcpy(e->config_dir, cfg->config_dir);
         (void)sel_prefs_load(&e->prefs, e->config_dir);
+        if (e->lib != NULL) sel_library_set_sources_off(e->lib, e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF]);
         sel_devilbox_set_config_dir(e->config_dir);
         sel_library_rating_push(e->lib); /* ratings left over from a run without the server (I173, I173c) */
         sel_library_hash_kick(e->lib);   /* local md5 for the duplicate redirect of OPEN (I184a) */

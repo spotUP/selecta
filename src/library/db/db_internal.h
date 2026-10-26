@@ -23,6 +23,7 @@ struct sel_library {
     uint32_t account;
     sqlite3* db;
     int has_index;     /* a read-only index is attached as schema idx (index.c) */
+    char src_off[160]; /* comma separated ids of the switched-off sources (library.sources_off, I265); read by search and radio */
     sel_spsc requests; /* caller -> worker */
     sel_spsc results;  /* worker -> caller */
     uint32_t served;   /* requests handled; written by the worker only */
