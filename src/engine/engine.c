@@ -55,8 +55,6 @@
 #include "sources/asma_net.h"
 #include "sources/asma_sync.h"
 #include "sources/hvsc_net.h"
-#include "sources/sndh_net.h"
-#include "sources/sndh_sync.h"
 #include "sources/keygenmusic_net.h"
 #include "sources/keygenmusic_sync.h"
 #include "sources/hvsc_sync.h"

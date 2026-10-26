@@ -1,8 +1,10 @@
 /* I414: the sndh central directory reader, end-of-directory finder, download page parser and source descriptor
- * (src/library/sources/sndh*.c). SEL_SNDH_ZIP is the recorded trimmed archive, SEL_SNDH_PAGE the recorded
+ * (plugins/sources/sndh). SEL_SNDH_ZIP is the recorded trimmed archive, SEL_SNDH_PAGE the recorded
  * /download.php, both under tests/net/fixtures/sndh.atari.org. */
-#include "sources/sndh_sync.h"
-#include "source.h"
+#include "sndh_sync.h"
+
+#include <selecta/plugin.h>
+#include <selecta/source.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -97,10 +99,12 @@ int main(void) {
         free(page);
     }
 
-    src = sel_source_find("sndh");
-    if (src == NULL) {
-        sel_source_register_builtin();
-        src = sel_source_find("sndh");
+    {
+        const sel_tag* desc = sel_plugin_entry(1);
+        const sel_tag* hooks = (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0);
+
+        CHECK(sel_tag_find(desc, SEL_PLUGIN_KIND, 0) == SEL_PLUGIN_KIND_SOURCE);
+        src = (const sel_source*)sel_tag_find(hooks, SEL_SRC_DESCRIPTOR, 0);
     }
     CHECK(src != NULL);
     if (src != NULL) {

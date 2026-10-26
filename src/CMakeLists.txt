@@ -115,7 +115,7 @@ if(SEL_AMIGA)
   # count. One line per checked target: name@source dir@binary dir@source prefix filter (regex)@sources (comma separated).
   # D-M3-3: SQLite (selecta_sqlite) and the R128 analyser are library-worker code where double is allowed;
   # they are excluded by target, simply by not being listed here. Everything listed must stay float-free.
-  set(SEL_NOFLOAT_TARGETS selecta_core selecta_mixer sel_plugin_wav sel_plugin_null selecta_library selecta_shared_source selecta_shared_archive)
+  set(SEL_NOFLOAT_TARGETS selecta_core selecta_mixer sel_plugin_wav sel_plugin_null selecta_library selecta_shared_source selecta_shared_archive sel_plugin_sndh)
   set(_nf "")
   foreach(_t IN LISTS SEL_NOFLOAT_TARGETS)
     if(_t STREQUAL "selecta_core")

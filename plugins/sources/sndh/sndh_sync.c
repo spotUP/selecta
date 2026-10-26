@@ -1,14 +1,11 @@
 /* See sndh_sync.h. */
 #include "sndh_sync.h"
 
-#include "../local.h"
-#include "../source.h"
-#include "sync_util.h"
+#include <selecta/catalogue.h>
+#include "source/sync_text.h"
 
 #include <stdio.h>
 #include <string.h>
-
-#define SYNC_BATCH 32u
 
 /* ---- the zip directory ---- */
 
@@ -106,12 +103,10 @@ typedef struct row_text {
 } row_text;
 
 typedef struct sync_state {
-    const sel_local_scan_config* cfg;
+    const sel_host* host;
+    const sel_catalogue* cat;
     sel_sndh_sync_stats* st;
-    const sel_source* src;
     row_text* text;
-    sel_scan_row* rows;
-    uint32_t row_n;
     int failed;
 } sync_state;
 
@@ -139,7 +134,7 @@ static int on_entry(void* ctx, const sel_sndh_entry* e) {
     sync_state* s = ctx;
     const size_t folder = sizeof SEL_SNDH_FOLDER - 1u;
     row_text* t;
-    sel_scan_row* r;
+    sel_catalogue_song song;
     sel_tag tags[4];
     const char* rel;
     size_t i;
@@ -159,64 +154,64 @@ static int on_entry(void* ctx, const sel_sndh_entry* e) {
             return 1;
         }
     }
-    t = &s->text[s->row_n];
-    r = &s->rows[s->row_n];
-    if (!sel_sync_safe_path(rel) || !s->src->parse(rel, t->scratch, sizeof t->scratch, tags)) {
+    t = s->text;
+    if (!sel_sync_safe_path(rel) || !sel_sndh_parse(rel, t->scratch, sizeof t->scratch, tags)) {
         s->st->skipped_rows++;
         return 1;
     }
     memcpy(t->path, rel, strlen(rel) + 1u);
-    memset(r, 0, sizeof *r);
-    r->source = "sndh";
-    r->path = t->path;
-    r->format = r->artist = r->name = "";
+    memset(&song, 0, sizeof song);
+    song.path = t->path;
+    song.format = song.artist = song.name = "";
     for (i = 0; tags[i].tag != SEL_TAG_END; i++) {
         if (tags[i].tag == SEL_SRC_FORMAT) {
-            r->format = (const char*)tags[i].value;
+            song.format = (const char*)tags[i].value;
         } else if (tags[i].tag == SEL_SRC_ARTIST) {
-            r->artist = (const char*)tags[i].value;
+            song.artist = (const char*)tags[i].value;
         } else if (tags[i].tag == SEL_SRC_NAME) {
-            r->name = (const char*)tags[i].value;
+            song.name = (const char*)tags[i].value;
         }
     }
-    r->album = r->md5 = "";
-    r->size = e->size;
-    s->row_n++;
+    song.album = song.md5 = "";
+    song.size = e->size;
     s->st->listing_rows++;
-    if (s->row_n == SYNC_BATCH && !sel_sync_flush_scan(s->cfg, s->rows, &s->row_n, &s->st->batches, &s->failed)) {
+    if (!s->cat->song(s->host, &song)) {
+        s->failed = 1;
         return 0;
     }
     return 1;
 }
 
-int sel_sndh_sync(const sel_local_scan_config* cfg, const char* dir, sel_sndh_sync_stats* stats) {
+int sel_sndh_sync(const sel_host* host, const char* dir, sel_sndh_sync_stats* stats) {
     sync_state s;
-    const sel_host* host = cfg->host;
-    char path[SEL_BROWSE_PATH_MAX];
+    const sel_catalogue* cat = host->catalogue != NULL ? host->catalogue(host) : NULL;
+    char path[1100];
     FILE* f = NULL;
-    int ok = 0;
+    int ok = 0, open = 0;
 
     memset(&s, 0, sizeof s);
     memset(stats, 0, sizeof *stats);
-    s.cfg = cfg;
+    s.host = host;
+    s.cat = cat;
     s.st = stats;
-    sel_source_register_builtin();
-    s.src = sel_source_find("sndh");
-    s.text = host->mem_alloc(host, (size_t)SYNC_BATCH * sizeof *s.text, SEL_MEM_FAST);
-    s.rows = host->mem_alloc(host, (size_t)SYNC_BATCH * sizeof *s.rows, SEL_MEM_FAST);
-    if (s.text != NULL && s.rows != NULL && s.src != NULL && sel_browse_join(path, sizeof path, dir, SEL_SNDH_CD)) {
-        f = fopen(path, "rb");
-    }
-    if (f != NULL) {
-        ok = sel_sndh_read_cd(f, on_entry, &s) >= 0 && !s.failed &&
-             sel_sync_flush_scan(cfg, s.rows, &s.row_n, &stats->batches, &s.failed);
+    s.text = host->mem_alloc(host, sizeof *s.text, SEL_MEM_FAST);
+    if (s.text != NULL && cat != NULL && snprintf(path, sizeof path, "%s/%s", dir, SEL_SNDH_CD) < (int)sizeof path &&
+        (f = fopen(path, "rb")) != NULL) {
+        open = cat->begin(host, "sndh");
+        if (open) {
+            ok = sel_sndh_read_cd(f, on_entry, &s) >= 0 && !s.failed;
+        }
         fclose(f);
+    }
+    if (open) {
+        if (ok) {
+            ok = cat->commit(host);
+        } else {
+            cat->abort(host);
+        }
     }
     if (s.text != NULL) {
         host->mem_free(host, s.text);
     }
-    if (s.rows != NULL) {
-        host->mem_free(host, s.rows);
-    }
-    return ok && !s.failed;
+    return ok;
 }

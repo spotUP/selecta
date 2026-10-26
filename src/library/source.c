@@ -118,9 +118,6 @@ void sel_source_register_builtin(void) {
     if (sel_source_find("asma") == NULL) {
         (void)sel_source_register(sel_source_asma());
     }
-    if (sel_source_find("sndh") == NULL) {
-        (void)sel_source_register(sel_source_sndh());
-    }
     if (sel_source_find("keygenmusic") == NULL) {
         (void)sel_source_register(sel_source_keygenmusic());
     }

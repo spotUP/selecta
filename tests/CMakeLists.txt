@@ -1742,11 +1742,14 @@ if(NOT SEL_AMIGA)
 
   # I414: the sndh directory reader, download page parser and source descriptor, on the recorded fixtures.
   add_executable(sndh_unit_test sndh_unit_test.c)
-  target_include_directories(sndh_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_sources(sndh_unit_test PRIVATE
+    ${PROJECT_SOURCE_DIR}/plugins/sources/sndh/sndh.c ${PROJECT_SOURCE_DIR}/plugins/sources/sndh/sndh_sync.c
+    ${PROJECT_SOURCE_DIR}/plugins/sources/sndh/sndh_net.c)
+  target_include_directories(sndh_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/sources/sndh)
   target_compile_definitions(sndh_unit_test PRIVATE
     SEL_SNDH_ZIP="${PROJECT_SOURCE_DIR}/tests/net/fixtures/sndh.atari.org/files/sndh2026_lf.zip"
     SEL_SNDH_PAGE="${PROJECT_SOURCE_DIR}/tests/net/fixtures/sndh.atari.org/download.php")
-  target_link_libraries(sndh_unit_test PRIVATE selecta_library selecta_core)
+  target_link_libraries(sndh_unit_test PRIVATE selecta_shared_source selecta_shared_archive selecta_core)
   add_test(NAME sndh-unit COMMAND sndh_unit_test)
   set_tests_properties(sndh-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sndh_unit_ok")
 

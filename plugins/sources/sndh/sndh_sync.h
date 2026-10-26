@@ -4,10 +4,11 @@
  * The catalogue is read from the zip's central directory, which sits at the end of the zip: two small Range
  * requests (bbmp sndh.py zip_list), not the 100 MB. The zip gives no checksums, so rows carry none. A path is
  * relative to /sndh/sndh_lf/ (`Mad_Max/Wings_Of_Death.sndh`), the song key is `sndh:<path>`. */
-#ifndef SELECTA_LIBRARY_SOURCES_SNDH_SYNC_H
-#define SELECTA_LIBRARY_SOURCES_SNDH_SYNC_H
+#ifndef SELECTA_PLUGINS_SOURCES_SNDH_SYNC_H
+#define SELECTA_PLUGINS_SOURCES_SNDH_SYNC_H
 
-#include "local_source.h"
+#include <selecta/host.h>
+#include <selecta/source.h>
 
 #include <stdio.h>
 
@@ -29,7 +30,7 @@ typedef struct sel_sndh_sync_stats {
     uint32_t entries;      /* central directory records read */
     uint32_t listing_rows; /* rows written to the catalogue */
     uint32_t skipped_rows; /* .sndh members with an unsafe path, a name that did not fit, or a non-ASCII CP437 name */
-    uint32_t batches;      /* SEL_LIB_REQ_SCAN_BATCH requests sent */
+    uint32_t batches;      /* unused; kept at 0 (the engine batches the catalogue rows) */
 } sel_sndh_sync_stats;
 
 /* Calls `fn` once per central directory record of `f`, stopping at the first byte run that is not a record (the
@@ -44,8 +45,11 @@ int sel_sndh_find_directory(const unsigned char* tail, size_t n, uint32_t* cd_of
 /* The highest year of the `files/sndh<year>_lf.zip` links of /download.php, or 0 when it links none. */
 unsigned sel_sndh_newest_year(const char* page, size_t n);
 
+/* The source descriptor's parse hook (sndh.c): format, artist and name of a path. */
+int sel_sndh_parse(const char* path, char* scratch, size_t n, sel_tag* out);
+
 /* Reads <dir>/sndh.cd into the catalogue. Returns 0 when the file cannot be read or is no directory, memory runs
  * out or the DB rejects a batch. */
-int sel_sndh_sync(const sel_local_scan_config* cfg, const char* dir, sel_sndh_sync_stats* stats);
+int sel_sndh_sync(const sel_host* host, const char* dir, sel_sndh_sync_stats* stats);
 
 #endif
