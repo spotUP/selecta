@@ -98,32 +98,54 @@ if(gridr_hash STREQUAL grid_hash)
   message(FATAL_ERROR "Right in the grid did not move the selection")
 endif()
 flow_run(gridd grid "key down\nwait 600\n")
-if(gridd_hash STREQUAL grid_hash) # beside the Statistics column the grid is one column wide, so Down and Right coincide (I379)
+if(gridd_hash STREQUAL grid_hash) # Down moves a row of tiles, Right one tile
   message(FATAL_ERROR "Down in the grid must move the selection")
 endif()
 
-# I379 / I382: the Statistics panel (the run passes --stats) sits in its own column; no grid tile and no cover flow cover may
-# intersect it. The dump gives the bounding box of the drawn tiles ("grid box x y w h", filled by both views) and the panel
-# column ("stats rect x y w h").
-function(no_stats_overlap out what)
+# I381 (supersedes the column of I379): the Statistics panel (the run passes --stats) is a strip across the top of the Library body,
+# and the grid below it gets the whole main width. The dump gives the bounding box of the drawn tiles ("grid box x y w h", filled by
+# both views), the strip ("stats rect x y w h") and the column count of the grid sentinel. The strip is as wide as the main region
+# less one margin each side, so the columns the full width yields are (strip width + gap) / (tile width + gap) with the tile 160 px
+# art plus 2 * 10 px pad and the 16 px gap: at 1280x800 that is at least 3, where the column beside the strip left one.
+set(TILE_W 180)
+set(TILE_GAP 16)
+function(stats_strip out what)
   expect("${out}" "stats rect [0-9]+ [0-9]+ [1-9][0-9]* [1-9][0-9]*\n" "the ${what} run shows the Statistics panel")
   string(REGEX MATCH "grid box ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)" _gb "${out}")
   set(gx ${CMAKE_MATCH_1})
+  set(gy ${CMAKE_MATCH_2})
   set(gw ${CMAKE_MATCH_3})
   string(REGEX MATCH "stats rect ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)" _sr "${out}")
   set(sx ${CMAKE_MATCH_1})
+  set(sy ${CMAKE_MATCH_2})
   set(sw ${CMAKE_MATCH_3})
+  set(sh ${CMAKE_MATCH_4})
   if(gw EQUAL 0)
     message(FATAL_ERROR "the ${what} run drew no tile box")
   endif()
+  math(EXPR strip_bottom "${sy} + ${sh}")
+  message(STATUS "${what}: Statistics strip x ${sx} y ${sy} w ${sw} h ${sh}, tiles from y ${gy}")
+  if(gy LESS strip_bottom)
+    message(FATAL_ERROR "${what}: tiles start at y ${gy}, inside the Statistics strip (y ${sy}..${strip_bottom})")
+  endif()
+  if(sh GREATER sw)
+    message(FATAL_ERROR "${what}: the Statistics panel is a column (${sw} x ${sh}), expected a horizontal strip")
+  endif()
+  math(EXPR want_cols "(${sw} + ${TILE_GAP}) / (${TILE_W} + ${TILE_GAP})")
+  if(want_cols LESS 3)
+    message(FATAL_ERROR "${what}: the full width ${sw} px yields ${want_cols} columns, expected at least 3")
+  endif()
+  string(REGEX MATCH "grid draws [0-9]+ tiles [0-9]+ cols ([0-9]+)" _gc "${out}")
+  if(NOT CMAKE_MATCH_1 EQUAL want_cols)
+    message(FATAL_ERROR "${what}: grid has ${CMAKE_MATCH_1} columns, expected ${want_cols} (strip width ${sw})")
+  endif()
   math(EXPR grid_right "${gx} + ${gw}")
-  math(EXPR stats_right "${sx} + ${sw}")
-  message(STATUS "${what}: tiles x ${gx}..${grid_right}, Statistics x ${sx}..${stats_right}")
-  if(grid_right GREATER sx AND gx LESS stats_right)
-    message(FATAL_ERROR "${what} (x ${gx}..${grid_right}) overlaps the Statistics panel (x ${sx}..${stats_right})")
+  math(EXPR strip_right "${sx} + ${sw}")
+  if(grid_right GREATER strip_right OR gx LESS sx)
+    message(FATAL_ERROR "${what}: tiles x ${gx}..${grid_right} leave the strip width x ${sx}..${strip_right}")
   endif()
 endfunction()
-no_stats_overlap("${grid_out}" "grid")
+stats_strip("${grid_out}" "grid")
 
 # I391 (Johan's decision): the cover flow hides the Statistics column and uses the whole main width. The flow run still passes
 # --stats, yet its "stats rect" is empty (the panel draws only in a non-empty rect) and its free area runs to the same right edge the grid's Statistics column ends at.

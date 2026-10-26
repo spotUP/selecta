@@ -2087,7 +2087,7 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
  * Stats page (F24) beside them. Every number comes from the engine state (COMPOSERS_SHOW, STATS_SHOW).
  * TODO DUI-P4-3 slice B/C: the tree, column browser, sources, Files and History pages hook in here, as further pages
  * of this view chosen by a segmented control above the list. */
-enum { LIB_MARGIN = 24, LIB_TITLE_Y = 24, LIB_TITLE_H = 40, LIB_TAB_H = 32, LIB_ROW_H = 48, LIB_STATS_W = 300 };
+enum { LIB_MARGIN = 24, LIB_TITLE_Y = 24, LIB_TITLE_H = 40, LIB_TAB_H = 32, LIB_ROW_H = 48, LIB_STATS_H = 48, LIB_STATS_LINE = 24 };
 
 /* I445: the Library header is three rows, the title, the tab row and the list, with a gap of two theme spacings between
  * each, so the title descenders, the buttons and the tabs never touch. A composer drilldown puts its song count and
@@ -2102,6 +2102,17 @@ static int32_t lib_tab_y(desk* d) {
 
 static int32_t lib_list_y(desk* d) {
     return lib_tab_y(d) + lpx(d, LIB_TAB_H) + lib_gap(d);
+}
+
+static int lib_stats_on(const sel_state* st) {
+    int flow = st->view != NULL && st->view->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW;
+    return st->stats != NULL && !flow;
+}
+
+/* Top edge of the Library body (the rows, the tiles): under the tab row, and under the Statistics strip when it shows
+ * (I381), a lib_gap below it like the other header rows. */
+static int32_t lib_body_y(desk* d, const sel_state* st) {
+    return lib_list_y(d) + (lib_stats_on(st) ? lpx(d, LIB_STATS_H) + lib_gap(d) : 0);
 }
 
 /* Next NUL-separated field after `p`. */
@@ -2133,8 +2144,7 @@ static uint32_t lib_list_n(const sel_state* st) {
 /* Top edge of the scrolling rows: under the tab row, or under the back line of a drilldown, which ends above the same
  * edge. Rows scrolled above it are clipped and not clickable. */
 static int32_t lib_list_top(desk* d, sel_gui_rect mn, const sel_state* st) {
-    (void)st;
-    return mn.y + lib_list_y(d);
+    return mn.y + lib_body_y(d, st);
 }
 
 static int32_t lib_off_px(desk* d, const sel_state* st) {
@@ -2144,19 +2154,17 @@ static int32_t lib_off_px(desk* d, const sel_state* st) {
 /* The one row rectangle of the Library page: drawing, hit-testing and the dump all go through it. */
 static sel_gui_rect lib_row_rect(desk* d, sel_gui_rect mn, uint32_t i) {
     int32_t mg = lpx(d, LIB_MARGIN);
-    int32_t w = mn.w - 3 * mg - lpx(d, LIB_STATS_W);
-    return rect_of(mn.x + mg, mn.y + lib_list_y(d) + (int32_t)i * lpx(d, LIB_ROW_H) - lib_off_px(d, sel_engine_state(d->engine)),
+    int32_t w = mn.w - 2 * mg;
+    return rect_of(mn.x + mg, mn.y + lib_body_y(d, sel_engine_state(d->engine)) + (int32_t)i * lpx(d, LIB_ROW_H) - lib_off_px(d, sel_engine_state(d->engine)),
                    w > 0 ? w : 0, lpx(d, LIB_ROW_H));
 }
 
-/* The Statistics column of the Library page, right of the rows and the tile grid: the one rectangle the panel draws in and
- * the list and the grid lay out beside (I379). Zero width when there are no statistics and in cover flow, which uses the
- * whole main width (I391). */
+/* The Statistics strip of the Library page, across the top of the main region between the tab row and the rows or the tile
+ * grid, which take the whole main width below it (I381; the column of I379 left the grid one tile wide at 1280x800). Zero
+ * width when there are no statistics and in cover flow, which uses the whole main width (I391). */
 static sel_gui_rect lib_stats_rect(desk* d, sel_gui_rect mn, const sel_state* st) {
     int32_t mg = lpx(d, LIB_MARGIN), y = mn.y + lib_list_y(d);
-    int flow = st->view != NULL && st->view->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW;
-    return st->stats != NULL && !flow ? rect_of(mn.x + mn.w - mg - lpx(d, LIB_STATS_W), y, lpx(d, LIB_STATS_W), mn.y + mn.h - y)
-                             : rect_of(mn.x + mn.w, y, 0, 0);
+    return lib_stats_on(st) ? rect_of(mn.x + mg, y, mn.w - 2 * mg > 0 ? mn.w - 2 * mg : 0, lpx(d, LIB_STATS_H)) : rect_of(mn.x + mn.w, y, 0, 0);
 }
 
 /* 1 when (x, y) is on row i of the Library list and not on a part of it scrolled out above the list top. */
@@ -4028,8 +4036,7 @@ static int lib_grid_on(const desk* d, const sel_state* st) {
 static uint32_t lib_grid_cols(const desk* d, sel_gui_rect mn) {
     int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
     int32_t tw = lpx(d, GRID_ART) + 2 * pad, gap = lpx(d, GRID_GAP);
-    sel_gui_rect sr = lib_stats_rect((desk*)d, mn, sel_engine_state(d->engine));
-    int32_t avail = (sr.w > 0 ? sr.x - lpx(d, LIB_MARGIN) - mn.x : mn.w - lpx(d, LIB_MARGIN)) - lpx(d, LIB_MARGIN) + gap;
+    int32_t avail = mn.w - 2 * lpx(d, LIB_MARGIN) + gap;
     return avail >= tw + gap ? (uint32_t)(avail / (tw + gap)) : 1u;
 }
 
@@ -4070,7 +4077,7 @@ static void draw_lib_grid(desk* d, sel_gui_rect mn) {
     const sel_view_state* v = sel_engine_state(d->engine)->view;
     int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]), gap = lpx(d, GRID_GAP), art = lpx(d, GRID_ART);
     int32_t tw = art + 2 * pad, th = pad + art + lpx(d, HOME_TILE_TEXT_GAP) + lpx(d, HOME_TITLE_H) + lpx(d, HOME_META_H) + pad;
-    int32_t y0 = mn.y + lib_list_y(d), vis = (mn.y + mn.h - y0 + gap) / (th + gap);
+    int32_t y0 = mn.y + lib_body_y(d, sel_engine_state(d->engine)), vis = (mn.y + mn.h - y0 + gap) / (th + gap);
     uint32_t cols = lib_grid_cols(d, mn), i, first, panel = ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]);
     uint32_t cur_row = v->cursor / cols;
     first = vis > 0 && cur_row >= (uint32_t)vis ? cur_row - (uint32_t)vis + 1u : 0u;
@@ -4135,11 +4142,10 @@ static void flow_slot(int32_t big, int32_t a, int32_t* sz, int32_t* off, int32_t
  * its new one (I400). */
 static void draw_lib_flow(desk* d, sel_gui_rect mn) {
     const sel_view_state* v = sel_engine_state(d->engine)->view;
-    sel_gui_rect sr = lib_stats_rect(d, mn, sel_engine_state(d->engine));
-    int32_t mg = lpx(d, LIB_MARGIN), right = sr.w > 0 ? sr.x - mg : mn.x + mn.w; /* the flow centres beside the Statistics column (I382) */
+    int32_t mg = lpx(d, LIB_MARGIN), right = mn.x + mn.w; /* the flow has no Statistics strip and uses the whole main width (I382, I391) */
     int32_t ref = lpx(d, FLOW_ART), avail = right - mn.x - 2 * mg, cx = (mn.x + right) / 2, y0;
     int32_t capt = lpx(d, HOME_TILE_TEXT_GAP + HOME_TITLE_H + HOME_META_H); /* the caption block under the centre cover */
-    int32_t top = mn.y + lib_list_y(d) + mg, area_h = mn.y + mn.h - mg - top; /* free height: below the tab row to the panel bottom */
+    int32_t top = mn.y + lib_body_y(d, sel_engine_state(d->engine)) + mg, area_h = mn.y + mn.h - mg - top; /* free height: below the tab row to the panel bottom */
     int32_t full = flow_stack_w(ref); /* width of the whole stack at the reference size */
     int32_t fit_w = ref * (avail > 0 ? avail : 0) / full, fit_h = area_h - capt; /* the centre cover that fills the width / the height */
     int32_t big = fit_w < fit_h ? fit_w : fit_h;
@@ -4210,7 +4216,7 @@ static void draw_library(desk* d) {
         d->lib_off_page++;
     }
     sel_gui_rect mn = draw_panel(d, "main");
-    int32_t mg = lpx(d, LIB_MARGIN), sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    int32_t mg = lpx(d, LIB_MARGIN);
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     uint32_t i = 0;
     const char* p;
@@ -4307,16 +4313,27 @@ static void draw_library(desk* d) {
         sel_gui_clip_pop(d->canvas);
         }
     }
-    if (st->stats != NULL && lib_stats_rect(d, mn, st).w > 0) { /* the Stats page (F24): the library totals as label and value */
+    if (st->stats != NULL && lib_stats_rect(d, mn, st).w > 0) { /* the Stats page (F24): the library totals as a strip of heading and label-over-value cells */
         sel_gui_rect sr = lib_stats_rect(d, mn, st);
-        sr.h = lpx(d, 28);
-        draw_text(d, sr, "Statistics", 1, 18, text);
-        sr.y += lpx(d, 28) + sp;
-        for (p = st->stats; *p != '\0'; sr.y += lpx(d, 24)) {
-            const char* val = lib_next(p);
-            draw_text(d, rect_of(sr.x, sr.y, sr.w * 2 / 3, lpx(d, 24)), p, 0, 14, muted);
-            draw_text(d, rect_of(sr.x + sr.w * 2 / 3, sr.y, sr.w / 3, lpx(d, 24)), val, 1, 14, text);
-            p = lib_next(val);
+        const sel_gui_atlas* hd = desk_font(d, 1, 18);
+        const sel_gui_atlas* la = desk_font(d, 0, 14);
+        const sel_gui_atlas* va = desk_font(d, 1, 14);
+        int32_t x = sr.x, end = sr.x + sr.w, line = lpx(d, LIB_STATS_LINE);
+        if (hd != NULL && la != NULL && va != NULL) {
+            int32_t hw = sel_gui_text_width(hd, "Statistics", 10u);
+            draw_text(d, rect_of(x, sr.y, hw, line), "Statistics", 1, 18, text);
+            x += hw + lib_gap(d);
+            for (p = st->stats; *p != '\0';) { /* as many cells as the strip holds, in the order of the statistics */
+                const char* val = lib_next(p);
+                int32_t lw = sel_gui_text_width(la, p, strlen(p)), vw = sel_gui_text_width(va, val, strlen(val)), cw = lw > vw ? lw : vw;
+                if (x + cw > end) {
+                    break;
+                }
+                draw_text(d, rect_of(x, sr.y, cw, line), p, 0, 14, muted);
+                draw_text(d, rect_of(x, sr.y + line, cw, line), val, 1, 14, text);
+                x += cw + lib_gap(d);
+                p = lib_next(val);
+            }
         }
     }
     sel_gui_clip_pop(d->canvas);
