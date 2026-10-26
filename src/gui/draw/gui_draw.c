@@ -779,6 +779,45 @@ static void blit_image_raw(sel_gui_canvas* c, sel_gui_rect dst, const uint32_t* 
     }
 }
 
+/* I477: nearest image blit whose corners follow a rounded rect of `radius` (the card behind it). Edge pixels blend the
+ * source by round_cov coverage over what is already there; INDEX8 keeps or drops a pixel at half coverage. */
+static void blit_image_round_raw(sel_gui_canvas* c, sel_gui_rect dst, const uint32_t* src, int32_t sw, int32_t sh,
+                                 int32_t sstride, int32_t radius) {
+    sel_gui_rect v;
+    int32_t x, y, rad = imin(radius, imin(dst.w, dst.h) / 2);
+    c->prims++;
+    if (dst.w <= 0 || dst.h <= 0) {
+        return;
+    }
+    if (rad < 0) {
+        rad = 0;
+    }
+    v = cur_clip(c, dst);
+    for (y = v.y; y < v.y + v.h; y++) {
+        int32_t sy = (int32_t)((int64_t)(y - dst.y) * sh / dst.h);
+        int in_band = y >= dst.y + rad && y < dst.y + dst.h - rad;
+        int32_t m0 = dst.x + rad, m1 = dst.x + dst.w - rad;
+        for (x = v.x; x < v.x + v.w; x++) {
+            int32_t sx = (int32_t)((int64_t)(x - dst.x) * sw / dst.w);
+            uint32_t col = src[(size_t)sy * (size_t)sstride + (size_t)sx];
+            uint32_t cov = (in_band || (x >= m0 && x < m1)) ? 16u : round_cov(dst, rad, x, y);
+            if (cov == 0u) {
+                continue;
+            }
+            if (cov < 16u) {
+                if (c->format == SEL_GUI_INDEX8) {
+                    if (cov < 8u) {
+                        continue;
+                    }
+                } else {
+                    col = ((((col >> 24) * cov + 8u) / 16u) << 24) | (col & 0xFFFFFFu);
+                }
+            }
+            put(c, x, y, col, 0);
+        }
+    }
+}
+
 void sel_gui_shadow_bake(sel_gui_shadow* s, uint32_t radius, uint32_t rgb, uint32_t peak) {
     uint32_t i, j;
     memset(s, 0, sizeof *s);
@@ -863,6 +902,12 @@ void sel_gui_blit_mask(sel_gui_canvas* c, int32_t x, int32_t y, const uint8_t* m
 void sel_gui_blit_image(sel_gui_canvas* c, sel_gui_rect dst, const uint32_t* src, int32_t sw, int32_t sh, int32_t sstride, int box) {
     uint32_t t0 = sel_gui_prof_begin(c);
     blit_image_raw(c, dst, src, sw, sh, sstride, box);
+    sel_gui_prof_end(c, SEL_GUI_PROF_IMAGE, t0);
+}
+
+void sel_gui_blit_image_round(sel_gui_canvas* c, sel_gui_rect dst, const uint32_t* src, int32_t sw, int32_t sh, int32_t sstride, int32_t radius) {
+    uint32_t t0 = sel_gui_prof_begin(c);
+    blit_image_round_raw(c, dst, src, sw, sh, sstride, radius);
     sel_gui_prof_end(c, SEL_GUI_PROF_IMAGE, t0);
 }
 

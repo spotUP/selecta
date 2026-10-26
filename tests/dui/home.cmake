@@ -106,6 +106,19 @@ expect_eq("idle scroll shelf 1" "${a1}" 0)
 dui_stat(album_art "${idle}" desktop shelf_album_art_draws)
 expect_eq("shelf album tiles drawn with a library cover" "${album_art}" 3)
 
+# I477: tile art is clipped to the card radius. A drawn cover's top-left corner pixel is the card fill behind it (the art
+# does not square off the rounded card), and its centre pixel is the cover, not the card.
+if(NOT "${idle}" MATCHES "\ntile_art corner=([0-9a-f]+) centre=([0-9a-f]+) fill=([0-9a-f]+)\n")
+  message(FATAL_ERROR "no tile_art line (a shelf tile cover was drawn) in:\n${idle}")
+endif()
+set(art_corner "${CMAKE_MATCH_1}")
+set(art_centre "${CMAKE_MATCH_2}")
+set(art_fill "${CMAKE_MATCH_3}")
+expect_eq("tile art corner pixel is the card fill" "${art_corner}" "${art_fill}")
+if("${art_centre}" STREQUAL "${art_fill}")
+  message(FATAL_ERROR "tile art centre pixel equals the card fill ${art_fill}; the cover was not drawn")
+endif()
+
 # 2b. Home is the start view itself: the shelves are in the dump of a run that replays no input at all, so the
 # shell's start-view logic (not a later UI turn) selected HOME before the first frame was drawn.
 home_run(first "")

@@ -294,6 +294,8 @@ typedef struct desk {
     uint32_t transport_hits; /* transport button clicks sent to the engine (DUI-P4-1) */
     uint32_t home_parts;     /* bit set of the Home frame parts drawn (HP_*), the I230 proof that each is on screen */
     uint32_t tile_cards;     /* tile card surfaces drawn in the Home view */
+    sel_gui_rect art_probe; /* the last shelf tile art rect drawn, w == 0 when none (home dump line tile_art, I477) */
+    uint32_t art_probe_fill; /* the card fill behind that art */
     uint32_t quick_hover_fill; /* the card fill the hovered quick-pick tile was last painted with, 0 when none is hovered (home dump line quick_hover, I490) */
     uint32_t frame_parts;    /* frame parts drawn: sidebar entries, Now Playing panel and transport buttons */
     int32_t shelf_q16[8];    /* horizontal scroll of each Home shelf in logical pixels, Q16 */
@@ -1677,6 +1679,12 @@ static uintptr_t home_dump_build(desk* d) {
     if (d->quick_hover_fill != 0u && o + 64u < sizeof d->home_dump) { /* I490: "quick_hover fill=AARRGGBB", present only while a quick tile is hovered */
         o += (size_t)snprintf(d->home_dump + o, sizeof d->home_dump - o, "quick_hover fill=%08x\n", (unsigned)d->quick_hover_fill);
     }
+    if (d->art_probe.w > 0 && o + 96u < sizeof d->home_dump) { /* I477: "tile_art corner=RRGGBB centre=RRGGBB fill=RRGGBB": the art's rounded corner shows the card, its middle the cover */
+        o += (size_t)snprintf(d->home_dump + o, sizeof d->home_dump - o, "tile_art corner=%06x centre=%06x fill=%06x\n",
+                              (unsigned)(sel_gui_pixel(d->canvas, d->art_probe.x, d->art_probe.y) & 0xFFFFFFu),
+                              (unsigned)(sel_gui_pixel(d->canvas, d->art_probe.x + d->art_probe.w / 2, d->art_probe.y + d->art_probe.h / 2) & 0xFFFFFFu),
+                              (unsigned)(d->art_probe_fill & 0xFFFFFFu));
+    }
     for (s = 0; s < n; s++) {
         for (k = 0; k < sh[s].tiles && o + 200u < sizeof d->home_dump; k++) {
             const sel_view_row* r = &st->view->rows[shelf_tile_row(st, &sh[s], k)];
@@ -2227,7 +2235,7 @@ static void draw_quick(desk* d, sel_gui_rect mn) {
         art = r->art_ref != NULL ? art_tile(d->art, r->art_ref) : NULL;
         if (art != NULL) {
             sel_gui_set_region(d->canvas, SEL_GUI_RGN_TILE);
-            sel_gui_blit_image(d->canvas, ar, art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, 0);
+            sel_gui_blit_image_round(d->canvas, ar, art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, radius);
             sel_gui_set_region(d->canvas, SEL_GUI_RGN_UI);
         } else {
             sel_gui_genart_draw(d->canvas, ar, "album", sel_gui_str_hash(r->text));
@@ -2288,7 +2296,9 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
             if (art != NULL) { /* the library cover; generated art only when the song or album has none (design 2.7) */
                 d->shelf_album_art_draws += r->album ? 1u : 0u;
                 sel_gui_set_region(d->canvas, SEL_GUI_RGN_TILE);
-                sel_gui_blit_image(d->canvas, ar, art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, 0);
+                sel_gui_blit_image_round(d->canvas, ar, art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]));
+                d->art_probe = ar; /* I477: the dump samples this tile's art corner and centre */
+                d->art_probe_fill = hovered ? desk_mix(panel, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), (uint32_t)hv) : panel;
                 sel_gui_set_region(d->canvas, SEL_GUI_RGN_UI);
             } else {
                 sel_gui_genart_draw(d->canvas, ar, r->album || r->composer ? "album" : format, sel_gui_str_hash(r->text));
@@ -5064,7 +5074,7 @@ static void draw_home_content(desk* d) {
         }
         if (art != NULL) {
             sel_gui_set_region(d->canvas, SEL_GUI_RGN_TILE);
-            sel_gui_blit_image(d->canvas, ar, art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, 0);
+            sel_gui_blit_image_round(d->canvas, ar, art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]));
             sel_gui_set_region(d->canvas, SEL_GUI_RGN_UI);
         } else {
             /* No cover: the generated art of the song's format and chip (gui_genart.h). */

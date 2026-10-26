@@ -124,6 +124,10 @@ void sel_gui_blit_mask(sel_gui_canvas* c, int32_t x, int32_t y, const uint8_t* m
  * shrinking. */
 void sel_gui_blit_image(sel_gui_canvas* c, sel_gui_rect dst, const uint32_t* src, int32_t sw, int32_t sh,
                         int32_t sstride, int box);
+/* Nearest image blit with the corners rounded to `radius` (I477): edge pixels blend the source over the canvas by the
+ * rounded rect's coverage, so a card behind the image shows through at the corners. */
+void sel_gui_blit_image_round(sel_gui_canvas* c, sel_gui_rect dst, const uint32_t* src, int32_t sw, int32_t sh,
+                              int32_t sstride, int32_t radius);
 /* Scrim: a translucent fill (dim behind a modal). */
 void sel_gui_scrim(sel_gui_canvas* c, sel_gui_rect r, uint32_t rgb, uint32_t alpha);
 
