@@ -532,3 +532,43 @@ quick_run(qhov_off "${few_db}" 1000x1400 "quickhover 1\nmove 5 5\nwait 1\n")
 if("${qhov_off}" MATCHES "\nquick_hover ")
   message(FATAL_ERROR "quick tile 1 stayed lit after the pointer left:\n${qhov_off}")
 endif()
+
+# 12. I499: the live data path. The fixture library above is hand-inserted; a real library is built by a scan of a folder
+# of mp3s with embedded cover art (tests/dui/fixtures/art-music: three albums, two tracks each, one APIC picture per
+# file). The desktop UI scans it through the real entry point (a dropped folder runs LIBRARY_SCAN), the scan must leave one
+# artwork row per album, and after one skipped play of a scanned song Home shows the Quick picks grid with that album and
+# draws its library cover (shelf_album_art_draws > 0), not generated art.
+set(live "${WORK}/live")
+file(REMOVE_RECURSE "${live}")
+file(MAKE_DIRECTORY "${live}")
+file(COPY "${HERE}/fixtures/art-music" DESTINATION "${live}")
+set(live_db "${live}/library.db")
+file(WRITE "${live}/scan.txt" "wait 1\ndrop ${live}/art-music\nwait 5\n")
+dui_run(live_scan --start-dir "${live}/art-music" --db "${live_db}" --ui desktop --backend mem --view home --canvas 1280x800
+  --clock fixed --stats --input "${live}/scan.txt")
+function(live_sql outvar sql)
+  execute_process(COMMAND "${SQLITE3}" "${live_db}" "${sql}" RESULT_VARIABLE rc ERROR_VARIABLE err OUTPUT_VARIABLE o)
+  if(NOT rc EQUAL 0)
+    message(FATAL_ERROR "live db query failed: ${err}")
+  endif()
+  string(STRIP "${o}" o)
+  set(${outvar} "${o}" PARENT_SCOPE)
+endfunction()
+live_sql(live_songs "SELECT COUNT(*) FROM songs")
+live_sql(live_art "SELECT COUNT(*) FROM artwork WHERE kind = 'cover'")
+expect_eq("scan of the art-music folder: songs" "${live_songs}" 6)
+expect_eq("scan of the art-music folder: one cover per album" "${live_art}" 3)
+live_sql(live_key "SELECT key FROM songs WHERE album = 'Iron Garden' ORDER BY key LIMIT 1")
+live_sql(live_seed "INSERT INTO history(key, played_at, skipped) VALUES('${live_key}', strftime('%s','now'), 1); SELECT 1")
+file(WRITE "${live}/home.txt" "wait 2\n")
+dui_run(live_home --db "${live_db}" --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats
+  --input "${live}/home.txt")
+quick_count(live_quick "${live_home}")
+expect_eq("live-scanned library: Quick picks tiles" "${live_quick}" 1)
+if(NOT "${live_home}" MATCHES "quick 0 cols=4 Iron Garden\\|Iron Garden\\|Mono Lake")
+  message(FATAL_ERROR "the played scanned album must be quick pick 0 in:\n${live_home}")
+endif()
+dui_stat(live_covers "${live_home}" desktop shelf_album_art_draws)
+if(live_covers LESS 1)
+  message(FATAL_ERROR "a scanned album with an embedded cover drew generated art on Home (shelf_album_art_draws=${live_covers}):\n${live_home}")
+endif()
