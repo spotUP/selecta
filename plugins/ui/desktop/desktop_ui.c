@@ -3623,9 +3623,9 @@ static const char* library_dump_build(desk* d) {
     }
     if (o + 200u < sizeof d->library_dump) { /* the footer bars (I312) */
         sel_gui_rect vb = vol_bar_rect(d), skb = seek_bar_rect(d);
-        o = dump_put(d, o, "footer vol_bar %d %d %d %d seek_bar %d %d %d %d vol_clicks=%u seek_clicks=%u\n", (int)vb.x,
+        o = dump_put(d, o, "footer vol_bar %d %d %d %d seek_bar %d %d %d %d vol_clicks=%u seek_clicks=%u seek_fill=%d\n", (int)vb.x,
                      (int)vb.y, (int)vb.w, (int)vb.h, (int)skb.x, (int)skb.y, (int)skb.w, (int)skb.h,
-                     (unsigned)d->vol_clicks, (unsigned)d->seek_clicks);
+                     (unsigned)d->vol_clicks, (unsigned)d->seek_clicks, (int)d->seek_fill);
     }
     if (o + 200u < sizeof d->library_dump) { /* the hover state (I272) */
         o = dump_put(d, o,
