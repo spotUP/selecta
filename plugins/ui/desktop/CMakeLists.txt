@@ -62,6 +62,32 @@ if(SEL_AMIGA)
   target_compile_definitions(sel_plugin_desktop_ui PRIVATE SELECTA_DESKTOP_RTG=1)
 endif()
 target_link_libraries(sel_plugin_desktop_ui PUBLIC selecta_uimodel selecta_gui)
+
+# The aga backend (I439, M4-P6-1, thoughts/shared/plans/2026-10-26-aga-c2p-backend.md): an 8-bitplane Intuition
+# screen fed by Kalms' public domain c2p (third_party/kalms-c2p). First light is a probe executable; the plugin
+# switches to it with SELECTA_DESKTOP_AGA once desktop_ui.c has the selection branch (design doc 2.1).
+if(SEL_AMIGA)
+  find_program(SEL_VASM vasmm68k_mot HINTS /opt/homebrew/bin /usr/local/bin NO_CMAKE_FIND_ROOT_PATH)
+  if(SEL_VASM)
+    set(AGA_C2P_DIR "${PROJECT_SOURCE_DIR}/third_party/kalms-c2p")
+    set(AGA_C2P_040 "${CMAKE_CURRENT_BINARY_DIR}/c2p1x1_8_c5_040.o")
+    add_custom_command(OUTPUT "${AGA_C2P_040}"
+      COMMAND "${SEL_VASM}" -quiet -m68040 -Fhunk -I "${AGA_C2P_DIR}" -o "${AGA_C2P_040}"
+        "${AGA_C2P_DIR}/normal/c2p1x1_8_c5_040.s"
+      DEPENDS "${AGA_C2P_DIR}/normal/c2p1x1_8_c5_040.s" "${AGA_C2P_DIR}/c2p_equates.i"
+      COMMENT "Assembling Kalms c2p1x1_8_c5_040")
+    set_source_files_properties("${AGA_C2P_040}" PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+    add_executable(selecta-aga-first-light amiga/aga_first_light.c amiga/backend_aga.c amiga/aga_planar.c
+      "${AGA_C2P_040}")
+    target_link_libraries(selecta-aga-first-light PRIVATE selecta_gui)
+    # Kalms against the C reference on a 68k CPU; run by `vamos -C 68040` (design doc 6, dui-aga-c2p-kalms).
+    add_executable(selecta-aga-c2p-kalms "${PROJECT_SOURCE_DIR}/tests/dui/aga_c2p_kalms.c" amiga/aga_planar.c
+      "${AGA_C2P_040}")
+    target_link_libraries(selecta-aga-c2p-kalms PRIVATE selecta_gui)
+  else()
+    message(WARNING "vasmm68k_mot not found: the AGA first light probe is not built")
+  endif()
+endif()
 if(UNIX AND NOT SEL_AMIGA)
   find_package(Threads REQUIRED)
   target_link_libraries(sel_plugin_desktop_ui PUBLIC m Threads::Threads)

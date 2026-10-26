@@ -121,6 +121,14 @@ target_link_libraries(dui_art_thread_amiga_unit PRIVATE selecta_gui)
 add_test(NAME dui-art-thread-amiga COMMAND dui_art_thread_amiga_unit)
 set_tests_properties(dui-art-thread-amiga PROPERTIES TIMEOUT 60)
 
+# I439 (M4-P6-1): the aga backend's pure helpers (row bands, reference c2p and its inverse, chip budget, LoadRGB32
+# table). The host builds amiga/aga_planar.c on its own, it needs no Amiga headers.
+add_executable(dui_aga_planar_unit aga_planar_unit.c ${PROJECT_SOURCE_DIR}/plugins/ui/desktop/amiga/aga_planar.c)
+target_include_directories(dui_aga_planar_unit PRIVATE ${PROJECT_SOURCE_DIR}/plugins/ui/desktop)
+target_link_libraries(dui_aga_planar_unit PRIVATE selecta_gui)
+add_test(NAME dui-aga-planar COMMAND dui_aga_planar_unit)
+set_tests_properties(dui-aga-planar PROPERTIES TIMEOUT 60)
+
 # I369: the scaler must run on a small stack (the Amiga task stack is 128 KB); a canvas-sized local crashes it.
 if(NOT SEL_AMIGA)
   find_package(Threads REQUIRED)
