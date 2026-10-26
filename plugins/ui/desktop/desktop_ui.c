@@ -212,7 +212,7 @@ typedef struct desk {
     char scan_file[SEL_SCAN_FILE_MAX]; /* I315: path of the file the progress shows */
     uint32_t scan_mid;       /* I336: progress snapshots seen while the scan was still running (done < total), proof the shell kept turning */
     uint32_t scan_draws;     /* I315: partial redraws of the Add Folder area while a scan ran (sentinel) */
-    int scan_pending;        /* 1 between sending LIBRARY_SCAN and its LIBRARY_RESULT: searches answer with the same event */
+    int scan_pending;        /* LIBRARY_SCANs sent and not yet answered (the engine queues them, I506): searches answer with the same event */
     int drop_playing;        /* 1 after a dropped file was sent as OPEN: an open_failed error then toasts */
     int32_t np_key_end;      /* right edge of the Now Playing label column; the values start np_val_x (I447) */
     int32_t np_val_x;
@@ -7403,7 +7403,7 @@ static int desk_drop_path(desk* d, const char* path, int more) {
         return 1;
     }
     if (S_ISDIR(sb.st_mode)) {
-        d->scan_pending = 1;
+        d->scan_pending++; /* folders dropped during a scan queue in the engine (I506) */
         d->scan_done = d->scan_total = 0u;
         d->scan_file[0] = '\0';
         if (d->page == PG_LIBRARY) { /* the Add Folder button turns into the progress bar */
@@ -8382,14 +8382,14 @@ static void desk_on_event(void* state, const sel_message* evt) {
         char msg[64];
         sel_engine_scan_info(d->engine, &si);
         desk_scan_sync(d); /* the last progress state, so the bar was seen full */
-        d->scan_pending = 0;
+        d->scan_pending--;
         d->scans++;
         snprintf(msg, sizeof msg, "Added %u songs to the library", (unsigned)si.scanned_files);
         desk_toast(d, msg); /* the page reload follows the library serial (desk_library_follow) */
         d->repaint = 1;
     }
-    if (evt->id == SEL_EVT_ERROR && d->scan_pending) { /* no_library or scan_failed */
-        d->scan_pending = 0;
+    if (evt->id == SEL_EVT_ERROR && d->scan_pending) { /* no_library, scan_failed or scan_busy */
+        d->scan_pending--;
         d->repaint = 1;
         d->uim.dirty |= SEL_UIM_DIRTY_ALL; /* the progress bar turns back into the button */
         desk_toast(d, "Cannot add that folder");

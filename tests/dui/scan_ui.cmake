@@ -5,6 +5,8 @@
 #    last file (file=c.mod), the engine scanned 3 files, a toast "Added 3 songs" is up and the toast rectangle does
 #    not intersect the Add Folder button or the progress rectangle (I297).
 # 2. A folder dropped on the Home page stays on Home (page 0) and the scan finishes with progress 3 of 3.
+# 3. I336: the scan runs on the library job thread (see below).
+# 4. I506: three folders dropped back to back are all scanned.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -110,3 +112,37 @@ endif()
 if(NOT "${slow}" MATCHES "scan_ui page=2 done=12 total=12 ")
   message(FATAL_ERROR "scan did not end at 12 of 12:\n${slow}")
 endif()
+
+# 4. I506: one drop of three folders sends three LIBRARY_SCANs back to back while the first still scans (100 ms a file).
+#    The engine queues the second and third instead of answering scan_busy, so the UI sees three results and the library
+#    holds all 2 + 3 + 4 songs.
+find_program(SQLITE3 sqlite3)
+if(NOT SQLITE3)
+  message(FATAL_ERROR "dui-scan-ui needs the sqlite3 command line tool to count the scanned songs")
+endif()
+set(drops "wait 1\ndrop")
+set(n 2)
+foreach(dir x y z)
+  file(MAKE_DIRECTORY "${WORK}/multi/${dir}")
+  foreach(i RANGE 1 ${n})
+    file(COPY_FILE "${SONGS}/selecta-test.mod" "${WORK}/multi/${dir}/${dir}${i}.mod")
+  endforeach()
+  string(APPEND drops " ${WORK}/multi/${dir}")
+  math(EXPR n "${n} + 1")
+endforeach()
+string(APPEND drops "\nwait 5\n")
+set(ENV{SELECTA_SCAN_DELAY_MS} 100)
+scan_run(multi home "${drops}")
+unset(ENV{SELECTA_SCAN_DELAY_MS})
+if(NOT "${multi}" MATCHES "scan probed [0-9]+ files [0-9]+ scans 3\n")
+  message(FATAL_ERROR "three dropped folders did not give three scan results:\n${multi}")
+endif()
+if(NOT "${multi}" MATCHES "scan_ui page=0 [^\n]* pending=0 ")
+  message(FATAL_ERROR "a scan is still pending after the three drops:\n${multi}")
+endif()
+execute_process(COMMAND "${SQLITE3}" "${WORK}/library.db" "SELECT COUNT(*) FROM songs WHERE path LIKE '%/multi/%'"
+  OUTPUT_VARIABLE songs OUTPUT_STRIP_TRAILING_WHITESPACE RESULT_VARIABLE rc)
+if(NOT rc EQUAL 0 OR NOT songs STREQUAL "9")
+  message(FATAL_ERROR "the library holds ${songs} of the 9 songs of the three dropped folders (rc ${rc})")
+endif()
+message(STATUS "scan_ui_multi_drop_ok")

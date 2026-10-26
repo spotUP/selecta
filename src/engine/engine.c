@@ -175,6 +175,7 @@
 #define SEL_DEFERRED_PATH_MAX 1024u
 #define SEL_ERROR_DETAIL_MAX 64
 #define SEL_LOG_LINE_MAX 96
+#define SEL_SCAN_QUEUE 8u /* LIBRARY_SCAN roots waiting behind the running scan (I506) */
 
 /* Events coalesced inside a batch: the latest value wins, emitted at END. */
 #define PENDING_STATE (1u << 0)
@@ -393,6 +394,9 @@ struct sel_engine {
     char scan_root[SEL_BROWSE_PATH_MAX];
     int scan_ok;
     int scan_running;
+    /* I506: roots of LIBRARY_SCANs that arrived while a scan ran, oldest first; scan_collect starts the next */
+    char scan_next[SEL_SCAN_QUEUE][SEL_BROWSE_PATH_MAX];
+    uint32_t scan_next_n;
     uint32_t scan_delay_ms; /* test hook SELECTA_SCAN_DELAY_MS: the scan thread sleeps this long before each file (I336) */
     sel_sync_info sync_info; /* counters of the last LIBRARY_SYNC */
     uint32_t lib_slot;
@@ -3316,18 +3320,8 @@ static void scan_task(void* ctx) {
     e->scan_ok = sel_local_scan(&e->scan_cfg, e->scan_root, &e->scan_stats);
 }
 
-/* LIBRARY_SCAN <dir>: starts the scan of the directory tree (and the archives in it) on the library job thread (I158,
- * I158a, I159, I336). The shell loop never waits for it: scan_collect answers with a LIBRARY_RESULT carrying the
- * scanned path and the file count once the task ended. A second LIBRARY_SCAN while one runs answers ERROR scan_busy. */
-static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
-    if (e->lib == NULL) {
-        sel_engine_report_error(e, "no_library", "LIBRARY_SCAN");
-        return;
-    }
-    if (e->scan_running) {
-        sel_engine_report_error(e, "scan_busy", m->args[0].v.s);
-        return;
-    }
+/* Starts the scan of root on the library job thread (I336); scan_running must be 0. */
+static void scan_start(sel_engine* e, const char* root) {
     memset(&e->scan_cfg, 0, sizeof e->scan_cfg);
     memset(&e->scan_stats, 0, sizeof e->scan_stats);
     e->scan_cfg.host = e->host;
@@ -3339,7 +3333,7 @@ static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
     e->scan_cfg.progress_ctx = e;
     e->scan_cfg.cancelled = scan_cancelled_cb;
     e->scan_cfg.cancelled_ctx = e;
-    snprintf(e->scan_root, sizeof e->scan_root, "%s", m->args[0].v.s);
+    snprintf(e->scan_root, sizeof e->scan_root, "%s", root);
     e->scan_ok = 0;
     {
         const char* delay = getenv("SELECTA_SCAN_DELAY_MS");
@@ -3351,6 +3345,38 @@ static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
         e->scan_running = 0;
         scan_progress_set(e, 0u, NULL, 0u, 0u);
         sel_engine_report_error(e, "scan_failed", e->scan_root);
+    }
+}
+
+/* LIBRARY_SCAN <dir>: scans the directory tree (and the archives in it) on the library job thread (I158, I158a, I159,
+ * I336). The shell loop never waits for it: scan_collect answers with a LIBRARY_RESULT carrying the scanned path and the
+ * file count once the task ended. A LIBRARY_SCAN while one runs waits in scan_next and starts when the running one ends,
+ * so every folder of a multi-folder drop is scanned (I506); only a full queue answers ERROR scan_busy. */
+static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
+    if (e->lib == NULL) {
+        sel_engine_report_error(e, "no_library", "LIBRARY_SCAN");
+        return;
+    }
+    if (!e->scan_running) {
+        scan_start(e, m->args[0].v.s);
+        return;
+    }
+    if (e->scan_next_n >= SEL_SCAN_QUEUE) {
+        sel_engine_report_error(e, "scan_busy", m->args[0].v.s);
+        return;
+    }
+    snprintf(e->scan_next[e->scan_next_n], sizeof e->scan_next[0], "%s", m->args[0].v.s);
+    e->scan_next_n++;
+}
+
+/* Starts the oldest queued LIBRARY_SCAN root, if any (I506). */
+static void scan_start_next(sel_engine* e) {
+    char root[SEL_BROWSE_PATH_MAX];
+    while (!e->scan_running && e->scan_next_n > 0u) { /* a root whose task cannot start reports scan_failed; try the next */
+        memcpy(root, e->scan_next[0], sizeof root);
+        e->scan_next_n--;
+        memmove(e->scan_next[0], e->scan_next[1], (size_t)e->scan_next_n * sizeof e->scan_next[0]);
+        scan_start(e, root);
     }
 }
 
@@ -3375,10 +3401,11 @@ static void scan_collect(sel_engine* e) {
     e->scan_info.bytes_read = e->scan_stats.bytes_read;
     if (!e->scan_ok) {
         sel_engine_report_error(e, "scan_failed", e->scan_root);
-        return;
+    } else {
+        sel_library_hash_kick(e->lib); /* the new local songs get their md5 in the background (I184a) */
+        emit_library_path(e, e->scan_root, e->scan_stats.scanned_files);
     }
-    sel_library_hash_kick(e->lib); /* the new local songs get their md5 in the background (I184a) */
-    emit_library_path(e, e->scan_root, e->scan_stats.scanned_files);
+    scan_start_next(e);
 }
 
 /* Stores the "new this week" count of a modland sync in the DB meta table, so it survives a restart (I161a). */
