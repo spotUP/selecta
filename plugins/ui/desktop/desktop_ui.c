@@ -293,6 +293,7 @@ typedef struct desk {
     char library_dump[8192]; /* the Library page as text for the stats (DUI-P4-3) */
     uint32_t library_sig;    /* hash of the Library page last drawn: a change redraws */
     sel_gui_rect grid_box;                       /* bounding box of the tiles of the last grid frame (I379) */
+    sel_gui_rect flow_cover, flow_area;          /* the centre cover and the free area of the last cover flow frame (I391) */
     uint32_t grid_draws, grid_tiles, grid_cols;   /* grid view frames drawn, tiles in the last one, columns of the last one (DUI-P4-5) */
     uint32_t flow_draws, flow_centre;             /* cover flow frames drawn and the listing index of the centred album in the last one */
     uint32_t flow_from;                           /* the centre the glide started from */
@@ -3486,6 +3487,8 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "grid draws %u tiles %u cols %u\nflow draws %u centre %u\n",
                           (unsigned)d->grid_draws, (unsigned)d->grid_tiles, (unsigned)d->grid_cols, (unsigned)d->flow_draws,
                           (unsigned)d->flow_centre);
+    o = dump_put(d, o, "flow cover %d %d %d %d area %d %d %d %d\n", (int)d->flow_cover.x, (int)d->flow_cover.y, (int)d->flow_cover.w,
+                 (int)d->flow_cover.h, (int)d->flow_area.x, (int)d->flow_area.y, (int)d->flow_area.w, (int)d->flow_area.h);
     o = dump_put(d, o, "grid box %d %d %d %d\n", (int)d->grid_box.x, (int)d->grid_box.y, (int)d->grid_box.w, (int)d->grid_box.h);
     if (st->stats != NULL) {
         sel_gui_rect sr = lib_stats_rect(d, region_rect(d, "main"), st);
@@ -3798,10 +3801,17 @@ static void lib_view_row_reg(desk* d, sel_gui_rect mn, const sel_state* st, uint
     }
 }
 
-static void lib_tile_text(desk* d, sel_gui_rect ar, int32_t y, const sel_view_row* r, uint32_t text, uint32_t muted) {
+/* The caption under a tile: left-aligned for the grid, centred under the cover for the cover flow (I391). */
+static void lib_tile_text(desk* d, sel_gui_rect ar, int32_t y, const sel_view_row* r, uint32_t text, uint32_t muted, int centre) {
     char line[32];
-    draw_text(d, rect_of(ar.x, y, ar.w, lpx(d, HOME_TITLE_H)), r->text != NULL ? r->text : "", 1, 14, text);
+    const char* title = r->text != NULL ? r->text : "";
     snprintf(line, sizeof line, r->art_id > 0u ? "Album %u" : "Single", (unsigned)r->art_id);
+    if (centre) {
+        draw_text_centered(d, rect_of(ar.x, y, ar.w, lpx(d, HOME_TITLE_H)), title, 1, 14, text);
+        draw_text_centered(d, rect_of(ar.x, y + lpx(d, HOME_TITLE_H), ar.w, lpx(d, HOME_META_H)), line, 0, 13, muted);
+        return;
+    }
+    draw_text(d, rect_of(ar.x, y, ar.w, lpx(d, HOME_TITLE_H)), title, 1, 14, text);
     draw_text(d, rect_of(ar.x, y + lpx(d, HOME_TITLE_H), ar.w, lpx(d, HOME_META_H)), line, 0, 13, muted);
 }
 
@@ -3835,7 +3845,7 @@ static void draw_lib_grid(desk* d, sel_gui_rect mn) {
                            sel ? ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]) : panel);
         sel_gui_genart_draw(d->canvas, ar, "album", sel_gui_str_hash(r->text != NULL ? r->text : ""));
         lib_tile_text(d, ar, ar.y + ar.h + lpx(d, HOME_TILE_TEXT_GAP), r, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]),
-                      ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+                      ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]), 0);
         lib_view_row_reg(d, mn, sel_engine_state(d->engine), i, t);
         sel_gui_dirty_add(d->canvas, t);
         d->grid_tiles++;
@@ -3849,12 +3859,15 @@ static void draw_lib_flow(desk* d, sel_gui_rect mn) {
     const sel_view_state* v = sel_engine_state(d->engine)->view;
     sel_gui_rect sr = lib_stats_rect(d, mn, sel_engine_state(d->engine));
     int32_t mg = lpx(d, LIB_MARGIN), right = sr.w > 0 ? sr.x - mg : mn.x + mn.w; /* the flow centres beside the Statistics column (I382) */
-    int32_t big = lpx(d, FLOW_ART), avail = right - mn.x - 2 * mg, step, cx = (mn.x + right) / 2, y0 = mn.y + lpx(d, LIB_LIST_Y), k, shift = 0;
-    int32_t full = 2 * (big * 4 / 3 + (big - 3 * big / 5) / 2); /* width of the whole stack at full size: two outer covers at 2 steps */
-    if (full > avail) { /* the stack shrinks to fit beside the Statistics column instead of running under it (I382) */
-        big = big * (avail > 0 ? avail : 0) / full;
-        big = big > lpx(d, 48) ? big : lpx(d, 48);
-    }
+    int32_t ref = lpx(d, FLOW_ART), avail = right - mn.x - 2 * mg, step, cx = (mn.x + right) / 2, k, shift = 0;
+    int32_t capt = lpx(d, HOME_TILE_TEXT_GAP + HOME_TITLE_H + HOME_META_H); /* the caption block under the centre cover */
+    int32_t top = mn.y + lpx(d, LIB_LIST_Y) + mg, area_h = mn.y + mn.h - mg - top; /* free height: below the tab row to the panel bottom */
+    int32_t full = 2 * (ref * 4 / 3 + (ref - 3 * ref / 5) / 2); /* width of the whole stack at the reference size: two outer covers at 2 steps */
+    int32_t fit_w = ref * (avail > 0 ? avail : 0) / full, fit_h = area_h - capt; /* the centre cover that fills the width / the height */
+    int32_t big = fit_w < fit_h ? fit_w : fit_h, y0;
+    big = big > lpx(d, 48) ? big : lpx(d, 48); /* the floor; the cover size follows the free area (I382, I391) */
+    y0 = top + (area_h - (big + capt)) / 2;    /* the stack and its caption centred vertically in the free area */
+    d->flow_area = rect_of(mn.x + mg, top, avail, area_h);
     step = big * 2 / 3;
     int32_t gl = sel_gui_tween_value(&d->tl, ANIM_KEY_FLOW, 65536);
     uint32_t side;
@@ -3865,6 +3878,7 @@ static void draw_lib_flow(desk* d, sel_gui_rect mn) {
     d->flow_draws++;
     d->flow_centre = v->cursor;
     d->grid_box = rect_of(0, 0, 0, 0);
+    d->flow_cover = rect_of(0, 0, 0, 0);
     for (k = 3; k >= 0; k--) {
         for (side = 0; side < 2u; side++) {
             int32_t sgn = side == 0u ? -1 : 1, sz = big - k * big / 5, off = k == 0 ? 0 : (k == 3 ? step * 2 : k == 2 ? step * 3 / 2 : step);
@@ -3878,6 +3892,7 @@ static void draw_lib_flow(desk* d, sel_gui_rect mn) {
             r = rect_of(cx + sgn * off - sz / 2 + shift, y0 + (big - sz) / 2, sz, sz);
             d->grid_box = rect_union(d->grid_box, r);
             if (k == 0) {
+                d->flow_cover = r;
                 sel_gui_shadow_draw(d->canvas, &d->shadow, r);
             }
             sel_gui_genart_draw(d->canvas, r, "album", sel_gui_str_hash(row->text != NULL ? row->text : ""));
@@ -3890,9 +3905,9 @@ static void draw_lib_flow(desk* d, sel_gui_rect mn) {
     }
     if (cr != NULL) {
         lib_tile_text(d, rect_of(cx - big / 2, y0 + big + lpx(d, HOME_TILE_TEXT_GAP), big, 0), y0 + big + lpx(d, HOME_TILE_TEXT_GAP), cr,
-                      ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+                      ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]), 1);
     }
-    sel_gui_dirty_add(d->canvas, rect_of(mn.x, y0, right - mn.x, big + lpx(d, HOME_TILE_TEXT_GAP + HOME_TITLE_H + HOME_META_H)));
+    sel_gui_dirty_add(d->canvas, rect_of(mn.x, top, right - mn.x, area_h)); /* the whole free area: the stack moves with the canvas size */
 }
 
 static void draw_library(desk* d) {

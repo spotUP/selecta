@@ -25,11 +25,12 @@ foreach(p 1.mod 2.mod 3.xm 4.it 5.sid)
 endforeach()
 
 # Runs the desktop with VIEW_STYLE ${style} and the key script ${script}; sets <tag>_out and <tag>_hash.
+set(CANVAS 1280x800)
 function(flow_run tag style script)
   file(REMOVE_RECURSE "${WORK}/cfg")
   # --view library enters the page in the first turn and the page sets its own source: the test's source follows it (I266).
   file(WRITE "${WORK}/${tag}.txt" "exec VIEW_SOURCE queue\nexec VIEW_WINDOW 8\nexec VIEW_STYLE ${style}\nexec COMPOSERS_SHOW\nwait 100\n${script}")
-  dui_run(o --db "${db}" --ui desktop --backend mem --view library --canvas 1280x800 --clock fixed --stats ${queue}
+  dui_run(o --db "${db}" --ui desktop --backend mem --view library --canvas ${CANVAS} --clock fixed --stats ${queue}
     --input "${WORK}/${tag}.txt")
   set(out "${o}\n${o_err}")
   dui_stat(hash "${o}" desktop canvas_hash)
@@ -124,3 +125,58 @@ function(no_stats_overlap out what)
 endfunction()
 no_stats_overlap("${grid_out}" "grid")
 no_stats_overlap("${flow0_out}" "cover flow")
+
+# I391: the centre cover follows the free area (below the tab row to the panel bottom, beside the Statistics column), the
+# stack plus caption is centred vertically in it, and the caption is centred under the cover. The dump line
+# "flow cover x y w h area x y w h" gives the cover and the free area; the caption is the centred label whose box starts
+# GAP below the cover (its ink span is recorded by draw_text_centered).
+set(FLOW_GAP 8)
+set(FLOW_CAPT 42) # HOME_TILE_TEXT_GAP + HOME_TITLE_H + HOME_META_H
+function(flow_layout out what)
+  string(REGEX MATCH "flow cover ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+) area ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)" _m "${out}")
+  if(NOT _m)
+    message(FATAL_ERROR "${what}: no 'flow cover' line in:\n${out}")
+  endif()
+  set(cx ${CMAKE_MATCH_1})
+  set(cy ${CMAKE_MATCH_2})
+  set(cw ${CMAKE_MATCH_3})
+  set(ay ${CMAKE_MATCH_6})
+  set(aw ${CMAKE_MATCH_7})
+  set(ah ${CMAKE_MATCH_8})
+  # (1) the cover is the smaller of the width fit (stack = 46/15 of the cover) and the height fit.
+  math(EXPR fit_w "15 * ${aw} / 46")
+  math(EXPR fit_h "${ah} - ${FLOW_CAPT}")
+  if(fit_w LESS fit_h)
+    set(want ${fit_w})
+  else()
+    set(want ${fit_h})
+  endif()
+  math(EXPR dfit "${cw} - ${want}")
+  if(dfit GREATER 2 OR dfit LESS -2)
+    message(FATAL_ERROR "${what}: centre cover ${cw} px, expected ${want} (width fit ${fit_w}, height fit ${fit_h})")
+  endif()
+  # (2) equal gaps above the cover and below the caption.
+  math(EXPR top_gap "${cy} - ${ay}")
+  math(EXPR bot_gap "${ay} + ${ah} - (${cy} + ${cw} + ${FLOW_CAPT})")
+  math(EXPR dgap "${top_gap} - ${bot_gap}")
+  if(dgap GREATER 2 OR dgap LESS -2)
+    message(FATAL_ERROR "${what}: top gap ${top_gap} px, bottom gap ${bot_gap} px (cover y ${cy} size ${cw}, area y ${ay} h ${ah})")
+  endif()
+  # (3) the caption title is centred under the cover.
+  math(EXPR cap_y "${cy} + ${cw} + ${FLOW_GAP}")
+  string(REGEX MATCH "label [0-9]+ ${cap_y} [0-9]+ [0-9]+ ink ([0-9]+) ([0-9]+) text" _l "${out}")
+  if(NOT _l)
+    message(FATAL_ERROR "${what}: no centred caption label at y ${cap_y}")
+  endif()
+  math(EXPR cap_mid2 "2 * ${CMAKE_MATCH_1} + ${CMAKE_MATCH_2}")
+  math(EXPR cov_mid2 "2 * ${cx} + ${cw}")
+  math(EXPR dmid "(${cap_mid2} - ${cov_mid2}) / 2")
+  if(dmid GREATER 2 OR dmid LESS -2)
+    message(FATAL_ERROR "${what}: caption centre x*2 ${cap_mid2} differs from the cover centre x*2 ${cov_mid2}")
+  endif()
+  message(STATUS "${what}: cover ${cw} px (fit w ${fit_w} h ${fit_h}), gaps top ${top_gap} bottom ${bot_gap}, caption off ${dmid}")
+endfunction()
+flow_layout("${flow0_out}" "cover flow 1280x800")
+set(CANVAS 1280x1024)
+flow_run(tall coverflow "wait 600\n")
+flow_layout("${tall_out}" "cover flow 1280x1024")
