@@ -294,6 +294,7 @@ typedef struct desk {
     uint32_t transport_hits; /* transport button clicks sent to the engine (DUI-P4-1) */
     uint32_t home_parts;     /* bit set of the Home frame parts drawn (HP_*), the I230 proof that each is on screen */
     uint32_t tile_cards;     /* tile card surfaces drawn in the Home view */
+    uint32_t quick_hover_fill; /* the card fill the hovered quick-pick tile was last painted with, 0 when none is hovered (home dump line quick_hover, I490) */
     uint32_t frame_parts;    /* frame parts drawn: sidebar entries, Now Playing panel and transport buttons */
     int32_t shelf_q16[8];    /* horizontal scroll of each Home shelf in logical pixels, Q16 */
     int32_t ptr_x, ptr_y;    /* the last pointer position: the wheel scrolls the shelf under it */
@@ -1673,6 +1674,9 @@ static uintptr_t home_dump_build(desk* d) {
         o += (size_t)snprintf(d->home_dump + o, sizeof d->home_dump - o, "quick %u cols=%u %s|%s|%s\n", (unsigned)k, (unsigned)quick_cols(d),
                               r->key, r->text, r->artist != NULL ? r->artist : "");
     }
+    if (d->quick_hover_fill != 0u && o + 64u < sizeof d->home_dump) { /* I490: "quick_hover fill=AARRGGBB", present only while a quick tile is hovered */
+        o += (size_t)snprintf(d->home_dump + o, sizeof d->home_dump - o, "quick_hover fill=%08x\n", (unsigned)d->quick_hover_fill);
+    }
     for (s = 0; s < n; s++) {
         for (k = 0; k < sh[s].tiles && o + 200u < sizeof d->home_dump; k++) {
             const sel_view_row* r = &st->view->rows[shelf_tile_row(st, &sh[s], k)];
@@ -1715,6 +1719,16 @@ static int quick_hit(desk* d, int32_t x, int32_t y, uint32_t* pk) {
         }
     }
     return 0;
+}
+
+/* The flat hover index of quick-pick tile k (I490): the quick tiles follow the shelf tiles in d->hover_tile's numbering, so the shelf indices stay as they were. */
+static uint32_t quick_hover_index(const sel_state* st, uint32_t k) {
+    shelf sh[SHELF_MAX];
+    uint32_t s, cnt = home_shelves(st, sh), flat = 0;
+    for (s = 0; s < cnt; s++) {
+        flat += sh[s].tiles;
+    }
+    return flat + k;
 }
 
 /* The shelf whose band holds the canvas row y, or SHELF_NONE. */
@@ -2192,16 +2206,22 @@ static void draw_quick(desk* d, sel_gui_rect mn) {
     int32_t gap = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     shelf q;
     uint32_t k, n = home_quick(st, &q);
+    d->quick_hover_fill = 0u;
     for (k = 0; k < n; k++) {
         const sel_view_row* r = &st->view->rows[shelf_tile_row(st, &q, k)];
         sel_gui_rect t = quick_tile_rect(d, k);
         sel_gui_rect ar = rect_of(t.x, t.y, t.h, t.h);
+        int hovered = d->hover_tile > 0 && (uint32_t)d->hover_tile - 1u == quick_hover_index(st, k);
+        uint32_t fill = hovered ? desk_mix(panel, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), 65536) : panel; /* the shelf card's hover fill */
         const uint32_t* art;
         if (t.y + t.h <= mn.y || t.y >= mn.y + mn.h) {
             continue;
         }
+        if (hovered) {
+            d->quick_hover_fill = fill;
+        }
         sel_gui_fill_rect(d->canvas, t, panel);
-        sel_gui_round_rect(d->canvas, t, radius, panel);
+        sel_gui_round_rect(d->canvas, t, radius, fill);
         d->tile_cards++;
         d->home_parts |= HP_TILE_CARD;
         art = r->art_ref != NULL ? art_tile(d->art, r->art_ref) : NULL;
@@ -6922,7 +6942,9 @@ static int desk_hover_move(desk* d, int32_t x, int32_t y) {
             } else if (home_shelf_mode(st)) {
                 shelf sh[SHELF_MAX];
                 uint32_t s, k, cnt = home_shelves(st, sh), flat = 0;
-                if (shelf_hit(d, x, y, &s, &k)) {
+                if (quick_hit(d, x, y, &k)) { /* I490 */
+                    tile = (int32_t)quick_hover_index(st, k) + 1;
+                } else if (shelf_hit(d, x, y, &s, &k)) {
                     for (i = 0; i < s && i < cnt; i++) {
                         flat += sh[i].tiles;
                     }
@@ -7300,6 +7322,14 @@ static int desk_replay_input(desk* d) {
         } else if (sscanf(line, "quicktile %u", &n) == 1) { /* I478: a click on the centre of quick-pick tile n */
             sel_gui_rect t = quick_tile_rect(d, n);
             opened |= desk_event_frame(d, desk_click(d, t.x + t.w / 2, t.y + t.h / 2));
+        } else if (sscanf(line, "quickhover %u", &n) == 1) { /* I490: the pointer moves to the centre of quick-pick tile n */
+            sel_gui_rect t = quick_tile_rect(d, n);
+            sel_gui_input mv;
+            memset(&mv, 0, sizeof mv);
+            mv.kind = SEL_GUI_IN_MOVE;
+            mv.x = t.x + t.w / 2;
+            mv.y = t.y + t.h / 2;
+            opened |= desk_route_input(d, &mv);
         } else if (sscanf(line, "door %u", &n) == 1 && n < DOOR_COUNT) { /* a click on the centre of door n */
             sel_gui_rect r = sidebar_door_rect(d, n);
             sel_gui_input ck;

@@ -503,3 +503,19 @@ expect_eq("quick picks without history" "${none_n}" 0)
 # Activating quick pick 1 (Monkey Island, songs 2 and 6) opens that album's two songs, exactly like its shelf tile (I473 path).
 quick_run(qact "${few_db}" 1000x1400 "quicktile 1\nexec VIEW_SOURCE query\nwait 1\n")
 expect_album_rows("${qact}" "quick pick 1 opens its album (Monkey Island: fixture:2 and fixture:6)" 2 "fixture:2")
+
+# I490: the pointer over quick-pick tile 1 lights that card like a hovered shelf card: the dump carries quick_hover with the
+# lit fill (the panel mixed to the surface token), and no such line while no quick tile is hovered.
+quick_run(qidle "${few_db}" 1000x1400 "wait 1\n")
+if("${qidle}" MATCHES "\nquick_hover ")
+  message(FATAL_ERROR "quick_hover reported with no pointer over a quick tile:\n${qidle}")
+endif()
+quick_run(qhov "${few_db}" 1000x1400 "quickhover 1\nwait 1\n")
+if(NOT "${qhov}" MATCHES "\nquick_hover fill=([0-9a-f]+)\n")
+  message(FATAL_ERROR "hovering quick tile 1 lit no card (no quick_hover line):\n${qhov}")
+endif()
+set(qfill "${CMAKE_MATCH_1}")
+quick_run(qhov_off "${few_db}" 1000x1400 "quickhover 1\nmove 5 5\nwait 1\n")
+if("${qhov_off}" MATCHES "\nquick_hover ")
+  message(FATAL_ERROR "quick tile 1 stayed lit after the pointer left:\n${qhov_off}")
+endif()
