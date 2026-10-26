@@ -47,9 +47,27 @@ amigaremix.com, remix.kwed.org, radio stations, Shared Playlists = 9 sources. Ta
 
 ## 2. bbmp and other services
 
-bbmp (the second parity target): I did not find a primary source for its online list in this run (no bbmp repo or doc
-was fetched). The memory note says v1 must match both; **bbmp's online services are UNVERIFIED and need one follow-up
-look at its docs before row I412 closes.** Candidate services, all "after HippoPlayer set":
+bbmp (the second parity target) is already researched in `thoughts/shared/research/2026-10-22_bbmp-sources.md`; the
+first version of this plan missed that doc and marked bbmp UNVERIFIED. Primary source: the bbmp repo
+(github.com/creep-ltx/bbmp), `src/bbmp/collection/*.py` and `docs/collections.md`. bbmp has six collections; Selecta
+registers two of them (`sel_source_register_builtin` in src/library/source.c: local, modland, hvsc, hippo). The other
+four appear only in the comment on `sel_source.id` in src/library/source.h.
+
+| bbmp collection | Catalogue and transport (bbmp file) | Selecta |
+|-----------------|-------------------------------------|---------|
+| modland | `allmods_md5.zip` + `allmods.zip`, FTP + HTTPS mirrors (modland.py, transports.py) | exists (src/library/sources/modland*.c) |
+| hvsc | Songlengths.md5 + STIL, hosted by Modland (hvsc.py) | exists (src/library/sources/hvsc*.c) |
+| asma | JSON list, https://asma.atari.org `/asma/`, Atari SAP (asma.py) | missing: I413 |
+| sndh | yearly `files/sndh<year>_lf.zip`, central directory read with 2 HTTP Range requests, https://sndh.atari.org `/sndh/sndh_lf/`, no md5 (sndh.py) | missing: I414 |
+| zxart | paged JSON `/api/language:eng/export:{what}/start:{start}/limit:{n}`, https://zxart.ee, ZX AY and beeper (zxart.py) | missing: I415 |
+| keygenmusic | JSON list, https://keygenmusic.tk `/kgm/` (keygenmusic.py) | missing: I416 |
+
+Shared mechanics (base.py, docs/collections.md) already match Selecta's source layer: song key `<id>:<path>`, one
+catalogue per source, md5-checked cache with LRU trim and kept songs, companions, prefetch, mirror ranking. Each new
+source follows the modland/hvsc pattern (`<id>.c`, `<id>_net.c`, `<id>_sync.c`) and D-OS-7 (real fixture + PROVENANCE
+row before the parser). On the Amiga each goes through the DEViLBOX mirror `/api/mirror/<source>/<path>` (design 16, D9).
+
+Other services, beyond both parity targets. Candidate services, all "after HippoPlayer set":
 
 | Service | Why | Endpoint knowledge |
 |---------|-----|--------------------|
@@ -124,7 +142,7 @@ cannot do TLS or parse HTML.
 - After the HippoPlayer set. Mod Archive needs an API key (question OS-6). One row per service is created when Johan picks.
 
 ### 5.7 parity check (I412)
-- Look up bbmp's online list (primary source), compare with sections 1 and 2, add rows for any difference. Done-when: a table of bbmp services each marked exists / row ID.
+- Done: the bbmp table in section 2 (from the bbmp repo and the 2026-10-22 research doc). Four missing collections became rows I413 to I416.
 
 ## 6. Tests
 
