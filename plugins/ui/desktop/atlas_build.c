@@ -40,10 +40,11 @@ static int cmp_kern(const void* a, const void* b) {
 
 /* Fills `g` from glyph index `gi`; the bitmap is rendered into `page` when it is not NULL, at the shelf position
  * the caller keeps in *px, *py, *row. */
-static void place(const stbtt_fontinfo* f, float scale, int gi, uint32_t cp, sel_gui_glyph* g, unsigned char* page,
+static void place(const stbtt_fontinfo* f, float scale, int ydiv, int gi, uint32_t cp, sel_gui_glyph* g, unsigned char* page,
                   int* px, int* py, int* row) {
     int x0, y0, x1, y1, adv, lsb, w, h;
-    stbtt_GetGlyphBitmapBox(f, gi, scale, scale, &x0, &y0, &x1, &y1);
+    float sy = scale / (float)ydiv; /* I468: rows are ydiv times taller than columns, so the bitmap has 1/ydiv the rows */
+    stbtt_GetGlyphBitmapBox(f, gi, scale, sy, &x0, &y0, &x1, &y1);
     stbtt_GetGlyphHMetrics(f, gi, &adv, &lsb);
     w = x1 - x0;
     h = y1 - y0;
@@ -51,7 +52,7 @@ static void place(const stbtt_fontinfo* f, float scale, int gi, uint32_t cp, sel
     g->cp = cp;
     g->adv = (uint16_t)((float)adv * scale + 0.5f);
     g->bx = (int16_t)x0;
-    g->by = (int16_t)y0;
+    g->by = (int16_t)(y0 * ydiv); /* layout units: the draw halves the pen row (gui_draw ydiv) */
     if (w <= 0 || h <= 0) {
         return;
     }
@@ -65,7 +66,7 @@ static void place(const stbtt_fontinfo* f, float scale, int gi, uint32_t cp, sel
     g->w = (uint16_t)w;
     g->h = (uint16_t)h;
     if (page != NULL) {
-        stbtt_MakeGlyphBitmap(f, page + (size_t)*py * PAGE_W + (size_t)*px, w, h, PAGE_W, scale, scale, gi);
+        stbtt_MakeGlyphBitmap(f, page + (size_t)*py * PAGE_W + (size_t)*px, w, h, PAGE_W, scale, sy, gi);
     }
     *px += w + 1;
     if (h > *row) {
@@ -74,6 +75,10 @@ static void place(const stbtt_fontinfo* f, float scale, int gi, uint32_t cp, sel
 }
 
 sel_gui_atlas* desk_atlas_build(const unsigned char* ttf, int pixel_size) {
+    return desk_atlas_build_tall(ttf, pixel_size, 1);
+}
+
+sel_gui_atlas* desk_atlas_build_tall(const unsigned char* ttf, int pixel_size, int ydiv) {
     stbtt_fontinfo f;
     sel_gui_atlas* at;
     sel_gui_glyph* glyphs;
@@ -105,14 +110,14 @@ sel_gui_atlas* desk_atlas_build(const unsigned char* ttf, int pixel_size) {
     for (pass = 0; pass < 2; pass++) {
         px = py = row = 0;
         n = 0;
-        place(&f, scale, 0, 0xFFFFFFFFu, &at->missing, page, &px, &py, &row);
+        place(&f, scale, ydiv, 0, 0xFFFFFFFFu, &at->missing, page, &px, &py, &row);
         for (r = 0; r < sizeof g_ranges / sizeof g_ranges[0]; r++) {
             for (cp = g_ranges[r].lo; cp <= g_ranges[r].hi; cp++) {
                 int gi = stbtt_FindGlyphIndex(&f, (int)cp);
                 if (gi == 0) {
                     continue;
                 }
-                place(&f, scale, gi, cp, &glyphs[n], page, &px, &py, &row);
+                place(&f, scale, ydiv, gi, cp, &glyphs[n], page, &px, &py, &row);
                 n++;
             }
         }
@@ -149,10 +154,11 @@ sel_gui_atlas* desk_atlas_build(const unsigned char* ttf, int pixel_size) {
     return at;
 }
 
-const sel_gui_atlas* desk_atlas_baked(int semibold, int pixel_size) {
+const sel_gui_atlas* desk_atlas_baked(int semibold, int pixel_size, int ydiv) {
     uint32_t i;
     for (i = 0; i < sel_font_baked_n; i++) {
-        if (sel_font_baked[i].semibold == semibold && sel_font_baked[i].px == pixel_size) {
+        if (sel_font_baked[i].semibold == semibold && sel_font_baked[i].px == pixel_size &&
+            sel_font_baked[i].ydiv == ydiv) {
             return &sel_font_baked[i].at;
         }
     }

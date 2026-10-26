@@ -276,6 +276,8 @@ typedef struct desk {
     uint32_t hist_n, hist_pos;
     desk_page pg_hist[PG_HIST_MAX]; /* page history (I266): the pages visited, desk_page_goto appends, Back and Forward move */
     uint32_t pg_n, pg_pos;
+    int ydiv_opt;            /* --ydiv N: forces the pixel aspect (the mem backend tests the AGA 640x256 layout); 0 = by backend */
+    int is_aga;              /* the aga backend: canvases up to 300 rows get ydiv 2 (I468) */
     int pg_walk;             /* 1 while Back or Forward re-enters a page: desk_page_goto must not append it again */
     uint32_t nav_arrow_clicks; /* history arrow clicks */
     uint32_t vol_clicks, seek_clicks; /* footer bar clicks and drags sent as VOLUME and SEEK (I312) */
@@ -548,6 +550,11 @@ static int32_t px_to_logical_ceil(const desk* d, int32_t px) {
     return (int32_t)(((int64_t)px * 65536 + d->scale_q16 - 1) / d->scale_q16);
 }
 
+/* I468: the layout height in square pixels: the canvas rows times the pixel aspect (ydiv 2 on the AGA 640x256 screen). */
+static int32_t cvh(const desk* d) {
+    return d->canvas->h * (d->canvas->ydiv > 1 ? d->canvas->ydiv : 1);
+}
+
 static sel_gui_rect region_rect(const desk* d, const char* name) {
     uint32_t i;
     for (i = 0; i < d->layout.count; i++) {
@@ -566,14 +573,15 @@ static const sel_gui_atlas* desk_font(desk* d, int semibold, int size) {
     for (i = 0; i < DESK_SIZES; i++) {
         if (g_sizes[i] == size) {
             if (d->atlas[semibold][i] == NULL) {
-                d->atlas[semibold][i] = desk_atlas_baked(semibold, lpx(d, size));
+                d->atlas[semibold][i] = desk_atlas_baked(semibold, lpx(d, size), d->canvas->ydiv > 1 ? d->canvas->ydiv : 1);
                 if (d->atlas[semibold][i] != NULL) {
                     d->atlas_baked_hits++;
                 } else {
                     const sel_host* ch = sel_engine_plugin_host(d->engine);
                     uint32_t t0 = ch->clock_ms(ch);
                     d->atlas[semibold][i] =
-                        desk_atlas_build(semibold ? sel_font_inter_semibold : sel_font_inter_regular, lpx(d, size));
+                        desk_atlas_build_tall(semibold ? sel_font_inter_semibold : sel_font_inter_regular, lpx(d, size),
+                                              d->canvas->ydiv > 1 ? d->canvas->ydiv : 1);
                     d->atlas_ms += ch->clock_ms(ch) - t0;
                     d->atlas_builds++;
                 }
@@ -3475,7 +3483,7 @@ static void viz_sigpath_draw(desk* d, sel_gui_rect r) {
 /* The visual layout: the whole canvas, the visualizer above the signal path. */
 static void draw_visual(desk* d) {
     int32_t mg = lpx(d, HOME_MARGIN), th = lpx(d, 24);
-    sel_gui_rect all = rect_of(0, 0, d->canvas->w, d->canvas->h);
+    sel_gui_rect all = rect_of(0, 0, d->canvas->w, cvh(d));
     sel_gui_fill_rect(d->canvas, all, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
     viz_draw_area(d, rect_of(mg, mg, all.w - 2 * mg, all.h - 3 * mg - th), d->viz_sel);
     viz_sigpath_draw(d, rect_of(mg, all.h - mg - th, all.w - 2 * mg, th));
@@ -5703,7 +5711,8 @@ static uint32_t np_art_average(const desk* d, sel_gui_rect ar) {
     }
     for (iy = 1; iy < 8; iy++) {
         for (ix = 1; ix < 8; ix++) {
-            int32_t x = ar.x + ar.w * ix / 8, y = ar.y + ar.h * iy / 8;
+            int32_t yd = d->canvas->ydiv > 1 ? d->canvas->ydiv : 1;
+            int32_t x = ar.x + ar.w * ix / 8, y = (ar.y + ar.h * iy / 8) / yd;
             uint32_t c;
             if (x < 0 || y < 0 || x >= d->canvas->w || y >= d->canvas->h) {
                 continue;
@@ -6404,7 +6413,7 @@ static sel_gui_rect overlay_row(const desk* d, uint32_t i) {
 
 /* I442: the toast sits in the bottom right corner of the app window, 16 px in from both edges. */
 static sel_gui_rect toast_rect(desk* d) {
-    return rect_of(d->canvas->w - lpx(d, 320 + 16), d->canvas->h - lpx(d, 40 + 16), lpx(d, 320), lpx(d, 40));
+    return rect_of(d->canvas->w - lpx(d, 320 + 16), cvh(d) - lpx(d, 40 + 16), lpx(d, 320), lpx(d, 40));
 }
 
 static void desk_draw_overlay(desk* d) {
@@ -6646,7 +6655,7 @@ static int desk_zoom_key(desk* d, const sel_gui_input* ev) {
         next = steps[at < 3 ? at + 1 : 3];
     }
     d->zoom_pct = next;
-    if (desk_set_scale(d, desk_scale_for(d, d->canvas->w, d->canvas->h))) {
+    if (desk_set_scale(d, desk_scale_for(d, d->canvas->w, cvh(d)))) {
         desk_resize(d, d->canvas->w, d->canvas->h);
     }
     return 1;
@@ -7503,7 +7512,13 @@ static int desk_add_folder(desk* d) {
 }
 
 /* one pointer or gesture event, from the --input script or the live window */
-static int desk_route_input(desk* d, const sel_gui_input* ev) {
+static int desk_route_input(desk* d, const sel_gui_input* ev_in) {
+    sel_gui_input tall = *ev_in; /* I468: pointer rows are canvas rows; the layout is in square pixels, so y and y2 scale by ydiv */
+    const sel_gui_input* ev = &tall;
+    if (d->canvas->ydiv > 1 && ev_in->kind != SEL_GUI_IN_DROP && ev_in->kind != SEL_GUI_IN_KEY) {
+        tall.y *= d->canvas->ydiv;
+        tall.y2 *= d->canvas->ydiv;
+    }
     d->frame_open = 0; /* an input that changes nothing never flushes: its stamp must not leak into the next frame */
     desk_frame_begin(d);
     if (ev->kind == SEL_GUI_IN_DROP) {
@@ -7774,9 +7789,9 @@ static int desk_present(desk* d) {
         d->seek_fill = -1;
         d->vol_fill = -1;
         d->seek_length[0] = '\0';
-        sel_gui_fill_rect(d->canvas, rect_of(0, 0, d->canvas->w, d->canvas->h),
+        sel_gui_fill_rect(d->canvas, rect_of(0, 0, d->canvas->w, cvh(d)),
                           ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
-        sel_gui_dirty_add(d->canvas, rect_of(0, 0, d->canvas->w, d->canvas->h));
+        sel_gui_dirty_add(d->canvas, rect_of(0, 0, d->canvas->w, cvh(d)));
         desk_pt_lap(d, PT_CANVAS);
     }
     if (d->uim.layout == SEL_UIM_LAYOUT_VISUAL) { /* the visual layout: the visualizer and the signal path fill the canvas */
@@ -8010,6 +8025,7 @@ static int desk_make_canvas(desk* d, const char* size, int32_t def_w, int32_t de
         return 0;
     }
     sel_gui_canvas_init(d->canvas, format, (int32_t)w, (int32_t)h, pixels);
+    d->canvas->ydiv = d->ydiv_opt > 0 ? d->ydiv_opt : (d->is_aga && h <= 300u ? 2 : 1); /* I468: the AGA 640x256 pixels are twice as tall as wide */
     desk_prof_attach(d);
     if (format == SEL_GUI_INDEX8) {
         static const int ui_tokens[] = {SEL_GUI_TOKEN_ACCENT, SEL_GUI_TOKEN_SURFACE, SEL_GUI_TOKEN_TEXT,
@@ -8050,7 +8066,7 @@ static int32_t desk_scale_for(const desk* d, int32_t w, int32_t h) {
 
 /* The layout runs at the logical size: the canvas divided by the scale. */
 static void desk_relayout(desk* d) {
-    sel_uim_layout_compute(&d->layout, (uint32_t)px_to_logical(d, d->canvas->w), (uint32_t)px_to_logical(d, d->canvas->h));
+    sel_uim_layout_compute(&d->layout, (uint32_t)px_to_logical(d, d->canvas->w), (uint32_t)px_to_logical(d, cvh(d)));
 }
 
 /* The backend density changed (a window moved to another screen): the scale follows, the zoom stays. */
@@ -8059,7 +8075,7 @@ static int desk_set_density(desk* d, int32_t density) {
         return 0;
     }
     d->scale = density;
-    return desk_set_scale(d, desk_scale_for(d, d->canvas->w, d->canvas->h));
+    return desk_set_scale(d, desk_scale_for(d, d->canvas->w, cvh(d)));
 }
 
 /* The icon atlas for the current scale (DUI-P2-8): each logical icon size at k times the size, picked from the
@@ -8077,6 +8093,7 @@ static void desk_free_icons(desk* d) {
 static void desk_build_icons(desk* d) {
     int i;
     uint32_t s;
+    int32_t yd = d->canvas != NULL && d->canvas->ydiv > 1 ? d->canvas->ydiv : 1; /* I468: tall pixels draw px / yd rows */
     desk_free_icons(d);
     d->icon_resampled = 0u;
     for (i = 0; i < DESK_ICON_SIZES; i++) {
@@ -8087,7 +8104,7 @@ static void desk_build_icons(desk* d) {
         d->icon_px[i] = px;
         for (s = 0; s < sel_gui_icons_baked.size_n; s++) {
             int32_t bs = sel_gui_icons_baked.sizes[s];
-            if (bs == px) {
+            if (bs == px && yd == 1) {
                 d->icon_alpha[i] = sel_gui_icons_baked.alpha[s];
                 exact = 1;
                 break;
@@ -8104,7 +8121,7 @@ static void desk_build_icons(desk* d) {
         if (!exact) {
             int32_t n = sel_gui_icons_baked.sizes[from];
             size_t src_sz = (size_t)n * (size_t)n;
-            size_t dst_sz = (size_t)px * (size_t)px;
+            size_t dst_sz = (size_t)px * (size_t)(px / yd);
             uint32_t k;
             d->icon_buf[i] = (uint8_t*)d->host->mem_alloc(d->host, dst_sz * sel_gui_icons_baked.count, SEL_MEM_FAST);
             if (d->icon_buf[i] == NULL) {
@@ -8113,7 +8130,7 @@ static void desk_build_icons(desk* d) {
                 continue;
             }
             for (k = 0; k < sel_gui_icons_baked.count; k++) {
-                sel_gui_icon_resample(sel_gui_icons_baked.alpha[from] + k * src_sz, n, d->icon_buf[i] + k * dst_sz, px);
+                sel_gui_icon_resample_tall(sel_gui_icons_baked.alpha[from] + k * src_sz, n, d->icon_buf[i] + k * dst_sz, px, px / yd);
             }
             d->icon_alpha[i] = d->icon_buf[i];
             d->icon_resampled++;
@@ -8160,14 +8177,18 @@ static int desk_resize(desk* d, int32_t w, int32_t h) {
         return 0;
     }
     d->host->mem_free(d->host, d->canvas->pixels);
-    sel_gui_canvas_init(d->canvas, SEL_GUI_RGBA32, w, h, pixels);
+    {
+        int32_t yd = d->canvas->ydiv; /* the pixel aspect belongs to the screen, not to the size */
+        sel_gui_canvas_init(d->canvas, SEL_GUI_RGBA32, w, h, pixels);
+        d->canvas->ydiv = yd;
+    }
     desk_prof_attach(d);
 #ifdef SELECTA_DESKTOP_SDL
     if (d->sdl != NULL && !desk_sdl_resize(d->sdl, w, h)) {
         return 0;
     }
 #endif
-    desk_set_scale(d, desk_scale_for(d, w, h)); /* a fit zoom follows the new size before the layout runs */
+    desk_set_scale(d, desk_scale_for(d, w, cvh(d))); /* a fit zoom follows the new size before the layout runs */
     desk_relayout(d);
     d->repaint = 1;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
@@ -8238,6 +8259,8 @@ static void* desk_open(const sel_ui_open_args* a) {
     }
     d->scale = 1;
     d->scale_q16 = 65536;
+    d->is_aga = backend != NULL && strcmp(backend, "aga") == 0;
+    d->ydiv_opt = desk_opt(a, "--ydiv") != NULL ? atoi(desk_opt(a, "--ydiv")) : 0;
     d->zoom_default = backend != NULL && (strcmp(backend, "rtg") == 0 || strcmp(backend, "aga") == 0) ? 0 : 100;
     d->zoom_pct = d->zoom_default;
     {
@@ -8282,6 +8305,10 @@ static void* desk_open(const sel_ui_open_args* a) {
         if (!desk_make_canvas(d, desk_opt(a, "--canvas"), def_w, def_h)) {
             desk_close(d);
             return NULL;
+        }
+        if (d->canvas->ydiv > 1) { /* the icon masks of tall pixels are px / ydiv rows: rebuilt now the canvas knows its aspect */
+            desk_build_icons(d);
+            d->icon_rebuilds = 0u;
         }
     }
     for (i = 0; i < a->argc; i++) {
@@ -8335,7 +8362,7 @@ static void* desk_open(const sel_ui_open_args* a) {
         d->live = d->input == NULL && !desk_sdl_headless(d->sdl);
     }
 #endif
-    if (desk_set_scale(d, desk_scale_for(d, d->canvas->w, d->canvas->h))) { /* the zoom (fit on rtg and aga) applies before the first frame */
+    if (desk_set_scale(d, desk_scale_for(d, d->canvas->w, cvh(d)))) { /* the zoom (fit on rtg and aga) applies before the first frame */
         d->atlas_rebuilds = 0u;
         d->icon_rebuilds = 0u;
         desk_relayout(d);
@@ -8814,7 +8841,7 @@ static const sel_tag* desk_stats(void* state) {
         d->stats[n].tag = SEL_UI_STAT_LOGICAL_W;
         d->stats[n++].value = (uintptr_t)px_to_logical(d, d->canvas->w);
         d->stats[n].tag = SEL_UI_STAT_LOGICAL_H;
-        d->stats[n++].value = (uintptr_t)px_to_logical(d, d->canvas->h);
+        d->stats[n++].value = (uintptr_t)px_to_logical(d, cvh(d));
         d->stats[n].tag = SEL_UI_STAT_ZOOM;
         d->stats[n++].value = (uintptr_t)d->zoom_str;
         d->stats[n].tag = SEL_UI_STAT_ICON_RESAMPLED;

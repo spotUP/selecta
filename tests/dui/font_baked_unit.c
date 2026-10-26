@@ -27,13 +27,13 @@ static int same_glyph(const sel_gui_glyph* a, const sel_gui_glyph* b) {
 int main(void) {
     uint32_t e, i;
     int bad = 0, compared = 0;
-    if (sel_font_baked_n == 0u || desk_atlas_baked(1, 13) == NULL || desk_atlas_baked(0, 13) == NULL) {
+    if (sel_font_baked_n == 0u || desk_atlas_baked(1, 13, 1) == NULL || desk_atlas_baked(0, 13, 1) == NULL) {
         fprintf(stderr, "font_baked_unit: nothing baked (n=%u)\n", (unsigned)sel_font_baked_n);
         return 1;
     }
     for (e = 0; e < sel_font_baked_n; e++) {
         const desk_baked_font* b = &sel_font_baked[e];
-        sel_gui_atlas* r = desk_atlas_build(b->semibold ? sel_font_inter_semibold : sel_font_inter_regular, b->px);
+        sel_gui_atlas* r = desk_atlas_build_tall(b->semibold ? sel_font_inter_semibold : sel_font_inter_regular, b->px, b->ydiv);
         const sel_gui_atlas* a = &b->at;
         int ok = r != NULL && a->glyph_n == r->glyph_n && a->kern_n == r->kern_n && a->page_w == r->page_w &&
                  a->page_h == r->page_h && a->ascent == r->ascent && a->line_height == r->line_height &&
@@ -45,7 +45,7 @@ int main(void) {
             ok = a->kerns[i].a == r->kerns[i].a && a->kerns[i].b == r->kerns[i].b && a->kerns[i].amount == r->kerns[i].amount;
         }
         if (!ok) {
-            fprintf(stderr, "font_baked_unit: weight %d size %d differs from the runtime atlas\n", (int)b->semibold, (int)b->px);
+            fprintf(stderr, "font_baked_unit: weight %d size %d ydiv %d differs from the runtime atlas\n", (int)b->semibold, (int)b->px, (int)b->ydiv);
             bad++;
         }
         compared++;

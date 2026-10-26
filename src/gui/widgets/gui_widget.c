@@ -22,7 +22,7 @@ const char* sel_gui_widget_kind_name(uint32_t kind) {
 static int32_t icon_draw_raw(sel_gui_canvas* c, const sel_gui_icons* ic, uint32_t id, sel_gui_rect box, int32_t px,
                           uint32_t argb) {
     uint32_t i, pick = 0;
-    int32_t n;
+    int32_t n, rows;
     if (ic == NULL || id >= ic->count || ic->size_n == 0) {
         return 0;
     }
@@ -32,8 +32,9 @@ static int32_t icon_draw_raw(sel_gui_canvas* c, const sel_gui_icons* ic, uint32_
         }
     }
     n = ic->sizes[pick];
+    rows = n / (c->ydiv > 1 ? c->ydiv : 1); /* I468: on tall pixels the masks hold n / ydiv rows (desktop_ui.c builds them) */
     sel_gui_blit_mask(c, box.x + (box.w - n) / 2, box.y + (box.h - n) / 2,
-                      ic->alpha[pick] + (size_t)id * (size_t)n * (size_t)n, n, n, n, argb);
+                      ic->alpha[pick] + (size_t)id * (size_t)n * (size_t)rows, n, rows, n, argb);
     return n;
 }
 
@@ -550,18 +551,23 @@ int sel_gui_widget_draw(sel_gui_canvas* c, const sel_gui_style* s, const sel_gui
  * everything scaled by m, source pixel i spans [i*m, (i+1)*m) and the destination spans [x*n, (x+1)*n), so the
  * weights are integers and sum to n per axis. */
 void sel_gui_icon_resample(const uint8_t* src, int32_t n, uint8_t* dst, int32_t m) {
+    sel_gui_icon_resample_tall(src, n, dst, m, m);
+}
+
+/* I468: n x n to m wide and mh rows; the same weights per axis (rows weigh in units of 1/mh). */
+void sel_gui_icon_resample_tall(const uint8_t* src, int32_t n, uint8_t* dst, int32_t m, int32_t mh) {
     int32_t x, y, i, j;
     uint32_t area = (uint32_t)n * (uint32_t)n;
-    for (y = 0; y < m; y++) {
-        int32_t y0 = (int32_t)(((int64_t)y * n) / m);
-        int32_t y1 = (int32_t)((((int64_t)(y + 1) * n) + m - 1) / m);
+    for (y = 0; y < mh; y++) {
+        int32_t y0 = (int32_t)(((int64_t)y * n) / mh);
+        int32_t y1 = (int32_t)((((int64_t)(y + 1) * n) + mh - 1) / mh);
         for (x = 0; x < m; x++) {
             int32_t x0 = (int32_t)(((int64_t)x * n) / m);
             int32_t x1 = (int32_t)((((int64_t)(x + 1) * n) + m - 1) / m);
             uint32_t sum = 0u;
             for (j = y0; j < y1 && j < n; j++) {
-                int32_t lo = j * m > y * n ? j * m : y * n;
-                int32_t hi = (j + 1) * m < (y + 1) * n ? (j + 1) * m : (y + 1) * n;
+                int32_t lo = j * mh > y * n ? j * mh : y * n;
+                int32_t hi = (j + 1) * mh < (y + 1) * n ? (j + 1) * mh : (y + 1) * n;
                 uint32_t wy = hi > lo ? (uint32_t)(hi - lo) : 0u;
                 for (i = x0; i < x1 && i < n; i++) {
                     int32_t l2 = i * m > x * n ? i * m : x * n;

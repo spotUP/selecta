@@ -25,7 +25,7 @@
 #include <stdlib.h>
 
 /* atlas_build.c looks baked atlases up; the tool has none (it makes them). */
-const desk_baked_font sel_font_baked[1] = {{0, 0, {0}}};
+const desk_baked_font sel_font_baked[1] = {{0, 0, 1, {0}}};
 const uint32_t sel_font_baked_n = 0;
 
 static unsigned char* slurp(const char* path) {
@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
     static const int sizes[] = {DESK_FONT_SIZES};
     static const int scales[] = {DESK_FONT_BAKE_SCALES_Q16};
     unsigned char* ttf[2];
-    int pxs[64], npx = 0, w, i, k;
+    int pxs[64], yds[64], npx = 0, w, i, k;
     FILE* o;
     if (argc != 4) {
         fprintf(stderr, "usage: gui_fontbake Inter-Regular.ttf Inter-SemiBold.ttf out.c\n");
@@ -70,8 +70,20 @@ int main(int argc, char** argv) {
             for (j = 0; j < npx && pxs[j] != px; j++) {
             }
             if (j == npx) {
+                yds[npx] = 1;
                 pxs[npx++] = px;
             }
+        }
+    }
+    /* I468: the tall-pixel (ydiv 2) set, for the AGA 640x256 screen, only at its one layout scale. */
+    for (i = 0; i < DESK_FONT_SIZE_N; i++) {
+        int px = (int)(((long long)sizes[i] * DESK_FONT_BAKE_TALL_SCALE_Q16 + 32768) >> 16);
+        int j;
+        for (j = 0; j < npx && !(pxs[j] == px && yds[j] == 2); j++) {
+        }
+        if (j == npx) {
+            pxs[npx] = px;
+            yds[npx++] = 2;
         }
     }
     o = fopen(argv[3], "w");
@@ -82,18 +94,18 @@ int main(int argc, char** argv) {
                "#include \"atlas_build.h\"\n\n");
     for (w = 0; w < 2; w++) {
         for (i = 0; i < npx; i++) {
-            sel_gui_atlas* at = desk_atlas_build(ttf[w], pxs[i]);
+            sel_gui_atlas* at = desk_atlas_build_tall(ttf[w], pxs[i], yds[i]);
             uint32_t g, n;
             if (at == NULL) {
-                fprintf(stderr, "gui_fontbake: atlas %d/%d failed\n", w, pxs[i]);
+                fprintf(stderr, "gui_fontbake: atlas %d/%d/%d failed\n", w, pxs[i], yds[i]);
                 return 1;
             }
-            fprintf(o, "static const sel_gui_glyph k_g%d_%d[] = {\n", w, pxs[i]);
+            fprintf(o, "static const sel_gui_glyph k_g%d_%d_%d[] = {\n", w, pxs[i], yds[i]);
             for (g = 0; g < at->glyph_n; g++) {
                 const sel_gui_glyph* e = &at->glyphs[g];
                 fprintf(o, "{%uu,%u,%u,%u,%u,%d,%d,%u},\n", (unsigned)e->cp, e->x, e->y, e->w, e->h, e->bx, e->by, e->adv);
             }
-            fprintf(o, "};\nstatic const sel_gui_kern k_k%d_%d[] = {\n", w, pxs[i]);
+            fprintf(o, "};\nstatic const sel_gui_kern k_k%d_%d_%d[] = {\n", w, pxs[i], yds[i]);
             for (g = 0; g < at->kern_n; g++) {
                 fprintf(o, "{%uu,%uu,%d},\n", (unsigned)at->kerns[g].a, (unsigned)at->kerns[g].b, at->kerns[g].amount);
             }
@@ -101,7 +113,7 @@ int main(int argc, char** argv) {
                 fprintf(o, "{0,0,0}\n");
             }
             n = (uint32_t)(at->page_w * at->page_h);
-            fprintf(o, "};\nstatic const uint8_t k_a%d_%d[] = {", w, pxs[i]);
+            fprintf(o, "};\nstatic const uint8_t k_a%d_%d_%d[] = {", w, pxs[i], yds[i]);
             for (g = 0; g < n; g++) {
                 fprintf(o, "%s%u,", g % 32 == 0 ? "\n" : "", (unsigned)at->alpha[g]);
             }
@@ -112,9 +124,9 @@ int main(int argc, char** argv) {
     fprintf(o, "\nconst desk_baked_font sel_font_baked[] = {\n");
     for (w = 0; w < 2; w++) {
         for (i = 0; i < npx; i++) {
-            sel_gui_atlas* at = desk_atlas_build(ttf[w], pxs[i]);
-            fprintf(o, "{%d,%d,{k_g%d_%d,%uu,k_k%d_%d,%uu,k_a%d_%d,%d,%d,%d,%d,", w, pxs[i], w, pxs[i], (unsigned)at->glyph_n, w,
-                    pxs[i], (unsigned)at->kern_n, w, pxs[i], at->page_w, at->page_h, at->ascent, at->line_height);
+            sel_gui_atlas* at = desk_atlas_build_tall(ttf[w], pxs[i], yds[i]);
+            fprintf(o, "{%d,%d,%d,{k_g%d_%d_%d,%uu,k_k%d_%d_%d,%uu,k_a%d_%d_%d,%d,%d,%d,%d,", w, pxs[i], yds[i], w, pxs[i], yds[i],
+                    (unsigned)at->glyph_n, w, pxs[i], yds[i], (unsigned)at->kern_n, w, pxs[i], yds[i], at->page_w, at->page_h, at->ascent, at->line_height);
             fprintf(o, "{%uu,%u,%u,%u,%u,%d,%d,%u}}},\n", (unsigned)at->missing.cp, at->missing.x, at->missing.y,
                     at->missing.w, at->missing.h, at->missing.bx, at->missing.by, at->missing.adv);
             desk_atlas_free(at);
