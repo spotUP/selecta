@@ -59,7 +59,7 @@ if(NOT moving_hash STREQUAL still_hash)
   message(FATAL_ERROR "the tween end state differs from the reduced-motion frame (${moving_hash} vs ${still_hash})")
 endif()
 
-# A hover fades in over several frames, and not at all with reduce_motion.
+# A hover switches at once (I351, I356, I359): one frame more than the base run, with or without reduce_motion, same end state.
 file(WRITE "${WORK}/hover.txt" "hover 0\nwait 300\n")
 dui_run(hov ${common} --exec "PREF_SET ui.desktop.reduce_motion 0" --input "${WORK}/hover.txt")
 dui_run(hov_still ${common} --exec "PREF_SET ui.desktop.reduce_motion 1" --input "${WORK}/hover.txt")
@@ -67,6 +67,6 @@ dui_stat(hov_frames "${hov}" desktop frames)
 dui_stat(hov_still_frames "${hov_still}" desktop frames)
 dui_stat(hov_hash "${hov}" desktop canvas_hash)
 dui_stat(hov_still_hash "${hov_still}" desktop canvas_hash)
-if(NOT hov_still_frames EQUAL still_want OR hov_frames LESS_EQUAL still_want OR NOT hov_hash STREQUAL hov_still_hash)
-  message(FATAL_ERROR "hover fade: frames ${hov_frames} (still ${hov_still_frames}, want ${still_want}), hashes ${hov_hash} / ${hov_still_hash}")
+if(NOT hov_still_frames EQUAL still_want OR NOT hov_frames EQUAL still_want OR NOT hov_hash STREQUAL hov_still_hash)
+  message(FATAL_ERROR "hover: frames ${hov_frames} (still ${hov_still_frames}, want ${still_want} for both: no fade), hashes ${hov_hash} / ${hov_still_hash}")
 endif()

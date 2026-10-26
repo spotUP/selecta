@@ -97,7 +97,8 @@ typedef struct desk {
     int testcard;           /* --view testcard: draw the primitive test card once, no widgets */
     uint32_t dirty_pixels;  /* pixels the latest present repainted (DUI-P2-2) */
     uint32_t dirty_total;   /* pixels repainted over all presents */
-    uint32_t hover_dirty_max; /* most pixels one present repainted while a hover fade ran (DUI-P3-8, stats line hover_dirty) */
+    uint32_t hover_dirty_max; /* most pixels one hover-move present repainted (DUI-P3-8, stats line hover_dirty) */
+    int hover_frame;          /* a hover move painted since the last present: the next present counts toward hover_dirty_max */
     int tween_ended;        /* a tween ended between live turns: the next live turn draws its end state once (I341) */
     int ticks_given;        /* --ticks was passed: only such mem runs drive visualizer frames (DUI-P4-11) */
     uint32_t ticks;         /* --ticks N: clock seconds the mem backend replays after the quiet turn */
@@ -302,7 +303,7 @@ static int desk_add_folder(desk* d);
 static sel_gui_rect toast_rect(desk* d);
 static void desk_toast_tick(desk* d);
 
-enum { ANIM_KEY_VIEW = 1, ANIM_KEY_HOVER = 2, ANIM_KEY_TIP = 3, ANIM_KEY_FLOW = 4 };
+enum { ANIM_KEY_VIEW = 1, ANIM_KEY_TIP = 3, ANIM_KEY_FLOW = 4 };
 enum { HR_NONE, HR_SIDEBAR, HR_MAIN, HR_DETAIL, HR_PLAYER };
 static int hover_region_of(const desk* d, sel_gui_rect box);
 enum { SLOT_SUB_PREV, SLOT_SHUFFLE, SLOT_PREV, SLOT_PLAY, SLOT_NEXT, SLOT_REPEAT, SLOT_SUB_NEXT, TRANSPORT_COUNT };
@@ -318,9 +319,10 @@ static uint32_t desk_flush(desk* d) {
 #endif
     {
         uint32_t px = sel_gui_present(d->canvas);
-        if (sel_gui_tween_value(&d->tl, ANIM_KEY_HOVER, 65536) < 65536 && px > d->hover_dirty_max) {
+        if (d->hover_frame && px > d->hover_dirty_max) {
             d->hover_dirty_max = px;
         }
+        d->hover_frame = 0;
         return px;
     }
 }
@@ -5420,8 +5422,7 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
 }
 
 /* The pointer moved to (x, y) (I272): finds the listed control under it (button, chip, tab, sidebar door) and the Home tile
- * under it, and starts the hover fade when either changed. Returns 1 when the picture changed. The hover state is shared
- * by every control through ANIM_KEY_HOVER, the tween the Home tiles already use. */
+ * under it, and repaints at once when either changed (no tween: I356, I359). Returns 1 when the picture changed. */
 static int desk_hover_move(desk* d, int32_t x, int32_t y) {
     sel_gui_rect hit = rect_of(0, 0, 0, 0);
     int32_t tile = 0;
@@ -5473,8 +5474,8 @@ static int desk_hover_move(desk* d, int32_t x, int32_t y) {
     if (!changed) {
         return 0;
     }
-    desk_tween(d, ANIM_KEY_HOVER, SEL_GUI_ANIM_FAST_MS, SEL_GUI_EASE_OUT);
-    d->hovers++;
+    d->hovers++; /* no tween: hover switches at once, so the move frame is the only frame (I359) */
+    d->hover_frame = 1;
     if (d->home && (tile_moved || hover_main_painted(d))) {
         draw_home(d);
     }
@@ -5823,7 +5824,7 @@ static int desk_replay_input(desk* d) {
             pointer_sent = 1; /* the engine answers on the next pump: the script resumes then */
         } else if (sscanf(line, "hover %u", &n) == 1 && d->home && d->open_tile == 0) {
             d->hover_tile = (int32_t)n + 1;
-            desk_tween(d, ANIM_KEY_HOVER, SEL_GUI_ANIM_FAST_MS, SEL_GUI_EASE_OUT);
+            d->hover_frame = 1;
             draw_home(d);
             opened |= desk_event_frame(d, 1);
         } else if (sscanf(line, "wait %u", &n) == 1) {

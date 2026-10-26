@@ -29,3 +29,45 @@ endif()
 if(NOT "${CMAKE_MATCH_1}" EQUAL 65536)
   message(FATAL_ERROR "the entering door weight ${CMAKE_MATCH_1} is not 65536 (hover lights instantly, I351)")
 endif()
+
+# I359: a Home tile lights on the move frame and no hover tween keeps repainting the Home page afterwards. Each repaint of the
+# whole Home page costs about 13 ms, so the 100 ms tween (6 frames) kept the loop busy and queued the next pointer events behind
+# it ("the hover effects dont feel instant"). A live run on the Home page with one tile: the rest frame (no pointer) and a run
+# with a motion onto the tile 300 ms in, both quitting at 400 ms. The moved run shows the tile lit (frame dump differs from the
+# rest frame in the tile rectangle) and presents exactly one frame more than the rest run (the move frame; the fade made it 7).
+include("${HERE}/ppm.cmake")
+function(home_run outvar timed ppm)
+  file(REMOVE_RECURSE "${WORK}/cfg")
+  set(ENV{SELECTA_SDL_TEST_TIMED} "${timed}")
+  execute_process(
+    COMMAND "${SELECTA}" --output null --size 80x25 --config-dir "${WORK}/cfg" --ui desktop --backend sdl --view home
+            --canvas 1280x800 --stats --frame-dump "${ppm}" --exec "QUEUE_ADD ${SONGS}/selecta-test.mod"
+    OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
+  if(NOT rc EQUAL 0)
+    message(FATAL_ERROR "selecta exited ${rc}\nstdout:\n${out}\nstderr:\n${err}")
+  endif()
+  set(${outvar} "${out}" PARENT_SCOPE)
+endfunction()
+home_run(hrest "q@400" "${WORK}/home_rest.ppm")
+if(NOT "${hrest}" MATCHES "hover_ctl [^\n]* main (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) ")
+  message(FATAL_ERROR "no hover_ctl main (Home tile) rectangle in:\n${hrest}")
+endif()
+set(tx ${CMAKE_MATCH_1})
+set(ty ${CMAKE_MATCH_2})
+set(tw ${CMAKE_MATCH_3})
+set(th ${CMAKE_MATCH_4})
+math(EXPR px "${tx} + ${tw} / 2")
+math(EXPR py "${ty} + ${th} / 2")
+home_run(hmoved "m${px},${py}@300 q@400" "${WORK}/home_moved.ppm")
+ppm_load("${WORK}/home_rest.ppm" resthex w)
+ppm_load("${WORK}/home_moved.ppm" movedhex mw)
+rect_differs("${resthex}" "${movedhex}" ${w} ${tx} ${ty} ${tw} ${th} lit)
+if(NOT lit)
+  message(FATAL_ERROR "the Home tile under the pointer is pixel-identical to the rest frame: it is not lit")
+endif()
+dui_stat(frames_rest "${hrest}" desktop frames)
+dui_stat(frames_moved "${hmoved}" desktop frames)
+math(EXPR extra "${frames_moved} - ${frames_rest}")
+if(NOT extra EQUAL 1)
+  message(FATAL_ERROR "the move onto a Home tile presented ${extra} more frames than the rest run, expected exactly 1 (a hover tween repaints the page)")
+endif()
