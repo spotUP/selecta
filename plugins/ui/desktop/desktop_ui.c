@@ -4050,7 +4050,7 @@ static int library_click(desk* d, int32_t x, int32_t y) {
         draw_home(d);
         return 1;
     }
-    if (st->composers == NULL) {
+    if (d->page != PG_LIBRARY || st->composers == NULL) { /* the rows and tabs below are drawn on the Library page only (dui-search) */
         return 0;
     }
     if (st->composer_page == NULL) {
