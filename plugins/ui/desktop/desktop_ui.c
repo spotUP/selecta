@@ -2128,11 +2128,23 @@ static int lib_row_hit(desk* d, sel_gui_rect mn, uint32_t i, int32_t x, int32_t 
 
 /* The Library page modes (slice B): the composers list, the tree and the column browser. The last two show the engine's
  * own view rows (VIEW_STYLE tree / drilldown over a LIBRARY_SEARCH result), the same commands the text UI sends. */
-enum { LIB_MODES = 5, LIB_TAB_Y = LIB_TITLE_Y + LIB_TITLE_H, LIB_TAB_W = 120, LIB_TAB_H = 24, LIB_WINDOW_ROWS = 12 };
+enum { LIB_MODES = 5, LIB_TAB_Y = LIB_TITLE_Y + LIB_TITLE_H, LIB_TAB_PAD = 12, LIB_TAB_H = 24, LIB_WINDOW_ROWS = 12 };
 static const char* const lib_mode_name[LIB_MODES] = {"Composers", "Tree", "Columns", "Files", "History"};
 
+/* I440: a tab is as wide as its label (bold, the active look) plus a pad on each side, so the right end of the tab row
+ * is free for the style chooser. */
+static int32_t lib_tab_w(desk* d, uint32_t i) {
+    const sel_gui_atlas* at = desk_font(d, 1, 14);
+    return (at != NULL ? sel_gui_text_width(at, lib_mode_name[i], strlen(lib_mode_name[i])) : 0) + 2 * lpx(d, LIB_TAB_PAD);
+}
+
 static sel_gui_rect lib_tab_rect(desk* d, sel_gui_rect mn, uint32_t i) {
-    return rect_of(mn.x + lpx(d, LIB_MARGIN) + (int32_t)i * lpx(d, LIB_TAB_W), mn.y + lpx(d, LIB_TAB_Y), lpx(d, LIB_TAB_W), lpx(d, LIB_TAB_H));
+    int32_t x = mn.x + lpx(d, LIB_MARGIN);
+    uint32_t k;
+    for (k = 0; k < i; k++) {
+        x += lib_tab_w(d, k);
+    }
+    return rect_of(x, mn.y + lpx(d, LIB_TAB_Y), lib_tab_w(d, i), lpx(d, LIB_TAB_H));
 }
 
 /* The Add Folder button on the title row of the Library page, right aligned up to the history arrows, which own
@@ -2149,21 +2161,61 @@ static sel_gui_rect lib_clear_rect(desk* d, sel_gui_rect mn) {
     return rect_of(ab.x - lpx(d, 12) - w, ab.y, w, ab.h);
 }
 
-/* I390: the Library style chooser, a segmented control of three icon buttons (Grid, Cover Flow, List) on the title row,
- * left of Clear Library. It is the only desktop control for VIEW_STYLE. While a scan runs the wide scan bar takes the
- * row and the chooser is not drawn. */
-enum { LIB_STYLES = 3, LIB_STYLE_W = 36, LIB_STYLE_GAP = 4, LIB_STYLE_ICON = 18, LIB_STYLE_CLEAR_GAP = 12 };
+/* I390: the Library style chooser, a segmented control of three buttons (Grid, Cover Flow, List). It is the only
+ * desktop control for VIEW_STYLE. While a scan runs the chooser is not drawn. I440: each segment shows its icon and its
+ * name; icons alone were not found. A segment is as wide as its icon plus its label, so no label is ellipsized. The
+ * title row has no room for the labels next to the heading and the two buttons, so the chooser sits at the right end
+ * of the tab row, its right edge on the page's right margin. A window too narrow for the labels left of it and right
+ * of the tabs gets the icons alone (the tooltip still names each one). */
+enum { LIB_STYLES = 3, LIB_STYLE_PAD = 8, LIB_STYLE_GAP = 4, LIB_STYLE_ICON = 18, LIB_STYLE_LABEL_PX = 14, LIB_STYLE_TAB_GAP = 16 };
 static const char* const lib_style_name[LIB_STYLES] = {"Grid", "Cover Flow", "List"};
 static const int32_t lib_style_icon[LIB_STYLES] = {SEL_GUI_ICON_LAYOUT_GRID, SEL_GUI_ICON_GALLERY_HORIZONTAL, SEL_GUI_ICON_LIST};
 static const char* const lib_style_cmd[LIB_STYLES] = {"VIEW_STYLE grid", "VIEW_STYLE coverflow", "VIEW_STYLE regular"};
 
 static uint32_t lib_style_selected(const sel_state* st);
 
+/* The label box of segment i: right of the icon, the label's width plus the centred-label pad on each side. */
+static int32_t lib_style_label_w(desk* d, uint32_t i) {
+    const sel_gui_atlas* at = desk_font(d, 1, LIB_STYLE_LABEL_PX);
+    const char* s = lib_style_name[i];
+    return (at != NULL ? sel_gui_text_width(at, s, strlen(s)) : 0) + 2 * lpx(d, 8);
+}
+
+/* The right edge the chooser ends at (the page's right margin; the tab row has nothing under the navigation arrows) and
+ * the left edge it must stay right of (the last tab). */
+static int32_t lib_style_right(desk* d, sel_gui_rect mn) {
+    return mn.x + mn.w - lpx(d, LIB_MARGIN);
+}
+
+static int32_t lib_tabs_end(desk* d, sel_gui_rect mn) {
+    sel_gui_rect t = lib_tab_rect(d, mn, LIB_MODES - 1u);
+    return t.x + t.w;
+}
+
+/* 1 when the labelled chooser does not fit between the tabs and its right edge: the segments then show icons alone. */
+static int lib_style_compact(desk* d, sel_gui_rect mn) {
+    int32_t w = (LIB_STYLES - 1) * lpx(d, LIB_STYLE_GAP);
+    uint32_t k;
+    for (k = 0; k < (uint32_t)LIB_STYLES; k++) {
+        w += 2 * lpx(d, LIB_STYLE_PAD) + lpx(d, LIB_STYLE_ICON) + lib_style_label_w(d, k) - lpx(d, LIB_STYLE_PAD);
+    }
+    return lib_style_right(d, mn) - w < lib_tabs_end(d, mn) + lpx(d, LIB_STYLE_TAB_GAP);
+}
+
+/* The label box width of segment i as laid out: 0 in the compact chooser. */
+static int32_t lib_style_text_w(desk* d, sel_gui_rect mn, uint32_t i) {
+    return lib_style_compact(d, mn) ? 0 : lib_style_label_w(d, i);
+}
+
 static sel_gui_rect lib_style_rect(desk* d, sel_gui_rect mn, uint32_t i) {
-    sel_gui_rect cl = lib_clear_rect(d, mn);
-    int32_t w = lpx(d, LIB_STYLE_W), gap = lpx(d, LIB_STYLE_GAP);
-    int32_t left = cl.x - lpx(d, LIB_STYLE_CLEAR_GAP) - LIB_STYLES * w - (LIB_STYLES - 1) * gap;
-    return rect_of(left + (int32_t)i * (w + gap), cl.y, w, cl.h);
+    int32_t gap = lpx(d, LIB_STYLE_GAP), lead = lpx(d, LIB_STYLE_PAD) + lpx(d, LIB_STYLE_ICON), x = lib_style_right(d, mn), w = 0;
+    int compact = lib_style_compact(d, mn);
+    uint32_t k;
+    for (k = LIB_STYLES; k-- > i;) { /* lay the segments out right to left from the right edge */
+        w = lead + (compact ? lpx(d, LIB_STYLE_PAD) : lib_style_label_w(d, k));
+        x -= w + (k + 1u < (uint32_t)LIB_STYLES ? gap : 0);
+    }
+    return rect_of(x, mn.y + lpx(d, LIB_TAB_Y), w, lpx(d, LIB_TAB_H));
 }
 
 /* I315: while a scan runs the Add Folder button gives way to the file being added and a progress bar. Same row and
@@ -2202,7 +2254,8 @@ static void lib_scan_draw(desk* d, sel_gui_rect mn) {
 
 /* The crumb after the tabs: the values picked in the column browser; a click on it clears them. */
 static sel_gui_rect lib_crumb_rect(desk* d, sel_gui_rect mn) {
-    return rect_of(mn.x + lpx(d, LIB_MARGIN) + LIB_MODES * lpx(d, LIB_TAB_W), mn.y + lpx(d, LIB_TAB_Y), lpx(d, 300), lpx(d, LIB_TAB_H));
+    int32_t x = lib_tabs_end(d, mn) + lpx(d, LIB_TAB_PAD), w = lib_style_rect(d, mn, 0).x - lpx(d, LIB_TAB_PAD) - x;
+    return rect_of(x, mn.y + lpx(d, LIB_TAB_Y), w > 0 ? w : 0, lpx(d, LIB_TAB_H));
 }
 
 static int lib_view_on(const desk* d, const sel_state* st) {
@@ -3520,7 +3573,7 @@ static const char* library_dump_build(desk* d) {
         const char* cnt = lib_next(disp);
         o = dump_put(d, o, "composer %u %s|%s|%s\n", (unsigned)i, p, disp, cnt);
         {
-            sel_gui_rect rr = lib_row_rect(d, region_rect(d, "main"), i);
+            sel_gui_rect rr = lib_row_rect(d, panel_rect(d, "main"), i);
             o = dump_put(d, o, "row %u %d %d %d %d\n", (unsigned)i, (int)rr.x, (int)rr.y, (int)rr.w, (int)rr.h);
         }
         p = lib_next(cnt);
@@ -3531,8 +3584,12 @@ static const char* library_dump_build(desk* d) {
     }
     o = dump_put(d, o, "mode %s\nscroll %d\n", lib_mode_name[d->lib_mode], (int)(d->lib_q16 >> 16));
     for (i = 0; i < LIB_MODES; i++) {
-        sel_gui_rect tr = lib_tab_rect(d, region_rect(d, "main"), i);
+        sel_gui_rect tr = lib_tab_rect(d, panel_rect(d, "main"), i);
         o = dump_put(d, o, "tab %u %d %d %d %d\n", (unsigned)i, (int)tr.x, (int)tr.y, (int)tr.w, (int)tr.h);
+    }
+    {
+        sel_gui_rect cr = lib_crumb_rect(d, panel_rect(d, "main"));
+        o = dump_put(d, o, "crumb %d %d %d %d\n", (int)cr.x, (int)cr.y, (int)cr.w, (int)cr.h);
     }
     if (lib_view_on(d, st)) {
         const sel_view_state* v = st->view;
@@ -3541,7 +3598,7 @@ static const char* library_dump_build(desk* d) {
         }
         for (i = 0; i < v->row_n && o + 400u < sizeof d->library_dump; i++) {
             const sel_view_row* vr = &v->rows[i];
-            sel_gui_rect rr = lib_row_rect(d, region_rect(d, "main"), i);
+            sel_gui_rect rr = lib_row_rect(d, panel_rect(d, "main"), i);
             o = dump_put(d, o, "vrow %u %s|%u|%u|%u|%s\n", (unsigned)i,
                                   lib_kind_name(vr->kind), (unsigned)vr->depth, (unsigned)vr->count,
                                   (unsigned)vr->expanded, vr->text != NULL ? vr->text : "");
@@ -3557,7 +3614,7 @@ static const char* library_dump_build(desk* d) {
         }
     }
     for (i = 0; i < (uint32_t)LIB_STYLES; i++) {
-        sel_gui_rect sr = lib_style_rect(d, region_rect(d, "main"), i);
+        sel_gui_rect sr = lib_style_rect(d, panel_rect(d, "main"), i);
         o = dump_put(d, o, "style_chooser %u %s %d %d %d %d selected=%d\n", (unsigned)i, lib_style_name[i], (int)sr.x, (int)sr.y,
                      (int)sr.w, (int)sr.h, lib_style_selected(st) == i);
     }
@@ -3573,7 +3630,7 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "\n%s", d->flow_snaps);
     o = dump_put(d, o, "grid box %d %d %d %d\n", (int)d->grid_box.x, (int)d->grid_box.y, (int)d->grid_box.w, (int)d->grid_box.h);
     if (st->stats != NULL) {
-        sel_gui_rect sr = lib_stats_rect(d, region_rect(d, "main"), st);
+        sel_gui_rect sr = lib_stats_rect(d, panel_rect(d, "main"), st);
         o = dump_put(d, o, "stats rect %d %d %d %d\n", (int)sr.x, (int)sr.y, (int)sr.w, (int)sr.h);
     }
     o = dump_put(d, o, "nowplaying inset left %d right %d token %d\nnowplaying draws %u pairs %u genart %u\nlyrics line %d at %u\nmessage lines %u\n",
@@ -3597,7 +3654,7 @@ static const char* library_dump_build(desk* d) {
         p = v + strlen(v) + 1;
     }
     {
-        sel_gui_rect ab = lib_add_rect(d, region_rect(d, "main"));
+        sel_gui_rect ab = lib_add_rect(d, panel_rect(d, "main"));
         sel_scan_info si;
         sel_engine_scan_info(d->engine, &si);
         o = dump_put(d, o, "addfolder %d %d %d %d\nscan probed %u files %u scans %u\n",
@@ -3816,8 +3873,8 @@ static const char* library_dump_build(desk* d) {
                               (unsigned)st->library_songs, (unsigned)d->dlg_playlists, dlg_button_rect(d, 0u).x, dlg_button_rect(d, 0u).y,
                               dlg_button_rect(d, 0u).w, dlg_button_rect(d, 0u).h, dlg_button_rect(d, 1u).x,
                               dlg_button_rect(d, 1u).y, dlg_button_rect(d, 1u).w, dlg_button_rect(d, 1u).h,
-                              lib_clear_rect(d, region_rect(d, "main")).x, lib_clear_rect(d, region_rect(d, "main")).y,
-                              lib_clear_rect(d, region_rect(d, "main")).w, lib_clear_rect(d, region_rect(d, "main")).h);
+                              lib_clear_rect(d, panel_rect(d, "main")).x, lib_clear_rect(d, panel_rect(d, "main")).y,
+                              lib_clear_rect(d, panel_rect(d, "main")).w, lib_clear_rect(d, panel_rect(d, "main")).h);
         for (k = 0; k < 5u && k < d->pal.count; k++) {
             o = dump_put(d, o, "palitem %u %s\n", (unsigned)k, d->pal.items[k].name);
         }
@@ -3881,7 +3938,12 @@ static void draw_lib_styles(desk* d, sel_gui_rect mn, const sel_state* st) {
         } else {
             ink = hover_ink_of(d, r, muted, text);
         }
-        sel_gui_icon_draw(d->canvas, &d->icons, (uint32_t)lib_style_icon[i], r, lpx(d, LIB_STYLE_ICON), ink);
+        sel_gui_icon_draw(d->canvas, &d->icons, (uint32_t)lib_style_icon[i], rect_of(r.x + lpx(d, LIB_STYLE_PAD), r.y, lpx(d, LIB_STYLE_ICON), r.h),
+                          lpx(d, LIB_STYLE_ICON), ink);
+        if (lib_style_text_w(d, mn, i) > 0) {
+            draw_text_centered(d, rect_of(r.x + r.w - lib_style_text_w(d, mn, i), r.y, lib_style_text_w(d, mn, i), r.h), lib_style_name[i], 1,
+                               LIB_STYLE_LABEL_PX, ink);
+        }
         sel_gui_dirty_add(d->canvas, r);
     }
 }
@@ -4248,7 +4310,7 @@ static void desk_composer_request(char* line, size_t cap, const char* canon) {
 /* Largest Library scroll offset in logical pixels, Q16: the UI-drawn list's content height minus the room under the list
  * top, or for the engine view modes the rows beyond its window. */
 static int32_t lib_max_q16(desk* d, const sel_state* st) {
-    sel_gui_rect mn = region_rect(d, "main");
+    sel_gui_rect mn = panel_rect(d, "main");
     int32_t sc = d->scale > 0 ? d->scale : 1, max;
     if (lib_ui_list(d, st)) {
         max = (int32_t)lib_list_n(st) * LIB_ROW_H - (mn.y + mn.h - lib_list_top(d, mn, st)) / sc;
@@ -4280,7 +4342,7 @@ static int lib_wheel(desk* d, int32_t dy) {
 /* A click on a composer row drills into it (COMPOSERS_SHOW canon); on the back line it returns to the list. */
 static int library_click(desk* d, int32_t x, int32_t y) {
     const sel_state* st = sel_engine_state(d->engine);
-    sel_gui_rect mn = region_rect(d, "main");
+    sel_gui_rect mn = panel_rect(d, "main");
     uint32_t i = 0;
     const char* p;
     char line[256];
@@ -5465,7 +5527,7 @@ static void desk_draw_tip(desk* d) {
     pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     w = sel_gui_text_width(at, d->tip_text, strlen(d->tip_text)) + 2 * pad;
     if (door >= (int32_t)DOOR_COUNT) { /* a Library style segment: the box sits below it, centred */
-        b = lib_style_rect(d, region_rect(d, "main"), (uint32_t)(door - (int32_t)DOOR_COUNT));
+        b = lib_style_rect(d, panel_rect(d, "main"), (uint32_t)(door - (int32_t)DOOR_COUNT));
         box = rect_of(b.x + b.w / 2 - w / 2, b.y + b.h + lpx(d, 4), w, lpx(d, TIP_H));
     } else if (door >= 0) { /* a rail door: the box sits to the right of the rail, level with the door (I363) */
         b = sidebar_door_rect(d, (uint32_t)door);
@@ -5491,7 +5553,7 @@ static int desk_tip_pointer(desk* d, int32_t x, int32_t y) {
     }
     if (btn == 0 && x >= 0 && d->page == PG_LIBRARY && sel_engine_state(d->engine)->composer_page == NULL && !d->scan_pending) {
         for (uint32_t i = 0; i < (uint32_t)LIB_STYLES; i++) { /* I390: the chooser segments follow the rail doors in the tooltip index */
-            if (in_rect(lib_style_rect(d, region_rect(d, "main"), i), x, y)) {
+            if (in_rect(lib_style_rect(d, panel_rect(d, "main"), i), x, y)) {
                 btn = (int32_t)TRANSPORT_COUNT + 1 + (int32_t)DOOR_COUNT + (int32_t)i;
             }
         }
