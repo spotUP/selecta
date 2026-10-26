@@ -52,6 +52,8 @@ if(NOT SEL_AMIGA)
       set(tlabel coverflow-slide)
     elseif(tname STREQUAL "keys-live") # I268: real SDL key events through desk_sdl_poll; not a plan item, so no dui label
       set(tlabel keys-live)
+    elseif(tname STREQUAL "dui-view-exec-order") # I398: --view enters its page before --exec runs; ledger row, not a plan item
+      set(tlabel view-exec-order)
     endif()
     set_tests_properties(${tname} PROPERTIES LABELS ${tlabel} TIMEOUT 120 ENVIRONMENT "TMPDIR=${tmpdir}")
   endforeach()
