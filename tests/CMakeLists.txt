@@ -1532,6 +1532,15 @@ if(NOT SEL_AMIGA)
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "zxart_net_ok")
 endif()
 
+# Row I416: LIBRARY_SYNC keygenmusic <url> over the keygenmusic.tk fixture.
+if(NOT SEL_AMIGA)
+  add_test(NAME source-keygenmusic-net
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      -P "${SEL_NET_DIR}/keygenmusic_net.cmake")
+  set_tests_properties(source-keygenmusic-net PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "keygenmusic_net_ok")
+endif()
+
 # Row I413: LIBRARY_SYNC asma <url> over the asma.atari.org fixture.
 if(NOT SEL_AMIGA)
   add_test(NAME source-asma-net
@@ -1635,6 +1644,15 @@ if(NOT SEL_AMIGA)
   target_link_libraries(zxart_unit_test PRIVATE selecta_library selecta_core)
   add_test(NAME zxart-unit COMMAND zxart_unit_test)
   set_tests_properties(zxart-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "zxart_unit_ok")
+
+  # I416: the keygenmusic list reader, path decoding, format and group rules and source descriptor.
+  add_executable(keygenmusic_unit_test keygenmusic_unit_test.c)
+  target_include_directories(keygenmusic_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_compile_definitions(keygenmusic_unit_test PRIVATE
+    SEL_KEYGEN_FIX_LIST="${PROJECT_SOURCE_DIR}/tests/net/fixtures/keygenmusic.tk/kgm/lib.txt")
+  target_link_libraries(keygenmusic_unit_test PRIVATE selecta_library selecta_core)
+  add_test(NAME keygenmusic-unit COMMAND keygenmusic_unit_test)
+  set_tests_properties(keygenmusic-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "keygenmusic_unit_ok")
   # I376: the bottom-of-stack canary (apps/common/stack_canary.c, used by amiga_start.c on the Amiga).
   add_executable(stack_canary_test stack_canary_test.c ${PROJECT_SOURCE_DIR}/apps/common/stack_canary.c)
   target_include_directories(stack_canary_test PRIVATE ${PROJECT_SOURCE_DIR}/apps/common)

@@ -1,0 +1,71 @@
+/* The `keygenmusic` source descriptor (row I416; online-sources plan section 2; design doc 9.1): the music of
+ * keygens, cracks and trainers from keygenmusic.tk. A path is relative to the /kgm/ root and decoded:
+ * `TSRh/TSRh - Opus Creator 9.01 kg.xm`; the song key is `keygenmusic:<path>` and the canonical URL is
+ * https://keygenmusic.tk/kgm/<path>, percent-encoded. Format from the extension, artist the release group (bbmp
+ * keygenmusic.py parse), name the file without its extension (the sync uses what was cracked instead). */
+#include "../source.h"
+#include "keygenmusic_sync.h"
+#include "url_path.h"
+
+#include <string.h>
+
+#define ROOT "https://keygenmusic.tk/" SEL_KEYGEN_ROOT
+
+static const sel_tag g_tags[] = {
+    {SEL_TAG_END, 0},
+};
+
+static int url_of(const char* path, char* out, size_t n) {
+    return sel_url_path_encode(ROOT, path, out, n);
+}
+
+static int path_in(const char* url, char* path, size_t n) {
+    return sel_url_path_decode(ROOT, url, path, n);
+}
+
+static int parse(const char* path, char* scratch, size_t n, sel_tag* out) {
+    const char* fmt;
+    const char* file;
+    const char* dot;
+    size_t fmt_len, name_len;
+    char* artist;
+
+    if (path == NULL || path[0] == '\0') {
+        return 0;
+    }
+    fmt = sel_keygen_format(path);
+    fmt_len = strlen(fmt);
+    file = strrchr(path, '/');
+    file = file != NULL ? file + 1 : path;
+    dot = strrchr(file, '.');
+    name_len = dot != NULL && dot != file ? (size_t)(dot - file) : strlen(file);
+    if (fmt_len + 1u + SEL_KEYGEN_TEXT_MAX + name_len + 1u > n) {
+        return 0;
+    }
+    memcpy(scratch, fmt, fmt_len + 1u);
+    artist = scratch + fmt_len + 1u;
+    if (!sel_keygen_group(path, "", artist, SEL_KEYGEN_TEXT_MAX)) {
+        return 0;
+    }
+    memcpy(artist + strlen(artist) + 1u, file, name_len);
+    artist[strlen(artist) + 1u + name_len] = '\0';
+    out[0].tag = SEL_SRC_FORMAT;
+    out[0].value = (uintptr_t)scratch;
+    out[1].tag = SEL_SRC_ARTIST;
+    out[1].value = (uintptr_t)artist;
+    out[2].tag = SEL_SRC_NAME;
+    out[2].value = (uintptr_t)(artist + strlen(artist) + 1u);
+    out[3].tag = SEL_TAG_END;
+    out[3].value = 0;
+    return 1;
+}
+
+static const sel_source g_keygenmusic = {
+    "keygenmusic", "Keygen Music", "https://keygenmusic.tk/",
+    "The music of keygens, cracks and trainers: tracker modules from release groups.", g_tags,
+    NULL, parse, NULL, url_of, path_in, NULL, NULL,
+};
+
+const sel_source* sel_source_keygenmusic(void) {
+    return &g_keygenmusic;
+}
