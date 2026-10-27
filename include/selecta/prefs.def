@@ -11,6 +11,8 @@ SEL_PREF(UI_HISTORY_SIZE,    "ui.history_size",    "100",                       
 /* desktop UI layout: full, window (compact window) or mini (title and transport only); MODE= sets it at start */
 SEL_PREF(UI_DESKTOP_MODE,    "ui.desktop.mode",    "full",                                        SEL_PREF_PLAIN)
 SEL_PREF(UI_DESKTOP_VIZ,     "ui.desktop.viz",     "viz_scope",                                   SEL_PREF_PLAIN)
+/* desktop UI zoom (I458, I565): fit, 75, 100, 125 or 150; empty = the backend default (100 on SDL, fit on rtg and aga); --zoom overrides */
+SEL_PREF(UI_DESKTOP_ZOOM,    "ui.desktop.zoom",    "",                                            SEL_PREF_PLAIN)
 /* desktop UI animations: 1 turns every tween off; 0 is the default because SDL does not report the OS setting */
 SEL_PREF(UI_DESKTOP_REDUCE_MOTION, "ui.desktop.reduce_motion", "0",                               SEL_PREF_PLAIN)
 /* crossfeed: auto (on when the output reports headphones), on, off */

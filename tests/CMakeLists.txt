@@ -69,6 +69,11 @@ add_test(NAME desktop-bake-check
   COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/tests/desktop-bake-check.tmp"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/dui/desktop_bake_check.cmake")
 
+# I565: every "ui.*" pref a UI plugin reads is declared in prefs.def (ui.desktop.zoom was not, so prefs.conf could not set it).
+add_test(NAME ui-prefs-declared
+  COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}" -P "${CMAKE_CURRENT_SOURCE_DIR}/dui/ui_prefs_declared.cmake")
+set_tests_properties(ui-prefs-declared PROPERTIES PASS_REGULAR_EXPRESSION "ui_prefs_declared_ok")
+
 # T13: render the generated test module, four resamplers. The module comes
 # from tools/gen_testmod.c (host build tool); hashes pinned per resampler in
 # tests/golden/nuade/ once the linear render has been listened to. A missing
@@ -469,6 +474,13 @@ if(NOT SEL_AMIGA)
       "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m1/browse_play.screen"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/browse_play"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/browse_play.cmake")
+
+  # I563: an unregistered UI is a fatal start-up exit; it must go through the shared report (sel_startup_error),
+  # whose count --stats prints, and carry the message. The Amiga requester half is the same call on the Amiga.
+  add_test(NAME selecta-startup-error-report
+    COMMAND selecta --stats --ui no-such-ui --output null)
+  set_tests_properties(selecta-startup-error-report PROPERTIES
+    PASS_REGULAR_EXPRESSION "selecta: ui 'no-such-ui' is not registered.*startup_error_reports=1")
 endif()
 
 # Context-aware keys: Right pages the list, and seeks with the pattern panel up
@@ -1632,6 +1644,15 @@ if(NOT SEL_AMIGA)
       "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3" -P "${SEL_NET_DIR}/modland_net.cmake")
   set_tests_properties(source-modland-net PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "modland_net_ok")
+endif()
+
+# I550: Modland index sync on the Amiga route (SELECTA_AMIGA_ROUTE=1) hits <devilbox>/api/mirror/modland/.
+if(NOT SEL_AMIGA)
+  add_test(NAME source-modland-amiga-route
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3" -P "${SEL_NET_DIR}/modland_amiga_route.cmake")
+  set_tests_properties(source-modland-amiga-route PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "modland_amiga_route_ok")
 endif()
 
 # M3 Phase 4 (I162a): T73 network part. LIBRARY_SYNC hvsc <url> over the hvsc.c64.org fixture.

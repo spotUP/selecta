@@ -252,7 +252,7 @@ static int cat_cache_dir(const sel_host* host, const char* source_id, char* out,
     sel_cache cache;
 
     (void)host;
-    sel_cache_init(&cache, NULL, 0);
+    sel_cache_init(&cache, NULL, sel_net_amiga_route());
     return snprintf(out, n, "%s/sync/%s", cache.dir, source_id) < (int)n && sel_config_mkdir(out);
 }
 

@@ -67,6 +67,15 @@ static void add_list(sel_mirror_set* s, const char* list) {
     }
 }
 
+int sel_net_amiga_route(void) {
+#ifdef SEL_NO_TLS
+    return 1;
+#else
+    const char* v = getenv("SELECTA_AMIGA_ROUTE");
+    return v != NULL && v[0] == '1';
+#endif
+}
+
 unsigned sel_mirrors_init(sel_mirror_set* s, const char* source, int amiga_route) {
     char envname[48];
     const char* v;

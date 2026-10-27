@@ -51,6 +51,11 @@ typedef int (*sel_mirror_verify)(void* ctx);
 /* Build the set for source ("modland", "hvsc"). amiga_route selects the DEViLBOX route.
  * Returns the mirror count (0 for an unknown source without an env list). */
 unsigned sel_mirrors_init(sel_mirror_set* set, const char* source, int amiga_route);
+
+/* 1 when this process reaches online sources through the DEViLBOX mirror proxy (design D9): always on SEL_NO_TLS
+ * (Amiga) builds, and on any build when SELECTA_AMIGA_ROUTE=1 (host-test switch). Every sel_cache_init and the
+ * Modland index sync take their amiga_route from here. */
+int sel_net_amiga_route(void);
 /* Fills order[set->count] with the rank order for the current measurements. */
 void sel_mirrors_rank(const sel_mirror_set* set, unsigned* order);
 /* Fetch <path> (no leading slash). Returns 1 when a mirror served it, 0 when all failed. */
