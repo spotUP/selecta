@@ -13,3 +13,6 @@
 1. Find what starves wasabid (run Selecta at priority -5 via `ChangeTaskPri`/`Run <NIL: nice`; check whether the first frame, 9.4 s, runs at priority 0 with the OS blocked in a busy WaitTOF loop).
 2. Write the log to a file that is not locked: flush and close/reopen per line, or log through a second path (serial.log) so reading does not need Selecta to exit.
 3. Then repeat the 5-click run and the STACKMEASURE exit.
+
+## Addendum: button trace
+With --stats on the AGA backend each MOUSEBUTTONS message now logs `button down|up x y stamped=<Intuition time> taken=<time the poll took it> downs= ups=`; the `input t=` line gives the handled time and `frame end= ms=` the frame time. Stamped to taken is the wait behind a frame; downs vs ups shows a lost half of a pair. Built, not run (rig 2 is down).

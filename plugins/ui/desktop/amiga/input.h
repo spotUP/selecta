@@ -25,6 +25,10 @@ typedef struct desk_amiga_input {
 
 /* Opens intuition.library and keymap.library for the translation (the libraries are opened here, not by libnix, see
  * input.c). 0 when one does not open. */
+/* Non-zero: every MOUSEBUTTONS message logs to stderr when Intuition stamped it, when it was taken off the port (the poll
+ * after a frame) and the running down/up counts, so a long frame or a lost half of a pair shows in the log (I525). */
+extern int desk_amiga_input_trace;
+
 int desk_amiga_input_open(desk_amiga_input* in);
 void desk_amiga_input_close(desk_amiga_input* in);
 /* Translates one message of the window. 1 when it queued an event (or a press that waits for its release). */

@@ -12,10 +12,12 @@
 #include <proto/exec.h>
 #include <proto/intuition.h>
 #include <proto/keymap.h>
+#include <stdio.h>
 #include <string.h>
 
 struct IntuitionBase* IntuitionBase;
 struct Library* KeymapBase;
+int desk_amiga_input_trace;
 
 int desk_amiga_input_open(desk_amiga_input* in) {
     memset(in, 0, sizeof *in);
@@ -153,6 +155,15 @@ int desk_amiga_input_handle(desk_amiga_input* b, struct IntuiMessage* m) {
             b->last_y = raw.y;
         }
         raw.clicks = b->clicks;
+        if (desk_amiga_input_trace) {
+            static uint32_t downs, ups;
+            ULONG now_s, now_m;
+            CurrentTime(&now_s, &now_m);
+            if (down) downs++; else ups++;
+            fprintf(stderr, "button %s x=%d y=%d stamped=%lu.%06lu taken=%lu.%06lu downs=%u ups=%u\n", down ? "down" : "up",
+                    (int)raw.x, (int)raw.y, (unsigned long)m->Seconds, (unsigned long)m->Micros, (unsigned long)now_s,
+                    (unsigned long)now_m, (unsigned)downs, (unsigned)ups);
+        }
         return queue_raw(b, &raw);
     }
     if (m->Class == IDCMP_RAWKEY) {

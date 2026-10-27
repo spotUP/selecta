@@ -23,6 +23,7 @@
 #if defined(SELECTA_DESKTOP_AGA) && !defined(SELECTA_DESKTOP_SDL)
 #define SELECTA_DESKTOP_SDL 1
 #include "amiga/backend_aga.h"
+#include "amiga/input.h"
 #define DESK_BACKEND_NAME "aga"
 #define desk_backend_depth(b) desk_aga_depth(b)
 #define DESK_BACKEND_INDEX8 1 /* the aga screen is always 8 bitplanes, 256 colours (design doc 2.1) */
@@ -8446,6 +8447,9 @@ static void* desk_open(const sel_ui_open_args* a) {
         if (strcmp(a->argv[i], "--stats") == 0) {
             d->report = 1;
             desk_prof_attach(d);
+#ifdef SELECTA_DESKTOP_AGA
+            desk_amiga_input_trace = 1; /* I525: stamped/taken times and down/up counts of every button */
+#endif
         }
         if (strcmp(a->argv[i], "--resize") == 0 && i + 1 < a->argc) {
             d->resize = a->argv[i + 1];
