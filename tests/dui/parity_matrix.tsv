@@ -1,139 +1,269 @@
 # Parity matrix of HippoPlayer (hippo) and bbmp (bbmp) UI features (plan DUI-P1-8, M4-P2-5).
 # Tab separated: source:row, feature, desktop UI column. The desktop column is a DUI item ID (several allowed) or
 # "not in this milestone: <reason>"; it must equal the Mapping column of the same row in plan section 8.2.
+# Fourth column: MUI plan IDs (MUI-Px-y) or "not carried: <reason>" (plan 2.3 reasons only) or "NO ROW" (mui-parity, MUI-P0-7).
+# Rows keyed desk:* are the desktop surface inventory built from the code's tables, not from plan section 8.2.
 # Text UI and Amiga UI columns stay in the M4 plan (M4 mapping column of section 8.2).
-hippo:25	Play mode button next to position slider	DUI-P4-1 (shuffle and repeat buttons in the transport bar); Amiga gadget stays M4-P12-12
-hippo:37	Alarm (timed start)	not in this milestone: engine scheduler, not UI (F13a NEW, unhomed)
-hippo:45	Doublebuffering of sample data	not in this milestone: output layer, M2
-hippo:70	F1-F10 stored programs	DUI-P5-8
-hippo:77	Module comment file	not in this milestone: engine metadata (see 9.5); shown by DUI-P4-3
-hippo:78	Hide window hotkey H	not in this milestone: Amiga-only, stays M4-P12-12 (Amiga)
-hippo:82	Archives LhA, LZX, Zip, gzip	not in this milestone: engine loader, M2
-hippo:83	XPK, PowerPacker, XFDmaster	not in this milestone: engine loader, M2
-hippo:92	Search source remembered	DUI-P5-1
-hippo:96	Infobox downloaded byte count	DUI-P5-2
-hippo:99	UHCBIN network transport	not in this milestone: source layer, not UI
-hippo:105	Resizable main and info windows	DUI-P2-7 (window resize relayout); Amiga NEWSIZE stays M4-P10-1
-hippo:106	Window shrink / expand (zip)	DUI-P4-15 (mini mode); Amiga zoom gadget stays M4-P5-3
-hippo:107	Any font for list and infobox/buttons	DUI-P5-6
-hippo:108	Big buttons	DUI-P5-6
-hippo:109	Button tooltips	DUI-P3-6
-hippo:110	Public screen selection	not in this milestone: Amiga-only, stays M4-P7-1 (Amiga)
-hippo:111	Own screen option	not in this milestone: Amiga-only, stays M4-P6-1 (Amiga), M4-P5-3 (Amiga)
-hippo:112	Filebox display and zoom	M4-P5-3 (Amiga), DUI-P1-7
-hippo:113	Disable info scroll	DUI-P5-2
-hippo:114	Info-line modes 7/8/9/0	DUI-P5-2
-hippo:115	Module info window with wheel scroll	DUI-P4-3, DUI-P3-2
-hippo:116	Info window: SID chip, instruments, channels	DUI-P4-3
-hippo:117	Info window: author, publisher, album, year	DUI-P4-3
-hippo:118	Info window: STIL trivia	DUI-P4-3
-hippo:119	AHI indicator	DUI-P5-2
-hippo:120	Keep window positions and open states	DUI-P5-1
-hippo:121	About window	DUI-P4-13
-hippo:122	Prefs window	DUI-P4-14
-hippo:127	Quadra scope	DUI-P4-11
-hippo:128	Filled quadra scope	DUI-P4-11
-hippo:129	Hippo scope	DUI-P4-11
-hippo:130	Bars scope	DUI-P4-11
-hippo:131	Spectrum analyzer	DUI-P4-11
-hippo:132	Patternscope 4-18 channels, XL rows	DUI-P4-11 (pattern plugin)
-hippo:133	PSID register scope	DUI-P4-12
-hippo:134	Several scopes at once	DUI-P4-11
-hippo:135	Scope size, priority, bars settings	DUI-P4-11
-hippo:136	Z toggles scopes	DUI-P4-11
-hippo:137	External scope plugins	DUI-P4-11 (viz plugin ABI)
-hippo:138	Module info window (I)	DUI-P4-3, DUI-P3-3
-hippo:139	Per-sample listing	DUI-P4-3 (tracker tabs)
-hippo:140	Synth sample / size counts	DUI-P4-3 (tracker tabs)
-hippo:145	Prefs page Play	DUI-P4-14
-hippo:146	Prefs page Show	DUI-P4-14
-hippo:157	MHI decoder hardware	not in this milestone UI plan: players plan (F26)
-hippo:158	AmiGUS mixer	not in this milestone UI plan: players plan (F26)
-hippo:159	Trinity audio	not in this milestone UI plan: players plan (F26)
-hippo:160	Load / save prefs	DUI-P4-14
-hippo:162	Hotkeys enable	not in this milestone: Amiga-only, stays M4-P12-12 (Amiga)
-hippo:163	Double-click play toggle	DUI-P3-2 (double-click plays)
-hippo:164	Task priority setting	not in this milestone: Amiga-only, stays M4-P12-12 (Amiga)
-hippo:165	HippoPlayer.group location	not in this milestone: Selecta has no group file; replayer set comes from the plugin registry
-hippo:211	ToolType parsing	not in this milestone: Amiga-only, stays M4-P7-5 (Amiga)
-hippo:212	UHCBIN environment variable	not in this milestone: source layer
-hippo:213	PIPE: streaming names	not in this milestone: source layer
-hippo:219	R opens prefs	DUI-P4-14, DUI-P3-3
-hippo:228	ESC exit	DUI-P3-3
-hippo:233	HELP about	DUI-P4-13
-hippo:235	` window shrink / expand	M4-P5-3 (Amiga), DUI-P3-3
-hippo:236	7/8/9/0 info-line modes	DUI-P5-2
-hippo:237	I module info	DUI-P3-3
-hippo:238	F1-F10 stored programs	DUI-P5-8
-hippo:240	H hide window; [ join program	M4-P12-12 (Amiga); join program = DUI-P3-3 (playlist append action)
-hippo:242	Z scope toggle	DUI-P4-11
-hippo:269	STIL.txt trivia	DUI-P4-3 (engine done M3)
-hippo:270	Hardware outputs	not in this milestone UI plan: players plan (F26)
-hippo:275	reqtools file requesters	DUI-P5-11 (desktop file dialogs); asl stays M4-P7-3
-hippo:276	Keyfile / registration	not in this milestone: out of scope, Selecta has no registration
-hippo:278	Prefs file location	DUI-P4-14 (prefs store done M1)
-hippo:279	PS3M config file	not in this milestone UI plan: players plan
-hippo:280	Iconify to AppIcon	not in this milestone: Amiga-only, stays M4-P5-3 (Amiga)
-hippo:281	Mouse wheel in lists and info window	DUI-P3-2
-hippo:282	Kickstart 1.2, 68000 baseline	not in this milestone: runtime tier, later (cat:255)
-bbmp:41	Loudness on Info with applied gain; off switch	DUI-P4-3, DUI-P4-14
-bbmp:46	Last visualiser remembered	DUI-P5-1
-bbmp:51	Per-format status line (verified / faults / does not play)	DUI-P4-3 (Song info view)
-bbmp:60	Queue tab; Enter jumps to song	DUI-P4-3, DUI-P3-3
-bbmp:69	Playlists tab; queue a whole playlist	DUI-P4-3, DUI-P3-3
-bbmp:72	Import via Files (.m3u)	DUI-P4-3 (Files view; import engine done M3)
-bbmp:85	Three-column Browse	DUI-P4-4, M4-P10-2 (Amiga) (drilldown style)
-bbmp:86	First list: All plus each collection	DUI-P4-4 (engine done M3)
-bbmp:87	Per-collection Formats, Platforms, Chips, Artists, New	DUI-P4-4 (engine done M3)
-bbmp:88	Formats > artists > songs	DUI-P4-4 (engine done M3)
-bbmp:89	Platforms drill	DUI-P4-4 (engine done M3)
-bbmp:90	Sound chips drill	DUI-P4-4 (engine done M3)
-bbmp:91	Artists A-Z	DUI-P4-4 (engine done M3)
-bbmp:93	HVSC layout view	DUI-P4-4 (engine done M3)
-bbmp:94	Sizes at every Browse level	DUI-P4-4
-bbmp:95	Narrow width drops the parent column; reopens where left	DUI-P1-7 (breakpoints), DUI-P5-1
-bbmp:96	Go to playing song	DUI-P3-3
-bbmp:99	Search tab / box	DUI-P4-3
-bbmp:102	Search scope next collection / all	DUI-P3-3
-bbmp:103	Search box Enter / Down / Esc	DUI-P3-3
-bbmp:104	Artist page	DUI-P4-3 (composer pages)
-bbmp:107	Web and Demozoo search	DUI-P5-7
-bbmp:108	Song info page	DUI-P4-3
-bbmp:109	Info tab: format notes, failure reason, loudness	DUI-P4-3
-bbmp:110	Page Up / Page Down	DUI-P3-3
-bbmp:111	Collection filter setting	DUI-P4-14, DUI-P5-1
-bbmp:112	Remembered browse view	DUI-P5-1
-bbmp:138	Not prepared upstream (archives, MP3/Ogg/FLAC)	not in this milestone: sources, not UI
-bbmp:149	Files tab	DUI-P4-3
-bbmp:169	History tab	DUI-P4-3
-bbmp:171	Stats tab	DUI-P4-3
-bbmp:175	Kept marker in lists	DUI-P5-2
-bbmp:183	Saved on this computer list	DUI-P4-3
-bbmp:184	Activity panel	DUI-P5-5
-bbmp:196	Tabs 1-0 and Help tab	DUI-P4-3, DUI-P3-3
-bbmp:197	All keys remappable	DUI-P4-14
-bbmp:198	Help tab listing all keys	DUI-P4-13
-bbmp:199	Quit	DUI-P3-3
-bbmp:200	Collection switch, view switch, go to playing	DUI-P3-3
-bbmp:201	Right / left enter and leave	DUI-P3-3
-bbmp:202	Update catalogues	DUI-P3-3
-bbmp:203	Sounds wrong key with note dialog	DUI-P5-4 (report storage unverified, engine side)
-bbmp:204	Activity key	DUI-P5-5
-bbmp:205	Theme preview while scrolling	DUI-P5-3
-bbmp:206	26 themes incl. 4 Amiga	DUI-P5-3 (Amiga four plus Selecta default; the rest Q21)
-bbmp:207	Viz and meters take theme colours	DUI-P5-3
-bbmp:208	Dialogs: collections, confirm, prompt, playlist picker	DUI-P5-4
-bbmp:209	First-start flow	DUI-P5-4
-bbmp:210	Guard on destructive actions	DUI-P5-4
-bbmp:211	Visualiser area, meters, now-playing bar	DUI-P4-1, DUI-P4-11
-bbmp:218	Command plays files / folders / archives	M4-P7-5 (Amiga), DUI-P1-3
-bbmp:234	`wrong` CLI	not in this milestone: CLI, not UI
-bbmp:242	Subsongs all / first only	DUI-P4-14
-bbmp:246	Browse and search scope setting	DUI-P4-14
-bbmp:248	Theme setting	DUI-P4-14, DUI-P5-3
-bbmp:257	Downloads and Extra files panels	DUI-P5-5
-bbmp:258	Saved on this computer panel	DUI-P4-3
-bbmp:259	Key remapping	DUI-P4-14
-bbmp:261	Settings saved the moment they change	DUI-P4-14
-bbmp:262	Environment variables	not in this milestone: host configuration, M1
-bbmp:287	Testers guide	not in this milestone: documentation, not UI
+hippo:25	Play mode button next to position slider	DUI-P4-1 (shuffle and repeat buttons in the transport bar); Amiga gadget stays M4-P12-12	MUI-P2-5, MUI-P4-1
+hippo:37	Alarm (timed start)	not in this milestone: engine scheduler, not UI (F13a NEW, unhomed)	MUI-P8-15
+hippo:45	Doublebuffering of sample data	not in this milestone: output layer, M2	not carried: engine, source and loader features (plan 2.3)
+hippo:70	F1-F10 stored programs	DUI-P5-8	MUI-P8-2
+hippo:77	Module comment file	not in this milestone: engine metadata (see 9.5); shown by DUI-P4-3	MUI-P3-1, MUI-P3-2, MUI-P4-2
+hippo:78	Hide window hotkey H	not in this milestone: Amiga-only, stays M4-P12-12 (Amiga)	MUI-P6-1
+hippo:82	Archives LhA, LZX, Zip, gzip	not in this milestone: engine loader, M2	not carried: engine, source and loader features (plan 2.3)
+hippo:83	XPK, PowerPacker, XFDmaster	not in this milestone: engine loader, M2	not carried: engine, source and loader features (plan 2.3)
+hippo:92	Search source remembered	DUI-P5-1	MUI-P8-8
+hippo:96	Infobox downloaded byte count	DUI-P5-2	MUI-P8-9
+hippo:99	UHCBIN network transport	not in this milestone: source layer, not UI	not carried: engine, source and loader features (plan 2.3)
+hippo:105	Resizable main and info windows	DUI-P2-7 (window resize relayout); Amiga NEWSIZE stays M4-P10-1	MUI-P2-2
+hippo:106	Window shrink / expand (zip)	DUI-P4-15 (mini mode); Amiga zoom gadget stays M4-P5-3	MUI-P6-4
+hippo:107	Any font for list and infobox/buttons	DUI-P5-6	not carried: Inter font atlas and token font sizes, MUI uses the user's MUI font prefs (plan 2.3)
+hippo:108	Big buttons	DUI-P5-6	not carried: Inter font atlas and token font sizes, MUI uses the user's MUI font prefs (plan 2.3)
+hippo:109	Button tooltips	DUI-P3-6	MUI-P8-10
+hippo:110	Public screen selection	not in this milestone: Amiga-only, stays M4-P7-1 (Amiga)	MUI-P6-6
+hippo:111	Own screen option	not in this milestone: Amiga-only, stays M4-P6-1 (Amiga), M4-P5-3 (Amiga)	not carried: Lowered screen mode, MUI windows open on a public screen and do not own one (plan 2.3)
+hippo:112	Filebox display and zoom	M4-P5-3 (Amiga), DUI-P1-7	MUI-P2-2
+hippo:113	Disable info scroll	DUI-P5-2	MUI-P8-9
+hippo:114	Info-line modes 7/8/9/0	DUI-P5-2	MUI-P8-9
+hippo:115	Module info window with wheel scroll	DUI-P4-3, DUI-P3-2	MUI-P3-1, MUI-P3-2, MUI-P4-2, MUI-P4-4, MUI-P4-6
+hippo:116	Info window: SID chip, instruments, channels	DUI-P4-3	MUI-P3-1, MUI-P3-2, MUI-P4-2
+hippo:117	Info window: author, publisher, album, year	DUI-P4-3	MUI-P3-1, MUI-P3-2, MUI-P4-2
+hippo:118	Info window: STIL trivia	DUI-P4-3	MUI-P3-1, MUI-P3-2, MUI-P4-2
+hippo:119	AHI indicator	DUI-P5-2	MUI-P8-9
+hippo:120	Keep window positions and open states	DUI-P5-1	MUI-P8-11
+hippo:121	About window	DUI-P4-13	MUI-P4-6, MUI-P4-11, MUI-P4-13, MUI-P4-14
+hippo:122	Prefs window	DUI-P4-14	MUI-P4-10
+hippo:127	Quadra scope	DUI-P4-11	MUI-P5-3
+hippo:128	Filled quadra scope	DUI-P4-11	MUI-P5-3
+hippo:129	Hippo scope	DUI-P4-11	MUI-P5-3
+hippo:130	Bars scope	DUI-P4-11	MUI-P5-3
+hippo:131	Spectrum analyzer	DUI-P4-11	MUI-P5-3
+hippo:132	Patternscope 4-18 channels, XL rows	DUI-P4-11 (pattern plugin)	MUI-P5-3
+hippo:133	PSID register scope	DUI-P4-12	MUI-P4-16
+hippo:134	Several scopes at once	DUI-P4-11	MUI-P5-3
+hippo:135	Scope size, priority, bars settings	DUI-P4-11	MUI-P5-3
+hippo:136	Z toggles scopes	DUI-P4-11	MUI-P5-3
+hippo:137	External scope plugins	DUI-P4-11 (viz plugin ABI)	MUI-P5-3
+hippo:138	Module info window (I)	DUI-P4-3, DUI-P3-3	MUI-P3-1, MUI-P3-2, MUI-P4-2, MUI-P2-7
+hippo:139	Per-sample listing	DUI-P4-3 (tracker tabs)	MUI-P3-1, MUI-P3-2, MUI-P4-2
+hippo:140	Synth sample / size counts	DUI-P4-3 (tracker tabs)	MUI-P3-1, MUI-P3-2, MUI-P4-2
+hippo:145	Prefs page Play	DUI-P4-14	MUI-P4-10
+hippo:146	Prefs page Show	DUI-P4-14	MUI-P4-10
+hippo:157	MHI decoder hardware	not in this milestone UI plan: players plan (F26)	not carried: players plan features (plan 2.3)
+hippo:158	AmiGUS mixer	not in this milestone UI plan: players plan (F26)	not carried: players plan features (plan 2.3)
+hippo:159	Trinity audio	not in this milestone UI plan: players plan (F26)	not carried: players plan features (plan 2.3)
+hippo:160	Load / save prefs	DUI-P4-14	MUI-P4-10
+hippo:162	Hotkeys enable	not in this milestone: Amiga-only, stays M4-P12-12 (Amiga)	MUI-P8-14
+hippo:163	Double-click play toggle	DUI-P3-2 (double-click plays)	MUI-P4-4, MUI-P4-6
+hippo:164	Task priority setting	not in this milestone: Amiga-only, stays M4-P12-12 (Amiga)	MUI-P8-14
+hippo:165	HippoPlayer.group location	not in this milestone: Selecta has no group file; replayer set comes from the plugin registry	MUI-P8-14
+hippo:211	ToolType parsing	not in this milestone: Amiga-only, stays M4-P7-5 (Amiga)	MUI-P6-6
+hippo:212	UHCBIN environment variable	not in this milestone: source layer	not carried: engine, source and loader features (plan 2.3)
+hippo:213	PIPE: streaming names	not in this milestone: source layer	not carried: engine, source and loader features (plan 2.3)
+hippo:219	R opens prefs	DUI-P4-14, DUI-P3-3	MUI-P4-10, MUI-P2-7
+hippo:228	ESC exit	DUI-P3-3	MUI-P2-7
+hippo:233	HELP about	DUI-P4-13	MUI-P4-6, MUI-P4-11, MUI-P4-13, MUI-P4-14
+hippo:235	` window shrink / expand	M4-P5-3 (Amiga), DUI-P3-3	MUI-P2-7
+hippo:236	7/8/9/0 info-line modes	DUI-P5-2	MUI-P8-9
+hippo:237	I module info	DUI-P3-3	MUI-P2-7
+hippo:238	F1-F10 stored programs	DUI-P5-8	MUI-P8-2
+hippo:240	H hide window; [ join program	M4-P12-12 (Amiga); join program = DUI-P3-3 (playlist append action)	MUI-P2-7
+hippo:242	Z scope toggle	DUI-P4-11	MUI-P5-3
+hippo:269	STIL.txt trivia	DUI-P4-3 (engine done M3)	MUI-P3-1, MUI-P3-2, MUI-P4-2
+hippo:270	Hardware outputs	not in this milestone UI plan: players plan (F26)	not carried: players plan features (plan 2.3)
+hippo:275	reqtools file requesters	DUI-P5-11 (desktop file dialogs); asl stays M4-P7-3	MUI-P5-6, MUI-P4-12
+hippo:276	Keyfile / registration	not in this milestone: out of scope, Selecta has no registration	not carried: CLI, environment, documentation and registration (plan 2.3)
+hippo:278	Prefs file location	DUI-P4-14 (prefs store done M1)	MUI-P4-10
+hippo:279	PS3M config file	not in this milestone UI plan: players plan	not carried: players plan features (plan 2.3)
+hippo:280	Iconify to AppIcon	not in this milestone: Amiga-only, stays M4-P5-3 (Amiga)	MUI-P6-5
+hippo:281	Mouse wheel in lists and info window	DUI-P3-2	MUI-P4-4, MUI-P4-6
+hippo:282	Kickstart 1.2, 68000 baseline	not in this milestone: runtime tier, later (cat:255)	not carried: Amiga-only runtime settings (plan 2.3)
+bbmp:41	Loudness on Info with applied gain; off switch	DUI-P4-3, DUI-P4-14	MUI-P3-1, MUI-P3-2, MUI-P4-2, MUI-P4-10
+bbmp:46	Last visualiser remembered	DUI-P5-1	MUI-P8-11
+bbmp:51	Per-format status line (verified / faults / does not play)	DUI-P4-3 (Song info view)	MUI-P3-1, MUI-P3-2, MUI-P4-2
+bbmp:60	Queue tab; Enter jumps to song	DUI-P4-3, DUI-P3-3	MUI-P3-1, MUI-P3-2, MUI-P4-2, MUI-P2-7
+bbmp:69	Playlists tab; queue a whole playlist	DUI-P4-3, DUI-P3-3	MUI-P3-1, MUI-P3-2, MUI-P4-2, MUI-P2-7
+bbmp:72	Import via Files (.m3u)	DUI-P4-3 (Files view; import engine done M3)	MUI-P3-1, MUI-P3-2, MUI-P4-2
+bbmp:85	Three-column Browse	DUI-P4-4, M4-P10-2 (Amiga) (drilldown style)	MUI-P3-3, MUI-P4-2
+bbmp:86	First list: All plus each collection	DUI-P4-4 (engine done M3)	MUI-P3-5, MUI-P5-2
+bbmp:87	Per-collection Formats, Platforms, Chips, Artists, New	DUI-P4-4 (engine done M3)	MUI-P3-5, MUI-P5-2
+bbmp:88	Formats > artists > songs	DUI-P4-4 (engine done M3)	MUI-P3-5, MUI-P5-2
+bbmp:89	Platforms drill	DUI-P4-4 (engine done M3)	MUI-P3-5, MUI-P5-2
+bbmp:90	Sound chips drill	DUI-P4-4 (engine done M3)	MUI-P3-5, MUI-P5-2
+bbmp:91	Artists A-Z	DUI-P4-4 (engine done M3)	MUI-P3-5, MUI-P5-2
+bbmp:93	HVSC layout view	DUI-P4-4 (engine done M3)	MUI-P3-5, MUI-P5-2
+bbmp:94	Sizes at every Browse level	DUI-P4-4	MUI-P3-5, MUI-P5-2
+bbmp:95	Narrow width drops the parent column; reopens where left	DUI-P1-7 (breakpoints), DUI-P5-1	MUI-P2-2, MUI-P6-2
+bbmp:96	Go to playing song	DUI-P3-3	MUI-P2-7
+bbmp:99	Search tab / box	DUI-P4-3	MUI-P3-1, MUI-P3-2, MUI-P4-2
+bbmp:102	Search scope next collection / all	DUI-P3-3	MUI-P2-7
+bbmp:103	Search box Enter / Down / Esc	DUI-P3-3	MUI-P2-7
+bbmp:104	Artist page	DUI-P4-3 (composer pages)	MUI-P3-1, MUI-P3-2, MUI-P4-2
+bbmp:107	Web and Demozoo search	DUI-P5-7	MUI-P8-8
+bbmp:108	Song info page	DUI-P4-3	MUI-P3-1, MUI-P3-2, MUI-P4-2
+bbmp:109	Info tab: format notes, failure reason, loudness	DUI-P4-3	MUI-P3-1, MUI-P3-2, MUI-P4-2
+bbmp:110	Page Up / Page Down	DUI-P3-3	MUI-P2-7
+bbmp:111	Collection filter setting	DUI-P4-14, DUI-P5-1	MUI-P4-10
+bbmp:112	Remembered browse view	DUI-P5-1	MUI-P8-11
+bbmp:138	Not prepared upstream (archives, MP3/Ogg/FLAC)	not in this milestone: sources, not UI	not carried: engine, source and loader features (plan 2.3)
+bbmp:149	Files tab	DUI-P4-3	MUI-P3-1, MUI-P3-2, MUI-P4-2
+bbmp:169	History tab	DUI-P4-3	MUI-P3-1, MUI-P3-2, MUI-P4-2
+bbmp:171	Stats tab	DUI-P4-3	MUI-P3-1, MUI-P3-2, MUI-P4-2
+bbmp:175	Kept marker in lists	DUI-P5-2	MUI-P8-9
+bbmp:183	Saved on this computer list	DUI-P4-3	MUI-P3-1, MUI-P3-2, MUI-P4-2
+bbmp:184	Activity panel	DUI-P5-5	MUI-P8-7
+bbmp:196	Tabs 1-0 and Help tab	DUI-P4-3, DUI-P3-3	MUI-P3-1, MUI-P3-2, MUI-P4-2, MUI-P2-7
+bbmp:197	All keys remappable	DUI-P4-14	MUI-P4-10
+bbmp:198	Help tab listing all keys	DUI-P4-13	MUI-P4-6, MUI-P4-11, MUI-P4-13, MUI-P4-14
+bbmp:199	Quit	DUI-P3-3	MUI-P2-7
+bbmp:200	Collection switch, view switch, go to playing	DUI-P3-3	MUI-P2-7
+bbmp:201	Right / left enter and leave	DUI-P3-3	MUI-P2-7
+bbmp:202	Update catalogues	DUI-P3-3	MUI-P2-7
+bbmp:203	Sounds wrong key with note dialog	DUI-P5-4 (report storage unverified, engine side)	MUI-P4-12
+bbmp:204	Activity key	DUI-P5-5	MUI-P8-7
+bbmp:205	Theme preview while scrolling	DUI-P5-3	MUI-P7-7
+bbmp:206	26 themes incl. 4 Amiga	DUI-P5-3 (Amiga four plus Selecta default; the rest Q21)	MUI-P7-7
+bbmp:207	Viz and meters take theme colours	DUI-P5-3	MUI-P7-7
+bbmp:208	Dialogs: collections, confirm, prompt, playlist picker	DUI-P5-4	MUI-P4-12
+bbmp:209	First-start flow	DUI-P5-4	MUI-P4-12
+bbmp:210	Guard on destructive actions	DUI-P5-4	MUI-P4-12
+bbmp:211	Visualiser area, meters, now-playing bar	DUI-P4-1, DUI-P4-11	MUI-P2-5, MUI-P4-1, MUI-P5-3
+bbmp:218	Command plays files / folders / archives	M4-P7-5 (Amiga), DUI-P1-3	MUI-P6-6
+bbmp:234	`wrong` CLI	not in this milestone: CLI, not UI	not carried: CLI, environment, documentation and registration (plan 2.3)
+bbmp:242	Subsongs all / first only	DUI-P4-14	MUI-P4-10
+bbmp:246	Browse and search scope setting	DUI-P4-14	MUI-P4-10
+bbmp:248	Theme setting	DUI-P4-14, DUI-P5-3	MUI-P4-10, MUI-P7-7
+bbmp:257	Downloads and Extra files panels	DUI-P5-5	MUI-P8-7
+bbmp:258	Saved on this computer panel	DUI-P4-3	MUI-P3-1, MUI-P3-2, MUI-P4-2
+bbmp:259	Key remapping	DUI-P4-14	MUI-P4-10
+bbmp:261	Settings saved the moment they change	DUI-P4-14	MUI-P4-10
+bbmp:262	Environment variables	not in this milestone: host configuration, M1	not carried: CLI, environment, documentation and registration (plan 2.3)
+bbmp:287	Testers guide	not in this milestone: documentation, not UI	not carried: CLI, environment, documentation and registration (plan 2.3)
+
+desk:actions-c:play	Play	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-5
+desk:actions-c:pause	Pause	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-5
+desk:actions-c:stop	Stop	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-5
+desk:actions-c:next-track	Next Track	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-5
+desk:actions-c:previous-track	Previous Track	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-5
+desk:actions-c:turn-shuffle-on	Turn Shuffle On	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-5
+desk:actions-c:turn-shuffle-off	Turn Shuffle Off	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-5
+desk:actions-c:turn-repeat-off	Turn Repeat Off	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-5
+desk:actions-c:repeat-queue	Repeat Queue	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-5
+desk:actions-c:repeat-song	Repeat Song	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-5
+desk:actions-c:previous-subsong	Previous Subsong	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P4-9
+desk:actions-c:next-subsong	Next Subsong	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P4-9
+desk:actions-c:next-album	Next Album	in code: actions.c k_actions	MUI-P8-1
+desk:actions-c:previous-album	Previous Album	in code: actions.c k_actions	MUI-P8-1
+desk:actions-c:seek-forward	Seek Forward	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-5
+desk:actions-c:seek-backward	Seek Backward	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-5
+desk:actions-c:volume-up	Volume Up	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-5
+desk:actions-c:volume-down	Volume Down	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-5
+desk:actions-c:pitch-up	Pitch Up	in code: actions.c k_actions	MUI-P8-1
+desk:actions-c:pitch-down	Pitch Down	in code: actions.c k_actions	MUI-P8-1
+desk:actions-c:tempo-up	Tempo Up	in code: actions.c k_actions	MUI-P8-1
+desk:actions-c:tempo-down	Tempo Down	in code: actions.c k_actions	MUI-P8-1
+desk:actions-c:unsolo-all-voices	Unsolo All Voices	in code: actions.c k_actions	MUI-P8-2
+desk:actions-c:toggle-filter-light	Toggle Filter Light	in code: actions.c k_actions	MUI-P8-2
+desk:actions-c:clear-queue	Clear Queue	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P4-4
+desk:actions-c:shuffle-queue	Shuffle Queue	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P4-4
+desk:actions-c:reshuffle-queue	Reshuffle Queue	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P4-4
+desk:actions-c:undo	Undo	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P4-4
+desk:actions-c:redo	Redo	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P4-4
+desk:actions-c:like-song	Like Song	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P4-7
+desk:actions-c:cursor-up	Cursor Up	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-7
+desk:actions-c:cursor-down	Cursor Down	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-7
+desk:actions-c:cursor-to-top	Cursor to Top	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-7
+desk:actions-c:cursor-to-bottom	Cursor to Bottom	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-7
+desk:actions-c:open-selection	Open Selection	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P2-7
+desk:actions-c:regular-style	Regular Style	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P3-8
+desk:actions-c:tree-style	Tree Style	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P3-8
+desk:actions-c:drilldown-style	Drilldown Style	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P3-8
+desk:actions-c:grid-style	Grid Style	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P3-8
+desk:actions-c:cover-flow-style	Cover Flow Style	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P3-8
+desk:actions-c:compact-style	Compact Style	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P3-8
+desk:actions-c:show-statistics	Show Statistics	in code: actions.c k_actions	MUI-P8-6
+desk:actions-c:hide-statistics	Hide Statistics	in code: actions.c k_actions	MUI-P8-6
+desk:actions-c:full-layout	Full Layout	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P6-1
+desk:actions-c:window-layout	Window Layout	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P6-1
+desk:actions-c:mini-layout	Mini Layout	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P6-1
+desk:actions-c:visual-layout	Visual Layout	in code: actions.c k_actions	MUI-P8-3
+desk:actions-c:oscilloscope-visualizer	Oscilloscope Visualizer	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P5-3
+desk:actions-c:levels-visualizer	Levels Visualizer	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P5-3
+desk:actions-c:spectrum-visualizer	Spectrum Visualizer	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P5-3
+desk:actions-c:switch-to-text-interface	Switch to Text Interface	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P7-4
+desk:actions-c:switch-to-desktop-interface	Switch to Desktop Interface	in code: actions.c k_actions	MUI-P2-3, MUI-P2-4, MUI-P7-4
+desk:g-doors:home	Home	in code: desktop_ui.c g_doors	MUI-P4-1
+desk:g-doors:search	Search	in code: desktop_ui.c g_doors	MUI-P4-3
+desk:g-doors:your-library	Your Library	in code: desktop_ui.c g_doors	MUI-P4-2
+desk:g-doors:playlists	Playlists	in code: desktop_ui.c g_doors	MUI-P4-5
+desk:g-doors:queue	Queue	in code: desktop_ui.c g_doors	MUI-P4-4
+desk:g-doors:now-playing	Now Playing	in code: desktop_ui.c g_doors	MUI-P4-8
+desk:g-doors:song-information	Song Information	in code: desktop_ui.c g_doors	MUI-P4-9
+desk:g-page-name:songs	songs	in code: desktop_ui.c g_page_name (pages that are not doors)	MUI-P3-1
+desk:g-page-name:viz	viz	in code: desktop_ui.c g_page_name (pages that are not doors)	MUI-P5-3
+desk:g-page-name:tracker	tracker	in code: desktop_ui.c g_page_name (pages that are not doors)	MUI-P4-16
+desk:features-c:play	Play	in code: features.c sel_uim_song_menu_label	MUI-P4-6
+desk:features-c:play-next	Play Next	in code: features.c sel_uim_song_menu_label	MUI-P4-6
+desk:features-c:add-to-queue	Add to Queue	in code: features.c sel_uim_song_menu_label	MUI-P4-6
+desk:features-c:add-to-playlist	Add to Playlist	in code: features.c sel_uim_song_menu_label	MUI-P4-6
+desk:features-c:remove-from-library-or-queue	Remove from Library or Queue	in code: features.c sel_uim_song_menu_label	MUI-P4-6
+desk:home-chip-name:home-chip-all	Home chip All	in code: desktop_ui.c home_chip_name	MUI-P4-1
+desk:home-chip-name:home-chip-songs	Home chip Songs	in code: desktop_ui.c home_chip_name	MUI-P4-1
+desk:home-chip-name:home-chip-composers	Home chip Composers	in code: desktop_ui.c home_chip_name	MUI-P4-1
+desk:home-chip-name:home-chip-playlists	Home chip Playlists	in code: desktop_ui.c home_chip_name	MUI-P4-1
+desk:search-facet-name:search-facet-all	Search facet All	in code: desktop_ui.c search_facet_name	MUI-P4-3
+desk:search-facet-name:search-facet-songs	Search facet Songs	in code: desktop_ui.c search_facet_name	MUI-P4-3
+desk:search-facet-name:search-facet-albums	Search facet Albums	in code: desktop_ui.c search_facet_name	MUI-P4-3
+desk:search-facet-name:search-facet-artists	Search facet Artists	in code: desktop_ui.c search_facet_name	MUI-P4-3
+desk:lib-mode-name:library-mode-composers	Library mode Composers	in code: desktop_ui.c lib_mode_name	MUI-P3-2
+desk:lib-mode-name:library-mode-tree	Library mode Tree	in code: desktop_ui.c lib_mode_name	MUI-P3-2
+desk:lib-mode-name:library-mode-columns	Library mode Columns	in code: desktop_ui.c lib_mode_name	MUI-P3-4
+desk:lib-mode-name:library-mode-files	Library mode Files	in code: desktop_ui.c lib_mode_name	MUI-P8-3
+desk:lib-mode-name:library-mode-history	Library mode History	in code: desktop_ui.c lib_mode_name	MUI-P8-3
+desk:lib-mode-name:library-mode-sources	Library mode Sources	in code: desktop_ui.c lib_mode_name	MUI-P8-3
+desk:lib-style-name:library-style-tab-grid	Library style tab Grid	in code: desktop_ui.c lib_style_name	MUI-P3-8, MUI-P5-2
+desk:lib-style-name:library-style-tab-cover-flow	Library style tab Cover Flow	in code: desktop_ui.c lib_style_name	MUI-P3-8, MUI-P5-2
+desk:lib-style-name:library-style-tab-list	Library style tab List	in code: desktop_ui.c lib_style_name	MUI-P3-8, MUI-P3-1
+desk:queue-scope-name:queue-scope-library	Queue scope Library	in code: desktop_ui.c queue_scope_name	MUI-P8-4
+desk:queue-scope-name:queue-scope-album	Queue scope Album	in code: desktop_ui.c queue_scope_name	MUI-P8-4
+desk:queue-scope-name:queue-scope-playlist	Queue scope Playlist	in code: desktop_ui.c queue_scope_name	MUI-P8-4
+desk:queue:queue-button-undo	Queue button Undo	in code: desktop_ui.c queue buttons (QUEUE_BUTTONS)	MUI-P4-4
+desk:queue:queue-button-redo	Queue button Redo	in code: desktop_ui.c queue buttons (QUEUE_BUTTONS)	MUI-P4-4
+desk:queue:queue-button-reshuffle	Queue button Reshuffle	in code: desktop_ui.c queue buttons (QUEUE_BUTTONS)	MUI-P4-4
+desk:queue:queue-button-scope-selector	Queue button Scope selector	in code: desktop_ui.c queue buttons (QUEUE_BUTTONS)	MUI-P8-4
+desk:pl-button-label:playlist-button-new-folder	Playlist button New Folder	in code: desktop_ui.c pl_button_label (PL_BUTTONS)	MUI-P8-5
+desk:pl-button-label:playlist-button-new-playlist	Playlist button New Playlist	in code: desktop_ui.c pl_button_label (PL_BUTTONS)	MUI-P8-5
+desk:pl-button-label:playlist-button-rename	Playlist button Rename	in code: desktop_ui.c pl_button_label (PL_BUTTONS)	MUI-P4-5
+desk:pl-button-label:playlist-button-delete	Playlist button Delete	in code: desktop_ui.c pl_button_label (PL_BUTTONS)	MUI-P4-5
+desk:pl-button-label:playlist-button-play	Playlist button Play	in code: desktop_ui.c pl_button_label (PL_BUTTONS)	MUI-P4-5
+desk:si-button-label:song-information-button-mark-wrong	Song information button Mark Wrong	in code: desktop_ui.c si_button_label (SI_BUTTONS)	MUI-P8-5
+desk:si-button-label:song-information-button-skip-song	Song information button Skip Song	in code: desktop_ui.c si_button_label (SI_BUTTONS)	MUI-P8-5
+desk:si-button-label:song-information-button-save-note	Song information button Save Note	in code: desktop_ui.c si_button_label (SI_BUTTONS)	MUI-P8-5
+desk:dlg-:confirm-dialog-remove-from-library	Confirm dialog Remove from Library	in code: desktop_ui.c DLG_ enum	MUI-P4-12
+desk:dlg-:confirm-dialog-clear-library	Confirm dialog Clear Library	in code: desktop_ui.c DLG_ enum	MUI-P4-12
+desk:ov-:overlay-command-palette	Overlay Command palette	in code: desktop_ui.c OV_ enum	MUI-P4-13
+desk:ov-:overlay-help-overlay	Overlay Help overlay	in code: desktop_ui.c OV_ enum	MUI-P4-14
+desk:ov-:overlay-command-line	Overlay Command line	in code: desktop_ui.c OV_ enum	MUI-P4-13
+desk:toast-ms:toast	Toast	in code: desktop_ui.c TOAST_MS and toasts	MUI-P4-11
+desk:features-c:empty-loading-and-error-text-per-view-7-	Empty, loading and error text per view (7 views, 3 kinds)	in code: features.c sel_uim_state_text	MUI-P4-15
+desk:slot-:transport-slot-previous-subsong	Transport slot Previous Subsong	in code: desktop_ui.c SLOT_ enum (TRANSPORT_COUNT)	MUI-P4-9
+desk:slot-:transport-slot-shuffle	Transport slot Shuffle	in code: desktop_ui.c SLOT_ enum (TRANSPORT_COUNT)	MUI-P2-5
+desk:slot-:transport-slot-previous	Transport slot Previous	in code: desktop_ui.c SLOT_ enum (TRANSPORT_COUNT)	MUI-P2-5
+desk:slot-:transport-slot-play	Transport slot Play	in code: desktop_ui.c SLOT_ enum (TRANSPORT_COUNT)	MUI-P2-5
+desk:slot-:transport-slot-next	Transport slot Next	in code: desktop_ui.c SLOT_ enum (TRANSPORT_COUNT)	MUI-P2-5
+desk:slot-:transport-slot-repeat	Transport slot Repeat	in code: desktop_ui.c SLOT_ enum (TRANSPORT_COUNT)	MUI-P2-5
+desk:slot-:transport-slot-next-subsong	Transport slot Next Subsong	in code: desktop_ui.c SLOT_ enum (TRANSPORT_COUNT)	MUI-P4-9
+desk:ctl-:like-heart-control	Like heart control	in code: desktop_ui.c CTL_ enum (CTL_LIKE)	MUI-P4-7
+desk:ctl-:visualizer-picker-6-controls	Visualizer picker (6 controls)	in code: desktop_ui.c CTL_ enum (CTL_VIZ_N)	MUI-P5-3
+desk:sidebar:tooltips-on-transport-and-sidebar-contro	Tooltips on transport and sidebar controls	in code: desktop_ui.c sidebar	MUI-P8-10
+desk:stats-open:library-statistics-panel-statistics-more	Library Statistics panel (Statistics, More, Less)	in code: desktop_ui.c stats_open	MUI-P8-6
+desk:nag-:first-start-sync-offer-not-now-sync-per-	First-start sync offer (Not now, Sync, per-source check)	in code: desktop_ui.c nag_ (I527)	MUI-P8-8
+desk:src-:sources-page-per-source-toggle-and-sync-	Sources page: per-source toggle and Sync, Syncing and Synced status	in code: desktop_ui.c src_ (SRC_TOGGLE)	MUI-P8-8
+desk:line:add-folder-button	Add Folder button	in code: desktop_ui.c line 4698	MUI-P4-12
+desk:line:clear-library-button	Clear Library button	in code: desktop_ui.c line 4699	MUI-P4-12
+desk:line:pref-ui-desktop-zoom-fit-75-100-125-150-	Pref ui.desktop.zoom (fit, 75, 100, 125, 150; not declared in prefs.def)	in code: desktop_ui.c line 8559	MUI-P8-12
+desk:prefs-def:display-mode-pref	Display mode pref	in code: prefs.def ui.desktop.mode	MUI-P6-1
+desk:prefs-def:visualizer-pref	Visualizer pref	in code: prefs.def ui.desktop.viz	MUI-P5-3
+desk:prefs-def:reduce-motion-pref	Reduce motion pref	in code: prefs.def ui.desktop.reduce_motion	not carried: Tweens, fades, hover animation, MUI draws its own frames (plan 2.3)
+desk:g-tile-steps:tile-size-steps-for-grid-and-home-shelve	Tile size steps for grid and home shelves	in code: desktop_ui.c g_tile_steps	MUI-P8-12
+desk:k-page-keys:page-keys-home-library-folders-info-viz-	Page keys @home @library @folders @info @viz @pattern	in code: desktop_ui.c k_page_keys	MUI-P2-7

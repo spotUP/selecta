@@ -36,6 +36,8 @@ const sel_registry_stats* sel_registry_get_stats(void);
 const sel_tag* sel_registry_format_owner(const char* format);
 uint32_t sel_registry_count(void);
 const sel_tag* sel_registry_get(uint32_t index);
+/* 1 when a UI descriptor is listed and auto-picked: its SEL_UI_PRESENT tag is missing or non-zero (MUI-P1-6). */
+int sel_registry_ui_listed(const sel_tag* desc);
 /* First plugin with this kind and PLUGIN_ID; NULL when absent. */
 const sel_tag* sel_registry_find(uint32_t kind, const char* id);
 /* Output a player opens when the user names none: the first entry of the machine's

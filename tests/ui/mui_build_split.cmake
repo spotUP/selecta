@@ -2,9 +2,7 @@
 if(NOT HAS_MAP)
   message(FATAL_ERROR "RED[mui-build-split]: target mui_map is missing")
 endif()
-if(NOT AMIGA AND HAS_UI)
-  message(FATAL_ERROR "RED[mui-build-split]: the host target list has mui_ui")
-endif()
-if(AMIGA AND NOT HAS_UI)
-  message(FATAL_ERROR "RED[mui-build-split]: the Amiga target list lacks mui_ui")
+# The descriptor is registered on every target (Johan 2026-10-27, MUI-P1-4): the MUI calls compile only on the Amiga.
+if(NOT HAS_UI)
+  message(FATAL_ERROR "RED[mui-build-split]: the target list lacks mui_ui")
 endif()

@@ -107,6 +107,13 @@ add_test(NAME dui-parity-matrix
     "-DMATRIX=${CMAKE_CURRENT_SOURCE_DIR}/parity_matrix.tsv" -P "${CMAKE_CURRENT_SOURCE_DIR}/parity_matrix.cmake")
 set_tests_properties(dui-parity-matrix PROPERTIES LABELS dui)
 
+# MUI-P0-7: the same matrix against the MUI plan; red while any row has NO ROW or names a MUI ID the plan lacks.
+add_test(NAME mui-parity
+  COMMAND "${CMAKE_COMMAND}" "-DPLAN=${PROJECT_SOURCE_DIR}/thoughts/shared/plans/2026-10-24-desktop-ui.md"
+    "-DMUIPLAN=${PROJECT_SOURCE_DIR}/thoughts/shared/plans/2026-10-25-amiga-mui.md"
+    "-DMATRIX=${CMAKE_CURRENT_SOURCE_DIR}/parity_matrix.tsv" -P "${CMAKE_CURRENT_SOURCE_DIR}/parity_matrix.cmake")
+set_tests_properties(mui-parity PROPERTIES LABELS mui)
+
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/items.txt" SEL_DUI_ITEMS)
 foreach(item IN LISTS SEL_DUI_ITEMS)
   string(REPLACE " " ";" parts "${item}")

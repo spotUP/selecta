@@ -110,6 +110,9 @@ if(SEL_AMIGA AND NOT SEL_DESKTOP_AGA)
   target_compile_definitions(sel_plugin_desktop_ui PRIVATE SELECTA_DESKTOP_RTG=1)
 endif()
 target_link_libraries(sel_plugin_desktop_ui PUBLIC selecta_uimodel selecta_gui)
+if(SEL_AMIGA)
+  target_include_directories(sel_plugin_desktop_ui PRIVATE "${PROJECT_SOURCE_DIR}/plugins/shared") # amiga/p96_write.h
+endif()
 
 # The aga backend (I439, M4-P6-1, thoughts/shared/plans/2026-10-26-aga-c2p-backend.md): an 8-bitplane Intuition
 # screen fed by Kalms' public domain c2p (third_party/kalms-c2p). First light is a probe executable; the plugin

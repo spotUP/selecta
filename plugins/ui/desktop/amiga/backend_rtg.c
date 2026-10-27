@@ -18,6 +18,7 @@
 #include <devices/inputevent.h>
 #include <dos/dos.h>
 #include <inline/macros.h>
+#include "amiga/p96_write.h"
 #include <intuition/intuition.h>
 #include <proto/dos.h>
 #include <proto/exec.h>
@@ -34,14 +35,9 @@ static struct Library* P96Base;
 
 
 /* Picasso96.h: struct RenderInfo, RGBFB_A8R8G8B8, P96IDA_*, P96BIDTAG_*. */
-struct rtg_render_info {
-    APTR memory;
-    WORD bytes_per_row;
-    WORD pad;
-    ULONG rgb_format;
-};
-#define RTG_FMT_A8R8G8B8 6u
-#define RTG_FMT_CLUT 1u /* RGBFB_CLUT */
+#define rtg_render_info p96_render_info
+#define RTG_FMT_A8R8G8B8 P96_FMT_A8R8G8B8
+#define RTG_FMT_CLUT P96_FMT_CLUT
 #define RTG_FORMATS_CLUT 0x2u /* RGBFF_CLUT */
 #define RTG_FORMATS_COLOR 0x3FFCu /* RGBFF_R8G8B8 up to RGBFF_B5G5R5PC: every direct-colour format */
 #define RTG_IDA_WIDTH 0
@@ -58,8 +54,7 @@ static ULONG p96_mode_attr(ULONG mode, ULONG attr) {
 }
 static void p96_write(struct rtg_render_info* ri, LONG sx, LONG sy, struct RastPort* rp, LONG dx, LONG dy, LONG w,
                       LONG h) {
-    LP8NR(0x66, p96WritePixelArray, struct rtg_render_info*, ri, a0, UWORD, sx, d0, UWORD, sy, d1, struct RastPort*, rp,
-          a1, UWORD, dx, d2, UWORD, dy, d3, UWORD, w, d4, UWORD, h, d5, , P96Base);
+    p96_write_pixel_array(P96Base, ri, sx, sy, rp, dx, dy, w, h);
 }
 
 struct desk_rtg {

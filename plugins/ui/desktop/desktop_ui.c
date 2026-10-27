@@ -16,6 +16,7 @@
 #include <selecta/gui/gui_widget.h>
 #include <selecta/gui/gui_input.h>
 #include <selecta/uimodel/cmdline.h>
+#include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/keybind.h>
 #include <selecta/uimodel/keys.h>
 #include <selecta/uimodel/palette.h>
@@ -74,7 +75,7 @@ static const int g_icon_sizes[DESK_ICON_SIZES] = {16, 20, 24, 32};
 typedef enum { PG_HOME, PG_SEARCH, PG_LIBRARY, PG_PLAYLISTS, PG_QUEUE, PG_NOWPLAYING, PG_SONGS, PG_SONGINFO, PG_VIZ, PG_TRACKER, PG_COUNT } desk_page;
 static const char* const g_page_name[PG_COUNT] = {"home", "search", "library", "playlists", "queue", "nowplaying", "songs", "songinfo", "viz", "tracker"};
 /* The sidebar doors in order: Spotify's Home, Search and Your Library, then Playlists, Queue and Now Playing. */
-#define DOOR_COUNT 7u
+#define DOOR_COUNT SEL_UIM_DOOR_COUNT
 /* Capacity of the hover hit-test list (I345). Worst case on one page: the Songs rows at SONG_ROW_H 32 px in a 4K tall main
  * region (2160 / 32 = 67.5 -> 68 rows, plus one row half scrolled out = 69), 7 doors, 8 transport buttons and 16 chips,
  * tabs and page buttons: 69 + 7 + 8 + 16 = 100, rounded up to 128. Library rows at 48 px need 46, queue and playlist rows
@@ -1289,7 +1290,6 @@ static int desk_tween(desk* d, uint32_t key, uint32_t ms, uint32_t ease) {
 /* ---- Song list (DUI-P3-2): header row, one row per queue entry, drop targets in the sidebar. All geometry in canvas
  * pixels; a pointer position is mapped to a region of the layout tree first (sel_uim_hit), then to a part of it. ---- */
 enum { SONG_HEADER_H = 24, SONG_ROW_H = 32, SONG_TARGET_H = 32, SONG_MENU_ITEM_H = 24, SONG_MENU_W = 140, SONG_MENU_ITEMS = 5, SONG_PLAYLIST_TARGETS = 4, SONG_TARGET_W = 160 };
-static const char* const g_menu_items[SONG_MENU_ITEMS] = {"Play", "Play Next", "Add to Queue", "Add to Playlist", "Remove from Library"};
 
 static int desk_send(desk* d, const char* line);
 static int desk_send_path(desk* d, const char* verb, const char* path);
@@ -1935,7 +1935,7 @@ static int song_menu_count(const desk* d) {
 }
 
 static const char* song_menu_label(const desk* d, int32_t k) {
-    return k == 4 && d->sm_ref.removable ? "Remove from Queue" : g_menu_items[k];
+    return sel_uim_song_menu_label((uint32_t)k, d->sm_ref.removable != 0);
 }
 
 /* Items on the open menu: the song items, the playlists (at least the "No playlists" line) or the three scope choices. */
@@ -2111,7 +2111,7 @@ static void dlg_open_remove(desk* d, const char* path) {
     if (!sel_engine_song_title(d->engine, path, title, sizeof title)) {
         snprintf(title, sizeof title, "%s", path_base(path));
     }
-    snprintf(d->dlg_text, sizeof d->dlg_text, "Remove \"%s\" from the library? The audio file on disk is not touched.", title);
+    sel_uim_remove_text(title, d->dlg_text, sizeof d->dlg_text);
     d->dlg_open = DLG_REMOVE;
     d->dlg_opens++;
 }
@@ -2120,9 +2120,7 @@ static void dlg_open_clear(desk* d) {
     uint32_t n = sel_engine_state(d->engine)->library_songs;
     uint32_t pl = sel_engine_library_playlists(d->engine);
     d->dlg_playlists = pl;
-    snprintf(d->dlg_text, sizeof d->dlg_text,
-             "Remove %u songs and %u playlists, with all ratings and notes? This cannot be undone. Files on disk are not touched.",
-             (unsigned)n, (unsigned)pl);
+    sel_uim_clear_text(n, pl, d->dlg_text, sizeof d->dlg_text);
     d->dlg_open = DLG_CLEAR;
     d->dlg_opens++;
 }
@@ -3149,7 +3147,7 @@ static void draw_queue(desk* d) {
     }
     sel_gui_clip_pop(d->canvas);
     if (st->queue_count == 0u) {
-        draw_empty_state(d, mn, mn.y + lpx(d, page_y(d, QUEUE_LIST_Y)), "The queue is empty. Add songs from the Library.");
+        draw_empty_state(d, mn, mn.y + lpx(d, page_y(d, QUEUE_LIST_Y)), sel_uim_state_text(SEL_UIM_SV_QUEUE, SEL_UIM_ST_EMPTY));
     }
     d->queue_draws++;
     d->queue_rows = shown;
@@ -3352,7 +3350,7 @@ static void draw_playlists(desk* d) {
                   row_ink(d, r, (int32_t)i == sel ? accent : folder ? text : muted));
     }
     if (shown == 0u) {
-        draw_empty_state(d, mn, pl_row_rect(d, mn, 0).y, "No playlists yet. Type a name and choose New Playlist.");
+        draw_empty_state(d, mn, pl_row_rect(d, mn, 0).y, sel_uim_state_text(SEL_UIM_SV_PLAYLISTS, SEL_UIM_ST_EMPTY));
     }
     d->pl_draws++;
     d->pl_rows = shown;
@@ -4084,7 +4082,7 @@ static void draw_songinfo(desk* d) {
     si_walk_from_top(d, st, si_draw_row);
     sel_gui_clip_pop(d->canvas);
     if (d->si_rows == 0u) {
-        draw_empty_state(d, mn, si_list_top(d, mn), "Nothing is playing. Play a song to see its details.");
+        draw_empty_state(d, mn, si_list_top(d, mn), sel_uim_state_text(SEL_UIM_SV_NOWPLAYING, SEL_UIM_ST_EMPTY));
     }
     d->si_draws++;
     sel_gui_clip_pop(d->canvas);
@@ -5559,7 +5557,6 @@ static const char* const search_facet_name[SEARCH_FACETS] = {"All", "Songs", "Al
 /* Sends the pending query to the engine as the text UI's library screen does; an empty query leaves the results. */
 static void desk_search_fire(desk* d) {
     char line[160];
-    size_t n = 0, k;
     d->search_pending = 0;
     if (d->qlen == 0u) {
         d->search_on = 0;
@@ -5567,15 +5564,8 @@ static void desk_search_fire(desk* d) {
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         return;
     }
-    n += (size_t)snprintf(line, sizeof line, "LIBRARY_SEARCH \"");
-    for (k = 0; k < d->qlen && n + 4u < sizeof line; k++) {
-        if (d->query[k] == '"' || d->query[k] == '\\') {
-            line[n++] = '\\';
-        }
-        line[n++] = d->query[k];
-    }
-    line[n++] = '"';
-    line[n] = '\0';
+    d->query[d->qlen < sizeof d->query ? d->qlen : sizeof d->query - 1u] = '\0';
+    (void)sel_uim_search_line(d->query, line, sizeof line);
     desk_send(d, line);
     desk_send(d, "VIEW_SOURCE search"); /* the engine groups the result by type: Songs, Albums, Artists */
     desk_send(d, "VIEW_STYLE regular");
@@ -6141,7 +6131,7 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
         if (in_rect(d->np_rate[i], x, y)) {
             char line[16];
             /* The mark of the stored rating clicked again takes the rating back (I306). */
-            snprintf(line, sizeof line, "RATE %u", d->np_rating == (int)i + 1 ? 0u : (unsigned)i + 1u);
+            sel_uim_rate_line(d->np_rating > 0 ? (uint32_t)d->np_rating : 0u, i + 1u, line, sizeof line);
             return desk_send(d, line);
         }
     }
@@ -6264,15 +6254,20 @@ static int32_t desk_button_at(const desk* d, int32_t x, int32_t y) {
 
 /* The sidebar doors (DUI-P4-1, I262): an icon and a label per page, one row each under the brand. The icon-only breakpoint
  * (a narrow sidebar) draws the icons alone. door_page maps a door to the page it opens. */
-static const struct {
-    uint32_t icon;
-    const char* label;
-    desk_page page;
-    const char* shorter; /* I537: the label drawn when the full one is wider than the rail leaves for it (NULL: none) */
-} g_doors[DOOR_COUNT] = {{SEL_GUI_ICON_HOUSE, "Home", PG_HOME, NULL},          {SEL_GUI_ICON_SEARCH, "Search", PG_SEARCH, NULL},
-                         {SEL_GUI_ICON_LIBRARY, "Your Library", PG_LIBRARY, NULL}, {SEL_GUI_ICON_DISC, "Playlists", PG_PLAYLISTS, NULL},
-                         {SEL_GUI_ICON_LIST, "Queue", PG_QUEUE, NULL},          {SEL_GUI_ICON_MUSIC, "Now Playing", PG_NOWPLAYING, NULL},
-                         {SEL_GUI_ICON_USER, "Song Information", PG_SONGINFO, "Song Info"}};
+static const uint32_t g_door_icon[DOOR_COUNT] = {SEL_GUI_ICON_HOUSE, SEL_GUI_ICON_SEARCH, SEL_GUI_ICON_LIBRARY, SEL_GUI_ICON_DISC,
+                                                  SEL_GUI_ICON_LIST,  SEL_GUI_ICON_MUSIC,  SEL_GUI_ICON_USER};
+
+/* Door i's page: the shared table (MUI-P4-0) names it, g_page_name maps the name to this UI's enum. */
+static desk_page door_page(uint32_t i) {
+    const sel_uim_door* dr = sel_uim_door_at(i);
+    uint32_t p;
+    for (p = 0; dr != NULL && p < PG_COUNT; p++) {
+        if (strcmp(g_page_name[p], dr->page) == 0) {
+            return (desk_page)p;
+        }
+    }
+    return PG_HOME;
+}
 
 /* The row of door i, shared by the drawing and the click: the panel inset of draw_panel, the brand, then the rows. */
 static sel_gui_rect sidebar_door_rect(const desk* d, uint32_t i) {
@@ -6294,7 +6289,8 @@ static uint32_t desk_rail_w(desk* d) {
         return 0u;
     }
     for (i = 0; i < DOOR_COUNT; i++) {
-        const char* s = g_doors[i].shorter != NULL ? g_doors[i].shorter : g_doors[i].label;
+        const sel_uim_door* dr = sel_uim_door_at(i);
+        const char* s = dr->shorter != NULL ? dr->shorter : dr->label;
         int32_t tw = sel_gui_text_width(at, s, strlen(s));
         widest = tw > widest ? tw : widest;
     }
@@ -6334,7 +6330,7 @@ static void draw_sidebar(desk* d) {
     for (i = 0; i < DOOR_COUNT; i++, y += row) {
         sel_gui_rect r = sidebar_door_rect(d, i);
         sel_gui_rect ic = rect_of(r.x + pad, y + (row - isz) / 2, isz, isz);
-        int here = g_doors[i].page == d->page;
+        int here = door_page(i) == d->page;
         uint32_t ink = ARGB(d->theme.token[here ? SEL_GUI_TOKEN_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]);
         if (here) { /* the current page: a raised row behind it */
             d->lit_doors |= 1u << i;
@@ -6343,14 +6339,15 @@ static void draw_sidebar(desk* d) {
         } else { /* another door: no background, its ink fades up as the pointer enters and back down as it leaves (I346) */
             ink = hover_ink_of(d, r, ink, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
         }
-        sel_gui_icon_draw(d->canvas, &d->icons, g_doors[i].icon, ic, isz, ink);
+        sel_gui_icon_draw(d->canvas, &d->icons, g_door_icon[i], ic, isz, ink);
         if (sb.w > lpx(d, 120)) {
             /* I537: the label box is the measured width the rail leaves right of the icon; a label wider than it takes its
              * shorter form (draw_text would ellipsize it), and the gap to the icon shrinks to the pad on the bitmap tier. */
             int32_t gap = desk_bitmap_text(d) ? lpx(d, 8) : lab, lx = ic.x + isz + gap, lw = r.x + r.w - lx;
-            const char* label = g_doors[i].label;
-            if (door_at != NULL && g_doors[i].shorter != NULL && sel_gui_text_width(door_at, label, strlen(label)) > lw) {
-                label = g_doors[i].shorter;
+            const sel_uim_door* dr = sel_uim_door_at(i);
+            const char* label = dr->label;
+            if (door_at != NULL && dr->shorter != NULL && sel_gui_text_width(door_at, label, strlen(label)) > lw) {
+                label = dr->shorter;
             }
             draw_text(d, rect_of(lx, y, lw, row), label, 1, 15, ink);
         }
@@ -6832,7 +6829,7 @@ static void desk_tip_tick(desk* d) {
     } else if (d->tip_btn > (int32_t)(TRANSPORT_COUNT + DOOR_COUNT)) { /* a Library style segment */
         snprintf(d->tip_text, sizeof d->tip_text, "%s", lib_style_name[d->tip_btn - 1 - (int32_t)(TRANSPORT_COUNT + DOOR_COUNT)]);
     } else if (d->tip_btn > (int32_t)TRANSPORT_COUNT) { /* a rail door: its full label */
-        snprintf(d->tip_text, sizeof d->tip_text, "%s", g_doors[d->tip_btn - 1 - (int32_t)TRANSPORT_COUNT].label);
+        snprintf(d->tip_text, sizeof d->tip_text, "%s", sel_uim_door_at((uint32_t)(d->tip_btn - 1 - (int32_t)TRANSPORT_COUNT))->label);
     } else {
         a = desk_action_by_id(desk_slot_action(d, (uint32_t)d->tip_btn - 1u));
         if (a == NULL) {
@@ -7591,7 +7588,7 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         } else if (ev->code >= 32u && ev->code < 127u && (ev->mods & (TXT_MOD_CTRL | TXT_MOD_ALT)) == 0u) {
             if (d->qlen + 1u < sizeof d->query) {
                 d->query[d->qlen++] = (char)ev->code;
-                d->query[d->qlen] = '\0';
+                d->query[d->qlen < sizeof d->query ? d->qlen : sizeof d->query - 1u] = '\0';
                 d->search_pending = 1;
                 d->search_since = d->now_ms;
             }
@@ -7811,7 +7808,7 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         int32_t door = sidebar_door_at(d, ev->x, ev->y);
         if (door >= 0) {
             d->nav_clicks++;
-            return desk_page_goto(d, g_doors[door].page);
+            return desk_page_goto(d, door_page((uint32_t)door));
         }
     }
     if ((in_main || (ev->kind == SEL_GUI_IN_MOVE && ev->code == 1u)) && lib_bar_pointer(d, ev)) { /* I541: the Library scrollbar */

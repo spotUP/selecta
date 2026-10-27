@@ -34,6 +34,10 @@ static int list_has(const sel_tag* t, uint32_t tag) {
     return 0;
 }
 
+static int probe_yes(void) {
+    return 1;
+}
+
 int main(int argc, char** argv) {
     const sel_host* host = sel_host_default();
     const sel_tag* desc = sel_plugin_entry_mui_test(1u);
@@ -55,6 +59,8 @@ int main(int argc, char** argv) {
         fputs("usage: mui_test <scratch dir>\n", stderr);
         return 2;
     }
+    mui_set_probe(probe_yes); /* the host has no MUI; the entry lists the plugin only when the probe says so */
+    desc = sel_plugin_entry_mui_test(1u);
 
     /* MUI-P1-2: id, kind, and the style mask per tier. */
     CHECK(desc != NULL, "no descriptor");
@@ -62,7 +68,7 @@ int main(int argc, char** argv) {
     CHECK(desc != NULL && sel_tag_find(desc, SEL_PLUGIN_KIND, 0) == SEL_PLUGIN_KIND_UI, "kind is not UI");
     CHECK(desc != NULL && strcmp((const char*)sel_tag_find(desc, SEL_PLUGIN_ID, 0), "mui") == 0, "id is not mui");
     CHECK(mui_style_mask(1) == SEL_VIEW_STYLES_ALL, "RTG mask %x", (unsigned)mui_style_mask(1));
-    CHECK(mui_style_mask(0) == SEL_VIEW_STYLES_CLASSIC, "planar mask %x", (unsigned)mui_style_mask(0));
+    CHECK(mui_style_mask(0) == (SEL_VIEW_STYLES_ALL & ~SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_COVERFLOW)), "planar mask %x", (unsigned)mui_style_mask(0));
     CHECK(mui_style_mask(1) != mui_style_mask(0), "tiers offer the same styles");
     CHECK(hooks != NULL && sel_tag_find(hooks, SEL_UI_VIEW_STYLES, 0) == mui_style_mask(0),
           "descriptor mask is not the planar-safe mask");
@@ -95,7 +101,7 @@ int main(int argc, char** argv) {
     tdesc = sel_registry_find(SEL_PLUGIN_KIND_UI, "text");
     thooks = tdesc != NULL ? (const sel_tag*)sel_tag_find(tdesc, SEL_PLUGIN_TAGS, 0) : NULL;
     CHECK(thooks != NULL, "text UI not registered");
-    CHECK(sel_registry_find(SEL_PLUGIN_KIND_UI, "mui") == NULL, "mui is registered on the host");
+    CHECK(sel_registry_find(SEL_PLUGIN_KIND_UI, "mui") != NULL, "mui is not registered on the host (MUI-P1-4)");
     memset(&cfg, 0, sizeof cfg);
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;

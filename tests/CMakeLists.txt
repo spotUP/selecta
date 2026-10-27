@@ -415,6 +415,14 @@ add_test(NAME view-unit COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs" br
 # T32: grouping, node ids, expand/collapse, drilldown, cursor across styles.
 add_test(NAME view-tree COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs" tree)
 # Both rebuild the same song directory.
+if(NOT SEL_AMIGA)
+  # MUI-P3-5, MUI-P3-6 (engine half): the engine against the MUI plugin's planar and RTG style masks.
+  target_link_libraries(view_test PRIVATE mui_map)
+  target_compile_definitions(view_test PRIVATE SEL_VIEW_TEST_MUI=1)
+  add_test(NAME mui-style-refusal COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs" mui-refusal)
+  add_test(NAME mui-style-keep COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs" mui-keep)
+  set_tests_properties(mui-style-refusal mui-style-keep PROPERTIES TIMEOUT 30 LABELS mui RESOURCE_LOCK view_songs_dir)
+endif()
 set_tests_properties(view-unit view-tree PROPERTIES RESOURCE_LOCK view_songs_dir)
 
 # T33: title-format resolver and PREF_GET / PREF_SET (src/engine/format.c, prefs.c).
@@ -447,6 +455,70 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-descriptor COMMAND mui_test "${CMAKE_CURRENT_BINARY_DIR}")
   add_test(NAME mui-stat-tag COMMAND mui_test "${CMAKE_CURRENT_BINARY_DIR}")
   set_tests_properties(mui-descriptor mui-stat-tag PROPERTIES TIMEOUT 30 LABELS mui)
+  add_executable(mui_contract_test ui/mui_contract_test.c "${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c")
+  target_include_directories(mui_contract_test PRIVATE "${PROJECT_SOURCE_DIR}/plugins/ui/mui/map")
+  target_compile_definitions(mui_contract_test PRIVATE SEL_PLUGIN_ENTRY=sel_plugin_entry_mui_test SEL_PLUGIN_KIND_BUILD=5)
+  target_link_libraries(mui_contract_test PRIVATE selecta_registry mui_map)
+  add_test(NAME mui-wait-contract COMMAND mui_contract_test wait)
+  add_test(NAME mui-registry COMMAND mui_contract_test registry)
+  add_test(NAME mui-drop COMMAND mui_contract_test drop)
+  add_test(NAME mui-open-failure COMMAND mui_contract_test failure)
+  add_test(NAME mui-open-nomui COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+    "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m2/quit.keys" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/mui-open-nomui"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/ui/mui_nomui.cmake")
+  add_test(NAME mui-menu COMMAND mui_contract_test menu)
+  add_test(NAME mui-style-menu COMMAND mui_contract_test style-menu)
+  add_test(NAME mui-menu-dispatch COMMAND mui_contract_test menu-dispatch)
+  add_test(NAME mui-weights COMMAND mui_contract_test weights)
+  add_test(NAME mui-relayout COMMAND mui_contract_test relayout)
+  add_test(NAME mui-transport-map COMMAND mui_contract_test transport)
+  add_test(NAME mui-dirty-map COMMAND mui_contract_test dirty)
+  add_test(NAME mui-keys COMMAND mui_contract_test keys)
+  add_test(NAME mui-list-regular COMMAND mui_contract_test list-regular)
+  add_test(NAME mui-list-tree COMMAND mui_contract_test list-tree)
+  add_test(NAME mui-list-drill COMMAND mui_contract_test list-drill)
+  add_test(NAME mui-columns COMMAND mui_contract_test columns)
+  add_test(NAME mui-style-mask COMMAND mui_contract_test style-mask)
+  add_test(NAME mui-list-pending COMMAND mui_contract_test list-pending)
+  add_test(NAME mui-list-backends COMMAND mui_contract_test list-backends)
+  add_test(NAME mui-home COMMAND mui_contract_test home)
+  add_test(NAME mui-doors COMMAND mui_contract_test doors)
+  add_test(NAME mui-library COMMAND mui_contract_test library)
+  add_test(NAME mui-toast COMMAND mui_contract_test toast)
+  add_test(NAME mui-help COMMAND mui_contract_test help)
+  add_executable(mui_canvas_test ui/mui_canvas_test.c)
+  target_link_libraries(mui_canvas_test PRIVATE mui_map selecta_gui)
+  target_compile_definitions(mui_canvas_test PRIVATE MUI_GRID_GOLDEN="a6d8f6ba455c0370")
+  add_test(NAME mui-canvas-geom COMMAND mui_canvas_test geom)
+  add_test(NAME mui-grid COMMAND mui_canvas_test grid)
+  add_test(NAME mui-art-path COMMAND mui_canvas_test art-path)
+  set_tests_properties(mui-canvas-geom mui-grid mui-art-path PROPERTIES TIMEOUT 30 LABELS mui)
+  add_executable(mui_viz_test ui/mui_viz_test.c)
+  target_link_libraries(mui_viz_test PRIVATE mui_map selecta_gui selecta_uimodel)
+  add_test(NAME mui-viz-surface COMMAND mui_viz_test surface)
+  add_test(NAME mui-budget COMMAND mui_viz_test budget)
+  add_test(NAME mui-copper-tint COMMAND mui_viz_test copper)
+  set_tests_properties(mui-viz-surface mui-budget mui-copper-tint PROPERTIES TIMEOUT 30 LABELS mui)
+  add_executable(gui_dither_test ui/gui_dither_test.c)
+  target_link_libraries(gui_dither_test PRIVATE selecta_gui)
+  target_compile_definitions(gui_dither_test PRIVATE GRADIENT_GOLDEN=0x6b25f44c8d897ac0ull COVER_GOLDEN=0x5feee6196fcf1ca2ull)
+  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bitart")
+  add_test(NAME gui-dither-atkinson COMMAND gui_dither_test dither)
+  add_test(NAME mui-art-planar-cache COMMAND gui_dither_test cache "${CMAKE_CURRENT_BINARY_DIR}/bitart")
+  set_tests_properties(gui-dither-atkinson mui-art-planar-cache PROPERTIES TIMEOUT 30 LABELS mui)
+  add_test(NAME mui-search COMMAND mui_contract_test search)
+  add_test(NAME mui-queue COMMAND mui_contract_test queue)
+  add_test(NAME mui-playlists COMMAND mui_contract_test playlists)
+  add_test(NAME mui-song-menu COMMAND mui_contract_test song-menu)
+  add_test(NAME mui-like-rating COMMAND mui_contract_test like-rating)
+  add_test(NAME mui-nowplaying COMMAND mui_contract_test nowplaying)
+  add_test(NAME mui-songinfo COMMAND mui_contract_test songinfo)
+  add_test(NAME mui-settings COMMAND mui_contract_test settings)
+  add_test(NAME mui-dialogs COMMAND mui_contract_test dialogs)
+  add_test(NAME mui-cmdline COMMAND mui_contract_test cmdline)
+  add_test(NAME mui-states COMMAND mui_contract_test states)
+  add_test(NAME mui-tracker COMMAND mui_contract_test tracker)
+  set_tests_properties(mui-wait-contract mui-registry mui-open-failure mui-open-nomui mui-menu mui-style-menu mui-menu-dispatch mui-weights mui-relayout mui-transport-map mui-dirty-map mui-keys mui-list-regular mui-list-tree mui-list-drill mui-list-pending mui-columns mui-style-mask mui-list-backends mui-home mui-doors mui-library mui-toast mui-help mui-search mui-queue mui-playlists mui-song-menu mui-like-rating mui-nowplaying mui-songinfo mui-settings mui-dialogs mui-cmdline mui-states mui-tracker mui-drop PROPERTIES TIMEOUT 30 LABELS mui)
   set(_mui_has_ui 0)
   if(TARGET sel_plugin_mui_ui)
     set(_mui_has_ui 1)
@@ -1117,13 +1189,50 @@ if(NOT SEL_AMIGA)
   # I508 / MUI-P1-3, MUI-P1-5: the MUI window opens on rig 2 through Selecta --ui mui (every Amiga build tree carries the
   # MUI plugin; SEL_MUI_BUILD names the one to run, default build/amiga).
   set(SEL_MUI_BUILD "${PROJECT_SOURCE_DIR}/build/amiga" CACHE PATH "Amiga build tree whose Selecta rig-m4-mui-open runs")
+  # MUI-P3-1 / MUI-P2-6: a real module the rig test plays through a list-row double-click (never committed; unset or
+  # missing: those steps are skipped with a NOTE). Set -DSEL_MUI_SONG=<path> or the SEL_MUI_SONG environment variable.
+  set(SEL_MUI_SONG "$ENV{SEL_MUI_SONG}" CACHE FILEPATH "Real .mod for the MUI play steps of rig-m4-mui-open")
   add_test(NAME rig-m4-mui-open
     COMMAND "${CMAKE_COMMAND}" -DTAG=M4MUI "-DRIG_DIR=${SEL_RIG_DIR}"
-      "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta" "-DMOD=${SEL_TESTMOD}"
+      "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta" "-DMOD=${SEL_TESTMOD}" "-DSONG=${SEL_MUI_SONG}"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-open"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
   set_tests_properties(rig-m4-mui-open PROPERTIES LABELS rig RESOURCE_LOCK rig
     ENVIRONMENT "UPTERM_RIG=2" SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  # MUI-P5-6: an icon dragged from a Workbench drawer window onto the MUI window (AppWindow drop) and Edit > Copy Song Title
+  # (clipboard.device). Needs a rig started with --no-dopus (plain Workbench) and SEL_MUI_SONG.
+  add_test(NAME rig-m4-mui-drop
+    COMMAND "${CMAKE_COMMAND}" -DTAG=M4MUIDROP "-DRIG_DIR=${SEL_RIG_DIR}"
+      "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta" "-DMOD=${SEL_TESTMOD}" "-DSONG=${SEL_MUI_SONG}"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-drop"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
+  set_tests_properties(rig-m4-mui-drop PROPERTIES LABELS rig RESOURCE_LOCK rig
+    ENVIRONMENT "UPTERM_RIG=2" SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  # MUI-P1-6 / M4-P11-2: MUI absent (SYS:MUI/Libs renamed, restored on every path): the Selecta requester with Continue,
+  # then the text UI runs and Selecta exits 0. Needs the same Amiga build tree as rig-m4-mui-open.
+  add_test(NAME rig-m4-mui-nomui
+    COMMAND "${CMAKE_COMMAND}" -DTAG=M4MUINO "-DRIG_DIR=${SEL_RIG_DIR}"
+      "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta" "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m2/quit.keys"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-nomui"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
+  set_tests_properties(rig-m4-mui-nomui PROPERTIES LABELS rig RESOURCE_LOCK rig
+    ENVIRONMENT "UPTERM_RIG=2" SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  # muimaster.library keeps one open count of its own once any MUI object has been created in a boot (a standalone
+  # OpenLibrary/MUI_NewObject/MUI_DisposeObject/CloseLibrary program leaves lib_OpenCnt=1 too, so Selecta does not leak),
+  # and the library can no longer be expunged. The missing-MUI test must therefore run before rig-m4-mui-open in a boot.
+  set_tests_properties(rig-m4-mui-open PROPERTIES DEPENDS rig-m4-mui-nomui)
+  # MUI-P0-2 / MUI-P0-3: recorded facts (plan section 9). rig-m4-mui-mem needs a fresh boot of the 68020 rig
+  # (`rig.py start --a1200`), before any MUI run, so the library is not yet resident when Avail is read.
+  foreach(t facts mem)
+    string(TOUPPER "${t}" T_UP)
+    add_test(NAME rig-m4-mui-${t}
+      COMMAND "${CMAKE_COMMAND}" -DTAG=M4MUI${T_UP} "-DRIG_DIR=${SEL_RIG_DIR}"
+        "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta" "-DMOD=${SEL_TESTMOD}"
+        "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-${t}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
+    set_tests_properties(rig-m4-mui-${t} PROPERTIES LABELS rig RESOURCE_LOCK rig
+      ENVIRONMENT "UPTERM_RIG=2" SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  endforeach()
   # I439 / M4-P6-1: AGA c2p first light on rig 2, backend alone and the full AGA Selecta (SEL_DESKTOP_AGA build tree in
   # SEL_AGA_BUILD, default build/amiga-aga).
   set(SEL_AGA_BUILD "${PROJECT_SOURCE_DIR}/build/amiga-aga" CACHE PATH "Amiga build tree configured with -DSEL_DESKTOP_AGA=ON")
