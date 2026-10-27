@@ -94,8 +94,13 @@ static ULONG pick_mode(int32_t* w, int32_t* h) {
     ULONG mode = AGA_NO_MODE;
     if (wb != NULL) {
         struct DimensionInfo dim;
+        struct DisplayInfo disp;
         ULONG id = GetVPModeID(&wb->ViewPort);
+        /* An RTG (Picasso96/CyberGraphX) Workbench is a foreign mode: its screen ignores planar bitmaps and the copper,
+         * so only a native chipset mode qualifies. */
         if (id != AGA_NO_MODE && (id & MONITOR_ID_MASK) != 0x40000000u &&
+            GetDisplayInfoData(NULL, (UBYTE*)&disp, sizeof disp, DTAG_DISP, id) > 0 &&
+            (disp.PropertyFlags & DIPF_IS_FOREIGN) == 0 &&
             GetDisplayInfoData(NULL, (UBYTE*)&dim, sizeof dim, DTAG_DIMS, id) > 0 && dim.MaxDepth >= 8) {
             mode = id;
             if (*w <= 0 || *h <= 0) {
