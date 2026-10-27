@@ -171,6 +171,13 @@ mui_home_kind mui_home_kind_of(const sel_view_row* r);
  * desktop shelf tile does); returns 3, or 0 for a row that is not a Home entry. */
 uint32_t mui_home_lines(const sel_view_state* v, uint32_t row, char lines[3][48]);
 
+/* MUI-P4-0: the sidebar doors, built from the shared uimodel door table (include/selecta/uimodel/doors.h). The label is the
+ * table's; the line is the engine line that switches the main view to the door's page, NULL for a page the MUI shows in
+ * another slot (Now Playing and Song Information are the player and detail slots, not a main view). */
+uint32_t mui_door_count(void);
+const char* mui_door_label(uint32_t i);
+const char* mui_door_line(uint32_t i);
+
 /* MUI-P4-2: Library breadcrumbs. Pieces of a browse path split on "/" and the AmigaDOS ":" (the volume keeps its colon);
  * `end` is the length of the path up to and including the piece, so a click on a crumb opens path[0..end). Returns the
  * piece count even above cap. The last piece equals the engine's browse_leaf. */

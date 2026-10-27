@@ -175,6 +175,8 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_VOLUME 0x2101L
 #define CTL_LIST_DBL 0x2110L
 #define CTL_LIST_SEL 0x2111L
+#define CTL_DOOR_BASE 0x2200L /* MUI-P4-0: one button per sidebar door */
+#define MUI_DOOR_MAX 8u
 
 static int mui_send(mui_state* s, const char* line) {
     char pool[1024];
@@ -212,6 +214,22 @@ static Object* mui_make_slider(LONG max, LONG id) {
         DoMethod(o, MUIM_Notify, MUIA_Slider_Level, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
     }
     return o;
+}
+
+/* MUI-P4-0: the sidebar slot content, one button per door of the shared uimodel table (mui_door_label). */
+static Object* mui_sidebar_group(void) {
+    Object* g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+    uint32_t i;
+    for (i = 0; g != NULL && i < mui_door_count() && i < MUI_DOOR_MAX; i++) {
+        Object* b = mui_make_button(mui_door_label(i), CTL_DOOR_BASE + (LONG)i);
+        if (b != NULL) {
+            DoMethod(g, OM_ADDMEMBER, b);
+        }
+    }
+    if (g != NULL) {
+        DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    }
+    return g;
 }
 
 /* The transport row and frame texts: three rows of one VGroup (the PLAYER slot content). */
@@ -353,6 +371,8 @@ static void mui_control_fire(mui_state* s, LONG id) {
         if (mui_send(s, mui_menu_line(mui_transport_action((uint32_t)(id - CTL_BTN_BASE), &s->uim.frame)))) {
             s->transport_hits++;
         }
+    } else if (id >= CTL_DOOR_BASE && id < CTL_DOOR_BASE + (LONG)MUI_DOOR_MAX) {
+        mui_send(s, mui_door_line((uint32_t)(id - CTL_DOOR_BASE))); /* the page switch: the engine moves the main view's source */
     } else if (id == CTL_SEEK) {
         GetAttr(MUIA_Slider_Level, s->seek, (ULONG*)&v);
         if (v != s->seek_set && mui_seek_line((uint32_t)v, sel_engine_state(s->engine)->song.duration_ms, line, sizeof line)
@@ -446,7 +466,7 @@ static void* mui_open(const sel_ui_open_args* a) {
             WindowContents, s->root = VGroup,
                 Child, s->slot[MUI_SLOT_SUGGESTION] = TextObject, MUIA_Text_Contents, (ULONG) "Window is narrow: try the mini layout", End,
                 Child, HGroup,
-                    Child, s->slot[MUI_SLOT_SIDEBAR] = VGroup, Child, TextObject, MUIA_Text_Contents, (ULONG) "Library", End, Child, HVSpace, End,
+                    Child, s->slot[MUI_SLOT_SIDEBAR] = mui_sidebar_group(),
                     Child, s->balance[0] = BalanceObject, End,
                     Child, s->slot[MUI_SLOT_MAIN] = mui_main_group(s),
                     Child, s->balance[1] = BalanceObject, End,

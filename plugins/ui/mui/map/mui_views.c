@@ -1,6 +1,8 @@
 /* MUI view mappings of Phase 4 (plan 2026-10-25-amiga-mui.md): pure C, host tested. */
 #include "mui_map.h"
 
+#include <selecta/uimodel/doors.h>
+
 #include <stdio.h>
 #include <string.h>
 
@@ -173,4 +175,30 @@ void mui_tracker_cell_text(const sel_rp_cell* cell, char* out, size_t cap) {
     char note[8], ins[8], vol[8], fx[8];
     sel_uim_cell_fields(cell, note, ins, vol, fx);
     snprintf(out, cap, "%s %s %s %s", note, ins, vol, fx);
+}
+
+/* MUI-P4-0: sidebar doors. The page name picks the engine line the desktop page switch sends (desk_page_load). */
+uint32_t mui_door_count(void) {
+    return SEL_UIM_DOOR_COUNT;
+}
+
+const char* mui_door_label(uint32_t i) {
+    const sel_uim_door* d = sel_uim_door_at(i);
+    return d != NULL ? d->label : NULL;
+}
+
+const char* mui_door_line(uint32_t i) {
+    static const struct {
+        const char* page;
+        const char* line;
+    } k_line[] = {{"home", "VIEW_SOURCE home"},          {"search", "VIEW_SOURCE search"},     {"library", "VIEW_SHOW browse"},
+                  {"playlists", "VIEW_SOURCE folders"},  {"queue", "VIEW_SHOW queue"}};
+    const sel_uim_door* d = sel_uim_door_at(i);
+    uint32_t k;
+    for (k = 0; d != NULL && k < sizeof k_line / sizeof k_line[0]; k++) {
+        if (strcmp(k_line[k].page, d->page) == 0) {
+            return k_line[k].line;
+        }
+    }
+    return NULL;
 }
