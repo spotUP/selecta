@@ -469,6 +469,13 @@ if(NOT SEL_AMIGA)
       "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m1/browse_play.screen"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/browse_play"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/browse_play.cmake")
+
+  # I563: an unregistered UI is a fatal start-up exit; it must go through the shared report (sel_startup_error),
+  # whose count --stats prints, and carry the message. The Amiga requester half is the same call on the Amiga.
+  add_test(NAME selecta-startup-error-report
+    COMMAND selecta --stats --ui no-such-ui --output null)
+  set_tests_properties(selecta-startup-error-report PROPERTIES
+    PASS_REGULAR_EXPRESSION "selecta: ui 'no-such-ui' is not registered.*startup_error_reports=1")
 endif()
 
 # Context-aware keys: Right pages the list, and seeks with the pattern panel up
