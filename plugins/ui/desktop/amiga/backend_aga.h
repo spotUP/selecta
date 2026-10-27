@@ -34,6 +34,11 @@ int32_t desk_aga_depth(const desk_aga* b);
 /* Converts the dirty rows of the INDEX8 canvas into the back buffer and shows it (call before sel_gui_present empties
  * the dirty list). */
 void desk_aga_present(desk_aga* b, const sel_gui_canvas* c);
+/* Copper gradients (I441): present also loads a UCopList that sets the reserved gradient pens (sel_gui_copper_changes)
+ * per scanline, AGA 24-bit through the BPLCON3 LOCT bank trick. Changes in the list since open / lines in it / lists
+ * installed (RethinkDisplay runs only when the changes differ). */
+uint32_t desk_aga_copper_changes(const desk_aga* b);
+uint32_t desk_aga_copper_installs(const desk_aga* b);
 /* Pixels converted (rows x width), presents, c2p calls, the c2p in use, chip RAM bytes held by the two buffers. */
 uint32_t desk_aga_upload_pixels(const desk_aga* b);
 uint32_t desk_aga_presents(const desk_aga* b);

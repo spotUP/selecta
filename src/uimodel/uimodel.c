@@ -28,7 +28,7 @@ uint32_t sel_uim_update(sel_uim* uim, const sel_state* st) {
     const char* artist = meta != NULL ? (const char*)sel_tag_find(meta, SEL_META_AUTHOR, 0) : NULL;
     const char* format = meta != NULL ? (const char*)sel_tag_find(meta, SEL_META_FORMAT, 0) : NULL;
     uint32_t dur = st->song.duration_ms;
-    uint32_t pos = st->song.position_ms;
+    uint32_t pos = st->play == SEL_STOPPED ? 0u : st->song.position_ms; /* I548: STOP keeps the slot loaded and its frozen position; a stopped transport reads 00:00 */
     uint32_t changed = 0;
     uint32_t i;
 

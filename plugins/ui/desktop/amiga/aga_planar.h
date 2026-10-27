@@ -45,6 +45,21 @@ size_t desk_aga_chip_bytes(int32_t w, int32_t h);
 /* Builds a graphics.library LoadRGB32 table for entries first .. first + n - 1 of 0xRRGGBB colours: word count and
  * first entry in the first longword, three left-justified 32-bit components per colour, a 0 terminator. out holds
  * n * 3 + 2 longwords. */
+/* I441: the four copper register writes that set palette pen `pen` (0-255) to rgb (0xRRGGBB) at 24-bit depth on AGA:
+ * BPLCON3 with the pen's bank and LOCT clear, the high nibbles, BPLCON3 with LOCT set, the low nibbles. out[i][0] is the
+ * custom chip register offset, out[i][1] the value. */
+void desk_aga_copper_regs(uint32_t pen, uint32_t rgb, uint32_t out[4][2]);
 void desk_aga_rgb32_table(const uint32_t* rgb, uint32_t first, uint32_t n, uint32_t* out);
+
+/* I441: 1 when a graphics.library display mode ID belongs to the native chipset (the monitors graphics knows: default,
+ * NTSC, PAL, VGA, A2024, Euro, Super72, DblNTSC, DblPAL, all below 0x00100000 in the monitor part), 0 for an RTG mode
+ * (CyberGraphX 0x40xxxxxx, Picasso96 0x50xxxxxx and any other board's high monitor IDs) and for INVALID_ID. The AGA
+ * screen opens on a native mode only: an RTG screen shows its planar bitmap black and has no copper. */
+int desk_aga_mode_is_native(uint32_t mode_id);
+
+/* The AGA screen is Selecta's own, whatever Workbench runs: 640x256 PAL HIRES (640x200 on NTSC) by default, or
+ * 320x256 PAL LORES (320x200 NTSC) when asked (Johan 2026-10-27; an 800x600 or interlaced screen is never opened).
+ * Fills w and h when either is <= 0. Returns 1 for HIRES, 0 for LORES, -1 when the asked size is neither. */
+int desk_aga_pick_size(int32_t* w, int32_t* h, int ntsc);
 
 #endif

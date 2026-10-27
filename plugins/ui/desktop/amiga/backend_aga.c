@@ -17,6 +17,9 @@
 #include <graphics/displayinfo.h>
 #include <graphics/gfx.h>
 #include <graphics/modeid.h>
+#include <graphics/copper.h>
+#include <graphics/gfxmacros.h>
+#include <graphics/view.h>
 #include <intuition/intuition.h>
 #include <intuition/screens.h>
 #include <proto/dos.h>
@@ -34,6 +37,8 @@ struct GfxBase* GfxBase;
 
 #define AGA_GAP 8 /* rows: two bands this close are converted as one */
 #define AGA_NO_MODE ((ULONG)INVALID_ID)
+
+#define AGA_COPPER_MAX 600u /* pen colour changes per list: a few hundred lines of gradient */
 
 struct desk_aga {
     int32_t w, h;
@@ -55,6 +60,10 @@ struct desk_aga {
     struct timerequest* treq;
     uint32_t upload_pixels, presents, c2p_calls, c2p_kind;
     desk_amiga_input in;
+    /* I441: the installed copper list and the changes it was built from */
+    struct UCopList* ucl;
+    sel_gui_copper_change cop[AGA_COPPER_MAX];
+    uint32_t cop_n, cop_installs;
 };
 
 static void c2p_bands(desk_aga* b, const uint8_t* chunky, const desk_aga_band* band, uint32_t n) {
@@ -78,33 +87,15 @@ uint32_t desk_aga_ticks(void) {
     return (uint32_t)ds.ds_Days * 86400000u + (uint32_t)ds.ds_Minute * 60000u + (uint32_t)ds.ds_Tick * 20u;
 }
 
-/* The mode of the screen: Workbench's when it is a native mode with 8 bitplanes, else PAL or NTSC HIRES (both allow
- * 8 bitplanes on AGA). */
+/* The mode of the screen: Selecta's own PAL/NTSC HIRES (640 wide) or LORES (320 wide), never Workbench's. The
+ * Workbench mode is irrelevant: an RTG Workbench (rig 2: Picasso96 800x600) must not leak its size or its mode here,
+ * a planar screen of that size cannot be displayed by the chipset and shows black. desk_aga_pick_size holds the rule. */
 static ULONG pick_mode(int32_t* w, int32_t* h) {
-    struct Screen* wb = LockPubScreen((CONST_STRPTR) "Workbench");
-    ULONG mode = AGA_NO_MODE;
-    if (wb != NULL) {
-        struct DimensionInfo dim;
-        ULONG id = GetVPModeID(&wb->ViewPort);
-        if (id != AGA_NO_MODE && (id & MONITOR_ID_MASK) != 0x40000000u &&
-            GetDisplayInfoData(NULL, (UBYTE*)&dim, sizeof dim, DTAG_DIMS, id) > 0 && dim.MaxDepth >= 8) {
-            mode = id;
-            if (*w <= 0 || *h <= 0) {
-                *w = wb->Width;
-                *h = wb->Height;
-            }
-        }
-        UnlockPubScreen(NULL, wb);
-    }
-    if (mode == AGA_NO_MODE) {
-        int ntsc = (GfxBase->DisplayFlags & NTSC) != 0;
-        mode = (ntsc ? NTSC_MONITOR_ID : PAL_MONITOR_ID) | HIRES_KEY;
-        if (*w <= 0 || *h <= 0) {
-            *w = 640;
-            *h = ntsc ? 200 : 256;
-        }
-    }
-    *w &= ~31;
+    int ntsc = (GfxBase->DisplayFlags & NTSC) != 0;
+    int hires = desk_aga_pick_size(w, h, ntsc);
+    ULONG mode;
+    if (hires < 0) return AGA_NO_MODE;
+    mode = (ntsc ? NTSC_MONITOR_ID : PAL_MONITOR_ID) | (hires ? HIRES_KEY : LORES_KEY);
     return ModeNotAvailable(mode) == 0 ? mode : AGA_NO_MODE;
 }
 
@@ -112,16 +103,8 @@ void desk_aga_default_size(int32_t* w, int32_t* h) {
     *w = 0;
     *h = 0;
     GfxBase = (struct GfxBase*)OpenLibrary((CONST_STRPTR) "graphics.library", 39);
-    IntuitionBase = (struct IntuitionBase*)OpenLibrary((CONST_STRPTR) "intuition.library", 39);
-    if (GfxBase != NULL && IntuitionBase != NULL) {
-        (void)pick_mode(w, h);
-    } else {
-        *w = 640;
-        *h = 256;
-    }
-    if (IntuitionBase != NULL) CloseLibrary((struct Library*)IntuitionBase);
+    (void)desk_aga_pick_size(w, h, GfxBase != NULL && (GfxBase->DisplayFlags & NTSC) != 0);
     if (GfxBase != NULL) CloseLibrary((struct Library*)GfxBase);
-    IntuitionBase = NULL;
     GfxBase = NULL;
 }
 
@@ -151,7 +134,7 @@ desk_aga* desk_aga_open(int32_t w, int32_t h, int index8) {
     if (!desk_amiga_input_open(&b->in)) return fail(b, "needs keymap.library v37"), NULL;
     if ((GfxBase->ChipRevBits0 & GFXF_AA_ALICE) == 0) return fail(b, "no AGA chipset"), NULL;
     mode = pick_mode(&w, &h);
-    if (mode == AGA_NO_MODE || w < 32 || h < 1) return fail(b, "no 8-bitplane native mode"), NULL;
+    if (mode == AGA_NO_MODE) return fail(b, "the AGA screen is 640x256 or 320x256 (640x200 / 320x200 on NTSC)"), NULL;
     b->w = w;
     b->h = h;
     bytes = desk_aga_buffer_bytes(w, h);
@@ -220,6 +203,11 @@ void desk_aga_close(desk_aga* b) {
         if (b->sb[i] != NULL) FreeScreenBuffer(b->screen, b->sb[i]);
     }
     if (b->safe_port != NULL) DeleteMsgPort(b->safe_port);
+    if (b->screen != NULL && b->ucl != NULL) { /* the list is ours: unhook it before the screen goes */
+        b->screen->ViewPort.UCopIns = NULL;
+        if (b->ucl->FirstCopList != NULL) FreeCopList(b->ucl->FirstCopList);
+        FreeMem(b->ucl, sizeof *b->ucl);
+    }
     if (b->screen != NULL) CloseScreen(b->screen);
     for (i = 0; i < 2; i++) {
         if (b->buf[i] != NULL) FreeMem(b->buf[i], (ULONG)desk_aga_buffer_bytes(b->w, b->h));
@@ -241,6 +229,50 @@ uint32_t desk_aga_c2p_calls(const desk_aga* b) { return b->c2p_calls; }
 uint32_t desk_aga_c2p_kind(const desk_aga* b) { return b->c2p_kind; }
 size_t desk_aga_chip_held(const desk_aga* b) { return b->buf[1] ? desk_aga_chip_bytes(b->w, b->h) : 0u; }
 
+uint32_t desk_aga_copper_changes(const desk_aga* b) { return b->cop_n; }
+uint32_t desk_aga_copper_installs(const desk_aga* b) { return b->cop_installs; }
+
+/* I441: replaces the screen's user copper list with one that sets the gradient pens per scanline. */
+static void copper_install(desk_aga* b, const sel_gui_copper_change* ch, uint32_t n) {
+    struct UCopList* nl = NULL;
+    struct UCopList* old;
+    uint32_t i, k;
+    int32_t last_v = -1;
+    if (n > 0u) {
+        nl = (struct UCopList*)AllocMem(sizeof *nl, MEMF_PUBLIC | MEMF_CLEAR);
+        if (nl == NULL) return;
+        CINIT(nl, (UWORD)(n * 5u + 4u));
+        for (i = 0; i < n; i++) {
+            uint32_t regs[4][2];
+            int32_t v = b->h > 300 ? ch[i].y / 2 : ch[i].y;
+            if (v != last_v) {
+                CWAIT(nl, (WORD)v, 0);
+                last_v = v;
+            }
+            desk_aga_copper_regs(ch[i].pen, ch[i].rgb, regs);
+            for (k = 0; k < 4u; k++) {
+                CMOVE(nl, *(volatile UWORD*)(0xDFF000u + regs[k][0]), (WORD)regs[k][1]);
+            }
+        }
+        CMOVE(nl, *(volatile UWORD*)(0xDFF106u), (WORD)0x0C00);
+        CEND(nl);
+    }
+    Forbid();
+    old = b->screen->ViewPort.UCopIns;
+    b->screen->ViewPort.UCopIns = nl;
+    Permit();
+    MakeScreen(b->screen);
+    RethinkDisplay();
+    if (old != NULL) {
+        if (old->FirstCopList != NULL) FreeCopList(old->FirstCopList);
+        FreeMem(old, sizeof *old);
+    }
+    b->ucl = nl;
+    memcpy(b->cop, ch, n * sizeof ch[0]);
+    b->cop_n = n;
+    b->cop_installs++;
+}
+
 void desk_aga_present(desk_aga* b, const sel_gui_canvas* c) {
     desk_aga_band now[DESK_AGA_BANDS_MAX], todo[DESK_AGA_BANDS_MAX];
     uint32_t n, nt;
@@ -250,6 +282,11 @@ void desk_aga_present(desk_aga* b, const sel_gui_canvas* c) {
         b->colours = c->colours;
         desk_aga_rgb32_table(b->palette, 0, 256, b->rgb32);
         LoadRGB32(&b->screen->ViewPort, (ULONG*)b->rgb32);
+    }
+    if (c->copper_pens > 0u) {
+        sel_gui_copper_change ch[AGA_COPPER_MAX];
+        uint32_t nc = sel_gui_copper_changes(c, ch, AGA_COPPER_MAX);
+        if (nc != b->cop_n || memcmp(ch, b->cop, nc * sizeof ch[0]) != 0) copper_install(b, ch, nc);
     }
     if (b->fresh > 0) {
         now[0].y = 0;

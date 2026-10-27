@@ -704,6 +704,7 @@ int main(int argc, char** argv)
         printf("song=%s\n", sel_engine_state(e)->song.path != NULL ? sel_engine_state(e)->song.path : "");
     }
     printf("links_parsed=%u links_made=%u\n", (unsigned)est.links_parsed, (unsigned)est.links_made);
+    printf("sources_listed=%u evt_dropped=%u\n", (unsigned)est.sources_listed, (unsigned)est.evt_dropped);
 
     printf("cmdline_runs=%u palette_opens=%u bindings=%u playlist_entries=%u undo_depth=%u redo_depth=%u view_style=%s\n",
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_CMDLINE_RUNS, 0), (unsigned)sel_tag_find(ust, SEL_UI_STAT_PALETTE_OPENS, 0),
@@ -730,7 +731,7 @@ int main(int argc, char** argv)
         for (u = 0; u < g_ui_count; u++) {
             const sel_tag* us = ui_stats_of(&g_uis[u]);
             printf("ui_open_mui=%u\n", (unsigned)sel_tag_find(us, SEL_UI_STAT_OPEN_MUI, 0)); /* MUI-P1-5 sentinel */
-            printf("ui_stats id=%s frames=%u widget_draws=%u uim_updates=%u uim_dirty=%u uim_layout=%u tweens=%u effect_prims=%u dirty_pixels=%u dirty_total=%u canvas_hash=%s draw_prims=%u missing_glyphs=%u glyphs=%u view_opens=%u art_decodes=%u art_tile_hash=%s present_hash=%s upload_pixels=%u presents=%u scale=%u atlas_rebuilds=%u icon_rebuilds=%u atlas_builds=%u actions_fired=%u actions_distinct=%u focus_moves=%u searches=%u arrows=%u focus=%u hovers=%u clicks=%u double_clicks=%u drags=%u sorts=%u sort_dir=%u top_row=%u menus=%u row_plays=%u tooltips=%u gestures=%u tile_size=%u scroll_px=%u open_tile=%u transport_hits=%u play_state=%u repeat_mode=%u random_on=%u subsong=%u frame_parts=%u home_parts=%u tile_cards=%u palette_colours_ui=%u palette_colours_art=%u palette_colours_tile=%u palette_colours_panel=%u palette_colours_flow=%u quant_calls=%u art_ms_max=%u turn_ms_max=%u frame_ms_min=%u frame_ms_avg=%u frame_ms_max=%u page_dirty_pixels=%u paint_ms_min=%u paint_ms_avg=%u paint_ms_max=%u present_ms_min=%u present_ms_avg=%u present_ms_max=%u atlas_ms=%u atlas_baked_hits=%u icon_resampled=%u ui_scale_q16=%u ui_zoom=%s ui_logical=%ux%u shelf_album_art_draws=%u tooltip_targets=%u\n", g_uis[u].id,
+            printf("ui_stats id=%s frames=%u widget_draws=%u uim_updates=%u uim_dirty=%u uim_layout=%u tweens=%u effect_prims=%u dirty_pixels=%u dirty_total=%u canvas_hash=%s draw_prims=%u missing_glyphs=%u glyphs=%u view_opens=%u art_decodes=%u art_tile_hash=%s present_hash=%s upload_pixels=%u presents=%u scale=%u atlas_rebuilds=%u icon_rebuilds=%u atlas_builds=%u actions_fired=%u actions_distinct=%u focus_moves=%u searches=%u arrows=%u focus=%u hovers=%u clicks=%u double_clicks=%u drags=%u sorts=%u sort_dir=%u top_row=%u menus=%u row_plays=%u tooltips=%u gestures=%u tile_size=%u scroll_px=%u open_tile=%u transport_hits=%u play_state=%u repeat_mode=%u random_on=%u subsong=%u frame_parts=%u home_parts=%u tile_cards=%u palette_colours_ui=%u palette_colours_art=%u palette_colours_tile=%u palette_colours_panel=%u palette_colours_flow=%u quant_calls=%u art_ms_max=%u turn_ms_max=%u frame_ms_min=%u frame_ms_avg=%u frame_ms_max=%u page_dirty_pixels=%u paint_ms_min=%u paint_ms_avg=%u paint_ms_max=%u present_ms_min=%u present_ms_avg=%u present_ms_max=%u atlas_ms=%u atlas_baked_hits=%u icon_resampled=%u ui_scale_q16=%u ui_zoom=%s ui_logical=%ux%u shelf_album_art_draws=%u tooltip_targets=%u bitmap_hits_mini4=%u bitmap_hits_mini6=%u bitmap_hits_mini8=%u headline_hits_18=%u headline_hits_24=%u\n", g_uis[u].id,
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_FRAMES, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_WIDGET_DRAWS, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_UPDATES, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_DIRTY, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_UIM_LAYOUT, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_TWEENS, 0),
@@ -779,7 +780,10 @@ int main(int argc, char** argv)
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_ATLAS_MS, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_ATLAS_BAKED_HITS, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_ICON_RESAMPLED, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_SCALE_Q16, 65536u), (const char*)sel_tag_find(us, SEL_UI_STAT_ZOOM, (uintptr_t) "100"),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_LOGICAL_W, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_LOGICAL_H, 0),
-                   (unsigned)sel_tag_find(us, SEL_UI_STAT_SHELF_ALBUM_ART_DRAWS, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_TOOLTIP_TARGETS, 0));
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_SHELF_ALBUM_ART_DRAWS, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_TOOLTIP_TARGETS, 0),
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_BITMAP_HITS_MINI4, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_BITMAP_HITS_MINI6, 0),
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_BITMAP_HITS_MINI8, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_HEADLINE_HITS_18, 0),
+                   (unsigned)sel_tag_find(us, SEL_UI_STAT_HEADLINE_HITS_24, 0));
             {
                 static const char* const pcls[] = {"fill", "scrim", "round", "gradient", "line", "text", "mask", "image", "shadow", "icon", "genart", "dirty", "clip", "palette", "quant", "art"};
                 static const char* const ppt[] = {"canvas", "song", "sidebar", "main", "transport", "progress", "volume", "status", "focus", "tip", "overlay", "visual"};

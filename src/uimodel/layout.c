@@ -10,6 +10,7 @@
 #define SIDEBAR_WIDE 220
 #define SIDEBAR_NARROW 200
 #define SIDEBAR_ICONS 56
+#define SIDEBAR_RAIL_LABELLED 160 /* I526 D1: the bitmap tier rail, mini8 labels beside the icon */
 #define DETAIL_W 320
 #define MAIN_MIN_W 240
 #define MAIN_MIN_H 120
@@ -18,6 +19,13 @@ static const char* const k_layout_names[SEL_UIM_BP_COUNT] = {"three-column", "tw
                                                              "mini-suggestion"};
 
 const char* sel_uim_breakpoint_name(uint32_t bp) { return bp < SEL_UIM_BP_COUNT ? k_layout_names[bp] : ""; }
+
+uint32_t sel_uim_breakpoint_for_tier(uint32_t width, uint32_t tier) {
+    if (tier == SEL_UIM_TIER_BITMAP && width >= 600u && width < 700u) {
+        return SEL_UIM_BP_ICON_SIDEBAR; /* I526: the 640 wide native screen keeps a rail, not the mini suggestion */
+    }
+    return sel_uim_breakpoint_for(width);
+}
 
 uint32_t sel_uim_breakpoint_for(uint32_t width) {
     if (width >= 1200u) {
@@ -45,7 +53,17 @@ static void add(sel_uim_layout* l, const char* name, uint32_t min_w, uint32_t mi
 }
 
 void sel_uim_layout_compute(sel_uim_layout* l, uint32_t width, uint32_t height) {
-    uint32_t bp = sel_uim_breakpoint_for(width);
+    sel_uim_layout_compute_tier(l, width, height, SEL_UIM_TIER_DEFAULT);
+}
+
+void sel_uim_layout_compute_tier(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier) {
+    sel_uim_layout_compute_rail(l, width, height, tier, 0u);
+}
+
+/* I547: rail_w is the labelled rail width the caller measured from its font (0: SIDEBAR_RAIL_LABELLED). It is never
+ * narrower than the default and never wider than a third of the window. */
+void sel_uim_layout_compute_rail(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t rail_w) {
+    uint32_t bp = sel_uim_breakpoint_for_tier(width, tier);
     uint32_t bar_h = height > BAR_H ? BAR_H : height;
     uint32_t body_h = height - bar_h;
     uint32_t side = 0, detail = 0, top = 0, main_w;
@@ -59,7 +77,12 @@ void sel_uim_layout_compute(sel_uim_layout* l, uint32_t width, uint32_t height) 
     } else if (bp == SEL_UIM_BP_TWO_COLUMN) {
         side = SIDEBAR_NARROW;
     } else if (bp == SEL_UIM_BP_ICON_SIDEBAR) {
-        side = SIDEBAR_ICONS;
+        if (tier == SEL_UIM_TIER_BITMAP) {
+            side = rail_w > SIDEBAR_RAIL_LABELLED ? rail_w : SIDEBAR_RAIL_LABELLED;
+            side = side > width / 3u ? (width / 3u > SIDEBAR_RAIL_LABELLED ? width / 3u : SIDEBAR_RAIL_LABELLED) : side;
+        } else {
+            side = SIDEBAR_ICONS;
+        }
     } else {
         top = body_h > BANNER_H ? BANNER_H : body_h;
     }

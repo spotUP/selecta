@@ -144,3 +144,32 @@ void desk_aga_rgb32_table(const uint32_t* rgb, uint32_t first, uint32_t n, uint3
     }
     out[1 + n * 3] = 0;
 }
+
+void desk_aga_copper_regs(uint32_t pen, uint32_t rgb, uint32_t out[4][2]) {
+    uint32_t r = (rgb >> 16) & 255u, g = (rgb >> 8) & 255u, b = rgb & 255u;
+    uint32_t bplcon3 = 0x0C00u | ((pen >> 5) << 13), reg = 0x180u + 2u * (pen & 31u);
+    out[0][0] = 0x106u;
+    out[0][1] = bplcon3;
+    out[1][0] = reg;
+    out[1][1] = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+    out[2][0] = 0x106u;
+    out[2][1] = bplcon3 | 0x200u;
+    out[3][0] = reg;
+    out[3][1] = ((r & 15u) << 8) | ((g & 15u) << 4) | (b & 15u);
+}
+
+int desk_aga_mode_is_native(uint32_t mode_id) {
+    return mode_id != 0xFFFFFFFFu && (mode_id & 0xFFF00000u) == 0u;
+}
+
+int desk_aga_pick_size(int32_t* w, int32_t* h, int ntsc) {
+    int32_t lines = ntsc ? 200 : 256;
+    if (*w <= 0 || *h <= 0) {
+        *w = 640;
+        *h = lines;
+    }
+    if (*h != lines) return -1;
+    if (*w == 640) return 1;
+    if (*w == 320) return 0;
+    return -1;
+}

@@ -336,6 +336,12 @@ SEL_TAG(UI, STAT_SHELF_ALBUM_ART_DRAWS, 0x50D9, INT)
 SEL_TAG(UI, STAT_TOOLTIP_TARGETS, 0x50DA, INT)
 /* Amiga MUI UI (plan 2026-10-25-amiga-mui.md MUI-P1-5): windows opened; only the mui plugin lists it. */
 SEL_TAG(UI, STAT_OPEN_MUI,        0x50DB, INT)
+/* I526: text lookups served by the bitmap fonts mini4, mini6, mini8 and by the Inter headline sizes 18 and 24. */
+SEL_TAG(UI, STAT_BITMAP_HITS_MINI4,   0x50DC, INT)
+SEL_TAG(UI, STAT_BITMAP_HITS_MINI6,   0x50DD, INT)
+SEL_TAG(UI, STAT_BITMAP_HITS_MINI8,   0x50DE, INT)
+SEL_TAG(UI, STAT_HEADLINE_HITS_18,    0x50DF, INT)
+SEL_TAG(UI, STAT_HEADLINE_HITS_24,    0x50E0, INT)
 
 /* LIBRARY_RESULT: the listed path and the number of entries in it. */
 SEL_TAG(SRC, PATH,             0x7000, STR)

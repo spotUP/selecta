@@ -63,7 +63,31 @@ typedef struct sel_gui_canvas {
      * fill_rect, round_rect, clip_push, dirty_add and blit_mask is halved here, so a round shape stays round on the
      * display. A mask is blitted as given (it is baked at half height) at the halved y. */
     int32_t ydiv;
+    /* I441: copper gradients. A backend with a per-scanline palette (the AGA copper) sets copper_pens through
+     * sel_gui_copper_enable; opaque vertical gradients on an INDEX8 canvas then fill with one reserved pen (255 down)
+     * per distinct gradient and record it in copper_key, and the backend loads the pen's colour per line from
+     * sel_gui_copper_changes. The rows are canvas rows, so ydiv is already applied. */
+    uint32_t copper_pens;
+    uint32_t copper_n;
+    uint32_t copper_filled; /* gradient rows drawn with a copper pen since init: the sentinel for I441 */
+    struct sel_gui_copper_key {
+        int32_t ry, rh;  /* the gradient rectangle's canvas rows: the colour depends on (y - ry) / (rh - 1) */
+        int32_t y0, y1;  /* canvas rows [y0, y1) actually filled with the pen */
+        uint32_t a, b;   /* 0xRRGGBB ends */
+    } copper_key[4];
 } sel_gui_canvas;
+
+/* I441: one change of a copper pen colour: from canvas row y on, `pen` shows rgb (0xRRGGBB) until its next change. */
+typedef struct sel_gui_copper_change {
+    int32_t y;
+    uint32_t pen, rgb;
+} sel_gui_copper_change;
+/* Reserves the last `pens` (0-4) palette entries for copper gradients (INDEX8 only); they leave the cover-flow
+ * sub-palette. 0 turns it off. Call before the palette is set. */
+void sel_gui_copper_enable(sel_gui_canvas* c, uint32_t pens);
+/* Pure: the pen colour changes that reproduce the recorded gradients, ordered by row then pen, same Q16 maths as the
+ * drawn gradient. Returns the count written (at most max). */
+uint32_t sel_gui_copper_changes(const sel_gui_canvas* c, sel_gui_copper_change* out, uint32_t max);
 
 /* Bytes of pixel storage for a format and size. */
 size_t sel_gui_pixel_bytes(uint32_t format, int32_t w, int32_t h);
@@ -80,6 +104,12 @@ uint32_t sel_gui_region_colours(const sel_gui_canvas* c, uint32_t region);
  * for entries 0-31, the rest of those 32 are steps from the surface to the accent and the text; entries 32-63 are
  * the generated-art colours (sel_gui_genart_palette); each artwork sub-palette starts as a grey ramp. */
 void sel_gui_palette_budget(uint32_t* rgb256, const uint32_t* ui, uint32_t n);
+/* I526-P2b: palette entries 24-29 are reserved for headline shades. A 2x-tall headline (Inter SemiBold at 22 or 32 px
+ * on a ydiv 2 canvas) has few pixels per stroke, so its antialiased edge needs exact in-between colours, not the nearest
+ * of the generic steps. Writes three steps (25, 50, 75 percent) from bg0 to fg0 into entries 24-26 and from bg1 to fg1
+ * into 27-29. Call after sel_gui_palette_budget with n <= 24 theme colours; the palette size does not change. */
+#define SEL_GUI_HEADLINE_SHADE0 24u
+void sel_gui_palette_headline_shades(uint32_t* rgb256, uint32_t fg0, uint32_t bg0, uint32_t fg1, uint32_t bg1);
 /* The default 256-colour UI palette from three theme colours: 3 theme entries, 24 greys, a 6x6x6 cube, then
  * surface-to-accent steps (now: sel_gui_palette_budget over the three colours). */
 void sel_gui_palette_default(uint32_t* rgb256, uint32_t accent, uint32_t surface, uint32_t text);

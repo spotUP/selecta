@@ -39,8 +39,8 @@ token x 0.625 / 2.
 
 | Token (weight) | Family, size | Rows | Roles (file:line in plugins/ui/desktop/desktop_ui.c) |
 |---|---|---|---|
-| 32 semibold | Inter SemiBold headline H16 (px 32, ydiv 2) | 16 | Page titles: Library 4620, composer title 4601, Queue 2861, Playlists 3102, Visualizer 3587, Tracker 3679, Song Information 3840, Welcome back 1470, Now Playing page 6047, now-playing page song title 6055 |
-| 18, 22, 24 semibold | Inter SemiBold headline H11 (px 22, ydiv 2) | 11 | Section headings: Recently played 1479, shelf heads 2300, Home empty section 5238 (token per call), Statistics 4707 (stats heading font 4701), search group heading 5135, detail big title 1150, "Nothing is playing" 6059, sidebar logo "Selecta" 5787 |
+| 32 semibold | Inter SemiBold headline H12 (px 24, ydiv 2; I545, was H16 px 32) | 12 | Page titles: Library 4620, composer title 4601, Queue 2861, Playlists 3102, Visualizer 3587, Tracker 3679, Song Information 3840, Welcome back 1470, Now Playing page 6047, now-playing page song title 6055 |
+| 18, 22, 24 semibold | Inter SemiBold headline H9 (px 18, ydiv 2; I545, was H11 px 22) | 9 | Section headings: Recently played 1479, shelf heads 2300, Home empty section 5238 (token per call), Statistics 4707 (stats heading font 4701), search group heading 5135, detail big title 1150, "Nothing is playing" 6059, sidebar logo "Selecta" 5787 |
 | 14, 15, 16 (both weights) | mini8 8x8 | 8 | Rail labels 5807 (semi 15); Library list rows 4613, 4666, 4689 (15) and their second column 4670/4672/4691 (14); library tabs and mode 4634/4636, crumb 4642, lib_tab_w 2503, style labels 2545 (LIB_STYLE_LABEL_PX 14); search field 1422/1424/1427 (14) and search rows 5143; home/library tile titles 2343, 4435, 4441, 5282 (semi 14); quick rows 2280; queue rows 2899/2914 (14); playlists rows 3118; scan line 2612; empty state 2843; stats values 4716-4740; "More/Less" 4724; sources 4830-4833; dialog title 2078 (16) and body 2079; dialog buttons 2094-2095, Add Folder / Clear Library / Sync 4626, 4627, 4835 (14); overlay body 6599; player bar title 5832 (semi 14); now-playing panel title 5917 (16) and page artist 6056 (16) |
 | 13 semibold | mini8 8x8 | 8 | Song rows 1321 and drop targets 1369; buttons and chips via draw_button 745 at 13 (home chips 1474, 1442, queue buttons 2866, playlist buttons 3106, tracker tabs 3682, song info buttons 3844, search facets 5118/5089, Browse files 5240); song menu 1979; queue headers 2874, 2893; tracker channel heads 3698; toast 6620; widgets semibold 1054; text sheet 975 |
 | 12, 13 regular; 12 semibold | mini6 6x8 | 8 | Secondary columns and meta: tile artist lines 2346, 4437, 4443, 5284 (13); draw_label 755; player bar artist 5833 (12); now-playing artist 5920, values 5990, lyrics 5999-6001, queue preview 6021; now-playing page format 6057, Next in Queue 6062; song information rows 3306-3338; tracker cells 3694-3746 (13); signal path 3508; viz pane names 3576 and viz buttons 3539 (12); queue Play Next 2900 (12); tooltip 6162/6185; overlay rows 6573-6588, command status 6604; widgets body 1053; text sheet 976 |
@@ -53,6 +53,17 @@ desktop_ui.c (133 call lines, grouped by enclosing function); `draw_frame_text` 
 
 The 6-row fallback is the only box-aware rule; it lives in `draw_text` (desktop_ui.c:628) as "line_height > box.h
 -> the family's short size", so it is one rule, not a per-role override.
+
+### I538 decision: aspect-aware bake (2026-10-27)
+
+The AGA screen is 640x256 hires with square-pixel layout 640x512 (ydiv 2), so a screen pixel is twice as tall as wide.
+Decision (Johan): keep 640 wide and bake the AGA fonts for 1:2 pixels. Not 320x256, not interlace, not plain 1-bit.
+Bake rule (`raster_tall` in plugins/ui/desktop/atlas_build.c, used by `desk_atlas_build_tall` when ydiv > 1): the glyph
+is rendered by the existing stb rasteriser at 8 sub-rows per screen row; a screen row is in for a column when at least
+half of its sub-rows cover it (alpha >= 128) and then carries the strongest horizontal coverage of those sub-rows,
+otherwise 0. Horizontal antialiasing stays, vertical edges are crisp. Metrics and glyph boxes are unchanged. ydiv 1
+atlases (Mac, SDL, RTG) take the old path and are byte-identical (guarded by a hash in dui-font-tall). The Amiga bitmap
+fonts are already 1-bit and unaffected.
 
 ## 2. Reaching the native layout
 
