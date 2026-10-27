@@ -4937,6 +4937,11 @@ static void draw_library(desk* d) {
                 sel_gui_dirty_add(d->canvas, r);
                 lib_view_row_reg(d, mn, st, k, r);
             }
+            for (k = 0; k < st->view->row_n && st->view->rows[k].kind == (uint32_t)SEL_ROW_HEADING; k++) {
+            }
+            if (k == st->view->row_n && (st->composers == NULL || *st->composers == '\0')) { /* I548 (e): no rows but headings (History lists its shelf headings) in an empty library: the same hint as the Composers page */
+                draw_empty_state(d, mn, lib_list_top(d, mn, st), "Your library is empty. Choose Add Folder to scan your music.");
+            }
             p = NULL;
         } else {
         sel_gui_clip_push(d->canvas, rect_of(mn.x, lib_list_top(d, mn, st), mn.w, mn.y + mn.h - lib_list_top(d, mn, st)));

@@ -146,3 +146,27 @@ dui_run(e --db "${edb}" --ui desktop --backend mem --view library --canvas 640x2
 if(NOT e MATCHES "libempty Your library is empty. Choose Add Folder to scan your music.\n")
   message(FATAL_ERROR "I548 e: an empty library shows no hint:\n${e}")
 endif()
+
+# I548 (e): the Tree, Columns, Files and History pages of an empty library show the same hint (tabs 1..4; x is a canvas column, y
+# is halved because canvas rows are half the layout rows).
+foreach(m 1 2 3 4)
+  if(NOT e MATCHES "tab ${m} ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)\n")
+    message(FATAL_ERROR "I548 e: no tab ${m} in the dump:\n${e}")
+  endif()
+  math(EXPR mx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+  math(EXPR my "(${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2) / 2")
+  file(REMOVE_RECURSE "${WORK}/cfg")
+  file(WRITE "${WORK}/em${m}.txt" "click ${mx} ${my}\nwait 300\n")
+  dui_run(em${m} --db "${edb}" --ui desktop --backend mem --view library --canvas 640x256 --ydiv 2 --zoom fit --clock fixed --stats
+    --resize 640x512 --input "${WORK}/em${m}.txt")
+  if(NOT em${m} MATCHES "mode (Tree|Columns|Files|History)\n")
+    message(FATAL_ERROR "I548 e: tab ${m} did not open:\n${em${m}}")
+  endif()
+  set(mode "${CMAKE_MATCH_1}")
+  if(m EQUAL 3 AND em${m} MATCHES "vrow 0 ") # Files lists the folders of the browse source, so the page is not blank and shows no hint
+    continue()
+  endif()
+  if(NOT em${m} MATCHES "libempty Your library is empty. Choose Add Folder to scan your music.\n")
+    message(FATAL_ERROR "I548 e: the ${mode} page of an empty library shows no hint:\n${em${m}}")
+  endif()
+endforeach()
