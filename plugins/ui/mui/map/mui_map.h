@@ -49,6 +49,8 @@ typedef struct mui_menu_item {
     const char* id;
 } mui_menu_item;
 uint32_t mui_menu_build(mui_menu_item* out, uint32_t cap);
+/* MUI-P3-8: as mui_menu_build, but a View > Style row is listed only when its style is in style_mask (mui_style_mask). */
+uint32_t mui_menu_build_for(mui_menu_item* out, uint32_t cap, uint32_t style_mask);
 /* MUI-P2-4: the protocol line a menu item sends: the action table's line for the id, the very line the desktop sends
  * (desktop_ui.c desk_action_by_id). NULL for an unknown id. */
 const char* mui_menu_line(const char* id);

@@ -132,6 +132,34 @@ static void test_menu(void) {
     CHECK(found_sub >= 3u, "View/Visualizer/* rows are not split into sub menu and item (%u)", (unsigned)found_sub);
 }
 
+/* mui-style-menu (MUI-P3-8): View > Style entries equal the mask popcount (planar 5, RTG 6) and each entry sends
+ * "VIEW_STYLE <label>" for a style in the mask. */
+static void test_style_menu(void) {
+    static mui_menu_item items[512];
+    uint32_t pass, i, n;
+    for (pass = 0; pass < 2; pass++) {
+        uint32_t mask = mui_style_mask((int)pass), want = 0, got = 0, s;
+        for (s = 0; s < SEL_VIEW_STYLE_COUNT; s++) {
+            want += (mask & SEL_VIEW_STYLE_BIT(s)) != 0u;
+        }
+        n = mui_menu_build_for(items, 512, mask);
+        for (i = 0; i < n && i < 512u; i++) {
+            if (strcmp(items[i].title, "View") == 0 && strcmp(items[i].sub, "Style") == 0) {
+                const char* line = mui_menu_line(items[i].id);
+                uint32_t k, hit = 0;
+                for (k = 0; k < SEL_VIEW_STYLE_COUNT; k++) {
+                    char want_line[48];
+                    snprintf(want_line, sizeof want_line, "VIEW_STYLE %s", sel_view_style_label(k));
+                    hit += line != NULL && strcmp(line, want_line) == 0 && (mask & SEL_VIEW_STYLE_BIT(k)) != 0u;
+                }
+                CHECK(hit == 1u, "style entry %s sends %s, not a style of the mask", items[i].item, line != NULL ? line : "(null)");
+                got++;
+            }
+        }
+        CHECK(got == want, "mask %u: %u style entries, %u styles offered", (unsigned)pass, (unsigned)got, (unsigned)want);
+    }
+}
+
 /* mui-menu-dispatch (MUI-P2-4): every menu row sends the table line the desktop sends. */
 static void test_menu_dispatch(void) {
     static mui_menu_item items[512];
@@ -673,6 +701,8 @@ int main(int argc, char** argv) {
         test_list_drill();
     } else if (strcmp(argv[1], "columns") == 0) {
         test_columns();
+    } else if (strcmp(argv[1], "style-menu") == 0) {
+        test_style_menu();
     } else if (strcmp(argv[1], "style-mask") == 0) {
         test_style_mask();
     } else if (strcmp(argv[1], "list-pending") == 0) {

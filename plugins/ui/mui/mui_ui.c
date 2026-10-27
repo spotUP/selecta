@@ -107,7 +107,7 @@ static Object* menu_child(Object* parent, ULONG cls_is_menu, const char* title, 
                       cls_is_menu ? MUIA_Menu_Title : MUIA_Menuitem_Title, (ULONG)title, TAG_DONE);
     if (o != NULL) {
         DoMethod(parent, OM_ADDMEMBER, o);
-        names[*count] = title;
+        names[*count] = want; /* the lookup key (the same one compared above), not the title: else every item of a sub menu made its own */
         objs[*count] = o;
         (*count)++;
     }
@@ -124,7 +124,7 @@ static Object* mui_menu_strip(void) {
     if (strip == NULL) {
         return NULL;
     }
-    g_menu_n = mui_menu_build(g_menu, MENU_MAX);
+    g_menu_n = mui_menu_build_for(g_menu, MENU_MAX, mui_style_mask(0)); /* MUI-P3-8; RTG widening: MUI-P6 */
     if (g_menu_n > MENU_MAX) {
         g_menu_n = MENU_MAX;
     }

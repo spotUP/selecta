@@ -68,7 +68,7 @@ int main(int argc, char** argv) {
     CHECK(desc != NULL && sel_tag_find(desc, SEL_PLUGIN_KIND, 0) == SEL_PLUGIN_KIND_UI, "kind is not UI");
     CHECK(desc != NULL && strcmp((const char*)sel_tag_find(desc, SEL_PLUGIN_ID, 0), "mui") == 0, "id is not mui");
     CHECK(mui_style_mask(1) == SEL_VIEW_STYLES_ALL, "RTG mask %x", (unsigned)mui_style_mask(1));
-    CHECK(mui_style_mask(0) == SEL_VIEW_STYLES_CLASSIC, "planar mask %x", (unsigned)mui_style_mask(0));
+    CHECK(mui_style_mask(0) == (SEL_VIEW_STYLES_ALL & ~SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_COVERFLOW)), "planar mask %x", (unsigned)mui_style_mask(0));
     CHECK(mui_style_mask(1) != mui_style_mask(0), "tiers offer the same styles");
     CHECK(hooks != NULL && sel_tag_find(hooks, SEL_UI_VIEW_STYLES, 0) == mui_style_mask(0),
           "descriptor mask is not the planar-safe mask");
