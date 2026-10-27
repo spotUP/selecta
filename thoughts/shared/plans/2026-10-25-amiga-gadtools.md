@@ -29,6 +29,7 @@ Finish line, measurable:
    Decision (Johan 2026-10-26): the shared layout tree gets a viz region, as recommended.
 7. Every Selecta colour token maps to a pen obtained with `ObtainBestPen` and released at close, `ui_pens_held=0` after close (GT-P7-1).
    Decision (Johan 2026-10-26): the status line shows the tooltip text on focus, as recommended.
+   Amended (Johan 2026-10-27): both. The status line keeps the tooltip on focus, and a hover bubble shows the same text for the mouse (GT-P4-19). Q1 re-confirmed the same day: OS 3.0 with gadtools.library 39.
 
 Commands (rig tests only on the caller's go-ahead; nothing here runs on any Amiga or rig until then):
 ```
@@ -79,7 +80,7 @@ Searches done: `grep -rn "gadtools\|GTLV_\|CreateGadget\|CreateContext" src plug
 - Columns in lists: ListView is one text column; the plugin pads fields to character cells with the screen font (monospace only) or the list shows title and artist in one string. Sortable column headers are not carried; sort is a menu action.
 - Real tree widget: tree style is indented rows; expand and collapse is an action on the cursor row, not a click on a twisty.
 - Drag and drop between rows: provided by the custom list gadget `gt_list` (GT-P3-9, Johan 2026-10-26); the ListView limitation no longer applies. Drop of files onto the window works through AppWindow.
-- Tooltips: GadTools has no bubble help. The action label is the gadget label; the full tooltip text is in the status line on focus and in the help window.
+- Tooltips: GadTools has no bubble help, so the plugin adds its own. The action label is the gadget label; the full tooltip text is in the status line on focus, in a hover bubble (GT-P4-19) and in the help window.
 - Right-mouse context menu on a row: Intuition owns the right button for the menu bar; the song menu is a menu entry set under a "Song" menu acting on the cursor row.
 - Proportional fonts in lists: ListView uses the screen font; a proportional font works but columns will not align.
 - Tweens, fades, hover animation, shadows, gradients, rounded corners, antialiased type: not available; the governor only caps custom-drawn areas.
@@ -158,6 +159,7 @@ Each desktop feature is either carried (GT-id in section 5) or listed in 2.3. Th
 - [ ] GT-P4-16 Tracker tabs and chip registers pane as text rows via `sel_uim_cell_fields`, only when tracker data exists. Test: `gadtools-tracker`: host; asserts field text for one pattern cell.
 - [ ] GT-P4-17 Activity, Downloads and Extra Files panels as ListView plus Stop and Continue buttons (M4-P12-10). Test: `gadtools-activity`: host; fake slow source with three jobs; asserts three rows and the Stop and Continue lines.
 - [ ] GT-P4-18 ARexx: no second port; the shell owns the one ARexx port (M4 ARexx plan) and the window adds none. Test: `rig-m4-gadtools-arexx`: `amiga_arexx` PLAY while `--ui gadtools` runs; asserts the engine state changes and the info strip shows the new status word.
+- [ ] GT-P4-19 Hover bubble: when the pointer rests on a gadget for 600 ms (IDCMP_INTUITICKS count), a small borderless window opens on the Selecta screen under the pointer with the action's `tooltip` text in the screen font; it closes on pointer move off the gadget, a click or a key. Same text source as the status line (`sel_uim_action.tooltip`), no second string table. Test: `gt-tooltip-hover` (host, pure timer and hit function: opens after the tick count, closes on move, no bubble for gadgets without a tooltip) plus a rig step in `rig-gt-open` asserting one bubble window appears and closes.
 
 ### Phase 5: custom area, viz
 - [ ] GT-P5-1 Viz area: one window-RastPort rectangle from the plan; planar viz surface via `sel_viz`, c2p lifted from the custom UI, `BltBitMapRastPort`. Test: `gadtools-viz-surface`: host; asserts surface format INDEX8 with pitch >= w and the rectangle equals the plan's viz slot.
@@ -212,7 +214,7 @@ C1-C6 of the MUI plan apply unchanged: C1 no compact breakpoint in `src/uimodel/
 ## 8. Coverage
 - 8.1 Design rows: M4 section 5 GadTools column: baseline (P1-3, P1-4), layout (P2-1, P2-2), lists (P3-1..P3-8), grid and cover flow hidden (P3-5, 2.3), viz (P5-1..P5-4), Now Playing text (P4-8), menus (P2-3, P2-4), display modes (P6-1), theme (P7-1, P7-2).
 - 8.2 Desktop parity: Home, Library, Search, Queue, Playlists, Now Playing, Song info, Settings, song menu, likes and ratings, toasts, dialogs, command line, help, states, tracker, activity panels (P4-1..P4-18). Not carried: grid, cover flow, artwork, tooltips, drag, columns headers (2.3). HippoPlayer and bbmp: carried through the desktop features; the row-by-row check is GT-P8-1 and is open.
-- 8.3 Row counts: Phase 0: 6, 1: 7, 2: 8, 3: 8, 4: 18, 5: 6, 6: 8, 7: 7, 8: 1 = 69. To be verified by `grep -c '^- \[ \] GT-P'` and by awk per phase before landing (counted per phase by grep when written; recount at landing).
+- 8.3 Row counts: Phase 0: 6, 1: 7, 2: 8, 3: 8, 4: 19, 5: 6, 6: 8, 7: 7, 8: 1 = 70 (GT-P4-19 added 2026-10-27; GT-P3-9 from 2026-10-26 not yet in this line). To be verified by `grep -c '^- \[ \] GT-P'` and by awk per phase before landing (counted per phase by grep when written; recount at landing).
 - 8.4 Older M4 rows replaced: M4-P10-1 (GT-P1-3, GT-P1-5, GT-P2-1, GT-P2-2), M4-P10-2 (GT-P3-1..P3-6), M4-P10-3 (GT-P5-1, GT-P5-2, GT-P6-1).
 
 ## 9. Recorded facts (fill in at GT-P0-1..3)
