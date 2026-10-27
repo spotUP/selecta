@@ -189,7 +189,7 @@ desk_aga* desk_aga_open(int32_t w, int32_t h, int index8) {
     b->safe = 1;
     b->back = 1;
     b->fresh = 2;
-    b->c2p_kind = desk_aga_c2p_pick(SysBase->AttnFlags);
+    b->c2p_kind = desk_aga_c2p_pick(SysBase->AttnFlags, (uint32_t)(w / 8) * (uint32_t)h);
     return b;
 }
 

@@ -37,7 +37,10 @@ void desk_aga_c2p_ref(const uint8_t* chunky, int32_t w, int32_t y, int32_t rows,
 /* I574: the c2p for a CPU, from exec's AttnFlags (AFF_68020 bit 1, AFF_68030 bit 2, AFF_68040 bit 3, AFF_68060 bit 7):
  * Kalms' 040 routine on a 68040/060, his 030 routine on a 68020/030 (DESK_AGA_C2P_* of backend_aga.h). The C reference
  * is only for a CPU below the 68020; on a 68020 it took 16 s per 640x256 frame, which froze the pointer. */
-uint32_t desk_aga_c2p_pick(uint32_t attn_flags);
+#define DESK_AGA_C2P_030_MAX_BPLSIZE 16384u
+/* I580: the 030 routine only while one plane (bplsize bytes) fits its 16 KB limit; a larger screen (640x256 is 20480
+ * bytes a plane) gets the 040 routine on a 68020/030 too. */
+uint32_t desk_aga_c2p_pick(uint32_t attn_flags, uint32_t bplsize);
 /* Inverse: planes of a w x h screen back to a chunky buffer (frame dumps and tests). */
 void desk_aga_p2c_ref(const uint8_t* planes, uint32_t bplsize, int32_t w, int32_t h, uint8_t* chunky);
 

@@ -142,15 +142,28 @@ static void test_pick_size(void) {
 /* I574: a 68020 (rig 2, the A1200) gets Kalms' 030 c2p; the C reference there took 16 s per 640x256 frame and froze
  * the pointer. 68040/060 keep the 040 routine; only a 68000/010 falls back to the reference. */
 static void test_c2p_pick(void) {
-    CHECK(desk_aga_c2p_pick(1u << 1) == 2u);                         /* 68020 */
-    CHECK(desk_aga_c2p_pick((1u << 1) | (1u << 2)) == 2u);           /* 68030 */
-    CHECK(desk_aga_c2p_pick((1u << 1) | (1u << 2) | (1u << 3)) == 1u); /* 68040 */
-    CHECK(desk_aga_c2p_pick((1u << 3) | (1u << 7)) == 1u);           /* 68060 */
-    CHECK(desk_aga_c2p_pick(0u) == 0u);                              /* 68000 */
+    const uint32_t lo = 320u / 8u * 200u; /* 8000 bytes a plane: inside the 030 routine's 16 KB */
+    CHECK(desk_aga_c2p_pick(1u << 1, lo) == 2u);                         /* 68020 */
+    CHECK(desk_aga_c2p_pick((1u << 1) | (1u << 2), lo) == 2u);           /* 68030 */
+    CHECK(desk_aga_c2p_pick((1u << 1) | (1u << 2) | (1u << 3), lo) == 1u); /* 68040 */
+    CHECK(desk_aga_c2p_pick((1u << 3) | (1u << 7), lo) == 1u);           /* 68060 */
+    CHECK(desk_aga_c2p_pick(0u, lo) == 0u);                              /* 68000 */
+    CHECK(desk_aga_c2p_pick(1u << 1, 16384u) == 2u);
+}
+
+/* I580: the 030 routine's 16-bit plane displacements wrap above 16 KB a plane. The 640x256 desktop (20480 bytes a
+ * plane, Johan's flat blue background on rig 2) must get the 040 routine on a 68020/030. */
+static void test_c2p_pick_large_planes(void) {
+    const uint32_t big = 640u / 8u * 256u;
+    CHECK(desk_aga_c2p_pick(1u << 1, big) == 1u);                 /* 68020 */
+    CHECK(desk_aga_c2p_pick((1u << 1) | (1u << 2), big) == 1u);   /* 68030 */
+    CHECK(desk_aga_c2p_pick(1u << 1, 640u / 8u * 200u) == 2u);    /* 640x200: 16000 bytes still fits */
+    CHECK(desk_aga_c2p_pick(1u << 1, 16385u) == 1u);
 }
 
 int main(void) {
     test_c2p_pick();
+    test_c2p_pick_large_planes();
     test_pick_size();
     test_bit_layout();
     test_round_trip_and_bands();

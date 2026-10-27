@@ -116,10 +116,15 @@ void desk_aga_c2p_ref(const uint8_t* chunky, int32_t w, int32_t y, int32_t rows,
     }
 }
 
-uint32_t desk_aga_c2p_pick(uint32_t attn_flags) {
+uint32_t desk_aga_c2p_pick(uint32_t attn_flags, uint32_t bplsize) {
     if (attn_flags & ((1u << 3) | (1u << 7))) return 1u; /* DESK_AGA_C2P_KALMS_040 */
-    if (attn_flags & ((1u << 1) | (1u << 2))) return 2u; /* DESK_AGA_C2P_KALMS_030 */
-    return 0u;                                         /* DESK_AGA_C2P_REF */
+    if (attn_flags & ((1u << 1) | (1u << 2))) {
+        /* The 030 routine addresses the planes with 16-bit displacements patched from bplsize (BPLSIZE*2(a1),
+         * -BPLSIZE-4(a1)); its header limits bplsize to 16 KB. A 640x256 plane is 20480 bytes, so BPLSIZE*2 wraps to
+         * -24576 and planes 2 and up land before the buffer. The 040 routine keeps long deltas and runs on any 68020. */
+        return bplsize <= DESK_AGA_C2P_030_MAX_BPLSIZE ? 2u /* DESK_AGA_C2P_KALMS_030 */ : 1u;
+    }
+    return 0u; /* DESK_AGA_C2P_REF */
 }
 
 void desk_aga_p2c_ref(const uint8_t* planes, uint32_t bplsize, int32_t w, int32_t h, uint8_t* chunky) {
