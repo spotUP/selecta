@@ -15,6 +15,7 @@
 #include <selecta/gui/gui_widget.h>
 #include <selecta/gui/gui_input.h>
 #include <selecta/uimodel/cmdline.h>
+#include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/keybind.h>
 #include <selecta/uimodel/keys.h>
 #include <selecta/uimodel/palette.h>
@@ -73,7 +74,7 @@ static const int g_icon_sizes[DESK_ICON_SIZES] = {16, 20, 24, 32};
 typedef enum { PG_HOME, PG_SEARCH, PG_LIBRARY, PG_PLAYLISTS, PG_QUEUE, PG_NOWPLAYING, PG_SONGS, PG_SONGINFO, PG_VIZ, PG_TRACKER, PG_COUNT } desk_page;
 static const char* const g_page_name[PG_COUNT] = {"home", "search", "library", "playlists", "queue", "nowplaying", "songs", "songinfo", "viz", "tracker"};
 /* The sidebar doors in order: Spotify's Home, Search and Your Library, then Playlists, Queue and Now Playing. */
-#define DOOR_COUNT 7u
+#define DOOR_COUNT SEL_UIM_DOOR_COUNT
 /* Capacity of the hover hit-test list (I345). Worst case on one page: the Songs rows at SONG_ROW_H 32 px in a 4K tall main
  * region (2160 / 32 = 67.5 -> 68 rows, plus one row half scrolled out = 69), 7 doors, 8 transport buttons and 16 chips,
  * tabs and page buttons: 69 + 7 + 8 + 16 = 100, rounded up to 128. Library rows at 48 px need 46, queue and playlist rows
@@ -5888,14 +5889,20 @@ static int32_t desk_button_at(const desk* d, int32_t x, int32_t y) {
 
 /* The sidebar doors (DUI-P4-1, I262): an icon and a label per page, one row each under the brand. The icon-only breakpoint
  * (a narrow sidebar) draws the icons alone. door_page maps a door to the page it opens. */
-static const struct {
-    uint32_t icon;
-    const char* label;
-    desk_page page;
-} g_doors[DOOR_COUNT] = {{SEL_GUI_ICON_HOUSE, "Home", PG_HOME},          {SEL_GUI_ICON_SEARCH, "Search", PG_SEARCH},
-                         {SEL_GUI_ICON_LIBRARY, "Your Library", PG_LIBRARY}, {SEL_GUI_ICON_DISC, "Playlists", PG_PLAYLISTS},
-                         {SEL_GUI_ICON_LIST, "Queue", PG_QUEUE},          {SEL_GUI_ICON_MUSIC, "Now Playing", PG_NOWPLAYING},
-                         {SEL_GUI_ICON_USER, "Song Information", PG_SONGINFO}};
+static const uint32_t g_door_icon[DOOR_COUNT] = {SEL_GUI_ICON_HOUSE, SEL_GUI_ICON_SEARCH, SEL_GUI_ICON_LIBRARY, SEL_GUI_ICON_DISC,
+                                                  SEL_GUI_ICON_LIST,  SEL_GUI_ICON_MUSIC,  SEL_GUI_ICON_USER};
+
+/* Door i's page: the shared table (MUI-P4-0) names it, g_page_name maps the name to this UI's enum. */
+static desk_page door_page(uint32_t i) {
+    const sel_uim_door* dr = sel_uim_door_at(i);
+    uint32_t p;
+    for (p = 0; dr != NULL && p < PG_COUNT; p++) {
+        if (strcmp(g_page_name[p], dr->page) == 0) {
+            return (desk_page)p;
+        }
+    }
+    return PG_HOME;
+}
 
 /* The row of door i, shared by the drawing and the click: the panel inset of draw_panel, the brand, then the rows. */
 static sel_gui_rect sidebar_door_rect(const desk* d, uint32_t i) {
@@ -5937,7 +5944,7 @@ static void draw_sidebar(desk* d) {
     for (i = 0; i < DOOR_COUNT; i++, y += row) {
         sel_gui_rect r = sidebar_door_rect(d, i);
         sel_gui_rect ic = rect_of(r.x + pad, y + (row - isz) / 2, isz, isz);
-        int here = g_doors[i].page == d->page;
+        int here = door_page(i) == d->page;
         uint32_t ink = ARGB(d->theme.token[here ? SEL_GUI_TOKEN_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]);
         if (here) { /* the current page: a raised row behind it */
             d->lit_doors |= 1u << i;
@@ -5946,9 +5953,9 @@ static void draw_sidebar(desk* d) {
         } else { /* another door: no background, its ink fades up as the pointer enters and back down as it leaves (I346) */
             ink = hover_ink_of(d, r, ink, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
         }
-        sel_gui_icon_draw(d->canvas, &d->icons, g_doors[i].icon, ic, isz, ink);
+        sel_gui_icon_draw(d->canvas, &d->icons, g_door_icon[i], ic, isz, ink);
         if (sb.w > lpx(d, 120)) {
-            draw_text(d, rect_of(ic.x + isz + lab, y, r.x + r.w - (ic.x + isz + lab), row), g_doors[i].label, 1, 15, ink);
+            draw_text(d, rect_of(ic.x + isz + lab, y, r.x + r.w - (ic.x + isz + lab), row), sel_uim_door_at(i)->label, 1, 15, ink);
         }
         sel_gui_dirty_add(d->canvas, r);
         d->frame_parts++;
@@ -6428,7 +6435,7 @@ static void desk_tip_tick(desk* d) {
     } else if (d->tip_btn > (int32_t)(TRANSPORT_COUNT + DOOR_COUNT)) { /* a Library style segment */
         snprintf(d->tip_text, sizeof d->tip_text, "%s", lib_style_name[d->tip_btn - 1 - (int32_t)(TRANSPORT_COUNT + DOOR_COUNT)]);
     } else if (d->tip_btn > (int32_t)TRANSPORT_COUNT) { /* a rail door: its full label */
-        snprintf(d->tip_text, sizeof d->tip_text, "%s", g_doors[d->tip_btn - 1 - (int32_t)TRANSPORT_COUNT].label);
+        snprintf(d->tip_text, sizeof d->tip_text, "%s", sel_uim_door_at((uint32_t)(d->tip_btn - 1 - (int32_t)TRANSPORT_COUNT))->label);
     } else {
         a = desk_action_by_id(desk_slot_action(d, (uint32_t)d->tip_btn - 1u));
         if (a == NULL) {
@@ -7406,7 +7413,7 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         int32_t door = sidebar_door_at(d, ev->x, ev->y);
         if (door >= 0) {
             d->nav_clicks++;
-            return desk_page_goto(d, g_doors[door].page);
+            return desk_page_goto(d, door_page((uint32_t)door));
         }
     }
     if (ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u && in_main && library_click(d, ev->x, ev->y)) { /* the Library page */
