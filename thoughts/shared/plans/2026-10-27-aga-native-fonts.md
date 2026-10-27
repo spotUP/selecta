@@ -1,7 +1,7 @@
 ---
 date: 2026-10-27
 author: spot
-status: draft
+status: approved
 ledger: I526
 design_section: thoughts/shared/plans/2026-10-22-architecture-design.md section 12 (runtime machine scaling, planar tier) and M3d/M4 (one src/gui library, AGA backend, D-M4-5, D-M4-6); D-M4-3 (Amiga UIs full screen by default); desktop UI plan 2026-10-24-desktop-ui.md Q14 (640x256 is the AGA design target)
 ---
@@ -142,7 +142,9 @@ Checklist IDs I526-P1 .. I526-P5. Test runs follow 6a-1 (nice 19, 2 workers, aff
   I526 native fonts"), check the same stats line through the amiga MCP, then Johan reads every label on Home and
   Library (ledger acceptance).
 
-## 5. Open decisions for Johan
+## 5. Decisions (Johan, 2026-10-27: D1-D6 all as recommended)
+
+Answered: D1 labelled rail 160; D2 no synthetic bold; D3 keep row metrics, tighten after the rig 2 check; D4 640x512 out of scope; D5 6-row fonts are fallback only; D6 reserve 6 palette entries for headline shades. The options below are kept for the record.
 
 - **D1 Rail at 640 wide.** (Recommended) labelled rail 160 layout units with mini8 labels: "Song Information" (16
   chars x 8 = 128) fits beside the icon; main column 480. Alternative: icon-only rail 56 (exists today,
