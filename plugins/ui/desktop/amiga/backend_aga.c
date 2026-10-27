@@ -96,9 +96,24 @@ uint32_t desk_aga_ticks(void) {
 /* The mode of the screen: Selecta's own PAL/NTSC HIRES (640 wide) or LORES (320 wide), never Workbench's. The
  * Workbench mode is irrelevant: an RTG Workbench (rig 2: Picasso96 800x600) must not leak its size or its mode here,
  * a planar screen of that size cannot be displayed by the chipset and shows black. desk_aga_pick_size holds the rule. */
+static void max_overscan(int ntsc, int32_t rect[4]) {
+    struct Rectangle r;
+    ULONG hires = (ntsc ? NTSC_MONITOR_ID : PAL_MONITOR_ID) | HIRES_KEY;
+    rect[0] = rect[1] = rect[2] = rect[3] = 0;
+    if (QueryOverscan(hires, &r, OSCAN_MAX)) {
+        rect[0] = r.MinX;
+        rect[1] = r.MinY;
+        rect[2] = r.MaxX;
+        rect[3] = r.MaxY;
+    }
+}
+
 static ULONG pick_mode(int32_t* w, int32_t* h) {
     int ntsc = (GfxBase->DisplayFlags & NTSC) != 0;
-    int hires = desk_aga_pick_size(w, h, ntsc);
+    int32_t mr[4];
+    int hires;
+    max_overscan(ntsc, mr);
+    hires = desk_aga_pick_size(w, h, ntsc, mr[2] - mr[0] + 1, mr[3] - mr[1] + 1);
     ULONG mode;
     if (hires < 0) return AGA_NO_MODE;
     mode = (ntsc ? NTSC_MONITOR_ID : PAL_MONITOR_ID) | (hires ? HIRES_KEY : LORES_KEY);
@@ -109,7 +124,12 @@ void desk_aga_default_size(int32_t* w, int32_t* h) {
     *w = 0;
     *h = 0;
     GfxBase = (struct GfxBase*)OpenLibrary((CONST_STRPTR) "graphics.library", 39);
-    (void)desk_aga_pick_size(w, h, GfxBase != NULL && (GfxBase->DisplayFlags & NTSC) != 0);
+    if (GfxBase != NULL) {
+        int ntsc = (GfxBase->DisplayFlags & NTSC) != 0;
+        int32_t mr[4];
+        max_overscan(ntsc, mr);
+        (void)desk_aga_pick_size(w, h, ntsc, mr[2] - mr[0] + 1, mr[3] - mr[1] + 1);
+    }
     if (GfxBase != NULL) CloseLibrary((struct Library*)GfxBase);
     GfxBase = NULL;
 }
@@ -155,9 +175,21 @@ desk_aga* desk_aga_open(int32_t w, int32_t h, int index8) {
         for (p = 0; p < 8; p++) b->bm[i].Planes[p] = (PLANEPTR)(b->buf[i] + (size_t)p * (bytes / 8u));
     }
     {
+        /* I566: a screen larger than the standard 640 x lines is the overscan fit: its display clip sits centred in the
+         * OSCAN_MAX area, otherwise the clip stays the standard one and the rest of the display is border. */
+        int32_t mr[4], dc[4];
+        struct Rectangle clip;
+        int fit = w > 640 || h > ((GfxBase->DisplayFlags & NTSC) ? 200 : 256);
+        max_overscan((GfxBase->DisplayFlags & NTSC) != 0, mr);
+        desk_aga_fit_clip(mr, w, h, dc);
+        clip.MinX = (WORD)dc[0];
+        clip.MinY = (WORD)dc[1];
+        clip.MaxX = (WORD)dc[2];
+        clip.MaxY = (WORD)dc[3];
         struct TagItem st[] = {{SA_Width, (ULONG)w}, {SA_Height, (ULONG)h}, {SA_Depth, 8},
                                {SA_DisplayID, mode}, {SA_BitMap, (ULONG)&b->bm[0]}, {SA_Quiet, TRUE},
                                {SA_ShowTitle, FALSE}, {SA_Type, CUSTOMSCREEN}, {SA_Exclusive, TRUE},
+                               {fit ? SA_DClip : TAG_IGNORE, (ULONG)&clip},
                                {SA_Title, (ULONG) "Selecta"}, {TAG_DONE, 0}};
         b->screen = OpenScreenTagList(NULL, st);
     }
@@ -244,10 +276,11 @@ static void copper_install(desk_aga* b, const sel_gui_copper_change* ch, uint32_
     struct UCopList* old;
     uint32_t i, k;
     int32_t last_v = -1;
-    if (n > 0u) {
+    { /* I566: the list always exists, even with no gradient pens: it carries the border blank */
         nl = (struct UCopList*)AllocMem(sizeof *nl, MEMF_PUBLIC | MEMF_CLEAR);
         if (nl == NULL) return;
-        CINIT(nl, (UWORD)(n * 5u + 4u));
+        CINIT(nl, (UWORD)(n * 5u + 6u));
+        CMOVE(nl, *(volatile UWORD*)(0xDFF106u), (WORD)DESK_AGA_BPLCON3);
         for (i = 0; i < n; i++) {
             uint32_t regs[4][2];
             int32_t v = b->h > 300 ? ch[i].y / 2 : ch[i].y;
@@ -260,7 +293,7 @@ static void copper_install(desk_aga* b, const sel_gui_copper_change* ch, uint32_
                 CMOVE(nl, *(volatile UWORD*)(0xDFF000u + regs[k][0]), (WORD)regs[k][1]);
             }
         }
-        CMOVE(nl, *(volatile UWORD*)(0xDFF106u), (WORD)0x0C00);
+        CMOVE(nl, *(volatile UWORD*)(0xDFF106u), (WORD)DESK_AGA_BPLCON3);
         CEND(nl);
     }
     Forbid();
@@ -292,7 +325,7 @@ void desk_aga_present(desk_aga* b, const sel_gui_canvas* c) {
     if (c->copper_pens > 0u) {
         sel_gui_copper_change ch[AGA_COPPER_MAX];
         uint32_t nc = sel_gui_copper_changes(c, ch, AGA_COPPER_MAX);
-        if (nc != b->cop_n || memcmp(ch, b->cop, nc * sizeof ch[0]) != 0) copper_install(b, ch, nc);
+        if (b->cop_installs == 0u || nc != b->cop_n || memcmp(ch, b->cop, nc * sizeof ch[0]) != 0) copper_install(b, ch, nc);
     }
     if (b->fresh > 0) {
         now[0].y = 0;

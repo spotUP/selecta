@@ -67,6 +67,18 @@ int desk_aga_mode_is_native(uint32_t mode_id);
 /* The AGA screen is Selecta's own, whatever Workbench runs: 640x256 PAL HIRES (640x200 on NTSC) by default, or
  * 320x256 PAL LORES (320x200 NTSC) when asked (Johan 2026-10-27; an 800x600 or interlaced screen is never opened).
  * Fills w and h when either is <= 0. Returns 1 for HIRES, 0 for LORES, -1 when the asked size is neither. */
-int desk_aga_pick_size(int32_t* w, int32_t* h, int ntsc);
+int desk_aga_pick_size(int32_t* w, int32_t* h, int ntsc, int32_t max_w, int32_t max_h);
+
+/* I566: BPLCON3 of every copper write Selecta makes: SPRES bits, BRDRBLNK (0x20) so the border outside the bitplane
+ * window is black. Without it the border shows COLOR00, which the desktop palette holds as the accent blue. */
+#define DESK_AGA_BPLCON3 0x0C20u
+
+/* I566: the screen fills the visible area. max_w x max_h is what QueryOverscan(OSCAN_MAX) reports for the HIRES mode;
+ * the canvas takes it rounded to what the c2p needs (width a multiple of 32, height a multiple of 8). A mode that
+ * offers less than the standard 640 x lines gets the standard size. */
+void desk_aga_fit_size(int32_t max_w, int32_t max_h, int ntsc, int32_t* w, int32_t* h);
+
+/* The DClip rectangle (left, top, right, bottom, inclusive) of a w x h screen centred inside the OSCAN_MAX rectangle. */
+void desk_aga_fit_clip(const int32_t max_rect[4], int32_t w, int32_t h, int32_t out[4]);
 
 #endif

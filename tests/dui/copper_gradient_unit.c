@@ -103,7 +103,7 @@ int main(void) {
     {
         uint32_t r[4][2];
         desk_aga_copper_regs(255u, 0xFF0A64u, r);
-        CHECK(r[0][0] == 0x106u && r[0][1] == (0x0C00u | (7u << 13)));
+        CHECK(r[0][0] == 0x106u && r[0][1] == (0x0C20u | (7u << 13)));
         CHECK(r[1][0] == 0x180u + 62u && r[1][1] == 0xF06u);
         CHECK(r[2][1] == (r[0][1] | 0x200u));
         CHECK(r[3][0] == r[1][0] && r[3][1] == 0xFA4u);

@@ -158,7 +158,7 @@ void desk_aga_rgb32_table(const uint32_t* rgb, uint32_t first, uint32_t n, uint3
 
 void desk_aga_copper_regs(uint32_t pen, uint32_t rgb, uint32_t out[4][2]) {
     uint32_t r = (rgb >> 16) & 255u, g = (rgb >> 8) & 255u, b = rgb & 255u;
-    uint32_t bplcon3 = 0x0C00u | ((pen >> 5) << 13), reg = 0x180u + 2u * (pen & 31u);
+    uint32_t bplcon3 = DESK_AGA_BPLCON3 | ((pen >> 5) << 13), reg = 0x180u + 2u * (pen & 31u);
     out[0][0] = 0x106u;
     out[0][1] = bplcon3;
     out[1][0] = reg;
@@ -173,14 +173,28 @@ int desk_aga_mode_is_native(uint32_t mode_id) {
     return mode_id != 0xFFFFFFFFu && (mode_id & 0xFFF00000u) == 0u;
 }
 
-int desk_aga_pick_size(int32_t* w, int32_t* h, int ntsc) {
+void desk_aga_fit_size(int32_t max_w, int32_t max_h, int ntsc, int32_t* w, int32_t* h) {
     int32_t lines = ntsc ? 200 : 256;
+    int32_t fw = max_w & ~31, fh = max_h & ~7;
+    *w = fw >= 640 ? fw : 640;
+    *h = fh >= lines ? fh : lines;
+}
+
+void desk_aga_fit_clip(const int32_t max_rect[4], int32_t w, int32_t h, int32_t out[4]) {
+    out[0] = max_rect[0] + ((max_rect[2] - max_rect[0] + 1) - w) / 2;
+    out[1] = max_rect[1] + ((max_rect[3] - max_rect[1] + 1) - h) / 2;
+    out[2] = out[0] + w - 1;
+    out[3] = out[1] + h - 1;
+}
+
+int desk_aga_pick_size(int32_t* w, int32_t* h, int ntsc, int32_t max_w, int32_t max_h) {
+    int32_t lines = ntsc ? 200 : 256, fw, fh;
+    desk_aga_fit_size(max_w, max_h, ntsc, &fw, &fh);
     if (*w <= 0 || *h <= 0) {
-        *w = 640;
-        *h = lines;
+        *w = fw;
+        *h = fh;
     }
-    if (*h != lines) return -1;
-    if (*w == 640) return 1;
-    if (*w == 320) return 0;
+    if (*h == lines && *w == 320) return 0;
+    if ((*h == lines && *w == 640) || (*h == fh && *w == fw)) return 1;
     return -1;
 }

@@ -121,22 +121,52 @@ static void test_budget_and_palette(void) {
 /* I441: the AGA screen size never comes from Workbench: 640x256 by default, 320x256 on request, nothing else. */
 static void test_pick_size(void) {
     int32_t w = 0, h = 0;
-    CHECK(desk_aga_pick_size(&w, &h, 0) == 1 && w == 640 && h == 256);
+    CHECK(desk_aga_pick_size(&w, &h, 0, 0, 0) == 1 && w == 640 && h == 256);
     w = 0;
     h = 0;
-    CHECK(desk_aga_pick_size(&w, &h, 1) == 1 && w == 640 && h == 200);
+    CHECK(desk_aga_pick_size(&w, &h, 1, 0, 0) == 1 && w == 640 && h == 200);
     w = 320;
     h = 256;
-    CHECK(desk_aga_pick_size(&w, &h, 0) == 0 && w == 320 && h == 256);
+    CHECK(desk_aga_pick_size(&w, &h, 0, 0, 0) == 0 && w == 320 && h == 256);
     w = 800;
     h = 600;
-    CHECK(desk_aga_pick_size(&w, &h, 0) == -1); /* the RTG Workbench size of rig 2 */
+    CHECK(desk_aga_pick_size(&w, &h, 0, 0, 0) == -1); /* the RTG Workbench size of rig 2 */
     w = 640;
     h = 512;
-    CHECK(desk_aga_pick_size(&w, &h, 0) == -1); /* no interlace */
+    CHECK(desk_aga_pick_size(&w, &h, 0, 0, 0) == -1); /* no interlace */
     w = 1280;
     h = 800;
-    CHECK(desk_aga_pick_size(&w, &h, 0) == -1); /* the sdl default */
+    CHECK(desk_aga_pick_size(&w, &h, 0, 0, 0) == -1); /* the sdl default */
+}
+
+/* I566: the blue border. The desktop palette holds the accent blue in pen 0, which is COLOR00, which is what the border
+ * shows. Every copper write sets BRDRBLNK (BPLCON3 bit 5) so the border is black. */
+static void test_border_blank(void) {
+    uint32_t r[4][2];
+    desk_aga_copper_regs(253u, 0x123456u, r);
+    CHECK(r[0][0] == 0x106u && (r[0][1] & 0x20u) != 0u);
+    CHECK(r[2][0] == 0x106u && (r[2][1] & 0x20u) != 0u);
+    CHECK((DESK_AGA_BPLCON3 & 0x20u) != 0u);
+}
+
+/* I566: the app fills the visible display. rig 2 (PAL): QueryOverscan(OSCAN_MAX) = -72,-15 to 651,267 = 724 x 283. */
+static void test_overscan_fit(void) {
+    int32_t w = 0, h = 0, rect[4] = {-72, -15, 651, 267}, clip[4];
+    CHECK(desk_aga_pick_size(&w, &h, 0, 724, 283) == 1 && w == 704 && h == 280);
+    w = 640;
+    h = 256;
+    CHECK(desk_aga_pick_size(&w, &h, 0, 724, 283) == 1); /* the standard size stays valid */
+    w = 704;
+    h = 280;
+    CHECK(desk_aga_pick_size(&w, &h, 0, 724, 283) == 1);
+    w = 0;
+    h = 0;
+    CHECK(desk_aga_pick_size(&w, &h, 0, 0, 0) == 1 && w == 640 && h == 256); /* no overscan info */
+    w = 0;
+    h = 0;
+    CHECK(desk_aga_pick_size(&w, &h, 1, 724, 241) == 1 && w == 704 && h == 240); /* NTSC */
+    desk_aga_fit_clip(rect, 704, 280, clip);
+    CHECK(clip[0] == -62 && clip[2] == 641 && clip[1] == -14 && clip[3] == 265);
 }
 
 /* I574: a 68020 (rig 2, the A1200) gets Kalms' 030 c2p; the C reference there took 16 s per 640x256 frame and froze
@@ -165,6 +195,8 @@ int main(void) {
     test_c2p_pick();
     test_c2p_pick_large_planes();
     test_pick_size();
+    test_border_blank();
+    test_overscan_fit();
     test_bit_layout();
     test_round_trip_and_bands();
     test_bands();
