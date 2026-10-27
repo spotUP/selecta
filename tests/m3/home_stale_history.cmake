@@ -3,7 +3,7 @@
 #   -DKEYS=<keys> -DCWD=<dir holding selecta-test.mod> -DWORK=<dir>
 # history.sel writes a finished play and a skip through the engine. sqlite3 then empties the songs table, as a cleared
 # library does, and leaves history alone. The real selecta binary opens that file and key H shows the home view:
-# home_rows must be 0. A LEFT JOIN from history to songs lists the leftover keys as raw-path rows instead.
+# home_rows must be 0. Stream keys (no songs row, not local:) added after that must show. A LEFT JOIN from history to songs lists the leftover keys as raw-path rows instead.
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
 set(db "${WORK}/h.db")
@@ -39,5 +39,26 @@ if(NOT out MATCHES "home_rows=([0-9]+)")
 endif()
 if(NOT CMAKE_MATCH_1 EQUAL 0)
   message(FATAL_ERROR "home_rows=${CMAKE_MATCH_1} with ${stale} stale history keys and no songs, want 0")
+endif()
+# Streams and other sources (no songs row, key is not local:<path>) still show: one finished play, one skip.
+set(ins "INSERT INTO history(key, played_at, duration_ms, skipped) VALUES ('modland:Protracker/Jester/test.mod', 1700000000, 1000, 0), ('http://example.org/radio', 1700000100, 500, 1); SELECT COUNT(*) FROM history;")
+sql("${ins}" total)
+execute_process(
+  COMMAND "${SELECTA}" --output null --size 80x25 --start-dir "${CWD}" --db "${db}"
+          --keys "${KEYS}" --screen-dump "${WORK}/home2.txt"
+  WORKING_DIRECTORY "${CWD}" OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "selecta exited ${rc}\nstdout:\n${out}\nstderr:\n${err}")
+endif()
+if(NOT out MATCHES "home_rows=([0-9]+)")
+  message(FATAL_ERROR "no home_rows= sentinel in:\n${out}")
+endif()
+# Recently played lists the two stream keys and Jump back in the skipped one (plus section headers); stale library keys add none.
+if(CMAKE_MATCH_1 LESS 3)
+  message(FATAL_ERROR "home_rows=${CMAKE_MATCH_1} with a Modland key and a stream key in history, want the stream rows listed")
+endif()
+file(READ "${WORK}/home2.txt" dump)
+if(NOT dump MATCHES "test.mod" OR NOT dump MATCHES "radio")
+  message(FATAL_ERROR "stream rows missing from home screen:\n${dump}")
 endif()
 message(STATUS "home_stale_history_ok")
