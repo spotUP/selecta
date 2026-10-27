@@ -32,3 +32,14 @@ Updated once with SELECTA_GOLDEN_UPDATE=1: 13 hashes (11 index8 views plus testc
 - desk_font role path bypasses the per-token atlas cache: counters count lookups, not unique atlases.
 - No `lint` target in build/host; type-check = the build, clean.
 - Per-row library text ink (at most 8 rows) not asserted.
+
+## P5 gap closure
+
+Test: tests/dui/aga_native_text.cmake (dui-aga-native-text), passes. 2 of 4 gaps closed, 1 closed without a code change, 1 open.
+
+- G1 (bitmap_hits_mini4 > 0): OPEN, not asserted. Tried the now-playing view with `OPEN` and `OPEN` + `PLAY` + `wait 200` (status=Playing): mini4 stays 0. Cause: at 640x512 the bitmap tier has only the sidebar, main and player regions, so the "detail" region draw_nowplaying needs (key labels, "Next in Queue", desktop_ui.c ~6156-6204) is never drawn, and `st.caption = desk_font(d, 0, 11)` (line 1089) is looked up before the tier is on, so it never counts. Remaining mini4 users: the subsong "n/m" label (6274, needs a multi-subsong song) and the "1" badge (6331); the caption of gui_widget.c 231/288/406 is not reached by these views. Needs a view that draws one of those or a product decision on the detail region at this tier.
+- G2 (font_misses=0): font_misses is not a ui_stats key, so a dui_stat assert is impossible. It is printed on the `np_page_text ... font_misses=N` line of every run; the existing check matched "font_misses=0" anywhere, now anchored to that line (`np_page_text [^\n]*font_misses=0\n`). The plan item was already met in substance; now exact.
+- G3 (library row ink <= 8 rows, pitch 8): DONE. No existing printed row geometry, so no new flag: the row is the first ink band at frame rows 96..219 (below the statistics strip, above the player region at layout row 440 = frame row 220). Measured: ink rows 106..113 = 8 rows. Pitch: 7 of the 8 column offsets (from the first ink column) carry ink (0-5 and 7), offset 6 is blank in every cell; a different pitch fills all 8 offsets. The row-start row 96 is a literal derived from the layout constants (title 24+40, tab 32, strip 48, halved).
+- G4 (title cap 11 to 16): DONE. Ink of the first glyph run of "Library" (the capital L, columns 190..205) measured rows 17..28 = 12 rows, asserted 11 to 16 (no widening).
+
+Revert results: forcing desk_bitmap_text to 0 was not run on its own (the stats and layout asserts fail first, as before). Disabling only the role lookup in desk_font (`if (0 && desk_bitmap_text(d))`) fails the test at the bitmap_hits_mini6 assert (library: bitmap_hits_mini6=0). The PPM asserts G3/G4 were NOT shown to fail on their own cause: with the role lookup off the dump still gives cap L = 12 rows (the headline falls back to the same baked Inter 32), so G4 does not discriminate that revert; the G3 numbers on the reverted run were not measured (budget). Treat G3/G4 revert-sensitivity as unproven. Code restored (git checkout of desktop_ui.c), binary rebuilt, test green.
