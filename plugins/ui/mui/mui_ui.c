@@ -23,6 +23,7 @@
 #include <proto/intuition.h>
 #include <proto/muimaster.h>
 struct Library* MUIMasterBase;
+#include "mui_canvas_class.h"
 #define SEL_MAKE_ID(a, b, c, d) (((ULONG)(a) << 24) | ((ULONG)(b) << 16) | ((ULONG)(c) << 8) | (ULONG)(d))
 
 /* The SDK's sfdc inline MUI_NewObject is a function-like macro; the SDK's ApplicationObject/End idiom nests object-like
@@ -54,6 +55,7 @@ typedef struct mui_state {
     Object* slot[MUI_SLOT_COUNT];   /* the five layout regions, created once, shown or hidden */
     Object* balance[2];             /* sidebar|main and main|detail */
     mui_layout_map_t lay;
+    Object* canvas;                 /* MUI-P5-1 Selecta_Canvas, NULL when MUI refused the class */
     Object* btn[MUI_BTN_COUNT];     /* MUI-P2-5 transport buttons */
     const char* btn_label[MUI_BTN_COUNT];
     Object* seek;
@@ -264,6 +266,14 @@ static Object* mui_main_group(mui_state* s) {
     DoMethod(s->list, MUIM_Notify, MUIA_List_Active, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_SEL);
     s->list_active_set = -1;
     DoMethod(g, OM_ADDMEMBER, s->listview);
+    /* MUI-P5-1: the canvas object sits beside the list, hidden until the style switch (MUI-P3-5) shows it. */
+    {
+        static const mui_grid_style grid = {0xFF101010u, 0xFF303030u, 0xFFFFA000u, 96, 8, 8};
+        s->canvas = mui_canvas_new(&grid, 1);
+        if (s->canvas != NULL) {
+            DoMethod(g, OM_ADDMEMBER, s->canvas);
+        }
+    }
     return g;
 }
 
@@ -518,6 +528,8 @@ static void mui_close(void* state) {
         MUI_DisposeObject(s->app); /* closes the window and frees the children */
         s->app = NULL;
         s->win = NULL;
+        s->canvas = NULL;
+        mui_canvas_class_free();
     }
     if (MUIMasterBase != NULL) {
         CloseLibrary(MUIMasterBase);
