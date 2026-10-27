@@ -167,7 +167,8 @@
 #define SEL_DEFERRED_PATH_MAX 1024u
 #define SEL_ERROR_DETAIL_MAX 64
 #define SEL_LOG_LINE_MAX 96
-#define SEL_SYNC_QUEUE 4u /* LIBRARY_SYNCs waiting behind the running sync or scan (I527) */
+#define SEL_SYNC_QUEUE SEL_SOURCE_MAX /* LIBRARY_SYNCs waiting behind the running sync or scan (I527): one per source,
+                                       * so the sync-all banner never loses a source to sync_busy */
 #define SEL_SCAN_QUEUE 8u /* LIBRARY_SCAN roots waiting behind the running scan (I506) */
 
 /* Events coalesced inside a batch: the latest value wins, emitted at END. */

@@ -9,6 +9,7 @@
 SEL_EXTERN_C_BEGIN
 
 #define SEL_SOURCE_ID_MAX 16u   /* longest source id incl. NUL */
+#define SEL_SOURCE_MAX 16u      /* most sources the registry holds */
 
 /* Receives one catalogue row of a full listing (path, size, md5 or NULL, format, artist). */
 typedef struct sel_listing_sink {

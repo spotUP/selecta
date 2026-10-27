@@ -3,7 +3,8 @@
  * blocks until the test releases it stands in for the network. Through the real entry point (message in, pump) the test
  * proves: the pump returns many times while the sync is still running (sentinel: g_in_sync set, g_done clear), a second
  * LIBRARY_SYNC and a LIBRARY_SCAN that arrive meanwhile queue instead of failing, no LIBRARY_RESULT arrives before the
- * release, and both syncs have run after it. With the old inline cmd_LIBRARY_SYNC the first pump does not return until
+ * release, and every queued sync has run after it, also when more than 4 queue (one per source, as the sync-all
+ * banner sends them). With the old inline cmd_LIBRARY_SYNC the first pump does not return until
  * the sync ended (its own 3 s safety timeout), so g_in_sync/g_done are already set and the test fails. */
 #include <selecta/engine.h>
 #include <selecta/host.h>
@@ -55,7 +56,7 @@ static const sel_source g_src = {
     NULL, NULL, NULL, NULL, NULL, NULL, NULL, blocking_sync, SEL_SOURCE_SYNCS, NULL,
 };
 
-static unsigned g_results, g_errors;
+static unsigned g_results, g_errors, g_busy;
 
 static void sink(void* ctx, const sel_message* evt) {
     (void)ctx;
@@ -63,6 +64,7 @@ static void sink(void* ctx, const sel_message* evt) {
         g_results++;
     } else if (evt->id == SEL_EVT_ERROR) {
         g_errors++;
+        g_busy += evt->argc > 0 && strcmp(evt->args[0].v.s, "sync_busy") == 0;
     }
 }
 
@@ -112,6 +114,14 @@ int main(void) {
     CHECK(sel_engine_scan_busy(e) == 1);
     CHECK(send_line(e, "LIBRARY_SYNC i527block /b 2")); /* queues behind the running sync */
     CHECK(send_line(e, "LIBRARY_SCAN /nonexistent-i527")); /* shares the task slot: queues, does not fail or stomp */
+    sel_engine_pump(e, sink, NULL);
+    for (i = 0; i < 5; i++) { /* the sync-all banner sends one per due source: more than 4 must all queue, none sync_busy */
+        char line[64];
+
+        snprintf(line, sizeof line, "LIBRARY_SYNC i527block /c%u 3", i);
+        CHECK(send_line(e, line));
+        sel_engine_pump(e, sink, NULL);
+    }
     for (i = 0; i < 50; i++) {
         sel_engine_pump(e, sink, NULL); /* each pump returns while the sync still blocks */
         pumps_while_running += atomic_load(&g_done) == 0;
@@ -122,12 +132,13 @@ int main(void) {
     CHECK(atomic_load(&g_calls) == 1u);
 
     atomic_store(&g_release, 1);
-    for (i = 0; i < 5000 && (atomic_load(&g_calls) < 2u || sel_engine_scan_busy(e)); i++) {
+    for (i = 0; i < 5000 && (atomic_load(&g_calls) < 7u || sel_engine_scan_busy(e)); i++) {
         sel_engine_pump(e, sink, NULL);
         nap(1);
     }
-    CHECK(atomic_load(&g_calls) == 2u); /* the queued second sync ran after the first */
-    CHECK(g_results >= 2);
+    CHECK(atomic_load(&g_calls) == 7u); /* every queued sync ran after the first */
+    CHECK(g_busy == 0); /* no sync dropped (the scan of a missing path may report its own error) */
+    CHECK(g_results >= 7);
 
     sel_engine_destroy(e);
     sel_library_close(lib);
