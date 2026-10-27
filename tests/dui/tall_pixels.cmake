@@ -1,8 +1,8 @@
 # dui-tall-pixels (I468, I457; design 2026-10-24-desktop-ui.md Q14: 640x256 is the AGA design target, PAL hires pixels are 1:2).
 # -DSELECTA -DWORK -DGOLDEN
 # The desktop shell on the mem backend at --canvas 640x256 --ydiv 2 --zoom fit, which is what the aga backend picks for a
-# canvas of up to 300 rows. The layout runs in 640x512 square pixels (1024x819 logical at the fit floor 0.625).
-#   1. Layout (`--resize 1024x819` dump): the sidebar region exists (I457: the left rail shows) and the play button is
+# canvas of up to 300 rows. The layout runs in 640x512 square pixels (the bitmap tier lays out in 1:1 pixels, P3).
+#   1. Layout (`--resize 640x512` dump): the sidebar region exists (I457: the left rail shows) and the play button is
 #      square in layout space.
 #   2. On screen (--frame-dump PPM, read column by column): the play button's centre column spans columns = 2 * rows (extents walked from its centre to the flat background),
 #      so a round button measures width = 2 * rows on a 1:2 display.
@@ -27,11 +27,11 @@ if(NOT rc EQUAL 0)
   message(FATAL_ERROR "loading the fixture failed: ${err}")
 endif()
 dui_run(o --db "${db}" --ui desktop --backend mem --view library --canvas 640x256 --ydiv 2 --zoom fit --clock fixed --stats
-  --resize 1024x819 --frame-dump "${WORK}/tall.ppm")
+  --resize 640x512 --frame-dump "${WORK}/tall.ppm")
 
 # 1. layout
-if(NOT o MATCHES "layout width=1024 height=819 id=[a-z-]+ regions=[0-9]+ check=ok")
-  message(FATAL_ERROR "no valid 1024x819 layout line:\n${o}")
+if(NOT o MATCHES "layout width=640 height=512 id=icon-sidebar regions=[0-9]+ check=ok")
+  message(FATAL_ERROR "no valid 640x512 icon-sidebar layout line:\n${o}")
 endif()
 if(NOT o MATCHES "region name=sidebar x=0 y=0 w=([0-9]+) h=([0-9]+)" OR NOT CMAKE_MATCH_1 GREATER 0)
   message(FATAL_ERROR "I457: the left rail (sidebar region) must show at 640x256:\n${o}")
@@ -80,11 +80,27 @@ function(extent outvar dx dy)
   endwhile()
   set(${outvar} ${n} PARENT_SCOPE)
 endfunction()
-extent(el -1 0)
-extent(er 1 0)
+# Columns: walk in from the flat background on both sides (the play glyph at the centre may share the background colour).
+function(edge_in outvar x0 dx)
+  set(x ${x0})
+  set(n 0)
+  while(n LESS 80)
+    pixel(c ${x} ${cy})
+    if(NOT c STREQUAL bg)
+      break()
+    endif()
+    math(EXPR x "${x} + ${dx}")
+    math(EXPR n "${n} + 1")
+  endwhile()
+  set(${outvar} ${x} PARENT_SCOPE)
+endfunction()
+math(EXPR rx0 "${bx} - 3")
+math(EXPR rx1 "${bx} + ${bw} + 3")
+edge_in(left_edge ${rx0} 1)
+edge_in(right_edge ${rx1} -1)
+math(EXPR hw "${right_edge} - ${left_edge} + 1")
 extent(eu 0 -1)
 extent(ed 0 1)
-math(EXPR hw "${el} + ${er} + 1")
 math(EXPR vh "${eu} + ${ed} + 1")
 math(EXPR skew "${hw} - 2 * ${vh}")
 if(hw LESS 6 OR skew LESS -2 OR skew GREATER 2)
