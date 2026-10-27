@@ -20,6 +20,7 @@
 #include <clib/alib_protos.h>
 #include <proto/dos.h>
 #include <devices/clipboard.h>
+#include <devices/timer.h>
 #include <dos/dos.h>
 #include <workbench/startup.h>
 #include <workbench/workbench.h>
@@ -56,6 +57,8 @@ typedef struct mui_state {
     sel_uim uim;             /* the frame model the controls are driven from (MUI-P2-6) */
 #ifdef SEL_MUI_NATIVE
     Object* app;
+    struct MsgPort* tport;          /* timer.device reply port: bounds the native wait by timeout_ms */
+    struct timerequest* treq;       /* NULL when timer.device failed: the wait then falls back to Delay(1) */
     Object* win;
     Object* root;                   /* window contents: its MUIA_Width drives the breakpoint (MUI-P2-2) */
     Object* slot[MUI_SLOT_COUNT];   /* the five layout regions, created once, shown or hidden */
@@ -518,6 +521,9 @@ static void mui_check_resize(mui_state* s) {
 
 /* MUI-P1-3: muimaster.library v19 (MUI 3.8), one Application with one Window. The sentinel counts after the window
  * is open (MUI-P1-5), so ui_open_mui=1 proves the window really opened. */
+static void mui_timer_open(mui_state* s);
+static void mui_timer_close(mui_state* s);
+
 static void* mui_open(const sel_ui_open_args* a) {
     mui_state* s = &g_state;
     ULONG open = 0;
@@ -576,6 +582,7 @@ static void* mui_open(const sel_ui_open_args* a) {
         return NULL;
     }
     s->wake_mask = 0;
+    mui_timer_open(s);
     mui_layout_map(&s->lay, 1280, 720); /* the initial size is unknown until MUI lays out; the first resize check fixes it */
     mui_apply_layout(s);
     s->lay.width = 0;
@@ -600,15 +607,51 @@ static int mui_io_new_input(void* ctx, uint32_t* sigs) {
     return id == (LONG)MUIV_Application_ReturnID_Quit ? MUI_WAIT_ID_QUIT : (int)id;
 }
 
-/* No timer.device in the loop: poll the mask, then yield one tick (the former behaviour). */
-static uint32_t mui_io_wait(void* ctx, uint32_t mask, uint32_t timeout_ms) {
-    uint32_t got = (uint32_t)SetSignal(0, 0) & mask;
-    (void)ctx;
-    (void)timeout_ms;
-    if (got == 0) {
-        Delay(1);
+/* Sleep until a MUI signal, the engine wake, Ctrl-C or timeout_ms (timer.device, same pattern as the AGA desktop backend).
+ * Wait() clears the signals it returns; the former SetSignal(0,0) poll only read them, so once any MUI port signal was set
+ * it stayed set, Delay(1) never ran again and the idle task spun at 100 percent CPU. */
+static void mui_timer_open(mui_state* s) {
+    s->tport = CreateMsgPort();
+    s->treq = s->tport ? (struct timerequest*)CreateIORequest(s->tport, sizeof *s->treq) : NULL;
+    if (s->treq != NULL && OpenDevice((CONST_STRPTR)TIMERNAME, UNIT_VBLANK, (struct IORequest*)s->treq, 0) != 0) {
+        DeleteIORequest((struct IORequest*)s->treq);
+        s->treq = NULL;
     }
-    return got;
+}
+
+static void mui_timer_close(mui_state* s) {
+    if (s->treq != NULL) {
+        CloseDevice((struct IORequest*)s->treq);
+        DeleteIORequest((struct IORequest*)s->treq);
+        s->treq = NULL;
+    }
+    if (s->tport != NULL) {
+        DeleteMsgPort(s->tport);
+        s->tport = NULL;
+    }
+}
+
+static uint32_t mui_io_wait(void* ctx, uint32_t mask, uint32_t timeout_ms) {
+    mui_state* s = (mui_state*)ctx;
+    ULONG got;
+    if (s->treq == NULL || timeout_ms == 0u) {
+        got = SetSignal(0, (ULONG)mask) & mask; /* read and clear what is already pending */
+        if (got == 0 && s->treq == NULL) {
+            Delay(1);
+            got = SetSignal(0, (ULONG)mask) & mask;
+        }
+        return (uint32_t)got;
+    }
+    s->treq->tr_node.io_Command = TR_ADDREQUEST;
+    s->treq->tr_time.tv_secs = timeout_ms / 1000u;
+    s->treq->tr_time.tv_micro = (timeout_ms % 1000u) * 1000u;
+    SendIO((struct IORequest*)s->treq);
+    got = Wait((ULONG)mask | (1UL << s->tport->mp_SigBit));
+    if (!CheckIO((struct IORequest*)s->treq)) {
+        AbortIO((struct IORequest*)s->treq);
+    }
+    WaitIO((struct IORequest*)s->treq);
+    return (uint32_t)(got & mask);
 }
 
 static int mui_wait(void* state, uint32_t timeout_ms) {
@@ -630,6 +673,7 @@ static void mui_close(void* state) {
         s->canvas = NULL;
         mui_canvas_class_free();
     }
+    mui_timer_close(s);
     if (MUIMasterBase != NULL) {
         CloseLibrary(MUIMasterBase);
         MUIMasterBase = NULL;
