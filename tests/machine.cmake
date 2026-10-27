@@ -48,6 +48,31 @@ function(sel_get name outvar)
   set(${outvar} "${CMAKE_MATCH_2}" PARENT_SCOPE)
 endfunction()
 
+if(EXPECT_FAST_RAM STREQUAL "vamos-image")
+  # vamos AvailMem(MEMF_FAST) is the free allocator total: the -m 8192 RAM
+  # (8388608) less a constant 307260 of its own use (measured on the 8faf9b3
+  # and HEAD images alike) less every hunk the loader allocates. The hunk sizes
+  # come from the HUNK_HEADER (0x3F3) of the binary under test.
+  file(READ "${AMIGA_CLI}" hdr HEX LIMIT 4096)
+  string(SUBSTRING "${hdr}" 0 8 magic)
+  if(NOT magic STREQUAL "000003f3")
+    message(FATAL_ERROR "${AMIGA_CLI} does not start with HUNK_HEADER: ${magic}")
+  endif()
+  # skip magic and the resident-library list end (0), then table size, first, last
+  string(SUBSTRING "${hdr}" 24 8 first_hex)
+  string(SUBSTRING "${hdr}" 32 8 last_hex)
+  math(EXPR first "0x${first_hex}")
+  math(EXPR last "0x${last_hex}")
+  set(image_bytes 0)
+  foreach(i RANGE ${first} ${last})
+    math(EXPR off "40 + (${i} - ${first}) * 8")
+    string(SUBSTRING "${hdr}" ${off} 8 sz_hex)
+    math(EXPR words "0x${sz_hex} & 0x3fffffff")
+    math(EXPR image_bytes "${image_bytes} + ${words} * 4")
+  endforeach()
+  math(EXPR EXPECT_FAST_RAM "8388608 - 307260 - ${image_bytes}")
+endif()
+
 if(EXPECT_FAST_RAM STREQUAL "sysctl")
   if(APPLE)
     execute_process(COMMAND sysctl -n hw.memsize OUTPUT_VARIABLE EXPECT_FAST_RAM

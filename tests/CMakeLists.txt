@@ -298,7 +298,7 @@ add_test(NAME machine-probe
 # profile; the 121-player image needs more than the 1 MiB default): CHIP_RAM and FAST_RAM, bytes.
 if(SEL_VAMOS AND EXISTS "${SEL_AMIGA_CLI}")
   set(SEL_VAMOS_CHIP_RAM 0) # vamos has no chip/fast split: AvailMem(MEMF_CHIP) is 0
-  set(SEL_VAMOS_FAST_RAM 8384512) # 8188 KiB: vamos -m 8192 RAM less its own use
+  set(SEL_VAMOS_FAST_RAM vamos-image) # free RAM = 8 MiB less vamos use less the loaded hunks: derived from the binary
   add_test(NAME amiga-machine
     COMMAND "${CMAKE_COMMAND}" "-DVAMOS=${SEL_VAMOS}" "-DAMIGA_CLI=${SEL_AMIGA_CLI}" -DPLATFORM=amiga
             "-DTAGS_DEF=${PROJECT_SOURCE_DIR}/include/selecta/tags.def"
