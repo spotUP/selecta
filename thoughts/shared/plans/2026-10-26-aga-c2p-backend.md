@@ -25,7 +25,7 @@ functions, and a macro map onto the `desk_sdl_*` names `desktop_ui.c` calls. `de
 
 | Function | aga behaviour |
 | --- | --- |
-| `desk_aga_default_size` | Workbench size when Workbench is a native mode with MaxDepth >= 8, else 640x256 (PAL) / 640x200 (NTSC); width rounded down to a multiple of 32 (Kalms needs it). Full screen by default (D-M4-3). |
+| `desk_aga_default_size` | 640x256 PAL HIRES / 640x200 NTSC HIRES, no interlace (Johan 2026-10-27; the earlier "Workbench size" rule is dropped). Width a multiple of 32 (Kalms needs it). Full screen by default (D-M4-3). The canvas takes this size from the backend; desktop_ui.c must never pass its 800x600 default to `desk_backend_open`. |
 | `desk_aga_open(w, h, index8)` | Refuses `index8 == 0`: an AGA screen shows INDEX8 only (`DESK_BACKEND_INDEX8 1`, as rtg). Needs graphics/intuition v39 and `GFXF_AA_ALICE`. |
 | `desk_aga_present(b, canvas)` | Palette upload when it changed, dirty-band c2p into the back buffer, `ChangeScreenBuffer`. |
 | `desk_aga_depth` | 8, read back from the screen's bitmap: the reachability sentinel that the screen is AGA planar. |
@@ -60,8 +60,10 @@ to become a small function table instead of macros; it is part of M4-P6-8, not f
 
 1. `OpenLibrary` graphics and intuition v39 (renamed bases `sel_aga_GfxBase` / `sel_aga_IntuitionBase`, same reason
    as backend_rtg.c: libnix would otherwise open them at program start for every binary).
-2. Mode: Workbench's mode when native and 8-plane capable (DTAG_DIMS MaxDepth >= 8), else `PAL_MONITOR_ID|HIRES_KEY`
-   or `NTSC_MONITOR_ID|HIRES_KEY` from `GfxBase->DisplayFlags`; `ModeNotAvailable` must be 0.
+2. Mode (Johan 2026-10-27): always `PAL_MONITOR_ID|HIRES_KEY` (640x256) or `NTSC_MONITOR_ID|HIRES_KEY` (640x200),
+   chosen from `GfxBase->DisplayFlags`; no interlace, no Workbench clone, never 800x600. 320x256 PAL LORES is the only
+   other valid size (confirmed by Johan). `ModeNotAvailable` must be 0. The desktop layout must fit
+   640x256; the canvas is sized from the opened mode, not the other way round.
 3. Chip RAM check before allocation: `AvailMem(MEMF_CHIP) >= desk_aga_chip_bytes(w, h)` and the largest chip block
    holds one buffer. Refusal prints a reason and returns NULL (the plugin then falls back to the MUI UI).
 4. Two buffers, each one `AllocMem(w*h, MEMF_CHIP|MEMF_CLEAR)` block, planes contiguous:
