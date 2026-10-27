@@ -1148,6 +1148,15 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
   set_tests_properties(rig-m4-mui-open PROPERTIES LABELS rig RESOURCE_LOCK rig
     ENVIRONMENT "UPTERM_RIG=2" SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  # MUI-P5-6: an icon dragged from a Workbench drawer window onto the MUI window (AppWindow drop) and Edit > Copy Song Title
+  # (clipboard.device). Needs a rig started with --no-dopus (plain Workbench) and SEL_MUI_SONG.
+  add_test(NAME rig-m4-mui-drop
+    COMMAND "${CMAKE_COMMAND}" -DTAG=M4MUIDROP "-DRIG_DIR=${SEL_RIG_DIR}"
+      "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta" "-DMOD=${SEL_TESTMOD}" "-DSONG=${SEL_MUI_SONG}"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-drop"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
+  set_tests_properties(rig-m4-mui-drop PROPERTIES LABELS rig RESOURCE_LOCK rig
+    ENVIRONMENT "UPTERM_RIG=2" SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
   # MUI-P1-6 / M4-P11-2: MUI absent (SYS:MUI/Libs renamed, restored on every path): the Selecta requester with Continue,
   # then the text UI runs and Selecta exits 0. Needs the same Amiga build tree as rig-m4-mui-open.
   add_test(NAME rig-m4-mui-nomui
