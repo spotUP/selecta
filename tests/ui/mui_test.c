@@ -53,7 +53,7 @@ int main(int argc, char** argv) {
     char keys[1024];
     FILE* f;
     void* ui;
-    uint32_t last = 0;
+    uint32_t same = 0;
 
     if (argc < 2) {
         fputs("usage: mui_test <scratch dir>\n", stderr);
@@ -76,13 +76,12 @@ int main(int argc, char** argv) {
               sel_tag_find(hooks, SEL_UI_CLOSE, 0) != 0,
           "open/wait/close hooks missing");
 
-    /* MUI-P0-4: the tag is the highest UI tag in tags.def, the mui plugin lists it, the text UI does not. */
+    /* MUI-P0-4: the tag is unique among the UI tags in tags.def (later rows append after it), the mui plugin lists it, the text UI does not. */
 #define SEL_TAG(grp, name, val, type) \
-    if (strcmp(#grp, "UI") == 0 && (val) > last) last = (val);
+    if (strcmp(#grp, "UI") == 0 && (val) == SEL_UI_STAT_OPEN_MUI) same++;
 #include <selecta/tags.def>
 #undef SEL_TAG
-    CHECK(SEL_UI_STAT_OPEN_MUI == last, "SEL_UI_STAT_OPEN_MUI %x is not the last UI tag %x", (unsigned)SEL_UI_STAT_OPEN_MUI,
-          (unsigned)last);
+    CHECK(same == 1, "SEL_UI_STAT_OPEN_MUI %x is shared by %u UI tags", (unsigned)SEL_UI_STAT_OPEN_MUI, (unsigned)same);
     CHECK(SEL_UI_STAT_OPEN_MUI > SEL_UI_STAT_TOOLTIP_TARGETS, "tag not after the previous last tag");
     stats = hooks != NULL ? (sel_ui_stats_fn)sel_tag_find(hooks, SEL_UI_STATS, 0) : NULL;
     CHECK(stats != NULL, "mui plugin has no SEL_UI_STATS hook");

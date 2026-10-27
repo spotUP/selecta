@@ -37,13 +37,13 @@ endif()
 if(NOT SEL_AMIGA)
   # dui-amiga-font (I526-P1): the bitmap .font reader, unit level (host only).
   add_test(NAME dui-amiga-font COMMAND dui_amiga_font_unit)
-  set_tests_properties(dui-amiga-font PROPERTIES LABELS dui TIMEOUT 60)
+  set_tests_properties(dui-amiga-font PROPERTIES LABELS amiga-font TIMEOUT 60) # ledger row, not a plan item: no dui label, dui-ratchet counts dui against the plan ids
   # dui-font-tall (I538): AGA atlases baked for 1:2 pixels, SDL atlases unchanged.
   add_test(NAME dui-font-tall COMMAND dui_font_tall_unit)
-  set_tests_properties(dui-font-tall PROPERTIES LABELS dui TIMEOUT 60)
+  set_tests_properties(dui-font-tall PROPERTIES LABELS font-tall TIMEOUT 60) # ledger row, not a plan item: no dui label, dui-ratchet counts dui against the plan ids
   # dui-font-roles (I526-P4): the role table and the 6-row fallback, unit level.
   add_test(NAME dui-font-roles COMMAND dui_font_roles_unit)
-  set_tests_properties(dui-font-roles PROPERTIES LABELS dui TIMEOUT 60)
+  set_tests_properties(dui-font-roles PROPERTIES LABELS font-roles TIMEOUT 60) # ledger row, not a plan item: no dui label, dui-ratchet counts dui against the plan ids
 endif()
 if(NOT SEL_AMIGA)
   foreach(spec "dui-uim-frame:uim_frame" "dui-ui-switch:ui_switch" "dui-ui-multi:ui_multi" "dui-mode-pref:mode_pref" "dui-actions:actions" "dui-layout:layout" "dui-governor:governor" "dui-tokens:tokens" "dui-draw:draw" "dui-dirty:dirty" "dui-text:text" "dui-artwork:artwork" "dui-genart:genart" "dui-golden-home:golden_home" "dui-sdl:sdl" "dui-widgets:widgets" "dui-hidpi:hidpi" "dui-anim:anim" "dui-keys:keys" "dui-mouse:mouse" "dui-tooltips:tooltips" "dui-gestures:gestures" "dui-frame:frame" "dui-home:home" "dui-library:library" "dui-styles:styles" "dui-grid-coverflow:grid_coverflow" "dui-search:search" "dui-nowplaying:nowplaying" "dui-queue:queue" "dui-queue-scroll:queue_scroll" "dui-playlists:playlists" "dui-songinfo:songinfo" "dui-overlays:overlays" "dui-nav:nav" "dui-viz:viz" "dui-tracker:tracker" "dui-drop:drop" "dui-footer:footer" "dui-screen:screen" "dui-hover-live:hover_live" "dui-hover-rows:hover_rows" "dui-hover-sidebar-ink:hover_sidebar_ink" "dui-hover-instant:hover_instant" "dui-hover-nowplaying:hover_nowplaying" "dui-hover-regions:hover_regions" "dui-scan-ui:scan_ui" "dui-library-reload:library_reload" "dui-library-unknown-composer:library_unknown_composer" "dui-song-menu:song_menu" "dui-library-remove:library_remove" "dui-song-menu-live:song_menu_live" "dui-song-menu-lists:song_menu_lists" "keys-live:keys_live" "dui-aga-budget:aga_budget" "dui-library-style:library_style" "dui-stats-panel:stats_panel" "dui-home-cover-shadow:home_cover_shadow" "dui-coverflow-slide:coverflow_slide" "dui-view-exec-order:view_exec_order" "dui-zoom:zoom" "dui-list-keys:list_keys" "dui-library-sources:library_sources" "dui-library-scroll:library_scroll" "dui-library-scroll-drag:library_scroll_drag" "dui-sources-counters:sources_counters" "dui-sync-banner:sync_banner" "dui-tall-pixels:tall_pixels" "dui-aga-native-text:aga_native_text" "window-raise:window_raise" "dui-idle-turns:idle_turns")
@@ -83,6 +83,8 @@ if(NOT SEL_AMIGA)
       set(tlabel sync-banner)
     elseif(tname STREQUAL "keys-live") # I268: real SDL key events through desk_sdl_poll; not a plan item, so no dui label
       set(tlabel keys-live)
+    elseif(tname STREQUAL "dui-aga-native-text" OR tname STREQUAL "dui-idle-turns" OR tname STREQUAL "dui-library-scroll" OR tname STREQUAL "dui-library-scroll-drag" OR tname STREQUAL "dui-sources-counters") # I526 I525 I541 I549 I546: ledger rows, not plan items; their own label keeps dui-ratchet at one test per plan id
+      string(REPLACE "dui-" "" tlabel "${tname}")
     elseif(tname STREQUAL "dui-view-exec-order") # I398: --view enters its page before --exec runs; ledger row, not a plan item
       set(tlabel view-exec-order)
     endif()
