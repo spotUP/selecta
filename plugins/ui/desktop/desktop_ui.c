@@ -896,7 +896,8 @@ static void draw_sidebar(desk* d);
 static void draw_nowplaying(desk* d);
 static void draw_nowplaypage(desk* d);
 static void draw_nav_arrows(desk* d, sel_gui_rect mn);
-static sel_gui_rect nav_arrow_rect(desk* d, sel_gui_rect mn, int32_t k);
+static sel_gui_rect nav_arrow_rect(const desk* d, sel_gui_rect mn, int32_t k);
+static int nav_arrows_shown(const desk* d, sel_gui_rect mn);
 static sel_gui_rect sidebar_door_rect(const desk* d, uint32_t i);
 static void draw_player_left(desk* d);
 
@@ -1463,6 +1464,9 @@ enum { SEARCH_FIELD_Y = 16, SEARCH_FIELD_H = 40 };
 static sel_gui_rect search_field_rect(const desk* d, sel_gui_rect mn) {
     int32_t mg = lpx(d, HOME_MARGIN);
     int32_t sw = mn.w - 2 * mg < lpx(d, HOME_SEARCH_MAX) ? mn.w - 2 * mg : lpx(d, HOME_SEARCH_MAX);
+    if (nav_arrows_shown(d, mn) && sw > nav_arrow_rect(d, mn, 0).x - lpx(d, 8) - (mn.x + mg)) { /* I554: ends left of the history arrows, which share its row */
+        sw = nav_arrow_rect(d, mn, 0).x - lpx(d, 8) - (mn.x + mg);
+    }
     return rect_of(mn.x + mg, mn.y + lpx(d, SEARCH_FIELD_Y), sw, lpx(d, SEARCH_FIELD_H));
 }
 
@@ -5810,9 +5814,14 @@ static void draw_home_content(desk* d) {
 }
 
 /* History arrow k (0 back, 1 forward) at the top right of the main pane; page controls on that row end left of it. */
-static sel_gui_rect nav_arrow_rect(desk* d, sel_gui_rect mn, int32_t k) {
+static sel_gui_rect nav_arrow_rect(const desk* d, sel_gui_rect mn, int32_t k) {
     int32_t bs = lpx(d, 28), gap = lpx(d, 8);
     return rect_of(mn.x + mn.w - lpx(d, HOME_MARGIN) - 2 * bs - gap + k * (bs + gap), mn.y + lpx(d, 8), bs, bs);
+}
+
+/* The arrows are drawn in the full layout on a main pane of at least 400 px; page content on their row ends left of them. */
+static int nav_arrows_shown(const desk* d, sel_gui_rect mn) {
+    return d->uim.layout == SEL_UIM_LAYOUT_FULL && mn.w >= lpx(d, 400);
 }
 
 /* The history arrows (I266) at the top right of the main pane, after Spotify's back and forward buttons: a round
@@ -5821,7 +5830,7 @@ static void draw_nav_arrows(desk* d, sel_gui_rect mn) {
     int32_t bs = lpx(d, 28), k;
     int can[2] = {d->pg_pos > 0u, d->pg_pos + 1u < d->pg_n};
     sel_gui_rect* slot[2] = {&d->nav_back, &d->nav_fwd};
-    if (d->uim.layout != SEL_UIM_LAYOUT_FULL || mn.w < lpx(d, 400)) {
+    if (!nav_arrows_shown(d, mn)) {
         d->nav_back = rect_of(0, 0, 0, 0);
         d->nav_fwd = rect_of(0, 0, 0, 0);
         return;
