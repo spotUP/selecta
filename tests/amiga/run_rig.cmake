@@ -212,6 +212,11 @@ elseif(TAG STREQUAL "M4MUI")
     ami(ignored exec "Break ${pid} C" 10)
     message(FATAL_ERROR "RED[M4MUI]: the MUI window is not the screen area ${scr_w}x${scr_h}:\n${tree}")
   endif()
+  # MUI-P2-3 / MUI-P2-4: the native Menustrip fires an item. "Playback/Stop" carries the shortcut key "s", so the rig's
+  # right-Amiga+s (ami.py ui menushort) must reach the Menuitem trigger, which sends the action line to the engine and
+  # bumps the menus= counter printed on the ui_stats id=mui line.
+  ami(ignored ui menushort Selecta s)
+  execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 3)
   ami(ignored exec "Break ${pid} C" 10)
   # MUI_DisposeObject, the stats print and the exit take a few seconds on the 68020: poll up to 30 s.
   foreach(i RANGE 1 6)
@@ -232,6 +237,9 @@ elseif(TAG STREQUAL "M4MUI")
   string(FIND "${out}" "ui_open_mui=1" pos)
   if(pos EQUAL -1)
     message(FATAL_ERROR "RED[M4MUI]: sentinel 'ui_open_mui=1' missing in:\n${out}")
+  endif()
+  if(NOT out MATCHES "ui_stats id=mui[^\n]* menus=([0-9]+)" OR CMAKE_MATCH_1 LESS 1)
+    message(FATAL_ERROR "RED[M4MUI]: the Menustrip item did not send its action line (menus>=1 missing on the ui_stats id=mui line):\n${out}")
   endif()
   ami(ignored exec "Delete >NIL: RAM:mui-out.txt RAM:mui.script ${P} QUIET" 10)
 elseif(TAG STREQUAL "M4AGA")
