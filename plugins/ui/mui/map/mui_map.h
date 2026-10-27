@@ -5,6 +5,8 @@
 
 #include <stdint.h>
 
+#include <selecta/uimodel.h>
+
 /* The view styles the MUI UI offers. An RTG screen can host the custom canvas (grid, cover flow), so every style;
  * a planar screen has only native list widgets, so the classic list styles (plan section 1, finish line 3). */
 uint32_t mui_style_mask(int screen_is_rtg);
@@ -65,5 +67,43 @@ void mui_layout_map(mui_layout_map_t* m, uint32_t width, uint32_t height);
 /* Recompute for a new window size. Returns 1 when the breakpoint changed (the caller re-applies ShowMe, *flips counts
  * the slots whose visibility changed), 0 when only weights move. */
 uint32_t mui_layout_relayout(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t* flips);
+
+/* MUI-P2-5: the transport row. Six buttons; the action each sends depends on the frame (Play/Pause on the play state,
+ * Repeat cycles off, all, one, Random toggles). Labels and ids come from the action table, so the text is the full
+ * English words of the desktop UI. Seek is a Slider 0..MUI_SEEK_MAX bound to progress_q16, volume 0..MUI_VOLUME_MAX. */
+enum { MUI_BTN_PREV = 0, MUI_BTN_PLAY, MUI_BTN_NEXT, MUI_BTN_STOP, MUI_BTN_REPEAT, MUI_BTN_RANDOM, MUI_BTN_COUNT };
+#define MUI_SEEK_MAX 65536
+#define MUI_VOLUME_MAX 100
+/* Action id the button sends for this frame; NULL for an unknown button. */
+const char* mui_transport_action(uint32_t button, const sel_uim_frame* f);
+/* Button label: the action's label for this frame. */
+const char* mui_transport_label(uint32_t button, const sel_uim_frame* f);
+
+/* MUI-P2-6: frame fields to object attributes. Each of the ten attributes belongs to exactly one dirty region, so a
+ * frame update calls set() only for the attributes whose region bit is in the mask. SEL_UIM_DIRTY_QUEUE has no
+ * attribute here (the queue list is MUI-P3/P4). */
+enum {
+    MUI_ATTR_TITLE = 0, MUI_ATTR_ARTIST, MUI_ATTR_FORMAT, MUI_ATTR_LENGTH, MUI_ATTR_CLOCK, MUI_ATTR_REMAINING,
+    MUI_ATTR_SEEK, MUI_ATTR_STATUS, MUI_ATTR_VOLUME, MUI_ATTR_PLAYSTATE, MUI_ATTR_COUNT
+};
+uint32_t mui_attr_region(uint32_t attr);              /* the one SEL_UIM_DIRTY_* bit, 0 for an unknown attr */
+uint32_t mui_dirty_attrs(uint32_t dirty);             /* bit mask of (1u << MUI_ATTR_*) to refresh */
+const char* mui_attr_text(uint32_t attr, const sel_uim_frame* f); /* text attrs; NULL for slider and button attrs */
+
+/* MUI-P2-7: every action key as a binding. Keys of one character are Right Amiga menu shortcuts (the Menustrip
+ * shortcut); named and modified keys (C-Enter, M-n, Space) go through a window event handler as code plus modifier
+ * bits of uimodel/keys.h. Mode keys: Right Amiga + 1..5 and + I switch ui.mui.mode (M4 plan 3.4, Q7). */
+typedef struct mui_key_bind {
+    const char* id;
+    uint32_t code, mods;
+    uint32_t shortcut; /* 1: Right Amiga menu shortcut, 0: event handler */
+} mui_key_bind;
+uint32_t mui_keys_build(mui_key_bind* out, uint32_t cap); /* returns the row count even above cap */
+typedef struct mui_mode_key {
+    char key;
+    const char* mode;
+    const char* line; /* PREF_SET ui.mui.mode <mode> */
+} mui_mode_key;
+const mui_mode_key* mui_mode_keys(uint32_t* count);
 
 #endif

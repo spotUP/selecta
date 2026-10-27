@@ -196,6 +196,128 @@ static void test_relayout(void) {
     CHECK(mui_layout_relayout(&m, 1000, 720, &flips) == 0 && flips == 0, "same breakpoint changes no visibility");
 }
 
+/* mui-transport-map (MUI-P2-5): the buttons reach exactly the action rows whose icon is a transport icon. */
+static int is_transport_icon(const sel_uim_action* a) {
+    const char* icon = a->icon;
+    static const char* const icons[] = {"play", "pause", "square", "skip-forward", "skip-back", "repeat", "shuffle"};
+    uint32_t i;
+    if (strncmp(a->menu, "Playback/", 9) != 0) { /* the queue shuffle shares the icon but is not transport */
+        return 0;
+    }
+    for (i = 0; i < sizeof icons / sizeof icons[0]; i++) {
+        if (strcmp(icon, icons[i]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void test_transport(void) {
+    uint32_t i, b, play, rep, rnd, n = sel_uim_action_count(), want = 0, got = 0;
+    const char* reached[32];
+    uint32_t nreached = 0;
+    for (i = 0; i < n; i++) {
+        want += is_transport_icon(sel_uim_action_at(i)) ? 1u : 0u;
+    }
+    for (b = 0; b < MUI_BTN_COUNT; b++) {
+        for (play = 0; play < 2; play++) {
+            for (rep = 0; rep < 3; rep++) {
+                for (rnd = 0; rnd < 2; rnd++) {
+                    sel_uim_frame f;
+                    const char* id;
+                    uint32_t k, seen = 0;
+                    memset(&f, 0, sizeof f);
+                    f.play = play ? SEL_PLAYING : SEL_PAUSED;
+                    f.repeat_mode = rep;
+                    f.random_on = rnd;
+                    id = mui_transport_action(b, &f);
+                    CHECK(id != NULL && mui_transport_label(b, &f) != NULL, "button %u has no action or label", b);
+                    for (k = 0; id != NULL && k < nreached; k++) {
+                        seen |= strcmp(reached[k], id) == 0;
+                    }
+                    if (id != NULL && !seen && nreached < 32) {
+                        reached[nreached++] = id;
+                    }
+                }
+            }
+        }
+    }
+    for (i = 0; i < n; i++) {
+        const sel_uim_action* a = sel_uim_action_at(i);
+        uint32_t k, hit = 0;
+        for (k = 0; k < nreached; k++) {
+            hit |= strcmp(reached[k], a->id) == 0;
+        }
+        got += hit;
+        CHECK(hit == (uint32_t)is_transport_icon(a), "action %s: reached %u, transport icon %d", a->id, hit, is_transport_icon(a));
+    }
+    CHECK(got == want && nreached == want, "button set %u, reached %u, transport rows %u", got, nreached, want);
+    CHECK(MUI_SEEK_MAX == 65536 && MUI_VOLUME_MAX == 100, "slider ranges");
+    {
+        sel_uim_frame f;
+        memset(&f, 0, sizeof f);
+        f.play = SEL_PLAYING;
+        CHECK(strcmp(mui_transport_label(MUI_BTN_PLAY, &f), "Pause") == 0, "playing shows Pause");
+        f.play = SEL_STOPPED;
+        CHECK(strcmp(mui_transport_label(MUI_BTN_PLAY, &f), "Play") == 0, "stopped shows Play");
+    }
+}
+
+/* mui-dirty-map (MUI-P2-6): ten attributes, each in exactly one region; every region but the queue has one. */
+static void test_dirty(void) {
+    uint32_t a, covered = 0, bit;
+    CHECK(MUI_ATTR_COUNT == 10, "attribute count %u", (unsigned)MUI_ATTR_COUNT);
+    for (a = 0; a < MUI_ATTR_COUNT; a++) {
+        uint32_t r = mui_attr_region(a), b2 = 0, hits = 0;
+        CHECK(r != 0 && (r & (r - 1u)) == 0 && (r & SEL_UIM_DIRTY_ALL) == r, "attr %u region %x", a, (unsigned)r);
+        for (bit = 0; bit < SEL_UIM_REGIONS; bit++) {
+            b2 = 1u << bit;
+            hits += (mui_dirty_attrs(b2) >> a) & 1u;
+        }
+        CHECK(hits == 1, "attr %u refreshed by %u regions", a, hits);
+        covered |= r;
+    }
+    CHECK(covered == (SEL_UIM_DIRTY_ALL & ~SEL_UIM_DIRTY_QUEUE), "regions covered %x", (unsigned)covered);
+    CHECK(mui_dirty_attrs(0) == 0 && mui_dirty_attrs(SEL_UIM_DIRTY_QUEUE) == 0, "queue or clean dirties an attribute");
+    {
+        sel_uim_frame f;
+        memset(&f, 0, sizeof f);
+        strcpy(f.title, "T");
+        strcpy(f.status, "S");
+        CHECK(strcmp(mui_attr_text(MUI_ATTR_TITLE, &f), "T") == 0 && strcmp(mui_attr_text(MUI_ATTR_STATUS, &f), "S") == 0, "attr text");
+        CHECK(mui_attr_text(MUI_ATTR_SEEK, &f) == NULL, "slider attr has text");
+    }
+}
+
+/* mui-keys (MUI-P2-7): every action key is one binding, no two bindings share code and modifiers, mode keys unique. */
+static void test_keys(void) {
+    static mui_key_bind kb[128];
+    uint32_t i, j, n = sel_uim_action_count(), withkey = 0, count, modes;
+    const mui_mode_key* mk;
+    for (i = 0; i < n; i++) {
+        withkey += sel_uim_action_at(i)->key[0] != '\0';
+    }
+    count = mui_keys_build(kb, 128);
+    CHECK(count == withkey && count <= 128, "bindings %u, actions with a key %u", count, withkey);
+    for (i = 0; i < count && i < 128; i++) {
+        for (j = i + 1; j < count && j < 128; j++) {
+            CHECK(kb[i].code != kb[j].code || kb[i].mods != kb[j].mods, "%s and %s share a key", kb[i].id, kb[j].id);
+        }
+    }
+    mk = mui_mode_keys(&modes);
+    CHECK(modes == 6, "mode keys %u", modes);
+    for (i = 0; i < modes; i++) {
+        CHECK(strstr(mk[i].line, mk[i].mode) != NULL, "mode %s line", mk[i].mode);
+        for (j = 0; j < count && j < 128; j++) {
+            /* a mode key is Right Amiga + char; a single-character action key is the same shortcut when equal */
+            CHECK(!kb[j].shortcut || (kb[j].code | 0x20u) != ((uint32_t)mk[i].key | 0x20u), "mode key %c collides with %s", mk[i].key, kb[j].id);
+        }
+        for (j = i + 1; j < modes; j++) {
+            CHECK(mk[i].key != mk[j].key, "duplicate mode key");
+        }
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -214,6 +336,12 @@ int main(int argc, char** argv) {
         test_weights();
     } else if (strcmp(argv[1], "relayout") == 0) {
         test_relayout();
+    } else if (strcmp(argv[1], "transport") == 0) {
+        test_transport();
+    } else if (strcmp(argv[1], "dirty") == 0) {
+        test_dirty();
+    } else if (strcmp(argv[1], "keys") == 0) {
+        test_keys();
     } else {
         return 2;
     }
