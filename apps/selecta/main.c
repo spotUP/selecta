@@ -538,7 +538,6 @@ int main(int argc, char** argv)
 #ifndef SEL_NO_CONTROL_SOCKET
     cc.engine = e;
     cc.sink_ctx = ctx;
-    cc.err[0] = '\0';
     if (!has_keys || getenv("SELECTA_SOCKET") != NULL) {
         sel_ctl_path(ctl_path, sizeof ctl_path);
         ctl_fd = sel_ctl_listen(ctl_path);
