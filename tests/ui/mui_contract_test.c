@@ -483,6 +483,137 @@ static void test_help(void) {
     }
 }
 
+static void test_search(void) {
+    char l[3][160];
+    CHECK(mui_search_lines("abc", l) == 3 && strcmp(l[0], "LIBRARY_SEARCH \"abc\"") == 0 && strcmp(l[1], "VIEW_SOURCE search") == 0, "search '%s'", l[0]);
+    CHECK(mui_search_lines("a\"b\\", l) == 3 && strcmp(l[0], "LIBRARY_SEARCH \"a\\\"b\\\\\"") == 0, "escape '%s'", l[0]);
+}
+
+static void test_queue(void) {
+    char o[64];
+    mui_queue_line("move", 7, 9, o, sizeof o);
+    CHECK(strcmp(o, "QUEUE_MOVE 7 9") == 0, "move '%s'", o);
+    mui_queue_line("remove", 7, 0, o, sizeof o);
+    CHECK(strcmp(o, "QUEUE_REMOVE 7") == 0, "remove '%s'", o);
+    mui_queue_line("clear", 0, 0, o, sizeof o);
+    CHECK(strcmp(o, "QUEUE_CLEAR") == 0, "clear");
+    mui_queue_line("bogus", 0, 0, o, sizeof o);
+    CHECK(o[0] == '\0', "unknown verb sends nothing");
+}
+
+static void test_playlists(void) {
+    char o[64];
+    CHECK(mui_playlist_line("open", 3, NULL, o, sizeof o) == 1 && strcmp(o, "VIEW_ACTIVATE") == 0, "open");
+    CHECK(mui_playlist_line("rename", 3, "Mine", o, sizeof o) == 1 && strcmp(o, "PLAYLIST_RENAME 3 \"Mine\"") == 0, "rename '%s'", o);
+    CHECK(mui_playlist_line("delete", 3, NULL, o, sizeof o) == 1 && strcmp(o, "PLAYLIST_DEL 3") == 0, "delete '%s'", o);
+    CHECK(mui_playlist_line("zap", 3, NULL, o, sizeof o) == 0, "unknown action");
+}
+
+static void test_song_menu(void) {
+    /* The desktop's song menu labels come from the same function; the set is the five items, item 4 switches on the Queue page. */
+    static const char* const want[5] = {"Play", "Play Next", "Add to Queue", "Add to Playlist", "Remove from Library"};
+    uint32_t i;
+    for (i = 0; i < SEL_UIM_SONG_MENU_ITEMS; i++) {
+        CHECK(strcmp(sel_uim_song_menu_label(i, 0), want[i]) == 0, "item %u '%s'", (unsigned)i, sel_uim_song_menu_label(i, 0));
+    }
+    CHECK(strcmp(sel_uim_song_menu_label(4, 1), "Remove from Queue") == 0 && sel_uim_song_menu_label(5, 0) == NULL, "queue page, bound");
+}
+
+static void test_like_rating(void) {
+    char o[32];
+    uint32_t i;
+    CHECK(strcmp(mui_like_line(), "LIKE") == 0, "like");
+    for (i = 0; i <= 5; i++) {
+        mui_rating_line(i, o, sizeof o);
+        CHECK(strcmp(o, i == 0 ? "RATE 0" : i == 1 ? "RATE 1" : i == 2 ? "RATE 2" : i == 3 ? "RATE 3" : i == 4 ? "RATE 4" : "RATE 5") == 0, "rate %u '%s'", (unsigned)i, o);
+    }
+    mui_rating_line(9, o, sizeof o);
+    CHECK(strcmp(o, "RATE 5") == 0, "clamped");
+    sel_uim_rate_line(3, 3, o, sizeof o);
+    CHECK(strcmp(o, "RATE 0") == 0, "same star clears");
+    sel_uim_rate_line(3, 4, o, sizeof o);
+    CHECK(strcmp(o, "RATE 4") == 0, "other star sets");
+}
+
+static void test_nowplaying(void) {
+    const char* names[8];
+    CHECK(mui_np_objects(names, 8) == 6 && strcmp(names[0], "artwork") == 0 && strcmp(names[4], "lyrics") == 0 && strcmp(names[5], "upnext") == 0, "object set");
+    CHECK(mui_lyric_line_of(0) == -1 && mui_lyric_line_of(1) == 0 && mui_lyric_line_of(12) == 11 && mui_lyric_line_of(-3) == -1, "slot to line");
+}
+
+static void test_songinfo(void) {
+    char o[32];
+    CHECK(mui_subsong_cycle_line(1, 3, o, sizeof o) == 1 && strcmp(o, "SUBSONG 2") == 0, "next '%s'", o);
+    CHECK(mui_subsong_cycle_line(3, 3, o, sizeof o) == 1 && strcmp(o, "SUBSONG 1") == 0, "wraps '%s'", o);
+    CHECK(mui_subsong_cycle_line(1, 1, o, sizeof o) == 0, "single subsong has no cycle");
+}
+
+static void test_settings(void) {
+    uint32_t i, n = sel_uim_pref_row_count();
+    char o[96];
+    CHECK(n >= 6u, "rows %u", (unsigned)n);
+    for (i = 0; i < n; i++) {
+        const sel_uim_pref_row* r = sel_uim_pref_row_at(i);
+        int found = 0;
+#define SEL_PREF(id, pkey, def, kind) if (strcmp(pkey, r->key) == 0) found = 1;
+#include <selecta/prefs.def>
+#undef SEL_PREF
+        CHECK(found, "pref %s is not in prefs.def", r->key);
+        CHECK(r->ui <= SEL_UIM_PREF_STRING && r->label[0] != '\0', "ui type and label of %s", r->key);
+        CHECK(r->ui == SEL_UIM_PREF_STRING || r->choices[0] != '\0', "choices of %s", r->key);
+    }
+    sel_uim_pref_line("mix.loudness", "off", o, sizeof o);
+    CHECK(strcmp(o, "PREF_SET mix.loudness \"off\"") == 0, "line '%s'", o);
+}
+
+static void test_dialogs(void) {
+    char o[200];
+    mui_confirm_text(1, NULL, 12, 3, o, sizeof o);
+    CHECK(strstr(o, "Remove 12 songs and 3 playlists, with all ratings and notes?") != NULL, "clear text '%s'", o);
+    mui_confirm_text(0, "Song A", 0, 0, o, sizeof o);
+    CHECK(strstr(o, "Remove \"Song A\" from the library?") != NULL, "remove text '%s'", o);
+    CHECK(strcmp(mui_confirm_line(1), "LIBRARY_CLEAR") == 0 && mui_confirm_line(0) == NULL, "clear sends LIBRARY_CLEAR");
+}
+
+static int g_sent;
+static char g_sent_line[200];
+static int fake_send(void* ctx, const char* line) {
+    (void)ctx;
+    g_sent++;
+    snprintf(g_sent_line, sizeof g_sent_line, "%s", line);
+    return 1;
+}
+
+static void test_cmdline(void) {
+    g_sent = 0;
+    CHECK(mui_cmdline_submit(fake_send, NULL, "PLAY  \"a b\"  ") == 1 && g_sent == 1 && strcmp(g_sent_line, "PLAY  \"a b\"  ") == 0, "unchanged '%s'", g_sent_line);
+    CHECK(mui_cmdline_submit(fake_send, NULL, "") == 0 && g_sent == 1, "empty line is not sent");
+}
+
+static void test_states(void) {
+    uint32_t v, k;
+    for (v = 0; v < SEL_UIM_SV_COUNT; v++) {
+        for (k = 0; k < 3; k++) {
+            const char* t = sel_uim_state_text(v, k);
+            CHECK(t != NULL && t[0] != '\0', "state %u/%u", (unsigned)v, (unsigned)k);
+        }
+    }
+    CHECK(strcmp(sel_uim_state_text(SEL_UIM_SV_QUEUE, SEL_UIM_ST_EMPTY), "The queue is empty. Add songs from the Library.") == 0, "queue empty");
+    CHECK(sel_uim_state_text(99, 0) == NULL && sel_uim_state_text(0, 9) == NULL, "unknown pair");
+}
+
+static void test_tracker(void) {
+    sel_rp_cell c;
+    char o[40];
+    memset(&c, 0, sizeof c);
+    c.note = 49; c.instrument = 1; c.effect = 0xA; c.param = 0x0F;
+    mui_tracker_cell_text(&c, o, sizeof o);
+    CHECK(strstr(o, " 01 .. A0F") != NULL, "cell '%s'", o);
+    memset(&c, 0, sizeof c);
+    mui_tracker_cell_text(&c, o, sizeof o);
+    CHECK(strstr(o, " .. .. ...") != NULL, "empty cell '%s'", o);
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -527,6 +658,30 @@ int main(int argc, char** argv) {
         test_toast();
     } else if (strcmp(argv[1], "help") == 0) {
         test_help();
+    } else if (strcmp(argv[1], "search") == 0) {
+        test_search();
+    } else if (strcmp(argv[1], "queue") == 0) {
+        test_queue();
+    } else if (strcmp(argv[1], "playlists") == 0) {
+        test_playlists();
+    } else if (strcmp(argv[1], "song-menu") == 0) {
+        test_song_menu();
+    } else if (strcmp(argv[1], "like-rating") == 0) {
+        test_like_rating();
+    } else if (strcmp(argv[1], "nowplaying") == 0) {
+        test_nowplaying();
+    } else if (strcmp(argv[1], "songinfo") == 0) {
+        test_songinfo();
+    } else if (strcmp(argv[1], "settings") == 0) {
+        test_settings();
+    } else if (strcmp(argv[1], "dialogs") == 0) {
+        test_dialogs();
+    } else if (strcmp(argv[1], "cmdline") == 0) {
+        test_cmdline();
+    } else if (strcmp(argv[1], "states") == 0) {
+        test_states();
+    } else if (strcmp(argv[1], "tracker") == 0) {
+        test_tracker();
     } else {
         return 2;
     }

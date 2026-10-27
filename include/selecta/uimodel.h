@@ -105,6 +105,35 @@ void sel_uim_help_row(uint32_t i, char* out, size_t cap);
 /* 0 when every line is a COMMANDS verb or a PREF_SET of a prefs.def key and every verb has a row or an exemption. */
 int sel_uim_actions_check(char* msg, size_t cap);
 
+/* Shared command lines and texts of the views (MUI-P4-3..P4-16; the desktop UI uses the same functions). */
+/* LIBRARY_SEARCH "text" with backslash and quote escaped; returns the length (0 when it does not fit). */
+size_t sel_uim_search_line(const char* text, char* out, size_t cap);
+/* Song context menu (DUI-P4-16): five items on every page; item 4 is Remove from Queue on the Queue page. */
+#define SEL_UIM_SONG_MENU_ITEMS 5u
+const char* sel_uim_song_menu_label(uint32_t item, int on_queue);
+/* RATE n for a click on star `star` (1..5) while the song has `current`: clicking the current rating clears it. */
+void sel_uim_rate_line(uint32_t current, uint32_t star, char* out, size_t cap);
+/* Confirm texts of the library removals (DUI-P4-18). */
+void sel_uim_remove_text(const char* title, char* out, size_t cap);
+void sel_uim_clear_text(uint32_t songs, uint32_t playlists, char* out, size_t cap);
+/* View states (DUI-P4-21): the text of an empty, loading or error state of a view; NULL for an unknown pair. */
+typedef enum sel_uim_state_view { SEL_UIM_SV_LIBRARY = 0, SEL_UIM_SV_QUEUE, SEL_UIM_SV_SEARCH, SEL_UIM_SV_PLAYLISTS,
+                                  SEL_UIM_SV_NOWPLAYING, SEL_UIM_SV_LYRICS, SEL_UIM_SV_LIKED, SEL_UIM_SV_COUNT } sel_uim_state_view;
+typedef enum sel_uim_state_kind { SEL_UIM_ST_EMPTY = 0, SEL_UIM_ST_LOADING, SEL_UIM_ST_ERROR } sel_uim_state_kind;
+const char* sel_uim_state_text(uint32_t view, uint32_t kind);
+/* Settings window rows (MUI-P4-10): the prefs a settings UI offers with the gadget each needs. */
+typedef enum sel_uim_pref_ui { SEL_UIM_PREF_CYCLE = 0, SEL_UIM_PREF_CHECK, SEL_UIM_PREF_SLIDER, SEL_UIM_PREF_STRING } sel_uim_pref_ui;
+typedef struct sel_uim_pref_row {
+    const char* key;      /* a prefs.def key */
+    const char* label;    /* full English words */
+    uint32_t ui;          /* sel_uim_pref_ui */
+    const char* choices;  /* cycle: comma list; check: "off,on"; slider: "min,max" */
+} sel_uim_pref_row;
+uint32_t sel_uim_pref_row_count(void);
+const sel_uim_pref_row* sel_uim_pref_row_at(uint32_t i);
+/* PREF_SET key "value" */
+void sel_uim_pref_line(const char* key, const char* value, char* out, size_t cap);
+
 /* Layout tree and breakpoints (plan DUI-P1-7). A canvas width picks the breakpoint; the regions tile the canvas. */
 enum {
     SEL_UIM_BP_THREE_COLUMN = 0,   /* 1200 wide and up */

@@ -477,7 +477,19 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-library COMMAND mui_contract_test library)
   add_test(NAME mui-toast COMMAND mui_contract_test toast)
   add_test(NAME mui-help COMMAND mui_contract_test help)
-  set_tests_properties(mui-wait-contract mui-registry mui-open-failure mui-open-nomui mui-menu mui-menu-dispatch mui-weights mui-relayout mui-transport-map mui-dirty-map mui-keys mui-list-regular mui-list-tree mui-list-drill mui-columns mui-style-mask mui-list-backends mui-home mui-library mui-toast mui-help PROPERTIES TIMEOUT 30 LABELS mui)
+  add_test(NAME mui-search COMMAND mui_contract_test search)
+  add_test(NAME mui-queue COMMAND mui_contract_test queue)
+  add_test(NAME mui-playlists COMMAND mui_contract_test playlists)
+  add_test(NAME mui-song-menu COMMAND mui_contract_test song-menu)
+  add_test(NAME mui-like-rating COMMAND mui_contract_test like-rating)
+  add_test(NAME mui-nowplaying COMMAND mui_contract_test nowplaying)
+  add_test(NAME mui-songinfo COMMAND mui_contract_test songinfo)
+  add_test(NAME mui-settings COMMAND mui_contract_test settings)
+  add_test(NAME mui-dialogs COMMAND mui_contract_test dialogs)
+  add_test(NAME mui-cmdline COMMAND mui_contract_test cmdline)
+  add_test(NAME mui-states COMMAND mui_contract_test states)
+  add_test(NAME mui-tracker COMMAND mui_contract_test tracker)
+  set_tests_properties(mui-wait-contract mui-registry mui-open-failure mui-open-nomui mui-menu mui-menu-dispatch mui-weights mui-relayout mui-transport-map mui-dirty-map mui-keys mui-list-regular mui-list-tree mui-list-drill mui-columns mui-style-mask mui-list-backends mui-home mui-library mui-toast mui-help mui-search mui-queue mui-playlists mui-song-menu mui-like-rating mui-nowplaying mui-songinfo mui-settings mui-dialogs mui-cmdline mui-states mui-tracker PROPERTIES TIMEOUT 30 LABELS mui)
   set(_mui_has_ui 0)
   if(TARGET sel_plugin_mui_ui)
     set(_mui_has_ui 1)
@@ -1124,18 +1136,6 @@ if(NOT SEL_AMIGA)
   # OpenLibrary/MUI_NewObject/MUI_DisposeObject/CloseLibrary program leaves lib_OpenCnt=1 too, so Selecta does not leak),
   # and the library can no longer be expunged. The missing-MUI test must therefore run before rig-m4-mui-open in a boot.
   set_tests_properties(rig-m4-mui-open PROPERTIES DEPENDS rig-m4-mui-nomui)
-  # I439 / M4-P6-1: AGA c2p first light on rig 2, backend alone and the full AGA Selecta (SEL_DESKTOP_AGA build tree in
-  # SEL_AGA_BUILD, default build/amiga-aga).
-  set(SEL_AGA_BUILD "${PROJECT_SOURCE_DIR}/build/amiga-aga" CACHE PATH "Amiga build tree configured with -DSEL_DESKTOP_AGA=ON")
-  add_test(NAME rig-m4-aga-first-light
-    COMMAND "${CMAKE_COMMAND}" -DTAG=M4AGA "-DRIG_DIR=${SEL_RIG_DIR}"
-      "-DSELECTA=${SEL_AGA_BUILD}/apps/selecta/selecta" "-DMOD=${SEL_TESTMOD}"
-      "-DSELECTA_CLI=${SEL_AGA_BUILD}/apps/selecta-cli/selecta-cli"
-      "-DAGA_FIRST_LIGHT=${SEL_AGA_BUILD}/plugins/ui/desktop/selecta-aga-first-light"
-      "-DGENRE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/m3/genre"
-      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-aga-first-light"
-      -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
-  set_tests_properties(rig-m4-aga-first-light PROPERTIES LABELS rig RESOURCE_LOCK rig
   # MUI-P0-2 / MUI-P0-3: recorded facts (plan section 9). rig-m4-mui-mem needs a fresh boot of the 68020 rig
   # (`rig.py start --a1200`), before any MUI run, so the library is not yet resident when Avail is read.
   foreach(t facts mem)
@@ -1148,6 +1148,18 @@ if(NOT SEL_AMIGA)
     set_tests_properties(rig-m4-mui-${t} PROPERTIES LABELS rig RESOURCE_LOCK rig
       ENVIRONMENT "UPTERM_RIG=2" SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
   endforeach()
+  # I439 / M4-P6-1: AGA c2p first light on rig 2, backend alone and the full AGA Selecta (SEL_DESKTOP_AGA build tree in
+  # SEL_AGA_BUILD, default build/amiga-aga).
+  set(SEL_AGA_BUILD "${PROJECT_SOURCE_DIR}/build/amiga-aga" CACHE PATH "Amiga build tree configured with -DSEL_DESKTOP_AGA=ON")
+  add_test(NAME rig-m4-aga-first-light
+    COMMAND "${CMAKE_COMMAND}" -DTAG=M4AGA "-DRIG_DIR=${SEL_RIG_DIR}"
+      "-DSELECTA=${SEL_AGA_BUILD}/apps/selecta/selecta" "-DMOD=${SEL_TESTMOD}"
+      "-DSELECTA_CLI=${SEL_AGA_BUILD}/apps/selecta-cli/selecta-cli"
+      "-DAGA_FIRST_LIGHT=${SEL_AGA_BUILD}/plugins/ui/desktop/selecta-aga-first-light"
+      "-DGENRE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/m3/genre"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-aga-first-light"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
+  set_tests_properties(rig-m4-aga-first-light PROPERTIES LABELS rig RESOURCE_LOCK rig
     ENVIRONMENT "UPTERM_RIG=2" SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
 endif()
 # I122/I123/I126: paula14 split tables, chip double buffer through a recording bus, routing of PCM outputs.

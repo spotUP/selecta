@@ -1228,7 +1228,6 @@ static int desk_tween(desk* d, uint32_t key, uint32_t ms, uint32_t ease) {
 /* ---- Song list (DUI-P3-2): header row, one row per queue entry, drop targets in the sidebar. All geometry in canvas
  * pixels; a pointer position is mapped to a region of the layout tree first (sel_uim_hit), then to a part of it. ---- */
 enum { SONG_HEADER_H = 24, SONG_ROW_H = 32, SONG_TARGET_H = 32, SONG_MENU_ITEM_H = 24, SONG_MENU_W = 140, SONG_MENU_ITEMS = 5, SONG_PLAYLIST_TARGETS = 4, SONG_TARGET_W = 160 };
-static const char* const g_menu_items[SONG_MENU_ITEMS] = {"Play", "Play Next", "Add to Queue", "Add to Playlist", "Remove from Library"};
 
 static int desk_send(desk* d, const char* line);
 static int desk_send_path(desk* d, const char* verb, const char* path);
@@ -1866,7 +1865,7 @@ static int song_menu_count(const desk* d) {
 }
 
 static const char* song_menu_label(const desk* d, int32_t k) {
-    return k == 4 && d->sm_ref.removable ? "Remove from Queue" : g_menu_items[k];
+    return sel_uim_song_menu_label((uint32_t)k, d->sm_ref.removable != 0);
 }
 
 /* Items on the open menu: the song items, the playlists (at least the "No playlists" line) or the three scope choices. */
@@ -2042,7 +2041,7 @@ static void dlg_open_remove(desk* d, const char* path) {
     if (!sel_engine_song_title(d->engine, path, title, sizeof title)) {
         snprintf(title, sizeof title, "%s", path_base(path));
     }
-    snprintf(d->dlg_text, sizeof d->dlg_text, "Remove \"%s\" from the library? The audio file on disk is not touched.", title);
+    sel_uim_remove_text(title, d->dlg_text, sizeof d->dlg_text);
     d->dlg_open = DLG_REMOVE;
     d->dlg_opens++;
 }
@@ -2051,9 +2050,7 @@ static void dlg_open_clear(desk* d) {
     uint32_t n = sel_engine_state(d->engine)->library_songs;
     uint32_t pl = sel_engine_library_playlists(d->engine);
     d->dlg_playlists = pl;
-    snprintf(d->dlg_text, sizeof d->dlg_text,
-             "Remove %u songs and %u playlists, with all ratings and notes? This cannot be undone. Files on disk are not touched.",
-             (unsigned)n, (unsigned)pl);
+    sel_uim_clear_text(n, pl, d->dlg_text, sizeof d->dlg_text);
     d->dlg_open = DLG_CLEAR;
     d->dlg_opens++;
 }
@@ -2978,7 +2975,7 @@ static void draw_queue(desk* d) {
     }
     sel_gui_clip_pop(d->canvas);
     if (st->queue_count == 0u) {
-        draw_empty_state(d, mn, mn.y + lpx(d, QUEUE_LIST_Y), "The queue is empty. Add songs from the Library.");
+        draw_empty_state(d, mn, mn.y + lpx(d, QUEUE_LIST_Y), sel_uim_state_text(SEL_UIM_SV_QUEUE, SEL_UIM_ST_EMPTY));
     }
     d->queue_draws++;
     d->queue_rows = shown;
@@ -3181,7 +3178,7 @@ static void draw_playlists(desk* d) {
                   row_ink(d, r, (int32_t)i == sel ? accent : folder ? text : muted));
     }
     if (shown == 0u) {
-        draw_empty_state(d, mn, pl_row_rect(d, mn, 0).y, "No playlists yet. Type a name and choose New Playlist.");
+        draw_empty_state(d, mn, pl_row_rect(d, mn, 0).y, sel_uim_state_text(SEL_UIM_SV_PLAYLISTS, SEL_UIM_ST_EMPTY));
     }
     d->pl_draws++;
     d->pl_rows = shown;
@@ -3913,7 +3910,7 @@ static void draw_songinfo(desk* d) {
     si_walk_from_top(d, st, si_draw_row);
     sel_gui_clip_pop(d->canvas);
     if (d->si_rows == 0u) {
-        draw_empty_state(d, mn, si_list_top(d, mn), "Nothing is playing. Play a song to see its details.");
+        draw_empty_state(d, mn, si_list_top(d, mn), sel_uim_state_text(SEL_UIM_SV_NOWPLAYING, SEL_UIM_ST_EMPTY));
     }
     d->si_draws++;
     sel_gui_clip_pop(d->canvas);
@@ -5199,7 +5196,6 @@ static const char* const search_facet_name[SEARCH_FACETS] = {"All", "Songs", "Al
 /* Sends the pending query to the engine as the text UI's library screen does; an empty query leaves the results. */
 static void desk_search_fire(desk* d) {
     char line[160];
-    size_t n = 0, k;
     d->search_pending = 0;
     if (d->qlen == 0u) {
         d->search_on = 0;
@@ -5207,15 +5203,8 @@ static void desk_search_fire(desk* d) {
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         return;
     }
-    n += (size_t)snprintf(line, sizeof line, "LIBRARY_SEARCH \"");
-    for (k = 0; k < d->qlen && n + 4u < sizeof line; k++) {
-        if (d->query[k] == '"' || d->query[k] == '\\') {
-            line[n++] = '\\';
-        }
-        line[n++] = d->query[k];
-    }
-    line[n++] = '"';
-    line[n] = '\0';
+    d->query[d->qlen < sizeof d->query ? d->qlen : sizeof d->query - 1u] = '\0';
+    (void)sel_uim_search_line(d->query, line, sizeof line);
     desk_send(d, line);
     desk_send(d, "VIEW_SOURCE search"); /* the engine groups the result by type: Songs, Albums, Artists */
     desk_send(d, "VIEW_STYLE regular");
@@ -5776,7 +5765,7 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
         if (in_rect(d->np_rate[i], x, y)) {
             char line[16];
             /* The mark of the stored rating clicked again takes the rating back (I306). */
-            snprintf(line, sizeof line, "RATE %u", d->np_rating == (int)i + 1 ? 0u : (unsigned)i + 1u);
+            sel_uim_rate_line(d->np_rating > 0 ? (uint32_t)d->np_rating : 0u, i + 1u, line, sizeof line);
             return desk_send(d, line);
         }
     }
@@ -7198,7 +7187,7 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         } else if (ev->code >= 32u && ev->code < 127u && (ev->mods & (TXT_MOD_CTRL | TXT_MOD_ALT)) == 0u) {
             if (d->qlen + 1u < sizeof d->query) {
                 d->query[d->qlen++] = (char)ev->code;
-                d->query[d->qlen] = '\0';
+                d->query[d->qlen < sizeof d->query ? d->qlen : sizeof d->query - 1u] = '\0';
                 d->search_pending = 1;
                 d->search_since = d->now_ms;
             }

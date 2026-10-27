@@ -80,3 +80,97 @@ uint32_t mui_help_count(void) {
 void mui_help_row(uint32_t i, char* out, size_t cap) {
     sel_uim_help_row(i, out, cap);
 }
+
+/* MUI-P4-3: a changed search String gadget sends the one LIBRARY_SEARCH line, then selects the result view as the desktop does. */
+uint32_t mui_search_lines(const char* text, char lines[3][160]) {
+    if (sel_uim_search_line(text, lines[0], 160) == 0) {
+        return 0;
+    }
+    snprintf(lines[1], 160, "VIEW_SOURCE search");
+    snprintf(lines[2], 160, "VIEW_STYLE regular");
+    return 3;
+}
+
+/* MUI-P4-4: the queue verbs take entry ids (the desktop sends the same). */
+void mui_queue_line(const char* verb, uint32_t id, uint32_t to_id, char* out, size_t cap) {
+    if (strcmp(verb, "move") == 0) {
+        snprintf(out, cap, "QUEUE_MOVE %u %u", (unsigned)id, (unsigned)to_id);
+    } else if (strcmp(verb, "remove") == 0) {
+        snprintf(out, cap, "QUEUE_REMOVE %u", (unsigned)id);
+    } else if (strcmp(verb, "clear") == 0) {
+        snprintf(out, cap, "QUEUE_CLEAR");
+    } else {
+        out[0] = '\0';
+    }
+}
+
+/* MUI-P4-5: playlist row actions. Open activates the row the list cursor is on (the list click sets VIEW_CURSOR first). */
+uint32_t mui_playlist_line(const char* action, uint32_t id, const char* name, char* out, size_t cap) {
+    if (strcmp(action, "open") == 0) {
+        snprintf(out, cap, "VIEW_ACTIVATE");
+    } else if (strcmp(action, "rename") == 0) {
+        snprintf(out, cap, "PLAYLIST_RENAME %u \"%s\"", (unsigned)id, name != NULL ? name : "");
+    } else if (strcmp(action, "delete") == 0) {
+        snprintf(out, cap, "PLAYLIST_DEL %u", (unsigned)id);
+    } else {
+        return 0;
+    }
+    return 1;
+}
+
+/* MUI-P4-7: the rating Cycle holds None and 1..5 stars; picking an entry sets that rating. */
+void mui_rating_line(uint32_t cycle_index, char* out, size_t cap) {
+    snprintf(out, cap, "RATE %u", (unsigned)(cycle_index > 5u ? 5u : cycle_index));
+}
+
+const char* mui_like_line(void) {
+    return "LIKE";
+}
+
+/* MUI-P4-8 */
+uint32_t mui_np_objects(const char** names, uint32_t cap) {
+    static const char* const objs[] = {"artwork", "title", "artist", "album", "lyrics", "upnext"};
+    uint32_t i, n = (uint32_t)(sizeof objs / sizeof objs[0]);
+    for (i = 0; i < n && i < cap; i++) {
+        names[i] = objs[i];
+    }
+    return n;
+}
+
+int32_t mui_lyric_line_of(int32_t lyric_slot) {
+    return lyric_slot > 0 ? lyric_slot - 1 : -1;
+}
+
+/* MUI-P4-9 */
+uint32_t mui_subsong_cycle_line(uint32_t subsong, uint32_t count, char* out, size_t cap) {
+    if (count < 2u) {
+        return 0;
+    }
+    snprintf(out, cap, "SUBSONG %u", (unsigned)(subsong >= count ? 1u : subsong + 1u));
+    return 1;
+}
+
+/* MUI-P4-12 */
+void mui_confirm_text(uint32_t kind, const char* title, uint32_t songs, uint32_t playlists, char* out, size_t cap) {
+    if (kind == 1u) {
+        sel_uim_clear_text(songs, playlists, out, cap);
+    } else {
+        sel_uim_remove_text(title, out, cap);
+    }
+}
+
+const char* mui_confirm_line(uint32_t kind) {
+    return kind == 1u ? "LIBRARY_CLEAR" : NULL; /* a remove confirm sends LIBRARY_REMOVE with the path the caller holds */
+}
+
+/* MUI-P4-13 */
+int mui_cmdline_submit(mui_send_fn send, void* ctx, const char* text) {
+    return send != NULL && text != NULL && text[0] != '\0' ? send(ctx, text) : 0;
+}
+
+/* MUI-P4-16 */
+void mui_tracker_cell_text(const sel_rp_cell* cell, char* out, size_t cap) {
+    char note[8], ins[8], vol[8], fx[8];
+    sel_uim_cell_fields(cell, note, ins, vol, fx);
+    snprintf(out, cap, "%s %s %s %s", note, ins, vol, fx);
+}

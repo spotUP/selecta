@@ -175,4 +175,27 @@ int mui_toast_tick(mui_toast* t, uint32_t now_ms); /* 1 when it just went away *
 uint32_t mui_help_count(void);
 void mui_help_row(uint32_t i, char* out, size_t cap);
 
+/* MUI-P4-3 search: the lines a changed String gadget sends; line 0 is the one search line. */
+uint32_t mui_search_lines(const char* text, char lines[3][160]);
+/* MUI-P4-4 queue: entry ids, as the desktop queue sends them. */
+void mui_queue_line(const char* verb, uint32_t id, uint32_t to_id, char* out, size_t cap); /* "move", "remove", "clear" */
+/* MUI-P4-5 playlists: action is "open", "rename" or "delete"; name is only used by rename. Returns 0 for an unknown action. */
+uint32_t mui_playlist_line(const char* action, uint32_t id, const char* name, char* out, size_t cap);
+/* MUI-P4-7 likes and ratings: the Cycle entry index 0..5 (0 is None) to its line, and the heart. */
+void mui_rating_line(uint32_t cycle_index, char* out, size_t cap);
+const char* mui_like_line(void);
+/* MUI-P4-8 Now Playing: the objects of the group in order, and a synced lyric slot to its line index (-1: none). */
+uint32_t mui_np_objects(const char** names, uint32_t cap);
+int32_t mui_lyric_line_of(int32_t lyric_slot);
+/* MUI-P4-9 song info: the next subsong of a Cycle (wraps after the last) as a SUBSONG line; 0 when there is only one. */
+uint32_t mui_subsong_cycle_line(uint32_t subsong, uint32_t count, char* out, size_t cap);
+/* MUI-P4-12 dialogs: the confirm text per kind (0 remove, 1 clear library) and the line a confirm sends. */
+void mui_confirm_text(uint32_t kind, const char* title, uint32_t songs, uint32_t playlists, char* out, size_t cap);
+const char* mui_confirm_line(uint32_t kind);
+/* MUI-P4-13 command line: hands the typed line to the engine sender unchanged; returns the sender's result. */
+typedef int (*mui_send_fn)(void* ctx, const char* line);
+int mui_cmdline_submit(mui_send_fn send, void* ctx, const char* text);
+/* MUI-P4-16 tracker: the text of one pattern cell, "C-4 01 .. 0A0F"-style fields joined by spaces. */
+void mui_tracker_cell_text(const sel_rp_cell* cell, char* out, size_t cap);
+
 #endif
