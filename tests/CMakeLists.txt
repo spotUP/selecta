@@ -410,6 +410,14 @@ add_test(NAME view-unit COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs" br
 # T32: grouping, node ids, expand/collapse, drilldown, cursor across styles.
 add_test(NAME view-tree COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs" tree)
 # Both rebuild the same song directory.
+if(NOT SEL_AMIGA)
+  # MUI-P3-5, MUI-P3-6 (engine half): the engine against the MUI plugin's planar and RTG style masks.
+  target_link_libraries(view_test PRIVATE mui_map)
+  target_compile_definitions(view_test PRIVATE SEL_VIEW_TEST_MUI=1)
+  add_test(NAME mui-style-refusal COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs" mui-refusal)
+  add_test(NAME mui-style-keep COMMAND view_test "${CMAKE_CURRENT_BINARY_DIR}/songs" mui-keep)
+  set_tests_properties(mui-style-refusal mui-style-keep PROPERTIES TIMEOUT 30 LABELS mui RESOURCE_LOCK view_songs_dir)
+endif()
 set_tests_properties(view-unit view-tree PROPERTIES RESOURCE_LOCK view_songs_dir)
 
 # T33: title-format resolver and PREF_GET / PREF_SET (src/engine/format.c, prefs.c).

@@ -7,6 +7,9 @@
 #include <selecta/host.h>
 #include <selecta/protocol.h>
 #include <selecta/registry.h>
+#ifdef SEL_VIEW_TEST_MUI
+#include "mui_map.h"
+#endif
 
 #include <limits.h>
 #include <stdio.h>
@@ -254,6 +257,61 @@ static void test_style(void) {
     CHECK(strstr(evlog, "ERROR unsupported_style") != NULL, "nonsense: %s", evlog);
 }
 
+#ifdef SEL_VIEW_TEST_MUI
+/* MUI-P3-5: a planar MUI screen offers five styles; the engine refuses cover flow there and takes it on RTG. */
+static void test_mui_refusal(void) {
+    uint32_t s;
+    sel_engine_set_ui_view_styles(eng, mui_style_mask(0));
+    run("VIEW_STYLE coverflow");
+    CHECK(strstr(evlog, "ERROR unsupported_style") != NULL, "planar coverflow not refused: %s", evlog);
+    for (s = 0; s < SEL_VIEW_STYLE_COUNT; s++) {
+        char cmd[64];
+        if ((mui_style_mask(0) & SEL_VIEW_STYLE_BIT(s)) == 0u) continue;
+        snprintf(cmd, sizeof cmd, "VIEW_STYLE %s", sel_view_style_label(s));
+        run(cmd);
+        CHECK(strstr(evlog, "ERROR unsupported_style") == NULL, "planar offered style %s refused: %s", sel_view_style_label(s), evlog);
+    }
+    sel_engine_set_ui_view_styles(eng, mui_style_mask(1));
+    run("VIEW_STYLE coverflow");
+    CHECK(strstr(evlog, "ERROR unsupported_style") == NULL, "RTG coverflow refused: %s", evlog);
+    sel_engine_set_ui_view_styles(eng, SEL_VIEW_STYLES_CLASSIC);
+}
+
+/* MUI-P3-6 (engine half): switching between any two offered styles keeps the cursor song. */
+static void test_mui_keep(void) {
+    uint32_t a, b;
+    char key[PATH_MAX];
+    const char* k;
+    run("QUEUE_CLEAR");
+    run("QUEUE_ADD /m/a/one.mod");
+    run("QUEUE_ADD /m/a/two.xm");
+    run("QUEUE_ADD /m/b/three.mod");
+    run("VIEW_SHOW queue");
+    run("VIEW_WINDOW 20");
+    run("VIEW_STYLE regular");
+    run("VIEW_CURSOR 2");
+    k = sel_engine_view_cursor_key(eng);
+    CHECK(k != NULL, "no cursor key on the queue");
+    if (k == NULL) return;
+    snprintf(key, sizeof key, "%s", k);
+    sel_engine_set_ui_view_styles(eng, mui_style_mask(0));
+    for (a = 0; a < SEL_VIEW_STYLE_COUNT; a++) {
+        for (b = 0; b < SEL_VIEW_STYLE_COUNT; b++) {
+            char cmd[64];
+            if ((mui_style_mask(0) & SEL_VIEW_STYLE_BIT(a)) == 0u || (mui_style_mask(0) & SEL_VIEW_STYLE_BIT(b)) == 0u) continue;
+            snprintf(cmd, sizeof cmd, "VIEW_STYLE %s", sel_view_style_label(a));
+            run(cmd);
+            snprintf(cmd, sizeof cmd, "VIEW_STYLE %s", sel_view_style_label(b));
+            run(cmd);
+            k = sel_engine_view_cursor_key(eng);
+            CHECK(k != NULL && strcmp(k, key) == 0, "cursor key %s -> %s: '%s' vs '%s'", sel_view_style_label(a),
+                  sel_view_style_label(b), k != NULL ? k : "(null)", key);
+        }
+    }
+    sel_engine_set_ui_view_styles(eng, SEL_VIEW_STYLES_CLASSIC);
+}
+#endif
+
 /* T32 view-tree: grouping, node ids, expand/collapse, drilldown, and the
  * cursor staying on one song across the three styles. */
 static int is_node(uint32_t i) {
@@ -378,6 +436,10 @@ int main(int argc, char** argv) {
     if (wanted(argc, argv, "window")) test_window();
     if (wanted(argc, argv, "style")) test_style();
     if (wanted(argc, argv, "tree")) test_tree();
+#ifdef SEL_VIEW_TEST_MUI
+    if (wanted(argc, argv, "mui-refusal")) test_mui_refusal();
+    if (wanted(argc, argv, "mui-keep")) test_mui_keep();
+#endif
     sel_engine_destroy(eng);
     remove_tree();
     printf(failures ? "view-unit: %d failure(s)\n" : "view-unit: ok\n", failures);
