@@ -6,6 +6,7 @@
 #include "mui_canvas_class.h"
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <clib/alib_protos.h>
@@ -19,8 +20,12 @@
 
 extern struct Library* MUIMasterBase;
 
+/* The instance data stays small: BOOPSI keeps the instance size in a UWORD (struct IClass cl_InstSize), and
+ * sel_gui_canvas alone is about 165 KB (the INDEX8 cubes). Embedding it truncated the size MUI allocated, and the
+ * OM_NEW memset then zeroed about 131 KB of other tasks' memory (the guest lost exec and the network seconds after
+ * the MUI window opened). The canvas lives on the heap, owned from OM_NEW to OM_DISPOSE. */
 typedef struct canvas_data {
-    mui_canvas mc;
+    mui_canvas* mc;
     mui_grid_style style;
     int rtg;
     struct Library* p96;
@@ -29,6 +34,9 @@ typedef struct canvas_data {
     mui_art_fn art;
     void* art_ctx;
 } canvas_data;
+
+/* Build-time guard: BOOPSI keeps the instance size in a UWORD (cl_InstSize). */
+typedef char canvas_data_fits_uword[(sizeof(canvas_data) < 65536u) ? 1 : -1];
 
 static struct MUI_CustomClass* g_class;
 
@@ -46,8 +54,23 @@ static ULONG canvas_new(struct IClass* cl, Object* obj, Msg msg) {
     if (obj != NULL) {
         canvas_data* d = INST_DATA(cl, obj);
         memset(d, 0, sizeof *d);
+        d->mc = calloc(1, sizeof *d->mc);
+        if (d->mc == NULL) {
+            CoerceMethod(cl, obj, OM_DISPOSE);
+            return 0;
+        }
     }
     return (ULONG)obj;
+}
+
+static ULONG canvas_dispose(struct IClass* cl, Object* obj, Msg msg) {
+    canvas_data* d = INST_DATA(cl, obj);
+    if (d->mc != NULL) {
+        mui_canvas_release(d->mc);
+        free(d->mc);
+        d->mc = NULL;
+    }
+    return DoSuperMethodA(cl, obj, msg);
 }
 
 static ULONG canvas_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
@@ -56,10 +79,23 @@ static ULONG canvas_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
     if ((msg->flags & MADF_DRAWOBJECT) == 0 || d->p96 == NULL || !d->rtg) {
         return 0;
     }
-    if (mui_canvas_fit(&d->mc, (sel_gui_rect){_mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj)})) {
-        mui_canvas_draw_grid(&d->mc, &d->style, d->tiles, d->n, d->cursor, d->art, d->art_ctx);
-        canvas_push(d->p96, d->mc.pix, d->mc.c.w, d->mc.c.h, _rp(obj), _mleft(obj), _mtop(obj));
+    if (mui_canvas_fit(d->mc, (sel_gui_rect){_mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj)})) {
+        mui_canvas_draw_grid(d->mc, &d->style, d->tiles, d->n, d->cursor, d->art, d->art_ctx);
+        canvas_push(d->p96, d->mc->pix, d->mc->c.w, d->mc->c.h, _rp(obj), _mleft(obj), _mtop(obj));
     }
+    return 0;
+}
+
+/* Every Area subclass answers AskMinMax: the super call leaves only the frame, and the canvas adds a small minimum, a
+ * grid-sized default and an unbounded maximum so the group can give it the space the list would have. */
+static ULONG canvas_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMinMax* msg) {
+    DoSuperMethodA(cl, obj, (Msg)msg);
+    msg->MinMaxInfo->MinWidth += 16;
+    msg->MinMaxInfo->DefWidth += 320;
+    msg->MinMaxInfo->MaxWidth += MUI_MAXMAX;
+    msg->MinMaxInfo->MinHeight += 16;
+    msg->MinMaxInfo->DefHeight += 200;
+    msg->MinMaxInfo->MaxHeight += MUI_MAXMAX;
     return 0;
 }
 
@@ -76,6 +112,8 @@ static ULONG __attribute__((used)) canvas_dispatch_c(struct IClass* cl, Object* 
     switch (msg->MethodID) {
     case OM_NEW:
         return canvas_new(cl, obj, msg);
+    case OM_DISPOSE:
+        return canvas_dispose(cl, obj, msg);
     case MUIM_Setup:
         if (!DoSuperMethodA(cl, obj, msg)) {
             return FALSE;
@@ -92,12 +130,14 @@ static ULONG __attribute__((used)) canvas_dispatch_c(struct IClass* cl, Object* 
         return DoSuperMethodA(cl, obj, msg);
     case MUIM_Show:
         d = INST_DATA(cl, obj);
-        mui_canvas_fit(&d->mc, (sel_gui_rect){_mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj)});
+        mui_canvas_fit(d->mc, (sel_gui_rect){_mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj)});
         return DoSuperMethodA(cl, obj, msg);
     case MUIM_Hide:
         d = INST_DATA(cl, obj);
-        mui_canvas_release(&d->mc);
+        mui_canvas_release(d->mc);
         return DoSuperMethodA(cl, obj, msg);
+    case MUIM_AskMinMax:
+        return canvas_askminmax(cl, obj, (struct MUIP_AskMinMax*)msg);
     case MUIM_Draw:
         return canvas_draw(cl, obj, (struct MUIP_Draw*)msg);
     }
@@ -133,7 +173,7 @@ void mui_canvas_set_grid(Object* obj, const mui_tile* tiles, uint32_t n, uint32_
 }
 
 uint32_t mui_canvas_draws(Object* obj) {
-    return ((canvas_data*)INST_DATA(g_class->mcc_Class, obj))->mc.draws;
+    return ((canvas_data*)INST_DATA(g_class->mcc_Class, obj))->mc->draws;
 }
 
 void mui_canvas_class_free(void) {
