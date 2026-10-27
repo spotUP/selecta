@@ -67,6 +67,7 @@ static const sel_uim_pref_row g_pref_rows[] = {
     {"mix.stereo_width", "Stereo Width", SEL_UIM_PREF_SLIDER, "0,100"},
     {"library.prefetch", "Prefetch Next Song", SEL_UIM_PREF_CHECK, "off,on"},
     {"library.metered", "Metered Connection", SEL_UIM_PREF_CHECK, "off,on"},
+    {"ui.desktop.overscan", "Fill Screen (Overscan)", SEL_UIM_PREF_CHECK, "off,on"},
     {"view.title_format", "Title Format", SEL_UIM_PREF_STRING, ""},
     {"view.status_format", "Status Format", SEL_UIM_PREF_STRING, ""},
 };
