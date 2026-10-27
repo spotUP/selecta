@@ -144,6 +144,14 @@ void sel_gui_palette_budget(uint32_t* p, const uint32_t* ui, uint32_t n) {
     }
 }
 
+void sel_gui_palette_headline_shades(uint32_t* p, uint32_t fg0, uint32_t bg0, uint32_t fg1, uint32_t bg1) {
+    uint32_t i;
+    for (i = 0; i < 3u; i++) { /* quarter, half, three quarters from the ground to the ink */
+        p[SEL_GUI_HEADLINE_SHADE0 + i] = mix(bg0 & 0xFFFFFFu, fg0 & 0xFFFFFFu, i + 1u, 4u);
+        p[SEL_GUI_HEADLINE_SHADE0 + 3u + i] = mix(bg1 & 0xFFFFFFu, fg1 & 0xFFFFFFu, i + 1u, 4u);
+    }
+}
+
 void sel_gui_palette_default(uint32_t* p, uint32_t accent, uint32_t surface, uint32_t text) {
     uint32_t ui[3];
     ui[0] = accent;

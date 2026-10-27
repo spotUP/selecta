@@ -342,6 +342,40 @@ static void test_index8_text_blend(void) {
     drop(c);
 }
 
+/* I526-P2b: headline shades. With the reserved entries 24-29 filled, a coverage ramp of TEXT on BACKGROUND lands on
+ * the three exact quarter steps; without them the nearest generic step is used and at most one of them matches. */
+static void test_headline_shades(void) {
+    const uint32_t fg = 0xE6E6EBu, bg = 0x1E1E24u, surf = 0x2A2A32u;
+    uint32_t pal[256], ui[21], i, hit[3] = {0u, 0u, 0u}, exact = 0u;
+    sel_gui_canvas* c = make(SEL_GUI_INDEX8, 16, 4);
+    uint8_t mask[16];
+    for (i = 0u; i < 21u; i++) {
+        ui[i] = i == 0u ? 0x3B82F6u : i == 1u ? surf : i == 2u ? fg : i == 3u ? bg : 0xA00000u + i; /* far from the grey ramp */
+    }
+    sel_gui_palette_budget(pal, ui, 21u);
+    sel_gui_palette_headline_shades(pal, fg, bg, fg, surf);
+    sel_gui_set_palette(c, pal, 0u, 256u);
+    for (i = 0u; i < 16u; i++) {
+        mask[i] = (uint8_t)(i * 17u);
+    }
+    sel_gui_fill_rect(c, R(0, 0, 16, 4), 0xFF000000u | bg);
+    sel_gui_blit_mask(c, 0, 0, mask, 16, 1, 16, 0xFF000000u | fg);
+    for (i = 0u; i < 16u; i++) {
+        uint32_t px = sel_gui_pixel(c, (int32_t)i, 0), s;
+        for (s = 0u; s < 3u; s++) {
+            if (px == pal[SEL_GUI_HEADLINE_SHADE0 + s]) {
+                hit[s]++;
+            }
+        }
+    }
+    for (i = 0u; i < 3u; i++) {
+        exact += hit[i] != 0u;
+    }
+    CHECK(exact == 3u);
+    CHECK(pal[SEL_GUI_HEADLINE_SHADE0 + 3u + 1u] == (((surf >> 16) + (fg >> 16)) / 2u << 16 | ((surf >> 8 & 255u) + (fg >> 8 & 255u)) / 2u << 8 | ((surf & 255u) + (fg & 255u)) / 2u));
+    drop(c);
+}
+
 /* ---- span rasterizers equal the per-pixel path (I396) ---- */
 
 static int32_t t_min(int32_t a, int32_t b) { return a < b ? a : b; }
@@ -596,6 +630,7 @@ int main(void) {
     test_scrim_shadow();
     test_shadow_round_card();
     test_index8_text_blend();
+    test_headline_shades();
     test_cube();
     test_dirty();
     if (g_fail != 0) {

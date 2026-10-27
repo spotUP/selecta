@@ -8160,6 +8160,8 @@ static int desk_make_canvas(desk* d, const char* size, int32_t def_w, int32_t de
             ui[k] = d->theme.token[ui_tokens[k]];
         }
         sel_gui_palette_budget(pal, ui, k);
+        sel_gui_palette_headline_shades(pal, d->theme.token[SEL_GUI_TOKEN_TEXT], d->theme.token[SEL_GUI_TOKEN_BACKGROUND],
+            d->theme.token[SEL_GUI_TOKEN_TEXT], d->theme.token[SEL_GUI_TOKEN_SURFACE]); /* I526-P2b */
         sel_gui_set_palette(d->canvas, pal, 0u, 256u);
     }
     if (sel_uim_budget_allows(&d->budget, SEL_UIM_FX_SHADOW)) {
