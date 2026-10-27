@@ -10,6 +10,7 @@
 #include <devices/inputevent.h>
 
 struct IntuiMessage;
+struct Screen;
 
 #define DESK_AMIGA_INPUT_QUEUE 64
 
@@ -35,5 +36,9 @@ void desk_amiga_input_close(desk_amiga_input* in);
 int desk_amiga_input_handle(desk_amiga_input* in, struct IntuiMessage* m);
 /* Takes the next queued event; 0 when the queue is empty. */
 int desk_amiga_input_next(desk_amiga_input* in, sel_gui_input* ev);
+
+/* Opens an asl.library drawers-only requester on the screen and queues the chosen drawer as a SEL_GUI_IN_DROP (I531, see
+ * folder_pick.h). Cancel queues nothing. 1 when the requester ran, 0 when it could not open. */
+int desk_amiga_input_pick_folder(desk_amiga_input* in, struct Screen* screen);
 
 #endif

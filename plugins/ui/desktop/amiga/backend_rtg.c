@@ -288,6 +288,7 @@ void desk_rtg_present(desk_rtg* b, const sel_gui_canvas* c) {
 }
 
 int desk_rtg_next_input(desk_rtg* b, sel_gui_input* ev) { return desk_amiga_input_next(&b->in, ev); }
+int desk_rtg_open_folder_dialog(desk_rtg* b) { return desk_amiga_input_pick_folder(&b->in, b->screen); }
 
 int desk_rtg_poll(desk_rtg* b, uint32_t timeout_ms) {
     struct MsgPort* wp = b->window->UserPort;
