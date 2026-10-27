@@ -42,6 +42,18 @@ uint32_t* sel_gui_art_cache_put(sel_gui_art_cache* c, int size, int64_t key);
 uint32_t sel_gui_art_cache_hits(const sel_gui_art_cache* c);
 uint32_t sel_gui_art_cache_misses(const sel_gui_art_cache* c);
 
+/* 1-bit artwork cache for planar screens (MUI-P5-7, I509): the Atkinson-dithered bitmap of an edge x edge cover, kept
+ * in memory (LRU slots) and as `<dir>/<key hex>.bit` beside the art cache directory (dir NULL: memory only). A hit in
+ * either place does no dither. Row pitch is (edge + 7) / 8 bytes. Not thread safe: the UI thread owns it. */
+typedef struct sel_gui_bitart sel_gui_bitart;
+sel_gui_bitart* sel_gui_bitart_open(uint16_t edge, uint8_t slots, const char* dir);
+void sel_gui_bitart_close(sel_gui_bitart* c);
+/* Bitmap of cover `key`: memory, then disk, then (when `px` is not NULL) dithered from px (edge x edge words) and
+ * stored in both. NULL when it is nowhere and px is NULL. */
+const uint8_t* sel_gui_bitart_get(sel_gui_bitart* c, int64_t key, const uint32_t* px);
+uint32_t sel_gui_bitart_dithers(const sel_gui_bitart* c); /* dither runs so far: the cache sentinel */
+uint32_t sel_gui_bitart_pitch(const sel_gui_bitart* c);
+
 #ifdef __cplusplus
 }
 #endif
