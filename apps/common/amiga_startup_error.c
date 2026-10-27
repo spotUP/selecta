@@ -3,6 +3,10 @@
  * is covered and the console case never touches intuition. */
 #include "startup_error.h"
 
+/* The library base is renamed for the reason given in backend_rtg.c: libnix would open it at program start, and a
+ * shared global set to NULL here would break any later user of it. */
+#define IntuitionBase sel_startup_IntuitionBase
+
 #include <dos/dos.h>
 #include <intuition/intuition.h>
 #include <proto/dos.h>
