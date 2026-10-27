@@ -662,12 +662,17 @@ static uint32_t desk_mix(uint32_t a, uint32_t b, int32_t q16) {
 }
 
 /* One line of text at the top left of the box, ellipsized to the box width. */
-static void draw_text(desk* d, sel_gui_rect box, const char* s, int semibold, int px, uint32_t argb) {
+static const sel_gui_atlas* desk_text_atlas(desk* d, int semibold, int px, int32_t box_h) {
     const sel_gui_atlas* at = desk_font(d, semibold, px);
-    if (at != NULL && desk_bitmap_text(d) && at->line_height > box.h) { /* I526: a box shorter than the line takes a 6-row font */
-        const sel_gui_atlas* fit = desk_role_atlas(d, semibold, px, box.h);
+    if (at != NULL && desk_bitmap_text(d) && at->line_height > box_h) { /* I526: a box shorter than the line takes a 6-row font */
+        const sel_gui_atlas* fit = desk_role_atlas(d, semibold, px, box_h);
         at = fit != NULL ? fit : at;
     }
+    return at;
+}
+
+static void draw_text(desk* d, sel_gui_rect box, const char* s, int semibold, int px, uint32_t argb) {
+    const sel_gui_atlas* at = desk_text_atlas(d, semibold, px, box.h);
     if (at != NULL) {
         sel_gui_clip_push(d->canvas, box);
         sel_gui_text_draw(d->canvas, at, box.x, box.y + (box.h - at->line_height) / 2, s, argb, box.w, &d->text);
@@ -2451,13 +2456,21 @@ static int32_t lib_nag_h(desk* d) {
     return lpx(d, NAG_HEAD_H + NAG_ROW_H * (int32_t)(n < NAG_COL_ROWS ? n : NAG_COL_ROWS)) + lib_gap(d);
 }
 
+static int lib_header_inline(desk* d);
+
+/* I548: when the measured title and both header buttons do not fit one row, the buttons take a row of their own under the title
+ * and everything below moves down by it. */
+static int32_t lib_header_row_h(desk* d) {
+    return sel_engine_state(d->engine)->composer_page == NULL && !lib_header_inline(d) ? lpx(d, 36) : 0;
+}
+
 static int32_t lib_tab_y(desk* d) {
-    return lpx(d, LIB_TITLE_Y + page_title_h(d)) + lib_gap(d) + lib_nag_h(d);
+    return lpx(d, LIB_TITLE_Y + page_title_h(d)) + lib_header_row_h(d) + lib_gap(d) + lib_nag_h(d);
 }
 
 static sel_gui_rect nag_rect(desk* d, sel_gui_rect mn) {
     int32_t mg = lpx(d, LIB_MARGIN);
-    return rect_of(mn.x + mg, mn.y + lpx(d, LIB_TITLE_Y + page_title_h(d)) + lib_gap(d), mn.w - 2 * mg, lib_nag_h(d) - lib_gap(d));
+    return rect_of(mn.x + mg, mn.y + lpx(d, LIB_TITLE_Y + page_title_h(d)) + lib_header_row_h(d) + lib_gap(d), mn.w - 2 * mg, lib_nag_h(d) - lib_gap(d));
 }
 
 static int32_t lib_header_btn_w(desk* d, const char* label);
@@ -2513,6 +2526,11 @@ static int32_t lib_list_y(desk* d) {
     return lib_tab_y(d) + lpx(d, LIB_TAB_H) + lib_gap(d) + lib_style_row_h(d);
 }
 
+/* I548: the bitmap tier lays each statistic on ONE row (label, then value), so the strip is one line high; elsewhere the label sits over the value. */
+static int32_t lib_stats_h(const desk* d) {
+    return lpx(d, desk_bitmap_text(d) ? LIB_STATS_LINE : LIB_STATS_H);
+}
+
 static int lib_stats_on(const sel_state* st) {
     int flow = st->view != NULL && st->view->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW;
     return st->stats != NULL && !flow;
@@ -2521,7 +2539,7 @@ static int lib_stats_on(const sel_state* st) {
 /* Top edge of the Library body (the rows, the tiles): under the tab row, and under the Statistics strip when it shows
  * (I381), a lib_gap below it like the other header rows. */
 static int32_t lib_body_y(desk* d, const sel_state* st) {
-    return lib_list_y(d) + (lib_stats_on(st) ? lpx(d, LIB_STATS_H) + lib_gap(d) : 0);
+    return lib_list_y(d) + (lib_stats_on(st) ? lib_stats_h(d) + lib_gap(d) : 0);
 }
 
 /* Next NUL-separated field after `p`. */
@@ -2589,14 +2607,14 @@ static sel_gui_rect lib_row_rect(desk* d, sel_gui_rect mn, uint32_t i) {
  * width when there are no statistics and in cover flow, which uses the whole main width (I391). */
 static sel_gui_rect lib_stats_rect(desk* d, sel_gui_rect mn, const sel_state* st) {
     int32_t mg = lpx(d, LIB_MARGIN), y = mn.y + lib_list_y(d);
-    return lib_stats_on(st) ? rect_of(mn.x + mg, y, mn.w - 2 * mg > 0 ? mn.w - 2 * mg : 0, lpx(d, LIB_STATS_H)) : rect_of(mn.x + mn.w, y, 0, 0);
+    return lib_stats_on(st) ? rect_of(mn.x + mg, y, mn.w - 2 * mg > 0 ? mn.w - 2 * mg : 0, lib_stats_h(d)) : rect_of(mn.x + mn.w, y, 0, 0);
 }
 
 /* I455: the More control at the right end of the strip, and the panel it expands over the grid: every statistics row (up
  * to 18) as label and value in two columns, under the strip. The grid keeps its full height while the panel is closed. */
 static sel_gui_rect lib_stats_more_rect(desk* d, sel_gui_rect sr) {
     int32_t w = lpx(d, LIB_STATS_MORE_W);
-    return rect_of(sr.x + sr.w - w, sr.y, w, sr.h);
+    return rect_of(sr.x + sr.w - w, sr.y, w, lpx(d, LIB_STATS_LINE)); /* on the first line, the one the heading and the labels are on */
 }
 
 static uint32_t lib_stats_rows(const sel_state* st) {
@@ -2677,7 +2695,7 @@ static int32_t lib_header_btn_w(desk* d, const char* label) { /* I537: the measu
 
 static sel_gui_rect lib_add_rect(desk* d, sel_gui_rect mn) {
     int32_t w = lib_header_btn_w(d, "Add Folder"), right = nav_arrow_rect(d, mn, 0).x - lib_gap(d) - lib_gap(d) / 2;
-    return rect_of(right - w, mn.y + lpx(d, LIB_TITLE_Y) + lpx(d, 4), w, lpx(d, 32));
+    return rect_of(right - w, mn.y + lpx(d, LIB_TITLE_Y) + lpx(d, 4) + (lib_header_inline(d) ? 0 : lpx(d, page_title_h(d))), w, lpx(d, 32));
 }
 
 /* DUI-P4-18: the Clear Library button sits left of Add Folder on the same row. */
@@ -2685,6 +2703,17 @@ static sel_gui_rect lib_clear_rect(desk* d, sel_gui_rect mn) {
     sel_gui_rect ab = lib_add_rect(d, mn);
     int32_t w = lib_header_btn_w(d, "Clear Library");
     return rect_of(ab.x - lib_gap(d) - w, ab.y, w, ab.h);
+}
+
+/* I548: the measured "Library" title (the atlas draw_text picks for its box) plus a gap fits left of the Clear Library button when
+ * both buttons sit on the title row. Measured on the row's own geometry, so the answer does not depend on where the buttons are drawn. */
+static int lib_header_inline(desk* d) {
+    sel_gui_rect mn = region_rect(d, "main");
+    const sel_gui_atlas* at = desk_text_atlas(d, 1, 32, lpx(d, page_title_h(d)));
+    int32_t tw = at != NULL ? sel_gui_text_width(at, "Library", 7u) : 0;
+    int32_t right = nav_arrow_rect(d, mn, 0).x - lib_gap(d) - lib_gap(d) / 2;
+    int32_t btn = lib_header_btn_w(d, "Add Folder") + lib_gap(d) + lib_header_btn_w(d, "Clear Library");
+    return mn.x + lpx(d, LIB_MARGIN) + tw + lib_gap(d) <= right - btn;
 }
 
 /* I390: the Library style chooser, a segmented control of three buttons (Grid, Cover Flow, List). It is the only
@@ -4233,6 +4262,13 @@ static const char* library_dump_build(desk* d) {
         sel_gui_rect sr = lib_stats_rect(d, panel_rect(d, "main"), st);
         sel_gui_rect mr = lib_stats_more_rect(d, sr), pr = lib_stats_panel_rect(d, sr, st);
         o = dump_put(d, o, "stats rect %d %d %d %d\n", (int)sr.x, (int)sr.y, (int)sr.w, (int)sr.h);
+        {
+            sel_gui_rect ar = lib_add_rect(d, panel_rect(d, "main")), cr = lib_clear_rect(d, panel_rect(d, "main"));
+            const sel_gui_atlas* ta = desk_text_atlas(d, 1, 32, lpx(d, page_title_h(d)));
+            o = dump_put(d, o, "lib_header title %d %d %d add %d %d %d %d clear %d %d %d %d\n", (int)(panel_rect(d, "main").x + lpx(d, LIB_MARGIN)),
+                         (int)(panel_rect(d, "main").y + lpx(d, LIB_TITLE_Y)), (int)(ta != NULL ? sel_gui_text_width(ta, "Library", 7u) : 0),
+                         (int)ar.x, (int)ar.y, (int)ar.w, (int)ar.h, (int)cr.x, (int)cr.y, (int)cr.w, (int)cr.h);
+        }
         o = dump_put(d, o, "stats_more %d %d %d %d open=%d\nstats_panel draws=%u rows=%u rect %d %d %d %d\n", (int)mr.x, (int)mr.y, (int)mr.w, (int)mr.h,
                      d->stats_open, (unsigned)d->stats_panel_draws, (unsigned)d->stats_panel_rows, (int)pr.x, (int)pr.y, (int)pr.w, (int)pr.h);
     }
@@ -4913,11 +4949,19 @@ static void draw_library(desk* d) {
             for (p = st->stats; *p != '\0';) { /* as many cells as the strip holds, in the order of the statistics */
                 const char* val = lib_next(p);
                 int32_t lw = sel_gui_text_width(la, p, strlen(p)), vw = sel_gui_text_width(va, val, strlen(val)), cw = lw > vw ? lw : vw;
+                int one_row = desk_bitmap_text(d); /* I548: label and value side by side on the label row */
+                if (one_row) {
+                    cw = lw + lib_gap(d) / 2 + vw;
+                }
                 if (x + cw > end) {
                     break;
                 }
-                draw_text(d, rect_of(x, sr.y, cw, line), p, 0, 14, muted);
-                draw_text(d, rect_of(x, sr.y + line, cw, line), val, 1, 14, text);
+                draw_text(d, rect_of(x, sr.y, one_row ? lw : cw, line), p, 0, 14, muted);
+                if (one_row) {
+                    draw_text(d, rect_of(x + lw + lib_gap(d) / 2, sr.y, vw, line), val, 1, 14, text);
+                } else {
+                    draw_text(d, rect_of(x, sr.y + line, cw, line), val, 1, 14, text);
+                }
                 x += cw + lib_gap(d);
                 p = lib_next(val);
             }

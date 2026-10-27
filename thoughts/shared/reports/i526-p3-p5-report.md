@@ -141,3 +141,13 @@ Johan decided 2026-10-27 to shrink every page heading box on the AGA bitmap tier
 - Golden: tests/golden/desktop/library-rgba32-640x256-ydiv2@1.hash was already stale since acf6919 (dui-tall-pixels failed before this change);
   updated with SELECTA_GOLDEN_UPDATE=1. No non-bitmap golden changed (dui-draw, tokens, widgets, hidpi, golden-home, screen, frame pass).
 - dui-fonts is a deliberate red placeholder (dui-red label), unrelated.
+
+## I548 (rig 3 AGA Library layout defects)
+
+- (a) Title covered by header buttons: root cause was the buttons being placed from the right edge without reserving the measured title width. `lib_header_inline` measures "Library" with the atlas `draw_text` picks (`desk_text_atlas`, extracted) and drops both buttons to their own row when title plus gap does not fit. Test: `tests/dui/aga_native_text.cmake` block 6 (title rect plus 8 unit gap must not intersect either button). Revert-checked (inline forced to 1 fails).
+- (b) Statistics strip: bitmap tier is now one 24 unit line (`lib_stats_h`), label and value side by side, More inside the row. Test: same cmake block. Revert-checked (strip forced to 48 fails).
+- (c) Clock while stopped: `sel_uim_update` showed the frozen `song.position_ms` because engine STOP keeps the slot loaded. Stopped now reads 00:00 and progress 0. No-song state still reads `--:--`. Test: `dui-stopped-clock` unit. Revert-checked. Engine STOP semantics unchanged.
+- (d) Sources tab 4 px from panel edge, (e) empty-library hint: NOT done (budget).
+- Goldens changed: `library-rgba32-640x256-ydiv2@1.hash` (layout), `nowplaying-rgba32-1280x800@1.hash` (stopped clock).
+- Not caused by this change (unverified against baseline): `dui-library-sources` golden mismatch, `dui-library-scroll` "Sources tab did not open"; `dui-hover-nowplaying` flaky.
+- AGA target built in build/amiga-aga, not deployed.

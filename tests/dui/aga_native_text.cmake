@@ -337,6 +337,52 @@ if(SDL_BUILT)
   endif()
 endif()
 
+# 6. I548 (a) the Library title does not intersect either header button, whichever row the buttons are on. The title rect is the
+# measured title width (the desktop's own lib_header line) on the title row; a button on the title row must start right of it.
+# Revert check: with the buttons pinned to the title row (lib_header_inline forced to 1) Clear Library starts at 292, 1 unit short
+# of the title end 285 plus the 8 unit gap, the rects intersect and this fails.
+if(NOT lo MATCHES "lib_header title (-?[0-9]+) (-?[0-9]+) ([0-9]+) add (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+) clear (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)\n")
+  message(FATAL_ERROR "I548: no lib_header line:\n${lo}")
+endif()
+set(t_x ${CMAKE_MATCH_1})
+set(t_y ${CMAKE_MATCH_2})
+math(EXPR t_r "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} + 8") # title ink plus the 8 unit gap a button keeps from it
+math(EXPR t_b "${CMAKE_MATCH_2} + 32")
+set(hdr "${lo}")
+foreach(which add clear)
+  if(which STREQUAL "add")
+    string(REGEX REPLACE "^.*lib_header title [^ ]+ [^ ]+ [^ ]+ add ([^ ]+) ([^ ]+) ([^ ]+) ([^ ]+) clear.*$" "\\1;\\2;\\3;\\4" btn "${hdr}")
+  else()
+    string(REGEX REPLACE "^.*clear ([^ ]+) ([^ ]+) ([^ ]+) ([^ \n]+)\n.*$" "\\1;\\2;\\3;\\4" btn "${hdr}")
+  endif()
+  list(GET btn 0 bx)
+  list(GET btn 1 by)
+  list(GET btn 2 bw)
+  list(GET btn 3 bh)
+  math(EXPR br "${bx} + ${bw}")
+  math(EXPR bb "${by} + ${bh}")
+  if(bx LESS t_r AND br GREATER t_x AND by LESS t_b AND bb GREATER t_y)
+    message(FATAL_ERROR "I548 (a): header button ${which} ${bx},${by} ${bw}x${bh} intersects the title ${t_x},${t_y} ending at column ${t_r}")
+  endif()
+endforeach()
+# 6. I548 (b) the statistics strip is one line high on the bitmap tier, so every value is on its label's row, and the More control
+# sits inside the strip row. Revert check: the old 48 high strip (label over value) and the 48 high More box fail the height test.
+if(NOT lo MATCHES "stats rect (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) ([0-9]+)\nlib_header[^\n]*\nstats_more (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) ([0-9]+) ")
+  message(FATAL_ERROR "I548: no stats rect and stats_more in order:\n${lo}")
+endif()
+set(s_y ${CMAKE_MATCH_2})
+set(s_h ${CMAKE_MATCH_4})
+set(m_y ${CMAKE_MATCH_6})
+set(m_h ${CMAKE_MATCH_8})
+math(EXPR s_b "${s_y} + ${s_h}")
+math(EXPR m_b "${m_y} + ${m_h}")
+if(NOT s_h EQUAL 24)
+  message(FATAL_ERROR "I548 (b): the statistics strip is ${s_h} units high, expected one 24 unit line (value on the label row)")
+endif()
+if(m_y LESS s_y OR m_b GREATER s_b)
+  message(FATAL_ERROR "I548 (b): the More control ${m_y}..${m_b} is outside the strip row ${s_y}..${s_b}")
+endif()
+
 # 5. I547: no sidebar or tab label is truncated at 640x512 (reuses the library run `lo`). Widths come from the measured labels,
 # not constants: a Library tab draws its whole label (label ink width = 8 px per character in mini8), and a sidebar door row
 # leaves its label box (row width - 12 pad - 22 icon - 8 gap) the widest rail label (12 characters, "Your Library") plus a 12 px

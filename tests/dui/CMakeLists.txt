@@ -193,3 +193,8 @@ target_include_directories(dui_amiga_folder_pick_unit PRIVATE ${PROJECT_SOURCE_D
 target_link_libraries(dui_amiga_folder_pick_unit PRIVATE selecta_gui)
 add_test(NAME dui-amiga-folder-pick COMMAND dui_amiga_folder_pick_unit)
 set_tests_properties(dui-amiga-folder-pick PROPERTIES TIMEOUT 60)
+
+# I548: a stopped transport reads 00:00 (the frozen slot position is not shown).
+add_executable(dui_stopped_clock_unit stopped_clock_unit.c)
+target_link_libraries(dui_stopped_clock_unit PRIVATE selecta_uimodel)
+add_test(NAME dui-stopped-clock COMMAND dui_stopped_clock_unit)
