@@ -317,6 +317,8 @@ typedef struct desk {
     uint32_t art_ms_max;     /* I377: longest single art_load on the UI thread, host clock ms */
     uint32_t turn_ms_max;    /* I377: longest turn of desk_wait without its poll wait, host clock ms */
     uint32_t poll_ms;        /* I377: poll wait accumulated inside the running turn */
+    uint32_t turn_why[5];    /* I525: live turns by where they returned: idle poll, present, scan, input, visualizer */
+    uint32_t turn_bits[6];   /* I525: live turns that presented, by the dirty region that asked for it */
     uint32_t frame_ms_min, frame_ms_max; /* I368: ms per paint (one desk_flush), host clock; min is valid once frame_ms_n > 0 */
     uint32_t frame_ms_sum, frame_ms_n;   /* I368: the avg is sum / n */
     uint32_t paint_ms_min, paint_ms_max, paint_ms_sum;     /* I387: the paint share of a frame (frame start to desk_flush), host clock ms */
@@ -4236,6 +4238,10 @@ static const char* library_dump_build(desk* d) {
                               (int)d->hover_box.w, (int)d->hover_box.h, (unsigned)d->hover_fill,
                               (unsigned)ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_HOVER]), (unsigned)d->hover_paints, (int)d->hover_tile);
         o = dump_put(d, o, "hover_ink=%d\n", (int)d->ink_in);
+        o = dump_put(d, o, "turns idle=%u present=%u scan=%u input=%u viz=%u bits song=%u queue=%u transport=%u progress=%u volume=%u status=%u\n",
+                     (unsigned)d->turn_why[0], (unsigned)d->turn_why[1], (unsigned)d->turn_why[2], (unsigned)d->turn_why[3],
+                     (unsigned)d->turn_why[4], (unsigned)d->turn_bits[0], (unsigned)d->turn_bits[1], (unsigned)d->turn_bits[2],
+                     (unsigned)d->turn_bits[3], (unsigned)d->turn_bits[4], (unsigned)d->turn_bits[5]);
 #if defined(SELECTA_DESKTOP_SDL) && !defined(SELECTA_DESKTOP_RTG) && !defined(SELECTA_DESKTOP_AGA)
         if (d->sdl != NULL) { /* I291: input to present, and the cost of a wheel notch, in microseconds */
             desk_sdl_lat lt;
@@ -8705,18 +8711,30 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
         d->uim.dirty |= SEL_UIM_DIRTY_PROGRESS;
     }
     vz = viz_tick(d); /* one visualizer frame per new engine block; the turn goes on, so ticks and the script still advance */
-    if (desk_present(d)) {
-        return 1;
+    {
+        uint32_t pend = d->uim.dirty, k;
+        if (desk_present(d)) {
+            d->turn_why[1]++;
+            for (k = 0u; k < 6u; k++) {
+                d->turn_bits[k] += (pend >> k) & 1u;
+            }
+            return 1;
+        }
     }
     if (!d->live && (d->scan_pending || desk_scan_active(d))) { /* I336: the scan runs on a job thread; a scripted or headless run keeps turning (and drawing the
                                         * progress) until its LIBRARY_RESULT arrives, so the script's next line sees the finished scan */
         desk_scan_nap();
+        d->turn_why[2]++;
         return 1;
     }
     if (d->input != NULL && !d->input_done && d->ticks == 0u && desk_replay_input(d)) { /* scripted input, once */
+        d->turn_why[3]++;
         return 1; /* every event flushed its own frame */
     }
-    if (vz) {
+    if (vz && !d->live) { /* I525: a live window goes on to the poll below, which waits up to the next engine block (20 ms)
+                           * for input; returning here skipped every wait during playback, so on AGA each turn ran c2p and
+                           * WaitTOF back to back at full CPU, clicks queued behind it and the other tasks starved */
+        d->turn_why[4]++;
         return 1;
     }
 #ifdef SELECTA_DESKTOP_SDL
@@ -8735,6 +8753,7 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
             wait_ms = desk_timers_wait(d);
         }
         (void)timeout_ms;
+        d->turn_why[0]++;
         {
             uint32_t p0 = desk_sdl_ticks();
             ev = desk_sdl_poll(d->sdl, wait_ms, &w, &h);
