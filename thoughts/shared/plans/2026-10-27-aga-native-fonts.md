@@ -158,3 +158,37 @@ Checklist IDs I526-P1 .. I526-P5. Test runs follow 6a-1 (nice 19, 2 workers, aff
   keyed on ydiv 2 only. Alternative: bitmap fonts there too (doubling rows): flicker-prone mode, extra layout case.
 - **D5 mini6 6x6 and mini4 4x6.** (Recommended) used only by the box-fit fallback (badge 6145, short boxes).
   Alternative: assign them to a role (for example tracker cells) for more rows per screen at lower legibility.
+
+## 6. Amarchy comparison (ledger I530)
+
+Source: thoughts/shared/reports/i530-amarchy-font-rendering.md (answer from the Amarchy session, 2026-10-27),
+code in ~/Code/UP-Term/vtcon branch prefs-inline (render/ttf.c, render/aa_ink.c, amarchy/menu_text.c,
+amarchy/menu_font.c), plan vtcon/thoughts/shared/plans/2026-10-26-amarchy-gui-aa-font.md.
+
+How Selecta blends text on INDEX8 today (src/gui/draw/gui_draw.c:722-760, `blit_mask_raw`): full 0-255 coverage,
+blended against the real destination byte and resolved to the nearest entry of the 32-entry UI palette region
+(cube built in `set_palette_raw`, gui_draw.c:75-90). So Selecta already blends against the true background, like
+Amarchy's per-row background pens. What it does not do is guarantee that intermediate shades exist: if the UI
+region holds no colour between text and surface, a coverage pixel snaps to fg or bg and the edge becomes a
+2-colour threshold.
+
+| Amarchy part | Selecta I526 | Why |
+|---|---|---|
+| Runtime TrueType rasteriser on the Amiga (render/ttf.c, glyph cache per size) | Reject | Inter is baked offline by gui_fontbake (atlas_build.h); no TTF file or rasteriser on the Amiga, zero first-draw cost on the 68020, `atlas_builds=0` is the sentinel. Selecta has a fixed size set, Amarchy a user-picked size, which is why they need runtime. |
+| Antialias by 3 shade inks per fg/bg pair (1/4, 1/2, 3/4), known background per row | Adopt the shade guarantee, not the pen allocator | Selecta owns its whole palette (no ObtainBestPen), so the equivalent is: the UI region of `sel_gui_palette_budget` (gui_draw.c:127) reserves the 3 shades of text-over-surface (and text-over-selection) for the headline pairs. `blit_mask_raw` then resolves to them unchanged. New phase I526-P2b below. |
+| Aspect from DisplayInfo Resolution x/y (`menu_screen_aspect`) | Adopt the idea, already covered | Selecta keys the tall bake on `ydiv` (desk_make_canvas, desktop_ui.c:8172): 640x256 PAL hires = 2:1, which is what DisplayInfo reports for that mode. Reading DisplayInfo on the AGA backend to pick ydiv is a follow-up only if a non-2:1 mode becomes a target (D4). |
+| No hinting, no gamma | Same | gui_fontbake uses stb_truetype coverage without hinting; no gamma step is added. |
+| Bitmap .font drawn plainly with Text() behind one measure/draw API | Adopt the single-API rule, reject Text() | Bitmap fonts become atlases in the same `sel_gui_atlas` format, so `sel_gui_text_draw` measures and draws both, ellipsis included (gui_text.c:104-138). Text() would split measure and draw paths and bypass the canvas. |
+
+Body text: stays on the mini bitmap fonts, no antialiasing. At 8 rows on a 2:1 screen an AA Inter body face is
+4-5 rows of x-height with 3 shade levels; Amarchy's readable sizes are 8-11 px on square-ish rows (report point 1),
+which on ydiv 2 are 16-22 layout units, i.e. headline sizes here. Johan's decision already fixes this; the
+comparison supports it.
+
+- **I526-P2b Headline shade guarantee.** `sel_gui_palette_budget` reserves 3 entries per headline fg/bg pair
+  (text on surface, text on selection) at 1/4, 1/2, 3/4. Regression test in the gui_draw unit: a px 32 headline
+  on INDEX8 has at least 3 distinct non-fg, non-bg indices along its edges; fails before when the UI region has
+  no intermediate shade (to be measured first: unverified whether today's budget already holds them).
+- **D6 Shade entries in the 32-entry UI region.** (Recommended) reserve 6 entries (3 shades x 2 pairs): edges
+  match Amarchy's 3-level look. Alternative: rely on whatever the theme puts there: no palette cost, but headline
+  edges can collapse to a 2-colour threshold depending on theme.
