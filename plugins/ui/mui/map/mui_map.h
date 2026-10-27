@@ -81,6 +81,11 @@ const char* mui_transport_action(uint32_t button, const sel_uim_frame* f);
 /* Button label: the action's label for this frame. */
 const char* mui_transport_label(uint32_t button, const sel_uim_frame* f);
 
+/* The lines the sliders send, the very lines the desktop bars send (desktop_ui.c: SEEK <ms>, VOLUME <0..100>). The seek
+ * line needs the song length: returns 0 (no line) when duration_ms is 0, else 1. Values clamp to the slider ranges. */
+uint32_t mui_seek_line(uint32_t q16, uint32_t duration_ms, char* out, size_t cap);
+void mui_volume_line(int32_t level, char* out, size_t cap);
+
 /* MUI-P2-6: frame fields to object attributes. Each of the ten attributes belongs to exactly one dirty region, so a
  * frame update calls set() only for the attributes whose region bit is in the mask. SEL_UIM_DIRTY_QUEUE has no
  * attribute here (the queue list is MUI-P3/P4). */

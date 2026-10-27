@@ -36,12 +36,17 @@ struct Library* MUIMasterBase;
 /* MUI-P1-4: a distinct error on stderr (the shell keeps the text UI) and, on the Amiga, an EasyRequest. */
 static void mui_report(mui_fail why);
 
+#define MUI_ROWS_MAX 64 /* most rows one window of the list holds (MUI-P3-1: only the engine window is inserted) */
+
 typedef struct mui_state {
     uint32_t opens; /* ui_open_mui sentinel (MUI-P1-5): windows opened */
     uint32_t wake_mask; /* engine wake signal (MUI-P1-7), 0 where there is none */
     uint32_t menu_sends; /* menu items that sent their action line to the engine (MUI-P2-4) */
     sel_engine* engine;
-    sel_tag stats[3];
+    uint32_t transport_hits; /* transport buttons and sliders that sent their line (MUI-P2-5): stat transport_hits */
+    uint32_t row_plays;      /* list rows activated by double click (MUI-P3-1): stat row_plays */
+    sel_tag stats[5];
+    sel_uim uim;             /* the frame model the controls are driven from (MUI-P2-6) */
 #ifdef SEL_MUI_NATIVE
     Object* app;
     Object* win;
@@ -49,6 +54,19 @@ typedef struct mui_state {
     Object* slot[MUI_SLOT_COUNT];   /* the five layout regions, created once, shown or hidden */
     Object* balance[2];             /* sidebar|main and main|detail */
     mui_layout_map_t lay;
+    Object* btn[MUI_BTN_COUNT];     /* MUI-P2-5 transport buttons */
+    const char* btn_label[MUI_BTN_COUNT];
+    Object* seek;
+    Object* vol;
+    Object* txt[MUI_ATTR_COUNT];    /* MUI-P2-6 frame texts (NULL for the slider and button attributes) */
+    char txt_buf[MUI_ATTR_COUNT][112];
+    LONG seek_set, vol_set;         /* values last written by set(): a notify with another value is the user */
+    Object* listview;               /* MUI-P3-1 */
+    Object* list;
+    mui_list_entry entries[MUI_ROWS_MAX];
+    const char* entry_ptr[MUI_ROWS_MAX + 1];
+    uint32_t list_sig;
+    LONG list_active_set;
 #endif
 } mui_state;
 
@@ -147,6 +165,203 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
     }
 }
 
+/* MUI-P2-5/P2-6/P3-1: the controls. ReturnIDs: buttons, sliders and list events are turned into engine lines in
+ * mui_control_fire, the same way a Menuitem is (mui_menu_fire). */
+#define CTL_BTN_BASE 0x2000L
+#define CTL_SEEK 0x2100L
+#define CTL_VOLUME 0x2101L
+#define CTL_LIST_DBL 0x2110L
+#define CTL_LIST_SEL 0x2111L
+
+static int mui_send(mui_state* s, const char* line) {
+    char pool[1024];
+    return line != NULL && s->engine != NULL && sel_engine_send_line(s->engine, line, pool, sizeof pool) == SEL_CODEC_OK;
+}
+
+static Object* mui_make_button(const char* label, LONG id) {
+    Object* o = MUI_NewObject((char*)MUIC_Text, MUIA_Frame, MUIV_Frame_Button, MUIA_Font, MUIV_Font_Button,
+                              MUIA_Text_Contents, (ULONG)label, MUIA_Text_PreParse, (ULONG) "\33c",
+                              MUIA_InputMode, MUIV_InputMode_RelVerify, MUIA_Background, MUII_ButtonBack, TAG_DONE);
+    if (o != NULL) {
+        DoMethod(o, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
+    }
+    return o;
+}
+
+static Object* mui_make_text(mui_state* s, uint32_t attr, const char* initial) {
+    snprintf(s->txt_buf[attr], sizeof s->txt_buf[attr], "%s", initial);
+    s->txt[attr] = MUI_NewObject((char*)MUIC_Text, MUIA_Frame, MUIV_Frame_Text, MUIA_Text_Contents, (ULONG)s->txt_buf[attr], TAG_DONE);
+    return s->txt[attr];
+}
+
+static Object* mui_make_slider(LONG max, LONG id) {
+    Object* o = MUI_NewObject((char*)MUIC_Slider, MUIA_Slider_Horiz, TRUE, MUIA_Slider_Min, 0, MUIA_Slider_Max, max, TAG_DONE);
+    if (o != NULL) {
+        DoMethod(o, MUIM_Notify, MUIA_Slider_Level, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
+    }
+    return o;
+}
+
+/* The transport row and frame texts: three rows of one VGroup (the PLAYER slot content). */
+static Object* mui_player_group(mui_state* s) {
+    sel_uim_frame zero;
+    Object *row1, *row2, *row3, *g;
+    uint32_t i;
+    memset(&zero, 0, sizeof zero);
+    row1 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    for (i = 0; row1 != NULL && i < MUI_BTN_COUNT; i++) {
+        s->btn_label[i] = mui_transport_label(i, &zero);
+        s->btn[i] = mui_make_button(s->btn_label[i], CTL_BTN_BASE + (LONG)i);
+        if (s->btn[i] != NULL) {
+            DoMethod(row1, OM_ADDMEMBER, s->btn[i]);
+        }
+    }
+    s->vol = mui_make_slider(MUI_VOLUME_MAX, CTL_VOLUME);
+    s->seek = mui_make_slider(MUI_SEEK_MAX, CTL_SEEK);
+    row2 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    row3 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+    if (row1 == NULL || row2 == NULL || row3 == NULL || g == NULL || s->vol == NULL || s->seek == NULL) {
+        return NULL;
+    }
+    DoMethod(row1, OM_ADDMEMBER, s->vol);
+    DoMethod(row2, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_CLOCK, "0:00 "));
+    DoMethod(row2, OM_ADDMEMBER, s->seek);
+    DoMethod(row2, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_REMAINING, "-0:00"));
+    DoMethod(row2, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_LENGTH, "0:00 "));
+    DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_TITLE, "No song"));
+    DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_ARTIST, ""));
+    DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_FORMAT, "        "));
+    DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_STATUS, "Stopped"));
+    DoMethod(g, OM_ADDMEMBER, row1);
+    DoMethod(g, OM_ADDMEMBER, row2);
+    DoMethod(g, OM_ADDMEMBER, row3);
+    return g;
+}
+
+/* MUI-P3-1: the 3.8 Listview with its plain List (the back end mui_list_backend_pick gives without NList). */
+static Object* mui_main_group(mui_state* s) {
+    Object* g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+    s->list = MUI_NewObject((char*)MUIC_List, MUIA_Frame, MUIV_Frame_InputList, TAG_DONE);
+    if (g == NULL || s->list == NULL) {
+        return NULL;
+    }
+    s->listview = MUI_NewObject((char*)MUIC_Listview, MUIA_Listview_List, (ULONG)s->list, TAG_DONE);
+    if (s->listview == NULL) {
+        return NULL;
+    }
+    DoMethod(s->listview, MUIM_Notify, MUIA_Listview_DoubleClick, TRUE, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_DBL);
+    DoMethod(s->list, MUIM_Notify, MUIA_List_Active, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_SEL);
+    s->list_active_set = -1;
+    DoMethod(g, OM_ADDMEMBER, s->listview);
+    return g;
+}
+
+/* One engine step into the controls: the frame through the dirty bits (mui_dirty_attrs) into set(), the button labels
+ * (they depend on play, repeat and random state), and the list window when its rows changed. */
+static void mui_refresh(mui_state* s) {
+    const sel_state* st = sel_engine_state(s->engine);
+    const sel_uim_frame* f;
+    uint32_t attrs, a, i;
+    const sel_view_state* v;
+    if (st == NULL) {
+        return;
+    }
+    s->uim.dirty |= sel_uim_update(&s->uim, st);
+    attrs = mui_dirty_attrs(sel_uim_take_dirty(&s->uim));
+    f = &s->uim.frame;
+    for (a = 0; a < MUI_ATTR_COUNT; a++) {
+        if ((attrs & (1u << a)) == 0) {
+            continue;
+        }
+        if (s->txt[a] != NULL) {
+            const char* t = mui_attr_text(a, f);
+            snprintf(s->txt_buf[a], sizeof s->txt_buf[a], "%s", t != NULL && t[0] != '\0' ? t : " ");
+            set(s->txt[a], MUIA_Text_Contents, (ULONG)s->txt_buf[a]);
+        } else if (a == MUI_ATTR_SEEK) {
+            s->seek_set = (LONG)f->progress_q16;
+            set(s->seek, MUIA_Slider_Level, s->seek_set);
+        } else if (a == MUI_ATTR_VOLUME) {
+            s->vol_set = (LONG)f->volume;
+            set(s->vol, MUIA_Slider_Level, s->vol_set);
+        }
+    }
+    for (i = 0; i < MUI_BTN_COUNT; i++) {
+        const char* label = mui_transport_label(i, f);
+        if (label != NULL && label != s->btn_label[i]) {
+            s->btn_label[i] = label;
+            set(s->btn[i], MUIA_Text_Contents, (ULONG)label);
+        }
+    }
+    v = st->view;
+    if (v != NULL) {
+        int32_t active = -1;
+        uint32_t n = mui_list_build(mui_list_backend_pick(0, 0), s->entries, MUI_ROWS_MAX, v, &active);
+        uint32_t sig = 2166136261u ^ v->window_start ^ (n << 20) ^ ((uint32_t)(active + 1) << 8);
+        const char* c;
+        for (i = 0; i < n; i++) {
+            for (c = s->entries[i].text; *c != '\0'; c++) {
+                sig = (sig ^ (uint8_t)*c) * 16777619u;
+            }
+            sig = (sig ^ 0xffu) * 16777619u;
+        }
+        if (sig != s->list_sig) {
+            s->list_sig = sig;
+            for (i = 0; i < n; i++) {
+                s->entry_ptr[i] = s->entries[i].text;
+            }
+            s->entry_ptr[n] = NULL;
+            set(s->list, MUIA_List_Quiet, TRUE);
+            DoMethod(s->list, MUIM_List_Clear);
+            if (n > 0) {
+                DoMethod(s->list, MUIM_List_Insert, (ULONG)s->entry_ptr, (LONG)n, MUIV_List_Insert_Bottom);
+            }
+            s->list_active_set = active;
+            set(s->list, MUIA_List_Active, active < 0 ? (LONG)MUIV_List_Active_Off : (LONG)active);
+            set(s->list, MUIA_List_Quiet, FALSE);
+        }
+    }
+}
+
+/* A control's ReturnID: the line is the action table's (buttons, through mui_menu_line like the menu) or the shared
+ * slider and list lines of the map layer. */
+static void mui_control_fire(mui_state* s, LONG id) {
+    char line[64];
+    LONG v = 0;
+    if (id >= CTL_BTN_BASE && id < CTL_BTN_BASE + (LONG)MUI_BTN_COUNT) {
+        if (mui_send(s, mui_menu_line(mui_transport_action((uint32_t)(id - CTL_BTN_BASE), &s->uim.frame)))) {
+            s->transport_hits++;
+        }
+    } else if (id == CTL_SEEK) {
+        GetAttr(MUIA_Slider_Level, s->seek, (ULONG*)&v);
+        if (v != s->seek_set && mui_seek_line((uint32_t)v, sel_engine_state(s->engine)->song.duration_ms, line, sizeof line)
+            && mui_send(s, line)) {
+            s->transport_hits++;
+        }
+        s->seek_set = v;
+    } else if (id == CTL_VOLUME) {
+        GetAttr(MUIA_Slider_Level, s->vol, (ULONG*)&v);
+        if (v != s->vol_set) {
+            mui_volume_line((int32_t)v, line, sizeof line);
+            if (mui_send(s, line)) {
+                s->transport_hits++;
+            }
+        }
+        s->vol_set = v;
+    } else if (id == CTL_LIST_SEL || id == CTL_LIST_DBL) {
+        const sel_view_state* view = sel_engine_state(s->engine)->view;
+        GetAttr(MUIA_List_Active, s->list, (ULONG*)&v);
+        if (view == NULL || v < 0 || (id == CTL_LIST_SEL && v == s->list_active_set)) {
+            return;
+        }
+        s->list_active_set = v;
+        snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)(view->window_start + (uint32_t)v));
+        if (mui_send(s, line) && id == CTL_LIST_DBL && mui_send(s, "VIEW_ACTIVATE")) {
+            s->row_plays++;
+        }
+    }
+}
+
 /* MUI-P2-1/P2-2: apply a layout map to the fixed objects: weights follow the region sizes, ShowMe hides what the
  * breakpoint drops. No object is created or disposed here. */
 static void mui_apply_layout(mui_state* s) {
@@ -191,6 +406,7 @@ static void* mui_open(const sel_ui_open_args* a) {
         return NULL;
     }
     strip = mui_menu_strip();
+    sel_uim_init(&s->uim);
     s->app = ApplicationObject, MUIA_Application_Title, (ULONG) "Selecta", MUIA_Application_Base, (ULONG) "SELECTA",
         MUIA_Application_Version, (ULONG) "$VER: Selecta MUI 1.0",
         SubWindow, s->win = WindowObject, MUIA_Window_Title, (ULONG) "Selecta", MUIA_Window_ID, SEL_MAKE_ID('S', 'E', 'L', 'M'),
@@ -204,11 +420,11 @@ static void* mui_open(const sel_ui_open_args* a) {
                 Child, HGroup,
                     Child, s->slot[MUI_SLOT_SIDEBAR] = VGroup, Child, TextObject, MUIA_Text_Contents, (ULONG) "Library", End, Child, HVSpace, End,
                     Child, s->balance[0] = BalanceObject, End,
-                    Child, s->slot[MUI_SLOT_MAIN] = VGroup, Child, TextObject, MUIA_Text_Contents, (ULONG) "Selecta", End, Child, HVSpace, End,
+                    Child, s->slot[MUI_SLOT_MAIN] = mui_main_group(s),
                     Child, s->balance[1] = BalanceObject, End,
                     Child, s->slot[MUI_SLOT_DETAIL] = VGroup, Child, TextObject, MUIA_Text_Contents, (ULONG) "Details", End, Child, HVSpace, End,
                 End,
-                Child, s->slot[MUI_SLOT_PLAYER] = TextObject, MUIA_Text_Contents, (ULONG) "Player", End,
+                Child, s->slot[MUI_SLOT_PLAYER] = mui_player_group(s),
             End, End, End;
     if (s->app == NULL) {
         if (strip != NULL) {
@@ -238,6 +454,7 @@ static void* mui_open(const sel_ui_open_args* a) {
     s->lay.width = 0;
     s->lay.breakpoint = SEL_UIM_BP_COUNT; /* no breakpoint yet: the first real size always applies */
     mui_check_resize(s);
+    mui_refresh(s);
     s->opens++;
     return s;
 }
@@ -249,7 +466,10 @@ static int mui_io_new_input(void* ctx, uint32_t* sigs) {
     mui_check_resize((mui_state*)ctx);
     if (id >= MENU_ID_BASE && id < MENU_ID_BASE + (LONG)g_menu_n) {
         mui_menu_fire((mui_state*)ctx, (uint32_t)(id - MENU_ID_BASE));
+    } else if (id >= CTL_BTN_BASE) {
+        mui_control_fire((mui_state*)ctx, id);
     }
+    mui_refresh((mui_state*)ctx);
     return id == (LONG)MUIV_Application_ReturnID_Quit ? MUI_WAIT_ID_QUIT : (int)id;
 }
 
@@ -336,8 +556,12 @@ static const sel_tag* mui_stats(void* state) {
     s->stats[0].value = s->opens;
     s->stats[1].tag = SEL_UI_STAT_MENUS;
     s->stats[1].value = s->menu_sends;
-    s->stats[2].tag = SEL_TAG_END;
-    s->stats[2].value = 0;
+    s->stats[2].tag = SEL_UI_STAT_TRANSPORT_HITS;
+    s->stats[2].value = s->transport_hits;
+    s->stats[3].tag = SEL_UI_STAT_ROW_PLAYS;
+    s->stats[3].value = s->row_plays;
+    s->stats[4].tag = SEL_TAG_END;
+    s->stats[4].value = 0;
     return s->stats;
 }
 

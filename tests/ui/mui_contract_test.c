@@ -261,6 +261,16 @@ static void test_transport(void) {
         f.play = SEL_STOPPED;
         CHECK(strcmp(mui_transport_label(MUI_BTN_PLAY, &f), "Play") == 0, "stopped shows Play");
     }
+    {
+        char line[32];
+        CHECK(mui_seek_line(32768, 200000, line, sizeof line) == 1 && strcmp(line, "SEEK 100000") == 0, "seek half: %s", line);
+        CHECK(mui_seek_line(99999, 1000, line, sizeof line) == 1 && strcmp(line, "SEEK 1000") == 0, "seek clamps: %s", line);
+        CHECK(mui_seek_line(100, 0, line, sizeof line) == 0 && line[0] == '\0', "no length, no seek line");
+        mui_volume_line(40, line, sizeof line);
+        CHECK(strcmp(line, "VOLUME 40") == 0, "volume: %s", line);
+        mui_volume_line(250, line, sizeof line);
+        CHECK(strcmp(line, "VOLUME 100") == 0, "volume clamps: %s", line);
+    }
 }
 
 /* mui-dirty-map (MUI-P2-6): ten attributes, each in exactly one region; every region but the queue has one. */

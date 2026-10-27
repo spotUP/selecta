@@ -4,6 +4,7 @@
 #include <selecta/uimodel/keys.h>
 #include <selecta/uimodel.h>
 
+#include <stdio.h>
 #include <string.h>
 
 #include "mui_map.h"
@@ -37,6 +38,22 @@ const char* mui_transport_label(uint32_t button, const sel_uim_frame* f) {
         }
     }
     return NULL;
+}
+
+uint32_t mui_seek_line(uint32_t q16, uint32_t duration_ms, char* out, size_t cap) {
+    if (q16 > MUI_SEEK_MAX) {
+        q16 = MUI_SEEK_MAX;
+    }
+    if (duration_ms == 0u) {
+        out[0] = '\0';
+        return 0;
+    }
+    snprintf(out, cap, "SEEK %u", (unsigned)(((uint64_t)q16 * duration_ms) / MUI_SEEK_MAX));
+    return 1;
+}
+
+void mui_volume_line(int32_t level, char* out, size_t cap) {
+    snprintf(out, cap, "VOLUME %d", level < 0 ? 0 : level > MUI_VOLUME_MAX ? MUI_VOLUME_MAX : (int)level);
 }
 
 static const uint32_t k_attr_region[MUI_ATTR_COUNT] = {
