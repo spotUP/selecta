@@ -58,17 +58,21 @@ if(SEL_AMIGA)
   set(FONTBAKE_CMD "${SELECTA_FONTBAKE_EXE}")
   set(FONTBAKE_DEP "")
 else()
-  add_executable(gui_fontbake "${PROJECT_SOURCE_DIR}/tools/gui_fontbake.c" atlas_build.c)
+  add_executable(gui_fontbake "${PROJECT_SOURCE_DIR}/tools/gui_fontbake.c" atlas_build.c amiga_font.c)
   target_include_directories(gui_fontbake PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop"
     "${PROJECT_SOURCE_DIR}/third_party/stb")
   target_link_libraries(gui_fontbake PRIVATE m)
   set(FONTBAKE_CMD gui_fontbake)
   set(FONTBAKE_DEP gui_fontbake)
 endif()
+# I526: the Amiga bitmap fonts (family:file), size = tf_YSize, baked at ydiv 2 next to Inter.
+set(AMIGA_MINI_DIR "${FONT_SRC}/amiga-mini")
+set(AMIGA_MINI_FILES "${AMIGA_MINI_DIR}/mini4/6" "${AMIGA_MINI_DIR}/mini6/8" "${AMIGA_MINI_DIR}/mini8/8")
 add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/font_baked.c"
   COMMAND ${FONTBAKE_CMD} "${FONT_SRC}/Inter-Regular.ttf" "${FONT_SRC}/Inter-SemiBold.ttf" "${CMAKE_CURRENT_BINARY_DIR}/font_baked.c"
-  DEPENDS ${FONTBAKE_DEP} "${FONT_SRC}/Inter-Regular.ttf" "${FONT_SRC}/Inter-SemiBold.ttf"
+    "mini4:${AMIGA_MINI_DIR}/mini4/6" "mini6:${AMIGA_MINI_DIR}/mini6/8" "mini8:${AMIGA_MINI_DIR}/mini8/8"
+  DEPENDS ${FONTBAKE_DEP} "${FONT_SRC}/Inter-Regular.ttf" "${FONT_SRC}/Inter-SemiBold.ttf" ${AMIGA_MINI_FILES}
   COMMENT "Baking the text atlases")
 list(APPEND FONT_GEN "${CMAKE_CURRENT_BINARY_DIR}/font_baked.c")
 if(NOT SEL_AMIGA)
@@ -77,6 +81,10 @@ if(NOT SEL_AMIGA)
   target_include_directories(dui_font_baked_unit PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop"
     "${PROJECT_SOURCE_DIR}/third_party/stb")
   target_link_libraries(dui_font_baked_unit PRIVATE m)
+  # dui-amiga-font (I526-P1): the bitmap .font reader against hand-decoded rows.
+  add_executable(dui_amiga_font_unit "${PROJECT_SOURCE_DIR}/tests/dui/amiga_font_unit.c" amiga_font.c)
+  target_include_directories(dui_amiga_font_unit PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop")
+  target_compile_definitions(dui_amiga_font_unit PRIVATE AMIGA_MINI_DIR="${AMIGA_MINI_DIR}")
 endif()
 
 # Artwork (DUI-P2-4): art.c turns library blobs into tile pixels, stb_impl.c decodes them, posix/art_thread.c is the

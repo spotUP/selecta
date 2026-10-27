@@ -154,10 +154,10 @@ sel_gui_atlas* desk_atlas_build_tall(const unsigned char* ttf, int pixel_size, i
     return at;
 }
 
-const sel_gui_atlas* desk_atlas_baked(int semibold, int pixel_size, int ydiv) {
+const sel_gui_atlas* desk_atlas_baked(int family, int pixel_size, int ydiv) {
     uint32_t i;
     for (i = 0; i < sel_font_baked_n; i++) {
-        if (sel_font_baked[i].semibold == semibold && sel_font_baked[i].px == pixel_size &&
+        if (sel_font_baked[i].family == family && sel_font_baked[i].px == pixel_size &&
             sel_font_baked[i].ydiv == ydiv) {
             return &sel_font_baked[i].at;
         }

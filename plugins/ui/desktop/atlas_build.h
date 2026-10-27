@@ -6,6 +6,8 @@
 
 #include <selecta/gui/gui_text.h>
 
+#include <stddef.h>
+
 /* Code points the atlas holds: Basic Latin, Latin-1 Supplement and Latin Extended-A, and the general punctuation
  * the player texts use. Returns NULL on a bad font or no memory. */
 sel_gui_atlas* desk_atlas_build(const unsigned char* ttf, int pixel_size);
@@ -22,21 +24,39 @@ void desk_atlas_free(const sel_gui_atlas* at);
 /* The UI scales (Q16) the atlases are baked for: the fit floor 0.625 (the 672x270 and 640x512 Amiga screens) and 1.0.
  * Other scales build at run time, as before. */
 #define DESK_FONT_BAKE_SCALES_Q16 40960, 65536
-/* The scale a tall-pixel (ydiv 2) set is also baked for: the AGA 640x256 screen lays out at the fit floor. */
-#define DESK_FONT_BAKE_TALL_SCALE_Q16 40960
+/* The tall-pixel (ydiv 2) Inter set (I526): SemiBold headlines only, at scale 1.0 (px 32 is 16 rows, px 22 is 11).
+ * Body text at ydiv 2 uses the Amiga bitmap fonts below. */
+#define DESK_FONT_BAKE_TALL_PX 22, 32
+#define DESK_FONT_BAKE_TALL_PX_N 2
+
+/* Font families a baked atlas belongs to. 0 and 1 equal the old `semibold` flag, so existing callers stay valid. */
+enum {
+    DESK_FAMILY_INTER_REGULAR = 0,
+    DESK_FAMILY_INTER_SEMIBOLD = 1,
+    DESK_FAMILY_MINI4 = 2,
+    DESK_FAMILY_MINI6 = 3,
+    DESK_FAMILY_MINI8 = 4,
+    DESK_FAMILY_N = 5
+};
+
+/* I526: an Amiga bitmap disk font (loadable .font program file, e.g. mini8/8) as an atlas at ydiv 2: glyph rows are
+ * the font rows, layout units count twice per row. NULL on a malformed file. desk_amiga_font_ysize returns tf_YSize
+ * (0 when the blob is not an Amiga font). Reader lives in amiga_font.c. */
+sel_gui_atlas* desk_atlas_build_amiga(const unsigned char* data, size_t n);
+int desk_amiga_font_ysize(const unsigned char* data, size_t n);
 
 /* Baked atlases (I463): the 68020 tier has no floating point, so building one with stb_truetype on the first frame cost
  * 43.8 s on the Replay. tools/gui_fontbake.c runs desk_atlas_build on the host and writes the tables. */
 typedef struct desk_baked_font {
-    int32_t semibold;
+    int32_t family; /* DESK_FAMILY_* */
     int32_t px;
     int32_t ydiv; /* 1 square pixels, 2 the 640x256 tall-pixel bake (I468) */
     sel_gui_atlas at;
 } desk_baked_font;
 extern const desk_baked_font sel_font_baked[];
 extern const uint32_t sel_font_baked_n;
-/* The baked atlas for a weight and a pixel size, or NULL when that pair was not baked. */
-const sel_gui_atlas* desk_atlas_baked(int semibold, int pixel_size, int ydiv);
+/* The baked atlas for a family and a pixel size, or NULL when that pair was not baked. */
+const sel_gui_atlas* desk_atlas_baked(int family, int pixel_size, int ydiv);
 
 /* The embedded Inter blobs (generated at build time from third_party/fonts). */
 extern const unsigned char sel_font_inter_regular[];
