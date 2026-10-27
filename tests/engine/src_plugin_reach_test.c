@@ -52,6 +52,7 @@ static int run(sel_engine* e, const char* line) {
         return 0;
     }
     sel_engine_pump(e, sink, NULL);
+    sel_engine_scan_wait(e, sink, NULL); /* the sync runs on the job thread (I527) */
     return 1;
 }
 
