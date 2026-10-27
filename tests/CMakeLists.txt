@@ -1097,6 +1097,10 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
   set_tests_properties(rig-m4-mui-nomui PROPERTIES LABELS rig RESOURCE_LOCK rig
     ENVIRONMENT "UPTERM_RIG=2" SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  # muimaster.library keeps one open count of its own once any MUI object has been created in a boot (a standalone
+  # OpenLibrary/MUI_NewObject/MUI_DisposeObject/CloseLibrary program leaves lib_OpenCnt=1 too, so Selecta does not leak),
+  # and the library can no longer be expunged. The missing-MUI test must therefore run before rig-m4-mui-open in a boot.
+  set_tests_properties(rig-m4-mui-open PROPERTIES DEPENDS rig-m4-mui-nomui)
   # I439 / M4-P6-1: AGA c2p first light on rig 2, backend alone and the full AGA Selecta (SEL_DESKTOP_AGA build tree in
   # SEL_AGA_BUILD, default build/amiga-aga).
   set(SEL_AGA_BUILD "${PROJECT_SOURCE_DIR}/build/amiga-aga" CACHE PATH "Amiga build tree configured with -DSEL_DESKTOP_AGA=ON")
