@@ -53,23 +53,45 @@ void sel_gui_canvas_init(sel_gui_canvas* c, uint32_t format, int32_t w, int32_t 
 static const uint32_t g_rgn_base[4] = {32u, 64u, 128u, 192u};
 static const uint32_t g_rgn_size[4] = {32u, 64u, 64u, 64u};
 
-static void build_cube(uint8_t* cube, const uint32_t* pal, uint32_t n) {
-    uint32_t i, k;
-    for (i = 0; i < 32768u; i++) {
-        int32_t r = (int32_t)(((i >> 10) & 31u) * 8u + 4u), g = (int32_t)(((i >> 5) & 31u) * 8u + 4u),
-                b = (int32_t)((i & 31u) * 8u + 4u);
-        uint32_t best = 0u, bestd = 0xFFFFFFFFu;
-        for (k = 0; k < n; k++) {
-            int32_t dr = r - (int32_t)((pal[k] >> 16) & 255u), dg = g - (int32_t)((pal[k] >> 8) & 255u),
-                    db = b - (int32_t)(pal[k] & 255u);
-            uint32_t d = (uint32_t)(dr * dr + dg * dg + db * db);
-            if (d < bestd) {
-                bestd = d;
-                best = k;
+/* I574: exact nearest entry for every 5-bit-per-channel colour. The squared channel distances are tabled once per
+ * entry (32 levels x 3 channels), so the 32768 x n inner loop is two adds and a compare with no multiply (a 68020
+ * spent 118 s on the old five-cube multiply loop). Ties keep the lowest entry, as before. *ops counts the distance
+ * evaluations, the host test pins it. */
+static void build_cube(uint8_t* cube, const uint32_t* pal, uint32_t n, uint32_t* ops) {
+    uint32_t tr[64][32], tg[64][32], tb[64][32];
+    uint32_t i, k, r, g, bl;
+    if (n > 64u) {
+        n = 64u;
+    }
+    for (k = 0; k < n; k++) {
+        for (i = 0; i < 32u; i++) {
+            int32_t lvl = (int32_t)(i * 8u + 4u), dr = lvl - (int32_t)((pal[k] >> 16) & 255u),
+                    dg = lvl - (int32_t)((pal[k] >> 8) & 255u), db = lvl - (int32_t)(pal[k] & 255u);
+            tr[k][i] = (uint32_t)(dr * dr);
+            tg[k][i] = (uint32_t)(dg * dg);
+            tb[k][i] = (uint32_t)(db * db);
+        }
+    }
+    for (r = 0; r < 32u; r++) {
+        for (g = 0; g < 32u; g++) {
+            uint32_t part[64];
+            for (k = 0; k < n; k++) {
+                part[k] = tr[k][r] + tg[k][g];
+            }
+            for (bl = 0; bl < 32u; bl++) {
+                uint32_t best = 0u, bestd = 0xFFFFFFFFu;
+                for (k = 0; k < n; k++) {
+                    uint32_t d = part[k] + tb[k][bl];
+                    if (d < bestd) {
+                        bestd = d;
+                        best = k;
+                    }
+                }
+                cube[(r << 10) | (g << 5) | bl] = (uint8_t)best;
             }
         }
-        cube[i] = (uint8_t)best;
     }
+    *ops += 32768u * n;
 }
 
 static void set_palette_raw(sel_gui_canvas* c, const uint32_t* rgb, uint32_t first, uint32_t n) {
@@ -82,13 +104,12 @@ static void set_palette_raw(sel_gui_canvas* c, const uint32_t* rgb, uint32_t fir
     }
     last = first + n > 256u ? 256u : first + n;
     if (first < 32u) { /* the UI colours */
-        build_cube(c->cube, c->palette, c->colours < 32u ? c->colours : 32u);
+        build_cube(c->cube, c->palette, c->colours < 32u ? c->colours : 32u, &c->cube_ops);
     }
     for (k = 0; k < 4u; k++) { /* a region sub-palette whose entries moved */
         uint32_t lo = g_rgn_base[k], hi = lo + g_rgn_size[k];
         if (first < hi && last > lo && c->colours > lo) {
-            uint32_t sz = g_rgn_size[k] - (k == 3u ? c->copper_pens : 0u); /* I441: copper pens leave the flow region */
-            build_cube(c->rcube[k], c->palette + lo, c->colours - lo < sz ? c->colours - lo : sz);
+            c->rcube_stale |= 1u << k; /* I574: built when the region is first drawn into, not at every palette set */
         }
     }
 }
@@ -362,6 +383,12 @@ static const uint8_t g_bayer[16] = {0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 
 
 static uint32_t cube_index(sel_gui_canvas* c, uint32_t r, uint32_t g, uint32_t b) {
     uint32_t at = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3), idx;
+    if (c->region >= SEL_GUI_RGN_ART && (c->rcube_stale & (1u << (c->region - SEL_GUI_RGN_ART))) != 0u &&
+        c->colours > g_rgn_base[c->region - SEL_GUI_RGN_ART]) {
+        uint32_t k = c->region - SEL_GUI_RGN_ART, lo = g_rgn_base[k], sz = g_rgn_size[k] - (k == 3u ? c->copper_pens : 0u);
+        build_cube(c->rcube[k], c->palette + lo, c->colours - lo < sz ? c->colours - lo : sz, &c->cube_ops);
+        c->rcube_stale &= ~(1u << k);
+    }
     idx = c->region >= SEL_GUI_RGN_ART
               ? g_rgn_base[c->region - SEL_GUI_RGN_ART] + c->rcube[c->region - SEL_GUI_RGN_ART][at]
               : c->cube[at];

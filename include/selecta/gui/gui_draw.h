@@ -42,6 +42,8 @@ typedef struct sel_gui_canvas {
     uint32_t colours;      /* palette entries in use */
     uint8_t cube[32768];   /* INDEX8: nearest of entries 0-31 (the UI region) for each 5-bit-per-channel colour */
     uint8_t rcube[4][32768]; /* INDEX8: nearest within each region sub-palette (art 32-63, tile, panel, flow) */
+    uint32_t rcube_stale;    /* I574: bit k = region k's rcube is older than the palette; built on first draw into it */
+    uint32_t cube_ops;       /* I574: distance evaluations spent building cubes (the host test pins it) */
     uint32_t region;         /* SEL_GUI_RGN_*: the budget region the draws below belong to */
     uint32_t used[SEL_GUI_RGN_COUNT][8]; /* INDEX8: bitmap of palette indices written per region */
     sel_gui_rect clip[SEL_GUI_CLIP_DEPTH];

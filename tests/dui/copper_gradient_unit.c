@@ -88,6 +88,17 @@ int main(void) {
     CHECK(c->copper_filled == 8u && n == 8u && ch[0].y == 4 && ch[7].y == 11 && ch[7].rgb == 0xFFFFFFu);
     free(c);
     free(px);
+    /* I574: setting the 256-colour palette builds only the UI cube (32 entries x 32768 cells), not four region cubes
+     * nobody draws into; a region cube is built on its first draw. A 68020 spent 118 s on the eager five-cube build. */
+    c = make(&px, 64, 32, 4u, 1);
+    CHECK(c->cube_ops == 32768u * 32u && c->rcube_stale == 0xFu);
+    sel_gui_fill_rect(c, rc(0, 0, 8, 8), 0xFF1DB954u);
+    CHECK(c->cube_ops == 32768u * 32u);
+    sel_gui_set_region(c, SEL_GUI_RGN_ART);
+    sel_gui_fill_rect(c, rc(0, 0, 8, 8), 0xFF1DB954u);
+    CHECK(c->cube_ops == 32768u * 64u && c->rcube_stale == 0xEu);
+    free(c);
+    free(px);
     /* register words: pen 255 is COLOR31 of bank 7 */
     {
         uint32_t r[4][2];
