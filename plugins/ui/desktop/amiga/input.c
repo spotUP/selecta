@@ -49,7 +49,13 @@ int desk_amiga_input_next(desk_amiga_input* b, sel_gui_input* ev) {
 
 static int queue_raw(desk_amiga_input* b, const sel_gui_raw* raw) {
     sel_gui_input in;
-    if (!sel_gui_input_map(&b->map, raw, &in) || b->q_count >= DESK_AMIGA_INPUT_QUEUE) {
+    if (!sel_gui_input_map(&b->map, raw, &in)) {
+        return 0;
+    }
+    if (b->q_count > 0u && sel_gui_input_coalesce(&b->queue[(b->q_head + b->q_count - 1u) % DESK_AMIGA_INPUT_QUEUE], &in)) {
+        return 1;
+    }
+    if (b->q_count >= DESK_AMIGA_INPUT_QUEUE) {
         return 0;
     }
     b->queue[(b->q_head + b->q_count) % DESK_AMIGA_INPUT_QUEUE] = in;

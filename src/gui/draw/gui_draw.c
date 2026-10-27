@@ -286,7 +286,7 @@ static sel_gui_rect bbox(sel_gui_rect a, sel_gui_rect b) {
 
 static void dirty_add_raw(sel_gui_canvas* c, sel_gui_rect r) {
     uint32_t i;
-    r = sel_gui_rect_intersect(r, c->clip[0]);
+    r = sel_gui_rect_intersect(r, c->clip[c->clip_n - 1u]); /* I549: pixels outside the active clip are never painted, so they are not dirty */
     if (r.w <= 0 || r.h <= 0) {
         return;
     }

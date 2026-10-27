@@ -118,5 +118,31 @@ int main(void) {
         CHECK(!sel_gui_input_map(&st, &r, &in));
     }
 
+    /* I549: of N held-button moves waiting in a queue only the newest is kept; the press state is kept apart and a
+     * release or a key is never merged. Sentinel: the queue length after the N moves. */
+    {
+        sel_gui_input q[64], held;
+        unsigned n = 0, i;
+        int merged = 0;
+        sel_gui_input_map_state hs;
+        memset(&hs, 0, sizeof hs);
+        CHECK(!map(&hs, SEL_GUI_RAW_BUTTON_DOWN, 600, 20, 1, 1, 0, 0, 0, &held));
+        for (i = 0; i < 40u; i++) {
+            CHECK(map(&hs, SEL_GUI_RAW_MOTION, 600, 30 + (int32_t)i, 0, 0, 0, 0, 0, &held));
+            if (n > 0u && sel_gui_input_coalesce(&q[n - 1u], &held)) {
+                merged++;
+            } else {
+                q[n++] = held;
+            }
+        }
+        CHECK(n == 1u && merged == 39);
+        CHECK(q[0].kind == SEL_GUI_IN_MOVE && q[0].code == 1u && q[0].y == 69 && q[0].y2 == 20);
+        CHECK(map(&hs, SEL_GUI_RAW_BUTTON_UP, 600, 70, 1, 1, 0, 0, 0, &held));
+        CHECK(!sel_gui_input_coalesce(&q[0], &held)); /* the release stays its own event */
+        CHECK(sel_gui_input_parse("move 600 70 600 20", &scripted) && scripted.code == 1u && scripted.y2 == 20);
+        CHECK(sel_gui_input_parse("move 600 70", &scripted) && scripted.code == 0u);
+        CHECK(!sel_gui_input_coalesce(&q[0], &scripted)); /* a hover move is not the held drag's */
+    }
+
     return fails == 0 ? 0 : 1;
 }

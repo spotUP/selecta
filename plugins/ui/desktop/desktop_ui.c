@@ -235,6 +235,8 @@ typedef struct desk {
     char np_text_title[96]; /* the title line the Now Playing page last drew (I361) */
     char np_text_artist[96];
     uint32_t lib_bar_draws;  /* the Library scrollbar painter ran (I541 sentinel) */
+    int lib_held_frame;      /* I549: a held-button scrollbar move painted since the last present */
+    uint32_t lib_held_n, lib_held_px_max; /* I549 sentinels: presents of held-button scrollbar moves, and the most pixels one repainted */
     uint32_t lib_off_page;   /* Library page draws while another page is current (sentinel, must stay 0: I274) */
     uint32_t np_draws;       /* Now Playing panel draws (sentinel) */
     uint32_t np_genart;      /* genart_draw runs by the Now Playing panel: one per draw (DUI-P4-7) */
@@ -526,6 +528,13 @@ static uint32_t desk_flush(desk* d) {
             d->hover_dirty_max = px;
         }
         d->hover_frame = 0;
+        if (d->lib_held_frame) {
+            d->lib_held_n++;
+            if (px > d->lib_held_px_max) {
+                d->lib_held_px_max = px;
+            }
+            d->lib_held_frame = 0;
+        }
         return px;
     }
 }
@@ -4194,6 +4203,7 @@ static const char* library_dump_build(desk* d) {
         } else {
             o = dump_put(d, o, "libbar none\n");
         }
+        o = dump_put(d, o, "libheld presents %u px_max %u\n", (unsigned)d->lib_held_n, (unsigned)d->lib_held_px_max);
     }
     if (d->lib_mode == 5u) { /* the Sources tab: the held SOURCES rows and the rects of their switches (I265) */
         o = dump_put(d, o, "sources %u draws %u\n", (unsigned)d->src_n, (unsigned)d->src_draws);
@@ -5316,17 +5326,31 @@ static void draw_lib_bar(desk* d) {
 static int lib_bar_pointer(desk* d, const sel_gui_input* ev) {
     sel_gui_rect t, h, hit;
     int32_t span, page;
-    if (!(ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u) && ev->kind != SEL_GUI_IN_DRAG) {
+    int held = ev->kind == SEL_GUI_IN_MOVE && ev->code == 1u; /* I549: the primary button is down; x2 y2 is where it was pressed */
+    if (!(ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u) && ev->kind != SEL_GUI_IN_DRAG && !held) {
         return 0;
     }
     if (!lib_bar_rects(d, &t, &h)) {
         return 0;
     }
     hit = rect_of(t.x - lpx(d, 6), t.y, t.w + lpx(d, 6), t.h);
-    if (!in_rect(hit, ev->x, ev->y)) {
+    if (!in_rect(hit, held ? ev->x2 : ev->x, held ? ev->y2 : ev->y)) {
         return 0;
     }
     span = t.h - h.h;
+    if (held) { /* the handle follows the pointer while the button is held, not only at the release */
+        int32_t at = ev->y - t.y - h.h / 2;
+        at = at < 0 ? 0 : (at > span ? span : at);
+        sel_gui_rect mn = panel_rect(d, "main");
+        int32_t lt = lib_list_top(d, mn, sel_engine_state(d->engine)), moved;
+        d->lib_held_frame = 1;
+        /* Only the list body and the bar change while the handle moves: the clip keeps the repaint, and so the dirty
+         * rectangle, to the list instead of the whole main panel. */
+        sel_gui_clip_push(d->canvas, rect_of(mn.x, lt, mn.w, mn.y + mn.h - lt));
+        moved = lib_scroll_set(d, span > 0 ? (int64_t)at * lib_max_q16(d, sel_engine_state(d->engine)) / span : 0);
+        sel_gui_clip_pop(d->canvas);
+        return moved;
+    }
     if (ev->kind == SEL_GUI_IN_DRAG) {
         int32_t at = ev->y2 - t.y - h.h / 2;
         at = at < 0 ? 0 : (at > span ? span : at);
@@ -7719,7 +7743,7 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
             return desk_page_goto(d, g_doors[door].page);
         }
     }
-    if (in_main && lib_bar_pointer(d, ev)) { /* I541: the Library scrollbar */
+    if ((in_main || (ev->kind == SEL_GUI_IN_MOVE && ev->code == 1u)) && lib_bar_pointer(d, ev)) { /* I541: the Library scrollbar */
         return 1;
     }
     if (ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u && in_main && library_click(d, ev->x, ev->y)) { /* the Library page */

@@ -312,7 +312,13 @@ static int32_t q16_of(float v) {
 /* One raw pointer event through the shared mapping into the queue; returns 1 when an event was queued. */
 static int queue_raw(desk_sdl* b, const sel_gui_raw* raw) {
     sel_gui_input in;
-    if (!sel_gui_input_map(&b->map, raw, &in) || b->q_count >= DESK_SDL_QUEUE) {
+    if (!sel_gui_input_map(&b->map, raw, &in)) {
+        return 0;
+    }
+    if (b->q_count > 0u && sel_gui_input_coalesce(&b->queue[(b->q_head + b->q_count - 1u) % DESK_SDL_QUEUE], &in)) {
+        return 1;
+    }
+    if (b->q_count >= DESK_SDL_QUEUE) {
         return 0;
     }
     b->queue[(b->q_head + b->q_count) % DESK_SDL_QUEUE] = in;

@@ -86,6 +86,12 @@ typedef struct sel_gui_input_map_state {
  * code and mods the `key` script line builds (text: mods 0; a zero code gives nothing). Back and forward up give SEL_GUI_IN_SWIPE (+1 and -1). */
 int sel_gui_input_map(sel_gui_input_map_state* st, const sel_gui_raw* raw, sel_gui_input* out);
 
+/* I549: a pointer move carries the whole pointer position, so of several moves waiting in a queue only the newest matters.
+ * Both desktop backends queue through this: when *tail (the newest queued event) and *in are both moves of the same
+ * press state (same code and press point), *tail becomes *in and 1 is returned, else 0 and the caller appends. A held-button
+ * drag then costs one frame per drain of the window's messages, not one per mouse report. */
+int sel_gui_input_coalesce(sel_gui_input* tail, const sel_gui_input* in);
+
 #ifdef __cplusplus
 }
 #endif
