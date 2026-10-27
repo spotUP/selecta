@@ -5,7 +5,7 @@
 # Rows keyed desk:* are the desktop surface inventory built from the code's tables, not from plan section 8.2.
 # Text UI and Amiga UI columns stay in the M4 plan (M4 mapping column of section 8.2).
 hippo:25	Play mode button next to position slider	DUI-P4-1 (shuffle and repeat buttons in the transport bar); Amiga gadget stays M4-P12-12	MUI-P2-5, MUI-P4-1
-hippo:37	Alarm (timed start)	not in this milestone: engine scheduler, not UI (F13a NEW, unhomed)	not carried: engine, source and loader features (plan 2.3)
+hippo:37	Alarm (timed start)	not in this milestone: engine scheduler, not UI (F13a NEW, unhomed)	MUI-P8-15
 hippo:45	Doublebuffering of sample data	not in this milestone: output layer, M2	not carried: engine, source and loader features (plan 2.3)
 hippo:70	F1-F10 stored programs	DUI-P5-8	MUI-P8-2
 hippo:77	Module comment file	not in this milestone: engine metadata (see 9.5); shown by DUI-P4-3	MUI-P3-1, MUI-P3-2, MUI-P4-2
@@ -53,10 +53,10 @@ hippo:157	MHI decoder hardware	not in this milestone UI plan: players plan (F26)
 hippo:158	AmiGUS mixer	not in this milestone UI plan: players plan (F26)	not carried: players plan features (plan 2.3)
 hippo:159	Trinity audio	not in this milestone UI plan: players plan (F26)	not carried: players plan features (plan 2.3)
 hippo:160	Load / save prefs	DUI-P4-14	MUI-P4-10
-hippo:162	Hotkeys enable	not in this milestone: Amiga-only, stays M4-P12-12 (Amiga)	not carried: Amiga-only runtime settings (plan 2.3)
+hippo:162	Hotkeys enable	not in this milestone: Amiga-only, stays M4-P12-12 (Amiga)	MUI-P8-14
 hippo:163	Double-click play toggle	DUI-P3-2 (double-click plays)	MUI-P4-4, MUI-P4-6
-hippo:164	Task priority setting	not in this milestone: Amiga-only, stays M4-P12-12 (Amiga)	not carried: Amiga-only runtime settings (plan 2.3)
-hippo:165	HippoPlayer.group location	not in this milestone: Selecta has no group file; replayer set comes from the plugin registry	not carried: Amiga-only runtime settings (plan 2.3)
+hippo:164	Task priority setting	not in this milestone: Amiga-only, stays M4-P12-12 (Amiga)	MUI-P8-14
+hippo:165	HippoPlayer.group location	not in this milestone: Selecta has no group file; replayer set comes from the plugin registry	MUI-P8-14
 hippo:211	ToolType parsing	not in this milestone: Amiga-only, stays M4-P7-5 (Amiga)	MUI-P6-6
 hippo:212	UHCBIN environment variable	not in this milestone: source layer	not carried: engine, source and loader features (plan 2.3)
 hippo:213	PIPE: streaming names	not in this milestone: source layer	not carried: engine, source and loader features (plan 2.3)
