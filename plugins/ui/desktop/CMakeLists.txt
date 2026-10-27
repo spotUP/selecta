@@ -82,7 +82,7 @@ endif()
 # Artwork (DUI-P2-4): art.c turns library blobs into tile pixels, stb_impl.c decodes them, posix/art_thread.c is the
 # worker thread (the only file with thread headers). The plugin is desktop only, so there is no Amiga branch.
 if(SEL_AMIGA)
-  set(ART_THREAD amiga/art_thread.c amiga/backend_rtg.c amiga/input.c)
+  set(ART_THREAD amiga/art_thread.c amiga/backend_rtg.c amiga/input.c amiga/folder_pick.c)
 else()
   set(ART_THREAD posix/art_thread.c)
 endif()
@@ -112,7 +112,7 @@ if(SEL_AMIGA)
       target_compile_definitions(sel_plugin_desktop_ui PRIVATE SELECTA_DESKTOP_AGA=1)
     endif()
     add_executable(selecta-aga-first-light amiga/aga_first_light.c amiga/backend_aga.c amiga/aga_planar.c
-      amiga/input.c "${AGA_C2P_040}")
+      amiga/input.c amiga/folder_pick.c "${AGA_C2P_040}")
     target_link_libraries(selecta-aga-first-light PRIVATE selecta_gui selecta_uimodel)
     # Kalms against the C reference on a 68k CPU; run by `vamos -C 68040` (design doc 6, dui-aga-c2p-kalms).
     add_executable(selecta-aga-c2p-kalms "${PROJECT_SOURCE_DIR}/tests/dui/aga_c2p_kalms.c" amiga/aga_planar.c

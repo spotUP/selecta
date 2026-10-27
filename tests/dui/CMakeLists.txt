@@ -174,3 +174,11 @@ if(NOT SEL_AMIGA)
   add_test(NAME dui-image-scale-stack COMMAND dui_image_scale_stack_unit)
   set_tests_properties(dui-image-scale-stack PROPERTIES TIMEOUT 60)
 endif()
+
+# I531: the Amiga Add folder dialog's platform independent half (requester answer to SEL_GUI_IN_DROP, cancel, spaces). The
+# host builds amiga/folder_pick.c on its own, it needs no Amiga headers.
+add_executable(dui_amiga_folder_pick_unit amiga_folder_pick_unit.c ${PROJECT_SOURCE_DIR}/plugins/ui/desktop/amiga/folder_pick.c)
+target_include_directories(dui_amiga_folder_pick_unit PRIVATE ${PROJECT_SOURCE_DIR}/plugins/ui/desktop)
+target_link_libraries(dui_amiga_folder_pick_unit PRIVATE selecta_gui)
+add_test(NAME dui-amiga-folder-pick COMMAND dui_amiga_folder_pick_unit)
+set_tests_properties(dui-amiga-folder-pick PROPERTIES TIMEOUT 60)
