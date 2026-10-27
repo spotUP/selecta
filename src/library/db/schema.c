@@ -119,24 +119,32 @@ static const char SCHEMA_V6[] = "ALTER TABLE song_composers ADD COLUMN tag INTEG
 
 /* v7 (I528): the composer list as a maintained table. composers holds one row per canonical spelling: display is the MIN(display)
  * of its song_composers rows, songs the row count (song_composers is keyed by (song_key, canon), so a row is a distinct song).
- * composer_unknown counts the songs rows without any song_composers row (the "Unknown composer" group). Triggers keep both
- * current from every write path (scan, songdb sync, song remove, Clear Library), so the list is a plain read. The index
- * carries display, so MIN(display) of a canon is one seek, not a scan of its rows. No path updates song_composers.song_key;
- * the only songs.key update (the scan.c rename) is covered by the songs trigger. */
+ * composer_spellings counts the rows per (canon, display), so the MIN(display) after a delete is a seek among the few spellings
+ * of one canon, not a scan of its song rows (and no new index on the 500 000-row song_composers, whose build does not fit the
+ * SQLite heap). composer_unknown counts the songs rows without any song_composers row (the "Unknown composer" group).
+ * Triggers keep all three current from every write path (scan, songdb sync, song remove, Clear Library), so the list is a plain
+ * read. No path updates song_composers.song_key; the only songs.key update (the scan.c rename) is covered by the songs trigger. */
 #define V7_ADD(r) \
+    "INSERT INTO composer_spellings(canon, display, n) VALUES(" r ".canon, " r ".display, 1)" \
+    " ON CONFLICT(canon, display) DO UPDATE SET n = n + 1;" \
     "INSERT INTO composers(canon, display, songs) VALUES(" r ".canon, " r ".display, 1)" \
     " ON CONFLICT(canon) DO UPDATE SET songs = songs + 1, display = MIN(display, excluded.display);"
 #define V7_DROP(r) \
+    "UPDATE composer_spellings SET n = n - 1 WHERE canon = " r ".canon AND display = " r ".display;" \
+    "DELETE FROM composer_spellings WHERE canon = " r ".canon AND display = " r ".display AND n <= 0;" \
     "UPDATE composers SET songs = songs - 1,"  \
-    " display = COALESCE((SELECT MIN(display) FROM song_composers WHERE canon = " r ".canon), display) WHERE canon = " r ".canon;" \
+    " display = COALESCE((SELECT MIN(display) FROM composer_spellings WHERE canon = " r ".canon), display)" \
+    " WHERE canon = " r ".canon;" \
     "DELETE FROM composers WHERE canon = " r ".canon AND songs <= 0;"
 static const char SCHEMA_V7[] =
-    "DROP INDEX song_composers_canon;"
-    "CREATE INDEX song_composers_canon ON song_composers(canon, display);"
     "CREATE TABLE composers(canon TEXT PRIMARY KEY, display TEXT NOT NULL, songs INTEGER NOT NULL) WITHOUT ROWID;"
     "CREATE INDEX composers_by_name ON composers(display, canon, songs);"
+    "CREATE TABLE composer_spellings(canon TEXT NOT NULL, display TEXT NOT NULL, n INTEGER NOT NULL,"
+    " PRIMARY KEY(canon, display)) WITHOUT ROWID;"
     "CREATE TABLE composer_unknown(n INTEGER NOT NULL);"
-    "INSERT INTO composers(canon, display, songs) SELECT canon, MIN(display), COUNT(*) FROM song_composers GROUP BY canon;"
+    "INSERT INTO composer_spellings(canon, display, n) SELECT canon, display, 1 FROM song_composers WHERE 1"
+    " ON CONFLICT(canon, display) DO UPDATE SET n = n + 1;"
+    "INSERT INTO composers(canon, display, songs) SELECT canon, MIN(display), SUM(n) FROM composer_spellings GROUP BY canon;"
     "INSERT INTO composer_unknown(n) SELECT COUNT(*) FROM songs WHERE NOT EXISTS"
     " (SELECT 1 FROM song_composers c WHERE c.song_key = songs.key);"
     "CREATE TRIGGER song_composers_ai AFTER INSERT ON song_composers BEGIN "
