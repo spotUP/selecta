@@ -128,6 +128,22 @@ if(NOT lo MATCHES "stats rect (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) ([0-9]+)\n")
   message(FATAL_ERROR "no stats rect in the library stats:\n${lo}")
 endif()
 math(EXPR strip_end "(${CMAKE_MATCH_2} + ${CMAKE_MATCH_4}) / 2 + 1")
+# 3a. I545 all pages: every page title box is 32 layout units (16 rows) on the bitmap tier and the page content below it moved
+# up by the 8 units the box gave back. The numbers come from the desktop's own page_tops line, built from the real rect
+# functions of Queue (button row, list), Playlists (name field), Song Information (list top) and Tracker (tab row); the
+# Library check above and the Now Playing / Visualizer tops use the same page_y rule. Pre-shrink values: 64 / 112 / 104 / 152 / 64.
+foreach(pg queue playlists songinfo tracker)
+  dui_run(pt --db "${db}" --ui desktop --backend mem --view ${pg} --canvas 640x256 --ydiv 2 --zoom fit --clock fixed
+    --stats --resize 640x512)
+  if(NOT pt MATCHES "page_tops title_h=([0-9]+) queue_btn_y=([0-9]+) queue_list_y=([0-9]+) playlists_name_y=([0-9]+) songinfo_list_y=([0-9]+) tracker_tab_y=([0-9]+)\n")
+    message(FATAL_ERROR "${pg}: no page_tops line:\n${pt}")
+  endif()
+  set(got "${CMAKE_MATCH_1} ${CMAKE_MATCH_2} ${CMAKE_MATCH_3} ${CMAKE_MATCH_4} ${CMAKE_MATCH_5} ${CMAKE_MATCH_6}")
+  if(NOT got STREQUAL "32 56 104 96 144 56")
+    message(FATAL_ERROR "I545 all pages (${pg}): page title box and tops are '${got}', expected '32 56 104 96 144 56' (title_h queue_btn queue_list playlists_name songinfo_list tracker_tab)")
+  endif()
+endforeach()
+
 # 3b. first library row: the first ink band below the statistics strip. The strip end comes from the "stats rect" line (layout rows, halved by --ydiv 2) and the player region starts at layout row 440 (frame row 220).
 set(rfirst -1)
 set(rlast -1)

@@ -124,3 +124,20 @@ Not reproduced on host. A click at the Modland switch centre (640x512, ydiv 2) c
 - Test: dui-aga-native-text asserts headline_hits_18/24 > 0 and the Library title cap L spans 9 to 10 rows. Unit tests dui-font-roles, dui-font-baked, dui-font-tall updated to 18/24. ydiv-1 hash in dui-font-tall unchanged (passes).
 - Revert-check: with px 32/22 restored, dui-aga-native-text fails (L spans 8 rows, the 32 headline steps down in the 32 unit box). Note: a first, looser range (8 to 10) did NOT fail on revert; tightened.
 - Goldens: none changed (dui-library*, dui-layout, dui-aga*, dui-font* pass; dui-fonts is a deliberate dui-red).
+
+## I545 all pages
+
+Johan decided 2026-10-27 to shrink every page heading box on the AGA bitmap tier like the Library one (acf6919).
+
+- One rule in desktop_ui.c: `page_title_h(d)` (40 layout units, 32 on the bitmap tier) replaces `lib_title_h`; `page_y(d, y)` pulls a
+  layout y that sits below a title up by what the box gave back (8 units = 4 screen rows).
+- Pages changed (bitmap tier only; other tiers compute the old numbers): Library (already), Queue (box, button row 64 to 56, list 112 to 104),
+  Playlists (box, name field 104 to 96, list 152 to 144, also the Song Information list top), Song Information (box), Tracker (box, tab row 64 to 56,
+  header and rows follow), Visualizer (box, panel top), Now Playing (page title box; cover and text column top 64 to 56). Search and Settings
+  have no page title box in desktop_ui.c (no draw_text title call), so nothing to change there.
+- Test: dui-aga-native-text step 3a reads a new `page_tops` stats line (built from the real queue_btn_rect, queue_list_rect, pl_name_rect, si_list_top
+  and tr_tab_rect) on the queue, playlists, songinfo and tracker views and requires `32 56 104 96 144 56`. Revert-check: with page_title_h forced to 40
+  the test fails with '40 64 112 104 152 64'; restored, it passes.
+- Golden: tests/golden/desktop/library-rgba32-640x256-ydiv2@1.hash was already stale since acf6919 (dui-tall-pixels failed before this change);
+  updated with SELECTA_GOLDEN_UPDATE=1. No non-bitmap golden changed (dui-draw, tokens, widgets, hidpi, golden-home, screen, frame pass).
+- dui-fonts is a deliberate red placeholder (dui-red label), unrelated.
