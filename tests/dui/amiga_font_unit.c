@@ -97,7 +97,7 @@ int main(void) {
             bad++;
             continue;
         }
-        if (at->glyph_n != 224u || at->line_height != 2 * fc->ysize || at->ascent != (fc->baseline + 1) * 2 ||
+        if (at->glyph_n != 224u + 7u /* Latin-1 plus 7 punctuation aliases (I526 P5) */ || at->line_height != 2 * fc->ysize || at->ascent != (fc->baseline + 1) * 2 ||
             at->missing.cp != 0xFFFFFFFFu) {
             fprintf(stderr, "amiga_font_unit: %s: glyph_n=%u line_height=%d ascent=%d\n", fc->file, (unsigned)at->glyph_n, at->line_height, at->ascent);
             bad++;
@@ -109,6 +109,11 @@ int main(void) {
                 bad++;
                 break;
             }
+        }
+        if (find(at, 0x2013) == NULL || find(at, 0x2013)->x != find(at, '-')->x || find(at, 0x2022) == NULL ||
+            find(at, 0x2022)->x != find(at, 0xB7)->x) { /* I526 P5: the en dash and the bullet are not missing glyphs */
+            fprintf(stderr, "amiga_font_unit: %s: en dash / bullet alias missing\n", fc->file);
+            bad++;
         }
         ga = find(at, 'A');
         ge = find(at, 0xE4);

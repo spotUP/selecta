@@ -34,6 +34,15 @@ int desk_amiga_font_ysize(const unsigned char* data, size_t n) {
     return (int)be16(data + 0x20 + TF_YSIZE);
 }
 
+/* Amiga fonts hold Latin-1 only. Typographic punctuation of the UI strings (en dash, curly quotes, bullet) shows the nearest
+ * Latin-1 glyph instead of the missing box. Ascending code points keep the glyph table sorted for the lookup. */
+typedef struct {
+    uint32_t cp, like;
+} amiga_alias;
+static const amiga_alias k_aliases[] = {{0x2013u, '-'}, {0x2014u, '-'}, {0x2018u, '\''}, {0x2019u, '\''},
+                                        {0x201Cu, '"'}, {0x201Du, '"'},  {0x2022u, 0xB7u}};
+#define AMIGA_ALIAS_MAX (sizeof k_aliases / sizeof k_aliases[0])
+
 sel_gui_atlas* desk_atlas_build_amiga(const unsigned char* data, size_t n) {
     const unsigned char *b, *cdata, *cloc, *cspace, *ckern;
     size_t body_n;
@@ -66,7 +75,7 @@ sel_gui_atlas* desk_atlas_build_amiga(const unsigned char* data, size_t n) {
     ckern = be32(b + TF_CHARKERN) != 0u ? b + be32(b + TF_CHARKERN) : NULL;
     nch = hi - lo + 1;
     at = (sel_gui_atlas*)calloc(1, sizeof *at);
-    glyphs = (sel_gui_glyph*)calloc((size_t)nch, sizeof *glyphs);
+    glyphs = (sel_gui_glyph*)calloc((size_t)nch + AMIGA_ALIAS_MAX, sizeof *glyphs);
     if (at == NULL || glyphs == NULL) {
         free(at);
         free(glyphs);
@@ -120,6 +129,16 @@ sel_gui_atlas* desk_atlas_build_amiga(const unsigned char* data, size_t n) {
                 free(at);
                 free(glyphs);
                 return NULL;
+            }
+        }
+    }
+    {
+        size_t k;
+        for (k = 0; k < AMIGA_ALIAS_MAX; k++) {
+            if (k_aliases[k].like >= (uint32_t)lo && k_aliases[k].like <= (uint32_t)hi) {
+                glyphs[nch] = glyphs[k_aliases[k].like - (uint32_t)lo];
+                glyphs[nch].cp = k_aliases[k].cp;
+                nch++;
             }
         }
     }
