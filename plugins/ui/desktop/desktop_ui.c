@@ -2565,6 +2565,10 @@ static sel_gui_rect src_toggle_rect(desk* d, sel_gui_rect r);
 static int lib_bar_rects(desk* d, sel_gui_rect* track, sel_gui_rect* handle);
 static void draw_lib_bar(desk* d);
 static sel_gui_rect src_sync_rect(desk* d, sel_gui_rect r);
+typedef struct {
+    int32_t name_x, name_w, kind_x, kind_w, count_x, count_w;
+} src_cols;
+static void src_columns(desk* d, sel_gui_rect r, src_cols* c);
 /* The Library lists the UI draws itself (the composers and a composer's songs) scroll by a pixel offset, lib_q16, as the
  * Songs page does (I303); the engine view modes scroll the engine's window instead (lib_wheel) and draw at offset 0. */
 static int lib_ui_list(const desk* d, const sel_state* st) {
@@ -2668,7 +2672,7 @@ static int32_t lib_tab_text_w(desk* d, uint32_t i) {
 /* I537: the pad on each side of a tab label. LIB_TAB_PAD when the whole row fits the page between its margins, less (down to
  * 2) when the measured labels would run past the right margin, so the tab row never overflows the main pane. */
 static int32_t lib_tab_pad(desk* d) {
-    sel_gui_rect mn = region_rect(d, "main");
+    sel_gui_rect mn = panel_rect(d, "main");
     int32_t full = lpx(d, LIB_TAB_PAD), text = 0, gaps = (LIB_MODES - 1) * lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     int32_t avail = mn.w - 2 * lpx(d, LIB_MARGIN) - gaps, pad;
     uint32_t k;
@@ -4177,7 +4181,7 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "drill %s|%s\nback %d %d %d %d\n", lib_next(p), lib_next(lib_next(p)), (int)br.x, (int)br.y, (int)br.w,
                      (int)br.h);
     }
-    o = dump_put(d, o, "mode %s\nscroll %d\n", lib_mode_name[d->lib_mode], (int)(d->lib_q16 >> 16));
+    o = dump_put(d, o, "mode %s\nscroll %d\nlibempty %s\n", lib_mode_name[d->lib_mode], (int)(d->lib_q16 >> 16), d->empty_text);
     for (i = 0; i < LIB_MODES; i++) {
         sel_gui_rect tr = lib_tab_rect(d, panel_rect(d, "main"), i);
         o = dump_put(d, o, "tab %u %d %d %d %d\n", (unsigned)i, (int)tr.x, (int)tr.y, (int)tr.w, (int)tr.h);
@@ -4212,6 +4216,16 @@ static const char* library_dump_build(desk* d) {
             o = dump_put(d, o, "source %u %s|%s|%s|%d|%u\nsourcetoggle %u %d %d %d %d\nsourcesync %u %d %d %d %d\n", (unsigned)i, d->src[i].key,
                          d->src[i].kind, d->src[i].name, d->src[i].enabled, (unsigned)d->src[i].count, (unsigned)i, (int)tg.x, (int)tg.y,
                          (int)tg.w, (int)tg.h, (unsigned)i, (int)sy.x, (int)sy.y, (int)sy.w, (int)sy.h);
+            {
+                src_cols sc;
+                const sel_gui_atlas* at = desk_font(d, 0, 14);
+                char cnt[24];
+                src_columns(d, rr, &sc);
+                snprintf(cnt, sizeof cnt, "%u songs", (unsigned)d->src[i].count);
+                o = dump_put(d, o, "sourcecols %u %d %d %d %d %d %d\n", (unsigned)i, (int)sc.kind_x, (int)sc.kind_w,
+                             at != NULL ? (int)sel_gui_text_width(at, "Remote", 6u) : 0, (int)sc.count_x, (int)sc.count_w,
+                             at != NULL ? (int)sel_gui_text_width(at, cnt, strlen(cnt)) : 0);
+            }
         }
     }
     {
@@ -4838,6 +4852,7 @@ static void draw_library(desk* d) {
     sel_gui_rect col = rect_of(mn.x + mg, mn.y + lpx(d, LIB_TITLE_Y), mn.w - 2 * mg, lpx(d, page_title_h(d)));
     sel_gui_clip_push(d->canvas, mn);
     d->library_sig = lib_hash(d, st);
+    d->empty_text[0] = '\0';
     if (st->composer_page != NULL) { /* drilldown: the composer, its song count and its songs */
         const char* shown = lib_next(st->composer_page); /* the header leads with the canon */
         const char* cnt = lib_next(shown);
@@ -4942,6 +4957,9 @@ static void draw_library(desk* d) {
             p = lib_rows_next(st, p);
         }
         sel_gui_clip_pop(d->canvas);
+        if (i == 0u) { /* I548 (e): an empty library names the way to fill it, in the one-line empty state the other pages use */
+            draw_empty_state(d, mn, lib_list_top(d, mn, st), "Your library is empty. Choose Add Folder to scan your music.");
+        }
         }
     }
     draw_lib_bar(d);
@@ -5145,6 +5163,23 @@ static void draw_lib_nag(desk* d, sel_gui_rect mn) {
     sel_gui_dirty_add(d->canvas, r);
 }
 
+/* I548 (f): the columns of a source row. The kind and count columns are as wide as their measured text (plus a spacing), the
+ * name takes what is left between the icon and the Sync button, so the status never runs under the button. */
+static void src_columns(desk* d, sel_gui_rect r, src_cols* c) {
+    const sel_gui_atlas* at = desk_font(d, 0, 14);
+    int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    int32_t left = r.x + pad + lpx(d, SRC_ICON) + pad, right = src_sync_rect(d, r).x - pad;
+    c->kind_w = (at != NULL ? sel_gui_text_width(at, "Remote", 6u) : 0) + pad;
+    c->count_w = (at != NULL ? sel_gui_text_width(at, "99999 songs", 11u) : 0) + pad;
+    c->name_x = left;
+    c->name_w = right - left - c->kind_w - c->count_w;
+    if (c->name_w < 0) {
+        c->name_w = 0;
+    }
+    c->kind_x = c->name_x + c->name_w;
+    c->count_x = c->kind_x + c->kind_w;
+}
+
 static void draw_lib_sources(desk* d, sel_gui_rect mn) {
     uint32_t i;
     sel_gui_rect clip = rect_of(mn.x, mn.y + lib_body_y(d, sel_engine_state(d->engine)), mn.w, mn.h);
@@ -5157,14 +5192,16 @@ static void draw_lib_sources(desk* d, sel_gui_rect mn) {
         sel_gui_rect tg = src_toggle_rect(d, r), kn;
         char line[48];
         int on = d->src[i].enabled;
-        int32_t kd = tg.h - lpx(d, 6), cx = r.x + pad + ic + pad, cw = r.w - 2 * pad - ic;
+        int32_t kd = tg.h - lpx(d, 6);
+        src_cols col;
         sel_gui_round_rect(d->canvas, card, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
         sel_gui_icon_draw(d->canvas, &d->icons, src_remote(d, i) ? SEL_GUI_ICON_DISC : SEL_GUI_ICON_LIBRARY,
                           rect_of(r.x + pad, r.y + (r.h - ic) / 2, ic, ic), ic, on ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : muted);
-        draw_text(d, rect_of(cx, r.y, cw * 3 / 10, r.h), d->src[i].name, 1, 15, on ? text : muted);
-        draw_text(d, rect_of(cx + cw * 3 / 10, r.y, cw / 8, r.h), src_remote(d, i) ? "Remote" : "Local", 0, 14, muted);
+        src_columns(d, r, &col);
+        draw_text(d, rect_of(col.name_x, r.y, col.name_w, r.h), d->src[i].name, 1, 15, on ? text : muted);
+        draw_text(d, rect_of(col.kind_x, r.y, col.kind_w, r.h), src_remote(d, i) ? "Remote" : "Local", 0, 14, muted);
         snprintf(line, sizeof line, "%u songs", (unsigned)d->src[i].count);
-        draw_text(d, rect_of(cx + cw * 3 / 10 + cw / 8, r.y, cw / 6, r.h), line, 0, 14, muted);
+        draw_text(d, rect_of(col.count_x, r.y, col.count_w, r.h), line, 0, 14, muted);
         if (src_remote(d, i) && on) {
             draw_button(d, src_sync_rect(d, r), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Sync", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
         }
