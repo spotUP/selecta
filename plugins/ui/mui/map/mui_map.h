@@ -216,4 +216,10 @@ int mui_cmdline_submit(mui_send_fn send, void* ctx, const char* text);
 /* MUI-P4-16 tracker: the text of one pattern cell, "C-4 01 .. 0A0F"-style fields joined by spaces. */
 void mui_tracker_cell_text(const sel_rp_cell* cell, char* out, size_t cap);
 
+/* MUI-P5-6 drop and clipboard: an AppWindow argument to its line (file QUEUE_ADD, drawer LIBRARY_SCAN); the text of
+ * Copy Song Title; its IFF FTXT image for clipboard.device. Each returns the length, 0 when it does not fit or is empty. */
+uint32_t mui_drop_line(const char* path, int is_dir, char* out, size_t cap);
+uint32_t mui_clip_text(const char* artist, const char* title, char* out, size_t cap);
+uint32_t mui_clip_iff(const char* text, uint32_t n, uint8_t* out, size_t cap);
+
 #endif

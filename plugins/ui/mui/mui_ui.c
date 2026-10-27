@@ -19,6 +19,11 @@
 #include <clib/muimaster_protos.h>
 #include <clib/alib_protos.h>
 #include <proto/dos.h>
+#include <devices/clipboard.h>
+#include <dos/dos.h>
+#include <workbench/startup.h>
+#include <workbench/workbench.h>
+#include <utility/hooks.h>
 #include <proto/exec.h>
 #include <proto/intuition.h>
 #include <proto/muimaster.h>
@@ -46,7 +51,8 @@ typedef struct mui_state {
     sel_engine* engine;
     uint32_t transport_hits; /* transport buttons and sliders that sent their line (MUI-P2-5): stat transport_hits */
     uint32_t row_plays;      /* list rows activated by double click (MUI-P3-1): stat row_plays */
-    sel_tag stats[5];
+    uint32_t drops;          /* AppWindow arguments sent to the engine (MUI-P5-6): stat drops */
+    sel_tag stats[6];
     sel_uim uim;             /* the frame model the controls are driven from (MUI-P2-6) */
 #ifdef SEL_MUI_NATIVE
     Object* app;
@@ -88,6 +94,7 @@ static void put_tag(sel_tag* t, uint32_t tag, uintptr_t value) {
  * wait loop turns into the row's protocol line for the engine (MUI-P2-4). */
 #define MENU_MAX 160
 #define MENU_ID_BASE 0x1000L
+#define CTL_CLIP_COPY 0x2120L /* Edit > Copy Song Title (MUI-P5-6), outside the MENU_ID_BASE + row range */
 static mui_menu_item g_menu[MENU_MAX];
 static char g_menu_sc[MENU_MAX][2];
 static uint32_t g_menu_n;
@@ -155,6 +162,17 @@ static Object* mui_menu_strip(void) {
         DoMethod(parent, OM_ADDMEMBER, item);
         DoMethod(item, MUIM_Notify, MUIA_Menuitem_Trigger, MUIV_EveryTime, MUIV_Notify_Application, 2,
                  MUIM_Application_ReturnID, (ULONG)(MENU_ID_BASE + (LONG)i));
+    }
+    {
+        /* MUI-P5-6: Copy Song Title joins the Edit menu the table's undo and redo rows made. */
+        Object* edit = menu_child(strip, 1, "Edit", NULL, t_name, t_obj, &nt, "Edit");
+        Object* copy = MUI_NewObject((char*)MUIC_Menuitem, MUIA_Menuitem_Title, (ULONG) "Copy Song Title", MUIA_Menuitem_Shortcut,
+                                     (ULONG) "C", TAG_DONE);
+        if (edit != NULL && copy != NULL) {
+            DoMethod(edit, OM_ADDMEMBER, copy);
+            DoMethod(copy, MUIM_Notify, MUIA_Menuitem_Trigger, MUIV_EveryTime, MUIV_Notify_Application, 2,
+                     MUIM_Application_ReturnID, (ULONG)CTL_CLIP_COPY);
+        }
     }
     return strip;
 }
@@ -335,6 +353,90 @@ static void mui_refresh(mui_state* s) {
     }
 }
 
+/* MUI-P5-6: write one FTXT image to clipboard.device unit 0 (CMD_WRITE, then CMD_UPDATE to post it). 1 when it landed. */
+static int mui_clip_write(const uint8_t* iff, uint32_t n) {
+    struct MsgPort* port = CreateMsgPort();
+    struct IOClipReq* io = port != NULL ? (struct IOClipReq*)CreateIORequest(port, sizeof(struct IOClipReq)) : NULL;
+    int ok = 0;
+    if (io != NULL && OpenDevice((STRPTR) "clipboard.device", 0, (struct IORequest*)io, 0) == 0) {
+        io->io_Data = (STRPTR)iff;
+        io->io_Length = n;
+        io->io_Offset = 0;
+        io->io_ClipID = 0;
+        io->io_Command = CMD_WRITE;
+        ok = DoIO((struct IORequest*)io) == 0;
+        if (ok) {
+            io->io_Command = CMD_UPDATE;
+            ok = DoIO((struct IORequest*)io) == 0;
+        }
+        CloseDevice((struct IORequest*)io);
+    }
+    if (io != NULL) {
+        DeleteIORequest((struct IORequest*)io);
+    }
+    if (port != NULL) {
+        DeleteMsgPort(port);
+    }
+    return ok;
+}
+
+/* Edit > Copy Song Title: "Artist - Title" of the shown song as FTXT text. */
+static void mui_clip_copy(mui_state* s) {
+    char text[200];
+    uint8_t iff[240];
+    uint32_t n = mui_clip_text(s->uim.frame.artist, s->uim.frame.title, text, sizeof text);
+    uint32_t len = n != 0 ? mui_clip_iff(text, n, iff, sizeof iff) : 0;
+    if (len != 0) {
+        (void)mui_clip_write(iff, len);
+    }
+}
+
+/* MUI-P5-6: the AppWindow drop. The window's MUIA_AppMessage notification calls this hook in the application task with
+ * the AppMessage; each argument becomes QUEUE_ADD (file) or LIBRARY_SCAN (drawer), the lines the desktop's drop sends. */
+static struct Hook g_drop_hook;
+static mui_state* g_drop_state;
+
+static ULONG mui_drop_hook(struct Hook* hook, Object* obj, struct AppMessage** msgp) {
+    struct AppMessage* am = msgp != NULL ? *msgp : NULL;
+    struct FileInfoBlock* fib;
+    LONG i;
+    (void)hook;
+    (void)obj;
+    if (am == NULL || g_drop_state == NULL || am->am_Type != AMTYPE_APPWINDOW) {
+        return 0;
+    }
+    fib = (struct FileInfoBlock*)AllocDosObject(DOS_FIB, NULL);
+    for (i = 0; fib != NULL && i < am->am_NumArgs; i++) {
+        struct WBArg* a = &am->am_ArgList[i];
+        char path[256], line[320];
+        int is_dir = 0;
+        if (a->wa_Lock == 0 || !NameFromLock(a->wa_Lock, (STRPTR)path, sizeof path)) {
+            continue;
+        }
+        if (a->wa_Name != NULL && a->wa_Name[0] != '\0') {
+            if (!AddPart((STRPTR)path, a->wa_Name, sizeof path)) {
+                continue;
+            }
+            {
+                BPTR l = Lock((STRPTR)path, ACCESS_READ);
+                if (l != 0) {
+                    is_dir = Examine(l, fib) && fib->fib_DirEntryType > 0;
+                    UnLock(l);
+                }
+            }
+        } else {
+            is_dir = 1; /* a drawer icon: the lock is the drawer itself */
+        }
+        if (mui_drop_line(path, is_dir, line, sizeof line) != 0 && mui_send(g_drop_state, line)) {
+            g_drop_state->drops++;
+        }
+    }
+    if (fib != NULL) {
+        FreeDosObject(DOS_FIB, fib);
+    }
+    return 0;
+}
+
 /* A control's ReturnID: the line is the action table's (buttons, through mui_menu_line like the menu) or the shared
  * slider and list lines of the map layer. */
 static void mui_control_fire(mui_state* s, LONG id) {
@@ -344,6 +446,8 @@ static void mui_control_fire(mui_state* s, LONG id) {
         if (mui_send(s, mui_menu_line(mui_transport_action((uint32_t)(id - CTL_BTN_BASE), &s->uim.frame)))) {
             s->transport_hits++;
         }
+    } else if (id == CTL_CLIP_COPY) {
+        mui_clip_copy(s);
     } else if (id == CTL_SEEK) {
         GetAttr(MUIA_Slider_Level, s->seek, (ULONG*)&v);
         if (v != s->seek_set && mui_seek_line((uint32_t)v, sel_engine_state(s->engine)->song.duration_ms, line, sizeof line)
@@ -428,7 +532,7 @@ static void* mui_open(const sel_ui_open_args* a) {
     sel_uim_init(&s->uim);
     s->app = ApplicationObject, MUIA_Application_Title, (ULONG) "Selecta", MUIA_Application_Base, (ULONG) "SELECTA",
         MUIA_Application_Version, (ULONG) "$VER: Selecta MUI 1.0",
-        SubWindow, s->win = WindowObject, MUIA_Window_Title, (ULONG) "Selecta", MUIA_Window_ID, SEL_MAKE_ID('S', 'E', 'L', 'M'),
+        SubWindow, s->win = WindowObject, MUIA_Window_Title, (ULONG) "Selecta", MUIA_Window_ID, SEL_MAKE_ID('S', 'E', 'L', 'M'), MUIA_Window_AppWindow, TRUE,
             /* D-M4-3: full screen by default; width and height are 100 percent of the public screen area MUI can use.
              * The HVSpace child gives the group unbounded height: a lone Text object has a fixed maximum height and MUI
              * never sizes a window beyond its contents' maximum, which left the window 41 pixels high. */
@@ -456,6 +560,10 @@ static void* mui_open(const sel_ui_open_args* a) {
     }
     DoMethod(s->win, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, s->app, 2, MUIM_Application_ReturnID,
              MUIV_Application_ReturnID_Quit);
+    g_drop_state = s;
+    g_drop_hook.h_Entry = (__typeof__(g_drop_hook.h_Entry))(void (*)(void))HookEntry;
+    g_drop_hook.h_SubEntry = (__typeof__(g_drop_hook.h_SubEntry))(void (*)(void))mui_drop_hook;
+    DoMethod(s->win, MUIM_Notify, MUIA_AppMessage, MUIV_EveryTime, s->app, 3, MUIM_CallHook, (ULONG)&g_drop_hook, MUIV_TriggerValue);
     set(s->win, MUIA_Window_Open, TRUE);
     GetAttr(MUIA_Window_Open, s->win, &open); /* MUI opens the window inside the set; 0 here means it failed */
     if (!open) {
@@ -581,8 +689,10 @@ static const sel_tag* mui_stats(void* state) {
     s->stats[2].value = s->transport_hits;
     s->stats[3].tag = SEL_UI_STAT_ROW_PLAYS;
     s->stats[3].value = s->row_plays;
-    s->stats[4].tag = SEL_TAG_END;
-    s->stats[4].value = 0;
+    s->stats[4].tag = SEL_UI_STAT_DROPS;
+    s->stats[4].value = s->drops;
+    s->stats[5].tag = SEL_TAG_END;
+    s->stats[5].value = 0;
     return s->stats;
 }
 
