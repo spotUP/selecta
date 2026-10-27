@@ -38,6 +38,37 @@ const char* sel_library_sqlite_version(void) {
 /* The smallest heap of the D-M3-2 table; SQLite still works in it. */
 #define HEAP_FLOOR_BYTES (512u * 1024u)
 
+/* Page size of every database this build creates (SQLITE_DEFAULT_PAGE_SIZE). */
+#define PAGE_BYTES 4096u
+
+/* memsys5 rounds every allocation up to a power of two, and a page cache entry is a page plus SQLite's
+ * header (4096 + 272 bytes on the host), so each page took 8 KB of the heap: the 41 pages of an empty
+ * schema alone used 328 KB of the 512 KB tier heap and `library scan` failed with out_of_memory (I577).
+ * Three eighths of the heap block become exact-size page slots (SQLITE_CONFIG_PAGECACHE) and the rest the
+ * memsys5 heap; the page cache of the main database is capped at the slot count so it recycles slots
+ * instead of overflowing into memsys5. */
+static uint32_t g_page_slots;
+
+static uint32_t page_slot_bytes(void) {
+    int hdr = 0;
+
+    sqlite3_config(SQLITE_CONFIG_PCACHE_HDRSZ, &hdr);
+    return (PAGE_BYTES + (uint32_t)hdr + 7u) & ~7u;
+}
+
+/* Splits the granted block into page slots and the memsys5 heap. */
+static int heap_configure(void* block, uint32_t bytes) {
+    uint32_t slot = page_slot_bytes();
+    uint32_t slots = bytes / 8u * 3u / slot;
+    char* heap = (char*)block + (size_t)slot * slots;
+
+    g_page_slots = slots;
+    if (sqlite3_config(SQLITE_CONFIG_PAGECACHE, block, (int)slot, (int)slots) != SQLITE_OK) {
+        return 0;
+    }
+    return sqlite3_config(SQLITE_CONFIG_HEAP, heap, (int)(bytes - slot * slots), 32) == SQLITE_OK;
+}
+
 /* The table size is a ceiling, not a demand: memsys5 needs one contiguous block, and on an Amiga
  * whose fast RAM is fragmented the largest free block can be far below the free total (I227: 50 MB
  * free, 16 MB largest, 32 MB asked). Halve until a block is granted, down to the floor. */
@@ -55,7 +86,7 @@ static int heap_acquire(const sel_host* host, uint32_t bytes) {
         g_heap_allocs++;
         /* SQLite is compiled with MEMSTATUS=0; switch the counters on so sel_library_heap_peak() has data. */
         sqlite3_config(SQLITE_CONFIG_MEMSTATUS, 1);
-        if (sqlite3_config(SQLITE_CONFIG_HEAP, g_heap, (int)bytes, 32) != SQLITE_OK) {
+        if (!heap_configure(g_heap, bytes)) {
             host->mem_free(host, g_heap);
             g_heap = NULL;
             return 0;
@@ -72,6 +103,14 @@ static void heap_release(const sel_host* host) {
         host->mem_free(host, g_heap);
         g_heap = NULL;
     }
+}
+
+/* Caps the main page cache at the page slots, so it recycles them instead of growing into memsys5. */
+static int set_cache_size(sqlite3* db) {
+    char sql[48];
+
+    sqlite3_snprintf((int)sizeof sql, sql, "PRAGMA main.cache_size=%u", (unsigned)g_page_slots);
+    return sqlite3_exec(db, sql, NULL, NULL, NULL) == SQLITE_OK;
 }
 
 sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint32_t account, const char* path) {
@@ -93,7 +132,7 @@ sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint
     lib->heap_allocs = g_heap_allocs;
     if (sqlite3_open_v2(path, &lib->db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_URI, NULL) !=
             SQLITE_OK ||
-        !sel_schema_migrate(lib->db) || !sel_library_register_regexp(lib->db)) {
+        !set_cache_size(lib->db) || !sel_schema_migrate(lib->db) || !sel_library_register_regexp(lib->db)) {
         goto fail;
     }
     sqlite3_snprintf((int)sizeof sql, sql, "INSERT OR REPLACE INTO meta(key, value) VALUES('account', '%u')", account);

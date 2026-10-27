@@ -569,6 +569,7 @@ static void library_dump_local(const char* db_path) {
 static int library_scan(int argc, char** argv) {
     const sel_host* host = sel_host_default();
     const char* db_path = NULL; /* default: the app's library.db (I276); --db :memory: scans into a throwaway DB */
+    const sel_tag* machine = NULL; /* --machine <fake>: scan under that tier's library heap (I577) */
     char db_default[300];
     const char* dir = NULL;
     browse_sink sink;
@@ -589,6 +590,12 @@ static int library_scan(int argc, char** argv) {
     for (i = 0; i < argc; i++) {
         if (strcmp(argv[i], "--db") == 0 && i + 1 < argc) {
             db_path = argv[++i];
+        } else if (strcmp(argv[i], "--machine") == 0 && i + 1 < argc) {
+            machine = sel_machine_fake(argv[++i]);
+            if (machine == NULL) {
+                fprintf(stderr, "library scan: unknown machine %s\n", argv[i]);
+                return 2;
+            }
         } else if (strcmp(argv[i], "--dump") == 0) {
             dump = 1;
         } else if ((strcmp(argv[i], "--watch") == 0 || strcmp(argv[i], "--poll") == 0) && i + 1 < argc) {
@@ -602,7 +609,7 @@ static int library_scan(int argc, char** argv) {
         }
     }
     if (dir == NULL) {
-        fputs("usage: selecta-cli library scan [--db <path>] [--dump] <dir>\n", stderr);
+        fputs("usage: selecta-cli library scan [--db <path>] [--machine <name>] [--dump] <dir>\n", stderr);
         return 2;
     }
     if (db_path == NULL) {
@@ -617,7 +624,7 @@ static int library_scan(int argc, char** argv) {
     sel_registry_init(host);
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;
-    cfg.machine = sel_machine_probe(host);
+    cfg.machine = machine != NULL ? machine : sel_machine_probe(host);
     lib = sel_library_open(host, cfg.machine, 0, db_path);
     if (lib == NULL) {
         puts("db_open=0");
@@ -651,10 +658,11 @@ static int library_scan(int argc, char** argv) {
     printf("rescanned_dirs=%u rescan_files=%u watch_events=%u ", (unsigned)rs.rescanned_dirs,
            (unsigned)rs.scanned_files, (unsigned)watch_events);
     printf("scanned_files=%u skipped_files=%u scan_batches=%u probed=%u dirs=%u archives=%u archive_members=%u "
-           "archive_lzx=%u depack_pp=%u bytes_read=%u db_songs=%d\n",
+           "archive_lzx=%u depack_pp=%u bytes_read=%u db_songs=%d heap_bytes=%u db_heap_peak=%u\n",
            (unsigned)info.scanned_files, (unsigned)info.skipped_files, (unsigned)info.scan_batches,
            (unsigned)info.probed, (unsigned)info.dirs, (unsigned)info.archives, (unsigned)info.archive_members,
-           (unsigned)info.archive_lzx, (unsigned)info.depack_pp, (unsigned)info.bytes_read, st.args[SEL_LIB_STAT_SONGS].v.i);
+           (unsigned)info.archive_lzx, (unsigned)info.depack_pp, (unsigned)info.bytes_read, st.args[SEL_LIB_STAT_SONGS].v.i,
+           (unsigned)sel_library_heap_size(lib), (unsigned)sel_library_heap_peak());
     sel_engine_destroy(e);
     sel_library_close(lib);
 #ifndef __amigaos__

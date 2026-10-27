@@ -1593,6 +1593,11 @@ if(NOT SEL_AMIGA)
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/scan_default_db.sh $<TARGET_FILE:selecta-cli> ${SEL_TESTMOD})
   set_tests_properties(library-scan-default-db PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "scan_default_db_ok")
 
+  # I577: the scan fits the 512 KB SQLite heap of the 2 MB tier, into :memory: and into a file.
+  add_test(NAME library-scan-small-heap
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/scan_small_heap.sh $<TARGET_FILE:selecta-cli> ${SEL_TESTMOD})
+  set_tests_properties(library-scan-small-heap PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "scan_small_heap_ok")
+
   # I184d: a local MP3 / Ogg is scanned and played through a file-backed byte stream, not read whole.
   add_test(NAME file-stream-local
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/file_stream.sh $<TARGET_FILE:selecta-cli>
