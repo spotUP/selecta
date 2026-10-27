@@ -419,6 +419,23 @@ static void test_style_mask(void) {
     CHECK((mui_style_mask(0) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_COVERFLOW)) == 0 && (mui_style_mask(0) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_GRID)) != 0, "planar drops only cover flow");
 }
 
+/* MUI-P3-1: a rebuild from a snapshot that has not seen the user's VIEW_CURSOR yet keeps the clicked row selected. */
+static void test_list_pending(void) {
+    mui_list_pending p;
+    memset(&p, 0, sizeof p);
+    CHECK(mui_list_pending_resolve(&p, 0) == 0, "nothing pending: snapshot wins");
+    mui_list_pending_arm(&p, 3, 0); /* user clicked row 3, snapshot cursor still row 0 */
+    CHECK(mui_list_pending_resolve(&p, 0) == 3, "stale snapshot must not move the selection back to row 0");
+    CHECK(mui_list_pending_resolve(&p, 0) == 3, "still stale on a second rebuild");
+    CHECK(mui_list_pending_resolve(&p, 3) == 3 && !p.armed, "snapshot caught up: settled");
+    CHECK(mui_list_pending_resolve(&p, 0) == 0, "settled: later snapshot wins");
+    mui_list_pending_arm(&p, 2, 0);
+    CHECK(mui_list_pending_resolve(&p, 1) == 1 && !p.armed, "snapshot moved elsewhere: snapshot wins");
+    mui_list_pending_arm(&p, 2, 0);
+    mui_list_pending_clear(&p);
+    CHECK(mui_list_pending_resolve(&p, 0) == 0, "cleared (double-click sent): snapshot wins");
+}
+
 static void test_list_backends(void) {
     static sel_view_row rows[40];
     static char txt[40][32];
@@ -658,6 +675,8 @@ int main(int argc, char** argv) {
         test_columns();
     } else if (strcmp(argv[1], "style-mask") == 0) {
         test_style_mask();
+    } else if (strcmp(argv[1], "list-pending") == 0) {
+        test_list_pending();
     } else if (strcmp(argv[1], "list-backends") == 0) {
         test_list_backends();
     } else if (strcmp(argv[1], "home") == 0) {

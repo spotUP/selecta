@@ -67,6 +67,7 @@ typedef struct mui_state {
     const char* entry_ptr[MUI_ROWS_MAX + 1];
     uint32_t list_sig;
     LONG list_active_set;
+    mui_list_pending list_pending;  /* the clicked row until the engine snapshot shows it */
 #endif
 } mui_state;
 
@@ -299,6 +300,7 @@ static void mui_refresh(mui_state* s) {
         uint32_t n = mui_list_build(mui_list_backend_pick(0, 0), s->entries, MUI_ROWS_MAX, v, &active);
         uint32_t sig = 2166136261u ^ v->window_start ^ (n << 20) ^ ((uint32_t)(active + 1) << 8);
         const char* c;
+        active = mui_list_pending_resolve(&s->list_pending, active);
         for (i = 0; i < n; i++) {
             for (c = s->entries[i].text; *c != '\0'; c++) {
                 sig = (sig ^ (uint8_t)*c) * 16777619u;
@@ -355,6 +357,13 @@ static void mui_control_fire(mui_state* s, LONG id) {
             return;
         }
         s->list_active_set = v;
+        if (id == CTL_LIST_SEL) {
+            int32_t shown = view->cursor >= view->window_start && view->cursor - view->window_start < view->window_rows
+                                ? (int32_t)(view->cursor - view->window_start) : -1;
+            mui_list_pending_arm(&s->list_pending, (int32_t)v, shown);
+        } else {
+            mui_list_pending_clear(&s->list_pending);
+        }
         snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)(view->window_start + (uint32_t)v));
         if (mui_send(s, line) && id == CTL_LIST_DBL && mui_send(s, "VIEW_ACTIVATE")) {
             s->row_plays++;

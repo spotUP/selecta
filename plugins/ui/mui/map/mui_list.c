@@ -20,6 +20,24 @@ const mui_list_backend* mui_list_backend_pick(int nlist_present, int listtree_pr
     return &k_nlist;
 }
 
+void mui_list_pending_arm(mui_list_pending* p, int32_t target, int32_t snapshot_active) {
+    p->armed = 1;
+    p->target = target;
+    p->base = snapshot_active;
+}
+
+void mui_list_pending_clear(mui_list_pending* p) {
+    p->armed = 0;
+}
+
+int32_t mui_list_pending_resolve(mui_list_pending* p, int32_t snapshot_active) {
+    if (p->armed && snapshot_active == p->base) {
+        return p->target;
+    }
+    p->armed = 0;
+    return snapshot_active;
+}
+
 uint32_t mui_list_build(const mui_list_backend* be, mui_list_entry* out, uint32_t cap, const sel_view_state* v, int32_t* active) {
     uint32_t i, n = v->row_n;
     if (n > v->window_rows) {

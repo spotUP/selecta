@@ -136,6 +136,19 @@ typedef struct mui_list_entry {
 /* Fill out[] from the visible window only (at most window_rows and cap entries); *active is the List cursor
  * position inside the window, -1 when the cursor row is outside it. Returns the entries filled. */
 uint32_t mui_list_build(const mui_list_backend* be, mui_list_entry* out, uint32_t cap, const sel_view_state* v, int32_t* active);
+/* MUI-P3-1: the user's row click is sent to the engine as VIEW_CURSOR, but sel_engine_state() is only a snapshot the pump
+ * updates later. Until it shows the new cursor, a list rebuild must keep the clicked row selected, not the snapshot's old
+ * cursor row (else a double-click right after reads the old row back and activates it). */
+typedef struct mui_list_pending {
+    int armed;
+    int32_t target; /* the row the user selected (window position) */
+    int32_t base;   /* the snapshot's cursor position when it was sent */
+} mui_list_pending;
+void mui_list_pending_arm(mui_list_pending* p, int32_t target, int32_t snapshot_active);
+void mui_list_pending_clear(mui_list_pending* p);
+/* The row a rebuild selects: the pending target while the snapshot still shows the cursor it had at arm time; the
+ * snapshot's own position once it moved (the pending selection is then settled and cleared). */
+int32_t mui_list_pending_resolve(mui_list_pending* p, int32_t snapshot_active);
 /* Tree style: the engine line a click on a node row sends (VIEW_EXPAND/VIEW_COLLAPSE <node id>); "" for a non-node. */
 void mui_list_toggle_line(const sel_view_row* r, char* out, size_t cap);
 /* Drilldown breadcrumb "Queue by folder  Drilldown > a > b" from the shared title function. */
