@@ -456,6 +456,7 @@ if(NOT SEL_AMIGA)
   target_link_libraries(mui_contract_test PRIVATE selecta_registry mui_map)
   add_test(NAME mui-wait-contract COMMAND mui_contract_test wait)
   add_test(NAME mui-registry COMMAND mui_contract_test registry)
+  add_test(NAME mui-drop COMMAND mui_contract_test drop)
   add_test(NAME mui-open-failure COMMAND mui_contract_test failure)
   add_test(NAME mui-open-nomui COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
     "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m2/quit.keys" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/mui-open-nomui"
@@ -487,6 +488,19 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-grid COMMAND mui_canvas_test grid)
   add_test(NAME mui-art-path COMMAND mui_canvas_test art-path)
   set_tests_properties(mui-canvas-geom mui-grid mui-art-path PROPERTIES TIMEOUT 30 LABELS mui)
+  add_executable(mui_viz_test ui/mui_viz_test.c)
+  target_link_libraries(mui_viz_test PRIVATE mui_map selecta_gui selecta_uimodel)
+  add_test(NAME mui-viz-surface COMMAND mui_viz_test surface)
+  add_test(NAME mui-budget COMMAND mui_viz_test budget)
+  add_test(NAME mui-copper-tint COMMAND mui_viz_test copper)
+  set_tests_properties(mui-viz-surface mui-budget mui-copper-tint PROPERTIES TIMEOUT 30 LABELS mui)
+  add_executable(gui_dither_test ui/gui_dither_test.c)
+  target_link_libraries(gui_dither_test PRIVATE selecta_gui)
+  target_compile_definitions(gui_dither_test PRIVATE GRADIENT_GOLDEN=0x6b25f44c8d897ac0ull COVER_GOLDEN=0x5feee6196fcf1ca2ull)
+  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bitart")
+  add_test(NAME gui-dither-atkinson COMMAND gui_dither_test dither)
+  add_test(NAME mui-art-planar-cache COMMAND gui_dither_test cache "${CMAKE_CURRENT_BINARY_DIR}/bitart")
+  set_tests_properties(gui-dither-atkinson mui-art-planar-cache PROPERTIES TIMEOUT 30 LABELS mui)
   add_test(NAME mui-search COMMAND mui_contract_test search)
   add_test(NAME mui-queue COMMAND mui_contract_test queue)
   add_test(NAME mui-playlists COMMAND mui_contract_test playlists)
@@ -499,7 +513,7 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-cmdline COMMAND mui_contract_test cmdline)
   add_test(NAME mui-states COMMAND mui_contract_test states)
   add_test(NAME mui-tracker COMMAND mui_contract_test tracker)
-  set_tests_properties(mui-wait-contract mui-registry mui-open-failure mui-open-nomui mui-menu mui-style-menu mui-menu-dispatch mui-weights mui-relayout mui-transport-map mui-dirty-map mui-keys mui-list-regular mui-list-tree mui-list-drill mui-list-pending mui-columns mui-style-mask mui-list-backends mui-home mui-doors mui-library mui-toast mui-help mui-search mui-queue mui-playlists mui-song-menu mui-like-rating mui-nowplaying mui-songinfo mui-settings mui-dialogs mui-cmdline mui-states mui-tracker PROPERTIES TIMEOUT 30 LABELS mui)
+  set_tests_properties(mui-wait-contract mui-registry mui-open-failure mui-open-nomui mui-menu mui-style-menu mui-menu-dispatch mui-weights mui-relayout mui-transport-map mui-dirty-map mui-keys mui-list-regular mui-list-tree mui-list-drill mui-list-pending mui-columns mui-style-mask mui-list-backends mui-home mui-doors mui-library mui-toast mui-help mui-search mui-queue mui-playlists mui-song-menu mui-like-rating mui-nowplaying mui-songinfo mui-settings mui-dialogs mui-cmdline mui-states mui-tracker mui-drop PROPERTIES TIMEOUT 30 LABELS mui)
   set(_mui_has_ui 0)
   if(TARGET sel_plugin_mui_ui)
     set(_mui_has_ui 1)
@@ -1135,6 +1149,15 @@ if(NOT SEL_AMIGA)
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-open"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
   set_tests_properties(rig-m4-mui-open PROPERTIES LABELS rig RESOURCE_LOCK rig
+    ENVIRONMENT "UPTERM_RIG=2" SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  # MUI-P5-6: an icon dragged from a Workbench drawer window onto the MUI window (AppWindow drop) and Edit > Copy Song Title
+  # (clipboard.device). Needs a rig started with --no-dopus (plain Workbench) and SEL_MUI_SONG.
+  add_test(NAME rig-m4-mui-drop
+    COMMAND "${CMAKE_COMMAND}" -DTAG=M4MUIDROP "-DRIG_DIR=${SEL_RIG_DIR}"
+      "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta" "-DMOD=${SEL_TESTMOD}" "-DSONG=${SEL_MUI_SONG}"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-drop"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
+  set_tests_properties(rig-m4-mui-drop PROPERTIES LABELS rig RESOURCE_LOCK rig
     ENVIRONMENT "UPTERM_RIG=2" SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
   # MUI-P1-6 / M4-P11-2: MUI absent (SYS:MUI/Libs renamed, restored on every path): the Selecta requester with Continue,
   # then the text UI runs and Selecta exits 0. Needs the same Amiga build tree as rig-m4-mui-open.

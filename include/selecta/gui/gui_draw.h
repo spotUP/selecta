@@ -150,6 +150,12 @@ void sel_gui_shadow_draw(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_rec
  * under the box; nothing shows above or at the sides of the box edge. Nothing on a palette canvas. */
 void sel_gui_shadow_draw_round(sel_gui_canvas* c, const sel_gui_shadow* s, sel_gui_rect box, int32_t radius, int32_t lift);
 
+/* Atkinson dither (MUI-P5-7, I509): turns w x h pixel words (alpha ignored) into a 1-bit bitmap, MSB first, rows of
+ * `pitch` bytes (pitch >= (w + 7) / 8), 1 = light. Luminance is (77 r + 151 g + 28 b) >> 8; the error of each pixel
+ * (one eighth to each of six neighbours, a quarter of it dropped) is carried in integers. Returns 0 on out of memory. */
+uint32_t sel_gui_luma(uint32_t argb);
+int sel_gui_dither_atkinson(const uint32_t* px, int32_t w, int32_t h, uint8_t* out, uint32_t pitch);
+
 #ifdef __cplusplus
 }
 #endif

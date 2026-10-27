@@ -634,6 +634,27 @@ static void test_settings(void) {
     CHECK(strcmp(o, "PREF_SET mix.loudness \"off\"") == 0, "line '%s'", o);
 }
 
+/* mui-drop (MUI-P5-6): the line a dropped file or drawer sends, the clipboard text and its IFF FTXT image. */
+static void test_drop(void) {
+    char o[64];
+    uint8_t iff[64];
+    uint32_t n;
+    CHECK(mui_drop_line("Work:Music/a b.mod", 0, o, sizeof o) > 0 && strcmp(o, "QUEUE_ADD \"Work:Music/a b.mod\"") == 0, "file line '%s'", o);
+    CHECK(mui_drop_line("Work:Music", 1, o, sizeof o) > 0 && strcmp(o, "LIBRARY_SCAN \"Work:Music\"") == 0, "drawer line '%s'", o);
+    CHECK(mui_drop_line("a\"b\\c", 0, o, sizeof o) > 0 && strcmp(o, "QUEUE_ADD \"a\\\"b\\\\c\"") == 0, "escape '%s'", o);
+    CHECK(mui_drop_line("", 0, o, sizeof o) == 0, "empty path");
+    CHECK(mui_drop_line("0123456789012345678901234567890123456789", 0, o, 30) == 0, "too long");
+    CHECK(mui_clip_text("Virgill", "That Meme", o, sizeof o) > 0 && strcmp(o, "Virgill - That Meme") == 0, "text '%s'", o);
+    CHECK(mui_clip_text("", "Solo", o, sizeof o) > 0 && strcmp(o, "Solo") == 0, "title only '%s'", o);
+    CHECK(mui_clip_text("A", "", o, sizeof o) == 0, "no title");
+    n = mui_clip_iff("abc", 3, iff, sizeof iff);
+    CHECK(n == 24 && memcmp(iff, "FORM", 4) == 0 && iff[7] == 16 && memcmp(iff + 8, "FTXT", 4) == 0 && memcmp(iff + 12, "CHRS", 4) == 0
+              && iff[19] == 3 && memcmp(iff + 20, "abc", 3) == 0 && iff[23] == 0, "iff odd length n=%u", (unsigned)n);
+    n = mui_clip_iff("abcd", 4, iff, sizeof iff);
+    CHECK(n == 24 && iff[7] == 16, "iff even length n=%u", (unsigned)n);
+    CHECK(mui_clip_iff("abcd", 4, iff, 23) == 0, "iff too small");
+}
+
 static void test_dialogs(void) {
     char o[200];
     mui_confirm_text(1, NULL, 12, 3, o, sizeof o);
@@ -692,6 +713,8 @@ int main(int argc, char** argv) {
         test_registry();
     } else if (strcmp(argv[1], "failure") == 0) {
         test_failure();
+    } else if (strcmp(argv[1], "drop") == 0) {
+        test_drop();
     } else if (strcmp(argv[1], "menu") == 0) {
         test_menu();
     } else if (strcmp(argv[1], "menu-dispatch") == 0) {
