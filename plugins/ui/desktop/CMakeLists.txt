@@ -1,6 +1,6 @@
 # The Amiga cross build cannot run a tool it builds, so the desktop UI plugin is built only when a host-built
 # gui_iconbake is given (-DSELECTA_ICONBAKE_EXE=<path>); the canonical Amiga configure leaves the plugin out.
-option(SEL_DESKTOP_AGA "Amiga: the desktop plugin draws through the AGA c2p backend instead of RTG (I439, M4-P6-1a)" OFF)
+option(SEL_DESKTOP_AGA "Amiga: the desktop plugin draws through the AGA c2p backend instead of RTG (I439, M4-P6-1a)" ON)
 include(${PROJECT_SOURCE_DIR}/cmake/desktop_bake_check.cmake)
 sel_desktop_bake_check()
 if(SEL_DESKTOP_SKIP)
