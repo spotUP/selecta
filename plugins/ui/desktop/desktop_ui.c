@@ -461,6 +461,9 @@ static uint32_t desk_flush(desk* d) {
         uint32_t px = sel_gui_present(d->canvas);
         uint32_t t_end = ch->clock_ms(ch);
         uint32_t dt = t_end - d->frame_t0;
+        if (d->report) { /* I525: when each repaint finished and how long it took */
+            fprintf(stderr, "frame end=%u ms=%u px=%u\n", (unsigned)t_end, (unsigned)dt, (unsigned)px);
+        }
         uint32_t paint = t_flush - d->frame_t0, present = t_end - t_flush;
         d->frame_open = 0;
         if (d->frame_flow != 0 && d->report) { /* I395: a cover flow frame, rest or slide */
@@ -7685,7 +7688,11 @@ static void desk_sdl_route(desk* d) {
             (void)desk_route_input(d, &ev);
             desk_sdl_note_cost(d->sdl, t0);
         } else {
-            (void)desk_route_input(d, &ev);
+            int hit = desk_route_input(d, &ev);
+            if (d->report && ev.kind != SEL_GUI_IN_MOVE) { /* I525: one line per pointer event, for the click latency measure */
+                fprintf(stderr, "input t=%u kind=%d x=%d y=%d hit=%d\n", (unsigned)desk_sdl_ticks(), (int)ev.kind, (int)ev.x,
+                        (int)ev.y, hit);
+            }
         }
     }
 }
