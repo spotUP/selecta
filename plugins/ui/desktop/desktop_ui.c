@@ -50,6 +50,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* I524b: --stats launch trace. One stderr line per launch phase with the host clock, so the log (--log) shows where the
+ * minutes before the first present go. Absolute host clock ms: subtract the first line (selecta: trace start). */
+static int g_desk_trace;
+static void desk_trace(const sel_host* h, const char* phase) {
+    if (g_desk_trace) {
+        fprintf(stderr, "trace t_ms=%u %s\n", (unsigned)h->clock_ms(h), phase);
+    }
+}
+
 /* The text size tokens (plan 2.6) as pixel sizes; each gets one atlas per weight. */
 #define DESK_SIZES DESK_FONT_SIZE_N
 /* The type scale tokens (Main.dc.html): caption 11/12, body 13/14, nav 15, subtitle 16, brand 18, heading 22, 24, 32. */
@@ -8339,6 +8348,10 @@ static void* desk_open(const sel_ui_open_args* a) {
 #ifdef SELECTA_DESKTOP_AGA
     want_sdl = want_sdl || (backend != NULL && strcmp(backend, "aga") == 0);
 #endif
+    for (i = 0; i < a->argc; i++) {
+        g_desk_trace = g_desk_trace || strcmp(a->argv[i], "--stats") == 0;
+    }
+    desk_trace(a->host, "desk_open begin");
     if (backend != NULL && strcmp(backend, "mem") != 0 && !want_sdl) {
         fprintf(stderr, "selecta: desktop backend '%s' is not mem or sdl\n", backend);
         return NULL;
@@ -8428,7 +8441,9 @@ static void* desk_open(const sel_ui_open_args* a) {
         d->scale = sc;
         d->scale_q16 = sc * 65536;
     }
+    desk_trace(a->host, "desk_open before icons");
     desk_build_icons(d);
+    desk_trace(a->host, "desk_open icons built");
     d->icon_rebuilds = 0u; /* the first build is not a rebuild */
     {
         int32_t def_w = 1280, def_h = 800;
@@ -8492,7 +8507,9 @@ static void* desk_open(const sel_ui_open_args* a) {
             desk_close(d);
             return NULL;
         }
+        desk_trace(a->host, "desk_open canvas made, backend (screen) open begin");
         d->sdl = desk_backend_open(d->canvas->w, d->canvas->h, d->canvas->format == SEL_GUI_INDEX8);
+        desk_trace(a->host, "desk_open backend (screen) open done");
         if (d->sdl == NULL) {
             desk_close(d);
             return NULL;
@@ -8505,6 +8522,7 @@ static void* desk_open(const sel_ui_open_args* a) {
         d->icon_rebuilds = 0u;
         desk_relayout(d);
     }
+    desk_trace(a->host, "desk_open scale applied");
     d->art = art_open(a->art);
     sel_gui_timeline_init(&d->tl);
     sel_uim_init(&d->uim);
@@ -8525,7 +8543,9 @@ static void* desk_open(const sel_ui_open_args* a) {
     } else if (d->textsheet || d->widgets) {
         d->dirty_total = 0; /* drawn on the first turn, after the --exec commands queued their names */
     } else {
+        desk_trace(a->host, "desk_open first present begin");
         desk_present(d);
+        desk_trace(a->host, "desk_open first present done");
     }
     return d;
 }
