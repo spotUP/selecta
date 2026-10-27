@@ -681,6 +681,14 @@ if(NOT SEL_AMIGA)
   set_tests_properties(engine-hw-song-seeks-natively PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "hw_prepare: ok")
   add_test(NAME engine-hw-song-not-cut-by-silence COMMAND hw_prepare_test silence)
   set_tests_properties(engine-hw-song-not-cut-by-silence PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "hw_prepare: ok")
+  # I532: a mixer-routed song on a voice-only output (Paula) swaps to a PCM sink (ahi, else paula14).
+  add_executable(pcm_route_test engine/pcm_route_test.c)
+  target_link_libraries(pcm_route_test PRIVATE selecta_core)
+  add_test(NAME engine-pcm-song-leaves-voice-only-output COMMAND pcm_route_test ahi)
+  add_test(NAME engine-pcm-song-falls-back-to-paula14 COMMAND pcm_route_test paula)
+  add_test(NAME engine-voice-song-stays-on-paula COMMAND pcm_route_test voice)
+  set_tests_properties(engine-pcm-song-leaves-voice-only-output engine-pcm-song-falls-back-to-paula14
+                       engine-voice-song-stays-on-paula PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "pcm_route: ok")
   set_tests_properties(browse-hides-unrecognised-files PROPERTIES PASS_REGULAR_EXPRESSION "browse_filter_ok")
 endif()
 

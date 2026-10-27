@@ -99,6 +99,8 @@ typedef struct shell_output {
     sel_out_open_fn open;
     sel_out_close_fn close;
     sel_out_set_source_fn set_source;
+    sel_out_pump_fn pump;
+    const sel_tag* machine;
     const sel_host* host;
     sel_engine* engine;
     uint32_t rate; /* sel_registry_output_rate: the one rate for set_mix, open and the turn length */
@@ -128,6 +130,48 @@ static int shell_handover(void* ctx, uint32_t release) {
 static const sel_tag* hooks_of(uint32_t kind, const char* id) {
     const sel_tag* desc = sel_registry_find(kind, id);
     return desc != NULL ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
+}
+
+/* Output swap (I532): the engine routes a PCM song while the open output is voice-only (Paula discards PCM), so it
+ * asks for a PCM sink by id. Close the open output, open `id` at its own rate, and point it at the engine. */
+static int shell_switch_output(void* ctx, const char* id) {
+    shell_output* so = (shell_output*)ctx;
+    const sel_tag* oh = hooks_of(SEL_PLUGIN_KIND_OUTPUT, id);
+    sel_out_open_fn open_fn;
+    sel_out_close_fn close_fn;
+    sel_out_set_source_fn source_fn;
+    sel_out_pump_fn pump_fn;
+    uint32_t rate;
+    void* out;
+    if (oh == NULL) {
+        return 0;
+    }
+    open_fn = (sel_out_open_fn)sel_tag_find(oh, SEL_OUT_OPEN, 0);
+    close_fn = (sel_out_close_fn)sel_tag_find(oh, SEL_OUT_CLOSE, 0);
+    source_fn = (sel_out_set_source_fn)sel_tag_find(oh, SEL_OUT_SET_SOURCE, 0);
+    pump_fn = (sel_out_pump_fn)sel_tag_find(oh, SEL_OUT_PUMP, 0);
+    if (!open_fn || !close_fn || !source_fn || !pump_fn) {
+        return 0;
+    }
+    if (so->out != NULL) {
+        so->close(so->out);
+        so->out = NULL;
+    }
+    rate = sel_registry_output_rate(oh, so->machine);
+    sel_engine_set_mix(so->engine, rate, SHELL_RESAMPLER);
+    out = open_fn(so->host, rate, 2);
+    if (out == NULL) {
+        return 0;
+    }
+    g_marked = 0; /* a new pull thread marks itself on its first call */
+    source_fn(out, audio_pull, so->engine);
+    so->rate = rate;
+    so->open = open_fn;
+    so->close = close_fn;
+    so->set_source = source_fn;
+    so->pump = pump_fn;
+    so->out = out;
+    return 1;
 }
 
 /* Default library DB: sel_default_db_path (src/core/config_dir.c), shared with selecta-cli. */
@@ -454,10 +498,13 @@ int main(int argc, char** argv)
     so.open = out_open;
     so.close = out_close;
     so.set_source = out_set_source;
+    so.pump = out_pump;
+    so.machine = machine_tags;
     so.host = host;
     so.engine = e;
     so.out = out;
     sel_engine_set_handover(e, shell_handover, &so);
+    sel_engine_set_output_switch(e, shell_switch_output, &so);
 
     memset(&args, 0, sizeof args);
     args.engine = e;
@@ -480,7 +527,7 @@ int main(int argc, char** argv)
                 g_uis[u].close(g_uis[u].state);
             }
             if (so.out != NULL) {
-                out_close(so.out);
+                so.close(so.out);
             }
             sel_engine_destroy(e);
             return 1;
@@ -504,7 +551,7 @@ int main(int argc, char** argv)
                 g_uis[u].close(g_uis[u].state);
             }
             if (so.out != NULL) {
-                out_close(so.out);
+                so.close(so.out);
             }
             sel_engine_destroy(e);
             return 1;
@@ -600,7 +647,7 @@ int main(int argc, char** argv)
         }
         waits++;
         if (so.out != NULL) {
-            out_pump(so.out, so.rate * SHELL_TURN_MS / 1000u);
+            so.pump(so.out, so.rate * SHELL_TURN_MS / 1000u);
         }
         sel_engine_pump(e, sink, ctx);
         sel_int_session_poll(isess);
@@ -764,7 +811,7 @@ int main(int argc, char** argv)
         g_uis[u].close(g_uis[u].state);
     }
     if (so.out != NULL) {
-        out_close(so.out);
+        so.close(so.out);
     }
     sel_engine_destroy(e);
     if (library != NULL) {

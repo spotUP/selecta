@@ -335,6 +335,13 @@ uint32_t sel_engine_voice_route(uint32_t voice_count, int has_sink, uint32_t voi
  * runs sel_engine_render itself by the wall clock, so position, pause and end of song keep working. */
 typedef int (*sel_engine_handover_fn)(void* ctx, uint32_t release);
 void sel_engine_set_handover(sel_engine* e, sel_engine_handover_fn fn, void* ctx);
+/* Output swap (I532, design section 5). A song routed to the mixer needs a PCM sink; when the open output only
+ * plays voices (SEL_OUT_VOICES, Paula) it would discard the PCM. Before such a song starts the engine picks a PCM
+ * output (ahi when the machine lists it, else paula14) and calls fn(ctx, id): the app closes its output, opens `id`
+ * at that output's rate (sel_engine_set_mix), sets the source, and returns 1. A song routed to the voice sink
+ * directly swaps back to the original output the same way. Never called without a callback. */
+typedef int (*sel_engine_output_switch_fn)(void* ctx, const char* id);
+void sel_engine_set_output_switch(sel_engine* e, sel_engine_output_switch_fn fn, void* ctx);
 /* 1 while the output is handed over to a HW-kind replayer. */
 uint32_t sel_engine_handed_over(const sel_engine* e);
 /* Where the song started last went: 1 = the output's voice sink, 0 = the mixer. */

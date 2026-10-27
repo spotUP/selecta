@@ -447,6 +447,10 @@ struct sel_engine {
     uint32_t fades; /* end fades started; audio side (T39) */
     uint32_t mixed_path; /* 1: the engine mixes (a DSP chain can run); 0: the output plays voices itself */
     const sel_voices* voice_sink; /* the output's own voice backend (Paula-direct), or NULL: voices go to the mixer */
+    sel_engine_output_switch_fn out_switch; /* the app's output swap (I532); NULL: the output never changes */
+    void* out_switch_ctx;
+    const char* audio_list;       /* the machine's SEL_MACHINE_AUDIO list ("paula,ahi"); NULL: unknown */
+    char home_output[SEL_OUTPUT_NAME_MAX]; /* the voice-only output swapped out for a PCM sink; "" when none */
     uint32_t voice_max;           /* most voices voice_sink plays (SEL_OUT_VOICE_MAX); 0: no limit */
     sel_engine_handover_fn handover; /* app hook that closes and reopens the output (I219), or NULL */
     void* handover_ctx;
@@ -1301,13 +1305,94 @@ static void handover_for(sel_engine* e, const sel_slot* sl, uint32_t route) {
     }
 }
 
+/* The PCM sink a mixer-routed song needs when the open output only plays voices (I532, design section 5): AHI when
+ * the machine lists it, else paula14 on a machine with Paula. One row per candidate: its id, and the entry of the
+ * machine's SEL_MACHINE_AUDIO list that makes it available. It must be a registered output without SEL_OUT_VOICES. */
+static const char* pcm_output_for(const sel_engine* e) {
+    static const struct {
+        const char* id;
+        const char* needs;
+    } k_pcm[] = {{"ahi", "ahi"}, {"paula14", "paula"}};
+    uint32_t i, j, n = e->registry_count != NULL && e->registry_get != NULL ? e->registry_count() : 0;
+    for (i = 0; i < sizeof k_pcm / sizeof k_pcm[0]; i++) {
+        size_t len = strlen(k_pcm[i].needs);
+        const char* l = e->audio_list;
+        int listed = 0;
+        while (l != NULL && *l != '\0') {
+            const char* end = strchr(l, ',');
+            size_t item = end != NULL ? (size_t)(end - l) : strlen(l);
+            listed = listed || (item == len && strncmp(l, k_pcm[i].needs, len) == 0);
+            l = end != NULL ? end + 1 : NULL;
+        }
+        if (!listed) {
+            continue;
+        }
+        for (j = 0; j < n; j++) {
+            const sel_tag* desc = e->registry_get(j);
+            const char* pid = (const char*)sel_tag_find(desc, SEL_PLUGIN_ID, 0);
+            if (sel_tag_find(desc, SEL_PLUGIN_KIND, 0) == SEL_PLUGIN_KIND_OUTPUT && pid != NULL && strcmp(pid, k_pcm[i].id) == 0 &&
+                sel_tag_find((const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0), SEL_OUT_VOICES, 0) == 0) {
+                return pid;
+            }
+        }
+    }
+    return NULL;
+}
+
+/* Swaps the app's output to `id` through the app callback, then tells the engine what the output is. */
+static int switch_output(sel_engine* e, const char* id) {
+    uint32_t i, n = e->registry_count != NULL && e->registry_get != NULL ? e->registry_count() : 0;
+    for (i = 0; i < n; i++) {
+        const sel_tag* desc = e->registry_get(i);
+        const char* pid = (const char*)sel_tag_find(desc, SEL_PLUGIN_ID, 0);
+        if (sel_tag_find(desc, SEL_PLUGIN_KIND, 0) == SEL_PLUGIN_KIND_OUTPUT && pid != NULL && strcmp(pid, id) == 0) {
+            if (!e->out_switch(e->out_switch_ctx, pid)) {
+                return 0;
+            }
+            sel_engine_set_output(e, (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0));
+            copy_str(e->state.output, SEL_OUTPUT_NAME_MAX, pid);
+            changed(e, PENDING_OUTPUT);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Output follows the route (I532): a song routed to the mixer needs a PCM sink, and a voice-only output (Paula)
+ * discards PCM, so the song would play silent while its position moves. Swap to a PCM sink for it, and back to the
+ * voice output once a song goes to the voice sink directly. */
+static void follow_route(sel_engine* e, uint32_t route) {
+    if (e->out_switch == NULL) {
+        return;
+    }
+    if (route == SEL_ROUTE_MIXER && !e->mixed_path) {
+        const char* pcm = pcm_output_for(e);
+        if (pcm != NULL) {
+            char home[SEL_OUTPUT_NAME_MAX];
+            copy_str(home, SEL_OUTPUT_NAME_MAX, e->state.output);
+            if (switch_output(e, pcm)) {
+                copy_str(e->home_output, SEL_OUTPUT_NAME_MAX, home);
+            }
+        }
+    } else if (route == SEL_ROUTE_DIRECT && e->home_output[0] != '\0') {
+        char home[SEL_OUTPUT_NAME_MAX];
+        copy_str(home, SEL_OUTPUT_NAME_MAX, e->home_output);
+        if (switch_output(e, home)) {
+            e->home_output[0] = '\0';
+        }
+    }
+}
+
 /* Fresh mixer and scheduler, then the replayer's start. */
 static int start_subsong(sel_engine* e, sel_slot* sl, uint32_t subsong) {
     sl->rp_render_calls = 0;
     sl->rendered_frames = 0;
-    handover_for(e, sl,
-                 sel_engine_route(sl->hw ? SEL_RP_KIND_HW : (sl->rp_render != NULL ? SEL_RP_KIND_RENDER : SEL_RP_KIND_VOICE),
-                                  sl->rp_info.voice_count, e->voice_sink != NULL, e->voice_max));
+    {
+        uint32_t route = sel_engine_route(sl->hw ? SEL_RP_KIND_HW : (sl->rp_render != NULL ? SEL_RP_KIND_RENDER : SEL_RP_KIND_VOICE),
+                                          sl->rp_info.voice_count, e->voice_sink != NULL, e->voice_max);
+        handover_for(e, sl, route);
+        follow_route(e, route);
+    }
     if (sl->hw) { /* the replayer plays through the hardware on its own clock; the engine only counts time */
         int rc;
         sl->frames_left = 0;
@@ -5407,6 +5492,7 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
     }
     sel_engine_set_stage(e, e->state.led_on, e->state.stereo_width);
     copy_str(e->state.output, SEL_OUTPUT_NAME_MAX, "null");
+    e->audio_list = cfg != NULL ? (const char*)sel_tag_find(cfg->machine, SEL_MACHINE_AUDIO, 0) : NULL;
     e->cur = SEL_SLOT_NONE;
     e->audio_slot = SEL_SLOT_NONE;
     e->act = SEL_SLOT_NONE;
@@ -5834,6 +5920,11 @@ uint32_t sel_engine_route(uint32_t kind, uint32_t voice_count, int has_sink, uin
         return k_routes[i].route;
     }
     return SEL_ROUTE_MIXER;
+}
+
+void sel_engine_set_output_switch(sel_engine* e, sel_engine_output_switch_fn fn, void* ctx) {
+    e->out_switch = fn;
+    e->out_switch_ctx = ctx;
 }
 
 void sel_engine_set_handover(sel_engine* e, sel_engine_handover_fn fn, void* ctx) {
