@@ -78,3 +78,22 @@ Open: the visible width of the real AGA screen on rig 3 (backend_aga.c pick_mode
 32, when no canvas is given; if it is wider than the visible display clip, or the window/screen is offset, the right 40-90 px fall
 outside). No Selecta was running on the rig when checked (only Directory Opus, screen 680x270), so the real screen size was not read.
 Not done: fix, icon colour change, regression test. Next step: start Selecta on the rig, read amiga_windows for the Selecta screen size.
+
+## I541 and I542
+
+### I541: Library lists scroll without a wheel
+
+Cause, all in plugins/ui/desktop/desktop_ui.c:
+- The desktop UI had no scrollbar. The only scroll path was the wheel (`lib_wheel`, Q16 offset `d->lib_q16`).
+- `lib_max_q16` counted composer rows (`lib_list_n`) even on the Sources tab (`lib_mode == 5`), so the scroll range there was wrong.
+- The wheel was gated on `composers != NULL`, and `lib_ui_key` (composer list keys) also ran on the Sources tab. It consumed Up/Down/Page Up/Page Down and moved the composer list, so the keys did nothing visible on Sources.
+- `src_click` ignored the list top, so a row scrolled under the tab row stayed clickable.
+
+Fix (one place): new `lib_rows_n`, `lib_scroll_set` (shared clamp/send/redraw, used by `lib_wheel`), `lib_bar_rects`, `draw_lib_bar`, `lib_bar_pointer` (drag in track sets the offset, click above or below the handle moves one page), `lib_scroll_key` (Up, Down, Page Up, Page Down, Home, End on Sources). The key chain skips `lib_ui_key` on Sources, and `src_click` skips rows above the list top. Sentinel: stats line `libbar ... draws N`.
+
+Test: tests/dui/library_scroll.cmake (ctest dui-library-scroll), 640x512 ydiv 2, mem backend, no wheel event. Scrollbar drag, track click, Page Down and Down each move the first visible source. Revert-check: with the desktop_ui.c change reverted the test fails; with it applied it passes.
+Golden tests/golden/desktop/library-sources-rgba32-1280x800@1.hash updated: with 9 sources the Sources page overflows at 1280x800, so it now shows the scrollbar (intended visible change).
+
+### I542: one click on Modland turned off the other sources
+
+Not reproduced on host. A click at the Modland switch centre (640x512, ydiv 2) changes only Modland (`library.sources_off = modland`); `src_toggle_send` flips only the clicked index. No fix made, none guessed. The test section in dui-library-scroll (exactly one enabled flag changes) passes without any fix, so it is a regression lock, not a revert-checked fix test. Open rig-side suspects, unverified: the AGA backend delivers several events per click, or a stale `d->src[]` on the rig.

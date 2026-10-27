@@ -234,6 +234,7 @@ typedef struct desk {
     uint32_t font_misses;    /* text draws whose size is not in g_sizes, so nothing was drawn (I361) */
     char np_text_title[96]; /* the title line the Now Playing page last drew (I361) */
     char np_text_artist[96];
+    uint32_t lib_bar_draws;  /* the Library scrollbar painter ran (I541 sentinel) */
     uint32_t lib_off_page;   /* Library page draws while another page is current (sentinel, must stay 0: I274) */
     uint32_t np_draws;       /* Now Playing panel draws (sentinel) */
     uint32_t np_genart;      /* genart_draw runs by the Now Playing panel: one per draw (DUI-P4-7) */
@@ -2520,6 +2521,8 @@ static void draw_lib_sources(desk* d, sel_gui_rect mn);
 static void draw_lib_nag(desk* d, sel_gui_rect mn);
 static void src_sync_send(desk* d, uint32_t i);
 static sel_gui_rect src_toggle_rect(desk* d, sel_gui_rect r);
+static int lib_bar_rects(desk* d, sel_gui_rect* track, sel_gui_rect* handle);
+static void draw_lib_bar(desk* d);
 static sel_gui_rect src_sync_rect(desk* d, sel_gui_rect r);
 /* The Library lists the UI draws itself (the composers and a composer's songs) scroll by a pixel offset, lib_q16, as the
  * Songs page does (I303); the engine view modes scroll the engine's window instead (lib_wheel) and draw at offset 0. */
@@ -4140,6 +4143,15 @@ static const char* library_dump_build(desk* d) {
             }
         }
     }
+    {
+        sel_gui_rect bt, bh;
+        if (lib_bar_rects(d, &bt, &bh)) { /* I541: the Library scrollbar, and where the list is scrolled to */
+            o = dump_put(d, o, "libbar %d %d %d %d handle %d %d %d %d q16 %d draws %u\n", (int)bt.x, (int)bt.y, (int)bt.w, (int)bt.h, (int)bh.x, (int)bh.y,
+                         (int)bh.w, (int)bh.h, (int)d->lib_q16, (unsigned)d->lib_bar_draws);
+        } else {
+            o = dump_put(d, o, "libbar none\n");
+        }
+    }
     if (d->lib_mode == 5u) { /* the Sources tab: the held SOURCES rows and the rects of their switches (I265) */
         o = dump_put(d, o, "sources %u draws %u\n", (unsigned)d->src_n, (unsigned)d->src_draws);
         for (i = 0; i < d->src_n; i++) {
@@ -4865,6 +4877,7 @@ static void draw_library(desk* d) {
         sel_gui_clip_pop(d->canvas);
         }
     }
+    draw_lib_bar(d);
     if (st->stats != NULL && lib_stats_rect(d, mn, st).w > 0) { /* the Stats page (F24): the library totals as a strip of heading and label-over-value cells */
         sel_gui_rect sr = lib_stats_rect(d, mn, st);
         const sel_gui_atlas* hd = desk_font(d, 1, 18);
@@ -4963,6 +4976,9 @@ static int src_click(desk* d, sel_gui_rect mn, int32_t x, int32_t y) {
     uint32_t i;
     for (i = 0; i < d->src_n; i++) {
         sel_gui_rect r = lib_row_rect(d, mn, i);
+        if (y < lib_list_top(d, mn, sel_engine_state(d->engine))) { /* a row scrolled under the tab row is clipped, so not clickable */
+            continue;
+        }
         if (in_rect(src_toggle_rect(d, r), x, y)) {
             return src_toggle_send(d, i);
         }
@@ -5151,13 +5167,18 @@ static void desk_composer_request(char* line, size_t cap, const char* canon) {
     line[o] = '\0';
 }
 
+/* Rows of the UI-drawn Library list: the registered sources on the Sources tab, else the composers or a composer's songs. */
+static uint32_t lib_rows_n(const desk* d, const sel_state* st) {
+    return d->lib_mode == 5u ? d->src_n : lib_list_n(st);
+}
+
 /* Largest Library scroll offset in logical pixels, Q16: the UI-drawn list's content height minus the room under the list
  * top, or for the engine view modes the rows beyond its window. */
 static int32_t lib_max_q16(desk* d, const sel_state* st) {
     sel_gui_rect mn = panel_rect(d, "main");
     int32_t max;
     if (lib_ui_list(d, st)) {
-        max = (int32_t)lib_list_n(st) * LIB_ROW_H - px_to_logical(d, mn.y + mn.h - lib_list_top(d, mn, st));
+        max = (int32_t)lib_rows_n(d, st) * LIB_ROW_H - px_to_logical(d, mn.y + mn.h - lib_list_top(d, mn, st));
     } else {
         max = ((int32_t)st->view->row_count - (int32_t)st->view->window_rows) * LIB_ROW_H;
     }
@@ -5167,9 +5188,8 @@ static int32_t lib_max_q16(desk* d, const sel_state* st) {
 /* A wheel over the Library page (DUI-P3-4, DUI-P4-3): the Songs pattern, a clamped Q16 pixel offset. The UI-drawn lists
  * draw at the offset; the engine view modes (tree, columns, Files, History) move the engine's window instead, by a
  * VIEW_CURSOR on the row that brings the wanted top row into the window (the view keeps its cursor in view). */
-static int lib_wheel(desk* d, int32_t dy) {
+static int lib_scroll_set(desk* d, int64_t v) {
     const sel_state* st = sel_engine_state(d->engine);
-    int64_t v = (int64_t)d->lib_q16 - (int64_t)dy * SCROLL_NOTCH;
     int32_t max_q16 = lib_max_q16(d, st);
     d->lib_q16 = v < 0 ? 0 : (v > max_q16 ? max_q16 : (int32_t)v);
     if (!lib_ui_list(d, st)) {
@@ -5181,6 +5201,100 @@ static int lib_wheel(desk* d, int32_t dy) {
     }
     draw_home(d); /* the main region only, as the Songs wheel does (I310): no full canvas repaint per wheel event */
     return 1;
+}
+
+static int lib_wheel(desk* d, int32_t dy) {
+    return lib_scroll_set(d, (int64_t)d->lib_q16 - (int64_t)dy * SCROLL_NOTCH);
+}
+
+/* I541: every Library list scrolls without a wheel. The scrollbar sits in the right margin of the list: a drag sets the
+ * offset, a click above or below the handle moves one page, and the keys below move the Sources list (the other lists
+ * have their own list keys). The wheel, the bar and the keys all end in lib_scroll_set. */
+enum { LIB_BAR_X = 18, LIB_BAR_W = 12, LIB_BAR_MIN_H = 24 };
+
+static int lib_bar_rects(desk* d, sel_gui_rect* track, sel_gui_rect* handle) {
+    const sel_state* st = sel_engine_state(d->engine);
+    sel_gui_rect mn;
+    int32_t max, top, view, content, hh;
+    if (d->page != PG_LIBRARY || lib_grid_on(d, st) || (d->lib_mode != 5u && st->composers == NULL)) {
+        return 0;
+    }
+    max = lib_max_q16(d, st);
+    if (max <= 0) {
+        return 0;
+    }
+    mn = panel_rect(d, "main");
+    top = lib_list_top(d, mn, st);
+    *track = rect_of(mn.x + mn.w - lpx(d, LIB_BAR_X), top, lpx(d, LIB_BAR_W), mn.y + mn.h - top);
+    content = (int32_t)(lib_ui_list(d, st) ? lib_rows_n(d, st) : st->view->row_count) * LIB_ROW_H;
+    view = content - (max >> 16);
+    hh = (int32_t)((int64_t)track->h * view / (content > 0 ? content : 1));
+    hh = hh < lpx(d, LIB_BAR_MIN_H) ? lpx(d, LIB_BAR_MIN_H) : hh;
+    hh = hh > track->h ? track->h : hh;
+    *handle = rect_of(track->x, track->y + (int32_t)((int64_t)(track->h - hh) * (d->lib_q16 > max ? max : d->lib_q16) / max), track->w, hh);
+    return 1;
+}
+
+static void draw_lib_bar(desk* d) {
+    sel_gui_rect t, h;
+    if (!lib_bar_rects(d, &t, &h)) {
+        return;
+    }
+    d->lib_bar_draws++;
+    sel_gui_round_rect(d->canvas, t, t.w / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]));
+    sel_gui_round_rect(d->canvas, h, h.w / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+    sel_gui_dirty_add(d->canvas, t);
+}
+
+/* A press on the Library scrollbar: a click above or below the handle moves one page, a drag that starts in the track
+ * puts the handle's centre where it is released. 1 when the event was on the bar. */
+static int lib_bar_pointer(desk* d, const sel_gui_input* ev) {
+    sel_gui_rect t, h, hit;
+    int32_t span, page;
+    if (!(ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u) && ev->kind != SEL_GUI_IN_DRAG) {
+        return 0;
+    }
+    if (!lib_bar_rects(d, &t, &h)) {
+        return 0;
+    }
+    hit = rect_of(t.x - lpx(d, 6), t.y, t.w + lpx(d, 6), t.h);
+    if (!in_rect(hit, ev->x, ev->y)) {
+        return 0;
+    }
+    span = t.h - h.h;
+    if (ev->kind == SEL_GUI_IN_DRAG) {
+        int32_t at = ev->y2 - t.y - h.h / 2;
+        at = at < 0 ? 0 : (at > span ? span : at);
+        return lib_scroll_set(d, span > 0 ? (int64_t)at * lib_max_q16(d, sel_engine_state(d->engine)) / span : 0);
+    }
+    page = px_to_logical(d, t.h) - LIB_ROW_H;
+    page = page < LIB_ROW_H ? LIB_ROW_H : page;
+    if (ev->y < h.y) {
+        return lib_scroll_set(d, (int64_t)d->lib_q16 - ((int64_t)page << 16));
+    }
+    if (ev->y >= h.y + h.h) {
+        return lib_scroll_set(d, (int64_t)d->lib_q16 + ((int64_t)page << 16));
+    }
+    return 1;
+}
+
+/* Keys on the Sources tab, whose rows are not a composer list: Up and Down move one row, Page Up and Page Down one page. */
+static int lib_scroll_key(desk* d, const sel_gui_input* ev) {
+    sel_gui_rect mn = panel_rect(d, "main");
+    int64_t row = (int64_t)LIB_ROW_H << 16, page = (int64_t)(px_to_logical(d, mn.y + mn.h - lib_list_top(d, mn, sel_engine_state(d->engine))) - LIB_ROW_H) << 16;
+    if (ev->mods != 0u || d->lib_mode != 5u) {
+        return 0;
+    }
+    page = page < row ? row : page;
+    switch (ev->code) {
+    case TXT_KEY_DOWN: return lib_scroll_set(d, d->lib_q16 + row);
+    case TXT_KEY_UP: return lib_scroll_set(d, d->lib_q16 - row);
+    case TXT_KEY_PAGE_DOWN: return lib_scroll_set(d, d->lib_q16 + page);
+    case TXT_KEY_PAGE_UP: return lib_scroll_set(d, d->lib_q16 - page);
+    case TXT_KEY_HOME: return lib_scroll_set(d, 0);
+    case TXT_KEY_END: return lib_scroll_set(d, INT32_MAX);
+    default: return 0;
+    }
 }
 
 /* A click on a composer row drills into it (COMPOSERS_SHOW canon); on the back line it returns to the list. */
@@ -7320,7 +7434,8 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         return 1;
     }
     if ((d->queue_page && queue_list_key(d, ev)) || (d->pl_page && pl_list_key(d, ev)) ||
-        (d->page == PG_LIBRARY && sel_engine_state(d->engine)->composers != NULL && lib_ui_list(d, sel_engine_state(d->engine)) && !lib_grid_on(d, sel_engine_state(d->engine)) && lib_ui_key(d, ev))) {
+        (d->page == PG_LIBRARY && d->lib_mode != 5u && sel_engine_state(d->engine)->composers != NULL && lib_ui_list(d, sel_engine_state(d->engine)) && !lib_grid_on(d, sel_engine_state(d->engine)) && lib_ui_key(d, ev)) ||
+        (d->page == PG_LIBRARY && lib_scroll_key(d, ev))) {
         return 1;
     }
     if (d->page == PG_SEARCH && ev->mods == 0u && sel_engine_state(d->engine)->view != NULL &&
@@ -7520,6 +7635,9 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
             return desk_page_goto(d, g_doors[door].page);
         }
     }
+    if (in_main && lib_bar_pointer(d, ev)) { /* I541: the Library scrollbar */
+        return 1;
+    }
     if (ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u && in_main && library_click(d, ev->x, ev->y)) { /* the Library page */
         d->clicks++;
         return 1;
@@ -7710,7 +7828,7 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
             return 1;
         }
-        if (d->page == PG_LIBRARY && sel_engine_state(d->engine)->composers != NULL) {
+        if (d->page == PG_LIBRARY && (sel_engine_state(d->engine)->composers != NULL || d->lib_mode == 5u)) {
             return lib_wheel(d, ev->dy);
         }
         if (d->page == PG_QUEUE && d->queue_page) { /* I258: the Queue page scrolls as the songs list does */
