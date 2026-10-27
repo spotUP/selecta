@@ -66,3 +66,15 @@ Run: dui-aga-native-text, dui-library*, dui-sync-banner, dui-tall-pixels, dui-la
 - Golden tests/golden/desktop/library-rgba32-640x256-ydiv2@1.hash regenerated (the Library title is a ydiv 2 Inter headline). dui-golden-home and dui-sdl unchanged and pass.
 - dui-fonts is a pre-existing red placeholder (DUI-P5-6), not related.
 - Unverified: how the result looks on the real screen; needs a look on the AGA rig.
+
+## I539 source switches
+
+Host repro (mem backend, --canvas 640x256 --ydiv 2 --zoom fit --resize 640x512, Sources tab opened by `click 578 50`):
+layout 640x512, regions sidebar 0,0,160 / main 160,0,480 / player 0,440,640x72; tab 5 at 544..612; row 0 sourcetoggle 552,256,44x24
+(in 512-row layout space), sourcesync 440..536. The frame dump (640x256) shows the accent switch painted at x 553..594 and the
+row card ending at x 612. Every rect is fully inside 640. So the layout (panel_rect, lib_row_rect, src_toggle_rect, lpx scale 1.0)
+is NOT the cause on the host; the static hypothesis "main width differs on AGA" is refuted by measurement.
+Open: the visible width of the real AGA screen on rig 3 (backend_aga.c pick_mode takes the Workbench screen width, rounded down to
+32, when no canvas is given; if it is wider than the visible display clip, or the window/screen is offset, the right 40-90 px fall
+outside). No Selecta was running on the rig when checked (only Directory Opus, screen 680x270), so the real screen size was not read.
+Not done: fix, icon colour change, regression test. Next step: start Selecta on the rig, read amiga_windows for the Selecta screen size.
