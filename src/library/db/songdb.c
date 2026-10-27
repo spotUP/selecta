@@ -121,7 +121,8 @@ static int op_apply(sqlite3* db, const sel_genre_op* op, int* found) {
             continue;
         }
         st = NULL;
-        rc = sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO song_composers(song_key, canon, display, tag) VALUES(?1, ?2, ?3, 0)", -1,
+        rc = sqlite3_prepare_v2(db, "INSERT INTO song_composers(song_key, canon, display, tag) VALUES(?1, ?2, ?3, 0)"
+                                " ON CONFLICT(song_key, canon) DO UPDATE SET display = excluded.display, tag = 0", -1,
                                 &st, NULL);
         if (rc != SQLITE_OK) return rc;
         sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
@@ -179,35 +180,37 @@ static int op_composer_next(sqlite3* db, const sel_genre_op* op, int64_t* id) {
 
 /* SEL_COMPOSER_LIST: every composer, one row per canonical spelling with its distinct song count, streamed through op->row in one pass (I528: a per-row OFFSET re-ran the whole GROUP BY for each composer). */
 static int op_composer_list(sqlite3* db, const sel_genre_op* op, int64_t* id) {
-    sqlite3_stmt* st = NULL;
+    static const char* const sql[2] = {
+        "SELECT canon, display, songs FROM composers ORDER BY display, canon",
+        "SELECT '" SEL_COMPOSER_UNKNOWN_CANON "', '" SEL_COMPOSER_UNKNOWN_DISPLAY "', n FROM composer_unknown WHERE n > 0"};
     int64_t rows = 0;
-    int rc = sqlite3_prepare_v2(db,
-                                "SELECT canon, disp, n FROM ("
-                                " SELECT canon, MIN(display) AS disp, COUNT(DISTINCT song_key) AS n, 0 AS last"
-                                "  FROM song_composers GROUP BY canon"
-                                " UNION ALL"
-                                " SELECT '" SEL_COMPOSER_UNKNOWN_CANON "', '" SEL_COMPOSER_UNKNOWN_DISPLAY "', COUNT(*), 1"
-                                "  FROM songs WHERE NOT EXISTS (SELECT 1 FROM song_composers c WHERE c.song_key = songs.key)"
-                                "  HAVING COUNT(*) > 0)"
-                                " ORDER BY last, disp, canon",
-                                -1, &st, NULL);
+    int rc = SQLITE_DONE, part, stop = 0;
 
     *id = 0;
-    if (rc != SQLITE_OK) return rc;
-    while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
-        char num[16];
-        const char* f[3];
+    for (part = 0; part < 2 && !stop; part++) { /* the Unknown composer group comes last */
+        sqlite3_stmt* st = NULL;
 
-        snprintf(num, sizeof num, "%d", sqlite3_column_int(st, 2));
-        f[0] = (const char*)sqlite3_column_text(st, 0);
-        f[1] = (const char*)sqlite3_column_text(st, 1);
-        f[2] = num;
-        rows++;
-        if (op->row(op->row_ctx, f) != 0) break;
+        rc = sqlite3_prepare_v2(db, sql[part], -1, &st, NULL);
+        if (rc != SQLITE_OK) return rc;
+        while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
+            char num[16];
+            const char* f[3];
+
+            snprintf(num, sizeof num, "%d", sqlite3_column_int(st, 2));
+            f[0] = (const char*)sqlite3_column_text(st, 0);
+            f[1] = (const char*)sqlite3_column_text(st, 1);
+            f[2] = num;
+            rows++;
+            if (op->row(op->row_ctx, f) != 0) {
+                stop = 1;
+                break;
+            }
+        }
+        sqlite3_finalize(st);
+        if (rc != SQLITE_ROW && rc != SQLITE_DONE) return rc;
     }
-    sqlite3_finalize(st);
     *id = rows;
-    return rc == SQLITE_ROW || rc == SQLITE_DONE ? SQLITE_OK : rc;
+    return SQLITE_OK;
 }
 
 /* SEL_SOURCE_SONGS: how many songs rows carry source id `key`, as decimal text in `out`. */
