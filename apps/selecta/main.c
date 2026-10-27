@@ -27,6 +27,9 @@
 #include "ctlsock.h"
 #endif
 #include "ctlexec.h"
+#ifdef __amigaos__
+#include "arexx.h"
+#endif
 #include "catalogue.h"
 #include "integration_host.h"
 #include "db.h"
@@ -287,7 +290,7 @@ static void send_line(sel_engine* e, const char* line) {
 /* Control socket (T35): one line in, one reply out. A line that does not parse,
  * or whose command raises ERROR, is answered `ERROR <code> <detail>`; the rest
  * `OK`. Only OK lines count in socket_cmds. */
-#ifndef SEL_NO_CONTROL_SOCKET
+#if !defined(SEL_NO_CONTROL_SOCKET) || defined(__amigaos__)
 typedef struct ctl_ctx {
     sel_engine* engine;
     void** sink_ctx;
@@ -297,6 +300,15 @@ static void ctl_fwd(void* ctx, const sel_message* evt) {
     sink(((ctl_ctx*)ctx)->sink_ctx, evt);
 }
 
+#endif
+#ifdef __amigaos__
+/* ARexx executor: the same shared dispatcher as the socket, so every UI still sees the events (M4-AX-3-2). */
+static int arexx_exec(void* ctx, const char* line, char* reply, size_t cap, int* rc) {
+    ctl_ctx* c = ctx;
+    return sel_ctl_exec_fwd(c->engine, line, reply, cap, rc, ctl_fwd, c);
+}
+#endif
+#ifndef SEL_NO_CONTROL_SOCKET
 static int ctl_handle(void* ctx, const char* line, char* reply, size_t cap) {
     ctl_ctx* c = ctx;
     char out[SEL_CTL_REPLY_MAX - 8u]; /* room for "OK\n" and "\n." around the result lines */
@@ -382,7 +394,12 @@ int main(int argc, char** argv)
     (void)socket_cmds;
 #ifndef SEL_NO_CONTROL_SOCKET
     char ctl_path[512];
+#endif
+#if !defined(SEL_NO_CONTROL_SOCKET) || defined(__amigaos__)
     ctl_ctx cc;
+#endif
+#ifdef __amigaos__
+    arexx_port* arexx = NULL;
 #endif
 
     {
@@ -535,9 +552,14 @@ int main(int argc, char** argv)
     ctx[1] = g_uis[0].state;
     ctx[2] = NULL;
 
-#ifndef SEL_NO_CONTROL_SOCKET
+#if !defined(SEL_NO_CONTROL_SOCKET) || defined(__amigaos__)
     cc.engine = e;
     cc.sink_ctx = ctx;
+#endif
+#ifdef __amigaos__
+    arexx = arexx_open(); /* after the engine exists, before the first UI turn; NULL leaves ARexx off */
+#endif
+#ifndef SEL_NO_CONTROL_SOCKET
     if (!has_keys || getenv("SELECTA_SOCKET") != NULL) {
         sel_ctl_path(ctl_path, sizeof ctl_path);
         ctl_fd = sel_ctl_listen(ctl_path);
@@ -650,6 +672,11 @@ int main(int argc, char** argv)
 #ifndef SEL_NO_CONTROL_SOCKET
         if (ctl_fd >= 0) {
             socket_cmds += (unsigned)sel_ctl_serve(ctl_fd, clockless ? SHELL_TURN_MS : 0u, ctl_handle, &cc);
+        }
+#endif
+#ifdef __amigaos__
+        if (arexx != NULL) { /* the Amiga's control path, polled where the socket is polled (M4-AX-3-2) */
+            arexx_poll(arexx, arexx_exec, &cc);
         }
 #endif
     }
@@ -796,6 +823,18 @@ int main(int argc, char** argv)
     printf("engine_state pitch_cents=%d tempo_percent=%d mute_mask=%u mutes=%u\n", (int)sel_engine_state(e)->pitch_cents,
            (int)sel_engine_state(e)->tempo_percent, (unsigned)sel_engine_state(e)->mute_mask, (unsigned)est.mutes);
 
+#ifdef __amigaos__
+    {
+        char line[128];
+        static const arexx_counters none = {0, 0};
+        arexx_stats_line(line, sizeof line, arexx != NULL ? arexx_name(arexx) : NULL,
+                         arexx != NULL ? arexx_stats(arexx) : &none);
+        printf("%s\n", line);
+        if (arexx != NULL) {
+            arexx_close(arexx);
+        }
+    }
+#endif
 #ifndef SEL_NO_CONTROL_SOCKET
     if (ctl_fd >= 0) {
         printf("socket_cmds=%u\n", socket_cmds);
