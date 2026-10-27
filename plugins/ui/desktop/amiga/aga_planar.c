@@ -157,3 +157,19 @@ void desk_aga_copper_regs(uint32_t pen, uint32_t rgb, uint32_t out[4][2]) {
     out[3][0] = reg;
     out[3][1] = ((r & 15u) << 8) | ((g & 15u) << 4) | (b & 15u);
 }
+
+int desk_aga_mode_is_native(uint32_t mode_id) {
+    return mode_id != 0xFFFFFFFFu && (mode_id & 0xFFF00000u) == 0u;
+}
+
+int desk_aga_pick_size(int32_t* w, int32_t* h, int ntsc) {
+    int32_t lines = ntsc ? 200 : 256;
+    if (*w <= 0 || *h <= 0) {
+        *w = 640;
+        *h = lines;
+    }
+    if (*h != lines) return -1;
+    if (*w == 640) return 1;
+    if (*w == 320) return 0;
+    return -1;
+}

@@ -87,38 +87,15 @@ uint32_t desk_aga_ticks(void) {
     return (uint32_t)ds.ds_Days * 86400000u + (uint32_t)ds.ds_Minute * 60000u + (uint32_t)ds.ds_Tick * 20u;
 }
 
-/* The mode of the screen: Workbench's when it is a native mode with 8 bitplanes, else PAL or NTSC HIRES (both allow
- * 8 bitplanes on AGA). */
+/* The mode of the screen: Selecta's own PAL/NTSC HIRES (640 wide) or LORES (320 wide), never Workbench's. The
+ * Workbench mode is irrelevant: an RTG Workbench (rig 2: Picasso96 800x600) must not leak its size or its mode here,
+ * a planar screen of that size cannot be displayed by the chipset and shows black. desk_aga_pick_size holds the rule. */
 static ULONG pick_mode(int32_t* w, int32_t* h) {
-    struct Screen* wb = LockPubScreen((CONST_STRPTR) "Workbench");
-    ULONG mode = AGA_NO_MODE;
-    if (wb != NULL) {
-        struct DimensionInfo dim;
-        struct DisplayInfo disp;
-        ULONG id = GetVPModeID(&wb->ViewPort);
-        /* An RTG (Picasso96/CyberGraphX) Workbench is a foreign mode: its screen ignores planar bitmaps and the copper,
-         * so only a native chipset mode qualifies. */
-        if (id != AGA_NO_MODE && (id & MONITOR_ID_MASK) != 0x40000000u &&
-            GetDisplayInfoData(NULL, (UBYTE*)&disp, sizeof disp, DTAG_DISP, id) > 0 &&
-            (disp.PropertyFlags & DIPF_IS_FOREIGN) == 0 &&
-            GetDisplayInfoData(NULL, (UBYTE*)&dim, sizeof dim, DTAG_DIMS, id) > 0 && dim.MaxDepth >= 8) {
-            mode = id;
-            if (*w <= 0 || *h <= 0) {
-                *w = wb->Width;
-                *h = wb->Height;
-            }
-        }
-        UnlockPubScreen(NULL, wb);
-    }
-    if (mode == AGA_NO_MODE) {
-        int ntsc = (GfxBase->DisplayFlags & NTSC) != 0;
-        mode = (ntsc ? NTSC_MONITOR_ID : PAL_MONITOR_ID) | HIRES_KEY;
-        if (*w <= 0 || *h <= 0) {
-            *w = 640;
-            *h = ntsc ? 200 : 256;
-        }
-    }
-    *w &= ~31;
+    int ntsc = (GfxBase->DisplayFlags & NTSC) != 0;
+    int hires = desk_aga_pick_size(w, h, ntsc);
+    ULONG mode;
+    if (hires < 0) return AGA_NO_MODE;
+    mode = (ntsc ? NTSC_MONITOR_ID : PAL_MONITOR_ID) | (hires ? HIRES_KEY : LORES_KEY);
     return ModeNotAvailable(mode) == 0 ? mode : AGA_NO_MODE;
 }
 
@@ -126,16 +103,8 @@ void desk_aga_default_size(int32_t* w, int32_t* h) {
     *w = 0;
     *h = 0;
     GfxBase = (struct GfxBase*)OpenLibrary((CONST_STRPTR) "graphics.library", 39);
-    IntuitionBase = (struct IntuitionBase*)OpenLibrary((CONST_STRPTR) "intuition.library", 39);
-    if (GfxBase != NULL && IntuitionBase != NULL) {
-        (void)pick_mode(w, h);
-    } else {
-        *w = 640;
-        *h = 256;
-    }
-    if (IntuitionBase != NULL) CloseLibrary((struct Library*)IntuitionBase);
+    (void)desk_aga_pick_size(w, h, GfxBase != NULL && (GfxBase->DisplayFlags & NTSC) != 0);
     if (GfxBase != NULL) CloseLibrary((struct Library*)GfxBase);
-    IntuitionBase = NULL;
     GfxBase = NULL;
 }
 
@@ -165,7 +134,7 @@ desk_aga* desk_aga_open(int32_t w, int32_t h, int index8) {
     if (!desk_amiga_input_open(&b->in)) return fail(b, "needs keymap.library v37"), NULL;
     if ((GfxBase->ChipRevBits0 & GFXF_AA_ALICE) == 0) return fail(b, "no AGA chipset"), NULL;
     mode = pick_mode(&w, &h);
-    if (mode == AGA_NO_MODE || w < 32 || h < 1) return fail(b, "no 8-bitplane native mode"), NULL;
+    if (mode == AGA_NO_MODE) return fail(b, "the AGA screen is 640x256 or 320x256 (640x200 / 320x200 on NTSC)"), NULL;
     b->w = w;
     b->h = h;
     bytes = desk_aga_buffer_bytes(w, h);

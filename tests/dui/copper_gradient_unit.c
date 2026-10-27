@@ -97,6 +97,16 @@ int main(void) {
         CHECK(r[2][1] == (r[0][1] | 0x200u));
         CHECK(r[3][0] == r[1][0] && r[3][1] == 0xFA4u);
     }
+    /* the screen mode: native chipset IDs pass; RTG IDs fail, the Picasso96 mode of rig 2's Workbench (0x50041303) too,
+     * which does not set DIPF_IS_FOREIGN and opened the AGA screen black (I441) */
+    CHECK(desk_aga_mode_is_native(0x00029000u) == 1);   /* PAL HIRES */
+    CHECK(desk_aga_mode_is_native(0x00019004u) == 1);   /* NTSC HIRES laced */
+    CHECK(desk_aga_mode_is_native(0x00039025u) == 1);   /* VGA productivity */
+    CHECK(desk_aga_mode_is_native(0x000A9004u) == 1);   /* DblPAL */
+    CHECK(desk_aga_mode_is_native(0x00000000u) == 1);   /* default monitor LORES */
+    CHECK(desk_aga_mode_is_native(0x50041303u) == 0);   /* Picasso96 (UAE RTG) */
+    CHECK(desk_aga_mode_is_native(0x40D20001u) == 0);   /* CyberGraphX */
+    CHECK(desk_aga_mode_is_native(0xFFFFFFFFu) == 0);   /* INVALID_ID */
     if (fails) return 1;
     printf("copper_gradient_unit: ok\n");
     return 0;

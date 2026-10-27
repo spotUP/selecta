@@ -118,7 +118,29 @@ static void test_budget_and_palette(void) {
     CHECK(t[7] == 0);
 }
 
+/* I441: the AGA screen size never comes from Workbench: 640x256 by default, 320x256 on request, nothing else. */
+static void test_pick_size(void) {
+    int32_t w = 0, h = 0;
+    CHECK(desk_aga_pick_size(&w, &h, 0) == 1 && w == 640 && h == 256);
+    w = 0;
+    h = 0;
+    CHECK(desk_aga_pick_size(&w, &h, 1) == 1 && w == 640 && h == 200);
+    w = 320;
+    h = 256;
+    CHECK(desk_aga_pick_size(&w, &h, 0) == 0 && w == 320 && h == 256);
+    w = 800;
+    h = 600;
+    CHECK(desk_aga_pick_size(&w, &h, 0) == -1); /* the RTG Workbench size of rig 2 */
+    w = 640;
+    h = 512;
+    CHECK(desk_aga_pick_size(&w, &h, 0) == -1); /* no interlace */
+    w = 1280;
+    h = 800;
+    CHECK(desk_aga_pick_size(&w, &h, 0) == -1); /* the sdl default */
+}
+
 int main(void) {
+    test_pick_size();
     test_bit_layout();
     test_round_trip_and_bands();
     test_bands();
