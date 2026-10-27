@@ -1,0 +1,153 @@
+# I526 P3-P5 report (AGA native fonts)
+
+Design: thoughts/shared/plans/2026-10-27-aga-native-fonts.md sections 4-6. Branch worktree-agent-aef30ca469ddcc5ed. Not pushed, not merged.
+
+## P3 layout tier - done (696041b)
+- sel_uim_layout_compute_tier with SEL_UIM_TIER_BITMAP. Bitmap tier: widths 600-699 map to the icon-sidebar breakpoint with a 160 wide labelled rail (decision D1); 700 and up unchanged. The layout id still prints as icon-sidebar.
+- desk_fit_q16 returns 65536 on the bitmap tier (ydiv > 1): layout is 640x512 in 1:1 pixels, no fit zoom.
+- Tests: dui-layout (new tier case: ydiv 2 at 640x512 gives icon-sidebar with sidebar w=160; default tier at 640 stays mini-suggestion), dui-tall-pixels (now --resize 640x512, expects icon-sidebar and sidebar region; play button column extent now measured walking in from the background because the glyph shares the fill colour).
+- Revert (desk_bitmap_text forced to 0): dui-layout FAILS ("the bitmap tier at 640x512 must give the labelled rail"). Restored, passes.
+
+## P4 role table - done (257d3bf)
+- plugins/ui/desktop/font_roles.c/.h: roles size>=25 H16 (Inter SemiBold 32), 18-24 H11 (SemiBold 22), >=14 or semibold 13 mini8/8, >=12 or regular 13 mini6/8, below mini4/8. Fallback when the line is taller than the box: next smaller headline, then mini8, then mini6/6; mini4/8 to mini4/6 (6-row rule).
+- Five Amiga fonts baked: mini4/6, mini4/8, mini6/6, mini6/8, mini8/8. fontbake entry array 64 to 96.
+- Counters (tags 0x50DC-0x50E0): bitmap_hits_mini4/6/8, headline_hits_22/32 on the ui_stats line.
+- Test: dui-font-roles (unit). Measured line heights (layout units): H16 39, H11 27, mini fonts 16. Revert (role start forced to mini8): FAILS "fitting box keeps the role", "headline steps down". Restored.
+
+## P5 end-to-end test - done (f1e3fcf)
+- tests/dui/aga_native_text.cmake (dui-aga-native-text): library and home at 640x256 ydiv 2 fit, asserts layout 640x512 icon-sidebar, all four non-mini4 counters > 0, atlas_builds=0, font_misses=0, missing_glyphs=0, title ink rows 11-18.
+- Stats line P5, library: missing_glyphs=0 atlas_builds=0 bitmap_hits_mini4=0 bitmap_hits_mini6=6 bitmap_hits_mini8=260 headline_hits_22=5 headline_hits_32=2.
+- Stats line P5, home: missing_glyphs=0 atlas_builds=0 bitmap_hits_mini4=0 bitmap_hits_mini6=9 bitmap_hits_mini8=177 headline_hits_22=4 headline_hits_32=2.
+- Native glyph measurements: Library title ink spans screen rows 16..32 = 17 rows (includes the y descender; a 32 px Inter L cap is 12 rows, the 22 px one 9). Bitmap glyph pitch is the font's 8 (mini8). Not measured: per-row library text ink (the library rows' album art tiles share the bands, so a clean ink walk needs a text-rect dump; open item).
+- Found by the test: the home view drew U+2013 (en dash), missing in the Latin-1 only Amiga fonts (missing_glyphs=1). Root-cause fix in amiga_font.c: seven punctuation aliases (en/em dash, curly quotes, bullet) share the Latin-1 glyph; glyph_n is 224+7. dui-amiga-font asserts it.
+- Revert 1 (bitmap tier off): dui-aga-native-text FAILS (layout assertion). Revert 2 (alias cp disabled): dui-amiga-font FAILS "en dash / bullet alias missing". Both restored.
+
+## Goldens (b139652)
+Updated once with SELECTA_GOLDEN_UPDATE=1: 13 hashes (11 index8 views plus testcard 640x400/640x512 and library-rgba32-640x256-ydiv2). dui-aga-budget passes after the update, so palette_colours_ui <= 32 on all views after P2b. Passing: dui-tall-pixels, dui-aga-budget, dui-draw, dui-text, dui-layout, dui-font-roles, dui-font-baked, dui-amiga-font, dui-aga-native-text.
+
+## Open items
+- Rig 2 (real AGA check) not done, deferred by instruction.
+- Ellipsis (U+2026) and other non-Latin-1 punctuation still missing in Amiga fonts if they appear; only the seven aliases exist.
+- The 5-bit palette snap caveat from P2b still applies to headline shades.
+- desk_font role path bypasses the per-token atlas cache: counters count lookups, not unique atlases.
+- No `lint` target in build/host; type-check = the build, clean.
+- Per-row library text ink (at most 8 rows) not asserted.
+
+## P5 gap closure
+
+Test: tests/dui/aga_native_text.cmake (dui-aga-native-text), passes. 2 of 4 gaps closed, 1 closed without a code change, 1 open.
+
+- G1 (bitmap_hits_mini4 > 0): OPEN, not asserted. Tried the now-playing view with `OPEN` and `OPEN` + `PLAY` + `wait 200` (status=Playing): mini4 stays 0. Cause: at 640x512 the bitmap tier has only the sidebar, main and player regions, so the "detail" region draw_nowplaying needs (key labels, "Next in Queue", desktop_ui.c ~6156-6204) is never drawn, and `st.caption = desk_font(d, 0, 11)` (line 1089) is looked up before the tier is on, so it never counts. Remaining mini4 users: the subsong "n/m" label (6274, needs a multi-subsong song) and the "1" badge (6331); the caption of gui_widget.c 231/288/406 is not reached by these views. Needs a view that draws one of those or a product decision on the detail region at this tier.
+- G2 (font_misses=0): font_misses is not a ui_stats key, so a dui_stat assert is impossible. It is printed on the `np_page_text ... font_misses=N` line of every run; the existing check matched "font_misses=0" anywhere, now anchored to that line (`np_page_text [^\n]*font_misses=0\n`). The plan item was already met in substance; now exact.
+- G3 (library row ink <= 8 rows, pitch 8): DONE. No existing printed row geometry, so no new flag: the row is the first ink band at frame rows 96..219 (below the statistics strip, above the player region at layout row 440 = frame row 220). Measured: ink rows 106..113 = 8 rows. Pitch: 7 of the 8 column offsets (from the first ink column) carry ink (0-5 and 7), offset 6 is blank in every cell; a different pitch fills all 8 offsets. The row-start row 96 is a literal derived from the layout constants (title 24+40, tab 32, strip 48, halved).
+- G4 (title cap 11 to 16): DONE. Ink of the first glyph run of "Library" (the capital L, columns 190..205) measured rows 17..28 = 12 rows, asserted 11 to 16 (no widening).
+
+Revert results: forcing desk_bitmap_text to 0 was not run on its own (the stats and layout asserts fail first, as before). Disabling only the role lookup in desk_font (`if (0 && desk_bitmap_text(d))`) fails the test at the bitmap_hits_mini6 assert (library: bitmap_hits_mini6=0). The PPM asserts G3/G4 were NOT shown to fail on their own cause: with the role lookup off the dump still gives cap L = 12 rows (the headline falls back to the same baked Inter 32), so G4 does not discriminate that revert; the G3 numbers on the reverted run were not measured (budget). Treat G3/G4 revert-sensitivity as unproven. Code restored (git checkout of desktop_ui.c), binary rebuilt, test green.
+
+## I537 items 1-5
+
+All changes in plugins/ui/desktop/desktop_ui.c; assertions in tests/dui/aga_native_text.cmake section 4 (test dui-aga-native-text).
+
+1. Title covered: lib_add_rect/lib_clear_rect used fixed 120/132 widths, Clear Library sat at x=256 over the title (ends ~288). Header buttons now sized by lib_header_btn_w (measured label + pad); Clear Library x=292. Test: Clear Library x >= 289. Revert check: with the old desktop_ui.c the test fails "button at x=256 covers the title". Pixel version was not usable (button outline merges with the title tail), so the check compares layout numbers.
+2. Rail labels ellipsized: label box started after icon + 16 px gap (~86 px). Gap is now 8 px on the bitmap tier, box runs to the rail edge, and a door with a shorter form (Song Information -> Song Info) uses it only when the full label does not fit. Test: last 8 ink columns of Your Library, Now Playing, Song Info span >= 4 rows. Revert check not run separately (the item 1 assertion fails first).
+3. Banner buttons: fixed 112 px buttons; now measured label + 16 (Sync 48, Not now 72), head text ends 8 px before Not now. Test (SDL banner run): widths 48 and 72. Centring is not pixel-verified (frame dump predates the banner redraw). Revert check not run separately.
+4. Tab row overflow: tab pad shrinks (lib_tab_pad) until six tabs fit the main region; the style chooser moves to its own row when it does not fit right of the tabs (lib_style_below). Test: every tab ends <= 640, tabs in order without overlap, chooser segments not on the tab row inside it. Revert check not run separately.
+5. Stats strip under transport: banner grew by 32 per due source. Now at most 4 rows tall, laid out in columns (nag_cols). Test (SDL banner run, 8 due sources): stats rect ends <= player region top (440). Revert check not run separately.
+
+Goldens updated (intended layout change): library-rgba32-640x256-ydiv2, library-sources-rgba32-1280x800, grid-view-rgba32-1280x800. Existing P5 row scan in the same test now starts below the stats strip from the stats rect instead of frame row 96.
+Run: dui-aga-native-text, dui-library*, dui-sync-banner, dui-tall-pixels, dui-layout, dui-grid-coverflow, dui-cover*, dui-style*: 13 of 13 pass.
+
+## I538 aspect-aware bake
+
+- Level: the bake. `desk_atlas_build_tall(ttf, px, ydiv)` already carried ydiv through `tools/gui_fontbake.c`; for ydiv > 1 it now calls `raster_tall` (plugins/ui/desktop/atlas_build.c) instead of stb's area-averaged `stbtt_MakeGlyphBitmap`. ydiv 1 path untouched.
+- Rule: 8 sub-rows per screen row via the same stb rasteriser; row in when >= half the sub-rows have alpha >= 128, value = max horizontal alpha of those sub-rows, else 0.
+- Only the two ydiv 2 Inter SemiBold atlases (px 22, 32) change; Amiga bitmap fonts are 1-bit already.
+- Test dui-font-tall (tests/dui/font_tall_unit.c): no "flat" partial-coverage pixel (partial alpha with equal left and right neighbours) in ydiv 2 atlases; baked == builder; FNV hash of 12 ydiv 1 atlases equals golden 0x9b4e533b6ca760bb (taken with the old code). Revert-check: with atlas_build.c at HEAD the test fails (1064 flat pixels at px 22, 2319 at px 32) and the ydiv 1 hash is the same value; restored, passes.
+- Golden tests/golden/desktop/library-rgba32-640x256-ydiv2@1.hash regenerated (the Library title is a ydiv 2 Inter headline). dui-golden-home and dui-sdl unchanged and pass.
+- dui-fonts is a pre-existing red placeholder (DUI-P5-6), not related.
+- Unverified: how the result looks on the real screen; needs a look on the AGA rig.
+
+## I539 source switches
+
+Host repro (mem backend, --canvas 640x256 --ydiv 2 --zoom fit --resize 640x512, Sources tab opened by `click 578 50`):
+layout 640x512, regions sidebar 0,0,160 / main 160,0,480 / player 0,440,640x72; tab 5 at 544..612; row 0 sourcetoggle 552,256,44x24
+(in 512-row layout space), sourcesync 440..536. The frame dump (640x256) shows the accent switch painted at x 553..594 and the
+row card ending at x 612. Every rect is fully inside 640. So the layout (panel_rect, lib_row_rect, src_toggle_rect, lpx scale 1.0)
+is NOT the cause on the host; the static hypothesis "main width differs on AGA" is refuted by measurement.
+Open: the visible width of the real AGA screen on rig 3 (backend_aga.c pick_mode takes the Workbench screen width, rounded down to
+32, when no canvas is given; if it is wider than the visible display clip, or the window/screen is offset, the right 40-90 px fall
+outside). No Selecta was running on the rig when checked (only Directory Opus, screen 680x270), so the real screen size was not read.
+Not done: fix, icon colour change, regression test. Next step: start Selecta on the rig, read amiga_windows for the Selecta screen size.
+
+## I541 and I542
+
+### I541: Library lists scroll without a wheel
+
+Cause, all in plugins/ui/desktop/desktop_ui.c:
+- The desktop UI had no scrollbar. The only scroll path was the wheel (`lib_wheel`, Q16 offset `d->lib_q16`).
+- `lib_max_q16` counted composer rows (`lib_list_n`) even on the Sources tab (`lib_mode == 5`), so the scroll range there was wrong.
+- The wheel was gated on `composers != NULL`, and `lib_ui_key` (composer list keys) also ran on the Sources tab. It consumed Up/Down/Page Up/Page Down and moved the composer list, so the keys did nothing visible on Sources.
+- `src_click` ignored the list top, so a row scrolled under the tab row stayed clickable.
+
+Fix (one place): new `lib_rows_n`, `lib_scroll_set` (shared clamp/send/redraw, used by `lib_wheel`), `lib_bar_rects`, `draw_lib_bar`, `lib_bar_pointer` (drag in track sets the offset, click above or below the handle moves one page), `lib_scroll_key` (Up, Down, Page Up, Page Down, Home, End on Sources). The key chain skips `lib_ui_key` on Sources, and `src_click` skips rows above the list top. Sentinel: stats line `libbar ... draws N`.
+
+Test: tests/dui/library_scroll.cmake (ctest dui-library-scroll), 640x512 ydiv 2, mem backend, no wheel event. Scrollbar drag, track click, Page Down and Down each move the first visible source. Revert-check: with the desktop_ui.c change reverted the test fails; with it applied it passes.
+Golden tests/golden/desktop/library-sources-rgba32-1280x800@1.hash updated: with 9 sources the Sources page overflows at 1280x800, so it now shows the scrollbar (intended visible change).
+
+### I542: one click on Modland turned off the other sources
+
+Not reproduced on host. A click at the Modland switch centre (640x512, ydiv 2) changes only Modland (`library.sources_off = modland`); `src_toggle_send` flips only the clicked index. No fix made, none guessed. The test section in dui-library-scroll (exactly one enabled flag changes) passes without any fix, so it is a regression lock, not a revert-checked fix test. Open rig-side suspects, unverified: the AGA backend delivers several events per click, or a stale `d->src[]` on the rig.
+
+## I547 (AGA sidebar labels cut, Library tab labels truncated)
+
+- Cause 1: src/uimodel/layout.c SIDEBAR_RAIL_LABELLED was a fixed 160. The door row (sidebar_door_rect, desktop_ui.c) left a
+  label box of 94 px, narrower than "Your Library" (96 px in mini8), so it was cut, and "Now Playing" (88 px) touched the
+  highlight edge.
+- Cause 2: lib_tab_pad shrinks the tab pad to as little as 2 px to fit six tabs, but draw_text_centered (and draw_button for the
+  active tab) always reserve 8 px each side, so the label box was narrower than the label: ellipsis ("Compo...").
+- Fix: new sel_uim_layout_compute_rail (compute_tier calls it with 0); the desktop passes desk_rail_w(d), the measured widest
+  rail label (shorter form where a door has one) plus door inset, pads, icon and gap, clamped to [160, width/3]. 640x512 now
+  gives a 174 px rail. Tabs use draw_text_centered_pad / draw_button_pad with lib_tab_pad, so a squeezed tab still shows its
+  whole label (existing 58ad55a pad-shrink rule kept as the overflow rule).
+- Test: dui-aga-native-text section 5 (tab label ink width = 8 px per character for all six tabs; every door row wide enough for
+  the widest label plus margin). Revert-check: with the fix removed, "Composers tab label is 68 px wide, expected 72" fails;
+  restored, passes.
+- Updated tests: dui-layout (sidebar w=174), dui-aga-native-text pixel scans start at x=178 (past the wider rail).
+- Golden changed: tests/golden/desktop/library-rgba32-640x256-ydiv2@1.hash (e516b1bc64b09446 -> new). Passing: dui-aga*,
+  dui-layout, dui-tall-pixels, dui-library*, dui-sync-banner, dui-stats-panel.
+
+## I545
+
+- Mapping: role table `k_chain` plugins/ui/desktop/font_roles.c:11 (headline entries, px = layout units, rows = px/2); bake set `DESK_FONT_BAKE_TALL_PX` atlas_build.h:29 (gui_fontbake bakes from it, so the atlases follow). desk_font -> desk_role_atlas desktop_ui.c:~603 unchanged.
+- Change: page titles px 32 -> 24 (12 rows), section titles px 22 -> 18 (9 rows); stat counters renamed headline_hits_18/24 (tags.def, main.c, desktop_ui.c); Library page title box 40 -> 32 units on the bitmap tier (`lib_title_h`, desktop_ui.c:~2419), 4 screen rows go to the lists. Other pages' heading boxes not touched (open; they are not box-limited: only the Library title box was tied to the old line height).
+- Plan: section 1 role table rows updated to H12/H9.
+- Test: dui-aga-native-text asserts headline_hits_18/24 > 0 and the Library title cap L spans 9 to 10 rows. Unit tests dui-font-roles, dui-font-baked, dui-font-tall updated to 18/24. ydiv-1 hash in dui-font-tall unchanged (passes).
+- Revert-check: with px 32/22 restored, dui-aga-native-text fails (L spans 8 rows, the 32 headline steps down in the 32 unit box). Note: a first, looser range (8 to 10) did NOT fail on revert; tightened.
+- Goldens: none changed (dui-library*, dui-layout, dui-aga*, dui-font* pass; dui-fonts is a deliberate dui-red).
+
+## I545 all pages
+
+Johan decided 2026-10-27 to shrink every page heading box on the AGA bitmap tier like the Library one (acf6919).
+
+- One rule in desktop_ui.c: `page_title_h(d)` (40 layout units, 32 on the bitmap tier) replaces `lib_title_h`; `page_y(d, y)` pulls a
+  layout y that sits below a title up by what the box gave back (8 units = 4 screen rows).
+- Pages changed (bitmap tier only; other tiers compute the old numbers): Library (already), Queue (box, button row 64 to 56, list 112 to 104),
+  Playlists (box, name field 104 to 96, list 152 to 144, also the Song Information list top), Song Information (box), Tracker (box, tab row 64 to 56,
+  header and rows follow), Visualizer (box, panel top), Now Playing (page title box; cover and text column top 64 to 56). Search and Settings
+  have no page title box in desktop_ui.c (no draw_text title call), so nothing to change there.
+- Test: dui-aga-native-text step 3a reads a new `page_tops` stats line (built from the real queue_btn_rect, queue_list_rect, pl_name_rect, si_list_top
+  and tr_tab_rect) on the queue, playlists, songinfo and tracker views and requires `32 56 104 96 144 56`. Revert-check: with page_title_h forced to 40
+  the test fails with '40 64 112 104 152 64'; restored, it passes.
+- Golden: tests/golden/desktop/library-rgba32-640x256-ydiv2@1.hash was already stale since acf6919 (dui-tall-pixels failed before this change);
+  updated with SELECTA_GOLDEN_UPDATE=1. No non-bitmap golden changed (dui-draw, tokens, widgets, hidpi, golden-home, screen, frame pass).
+- dui-fonts is a deliberate red placeholder (dui-red label), unrelated.
+
+## I548 (rig 3 AGA Library layout defects)
+
+- (a) Title covered by header buttons: root cause was the buttons being placed from the right edge without reserving the measured title width. `lib_header_inline` measures "Library" with the atlas `draw_text` picks (`desk_text_atlas`, extracted) and drops both buttons to their own row when title plus gap does not fit. Test: `tests/dui/aga_native_text.cmake` block 6 (title rect plus 8 unit gap must not intersect either button). Revert-checked (inline forced to 1 fails).
+- (b) Statistics strip: bitmap tier is now one 24 unit line (`lib_stats_h`), label and value side by side, More inside the row. Test: same cmake block. Revert-checked (strip forced to 48 fails).
+- (c) Clock while stopped: `sel_uim_update` showed the frozen `song.position_ms` because engine STOP keeps the slot loaded. Stopped now reads 00:00 and progress 0. No-song state still reads `--:--`. Test: `dui-stopped-clock` unit. Revert-checked. Engine STOP semantics unchanged.
+- (d) Sources tab 4 px from panel edge, (e) empty-library hint: NOT done (budget).
+- Goldens changed: `library-rgba32-640x256-ydiv2@1.hash` (layout), `nowplaying-rgba32-1280x800@1.hash` (stopped clock).
+- Not caused by this change (unverified against baseline): `dui-library-sources` golden mismatch, `dui-library-scroll` "Sources tab did not open"; `dui-hover-nowplaying` flaky.
+- AGA target built in build/amiga-aga, not deployed.

@@ -36,3 +36,13 @@ foreach(spec "1200:three-column" "1199:two-column" "900:two-column" "899:icon-si
     message(FATAL_ERROR "edge width ${w} must give ${id}:\n${edge}")
   endif()
 endforeach()
+# I526 P3: the bitmap tier (--ydiv 2) lays out in 1:1 pixels, so 640 wide gets the labelled rail (sidebar region 174 wide: the measured widest rail label plus icon and pads, I547);
+# the default tier at the same width still gives the mini suggestion.
+dui_run(bm --ui desktop --backend mem --canvas 640x256 --ydiv 2 --zoom fit --resize 640x512)
+if(NOT bm MATCHES "layout width=640 height=512 id=icon-sidebar " OR NOT bm MATCHES "region name=sidebar x=0 y=0 w=174 ")
+  message(FATAL_ERROR "I526 P3: the bitmap tier at 640x512 must give the labelled rail:\n${bm}")
+endif()
+dui_run(dflt --ui desktop --backend mem --resize 640x512)
+if(NOT dflt MATCHES "layout width=640 height=512 id=mini-suggestion ")
+  message(FATAL_ERROR "the default tier at 640 wide must stay mini-suggestion:\n${dflt}")
+endif()

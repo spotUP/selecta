@@ -132,6 +132,9 @@ int sel_gui_input_parse(const char* line, sel_gui_input* ev) {
     }
     if (strcmp(verb, "move") == 0 && n == 3) {
         ev->kind = SEL_GUI_IN_MOVE;
+        if (sscanf(line, "%*s %*s %*s %d %d", &ev->x2, &ev->y2) == 2) { /* move X Y X2 Y2: the primary button held since X2 Y2 (code 1, as the mapping builds it) */
+            ev->code = 1u;
+        }
         return sscanf(a, "%d", &ev->x) == 1 && sscanf(b, "%d", &ev->y) == 1;
     }
     if (strcmp(verb, "drag") == 0) {
@@ -170,6 +173,15 @@ int sel_gui_input_parse(const char* line, sel_gui_input* ev) {
 
 static int32_t absdiff(int32_t a, int32_t b) {
     return a > b ? a - b : b - a;
+}
+
+int sel_gui_input_coalesce(sel_gui_input* tail, const sel_gui_input* in) {
+    if (tail->kind == SEL_GUI_IN_MOVE && in->kind == SEL_GUI_IN_MOVE && tail->code == in->code && tail->x2 == in->x2 &&
+        tail->y2 == in->y2) {
+        *tail = *in;
+        return 1;
+    }
+    return 0;
 }
 
 int sel_gui_input_map(sel_gui_input_map_state* st, const sel_gui_raw* raw, sel_gui_input* out) {

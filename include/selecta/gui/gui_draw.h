@@ -104,6 +104,12 @@ uint32_t sel_gui_region_colours(const sel_gui_canvas* c, uint32_t region);
  * for entries 0-31, the rest of those 32 are steps from the surface to the accent and the text; entries 32-63 are
  * the generated-art colours (sel_gui_genart_palette); each artwork sub-palette starts as a grey ramp. */
 void sel_gui_palette_budget(uint32_t* rgb256, const uint32_t* ui, uint32_t n);
+/* I526-P2b: palette entries 24-29 are reserved for headline shades. A 2x-tall headline (Inter SemiBold at 22 or 32 px
+ * on a ydiv 2 canvas) has few pixels per stroke, so its antialiased edge needs exact in-between colours, not the nearest
+ * of the generic steps. Writes three steps (25, 50, 75 percent) from bg0 to fg0 into entries 24-26 and from bg1 to fg1
+ * into 27-29. Call after sel_gui_palette_budget with n <= 24 theme colours; the palette size does not change. */
+#define SEL_GUI_HEADLINE_SHADE0 24u
+void sel_gui_palette_headline_shades(uint32_t* rgb256, uint32_t fg0, uint32_t bg0, uint32_t fg1, uint32_t bg1);
 /* The default 256-colour UI palette from three theme colours: 3 theme entries, 24 greys, a 6x6x6 cube, then
  * surface-to-accent steps (now: sel_gui_palette_budget over the three colours). */
 void sel_gui_palette_default(uint32_t* rgb256, uint32_t accent, uint32_t surface, uint32_t text);

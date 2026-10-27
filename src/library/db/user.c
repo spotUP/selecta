@@ -351,10 +351,13 @@ static int home_text(sqlite3* db, const sel_user_op* op, int64_t* rows) {
                        " GROUP BY s.album, COALESCE(s.artist, '') ORDER BY MAX(h.played_at) DESC, s.album LIMIT MIN(?1, 8)");
         if (rc != SQLITE_OK) return rc;
     }
+    /* I555: a history row of a library song (key "local:<path>", sel_song_key_of) that left the library is not listed; keys
+     * of any other source (streams, Modland, HippoPlayer, ASMA, radio) have no songs row and still show. */
     home_put(op, &used, rows, "H", "Recently played");
     rc = home_list(db, op, &used, rows,
                    "SELECT COALESCE(s.name, h.key), s.artist, h.key, 0 FROM (SELECT key, MAX(played_at) AS last FROM history GROUP BY key) h"
-                   " LEFT JOIN songs s ON s.key = h.key ORDER BY h.last DESC, h.key LIMIT ?1");
+                   " LEFT JOIN songs s ON s.key = h.key WHERE s.key IS NOT NULL OR substr(h.key, 1, 6) <> 'local:'"
+                   " ORDER BY h.last DESC, h.key LIMIT ?1");
     if (rc != SQLITE_OK) return rc;
     /* I311: Jump back in lists every song with a skipped play and no finished play: as its album when the song has
      * one (one entry per album), as the song itself otherwise. */
@@ -365,6 +368,7 @@ static int home_text(sqlite3* db, const sel_user_op* op, int64_t* rows) {
                    "SELECT h.key AS key, s.name AS name, s.artist AS artist, s.album AS album,"
                    " (s.album IS NOT NULL AND s.album <> '') AS a, MAX(h.played_at) AS last"
                    " FROM history h LEFT JOIN songs s ON s.key = h.key WHERE h.skipped = 1"
+                   " AND (s.key IS NOT NULL OR substr(h.key, 1, 6) <> 'local:')"
                    " AND NOT EXISTS (SELECT 1 FROM history f WHERE f.key = h.key AND f.skipped = 0) GROUP BY h.key)"
                    " GROUP BY CASE WHEN a THEN album || char(31) || COALESCE(artist, '') ELSE key END ORDER BY recent DESC, 3, 2 LIMIT ?1");
     if (rc != SQLITE_OK) return rc;

@@ -395,6 +395,8 @@ typedef struct sel_engine_stats {
     uint32_t sticker_ops;         /* STICKER_* commands run against the library (I176 sentinel) */
     uint32_t links_parsed;        /* share links OPEN parsed (I180 sentinel) */
     uint32_t links_made;          /* share links SHARE wrote (I180 sentinel) */
+    uint32_t sources_listed;      /* SOURCES rows the engine queued for the UI (I546 sentinel) */
+    uint32_t evt_dropped;         /* events dropped because the event queue was full (I546 sentinel) */
     uint32_t radio_appends;       /* songs RADIO appended to the queue (I186 sentinel) */
     uint32_t radio_min_ahead;     /* fewest songs queued after the playing one after a radio top-up, 0xFFFFFFFF before RADIO (I186) */
     uint32_t net_cancels;         /* URL fetches abandoned because a newer STOP or OPEN arrived (I195a sentinel) */

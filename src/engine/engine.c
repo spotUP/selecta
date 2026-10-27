@@ -415,6 +415,7 @@ struct sel_engine {
     uint32_t st_slot;                         /* STICKER answers: ring of 8, like lib_tags */
     sel_tag st_tags[8][5];
     uint32_t sources_listed;                  /* SOURCES rows answered (DUI-P4-3) */
+    uint32_t evt_dropped;                     /* events emit() could not queue because evt_q was full (I546) */
     sel_tag src_tags[16][9];                  /* one SOURCES row per registered source (registry holds 16) */
     char st_key[8][SEL_DEFERRED_PATH_MAX];
     char st_name[8][128];
@@ -545,6 +546,7 @@ static const sel_tag* slot_meta(sel_slot* sl) {
 
 static void emit(sel_engine* e, const sel_message* m) {
     if (!sel_spsc_push(&e->evt_q, m)) {
+        e->evt_dropped++;
         e->host->log(e->host, SEL_LOG_WARN, "event queue full, event dropped");
     }
 }
@@ -5995,6 +5997,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->folder_ops = e->folder_ops;
     out->links_parsed = e->links_parsed;
     out->links_made = e->links_made;
+    out->sources_listed = e->sources_listed;
+    out->evt_dropped = e->evt_dropped;
     out->radio_appends = e->radio_appends;
     out->net_cancels = e->net_cancels;
     out->net_cancel_lost = e->net_cancel_lost;
