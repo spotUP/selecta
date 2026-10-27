@@ -1338,6 +1338,16 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/song_key.cmake")
   set_tests_properties(song-key PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "song_key_ok")
 
+  # I535: per-source song counts kept by schema v8 triggers, read by SOURCES without a scan of songs.
+  add_test(NAME source-songs
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>"
+      "-DSEL=${CMAKE_CURRENT_SOURCE_DIR}/m3/sources.sel"
+      "-DSQLITE3=${SEL_SQLITE3_META}"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/source_songs"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/source_songs.cmake")
+  set_tests_properties(source-songs PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_songs_ok")
+
   add_executable(key_remote_test m3/key_remote_test.c)
   target_link_libraries(key_remote_test PRIVATE selecta_core)
   add_test(NAME key-remote COMMAND key_remote_test)

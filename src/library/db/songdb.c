@@ -213,15 +213,16 @@ static int op_composer_list(sqlite3* db, const sel_genre_op* op, int64_t* id) {
     return SQLITE_OK;
 }
 
-/* SEL_SOURCE_SONGS: how many songs rows carry source id `key`, as decimal text in `out`. */
+/* SEL_SOURCE_SONGS: how many songs rows carry source id `key`, as decimal text in `out`. The user DB part reads the
+ * trigger-kept source_songs count (schema v8), never a scan of songs. */
 static int op_source_songs(sqlite3* db, int has_index, const sel_genre_op* op, int* found) {
     sqlite3_stmt* st = NULL;
     /* An attached index adds the songs it holds that the user DB does not (the same key counts once, I265). */
     int rc = sqlite3_prepare_v2(db,
-                                has_index ? "SELECT (SELECT COUNT(*) FROM songs WHERE source = ?1) + (SELECT COUNT(*) FROM"
+                                has_index ? "SELECT IFNULL((SELECT n FROM source_songs WHERE source = ?1), 0) + (SELECT COUNT(*) FROM"
                                             " idx.songs AS i WHERE i.source = ?1 AND NOT EXISTS (SELECT 1 FROM songs AS s"
                                             " WHERE s.key = i.key))"
-                                          : "SELECT COUNT(*) FROM songs WHERE source = ?1",
+                                          : "SELECT IFNULL((SELECT n FROM source_songs WHERE source = ?1), 0)",
                                 -1, &st, NULL);
 
     if (rc != SQLITE_OK) return rc;

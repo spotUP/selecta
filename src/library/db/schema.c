@@ -172,7 +172,25 @@ static const char SCHEMA_V7[] =
     " + (NOT EXISTS (SELECT 1 FROM song_composers WHERE song_key = new.key));"
     "END;";
 
-static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7};
+/* v8 (I535): the songs count per source as a maintained table. The Sources page asks for every source's count on the UI
+ * thread; COUNT(*) FROM songs WHERE source = ? has no index and scans the whole table per source (2.2 s for 8 sources on a
+ * 520 000-song library). An index on songs(source) would fix the read, but its build has the same heap cost on the Amiga as
+ * the v7 note above, so the count is kept by triggers like the v7 composer tables: the read is one primary key seek. */
+#define V8_ADD(r) \
+    "INSERT INTO source_songs(source, n) VALUES(" r ".source, 1) ON CONFLICT(source) DO UPDATE SET n = n + 1;"
+#define V8_DROP(r) \
+    "UPDATE source_songs SET n = n - 1 WHERE source = " r ".source;" \
+    "DELETE FROM source_songs WHERE source = " r ".source AND n <= 0;"
+static const char SCHEMA_V8[] =
+    "CREATE TABLE source_songs(source TEXT PRIMARY KEY, n INTEGER NOT NULL) WITHOUT ROWID;"
+    "INSERT INTO source_songs(source, n) SELECT source, 1 FROM songs WHERE 1 ON CONFLICT(source) DO UPDATE SET n = n + 1;"
+    "CREATE TRIGGER songs_source_ai AFTER INSERT ON songs BEGIN " V8_ADD("new") "END;"
+    "CREATE TRIGGER songs_source_ad AFTER DELETE ON songs BEGIN " V8_DROP("old") "END;"
+    "CREATE TRIGGER songs_source_au AFTER UPDATE OF source ON songs WHEN new.source <> old.source BEGIN "
+    V8_DROP("old") V8_ADD("new") "END;";
+
+static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4,
+                                           SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 
