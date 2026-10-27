@@ -1117,9 +1117,12 @@ if(NOT SEL_AMIGA)
   # I508 / MUI-P1-3, MUI-P1-5: the MUI window opens on rig 2 through Selecta --ui mui (every Amiga build tree carries the
   # MUI plugin; SEL_MUI_BUILD names the one to run, default build/amiga).
   set(SEL_MUI_BUILD "${PROJECT_SOURCE_DIR}/build/amiga" CACHE PATH "Amiga build tree whose Selecta rig-m4-mui-open runs")
+  # MUI-P3-1 / MUI-P2-6: a real module the rig test plays through a list-row double-click (never committed; unset or
+  # missing: those steps are skipped with a NOTE). Set -DSEL_MUI_SONG=<path> or the SEL_MUI_SONG environment variable.
+  set(SEL_MUI_SONG "$ENV{SEL_MUI_SONG}" CACHE FILEPATH "Real .mod for the MUI play steps of rig-m4-mui-open")
   add_test(NAME rig-m4-mui-open
     COMMAND "${CMAKE_COMMAND}" -DTAG=M4MUI "-DRIG_DIR=${SEL_RIG_DIR}"
-      "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta" "-DMOD=${SEL_TESTMOD}"
+      "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta" "-DMOD=${SEL_TESTMOD}" "-DSONG=${SEL_MUI_SONG}"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-open"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
   set_tests_properties(rig-m4-mui-open PROPERTIES LABELS rig RESOURCE_LOCK rig

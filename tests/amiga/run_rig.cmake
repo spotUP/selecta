@@ -170,7 +170,24 @@ elseif(TAG STREQUAL "M4MUI")
   # the Application), and no "Selecta" window left behind. The binary runs as RAM:SelectaMUI so the Status match never
   # picks up another Selecta process on the rig.
   set(P "RAM:SelectaMUI")
-  file(WRITE "${WORK}/mui.script" "Stack 200000\n${P} --ui mui --stats >RAM:mui-out.txt\n")
+  # MUI-P3-1 / MUI-P2-6: with a real module (SONG, from the SEL_MUI_SONG cache variable or env var; absent: those steps are
+  # skipped with a NOTE and the rest of the test still runs) in a start drawer, the double-click on its list row must play it.
+  set(song_ok FALSE)
+  set(SONG_NAME "meme.mod")
+  if(DEFINED SONG AND NOT SONG STREQUAL "" AND EXISTS "${SONG}")
+    set(song_ok TRUE)
+  else()
+    message(STATUS "NOTE[M4MUI]: SEL_MUI_SONG not set or missing: MUI-P3-1 / MUI-P2-6 rig steps skipped")
+  endif()
+  if(song_ok)
+    # The name is fixed and free of underscores: MUI reads "_" in a label as a shortcut mark and drops it from the text.
+    ami(ignored exec "Delete >NIL: RAM:mui-mm ALL QUIET" 10)
+    ami(ignored exec "MakeDir RAM:mui-mm" 10)
+    ami(ignored put "${SONG}" "RAM:mui-mm/${SONG_NAME}")
+    file(WRITE "${WORK}/mui.script" "Stack 200000\n${P} --ui mui --start-dir RAM:mui-mm --stats >RAM:mui-out.txt\n")
+  else()
+    file(WRITE "${WORK}/mui.script" "Stack 200000\n${P} --ui mui --stats >RAM:mui-out.txt\n")
+  endif()
   ami(ignored exec "Delete >NIL: RAM:mui-out.txt ${P} QUIET" 10)
   ami(ignored put "${SELECTA}" "${P}")
   ami(ignored put "${WORK}/mui.script" "RAM:mui.script")
@@ -217,6 +234,43 @@ elseif(TAG STREQUAL "M4MUI")
   # bumps the menus= counter printed on the ui_stats id=mui line.
   ami(ignored ui menushort Selecta s)
   execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 3)
+  if(song_ok)
+    # MUI-P3-1: ".." is the selected row after the scan; the double-click on the song row plays it: the song label shows
+    # the clicked song and the status word reads "Playing".
+    ami(ignored ui dclick Selecta "${SONG_NAME}")
+    set(playing FALSE)
+    foreach(i RANGE 1 12)
+      execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 2)
+      ami(tree uitree)
+      if(tree MATCHES "label - \"Playing\"" AND tree MATCHES "label - \"${SONG_NAME}\"")
+        set(playing TRUE)
+        break()
+      endif()
+    endforeach()
+    if(NOT playing)
+      ami(ignored exec "Break ${pid} C" 10)
+      message(FATAL_ERROR "RED[M4MUI]: MUI-P3-1: double-click on the list row \"${SONG_NAME}\" did not show the song label and \"Playing\":\n${tree}")
+    endif()
+    # MUI-P2-6: while playing the clock label is a time (not "--:--"), it advances between two reads, the status word is
+    # not "Stopped".
+    if(NOT tree MATCHES "label - \"([0-9][0-9]):([0-9][0-9])\"")
+      ami(ignored exec "Break ${pid} C" 10)
+      message(FATAL_ERROR "RED[M4MUI]: MUI-P2-6: no MM:SS time label while playing (still \"--:--\"?):\n${tree}")
+    endif()
+    math(EXPR t1 "${CMAKE_MATCH_1} * 60 + ${CMAKE_MATCH_2}" OUTPUT_FORMAT DECIMAL)
+    execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 5)
+    ami(tree uitree)
+    if(NOT tree MATCHES "label - \"([0-9][0-9]):([0-9][0-9])\"")
+      ami(ignored exec "Break ${pid} C" 10)
+      message(FATAL_ERROR "RED[M4MUI]: MUI-P2-6: the time label vanished on the second read:\n${tree}")
+    endif()
+    math(EXPR t2 "${CMAKE_MATCH_1} * 60 + ${CMAKE_MATCH_2}" OUTPUT_FORMAT DECIMAL)
+    if(NOT t2 GREATER t1 OR tree MATCHES "label - \"Stopped\"")
+      ami(ignored exec "Break ${pid} C" 10)
+      message(FATAL_ERROR "RED[M4MUI]: MUI-P2-6: the time label did not advance (${t1} s then ${t2} s) or the status reads Stopped:\n${tree}")
+    endif()
+    message(STATUS "M4MUI P3-1 / P2-6: row double-click played ${SONG_NAME}; time ${t1} s then ${t2} s")
+  endif()
   # MUI-P2-5 / MUI-P2-6 / MUI-P3-1 (wiring): the transport row is real gadgets (a Stop button the rig finds by its label
   # and clicks with the mouse); the click must reach mui_control_fire, send the action line and bump transport_hits on
   # the ui_stats id=mui line.
@@ -255,6 +309,7 @@ elseif(TAG STREQUAL "M4MUI")
     message(FATAL_ERROR "RED[M4MUI]: the Stop button click did not send its action line (transport_hits>=1 missing on the ui_stats id=mui line):\n${out}")
   endif()
   ami(ignored exec "Delete >NIL: RAM:mui-out.txt RAM:mui.script ${P} QUIET" 10)
+  ami(ignored exec "Delete >NIL: RAM:mui-mm ALL QUIET" 10)
 elseif(TAG STREQUAL "M4MUINO")
   # MUI-P1-6 / M4-P11-2: MUI absent on rig 2. The rig has MUI installed, so the test makes it absent by renaming
   # the MUI drawer from the LIBS: multi-assign (rig.py RIG_LIBS adds DH0:MUI/Libs; no reboot needed) and re-adds it on EVERY path, a RED
