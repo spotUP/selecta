@@ -66,3 +66,13 @@ if(NOT pl_screen MATCHES "Queue")
   message(FATAL_ERROR "VIEW_SOURCE playlist should show the queue\n${pl_screen}")
 endif()
 message(STATUS "view_source playlist and home answer OK")
+
+# I569: VIEW_SOURCE search with no search run (res_count == 0) still lands on the search source and prints it.
+execute_process(
+  COMMAND "${SELECTA}" --output null --start-dir "${WORK}" --catalogue "${CAT}"
+          --exec "VIEW_SOURCE search" --keys "${WORK}/plain.keys" --screen-dump "${WORK}/search.txt"
+  OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
+if(NOT rc EQUAL 0 OR err MATCHES "unsupported" OR NOT out MATCHES "view_source=search")
+  message(FATAL_ERROR "VIEW_SOURCE search without a prior search did not land on the search source (rc ${rc})\nstdout:\n${out}\nstderr:\n${err}")
+endif()
+message(STATUS "view_source search with an empty result answers OK")

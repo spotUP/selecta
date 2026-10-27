@@ -180,11 +180,20 @@ static Object* mui_menu_strip(void) {
     return strip;
 }
 
+/* Sends one command line. A decoded string argument points into the pool and the engine reads it on its next pump, after
+ * this returns (the engine does not copy it): the pool outlives the call, a ring so several lines queued before one pump
+ * keep their text. A stack pool left "VIEW_SOURCE search" with an empty source and the engine refused it (I569). */
+static int mui_engine_line(mui_state* s, const char* line) {
+    static char ring[16][512];
+    static uint32_t next;
+    char* pool = ring[next++ % 16u];
+    return line != NULL && s->engine != NULL && sel_engine_send_line(s->engine, line, pool, sizeof ring[0]) == SEL_CODEC_OK;
+}
+
 /* A fired Menuitem: the same line the desktop sends for the action id (MUI-P2-4). */
 static void mui_menu_fire(mui_state* s, uint32_t row) {
     const char* line = row < g_menu_n ? mui_menu_line(g_menu[row].id) : NULL;
-    char pool[1024];
-    if (line != NULL && s->engine != NULL && sel_engine_send_line(s->engine, line, pool, sizeof pool) == SEL_CODEC_OK) {
+    if (mui_engine_line(s, line)) {
         s->menu_sends++;
     }
 }
@@ -198,11 +207,6 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_LIST_SEL 0x2111L
 #define CTL_DOOR_BASE 0x2200L /* MUI-P4-0: one button per sidebar door */
 #define MUI_DOOR_MAX 8u
-
-static int mui_send(mui_state* s, const char* line) {
-    char pool[1024];
-    return line != NULL && s->engine != NULL && sel_engine_send_line(s->engine, line, pool, sizeof pool) == SEL_CODEC_OK;
-}
 
 /* I564: a Text object reads "_" in its contents as the hotkey mark and drops it, so a file name such as
  * "that_meme_again.mod" shows as "thatmemeagain.mod". MUIA_Text_HiCharIdx names the mark character; MUI_NOMARK is a control
@@ -457,7 +461,7 @@ static ULONG mui_drop_hook(struct Hook* hook, Object* obj, struct AppMessage** m
         } else {
             is_dir = 1; /* a drawer icon: the lock is the drawer itself */
         }
-        if (mui_drop_line(path, is_dir, line, sizeof line) != 0 && mui_send(g_drop_state, line)) {
+        if (mui_drop_line(path, is_dir, line, sizeof line) != 0 && mui_engine_line(g_drop_state, line)) {
             g_drop_state->drops++;
         }
     }
@@ -473,17 +477,17 @@ static void mui_control_fire(mui_state* s, LONG id) {
     char line[64];
     LONG v = 0;
     if (id >= CTL_BTN_BASE && id < CTL_BTN_BASE + (LONG)MUI_BTN_COUNT) {
-        if (mui_send(s, mui_menu_line(mui_transport_action((uint32_t)(id - CTL_BTN_BASE), &s->uim.frame)))) {
+        if (mui_engine_line(s, mui_menu_line(mui_transport_action((uint32_t)(id - CTL_BTN_BASE), &s->uim.frame)))) {
             s->transport_hits++;
         }
     } else if (id >= CTL_DOOR_BASE && id < CTL_DOOR_BASE + (LONG)MUI_DOOR_MAX) {
-        mui_send(s, mui_door_line((uint32_t)(id - CTL_DOOR_BASE))); /* the page switch: the engine moves the main view's source */
+        mui_engine_line(s, mui_door_line((uint32_t)(id - CTL_DOOR_BASE))); /* the page switch: the engine moves the main view's source */
     } else if (id == CTL_CLIP_COPY) {
         mui_clip_copy(s);
     } else if (id == CTL_SEEK) {
         GetAttr(MUIA_Slider_Level, s->seek, (ULONG*)&v);
         if (v != s->seek_set && mui_seek_line((uint32_t)v, sel_engine_state(s->engine)->song.duration_ms, line, sizeof line)
-            && mui_send(s, line)) {
+            && mui_engine_line(s, line)) {
             s->transport_hits++;
         }
         s->seek_set = v;
@@ -491,7 +495,7 @@ static void mui_control_fire(mui_state* s, LONG id) {
         GetAttr(MUIA_Slider_Level, s->vol, (ULONG*)&v);
         if (v != s->vol_set) {
             mui_volume_line((int32_t)v, line, sizeof line);
-            if (mui_send(s, line)) {
+            if (mui_engine_line(s, line)) {
                 s->transport_hits++;
             }
         }
@@ -511,7 +515,7 @@ static void mui_control_fire(mui_state* s, LONG id) {
             mui_list_pending_clear(&s->list_pending);
         }
         snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)(view->window_start + (uint32_t)v));
-        if (mui_send(s, line) && id == CTL_LIST_DBL && mui_send(s, "VIEW_ACTIVATE")) {
+        if (mui_engine_line(s, line) && id == CTL_LIST_DBL && mui_engine_line(s, "VIEW_ACTIVATE")) {
             s->row_plays++;
         }
     }
