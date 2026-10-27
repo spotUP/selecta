@@ -1136,6 +1136,18 @@ if(NOT SEL_AMIGA)
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-aga-first-light"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
   set_tests_properties(rig-m4-aga-first-light PROPERTIES LABELS rig RESOURCE_LOCK rig
+  # MUI-P0-2 / MUI-P0-3: recorded facts (plan section 9). rig-m4-mui-mem needs a fresh boot of the 68020 rig
+  # (`rig.py start --a1200`), before any MUI run, so the library is not yet resident when Avail is read.
+  foreach(t facts mem)
+    string(TOUPPER "${t}" T_UP)
+    add_test(NAME rig-m4-mui-${t}
+      COMMAND "${CMAKE_COMMAND}" -DTAG=M4MUI${T_UP} "-DRIG_DIR=${SEL_RIG_DIR}"
+        "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta" "-DMOD=${SEL_TESTMOD}"
+        "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-${t}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
+    set_tests_properties(rig-m4-mui-${t} PROPERTIES LABELS rig RESOURCE_LOCK rig
+      ENVIRONMENT "UPTERM_RIG=2" SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  endforeach()
     ENVIRONMENT "UPTERM_RIG=2" SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
 endif()
 # I122/I123/I126: paula14 split tables, chip double buffer through a recording bus, routing of PCM outputs.
