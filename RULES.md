@@ -27,6 +27,7 @@ Toolchains: desktop clang/gcc + CMake + Ninja; Amiga bebbo amiga-gcc at `~/opt/a
 | Test, one suite | `nice -n 19 ctest --test-dir build/host -R <name> --output-on-failure` |
 | Test, CI (all) | `nice -n 19 ctest --test-dir build/host -j2 --output-on-failure` |
 | Test, all finished milestones (leaves out the desktop UI red tests until M3d lands) | `nice -n 19 ctest --test-dir build/host -j2 -LE dui-red --output-on-failure` |
+| Test, one rig test on the FS-UAE rig | `UPTERM_RIG=<n> nice -n 19 ctest --test-dir build/host -R rig-<name> --output-on-failure`; `UPTERM_RIG` is required (no default; `tests/amiga/run_rig.cmake` fails when it is unset) so a run never lands on another session's rig. Host runs leave rig tests out with `-E 'rig-'` |
 | Test, Amiga under vamos | build `build/amiga` first, reconfigure `build/host`, then `ctest --test-dir build/host -R amiga-roundtrip` |
 | List / lint plugins | `build/host/apps/selecta-cli/selecta-cli plugins --lint` |
 | Probe the machine (prints sel_machine tags) | `build/host/apps/selecta-cli/selecta-cli machine` |
