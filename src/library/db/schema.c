@@ -117,7 +117,54 @@ static const char SCHEMA_V5[] =
 /* v6 (I296): 1 marks a song_composers row written from the scanned file's author tag; the songdb sync replaces it. */
 static const char SCHEMA_V6[] = "ALTER TABLE song_composers ADD COLUMN tag INTEGER NOT NULL DEFAULT 0;";
 
-static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6};
+/* v7 (I528): the composer list as a maintained table. composers holds one row per canonical spelling: display is the MIN(display)
+ * of its song_composers rows, songs the row count (song_composers is keyed by (song_key, canon), so a row is a distinct song).
+ * composer_unknown counts the songs rows without any song_composers row (the "Unknown composer" group). Triggers keep both
+ * current from every write path (scan, songdb sync, song remove, Clear Library), so the list is a plain read. The index
+ * carries display, so MIN(display) of a canon is one seek, not a scan of its rows. No path updates song_composers.song_key;
+ * the only songs.key update (the scan.c rename) is covered by the songs trigger. */
+#define V7_ADD(r) \
+    "INSERT INTO composers(canon, display, songs) VALUES(" r ".canon, " r ".display, 1)" \
+    " ON CONFLICT(canon) DO UPDATE SET songs = songs + 1, display = MIN(display, excluded.display);"
+#define V7_DROP(r) \
+    "UPDATE composers SET songs = songs - 1,"  \
+    " display = COALESCE((SELECT MIN(display) FROM song_composers WHERE canon = " r ".canon), display) WHERE canon = " r ".canon;" \
+    "DELETE FROM composers WHERE canon = " r ".canon AND songs <= 0;"
+static const char SCHEMA_V7[] =
+    "DROP INDEX song_composers_canon;"
+    "CREATE INDEX song_composers_canon ON song_composers(canon, display);"
+    "CREATE TABLE composers(canon TEXT PRIMARY KEY, display TEXT NOT NULL, songs INTEGER NOT NULL) WITHOUT ROWID;"
+    "CREATE INDEX composers_by_name ON composers(display, canon, songs);"
+    "CREATE TABLE composer_unknown(n INTEGER NOT NULL);"
+    "INSERT INTO composers(canon, display, songs) SELECT canon, MIN(display), COUNT(*) FROM song_composers GROUP BY canon;"
+    "INSERT INTO composer_unknown(n) SELECT COUNT(*) FROM songs WHERE NOT EXISTS"
+    " (SELECT 1 FROM song_composers c WHERE c.song_key = songs.key);"
+    "CREATE TRIGGER song_composers_ai AFTER INSERT ON song_composers BEGIN "
+    V7_ADD("new")
+    "UPDATE composer_unknown SET n = n - 1 WHERE EXISTS (SELECT 1 FROM songs WHERE key = new.song_key)"
+    " AND (SELECT COUNT(*) FROM song_composers WHERE song_key = new.song_key) = 1;"
+    "END;"
+    "CREATE TRIGGER song_composers_ad AFTER DELETE ON song_composers BEGIN "
+    V7_DROP("old")
+    "UPDATE composer_unknown SET n = n + 1 WHERE EXISTS (SELECT 1 FROM songs WHERE key = old.song_key)"
+    " AND NOT EXISTS (SELECT 1 FROM song_composers WHERE song_key = old.song_key);"
+    "END;"
+    "CREATE TRIGGER song_composers_au AFTER UPDATE OF canon, display ON song_composers BEGIN "
+    V7_DROP("old")
+    V7_ADD("new")
+    "END;"
+    "CREATE TRIGGER songs_composers_ai AFTER INSERT ON songs BEGIN "
+    "UPDATE composer_unknown SET n = n + 1 WHERE NOT EXISTS (SELECT 1 FROM song_composers WHERE song_key = new.key);"
+    "END;"
+    "CREATE TRIGGER songs_composers_ad AFTER DELETE ON songs BEGIN "
+    "UPDATE composer_unknown SET n = n - 1 WHERE NOT EXISTS (SELECT 1 FROM song_composers WHERE song_key = old.key);"
+    "END;"
+    "CREATE TRIGGER songs_composers_au AFTER UPDATE OF key ON songs WHEN new.key <> old.key BEGIN "
+    "UPDATE composer_unknown SET n = n - (NOT EXISTS (SELECT 1 FROM song_composers WHERE song_key = old.key))"
+    " + (NOT EXISTS (SELECT 1 FROM song_composers WHERE song_key = new.key));"
+    "END;";
+
+static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 

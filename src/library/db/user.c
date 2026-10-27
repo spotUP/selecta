@@ -408,8 +408,7 @@ static int home_text(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     if (fill) {
         home_put(op, &used, rows, "H", "Your composers");
         rc = home_list(db, op, &used, rows,
-                       "SELECT MIN(display), NULL, canon, 2 FROM song_composers GROUP BY canon"
-                       " ORDER BY COUNT(DISTINCT song_key) DESC, canon LIMIT ?1");
+                       "SELECT display, NULL, canon, 2 FROM composers ORDER BY songs DESC, canon LIMIT ?1");
         if (rc != SQLITE_OK) return rc;
     }
     return SQLITE_OK;
