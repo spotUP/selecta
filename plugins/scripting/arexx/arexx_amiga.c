@@ -17,7 +17,10 @@ struct arexx_port {
     arexx_counters counters;
 };
 
-struct RxsLib* RexxSysBase;
+/* Initialised on purpose: a tentative definition is a common symbol, and ld then pulls libnix's autoopen member for
+ * RexxSysBase, which opens rexxsyslib.library at startup and aborts the whole program (rc 20) when the library is
+ * absent (vamos). A strong definition keeps the open in arexx_open, where a missing library only leaves ARexx off. */
+struct RxsLib* RexxSysBase = NULL;
 
 arexx_port* arexx_open(void) {
     arexx_port* p;
