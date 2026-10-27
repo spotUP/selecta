@@ -2411,7 +2411,13 @@ static int32_t lib_gap(desk* d) {
 
 /* Sync on launch (I527): SOURCES rows the engine marked due (a remote source never synced, or stale) are offered in a banner
  * under the Library heading, a row each with a checkbox, and Sync / Not now. Playback and browsing go on beside it. */
-enum { NAG_HEAD_H = 40, NAG_ROW_H = 32, NAG_BOX = 20, NAG_BTN_W = 112 };
+enum { NAG_HEAD_H = 40, NAG_ROW_H = 32, NAG_BOX = 20, NAG_BTN_W = 112, NAG_COL_ROWS = 4 };
+
+/* I537: at most NAG_COL_ROWS source rows stack in a column, the next ones start a column beside it, so the banner's height is
+ * bounded and the statistics strip and the list below it are never pushed under the player bar. */
+static uint32_t nag_cols(uint32_t n) {
+    return (n + NAG_COL_ROWS - 1u) / NAG_COL_ROWS;
+}
 
 static uint32_t nag_count(const desk* d) {
     uint32_t i, n = 0;
@@ -2427,7 +2433,7 @@ static int32_t lib_nag_h(desk* d) {
     if (n == 0u || sel_engine_state(d->engine)->composer_page != NULL) {
         return 0;
     }
-    return lpx(d, NAG_HEAD_H + NAG_ROW_H * (int32_t)n) + lib_gap(d);
+    return lpx(d, NAG_HEAD_H + NAG_ROW_H * (int32_t)(n < NAG_COL_ROWS ? n : NAG_COL_ROWS)) + lib_gap(d);
 }
 
 static int32_t lib_tab_y(desk* d) {
@@ -2439,14 +2445,22 @@ static sel_gui_rect nag_rect(desk* d, sel_gui_rect mn) {
     return rect_of(mn.x + mg, mn.y + lpx(d, LIB_TITLE_Y + LIB_TITLE_H) + lib_gap(d), mn.w - 2 * mg, lib_nag_h(d) - lib_gap(d));
 }
 
+static int32_t lib_header_btn_w(desk* d, const char* label);
+
+/* I537: both buttons are as wide as their measured label plus the centred-label pad (never wider than NAG_BTN_W), so the
+ * label sits in the middle of the fill and the heading keeps the room the fixed 112 wide boxes took. */
 static sel_gui_rect nag_sync_rect(desk* d, sel_gui_rect mn) {
     sel_gui_rect r = nag_rect(d, mn);
-    return rect_of(r.x + r.w - lpx(d, 16 + NAG_BTN_W), r.y + lpx(d, 4), lpx(d, NAG_BTN_W), lpx(d, 32));
+    int32_t w = lib_header_btn_w(d, "Sync");
+    w = w < lpx(d, NAG_BTN_W) ? w : lpx(d, NAG_BTN_W);
+    return rect_of(r.x + r.w - lpx(d, 16) - w, r.y + lpx(d, 4), w, lpx(d, 32));
 }
 
 static sel_gui_rect nag_later_rect(desk* d, sel_gui_rect mn) {
     sel_gui_rect s = nag_sync_rect(d, mn);
-    return rect_of(s.x - lpx(d, 8 + NAG_BTN_W), s.y, lpx(d, NAG_BTN_W), s.h);
+    int32_t w = lib_header_btn_w(d, "Not now");
+    w = w < lpx(d, NAG_BTN_W) ? w : lpx(d, NAG_BTN_W);
+    return rect_of(s.x - lpx(d, 8) - w, s.y, w, s.h);
 }
 
 /* The k-th due source's row: its index in src[] through *idx, its rectangle returned. */
@@ -2462,7 +2476,10 @@ static sel_gui_rect nag_row_rect(desk* d, sel_gui_rect mn, uint32_t k, uint32_t*
             }
         }
     }
-    return rect_of(r.x, r.y + lpx(d, NAG_HEAD_H + NAG_ROW_H * (int32_t)k), r.w, lpx(d, NAG_ROW_H));
+    {
+        int32_t cw = r.w / (int32_t)nag_cols(nag_count(d));
+        return rect_of(r.x + (int32_t)(k / NAG_COL_ROWS) * cw, r.y + lpx(d, NAG_HEAD_H + NAG_ROW_H * (int32_t)(k % NAG_COL_ROWS)), cw, lpx(d, NAG_ROW_H));
+    }
 }
 
 static sel_gui_rect nag_box_rect(desk* d, sel_gui_rect row) {
@@ -2470,8 +2487,15 @@ static sel_gui_rect nag_box_rect(desk* d, sel_gui_rect row) {
     return rect_of(row.x + pad, row.y + (row.h - b) / 2, b, b);
 }
 
+static int lib_style_below(desk* d);
+
+/* I537: a page too narrow for the tabs and even the icon-only chooser on one row puts the chooser on its own row under the tabs. */
+static int32_t lib_style_row_h(desk* d) {
+    return lib_style_below(d) ? lpx(d, LIB_TAB_H) + lib_gap(d) : 0;
+}
+
 static int32_t lib_list_y(desk* d) {
-    return lib_tab_y(d) + lpx(d, LIB_TAB_H) + lib_gap(d);
+    return lib_tab_y(d) + lpx(d, LIB_TAB_H) + lib_gap(d) + lib_style_row_h(d);
 }
 
 static int lib_stats_on(const sel_state* st) {
@@ -2592,9 +2616,30 @@ static const char* const lib_mode_name[LIB_MODES] = {"Composers", "Tree", "Colum
 
 /* I440: a tab is as wide as its label (bold, the active look) plus a pad on each side, so the right end of the tab row
  * is free for the style chooser. */
-static int32_t lib_tab_w(desk* d, uint32_t i) {
+static int32_t lib_tab_text_w(desk* d, uint32_t i) {
     const sel_gui_atlas* at = desk_font(d, 1, 14);
-    return (at != NULL ? sel_gui_text_width(at, lib_mode_name[i], strlen(lib_mode_name[i])) : 0) + 2 * lpx(d, LIB_TAB_PAD);
+    return at != NULL ? sel_gui_text_width(at, lib_mode_name[i], strlen(lib_mode_name[i])) : 0;
+}
+
+/* I537: the pad on each side of a tab label. LIB_TAB_PAD when the whole row fits the page between its margins, less (down to
+ * 2) when the measured labels would run past the right margin, so the tab row never overflows the main pane. */
+static int32_t lib_tab_pad(desk* d) {
+    sel_gui_rect mn = region_rect(d, "main");
+    int32_t full = lpx(d, LIB_TAB_PAD), text = 0, gaps = (LIB_MODES - 1) * lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    int32_t avail = mn.w - 2 * lpx(d, LIB_MARGIN) - gaps, pad;
+    uint32_t k;
+    for (k = 0; k < (uint32_t)LIB_MODES; k++) {
+        text += lib_tab_text_w(d, k);
+    }
+    if (text + 2 * LIB_MODES * full <= avail) {
+        return full;
+    }
+    pad = (avail - text) / (2 * LIB_MODES);
+    return pad < lpx(d, 2) ? lpx(d, 2) : pad;
+}
+
+static int32_t lib_tab_w(desk* d, uint32_t i) {
+    return lib_tab_text_w(d, i) + 2 * lib_tab_pad(d);
 }
 
 static sel_gui_rect lib_tab_rect(desk* d, sel_gui_rect mn, uint32_t i) {
@@ -2608,15 +2653,20 @@ static sel_gui_rect lib_tab_rect(desk* d, sel_gui_rect mn, uint32_t i) {
 
 /* The Add Folder button on the title row of the Library page, right aligned up to the history arrows, which own
  * the top right corner of the main pane. */
+static int32_t lib_header_btn_w(desk* d, const char* label) { /* I537: the measured label plus the centred-label pad */
+    const sel_gui_atlas* at = desk_font(d, 1, 14);
+    return (at != NULL ? sel_gui_text_width(at, label, strlen(label)) : 0) + 2 * lpx(d, 8);
+}
+
 static sel_gui_rect lib_add_rect(desk* d, sel_gui_rect mn) {
-    int32_t w = lpx(d, 120), right = nav_arrow_rect(d, mn, 0).x - lib_gap(d) - lib_gap(d) / 2;
+    int32_t w = lib_header_btn_w(d, "Add Folder"), right = nav_arrow_rect(d, mn, 0).x - lib_gap(d) - lib_gap(d) / 2;
     return rect_of(right - w, mn.y + lpx(d, LIB_TITLE_Y) + lpx(d, 4), w, lpx(d, 32));
 }
 
 /* DUI-P4-18: the Clear Library button sits left of Add Folder on the same row. */
 static sel_gui_rect lib_clear_rect(desk* d, sel_gui_rect mn) {
     sel_gui_rect ab = lib_add_rect(d, mn);
-    int32_t w = lpx(d, 132);
+    int32_t w = lib_header_btn_w(d, "Clear Library");
     return rect_of(ab.x - lib_gap(d) - w, ab.y, w, ab.h);
 }
 
@@ -2655,9 +2705,19 @@ static int32_t lib_tabs_end(desk* d, sel_gui_rect mn) {
 static int lib_style_compact(desk* d, sel_gui_rect mn) {
     int32_t w = (LIB_STYLES - 1) * lpx(d, LIB_STYLE_GAP);
     uint32_t k;
+    if (lib_style_below(d)) { /* a row of its own: the labels fit */
+        return 0;
+    }
     for (k = 0; k < (uint32_t)LIB_STYLES; k++) {
         w += 2 * lpx(d, LIB_STYLE_PAD) + lpx(d, LIB_STYLE_ICON) + lib_style_label_w(d, k) - lpx(d, LIB_STYLE_PAD);
     }
+    return lib_style_right(d, mn) - w < lib_tabs_end(d, mn) + lpx(d, LIB_STYLE_TAB_GAP);
+}
+
+/* 1 when the icon-only chooser does not fit right of the last tab either (I537). */
+static int lib_style_below(desk* d) {
+    sel_gui_rect mn = region_rect(d, "main");
+    int32_t w = (LIB_STYLES - 1) * lpx(d, LIB_STYLE_GAP) + LIB_STYLES * (2 * lpx(d, LIB_STYLE_PAD) + lpx(d, LIB_STYLE_ICON));
     return lib_style_right(d, mn) - w < lib_tabs_end(d, mn) + lpx(d, LIB_STYLE_TAB_GAP);
 }
 
@@ -2674,7 +2734,7 @@ static sel_gui_rect lib_style_rect(desk* d, sel_gui_rect mn, uint32_t i) {
         w = lead + (compact ? lpx(d, LIB_STYLE_PAD) : lib_style_label_w(d, k));
         x -= w + (k + 1u < (uint32_t)LIB_STYLES ? gap : 0);
     }
-    return rect_of(x, mn.y + lib_tab_y(d), w, lpx(d, LIB_TAB_H));
+    return rect_of(x, mn.y + lib_tab_y(d) + lib_style_row_h(d), w, lpx(d, LIB_TAB_H));
 }
 
 /* I315: while a scan runs the Add Folder button gives way to the file being added and a progress bar. Same row and
@@ -4972,7 +5032,7 @@ static void draw_lib_nag(desk* d, sel_gui_rect mn) {
     char head[96];
     sel_gui_round_rect(d->canvas, r, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
     snprintf(head, sizeof head, "%u source%s not synced for a while", (unsigned)n, n == 1u ? "" : "s");
-    draw_text(d, rect_of(r.x + pad, r.y, r.w / 2, lpx(d, NAG_HEAD_H)), head, 1, 15, text);
+    draw_text(d, rect_of(r.x + pad, r.y, nag_later_rect(d, mn).x - lpx(d, 8) - (r.x + pad), lpx(d, NAG_HEAD_H)), head, 1, 15, text);
     draw_button(d, nag_later_rect(d, mn), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Not now", 14, text);
     draw_button(d, nag_sync_rect(d, mn), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), "Sync", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
     for (k = 0; k < n; k++) {
@@ -4989,7 +5049,7 @@ static void draw_lib_nag(desk* d, sel_gui_rect mn) {
         } else {
             snprintf(line, sizeof line, "%s, never synced", d->src[idx].name);
         }
-        draw_text(d, rect_of(bx.x + bx.w + pad, row.y, row.w / 2, row.h), line, 0, 14, on ? text : muted);
+        draw_text(d, rect_of(bx.x + bx.w + pad, row.y, row.x + row.w - (bx.x + bx.w + pad), row.h), line, 0, 14, on ? text : muted);
     }
     sel_gui_dirty_add(d->canvas, r);
 }
@@ -5934,10 +5994,11 @@ static const struct {
     uint32_t icon;
     const char* label;
     desk_page page;
-} g_doors[DOOR_COUNT] = {{SEL_GUI_ICON_HOUSE, "Home", PG_HOME},          {SEL_GUI_ICON_SEARCH, "Search", PG_SEARCH},
-                         {SEL_GUI_ICON_LIBRARY, "Your Library", PG_LIBRARY}, {SEL_GUI_ICON_DISC, "Playlists", PG_PLAYLISTS},
-                         {SEL_GUI_ICON_LIST, "Queue", PG_QUEUE},          {SEL_GUI_ICON_MUSIC, "Now Playing", PG_NOWPLAYING},
-                         {SEL_GUI_ICON_USER, "Song Information", PG_SONGINFO}};
+    const char* shorter; /* I537: the label drawn when the full one is wider than the rail leaves for it (NULL: none) */
+} g_doors[DOOR_COUNT] = {{SEL_GUI_ICON_HOUSE, "Home", PG_HOME, NULL},          {SEL_GUI_ICON_SEARCH, "Search", PG_SEARCH, NULL},
+                         {SEL_GUI_ICON_LIBRARY, "Your Library", PG_LIBRARY, NULL}, {SEL_GUI_ICON_DISC, "Playlists", PG_PLAYLISTS, NULL},
+                         {SEL_GUI_ICON_LIST, "Queue", PG_QUEUE, NULL},          {SEL_GUI_ICON_MUSIC, "Now Playing", PG_NOWPLAYING, NULL},
+                         {SEL_GUI_ICON_USER, "Song Information", PG_SONGINFO, "Song Info"}};
 
 /* The row of door i, shared by the drawing and the click: the panel inset of draw_panel, the brand, then the rows. */
 static sel_gui_rect sidebar_door_rect(const desk* d, uint32_t i) {
@@ -5964,6 +6025,7 @@ static void draw_sidebar(desk* d) {
     int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     int32_t row = lpx(d, 40), isz = lpx(d, 22), br = lpx(d, HOME_BRAND), y = sb.y + 2 * sp;
     int32_t pad = lpx(d, 12), lab = lpx(d, 16);
+    const sel_gui_atlas* door_at = desk_font(d, 1, 15);
     sel_gui_rect logo = rect_of(sb.x + pad + sp, y, br, br);
     uint32_t i;
     sel_gui_round_rect(d->canvas, logo, lpx(d, 7), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
@@ -5990,7 +6052,14 @@ static void draw_sidebar(desk* d) {
         }
         sel_gui_icon_draw(d->canvas, &d->icons, g_doors[i].icon, ic, isz, ink);
         if (sb.w > lpx(d, 120)) {
-            draw_text(d, rect_of(ic.x + isz + lab, y, r.x + r.w - (ic.x + isz + lab), row), g_doors[i].label, 1, 15, ink);
+            /* I537: the label box is the measured width the rail leaves right of the icon; a label wider than it takes its
+             * shorter form (draw_text would ellipsize it), and the gap to the icon shrinks to the pad on the bitmap tier. */
+            int32_t gap = desk_bitmap_text(d) ? lpx(d, 8) : lab, lx = ic.x + isz + gap, lw = r.x + r.w - lx;
+            const char* label = g_doors[i].label;
+            if (door_at != NULL && g_doors[i].shorter != NULL && sel_gui_text_width(door_at, label, strlen(label)) > lw) {
+                label = g_doors[i].shorter;
+            }
+            draw_text(d, rect_of(lx, y, lw, row), label, 1, 15, ink);
         }
         sel_gui_dirty_add(d->canvas, r);
         d->frame_parts++;

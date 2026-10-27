@@ -43,3 +43,16 @@ Test: tests/dui/aga_native_text.cmake (dui-aga-native-text), passes. 2 of 4 gaps
 - G4 (title cap 11 to 16): DONE. Ink of the first glyph run of "Library" (the capital L, columns 190..205) measured rows 17..28 = 12 rows, asserted 11 to 16 (no widening).
 
 Revert results: forcing desk_bitmap_text to 0 was not run on its own (the stats and layout asserts fail first, as before). Disabling only the role lookup in desk_font (`if (0 && desk_bitmap_text(d))`) fails the test at the bitmap_hits_mini6 assert (library: bitmap_hits_mini6=0). The PPM asserts G3/G4 were NOT shown to fail on their own cause: with the role lookup off the dump still gives cap L = 12 rows (the headline falls back to the same baked Inter 32), so G4 does not discriminate that revert; the G3 numbers on the reverted run were not measured (budget). Treat G3/G4 revert-sensitivity as unproven. Code restored (git checkout of desktop_ui.c), binary rebuilt, test green.
+
+## I537 items 1-5
+
+All changes in plugins/ui/desktop/desktop_ui.c; assertions in tests/dui/aga_native_text.cmake section 4 (test dui-aga-native-text).
+
+1. Title covered: lib_add_rect/lib_clear_rect used fixed 120/132 widths, Clear Library sat at x=256 over the title (ends ~288). Header buttons now sized by lib_header_btn_w (measured label + pad); Clear Library x=292. Test: Clear Library x >= 289. Revert check: with the old desktop_ui.c the test fails "button at x=256 covers the title". Pixel version was not usable (button outline merges with the title tail), so the check compares layout numbers.
+2. Rail labels ellipsized: label box started after icon + 16 px gap (~86 px). Gap is now 8 px on the bitmap tier, box runs to the rail edge, and a door with a shorter form (Song Information -> Song Info) uses it only when the full label does not fit. Test: last 8 ink columns of Your Library, Now Playing, Song Info span >= 4 rows. Revert check not run separately (the item 1 assertion fails first).
+3. Banner buttons: fixed 112 px buttons; now measured label + 16 (Sync 48, Not now 72), head text ends 8 px before Not now. Test (SDL banner run): widths 48 and 72. Centring is not pixel-verified (frame dump predates the banner redraw). Revert check not run separately.
+4. Tab row overflow: tab pad shrinks (lib_tab_pad) until six tabs fit the main region; the style chooser moves to its own row when it does not fit right of the tabs (lib_style_below). Test: every tab ends <= 640, tabs in order without overlap, chooser segments not on the tab row inside it. Revert check not run separately.
+5. Stats strip under transport: banner grew by 32 per due source. Now at most 4 rows tall, laid out in columns (nag_cols). Test (SDL banner run, 8 due sources): stats rect ends <= player region top (440). Revert check not run separately.
+
+Goldens updated (intended layout change): library-rgba32-640x256-ydiv2, library-sources-rgba32-1280x800, grid-view-rgba32-1280x800. Existing P5 row scan in the same test now starts below the stats strip from the stats rect instead of frame row 96.
+Run: dui-aga-native-text, dui-library*, dui-sync-banner, dui-tall-pixels, dui-layout, dui-grid-coverflow, dui-cover*, dui-style*: 13 of 13 pass.
