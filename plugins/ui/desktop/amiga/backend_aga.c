@@ -31,6 +31,7 @@
 #include <utility/tagitem.h>
 
 #include "../../../../third_party/kalms-c2p/normal/c2p1x1_8_c5_040.h"
+#include "../../../../third_party/kalms-c2p/normal/c2p1x1_8_c5_030.h"
 
 struct IntuitionBase* IntuitionBase;
 struct GfxBase* GfxBase;
@@ -73,6 +74,11 @@ static void c2p_bands(desk_aga* b, const uint8_t* chunky, const desk_aga_band* b
             /* Kalms: rows y .. y + h of the chunky buffer into the same rows of the planes (scroffsy = y). */
             c2p1x1_8_c5_040_init(b->w, band[i].h, band[i].y, (int)bplsize);
             c2p1x1_8_c5_040((void*)(chunky + (size_t)band[i].y * (size_t)b->w), b->buf[b->back]);
+        } else if (b->c2p_kind == DESK_AGA_C2P_KALMS_030) {
+            /* I574: the 030 routine patches its own code with the sizes; flush the caches before running it. */
+            c2p1x1_8_c5_030_smcinit(b->w, band[i].h, band[i].y, (int)bplsize);
+            CacheClearU();
+            c2p1x1_8_c5_030((void*)(chunky + (size_t)band[i].y * (size_t)b->w), b->buf[b->back]);
         } else {
             desk_aga_c2p_ref(chunky, b->w, band[i].y, band[i].h, b->buf[b->back], bplsize);
         }
@@ -183,7 +189,7 @@ desk_aga* desk_aga_open(int32_t w, int32_t h, int index8) {
     b->safe = 1;
     b->back = 1;
     b->fresh = 2;
-    b->c2p_kind = (SysBase->AttnFlags & (AFF_68040 | AFF_68060)) ? DESK_AGA_C2P_KALMS_040 : DESK_AGA_C2P_REF;
+    b->c2p_kind = desk_aga_c2p_pick(SysBase->AttnFlags);
     return b;
 }
 

@@ -139,7 +139,18 @@ static void test_pick_size(void) {
     CHECK(desk_aga_pick_size(&w, &h, 0) == -1); /* the sdl default */
 }
 
+/* I574: a 68020 (rig 2, the A1200) gets Kalms' 030 c2p; the C reference there took 16 s per 640x256 frame and froze
+ * the pointer. 68040/060 keep the 040 routine; only a 68000/010 falls back to the reference. */
+static void test_c2p_pick(void) {
+    CHECK(desk_aga_c2p_pick(1u << 1) == 2u);                         /* 68020 */
+    CHECK(desk_aga_c2p_pick((1u << 1) | (1u << 2)) == 2u);           /* 68030 */
+    CHECK(desk_aga_c2p_pick((1u << 1) | (1u << 2) | (1u << 3)) == 1u); /* 68040 */
+    CHECK(desk_aga_c2p_pick((1u << 3) | (1u << 7)) == 1u);           /* 68060 */
+    CHECK(desk_aga_c2p_pick(0u) == 0u);                              /* 68000 */
+}
+
 int main(void) {
+    test_c2p_pick();
     test_pick_size();
     test_bit_layout();
     test_round_trip_and_bands();

@@ -484,7 +484,17 @@ static uint32_t desk_flush(desk* d) {
         uint32_t t_end = ch->clock_ms(ch);
         uint32_t dt = t_end - d->frame_t0;
         if (d->report) { /* I525: when each repaint finished and how long it took */
-            fprintf(stderr, "frame end=%u ms=%u px=%u\n", (unsigned)t_end, (unsigned)dt, (unsigned)px);
+            uint32_t k;
+            fprintf(stderr, "frame end=%u ms=%u px=%u paint=%u present=%u cube_ops=%u", (unsigned)t_end, (unsigned)dt,
+                    (unsigned)px, (unsigned)(t_flush - d->frame_t0), (unsigned)(t_end - t_flush),
+                    (unsigned)d->canvas->cube_ops);
+            for (k = 0; k < SEL_GUI_PROF_COUNT; k++) { /* I574: the primitive classes that took this frame's time */
+                uint32_t pk = d->canvas->prof_ms[k] - d->frame_prof0[k];
+                if (pk >= 20u) {
+                    fprintf(stderr, " prof%u=%u", (unsigned)k, (unsigned)pk);
+                }
+            }
+            fputc('\n', stderr);
         }
         uint32_t paint = t_flush - d->frame_t0, present = t_end - t_flush;
         d->frame_open = 0;

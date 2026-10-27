@@ -128,12 +128,20 @@ if(SEL_AMIGA)
       DEPENDS "${AGA_C2P_DIR}/normal/c2p1x1_8_c5_040.s" "${AGA_C2P_DIR}/c2p_equates.i"
       COMMENT "Assembling Kalms c2p1x1_8_c5_040")
     set_source_files_properties("${AGA_C2P_040}" PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+    # I574: the 68020/030 routine; without it a 68020 ran the C reference, 16 s per 640x256 frame.
+    set(AGA_C2P_030 "${CMAKE_CURRENT_BINARY_DIR}/c2p1x1_8_c5_030.o")
+    add_custom_command(OUTPUT "${AGA_C2P_030}"
+      COMMAND "${SEL_VASM}" -quiet -m68020 -m68030 -Fhunk -I "${AGA_C2P_DIR}" -o "${AGA_C2P_030}"
+        "${AGA_C2P_DIR}/normal/c2p1x1_8_c5_030.s"
+      DEPENDS "${AGA_C2P_DIR}/normal/c2p1x1_8_c5_030.s" "${AGA_C2P_DIR}/c2p_equates.i"
+      COMMENT "Assembling Kalms c2p1x1_8_c5_030")
+    set_source_files_properties("${AGA_C2P_030}" PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
     if(SEL_DESKTOP_AGA)
-      target_sources(sel_plugin_desktop_ui PRIVATE amiga/backend_aga.c amiga/aga_planar.c "${AGA_C2P_040}")
+      target_sources(sel_plugin_desktop_ui PRIVATE amiga/backend_aga.c amiga/aga_planar.c "${AGA_C2P_040}" "${AGA_C2P_030}")
       target_compile_definitions(sel_plugin_desktop_ui PRIVATE SELECTA_DESKTOP_AGA=1)
     endif()
     add_executable(selecta-aga-first-light amiga/aga_first_light.c amiga/backend_aga.c amiga/aga_planar.c
-      amiga/input.c amiga/folder_pick.c "${AGA_C2P_040}")
+      amiga/input.c amiga/folder_pick.c "${AGA_C2P_040}" "${AGA_C2P_030}")
     target_link_libraries(selecta-aga-first-light PRIVATE selecta_gui selecta_uimodel)
     # Kalms against the C reference on a 68k CPU; run by `vamos -C 68040` (design doc 6, dui-aga-c2p-kalms).
     add_executable(selecta-aga-c2p-kalms "${PROJECT_SOURCE_DIR}/tests/dui/aga_c2p_kalms.c" amiga/aga_planar.c

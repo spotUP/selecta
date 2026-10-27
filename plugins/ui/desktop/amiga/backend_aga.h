@@ -17,7 +17,7 @@
 typedef struct desk_aga desk_aga;
 
 enum { DESK_AGA_NONE = 0, DESK_AGA_QUIT = 1, DESK_AGA_RESIZE = 2, DESK_AGA_ACTIVITY = 3 };
-enum { DESK_AGA_C2P_REF = 0, DESK_AGA_C2P_KALMS_040 = 1 };
+enum { DESK_AGA_C2P_REF = 0, DESK_AGA_C2P_KALMS_040 = 1, DESK_AGA_C2P_KALMS_030 = 2 };
 
 /* The canvas size when none is asked for: the Workbench size when Workbench runs on a native mode that allows 8
  * bitplanes, else 640x256 (PAL) or 640x200 (NTSC) (M4-P6-8). */

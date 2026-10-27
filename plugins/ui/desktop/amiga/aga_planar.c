@@ -116,6 +116,12 @@ void desk_aga_c2p_ref(const uint8_t* chunky, int32_t w, int32_t y, int32_t rows,
     }
 }
 
+uint32_t desk_aga_c2p_pick(uint32_t attn_flags) {
+    if (attn_flags & ((1u << 3) | (1u << 7))) return 1u; /* DESK_AGA_C2P_KALMS_040 */
+    if (attn_flags & ((1u << 1) | (1u << 2))) return 2u; /* DESK_AGA_C2P_KALMS_030 */
+    return 0u;                                         /* DESK_AGA_C2P_REF */
+}
+
 void desk_aga_p2c_ref(const uint8_t* planes, uint32_t bplsize, int32_t w, int32_t h, uint8_t* chunky) {
     int32_t rb = w / 8;
     for (int32_t row = 0; row < h; row++) {

@@ -34,6 +34,10 @@ uint32_t desk_aga_band_rows(const desk_aga_band* b, uint32_t n);
 /* Reference conversion of rows [y, y + rows) of a chunky buffer w pixels wide (row stride w) into the planes. w is a
  * multiple of 8. The planes outside those rows are not touched. */
 void desk_aga_c2p_ref(const uint8_t* chunky, int32_t w, int32_t y, int32_t rows, uint8_t* planes, uint32_t bplsize);
+/* I574: the c2p for a CPU, from exec's AttnFlags (AFF_68020 bit 1, AFF_68030 bit 2, AFF_68040 bit 3, AFF_68060 bit 7):
+ * Kalms' 040 routine on a 68040/060, his 030 routine on a 68020/030 (DESK_AGA_C2P_* of backend_aga.h). The C reference
+ * is only for a CPU below the 68020; on a 68020 it took 16 s per 640x256 frame, which froze the pointer. */
+uint32_t desk_aga_c2p_pick(uint32_t attn_flags);
 /* Inverse: planes of a w x h screen back to a chunky buffer (frame dumps and tests). */
 void desk_aga_p2c_ref(const uint8_t* planes, uint32_t bplsize, int32_t w, int32_t h, uint8_t* chunky);
 
