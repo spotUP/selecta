@@ -318,6 +318,120 @@ static void test_keys(void) {
     }
 }
 
+/* MUI-P3-1..4, P3-5 (mask), P3-7: list models over a fake sel_view_state. */
+static void fake_state(sel_view_state* v, sel_view_row* rows, char (*txt)[32], uint32_t total, uint32_t start, uint32_t win, uint32_t style) {
+    uint32_t i, n = total - start < win ? total - start : win;
+    memset(v, 0, sizeof *v);
+    for (i = 0; i < n; i++) {
+        memset(&rows[i], 0, sizeof rows[i]);
+        snprintf(txt[i], 32, "Song %u", (unsigned)(start + i));
+        rows[i].text = txt[i];
+        rows[i].artist = "Artist";
+        rows[i].id = start + i;
+        rows[i].kind = SEL_ROW_QUEUE;
+    }
+    v->style = style;
+    v->row_count = total;
+    v->window_start = start;
+    v->window_rows = win;
+    v->row_n = n;
+    v->rows = rows;
+    v->cursor = start + 2;
+}
+
+static void test_list_regular(void) {
+    static sel_view_row rows[40];
+    static char txt[40][32];
+    static mui_list_entry out[40];
+    sel_view_state v;
+    int32_t active = -9;
+    uint32_t n;
+    fake_state(&v, rows, txt, 5000, 1200, 30, SEL_VIEW_STYLE_REGULAR);
+    n = mui_list_build(mui_list_backend_pick(1, 1), out, 40, &v, &active);
+    CHECK(n == 30 && active == 2, "window %u entries, active %d", n, (int)active);
+    CHECK(out[0].index == 1200 && strcmp(out[0].text, "Song 1200") == 0, "first entry %u '%s'", out[0].index, out[0].text);
+    n = mui_list_build(mui_list_backend_pick(1, 1), out, 10, &v, &active);
+    CHECK(n == 10, "cap limits entries to %u", n);
+    v.cursor = 3;
+    mui_list_build(mui_list_backend_pick(1, 1), out, 40, &v, &active);
+    CHECK(active == -1, "cursor outside window gives %d", (int)active);
+}
+
+static void test_list_tree(void) {
+    static sel_view_row rows[4];
+    static mui_list_entry out[4];
+    sel_view_state v;
+    char line[32];
+    memset(rows, 0, sizeof rows);
+    rows[0].kind = SEL_ROW_NODE; rows[0].text = "folder"; rows[0].id = 7; rows[0].count = 3; rows[0].expanded = 1;
+    rows[1].kind = SEL_ROW_QUEUE; rows[1].text = "one.mod"; rows[1].depth = 1; rows[1].id = 11;
+    rows[2].kind = SEL_ROW_NODE; rows[2].text = "other"; rows[2].id = 8; rows[2].count = 2;
+    memset(&v, 0, sizeof v);
+    v.style = SEL_VIEW_STYLE_TREE; v.row_count = 3; v.window_rows = 4; v.row_n = 3; v.rows = rows;
+    mui_list_build(mui_list_backend_pick(0, 0), out, 4, &v, NULL);
+    CHECK(strcmp(out[0].text, "- folder (3)") == 0, "expanded node '%s'", out[0].text);
+    CHECK(strcmp(out[1].text, "  one.mod") == 0, "indented song '%s'", out[1].text);
+    CHECK(strcmp(out[2].text, "+ other (2)") == 0, "collapsed node '%s'", out[2].text);
+    mui_list_toggle_line(&rows[0], line, sizeof line);
+    CHECK(strcmp(line, "VIEW_COLLAPSE 7") == 0, "collapse line '%s'", line);
+    mui_list_toggle_line(&rows[2], line, sizeof line);
+    CHECK(strcmp(line, "VIEW_EXPAND 8") == 0, "expand line '%s'", line);
+    mui_list_toggle_line(&rows[1], line, sizeof line);
+    CHECK(line[0] == '\0', "song row toggles nothing");
+    mui_list_build(mui_list_backend_pick(1, 1), out, 4, &v, NULL);
+    CHECK(strcmp(out[1].text, "one.mod") == 0, "Listtree draws depth itself: '%s'", out[1].text);
+}
+
+static void test_list_drill(void) {
+    sel_view_state v;
+    char buf[160];
+    memset(&v, 0, sizeof v);
+    v.source = SEL_VIEW_QUEUE; v.style = SEL_VIEW_STYLE_DRILLDOWN; v.group = "folder"; v.drill_n = 2;
+    v.drill[0] = "a"; v.drill[1] = "b";
+    mui_list_breadcrumb(&v, buf, sizeof buf);
+    CHECK(strcmp(buf, "Queue by folder  Drilldown > a > b") == 0, "breadcrumb '%s'", buf);
+}
+
+static void test_columns(void) {
+    uint8_t c[MUI_COL_COUNT];
+    char f[32];
+    static const uint32_t want[4] = {5, 4, 3, 2};
+    uint32_t bp;
+    for (bp = 0; bp < 4; bp++) {
+        CHECK(mui_columns_for(bp, c) == want[bp] && c[0] == MUI_COL_TITLE, "breakpoint %u has %u columns", bp, mui_columns_for(bp, c));
+        mui_columns_format(bp, f, sizeof f);
+        CHECK(strlen(f) == 4u * (want[bp] - 1u), "format '%s' at %u", f, bp);
+    }
+}
+
+static void test_style_mask(void) {
+    CHECK(__builtin_popcount(mui_style_mask(1)) == 6 && __builtin_popcount(mui_style_mask(0)) == 5, "mask sizes %d %d", __builtin_popcount(mui_style_mask(1)), __builtin_popcount(mui_style_mask(0)));
+    CHECK((mui_style_mask(0) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_COVERFLOW)) == 0 && (mui_style_mask(0) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_GRID)) != 0, "planar drops only cover flow");
+}
+
+static void test_list_backends(void) {
+    static sel_view_row rows[40];
+    static char txt[40][32];
+    static mui_list_entry a[40], b[40];
+    sel_view_state v;
+    int32_t ia, ib;
+    uint32_t i, n, m, ca, cb;
+    uint8_t col[MUI_COL_COUNT];
+    fake_state(&v, rows, txt, 100, 10, 20, SEL_VIEW_STYLE_REGULAR);
+    n = mui_list_build(mui_list_backend_pick(1, 1), a, 40, &v, &ia);
+    m = mui_list_build(mui_list_backend_pick(0, 0), b, 40, &v, &ib);
+    CHECK(n == m && ia == ib, "row count %u/%u cursor %d/%d", n, m, (int)ia, (int)ib);
+    for (i = 0; i < n; i++) {
+        CHECK(strcmp(a[i].text, b[i].text) == 0, "row %u differs", i);
+    }
+    for (i = 0; i < 4; i++) {
+        ca = mui_columns_for(i, col);
+        cb = mui_columns_for(i, col);
+        CHECK(ca == cb, "column set differs");
+    }
+    CHECK(mui_list_backend_pick(1, 1)->sortable == 1 && mui_list_backend_pick(0, 0)->sortable == 0, "only NList sorts");
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -342,6 +456,18 @@ int main(int argc, char** argv) {
         test_dirty();
     } else if (strcmp(argv[1], "keys") == 0) {
         test_keys();
+    } else if (strcmp(argv[1], "list-regular") == 0) {
+        test_list_regular();
+    } else if (strcmp(argv[1], "list-tree") == 0) {
+        test_list_tree();
+    } else if (strcmp(argv[1], "list-drill") == 0) {
+        test_list_drill();
+    } else if (strcmp(argv[1], "columns") == 0) {
+        test_columns();
+    } else if (strcmp(argv[1], "style-mask") == 0) {
+        test_style_mask();
+    } else if (strcmp(argv[1], "list-backends") == 0) {
+        test_list_backends();
     } else {
         return 2;
     }

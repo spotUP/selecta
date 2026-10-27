@@ -3,12 +3,14 @@
 #ifndef SEL_MUI_MAP_H
 #define SEL_MUI_MAP_H
 
+#include <stddef.h>
 #include <stdint.h>
 
+#include <selecta/engine.h>
 #include <selecta/uimodel.h>
 
-/* The view styles the MUI UI offers. An RTG screen can host the custom canvas (grid, cover flow), so every style;
- * a planar screen has only native list widgets, so the classic list styles (plan section 1, finish line 3). */
+/* The view styles the MUI UI offers. An RTG screen offers every style (6). A planar screen shows artwork and grid tiles
+ * as cached 1-bit dithered images (MUI-P5-7, I509), so all but cover flow (5); the classic three alone no longer fit. */
 uint32_t mui_style_mask(int screen_is_rtg);
 
 /* MUI-P1-7: the SEL_UI_WAIT contract as a loop over two callbacks, so the host tests it and the Amiga build runs the
@@ -105,5 +107,41 @@ typedef struct mui_mode_key {
     const char* line; /* PREF_SET ui.mui.mode <mode> */
 } mui_mode_key;
 const mui_mode_key* mui_mode_keys(uint32_t* count);
+
+/* MUI-P3-1..4, P3-7: the list models. A back end is chosen once at open from the MUI-P0-1 facts: `nlist` (NList
+ * columns and sort, Listtree for the tree style) when NList is installed, `plain` (3.8 List with a Format string,
+ * indented rows) otherwise. Both consume the same sel_view_state window and give the same labels, cursor and columns. */
+typedef struct mui_list_backend {
+    const char* name;  /* "nlist" or "plain" */
+    uint32_t sortable; /* NList sort */
+    uint32_t native_tree; /* Listtree draws the depth, so the row text carries no indent */
+} mui_list_backend;
+const mui_list_backend* mui_list_backend_pick(int nlist_present, int listtree_present);
+
+#define MUI_LIST_TEXT 160
+typedef struct mui_list_entry {
+    uint32_t index;    /* index in the whole list (window_start + position) */
+    uint32_t kind;     /* sel_row_kind */
+    uint32_t depth;
+    uint32_t node;     /* 1 for a SEL_ROW_NODE row */
+    uint32_t expanded;
+    char label[MUI_LIST_TEXT]; /* row text without indent or marker */
+    char text[MUI_LIST_TEXT];  /* what the List shows: indent, +/- marker for nodes, count */
+} mui_list_entry;
+/* Fill out[] from the visible window only (at most window_rows and cap entries); *active is the List cursor
+ * position inside the window, -1 when the cursor row is outside it. Returns the entries filled. */
+uint32_t mui_list_build(const mui_list_backend* be, mui_list_entry* out, uint32_t cap, const sel_view_state* v, int32_t* active);
+/* Tree style: the engine line a click on a node row sends (VIEW_EXPAND/VIEW_COLLAPSE <node id>); "" for a non-node. */
+void mui_list_toggle_line(const sel_view_row* r, char* out, size_t cap);
+/* Drilldown breadcrumb "Queue by folder  Drilldown > a > b" from the shared title function. */
+void mui_list_breadcrumb(const sel_view_state* v, char* out, size_t cap);
+
+enum { MUI_COL_TITLE = 0, MUI_COL_ARTIST, MUI_COL_ALBUM, MUI_COL_LENGTH, MUI_COL_FORMAT, MUI_COL_COUNT };
+/* Visible columns in display order for a SEL_UIM_BP_*; hidden by width: format first, then album, then length. */
+uint32_t mui_columns_for(uint32_t breakpoint, uint8_t out[MUI_COL_COUNT]);
+/* MUIA_List_Format string for those columns: "BAR," per column but the last. */
+void mui_columns_format(uint32_t breakpoint, char* out, size_t cap);
+/* Cell text of one row; "" for the columns the engine row does not carry (the view model rows hold title and artist). */
+const char* mui_row_cell(const sel_view_row* r, uint32_t column);
 
 #endif
