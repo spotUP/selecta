@@ -57,6 +57,12 @@ void sel_uim_layout_compute(sel_uim_layout* l, uint32_t width, uint32_t height) 
 }
 
 void sel_uim_layout_compute_tier(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier) {
+    sel_uim_layout_compute_rail(l, width, height, tier, 0u);
+}
+
+/* I547: rail_w is the labelled rail width the caller measured from its font (0: SIDEBAR_RAIL_LABELLED). It is never
+ * narrower than the default and never wider than a third of the window. */
+void sel_uim_layout_compute_rail(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t rail_w) {
     uint32_t bp = sel_uim_breakpoint_for_tier(width, tier);
     uint32_t bar_h = height > BAR_H ? BAR_H : height;
     uint32_t body_h = height - bar_h;
@@ -71,7 +77,12 @@ void sel_uim_layout_compute_tier(sel_uim_layout* l, uint32_t width, uint32_t hei
     } else if (bp == SEL_UIM_BP_TWO_COLUMN) {
         side = SIDEBAR_NARROW;
     } else if (bp == SEL_UIM_BP_ICON_SIDEBAR) {
-        side = tier == SEL_UIM_TIER_BITMAP ? SIDEBAR_RAIL_LABELLED : SIDEBAR_ICONS;
+        if (tier == SEL_UIM_TIER_BITMAP) {
+            side = rail_w > SIDEBAR_RAIL_LABELLED ? rail_w : SIDEBAR_RAIL_LABELLED;
+            side = side > width / 3u ? (width / 3u > SIDEBAR_RAIL_LABELLED ? width / 3u : SIDEBAR_RAIL_LABELLED) : side;
+        } else {
+            side = SIDEBAR_ICONS;
+        }
     } else {
         top = body_h > BANNER_H ? BANNER_H : body_h;
     }

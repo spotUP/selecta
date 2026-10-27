@@ -136,6 +136,8 @@ uint32_t sel_uim_breakpoint_for(uint32_t width);
 enum { SEL_UIM_TIER_DEFAULT = 0, SEL_UIM_TIER_BITMAP = 1 };
 uint32_t sel_uim_breakpoint_for_tier(uint32_t width, uint32_t tier);
 void sel_uim_layout_compute_tier(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier);
+/* I547: as compute_tier, with the bitmap tier rail width measured by the caller from its font (0: the default). */
+void sel_uim_layout_compute_rail(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t rail_w);
 void sel_uim_layout_compute(sel_uim_layout* l, uint32_t width, uint32_t height);
 int sel_uim_layout_check(const sel_uim_layout* l, char* msg, size_t cap);
 /* Hit test (DUI-P3-2): the index of the region of the layout tree that holds the point (x, y) in layout units, or -1

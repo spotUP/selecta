@@ -97,3 +97,21 @@ Golden tests/golden/desktop/library-sources-rgba32-1280x800@1.hash updated: with
 ### I542: one click on Modland turned off the other sources
 
 Not reproduced on host. A click at the Modland switch centre (640x512, ydiv 2) changes only Modland (`library.sources_off = modland`); `src_toggle_send` flips only the clicked index. No fix made, none guessed. The test section in dui-library-scroll (exactly one enabled flag changes) passes without any fix, so it is a regression lock, not a revert-checked fix test. Open rig-side suspects, unverified: the AGA backend delivers several events per click, or a stale `d->src[]` on the rig.
+
+## I547 (AGA sidebar labels cut, Library tab labels truncated)
+
+- Cause 1: src/uimodel/layout.c SIDEBAR_RAIL_LABELLED was a fixed 160. The door row (sidebar_door_rect, desktop_ui.c) leaves
+  150 - 12 pad - 22 icon - 8 gap = 108... measured against the old inset the label box was 94 px for "Your Library" (96 px in
+  mini8) and "Now Playing" (88) touched the highlight edge.
+- Cause 2: lib_tab_pad shrinks the tab pad to as little as 2 px to fit six tabs, but draw_text_centered (and draw_button for the
+  active tab) always reserve 8 px each side, so the label box was narrower than the label: ellipsis ("Compo...").
+- Fix: new sel_uim_layout_compute_rail (compute_tier calls it with 0); the desktop passes desk_rail_w(d), the measured widest
+  rail label (shorter form where a door has one) plus door inset, pads, icon and gap, clamped to [160, width/3]. 640x512 now
+  gives a 174 px rail. Tabs use draw_text_centered_pad / draw_button_pad with lib_tab_pad, so a squeezed tab still shows its
+  whole label (existing 58ad55a pad-shrink rule kept as the overflow rule).
+- Test: dui-aga-native-text section 5 (tab label ink width = 8 px per character for all six tabs; every door row wide enough for
+  the widest label plus margin). Revert-check: with the fix removed, "Composers tab label is 68 px wide, expected 72" fails;
+  restored, passes.
+- Updated tests: dui-layout (sidebar w=174), dui-aga-native-text pixel scans start at x=178 (past the wider rail).
+- Golden changed: tests/golden/desktop/library-rgba32-640x256-ydiv2@1.hash (e516b1bc64b09446 -> new). Passing: dui-aga*,
+  dui-layout, dui-tall-pixels, dui-library*, dui-sync-banner, dui-stats-panel.

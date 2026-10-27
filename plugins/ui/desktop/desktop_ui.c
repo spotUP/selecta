@@ -671,9 +671,9 @@ static void draw_text(desk* d, sel_gui_rect box, const char* s, int semibold, in
 
 /* One line of text centred in a button or chip box, ellipsized to the box width minus a pad on each side. Every button
  * and chip label goes through here (I270). The ink span is recorded per box for the stats line. */
-static void draw_text_centered(desk* d, sel_gui_rect box, const char* s, int semibold, int px, uint32_t argb) {
+static void draw_text_centered_pad(desk* d, sel_gui_rect box, const char* s, int semibold, int px, uint32_t argb, int32_t pad) {
     const sel_gui_atlas* at = desk_font(d, semibold, px);
-    int32_t avail = box.w - 2 * lpx(d, 8), tw, ink, x;
+    int32_t avail = box.w - 2 * pad, tw, ink, x;
     uint32_t i;
     if (at == NULL || avail <= 0) {
         return;
@@ -695,6 +695,10 @@ static void draw_text_centered(desk* d, sel_gui_rect box, const char* s, int sem
     }
 }
 
+
+static void draw_text_centered(desk* d, sel_gui_rect box, const char* s, int semibold, int px, uint32_t argb) {
+    draw_text_centered_pad(d, box, s, semibold, px, argb, lpx(d, 8));
+}
 
 static int rect_inside(sel_gui_rect b, sel_gui_rect area) {
     return b.x >= area.x && b.y >= area.y && b.x + b.w <= area.x + area.w && b.y + b.h <= area.y + area.h;
@@ -777,10 +781,14 @@ static void hover_prune(desk* d, sel_gui_rect area) {
 
 /* The one button primitive (I272): a rounded fill and a centred label, with the hover state from the pointer. Every
  * button, chip and tab goes through here. */
-static void draw_button(desk* d, sel_gui_rect box, uint32_t base, const char* label, int px, uint32_t ink) {
+static void draw_button_pad(desk* d, sel_gui_rect box, uint32_t base, const char* label, int px, uint32_t ink, int32_t pad) {
     hover_reg(d, box);
     sel_gui_round_rect(d->canvas, box, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), hover_fill_of(d, box, base));
-    draw_text_centered(d, box, label, 1, px, ink);
+    draw_text_centered_pad(d, box, label, 1, px, ink, pad);
+}
+
+static void draw_button(desk* d, sel_gui_rect box, uint32_t base, const char* label, int px, uint32_t ink) {
+    draw_button_pad(d, box, base, label, px, ink, lpx(d, 8));
 }
 
 /* Fill the box with the surface colour, then draw the text (regular 13 pixel Inter, ellipsized), and mark the box
@@ -4812,9 +4820,10 @@ static void draw_library(desk* d) {
         for (m = 0; m < LIB_MODES; m++) { /* the mode tabs: the active one in the accent colour */
             sel_gui_rect tr = lib_tab_rect(d, mn, m);
             if (m == d->lib_mode) { /* the active tab is filled like the selected Home and Search chips (I362) */
-                draw_button(d, tr, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), lib_mode_name[m], 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
-            } else {
-                draw_text_centered(d, tr, lib_mode_name[m], 0, 14, muted); /* centred as on the active pill (I445) */
+                draw_button_pad(d, tr, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), lib_mode_name[m], 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]),
+                                lib_tab_pad(d));
+            } else { /* I547: the centring pad is the tab's own pad, so a tab squeezed below 8 px still shows its whole label */
+                draw_text_centered_pad(d, tr, lib_mode_name[m], 0, 14, muted, lib_tab_pad(d)); /* centred as on the active pill (I445) */
             }
         }
         if (lib_view_on(d, st) && d->lib_mode == 2u && st->view->drill_n > 0u) {
@@ -6121,6 +6130,25 @@ static sel_gui_rect sidebar_door_rect(const desk* d, uint32_t i) {
     int32_t g = sp / 2, row = lpx(d, 40);
     int32_t y = r.y + g + 2 * sp + lpx(d, HOME_BRAND) + lpx(d, 12) + (int32_t)i * row;
     return rect_of(r.x + g + sp, y, r.w - 2 * g - 2 * sp, row);
+}
+
+/* I547: the width the labelled rail needs on the bitmap tier: the door inset, the row pad, icon, icon gap and the measured
+ * widest label (the shorter form where a door has one, as draw_sidebar falls back to it), and the pad again so the label
+ * never touches the edge of the highlighted row. 0 off the bitmap tier (the layout keeps its own widths). */
+static uint32_t desk_rail_w(desk* d) {
+    const sel_gui_atlas* at = desk_font(d, 1, 15);
+    int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]), widest = 0, w;
+    uint32_t i;
+    if (!desk_bitmap_text(d) || at == NULL) {
+        return 0u;
+    }
+    for (i = 0; i < DOOR_COUNT; i++) {
+        const char* s = g_doors[i].shorter != NULL ? g_doors[i].shorter : g_doors[i].label;
+        int32_t tw = sel_gui_text_width(at, s, strlen(s));
+        widest = tw > widest ? tw : widest;
+    }
+    w = 2 * (sp / 2 + sp) + 2 * lpx(d, 12) + lpx(d, 22) + lpx(d, 8) + widest;
+    return (uint32_t)px_to_logical_ceil(d, w);
 }
 
 /* The door under a point, -1 for none. */
@@ -8386,7 +8414,7 @@ static void desk_replay_resizes(desk* d) {
     char msg[96];
     while (sscanf(p, "%ux%u%n", &w, &h, &used) == 2) {
         uint32_t i;
-        sel_uim_layout_compute_tier(&d->layout, w, h, desk_bitmap_text(d) ? SEL_UIM_TIER_BITMAP : SEL_UIM_TIER_DEFAULT);
+        sel_uim_layout_compute_rail(&d->layout, w, h, desk_bitmap_text(d) ? SEL_UIM_TIER_BITMAP : SEL_UIM_TIER_DEFAULT, desk_rail_w(d));
         printf("layout width=%u height=%u id=%s regions=%u check=%s\n", w, h,
                sel_uim_breakpoint_name(d->layout.breakpoint), (unsigned)d->layout.count,
                sel_uim_layout_check(&d->layout, msg, sizeof msg) == 0 ? "ok" : msg);
@@ -8588,8 +8616,8 @@ static int32_t desk_scale_for(const desk* d, int32_t w, int32_t h) {
 
 /* The layout runs at the logical size: the canvas divided by the scale. */
 static void desk_relayout(desk* d) {
-    sel_uim_layout_compute_tier(&d->layout, (uint32_t)px_to_logical(d, d->canvas->w), (uint32_t)px_to_logical(d, cvh(d)),
-                                desk_bitmap_text(d) ? SEL_UIM_TIER_BITMAP : SEL_UIM_TIER_DEFAULT);
+    sel_uim_layout_compute_rail(&d->layout, (uint32_t)px_to_logical(d, d->canvas->w), (uint32_t)px_to_logical(d, cvh(d)),
+                                desk_bitmap_text(d) ? SEL_UIM_TIER_BITMAP : SEL_UIM_TIER_DEFAULT, desk_rail_w(d));
 }
 
 /* The backend density changed (a window moved to another screen): the scale follows, the zoom stays. */
