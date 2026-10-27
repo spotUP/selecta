@@ -3,11 +3,9 @@
 #ifndef SELECTA_CTLEXEC_H
 #define SELECTA_CTLEXEC_H
 
+#include "ctlsock.h" /* SEL_CTL_REPLY_MAX */
 #include <selecta/engine.h>
 #include <stddef.h>
-
-/* Reply buffer size for the socket and the ARexx port: COMMANDS is about 7 KB, so the cap is more than twice that. */
-#define SEL_CTL_REPLY_MAX 16384u
 
 /* Sends `line`, pumps the engine and builds the reply from the events of that line:
  * - an ERROR event: rc = 10, reply `<code> <detail>`, result lines dropped;

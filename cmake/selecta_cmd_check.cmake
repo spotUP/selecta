@@ -1,0 +1,36 @@
+# Build-time check of include/selecta/commands.def (plan 2026-10-25-m4-arexx section 4.3): every SEL_CMD row has the
+# five columns (id, args, area, argnames, label), the label starts with a capital, and the number of argument names
+# equals the number of argument letters in the signature ('?' and '*' are not letters). Also runnable as a script:
+#   cmake -DSEL_CMD_DEF=<file> -P cmake/selecta_cmd_check.cmake
+
+function(sel_check_commands_def file)
+  file(STRINGS "${file}" rows REGEX "^SEL_CMD\\(")
+  foreach(row IN LISTS rows)
+    if(NOT row MATCHES "^SEL_CMD\\(([A-Z0-9_]+), \"([^\"]*)\", \"([^\"]*)\", \"([^\"]*)\", \"([^\"]*)\"\\)")
+      message(FATAL_ERROR "commands.def row without argnames and label: ${row}")
+    endif()
+    set(id "${CMAKE_MATCH_1}")
+    set(sig "${CMAKE_MATCH_2}")
+    set(names "${CMAKE_MATCH_4}")
+    set(label "${CMAKE_MATCH_5}")
+    if(NOT label MATCHES "^[A-Z][A-Za-z ]+$")
+      message(FATAL_ERROR "commands.def ${id}: label '${label}' must be English words starting with a capital")
+    endif()
+    string(REGEX REPLACE "[?*]" "" letters "${sig}")
+    string(LENGTH "${letters}" nletters)
+    if(names STREQUAL "")
+      set(nnames 0)
+    else()
+      string(REPLACE " " ";" name_list "${names}")
+      list(LENGTH name_list nnames)
+    endif()
+    if(NOT nletters EQUAL nnames)
+      message(FATAL_ERROR "commands.def ${id}: ${nnames} argnames for signature '${sig}' (${nletters} arguments)")
+    endif()
+  endforeach()
+endfunction()
+
+if(SEL_CMD_DEF)
+  sel_check_commands_def("${SEL_CMD_DEF}")
+  message(STATUS "commands.def check passed")
+endif()

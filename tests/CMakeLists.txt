@@ -696,7 +696,21 @@ if(NOT SEL_AMIGA)
   target_link_libraries(ctl_exec_test PRIVATE selecta_core)
   add_test(NAME ctl-exec-result COMMAND ctl_exec_test status)
   add_test(NAME commands-reflection-format COMMAND ctl_exec_test commands)
-  set_tests_properties(ctl-exec-result commands-reflection-format PROPERTIES TIMEOUT 60 LABELS engine
+  add_test(NAME result-event-commands COMMAND ctl_exec_test raw)
+  # M4-AX-2-1: the commands.def build check accepts the real table and rejects a row without a label and one whose
+  # argnames do not match the signature.
+  add_test(NAME commands-def-check COMMAND ${CMAKE_COMMAND} -DSEL_CMD_DEF=${PROJECT_SOURCE_DIR}/include/selecta/commands.def
+           -P ${PROJECT_SOURCE_DIR}/cmake/selecta_cmd_check.cmake)
+  add_test(NAME commands-def-check-no-label COMMAND ${CMAKE_COMMAND}
+           -DSEL_CMD_DEF=${CMAKE_CURRENT_SOURCE_DIR}/cmake_fixtures/commands_no_label.def
+           -P ${PROJECT_SOURCE_DIR}/cmake/selecta_cmd_check.cmake)
+  add_test(NAME commands-def-check-bad-argnames COMMAND ${CMAKE_COMMAND}
+           -DSEL_CMD_DEF=${CMAKE_CURRENT_SOURCE_DIR}/cmake_fixtures/commands_bad_argnames.def
+           -P ${PROJECT_SOURCE_DIR}/cmake/selecta_cmd_check.cmake)
+  set_tests_properties(commands-def-check PROPERTIES PASS_REGULAR_EXPRESSION "commands.def check passed")
+  set_tests_properties(commands-def-check-no-label PROPERTIES PASS_REGULAR_EXPRESSION "without argnames and label")
+  set_tests_properties(commands-def-check-bad-argnames PROPERTIES PASS_REGULAR_EXPRESSION "2 argnames for signature")
+  set_tests_properties(ctl-exec-result commands-reflection-format result-event-commands PROPERTIES TIMEOUT 60 LABELS engine
                        PASS_REGULAR_EXPRESSION "ctl_exec: ok")
 endif()
 

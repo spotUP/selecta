@@ -1,6 +1,6 @@
 /* Control socket (plan M1.2 phase 6, design doc section 8): a Unix domain
  * socket the shell listens on and `selecta-cli send` writes to. One protocol
- * line in, one reply line out, one connection per line. POSIX only; the
+ * line in, one reply out (one line, or `OK`, result lines and a closing `.`), one connection per line. POSIX only; the
  * Amiga's equivalent is the ARexx port (M4). */
 #ifndef SELECTA_CTLSOCK_H
 #define SELECTA_CTLSOCK_H
@@ -10,6 +10,9 @@
 /* $SELECTA_SOCKET, else $XDG_RUNTIME_DIR/selecta.sock, else
  * $TMPDIR/selecta-<uid>.sock (TMPDIR defaults to /tmp). 0 when it does not fit. */
 int sel_ctl_path(char* out, size_t cap);
+
+/* Reply buffer size for the socket and the ARexx port: COMMANDS is about 7 KB, so the cap is more than twice that. */
+#define SEL_CTL_REPLY_MAX 16384u
 
 #define SEL_CTL_ALREADY_RUNNING (-2)
 
@@ -27,8 +30,8 @@ int sel_ctl_serve(int fd, int timeout_ms, sel_ctl_handler handler, void* ctx);
 
 void sel_ctl_close(int fd, const char* path);
 
-/* Client: sends one line, stores the reply (no newline). 0 on success, -1 when
- * nothing listens on `path`. */
+/* Client: sends one line, stores the whole reply (read to the end of the stream, which may span lines: `OK`,
+ * result lines, `.`), without the trailing newline. 0 on success, -1 when nothing listens on `path`. */
 int sel_ctl_send(const char* path, const char* line, char* reply, size_t cap);
 
 #endif /* SELECTA_CTLSOCK_H */

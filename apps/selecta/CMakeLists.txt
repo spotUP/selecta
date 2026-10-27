@@ -1,4 +1,4 @@
-add_executable(selecta main.c ../common/integration_host.c ../common/catalogue.c)
+add_executable(selecta main.c ../common/integration_host.c ../common/catalogue.c ../common/ctlexec.c)
 target_include_directories(selecta PRIVATE ../common)
 target_include_directories(selecta PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
 target_link_libraries(selecta PRIVATE selecta_registry)

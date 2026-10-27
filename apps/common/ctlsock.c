@@ -110,7 +110,7 @@ static int read_line(int fd, char* buf, size_t cap) {
 
 int sel_ctl_serve(int fd, int timeout_ms, sel_ctl_handler handler, void* ctx) {
     struct pollfd p;
-    char line[CTL_LINE_MAX], reply[CTL_LINE_MAX];
+    char line[CTL_LINE_MAX], reply[SEL_CTL_REPLY_MAX];
     int c, accepted = 0;
     p.fd = fd;
     p.events = POLLIN;
@@ -122,12 +122,19 @@ int sel_ctl_serve(int fd, int timeout_ms, sel_ctl_handler handler, void* ctx) {
         return 0;
     }
     if (read_line(c, line, sizeof line)) {
-        size_t n;
+        size_t n, sent;
         reply[0] = '\0';
         accepted = handler(ctx, line, reply, sizeof reply - 1) ? 1 : 0;
         n = strlen(reply);
         reply[n] = '\n';
-        (void)!write(c, reply, n + 1);
+        n++;
+        for (sent = 0; sent < n;) {
+            ssize_t w = write(c, reply + sent, n - sent);
+            if (w <= 0) {
+                break;
+            }
+            sent += (size_t)w;
+        }
     }
     close(c);
     return accepted;
@@ -154,11 +161,14 @@ int sel_ctl_send(const char* path, const char* line, char* reply, size_t cap) {
         return -1;
     }
     while (n + 1 < cap) {
-        char c;
-        if (read(fd, &c, 1) <= 0 || c == '\n') {
+        ssize_t r = read(fd, reply + n, cap - 1 - n);
+        if (r <= 0) {
             break;
         }
-        reply[n++] = c;
+        n += (size_t)r;
+    }
+    if (n > 0 && reply[n - 1] == '\n') {
+        n--;
     }
     reply[n] = '\0';
     close(fd);

@@ -13,16 +13,18 @@ typedef struct sel_msg_info {
     const char* name;
     const char* args;
     const char* area; /* commands only: the commands.def section; NULL for events */
+    const char* argnames; /* commands only: the commands.def argument names; NULL for events */
+    const char* label;    /* commands only: the commands.def label; NULL for events */
 } sel_msg_info;
 
 static const sel_msg_info k_cmds[] = {
-#define SEL_CMD(id, args, area) {#id, args, area},
+#define SEL_CMD(id, args, area, argnames, label) {#id, args, area, argnames, label},
 #include <selecta/commands.def>
 #undef SEL_CMD
 };
 
 static const sel_msg_info k_evts[] = {
-#define SEL_EVT(id, args) {#id, args, NULL},
+#define SEL_EVT(id, args) {#id, args, NULL, NULL, NULL},
 #include <selecta/events.def>
 #undef SEL_EVT
 };
@@ -67,6 +69,14 @@ const char* sel_cmd_args(uint32_t id) {
 const char* sel_cmd_area(uint32_t id) {
     const sel_msg_info* i = info_of(SEL_MSG_CMD, id);
     return i ? i->area : NULL;
+}
+const char* sel_cmd_argnames(uint32_t id) {
+    const sel_msg_info* i = info_of(SEL_MSG_CMD, id);
+    return i ? i->argnames : NULL;
+}
+const char* sel_cmd_label(uint32_t id) {
+    const sel_msg_info* i = info_of(SEL_MSG_CMD, id);
+    return i ? i->label : NULL;
 }
 int sel_cmd_by_name(const char* name, uint32_t* out) {
     return by_name(SEL_MSG_CMD, name, out);

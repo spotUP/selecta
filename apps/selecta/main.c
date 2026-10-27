@@ -26,6 +26,7 @@
 #ifndef SEL_NO_CONTROL_SOCKET
 #include "ctlsock.h"
 #endif
+#include "ctlexec.h"
 #include "catalogue.h"
 #include "integration_host.h"
 #include "db.h"
@@ -290,29 +291,25 @@ static void send_line(sel_engine* e, const char* line) {
 typedef struct ctl_ctx {
     sel_engine* engine;
     void** sink_ctx;
-    char err[160];
 } ctl_ctx;
 
-static void ctl_sink(void* ctx, const sel_message* evt) {
-    ctl_ctx* c = ctx;
-    if (evt->id == SEL_EVT_ERROR && c->err[0] == '\0') {
-        snprintf(c->err, sizeof c->err, "ERROR %s %s", evt->args[0].v.s, evt->argc > 1 ? evt->args[1].v.s : "");
-    }
-    sink(c->sink_ctx, evt);
+static void ctl_fwd(void* ctx, const sel_message* evt) {
+    sink(((ctl_ctx*)ctx)->sink_ctx, evt);
 }
 
 static int ctl_handle(void* ctx, const char* line, char* reply, size_t cap) {
     ctl_ctx* c = ctx;
-    char pool[1024];
+    char out[SEL_CTL_REPLY_MAX - 8u]; /* room for "OK\n" and "\n." around the result lines */
     int rc;
-    c->err[0] = '\0';
-    rc = sel_engine_send_line(c->engine, line, pool, sizeof pool);
-    sel_engine_pump(c->engine, ctl_sink, c); /* a rejected line queued its ERROR event */
-    if (rc != SEL_CODEC_OK && c->err[0] == '\0') {
-        snprintf(c->err, sizeof c->err, "ERROR %s", sel_codec_strerror(rc));
+    sel_ctl_exec_fwd(c->engine, line, out, sizeof out, &rc, ctl_fwd, c);
+    if (rc != 0) {
+        snprintf(reply, cap, "ERROR %s", out);
+    } else if (out[0] != '\0') {
+        snprintf(reply, cap, "OK\n%s\n.", out);
+    } else {
+        snprintf(reply, cap, "OK");
     }
-    snprintf(reply, cap, "%s", c->err[0] != '\0' ? c->err : "OK");
-    return c->err[0] == '\0';
+    return rc == 0;
 }
 #endif
 

@@ -167,6 +167,10 @@
 #define SEL_DEFERRED_PATH_MAX 1024u
 #define SEL_ERROR_DETAIL_MAX 64
 #define SEL_LOG_LINE_MAX 96
+/* RESULT lines (COMMANDS, EVENTS, TAGTYPES, STATUS) are copied into a per-engine arena that lives until the event queue
+ * is drained at the end of a pump. One line holds at most SEL_RESULT_LINE_MAX bytes. */
+#define SEL_RESULT_ARENA_MAX 24576u
+#define SEL_RESULT_LINE_MAX 255u
 #define SEL_SYNC_QUEUE SEL_SOURCE_MAX /* LIBRARY_SYNCs waiting behind the running sync or scan (I527): one per source,
                                        * so the sync-all banner never loses a source to sync_busy */
 #define SEL_SCAN_QUEUE 8u /* LIBRARY_SCAN roots waiting behind the running scan (I506) */
@@ -318,6 +322,9 @@ struct sel_engine {
     char error_detail[8][SEL_ERROR_DETAIL_MAX];
     uint32_t log_slot;
     char log_line[8][SEL_LOG_LINE_MAX];
+    char result_arena[SEL_RESULT_ARENA_MAX];
+    uint32_t result_used;
+    int result_overflow;
     uint32_t (*registry_count)(void);
     const sel_tag* (*registry_get)(uint32_t index);
     uint32_t rate;
@@ -659,6 +666,29 @@ static void emit_log(sel_engine* e, const char* a, const char* b) {
     snprintf(slot, SEL_LOG_LINE_MAX, "%s %s", a, b ? b : "");
     evt_init(&m, SEL_EVT_LOG);
     evt_str(&m, slot);
+    emit(e, &m);
+}
+
+/* One RESULT line answering the verb being dispatched. The text is copied, so it may live on the caller's stack. A
+ * line that does not fit the arena (or is over SEL_RESULT_LINE_MAX) is dropped and one result_truncated ERROR is
+ * emitted per pump; the control layer then answers the whole command with that error. */
+static void emit_result(sel_engine* e, const char* text) {
+    size_t len = strlen(text);
+    sel_message m;
+    char* dst;
+
+    if (len > SEL_RESULT_LINE_MAX || e->result_used + len + 1u > SEL_RESULT_ARENA_MAX) {
+        if (!e->result_overflow) {
+            e->result_overflow = 1;
+            sel_engine_report_error(e, "result_truncated", NULL);
+        }
+        return;
+    }
+    dst = e->result_arena + e->result_used;
+    memcpy(dst, text, len + 1u);
+    e->result_used += (uint32_t)len + 1u;
+    evt_init(&m, SEL_EVT_RESULT);
+    evt_str(&m, dst);
     emit(e, &m);
 }
 
@@ -1146,9 +1176,11 @@ static void cmd_COMMANDS(sel_engine* e, const sel_message* m) {
     uint32_t i;
     (void)m;
     for (i = 0; i < SEL_CMD_COUNT; i++) {
-        char fields[96];
-        snprintf(fields, sizeof fields, "%s area=%s", sel_cmd_args(i), sel_cmd_area(i));
-        emit_log(e, sel_cmd_name(i), fields);
+        char line[SEL_RESULT_LINE_MAX + 1u];
+        const char* names = sel_cmd_argnames(i);
+        snprintf(line, sizeof line, "%s%s%s\t%s\targs=%s area=%s", sel_cmd_name(i), names[0] ? " " : "", names,
+                 sel_cmd_label(i), sel_cmd_args(i), sel_cmd_area(i));
+        emit_result(e, line);
     }
 }
 
@@ -1156,7 +1188,9 @@ static void cmd_EVENTS(sel_engine* e, const sel_message* m) {
     uint32_t i;
     (void)m;
     for (i = 0; i < SEL_EVT_COUNT; i++) {
-        emit_log(e, sel_evt_name(i), sel_evt_args(i));
+        char line[SEL_RESULT_LINE_MAX + 1u];
+        snprintf(line, sizeof line, "%s %s", sel_evt_name(i), sel_evt_args(i));
+        emit_result(e, line);
     }
 }
 
@@ -1166,7 +1200,7 @@ static void cmd_TAGTYPES(sel_engine* e, const sel_message* m) {
     (void)m;
     for (i = 0; i < count; i++) {
         if ((table[i].tag & 0xF000u) == 0x8000u) {
-            emit_log(e, table[i].name, NULL);
+            emit_result(e, table[i].name);
         }
     }
 }
@@ -5842,6 +5876,8 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
         }
         delivered++;
     }
+    e->result_used = 0; /* every RESULT line was delivered */
+    e->result_overflow = 0;
     return delivered;
 }
 

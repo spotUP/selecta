@@ -52,6 +52,27 @@ static int line_ok(const char* s) {
     return strncmp(p, "\targs=", 6) == 0;
 }
 
+/* I320: COMMANDS delivers one RESULT event per verb, each line intact at sink time (the old LOG ring of 8 slots
+ * overwrote lines before the sink read them). */
+typedef struct {
+    unsigned results;
+    unsigned intact;
+    unsigned logs;
+} raw_count;
+
+static void raw_sink(void* ctx, const sel_message* m) {
+    raw_count* c = ctx;
+    if (m->id == SEL_EVT_RESULT) {
+        const char* s = m->args[0].v.s;
+        const char* name = sel_cmd_name(c->results < SEL_CMD_COUNT ? c->results : 0);
+        size_t n = strlen(name);
+        c->intact += strncmp(s, name, n) == 0 && (s[n] == ' ' || s[n] == '\t');
+        c->results++;
+    } else if (m->id == SEL_EVT_LOG) {
+        c->logs++;
+    }
+}
+
 int main(int argc, char** argv) {
     sel_engine_config cfg;
     sel_engine* e;
@@ -69,6 +90,14 @@ int main(int argc, char** argv) {
         CHECK(sel_ctl_exec(e, "STATUS", reply, sizeof reply, &rc) == 1);
         CHECK(rc == 0);
         CHECK(strstr(reply, "state=stopped") != NULL);
+    } else if (strcmp(mode, "raw") == 0) {
+        raw_count c = {0, 0, 0};
+        char pool[256];
+        sel_engine_send_line(e, "COMMANDS", pool, sizeof pool);
+        sel_engine_pump(e, raw_sink, &c);
+        CHECK(c.results == SEL_CMD_COUNT);
+        CHECK(c.intact == SEL_CMD_COUNT);
+        CHECK(c.logs == 0);
     } else {
         unsigned lines = 0;
         char* p = reply;
