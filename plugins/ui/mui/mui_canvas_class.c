@@ -11,6 +11,7 @@
 #include <clib/alib_protos.h>
 #include <clib/muimaster_protos.h>
 #include <inline/macros.h>
+#include "amiga/p96_write.h"
 #include <proto/exec.h>
 #include <proto/graphics.h>
 #include <proto/intuition.h>
@@ -31,22 +32,13 @@ typedef struct canvas_data {
 
 static struct MUI_CustomClass* g_class;
 
-struct canvas_render_info {
-    APTR memory;
-    WORD bytes_per_row;
-    WORD pad;
-    ULONG rgb_format;
-};
-#define CANVAS_FMT_A8R8G8B8 6u /* Picasso96.h RGBFB_A8R8G8B8, as in backend_rtg.c */
-
 static void canvas_push(struct Library* p96, const uint32_t* px, int32_t w, int32_t h, struct RastPort* rp, int32_t dx, int32_t dy) {
-    struct canvas_render_info ri;
+    struct p96_render_info ri;
     ri.memory = (APTR)px;
     ri.pad = 0;
     ri.bytes_per_row = (WORD)(w * 4);
-    ri.rgb_format = CANVAS_FMT_A8R8G8B8;
-    LP8NR(0x66, p96WritePixelArray, struct canvas_render_info*, &ri, a0, UWORD, 0, d0, UWORD, 0, d1, struct RastPort*, rp, a1,
-          UWORD, dx, d2, UWORD, dy, d3, UWORD, w, d4, UWORD, h, d5, , p96);
+    ri.rgb_format = P96_FMT_A8R8G8B8;
+    p96_write_pixel_array(p96, &ri, 0, 0, rp, dx, dy, w, h);
 }
 
 static ULONG canvas_new(struct IClass* cl, Object* obj, Msg msg) {
