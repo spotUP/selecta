@@ -101,7 +101,7 @@ int main(int argc, char** argv) {
     tdesc = sel_registry_find(SEL_PLUGIN_KIND_UI, "text");
     thooks = tdesc != NULL ? (const sel_tag*)sel_tag_find(tdesc, SEL_PLUGIN_TAGS, 0) : NULL;
     CHECK(thooks != NULL, "text UI not registered");
-    CHECK(sel_registry_find(SEL_PLUGIN_KIND_UI, "mui") == NULL, "mui is registered on the host");
+    CHECK(sel_registry_find(SEL_PLUGIN_KIND_UI, "mui") != NULL, "mui is not registered on the host (MUI-P1-4)");
     memset(&cfg, 0, sizeof cfg);
     cfg.registry_count = sel_registry_count;
     cfg.registry_get = sel_registry_get;

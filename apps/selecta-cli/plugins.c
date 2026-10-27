@@ -83,6 +83,9 @@ int sel_cli_plugins(int argc, char** argv) {
     }
     for (i = 0; i < n; i++) {
         const sel_tag* d = sel_registry_get(i);
+        if (sel_tag_find(d, SEL_PLUGIN_KIND, 0) == SEL_PLUGIN_KIND_UI && !sel_registry_ui_listed(d)) {
+            continue; /* a UI whose system library is absent is registered but not listed (MUI-P1-6) */
+        }
         printf("%s kind=%u version=%u\n", (const char*)sel_tag_find(d, SEL_PLUGIN_ID, (uintptr_t) "?"),
                (unsigned)sel_tag_find(d, SEL_PLUGIN_KIND, 0),
                (unsigned)sel_tag_find(d, SEL_PLUGIN_VERSION, 0));

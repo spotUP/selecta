@@ -133,6 +133,9 @@ SEL_TAG(UI, VIEW_STYLES,       0x5005, INT)
 SEL_TAG(UI, NEEDS_RTG,         0x5006, INT)
 SEL_TAG(UI, HOTKEYS,           0x5007, PTR)
 SEL_TAG(UI, STATS,             0x5008, PTR)
+/* MUI-P1-6: 0 when the UI is registered but its system library is absent. The tag missing means present. UI lists and
+ * the default UI pick skip a UI with 0; an explicit --ui still opens it, and its open reports why it cannot. */
+SEL_TAG(UI, PRESENT,              0x506E, INT)
 /* VIEW_CHANGED / VIEW_ROWS: where the view window stands. */
 SEL_TAG(UI, ROW_COUNT,         0x5009, INT)
 SEL_TAG(UI, CURSOR,            0x500A, INT)

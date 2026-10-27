@@ -141,6 +141,11 @@ const sel_tag* sel_registry_get(uint32_t index) {
     return index < g_count ? g_desc[index] : NULL;
 }
 
+int sel_registry_ui_listed(const sel_tag* desc) {
+    const sel_tag* hooks = desc != NULL ? (const sel_tag*)sel_tag_find(desc, SEL_PLUGIN_TAGS, 0) : NULL;
+    return hooks == NULL || sel_tag_find(hooks, SEL_UI_PRESENT, 1) != 0;
+}
+
 const sel_tag* sel_registry_find(uint32_t kind, const char* id) {
     uint32_t i;
     for (i = 0; i < g_count; i++) {

@@ -46,7 +46,7 @@ typedef struct mui_state {
 } mui_state;
 
 static mui_state g_state;
-static sel_tag g_hooks[8];
+static sel_tag g_hooks[9];
 static sel_tag g_desc[5];
 
 static void put_tag(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -168,7 +168,7 @@ static void mui_report(mui_fail why) {
 
 static void* mui_open(const sel_ui_open_args* a) {
     (void)a;
-    mui_report(MUI_FAIL_NO_WINDOW);
+    mui_report(mui_present() ? MUI_FAIL_NO_WINDOW : MUI_FAIL_NO_LIBRARY);
     return NULL; /* the host has no MUI: the shell keeps its current UI */
 }
 
@@ -200,9 +200,6 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
 #ifdef SEL_MUI_NATIVE
     mui_set_probe(mui_native_probe);
 #endif
-    if (!mui_present()) {
-        return NULL; /* MUI 3.8 absent: the registry does not list the UI (MUI-P1-6) */
-    }
     memset(&g_state, 0, sizeof g_state);
     put_tag(&g_hooks[0], SEL_UI_NAME, (uintptr_t) "MUI");
     put_tag(&g_hooks[1], SEL_UI_OPEN, SEL_TAG_FN(mui_open));
@@ -211,7 +208,10 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     put_tag(&g_hooks[4], SEL_UI_STATS, SEL_TAG_FN(mui_stats));
     /* Planar-safe mask: the descriptor is static, an RTG screen widens it when the window opens (MUI-P6). */
     put_tag(&g_hooks[5], SEL_UI_VIEW_STYLES, mui_style_mask(0));
-    put_tag(&g_hooks[6], SEL_TAG_END, 0);
+    /* MUI 3.8 absent: still registered so an explicit --ui mui reaches mui_open and its requester, but not listed
+     * or auto-picked (MUI-P1-6, Johan 2026-10-27). */
+    put_tag(&g_hooks[6], SEL_UI_PRESENT, (uintptr_t)(mui_present() != 0));
+    put_tag(&g_hooks[7], SEL_TAG_END, 0);
 
     put_tag(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_UI);
     put_tag(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "mui");

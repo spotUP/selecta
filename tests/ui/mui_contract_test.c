@@ -1,6 +1,7 @@
 /* mui-wait-contract (MUI-P1-7), mui-registry (MUI-P1-6), mui-open-failure (MUI-P1-4), plan 2026-10-25-amiga-mui.md.
  * Usage: mui_contract_test wait|registry|failure */
 #include <selecta/plugin.h>
+#include <selecta/registry.h>
 #include <selecta/ui.h>
 #include <selecta/uimodel.h>
 
@@ -77,12 +78,15 @@ static void test_wait(void) {
 static void test_registry(void) {
     const sel_tag* d;
     mui_set_probe(probe_no);
-    CHECK(sel_plugin_entry_mui_test(1u) == NULL, "mui listed although MUI is absent");
+    d = sel_plugin_entry_mui_test(1u);
+    CHECK(d != NULL && strcmp((const char*)sel_tag_find(d, SEL_PLUGIN_ID, 0), "mui") == 0, "mui not registered when absent");
+    CHECK(!sel_registry_ui_listed(d), "mui listed although MUI is absent");
     mui_set_probe(NULL);
-    CHECK(sel_plugin_entry_mui_test(1u) == NULL, "mui listed with no probe");
+    d = sel_plugin_entry_mui_test(1u);
+    CHECK(d != NULL && !sel_registry_ui_listed(d), "mui listed with no probe");
     mui_set_probe(probe_yes);
     d = sel_plugin_entry_mui_test(1u);
-    CHECK(d != NULL && strcmp((const char*)sel_tag_find(d, SEL_PLUGIN_ID, 0), "mui") == 0, "mui not listed with MUI");
+    CHECK(d != NULL && sel_registry_ui_listed(d), "mui not listed with MUI");
 }
 
 static void test_failure(void) {
