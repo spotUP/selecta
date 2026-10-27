@@ -151,6 +151,51 @@ static void test_menu_dispatch(void) {
     CHECK(mui_menu_line("no_such_action") == NULL, "unknown id has a line");
 }
 
+/* mui-weights (MUI-P2-1): horizontal weights equal the region widths and sum to the window width. */
+static void test_weights(void) {
+    static const uint32_t widths[] = {1280, 1024, 800, 640};
+    uint32_t i;
+    for (i = 0; i < 4; i++) {
+        mui_layout_map_t m;
+        sel_uim_layout l;
+        uint32_t sum, s;
+        mui_layout_map(&m, widths[i], 720);
+        sel_uim_layout_compute(&l, widths[i], 720);
+        sum = m.weight_w[MUI_SLOT_SIDEBAR] + m.weight_w[MUI_SLOT_MAIN] + m.weight_w[MUI_SLOT_DETAIL];
+        CHECK(sum == widths[i], "width %u: body weights sum %u", widths[i], sum);
+        for (s = 0; s < l.count; s++) {
+            const char* n = l.regions[s].name;
+            uint32_t slot = strcmp(n, "sidebar") == 0 ? MUI_SLOT_SIDEBAR : strcmp(n, "main") == 0 ? MUI_SLOT_MAIN : strcmp(n, "detail") == 0 ? MUI_SLOT_DETAIL : MUI_SLOT_COUNT;
+            if (slot != MUI_SLOT_COUNT) {
+                CHECK(m.weight_w[slot] == l.regions[s].w, "width %u: %s weight %u != region %u", widths[i], n, m.weight_w[slot], l.regions[s].w);
+            }
+        }
+        CHECK(m.weight_h[MUI_SLOT_PLAYER] + m.weight_h[MUI_SLOT_MAIN] + m.weight_h[MUI_SLOT_SUGGESTION] == 720, "width %u: vertical weights", widths[i]);
+        CHECK(m.balance_sidebar_main == (m.show[MUI_SLOT_SIDEBAR] && m.show[MUI_SLOT_MAIN]), "balance sidebar");
+        CHECK(m.balance_main_detail == (widths[i] >= 1200), "balance detail at %u", widths[i]);
+    }
+}
+
+/* mui-relayout (MUI-P2-2): the shown set per breakpoint; the slot count is fixed, and sel_uim_breakpoint_for decides. */
+static void test_relayout(void) {
+    static const uint32_t widths[] = {1280, 1024, 800, 640};
+    static const uint8_t want[4][MUI_SLOT_COUNT] = {{0, 1, 1, 1, 1}, {0, 1, 1, 0, 1}, {0, 1, 1, 0, 1}, {1, 0, 1, 0, 1}};
+    mui_layout_map_t m;
+    uint32_t i, s, flips = 99;
+    mui_layout_map(&m, 1280, 720);
+    for (i = 0; i < 4; i++) {
+        uint32_t changed = mui_layout_relayout(&m, widths[i], 720, &flips);
+        CHECK(m.breakpoint == sel_uim_breakpoint_for(widths[i]), "breakpoint at %u", widths[i]);
+        CHECK(changed == (i != 0 && sel_uim_breakpoint_for(widths[i]) != sel_uim_breakpoint_for(widths[i - 1])), "changed flag at %u", widths[i]);
+        for (s = 0; s < MUI_SLOT_COUNT; s++) {
+            CHECK(m.show[s] == want[i][s], "width %u slot %u show %u", widths[i], s, m.show[s]);
+        }
+    }
+    mui_layout_map(&m, 1280, 720);
+    CHECK(mui_layout_relayout(&m, 1100, 720, &flips) == 1 && flips == 1, "1280 to 1100 hides only detail (flips %u)", flips);
+    CHECK(mui_layout_relayout(&m, 1000, 720, &flips) == 0 && flips == 0, "same breakpoint changes no visibility");
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -165,6 +210,10 @@ int main(int argc, char** argv) {
         test_menu();
     } else if (strcmp(argv[1], "menu-dispatch") == 0) {
         test_menu_dispatch();
+    } else if (strcmp(argv[1], "weights") == 0) {
+        test_weights();
+    } else if (strcmp(argv[1], "relayout") == 0) {
+        test_relayout();
     } else {
         return 2;
     }

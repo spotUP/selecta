@@ -49,4 +49,21 @@ uint32_t mui_menu_build(mui_menu_item* out, uint32_t cap);
  * (desktop_ui.c desk_action_by_id). NULL for an unknown id. */
 const char* mui_menu_line(const char* id);
 
+/* MUI-P2-1: the five layout regions as fixed object slots. The objects are created once; a breakpoint only changes
+ * which are shown (MUIA_ShowMe), never how many exist (MUI-P2-2). weight_w feeds MUIA_HorizWeight of the body row
+ * children (sidebar, main, detail) and weight_h MUIA_VertWeight of body versus player; a hidden slot has show 0. */
+enum { MUI_SLOT_SUGGESTION = 0, MUI_SLOT_SIDEBAR, MUI_SLOT_MAIN, MUI_SLOT_DETAIL, MUI_SLOT_PLAYER, MUI_SLOT_COUNT };
+typedef struct mui_layout_map_t {
+    uint32_t width, height;
+    uint32_t breakpoint; /* SEL_UIM_BP_* from sel_uim_breakpoint_for */
+    uint8_t show[MUI_SLOT_COUNT];
+    uint32_t weight_w[MUI_SLOT_COUNT];
+    uint32_t weight_h[MUI_SLOT_COUNT];
+    uint8_t balance_sidebar_main, balance_main_detail; /* Balance object between two shown panels */
+} mui_layout_map_t;
+void mui_layout_map(mui_layout_map_t* m, uint32_t width, uint32_t height);
+/* Recompute for a new window size. Returns 1 when the breakpoint changed (the caller re-applies ShowMe, *flips counts
+ * the slots whose visibility changed), 0 when only weights move. */
+uint32_t mui_layout_relayout(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t* flips);
+
 #endif

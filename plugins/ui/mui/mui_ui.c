@@ -4,6 +4,7 @@
 #include <selecta/engine.h>
 #include <selecta/plugin.h>
 #include <selecta/ui.h>
+#include <selecta/uimodel.h>
 
 #include <stdint.h>
 #include <stdio.h>
@@ -44,6 +45,10 @@ typedef struct mui_state {
 #ifdef SEL_MUI_NATIVE
     Object* app;
     Object* win;
+    Object* root;                   /* window contents: its MUIA_Width drives the breakpoint (MUI-P2-2) */
+    Object* slot[MUI_SLOT_COUNT];   /* the five layout regions, created once, shown or hidden */
+    Object* balance[2];             /* sidebar|main and main|detail */
+    mui_layout_map_t lay;
 #endif
 } mui_state;
 
@@ -142,6 +147,37 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
     }
 }
 
+/* MUI-P2-1/P2-2: apply a layout map to the fixed objects: weights follow the region sizes, ShowMe hides what the
+ * breakpoint drops. No object is created or disposed here. */
+static void mui_apply_layout(mui_state* s) {
+    uint32_t i;
+    for (i = 0; i < MUI_SLOT_COUNT; i++) {
+        set(s->slot[i], MUIA_ShowMe, s->lay.show[i] ? TRUE : FALSE);
+        set(s->slot[i], MUIA_HorizWeight, s->lay.weight_w[i] > 0 ? s->lay.weight_w[i] : 1);
+        set(s->slot[i], MUIA_VertWeight, s->lay.weight_h[i] > 0 ? s->lay.weight_h[i] : 1);
+    }
+    set(s->balance[0], MUIA_ShowMe, s->lay.balance_sidebar_main ? TRUE : FALSE);
+    set(s->balance[1], MUIA_ShowMe, s->lay.balance_main_detail ? TRUE : FALSE);
+}
+
+/* The window size changed: recompute, and re-apply only when the breakpoint moved (weights are user-adjustable
+ * through the Balance objects, so they are not forced back inside one breakpoint). */
+static void mui_check_resize(mui_state* s) {
+    ULONG w = 0, h = 0;
+    uint32_t flips;
+    if (s->root == NULL) {
+        return;
+    }
+    GetAttr(MUIA_Width, s->root, &w);
+    GetAttr(MUIA_Height, s->root, &h);
+    if (w == 0 || (w == s->lay.width && h == s->lay.height)) {
+        return;
+    }
+    if (mui_layout_relayout(&s->lay, (uint32_t)w, (uint32_t)h, &flips)) {
+        mui_apply_layout(s);
+    }
+}
+
 /* MUI-P1-3: muimaster.library v19 (MUI 3.8), one Application with one Window. The sentinel counts after the window
  * is open (MUI-P1-5), so ui_open_mui=1 proves the window really opened. */
 static void* mui_open(const sel_ui_open_args* a) {
@@ -163,8 +199,17 @@ static void* mui_open(const sel_ui_open_args* a) {
              * never sizes a window beyond its contents' maximum, which left the window 41 pixels high. */
             MUIA_Window_Width, MUIV_Window_Width_Screen(100), MUIA_Window_Height, MUIV_Window_Height_Screen(100),
             MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Centered, MUIA_Window_Menustrip, (ULONG)strip,
-            WindowContents, VGroup, Child, TextObject, MUIA_Text_Contents, (ULONG) "Selecta", End,
-                Child, HVSpace, End, End, End;
+            WindowContents, s->root = VGroup,
+                Child, s->slot[MUI_SLOT_SUGGESTION] = TextObject, MUIA_Text_Contents, (ULONG) "Window is narrow: try the mini layout", End,
+                Child, HGroup,
+                    Child, s->slot[MUI_SLOT_SIDEBAR] = VGroup, Child, TextObject, MUIA_Text_Contents, (ULONG) "Library", End, Child, HVSpace, End,
+                    Child, s->balance[0] = BalanceObject, End,
+                    Child, s->slot[MUI_SLOT_MAIN] = VGroup, Child, TextObject, MUIA_Text_Contents, (ULONG) "Selecta", End, Child, HVSpace, End,
+                    Child, s->balance[1] = BalanceObject, End,
+                    Child, s->slot[MUI_SLOT_DETAIL] = VGroup, Child, TextObject, MUIA_Text_Contents, (ULONG) "Details", End, Child, HVSpace, End,
+                End,
+                Child, s->slot[MUI_SLOT_PLAYER] = TextObject, MUIA_Text_Contents, (ULONG) "Player", End,
+            End, End, End;
     if (s->app == NULL) {
         if (strip != NULL) {
             MUI_DisposeObject(strip);
@@ -188,6 +233,11 @@ static void* mui_open(const sel_ui_open_args* a) {
         return NULL;
     }
     s->wake_mask = 0;
+    mui_layout_map(&s->lay, 1280, 720); /* the initial size is unknown until MUI lays out; the first resize check fixes it */
+    mui_apply_layout(s);
+    s->lay.width = 0;
+    s->lay.breakpoint = SEL_UIM_BP_COUNT; /* no breakpoint yet: the first real size always applies */
+    mui_check_resize(s);
     s->opens++;
     return s;
 }
@@ -196,6 +246,7 @@ static int mui_io_new_input(void* ctx, uint32_t* sigs) {
     ULONG got = 0;
     LONG id = (LONG)DoMethod(((mui_state*)ctx)->app, MUIM_Application_NewInput, &got);
     *sigs = (uint32_t)got;
+    mui_check_resize((mui_state*)ctx);
     if (id >= MENU_ID_BASE && id < MENU_ID_BASE + (LONG)g_menu_n) {
         mui_menu_fire((mui_state*)ctx, (uint32_t)(id - MENU_ID_BASE));
     }
