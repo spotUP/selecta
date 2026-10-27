@@ -11,7 +11,7 @@ static sel_cache* cache_get(sel_library* lib) {
         lib->cache = lib->host->mem_alloc(lib->host, sizeof *lib->cache, SEL_MEM_FAST);
         if (lib->cache != NULL) {
             memset(lib->cache, 0, sizeof *lib->cache);
-            sel_cache_init(lib->cache, NULL, 0);
+            sel_cache_init(lib->cache, NULL, sel_net_amiga_route());
         }
     }
     return lib->cache;

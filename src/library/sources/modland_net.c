@@ -76,9 +76,17 @@ int sel_modland_net_sync(const sel_local_scan_config* cfg, const char* base, int
     char url[URL_BYTES];
     char root[URL_BYTES];
     unsigned long got = 0;
-    size_t n = strlen(base);
+    sel_mirror_set mirrors;
+    size_t n;
     int day;
 
+    /* Design D9: with the Amiga route the index and changelogs come from the DEViLBOX mirror proxy
+     * (<devilbox>/api/mirror/modland/), the same base the module files use. The route's own base is the last
+     * entry; a SELECTA_MIRROR home mirror in front of it only serves module files. */
+    if (sel_net_amiga_route() && sel_mirrors_init(&mirrors, "modland", 1) > 0) {
+        base = mirrors.base[mirrors.count - 1u];
+    }
+    n = strlen(base);
     memset(net, 0, sizeof *net);
     memset(stats, 0, sizeof *stats);
     while (n > 0 && base[n - 1] == '/') {
@@ -89,7 +97,7 @@ int sel_modland_net_sync(const sel_local_scan_config* cfg, const char* base, int
     }
     memcpy(root, base, n);
     root[n] = '\0';
-    sel_cache_init(&cache, NULL, 0);
+    sel_cache_init(&cache, NULL, sel_net_amiga_route());
     if (snprintf(dir, sizeof dir, "%s/sync/modland", cache.dir) >= (int)sizeof dir || !sel_config_mkdir(dir) ||
         !sel_browse_join(zip, sizeof zip, dir, ZIP_NAME) ||
         !sel_browse_join(listing, sizeof listing, dir, SEL_MODLAND_LISTING)) {

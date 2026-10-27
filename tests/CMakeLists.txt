@@ -1634,6 +1634,15 @@ if(NOT SEL_AMIGA)
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "modland_net_ok")
 endif()
 
+# I550: Modland index sync on the Amiga route (SELECTA_AMIGA_ROUTE=1) hits <devilbox>/api/mirror/modland/.
+if(NOT SEL_AMIGA)
+  add_test(NAME source-modland-amiga-route
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3" -P "${SEL_NET_DIR}/modland_amiga_route.cmake")
+  set_tests_properties(source-modland-amiga-route PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "modland_amiga_route_ok")
+endif()
+
 # M3 Phase 4 (I162a): T73 network part. LIBRARY_SYNC hvsc <url> over the hvsc.c64.org fixture.
 if(NOT SEL_AMIGA)
   add_test(NAME source-hvsc-net
