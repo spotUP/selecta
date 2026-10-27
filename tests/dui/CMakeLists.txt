@@ -172,6 +172,7 @@ set_tests_properties(dui-art-thread-amiga PROPERTIES TIMEOUT 60)
 add_executable(dui_aga_planar_unit aga_planar_unit.c ${PROJECT_SOURCE_DIR}/plugins/ui/desktop/amiga/aga_planar.c)
 target_include_directories(dui_aga_planar_unit PRIVATE ${PROJECT_SOURCE_DIR}/plugins/ui/desktop)
 target_link_libraries(dui_aga_planar_unit PRIVATE selecta_gui)
+target_compile_definitions(dui_aga_planar_unit PRIVATE SELECTA_AGA_BACKEND_SRC="${PROJECT_SOURCE_DIR}/plugins/ui/desktop/amiga/backend_aga.c")
 add_test(NAME dui-aga-planar COMMAND dui_aga_planar_unit)
 set_tests_properties(dui-aga-planar PROPERTIES TIMEOUT 60)
 

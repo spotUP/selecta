@@ -213,7 +213,36 @@ static void test_c2p_pick_large_planes(void) {
     CHECK(desk_aga_c2p_pick(1u << 1, 16385u) == 1u);
 }
 
+/* I566: QueryOverscan is an intuition.library call. desk_aga_default_size opened graphics.library only, so with
+ * ui.desktop.overscan=1 the call went through a NULL IntuitionBase and froze the whole Amiga (rig 2). The backend is
+ * Amiga-only, so this reads its source: every function that reaches QueryOverscan (max_overscan) must run after
+ * intuition.library is opened. */
+static void test_query_overscan_has_intuition(void) {
+    FILE* f = fopen(SELECTA_AGA_BACKEND_SRC, "rb");
+    static char src[40000];
+    size_t n, cap;
+    char *def, *end, *mo, *cl;
+    CHECK(f != NULL);
+    if (f == NULL) return;
+    n = fread(src, 1, sizeof src - 1, f);
+    fclose(f);
+    src[n] = 0;
+    cap = n;
+    (void)cap;
+    def = strstr(src, "void desk_aga_default_size(");
+    CHECK(def != NULL);
+    if (def == NULL) return;
+    end = strstr(def, "\nstatic int fail(");
+    CHECK(end != NULL);
+    if (end == NULL) return;
+    *end = 0;
+    mo = strstr(def, "max_overscan(");
+    cl = strstr(def, "\"intuition.library\"");
+    CHECK(mo != NULL && cl != NULL && cl < mo);
+}
+
 int main(void) {
+    test_query_overscan_has_intuition();
     test_c2p_pick();
     test_c2p_pick_large_planes();
     test_pick_size();

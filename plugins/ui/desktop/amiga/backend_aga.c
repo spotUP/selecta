@@ -135,7 +135,10 @@ void desk_aga_default_size(int32_t* w, int32_t* h) {
     *w = 0;
     *h = 0;
     GfxBase = (struct GfxBase*)OpenLibrary((CONST_STRPTR) "graphics.library", 39);
-    if (GfxBase != NULL) {
+    /* I566: QueryOverscan is an intuition.library call; through the NULL IntuitionBase it jumped into low memory and froze the
+     * whole machine as soon as ui.desktop.overscan was read. */
+    IntuitionBase = (struct IntuitionBase*)OpenLibrary((CONST_STRPTR) "intuition.library", 39);
+    if (GfxBase != NULL && IntuitionBase != NULL) {
         int ntsc = (GfxBase->DisplayFlags & NTSC) != 0;
         int32_t mr[4];
         int32_t mw, mh;
@@ -145,6 +148,8 @@ void desk_aga_default_size(int32_t* w, int32_t* h) {
         desk_aga_overscan_area(g_overscan, &mw, &mh);
         (void)desk_aga_pick_size(w, h, ntsc, mw, mh);
     }
+    if (IntuitionBase != NULL) CloseLibrary((struct Library*)IntuitionBase);
+    IntuitionBase = NULL;
     if (GfxBase != NULL) CloseLibrary((struct Library*)GfxBase);
     GfxBase = NULL;
 }
