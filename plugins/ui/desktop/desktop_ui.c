@@ -1280,10 +1280,17 @@ static void load_tile_art(desk* d, const char* const* keys, uint32_t n) {
     }
 }
 
+/* Reads a pref. Prefs live in the engine, so they are answered by the engine's plugin host only; the host the UI
+ * was opened with is the raw process host, whose config_get always returns the default (I566). */
+static const char* desk_pref(const desk* d, const char* key, const char* def) {
+    const sel_host* h = d->engine != NULL ? sel_engine_plugin_host(d->engine) : NULL;
+    const char* v = h != NULL && h->config_get != NULL ? h->config_get(h, key, def) : def;
+    return v != NULL ? v : def;
+}
+
 /* The pref ui.desktop.reduce_motion and the format governor together decide whether a tween may start. */
 static int desk_motion(const desk* d) {
-    const sel_host* h = sel_engine_plugin_host(d->engine);
-    const char* v = h != NULL && h->config_get != NULL ? h->config_get(h, "ui.desktop.reduce_motion", "0") : "0";
+    const char* v = desk_pref(d, "ui.desktop.reduce_motion", "0");
     return sel_uim_motion_allowed(&d->budget, v != NULL && strcmp(v, "1") == 0);
 }
 
@@ -8981,7 +8988,7 @@ static void* desk_open(const sel_ui_open_args* a) {
     d->zoom_pct = d->zoom_default;
     {
         /* UI Zoom (I458): the pref ui.desktop.zoom, overridden by --zoom; fit, 75, 100, 125 or 150. */
-        const char* zv = a->host != NULL && a->host->config_get != NULL ? a->host->config_get(a->host, "ui.desktop.zoom", "") : "";
+        const char* zv = desk_pref(d, "ui.desktop.zoom", "");
         if (desk_opt(a, "--zoom") != NULL) {
             zv = desk_opt(a, "--zoom");
         }
@@ -9015,7 +9022,7 @@ static void* desk_open(const sel_ui_open_args* a) {
     d->icon_rebuilds = 0u; /* the first build is not a rebuild */
 #ifdef SELECTA_DESKTOP_AGA
     if (want_sdl) { /* I566: Fill Screen (Overscan), read once at open */
-        const char* ov = a->host != NULL && a->host->config_get != NULL ? a->host->config_get(a->host, "ui.desktop.overscan", "0") : "0";
+        const char* ov = desk_pref(d, "ui.desktop.overscan", "0");
         desk_aga_set_overscan(ov != NULL && strcmp(ov, "1") == 0);
     }
 #endif
