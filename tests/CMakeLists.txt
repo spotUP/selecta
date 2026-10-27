@@ -1366,6 +1366,17 @@ if(NOT SEL_AMIGA)
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/home_view"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/home_view.cmake")
   set_tests_properties(home-view PROPERTIES LABELS m3)
+  # I555: history rows of songs that left the library are not listed on Home (empty library shows the hint).
+  add_test(NAME home-stale-history
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue_keys.tsv"
+      "-DSEL=${CMAKE_CURRENT_SOURCE_DIR}/m3/history.sel"
+      "-DSQLITE3=${SEL_SQLITE3_META}"
+      "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m3/home.keys"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/home_stale_history"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/home_stale_history.cmake")
+  set_tests_properties(home-stale-history PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "home_stale_history_ok")
   add_test(NAME stats-screen
     COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>" "-DSELECTA=$<TARGET_FILE:selecta>"
       "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv"
