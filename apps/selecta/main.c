@@ -57,6 +57,12 @@ typedef struct shell_ui {
 
 static shell_ui g_uis[SHELL_MAX_UIS];
 static unsigned g_ui_count;
+static int g_trace; /* --stats: one stderr line per launch phase (I524b) */
+static void sel_trace(const sel_host* h, const char* phase) {
+    if (g_trace) {
+        fprintf(stderr, "trace t_ms=%u %s\n", (unsigned)h->clock_ms(h), phase);
+    }
+}
 static int g_stats; /* --stats: the shell reports what the UIs and prefs did on stdout */
 
 /* ctx[0] = engine (set once it exists), ctx[1] = primary UI state, ctx[2] = integration session. */
@@ -345,7 +351,15 @@ int main(int argc, char** argv)
             return 1;
         }
     }
+    {
+        int ta;
+        for (ta = 1; ta < argc; ta++) {
+            g_trace = g_trace || strcmp(argv[ta], "--stats") == 0;
+        }
+    }
+    sel_trace(host, "main begin");
     sel_registry_init_machine(host, machine_tags);
+    sel_trace(host, "registry init done");
     out_id = option(argc, argv, "--output", sel_registry_default_output(machine_tags));
     is_null = strcmp(out_id, "null") == 0;
     int_id = option(argc, argv, "--integration",
@@ -418,7 +432,9 @@ int main(int argc, char** argv)
     if (cfg.config_dir == NULL && sel_config_dir(cfgdir, sizeof cfgdir)) {
         cfg.config_dir = cfgdir;
     }
+    sel_trace(host, "library open done");
     e = sel_engine_create(host, &cfg);
+    sel_trace(host, "engine created");
     if (e == NULL) {
         fputs("selecta: engine allocation failed\n", stderr);
         return 1;
@@ -454,8 +470,10 @@ int main(int argc, char** argv)
         sel_library_art_provider(library, &art_src);
         args.art = &art_src;
     }
+    sel_trace(host, "output open done, UI open begin");
     for (u = 0; u < g_ui_count; u++) {
         g_uis[u].state = g_uis[u].open(&args);
+        sel_trace(host, "UI open returned");
         if (g_uis[u].state == NULL) {
             fputs("selecta: the UI could not open (no terminal?)\n", stderr);
             while (u-- > 0) {

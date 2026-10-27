@@ -1,11 +1,12 @@
 /* The `hvsc` source sync (plan Phase 4, I162; design doc 9.1): reads the HVSC listing, Songlengths.md5 and
  * STIL.txt from one directory into the catalogue through the same LIBRARY_SYNC command as Modland. Offline
  * by design: the fetch layer puts the three files in <dir>; the canonical URL of a row comes from
- * sel_source_hvsc()->url, which resolves through the Modland host path layout. */
-#ifndef SELECTA_LIBRARY_SOURCES_HVSC_SYNC_H
-#define SELECTA_LIBRARY_SOURCES_HVSC_SYNC_H
+ * the source url hook, which resolves through the Modland host path layout. */
+#ifndef SELECTA_PLUGINS_SOURCES_HVSC_SYNC_H
+#define SELECTA_PLUGINS_SOURCES_HVSC_SYNC_H
 
-#include "local_source.h"
+#include <selecta/host.h>
+#include <selecta/source.h>
 
 #define SEL_HVSC_LISTING "hvsc_listing.txt"    /* one path per line: `/MUSICIANS/H/Hubbard_Rob/Commando.sid` */
 #define SEL_HVSC_SONGLENGTHS "Songlengths.md5" /* `; /PATH` comment line, then `<md5>=<m:ss[.mmm]> ...` */
@@ -22,7 +23,7 @@
 typedef struct sel_hvsc_sync_stats {
     uint32_t listing_rows;    /* listing lines written to the catalogue */
     uint32_t skipped_rows;    /* listing lines outside MUSICIANS/GAMES/DEMOS */
-    uint32_t batches;         /* SEL_LIB_REQ_SCAN_BATCH requests sent */
+    uint32_t batches;         /* unused; kept at 0 (the engine batches the catalogue rows) */
     uint32_t songlengths;     /* Songlengths.md5 entries parsed */
     uint32_t lengths_matched; /* ... that annotated a listed song */
     uint32_t subtunes;        /* subtunes summed over the parsed entries */
@@ -38,6 +39,9 @@ int32_t sel_hvsc_parse_time_ms(const char* text);
 
 /* Applies <dir>/hvsc_listing.txt, then Songlengths.md5 and STIL.txt when present. Returns 0 when the
  * listing cannot be read, memory runs out or the DB rejects a batch. */
-int sel_hvsc_sync(const sel_local_scan_config* cfg, const char* dir, sel_hvsc_sync_stats* stats);
+int sel_hvsc_sync(const sel_host* host, const char* dir, sel_hvsc_sync_stats* stats);
+
+/* Source parse hook: path -> format, artist, name tags (scratch holds the strings). */
+int sel_hvsc_parse(const char* path, char* scratch, size_t n, sel_tag* out);
 
 #endif

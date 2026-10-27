@@ -52,8 +52,6 @@
 #include "sources/local_source.h"
 #include "sources/hippo_publish.h"
 #include "sources/hippo_sync.h"
-#include "sources/hvsc_net.h"
-#include "sources/hvsc_sync.h"
 #include "sources/modland_net.h"
 #include "sources/sync_host.h"
 #include "source.h"
@@ -169,6 +167,8 @@
 #define SEL_DEFERRED_PATH_MAX 1024u
 #define SEL_ERROR_DETAIL_MAX 64
 #define SEL_LOG_LINE_MAX 96
+#define SEL_SYNC_QUEUE SEL_SOURCE_MAX /* LIBRARY_SYNCs waiting behind the running sync or scan (I527): one per source,
+                                       * so the sync-all banner never loses a source to sync_busy */
 #define SEL_SCAN_QUEUE 8u /* LIBRARY_SCAN roots waiting behind the running scan (I506) */
 
 /* Events coalesced inside a batch: the latest value wins, emitted at END. */
@@ -393,13 +393,29 @@ struct sel_engine {
     uint32_t scan_next_n;
     uint32_t scan_delay_ms; /* test hook SELECTA_SCAN_DELAY_MS: the scan thread sleeps this long before each file (I336) */
     sel_sync_info sync_info; /* counters of the last LIBRARY_SYNC */
+    /* I527: a LIBRARY_SYNC runs in the same library job thread slot as the scan; the task owns these while sync_running,
+     * the pump reads them after the task ends. A request that arrives while a scan or sync runs waits in sync_next. */
+    int sync_running;
+    int sync_ok;
+    const sel_source* sync_src;
+    char sync_id[SEL_SOURCE_ID_MAX];
+    char sync_arg[SEL_BROWSE_PATH_MAX];
+    int64_t sync_now;
+    sel_sync_ctx sync_ctx;
+    sel_tag sync_stats[SEL_SYNC_STATS_MAX];
+    struct {
+        char id[SEL_SOURCE_ID_MAX];
+        char arg[SEL_BROWSE_PATH_MAX];
+        int64_t now;
+    } sync_next[SEL_SYNC_QUEUE];
+    uint32_t sync_next_n;
     uint32_t lib_slot;
     sel_tag lib_tags[4][4];                  /* LIBRARY_RESULT tags, a ring like error_detail */
     char lib_path[4][SEL_BROWSE_PATH_MAX];
     uint32_t st_slot;                         /* STICKER answers: ring of 8, like lib_tags */
     sel_tag st_tags[8][5];
     uint32_t sources_listed;                  /* SOURCES rows answered (DUI-P4-3) */
-    sel_tag src_tags[16][8];                  /* one SOURCES row per registered source (registry holds 16) */
+    sel_tag src_tags[16][9];                  /* one SOURCES row per registered source (registry holds 16) */
     char st_key[8][SEL_DEFERRED_PATH_MAX];
     char st_name[8][128];
     char st_value[8][SEL_STICKER_VALUE_MAX];
@@ -610,7 +626,7 @@ static void copy_str(char* dst, size_t cap, const char* src) {
 }
 
 void sel_engine_scan_wait(sel_engine* e, sel_event_sink sink, void* ctx) {
-    while (e->scan_running) {
+    while (e->scan_running || e->sync_running) {
 #if defined(__unix__) || defined(__APPLE__)
         struct timespec ts;
         ts.tv_sec = 0;
@@ -3301,7 +3317,7 @@ void sel_engine_scan_progress(const sel_engine* e, sel_scan_progress* out) {
 }
 
 int sel_engine_scan_busy(const sel_engine* e) {
-    return e->scan_running;
+    return e->scan_running || e->sync_running; /* the scan and the sync share the one library task slot (I527) */
 }
 
 static int scan_cancelled_cb(void* ctx) {
@@ -3352,7 +3368,7 @@ static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
         sel_engine_report_error(e, "no_library", "LIBRARY_SCAN");
         return;
     }
-    if (!e->scan_running) {
+    if (!e->scan_running && !e->sync_running) {
         scan_start(e, m->args[0].v.s);
         return;
     }
@@ -3367,7 +3383,7 @@ static void cmd_LIBRARY_SCAN(sel_engine* e, const sel_message* m) {
 /* Starts the oldest queued LIBRARY_SCAN root, if any (I506). */
 static void scan_start_next(sel_engine* e) {
     char root[SEL_BROWSE_PATH_MAX];
-    while (!e->scan_running && e->scan_next_n > 0u) { /* a root whose task cannot start reports scan_failed; try the next */
+    while (!e->scan_running && !e->sync_running && e->scan_next_n > 0u) { /* a root whose task cannot start reports scan_failed; try the next */
         memcpy(root, e->scan_next[0], sizeof root);
         e->scan_next_n--;
         memmove(e->scan_next[0], e->scan_next[1], (size_t)e->scan_next_n * sizeof e->scan_next[0]);
@@ -3377,6 +3393,8 @@ static void scan_start_next(sel_engine* e) {
 
 /* Pump side of LIBRARY_SCAN: once the task ended, everything the old synchronous command did after the scan runs here, on
  * the shell thread, because events are emitted only from the pump. */
+static void sync_start_next(sel_engine* e);
+
 static void scan_collect(sel_engine* e) {
     if (!e->scan_running || e->lib == NULL || !sel_library_task_take(e->lib)) {
         return;
@@ -3401,6 +3419,7 @@ static void scan_collect(sel_engine* e) {
         emit_library_path(e, e->scan_root, e->scan_stats.scanned_files);
     }
     scan_start_next(e);
+    sync_start_next(e);
 }
 
 /* Stores the "new this week" count of a modland sync in the DB meta table, so it survives a restart (I161a). */
@@ -3813,6 +3832,39 @@ static void sticker_answer(sel_engine* e, const char* key, const char* name, con
     emit(e, &r);
 }
 
+/* Last successful sync of source `id` (I527), kept in the library meta table under "sync.<id>": unix time, 0 never. */
+static int64_t sync_time_get(sel_engine* e, const char* id) {
+    char key[64], text[24];
+    sel_meta_op op;
+    sel_message reply;
+
+    if (e->lib == NULL) return 0;
+    snprintf(key, sizeof key, "sync.%s", id);
+    text[0] = '\0';
+    op.key = key;
+    op.value = text;
+    op.cap = sizeof text;
+    op.set = 0;
+    memset(&reply, 0, sizeof reply);
+    sel_library_request(e->lib, SEL_LIB_REQ_META, &op, &reply);
+    return (int64_t)strtoll(text, NULL, 10);
+}
+
+static void sync_time_set(sel_engine* e, const char* id, int64_t when) {
+    char key[64], text[24];
+    sel_meta_op op;
+    sel_message reply;
+
+    snprintf(key, sizeof key, "sync.%s", id);
+    snprintf(text, sizeof text, "%lld", (long long)when);
+    op.key = key;
+    op.value = text;
+    op.cap = sizeof text;
+    op.set = 1;
+    memset(&reply, 0, sizeof reply);
+    sel_library_request(e->lib, SEL_LIB_REQ_META, &op, &reply);
+}
+
 /* SOURCES: one LIBRARY_RESULT per registered source for the Library page's Sources tab (DUI-P4-3): SRC_KEY id,
  * SRC_KIND local or remote, SRC_NAME, SRC_PATH the home, SRC_ENABLED, SRC_COUNT the songs rows of that source (0
  * without a library). SRC_ENABLED is 0 for an id in the library.sources_off pref (I265). */
@@ -3826,7 +3878,8 @@ static void sources_row(void* ctx, const char* id, const char* name, const char*
     sel_engine* e = f->e;
     sel_tag* t;
     sel_message r;
-    int songs;
+    int songs, enabled;
+    int64_t synced;
     if (f->n >= 16u) return;
     t = e->src_tags[f->n++];
     songs = e->lib != NULL ? sel_library_source_songs(e->lib, id) : 0;
@@ -3839,11 +3892,20 @@ static void sources_row(void* ctx, const char* id, const char* name, const char*
     t[3].tag = SEL_SRC_PATH;
     t[3].value = (uintptr_t)(home != NULL ? home : "");
     t[4].tag = SEL_SRC_ENABLED;
-    t[4].value = sel_library_csv_has(e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF], id) ? 0 : 1;
+    enabled = sel_library_csv_has(e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF], id) ? 0 : 1;
+    t[4].value = (uintptr_t)enabled;
     t[5].tag = SEL_SRC_COUNT;
     t[5].value = songs > 0 ? (uintptr_t)songs : 0;
-    t[6].tag = SEL_TAG_END;
-    t[6].value = 0;
+    synced = sync_time_get(e, id);
+    t[6].tag = SEL_SRC_SYNCED;
+    t[6].value = (uintptr_t)synced;
+    t[7].tag = SEL_SRC_DUE; /* I527: only a remote, enabled source of an open library is offered a sync */
+    t[7].value = (remote && enabled && e->lib != NULL &&
+                  sel_source_sync_due(synced, strtoll(e->prefs.value[SEL_PREF_LIBRARY_SYNC_NOTICE_AT], NULL, 10), (int64_t)time(NULL),
+                                      (uint32_t)strtoul(e->prefs.value[SEL_PREF_LIBRARY_SYNC_STALE_DAYS], NULL, 10)))
+                     ? 1u : 0u;
+    t[8].tag = SEL_TAG_END;
+    t[8].value = 0;
     evt_init(&r, SEL_EVT_LIBRARY_RESULT);
     evt_tags(&r, t);
     emit(e, &r);
@@ -4588,14 +4650,68 @@ static void record_sync_stats(sel_engine* e, const sel_tag* stats) {
     si->stats[i].value = 0;
 }
 
-/* LIBRARY_SYNC <source> <arg> [now]: runs the source's own `sync` (I517); the engine knows no source by name. */
+/* The sync itself, on the library job thread (I527): the source's own `sync` blocks on the network, so it must not run on
+ * the shell thread. Its library requests (the catalogue batch) are serialised by the library's call lock, the same way
+ * the scan's are, so they cannot deadlock against the job thread. */
+static void sync_task(void* ctx) {
+    sel_engine* e = ctx;
+    sel_host host;
+
+    sel_sync_host_bind(&host, e->host, &e->sync_ctx);
+    e->sync_ok = e->sync_src->sync(&host, e->sync_arg, e->sync_now, e->sync_stats, SEL_SYNC_STATS_MAX);
+    sel_sync_ctx_release(&e->sync_ctx);
+}
+
+/* Starts the sync on the library job thread; neither a scan nor a sync may be running. */
+static void sync_start(sel_engine* e, const char* id, const char* arg, int64_t now) {
+    sel_source_register_builtin();
+    e->sync_src = sel_source_find(id);
+    if (e->sync_src == NULL || e->sync_src->sync == NULL) {
+        sel_engine_report_error(e, "unknown_source", id);
+        return;
+    }
+    snprintf(e->sync_id, sizeof e->sync_id, "%s", id);
+    snprintf(e->sync_arg, sizeof e->sync_arg, "%s", arg);
+    e->sync_now = now;
+    memset(&e->sync_ctx, 0, sizeof e->sync_ctx);
+    e->sync_ctx.scfg.host = e->host;
+    e->sync_ctx.scfg.lib = e->lib;
+    e->sync_ctx.scfg.registry_count = e->registry_count;
+    e->sync_ctx.scfg.registry_get = e->registry_get;
+    e->sync_ctx.scfg.now = now;
+    memset(e->sync_stats, 0, sizeof e->sync_stats);
+    e->sync_stats[0].tag = SEL_TAG_END;
+    memset(&e->sync_info, 0, sizeof e->sync_info);
+    e->sync_ok = 0;
+    e->sync_running = 1;
+    if (!sel_library_task_start(e->lib, sync_task, e)) {
+        e->sync_running = 0;
+        sel_engine_report_error(e, "sync_failed", arg);
+    }
+}
+
+/* Starts the oldest queued LIBRARY_SYNC, if the task slot is free (I527). */
+static void sync_start_next(sel_engine* e) {
+    char id[SEL_SOURCE_ID_MAX];
+    char arg[SEL_BROWSE_PATH_MAX];
+    int64_t now;
+
+    while (!e->scan_running && !e->sync_running && e->sync_next_n > 0u) {
+        memcpy(id, e->sync_next[0].id, sizeof id);
+        memcpy(arg, e->sync_next[0].arg, sizeof arg);
+        now = e->sync_next[0].now;
+        e->sync_next_n--;
+        memmove(&e->sync_next[0], &e->sync_next[1], (size_t)e->sync_next_n * sizeof e->sync_next[0]);
+        sync_start(e, id, arg, now);
+    }
+}
+
+/* LIBRARY_SYNC <source> <arg> [now]: runs the source's own `sync` (I517) on the library job thread (I527); the engine
+ * knows no source by name. The shell loop never waits for it: sync_collect answers once the task ended. A LIBRARY_SYNC
+ * while a scan or another sync runs waits in sync_next; only a full queue answers ERROR sync_busy. */
 static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
     const sel_source* src;
-    sel_sync_ctx ctx;
-    sel_host host;
-    sel_tag stats[SEL_SYNC_STATS_MAX];
     int64_t now;
-    int ok;
 
     if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", "LIBRARY_SYNC");
@@ -4608,28 +4724,42 @@ static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
         return;
     }
     now = m->argc > 2 ? (int64_t)m->args[2].v.u : (int64_t)time(NULL);
-    memset(&ctx, 0, sizeof ctx);
-    ctx.scfg.host = e->host;
-    ctx.scfg.lib = e->lib;
-    ctx.scfg.registry_count = e->registry_count;
-    ctx.scfg.registry_get = e->registry_get;
-    ctx.scfg.now = now;
-    sel_sync_host_bind(&host, e->host, &ctx);
-    memset(stats, 0, sizeof stats);
-    stats[0].tag = SEL_TAG_END;
-    memset(&e->sync_info, 0, sizeof e->sync_info);
-    ok = src->sync(&host, m->args[1].v.s, now, stats, SEL_SYNC_STATS_MAX);
-    sel_sync_ctx_release(&ctx);
-    e->art_generation++; /* a failed sync may still have stored albums */
-    record_sync_stats(e, stats);
-    if (ok && (src->flags & SEL_SOURCE_NEW_THIS_WEEK)) {
-        persist_new_this_week(e, e->sync_info.new_this_week);
-    }
-    if (!ok) {
-        sel_engine_report_error(e, "sync_failed", m->args[1].v.s);
+    if (!e->scan_running && !e->sync_running) {
+        sync_start(e, m->args[0].v.s, m->args[1].v.s, now);
         return;
     }
-    emit_library_path(e, m->args[1].v.s, e->sync_info.listing_rows);
+    if (e->sync_next_n >= SEL_SYNC_QUEUE) {
+        sel_engine_report_error(e, "sync_busy", m->args[0].v.s);
+        return;
+    }
+    snprintf(e->sync_next[e->sync_next_n].id, sizeof e->sync_next[0].id, "%s", m->args[0].v.s);
+    snprintf(e->sync_next[e->sync_next_n].arg, sizeof e->sync_next[0].arg, "%s", m->args[1].v.s);
+    e->sync_next[e->sync_next_n].now = now;
+    e->sync_next_n++;
+}
+
+/* Pump side of LIBRARY_SYNC: everything the synchronous command did after the sync runs here, on the shell thread,
+ * because events are emitted only from the pump. */
+static void sync_collect(sel_engine* e) {
+    if (!e->sync_running || e->lib == NULL || !sel_library_task_take(e->lib)) {
+        return;
+    }
+    e->sync_running = 0;
+    e->art_generation++; /* a failed sync may still have stored albums */
+    record_sync_stats(e, e->sync_stats);
+    if (e->sync_ok) {
+        sync_time_set(e, e->sync_id, e->sync_now);
+    }
+    if (e->sync_ok && (e->sync_src->flags & SEL_SOURCE_NEW_THIS_WEEK)) {
+        persist_new_this_week(e, e->sync_info.new_this_week);
+    }
+    if (!e->sync_ok) {
+        sel_engine_report_error(e, "sync_failed", e->sync_arg);
+    } else {
+        emit_library_path(e, e->sync_arg, e->sync_info.listing_rows);
+    }
+    scan_start_next(e);
+    sync_start_next(e);
 }
 
 /* LIBRARY_FETCH <source>:<path>[#md5=<hex>]: fetches the file and its companions into the library's
@@ -5314,7 +5444,7 @@ void sel_engine_destroy(sel_engine* e) {
     if (e) {
         SEL_THREAD_NOT_AUDIO(e);
         uint32_t i;
-        if (e->scan_running) {
+        if (e->scan_running || e->sync_running) {
             sel_library_task_cancel(e->lib); /* the scan task uses this engine; end it first (I336) */
         }
         for (i = 0; i < SEL_SLOT_COUNT; i++) {
@@ -5568,6 +5698,7 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
         }
     }
     scan_collect(e);
+    sync_collect(e);
     timer_pump(e);
     reclaim_slots(e);
     if (e->deferred) {

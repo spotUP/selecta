@@ -10,6 +10,7 @@
 #include <devices/inputevent.h>
 
 struct IntuiMessage;
+struct Screen;
 
 #define DESK_AMIGA_INPUT_QUEUE 64
 
@@ -25,11 +26,19 @@ typedef struct desk_amiga_input {
 
 /* Opens intuition.library and keymap.library for the translation (the libraries are opened here, not by libnix, see
  * input.c). 0 when one does not open. */
+/* Non-zero: every MOUSEBUTTONS message logs to stderr when Intuition stamped it, when it was taken off the port (the poll
+ * after a frame) and the running down/up counts, so a long frame or a lost half of a pair shows in the log (I525). */
+extern int desk_amiga_input_trace;
+
 int desk_amiga_input_open(desk_amiga_input* in);
 void desk_amiga_input_close(desk_amiga_input* in);
 /* Translates one message of the window. 1 when it queued an event (or a press that waits for its release). */
 int desk_amiga_input_handle(desk_amiga_input* in, struct IntuiMessage* m);
 /* Takes the next queued event; 0 when the queue is empty. */
 int desk_amiga_input_next(desk_amiga_input* in, sel_gui_input* ev);
+
+/* Opens an asl.library drawers-only requester on the screen and queues the chosen drawer as a SEL_GUI_IN_DROP (I531, see
+ * folder_pick.h). Cancel queues nothing. 1 when the requester ran, 0 when it could not open. */
+int desk_amiga_input_pick_folder(desk_amiga_input* in, struct Screen* screen);
 
 #endif

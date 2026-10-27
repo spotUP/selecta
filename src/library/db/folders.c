@@ -216,7 +216,8 @@ static int song_remove(sqlite3* db, const sel_user_op* op, int64_t* rows) {
  * data. Settings (meta) stay. One transaction. */
 static int library_clear(sqlite3* db, int64_t* rows) {
     int64_t n = scalar(db, "SELECT COUNT(*) FROM songs", 0, 0);
-    if (sqlite3_exec(db, "BEGIN;DELETE FROM artwork;DELETE FROM albums;DELETE FROM song_composers;DELETE FROM files;DELETE FROM songs;"
+    if (sqlite3_exec(db, "BEGIN;DELETE FROM artwork;DELETE FROM albums;DELETE FROM composers;DELETE FROM composer_spellings;DELETE FROM song_composers;"
+                     "DELETE FROM files;DELETE FROM songs;UPDATE composer_unknown SET n = 0;"
                      "DELETE FROM playlist_entries;DELETE FROM playlists;DELETE FROM folders;DELETE FROM ratings;DELETE FROM notes;"
                      "DELETE FROM liked;DELETE FROM kept;DELETE FROM cues;DELETE FROM flags;DELETE FROM stickers;DELETE FROM history;COMMIT;",
                      NULL, NULL, NULL) != SQLITE_OK) {

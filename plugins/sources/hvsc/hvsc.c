@@ -4,14 +4,19 @@
  * through Modland's path layout: the host path is `pub/modules/HVSC/<path>` (SEL_SRC_HOSTED_BY = modland),
  * and the canonical URL is the Modland URL of the host path. Format names follow bbmp: "HVSC - Musicians",
  * "HVSC - Games", "HVSC - Demos". */
-#include "../source.h"
 #include "hvsc_net.h"
-#include "modland_net.h"
-#include "sync_host.h"
 #include "hvsc_sync.h"
+
+#include <selecta/plugin.h>
+#include <selecta/source.h>
+#include "source/descriptor.h"
+#include "source/sync_stat.h"
+#include "source/url_path.h"
 
 #include <stdio.h>
 #include <string.h>
+
+#define ROOT "https://modland.com/"
 
 static const sel_tag g_tags[] = {
     {SEL_SRC_HOSTED_BY, (uintptr_t)"modland"},
@@ -29,16 +34,16 @@ int sel_hvsc_host_path(const char* path, char* out, size_t n) {
 }
 
 static int url_of(const char* path, char* out, size_t n) {
-    char host[SEL_SONG_KEY_MAX];
+    char host[1100];
 
-    return sel_hvsc_host_path(path, host, sizeof host) && sel_source_modland()->url(host, out, n);
+    return sel_hvsc_host_path(path, host, sizeof host) && sel_url_path_encode(ROOT, host, out, n);
 }
 
 static int path_in(const char* url, char* path, size_t n) {
-    char host[SEL_SONG_KEY_MAX];
+    char host[1100];
     const char* rel;
 
-    if (!sel_source_modland()->path_in(url, host, sizeof host) ||
+    if (!sel_url_path_decode(ROOT, url, host, sizeof host) ||
         strncmp(host, SEL_HVSC_HOST_DIR, sizeof SEL_HVSC_HOST_DIR - 1u) != 0) {
         return 0;
     }
@@ -52,7 +57,7 @@ static int path_in(const char* url, char* path, size_t n) {
 
 /* <MUSICIANS|GAMES|DEMOS>/<letter>/...: format from the top directory; the artist of a MUSICIANS file is
  * its directory two levels down ("Hubbard_Rob" -> "Hubbard Rob"); name = file without extension. */
-static int parse(const char* path, char* scratch, size_t n, sel_tag* out) {
+int sel_hvsc_parse(const char* path, char* scratch, size_t n, sel_tag* out) {
     const char* fmt;
     const char* artist = "";
     size_t artist_len = 0, used = 0, len;
@@ -125,23 +130,22 @@ static int parse(const char* path, char* scratch, size_t n, sel_tag* out) {
 
 /* LIBRARY_SYNC dispatch (I517): a URL runs the network sync, anything else reads a local mirror copy. */
 static int hvsc_sync_host(const sel_host* host, const char* arg, int64_t now, sel_tag* stats, uint32_t cap) {
-    const sel_local_scan_config* cfg = sel_sync_cfg(host);
     sel_hvsc_sync_stats st;
     int ok;
 
     (void)now;
     memset(&st, 0, sizeof st);
-    if (sel_modland_is_url(arg)) {
+    if (strncmp(arg, "http://", 7) == 0 || strncmp(arg, "https://", 8) == 0) {
         sel_hvsc_net_stats nt;
 
         memset(&nt, 0, sizeof nt);
-        ok = sel_hvsc_net_sync(cfg, arg, &st, &nt);
+        ok = sel_hvsc_net_sync(host, arg, &st, &nt);
         sel_sync_stat(stats, cap, SEL_SYNC_SONGLENGTHS_BYTES, nt.songlengths_bytes);
         sel_sync_stat(stats, cap, SEL_SYNC_STIL_BYTES, nt.stil_bytes);
         sel_sync_stat(stats, cap, SEL_SYNC_LISTING_DERIVED, nt.listing_derived);
         sel_sync_stat(stats, cap, SEL_SYNC_NET_REQUESTS, nt.http_requests);
     } else {
-        ok = sel_hvsc_sync(cfg, arg, &st);
+        ok = sel_hvsc_sync(host, arg, &st);
     }
     sel_sync_stat(stats, cap, SEL_SYNC_LISTING_ROWS, st.listing_rows);
     sel_sync_stat(stats, cap, SEL_SYNC_SKIPPED_ROWS, st.skipped_rows);
@@ -153,9 +157,10 @@ static int hvsc_sync_host(const sel_host* host, const char* arg, int64_t now, se
 
 static const sel_source g_hvsc = {
     "hvsc", "HVSC", "https://hvsc.c64.org/", "High Voltage SID Collection, served through Modland.", g_tags,
-    NULL, parse, NULL, url_of, path_in, NULL, NULL, hvsc_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL,
+    NULL, sel_hvsc_parse, NULL, url_of, path_in, NULL, NULL, hvsc_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL,
 };
 
-const sel_source* sel_source_hvsc(void) {
-    return &g_hvsc;
+const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
+    (void)host_api;
+    return sel_source_plugin_descriptor("hvsc", &g_hvsc);
 }

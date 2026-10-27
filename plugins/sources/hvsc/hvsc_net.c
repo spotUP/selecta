@@ -1,17 +1,16 @@
 /* See hvsc_net.h. */
 #include "hvsc_net.h"
 
-#include "../cache.h"
-#include "../local.h"
-#include "sync_net.h"
-#include "sync_util.h"
+#include "source/sync_text.h"
 
-#include <selecta/engine.h>
+#include <selecta/catalogue.h>
+#include <selecta/net.h>
 #include <stdio.h>
 #include <string.h>
 
 #define URL_BYTES 1100u
 #define LINE_BYTES 2400u
+#define PATH_BYTES 1100u
 
 /* Writes the `; /PATH` lines of Songlengths.md5 as `/PATH` lines: the catalogue listing. Returns the count, or
  * -1 when a file cannot be opened or written. */
@@ -46,13 +45,13 @@ static int64_t derive_listing(const char* songlengths, const char* listing) {
     return n;
 }
 
-int sel_hvsc_net_sync(const sel_local_scan_config* cfg, const char* base, sel_hvsc_sync_stats* stats,
-                      sel_hvsc_net_stats* net) {
-    sel_cache cache;
-    char dir[SEL_CACHE_PATH_MAX];
-    char songlengths[SEL_CACHE_PATH_MAX];
-    char stil[SEL_CACHE_PATH_MAX];
-    char listing[SEL_CACHE_PATH_MAX];
+int sel_hvsc_net_sync(const sel_host* host, const char* base, sel_hvsc_sync_stats* stats, sel_hvsc_net_stats* net) {
+    const sel_net* net_svc = host->net != NULL ? host->net(host) : NULL;
+    const sel_catalogue* cat = host->catalogue != NULL ? host->catalogue(host) : NULL;
+    char dir[PATH_BYTES - 64u];
+    char songlengths[PATH_BYTES];
+    char stil[PATH_BYTES];
+    char listing[PATH_BYTES];
     char url[URL_BYTES];
     unsigned long got = 0;
     size_t n = strlen(base);
@@ -66,20 +65,19 @@ int sel_hvsc_net_sync(const sel_local_scan_config* cfg, const char* base, sel_hv
     if (n == 0 || n >= URL_BYTES - 64u) {
         return 0;
     }
-    sel_cache_init(&cache, NULL, 0);
-    if (snprintf(dir, sizeof dir, "%s/sync/hvsc", cache.dir) >= (int)sizeof dir || !sel_config_mkdir(dir) ||
-        !sel_browse_join(songlengths, sizeof songlengths, dir, SEL_HVSC_SONGLENGTHS) ||
-        !sel_browse_join(stil, sizeof stil, dir, SEL_HVSC_STIL) ||
-        !sel_browse_join(listing, sizeof listing, dir, SEL_HVSC_LISTING)) {
+    if (net_svc == NULL || cat == NULL || !cat->cache_dir(host, "hvsc", dir, sizeof dir) ||
+        snprintf(songlengths, sizeof songlengths, "%s/%s", dir, SEL_HVSC_SONGLENGTHS) >= (int)sizeof songlengths ||
+        snprintf(stil, sizeof stil, "%s/%s", dir, SEL_HVSC_STIL) >= (int)sizeof stil ||
+        snprintf(listing, sizeof listing, "%s/%s", dir, SEL_HVSC_LISTING) >= (int)sizeof listing) {
         return 0;
     }
     snprintf(url, sizeof url, "%.*s" SEL_HVSC_DOC_DIR SEL_HVSC_SONGLENGTHS, (int)n, base);
-    if (sel_sync_net_get_file(url, songlengths, &net->http_requests, &got) != 200) {
+    if (net_svc->get_file(host, url, songlengths, &net->http_requests, &got) != 200) {
         return 0;
     }
     net->songlengths_bytes = (uint32_t)got;
     snprintf(url, sizeof url, "%.*s" SEL_HVSC_DOC_DIR SEL_HVSC_STIL, (int)n, base);
-    if (sel_sync_net_get_file(url, stil, &net->http_requests, &got) != 200) {
+    if (net_svc->get_file(host, url, stil, &net->http_requests, &got) != 200) {
         return 0;
     }
     net->stil_bytes = (uint32_t)got;
@@ -88,5 +86,5 @@ int sel_hvsc_net_sync(const sel_local_scan_config* cfg, const char* base, sel_hv
         return 0;
     }
     net->listing_derived = (uint32_t)derived;
-    return sel_hvsc_sync(cfg, dir, stats);
+    return sel_hvsc_sync(host, dir, stats);
 }

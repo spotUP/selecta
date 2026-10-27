@@ -1,21 +1,28 @@
 /* The IDCMP to sel_gui_input translation of the Amiga desktop backends; see input.h. */
 #include "input.h"
+#include "folder_pick.h"
 
 /* The library bases are renamed for the reason given in backend_rtg.c: libnix would open them at program start. */
 #define IntuitionBase sel_input_IntuitionBase
 #define KeymapBase sel_input_KeymapBase
+#define AslBase sel_input_AslBase
 
 #include <selecta/uimodel/keys.h>
 
 #include <devices/inputevent.h>
 #include <intuition/intuition.h>
+#include <libraries/asl.h>
+#include <proto/asl.h>
 #include <proto/exec.h>
 #include <proto/intuition.h>
 #include <proto/keymap.h>
+#include <stdio.h>
 #include <string.h>
 
 struct IntuitionBase* IntuitionBase;
 struct Library* KeymapBase;
+struct Library* AslBase; /* opened for the length of one folder requester only */
+int desk_amiga_input_trace;
 
 int desk_amiga_input_open(desk_amiga_input* in) {
     memset(in, 0, sizeof *in);
@@ -153,6 +160,15 @@ int desk_amiga_input_handle(desk_amiga_input* b, struct IntuiMessage* m) {
             b->last_y = raw.y;
         }
         raw.clicks = b->clicks;
+        if (desk_amiga_input_trace) {
+            static uint32_t downs, ups;
+            ULONG now_s, now_m;
+            CurrentTime(&now_s, &now_m);
+            if (down) downs++; else ups++;
+            fprintf(stderr, "button %s x=%d y=%d stamped=%lu.%06lu taken=%lu.%06lu downs=%u ups=%u\n", down ? "down" : "up",
+                    (int)raw.x, (int)raw.y, (unsigned long)m->Seconds, (unsigned long)m->Micros, (unsigned long)now_s,
+                    (unsigned long)now_m, (unsigned)downs, (unsigned)ups);
+        }
         return queue_raw(b, &raw);
     }
     if (m->Class == IDCMP_RAWKEY) {
@@ -169,3 +185,34 @@ int desk_amiga_input_handle(desk_amiga_input* b, struct IntuiMessage* m) {
     return 0;
 }
 
+
+/* The folder dialog (I531): an asl.library file requester in drawers-only mode on the Selecta screen. It blocks until
+ * the user answers (the screen keeps its last frame). The chosen drawer becomes the same SEL_GUI_IN_DROP the SDL folder
+ * dialog queues; desktop_ui.c answers it with LIBRARY_SCAN. Cancel queues nothing. Returns 1 when the requester ran
+ * (whatever the answer), 0 when asl.library or the requester could not be opened. */
+int desk_amiga_input_pick_folder(desk_amiga_input* b, struct Screen* screen) {
+    struct FileRequester* fr;
+    int ran = 0;
+    AslBase = OpenLibrary((CONST_STRPTR) "asl.library", 37);
+    if (AslBase == NULL) {
+        return 0;
+    }
+    fr = (struct FileRequester*)AllocAslRequestTags(ASL_FileRequest, ASLFR_Screen, (ULONG)screen, ASLFR_TitleText,
+                                                    (ULONG) "Add folder", ASLFR_DrawersOnly, TRUE,
+                                                    ASLFR_RejectIcons, TRUE, TAG_DONE);
+    if (fr != NULL) {
+        ran = 1;
+        if (AslRequest(fr, NULL)) {
+            sel_gui_input ev;
+            if (desk_amiga_folder_event((const char*)fr->fr_Drawer, (const char*)fr->fr_File, &ev) &&
+                b->q_count < DESK_AMIGA_INPUT_QUEUE) {
+                b->queue[(b->q_head + b->q_count) % DESK_AMIGA_INPUT_QUEUE] = ev;
+                b->q_count++;
+            }
+        }
+        FreeAslRequest(fr);
+    }
+    CloseLibrary(AslBase);
+    AslBase = NULL;
+    return ran;
+}

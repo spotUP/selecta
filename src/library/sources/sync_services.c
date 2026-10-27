@@ -279,8 +279,56 @@ static int64_t cat_now(const sel_host* host) {
     return ctx_of(host)->scfg.now;
 }
 
-static const sel_catalogue g_catalogue = {cat_begin,    cat_song,      cat_remove,   cat_move, cat_commit,
-                                          cat_abort,    cat_cache_dir, cat_list_dir, cat_now};
+static int32_t cat_annotate(const sel_host* host, const sel_catalogue_note* notes, uint32_t count) {
+    sel_sync_ctx* c = ctx_of(host);
+    sel_annotation* a;
+    sel_sticker* st;
+    sel_annotate_batch b;
+    sel_message reply;
+    uint32_t i, j, total = 0, used = 0;
+    int32_t matched = -1;
+
+    if (c->batch == NULL || notes == NULL || !cat_flush(c)) {
+        return -1;
+    }
+    for (i = 0; i < count; i++) {
+        total += notes[i].sticker_n;
+    }
+    a = host->mem_alloc(host, (size_t)(count + 1u) * sizeof *a, SEL_MEM_FAST);
+    st = host->mem_alloc(host, (size_t)(total + 1u) * sizeof *st, SEL_MEM_FAST);
+    if (a != NULL && st != NULL) {
+        for (i = 0; i < count; i++) {
+            a[i].path = notes[i].path;
+            a[i].md5 = notes[i].md5;
+            a[i].duration_ms = notes[i].duration_ms;
+            a[i].stickers = st + used;
+            a[i].sticker_n = notes[i].sticker_n;
+            for (j = 0; j < notes[i].sticker_n; j++, used++) {
+                st[used].name = notes[i].stickers[j].name;
+                st[used].value = notes[i].stickers[j].value;
+            }
+        }
+        b.source = c->batch->source;
+        b.items = a;
+        b.count = count;
+        memset(&reply, 0, sizeof reply);
+        if (sel_library_request(c->scfg.lib, SEL_LIB_REQ_ANNOTATE, &b, &reply) && reply.args[1].v.i == 0) {
+            matched = (int32_t)reply.args[0].v.i;
+        } else {
+            c->batch->failed = 1;
+        }
+    }
+    if (a != NULL) {
+        host->mem_free(host, a);
+    }
+    if (st != NULL) {
+        host->mem_free(host, st);
+    }
+    return matched;
+}
+
+static const sel_catalogue g_catalogue = {cat_begin,    cat_song,      cat_remove,   cat_move,  cat_commit,
+                                          cat_abort,    cat_cache_dir, cat_list_dir, cat_now, cat_annotate};
 
 static const sel_catalogue* host_catalogue(const sel_host* host) {
     return ctx_of(host)->scfg.lib != NULL ? &g_catalogue : NULL;

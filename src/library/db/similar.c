@@ -5,7 +5,7 @@
  * Similar: every other song, ordered by genre match with the seed (case-insensitive, an empty genre never
  * matches), then rating (ratings table, unrated = 0, higher first), then library order. Also-by: the other songs
  * that share a canonical composer with the seed (song_composers, filled by the songdb step of the genre sync).
- * Both are paged by row offset: the worker op returns row `after` and the reply id is after + 1 (0: none left). */
+ * Both stream every row through op->row in one request (I528); the reply id is the row count. */
 #include "db_internal.h"
 
 #include <stdio.h>
@@ -14,38 +14,23 @@
 
 #define SEL_SIMILAR_LIMIT 100
 
-static int pack(const sel_genre_op* op, const char* const* f, int n) {
-    size_t total = 0;
-    int i;
-
-    for (i = 0; i < n; i++) total += strlen(f[i]) + 1u;
-    if (total > op->out_cap) return 0;
-    total = 0;
-    for (i = 0; i < n; i++) {
-        size_t l = strlen(f[i]) + 1u;
-
-        memcpy(op->out + total, f[i], l);
-        total += l;
-    }
-    return 1;
-}
-
+/* Streams the rows of the similar list / also-by list through op->row in one query (I528: a per-row OFFSET re-sorted the library for each row). */
 static int op_similar(sqlite3* db, const sel_genre_op* op, int64_t* id) {
     sqlite3_stmt* st = NULL;
+    int64_t rows = 0;
     int rc = sqlite3_prepare_v2(
         db,
         "SELECT s.key, COALESCE(s.name, ''), COALESCE(s.genre, ''), COALESCE(r.rating, 0),"
         " (COALESCE(s.genre, '') <> '' AND lower(s.genre) = lower((SELECT genre FROM songs WHERE key = ?1))) AS m"
         " FROM songs s LEFT JOIN ratings r ON r.key = s.key WHERE s.key <> ?1"
-        " ORDER BY m DESC, COALESCE(r.rating, 0) DESC, s.id LIMIT 1 OFFSET ?2",
+        " ORDER BY m DESC, COALESCE(r.rating, 0) DESC, s.id LIMIT ?2",
         -1, &st, NULL);
 
     *id = 0;
     if (rc != SQLITE_OK) return rc;
     sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
-    sqlite3_bind_int64(st, 2, op->after);
-    rc = sqlite3_step(st);
-    if (rc == SQLITE_ROW) {
+    sqlite3_bind_int64(st, 2, SEL_SIMILAR_LIMIT);
+    while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
         char rating[16], match[4];
         const char* f[5];
 
@@ -56,38 +41,39 @@ static int op_similar(sqlite3* db, const sel_genre_op* op, int64_t* id) {
         f[2] = (const char*)sqlite3_column_text(st, 2);
         f[3] = rating;
         f[4] = match;
-        if (pack(op, f, 5)) *id = op->after + 1;
-        rc = SQLITE_DONE;
+        rows++;
+        if (op->row(op->row_ctx, f) != 0) break;
     }
     sqlite3_finalize(st);
-    return rc == SQLITE_DONE ? SQLITE_OK : rc;
+    *id = rows;
+    return rc == SQLITE_ROW || rc == SQLITE_DONE ? SQLITE_OK : rc;
 }
 
 static int op_also_by(sqlite3* db, const sel_genre_op* op, int64_t* id) {
     sqlite3_stmt* st = NULL;
+    int64_t rows = 0;
     int rc = sqlite3_prepare_v2(
         db,
         "SELECT s.key, COALESCE(s.name, ''), MIN(c.display) FROM songs s JOIN song_composers c ON c.song_key = s.key"
         " WHERE s.key <> ?1 AND c.canon IN (SELECT canon FROM song_composers WHERE song_key = ?1)"
-        " GROUP BY s.key ORDER BY s.id LIMIT 1 OFFSET ?2",
+        " GROUP BY s.key ORDER BY s.id",
         -1, &st, NULL);
 
     *id = 0;
     if (rc != SQLITE_OK) return rc;
     sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
-    sqlite3_bind_int64(st, 2, op->after);
-    rc = sqlite3_step(st);
-    if (rc == SQLITE_ROW) {
+    while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
         const char* f[3];
 
         f[0] = (const char*)sqlite3_column_text(st, 0);
         f[1] = (const char*)sqlite3_column_text(st, 1);
         f[2] = (const char*)sqlite3_column_text(st, 2);
-        if (pack(op, f, 3)) *id = op->after + 1;
-        rc = SQLITE_DONE;
+        rows++;
+        if (op->row(op->row_ctx, f) != 0) break;
     }
     sqlite3_finalize(st);
-    return rc == SQLITE_DONE ? SQLITE_OK : rc;
+    *id = rows;
+    return rc == SQLITE_ROW || rc == SQLITE_DONE ? SQLITE_OK : rc;
 }
 
 int sel_library_similar_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id) {
@@ -95,7 +81,7 @@ int sel_library_similar_op(sel_library* lib, const sel_genre_op* op, int* found,
 
     *found = 0;
     *id = 0;
-    if (op->out == NULL || op->key == NULL) return rc;
+    if (op->row == NULL || op->key == NULL) return rc;
     if (op->op == SEL_SIMILAR_NEXT) {
         rc = op_similar(lib->db, op, id);
     } else if (op->op == SEL_ALSOBY_NEXT) {
@@ -107,60 +93,52 @@ int sel_library_similar_op(sel_library* lib, const sel_genre_op* op, int* found,
 
 /* ---- caller half ---- */
 
+typedef struct sim_sink {
+    sel_similar_row_fn sim;
+    sel_composer_row_fn also;
+    void* ctx;
+} sim_sink;
+
+static int sim_row(void* ctx, const char* const* f) {
+    sim_sink* k = ctx;
+
+    if (k->sim != NULL) k->sim(k->ctx, f[0], f[1], f[2], atoi(f[3]), atoi(f[4]));
+    return 0;
+}
+
+static int also_row(void* ctx, const char* const* f) {
+    sim_sink* k = ctx;
+
+    if (k->also != NULL) k->also(k->ctx, f[0], f[1], f[2]);
+    return 0;
+}
+
 int sel_library_similar(sel_library* lib, const char* song_key, sel_similar_row_fn fn, void* ctx) {
-    char buf[1536];
-    int64_t id = 0;
-    int rows = 0;
+    sim_sink k = {fn, NULL, ctx};
+    sel_genre_op op;
+    int64_t rows = 0;
 
     if (lib == NULL || song_key == NULL) return -1;
-    while (id < SEL_SIMILAR_LIMIT) {
-        sel_genre_op op;
-        const char* name;
-        const char* genre;
-        const char* rating;
-        const char* match;
-
-        memset(&op, 0, sizeof op);
-        op.op = SEL_SIMILAR_NEXT;
-        op.key = song_key;
-        op.after = id;
-        op.out = buf;
-        op.out_cap = sizeof buf;
-        if (sel_genre_call(lib, &op, &id) < 0) return -1;
-        if (id == 0) break;
-        name = buf + strlen(buf) + 1u;
-        genre = name + strlen(name) + 1u;
-        rating = genre + strlen(genre) + 1u;
-        match = rating + strlen(rating) + 1u;
-        if (fn != NULL) fn(ctx, buf, name, genre, atoi(rating), atoi(match));
-        rows++;
-    }
-    return rows;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_SIMILAR_NEXT;
+    op.key = song_key;
+    op.row = sim_row;
+    op.row_ctx = &k;
+    if (sel_genre_call(lib, &op, &rows) < 0) return -1;
+    return (int)rows;
 }
 
 int sel_library_also_by(sel_library* lib, const char* song_key, sel_composer_row_fn fn, void* ctx) {
-    char buf[1536];
-    int64_t id = 0;
-    int rows = 0;
+    sim_sink k = {NULL, fn, ctx};
+    sel_genre_op op;
+    int64_t rows = 0;
 
     if (lib == NULL || song_key == NULL) return -1;
-    for (;;) {
-        sel_genre_op op;
-        const char* name;
-        const char* disp;
-
-        memset(&op, 0, sizeof op);
-        op.op = SEL_ALSOBY_NEXT;
-        op.key = song_key;
-        op.after = id;
-        op.out = buf;
-        op.out_cap = sizeof buf;
-        if (sel_genre_call(lib, &op, &id) < 0) return -1;
-        if (id == 0) break;
-        name = buf + strlen(buf) + 1u;
-        disp = name + strlen(name) + 1u;
-        if (fn != NULL) fn(ctx, buf, name, disp);
-        rows++;
-    }
-    return rows;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_ALSOBY_NEXT;
+    op.key = song_key;
+    op.row = also_row;
+    op.row_ctx = &k;
+    if (sel_genre_call(lib, &op, &rows) < 0) return -1;
+    return (int)rows;
 }

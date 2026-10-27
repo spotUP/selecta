@@ -23,6 +23,7 @@
 #if defined(SELECTA_DESKTOP_AGA) && !defined(SELECTA_DESKTOP_SDL)
 #define SELECTA_DESKTOP_SDL 1
 #include "amiga/backend_aga.h"
+#include "amiga/input.h"
 #define DESK_BACKEND_NAME "aga"
 #define desk_backend_depth(b) desk_aga_depth(b)
 #define DESK_BACKEND_INDEX8 1 /* the aga screen is always 8 bitplanes, 256 colours (design doc 2.1) */
@@ -48,6 +49,15 @@
 #include <sys/stat.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* I524b: --stats launch trace. One stderr line per launch phase with the host clock, so the log (--log) shows where the
+ * minutes before the first present go. Absolute host clock ms: subtract the first line (selecta: trace start). */
+static int g_desk_trace;
+static void desk_trace(const sel_host* h, const char* phase) {
+    if (g_desk_trace) {
+        fprintf(stderr, "trace t_ms=%u %s\n", (unsigned)h->clock_ms(h), phase);
+    }
+}
 
 /* The text size tokens (plan 2.6) as pixel sizes; each gets one atlas per weight. */
 #define DESK_SIZES DESK_FONT_SIZE_N
@@ -316,6 +326,8 @@ typedef struct desk {
     uint32_t art_ms_max;     /* I377: longest single art_load on the UI thread, host clock ms */
     uint32_t turn_ms_max;    /* I377: longest turn of desk_wait without its poll wait, host clock ms */
     uint32_t poll_ms;        /* I377: poll wait accumulated inside the running turn */
+    uint32_t turn_why[5];    /* I525: live turns by where they returned: idle poll, present, scan, input, visualizer */
+    uint32_t turn_bits[6];   /* I525: live turns that presented, by the dirty region that asked for it */
     uint32_t frame_ms_min, frame_ms_max; /* I368: ms per paint (one desk_flush), host clock; min is valid once frame_ms_n > 0 */
     uint32_t frame_ms_sum, frame_ms_n;   /* I368: the avg is sum / n */
     uint32_t paint_ms_min, paint_ms_max, paint_ms_sum;     /* I387: the paint share of a frame (frame start to desk_flush), host clock ms */
@@ -344,8 +356,11 @@ typedef struct desk {
     uint32_t flow_rec_n;
     char flow_snaps[2048];                        /* script `flowsnap` lines: the covers of the frame drawn so far, one line per snap (I400 test) */
     uint32_t lib_mode;       /* Library page mode: 0 composers, 1 tree, 2 column browser, 3 files, 4 history, 5 sources (DUI-P4-3 slices B, C; I265) */
-    struct { char key[24], kind[12], name[40], path[96]; int enabled; uint32_t count; } src[16]; /* the SOURCES rows of the Sources tab (I265) */
+    struct { char key[24], kind[12], name[40], path[96]; int enabled; uint32_t count; int64_t synced; int due; } src[16]; /* the SOURCES rows of the Sources tab (I265) */
     uint32_t src_n;          /* rows held in src */
+    uint32_t nag_off;        /* bit i set: the sync offer (I527) has source row i unchecked; all start checked */
+    uint32_t nag_syncs;      /* sources the offer's Sync button sent LIBRARY_SYNC for (the test's sentinel) */
+    int nag_asked;           /* the launch SOURCES request was sent (I527) */
     int src_wait;            /* a SOURCES request is out: its first row replaces the held rows */
     uint32_t src_draws;      /* Sources tab frames drawn (the test's sentinel) */
     char src_syncing[40];    /* name of the source a Sync was sent for; the SOURCES reply that follows it toasts */
@@ -461,6 +476,9 @@ static uint32_t desk_flush(desk* d) {
         uint32_t px = sel_gui_present(d->canvas);
         uint32_t t_end = ch->clock_ms(ch);
         uint32_t dt = t_end - d->frame_t0;
+        if (d->report) { /* I525: when each repaint finished and how long it took */
+            fprintf(stderr, "frame end=%u ms=%u px=%u\n", (unsigned)t_end, (unsigned)dt, (unsigned)px);
+        }
         uint32_t paint = t_flush - d->frame_t0, present = t_end - t_flush;
         d->frame_open = 0;
         if (d->frame_flow != 0 && d->report) { /* I395: a cover flow frame, rest or slide */
@@ -2360,8 +2378,65 @@ static int32_t lib_gap(desk* d) {
     return 2 * lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
 }
 
+/* Sync on launch (I527): SOURCES rows the engine marked due (a remote source never synced, or stale) are offered in a banner
+ * under the Library heading, a row each with a checkbox, and Sync / Not now. Playback and browsing go on beside it. */
+enum { NAG_HEAD_H = 40, NAG_ROW_H = 32, NAG_BOX = 20, NAG_BTN_W = 112 };
+
+static uint32_t nag_count(const desk* d) {
+    uint32_t i, n = 0;
+    for (i = 0; i < d->src_n; i++) {
+        n += d->src[i].due ? 1u : 0u;
+    }
+    return n;
+}
+
+/* Height of the banner with the gap under it; 0 when nothing is due or a composer page replaces the tab row. */
+static int32_t lib_nag_h(desk* d) {
+    uint32_t n = nag_count(d);
+    if (n == 0u || sel_engine_state(d->engine)->composer_page != NULL) {
+        return 0;
+    }
+    return lpx(d, NAG_HEAD_H + NAG_ROW_H * (int32_t)n) + lib_gap(d);
+}
+
 static int32_t lib_tab_y(desk* d) {
-    return lpx(d, LIB_TITLE_Y + LIB_TITLE_H) + lib_gap(d);
+    return lpx(d, LIB_TITLE_Y + LIB_TITLE_H) + lib_gap(d) + lib_nag_h(d);
+}
+
+static sel_gui_rect nag_rect(desk* d, sel_gui_rect mn) {
+    int32_t mg = lpx(d, LIB_MARGIN);
+    return rect_of(mn.x + mg, mn.y + lpx(d, LIB_TITLE_Y + LIB_TITLE_H) + lib_gap(d), mn.w - 2 * mg, lib_nag_h(d) - lib_gap(d));
+}
+
+static sel_gui_rect nag_sync_rect(desk* d, sel_gui_rect mn) {
+    sel_gui_rect r = nag_rect(d, mn);
+    return rect_of(r.x + r.w - lpx(d, 16 + NAG_BTN_W), r.y + lpx(d, 4), lpx(d, NAG_BTN_W), lpx(d, 32));
+}
+
+static sel_gui_rect nag_later_rect(desk* d, sel_gui_rect mn) {
+    sel_gui_rect s = nag_sync_rect(d, mn);
+    return rect_of(s.x - lpx(d, 8 + NAG_BTN_W), s.y, lpx(d, NAG_BTN_W), s.h);
+}
+
+/* The k-th due source's row: its index in src[] through *idx, its rectangle returned. */
+static sel_gui_rect nag_row_rect(desk* d, sel_gui_rect mn, uint32_t k, uint32_t* idx) {
+    sel_gui_rect r = nag_rect(d, mn);
+    uint32_t i, seen = 0;
+    *idx = 0;
+    for (i = 0; i < d->src_n; i++) {
+        if (d->src[i].due) {
+            if (seen++ == k) {
+                *idx = i;
+                break;
+            }
+        }
+    }
+    return rect_of(r.x, r.y + lpx(d, NAG_HEAD_H + NAG_ROW_H * (int32_t)k), r.w, lpx(d, NAG_ROW_H));
+}
+
+static sel_gui_rect nag_box_rect(desk* d, sel_gui_rect row) {
+    int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]), b = lpx(d, NAG_BOX);
+    return rect_of(row.x + pad, row.y + (row.h - b) / 2, b, b);
 }
 
 static int32_t lib_list_y(desk* d) {
@@ -2387,6 +2462,8 @@ static const char* lib_next(const char* p) {
 static int lib_view_on(const desk* d, const sel_state* st);
 static int lib_grid_on(const desk* d, const sel_state* st);
 static void draw_lib_sources(desk* d, sel_gui_rect mn);
+static void draw_lib_nag(desk* d, sel_gui_rect mn);
+static void src_sync_send(desk* d, uint32_t i);
 static sel_gui_rect src_toggle_rect(desk* d, sel_gui_rect r);
 static sel_gui_rect src_sync_rect(desk* d, sel_gui_rect r);
 /* The Library lists the UI draws itself (the composers and a composer's songs) scroll by a pixel offset, lib_q16, as the
@@ -3959,6 +4036,19 @@ static const char* library_dump_build(desk* d) {
         sel_gui_rect tr = lib_tab_rect(d, panel_rect(d, "main"), i);
         o = dump_put(d, o, "tab %u %d %d %d %d\n", (unsigned)i, (int)tr.x, (int)tr.y, (int)tr.w, (int)tr.h);
     }
+    {
+        uint32_t k, n = nag_count(d), idx;
+        sel_gui_rect pm = panel_rect(d, "main");
+        o = dump_put(d, o, "nag %u syncs %u\n", (unsigned)(lib_nag_h(d) > 0 ? n : 0u), (unsigned)d->nag_syncs);
+        if (lib_nag_h(d) > 0) {
+            sel_gui_rect sy = nag_sync_rect(d, pm), lt = nag_later_rect(d, pm);
+            o = dump_put(d, o, "nagsync %d %d %d %d\nnaglater %d %d %d %d\n", (int)sy.x, (int)sy.y, (int)sy.w, (int)sy.h, (int)lt.x, (int)lt.y, (int)lt.w, (int)lt.h);
+            for (k = 0; k < n; k++) {
+                sel_gui_rect row = nag_row_rect(d, pm, k, &idx), bx = nag_box_rect(d, row);
+                o = dump_put(d, o, "nagrow %u %s|%d %d %d %d %d\n", (unsigned)k, d->src[idx].key, !(d->nag_off & (1u << idx)), (int)bx.x, (int)bx.y, (int)bx.w, (int)bx.h);
+            }
+        }
+    }
     if (d->lib_mode == 5u) { /* the Sources tab: the held SOURCES rows and the rects of their switches (I265) */
         o = dump_put(d, o, "sources %u draws %u\n", (unsigned)d->src_n, (unsigned)d->src_draws);
         for (i = 0; i < d->src_n; i++) {
@@ -4232,6 +4322,10 @@ static const char* library_dump_build(desk* d) {
                               (int)d->hover_box.w, (int)d->hover_box.h, (unsigned)d->hover_fill,
                               (unsigned)ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_HOVER]), (unsigned)d->hover_paints, (int)d->hover_tile);
         o = dump_put(d, o, "hover_ink=%d\n", (int)d->ink_in);
+        o = dump_put(d, o, "turns idle=%u present=%u scan=%u input=%u viz=%u bits song=%u queue=%u transport=%u progress=%u volume=%u status=%u\n",
+                     (unsigned)d->turn_why[0], (unsigned)d->turn_why[1], (unsigned)d->turn_why[2], (unsigned)d->turn_why[3],
+                     (unsigned)d->turn_why[4], (unsigned)d->turn_bits[0], (unsigned)d->turn_bits[1], (unsigned)d->turn_bits[2],
+                     (unsigned)d->turn_bits[3], (unsigned)d->turn_bits[4], (unsigned)d->turn_bits[5]);
 #if defined(SELECTA_DESKTOP_SDL) && !defined(SELECTA_DESKTOP_RTG) && !defined(SELECTA_DESKTOP_AGA)
         if (d->sdl != NULL) { /* I291: input to present, and the cost of a wheel notch, in microseconds */
             desk_sdl_lat lt;
@@ -4609,6 +4703,9 @@ static void draw_library(desk* d) {
                 draw_lib_styles(d, mn, st);
             }
         }
+        if (lib_nag_h(d) > 0) {
+            draw_lib_nag(d, mn);
+        }
         for (m = 0; m < LIB_MODES; m++) { /* the mode tabs: the active one in the accent colour */
             sel_gui_rect tr = lib_tab_rect(d, mn, m);
             if (m == d->lib_mode) { /* the active tab is filled like the selected Home and Search chips (I362) */
@@ -4779,17 +4876,91 @@ static int src_click(desk* d, sel_gui_rect mn, int32_t x, int32_t y) {
             return src_toggle_send(d, i);
         }
         if (src_remote(d, i) && d->src[i].enabled && in_rect(src_sync_rect(d, r), x, y)) {
-            char line[256], msg[64];
-            snprintf(line, sizeof line, "LIBRARY_SYNC %s \"%s\"", d->src[i].key, d->src[i].path);
-            snprintf(d->src_syncing, sizeof d->src_syncing, "%s", d->src[i].name);
-            snprintf(msg, sizeof msg, "Syncing %s", d->src[i].name);
-            desk_toast(d, msg);
-            desk_send(d, line);
+            src_sync_send(d, i);
             d->src_wait = 1;
             return desk_send(d, "SOURCES");
         }
     }
     return 0;
+}
+
+/* One LIBRARY_SYNC per ticked source, the same message the Sources page Sync button sends (src_sync_send). */
+static void src_sync_send(desk* d, uint32_t i) {
+    char line[256], msg[64];
+    snprintf(line, sizeof line, "LIBRARY_SYNC %s \"%s\"", d->src[i].key, d->src[i].path);
+    snprintf(d->src_syncing, sizeof d->src_syncing, "%s", d->src[i].name);
+    snprintf(msg, sizeof msg, "Syncing %s", d->src[i].name);
+    desk_toast(d, msg);
+    desk_send(d, line);
+}
+
+/* A click on the sync offer; 1 when it hit one of its controls. The reply to SOURCES clears the banner: the synced sources
+ * are no longer due, and Not now stores library.sync_notice_at, which the engine counts from. */
+static void nag_dismiss(desk* d) {
+    char line[96];
+    snprintf(line, sizeof line, "PREF_SET library.sync_notice_at %lld", (long long)time(NULL));
+    desk_send(d, line);
+    d->src_wait = 1;
+    desk_send(d, "SOURCES");
+}
+
+static int nag_click(desk* d, sel_gui_rect mn, int32_t x, int32_t y) {
+    uint32_t k, n = nag_count(d), idx;
+    for (k = 0; k < n; k++) {
+        sel_gui_rect row = nag_row_rect(d, mn, k, &idx);
+        if (in_rect(row, x, y)) {
+            d->nag_off ^= 1u << idx;
+            d->repaint = 1;
+            return 1;
+        }
+    }
+    if (in_rect(nag_sync_rect(d, mn), x, y)) {
+        for (k = 0; k < n; k++) {
+            (void)nag_row_rect(d, mn, k, &idx);
+            if (!(d->nag_off & (1u << idx))) {
+                src_sync_send(d, idx);
+                d->nag_syncs++;
+            }
+        }
+        /* The unticked sources are a decision too: ask again at the next stale point, as Not now does. */
+        nag_dismiss(d);
+        return 1;
+    }
+    if (in_rect(nag_later_rect(d, mn), x, y)) {
+        nag_dismiss(d);
+        return 1;
+    }
+    return 0;
+}
+
+static void draw_lib_nag(desk* d, sel_gui_rect mn) {
+    uint32_t k, n = nag_count(d), idx;
+    sel_gui_rect r = nag_rect(d, mn);
+    uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+    int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    char head[96];
+    sel_gui_round_rect(d->canvas, r, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+    snprintf(head, sizeof head, "%u source%s not synced for a while", (unsigned)n, n == 1u ? "" : "s");
+    draw_text(d, rect_of(r.x + pad, r.y, r.w / 2, lpx(d, NAG_HEAD_H)), head, 1, 15, text);
+    draw_button(d, nag_later_rect(d, mn), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Not now", 14, text);
+    draw_button(d, nag_sync_rect(d, mn), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), "Sync", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+    for (k = 0; k < n; k++) {
+        sel_gui_rect row = nag_row_rect(d, mn, k, &idx), bx = nag_box_rect(d, row);
+        int on = !(d->nag_off & (1u << idx));
+        char line[96];
+        sel_gui_round_rect(d->canvas, bx, lpx(d, 4), on ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]));
+        if (on) {
+            sel_gui_rect in = rect_of(bx.x + bx.w / 4, bx.y + bx.h / 4, bx.w / 2, bx.h / 2);
+            sel_gui_round_rect(d->canvas, in, lpx(d, 2), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+        }
+        if (d->src[idx].synced > 0) {
+            snprintf(line, sizeof line, "%s, last synced %lld days ago", d->src[idx].name, (long long)((time(NULL) - d->src[idx].synced) / 86400));
+        } else {
+            snprintf(line, sizeof line, "%s, never synced", d->src[idx].name);
+        }
+        draw_text(d, rect_of(bx.x + bx.w + pad, row.y, row.w / 2, row.h), line, 0, 14, on ? text : muted);
+    }
+    sel_gui_dirty_add(d->canvas, r);
 }
 
 static void draw_lib_sources(desk* d, sel_gui_rect mn) {
@@ -4963,6 +5134,9 @@ static int library_click(desk* d, int32_t x, int32_t y) {
     }
     if (st->composer_page == NULL) {
         uint32_t m;
+        if (lib_nag_h(d) > 0 && nag_click(d, mn, x, y)) {
+            return 1;
+        }
         for (m = 0; m < LIB_MODES; m++) {
             if (in_rect(lib_tab_rect(d, mn, m), x, y)) {
                 return lib_set_mode(d, m);
@@ -7685,7 +7859,11 @@ static void desk_sdl_route(desk* d) {
             (void)desk_route_input(d, &ev);
             desk_sdl_note_cost(d->sdl, t0);
         } else {
-            (void)desk_route_input(d, &ev);
+            int hit = desk_route_input(d, &ev);
+            if (d->report && ev.kind != SEL_GUI_IN_MOVE) { /* I525: one line per pointer event, for the click latency measure */
+                fprintf(stderr, "input t=%u kind=%d x=%d y=%d hit=%d\n", (unsigned)desk_sdl_ticks(), (int)ev.kind, (int)ev.x,
+                        (int)ev.y, hit);
+            }
         }
     }
 }
@@ -8327,6 +8505,10 @@ static void* desk_open(const sel_ui_open_args* a) {
 #ifdef SELECTA_DESKTOP_AGA
     want_sdl = want_sdl || (backend != NULL && strcmp(backend, "aga") == 0);
 #endif
+    for (i = 0; i < a->argc; i++) {
+        g_desk_trace = g_desk_trace || strcmp(a->argv[i], "--stats") == 0;
+    }
+    desk_trace(a->host, "desk_open begin");
     if (backend != NULL && strcmp(backend, "mem") != 0 && !want_sdl) {
         fprintf(stderr, "selecta: desktop backend '%s' is not mem or sdl\n", backend);
         return NULL;
@@ -8416,7 +8598,9 @@ static void* desk_open(const sel_ui_open_args* a) {
         d->scale = sc;
         d->scale_q16 = sc * 65536;
     }
+    desk_trace(a->host, "desk_open before icons");
     desk_build_icons(d);
+    desk_trace(a->host, "desk_open icons built");
     d->icon_rebuilds = 0u; /* the first build is not a rebuild */
     {
         int32_t def_w = 1280, def_h = 800;
@@ -8441,6 +8625,9 @@ static void* desk_open(const sel_ui_open_args* a) {
         if (strcmp(a->argv[i], "--stats") == 0) {
             d->report = 1;
             desk_prof_attach(d);
+#ifdef SELECTA_DESKTOP_AGA
+            desk_amiga_input_trace = 1; /* I525: stamped/taken times and down/up counts of every button */
+#endif
         }
         if (strcmp(a->argv[i], "--resize") == 0 && i + 1 < a->argc) {
             d->resize = a->argv[i + 1];
@@ -8477,7 +8664,9 @@ static void* desk_open(const sel_ui_open_args* a) {
             desk_close(d);
             return NULL;
         }
+        desk_trace(a->host, "desk_open canvas made, backend (screen) open begin");
         d->sdl = desk_backend_open(d->canvas->w, d->canvas->h, d->canvas->format == SEL_GUI_INDEX8);
+        desk_trace(a->host, "desk_open backend (screen) open done");
         if (d->sdl == NULL) {
             desk_close(d);
             return NULL;
@@ -8490,6 +8679,7 @@ static void* desk_open(const sel_ui_open_args* a) {
         d->icon_rebuilds = 0u;
         desk_relayout(d);
     }
+    desk_trace(a->host, "desk_open scale applied");
     d->art = art_open(a->art);
     sel_gui_timeline_init(&d->tl);
     sel_uim_init(&d->uim);
@@ -8510,7 +8700,9 @@ static void* desk_open(const sel_ui_open_args* a) {
     } else if (d->textsheet || d->widgets) {
         d->dirty_total = 0; /* drawn on the first turn, after the --exec commands queued their names */
     } else {
+        desk_trace(a->host, "desk_open first present begin");
         desk_present(d);
+        desk_trace(a->host, "desk_open first present done");
     }
     return d;
 }
@@ -8540,16 +8732,22 @@ static void desk_on_event(void* state, const sel_message* evt) {
                 d->src_syncing[0] = '\0';
             }
         }
+        int changed = 1;
         if (d->src_n < sizeof d->src / sizeof d->src[0]) {
             uint32_t n = d->src_n++;
+            unsigned char before[sizeof d->src[0]]; /* the row held from the last SOURCES answer: an identical answer paints nothing new */
+            memcpy(before, &d->src[n], sizeof before);
             snprintf(d->src[n].key, sizeof d->src[n].key, "%s", (const char*)sel_tag_find(t, SEL_SRC_KEY, (uintptr_t)""));
             snprintf(d->src[n].kind, sizeof d->src[n].kind, "%s", (const char*)sel_tag_find(t, SEL_SRC_KIND, (uintptr_t)""));
             snprintf(d->src[n].name, sizeof d->src[n].name, "%s", (const char*)sel_tag_find(t, SEL_SRC_NAME, (uintptr_t)""));
             snprintf(d->src[n].path, sizeof d->src[n].path, "%s", (const char*)sel_tag_find(t, SEL_SRC_PATH, (uintptr_t)""));
             d->src[n].enabled = sel_tag_find(t, SEL_SRC_ENABLED, 1) != 0;
             d->src[n].count = (uint32_t)sel_tag_find(t, SEL_SRC_COUNT, 0);
+            d->src[n].synced = (int64_t)sel_tag_find(t, SEL_SRC_SYNCED, 0);
+            d->src[n].due = sel_tag_find(t, SEL_SRC_DUE, 0) != 0;
+            changed = memcmp(before, &d->src[n], sizeof before) != 0;
         }
-        d->repaint = 1;
+        d->repaint |= changed && d->page == PG_LIBRARY; /* only the Library page draws these rows (banner, Sources tab); a page change repaints on its own */
         src_row = 1;
     }
     if (evt->id == SEL_EVT_LIBRARY_RESULT && d->scan_pending && !src_row) { /* a LIBRARY_SCAN finished: tell the user and refresh what the Library page lists */
@@ -8604,6 +8802,11 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
         return -1; /* the test card is one frame */
     }
     desk_library_follow(d);
+    if (!d->nag_asked) { /* sync on launch (I527): the engine marks remote sources never synced or stale in its SOURCES rows; asked on the first turn, when the engine answers UI events */
+        d->nag_asked = 1;
+        d->src_wait = 1;
+        desk_send(d, "SOURCES");
+    }
     if (d->textsheet) { /* the text sheet is one frame, drawn on the first turn */
         if (d->frames > 0u) {
             return -1;
@@ -8696,18 +8899,30 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
         d->uim.dirty |= SEL_UIM_DIRTY_PROGRESS;
     }
     vz = viz_tick(d); /* one visualizer frame per new engine block; the turn goes on, so ticks and the script still advance */
-    if (desk_present(d)) {
-        return 1;
+    {
+        uint32_t pend = d->uim.dirty, k;
+        if (desk_present(d)) {
+            d->turn_why[1]++;
+            for (k = 0u; k < 6u; k++) {
+                d->turn_bits[k] += (pend >> k) & 1u;
+            }
+            return 1;
+        }
     }
     if (!d->live && (d->scan_pending || desk_scan_active(d))) { /* I336: the scan runs on a job thread; a scripted or headless run keeps turning (and drawing the
                                         * progress) until its LIBRARY_RESULT arrives, so the script's next line sees the finished scan */
         desk_scan_nap();
+        d->turn_why[2]++;
         return 1;
     }
     if (d->input != NULL && !d->input_done && d->ticks == 0u && desk_replay_input(d)) { /* scripted input, once */
+        d->turn_why[3]++;
         return 1; /* every event flushed its own frame */
     }
-    if (vz) {
+    if (vz && !d->live) { /* I525: a live window goes on to the poll below, which waits up to the next engine block (20 ms)
+                           * for input; returning here skipped every wait during playback, so on AGA each turn ran c2p and
+                           * WaitTOF back to back at full CPU, clicks queued behind it and the other tasks starved */
+        d->turn_why[4]++;
         return 1;
     }
 #ifdef SELECTA_DESKTOP_SDL
@@ -8726,6 +8941,7 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
             wait_ms = desk_timers_wait(d);
         }
         (void)timeout_ms;
+        d->turn_why[0]++;
         {
             uint32_t p0 = desk_sdl_ticks();
             ev = desk_sdl_poll(d->sdl, wait_ms, &w, &h);

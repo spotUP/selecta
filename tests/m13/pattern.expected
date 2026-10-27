@@ -1,5 +1,5 @@
 SONG_OPENED {META_TITLE="selecta test",META_FORMAT=Protracker4,META_CHANNELS=4,META_SUBSONGS=1,META_SIZE=6166}
-POSITION 0 0 0 0
+POSITION 0 0 0 0 0 0 0
 TRACKER_INFO order=0 orders=4 patterns=0 rows=64 channels=4
 CELL order=0 row=0 channel=0 note=61 instrument=1 volume=0 effect=15 param=6
 CELL order=0 row=1 channel=0 note=0 instrument=0 volume=0 effect=0 param=0

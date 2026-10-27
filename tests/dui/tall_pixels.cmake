@@ -11,6 +11,7 @@
 #   4. The frame hash matches the golden (update only with SELECTA_GOLDEN_UPDATE=1).
 # Revert check: with the canvas ydiv forced to 1 the play button covers its full layout width in rows and check 2 fails.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+set(DUI_SYNC_BANNER ON) # I527: this test runs with the banner on (see dui_run.cmake)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")

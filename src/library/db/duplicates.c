@@ -191,21 +191,20 @@ static int hash_for_open(sqlite3* db, const char* key) {
     }
 }
 
-/* The group at row offset `after`: out = md5 NUL member count NUL best key NUL. */
+/* Every duplicate group (same md5, two or more songs), streamed through op->row in one query: md5, member count, best key (I528). */
 static int op_dup_next(sqlite3* db, const sel_genre_op* op, int64_t* id) {
     sqlite3_stmt* st = NULL;
+    int64_t rows = 0;
     int rc = sqlite3_prepare_v2(
         db,
         "SELECT md5, COUNT(*), (SELECT s2.key FROM songs s2 WHERE s2.md5 = s.md5 ORDER BY " SEL_SOURCE_RANK_SQL
         ", s2.id LIMIT 1) FROM songs s WHERE COALESCE(md5, '') <> '' GROUP BY md5 HAVING COUNT(*) > 1"
-        " ORDER BY MIN(id) LIMIT 1 OFFSET ?1",
+        " ORDER BY MIN(id)",
         -1, &st, NULL);
 
     *id = 0;
     if (rc != SQLITE_OK) return rc;
-    sqlite3_bind_int64(st, 1, op->after);
-    rc = sqlite3_step(st);
-    if (rc == SQLITE_ROW) {
+    while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
         char count[16];
         const char* f[3];
 
@@ -213,11 +212,12 @@ static int op_dup_next(sqlite3* db, const sel_genre_op* op, int64_t* id) {
         f[0] = (const char*)sqlite3_column_text(st, 0);
         f[1] = count;
         f[2] = (const char*)sqlite3_column_text(st, 2);
-        if (pack(op, f, 3)) *id = op->after + 1;
-        rc = SQLITE_DONE;
+        rows++;
+        if (op->row(op->row_ctx, f) != 0) break;
     }
     sqlite3_finalize(st);
-    return rc == SQLITE_DONE ? SQLITE_OK : rc;
+    *id = rows;
+    return rc == SQLITE_ROW || rc == SQLITE_DONE ? SQLITE_OK : rc;
 }
 
 /* The best song key among the songs sharing the md5 of song key `key`. out = best key NUL; reply id = 1 when found. */
@@ -256,7 +256,7 @@ int sel_library_duplicates_op(sel_library* lib, const sel_genre_op* op, int* fou
     *id = 0;
     if (op->op == SEL_DUP_HASH) {
         rc = op_hash(lib->db, op, id);
-    } else if (op->op == SEL_DUP_NEXT && op->out != NULL) {
+    } else if (op->op == SEL_DUP_NEXT && op->row != NULL) {
         rc = op_dup_next(lib->db, op, id);
     } else if (op->op == SEL_BEST_SOURCE && op->out != NULL && op->key != NULL) {
         rc = op_best(lib->db, op, id);
@@ -455,30 +455,30 @@ void sel_library_hash_stats(sel_library* lib, sel_hash_stats* out) {
 
 #endif
 
+typedef struct dup_sink {
+    sel_dup_row_fn fn;
+    void* ctx;
+} dup_sink;
+
+static int dup_row(void* ctx, const char* const* f) {
+    dup_sink* k = ctx;
+
+    if (k->fn != NULL) k->fn(k->ctx, f[0], atoi(f[1]), f[2]);
+    return 0;
+}
+
 int sel_library_duplicates(sel_library* lib, sel_dup_row_fn fn, void* ctx) {
-    char buf[1536];
-    int64_t id = 0;
-    int rows = 0;
+    dup_sink k = {fn, ctx};
+    sel_genre_op op;
+    int64_t rows = 0;
 
     if (lib == NULL || sel_library_hash_local(lib) < 0) return -1;
-    for (;;) {
-        sel_genre_op op;
-        const char* count;
-        const char* best;
-
-        memset(&op, 0, sizeof op);
-        op.op = SEL_DUP_NEXT;
-        op.after = id;
-        op.out = buf;
-        op.out_cap = sizeof buf;
-        if (sel_genre_call(lib, &op, &id) < 0) return -1;
-        if (id == 0) break;
-        count = buf + strlen(buf) + 1u;
-        best = count + strlen(count) + 1u;
-        if (fn != NULL) fn(ctx, buf, atoi(count), best);
-        rows++;
-    }
-    return rows;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_DUP_NEXT;
+    op.row = dup_row;
+    op.row_ctx = &k;
+    if (sel_genre_call(lib, &op, &rows) < 0) return -1;
+    return (int)rows;
 }
 
 int sel_library_best_source(sel_library* lib, const char* song_key, char* out, size_t cap) {

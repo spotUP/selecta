@@ -1338,6 +1338,16 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/song_key.cmake")
   set_tests_properties(song-key PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "song_key_ok")
 
+  # I535: per-source song counts kept by schema v8 triggers, read by SOURCES without a scan of songs.
+  add_test(NAME source-songs
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>"
+      "-DSEL=${CMAKE_CURRENT_SOURCE_DIR}/m3/sources.sel"
+      "-DSQLITE3=${SEL_SQLITE3_META}"
+      "-DCWD=${CMAKE_CURRENT_BINARY_DIR}/songs"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/source_songs"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/source_songs.cmake")
+  set_tests_properties(source-songs PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_songs_ok")
+
   add_executable(key_remote_test m3/key_remote_test.c)
   target_link_libraries(key_remote_test PRIVATE selecta_core)
   add_test(NAME key-remote COMMAND key_remote_test)
@@ -1922,6 +1932,13 @@ if(NOT SEL_AMIGA)
   add_test(NAME library-sync-dispatch COMMAND library_sync_dispatch_test)
   set_tests_properties(library-sync-dispatch PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_sync_dispatch_ok")
 
+  # I527: LIBRARY_SYNC runs on the library job thread; the pump returns while a blocking sync runs, a second sync and a scan queue.
+  add_executable(library_sync_async_test engine/library_sync_async_test.c)
+  target_include_directories(library_sync_async_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(library_sync_async_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-sync-async COMMAND library_sync_async_test)
+  set_tests_properties(library-sync-async PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "library_sync_async_ok")
+
   # I517 phase 3: a source that exists only as a plugin (tests/sources/testsrc) reaches SOURCES, LIBRARY_SYNC and the Sources page.
   add_executable(src_plugin_reach_test engine/src_plugin_reach_test.c)
   target_include_directories(src_plugin_reach_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
@@ -1933,6 +1950,12 @@ if(NOT SEL_AMIGA)
   file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/src-plugin-reach.tmp")
   set_tests_properties(src-plugin-reach PROPERTIES LABELS m3 TIMEOUT 120 PASS_REGULAR_EXPRESSION "src_plugin_reach_ok"
     ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/src-plugin-reach.tmp")
+
+  # I527: the stale decision behind the sync-on-launch banner (never synced, fresh, stale, dismissed, off).
+  add_executable(source_sync_due_test engine/source_sync_due_test.c)
+  target_link_libraries(source_sync_due_test PRIVATE selecta_core)
+  add_test(NAME source-sync-due COMMAND source_sync_due_test)
+  set_tests_properties(source-sync-due PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_sync_due_ok")
 
   # I195c: STOP sends racing the pump never lose their net cancel (threads, many iterations).
   add_executable(cancel_race_test engine/cancel_race_test.c)

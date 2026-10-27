@@ -301,3 +301,4 @@ int desk_aga_poll(desk_aga* b, uint32_t timeout_ms) {
 }
 
 int desk_aga_next_input(desk_aga* b, sel_gui_input* ev) { return desk_amiga_input_next(&b->in, ev); }
+int desk_aga_open_folder_dialog(desk_aga* b) { return desk_amiga_input_pick_folder(&b->in, b->screen); }

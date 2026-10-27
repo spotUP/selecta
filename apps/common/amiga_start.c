@@ -89,6 +89,9 @@ int sel_amiga_run_with_stack(int (*body)(int, char**), int argc, char** argv, un
         fputs("amiga_start: stack overflow, canary at the stack bottom overwritten (stack too small)\n", stderr);
         g_rc = 1;
     }
+#ifdef SEL_STACKMEASURE /* I523: the high-water mark of the swapped stack */
+    fprintf(stderr, "amiga_start: stack used %lu of %lu bytes\n", bytes - sel_stack_untouched(mem, bytes), bytes);
+#endif
     g_stack_low = NULL;
     FreeMem(mem, bytes + SEL_STACK_GUARD);
     return g_rc;

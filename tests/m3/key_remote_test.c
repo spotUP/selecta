@@ -1,5 +1,5 @@
 /* I211b: the cache and DEViLBOX paths take their remote-source decision from the source table, so every registered
- * remote source (modland, hvsc, hippo, ...) works and local keys, plain paths and URLs do not. */
+ * remote source (the builtins modland and hippo; plugin sources are not registered in this test) works and local keys, plain paths and URLs do not. */
 #include "../../src/library/cache.h"
 #include "../../src/library/net/devilbox.h"
 #include "../../src/library/source.h"
@@ -17,8 +17,7 @@ static void check(int ok, const char* what) {
 }
 
 int main(void) {
-    static const char* const remote[] = {"modland:p/purple.xm", "hvsc:MUSICIANS/H/Hubbard_Rob/Commando.sid",
-                                         "hippo:LMan_SID_Chip_Club.prg"};
+    static const char* const remote[] = {"modland:p/purple.xm", "hippo:LMan_SID_Chip_Club.prg"};
     static const char* const not_remote[] = {"local:selecta-test.mod", "selecta-test.mod", "nosuch:x/y.mod",
                                              "http://x.test/a.mp3", "modland:", "radio:station"};
     char source[16];

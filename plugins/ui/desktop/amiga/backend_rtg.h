@@ -40,6 +40,8 @@ int desk_rtg_poll(desk_rtg* b, uint32_t timeout_ms);
 uint32_t desk_rtg_ticks(void);
 /* Pops the oldest queued input; 0 when empty. The queue holds 64 events and drops the newest beyond that. */
 int desk_rtg_next_input(desk_rtg* b, sel_gui_input* ev);
+/* Add folder (I531): an asl.library drawers-only requester on this screen; the chosen drawer is queued as a drop. */
+int desk_rtg_open_folder_dialog(desk_rtg* b);
 
 /* The sdl names desktop_ui.c uses, served by this backend. */
 #define desk_sdl desk_rtg
@@ -60,7 +62,7 @@ int desk_rtg_next_input(desk_rtg* b, sel_gui_input* ev);
 #define desk_sdl_presents desk_rtg_presents
 #define desk_sdl_poll(b, ms, w, h) ((void)(w), (void)(h), desk_rtg_poll((b), (ms)))
 #define desk_sdl_ticks desk_rtg_ticks
-#define desk_sdl_open_folder_dialog(b) ((void)(b), 0)
+#define desk_sdl_open_folder_dialog desk_rtg_open_folder_dialog
 #define desk_sdl_next_input desk_rtg_next_input
 #define desk_sdl_now_ns() ((uint64_t)0u) /* wheel cost timing (I291) is SDL only */
 #define desk_sdl_note_cost(b, t0) ((void)(b), (void)(t0))

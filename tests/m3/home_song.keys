@@ -1,6 +1,8 @@
-# T91 home-view (I191a): Enter on the first Recently played row (second row of the view) starts that song.
+# T91 home-view (I191a): Enter on the first Recently played row (fourth row of the view, after the Quick picks heading and tile, I478) starts that song.
 H
 wait 300
+Down
+Down
 Down
 Enter
 wait 500

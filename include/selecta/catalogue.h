@@ -19,6 +19,21 @@ typedef struct sel_catalogue_song {
     int32_t year;        /* 0 = unknown */
 } sel_catalogue_song;
 
+/* Side data for a song that already has a row (HVSC Songlengths.md5 and STIL): stickers are name/value notes stored
+ * under the song. */
+typedef struct sel_catalogue_sticker {
+    const char* name;
+    const char* value;
+} sel_catalogue_sticker;
+
+typedef struct sel_catalogue_note {
+    const char* path;   /* path inside the source; a path without a row is skipped */
+    const char* md5;    /* "" or NULL = keep */
+    int32_t duration_ms; /* 0 = keep */
+    const sel_catalogue_sticker* stickers;
+    uint32_t sticker_n;
+} sel_catalogue_note;
+
 typedef struct sel_catalogue_dir_sink {
     void* ctx;
     int (*entry)(void* ctx, const char* name, int is_dir); /* nonzero stops the listing */
@@ -43,6 +58,9 @@ typedef struct sel_catalogue {
     int (*list_dir)(const sel_host* host, const char* path, const sel_catalogue_dir_sink* sink);
     /* Epoch seconds the engine stamps on new rows. */
     int64_t (*now)(const sel_host* host);
+    /* Writes `count` notes onto songs already in the library, after the queued rows. Returns the number of songs
+     * annotated, or -1 when the batch is rejected. */
+    int32_t (*annotate)(const sel_host* host, const sel_catalogue_note* notes, uint32_t count);
 } sel_catalogue;
 
 SEL_EXTERN_C_END

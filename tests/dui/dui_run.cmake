@@ -3,6 +3,13 @@
 #   dui_stat(<out var> <stdout> <ui id> <key>) reads key=value from the `ui_stats id=<ui id>` line.
 function(dui_run outvar)
   file(MAKE_DIRECTORY "${WORK}")
+  # I527: the sync-on-launch banner shifts the Library layout once the launch SOURCES reply arrives, and the fixtures hold
+  # never-synced remote sources. Tests that are not about the banner start with it switched off (library.sync_stale_days=0);
+  # a test that wants it sets DUI_SYNC_BANNER before calling dui_run.
+  if(NOT DUI_SYNC_BANNER AND NOT EXISTS "${WORK}/cfg/prefs.conf")
+    file(MAKE_DIRECTORY "${WORK}/cfg")
+    file(WRITE "${WORK}/cfg/prefs.conf" "library.sync_stale_days=0\n")
+  endif()
   execute_process(
     COMMAND "${SELECTA}" --output null --size 80x25 --config-dir "${WORK}/cfg" ${ARGN}
     OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)

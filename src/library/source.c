@@ -6,14 +6,12 @@
 #include <stdio.h>
 #include <string.h>
 
-#define SOURCE_MAX 16u
-
-static const sel_source* g_sources[SOURCE_MAX];
+static const sel_source* g_sources[SEL_SOURCE_MAX];
 static uint32_t g_count;
 
 int sel_source_register(const sel_source* src) {
     if (src == NULL || src->id == NULL || src->id[0] == '\0' || strlen(src->id) >= SEL_SOURCE_ID_MAX ||
-        strchr(src->id, ':') != NULL || g_count >= SOURCE_MAX || sel_source_find(src->id) != NULL) {
+        strchr(src->id, ':') != NULL || g_count >= SEL_SOURCE_MAX || sel_source_find(src->id) != NULL) {
         return 0;
     }
     g_sources[g_count++] = src;
@@ -108,9 +106,6 @@ void sel_source_register_builtin(void) {
     }
     if (sel_source_find("modland") == NULL) {
         (void)sel_source_register(sel_source_modland());
-    }
-    if (sel_source_find("hvsc") == NULL) {
-        (void)sel_source_register(sel_source_hvsc());
     }
     if (sel_source_find("hippo") == NULL) {
         (void)sel_source_register(sel_source_hippo());

@@ -117,7 +117,80 @@ static const char SCHEMA_V5[] =
 /* v6 (I296): 1 marks a song_composers row written from the scanned file's author tag; the songdb sync replaces it. */
 static const char SCHEMA_V6[] = "ALTER TABLE song_composers ADD COLUMN tag INTEGER NOT NULL DEFAULT 0;";
 
-static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6};
+/* v7 (I528): the composer list as a maintained table. composers holds one row per canonical spelling: display is the MIN(display)
+ * of its song_composers rows, songs the row count (song_composers is keyed by (song_key, canon), so a row is a distinct song).
+ * composer_spellings counts the rows per (canon, display), so the MIN(display) after a delete is a seek among the few spellings
+ * of one canon, not a scan of its song rows (and no new index on the 500 000-row song_composers, whose build does not fit the
+ * SQLite heap). composer_unknown counts the songs rows without any song_composers row (the "Unknown composer" group).
+ * Triggers keep all three current from every write path (scan, songdb sync, song remove, Clear Library), so the list is a plain
+ * read. No path updates song_composers.song_key; the only songs.key update (the scan.c rename) is covered by the songs trigger. */
+#define V7_ADD(r) \
+    "INSERT INTO composer_spellings(canon, display, n) VALUES(" r ".canon, " r ".display, 1)" \
+    " ON CONFLICT(canon, display) DO UPDATE SET n = n + 1;" \
+    "INSERT INTO composers(canon, display, songs) VALUES(" r ".canon, " r ".display, 1)" \
+    " ON CONFLICT(canon) DO UPDATE SET songs = songs + 1, display = MIN(display, excluded.display);"
+#define V7_DROP(r) \
+    "UPDATE composer_spellings SET n = n - 1 WHERE canon = " r ".canon AND display = " r ".display;" \
+    "DELETE FROM composer_spellings WHERE canon = " r ".canon AND display = " r ".display AND n <= 0;" \
+    "UPDATE composers SET songs = songs - 1,"  \
+    " display = COALESCE((SELECT MIN(display) FROM composer_spellings WHERE canon = " r ".canon), display)" \
+    " WHERE canon = " r ".canon;" \
+    "DELETE FROM composers WHERE canon = " r ".canon AND songs <= 0;"
+static const char SCHEMA_V7[] =
+    "CREATE TABLE composers(canon TEXT PRIMARY KEY, display TEXT NOT NULL, songs INTEGER NOT NULL) WITHOUT ROWID;"
+    "CREATE INDEX composers_by_name ON composers(display, canon, songs);"
+    "CREATE TABLE composer_spellings(canon TEXT NOT NULL, display TEXT NOT NULL, n INTEGER NOT NULL,"
+    " PRIMARY KEY(canon, display)) WITHOUT ROWID;"
+    "CREATE TABLE composer_unknown(n INTEGER NOT NULL);"
+    "INSERT INTO composer_spellings(canon, display, n) SELECT canon, display, 1 FROM song_composers WHERE 1"
+    " ON CONFLICT(canon, display) DO UPDATE SET n = n + 1;"
+    "INSERT INTO composers(canon, display, songs) SELECT canon, MIN(display), SUM(n) FROM composer_spellings GROUP BY canon;"
+    "INSERT INTO composer_unknown(n) SELECT COUNT(*) FROM songs WHERE NOT EXISTS"
+    " (SELECT 1 FROM song_composers c WHERE c.song_key = songs.key);"
+    "CREATE TRIGGER song_composers_ai AFTER INSERT ON song_composers BEGIN "
+    V7_ADD("new")
+    "UPDATE composer_unknown SET n = n - 1 WHERE EXISTS (SELECT 1 FROM songs WHERE key = new.song_key)"
+    " AND (SELECT COUNT(*) FROM song_composers WHERE song_key = new.song_key) = 1;"
+    "END;"
+    "CREATE TRIGGER song_composers_ad AFTER DELETE ON song_composers BEGIN "
+    V7_DROP("old")
+    "UPDATE composer_unknown SET n = n + 1 WHERE EXISTS (SELECT 1 FROM songs WHERE key = old.song_key)"
+    " AND NOT EXISTS (SELECT 1 FROM song_composers WHERE song_key = old.song_key);"
+    "END;"
+    "CREATE TRIGGER song_composers_au AFTER UPDATE OF canon, display ON song_composers BEGIN "
+    V7_DROP("old")
+    V7_ADD("new")
+    "END;"
+    "CREATE TRIGGER songs_composers_ai AFTER INSERT ON songs BEGIN "
+    "UPDATE composer_unknown SET n = n + 1 WHERE NOT EXISTS (SELECT 1 FROM song_composers WHERE song_key = new.key);"
+    "END;"
+    "CREATE TRIGGER songs_composers_ad AFTER DELETE ON songs BEGIN "
+    "UPDATE composer_unknown SET n = n - 1 WHERE NOT EXISTS (SELECT 1 FROM song_composers WHERE song_key = old.key);"
+    "END;"
+    "CREATE TRIGGER songs_composers_au AFTER UPDATE OF key ON songs WHEN new.key <> old.key BEGIN "
+    "UPDATE composer_unknown SET n = n - (NOT EXISTS (SELECT 1 FROM song_composers WHERE song_key = old.key))"
+    " + (NOT EXISTS (SELECT 1 FROM song_composers WHERE song_key = new.key));"
+    "END;";
+
+/* v8 (I535): the songs count per source as a maintained table. The Sources page asks for every source's count on the UI
+ * thread; COUNT(*) FROM songs WHERE source = ? has no index and scans the whole table per source (2.2 s for 8 sources on a
+ * 520 000-song library). An index on songs(source) would fix the read, but its build has the same heap cost on the Amiga as
+ * the v7 note above, so the count is kept by triggers like the v7 composer tables: the read is one primary key seek. */
+#define V8_ADD(r) \
+    "INSERT INTO source_songs(source, n) VALUES(" r ".source, 1) ON CONFLICT(source) DO UPDATE SET n = n + 1;"
+#define V8_DROP(r) \
+    "UPDATE source_songs SET n = n - 1 WHERE source = " r ".source;" \
+    "DELETE FROM source_songs WHERE source = " r ".source AND n <= 0;"
+static const char SCHEMA_V8[] =
+    "CREATE TABLE source_songs(source TEXT PRIMARY KEY, n INTEGER NOT NULL) WITHOUT ROWID;"
+    "INSERT INTO source_songs(source, n) SELECT source, 1 FROM songs WHERE 1 ON CONFLICT(source) DO UPDATE SET n = n + 1;"
+    "CREATE TRIGGER songs_source_ai AFTER INSERT ON songs BEGIN " V8_ADD("new") "END;"
+    "CREATE TRIGGER songs_source_ad AFTER DELETE ON songs BEGIN " V8_DROP("old") "END;"
+    "CREATE TRIGGER songs_source_au AFTER UPDATE OF source ON songs WHEN new.source <> old.source BEGIN "
+    V8_DROP("old") V8_ADD("new") "END;";
+
+static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4,
+                                           SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 
