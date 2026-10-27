@@ -868,6 +868,7 @@ static int library_sync(int argc, char** argv) {
     }
     sel_engine_send_line(e, line, pool, sizeof pool);
     sel_engine_pump(e, on_event, &sink);
+    sel_engine_scan_wait(e, on_event, &sink); /* the sync runs on the job thread (I527) */
     sel_engine_sync_info(e, &info);
     memset(&st, 0, sizeof st);
     if (!sel_library_call(lib, SEL_LIB_REQ_STATS, &st)) {

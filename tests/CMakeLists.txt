@@ -1922,6 +1922,13 @@ if(NOT SEL_AMIGA)
   add_test(NAME library-sync-dispatch COMMAND library_sync_dispatch_test)
   set_tests_properties(library-sync-dispatch PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_sync_dispatch_ok")
 
+  # I527: LIBRARY_SYNC runs on the library job thread; the pump returns while a blocking sync runs, a second sync and a scan queue.
+  add_executable(library_sync_async_test engine/library_sync_async_test.c)
+  target_include_directories(library_sync_async_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(library_sync_async_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-sync-async COMMAND library_sync_async_test)
+  set_tests_properties(library-sync-async PROPERTIES LABELS m3 TIMEOUT 60 PASS_REGULAR_EXPRESSION "library_sync_async_ok")
+
   # I517 phase 3: a source that exists only as a plugin (tests/sources/testsrc) reaches SOURCES, LIBRARY_SYNC and the Sources page.
   add_executable(src_plugin_reach_test engine/src_plugin_reach_test.c)
   target_include_directories(src_plugin_reach_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
