@@ -87,7 +87,8 @@ static void set_palette_raw(sel_gui_canvas* c, const uint32_t* rgb, uint32_t fir
     for (k = 0; k < 4u; k++) { /* a region sub-palette whose entries moved */
         uint32_t lo = g_rgn_base[k], hi = lo + g_rgn_size[k];
         if (first < hi && last > lo && c->colours > lo) {
-            build_cube(c->rcube[k], c->palette + lo, c->colours - lo < g_rgn_size[k] ? c->colours - lo : g_rgn_size[k]);
+            uint32_t sz = g_rgn_size[k] - (k == 3u ? c->copper_pens : 0u); /* I441: copper pens leave the flow region */
+            build_cube(c->rcube[k], c->palette + lo, c->colours - lo < sz ? c->colours - lo : sz);
         }
     }
 }
@@ -281,6 +282,9 @@ static void dirty_add_raw(sel_gui_canvas* c, sel_gui_rect r) {
     r = sel_gui_rect_intersect(r, c->clip[0]);
     if (r.w <= 0 || r.h <= 0) {
         return;
+    }
+    if (r.w == c->w && r.h == c->h) {
+        c->copper_n = 0u; /* a whole-canvas repaint redraws every gradient: the pens are handed out again */
     }
     /* Overlapping rectangles merge until the list is disjoint again; a contained one disappears. */
     for (i = 0; i < c->dirty_n;) {
@@ -951,9 +955,94 @@ void sel_gui_round_frame(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, int3
     sel_gui_prof_end(c, SEL_GUI_PROF_ROUND, t0);
 }
 
+void sel_gui_copper_enable(sel_gui_canvas* c, uint32_t pens) {
+    c->copper_pens = pens > 4u ? 4u : pens;
+    c->copper_n = 0u;
+}
+
+static uint32_t copper_rgb(const struct sel_gui_copper_key* k, int32_t y) {
+    int32_t step = k->rh > 1 ? (int32_t)(65536 / (k->rh - 1)) : 0, t = (y - k->ry) * step, ch;
+    uint32_t rgb = 0u;
+    for (ch = 16; ch >= 0; ch -= 8) {
+        int32_t from = (int32_t)((k->a >> ch) & 255u), to = (int32_t)((k->b >> ch) & 255u);
+        rgb |= clampc(from + (int32_t)(((int64_t)(to - from) * t + 32768) >> 16)) << ch;
+    }
+    return rgb;
+}
+
+/* I441: fills the visible rows of an opaque vertical gradient with its copper pen. 0 when no pen is free (the caller
+ * draws the dithered gradient). */
+static int copper_gradient(sel_gui_canvas* c, sel_gui_rect r, uint32_t a, uint32_t b) {
+    sel_gui_rect v = cur_clip(c, r);
+    uint32_t i;
+    int32_t y;
+    if (v.w <= 0 || v.h <= 0) {
+        return 1;
+    }
+    for (i = 0; i < c->copper_n; i++) {
+        const struct sel_gui_copper_key* k = &c->copper_key[i];
+        if (k->ry == r.y && k->rh == r.h && k->a == (a & 0xFFFFFFu) && k->b == (b & 0xFFFFFFu)) {
+            break;
+        }
+    }
+    if (i == c->copper_n) {
+        if (i >= c->copper_pens) {
+            return 0;
+        }
+        c->copper_key[i].ry = r.y;
+        c->copper_key[i].rh = r.h;
+        c->copper_key[i].a = a & 0xFFFFFFu;
+        c->copper_key[i].b = b & 0xFFFFFFu;
+        c->copper_key[i].y0 = v.y;
+        c->copper_key[i].y1 = v.y + v.h;
+        c->copper_n++;
+    } else {
+        if (v.y < c->copper_key[i].y0) c->copper_key[i].y0 = v.y;
+        if (v.y + v.h > c->copper_key[i].y1) c->copper_key[i].y1 = v.y + v.h;
+    }
+    for (y = v.y; y < v.y + v.h; y++) {
+        memset(px8(c, v.x, y), (int)(255u - i), (size_t)v.w);
+    }
+    c->used[c->region][(255u - i) >> 5] |= 1u << ((255u - i) & 31u);
+    c->copper_filled += (uint32_t)v.h;
+    c->span_px += (uint32_t)(v.w * v.h);
+    return 1;
+}
+
+uint32_t sel_gui_copper_changes(const sel_gui_canvas* c, sel_gui_copper_change* out, uint32_t max) {
+    uint32_t n = 0u, i;
+    int32_t y, y0 = c->h, y1 = 0;
+    for (i = 0; i < c->copper_n; i++) {
+        if (c->copper_key[i].y0 < y0) y0 = c->copper_key[i].y0;
+        if (c->copper_key[i].y1 > y1) y1 = c->copper_key[i].y1;
+    }
+    for (y = y0; y < y1; y++) {
+        for (i = 0; i < c->copper_n && n < max; i++) {
+            const struct sel_gui_copper_key* k = &c->copper_key[i];
+            uint32_t rgb;
+            if (y < k->y0 || y >= k->y1) {
+                continue;
+            }
+            rgb = copper_rgb(k, y);
+            if (y > k->y0 && copper_rgb(k, y - 1) == rgb) {
+                continue; /* the copper holds the colour */
+            }
+            out[n].y = y;
+            out[n].pen = 255u - i;
+            out[n].rgb = rgb;
+            n++;
+        }
+    }
+    return n;
+}
+
 void sel_gui_gradient(sel_gui_canvas* c, sel_gui_rect r, int vertical, uint32_t a, uint32_t b) {
     uint32_t t0 = sel_gui_prof_begin(c);
-    gradient_raw(c, to_canvas(c, r), vertical, a, b);
+    sel_gui_rect cr = to_canvas(c, r);
+    if (!(vertical && c->copper_pens > 0u && c->format == SEL_GUI_INDEX8 && (a >> 24) == 255u && (b >> 24) == 255u &&
+          copper_gradient(c, cr, a, b))) {
+        gradient_raw(c, cr, vertical, a, b);
+    }
     sel_gui_prof_end(c, SEL_GUI_PROF_GRADIENT, t0);
 }
 

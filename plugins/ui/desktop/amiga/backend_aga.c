@@ -17,6 +17,9 @@
 #include <graphics/displayinfo.h>
 #include <graphics/gfx.h>
 #include <graphics/modeid.h>
+#include <graphics/copper.h>
+#include <graphics/gfxmacros.h>
+#include <graphics/view.h>
 #include <intuition/intuition.h>
 #include <intuition/screens.h>
 #include <proto/dos.h>
@@ -34,6 +37,8 @@ struct GfxBase* GfxBase;
 
 #define AGA_GAP 8 /* rows: two bands this close are converted as one */
 #define AGA_NO_MODE ((ULONG)INVALID_ID)
+
+#define AGA_COPPER_MAX 600u /* pen colour changes per list: a few hundred lines of gradient */
 
 struct desk_aga {
     int32_t w, h;
@@ -55,6 +60,10 @@ struct desk_aga {
     struct timerequest* treq;
     uint32_t upload_pixels, presents, c2p_calls, c2p_kind;
     desk_amiga_input in;
+    /* I441: the installed copper list and the changes it was built from */
+    struct UCopList* ucl;
+    sel_gui_copper_change cop[AGA_COPPER_MAX];
+    uint32_t cop_n, cop_installs;
 };
 
 static void c2p_bands(desk_aga* b, const uint8_t* chunky, const desk_aga_band* band, uint32_t n) {
@@ -220,6 +229,11 @@ void desk_aga_close(desk_aga* b) {
         if (b->sb[i] != NULL) FreeScreenBuffer(b->screen, b->sb[i]);
     }
     if (b->safe_port != NULL) DeleteMsgPort(b->safe_port);
+    if (b->screen != NULL && b->ucl != NULL) { /* the list is ours: unhook it before the screen goes */
+        b->screen->ViewPort.UCopIns = NULL;
+        if (b->ucl->FirstCopList != NULL) FreeCopList(b->ucl->FirstCopList);
+        FreeMem(b->ucl, sizeof *b->ucl);
+    }
     if (b->screen != NULL) CloseScreen(b->screen);
     for (i = 0; i < 2; i++) {
         if (b->buf[i] != NULL) FreeMem(b->buf[i], (ULONG)desk_aga_buffer_bytes(b->w, b->h));
@@ -241,6 +255,50 @@ uint32_t desk_aga_c2p_calls(const desk_aga* b) { return b->c2p_calls; }
 uint32_t desk_aga_c2p_kind(const desk_aga* b) { return b->c2p_kind; }
 size_t desk_aga_chip_held(const desk_aga* b) { return b->buf[1] ? desk_aga_chip_bytes(b->w, b->h) : 0u; }
 
+uint32_t desk_aga_copper_changes(const desk_aga* b) { return b->cop_n; }
+uint32_t desk_aga_copper_installs(const desk_aga* b) { return b->cop_installs; }
+
+/* I441: replaces the screen's user copper list with one that sets the gradient pens per scanline. */
+static void copper_install(desk_aga* b, const sel_gui_copper_change* ch, uint32_t n) {
+    struct UCopList* nl = NULL;
+    struct UCopList* old;
+    uint32_t i, k;
+    int32_t last_v = -1;
+    if (n > 0u) {
+        nl = (struct UCopList*)AllocMem(sizeof *nl, MEMF_PUBLIC | MEMF_CLEAR);
+        if (nl == NULL) return;
+        CINIT(nl, (UWORD)(n * 5u + 4u));
+        for (i = 0; i < n; i++) {
+            uint32_t regs[4][2];
+            int32_t v = b->h > 300 ? ch[i].y / 2 : ch[i].y;
+            if (v != last_v) {
+                CWAIT(nl, (WORD)v, 0);
+                last_v = v;
+            }
+            desk_aga_copper_regs(ch[i].pen, ch[i].rgb, regs);
+            for (k = 0; k < 4u; k++) {
+                CMOVE(nl, *(volatile UWORD*)(0xDFF000u + regs[k][0]), (WORD)regs[k][1]);
+            }
+        }
+        CMOVE(nl, *(volatile UWORD*)(0xDFF106u), (WORD)0x0C00);
+        CEND(nl);
+    }
+    Forbid();
+    old = b->screen->ViewPort.UCopIns;
+    b->screen->ViewPort.UCopIns = nl;
+    Permit();
+    MakeScreen(b->screen);
+    RethinkDisplay();
+    if (old != NULL) {
+        if (old->FirstCopList != NULL) FreeCopList(old->FirstCopList);
+        FreeMem(old, sizeof *old);
+    }
+    b->ucl = nl;
+    memcpy(b->cop, ch, n * sizeof ch[0]);
+    b->cop_n = n;
+    b->cop_installs++;
+}
+
 void desk_aga_present(desk_aga* b, const sel_gui_canvas* c) {
     desk_aga_band now[DESK_AGA_BANDS_MAX], todo[DESK_AGA_BANDS_MAX];
     uint32_t n, nt;
@@ -250,6 +308,11 @@ void desk_aga_present(desk_aga* b, const sel_gui_canvas* c) {
         b->colours = c->colours;
         desk_aga_rgb32_table(b->palette, 0, 256, b->rgb32);
         LoadRGB32(&b->screen->ViewPort, (ULONG*)b->rgb32);
+    }
+    if (c->copper_pens > 0u) {
+        sel_gui_copper_change ch[AGA_COPPER_MAX];
+        uint32_t nc = sel_gui_copper_changes(c, ch, AGA_COPPER_MAX);
+        if (nc != b->cop_n || memcmp(ch, b->cop, nc * sizeof ch[0]) != 0) copper_install(b, ch, nc);
     }
     if (b->fresh > 0) {
         now[0].y = 0;

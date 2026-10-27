@@ -182,3 +182,10 @@ target_include_directories(dui_amiga_folder_pick_unit PRIVATE ${PROJECT_SOURCE_D
 target_link_libraries(dui_amiga_folder_pick_unit PRIVATE selecta_gui)
 add_test(NAME dui-amiga-folder-pick COMMAND dui_amiga_folder_pick_unit)
 set_tests_properties(dui-amiga-folder-pick PROPERTIES TIMEOUT 60)
+
+# I441: copper gradients: the gradient-to-copper-line table builder and the AGA register words (pure; host).
+add_executable(dui_copper_gradient_unit copper_gradient_unit.c ${PROJECT_SOURCE_DIR}/plugins/ui/desktop/amiga/aga_planar.c)
+target_include_directories(dui_copper_gradient_unit PRIVATE ${PROJECT_SOURCE_DIR}/plugins/ui/desktop)
+target_link_libraries(dui_copper_gradient_unit PRIVATE selecta_gui)
+add_test(NAME dui-copper-gradient COMMAND dui_copper_gradient_unit)
+set_tests_properties(dui-copper-gradient PROPERTIES TIMEOUT 60)

@@ -45,6 +45,10 @@ size_t desk_aga_chip_bytes(int32_t w, int32_t h);
 /* Builds a graphics.library LoadRGB32 table for entries first .. first + n - 1 of 0xRRGGBB colours: word count and
  * first entry in the first longword, three left-justified 32-bit components per colour, a 0 terminator. out holds
  * n * 3 + 2 longwords. */
+/* I441: the four copper register writes that set palette pen `pen` (0-255) to rgb (0xRRGGBB) at 24-bit depth on AGA:
+ * BPLCON3 with the pen's bank and LOCT clear, the high nibbles, BPLCON3 with LOCT set, the low nibbles. out[i][0] is the
+ * custom chip register offset, out[i][1] the value. */
+void desk_aga_copper_regs(uint32_t pen, uint32_t rgb, uint32_t out[4][2]);
 void desk_aga_rgb32_table(const uint32_t* rgb, uint32_t first, uint32_t n, uint32_t* out);
 
 #endif

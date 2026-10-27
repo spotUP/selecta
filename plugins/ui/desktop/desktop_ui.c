@@ -8326,6 +8326,9 @@ static int desk_make_canvas(desk* d, const char* size, int32_t def_w, int32_t de
     sel_gui_canvas_init(d->canvas, format, (int32_t)w, (int32_t)h, pixels);
     d->canvas->ydiv = d->ydiv_opt > 0 ? d->ydiv_opt : (d->is_aga && h <= 300u ? 2 : 1); /* I468: the AGA 640x256 pixels are twice as tall as wide */
     desk_prof_attach(d);
+    if (d->is_aga && format == SEL_GUI_INDEX8) {
+        sel_gui_copper_enable(d->canvas, 4u); /* I441: the aga backend draws vertical gradients with the copper */
+    }
     if (format == SEL_GUI_INDEX8) {
         static const int ui_tokens[] = {SEL_GUI_TOKEN_ACCENT, SEL_GUI_TOKEN_SURFACE, SEL_GUI_TOKEN_TEXT,
             SEL_GUI_TOKEN_BACKGROUND, SEL_GUI_TOKEN_SURFACE_RAISED, SEL_GUI_TOKEN_SURFACE_HOVER,

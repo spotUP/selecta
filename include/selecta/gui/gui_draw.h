@@ -63,7 +63,31 @@ typedef struct sel_gui_canvas {
      * fill_rect, round_rect, clip_push, dirty_add and blit_mask is halved here, so a round shape stays round on the
      * display. A mask is blitted as given (it is baked at half height) at the halved y. */
     int32_t ydiv;
+    /* I441: copper gradients. A backend with a per-scanline palette (the AGA copper) sets copper_pens through
+     * sel_gui_copper_enable; opaque vertical gradients on an INDEX8 canvas then fill with one reserved pen (255 down)
+     * per distinct gradient and record it in copper_key, and the backend loads the pen's colour per line from
+     * sel_gui_copper_changes. The rows are canvas rows, so ydiv is already applied. */
+    uint32_t copper_pens;
+    uint32_t copper_n;
+    uint32_t copper_filled; /* gradient rows drawn with a copper pen since init: the sentinel for I441 */
+    struct sel_gui_copper_key {
+        int32_t ry, rh;  /* the gradient rectangle's canvas rows: the colour depends on (y - ry) / (rh - 1) */
+        int32_t y0, y1;  /* canvas rows [y0, y1) actually filled with the pen */
+        uint32_t a, b;   /* 0xRRGGBB ends */
+    } copper_key[4];
 } sel_gui_canvas;
+
+/* I441: one change of a copper pen colour: from canvas row y on, `pen` shows rgb (0xRRGGBB) until its next change. */
+typedef struct sel_gui_copper_change {
+    int32_t y;
+    uint32_t pen, rgb;
+} sel_gui_copper_change;
+/* Reserves the last `pens` (0-4) palette entries for copper gradients (INDEX8 only); they leave the cover-flow
+ * sub-palette. 0 turns it off. Call before the palette is set. */
+void sel_gui_copper_enable(sel_gui_canvas* c, uint32_t pens);
+/* Pure: the pen colour changes that reproduce the recorded gradients, ordered by row then pen, same Q16 maths as the
+ * drawn gradient. Returns the count written (at most max). */
+uint32_t sel_gui_copper_changes(const sel_gui_canvas* c, sel_gui_copper_change* out, uint32_t max);
 
 /* Bytes of pixel storage for a format and size. */
 size_t sel_gui_pixel_bytes(uint32_t format, int32_t w, int32_t h);
