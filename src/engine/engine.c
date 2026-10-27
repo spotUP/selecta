@@ -397,7 +397,7 @@ struct sel_engine {
     uint32_t st_slot;                         /* STICKER answers: ring of 8, like lib_tags */
     sel_tag st_tags[8][5];
     uint32_t sources_listed;                  /* SOURCES rows answered (DUI-P4-3) */
-    sel_tag src_tags[16][8];                  /* one SOURCES row per registered source (registry holds 16) */
+    sel_tag src_tags[16][9];                  /* one SOURCES row per registered source (registry holds 16) */
     char st_key[8][SEL_DEFERRED_PATH_MAX];
     char st_name[8][128];
     char st_value[8][SEL_STICKER_VALUE_MAX];
@@ -3811,6 +3811,39 @@ static void sticker_answer(sel_engine* e, const char* key, const char* name, con
     emit(e, &r);
 }
 
+/* Last successful sync of source `id` (I527), kept in the library meta table under "sync.<id>": unix time, 0 never. */
+static int64_t sync_time_get(sel_engine* e, const char* id) {
+    char key[64], text[24];
+    sel_meta_op op;
+    sel_message reply;
+
+    if (e->lib == NULL) return 0;
+    snprintf(key, sizeof key, "sync.%s", id);
+    text[0] = '\0';
+    op.key = key;
+    op.value = text;
+    op.cap = sizeof text;
+    op.set = 0;
+    memset(&reply, 0, sizeof reply);
+    sel_library_request(e->lib, SEL_LIB_REQ_META, &op, &reply);
+    return (int64_t)strtoll(text, NULL, 10);
+}
+
+static void sync_time_set(sel_engine* e, const char* id, int64_t when) {
+    char key[64], text[24];
+    sel_meta_op op;
+    sel_message reply;
+
+    snprintf(key, sizeof key, "sync.%s", id);
+    snprintf(text, sizeof text, "%lld", (long long)when);
+    op.key = key;
+    op.value = text;
+    op.cap = sizeof text;
+    op.set = 1;
+    memset(&reply, 0, sizeof reply);
+    sel_library_request(e->lib, SEL_LIB_REQ_META, &op, &reply);
+}
+
 /* SOURCES: one LIBRARY_RESULT per registered source for the Library page's Sources tab (DUI-P4-3): SRC_KEY id,
  * SRC_KIND local or remote, SRC_NAME, SRC_PATH the home, SRC_ENABLED, SRC_COUNT the songs rows of that source (0
  * without a library). SRC_ENABLED is 0 for an id in the library.sources_off pref (I265). */
@@ -3824,7 +3857,8 @@ static void sources_row(void* ctx, const char* id, const char* name, const char*
     sel_engine* e = f->e;
     sel_tag* t;
     sel_message r;
-    int songs;
+    int songs, enabled;
+    int64_t synced;
     if (f->n >= 16u) return;
     t = e->src_tags[f->n++];
     songs = e->lib != NULL ? sel_library_source_songs(e->lib, id) : 0;
@@ -3837,11 +3871,20 @@ static void sources_row(void* ctx, const char* id, const char* name, const char*
     t[3].tag = SEL_SRC_PATH;
     t[3].value = (uintptr_t)(home != NULL ? home : "");
     t[4].tag = SEL_SRC_ENABLED;
-    t[4].value = sel_library_csv_has(e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF], id) ? 0 : 1;
+    enabled = sel_library_csv_has(e->prefs.value[SEL_PREF_LIBRARY_SOURCES_OFF], id) ? 0 : 1;
+    t[4].value = (uintptr_t)enabled;
     t[5].tag = SEL_SRC_COUNT;
     t[5].value = songs > 0 ? (uintptr_t)songs : 0;
-    t[6].tag = SEL_TAG_END;
-    t[6].value = 0;
+    synced = sync_time_get(e, id);
+    t[6].tag = SEL_SRC_SYNCED;
+    t[6].value = (uintptr_t)synced;
+    t[7].tag = SEL_SRC_DUE; /* I527: only a remote, enabled source of an open library is offered a sync */
+    t[7].value = (remote && enabled && e->lib != NULL &&
+                  sel_source_sync_due(synced, strtoll(e->prefs.value[SEL_PREF_LIBRARY_SYNC_NOTICE_AT], NULL, 10), (int64_t)time(NULL),
+                                      (uint32_t)strtoul(e->prefs.value[SEL_PREF_LIBRARY_SYNC_STALE_DAYS], NULL, 10)))
+                     ? 1u : 0u;
+    t[8].tag = SEL_TAG_END;
+    t[8].value = 0;
     evt_init(&r, SEL_EVT_LIBRARY_RESULT);
     evt_tags(&r, t);
     emit(e, &r);
@@ -4620,6 +4663,9 @@ static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
     sel_sync_ctx_release(&ctx);
     e->art_generation++; /* a failed sync may still have stored albums */
     record_sync_stats(e, stats);
+    if (ok) {
+        sync_time_set(e, m->args[0].v.s, now);
+    }
     if (ok && (src->flags & SEL_SOURCE_NEW_THIS_WEEK)) {
         persist_new_this_week(e, e->sync_info.new_this_week);
     }

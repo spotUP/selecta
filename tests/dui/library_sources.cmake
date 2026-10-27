@@ -8,6 +8,7 @@
 #   run B: click the Sources tab, then the switch of row 1 -> the engine's SOURCES reply reports that source disabled (the
 #          pref library.sources_off was stored and read back) while the others stay enabled.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+set(DUI_SYNC_BANNER ON) # I527: this test runs with the banner on (see dui_run.cmake)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")

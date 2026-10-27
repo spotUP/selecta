@@ -1934,6 +1934,12 @@ if(NOT SEL_AMIGA)
   set_tests_properties(src-plugin-reach PROPERTIES LABELS m3 TIMEOUT 120 PASS_REGULAR_EXPRESSION "src_plugin_reach_ok"
     ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/src-plugin-reach.tmp")
 
+  # I527: the stale decision behind the sync-on-launch banner (never synced, fresh, stale, dismissed, off).
+  add_executable(source_sync_due_test engine/source_sync_due_test.c)
+  target_link_libraries(source_sync_due_test PRIVATE selecta_core)
+  add_test(NAME source-sync-due COMMAND source_sync_due_test)
+  set_tests_properties(source-sync-due PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_sync_due_ok")
+
   # I195c: STOP sends racing the pump never lose their net cancel (threads, many iterations).
   add_executable(cancel_race_test engine/cancel_race_test.c)
   target_link_libraries(cancel_race_test PRIVATE selecta_core ${CMAKE_THREAD_LIBS_INIT})

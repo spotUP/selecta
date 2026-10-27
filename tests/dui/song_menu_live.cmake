@@ -97,7 +97,7 @@ endif()
 # row shows its songs, a right click on song row 2 opens the menu, a left click picks item 0 (Play).
 file(REMOVE_RECURSE "${WORK}/cfgviz")
 file(MAKE_DIRECTORY "${WORK}/cfgviz")
-file(WRITE "${WORK}/cfgviz/prefs.conf" "ui.desktop.viz = viz_spectrum\nui.desktop.mode = full\n")
+file(WRITE "${WORK}/cfgviz/prefs.conf" "ui.desktop.viz = viz_spectrum\nui.desktop.mode = full\nlibrary.sync_stale_days = 0\n")
 unset(ENV{SELECTA_SDL_TEST_LIVE})
 unset(ENV{SELECTA_SDL_TEST_TIMED})
 function(viz_run outvar)

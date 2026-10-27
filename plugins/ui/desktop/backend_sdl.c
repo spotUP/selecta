@@ -103,7 +103,7 @@ static Uint32 SDLCALL timed_event(void* param, SDL_TimerID id, Uint32 interval) 
 }
 
 static void push_timed_events(const char* list) {
-    char buf[256];
+    char buf[2048]; /* a script of many clicks is long; a cut list silently loses its trailing quit and hangs the run */
     char* save = NULL;
     char* tok;
     if (list == NULL) {
