@@ -1378,6 +1378,8 @@ static void songs_resort(desk* d) {
     }
 }
 
+static void draw_empty_state(desk* d, sel_gui_rect mn, int32_t y, const char* text);
+
 static void draw_songs(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     sel_gui_rect mn = region_rect(d, "main");
@@ -1422,6 +1424,9 @@ static void draw_songs(desk* d) {
                           name, rink, 1, &d->text);
         sel_gui_text_wrap(d->canvas, semi, rect_of(songs_header_col(d, 1).x + pad, r.y + lpx(d, 8), songs_header_col(d, 1).w - 2 * pad, semi->line_height),
                           format, rink, 1, &d->text);
+    }
+    if (d->order_n == 0u) { /* I552: no songs: the column headers alone read as a broken page, so name the way to fill it */
+        draw_empty_state(d, mn, songs_top(d) + lpx(d, SONG_HEADER_H), "No songs to list yet. Add songs from the Library page.");
     }
     sel_gui_clip_pop(d->canvas);
     sel_gui_dirty_add(d->canvas, mn);

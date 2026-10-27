@@ -134,7 +134,7 @@ if(NOT changed EQUAL 1)
   message(FATAL_ERROR "F: one click on a switch changed ${changed} sources, expected 1:\n${a}\n${f}")
 endif()
 
-# I548 (e): an empty library shows the one-line hint under the tab row (the shared empty state); a library with songs shows none.
+# I548 (e): an empty library shows the one-line hint under the tab row (the shared empty state)
 if(NOT a MATCHES "libempty \n")
   message(FATAL_ERROR "I548 e: the fixture library must show no empty hint:\n${a}")
 endif()
@@ -170,3 +170,11 @@ foreach(m 1 2 3 4)
     message(FATAL_ERROR "I548 e: the ${mode} page of an empty library shows no hint:\n${em${m}}")
   endif()
 endforeach()
+
+# I552: the Songs page with nothing to list shows a hint under its Title and Format headers (rig 3 showed the headers alone);
+# (rig 3 state: the Songs page lists the queue, which is empty).file(REMOVE_RECURSE "${WORK}/cfg")
+dui_run(sg --db "${edb}" --ui desktop --backend mem --view songs --canvas 640x256 --ydiv 2 --zoom fit --clock fixed --stats
+  --resize 640x512)
+if(NOT sg MATCHES "libempty No songs to list yet. Add songs from the Library page.\n")
+  message(FATAL_ERROR "I552: the Songs page of an empty library shows no hint:\n${sg}")
+endif()
