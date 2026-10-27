@@ -1315,16 +1315,7 @@ static const char* pcm_output_for(const sel_engine* e) {
     } k_pcm[] = {{"ahi", "ahi"}, {"paula14", "paula"}};
     uint32_t i, j, n = e->registry_count != NULL && e->registry_get != NULL ? e->registry_count() : 0;
     for (i = 0; i < sizeof k_pcm / sizeof k_pcm[0]; i++) {
-        size_t len = strlen(k_pcm[i].needs);
-        const char* l = e->audio_list;
-        int listed = 0;
-        while (l != NULL && *l != '\0') {
-            const char* end = strchr(l, ',');
-            size_t item = end != NULL ? (size_t)(end - l) : strlen(l);
-            listed = listed || (item == len && strncmp(l, k_pcm[i].needs, len) == 0);
-            l = end != NULL ? end + 1 : NULL;
-        }
-        if (!listed) {
+        if (!sel_library_csv_has(e->audio_list, k_pcm[i].needs)) {
             continue;
         }
         for (j = 0; j < n; j++) {
