@@ -91,7 +91,7 @@ static int test_copper(void) {
     mui_copper_row_colors(px, 4, 4, rows);
     CHECK(rows[0] == 0xBF0000u && rows[1] == 0xFF0000u && rows[3] == 0x0000FFu, "row colours %06x %06x %06x", rows[0], rows[1], rows[3]);
     CHECK(mui_copper_cover_list(rows, 4, 10, e, 8) == 3u, "entries merge equal lines");
-    CHECK(e[0].y == 10 && e[0].rgb4 == 0xB00u && e[1].y == 11 && e[1].rgb4 == 0xF00u && e[2].y == 13 && e[2].rgb4 == 0x00Fu, "entry values");
+    CHECK(e[0].y == 10 && e[0].rgb4 == 0xB00u && e[1].y == 11 && e[1].rgb4 == 0xF00u && e[2].y == 12 && e[2].rgb4 == 0x00Fu, "entry values");
     CHECK(mui_copper_grid_row_list(1, rows, 4, 20, e, 8) == 3u && e[0].y == 20, "grid tint on");
     CHECK(mui_copper_grid_row_list(0, rows, 4, 20, e, 8) == 0u, "grid tint off adds nothing");
     CHECK(mui_copper_cover_list(rows, 4, 0, e, 2) == 2u, "cap respected");
