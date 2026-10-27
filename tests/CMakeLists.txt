@@ -1208,6 +1208,14 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
   set_tests_properties(rig-m4-mui-styles PROPERTIES LABELS rig RESOURCE_LOCK rig
     SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  # MUI-P3-2 / P3-3 / P3-4 / I558: Tree and Drilldown styles and the columns of the MUI List on a real song (SEL_MUI_SONG).
+  add_test(NAME rig-m4-mui-list
+    COMMAND "${CMAKE_COMMAND}" -DTAG=M4MUILIST "-DRIG_DIR=${SEL_RIG_DIR}"
+      "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta" "-DSONG=${SEL_MUI_SONG}"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-list"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
+  set_tests_properties(rig-m4-mui-list PROPERTIES LABELS rig RESOURCE_LOCK rig
+    SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
   # MUI-P5-6: an icon dragged from a Workbench drawer window onto the MUI window (AppWindow drop) and Edit > Copy Song Title
   # (clipboard.device). Needs a rig started with --no-dopus (plain Workbench) and SEL_MUI_SONG.
   add_test(NAME rig-m4-mui-drop

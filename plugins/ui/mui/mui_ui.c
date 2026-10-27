@@ -45,6 +45,12 @@ static void mui_report(mui_fail why);
 
 #define MUI_ROWS_MAX 64 /* most rows one window of the list holds (MUI-P3-1: only the engine window is inserted) */
 
+/* One List entry. The title text comes first so that anything reading an entry as a string (the rig's gadget list) sees it. */
+typedef struct mui_cells {
+    char title[MUI_LIST_TEXT];
+    char artist[64];
+} mui_cells;
+
 typedef struct mui_state {
     uint32_t opens; /* ui_open_mui sentinel (MUI-P1-5): windows opened */
     uint32_t wake_mask; /* engine wake signal (MUI-P1-7), 0 where there is none */
@@ -53,8 +59,9 @@ typedef struct mui_state {
     uint32_t transport_hits; /* transport buttons and sliders that sent their line (MUI-P2-5): stat transport_hits */
     uint32_t row_plays;      /* list rows activated by double click (MUI-P3-1): stat row_plays */
     uint32_t drops;          /* AppWindow arguments sent to the engine (MUI-P5-6): stat drops */
-    sel_tag stats[6];
+    sel_tag stats[7];
     sel_uim uim;             /* the frame model the controls are driven from (MUI-P2-6) */
+    char list_stat[160];     /* the list sentinel printed as ui_list: back end, style, columns, rows (native List only) */
 #ifdef SEL_MUI_NATIVE
     Object* app;
     struct MsgPort* tport;          /* timer.device reply port: bounds the native wait by timeout_ms */
@@ -76,6 +83,11 @@ typedef struct mui_state {
     Object* list;
     mui_list_entry entries[MUI_ROWS_MAX];
     const char* entry_ptr[MUI_ROWS_MAX + 1];
+    mui_cells cell[MUI_ROWS_MAX];   /* MUI-P3-4: the List entries; the display hook reads the cells from them */
+    char col_fmt[32];               /* MUIA_List_Format of the shown column set (mui_columns_format) */
+    uint32_t col_bp;                /* the breakpoint col_fmt was built for */
+    Object* crumb;                  /* MUI-P3-3: the drilldown breadcrumb line above the list */
+    char crumb_buf[128];
     uint32_t list_sig;
     LONG list_active_set;
     mui_list_pending list_pending;  /* the clicked row until the engine snapshot shows it */
@@ -294,11 +306,34 @@ static Object* mui_player_group(mui_state* s) {
     return g;
 }
 
+/* MUI-P3-4: the List's display hook. The entry is the row's cell array; a NULL entry asks for the column titles
+ * (MUIA_List_Title TRUE). The columns shown are mui_columns_for(breakpoint): the rest are hidden by width. */
+static struct Hook g_list_hook;
+static uint32_t g_list_hook_calls;
+static ULONG mui_list_display(struct Hook* hook, char** array, mui_cells* cells) {
+    static const char* const titles[MUI_COL_COUNT] = {"Title", "Artist", "Album", "Length", "Format"};
+    uint8_t cols[MUI_COL_COUNT];
+    uint32_t n = mui_columns_for(g_state.col_bp, cols), k;
+    (void)hook;
+    g_list_hook_calls++;
+    for (k = 0; k < n; k++) {
+        const char* t = cells == NULL ? titles[cols[k]] : cols[k] == MUI_COL_TITLE ? cells->title : cols[k] == MUI_COL_ARTIST ? cells->artist : "";
+        array[k] = (char*)t;
+    }
+    return 0;
+}
+
 /* MUI-P3-1: the 3.8 Listview with its plain List (the back end mui_list_backend_pick gives without NList). */
 static Object* mui_main_group(mui_state* s) {
     Object* g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
-    s->list = MUI_NewObject((char*)MUIC_List, MUIA_Frame, MUIV_Frame_InputList, TAG_DONE);
-    if (g == NULL || s->list == NULL) {
+    s->col_bp = SEL_UIM_BP_COUNT;
+    mui_columns_format(s->col_bp, s->col_fmt, sizeof s->col_fmt);
+    g_list_hook.h_Entry = (__typeof__(g_list_hook.h_Entry))(void (*)(void))HookEntry;
+    g_list_hook.h_SubEntry = (__typeof__(g_list_hook.h_SubEntry))(void (*)(void))mui_list_display;
+    s->crumb = MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG)" ", MUIA_ShowMe, FALSE, TAG_DONE);
+    s->list = MUI_NewObject((char*)MUIC_List, MUIA_Frame, MUIV_Frame_InputList, MUIA_List_DisplayHook, (ULONG)&g_list_hook,
+                            MUIA_List_Format, (ULONG)s->col_fmt, MUIA_List_Title, TRUE, TAG_DONE);
+    if (g == NULL || s->list == NULL || s->crumb == NULL) {
         return NULL;
     }
     s->listview = MUI_NewObject((char*)MUIC_Listview, MUIA_Listview_List, (ULONG)s->list, TAG_DONE);
@@ -308,6 +343,7 @@ static Object* mui_main_group(mui_state* s) {
     DoMethod(s->listview, MUIM_Notify, MUIA_Listview_DoubleClick, TRUE, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_DBL);
     DoMethod(s->list, MUIM_Notify, MUIA_List_Active, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_SEL);
     s->list_active_set = -1;
+    DoMethod(g, OM_ADDMEMBER, s->crumb);
     DoMethod(g, OM_ADDMEMBER, s->listview);
     /* MUI-P5-1: the canvas object sits beside the list, hidden until the style switch (MUI-P3-5) shows it. */
     {
@@ -360,9 +396,24 @@ static void mui_refresh(mui_state* s) {
     if (v != NULL) {
         int32_t active = -1;
         uint32_t n = mui_list_build(mui_list_backend_pick(0, 0), s->entries, MUI_ROWS_MAX, v, &active);
-        uint32_t sig = 2166136261u ^ v->window_start ^ (n << 20) ^ ((uint32_t)(active + 1) << 8);
+        uint32_t sig = 2166136261u ^ v->window_start ^ (n << 20) ^ ((uint32_t)(active + 1) << 8) ^ (s->lay.breakpoint << 28);
         const char* c;
         active = mui_list_pending_resolve(&s->list_pending, active);
+        if (s->lay.breakpoint != s->col_bp && s->lay.breakpoint < SEL_UIM_BP_COUNT) { /* MUI-P3-4: another column set */
+            s->col_bp = s->lay.breakpoint;
+            mui_columns_format(s->col_bp, s->col_fmt, sizeof s->col_fmt);
+            set(s->list, MUIA_List_Format, (ULONG)s->col_fmt);
+        }
+        {
+            uint32_t drill = v->style == SEL_VIEW_STYLE_DRILLDOWN; /* MUI-P3-3: the breadcrumb line, drilldown only */
+            char crumb[sizeof s->crumb_buf];
+            mui_list_breadcrumb(v, crumb, sizeof crumb);
+            if (drill && strcmp(crumb, s->crumb_buf) != 0) {
+                snprintf(s->crumb_buf, sizeof s->crumb_buf, "%s", crumb);
+                set(s->crumb, MUIA_Text_Contents, (ULONG)s->crumb_buf);
+            }
+            set(s->crumb, MUIA_ShowMe, drill ? TRUE : FALSE);
+        }
         for (i = 0; i < n; i++) {
             for (c = s->entries[i].text; *c != '\0'; c++) {
                 sig = (sig ^ (uint8_t)*c) * 16777619u;
@@ -372,7 +423,9 @@ static void mui_refresh(mui_state* s) {
         if (sig != s->list_sig) {
             s->list_sig = sig;
             for (i = 0; i < n; i++) {
-                s->entry_ptr[i] = s->entries[i].text;
+                snprintf(s->cell[i].title, sizeof s->cell[i].title, "%s", s->entries[i].text);
+                snprintf(s->cell[i].artist, sizeof s->cell[i].artist, "%s", mui_row_cell(&v->rows[i], MUI_COL_ARTIST));
+                s->entry_ptr[i] = (const char*)&s->cell[i];
             }
             s->entry_ptr[n] = NULL;
             set(s->list, MUIA_List_Quiet, TRUE);
@@ -384,6 +437,10 @@ static void mui_refresh(mui_state* s) {
             set(s->list, MUIA_List_Active, active < 0 ? (LONG)MUIV_List_Active_Off : (LONG)active);
             set(s->list, MUIA_List_Quiet, FALSE);
         }
+        /* The sentinel the exit stats print (ui_list): which back end, style and column set the List runs, and how often its display hook ran. */
+        snprintf(s->list_stat, sizeof s->list_stat, "backend=%s style=%u cols=%u format=%s rows=%u indent=%u hook_calls=%u",
+                 mui_list_backend_pick(0, 0)->name, (unsigned)v->style, (unsigned)mui_columns_for(s->col_bp, (uint8_t[MUI_COL_COUNT]){0}),
+                 s->col_fmt, (unsigned)n, n > 1 ? (unsigned)(s->entries[n - 1].depth) : 0u, (unsigned)g_list_hook_calls);
     }
 }
 
@@ -507,6 +564,15 @@ static void mui_control_fire(mui_state* s, LONG id) {
             return;
         }
         s->list_active_set = v;
+        if (id == CTL_LIST_DBL && view->style == SEL_VIEW_STYLE_TREE && (uint32_t)v < view->row_n && view->rows[v].kind == SEL_ROW_NODE) {
+            /* MUI-P3-2: a node row of the tree style toggles; the engine line is VIEW_EXPAND or VIEW_COLLAPSE <node id>. */
+            mui_list_pending_clear(&s->list_pending);
+            snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)(view->window_start + (uint32_t)v));
+            mui_engine_line(s, line);
+            mui_list_toggle_line(&view->rows[v], line, sizeof line);
+            mui_engine_line(s, line);
+            return;
+        }
         if (id == CTL_LIST_SEL) {
             int32_t shown = view->cursor >= view->window_start && view->cursor - view->window_start < view->window_rows
                                 ? (int32_t)(view->cursor - view->window_start) : -1;
@@ -768,8 +834,10 @@ static const sel_tag* mui_stats(void* state) {
     s->stats[3].value = s->row_plays;
     s->stats[4].tag = SEL_UI_STAT_DROPS;
     s->stats[4].value = s->drops;
-    s->stats[5].tag = SEL_TAG_END;
-    s->stats[5].value = 0;
+    s->stats[5].tag = SEL_UI_STAT_LIST_VIEW;
+    s->stats[5].value = (uintptr_t)s->list_stat;
+    s->stats[6].tag = SEL_TAG_END;
+    s->stats[6].value = 0;
     return s->stats;
 }
 

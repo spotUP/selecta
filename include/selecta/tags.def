@@ -243,6 +243,7 @@ SEL_TAG(UI, STAT_HOME_EMPTY,       0x5056, INT)
 SEL_TAG(UI, STAT_DROPS,            0x5057, INT)
 SEL_TAG(UI, STAT_SCANS,            0x5058, INT)
 SEL_TAG(UI, STAT_BACKEND,          0x5059, STR)
+SEL_TAG(UI, STAT_LIST_VIEW,        0x509A, STR) /* MUI list sentinel (MUI-P3-2..P3-4): back end, style, column set, rows */
 SEL_TAG(UI, STAT_SCREEN_DEPTH,     0x505A, INT)
 /* I355: flushes that carried the text UI start screen. */
 SEL_TAG(UI, STAT_SPLASH_FRAMES,    0x505B, INT)
