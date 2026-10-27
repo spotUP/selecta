@@ -2715,15 +2715,23 @@ static int32_t lib_header_btn_w(desk* d, const char* label) { /* I537: the measu
     return (at != NULL ? sel_gui_text_width(at, label, strlen(label)) : 0) + 2 * lpx(d, 8);
 }
 
+/* I553: the two title row buttons are set in the 12 semibold role (the 6x8 family) on the bitmap tier, so both fit right of the
+ * "Library" title on a 640 px screen instead of dropping to a second row. */
+static int lib_title_btn_px(const desk* d) { return desk_bitmap_text(d) ? 12 : 14; }
+static int32_t lib_title_btn_w(desk* d, const char* label) {
+    const sel_gui_atlas* at = desk_font(d, 1, lib_title_btn_px(d));
+    return (at != NULL ? sel_gui_text_width(at, label, strlen(label)) : 0) + 2 * lpx(d, 8);
+}
+
 static sel_gui_rect lib_add_rect(desk* d, sel_gui_rect mn) {
-    int32_t w = lib_header_btn_w(d, "Add Folder"), right = nav_arrow_rect(d, mn, 0).x - lib_gap(d) - lib_gap(d) / 2;
+    int32_t w = lib_title_btn_w(d, "Add Folder"), right = nav_arrow_rect(d, mn, 0).x - lib_gap(d) - lib_gap(d) / 2;
     return rect_of(right - w, mn.y + lpx(d, LIB_TITLE_Y) + lpx(d, 4) + (lib_header_inline(d) ? 0 : lpx(d, page_title_h(d))), w, lpx(d, 32));
 }
 
 /* DUI-P4-18: the Clear Library button sits left of Add Folder on the same row. */
 static sel_gui_rect lib_clear_rect(desk* d, sel_gui_rect mn) {
     sel_gui_rect ab = lib_add_rect(d, mn);
-    int32_t w = lib_header_btn_w(d, "Clear Library");
+    int32_t w = lib_title_btn_w(d, "Clear Library");
     return rect_of(ab.x - lib_gap(d) - w, ab.y, w, ab.h);
 }
 
@@ -2734,7 +2742,7 @@ static int lib_header_inline(desk* d) {
     const sel_gui_atlas* at = desk_text_atlas(d, 1, 32, lpx(d, page_title_h(d)));
     int32_t tw = at != NULL ? sel_gui_text_width(at, "Library", 7u) : 0;
     int32_t right = nav_arrow_rect(d, mn, 0).x - lib_gap(d) - lib_gap(d) / 2;
-    int32_t btn = lib_header_btn_w(d, "Add Folder") + lib_gap(d) + lib_header_btn_w(d, "Clear Library");
+    int32_t btn = lib_title_btn_w(d, "Add Folder") + lib_gap(d) + lib_title_btn_w(d, "Clear Library");
     return mn.x + lpx(d, LIB_MARGIN) + tw + lib_gap(d) <= right - btn;
 }
 
@@ -4894,8 +4902,8 @@ static void draw_library(desk* d) {
             if (d->scan_pending) {
                 lib_scan_draw(d, mn);
             } else {
-                draw_button(d, ab, ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Add Folder", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
-                draw_button(d, lib_clear_rect(d, mn), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Clear Library", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+                draw_button(d, ab, ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Add Folder", lib_title_btn_px(d), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+                draw_button(d, lib_clear_rect(d, mn), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Clear Library", lib_title_btn_px(d), ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
                 draw_lib_styles(d, mn, st);
             }
         }

@@ -365,6 +365,22 @@ foreach(which add clear)
     message(FATAL_ERROR "I548 (a): header button ${which} ${bx},${by} ${bw}x${bh} intersects the title ${t_x},${t_y} ending at column ${t_r}")
   endif()
 endforeach()
+# 6. I553 on the 640x256 ydiv 2 screen both buttons share the title's row (their y lies inside the title row, not on a second row)
+# and are right aligned: Add Folder ends right of Clear Library, which starts right of the title ink end.
+# Revert check: with the buttons measured and drawn in the 14 role Clear Library drops to the second row (y = title y + 32 or more).
+string(REGEX MATCH "lib_header title [^ ]+ [^ ]+ [^ ]+ add ([^ ]+) ([^ ]+) ([^ ]+) ([^ ]+) clear ([^ ]+) ([^ ]+) ([^ ]+) ([^ \n]+)\n" _h "${lo}")
+set(add_x ${CMAKE_MATCH_1})
+set(add_y ${CMAKE_MATCH_2})
+set(clr_x ${CMAKE_MATCH_5})
+set(clr_y ${CMAKE_MATCH_6})
+set(clr_w ${CMAKE_MATCH_7})
+if(add_y GREATER t_b OR clr_y GREATER t_b OR add_y LESS t_y OR NOT add_y EQUAL clr_y)
+  message(FATAL_ERROR "I553: the header buttons are not on the title row: add y ${add_y}, clear y ${clr_y}, title row ${t_y}..${t_b}")
+endif()
+math(EXPR clr_r "${clr_x} + ${clr_w}")
+if(clr_r GREATER add_x OR clr_x LESS t_r)
+  message(FATAL_ERROR "I553: Clear Library ${clr_x}..${clr_r} overlaps Add Folder at ${add_x} or the title ending at ${t_r}")
+endif()
 # 6. I548 (b) the statistics strip is one line high on the bitmap tier, so every value is on its label's row, and the More control
 # sits inside the strip row. Revert check: the old 48 high strip (label over value) and the 48 high More box fail the height test.
 if(NOT lo MATCHES "stats rect (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) ([0-9]+)\nlib_header[^\n]*\nstats_more (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) ([0-9]+) ")

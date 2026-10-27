@@ -24,7 +24,7 @@ set(ENV{SELECTA_SOCKET} "/tmp/selecta-dui-library-scroll.sock")
 # The Sources tab is the sixth tab; its centre at 640x512 (canvas rows are half the layout rows).
 function(scenario tag lines)
   file(REMOVE_RECURSE "${WORK}/cfg")
-  file(WRITE "${WORK}/${tag}.txt" "click 581 64\nwait 300\n${lines}wait 300\n")
+  file(WRITE "${WORK}/${tag}.txt" "click 581 46\nwait 300\n${lines}wait 300\n")
   dui_run(${tag} --db "${db}" --ui desktop --backend mem --view library --canvas 640x256 --ydiv 2
     --zoom fit --clock fixed --stats --resize 640x512 --input "${WORK}/${tag}.txt")
   set(${tag} "${${tag}}" PARENT_SCOPE)
