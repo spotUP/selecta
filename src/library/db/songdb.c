@@ -177,9 +177,10 @@ static int op_composer_next(sqlite3* db, const sel_genre_op* op, int64_t* id) {
     return rc == SQLITE_DONE ? SQLITE_OK : rc;
 }
 
-/* SEL_COMPOSER_LIST: the composer at offset `after`, one row per canonical spelling with its distinct song count. */
+/* SEL_COMPOSER_LIST: every composer, one row per canonical spelling with its distinct song count, streamed through op->row in one pass (I528: a per-row OFFSET re-ran the whole GROUP BY for each composer). */
 static int op_composer_list(sqlite3* db, const sel_genre_op* op, int64_t* id) {
     sqlite3_stmt* st = NULL;
+    int64_t rows = 0;
     int rc = sqlite3_prepare_v2(db,
                                 "SELECT canon, disp, n FROM ("
                                 " SELECT canon, MIN(display) AS disp, COUNT(DISTINCT song_key) AS n, 0 AS last"
@@ -188,31 +189,25 @@ static int op_composer_list(sqlite3* db, const sel_genre_op* op, int64_t* id) {
                                 " SELECT '" SEL_COMPOSER_UNKNOWN_CANON "', '" SEL_COMPOSER_UNKNOWN_DISPLAY "', COUNT(*), 1"
                                 "  FROM songs WHERE NOT EXISTS (SELECT 1 FROM song_composers c WHERE c.song_key = songs.key)"
                                 "  HAVING COUNT(*) > 0)"
-                                " ORDER BY last, disp, canon LIMIT 1 OFFSET ?1",
+                                " ORDER BY last, disp, canon",
                                 -1, &st, NULL);
 
     *id = 0;
     if (rc != SQLITE_OK) return rc;
-    sqlite3_bind_int64(st, 1, op->after);
-    rc = sqlite3_step(st);
-    if (rc == SQLITE_ROW) {
+    while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
         char num[16];
-        const char* canon = (const char*)sqlite3_column_text(st, 0);
-        const char* disp = (const char*)sqlite3_column_text(st, 1);
-        size_t cl = strlen(canon), dl = strlen(disp), nl;
+        const char* f[3];
 
         snprintf(num, sizeof num, "%d", sqlite3_column_int(st, 2));
-        nl = strlen(num);
-        if (cl + dl + nl + 3u <= op->out_cap) {
-            memcpy(op->out, canon, cl + 1u);
-            memcpy(op->out + cl + 1u, disp, dl + 1u);
-            memcpy(op->out + cl + dl + 2u, num, nl + 1u);
-            *id = op->after + 1;
-        }
-        rc = SQLITE_DONE;
+        f[0] = (const char*)sqlite3_column_text(st, 0);
+        f[1] = (const char*)sqlite3_column_text(st, 1);
+        f[2] = num;
+        rows++;
+        if (op->row(op->row_ctx, f) != 0) break;
     }
     sqlite3_finalize(st);
-    return rc == SQLITE_DONE ? SQLITE_OK : rc;
+    *id = rows;
+    return rc == SQLITE_ROW || rc == SQLITE_DONE ? SQLITE_OK : rc;
 }
 
 /* SEL_SOURCE_SONGS: how many songs rows carry source id `key`, as decimal text in `out`. */
@@ -257,7 +252,7 @@ int sel_library_songdb_op(sel_library* lib, const sel_genre_op* op, int* found, 
     } else if (op->op == SEL_COMPOSER_NEXT && op->out != NULL) {
         rc = op_composer_next(lib->db, op, id);
         *found = *id != 0;
-    } else if (op->op == SEL_COMPOSER_LIST && op->out != NULL) {
+    } else if (op->op == SEL_COMPOSER_LIST && op->row != NULL) {
         rc = op_composer_list(lib->db, op, id);
         *found = *id != 0;
     } else if (op->op == SEL_SOURCE_SONGS && op->key != NULL && op->out != NULL) {
@@ -386,29 +381,32 @@ int sel_library_composer_page(sel_library* lib, const char* name, sel_composer_r
     return rows;
 }
 
+typedef struct composer_sink {
+    sel_composer_list_fn fn;
+    void* ctx;
+} composer_sink;
+
+static int composer_row(void* ctx, const char* const* f) {
+    composer_sink* k = ctx;
+
+    if (k->fn != NULL) k->fn(k->ctx, f[0], f[1], (uint32_t)strtoul(f[2], NULL, 10));
+    return 0;
+}
+
 int sel_library_composer_list(sel_library* lib, sel_composer_list_fn fn, void* ctx) {
-    char buf[SEL_COMPOSER_MAX * 2u + 64u];
-    int64_t after = 0, id = 0;
-    int rows = 0;
+    composer_sink k;
+    sel_genre_op op;
+    int64_t rows = 0;
 
     if (lib == NULL) return -1;
-    for (;;) {
-        sel_genre_op op;
-        const char* disp;
-
-        memset(&op, 0, sizeof op);
-        op.op = SEL_COMPOSER_LIST;
-        op.after = after;
-        op.out = buf;
-        op.out_cap = sizeof buf;
-        if (sel_genre_call(lib, &op, &id) < 0) return -1;
-        if (id == 0) break;
-        after = id;
-        disp = buf + strlen(buf) + 1u;
-        if (fn != NULL) fn(ctx, buf, disp, (uint32_t)strtoul(disp + strlen(disp) + 1u, NULL, 10));
-        rows++;
-    }
-    return rows;
+    k.fn = fn;
+    k.ctx = ctx;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_COMPOSER_LIST;
+    op.row = composer_row;
+    op.row_ctx = &k;
+    if (sel_genre_call(lib, &op, &rows) < 0) return -1;
+    return (int)rows;
 }
 
 int sel_library_source_songs(sel_library* lib, const char* source) {

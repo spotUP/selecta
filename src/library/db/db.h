@@ -45,14 +45,14 @@ enum {
     SEL_SONGDB_PUT,     /* I182: cache UADE key `key` -> authors `value` (lines; NULL = not in songdb) with fetch time `at` */
     SEL_SONGDB_APPLY,   /* I182: rebuild song_composers of song key `key` from authors `value` (lines) */
     SEL_COMPOSER_NEXT,  /* I182: next song with id > `after` that has composer canon `key`: `out` = song key NUL name NUL display NUL, reply [2] = its id (0: none) */
-    SEL_SIMILAR_NEXT,   /* I183: song at row offset `after` of the similar list of song key `key`: `out` = key NUL name NUL genre NUL rating NUL genre_match NUL (decimal text), reply [2] = after + 1 (0: none) */
-    SEL_ALSOBY_NEXT,    /* I183: song at row offset `after` among the other songs sharing a composer with song key `key`: `out` = key NUL name NUL composer display NUL, reply [2] = after + 1 (0: none) */
+    SEL_SIMILAR_NEXT,   /* I183: the similar list of song key `key` (at most 100 rows) streamed through `row`: key, name, genre, rating, genre_match (decimal text); reply [2] = row count */
+    SEL_ALSOBY_NEXT,    /* I183: the other songs sharing a composer with song key `key`, streamed through `row`: key, name, composer display; reply [2] = row count */
     SEL_DUP_HASH,       /* I184: hashes the next local song with id > `after` that has no md5 and stores it: reply [2] = its id (0: none left) */
-    SEL_DUP_NEXT,       /* I184: duplicate group at row offset `after` (same md5, two or more songs): `out` = md5 NUL member count NUL best key NUL, reply [2] = after + 1 (0: none) */
+    SEL_DUP_NEXT,       /* I184: every duplicate group (same md5, two or more songs) streamed through `row`: md5, member count, best key; reply [2] = row count */
     SEL_BEST_SOURCE,    /* I184: best song among those sharing the md5 of song key `key` (D-M3-14): `out` = key NUL, reply [2] = 1 (0: key unknown or no md5) */
     SEL_DUP_PICK,       /* I184b: next local song with id > `after` that has no md5, not hashed: `out` = key NUL path NUL, reply [2] = its id (0: none left) */
     SEL_DUP_STORE,      /* I184b: store md5 `value` for local song key `key` (songs and files tables) */
-    SEL_COMPOSER_LIST,  /* DUI-P4-3: composer at row offset `after` (by display name): `out` = canon NUL display NUL song count (decimal) NUL, reply [2] = after + 1 (0: none) */
+    SEL_COMPOSER_LIST,  /* DUI-P4-3: every composer (by display name, Unknown composer last) streamed through `row` in one request: canon, display, song count (decimal); reply [2] = row count (I528) */
     SEL_SOURCE_SONGS    /* DUI-P4-3: songs rows of source id `key`: `out` = decimal count NUL, reply [0] = 1 */
 };
 /* One albums/artwork operation (SEL_LIB_REQ_ART, DUI-P2-4). Reply INT [0]: SEL_ART_FIND the id of the albums row the song belongs to (0: none),
@@ -72,6 +72,9 @@ typedef struct sel_art_op {
     const char* artist;/* STORE: album artist, NULL = none */
 } sel_art_op;
 
+/* One row of a streamed list: the column texts, valid only during the call. Returns 0 to go on. */
+typedef int (*sel_genre_row_fn)(void* ctx, const char* const* f);
+
 typedef struct sel_genre_op {
     uint32_t op;       /* SEL_GENRE_* */
     const char* key;
@@ -80,6 +83,8 @@ typedef struct sel_genre_op {
     int64_t after;
     char* out;
     uint32_t out_cap;
+    sel_genre_row_fn row; /* I528: *_LIST/_NEXT list ops stream every row through this sink in ONE request (runs on the library worker while the caller waits); reply [2] = row count */
+    void* row_ctx;
 } sel_genre_op;
 
 /* Counters of one sel_library_genre_sync run. */

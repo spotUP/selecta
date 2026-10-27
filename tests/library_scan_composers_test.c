@@ -32,6 +32,22 @@ static void on_composer(void* ctx, const char* canon, const char* display, uint3
     c->rows++;
 }
 
+static int order_ok = 1;
+static int order_rows;
+
+static void on_composer_order(void* ctx, const char* canon, const char* display, uint32_t songs) {
+    static char prev[64];
+
+    (void)ctx;
+    (void)canon;
+    (void)songs;
+    if (strncmp(display, "Composer ", 9) == 0) {
+        if (prev[0] != '\0' && strcmp(prev, display) >= 0) order_ok = 0;
+        snprintf(prev, sizeof prev, "%s", display);
+    }
+    order_rows++;
+}
+
 static const char* composers(sel_library* lib, list_ctx* c) {
     memset(c, 0, sizeof *c);
     check(sel_library_composer_list(lib, on_composer, c) >= 0, "composer list");
@@ -90,6 +106,28 @@ int main(void) {
 
     apply(lib, "local:b.mod", ""); /* songdb does not know b.mod: the tag stays */
     check(strcmp(composers(lib, &c), "Dr Awesome=1;Lizardking=1;Unknown composer=1;") == 0, "unknown to songdb keeps the tag");
+
+    /* I528: the whole list is ONE library request, whatever the composer count (it was one request, each re-running the full
+     * GROUP BY with a growing OFFSET, per composer). Rows stay in display order. */
+    {
+        enum { MANY = 300 };
+        char path[32], artist[32];
+        uint32_t before, requests;
+        int i, n;
+
+        for (i = 0; i < MANY; i++) {
+            snprintf(path, sizeof path, "m%03d.mod", i);
+            snprintf(artist, sizeof artist, "Composer %03d", (i * 7) % MANY);
+            scan(lib, path, artist);
+        }
+        before = lib->served;
+        memset(&c, 0, sizeof c);
+        n = sel_library_composer_list(lib, on_composer_order, &c);
+        requests = lib->served - before;
+        check(n == MANY + 3, "composer list row count");
+        check(requests == 1u, "composer list is one library request");
+        check(order_ok == 1 && order_rows == MANY + 3, "composer list in display order");
+    }
 
     sel_library_close(lib);
     if (fails == 0) printf("library_scan_composers_ok\n");
