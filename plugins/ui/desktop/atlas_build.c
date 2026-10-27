@@ -38,6 +38,44 @@ static int cmp_kern(const void* a, const void* b) {
     return x->b < y->b ? -1 : x->b > y->b;
 }
 
+#define TALL_SUB 8 /* vertical sub-rows per screen row when baking for tall pixels */
+
+/* I538: rasterise a glyph for a screen whose pixels are ydiv times taller than wide. Coverage stays antialiased
+ * across the columns, but each screen row is either in or out per column: the glyph is rendered by the same stb
+ * rasteriser at TALL_SUB sub-rows per screen row, a row is in when at least half of its sub-rows cover the column
+ * (alpha >= 128), and then carries the strongest horizontal coverage of those sub-rows. No vertical blending. */
+static void raster_tall(const stbtt_fontinfo* f, float scale, int ydiv, int gi, int y0, unsigned char* dst, int w, int h) {
+    float sy = scale / (float)ydiv;
+    float sh = sy * (float)TALL_SUB;
+    int hx0, hy0, hx1, hy1, hh, r, c, k;
+    unsigned char* hi;
+    stbtt_GetGlyphBitmapBox(f, gi, scale, sh, &hx0, &hy0, &hx1, &hy1);
+    hh = hy1 - hy0;
+    hi = (unsigned char*)calloc((size_t)w * (size_t)(hh > 0 ? hh : 1), 1);
+    if (hi == NULL) {
+        stbtt_MakeGlyphBitmap(f, dst, w, h, PAGE_W, scale, sy, gi);
+        return;
+    }
+    stbtt_MakeGlyphBitmap(f, hi, w, hh, w, scale, sh, gi);
+    for (r = 0; r < h; r++) {
+        for (c = 0; c < w; c++) {
+            int on = 0, mx = 0;
+            for (k = 0; k < TALL_SUB; k++) {
+                int hr = (y0 + r) * TALL_SUB + k - hy0; /* screen row r spans sub-rows y0*SUB + r*SUB .. +SUB-1 */
+                int a = (hr >= 0 && hr < hh) ? hi[(size_t)hr * (size_t)w + (size_t)c] : 0;
+                if (a >= 128) {
+                    on++;
+                }
+                if (a > mx) {
+                    mx = a;
+                }
+            }
+            dst[(size_t)r * PAGE_W + (size_t)c] = (unsigned char)(on * 2 >= TALL_SUB ? mx : 0);
+        }
+    }
+    free(hi);
+}
+
 /* Fills `g` from glyph index `gi`; the bitmap is rendered into `page` when it is not NULL, at the shelf position
  * the caller keeps in *px, *py, *row. */
 static void place(const stbtt_fontinfo* f, float scale, int ydiv, int gi, uint32_t cp, sel_gui_glyph* g, unsigned char* page,
@@ -66,7 +104,11 @@ static void place(const stbtt_fontinfo* f, float scale, int ydiv, int gi, uint32
     g->w = (uint16_t)w;
     g->h = (uint16_t)h;
     if (page != NULL) {
-        stbtt_MakeGlyphBitmap(f, page + (size_t)*py * PAGE_W + (size_t)*px, w, h, PAGE_W, scale, sy, gi);
+        if (ydiv > 1) {
+            raster_tall(f, scale, ydiv, gi, y0, page + (size_t)*py * PAGE_W + (size_t)*px, w, h);
+        } else {
+            stbtt_MakeGlyphBitmap(f, page + (size_t)*py * PAGE_W + (size_t)*px, w, h, PAGE_W, scale, sy, gi);
+        }
     }
     *px += w + 1;
     if (h > *row) {

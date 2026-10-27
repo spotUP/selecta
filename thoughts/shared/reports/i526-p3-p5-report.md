@@ -56,3 +56,13 @@ All changes in plugins/ui/desktop/desktop_ui.c; assertions in tests/dui/aga_nati
 
 Goldens updated (intended layout change): library-rgba32-640x256-ydiv2, library-sources-rgba32-1280x800, grid-view-rgba32-1280x800. Existing P5 row scan in the same test now starts below the stats strip from the stats rect instead of frame row 96.
 Run: dui-aga-native-text, dui-library*, dui-sync-banner, dui-tall-pixels, dui-layout, dui-grid-coverflow, dui-cover*, dui-style*: 13 of 13 pass.
+
+## I538 aspect-aware bake
+
+- Level: the bake. `desk_atlas_build_tall(ttf, px, ydiv)` already carried ydiv through `tools/gui_fontbake.c`; for ydiv > 1 it now calls `raster_tall` (plugins/ui/desktop/atlas_build.c) instead of stb's area-averaged `stbtt_MakeGlyphBitmap`. ydiv 1 path untouched.
+- Rule: 8 sub-rows per screen row via the same stb rasteriser; row in when >= half the sub-rows have alpha >= 128, value = max horizontal alpha of those sub-rows, else 0.
+- Only the two ydiv 2 Inter SemiBold atlases (px 22, 32) change; Amiga bitmap fonts are 1-bit already.
+- Test dui-font-tall (tests/dui/font_tall_unit.c): no "flat" partial-coverage pixel (partial alpha with equal left and right neighbours) in ydiv 2 atlases; baked == builder; FNV hash of 12 ydiv 1 atlases equals golden 0x9b4e533b6ca760bb (taken with the old code). Revert-check: with atlas_build.c at HEAD the test fails (1064 flat pixels at px 22, 2319 at px 32) and the ydiv 1 hash is the same value; restored, passes.
+- Golden tests/golden/desktop/library-rgba32-640x256-ydiv2@1.hash regenerated (the Library title is a ydiv 2 Inter headline). dui-golden-home and dui-sdl unchanged and pass.
+- dui-fonts is a pre-existing red placeholder (DUI-P5-6), not related.
+- Unverified: how the result looks on the real screen; needs a look on the AGA rig.

@@ -38,6 +38,9 @@ if(NOT SEL_AMIGA)
   # dui-amiga-font (I526-P1): the bitmap .font reader, unit level (host only).
   add_test(NAME dui-amiga-font COMMAND dui_amiga_font_unit)
   set_tests_properties(dui-amiga-font PROPERTIES LABELS dui TIMEOUT 60)
+  # dui-font-tall (I538): AGA atlases baked for 1:2 pixels, SDL atlases unchanged.
+  add_test(NAME dui-font-tall COMMAND dui_font_tall_unit)
+  set_tests_properties(dui-font-tall PROPERTIES LABELS dui TIMEOUT 60)
   # dui-font-roles (I526-P4): the role table and the 6-row fallback, unit level.
   add_test(NAME dui-font-roles COMMAND dui_font_roles_unit)
   set_tests_properties(dui-font-roles PROPERTIES LABELS dui TIMEOUT 60)

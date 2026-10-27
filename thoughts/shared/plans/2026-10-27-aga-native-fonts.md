@@ -54,6 +54,17 @@ desktop_ui.c (133 call lines, grouped by enclosing function); `draw_frame_text` 
 The 6-row fallback is the only box-aware rule; it lives in `draw_text` (desktop_ui.c:628) as "line_height > box.h
 -> the family's short size", so it is one rule, not a per-role override.
 
+### I538 decision: aspect-aware bake (2026-10-27)
+
+The AGA screen is 640x256 hires with square-pixel layout 640x512 (ydiv 2), so a screen pixel is twice as tall as wide.
+Decision (Johan): keep 640 wide and bake the AGA fonts for 1:2 pixels. Not 320x256, not interlace, not plain 1-bit.
+Bake rule (`raster_tall` in plugins/ui/desktop/atlas_build.c, used by `desk_atlas_build_tall` when ydiv > 1): the glyph
+is rendered by the existing stb rasteriser at 8 sub-rows per screen row; a screen row is in for a column when at least
+half of its sub-rows cover it (alpha >= 128) and then carries the strongest horizontal coverage of those sub-rows,
+otherwise 0. Horizontal antialiasing stays, vertical edges are crisp. Metrics and glyph boxes are unchanged. ydiv 1
+atlases (Mac, SDL, RTG) take the old path and are byte-identical (guarded by a hash in dui-font-tall). The Amiga bitmap
+fonts are already 1-bit and unaffected.
+
 ## 2. Reaching the native layout
 
 Today: `desk_make_canvas` (8150) sets ydiv 2 for an AGA canvas up to 300 rows; `desk_scale_for` (8205) takes the

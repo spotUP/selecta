@@ -81,6 +81,11 @@ if(NOT SEL_AMIGA)
   target_include_directories(dui_font_baked_unit PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop"
     "${PROJECT_SOURCE_DIR}/third_party/stb")
   target_link_libraries(dui_font_baked_unit PRIVATE m)
+  # dui-font-tall (I538): the ydiv 2 atlases have no vertical partial coverage; the ydiv 1 atlases are unchanged.
+  add_executable(dui_font_tall_unit "${PROJECT_SOURCE_DIR}/tests/dui/font_tall_unit.c" atlas_build.c ${FONT_GEN})
+  target_include_directories(dui_font_tall_unit PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop"
+    "${PROJECT_SOURCE_DIR}/third_party/stb")
+  target_link_libraries(dui_font_tall_unit PRIVATE m)
   # dui-font-roles (I526-P4): the role table and the 6-row fallback.
   add_executable(dui_font_roles_unit "${PROJECT_SOURCE_DIR}/tests/dui/font_roles_unit.c" font_roles.c atlas_build.c stb_impl.c ${FONT_GEN})
   target_include_directories(dui_font_roles_unit PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop"
