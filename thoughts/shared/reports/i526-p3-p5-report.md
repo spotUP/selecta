@@ -100,9 +100,9 @@ Not reproduced on host. A click at the Modland switch centre (640x512, ydiv 2) c
 
 ## I547 (AGA sidebar labels cut, Library tab labels truncated)
 
-- Cause 1: src/uimodel/layout.c SIDEBAR_RAIL_LABELLED was a fixed 160. The door row (sidebar_door_rect, desktop_ui.c) leaves
-  150 - 12 pad - 22 icon - 8 gap = 108... measured against the old inset the label box was 94 px for "Your Library" (96 px in
-  mini8) and "Now Playing" (88) touched the highlight edge.
+- Cause 1: src/uimodel/layout.c SIDEBAR_RAIL_LABELLED was a fixed 160. The door row (sidebar_door_rect, desktop_ui.c) left a
+  label box of 94 px, narrower than "Your Library" (96 px in mini8), so it was cut, and "Now Playing" (88 px) touched the
+  highlight edge.
 - Cause 2: lib_tab_pad shrinks the tab pad to as little as 2 px to fit six tabs, but draw_text_centered (and draw_button for the
   active tab) always reserve 8 px each side, so the label box was narrower than the label: ellipsis ("Compo...").
 - Fix: new sel_uim_layout_compute_rail (compute_tier calls it with 0); the desktop passes desk_rail_w(d), the measured widest
