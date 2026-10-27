@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "mui_copper.h"
 #include "mui_viz.h"
 
 static int failures;
@@ -78,10 +79,31 @@ static int test_budget(void) {
     return failures;
 }
 
+/* mui-copper-tint (MUI-P5-8): row colours to copper entries, grid switch on and off. */
+static int test_copper(void) {
+    uint32_t px[4 * 4], rows[4];
+    mui_copper_entry e[8];
+    int i;
+    for (i = 0; i < 16; i++) {
+        px[i] = (i / 4 < 2) ? 0xFFFF0000u : 0xFF0000FFu; /* two red rows, two blue rows */
+    }
+    px[0] = 0xFF000000u; /* row 0 average: (0 + 3 * 255) / 4 = 191 red */
+    mui_copper_row_colors(px, 4, 4, rows);
+    CHECK(rows[0] == 0xBF0000u && rows[1] == 0xFF0000u && rows[3] == 0x0000FFu, "row colours %06x %06x %06x", rows[0], rows[1], rows[3]);
+    CHECK(mui_copper_cover_list(rows, 4, 10, e, 8) == 3u, "entries merge equal lines");
+    CHECK(e[0].y == 10 && e[0].rgb4 == 0xB00u && e[1].y == 11 && e[1].rgb4 == 0xF00u && e[2].y == 13 && e[2].rgb4 == 0x00Fu, "entry values");
+    CHECK(mui_copper_grid_row_list(1, rows, 4, 20, e, 8) == 3u && e[0].y == 20, "grid tint on");
+    CHECK(mui_copper_grid_row_list(0, rows, 4, 20, e, 8) == 0u, "grid tint off adds nothing");
+    CHECK(mui_copper_cover_list(rows, 4, 0, e, 2) == 2u, "cap respected");
+    return failures;
+}
+
 int main(int argc, char** argv) {
     int r = 1;
     if (argc > 1 && strcmp(argv[1], "surface") == 0) {
         r = test_surface();
+    } else if (argc > 1 && strcmp(argv[1], "copper") == 0) {
+        r = test_copper();
     } else if (argc > 1 && strcmp(argv[1], "budget") == 0) {
         r = test_budget();
     }
