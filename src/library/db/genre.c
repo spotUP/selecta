@@ -122,11 +122,88 @@ void sel_library_genre_op(sel_library* lib, const sel_genre_op* op, sel_message*
 
 /* ---- caller half ---- */
 
+/* Rows of a streamed list op, collected on the library worker and replayed on the caller's thread once the
+ * request returns. The caller's row callback may then call the library again (radio's admit asks whether each
+ * candidate is skipped); calling it on the worker deadlocks, because the worker would wait on itself. */
+typedef struct row_buf {
+    char* text; /* each row: its fields NUL-terminated, back to back */
+    size_t len, cap;
+    uint32_t fields;
+    int failed;
+} row_buf;
+
+/* Fields per row of each streamed list op (the db.h comments name them). */
+static uint32_t row_fields(uint32_t op) {
+    switch (op) {
+    case SEL_SIMILAR_NEXT: return 5u;
+    case SEL_ALSOBY_NEXT:
+    case SEL_DUP_NEXT:
+    case SEL_COMPOSER_LIST: return 3u;
+    default: return 0u;
+    }
+}
+
+static int row_keep(void* ctx, const char* const* f) {
+    row_buf* b = ctx;
+    uint32_t i;
+
+    for (i = 0; i < b->fields; i++) {
+        size_t n = strlen(f[i] != NULL ? f[i] : "") + 1u;
+
+        if (b->len + n > b->cap) {
+            size_t cap = b->cap == 0 ? 4096u : b->cap;
+            char* np;
+
+            while (cap < b->len + n) cap *= 2u;
+            np = realloc(b->text, cap);
+            if (np == NULL) {
+                b->failed = 1;
+                return 1;
+            }
+            b->text = np;
+            b->cap = cap;
+        }
+        memcpy(b->text + b->len, f[i] != NULL ? f[i] : "", n);
+        b->len += n;
+    }
+    return 0;
+}
+
 int sel_genre_call(sel_library* lib, const sel_genre_op* op, int64_t* id) {
     sel_message reply;
+    sel_genre_op local;
+    row_buf rows;
+    const sel_genre_op* send = op;
+    int ok;
 
+    memset(&rows, 0, sizeof rows);
+    if (op->row != NULL) {
+        rows.fields = row_fields(op->op);
+        if (rows.fields == 0) return -1;
+        local = *op;
+        local.row = row_keep;
+        local.row_ctx = &rows;
+        send = &local;
+    }
     memset(&reply, 0, sizeof reply);
-    if (!sel_library_request(lib, SEL_LIB_REQ_GENRE, op, &reply) || reply.argc < 3 || reply.args[1].v.i != 0) return -1;
+    ok = sel_library_request(lib, SEL_LIB_REQ_GENRE, send, &reply) && reply.argc >= 3 && reply.args[1].v.i == 0 && !rows.failed;
+    if (ok && op->row != NULL) {
+        const char* p = rows.text;
+        const char* end = rows.text + rows.len;
+
+        while (p < end) {
+            const char* f[5];
+            uint32_t i;
+
+            for (i = 0; i < rows.fields; i++) {
+                f[i] = p;
+                p += strlen(p) + 1u;
+            }
+            if (op->row(op->row_ctx, f) != 0) break;
+        }
+    }
+    free(rows.text);
+    if (!ok) return -1;
     if (id != NULL) *id = reply.args[2].v.i;
     return reply.args[0].v.i;
 }

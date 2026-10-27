@@ -83,7 +83,7 @@ typedef struct sel_genre_op {
     int64_t after;
     char* out;
     uint32_t out_cap;
-    sel_genre_row_fn row; /* I528: *_LIST/_NEXT list ops stream every row through this sink in ONE request (runs on the library worker while the caller waits); reply [2] = row count */
+    sel_genre_row_fn row; /* I528: *_LIST/_NEXT list ops stream every row through this sink in ONE request; sel_genre_call buffers the rows on the library worker and calls the sink on the caller's thread after the reply, so the sink may call the library; reply [2] = row count */
     void* row_ctx;
 } sel_genre_op;
 
