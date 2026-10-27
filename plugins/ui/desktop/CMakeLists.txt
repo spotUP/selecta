@@ -67,11 +67,11 @@ else()
 endif()
 # I526: the Amiga bitmap fonts (family:file), size = tf_YSize, baked at ydiv 2 next to Inter.
 set(AMIGA_MINI_DIR "${FONT_SRC}/amiga-mini")
-set(AMIGA_MINI_FILES "${AMIGA_MINI_DIR}/mini4/6" "${AMIGA_MINI_DIR}/mini6/8" "${AMIGA_MINI_DIR}/mini8/8")
+set(AMIGA_MINI_FILES "${AMIGA_MINI_DIR}/mini4/6" "${AMIGA_MINI_DIR}/mini4/8" "${AMIGA_MINI_DIR}/mini6/6" "${AMIGA_MINI_DIR}/mini6/8" "${AMIGA_MINI_DIR}/mini8/8")
 add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/font_baked.c"
   COMMAND ${FONTBAKE_CMD} "${FONT_SRC}/Inter-Regular.ttf" "${FONT_SRC}/Inter-SemiBold.ttf" "${CMAKE_CURRENT_BINARY_DIR}/font_baked.c"
-    "mini4:${AMIGA_MINI_DIR}/mini4/6" "mini6:${AMIGA_MINI_DIR}/mini6/8" "mini8:${AMIGA_MINI_DIR}/mini8/8"
+    "mini4:${AMIGA_MINI_DIR}/mini4/6" "mini4:${AMIGA_MINI_DIR}/mini4/8" "mini6:${AMIGA_MINI_DIR}/mini6/6" "mini6:${AMIGA_MINI_DIR}/mini6/8" "mini8:${AMIGA_MINI_DIR}/mini8/8"
   DEPENDS ${FONTBAKE_DEP} "${FONT_SRC}/Inter-Regular.ttf" "${FONT_SRC}/Inter-SemiBold.ttf" ${AMIGA_MINI_FILES}
   COMMENT "Baking the text atlases")
 list(APPEND FONT_GEN "${CMAKE_CURRENT_BINARY_DIR}/font_baked.c")
@@ -81,6 +81,11 @@ if(NOT SEL_AMIGA)
   target_include_directories(dui_font_baked_unit PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop"
     "${PROJECT_SOURCE_DIR}/third_party/stb")
   target_link_libraries(dui_font_baked_unit PRIVATE m)
+  # dui-font-roles (I526-P4): the role table and the 6-row fallback.
+  add_executable(dui_font_roles_unit "${PROJECT_SOURCE_DIR}/tests/dui/font_roles_unit.c" font_roles.c atlas_build.c stb_impl.c ${FONT_GEN})
+  target_include_directories(dui_font_roles_unit PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop"
+    "${PROJECT_SOURCE_DIR}/third_party/stb")
+  target_link_libraries(dui_font_roles_unit PRIVATE m)
   # dui-amiga-font (I526-P1): the bitmap .font reader against hand-decoded rows.
   add_executable(dui_amiga_font_unit "${PROJECT_SOURCE_DIR}/tests/dui/amiga_font_unit.c" amiga_font.c)
   target_include_directories(dui_amiga_font_unit PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop")
@@ -94,7 +99,7 @@ if(SEL_AMIGA)
 else()
   set(ART_THREAD posix/art_thread.c)
 endif()
-sel_add_plugin(desktop_ui 5 desktop_ui.c atlas_build.c art.c ${ART_THREAD} stb_impl.c ${FONT_GEN}
+sel_add_plugin(desktop_ui 5 desktop_ui.c atlas_build.c font_roles.c art.c ${ART_THREAD} stb_impl.c ${FONT_GEN}
   THIRD_PARTY_INCLUDES "${PROJECT_SOURCE_DIR}/third_party/stb")
 if(SEL_AMIGA AND NOT SEL_DESKTOP_AGA)
   target_compile_definitions(sel_plugin_desktop_ui PRIVATE SELECTA_DESKTOP_RTG=1)

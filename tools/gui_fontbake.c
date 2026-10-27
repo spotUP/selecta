@@ -79,7 +79,7 @@ int main(int argc, char** argv) {
     static const int tall[] = {DESK_FONT_BAKE_TALL_PX};
     static const char* const amiga_names[] = {"mini4", "mini6", "mini8"};
     unsigned char* ttf[2];
-    bake_entry ent[64];
+    bake_entry ent[96];
     int pxs[64], npx = 0, ne = 0, w, i, k, a;
     FILE* o;
     if (argc < 4) {

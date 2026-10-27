@@ -9,6 +9,7 @@
 #include "art.h"
 #include <selecta/gui/gui_genart.h>
 #include "atlas_build.h"
+#include "font_roles.h"
 #include <selecta/gui/gui_anim.h>
 #include <selecta/gui/gui_draw.h>
 #include <selecta/gui/gui_text.h>
@@ -165,6 +166,8 @@ typedef struct desk {
     int32_t zoom_default;   /* the zoom the backend starts at: 0 (fit) on rtg and aga, 100 otherwise */
     uint32_t atlas_builds;   /* text atlases built at run time */
     uint32_t atlas_baked_hits; /* text atlases taken from the baked tables (I463) */
+    uint32_t bitmap_hits[3];   /* I526: text lookups served by mini4, mini6, mini8 */
+    uint32_t headline_hits[2]; /* I526: text lookups served by the Inter headline sizes 22 and 32 */
     uint32_t atlas_ms;       /* host clock ms spent in desk_atlas_build (I463): the soft-float cost on the 68020 tier */
     uint32_t atlas_rebuilds; /* scale changes that dropped the built text atlases */
     uint32_t icon_rebuilds;  /* scale changes that rebuilt the icon atlas view */
@@ -342,7 +345,7 @@ typedef struct desk {
     uint32_t fl_n[2], fl_paint[2], fl_max[2], fl_prof[2][SEL_GUI_PROF_COUNT];
     uint32_t frame_prof0[SEL_GUI_PROF_COUNT]; /* canvas->prof_ms when the open frame began */
     int frame_flow;                           /* 0 not a cover flow frame, 1 rest, 2 slide */
-    sel_tag stats[90 + 2 * (SEL_GUI_PROF_COUNT + PT_COUNT) + 2 * SEL_GUI_PROF_COUNT + 10];
+    sel_tag stats[100 + 2 * (SEL_GUI_PROF_COUNT + PT_COUNT) + 2 * SEL_GUI_PROF_COUNT + 10];
     char* input_at;         /* where the scripted input resumes after a turn that sent an engine line */
     uint32_t sends;         /* engine lines sent so far: the replay yields a turn so the shell pumps them */
     char library_dump[8192]; /* the Library page as text for the stats (DUI-P4-3) */
@@ -591,10 +594,34 @@ static sel_gui_rect region_rect(const desk* d, const char* name) {
 
 /* The atlas for a weight and a size token (pixel size), built from the embedded Inter on first use; NULL when
  * the size is not a token or memory ran out. */
+/* I526: the bitmap tier is the native AGA 640x256 screen (ydiv 2): fit zoom 1.0, Amiga bitmap fonts and two Inter
+ * headline sizes through the role table of font_roles.c. */
+static int desk_bitmap_text(const desk* d) { return d->canvas != NULL && d->canvas->ydiv > 1; }
+
+/* The role atlas of a token on the bitmap tier for a box of box_h layout units (0 = no fit), counted for the stats. */
+static const sel_gui_atlas* desk_role_atlas(desk* d, int semibold, int size, int32_t box_h) {
+    int family = 0, px = 0;
+    const sel_gui_atlas* at = desk_font_role_atlas(semibold, size, box_h, &family, &px);
+    if (at != NULL) {
+        if (family >= DESK_FAMILY_MINI4) {
+            d->bitmap_hits[family - DESK_FAMILY_MINI4]++;
+        } else {
+            d->headline_hits[px >= 32 ? 1 : 0]++;
+        }
+    }
+    return at;
+}
+
 static const sel_gui_atlas* desk_font(desk* d, int semibold, int size) {
     int i;
     for (i = 0; i < DESK_SIZES; i++) {
         if (g_sizes[i] == size) {
+            if (desk_bitmap_text(d)) {
+                const sel_gui_atlas* role = desk_role_atlas(d, semibold, size, 0);
+                if (role != NULL) {
+                    return role;
+                }
+            }
             if (d->atlas[semibold][i] == NULL) {
                 d->atlas[semibold][i] = desk_atlas_baked(semibold, lpx(d, size), d->canvas->ydiv > 1 ? d->canvas->ydiv : 1);
                 if (d->atlas[semibold][i] != NULL) {
@@ -630,6 +657,10 @@ static uint32_t desk_mix(uint32_t a, uint32_t b, int32_t q16) {
 /* One line of text at the top left of the box, ellipsized to the box width. */
 static void draw_text(desk* d, sel_gui_rect box, const char* s, int semibold, int px, uint32_t argb) {
     const sel_gui_atlas* at = desk_font(d, semibold, px);
+    if (at != NULL && desk_bitmap_text(d) && at->line_height > box.h) { /* I526: a box shorter than the line takes a 6-row font */
+        const sel_gui_atlas* fit = desk_role_atlas(d, semibold, px, box.h);
+        at = fit != NULL ? fit : at;
+    }
     if (at != NULL) {
         sel_gui_clip_push(d->canvas, box);
         sel_gui_text_draw(d->canvas, at, box.x, box.y + (box.h - at->line_height) / 2, s, argb, box.w, &d->text);
@@ -8168,7 +8199,7 @@ static void desk_replay_resizes(desk* d) {
     char msg[96];
     while (sscanf(p, "%ux%u%n", &w, &h, &used) == 2) {
         uint32_t i;
-        sel_uim_layout_compute(&d->layout, w, h);
+        sel_uim_layout_compute_tier(&d->layout, w, h, desk_bitmap_text(d) ? SEL_UIM_TIER_BITMAP : SEL_UIM_TIER_DEFAULT);
         printf("layout width=%u height=%u id=%s regions=%u check=%s\n", w, h,
                sel_uim_breakpoint_name(d->layout.breakpoint), (unsigned)d->layout.count,
                sel_uim_layout_check(&d->layout, msg, sizeof msg) == 0 ? "ok" : msg);
@@ -8353,6 +8384,9 @@ static int desk_make_canvas(desk* d, const char* size, int32_t def_w, int32_t de
 /* The fit zoom (design 10.3), Q16: the canvas in logical units of the density against the 1024x640 reference, never
  * enlarging and never below 0.625 (the compact layout takes over below that). */
 static int32_t desk_fit_q16(const desk* d, int32_t w, int32_t h) {
+    if (desk_bitmap_text(d)) {
+        return 65536; /* I526: the native screen, one layout unit is one column */
+    }
     int64_t fw = (int64_t)w * 65536 / (1024 * (int64_t)d->scale), fh = (int64_t)h * 65536 / (640 * (int64_t)d->scale);
     int64_t f = fw < fh ? fw : fh;
     return (int32_t)(f > 65536 ? 65536 : f < 40960 ? 40960 : f);
@@ -8367,7 +8401,8 @@ static int32_t desk_scale_for(const desk* d, int32_t w, int32_t h) {
 
 /* The layout runs at the logical size: the canvas divided by the scale. */
 static void desk_relayout(desk* d) {
-    sel_uim_layout_compute(&d->layout, (uint32_t)px_to_logical(d, d->canvas->w), (uint32_t)px_to_logical(d, cvh(d)));
+    sel_uim_layout_compute_tier(&d->layout, (uint32_t)px_to_logical(d, d->canvas->w), (uint32_t)px_to_logical(d, cvh(d)),
+                                desk_bitmap_text(d) ? SEL_UIM_TIER_BITMAP : SEL_UIM_TIER_DEFAULT);
 }
 
 /* The backend density changed (a window moved to another screen): the scale follows, the zoom stays. */
@@ -9214,6 +9249,16 @@ static const sel_tag* desk_stats(void* state) {
         d->stats[n++].value = d->atlas_ms;
         d->stats[n].tag = SEL_UI_STAT_ATLAS_BAKED_HITS;
         d->stats[n++].value = d->atlas_baked_hits;
+        d->stats[n].tag = SEL_UI_STAT_BITMAP_HITS_MINI4;
+        d->stats[n++].value = d->bitmap_hits[0];
+        d->stats[n].tag = SEL_UI_STAT_BITMAP_HITS_MINI6;
+        d->stats[n++].value = d->bitmap_hits[1];
+        d->stats[n].tag = SEL_UI_STAT_BITMAP_HITS_MINI8;
+        d->stats[n++].value = d->bitmap_hits[2];
+        d->stats[n].tag = SEL_UI_STAT_HEADLINE_HITS_22;
+        d->stats[n++].value = d->headline_hits[0];
+        d->stats[n].tag = SEL_UI_STAT_HEADLINE_HITS_32;
+        d->stats[n++].value = d->headline_hits[1];
         d->stats[n].tag = SEL_UI_STAT_SHELF_ALBUM_ART_DRAWS;
         d->stats[n++].value = d->shelf_album_art_draws;
         d->stats[n].tag = SEL_UI_STAT_TOOLTIP_TARGETS;
