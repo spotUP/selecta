@@ -432,6 +432,57 @@ static void test_list_backends(void) {
     CHECK(mui_list_backend_pick(1, 1)->sortable == 1 && mui_list_backend_pick(0, 0)->sortable == 0, "only NList sorts");
 }
 
+static void test_home(void) {
+    sel_view_row r[4];
+    sel_view_state v;
+    char lines[3][48];
+    memset(r, 0, sizeof r);
+    memset(&v, 0, sizeof v);
+    r[0].kind = SEL_ROW_HOME; r[0].key = "a/b.mod";
+    r[1].kind = SEL_ROW_HOME; r[1].key = "Album"; r[1].album = 1;
+    r[2].kind = SEL_ROW_HOME; r[2].key = "canon"; r[2].composer = 1;
+    r[3].kind = SEL_ROW_HEADING;
+    v.rows = r; v.row_n = 4; v.window_start = 10;
+    CHECK(mui_home_kind_of(&r[0]) == MUI_HOME_SONG && mui_home_kind_of(&r[1]) == MUI_HOME_ALBUM, "song versus album");
+    CHECK(mui_home_kind_of(&r[2]) == MUI_HOME_COMPOSER && mui_home_kind_of(&r[3]) == MUI_HOME_NONE, "composer, heading");
+    CHECK(mui_home_lines(&v, 1, lines) == 3 && strcmp(lines[0], "VIEW_CURSOR 11") == 0 && strcmp(lines[1], "VIEW_ACTIVATE") == 0 &&
+              strcmp(lines[2], "VIEW_SOURCE home") == 0, "lines '%s' '%s'", lines[0], lines[1]);
+    CHECK(mui_home_lines(&v, 3, lines) == 0 && mui_home_lines(&v, 9, lines) == 0, "heading or outside window sends nothing");
+}
+
+static void test_library(void) {
+    mui_crumb c[8];
+    CHECK(mui_path_crumbs("/home/x/songs", c, 8) == 3 && strcmp(c[0].name, "home") == 0 && strcmp(c[2].name, "songs") == 0 && c[2].end == 13u,
+          "unix crumbs");
+    CHECK(mui_path_crumbs("Work:Music/Mods", c, 8) == 3 && strcmp(c[0].name, "Work:") == 0 && c[0].end == 5u && strcmp(c[1].name, "Music") == 0 &&
+              strcmp(c[2].name, "Mods") == 0 && c[2].end == 15u, "AmigaDOS crumbs %s %s", c[0].name, c[1].name);
+    CHECK(mui_path_crumbs("Work:", c, 8) == 1 && strcmp(c[0].name, "Work:") == 0, "volume root");
+    CHECK(mui_path_crumbs("/", c, 8) == 0 && mui_path_crumbs("", c, 8) == 0 && mui_path_crumbs(NULL, c, 8) == 0, "empty roots");
+    CHECK(mui_path_crumbs("a/b/c", c, 2) == 3, "count above cap");
+}
+
+static void test_toast(void) {
+    mui_toast t;
+    memset(&t, 0, sizeof t);
+    CHECK(mui_toast_ms(0) == 3000u && mui_toast_ms(1) == 6000u, "durations");
+    mui_toast_show(&t, "first", 0, 1000);
+    mui_toast_show(&t, "second", 1, 2000);
+    CHECK(t.visible && strcmp(t.text, "second") == 0 && t.until_ms == 8000u && t.shown == 2u, "replace, not stack: '%s' %u", t.text, t.until_ms);
+    CHECK(mui_toast_tick(&t, 7999) == 0 && t.visible, "still visible");
+    CHECK(mui_toast_tick(&t, 8000) == 1 && !t.visible && t.text[0] == '\0', "gone at 6 s");
+}
+
+static void test_help(void) {
+    char row[128], msg[128];
+    uint32_t i;
+    CHECK(mui_help_count() == sel_uim_action_count() && mui_help_count() > 20u, "help rows %u", (unsigned)mui_help_count());
+    CHECK(sel_uim_actions_check(msg, sizeof msg) == 0, "action table check: %s", msg);
+    for (i = 0; i < mui_help_count(); i++) {
+        mui_help_row(i, row, sizeof row);
+        CHECK(row[0] != '\0', "help row %u empty", (unsigned)i);
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -468,6 +519,14 @@ int main(int argc, char** argv) {
         test_style_mask();
     } else if (strcmp(argv[1], "list-backends") == 0) {
         test_list_backends();
+    } else if (strcmp(argv[1], "home") == 0) {
+        test_home();
+    } else if (strcmp(argv[1], "library") == 0) {
+        test_library();
+    } else if (strcmp(argv[1], "toast") == 0) {
+        test_toast();
+    } else if (strcmp(argv[1], "help") == 0) {
+        test_help();
     } else {
         return 2;
     }

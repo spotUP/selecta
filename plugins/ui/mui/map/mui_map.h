@@ -144,4 +144,35 @@ void mui_columns_format(uint32_t breakpoint, char* out, size_t cap);
 /* Cell text of one row; "" for the columns the engine row does not carry (the view model rows hold title and artist). */
 const char* mui_row_cell(const sel_view_row* r, uint32_t column);
 
+/* MUI-P4-1: Home rows. SEL_ROW_HOME rows carry `key` plus `album` (song to play versus album to open) and `composer`. */
+typedef enum mui_home_kind { MUI_HOME_NONE = 0, MUI_HOME_SONG, MUI_HOME_ALBUM, MUI_HOME_COMPOSER } mui_home_kind;
+mui_home_kind mui_home_kind_of(const sel_view_row* r);
+/* The three engine lines a click on window row `row` sends (cursor, activate, ask the home source again, as the
+ * desktop shelf tile does); returns 3, or 0 for a row that is not a Home entry. */
+uint32_t mui_home_lines(const sel_view_state* v, uint32_t row, char lines[3][48]);
+
+/* MUI-P4-2: Library breadcrumbs. Pieces of a browse path split on "/" and the AmigaDOS ":" (the volume keeps its colon);
+ * `end` is the length of the path up to and including the piece, so a click on a crumb opens path[0..end). Returns the
+ * piece count even above cap. The last piece equals the engine's browse_leaf. */
+typedef struct mui_crumb {
+    char name[48];
+    uint32_t end;
+} mui_crumb;
+uint32_t mui_path_crumbs(const char* path, mui_crumb* out, uint32_t cap);
+
+/* MUI-P4-11: the one-line status that stands in for a toast. */
+typedef struct mui_toast {
+    char text[160];
+    uint32_t until_ms;
+    uint32_t shown;
+    int visible;
+} mui_toast;
+uint32_t mui_toast_ms(int is_error);
+void mui_toast_show(mui_toast* t, const char* text, int is_error, uint32_t now_ms);
+int mui_toast_tick(mui_toast* t, uint32_t now_ms); /* 1 when it just went away */
+
+/* MUI-P4-14: Help window rows, one per action table row. */
+uint32_t mui_help_count(void);
+void mui_help_row(uint32_t i, char* out, size_t cap);
+
 #endif
