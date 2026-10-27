@@ -638,7 +638,7 @@ int main(int argc, char** argv)
                 continue;
             }
         }
-        if (r < 0) {
+        if (r < 0 || sel_engine_take_quit(e)) { /* QUIT ends the run like the primary UI's quit key */
             break;
         }
         waits++;

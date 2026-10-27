@@ -748,6 +748,12 @@ if(NOT SEL_AMIGA)
     COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/m12/control_socket.sh" "$<TARGET_FILE:selecta>"
       "${SEL_CLI}" "${CMAKE_CURRENT_SOURCE_DIR}/m12/wait.keys" "${CMAKE_CURRENT_BINARY_DIR}/control_socket")
 
+  # M4-AX-0-4 ctl-socket-result (and M4-AX-2-4 QUIT): the one reachability test of the result reply and the new verbs.
+  add_test(NAME ctl-socket-result
+    COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/m12/ctl_socket_result.sh" "$<TARGET_FILE:selecta>"
+      "${SEL_CLI}" "${CMAKE_CURRENT_SOURCE_DIR}/m12/wait.keys" "${CMAKE_CURRENT_BINARY_DIR}/ctl_socket_result" "${SEL_COUNT_CMD}" "${SEL_TESTMOD}")
+  set_tests_properties(ctl-socket-result PROPERTIES TIMEOUT 60 LABELS engine PASS_REGULAR_EXPRESSION "ctl-socket-result ok")
+
   # T38 (row I80): the integration host and the fake Now Playing backend.
   add_test(NAME integration-nowplaying
     COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}"

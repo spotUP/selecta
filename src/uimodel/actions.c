@@ -110,7 +110,7 @@ static const struct {
     {"VIEW_WINDOW", PROTO},  {"VIEW_GROUP", CTX},     {"VIEW_EXPAND", CTX},     {"VIEW_COLLAPSE", CTX},
     {"VIEW_DRILL", CTX},     {"MIX_STEREO_WIDTH", ARG}, {"DSP", ARG},           {"BEGIN", PROTO},
     {"END", PROTO},          {"COMMANDS", PROTO},     {"EVENTS", PROTO},        {"TAGTYPES", PROTO},
-    {"IDLE", PROTO},         {"AUTH", PROTO},         {"DEVICE_LIST", PROTO},   {"DEVICE_TRANSFER", ARG},
+    {"IDLE", PROTO},         {"STATUS", PROTO},       {"QUIT", "File/Quit action row lands with I327"},         {"AUTH", PROTO},         {"DEVICE_LIST", PROTO},   {"DEVICE_TRANSFER", ARG},
     {"DEVICE_FOLLOW", ARG},
 };
 #undef ARG

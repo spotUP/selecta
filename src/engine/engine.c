@@ -70,6 +70,8 @@
 /* The verbs with real behaviour in M0a. Adding a row here is how a later
  * plan lowers tests/ratchet/unimplemented.txt. */
 #define SEL_CMD_IMPLEMENTED(X)                                                                \
+    X(STATUS)                                                                                 \
+    X(QUIT)                                                                                   \
     X(UI_SWITCH)                                                                              \
     X(PREF_GET)                                                                               \
     X(PREF_SET)                                                                               \
@@ -262,6 +264,8 @@ struct sel_engine {
     uint32_t votes_generation;             /* moves when a count is stored; the view re-reads its vote texts */
     uint32_t art_generation;               /* moves when a scan or sync may have added or renamed albums; the view re-reads its artwork ids */
     uint32_t ui_view_styles; /* sel_view_style bits the active UI offers (SEL_UI_VIEW_STYLES), set by the shell */
+    uint32_t quit;           /* QUIT was asked: the shell takes it between turns (sel_engine_take_quit) */
+    uint32_t quit_at_end;    /* QUIT inside BEGIN: becomes `quit` at END */
     char ui_switch[16];      /* id named by the last UI_SWITCH, "" none: the shell owns the UIs and takes it (I238) */
     uint32_t scrobble_due;   /* SCROBBLE_DUE events emitted (sentinel of the I177 rule) */
     uint32_t history_writes; /* history rows written (sentinel of the I170 writer) */
@@ -1205,6 +1209,55 @@ static void cmd_TAGTYPES(sel_engine* e, const sel_message* m) {
     }
 }
 
+/* STATUS: one RESULT line per field, key=value, values unquoted (plan M4-AX section 4.1). */
+static void cmd_STATUS(sel_engine* e, const sel_message* m) {
+    const sel_state* st = &e->state;
+    const sel_tag* meta = st->song.meta;
+    const char* title = meta != NULL ? (const char*)sel_tag_find(meta, SEL_META_TITLE, 0) : NULL;
+    const char* composer = meta != NULL ? (const char*)sel_tag_find(meta, SEL_META_AUTHOR, 0) : NULL;
+    char line[SEL_RESULT_LINE_MAX + 1u];
+    uint32_t i, pos = 0;
+    (void)m;
+    for (i = 0; i < st->queue_count; i++) {
+        if (st->queue[i].id == st->queue_playing) {
+            pos = i + 1u;
+        }
+    }
+    snprintf(line, sizeof line, "state=%s", sel_play_state_name(st->play));
+    emit_result(e, line);
+    snprintf(line, sizeof line, "title=%s", title != NULL ? title : "");
+    emit_result(e, line);
+    snprintf(line, sizeof line, "composer=%s", composer != NULL ? composer : "");
+    emit_result(e, line);
+    snprintf(line, sizeof line, "path=%s", st->song.path != NULL ? st->song.path : "");
+    emit_result(e, line);
+    snprintf(line, sizeof line, "subsong=%u/%u", (unsigned)st->song.subsong, (unsigned)st->song.subsong_count);
+    emit_result(e, line);
+    snprintf(line, sizeof line, "position_ms=%u", (unsigned)st->song.position_ms);
+    emit_result(e, line);
+    snprintf(line, sizeof line, "duration_ms=%u", (unsigned)st->song.duration_ms);
+    emit_result(e, line);
+    snprintf(line, sizeof line, "volume=%d", (int)st->volume);
+    emit_result(e, line);
+    snprintf(line, sizeof line, "repeat=%s", st->options[SEL_OPT_REPEAT]);
+    emit_result(e, line);
+    snprintf(line, sizeof line, "random=%s", st->options[SEL_OPT_RANDOM]);
+    emit_result(e, line);
+    snprintf(line, sizeof line, "queue_pos=%u/%u", (unsigned)pos, (unsigned)st->queue_count);
+    emit_result(e, line);
+}
+
+/* QUIT: the engine owns no run loop, so it only holds the request; the shell takes it between turns. Inside BEGIN it
+ * waits for END (plan M4-AX section 4.2). */
+static void cmd_QUIT(sel_engine* e, const sel_message* m) {
+    (void)m;
+    if (e->in_batch) {
+        e->quit_at_end = 1;
+    } else {
+        e->quit = 1;
+    }
+}
+
 static void cmd_BEGIN(sel_engine* e, const sel_message* m) {
     (void)m;
     e->in_batch = 1;
@@ -1213,6 +1266,10 @@ static void cmd_BEGIN(sel_engine* e, const sel_message* m) {
 static void cmd_END(sel_engine* e, const sel_message* m) {
     (void)m;
     e->in_batch = 0;
+    if (e->quit_at_end) {
+        e->quit_at_end = 0;
+        e->quit = 1;
+    }
     flush_pending(e);
 }
 
@@ -5158,6 +5215,12 @@ static void cmd_UI_SWITCH(sel_engine* e, const sel_message* m) {
         return;
     }
     strcpy(e->ui_switch, id);
+}
+
+int sel_engine_take_quit(sel_engine* e) {
+    int q = e->quit != 0u;
+    e->quit = 0;
+    return q;
 }
 
 void sel_engine_set_ui_view_styles(sel_engine* e, uint32_t mask) {
