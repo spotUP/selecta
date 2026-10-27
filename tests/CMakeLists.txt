@@ -69,6 +69,11 @@ add_test(NAME desktop-bake-check
   COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/tests/desktop-bake-check.tmp"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/dui/desktop_bake_check.cmake")
 
+# I565: every "ui.*" pref a UI plugin reads is declared in prefs.def (ui.desktop.zoom was not, so prefs.conf could not set it).
+add_test(NAME ui-prefs-declared
+  COMMAND "${CMAKE_COMMAND}" "-DSRC=${PROJECT_SOURCE_DIR}" -P "${CMAKE_CURRENT_SOURCE_DIR}/dui/ui_prefs_declared.cmake")
+set_tests_properties(ui-prefs-declared PROPERTIES PASS_REGULAR_EXPRESSION "ui_prefs_declared_ok")
+
 # T13: render the generated test module, four resamplers. The module comes
 # from tools/gen_testmod.c (host build tool); hashes pinned per resampler in
 # tests/golden/nuade/ once the linear render has been listened to. A missing
