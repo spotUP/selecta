@@ -214,7 +214,27 @@ static void json_string(FILE* f, char* buf, size_t n) {
     }
 }
 
-/* One object of the list: flat "key": "string" | number members. Unknown keys are read and dropped. */
+/* After the opening '{' or '[' of a value: reads to its matching close, string aware (a quoted bracket does
+ * not count). Nested members of a list entry are not part of the item, so they are dropped whole. */
+static void json_skip_container(FILE* f) {
+    unsigned depth = 1u;
+    int c;
+
+    while (depth > 0u && (c = getc(f)) != EOF) {
+        if (c == '"') {
+            char drop[2];
+
+            json_string(f, drop, sizeof drop);
+        } else if (c == '{' || c == '[') {
+            depth++;
+        } else if (c == '}' || c == ']') {
+            depth--;
+        }
+    }
+}
+
+/* One object of the list: "key": "string" | number members; a nested object or array value is skipped whole.
+ * Unknown keys are read and dropped. */
 static int json_object(sync_state* s, FILE* f) {
     list_item* it = &s->items[s->n];
     char key[24];
@@ -246,6 +266,8 @@ static int json_object(sync_state* s, FILE* f) {
         }
         if (c == '"') {
             json_string(f, dst, dn);
+        } else if (c == '{' || c == '[') {
+            json_skip_container(f);
         } else {
             while (c != EOF && c != ',' && c != '}' && c != ' ' && c != '\n' && c != '\r') {
                 if (o + 1u < dn) {

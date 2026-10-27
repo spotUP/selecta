@@ -57,4 +57,13 @@ echo "$jout" | grep -q '^hippo_row=LMan_SID_Chip_Club.prg|.*|181|' || fail "hipp
 # the fetched .prg is annotated on its own playlist row (stickers after the id: entries|dividers|stealth|subsongs)
 echo "$jout" | grep -qF "|181|$p_entries|$p_div|$p_stealth|$p_sub" || fail "prg stickers on the playlist row"
 
+# a list entry with nested members (an array of strings, an object, a quoted bracket) is one row: the nested
+# keys must not leak into it or split it
+mkdir "$root/nested"
+printf '%s' '[{"id":7,"tags":["title","}"],"meta":{"title":"WRONG","filename":"WRONG.prg","deep":[{"a":1}]},"title":"Nested","author":"N","genre":"Chip","filename":"nested.prg"}]' > "$root/nested/hippo_list.json"
+nout=$("$cli" library sync --db "$root/n.db" --now 1792756800 --dump hippo "$root/nested")
+[ "$(field "$nout" hippo_lists)" = 1 ] || fail "nested hippo_lists != 1: $nout"
+echo "$nout" | grep -q '^hippo_row=nested.prg|Hippo - Playlists|Nested|N|Chip|' || fail "nested row: $nout"
+if echo "$nout" | grep -q 'WRONG'; then fail "nested member leaked into a row"; fi
+
 echo "source_hippo_ok lists=$listed prg_entries=$p_entries dividers=$p_div stealth=$p_stealth subsongs=$p_sub"
