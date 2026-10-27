@@ -1,7 +1,7 @@
 add_executable(selecta-cli main.c abi.c plugins.c play_null.c machine.c render.c session.c play.c library.c analyse.c folders.c fetch.c record.c devilbox.c lastfm.c mirror_fetch.c dryrun.c spsc.c
   ../common/integration_host.c ../common/catalogue.c)
 target_include_directories(selecta-cli PRIVATE ../common)
-target_link_libraries(selecta-cli PRIVATE selecta_registry)
+target_link_libraries(selecta-cli PRIVATE selecta_registry_cli)
 if(SEL_AMIGA)
   target_compile_definitions(selecta-cli PRIVATE SEL_NO_ANALYSE)
 endif()

@@ -106,6 +106,7 @@ else()
 endif()
 sel_add_plugin(desktop_ui 5 desktop_ui.c atlas_build.c font_roles.c art.c ${ART_THREAD} stb_impl.c ${FONT_GEN}
   THIRD_PARTY_INCLUDES "${PROJECT_SOURCE_DIR}/third_party/stb")
+set_property(GLOBAL APPEND PROPERTY SEL_GUI_ONLY_PLUGINS desktop_ui) # left out of selecta_registry_cli on the Amiga (I583)
 if(SEL_AMIGA AND NOT SEL_DESKTOP_AGA)
   target_compile_definitions(sel_plugin_desktop_ui PRIVATE SELECTA_DESKTOP_RTG=1)
 endif()
