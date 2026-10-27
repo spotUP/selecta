@@ -9031,12 +9031,6 @@ static void desk_on_event(void* state, const sel_message* evt) {
         if (d->src_wait) {
             d->src_wait = 0;
             d->src_n = 0;
-            if (d->src_syncing[0] != '\0') {
-                char msg[64];
-                snprintf(msg, sizeof msg, "Synced %s", d->src_syncing);
-                desk_toast(d, msg);
-                d->src_syncing[0] = '\0';
-            }
         }
         int changed = 1;
         if (d->src_n < sizeof d->src / sizeof d->src[0]) {
@@ -9065,6 +9059,23 @@ static void desk_on_event(void* state, const sel_message* evt) {
         d->scans++;
         snprintf(msg, sizeof msg, "Added %u songs to the library", (unsigned)si.scanned_files);
         desk_toast(d, msg); /* the page reload follows the library serial (desk_library_follow) */
+        d->repaint = 1;
+    }
+    /* I550: the SOURCES reply that follows a LIBRARY_SYNC only means the request was queued, never that the sync worked.
+     * The outcome is the engine's own completion: a path LIBRARY_RESULT (success) or ERROR sync_failed/sync_busy (failure). */
+    if (evt->id == SEL_EVT_LIBRARY_RESULT && !src_row && !d->scan_pending && d->src_syncing[0] != '\0') {
+        char msg[96];
+        snprintf(msg, sizeof msg, "Synced %s", d->src_syncing);
+        desk_toast(d, msg);
+        d->src_syncing[0] = '\0';
+        d->repaint = 1;
+    }
+    if (evt->id == SEL_EVT_ERROR && d->src_syncing[0] != '\0' && evt->argc > 0 && evt->args[0].type == SEL_ARG_STR
+        && (strcmp(evt->args[0].v.s, "sync_failed") == 0 || strcmp(evt->args[0].v.s, "sync_busy") == 0)) {
+        char msg[160];
+        snprintf(msg, sizeof msg, "Cannot sync %s: %s", d->src_syncing, strcmp(evt->args[0].v.s, "sync_busy") == 0 ? "another sync is running" : "the source could not be fetched");
+        desk_toast(d, msg);
+        d->src_syncing[0] = '\0';
         d->repaint = 1;
     }
     if (evt->id == SEL_EVT_ERROR && d->scan_pending) { /* no_library, scan_failed or scan_busy */

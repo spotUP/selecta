@@ -109,3 +109,23 @@ foreach(k local hippo asma hvsc keygenmusic sndh zxart testsrc)
     message(FATAL_ERROR "run B: source '${k}' should stay enabled:\n${b}")
   endif()
 endforeach()
+
+# Run C (I550): Sync on the Modland row with the network unreachable (SELECTA_NET_ALLOW lets only loopback through) must toast an
+# error and never "Synced Modland". The SOURCES reply that follows LIBRARY_SYNC only means "queued"; before the fix it toasted
+# "Synced" at once. Entry point: the real mouse click on the row's Sync control.
+string(REGEX MATCH "sourcesync 1 (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+)\n" _y "${a}")
+if(_y STREQUAL "")
+  message(FATAL_ERROR "run A: no sourcesync 1 line:\n${a}")
+endif()
+math(EXPR yx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+math(EXPR yy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+click_tokens(sy_click ${yx} ${yy} 800)
+set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
+click_run(c "${tab_click} ${sy_click} q@3500")
+unset(ENV{SELECTA_NET_ALLOW})
+if(NOT c MATCHES "toast_text Cannot sync Modland: [^\n]+\n")
+  message(FATAL_ERROR "run C: a failed Modland sync did not toast an error:\n${c}")
+endif()
+if(c MATCHES "toast_text Synced")
+  message(FATAL_ERROR "run C: a failed Modland sync toasted success:\n${c}")
+endif()
