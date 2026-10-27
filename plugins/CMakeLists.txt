@@ -94,3 +94,9 @@ add_subdirectory(sources)
 if(NOT SEL_AMIGA)
   add_subdirectory(integrations)
 endif()
+
+# ARexx port (M4-AX-3-1, kind 9). arexx_core.c is portable and compiled by tests/m4/arexx_test.c on the host; the
+# plugin itself is Amiga only (exec/rexxsyslib).
+if(SEL_AMIGA)
+  sel_add_plugin(arexx 9 scripting/arexx/arexx_plugin.c scripting/arexx/arexx_core.c scripting/arexx/arexx_amiga.c)
+endif()

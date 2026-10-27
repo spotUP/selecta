@@ -697,6 +697,15 @@ if(NOT SEL_AMIGA)
   add_test(NAME ctl-exec-result COMMAND ctl_exec_test status)
   add_test(NAME commands-reflection-format COMMAND ctl_exec_test commands)
   add_test(NAME result-event-commands COMMAND ctl_exec_test raw)
+  # M4-AX-3-1 / M4-AX-3-4: the ARexx message mapping through the shared dispatcher (the Amiga half is cross-built).
+  add_executable(arexx_test engine/arexx_test.c ../apps/common/ctlexec.c ../plugins/scripting/arexx/arexx_core.c)
+  target_include_directories(arexx_test PRIVATE ${PROJECT_SOURCE_DIR}/apps/common ${PROJECT_SOURCE_DIR}/plugins/scripting/arexx)
+  target_link_libraries(arexx_test PRIVATE selecta_core)
+  add_test(NAME arexx-dispatch-reach COMMAND arexx_test reach)
+  add_test(NAME arexx-dispatch-rc COMMAND arexx_test rc)
+  add_test(NAME arexx-port-names COMMAND arexx_test names)
+  set_tests_properties(arexx-dispatch-reach arexx-dispatch-rc arexx-port-names PROPERTIES TIMEOUT 60 LABELS engine
+                       PASS_REGULAR_EXPRESSION "arexx_test [a-z]+ ok")
   # M4-AX-2-1: the commands.def build check accepts the real table and rejects a row without a label and one whose
   # argnames do not match the signature.
   add_test(NAME commands-def-check COMMAND ${CMAKE_COMMAND} -DSEL_CMD_DEF=${PROJECT_SOURCE_DIR}/include/selecta/commands.def
