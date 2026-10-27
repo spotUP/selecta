@@ -690,6 +690,14 @@ if(NOT SEL_AMIGA)
   set_tests_properties(engine-pcm-song-leaves-voice-only-output engine-pcm-song-falls-back-to-paula14
                        engine-voice-song-stays-on-paula PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "pcm_route: ok")
   set_tests_properties(browse-hides-unrecognised-files PROPERTIES PASS_REGULAR_EXPRESSION "browse_filter_ok")
+  # M4-AX-0-1 / M4-AX-0-2: the shared reply layer (apps/common/ctlexec.c) returns rc and RESULT lines.
+  add_executable(ctl_exec_test engine/ctl_exec_test.c ../apps/common/ctlexec.c)
+  target_include_directories(ctl_exec_test PRIVATE ${PROJECT_SOURCE_DIR}/apps/common)
+  target_link_libraries(ctl_exec_test PRIVATE selecta_core)
+  add_test(NAME ctl-exec-result COMMAND ctl_exec_test status)
+  add_test(NAME commands-reflection-format COMMAND ctl_exec_test commands)
+  set_tests_properties(ctl-exec-result commands-reflection-format PROPERTIES TIMEOUT 60 LABELS engine
+                       PASS_REGULAR_EXPRESSION "ctl_exec: ok")
 endif()
 
 # I182a: composer canonical key and display name golden cases.
