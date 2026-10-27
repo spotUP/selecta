@@ -179,9 +179,17 @@ static int mui_send(mui_state* s, const char* line) {
     return line != NULL && s->engine != NULL && sel_engine_send_line(s->engine, line, pool, sizeof pool) == SEL_CODEC_OK;
 }
 
+/* I564: a Text object reads "_" in its contents as the hotkey mark and drops it, so a file name such as
+ * "that_meme_again.mod" shows as "thatmemeagain.mod". MUIA_Text_HiCharIdx names the mark character; MUI_NOMARK is a control
+ * character no file name, title or label carries, so every "_" is shown verbatim. List rows do not parse the mark. */
+#ifndef MUIA_Text_HiCharIdx
+#define MUIA_Text_HiCharIdx 0x804214f5UL
+#endif
+#define MUI_NOMARK 1
+
 static Object* mui_make_button(const char* label, LONG id) {
     Object* o = MUI_NewObject((char*)MUIC_Text, MUIA_Frame, MUIV_Frame_Button, MUIA_Font, MUIV_Font_Button,
-                              MUIA_Text_Contents, (ULONG)label, MUIA_Text_PreParse, (ULONG) "\33c",
+                              MUIA_Text_Contents, (ULONG)label, MUIA_Text_HiCharIdx, MUI_NOMARK, MUIA_Text_PreParse, (ULONG) "\33c",
                               MUIA_InputMode, MUIV_InputMode_RelVerify, MUIA_Background, MUII_ButtonBack, TAG_DONE);
     if (o != NULL) {
         DoMethod(o, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
@@ -191,7 +199,8 @@ static Object* mui_make_button(const char* label, LONG id) {
 
 static Object* mui_make_text(mui_state* s, uint32_t attr, const char* initial) {
     snprintf(s->txt_buf[attr], sizeof s->txt_buf[attr], "%s", initial);
-    s->txt[attr] = MUI_NewObject((char*)MUIC_Text, MUIA_Frame, MUIV_Frame_Text, MUIA_Text_Contents, (ULONG)s->txt_buf[attr], TAG_DONE);
+    s->txt[attr] = MUI_NewObject((char*)MUIC_Text, MUIA_Frame, MUIV_Frame_Text, MUIA_Text_Contents, (ULONG)s->txt_buf[attr], MUIA_Text_HiCharIdx, MUI_NOMARK,
+                                 TAG_DONE);
     return s->txt[attr];
 }
 
