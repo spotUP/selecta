@@ -88,6 +88,26 @@ int main(void) {
     memcpy(key2, "local:/", 7);
     memset(key2 + 7, 'b', 1180);
     memcpy(key2 + 1187, ".xm", 4); /* 1190 bytes: near the SEL_SONG_KEY_MAX limit */
+    /* Home hides history of local: songs that are not in the library (I555), so both songs must be scanned in. */
+    {
+        sel_scan_row rows2[2];
+        sel_scan_batch b2;
+        sel_message reply2;
+        memset(rows2, 0, sizeof rows2);
+        rows2[0].source = "local";
+        rows2[0].path = key + 6; /* key is "local:/music/..." */
+        rows2[0].format = "mod";
+        rows2[0].name = "Long One";
+        rows2[1].source = "local";
+        rows2[1].path = key2 + 6;
+        rows2[1].format = "xm";
+        rows2[1].name = "Long Two";
+        memset(&b2, 0, sizeof b2);
+        b2.rows = rows2;
+        b2.count = 2;
+        b2.now = 1;
+        check(sel_library_request(lib, SEL_LIB_REQ_SCAN_BATCH, &b2, &reply2) && reply2.args[1].v.i == 0, "scan both songs");
+    }
     check(sel_library_history_add(lib, key, 100, 0), "history add 300");
     check(sel_library_history_add(lib, key2, 200, 0), "history add 1190");
     check(sel_library_home(lib, 10, v.htext, SEL_VIEW_HOME_TEXT_MAX, &lines), "home text");
