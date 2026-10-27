@@ -38,16 +38,24 @@ if(SEL_AMIGA)
   set(ICONBAKE_DEP "")
 else()
   add_executable(gui_iconbake "${PROJECT_SOURCE_DIR}/tools/gui_iconbake.c")
+  target_sources(gui_iconbake PRIVATE "${PROJECT_SOURCE_DIR}/src/gui/widgets/gui_icon_pack.c")
+  target_include_directories(gui_iconbake PRIVATE "${PROJECT_SOURCE_DIR}/include")
   target_link_libraries(gui_iconbake PRIVATE m)
   set(ICONBAKE_CMD gui_iconbake)
   set(ICONBAKE_DEP gui_iconbake)
 endif()
 file(GLOB LUCIDE_SVGS "${PROJECT_SOURCE_DIR}/third_party/lucide/icons/*.svg")
+# I584: the baked masks are run-length packed. The Amiga UI runs at density 1 (zoom up to 150 percent of 32 px = 48 px,
+# resampled from the next baked size above, 60 px), so its bake stops at 60 px; the host SDL window can ask for density 3.
+set(ICONBAKE_MAXPX "")
+if(SEL_AMIGA)
+  set(ICONBAKE_MAXPX 60)
+endif()
 add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/gui_icons_baked.c"
   COMMAND ${ICONBAKE_CMD} "${PROJECT_SOURCE_DIR}/include/selecta/gui/gui_icons.h"
-    "${PROJECT_SOURCE_DIR}/third_party/lucide/icons" "${CMAKE_CURRENT_BINARY_DIR}/gui_icons_baked.c"
-  DEPENDS ${ICONBAKE_DEP} "${PROJECT_SOURCE_DIR}/include/selecta/gui/gui_icons.h" ${LUCIDE_SVGS}
+    "${PROJECT_SOURCE_DIR}/third_party/lucide/icons" "${CMAKE_CURRENT_BINARY_DIR}/gui_icons_baked.c" ${ICONBAKE_MAXPX}
+  DEPENDS ${ICONBAKE_DEP} ${SELECTA_ICONBAKE_EXE} "${PROJECT_SOURCE_DIR}/include/selecta/gui/gui_icons.h" ${LUCIDE_SVGS}
   COMMENT "Baking the icon atlas")
 list(APPEND FONT_GEN "${CMAKE_CURRENT_BINARY_DIR}/gui_icons_baked.c")
 

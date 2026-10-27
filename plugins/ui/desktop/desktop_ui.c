@@ -8876,10 +8876,16 @@ static void desk_free_icons(desk* d) {
     }
 }
 
+/* I584: the baked masks are packed (gui_icons.h); every size the UI shows is unpacked here, icon by icon, into the
+ * cache d->icon_buf: an exact baked size is unpacked as is, any other size is area-resampled from the smallest baked
+ * size above it (I460), so the pixels equal those of the unpacked-table version. */
+static const uint8_t g_icon_none[1] = {0};
+
 static void desk_build_icons(desk* d) {
     int i;
     uint32_t s;
     int32_t yd = d->canvas != NULL && d->canvas->ydiv > 1 ? d->canvas->ydiv : 1; /* I468: tall pixels draw px / yd rows */
+    uint8_t* tmp = NULL;
     desk_free_icons(d);
     d->icon_resampled = 0u;
     for (i = 0; i < DESK_ICON_SIZES; i++) {
@@ -8887,12 +8893,16 @@ static void desk_build_icons(desk* d) {
         int exact = 0;
         uint32_t from = 0u;
         int have = 0;
+        int32_t n;
+        size_t dst_sz;
+        uint32_t k;
         d->icon_px[i] = px;
         for (s = 0; s < sel_gui_icons_baked.size_n; s++) {
             int32_t bs = sel_gui_icons_baked.sizes[s];
             if (bs == px && yd == 1) {
-                d->icon_alpha[i] = sel_gui_icons_baked.alpha[s];
+                from = s;
                 exact = 1;
+                have = 1;
                 break;
             }
             /* the source: the smallest baked size above the target (sizes ascend), else the largest */
@@ -8904,23 +8914,37 @@ static void desk_build_icons(desk* d) {
         if (!have) {
             from = sel_gui_icons_baked.size_n - 1u;
         }
+        n = sel_gui_icons_baked.sizes[from];
+        dst_sz = exact ? (size_t)n * (size_t)n : (size_t)px * (size_t)(px / yd);
+        d->icon_buf[i] = (uint8_t*)d->host->mem_alloc(d->host, dst_sz * sel_gui_icons_baked.count, SEL_MEM_FAST);
+        if (!exact && d->icon_buf[i] != NULL && tmp == NULL) {
+            tmp = (uint8_t*)d->host->mem_alloc(d->host, (size_t)sel_gui_icons_baked.sizes[sel_gui_icons_baked.size_n - 1u] *
+                                                           (size_t)sel_gui_icons_baked.sizes[sel_gui_icons_baked.size_n - 1u], SEL_MEM_FAST);
+            if (tmp == NULL) {
+                d->host->mem_free(d->host, d->icon_buf[i]);
+                d->icon_buf[i] = NULL;
+            }
+        }
+        if (d->icon_buf[i] == NULL) { /* out of memory: this size draws nothing */
+            d->icon_alpha[i] = g_icon_none;
+            d->icon_px[i] = 0;
+            continue;
+        }
+        for (k = 0; k < sel_gui_icons_baked.count; k++) {
+            if (exact) {
+                sel_gui_icon_unpack(&sel_gui_icons_baked, from, k, d->icon_buf[i] + k * dst_sz);
+            } else {
+                sel_gui_icon_unpack(&sel_gui_icons_baked, from, k, tmp);
+                sel_gui_icon_resample_tall(tmp, n, d->icon_buf[i] + k * dst_sz, px, px / yd);
+            }
+        }
+        d->icon_alpha[i] = d->icon_buf[i];
         if (!exact) {
-            int32_t n = sel_gui_icons_baked.sizes[from];
-            size_t src_sz = (size_t)n * (size_t)n;
-            size_t dst_sz = (size_t)px * (size_t)(px / yd);
-            uint32_t k;
-            d->icon_buf[i] = (uint8_t*)d->host->mem_alloc(d->host, dst_sz * sel_gui_icons_baked.count, SEL_MEM_FAST);
-            if (d->icon_buf[i] == NULL) {
-                d->icon_alpha[i] = sel_gui_icons_baked.alpha[0];
-                d->icon_px[i] = sel_gui_icons_baked.sizes[0];
-                continue;
-            }
-            for (k = 0; k < sel_gui_icons_baked.count; k++) {
-                sel_gui_icon_resample_tall(sel_gui_icons_baked.alpha[from] + k * src_sz, n, d->icon_buf[i] + k * dst_sz, px, px / yd);
-            }
-            d->icon_alpha[i] = d->icon_buf[i];
             d->icon_resampled++;
         }
+    }
+    if (tmp != NULL) {
+        d->host->mem_free(d->host, tmp);
     }
     d->icons.count = sel_gui_icons_baked.count;
     d->icons.size_n = DESK_ICON_SIZES;
