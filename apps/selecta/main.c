@@ -623,6 +623,7 @@ int main(int argc, char** argv)
         printf("song=%s\n", sel_engine_state(e)->song.path != NULL ? sel_engine_state(e)->song.path : "");
     }
     printf("links_parsed=%u links_made=%u\n", (unsigned)est.links_parsed, (unsigned)est.links_made);
+    printf("sources_listed=%u evt_dropped=%u\n", (unsigned)est.sources_listed, (unsigned)est.evt_dropped);
 
     printf("cmdline_runs=%u palette_opens=%u bindings=%u playlist_entries=%u undo_depth=%u redo_depth=%u view_style=%s\n",
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_CMDLINE_RUNS, 0), (unsigned)sel_tag_find(ust, SEL_UI_STAT_PALETTE_OPENS, 0),
