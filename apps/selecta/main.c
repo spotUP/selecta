@@ -576,7 +576,10 @@ int main(int argc, char** argv)
     arexx = arexx_open(); /* after the engine exists, before the first UI turn; NULL leaves ARexx off */
 #endif
 #ifndef SEL_NO_CONTROL_SOCKET
-    if (!has_keys || getenv("SELECTA_SOCKET") != NULL) {
+    /* I573: a scripted run (--keys, or the desktop UI's --input feeder) opens no control socket unless SELECTA_SOCKET asks.
+     * With the socket open, a clockless run polls it SHELL_TURN_MS per turn, so a headless --input run plays its song in
+     * real time, and whether the socket binds depends on the TMPDIR length (sun_path), which made run time path-dependent. */
+    if (!(has_keys || option(argc, argv, "--input", NULL) != NULL) || getenv("SELECTA_SOCKET") != NULL) {
         sel_ctl_path(ctl_path, sizeof ctl_path);
         ctl_fd = sel_ctl_listen(ctl_path);
         if (ctl_fd == SEL_CTL_ALREADY_RUNNING) {
