@@ -15,6 +15,7 @@
  * queue_version=<q>` (the sentinels of test T19). */
 #ifdef __amigaos__
 #include "amiga_start.h"
+#include "startup_error.h"
 #endif
 #include <selecta/engine.h>
 #include <selecta/machine.h>
@@ -27,6 +28,7 @@
 #include "ctlsock.h"
 #endif
 #include "catalogue.h"
+#include "startup_error.h"
 #include "integration_host.h"
 #include "db.h"
 #include "local.h"
@@ -63,6 +65,15 @@ static void sel_trace(const sel_host* h, const char* phase) {
         fprintf(stderr, "trace t_ms=%u %s\n", (unsigned)h->clock_ms(h), phase);
     }
 }
+/* Every fatal start-up exit reports through sel_startup_error (stderr, plus a requester on the Amiga without a
+ * console, I563); --stats prints the report count so a test can prove the shared path ran. */
+#define STARTUP_FAIL(...)                                                                                          \
+    do {                                                                                                           \
+        unsigned reports_ = sel_startup_error(__VA_ARGS__);                                                        \
+        if (g_trace) {                                                                                             \
+            fprintf(stderr, "startup_error_reports=%u\n", reports_);                                               \
+        }                                                                                                          \
+    } while (0)
 static int g_stats; /* --stats: the shell reports what the UIs and prefs did on stdout */
 
 /* ctx[0] = engine (set once it exists), ctx[1] = primary UI state, ctx[2] = integration session. */
@@ -239,7 +250,7 @@ static void apply_option_words(sel_engine* e, int argc, char** argv) {
         memset(&o, 0, sizeof o);
         r = sel_opts_apply_word(&set, &o, argv[a]);
         if (r == SEL_OPTS_BAD_VALUE) {
-            fprintf(stderr, "selecta: bad option value in '%s'\n", argv[a]);
+            STARTUP_FAIL("bad option value in '%s'", argv[a]);
         }
         for (id = 0; r == SEL_OPTS_OK && id < SEL_PREF_COUNT; id++) {
             if (strcmp(set.value[id], defaults.value[id]) != 0) {
@@ -267,7 +278,7 @@ static int ui_switch(const char* id, const sel_ui_open_args* args, void** ctx) {
     cur->state = NULL; /* no event reaches a closed UI while the next one opens */
     next.state = next.open(args);
     if (next.state == NULL) {
-        fprintf(stderr, "selecta: the UI '%s' could not open\n", id);
+        STARTUP_FAIL("the UI '%s' could not open", id);
         return -1;
     }
     *cur = next;
@@ -412,11 +423,11 @@ int main(int argc, char** argv)
     for (a = 1; a < argc; a++) {
         if (strcmp(argv[a], "--ui") == 0 && a + 1 < argc) {
             if (g_ui_count >= SHELL_MAX_UIS) {
-                fputs("selecta: too many --ui\n", stderr);
+                STARTUP_FAIL("too many --ui");
                 return 2;
             }
             if (!ui_resolve(argv[a + 1], &g_uis[g_ui_count])) {
-                fprintf(stderr, "selecta: ui '%s' is not registered\n", argv[a + 1]);
+                STARTUP_FAIL("ui '%s' is not registered", argv[a + 1]);
                 return 2;
             }
             g_ui_count++;
@@ -427,11 +438,11 @@ int main(int argc, char** argv)
         }
     }
     if (g_ui_count == 0 && !ui_resolve(ui_id, &g_uis[g_ui_count++])) {
-        fprintf(stderr, "selecta: ui '%s' is not registered\n", ui_id);
+        STARTUP_FAIL("ui '%s' is not registered", ui_id);
         return 2;
     }
     if (oh == NULL) {
-        fprintf(stderr, "selecta: output '%s' is not registered\n", out_id);
+        STARTUP_FAIL("output '%s' is not registered", out_id);
         return 2;
     }
     out_open = (sel_out_open_fn)sel_tag_find(oh, SEL_OUT_OPEN, 0);
@@ -441,7 +452,7 @@ int main(int argc, char** argv)
     clockless = sel_tag_find(oh, SEL_OUT_CLOCKLESS, 0) != 0;
     ctx[0] = NULL;
     if (!out_open || !out_close || !out_set_source || !out_pump) {
-        fputs("selecta: a plugin lacks a hook\n", stderr);
+        STARTUP_FAIL("a plugin lacks a hook");
         return 2;
     }
 
@@ -466,7 +477,7 @@ int main(int argc, char** argv)
         if (db != NULL) {
             library = sel_library_open(host, machine_tags, 0, db);
             if (library == NULL) {
-                fprintf(stderr, "selecta: cannot open the library database %s\n", db);
+                STARTUP_FAIL("cannot open the library database %s", db);
                 return 1;
             }
             cfg.library = library;
@@ -480,7 +491,7 @@ int main(int argc, char** argv)
     e = sel_engine_create(host, &cfg);
     sel_trace(host, "engine created");
     if (e == NULL) {
-        fputs("selecta: engine allocation failed\n", stderr);
+        STARTUP_FAIL("engine allocation failed");
         return 1;
     }
     rate = sel_registry_output_rate(oh, machine_tags);
@@ -488,7 +499,7 @@ int main(int argc, char** argv)
     sel_engine_set_output(e, oh);
     out = out_open(host, rate, 2);
     if (out == NULL) {
-        fputs("selecta: no output device\n", stderr);
+        STARTUP_FAIL("no output device");
         sel_engine_destroy(e);
         return 77;
     }
@@ -522,7 +533,7 @@ int main(int argc, char** argv)
         g_uis[u].state = g_uis[u].open(&args);
         sel_trace(host, "UI open returned");
         if (g_uis[u].state == NULL) {
-            fputs("selecta: the UI could not open (no terminal?)\n", stderr);
+            STARTUP_FAIL("the UI could not open (no terminal?)");
             while (u-- > 0) {
                 g_uis[u].close(g_uis[u].state);
             }
@@ -546,7 +557,7 @@ int main(int argc, char** argv)
         sel_ctl_path(ctl_path, sizeof ctl_path);
         ctl_fd = sel_ctl_listen(ctl_path);
         if (ctl_fd == SEL_CTL_ALREADY_RUNNING) {
-            fprintf(stderr, "selecta: already running (%s)\n", ctl_path);
+            STARTUP_FAIL("already running (%s)", ctl_path);
             for (u = 0; u < g_ui_count; u++) {
                 g_uis[u].close(g_uis[u].state);
             }
@@ -561,7 +572,7 @@ int main(int argc, char** argv)
     if (strcmp(int_id, "none") != 0) {
         isess = sel_int_session_open(e, int_id, sink, ctx);
         if (isess == NULL) {
-            fprintf(stderr, "selecta: integration '%s' is not available\n", int_id);
+            STARTUP_FAIL("integration '%s' is not available", int_id);
         }
         ctx[2] = isess;
     }
