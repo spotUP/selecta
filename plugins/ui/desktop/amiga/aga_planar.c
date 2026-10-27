@@ -187,6 +187,21 @@ void desk_aga_fit_clip(const int32_t max_rect[4], int32_t w, int32_t h, int32_t 
     out[3] = out[1] + h - 1;
 }
 
+void desk_aga_overscan_area(int overscan, int32_t* max_w, int32_t* max_h) {
+    if (!overscan) {
+        *max_w = 0;
+        *max_h = 0;
+    }
+}
+
+int desk_aga_border_blank_tags(uint32_t tags[4]) {
+    tags[0] = DESK_AGA_VTAG_BORDERBLANK_SET;
+    tags[1] = 0u;
+    tags[2] = 0u; /* TAG_DONE */
+    tags[3] = 0u;
+    return 3;
+}
+
 int desk_aga_pick_size(int32_t* w, int32_t* h, int ntsc, int32_t max_w, int32_t max_h) {
     int32_t lines = ntsc ? 200 : 256, fw, fh;
     desk_aga_fit_size(max_w, max_h, ntsc, &fw, &fh);

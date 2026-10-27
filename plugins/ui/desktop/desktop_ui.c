@@ -9013,6 +9013,12 @@ static void* desk_open(const sel_ui_open_args* a) {
     desk_build_icons(d);
     desk_trace(a->host, "desk_open icons built");
     d->icon_rebuilds = 0u; /* the first build is not a rebuild */
+#ifdef SELECTA_DESKTOP_AGA
+    if (want_sdl) { /* I566: Fill Screen (Overscan), read once at open */
+        const char* ov = a->host != NULL && a->host->config_get != NULL ? a->host->config_get(a->host, "ui.desktop.overscan", "0") : "0";
+        desk_aga_set_overscan(ov != NULL && strcmp(ov, "1") == 0);
+    }
+#endif
     {
         int32_t def_w = 1280, def_h = 800;
 #ifdef SELECTA_DESKTOP_SDL

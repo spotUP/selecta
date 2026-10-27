@@ -96,10 +96,17 @@ uint32_t desk_aga_ticks(void) {
 /* The mode of the screen: Selecta's own PAL/NTSC HIRES (640 wide) or LORES (320 wide), never Workbench's. The
  * Workbench mode is irrelevant: an RTG Workbench (rig 2: Picasso96 800x600) must not leak its size or its mode here,
  * a planar screen of that size cannot be displayed by the chipset and shows black. desk_aga_pick_size holds the rule. */
+static int g_overscan; /* I566: pref ui.desktop.overscan */
+
+void desk_aga_set_overscan(int on) {
+    g_overscan = on != 0;
+}
+
 static void max_overscan(int ntsc, int32_t rect[4]) {
     struct Rectangle r;
     ULONG hires = (ntsc ? NTSC_MONITOR_ID : PAL_MONITOR_ID) | HIRES_KEY;
     rect[0] = rect[1] = rect[2] = rect[3] = 0;
+    if (!g_overscan) return; /* off: no QueryOverscan at all (I566: the hang suspect); pick_size keeps the standard size */
     if (QueryOverscan(hires, &r, OSCAN_MAX)) {
         rect[0] = r.MinX;
         rect[1] = r.MinY;
@@ -112,8 +119,12 @@ static ULONG pick_mode(int32_t* w, int32_t* h) {
     int ntsc = (GfxBase->DisplayFlags & NTSC) != 0;
     int32_t mr[4];
     int hires;
+    int32_t mw, mh;
     max_overscan(ntsc, mr);
-    hires = desk_aga_pick_size(w, h, ntsc, mr[2] - mr[0] + 1, mr[3] - mr[1] + 1);
+    mw = mr[2] - mr[0] + 1;
+    mh = mr[3] - mr[1] + 1;
+    desk_aga_overscan_area(g_overscan, &mw, &mh);
+    hires = desk_aga_pick_size(w, h, ntsc, mw, mh);
     ULONG mode;
     if (hires < 0) return AGA_NO_MODE;
     mode = (ntsc ? NTSC_MONITOR_ID : PAL_MONITOR_ID) | (hires ? HIRES_KEY : LORES_KEY);
@@ -127,8 +138,12 @@ void desk_aga_default_size(int32_t* w, int32_t* h) {
     if (GfxBase != NULL) {
         int ntsc = (GfxBase->DisplayFlags & NTSC) != 0;
         int32_t mr[4];
+        int32_t mw, mh;
         max_overscan(ntsc, mr);
-        (void)desk_aga_pick_size(w, h, ntsc, mr[2] - mr[0] + 1, mr[3] - mr[1] + 1);
+        mw = mr[2] - mr[0] + 1;
+        mh = mr[3] - mr[1] + 1;
+        desk_aga_overscan_area(g_overscan, &mw, &mh);
+        (void)desk_aga_pick_size(w, h, ntsc, mw, mh);
     }
     if (GfxBase != NULL) CloseLibrary((struct Library*)GfxBase);
     GfxBase = NULL;
@@ -186,11 +201,17 @@ desk_aga* desk_aga_open(int32_t w, int32_t h, int index8) {
         clip.MinY = (WORD)dc[1];
         clip.MaxX = (WORD)dc[2];
         clip.MaxY = (WORD)dc[3];
+        /* I566: the border shows COLOR00 (the accent blue). SA_VideoControl hands graphics.library VTAG_BORDERBLANK_SET at
+         * open: it sets BRDRBLNK and ECSENA (the chipset ignores BRDRBLNK without ECSENA) with no MakeScreen/RethinkDisplay
+         * on a running system; the copper BPLCON3 writes keep BRDRBLNK set. */
+        uint32_t vt[4];
         struct TagItem st[] = {{SA_Width, (ULONG)w}, {SA_Height, (ULONG)h}, {SA_Depth, 8},
                                {SA_DisplayID, mode}, {SA_BitMap, (ULONG)&b->bm[0]}, {SA_Quiet, TRUE},
                                {SA_ShowTitle, FALSE}, {SA_Type, CUSTOMSCREEN}, {SA_Exclusive, TRUE},
                                {fit ? SA_DClip : TAG_IGNORE, (ULONG)&clip},
+                               {SA_VideoControl, (ULONG)vt},
                                {SA_Title, (ULONG) "Selecta"}, {TAG_DONE, 0}};
+        (void)desk_aga_border_blank_tags(vt);
         b->screen = OpenScreenTagList(NULL, st);
     }
     if (b->screen == NULL) return fail(b, "OpenScreen failed"), NULL;

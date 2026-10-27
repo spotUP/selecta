@@ -78,6 +78,15 @@ int desk_aga_pick_size(int32_t* w, int32_t* h, int ntsc, int32_t max_w, int32_t 
  * offers less than the standard 640 x lines gets the standard size. */
 void desk_aga_fit_size(int32_t max_w, int32_t max_h, int ntsc, int32_t* w, int32_t* h);
 
+/* I566: the setting ui.desktop.overscan. Off: the standard 640 x lines screen (the overscan area is reported as 0 x 0, so
+ * desk_aga_pick_size keeps the standard size); on: the QueryOverscan area stays and the screen fills it. */
+void desk_aga_overscan_area(int overscan, int32_t* max_w, int32_t* max_h);
+
+/* I566: the graphics.library VideoControl tag list that blanks the border. VTAG_BORDERBLANK_SET makes graphics.library
+ * set BRDRBLNK and ECSENA (BPLCON0 bit 0, without which the chipset ignores BRDRBLNK). Returns the tag count incl. TAG_DONE. */
+#define DESK_AGA_VTAG_BORDERBLANK_SET 0x80000005u
+int desk_aga_border_blank_tags(uint32_t tags[4]);
+
 /* The DClip rectangle (left, top, right, bottom, inclusive) of a w x h screen centred inside the OSCAN_MAX rectangle. */
 void desk_aga_fit_clip(const int32_t max_rect[4], int32_t w, int32_t h, int32_t out[4]);
 

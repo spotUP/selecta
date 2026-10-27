@@ -22,6 +22,8 @@ enum { DESK_AGA_C2P_REF = 0, DESK_AGA_C2P_KALMS_040 = 1, DESK_AGA_C2P_KALMS_030 
 /* The canvas size when none is asked for: the Workbench size when Workbench runs on a native mode that allows 8
  * bitplanes, else 640x256 (PAL) or 640x200 (NTSC) (M4-P6-8). */
 void desk_aga_default_size(int32_t* w, int32_t* h);
+/* The pref ui.desktop.overscan (I566): 1 = the screen fills the overscan area, 0 (default) = 640x256, black border. Call before desk_aga_default_size and desk_aga_open. */
+void desk_aga_set_overscan(int on);
 /* Opens the screen, the two chip RAM buffers and the backdrop window. index8 must be non-zero (an AGA screen shows
  * an INDEX8 canvas only); w must be a multiple of 32. NULL with a message on stdout when the chip RAM free is below
  * desk_aga_chip_bytes(w, h), the mode is missing or a library does not open. */

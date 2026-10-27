@@ -149,6 +149,28 @@ static void test_border_blank(void) {
     CHECK((DESK_AGA_BPLCON3 & 0x20u) != 0u);
 }
 
+/* I566: the setting ui.desktop.overscan. Off (the default) keeps 640x256 / 640x200 whatever the mode offers; on takes the fit.
+ * Both request the border blank through VideoControl so graphics.library sets ECSENA with BRDRBLNK. */
+static void test_overscan_setting(void) {
+    int32_t w = 0, h = 0, mw = 724, mh = 283;
+    uint32_t vt[4];
+    desk_aga_overscan_area(0, &mw, &mh);
+    CHECK(desk_aga_pick_size(&w, &h, 0, mw, mh) == 1 && w == 640 && h == 256);
+    mw = 724;
+    mh = 283;
+    w = 0;
+    h = 0;
+    desk_aga_overscan_area(1, &mw, &mh);
+    CHECK(desk_aga_pick_size(&w, &h, 0, mw, mh) == 1 && w == 704 && h == 280);
+    mw = 724;
+    mh = 241;
+    w = 0;
+    h = 0;
+    desk_aga_overscan_area(0, &mw, &mh);
+    CHECK(desk_aga_pick_size(&w, &h, 1, mw, mh) == 1 && w == 640 && h == 200);
+    CHECK(desk_aga_border_blank_tags(vt) == 3 && vt[0] == 0x80000005u && vt[2] == 0u);
+}
+
 /* I566: the app fills the visible display. rig 2 (PAL): QueryOverscan(OSCAN_MAX) = -72,-15 to 651,267 = 724 x 283. */
 static void test_overscan_fit(void) {
     int32_t w = 0, h = 0, rect[4] = {-72, -15, 651, 267}, clip[4];
@@ -197,6 +219,7 @@ int main(void) {
     test_pick_size();
     test_border_blank();
     test_overscan_fit();
+    test_overscan_setting();
     test_bit_layout();
     test_round_trip_and_bands();
     test_bands();
