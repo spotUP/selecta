@@ -1088,6 +1088,15 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
   set_tests_properties(rig-m4-mui-open PROPERTIES LABELS rig RESOURCE_LOCK rig
     ENVIRONMENT "UPTERM_RIG=2" SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  # MUI-P1-6 / M4-P11-2: MUI absent (SYS:MUI/Libs renamed, restored on every path): the Selecta requester with Continue,
+  # then the text UI runs and Selecta exits 0. Needs the same Amiga build tree as rig-m4-mui-open.
+  add_test(NAME rig-m4-mui-nomui
+    COMMAND "${CMAKE_COMMAND}" -DTAG=M4MUINO "-DRIG_DIR=${SEL_RIG_DIR}"
+      "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta" "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m2/quit.keys"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-nomui"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
+  set_tests_properties(rig-m4-mui-nomui PROPERTIES LABELS rig RESOURCE_LOCK rig
+    ENVIRONMENT "UPTERM_RIG=2" SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
   # I439 / M4-P6-1: AGA c2p first light on rig 2, backend alone and the full AGA Selecta (SEL_DESKTOP_AGA build tree in
   # SEL_AGA_BUILD, default build/amiga-aga).
   set(SEL_AGA_BUILD "${PROJECT_SOURCE_DIR}/build/amiga-aga" CACHE PATH "Amiga build tree configured with -DSEL_DESKTOP_AGA=ON")
