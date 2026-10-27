@@ -2570,6 +2570,10 @@ static sel_gui_rect src_toggle_rect(desk* d, sel_gui_rect r);
 static int lib_bar_rects(desk* d, sel_gui_rect* track, sel_gui_rect* handle);
 static void draw_lib_bar(desk* d);
 static sel_gui_rect src_sync_rect(desk* d, sel_gui_rect r);
+/* I551: the source name is set below the status columns (12 semibold: the 6x8 family on the bitmap tier, not the 8x8 one), so the
+ * built-in names fit the name column on a 640 px screen; the kind and count columns use the 13 regular role (the same
+ * 6x8 family) so they take less of the row. */
+enum { SRC_NAME_PX = 12, SRC_STATUS_PX = 13 };
 typedef struct {
     int32_t name_x, name_w, kind_x, kind_w, count_x, count_w;
 } src_cols;
@@ -4223,13 +4227,16 @@ static const char* library_dump_build(desk* d) {
                          (int)tg.w, (int)tg.h, (unsigned)i, (int)sy.x, (int)sy.y, (int)sy.w, (int)sy.h);
             {
                 src_cols sc;
-                const sel_gui_atlas* at = desk_font(d, 0, 14);
+                const sel_gui_atlas* at = desk_font(d, 0, SRC_STATUS_PX);
                 char cnt[24];
                 src_columns(d, rr, &sc);
                 snprintf(cnt, sizeof cnt, "%u songs", (unsigned)d->src[i].count);
                 o = dump_put(d, o, "sourcecols %u %d %d %d %d %d %d\n", (unsigned)i, (int)sc.kind_x, (int)sc.kind_w,
                              at != NULL ? (int)sel_gui_text_width(at, "Remote", 6u) : 0, (int)sc.count_x, (int)sc.count_w,
                              at != NULL ? (int)sel_gui_text_width(at, cnt, strlen(cnt)) : 0);
+                at = desk_font(d, 1, SRC_NAME_PX);
+                o = dump_put(d, o, "sourcename %u %d %d %d\n", (unsigned)i, (int)sc.name_x, (int)sc.name_w,
+                             at != NULL ? (int)sel_gui_text_width(at, d->src[i].name, strlen(d->src[i].name)) : 0);
             }
         }
     }
@@ -5176,7 +5183,7 @@ static void draw_lib_nag(desk* d, sel_gui_rect mn) {
 /* I548 (f): the columns of a source row. The kind and count columns are as wide as their measured text (plus a spacing), the
  * name takes what is left between the icon and the Sync button, so the status never runs under the button. */
 static void src_columns(desk* d, sel_gui_rect r, src_cols* c) {
-    const sel_gui_atlas* at = desk_font(d, 0, 14);
+    const sel_gui_atlas* at = desk_font(d, 0, SRC_STATUS_PX);
     int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     int32_t left = r.x + pad + lpx(d, SRC_ICON) + pad, right = src_sync_rect(d, r).x - pad;
     c->kind_w = (at != NULL ? sel_gui_text_width(at, "Remote", 6u) : 0) + pad;
@@ -5208,10 +5215,10 @@ static void draw_lib_sources(desk* d, sel_gui_rect mn) {
         sel_gui_icon_draw(d->canvas, &d->icons, src_remote(d, i) ? SEL_GUI_ICON_DISC : SEL_GUI_ICON_LIBRARY,
                           rect_of(r.x + pad, r.y + (r.h - ic) / 2, ic, ic), ic, on ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : muted);
         src_columns(d, r, &col);
-        draw_text(d, rect_of(col.name_x, r.y, col.name_w, r.h), d->src[i].name, 1, 15, on ? text : muted);
-        draw_text(d, rect_of(col.kind_x, r.y, col.kind_w, r.h), src_remote(d, i) ? "Remote" : "Local", 0, 14, muted);
+        draw_text(d, rect_of(col.name_x, r.y, col.name_w, r.h), d->src[i].name, 1, SRC_NAME_PX, on ? text : muted);
+        draw_text(d, rect_of(col.kind_x, r.y, col.kind_w, r.h), src_remote(d, i) ? "Remote" : "Local", 0, SRC_STATUS_PX, muted);
         snprintf(line, sizeof line, "%u songs", (unsigned)d->src[i].count);
-        draw_text(d, rect_of(col.count_x, r.y, col.count_w, r.h), line, 0, 14, muted);
+        draw_text(d, rect_of(col.count_x, r.y, col.count_w, r.h), line, 0, SRC_STATUS_PX, muted);
         if (src_remote(d, i) && on) {
             draw_button(d, src_sync_rect(d, r), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Sync", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
         }
