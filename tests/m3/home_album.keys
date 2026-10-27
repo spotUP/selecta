@@ -1,6 +1,8 @@
-# T91 home-view (I191a): Enter on the Jump back in row (fifth row of the view) opens that album in the query source.
+# T91 home-view (I191a): Enter on the Jump back in row (seventh row of the view, I478 Quick picks above) opens that album in the query source.
 H
 wait 300
+Down
+Down
 Down
 Down
 Down
