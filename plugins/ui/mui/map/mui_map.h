@@ -33,4 +33,20 @@ int mui_present(void);
 typedef enum mui_fail { MUI_FAIL_NO_LIBRARY = 0, MUI_FAIL_NO_WINDOW = 1 } mui_fail;
 const char* mui_fail_text(mui_fail why);
 
+/* MUI-P2-3: one Menustrip row per action-table row with a non-empty menu path. "Menu/Item" gives title and item,
+ * "Menu/Sub/Item" a sub menu between them. The shortcut is the key when it is one character (MUI shortcuts are single
+ * keys); longer key names (Enter, M-n) are shown as `key` text only. Returns the row count even above cap. */
+typedef struct mui_menu_item {
+    char title[32];
+    char sub[32];
+    char item[48];
+    const char* key;
+    char shortcut;
+    const char* id;
+} mui_menu_item;
+uint32_t mui_menu_build(mui_menu_item* out, uint32_t cap);
+/* MUI-P2-4: the protocol line a menu item sends: the action table's line for the id, the very line the desktop sends
+ * (desktop_ui.c desk_action_by_id). NULL for an unknown id. */
+const char* mui_menu_line(const char* id);
+
 #endif

@@ -2,6 +2,7 @@
  * Usage: mui_contract_test wait|registry|failure */
 #include <selecta/plugin.h>
 #include <selecta/ui.h>
+#include <selecta/uimodel.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -98,6 +99,54 @@ static void test_failure(void) {
     CHECK(open != NULL && open(NULL) == NULL, "open does not fail without a window system");
 }
 
+/* mui-menu (MUI-P2-3): rows = action rows with a menu path, every key shown, titles non-empty. */
+static void test_menu(void) {
+    static mui_menu_item items[512];
+    uint32_t i, found_sub, want = 0, n = sel_uim_action_count(), got = mui_menu_build(items, 512);
+    for (i = 0; i < n; i++) {
+        want += sel_uim_action_at(i)->menu[0] != '\0';
+    }
+    CHECK(want > 20u && got == want, "menu rows %u, action rows with a menu path %u", (unsigned)got, (unsigned)want);
+    for (i = 0; i < got; i++) {
+        CHECK(items[i].title[0] != '\0' && items[i].item[0] != '\0', "row %u has no title or item", (unsigned)i);
+    }
+    for (i = 0; i < n && got == want; i++) {
+        const sel_uim_action* a = sel_uim_action_at(i);
+        uint32_t k, found = 0;
+        if (a->menu[0] == '\0' || a->key[0] == '\0') {
+            continue;
+        }
+        for (k = 0; k < got; k++) {
+            found += strcmp(items[k].id, a->id) == 0 && strcmp(items[k].key, a->key) == 0 &&
+                     (a->key[1] != '\0' || items[k].shortcut == a->key[0]);
+        }
+        CHECK(found == 1u, "key %s of %s is not a shortcut", a->key, a->id);
+    }
+    for (i = 0, found_sub = 0; i < got; i++) {
+        found_sub += strcmp(items[i].sub, "Visualizer") == 0 && strchr(items[i].item, '/') == NULL;
+    }
+    CHECK(found_sub >= 3u, "View/Visualizer/* rows are not split into sub menu and item (%u)", (unsigned)found_sub);
+}
+
+/* mui-menu-dispatch (MUI-P2-4): every menu row sends the table line the desktop sends. */
+static void test_menu_dispatch(void) {
+    static mui_menu_item items[512];
+    uint32_t i, got = mui_menu_build(items, 512);
+    CHECK(got > 20u, "no menu rows");
+    for (i = 0; i < got; i++) {
+        const char* line = mui_menu_line(items[i].id);
+        uint32_t k, n = sel_uim_action_count();
+        const sel_uim_action* a = NULL;
+        for (k = 0; k < n; k++) {
+            if (strcmp(sel_uim_action_at(k)->id, items[i].id) == 0) {
+                a = sel_uim_action_at(k);
+            }
+        }
+        CHECK(a != NULL && line != NULL && line[0] != '\0' && strcmp(line, a->line) == 0, "menu %s/%s sends '%s'", items[i].title, items[i].item, line != NULL ? line : "(null)");
+    }
+    CHECK(mui_menu_line("no_such_action") == NULL, "unknown id has a line");
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -108,6 +157,10 @@ int main(int argc, char** argv) {
         test_registry();
     } else if (strcmp(argv[1], "failure") == 0) {
         test_failure();
+    } else if (strcmp(argv[1], "menu") == 0) {
+        test_menu();
+    } else if (strcmp(argv[1], "menu-dispatch") == 0) {
+        test_menu_dispatch();
     } else {
         return 2;
     }
