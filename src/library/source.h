@@ -17,7 +17,7 @@ int sel_source_register(const sel_source* src);
 const sel_source* sel_source_find(const char* id);
 uint32_t sel_source_count(void);
 const sel_source* sel_source_get(uint32_t index);
-/* Registers the sources this build ships (local, modland, hvsc). Idempotent. */
+/* Registers the sources this build ships (local, modland, hippo) and the source plugins. Idempotent. */
 void sel_source_register_builtin(void);
 /* Hands in the plugin enumeration (sel_registry_count / sel_registry_get) and the host for log lines; the
  * registry walk in sel_source_register_builtin adds every kind 7 plugin. NULL: no plugin sources. */
@@ -27,7 +27,6 @@ void sel_source_set_plugins(uint32_t (*count)(void), const sel_tag* (*get)(uint3
 const sel_source* sel_source_local(void);
 const sel_source* sel_source_modland(void);
 const sel_source* sel_source_hippo(void);   /* sources/hippo.c, hippoplayer.se playlists */
-const sel_source* sel_source_hvsc(void); /* sources/hvsc.c, hosted by Modland */
 
 /* Song key <source id>:<path>. 0 when it does not fit. */
 int sel_song_key(const char* source, const char* path, char* out, size_t n);

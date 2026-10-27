@@ -52,8 +52,6 @@
 #include "sources/local_source.h"
 #include "sources/hippo_publish.h"
 #include "sources/hippo_sync.h"
-#include "sources/hvsc_net.h"
-#include "sources/hvsc_sync.h"
 #include "sources/modland_net.h"
 #include "sources/sync_host.h"
 #include "source.h"

@@ -109,9 +109,6 @@ void sel_source_register_builtin(void) {
     if (sel_source_find("modland") == NULL) {
         (void)sel_source_register(sel_source_modland());
     }
-    if (sel_source_find("hvsc") == NULL) {
-        (void)sel_source_register(sel_source_hvsc());
-    }
     if (sel_source_find("hippo") == NULL) {
         (void)sel_source_register(sel_source_hippo());
     }

@@ -1,9 +1,9 @@
 /* See hvsc_sync.h. No float, no allocation after the start (blocks from the host). */
 #include "hvsc_sync.h"
 
-#include "../local.h"
-#include "../source.h"
-#include "sync_util.h"
+#include "source/sync_text.h"
+
+#include <selecta/catalogue.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,7 +11,6 @@
 
 #define LINE_BYTES 2400u
 #define PATH_BYTES 512u
-#define SCAN_BATCH 32u
 #define LEN_BATCH 32u
 #define LEN_TEXT 1800u
 #define STIL_BATCH 16u
@@ -29,7 +28,7 @@ typedef struct len_item {
     char md5[40];
     char lengths[LEN_TEXT];
     char count[8];
-    sel_sticker st[2];
+    sel_catalogue_sticker st[2];
 } len_item;
 
 typedef struct stil_item {
@@ -37,21 +36,19 @@ typedef struct stil_item {
     char names[STIL_STICKERS][STIL_NAME];
     char pool[STIL_POOL];
     uint32_t value_at[STIL_STICKERS];
-    sel_sticker st[STIL_STICKERS];
+    sel_catalogue_sticker st[STIL_STICKERS];
     uint32_t pool_used;
     uint32_t n;
 } stil_item;
 
 typedef struct sync_state {
-    const sel_local_scan_config* cfg;
+    const sel_host* host;
+    const sel_catalogue* cat;
     sel_hvsc_sync_stats* st;
-    const sel_source* src;
     scan_text* text;
-    sel_scan_row* rows;
-    uint32_t row_n;
     len_item* lens;
     stil_item* stils;
-    sel_annotation* notes;
+    sel_catalogue_note* notes;
     uint32_t item_n;
     int failed;
 } sync_state;
@@ -104,22 +101,9 @@ static const char* rel_path(const char* p) {
     return p;
 }
 
-static int send_request(sync_state* s, uint32_t req, const void* payload, sel_message* reply) {
-    memset(reply, 0, sizeof *reply);
-    if (!sel_library_request(s->cfg->lib, req, payload, reply) || reply->args[1].v.i != 0) {
-        s->failed = 1;
-        return 0;
-    }
-    return 1;
-}
-
-static int flush_rows(sync_state* s) {
-    return sel_sync_flush_scan(s->cfg, s->rows, &s->row_n, &s->st->batches, &s->failed);
-}
-
 static int queue_row(sync_state* s, const char* rel) {
-    scan_text* t = &s->text[s->row_n];
-    sel_scan_row* r = &s->rows[s->row_n];
+    scan_text* t = s->text;
+    sel_catalogue_song song;
     sel_tag tags[4];
     uint32_t i;
 
@@ -127,23 +111,25 @@ static int queue_row(sync_state* s, const char* rel) {
         return 0;
     }
     memcpy(t->path, rel, strlen(rel) + 1u);
-    if (!s->src->parse(t->path, t->scratch, sizeof t->scratch, tags)) {
+    if (!sel_hvsc_parse(t->path, t->scratch, sizeof t->scratch, tags)) {
         return 0;
     }
-    memset(r, 0, sizeof *r);
-    r->source = "hvsc";
-    r->path = t->path;
-    r->format = r->artist = r->name = r->md5 = "";
+    memset(&song, 0, sizeof song);
+    song.path = t->path;
+    song.format = song.artist = song.name = song.md5 = song.album = "";
     for (i = 0; tags[i].tag != SEL_TAG_END; i++) {
         if (tags[i].tag == SEL_SRC_FORMAT) {
-            r->format = (const char*)tags[i].value;
+            song.format = (const char*)tags[i].value;
         } else if (tags[i].tag == SEL_SRC_ARTIST) {
-            r->artist = (const char*)tags[i].value;
+            song.artist = (const char*)tags[i].value;
         } else if (tags[i].tag == SEL_SRC_NAME) {
-            r->name = (const char*)tags[i].value;
+            song.name = (const char*)tags[i].value;
         }
     }
-    s->row_n++;
+    if (!s->cat->song(s->host, &song)) {
+        s->failed = 1;
+        return 0;
+    }
     return 1;
 }
 
@@ -160,38 +146,35 @@ static int sync_listing(sync_state* s, const char* file) {
             continue;
         }
         if (!queue_row(s, rel_path(line))) {
-            s->st->skipped_rows++;
+            if (!s->failed) {
+                s->st->skipped_rows++;
+            }
             continue;
         }
         s->st->listing_rows++;
-        if (s->row_n == SCAN_BATCH && !flush_rows(s)) {
-            break;
-        }
     }
     fclose(f);
-    return !s->failed && flush_rows(s);
+    return !s->failed;
 }
 
 static int flush_annotations(sync_state* s, uint32_t* matched) {
-    sel_annotate_batch b;
-    sel_message reply;
+    int32_t n;
 
     if (s->item_n == 0) {
         return 1;
     }
-    b.source = "hvsc";
-    b.items = s->notes;
-    b.count = s->item_n;
+    n = s->cat->annotate(s->host, s->notes, s->item_n);
     s->item_n = 0;
-    if (!send_request(s, SEL_LIB_REQ_ANNOTATE, &b, &reply)) {
+    if (n < 0) {
+        s->failed = 1;
         return 0;
     }
-    *matched += (uint32_t)reply.args[0].v.i;
+    *matched += (uint32_t)n;
     return 1;
 }
 
 /* "<md5>=<t1> <t2> ...": fills the item and its annotation; returns the subtune count (0 when malformed). */
-static uint32_t fill_lengths(len_item* it, char* line, sel_annotation* a) {
+static uint32_t fill_lengths(len_item* it, char* line, sel_catalogue_note* a) {
     char* eq = strchr(line, '=');
     char* p;
     size_t used = 0;
@@ -324,7 +307,7 @@ static void stil_begin(stil_item* it, const char* path) {
 /* Closes the entry being built in slot item_n; sends the batch when full. */
 static void stil_commit(sync_state* s, uint32_t* matched) {
     stil_item* it = &s->stils[s->item_n];
-    sel_annotation* a = &s->notes[s->item_n];
+    sel_catalogue_note* a = &s->notes[s->item_n];
     uint32_t i;
 
     if (it->path[0] == '\0' || it->n == 0) {
@@ -435,35 +418,42 @@ static int sync_stil(sync_state* s, const char* file) {
     return !s->failed;
 }
 
-int sel_hvsc_sync(const sel_local_scan_config* cfg, const char* dir, sel_hvsc_sync_stats* stats) {
+int sel_hvsc_sync(const sel_host* host, const char* dir, sel_hvsc_sync_stats* stats) {
     sync_state s;
-    const sel_host* host = cfg->host;
-    char path[SEL_BROWSE_PATH_MAX];
-    int ok = 0;
+    const sel_catalogue* cat = host->catalogue != NULL ? host->catalogue(host) : NULL;
+    char path[1100];
+    int ok = 0, open = 0;
 
     memset(&s, 0, sizeof s);
     memset(stats, 0, sizeof *stats);
-    s.cfg = cfg;
+    s.host = host;
+    s.cat = cat;
     s.st = stats;
-    sel_source_register_builtin();
-    s.src = sel_source_find("hvsc");
-    s.text = host->mem_alloc(host, (size_t)SCAN_BATCH * sizeof *s.text, SEL_MEM_FAST);
-    s.rows = host->mem_alloc(host, (size_t)SCAN_BATCH * sizeof *s.rows, SEL_MEM_FAST);
+    s.text = host->mem_alloc(host, sizeof *s.text, SEL_MEM_FAST);
     s.lens = host->mem_alloc(host, (size_t)LEN_BATCH * sizeof *s.lens, SEL_MEM_FAST);
     s.stils = host->mem_alloc(host, (size_t)(STIL_BATCH + 1u) * sizeof *s.stils, SEL_MEM_FAST);
     s.notes = host->mem_alloc(host, (size_t)LEN_BATCH * sizeof *s.notes, SEL_MEM_FAST);
-    if (s.src != NULL && s.text != NULL && s.rows != NULL && s.lens != NULL && s.stils != NULL && s.notes != NULL &&
-        sel_browse_join(path, sizeof path, dir, SEL_HVSC_LISTING) && sync_listing(&s, path)) {
-        ok = sel_browse_join(path, sizeof path, dir, SEL_HVSC_SONGLENGTHS) && sync_songlengths(&s, path);
-        if (ok) {
-            ok = sel_browse_join(path, sizeof path, dir, SEL_HVSC_STIL) && sync_stil(&s, path);
+    if (cat != NULL && s.text != NULL && s.lens != NULL && s.stils != NULL && s.notes != NULL &&
+        (open = cat->begin(host, "hvsc")) != 0) {
+        if (snprintf(path, sizeof path, "%s/%s", dir, SEL_HVSC_LISTING) < (int)sizeof path && sync_listing(&s, path)) {
+            ok = snprintf(path, sizeof path, "%s/%s", dir, SEL_HVSC_SONGLENGTHS) < (int)sizeof path &&
+                 sync_songlengths(&s, path);
+            if (ok) {
+                ok = snprintf(path, sizeof path, "%s/%s", dir, SEL_HVSC_STIL) < (int)sizeof path &&
+                     sync_stil(&s, path);
+            }
+        }
+    }
+    if (open) {
+        if (ok && !s.failed) {
+            ok = cat->commit(host);
+        } else {
+            cat->abort(host);
+            ok = 0;
         }
     }
     if (s.text != NULL) {
         host->mem_free(host, s.text);
-    }
-    if (s.rows != NULL) {
-        host->mem_free(host, s.rows);
     }
     if (s.lens != NULL) {
         host->mem_free(host, s.lens);
@@ -474,5 +464,5 @@ int sel_hvsc_sync(const sel_local_scan_config* cfg, const char* dir, sel_hvsc_sy
     if (s.notes != NULL) {
         host->mem_free(host, s.notes);
     }
-    return ok && !s.failed;
+    return ok;
 }
