@@ -521,6 +521,10 @@ int main(int argc, char** argv)
     for (u = 0; u < g_ui_count; u++) {
         g_uis[u].state = g_uis[u].open(&args);
         sel_trace(host, "UI open returned");
+        /* A graphical UI that cannot open (MUI-P1-4, Q26) has already said why; the shell keeps the text UI. */
+        if (g_uis[u].state == NULL && strcmp(g_uis[u].id, "text") != 0 && ui_resolve("text", &g_uis[u])) {
+            g_uis[u].state = g_uis[u].open(&args);
+        }
         if (g_uis[u].state == NULL) {
             fputs("selecta: the UI could not open (no terminal?)\n", stderr);
             while (u-- > 0) {

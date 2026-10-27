@@ -34,6 +34,10 @@ static int list_has(const sel_tag* t, uint32_t tag) {
     return 0;
 }
 
+static int probe_yes(void) {
+    return 1;
+}
+
 int main(int argc, char** argv) {
     const sel_host* host = sel_host_default();
     const sel_tag* desc = sel_plugin_entry_mui_test(1u);
@@ -55,6 +59,8 @@ int main(int argc, char** argv) {
         fputs("usage: mui_test <scratch dir>\n", stderr);
         return 2;
     }
+    mui_set_probe(probe_yes); /* the host has no MUI; the entry lists the plugin only when the probe says so */
+    desc = sel_plugin_entry_mui_test(1u);
 
     /* MUI-P1-2: id, kind, and the style mask per tier. */
     CHECK(desc != NULL, "no descriptor");

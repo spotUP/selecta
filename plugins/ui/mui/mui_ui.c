@@ -6,6 +6,7 @@
 #include <selecta/ui.h>
 
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "map/mui_map.h"
@@ -31,8 +32,12 @@ struct Library* MUIMasterBase;
 #undef MUI_NewObject
 #endif
 
+/* MUI-P1-4: a distinct error on stderr (the shell keeps the text UI) and, on the Amiga, an EasyRequest. */
+static void mui_report(mui_fail why);
+
 typedef struct mui_state {
     uint32_t opens; /* ui_open_mui sentinel (MUI-P1-5): windows opened */
+    uint32_t wake_mask; /* engine wake signal (MUI-P1-7), 0 where there is none */
     sel_tag stats[2];
 #ifdef SEL_MUI_NATIVE
     Object* app;
@@ -58,6 +63,7 @@ static void* mui_open(const sel_ui_open_args* a) {
     (void)a;
     MUIMasterBase = OpenLibrary((CONST_STRPTR)MUIMASTER_NAME, 19);
     if (MUIMasterBase == NULL) {
+        mui_report(MUI_FAIL_NO_LIBRARY);
         return NULL;
     }
     s->app = ApplicationObject, MUIA_Application_Title, (ULONG) "Selecta", MUIA_Application_Base, (ULONG) "SELECTA",
@@ -73,6 +79,7 @@ static void* mui_open(const sel_ui_open_args* a) {
     if (s->app == NULL) {
         CloseLibrary(MUIMasterBase);
         MUIMasterBase = NULL;
+        mui_report(MUI_FAIL_NO_WINDOW);
         return NULL;
     }
     DoMethod(s->win, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, s->app, 2, MUIM_Application_ReturnID,
@@ -85,26 +92,40 @@ static void* mui_open(const sel_ui_open_args* a) {
         s->win = NULL;
         CloseLibrary(MUIMasterBase);
         MUIMasterBase = NULL;
+        mui_report(MUI_FAIL_NO_WINDOW);
         return NULL;
     }
+    s->wake_mask = 0;
     s->opens++;
     return s;
 }
 
+static int mui_io_new_input(void* ctx, uint32_t* sigs) {
+    ULONG got = 0;
+    LONG id = (LONG)DoMethod(((mui_state*)ctx)->app, MUIM_Application_NewInput, &got);
+    *sigs = (uint32_t)got;
+    return id == (LONG)MUIV_Application_ReturnID_Quit ? MUI_WAIT_ID_QUIT : (int)id;
+}
+
+/* No timer.device in the loop: poll the mask, then yield one tick (the former behaviour). */
+static uint32_t mui_io_wait(void* ctx, uint32_t mask, uint32_t timeout_ms) {
+    uint32_t got = (uint32_t)SetSignal(0, 0) & mask;
+    (void)ctx;
+    (void)timeout_ms;
+    if (got == 0) {
+        Delay(1);
+    }
+    return got;
+}
+
 static int mui_wait(void* state, uint32_t timeout_ms) {
     mui_state* s = (mui_state*)state;
-    ULONG sigs = 0;
-    LONG id;
-    (void)timeout_ms;
-    id = (LONG)DoMethod(s->app, MUIM_Application_NewInput, &sigs);
-    if (id == (LONG)MUIV_Application_ReturnID_Quit) {
-        return -1;
-    }
-    if (SetSignal(0, 0) & SIGBREAKF_CTRL_C) { /* Break ends the UI like the close gadget */
-        return -1;
-    }
-    Delay(1);
-    return id != 0 ? 1 : 0;
+    mui_wait_io io;
+    io.new_input = mui_io_new_input;
+    io.wait = mui_io_wait;
+    io.break_mask = SIGBREAKF_CTRL_C;
+    io.wake_mask = s->wake_mask;
+    return mui_wait_step(&io, s, timeout_ms);
 }
 
 static void mui_close(void* state) {
@@ -119,9 +140,35 @@ static void mui_close(void* state) {
         MUIMasterBase = NULL;
     }
 }
+
+static int mui_native_probe(void) {
+    struct Library* b = OpenLibrary((CONST_STRPTR)MUIMASTER_NAME, 19);
+    if (b == NULL) {
+        return 0;
+    }
+    CloseLibrary(b);
+    return 1;
+}
+
+static void mui_report(mui_fail why) {
+    struct EasyStruct es;
+    const char* text = mui_fail_text(why);
+    fprintf(stderr, "%s\n", text);
+    es.es_StructSize = sizeof es;
+    es.es_Flags = 0;
+    es.es_Title = (UBYTE*)"Selecta";
+    es.es_TextFormat = (UBYTE*)"%s";
+    es.es_GadgetFormat = (UBYTE*)"Continue";
+    EasyRequest(NULL, &es, NULL, (ULONG)text);
+}
 #else
+static void mui_report(mui_fail why) {
+    fprintf(stderr, "%s\n", mui_fail_text(why));
+}
+
 static void* mui_open(const sel_ui_open_args* a) {
     (void)a;
+    mui_report(MUI_FAIL_NO_WINDOW);
     return NULL; /* the host has no MUI: the shell keeps its current UI */
 }
 
@@ -149,6 +196,12 @@ static const sel_tag* mui_stats(void* state) {
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     if (host_api < 1u) {
         return NULL;
+    }
+#ifdef SEL_MUI_NATIVE
+    mui_set_probe(mui_native_probe);
+#endif
+    if (!mui_present()) {
+        return NULL; /* MUI 3.8 absent: the registry does not list the UI (MUI-P1-6) */
     }
     memset(&g_state, 0, sizeof g_state);
     put_tag(&g_hooks[0], SEL_UI_NAME, (uintptr_t) "MUI");
