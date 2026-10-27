@@ -55,20 +55,20 @@ int main(void) {
         compared++;
         desk_atlas_free(r);
     }
-    /* I526-P2: the ydiv 2 Inter set is SemiBold headlines only (px 22 and 32); nothing else at ydiv 2 is Inter. */
+    /* I526-P2: the ydiv 2 Inter set is SemiBold headlines only (px 18 and 24); nothing else at ydiv 2 is Inter. */
     for (e = 0; e < sel_font_baked_n; e++) {
         const desk_baked_font* b = &sel_font_baked[e];
-        if (b->ydiv == 2 && b->family < DESK_FAMILY_MINI4 && !(b->family == DESK_FAMILY_INTER_SEMIBOLD && (b->px == 22 || b->px == 32))) {
+        if (b->ydiv == 2 && b->family < DESK_FAMILY_MINI4 && !(b->family == DESK_FAMILY_INTER_SEMIBOLD && (b->px == 18 || b->px == 24))) {
             fprintf(stderr, "font_baked_unit: unexpected Inter ydiv 2 atlas family %d size %d\n", (int)b->family, (int)b->px);
             bad++;
         }
     }
     {
-        static const int px[] = {32, 22};
-        /* Inter cap height is 0.727 em, so an L at ydiv 2 is px x 0.364 rows: 11.6 at px 32, 8.0 at px 22. The plan's
+        static const int px[] = {24, 18};
+        /* Inter cap height is 0.727 em, so an L at ydiv 2 is px x 0.364 rows: 8.7 at px 24, 6.5 at px 18. The plan's
          * 15-16 and 10-11 rows are the em height, not the ink of an L; measured 12 and 9. */
-        static const int rows_lo[] = {11, 8};
-        static const int rows_hi[] = {12, 9};
+        static const int rows_lo[] = {8, 6};
+        static const int rows_hi[] = {9, 7};
         int k;
         for (k = 0; k < 2; k++) {
             const sel_gui_atlas* a = desk_atlas_baked(DESK_FAMILY_INTER_SEMIBOLD, px[k], 2);

@@ -33,7 +33,7 @@ static uint64_t fnv(uint64_t h, const unsigned char* p, size_t n) {
 }
 
 int main(void) {
-    static const int tall_px[] = {22, 32};
+    static const int tall_px[] = {18, 24};
     static const int flat_px[] = {13, 14, 15, 16, 22, 32};
     int bad = 0, k, partial_total = 0;
     uint64_t h = 1469598103934665603ull;

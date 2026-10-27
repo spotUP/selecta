@@ -115,3 +115,12 @@ Not reproduced on host. A click at the Modland switch centre (640x512, ydiv 2) c
 - Updated tests: dui-layout (sidebar w=174), dui-aga-native-text pixel scans start at x=178 (past the wider rail).
 - Golden changed: tests/golden/desktop/library-rgba32-640x256-ydiv2@1.hash (e516b1bc64b09446 -> new). Passing: dui-aga*,
   dui-layout, dui-tall-pixels, dui-library*, dui-sync-banner, dui-stats-panel.
+
+## I545
+
+- Mapping: role table `k_chain` plugins/ui/desktop/font_roles.c:11 (headline entries, px = layout units, rows = px/2); bake set `DESK_FONT_BAKE_TALL_PX` atlas_build.h:29 (gui_fontbake bakes from it, so the atlases follow). desk_font -> desk_role_atlas desktop_ui.c:~603 unchanged.
+- Change: page titles px 32 -> 24 (12 rows), section titles px 22 -> 18 (9 rows); stat counters renamed headline_hits_18/24 (tags.def, main.c, desktop_ui.c); Library page title box 40 -> 32 units on the bitmap tier (`lib_title_h`, desktop_ui.c:~2419), 4 screen rows go to the lists. Other pages' heading boxes not touched (open; they are not box-limited: only the Library title box was tied to the old line height).
+- Plan: section 1 role table rows updated to H12/H9.
+- Test: dui-aga-native-text asserts headline_hits_18/24 > 0 and the Library title cap L spans 9 to 10 rows. Unit tests dui-font-roles, dui-font-baked, dui-font-tall updated to 18/24. ydiv-1 hash in dui-font-tall unchanged (passes).
+- Revert-check: with px 32/22 restored, dui-aga-native-text fails (L spans 8 rows, the 32 headline steps down in the 32 unit box). Note: a first, looser range (8 to 10) did NOT fail on revert; tightened.
+- Goldens: none changed (dui-library*, dui-layout, dui-aga*, dui-font* pass; dui-fonts is a deliberate dui-red).

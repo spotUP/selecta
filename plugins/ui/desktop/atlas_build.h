@@ -24,9 +24,9 @@ void desk_atlas_free(const sel_gui_atlas* at);
 /* The UI scales (Q16) the atlases are baked for: the fit floor 0.625 (the 672x270 and 640x512 Amiga screens) and 1.0.
  * Other scales build at run time, as before. */
 #define DESK_FONT_BAKE_SCALES_Q16 40960, 65536
-/* The tall-pixel (ydiv 2) Inter set (I526): SemiBold headlines only, at scale 1.0 (px 32 is 16 rows, px 22 is 11).
+/* The tall-pixel (ydiv 2) Inter set (I526): SemiBold headlines only, at scale 1.0 (I545: px 24 is 12 rows, px 18 is 9).
  * Body text at ydiv 2 uses the Amiga bitmap fonts below. */
-#define DESK_FONT_BAKE_TALL_PX 22, 32
+#define DESK_FONT_BAKE_TALL_PX 18, 24
 #define DESK_FONT_BAKE_TALL_PX_N 2
 
 /* Font families a baked atlas belongs to. 0 and 1 equal the old `semibold` flag, so existing callers stay valid. */

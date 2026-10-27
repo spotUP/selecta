@@ -2,10 +2,10 @@
 # its text with the native Amiga fonts and the two Inter headline sizes, never an atlas built on the spot.
 # -DSELECTA -DWORK
 #   1. Library and home views at --canvas 640x256 --ydiv 2 --zoom fit: layout 640x512 with the labelled rail.
-#   2. Stats: bitmap_hits_mini6 and bitmap_hits_mini8 > 0, headline_hits_22 and headline_hits_32 > 0 (the role table ran),
+#   2. Stats: bitmap_hits_mini6 and bitmap_hits_mini8 > 0, headline_hits_18 (9-row section titles) and headline_hits_24 (12-row page titles) > 0 (the role table ran),
 #      atlas_builds=0, font_misses=0, missing_glyphs=0 (every glyph came from a baked atlas).
-#   3. PPM ink of the library view: the cap "L" of the title (Inter SemiBold 32 baked at 1:2, no descender) occupies 11 to 16
-#      screen rows (the old fit zoom scaled it to 9 to 10); the first library row's text ink is at most 8 rows and its glyph
+#   3. PPM ink of the library view: the cap "L" of the title (I545: Inter SemiBold px 24 baked at 1:2, a 12-row page title)
+#      occupies 9 to 10 screen rows (px 22 gave 8, px 32 gave 11 to 12; the old fit zoom scaled it to 9 to 10); the first library row's text ink is at most 8 rows and its glyph
 #      pitch is 8 columns (mini8).
 # Open (I526 P5 gap G1): bitmap_hits_mini4 > 0 is not asserted; no view reachable at 640x512 draws a mini4 caption yet (see the report).
 # Revert check: with the bitmap tier forced off (desk_bitmap_text returns 0) the layout, the hit counters and the
@@ -32,7 +32,7 @@ foreach(view library home)
   if(NOT o MATCHES "layout width=640 height=512 id=icon-sidebar ")
     message(FATAL_ERROR "${view}: the bitmap tier must lay out 640x512 with the labelled rail:\n${o}")
   endif()
-  foreach(key bitmap_hits_mini6 bitmap_hits_mini8 headline_hits_22 headline_hits_32)
+  foreach(key bitmap_hits_mini6 bitmap_hits_mini8 headline_hits_18 headline_hits_24)
     dui_stat(n "${o}" desktop ${key})
     if(NOT n GREATER 0)
       message(FATAL_ERROR "${view}: ${key}=${n}, the native font role table did not run")
@@ -88,7 +88,7 @@ endfunction()
 # 3a. title: the cap "L" is the first glyph run right of x=186 (its stem and foot); count its ink rows
 set(x0 -1)
 foreach(x RANGE 186 230)
-  col_rows(r ${x} 10 40)
+  col_rows(r ${x} 10 27)
   list(GET r 0 f)
   if(NOT f LESS 0)
     set(x0 ${x})
@@ -102,7 +102,7 @@ set(first 1000)
 set(last -1)
 set(x ${x0})
 while(x LESS 260)
-  col_rows(r ${x} 10 40)
+  col_rows(r ${x} 10 27)
   list(GET r 0 f)
   list(GET r 1 l)
   if(f LESS 0)
@@ -118,8 +118,8 @@ while(x LESS 260)
 endwhile()
 math(EXPR rows "${last} - ${first} + 1")
 message(STATUS "P5 title cap L columns ${x0}..${x} ink rows ${first}..${last} = ${rows}")
-if(rows LESS 11 OR rows GREATER 16)
-  message(FATAL_ERROR "the Library title cap spans ${rows} screen rows, expected 11 to 16 (Inter SemiBold 32 baked)")
+if(rows LESS 9 OR rows GREATER 10)
+  message(FATAL_ERROR "the Library title cap spans ${rows} screen rows, expected 9 to 10 (I545: Inter SemiBold px 24, a 12-row page title)")
 endif()
 
 dui_run(lo --db "${db}" --ui desktop --backend mem --view library --canvas 640x256 --ydiv 2 --zoom fit --clock fixed

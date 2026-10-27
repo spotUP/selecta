@@ -167,7 +167,7 @@ typedef struct desk {
     uint32_t atlas_builds;   /* text atlases built at run time */
     uint32_t atlas_baked_hits; /* text atlases taken from the baked tables (I463) */
     uint32_t bitmap_hits[3];   /* I526: text lookups served by mini4, mini6, mini8 */
-    uint32_t headline_hits[2]; /* I526: text lookups served by the Inter headline sizes 22 and 32 */
+    uint32_t headline_hits[2]; /* I526: text lookups served by the Inter headline sizes 18 and 24 */
     uint32_t atlas_ms;       /* host clock ms spent in desk_atlas_build (I463): the soft-float cost on the 68020 tier */
     uint32_t atlas_rebuilds; /* scale changes that dropped the built text atlases */
     uint32_t icon_rebuilds;  /* scale changes that rebuilt the icon atlas view */
@@ -607,7 +607,7 @@ static const sel_gui_atlas* desk_role_atlas(desk* d, int semibold, int size, int
         if (family >= DESK_FAMILY_MINI4) {
             d->bitmap_hits[family - DESK_FAMILY_MINI4]++;
         } else {
-            d->headline_hits[px >= 32 ? 1 : 0]++;
+            d->headline_hits[px >= 24 ? 1 : 0]++;
         }
     }
     return at;
@@ -2414,6 +2414,12 @@ enum { LIB_MARGIN = 24, LIB_TITLE_Y = 24, LIB_TITLE_H = 40, LIB_TAB_H = 32, LIB_
 /* I445: the Library header is three rows, the title, the tab row and the list, with a gap of two theme spacings between
  * each, so the title descenders, the buttons and the tabs never touch. A composer drilldown puts its song count and
  * back line where the tabs are. */
+/* The page title box: 40 layout units for the 32 px title; on the bitmap tier (I545) the 12-row headline (px 24, line
+ * 29 units) needs 32, which returns 4 screen rows to the lists. */
+static int32_t lib_title_h(const desk* d) {
+    return desk_bitmap_text(d) ? 32 : LIB_TITLE_H;
+}
+
 static int32_t lib_gap(desk* d) {
     return 2 * lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
 }
@@ -2446,12 +2452,12 @@ static int32_t lib_nag_h(desk* d) {
 }
 
 static int32_t lib_tab_y(desk* d) {
-    return lpx(d, LIB_TITLE_Y + LIB_TITLE_H) + lib_gap(d) + lib_nag_h(d);
+    return lpx(d, LIB_TITLE_Y + lib_title_h(d)) + lib_gap(d) + lib_nag_h(d);
 }
 
 static sel_gui_rect nag_rect(desk* d, sel_gui_rect mn) {
     int32_t mg = lpx(d, LIB_MARGIN);
-    return rect_of(mn.x + mg, mn.y + lpx(d, LIB_TITLE_Y + LIB_TITLE_H) + lib_gap(d), mn.w - 2 * mg, lib_nag_h(d) - lib_gap(d));
+    return rect_of(mn.x + mg, mn.y + lpx(d, LIB_TITLE_Y + lib_title_h(d)) + lib_gap(d), mn.w - 2 * mg, lib_nag_h(d) - lib_gap(d));
 }
 
 static int32_t lib_header_btn_w(desk* d, const char* label);
@@ -2790,7 +2796,7 @@ static sel_gui_rect lib_crumb_rect(desk* d, sel_gui_rect mn) {
 
 /* The "Back to all composers" line of a drilldown: under the song count, above the rows (I445). */
 static sel_gui_rect lib_back_rect(desk* d, sel_gui_rect mn) {
-    return rect_of(mn.x + lpx(d, LIB_MARGIN), mn.y + lpx(d, LIB_TITLE_Y + LIB_TITLE_H + 24), mn.w / 2, lpx(d, 24));
+    return rect_of(mn.x + lpx(d, LIB_MARGIN), mn.y + lpx(d, LIB_TITLE_Y + lib_title_h(d) + 24), mn.w / 2, lpx(d, 24));
 }
 
 static int lib_view_on(const desk* d, const sel_state* st) {
@@ -4777,7 +4783,7 @@ static void draw_library(desk* d) {
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     uint32_t i = 0;
     const char* p;
-    sel_gui_rect col = rect_of(mn.x + mg, mn.y + lpx(d, LIB_TITLE_Y), mn.w - 2 * mg, lpx(d, LIB_TITLE_H));
+    sel_gui_rect col = rect_of(mn.x + mg, mn.y + lpx(d, LIB_TITLE_Y), mn.w - 2 * mg, lpx(d, lib_title_h(d)));
     sel_gui_clip_push(d->canvas, mn);
     d->library_sig = lib_hash(d, st);
     if (st->composer_page != NULL) { /* drilldown: the composer, its song count and its songs */
@@ -9470,9 +9476,9 @@ static const sel_tag* desk_stats(void* state) {
         d->stats[n++].value = d->bitmap_hits[1];
         d->stats[n].tag = SEL_UI_STAT_BITMAP_HITS_MINI8;
         d->stats[n++].value = d->bitmap_hits[2];
-        d->stats[n].tag = SEL_UI_STAT_HEADLINE_HITS_22;
+        d->stats[n].tag = SEL_UI_STAT_HEADLINE_HITS_18;
         d->stats[n++].value = d->headline_hits[0];
-        d->stats[n].tag = SEL_UI_STAT_HEADLINE_HITS_32;
+        d->stats[n].tag = SEL_UI_STAT_HEADLINE_HITS_24;
         d->stats[n++].value = d->headline_hits[1];
         d->stats[n].tag = SEL_UI_STAT_SHELF_ALBUM_ART_DRAWS;
         d->stats[n++].value = d->shelf_album_art_draws;

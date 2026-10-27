@@ -9,7 +9,7 @@ typedef struct {
 
 /* The fallback chain, largest first. A role starts at its entry and moves down while the box is shorter than the line. */
 static const role_font k_chain[] = {
-    {DESK_FAMILY_INTER_SEMIBOLD, 32}, {DESK_FAMILY_INTER_SEMIBOLD, 22}, {DESK_FAMILY_MINI8, 8},
+    {DESK_FAMILY_INTER_SEMIBOLD, 24}, {DESK_FAMILY_INTER_SEMIBOLD, 18}, {DESK_FAMILY_MINI8, 8},
     {DESK_FAMILY_MINI6, 8},           {DESK_FAMILY_MINI4, 8},           {DESK_FAMILY_MINI6, 6},
     {DESK_FAMILY_MINI4, 6},
 };
@@ -20,7 +20,7 @@ static const role_font k_chain[] = {
 #define CH_MINI6 3
 #define CH_MINI4 4
 
-/* The role of a token: headlines for 18 and up (22 for 18-24, 32 above), mini8 for 14-16 and the semibold 13, mini6 for
+/* The role of a token: headlines for 18 and up (I545: the 9-row px 18 for 18-24, the 12-row px 24 above), mini8 for 14-16 and the semibold 13, mini6 for
  * 12 and the regular 13, mini4 for 11. */
 static int role_start(int semibold, int size) {
     if (size >= 25) {

@@ -20,11 +20,11 @@ typedef struct {
 int main(void) {
     static const int sizes[] = {DESK_FONT_SIZES};
     static const role_case roles[] = {
-        {1, 32, DESK_FAMILY_INTER_SEMIBOLD, 32}, {1, 24, DESK_FAMILY_INTER_SEMIBOLD, 22}, {1, 22, DESK_FAMILY_INTER_SEMIBOLD, 22},
-        {1, 18, DESK_FAMILY_INTER_SEMIBOLD, 22}, {1, 16, DESK_FAMILY_MINI8, 8},           {0, 15, DESK_FAMILY_MINI8, 8},
+        {1, 32, DESK_FAMILY_INTER_SEMIBOLD, 24}, {1, 24, DESK_FAMILY_INTER_SEMIBOLD, 18}, {1, 22, DESK_FAMILY_INTER_SEMIBOLD, 18},
+        {1, 18, DESK_FAMILY_INTER_SEMIBOLD, 18}, {1, 16, DESK_FAMILY_MINI8, 8},           {0, 15, DESK_FAMILY_MINI8, 8},
         {1, 14, DESK_FAMILY_MINI8, 8},           {1, 13, DESK_FAMILY_MINI8, 8},           {0, 13, DESK_FAMILY_MINI6, 8},
         {0, 12, DESK_FAMILY_MINI6, 8},           {1, 12, DESK_FAMILY_MINI6, 8},           {0, 11, DESK_FAMILY_MINI4, 8},
-        {1, 11, DESK_FAMILY_MINI4, 8},           {0, 18, DESK_FAMILY_INTER_SEMIBOLD, 22}, {0, 32, DESK_FAMILY_INTER_SEMIBOLD, 32},
+        {1, 11, DESK_FAMILY_MINI4, 8},           {0, 18, DESK_FAMILY_INTER_SEMIBOLD, 18}, {0, 32, DESK_FAMILY_INTER_SEMIBOLD, 24},
     };
     unsigned i;
     int w, k;
@@ -46,8 +46,8 @@ int main(void) {
         expect(a != NULL && fam == DESK_FAMILY_MINI4 && px == 6 && a->line_height == 12, "mini4 6-row fallback", fam, px);
         a = desk_font_role_atlas(0, 12, 16, &fam, &px); /* fits: stays at 8 rows */
         expect(a != NULL && fam == DESK_FAMILY_MINI6 && px == 8, "fitting box keeps the role", fam, px);
-        a = desk_font_role_atlas(1, 32, 30, &fam, &px); /* H16 line (39) is taller than 30: H11 (27) */
-        expect(a != NULL && fam == DESK_FAMILY_INTER_SEMIBOLD && px == 22, "headline steps down", fam, px);
+        a = desk_font_role_atlas(1, 32, 24, &fam, &px); /* H12 line is taller than 24: H9 */
+        expect(a != NULL && fam == DESK_FAMILY_INTER_SEMIBOLD && px == 18, "headline steps down", fam, px);
     }
     if (bad == 0) {
         printf("font_roles_unit: ok\n");
