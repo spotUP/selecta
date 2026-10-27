@@ -373,6 +373,9 @@ SEL_TAG(SRC, DESCRIPTOR,       0x7017, PTR)
  * the desktop should offer a sync on launch (sel_source_sync_due: a remote, enabled source never synced or stale). */
 SEL_TAG(SRC, SYNCED,           0x7018, INT)
 SEL_TAG(SRC, DUE,              0x7019, INT)
+/* SOURCES rows (I582): unix time (whole days) the user snoozed this source's sync offer with the banner's Sync button while the
+ * row was unticked (library.sync_snoozed); 0 none. The desktop writes the pref back from these, so it never reads prefs. */
+SEL_TAG(SRC, SNOOZED,          0x701a, INT)
 
 /* META STR values come from the song file. The host stores and draws UTF-8: a value that is valid UTF-8 is kept,
  * anything else is read as ISO-8859-1 (Amiga module text) and converted where it enters the host (I444,

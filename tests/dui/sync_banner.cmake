@@ -6,6 +6,9 @@
 #   - the engine ran the testsrc sync: its SOURCES row now counts 3 songs (the plugin writes 3), and it is no longer due,
 #   - the banner is gone ("nag 0") although the unticked sources were never synced (no network sync was started).
 # Second run: "Not now" hides the banner for the rest of the stale window.
+# Third run (I582): a banner sync that FAILS (SELECTA_TESTSRC_FAIL makes testsrc fail like a source without network) must not
+# make the banner vanish: Sync stores no global notice, only the unticked rows are snoozed (per source), the failed row stays
+# due with its checkbox and the Sync button, and pressing Sync again sends it again.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 set(DUI_SYNC_BANNER ON) # I527: this test runs with the banner on (see dui_run.cmake)
 include("${HERE}/dui_run.cmake")
@@ -105,3 +108,53 @@ click_run(b "${lc} q@1500")
 if(NOT b MATCHES "nag 0 syncs 0\n")
   message(FATAL_ERROR "run B: Not now did not hide the banner:\n${b}")
 endif()
+
+# Run C (I582): fresh library, testsrc fails. Untick everything but testsrc, press Sync, wait for the failure, press Sync again.
+set(db "${WORK}/library2.db")
+dui_run(init2 --db "${db}" --ui desktop --backend mem --view home --canvas 900x600 --clock fixed --stats)
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db}" INPUT_FILE "${HERE}/fixture_library.sql"
+  RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "loading the fixture failed: ${err}")
+endif()
+set(ENV{SELECTA_TESTSRC_FAIL} 1)
+click_run(f0 "m5,5@200 m6,6@400 m7,7@600 q@800")
+set(tokens "")
+set(t 300)
+foreach(k ${want_keys})
+  if(NOT k STREQUAL "testsrc")
+    rect_center(row "${f0}" "nagrow [0-9]+ ${k}\\|1")
+    click_at(c ${row_x} ${row_y} ${t})
+    string(APPEND tokens " ${c}")
+    math(EXPR t "${t} + 200")
+  endif()
+endforeach()
+rect_center(sync "${f0}" "nagsync")
+click_at(sc ${sync_x} ${sync_y} ${t})
+math(EXPR t2 "${t} + 2500")
+click_at(sc2 ${sync_x} ${sync_y} ${t2})
+math(EXPR tq "${t2} + 2500")
+# One press: the unticked rows are snoozed and gone, the ticked failing row is still there, marked failed, with its Sync button.
+math(EXPR tq1 "${t} + 2000")
+click_run(f1 "${tokens} ${sc} q@${tq1}")
+if(NOT f1 MATCHES "nag 1 syncs 1\n")
+  message(FATAL_ERROR "run C: after a failed banner sync the banner must hold exactly the failed row (nag 1 syncs 1):\n${f1}")
+endif()
+if(NOT f1 MATCHES "nagsync [0-9]+ [0-9]+ [0-9]+ [0-9]+\n")
+  message(FATAL_ERROR "run C: the Sync button is gone after a failed sync:\n${f1}")
+endif()
+if(NOT f1 MATCHES "nagrow 0 testsrc\\|1 ")
+  message(FATAL_ERROR "run C: the failed row lost its checkbox:\n${f1}")
+endif()
+if(NOT f1 MATCHES "nagstate 0 testsrc\\|failed\n")
+  message(FATAL_ERROR "run C: the failed row is not marked failed:\n${f1}")
+endif()
+# A second press sends the failed row again.
+click_run(f2 "${tokens} ${sc} ${sc2} q@${tq}")
+if(NOT f2 MATCHES "nag 1 syncs 2\n")
+  message(FATAL_ERROR "run C: the second Sync press did not send the failed row again (nag 1 syncs 2):\n${f2}")
+endif()
+if(NOT f2 MATCHES "nagstate 0 testsrc\\|failed\n")
+  message(FATAL_ERROR "run C: the retried row is not marked failed again:\n${f2}")
+endif()
+unset(ENV{SELECTA_TESTSRC_FAIL})

@@ -60,6 +60,10 @@ SEL_PREF(LIBRARY_SOURCES_OFF, "library.sources_off", "",                        
  * offer). library.sync_notice_at is the unix time Not now was pressed; the offer returns once that is as old as the limit. */
 SEL_PREF(LIBRARY_SYNC_STALE_DAYS, "library.sync_stale_days", "30",                              SEL_PREF_PLAIN)
 SEL_PREF(LIBRARY_SYNC_NOTICE_AT,  "library.sync_notice_at",  "0",                               SEL_PREF_PLAIN)
+/* I582: per-source snooze of the offer. Comma separated "id:days" (days since the unix epoch the banner's Sync button was
+ * pressed with that source unticked). The engine counts a source's offer from the later of this and library.sync_notice_at.
+ * Whole days keep up to eight remote sources inside the 128 character pref limit. */
+SEL_PREF(LIBRARY_SYNC_SNOOZED,    "library.sync_snoozed",    "",                                SEL_PREF_PLAIN)
 SEL_PREF(LIBRARY_SMART_VIEW, "library.smart_playlist", "smart",                                   SEL_PREF_PLAIN)
 SEL_PREF(LIBRARY_SMART_TOP,  "library.smart_top",  "3",                                           SEL_PREF_PLAIN)
 #ifndef __amigaos__

@@ -427,7 +427,7 @@ struct sel_engine {
     sel_tag st_tags[8][5];
     uint32_t sources_listed;                  /* SOURCES rows answered (DUI-P4-3) */
     uint32_t evt_dropped;                     /* events emit() could not queue because evt_q was full (I546) */
-    sel_tag src_tags[16][9];                  /* one SOURCES row per registered source (registry holds 16) */
+    sel_tag src_tags[16][10];                  /* one SOURCES row per registered source (registry holds 16) */
     char st_key[8][SEL_DEFERRED_PATH_MAX];
     char st_name[8][128];
     char st_value[8][SEL_STICKER_VALUE_MAX];
@@ -4048,7 +4048,7 @@ static void sources_row(void* ctx, const char* id, const char* name, const char*
     sel_tag* t;
     sel_message r;
     int songs, enabled;
-    int64_t synced;
+    int64_t synced, snoozed, notice;
     if (f->n >= 16u) return;
     t = e->src_tags[f->n++];
     songs = e->lib != NULL ? sel_library_source_songs(e->lib, id) : 0;
@@ -4069,12 +4069,16 @@ static void sources_row(void* ctx, const char* id, const char* name, const char*
     t[6].tag = SEL_SRC_SYNCED;
     t[6].value = (uintptr_t)synced;
     t[7].tag = SEL_SRC_DUE; /* I527: only a remote, enabled source of an open library is offered a sync */
+    snoozed = sel_source_snooze_at(e->prefs.value[SEL_PREF_LIBRARY_SYNC_SNOOZED], id); /* I582: per source, beside the global Not now */
+    notice = strtoll(e->prefs.value[SEL_PREF_LIBRARY_SYNC_NOTICE_AT], NULL, 10);
     t[7].value = (remote && enabled && e->lib != NULL &&
-                  sel_source_sync_due(synced, strtoll(e->prefs.value[SEL_PREF_LIBRARY_SYNC_NOTICE_AT], NULL, 10), (int64_t)time(NULL),
+                  sel_source_sync_due(synced, snoozed > notice ? snoozed : notice, (int64_t)time(NULL),
                                       (uint32_t)strtoul(e->prefs.value[SEL_PREF_LIBRARY_SYNC_STALE_DAYS], NULL, 10)))
                      ? 1u : 0u;
-    t[8].tag = SEL_TAG_END;
-    t[8].value = 0;
+    t[8].tag = SEL_SRC_SNOOZED;
+    t[8].value = (uintptr_t)snoozed;
+    t[9].tag = SEL_TAG_END;
+    t[9].value = 0;
     evt_init(&r, SEL_EVT_LIBRARY_RESULT);
     evt_tags(&r, t);
     emit(e, &r);

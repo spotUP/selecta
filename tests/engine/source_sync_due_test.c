@@ -24,6 +24,19 @@ int main(void) {
     check(sel_source_sync_due(0, 0, now, 0) == 0, "days 0 turns the offer off for a never synced source");
     check(sel_source_sync_due(now - 900 * day, 0, now, 0) == 0, "days 0 turns the offer off for a stale source");
     check(sel_source_sync_due(now - 1 * day, 0, now, 1) == 1, "one day setting: exactly one day old is stale");
+    /* I582: per-source snooze list "id:days"; the later of it and the global notice starts the clock. */
+    check(sel_source_snooze_at("", "asma") == 0, "empty list has no snooze");
+    check(sel_source_snooze_at("asma:100,hvsc:200", "hvsc") == 200 * day, "second entry found");
+    check(sel_source_snooze_at("asma:100,hvsc:200", "asma") == 100 * day, "first entry found");
+    check(sel_source_snooze_at("asma:100,hvsc:200", "as") == 0, "a prefix of an id is not the id");
+    check(sel_source_snooze_at("asma:100", "asma:1") == 0, "an id longer than the entry does not match");
+    check(sel_source_snooze_at("asma:100,hvsc:200", "sndh") == 0, "absent id has none");
+    {
+        int64_t sn = sel_source_snooze_at("asma:990", "asma");
+        check(sel_source_sync_due(0, sn > 0 ? sn : 0, now, 30) == 0, "never synced but snoozed 10 days ago is hidden");
+        check(sel_source_sync_due(0, sel_source_snooze_at("asma:990", "hvsc"), now, 30) == 1, "another source's snooze does not hide this one");
+        check(sel_source_sync_due(0, sel_source_snooze_at("asma:960", "asma"), now, 30) == 1, "snooze 40 days old offers again");
+    }
     if (fails) return 1;
     printf("source_sync_due_ok\n");
     return 0;

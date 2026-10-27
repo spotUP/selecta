@@ -363,9 +363,11 @@ typedef struct desk {
     uint32_t flow_rec_n;
     char flow_snaps[2048];                        /* script `flowsnap` lines: the covers of the frame drawn so far, one line per snap (I400 test) */
     uint32_t lib_mode;       /* Library page mode: 0 composers, 1 tree, 2 column browser, 3 files, 4 history, 5 sources (DUI-P4-3 slices B, C; I265) */
-    struct { char key[24], kind[12], name[40], path[96]; int enabled; uint32_t count; int64_t synced; int due; } src[16]; /* the SOURCES rows of the Sources tab (I265) */
+    struct { char key[24], kind[12], name[40], path[96]; int enabled; uint32_t count; int64_t synced; int64_t snooze; int due; } src[16]; /* the SOURCES rows of the Sources tab (I265) */
     uint32_t src_n;          /* rows held in src */
     uint32_t nag_off;        /* bit i set: the sync offer (I527) has source row i unchecked; all start checked */
+    uint32_t sync_pending;   /* bit i set: a LIBRARY_SYNC for source row i is queued or running; cleared by its outcome (I582) */
+    uint32_t sync_failed;    /* bit i set: the last sync of source row i ended in ERROR sync_failed or sync_busy (I582) */
     uint32_t nag_syncs;      /* sources the offer's Sync button sent LIBRARY_SYNC for (the test's sentinel) */
     int nag_asked;           /* the launch SOURCES request was sent (I527) */
     int src_wait;            /* a SOURCES request is out: its first row replaces the held rows */
@@ -4232,6 +4234,7 @@ static const char* library_dump_build(desk* d) {
             for (k = 0; k < n; k++) {
                 sel_gui_rect row = nag_row_rect(d, pm, k, &idx), bx = nag_box_rect(d, row);
                 o = dump_put(d, o, "nagrow %u %s|%d %d %d %d %d\n", (unsigned)k, d->src[idx].key, !(d->nag_off & (1u << idx)), (int)bx.x, (int)bx.y, (int)bx.w, (int)bx.h);
+                o = dump_put(d, o, "nagstate %u %s|%s\n", (unsigned)k, d->src[idx].key, (d->sync_pending & (1u << idx)) ? "pending" : (d->sync_failed & (1u << idx)) ? "failed" : "idle");
             }
         }
     }
@@ -5132,14 +5135,67 @@ static int src_click(desk* d, sel_gui_rect mn, int32_t x, int32_t y) {
 static void src_sync_send(desk* d, uint32_t i) {
     char line[256], msg[64];
     snprintf(line, sizeof line, "LIBRARY_SYNC %s \"%s\"", d->src[i].key, d->src[i].path);
+    d->sync_pending |= 1u << i;
+    d->sync_failed &= ~(1u << i);
     snprintf(d->src_syncing, sizeof d->src_syncing, "%s", d->src[i].name);
     snprintf(msg, sizeof msg, "Syncing %s", d->src[i].name);
     desk_toast(d, msg);
     desk_send(d, line);
 }
 
-/* A click on the sync offer; 1 when it hit one of its controls. The reply to SOURCES clears the banner: the synced sources
- * are no longer due, and Not now stores library.sync_notice_at, which the engine counts from. */
+/* The row of src[] whose pending (or failed) sync the engine named: ERROR sync_failed carries the path sent in LIBRARY_SYNC,
+ * sync_busy the key, and the success LIBRARY_RESULT the path. -1 when no such row. */
+static int sync_row_find(const desk* d, uint32_t mask, const char* name) {
+    uint32_t i;
+    for (i = 0; i < d->src_n; i++) {
+        if ((mask & (1u << i)) && (strcmp(d->src[i].key, name) == 0 || strcmp(d->src[i].path, name) == 0)) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+/* A sync outcome for one row (I582): clears pending, marks failed, asks SOURCES so the due flags follow. */
+static void sync_row_done(desk* d, int row, int failed) {
+    d->sync_pending &= ~(1u << row);
+    if (failed) {
+        d->sync_failed |= 1u << row;
+    } else {
+        d->sync_failed &= ~(1u << row);
+    }
+    d->src_wait = 1;
+    desk_send(d, "SOURCES");
+    d->repaint = 1;
+}
+
+/* Stores the per-source snooze (library.sync_snoozed, I582) of the banner rows left unticked at Sync: "id:days" for them and
+ * for every source the engine already reported a snooze for, then asks SOURCES. The global notice stays untouched. */
+static void nag_snooze(desk* d, uint32_t unticked) {
+    char line[160], csv[128];
+    size_t n = 0;
+    uint32_t k;
+    csv[0] = '\0';
+    for (k = 0; k < d->src_n; k++) {
+        int64_t days = (unticked & (1u << k)) ? (int64_t)time(NULL) / 86400 : d->src[k].snooze / 86400;
+        char entry[48];
+        size_t len;
+        if (days <= 0) {
+            continue;
+        }
+        len = (size_t)snprintf(entry, sizeof entry, "%s%s:%lld", n > 0 ? "," : "", d->src[k].key, (long long)days);
+        if (n + len < sizeof csv) {
+            memcpy(csv + n, entry, len + 1u);
+            n += len;
+        }
+    }
+    snprintf(line, sizeof line, "PREF_SET library.sync_snoozed \"%s\"", csv);
+    desk_send(d, line);
+    d->src_wait = 1;
+    desk_send(d, "SOURCES");
+}
+
+/* A click on the sync offer; 1 when it hit one of its controls. Not now stores library.sync_notice_at, which the engine
+ * counts from. Sync stores no global notice (I582): its ticked rows stay due until their sync succeeds. */
 static void nag_dismiss(desk* d) {
     char line[96];
     snprintf(line, sizeof line, "PREF_SET library.sync_notice_at %lld", (long long)time(NULL));
@@ -5159,15 +5215,22 @@ static int nag_click(desk* d, sel_gui_rect mn, int32_t x, int32_t y) {
         }
     }
     if (in_rect(nag_sync_rect(d, mn), x, y)) {
+        uint32_t unticked = 0;
         for (k = 0; k < n; k++) {
             (void)nag_row_rect(d, mn, k, &idx);
-            if (!(d->nag_off & (1u << idx))) {
+            if (d->nag_off & (1u << idx)) {
+                unticked |= 1u << idx;
+            } else if (!(d->sync_pending & (1u << idx))) {
                 src_sync_send(d, idx);
                 d->nag_syncs++;
             }
         }
-        /* The unticked sources are a decision too: ask again at the next stale point, as Not now does. */
-        nag_dismiss(d);
+        /* The unticked sources are a decision too: snooze each one alone, so a failed sync of a ticked source keeps its row. */
+        d->nag_off &= ~unticked;
+        d->repaint = 1;
+        if (unticked != 0u) {
+            nag_snooze(d, unticked);
+        }
         return 1;
     }
     if (in_rect(nag_later_rect(d, mn), x, y)) {
@@ -5197,7 +5260,11 @@ static void draw_lib_nag(desk* d, sel_gui_rect mn) {
             sel_gui_rect in = rect_of(bx.x + bx.w / 4, bx.y + bx.h / 4, bx.w / 2, bx.h / 2);
             sel_gui_round_rect(d->canvas, in, lpx(d, 2), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
         }
-        if (d->src[idx].synced > 0) {
+        if (d->sync_pending & (1u << idx)) {
+            snprintf(line, sizeof line, "%s, Syncing", d->src[idx].name);
+        } else if (d->sync_failed & (1u << idx)) {
+            snprintf(line, sizeof line, "%s, Failed", d->src[idx].name);
+        } else if (d->src[idx].synced > 0) {
             snprintf(line, sizeof line, "%s, last synced %lld days ago", d->src[idx].name, (long long)((time(NULL) - d->src[idx].synced) / 86400));
         } else {
             snprintf(line, sizeof line, "%s, never synced", d->src[idx].name);
@@ -9163,6 +9230,7 @@ static void desk_on_event(void* state, const sel_message* evt) {
             d->src[n].count = (uint32_t)sel_tag_find(t, SEL_SRC_COUNT, 0);
             d->src[n].synced = (int64_t)sel_tag_find(t, SEL_SRC_SYNCED, 0);
             d->src[n].due = sel_tag_find(t, SEL_SRC_DUE, 0) != 0;
+            d->src[n].snooze = (int64_t)sel_tag_find(t, SEL_SRC_SNOOZED, 0);
             changed = memcmp(before, &d->src[n], sizeof before) != 0;
         }
         d->repaint |= changed && d->page == PG_LIBRARY; /* only the Library page draws these rows (banner, Sources tab); a page change repaints on its own */
@@ -9181,6 +9249,19 @@ static void desk_on_event(void* state, const sel_message* evt) {
     }
     /* I550: the SOURCES reply that follows a LIBRARY_SYNC only means the request was queued, never that the sync worked.
      * The outcome is the engine's own completion: a path LIBRARY_RESULT (success) or ERROR sync_failed/sync_busy (failure). */
+    if (evt->id == SEL_EVT_LIBRARY_RESULT && !src_row && d->sync_pending != 0u && evt->argc > 0 && evt->args[0].type == SEL_ARG_TAGS) {
+        int row = sync_row_find(d, d->sync_pending, (const char*)sel_tag_find(evt->args[0].v.t, SEL_SRC_PATH, (uintptr_t)""));
+        if (row >= 0) {
+            sync_row_done(d, row, 0);
+        }
+    }
+    if (evt->id == SEL_EVT_ERROR && d->sync_pending != 0u && evt->argc > 1 && evt->args[0].type == SEL_ARG_STR && evt->args[1].type == SEL_ARG_STR
+        && (strcmp(evt->args[0].v.s, "sync_failed") == 0 || strcmp(evt->args[0].v.s, "sync_busy") == 0)) {
+        int row = sync_row_find(d, d->sync_pending, evt->args[1].v.s);
+        if (row >= 0) {
+            sync_row_done(d, row, 1);
+        }
+    }
     if (evt->id == SEL_EVT_LIBRARY_RESULT && !src_row && !d->scan_pending && d->src_syncing[0] != '\0') {
         char msg[96];
         snprintf(msg, sizeof msg, "Synced %s", d->src_syncing);
