@@ -163,6 +163,16 @@ uint32_t mui_columns_for(uint32_t breakpoint, uint8_t out[MUI_COL_COUNT]);
 void mui_columns_format(uint32_t breakpoint, char* out, size_t cap);
 /* Cell text of one row; "" for the columns the engine row does not carry (the view model rows hold title and artist). */
 const char* mui_row_cell(const sel_view_row* r, uint32_t column);
+/* MUI-P3-4: the album, length and format cells of one row. The engine rows carry only title and artist, so these come from the
+ * snapshot: the format is the file extension of the row's song (queue rows: its queue entry's path, else the row text); the
+ * length is the open song's duration on its own queue row, else the shared unknown clock "--:--" (the engine keeps no length per
+ * queued song); the album is what the caller got from sel_engine_song_group for the row's path ("" when uncatalogued). */
+typedef struct mui_row_extra {
+    char album[64];
+    char length[16];
+    char format[16];
+} mui_row_extra;
+void mui_row_extra_fill(const sel_state* st, const sel_view_row* r, const char* album, mui_row_extra* out);
 
 /* MUI-P4-1: Home rows. SEL_ROW_HOME rows carry `key` plus `album` (song to play versus album to open) and `composer`. */
 typedef enum mui_home_kind { MUI_HOME_NONE = 0, MUI_HOME_SONG, MUI_HOME_ALBUM, MUI_HOME_COMPOSER } mui_home_kind;

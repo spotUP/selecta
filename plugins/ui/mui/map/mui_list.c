@@ -126,3 +126,32 @@ const char* mui_row_cell(const sel_view_row* r, uint32_t column) {
         return "";
     }
 }
+
+void mui_row_extra_fill(const sel_state* st, const sel_view_row* r, const char* album, mui_row_extra* out) {
+    const char* path = r->text != NULL ? r->text : "";
+    const char* dot;
+    const char* slash;
+    uint32_t i;
+    int playing = r->kind == SEL_ROW_QUEUE && st->song.queue_id != 0u && st->song.queue_id == r->id;
+    out->album[0] = out->format[0] = '\0';
+    if (r->kind == SEL_ROW_QUEUE && st->queue != NULL && st->queue_text != NULL) {
+        for (i = 0; i < st->queue_count; i++) {
+            if (st->queue[i].id == r->id) {
+                path = st->queue_text + st->queue[i].path_offset;
+                break;
+            }
+        }
+    }
+    dot = strrchr(path, '.');
+    slash = strrchr(path, '/');
+    if (slash == NULL) {
+        slash = strrchr(path, ':');
+    }
+    if (dot != NULL && (slash == NULL || dot > slash) && strlen(dot + 1) < sizeof out->format) {
+        strcpy(out->format, dot + 1);
+    }
+    if (album != NULL) {
+        snprintf(out->album, sizeof out->album, "%s", album);
+    }
+    sel_uim_clock(out->length, sizeof out->length, playing ? st->song.duration_ms : 0u, playing && st->song.duration_ms != 0u);
+}

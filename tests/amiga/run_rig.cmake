@@ -425,8 +425,10 @@ elseif(TAG STREQUAL "M4MUILIST")
     message(FATAL_ERROR "RED[M4MUILIST]: ${P} still runs after Break:\n${procs}")
   endif()
   fetch(out "RAM:mui-out.txt")
+  # The song's duration is 0 (unknown) in the engine snapshot for this mod (song_ms=0), so the length cell is the shared unknown clock;
+  # row0 lists all five cells of the first row (Format is hidden by width at cols=3), header the shown column titles.
   # MUI-P3-4 / P3-7: the exit stats line of the List: plain back end (no NList), the 3-column format, the display hook ran.
-  if(NOT out MATCHES "ui_list id=mui backend=plain style=2 cols=3 format=BAR,BAR, rows=1 indent=0 hook_calls=[1-9]")
+  if(NOT out MATCHES "ui_list id=mui backend=plain style=2 cols=3 format=BAR,BAR, rows=1 indent=0[ \n]+hook_calls=[1-9][0-9]*[ \n]+song_qid=[0-9]+ song_ms=[0-9]+ row0_id=[0-9]+[ \n]+header={Title\\|Artist\\|Length} row0={meme.mod\\|[^|}]*\\|[^|}]*\\|[0-9-][0-9-]:[0-9-][0-9-]\\|mod}")
     message(FATAL_ERROR "RED[M4MUILIST]: MUI-P3-4: ui_list line missing or wrong:\n${out}")
   endif()
   message(STATUS "M4MUILIST MUI-P3-4: ${CMAKE_MATCH_0}")

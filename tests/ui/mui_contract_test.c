@@ -442,6 +442,30 @@ static void test_columns(void) {
     }
 }
 
+/* MUI-P3-4: the album, length and format cells come from the snapshot, not from the (title, artist) engine row. */
+static void test_row_cells(void) {
+    static sel_state st;
+    static const char arena[] = "RAM:mui-mm/meme.mod\0Work:other/x.xm";
+    sel_queue_entry q[2];
+    sel_view_row r;
+    mui_row_extra x;
+    memset(&st, 0, sizeof st);
+    memset(&r, 0, sizeof r);
+    q[0].id = 5; q[0].path_offset = 0;
+    q[1].id = 6; q[1].path_offset = 20;
+    st.queue = q; st.queue_count = 2; st.queue_text = arena;
+    st.song.queue_id = 5; st.song.duration_ms = 185000;
+    r.kind = SEL_ROW_QUEUE; r.id = 5; r.text = "That Meme Again";
+    mui_row_extra_fill(&st, &r, "Evoke", &x);
+    CHECK(strcmp(x.format, "mod") == 0 && strcmp(x.length, "03:05") == 0 && strcmp(x.album, "Evoke") == 0, "playing row: '%s' '%s' '%s'", x.format, x.length, x.album);
+    r.id = 6;
+    mui_row_extra_fill(&st, &r, NULL, &x);
+    CHECK(strcmp(x.format, "xm") == 0 && strcmp(x.length, "--:--") == 0 && x.album[0] == '\0', "queued row: '%s' '%s' '%s'", x.format, x.length, x.album);
+    r.kind = SEL_ROW_FILE; r.text = "dir.x/readme";
+    mui_row_extra_fill(&st, &r, NULL, &x);
+    CHECK(x.format[0] == '\0', "no extension after the last slash: '%s'", x.format);
+}
+
 static void test_style_mask(void) {
     CHECK(__builtin_popcount(mui_style_mask(1)) == 6 && __builtin_popcount(mui_style_mask(0)) == 5, "mask sizes %d %d", __builtin_popcount(mui_style_mask(1)), __builtin_popcount(mui_style_mask(0)));
     CHECK((mui_style_mask(0) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_COVERFLOW)) == 0 && (mui_style_mask(0) & SEL_VIEW_STYLE_BIT(SEL_VIEW_STYLE_GRID)) != 0, "planar drops only cover flow");
@@ -737,6 +761,7 @@ int main(int argc, char** argv) {
         test_list_drill();
     } else if (strcmp(argv[1], "columns") == 0) {
         test_columns();
+        test_row_cells();
     } else if (strcmp(argv[1], "style-menu") == 0) {
         test_style_menu();
     } else if (strcmp(argv[1], "style-mask") == 0) {

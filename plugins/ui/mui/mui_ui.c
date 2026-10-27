@@ -49,6 +49,7 @@ static void mui_report(mui_fail why);
 typedef struct mui_cells {
     char title[MUI_LIST_TEXT];
     char artist[64];
+    mui_row_extra extra; /* album, length, format */
 } mui_cells;
 
 typedef struct mui_state {
@@ -61,7 +62,7 @@ typedef struct mui_state {
     uint32_t drops;          /* AppWindow arguments sent to the engine (MUI-P5-6): stat drops */
     sel_tag stats[7];
     sel_uim uim;             /* the frame model the controls are driven from (MUI-P2-6) */
-    char list_stat[160];     /* the list sentinel printed as ui_list: back end, style, columns, rows (native List only) */
+    char list_stat[480];     /* the list sentinel printed as ui_list: back end, style, columns, rows (native List only) */
 #ifdef SEL_MUI_NATIVE
     Object* app;
     struct MsgPort* tport;          /* timer.device reply port: bounds the native wait by timeout_ms */
@@ -317,10 +318,26 @@ static ULONG mui_list_display(struct Hook* hook, char** array, mui_cells* cells)
     (void)hook;
     g_list_hook_calls++;
     for (k = 0; k < n; k++) {
-        const char* t = cells == NULL ? titles[cols[k]] : cols[k] == MUI_COL_TITLE ? cells->title : cols[k] == MUI_COL_ARTIST ? cells->artist : "";
+        const char* t = cells == NULL ? titles[cols[k]] : cols[k] == MUI_COL_TITLE ? cells->title : cols[k] == MUI_COL_ARTIST ? cells->artist : cols[k] == MUI_COL_ALBUM ? cells->extra.album : cols[k] == MUI_COL_LENGTH ? cells->extra.length : cells->extra.format;
         array[k] = (char*)t;
     }
     return 0;
+}
+
+/* The column titles the display hook returns (cells NULL), joined by '|': the rig's read-back of the header row (ui_list header=). */
+static void mui_list_header(char* out, size_t cap) {
+    char* arr[MUI_COL_COUNT];
+    uint32_t k, n = mui_columns_for(g_state.col_bp, (uint8_t[MUI_COL_COUNT]){0});
+    size_t used = 0;
+    out[0] = '\0';
+    for (k = 0; k < MUI_COL_COUNT; k++) {
+        arr[k] = (char*)"";
+    }
+    (void)mui_list_display(&g_list_hook, arr, NULL);
+    g_list_hook_calls--; /* a read-back is not a display call */
+    for (k = 0; k < n && used + 1u < cap; k++) {
+        used += (size_t)snprintf(out + used, cap - used, "%s%s", k > 0 ? "|" : "", arr[k]);
+    }
 }
 
 /* MUI-P3-1: the 3.8 Listview with its plain List (the back end mui_list_backend_pick gives without NList). */
@@ -396,7 +413,7 @@ static void mui_refresh(mui_state* s) {
     if (v != NULL) {
         int32_t active = -1;
         uint32_t n = mui_list_build(mui_list_backend_pick(0, 0), s->entries, MUI_ROWS_MAX, v, &active);
-        uint32_t sig = 2166136261u ^ v->window_start ^ (n << 20) ^ ((uint32_t)(active + 1) << 8) ^ (s->lay.breakpoint << 28);
+        uint32_t sig = 2166136261u ^ v->window_start ^ (n << 20) ^ ((uint32_t)(active + 1) << 8) ^ (s->lay.breakpoint << 28) ^ (st->song.duration_ms * 2654435761u) ^ st->song.queue_id;
         const char* c;
         active = mui_list_pending_resolve(&s->list_pending, active);
         if (s->lay.breakpoint != s->col_bp && s->lay.breakpoint < SEL_UIM_BP_COUNT) { /* MUI-P3-4: another column set */
@@ -425,6 +442,14 @@ static void mui_refresh(mui_state* s) {
             for (i = 0; i < n; i++) {
                 snprintf(s->cell[i].title, sizeof s->cell[i].title, "%s", s->entries[i].text);
                 snprintf(s->cell[i].artist, sizeof s->cell[i].artist, "%s", mui_row_cell(&v->rows[i], MUI_COL_ARTIST));
+                {
+                    char rpath[256], grp[64];
+                    grp[0] = '\0';
+                    if (sel_engine_view_row_path(s->engine, i, rpath, sizeof rpath)) {
+                        (void)sel_engine_song_group(s->engine, rpath, grp, sizeof grp);
+                    }
+                    mui_row_extra_fill(st, &v->rows[i], grp, &s->cell[i].extra);
+                }
                 s->entry_ptr[i] = (const char*)&s->cell[i];
             }
             s->entry_ptr[n] = NULL;
@@ -438,9 +463,18 @@ static void mui_refresh(mui_state* s) {
             set(s->list, MUIA_List_Quiet, FALSE);
         }
         /* The sentinel the exit stats print (ui_list): which back end, style and column set the List runs, and how often its display hook ran. */
-        snprintf(s->list_stat, sizeof s->list_stat, "backend=%s style=%u cols=%u format=%s rows=%u indent=%u hook_calls=%u",
-                 mui_list_backend_pick(0, 0)->name, (unsigned)v->style, (unsigned)mui_columns_for(s->col_bp, (uint8_t[MUI_COL_COUNT]){0}),
-                 s->col_fmt, (unsigned)n, n > 1 ? (unsigned)(s->entries[n - 1].depth) : 0u, (unsigned)g_list_hook_calls);
+        {
+            char head[160], row0[320]; /* row0 lists all five cells of the first row, shown or hidden by width */
+            mui_list_header(head, sizeof head);
+            if (n > 0) {
+                snprintf(row0, sizeof row0, "%s|%s|%s|%s|%s", s->cell[0].title, s->cell[0].artist, s->cell[0].extra.album, s->cell[0].extra.length, s->cell[0].extra.format);
+            } else {
+                row0[0] = '\0';
+            }
+            snprintf(s->list_stat, sizeof s->list_stat, "backend=%s style=%u cols=%u format=%s rows=%u indent=%u hook_calls=%u song_qid=%u song_ms=%u row0_id=%u header={%s} row0={%s}",
+                     mui_list_backend_pick(0, 0)->name, (unsigned)v->style, (unsigned)mui_columns_for(s->col_bp, (uint8_t[MUI_COL_COUNT]){0}),
+                     s->col_fmt, (unsigned)n, n > 1 ? (unsigned)(s->entries[n - 1].depth) : 0u, (unsigned)g_list_hook_calls, (unsigned)st->song.queue_id, (unsigned)st->song.duration_ms, n > 0 ? (unsigned)v->rows[0].id : 0u, head, row0);
+        }
     }
 }
 
