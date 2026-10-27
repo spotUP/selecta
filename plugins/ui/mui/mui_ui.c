@@ -38,7 +38,9 @@ static void mui_report(mui_fail why);
 typedef struct mui_state {
     uint32_t opens; /* ui_open_mui sentinel (MUI-P1-5): windows opened */
     uint32_t wake_mask; /* engine wake signal (MUI-P1-7), 0 where there is none */
-    sel_tag stats[2];
+    uint32_t menu_sends; /* menu items that sent their action line to the engine (MUI-P2-4) */
+    sel_engine* engine;
+    sel_tag stats[3];
 #ifdef SEL_MUI_NATIVE
     Object* app;
     Object* win;
@@ -55,17 +57,104 @@ static void put_tag(sel_tag* t, uint32_t tag, uintptr_t value) {
 }
 
 #ifdef SEL_MUI_NATIVE
+/* MUI-P2-3: the Menustrip built from the action table (mui_menu_build). MUI keeps the title and shortcut pointers, so the
+ * rows and the one-character shortcut strings are static. A Menuitem trigger is a ReturnID (MENU_ID_BASE + row) that the
+ * wait loop turns into the row's protocol line for the engine (MUI-P2-4). */
+#define MENU_MAX 160
+#define MENU_ID_BASE 0x1000L
+static mui_menu_item g_menu[MENU_MAX];
+static char g_menu_sc[MENU_MAX][2];
+static uint32_t g_menu_n;
+
+static Object* menu_child(Object* parent, ULONG cls_is_menu, const char* title, Object** cache_key, const char** names, Object** objs,
+                          uint32_t* count, const char* want) {
+    uint32_t i;
+    Object* o;
+    (void)cls_is_menu;
+    (void)cache_key;
+    for (i = 0; i < *count; i++) {
+        if (strcmp(names[i], want) == 0) {
+            return objs[i];
+        }
+    }
+    o = MUI_NewObject(cls_is_menu ? (char*)MUIC_Menu : (char*)MUIC_Menuitem,
+                      cls_is_menu ? MUIA_Menu_Title : MUIA_Menuitem_Title, (ULONG)title, TAG_DONE);
+    if (o != NULL) {
+        DoMethod(parent, OM_ADDMEMBER, o);
+        names[*count] = title;
+        objs[*count] = o;
+        (*count)++;
+    }
+    return o;
+}
+
+static Object* mui_menu_strip(void) {
+    static const char* t_name[48];
+    static Object* t_obj[48];
+    static const char* s_name[96];
+    static Object* s_obj[96];
+    uint32_t nt = 0, ns = 0, i;
+    Object* strip = MUI_NewObject((char*)MUIC_Menustrip, TAG_DONE);
+    if (strip == NULL) {
+        return NULL;
+    }
+    g_menu_n = mui_menu_build(g_menu, MENU_MAX);
+    if (g_menu_n > MENU_MAX) {
+        g_menu_n = MENU_MAX;
+    }
+    for (i = 0; i < g_menu_n; i++) {
+        mui_menu_item* m = &g_menu[i];
+        Object* menu = menu_child(strip, 1, m->title, NULL, t_name, t_obj, &nt, m->title);
+        Object* parent = menu;
+        Object* item;
+        if (menu == NULL) {
+            continue;
+        }
+        if (m->sub[0] != '\0') {
+            static char key[96][80];
+            char* k = key[ns < 96 ? ns : 95];
+            snprintf(k, 80, "%s/%s", m->title, m->sub);
+            parent = menu_child(menu, 0, m->sub, NULL, s_name, s_obj, &ns, k);
+            if (parent == NULL) {
+                continue;
+            }
+        }
+        g_menu_sc[i][0] = m->shortcut;
+        g_menu_sc[i][1] = '\0';
+        item = MUI_NewObject((char*)MUIC_Menuitem, MUIA_Menuitem_Title, (ULONG)m->item,
+                             MUIA_Menuitem_Shortcut, (ULONG)(m->shortcut != '\0' ? g_menu_sc[i] : NULL), TAG_DONE);
+        if (item == NULL) {
+            continue;
+        }
+        DoMethod(parent, OM_ADDMEMBER, item);
+        DoMethod(item, MUIM_Notify, MUIA_Menuitem_Trigger, MUIV_EveryTime, MUIV_Notify_Application, 2,
+                 MUIM_Application_ReturnID, (ULONG)(MENU_ID_BASE + (LONG)i));
+    }
+    return strip;
+}
+
+/* A fired Menuitem: the same line the desktop sends for the action id (MUI-P2-4). */
+static void mui_menu_fire(mui_state* s, uint32_t row) {
+    const char* line = row < g_menu_n ? mui_menu_line(g_menu[row].id) : NULL;
+    char pool[1024];
+    if (line != NULL && s->engine != NULL && sel_engine_send_line(s->engine, line, pool, sizeof pool) == SEL_CODEC_OK) {
+        s->menu_sends++;
+    }
+}
+
 /* MUI-P1-3: muimaster.library v19 (MUI 3.8), one Application with one Window. The sentinel counts after the window
  * is open (MUI-P1-5), so ui_open_mui=1 proves the window really opened. */
 static void* mui_open(const sel_ui_open_args* a) {
     mui_state* s = &g_state;
     ULONG open = 0;
-    (void)a;
+    Object* strip;
+    s->engine = a != NULL ? a->engine : NULL;
     MUIMasterBase = OpenLibrary((CONST_STRPTR)MUIMASTER_NAME, 19);
     if (MUIMasterBase == NULL) {
         mui_report(MUI_FAIL_NO_LIBRARY);
         return NULL;
     }
+    strip = mui_menu_strip();
     s->app = ApplicationObject, MUIA_Application_Title, (ULONG) "Selecta", MUIA_Application_Base, (ULONG) "SELECTA",
         MUIA_Application_Version, (ULONG) "$VER: Selecta MUI 1.0",
         SubWindow, s->win = WindowObject, MUIA_Window_Title, (ULONG) "Selecta", MUIA_Window_ID, SEL_MAKE_ID('S', 'E', 'L', 'M'),
@@ -73,10 +162,13 @@ static void* mui_open(const sel_ui_open_args* a) {
              * The HVSpace child gives the group unbounded height: a lone Text object has a fixed maximum height and MUI
              * never sizes a window beyond its contents' maximum, which left the window 41 pixels high. */
             MUIA_Window_Width, MUIV_Window_Width_Screen(100), MUIA_Window_Height, MUIV_Window_Height_Screen(100),
-            MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Centered,
+            MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Centered, MUIA_Window_Menustrip, (ULONG)strip,
             WindowContents, VGroup, Child, TextObject, MUIA_Text_Contents, (ULONG) "Selecta", End,
                 Child, HVSpace, End, End, End;
     if (s->app == NULL) {
+        if (strip != NULL) {
+            MUI_DisposeObject(strip);
+        }
         CloseLibrary(MUIMasterBase);
         MUIMasterBase = NULL;
         mui_report(MUI_FAIL_NO_WINDOW);
@@ -104,6 +196,9 @@ static int mui_io_new_input(void* ctx, uint32_t* sigs) {
     ULONG got = 0;
     LONG id = (LONG)DoMethod(((mui_state*)ctx)->app, MUIM_Application_NewInput, &got);
     *sigs = (uint32_t)got;
+    if (id >= MENU_ID_BASE && id < MENU_ID_BASE + (LONG)g_menu_n) {
+        mui_menu_fire((mui_state*)ctx, (uint32_t)(id - MENU_ID_BASE));
+    }
     return id == (LONG)MUIV_Application_ReturnID_Quit ? MUI_WAIT_ID_QUIT : (int)id;
 }
 
@@ -188,8 +283,10 @@ static const sel_tag* mui_stats(void* state) {
     (void)state;
     s->stats[0].tag = SEL_UI_STAT_OPEN_MUI;
     s->stats[0].value = s->opens;
-    s->stats[1].tag = SEL_TAG_END;
-    s->stats[1].value = 0;
+    s->stats[1].tag = SEL_UI_STAT_MENUS;
+    s->stats[1].value = s->menu_sends;
+    s->stats[2].tag = SEL_TAG_END;
+    s->stats[2].value = 0;
     return s->stats;
 }
 
