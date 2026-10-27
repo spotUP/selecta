@@ -702,6 +702,37 @@ if(NOT SEL_AMIGA)
   set_tests_properties(engine-pcm-song-leaves-voice-only-output engine-pcm-song-falls-back-to-paula14
                        engine-voice-song-stays-on-paula PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "pcm_route: ok")
   set_tests_properties(browse-hides-unrecognised-files PROPERTIES PASS_REGULAR_EXPRESSION "browse_filter_ok")
+  # M4-AX-0-1 / M4-AX-0-2: the shared reply layer (apps/common/ctlexec.c) returns rc and RESULT lines.
+  add_executable(ctl_exec_test engine/ctl_exec_test.c ../apps/common/ctlexec.c)
+  target_include_directories(ctl_exec_test PRIVATE ${PROJECT_SOURCE_DIR}/apps/common)
+  target_link_libraries(ctl_exec_test PRIVATE selecta_core)
+  add_test(NAME ctl-exec-result COMMAND ctl_exec_test status)
+  add_test(NAME commands-reflection-format COMMAND ctl_exec_test commands)
+  add_test(NAME result-event-commands COMMAND ctl_exec_test raw)
+  # M4-AX-3-1 / M4-AX-3-4: the ARexx message mapping through the shared dispatcher (the Amiga half is cross-built).
+  add_executable(arexx_test engine/arexx_test.c ../apps/common/ctlexec.c ../plugins/scripting/arexx/arexx_core.c)
+  target_include_directories(arexx_test PRIVATE ${PROJECT_SOURCE_DIR}/apps/common ${PROJECT_SOURCE_DIR}/plugins/scripting/arexx)
+  target_link_libraries(arexx_test PRIVATE selecta_core)
+  add_test(NAME arexx-dispatch-reach COMMAND arexx_test reach)
+  add_test(NAME arexx-dispatch-rc COMMAND arexx_test rc)
+  add_test(NAME arexx-port-names COMMAND arexx_test names)
+  set_tests_properties(arexx-dispatch-reach arexx-dispatch-rc arexx-port-names PROPERTIES TIMEOUT 60 LABELS engine
+                       PASS_REGULAR_EXPRESSION "arexx_test [a-z]+ ok")
+  # M4-AX-2-1: the commands.def build check accepts the real table and rejects a row without a label and one whose
+  # argnames do not match the signature.
+  add_test(NAME commands-def-check COMMAND ${CMAKE_COMMAND} -DSEL_CMD_DEF=${PROJECT_SOURCE_DIR}/include/selecta/commands.def
+           -P ${PROJECT_SOURCE_DIR}/cmake/selecta_cmd_check.cmake)
+  add_test(NAME commands-def-check-no-label COMMAND ${CMAKE_COMMAND}
+           -DSEL_CMD_DEF=${CMAKE_CURRENT_SOURCE_DIR}/cmake_fixtures/commands_no_label.def
+           -P ${PROJECT_SOURCE_DIR}/cmake/selecta_cmd_check.cmake)
+  add_test(NAME commands-def-check-bad-argnames COMMAND ${CMAKE_COMMAND}
+           -DSEL_CMD_DEF=${CMAKE_CURRENT_SOURCE_DIR}/cmake_fixtures/commands_bad_argnames.def
+           -P ${PROJECT_SOURCE_DIR}/cmake/selecta_cmd_check.cmake)
+  set_tests_properties(commands-def-check PROPERTIES PASS_REGULAR_EXPRESSION "commands.def check passed")
+  set_tests_properties(commands-def-check-no-label PROPERTIES PASS_REGULAR_EXPRESSION "without argnames and label")
+  set_tests_properties(commands-def-check-bad-argnames PROPERTIES PASS_REGULAR_EXPRESSION "2 argnames for signature")
+  set_tests_properties(ctl-exec-result commands-reflection-format result-event-commands PROPERTIES TIMEOUT 60 LABELS engine
+                       PASS_REGULAR_EXPRESSION "ctl_exec: ok")
 endif()
 
 # I182a: composer canonical key and display name golden cases.
@@ -737,6 +768,12 @@ if(NOT SEL_AMIGA)
   add_test(NAME control-socket
     COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/m12/control_socket.sh" "$<TARGET_FILE:selecta>"
       "${SEL_CLI}" "${CMAKE_CURRENT_SOURCE_DIR}/m12/wait.keys" "${CMAKE_CURRENT_BINARY_DIR}/control_socket")
+
+  # M4-AX-0-4 ctl-socket-result (and M4-AX-2-4 QUIT): the one reachability test of the result reply and the new verbs.
+  add_test(NAME ctl-socket-result
+    COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/m12/ctl_socket_result.sh" "$<TARGET_FILE:selecta>"
+      "${SEL_CLI}" "${CMAKE_CURRENT_SOURCE_DIR}/m12/wait.keys" "${CMAKE_CURRENT_BINARY_DIR}/ctl_socket_result" "${SEL_COUNT_CMD}" "${SEL_TESTMOD}")
+  set_tests_properties(ctl-socket-result PROPERTIES TIMEOUT 60 LABELS engine PASS_REGULAR_EXPRESSION "ctl-socket-result ok")
 
   # T38 (row I80): the integration host and the fake Now Playing backend.
   add_test(NAME integration-nowplaying

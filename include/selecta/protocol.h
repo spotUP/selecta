@@ -9,7 +9,7 @@
 SEL_EXTERN_C_BEGIN
 
 typedef enum sel_cmd_id {
-#define SEL_CMD(id, args, area) SEL_CMD_##id,
+#define SEL_CMD(id, args, area, argnames, label) SEL_CMD_##id,
 #include <selecta/commands.def>
 #undef SEL_CMD
     SEL_CMD_COUNT
@@ -43,7 +43,7 @@ typedef struct sel_arg {
 #define SEL_MAX_ARGS 8
 
 /* Compile-time check: no signature in the tables is longer than SEL_MAX_ARGS. */
-#define SEL_CMD(id, args, area) typedef char sel_sig_fits_cmd_##id[(sizeof(args) - 1 <= SEL_MAX_ARGS) ? 1 : -1];
+#define SEL_CMD(id, args, area, argnames, label) typedef char sel_sig_fits_cmd_##id[(sizeof(args) - 1 <= SEL_MAX_ARGS) ? 1 : -1];
 #include <selecta/commands.def>
 #undef SEL_CMD
 #define SEL_EVT(id, args) typedef char sel_sig_fits_evt_##id[(sizeof(args) - 1 <= SEL_MAX_ARGS) ? 1 : -1];
@@ -61,6 +61,8 @@ typedef struct sel_message {
 const char* sel_cmd_name(uint32_t id);
 const char* sel_cmd_args(uint32_t id);
 const char* sel_cmd_area(uint32_t id); /* transport, queue, playlists, view or protocol */
+const char* sel_cmd_argnames(uint32_t id); /* space separated names, [optional] and repeating..., see commands.def */
+const char* sel_cmd_label(uint32_t id);    /* the verb's name for people, full English words */
 int sel_cmd_by_name(const char* name, uint32_t* out);
 const char* sel_evt_name(uint32_t id);
 const char* sel_evt_args(uint32_t id);

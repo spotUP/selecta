@@ -1,10 +1,11 @@
-add_executable(selecta main.c ../common/integration_host.c ../common/catalogue.c ../common/startup_error.c)
+add_executable(selecta main.c ../common/integration_host.c ../common/catalogue.c ../common/startup_error.c ../common/ctlexec.c)
 target_include_directories(selecta PRIVATE ../common)
 target_include_directories(selecta PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
 target_link_libraries(selecta PRIVATE selecta_registry)
 # The control socket is POSIX only; the Amiga's equivalent is the ARexx port (M4).
 if(SEL_AMIGA)
   target_compile_definitions(selecta PRIVATE SEL_NO_CONTROL_SOCKET)
+  target_include_directories(selecta PRIVATE ${PROJECT_SOURCE_DIR}/plugins/scripting/arexx)
   target_sources(selecta PRIVATE ../common/amiga_start.c ../common/stack_canary.c ../common/amiga_startup_error.c)
 else()
   target_sources(selecta PRIVATE ../common/ctlsock.c)

@@ -974,7 +974,7 @@ static int cmd_send(int argc, char** argv) {
     fputs("selecta-cli: send needs the control socket; the Amiga uses the ARexx port\n", stderr);
     return 2;
 #else
-    char path[256], line[1024], reply[1024];
+    char path[256], line[1024], reply[SEL_CTL_REPLY_MAX];
     int i;
     size_t used = 0;
     if (argc < 1) {
