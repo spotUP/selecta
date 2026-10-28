@@ -452,6 +452,8 @@ typedef struct sel_engine_library_item {
 } sel_engine_library_item;
 /* Fills out[0..max) with the saved playlists in the library, oldest first, and returns how many were written; 0 without a library. */
 uint32_t sel_engine_library_playlist_items(sel_engine* e, sel_engine_library_item* out, uint32_t max);
+/* I633: the song keys of saved playlist `id` in position order into out as "key\0key\0...\0\0"; returns how many. */
+uint32_t sel_engine_library_playlist_keys(sel_engine* e, uint32_t id, char* out, uint32_t cap);
 /* DUI-P4-18: the catalogue title of the song at `ref` (path or key) into out; 1 when it has one, else 0 (callers fall back to the file name). */
 int sel_engine_song_title(sel_engine* e, const char* ref, char* out, size_t cap);
 /* I258: the Queue page group of the song at `ref`: its album, else its source, into out; 1 when the song is catalogued, else 0 and out empty. */

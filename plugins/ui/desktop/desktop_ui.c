@@ -89,6 +89,8 @@ typedef struct song_ref {
     uint32_t qid;
     int removable;
     int home;   /* 1 = a Home shelf tile: Play Next also counts as a tile_queued */
+    uint32_t pl_id;    /* I633: the saved playlist whose page lists this row (0 = not a playlist row): the menu offers Remove from Playlist */
+    uint32_t pl_index; /* I633: the row's position in that playlist */
 } song_ref;
 
 /* Rows a frame registers (song_row_reg): the Queue page lists the rows that fit (at most ~30 at 1080p), the Library lists hold
@@ -192,6 +194,12 @@ typedef struct desk {
     char empty_text[64];     /* the one-line empty state the last page frame drew; empty when it drew none */
     uint32_t pl_draws, pl_rows, pl_cmds, folder_opens; /* frames drawn (sentinel), rows in the last one, verbs sent, folders source opens */
     uint32_t pl_sel_kind, pl_sel_id; /* the selected row: SEL_ROW_FOLDER or SEL_ROW_PLAYLIST and its database id (0 = none) */
+    uint32_t pls_id;         /* I633: the saved playlist the Playlists page shows as a page of songs (0 = the tree) */
+    char pls_name[96];
+    char* pls_buf;           /* its song keys, NUL separated, in playlist order */
+    uint32_t* pls_off;       /* offset of each key in pls_buf */
+    char (*pls_title)[96];   /* the catalogue title of each song, read once per reload */
+    uint32_t pls_want, pls_n, pls_stale, pls_scroll, pls_draws, pls_rows; /* songs, reload wanted, first row shown, frames drawn, rows in the last one */
     int pl_confirm;          /* 1 while the Delete button waits for its confirmation */
     int pl_edit;             /* 1 while the name field has the keyboard */
     char pl_name[64];
@@ -437,7 +445,7 @@ static int desk_event_frame(desk* d, int changed);
 static void desk_draw_focus(desk* d);
 static void desk_draw_tip(desk* d);
 static void desk_draw_overlay(desk* d);
-static void song_row_reg(desk* d, sel_gui_rect r, const char* path, uint32_t qid, int removable, int home);
+static song_row* song_row_reg(desk* d, sel_gui_rect r, const char* path, uint32_t qid, int removable, int home);
 static uint32_t desk_toast_wait(const desk* d);
 static void desk_toast(desk* d, const char* text);
 static int desk_add_folder(desk* d);
@@ -2166,11 +2174,13 @@ static const char* const queue_scope_name[3] = {"library", "album", "playlist"};
 static const char* const queue_scope_label[3] = {"Scope: Library", "Scope: Album", "Scope: Playlist"};
 
 static int song_menu_count(const desk* d) {
-    (void)d;
-    return SONG_MENU_ITEMS;
+    return SONG_MENU_ITEMS + (d->sm_ref.pl_id != 0u ? 1 : 0); /* I633: a playlist row adds Remove from Playlist */
 }
 
 static const char* song_menu_label(const desk* d, int32_t k) {
+    if (k == SONG_MENU_ITEMS) {
+        return "Remove from Playlist";
+    }
     return sel_uim_song_menu_label((uint32_t)k, d->sm_ref.removable != 0);
 }
 
@@ -2247,15 +2257,17 @@ static song_row* song_row_add(desk* d, sel_gui_rect r, const char* path, uint32_
     e->ref.qid = qid;
     e->ref.removable = removable;
     e->ref.home = home;
+    e->ref.pl_id = 0u;
+    e->ref.pl_index = 0u;
     e->more = rect_of(r.x + r.w - eh - in, r.h > lpx(d, 64) ? r.y + in : r.y + (r.h - eh) / 2, eh, eh);
     return e;
 }
 
-static void song_row_reg(desk* d, sel_gui_rect r, const char* path, uint32_t qid, int removable, int home) {
+static song_row* song_row_reg(desk* d, sel_gui_rect r, const char* path, uint32_t qid, int removable, int home) {
     song_row* e = song_row_add(d, r, path, qid, removable, home);
     int32_t eh = lpx(d, 20);
     if (e == NULL) {
-        return;
+        return NULL;
     }
     hover_reg(d, r);
     if (in_rect(r, d->ptr_x, d->ptr_y) || (d->sm_open && strcmp(d->sm_ref.path, path) == 0)) {
@@ -2263,6 +2275,7 @@ static void song_row_reg(desk* d, sel_gui_rect r, const char* path, uint32_t qid
         sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_ELLIPSIS, e->more, eh,
                           row_ink(d, e->more, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED])));
     }
+    return e;
 }
 
 /* The playing song's title lines in the Now Playing panel (I372, DUI-P4-16). The panel is drawn on its own and the main
@@ -2624,6 +2637,16 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
                     d->sm_pl_adds++;
                     desk_toast(d, "Added to playlist");
                 }
+            } else if (k == SONG_MENU_ITEMS) { /* I633: the playlist page's own item */
+                char line[48];
+                snprintf(line, sizeof line, "PLAYLIST_REMOVE_SONG %u %u", (unsigned)d->sm_ref.pl_id, (unsigned)d->sm_ref.pl_index);
+                desk_send(d, line);
+                d->pls_want = d->pls_n; /* the page must show fewer songs than this */
+                d->pls_stale = 1u; /* the engine applies the command on its next pump: the page reads the list again then */
+                d->side_stale = 1u;
+                d->repaint = 1;
+                d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+                desk_toast(d, "Removed from playlist");
             } else if (k == 3) {
                 side_lib_reload(d); /* I631: the saved playlists from the library, whatever page is open */
                 d->sm_step = 1;
@@ -3654,6 +3677,146 @@ static const char* pl_button_label(const desk* d, uint32_t k) {
     return k == 0u ? "New Folder" : k == 1u ? "New Playlist" : k == 2u ? "Rename" : k == 3u ? "Delete" : "Play";
 }
 
+/* ---- The playlist page (I633): the Playlists page shows one saved playlist as a Spotify-style page: cover, name, song count,
+ * a Play button and the songs as shared song rows (song_row_reg, so the song menu, keyboard focus and drag work). The keys
+ * come from the library (sel_engine_library_playlist_keys); nothing here reads SQL. ---- */
+static void pls_free(desk* d) {
+    free(d->pls_buf);
+    free(d->pls_off);
+    free(d->pls_title);
+    d->pls_buf = NULL;
+    d->pls_off = NULL;
+    d->pls_title = NULL;
+    d->pls_n = 0u;
+}
+
+static const char* pls_key(const desk* d, uint32_t i) {
+    return d->pls_buf + d->pls_off[i];
+}
+
+static void pls_reload(desk* d) {
+    enum { CAP = 262144 };
+    char* buf = (char*)malloc(CAP);
+    uint32_t n, i;
+    const char* k;
+    d->pls_stale = 0u;
+    pls_free(d);
+    if (buf == NULL) {
+        return;
+    }
+    n = sel_engine_library_playlist_keys(d->engine, d->pls_id, buf, CAP);
+    d->pls_off = (uint32_t*)malloc((n + 1u) * sizeof *d->pls_off);
+    d->pls_title = (char(*)[96])malloc((n + 1u) * sizeof *d->pls_title);
+    if (d->pls_off == NULL || d->pls_title == NULL) {
+        free(d->pls_off);
+        free(d->pls_title);
+        d->pls_off = NULL;
+        d->pls_title = NULL;
+        free(buf);
+        return;
+    }
+    d->pls_buf = buf;
+    for (i = 0, k = buf; i < n && *k != '\0'; i++, k += strlen(k) + 1u) {
+        d->pls_off[i] = (uint32_t)(k - buf);
+        if (!sel_engine_song_title(d->engine, k, d->pls_title[i], sizeof d->pls_title[i])) {
+            snprintf(d->pls_title[i], sizeof d->pls_title[i], "%s", path_base(k));
+        }
+    }
+    d->pls_n = i;
+    if (d->pls_want != 0u && d->pls_n >= d->pls_want) { /* the engine has not applied the removal yet: ask again next frame */
+        d->pls_stale = 1u;
+    } else {
+        d->pls_want = 0u;
+    }
+    if (d->pls_scroll >= d->pls_n) {
+        d->pls_scroll = 0u;
+    }
+}
+
+/* Opens playlist `id` on the Playlists page (the sidebar Your Library row and a playlist row of the tree). */
+static void pls_open(desk* d, uint32_t id, const char* name) {
+    d->pls_id = id;
+    d->pls_want = 0u;
+    d->pls_scroll = 0u;
+    snprintf(d->pls_name, sizeof d->pls_name, "%s", name != NULL ? name : "Playlist");
+    d->pl_sel_kind = (uint32_t)SEL_ROW_PLAYLIST;
+    d->pl_sel_id = id;
+    d->pl_confirm = 0;
+    d->pl_edit = 0;
+    pls_reload(d);
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+}
+
+static void pls_close(desk* d) {
+    d->pls_id = 0u;
+    pls_free(d);
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+}
+
+enum { PLS_COVER = 160, PLS_GAP = 24 };
+
+static sel_gui_rect pls_back_rect(desk* d, sel_gui_rect mn) {
+    return rect_of(mn.x + lpx(d, HOME_MARGIN), mn.y + lpx(d, 16), lpx(d, QUEUE_BTN_W), lpx(d, QUEUE_BTN_H));
+}
+
+static sel_gui_rect pls_cover_rect(desk* d, sel_gui_rect mn) {
+    sel_gui_rect b = pls_back_rect(d, mn);
+    return rect_of(b.x, b.y + b.h + lpx(d, 16), lpx(d, PLS_COVER), lpx(d, PLS_COVER));
+}
+
+static sel_gui_rect pls_play_rect(desk* d, sel_gui_rect mn) {
+    sel_gui_rect c = pls_cover_rect(d, mn);
+    return rect_of(c.x + c.w + lpx(d, PLS_GAP), c.y + c.h - lpx(d, QUEUE_BTN_H), lpx(d, QUEUE_BTN_W), lpx(d, QUEUE_BTN_H));
+}
+
+static sel_gui_rect pls_row_rect(desk* d, sel_gui_rect mn, uint32_t slot) {
+    sel_gui_rect c = pls_cover_rect(d, mn);
+    return rect_of(c.x, c.y + c.h + lpx(d, PLS_GAP) + (int32_t)slot * lpx(d, SONG_ROW_H), mn.w - 2 * lpx(d, HOME_MARGIN), lpx(d, SONG_ROW_H));
+}
+
+static int pls_row_visible(desk* d, sel_gui_rect mn, uint32_t slot) {
+    return pls_row_rect(d, mn, slot).y + lpx(d, SONG_ROW_H) <= mn.y + mn.h;
+}
+
+static void draw_playlist_page(desk* d, sel_gui_rect mn) {
+    uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+    uint32_t surf = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
+    sel_gui_rect cv = pls_cover_rect(d, mn), pb = pls_play_rect(d, mn);
+    int32_t tx = cv.x + cv.w + lpx(d, PLS_GAP), rad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]);
+    char count[48];
+    uint32_t slot, shown = 0;
+    if (d->pls_stale) {
+        pls_reload(d);
+    }
+    draw_button(d, pls_back_rect(d, mn), surf, "Back to Playlists", 13, text);
+    sel_gui_genart_draw(d->canvas, cv, "album", sel_gui_str_hash(d->pls_name));
+    draw_text(d, rect_of(tx, cv.y, mn.x + mn.w - tx - lpx(d, HOME_MARGIN), lpx(d, 20)), "Playlist", 0, 13, muted);
+    draw_text(d, rect_of(tx, cv.y + lpx(d, 24), mn.x + mn.w - tx - lpx(d, HOME_MARGIN), lpx(d, page_title_h(d))), d->pls_name, 1, 32, text);
+    snprintf(count, sizeof count, "%u %s", (unsigned)d->pls_n, d->pls_n == 1u ? "song" : "songs");
+    draw_text(d, rect_of(tx, cv.y + lpx(d, 24) + lpx(d, page_title_h(d)), pb.w * 2, lpx(d, 20)), count, 0, 13, muted);
+    draw_button(d, pb, accent, "Play", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+    for (slot = 0; d->pls_scroll + slot < d->pls_n && pls_row_visible(d, mn, slot); slot++, shown++) {
+        uint32_t i = d->pls_scroll + slot;
+        sel_gui_rect r = pls_row_rect(d, mn, slot);
+        char num[16];
+        song_row* e = song_row_reg(d, r, pls_key(d, i), 0u, 0, 0);
+        if (e != NULL) {
+            e->ref.pl_id = d->pls_id;
+            e->ref.pl_index = i;
+        }
+        if (in_rect(r, d->ptr_x, d->ptr_y)) {
+            sel_gui_round_rect(d->canvas, r, rad, surf);
+        }
+        snprintf(num, sizeof num, "%u", (unsigned)(i + 1u));
+        draw_text(d, rect_of(r.x + lpx(d, 12), r.y, lpx(d, 36), r.h), num, 0, 14, muted);
+        draw_text(d, rect_of(r.x + lpx(d, 56), r.y, r.w - lpx(d, 56) - lpx(d, 40), r.h), d->pls_title[i], 0, 14, row_ink(d, r, text));
+    }
+    d->pls_draws++;
+    d->pls_rows = shown;
+}
+
 static void draw_playlists(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     const sel_view_state* v = pl_view(st);
@@ -3665,6 +3828,12 @@ static void draw_playlists(desk* d) {
     uint32_t i, shown = 0;
     d->empty_text[0] = '\0';
     sel_gui_clip_push(d->canvas, mn);
+    if (d->pls_id != 0u) { /* I633: one playlist open as a page of songs */
+        draw_playlist_page(d, mn);
+        sel_gui_clip_pop(d->canvas);
+        sel_gui_dirty_add(d->canvas, mn);
+        return;
+    }
     draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, page_title_h(d))), "Playlists", 1, 32, text);
     for (i = 0; i < PL_BUTTONS; i++) {
         sel_gui_rect b = queue_btn_rect(d, mn, i);
@@ -3750,6 +3919,33 @@ static int pl_button_click(desk* d, const sel_view_state* v, uint32_t k) {
     }
 }
 
+/* One pointer event on an open playlist page: Back, Play, or a click on a song row plays that song. */
+static int pls_pointer(desk* d, const sel_gui_input* ev) {
+    sel_gui_rect mn = region_rect(d, "main");
+    uint32_t slot;
+    char line[48];
+    if (ev->kind != SEL_GUI_IN_CLICK || ev->button != 0u) {
+        return 0;
+    }
+    if (in_rect(pls_back_rect(d, mn), ev->x, ev->y)) {
+        pls_close(d);
+        return 1;
+    }
+    if (in_rect(pls_play_rect(d, mn), ev->x, ev->y)) {
+        snprintf(line, sizeof line, "PLAYLIST_PLAY %u", (unsigned)d->pls_id);
+        d->repaint = 1;
+        return desk_send(d, line);
+    }
+    for (slot = 0; d->pls_scroll + slot < d->pls_n && pls_row_visible(d, mn, slot); slot++) {
+        if (in_rect(pls_row_rect(d, mn, slot), ev->x, ev->y)) {
+            desk_play_path(d, pls_key(d, d->pls_scroll + slot));
+            d->row_plays++;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* One pointer event on the Playlists page: a button or a row click, or a drag of a row onto a folder row. */
 static int pl_pointer(desk* d, const sel_gui_input* ev) {
     const sel_view_state* v = pl_view(sel_engine_state(d->engine));
@@ -3757,6 +3953,9 @@ static int pl_pointer(desk* d, const sel_gui_input* ev) {
     char line[160];
     uint32_t k;
     int32_t row, to;
+    if (d->pls_id != 0u) {
+        return pls_pointer(d, ev);
+    }
     if (v == NULL) {
         return 0;
     }
@@ -3784,6 +3983,9 @@ static int pl_pointer(desk* d, const sel_gui_input* ev) {
         d->pl_sel_kind = v->rows[row].kind;
         d->pl_sel_id = v->rows[row].id;
         d->pl_confirm = 0;
+        if (v->rows[row].kind == (uint32_t)SEL_ROW_PLAYLIST) { /* I633: a playlist row opens its page */
+            pls_open(d, v->rows[row].id, v->rows[row].text);
+        }
     }
     d->repaint = 1;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
@@ -4752,6 +4954,18 @@ static const char* library_dump_build(desk* d) {
             o = dump_put(d, o, "plrow %u %s %u %u %s\n", (unsigned)i,
                                   pv->rows[i].kind == (uint32_t)SEL_ROW_FOLDER ? "folder" : "playlist", (unsigned)pv->rows[i].id,
                                   (unsigned)pv->rows[i].depth, pv->rows[i].text);
+        }
+    }
+    if (d->pl_page && d->pls_id != 0u) { /* I633: the open playlist page: its songs in order and the geometry a script clicks */
+        sel_gui_rect pmn = region_rect(d, "main"), bk = pls_back_rect(d, pmn), pp = pls_play_rect(d, pmn);
+        uint32_t j;
+        o = dump_put(d, o, "plpage id=%u name=[%s] songs=%u rows=%u draws=%u back=%d,%d,%d,%d play=%d,%d,%d,%d\n", (unsigned)d->pls_id, d->pls_name,
+                     (unsigned)d->pls_n, (unsigned)d->pls_rows, (unsigned)d->pls_draws, (int)bk.x, (int)bk.y, (int)bk.w, (int)bk.h,
+                     (int)pp.x, (int)pp.y, (int)pp.w, (int)pp.h);
+        for (j = 0; d->pls_scroll + j < d->pls_n && pls_row_visible(d, pmn, j) && o + 400u < sizeof d->library_dump; j++) {
+            sel_gui_rect r = pls_row_rect(d, pmn, j);
+            o = dump_put(d, o, "plsong %u %d %d %d %d file=%s title=%s\n", (unsigned)j, (int)r.x, (int)r.y, (int)r.w, (int)r.h, path_base(pls_key(d, d->pls_scroll + j)),
+                         d->pls_title[d->pls_scroll + j]);
         }
     }
     if (d->si_page) { /* the Song Information page geometry and rows (DUI-P4-10) */
@@ -6290,6 +6504,7 @@ static void desk_page_flags(desk* d, desk_page pg) {
     d->kb_list = 0;
     d->queue_page = pg == PG_QUEUE;
     d->pl_page = pg == PG_PLAYLISTS;
+    d->pls_id = 0u;
     d->si_page = pg == PG_SONGINFO;
     d->si_y_q16 = 0; /* I298: the info list starts at the top on every entry */
     d->viz_page = pg == PG_VIZ;
@@ -7963,7 +8178,7 @@ static int lib_ui_key(desk* d, const sel_gui_input* ev) {
 static int pl_list_key(desk* d, const sel_gui_input* ev) {
     const sel_view_state* v = pl_view(sel_engine_state(d->engine));
     int32_t sel = pl_sel_row(d, v), to;
-    if (ev->mods != 0u || v == NULL || v->row_n == 0u || d->pl_confirm) {
+    if (ev->mods != 0u || v == NULL || v->row_n == 0u || d->pl_confirm || d->pls_id != 0u) {
         return 0;
     }
     if (ev->code == 13u) {
@@ -8020,6 +8235,10 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
     }
     if (d->pl_page && d->pl_edit) { /* the name field of the Playlists page has the keyboard */
         return pl_key(d, ev);
+    }
+    if (d->pl_page && d->pls_id != 0u && ev->code == 27u && ev->mods == 0u && !d->sm_open) { /* I633: Escape leaves the playlist page */
+        pls_close(d);
+        return 1;
     }
     if (d->si_page && d->si_edit) { /* the note field of the Song Information page has the keyboard */
         return si_key(d, ev);
@@ -8279,8 +8498,7 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         if (door >= 0) {
             d->side_opens++;
             desk_page_goto(d, PG_PLAYLISTS);
-            d->pl_sel_kind = (uint32_t)SEL_ROW_PLAYLIST;
-            d->pl_sel_id = d->side_items[door].id;
+            pls_open(d, d->side_items[door].id, d->side_items[door].name); /* I633: the playlist's page of songs */
             d->repaint = 1;
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
             return 1;
@@ -8487,6 +8705,16 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
             int32_t max_q16 = side_lib_max_q16(d);
             int64_t v = (int64_t)d->side_y_q16 - (int64_t)ev->dy * SCROLL_NOTCH;
             d->side_y_q16 = v < 0 ? 0 : (v > max_q16 ? max_q16 : (int32_t)v);
+            d->repaint = 1;
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+            return 1;
+        }
+        if (d->pl_page && d->pls_id != 0u && ev->dy != 0) { /* I633: the playlist's songs scroll a row a notch */
+            if (ev->dy < 0 && d->pls_scroll + 1u < d->pls_n) {
+                d->pls_scroll++;
+            } else if (ev->dy > 0 && d->pls_scroll > 0u) {
+                d->pls_scroll--;
+            }
             d->repaint = 1;
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
             return 1;
@@ -9854,6 +10082,9 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
             }
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         }
+    }
+    if (d->pls_stale && d->pls_id != 0u) { /* I633: a song left the open playlist: redraw so the page reads the list again */
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
     }
     if (d->home && sel_engine_state(d->engine)->view != NULL) { /* HOME rows arrived or changed: redraw */
         const sel_view_state* hv = sel_engine_state(d->engine)->view;
