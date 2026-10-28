@@ -394,6 +394,8 @@ typedef struct sel_engine_stats {
     uint32_t folder_ops;          /* FOLDER_ADD/MOVE/DEL and PLAYLIST_MOVE run against the library (I178 sentinel) */
     uint32_t import_runs;         /* PLAYLIST_IMPORT files parsed and appended (I652c sentinel) */
     uint32_t import_added;        /* songs the last PLAYLIST_IMPORT appended */
+    uint32_t addf_runs;           /* PLAYLIST_ADD_FOLDER scans finished and appended (I652d sentinel) */
+    uint32_t addf_added;          /* songs the last PLAYLIST_ADD_FOLDER appended */
     uint32_t import_missing;      /* entries of the last PLAYLIST_IMPORT whose file does not exist */
     uint32_t sticker_ops;         /* STICKER_* commands run against the library (I176 sentinel) */
     uint32_t links_parsed;        /* share links OPEN parsed (I180 sentinel) */

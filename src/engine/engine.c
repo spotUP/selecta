@@ -137,7 +137,7 @@
     X(FLAG)                                                                                   \
     X(NOTE)                                                                                   \
     X(RATE) X(VOTE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
-    X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(PLAYLIST_ADD_SONG) X(PLAYLIST_IMPORT) X(PLAYLIST_REMOVE_SONG) X(PLAYLIST_PLAY) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
+    X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(PLAYLIST_ADD_SONG) X(PLAYLIST_IMPORT) X(PLAYLIST_ADD_FOLDER) X(PLAYLIST_REMOVE_SONG) X(PLAYLIST_PLAY) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
     X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(COMPOSERS_HIDE) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
@@ -281,6 +281,14 @@ struct sel_engine {
     uint32_t home_rows;                        /* entries the home view source shows (I191 sentinel) */
     uint32_t folder_view_rows;                 /* rows the folders view source built (I179 sentinel) */
     uint32_t import_runs, import_added, import_missing; /* PLAYLIST_IMPORT sentinel and last result (I652c) */
+    uint32_t addf_runs, addf_added;            /* PLAYLIST_ADD_FOLDER sentinel and songs the last run appended (I652d) */
+    /* I652d: the PLAYLIST_ADD_FOLDER in flight: its scan collects the module paths (scan thread) into addf_buf, NUL separated;
+     * scan_collect sorts them and appends them to playlist addf_id. */
+    int addf_active;
+    uint32_t addf_id, addf_count;
+    char* addf_buf;
+    size_t addf_len, addf_cap;
+    int addf_oom;
     uint32_t folder_ops;                       /* FOLDER_* / PLAYLIST_MOVE commands run against the library (I178) */
     uint32_t links_parsed, links_made;         /* share links OPEN parsed / SHARE wrote (I180 sentinels) */
     char stats[2048];                          /* rows of the open stats screen, "label\0value\0" pairs (I192) */
@@ -3514,6 +3522,76 @@ static int scan_cancelled_cb(void* ctx) {
     return sel_library_task_cancelled(((sel_engine*)ctx)->lib);
 }
 
+static void folder_report(sel_engine* e, int code, const char* who);
+static void folders_reload(sel_engine* e);
+
+/* I652d: the scan reports every module it recognised; the paths pile up in addf_buf for addf_finish. Scan thread. */
+static void addf_collect(void* ctx, const char* path) {
+    sel_engine* e = ctx;
+    size_t n = strlen(path) + 1u;
+    if (e->addf_oom) return;
+    if (e->addf_len + n > e->addf_cap) {
+        size_t cap = e->addf_cap != 0u ? e->addf_cap * 2u : 8192u;
+        char* grown;
+        while (cap < e->addf_len + n) cap *= 2u;
+        grown = e->host->mem_alloc(e->host, cap, SEL_MEM_FAST);
+        if (grown == NULL) {
+            e->addf_oom = 1;
+            return;
+        }
+        if (e->addf_len != 0u) memcpy(grown, e->addf_buf, e->addf_len);
+        if (e->addf_buf != NULL) e->host->mem_free(e->host, e->addf_buf);
+        e->addf_buf = grown;
+        e->addf_cap = cap;
+    }
+    memcpy(e->addf_buf + e->addf_len, path, n);
+    e->addf_len += n;
+    e->addf_count++;
+}
+
+static int addf_path_cmp(const void* a, const void* b) {
+    return strcmp(*(const char* const*)a, *(const char* const*)b);
+}
+
+/* I652d: the folder scan ended: append the collected module paths, in path order, to the playlist. Pump thread. */
+static void addf_finish(sel_engine* e, int scan_ok) {
+    const char** list = NULL;
+    uint32_t i, added = 0;
+    size_t off;
+    e->addf_active = 0;
+    if (!scan_ok || e->addf_oom) {
+        sel_engine_report_error(e, "scan_failed", "PLAYLIST_ADD_FOLDER");
+    } else if (e->addf_count != 0u) {
+        list = e->host->mem_alloc(e->host, (size_t)e->addf_count * sizeof *list, SEL_MEM_FAST);
+        if (list == NULL) {
+            sel_engine_report_error(e, "no_memory", "PLAYLIST_ADD_FOLDER");
+        } else {
+            for (i = 0, off = 0; i < e->addf_count; i++) {
+                list[i] = e->addf_buf + off;
+                off += strlen(list[i]) + 1u;
+            }
+            qsort(list, e->addf_count, sizeof *list, addf_path_cmp);
+            for (i = 0; i < e->addf_count; i++) {
+                int rc = sel_library_playlist_add_song(e->lib, e->addf_id, list[i]);
+                if (rc != SEL_FOLDER_OK) {
+                    folder_report(e, rc, "PLAYLIST_ADD_FOLDER");
+                    break;
+                }
+                added++;
+            }
+            e->host->mem_free(e->host, (void*)list);
+        }
+    }
+    if (e->addf_buf != NULL) e->host->mem_free(e->host, e->addf_buf);
+    e->addf_buf = NULL;
+    e->addf_len = e->addf_cap = 0u;
+    e->addf_count = 0u;
+    e->addf_oom = 0;
+    e->addf_runs++;
+    e->addf_added = added;
+    folders_reload(e);
+}
+
 /* The scan itself, on the library job thread (I336); the only writer of the scan progress while it runs. */
 static void scan_task(void* ctx) {
     sel_engine* e = ctx;
@@ -3534,6 +3612,10 @@ static void scan_start(sel_engine* e, const char* root) {
     e->scan_cfg.progress_ctx = e;
     e->scan_cfg.cancelled = scan_cancelled_cb;
     e->scan_cfg.cancelled_ctx = e;
+    if (e->addf_active) {
+        e->scan_cfg.song = addf_collect;
+        e->scan_cfg.song_ctx = e;
+    }
     snprintf(e->scan_root, sizeof e->scan_root, "%s", root);
     e->scan_ok = 0;
     {
@@ -3602,6 +3684,9 @@ static void scan_collect(sel_engine* e) {
     e->scan_info.archive_lzx = e->scan_stats.archive_lzx;
     e->scan_info.depack_pp = e->scan_stats.depack_pp;
     e->scan_info.bytes_read = e->scan_stats.bytes_read;
+    if (e->addf_active) {
+        addf_finish(e, e->scan_ok);
+    }
     if (!e->scan_ok) {
         sel_engine_report_error(e, "scan_failed", e->scan_root);
     } else {
@@ -4795,6 +4880,24 @@ static void cmd_PLAYLIST_IMPORT(sel_engine* e, const sel_message* m) {
     folders_reload(e);
 }
 
+/* PLAYLIST_ADD_FOLDER id dir (I652d): scans `dir` recursively with the library's folder scan (the modules it recognises also
+ * join the catalogue, as for LIBRARY_SCAN) and appends each recognised song to saved playlist `id` in path order. Asynchronous
+ * like LIBRARY_SCAN: the songs are in the playlist once addf_runs moved. One at a time; while a scan or sync runs it answers
+ * ERROR scan_busy. */
+static void cmd_PLAYLIST_ADD_FOLDER(sel_engine* e, const sel_message* m) {
+    if (!folder_ready(e, "PLAYLIST_ADD_FOLDER")) return;
+    if (e->scan_running || e->sync_running || e->addf_active) {
+        sel_engine_report_error(e, "scan_busy", m->args[1].v.s);
+        return;
+    }
+    e->addf_id = (uint32_t)m->args[0].v.u;
+    e->addf_active = 1;
+    scan_start(e, m->args[1].v.s);
+    if (!e->scan_running) { /* the task could not start; scan_start reported it */
+        e->addf_active = 0;
+    }
+}
+
 #define PLAYLIST_KEYS_CAP 65536u
 
 /* PLAYLIST_REMOVE_SONG id index (I633): drops the entry at `index` (position order) from a saved playlist. */
@@ -5738,6 +5841,7 @@ void sel_engine_destroy(sel_engine* e) {
         for (i = 0; i < SEL_SLOT_COUNT; i++) {
             close_slot(e, &e->slot[i]);
         }
+        if (e->addf_buf != NULL) e->host->mem_free(e->host, e->addf_buf);
         sel_spsc_free(&e->cmd_q, e->host);
         sel_spsc_free(&e->evt_q, e->host);
         sel_spsc_free(&e->swap_q, e->host);
@@ -6226,6 +6330,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->folder_ops = e->folder_ops;
     out->import_runs = e->import_runs;
     out->import_added = e->import_added;
+    out->addf_runs = e->addf_runs;
+    out->addf_added = e->addf_added;
     out->import_missing = e->import_missing;
     out->links_parsed = e->links_parsed;
     out->links_made = e->links_made;
