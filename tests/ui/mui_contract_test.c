@@ -334,17 +334,17 @@ static void test_weights(void) {
     }
 }
 
-/* mui-relayout (MUI-P2-2): the shown set per breakpoint; the slot count is fixed, and sel_uim_breakpoint_for decides. */
+/* mui-relayout (MUI-P2-2): the shown set per breakpoint; the slot count is fixed, and sel_uim_breakpoint_for_tier (bitmap tier, I674: 640 keeps a rail) decides. */
 static void test_relayout(void) {
     static const uint32_t widths[] = {1280, 1024, 800, 640};
-    static const uint8_t want[4][MUI_SLOT_COUNT] = {{0, 1, 1, 1, 1}, {0, 1, 1, 0, 1}, {0, 1, 1, 0, 1}, {1, 0, 1, 0, 1}};
+    static const uint8_t want[4][MUI_SLOT_COUNT] = {{0, 1, 1, 1, 1}, {0, 1, 1, 0, 1}, {0, 1, 1, 0, 1}, {0, 1, 1, 0, 1}};
     mui_layout_map_t m;
     uint32_t i, s, flips = 99;
     mui_layout_map(&m, 1280, 720);
     for (i = 0; i < 4; i++) {
         uint32_t changed = mui_layout_relayout(&m, widths[i], 720, &flips);
-        CHECK(m.breakpoint == sel_uim_breakpoint_for(widths[i]), "breakpoint at %u", widths[i]);
-        CHECK(changed == (i != 0 && sel_uim_breakpoint_for(widths[i]) != sel_uim_breakpoint_for(widths[i - 1])), "changed flag at %u", widths[i]);
+        CHECK(m.breakpoint == sel_uim_breakpoint_for_tier(widths[i], SEL_UIM_TIER_BITMAP), "breakpoint at %u", widths[i]);
+        CHECK(changed == (i != 0 && sel_uim_breakpoint_for_tier(widths[i], SEL_UIM_TIER_BITMAP) != sel_uim_breakpoint_for_tier(widths[i - 1], SEL_UIM_TIER_BITMAP)), "changed flag at %u", widths[i]);
         for (s = 0; s < MUI_SLOT_COUNT; s++) {
             CHECK(m.show[s] == want[i][s], "width %u slot %u show %u", widths[i], s, m.show[s]);
         }
@@ -370,8 +370,13 @@ static void test_open_no_suggestion(void) {
     m.breakpoint = SEL_UIM_BP_COUNT;
     mui_layout_relayout(&m, 792, 576, &flips);
     CHECK(m.show[MUI_SLOT_SUGGESTION] == 0, "792 wide shows no suggestion");
+    mui_layout_relayout(&m, 560, 576, &flips);
+    CHECK(m.show[MUI_SLOT_SUGGESTION] == 1, "560 wide (mini) shows the suggestion");
+    /* I674: the 640 wide own screen (window 600-699) keeps a rail and shows no "Window is narrow" hint. */
     mui_layout_relayout(&m, 600, 576, &flips);
-    CHECK(m.show[MUI_SLOT_SUGGESTION] == 1, "600 wide (mini) shows the suggestion");
+    CHECK(m.show[MUI_SLOT_SUGGESTION] == 0 && m.show[MUI_SLOT_SIDEBAR] == 1, "600 wide shows a rail, no suggestion");
+    mui_layout_relayout(&m, 640, 512, &flips);
+    CHECK(m.show[MUI_SLOT_SUGGESTION] == 0, "640 wide shows no suggestion");
     CHECK(f != NULL, "mui_ui.c readable");
     while (f != NULL && fgets(line, sizeof line, f) != NULL) {
         if (strstr(line, "slot[MUI_SLOT_SUGGESTION] = TextObject") != NULL) {

@@ -43,6 +43,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #define SHELL_TURN_MS 20u
@@ -245,6 +246,29 @@ static const char* stat_hash_str(const sel_tag* stats, uint32_t tag) {
 }
 
 static void send_line(sel_engine* e, const char* line);
+
+/* I674: a positional song path (`selecta --ui mui RAM:meme.mod`). The shell owns it for every UI: it is a plain argument
+ * (no leading '-', no KEY=VALUE option word, not a share link, not the value of a `--name value` option) naming a file. */
+static int is_song_argument(int argc, char** argv, int a) {
+    static const char* const flags[] = {"--stats", "--tokens", "--actions"};
+    struct stat sb;
+    size_t k;
+    (void)argc;
+    if (argv[a][0] == '-' || sel_share_is_link(argv[a]) || (strchr(argv[a], '=') != NULL && strpbrk(argv[a], "/:") == NULL)) {
+        return 0;
+    }
+    if (a > 1 && strncmp(argv[a - 1], "--", 2) == 0) {
+        for (k = 0; k < sizeof flags / sizeof flags[0]; k++) {
+            if (strcmp(argv[a - 1], flags[k]) == 0) {
+                break;
+            }
+        }
+        if (k == sizeof flags / sizeof flags[0]) {
+            return 0; /* the value of an option */
+        }
+    }
+    return stat(argv[a], &sb) == 0 && S_ISREG(sb.st_mode);
+}
 
 /* Start options as KEY=VALUE words (MODE=mini, DUI-P1-3): the one parser (src/engine/options.c, the same as
  * ToolTypes and selecta-cli) validates each word against a scratch prefs table, and the prefs it changed reach the
@@ -673,6 +697,17 @@ int main(int argc, char** argv)
             if (sel_engine_send_line(e, cmd, pool, sizeof pool) == SEL_CODEC_OK) {
                 sel_engine_pump(e, sink, ctx);
             }
+        }
+    }
+    for (a = 1; a < argc; a++) { /* the song named on the command line is opened and played, whatever the UI (I674) */
+        if (is_song_argument(argc, argv, a)) {
+            char pool[1536];
+            snprintf(cmd, sizeof cmd, "OPEN %s", argv[a]);
+            if (sel_engine_send_line(e, cmd, pool, sizeof pool) == SEL_CODEC_OK) {
+                sel_engine_pump(e, sink, ctx);
+                send_line(e, "PLAY");
+            }
+            break;
         }
     }
     for (a = 1; a + 1 < argc; a++) {

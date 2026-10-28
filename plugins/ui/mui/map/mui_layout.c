@@ -68,7 +68,9 @@ void mui_layout_map(mui_layout_map_t* m, uint32_t width, uint32_t height) {
     sel_uim_layout l;
     uint32_t i, s;
     memset(m, 0, sizeof *m);
-    sel_uim_layout_compute(&l, width, height);
+    /* I674: MUI runs on the native Amiga screens, the bitmap tier: a 640 wide own screen (window 600-699) keeps a rail, it
+     * does not get the mini-layout suggestion (sel_uim_breakpoint_for_tier, I526). */
+    sel_uim_layout_compute_tier(&l, width, height, SEL_UIM_TIER_BITMAP);
     m->width = width;
     m->height = height;
     m->breakpoint = l.breakpoint;

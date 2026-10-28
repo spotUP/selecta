@@ -466,6 +466,10 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-open-nomui COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
     "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m2/quit.keys" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/mui-open-nomui"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/ui/mui_nomui.cmake")
+  add_test(NAME mui-song-arg COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+    "-DSONG=${SEL_TESTMOD}""-DWORK=${CMAKE_CURRENT_BINARY_DIR}/mui-song-arg"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/ui/mui_song_arg.cmake")
+  set_tests_properties(mui-song-arg PROPERTIES TIMEOUT 120 LABELS mui)
   add_test(NAME mui-menu COMMAND mui_contract_test menu)
   add_test(NAME mui-style-menu COMMAND mui_contract_test style-menu)
   add_test(NAME mui-theme COMMAND mui_contract_test theme)
