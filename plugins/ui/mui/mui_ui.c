@@ -111,6 +111,7 @@ typedef struct mui_state {
     mui_list_entry entries[MUI_ROWS_MAX];
     const char* entry_ptr[MUI_ROWS_MAX + 1];
     mui_cells cell[MUI_ROWS_MAX];   /* MUI-P3-4: the List entries; the display hook reads the cells from them */
+    char col_fmt_th[96];            /* I660: col_fmt with the text pen preparse per column (what MUI gets) */
     char col_fmt[48];               /* MUIA_List_Format of the shown column set (mui_columns_format) */
     uint32_t col_bp;                /* the breakpoint col_fmt was built for */
     Object* str_search;             /* MUI-P4-3 */
@@ -360,26 +361,71 @@ static void mui_close_on_request(Object* win) {
     DoMethod(win, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, MUIV_Notify_Self, 3, MUIM_Set, MUIA_Window_Open, FALSE);
 }
 
-/* Reads the screen's text pen colour (the user's MUI text pen is the DrawInfo text pen unless MUI prefs change it) and
- * switches every role on whose background keeps that text readable. */
+/* I660: PreParse strings of every Text object (plain, centred, right); only the alignment escape when the look is off. */
+static char g_pre[4], g_pre_c[8], g_pre_r[8];
+static char g_list_fmt1[8]; /* one-column list format carrying the pen preparse ("P=" + pen), empty when off */
+
+/* col_fmt (comma separated column specs) with "P=<pen escape> " in front of each column, so list text uses the look pen. */
+static void mui_col_format_themed(const char* in, char* out, size_t cap) {
+    size_t used = 0;
+    if (g_pre[0] == '\0') {
+        snprintf(out, cap, "%s", in);
+        return;
+    }
+    out[0] = '\0';
+    for (;;) {
+        const char* comma = strchr(in, ',');
+        size_t len = comma != NULL ? (size_t)(comma - in) : strlen(in);
+        int put = snprintf(out + used, cap - used, "P=%s %.*s%s", g_pre, (int)len, in, comma != NULL ? "," : "");
+        if (put < 0 || (size_t)put >= cap - used) {
+            out[used] = '\0';
+            return;
+        }
+        used += (size_t)put;
+        if (comma == NULL) {
+            return;
+        }
+        in = comma + 1;
+    }
+}
+
+/* Reads the colours of the screen DrawInfo pens and decides the look once for all roles. */
 static void mui_theme_init(void) {
     txt_theme th;
-    ULONG rgb[3] = {0, 0, 0};
-    uint32_t text = 0;
+    uint32_t pen_rgb[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    int pen;
     struct Screen* scr = LockPubScreen(NULL);
     int i;
     if (scr != NULL) {
         struct DrawInfo* dri = GetScreenDrawInfo(scr);
         if (dri != NULL) {
-            GetRGB32(scr->ViewPort.ColorMap, dri->dri_Pens[TEXTPEN], 1, rgb);
+            for (i = 0; i < 8; i++) {
+                ULONG rgb[3] = {0, 0, 0};
+                GetRGB32(scr->ViewPort.ColorMap, dri->dri_Pens[i], 1, rgb);
+                pen_rgb[i] = ((rgb[0] >> 24) << 16) | ((rgb[1] >> 24) << 8) | (rgb[2] >> 24);
+            }
             FreeScreenDrawInfo(scr, dri);
-            text = ((rgb[0] >> 24) << 16) | ((rgb[1] >> 24) << 8) | (rgb[2] >> 24);
         }
         UnlockPubScreen(NULL, scr);
     }
     txt_theme_default(&th);
+    /* I660: one decision for the whole look (mui_theme_pick_pen over DrawInfo pens 0..7). MUI 3.8 draws object text with
+     * screen pens only; ESC plus a pen digit in PreParse picks one. No readable pen: every role stays off and the user's
+     * MUI look is untouched. Otherwise all roles are on together and all text uses that pen. The string gadget (FIELD)
+     * cannot take pen escapes, so it keeps the user's MUI look. */
+    pen = mui_theme_pick_pen(pen_rgb, 8, th.token);
     for (i = 0; i < MUI_TH_COUNT; i++) {
-        g_th[i].on = mui_theme_look_for((mui_theme_role)i, th.token, &g_th[i].look) && mui_theme_readable(text, g_th[i].look.bg_rgb);
+        g_th[i].on = mui_theme_look_for((mui_theme_role)i, th.token, &g_th[i].look) && pen >= 0 && i != MUI_TH_FIELD;
+    }
+    /* The look off keeps the alignment escapes the labels always had. */
+    g_pre[0] = g_list_fmt1[0] = 0;
+    sprintf(g_pre_c, "\033c");
+    sprintf(g_pre_r, "\033r");
+    if (pen >= 0) {
+        sprintf(g_pre, "\033%d", pen);
+        sprintf(g_pre_c, "\033c\033%d", pen);
+        sprintf(g_pre_r, "\033r\033%d", pen);
+        sprintf(g_list_fmt1, "P=%s", g_pre);
     }
 }
 
@@ -435,7 +481,7 @@ static Object* mui_make_button_i(const char* label, const char* icon_key, const 
     /* I656: an icon-only button (dense rows) has no label text so its row fits the smallest screen; the label stays as the
      * ShortHelp. Without an icon it keeps the label. */
     Object* txt = icon_only && img != NULL ? NULL : MUI_NewObject((char*)MUIC_Text, MUIA_Font, MUIV_Font_Button, MUIA_Text_Contents, (ULONG)label, MUIA_Text_HiCharIdx, MUI_NOMARK,
-                                MUIA_Text_PreParse, (ULONG) "\33c", TAG_DONE);
+                                MUIA_Text_PreParse, (ULONG)g_pre_c, TAG_DONE);
     Object* o = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_Group_HorizSpacing, MUI_BTN_ICON_GAP, MUIA_Weight, (ULONG)weight,
                               TH_TAGS(MUI_TH_BUTTON, MUIV_Frame_Button) InnerSpacing(MUI_BTN_PAD_X, MUI_BTN_PAD_Y), MUIA_ShortHelp, (ULONG)label,
                               MUIA_InputMode, MUIV_InputMode_RelVerify, TH_BG_OR(MUI_TH_BUTTON, MUII_ButtonBack) TAG_DONE);
@@ -483,7 +529,7 @@ static Object* mui_make_button(const char* label, const char* icon_key, LONG id)
 static Object* mui_make_text(mui_state* s, uint32_t attr, const char* initial) {
     snprintf(s->txt_buf[attr], sizeof s->txt_buf[attr], "%s", initial);
     s->txt[attr] = MUI_NewObject((char*)MUIC_Text, TH_TAGS(MUI_TH_STATUS, MUIV_Frame_Text) MUIA_Text_Contents, (ULONG)s->txt_buf[attr], MUIA_Text_HiCharIdx, MUI_NOMARK,
-                                 TAG_DONE);
+                                 MUIA_Text_PreParse, (ULONG)g_pre, TAG_DONE);
     return s->txt[attr];
 }
 
@@ -637,7 +683,7 @@ static Object* mui_tool_group(mui_state* s) {
     s->cyc_rating = mui_make_cycle(p4_rating_entries, CTL_P4_BASE + P4_RATING);
     s->cyc_subsong = mui_make_cycle(p4_subsong_entries, CTL_P4_BASE + P4_SUBSONG);
     snprintf(s->status_buf, sizeof s->status_buf, "Ready");
-    s->status = MUI_NewObject((char*)MUIC_Text, TH_TAGS(MUI_TH_STATUS, MUIV_Frame_Text) MUIA_Text_Contents, (ULONG)s->status_buf, MUIA_Text_HiCharIdx, MUI_NOMARK, TAG_DONE);
+    s->status = MUI_NewObject((char*)MUIC_Text, TH_TAGS(MUI_TH_STATUS, MUIV_Frame_Text) MUIA_Text_Contents, (ULONG)s->status_buf, MUIA_Text_HiCharIdx, MUI_NOMARK, MUIA_Text_PreParse, (ULONG)g_pre, TAG_DONE);
     if (s->str_search == NULL || s->str_cmd == NULL || s->cyc_rating == NULL || s->cyc_subsong == NULL || s->status == NULL) {
         return NULL;
     }
@@ -662,11 +708,12 @@ static Object* mui_main_group(mui_state* s) {
     Object* g = MUI_NewObject((char*)MUIC_Group, TH_TAGS(MUI_TH_PANEL, MUI_FRAME_NONE) TAG_DONE);
     s->col_bp = SEL_UIM_BP_COUNT;
     mui_columns_format(s->col_bp, s->col_fmt, sizeof s->col_fmt);
+    mui_col_format_themed(s->col_fmt, s->col_fmt_th, sizeof s->col_fmt_th);
     g_list_hook.h_Entry = (__typeof__(g_list_hook.h_Entry))(void (*)(void))HookEntry;
     g_list_hook.h_SubEntry = (__typeof__(g_list_hook.h_SubEntry))(void (*)(void))mui_list_display;
-    s->crumb = MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG)" ", MUIA_ShowMe, FALSE, TAG_DONE);
+    s->crumb = MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG)" ", MUIA_ShowMe, FALSE, MUIA_Text_PreParse, (ULONG)g_pre, TAG_DONE);
     s->list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_List_DisplayHook, (ULONG)&g_list_hook,
-                            MUIA_List_Format, (ULONG)s->col_fmt, MUIA_List_Title, TRUE, TAG_DONE);
+                            MUIA_List_Format, (ULONG)s->col_fmt_th, MUIA_List_Title, TRUE, TAG_DONE);
     if (g == NULL || s->list == NULL || s->crumb == NULL) {
         return NULL;
     }
@@ -687,7 +734,7 @@ static Object* mui_main_group(mui_state* s) {
     }
     DoMethod(g, OM_ADDMEMBER, s->crumb);
     s->crumb_row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_ShowMe, FALSE, TAG_DONE);
-    s->state_txt = MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG)" ", MUIA_ShowMe, FALSE, TAG_DONE);
+    s->state_txt = MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG)" ", MUIA_ShowMe, FALSE, MUIA_Text_PreParse, (ULONG)g_pre, TAG_DONE);
     if (s->crumb_row == NULL || s->state_txt == NULL) {
         return NULL;
     }
@@ -725,7 +772,7 @@ static Object* mui_main_group(mui_state* s) {
  * signature of the shown values changes. */
 static Object* mui_np_text(char* buf, size_t cap, const char* init) {
     snprintf(buf, cap, "%s", init);
-    return MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG)buf, TAG_DONE);
+    return MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG)buf, MUIA_Text_PreParse, (ULONG)g_pre, TAG_DONE);
 }
 
 static Object* mui_detail_group(mui_state* s) {
@@ -743,8 +790,8 @@ static Object* mui_detail_group(mui_state* s) {
     s->np_album = mui_np_text(s->np_buf[2], sizeof s->np_buf[2], " ");
     s->np_lyrics = lyr_list;
     lyr_view = lyr_list != NULL ? MUI_NewObject((char*)MUIC_Listview, MUIA_Listview_List, (ULONG)lyr_list, TAG_DONE) : NULL;
-    s->info_list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) TAG_DONE);
-    s->trk_list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) TAG_DONE);
+    s->info_list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_List_Format, (ULONG)g_list_fmt1, TAG_DONE);
+    s->trk_list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_List_Format, (ULONG)g_list_fmt1, TAG_DONE);
     s->trk_group = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
     if (art != NULL) {
         DoMethod(g, OM_ADDMEMBER, art);
@@ -755,7 +802,7 @@ static Object* mui_detail_group(mui_state* s) {
     if (lyr_view != NULL) {
         DoMethod(g, OM_ADDMEMBER, lyr_view);
     }
-    DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG) "\033cNext in Queue", TAG_DONE));
+    DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG) "Next in Queue", MUIA_Text_PreParse, (ULONG)g_pre_c, TAG_DONE));
     for (i = 0; i < 3; i++) {
         s->np_up[i] = mui_np_text(s->np_up_buf[i], sizeof s->np_up_buf[i], " ");
         DoMethod(g, OM_ADDMEMBER, s->np_up[i]);
@@ -977,7 +1024,8 @@ static void mui_refresh(mui_state* s) {
         if (s->lay.breakpoint != s->col_bp && s->lay.breakpoint < SEL_UIM_BP_COUNT) { /* MUI-P3-4: another column set */
             s->col_bp = s->lay.breakpoint;
             mui_columns_format(s->col_bp, s->col_fmt, sizeof s->col_fmt);
-            set(s->list, MUIA_List_Format, (ULONG)s->col_fmt);
+            mui_col_format_themed(s->col_fmt, s->col_fmt_th, sizeof s->col_fmt_th);
+            set(s->list, MUIA_List_Format, (ULONG)s->col_fmt_th);
         }
         {
             uint32_t drill = v->style == SEL_VIEW_STYLE_DRILLDOWN; /* MUI-P3-3: the breadcrumb line, drilldown only */
@@ -1205,7 +1253,7 @@ static void mui_help_open(mui_state* s) {
             s->help_ptr[i] = s->help_buf[i];
         }
         s->help_ptr[n] = NULL;
-        lst = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) TAG_DONE);
+        lst = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_List_Format, (ULONG)g_list_fmt1, TAG_DONE);
         if (lst == NULL) {
             return;
         }
@@ -1336,7 +1384,7 @@ static void mui_settings_open(mui_state* s) {
                 continue;
             }
             s->set_ctl[i] = g;
-            DoMethod(grid, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG)r->label, MUIA_Text_PreParse, (ULONG) "\033r", TAG_DONE));
+            DoMethod(grid, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG)r->label, MUIA_Text_PreParse, (ULONG)g_pre_r, TAG_DONE));
             DoMethod(grid, OM_ADDMEMBER, g);
         }
         s->set_win = MUI_NewObject((char*)MUIC_Window, MUIA_Window_Title, (ULONG) "Selecta Settings", MUIA_Window_ID, 0x53455453UL,

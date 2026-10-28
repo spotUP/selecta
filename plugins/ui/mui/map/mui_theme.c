@@ -57,6 +57,34 @@ int mui_theme_readable(uint32_t text_rgb, uint32_t bg_rgb) {
     return hi * 10u / lo >= 40u;
 }
 
+static uint32_t lum_dist(uint32_t a, uint32_t b) {
+    uint32_t x = lum(a), y = lum(b);
+    return x > y ? x - y : y - x;
+}
+
+int mui_theme_pick_pen(const uint32_t* pen_rgb, uint32_t n, const uint32_t* tokens) {
+    static const int bgs[4] = {SEL_GUI_TOKEN_BACKGROUND, SEL_GUI_TOKEN_SURFACE, SEL_GUI_TOKEN_SURFACE_RAISED, SEL_GUI_TOKEN_PANEL};
+    int best = -1;
+    uint32_t best_d = 0;
+    if (pen_rgb == NULL || tokens == NULL) {
+        return -1;
+    }
+    for (uint32_t i = 0; i < n; i++) {
+        int ok = 1;
+        for (int b = 0; b < 4; b++) {
+            ok = ok && mui_theme_readable(pen_rgb[i], tokens[bgs[b]]);
+        }
+        if (ok) {
+            uint32_t d = lum_dist(pen_rgb[i], tokens[SEL_GUI_TOKEN_TEXT]);
+            if (best < 0 || d < best_d) {
+                best = (int)i;
+                best_d = d;
+            }
+        }
+    }
+    return best;
+}
+
 uint32_t mui_theme_applied(void) {
     uint32_t n = 0;
     for (int i = 0; i < MUI_TH_COUNT; i++) {
