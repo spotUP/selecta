@@ -2226,8 +2226,13 @@ static int32_t song_menu_n(const desk* d) {
     return n > 0 ? n : 1;
 }
 
+/* The window in canvas pixels: the one rectangle a floating menu is placed in and clipped to, whichever region the pointer was in. */
+static sel_gui_rect window_rect(const desk* d) {
+    return rect_of(0, 0, lpx(d, (int32_t)d->layout.width), lpx(d, (int32_t)d->layout.height));
+}
+
 static sel_gui_rect song_menu_item_rect(const desk* d, int32_t k) {
-    sel_gui_rect mn = region_rect(d, "main");
+    sel_gui_rect mn = window_rect(d);
     int32_t w = lpx(d, SONG_MENU_W + 40), x = d->menu_x, y = d->menu_y;
     int32_t n = song_menu_n(d);
     if (x + w > mn.x + mn.w) {
@@ -2235,6 +2240,12 @@ static sel_gui_rect song_menu_item_rect(const desk* d, int32_t k) {
     }
     if (y + n * lpx(d, SONG_MENU_ITEM_H) > mn.y + mn.h) {
         y = mn.y + mn.h - n * lpx(d, SONG_MENU_ITEM_H);
+    }
+    if (x < mn.x) {
+        x = mn.x;
+    }
+    if (y < mn.y) {
+        y = mn.y;
     }
     return rect_of(x, y + k * lpx(d, SONG_MENU_ITEM_H), w, lpx(d, SONG_MENU_ITEM_H));
 }
@@ -2249,16 +2260,14 @@ static void song_menu_open(desk* d, int32_t x, int32_t y, const song_ref* ref) {
     d->sm_opens++;
 }
 
-/* I647: the same menu with a playlist's (Rename, Delete) or a folder's (Delete) items. The sidebar sits left of the main region the
- * menu is clipped to, so the menu opens at the main region's left edge there. */
+/* I647: the same menu with a playlist's (Rename, Delete) or a folder's (Delete) items. */
 static void plmenu_open(desk* d, int32_t x, int32_t y, uint32_t id, uint32_t folder, const char* name) {
-    sel_gui_rect mn = region_rect(d, "main");
     d->sm_pl_id = id;
     d->sm_pl_folder = folder;
     snprintf(d->sm_pl_name, sizeof d->sm_pl_name, "%s", name != NULL ? name : "");
     d->sm_open = 1;
     d->sm_step = 3;
-    d->menu_x = x < mn.x ? mn.x : x;
+    d->menu_x = x;
     d->menu_y = y;
     d->menus++;
 }
@@ -2347,7 +2356,7 @@ static void song_menu_draw(desk* d) {
         return;
     }
     n = song_menu_n(d);
-    sel_gui_clip_push(d->canvas, region_rect(d, "main"));
+    sel_gui_clip_push(d->canvas, window_rect(d));
     {
         /* One raised panel with the overlay shadow; items are text on it, and only the item under the pointer takes the accent
          * fill (the macOS menu convention, switching at once like the sidebar doors: I356, I373). */
@@ -5203,6 +5212,10 @@ static const char* library_dump_build(desk* d) {
     }
     if (o + 600u < sizeof d->library_dump) { /* the sidebar library list (I608): counters and the rectangle of each drawn row */
         uint32_t k;
+        if (d->sm_open) { /* I649: the open menu's panel, in window coordinates */
+            sel_gui_rect m0 = song_menu_item_rect(d, 0);
+            o = dump_put(d, o, "smenu %d %d %d %d\n", (int)m0.x, (int)m0.y, (int)m0.w, (int)(m0.h * song_menu_n(d)));
+        }
         o = dump_put(d, o, "sidelib draws=%u rows=%u items=%u opens=%u y=%d max=%d\n", (unsigned)d->side_draws, (unsigned)d->side_rows,
                      (unsigned)d->side_n, (unsigned)d->side_opens, (int)d->side_y_q16, (int)side_lib_max_q16(d));
         o = dump_put(d, o, "sideempty draws=%u clicks=%u btn %d %d %d %d\n", (unsigned)d->side_empty_draws, (unsigned)d->side_create_clicks,

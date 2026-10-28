@@ -142,3 +142,15 @@ dui_run(e3 ${empty2} --canvas 1280x800 --input "${WORK}/create_name.txt")
 if(NOT "${e3}" MATCHES "plpage id=[0-9]+ name=\\[Road\\] [^\n]* edit=0")
   message(FATAL_ERROR "typing did not rename the opened playlist in:\n${e3}")
 endif()
+
+# 7. I649: a right-click on a sidebar row opens the Rename/Delete menu at the pointer, over the sidebar, not at the main region's
+# left edge. Invariant: a floating menu is placed in window coordinates at the pointer, clamped to the window only.
+sl_centre(c7 "${w1}" 1)
+string(REPLACE " " ";" c7_xy "${c7}")
+list(GET c7_xy 0 c7x)
+file(WRITE "${WORK}/rclick.txt" "move ${c7}\nrclick ${c7}\nwait 50\n")
+dui_run(r1 ${common} --canvas 1280x800 --input "${WORK}/rclick.txt")
+if(NOT "${r1}" MATCHES "smenu ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)")
+  message(FATAL_ERROR "no smenu line (the sidebar row menu did not open) in:\n${r1}")
+endif()
+expect_eq("sidebar menu x" "${CMAKE_MATCH_1}" "${c7x}")
