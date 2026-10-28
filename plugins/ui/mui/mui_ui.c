@@ -467,6 +467,16 @@ static void mui_close_on_request(Object* win) {
 
 /* I660: PreParse strings of every Text object (plain, centred, right); only the alignment escape when the look is off. */
 static char g_pre[4], g_pre_c[8], g_pre_r[8];
+/* I672: the same for the muted slot (TEXT_MUTED); equal to the primary strings when the screen cannot show it exactly. */
+static char g_pre_m[4], g_pre_m_c[8];
+
+/* PreParse for a label: the pen slot comes from mui_pens_label_slot (map/mui_pens.c), the single label table. */
+static const char* mui_pre_for(mui_label label, int centred) {
+    if (mui_pens_label_slot(label) == MUI_PEN_TEXT_MUTED) {
+        return centred ? g_pre_m_c : g_pre_m;
+    }
+    return centred ? g_pre_c : g_pre;
+}
 static char g_list_fmt1[8]; /* one-column list format carrying the pen preparse ("P=" + pen), empty when off */
 
 /* col_fmt (comma separated column specs) with "P=<pen escape> " in front of each column, so list text uses the look pen. */
@@ -533,6 +543,17 @@ static void mui_theme_init(void) {
         sprintf(g_pre_c, "\033c\033%d", pen);
         sprintf(g_pre_r, "\033r\033%d", pen);
         sprintf(g_list_fmt1, "P=%s", g_pre);
+    }
+    /* I672: DrawInfo pen mui_pens_dri_index(MUTED) must read exactly the TEXT_MUTED token on the screen, or the muted labels
+     * fall back to the primary pen (Workbench fallback screen). */
+    sprintf(g_pre_m, "%s", g_pre);
+    sprintf(g_pre_m_c, "%s", g_pre_c);
+    {
+        int mp = mui_pens_dri_index(&g_plan, MUI_PEN_TEXT_MUTED);
+        if (pen >= 0 && g_scr != NULL && mp >= 0 && mp < 8 && pen_rgb[mp] == th.token[SEL_GUI_TOKEN_TEXT_MUTED]) {
+            sprintf(g_pre_m, "\033%d", mp);
+            sprintf(g_pre_m_c, "\033c\033%d", mp);
+        }
     }
 }
 
@@ -633,10 +654,10 @@ static Object* mui_make_button(const char* label, const char* icon_key, LONG id)
     return mui_make_button_w(label, icon_key, id, 100);
 }
 
-static Object* mui_make_text(mui_state* s, uint32_t attr, const char* initial) {
+static Object* mui_make_text(mui_state* s, uint32_t attr, const char* initial, mui_label label) {
     snprintf(s->txt_buf[attr], sizeof s->txt_buf[attr], "%s", initial);
     s->txt[attr] = MUI_NewObject((char*)MUIC_Text, TH_TAGS(MUI_TH_STATUS, MUIV_Frame_Text) MUIA_Text_Contents, (ULONG)s->txt_buf[attr], MUIA_Text_HiCharIdx, MUI_NOMARK,
-                                 MUIA_Text_PreParse, (ULONG)g_pre, TAG_DONE);
+                                 MUIA_Text_PreParse, (ULONG)mui_pre_for(label, 0), TAG_DONE);
     return s->txt[attr];
 }
 
@@ -721,14 +742,14 @@ static Object* mui_player_group(mui_state* s) {
         return NULL;
     }
     DoMethod(row1, OM_ADDMEMBER, s->vol);
-    DoMethod(row2, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_CLOCK, "0:00 "));
+    DoMethod(row2, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_CLOCK, "0:00 ", MUI_LBL_CLOCK));
     DoMethod(row2, OM_ADDMEMBER, s->seek);
-    DoMethod(row2, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_REMAINING, "-0:00"));
-    DoMethod(row2, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_LENGTH, "0:00 "));
-    DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_TITLE, "No song"));
-    DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_ARTIST, ""));
-    DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_FORMAT, "        "));
-    DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_STATUS, "Stopped"));
+    DoMethod(row2, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_REMAINING, "-0:00", MUI_LBL_REMAINING));
+    DoMethod(row2, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_LENGTH, "0:00 ", MUI_LBL_LENGTH));
+    DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_TITLE, "No song", MUI_LBL_TITLE));
+    DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_ARTIST, "", MUI_LBL_ARTIST));
+    DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_FORMAT, "        ", MUI_LBL_FORMAT));
+    DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_STATUS, "Stopped", MUI_LBL_STATUS));
     DoMethod(g, OM_ADDMEMBER, row1);
     DoMethod(g, OM_ADDMEMBER, row1b);
     DoMethod(g, OM_ADDMEMBER, mui_p8_extras_row());
@@ -890,9 +911,9 @@ static Object* mui_main_group(mui_state* s) {
 /* MUI-P4-8/9/16: the detail slot. Now Playing (artwork placeholder, title, artist, album, lyrics, next in queue), the song
  * information rows, and the tracker pattern rows. All text comes from the engine state; mui_detail_refresh refills it when the
  * signature of the shown values changes. */
-static Object* mui_np_text(char* buf, size_t cap, const char* init) {
+static Object* mui_np_text(char* buf, size_t cap, const char* init, mui_label label) {
     snprintf(buf, cap, "%s", init);
-    return MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG)buf, MUIA_Text_PreParse, (ULONG)g_pre, TAG_DONE);
+    return MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG)buf, MUIA_Text_PreParse, (ULONG)mui_pre_for(label, 0), TAG_DONE);
 }
 
 static Object* mui_detail_group(mui_state* s) {
@@ -905,9 +926,9 @@ static Object* mui_detail_group(mui_state* s) {
         return NULL;
     }
     s->np_lyric_buf[0] = '\0';
-    s->np_title = mui_np_text(s->np_buf[0], sizeof s->np_buf[0], " ");
-    s->np_artist = mui_np_text(s->np_buf[1], sizeof s->np_buf[1], " ");
-    s->np_album = mui_np_text(s->np_buf[2], sizeof s->np_buf[2], " ");
+    s->np_title = mui_np_text(s->np_buf[0], sizeof s->np_buf[0], " ", MUI_LBL_TITLE);
+    s->np_artist = mui_np_text(s->np_buf[1], sizeof s->np_buf[1], " ", MUI_LBL_ARTIST);
+    s->np_album = mui_np_text(s->np_buf[2], sizeof s->np_buf[2], " ", MUI_LBL_ALBUM);
     s->np_lyrics = lyr_list;
     lyr_view = lyr_list != NULL ? MUI_NewObject((char*)MUIC_Listview, MUIA_Listview_List, (ULONG)lyr_list, TAG_DONE) : NULL;
     s->info_list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_List_Format, (ULONG)g_list_fmt1, TAG_DONE);
@@ -922,9 +943,9 @@ static Object* mui_detail_group(mui_state* s) {
     if (lyr_view != NULL) {
         DoMethod(g, OM_ADDMEMBER, lyr_view);
     }
-    DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG) "Next in Queue", MUIA_Text_PreParse, (ULONG)g_pre_c, TAG_DONE));
+    DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG) "Next in Queue", MUIA_Text_PreParse, (ULONG)mui_pre_for(MUI_LBL_SECTION, 1), TAG_DONE));
     for (i = 0; i < 3; i++) {
-        s->np_up[i] = mui_np_text(s->np_up_buf[i], sizeof s->np_up_buf[i], " ");
+        s->np_up[i] = mui_np_text(s->np_up_buf[i], sizeof s->np_up_buf[i], " ", MUI_LBL_UPCOMING);
         DoMethod(g, OM_ADDMEMBER, s->np_up[i]);
     }
     if (s->info_list != NULL) {
