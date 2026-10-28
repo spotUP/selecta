@@ -54,10 +54,11 @@ typedef struct mui_cells {
 } mui_cells;
 
 /* MUI-P4: the tool row gadgets and their counters in the ui_p4 sentinel. */
+#define MUI_CRUMB_MAX 6u
 enum { P4_SEARCH, P4_CMD, P4_LIKE, P4_RATING, P4_SUBSONG, P4_QREMOVE, P4_QCLEAR, P4_QUP, P4_QDOWN, P4_POPEN, P4_PRENAME, P4_PDELETE,
-       P4_CLEARLIB, P4_HELP, P4_HOME, P4_TOAST, P4_COUNT };
+       P4_CLEARLIB, P4_HELP, P4_HOME, P4_TOAST, P4_CRUMB, P4_STATE, P4_COUNT };
 static const char* const p4_name[P4_COUNT] = {"search", "cmd", "like", "rating", "subsong", "qremove", "qclear", "qup", "qdown",
-                                              "popen", "prename", "pdelete", "clearlib", "help", "home", "toast"};
+                                              "popen", "prename", "pdelete", "clearlib", "help", "home", "toast", "crumb", "state"};
 
 typedef struct mui_state {
     uint32_t opens; /* ui_open_mui sentinel (MUI-P1-5): windows opened */
@@ -68,7 +69,7 @@ typedef struct mui_state {
     uint32_t row_plays;      /* list rows activated by double click (MUI-P3-1): stat row_plays */
     uint32_t drops;          /* AppWindow arguments sent to the engine (MUI-P5-6): stat drops */
     sel_tag stats[8];
-    char p4_stat[160];       /* MUI-P4: the sentinel printed as ui_p4: how often each P4 gadget sent its line */
+    char p4_stat[200];       /* MUI-P4: the sentinel printed as ui_p4: how often each P4 gadget sent its line */
     uint32_t p4[P4_COUNT];
     sel_uim uim;             /* the frame model the controls are driven from (MUI-P2-6) */
     char list_stat[480];     /* the list sentinel printed as ui_list: back end, style, columns, rows (native List only) */
@@ -108,6 +109,12 @@ typedef struct mui_state {
     char status_buf[160];
     Object* crumb;                  /* MUI-P3-3: the drilldown breadcrumb line above the list */
     char crumb_buf[128];
+    Object* crumb_row;              /* MUI-P4-2: the Library breadcrumb buttons (browse path pieces), shown in the browse source */
+    Object* crumb_btn[MUI_CRUMB_MAX];
+    char crumb_lbl[MUI_CRUMB_MAX][48];
+    char crumb_path[256];           /* the browse path the buttons were last labelled from */
+    Object* state_txt;              /* MUI-P4-15: the empty-state line of the view (sel_uim_state_text) */
+    char state_buf[96];
     uint32_t list_sig;
     LONG list_active_set;
     mui_list_pending list_pending;  /* the clicked row until the engine snapshot shows it */
@@ -240,6 +247,7 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_LIST_SEL 0x2111L
 #define CTL_DOOR_BASE 0x2200L /* MUI-P4-0: one button per sidebar door */
 #define MUI_DOOR_MAX 8u
+#define CTL_CRUMB_BASE 0x2400L /* MUI-P4-2: one button per breadcrumb piece */
 #define CTL_P4_BASE 0x2300L /* MUI-P4: CTL_P4_BASE + P4_* */
 static const char* const p4_rating_entries[] = {"None", "1 star", "2 stars", "3 stars", "4 stars", "5 stars", NULL};
 static const char* const p4_subsong_entries[] = {"Subsong 1", "Subsong 2", "Subsong 3", "Subsong 4", "Subsong 5", "Subsong 6", "Subsong 7", "Subsong 8", NULL};
@@ -252,14 +260,19 @@ static const char* const p4_subsong_entries[] = {"Subsong 1", "Subsong 2", "Subs
 #endif
 #define MUI_NOMARK 1
 
-static Object* mui_make_button(const char* label, LONG id) {
-    Object* o = MUI_NewObject((char*)MUIC_Text, MUIA_Frame, MUIV_Frame_Button, MUIA_Font, MUIV_Font_Button,
+/* weight 100 is the MUI default (equal shares of the row); 0 sizes the button to its label. */
+static Object* mui_make_button_w(const char* label, LONG id, LONG weight) {
+    Object* o = MUI_NewObject((char*)MUIC_Text, MUIA_Weight, (ULONG)weight, MUIA_Frame, MUIV_Frame_Button, MUIA_Font, MUIV_Font_Button,
                               MUIA_Text_Contents, (ULONG)label, MUIA_Text_HiCharIdx, MUI_NOMARK, MUIA_Text_PreParse, (ULONG) "\33c",
                               MUIA_InputMode, MUIV_InputMode_RelVerify, MUIA_Background, MUII_ButtonBack, TAG_DONE);
     if (o != NULL) {
         DoMethod(o, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
     }
     return o;
+}
+
+static Object* mui_make_button(const char* label, LONG id) {
+    return mui_make_button_w(label, id, 100);
 }
 
 static Object* mui_make_text(mui_state* s, uint32_t attr, const char* initial) {
@@ -445,6 +458,26 @@ static Object* mui_main_group(mui_state* s) {
         DoMethod(g, OM_ADDMEMBER, tools);
     }
     DoMethod(g, OM_ADDMEMBER, s->crumb);
+    s->crumb_row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_ShowMe, FALSE, TAG_DONE);
+    s->state_txt = MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG)" ", MUIA_ShowMe, FALSE, TAG_DONE);
+    if (s->crumb_row == NULL || s->state_txt == NULL) {
+        return NULL;
+    }
+    {
+        uint32_t k;
+        for (k = 0; k < MUI_CRUMB_MAX; k++) {
+            snprintf(s->crumb_lbl[k], sizeof s->crumb_lbl[k], " ");
+            s->crumb_btn[k] = mui_make_button_w(s->crumb_lbl[k], CTL_CRUMB_BASE + (LONG)k, 0);
+            if (s->crumb_btn[k] == NULL) {
+                return NULL;
+            }
+            set(s->crumb_btn[k], MUIA_ShowMe, FALSE);
+            DoMethod(s->crumb_row, OM_ADDMEMBER, s->crumb_btn[k]);
+        }
+    }
+    DoMethod(s->crumb_row, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    DoMethod(g, OM_ADDMEMBER, s->crumb_row);
+    DoMethod(g, OM_ADDMEMBER, s->state_txt);
     DoMethod(g, OM_ADDMEMBER, s->listview);
     /* MUI-P5-1: the canvas object sits beside the list, hidden until the style switch (MUI-P3-5) shows it. */
     {
@@ -519,6 +552,52 @@ static void mui_refresh(mui_state* s) {
                 set(s->crumb, MUIA_Text_Contents, (ULONG)s->crumb_buf);
             }
             set(s->crumb, MUIA_ShowMe, drill ? TRUE : FALSE);
+        }
+        {
+            /* MUI-P4-2: the browse path as clickable pieces; MUI-P4-15: the empty-state line of a view without rows. */
+            mui_crumb pieces[MUI_CRUMB_MAX];
+            const char* bp = v->source == SEL_VIEW_BROWSE && v->browse_path != NULL ? v->browse_path : "";
+            uint32_t k, np;
+            const char* stxt;
+            ULONG parent = 0;
+            GetAttr(MUIA_Parent, s->crumb_row, &parent);
+            if (strcmp(bp, s->crumb_path) != 0 && parent != 0) {
+                DoMethod((Object*)parent, MUIM_Group_InitChange);
+                DoMethod(s->crumb_row, MUIM_Group_InitChange);
+                snprintf(s->crumb_path, sizeof s->crumb_path, "%s", bp);
+                np = mui_path_crumbs(bp, pieces, MUI_CRUMB_MAX);
+                for (k = 0; k < MUI_CRUMB_MAX; k++) {
+                    if (k < np) {
+                        snprintf(s->crumb_lbl[k], sizeof s->crumb_lbl[k], "%s", pieces[k].name);
+                        set(s->crumb_btn[k], MUIA_Text_Contents, (ULONG)s->crumb_lbl[k]);
+                    }
+                    set(s->crumb_btn[k], MUIA_ShowMe, k < np ? TRUE : FALSE);
+                }
+                set(s->crumb_row, MUIA_ShowMe, np > 0 ? TRUE : FALSE);
+                DoMethod(s->crumb_row, MUIM_Group_ExitChange);
+                DoMethod((Object*)parent, MUIM_Group_ExitChange);
+            }
+            stxt = mui_view_is_empty(v) ? sel_uim_state_text(mui_state_view_of(v->source), SEL_UIM_ST_EMPTY) : NULL;
+            if (stxt == NULL) {
+                stxt = "";
+            }
+            if (strcmp(stxt, s->state_buf) != 0) {
+                ULONG sparent = 0;
+                snprintf(s->state_buf, sizeof s->state_buf, "%s", stxt);
+                GetAttr(MUIA_Parent, s->state_txt, &sparent);
+                /* A ShowMe change needs the group's layout pass, like the crumb row above. */
+                if (sparent != 0) {
+                    DoMethod((Object*)sparent, MUIM_Group_InitChange);
+                }
+                set(s->state_txt, MUIA_Text_Contents, (ULONG)(s->state_buf[0] != '\0' ? s->state_buf : " "));
+                set(s->state_txt, MUIA_ShowMe, s->state_buf[0] != '\0' ? TRUE : FALSE);
+                if (sparent != 0) {
+                    DoMethod((Object*)sparent, MUIM_Group_ExitChange);
+                }
+                if (s->state_buf[0] != '\0') {
+                    s->p4[P4_STATE]++;
+                }
+            }
         }
         for (i = 0; i < n; i++) {
             for (c = s->entries[i].text; *c != '\0'; c++) {
@@ -812,6 +891,18 @@ static void mui_control_fire(mui_state* s, LONG id) {
         }
     } else if (id >= CTL_DOOR_BASE && id < CTL_DOOR_BASE + (LONG)MUI_DOOR_MAX) {
         mui_engine_line(s, mui_door_line((uint32_t)(id - CTL_DOOR_BASE))); /* the page switch: the engine moves the main view's source */
+    } else if (id >= CTL_CRUMB_BASE && id < CTL_CRUMB_BASE + (LONG)MUI_CRUMB_MAX) {
+        /* MUI-P4-2: a crumb opens the browse path up to and including that piece. */
+        const sel_view_state* view = sel_engine_state(s->engine)->view;
+        mui_crumb pieces[MUI_CRUMB_MAX];
+        uint32_t k = (uint32_t)(id - CTL_CRUMB_BASE);
+        if (view != NULL && view->source == SEL_VIEW_BROWSE && view->browse_path != NULL && k < mui_path_crumbs(view->browse_path, pieces, MUI_CRUMB_MAX)) {
+            char cl[300];
+            snprintf(cl, sizeof cl, "LIBRARY_BROWSE %.*s", (int)pieces[k].end, view->browse_path);
+            if (mui_engine_line(s, cl)) {
+                s->p4[P4_CRUMB]++;
+            }
+        }
     } else if (id >= CTL_P4_BASE && id < CTL_P4_BASE + (LONG)P4_COUNT) {
         mui_p4_fire(s, (uint32_t)(id - CTL_P4_BASE));
     } else if (id == CTL_CLIP_COPY) {
