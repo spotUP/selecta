@@ -515,6 +515,12 @@ int desk_sdl_poll(desk_sdl* b, uint32_t timeout_ms, int32_t* w, int32_t* h) {
             break;
         }
         case SDL_EVENT_KEY_DOWN:
+#ifdef __APPLE__
+            if (ev.key.key == SDLK_Q && (ev.key.mod & SDL_KMOD_GUI) != 0) { /* Command-Q quits at once, as the window close does (I623) */
+                return DESK_SDL_QUIT;
+            }
+#endif
+            /* fall through */
         case SDL_EVENT_TEXT_INPUT:
             if (queue_key(b, &ev) && result == DESK_SDL_NONE) {
                 result = DESK_SDL_ACTIVITY;

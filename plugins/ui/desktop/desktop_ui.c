@@ -270,10 +270,11 @@ typedef struct desk {
     int sm_open;             /* the shared song menu is open (I305) */
     int stats_open;          /* the Library Statistics panel (More) is expanded over the grid (I455) */
     uint32_t stats_panel_draws, stats_panel_rows; /* panels painted, and the statistics rows in the last one */
-    int dlg_open;            /* DUI-P4-18: the confirm dialog is up: 1 = Remove from Library, 2 = Clear Library */
+    int dlg_open;            /* DUI-P4-18: the confirm dialog is up: 1 = Remove from Library, 2 = Clear Library, 3 = Quit Selecta */
     char dlg_path[512];      /* the song a Remove from Library dialog names */
     char dlg_text[640];      /* the question the dialog shows */
     uint32_t dlg_playlists;  /* playlists the Clear Library dialog names */
+    int quit_req;            /* I623: the Quit Selecta dialog was confirmed; the turn ends the UI loop like a closed window */
     uint32_t dlg_opens, dlg_confirms, dlg_cancels; /* sentinels: dialogs opened / confirmed / cancelled */
     int sm_step;             /* 0 the items, 1 the playlist chooser, 2 the Queue scope choices (I258) */
     song_ref sm_ref;         /* the song it was opened on */
@@ -2223,7 +2224,7 @@ static void song_menu_draw(desk* d) {
  * the song count. Nothing is sent until Confirm; Cancel, Escape or a click outside close it. ---- */
 
 enum { NAG_BOX = 20, NAG_COL_ROWS = 4, NAG_ROW_H = 32, NAG_MAX = 16 };
-enum { DLG_NONE = 0, DLG_REMOVE = 1, DLG_CLEAR = 2, DLG_SYNC = 3 };
+enum { DLG_NONE = 0, DLG_REMOVE = 1, DLG_CLEAR = 2, DLG_SYNC = 3, DLG_QUIT = 4 };
 
 static const char* path_base(const char* p);
 
@@ -2397,6 +2398,21 @@ static int nagdlg_pointer(desk* d, const sel_gui_input* ev) {
     return 1; /* a decision dialog: a click outside does nothing */
 }
 
+/* I623: Escape with nothing open asks before it quits. */
+static void dlg_open_quit(desk* d) {
+    snprintf(d->dlg_text, sizeof d->dlg_text, "%s", "Quit Selecta?");
+    d->dlg_open = DLG_QUIT;
+    d->dlg_opens++;
+}
+
+static const char* dlg_title(const desk* d) {
+    return d->dlg_open == DLG_CLEAR ? "Clear Library" : d->dlg_open == DLG_QUIT ? "Quit" : "Remove from Library";
+}
+
+static const char* dlg_confirm_label(const desk* d) {
+    return d->dlg_open == DLG_CLEAR ? "Clear Library" : d->dlg_open == DLG_QUIT ? "Quit" : "Remove";
+}
+
 static void dlg_close(desk* d, int confirm) {
     int kind = d->dlg_open;
     d->dlg_open = DLG_NONE;
@@ -2406,6 +2422,9 @@ static void dlg_close(desk* d, int confirm) {
     } else if (confirm && kind == DLG_CLEAR) {
         desk_send(d, "LIBRARY_CLEAR");
         desk_toast(d, "Library cleared");
+    }
+    if (confirm && kind == DLG_QUIT) {
+        d->quit_req = 1;
     }
     if (confirm) {
         d->dlg_confirms++;
@@ -2434,12 +2453,12 @@ static void dlg_draw(desk* d) {
         return;
     }
     tr = rect_of(p.x + m, p.y + m, p.w - 2 * m, head->line_height);
-    sel_gui_text_wrap(d->canvas, head, tr, d->dlg_open == DLG_CLEAR ? "Clear Library" : "Remove from Library",
+    sel_gui_text_wrap(d->canvas, head, tr, dlg_title(d),
                       ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), 1, &d->text);
     tr = rect_of(p.x + m, p.y + m + head->line_height + lpx(d, 10), p.w - 2 * m, body->line_height * 3);
     sel_gui_text_wrap(d->canvas, body, tr, d->dlg_text, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), 3, &d->text);
     draw_button(d, dlg_button_rect(d, 0u), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Cancel", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
-    draw_button(d, dlg_button_rect(d, 1u), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), d->dlg_open == DLG_CLEAR ? "Clear Library" : "Remove",
+    draw_button(d, dlg_button_rect(d, 1u), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), dlg_confirm_label(d),
                 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
     sel_gui_dirty_add(d->canvas, p);
 }
@@ -4819,7 +4838,7 @@ static const char* library_dump_build(desk* d) {
                               "overlay kind=%d palette_opens=%u palette_runs=%u help_opens=%u cmdline_opens=%u cmdline_runs=%u sends_ok=%u "
                               "toasts=%u toast_on=%d menu_picks=%u,%u,%u,%u last_verb=%s pal_count=%u queue=%u status=%s\n"
                               "song_menu open=%d items=%d opens=%u picks=%u playlist_adds=%u rows=%u accent=%06x raised=%06x\n"
-                              "dialog open=%d opens=%u confirms=%u cancels=%u songs=%u playlists=%u cancel=%d,%d,%d,%d confirm=%d,%d,%d,%d clear=%d,%d,%d,%d\n",
+                              "dialog quits=%d open=%d opens=%u confirms=%u cancels=%u songs=%u playlists=%u cancel=%d,%d,%d,%d confirm=%d,%d,%d,%d clear=%d,%d,%d,%d\n",
                               d->overlay, (unsigned)d->palette_opens, (unsigned)d->palette_runs, (unsigned)d->help_opens,
                               (unsigned)d->cmdline_opens, (unsigned)d->cmdline_runs, (unsigned)d->overlay_sends_ok, (unsigned)d->toasts,
                               d->toast_on, (unsigned)d->menu_picks[0], (unsigned)d->menu_picks[1], (unsigned)d->menu_picks[2],
@@ -4828,7 +4847,7 @@ static const char* library_dump_build(desk* d) {
                               (unsigned)d->sm_opens, (unsigned)d->sm_picks, (unsigned)d->sm_pl_adds, (unsigned)d->sm_n,
                               (unsigned)(ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) & 0xFFFFFFu),
                               (unsigned)(ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]) & 0xFFFFFFu),
-                              d->dlg_open, (unsigned)d->dlg_opens, (unsigned)d->dlg_confirms, (unsigned)d->dlg_cancels,
+                              d->quit_req, d->dlg_open, (unsigned)d->dlg_opens, (unsigned)d->dlg_confirms, (unsigned)d->dlg_cancels,
                               (unsigned)st->library_songs, (unsigned)d->dlg_playlists, dlg_button_rect(d, 0u).x, dlg_button_rect(d, 0u).y,
                               dlg_button_rect(d, 0u).w, dlg_button_rect(d, 0u).h, dlg_button_rect(d, 1u).x,
                               dlg_button_rect(d, 1u).y, dlg_button_rect(d, 1u).w, dlg_button_rect(d, 1u).h,
@@ -7878,6 +7897,9 @@ static int view_first_down(desk* d, const sel_gui_input* ev) {
 static int desk_key(desk* d, const sel_gui_input* ev) {
     const char* act;
     d->keys_in++;
+    if (d->quit_req) { /* the Quit Selecta dialog was confirmed: the loop is ending, later keys do nothing (I623) */
+        return 1;
+    }
     if (desk_zoom_key(d, ev)) {
         return 1;
     }
@@ -7899,6 +7921,17 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
     }
     if (d->si_page && d->si_edit) { /* the note field of the Song Information page has the keyboard */
         return si_key(d, ev);
+    }
+    if (ev->code == 27u && ev->mods == 0u && d->sm_open) { /* Escape closes the open song menu */
+        d->sm_open = 0;
+        draw_home(d);
+        return 1;
+    }
+    if (ev->code == 27u && ev->mods == 0u && !(d->pl_page && d->pl_edit) && !(d->si_page && d->si_edit) &&
+        d->focus != (int32_t)d->layout.count) { /* Escape with nothing open asks whether to quit (I623) */
+        dlg_open_quit(d);
+        draw_home(d);
+        return 1;
     }
     if (d->focus == (int32_t)d->layout.count) { /* the search field is focused */
         if (ev->code == 27u) {
@@ -9619,6 +9652,9 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
 #endif
     if (d->testcard) {
         return -1; /* the test card is one frame */
+    }
+    if (d->quit_req) {
+        return -1; /* the Quit Selecta dialog was confirmed: end the loop as a closed window does (I623) */
     }
     desk_library_follow(d);
     if (!d->nag_asked) { /* sync on launch (I527): the engine marks remote sources never synced or stale in its SOURCES rows; asked on the first turn, when the engine answers UI events */
