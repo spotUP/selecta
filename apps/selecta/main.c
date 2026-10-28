@@ -614,7 +614,7 @@ int main(int argc, char** argv)
         snprintf(cmd, sizeof cmd, "LIBRARY_BROWSE %s", start);
         send_line(e, cmd);
         const char* view = option(argc, argv, "--view", "");
-        int own = strcmp(ui_id, "desktop") == 0 && (strcmp(view, "home") == 0 || strcmp(view, "library") == 0 ||
+        int own = strcmp(ui_id, "desktop") == 0 && (view[0] == '\0' || strcmp(view, "home") == 0 || strcmp(view, "library") == 0 || /* no --view: the desktop UI starts on Home (I594) */
                                                      strcmp(view, "playlists") == 0 || strcmp(view, "songs") == 0);
         /* the desktop UI enters these pages itself (desk_page_goto), the one place their engine verbs live (I266) */
         if (!own) {

@@ -8972,6 +8972,9 @@ static void* desk_open(const sel_ui_open_args* a) {
             a->host->mem_free(a->host, d);
             return NULL;
         }
+    } else { /* no --view: the sidebar marks Home at start, so enter Home through the door's path (I594); else the main area stays empty */
+        d->view_pending = 1;
+        d->view_pg = PG_HOME;
     }
     d->scale = 1;
     d->scale_q16 = 65536;

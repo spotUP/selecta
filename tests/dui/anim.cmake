@@ -1,6 +1,6 @@
 # dui-anim (DUI-P3-5): animation timeline, reduce-motion pref and idle blocking, through the real shell.
 #   -DSELECTA -DSONGS -DWORK -DGOLDEN
-# 1. Idle: no input and no song, a 10 s run on the fixed clock (`wait 10000`) draws exactly 1 frame (the first).
+# 1. Idle: no input and no song, a 10 s run on the fixed clock (`wait 10000`) draws no frame beyond the start (first frame + the Home entry frame, I594).
 # 2. A view change (`tile 0` on the home grid) with ui.desktop.reduce_motion=1 draws 1 frame more than the run without
 #    it and starts no tween; without the pref it draws more than 1 frame more and starts a tween (sentinel).
 # The pref persists in the config dir, so every run sets it.
@@ -14,8 +14,13 @@ file(MAKE_DIRECTORY "${WORK}")
 file(WRITE "${WORK}/idle.txt" "wait 10000\n")
 dui_run(idle --ui desktop --backend mem --stats --clock fixed --input "${WORK}/idle.txt")
 dui_stat(idle_frames "${idle}" desktop frames)
-if(NOT idle_frames EQUAL 1)
-  message(FATAL_ERROR "an idle 10 s run with no input and no song must draw 1 frame (drew ${idle_frames})")
+# I594: the start enters Home through the page door, so the first frame is followed by one frame when the Home view
+# arrives. Idle time itself must add nothing: a 10 s wait draws as many frames as a 100 ms wait.
+file(WRITE "${WORK}/idle_short.txt" "wait 100\n")
+dui_run(idle_short --ui desktop --backend mem --stats --clock fixed --input "${WORK}/idle_short.txt")
+dui_stat(idle_short_frames "${idle_short}" desktop frames)
+if(NOT idle_frames EQUAL idle_short_frames OR idle_frames GREATER 2)
+  message(FATAL_ERROR "an idle run with no input and no song must draw the first frame plus the start-page frame only, and idle time must add none (10 s drew ${idle_frames}, 100 ms drew ${idle_short_frames})")
 endif()
 
 file(STRINGS "${HERE}/fixture_library.sql" album_lines REGEX "^INSERT INTO albums")
