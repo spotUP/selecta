@@ -152,3 +152,47 @@ Right group (left to right):
 - Exact hex colours (estimated from the image, not sampled).
 - Tooltips, hover states, and the true state of shuffle and repeat (shown grey, read as off).
 - Anything outside this window (menus, other pages, scrolled content below the visible rows).
+
+## Library sort and view menu (screenshot 2026-10-28 11.50.15)
+
+
+## Spotify sidebar menu (source: CleanShot 2026-10-28 at 11.50.15@2x.png)
+
+Crop covers only the top-right of the library panel. The left edge of the sidebar is not in the image, so the opener is read from the crop only.
+
+### Opener
+- Trigger: list icon (lines with dots, about x=545 y=44 in the 2x image) at the right end of the header row, next to the text "Recents". The "Recents" text is the current sort label and is also part of the trigger.
+- Menu anchors below the header, left-aligned at about x=144 (2x px), spanning to about x=560. Panel top about y=92, bottom about y=686.
+
+### Menu items, in order
+1. Section header "Sort by" (grey, not selectable, no icon)
+2. "Recents": green text, checkmark at right. Checked state.
+3. "Recently added": white, no check
+4. "Alphabetical": white, no check
+5. "Creator": white, no check
+6. Separator line (thin grey, full inner width, about y=508)
+7. Section header "View as" (grey, not selectable)
+8. View-as segmented control, 4 icon buttons in a rounded strip:
+   a. Compact list icon (three horizontal lines), not selected
+   b. List icon (lines with dots), green, selected: sits on a rounded grey pill
+   c. Small grid (3x3 dots), not selected
+   d. Large grid (2x2 squares), not selected
+
+Not visible: keyboard shortcuts, submenu arrows, disabled items, icons next to the sort items (none shown).
+
+### Visual treatment (estimated by eye, not measured)
+- Panel: about 416 x 594 px at 2x (about 208 x 297 pt). Dark charcoal background, roughly #282828. Corner radius small, about 4-6 pt. Soft dark shadow, faintly visible at the edges.
+- Section headers: grey (about #B3B3B3), medium weight, about 18 pt at 1x.
+- Item labels: white, regular weight, about 20 pt at 1x. Selected label is green (Spotify green).
+- Row height about 80 px at 2x (about 40 pt). Left text inset about 32 px at 2x (about 16 pt).
+- Hover row: none visible in the screenshot.
+- View-as strip: darker rounded container, selected button has a lighter grey rounded background.
+
+### Other visible state (versus a normal library list)
+- Library list behind the menu is in list view: first row "Liked Songs" with purple-to-blue heart tile, green pin, then a folder tile, a podcast-style cover, a bookmark tile.
+- Bottom now-playing bar shows "Who Am I" by Beenie Man with an add (plus-circle) button.
+- Nothing else in the crop is clearly changed from a normal sidebar. The left sidebar is not in the crop, so I cannot confirm anything about it.
+
+### Could not read
+- Exact pixel sizes, colors, shadow values and corner radius are estimates from the image, not measured.
+- Whether the trigger is in the left sidebar: the crop shows the right side of the library header only.
