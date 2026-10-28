@@ -33,6 +33,17 @@ static int exec_shared(void* ctx, const char* line, char* reply, size_t cap, int
     return sel_ctl_exec(x->e, line, reply, cap, rc);
 }
 
+static unsigned g_launches;
+static char g_last_cmd[256];
+static int g_launch_ok = 1;
+static int fake_launch(void* ctx, const char* script, const char* cmdline) {
+    (void)ctx;
+    (void)script;
+    g_launches++;
+    snprintf(g_last_cmd, sizeof g_last_cmd, "%s", cmdline);
+    return g_launch_ok;
+}
+
 int main(int argc, char** argv) {
     sel_engine_config cfg;
     exec_ctx x;
@@ -84,6 +95,74 @@ int main(int argc, char** argv) {
         CHECK(c.cmds == 0 && c.errors == 6);
         arexx_closing_result(&r, &c);
         CHECK(r.result1 == AREXX_RC_CLOSING && strcmp(r.text, "port_closing") == 0 && c.errors == 7);
+    } else if (strcmp(mode, "batch") == 0) {
+        /* M4-AX-3-3: BEGIN/END pass through the engine's one batch; the close-time END ends an open one */
+        static const char* const seq[] = {"BEGIN", "BEGIN", "END", "END"};
+        unsigned i;
+        for (i = 0; i < 4u; i++) { /* measured from the engine: a second BEGIN and a stray END both answer RC 0 */
+            arexx_dispatch(seq[i], 1, exec_shared, &x, reply, sizeof reply, &r, &c);
+            CHECK(r.result1 == AREXX_RC_OK);
+        }
+        CHECK(!sel_engine_in_batch(x.e));
+        arexx_dispatch("BEGIN", 1, exec_shared, &x, reply, sizeof reply, &r, &c);
+        CHECK(sel_engine_in_batch(x.e));
+        CHECK(arexx_end_batch(sel_engine_in_batch(x.e), exec_shared, &x, reply, sizeof reply, &c) == 1);
+        CHECK(!sel_engine_in_batch(x.e));
+        CHECK(arexx_end_batch(sel_engine_in_batch(x.e), exec_shared, &x, reply, sizeof reply, &c) == 0);
+        CHECK(x.calls == 6); /* the second end_batch sent nothing */
+    } else if (strcmp(mode, "hook") == 0) {
+        /* M4-AX-4-2: one launch per SONG_OPENED, none for other events, one log line on a failed launch */
+        arexx_hook_stats hs = {0, 0};
+        char logline[128];
+        CHECK(arexx_hook_event(0, "DH0:s.rexx", fake_launch, NULL, &hs, logline, sizeof logline) == -1);
+        CHECK(arexx_hook_event(1, "", fake_launch, NULL, &hs, logline, sizeof logline) == -1);
+        CHECK(arexx_hook_event(1, NULL, fake_launch, NULL, &hs, logline, sizeof logline) == -1);
+        CHECK(g_launches == 0);
+        CHECK(arexx_hook_event(1, "DH0:my s.rexx", fake_launch, NULL, &hs, logline, sizeof logline) == 1);
+        CHECK(g_launches == 1 && strcmp(g_last_cmd, "rx \"DH0:my s.rexx\"") == 0 && hs.fired == 1);
+        g_launch_ok = 0; /* script missing or no RexxMast */
+        CHECK(arexx_hook_event(1, "DH0:gone.rexx", fake_launch, NULL, &hs, logline, sizeof logline) == 0);
+        CHECK(strstr(logline, "hook_command failed") != NULL && hs.failed == 1);
+        CHECK(arexx_hook_event(1, "a\"b", fake_launch, NULL, &hs, logline, sizeof logline) == 0 && g_launches == 2);
+    } else if (strcmp(mode, "scripts") == 0 && argc > 2) {
+        /* M4-AX-4-1: every `ADDRESS SELECTA '<line>'` of the three example scripts is a line the port accepts */
+        static const char* const files[] = {"selecta-status.rexx", "selecta-next.rexx", "selecta-volume.rexx"};
+        unsigned i;
+        for (i = 0; i < 3u; i++) {
+            char path[512];
+            char text[8192];
+            char* at;
+            FILE* f;
+            size_t n;
+            snprintf(path, sizeof path, "%s/%s", argv[2], files[i]);
+            f = fopen(path, "rb");
+            CHECK(f != NULL);
+            if (f == NULL) {
+                continue;
+            }
+            n = fread(text, 1, sizeof text - 1u, f);
+            fclose(f);
+            text[n] = '\0';
+            at = strstr(text, "\nADDRESS SELECTA '"); /* at line start: the comment also shows one */
+            CHECK(at != NULL);
+            if (at != NULL) {
+                char line[64];
+                char* end;
+                at += 18;
+                end = strchr(at, '\'');
+                CHECK(end != NULL && (size_t)(end - at) < sizeof line - 4u);
+                if (end != NULL) {
+                    memcpy(line, at, (size_t)(end - at));
+                    line[end - at] = '\0';
+                    if (strcmp(files[i], "selecta-volume.rexx") == 0) {
+                        strcat(line, " 40"); /* the script appends its argument after the verb */
+                    }
+                    arexx_dispatch(line, 1, exec_shared, &x, reply, sizeof reply, &r, &c);
+                    CHECK(r.result1 == AREXX_RC_OK);
+                }
+            }
+        }
+        CHECK(x.calls == 3);
     } else if (strcmp(mode, "names") == 0) {
         unsigned n = 0;
         CHECK(arexx_port_name(0, name, sizeof name) && strcmp(name, "SELECTA") == 0);
