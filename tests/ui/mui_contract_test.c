@@ -11,6 +11,7 @@
 #include "mui_icons.h"
 #include "mui_map.h"
 #include "mui_theme.h"
+#include "mui_pens.h"
 
 #include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/theme.h>
@@ -139,6 +140,53 @@ static void test_menu(void) {
 
 /* mui-style-menu (MUI-P3-8): View > Style entries equal the mask popcount (planar 5, RTG 6) and each entry sends
  * "VIEW_STYLE <label>" for a style in the mask. */
+
+
+/* I666: Selecta owns its screen, so the token colours exist there at exact values. The Amiga half (mui_ui.c) is compiled only on
+ * the Amiga; this checks the plan it is built from (call counter, exact 32-bit components, DrawInfo text pen = soft grey token,
+ * fits 16 colours for AGA) and that mui_ui.c opens the screen from that plan, obtains every colour exact and releases it. */
+static void test_pens(void) {
+    txt_theme th;
+    mui_pens_plan pl;
+    uint32_t pens_rgb[MUI_DRI_PENS];
+    uint32_t before = mui_pens_planned();
+    int i;
+    FILE* f;
+    char src[400000];
+    size_t n;
+    txt_theme_default(&th);
+    CHECK(mui_pens_plan_for(th.token, &pl) == 1 && mui_pens_planned() - before == 1, "pen plan built once (sentinel)");
+    CHECK(mui_pens_plan_for(NULL, &pl) == 0 && mui_pens_plan_for(th.token, NULL) == 0, "bad input refused");
+    CHECK(MUI_PEN_COUNT <= 16, "palette of %d fits an AGA 16 colour screen", (int)MUI_PEN_COUNT);
+    CHECK(pl.rgb[MUI_PEN_BACKGROUND] == th.token[SEL_GUI_TOKEN_BACKGROUND] && pl.rgb[MUI_PEN_SURFACE] == th.token[SEL_GUI_TOKEN_SURFACE] &&
+              pl.rgb[MUI_PEN_RAISED] == th.token[SEL_GUI_TOKEN_SURFACE_RAISED] && pl.rgb[MUI_PEN_PANEL] == th.token[SEL_GUI_TOKEN_PANEL] &&
+              pl.rgb[MUI_PEN_TEXT] == th.token[SEL_GUI_TOKEN_TEXT] && pl.rgb[MUI_PEN_ACCENT] == th.token[SEL_GUI_TOKEN_ACCENT],
+          "every slot holds its token colour");
+    CHECK(pl.rgb[MUI_PEN_TEXT] != 0xFFFFFFu && pl.rgb[MUI_PEN_BACKGROUND] != 0x000000u, "text is not white and the background is not black");
+    for (i = 0; i < MUI_PEN_COUNT; i++) {
+        CHECK(pl.rgb32[i][0] == ((pl.rgb[i] >> 16) & 0xFFu) * 0x01010101u && pl.rgb32[i][1] == ((pl.rgb[i] >> 8) & 0xFFu) * 0x01010101u &&
+                  pl.rgb32[i][2] == (pl.rgb[i] & 0xFFu) * 0x01010101u,
+              "slot %d 32-bit components are the 8-bit token replicated (exact, no rounding)", i);
+    }
+    CHECK(pl.dri_pens[MUI_DRI_PENS] == -1 && pl.dri_pens[2] == MUI_PEN_TEXT, "SA_Pens array ends with -1 and TEXTPEN is the text slot");
+    for (i = 0; i < MUI_DRI_PENS; i++) {
+        CHECK(pl.dri_pens[i] >= 0 && pl.dri_pens[i] < MUI_PEN_COUNT, "DrawInfo pen %d points at a palette slot", i);
+        pens_rgb[i] = pl.rgb[pl.dri_pens[i]];
+    }
+    f = fopen(MUI_UI_SOURCE, "rb");
+    CHECK(f != NULL, "open %s", MUI_UI_SOURCE);
+    if (f == NULL) {
+        return;
+    }
+    n = fread(src, 1, sizeof src - 1, f);
+    fclose(f);
+    src[n] = 0;
+    CHECK(strstr(src, "mui_pens_plan_for(") != NULL, "mui_ui.c builds the palette through mui_pens_plan_for");
+    CHECK(strstr(src, "SA_Pens") != NULL && strstr(src, "SA_Colors32") != NULL && strstr(src, "SA_PubName") != NULL, "mui_ui.c opens its own public screen with the plan palette and DrawInfo pens");
+    CHECK(strstr(src, "PRECISION_EXACT") != NULL && strstr(src, "ObtainBestPen(") != NULL, "mui_ui.c obtains every token colour at exact precision");
+    CHECK(strstr(src, "ReleasePen(") != NULL && strstr(src, "CloseScreen(") != NULL, "mui_ui.c releases the pens and closes the screen");
+    CHECK(strstr(src, "MUIA_Window_PublicScreen") != NULL, "windows open on the Selecta screen");
+}
 
 /* I648: the MUI look comes from the desktop UI tokens. The native build path (mui_ui.c) is compiled only on the Amiga, so
  * this test checks both halves it is made of: the token mapping (with a call counter) and that mui_ui.c asks for each role
@@ -1010,6 +1058,8 @@ int main(int argc, char** argv) {
         test_row_cells();
     } else if (strcmp(argv[1], "theme") == 0) {
         test_theme();
+    } else if (strcmp(argv[1], "pens") == 0) {
+        test_pens();
     } else if (strcmp(argv[1], "style-menu") == 0) {
         test_style_menu();
     } else if (strcmp(argv[1], "style-mask") == 0) {

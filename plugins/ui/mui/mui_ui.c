@@ -13,6 +13,7 @@
 
 #include "map/mui_map.h"
 #include "map/mui_theme.h"
+#include "map/mui_pens.h"
 #include "map/mui_icons.h"
 #include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/theme.h>
@@ -34,6 +35,9 @@
 #include <proto/exec.h>
 #include <proto/intuition.h>
 #include <proto/graphics.h>
+#include <graphics/displayinfo.h>
+#include <graphics/view.h>
+#include <intuition/screens.h>
 #include <proto/muimaster.h>
 struct Library* MUIMasterBase;
 #include "mui_canvas_class.h"
@@ -355,6 +359,85 @@ static struct {
     (ULONG)MUIA_Frame, g_th[role].on ? (ULONG)g_th[role].look.frame : (ULONG)(frame_off),
 #define TH_BG_OR(role, spec) MUIA_Background, g_th[role].on ? (ULONG)g_th[role].look.background : (ULONG)(spec),
 
+/* I666: Selecta's own public screen. MUI maps every colour it is asked for to the nearest pen the screen already has; the
+ * Workbench screen (4 colours on the RTG rig, 16 on AGA) holds no dark greys and no soft grey, so surfaces went black and text
+ * white. mui_pens_plan_for decides the palette and DrawInfo pens from the desktop UI tokens; here the screen opens with exactly
+ * that palette (SA_Colors32, SA_Pens) and every token colour is obtained at exact precision and held, so MUI's own pen requests
+ * for the same RGB find them. Native planar modes get 16 colours (chip RAM bandwidth), RTG modes 256. If the screen cannot open,
+ * the windows stay on the Workbench screen and the look degrades as before (g_scr stays NULL). */
+#define MUI_PUB_NAME "SELECTA"
+static struct Screen* g_scr;
+static mui_pens_plan g_plan;
+static LONG g_pen_held[MUI_PEN_COUNT];
+
+static void mui_screen_close(void) {
+    int i;
+    if (g_scr == NULL) {
+        return;
+    }
+    for (i = 0; i < MUI_PEN_COUNT; i++) {
+        if (g_pen_held[i] >= 0) {
+            ReleasePen(g_scr->ViewPort.ColorMap, (ULONG)g_pen_held[i]);
+            g_pen_held[i] = -1;
+        }
+    }
+    PubScreenStatus(g_scr, PSNF_PRIVATE);
+    if (!CloseScreen(g_scr)) {
+        PubScreenStatus(g_scr, 0); /* visitor windows still open: leave the screen public rather than pull it away */
+        fprintf(stderr, "selecta mui: screen %s still has visitor windows, left open\n", MUI_PUB_NAME);
+    }
+    g_scr = NULL;
+}
+
+static void mui_screen_open(const uint32_t* tokens) {
+    struct Screen* wb;
+    struct DisplayInfo di;
+    ULONG mode = INVALID_ID;
+    ULONG depth = 4;
+    ULONG pal[2 + MUI_PEN_COUNT * 3];
+    int i;
+    for (i = 0; i < MUI_PEN_COUNT; i++) {
+        g_pen_held[i] = -1;
+    }
+    if (!mui_pens_plan_for(tokens, &g_plan)) {
+        return;
+    }
+    wb = LockPubScreen(NULL);
+    if (wb != NULL) {
+        mode = GetVPModeID(&wb->ViewPort);
+        memset(&di, 0, sizeof di);
+        if (mode != (ULONG)INVALID_ID && GetDisplayInfoData(NULL, (UBYTE*)&di, sizeof di, DTAG_DISP, mode) > 0 &&
+            (di.PropertyFlags & DIPF_IS_FOREIGN) != 0) {
+            depth = 8; /* RTG mode: no chip RAM bitplanes, 256 colours cost nothing */
+        }
+        UnlockPubScreen(NULL, wb);
+    }
+    pal[0] = ((ULONG)MUI_PEN_COUNT << 16) | 0u;
+    for (i = 0; i < MUI_PEN_COUNT; i++) {
+        pal[1 + i * 3] = g_plan.rgb32[i][0];
+        pal[2 + i * 3] = g_plan.rgb32[i][1];
+        pal[3 + i * 3] = g_plan.rgb32[i][2];
+    }
+    pal[1 + MUI_PEN_COUNT * 3] = 0;
+    g_scr = OpenScreenTags(NULL, SA_DisplayID, mode, SA_Overscan, OSCAN_TEXT, SA_Depth, depth, SA_Colors32, (ULONG)pal, SA_Pens,
+                           (ULONG)g_plan.dri_pens, SA_SharePens, TRUE, SA_PubName, (ULONG)MUI_PUB_NAME, SA_Title, (ULONG) "Selecta",
+                           SA_Type, PUBLICSCREEN, TAG_DONE);
+    if (g_scr == NULL) {
+        fprintf(stderr, "selecta mui: own screen did not open, using the Workbench screen\n");
+        return;
+    }
+    for (i = 0; i < MUI_PEN_COUNT; i++) {
+        LONG pen = ObtainBestPen(g_scr->ViewPort.ColorMap, g_plan.rgb32[i][0], g_plan.rgb32[i][1], g_plan.rgb32[i][2], OBP_Precision,
+                                 PRECISION_EXACT, OBP_FailIfBad, TRUE, TAG_DONE);
+        g_pen_held[i] = pen;
+        if (pen < 0) {
+            fprintf(stderr, "selecta mui: no exact pen for %06x\n", (unsigned)g_plan.rgb[i]);
+        }
+    }
+    PubScreenStatus(g_scr, 0); /* from private to public: MUI windows find it by name */
+}
+#define TH_SCR (g_scr != NULL ? (ULONG)MUIA_Window_PublicScreen : (ULONG)TAG_IGNORE), (ULONG)MUI_PUB_NAME,
+
 /* I659: MUI never closes a window by itself; the close gadget only sets MUIA_Window_CloseRequest. Every secondary window
  * closes itself on that request (the main window quits the application instead, see the notify in mui_open). */
 static void mui_close_on_request(Object* win) {
@@ -394,8 +477,11 @@ static void mui_theme_init(void) {
     txt_theme th;
     uint32_t pen_rgb[8] = {0, 0, 0, 0, 0, 0, 0, 0};
     int pen;
-    struct Screen* scr = LockPubScreen(NULL);
+    struct Screen* scr;
     int i;
+    txt_theme_default(&th);
+    mui_screen_open(th.token);
+    scr = LockPubScreen(g_scr != NULL ? (CONST_STRPTR)MUI_PUB_NAME : NULL);
     if (scr != NULL) {
         struct DrawInfo* dri = GetScreenDrawInfo(scr);
         if (dri != NULL) {
@@ -406,9 +492,8 @@ static void mui_theme_init(void) {
             }
             FreeScreenDrawInfo(scr, dri);
         }
-        UnlockPubScreen(NULL, scr);
+        UnlockPubScreen(g_scr != NULL ? (CONST_STRPTR)MUI_PUB_NAME : NULL, scr);
     }
-    txt_theme_default(&th);
     /* I660: one decision for the whole look (mui_theme_pick_pen over DrawInfo pens 0..7). MUI 3.8 draws object text with
      * screen pens only; ESC plus a pen digit in PreParse picks one. No readable pen: every role stays off and the user's
      * MUI look is untouched. Otherwise all roles are on together and all text uses that pen. The string gadget (FIELD)
@@ -1257,7 +1342,7 @@ static void mui_help_open(mui_state* s) {
         if (lst == NULL) {
             return;
         }
-        s->help_win = MUI_NewObject((char*)MUIC_Window, MUIA_Window_Title, (ULONG) "Selecta Help", MUIA_Window_ID, 0x48454C50UL,
+        s->help_win = MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, (ULONG) "Selecta Help", MUIA_Window_ID, 0x48454C50UL,
                                     MUIA_Window_RootObject, (ULONG)MUI_NewObject((char*)MUIC_Listview, MUIA_Listview_List, (ULONG)lst, TAG_DONE), TAG_DONE);
         if (s->help_win == NULL) {
             return;
@@ -1387,7 +1472,7 @@ static void mui_settings_open(mui_state* s) {
             DoMethod(grid, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG)r->label, MUIA_Text_PreParse, (ULONG)g_pre_r, TAG_DONE));
             DoMethod(grid, OM_ADDMEMBER, g);
         }
-        s->set_win = MUI_NewObject((char*)MUIC_Window, MUIA_Window_Title, (ULONG) "Selecta Settings", MUIA_Window_ID, 0x53455453UL,
+        s->set_win = MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, (ULONG) "Selecta Settings", MUIA_Window_ID, 0x53455453UL,
                                    MUIA_Window_RootObject, (ULONG)grid, TAG_DONE);
         if (s->set_win == NULL) {
             return;
@@ -1669,7 +1754,7 @@ static void* mui_open(const sel_ui_open_args* a) {
      * table is given: PLAY and every other command reach the engine through the shell's port, one command set (plan section 5). */
     s->app = ApplicationObject, MUIA_Application_Title, (ULONG) "Selecta", MUIA_Application_Base, (ULONG) "SELECTA",
         MUIA_Application_Version, (ULONG) "$VER: Selecta MUI 1.0",
-        SubWindow, s->win = WindowObject, MUIA_Window_Title, (ULONG) "Selecta", MUIA_Window_ID, SEL_MAKE_ID('S', 'E', 'L', 'M'), MUIA_Window_AppWindow, TRUE,
+        SubWindow, s->win = WindowObject, TH_SCR MUIA_Window_Title, (ULONG) "Selecta", MUIA_Window_ID, SEL_MAKE_ID('S', 'E', 'L', 'M'), MUIA_Window_AppWindow, TRUE,
             /* D-M4-3: full screen by default; width and height are 100 percent of the public screen area MUI can use.
              * The HVSpace child gives the group unbounded height: a lone Text object has a fixed maximum height and MUI
              * never sizes a window beyond its contents' maximum, which left the window 41 pixels high. */
@@ -1690,6 +1775,7 @@ static void* mui_open(const sel_ui_open_args* a) {
         if (strip != NULL) {
             MUI_DisposeObject(strip);
         }
+        mui_screen_close();
         CloseLibrary(MUIMasterBase);
         MUIMasterBase = NULL;
         mui_report(MUI_FAIL_NO_WINDOW, "");
@@ -1707,6 +1793,7 @@ static void* mui_open(const sel_ui_open_args* a) {
         MUI_DisposeObject(s->app);
         s->app = NULL;
         s->win = NULL;
+        mui_screen_close();
         CloseLibrary(MUIMasterBase);
         MUIMasterBase = NULL;
         mui_report(MUI_FAIL_NO_WINDOW, "");
@@ -1807,6 +1894,7 @@ static void mui_close(void* state) {
     }
     mui_timer_close(s);
     if (MUIMasterBase != NULL) {
+        mui_screen_close();
         CloseLibrary(MUIMasterBase);
         MUIMasterBase = NULL;
     }
