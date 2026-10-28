@@ -137,7 +137,7 @@
     X(FLAG)                                                                                   \
     X(NOTE)                                                                                   \
     X(RATE) X(VOTE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
-    X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(PLAYLIST_ADD_SONG) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
+    X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(PLAYLIST_ADD_SONG) X(PLAYLIST_REMOVE_SONG) X(PLAYLIST_PLAY) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
     X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(COMPOSERS_HIDE) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
@@ -4743,6 +4743,37 @@ static void cmd_PLAYLIST_ADD_SONG(sel_engine* e, const sel_message* m) {
     else folders_reload(e);
 }
 
+#define PLAYLIST_KEYS_CAP 65536u
+
+/* PLAYLIST_REMOVE_SONG id index (I633): drops the entry at `index` (position order) from a saved playlist. */
+static void cmd_PLAYLIST_REMOVE_SONG(sel_engine* e, const sel_message* m) {
+    int rc;
+    if (!folder_ready(e, "PLAYLIST_REMOVE_SONG")) return;
+    rc = sel_library_playlist_remove_song(e->lib, (uint32_t)m->args[0].v.u, (uint32_t)m->args[1].v.u);
+    if (rc != SEL_FOLDER_OK) folder_report(e, rc, "PLAYLIST_REMOVE_SONG");
+    else folders_reload(e);
+}
+
+/* Appends the songs of a saved playlist to the queue and starts the first of them (VIEW_ACTIVATE on a playlist row,
+ * PLAYLIST_PLAY). */
+static void playlist_play(sel_engine* e, uint32_t id, const char* why) {
+    uint32_t n = 0, before = e->queue.count;
+    const char* k;
+    char* keys;
+    if (e->lib == NULL) return;
+    keys = (char*)malloc(PLAYLIST_KEYS_CAP);
+    if (keys == NULL) return;
+    if (sel_library_playlist_keys(e->lib, id, keys, PLAYLIST_KEYS_CAP, &n) == SEL_FOLDER_OK) {
+        for (k = keys; *k != '\0'; k += strlen(k) + 1u) queue_insert(e, e->queue.count, k, why);
+        if (e->queue.count > before) queue_start(e, before);
+    }
+    free(keys);
+}
+
+static void cmd_PLAYLIST_PLAY(sel_engine* e, const sel_message* m) {
+    playlist_play(e, (uint32_t)m->args[0].v.u, "PLAYLIST_PLAY");
+}
+
 static void cmd_PLAYLIST_RENAME(sel_engine* e, const sel_message* m) {
     int rc;
     if (!folder_ready(e, "PLAYLIST_RENAME")) return;
@@ -5197,6 +5228,12 @@ uint32_t sel_engine_library_playlist_items(sel_engine* e, sel_engine_library_ite
     return n;
 }
 
+uint32_t sel_engine_library_playlist_keys(sel_engine* e, uint32_t id, char* out, uint32_t cap) {
+    uint32_t n = 0;
+    if (e->lib == NULL || sel_library_playlist_keys(e->lib, id, out, cap, &n) != SEL_FOLDER_OK) return 0u;
+    return n;
+}
+
 int sel_engine_song_title(sel_engine* e, const char* ref, char* out, size_t cap) {
     return e->lib != NULL && sel_library_song_title(e->lib, ref, out, cap);
 }
@@ -5442,19 +5479,7 @@ static void cmd_VIEW_ACTIVATE(sel_engine* e, const sel_message* m) {
         /* A playlist row loads the playlist into the queue and starts its first song; a folder row has
          * nothing to start (the tree is always shown open). */
         const sel_view_row* r = &e->view.frows[at];
-        char keys[4096];
-        uint32_t n = 0, before = e->queue.count;
-        const char* k;
-        if (r->kind != SEL_ROW_PLAYLIST || e->lib == NULL ||
-            sel_library_playlist_keys(e->lib, r->id, keys, sizeof keys, &n) != SEL_FOLDER_OK) {
-            return;
-        }
-        for (k = keys; *k != '\0'; k += strlen(k) + 1u) {
-            queue_insert(e, e->queue.count, k, "VIEW_ACTIVATE");
-        }
-        if (e->queue.count > before) {
-            queue_start(e, before);
-        }
+        if (r->kind == SEL_ROW_PLAYLIST) playlist_play(e, r->id, "VIEW_ACTIVATE");
         return;
     }
     if (v->source != SEL_VIEW_BROWSE) {
