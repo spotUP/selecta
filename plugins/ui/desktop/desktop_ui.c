@@ -7581,12 +7581,13 @@ static int32_t side_chip_total(desk* d) {
 }
 
 
-/* The scrolling band of the chips: the row less the pad; with an overflow a chevron button at each end takes its square. */
+/* The scrolling band of the chips: the row less the pad; with an overflow a chevron button at each end takes its square. The
+ * bitmap tier always counts as an overflow: its 6-row chips would be too small to read side by side (I669). */
 static sel_gui_rect side_chip_band(desk* d, int* overflow) {
     sel_gui_rect r = side_chips_rect(d);
     int32_t pad = lpx(d, 12), cv = lpx(d, HOME_CHIP_H), gap = lpx(d, 4);
     sel_gui_rect b = rect_of(r.x + pad, r.y, r.w - 2 * pad, r.h);
-    *overflow = !desk_bitmap_text(d) && side_chip_total(d) > b.w;
+    *overflow = desk_bitmap_text(d) || side_chip_total(d) > b.w;
     if (*overflow) {
         b = rect_of(b.x + cv + gap, b.y, b.w - 2 * (cv + gap), b.h);
     }
@@ -7599,13 +7600,13 @@ static sel_gui_rect side_chip_chevron(desk* d, int right) {
     return rect_of(right ? r.x + r.w - pad - cv : r.x + pad, r.y, cv, cv);
 }
 
-/* I669: one control instead of the chip row: the bitmap tier's cycle button, or, when the chips do not fit the sidebar, a
- * label naming the filter in force that the chevrons step through All and the chips (a row of chips with only one in view
- * hides the choices, so a click on it means nothing). */
+/* I669: one control instead of the chip row when the chips do not fit the sidebar (and on the bitmap tier): a label naming
+ * the filter in force that the chevrons step through All and the chips (a row of chips with only one in view hides the
+ * choices, so a click on it means nothing). */
 static int side_chip_single(desk* d) {
     int ov;
     side_chip_band(d, &ov);
-    return ov || desk_bitmap_text(d);
+    return ov;
 }
 
 /* The chip rectangle k; with a single control chip 0 is that control across the band and the rest are empty. */
@@ -7644,7 +7645,7 @@ static int32_t side_chip_at(desk* d, int32_t x, int32_t y) {
     if (!in_rect(b, x, y)) {
         return -1;
     }
-    for (k = 0; k < (desk_bitmap_text(d) ? 1u : (uint32_t)SIDE_CHIPS); k++) {
+    for (k = 0; k < (uint32_t)SIDE_CHIPS; k++) {
         if (in_rect(side_chip_rect(d, k), x, y)) {
             return (int32_t)k;
         }
@@ -7657,8 +7658,7 @@ static int side_chip_keeps_playlists(const desk* d) {
     return d->side_chip == 0u || d->side_chip == 1u;
 }
 
-/* A click on a chip: the chip in force again clears the filter, another one takes over; the cycle button steps through
- * none and the chips. A chevron steps the filter one back or on, from All to the last chip, stopping at both ends (I669). */
+/* A click on a chip: the chip in force again clears the filter, another one takes over. A chevron steps the filter one back or on, from All to the last chip, stopping at both ends (I669). */
 static void side_chip_click(desk* d, int32_t c) {
     if (c == SIDE_CHIPS) {
         d->side_chip -= d->side_chip > 0u ? 1u : 0u;
@@ -7666,8 +7666,6 @@ static void side_chip_click(desk* d, int32_t c) {
     } else if (c == SIDE_CHIPS + 1) {
         d->side_chip += d->side_chip < (uint32_t)SIDE_CHIPS ? 1u : 0u;
         d->side_chip_scrolls++;
-    } else if (desk_bitmap_text(d)) {
-        d->side_chip = (d->side_chip + 1u) % (SIDE_CHIPS + 1u);
     } else {
         d->side_chip = d->side_chip == (uint32_t)c + 1u ? 0u : (uint32_t)c + 1u;
     }
@@ -7919,7 +7917,7 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
     }
     d->side_rows = 0u;
     d->side_empty_btn = rect_of(0, 0, 0, 0);
-    if (labels) { /* I610: the chip row, or the single control (I669) when the chips do not fit or on the bitmap tier */
+    if (labels) { /* I610: the chip row, or the single label with chevrons (I669) when the chips do not fit or on the bitmap tier */
         int ov;
         uint32_t k;
         sel_gui_rect band = side_chip_band(d, &ov), cr = side_chips_rect(d);
@@ -9715,7 +9713,7 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
             side_tools_click(d, door);
             return 1;
         }
-        door = side_chip_at(d, ev->x, ev->y); /* I610: a library chip, chevron or cycle button */
+        door = side_chip_at(d, ev->x, ev->y); /* I610: a library chip or chevron */
         if (door >= 0) {
             side_chip_click(d, door);
             return 1;

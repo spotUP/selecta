@@ -358,6 +358,33 @@ dui_run(k9 ${common} --canvas 1280x800 --input "${WORK}/wchip_pl.txt")
 sc_parse(k9 "${k9}")
 expect_eq("Playlists chip in force" "${k9_chip}" "1")
 
+# 10c. I669 on the bitmap tier (the AGA shape, 640x256 tall pixels): the same single label with chevrons, never a cycle button. The
+# label takes no click; the right chevron steps to Playlists, the left one back to All.
+set(aga --canvas 640x256 --ydiv 2 --zoom fit)
+dui_run(a0 ${common} ${aga} --input "${WORK}/idle.txt")
+sc_parse(a0 "${a0}")
+expect_eq("bitmap tier shows the single label" "${a0_single}" "1")
+sc_centre(alabel "${a0}" 0)
+sc_chev(acr "${a0}" R)
+sc_chev(acl "${a0}" L)
+# Pointer rows are canvas rows on the tall-pixel canvas: the layout y halves (I468).
+foreach(v alabel acr acl)
+  separate_arguments(xy UNIX_COMMAND "${${v}}")
+  list(GET xy 0 vx)
+  list(GET xy 1 vy)
+  math(EXPR vy "${vy} / 2")
+  set(${v} "${vx} ${vy}")
+endforeach()
+file(WRITE "${WORK}/achip.txt" "click ${alabel}\nwait 100\nclick ${acr}\nwait 100\n")
+dui_run(a1 ${common} ${aga} --input "${WORK}/achip.txt")
+sc_parse(a1 "${a1}")
+expect_eq("bitmap tier label click then right chevron picks Playlists" "${a1_chip}" "1")
+expect_eq("bitmap tier chevron counted once" "${a1_scrolls}" "1")
+file(WRITE "${WORK}/achip2.txt" "click ${acr}\nwait 100\nclick ${acl}\nwait 100\n")
+dui_run(a2 ${common} ${aga} --input "${WORK}/achip2.txt")
+sc_parse(a2 "${a2}")
+expect_eq("bitmap tier right then left returns to All" "${a2_chip}" "0")
+
 # 9c. Icon rail (899 wide): the toggle is the only header control and opens the rail to a wider sidebar.
 dui_run(h4 ${common} --canvas 899x700 --input "${WORK}/idle.txt")
 hdr_centre(rail_c "${h4}" wide)
