@@ -354,6 +354,7 @@ typedef struct desk {
     sel_engine_library_item side_items[SIDE_LIB_MAX]; /* I608: the saved playlists listed under the doors */
     uint32_t side_n, side_stale, side_draws, side_rows, side_opens, side_empty_draws, side_create_clicks; /* items held, reload wanted, frames drawn, rows drawn in the last one, rows opened */
     uint32_t side_open_n, side_open_tries; /* I646: the sidebar count a just created playlist brings the list to (0 = none pending), frames waited */
+    uint32_t topbar_draws, topbar_home_clicks, topbar_browse_clicks; /* I615: top bar frames drawn, Home and Browse button clicks */
     uint32_t side_wide, side_plus_clicks, side_wide_clicks; /* I609: the sidebar is widened; header Create Playlist and width toggle clicks */
     uint32_t side_anim, side_from, side_to, side_tween_frames; /* I668: the width tween runs, its ends in logical px, frames relaid out by it */
     sel_gui_rect side_empty_btn; /* I627: the empty-state Create playlist button, zero size when not drawn */
@@ -984,6 +985,7 @@ static sel_gui_rect draw_panel(desk* d, const char* name) {
  * clock, the remaining time and the progress bar and nothing else. */
 static void queue_title(const sel_state* st, uint32_t i, char* out, size_t cap);
 static void draw_home(desk* d);
+static void draw_topbar(desk* d);
 static void select_sync(desk* d);
 static int select_key(desk* d, const sel_gui_input* ev);
 static void tile_palette(desk* d, const char* const* keys, uint32_t n);
@@ -1113,6 +1115,7 @@ static void draw_widget(desk* d, uint32_t bit) {
         sel_gui_dirty_add(d->canvas, card);
         draw_nowplaying(d);
     } else if (bit == SEL_UIM_DIRTY_QUEUE) {
+        draw_topbar(d);
         draw_sidebar(d);
         desk_pt_lap(d, PT_SIDEBAR);
         if (d->home) {
@@ -1630,8 +1633,23 @@ enum { SEARCH_FIELD_Y = 16, SEARCH_FIELD_H = 40 };
 
 /* The one rect of the search field, on Home (the header field) and on the Search page alike, inside the main region mn:
  * drawn by both pages, hit by the Home click and ringed by desk_draw_focus. */
+enum { TOPBAR_HOME, TOPBAR_FIELD, TOPBAR_BROWSE };
+
+/* I615: a part of the layout's top bar in canvas px; empty when the layout has no bar (the bitmap tier, the mini layout). */
+static sel_gui_rect topbar_part(const desk* d, int part) {
+    const sel_uim_region* r = part == TOPBAR_HOME ? &d->layout.topbar_home : part == TOPBAR_FIELD ? &d->layout.topbar_field : &d->layout.topbar_browse;
+    return rect_of(lpx(d, r->x), lpx(d, r->y), lpx(d, (int32_t)r->w), lpx(d, (int32_t)r->h));
+}
+
+static int topbar_shown(const desk* d) {
+    return d->layout.topbar.h > 0u;
+}
+
 static sel_gui_rect search_field_rect(const desk* d, sel_gui_rect mn) {
     int32_t mg = lpx(d, HOME_MARGIN);
+    if (topbar_shown(d)) { /* I615: the field lives in the top bar on every page */
+        return topbar_part(d, TOPBAR_FIELD);
+    }
     int32_t sw = mn.w - 2 * mg < lpx(d, HOME_SEARCH_MAX) ? mn.w - 2 * mg : lpx(d, HOME_SEARCH_MAX);
     if (nav_arrows_shown(d, mn) && sw > nav_arrow_rect(d, mn, 0).x - lpx(d, 8) - (mn.x + mg)) { /* I554: ends left of the history arrows, which share its row */
         sw = nav_arrow_rect(d, mn, 0).x - lpx(d, 8) - (mn.x + mg);
@@ -1643,8 +1661,13 @@ static sel_gui_rect search_field_rect(const desk* d, sel_gui_rect mn) {
  * greeting, the filter chips and the section heading. */
 /* The empty-field hint, "Search songs, albums, artists": the chip names after the leading All chip, lowercased, so the
  * hint names what the page's own chips search (I366). */
-static void search_hint(char* out, size_t cap, const char* const* chips, uint32_t n) {
-    size_t o = (size_t)snprintf(out, cap, "Search");
+static void search_hint(const desk* d, char* out, size_t cap, const char* const* chips, uint32_t n) {
+    size_t o;
+    if (topbar_shown(d)) { /* I615: the top bar field has one hint on every page */
+        snprintf(out, cap, "What do you want to play?");
+        return;
+    }
+    o = (size_t)snprintf(out, cap, "Search");
     uint32_t k;
     for (k = 1; k < n && o + 2u < cap; k++) {
         const char* p = chips[k];
@@ -1658,6 +1681,9 @@ static void search_hint(char* out, size_t cap, const char* const* chips, uint32_
 
 static void desk_draw_query(desk* d, sel_gui_rect sr, const char* hint) {
     sel_gui_rect tb = rect_of(sr.x + lpx(d, 42), sr.y, sr.w - lpx(d, 56), sr.h);
+    if (topbar_shown(d)) { /* I615: the Browse button takes the field's right end */
+        tb.w -= topbar_part(d, TOPBAR_BROWSE).w;
+    }
     d->field = sr; /* the field as last drawn, for the stats line */
     if (d->qlen > 0u) { /* the typed query (I239); a caret follows it while the field has the focus */
         draw_text(d, tb, d->query, 0, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
@@ -1711,12 +1737,14 @@ static void draw_home_header(desk* d, sel_gui_rect mn, int with_section) {
                          ARGB(d->theme.token[SEL_GUI_TOKEN_HEADER_TINT]), ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
     }
     d->home_parts |= HP_HEADER_TINT;
-    sel_gui_round_rect(d->canvas, sr, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
-    sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_SEARCH, rect_of(sr.x + lpx(d, 14), sr.y + (sr.h - ic) / 2, ic, ic), ic,
-                      muted);
-    d->home_parts |= HP_SEARCH_ICON;
-    search_hint(hint, sizeof hint, home_chip_name, HOME_CHIPS);
-    desk_draw_query(d, sr, hint);
+    if (!topbar_shown(d)) { /* I615: with a top bar the field is drawn there */
+        sel_gui_round_rect(d->canvas, sr, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+        sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_SEARCH, rect_of(sr.x + lpx(d, 14), sr.y + (sr.h - ic) / 2, ic, ic), ic,
+                          muted);
+        d->home_parts |= HP_SEARCH_ICON;
+        search_hint(d, hint, sizeof hint, home_chip_name, HOME_CHIPS);
+        desk_draw_query(d, sr, hint);
+    }
     draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, HOME_GREET_Y), mn.w - 2 * mg, lpx(d, HOME_GREET_H)), "Welcome back", 1, 32, text);
     d->home_parts |= HP_GREETING;
     for (k = 0; k < HOME_CHIPS && chip != NULL; k++) {
@@ -5687,6 +5715,13 @@ static const char* library_dump_build(desk* d) {
         }
         o = dump_put(d, o, "sidelib draws=%u rows=%u items=%u opens=%u y=%d max=%d\n", (unsigned)d->side_draws, (unsigned)d->side_rows,
                      (unsigned)d->side_n, (unsigned)d->side_opens, (int)d->side_y_q16, (int)side_lib_max_q16(d));
+        {
+            sel_gui_rect th = topbar_part(d, TOPBAR_HOME), tf = topbar_part(d, TOPBAR_FIELD), tb = topbar_part(d, TOPBAR_BROWSE);
+            o = dump_put(d, o, "topbar draws=%u shown=%d home %d %d %d %d field %d %d %d %d browse %d %d %d %d home_clicks=%u browse_clicks=%u\n",
+                         (unsigned)d->topbar_draws, topbar_shown(d), (int)th.x, (int)th.y, (int)th.w, (int)th.h, (int)tf.x, (int)tf.y,
+                         (int)tf.w, (int)tf.h, (int)tb.x, (int)tb.y, (int)tb.w, (int)tb.h, (unsigned)d->topbar_home_clicks,
+                         (unsigned)d->topbar_browse_clicks);
+        }
         o = dump_put(d, o, "sideempty draws=%u clicks=%u btn %d %d %d %d\n", (unsigned)d->side_empty_draws, (unsigned)d->side_create_clicks,
                      (int)d->side_empty_btn.x, (int)d->side_empty_btn.y, (int)d->side_empty_btn.w, (int)d->side_empty_btn.h);
         for (k = 1u; k <= (uint32_t)SIDE_HDR_COUNT; k++) { /* I609: header controls and their counters */
@@ -6832,10 +6867,12 @@ static void draw_search(desk* d) {
     d->empty_text[0] = '\0';
     const sel_view_state* v = st->view != NULL && st->view->source == SEL_VIEW_SEARCH ? st->view : NULL;
     sel_gui_clip_push(d->canvas, mn);
-    sel_gui_round_rect(d->canvas, sr, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
-    sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_SEARCH, rect_of(sr.x + lpx(d, 14), sr.y + (sr.h - ic) / 2, ic, ic), ic, muted);
-    search_hint(hint, sizeof hint, search_facet_name, SEARCH_FACETS);
-    desk_draw_query(d, sr, hint);
+    if (!topbar_shown(d)) { /* I615: with a top bar the field is drawn there */
+        sel_gui_round_rect(d->canvas, sr, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+        sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_SEARCH, rect_of(sr.x + lpx(d, 14), sr.y + (sr.h - ic) / 2, ic, ic), ic, muted);
+        search_hint(d, hint, sizeof hint, search_facet_name, SEARCH_FACETS);
+        desk_draw_query(d, sr, hint);
+    }
     for (k = 0; k < SEARCH_FACETS; k++) { /* facet chips: the active one filled with the accent */
         sel_gui_rect cr = search_facet_rect(d, mn, k);
         draw_chip(d, cr, search_facet_name[k], k == d->search_facet, SEL_GUI_TOKEN_SURFACE);
@@ -7100,6 +7137,68 @@ static void tile_palette_raw(desk* d, const char* const* keys, uint32_t nk) {
 
 /* The main region with the running tweens on top: the hover fade of one tile (a light veil, full strength at rest)
  * and the view cross-fade (the new view fades in from the surface colour). At rest both are the plain view. */
+/* I615: the window-wide top bar: the round Home button, then the pill search field (magnifier, the typed query or the hint)
+ * with the Browse button behind a thin divider at its right end. Rects come from the layout; colours from the tokens. */
+static void draw_topbar(desk* d) {
+    sel_gui_rect bar, hm, sr, br;
+    char hint[64];
+    int32_t ic = lpx(d, 20), dh, dw;
+    if (!topbar_shown(d)) {
+        return;
+    }
+    bar = rect_of(lpx(d, d->layout.topbar.x), lpx(d, d->layout.topbar.y), lpx(d, (int32_t)d->layout.topbar.w), lpx(d, (int32_t)d->layout.topbar.h));
+    hm = topbar_part(d, TOPBAR_HOME);
+    sr = topbar_part(d, TOPBAR_FIELD);
+    br = topbar_part(d, TOPBAR_BROWSE);
+    dh = br.h / 2;
+    dw = lpx(d, 1) > 0 ? lpx(d, 1) : 1;
+    sel_gui_fill_rect(d->canvas, bar, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
+    sel_gui_round_rect(d->canvas, hm, hm.h / 2, ARGB(d->theme.token[d->page == PG_HOME ? SEL_GUI_TOKEN_SURFACE_HOVER : SEL_GUI_TOKEN_SURFACE_RAISED]));
+    sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_HOUSE, rect_of(hm.x + (hm.w - ic) / 2, hm.y + (hm.h - ic) / 2, ic, ic), ic,
+                      ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    sel_gui_round_rect(d->canvas, sr, sr.h / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+    sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_SEARCH, rect_of(sr.x + lpx(d, 14), sr.y + (sr.h - ic) / 2, ic, ic), ic,
+                      ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+    search_hint(d, hint, sizeof hint, home_chip_name, HOME_CHIPS);
+    desk_draw_query(d, sr, hint);
+    sel_gui_fill_rect(d->canvas, rect_of(br.x, br.y + (br.h - dh) / 2, dw, dh), ARGB(d->theme.token[SEL_GUI_TOKEN_DIVIDER]));
+    sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_LAYOUT_GRID, rect_of(br.x + (br.w - ic) / 2, br.y + (br.h - ic) / 2, ic, ic), ic,
+                      ARGB(d->theme.token[d->page == PG_LIBRARY ? SEL_GUI_TOKEN_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]));
+    sel_gui_dirty_add(d->canvas, bar);
+    d->topbar_draws++;
+}
+
+/* I615: a click on the top bar: Home opens the Home page, Browse the Library browse page, the field takes the keyboard on the
+ * Search page. 1 when the click was the bar's. */
+static int topbar_click(desk* d, int32_t x, int32_t y) {
+    if (!topbar_shown(d)) {
+        return 0;
+    }
+    if (in_rect(topbar_part(d, TOPBAR_HOME), x, y)) {
+        d->topbar_home_clicks++;
+        desk_page_goto(d, PG_HOME);
+        return 1;
+    }
+    if (in_rect(topbar_part(d, TOPBAR_BROWSE), x, y)) {
+        d->topbar_browse_clicks++;
+        desk_page_goto(d, PG_LIBRARY);
+        return 1;
+    }
+    if (in_rect(topbar_part(d, TOPBAR_FIELD), x, y)) {
+        if (d->page == PG_SEARCH) { /* a click in the field focuses it */
+            d->focus = (int32_t)d->layout.count;
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+            d->repaint = 1;
+        } else { /* the field is the Search page's field: the click goes there with the query kept */
+            d->search_keep = 1;
+            desk_page_goto(d, PG_SEARCH);
+            d->search_keep = 0;
+        }
+        return 1;
+    }
+    return 0;
+}
+
 static void draw_home(desk* d) {
     sel_gui_rect mn = region_rect(d, "main"), pn = panel_rect(d, "main");
     int32_t view = sel_gui_tween_value(&d->tl, ANIM_KEY_VIEW, 65536);
@@ -9796,6 +9895,9 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         d->nav_arrow_clicks++;
         return desk_page_walk(d, in_rect(d->nav_back, ev->x, ev->y) ? -1 : 1);
     }
+    if (ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u && topbar_click(d, ev->x, ev->y)) { /* I615 */
+        return 1;
+    }
     if (ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u) { /* a sidebar door opens its page */
         int32_t door = sidebar_door_at(d, ev->x, ev->y);
         if (d->lf_edit && side_tools_at(d, ev->x, ev->y) != 2 && tl_at(d, lib_tools_rect(d, region_rect(d, "main")), ev->x, ev->y) != 2) { /* I611: a click elsewhere takes the keyboard from the filter field */
@@ -10523,6 +10625,15 @@ static int desk_replay_input(desk* d) {
             opened |= desk_route_input(d, &mv);
         } else if (sscanf(line, "door %u", &n) == 1 && n < DOOR_COUNT) { /* a click on the centre of door n */
             sel_gui_rect r = sidebar_door_rect(d, n);
+            sel_gui_input ck;
+            memset(&ck, 0, sizeof ck);
+            ck.kind = SEL_GUI_IN_CLICK;
+            ck.x = r.x + r.w / 2;
+            ck.y = r.y + r.h / 2;
+            opened |= desk_route_input(d, &ck);
+            pointer_sent = d->sends != sent;
+        } else if (sscanf(line, "topbar %u", &n) == 1 && n <= TOPBAR_BROWSE && topbar_shown(d)) { /* I615: a click on the centre of top bar part n (0 Home, 1 field, 2 Browse) */
+            sel_gui_rect r = topbar_part(d, (int)n);
             sel_gui_input ck;
             memset(&ck, 0, sizeof ck);
             ck.kind = SEL_GUI_IN_CLICK;

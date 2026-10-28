@@ -1,0 +1,88 @@
+# dui-topbar (I615): the window-wide top bar of the Mac desktop UI. -DSELECTA -DSONGS -DWORK
+# 1. The layout gives a bar with a round Home button, then the search field, and the Browse button inside the field's right end;
+#    the stats dump the three rects (topbar line) and the frames drawn.
+# 2. A pointer click on Home opens the Home page, a click on Browse opens the Library browse page; the counters count them.
+# 3. A click in the field opens Search with the keyboard in the field; typing still gives the fixture's mod count of results.
+# The `topbar N` input command clicks the centre of part N (0 Home, 1 field, 2 Browse) through the pointer path.
+get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+include("${HERE}/dui_run.cmake")
+file(REMOVE_RECURSE "${WORK}")
+file(MAKE_DIRECTORY "${WORK}")
+find_program(SQLITE3 sqlite3)
+if(NOT SQLITE3)
+  message(FATAL_ERROR "dui-topbar needs the sqlite3 command line tool to load the fixture library")
+endif()
+set(db "${WORK}/library.db")
+dui_run(init --db "${db}" --ui desktop --backend mem --view home --canvas 900x600 --clock fixed --stats)
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db}" INPUT_FILE "${HERE}/fixture_library.sql"
+  RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "loading the fixture failed: ${err}")
+endif()
+file(READ "${HERE}/fixture_library.sql" fixture)
+string(REGEX MATCHALL "INSERT INTO songs\\([^\n]*'mod', [0-9]+," mods "${fixture}")
+list(LENGTH mods mod_count)
+
+function(bar_run tag view script)
+  file(REMOVE_RECURSE "${WORK}/cfg")
+  file(WRITE "${WORK}/${tag}.txt" "${script}")
+  dui_run(o --db "${db}" --ui desktop --backend mem --view ${view} --canvas 1280x800 --clock fixed --stats --input "${WORK}/${tag}.txt")
+  set(num "-?[0-9]+")
+  set(r4 "(${num}) (${num}) (${num}) (${num})")
+  # CMake keeps nine match groups, so each part of the line is matched on its own
+  if(NOT "${o}" MATCHES "topbar draws=([0-9]+) shown=([01]) ")
+    message(FATAL_ERROR "no topbar line in:\n${o}")
+  endif()
+  set(${tag}_draws ${CMAKE_MATCH_1} PARENT_SCOPE)
+  set(${tag}_shown ${CMAKE_MATCH_2} PARENT_SCOPE)
+  foreach(part home field browse)
+    string(REGEX MATCH "topbar [^\n]* ${part} ${r4}" _m "${o}")
+    set(${tag}_${part}x ${CMAKE_MATCH_1} PARENT_SCOPE)
+    set(${tag}_${part}y ${CMAKE_MATCH_2} PARENT_SCOPE)
+    set(${tag}_${part}w ${CMAKE_MATCH_3} PARENT_SCOPE)
+    set(${tag}_${part}h ${CMAKE_MATCH_4} PARENT_SCOPE)
+  endforeach()
+  string(REGEX MATCH "home_clicks=([0-9]+) browse_clicks=([0-9]+)" _m "${o}")
+  set(${tag}_homec ${CMAKE_MATCH_1} PARENT_SCOPE)
+  set(${tag}_browsec ${CMAKE_MATCH_2} PARENT_SCOPE)
+  string(REGEX MATCH "nav page=([a-z]+)" _m "${o}")
+  set(${tag}_page "${CMAKE_MATCH_1}" PARENT_SCOPE)
+  set(${tag}_out "${o}" PARENT_SCOPE)
+endfunction()
+
+function(expect_eq what got want)
+  if(NOT "${got}" STREQUAL "${want}")
+    message(FATAL_ERROR "${what}: got '${got}', want '${want}'")
+  endif()
+endfunction()
+
+# 1. layout and drawing
+bar_run(lay home "wait 100\n")
+expect_eq("the bar is shown" "${lay_shown}" 1)
+if(lay_draws LESS 1)
+  message(FATAL_ERROR "the top bar was never drawn (draws=${lay_draws})")
+endif()
+expect_eq("Home button is round" "${lay_homew}" "${lay_homeh}")
+expect_eq("Home and field share a row" "${lay_homey}" "${lay_fieldy}")
+if(NOT lay_fieldx GREATER lay_homex)
+  message(FATAL_ERROR "the field must sit right of the Home button (home x ${lay_homex}, field x ${lay_fieldx})")
+endif()
+math(EXPR field_end "${lay_fieldx} + ${lay_fieldw}")
+math(EXPR browse_end "${lay_browsex} + ${lay_browsew}")
+expect_eq("Browse button ends at the field's right end" "${browse_end}" "${field_end}")
+
+# 2. Home and Browse through the pointer
+bar_run(home library "topbar 0\nwait 100\n")
+expect_eq("page after a click on Home" "${home_page}" "home")
+expect_eq("Home clicks" "${home_homec}" 1)
+bar_run(browse home "topbar 2\nwait 100\n")
+expect_eq("page after a click on Browse" "${browse_page}" "library")
+expect_eq("Browse clicks" "${browse_browsec}" 1)
+expect_eq("Browse does not count as Home" "${browse_homec}" 0)
+
+# 3. the field: a click opens Search with the keyboard in the field, typing gives the results
+bar_run(find home "topbar 1\nkey f\nkey o\nkey r\nkey m\nkey a\nkey t\nkey :\nkey m\nkey o\nkey d\nwait 600\n")
+expect_eq("page after a click in the field" "${find_page}" "search")
+if(NOT "${find_out}" MATCHES "search draws [1-9][0-9]* rows ${mod_count} query format:mod\n")
+  message(FATAL_ERROR "typing after a click in the top bar field must give ${mod_count} mod results:\n${find_out}")
+endif()

@@ -82,13 +82,42 @@ void sel_uim_layout_compute_bar(sel_uim_layout* l, uint32_t width, uint32_t heig
     sel_uim_layout_compute_expand(l, width, height, tier, rail_w, bar_height, 0u);
 }
 
+/* I615: the top bar rects. The group (Home button, gap, field) is centred in the window, the field at most FIELD_MAX wide;
+ * on a narrow canvas the field shrinks and the group keeps a gutter on both sides. The Browse button is the field's last
+ * BUTTON wide slice, behind a divider drawn by the caller. */
+static void topbar_set(sel_uim_region* r, const char* name, int32_t x, int32_t y, uint32_t w, uint32_t h) {
+    r->name = name;
+    r->x = x;
+    r->y = y;
+    r->w = w;
+    r->h = h;
+    r->min_w = 0;
+    r->min_h = 0;
+}
+
+static void topbar_compute(sel_uim_layout* l, uint32_t width, uint32_t tb_h) {
+    uint32_t btn = SEL_UIM_TOPBAR_BUTTON, gap = 8u, gutter = 16u;
+    uint32_t fw = width > 2u * gutter + btn + gap ? width - 2u * gutter - btn - gap : 0u;
+    uint32_t gw, x0;
+    int32_t y = (int32_t)((tb_h - btn) / 2u);
+    fw = fw > SEL_UIM_TOPBAR_FIELD_MAX ? SEL_UIM_TOPBAR_FIELD_MAX : fw;
+    gw = btn + gap + fw;
+    x0 = (width - gw) / 2u;
+    topbar_set(&l->topbar, "topbar", 0, 0, width, tb_h);
+    topbar_set(&l->topbar_home, "topbar-home", (int32_t)x0, y, btn, btn);
+    topbar_set(&l->topbar_field, "topbar-field", (int32_t)(x0 + btn + gap), y, fw, btn);
+    topbar_set(&l->topbar_browse, "topbar-browse", (int32_t)(x0 + btn + gap + fw - btn), y, btn, btn);
+}
+
 /* I609: as compute_bar; `expand` widens the sidebar (Spotify's Expand Library). The bitmap tier and the mini layout have no
  * wider form and ignore it. */
 void sel_uim_layout_compute_expand(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t rail_w,
                                    uint32_t bar_height, uint32_t expand) {
     uint32_t bp = sel_uim_breakpoint_for_tier(width, tier);
     uint32_t bar_h = height > bar_height ? bar_height : height;
-    uint32_t body_h = height - bar_h;
+    uint32_t tb_h = (tier != SEL_UIM_TIER_BITMAP && bp != SEL_UIM_BP_MINI_SUGGESTION && height >= bar_h + SEL_UIM_TOPBAR_H + MAIN_MIN_H)
+                        ? SEL_UIM_TOPBAR_H : 0u; /* I615: the default tier's top bar */
+    uint32_t body_h = height - bar_h - tb_h;
     uint32_t side = 0, detail = 0, top = 0, main_w;
     memset(l, 0, sizeof *l);
     l->width = width;
@@ -110,17 +139,20 @@ void sel_uim_layout_compute_expand(sel_uim_layout* l, uint32_t width, uint32_t h
         top = body_h > BANNER_H ? BANNER_H : body_h;
     }
     main_w = width - side - detail;
+    if (tb_h > 0u) {
+        topbar_compute(l, width, tb_h);
+    }
     if (top > 0u) {
         add(l, "suggestion", width, 0, 0, 0, width, top);
     }
     if (side > 0u) {
-        add(l, "sidebar", side, MAIN_MIN_H, 0, 0, side, body_h);
+        add(l, "sidebar", side, MAIN_MIN_H, 0, (int32_t)tb_h, side, body_h);
     }
-    add(l, "main", MAIN_MIN_W, MAIN_MIN_H, (int32_t)side, (int32_t)top, main_w, body_h - top);
+    add(l, "main", MAIN_MIN_W, MAIN_MIN_H, (int32_t)side, (int32_t)(tb_h + top), main_w, body_h - top);
     if (detail > 0u) {
-        add(l, "detail", detail, MAIN_MIN_H, (int32_t)(side + main_w), 0, detail, body_h);
+        add(l, "detail", detail, MAIN_MIN_H, (int32_t)(side + main_w), (int32_t)tb_h, detail, body_h);
     }
-    add(l, "player", 0, 0, 0, (int32_t)body_h, width, bar_h);
+    add(l, "player", 0, 0, 0, (int32_t)(tb_h + body_h), width, bar_h);
 }
 
 /* I668: puts the sidebar at `side` wide mid-tween and gives the main region the rest, the detail column and the player staying put.

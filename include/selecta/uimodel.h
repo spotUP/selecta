@@ -143,6 +143,9 @@ enum {
     SEL_UIM_BP_COUNT = 4
 };
 #define SEL_UIM_LAYOUT_REGIONS 5u
+#define SEL_UIM_TOPBAR_H 56u       /* I615: the top bar height, logical px */
+#define SEL_UIM_TOPBAR_BUTTON 40u  /* the round Home button and the field height */
+#define SEL_UIM_TOPBAR_FIELD_MAX 480u
 
 typedef struct sel_uim_region {
     const char* name;
@@ -156,6 +159,10 @@ typedef struct sel_uim_layout {
     uint32_t breakpoint; /* SEL_UIM_BP_* */
     uint32_t count;
     sel_uim_region regions[SEL_UIM_LAYOUT_REGIONS];
+    /* I615: the window-wide top bar of the default tier (Spotify's): a round Home button, then a pill search field with
+     * a Browse button at its right end, the group centred. topbar.h is 0 when the layout has none (the bitmap tier, the
+     * mini layout, a canvas too short); the four rects are then all empty. The regions below start under the bar. */
+    sel_uim_region topbar, topbar_home, topbar_field, topbar_browse;
 } sel_uim_layout;
 
 /* DUI-P1-11 (D-DUI-2): the decided breakpoint edges in logical pixels, one place for the layout, the tests and the MUI. */

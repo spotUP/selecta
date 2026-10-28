@@ -59,7 +59,7 @@ foreach(t ${targets})
 endforeach()
 
 # 1. Double-click on row 0 plays it.
-mouse_run(dbl "dclick 600 110\n")
+mouse_run(dbl "dclick 600 166\n")
 if(NOT dbl MATCHES "song=([^\n]*)\n")
   message(FATAL_ERROR "no song line in:\n${dbl}")
 endif()
@@ -71,21 +71,21 @@ expect("${dbl}" row_plays 1)
 expect("${dbl}" play_state 1)
 
 # 2. Drag a row to the queue.
-mouse_run(drag "drag 600 142 870 110\n")
+mouse_run(drag "drag 600 198 870 166\n")
 expect("${drag}" drags 1)
 expect("${drag}" playlist_entries 4)
 
 # 3. Header click: ascending, then descending.
-mouse_run(asc "click 600 84\n")
+mouse_run(asc "click 600 140\n")
 expect("${asc}" sorts 1)
 expect("${asc}" sort_dir 1)
 expect("${asc}" top_row 2)
-mouse_run(desc "click 600 84\nclick 600 84\n")
+mouse_run(desc "click 600 140\nclick 600 140\n")
 expect("${desc}" sorts 2)
 expect("${desc}" sort_dir 2)
 expect("${desc}" top_row 3)
 
 # 4. Hover and context menu.
-mouse_run(menu "move 600 110\nrclick 600 142\n")
+mouse_run(menu "move 600 166\nrclick 600 198\n")
 expect("${menu}" hovers 1)
 expect("${menu}" menus 1)

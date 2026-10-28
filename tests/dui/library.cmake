@@ -41,7 +41,7 @@ endif()
 function(lib_run outvar input)
   file(REMOVE_RECURSE "${WORK}/cfg")
   file(WRITE "${WORK}/in.txt" "${input}")
-  dui_run(o --start-dir "${SONGS}" --db "${db}" --ui desktop --backend mem --view library --canvas 900x600 --clock fixed --stats --input "${WORK}/in.txt")
+  dui_run(o --start-dir "${SONGS}" --db "${db}" --ui desktop --backend mem --view library --canvas 900x720 --clock fixed --stats --input "${WORK}/in.txt")
   set(${outvar} "${o}" PARENT_SCOPE)
 endfunction()
 
