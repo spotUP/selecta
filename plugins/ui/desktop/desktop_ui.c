@@ -293,6 +293,7 @@ typedef struct desk {
     uint32_t hist_n, hist_pos;
     desk_page pg_hist[PG_HIST_MAX]; /* page history (I266): the pages visited, desk_page_goto appends, Back and Forward move */
     uint32_t pg_n, pg_pos;
+    int baked_zoom;          /* I587: the Amiga tier (aga, rtg; --baked-zoom on the host): zoom and fit take only the baked scales */
     int ydiv_opt;            /* --ydiv N: forces the pixel aspect (the mem backend tests the AGA 640x256 layout); 0 = by backend */
     int is_aga;              /* the aga backend: canvases up to 300 rows get ydiv 2 (I468) */
     int pg_walk;             /* 1 while Back or Forward re-enters a page: desk_page_goto must not append it again */
@@ -7424,7 +7425,7 @@ static int desk_zoom_key(desk* d, const sel_gui_input* ev) {
     } else if (ev->code == '-') {
         next = steps[at > 0 ? at - 1 : 0];
     } else {
-        next = steps[at < 3 ? at + 1 : 3];
+        next = steps[at < (d->baked_zoom ? 1 : 3) ? at + 1 : (d->baked_zoom ? 1 : 3)]; /* I587: 75 and 100 are the baked scales */
     }
     d->zoom_pct = next;
     if (desk_set_scale(d, desk_scale_for(d, d->canvas->w, cvh(d)))) {
@@ -8842,13 +8843,17 @@ static int32_t desk_fit_q16(const desk* d, int32_t w, int32_t h) {
     }
     int64_t fw = (int64_t)w * 65536 / (1024 * (int64_t)d->scale), fh = (int64_t)h * 65536 / (640 * (int64_t)d->scale);
     int64_t f = fw < fh ? fw : fh;
-    return (int32_t)(f > 65536 ? 65536 : f < 40960 ? 40960 : f);
+    f = f > 65536 ? 65536 : f < 40960 ? 40960 : f;
+    return d->baked_zoom ? desk_baked_scale_fit_q16((int32_t)f) : (int32_t)f;
 }
 
 /* The scale (density times zoom, Q16) for a canvas size. Integer for density times 100 percent: pixel-identical to the
  * old integer scale. */
 static int32_t desk_scale_for(const desk* d, int32_t w, int32_t h) {
     int32_t zoom = d->zoom_pct == 0 ? desk_fit_q16(d, w, h) : (int32_t)((int64_t)d->zoom_pct * 65536 / 100);
+    if (d->baked_zoom) {
+        zoom = desk_baked_scale_snap_q16(zoom); /* I587: only the baked scales exist on the Amiga */
+    }
     return (int32_t)((int64_t)d->scale * zoom);
 }
 
@@ -9080,6 +9085,7 @@ static void* desk_open(const sel_ui_open_args* a) {
     d->scale_q16 = 65536;
     d->is_aga = backend != NULL && strcmp(backend, "aga") == 0;
     d->ydiv_opt = desk_opt(a, "--ydiv") != NULL ? atoi(desk_opt(a, "--ydiv")) : 0;
+    d->baked_zoom = (backend != NULL && (strcmp(backend, "rtg") == 0 || strcmp(backend, "aga") == 0)) || desk_opt(a, "--baked-zoom") != NULL;
     d->zoom_default = backend != NULL && (strcmp(backend, "rtg") == 0 || strcmp(backend, "aga") == 0) ? 0 : 100;
     d->zoom_pct = d->zoom_default;
     {

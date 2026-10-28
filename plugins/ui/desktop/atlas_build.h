@@ -27,6 +27,11 @@ void desk_atlas_free(const sel_gui_atlas* at);
  * 125 and 150 and fit between 0.625 and 1.0 build at run time on the host only: baking them costs about 918 KB of
  * image and pushes vamos over -m 8192 (open, I587). */
 #define DESK_FONT_BAKE_SCALES_Q16 40960, 65536
+/* I587, Johan's decision: on the Amiga (AGA and RTG) UI Zoom and fit take only the baked scales above. Snap picks the
+ * nearest baked scale (75 -> 0.625, 125 and 150 -> 1.0); fit picks the largest baked scale not above the raw fit, or
+ * the smallest baked scale when none fits. DESK_FONT_BAKE_SCALES_Q16 stays the single list. */
+int32_t desk_baked_scale_snap_q16(int32_t q16);
+int32_t desk_baked_scale_fit_q16(int32_t q16);
 /* The tall-pixel (ydiv 2) Inter set (I526): SemiBold headlines only, at scale 1.0 (I545: px 24 is 12 rows, px 18 is 9).
  * Body text at ydiv 2 uses the Amiga bitmap fonts below. */
 #define DESK_FONT_BAKE_TALL_PX 18, 24

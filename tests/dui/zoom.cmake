@@ -56,3 +56,21 @@ endif()
 if(NOT def MATCHES "icon_resampled=0[^0-9]")
   message(FATAL_ERROR "100% must use baked icons only:\n${def}")
 endif()
+
+# I587: on the Amiga tier (--baked-zoom stands for aga and rtg) zoom and fit take only the baked scales 0.625 (40960) and
+# 1.0 (65536): 75 -> 0.625, 100/125/150 -> 1.0, fit -> the largest baked scale that fits (640x256 and the RTG 800x600
+# both give 0.625; 1280x800 gives 1.0), and Ctrl+Plus cannot leave the baked set.
+foreach(case "75;1280x800;40960" "100;1280x800;65536" "125;1280x800;65536" "150;1280x800;65536" "fit;640x256;40960" "fit;800x600;40960" "fit;1280x800;65536")
+  list(GET case 0 z)
+  list(GET case 1 cv)
+  list(GET case 2 q)
+  dui_run(baked --ui desktop --backend mem --view home --clock fixed --stats --baked-zoom --zoom ${z} --canvas ${cv})
+  if(NOT baked MATCHES "ui_scale_q16=${q} ui_zoom=${z} ")
+    message(FATAL_ERROR "baked tier zoom ${z} on ${cv} must give ui_scale_q16=${q}:\n${baked}")
+  endif()
+endforeach()
+file(WRITE "${WORK}/keys.txt" "key ctrl++\nkey ctrl++\nkey ctrl++\n")
+dui_run(bakedkeys --ui desktop --backend mem --view home --clock fixed --stats --baked-zoom --zoom 100 --canvas 1280x800 --input "${WORK}/keys.txt")
+if(NOT bakedkeys MATCHES "ui_scale_q16=65536 ui_zoom=100 ")
+  message(FATAL_ERROR "baked tier Ctrl+Plus must stay on 1.0:\n${bakedkeys}")
+endif()

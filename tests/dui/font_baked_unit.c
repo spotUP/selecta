@@ -103,6 +103,26 @@ int main(void) {
             }
         }
     }
+    /* I587: the Amiga snap and fit take only baked scales (0.625 = 40960, 1.0 = 65536). */
+    {
+        static const int snap_in[] = {49152, 40960, 65536, 81920, 98304, 51200, 52429};
+        static const int snap_out[] = {40960, 40960, 65536, 65536, 65536, 40960, 40960};
+        static const int fit_in[] = {40960, 51200, 65535, 65536, 70000};
+        static const int fit_out[] = {40960, 40960, 40960, 65536, 65536};
+        size_t k;
+        for (k = 0; k < sizeof snap_in / sizeof snap_in[0]; k++) {
+            if (desk_baked_scale_snap_q16(snap_in[k]) != snap_out[k]) {
+                fprintf(stderr, "font_baked_unit: snap(%d) = %d, want %d\n", snap_in[k], (int)desk_baked_scale_snap_q16(snap_in[k]), snap_out[k]);
+                bad++;
+            }
+        }
+        for (k = 0; k < sizeof fit_in / sizeof fit_in[0]; k++) {
+            if (desk_baked_scale_fit_q16(fit_in[k]) != fit_out[k]) {
+                fprintf(stderr, "font_baked_unit: fit(%d) = %d, want %d\n", fit_in[k], (int)desk_baked_scale_fit_q16(fit_in[k]), fit_out[k]);
+                bad++;
+            }
+        }
+    }
     printf("font_baked_unit compared=%d bad=%d\n", compared, bad);
     return bad != 0;
 }

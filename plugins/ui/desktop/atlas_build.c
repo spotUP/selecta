@@ -230,6 +230,35 @@ const sel_gui_atlas* desk_atlas_baked(int family, int pixel_size, int ydiv) {
     return NULL;
 }
 
+int32_t desk_baked_scale_snap_q16(int32_t q16) {
+    static const int32_t scales[] = {DESK_FONT_BAKE_SCALES_Q16};
+    int32_t best = scales[0], bd = -1;
+    size_t i;
+    for (i = 0; i < sizeof scales / sizeof scales[0]; i++) {
+        int32_t dd = q16 > scales[i] ? q16 - scales[i] : scales[i] - q16;
+        if (bd < 0 || dd < bd) {
+            bd = dd;
+            best = scales[i];
+        }
+    }
+    return best;
+}
+
+int32_t desk_baked_scale_fit_q16(int32_t q16) {
+    static const int32_t scales[] = {DESK_FONT_BAKE_SCALES_Q16};
+    int32_t fit = -1, lowest = scales[0];
+    size_t i;
+    for (i = 0; i < sizeof scales / sizeof scales[0]; i++) {
+        if (scales[i] <= q16 && scales[i] > fit) {
+            fit = scales[i];
+        }
+        if (scales[i] < lowest) {
+            lowest = scales[i];
+        }
+    }
+    return fit < 0 ? lowest : fit;
+}
+
 void desk_atlas_free(const sel_gui_atlas* at) {
     if (at == NULL) {
         return;
