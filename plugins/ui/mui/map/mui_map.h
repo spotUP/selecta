@@ -262,5 +262,29 @@ uint32_t mui_clip_iff(const char* text, uint32_t n, uint8_t* out, size_t cap);
 extern const char* const mui_tool_labels[MUI_TOOL_BTNS];
 /* Label characters in tool row 2 (row 0) or row 3 (row 1). */
 uint32_t mui_tool_row_chars(uint32_t row);
+/* MUI-P8 (plan 2026-10-25-amiga-mui.md section P8): parity rows the first MUI pass left out. Every action here is fired by
+ * its shared action-table id (mui_menu_line), the same line the desktop sends; nothing keeps a second list. */
+/* Fires the table line of action `id` through send; returns 1 when the line was sent. mui_action_fires() is the call-count
+ * sentinel the tests read. */
+uint32_t mui_action_fire(const char* id, mui_send_fn send, void* ctx);
+uint32_t mui_action_fires(void);
+/* MUI-P8-1: the album and speed actions, as transport-area buttons (the menu items and keys come from the table). */
+enum { MUI_EXTRA_COUNT = 6 };
+const char* mui_extra_action(uint32_t i); /* action id, NULL past the count */
+const char* mui_extra_label(uint32_t i);  /* the action's label, the desktop's words */
+const char* mui_extra_tip(uint32_t i);    /* the action's tooltip text */
+
+/* MUI-P8-2: Unsolo All Voices and Toggle Filter Light are table actions (ids solo_clear, filter_led: menu and key come
+ * from the table). F1..F10 recall and Shift+F1..F10 store a program through the shared model sel_uim_fkey_*. */
+typedef struct mui_fkey_bind {
+    uint32_t code, mods; /* TXT_KEY_F1.. and TXT_MOD_SHIFT for a store */
+    uint32_t slot;       /* 1..10 */
+    int store;
+} mui_fkey_bind;
+/* 20 rows: ten recalls, then ten stores. Returns the row count (may exceed cap; only cap rows are written). */
+uint32_t mui_fkeys_build(mui_fkey_bind* out, uint32_t cap);
+/* A pressed key: sends the program's lines through send, one call each. Returns the lines sent, 0 for a key that is no
+ * program key. */
+uint32_t mui_fkey_fire(uint32_t code, uint32_t mods, mui_send_fn send, void* ctx);
 
 #endif
