@@ -325,7 +325,8 @@ typedef struct desk {
     int32_t ink_in;          /* the weight hover_ink_of last used for the hovered box (stats line hover_ink) */
     uint32_t lit_doors;      /* bit i set: sidebar door i was drawn raised in the last frame (nav sentinel) */
     sel_engine_library_item side_items[SIDE_LIB_MAX]; /* I608: the saved playlists listed under the doors */
-    uint32_t side_n, side_stale, side_draws, side_rows, side_opens; /* items held, reload wanted, frames drawn, rows drawn in the last one, rows opened */
+    uint32_t side_n, side_stale, side_draws, side_rows, side_opens, side_empty_draws, side_create_clicks; /* items held, reload wanted, frames drawn, rows drawn in the last one, rows opened */
+    sel_gui_rect side_empty_btn; /* I627: the empty-state Create playlist button, zero size when not drawn */
     int32_t side_y_q16; /* the list's scroll offset in Q16 logical pixels */
     int np_page;             /* the main region shows the Now Playing page */
     int view_pending;        /* --view named a page: desk_open enters it through desk_page_apply, before the --exec lines */
@@ -3889,6 +3890,13 @@ static const char* pl_take_name(desk* d, const char* fallback) {
     return name;
 }
 
+/* The New Playlist action: the Playlists page button and the sidebar's empty-state button (I627) both send it here. */
+static int pl_create(desk* d, uint32_t folder) {
+    char line[160];
+    snprintf(line, sizeof line, "PLAYLIST_CREATE \"%s\" %u", pl_take_name(d, "New Playlist"), (unsigned)folder);
+    return pl_send(d, line);
+}
+
 static int pl_button_click(desk* d, const sel_view_state* v, uint32_t k) {
     int32_t sel = pl_sel_row(d, v);
     char line[160];
@@ -3909,8 +3917,7 @@ static int pl_button_click(desk* d, const sel_view_state* v, uint32_t k) {
         snprintf(line, sizeof line, "FOLDER_ADD \"%s\" %u", pl_take_name(d, "New Folder"), (unsigned)pl_target_folder(d, v));
         return pl_send(d, line);
     case 1u:
-        snprintf(line, sizeof line, "PLAYLIST_CREATE \"%s\" %u", pl_take_name(d, "New Playlist"), (unsigned)pl_target_folder(d, v));
-        return pl_send(d, line);
+        return pl_create(d, pl_target_folder(d, v));
     case 2u:
         if (sel < 0 || v->rows[sel].kind != (uint32_t)SEL_ROW_PLAYLIST || d->pl_nlen == 0u) {
             return 1; /* a folder has no rename verb; a playlist needs a typed name */
@@ -5081,6 +5088,8 @@ static const char* library_dump_build(desk* d) {
         uint32_t k;
         o = dump_put(d, o, "sidelib draws=%u rows=%u items=%u opens=%u y=%d max=%d\n", (unsigned)d->side_draws, (unsigned)d->side_rows,
                      (unsigned)d->side_n, (unsigned)d->side_opens, (int)d->side_y_q16, (int)side_lib_max_q16(d));
+        o = dump_put(d, o, "sideempty draws=%u clicks=%u btn %d %d %d %d\n", (unsigned)d->side_empty_draws, (unsigned)d->side_create_clicks,
+                     (int)d->side_empty_btn.x, (int)d->side_empty_btn.y, (int)d->side_empty_btn.w, (int)d->side_empty_btn.h);
         for (k = 0; k < d->side_n && k < 8u; k++) {
             sel_gui_rect r = side_lib_row_rect(d, k);
             o = dump_put(d, o, "sidelib_row %u %d %d %d %d %s\n", (unsigned)k, (int)r.x, (int)r.y, (int)r.w, (int)r.h, d->side_items[k].name);
@@ -6960,6 +6969,22 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
         draw_text(d, rect_of(hd.x + pad, hd.y, hd.w - 2 * pad, hd.h), "Your Library", 1, 15, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
     }
     d->side_rows = 0u;
+    d->side_empty_btn = rect_of(0, 0, 0, 0);
+    if (d->side_n == 0u && labels && v.h > 0) { /* I627: no saved playlist: Spotify's card with one button; one text line on the bitmap tier */
+        uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+        int32_t cw = v.w - 2 * pad, ch = lpx(d, 120), bw = lpx(d, 150);
+        if (desk_bitmap_text(d)) {
+            draw_text(d, rect_of(v.x + pad, v.y, cw, lpx(d, 28)), "No playlists yet.", 0, 14, muted);
+        } else if (v.h >= ch) {
+            sel_gui_rect card = rect_of(v.x + pad, v.y + lpx(d, 4), cw, ch);
+            sel_gui_round_rect(d->canvas, card, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+            draw_text(d, rect_of(card.x + pad, card.y + lpx(d, 12), card.w - 2 * pad, lpx(d, 20)), "Create your first playlist", 1, 14, text);
+            draw_text(d, rect_of(card.x + pad, card.y + lpx(d, 34), card.w - 2 * pad, lpx(d, 18)), "It's easy, we'll help you", 0, 12, muted);
+            d->side_empty_btn = rect_of(card.x + pad, card.y + lpx(d, 68), bw < card.w - 2 * pad ? bw : card.w - 2 * pad, lpx(d, 36));
+            draw_button(d, d->side_empty_btn, text, "Create playlist", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
+            d->side_empty_draws++;
+        }
+    }
     sel_gui_clip_push(d->canvas, v);
     for (i = 0; i < d->side_n; i++) {
         sel_gui_rect r = side_lib_row_rect(d, i), ar;
@@ -8504,6 +8529,12 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         if (door >= 0) {
             d->nav_clicks++;
             return desk_page_goto(d, door_page((uint32_t)door));
+        }
+        if (d->side_empty_btn.w > 0 && d->side_n == 0u && in_rect(d->side_empty_btn, ev->x, ev->y)) { /* I627: the empty-state button */
+            d->side_create_clicks++;
+            d->repaint = 1;
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+            return pl_create(d, 0u);
         }
         door = side_lib_at(d, ev->x, ev->y); /* I608: a library row opens that item in the main region */
         if (door >= 0) {
