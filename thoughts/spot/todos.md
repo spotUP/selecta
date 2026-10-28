@@ -5,7 +5,7 @@ Session 2026-10-23 (3). Finish line: M1.1 plan approved, rows in this ledger (R8
 Session 2026-10-22 (2). Finish line: RULES.md rule 0 (plans and ledger never stale), M0a plan written and approved, ledger rows I1 to I22 added, implementation started.
 ## Now (track queues; the next agent for a free slot is the first open row of its track, never a list from a session summary)
 Mac track (desktop UI, Spotify reference; one agent): running I609 and I610 (Johan 2026-10-28: one extra Mac agent for Spotify work). Then, in order: I611, I615, I617, I619, I616, I614, I618, I612, I613, I607 open parts (tooltips, I630 easing), then bug rows I632d2, I632e, I632f, I658.
-Amiga track (MUI; one agent, one rig): running I665 spike (with I662). Then, in order: I666 (colours match rich UI, Johan 2026-10-28), I663 (agent drives MUI Prefs), I661, I662 full (AAText, AAList), I657, I648.
+Amiga track (MUI; one agent, one rig): running I665 spike (with I662) and I666 (colours match rich UI; Johan 2026-10-28 "do it", extra Amiga agent). Then, in order: I663 (agent drives MUI Prefs), I661, I662 full (AAText, AAList), I657, I648.
 Blocked on Johan (Mac): I652 toast, I632c, I632d, golden reblesses I642, I644, I627, I647, playlists.
 Johan 2026-10-28: "has work on spotify stopped? why are you loosing threads all the time?" Cause: the Spotify rows I609-I619 were queued only in prose inside I606; the slot picks after compaction came from the summary's next-rows list, which dropped them. This section is the fix.
 
