@@ -2811,16 +2811,39 @@ static void playlist_warn(void* ctx, const char* msg) {
     emit_log((sel_engine*)ctx, "playlist", msg);
 }
 
+/* Reads and parses the playlist file at `path` into `pl` (backed by the engine's playlist buffers); reports the error
+ * against `cmd` and returns 0 when it cannot be opened, does not fit the buffer, or does not parse. */
+static int playlist_file_parse(sel_engine* e, const char* path, sel_playlist* pl, const char* cmd) {
+    uint32_t text_cap = e->queue.text_bytes + 16u;
+    FILE* f = fopen(path, "rb");
+    size_t n;
+    int rc;
+    if (f == NULL) {
+        sel_engine_report_error(e, "open_failed", cmd);
+        return 0;
+    }
+    n = fread(e->pl_file, 1, text_cap, f);
+    rc = fgetc(f); /* anything left means the file does not fit the buffer */
+    fclose(f);
+    if (rc != EOF) {
+        sel_engine_report_error(e, "queue_full", cmd);
+        return 0;
+    }
+    sel_playlist_init(pl, e->pl_entries, e->queue.capacity, e->pl_text, text_cap);
+    rc = sel_playlist_read(sel_playlist_format_from_name(path), e->pl_file, n, pl, playlist_warn, e);
+    if (rc != SEL_PL_OK) {
+        sel_engine_report_error(e, rc == SEL_PL_RANGE ? "queue_full" : "bad_format", cmd);
+        return 0;
+    }
+    return 1;
+}
+
 static void cmd_PLAYLIST_LOAD(sel_engine* e, const sel_message* m) {
     const char* path = m->args[0].v.s;
     int replace = 0;
     sel_playlist pl;
-    sel_pl_format fmt;
-    FILE* f;
-    size_t n;
-    uint32_t i, text_cap = e->queue.text_bytes + 16u;
+    uint32_t i;
     char full[SEL_DEFERRED_PATH_MAX];
-    int rc;
 
     if (m->argc > 1) {
         if (strcmp(m->args[1].v.s, "replace") == 0) {
@@ -2830,23 +2853,7 @@ static void cmd_PLAYLIST_LOAD(sel_engine* e, const sel_message* m) {
             return;
         }
     }
-    f = fopen(path, "rb");
-    if (f == NULL) {
-        sel_engine_report_error(e, "open_failed", "PLAYLIST_LOAD");
-        return;
-    }
-    n = fread(e->pl_file, 1, text_cap, f);
-    rc = fgetc(f); /* anything left means the file does not fit the buffer */
-    fclose(f);
-    if (rc != EOF) {
-        sel_engine_report_error(e, "queue_full", "PLAYLIST_LOAD");
-        return;
-    }
-    fmt = sel_playlist_format_from_name(path);
-    sel_playlist_init(&pl, e->pl_entries, e->queue.capacity, e->pl_text, text_cap);
-    rc = sel_playlist_read(fmt, e->pl_file, n, &pl, playlist_warn, e);
-    if (rc != SEL_PL_OK) {
-        sel_engine_report_error(e, rc == SEL_PL_RANGE ? "queue_full" : "bad_format", "PLAYLIST_LOAD");
+    if (!playlist_file_parse(e, path, &pl, "PLAYLIST_LOAD")) {
         return;
     }
     sel_history_record(&e->history, &e->queue);
@@ -4749,29 +4756,12 @@ static void cmd_PLAYLIST_ADD_SONG(sel_engine* e, const sel_message* m) {
  * skipped. The result is import_added / import_missing in the engine state and one log line. */
 static void cmd_PLAYLIST_IMPORT(sel_engine* e, const sel_message* m) {
     const char* path = m->args[1].v.s;
-    uint32_t id = (uint32_t)m->args[0].v.u, i, added = 0, missing = 0, text_cap = e->queue.text_bytes + 16u;
+    uint32_t id = (uint32_t)m->args[0].v.u, i, added = 0, missing = 0;
     char full[SEL_DEFERRED_PATH_MAX], msg[64];
     sel_playlist pl;
-    FILE* f;
-    size_t n;
     int rc;
     if (!folder_ready(e, "PLAYLIST_IMPORT")) return;
-    f = fopen(path, "rb");
-    if (f == NULL) {
-        sel_engine_report_error(e, "open_failed", "PLAYLIST_IMPORT");
-        return;
-    }
-    n = fread(e->pl_file, 1, text_cap, f);
-    rc = fgetc(f);
-    fclose(f);
-    if (rc != EOF) {
-        sel_engine_report_error(e, "queue_full", "PLAYLIST_IMPORT");
-        return;
-    }
-    sel_playlist_init(&pl, e->pl_entries, e->queue.capacity, e->pl_text, text_cap);
-    rc = sel_playlist_read(sel_playlist_format_from_name(path), e->pl_file, n, &pl, playlist_warn, e);
-    if (rc != SEL_PL_OK) {
-        sel_engine_report_error(e, rc == SEL_PL_RANGE ? "queue_full" : "bad_format", "PLAYLIST_IMPORT");
+    if (!playlist_file_parse(e, path, &pl, "PLAYLIST_IMPORT")) {
         return;
     }
     for (i = 0; i < pl.count; i++) {
