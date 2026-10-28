@@ -2,7 +2,7 @@
 # The fixture library gets a seeded play history (oldest to newest: songs 3, 1, 5, 2, 6, 4; songs 3, 5, 6, 4 skipped).
 # 1. "Recently played" holds the last 6 songs, newest first: 4 6 2 5 1 3 (checked in order from the ui_home dump).
 # 2. "Jump back in" holds the albums of the skipped songs, newest first (engine rule: an unfinished play).
-# 3. Each shelf scrolls on its own: the wheel over shelf 0 moves only shelf 0, over shelf 1 only shelf 1.
+# 3. Shelf buttons (I607): the wheel never moves a shelf sideways; round previous/next buttons show on the hovered shelf only and page it.
 # 4. Activating tile 0 sends play to the engine: play_state 1 and songs_opened=1.
 # 5. Revert check: a dump built with the order of the history reversed must fail the same assertion.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
@@ -132,19 +132,67 @@ if("${recent}" STREQUAL "${reversed}")
   message(FATAL_ERROR "revert check: the reversed history order matches, the order assertion cannot fail")
 endif()
 
-# 3. Independent scrolling. Shelf 0 band is y 172-418, shelf 1 starts at y 434 at this canvas; 700 wide makes both overflow.
-home_run(s0only "move 400 444\nwheel -3 0\n")
-shelf_scrolls(b0 b1 "${s0only}")
-if(NOT b0 GREATER 0)
-  message(FATAL_ERROR "wheel over shelf 0 did not scroll it: ${b0}")
+# 3. Shelf buttons (I607). The wheel never scrolls a shelf sideways, vertical or horizontal; the page scrolls instead.
+# Round previous/next buttons show only on the shelf under the pointer; previous is hidden at the shelf start; a click on
+# next moves that shelf (and only that one) by one page of covers and then shows previous; a click on previous returns.
+# Shelf 0 band is y 172-418, shelf 1 starts at y 434 at this canvas; 700 wide makes both overflow. The dump's shelf_nav
+# lines are what the last paint drew, so a button that was not painted reads 0.
+function(home_stat outvar out key)
+  if(NOT "${out}" MATCHES "ui_home id=desktop [^\n]*${key}=([0-9]+)")
+    message(FATAL_ERROR "no ${key} in the ui_home line of:\n${out}")
+  endif()
+  set(${outvar} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+endfunction()
+function(shelf_nav out s what)
+  if(NOT "${out}" MATCHES "shelf_nav ${s} prev=([01]) next=([01]) prev_at=(-?[0-9]+),(-?[0-9]+) next_at=(-?[0-9]+),(-?[0-9]+) labels=Previous,Next")
+    message(FATAL_ERROR "${what}: no shelf_nav ${s} line in:\n${out}")
+  endif()
+  set(nav_prev ${CMAKE_MATCH_1} PARENT_SCOPE)
+  set(nav_next ${CMAKE_MATCH_2} PARENT_SCOPE)
+  set(nav_prev_x ${CMAKE_MATCH_3} PARENT_SCOPE)
+  set(nav_prev_y ${CMAKE_MATCH_4} PARENT_SCOPE)
+  set(nav_next_x ${CMAKE_MATCH_5} PARENT_SCOPE)
+  set(nav_next_y ${CMAKE_MATCH_6} PARENT_SCOPE)
+endfunction()
+shelf_nav("${idle}" 0 "idle")
+expect_eq("previous button with the pointer elsewhere" "${nav_prev}" 0)
+expect_eq("next button with the pointer elsewhere" "${nav_next}" 0)
+home_run(over0 "move 400 444\n")
+shelf_nav("${over0}" 0 "hover shelf 0")
+expect_eq("previous button hidden at the shelf start" "${nav_prev}" 0)
+expect_eq("next button shown while hovering the shelf" "${nav_next}" 1)
+set(nx ${nav_next_x})
+set(ny ${nav_next_y})
+shelf_nav("${over0}" 1 "hover shelf 0")
+expect_eq("shelf 1 next button while hovering shelf 0" "${nav_next}" 0)
+# The wheel moves the page, never the shelf.
+home_run(wheel_v "move 400 444\nwheel 0 -3\n")
+shelf_scrolls(w0 w1 "${wheel_v}")
+expect_eq("shelf 0 after a vertical wheel over it" "${w0}" 0)
+home_stat(wy "${wheel_v}" scroll_y)
+if(NOT wy GREATER 0)
+  message(FATAL_ERROR "the vertical wheel over a shelf did not scroll the page: scroll_y=${wy}")
 endif()
-expect_eq("shelf 1 after wheel over shelf 0" "${b1}" 0)
-home_run(s1only "move 400 614\nwheel -3 0\n")
-shelf_scrolls(c0 c1 "${s1only}")
-if(NOT c1 GREATER 0)
-  message(FATAL_ERROR "wheel over shelf 1 did not scroll it: ${c1}")
+home_run(wheel_h "move 400 444\nwheel -3 0\nwheel 3 0\n")
+shelf_scrolls(h0 h1 "${wheel_h}")
+expect_eq("shelf 0 after a horizontal wheel over it" "${h0}" 0)
+expect_eq("shelf 1 after a horizontal wheel over shelf 0" "${h1}" 0)
+# A click on next moves shelf 0 by one page; shelf 1 stays; previous now shows.
+home_run(page1 "move 400 444\nclick ${nx} ${ny}\n")
+shelf_scrolls(p0 p1 "${page1}")
+if(NOT p0 GREATER 0)
+  message(FATAL_ERROR "the next button did not move shelf 0: ${p0} in:\n${page1}")
 endif()
-expect_eq("shelf 0 after wheel over shelf 1" "${c0}" 0)
+expect_eq("shelf 1 after the next button of shelf 0" "${p1}" 0)
+shelf_nav("${page1}" 0 "after next")
+expect_eq("previous button shown once the shelf moved" "${nav_prev}" 1)
+set(px ${nav_prev_x})
+set(py ${nav_prev_y})
+home_run(back "move 400 444\nclick ${nx} ${ny}\nclick ${px} ${py}\n")
+shelf_scrolls(b0 b1 "${back}")
+expect_eq("shelf 0 after next then previous" "${b0}" 0)
+dui_stat(played_by_button "${page1}" desktop play_state)
+expect_eq("a button click does not activate the tile under it" "${played_by_button}" 0)
 
 # 4. Activation: tile 0 of shelf 0 plays the newest song through the engine.
 dui_stat(state0 "${idle}" desktop play_state)
@@ -160,12 +208,6 @@ endif()
 # tile's song key (tile_queued counts it). Tile 0 of shelf 0 is a song at this canvas; the item sits at the click point.
 # 7. Vertical overflow (I247): the shelves are taller than the main panel, so a wheel over the greeting block (not over
 # tile cards) scrolls the whole content, home_scroll_y > 0, while the shelves' own horizontal scroll stays 0.
-function(home_stat outvar out key)
-  if(NOT "${out}" MATCHES "ui_home id=desktop [^\n]*${key}=([0-9]+)")
-    message(FATAL_ERROR "no ${key} in the ui_home line of:\n${out}")
-  endif()
-  set(${outvar} "${CMAKE_MATCH_1}" PARENT_SCOPE)
-endfunction()
 home_run(probe "wait 1\n")
 home_stat(q0 "${probe}" tile_queued)
 expect_eq("tile_queued idle" "${q0}" 0)

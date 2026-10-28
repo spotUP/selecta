@@ -323,6 +323,9 @@ typedef struct desk {
     uint32_t quick_hover_fill; /* the card fill the hovered quick-pick tile was last painted with, 0 when none is hovered (home dump line quick_hover, I490) */
     uint32_t frame_parts;    /* frame parts drawn: sidebar entries, Now Playing panel and transport buttons */
     int32_t shelf_q16[8];    /* horizontal scroll of each Home shelf in logical pixels, Q16 */
+    uint32_t hover_shelf1;   /* I607: 1-based Home shelf under the pointer, 0 = none: only that shelf shows its previous/next buttons */
+    uint8_t shelf_nav_drawn[8]; /* I607: what the last shelf paint drew per shelf: bit 0 previous button, bit 1 next button */
+    uint32_t shelf_nav_clicks;  /* I607: previous/next button clicks that moved a shelf */
     int32_t ptr_x, ptr_y;    /* the last pointer position: the wheel scrolls the shelf under it */
     uint32_t shelf_plays;    /* shelf tiles activated (song or album sent to the engine) */
     uint32_t shelf_album_art_draws; /* I469: shelf ALBUM tiles drawn with a library cover in the last shelf paint */
@@ -1566,6 +1569,7 @@ static void draw_home_header(desk* d, sel_gui_rect mn, int with_section) {
 /* ---- Home shelves (DUI-P4-2): the HOME view source (engine) as rows of tiles. A heading row starts a shelf; the
  * song and album rows after it are its tiles; a row without a key (the "new this week" count line) is plain text.
  * Each shelf scrolls horizontally on its own. ---- */
+enum { NAV_PREV = 1, NAV_NEXT = 2 }; /* I607: the shelf buttons, bits of shelf_nav_drawn */
 enum { SHELF_MAX = 6, SHELF_HEAD_H = HOME_SECTION_H + HOME_SHADOW_R + HOME_HEAD_GAP, SHELF_GAP = 16, SHELF_WINDOW = 32, SHELF_NONE = 0x7FFFFFFF };
 
 typedef struct shelf {
@@ -1780,6 +1784,8 @@ static sel_gui_rect shelf_tile_rect(desk* d, uint32_t s, uint32_t k) {
                    shelf_top(d, s) + lpx(d, SHELF_HEAD_H) - pad, cw, shelf_card_h(d));
 }
 
+static sel_gui_rect shelf_nav_rect(desk* d, uint32_t s, int next);
+
 /* Writes "shelf S tile K heading|key|title" lines in order into home_dump; returns the shelf count. */
 static uintptr_t home_dump_build(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
@@ -1805,6 +1811,12 @@ static uintptr_t home_dump_build(desk* d) {
         o += (size_t)snprintf(d->home_dump + o, sizeof d->home_dump - o, "tile_art_rect %d %d %d %d\n", (int)d->art_probe.x, (int)d->art_probe.y, (int)d->art_probe.w, (int)d->art_probe.h);
     }
     for (s = 0; s < n; s++) {
+        if (s < 8u && o + 80u < sizeof d->home_dump) { /* I607: "shelf_nav S prev=P next=N" is what the last paint drew */
+            sel_gui_rect pr = shelf_nav_rect(d, s, 0), nr = shelf_nav_rect(d, s, 1);
+            o += (size_t)snprintf(d->home_dump + o, sizeof d->home_dump - o, "shelf_nav %u prev=%u next=%u prev_at=%d,%d next_at=%d,%d labels=Previous,Next\n",
+                                  (unsigned)s, (unsigned)(d->shelf_nav_drawn[s] & NAV_PREV ? 1u : 0u), (unsigned)(d->shelf_nav_drawn[s] & NAV_NEXT ? 1u : 0u),
+                                  (int)(pr.x + pr.w / 2), (int)(pr.y + pr.h / 2), (int)(nr.x + nr.w / 2), (int)(nr.y + nr.h / 2));
+        }
         for (k = 0; k < sh[s].tiles && o + 200u < sizeof d->home_dump; k++) {
             const sel_view_row* r = &st->view->rows[shelf_tile_row(st, &sh[s], k)];
             o += (size_t)snprintf(d->home_dump + o, sizeof d->home_dump - o, "shelf %u tile %u %s|%s|%s|%s\n", (unsigned)s, (unsigned)k,
@@ -1925,10 +1937,68 @@ static void home_scroll_y(desk* d, int32_t notches_q16) {
     d->home_y_q16 = v < 0 ? 0 : (v > max ? max : (int32_t)v);
 }
 
-/* 1 when canvas row y is over the tile cards of a shelf (below its heading), where the wheel scrolls that shelf. */
-static int shelf_over_cards(desk* d, int32_t y) {
+/* I607: Spotify-style round previous/next buttons at the ends of a shelf. They show only while the pointer is over that
+ * shelf, and a button whose direction has nothing more to show (previous at the start, next at the end) stays hidden.
+ * The wheel never scrolls a shelf sideways; a click on a button moves it by one page of covers. The round fill and the
+ * HOME_PLAY_SIZE diameter are the tile play button's; the chevron is a baked icon in the theme text colour. */
+/* The button rect of a shelf end: centred on the cover art vertically, inset by the Home margin. */
+static sel_gui_rect shelf_nav_rect(desk* d, uint32_t s, int next) {
+    sel_gui_rect mn = region_rect(d, "main");
+    int32_t ps = lpx(d, HOME_PLAY_SIZE);
+    int32_t y = shelf_top(d, s) + lpx(d, SHELF_HEAD_H) + (lpx(d, g_tile_steps[d->tile_step]) - ps) / 2;
+    int32_t x = next ? mn.x + mn.w - lpx(d, HOME_MARGIN) - ps : mn.x + lpx(d, HOME_MARGIN);
+    return rect_of(x, y, ps, ps);
+}
+
+/* The buttons shelf s shows now (NAV_* bits). */
+static uint32_t shelf_nav_visible(desk* d, uint32_t s, const shelf* sh) {
+    int32_t max = shelf_max_q16(d, sh);
+    uint32_t bits = 0u;
+    if (s >= 8u || d->hover_shelf1 != s + 1u) {
+        return 0u;
+    }
+    bits |= d->shelf_q16[s] > 0 ? NAV_PREV : 0u;
+    bits |= d->shelf_q16[s] < max ? NAV_NEXT : 0u;
+    return bits;
+}
+
+/* One page of covers in Q16 logical pixels: as many whole covers as fit the visible width, at least one. */
+static int32_t shelf_page_q16(desk* d) {
+    int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
+    sel_gui_rect mn = region_rect(d, "main");
+    int32_t cw = lpx(d, g_tile_steps[d->tile_step]) + 2 * pad + lpx(d, HOME_TILE_GAP);
+    int32_t vis = mn.w - 2 * lpx(d, HOME_MARGIN) + 2 * pad;
+    int32_t unit = lpx(d, 1) > 0 ? lpx(d, 1) : 1;
+    int32_t n = cw > 0 ? vis / cw : 1;
+    return ((n < 1 ? cw : n * cw) / unit) << 16;
+}
+
+/* The shelf (1-based) under canvas point (x, y), else 0. */
+static uint32_t shelf_hover_of(desk* d, int32_t x, int32_t y) {
     uint32_t s = shelf_at_y(d, y);
-    return s != SHELF_NONE && y >= shelf_top(d, s) + lpx(d, SHELF_HEAD_H);
+    return s != SHELF_NONE && s < 8u && in_rect(region_rect(d, "main"), x, y) ? s + 1u : 0u;
+}
+
+/* A click on a visible button moves its shelf by one page. Returns 1 when the click hit a button. */
+static int shelf_nav_click(desk* d, int32_t x, int32_t y) {
+    shelf sh[SHELF_MAX];
+    uint32_t s = d->hover_shelf1 - 1u, bits;
+    int32_t v, max;
+    if (d->hover_shelf1 == 0u || home_shelves(sel_engine_state(d->engine), sh) <= s) {
+        return 0;
+    }
+    bits = shelf_nav_visible(d, s, &sh[s]);
+    max = shelf_max_q16(d, &sh[s]);
+    if ((bits & NAV_PREV) && in_rect(shelf_nav_rect(d, s, 0), x, y)) {
+        v = d->shelf_q16[s] - shelf_page_q16(d);
+    } else if ((bits & NAV_NEXT) && in_rect(shelf_nav_rect(d, s, 1), x, y)) {
+        v = d->shelf_q16[s] + shelf_page_q16(d);
+    } else {
+        return 0;
+    }
+    d->shelf_q16[s] = v < 0 ? 0 : (v > max ? max : v);
+    d->shelf_nav_clicks++;
+    return 1;
 }
 
 /* ---- The shared song menu (I305, DUI-P3-16): every page that shows a song row registers it while drawing
@@ -2305,24 +2375,6 @@ static int song_menu_key(desk* d) {
     return 1;
 }
 
-/* Scrolls the shelf under canvas row y by wheel notches (positive = toward the end). */
-static void shelf_scroll(desk* d, int32_t y, int32_t notches_q16) {
-    shelf sh[SHELF_MAX];
-    uint32_t s = shelf_at_y(d, y);
-    int64_t v;
-    if (s == SHELF_NONE || home_shelves(sel_engine_state(d->engine), sh) <= s) {
-        return;
-    }
-    v = (int64_t)d->shelf_q16[s] + (int64_t)notches_q16 * SCROLL_NOTCH;
-    if (v < 0) {
-        v = 0;
-    }
-    if (v > shelf_max_q16(d, &sh[s])) {
-        v = shelf_max_q16(d, &sh[s]);
-    }
-    d->shelf_q16[s] = (int32_t)v;
-}
-
 /* I478: the quick-pick grid: a card of the shelf tiles' surface and radius, small square art on the left, the name beside it. */
 static void draw_quick(desk* d, sel_gui_rect mn) {
     const sel_state* st = sel_engine_state(d->engine);
@@ -2371,6 +2423,7 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
     uint32_t panel = ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]);
     shelf sh[SHELF_MAX];
     uint32_t s, k, flat = 0, n = home_shelves(st, sh);
+    memset(d->shelf_nav_drawn, 0, sizeof d->shelf_nav_drawn);
     for (s = 0; s < n; s++) {
         const sel_view_row* head = &st->view->rows[sh[s].head];
         int32_t top = shelf_top(d, s);
@@ -2437,6 +2490,20 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
                 sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_PLAY, rect_of(pb.x + ps / 4, pb.y + ps / 4, ps / 2, ps / 2),
                                   ps / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
                 d->home_parts |= HP_PLAY_HOVER;
+            }
+        }
+        if (s < 8u) { /* I607: the round previous/next buttons over the covers of the hovered shelf */
+            uint32_t bits = shelf_nav_visible(d, s, &sh[s]), dir;
+            for (dir = 0; dir < 2u; dir++) {
+                sel_gui_rect b = shelf_nav_rect(d, s, (int)dir);
+                int32_t ps = b.w;
+                if (!(bits & (dir ? NAV_NEXT : NAV_PREV))) {
+                    continue;
+                }
+                sel_gui_round_rect(d->canvas, b, ps / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+                sel_gui_icon_draw(d->canvas, &d->icons, dir ? SEL_GUI_ICON_CHEVRON_RIGHT : SEL_GUI_ICON_CHEVRON_LEFT,
+                                  rect_of(b.x + ps / 4, b.y + ps / 4, ps / 2, ps / 2), ps / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+                d->shelf_nav_drawn[s] |= (uint8_t)(dir ? NAV_NEXT : NAV_PREV);
             }
         }
     }
@@ -6157,6 +6224,10 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
     }
     if (home_shelf_mode(st)) { /* a shelf tile: the engine plays the song or opens the album */
         uint32_t s, k;
+        if (shelf_nav_click(d, x, y)) { /* I607: a previous/next button sits over the covers: it wins over the tile */
+            draw_home(d);
+            return 1;
+        }
         if (quick_hit(d, x, y, &k)) {
             quick_activate(d, k);
             draw_home(d);
@@ -7933,6 +8004,7 @@ static int desk_hover_move(desk* d, int32_t x, int32_t y) {
     const sel_state* st = sel_engine_state(d->engine);
     uint32_t i;
     int changed = 0, tile_moved = 0;
+    uint32_t shelf1 = 0u;
     if (d->overlay == OV_NONE) {
         for (i = 0; i < d->hbox_n; i++) {
             if (in_rect(d->hbox[i], x, y)) {
@@ -7946,6 +8018,7 @@ static int desk_hover_move(desk* d, int32_t x, int32_t y) {
             } else if (home_shelf_mode(st)) {
                 shelf sh[SHELF_MAX];
                 uint32_t s, k, cnt = home_shelves(st, sh), flat = 0;
+                shelf1 = shelf_hover_of(d, x, y); /* I607 */
                 if (quick_hit(d, x, y, &k)) { /* I490 */
                     tile = (int32_t)quick_hover_index(st, k) + 1;
                 } else if (shelf_hit(d, x, y, &s, &k)) {
@@ -7975,6 +8048,11 @@ static int desk_hover_move(desk* d, int32_t x, int32_t y) {
             d->hover_prev = rect_of(0, 0, 0, 0);
         }
         d->hover_tile = tile;
+        changed = 1;
+    }
+    if (shelf1 != d->hover_shelf1) { /* I607: the previous/next buttons follow the shelf under the pointer */
+        d->hover_shelf1 = shelf1;
+        tile_moved = 1;
         changed = 1;
     }
     if (!changed) {
@@ -8041,15 +8119,10 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
             return 1;
         }
         if (d->home && d->open_tile == 0 && home_shelf_mode(sel_engine_state(d->engine))) { /* the shelf under the pointer */
-            /* Rule (I247, I311): a horizontal wheel (dx) always scrolls the shelf under the pointer sideways; a vertical
-             * wheel (dy) scrolls the whole Home content vertically whenever it overflows the panel, wherever the pointer
-             * is, so a tall Home stays reachable with a plain mouse wheel (the tile cards cover most of it). Only on a
-             * Home that fits does a vertical wheel over tile cards scroll that shelf sideways instead. */
-            if (ev->dx != 0 || (shelf_over_cards(d, d->ptr_y) && home_max_y_q16(d) == 0)) {
-                shelf_scroll(d, d->ptr_y, -(ev->dx != 0 ? ev->dx : ev->dy));
-            } else {
-                home_scroll_y(d, -ev->dy);
-            }
+            /* Rule (I607): the wheel never scrolls a shelf sideways, a horizontal swipe included; the vertical wheel
+             * scrolls the whole Home content wherever the pointer is. A shelf moves only by its previous/next buttons. */
+            home_scroll_y(d, -ev->dy);
+            d->hover_shelf1 = shelf_hover_of(d, d->ptr_x, d->ptr_y); /* the content moved under a still pointer */
             d->sm_open = 0;
             draw_home(d);
             return 1;
