@@ -121,6 +121,8 @@ typedef struct sel_view_state {
     const char* group;       /* grouping key: "folder" or "format" */
     uint32_t drill_n;        /* drilldown: values picked so far */
     const char* drill[2];    /* the picked values, column order */
+    uint32_t version;        /* moves whenever the listing's rows change identity or order (relist, sort, filter, search, drill,
+                                queue edit): the SONGS_* verbs refuse a selection made against another version (I632b) */
 } sel_view_state;
 
 typedef struct sel_song_state {
@@ -401,6 +403,9 @@ typedef struct sel_engine_stats {
     uint32_t addf_added;          /* songs the last PLAYLIST_ADD_FOLDER appended */
     uint32_t pl_fail_runs;        /* PLAYLIST_IMPORT / PLAYLIST_ADD_FOLDER runs that failed (I652e) */
     uint32_t pl_fail_reason;      /* SEL_PLFAIL_* of the last failed run */
+    uint32_t songs_runs;          /* SONGS_* bulk verbs that ran (I632b sentinel) */
+    uint32_t songs_done;          /* songs the last SONGS_* verb handled (the count the toast shows) */
+    uint32_t songs_stale;         /* SONGS_* verbs refused because the list version moved */
     uint32_t import_missing;      /* entries of the last PLAYLIST_IMPORT whose file does not exist */
     uint32_t sticker_ops;         /* STICKER_* commands run against the library (I176 sentinel) */
     uint32_t links_parsed;        /* share links OPEN parsed (I180 sentinel) */

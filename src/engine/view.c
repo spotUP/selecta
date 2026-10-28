@@ -805,6 +805,22 @@ void sel_view_refresh(sel_view* v, const sel_view_src* s) {
     if (mode != SEL_VIEW_STYLE_REGULAR) {
         fill_styled(v, s);
     }
+    {
+        /* pub.version moves when the whole list changes identity or order; a cursor move or a scroll does not touch it. */
+        uint32_t sig[8];
+        sig[0] = p->source;
+        sig[1] = p->style;
+        sig[2] = count;
+        sig[3] = s->queue->version;
+        sig[4] = s->browse->generation;
+        sig[5] = v->group_key;
+        sig[6] = p->drill_n;
+        sig[7] = v->fgen;
+        if (memcmp(sig, v->vsig, sizeof sig) != 0) {
+            memcpy(v->vsig, sig, sizeof sig);
+            p->version++;
+        }
+    }
     for (i = 0; mode == SEL_VIEW_STYLE_REGULAR && i < p->row_n; i++) {
         uint32_t idx = p->window_start + i;
         sel_view_row* r = &v->rows[i];

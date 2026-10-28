@@ -97,6 +97,7 @@ typedef struct sel_view {
     char* htext;                     /* SEL_VIEW_HOME_TEXT_MAX bytes: scratch for the home text the library writes */
     uint32_t frow_n, fgen;           /* rows filled, bumps on every set */
     sel_view_sig last;
+    uint32_t vsig[8]; /* what pub.version was last bumped for */
 } sel_view;
 
 /* Returns 0 when allocation fails. */
