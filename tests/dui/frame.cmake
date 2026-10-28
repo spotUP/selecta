@@ -127,6 +127,8 @@ message(STATUS "dui-frame: transport clicks, golden ${hash} and narrow layouts p
 #    here. Bits: 1 nav, 2 brand, 4 tile card, 8 play affordance (hover only), 16 player art, 32 player title,
 #    64 seek bar with times, 128 greeting, 256 section heading, 512 tile artist line, 1024 header search icon,
 #    2048 header tint, 4096 panels, 8192 chips. tile_cards counts the card surfaces (one per queued song).
+#    I615: at 1280x800 the top bar owns the search field, so the header search icon (1024) is not drawn on Home;
+#    tests/dui/topbar.cmake covers the field there.
 function(home_run outvar input)
   file(REMOVE_RECURSE "${WORK}/cfg")
   file(WRITE "${WORK}/in.txt" "${input}")
@@ -135,9 +137,8 @@ function(home_run outvar input)
 endfunction()
 home_run(homeidle "")
 dui_stat(hp "${homeidle}" desktop home_parts)
-math(EXPR rest "${hp} & 16375")
-if(NOT rest EQUAL 16375 OR NOT hp EQUAL 16375)
-  message(FATAL_ERROR "home_parts=${hp}, expected 16375 (every chrome part but the hover play affordance):\n${homeidle}")
+if(NOT hp EQUAL 15351)
+  message(FATAL_ERROR "home_parts=${hp}, expected 15351 (every chrome part but the hover play affordance and the header search icon):\n${homeidle}")
 endif()
 # The counter adds up over frames and --view home enters the page in a frame of its own (I266): a whole number of the three queued cards.
 dui_stat(tc "${homeidle}" desktop tile_cards)
