@@ -40,6 +40,7 @@
 #include <intuition/screens.h>
 #include <proto/muimaster.h>
 struct Library* MUIMasterBase;
+#include "mui_aabtn_class.h"
 #include "mui_canvas_class.h"
 #include "mui_listview_class.h"
 #define SEL_MAKE_ID(a, b, c, d) (((ULONG)(a) << 24) | ((ULONG)(b) << 16) | ((ULONG)(c) << 8) | (ULONG)(d))
@@ -101,7 +102,8 @@ typedef struct mui_state {
     Object* balance[2];             /* sidebar|main and main|detail */
     mui_layout_map_t lay;
     Object* canvas;                 /* MUI-P5-1 Selecta_Canvas, NULL when MUI refused the class */
-    Object* btn_txt[MUI_BTN_COUNT];   /* I651: the label Text inside each transport button group */
+    Object* aabtn_play;               /* I665: the flat antialiased Play button, NULL when the look is off */
+    Object* btn_txt[MUI_BTN_COUNT];  /* I651: the label Text inside each transport button group */
     Object* btn_pages[MUI_BTN_COUNT]; /* I651: icon pages (play/pause), NULL for single-icon buttons */
     Object* btn[MUI_BTN_COUNT];     /* MUI-P2-5 transport buttons */
     const char* btn_label[MUI_BTN_COUNT];
@@ -353,6 +355,7 @@ static struct {
     mui_theme_look look;
     int on;
 } g_th[MUI_TH_COUNT];
+static uint32_t g_text_rgb; /* I665: the TEXT token, caption colour of the flat button */
 
 #define TH_TAGS(role, frame_off) \
     g_th[role].on ? (ULONG)MUIA_Background : (ULONG)TAG_IGNORE, g_th[role].on ? (ULONG)g_th[role].look.background : 0UL, \
@@ -499,6 +502,7 @@ static void mui_theme_init(void) {
      * MUI look is untouched. Otherwise all roles are on together and all text uses that pen. The string gadget (FIELD)
      * cannot take pen escapes, so it keeps the user's MUI look. */
     pen = mui_theme_pick_pen(pen_rgb, 8, th.token);
+    g_text_rgb = th.token[SEL_GUI_TOKEN_TEXT];
     for (i = 0; i < MUI_TH_COUNT; i++) {
         g_th[i].on = mui_theme_look_for((mui_theme_role)i, th.token, &g_th[i].look) && pen >= 0 && i != MUI_TH_FIELD;
     }
@@ -673,6 +677,19 @@ static Object* mui_player_group(mui_state* s) {
         s->btn_label[i] = mui_transport_label(i, &zero);
         s->btn[i] = mui_make_button_i(s->btn_label[i], mui_transport_action(i, &zero), i == MUI_BTN_PLAY ? "pause" : NULL, CTL_BTN_BASE + (LONG)i, 100, 0,
                                       &s->btn_txt[i], &s->btn_pages[i]);
+        if (i == MUI_BTN_PLAY && g_th[MUI_TH_BUTTON].on) {
+            /* I665 spike: the Play button alone gets the flat rounded antialiased look, beside the old buttons. */
+            Object* aa = mui_aabtn_new(s->btn_label[i], "Pause", g_th[MUI_TH_BUTTON].look.bg_rgb, g_text_rgb, CTL_BTN_BASE + (LONG)i);
+            if (aa != NULL) {
+                if (s->btn[i] != NULL) {
+                    MUI_DisposeObject(s->btn[i]);
+                }
+                s->btn[i] = aa;
+                s->btn_txt[i] = NULL;
+                s->btn_pages[i] = NULL;
+                s->aabtn_play = aa;
+            }
+        }
         if (s->btn[i] != NULL) {
             DoMethod(i < MUI_TRANSPORT_ROW1 ? row1 : row1b, OM_ADDMEMBER, s->btn[i]);
         }
@@ -1091,7 +1108,11 @@ static void mui_refresh(mui_state* s) {
         const char* label = mui_transport_label(i, f);
         if (label != NULL && label != s->btn_label[i]) {
             s->btn_label[i] = label;
-            set(s->btn_txt[i], MUIA_Text_Contents, (ULONG)label);
+            if (i == MUI_BTN_PLAY && s->aabtn_play != NULL) {
+                mui_aabtn_set_caption(s->aabtn_play, label);
+            } else {
+                set(s->btn_txt[i], MUIA_Text_Contents, (ULONG)label);
+            }
             if (s->btn_pages[i] != NULL) {
                 const char* act = mui_transport_action(i, f);
                 set(s->btn_pages[i], MUIA_Group_ActivePage, act != NULL && strcmp(act, "pause") == 0 ? 1 : 0);
@@ -1890,6 +1911,7 @@ static void mui_close(void* state) {
         s->win = NULL;
         s->canvas = NULL;
         mui_canvas_class_free();
+        mui_aabtn_class_free();
         mui_listview_class_free();
     }
     mui_timer_close(s);
