@@ -123,6 +123,28 @@ void sel_uim_layout_compute_expand(sel_uim_layout* l, uint32_t width, uint32_t h
     add(l, "player", 0, 0, 0, (int32_t)body_h, width, bar_h);
 }
 
+/* I668: puts the sidebar at `side` wide mid-tween and gives the main region the rest, the detail column and the player staying put.
+ * The sidebar keeps its minimum only down to the width it has now. */
+void sel_uim_layout_set_side_width(sel_uim_layout* l, uint32_t side) {
+    sel_uim_region *sb = NULL, *mn = NULL;
+    uint32_t i, old;
+    for (i = 0; i < l->count; i++) {
+        if (strcmp(l->regions[i].name, "sidebar") == 0) {
+            sb = &l->regions[i];
+        } else if (strcmp(l->regions[i].name, "main") == 0) {
+            mn = &l->regions[i];
+        }
+    }
+    if (sb == NULL || mn == NULL) {
+        return;
+    }
+    old = sb->w;
+    sb->w = side;
+    sb->min_w = side < sb->min_w ? side : sb->min_w;
+    mn->x = (int32_t)side;
+    mn->w = mn->w + old - side;
+}
+
 /* 0 when every region lies inside the canvas, meets its minimum size and overlaps no other region. */
 int sel_uim_layout_check(const sel_uim_layout* l, char* msg, size_t cap) {
     uint32_t i, j;

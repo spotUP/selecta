@@ -355,6 +355,7 @@ typedef struct desk {
     uint32_t side_n, side_stale, side_draws, side_rows, side_opens, side_empty_draws, side_create_clicks; /* items held, reload wanted, frames drawn, rows drawn in the last one, rows opened */
     uint32_t side_open_n, side_open_tries; /* I646: the sidebar count a just created playlist brings the list to (0 = none pending), frames waited */
     uint32_t side_wide, side_plus_clicks, side_wide_clicks; /* I609: the sidebar is widened; header Create Playlist and width toggle clicks */
+    uint32_t side_anim, side_from, side_to, side_tween_frames; /* I668: the width tween runs, its ends in logical px, frames relaid out by it */
     sel_gui_rect side_empty_btn; /* I627: the empty-state Create playlist button, zero size when not drawn */
     int32_t side_y_q16; /* the list's scroll offset in Q16 logical pixels */
     uint32_t side_chip, side_filters, side_chip_scrolls; /* I610: the library chip in force (0 none, else 1 + index), filter passes run, chevron scrolls */
@@ -476,6 +477,7 @@ typedef struct desk {
 static int desk_resize(desk* d, int32_t w, int32_t h);
 static int desk_set_scale(desk* d, int32_t scale_q16);
 static void desk_relayout(desk* d);
+static void side_wide_toggle(desk* d);
 enum { SIDE_HDR_PLUS = 1, SIDE_HDR_WIDE = 2, SIDE_HDR_COUNT = 2 }; /* I609: Your Library header controls */
 static sel_gui_rect side_hdr_rect(const desk* d, uint32_t which);
 static int desk_set_density(desk* d, int32_t density);
@@ -493,7 +495,7 @@ static sel_gui_rect toast_rect(desk* d);
 static int desk_toast_tick(desk* d);
 static int overlay_refresh(desk* d);
 
-enum { ANIM_KEY_VIEW = 1, ANIM_KEY_TIP = 3, ANIM_KEY_FLOW = 4, ANIM_KEY_TOAST = 5, ANIM_KEY_NAV_FADE = 6, ANIM_KEY_NAV_SCROLL = 7, ANIM_KEY_NAV_SCALE = 8 /* +1 per direction */ };
+enum { ANIM_KEY_VIEW = 1, ANIM_KEY_TIP = 3, ANIM_KEY_FLOW = 4, ANIM_KEY_TOAST = 5, ANIM_KEY_NAV_FADE = 6, ANIM_KEY_NAV_SCROLL = 7, ANIM_KEY_NAV_SCALE = 8 /* +1 per direction */, ANIM_KEY_SIDE = 10 /* I668: sidebar width */ };
 enum { HR_NONE, HR_SIDEBAR, HR_MAIN, HR_DETAIL, HR_PLAYER };
 static int hover_region_of(const desk* d, sel_gui_rect box);
 enum { SLOT_SUB_PREV, SLOT_SHUFFLE, SLOT_PREV, SLOT_PLAY, SLOT_NEXT, SLOT_REPEAT, SLOT_SUB_NEXT, TRANSPORT_COUNT };
@@ -5689,9 +5691,9 @@ static const char* library_dump_build(desk* d) {
                      (int)d->side_empty_btn.x, (int)d->side_empty_btn.y, (int)d->side_empty_btn.w, (int)d->side_empty_btn.h);
         for (k = 1u; k <= (uint32_t)SIDE_HDR_COUNT; k++) { /* I609: header controls and their counters */
             sel_gui_rect r = side_hdr_rect(d, k);
-            o = dump_put(d, o, "sidehdr %s plus_clicks=%u wide_clicks=%u wide=%u sidebar_w=%d rect %d %d %d %d\n", k == SIDE_HDR_PLUS ? "plus" : "wide",
+            o = dump_put(d, o, "sidehdr %s plus_clicks=%u wide_clicks=%u wide=%u sidebar_w=%d rect %d %d %d %d tween_frames=%u\n", k == SIDE_HDR_PLUS ? "plus" : "wide",
                          (unsigned)d->side_plus_clicks, (unsigned)d->side_wide_clicks, (unsigned)d->side_wide, (int)region_rect(d, "sidebar").w,
-                         (int)r.x, (int)r.y, (int)r.w, (int)r.h);
+                         (int)r.x, (int)r.y, (int)r.w, (int)r.h, (unsigned)d->side_tween_frames);
         }
         o = dump_put(d, o, "sidechips chip=%u filters=%u scrolls=%u single=%d\n", (unsigned)d->side_chip, (unsigned)d->side_filters,
                      (unsigned)d->side_chip_scrolls, side_chip_single(d));
@@ -8738,6 +8740,21 @@ static int desk_timers_tick(desk* d) {
     return desk_toast_tick(d);
 }
 
+/* I668: one step of the sidebar width tween, run after the clock moved (test clock and live loop alike): lays the window out
+ * at the width the tween has reached and ends the tween on the exact target width. */
+static void desk_side_step(desk* d) {
+    if (d->side_anim == 0u) {
+        return;
+    }
+    if (sel_gui_tween_value(&d->tl, ANIM_KEY_SIDE, 65536) >= 65536) {
+        d->side_anim = 0u;
+    }
+    d->side_tween_frames++;
+    desk_relayout(d);
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+}
+
 /* Moves the UI clock ms forward the way the live loop would: 16 ms steps while a tween runs, otherwise one jump to the
  * next visible-clock second boundary (the idle block). Draws a frame per step that has a reason. */
 static void desk_advance(desk* d, uint32_t ms) {
@@ -8759,6 +8776,7 @@ static void desk_advance(desk* d, uint32_t ms) {
         int main_moves = animated && d->home && hover_main_painted(d); /* asked before the advance: the step that ends a tween still paints it */
         d->now_ms += step;
         sel_gui_timeline_advance(&d->tl, d->now_ms);
+        desk_side_step(d);
         sel_uim_update(&d->uim, sel_engine_state(d->engine));
         desk_timers_tick(d);
         if (!desk_should_draw(d, animated)) {
@@ -9794,8 +9812,7 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         }
         if (door == SIDE_HDR_WIDE) { /* I609: widen or narrow the sidebar through the layout */
             d->side_wide_clicks++;
-            d->side_wide = !d->side_wide;
-            desk_relayout(d);
+            side_wide_toggle(d);
             d->repaint = 1;
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
             return 1;
@@ -10402,6 +10419,7 @@ static void desk_live_tick(desk* d) {
     uint32_t before = sel_gui_timeline_running(&d->tl);
     d->now_ms = desk_sdl_ticks();
     sel_gui_timeline_advance(&d->tl, d->now_ms);
+    desk_side_step(d);
     if (before > 0u && sel_gui_timeline_running(&d->tl) == 0u) {
         d->tween_ended = 1;
     }
@@ -10949,11 +10967,45 @@ static int32_t desk_scale_for(const desk* d, int32_t w, int32_t h) {
 }
 
 /* The layout runs at the logical size: the canvas divided by the scale. */
-static void desk_relayout(desk* d) {
+static void desk_layout_into(desk* d, sel_uim_layout* l) {
     uint32_t lh = (uint32_t)px_to_logical(d, cvh(d));
-    sel_uim_layout_compute_expand(&d->layout, (uint32_t)px_to_logical(d, d->canvas->w), lh,
+    sel_uim_layout_compute_expand(l, (uint32_t)px_to_logical(d, d->canvas->w), lh,
                                   desk_bitmap_text(d) ? SEL_UIM_TIER_BITMAP : SEL_UIM_TIER_DEFAULT, desk_rail_w(d), sel_uim_footer_height(lh),
                                   d->side_wide);
+}
+
+/* I668: while the width tween runs the sidebar is between its two ends and the main region takes the rest. */
+static void desk_relayout(desk* d) {
+    desk_layout_into(d, &d->layout);
+    if (d->side_anim != 0u) {
+        int32_t v = sel_gui_tween_value(&d->tl, ANIM_KEY_SIDE, 65536);
+        int32_t from = (int32_t)d->side_from, to = (int32_t)d->side_to;
+        sel_uim_layout_set_side_width(&d->layout, (uint32_t)(from + (int32_t)(((int64_t)(to - from) * v) >> 16)));
+    }
+}
+
+/* I668: the sidebar width in logical px (0 when the layout has none). */
+static uint32_t desk_side_w(const sel_uim_layout* l) {
+    uint32_t i;
+    for (i = 0; i < l->count; i++) {
+        if (strcmp(l->regions[i].name, "sidebar") == 0) {
+            return l->regions[i].w;
+        }
+    }
+    return 0u;
+}
+
+/* I609: widen or narrow the sidebar through the layout. I668: the width eases from where it is now to the new target through the
+ * shared tween path, so a click mid-tween reverses from the current width. */
+static void side_wide_toggle(desk* d) {
+    uint32_t cur = desk_side_w(&d->layout);
+    sel_uim_layout target;
+    d->side_wide = !d->side_wide;
+    desk_layout_into(d, &target);
+    d->side_from = cur;
+    d->side_to = desk_side_w(&target);
+    d->side_anim = d->side_from != d->side_to && desk_tween(d, ANIM_KEY_SIDE, SEL_GUI_ANIM_FAST_MS, SEL_GUI_EASE_OUT) ? 1u : 0u;
+    desk_relayout(d);
 }
 
 /* The backend density changed (a window moved to another screen): the scale follows, the zoom stays. */

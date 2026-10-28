@@ -181,6 +181,8 @@ void sel_uim_layout_compute_bar(sel_uim_layout* l, uint32_t width, uint32_t heig
 /* I609: as compute_bar; a non-zero `expand` widens the sidebar of the default tier. */
 void sel_uim_layout_compute_expand(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t rail_w,
                                    uint32_t bar_height, uint32_t expand);
+/* I668: the sidebar `side` wide mid-tween; the main region takes the rest. */
+void sel_uim_layout_set_side_width(sel_uim_layout* l, uint32_t side);
 int sel_uim_layout_check(const sel_uim_layout* l, char* msg, size_t cap);
 /* Hit test (DUI-P3-2): the index of the region of the layout tree that holds the point (x, y) in layout units, or -1
  * outside every region. The regions tile the canvas, so a point belongs to at most one. */

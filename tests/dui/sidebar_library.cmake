@@ -337,6 +337,34 @@ expect_eq("toggle clicks (two)" "${wc3}" "2")
 expect_eq("toggle state (two)" "${wv3}" "0")
 expect_eq("sidebar width restored" "${ww3}" "${w_base}")
 
+# 9b-tween. I668: the width eases between the two ends through the shared tween path, relaid out per frame (tween_frames counts them).
+# One run through the real binary: the full click ran more than one frame and landed on the exact target; 48 ms in the width is strictly
+# between the ends; a second click mid-tween reverses from the current width (no jump to an end) and lands on the original width.
+hdr_field(tf_full "${h2}" wide tween_frames)
+if(NOT tf_full GREATER 1)
+  message(FATAL_ERROR "the sidebar width tween ran ${tf_full} frames, wanted more than one")
+endif()
+file(WRITE "${WORK}/wide_mid.txt" "click ${wide_c}\nwait 48\n")
+dui_run(hm ${common} --canvas 1280x800 --input "${WORK}/wide_mid.txt")
+hdr_field(wm_w "${hm}" wide sidebar_w)
+hdr_field(wm_f "${hm}" wide tween_frames)
+if(NOT wm_w GREATER w_base OR NOT wm_w LESS ww OR NOT wm_f GREATER 1)
+  message(FATAL_ERROR "mid-tween width ${wm_w} is not strictly between ${w_base} and ${ww} (frames ${wm_f})")
+endif()
+hdr_centre(wide_cm "${hm}" wide)
+file(WRITE "${WORK}/wide_rev.txt" "click ${wide_c}\nwait 48\nclick ${wide_cm}\nwait 16\n")
+dui_run(hr ${common} --canvas 1280x800 --input "${WORK}/wide_rev.txt")
+hdr_field(wr_w "${hr}" wide sidebar_w)
+hdr_field(wr_c "${hr}" wide wide_clicks)
+expect_eq("reverse click counted" "${wr_c}" "2")
+if(NOT wr_w GREATER w_base OR NOT wr_w LESS wm_w)
+  message(FATAL_ERROR "the reversed width ${wr_w} did not move back from ${wm_w} towards ${w_base}")
+endif()
+file(WRITE "${WORK}/wide_rev2.txt" "click ${wide_c}\nwait 48\nclick ${wide_cm}\nwait 200\n")
+dui_run(hr2 ${common} --canvas 1280x800 --input "${WORK}/wide_rev2.txt")
+hdr_field(wr2_w "${hr2}" wide sidebar_w)
+expect_eq("reversed tween lands on the original width" "${wr2_w}" "${w_base}")
+
 # 10b. I610 on the wide sidebar: the chips fit, so the row shows them all and each takes a click; the chip in force clicked again clears
 # the filter, a chip of a kind without rows shows no row.
 sc_parse(k6 "${h2}")
