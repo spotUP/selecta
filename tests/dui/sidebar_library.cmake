@@ -122,3 +122,23 @@ if(NOT "${e2}" MATCHES "sideempty draws=[0-9]+ clicks=1 ")
 endif()
 expect_eq("items after create" "${e2_items}" "1")
 expect_eq("rows after create" "${e2_rows}" "1")
+
+# 6. I646: Create playlist creates AND opens, like Spotify: the Playlists page shows the new playlist (plpage with its id) and
+# the name field has the keyboard (edit=1), so typing renames it. Typing "Road" and Enter renames it to Road.
+if(NOT "${e2}" MATCHES "nav page=playlists")
+  message(FATAL_ERROR "the card click did not go to the Playlists page:\n${e2}")
+endif()
+if(NOT "${e2}" MATCHES "plpage id=([0-9]+) name=\\[New Playlist\\] [^\n]* edit=1")
+  message(FATAL_ERROR "the new playlist was not opened with the name field focused in:\n${e2}")
+endif()
+set(db4 "${WORK}/empty2.db")
+dui_run(seed4 --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats --db "${db4}"
+  --exec "QUEUE_ADD ${WORK}/one.mod")
+set(empty2 ${common})
+list(REMOVE_ITEM empty2 "${db}")
+list(APPEND empty2 "${db4}")
+file(WRITE "${WORK}/create_name.txt" "click ${bx} ${by}\nwait 100\nkey R\nkey o\nkey a\nkey d\nkey enter\nwait 100\n")
+dui_run(e3 ${empty2} --canvas 1280x800 --input "${WORK}/create_name.txt")
+if(NOT "${e3}" MATCHES "plpage id=[0-9]+ name=\\[Road\\] [^\n]* edit=0")
+  message(FATAL_ERROR "typing did not rename the opened playlist in:\n${e3}")
+endif()
