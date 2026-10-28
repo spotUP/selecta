@@ -169,6 +169,16 @@ static void test_theme(void) {
     CHECK(mui_theme_look_for(MUI_TH_COUNT, th.token, &lk) == 0 && mui_theme_look_for(MUI_TH_WINDOW, NULL, &lk) == 0, "bad input refused");
     CHECK(mui_theme_readable(th.token[SEL_GUI_TOKEN_TEXT], th.token[SEL_GUI_TOKEN_BACKGROUND]) == 1, "light text on the dark theme is readable");
     CHECK(mui_theme_readable(0x000000u, th.token[SEL_GUI_TOKEN_BACKGROUND]) == 0, "black MUI text on the dark theme is not readable: theme stays off");
+    /* I660: one decision for the whole look, over the screen pens MUI can draw text with (DrawInfo pens). A Workbench-style
+     * palette (black text pen, white shine pen) gets the white pen; a screen with only dark pens gets -1 (look off everywhere). */
+    {
+        static const uint32_t wb[8] = {0x000000u, 0xFFFFFFu, 0x000000u, 0xFFFFFFu, 0x000000u, 0x6688BBu, 0x000000u, 0xFFFFFFu};
+        static const uint32_t dark[8] = {0x000000u, 0x000000u, 0x000000u, 0x202020u, 0x000000u, 0x101010u, 0x000000u, 0x181818u};
+        int pen = mui_theme_pick_pen(wb, 8, th.token);
+        CHECK(pen == 1 || pen == 3 || pen == 7, "light pen picked on a Workbench palette, got %d", pen);
+        CHECK(mui_theme_pick_pen(dark, 8, th.token) == -1, "no readable pen: look off for every role");
+        CHECK(mui_theme_pick_pen(NULL, 8, th.token) == -1 && mui_theme_pick_pen(wb, 8, NULL) == -1, "bad input refused");
+    }
     f = fopen(MUI_UI_SOURCE, "rb");
     CHECK(f != NULL, "open %s", MUI_UI_SOURCE);
     if (f == NULL) {
@@ -177,6 +187,8 @@ static void test_theme(void) {
     n = fread(src, 1, sizeof src - 1, f);
     fclose(f);
     src[n] = 0;
+    CHECK(strstr(src, "mui_theme_pick_pen(") != NULL, "mui_ui.c decides the look once through mui_theme_pick_pen");
+    CHECK(strstr(src, "mui_theme_readable(text, g_th[i]") == NULL, "mui_ui.c gates roles one by one against the TEXTPEN colour");
     for (role = 0; role < MUI_TH_COUNT; role++) {
         char key[64];
         snprintf(key, sizeof key, "TH_TAGS(%s,", names[role]);
