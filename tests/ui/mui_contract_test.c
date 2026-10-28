@@ -770,6 +770,18 @@ static void test_tracker(void) {
     CHECK(strstr(o, " .. .. ...") != NULL, "empty cell '%s'", o);
 }
 
+/* Regression (MUI-P4-10): eleven buttons and two cycles in one row made the window wider than the 800 pixel screen and
+ * MUIA_Window_Open stayed 0 on the Amiga. Each tool row must stay narrow enough. */
+static void test_toolrows(void) {
+    uint32_t r;
+    for (r = 0; r < 2u; r++) {
+        if (mui_tool_row_chars(r) == 0u || mui_tool_row_chars(r) > 64u) {
+            fprintf(stderr, "FAIL tool row %u holds %u label characters (1..64 fit an 800 pixel window)\n", (unsigned)r, (unsigned)mui_tool_row_chars(r));
+            failures++;
+        }
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -846,6 +858,8 @@ int main(int argc, char** argv) {
     } else if (strcmp(argv[1], "states") == 0) {
         test_states();
         test_view_empty();
+    } else if (strcmp(argv[1], "toolrows") == 0) {
+        test_toolrows();
     } else if (strcmp(argv[1], "tracker") == 0) {
         test_tracker();
     } else {

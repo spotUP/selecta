@@ -43,7 +43,7 @@ struct Library* MUIMasterBase;
 #endif
 
 /* MUI-P1-4: a distinct error on stderr (the shell keeps the text UI) and, on the Amiga, an EasyRequest. */
-static void mui_report(mui_fail why);
+static void mui_report(mui_fail why, const char* detail);
 
 #define MUI_HELP_MAX 160 /* MUI-P4-14: most help rows shown (one per action table row) */
 #define MUI_ROWS_MAX 64 /* most rows one window of the list holds (MUI-P3-1: only the engine window is inserted) */
@@ -163,6 +163,8 @@ static void put_tag(sel_tag* t, uint32_t tag, uintptr_t value) {
 
 #ifdef SEL_MUI_NATIVE
 static uint32_t mui_now_ms(void);
+/* The tool button order is the label order of mui_tool_labels (map/mui_layout.c, tested on the host): this lists each button's id. */
+static const uint32_t g_tool_which[MUI_TOOL_BTNS] = {P4_LIKE, P4_QREMOVE, P4_QCLEAR, P4_QUP, P4_QDOWN, P4_HELP, P4_SETTINGS, P4_POPEN, P4_PRENAME, P4_PDELETE, P4_CLEARLIB};
 /* MUI-P2-3: the Menustrip built from the action table (mui_menu_build). MUI keeps the title and shortcut pointers, so the
  * rows and the one-character shortcut strings are static. A Menuitem trigger is a ReturnID (MENU_ID_BASE + row) that the
  * wait loop turns into the row's protocol line for the engine (MUI-P2-4). */
@@ -464,14 +466,12 @@ static Object* mui_make_cycle(const char* const* entries, LONG id) {
 /* MUI-P4: the tool rows above the list: search and command line Strings, the like button, the rating and subsong Cycles,
  * the queue and playlist actions of the cursor row, and Clear Library (confirmed by a MUI_Request). */
 static Object* mui_tool_group(mui_state* s) {
-    static const struct { const char* label; uint32_t which; } btns[] = {
-        {"Like", P4_LIKE}, {"Remove From Queue", P4_QREMOVE}, {"Clear Queue", P4_QCLEAR}, {"Move Up", P4_QUP}, {"Move Down", P4_QDOWN},
-        {"Help", P4_HELP}, {"Settings", P4_SETTINGS}, {"Open Playlist", P4_POPEN}, {"Rename Playlist", P4_PRENAME}, {"Delete Playlist", P4_PDELETE}, {"Clear Library", P4_CLEARLIB}};
     Object* g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
     Object* r1 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     Object* r2 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    Object* r3 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     uint32_t i;
-    if (g == NULL || r1 == NULL || r2 == NULL) {
+    if (g == NULL || r1 == NULL || r2 == NULL || r3 == NULL) {
         return NULL;
     }
     s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH);
@@ -485,16 +485,17 @@ static Object* mui_tool_group(mui_state* s) {
     }
     DoMethod(r1, OM_ADDMEMBER, s->str_search);
     DoMethod(r1, OM_ADDMEMBER, s->str_cmd);
-    for (i = 0; i < sizeof btns / sizeof btns[0]; i++) {
-        Object* b = mui_make_button(btns[i].label, CTL_P4_BASE + (LONG)btns[i].which);
+    for (i = 0; i < MUI_TOOL_BTNS; i++) {
+        Object* b = mui_make_button(mui_tool_labels[i], CTL_P4_BASE + (LONG)g_tool_which[i]);
         if (b != NULL) {
-            DoMethod(r2, OM_ADDMEMBER, b);
+            DoMethod(i < MUI_TOOL_ROW2 ? r2 : r3, OM_ADDMEMBER, b);
         }
     }
-    DoMethod(r2, OM_ADDMEMBER, s->cyc_rating);
-    DoMethod(r2, OM_ADDMEMBER, s->cyc_subsong);
+    DoMethod(r3, OM_ADDMEMBER, s->cyc_rating);
+    DoMethod(r3, OM_ADDMEMBER, s->cyc_subsong);
     DoMethod(g, OM_ADDMEMBER, r1);
     DoMethod(g, OM_ADDMEMBER, r2);
+    DoMethod(g, OM_ADDMEMBER, r3);
     DoMethod(g, OM_ADDMEMBER, s->status);
     return g;
 }
@@ -1441,7 +1442,7 @@ static void* mui_open(const sel_ui_open_args* a) {
     s->engine = a != NULL ? a->engine : NULL;
     MUIMasterBase = OpenLibrary((CONST_STRPTR)MUIMASTER_NAME, 19);
     if (MUIMasterBase == NULL) {
-        mui_report(MUI_FAIL_NO_LIBRARY);
+        mui_report(MUI_FAIL_NO_LIBRARY, "");
         return NULL;
     }
     strip = mui_menu_strip();
@@ -1474,7 +1475,7 @@ static void* mui_open(const sel_ui_open_args* a) {
         }
         CloseLibrary(MUIMasterBase);
         MUIMasterBase = NULL;
-        mui_report(MUI_FAIL_NO_WINDOW);
+        mui_report(MUI_FAIL_NO_WINDOW, "");
         return NULL;
     }
     DoMethod(s->win, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, s->app, 2, MUIM_Application_ReturnID,
@@ -1491,7 +1492,7 @@ static void* mui_open(const sel_ui_open_args* a) {
         s->win = NULL;
         CloseLibrary(MUIMasterBase);
         MUIMasterBase = NULL;
-        mui_report(MUI_FAIL_NO_WINDOW);
+        mui_report(MUI_FAIL_NO_WINDOW, "");
         return NULL;
     }
     s->wake_mask = 0;
@@ -1602,9 +1603,10 @@ static int mui_native_probe(void) {
     return 1;
 }
 
-static void mui_report(mui_fail why) {
+static void mui_report(mui_fail why, const char* detail) {
     struct EasyStruct es;
-    const char* text = mui_fail_text(why);
+    char text[300];
+    snprintf(text, sizeof text, "%s %s", mui_fail_text(why), detail);
     fprintf(stderr, "%s\n", text);
     es.es_StructSize = sizeof es;
     es.es_Flags = 0;
@@ -1614,13 +1616,13 @@ static void mui_report(mui_fail why) {
     EasyRequest(NULL, &es, NULL, (ULONG)text);
 }
 #else
-static void mui_report(mui_fail why) {
-    fprintf(stderr, "%s\n", mui_fail_text(why));
+static void mui_report(mui_fail why, const char* detail) {
+    fprintf(stderr, "%s %s\n", mui_fail_text(why), detail);
 }
 
 static void* mui_open(const sel_ui_open_args* a) {
     (void)a;
-    mui_report(mui_present() ? MUI_FAIL_NO_WINDOW : MUI_FAIL_NO_LIBRARY);
+    mui_report(mui_present() ? MUI_FAIL_NO_WINDOW : MUI_FAIL_NO_LIBRARY, "");
     return NULL; /* the host has no MUI: the shell keeps its current UI */
 }
 

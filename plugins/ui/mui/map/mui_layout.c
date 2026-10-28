@@ -8,6 +8,19 @@
 
 static const char* const k_slot_names[MUI_SLOT_COUNT] = {"suggestion", "sidebar", "main", "detail", "player"};
 
+const char* const mui_tool_labels[MUI_TOOL_BTNS] = {"Like", "Remove From Queue", "Clear Queue", "Move Up", "Move Down", "Help", "Settings",
+                                                    "Open Playlist", "Rename Playlist", "Delete Playlist", "Clear Library"};
+
+uint32_t mui_tool_row_chars(uint32_t row) {
+    uint32_t i, n = 0;
+    for (i = 0; i < MUI_TOOL_BTNS; i++) {
+        if ((i < MUI_TOOL_ROW2 ? 0u : 1u) == row) {
+            n += (uint32_t)strlen(mui_tool_labels[i]);
+        }
+    }
+    return n;
+}
+
 void mui_layout_map(mui_layout_map_t* m, uint32_t width, uint32_t height) {
     sel_uim_layout l;
     uint32_t i, s;
