@@ -494,6 +494,8 @@ void sel_engine_set_ui_view_styles(sel_engine* e, uint32_t mask);
 int sel_engine_take_ui_switch(sel_engine* e, char* id, size_t cap);
 /* 1 once after a QUIT command (inside BEGIN: after END); the shell then ends its run as if the primary UI returned -1. */
 int sel_engine_take_quit(sel_engine* e);
+/* 1 while a BEGIN is open (the ARexx port ends it at close, plan M4-AX section 5). */
+int sel_engine_in_batch(const sel_engine* e);
 
 SEL_EXTERN_C_END
 

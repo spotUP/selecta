@@ -5228,6 +5228,10 @@ static void cmd_UI_SWITCH(sel_engine* e, const sel_message* m) {
     strcpy(e->ui_switch, id);
 }
 
+int sel_engine_in_batch(const sel_engine* e) {
+    return e->in_batch != 0u;
+}
+
 int sel_engine_take_quit(sel_engine* e) {
     int q = e->quit != 0u;
     e->quit = 0;
