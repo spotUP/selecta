@@ -14,6 +14,13 @@ extern "C" {
 /* Button geometry in pixels: the icon edge and the MUI inner padding around the button contents. The label sits right of
  * the icon; the old text-only button had MUI's default 1 px padding. */
 enum { MUI_ICON_PX = 24, MUI_BTN_PAD_X = 10, MUI_BTN_PAD_Y = 6, MUI_BTN_ICON_GAP = 6 };
+/* I656: an icon-only button is a group whose only child is a fixed-size image, so its maximum width is fixed and bounds the
+ * row, then the root group, then MUIV_Window_Width_Screen (the window opened 446 px wide). Such a button gets this many
+ * HSpace(0) children around the image: they have no minimum but are stretchable, so the button grows like a text button
+ * and the icon stays centered. */
+static inline unsigned mui_button_spacers(int icon_only, int has_icon) {
+    return icon_only && has_icon ? 2u : 0u;
+}
 /* Width model of a button (I656): MUI frame 2 px a side, the 8 px topaz label font, the volume slider's minimum. The dense rows
  * (toolbar, extras) are icon-only with the label as MUIA_ShortHelp so every row fits the 640 px smallest screen (plan P6-2);
  * doors, crumbs and the transport row keep icon and label. */

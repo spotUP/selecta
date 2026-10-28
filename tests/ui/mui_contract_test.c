@@ -861,6 +861,9 @@ static void test_icon_button_rows(void) {
         CHECK(mui_transport_row_width(r) <= MUI_MIN_SCREEN_W, "transport row %u needs %u px", (unsigned)r, (unsigned)mui_transport_row_width(r));
     }
     CHECK(mui_extra_row_width() <= MUI_MIN_SCREEN_W, "extras row needs %u px", (unsigned)mui_extra_row_width());
+    /* I656b: icon-only buttons must stretch (spacers around the fixed image) or the root group's max width caps the window. */
+    CHECK(mui_button_spacers(1, 1) == 2u && mui_button_spacers(0, 1) == 0u && mui_button_spacers(1, 0) == 0u, "icon-only button has no stretch spacers");
+    CHECK(strstr(src, "mui_button_spacers(icon_only, 1)") != NULL && strstr(src, "HSpace(0)") != NULL, "mui_ui.c does not add the spacers");
     CHECK(strstr(src, "mui_make_button_icon(") != NULL && strstr(src, "icon_only && img != NULL ? NULL") != NULL, "dense rows are not icon-only in mui_ui.c");
 }
 

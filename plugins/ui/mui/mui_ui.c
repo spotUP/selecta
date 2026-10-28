@@ -439,7 +439,14 @@ static Object* mui_make_button_i(const char* label, const char* icon_key, const 
         pages = MUI_NewObject((char*)MUIC_Group, MUIA_Group_PageMode, TRUE, MUIA_Group_Child, img, MUIA_Group_Child, alt, TAG_DONE);
         DoMethod(o, OM_ADDMEMBER, pages != NULL ? pages : img);
     } else if (img != NULL) {
+        unsigned sp = mui_button_spacers(icon_only, 1);
+        if (sp != 0) {
+            DoMethod(o, OM_ADDMEMBER, HSpace(0));
+        }
         DoMethod(o, OM_ADDMEMBER, img);
+        if (sp != 0) {
+            DoMethod(o, OM_ADDMEMBER, HSpace(0));
+        }
     }
     if (txt != NULL) {
         DoMethod(o, OM_ADDMEMBER, txt);
