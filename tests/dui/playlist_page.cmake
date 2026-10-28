@@ -197,3 +197,30 @@ dui_run(l4 ${acommon} --input "${WORK}/lib4.txt")
 if(NOT "${l4}" MATCHES "plpage id=[0-9]+ name=\\[gamma\\] songs=1 " OR "${l4}" MATCHES "libadd ")
   message(FATAL_ERROR "Back to gamma did not return to the playlist with 1 song in:\n${l4}")
 endif()
+
+# 7. I652c: the empty playlist page's Import playlist file button. --dialog-answer stands in for the native file dialog's answer
+# (a path to an .m3u). The dump prints `plfindbtn 1 x y w h` (the button) and `plimport sent= runs= added= missing=` (sent: lines the UI sent;
+# runs: engine PLAYLIST_IMPORT runs, the sentinel). The list names a.mod, a missing file and b.mod (relative to the list): the playlist then has
+# 2 songs in file order, the engine counted 1 missing, and the UI reports them.
+set(idb "${WORK}/imp.db")
+dui_run(i_init --db "${idb}" --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats
+  --exec "PLAYLIST_CREATE gamma")
+file(WRITE "${WORK}/list.m3u" "#EXTM3U\n${WORK}/a.mod\n${WORK}/missing.mod\nb.mod\n")
+set(icommon --ui desktop --backend mem --view home --clock fixed --stats --db "${idb}" --canvas 1280x800)
+dui_run(i1 ${icommon} --input "${WORK}/find1.txt")
+if(NOT "${i1}" MATCHES "plimport sent=0 runs=0 added=0 missing=0")
+  message(FATAL_ERROR "the import counters are not zero before the click in:\n${i1}")
+endif()
+pp_centre(ibtn "${i1}" "plfindbtn 1")
+file(WRITE "${WORK}/imp1.txt" "click ${fside}\nwait 100\nclick ${ibtn}\nwait 300\n")
+dui_run(i2 ${icommon} --dialog-answer "${WORK}/list.m3u" --input "${WORK}/imp1.txt")
+if(NOT "${i2}" MATCHES "plimport sent=1 runs=1 added=2 missing=1")
+  message(FATAL_ERROR "the import sentinel did not count 2 added 1 missing in:\n${i2}")
+endif()
+if(NOT "${i2}" MATCHES "plpage id=[0-9]+ name=\\[gamma\\] songs=2 ")
+  message(FATAL_ERROR "Import playlist file did not give gamma 2 songs in:\n${i2}")
+endif()
+dui_run(i3 ${icommon} --input "${WORK}/find1.txt")
+if(NOT "${i3}" MATCHES "plpage id=[0-9]+ name=\\[gamma\\] songs=2 ")
+  message(FATAL_ERROR "the imported songs did not reach the library in:\n${i3}")
+endif()

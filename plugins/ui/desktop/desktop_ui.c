@@ -210,6 +210,8 @@ typedef struct desk {
     char add_name[96];
     uint32_t add_sent;       /* I652b: PLAYLIST_ADD_SONG lines sent from the Library page in add mode */
     uint32_t add_drawn;      /* I652b: Add controls drawn on the Library rows this frame */
+    int imp_wait;            /* I652c: the playlist file dialog is open; its answer arrives as a drop */
+    uint32_t imp_sent, imp_seen; /* I652c sentinels: PLAYLIST_IMPORT lines sent / engine import runs the UI has shown */
     uint32_t pls_adds;       /* I652a: PLAYLIST_ADD_SONG lines sent from the empty-playlist search */
     uint32_t pls_find_sig;   /* I652a: signature of the search result last drawn under the empty playlist's field */
     int pls_find_shown;      /* I652a: result rows drawn under the empty playlist's search field */
@@ -1404,6 +1406,7 @@ static int desk_tween(desk* d, uint32_t key, uint32_t ms, uint32_t ease) {
 enum { SONG_HEADER_H = 24, SONG_ROW_H = 32, SONG_TARGET_H = 32, SONG_MENU_ITEM_H = 24, SONG_MENU_W = 140, SONG_MENU_ITEMS = 5, SONG_PLAYLIST_TARGETS = 4, SONG_TARGET_W = 160 };
 
 static int desk_send(desk* d, const char* line);
+static int desk_pls_import_pick(desk* d);
 static int desk_send_path(desk* d, const char* verb, const char* path);
 static int desk_play_path(desk* d, const char* path);
 static const sel_uim_action* desk_action_by_id(const char* id);
@@ -3961,7 +3964,7 @@ static sel_gui_rect pls_find_add_rect(desk* d, sel_gui_rect mn, uint32_t slot) {
     return add_btn_rect(d, pls_find_row_rect(d, mn, slot));
 }
 
-/* I652b: the button strip under the search field (room: PLS_FIND_BUTTONS_H); slot 0 Add from Library, 1 and 2 stay free for I652c and I652d. */
+/* I652b: the button strip under the search field (room: PLS_FIND_BUTTONS_H); slot 0 Add from Library, slot 1 Import playlist file (I652c), 2 stays free for I652d. */
 enum { PLS_FIND_BTN_W = 200, PLS_FIND_BTN_H = 32 };
 static sel_gui_rect pls_find_btn_rect(desk* d, sel_gui_rect mn, uint32_t slot) {
     sel_gui_rect f = pls_find_field_rect(d, mn);
@@ -4014,6 +4017,7 @@ static void draw_playlist_find(desk* d, sel_gui_rect mn) {
     sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_SEARCH, rect_of(sr.x + lpx(d, 14), sr.y + (sr.h - ic) / 2, ic, ic), ic, muted);
     desk_draw_query(d, sr, "Search for songs");
     draw_button(d, pls_find_btn_rect(d, mn, 0u), surf, "Add from Library", 13, text);
+    draw_button(d, pls_find_btn_rect(d, mn, 1u), surf, "Import playlist file", 13, text);
     d->pls_find_shown = 0;
     for (slot = 0; pls_find_row_visible(d, mn, slot); slot++) {
         const sel_view_row* r = pls_find_result(d, slot);
@@ -4235,6 +4239,10 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
             d->pl_edit = 0;
             add_mode_open(d);
             return 1;
+        }
+        if (in_rect(pls_find_btn_rect(d, mn, 1u), ev->x, ev->y)) {
+            d->pl_edit = 0;
+            return desk_pls_import_pick(d);
         }
         for (slot = 0; pls_find_row_visible(d, mn, slot) && pls_find_result(d, slot) != NULL; slot++) {
             if (in_rect(pls_find_add_rect(d, mn, slot), ev->x, ev->y)) {
@@ -5343,7 +5351,15 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "plmore %d %d %d %d\n", (int)pm.x, (int)pm.y, (int)pm.w, (int)pm.h);
         if (d->pls_n == 0u) {
             sel_gui_rect fb = pls_find_btn_rect(d, pmn, 0u);
+            sel_gui_rect ib = pls_find_btn_rect(d, pmn, 1u);
             o = dump_put(d, o, "plfindbtn 0 %d %d %d %d label=Add from Library\n", (int)fb.x, (int)fb.y, (int)fb.w, (int)fb.h);
+            o = dump_put(d, o, "plfindbtn 1 %d %d %d %d label=Import playlist file\n", (int)ib.x, (int)ib.y, (int)ib.w, (int)ib.h);
+        }
+        { /* I652c: the import sentinel; printed on every playlist page, the page the import fills is no longer empty */
+            sel_engine_stats is;
+            sel_engine_stats_get(d->engine, &is);
+            o = dump_put(d, o, "plimport sent=%u runs=%u added=%u missing=%u\n", (unsigned)d->imp_sent, (unsigned)is.import_runs,
+                         (unsigned)is.import_added, (unsigned)is.import_missing);
         }
         if (d->pls_n == 0u) { /* I652a: the empty playlist's search field, its results and their Add buttons */
             sel_gui_rect pf = pls_find_field_rect(d, pmn);
@@ -9346,6 +9362,56 @@ static void desk_scan_nap(void) {
 #endif
 }
 
+/* I652c: Import playlist file. The native file dialog (a test answers with --dialog-answer) hands back a path that arrives as a
+ * drop; with imp_wait set that drop goes to PLAYLIST_IMPORT for the open playlist instead of playing. */
+static int desk_pls_import(desk* d, const char* path) {
+    char line[640];
+    size_t o = (size_t)snprintf(line, sizeof line, "PLAYLIST_IMPORT %u \"", (unsigned)d->pls_id);
+    for (const char* c = path; *c != '\0' && o + 4u < sizeof line; c++) {
+        if (*c == '"' || *c == '\\') {
+            line[o++] = '\\';
+        }
+        line[o++] = *c;
+    }
+    line[o++] = '"';
+    line[o] = '\0';
+    d->imp_wait = 0;
+    d->imp_sent++;
+    return desk_send(d, line);
+}
+
+static int desk_pls_import_pick(desk* d) {
+    if (d->dialog_answer != NULL) {
+        return desk_pls_import(d, d->dialog_answer);
+    }
+#ifdef SELECTA_DESKTOP_SDL
+    if (d->sdl != NULL && desk_sdl_open_file_dialog(d->sdl)) {
+        d->imp_wait = 1;
+        return 1;
+    }
+#endif
+    desk_toast(d, "No file dialog here");
+    return 1;
+}
+
+/* The engine finished a PLAYLIST_IMPORT: report the counts and reload the page (the sidebar count too). */
+static void desk_import_follow(desk* d) {
+    sel_engine_stats es;
+    const sel_engine_stats* st = &es;
+    char text[64];
+    sel_engine_stats_get(d->engine, &es);
+    if (st->import_runs == d->imp_seen) {
+        return;
+    }
+    d->imp_seen = st->import_runs;
+    snprintf(text, sizeof text, "%u songs added, %u not found", (unsigned)st->import_added, (unsigned)st->import_missing);
+    desk_toast(d, text);
+    d->pls_stale = 1u;
+    d->side_stale = 1u;
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+}
+
 static int desk_add_folder(desk* d) {
     if (d->dialog_answer != NULL) {
         return desk_drop_path(d, d->dialog_answer, 0);
@@ -9370,6 +9436,9 @@ static int desk_route_input(desk* d, const sel_gui_input* ev_in) {
     d->frame_open = 0; /* an input that changes nothing never flushes: its stamp must not leak into the next frame */
     desk_frame_begin(d);
     if (ev->kind == SEL_GUI_IN_DROP) {
+        if (d->imp_wait) {
+            return desk_event_frame(d, desk_pls_import(d, ev->path));
+        }
         return desk_event_frame(d, desk_drop_path(d, ev->path, ev->x != 0));
     }
     if (ev->kind == SEL_GUI_IN_CLICK || ev->kind == SEL_GUI_IN_MOVE || ev->kind == SEL_GUI_IN_DRAG) {
@@ -10442,6 +10511,7 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
         return -1; /* the Quit Selecta dialog was confirmed: end the loop as a closed window does (I623) */
     }
     desk_library_follow(d);
+    desk_import_follow(d);
     if (!d->nag_asked) { /* sync on launch (I527): the engine marks remote sources never synced or stale in its SOURCES rows; asked on the first turn, when the engine answers UI events */
         d->nag_asked = 1;
         d->src_wait = 1;

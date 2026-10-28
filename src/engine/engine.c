@@ -137,7 +137,7 @@
     X(FLAG)                                                                                   \
     X(NOTE)                                                                                   \
     X(RATE) X(VOTE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
-    X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(PLAYLIST_ADD_SONG) X(PLAYLIST_REMOVE_SONG) X(PLAYLIST_PLAY) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
+    X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(PLAYLIST_ADD_SONG) X(PLAYLIST_IMPORT) X(PLAYLIST_REMOVE_SONG) X(PLAYLIST_PLAY) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
     X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(COMPOSERS_HIDE) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
@@ -280,6 +280,7 @@ struct sel_engine {
     int32_t analyse_lufs_cdb, analyse_gain_cdb, analyse_peak_cdb;
     uint32_t home_rows;                        /* entries the home view source shows (I191 sentinel) */
     uint32_t folder_view_rows;                 /* rows the folders view source built (I179 sentinel) */
+    uint32_t import_runs, import_added, import_missing; /* PLAYLIST_IMPORT sentinel and last result (I652c) */
     uint32_t folder_ops;                       /* FOLDER_* / PLAYLIST_MOVE commands run against the library (I178) */
     uint32_t links_parsed, links_made;         /* share links OPEN parsed / SHARE wrote (I180 sentinels) */
     char stats[2048];                          /* rows of the open stats screen, "label\0value\0" pairs (I192) */
@@ -4743,6 +4744,67 @@ static void cmd_PLAYLIST_ADD_SONG(sel_engine* e, const sel_message* m) {
     else folders_reload(e);
 }
 
+/* PLAYLIST_IMPORT id path (I652c): parses an .m3u/.pls file with the playlist codecs and appends each song to saved playlist
+ * `id` in file order, as PLAYLIST_ADD_SONG does. A local entry whose file does not exist is counted, not added; dividers are
+ * skipped. The result is import_added / import_missing in the engine state and one log line. */
+static void cmd_PLAYLIST_IMPORT(sel_engine* e, const sel_message* m) {
+    const char* path = m->args[1].v.s;
+    uint32_t id = (uint32_t)m->args[0].v.u, i, added = 0, missing = 0, text_cap = e->queue.text_bytes + 16u;
+    char full[SEL_DEFERRED_PATH_MAX], msg[64];
+    sel_playlist pl;
+    FILE* f;
+    size_t n;
+    int rc;
+    if (!folder_ready(e, "PLAYLIST_IMPORT")) return;
+    f = fopen(path, "rb");
+    if (f == NULL) {
+        sel_engine_report_error(e, "open_failed", "PLAYLIST_IMPORT");
+        return;
+    }
+    n = fread(e->pl_file, 1, text_cap, f);
+    rc = fgetc(f);
+    fclose(f);
+    if (rc != EOF) {
+        sel_engine_report_error(e, "queue_full", "PLAYLIST_IMPORT");
+        return;
+    }
+    sel_playlist_init(&pl, e->pl_entries, e->queue.capacity, e->pl_text, text_cap);
+    rc = sel_playlist_read(sel_playlist_format_from_name(path), e->pl_file, n, &pl, playlist_warn, e);
+    if (rc != SEL_PL_OK) {
+        sel_engine_report_error(e, rc == SEL_PL_RANGE ? "queue_full" : "bad_format", "PLAYLIST_IMPORT");
+        return;
+    }
+    for (i = 0; i < pl.count; i++) {
+        const sel_pl_entry* pe = &pl.entries[i];
+        FILE* probe;
+        if (pe->kind == SEL_PL_DIVIDER) continue;
+        if (!playlist_resolve(full, sizeof full, path, sel_playlist_str(&pl, pe->key))) {
+            missing++;
+            continue;
+        }
+        if (strstr(full, "://") == NULL) {
+            probe = fopen(full, "rb");
+            if (probe == NULL) {
+                missing++;
+                continue;
+            }
+            fclose(probe);
+        }
+        rc = sel_library_playlist_add_song(e->lib, id, full);
+        if (rc != SEL_FOLDER_OK) {
+            folder_report(e, rc, "PLAYLIST_IMPORT");
+            return;
+        }
+        added++;
+    }
+    e->import_runs++;
+    e->import_added = added;
+    e->import_missing = missing;
+    snprintf(msg, sizeof msg, "%u added, %u missing", (unsigned)added, (unsigned)missing);
+    emit_log(e, "playlist_import", msg);
+    folders_reload(e);
+}
+
 #define PLAYLIST_KEYS_CAP 65536u
 
 /* PLAYLIST_REMOVE_SONG id index (I633): drops the entry at `index` (position order) from a saved playlist. */
@@ -6172,6 +6234,9 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->cue_gotos = e->cue_gotos;
     out->sticker_ops = e->sticker_ops;
     out->folder_ops = e->folder_ops;
+    out->import_runs = e->import_runs;
+    out->import_added = e->import_added;
+    out->import_missing = e->import_missing;
     out->links_parsed = e->links_parsed;
     out->links_made = e->links_made;
     out->sources_listed = e->sources_listed;

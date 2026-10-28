@@ -74,6 +74,7 @@ int desk_aga_open_folder_dialog(desk_aga* b);
 #define desk_sdl_presents desk_aga_presents
 #define desk_sdl_poll(b, ms, w, h) ((void)(w), (void)(h), desk_aga_poll((b), (ms)))
 #define desk_sdl_ticks desk_aga_ticks
+#define desk_sdl_open_file_dialog(b) ((void)(b), 0) /* I652c: no playlist file dialog on the Amiga yet */
 #define desk_sdl_open_folder_dialog desk_aga_open_folder_dialog
 #define desk_sdl_next_input desk_aga_next_input
 #define desk_sdl_now_ns() ((uint64_t)0u)

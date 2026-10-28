@@ -55,6 +55,7 @@ uint32_t desk_sdl_ticks(void);
 /* Add Folder: opens the native folder dialog (SDL_ShowOpenFolderDialog); the chosen folder arrives later through
  * desk_sdl_next_input as a SEL_GUI_IN_DROP. Returns 0 when there is no window to attach it to. */
 int desk_sdl_open_folder_dialog(desk_sdl* b);
+int desk_sdl_open_file_dialog(desk_sdl* b);
 int desk_sdl_next_input(desk_sdl* b, sel_gui_input* ev);
 
 #endif
