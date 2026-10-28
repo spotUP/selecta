@@ -9,6 +9,9 @@
 #include <string.h>
 
 #include "mui_map.h"
+#include "mui_theme.h"
+
+#include <selecta/uimodel/theme.h>
 
 extern const sel_tag* sel_plugin_entry_mui_test(uint32_t host_api);
 
@@ -134,6 +137,53 @@ static void test_menu(void) {
 
 /* mui-style-menu (MUI-P3-8): View > Style entries equal the mask popcount (planar 5, RTG 6) and each entry sends
  * "VIEW_STYLE <label>" for a style in the mask. */
+
+/* I648: the MUI look comes from the desktop UI tokens. The native build path (mui_ui.c) is compiled only on the Amiga, so
+ * this test checks both halves it is made of: the token mapping (with a call counter) and that mui_ui.c asks for each role
+ * through TH_TAGS and keeps no hardcoded button frame or background. */
+static void test_theme(void) {
+    txt_theme th;
+    mui_theme_look lk;
+    char want[40];
+    uint32_t before = mui_theme_applied();
+    FILE* f;
+    char src[400000];
+    size_t n;
+    int role;
+    static const char* const names[MUI_TH_COUNT] = {"MUI_TH_WINDOW", "MUI_TH_PANEL", "MUI_TH_BUTTON", "MUI_TH_FIELD", "MUI_TH_LIST", "MUI_TH_STATUS"};
+    txt_theme_default(&th);
+    CHECK(mui_theme_look_for(MUI_TH_WINDOW, th.token, &lk) == 1, "window look");
+    snprintf(want, sizeof want, "2:%08x,%08x,%08x", (unsigned)(((th.token[SEL_GUI_TOKEN_BACKGROUND] >> 16) & 0xFF) * 0x01010101u),
+             (unsigned)(((th.token[SEL_GUI_TOKEN_BACKGROUND] >> 8) & 0xFF) * 0x01010101u), (unsigned)((th.token[SEL_GUI_TOKEN_BACKGROUND] & 0xFF) * 0x01010101u));
+    CHECK(strcmp(lk.background, want) == 0, "window background %s want %s", lk.background, want);
+    CHECK(lk.frame == MUI_FRAME_NONE, "window frame %u", (unsigned)lk.frame);
+    CHECK(mui_theme_look_for(MUI_TH_BUTTON, th.token, &lk) == 1 && lk.bg_rgb == th.token[SEL_GUI_TOKEN_SURFACE_RAISED] && lk.frame == MUI_FRAME_TEXT,
+          "button look from SURFACE_RAISED, thin frame");
+    CHECK(mui_theme_look_for(MUI_TH_FIELD, th.token, &lk) == 1 && lk.frame == MUI_FRAME_STRING, "field frame");
+    CHECK(mui_theme_look_for(MUI_TH_LIST, th.token, &lk) == 1 && lk.bg_rgb == th.token[SEL_GUI_TOKEN_SURFACE], "list look from SURFACE");
+    CHECK(mui_theme_look_for(MUI_TH_PANEL, th.token, &lk) == 1 && mui_theme_look_for(MUI_TH_STATUS, th.token, &lk) == 1 && lk.bg_rgb == th.token[SEL_GUI_TOKEN_PANEL],
+          "panel and status looks");
+    CHECK(mui_theme_applied() - before == 6, "applied count %u", (unsigned)(mui_theme_applied() - before));
+    CHECK(mui_theme_look_for(MUI_TH_COUNT, th.token, &lk) == 0 && mui_theme_look_for(MUI_TH_WINDOW, NULL, &lk) == 0, "bad input refused");
+    CHECK(mui_theme_readable(th.token[SEL_GUI_TOKEN_TEXT], th.token[SEL_GUI_TOKEN_BACKGROUND]) == 1, "light text on the dark theme is readable");
+    CHECK(mui_theme_readable(0x000000u, th.token[SEL_GUI_TOKEN_BACKGROUND]) == 0, "black MUI text on the dark theme is not readable: theme stays off");
+    f = fopen(MUI_UI_SOURCE, "rb");
+    CHECK(f != NULL, "open %s", MUI_UI_SOURCE);
+    if (f == NULL) {
+        return;
+    }
+    n = fread(src, 1, sizeof src - 1, f);
+    fclose(f);
+    src[n] = 0;
+    for (role = 0; role < MUI_TH_COUNT; role++) {
+        char key[64];
+        snprintf(key, sizeof key, "TH_TAGS(%s,", names[role]);
+        CHECK(strstr(src, key) != NULL, "mui_ui.c never builds role %s through TH_TAGS", names[role]);
+    }
+    CHECK(strstr(src, "MUIA_Frame, MUIV_Frame_Button") == NULL, "button frame is hardcoded in mui_ui.c");
+    CHECK(strstr(src, "MUIA_Background, MUII_ButtonBack") == NULL, "button background is hardcoded in mui_ui.c");
+}
+
 static void test_style_menu(void) {
     static mui_menu_item items[512];
     uint32_t pass, i, n;
@@ -824,6 +874,8 @@ int main(int argc, char** argv) {
     } else if (strcmp(argv[1], "columns") == 0) {
         test_columns();
         test_row_cells();
+    } else if (strcmp(argv[1], "theme") == 0) {
+        test_theme();
     } else if (strcmp(argv[1], "style-menu") == 0) {
         test_style_menu();
     } else if (strcmp(argv[1], "style-mask") == 0) {

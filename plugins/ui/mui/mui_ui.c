@@ -12,6 +12,8 @@
 #include <string.h>
 
 #include "map/mui_map.h"
+#include "map/mui_theme.h"
+#include <selecta/uimodel/theme.h>
 #include <selecta/tags.h>
 
 #if defined(__amigaos__) || defined(AMIGA)
@@ -29,6 +31,7 @@
 #include <utility/hooks.h>
 #include <proto/exec.h>
 #include <proto/intuition.h>
+#include <proto/graphics.h>
 #include <proto/muimaster.h>
 struct Library* MUIMasterBase;
 #include "mui_canvas_class.h"
@@ -332,11 +335,48 @@ static const char* const p4_subsong_entries[] = {"Subsong 1", "Subsong 2", "Subs
 #endif
 #define MUI_NOMARK 1
 
+
+/* I648: the Selecta look. g_look is filled once at open from the txt_theme tokens (the desktop UI's table); an entry with
+ * on == 0 leaves the user's MUI background and frame alone. TH_TAGS expands to two tag pairs: MUIA_Background and
+ * MUIA_Frame, each TAG_IGNORE when the look is off, so the same call works either way. */
+static struct {
+    mui_theme_look look;
+    int on;
+} g_th[MUI_TH_COUNT];
+
+#define TH_TAGS(role, frame_off) \
+    g_th[role].on ? (ULONG)MUIA_Background : (ULONG)TAG_IGNORE, g_th[role].on ? (ULONG)g_th[role].look.background : 0UL, \
+    (ULONG)MUIA_Frame, g_th[role].on ? (ULONG)g_th[role].look.frame : (ULONG)(frame_off),
+#define TH_BG_OR(role, spec) MUIA_Background, g_th[role].on ? (ULONG)g_th[role].look.background : (ULONG)(spec),
+
+/* Reads the screen's text pen colour (the user's MUI text pen is the DrawInfo text pen unless MUI prefs change it) and
+ * switches every role on whose background keeps that text readable. */
+static void mui_theme_init(void) {
+    txt_theme th;
+    ULONG rgb[3] = {0, 0, 0};
+    uint32_t text = 0;
+    struct Screen* scr = LockPubScreen(NULL);
+    int i;
+    if (scr != NULL) {
+        struct DrawInfo* dri = GetScreenDrawInfo(scr);
+        if (dri != NULL) {
+            GetRGB32(scr->ViewPort.ColorMap, dri->dri_Pens[TEXTPEN], 1, rgb);
+            FreeScreenDrawInfo(scr, dri);
+            text = ((rgb[0] >> 24) << 16) | ((rgb[1] >> 24) << 8) | (rgb[2] >> 24);
+        }
+        UnlockPubScreen(NULL, scr);
+    }
+    txt_theme_default(&th);
+    for (i = 0; i < MUI_TH_COUNT; i++) {
+        g_th[i].on = mui_theme_look_for((mui_theme_role)i, th.token, &g_th[i].look) && mui_theme_readable(text, g_th[i].look.bg_rgb);
+    }
+}
+
 /* weight 100 is the MUI default (equal shares of the row); 0 sizes the button to its label. */
 static Object* mui_make_button_w(const char* label, LONG id, LONG weight) {
-    Object* o = MUI_NewObject((char*)MUIC_Text, MUIA_Weight, (ULONG)weight, MUIA_Frame, MUIV_Frame_Button, MUIA_Font, MUIV_Font_Button,
+    Object* o = MUI_NewObject((char*)MUIC_Text, MUIA_Weight, (ULONG)weight, TH_TAGS(MUI_TH_BUTTON, MUIV_Frame_Button) MUIA_Font, MUIV_Font_Button,
                               MUIA_Text_Contents, (ULONG)label, MUIA_Text_HiCharIdx, MUI_NOMARK, MUIA_Text_PreParse, (ULONG) "\33c",
-                              MUIA_InputMode, MUIV_InputMode_RelVerify, MUIA_Background, MUII_ButtonBack, TAG_DONE);
+                              MUIA_InputMode, MUIV_InputMode_RelVerify, TH_BG_OR(MUI_TH_BUTTON, MUII_ButtonBack) TAG_DONE);
     if (o != NULL) {
         DoMethod(o, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
     }
@@ -349,7 +389,7 @@ static Object* mui_make_button(const char* label, LONG id) {
 
 static Object* mui_make_text(mui_state* s, uint32_t attr, const char* initial) {
     snprintf(s->txt_buf[attr], sizeof s->txt_buf[attr], "%s", initial);
-    s->txt[attr] = MUI_NewObject((char*)MUIC_Text, MUIA_Frame, MUIV_Frame_Text, MUIA_Text_Contents, (ULONG)s->txt_buf[attr], MUIA_Text_HiCharIdx, MUI_NOMARK,
+    s->txt[attr] = MUI_NewObject((char*)MUIC_Text, TH_TAGS(MUI_TH_STATUS, MUIV_Frame_Text) MUIA_Text_Contents, (ULONG)s->txt_buf[attr], MUIA_Text_HiCharIdx, MUI_NOMARK,
                                  TAG_DONE);
     return s->txt[attr];
 }
@@ -364,7 +404,7 @@ static Object* mui_make_slider(LONG max, LONG id) {
 
 /* MUI-P4-0: the sidebar slot content, one button per door of the shared uimodel table (mui_door_label). */
 static Object* mui_sidebar_group(void) {
-    Object* g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+    Object* g = MUI_NewObject((char*)MUIC_Group, TH_TAGS(MUI_TH_PANEL, MUI_FRAME_NONE) TAG_DONE);
     uint32_t i;
     for (i = 0; g != NULL && i < mui_door_count() && i < MUI_DOOR_MAX; i++) {
         Object* b = mui_make_button(mui_door_label(i), CTL_DOOR_BASE + (LONG)i);
@@ -415,7 +455,7 @@ static Object* mui_player_group(mui_state* s) {
     s->seek = mui_make_slider(MUI_SEEK_MAX, CTL_SEEK);
     row2 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     row3 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
-    g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+    g = MUI_NewObject((char*)MUIC_Group, TH_TAGS(MUI_TH_PANEL, MUI_FRAME_NONE) TAG_DONE);
     if (row1 == NULL || row2 == NULL || row3 == NULL || g == NULL || s->vol == NULL || s->seek == NULL) {
         return NULL;
     }
@@ -470,7 +510,7 @@ static void mui_list_header(char* out, size_t cap) {
 
 /* MUI-P3-1: the 3.8 Listview with its plain List (the back end mui_list_backend_pick gives without NList). */
 static Object* mui_make_string(LONG id) {
-    Object* o = MUI_NewObject((char*)MUIC_String, MUIA_Frame, MUIV_Frame_String, MUIA_String_MaxLen, 159, MUIA_String_Contents, (ULONG) "", TAG_DONE);
+    Object* o = MUI_NewObject((char*)MUIC_String, TH_TAGS(MUI_TH_FIELD, MUIV_Frame_String) MUIA_String_MaxLen, 159, MUIA_String_Contents, (ULONG) "", TAG_DONE);
     if (o != NULL) {
         DoMethod(o, MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
     }
@@ -501,7 +541,7 @@ static Object* mui_tool_group(mui_state* s) {
     s->cyc_rating = mui_make_cycle(p4_rating_entries, CTL_P4_BASE + P4_RATING);
     s->cyc_subsong = mui_make_cycle(p4_subsong_entries, CTL_P4_BASE + P4_SUBSONG);
     snprintf(s->status_buf, sizeof s->status_buf, "Ready");
-    s->status = MUI_NewObject((char*)MUIC_Text, MUIA_Frame, MUIV_Frame_Text, MUIA_Text_Contents, (ULONG)s->status_buf, MUIA_Text_HiCharIdx, MUI_NOMARK, TAG_DONE);
+    s->status = MUI_NewObject((char*)MUIC_Text, TH_TAGS(MUI_TH_STATUS, MUIV_Frame_Text) MUIA_Text_Contents, (ULONG)s->status_buf, MUIA_Text_HiCharIdx, MUI_NOMARK, TAG_DONE);
     if (s->str_search == NULL || s->str_cmd == NULL || s->cyc_rating == NULL || s->cyc_subsong == NULL || s->status == NULL) {
         return NULL;
     }
@@ -523,13 +563,13 @@ static Object* mui_tool_group(mui_state* s) {
 }
 
 static Object* mui_main_group(mui_state* s) {
-    Object* g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+    Object* g = MUI_NewObject((char*)MUIC_Group, TH_TAGS(MUI_TH_PANEL, MUI_FRAME_NONE) TAG_DONE);
     s->col_bp = SEL_UIM_BP_COUNT;
     mui_columns_format(s->col_bp, s->col_fmt, sizeof s->col_fmt);
     g_list_hook.h_Entry = (__typeof__(g_list_hook.h_Entry))(void (*)(void))HookEntry;
     g_list_hook.h_SubEntry = (__typeof__(g_list_hook.h_SubEntry))(void (*)(void))mui_list_display;
     s->crumb = MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG)" ", MUIA_ShowMe, FALSE, TAG_DONE);
-    s->list = MUI_NewObject((char*)MUIC_List, MUIA_Frame, MUIV_Frame_InputList, MUIA_List_DisplayHook, (ULONG)&g_list_hook,
+    s->list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_List_DisplayHook, (ULONG)&g_list_hook,
                             MUIA_List_Format, (ULONG)s->col_fmt, MUIA_List_Title, TRUE, TAG_DONE);
     if (g == NULL || s->list == NULL || s->crumb == NULL) {
         return NULL;
@@ -593,7 +633,7 @@ static Object* mui_np_text(char* buf, size_t cap, const char* init) {
 }
 
 static Object* mui_detail_group(mui_state* s) {
-    Object* g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+    Object* g = MUI_NewObject((char*)MUIC_Group, TH_TAGS(MUI_TH_PANEL, MUI_FRAME_NONE) TAG_DONE);
     Object* art = MUI_NewObject((char*)MUIC_Rectangle, MUIA_Frame, MUIV_Frame_Group, MUIA_FixHeight, 64, MUIA_FixWidth, 64, TAG_DONE);
     Object* lyr_list = MUI_NewObject((char*)MUIC_Floattext, MUIA_Floattext_Text, (ULONG)s->np_lyric_buf, TAG_DONE);
     Object* lyr_view;
@@ -607,8 +647,8 @@ static Object* mui_detail_group(mui_state* s) {
     s->np_album = mui_np_text(s->np_buf[2], sizeof s->np_buf[2], " ");
     s->np_lyrics = lyr_list;
     lyr_view = lyr_list != NULL ? MUI_NewObject((char*)MUIC_Listview, MUIA_Listview_List, (ULONG)lyr_list, TAG_DONE) : NULL;
-    s->info_list = MUI_NewObject((char*)MUIC_List, MUIA_Frame, MUIV_Frame_InputList, TAG_DONE);
-    s->trk_list = MUI_NewObject((char*)MUIC_List, MUIA_Frame, MUIV_Frame_InputList, TAG_DONE);
+    s->info_list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) TAG_DONE);
+    s->trk_list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) TAG_DONE);
     s->trk_group = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
     if (art != NULL) {
         DoMethod(g, OM_ADDMEMBER, art);
@@ -1065,7 +1105,7 @@ static void mui_help_open(mui_state* s) {
             s->help_ptr[i] = s->help_buf[i];
         }
         s->help_ptr[n] = NULL;
-        lst = MUI_NewObject((char*)MUIC_List, MUIA_Frame, MUIV_Frame_InputList, TAG_DONE);
+        lst = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) TAG_DONE);
         if (lst == NULL) {
             return;
         }
@@ -1471,6 +1511,7 @@ static void* mui_open(const sel_ui_open_args* a) {
         mui_report(MUI_FAIL_NO_LIBRARY, "");
         return NULL;
     }
+    mui_theme_init();
     strip = mui_menu_strip();
     sel_uim_init(&s->uim);
     /* MUI-P4-17: MUIA_Application_Base is the settings identity only. The shell opened the one ARexx port SELECTA before this
@@ -1484,7 +1525,7 @@ static void* mui_open(const sel_ui_open_args* a) {
              * never sizes a window beyond its contents' maximum, which left the window 41 pixels high. */
             MUIA_Window_Width, MUIV_Window_Width_Screen(100), MUIA_Window_Height, MUIV_Window_Height_Screen(100),
             MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Centered, MUIA_Window_Menustrip, (ULONG)strip,
-            WindowContents, s->root = VGroup,
+            WindowContents, s->root = VGroup, TH_TAGS(MUI_TH_WINDOW, MUI_FRAME_NONE)
                 Child, s->slot[MUI_SLOT_SUGGESTION] = TextObject, MUIA_Text_Contents, (ULONG) "Window is narrow: try the mini layout", End,
                 Child, HGroup,
                     Child, s->slot[MUI_SLOT_SIDEBAR] = mui_sidebar_group(),
