@@ -33,6 +33,7 @@
 #endif
 #include "catalogue.h"
 #include "startup_error.h"
+#include "console_fallback.h"
 #include "integration_host.h"
 #include "db.h"
 #include "local.h"
@@ -396,6 +397,8 @@ int main(int argc, char** argv)
     uint32_t rate;
     void* ctx[3];
     unsigned u;
+    char console_err[160] = "";
+    const char* fallback_why = NULL; /* set when the text UI replaced a MUI that could not open (I671b) */
     int has_stats = 0;
 #if !defined(__amigaos__) && !defined(AMIGA)
     char cwd[1024];
@@ -565,10 +568,21 @@ int main(int argc, char** argv)
         /* Only the MUI plugin that cannot open (MUI-P1-4, Q26) has already said why (requester); the shell keeps the text UI.
          * Every other UI that refuses (bad --format, --clock, scale, no SDL) must fail the start with rc 1. */
         if (g_uis[u].state == NULL && strcmp(g_uis[u].id, "mui") == 0 && ui_resolve("text", &g_uis[u])) {
-            g_uis[u].state = g_uis[u].open(&args);
+            /* The text UI needs a console; Run >NIL: and a Workbench start have none (I671b), so open one first. */
+            if (sel_console_ensure(console_err, sizeof console_err)) {
+                g_uis[u].state = g_uis[u].open(&args);
+                if (g_uis[u].state == NULL) {
+                    snprintf(console_err, sizeof console_err, "the text UI could not open either");
+                }
+            }
+            fallback_why = console_err;
         }
         if (g_uis[u].state == NULL) {
-            STARTUP_FAIL("the UI could not open (no terminal?)");
+            if (fallback_why != NULL) {
+                STARTUP_FAIL("the MUI window could not open, and the text UI fallback failed: %s", fallback_why);
+            } else {
+                STARTUP_FAIL("the UI could not open (no terminal?)");
+            }
             while (u-- > 0) {
                 g_uis[u].close(g_uis[u].state);
             }

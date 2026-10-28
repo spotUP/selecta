@@ -2070,6 +2070,11 @@ if(NOT SEL_AMIGA)
   target_include_directories(stack_canary_test PRIVATE ${PROJECT_SOURCE_DIR}/apps/common)
   add_test(NAME stack-canary COMMAND stack_canary_test)
   set_tests_properties(stack-canary PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "stack_canary_unit_ok")
+  # I671b: the text UI fallback opens a console when none is attached (apps/common/console_fallback.c).
+  add_executable(console_fallback_test console_fallback_test.c ${PROJECT_SOURCE_DIR}/apps/common/console_fallback.c)
+  target_include_directories(console_fallback_test PRIVATE ${PROJECT_SOURCE_DIR}/apps/common)
+  add_test(NAME console-fallback COMMAND console_fallback_test)
+  set_tests_properties(console-fallback PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "console_fallback_unit_ok")
   set_tests_properties(lrc-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "lyrics_unit_ok")
   # I266: a cancelled job thread's send is SEL_NET_E_IO, not a timeout (TLS retried until its deadline).
   add_executable(net_cancel_send_test net_cancel_send_test.c)
