@@ -39,3 +39,33 @@ const char* mui_extra_tip(uint32_t i) {
     const sel_uim_action* a = action_by_id(mui_extra_action(i));
     return a != NULL ? a->tooltip : NULL;
 }
+
+#include <selecta/uimodel/fkeys.h>
+#include <selecta/uimodel/keys.h>
+
+uint32_t mui_fkeys_build(mui_fkey_bind* out, uint32_t cap) {
+    uint32_t n = 0, store, slot;
+    for (store = 0; store < 2u; store++) {
+        for (slot = 1; slot <= SEL_UIM_FKEY_COUNT; slot++) {
+            if (n < cap) {
+                out[n].code = TXT_KEY_F1 + slot - 1u;
+                out[n].mods = store != 0u ? TXT_MOD_SHIFT : 0u;
+                out[n].slot = slot;
+                out[n].store = (int)store;
+            }
+            n++;
+        }
+    }
+    return n;
+}
+
+uint32_t mui_fkey_fire(uint32_t code, uint32_t mods, mui_send_fn send, void* ctx) {
+    char lines[SEL_UIM_FKEY_LINES][SEL_UIM_FKEY_LINE_MAX];
+    int store = 0;
+    uint32_t slot = sel_uim_fkey_slot(code, mods, &store), i, n, sent = 0;
+    n = sel_uim_fkey_lines(slot, store, lines);
+    for (i = 0; send != NULL && i < n; i++) {
+        sent += send(ctx, lines[i]) != 0;
+    }
+    return sent;
+}

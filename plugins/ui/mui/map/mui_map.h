@@ -253,4 +253,17 @@ const char* mui_extra_action(uint32_t i); /* action id, NULL past the count */
 const char* mui_extra_label(uint32_t i);  /* the action's label, the desktop's words */
 const char* mui_extra_tip(uint32_t i);    /* the action's tooltip text */
 
+/* MUI-P8-2: Unsolo All Voices and Toggle Filter Light are table actions (ids solo_clear, filter_led: menu and key come
+ * from the table). F1..F10 recall and Shift+F1..F10 store a program through the shared model sel_uim_fkey_*. */
+typedef struct mui_fkey_bind {
+    uint32_t code, mods; /* TXT_KEY_F1.. and TXT_MOD_SHIFT for a store */
+    uint32_t slot;       /* 1..10 */
+    int store;
+} mui_fkey_bind;
+/* 20 rows: ten recalls, then ten stores. Returns the row count (may exceed cap; only cap rows are written). */
+uint32_t mui_fkeys_build(mui_fkey_bind* out, uint32_t cap);
+/* A pressed key: sends the program's lines through send, one call each. Returns the lines sent, 0 for a key that is no
+ * program key. */
+uint32_t mui_fkey_fire(uint32_t code, uint32_t mods, mui_send_fn send, void* ctx);
+
 #endif
