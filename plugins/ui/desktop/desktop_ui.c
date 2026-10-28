@@ -343,6 +343,7 @@ typedef struct desk {
     int32_t shelf_q16[8];    /* horizontal scroll of each Home shelf in logical pixels, Q16 */
     uint32_t hover_shelf1;   /* I607: 1-based Home shelf under the pointer, 0 = none: only that shelf shows its previous/next buttons */
     uint8_t shelf_nav_drawn[8]; /* I607: what the last shelf paint drew per shelf: bit 0 previous button, bit 1 next button */
+    uint8_t shelf_nav_alpha[8]; /* I630: the alpha byte the last shelf paint gave each shelf's buttons */
     uint32_t shelf_nav_clicks;  /* I607: previous/next button clicks that moved a shelf */
     uint32_t nav_shelf1;        /* I630: 1-based shelf whose buttons are shown or fading out (the last hovered one) */
     int32_t nav_fade_from, nav_fade_to;       /* I630: button opacity Q16 the fade tween runs between */
@@ -2062,6 +2063,12 @@ static int32_t nav_fade_now(const desk* d) {
     return nav_mix(d, ANIM_KEY_NAV_FADE, d->nav_fade_from, d->nav_fade_to);
 }
 
+/* I630: a Q16 opacity as the 0-255 alpha byte of a colour. Full opacity is 65536, so a plain >> 8 gives 256 and wraps to 0
+ * once shifted into the top byte: the buttons would vanish the moment their fade-in ended. */
+static uint32_t nav_alpha(int32_t fade) {
+    return fade >= 65536 ? 255u : fade <= 0 ? 0u : (uint32_t)fade >> 8;
+}
+
 static int32_t nav_scale_now(const desk* d, uint32_t dir) {
     return nav_mix(d, ANIM_KEY_NAV_SCALE + dir, d->nav_scale_from[dir], d->nav_scale_to[dir]);
 }
@@ -2783,6 +2790,7 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
     shelf sh[SHELF_MAX];
     uint32_t s, k, flat = 0, n = home_shelves(st, sh);
     memset(d->shelf_nav_drawn, 0, sizeof d->shelf_nav_drawn);
+    memset(d->shelf_nav_alpha, 0, sizeof d->shelf_nav_alpha);
     for (s = 0; s < n; s++) {
         const sel_view_row* head = &st->view->rows[sh[s].head];
         int32_t top = shelf_top(d, s);
@@ -2858,7 +2866,7 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
             for (dir = 0; dir < 2u; dir++) {
                 sel_gui_rect b = shelf_nav_rect(d, s, (int)dir);
                 int32_t ps = b.w, grown = (int32_t)(((int64_t)ps * nav_scale_now(d, dir)) >> 16);
-                uint32_t a = (uint32_t)(fade >> 8) << 24; /* I630: the whole button fades with its opacity */
+                uint32_t a = nav_alpha(fade) << 24; /* I630: the whole button fades with its opacity */
                 if (!(bits & (dir ? NAV_NEXT : NAV_PREV))) {
                     continue;
                 }
@@ -2868,6 +2876,7 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
                 sel_gui_icon_draw(d->canvas, &d->icons, dir ? SEL_GUI_ICON_CHEVRON_RIGHT : SEL_GUI_ICON_CHEVRON_LEFT,
                                   rect_of(b.x + ps / 4, b.y + ps / 4, ps / 2, ps / 2), ps / 2, a | (d->theme.token[SEL_GUI_TOKEN_TEXT] & 0xFFFFFFu));
                 d->shelf_nav_drawn[s] |= (uint8_t)(dir ? NAV_NEXT : NAV_PREV);
+                d->shelf_nav_alpha[s] = (uint8_t)nav_alpha(fade);
             }
         }
     }
@@ -9119,9 +9128,10 @@ static int desk_replay_input(desk* d) {
         } else if (strncmp(line, "navsnap", 7) == 0) { /* I630: records shelf 0's button opacity (alpha1= shelf 1's), both button scales and scroll as of now, mid-tween, for the dump */
             size_t at = strlen(d->flow_snaps);
             if (at + 128u < sizeof d->flow_snaps) {
-                snprintf(d->flow_snaps + at, sizeof d->flow_snaps - at, "nav snap alpha=%d scale_prev=%d scale_next=%d scroll=%d alpha1=%d\n",
+                snprintf(d->flow_snaps + at, sizeof d->flow_snaps - at, "nav snap alpha=%d scale_prev=%d scale_next=%d scroll=%d alpha1=%d painted=%u\n",
                          d->nav_shelf1 == 1u ? (int)nav_fade_now(d) : 0, (int)nav_scale_now(d, 0u), (int)nav_scale_now(d, 1u),
-                         (int)(shelf_pos_q16(d, 0u) >> 16), d->nav_shelf1 == 2u ? (int)nav_fade_now(d) : 0);
+                         (int)(shelf_pos_q16(d, 0u) >> 16), d->nav_shelf1 == 2u ? (int)nav_fade_now(d) : 0,
+                         (unsigned)d->shelf_nav_alpha[0]);
             }
         } else if (strncmp(line, "flowsnap", 8) == 0) { /* records the covers of the last cover flow frame, mid-glide, for the dump */
             size_t at = strlen(d->flow_snaps), m;

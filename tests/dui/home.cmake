@@ -228,6 +228,15 @@ expect_between("button opacity 64 ms after hover" ${sn1_alpha} ${sn0_alpha} 6553
 expect_eq("button opacity once the fade is over" "${sn2_alpha}" 65536)
 expect_between("button opacity 32 ms after the pointer left the shelf" ${sn10_alpha} 0 65536)
 expect_eq("button opacity once faded out" "${sn11_alpha}" 0)
+# What the paint drew, as the alpha byte (I630 flicker): mid-fade partly opaque, and fully opaque once the fade is over. A Q16
+# 65536 shifted down to 256 wraps to alpha 0, so the buttons vanished the moment their fade-in ended.
+string(REGEX MATCHALL "nav snap [^\n]* painted=[0-9]+" painted_snaps "${motion}")
+list(GET painted_snaps 0 pa0)
+list(GET painted_snaps 2 pa2)
+string(REGEX REPLACE ".* painted=([0-9]+)" "\\1" pa0 "${pa0}")
+string(REGEX REPLACE ".* painted=([0-9]+)" "\\1" pa2 "${pa2}")
+expect_between("painted button alpha 32 ms after hover" ${pa0} 0 255)
+expect_eq("painted button alpha once the fade is over" "${pa2}" 255)
 # Grow: the hovered next button scales up while the previous one stays, and it returns on leave.
 expect_eq("next button scale before it is hovered" "${sn2_next}" 65536)
 expect_between("next button scale 32 ms after the pointer entered it" ${sn3_next} 65536 72090)
