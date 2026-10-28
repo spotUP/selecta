@@ -2149,6 +2149,9 @@ static uint32_t shelf_hover_of(desk* d, int32_t x, int32_t y) {
 static int shelf_nav_pointer(desk* d, int32_t x, int32_t y, uint32_t shelf1) {
     int changed = shelf1 != d->hover_shelf1;
     d->hover_shelf1 = shelf1;
+    if (d->page != PG_HOME || !d->home) { /* no shelves on this page: no button tween, so a Library drag repaints only its own band */
+        return changed;
+    }
     return shelf_nav_hover(d, x, y, shelf1) | changed;
 }
 
