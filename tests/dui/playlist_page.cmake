@@ -157,3 +157,43 @@ dui_run(f4 ${fcommon} --input "${WORK}/find1.txt")
 if(NOT "${f4}" MATCHES "plpage id=[0-9]+ name=\\[gamma\\] songs=1 ")
   message(FATAL_ERROR "the added song did not reach the library in:\n${f4}")
 endif()
+
+# 6. I652b: the empty playlist page's Add from Library button opens the Library page in add mode for this playlist. The dump prints
+# `plfindbtn 0 x y w h` (the button) and, in add mode, `libadd id= name=[] adds= sent=`, `libaddback x y w h` and one `libaddrow i x y w h key=` per Add control.
+# Click the button: add mode names gamma and draws Add controls; click Add on a row: the playlist then has 1 song after Back.
+# The earlier cases filled gamma, so this case builds a fresh database with an empty gamma.
+set(adb "${WORK}/add.db")
+dui_run(a_init --db "${adb}" --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats
+  --exec "PLAYLIST_CREATE gamma")
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${adb}" INPUT_FILE "${HERE}/fixture_library.sql"
+  RESULT_VARIABLE arc ERROR_VARIABLE aerr)
+if(NOT arc EQUAL 0)
+  message(FATAL_ERROR "loading the fixture failed: ${aerr}")
+endif()
+set(acommon --ui desktop --backend mem --view home --clock fixed --stats --db "${adb}" --canvas 1280x800)
+dui_run(a1 ${acommon} --input "${WORK}/find1.txt")
+pp_centre(fbtn "${a1}" "plfindbtn 0")
+file(WRITE "${WORK}/lib1.txt" "click ${fside}\nwait 100\nclick ${fbtn}\nwait 300\n")
+dui_run(l1 ${acommon} --input "${WORK}/lib1.txt")
+if(NOT "${l1}" MATCHES "libadd id=([0-9]+) name=\\[gamma\\] adds=0 ")
+  message(FATAL_ERROR "the Add from Library button did not open the Library in add mode for gamma in:\n${l1}")
+endif()
+# Add mode lists song rows with an Add control in the History mode (tab 4).
+pp_centre(ftab "${l1}" "tab 4")
+file(WRITE "${WORK}/lib2.txt" "click ${fside}\nwait 100\nclick ${fbtn}\nwait 300\nclick ${ftab}\nwait 400\n")
+dui_run(l2 ${acommon} --input "${WORK}/lib2.txt")
+if(NOT "${l2}" MATCHES "libadd id=[0-9]+ name=\\[gamma\\] adds=([1-9][0-9]*) sent=0")
+  message(FATAL_ERROR "no Add controls on the library song rows in:\n${l2}")
+endif()
+pp_centre(frow "${l2}" "libaddrow 0")
+pp_centre(fback "${l2}" "libaddback")
+file(WRITE "${WORK}/lib3.txt" "click ${fside}\nwait 100\nclick ${fbtn}\nwait 300\nclick ${ftab}\nwait 400\nclick ${frow}\nwait 300\n")
+dui_run(l3 ${acommon} --input "${WORK}/lib3.txt")
+if(NOT "${l3}" MATCHES "libadd id=[0-9]+ name=\\[gamma\\] adds=[0-9]+ sent=1" OR NOT "${l3}" MATCHES "songs_opened=0")
+  message(FATAL_ERROR "Add on a library row did not send PLAYLIST_ADD_SONG (or played the row) in:\n${l3}")
+endif()
+file(WRITE "${WORK}/lib4.txt" "click ${fside}\nwait 100\nclick ${fbtn}\nwait 300\nclick ${ftab}\nwait 400\nclick ${frow}\nwait 300\nclick ${fback}\nwait 300\n")
+dui_run(l4 ${acommon} --input "${WORK}/lib4.txt")
+if(NOT "${l4}" MATCHES "plpage id=[0-9]+ name=\\[gamma\\] songs=1 " OR "${l4}" MATCHES "libadd ")
+  message(FATAL_ERROR "Back to gamma did not return to the playlist with 1 song in:\n${l4}")
+endif()

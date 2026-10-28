@@ -206,6 +206,10 @@ typedef struct desk {
     int pl_edit;             /* 1 while the name field has the keyboard */
     char pl_name[64];
     uint32_t pls_min;        /* I652a: the page must list at least this many songs (an Add is still on its way to the engine) */
+    uint32_t add_id;         /* I652b: the playlist the Library page adds to (0 = the Library page is not in add mode) */
+    char add_name[96];
+    uint32_t add_sent;       /* I652b: PLAYLIST_ADD_SONG lines sent from the Library page in add mode */
+    uint32_t add_drawn;      /* I652b: Add controls drawn on the Library rows this frame */
     uint32_t pls_adds;       /* I652a: PLAYLIST_ADD_SONG lines sent from the empty-playlist search */
     uint32_t pls_find_sig;   /* I652a: signature of the search result last drawn under the empty playlist's field */
     int pls_find_shown;      /* I652a: result rows drawn under the empty playlist's search field */
@@ -2289,6 +2293,8 @@ static void plmenu_open(desk* d, int32_t x, int32_t y, uint32_t id, uint32_t fol
 
 static void pl_rename_begin(desk* d, uint32_t id, const char* name);
 static void pls_close(desk* d);
+static sel_gui_rect add_btn_rect(desk* d, sel_gui_rect row);
+static int add_mode(const desk* d);
 static int pl_send(desk* d, const char* line);
 
 /* The Queue page Scope button opens the same menu with the three scope choices (I258); a pick sends SCOPE <name>. */
@@ -2341,6 +2347,13 @@ static song_row* song_row_reg(desk* d, sel_gui_rect r, const char* path, uint32_
         return NULL;
     }
     hover_reg(d, r);
+    if (add_mode(d) && e->more.w > 0) { /* I652b: the Library page adds to a playlist: every song row ends in Add, the same control as the empty playlist's results */
+        sel_gui_rect ab = add_btn_rect(d, r);
+        draw_button(d, ab, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), "Add", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+        hover_reg(d, ab);
+        d->add_drawn++;
+        return e;
+    }
     if (in_rect(r, d->ptr_x, d->ptr_y) || (d->sm_open && strcmp(d->sm_ref.path, path) == 0)) {
         hover_reg(d, e->more);
         sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_ELLIPSIS, e->more, eh,
@@ -3935,9 +3948,24 @@ static sel_gui_rect pls_find_row_rect(desk* d, sel_gui_rect mn, uint32_t slot) {
     return rect_of(f.x, f.y + f.h + lpx(d, 8 + PLS_FIND_BUTTONS_H + 16) + (int32_t)slot * lpx(d, SONG_ROW_H), mn.w - 2 * lpx(d, HOME_MARGIN), lpx(d, SONG_ROW_H));
 }
 
-static sel_gui_rect pls_find_add_rect(desk* d, sel_gui_rect mn, uint32_t slot) {
-    sel_gui_rect r = pls_find_row_rect(d, mn, slot);
+/* The Add control at the right end of a song row: the empty playlist's results (I652a) and the Library rows in add mode (I652b). */
+static sel_gui_rect add_btn_rect(desk* d, sel_gui_rect r) {
     return rect_of(r.x + r.w - lpx(d, PLS_FIND_ADD_W), r.y + (r.h - lpx(d, PLS_FIND_ADD_H)) / 2, lpx(d, PLS_FIND_ADD_W), lpx(d, PLS_FIND_ADD_H));
+}
+
+static int add_mode(const desk* d) {
+    return d->add_id != 0u && d->page == PG_LIBRARY;
+}
+
+static sel_gui_rect pls_find_add_rect(desk* d, sel_gui_rect mn, uint32_t slot) {
+    return add_btn_rect(d, pls_find_row_rect(d, mn, slot));
+}
+
+/* I652b: the button strip under the search field (room: PLS_FIND_BUTTONS_H); slot 0 Add from Library, 1 and 2 stay free for I652c and I652d. */
+enum { PLS_FIND_BTN_W = 200, PLS_FIND_BTN_H = 32 };
+static sel_gui_rect pls_find_btn_rect(desk* d, sel_gui_rect mn, uint32_t slot) {
+    sel_gui_rect f = pls_find_field_rect(d, mn);
+    return rect_of(f.x + (int32_t)slot * (lpx(d, PLS_FIND_BTN_W) + lpx(d, QUEUE_BTN_GAP)), f.y + f.h + lpx(d, 8), lpx(d, PLS_FIND_BTN_W), lpx(d, PLS_FIND_BTN_H));
 }
 
 static int pls_find_row_visible(desk* d, sel_gui_rect mn, uint32_t slot) {
@@ -3985,6 +4013,7 @@ static void draw_playlist_find(desk* d, sel_gui_rect mn) {
     sel_gui_round_rect(d->canvas, sr, rad, surf);
     sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_SEARCH, rect_of(sr.x + lpx(d, 14), sr.y + (sr.h - ic) / 2, ic, ic), ic, muted);
     desk_draw_query(d, sr, "Search for songs");
+    draw_button(d, pls_find_btn_rect(d, mn, 0u), surf, "Add from Library", 13, text);
     d->pls_find_shown = 0;
     for (slot = 0; pls_find_row_visible(d, mn, slot); slot++) {
         const sel_view_row* r = pls_find_result(d, slot);
@@ -4003,13 +4032,9 @@ static void draw_playlist_find(desk* d, sel_gui_rect mn) {
 }
 
 /* Add on result `slot`: the song key goes to PLAYLIST_ADD_SONG with this playlist's id, whatever source the key names (I653). */
-static void pls_find_add(desk* d, uint32_t slot) {
-    const sel_view_row* r = pls_find_result(d, slot);
+static void pls_add_key(desk* d, uint32_t pid, const char* key) {
     char line[640];
-    if (r == NULL) {
-        return;
-    }
-    snprintf(line, sizeof line, "PLAYLIST_ADD_SONG %u \"%s\"", (unsigned)d->pls_id, r->key);
+    snprintf(line, sizeof line, "PLAYLIST_ADD_SONG %u \"%s\"", (unsigned)pid, key);
     desk_send(d, line);
     d->pls_adds++;
     d->pls_min = d->pls_n + 1u;
@@ -4022,6 +4047,42 @@ static void pls_find_add(desk* d, uint32_t slot) {
     d->repaint = 1;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
     desk_toast(d, "Added to playlist");
+}
+
+static void pls_find_add(desk* d, uint32_t slot) {
+    const sel_view_row* r = pls_find_result(d, slot);
+    if (r != NULL) {
+        pls_add_key(d, d->pls_id, r->key);
+    }
+}
+
+/* I652b: Add from Library opens the Library page in add mode for this playlist; Back returns to the playlist's page. */
+static sel_gui_rect add_back_rect(desk* d, sel_gui_rect mn) {
+    char label[160];
+    sel_gui_rect ab = lib_add_rect(d, mn);
+    int32_t w;
+    snprintf(label, sizeof label, "Back to %s", d->add_name);
+    w = lib_title_btn_w(d, label);
+    return rect_of(ab.x + ab.w - w, ab.y, w, ab.h);
+}
+
+static void add_mode_open(desk* d) {
+    uint32_t id = d->pls_id;
+    char name[sizeof d->add_name];
+    snprintf(name, sizeof name, "%s", d->pls_name);
+    desk_page_goto(d, PG_LIBRARY);
+    d->add_id = id;
+    snprintf(d->add_name, sizeof d->add_name, "%s", name);
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+}
+
+static void add_mode_back(desk* d) {
+    uint32_t id = d->add_id;
+    char name[sizeof d->add_name];
+    snprintf(name, sizeof name, "%s", d->add_name);
+    desk_page_goto(d, PG_PLAYLISTS);
+    pls_open(d, id, name);
 }
 
 static void draw_playlist_page(desk* d, sel_gui_rect mn) {
@@ -4170,6 +4231,11 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
     }
     if (d->pls_n == 0u) { /* I652a: the search field of the empty playlist, and an Add on a result */
         int on = in_rect(pls_find_field_rect(d, mn), ev->x, ev->y);
+        if (in_rect(pls_find_btn_rect(d, mn, 0u), ev->x, ev->y)) {
+            d->pl_edit = 0;
+            add_mode_open(d);
+            return 1;
+        }
         for (slot = 0; pls_find_row_visible(d, mn, slot) && pls_find_result(d, slot) != NULL; slot++) {
             if (in_rect(pls_find_add_rect(d, mn, slot), ev->x, ev->y)) {
                 d->pl_edit = 0;
@@ -5256,6 +5322,18 @@ static const char* library_dump_build(desk* d) {
                                   (unsigned)pv->rows[i].depth, pv->rows[i].text);
         }
     }
+    if (add_mode(d)) { /* I652b: the Library page in add mode: its playlist, the way back, and the Add controls drawn on the rows */
+        sel_gui_rect ab = add_back_rect(d, region_rect(d, "main"));
+        uint32_t j;
+        o = dump_put(d, o, "libadd id=%u name=[%s] adds=%u sent=%u\nlibaddback %d %d %d %d\n", (unsigned)d->add_id, d->add_name,
+                     (unsigned)d->add_drawn, (unsigned)d->pls_adds, (int)ab.x, (int)ab.y, (int)ab.w, (int)ab.h);
+        for (j = 0; j < d->sm_n && o + 400u < sizeof d->library_dump; j++) {
+            sel_gui_rect ar = add_btn_rect(d, d->sm_rows[j].r);
+            if (d->sm_rows[j].more.w > 0) {
+                o = dump_put(d, o, "libaddrow %u %d %d %d %d key=%s\n", (unsigned)j, (int)ar.x, (int)ar.y, (int)ar.w, (int)ar.h, d->sm_rows[j].ref.path);
+            }
+        }
+    }
     if (d->pl_page && d->pls_id != 0u) { /* I633: the open playlist page: its songs in order and the geometry a script clicks */
         sel_gui_rect pmn = region_rect(d, "main"), bk = pls_back_rect(d, pmn), pp = pls_play_rect(d, pmn), pm = pls_more_rect(d, pmn);
         uint32_t j;
@@ -5263,6 +5341,10 @@ static const char* library_dump_build(desk* d) {
                      (unsigned)d->pls_n, (unsigned)d->pls_rows, (unsigned)d->pls_draws, (int)bk.x, (int)bk.y, (int)bk.w, (int)bk.h,
                      (int)pp.x, (int)pp.y, (int)pp.w, (int)pp.h, d->pl_edit);
         o = dump_put(d, o, "plmore %d %d %d %d\n", (int)pm.x, (int)pm.y, (int)pm.w, (int)pm.h);
+        if (d->pls_n == 0u) {
+            sel_gui_rect fb = pls_find_btn_rect(d, pmn, 0u);
+            o = dump_put(d, o, "plfindbtn 0 %d %d %d %d label=Add from Library\n", (int)fb.x, (int)fb.y, (int)fb.w, (int)fb.h);
+        }
         if (d->pls_n == 0u) { /* I652a: the empty playlist's search field, its results and their Add buttons */
             sel_gui_rect pf = pls_find_field_rect(d, pmn);
             o = dump_put(d, o, "plfind field %d %d %d %d results=%d adds=%u searches=%u on=%d vsrc=%d vrows=%u live=%d\n", (int)pf.x, (int)pf.y, (int)pf.w, (int)pf.h, d->pls_find_shown,
@@ -5755,6 +5837,7 @@ static void draw_library(desk* d) {
     }
     sel_gui_rect mn = draw_panel(d, "main");
     int32_t mg = lpx(d, LIB_MARGIN);
+    d->add_drawn = 0u;
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     uint32_t i = 0;
     const char* p;
@@ -5788,7 +5871,13 @@ static void draw_library(desk* d) {
         draw_text(d, col, "Library", 1, 32, text);
         {
             sel_gui_rect ab = lib_add_rect(d, mn);
-            if (d->scan_pending) {
+            if (add_mode(d)) { /* I652b: add mode replaces Add Folder and Clear Library by the way back */
+                {
+                    char label[160];
+                    snprintf(label, sizeof label, "Back to %s", d->add_name);
+                    draw_button(d, add_back_rect(d, mn), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), label, lib_title_btn_px(d), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+                }
+            } else if (d->scan_pending) {
                 lib_scan_draw(d, mn);
             } else {
                 draw_button(d, ab, ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Add Folder", lib_title_btn_px(d), ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
@@ -6324,6 +6413,19 @@ static int library_click(desk* d, int32_t x, int32_t y) {
     uint32_t i = 0;
     const char* p;
     char line[256];
+    if (add_mode(d)) { /* I652b: Back, or Add on a song row */
+        uint32_t k;
+        if (in_rect(add_back_rect(d, mn), x, y)) {
+            add_mode_back(d);
+            return 1;
+        }
+        for (k = 0; k < d->sm_n; k++) {
+            if (d->sm_rows[k].more.w > 0 && in_rect(add_btn_rect(d, d->sm_rows[k].r), x, y)) {
+                pls_add_key(d, d->add_id, d->sm_rows[k].ref.path);
+                return 1;
+            }
+        }
+    }
     if (d->page == PG_LIBRARY && lib_stats_on(st)) { /* I455: More toggles the panel; the open panel owns clicks on it, any other click closes it */
         sel_gui_rect sr = lib_stats_rect(d, mn, st);
         if (in_rect(lib_stats_more_rect(d, sr), x, y)) {
@@ -6807,6 +6909,7 @@ static void desk_page_flags(desk* d, desk_page pg) {
     d->queue_page = pg == PG_QUEUE;
     d->pl_page = pg == PG_PLAYLISTS;
     d->pls_id = 0u;
+    d->add_id = 0u; /* I652b: leaving or entering a page ends the Library's add mode */
     d->si_page = pg == PG_SONGINFO;
     d->si_y_q16 = 0; /* I298: the info list starts at the top on every entry */
     d->viz_page = pg == PG_VIZ;
