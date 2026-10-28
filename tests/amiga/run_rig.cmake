@@ -460,12 +460,15 @@ elseif(TAG STREQUAL "M4MUI")
   execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 6)
   ami(ignored exec "Break ${pid} C" 10)
   # MUI_DisposeObject, the stats print and the exit take a few seconds on the 68020: poll up to 30 s.
+  # I558 rig 3 (2026-10-28): the first Break after the Settings/Help windows closed was swallowed once (the process ended on a
+  # second Break 30 s later), so the poll repeats the Break each round.
   foreach(i RANGE 1 6)
     execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 5)
     ami(procs exec "Status" 10)
     if(NOT procs MATCHES "Loaded as command: ${P}")
       break()
     endif()
+    ami(ignored exec "Break ${pid} C" 10)
   endforeach()
   if(procs MATCHES "Loaded as command: ${P}")
     message(FATAL_ERROR "RED[M4MUI]: ${P} still runs after Break (SEL_UI_CLOSE did not end the UI):\n${procs}")
@@ -601,7 +604,7 @@ elseif(TAG STREQUAL "M4MUILIST")
   # The song's duration is 0 (unknown) in the engine snapshot for this mod (song_ms=0), so the length cell is the shared unknown clock;
   # row0 lists all five cells of the first row (Format is hidden by width at cols=3), header the shown column titles.
   # MUI-P3-4 / P3-7: the exit stats line of the List: plain back end (no NList), the 3-column format, the display hook ran.
-  if(NOT out MATCHES "ui_list id=mui backend=plain style=2 cols=3 format=BAR,BAR, rows=1 indent=0[ \n]+hook_calls=[1-9][0-9]*[ \n]+song_qid=[0-9]+ song_ms=[0-9]+ row0_id=[0-9]+[ \n]+header={Title\\|Artist\\|Length} row0={meme.mod\\|[^|}]*\\|[^|}]*\\|[0-9-][0-9-]:[0-9-][0-9-]\\|mod}")
+  if(NOT out MATCHES "ui_list id=mui backend=plain style=2 cols=3 format=W=40 BAR,W=25 BAR, rows=1 indent=0[ \n]+hook_calls=[1-9][0-9]*[ \n]+song_qid=[0-9]+ song_ms=[0-9]+ row0_id=[0-9]+[ \n]+header={Title\\|Artist\\|Length} row0={meme.mod\\|[^|}]*\\|[^|}]*\\|[0-9-][0-9-]:[0-9-][0-9-]\\|mod}")
     message(FATAL_ERROR "RED[M4MUILIST]: MUI-P3-4: ui_list line missing or wrong:\n${out}")
   endif()
   message(STATUS "M4MUILIST MUI-P3-4: ${CMAKE_MATCH_0}")

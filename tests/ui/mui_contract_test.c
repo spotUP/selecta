@@ -432,13 +432,20 @@ static void test_list_drill(void) {
 
 static void test_columns(void) {
     uint8_t c[MUI_COL_COUNT];
-    char f[32];
+    char f[48];
     static const uint32_t want[4] = {5, 4, 3, 2};
     uint32_t bp;
     for (bp = 0; bp < 4; bp++) {
         CHECK(mui_columns_for(bp, c) == want[bp] && c[0] == MUI_COL_TITLE, "breakpoint %u has %u columns", bp, mui_columns_for(bp, c));
         mui_columns_format(bp, f, sizeof f);
-        CHECK(strlen(f) == 4u * (want[bp] - 1u), "format '%s' at %u", f, bp);
+        {
+            uint32_t bars = 0, k;
+            for (k = 0; f[k] != '\0'; k++) {
+                bars += strncmp(f + k, "BAR,", 4) == 0;
+            }
+            CHECK(bars == want[bp] - 1u, "format '%s' has %u BAR separators at %u", f, bars, bp);
+            CHECK(strncmp(f, "W=40 BAR,W=25", 13) == 0, "title and artist carry weights: '%s' at %u", f, bp);
+        }
     }
 }
 

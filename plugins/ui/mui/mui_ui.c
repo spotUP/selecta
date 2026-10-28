@@ -103,7 +103,7 @@ typedef struct mui_state {
     mui_list_entry entries[MUI_ROWS_MAX];
     const char* entry_ptr[MUI_ROWS_MAX + 1];
     mui_cells cell[MUI_ROWS_MAX];   /* MUI-P3-4: the List entries; the display hook reads the cells from them */
-    char col_fmt[32];               /* MUIA_List_Format of the shown column set (mui_columns_format) */
+    char col_fmt[48];               /* MUIA_List_Format of the shown column set (mui_columns_format) */
     uint32_t col_bp;                /* the breakpoint col_fmt was built for */
     Object* str_search;             /* MUI-P4-3 */
     Object* str_cmd;                /* MUI-P4-13 */
