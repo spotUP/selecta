@@ -556,6 +556,7 @@ int desk_sdl_poll(desk_sdl* b, uint32_t timeout_ms, int32_t* w, int32_t* h) {
                 raw.y = (int32_t)ev.button.y;
                 raw.button = mouse_button_of(b, &ev, SDL_GetModState());
                 raw.clicks = ev.button.clicks;
+                raw.mods = txt_mods_of(SDL_GetModState()); /* I632d: Command (Control elsewhere) and Shift ride on the click */
             }
             if (queue_raw(b, &raw) && result == DESK_SDL_NONE) {
                 result = DESK_SDL_ACTIVITY;

@@ -39,7 +39,7 @@ typedef struct sel_gui_input {
     char path[SEL_GUI_INPUT_PATH];
 } sel_gui_input;
 
-/* Parses one script line (`key ctrl+f`, `click 640 120 [count]`, `dclick 640 120`, `rclick 640 120`, `move 640 120`, `drag 10 20 30 40`, `wheel 0 -3`, `pinch 1.25`, `swipe left|right`, `drop /a.mod`, `resize 900 600`,
+/* Parses one script line (`key ctrl+f`, `click 640 120 [count [ctrl|shift]]` (the modifier held for the click, I632d), `dclick 640 120`, `rclick 640 120`, `move 640 120`, `drag 10 20 30 40`, `wheel 0 -3`, `pinch 1.25`, `swipe left|right`, `drop /a.mod`, `resize 900 600`,
  * `wait 200`). Returns 1 and fills *ev, or 0 for a blank, comment or unknown line. */
 int sel_gui_input_parse(const char* line, sel_gui_input* ev);
 
@@ -67,7 +67,7 @@ typedef struct sel_gui_raw {
     int32_t x, y;
     uint32_t button, clicks;
     int32_t dx, scale, dy;
-    uint32_t code, mods; /* SEL_GUI_RAW_KEY and SEL_GUI_RAW_TEXT */
+    uint32_t code, mods; /* SEL_GUI_RAW_KEY and SEL_GUI_RAW_TEXT; mods also on SEL_GUI_RAW_BUTTON_UP (I632d) */
 } sel_gui_raw;
 
 /* Press state between a button down and its up. */

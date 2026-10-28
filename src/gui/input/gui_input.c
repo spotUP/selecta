@@ -128,6 +128,16 @@ int sel_gui_input_parse(const char* line, sel_gui_input* ev) {
         if (verb[0] == 'c' && sscanf(line, "%*s %*s %*s %d", &count) == 1 && count >= 1) { /* click X Y COUNT */
             ev->clicks = (uint32_t)count;
         }
+        if (verb[0] == 'c') { /* click X Y COUNT ctrl|shift: the modifiers held for the click (I632d) */
+            char w[24] = "";
+            if (sscanf(line, "%*s %*s %*s %*s %23s", w) == 1) {
+                if (strcmp(w, "ctrl") == 0) {
+                    ev->mods = TXT_MOD_CTRL;
+                } else if (strcmp(w, "shift") == 0) {
+                    ev->mods = TXT_MOD_SHIFT;
+                }
+            }
+        }
         return sscanf(a, "%d", &ev->x) == 1 && sscanf(b, "%d", &ev->y) == 1;
     }
     if (strcmp(verb, "move") == 0 && n == 3) {
@@ -206,6 +216,7 @@ int sel_gui_input_map(sel_gui_input_map_state* st, const sel_gui_raw* raw, sel_g
         out->x = raw->x;
         out->y = raw->y;
         out->button = raw->button == 3u ? 1u : 0u;
+        out->mods = raw->mods;
         if (st->down_button == raw->button &&
             (absdiff(raw->x, st->down_x) > SEL_GUI_DRAG_SLOP || absdiff(raw->y, st->down_y) > SEL_GUI_DRAG_SLOP)) {
             out->kind = SEL_GUI_IN_DRAG;
