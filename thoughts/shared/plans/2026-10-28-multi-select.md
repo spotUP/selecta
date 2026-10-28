@@ -138,7 +138,7 @@ same N labels. The context menu itself is MUI-P4-6, still open (no `MUIA_Context
 
 - [x] **I632a** (18fa417d) Shared selection model `src/uimodel/select.c`. Test `uim-select` (host ctest): toggle, Shift range over a base set,
   select-all as one run, clear, 32-run cap, `bind` clears on list or version change, ranges format/parse round trip.
-- [x] **I632b** (done, commit in ledger row I632) Engine `SONGS_*` verbs + `sel_view_state.version` + action table rows. Test `engine-songs-bulk`: Play Next of 3
+- [~] **I632b** (merged 7b72bd23; open half is row I632b2 below) Engine `SONGS_*` verbs + `sel_view_state.version` + action table rows. Test `engine-songs-bulk`: Play Next of 3
   keeps list order; one UNDO restores the queue; one `QUEUE_CHANGED`; stale version changes nothing; `SONGS_PLAYLIST_ADD` adds 3;
   playlist removal of indices {1,3} removes the right two; 70 songs pass (beats the 64-deep queue and 16-pool ring).
   Built as: verbs `SONGS_PLAY|PLAY_NEXT|QUEUE_ADD|REMOVE list version ranges`, `SONGS_PLAYLIST_ADD playlist list version ranges`;
@@ -151,6 +151,10 @@ same N labels. The context menu itself is MUI-P4-6, still open (no `MUIA_Context
   (2) `SONGS_PLAY` on the `queue` list starts the first selected entry in place (already queued, no insertion), on other lists it
   inserts after the playing song in list order and starts the first (D4); (3) tree and drilldown view styles and the folders source
   answer `ERROR bad_list` for list `view`. Paths are resolved before the first insert, so indices stay valid.
+- [ ] **I632b2** Close the I632b gaps. Deviation (3) cuts lists section 1 requires (drilldowns, composer list; tree style and the
+  folders source): make `SONGS_*` accept them, song rows only (group and folder rows are skipped and counted, not an error), or
+  record a decision from Johan. Tests missing from I632b: `SONGS_PLAY` (queue in place and insert-and-start on other lists) and the
+  `view` list (Library view, Search, drilldown song level) in `engine-songs-bulk`.
 - [ ] **I632c** Modifier fix: macOS Ctrl+left-click becomes button 1 in `backend_sdl.c`; drop the Ctrl branch at
   `desktop_ui.c:2719`. Test (host, desktop input): Cmd-click no longer opens the menu; Ctrl-click on macOS still does. Regression
   test fails before, passes after.
