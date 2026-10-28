@@ -151,7 +151,7 @@ same N labels. The context menu itself is MUI-P4-6, still open (no `MUIA_Context
   (2) `SONGS_PLAY` on the `queue` list starts the first selected entry in place (already queued, no insertion), on other lists it
   inserts after the playing song in list order and starts the first (D4); (3) tree and drilldown view styles and the folders source
   answer `ERROR bad_list` for list `view`. Paths are resolved before the first insert, so indices stay valid.
-- [ ] **I632b2** Close the I632b gaps. Deviation (3) cuts lists section 1 requires (drilldowns, composer list; tree style and the
+- [x] **I632b2** Close the I632b gaps. Deviation (3) cuts lists section 1 requires (drilldowns, composer list; tree style and the
   folders source): make `SONGS_*` accept them, song rows only (group and folder rows are skipped and counted, not an error), or
   record a decision from Johan. Tests missing from I632b: `SONGS_PLAY` (queue in place and insert-and-start on other lists) and the
   `view` list (Library view, Search, drilldown song level) in `engine-songs-bulk`.

@@ -284,7 +284,7 @@ struct sel_engine {
     uint32_t folder_view_rows;                 /* rows the folders view source built (I179 sentinel) */
     uint32_t import_runs, import_added, import_missing; /* PLAYLIST_IMPORT sentinel and last result (I652c) */
     uint32_t pl_fail_runs, pl_fail_reason;     /* last failed PLAYLIST_IMPORT / PLAYLIST_ADD_FOLDER: counter and SEL_PLFAIL_* (I652e) */
-    uint32_t songs_runs, songs_done, songs_stale; /* SONGS_* sentinel, songs handled by the last verb, stale refusals (I632b) */
+    uint32_t songs_runs, songs_done, songs_stale, songs_skipped; /* SONGS_* sentinel, songs handled by the last verb, stale refusals (I632b) */
     char* songs_ranges;                        /* SONGS_RANGES staging: ranges text for the next SONGS_* verb, heap, NULL none */
     size_t songs_ranges_len;
     uint32_t addf_runs, addf_added;            /* PLAYLIST_ADD_FOLDER sentinel and songs the last run appended (I652d) */
@@ -5466,6 +5466,7 @@ typedef struct songs_sel {
     char* pbuf;            /* the selected songs' paths, NUL separated, in list order (resolved before any verb moves a row) */
     const char** plist;    /* path of the j-th song of the selection; rows that name no song are left out */
     uint32_t pn;
+    uint32_t skipped;      /* selected rows that name no song: group, folder, playlist, album, heading and divider rows */
 } songs_sel;
 
 static void songs_sel_free(songs_sel* s) {
@@ -5519,12 +5520,6 @@ static int songs_open(sel_engine* e, const char* verb, const char* list, uint32_
         s->kind = SONGS_VIEW;
         view_src(e, &vs);
         sel_view_refresh(&e->view, &vs);
-        if (v->source == SEL_VIEW_FOLDERS || ((v->source == SEL_VIEW_QUEUE || v->source == SEL_VIEW_QUERY) &&
-                                              (v->style == SEL_VIEW_STYLE_TREE || v->style == SEL_VIEW_STYLE_DRILLDOWN))) {
-            sel_engine_report_error(e, "bad_list", verb);
-            songs_unstage(e);
-            return 0;
-        }
         s->count = v->row_count;
         have = v->version;
     } else if (strncmp(list, "playlist:", 9) == 0 && list[9] >= '0' && list[9] <= '9') {
@@ -5618,6 +5613,7 @@ static int songs_open(sel_engine* e, const char* verb, const char* list, uint32_
         songs_sel_free(s);
         return 0;
     }
+    e->songs_skipped = s->skipped;
     return 1;
 }
 
@@ -5638,6 +5634,15 @@ static int songs_row_path(sel_engine* e, const songs_sel* s, uint32_t i, char* o
         if (v->source == SEL_VIEW_HOME || v->source == SEL_VIEW_SEARCH) {
             const sel_view_row* r = &e->view.frows[at];
             path = r->kind == SEL_ROW_HOME && !r->album && !r->composer ? r->key : NULL;
+        } else if (v->source == SEL_VIEW_FOLDERS) {
+            return 0; /* folder and playlist rows only: a playlist is not a song, its songs are listed under playlist:<id> */
+        } else if (v->style == SEL_VIEW_STYLE_TREE || v->style == SEL_VIEW_STYLE_DRILLDOWN) {
+            /* The row index counts group nodes too: the view maps it to a queue entry, a node row names no song. */
+            sel_view_src vs;
+            uint32_t qi;
+            view_src(e, &vs);
+            if (!sel_view_song_at(&e->view, &vs, at, &qi)) return 0;
+            path = sel_queue_path(vs.queue, qi);
         } else {
             const sel_queue* q = v->source == SEL_VIEW_QUERY ? &e->qview : &e->queue;
             path = row_is_divider(q, at) ? NULL : sel_queue_path(q, at);
@@ -5674,15 +5679,16 @@ static int songs_resolve(sel_engine* e, const char* verb, songs_sel* s) {
         used += l;
         s->pn++;
     }
+    s->skipped = s->n - s->pn;
     for (i = 0, j = 0; j < s->pn; j++, i += (uint32_t)strlen(s->pbuf + i) + 1u) s->plist[j] = s->pbuf + i;
     return 1;
 }
 
 static void songs_done(sel_engine* e, const char* verb, uint32_t done) {
-    char msg[48];
+    char msg[64];
     e->songs_runs++;
     e->songs_done = done;
-    snprintf(msg, sizeof msg, "%s %u", verb, (unsigned)done);
+    snprintf(msg, sizeof msg, "%s %u skipped %u", verb, (unsigned)done, (unsigned)e->songs_skipped);
     emit_log(e, "songs", msg);
 }
 
@@ -6730,6 +6736,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->songs_runs = e->songs_runs;
     out->songs_done = e->songs_done;
     out->songs_stale = e->songs_stale;
+    out->songs_skipped = e->songs_skipped;
     out->import_missing = e->import_missing;
     out->links_parsed = e->links_parsed;
     out->links_made = e->links_made;
