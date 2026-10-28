@@ -23,7 +23,7 @@ target_include_directories(selecta_library PUBLIC ${PROJECT_SOURCE_DIR}/include 
 # SQLite, schema v1 with migrations, the memsys5 heap and the worker with its SPSC queues. The
 # Amiga build runs requests on the caller's task until the library subtask (Phase 12).
 add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/sqlite ${CMAKE_BINARY_DIR}/third_party/sqlite)
-target_sources(selecta_library PRIVATE db/amiga_vfs.c db/db.c db/index.c db/schema.c db/worker.c db/search.c db/scan.c db/user.c db/folders.c db/fetch.c db/rating_push.c db/vote_push.c db/lyrics_fetch.c db/job.c db/genre.c db/art.c db/songdb.c db/similar.c db/duplicates.c devilbox_loudness.c devilbox_lyrics.c stream_open.c record_name.c meta_utf8.c radio.c composer.c xxh32.c lyrics.c query.c regex.c share.c)
+target_sources(selecta_library PRIVATE db/amiga_vfs.c db/db.c db/index.c db/schema.c db/worker.c db/search.c db/scan.c db/user.c db/folders.c db/fetch.c db/rating_push.c db/vote_push.c db/lyrics_fetch.c db/job.c db/genre.c db/art.c db/songdb.c db/similar.c db/duplicates.c devilbox_loudness.c devilbox_lyrics.c stream_open.c record_name.c songlen.c meta_utf8.c radio.c composer.c xxh32.c lyrics.c query.c regex.c share.c)
 target_include_directories(selecta_library PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/db)
 target_link_libraries(selecta_library PUBLIC selecta_sqlite)
 if(SEL_AMIGA)
@@ -78,3 +78,26 @@ target_include_directories(selecta_archive PUBLIC ${PROJECT_SOURCE_DIR}/third_pa
 target_compile_options(selecta_archive PRIVATE -w)
 target_compile_definitions(selecta_archive PUBLIC MINIZ_NO_ZLIB_COMPATIBLE_NAMES)
 target_link_libraries(selecta_library PUBLIC selecta_archive selecta_shared_archive selecta_shared_source)
+
+# Song length database (I605, feature F1): tools/songlen_bake.c turns the audacious-uade-tools songlengths.tsv into the
+# sorted binary file the engine reads by seeks (songlen.h). The TSV is not in the repo: pass its path as
+# -DSELECTA_SONGLENGTHS_TSV=<.../tsv/pretty/xxh32/songlengths.tsv>; without it (or on the Amiga cross build, which
+# only installs the file) no file is made and every lookup finds nothing. The result is <build>/songlengths.bin,
+# to be installed as <config dir>/songlengths.bin.
+if(NOT SEL_AMIGA)
+  add_library(selecta_songlen_bake STATIC songlen_bake.c)
+  target_include_directories(selecta_songlen_bake PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+  add_executable(songlen_bake ${PROJECT_SOURCE_DIR}/tools/songlen_bake.c)
+  target_link_libraries(songlen_bake PRIVATE selecta_songlen_bake)
+  set(SELECTA_SONGLENGTHS_TSV "" CACHE FILEPATH "audacious-uade-tools songlengths.tsv (xxh32 pretty form) to bake into songlengths.bin")
+  if(SELECTA_SONGLENGTHS_TSV AND EXISTS "${SELECTA_SONGLENGTHS_TSV}")
+    add_custom_command(
+      OUTPUT ${CMAKE_BINARY_DIR}/songlengths.bin
+      COMMAND songlen_bake "${SELECTA_SONGLENGTHS_TSV}" ${CMAKE_BINARY_DIR}/songlengths.bin
+      DEPENDS songlen_bake "${SELECTA_SONGLENGTHS_TSV}"
+      COMMENT "Baking the song length database")
+    add_custom_target(songlengths ALL DEPENDS ${CMAKE_BINARY_DIR}/songlengths.bin)
+  else()
+    message(STATUS "Song length database skipped: pass -DSELECTA_SONGLENGTHS_TSV=<songlengths.tsv> to bake songlengths.bin")
+  endif()
+endif()
