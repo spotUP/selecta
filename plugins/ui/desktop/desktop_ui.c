@@ -315,6 +315,7 @@ typedef struct desk {
     int view_pending;        /* --view named a page: desk_open enters it through desk_page_apply, before the --exec lines */
     desk_page view_pg;
     sel_gui_rect nav_back, nav_fwd; /* the history arrows at the top of the main pane */
+    uint32_t nav_icon_draws; /* I599: arrow chevrons drawn through the icon atlas (sentinel) */
     uint32_t transport_hits; /* transport button clicks sent to the engine (DUI-P4-1) */
     uint32_t home_parts;     /* bit set of the Home frame parts drawn (HP_*), the I230 proof that each is on screen */
     uint32_t tile_cards;     /* tile card surfaces drawn in the Home view */
@@ -3827,7 +3828,14 @@ static void draw_vizpage(desk* d) {
     sel_gui_clip_push(d->canvas, mn);
     draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, page_title_h(d))), "Visualizer", 1, 32,
               ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
-    viz_switch_draw(d, 1u, rect_of(mn.x + mn.w - mg - lpx(d, 360), mn.y + lpx(d, 22), lpx(d, 360), lpx(d, 28)));
+    /* I599: the switch ends left of the history arrows, which share its row (the arrows now sit on the search field row) */
+    {
+        int32_t sr = mn.x + mn.w - mg;
+        if (nav_arrows_shown(d, mn) && sr > nav_arrow_rect(d, mn, 0).x - lpx(d, 8)) {
+            sr = nav_arrow_rect(d, mn, 0).x - lpx(d, 8);
+        }
+        viz_switch_draw(d, 1u, rect_of(sr - lpx(d, 360), mn.y + lpx(d, 22), lpx(d, 360), lpx(d, 28)));
+    }
     for (k = 0; k < VIZ_MAX; k++) {
         d->viz_pane[k] = rect_of(mn.x + mg, top + gap + (int32_t)k * (ph + gap), mn.w - 2 * mg, ph);
     }
@@ -4510,11 +4518,11 @@ static const char* library_dump_build(desk* d) {
         }
     }
     if (o + 400u < sizeof d->library_dump) { /* the page navigation (I262) */
-        o = dump_put(d, o, "nav page=%s nav_clicks=%u nav_keys=%u doors=%u hist=%u pos=%u np_page_draws=%u arrow_clicks=%u lit=%u lib_off_page=%u\nfocus_ring %d %d %d %d\nsearch_field %d %d %d %d caret_draws=%u caret_rect %d %d %d %d\nnav_arrows %d %d %d %d %d %d %d %d\n",
+        o = dump_put(d, o, "nav page=%s nav_clicks=%u nav_keys=%u doors=%u hist=%u pos=%u np_page_draws=%u arrow_clicks=%u lit=%u lib_off_page=%u\nfocus_ring %d %d %d %d\nsearch_field %d %d %d %d caret_draws=%u caret_rect %d %d %d %d\nnav_arrows %d %d %d %d %d %d %d %d\nnav_icons %u\n",
                               g_page_name[d->page], (unsigned)d->nav_clicks, (unsigned)d->nav_keys, (unsigned)DOOR_COUNT,
                               (unsigned)d->pg_n, (unsigned)d->pg_pos, (unsigned)d->np_page_draws, (unsigned)d->nav_arrow_clicks, (unsigned)d->lit_doors, (unsigned)d->lib_off_page, (int)d->ring.x, (int)d->ring.y, (int)d->ring.w, (int)d->ring.h,
                               (int)d->field.x, (int)d->field.y, (int)d->field.w, (int)d->field.h, (unsigned)d->caret_draws, (int)d->caret.x, (int)d->caret.y, (int)d->caret.w, (int)d->caret.h, (int)d->nav_back.x, (int)d->nav_back.y, (int)d->nav_back.w,
-                              (int)d->nav_back.h, (int)d->nav_fwd.x, (int)d->nav_fwd.y, (int)d->nav_fwd.w, (int)d->nav_fwd.h);
+                              (int)d->nav_back.h, (int)d->nav_fwd.x, (int)d->nav_fwd.y, (int)d->nav_fwd.w, (int)d->nav_fwd.h, (unsigned)d->nav_icon_draws);
     }
     if (o + 300u < sizeof d->library_dump) { /* the Now Playing page text (I361) */
         o = dump_put(d, o, "np_page_text title=[%s] artist=[%s] font_misses=%u\n", d->np_text_title, d->np_text_artist, (unsigned)d->font_misses);
@@ -5816,7 +5824,9 @@ static void draw_home_content(desk* d) {
 /* History arrow k (0 back, 1 forward) at the top right of the main pane; page controls on that row end left of it. */
 static sel_gui_rect nav_arrow_rect(const desk* d, sel_gui_rect mn, int32_t k) {
     int32_t bs = lpx(d, 28), gap = lpx(d, 8);
-    return rect_of(mn.x + mn.w - lpx(d, HOME_MARGIN) - 2 * bs - gap + k * (bs + gap), mn.y + lpx(d, 8), bs, bs);
+    /* I599: vertically centred on the search field row (the field is at SEARCH_FIELD_Y, SEARCH_FIELD_H high) */
+    return rect_of(mn.x + mn.w - lpx(d, HOME_MARGIN) - 2 * bs - gap + k * (bs + gap),
+                   mn.y + lpx(d, SEARCH_FIELD_Y) + (lpx(d, SEARCH_FIELD_H) - bs) / 2, bs, bs);
 }
 
 /* The arrows are drawn in the full layout on a main pane of at least 400 px; page content on their row ends left of them. */
@@ -5838,14 +5848,15 @@ static void draw_nav_arrows(desk* d, sel_gui_rect mn) {
     for (k = 0; k < 2; k++) {
         sel_gui_rect b = nav_arrow_rect(d, mn, k);
         uint32_t ink = ARGB(d->theme.token[can[k] ? SEL_GUI_TOKEN_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]);
-        int32_t cx = b.x + bs / 2, cy = b.y + bs / 2, a = bs / 5, t, dir = k == 0 ? -1 : 1;
+        int32_t ic = lpx(d, 18);
         *slot[k] = b;
         hover_reg(d, b);
         sel_gui_round_rect(d->canvas, b, bs / 2, hover_fill_of(d, b, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE])));
-        for (t = 0; t < 2; t++) { /* a chevron of two strokes, drawn twice a pixel apart for weight */
-            sel_gui_line(d->canvas, cx - dir * a / 2 + t, cy - a, cx + dir * a / 2 + t, cy, ink);
-            sel_gui_line(d->canvas, cx + dir * a / 2 + t, cy, cx - dir * a / 2 + t, cy + a, ink);
-        }
+        /* I599: the baked Lucide chevron, centred in the round button; the icon path scales to tall pixels, so both arms
+         * have the same length (two hand-drawn strokes did not: sel_gui_line divides each y by ydv). */
+        sel_gui_icon_draw(d->canvas, &d->icons, k == 0 ? SEL_GUI_ICON_CHEVRON_LEFT : SEL_GUI_ICON_CHEVRON_RIGHT,
+                          rect_of(b.x + (bs - ic) / 2, b.y + (bs - ic) / 2, ic, ic), ic, ink);
+        d->nav_icon_draws++;
         sel_gui_dirty_add(d->canvas, b);
     }
 }
@@ -5891,12 +5902,12 @@ static void tile_palette_raw(desk* d, const char* const* keys, uint32_t nk) {
 /* The main region with the running tweens on top: the hover fade of one tile (a light veil, full strength at rest)
  * and the view cross-fade (the new view fades in from the surface colour). At rest both are the plain view. */
 static void draw_home(desk* d) {
-    sel_gui_rect mn = region_rect(d, "main");
+    sel_gui_rect mn = region_rect(d, "main"), pn = panel_rect(d, "main");
     int32_t view = sel_gui_tween_value(&d->tl, ANIM_KEY_VIEW, 65536);
     draw_home_content(d);
     song_menu_draw(d);
     dlg_draw(d);
-    draw_nav_arrows(d, mn);
+    draw_nav_arrows(d, pn); /* I599: the panel rect, the one the search field row is laid out in */
     if (view < 65536) {
         sel_gui_scrim(d->canvas, rect_of(mn.x, songs_top(d), mn.w, mn.y + mn.h - songs_top(d)),
                       ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]) & 0xFFFFFFu,
