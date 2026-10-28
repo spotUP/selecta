@@ -356,7 +356,6 @@ typedef struct desk {
     sel_gui_rect side_empty_btn; /* I627: the empty-state Create playlist button, zero size when not drawn */
     int32_t side_y_q16; /* the list's scroll offset in Q16 logical pixels */
     uint32_t side_chip, side_filters, side_chip_scrolls; /* I610: the library chip in force (0 none, else 1 + index), filter passes run, chevron scrolls */
-    int32_t side_chip_x; /* I610: the chip row's scroll offset in canvas pixels */
     uint32_t side_sort, side_view; /* I611: the Your Library sort (SEL_UIM_LSORT_*) and view size (SEL_UIM_LVIEW_*) */
     uint32_t lf_open, lf_edit, lf_len; /* I611: the filter field is shown, has the keyboard, and holds this many characters */
     char lf_text[64];
@@ -999,7 +998,7 @@ static sel_gui_rect lmenu_strip_rect(const desk* d, uint32_t seg);
 static void side_sort_pick(desk* d, uint32_t sort);
 static void side_view_pick(desk* d, uint32_t view);
 static void side_chip_click(desk* d, int32_t c);
-static int32_t side_chip_max_x(desk* d);
+static int side_chip_single(desk* d);
 static sel_gui_rect side_chip_rect(desk* d, uint32_t k);
 static int32_t side_chips_h(const desk* d);
 static sel_gui_rect side_chip_chevron(desk* d, int right);
@@ -5671,8 +5670,8 @@ static const char* library_dump_build(desk* d) {
                          (unsigned)d->side_plus_clicks, (unsigned)d->side_wide_clicks, (unsigned)d->side_wide, (int)region_rect(d, "sidebar").w,
                          (int)r.x, (int)r.y, (int)r.w, (int)r.h);
         }
-        o = dump_put(d, o, "sidechips chip=%u filters=%u scrolls=%u x=%d max=%d\n", (unsigned)d->side_chip, (unsigned)d->side_filters,
-                     (unsigned)d->side_chip_scrolls, (int)d->side_chip_x, (int)side_chip_max_x(d));
+        o = dump_put(d, o, "sidechips chip=%u filters=%u scrolls=%u single=%d\n", (unsigned)d->side_chip, (unsigned)d->side_filters,
+                     (unsigned)d->side_chip_scrolls, side_chip_single(d));
         for (k = 0; k < 4u && side_chips_h(d) > 0; k++) {
             sel_gui_rect r = side_chip_rect(d, k);
             o = dump_put(d, o, "sidechip %u %d %d %d %d\n", (unsigned)k, (int)r.x, (int)r.y, (int)r.w, (int)r.h);
@@ -7563,19 +7562,24 @@ static sel_gui_rect side_chips_rect(const desk* d) {
     return rect_of(h.x, h.y + h.h, h.w, side_chips_h(d));
 }
 
+/* I669: pads and gap tight enough that the four chips fit the expanded sidebar (360 wide). */
+enum { SIDE_CHIP_PAD = 10, SIDE_CHIP_GAP = 6 };
+
+/* The chip's width: its label plus the side pads. */
 static int32_t side_chip_w(desk* d, uint32_t k) {
     const sel_gui_atlas* at = desk_font(d, 1, 13);
-    return (at != NULL ? sel_gui_text_width(at, side_chip_name[k], strlen(side_chip_name[k])) : 40) + 2 * lpx(d, 14);
+    return (at != NULL ? sel_gui_text_width(at, side_chip_name[k], strlen(side_chip_name[k])) : 40) + 2 * lpx(d, SIDE_CHIP_PAD);
 }
 
 static int32_t side_chip_total(desk* d) {
     int32_t t = 0;
     uint32_t k;
     for (k = 0; k < SIDE_CHIPS; k++) {
-        t += side_chip_w(d, k) + (k != 0u ? lpx(d, 8) : 0);
+        t += side_chip_w(d, k) + (k != 0u ? lpx(d, SIDE_CHIP_GAP) : 0);
     }
     return t;
 }
+
 
 /* The scrolling band of the chips: the row less the pad; with an overflow a chevron button at each end takes its square. */
 static sel_gui_rect side_chip_band(desk* d, int* overflow) {
@@ -7595,23 +7599,26 @@ static sel_gui_rect side_chip_chevron(desk* d, int right) {
     return rect_of(right ? r.x + r.w - pad - cv : r.x + pad, r.y, cv, cv);
 }
 
-static int32_t side_chip_max_x(desk* d) {
+/* I669: one control instead of the chip row: the bitmap tier's cycle button, or, when the chips do not fit the sidebar, a
+ * label naming the filter in force that the chevrons step through All and the chips (a row of chips with only one in view
+ * hides the choices, so a click on it means nothing). */
+static int side_chip_single(desk* d) {
     int ov;
-    int32_t m = side_chip_total(d) - side_chip_band(d, &ov).w;
-    return ov && m > 0 ? m : 0;
+    side_chip_band(d, &ov);
+    return ov || desk_bitmap_text(d);
 }
 
-/* The chip rectangle k as scrolled; on the bitmap tier chip 0 is the single cycle button and the rest are empty. */
+/* The chip rectangle k; with a single control chip 0 is that control across the band and the rest are empty. */
 static sel_gui_rect side_chip_rect(desk* d, uint32_t k) {
     int ov;
     uint32_t i;
     sel_gui_rect b = side_chip_band(d, &ov);
-    int32_t x = b.x - d->side_chip_x;
-    if (desk_bitmap_text(d)) {
+    int32_t x = b.x;
+    if (side_chip_single(d)) {
         return k == 0u ? rect_of(b.x, b.y, b.w, lpx(d, HOME_CHIP_H)) : rect_of(0, 0, 0, 0);
     }
     for (i = 0; i < k; i++) {
-        x += side_chip_w(d, i) + lpx(d, 8);
+        x += side_chip_w(d, i) + lpx(d, SIDE_CHIP_GAP);
     }
     return rect_of(x, b.y, side_chip_w(d, k), lpx(d, HOME_CHIP_H));
 }
@@ -7632,6 +7639,7 @@ static int32_t side_chip_at(desk* d, int32_t x, int32_t y) {
         if (in_rect(side_chip_chevron(d, 1), x, y)) {
             return SIDE_CHIPS + 1;
         }
+        return -1; /* I669: the label between the chevrons only names the filter */
     }
     if (!in_rect(b, x, y)) {
         return -1;
@@ -7650,23 +7658,21 @@ static int side_chip_keeps_playlists(const desk* d) {
 }
 
 /* A click on a chip: the chip in force again clears the filter, another one takes over; the cycle button steps through
- * none and the chips. A chevron scrolls the row half a band. */
+ * none and the chips. A chevron steps the filter one back or on, from All to the last chip, stopping at both ends (I669). */
 static void side_chip_click(desk* d, int32_t c) {
-    int ov;
-    if (c >= SIDE_CHIPS) {
-        int32_t step = side_chip_band(d, &ov).w / 2, max = side_chip_max_x(d);
-        d->side_chip_x += c == SIDE_CHIPS ? -step : step;
-        d->side_chip_x = d->side_chip_x < 0 ? 0 : (d->side_chip_x > max ? max : d->side_chip_x);
+    if (c == SIDE_CHIPS) {
+        d->side_chip -= d->side_chip > 0u ? 1u : 0u;
+        d->side_chip_scrolls++;
+    } else if (c == SIDE_CHIPS + 1) {
+        d->side_chip += d->side_chip < (uint32_t)SIDE_CHIPS ? 1u : 0u;
         d->side_chip_scrolls++;
     } else if (desk_bitmap_text(d)) {
         d->side_chip = (d->side_chip + 1u) % (SIDE_CHIPS + 1u);
     } else {
         d->side_chip = d->side_chip == (uint32_t)c + 1u ? 0u : (uint32_t)c + 1u;
     }
-    if (c < SIDE_CHIPS) {
-        d->side_y_q16 = 0;
-        d->side_stale = 1u; /* the list is read again through the filter */
-    }
+    d->side_y_q16 = 0;
+    d->side_stale = 1u; /* the list is read again through the filter */
     d->repaint = 1;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
 }
@@ -7913,12 +7919,12 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
     }
     d->side_rows = 0u;
     d->side_empty_btn = rect_of(0, 0, 0, 0);
-    if (labels) { /* I610: the chip row, or the cycle button on the bitmap tier */
+    if (labels) { /* I610: the chip row, or the single control (I669) when the chips do not fit or on the bitmap tier */
         int ov;
         uint32_t k;
         sel_gui_rect band = side_chip_band(d, &ov), cr = side_chips_rect(d);
         sel_gui_clip_push(d->canvas, band);
-        if (desk_bitmap_text(d)) {
+        if (side_chip_single(d)) {
             draw_chip(d, side_chip_rect(d, 0), d->side_chip == 0u ? "All" : side_chip_name[d->side_chip - 1u], d->side_chip != 0u, SEL_GUI_TOKEN_SURFACE_RAISED);
         } else {
             for (k = 0; k < SIDE_CHIPS; k++) {
@@ -7929,7 +7935,7 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
         if (ov) {
             for (k = 0; k < 2u; k++) {
                 sel_gui_rect cv = side_chip_chevron(d, (int)k);
-                int can = k == 0u ? d->side_chip_x > 0 : d->side_chip_x < side_chip_max_x(d);
+                int can = k == 0u ? d->side_chip > 0u : d->side_chip < (uint32_t)SIDE_CHIPS;
                 hover_reg(d, cv);
                 sel_gui_round_rect(d->canvas, cv, cv.h / 2, hover_fill_of(d, cv, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED])));
                 sel_gui_icon_draw(d->canvas, &d->icons, k == 0u ? SEL_GUI_ICON_CHEVRON_LEFT : SEL_GUI_ICON_CHEVRON_RIGHT,
