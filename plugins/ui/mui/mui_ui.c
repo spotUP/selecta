@@ -13,6 +13,8 @@
 
 #include "map/mui_map.h"
 #include "map/mui_theme.h"
+#include "map/mui_icons.h"
+#include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/theme.h>
 #include <selecta/tags.h>
 
@@ -94,6 +96,8 @@ typedef struct mui_state {
     Object* balance[2];             /* sidebar|main and main|detail */
     mui_layout_map_t lay;
     Object* canvas;                 /* MUI-P5-1 Selecta_Canvas, NULL when MUI refused the class */
+    Object* btn_txt[MUI_BTN_COUNT];   /* I651: the label Text inside each transport button group */
+    Object* btn_pages[MUI_BTN_COUNT]; /* I651: icon pages (play/pause), NULL for single-icon buttons */
     Object* btn[MUI_BTN_COUNT];     /* MUI-P2-5 transport buttons */
     const char* btn_label[MUI_BTN_COUNT];
     Object* seek;
@@ -372,19 +376,86 @@ static void mui_theme_init(void) {
     }
 }
 
-/* weight 100 is the MUI default (equal shares of the row); 0 sizes the button to its label. */
-static Object* mui_make_button_w(const char* label, LONG id, LONG weight) {
-    Object* o = MUI_NewObject((char*)MUIC_Text, MUIA_Weight, (ULONG)weight, TH_TAGS(MUI_TH_BUTTON, MUIV_Frame_Button) MUIA_Font, MUIV_Font_Button,
-                              MUIA_Text_Contents, (ULONG)label, MUIA_Text_HiCharIdx, MUI_NOMARK, MUIA_Text_PreParse, (ULONG) "\33c",
+/* I651: Bodychunk / Bitmap tags (MUI 3.8 libraries/mui.h carries them; guarded for older NDK copies). */
+#ifndef MUIA_Bodychunk_Body
+#define MUIA_Bodychunk_Body 0x8042ca67UL
+#define MUIA_Bodychunk_Compression 0x8042de5fUL
+#define MUIA_Bodychunk_Depth 0x8042c392UL
+#define MUIA_Bodychunk_Masking 0x80423b0eUL
+#define MUIA_Bitmap_Height 0x80421560UL
+#define MUIA_Bitmap_SourceColors 0x80425360UL
+#define MUIA_Bitmap_Transparent 0x80422805UL
+#define MUIA_Bitmap_UseFriend 0x804239d8UL
+#define MUIA_Bitmap_Width 0x8042eb3aUL
+#endif
+
+/* I651: the icon image of a button, a Bodychunk built from the build-time body. The palette is fixed at creation (theme
+ * face and ink) and MUI remaps the bitmap once at layout; nothing is drawn per frame. Pen 0 is transparent so the button
+ * face shows through. NULL when the icon is missing: the button then keeps its label only. */
+static ULONG g_icon_pal[12];
+static int g_icon_pal_set;
+
+static Object* mui_icon_object(int icon) {
+    const uint8_t* body = mui_icon_body(icon);
+    if (body == NULL) {
+        return NULL;
+    }
+    if (!g_icon_pal_set) {
+        txt_theme th;
+        uint32_t pal[12];
+        int i;
+        txt_theme_default(&th);
+        mui_icon_palette(th.token, g_th[MUI_TH_BUTTON].on, pal);
+        for (i = 0; i < 12; i++) {
+            g_icon_pal[i] = pal[i];
+        }
+        g_icon_pal_set = 1;
+    }
+    return MUI_NewObject((char*)MUIC_Bodychunk, MUIA_FixWidth, MUI_ICON_PX, MUIA_FixHeight, MUI_ICON_PX, MUIA_Bitmap_Width, MUI_ICON_PX,
+                         MUIA_Bitmap_Height, MUI_ICON_PX, MUIA_Bodychunk_Depth, 2, MUIA_Bodychunk_Body, (ULONG)body, MUIA_Bodychunk_Compression, 0,
+                         MUIA_Bodychunk_Masking, 2, MUIA_Bitmap_Transparent, 0, MUIA_Bitmap_SourceColors, (ULONG)g_icon_pal, MUIA_Bitmap_UseFriend, TRUE,
+                         TAG_DONE);
+}
+
+/* A button: a group (frame, background, press handling) holding the icon and the label text. alt_key names a second icon
+ * shown on page 2 of a page-mode group (play/pause); *txt_out receives the label Text object so a later set() can change
+ * it, *pages_out the page group (NULL without alt_key). weight 100 is the MUI default (equal shares of the row); 0 sizes
+ * the button to its contents. Padding and icon size come from mui_icons.h. */
+static Object* mui_make_button_i(const char* label, const char* icon_key, const char* alt_key, LONG id, LONG weight, Object** txt_out, Object** pages_out) {
+    Object* img = mui_icon_object(mui_icon_id(icon_key));
+    Object* alt = alt_key != NULL ? mui_icon_object(mui_icon_id(alt_key)) : NULL;
+    Object* pages = NULL;
+    Object* txt = MUI_NewObject((char*)MUIC_Text, MUIA_Font, MUIV_Font_Button, MUIA_Text_Contents, (ULONG)label, MUIA_Text_HiCharIdx, MUI_NOMARK,
+                                MUIA_Text_PreParse, (ULONG) "\33c", TAG_DONE);
+    Object* o = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_Group_HorizSpacing, MUI_BTN_ICON_GAP, MUIA_Weight, (ULONG)weight,
+                              TH_TAGS(MUI_TH_BUTTON, MUIV_Frame_Button) InnerSpacing(MUI_BTN_PAD_X, MUI_BTN_PAD_Y), MUIA_ShortHelp, (ULONG)label,
                               MUIA_InputMode, MUIV_InputMode_RelVerify, TH_BG_OR(MUI_TH_BUTTON, MUII_ButtonBack) TAG_DONE);
-    if (o != NULL) {
-        DoMethod(o, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
+    if (o == NULL || txt == NULL) {
+        return o;
+    }
+    if (img != NULL && alt != NULL) {
+        pages = MUI_NewObject((char*)MUIC_Group, MUIA_Group_PageMode, TRUE, MUIA_Group_Child, img, MUIA_Group_Child, alt, TAG_DONE);
+        DoMethod(o, OM_ADDMEMBER, pages != NULL ? pages : img);
+    } else if (img != NULL) {
+        DoMethod(o, OM_ADDMEMBER, img);
+    }
+    DoMethod(o, OM_ADDMEMBER, txt);
+    DoMethod(o, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
+    if (txt_out != NULL) {
+        *txt_out = txt;
+    }
+    if (pages_out != NULL) {
+        *pages_out = pages;
     }
     return o;
 }
 
-static Object* mui_make_button(const char* label, LONG id) {
-    return mui_make_button_w(label, id, 100);
+static Object* mui_make_button_w(const char* label, const char* icon_key, LONG id, LONG weight) {
+    return mui_make_button_i(label, icon_key, NULL, id, weight, NULL, NULL);
+}
+
+static Object* mui_make_button(const char* label, const char* icon_key, LONG id) {
+    return mui_make_button_w(label, icon_key, id, 100);
 }
 
 static Object* mui_make_text(mui_state* s, uint32_t attr, const char* initial) {
@@ -407,7 +478,7 @@ static Object* mui_sidebar_group(void) {
     Object* g = MUI_NewObject((char*)MUIC_Group, TH_TAGS(MUI_TH_PANEL, MUI_FRAME_NONE) TAG_DONE);
     uint32_t i;
     for (i = 0; g != NULL && i < mui_door_count() && i < MUI_DOOR_MAX; i++) {
-        Object* b = mui_make_button(mui_door_label(i), CTL_DOOR_BASE + (LONG)i);
+        Object* b = mui_make_button(mui_door_label(i), sel_uim_door_at(i)->page, CTL_DOOR_BASE + (LONG)i);
         if (b != NULL) {
             DoMethod(g, OM_ADDMEMBER, b);
         }
@@ -428,7 +499,7 @@ static Object* mui_p8_extras_row(void) {
     Object* row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     uint32_t i;
     for (i = 0; row != NULL && i < MUI_EXTRA_COUNT; i++) {
-        Object* b = mui_make_button(mui_extra_label(i), CTL_EXTRA_BASE + (LONG)i);
+        Object* b = mui_make_button(mui_extra_label(i), mui_extra_action(i), CTL_EXTRA_BASE + (LONG)i);
         if (b != NULL) {
             SetAttrs(b, MUIA_ShortHelp, (ULONG)mui_extra_tip(i), TAG_DONE);
             DoMethod(row, OM_ADDMEMBER, b);
@@ -446,7 +517,8 @@ static Object* mui_player_group(mui_state* s) {
     row1 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     for (i = 0; row1 != NULL && i < MUI_BTN_COUNT; i++) {
         s->btn_label[i] = mui_transport_label(i, &zero);
-        s->btn[i] = mui_make_button(s->btn_label[i], CTL_BTN_BASE + (LONG)i);
+        s->btn[i] = mui_make_button_i(s->btn_label[i], mui_transport_action(i, &zero), i == MUI_BTN_PLAY ? "pause" : NULL, CTL_BTN_BASE + (LONG)i, 100,
+                                      &s->btn_txt[i], &s->btn_pages[i]);
         if (s->btn[i] != NULL) {
             DoMethod(row1, OM_ADDMEMBER, s->btn[i]);
         }
@@ -548,7 +620,7 @@ static Object* mui_tool_group(mui_state* s) {
     DoMethod(r1, OM_ADDMEMBER, s->str_search);
     DoMethod(r1, OM_ADDMEMBER, s->str_cmd);
     for (i = 0; i < MUI_TOOL_BTNS; i++) {
-        Object* b = mui_make_button(mui_tool_labels[i], CTL_P4_BASE + (LONG)g_tool_which[i]);
+        Object* b = mui_make_button(mui_tool_labels[i], mui_tool_labels[i], CTL_P4_BASE + (LONG)g_tool_which[i]);
         if (b != NULL) {
             DoMethod(i < MUI_TOOL_ROW2 ? r2 : r3, OM_ADDMEMBER, b);
         }
@@ -599,7 +671,7 @@ static Object* mui_main_group(mui_state* s) {
         uint32_t k;
         for (k = 0; k < MUI_CRUMB_MAX; k++) {
             snprintf(s->crumb_lbl[k], sizeof s->crumb_lbl[k], " ");
-            s->crumb_btn[k] = mui_make_button_w(s->crumb_lbl[k], CTL_CRUMB_BASE + (LONG)k, 0);
+            s->crumb_btn[k] = mui_make_button_w(s->crumb_lbl[k], "crumb", CTL_CRUMB_BASE + (LONG)k, 0);
             if (s->crumb_btn[k] == NULL) {
                 return NULL;
             }
@@ -863,7 +935,11 @@ static void mui_refresh(mui_state* s) {
         const char* label = mui_transport_label(i, f);
         if (label != NULL && label != s->btn_label[i]) {
             s->btn_label[i] = label;
-            set(s->btn[i], MUIA_Text_Contents, (ULONG)label);
+            set(s->btn_txt[i], MUIA_Text_Contents, (ULONG)label);
+            if (s->btn_pages[i] != NULL) {
+                const char* act = mui_transport_action(i, f);
+                set(s->btn_pages[i], MUIA_Group_ActivePage, act != NULL && strcmp(act, "pause") == 0 ? 1 : 0);
+            }
         }
     }
     mui_detail_refresh(s, st);

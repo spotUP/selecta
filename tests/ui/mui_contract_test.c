@@ -8,9 +8,11 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "mui_icons.h"
 #include "mui_map.h"
 #include "mui_theme.h"
 
+#include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/theme.h>
 
 extern const sel_tag* sel_plugin_entry_mui_test(uint32_t host_api);
@@ -839,6 +841,68 @@ static void test_toolrows(void) {
     }
 }
 
+/* I651: every MUI button is built with an icon. The keys below are the real button sources (transport actions for both play
+ * states, extras, doors, toolbar labels, crumb); each must resolve to a baked Lucide body, the lookup counter must rise by
+ * exactly that many, and mui_ui.c must build the image (Bodychunk with the theme palette) and the bigger padding. */
+static void test_icon_buttons(void) {
+    static char src[400000];
+    sel_uim_frame fr;
+    txt_theme th;
+    uint32_t pal[12], before = mui_icon_resolved(), want = 0, i, b, st;
+    size_t n;
+    FILE* f;
+    memset(&fr, 0, sizeof fr);
+    for (st = 0; st < 2; st++) {
+        fr.play = st ? SEL_PLAYING : SEL_STOPPED;
+        for (b = 0; b < MUI_BTN_COUNT; b++) {
+            const char* a = mui_transport_action(b, &fr);
+            CHECK(a != NULL && mui_icon_body(mui_icon_id(a)) != NULL, "transport button %u state %u has no icon", (unsigned)b, (unsigned)st);
+            want++;
+        }
+    }
+    for (i = 0; mui_extra_action(i) != NULL; i++, want++) {
+        CHECK(mui_icon_body(mui_icon_id(mui_extra_action(i))) != NULL, "extra %s has no icon", mui_extra_action(i));
+    }
+    for (i = 0; i < SEL_UIM_DOOR_COUNT; i++, want++) {
+        CHECK(mui_icon_body(mui_icon_id(sel_uim_door_at(i)->page)) != NULL, "door %s has no icon", sel_uim_door_at(i)->page);
+    }
+    for (i = 0; i < MUI_TOOL_BTNS; i++, want++) {
+        CHECK(mui_icon_body(mui_icon_id(mui_tool_labels[i])) != NULL, "tool %s has no icon", mui_tool_labels[i]);
+    }
+    CHECK(mui_icon_body(mui_icon_id("crumb")) != NULL, "crumb has no icon");
+    want++;
+    CHECK(mui_icon_resolved() - before == want, "icon lookups %u want %u", (unsigned)(mui_icon_resolved() - before), (unsigned)want);
+    CHECK(mui_icon_id("no such button") < 0 && mui_icon_body(-1) == NULL, "unknown key has no icon");
+    {
+        const uint8_t* body = mui_icon_body(mui_icon_id("play"));
+        size_t k, bytes = (size_t)mui_icon_body_px * (((mui_icon_body_px + 15) / 16) * 2) * 2, ink = 0;
+        CHECK(mui_icon_body_px == MUI_ICON_PX, "baked edge %u", (unsigned)mui_icon_body_px);
+        for (k = 0; k < bytes; k++) {
+            ink += body[k] != 0;
+        }
+        CHECK(ink > 8, "play body is empty");
+    }
+    txt_theme_default(&th);
+    mui_icon_palette(th.token, 1, pal);
+    CHECK(pal[0] == (th.token[SEL_GUI_TOKEN_SURFACE_RAISED] >> 16 & 0xFFu) * 0x01010101u && pal[9] == (th.token[SEL_GUI_TOKEN_TEXT] >> 16 & 0xFFu) * 0x01010101u,
+          "palette runs from the button face to the text colour");
+    CHECK(MUI_BTN_PAD_X >= 8 && MUI_BTN_PAD_Y >= 4 && MUI_ICON_PX >= 24, "buttons are bigger than the 1 px text-only ones");
+    f = fopen(MUI_UI_SOURCE, "rb");
+    CHECK(f != NULL, "open %s", MUI_UI_SOURCE);
+    if (f == NULL) {
+        return;
+    }
+    n = fread(src, 1, sizeof src - 1, f);
+    fclose(f);
+    src[n] = 0;
+    CHECK(strstr(src, "MUIC_Bodychunk") != NULL && strstr(src, "mui_icon_palette(") != NULL && strstr(src, "MUI_BTN_PAD_X") != NULL,
+          "mui_ui.c builds no icon image");
+    CHECK(strstr(src, "mui_make_button(mui_door_label(i), sel_uim_door_at(i)->page,") != NULL &&
+              strstr(src, "mui_make_button(mui_tool_labels[i], mui_tool_labels[i],") != NULL && strstr(src, "mui_make_button_w(s->crumb_lbl[k], \"crumb\",") != NULL &&
+              strstr(src, "mui_make_button_i(s->btn_label[i], mui_transport_action(") != NULL && strstr(src, "mui_make_button(mui_extra_label(i), mui_extra_action(i),") != NULL,
+          "a button call site passes no icon key");
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -917,6 +981,8 @@ int main(int argc, char** argv) {
     } else if (strcmp(argv[1], "states") == 0) {
         test_states();
         test_view_empty();
+    } else if (strcmp(argv[1], "icon-buttons") == 0) {
+        test_icon_buttons();
     } else if (strcmp(argv[1], "toolrows") == 0) {
         test_toolrows();
     } else if (strcmp(argv[1], "tracker") == 0) {
