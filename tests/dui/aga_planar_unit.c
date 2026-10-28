@@ -189,6 +189,14 @@ static void test_overscan_fit(void) {
     CHECK(desk_aga_pick_size(&w, &h, 1, 724, 241) == 1 && w == 704 && h == 240); /* NTSC */
     desk_aga_fit_clip(rect, 704, 280, clip);
     CHECK(clip[0] == -62 && clip[2] == 641 && clip[1] == -14 && clip[3] == 265);
+    /* I624: PAL maximum overscan 0,0..677,270 = 678 x 271 picks 672 x 264; the clip must start on a lores pixel. */
+    {
+        int32_t r2[4] = {0, 0, 677, 270}, c2[4], pw = 0, ph = 0;
+        CHECK(desk_aga_pick_size(&pw, &ph, 0, 678, 271) == 1 && pw == 672 && ph == 264);
+        desk_aga_fit_clip(r2, pw, ph, c2);
+        CHECK((c2[0] & 1) == 0 && c2[0] == 2 && c2[2] - c2[0] + 1 == 672 && c2[2] <= 677);
+        CHECK(c2[1] == 3 && c2[3] == 266);
+    }
 }
 
 /* I566: Fill Screen follows the Overscan preferences (OSCAN_STANDARD = 2), not OSCAN_MAX (3). Untuned preferences give the
