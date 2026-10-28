@@ -113,6 +113,8 @@ static void max_overscan(int ntsc, int32_t rect[4]) {
         rect[2] = r.MaxX;
         rect[3] = r.MaxY;
     }
+    /* I566: the area decides the Fill Screen size; the log shows what the Overscan preferences gave */
+    fprintf(stderr, "aga: overscan area %ld,%ld..%ld,%ld\n", (long)rect[0], (long)rect[1], (long)rect[2], (long)rect[3]);
 }
 
 static ULONG pick_mode(int32_t* w, int32_t* h) {
