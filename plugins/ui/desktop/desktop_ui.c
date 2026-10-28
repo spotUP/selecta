@@ -431,6 +431,7 @@ enum { HR_NONE, HR_SIDEBAR, HR_MAIN, HR_DETAIL, HR_PLAYER };
 static int hover_region_of(const desk* d, sel_gui_rect box);
 enum { SLOT_SUB_PREV, SLOT_SHUFFLE, SLOT_PREV, SLOT_PLAY, SLOT_NEXT, SLOT_REPEAT, SLOT_SUB_NEXT, TRANSPORT_COUNT };
 static sel_gui_rect desk_button_rect(const desk* d, uint32_t i);
+static const char* desk_slot_action(const desk* d, uint32_t i);
 
 /* I385: marks the start of a frame's paint. The first call after a flush wins, so one frame has one start. */
 static void desk_frame_begin(desk* d) {
@@ -922,9 +923,35 @@ static void draw_player_left(desk* d);
 /* The footer bars (I312). The seek row spans tw pixels from x0, centred over the transport buttons, with the times at
  * both ends; the volume bar sits at the right end under the status text, its speaker icon to its left. Drawing and
  * the pointer hit test both take their boxes from here. */
+/* DUI-P4-20: on a short canvas (layout height at or under SEL_UIM_FOOTER_ONE_ROW_MAX_H) the player bar is one row:
+ * transport buttons, elapsed time, the seek bar over the free width, total time, speaker and volume bar, all centred
+ * on the row. footer_y0 is the top of the 16 px text row in both footers; the bars sit 6 px under it. */
+static int footer_one_row(const desk* d) {
+    return d->layout.height <= SEL_UIM_FOOTER_ONE_ROW_MAX_H;
+}
+
+static int32_t footer_y0(const desk* d) {
+    sel_gui_rect pl = region_rect(d, "player");
+    if (footer_one_row(d)) {
+        return pl.y + (pl.h - lpx(d, 16)) / 2;
+    }
+    return pl.y + lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+}
+
 static void seek_span(const desk* d, int32_t* x0, int32_t* tw) {
     sel_gui_rect pl = region_rect(d, "player");
     int32_t lw = lpx(d, 40), w = lpx(d, 560);
+    if (footer_one_row(d)) { /* from the last transport button to the speaker icon */
+        int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+        sel_gui_rect last = desk_button_rect(d, desk_slot_action(d, SLOT_SUB_NEXT) != NULL ? SLOT_SUB_NEXT : SLOT_REPEAT);
+        sel_gui_rect vb = pl;
+        int32_t right;
+        vb.x = pl.x + pl.w - sp - lpx(d, 96) - sp - lpx(d, 16);
+        right = vb.x - sp;
+        *x0 = last.x + last.w + 2 * sp;
+        *tw = right - *x0;
+        return;
+    }
     if (w > pl.w - 2 * lpx(d, 300)) {
         w = pl.w - 2 * lpx(d, 300);
     }
@@ -936,23 +963,23 @@ static void seek_span(const desk* d, int32_t* x0, int32_t* tw) {
 }
 
 static sel_gui_rect seek_bar_rect(const desk* d) {
-    sel_gui_rect pl = region_rect(d, "player");
     int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]), lw = lpx(d, 40), x0, tw;
     seek_span(d, &x0, &tw);
-    return rect_of(x0 + lw + sp, pl.y + sp + lpx(d, 6), tw - 2 * lw - 2 * sp, lpx(d, 4));
+    return rect_of(x0 + lw + sp, footer_y0(d) + lpx(d, 6), tw - 2 * lw - 2 * sp, lpx(d, 4));
 }
 
 static sel_gui_rect vol_bar_rect(const desk* d) {
     sel_gui_rect pl = region_rect(d, "player");
     int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
-    return rect_of(pl.x + pl.w - sp - lpx(d, 96), pl.y + sp + lpx(d, 40), lpx(d, 96), lpx(d, 4));
+    return rect_of(pl.x + pl.w - sp - lpx(d, 96), footer_one_row(d) ? footer_y0(d) + lpx(d, 6) : pl.y + sp + lpx(d, 40), lpx(d, 96),
+                   lpx(d, 4));
 }
 
 static void draw_widget(desk* d, uint32_t bit) {
     const sel_uim_frame* f = &d->uim.frame;
     int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     sel_gui_rect pl = region_rect(d, "player"), mn = region_rect(d, "main");
-    int32_t y0 = pl.y + sp;
+    int32_t y0 = footer_y0(d);
     if (bit == SEL_UIM_DIRTY_SONG) {
         draw_player_left(d);
         if (d->home && !d->songs && !d->queue_page && !d->pl_page && d->open_tile == 0) { /* the Home header replaces the song card */
@@ -1001,6 +1028,9 @@ static void draw_widget(desk* d, uint32_t bit) {
         sel_gui_dirty_add(d->canvas, ir);
         draw_bar(d, vb, (uint32_t)v * 65536u / 100u, &d->vol_fill);
     } else if (bit == SEL_UIM_DIRTY_STATUS) {
+        if (footer_one_row(d)) { /* the play or pause button already shows the state */
+            return;
+        }
         draw_frame_text(d, rect_of(pl.x + pl.w - sp - lpx(d, 200), y0, lpx(d, 200), lpx(d, 16)), f->status, 12, 1);
     }
 }
@@ -6336,6 +6366,11 @@ static sel_gui_rect desk_button_rect(const desk* d, uint32_t i) {
     sel_gui_rect pl = region_rect(d, "player");
     int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     int32_t cx = pl.x + pl.w / 2;
+    if (footer_one_row(d)) { /* DUI-P4-20: from the left edge; shuffle first, the subsong buttons and their label around it */
+        int32_t step = lpx(d, TIP_BTN) + sp;
+        int32_t x = pl.x + sp + (desk_slot_action(d, SLOT_SUB_PREV) != NULL ? lpx(d, 56) + sp + step : 0);
+        return rect_of(x + ((int32_t)i - SLOT_SHUFFLE) * step, pl.y + (pl.h - lpx(d, TIP_BTN)) / 2, lpx(d, TIP_BTN), lpx(d, TIP_BTN));
+    }
     return rect_of(cx - lpx(d, TIP_BTN / 2) + ((int32_t)i - SLOT_PLAY) * (lpx(d, TIP_BTN) + sp), pl.y + sp + lpx(d, 24),
                    lpx(d, TIP_BTN), lpx(d, TIP_BTN));
 }
@@ -8661,7 +8696,8 @@ static void desk_replay_resizes(desk* d) {
     char msg[96];
     while (sscanf(p, "%ux%u%n", &w, &h, &used) == 2) {
         uint32_t i;
-        sel_uim_layout_compute_rail(&d->layout, w, h, desk_bitmap_text(d) ? SEL_UIM_TIER_BITMAP : SEL_UIM_TIER_DEFAULT, desk_rail_w(d));
+        sel_uim_layout_compute_bar(&d->layout, w, h, desk_bitmap_text(d) ? SEL_UIM_TIER_BITMAP : SEL_UIM_TIER_DEFAULT, desk_rail_w(d),
+                                   sel_uim_footer_height(h));
         printf("layout width=%u height=%u id=%s regions=%u check=%s\n", w, h,
                sel_uim_breakpoint_name(d->layout.breakpoint), (unsigned)d->layout.count,
                sel_uim_layout_check(&d->layout, msg, sizeof msg) == 0 ? "ok" : msg);
@@ -8870,8 +8906,9 @@ static int32_t desk_scale_for(const desk* d, int32_t w, int32_t h) {
 
 /* The layout runs at the logical size: the canvas divided by the scale. */
 static void desk_relayout(desk* d) {
-    sel_uim_layout_compute_rail(&d->layout, (uint32_t)px_to_logical(d, d->canvas->w), (uint32_t)px_to_logical(d, cvh(d)),
-                                desk_bitmap_text(d) ? SEL_UIM_TIER_BITMAP : SEL_UIM_TIER_DEFAULT, desk_rail_w(d));
+    uint32_t lh = (uint32_t)px_to_logical(d, cvh(d));
+    sel_uim_layout_compute_bar(&d->layout, (uint32_t)px_to_logical(d, d->canvas->w), lh,
+                               desk_bitmap_text(d) ? SEL_UIM_TIER_BITMAP : SEL_UIM_TIER_DEFAULT, desk_rail_w(d), sel_uim_footer_height(lh));
 }
 
 /* The backend density changed (a window moved to another screen): the scale follows, the zoom stays. */
