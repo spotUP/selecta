@@ -68,6 +68,10 @@ extern const sel_gui_icons_packed sel_gui_icons_baked;
 /* The packing: control byte c < 128 copies the next c + 1 bytes; c >= 128 repeats the next byte c - 126 times (2..129). */
 size_t sel_gui_icon_pack(const uint8_t* src, size_t n, uint8_t* dst);
 
+/* The decoder behind sel_gui_icon_unpack, also used for the baked text atlases (I587): expands the stream s[0..n) into
+ * exactly `total` bytes at dst. Returns 0 on a malformed or wrong-length stream. */
+int sel_gui_pack_decode(const uint8_t* s, size_t n, uint8_t* dst, size_t total);
+
 /* Unpacks icon `id` at size index `size_idx` into dst (sizes[size_idx] squared bytes): the one reader every UI path
  * uses. Returns 0 on an unknown index or a malformed stream. */
 int sel_gui_icon_unpack(const sel_gui_icons_packed* p, uint32_t size_idx, uint32_t id, uint8_t* dst);

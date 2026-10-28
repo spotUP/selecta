@@ -655,7 +655,9 @@ static const sel_gui_atlas* desk_font(desk* d, int semibold, int size) {
                 d->atlas[semibold][i] = desk_atlas_baked(semibold, lpx(d, size), d->canvas->ydiv > 1 ? d->canvas->ydiv : 1);
                 if (d->atlas[semibold][i] != NULL) {
                     d->atlas_baked_hits++;
-                } else {
+                }
+#ifndef SEL_DESKTOP_NO_TTF
+                else {
                     const sel_host* ch = sel_engine_plugin_host(d->engine);
                     uint32_t t0 = ch->clock_ms(ch);
                     d->atlas[semibold][i] =
@@ -664,6 +666,7 @@ static const sel_gui_atlas* desk_font(desk* d, int semibold, int size) {
                     d->atlas_ms += ch->clock_ms(ch) - t0;
                     d->atlas_builds++;
                 }
+#endif
             }
             return d->atlas[semibold][i];
         }

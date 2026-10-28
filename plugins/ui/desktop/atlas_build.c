@@ -1,6 +1,8 @@
 /* Atlas builder (DUI-P2-3); see atlas_build.h. */
 #include "atlas_build.h"
 
+#include <selecta/gui/gui_icons.h>
+
 #ifdef __clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wnewline-eof"
@@ -196,26 +198,44 @@ sel_gui_atlas* desk_atlas_build_tall(const unsigned char* ttf, int pixel_size, i
     return at;
 }
 
+/* I587: the decoded pages. The table stores each page packed; a page is expanded the first time its atlas is asked for
+ * and then kept for the life of the process (desk_atlas_free leaves it alone), parallel to sel_font_baked. */
+static sel_gui_atlas* g_decoded;
+
 const sel_gui_atlas* desk_atlas_baked(int family, int pixel_size, int ydiv) {
     uint32_t i;
     for (i = 0; i < sel_font_baked_n; i++) {
-        if (sel_font_baked[i].family == family && sel_font_baked[i].px == pixel_size &&
-            sel_font_baked[i].ydiv == ydiv) {
-            return &sel_font_baked[i].at;
+        const desk_baked_font* b = &sel_font_baked[i];
+        if (b->family == family && b->px == pixel_size && b->ydiv == ydiv) {
+            size_t total = (size_t)b->at.page_w * (size_t)b->at.page_h;
+            uint8_t* page;
+            if (g_decoded == NULL) {
+                g_decoded = (sel_gui_atlas*)calloc(sel_font_baked_n, sizeof *g_decoded);
+                if (g_decoded == NULL) {
+                    return NULL;
+                }
+            }
+            if (g_decoded[i].alpha == NULL) {
+                page = (uint8_t*)malloc(total);
+                if (page == NULL || !sel_gui_pack_decode(b->packed, b->packed_n, page, total)) {
+                    free(page);
+                    return NULL;
+                }
+                g_decoded[i] = b->at;
+                g_decoded[i].alpha = page;
+            }
+            return &g_decoded[i];
         }
     }
     return NULL;
 }
 
 void desk_atlas_free(const sel_gui_atlas* at) {
-    uint32_t i;
     if (at == NULL) {
         return;
     }
-    for (i = 0; i < sel_font_baked_n; i++) {
-        if (at == &sel_font_baked[i].at) {
-            return; /* static data */
-        }
+    if (g_decoded != NULL && at >= g_decoded && at < g_decoded + sel_font_baked_n) {
+        return; /* a baked atlas: the decoded page is shared and kept */
     }
     free((void*)at->glyphs);
     free((void*)at->kerns);

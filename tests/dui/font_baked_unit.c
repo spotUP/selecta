@@ -34,12 +34,12 @@ int main(void) {
     for (e = 0; e < sel_font_baked_n; e++) {
         const desk_baked_font* b = &sel_font_baked[e];
         sel_gui_atlas* r = b->family >= DESK_FAMILY_MINI4 ? NULL : desk_atlas_build_tall(b->family == DESK_FAMILY_INTER_SEMIBOLD ? sel_font_inter_semibold : sel_font_inter_regular, b->px, b->ydiv);
-        const sel_gui_atlas* a = &b->at;
+        const sel_gui_atlas* a = desk_atlas_baked(b->family, b->px, b->ydiv); /* I587: the packed page, decoded */
         int ok;
         if (b->family >= DESK_FAMILY_MINI4) { /* Amiga bitmap atlases are checked by dui-amiga-font */
             continue;
         }
-        ok = r != NULL && a->glyph_n == r->glyph_n && a->kern_n == r->kern_n && a->page_w == r->page_w &&
+        ok = r != NULL && a != NULL && b->packed_n < (uint32_t)(r->page_w * r->page_h) && a->glyph_n == r->glyph_n && a->kern_n == r->kern_n && a->page_w == r->page_w &&
                  a->page_h == r->page_h && a->ascent == r->ascent && a->line_height == r->line_height &&
                  same_glyph(&a->missing, &r->missing) && memcmp(a->alpha, r->alpha, (size_t)a->page_w * (size_t)a->page_h) == 0;
         for (i = 0; ok && i < a->glyph_n; i++) {

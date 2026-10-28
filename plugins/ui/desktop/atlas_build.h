@@ -51,15 +51,20 @@ typedef struct desk_baked_font {
     int32_t family; /* DESK_FAMILY_* */
     int32_t px;
     int32_t ydiv; /* 1 square pixels, 2 the 640x256 tall-pixel bake (I468) */
-    sel_gui_atlas at;
+    sel_gui_atlas at; /* at.alpha is NULL in the table: the page is stored packed (I587), desk_atlas_baked decodes it */
+    const uint8_t* packed;
+    uint32_t packed_n;
 } desk_baked_font;
 extern const desk_baked_font sel_font_baked[];
 extern const uint32_t sel_font_baked_n;
-/* The baked atlas for a family and a pixel size, or NULL when that pair was not baked. */
+/* The baked atlas for a family and a pixel size, or NULL when that pair was not baked. The packed page (the icon packer,
+ * sel_gui_pack_decode) is decoded on first use and kept, so the image holds the compressed page and RAM the pages in use. */
 const sel_gui_atlas* desk_atlas_baked(int family, int pixel_size, int ydiv);
 
 /* The embedded Inter blobs (generated at build time from third_party/fonts). */
+#ifndef SEL_DESKTOP_NO_TTF /* the 68k image does not embed them (I587) */
 extern const unsigned char sel_font_inter_regular[];
 extern const unsigned char sel_font_inter_semibold[];
+#endif
 
 #endif
