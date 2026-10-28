@@ -37,6 +37,7 @@
 #include <proto/muimaster.h>
 struct Library* MUIMasterBase;
 #include "mui_canvas_class.h"
+#include "mui_listview_class.h"
 #define SEL_MAKE_ID(a, b, c, d) (((ULONG)(a) << 24) | ((ULONG)(b) << 16) | ((ULONG)(c) << 8) | (ULONG)(d))
 
 /* The SDK's sfdc inline MUI_NewObject is a function-like macro; the SDK's ApplicationObject/End idiom nests object-like
@@ -663,7 +664,7 @@ static Object* mui_main_group(mui_state* s) {
     if (g == NULL || s->list == NULL || s->crumb == NULL) {
         return NULL;
     }
-    s->listview = MUI_NewObject((char*)MUIC_Listview, MUIA_Listview_List, (ULONG)s->list, TAG_DONE);
+    s->listview = mui_listview_new(s->list, (ULONG)CTL_SM_BASE, (ULONG)SEL_UIM_SONG_MENU_ITEMS); /* Selecta_Listview: Amiga-1..5 over the list (I558) */
     if (s->listview == NULL) {
         return NULL;
     }
@@ -1746,6 +1747,7 @@ static void mui_close(void* state) {
         s->win = NULL;
         s->canvas = NULL;
         mui_canvas_class_free();
+        mui_listview_class_free();
     }
     mui_timer_close(s);
     if (MUIMasterBase != NULL) {
