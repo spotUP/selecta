@@ -105,6 +105,8 @@ typedef struct song_row {
 enum { PT_CANVAS = 0, PT_SONG, PT_SIDEBAR, PT_MAIN, PT_TRANSPORT, PT_PROGRESS, PT_VOLUME, PT_STATUS, PT_FOCUS, PT_TIP,
        PT_OVERLAY, PT_VISUAL, PT_COUNT };
 
+#define SIDE_LIB_MAX 64u /* I608: playlists the sidebar list holds */
+
 typedef struct desk {
     sel_engine* engine;
     const sel_host* host;
@@ -312,6 +314,9 @@ typedef struct desk {
     sel_gui_rect hover_prev; /* the box the pointer left, w = 0 for none: kept only so its region repaints once and the old box loses its ink on that frame (I356: no fade) */
     int32_t ink_in;          /* the weight hover_ink_of last used for the hovered box (stats line hover_ink) */
     uint32_t lit_doors;      /* bit i set: sidebar door i was drawn raised in the last frame (nav sentinel) */
+    sel_engine_library_item side_items[SIDE_LIB_MAX]; /* I608: the saved playlists listed under the doors */
+    uint32_t side_n, side_stale, side_draws, side_rows, side_opens; /* items held, reload wanted, frames drawn, rows drawn in the last one, rows opened */
+    int32_t side_y_q16; /* the list's scroll offset in Q16 logical pixels */
     int np_page;             /* the main region shows the Now Playing page */
     int view_pending;        /* --view named a page: desk_open enters it through desk_page_apply, before the --exec lines */
     desk_page view_pg;
@@ -916,6 +921,9 @@ static void tile_palette(desk* d, const char* const* keys, uint32_t n);
 static uint32_t art_keys(const sel_state* st, const char** out, uint32_t cap);
 static void draw_transport(desk* d);
 static void draw_sidebar(desk* d);
+static int32_t side_lib_at(const desk* d, int32_t x, int32_t y);
+static int32_t side_lib_max_q16(const desk* d);
+static sel_gui_rect side_lib_row_rect(const desk* d, uint32_t i);
 static void draw_nowplaying(desk* d);
 static void draw_nowplaypage(desk* d);
 static void draw_nav_arrows(desk* d, sel_gui_rect mn);
@@ -3501,6 +3509,7 @@ static void draw_playlists(desk* d) {
 
 static int pl_send(desk* d, const char* line) {
     d->pl_cmds++;
+    d->side_stale = 1u;
     return desk_send(d, line);
 }
 
@@ -4656,6 +4665,15 @@ static const char* library_dump_build(desk* d) {
                               (unsigned)d->pg_n, (unsigned)d->pg_pos, (unsigned)d->np_page_draws, (unsigned)d->nav_arrow_clicks, (unsigned)d->lit_doors, (unsigned)d->lib_off_page, (int)d->ring.x, (int)d->ring.y, (int)d->ring.w, (int)d->ring.h,
                               (int)d->field.x, (int)d->field.y, (int)d->field.w, (int)d->field.h, (unsigned)d->caret_draws, (int)d->caret.x, (int)d->caret.y, (int)d->caret.w, (int)d->caret.h, (int)d->nav_back.x, (int)d->nav_back.y, (int)d->nav_back.w,
                               (int)d->nav_back.h, (int)d->nav_fwd.x, (int)d->nav_fwd.y, (int)d->nav_fwd.w, (int)d->nav_fwd.h, (unsigned)d->nav_icon_draws);
+    }
+    if (o + 600u < sizeof d->library_dump) { /* the sidebar library list (I608): counters and the rectangle of each drawn row */
+        uint32_t k;
+        o = dump_put(d, o, "sidelib draws=%u rows=%u items=%u opens=%u y=%d max=%d\n", (unsigned)d->side_draws, (unsigned)d->side_rows,
+                     (unsigned)d->side_n, (unsigned)d->side_opens, (int)d->side_y_q16, (int)side_lib_max_q16(d));
+        for (k = 0; k < d->side_n && k < 8u; k++) {
+            sel_gui_rect r = side_lib_row_rect(d, k);
+            o = dump_put(d, o, "sidelib_row %u %d %d %d %d %s\n", (unsigned)k, (int)r.x, (int)r.y, (int)r.w, (int)r.h, d->side_items[k].name);
+        }
     }
     if (o + 300u < sizeof d->library_dump) { /* the Now Playing page text (I361) */
         o = dump_put(d, o, "np_page_text title=[%s] artist=[%s] font_misses=%u\n", d->np_text_title, d->np_text_artist, (unsigned)d->font_misses);
@@ -6460,6 +6478,92 @@ static int32_t sidebar_door_at(const desk* d, int32_t x, int32_t y) {
     return -1;
 }
 
+/* I608: the Your Library list under the doors. The header band keeps its right end free for the controls of I609 and the
+ * chips of I610; the rows below it scroll. One geometry for drawing, hit testing, the wheel and the test dump. */
+static sel_gui_rect side_lib_header_rect(const desk* d) {
+    sel_gui_rect r = sidebar_door_rect(d, DOOR_COUNT - 1u);
+    int32_t h = lpx(d, 36);
+    return rect_of(r.x, r.y + r.h + lpx(d, 8), r.w, h);
+}
+
+static sel_gui_rect side_lib_view_rect(const desk* d) {
+    sel_gui_rect sb = region_rect(d, "sidebar"), h = side_lib_header_rect(d);
+    int32_t y = h.y + h.h, bottom = sb.y + sb.h - lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    return rect_of(h.x, y, h.w, bottom > y ? bottom - y : 0);
+}
+
+static int32_t side_lib_row_h(const desk* d) {
+    return lpx(d, 56);
+}
+
+static int32_t side_lib_max_q16(const desk* d) {
+    int32_t total = (int32_t)d->side_n * side_lib_row_h(d), view = side_lib_view_rect(d).h;
+    return total > view ? px_to_logical(d, total - view) << 16 : 0;
+}
+
+static sel_gui_rect side_lib_row_rect(const desk* d, uint32_t i) {
+    sel_gui_rect v = side_lib_view_rect(d);
+    return rect_of(v.x, v.y + (int32_t)i * side_lib_row_h(d) - lpx(d, d->side_y_q16 >> 16), v.w, side_lib_row_h(d));
+}
+
+/* The row under a canvas point, -1 for none; rows scrolled out of the view do not count. */
+static int32_t side_lib_at(const desk* d, int32_t x, int32_t y) {
+    uint32_t i;
+    if (!in_rect(side_lib_view_rect(d), x, y)) {
+        return -1;
+    }
+    for (i = 0; i < d->side_n; i++) {
+        if (in_rect(side_lib_row_rect(d, i), x, y)) {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
+/* The item the main region shows now: a playlist is open while the Playlists page selects it. */
+static int side_lib_open_item(const desk* d, uint32_t i) {
+    return d->page == PG_PLAYLISTS && d->pl_sel_kind == (uint32_t)SEL_ROW_PLAYLIST && d->pl_sel_id == d->side_items[i].id;
+}
+
+static void side_lib_draw(desk* d, sel_gui_rect sb) {
+    sel_gui_rect hd = side_lib_header_rect(d), v = side_lib_view_rect(d);
+    int32_t pad = lpx(d, 12), cov = lpx(d, 44), gap = lpx(d, 12);
+    int labels = sb.w > lpx(d, 120);
+    uint32_t i;
+    if (d->side_stale) { /* the saved playlists changed: read them again */
+        d->side_n = sel_engine_library_playlist_items(d->engine, d->side_items, SIDE_LIB_MAX);
+        d->side_stale = 0u;
+        d->side_y_q16 = d->side_y_q16 > side_lib_max_q16(d) ? side_lib_max_q16(d) : d->side_y_q16;
+    }
+    if (labels) {
+        draw_text(d, rect_of(hd.x + pad, hd.y, hd.w - 2 * pad, hd.h), "Your Library", 1, 15, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    }
+    d->side_rows = 0u;
+    sel_gui_clip_push(d->canvas, v);
+    for (i = 0; i < d->side_n; i++) {
+        sel_gui_rect r = side_lib_row_rect(d, i), ar;
+        int open = side_lib_open_item(d, i);
+        if (r.y + r.h <= v.y || r.y >= v.y + v.h) {
+            continue;
+        }
+        if (open) {
+            sel_gui_round_rect(d->canvas, r, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+        }
+        ar = rect_of(r.x + (labels ? pad : (r.w - cov) / 2), r.y + (r.h - cov) / 2, cov, cov);
+        sel_gui_genart_draw(d->canvas, ar, "album", sel_gui_str_hash(d->side_items[i].name));
+        if (labels) {
+            int32_t tx = ar.x + cov + gap, tw = r.x + r.w - pad - tx, th = lpx(d, 20);
+            uint32_t ink = open ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : row_ink(d, r, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+            draw_text(d, rect_of(tx, ar.y + lpx(d, 2), tw, th), d->side_items[i].name, 1, 14, ink);
+            draw_text(d, rect_of(tx, ar.y + lpx(d, 2) + th, tw, th), "Playlist", 0, 12, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+        }
+        d->side_rows++;
+    }
+    sel_gui_clip_pop(d->canvas);
+    d->side_draws++;
+    sel_gui_dirty_add(d->canvas, rect_of(hd.x, hd.y, hd.w, hd.h + v.h));
+}
+
 static void draw_sidebar(desk* d) {
     sel_gui_rect sb = draw_panel(d, "sidebar");
     int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
@@ -6506,6 +6610,7 @@ static void draw_sidebar(desk* d) {
         d->frame_parts++;
         d->home_parts |= HP_NAV;
     }
+    side_lib_draw(d, sb);
 }
 
 /* The player bar's left block (mockup footer): artwork of the playing song with its title and artist beside it. Hidden
@@ -7961,6 +8066,16 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
             d->nav_clicks++;
             return desk_page_goto(d, door_page((uint32_t)door));
         }
+        door = side_lib_at(d, ev->x, ev->y); /* I608: a library row opens that item in the main region */
+        if (door >= 0) {
+            d->side_opens++;
+            desk_page_goto(d, PG_PLAYLISTS);
+            d->pl_sel_kind = (uint32_t)SEL_ROW_PLAYLIST;
+            d->pl_sel_id = d->side_items[door].id;
+            d->repaint = 1;
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+            return 1;
+        }
     }
     if ((in_main || (ev->kind == SEL_GUI_IN_MOVE && ev->code == 1u)) && lib_bar_pointer(d, ev)) { /* I541: the Library scrollbar */
         return 1;
@@ -8148,6 +8263,14 @@ static int desk_pointer(desk* d, const sel_gui_input* ev) {
  * when the picture changed. */
 static int desk_gesture(desk* d, const sel_gui_input* ev) {
     if (ev->kind == SEL_GUI_IN_WHEEL) {
+        if (side_lib_max_q16(d) > 0 && in_rect(side_lib_view_rect(d), d->ptr_x, d->ptr_y)) { /* I608: a sidebar list longer than its view scrolls under the pointer */
+            int32_t max_q16 = side_lib_max_q16(d);
+            int64_t v = (int64_t)d->side_y_q16 - (int64_t)ev->dy * SCROLL_NOTCH;
+            d->side_y_q16 = v < 0 ? 0 : (v > max_q16 ? max_q16 : (int32_t)v);
+            d->repaint = 1;
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+            return 1;
+        }
         if (d->si_page) { /* I298: the Song Information list scrolls when its rows overflow the panel */
             int32_t max_q16 = si_max_q16(d);
             int64_t v = (int64_t)d->si_y_q16 - (int64_t)ev->dy * SCROLL_NOTCH;
@@ -9108,6 +9231,7 @@ static void* desk_open(const sel_ui_open_args* a) {
         return NULL;
     }
     memset(d, 0, sizeof *d);
+    d->side_stale = 1u; /* I608: the first sidebar draw reads the saved playlists */
     d->lib_serial_seen = UINT32_MAX;
     d->songs_drag = -1;
     d->qdrag_from = -1;
@@ -9510,6 +9634,9 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
         uint32_t sig = hv->source == SEL_VIEW_HOME ? 1u + hv->row_n : d->search_on && hv->source == SEL_VIEW_SEARCH ? 0x10000u + hv->row_count * 64u + hv->row_n : 0u;
         if (hv->source == SEL_VIEW_FOLDERS && (d->pl_page || hv->row_n > 0u)) { /* the saved playlists arrived or changed */
             sig = 0x20000u + pl_hash(hv);
+        }
+        if (hv->source == SEL_VIEW_FOLDERS) { /* I608: the sidebar list follows the saved playlists */
+            d->side_stale = 1u;
         }
         if (sig != d->home_sig) {
             d->home_sig = sig;
