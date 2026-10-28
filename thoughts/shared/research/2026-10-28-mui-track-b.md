@@ -6,7 +6,10 @@ Branch: worktree-agent-a48b66d9ed5a16d37. Host tests only; no rig touched.
 |---|---|---|---|
 | MUI-P8-1 | [~] host done, native button row unbuilt, rig check pending (track A) | 04cd8417 | mui-p8-transport-extras (revert-checked) |
 | MUI-P8-2 | [~] host done, native F-key route into mui_ui.c not wired, rig check pending (track A) | see git log "MUI-P8-2" | mui-p8-voices-programs (revert-checked) |
-| MUI-P8-3..15 | not started | | |
+| MUI-P8-3 | [~] host mapping done (sel_uim_libmode_* in new uimodel/browse.h, desktop rewired to it), native Cycle unwired, rig check pending (track A) | b7d0e573 | mui-p8-library-modes |
+| MUI-P8-4 | [~] same, sel_uim_scope_* | b7d0e573 | mui-p8-queue-scope |
+| MUI-P8-5..14 | not started (tool budget used); P8-12 can reuse sel_uim_tile_step | | |
+| MUI-P8-15 | skipped by order | | |
 
 Notes
 - MUI-P8-2 created a new shared model `sel_uim_fkey_*` (include/selecta/uimodel/fkeys.h, src/uimodel/fkeys.c): F<n> = PLAYLIST_LOAD F<n> then PLAY, Shift+F<n> = PLAYLIST_SAVE F<n>. DUI-P5-8 was still open; the desktop can reuse it. Program naming is Johan's call.
