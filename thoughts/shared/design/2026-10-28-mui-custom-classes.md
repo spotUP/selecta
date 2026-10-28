@@ -260,3 +260,14 @@ prefs text pen and logs once. Host test: `mui-theme` covers the maths; the class
 - MUI 3.8 header names in 3.5 (List attributes) are unverified here; the 3.5/3.6 builder checks them first.
 - AAField text is stock MUI (no AA inside String gadgets).
 - Window title bar and borders stay DrawInfo pens (I666 SA_Pens), not drawn by these classes.
+
+## I671 findings (2026-10-28, rig 2 AGA 640x256 depth 4, stopped at the tool-call budget)
+
+Johan on rig 2, verbatim: first requester "the mui window could not open, using text ui", then after OK: "the ui could not open, no terminal".
+
+- MUI is installed and complete on rig 2: LIBS:muimaster.library 19.35 (MUI 3.8, 02/12/97), assign MUI: = System:MUI, MUI:Libs holds the classes, MUI.key is in SYS:S/. Not an install problem.
+- The second requester is the shell's text UI fallback. It needs a console; started with Run >NIL: (or from an icon) it has none, so the fallback is a dead end. Separate row proposed (I671b).
+- The two MUI_FAIL_NO_WINDOW sites in mui_open now pass distinct details. The rig log of the fixed build reads "the MUI window could not open. Using the text UI. (the layout does not fit the screen)": ApplicationObject is created; MUIA_Window_Open reads back 0. Same class of failure as I656 (window minimum larger than the screen, there on width at 800).
+- Stack size is not the cause: with Stack 200000 the failure is the same (the default Run stack also overflows the canary, which is a separate warning).
+- Fix applied (necessary, NOT sufficient): mui_open applied the 1280x720 three-column layout only after the open, so the open measured sidebar and detail too. It now applies the layout of the screen it opens on before MUIA_Window_Open (mui_layout_for_screen; 640x256 maps to the mini-suggestion breakpoint, sidebar and detail hidden). Host regression: mui_contract_test icon-rows (test_layout_before_open). On the rig the window still does not open with sidebar and detail hidden.
+- Remaining cause, unverified: the minimum HEIGHT of main column plus player group exceeds 256 (minus the Workbench title bar, 242 usable). Width rows are proven <= 640 by test_icon_button_rows; nothing models height. Next step: a height model in mui_map (player rows + toolbar rows + list minimum + suggestion banner, 24 px icon rows) checked against 242, then a compact player for screens under ~400 high, or an own SELECTA screen in a taller mode (PAL interlace 640x512) on AGA.

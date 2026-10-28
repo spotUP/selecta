@@ -939,6 +939,29 @@ static void test_toolrows(void) {
     }
 }
 
+/* Regression (I671): on a 640x256 AGA screen MUI refused the window (MUIA_Window_Open read back 0, requester "the MUI
+ * window could not open") because the three-column layout was applied only after the open, with a fixed 1280x720 size,
+ * so the open measured the sidebar and detail panels too. The open must apply the layout of the screen it opens on first,
+ * and that layout must hide the sidebar and detail panels on the smallest screen. */
+static void test_layout_before_open(void) {
+    static char src[400000];
+    mui_layout_map_t m;
+    const char *pick, *open_at;
+    FILE* f = fopen(MUI_UI_SOURCE, "rb");
+    size_t n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    mui_layout_map(&m, 640u, 256u);
+    CHECK(m.show[MUI_SLOT_MAIN] && m.show[MUI_SLOT_PLAYER] && !m.show[MUI_SLOT_SIDEBAR] && !m.show[MUI_SLOT_DETAIL],
+          "640x256 layout shows sidebar %u detail %u", (unsigned)m.show[MUI_SLOT_SIDEBAR], (unsigned)m.show[MUI_SLOT_DETAIL]);
+    pick = strstr(src, "    mui_layout_for_screen(s);\n    set(s->win, MUIA_Window_Open, TRUE);");
+    open_at = strstr(src, "set(s->win, MUIA_Window_Open, TRUE);");
+    CHECK(pick != NULL && open_at != NULL && pick < open_at, "mui_open does not apply the screen layout before MUIA_Window_Open");
+    CHECK(strstr(src, "mui_layout_map(&s->lay, 1280, 720)") == NULL, "mui_open still applies a fixed 1280x720 layout");
+}
+
 /* Regression (I656): with the I651 icons every button grew by 24 + 6 + 20 px, the tool row 2 reached ~860 px and MUI refused to
  * open the window (MUIA_Window_Open read back 0 on rig 3). Each button row's summed minimum width, from the constants and the
  * label tables mui_ui.c builds from, must fit the smallest supported screen (640 px, plan P6-2). The rows must also be built
@@ -1112,6 +1135,7 @@ int main(int argc, char** argv) {
         test_icon_buttons();
     } else if (strcmp(argv[1], "icon-rows") == 0) {
         test_icon_button_rows();
+        test_layout_before_open();
     } else if (strcmp(argv[1], "toolrows") == 0) {
         test_toolrows();
     } else if (strcmp(argv[1], "tracker") == 0) {

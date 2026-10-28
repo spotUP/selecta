@@ -1734,6 +1734,22 @@ static void mui_apply_layout(mui_state* s) {
     set(s->balance[1], MUIA_ShowMe, s->lay.balance_main_detail ? TRUE : FALSE);
 }
 
+/* I671: the layout for the full screen the window asks for (D-M4-3), from the screen it opens on: the own SELECTA screen,
+ * else the default public screen. */
+static void mui_layout_for_screen(mui_state* s) {
+    struct Screen* scr = g_scr != NULL ? g_scr : LockPubScreen(NULL);
+    uint32_t w = 1280u, h = 720u;
+    if (scr != NULL) {
+        w = (uint32_t)scr->Width;
+        h = (uint32_t)scr->Height;
+        if (scr != g_scr) {
+            UnlockPubScreen(NULL, scr);
+        }
+    }
+    mui_layout_map(&s->lay, w, h);
+    mui_apply_layout(s);
+}
+
 /* The window size changed: recompute, and re-apply only when the breakpoint moved (weights are user-adjustable
  * through the Balance objects, so they are not forced back inside one breakpoint). */
 static void mui_check_resize(mui_state* s) {
@@ -1799,7 +1815,7 @@ static void* mui_open(const sel_ui_open_args* a) {
         mui_screen_close();
         CloseLibrary(MUIMasterBase);
         MUIMasterBase = NULL;
-        mui_report(MUI_FAIL_NO_WINDOW, "");
+        mui_report(MUI_FAIL_NO_WINDOW, "(MUI could not create the objects)");
         return NULL;
     }
     DoMethod(s->win, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, s->app, 2, MUIM_Application_ReturnID,
@@ -1808,6 +1824,11 @@ static void* mui_open(const sel_ui_open_args* a) {
     g_drop_hook.h_Entry = (__typeof__(g_drop_hook.h_Entry))(void (*)(void))HookEntry;
     g_drop_hook.h_SubEntry = (__typeof__(g_drop_hook.h_SubEntry))(void (*)(void))mui_drop_hook;
     DoMethod(s->win, MUIM_Notify, MUIA_AppMessage, MUIV_EveryTime, s->app, 3, MUIM_CallHook, (ULONG)&g_drop_hook, MUIV_TriggerValue);
+    /* I671: pick the breakpoint from the screen the window opens on BEFORE the open. The full three-column layout's
+     * minimum height (seven 24 px sidebar doors plus the player rows) exceeds a 640x256 AGA screen, and MUI 3.8 refuses
+     * a window whose minimum does not fit (MUIA_Window_Open stays 0). Applying the 1280x720 layout only after the open
+     * never got that far. */
+    mui_layout_for_screen(s);
     set(s->win, MUIA_Window_Open, TRUE);
     GetAttr(MUIA_Window_Open, s->win, &open); /* MUI opens the window inside the set; 0 here means it failed */
     if (!open) {
@@ -1817,14 +1838,12 @@ static void* mui_open(const sel_ui_open_args* a) {
         mui_screen_close();
         CloseLibrary(MUIMasterBase);
         MUIMasterBase = NULL;
-        mui_report(MUI_FAIL_NO_WINDOW, "");
+        mui_report(MUI_FAIL_NO_WINDOW, "(the layout does not fit the screen)");
         return NULL;
     }
     s->wake_mask = 0;
     mui_timer_open(s);
-    mui_layout_map(&s->lay, 1280, 720); /* the initial size is unknown until MUI lays out; the first resize check fixes it */
-    mui_apply_layout(s);
-    s->lay.width = 0;
+    s->lay.width = 0; /* mui_layout_for_screen applied the screen-size layout; the first resize check moves it to the real size */
     s->lay.breakpoint = SEL_UIM_BP_COUNT; /* no breakpoint yet: the first real size always applies */
     mui_check_resize(s);
     mui_refresh(s);
