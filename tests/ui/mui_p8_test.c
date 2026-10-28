@@ -2,6 +2,7 @@
  * engine with a send function that records the lines. */
 #include <selecta/uimodel.h>
 #include <selecta/uimodel/browse.h>
+#include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/keys.h>
 #include <selecta/uimodel/viewcmds.h>
 
@@ -271,11 +272,203 @@ static void test_statistics(void) {
     CHECK(mui_stats_builds() - base == 3u, "sentinel %u, want 3", (unsigned)(mui_stats_builds() - base));
 }
 
+/* mui-p8-panels (MUI-P8-7) */
+static void test_panels(void) {
+    static mui_menu_item dummy[1];
+    static mui_key_bind keys[128];
+    sel_uim_net st;
+    char text[512];
+    uint32_t p, q, i, n, base = mui_panel_builds();
+    (void)dummy;
+    memset(&st, 0, sizeof st);
+    st.requests = 17;
+    st.zip_bytes = 4096;
+    st.listing_bytes = 512;
+    st.changelogs_fetched = 9;
+    for (p = 0; p < MUI_PANES; p++) {
+        uint32_t rows = sel_uim_panel_row_count(p), lines = 0, used = mui_panel_text(p, &st, text, sizeof text);
+        CHECK(sel_uim_panel_title(p) != NULL && mui_panel_menu_id(p) != 0u, "pane %u has no title or menu id", (unsigned)p);
+        for (i = 0; i < used; i++) {
+            lines += text[i] == '\n';
+        }
+        CHECK(lines == rows && rows > 0u, "pane %u shows %u lines, model has %u", (unsigned)p, (unsigned)lines, (unsigned)rows);
+        for (i = 0; i < rows; i++) {
+            char row[96];
+            CHECK(sel_uim_panel_row(p, &st, i, row, sizeof row) != 0u && strstr(text, row) != NULL, "pane %u lacks row %u", (unsigned)p, (unsigned)i);
+        }
+        for (q = p + 1u; q < MUI_PANES; q++) {
+            CHECK(mui_panel_menu_id(p) != mui_panel_menu_id(q), "panes %u and %u share a menu id", (unsigned)p, (unsigned)q);
+        }
+    }
+    mui_panel_text(SEL_UIM_PANEL_ACTIVITY, &st, text, sizeof text);
+    CHECK(strstr(text, "Requests: 17") != NULL && strstr(text, "Song bytes read: 0") != NULL, "Activity lacks its rows: %s", text);
+    mui_panel_text(SEL_UIM_PANEL_DOWNLOADS, &st, text, sizeof text);
+    CHECK(strstr(text, "Archive bytes: 4096") != NULL, "Downloads lacks the archive bytes");
+    /* the Activity key toggles the Activity pane */
+    n = mui_keys_build(keys, 128);
+    for (i = 0; i < n && i < 128u; i++) {
+        CHECK(!(keys[i].code == 'a' && keys[i].mods == TXT_MOD_CTRL), "Ctrl+A is already bound to %s", keys[i].id);
+    }
+    CHECK(mui_panel_key_pane('a', TXT_MOD_CTRL) == SEL_UIM_PANEL_ACTIVITY && mui_panel_key_pane('a', 0u) == MUI_PANES, "Activity key mapping");
+    CHECK(mui_panel_toggle(mui_panel_key_pane('a', TXT_MOD_CTRL)) == 1u, "first Activity key does not open");
+    CHECK(mui_panel_toggle(mui_panel_key_pane('a', TXT_MOD_CTRL)) == 0u, "second Activity key does not close");
+    CHECK(mui_panel_builds() - base == MUI_PANES + 2u, "sentinel %u", (unsigned)(mui_panel_builds() - base));
+}
+
+/* mui-p8-sources (MUI-P8-8) */
+static void test_sources(void) {
+    sel_uim_source s[3] = {{"local", "/music", 1}, {"modland", "https://m", 1}, {"hvsc", "https://h", 0}};
+    fake_engine e;
+    uint32_t base = mui_source_fires(), i;
+    memset(&e, 0, sizeof e);
+    CHECK(mui_source_toggle(s, 3, 1, fake_send, &e) == 2u, "toggle sends two lines");
+    CHECK(strcmp(e.lines[0], "PREF_SET library.sources_off \"modland,hvsc\"") == 0, "toggle line: %s", e.lines[0]);
+    CHECK(strcmp(e.lines[1], "SOURCES") == 0, "toggle re-reads: %s", e.lines[1]);
+    memset(&e, 0, sizeof e);
+    CHECK(mui_source_toggle(s, 3, 2, fake_send, &e) == 2u && strcmp(e.lines[0], "PREF_SET library.sources_off \"\"") == 0, "toggle on: %s", e.lines[0]);
+    memset(&e, 0, sizeof e);
+    mui_source_sync(&s[1], fake_send, &e);
+    CHECK(e.n == 2u && strcmp(e.lines[0], "LIBRARY_SYNC modland \"https://m\"") == 0, "sync line: %s", e.lines[0]);
+    CHECK(strcmp(mui_source_status(1, 0, 0), "Syncing") == 0 && strcmp(mui_source_status(0, 1, 5), "Sync failed") == 0 &&
+              strcmp(mui_source_status(0, 0, 5), "Synced") == 0 && strcmp(mui_source_status(0, 0, 0), "Not synced") == 0,
+          "status text");
+    memset(&e, 0, sizeof e);
+    mui_offer_not_now(1234, fake_send, &e);
+    CHECK(strcmp(e.lines[0], "PREF_SET library.sync_notice_at 1234") == 0, "Not now line: %s", e.lines[0]);
+    memset(&e, 0, sizeof e);
+    CHECK(mui_offer_sync(s, 3, 0x3u, fake_send, &e) == 2u && strncmp(e.lines[0], "LIBRARY_SYNC local", 18) == 0 && strncmp(e.lines[1], "LIBRARY_SYNC modland", 20) == 0,
+          "offer Sync sends one per ticked source");
+    CHECK(strcmp(mui_search_source_label(0), "Library") == 0 && strcmp(mui_search_source_label(1), "Web") == 0 && strcmp(mui_search_source_label(2), "Demozoo") == 0 &&
+              mui_search_source_label(3) == NULL,
+          "search source labels");
+    for (i = 0; i < 3u; i++) {
+        char want[64];
+        memset(&e, 0, sizeof e);
+        mui_search_source_set(i, fake_send, &e);
+        snprintf(want, sizeof want, "PREF_SET search.source \"%s\"", mui_search_source_label(i));
+        CHECK(e.n == 1u && strcmp(e.lines[0], want) == 0, "search source line %u: %s", (unsigned)i, e.lines[0]);
+        CHECK(sel_uim_search_source_find(mui_search_source_label(i)) == i, "remembered value %u not found again", (unsigned)i);
+    }
+    CHECK(mui_source_fires() - base == 8u, "sentinel %u, want 8", (unsigned)(mui_source_fires() - base));
+}
+
+/* mui-p8-infoline (MUI-P8-9) */
+static void test_infoline(void) {
+    sel_uim_net st;
+    char buf[64];
+    const char keys[4] = {'7', '8', '9', '0'};
+    uint32_t i;
+    memset(&st, 0, sizeof st);
+    for (i = 0; i < 4u; i++) {
+        CHECK(mui_info_mode_key(keys[i]) == (int32_t)i, "key %c", keys[i]);
+    }
+    CHECK(mui_info_mode_key('1') == -1, "other key selects a mode");
+    CHECK(mui_info_scroll_next(5, 20, 1) == 5u && mui_info_scroll_next(5, 20, 0) == 6u && mui_info_scroll_next(19, 20, 0) == 0u, "scroll offset");
+    CHECK(strcmp(mui_info_ahi(1), "AHI") == 0 && mui_info_ahi(0)[0] == '\0', "AHI indicator");
+    st.zip_bytes = 1000;
+    st.stil_bytes = 24;
+    CHECK(mui_info_downloaded(&st, buf, sizeof buf) != 0u && strcmp(buf, "Downloaded 1024 bytes") == 0, "byte count: %s", buf);
+    CHECK(mui_list_kept_cell(1)[0] == '*' && mui_list_kept_cell(0)[0] == ' ', "kept marker");
+}
+
+/* mui-p8-tooltips (MUI-P8-10) */
+static void test_tooltips(void) {
+    sel_uim_frame f;
+    char tip[SEL_UIM_TIP_MAX], want[SEL_UIM_TIP_MAX], status[160];
+    uint32_t b, i, base = mui_tooltip_hovers(), pass;
+    memset(&f, 0, sizeof f);
+    for (pass = 0; pass < 2u; pass++) {
+        f.play = pass != 0u ? SEL_PLAYING : SEL_STOPPED;
+        for (b = 0; b < MUI_BTN_COUNT; b++) {
+            const char* id = mui_transport_action(b, &f);
+            uint32_t a, n = sel_uim_action_count(), ok = 0;
+            CHECK(mui_tooltip_transport(b, &f, tip, sizeof tip) != 0u && tip[0] != '\0', "button %u has no help", (unsigned)b);
+            for (a = 0; a < n; a++) {
+                if (strcmp(sel_uim_action_at(a)->id, id) == 0) {
+                    sel_uim_action_tip_text(sel_uim_action_at(a), want, sizeof want);
+                    ok = strcmp(want, tip) == 0;
+                }
+            }
+            CHECK(ok, "button %u help '%s' differs from the table", (unsigned)b, tip);
+        }
+    }
+    for (i = 0; i < SEL_UIM_DOOR_COUNT; i++) {
+        CHECK(mui_tooltip_door(i, tip, sizeof tip) != 0u && strcmp(tip, sel_uim_door_at(i)->label) == 0, "door %u help", (unsigned)i);
+    }
+    mui_tooltip_transport(MUI_BTN_STOP, &f, tip, sizeof tip);
+    mui_tooltip_hover(tip, status, sizeof status);
+    CHECK(strcmp(status, tip) == 0 && mui_tooltip_hovers() - base == 1u, "hover does not update the status line");
+}
+
+/* mui-p8-remember (MUI-P8-11) */
+typedef struct fake_prefs {
+    char key[4][32];
+    char val[4][64];
+    uint32_t n;
+} fake_prefs;
+
+static int prefs_send(void* ctx, const char* line) {
+    fake_prefs* p = ctx;
+    const char* k = strstr(line, "PREF_SET ");
+    const char* q = k != NULL ? strchr(k + 9, ' ') : NULL;
+    const char* v = q != NULL ? strchr(q, '"') : NULL;
+    size_t kl, vl;
+    if (k == NULL || q == NULL || v == NULL || p->n >= 4u) {
+        return 0;
+    }
+    kl = (size_t)(q - (k + 9));
+    vl = strlen(v + 1) - 1u;
+    memcpy(p->key[p->n], k + 9, kl);
+    memcpy(p->val[p->n], v + 1, vl);
+    p->n++;
+    return 1;
+}
+
+static const char* prefs_get(void* ctx, const char* key) {
+    fake_prefs* p = ctx;
+    uint32_t i;
+    for (i = 0; i < p->n; i++) {
+        if (strcmp(p->key[i], key) == 0) {
+            return p->val[i];
+        }
+    }
+    return NULL;
+}
+
+static void test_remember(void) {
+    fake_prefs prefs;
+    mui_remember a, b;
+    memset(&prefs, 0, sizeof prefs);
+    memset(&a, 0, sizeof a);
+    a.x = -20;
+    a.y = 15;
+    a.w = 640;
+    a.h = 256;
+    a.panes = 5;
+    snprintf(a.viz, sizeof a.viz, "viz_scope");
+    snprintf(a.browse, sizeof a.browse, "columns");
+    CHECK(mui_remember_open(&b, prefs_get, &prefs) == 0u, "values found before anything was stored");
+    CHECK(mui_remember_close(&a, prefs_send, &prefs) == 4u, "close stores four items");
+    CHECK(mui_remember_open(&b, prefs_get, &prefs) == 4u, "open finds four items");
+    CHECK(b.x == -20 && b.y == 15 && b.w == 640u && b.h == 256u, "geometry %d %d %u %u", (int)b.x, (int)b.y, (unsigned)b.w, (unsigned)b.h);
+    CHECK(b.panes == 5u && strcmp(b.viz, "viz_scope") == 0 && strcmp(b.browse, "columns") == 0, "panes/viz/browse: %u %s %s", (unsigned)b.panes, b.viz, b.browse);
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
     }
-    if (strcmp(argv[1], "transport-extras") == 0) {
+    if (strcmp(argv[1], "panels") == 0) {
+        test_panels();
+    } else if (strcmp(argv[1], "sources") == 0) {
+        test_sources();
+    } else if (strcmp(argv[1], "infoline") == 0) {
+        test_infoline();
+    } else if (strcmp(argv[1], "tooltips") == 0) {
+        test_tooltips();
+    } else if (strcmp(argv[1], "remember") == 0) {
+        test_remember();
+    } else if (strcmp(argv[1], "transport-extras") == 0) {
         test_transport_extras();
     } else if (strcmp(argv[1], "voices-programs") == 0) {
         test_voices_programs();

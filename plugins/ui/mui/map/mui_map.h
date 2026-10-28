@@ -8,6 +8,8 @@
 
 #include <selecta/engine.h>
 #include <selecta/uimodel.h>
+#include <selecta/uimodel/panels.h>
+#include <selecta/uimodel/sources.h>
 
 /* The view styles the MUI UI offers. An RTG screen offers every style (6). A planar screen shows artwork and grid tiles
  * as cached 1-bit dithered images (MUI-P5-7, I509), so all but cover flow (5); the classic three alone no longer fit. */
@@ -320,5 +322,54 @@ uint32_t mui_page_switches(void);
  * SEL_UIM_STATS_LESS, More all of them; NULL stats (Hide) gives an empty text. Returns the bytes written. */
 uint32_t mui_stats_text(const char* stats, int more, char* out, uint32_t cap);
 uint32_t mui_stats_builds(void); /* call-count sentinel */
+
+
+/* MUI-P8-7: the Activity, Downloads and Extra Files panes. Ids 0..2 index sel_uim_panel_*; the menu ids (MUIA_UserData of the menu
+ * items) are MUI_ID_PANEL_BASE + pane, above every control id P8-5..P8-14 uses. The Activity key is Ctrl+A and toggles that pane. */
+#define MUI_ID_PANEL_BASE 0x8700u
+#define MUI_PANES 3u
+uint32_t mui_panel_menu_id(uint32_t pane);
+uint32_t mui_panel_key_pane(uint32_t code, uint32_t mods); /* pane the key opens or closes, MUI_PANES for none */
+uint32_t mui_panel_toggle(uint32_t pane);                   /* toggles the pane's open bit, returns the open mask */
+uint32_t mui_panel_open_mask(void);
+uint32_t mui_panel_text(uint32_t pane, const sel_uim_net* st, char* out, uint32_t cap); /* the pane's rows, one per line */
+uint32_t mui_panel_builds(void);                            /* call-count sentinel */
+
+/* MUI-P8-8: Sources page and sync offer, search source. Every fire returns the lines sent. */
+uint32_t mui_source_toggle(const sel_uim_source* s, uint32_t n, uint32_t flip, mui_send_fn send, void* ctx); /* off list, then SOURCES */
+uint32_t mui_source_sync(const sel_uim_source* s, mui_send_fn send, void* ctx);                                 /* LIBRARY_SYNC, then SOURCES */
+const char* mui_source_status(int pending, int failed, int64_t synced);
+uint32_t mui_offer_not_now(int64_t now, mui_send_fn send, void* ctx);                                         /* Not now button */
+uint32_t mui_offer_sync(const sel_uim_source* s, uint32_t n, uint32_t ticked, mui_send_fn send, void* ctx);   /* Sync button */
+const char* mui_search_source_label(uint32_t i);
+uint32_t mui_search_source_set(uint32_t i, mui_send_fn send, void* ctx);
+uint32_t mui_source_fires(void); /* call-count sentinel */
+
+/* MUI-P8-9: info line pieces. */
+int32_t mui_info_mode_key(char key);
+uint32_t mui_info_scroll_next(uint32_t offset, uint32_t text_len, int no_scroll);
+const char* mui_info_ahi(int active);
+uint32_t mui_info_downloaded(const sel_uim_net* st, char* out, uint32_t cap);
+const char* mui_list_kept_cell(int kept); /* column 0 of a list row */
+
+/* MUI-P8-10: MUIA_ShortHelp texts. Transport button i for the frame: the action's tip text with its key hint (sel_uim_action_tip_text);
+ * sidebar door i: the door label. mui_tooltip_hover copies the text to the status line and counts the update. */
+uint32_t mui_tooltip_transport(uint32_t button, const sel_uim_frame* f, char* out, uint32_t cap);
+uint32_t mui_tooltip_door(uint32_t i, char* out, uint32_t cap);
+uint32_t mui_tooltip_hover(const char* tip, char* status, uint32_t cap);
+uint32_t mui_tooltip_hovers(void);
+
+/* MUI-P8-11: remembered state. close stores geometry, open panes, visualiser and browse view as PREF_SET lines through `send`;
+ * open reads them back through `get` (the pref value of a key, NULL when unset). */
+typedef struct mui_remember {
+    int32_t x, y;
+    uint32_t w, h;
+    uint32_t panes;
+    char viz[32];
+    char browse[32];
+} mui_remember;
+typedef const char* (*mui_pref_get_fn)(void* ctx, const char* key);
+uint32_t mui_remember_close(const mui_remember* r, mui_send_fn send, void* ctx);
+uint32_t mui_remember_open(mui_remember* r, mui_pref_get_fn get, void* ctx); /* returns how many of the four items were found */
 
 #endif
