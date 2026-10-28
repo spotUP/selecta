@@ -352,6 +352,7 @@ typedef struct desk {
     uint32_t hover_paints;   /* paints of a hovered control (sentinel) */
     sel_gui_rect hover_prev; /* the box the pointer left, w = 0 for none: kept only so its region repaints once and the old box loses its ink on that frame (I356: no fade) */
     int32_t ink_in;          /* the weight hover_ink_of last used for the hovered box (stats line hover_ink) */
+    uint32_t doors_drawn;    /* I615a: bit i set: sidebar door i got a row in the last frame (hidden doors stay clear) */
     uint32_t lit_doors;      /* bit i set: sidebar door i was drawn raised in the last frame (nav sentinel) */
     sel_engine_library_item side_items[SIDE_LIB_MAX]; /* I608: the saved playlists listed under the doors */
     uint32_t side_n, side_stale, side_draws, side_rows, side_opens, side_empty_draws, side_create_clicks; /* items held, reload wanted, frames drawn, rows drawn in the last one, rows opened */
@@ -5775,6 +5776,7 @@ static const char* library_dump_build(desk* d) {
                      (unsigned)d->side_n, (unsigned)d->side_opens, (int)d->side_y_q16, (int)side_lib_max_q16(d));
         {
             sel_gui_rect th = topbar_part(d, TOPBAR_HOME), tf = topbar_part(d, TOPBAR_FIELD), tb = topbar_part(d, TOPBAR_BROWSE);
+            o = dump_put(d, o, "sidebar_doors drawn=%u\n", (unsigned)d->doors_drawn);
             o = dump_put(d, o, "topbar draws=%u shown=%d home %d %d %d %d field %d %d %d %d browse %d %d %d %d home_clicks=%u browse_clicks=%u\n",
                          (unsigned)d->topbar_draws, topbar_shown(d), (int)th.x, (int)th.y, (int)th.w, (int)th.h, (int)tf.x, (int)tf.y,
                          (int)tf.w, (int)tf.h, (int)tb.x, (int)tb.y, (int)tb.w, (int)tb.h, (unsigned)d->topbar_home_clicks,
@@ -7707,7 +7709,10 @@ static sel_gui_rect sidebar_door_rect(const desk* d, uint32_t i) {
     sel_gui_rect r = region_rect(d, "sidebar");
     int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     int32_t g = sp / 2, row = lpx(d, 40);
-    int32_t y = r.y + g + 2 * sp + lpx(d, HOME_BRAND) + lpx(d, 12) + (int32_t)i * row;
+    int32_t y = r.y + g + 2 * sp + lpx(d, HOME_BRAND) + lpx(d, 12) + (int32_t)sel_uim_door_slot(i, topbar_shown(d)) * row;
+    if (!sel_uim_door_shown(i, topbar_shown(d))) { /* I615a: the top bar owns this page: no row */
+        return rect_of(r.x, y, 0, 0);
+    }
     return rect_of(r.x + g + sp, y, r.w - 2 * g - 2 * sp, row);
 }
 
@@ -8343,9 +8348,14 @@ static void draw_sidebar(desk* d) {
     d->home_parts |= HP_BRAND;
     y += br + pad;
     d->lit_doors = 0u;
-    for (i = 0; i < DOOR_COUNT; i++, y += row) {
+    d->doors_drawn = 0u;
+    for (i = 0; i < DOOR_COUNT; i++) {
         sel_gui_rect r = sidebar_door_rect(d, i);
-        sel_gui_rect ic = rect_of(r.x + pad, y + (row - isz) / 2, isz, isz);
+        if (!sel_uim_door_shown(i, topbar_shown(d))) { /* I615a: Home and Search live in the top bar */
+            continue;
+        }
+        d->doors_drawn |= 1u << i;
+        sel_gui_rect ic = rect_of(r.x + pad, r.y + (row - isz) / 2, isz, isz);
         int here = door_page(i) == d->page;
         uint32_t ink = ARGB(d->theme.token[here ? SEL_GUI_TOKEN_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]);
         if (here) { /* the current page: a raised row behind it */
@@ -8365,7 +8375,7 @@ static void draw_sidebar(desk* d) {
             if (door_at != NULL && dr->shorter != NULL && sel_gui_text_width(door_at, label, strlen(label)) > lw) {
                 label = dr->shorter;
             }
-            draw_text(d, rect_of(lx, y, lw, row), label, 1, 15, ink);
+            draw_text(d, rect_of(lx, r.y, lw, row), label, 1, 15, ink);
         }
         sel_gui_dirty_add(d->canvas, r);
         d->frame_parts++;

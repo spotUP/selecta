@@ -76,8 +76,14 @@ nav_run(h0 home "wait 100\n")
 expect_eq("Home frame page before any click" "${h0_page}" "home")
 expect_eq("no click yet" "${h0_clicks}" 0)
 expect_eq("seven doors" "${h0_doors}" 7)
+# Home and Search (doors 0 and 1) are owned by the top bar on this tier and have no sidebar rect (I615a);
+# dui-topbar-doors covers them. Doors 2..6 are clicked here.
 set(i 0)
 foreach(pg ${door_pages})
+  if(i LESS 2)
+    math(EXPR i "${i} + 1")
+    continue()
+  endif()
   nav_run(d${i} home "wait 100\ndoor ${i}\nwait 100\n")
   expect_eq("door ${i} opens ${pg}" "${d${i}_page}" "${pg}")
   expect_eq("door ${i} click counted" "${d${i}_clicks}" 1)
@@ -85,8 +91,8 @@ foreach(pg ${door_pages})
 endforeach()
 
 # 2. a walk through several doors ends on the last one, counting each click
-nav_run(w home "wait 100\ndoor 3\nwait 100\ndoor 4\nwait 100\ndoor 2\nwait 100\ndoor 0\nwait 100\n")
-expect_eq("walk ends at Home" "${w_page}" "home")
+nav_run(w home "wait 100\ndoor 3\nwait 100\ndoor 4\nwait 100\ndoor 2\nwait 100\ndoor 6\nwait 100\n")
+expect_eq("walk ends at Song Info" "${w_page}" "songinfo")
 expect_eq("walk counted four clicks" "${w_clicks}" 4)
 
 # 3. the page keys of the text UI's table
@@ -141,12 +147,12 @@ nav_run(sw home "wait 100\ndoor 3\nwait 100\ndoor 4\nwait 100\nswipe right\nwait
 expect_eq("a swipe is a page back" "${sw_page}" "playlists")
 
 # 7. the Search highlight clears (I266 d): the lit door follows the page, so leaving Search by key or door moves it
-nav_run(sh home "wait 100\ndoor 1\nwait 100\nkey /\nwait 100\ndoor 4\nwait 100\n")
+nav_run(sh home "wait 100\ntopbar 1\nwait 100\nkey /\nwait 100\ndoor 4\nwait 100\n")
 expect_eq("leaving Search by a door" "${sh_page}" "queue")
 expect_eq("only the Queue door is lit after leaving Search by a door (bit 4)" "${sh_lit}" "16")
 nav_run(sk home "wait 100\nkey /\nwait 100\nkey Escape\nwait 100\nkey l\nwait 100\n")
 expect_eq("leaving Search by a page key" "${sk_page}" "library")
-nav_run(sl home "wait 100\ndoor 1\nwait 100\nkey /\nwait 100\nkey Escape\nwait 100\nkey l\nwait 100\n")
+nav_run(sl home "wait 100\ntopbar 1\nwait 100\nkey /\nwait 100\nkey Escape\nwait 100\nkey l\nwait 100\n")
 expect_eq("only the Library door is lit after a page key leaves Search (bit 2)" "${sl_lit}" "4")
 
 # 8. a click on the Home search field goes to Search with the field focused (I266 f), the field and its ring one rect (g)
@@ -180,8 +186,7 @@ expect_eq("the Home field is the Search field" "${hf_field}" "${hc_field}")
 nav_run(hq home "wait 100\nkey /\nwait 100\nkey m\nkey o\nkey d\nwait 400\ndoor 0\nwait 100\nclick ${sx} ${sy}\nwait 400\n")
 expect_eq("the Home field click lands on Search" "${hq_page}" "search")
 expect_eq("the Home field click keeps the query" "${hq_query}" "mod")
-nav_run(hd home "wait 100\nkey /\nwait 100\nkey m\nkey o\nkey d\nwait 400\ndoor 0\nwait 100\ndoor 1\nwait 400\n")
-expect_eq("a door into Search starts with an empty query" "${hd_query}" "")
+# The Search door has no sidebar rect on the top bar tier (I615a) and the top bar field keeps the query by design, so the "door starts empty" case no longer exists there.
 
 # 8. button and chip labels are centred in their box (I270): the stats `label bx by bw bh ink ix iw text T` lines carry
 # the box and the ink span of every centred label drawn. The ink centre sits within 1 px of the box centre, and the
@@ -235,18 +240,18 @@ if(NOT rc EQUAL 0)
   message(FATAL_ERROR "loading the fixture failed: ${err}")
 endif()
 set(NAV_ARGS --db "${db}" --start-dir "${SONGS}")
-nav_run(lt library "wait 100\ndoor 1\nkey m\nkey o\nkey d\nwait 600\n")
+nav_run(lt library "wait 100\ntopbar 1\nkey m\nkey o\nkey d\nwait 600\n")
 expect_eq("Library view then Search door lands on Search" "${lt_page}" "search")
 if(lt_sdraws EQUAL 0)
   message(FATAL_ERROR "I274: Search from the Library view typed a query and the Search page was never drawn (search draws 0)")
 endif()
-nav_run(ld home "wait 100\ndoor 2\nwait 100\ndoor 1\nkey m\nkey o\nkey d\nwait 600\n")
+nav_run(ld home "wait 100\ndoor 2\nwait 100\ntopbar 1\nkey m\nkey o\nkey d\nwait 600\n")
 if(ld_sdraws EQUAL 0)
   message(FATAL_ERROR "I274: Search entered from the Library door was never drawn (search draws 0)")
 endif()
-nav_run(le home "wait 100\ndoor 2\nwait 100\ndoor 1\nwait 600\n")
+nav_run(le home "wait 100\ndoor 2\nwait 100\ntopbar 1\nwait 600\n")
 expect_eq("I274: the Library page is not drawn over the Search page (empty query)" "${le_liboff}" 0)
-nav_run(lf library "wait 100\ndoor 1\nwait 600\n")
+nav_run(lf library "wait 100\ntopbar 1\nwait 600\n")
 expect_eq("I274: the Library page is not drawn over Search entered from the Library view" "${lf_liboff}" 0)
 
 # 10. I272: every control has a hover state. A pointer move over a button or chip (the SDL path's SEL_GUI_IN_MOVE, the same
