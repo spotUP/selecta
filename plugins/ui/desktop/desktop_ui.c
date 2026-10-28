@@ -205,6 +205,10 @@ typedef struct desk {
     uint32_t pls_want, pls_n, pls_stale, pls_scroll, pls_draws, pls_rows; /* songs, reload wanted, first row shown, frames drawn, rows in the last one */
     int pl_edit;             /* 1 while the name field has the keyboard */
     char pl_name[64];
+    uint32_t pls_min;        /* I652a: the page must list at least this many songs (an Add is still on its way to the engine) */
+    uint32_t pls_adds;       /* I652a: PLAYLIST_ADD_SONG lines sent from the empty-playlist search */
+    uint32_t pls_find_sig;   /* I652a: signature of the search result last drawn under the empty playlist's field */
+    int pls_find_shown;      /* I652a: result rows drawn under the empty playlist's search field */
     size_t pl_nlen;
     int tr_page;             /* --view tracker: the main region shows the Tracker page (DUI-P4-12) */
     uint32_t tr_tab, tr_draws, tr_rows, tr_cmds, tr_sig; /* tab, frames drawn (sentinel), rows in the last one, verbs sent, redraw hash */
@@ -3810,6 +3814,11 @@ static void pls_reload(desk* d) {
     } else {
         d->pls_want = 0u;
     }
+    if (d->pls_n < d->pls_min) { /* I652a: an Add has not been applied yet */
+        d->pls_stale = 1u;
+    } else {
+        d->pls_min = 0u;
+    }
     if (d->pls_scroll >= d->pls_n) {
         d->pls_scroll = 0u;
     }
@@ -3819,7 +3828,12 @@ static void pls_reload(desk* d) {
 static void pls_open(desk* d, uint32_t id, const char* name) {
     d->pls_id = id;
     d->pls_want = 0u;
+    d->pls_min = 0u;
     d->pls_scroll = 0u;
+    d->qlen = 0u; /* I652a: the song search of an empty playlist starts empty */
+    d->query[0] = '\0';
+    d->search_on = 0;
+    d->search_pending = 0;
     snprintf(d->pls_name, sizeof d->pls_name, "%s", name != NULL ? name : "Playlist");
     d->pl_sel_kind = (uint32_t)SEL_ROW_PLAYLIST;
     d->pl_sel_id = id;
@@ -3889,6 +3903,116 @@ static sel_gui_rect pls_title_rect(desk* d, sel_gui_rect mn) {
     return rect_of(tx, cv.y + lpx(d, 24), mn.x + mn.w - tx - lpx(d, HOME_MARGIN), lpx(d, page_title_h(d)));
 }
 
+/* I652a: the empty playlist page offers "Let's find something for your playlist": a search field and, under it, the songs the
+ * library search found, each with an Add button. The field is the desktop's one search field (d->query, desk_search_fire);
+ * the room under it is kept for the import buttons of I652b-d. */
+enum { PLS_FIND_HEAD_H = 32, PLS_FIND_FIELD_H = 40, PLS_FIND_BUTTONS_H = 36, PLS_FIND_ADD_W = 80, PLS_FIND_ADD_H = 28 };
+
+static sel_gui_rect pls_find_head_rect(desk* d, sel_gui_rect mn) {
+    sel_gui_rect c = pls_cover_rect(d, mn);
+    return rect_of(c.x, c.y + c.h + lpx(d, PLS_GAP), mn.w - 2 * lpx(d, HOME_MARGIN), lpx(d, PLS_FIND_HEAD_H));
+}
+
+static sel_gui_rect pls_find_field_rect(desk* d, sel_gui_rect mn) {
+    sel_gui_rect h = pls_find_head_rect(d, mn);
+    int32_t w = h.w < lpx(d, HOME_SEARCH_MAX) ? h.w : lpx(d, HOME_SEARCH_MAX);
+    return rect_of(h.x, h.y + h.h + lpx(d, 8), w, lpx(d, PLS_FIND_FIELD_H));
+}
+
+static sel_gui_rect pls_find_row_rect(desk* d, sel_gui_rect mn, uint32_t slot) {
+    sel_gui_rect f = pls_find_field_rect(d, mn);
+    return rect_of(f.x, f.y + f.h + lpx(d, 8 + PLS_FIND_BUTTONS_H + 16) + (int32_t)slot * lpx(d, SONG_ROW_H), mn.w - 2 * lpx(d, HOME_MARGIN), lpx(d, SONG_ROW_H));
+}
+
+static sel_gui_rect pls_find_add_rect(desk* d, sel_gui_rect mn, uint32_t slot) {
+    sel_gui_rect r = pls_find_row_rect(d, mn, slot);
+    return rect_of(r.x + r.w - lpx(d, PLS_FIND_ADD_W), r.y + (r.h - lpx(d, PLS_FIND_ADD_H)) / 2, lpx(d, PLS_FIND_ADD_W), lpx(d, PLS_FIND_ADD_H));
+}
+
+static int pls_find_row_visible(desk* d, sel_gui_rect mn, uint32_t slot) {
+    return pls_find_row_rect(d, mn, slot).y + lpx(d, SONG_ROW_H) <= mn.y + mn.h;
+}
+
+/* The slot-th song of the engine's search result (the Songs group of the search view, the rows the Search page draws), or NULL. */
+static const sel_view_row* pls_find_result(desk* d, uint32_t slot) {
+    const sel_view_state* v = sel_engine_state(d->engine)->view;
+    uint32_t k, group = 0, n = 0;
+    if (!d->search_on || v == NULL || v->source != SEL_VIEW_SEARCH) {
+        return NULL;
+    }
+    for (k = 0; k < v->row_n; k++) {
+        const sel_view_row* r = &v->rows[k];
+        const char* t = r->text != NULL ? r->text : "";
+        if (r->kind == SEL_ROW_HEADING) {
+            group = strncmp(t, "Songs", 5) == 0 ? 1u : 2u;
+        } else if (group == 1u && !r->album && r->key != NULL && n++ == slot) {
+            return r;
+        }
+    }
+    return NULL;
+}
+
+/* A result row's text is "<title>  <artist>" (two spaces): copies the title and points *artist at the rest. */
+static void pls_find_split(const char* text, char* title, size_t cap, const char** artist) {
+    const char* sep = strstr(text, "  ");
+    size_t n = sep != NULL ? (size_t)(sep - text) : strlen(text);
+    if (n >= cap) {
+        n = cap - 1u;
+    }
+    memcpy(title, text, n);
+    title[n] = '\0';
+    *artist = sep != NULL ? sep + 2 : "";
+}
+
+static void draw_playlist_find(desk* d, sel_gui_rect mn) {
+    uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+    uint32_t surf = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
+    sel_gui_rect sr = pls_find_field_rect(d, mn);
+    int32_t ic = lpx(d, 18), rad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]);
+    uint32_t slot;
+    draw_text(d, pls_find_head_rect(d, mn), "Let's find something for your playlist", 1, 22, text);
+    sel_gui_round_rect(d->canvas, sr, rad, surf);
+    sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_SEARCH, rect_of(sr.x + lpx(d, 14), sr.y + (sr.h - ic) / 2, ic, ic), ic, muted);
+    desk_draw_query(d, sr, "Search for songs");
+    d->pls_find_shown = 0;
+    for (slot = 0; pls_find_row_visible(d, mn, slot); slot++) {
+        const sel_view_row* r = pls_find_result(d, slot);
+        sel_gui_rect rr = pls_find_row_rect(d, mn, slot);
+        char title[96];
+        const char* artist;
+        if (r == NULL) {
+            break;
+        }
+        pls_find_split(r->text != NULL ? r->text : "", title, sizeof title, &artist);
+        draw_text(d, rect_of(rr.x + lpx(d, 12), rr.y, rr.w / 2 - lpx(d, 12), rr.h), title, 0, 14, text);
+        draw_text(d, rect_of(rr.x + rr.w / 2, rr.y, rr.w / 2 - lpx(d, PLS_FIND_ADD_W + 16), rr.h), artist, 0, 13, muted);
+        draw_button(d, pls_find_add_rect(d, mn, slot), accent, "Add", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+        d->pls_find_shown++;
+    }
+}
+
+/* Add on result `slot`: the song key goes to PLAYLIST_ADD_SONG with this playlist's id, whatever source the key names (I653). */
+static void pls_find_add(desk* d, uint32_t slot) {
+    const sel_view_row* r = pls_find_result(d, slot);
+    char line[640];
+    if (r == NULL) {
+        return;
+    }
+    snprintf(line, sizeof line, "PLAYLIST_ADD_SONG %u \"%s\"", (unsigned)d->pls_id, r->key);
+    desk_send(d, line);
+    d->pls_adds++;
+    d->pls_min = d->pls_n + 1u;
+    d->pls_stale = 1u;
+    d->side_stale = 1u;
+    d->qlen = 0u;
+    d->query[0] = '\0';
+    d->search_on = 0;
+    d->focus = -1;
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    desk_toast(d, "Added to playlist");
+}
+
 static void draw_playlist_page(desk* d, sel_gui_rect mn) {
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     uint32_t surf = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
@@ -3928,6 +4052,9 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
         snprintf(num, sizeof num, "%u", (unsigned)(i + 1u));
         draw_text(d, rect_of(r.x + lpx(d, 12), r.y, lpx(d, 36), r.h), num, 0, 14, muted);
         draw_text(d, rect_of(r.x + lpx(d, 56), r.y, r.w - lpx(d, 56) - lpx(d, 40), r.h), d->pls_title[i], 0, 14, row_ink(d, r, text));
+    }
+    if (d->pls_n == 0u) {
+        draw_playlist_find(d, mn);
     }
     d->pls_draws++;
     d->pls_rows = shown;
@@ -4029,6 +4156,25 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
     char line[48];
     if (ev->kind != SEL_GUI_IN_CLICK || ev->button != 0u) {
         return 0;
+    }
+    if (d->pls_n == 0u) { /* I652a: the search field of the empty playlist, and an Add on a result */
+        int on = in_rect(pls_find_field_rect(d, mn), ev->x, ev->y);
+        for (slot = 0; pls_find_row_visible(d, mn, slot) && pls_find_result(d, slot) != NULL; slot++) {
+            if (in_rect(pls_find_add_rect(d, mn, slot), ev->x, ev->y)) {
+                d->pl_edit = 0;
+                pls_find_add(d, slot);
+                return 1;
+            }
+        }
+        if (on || d->focus == (int32_t)d->layout.count) {
+            d->focus = on ? (int32_t)d->layout.count : -1;
+            d->repaint = 1;
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+            if (on) {
+                d->pl_edit = 0;
+                return 1;
+            }
+        }
     }
     d->pl_edit = in_rect(pls_title_rect(d, mn), ev->x, ev->y); /* I646: the name field */
     if (d->pl_edit) {
@@ -5106,6 +5252,17 @@ static const char* library_dump_build(desk* d) {
                      (unsigned)d->pls_n, (unsigned)d->pls_rows, (unsigned)d->pls_draws, (int)bk.x, (int)bk.y, (int)bk.w, (int)bk.h,
                      (int)pp.x, (int)pp.y, (int)pp.w, (int)pp.h, d->pl_edit);
         o = dump_put(d, o, "plmore %d %d %d %d\n", (int)pm.x, (int)pm.y, (int)pm.w, (int)pm.h);
+        if (d->pls_n == 0u) { /* I652a: the empty playlist's search field, its results and their Add buttons */
+            sel_gui_rect pf = pls_find_field_rect(d, pmn);
+            o = dump_put(d, o, "plfind field %d %d %d %d results=%d adds=%u searches=%u on=%d vsrc=%d vrows=%u live=%d\n", (int)pf.x, (int)pf.y, (int)pf.w, (int)pf.h, d->pls_find_shown,
+                         (unsigned)d->pls_adds, (unsigned)d->lib_searches, d->search_on, sel_engine_state(d->engine)->view != NULL ? (int)sel_engine_state(d->engine)->view->source : -1,
+                         sel_engine_state(d->engine)->view != NULL ? (unsigned)sel_engine_state(d->engine)->view->row_n : 0u, pls_find_result(d, 0u) != NULL);
+            for (j = 0; (int)j < d->pls_find_shown; j++) {
+                sel_gui_rect fa = pls_find_add_rect(d, pmn, j);
+                const sel_view_row* fr = pls_find_result(d, j);
+                o = dump_put(d, o, "plfindadd %u %d %d %d %d key=%s\n", (unsigned)j, (int)fa.x, (int)fa.y, (int)fa.w, (int)fa.h, fr != NULL ? fr->key : "");
+            }
+        }
         for (j = 0; d->pls_scroll + j < d->pls_n && pls_row_visible(d, pmn, j) && o + 400u < sizeof d->library_dump; j++) {
             sel_gui_rect r = pls_row_rect(d, pmn, j);
             o = dump_put(d, o, "plsong %u %d %d %d %d file=%s title=%s\n", (unsigned)j, (int)r.x, (int)r.y, (int)r.w, (int)r.h, path_base(pls_key(d, d->pls_scroll + j)),
@@ -6367,7 +6524,7 @@ static void draw_home_content(desk* d) {
     d->sm_n = 0;
     np_title_reg(d);
     hover_prune(d, region_rect(d, "main")); /* the main region lists its controls afresh: a page change leaves none behind */
-    if (d->search_on || d->page == PG_SEARCH) { /* the Search page always draws its own field and facet chips, also before a query */
+    if ((d->search_on && !(d->pl_page && d->pls_id != 0u)) || d->page == PG_SEARCH) { /* I652a: an open playlist keeps its page, its search shows inside it; the Search page always draws its own field and facet chips, also before a query */
         draw_search(d);
         return;
     }
@@ -10257,6 +10414,15 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
     }
     if (d->pls_stale && d->pls_id != 0u) { /* I633: a song left the open playlist: redraw so the page reads the list again */
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    }
+    if (d->pls_id != 0u && d->search_on && sel_engine_state(d->engine)->view != NULL) { /* I652a: the empty playlist's search result arrived or changed: redraw */
+        const sel_view_state* fv = sel_engine_state(d->engine)->view;
+        uint32_t fsig = fv->source == SEL_VIEW_SEARCH ? 1u + fv->row_count * 64u + fv->row_n : 0u;
+        if (fsig != d->pls_find_sig) {
+            d->pls_find_sig = fsig;
+            d->repaint = 1;
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        }
     }
     if (d->home && sel_engine_state(d->engine)->view != NULL) { /* HOME rows arrived or changed: redraw */
         const sel_view_state* hv = sel_engine_state(d->engine)->view;
