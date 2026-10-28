@@ -310,6 +310,8 @@ typedef struct desk {
     uint32_t dlg_pl_id, dlg_pl_folder; /* the playlist or folder a Delete dialog names (I647) */
     song_ref sm_ref;         /* the song it was opened on */
     song_row sm_rows[SM_ROWS]; /* the song rows drawn in the main region this frame: the one registry every page feeds */
+    sel_engine_library_item sm_pls[8]; /* the song menu's Add to Playlist step: all playlists, not the sidebar's filtered list */
+    uint32_t sm_pl_n;
     uint32_t sm_n, sm_opens, sm_picks, sm_pl_adds;
     sel_uim_selset sel; /* I632d: the one selection of the list on screen (src/uimodel/select.c) */
     uint32_t sel_clicks, sel_keys, pls_ver, sel_cur;
@@ -357,6 +359,8 @@ typedef struct desk {
     int32_t side_y_q16; /* the list's scroll offset in Q16 logical pixels */
     uint32_t side_chip, side_filters, side_chip_scrolls; /* I610: the library chip in force (0 none, else 1 + index), filter passes run, chevron scrolls */
     uint32_t side_sort, side_view; /* I611: the Your Library sort (SEL_UIM_LSORT_*) and view size (SEL_UIM_LVIEW_*) */
+    uint32_t side_prefs_read, side_pref_sets; /* I611: the sort/view prefs were read once; PREF_SET lines sent for them */
+    uint32_t lib_tools_draws, lib_tools_clicks, lib_sort_keys; /* I611: Library page tools row draws and clicks, Sort key presses */
     uint32_t lf_open, lf_edit, lf_len; /* I611: the filter field is shown, has the keyboard, and holds this many characters */
     char lf_text[64];
     uint32_t side_sorts, side_sort_picks, side_view_picks, side_menu_opens, side_filter_keys; /* I611: sort passes run, menu picks, menu opens, typed filter keys */
@@ -993,7 +997,13 @@ static sel_gui_rect side_mag_rect(const desk* d);
 static sel_gui_rect side_sort_rect(const desk* d);
 static sel_gui_rect side_field_rect(const desk* d);
 static uint32_t side_lib_cols(const desk* d);
-static void side_tools_click(desk* d, int32_t k);
+static void tl_click(desk* d, sel_gui_rect t, int32_t k);
+static void tl_draw(desk* d, sel_gui_rect t);
+static sel_gui_rect lib_tools_rect(desk* d, sel_gui_rect mn);
+static sel_gui_rect tl_mag_rect(const desk* d, sel_gui_rect t);
+static sel_gui_rect tl_sort_rect(const desk* d, sel_gui_rect t);
+static int32_t tl_at(const desk* d, sel_gui_rect t, int32_t x, int32_t y);
+static void lsort_prefs_load(desk* d);
 static sel_gui_rect lmenu_strip_rect(const desk* d, uint32_t seg);
 static void side_sort_pick(desk* d, uint32_t sort);
 static void side_view_pick(desk* d, uint32_t view);
@@ -2288,7 +2298,7 @@ static int32_t song_menu_n(const desk* d) {
     if (d->sm_step == 3) {
         return d->sm_pl_folder ? 1 : 2;
     }
-    n = d->side_n < 8u ? (int32_t)d->side_n : 8;
+    n = (int32_t)d->sm_pl_n;
     return n > 0 ? n : 1;
 }
 
@@ -2506,8 +2516,8 @@ static void song_menu_draw(desk* d) {
                                    lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_SMALL]),
                                    ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
             }
-            if (d->sm_step == 1 && (uint32_t)k < d->side_n) {
-                label = d->side_items[k].name;
+            if (d->sm_step == 1 && (uint32_t)k < d->sm_pl_n) {
+                label = d->sm_pls[k].name;
             }
             sel_gui_text_wrap(d->canvas, semi, rect_of(m.x + lpx(d, 8), m.y + lpx(d, 4), m.w - lpx(d, 16), semi->line_height), label,
                               ARGB(d->theme.token[lit ? SEL_GUI_TOKEN_ACCENT_TEXT : SEL_GUI_TOKEN_TEXT]), 1, &d->text);
@@ -2878,7 +2888,7 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
                 d->queue_cmds++;
                 desk_send(d, line);
             } else if (d->sm_step == 1) {
-                uint32_t pid = (uint32_t)k < d->side_n ? d->side_items[k].id : 0u;
+                uint32_t pid = (uint32_t)k < d->sm_pl_n ? d->sm_pls[k].id : 0u;
                 if (pid != 0u) {
                     char line[640];
                     snprintf(line, sizeof line, "PLAYLIST_ADD_SONG %u \"%s\"", (unsigned)pid, d->sm_ref.path);
@@ -2897,7 +2907,7 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
                 d->uim.dirty |= SEL_UIM_DIRTY_ALL;
                 desk_toast(d, "Removed from playlist");
             } else if (k == 3) {
-                side_lib_reload(d); /* I631: the saved playlists from the library, whatever page is open */
+                d->sm_pl_n = sel_engine_library_playlist_items(d->engine, d->sm_pls, 8u); /* I631: every saved playlist, unfiltered by the sidebar chip, filter field or sort */
                 d->sm_step = 1;
                 keep = 1;
             } else {
@@ -3155,8 +3165,13 @@ static int32_t lib_style_row_h(desk* d) {
     return lib_style_below(d) ? lpx(d, LIB_TAB_H) + lib_gap(d) : 0;
 }
 
+/* I611: the Library page's search field and Sort by row, under the tabs; a composer drilldown has none. */
+static int32_t lib_tools_h(desk* d) {
+    return sel_engine_state(d->engine)->composer_page == NULL ? lpx(d, 36) : 0;
+}
+
 static int32_t lib_list_y(desk* d) {
-    return lib_tab_y(d) + lpx(d, LIB_TAB_H) + lib_gap(d) + lib_style_row_h(d);
+    return lib_tab_y(d) + lpx(d, LIB_TAB_H) + lib_gap(d) + lib_style_row_h(d) + lib_tools_h(d);
 }
 
 /* I548: the bitmap tier lays each statistic on ONE row (label, then value), so the strip is one line high; elsewhere the label sits over the value. */
@@ -5642,6 +5657,13 @@ static const char* library_dump_build(desk* d) {
                          (unsigned)d->side_sort, (unsigned)d->side_view, d->lf_text, (unsigned)d->lf_open, (unsigned)d->lf_edit, (unsigned)side_lib_cols(d),
                          (unsigned)d->side_sorts, (unsigned)d->side_sort_picks, (unsigned)d->side_view_picks, (unsigned)d->side_menu_opens,
                          (unsigned)d->side_filter_keys);
+            {
+                sel_gui_rect lt = d->page == PG_LIBRARY ? lib_tools_rect(d, panel_rect(d, "main")) : rect_of(0, 0, 0, 0);
+                sel_gui_rect lm = tl_mag_rect(d, lt), ls = tl_sort_rect(d, lt);
+                o = dump_put(d, o, "libtools draws=%u clicks=%u sort_keys=%u pref_sets=%u mag %d %d %d %d sort %d %d %d %d\n", (unsigned)d->lib_tools_draws,
+                             (unsigned)d->lib_tools_clicks, (unsigned)d->lib_sort_keys, (unsigned)d->side_pref_sets, (int)lm.x, (int)lm.y, (int)lm.w, (int)lm.h,
+                             (int)ls.x, (int)ls.y, (int)ls.w, (int)ls.h);
+            }
             o = dump_put(d, o, "sidetools_rect mag %d %d %d %d sort %d %d %d %d field %d %d %d %d\n", (int)mg.x, (int)mg.y, (int)mg.w, (int)mg.h,
                          (int)sr.x, (int)sr.y, (int)sr.w, (int)sr.h, (int)fr.x, (int)fr.y, (int)fr.w, (int)fr.h);
             if (d->sm_open && d->sm_step == 4) {
@@ -5659,6 +5681,7 @@ static const char* library_dump_build(desk* d) {
         if (d->sm_open) { /* I649: the open menu's panel, in window coordinates */
             sel_gui_rect m0 = song_menu_item_rect(d, 0);
             o = dump_put(d, o, "smenu %d %d %d %d\n", (int)m0.x, (int)m0.y, (int)m0.w, (int)(m0.h * song_menu_n(d)));
+            o = dump_put(d, o, "smenu_pl step=%d playlists=%u sidebar_rows=%u\n", d->sm_step, (unsigned)d->sm_pl_n, (unsigned)d->side_n);
         }
         o = dump_put(d, o, "sidelib draws=%u rows=%u items=%u opens=%u y=%d max=%d\n", (unsigned)d->side_draws, (unsigned)d->side_rows,
                      (unsigned)d->side_n, (unsigned)d->side_opens, (int)d->side_y_q16, (int)side_lib_max_q16(d));
@@ -6102,6 +6125,8 @@ static void draw_library(desk* d) {
                 draw_lib_styles(d, mn, st);
             }
         }
+        tl_draw(d, lib_tools_rect(d, mn)); /* I611: the Library page's search field and Sort by menu, the same row as the sidebar's */
+        d->lib_tools_draws++;
         for (m = 0; m < LIB_MODES; m++) { /* the mode tabs: the active one in the accent colour */
             sel_gui_rect tr = lib_tab_rect(d, mn, m);
             if (m == d->lib_mode) { /* the active tab is filled like the selected Home and Search chips (I362) */
@@ -6671,6 +6696,15 @@ static int library_click(desk* d, int32_t x, int32_t y) {
             if (in_rect(lib_style_rect(d, mn, sg), x, y)) {
                 return lib_style_click(d, sg);
             }
+        }
+    }
+    if (d->page == PG_LIBRARY && st->composer_page == NULL) { /* I611: the Library page's tools row */
+        int32_t tk = tl_at(d, lib_tools_rect(d, mn), x, y);
+        if (tk >= 0) {
+            d->lib_tools_clicks++;
+            tl_click(d, lib_tools_rect(d, mn), tk);
+            draw_home(d);
+            return 1;
         }
     }
     if (d->page != PG_LIBRARY || st->composers == NULL) { /* the rows and tabs below are drawn on the Library page only (dui-search) */
@@ -7685,35 +7719,56 @@ static sel_gui_rect side_tools_rect(const desk* d) {
     return rect_of(c.x, c.y + c.h, c.w, side_tools_h(d));
 }
 
-static sel_gui_rect side_mag_rect(const desk* d) {
-    sel_gui_rect t = side_tools_rect(d);
+/* The tools row geometry is a function of the row's rectangle `t`, so the sidebar and the Library page share one layout (I611). */
+static sel_gui_rect tl_mag_rect(const desk* d, sel_gui_rect t) {
     return rect_of(t.x + lpx(d, 12), t.y + lpx(d, 4), lpx(d, 28), lpx(d, 28));
 }
 
-static sel_gui_rect side_sort_rect(const desk* d) {
-    sel_gui_rect t = side_tools_rect(d);
+static sel_gui_rect tl_sort_rect(const desk* d, sel_gui_rect t) {
     int32_t w = d->lf_open ? lpx(d, 28) : (t.w / 2 < lpx(d, 150) ? t.w / 2 : lpx(d, 150)), pad = lpx(d, 12);
     return rect_of(t.x + t.w - pad - w, t.y + lpx(d, 4), w, lpx(d, 28));
 }
 
-static sel_gui_rect side_field_rect(const desk* d) {
-    sel_gui_rect m = side_mag_rect(d), s = side_sort_rect(d);
+static sel_gui_rect tl_field_rect(const desk* d, sel_gui_rect t) {
+    sel_gui_rect m = tl_mag_rect(d, t), s = tl_sort_rect(d, t);
     int32_t x = m.x + m.w + lpx(d, 4), w = s.x - lpx(d, 4) - x;
     return d->lf_open && w > 0 ? rect_of(x, m.y, w, m.h) : rect_of(0, 0, 0, 0);
 }
 
 /* 1 magnifier, 2 filter field, 3 sort label; -1 for none. */
-static int32_t side_tools_at(const desk* d, int32_t x, int32_t y) {
-    if (side_tools_h(d) == 0) {
+static int32_t tl_at(const desk* d, sel_gui_rect t, int32_t x, int32_t y) {
+    if (t.w <= 0 || t.h <= 0) {
         return -1;
     }
-    if (in_rect(side_mag_rect(d), x, y)) {
+    if (in_rect(tl_mag_rect(d, t), x, y)) {
         return 1;
     }
-    if (d->lf_open && in_rect(side_field_rect(d), x, y)) {
+    if (d->lf_open && in_rect(tl_field_rect(d, t), x, y)) {
         return 2;
     }
-    return in_rect(side_sort_rect(d), x, y) ? 3 : -1;
+    return in_rect(tl_sort_rect(d, t), x, y) ? 3 : -1;
+}
+
+static sel_gui_rect side_mag_rect(const desk* d) {
+    return tl_mag_rect(d, side_tools_rect(d));
+}
+
+static sel_gui_rect side_sort_rect(const desk* d) {
+    return tl_sort_rect(d, side_tools_rect(d));
+}
+
+static sel_gui_rect side_field_rect(const desk* d) {
+    return tl_field_rect(d, side_tools_rect(d));
+}
+
+static int32_t side_tools_at(const desk* d, int32_t x, int32_t y) {
+    return side_tools_h(d) == 0 ? -1 : tl_at(d, side_tools_rect(d), x, y);
+}
+
+/* The Library page's tools row (I611): the same row under its tabs, bound to the same filter and sort state. */
+static sel_gui_rect lib_tools_rect(desk* d, sel_gui_rect mn) {
+    int32_t mg = lpx(d, LIB_MARGIN);
+    return lib_tools_h(d) > 0 ? rect_of(mn.x + mg, mn.y + lib_list_y(d) - lib_tools_h(d), mn.w - 2 * mg, lib_tools_h(d)) : rect_of(0, 0, 0, 0);
 }
 
 /* The view size sets the cell: columns and cell height. The rail (icons only) always lists. */
@@ -7754,6 +7809,7 @@ static int32_t side_lib_max_q16(const desk* d) {
 
 /* I608, I631: the one read of the saved playlists, shared by the sidebar list and the song menu's Add to Playlist step. */
 static void side_lib_reload(desk* d) {
+    lsort_prefs_load(d);
     d->side_n = sel_engine_library_playlist_items(d->engine, d->side_items, SIDE_LIB_MAX);
     d->side_stale = 0u;
     d->side_filters++; /* I610: the chip filter: every item is a playlist, so a chip of another kind leaves none */
@@ -7794,8 +7850,33 @@ static void side_lib_reload(desk* d) {
     d->side_y_q16 = d->side_y_q16 > side_lib_max_q16(d) ? side_lib_max_q16(d) : d->side_y_q16;
 }
 
+/* The sort and view choice survive a restart: ui.desktop.library_sort and ui.desktop.library_view (include/selecta/prefs.def). Read once, written on every pick. */
+static void lsort_prefs_load(desk* d) {
+    const char* v;
+    if (d->side_prefs_read) {
+        return;
+    }
+    d->side_prefs_read = 1u;
+    v = desk_pref(d, "ui.desktop.library_sort", "0");
+    if (v != NULL && v[0] >= '0' && v[0] < (char)('0' + SEL_UIM_LSORTS) && v[1] == '\0') {
+        d->side_sort = (uint32_t)(v[0] - '0');
+    }
+    v = desk_pref(d, "ui.desktop.library_view", "1");
+    if (v != NULL && v[0] >= '0' && v[0] < (char)('0' + SEL_UIM_LVIEWS) && v[1] == '\0') {
+        d->side_view = (uint32_t)(v[0] - '0');
+    }
+}
+
+static void lsort_prefs_save(desk* d, const char* key, uint32_t value) {
+    char line[96];
+    snprintf(line, sizeof line, "PREF_SET %s \"%u\"", key, (unsigned)value);
+    desk_send(d, line);
+    d->side_pref_sets++;
+}
+
 static void side_sort_pick(desk* d, uint32_t sort) {
     d->side_sort = sort;
+    lsort_prefs_save(d, "ui.desktop.library_sort", sort);
     d->side_sort_picks++;
     d->side_stale = 1u;
     d->side_y_q16 = 0;
@@ -7805,6 +7886,7 @@ static void side_sort_pick(desk* d, uint32_t sort) {
 
 static void side_view_pick(desk* d, uint32_t view) {
     d->side_view = view;
+    lsort_prefs_save(d, "ui.desktop.library_view", view);
     d->side_view_picks++;
     d->side_y_q16 = 0;
     d->repaint = 1;
@@ -7812,7 +7894,7 @@ static void side_view_pick(desk* d, uint32_t view) {
 }
 
 /* The menu under the sort label (Spotify's Sort by and View as); on the bitmap tier the label cycles the sort instead. */
-static void side_tools_click(desk* d, int32_t k) {
+static void tl_click(desk* d, sel_gui_rect t, int32_t k) {
     if (k == 1) { /* the magnifier opens the filter field with the keyboard; again it closes the field and drops the filter */
         d->lf_open = !d->lf_open;
         d->lf_edit = d->lf_open;
@@ -7826,7 +7908,7 @@ static void side_tools_click(desk* d, int32_t k) {
     } else if (desk_bitmap_text(d)) {
         side_sort_pick(d, (d->side_sort + 1u) % SEL_UIM_LSORTS);
     } else {
-        sel_gui_rect r = side_sort_rect(d);
+        sel_gui_rect r = tl_sort_rect(d, t);
         d->sm_open = 1;
         d->sm_step = 4;
         d->menu_x = r.x;
@@ -7895,6 +7977,40 @@ static int side_lib_open_item(const desk* d, uint32_t i) {
     return d->page == PG_PLAYLISTS && d->pl_sel_kind == (uint32_t)SEL_ROW_PLAYLIST && d->pl_sel_id == d->side_items[i].id;
 }
 
+/* The tools row: magnifier, the filter field when open, and the sort label with the list icon (sidebar and Library page). */
+static void tl_draw(desk* d, sel_gui_rect t) {
+    lsort_prefs_load(d);
+    {   /* I611: the tools row: magnifier, the filter field when open, and the sort label with the list icon */
+        sel_gui_rect mg = tl_mag_rect(d, t), fr = tl_field_rect(d, t), sr = tl_sort_rect(d, t);
+        uint32_t muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]), ink = hover_ink_of(d, mg, muted, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_SEARCH, rect_of(mg.x + lpx(d, 4), mg.y + lpx(d, 4), lpx(d, 20), lpx(d, 20)), lpx(d, 20), ink);
+        if (fr.w > 0) {
+            const sel_gui_atlas* at = desk_font(d, 0, 13);
+            sel_gui_round_rect(d->canvas, fr, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_SMALL]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+            if (d->lf_len > 0u) {
+                draw_text(d, rect_of(fr.x + lpx(d, 8), fr.y, fr.w - lpx(d, 16), fr.h), d->lf_text, 0, 13, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+            } else {
+                draw_text(d, rect_of(fr.x + lpx(d, 8), fr.y, fr.w - lpx(d, 16), fr.h), "Search in Your Library", 0, 13, muted);
+            }
+            if (d->lf_edit) { /* the caret: a thin bar at the text end */
+                int32_t tw = at != NULL ? sel_gui_text_width(at, d->lf_text, d->lf_len) : 0, ch = lpx(d, 16);
+                sel_gui_fill_rect(d->canvas, rect_of(fr.x + lpx(d, 8) + tw, fr.y + (fr.h - ch) / 2, lpx(d, 1) > 0 ? lpx(d, 1) : 1, ch), ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+            }
+        }
+        hover_reg(d, sr);
+        {
+            uint32_t sink = hover_ink_of(d, sr, muted, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+            int32_t isz = lpx(d, 18);
+            sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_LIST, rect_of(sr.x + sr.w - isz, sr.y + (sr.h - isz) / 2, isz, isz), isz, sink);
+            if (sr.w > lpx(d, 40)) {
+                draw_text(d, rect_of(sr.x, sr.y, sr.w - isz - lpx(d, 6), sr.h), sel_uim_lsort_label(d->side_sort), 0, 13, sink);
+            }
+        }
+        hover_reg(d, mg);
+        sel_gui_dirty_add(d->canvas, t);
+    }
+}
+
 static void side_lib_draw(desk* d, sel_gui_rect sb) {
     sel_gui_rect hd = side_lib_header_rect(d), v = side_lib_view_rect(d);
     int32_t pad = lpx(d, 12), cov = lpx(d, 44), gap = lpx(d, 12);
@@ -7942,35 +8058,7 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
             }
         }
         sel_gui_dirty_add(d->canvas, cr);
-        {   /* I611: the tools row: magnifier, the filter field when open, and the sort label with the list icon */
-            sel_gui_rect mg = side_mag_rect(d), fr = side_field_rect(d), sr = side_sort_rect(d);
-            uint32_t muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]), ink = hover_ink_of(d, mg, muted, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
-            sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_SEARCH, rect_of(mg.x + lpx(d, 4), mg.y + lpx(d, 4), lpx(d, 20), lpx(d, 20)), lpx(d, 20), ink);
-            if (fr.w > 0) {
-                const sel_gui_atlas* at = desk_font(d, 0, 13);
-                sel_gui_round_rect(d->canvas, fr, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_SMALL]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
-                if (d->lf_len > 0u) {
-                    draw_text(d, rect_of(fr.x + lpx(d, 8), fr.y, fr.w - lpx(d, 16), fr.h), d->lf_text, 0, 13, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
-                } else {
-                    draw_text(d, rect_of(fr.x + lpx(d, 8), fr.y, fr.w - lpx(d, 16), fr.h), "Search in Your Library", 0, 13, muted);
-                }
-                if (d->lf_edit) { /* the caret: a thin bar at the text end */
-                    int32_t tw = at != NULL ? sel_gui_text_width(at, d->lf_text, d->lf_len) : 0, ch = lpx(d, 16);
-                    sel_gui_fill_rect(d->canvas, rect_of(fr.x + lpx(d, 8) + tw, fr.y + (fr.h - ch) / 2, lpx(d, 1) > 0 ? lpx(d, 1) : 1, ch), ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
-                }
-            }
-            hover_reg(d, sr);
-            {
-                uint32_t sink = hover_ink_of(d, sr, muted, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
-                int32_t isz = lpx(d, 18);
-                sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_LIST, rect_of(sr.x + sr.w - isz, sr.y + (sr.h - isz) / 2, isz, isz), isz, sink);
-                if (sr.w > lpx(d, 40)) {
-                    draw_text(d, rect_of(sr.x, sr.y, sr.w - isz - lpx(d, 6), sr.h), sel_uim_lsort_label(d->side_sort), 0, 13, sink);
-                }
-            }
-            hover_reg(d, mg);
-            sel_gui_dirty_add(d->canvas, side_tools_rect(d));
-        }
+        tl_draw(d, side_tools_rect(d));
     }
     if (d->side_n == 0u && labels && v.h > 0 && !side_chip_keeps_playlists(d)) { /* a chip of a kind without rows */
         draw_text(d, rect_of(v.x + pad, v.y, v.w - 2 * pad, lpx(d, 28)), "Nothing here yet.", 0, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
@@ -9368,6 +9456,14 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
     if (ev->code == '/' && ev->mods == 0u) {
         return desk_page_goto(d, PG_SEARCH);
     }
+    if (ev->code == 'o' && ev->mods == 0u && desk_bitmap_text(d)) { /* I611: the bitmap tier has no Sort by menu: O cycles the Your Library sort like a click on the label */
+        lsort_prefs_load(d);
+        d->lib_sort_keys++;
+        side_sort_pick(d, (d->side_sort + 1u) % SEL_UIM_LSORTS);
+        d->repaint = 1;
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        return desk_present(d);
+    }
     if (d->songs && songs_list_key(d, ev)) {
         return 1;
     }
@@ -9684,7 +9780,7 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
     }
     if (ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u) { /* a sidebar door opens its page */
         int32_t door = sidebar_door_at(d, ev->x, ev->y);
-        if (d->lf_edit && side_tools_at(d, ev->x, ev->y) != 2) { /* I611: a click elsewhere takes the keyboard from the filter field */
+        if (d->lf_edit && side_tools_at(d, ev->x, ev->y) != 2 && tl_at(d, lib_tools_rect(d, region_rect(d, "main")), ev->x, ev->y) != 2) { /* I611: a click elsewhere takes the keyboard from the filter field */
             d->lf_edit = 0;
         }
         if (door >= 0) {
@@ -9710,7 +9806,7 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         }
         door = side_tools_at(d, ev->x, ev->y); /* I611: magnifier, filter field, sort label */
         if (door >= 0) {
-            side_tools_click(d, door);
+            tl_click(d, side_tools_rect(d), door);
             return 1;
         }
         door = side_chip_at(d, ev->x, ev->y); /* I610: a library chip or chevron */

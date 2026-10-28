@@ -92,13 +92,13 @@ endif()
 set(mnx ${CMAKE_MATCH_1}) 
 set(mny ${CMAKE_MATCH_2})
 set(mnw ${CMAKE_MATCH_3})
-# Library grid tile 0 (margin 24, list top 88 plus the Statistics strip 48 and its gap 16, art 160) and the cover flow centre (240 wide, list top 88), queue source.
+# Library grid tile 0 (margin 24, list top 88 plus the tools row 36 (I611) plus the Statistics strip 48 and its gap 16, art 160) and the cover flow centre (240 wide, list top 88), queue source.
 set(libstyle "exec VIEW_SOURCE queue\nexec VIEW_WINDOW 8\nexec COMPOSERS_SHOW\n")
 math(EXPR gx "${mnx} + 24 + 40")
-math(EXPR gy "${mny} + 88 + 48 + 16 + 60")
+math(EXPR gy "${mny} + 88 + 36 + 48 + 16 + 60")
 expect_menu_at("Library grid tile" library "${libstyle}exec VIEW_STYLE grid\nwait 100\n" ${gx} ${gy})
 math(EXPR fx "${mnx} + ${mnw} / 2")
-math(EXPR fy "${mny} + 88 + 120")
+math(EXPR fy "${mny} + 88 + 36 + 120")
 expect_menu_at("Library cover flow centre" library "${libstyle}exec VIEW_STYLE coverflow\nwait 100\n" ${fx} ${fy})
 # Home tile grid: tile 0 of the queue tiles (hover_ctl main is tile 0).
 set(playing "exec OPEN ${WORK}/songs/a.mod\nwait 100\n")
