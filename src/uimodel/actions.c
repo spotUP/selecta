@@ -86,6 +86,7 @@ static const sel_uim_action k_actions[] = {
      "View/Switch to Text Interface", "C-t", "UI_SWITCH text"},
     {"ui_desktop", "Switch to Desktop Interface", "Hand the session to the desktop interface", "monitor",
      "View/Switch to Desktop Interface", "C-d", "UI_SWITCH desktop"},
+    {"quit", "Quit", "Close Selecta", "x", "File/Quit", "", "QUIT"},
 };
 
 /* Verbs that no menu item, button or shortcut sends as they stand. Each carries the reason. */
@@ -116,7 +117,7 @@ static const struct {
     {"VIEW_WINDOW", PROTO},  {"VIEW_GROUP", CTX},     {"VIEW_EXPAND", CTX},     {"VIEW_COLLAPSE", CTX},
     {"VIEW_DRILL", CTX},     {"MIX_STEREO_WIDTH", ARG}, {"DSP", ARG},           {"BEGIN", PROTO},
     {"END", PROTO},          {"COMMANDS", PROTO},     {"EVENTS", PROTO},        {"TAGTYPES", PROTO},
-    {"IDLE", PROTO},         {"STATUS", PROTO},       {"QUIT", "File/Quit action row lands with I327"},         {"AUTH", PROTO},         {"DEVICE_LIST", PROTO},   {"DEVICE_TRANSFER", ARG},
+    {"IDLE", PROTO},         {"STATUS", PROTO},       {"AUTH", PROTO},         {"DEVICE_LIST", PROTO},   {"DEVICE_TRANSFER", ARG},
     {"DEVICE_FOLLOW", ARG},
 };
 #undef ARG

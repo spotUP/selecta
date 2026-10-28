@@ -776,11 +776,16 @@ if(NOT SEL_AMIGA)
   set_tests_properties(browse-hides-unrecognised-files PROPERTIES PASS_REGULAR_EXPRESSION "browse_filter_ok")
   # M4-AX-0-1 / M4-AX-0-2: the shared reply layer (apps/common/ctlexec.c) returns rc and RESULT lines.
   add_executable(ctl_exec_test engine/ctl_exec_test.c ../apps/common/ctlexec.c)
+  target_link_libraries(ctl_exec_test PRIVATE selecta_uimodel)
   target_include_directories(ctl_exec_test PRIVATE ${PROJECT_SOURCE_DIR}/apps/common)
   target_link_libraries(ctl_exec_test PRIVATE selecta_core)
   add_test(NAME ctl-exec-result COMMAND ctl_exec_test status)
   add_test(NAME commands-reflection-format COMMAND ctl_exec_test commands)
   add_test(NAME result-event-commands COMMAND ctl_exec_test raw)
+  add_test(NAME ctl-exec-limits COMMAND ctl_exec_test limits)
+  add_test(NAME ctl-exec-last-error COMMAND ctl_exec_test lasterror)
+  add_test(NAME ctl-exec-quit COMMAND ctl_exec_test quit)
+  add_test(NAME ctl-exec-quit-action COMMAND ctl_exec_test quitaction)
   # M4-AX-3-1 / M4-AX-3-4: the ARexx message mapping through the shared dispatcher (the Amiga half is cross-built).
   add_executable(arexx_test engine/arexx_test.c ../apps/common/ctlexec.c ../plugins/scripting/arexx/arexx_core.c)
   target_include_directories(arexx_test PRIVATE ${PROJECT_SOURCE_DIR}/apps/common ${PROJECT_SOURCE_DIR}/plugins/scripting/arexx)
@@ -803,7 +808,7 @@ if(NOT SEL_AMIGA)
   set_tests_properties(commands-def-check PROPERTIES PASS_REGULAR_EXPRESSION "commands.def check passed")
   set_tests_properties(commands-def-check-no-label PROPERTIES PASS_REGULAR_EXPRESSION "without argnames and label")
   set_tests_properties(commands-def-check-bad-argnames PROPERTIES PASS_REGULAR_EXPRESSION "2 argnames for signature")
-  set_tests_properties(ctl-exec-result commands-reflection-format result-event-commands PROPERTIES TIMEOUT 60 LABELS engine
+  set_tests_properties(ctl-exec-result commands-reflection-format result-event-commands ctl-exec-limits ctl-exec-last-error ctl-exec-quit ctl-exec-quit-action PROPERTIES TIMEOUT 60 LABELS engine
                        PASS_REGULAR_EXPRESSION "ctl_exec: ok")
 endif()
 
