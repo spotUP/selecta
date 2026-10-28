@@ -2278,7 +2278,7 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
     }
     for (i = 0; i < d->sm_n; i++) {
         const song_row* e = &d->sm_rows[i];
-        int ctx = ev->button == 1u || (ev->button == 0u && (ev->mods & TXT_MOD_CTRL) != 0u);
+        int ctx = ev->button == 1u;
         int more = ev->button == 0u && in_rect(e->more, ev->x, ev->y) && in_rect(e->r, d->ptr_x, d->ptr_y);
         if ((ctx && in_rect(e->r, ev->x, ev->y)) || more) {
             song_menu_open(d, more ? e->more.x : ev->x, more ? e->more.y + e->more.h : ev->y, &e->ref);
