@@ -127,6 +127,37 @@ void mui_queue_line(const char* verb, uint32_t id, uint32_t to_id, char* out, si
     }
 }
 
+/* MUI-P4-6: the lines the desktop song menu sends per item (desktop_ui.c, the sm_open branch). */
+uint32_t mui_song_menu_line(uint32_t item, const char* path, uint32_t qid, uint32_t playlist_id, int on_queue, char* out, size_t cap) {
+    char head[40];
+    out[0] = '\0';
+    switch (item) {
+    case 0:
+        return mui_path_line("OPEN", path, out, cap);
+    case 1:
+        return mui_path_line("QUEUE_PLAY_NEXT", path, out, cap);
+    case 2:
+        return mui_path_line("QUEUE_ADD", path, out, cap);
+    case 3:
+        if (playlist_id == 0u) {
+            return 0;
+        }
+        snprintf(head, sizeof head, "PLAYLIST_ADD_SONG %u", (unsigned)playlist_id);
+        return mui_path_line(head, path, out, cap);
+    case 4:
+        if (on_queue) {
+            return qid != 0u ? (uint32_t)snprintf(out, cap, "QUEUE_REMOVE %u", (unsigned)qid) : 0u;
+        }
+        return mui_path_line("LIBRARY_REMOVE", path, out, cap);
+    default:
+        return 0;
+    }
+}
+
+const char* mui_song_menu_follow(uint32_t item) {
+    return item == 0u ? "PLAY" : NULL;
+}
+
 /* MUI-P4-5: playlist row actions. Open activates the row the list cursor is on (the list click sets VIEW_CURSOR first). */
 uint32_t mui_playlist_line(const char* action, uint32_t id, const char* name, char* out, size_t cap) {
     if (strcmp(action, "open") == 0) {

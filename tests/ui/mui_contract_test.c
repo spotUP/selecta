@@ -626,6 +626,22 @@ static void test_song_menu(void) {
         CHECK(strcmp(sel_uim_song_menu_label(i, 0), want[i]) == 0, "item %u '%s'", (unsigned)i, sel_uim_song_menu_label(i, 0));
     }
     CHECK(strcmp(sel_uim_song_menu_label(4, 1), "Remove from Queue") == 0 && sel_uim_song_menu_label(5, 0) == NULL, "queue page, bound");
+    {
+        char o[96];
+        CHECK(mui_song_menu_line(0, "A:b\"c.mod", 0, 0, 0, o, sizeof o) > 0 && strcmp(o, "OPEN \"A:b\\\"c.mod\"") == 0, "play '%s'", o);
+        CHECK(strcmp(mui_song_menu_follow(0), "PLAY") == 0 && mui_song_menu_follow(2) == NULL, "play follows with PLAY");
+        mui_song_menu_line(1, "x.mod", 0, 0, 0, o, sizeof o);
+        CHECK(strcmp(o, "QUEUE_PLAY_NEXT \"x.mod\"") == 0, "next '%s'", o);
+        mui_song_menu_line(2, "x.mod", 0, 0, 0, o, sizeof o);
+        CHECK(strcmp(o, "QUEUE_ADD \"x.mod\"") == 0, "add '%s'", o);
+        CHECK(mui_song_menu_line(3, "x.mod", 0, 0, 0, o, sizeof o) == 0, "playlist needs an id");
+        mui_song_menu_line(3, "x.mod", 7, 7, 0, o, sizeof o);
+        CHECK(strcmp(o, "PLAYLIST_ADD_SONG 7 \"x.mod\"") == 0, "playlist '%s'", o);
+        mui_song_menu_line(4, "x.mod", 9, 0, 1, o, sizeof o);
+        CHECK(strcmp(o, "QUEUE_REMOVE 9") == 0, "queue remove '%s'", o);
+        mui_song_menu_line(4, "x.mod", 0, 0, 0, o, sizeof o);
+        CHECK(strcmp(o, "LIBRARY_REMOVE \"x.mod\"") == 0, "library remove '%s'", o);
+    }
 }
 
 static void test_like_rating(void) {
@@ -754,6 +770,18 @@ static void test_tracker(void) {
     CHECK(strstr(o, " .. .. ...") != NULL, "empty cell '%s'", o);
 }
 
+/* Regression (MUI-P4-10): eleven buttons and two cycles in one row made the window wider than the 800 pixel screen and
+ * MUIA_Window_Open stayed 0 on the Amiga. Each tool row must stay narrow enough. */
+static void test_toolrows(void) {
+    uint32_t r;
+    for (r = 0; r < 2u; r++) {
+        if (mui_tool_row_chars(r) == 0u || mui_tool_row_chars(r) > 64u) {
+            fprintf(stderr, "FAIL tool row %u holds %u label characters (1..64 fit an 800 pixel window)\n", (unsigned)r, (unsigned)mui_tool_row_chars(r));
+            failures++;
+        }
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -830,6 +858,8 @@ int main(int argc, char** argv) {
     } else if (strcmp(argv[1], "states") == 0) {
         test_states();
         test_view_empty();
+    } else if (strcmp(argv[1], "toolrows") == 0) {
+        test_toolrows();
     } else if (strcmp(argv[1], "tracker") == 0) {
         test_tracker();
     } else {
