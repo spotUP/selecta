@@ -141,6 +141,10 @@ int sel_view_expand(sel_view* v, const sel_view_src* s, uint32_t node, int on);
  * the deeper ones. 0: not the drilldown, level out of reach or no such value. */
 int sel_view_drill(sel_view* v, const sel_view_src* s, uint32_t level, const char* value);
 
+/* The queue index of the song on row `row` of the whole list (every row, not the window): in the tree and the drilldown a
+ * node row names no song and gives 0. Needs a refreshed view. The bulk SONGS_* verbs resolve their ranges through this. */
+int sel_view_song_at(const sel_view* v, const sel_view_src* s, uint32_t row, uint32_t* queue_index);
+
 /* Enter on the cursor row. Returns 1 with *queue_index set when it is a song
  * to start; 0 when it was a node (toggled in the tree, drilled into in the drilldown). */
 int sel_view_enter(sel_view* v, const sel_view_src* s, uint32_t* queue_index);

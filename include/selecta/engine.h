@@ -405,6 +405,8 @@ typedef struct sel_engine_stats {
     uint32_t pl_fail_reason;      /* SEL_PLFAIL_* of the last failed run */
     uint32_t songs_runs;          /* SONGS_* bulk verbs that ran (I632b sentinel) */
     uint32_t songs_done;          /* songs the last SONGS_* verb handled (the count the toast shows) */
+    uint32_t songs_skipped;       /* rows the last SONGS_* verb skipped because they name no song (group, folder, heading, divider)
+                                   * (I632b2) */
     uint32_t songs_stale;         /* SONGS_* verbs refused because the list version moved */
     uint32_t import_missing;      /* entries of the last PLAYLIST_IMPORT whose file does not exist */
     uint32_t sticker_ops;         /* STICKER_* commands run against the library (I176 sentinel) */

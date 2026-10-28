@@ -57,7 +57,164 @@ static uint32_t qcount(sel_engine* e) { return sel_engine_state(e)->queue_count;
 static uint32_t qversion(sel_engine* e) { return sel_engine_state(e)->queue_version; }
 static uint32_t vversion(sel_engine* e) { return sel_engine_state(e)->view->version; }
 
-int main(void) {
+static const char* playing_path(sel_engine* e) {
+    const sel_state* st = sel_engine_state(e);
+    uint32_t i;
+    for (i = 0; i < st->queue_count; i++) {
+        if (st->queue[i].id == st->queue_playing) return st->queue_text + st->queue[i].path_offset;
+    }
+    return "";
+}
+
+/* Rows of the window that name a song (a Home or Search song row, not an album, composer, artist-less heading). */
+static uint32_t home_song_rows(sel_engine* e) {
+    const sel_view_state* v = sel_engine_state(e)->view;
+    uint32_t i, n = 0;
+    for (i = 0; i < v->row_n; i++) {
+        if (v->rows[i].kind == SEL_ROW_HOME && v->rows[i].key && !v->rows[i].album && !v->rows[i].composer) n++;
+    }
+    return n;
+}
+
+static void mkmod(const char* tool, const char* path) {
+    char cmd[700];
+    snprintf(cmd, sizeof cmd, "\"%s\" --loop \"%s\"", tool, path);
+    CHECK(system(cmd) == 0);
+}
+
+/* I632b2: the view list in every style and source, and SONGS_PLAY. Real modules (argv[1] = gen_testmod) so that a started
+ * song really becomes the playing one. Layout x/a x/b y/c y/d under dir/real. */
+static void test_views(sel_engine* e, sel_library* lib, const char* dir, const char* tool) {
+    char real[300], px[300], py[300], f[4][320], line[400], tsv[2048], hist[320];
+    sel_lib_job job;
+    sel_engine_stats st;
+    uint32_t i, before, runs, plid = 0, n;
+    snprintf(real, sizeof real, "%s/real", dir);
+    snprintf(px, sizeof px, "%s/x", real);
+    snprintf(py, sizeof py, "%s/y", real);
+    snprintf(line, sizeof line, "mkdir -p \"%s\" \"%s\"", px, py);
+    CHECK(system(line) == 0);
+    snprintf(f[0], sizeof f[0], "%s/a.mod", px);
+    snprintf(f[1], sizeof f[1], "%s/b.mod", px);
+    snprintf(f[2], sizeof f[2], "%s/c.mod", py);
+    snprintf(f[3], sizeof f[3], "%s/d.mod", py);
+    tsv[0] = '\0';
+    for (i = 0; i < 4; i++) {
+        mkmod(tool, f[i]);
+        snprintf(tsv + strlen(tsv), sizeof tsv - strlen(tsv), "%s\tlocal\t%s\tsong %c\tzedartist\tmod\t1994\n", f[i], f[i], (char)('a' + i));
+    }
+    memset(&job, 0, sizeof job);
+    job.text = tsv;
+    CHECK(sel_library_run(lib, SEL_LIB_REQ_IMPORT, &job) && job.count == 4u);
+
+    /* SONGS_PLAY on the queue plays in place: no song is added, the first selected row starts. */
+    run(e, "QUEUE_CLEAR");
+    run(e, "PLAYLIST_CREATE beta"); /* playlist 2, empty */
+    for (i = 0; i < 4; i++) {
+        snprintf(line, sizeof line, "QUEUE_ADD \"%s\"", f[i]);
+        run(e, line);
+    }
+    snprintf(line, sizeof line, "SONGS_PLAY queue %u \"2-3\"", (unsigned)qversion(e));
+    runs = stats(e).songs_runs;
+    run(e, line);
+    CHECK(stats(e).songs_runs == runs + 1u && stats(e).songs_done == 2u && qcount(e) == 4u);
+    CHECK(strcmp(playing_path(e), f[2]) == 0);
+    /* The same on a list that is not the queue: the songs join after the playing one and the first starts. */
+    snprintf(line, sizeof line, "SONGS_PLAYLIST_ADD 2 queue %u \"0-3\"", (unsigned)qversion(e));
+    run(e, line);
+    CHECK(stats(e).songs_done == 4u);
+    run(e, "QUEUE_CLEAR");
+    snprintf(line, sizeof line, "QUEUE_ADD \"%s\"", f[0]);
+    run(e, line);
+    run(e, "VIEW_SOURCE folders");
+    snprintf(line, sizeof line, "SONGS_PLAY playlist:2 %u \"1,3\"", (unsigned)vversion(e));
+    run(e, line);
+    CHECK(stats(e).songs_done == 2u && qcount(e) == 3u);
+    CHECK(strcmp(playing_path(e), f[1]) == 0 && strcmp(qpath(e, 0), f[1]) == 0 && strcmp(qpath(e, 1), f[3]) == 0 && strcmp(qpath(e, 2), f[0]) == 0);
+
+    /* Library view (Home): heading rows are skipped and counted, song rows are handled. */
+    run(e, "QUEUE_CLEAR");
+    for (i = 0; i < 3; i++) CHECK(sel_library_history_add(lib, f[i], 1000 + (long)i, 0));
+    snprintf(hist, sizeof hist, "%s", f[0]);
+    run(e, "VIEW_WINDOW 60");
+    run(e, "VIEW_SOURCE home");
+    n = sel_engine_state(e)->view->row_count;
+    CHECK(n > 0u && sel_engine_state(e)->view->row_n == n);
+    i = home_song_rows(e);
+    CHECK(i >= 3u && i < n);
+    snprintf(line, sizeof line, "SONGS_QUEUE_ADD view %u \"0-%u\"", (unsigned)vversion(e), (unsigned)(n - 1u));
+    run(e, line);
+    st = stats(e);
+    CHECK(st.songs_done == i && st.songs_skipped == n - i && qcount(e) == i);
+
+    /* Search results: the songs and the artist row. Play starts the first song and queues them all. */
+    run(e, "QUEUE_CLEAR");
+    run(e, "LIBRARY_SEARCH zedartist");
+    run(e, "VIEW_SOURCE search");
+    n = sel_engine_state(e)->view->row_count;
+    CHECK(n > 0u && sel_engine_state(e)->view->row_n == n);
+    i = home_song_rows(e);
+    CHECK(i >= 4u && i < n);
+    snprintf(line, sizeof line, "SONGS_PLAY view %u \"0-%u\"", (unsigned)vversion(e), (unsigned)(n - 1u));
+    run(e, line);
+    st = stats(e);
+    CHECK(st.songs_done == i && st.songs_skipped == n - i && qcount(e) == i && strcmp(playing_path(e), qpath(e, 0)) == 0);
+
+    /* Query source in the tree: node rows are skipped, the songs under the open nodes are handled in tree order. */
+    run(e, "QUEUE_CLEAR");
+    run(e, "LIBRARY_SEARCH zedartist");
+    run(e, "VIEW_SOURCE query");
+    run(e, "VIEW_GROUP folder");
+    CHECK(sel_engine_state(e)->view->style == SEL_VIEW_STYLE_TREE && sel_engine_state(e)->view->row_count == 2u);
+    run(e, "VIEW_EXPAND 1");
+    run(e, "VIEW_EXPAND 2");
+    CHECK(sel_engine_state(e)->view->row_count == 6u); /* x a b y c d */
+    snprintf(line, sizeof line, "SONGS_QUEUE_ADD view %u \"1-3\"", (unsigned)vversion(e)); /* a b y: two songs, one node */
+    run(e, line);
+    st = stats(e);
+    CHECK(st.songs_done == 2u && st.songs_skipped == 1u && qcount(e) == 2u && strcmp(qpath(e, 0), f[0]) == 0 && strcmp(qpath(e, 1), f[1]) == 0);
+    snprintf(line, sizeof line, "SONGS_QUEUE_ADD view %u \"0-5\"", (unsigned)vversion(e));
+    run(e, line);
+    st = stats(e);
+    CHECK(st.songs_done == 4u && st.songs_skipped == 2u && qcount(e) == 6u && strcmp(qpath(e, 5), f[3]) == 0);
+    run(e, "VIEW_COLLAPSE 1");
+    run(e, "VIEW_COLLAPSE 2");
+    before = qcount(e);
+    snprintf(line, sizeof line, "SONGS_PLAY_NEXT view %u \"0-1\"", (unsigned)vversion(e)); /* two nodes: nothing to do, no error */
+    runs = stats(e).songs_runs;
+    run(e, line);
+    st = stats(e);
+    CHECK(st.songs_runs == runs + 1u && st.songs_done == 0u && st.songs_skipped == 2u && qcount(e) == before);
+
+    /* Drilldown: the node level has only nodes, the song level only songs. */
+    run(e, "VIEW_STYLE drilldown");
+    CHECK(sel_engine_state(e)->view->row_count == 2u);
+    snprintf(line, sizeof line, "SONGS_QUEUE_ADD view %u \"0-1\"", (unsigned)vversion(e));
+    run(e, line);
+    st = stats(e);
+    CHECK(st.songs_done == 0u && st.songs_skipped == 2u && qcount(e) == before);
+    snprintf(line, sizeof line, "VIEW_DRILL 0 %s", py);
+    run(e, line);
+    CHECK(sel_engine_state(e)->view->row_count == 2u);
+    snprintf(line, sizeof line, "SONGS_QUEUE_ADD view %u \"0-1\"", (unsigned)vversion(e));
+    run(e, line);
+    st = stats(e);
+    CHECK(st.songs_done == 2u && st.songs_skipped == 0u && qcount(e) == before + 2u && strcmp(qpath(e, before), f[2]) == 0);
+
+    /* Folders source: folder and playlist rows only, all skipped and counted. */
+    CHECK(sel_library_folder_add(lib, "mixed", 0u, &plid) == 0);
+    run(e, "VIEW_SOURCE folders");
+    n = sel_engine_state(e)->view->row_count;
+    CHECK(n >= 3u);
+    before = qcount(e);
+    snprintf(line, sizeof line, "SONGS_PLAY view %u \"0-%u\"", (unsigned)vversion(e), (unsigned)(n - 1u));
+    runs = stats(e).songs_runs;
+    run(e, line);
+    st = stats(e);
+    CHECK(st.songs_runs == runs + 1u && st.songs_done == 0u && st.songs_skipped == n && qcount(e) == before);
+}
+
+int main(int argc, char** argv) {
     const sel_host* host = sel_host_default();
     char dir[] = "/tmp/selecta_songsbulk_XXXXXX";
     char db[256], line[256], cmd[300], keys[4096];
@@ -157,6 +314,9 @@ int main(void) {
     snprintf(line, sizeof line, "SONGS_QUEUE_ADD queue %u \"60-69\"", (unsigned)qversion(e));
     run(e, line);
     CHECK(stats(e).songs_done == 40u && qcount(e) == before + 40u);
+
+    if (argc > 1) test_views(e, lib, dir, argv[1]);
+    CHECK(argc > 1);
 
     sel_engine_destroy(e);
     sel_library_close(lib);
