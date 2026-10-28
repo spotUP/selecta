@@ -155,9 +155,9 @@ same N labels. The context menu itself is MUI-P4-6, still open (no `MUIA_Context
   folders source): make `SONGS_*` accept them, song rows only (group and folder rows are skipped and counted, not an error), or
   record a decision from Johan. Tests missing from I632b: `SONGS_PLAY` (queue in place and insert-and-start on other lists) and the
   `view` list (Library view, Search, drilldown song level) in `engine-songs-bulk`.
-- [ ] **I632c** Modifier fix: macOS Ctrl+left-click becomes button 1 in `backend_sdl.c`; drop the Ctrl branch at
+- [x] **I632c** Modifier fix: macOS Ctrl+left-click becomes button 1 in `backend_sdl.c`; drop the Ctrl branch at
   `desktop_ui.c:2719`. Test (host, desktop input): Cmd-click no longer opens the menu; Ctrl-click on macOS still does. Regression
-  test fails before, passes after.
+  test fails before, passes after. DONE merged 79262233 (cef6784c): Ctrl+left-click on macOS is reported as button 3 (right), Cmd-click stays button 1; dui-song-menu-live covers both.
 - [ ] **I632d** Desktop wiring: `song_ref.list_index` at every list call site (section 2), click/Cmd/Shift/Cmd-A/Escape, Shift+arrows,
   selection paint. Test `dui-select-lists`: per list (Library view, Search, drilldown, composer list, Queue, playlist page) the
   scripted clicks give the expected `count`/runs in `--stats`; scroll keeps it, sort clears it.
