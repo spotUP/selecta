@@ -2389,8 +2389,9 @@ static void draw_quick(desk* d, sel_gui_rect mn) {
         if (hovered) {
             d->quick_hover_fill = fill;
         }
-        sel_gui_fill_rect(d->canvas, t, panel);
-        sel_gui_round_rect(d->canvas, t, radius, fill);
+        if (hovered) { /* I600: an idle card has no fill, so the Home tint shows through; only the hover paints the card */
+            sel_gui_round_rect(d->canvas, t, radius, fill);
+        }
         d->tile_cards++;
         d->home_parts |= HP_TILE_CARD;
         art = r->art_ref != NULL ? art_tile(d->art, r->art_ref) : NULL;
@@ -2445,9 +2446,10 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
                 fi++;
             }
             format[fi] = '\0';
-            sel_gui_fill_rect(d->canvas, t, panel);
-            sel_gui_round_rect(d->canvas, t, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]),
-                               hovered ? desk_mix(panel, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), (uint32_t)hv) : panel);
+            if (hovered) { /* I600: the idle card has no fill (the Home tint shows through, no dark frame on AGA); the hover fades one in */
+                sel_gui_round_rect(d->canvas, t, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]),
+                                   desk_mix(panel, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), (uint32_t)hv));
+            }
             d->tile_cards++;
             d->home_parts |= HP_TILE_CARD;
             if (d->shadow_ready) {
@@ -2459,7 +2461,7 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
                 sel_gui_set_region(d->canvas, SEL_GUI_RGN_TILE);
                 sel_gui_blit_image_round(d->canvas, ar, art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]));
                 d->art_probe = ar; /* I477: the dump samples this tile's art corner and centre */
-                d->art_probe_fill = hovered ? desk_mix(panel, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), (uint32_t)hv) : panel;
+                d->art_probe_fill = sel_gui_pixel(d->canvas, ar.x, ar.y - 1); /* the card or the tint just above the art, before it is drawn over */
                 sel_gui_set_region(d->canvas, SEL_GUI_RGN_UI);
             } else {
                 sel_gui_genart_draw(d->canvas, ar, r->album || r->composer ? "album" : format, sel_gui_str_hash(r->text));
