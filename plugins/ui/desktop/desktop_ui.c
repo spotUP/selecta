@@ -297,6 +297,7 @@ typedef struct desk {
     desk_page pg_hist[PG_HIST_MAX]; /* page history (I266): the pages visited, desk_page_goto appends, Back and Forward move */
     uint32_t pg_n, pg_pos;
     int baked_zoom;          /* I587: the Amiga tier (aga, rtg; --baked-zoom on the host): zoom and fit take only the baked scales */
+    int copper_opt;          /* --copper N: copper pens on an INDEX8 canvas of any backend (the mem backend tests the AGA copper, I628); 0 = by backend */
     int ydiv_opt;            /* --ydiv N: forces the pixel aspect (the mem backend tests the AGA 640x256 layout); 0 = by backend */
     int is_aga;              /* the aga backend: canvases up to 300 rows get ydiv 2 (I468) */
     int pg_walk;             /* 1 while Back or Forward re-enters a page: desk_page_goto must not append it again */
@@ -1600,9 +1601,18 @@ static void draw_home_header(desk* d, sel_gui_rect mn, int with_section) {
     const sel_gui_atlas* chip = desk_font(d, 1, 13);
     int32_t k, ic = lpx(d, 18);
     char hint[64];
-    sel_gui_round_rect(d->canvas, rect_of(mn.x, mn.y, mn.w, 2 * rad), rad, ARGB(d->theme.token[SEL_GUI_TOKEN_HEADER_TINT]));
-    sel_gui_gradient(d->canvas, rect_of(mn.x, mn.y + rad, mn.w, lpx(d, HOME_TINT_H) - rad), 1,
-                     ARGB(d->theme.token[SEL_GUI_TOKEN_HEADER_TINT]), ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
+    if (d->canvas->copper_pens > 0u) {
+        /* I628: with a copper the tint is one copper bar down the whole page: it costs one pen however tall, and it
+         * stays put while the shelves scroll (the main region, not the scrolled header rect), so its key is stable. */
+        sel_gui_rect pg = region_rect(d, "main");
+        sel_gui_round_rect(d->canvas, rect_of(pg.x, pg.y, pg.w, 2 * rad), rad, ARGB(d->theme.token[SEL_GUI_TOKEN_HEADER_TINT]));
+        sel_gui_gradient(d->canvas, rect_of(pg.x, pg.y + rad, pg.w, pg.h - rad), 1, ARGB(d->theme.token[SEL_GUI_TOKEN_HEADER_TINT]),
+                         ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
+    } else {
+        sel_gui_round_rect(d->canvas, rect_of(mn.x, mn.y, mn.w, 2 * rad), rad, ARGB(d->theme.token[SEL_GUI_TOKEN_HEADER_TINT]));
+        sel_gui_gradient(d->canvas, rect_of(mn.x, mn.y + rad, mn.w, lpx(d, HOME_TINT_H) - rad), 1,
+                         ARGB(d->theme.token[SEL_GUI_TOKEN_HEADER_TINT]), ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
+    }
     d->home_parts |= HP_HEADER_TINT;
     sel_gui_round_rect(d->canvas, sr, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
     sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_SEARCH, rect_of(sr.x + lpx(d, 14), sr.y + (sr.h - ic) / 2, ic, ic), ic,
@@ -1867,6 +1877,17 @@ static uintptr_t home_dump_build(desk* d) {
                               (unsigned)(sel_gui_pixel(d->canvas, d->art_probe.x + d->art_probe.w / 2, d->art_probe.y + d->art_probe.h / 2) & 0xFFFFFFu),
                               (unsigned)(d->art_probe_fill & 0xFFFFFFu));
         o += (size_t)snprintf(d->home_dump + o, sizeof d->home_dump - o, "tile_art_rect %d %d %d %d\n", (int)d->art_probe.x, (int)d->art_probe.y, (int)d->art_probe.w, (int)d->art_probe.h);
+    }
+    if (d->canvas->copper_pens > 0u && o + 64u < sizeof d->home_dump) { /* I628: "copper pens=P keys=K miss=M changes=C", then "copper_key pen ry rh y0 y1" per key */
+        static sel_gui_copper_change ch[600];
+        uint32_t i;
+        o += (size_t)snprintf(d->home_dump + o, sizeof d->home_dump - o, "copper pens=%u keys=%u miss=%u changes=%u\n", (unsigned)d->canvas->copper_pens,
+                              (unsigned)d->canvas->copper_n, (unsigned)d->canvas->copper_miss, (unsigned)sel_gui_copper_changes(d->canvas, ch, 600u));
+        for (i = 0; i < d->canvas->copper_n && o + 64u < sizeof d->home_dump; i++) {
+            const struct sel_gui_copper_key* ck = &d->canvas->copper_key[i];
+            o += (size_t)snprintf(d->home_dump + o, sizeof d->home_dump - o, "copper_key %u %d %d %d %d\n", (unsigned)ck->pen, (int)ck->ry, (int)ck->rh,
+                                  (int)ck->y0, (int)ck->y1);
+        }
     }
     for (s = 0; s < n; s++) {
         if (s < 8u && o + 80u < sizeof d->home_dump) { /* I607: "shelf_nav S prev=P next=N" is what the last paint drew */
@@ -9104,8 +9125,8 @@ static int desk_make_canvas(desk* d, const char* size, int32_t def_w, int32_t de
     sel_gui_canvas_init(d->canvas, format, (int32_t)w, (int32_t)h, pixels);
     d->canvas->ydiv = d->ydiv_opt > 0 ? d->ydiv_opt : (d->is_aga && h <= 300u ? 2 : 1); /* I468: the AGA 640x256 pixels are twice as tall as wide */
     desk_prof_attach(d);
-    if (d->is_aga && format == SEL_GUI_INDEX8) {
-        sel_gui_copper_enable(d->canvas, 4u); /* I441: the aga backend draws vertical gradients with the copper */
+    if ((d->is_aga || d->copper_opt > 0) && format == SEL_GUI_INDEX8) {
+        sel_gui_copper_enable(d->canvas, d->copper_opt > 0 ? (uint32_t)d->copper_opt : 4u); /* I441: the aga backend draws vertical gradients with the copper */
     }
     if (format == SEL_GUI_INDEX8) {
         static const int ui_tokens[] = {SEL_GUI_TOKEN_ACCENT, SEL_GUI_TOKEN_SURFACE, SEL_GUI_TOKEN_TEXT,
@@ -9385,6 +9406,7 @@ static void* desk_open(const sel_ui_open_args* a) {
     d->scale = 1;
     d->scale_q16 = 65536;
     d->is_aga = backend != NULL && strcmp(backend, "aga") == 0;
+    d->copper_opt = desk_opt(a, "--copper") != NULL ? atoi(desk_opt(a, "--copper")) : 0;
     d->ydiv_opt = desk_opt(a, "--ydiv") != NULL ? atoi(desk_opt(a, "--ydiv")) : 0;
     d->baked_zoom = (backend != NULL && (strcmp(backend, "rtg") == 0 || strcmp(backend, "aga") == 0)) || desk_opt(a, "--baked-zoom") != NULL;
     d->zoom_default = backend != NULL && (strcmp(backend, "rtg") == 0 || strcmp(backend, "aga") == 0) ? 0 : 100;

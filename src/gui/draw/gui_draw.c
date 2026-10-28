@@ -314,6 +314,7 @@ static void dirty_add_raw(sel_gui_canvas* c, sel_gui_rect r) {
     }
     if (r.w == c->w && r.h == c->h) {
         c->copper_n = 0u; /* a whole-canvas repaint redraws every gradient: the pens are handed out again */
+        c->copper_mask = 0u;
     }
     /* Overlapping rectangles merge until the list is disjoint again; a contained one disappears. */
     for (i = 0; i < c->dirty_n;) {
@@ -405,12 +406,28 @@ static uint32_t copper_rgb(const struct sel_gui_copper_key* k, int32_t y);
 
 /* 1 when palette index idx is a live copper pen (I441): its colour changes per row, palette[idx] is only a stand-in. */
 static int is_copper_pen(const sel_gui_canvas* c, uint32_t idx) {
-    return c->copper_n > 0u && idx >= 256u - c->copper_n;
+    return idx >= 224u && (c->copper_mask >> (255u - idx) & 1u) != 0u;
+}
+
+/* The key a copper pen shows on canvas row y (I628: one pen carries several gradients on disjoint rows). */
+static const struct sel_gui_copper_key* copper_key_at(const sel_gui_canvas* c, uint32_t pen, int32_t y) {
+    const struct sel_gui_copper_key* any = NULL;
+    uint32_t i;
+    for (i = 0; i < c->copper_n; i++) {
+        const struct sel_gui_copper_key* k = &c->copper_key[i];
+        if (k->pen == pen) {
+            if (y >= k->y0 && y < k->y1) {
+                return k;
+            }
+            any = k;
+        }
+    }
+    return any;
 }
 
 /* The colour a destination pixel really shows: the row's copper colour for a copper pen, else its palette entry. */
 static uint32_t dest_rgb(const sel_gui_canvas* c, uint32_t idx, int32_t y) {
-    return is_copper_pen(c, idx) ? copper_rgb(&c->copper_key[255u - idx], y) : c->palette[idx];
+    return is_copper_pen(c, idx) ? copper_rgb(copper_key_at(c, idx, y), y) : c->palette[idx];
 }
 
 /* The region whose cube maps a blend over destination index idx (I595): an index inside an art band maps through
@@ -1011,6 +1028,7 @@ void sel_gui_round_frame(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, int3
 void sel_gui_copper_enable(sel_gui_canvas* c, uint32_t pens) {
     c->copper_pens = pens > 4u ? 4u : pens;
     c->copper_n = 0u;
+    c->copper_mask = 0u;
 }
 
 static uint32_t copper_rgb(const struct sel_gui_copper_key* k, int32_t y) {
@@ -1023,40 +1041,104 @@ static uint32_t copper_rgb(const struct sel_gui_copper_key* k, int32_t y) {
     return rgb;
 }
 
+/* I628: the rows a key reserves on its pen: the whole gradient rectangle on the canvas, so a later repaint of another
+ * part of it (a scroll, a clipped redraw) never lands on rows another gradient holds. */
+static void copper_rows(const sel_gui_canvas* c, const struct sel_gui_copper_key* k, int32_t* y0, int32_t* y1) {
+    *y0 = imin(imax(k->ry, 0), k->y0);
+    *y1 = imax(imin(k->ry + k->rh, c->h), k->y1);
+}
+
+/* 1 when pen p is free on canvas rows [y0, y1): no key on p reserves any of them. */
+static int copper_pen_free(const sel_gui_canvas* c, uint32_t p, int32_t y0, int32_t y1) {
+    uint32_t i;
+    for (i = 0; i < c->copper_n; i++) {
+        int32_t a, b;
+        if (c->copper_key[i].pen != p) {
+            continue;
+        }
+        copper_rows(c, &c->copper_key[i], &a, &b);
+        if (a < y1 && y0 < b) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* I628: drops keys whose pen no longer shows anywhere on their rows (later drawing covered them), so a long session
+ * of partial repaints (scrolling) keeps finding pens. Runs only when an allocation fails. */
+static void copper_collect(sel_gui_canvas* c) {
+    uint32_t i, j;
+    for (i = 0; i < c->copper_n;) {
+        const struct sel_gui_copper_key* k = &c->copper_key[i];
+        int32_t y, alive = 0;
+        for (y = imax(k->y0, 0); y < imin(k->y1, c->h) && !alive; y++) {
+            alive = memchr(px8(c, 0, y), (int)k->pen, (size_t)c->w) != NULL;
+        }
+        if (alive) {
+            i++;
+        } else {
+            c->copper_key[i] = c->copper_key[--c->copper_n];
+        }
+    }
+    c->copper_mask = 0u;
+    for (j = 0; j < c->copper_n; j++) {
+        c->copper_mask |= 1u << (255u - c->copper_key[j].pen);
+    }
+}
+
+/* The first pen (255 down) free on rows [y0, y1), or 0 when every pen is taken there. */
+static uint32_t copper_pick(const sel_gui_canvas* c, int32_t y0, int32_t y1) {
+    uint32_t p;
+    for (p = 255u; p > 255u - c->copper_pens; p--) {
+        if (copper_pen_free(c, p, y0, y1)) {
+            return p;
+        }
+    }
+    return 0u;
+}
+
 /* I441: fills the visible rows of an opaque vertical gradient with its copper pen. 0 when no pen is free (the caller
- * draws the dithered gradient). */
+ * draws the dithered gradient). I628: a gradient on exactly the rows of a recorded one shares its key (one line colour
+ * per row band, I510); any other takes the first pen free on its rows, so gradients on disjoint rows share a pen. */
 static int copper_gradient(sel_gui_canvas* c, sel_gui_rect r, uint32_t a, uint32_t b) {
     sel_gui_rect v = cur_clip(c, r);
-    uint32_t i;
+    struct sel_gui_copper_key* k = NULL;
+    uint32_t i, pen;
     int32_t y;
     if (v.w <= 0 || v.h <= 0) {
         return 1;
     }
     for (i = 0; i < c->copper_n; i++) {
-        const struct sel_gui_copper_key* k = &c->copper_key[i];
-        if (k->ry == r.y && k->rh == r.h && k->a == (a & 0xFFFFFFu) && k->b == (b & 0xFFFFFFu)) {
+        if (c->copper_key[i].ry == r.y && c->copper_key[i].rh == r.h) {
+            k = &c->copper_key[i];
             break;
         }
     }
-    if (i == c->copper_n) {
-        if (i >= c->copper_pens) {
-            return 0;
+    if (k == NULL) {
+        int32_t y0 = imin(imax(r.y, 0), v.y), y1 = imax(imin(r.y + r.h, c->h), v.y + v.h);
+        if (c->copper_n >= SEL_GUI_COPPER_KEYS || (pen = copper_pick(c, y0, y1)) == 0u) {
+            copper_collect(c);
+            if (c->copper_n >= SEL_GUI_COPPER_KEYS || (pen = copper_pick(c, y0, y1)) == 0u) {
+                return 0;
+            }
         }
-        c->copper_key[i].ry = r.y;
-        c->copper_key[i].rh = r.h;
-        c->copper_key[i].a = a & 0xFFFFFFu;
-        c->copper_key[i].b = b & 0xFFFFFFu;
-        c->copper_key[i].y0 = v.y;
-        c->copper_key[i].y1 = v.y + v.h;
-        c->copper_n++;
+        k = &c->copper_key[c->copper_n++];
+        k->ry = r.y;
+        k->rh = r.h;
+        k->a = a & 0xFFFFFFu;
+        k->b = b & 0xFFFFFFu;
+        k->y0 = v.y;
+        k->y1 = v.y + v.h;
+        k->pen = pen;
+        c->copper_mask |= 1u << (255u - pen);
     } else {
-        if (v.y < c->copper_key[i].y0) c->copper_key[i].y0 = v.y;
-        if (v.y + v.h > c->copper_key[i].y1) c->copper_key[i].y1 = v.y + v.h;
+        if (v.y < k->y0) k->y0 = v.y;
+        if (v.y + v.h > k->y1) k->y1 = v.y + v.h;
     }
     for (y = v.y; y < v.y + v.h; y++) {
-        memset(px8(c, v.x, y), (int)(255u - i), (size_t)v.w);
+        memset(px8(c, v.x, y), (int)k->pen, (size_t)v.w);
     }
-    c->used[c->region][(255u - i) >> 5] |= 1u << ((255u - i) & 31u);
+    c->used[c->region][k->pen >> 5] |= 1u << (k->pen & 31u);
     c->copper_filled += (uint32_t)v.h;
     c->span_px += (uint32_t)(v.w * v.h);
     return 1;
@@ -1081,7 +1163,7 @@ uint32_t sel_gui_copper_changes(const sel_gui_canvas* c, sel_gui_copper_change* 
                 continue; /* the copper holds the colour */
             }
             out[n].y = y;
-            out[n].pen = 255u - i;
+            out[n].pen = k->pen;
             out[n].rgb = rgb;
             n++;
         }
@@ -1092,8 +1174,9 @@ uint32_t sel_gui_copper_changes(const sel_gui_canvas* c, sel_gui_copper_change* 
 void sel_gui_gradient(sel_gui_canvas* c, sel_gui_rect r, int vertical, uint32_t a, uint32_t b) {
     uint32_t t0 = sel_gui_prof_begin(c);
     sel_gui_rect cr = to_canvas(c, r);
-    if (!(vertical && c->copper_pens > 0u && c->format == SEL_GUI_INDEX8 && (a >> 24) == 255u && (b >> 24) == 255u &&
-          copper_gradient(c, cr, a, b))) {
+    int copper = vertical && c->copper_pens > 0u && c->format == SEL_GUI_INDEX8 && (a >> 24) == 255u && (b >> 24) == 255u;
+    if (!(copper && copper_gradient(c, cr, a, b))) {
+        c->copper_miss += copper ? 1u : 0u; /* I628: a copper gradient that found no pen dithers instead */
         gradient_raw(c, cr, vertical, a, b);
     }
     sel_gui_prof_end(c, SEL_GUI_PROF_GRADIENT, t0);
