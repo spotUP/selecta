@@ -26,7 +26,6 @@
     X(CHEVRON_DOWN, "chevron-down") \
     X(CHEVRON_LEFT, "chevron-left") \
     X(CHEVRON_RIGHT, "chevron-right") \
-    X(CHEVRON_LEFT, "chevron-left") \
     X(LIST, "list") \
     X(LIBRARY, "library") \
     X(HEART, "heart") \
