@@ -31,6 +31,7 @@ struct desk_sdl {
     uint32_t drop_n;          /* files of the drop in progress so far (SDL_EVENT_DROP_BEGIN resets it) */
     char drop_hold[SEL_GUI_INPUT_PATH]; /* the newest file of the drop, sent at the next file or at DROP_COMPLETE */
     int drop_held;
+    int ctrl_click; /* the left button went down with Control held on macOS and is reported as the right button until it is released (I632c) */
     char dlg_path[SEL_GUI_INPUT_PATH]; /* the folder the open dialog answered; read on the main thread in desk_sdl_poll */
     SDL_AtomicInt dlg_ready;
     uint64_t pending_ns;                    /* SDL timestamp of the first click, key or wheel event of this turn, until a present shows it (I291) */
@@ -91,14 +92,20 @@ static void push_test_events(const char* list) {
 }
 
 /* Test hook: SELECTA_SDL_TEST_TIMED is a space separated list of events pushed from an SDL timer thread while the live
- * loop waits in poll: `m<x>,<y>@<ms>` a mouse motion, `d<btn>,<x>,<y>@<ms>` a mouse button down, `u<btn>,<x>,<y>@<ms>` a button up (1 left, 3 right),
+ * loop waits in poll: `m<x>,<y>@<ms>` a mouse motion, `d<btn>,<x>,<y>@<ms>` a mouse button down, `u<btn>,<x>,<y>@<ms>` a button up (1 left, 3 right; a C or G after d/u, `dC1,..`, holds Control or Command),
  * `w<dx>,<dy>@<ms>` a wheel notch, `q@<ms>` a quit, <ms> after open. SELECTA_SDL_TEST_LIVE=1 makes the
  * dummy driver count as a live display, so a test runs the real live loop (I341). */
+typedef struct {
+    SDL_Event ev; /* first: the timer parameter is the event */
+    SDL_Keymod mod; /* the modifier state the event is pushed under (a button token may carry C for Control or G for Command) */
+} timed_ev;
+
 static Uint32 SDLCALL timed_event(void* param, SDL_TimerID id, Uint32 interval) {
-    SDL_Event* ev = (SDL_Event*)param;
+    timed_ev* te = (timed_ev*)param;
     (void)id;
     (void)interval;
-    SDL_PushEvent(ev);
+    SDL_SetModState(te->mod);
+    SDL_PushEvent(&te->ev);
     return 0u;
 }
 
@@ -111,17 +118,24 @@ static void push_timed_events(const char* list) {
     }
     snprintf(buf, sizeof buf, "%s", list);
     for (tok = strtok_r(buf, " ", &save); tok != NULL; tok = strtok_r(NULL, " ", &save)) {
-        SDL_Event* ev = (SDL_Event*)SDL_calloc(1, sizeof *ev); /* the test hook never frees: it runs once per process */
+        timed_ev* te = (timed_ev*)SDL_calloc(1, sizeof *te); /* the test hook never frees: it runs once per process */
+        SDL_Event* ev;
+        const char* body = tok + 1;
         float x = 0.0f, y = 0.0f;
         unsigned ms = 0u, btn = 0u;
-        if (ev == NULL) {
+        if (te == NULL) {
             return;
+        }
+        ev = &te->ev;
+        if ((tok[0] == 'd' || tok[0] == 'u') && (body[0] == 'C' || body[0] == 'G')) { /* d1,.. -> dC1,.. : button held with Control / Command */
+            te->mod = body[0] == 'C' ? SDL_KMOD_CTRL : SDL_KMOD_GUI;
+            body++;
         }
         if (tok[0] == 'm' && sscanf(tok + 1, "%f,%f@%u", &x, &y, &ms) == 3) {
             ev->type = SDL_EVENT_MOUSE_MOTION;
             ev->motion.x = x;
             ev->motion.y = y;
-        } else if ((tok[0] == 'd' || tok[0] == 'u') && sscanf(tok + 1, "%u,%f,%f@%u", &btn, &x, &y, &ms) == 4) {
+        } else if ((tok[0] == 'd' || tok[0] == 'u') && sscanf(body, "%u,%f,%f@%u", &btn, &x, &y, &ms) == 4) {
             ev->type = tok[0] == 'd' ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
             ev->button.button = (Uint8)btn;
             ev->button.down = tok[0] == 'd';
@@ -137,7 +151,7 @@ static void push_timed_events(const char* list) {
         } else {
             continue;
         }
-        (void)SDL_AddTimer(ms, timed_event, ev);
+        (void)SDL_AddTimer(ms, timed_event, te);
     }
 }
 
@@ -400,6 +414,30 @@ static uint32_t txt_mods_of(SDL_Keymod m) {
     return mods;
 }
 
+/* The button number a mouse event reports. On macOS Control+left-click is the platform's right-click (I632c): the press is
+ * reported as button 3, and so is its release even when Control was let go first, so the pair stays one right click. Command
+ * is not Control here, so Command+left-click stays a left click and is free for multi-select. */
+static Uint8 mouse_button_of(desk_sdl* b, const SDL_Event* ev, SDL_Keymod mod) {
+    Uint8 btn = ev->button.button;
+#ifdef __APPLE__
+    if (btn == SDL_BUTTON_LEFT) {
+        if (ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+            b->ctrl_click = (mod & SDL_KMOD_CTRL) != 0;
+        }
+        if (b->ctrl_click) {
+            btn = SDL_BUTTON_RIGHT;
+        }
+        if (ev->type == SDL_EVENT_MOUSE_BUTTON_UP) {
+            b->ctrl_click = 0;
+        }
+    }
+#else
+    (void)b;
+    (void)mod;
+#endif
+    return btn;
+}
+
 /* The key code (TXT_KEY_* or a code point) a KEY_DOWN delivers, or 0 when the key is a modifier, unknown, or a
  * printable one that arrives as text instead. Printable keys are delivered here only under Control or Alt. */
 static uint32_t txt_code_of(SDL_Keycode k, uint32_t mods) {
@@ -516,7 +554,7 @@ int desk_sdl_poll(desk_sdl* b, uint32_t timeout_ms, int32_t* w, int32_t* h) {
                 raw.kind = ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? SEL_GUI_RAW_BUTTON_DOWN : SEL_GUI_RAW_BUTTON_UP;
                 raw.x = (int32_t)ev.button.x;
                 raw.y = (int32_t)ev.button.y;
-                raw.button = ev.button.button;
+                raw.button = mouse_button_of(b, &ev, SDL_GetModState());
                 raw.clicks = ev.button.clicks;
             }
             if (queue_raw(b, &raw) && result == DESK_SDL_NONE) {
