@@ -225,6 +225,13 @@ static void test_theme(void) {
         int pen = mui_theme_pick_pen(wb, 8, th.token);
         CHECK(pen == 1 || pen == 3 || pen == 7, "light pen picked on a Workbench palette, got %d", pen);
         CHECK(mui_theme_pick_pen(dark, 8, th.token) == -1, "no readable pen: look off for every role");
+        /* I665: the gate measures WCAG contrast on linear (sRGB-decoded) luminance. The rig's text pen C8C8D0 on the
+         * button face 2A2A32 is about 8.5:1; without linearisation it read 3.9 and switched every role off. */
+        {
+            static const uint32_t rig[4] = {0x000000u, 0xC8C8D0u, 0x2A2A32u, 0x121214u};
+            CHECK(mui_theme_readable(0xC8C8D0u, 0x2A2A32u) == 1, "C8C8D0 text on 2A2A32 button face is readable");
+            CHECK(mui_theme_pick_pen(rig, 4, th.token) == 1, "rig palette picks the C8C8D0 text pen, got %d", mui_theme_pick_pen(rig, 4, th.token));
+        }
         CHECK(mui_theme_pick_pen(NULL, 8, th.token) == -1 && mui_theme_pick_pen(wb, 8, NULL) == -1, "bad input refused");
     }
     f = fopen(MUI_UI_SOURCE, "rb");
