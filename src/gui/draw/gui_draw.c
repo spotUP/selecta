@@ -559,13 +559,9 @@ static void corner_px(sel_gui_canvas* c, sel_gui_rect r, int32_t rad, int32_t x,
     uint32_t a = argb >> 24;
     if (cx >= 0) {
         uint32_t cov = coverage(x, y, cx, cy, rad, k);
-        if (c->format == SEL_GUI_INDEX8) {
-            if (cov < 8u) {
-                return;
-            }
-        } else {
-            a = (a * cov + 8u) / 16u;
-        }
+        /* I588: INDEX8 blends too: put() mixes the colour with the destination's palette entry and snaps to the
+         * nearest of the reserved in-between steps (sel_gui_palette_budget), so the edge has shades, not two colours */
+        a = (a * cov + 8u) / 16u;
         put(c, x, y, (a << 24) | (argb & 0xFFFFFFu), 0);
         return;
     }
@@ -669,13 +665,7 @@ static void round_frame_raw(sel_gui_canvas* c, sel_gui_rect r, int32_t radius, i
             if (cov == 0u) {
                 continue;
             }
-            if (c->format == SEL_GUI_INDEX8) {
-                if (cov < 8u) {
-                    continue;
-                }
-            } else {
-                a = (a * cov + 8u) / 16u;
-            }
+            a = (a * cov + 8u) / 16u; /* I588: INDEX8 blends through put() as well */
             put(c, x, y, (a << 24) | (argb & 0xFFFFFFu), 0);
         }
     }
