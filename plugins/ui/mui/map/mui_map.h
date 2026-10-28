@@ -241,4 +241,16 @@ uint32_t mui_drop_line(const char* path, int is_dir, char* out, size_t cap);
 uint32_t mui_clip_text(const char* artist, const char* title, char* out, size_t cap);
 uint32_t mui_clip_iff(const char* text, uint32_t n, uint8_t* out, size_t cap);
 
+/* MUI-P8 (plan 2026-10-25-amiga-mui.md section P8): parity rows the first MUI pass left out. Every action here is fired by
+ * its shared action-table id (mui_menu_line), the same line the desktop sends; nothing keeps a second list. */
+/* Fires the table line of action `id` through send; returns 1 when the line was sent. mui_action_fires() is the call-count
+ * sentinel the tests read. */
+uint32_t mui_action_fire(const char* id, mui_send_fn send, void* ctx);
+uint32_t mui_action_fires(void);
+/* MUI-P8-1: the album and speed actions, as transport-area buttons (the menu items and keys come from the table). */
+enum { MUI_EXTRA_COUNT = 6 };
+const char* mui_extra_action(uint32_t i); /* action id, NULL past the count */
+const char* mui_extra_label(uint32_t i);  /* the action's label, the desktop's words */
+const char* mui_extra_tip(uint32_t i);    /* the action's tooltip text */
+
 #endif

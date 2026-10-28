@@ -220,6 +220,7 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_LIST_SEL 0x2111L
 #define CTL_DOOR_BASE 0x2200L /* MUI-P4-0: one button per sidebar door */
 #define MUI_DOOR_MAX 8u
+#define CTL_EXTRA_BASE 0x2300L /* MUI-P8-1: album and speed buttons of the transport area */
 
 /* I564: a Text object reads "_" in its contents as the hotkey mark and drops it, so a file name such as
  * "that_meme_again.mod" shows as "thatmemeagain.mod". MUIA_Text_HiCharIdx names the mark character; MUI_NOMARK is a control
@@ -270,6 +271,25 @@ static Object* mui_sidebar_group(void) {
     return g;
 }
 
+/* MUI-P8-1: the album and speed buttons, one row under the transport row. Labels and help come from the action table
+ * (mui_extra_*); a press goes through mui_action_fire in mui_control_fire. */
+static int mui_p8_send(void* ctx, const char* line) {
+    return mui_engine_line((mui_state*)ctx, line);
+}
+
+static Object* mui_p8_extras_row(void) {
+    Object* row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    uint32_t i;
+    for (i = 0; row != NULL && i < MUI_EXTRA_COUNT; i++) {
+        Object* b = mui_make_button(mui_extra_label(i), CTL_EXTRA_BASE + (LONG)i);
+        if (b != NULL) {
+            SetAttrs(b, MUIA_ShortHelp, (ULONG)mui_extra_tip(i), TAG_DONE);
+            DoMethod(row, OM_ADDMEMBER, b);
+        }
+    }
+    return row;
+}
+
 /* The transport row and frame texts: three rows of one VGroup (the PLAYER slot content). */
 static Object* mui_player_group(mui_state* s) {
     sel_uim_frame zero;
@@ -302,6 +322,7 @@ static Object* mui_player_group(mui_state* s) {
     DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_FORMAT, "        "));
     DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_STATUS, "Stopped"));
     DoMethod(g, OM_ADDMEMBER, row1);
+    DoMethod(g, OM_ADDMEMBER, mui_p8_extras_row());
     DoMethod(g, OM_ADDMEMBER, row2);
     DoMethod(g, OM_ADDMEMBER, row3);
     return g;
@@ -569,6 +590,10 @@ static void mui_control_fire(mui_state* s, LONG id) {
     LONG v = 0;
     if (id >= CTL_BTN_BASE && id < CTL_BTN_BASE + (LONG)MUI_BTN_COUNT) {
         if (mui_engine_line(s, mui_menu_line(mui_transport_action((uint32_t)(id - CTL_BTN_BASE), &s->uim.frame)))) {
+            s->transport_hits++;
+        }
+    } else if (id >= CTL_EXTRA_BASE && id < CTL_EXTRA_BASE + (LONG)MUI_EXTRA_COUNT) {
+        if (mui_action_fire(mui_extra_action((uint32_t)(id - CTL_EXTRA_BASE)), mui_p8_send, s)) {
             s->transport_hits++;
         }
     } else if (id >= CTL_DOOR_BASE && id < CTL_DOOR_BASE + (LONG)MUI_DOOR_MAX) {
