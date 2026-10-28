@@ -136,7 +136,7 @@ same N labels. The context menu itself is MUI-P4-6, still open (no `MUIA_Context
 
 ## 7. Rows
 
-- [ ] **I632a** Shared selection model `src/uimodel/select.c`. Test `uim-select` (host ctest): toggle, Shift range over a base set,
+- [x] **I632a** (18fa417d) Shared selection model `src/uimodel/select.c`. Test `uim-select` (host ctest): toggle, Shift range over a base set,
   select-all as one run, clear, 32-run cap, `bind` clears on list or version change, ranges format/parse round trip.
 - [ ] **I632b** Engine `SONGS_*` verbs + `sel_view_state.version` + action table rows. Test `engine-songs-bulk`: Play Next of 3
   keeps list order; one UNDO restores the queue; one `QUEUE_CHANGED`; stale version changes nothing; `SONGS_PLAYLIST_ADD` adds 3;
