@@ -64,7 +64,7 @@ struct desk_aga {
     /* I441: the installed copper list and the changes it was built from */
     struct UCopList* ucl;
     sel_gui_copper_change cop[AGA_COPPER_MAX];
-    uint32_t cop_n, cop_installs;
+    uint32_t cop_n, cop_installs, cop_logged;
 };
 
 static void c2p_bands(desk_aga* b, const uint8_t* chunky, const desk_aga_band* band, uint32_t n) {
@@ -335,6 +335,8 @@ static void copper_install(desk_aga* b, const sel_gui_copper_change* ch, uint32_
         FreeMem(old, sizeof *old);
     }
     b->ucl = nl;
+    fprintf(stderr, "aga: copper list installed: %lu changes, UCopIns=%s, copper list=%s\n", (unsigned long)n,
+            b->screen->ViewPort.UCopIns != NULL ? "set" : "NULL", b->screen->ViewPort.UCopIns != NULL && b->screen->ViewPort.UCopIns->FirstCopList != NULL ? "built" : "NULL");
     memcpy(b->cop, ch, n * sizeof ch[0]);
     b->cop_n = n;
     b->cop_installs++;
@@ -350,6 +352,7 @@ void desk_aga_present(desk_aga* b, const sel_gui_canvas* c) {
         desk_aga_rgb32_table(b->palette, 0, 256, b->rgb32);
         LoadRGB32(&b->screen->ViewPort, (ULONG*)b->rgb32);
     }
+    if (b->cop_logged++ == 0u) fprintf(stderr, "aga: present: copper_pens=%lu copper_n=%lu\n", (unsigned long)c->copper_pens, (unsigned long)c->copper_n);
     if (c->copper_pens > 0u) {
         sel_gui_copper_change ch[AGA_COPPER_MAX];
         uint32_t nc = sel_gui_copper_changes(c, ch, AGA_COPPER_MAX);
