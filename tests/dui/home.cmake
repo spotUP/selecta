@@ -194,6 +194,53 @@ expect_eq("shelf 0 after next then previous" "${b0}" 0)
 dui_stat(played_by_button "${page1}" desktop play_state)
 expect_eq("a button click does not activate the tile under it" "${played_by_button}" 0)
 
+# 3b. Shelf button motion (I630). The buttons fade in on hover, a click eases the shelf one page on, and the button under the
+# pointer grows to about 1.1x (scale 72090 of 65536) and shrinks back on leave. The run ends by finishing every tween, so the
+# motion is read with `navsnap` lines taken mid-tween: a value strictly between its ends proves the tween ran (a pop or a hard
+# jump has none).
+function(expect_between what v lo hi)
+  if(NOT v GREATER lo OR NOT v LESS hi)
+    message(FATAL_ERROR "${what}: ${v} is not strictly between ${lo} and ${hi}")
+  endif()
+endfunction()
+string(CONCAT motion_in
+  "move 400 444\nwait 32\nnavsnap\nwait 32\nnavsnap\nwait 400\nnavsnap\n"
+  "move ${nx} ${ny}\nwait 32\nnavsnap\nwait 400\nnavsnap\n"
+  "click ${nx} ${ny}\nwait 48\nnavsnap\nwait 48\nnavsnap\nwait 600\nnavsnap\n"
+  "move 400 444\nwait 32\nnavsnap\nwait 400\nnavsnap\n"
+  "move 5 5\nwait 32\nnavsnap\nwait 400\nnavsnap\n")
+home_run(motion "${motion_in}")
+string(REGEX MATCHALL "nav snap alpha=[-0-9]+ scale_prev=[0-9]+ scale_next=[0-9]+ scroll=[0-9]+" snaps "${motion}")
+list(LENGTH snaps n_snaps)
+expect_eq("navsnap lines in the dump" "${n_snaps}" 12)
+set(i 0)
+foreach(s IN LISTS snaps)
+  string(REGEX REPLACE "nav snap alpha=([-0-9]+) scale_prev=([0-9]+) scale_next=([0-9]+) scroll=([0-9]+)" "\\1;\\2;\\3;\\4" f "${s}")
+  list(GET f 0 sn${i}_alpha)
+  list(GET f 1 sn${i}_prev)
+  list(GET f 2 sn${i}_next)
+  list(GET f 3 sn${i}_scroll)
+  math(EXPR i "${i} + 1")
+endforeach()
+# Fade: rising over frames after the pointer enters the shelf, full when it ends, back to zero after the pointer left.
+expect_between("button opacity 32 ms after hover" ${sn0_alpha} 0 65536)
+expect_between("button opacity 64 ms after hover" ${sn1_alpha} ${sn0_alpha} 65536)
+expect_eq("button opacity once the fade is over" "${sn2_alpha}" 65536)
+expect_between("button opacity 32 ms after the pointer left the shelf" ${sn10_alpha} 0 65536)
+expect_eq("button opacity once faded out" "${sn11_alpha}" 0)
+# Grow: the hovered next button scales up while the previous one stays, and it returns on leave.
+expect_eq("next button scale before it is hovered" "${sn2_next}" 65536)
+expect_between("next button scale 32 ms after the pointer entered it" ${sn3_next} 65536 72090)
+expect_eq("next button scale while hovered" "${sn4_next}" 72090)
+expect_eq("previous button scale while next is hovered" "${sn4_prev}" 65536)
+expect_between("next button scale 32 ms after the pointer left it" ${sn8_next} 65536 72090)
+expect_eq("next button scale after leaving it" "${sn9_next}" 65536)
+# Easing: the click passes intermediate positions and settles exactly where the instant jump of section 3 ended.
+expect_eq("shelf 0 before the click" "${sn4_scroll}" 0)
+expect_between("shelf 0 48 ms into the scroll" ${sn5_scroll} 0 ${p0})
+expect_between("shelf 0 96 ms into the scroll" ${sn6_scroll} ${sn5_scroll} ${p0})
+expect_eq("shelf 0 once the eased scroll settled (one page)" "${sn7_scroll}" "${p0}")
+
 # 4. Activation: tile 0 of shelf 0 plays the newest song through the engine.
 dui_stat(state0 "${idle}" desktop play_state)
 expect_eq("play_state before" "${state0}" 0)

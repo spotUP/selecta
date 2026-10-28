@@ -335,6 +335,11 @@ typedef struct desk {
     uint32_t hover_shelf1;   /* I607: 1-based Home shelf under the pointer, 0 = none: only that shelf shows its previous/next buttons */
     uint8_t shelf_nav_drawn[8]; /* I607: what the last shelf paint drew per shelf: bit 0 previous button, bit 1 next button */
     uint32_t shelf_nav_clicks;  /* I607: previous/next button clicks that moved a shelf */
+    uint32_t nav_shelf1;        /* I630: 1-based shelf whose buttons are shown or fading out (the last hovered one) */
+    int32_t nav_fade_from, nav_fade_to;       /* I630: button opacity Q16 the fade tween runs between */
+    int32_t nav_scale_from[2], nav_scale_to[2]; /* I630: button scale Q16 (65536 = 1.0) per direction, the hover grow tween's ends */
+    uint32_t nav_scroll_shelf;  /* I630: the shelf whose click scroll tween runs; shelf_q16 holds the scroll's target */
+    int32_t nav_scroll_from;    /* I630: where that scroll started, Q16 */
     int32_t ptr_x, ptr_y;    /* the last pointer position: the wheel scrolls the shelf under it */
     uint32_t shelf_plays;    /* shelf tiles activated (song or album sent to the engine) */
     uint32_t shelf_album_art_draws; /* I469: shelf ALBUM tiles drawn with a library cover in the last shelf paint */
@@ -440,7 +445,7 @@ static sel_gui_rect toast_rect(desk* d);
 static int desk_toast_tick(desk* d);
 static int overlay_refresh(desk* d);
 
-enum { ANIM_KEY_VIEW = 1, ANIM_KEY_TIP = 3, ANIM_KEY_FLOW = 4, ANIM_KEY_TOAST = 5 };
+enum { ANIM_KEY_VIEW = 1, ANIM_KEY_TIP = 3, ANIM_KEY_FLOW = 4, ANIM_KEY_TOAST = 5, ANIM_KEY_NAV_FADE = 6, ANIM_KEY_NAV_SCROLL = 7, ANIM_KEY_NAV_SCALE = 8 /* +1 per direction */ };
 enum { HR_NONE, HR_SIDEBAR, HR_MAIN, HR_DETAIL, HR_PLAYER };
 static int hover_region_of(const desk* d, sel_gui_rect box);
 enum { SLOT_SUB_PREV, SLOT_SHUFFLE, SLOT_PREV, SLOT_PLAY, SLOT_NEXT, SLOT_REPEAT, SLOT_SUB_NEXT, TRANSPORT_COUNT };
@@ -1637,7 +1642,7 @@ static void draw_home_header(desk* d, sel_gui_rect mn, int with_section) {
 /* ---- Home shelves (DUI-P4-2): the HOME view source (engine) as rows of tiles. A heading row starts a shelf; the
  * song and album rows after it are its tiles; a row without a key (the "new this week" count line) is plain text.
  * Each shelf scrolls horizontally on its own. ---- */
-enum { NAV_PREV = 1, NAV_NEXT = 2 }; /* I607: the shelf buttons, bits of shelf_nav_drawn */
+enum { NAV_PREV = 1, NAV_NEXT = 2, HOME_NAV_GROW_Q16 = 6554 /* the hovered button grows to about 1.1x (I630) */ }; /* I607: the shelf buttons, bits of shelf_nav_drawn */
 enum { SHELF_MAX = 6, SHELF_HEAD_H = HOME_SECTION_H + HOME_SHADOW_R + HOME_HEAD_GAP, SHELF_GAP = 16, SHELF_WINDOW = 32, SHELF_NONE = 0x7FFFFFFF };
 
 typedef struct shelf {
@@ -1833,6 +1838,12 @@ static int32_t shelf_top(desk* d, uint32_t s) {
     return mn.y - lpx(d, d->home_y_q16 >> 16) + lpx(d, HOME_SECTION_Y) + quick_h(d) + (int32_t)s * (lpx(d, SHELF_HEAD_H + SHELF_GAP) + shelf_card_h(d));
 }
 
+/* I630: the scroll of shelf s as painted: a button click eases it from where it was to shelf_q16[s], the target. */
+static int32_t shelf_pos_q16(const desk* d, uint32_t s) {
+    int32_t v = s == d->nav_scroll_shelf ? sel_gui_tween_value(&d->tl, ANIM_KEY_NAV_SCROLL, 65536) : 65536;
+    return v >= 65536 ? d->shelf_q16[s] : d->nav_scroll_from + (int32_t)(((int64_t)(d->shelf_q16[s] - d->nav_scroll_from) * v) >> 16);
+}
+
 /* The scroll limit of a shelf in Q16 logical pixels: the tiles' width beyond the visible width. */
 static int32_t shelf_max_q16(desk* d, const shelf* sh) {
     int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
@@ -1848,11 +1859,13 @@ static sel_gui_rect shelf_tile_rect(desk* d, uint32_t s, uint32_t k) {
     int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
     sel_gui_rect mn = region_rect(d, "main");
     int32_t cw = lpx(d, g_tile_steps[d->tile_step]) + 2 * pad;
-    return rect_of(mn.x + lpx(d, HOME_MARGIN) - pad + (int32_t)k * (cw + lpx(d, HOME_TILE_GAP)) - lpx(d, d->shelf_q16[s] >> 16),
+    return rect_of(mn.x + lpx(d, HOME_MARGIN) - pad + (int32_t)k * (cw + lpx(d, HOME_TILE_GAP)) - lpx(d, shelf_pos_q16(d, s) >> 16),
                    shelf_top(d, s) + lpx(d, SHELF_HEAD_H) - pad, cw, shelf_card_h(d));
 }
 
 static sel_gui_rect shelf_nav_rect(desk* d, uint32_t s, int next);
+static int32_t nav_fade_now(const desk* d);
+static int32_t nav_scale_now(const desk* d, uint32_t dir);
 
 /* Writes "shelf S tile K heading|key|title" lines in order into home_dump; returns the shelf count. */
 static uintptr_t home_dump_build(desk* d) {
@@ -1892,9 +1905,9 @@ static uintptr_t home_dump_build(desk* d) {
     for (s = 0; s < n; s++) {
         if (s < 8u && o + 80u < sizeof d->home_dump) { /* I607: "shelf_nav S prev=P next=N" is what the last paint drew */
             sel_gui_rect pr = shelf_nav_rect(d, s, 0), nr = shelf_nav_rect(d, s, 1);
-            o += (size_t)snprintf(d->home_dump + o, sizeof d->home_dump - o, "shelf_nav %u prev=%u next=%u prev_at=%d,%d next_at=%d,%d labels=Previous,Next\n",
+            o += (size_t)snprintf(d->home_dump + o, sizeof d->home_dump - o, "shelf_nav %u prev=%u next=%u prev_at=%d,%d next_at=%d,%d labels=Previous,Next alpha=%d scale_prev=%d scale_next=%d\n",
                                   (unsigned)s, (unsigned)(d->shelf_nav_drawn[s] & NAV_PREV ? 1u : 0u), (unsigned)(d->shelf_nav_drawn[s] & NAV_NEXT ? 1u : 0u),
-                                  (int)(pr.x + pr.w / 2), (int)(pr.y + pr.h / 2), (int)(nr.x + nr.w / 2), (int)(nr.y + nr.h / 2));
+                                  (int)(pr.x + pr.w / 2), (int)(pr.y + pr.h / 2), (int)(nr.x + nr.w / 2), (int)(nr.y + nr.h / 2), (int)(d->nav_shelf1 == s + 1u ? nav_fade_now(d) : 0), (int)nav_scale_now(d, 0), (int)nav_scale_now(d, 1));
         }
         for (k = 0; k < sh[s].tiles && o + 200u < sizeof d->home_dump; k++) {
             const sel_view_row* r = &st->view->rows[shelf_tile_row(st, &sh[s], k)];
@@ -2029,16 +2042,77 @@ static sel_gui_rect shelf_nav_rect(desk* d, uint32_t s, int next) {
     return rect_of(x, y, ps, ps);
 }
 
-/* The buttons shelf s shows now (NAV_* bits). */
-static uint32_t shelf_nav_visible(desk* d, uint32_t s, const shelf* sh) {
+/* I630: a tween value between its two ends, Q16. */
+static int32_t nav_mix(const desk* d, uint32_t key, int32_t from, int32_t to) {
+    return from + (int32_t)(((int64_t)(to - from) * sel_gui_tween_value(&d->tl, key, 65536)) >> 16);
+}
+
+static int32_t nav_fade_now(const desk* d) {
+    return nav_mix(d, ANIM_KEY_NAV_FADE, d->nav_fade_from, d->nav_fade_to);
+}
+
+static int32_t nav_scale_now(const desk* d, uint32_t dir) {
+    return nav_mix(d, ANIM_KEY_NAV_SCALE + dir, d->nav_scale_from[dir], d->nav_scale_to[dir]);
+}
+
+/* True while any shelf button tween (fade, grow, click scroll) runs: the main region repaints each step. */
+static int nav_animating(const desk* d) {
+    return sel_gui_tween_value(&d->tl, ANIM_KEY_NAV_FADE, 65536) < 65536 || sel_gui_tween_value(&d->tl, ANIM_KEY_NAV_SCROLL, 65536) < 65536 ||
+           sel_gui_tween_value(&d->tl, ANIM_KEY_NAV_SCALE, 65536) < 65536 || sel_gui_tween_value(&d->tl, ANIM_KEY_NAV_SCALE + 1, 65536) < 65536;
+}
+
+/* The buttons shelf s has by its scroll position (NAV_* bits): previous unless at the start, next unless at the end. */
+static uint32_t shelf_nav_bits(desk* d, uint32_t s, const shelf* sh) {
     int32_t max = shelf_max_q16(d, sh);
     uint32_t bits = 0u;
-    if (s >= 8u || d->hover_shelf1 != s + 1u) {
-        return 0u;
-    }
     bits |= d->shelf_q16[s] > 0 ? NAV_PREV : 0u;
     bits |= d->shelf_q16[s] < max ? NAV_NEXT : 0u;
     return bits;
+}
+
+/* The buttons shelf s shows now (NAV_* bits). */
+static uint32_t shelf_nav_visible(desk* d, uint32_t s, const shelf* sh) {
+    if (s >= 8u || d->hover_shelf1 != s + 1u) {
+        return 0u;
+    }
+    return shelf_nav_bits(d, s, sh);
+}
+
+/* I630: starts a tween from the current value to a new target; a no-op while the target is unchanged. Without motion the
+ * tween does not start and the value is the target at once. Returns 1 when the target changed. */
+static int nav_retarget(desk* d, uint32_t key, int32_t* from, int32_t* to, int32_t now, int32_t target) {
+    if (*to == target) {
+        return 0;
+    }
+    *from = now;
+    *to = target;
+    desk_tween(d, key, SEL_GUI_ANIM_FAST_MS, SEL_GUI_EASE_OUT);
+    return 1;
+}
+
+/* I630: the pointer is over canvas point (x, y) and shelf1 (1-based, 0 = none) is the shelf under it: fades the buttons of
+ * that shelf in and the last shelf's out, and grows the button under the pointer while shrinking the other. Returns 1 when a
+ * target changed. d->hover_shelf1 already equals shelf1. */
+static int shelf_nav_hover(desk* d, int32_t x, int32_t y, uint32_t shelf1) {
+    shelf sh[SHELF_MAX];
+    uint32_t dir, bits = 0u;
+    int changed = 0;
+    if (shelf1 != 0u && d->nav_shelf1 != shelf1) { /* another shelf: its buttons start from nothing, the old shelf's are gone */
+        d->nav_shelf1 = shelf1;
+        d->nav_fade_from = d->nav_fade_to = 0;
+        d->nav_scale_from[0] = d->nav_scale_to[0] = d->nav_scale_from[1] = d->nav_scale_to[1] = 65536;
+        changed = 1;
+    }
+    if (shelf1 != 0u && home_shelves(sel_engine_state(d->engine), sh) >= shelf1) {
+        bits = shelf_nav_visible(d, shelf1 - 1u, &sh[shelf1 - 1u]);
+    }
+    changed |= nav_retarget(d, ANIM_KEY_NAV_FADE, &d->nav_fade_from, &d->nav_fade_to, nav_fade_now(d), shelf1 != 0u ? 65536 : 0);
+    for (dir = 0; dir < 2u; dir++) {
+        int hot = shelf1 != 0u && (bits & (dir ? NAV_NEXT : NAV_PREV)) && in_rect(shelf_nav_rect(d, shelf1 - 1u, (int)dir), x, y);
+        changed |= nav_retarget(d, ANIM_KEY_NAV_SCALE + dir, &d->nav_scale_from[dir], &d->nav_scale_to[dir], nav_scale_now(d, dir),
+                                hot ? 65536 + HOME_NAV_GROW_Q16 : 65536);
+    }
+    return changed;
 }
 
 /* One page of covers in Q16 logical pixels: as many whole covers as fit the visible width, at least one. */
@@ -2075,7 +2149,10 @@ static int shelf_nav_click(desk* d, int32_t x, int32_t y) {
     } else {
         return 0;
     }
+    d->nav_scroll_from = shelf_pos_q16(d, s); /* a click mid-scroll goes on from where the covers are */
+    d->nav_scroll_shelf = s;
     d->shelf_q16[s] = v < 0 ? 0 : (v > max ? max : v);
+    desk_tween(d, ANIM_KEY_NAV_SCROLL, SEL_GUI_ANIM_NORMAL_MS, SEL_GUI_EASE_OUT);
     d->shelf_nav_clicks++;
     return 1;
 }
@@ -2741,16 +2818,20 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
             }
         }
         if (s < 8u) { /* I607: the round previous/next buttons over the covers of the hovered shelf */
-            uint32_t bits = shelf_nav_visible(d, s, &sh[s]), dir;
+            int32_t fade = d->nav_shelf1 == s + 1u ? nav_fade_now(d) : 0;
+            uint32_t bits = fade > 0 ? shelf_nav_bits(d, s, &sh[s]) : 0u, dir;
             for (dir = 0; dir < 2u; dir++) {
                 sel_gui_rect b = shelf_nav_rect(d, s, (int)dir);
-                int32_t ps = b.w;
+                int32_t ps = b.w, grown = (int32_t)(((int64_t)ps * nav_scale_now(d, dir)) >> 16);
+                uint32_t a = (uint32_t)(fade >> 8) << 24; /* I630: the whole button fades with its opacity */
                 if (!(bits & (dir ? NAV_NEXT : NAV_PREV))) {
                     continue;
                 }
-                sel_gui_round_rect(d->canvas, b, ps / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+                b = rect_of(b.x - (grown - ps) / 2, b.y - (grown - ps) / 2, grown, grown);
+                ps = grown;
+                sel_gui_round_rect(d->canvas, b, ps / 2, a | (d->theme.token[SEL_GUI_TOKEN_SURFACE] & 0xFFFFFFu));
                 sel_gui_icon_draw(d->canvas, &d->icons, dir ? SEL_GUI_ICON_CHEVRON_RIGHT : SEL_GUI_ICON_CHEVRON_LEFT,
-                                  rect_of(b.x + ps / 4, b.y + ps / 4, ps / 2, ps / 2), ps / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+                                  rect_of(b.x + ps / 4, b.y + ps / 4, ps / 2, ps / 2), ps / 2, a | (d->theme.token[SEL_GUI_TOKEN_TEXT] & 0xFFFFFFu));
                 d->shelf_nav_drawn[s] |= (uint8_t)(dir ? NAV_NEXT : NAV_PREV);
             }
         }
@@ -7258,7 +7339,7 @@ static void hover_repaint(desk* d) {
  * list cross-fade. A fade confined to another region leaves the main region (and its dirty rectangle) alone. */
 static int hover_main_painted(const desk* d) {
     return d->hover_tile > 0 || hover_region_of(d, d->hover_box) == HR_MAIN || hover_region_of(d, d->hover_prev) == HR_MAIN ||
-           sel_gui_tween_value(&d->tl, ANIM_KEY_VIEW, 65536) < 65536 || sel_gui_tween_value(&d->tl, ANIM_KEY_FLOW, 65536) < 65536;
+           sel_gui_tween_value(&d->tl, ANIM_KEY_VIEW, 65536) < 65536 || sel_gui_tween_value(&d->tl, ANIM_KEY_FLOW, 65536) < 65536 || nav_animating(d);
 }
 
 /* The next due time of the three UI timers (tooltip delay, search debounce, toast), 0 when none is pending. One place for
@@ -8368,6 +8449,10 @@ static int desk_hover_move(desk* d, int32_t x, int32_t y) {
         tile_moved = 1;
         changed = 1;
     }
+    if (d->page == PG_HOME && d->home && shelf_nav_hover(d, x, y, d->hover_shelf1)) { /* I630: fade and grow targets */
+        tile_moved = 1;
+        changed = 1;
+    }
     if (!changed) {
         return 0;
     }
@@ -8766,6 +8851,13 @@ static int desk_replay_input(desk* d) {
             d->hover_frame = 1;
             draw_home(d);
             opened |= desk_event_frame(d, 1);
+        } else if (strncmp(line, "navsnap", 7) == 0) { /* I630: records shelf 0's button opacity, both button scales and scroll as of now, mid-tween, for the dump */
+            size_t at = strlen(d->flow_snaps);
+            if (at + 128u < sizeof d->flow_snaps) {
+                snprintf(d->flow_snaps + at, sizeof d->flow_snaps - at, "nav snap alpha=%d scale_prev=%d scale_next=%d scroll=%d\n",
+                         d->nav_shelf1 == 1u ? (int)nav_fade_now(d) : 0, (int)nav_scale_now(d, 0u), (int)nav_scale_now(d, 1u),
+                         (int)(shelf_pos_q16(d, 0u) >> 16));
+            }
         } else if (strncmp(line, "flowsnap", 8) == 0) { /* records the covers of the last cover flow frame, mid-glide, for the dump */
             size_t at = strlen(d->flow_snaps), m;
             for (m = 0; m < d->flow_rec_n && at + 64u < sizeof d->flow_snaps; m++) {
@@ -9972,7 +10064,7 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[53].tag = SEL_UI_STAT_HOME_SHELVES;
     d->stats[53].value = home_dump_build(d);
     d->stats[54].tag = SEL_UI_STAT_SHELF_SCROLL;
-    d->stats[54].value = (uintptr_t)(((uint32_t)d->shelf_q16[0] >> 16) | (((uint32_t)d->shelf_q16[1] >> 16) << 16));
+    d->stats[54].value = (uintptr_t)(((uint32_t)shelf_pos_q16(d, 0u) >> 16) | (((uint32_t)shelf_pos_q16(d, 1u) >> 16) << 16));
     d->stats[55].tag = SEL_UI_STAT_HOME_DUMP;
     d->stats[55].value = (uintptr_t)d->home_dump;
     d->stats[56].tag = SEL_UI_STAT_HOME_SCROLL_Y;
