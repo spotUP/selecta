@@ -421,16 +421,18 @@ static Object* mui_icon_object(int icon) {
  * shown on page 2 of a page-mode group (play/pause); *txt_out receives the label Text object so a later set() can change
  * it, *pages_out the page group (NULL without alt_key). weight 100 is the MUI default (equal shares of the row); 0 sizes
  * the button to its contents. Padding and icon size come from mui_icons.h. */
-static Object* mui_make_button_i(const char* label, const char* icon_key, const char* alt_key, LONG id, LONG weight, Object** txt_out, Object** pages_out) {
+static Object* mui_make_button_i(const char* label, const char* icon_key, const char* alt_key, LONG id, LONG weight, int icon_only, Object** txt_out, Object** pages_out) {
     Object* img = mui_icon_object(mui_icon_id(icon_key));
     Object* alt = alt_key != NULL ? mui_icon_object(mui_icon_id(alt_key)) : NULL;
     Object* pages = NULL;
-    Object* txt = MUI_NewObject((char*)MUIC_Text, MUIA_Font, MUIV_Font_Button, MUIA_Text_Contents, (ULONG)label, MUIA_Text_HiCharIdx, MUI_NOMARK,
+    /* I656: an icon-only button (dense rows) has no label text so its row fits the smallest screen; the label stays as the
+     * ShortHelp. Without an icon it keeps the label. */
+    Object* txt = icon_only && img != NULL ? NULL : MUI_NewObject((char*)MUIC_Text, MUIA_Font, MUIV_Font_Button, MUIA_Text_Contents, (ULONG)label, MUIA_Text_HiCharIdx, MUI_NOMARK,
                                 MUIA_Text_PreParse, (ULONG) "\33c", TAG_DONE);
     Object* o = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_Group_HorizSpacing, MUI_BTN_ICON_GAP, MUIA_Weight, (ULONG)weight,
                               TH_TAGS(MUI_TH_BUTTON, MUIV_Frame_Button) InnerSpacing(MUI_BTN_PAD_X, MUI_BTN_PAD_Y), MUIA_ShortHelp, (ULONG)label,
                               MUIA_InputMode, MUIV_InputMode_RelVerify, TH_BG_OR(MUI_TH_BUTTON, MUII_ButtonBack) TAG_DONE);
-    if (o == NULL || txt == NULL) {
+    if (o == NULL || (txt == NULL && !(icon_only && img != NULL))) {
         return o;
     }
     if (img != NULL && alt != NULL) {
@@ -439,7 +441,9 @@ static Object* mui_make_button_i(const char* label, const char* icon_key, const 
     } else if (img != NULL) {
         DoMethod(o, OM_ADDMEMBER, img);
     }
-    DoMethod(o, OM_ADDMEMBER, txt);
+    if (txt != NULL) {
+        DoMethod(o, OM_ADDMEMBER, txt);
+    }
     DoMethod(o, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
     if (txt_out != NULL) {
         *txt_out = txt;
@@ -451,7 +455,11 @@ static Object* mui_make_button_i(const char* label, const char* icon_key, const 
 }
 
 static Object* mui_make_button_w(const char* label, const char* icon_key, LONG id, LONG weight) {
-    return mui_make_button_i(label, icon_key, NULL, id, weight, NULL, NULL);
+    return mui_make_button_i(label, icon_key, NULL, id, weight, 0, NULL, NULL);
+}
+
+static Object* mui_make_button_icon(const char* label, const char* icon_key, LONG id) {
+    return mui_make_button_i(label, icon_key, NULL, id, 100, 1, NULL, NULL);
 }
 
 static Object* mui_make_button(const char* label, const char* icon_key, LONG id) {
@@ -499,7 +507,7 @@ static Object* mui_p8_extras_row(void) {
     Object* row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     uint32_t i;
     for (i = 0; row != NULL && i < MUI_EXTRA_COUNT; i++) {
-        Object* b = mui_make_button(mui_extra_label(i), mui_extra_action(i), CTL_EXTRA_BASE + (LONG)i);
+        Object* b = mui_make_button_icon(mui_extra_label(i), mui_extra_action(i), CTL_EXTRA_BASE + (LONG)i);
         if (b != NULL) {
             SetAttrs(b, MUIA_ShortHelp, (ULONG)mui_extra_tip(i), TAG_DONE);
             DoMethod(row, OM_ADDMEMBER, b);
@@ -511,16 +519,17 @@ static Object* mui_p8_extras_row(void) {
 /* The transport row and frame texts: three rows of one VGroup (the PLAYER slot content). */
 static Object* mui_player_group(mui_state* s) {
     sel_uim_frame zero;
-    Object *row1, *row2, *row3, *g;
+    Object *row1, *row1b, *row2, *row3, *g;
     uint32_t i;
     memset(&zero, 0, sizeof zero);
     row1 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
-    for (i = 0; row1 != NULL && i < MUI_BTN_COUNT; i++) {
+    row1b = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE); /* I656: Repeat and Random, their state labels are long */
+    for (i = 0; row1 != NULL && row1b != NULL && i < MUI_BTN_COUNT; i++) {
         s->btn_label[i] = mui_transport_label(i, &zero);
-        s->btn[i] = mui_make_button_i(s->btn_label[i], mui_transport_action(i, &zero), i == MUI_BTN_PLAY ? "pause" : NULL, CTL_BTN_BASE + (LONG)i, 100,
+        s->btn[i] = mui_make_button_i(s->btn_label[i], mui_transport_action(i, &zero), i == MUI_BTN_PLAY ? "pause" : NULL, CTL_BTN_BASE + (LONG)i, 100, 0,
                                       &s->btn_txt[i], &s->btn_pages[i]);
         if (s->btn[i] != NULL) {
-            DoMethod(row1, OM_ADDMEMBER, s->btn[i]);
+            DoMethod(i < MUI_TRANSPORT_ROW1 ? row1 : row1b, OM_ADDMEMBER, s->btn[i]);
         }
     }
     s->vol = mui_make_slider(MUI_VOLUME_MAX, CTL_VOLUME);
@@ -528,7 +537,7 @@ static Object* mui_player_group(mui_state* s) {
     row2 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     row3 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     g = MUI_NewObject((char*)MUIC_Group, TH_TAGS(MUI_TH_PANEL, MUI_FRAME_NONE) TAG_DONE);
-    if (row1 == NULL || row2 == NULL || row3 == NULL || g == NULL || s->vol == NULL || s->seek == NULL) {
+    if (row1 == NULL || row1b == NULL || row2 == NULL || row3 == NULL || g == NULL || s->vol == NULL || s->seek == NULL) {
         return NULL;
     }
     DoMethod(row1, OM_ADDMEMBER, s->vol);
@@ -541,6 +550,7 @@ static Object* mui_player_group(mui_state* s) {
     DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_FORMAT, "        "));
     DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_STATUS, "Stopped"));
     DoMethod(g, OM_ADDMEMBER, row1);
+    DoMethod(g, OM_ADDMEMBER, row1b);
     DoMethod(g, OM_ADDMEMBER, mui_p8_extras_row());
     DoMethod(g, OM_ADDMEMBER, row2);
     DoMethod(g, OM_ADDMEMBER, row3);
@@ -620,7 +630,7 @@ static Object* mui_tool_group(mui_state* s) {
     DoMethod(r1, OM_ADDMEMBER, s->str_search);
     DoMethod(r1, OM_ADDMEMBER, s->str_cmd);
     for (i = 0; i < MUI_TOOL_BTNS; i++) {
-        Object* b = mui_make_button(mui_tool_labels[i], mui_tool_labels[i], CTL_P4_BASE + (LONG)g_tool_which[i]);
+        Object* b = mui_make_button_icon(mui_tool_labels[i], mui_tool_labels[i], CTL_P4_BASE + (LONG)g_tool_which[i]);
         if (b != NULL) {
             DoMethod(i < MUI_TOOL_ROW2 ? r2 : r3, OM_ADDMEMBER, b);
         }

@@ -4,6 +4,7 @@
 
 #include <string.h>
 
+#include "mui_icons.h"
 #include "mui_map.h"
 
 static const char* const k_slot_names[MUI_SLOT_COUNT] = {"suggestion", "sidebar", "main", "detail", "player"};
@@ -17,6 +18,48 @@ uint32_t mui_tool_row_chars(uint32_t row) {
         if ((i < MUI_TOOL_ROW2 ? 0u : 1u) == row) {
             n += (uint32_t)strlen(mui_tool_labels[i]);
         }
+    }
+    return n;
+}
+
+uint32_t mui_tool_row_width(uint32_t row) {
+    uint32_t i, n = 0;
+    for (i = 0; i < MUI_TOOL_BTNS; i++) {
+        if ((i < MUI_TOOL_ROW2 ? 0u : 1u) == row) {
+            n += mui_button_width(mui_tool_labels[i], MUI_TOOL_ICON_ONLY);
+        }
+    }
+    return n;
+}
+
+uint32_t mui_extra_row_width(void) {
+    uint32_t i, n = 0;
+    for (i = 0; i < MUI_EXTRA_COUNT; i++) {
+        n += mui_button_width(mui_extra_label(i), MUI_EXTRA_ICON_ONLY);
+    }
+    return n;
+}
+
+uint32_t mui_transport_row_width(uint32_t row) {
+    uint32_t b, n = row == 0u ? MUI_SLIDER_MIN : 0u;
+    for (b = 0; b < MUI_BTN_COUNT; b++) {
+        if ((b < MUI_TRANSPORT_ROW1 ? 0u : 1u) != row) {
+            continue;
+        }
+        uint32_t st, widest = 0;
+        for (st = 0; st < 12u; st++) { /* play (2) x repeat (3) x random (2) */
+            sel_uim_frame f;
+            const char* l;
+            memset(&f, 0, sizeof f);
+            f.play = (st & 1u) != 0u ? SEL_PLAYING : SEL_STOPPED;
+            f.repeat_mode = (st >> 1) % 3u;
+            f.random_on = (st / 6u) != 0u;
+            l = mui_transport_label(b, &f);
+            if (l != NULL && mui_button_width(l, 0) > widest) {
+                widest = mui_button_width(l, 0);
+            }
+        }
+        n += widest;
     }
     return n;
 }

@@ -841,6 +841,29 @@ static void test_toolrows(void) {
     }
 }
 
+/* Regression (I656): with the I651 icons every button grew by 24 + 6 + 20 px, the tool row 2 reached ~860 px and MUI refused to
+ * open the window (MUIA_Window_Open read back 0 on rig 3). Each button row's summed minimum width, from the constants and the
+ * label tables mui_ui.c builds from, must fit the smallest supported screen (640 px, plan P6-2). The rows must also be built
+ * from the icon-only call, or the model above would not describe them. */
+static void test_icon_button_rows(void) {
+    uint32_t r;
+    static char src[400000];
+    FILE* f = fopen(MUI_UI_SOURCE, "rb");
+    size_t n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    for (r = 0; r < 2u; r++) {
+        CHECK(mui_tool_row_width(r) <= MUI_MIN_SCREEN_W, "tool row %u needs %u px (screen %d)", (unsigned)r, (unsigned)mui_tool_row_width(r), MUI_MIN_SCREEN_W);
+    }
+    for (r = 0; r < 2u; r++) {
+        CHECK(mui_transport_row_width(r) <= MUI_MIN_SCREEN_W, "transport row %u needs %u px", (unsigned)r, (unsigned)mui_transport_row_width(r));
+    }
+    CHECK(mui_extra_row_width() <= MUI_MIN_SCREEN_W, "extras row needs %u px", (unsigned)mui_extra_row_width());
+    CHECK(strstr(src, "mui_make_button_icon(") != NULL && strstr(src, "icon_only && img != NULL ? NULL") != NULL, "dense rows are not icon-only in mui_ui.c");
+}
+
 /* I651: every MUI button is built with an icon. The keys below are the real button sources (transport actions for both play
  * states, extras, doors, toolbar labels, crumb); each must resolve to a baked Lucide body, the lookup counter must rise by
  * exactly that many, and mui_ui.c must build the image (Bodychunk with the theme palette) and the bigger padding. */
@@ -898,8 +921,8 @@ static void test_icon_buttons(void) {
     CHECK(strstr(src, "MUIC_Bodychunk") != NULL && strstr(src, "mui_icon_palette(") != NULL && strstr(src, "MUI_BTN_PAD_X") != NULL,
           "mui_ui.c builds no icon image");
     CHECK(strstr(src, "mui_make_button(mui_door_label(i), sel_uim_door_at(i)->page,") != NULL &&
-              strstr(src, "mui_make_button(mui_tool_labels[i], mui_tool_labels[i],") != NULL && strstr(src, "mui_make_button_w(s->crumb_lbl[k], \"crumb\",") != NULL &&
-              strstr(src, "mui_make_button_i(s->btn_label[i], mui_transport_action(") != NULL && strstr(src, "mui_make_button(mui_extra_label(i), mui_extra_action(i),") != NULL,
+              strstr(src, "mui_make_button_icon(mui_tool_labels[i], mui_tool_labels[i],") != NULL && strstr(src, "mui_make_button_w(s->crumb_lbl[k], \"crumb\",") != NULL &&
+              strstr(src, "mui_make_button_i(s->btn_label[i], mui_transport_action(") != NULL && strstr(src, "mui_make_button_icon(mui_extra_label(i), mui_extra_action(i),") != NULL,
           "a button call site passes no icon key");
 }
 
@@ -983,6 +1006,8 @@ int main(int argc, char** argv) {
         test_view_empty();
     } else if (strcmp(argv[1], "icon-buttons") == 0) {
         test_icon_buttons();
+    } else if (strcmp(argv[1], "icon-rows") == 0) {
+        test_icon_button_rows();
     } else if (strcmp(argv[1], "toolrows") == 0) {
         test_toolrows();
     } else if (strcmp(argv[1], "tracker") == 0) {

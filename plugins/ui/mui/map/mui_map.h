@@ -77,6 +77,7 @@ uint32_t mui_layout_relayout(mui_layout_map_t* m, uint32_t width, uint32_t heigh
 /* MUI-P2-5: the transport row. Six buttons; the action each sends depends on the frame (Play/Pause on the play state,
  * Repeat cycles off, all, one, Random toggles). Labels and ids come from the action table, so the text is the full
  * English words of the desktop UI. Seek is a Slider 0..MUI_SEEK_MAX bound to progress_q16, volume 0..MUI_VOLUME_MAX. */
+#define MUI_TRANSPORT_ROW1 4u /* Previous, Play, Next, Stop stay in the first row with the volume; Repeat and Random (long state labels) get their own */
 enum { MUI_BTN_PREV = 0, MUI_BTN_PLAY, MUI_BTN_NEXT, MUI_BTN_STOP, MUI_BTN_REPEAT, MUI_BTN_RANDOM, MUI_BTN_COUNT };
 #define MUI_SEEK_MAX 65536
 #define MUI_VOLUME_MAX 100
@@ -264,6 +265,11 @@ uint32_t mui_clip_iff(const char* text, uint32_t n, uint8_t* out, size_t cap);
 extern const char* const mui_tool_labels[MUI_TOOL_BTNS];
 /* Label characters in tool row 2 (row 0) or row 3 (row 1). */
 uint32_t mui_tool_row_chars(uint32_t row);
+/* Minimum pixel widths of the button rows as mui_ui.c builds them (mui_icons.h width model): tool row 0 or 1, the transport row
+ * (worst-case labels over play, repeat and random states; row 0 = the first MUI_TRANSPORT_ROW1 buttons plus the volume slider, row 1 = the state buttons Repeat and Random), the extras row. */
+uint32_t mui_tool_row_width(uint32_t row);
+uint32_t mui_transport_row_width(uint32_t row);
+uint32_t mui_extra_row_width(void);
 /* MUI-P8 (plan 2026-10-25-amiga-mui.md section P8): parity rows the first MUI pass left out. Every action here is fired by
  * its shared action-table id (mui_menu_line), the same line the desktop sends; nothing keeps a second list. */
 /* Fires the table line of action `id` through send; returns 1 when the line was sent. mui_action_fires() is the call-count

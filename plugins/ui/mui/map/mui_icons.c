@@ -64,3 +64,11 @@ void mui_icon_palette(const uint32_t* tokens, int themed, uint32_t out[12]) {
         }
     }
 }
+
+uint32_t mui_button_width(const char* label, int icon_only) {
+    uint32_t w = 2u * MUI_BTN_PAD_X + MUI_BTN_FRAME + MUI_ICON_PX;
+    if (!icon_only && label != NULL) {
+        w += MUI_BTN_ICON_GAP + (uint32_t)strlen(label) * MUI_FONT_W;
+    }
+    return w;
+}
