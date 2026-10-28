@@ -262,6 +262,9 @@ static int scan_blob_ex(scan_state* s, const uint8_t* data, size_t size, const s
     r->md5 = "";
     r->size = stream != NULL ? (int64_t)total : (int64_t)size;
     s->row_n++;
+    if (s->cfg->song != NULL) {
+        s->cfg->song(s->cfg->song_ctx, t->path);
+    }
     return 1;
 }
 

@@ -24,6 +24,10 @@ typedef struct sel_local_scan_config {
     /* I336: optional. Polled before each file; non-zero ends the scan early (ok is still returned with the stats so far). */
     int (*cancelled)(void* ctx);
     void* cancelled_ctx;
+    /* I652d: optional. Called with the catalogue path of every module the scan recognised and queued, in walk order (also
+     * archive members, "<archive>/<member>"). Runs on the scan thread. */
+    void (*song)(void* ctx, const char* path);
+    void* song_ctx;
 } sel_local_scan_config;
 
 typedef struct sel_local_scan_stats {
