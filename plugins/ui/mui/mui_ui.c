@@ -361,7 +361,7 @@ static void mui_close_on_request(Object* win) {
     DoMethod(win, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, MUIV_Notify_Self, 3, MUIM_Set, MUIA_Window_Open, FALSE);
 }
 
-/* I660: PreParse strings of every Text object (plain, centred, right); empty when the look is off. */
+/* I660: PreParse strings of every Text object (plain, centred, right); only the alignment escape when the look is off. */
 static char g_pre[4], g_pre_c[8], g_pre_r[8];
 static char g_list_fmt1[8]; /* one-column list format carrying the pen preparse ("P=" + pen), empty when off */
 
@@ -417,7 +417,10 @@ static void mui_theme_init(void) {
     for (i = 0; i < MUI_TH_COUNT; i++) {
         g_th[i].on = mui_theme_look_for((mui_theme_role)i, th.token, &g_th[i].look) && pen >= 0 && i != MUI_TH_FIELD;
     }
-    g_pre[0] = g_pre_c[0] = g_pre_r[0] = g_list_fmt1[0] = 0;
+    /* The look off keeps the alignment escapes the labels always had. */
+    g_pre[0] = g_list_fmt1[0] = 0;
+    sprintf(g_pre_c, "\033c");
+    sprintf(g_pre_r, "\033r");
     if (pen >= 0) {
         sprintf(g_pre, "\033%d", pen);
         sprintf(g_pre_c, "\033c\033%d", pen);
