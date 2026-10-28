@@ -168,6 +168,11 @@ void sel_uim_layout_compute_tier(sel_uim_layout* l, uint32_t width, uint32_t hei
 /* I547: as compute_tier, with the bitmap tier rail width measured by the caller from its font (0: the default). */
 void sel_uim_layout_compute_rail(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t rail_w);
 void sel_uim_layout_compute(sel_uim_layout* l, uint32_t width, uint32_t height);
+/* DUI-P4-20: a canvas this tall (logical px) or shorter gets the one row footer. */
+#define SEL_UIM_FOOTER_ONE_ROW_MAX_H 600u
+uint32_t sel_uim_footer_height(uint32_t height);
+void sel_uim_layout_compute_bar(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t rail_w,
+                                uint32_t bar_height);
 int sel_uim_layout_check(const sel_uim_layout* l, char* msg, size_t cap);
 /* Hit test (DUI-P3-2): the index of the region of the layout tree that holds the point (x, y) in layout units, or -1
  * outside every region. The regions tile the canvas, so a point belongs to at most one. */
