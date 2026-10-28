@@ -4,6 +4,7 @@
 #   shared registry while they draw (song_row_reg); right-click opens the one menu (song_menu_open). Three songs are scanned,
 #   the Composers drilldown shows them, a right-click on song row 2 opens the menu with its 4 items (no Remove: not a queue
 #   row), Add to Queue grows the engine queue by 1 and the sentinel counts the open and the pick.
+#   I631: Add to Playlist on the Library page lists the saved playlists and adds the song to the one picked.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -79,3 +80,14 @@ if(NOT "${queued}" MATCHES "playlist_entries=([0-9]+)")
 endif()
 math(EXPR grew "${CMAKE_MATCH_1} - ${q0}")
 expect_eq("engine queue growth after Add to Queue" "${grew}" 1)
+
+# I631: Add to Playlist lists the saved playlists from the library on every page, not only while the Folders view is open.
+#   Violated invariant: the playlist step reads the same saved playlists as the sidebar (sel_engine_library_playlist_items).
+#   It read the current view's rows, so on the Library page it showed "No playlists" and its click added nothing.
+# Item 4 (Add to Playlist) opens the playlist step at the same anchor; its first item is the playlist made before.
+math(EXPR px "${sx} + 10")
+math(EXPR py "${sy} + 3 * 24 + 12")
+math(EXPR fy "${sy} + 12")
+sm_run(added "${scan}exec PLAYLIST_CREATE alpha\nwait 1\nmove ${cx} ${cy}\nclick ${cx} ${cy}\nwait 1\nmove ${sx} ${sy}\nrclick ${sx} ${sy}\nclick ${px} ${py}\nwait 1\nclick ${px} ${fy}\nwait 1\n")
+sm_field(adds "${added}" playlist_adds)
+expect_eq("Add to Playlist adds to the saved playlist from the Library page" "${adds}" 1)

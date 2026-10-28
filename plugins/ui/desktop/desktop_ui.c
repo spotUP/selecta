@@ -926,6 +926,7 @@ static void draw_transport(desk* d);
 static void draw_sidebar(desk* d);
 static int32_t side_lib_at(const desk* d, int32_t x, int32_t y);
 static int32_t side_lib_max_q16(const desk* d);
+static void side_lib_reload(desk* d);
 static sel_gui_rect side_lib_row_rect(const desk* d, uint32_t i);
 static void draw_nowplaying(desk* d);
 static void draw_nowplaypage(desk* d);
@@ -2077,15 +2078,13 @@ static const char* song_menu_label(const desk* d, int32_t k) {
 /* Items on the open menu: the song items, the playlists (at least the "No playlists" line) or the three scope choices. */
 static int32_t song_menu_n(const desk* d) {
     int32_t n = 1;
-    const char* name;
     if (d->sm_step == 0) {
         return song_menu_count(d);
     }
     if (d->sm_step == 2) {
         return 3;
     }
-    for (n = 0; n < 8 && playlist_nth(sel_engine_state(d->engine), (uint32_t)n, &name) != 0u; n++) {
-    }
+    n = d->side_n < 8u ? (int32_t)d->side_n : 8;
     return n > 0 ? n : 1;
 }
 
@@ -2185,7 +2184,6 @@ static void np_title_reg(desk* d) {
 static void song_menu_draw(desk* d) {
     int32_t k, n;
     const sel_gui_atlas* semi = desk_font(d, 1, 13);
-    const char* name;
     if (!d->sm_open || semi == NULL) {
         return;
     }
@@ -2210,8 +2208,8 @@ static void song_menu_draw(desk* d) {
                                    lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_SMALL]),
                                    ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
             }
-            if (d->sm_step == 1 && playlist_nth(sel_engine_state(d->engine), (uint32_t)k, &name) != 0u) {
-                label = name;
+            if (d->sm_step == 1 && (uint32_t)k < d->side_n) {
+                label = d->side_items[k].name;
             }
             sel_gui_text_wrap(d->canvas, semi, rect_of(m.x + lpx(d, 8), m.y + lpx(d, 4), m.w - lpx(d, 16), semi->line_height), label,
                               ARGB(d->theme.token[lit ? SEL_GUI_TOKEN_ACCENT_TEXT : SEL_GUI_TOKEN_TEXT]), 1, &d->text);
@@ -2501,8 +2499,7 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
                 d->queue_cmds++;
                 desk_send(d, line);
             } else if (d->sm_step == 1) {
-                const char* name;
-                uint32_t pid = playlist_nth(sel_engine_state(d->engine), (uint32_t)k, &name);
+                uint32_t pid = (uint32_t)k < d->side_n ? d->side_items[k].id : 0u;
                 if (pid != 0u) {
                     char line[640];
                     snprintf(line, sizeof line, "PLAYLIST_ADD_SONG %u \"%s\"", (unsigned)pid, d->sm_ref.path);
@@ -2511,6 +2508,7 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
                     desk_toast(d, "Added to playlist");
                 }
             } else if (k == 3) {
+                side_lib_reload(d); /* I631: the saved playlists from the library, whatever page is open */
                 d->sm_step = 1;
                 keep = 1;
             } else {
@@ -6572,6 +6570,13 @@ static int32_t side_lib_max_q16(const desk* d) {
     return total > view ? px_to_logical(d, total - view) << 16 : 0;
 }
 
+/* I608, I631: the one read of the saved playlists, shared by the sidebar list and the song menu's Add to Playlist step. */
+static void side_lib_reload(desk* d) {
+    d->side_n = sel_engine_library_playlist_items(d->engine, d->side_items, SIDE_LIB_MAX);
+    d->side_stale = 0u;
+    d->side_y_q16 = d->side_y_q16 > side_lib_max_q16(d) ? side_lib_max_q16(d) : d->side_y_q16;
+}
+
 static sel_gui_rect side_lib_row_rect(const desk* d, uint32_t i) {
     sel_gui_rect v = side_lib_view_rect(d);
     return rect_of(v.x, v.y + (int32_t)i * side_lib_row_h(d) - lpx(d, d->side_y_q16 >> 16), v.w, side_lib_row_h(d));
@@ -6602,9 +6607,7 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
     int labels = sb.w > lpx(d, 120);
     uint32_t i;
     if (d->side_stale) { /* the saved playlists changed: read them again */
-        d->side_n = sel_engine_library_playlist_items(d->engine, d->side_items, SIDE_LIB_MAX);
-        d->side_stale = 0u;
-        d->side_y_q16 = d->side_y_q16 > side_lib_max_q16(d) ? side_lib_max_q16(d) : d->side_y_q16;
+        side_lib_reload(d);
     }
     if (labels) {
         draw_text(d, rect_of(hd.x + pad, hd.y, hd.w - 2 * pad, hd.h), "Your Library", 1, 15, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
