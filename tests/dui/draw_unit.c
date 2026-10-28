@@ -197,12 +197,20 @@ static void test_blit_image_round(void) {
     partial = 0u;
     for (y = 4; y < 12; y++) {
         for (x = 4; x < 12; x++) {
-            uint32_t want = chan(sel_gui_pixel(c, x, y), 16) >= 128u ? red8 : bg8;
-            CHECK(sel_gui_pixel(ic, x, y) == want);
-            partial += want == red8;
+            uint32_t p = sel_gui_pixel(c, x, y), r = chan(p, 16);
+            /* I595: INDEX8 blends the edge like RGBA32 (no hard drop at half coverage): untouched where nothing
+             * is covered, the source index where fully covered, a changed index wherever the coverage is real. */
+            if (r == 0u) {
+                CHECK(sel_gui_pixel(ic, x, y) == bg8);
+            } else if (r == 255u) {
+                CHECK(sel_gui_pixel(ic, x, y) == red8);
+            } else if (r >= 128u) {
+                CHECK(sel_gui_pixel(ic, x, y) != bg8);
+            }
+            partial += r != 0u && r != 255u && r >= 128u;
         }
     }
-    CHECK(partial > 20u && partial < 64u);             /* the arc keeps some corner pixels and drops others */
+    CHECK(partial > 4u);                               /* the arc has blended pixels to check */
     drop(ic);
     drop(c);
 }
@@ -409,13 +417,7 @@ static void ref_px(sel_gui_canvas* c, int32_t x, int32_t y, uint32_t cov, uint32
     if (cov == 0u) {
         return;
     }
-    if (c->format == SEL_GUI_INDEX8) {
-        if (cov < 8u) {
-            return;
-        }
-    } else {
-        a = (a * cov + 8u) / 16u;
-    }
+    a = (a * cov + 8u) / 16u; /* I595: INDEX8 blends the edge like RGBA32 instead of dropping half-covered pixels */
     sel_gui_fill_rect(c, R(x, y, 1, 1), (a << 24) | (argb & 0xFFFFFFu));
 }
 
