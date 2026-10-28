@@ -115,6 +115,7 @@ int main(int argc, char** argv) {
         usleep(10000);
     }
     CHECK(addf_stats(e).addf_runs == 2u && addf_stats(e).addf_added == 0u); /* a missing folder finishes the run and adds nothing */
+    CHECK(addf_stats(e).pl_fail_runs == 1u && addf_stats(e).pl_fail_reason == SEL_PLFAIL_UNREADABLE); /* and says it could not read it (I652e) */
     CHECK(sel_library_playlist_keys(lib, 1u, keys, sizeof keys, &n) == 0 && n == 3u);
 
     sel_engine_destroy(e);

@@ -91,6 +91,7 @@ int main(void) {
     snprintf(line, sizeof line, "PLAYLIST_IMPORT %u \"%s/nothere.m3u\"", (unsigned)id, dir);
     run(e, line);
     CHECK(imp_stats(e).import_runs == 1u); /* an unreadable file imports nothing */
+    CHECK(imp_stats(e).pl_fail_runs == 1u && imp_stats(e).pl_fail_reason == SEL_PLFAIL_UNREADABLE); /* and reports the failure (I652e) */
     CHECK(sel_library_playlist_keys(lib, id, keys, sizeof keys, &n) == 0 && n == 2u);
 
     sel_engine_destroy(e);

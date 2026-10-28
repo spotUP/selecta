@@ -281,6 +281,7 @@ struct sel_engine {
     uint32_t home_rows;                        /* entries the home view source shows (I191 sentinel) */
     uint32_t folder_view_rows;                 /* rows the folders view source built (I179 sentinel) */
     uint32_t import_runs, import_added, import_missing; /* PLAYLIST_IMPORT sentinel and last result (I652c) */
+    uint32_t pl_fail_runs, pl_fail_reason;     /* last failed PLAYLIST_IMPORT / PLAYLIST_ADD_FOLDER: counter and SEL_PLFAIL_* (I652e) */
     uint32_t addf_runs, addf_added;            /* PLAYLIST_ADD_FOLDER sentinel and songs the last run appended (I652d) */
     /* I652d: the PLAYLIST_ADD_FOLDER in flight: its scan collects the module paths (scan thread) into addf_buf, NUL separated;
      * scan_collect sorts them and appends them to playlist addf_id. */
@@ -3549,6 +3550,12 @@ static void addf_collect(void* ctx, const char* path) {
     e->addf_count++;
 }
 
+/* I652e: a playlist import or add-folder failed; the UI reads the counter and reason instead of a "0 songs added" count. */
+static void playlist_fail(sel_engine* e, uint32_t reason) {
+    e->pl_fail_runs++;
+    e->pl_fail_reason = reason;
+}
+
 static int addf_path_cmp(const void* a, const void* b) {
     return strcmp(*(const char* const*)a, *(const char* const*)b);
 }
@@ -3561,10 +3568,12 @@ static void addf_finish(sel_engine* e, int scan_ok) {
     e->addf_active = 0;
     if (!scan_ok || e->addf_oom) {
         sel_engine_report_error(e, "scan_failed", "PLAYLIST_ADD_FOLDER");
+        playlist_fail(e, SEL_PLFAIL_UNREADABLE);
     } else if (e->addf_count != 0u) {
         list = e->host->mem_alloc(e->host, (size_t)e->addf_count * sizeof *list, SEL_MEM_FAST);
         if (list == NULL) {
             sel_engine_report_error(e, "no_memory", "PLAYLIST_ADD_FOLDER");
+            playlist_fail(e, SEL_PLFAIL_OTHER);
         } else {
             for (i = 0, off = 0; i < e->addf_count; i++) {
                 list[i] = e->addf_buf + off;
@@ -3575,6 +3584,7 @@ static void addf_finish(sel_engine* e, int scan_ok) {
                 int rc = sel_library_playlist_add_song(e->lib, e->addf_id, list[i]);
                 if (rc != SEL_FOLDER_OK) {
                     folder_report(e, rc, "PLAYLIST_ADD_FOLDER");
+                    playlist_fail(e, SEL_PLFAIL_OTHER);
                     break;
                 }
                 added++;
@@ -4847,6 +4857,7 @@ static void cmd_PLAYLIST_IMPORT(sel_engine* e, const sel_message* m) {
     int rc;
     if (!folder_ready(e, "PLAYLIST_IMPORT")) return;
     if (!playlist_file_parse(e, path, &pl, "PLAYLIST_IMPORT")) {
+        playlist_fail(e, SEL_PLFAIL_UNREADABLE);
         return;
     }
     for (i = 0; i < pl.count; i++) {
@@ -4868,6 +4879,7 @@ static void cmd_PLAYLIST_IMPORT(sel_engine* e, const sel_message* m) {
         rc = sel_library_playlist_add_song(e->lib, id, full);
         if (rc != SEL_FOLDER_OK) {
             folder_report(e, rc, "PLAYLIST_IMPORT");
+            playlist_fail(e, SEL_PLFAIL_OTHER);
             return;
         }
         added++;
@@ -4888,6 +4900,7 @@ static void cmd_PLAYLIST_ADD_FOLDER(sel_engine* e, const sel_message* m) {
     if (!folder_ready(e, "PLAYLIST_ADD_FOLDER")) return;
     if (e->scan_running || e->sync_running || e->addf_active) {
         sel_engine_report_error(e, "scan_busy", m->args[1].v.s);
+        playlist_fail(e, SEL_PLFAIL_BUSY);
         return;
     }
     e->addf_id = (uint32_t)m->args[0].v.u;
@@ -4895,6 +4908,7 @@ static void cmd_PLAYLIST_ADD_FOLDER(sel_engine* e, const sel_message* m) {
     scan_start(e, m->args[1].v.s);
     if (!e->scan_running) { /* the task could not start; scan_start reported it */
         e->addf_active = 0;
+        playlist_fail(e, SEL_PLFAIL_UNREADABLE);
     }
 }
 
@@ -6332,6 +6346,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->import_added = e->import_added;
     out->addf_runs = e->addf_runs;
     out->addf_added = e->addf_added;
+    out->pl_fail_runs = e->pl_fail_runs;
+    out->pl_fail_reason = e->pl_fail_reason;
     out->import_missing = e->import_missing;
     out->links_parsed = e->links_parsed;
     out->links_made = e->links_made;
