@@ -101,3 +101,48 @@ uint32_t mui_scope_fire(uint32_t i, mui_send_fn send, void* ctx) {
     }
     return sent;
 }
+
+#include <selecta/uimodel/viewcmds.h>
+
+/* MUI-P8-5 */
+static const char* const k_viewbtn[2] = {"New Folder", "New Playlist"};
+
+const char* mui_viewbtn_label(uint32_t i) {
+    return i < MUI_VIEWBTN_COUNT ? (i < 2u ? k_viewbtn[i] : sel_uim_flag_label(i - 2u)) : NULL;
+}
+
+uint32_t mui_viewbtn_fire(uint32_t i, const char* text, uint32_t folder, mui_send_fn send, void* ctx) {
+    char line[SEL_UIM_CMD_MAX];
+    uint32_t n = i < 2u ? sel_uim_plbtn_line(i, text, folder, line, sizeof line) : sel_uim_flag_line(i - 2u, text, line, sizeof line);
+    g_view_fires++;
+    return n != 0u && send != NULL && send(ctx, line) != 0;
+}
+
+/* MUI-P8-12 */
+uint32_t mui_tile_steps(void) { return SEL_UIM_TILE_STEPS; }
+int32_t mui_tile_step(uint32_t i) { return sel_uim_tile_step(i); }
+
+/* MUI-P8-14 */
+static uint32_t g_pref_sets;
+
+uint32_t mui_pref_sets(void) { return g_pref_sets; }
+
+static uint32_t pref_send(uint32_t n, const char* line, mui_send_fn send, void* ctx) {
+    g_pref_sets++;
+    return n != 0u && send != NULL && send(ctx, line) != 0;
+}
+
+uint32_t mui_amiga_hotkeys_set(int enabled, mui_send_fn send, void* ctx) {
+    char line[SEL_UIM_CMD_MAX];
+    return pref_send(sel_uim_hotkeys_line(enabled, line, sizeof line), line, send, ctx);
+}
+
+uint32_t mui_amiga_priority_set(int32_t v, mui_send_fn send, void* ctx) {
+    char line[SEL_UIM_CMD_MAX];
+    return pref_send(sel_uim_priority_line(v, line, sizeof line), line, send, ctx);
+}
+
+uint32_t mui_amiga_group_set(const char* path, mui_send_fn send, void* ctx) {
+    char line[SEL_UIM_CMD_MAX];
+    return pref_send(sel_uim_groupfile_line(path, line, sizeof line), line, send, ctx);
+}

@@ -16,6 +16,7 @@
 #include <selecta/gui/gui_widget.h>
 #include <selecta/gui/gui_input.h>
 #include <selecta/uimodel/browse.h>
+#include <selecta/uimodel/viewcmds.h>
 #include <selecta/uimodel/cmdline.h>
 #include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/keybind.h>
@@ -3902,7 +3903,7 @@ static const char* pl_take_name(desk* d, const char* fallback) {
 /* The New Playlist action: the Playlists page button and the sidebar's empty-state button (I627) both send it here. */
 static int pl_create(desk* d, uint32_t folder) {
     char line[160];
-    snprintf(line, sizeof line, "PLAYLIST_CREATE \"%s\" %u", pl_take_name(d, "New Playlist"), (unsigned)folder);
+    sel_uim_plbtn_line(1u, pl_take_name(d, "New Playlist"), folder, line, sizeof line);
     return pl_send(d, line);
 }
 
@@ -3923,7 +3924,7 @@ static int pl_button_click(desk* d, const sel_view_state* v, uint32_t k) {
     }
     switch (k) {
     case 0u:
-        snprintf(line, sizeof line, "FOLDER_ADD \"%s\" %u", pl_take_name(d, "New Folder"), (unsigned)pl_target_folder(d, v));
+        sel_uim_plbtn_line(0u, pl_take_name(d, "New Folder"), pl_target_folder(d, v), line, sizeof line);
         return pl_send(d, line);
     case 1u:
         return pl_create(d, pl_target_folder(d, v));
@@ -4047,7 +4048,7 @@ static int pl_key(desk* d, const sel_gui_input* ev) {
 enum { SI_BUTTONS = 3, SI_ROW_H = 20 };
 
 static const char* si_button_label(uint32_t k) {
-    return k == 0u ? "Mark Wrong" : k == 1u ? "Skip Song" : "Save Note";
+    return sel_uim_flag_label(k);
 }
 
 static void si_clean(char* val) {
@@ -4676,13 +4677,7 @@ static int si_pointer(desk* d, const sel_gui_input* ev) {
     }
     for (k = 0; k < SI_BUTTONS; k++) {
         if (in_rect(queue_btn_rect(d, mn, k), ev->x, ev->y)) {
-            if (k == 1u) {
-                snprintf(line, sizeof line, "FLAG skip");
-            } else if (k == 0u) {
-                snprintf(line, sizeof line, d->si_nlen > 0u ? "FLAG wrong \"%s\"" : "FLAG wrong", d->si_note);
-            } else {
-                snprintf(line, sizeof line, d->si_nlen > 0u ? "NOTE \"%s\"" : "NOTE", d->si_note);
-            }
+            sel_uim_flag_line(k, d->si_note, line, sizeof line);
             d->si_edit = 0;
             return si_send(d, line);
         }
