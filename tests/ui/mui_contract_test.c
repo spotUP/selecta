@@ -626,6 +626,22 @@ static void test_song_menu(void) {
         CHECK(strcmp(sel_uim_song_menu_label(i, 0), want[i]) == 0, "item %u '%s'", (unsigned)i, sel_uim_song_menu_label(i, 0));
     }
     CHECK(strcmp(sel_uim_song_menu_label(4, 1), "Remove from Queue") == 0 && sel_uim_song_menu_label(5, 0) == NULL, "queue page, bound");
+    {
+        char o[96];
+        CHECK(mui_song_menu_line(0, "A:b\"c.mod", 0, 0, 0, o, sizeof o) > 0 && strcmp(o, "OPEN \"A:b\\\"c.mod\"") == 0, "play '%s'", o);
+        CHECK(strcmp(mui_song_menu_follow(0), "PLAY") == 0 && mui_song_menu_follow(2) == NULL, "play follows with PLAY");
+        mui_song_menu_line(1, "x.mod", 0, 0, 0, o, sizeof o);
+        CHECK(strcmp(o, "QUEUE_PLAY_NEXT \"x.mod\"") == 0, "next '%s'", o);
+        mui_song_menu_line(2, "x.mod", 0, 0, 0, o, sizeof o);
+        CHECK(strcmp(o, "QUEUE_ADD \"x.mod\"") == 0, "add '%s'", o);
+        CHECK(mui_song_menu_line(3, "x.mod", 0, 0, 0, o, sizeof o) == 0, "playlist needs an id");
+        mui_song_menu_line(3, "x.mod", 7, 7, 0, o, sizeof o);
+        CHECK(strcmp(o, "PLAYLIST_ADD_SONG 7 \"x.mod\"") == 0, "playlist '%s'", o);
+        mui_song_menu_line(4, "x.mod", 9, 0, 1, o, sizeof o);
+        CHECK(strcmp(o, "QUEUE_REMOVE 9") == 0, "queue remove '%s'", o);
+        mui_song_menu_line(4, "x.mod", 0, 0, 0, o, sizeof o);
+        CHECK(strcmp(o, "LIBRARY_REMOVE \"x.mod\"") == 0, "library remove '%s'", o);
+    }
 }
 
 static void test_like_rating(void) {

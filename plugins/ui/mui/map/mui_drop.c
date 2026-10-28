@@ -6,16 +6,21 @@
 #include <stdio.h>
 #include <string.h>
 
-/* One AppWindow argument to its engine line: a file joins the queue (M4-P7-2), a drawer runs the scan the desktop runs
+/* A verb head and a path to one engine line, the path quoted and escaped like the desktop's desk_send_path. Returns the
+ * length, 0 when the line would not fit or the path is empty.
+ * One AppWindow argument to its engine line: a file joins the queue (M4-P7-2), a drawer runs the scan the desktop runs
  * for a dropped folder. The path is quoted and escaped like the desktop's desk_send_path. Returns the line length,
  * 0 when the line would not fit or the path is empty. */
-uint32_t mui_drop_line(const char* path, int is_dir, char* out, size_t cap) {
-    const char* verb = is_dir ? "LIBRARY_SCAN" : "QUEUE_ADD";
+uint32_t mui_path_line(const char* head, const char* path, char* out, size_t cap) {
     size_t o;
-    if (path == NULL || path[0] == '\0' || cap < 20u) {
+    if (head == NULL || path == NULL || path[0] == '\0' || cap < 20u) {
         return 0;
     }
-    o = (size_t)snprintf(out, cap, "%s \"", verb);
+    o = (size_t)snprintf(out, cap, "%s \"", head);
+    if (o >= cap) {
+        out[0] = '\0';
+        return 0;
+    }
     for (; *path != '\0'; path++) {
         if (o + 3u >= cap) {
             out[0] = '\0';
@@ -33,6 +38,10 @@ uint32_t mui_drop_line(const char* path, int is_dir, char* out, size_t cap) {
     out[o++] = '"';
     out[o] = '\0';
     return (uint32_t)o;
+}
+
+uint32_t mui_drop_line(const char* path, int is_dir, char* out, size_t cap) {
+    return mui_path_line(is_dir ? "LIBRARY_SCAN" : "QUEUE_ADD", path, out, cap);
 }
 
 /* The text Copy Song Title puts on the clipboard: "Artist - Title", or the title alone. 0 when nothing is shown. */

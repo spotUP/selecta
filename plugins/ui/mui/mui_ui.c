@@ -8,9 +8,11 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "map/mui_map.h"
+#include <selecta/tags.h>
 
 #if defined(__amigaos__) || defined(AMIGA)
 #define SEL_MUI_NATIVE 1
@@ -56,9 +58,15 @@ typedef struct mui_cells {
 /* MUI-P4: the tool row gadgets and their counters in the ui_p4 sentinel. */
 #define MUI_CRUMB_MAX 6u
 enum { P4_SEARCH, P4_CMD, P4_LIKE, P4_RATING, P4_SUBSONG, P4_QREMOVE, P4_QCLEAR, P4_QUP, P4_QDOWN, P4_POPEN, P4_PRENAME, P4_PDELETE,
-       P4_CLEARLIB, P4_HELP, P4_HOME, P4_TOAST, P4_CRUMB, P4_STATE, P4_COUNT };
+       P4_CLEARLIB, P4_HELP, P4_HOME, P4_TOAST, P4_CRUMB, P4_STATE, P4_SETTINGS, P4_SONGMENU, P4_NP, P4_SONGINFO, P4_PREF, P4_TRACKER,
+       P4_COUNT };
 static const char* const p4_name[P4_COUNT] = {"search", "cmd", "like", "rating", "subsong", "qremove", "qclear", "qup", "qdown",
-                                              "popen", "prename", "pdelete", "clearlib", "help", "home", "toast", "crumb", "state"};
+                                              "popen", "prename", "pdelete", "clearlib", "help", "home", "toast", "crumb", "state", "settings",
+                                              "songmenu", "np", "songinfo", "pref", "tracker"};
+#define MUI_PREF_MAX 12u   /* MUI-P4-10: most Settings rows (sel_uim_pref_row_count) */
+#define MUI_INFO_MAX 24u   /* MUI-P4-9: most song info rows */
+#define MUI_TRK_ROWS 16u   /* MUI-P4-16: pattern rows shown */
+#define MUI_TRK_CHANNELS 4u /* MUI-P4-16: channel columns shown */
 
 typedef struct mui_state {
     uint32_t opens; /* ui_open_mui sentinel (MUI-P1-5): windows opened */
@@ -69,7 +77,7 @@ typedef struct mui_state {
     uint32_t row_plays;      /* list rows activated by double click (MUI-P3-1): stat row_plays */
     uint32_t drops;          /* AppWindow arguments sent to the engine (MUI-P5-6): stat drops */
     sel_tag stats[8];
-    char p4_stat[200];       /* MUI-P4: the sentinel printed as ui_p4: how often each P4 gadget sent its line */
+    char p4_stat[400];       /* MUI-P4: the sentinel printed as ui_p4: how often each P4 gadget sent its line */
     uint32_t p4[P4_COUNT];
     sel_uim uim;             /* the frame model the controls are driven from (MUI-P2-6) */
     char list_stat[480];     /* the list sentinel printed as ui_list: back end, style, columns, rows (native List only) */
@@ -107,6 +115,29 @@ typedef struct mui_state {
     char help_buf[MUI_HELP_MAX][96];
     const char* help_ptr[MUI_HELP_MAX + 1];
     char status_buf[160];
+    Object* set_win;                /* MUI-P4-10: the Settings window, created on the first click on Settings */
+    Object* set_ctl[MUI_PREF_MAX];
+    char set_choice[MUI_PREF_MAX][80];
+    const char* set_entry[MUI_PREF_MAX][10];
+    Object* np_title;               /* MUI-P4-8 Now Playing group in the detail slot */
+    Object* np_artist;
+    Object* np_album;
+    Object* np_lyrics;
+    Object* np_up[3];
+    char np_buf[3][112];
+    char np_lyric_buf[1024];
+    char np_up_buf[3][96];
+    Object* info_list;              /* MUI-P4-9 song info rows */
+    char info_buf[MUI_INFO_MAX][128];
+    const char* info_ptr[MUI_INFO_MAX + 1];
+    Object* trk_list;               /* MUI-P4-16 pattern rows, shown only when the engine answered with pattern data */
+    Object* trk_group;
+    char trk_buf[MUI_TRK_ROWS][160];
+    const char* trk_ptr[MUI_TRK_ROWS + 1];
+    uint32_t detail_sig, trk_sig;
+    uint32_t pat_asked, pat_order, pat_row, pat_qid;
+    uint32_t sm_playlist;           /* MUI-P4-6: the playlist last opened or seen, the target of Add to Playlist */
+    uint32_t sm_on_queue;           /* the Song menu item 4 title follows the cursor row (Remove from Queue) */
     Object* crumb;                  /* MUI-P3-3: the drilldown breadcrumb line above the list */
     char crumb_buf[128];
     Object* crumb_row;              /* MUI-P4-2: the Library breadcrumb buttons (browse path pieces), shown in the browse source */
@@ -137,10 +168,41 @@ static uint32_t mui_now_ms(void);
  * wait loop turns into the row's protocol line for the engine (MUI-P2-4). */
 #define MENU_MAX 160
 #define MENU_ID_BASE 0x1000L
+#define CTL_SM_BASE 0x2500L /* MUI-P4-6: Song menu items, CTL_SM_BASE + item */
+#define CTL_PREF_BASE 0x2600L /* MUI-P4-10: Settings gadgets, CTL_PREF_BASE + pref row */
 #define CTL_CLIP_COPY 0x2120L /* Edit > Copy Song Title (MUI-P5-6), outside the MENU_ID_BASE + row range */
 static mui_menu_item g_menu[MENU_MAX];
 static char g_menu_sc[MENU_MAX][2];
 static uint32_t g_menu_n;
+
+/* MUI-P4-6: the five Song menu items (labels from sel_uim_song_menu_label, the desktop's set) under `parent`. They sit in the
+ * window menu strip (keys 1 to 5, the rig drives them with ui menushort) and in the Listview's context menu (right mouse). */
+static Object* g_sm_item[2][SEL_UIM_SONG_MENU_ITEMS];
+static void mui_song_menu_items(Object* parent, uint32_t which) {
+    static const char* const keys[SEL_UIM_SONG_MENU_ITEMS] = {"1", "2", "3", "4", "5"};
+    uint32_t i;
+    for (i = 0; i < SEL_UIM_SONG_MENU_ITEMS; i++) {
+        Object* it = MUI_NewObject((char*)MUIC_Menuitem, MUIA_Menuitem_Title, (ULONG)sel_uim_song_menu_label(i, 0),
+                                   MUIA_Menuitem_Shortcut, (ULONG)(which == 0u ? keys[i] : NULL), TAG_DONE);
+        g_sm_item[which][i] = it;
+        if (it != NULL) {
+            DoMethod(parent, OM_ADDMEMBER, it);
+            DoMethod(it, MUIM_Notify, MUIA_Menuitem_Trigger, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID,
+                     (ULONG)(CTL_SM_BASE + (LONG)i));
+        }
+    }
+}
+
+static Object* mui_song_context_menu(void) {
+    Object* strip = MUI_NewObject((char*)MUIC_Menustrip, TAG_DONE);
+    Object* menu = MUI_NewObject((char*)MUIC_Menu, MUIA_Menu_Title, (ULONG) "Song", TAG_DONE);
+    if (strip == NULL || menu == NULL) {
+        return NULL;
+    }
+    DoMethod(strip, OM_ADDMEMBER, menu);
+    mui_song_menu_items(menu, 1u);
+    return strip;
+}
 
 static Object* menu_child(Object* parent, ULONG cls_is_menu, const char* title, Object** cache_key, const char** names, Object** objs,
                           uint32_t* count, const char* want) {
@@ -215,6 +277,12 @@ static Object* mui_menu_strip(void) {
             DoMethod(edit, OM_ADDMEMBER, copy);
             DoMethod(copy, MUIM_Notify, MUIA_Menuitem_Trigger, MUIV_EveryTime, MUIV_Notify_Application, 2,
                      MUIM_Application_ReturnID, (ULONG)CTL_CLIP_COPY);
+        }
+    }
+    {
+        Object* song = menu_child(strip, 1, "Song", NULL, t_name, t_obj, &nt, "Song");
+        if (song != NULL) {
+            mui_song_menu_items(song, 0u);
         }
     }
     return strip;
@@ -398,7 +466,7 @@ static Object* mui_make_cycle(const char* const* entries, LONG id) {
 static Object* mui_tool_group(mui_state* s) {
     static const struct { const char* label; uint32_t which; } btns[] = {
         {"Like", P4_LIKE}, {"Remove From Queue", P4_QREMOVE}, {"Clear Queue", P4_QCLEAR}, {"Move Up", P4_QUP}, {"Move Down", P4_QDOWN},
-        {"Help", P4_HELP}, {"Open Playlist", P4_POPEN}, {"Rename Playlist", P4_PRENAME}, {"Delete Playlist", P4_PDELETE}, {"Clear Library", P4_CLEARLIB}};
+        {"Help", P4_HELP}, {"Settings", P4_SETTINGS}, {"Open Playlist", P4_POPEN}, {"Rename Playlist", P4_PRENAME}, {"Delete Playlist", P4_PDELETE}, {"Clear Library", P4_CLEARLIB}};
     Object* g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
     Object* r1 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     Object* r2 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
@@ -447,6 +515,7 @@ static Object* mui_main_group(mui_state* s) {
     if (s->listview == NULL) {
         return NULL;
     }
+    set(s->listview, MUIA_ContextMenu, (ULONG)mui_song_context_menu()); /* MUI-P4-6: right mouse button */
     DoMethod(s->listview, MUIM_Notify, MUIA_Listview_DoubleClick, TRUE, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_DBL);
     DoMethod(s->list, MUIM_Notify, MUIA_List_Active, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_SEL);
     s->list_active_set = -1;
@@ -492,6 +561,209 @@ static Object* mui_main_group(mui_state* s) {
 
 /* One engine step into the controls: the frame through the dirty bits (mui_dirty_attrs) into set(), the button labels
  * (they depend on play, repeat and random state), and the list window when its rows changed. */
+/* MUI-P4-8/9/16: the detail slot. Now Playing (artwork placeholder, title, artist, album, lyrics, next in queue), the song
+ * information rows, and the tracker pattern rows. All text comes from the engine state; mui_detail_refresh refills it when the
+ * signature of the shown values changes. */
+static Object* mui_np_text(char* buf, size_t cap, const char* init) {
+    snprintf(buf, cap, "%s", init);
+    return MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG)buf, TAG_DONE);
+}
+
+static Object* mui_detail_group(mui_state* s) {
+    Object* g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+    Object* art = MUI_NewObject((char*)MUIC_Rectangle, MUIA_Frame, MUIV_Frame_Group, MUIA_FixHeight, 64, MUIA_FixWidth, 64, TAG_DONE);
+    Object* lyr_list = MUI_NewObject((char*)MUIC_Floattext, MUIA_Floattext_Text, (ULONG)s->np_lyric_buf, TAG_DONE);
+    Object* lyr_view;
+    uint32_t i;
+    if (g == NULL) {
+        return NULL;
+    }
+    s->np_lyric_buf[0] = '\0';
+    s->np_title = mui_np_text(s->np_buf[0], sizeof s->np_buf[0], " ");
+    s->np_artist = mui_np_text(s->np_buf[1], sizeof s->np_buf[1], " ");
+    s->np_album = mui_np_text(s->np_buf[2], sizeof s->np_buf[2], " ");
+    s->np_lyrics = lyr_list;
+    lyr_view = lyr_list != NULL ? MUI_NewObject((char*)MUIC_Listview, MUIA_Listview_List, (ULONG)lyr_list, TAG_DONE) : NULL;
+    s->info_list = MUI_NewObject((char*)MUIC_List, MUIA_Frame, MUIV_Frame_InputList, TAG_DONE);
+    s->trk_list = MUI_NewObject((char*)MUIC_List, MUIA_Frame, MUIV_Frame_InputList, TAG_DONE);
+    s->trk_group = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
+    if (art != NULL) {
+        DoMethod(g, OM_ADDMEMBER, art);
+    }
+    DoMethod(g, OM_ADDMEMBER, s->np_title);
+    DoMethod(g, OM_ADDMEMBER, s->np_artist);
+    DoMethod(g, OM_ADDMEMBER, s->np_album);
+    if (lyr_view != NULL) {
+        DoMethod(g, OM_ADDMEMBER, lyr_view);
+    }
+    DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG) "\033cNext in Queue", TAG_DONE));
+    for (i = 0; i < 3; i++) {
+        s->np_up[i] = mui_np_text(s->np_up_buf[i], sizeof s->np_up_buf[i], " ");
+        DoMethod(g, OM_ADDMEMBER, s->np_up[i]);
+    }
+    if (s->info_list != NULL) {
+        DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Listview, MUIA_Listview_List, (ULONG)s->info_list, TAG_DONE));
+    }
+    if (s->trk_group != NULL && s->trk_list != NULL) {
+        DoMethod(s->trk_group, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Listview, MUIA_Listview_List, (ULONG)s->trk_list, TAG_DONE));
+        DoMethod(g, OM_ADDMEMBER, s->trk_group);
+    }
+    return g;
+}
+
+static const char* mui_base_name(const char* path) {
+    const char* b = path, *p;
+    for (p = path; *p != '\0'; p++) {
+        if (*p == '/' || *p == ':') {
+            b = p + 1;
+        }
+    }
+    return b;
+}
+
+static void mui_flat(char* d, size_t cap, const char* src) {
+    size_t i = 0;
+    for (; src != NULL && src[i] != '\0' && i + 1 < cap; i++) {
+        d[i] = (unsigned char)src[i] < 32u ? ' ' : src[i];
+    }
+    d[i] = '\0';
+}
+
+static void mui_detail_refresh(mui_state* s, const sel_state* st) {
+    const sel_song_state* so = &st->song;
+    const sel_pattern_view* pv = st->pattern;
+    uint32_t sig, i, n, k;
+    const char* title, *artist, *album, *lyr;
+    if (s->np_title == NULL) {
+        return;
+    }
+    /* The pattern window follows the play position: ask again when the order or the row moved. */
+    if (so->path != NULL && (so->pattern_pos.order != s->pat_order || so->pattern_pos.row != s->pat_row || s->pat_asked == 0u)) {
+        s->pat_order = so->pattern_pos.order;
+        s->pat_row = so->pattern_pos.row;
+        s->pat_asked = 1u;
+        sel_engine_pattern_request(s->engine, s->pat_order, s->pat_row, MUI_TRK_ROWS);
+    }
+    sig = 2166136261u;
+#define MUI_SIG(v) (sig = (sig ^ (uint32_t)(v)) * 16777619u)
+    for (k = 0; so->path != NULL && so->path[k] != '\0'; k++) {
+        MUI_SIG(so->path[k]);
+    }
+    MUI_SIG(so->subsong);
+    MUI_SIG(so->subsong_count);
+    MUI_SIG(st->lyric_line);
+    MUI_SIG(st->lyric_lines);
+    MUI_SIG(st->queue_playing);
+    MUI_SIG(st->queue_count);
+    MUI_SIG(pv != NULL ? pv->seq : 0u);
+    if (sig == s->detail_sig) {
+        return;
+    }
+    s->detail_sig = sig;
+    title = so->path != NULL ? (const char*)sel_tag_find(so->meta, SEL_META_TITLE, 0) : NULL;
+    artist = so->path != NULL ? (const char*)sel_tag_find(so->meta, SEL_META_AUTHOR, 0) : NULL;
+    album = so->path != NULL ? (const char*)sel_tag_find(so->meta, SEL_META_RELEASE, 0) : NULL;
+    if ((title == NULL || title[0] == '\0') && so->path != NULL) {
+        title = mui_base_name(so->path);
+    }
+    mui_flat(s->np_buf[0], sizeof s->np_buf[0], title != NULL && title[0] != '\0' ? title : " ");
+    mui_flat(s->np_buf[1], sizeof s->np_buf[1], artist != NULL && artist[0] != '\0' ? artist : " ");
+    mui_flat(s->np_buf[2], sizeof s->np_buf[2], album != NULL && album[0] != '\0' ? album : " ");
+    set(s->np_title, MUIA_Text_Contents, (ULONG)s->np_buf[0]);
+    set(s->np_artist, MUIA_Text_Contents, (ULONG)s->np_buf[1]);
+    set(s->np_album, MUIA_Text_Contents, (ULONG)s->np_buf[2]);
+    /* Lyrics: plain text whole; synced lyrics show the current line and the next. */
+    lyr = st->lyric_text;
+    if (lyr != NULL) {
+        snprintf(s->np_lyric_buf, sizeof s->np_lyric_buf, "%s", lyr);
+    } else if (st->lyric_current != NULL || st->lyric_next != NULL) {
+        snprintf(s->np_lyric_buf, sizeof s->np_lyric_buf, "%s\n%s", st->lyric_current != NULL ? st->lyric_current : "",
+                 st->lyric_next != NULL ? st->lyric_next : "");
+    } else {
+        s->np_lyric_buf[0] = '\0';
+    }
+    set(s->np_lyrics, MUIA_Floattext_Text, (ULONG)s->np_lyric_buf);
+    /* Next in queue: the three entries after the playing one. */
+    n = 0;
+    for (i = 0; i < st->queue_count && st->queue != NULL; i++) {
+        if (st->queue[i].id == st->queue_playing) {
+            n = i + 1u;
+            break;
+        }
+    }
+    for (i = 0; i < 3u; i++) {
+        const char* p = n + i < st->queue_count && st->queue != NULL ? st->queue_text + st->queue[n + i].path_offset : NULL;
+        mui_flat(s->np_up_buf[i], sizeof s->np_up_buf[i], p != NULL ? mui_base_name(p) : " ");
+        set(s->np_up[i], MUIA_Text_Contents, (ULONG)s->np_up_buf[i]);
+    }
+    if (title != NULL && title[0] != '\0') {
+        s->p4[P4_NP]++;
+    }
+    /* Song information: one "Label: value" row per meta tag the song carries, then the subsong line. */
+    if (s->info_list != NULL) {
+        uint32_t tag, rows = 0;
+        DoMethod(s->info_list, MUIM_List_Clear);
+        for (tag = SEL_META_TITLE; so->path != NULL && sel_tag_name(tag) != NULL && rows < MUI_INFO_MAX - 1u; tag++) {
+            sel_tag_type ty;
+            char lab[48], val[96];
+            uintptr_t v = sel_tag_find(so->meta, tag, 0);
+            if (v == 0 || sel_tag_type_of(tag, &ty) == 0) {
+                continue;
+            }
+            sel_uim_tag_label(tag, lab, sizeof lab);
+            if (ty == SEL_TT_STR) {
+                mui_flat(val, sizeof val, (const char*)v);
+            } else if (ty == SEL_TT_INT) {
+                snprintf(val, sizeof val, "%lu", (unsigned long)v);
+            } else {
+                continue;
+            }
+            snprintf(s->info_buf[rows], sizeof s->info_buf[rows], "%s: %s", lab, val);
+            s->info_ptr[rows] = s->info_buf[rows];
+            rows++;
+        }
+        if (so->path != NULL && so->subsong_count > 1u) {
+            snprintf(s->info_buf[rows], sizeof s->info_buf[rows], "Subsong: %lu of %lu", (unsigned long)so->subsong + 1ul,
+                     (unsigned long)so->subsong_count);
+            s->info_ptr[rows] = s->info_buf[rows];
+            rows++;
+        }
+        s->info_ptr[rows] = NULL;
+        if (rows > 0u) {
+            DoMethod(s->info_list, MUIM_List_Insert, (ULONG)s->info_ptr, (LONG)rows, MUIV_List_Insert_Bottom);
+            s->p4[P4_SONGINFO]++;
+        }
+    }
+    /* Tracker pattern rows, only when the engine answered with pattern data. */
+    if (s->trk_list != NULL) {
+        uint32_t rows = 0;
+        DoMethod(s->trk_list, MUIM_List_Clear);
+        if (pv != NULL && pv->valid != 0u) {
+            uint32_t ch = pv->channels < MUI_TRK_CHANNELS ? pv->channels : MUI_TRK_CHANNELS;
+            for (i = 0; i < pv->row_n && rows < MUI_TRK_ROWS; i++) {
+                char* o = s->trk_buf[rows];
+                size_t used;
+                uint32_t c;
+                snprintf(o, sizeof s->trk_buf[rows], "%02lX", (unsigned long)(pv->row_lo + i));
+                for (c = 0; c < ch; c++) {
+                    char cell[40];
+                    used = strlen(o);
+                    mui_tracker_cell_text(&pv->cell[i][c], cell, sizeof cell);
+                    snprintf(o + used, sizeof s->trk_buf[rows] - used, " | %s", cell);
+                }
+                s->trk_ptr[rows] = o;
+                rows++;
+            }
+            s->trk_ptr[rows] = NULL;
+            DoMethod(s->trk_list, MUIM_List_Insert, (ULONG)s->trk_ptr, (LONG)rows, MUIV_List_Insert_Bottom);
+            if (rows > 0u) {
+                s->p4[P4_TRACKER]++;
+            }
+        }
+        set(s->trk_group, MUIA_ShowMe, rows > 0u ? TRUE : FALSE);
+    }
+}
+
 static void mui_refresh(mui_state* s) {
     const sel_state* st = sel_engine_state(s->engine);
     const sel_uim_frame* f;
@@ -531,6 +803,7 @@ static void mui_refresh(mui_state* s) {
             set(s->btn[i], MUIA_Text_Contents, (ULONG)label);
         }
     }
+    mui_detail_refresh(s, st);
     v = st->view;
     if (v != NULL) {
         int32_t active = -1;
@@ -788,6 +1061,158 @@ static int mui_cmd_send(void* ctx, const char* line) {
     return mui_engine_line((mui_state*)ctx, line);
 }
 
+/* MUI-P4-6: one Song menu item fired, on the song under the list cursor. The lines come from the shared mapping. */
+static void mui_song_menu_fire(mui_state* s, uint32_t item) {
+    const sel_view_state* view;
+    const sel_view_row* row = mui_cursor_row(s, &view);
+    char path[512], line[640];
+    const char* follow;
+    uint32_t qid = 0, pl = s->sm_playlist, i;
+    int on_queue;
+    if (row == NULL || (row->kind != (uint32_t)SEL_ROW_FILE && row->kind != (uint32_t)SEL_ROW_QUEUE)) {
+        return;
+    }
+    on_queue = row->kind == (uint32_t)SEL_ROW_QUEUE;
+    qid = on_queue ? row->id : 0u;
+    if (sel_engine_view_row_path(s->engine, view->cursor - view->window_start, path, sizeof path) <= 0) {
+        return;
+    }
+    for (i = 0; view->source == SEL_VIEW_FOLDERS && i < view->row_n; i++) {
+        if (view->rows[i].kind == (uint32_t)SEL_ROW_PLAYLIST) {
+            pl = view->rows[i].id;
+            break;
+        }
+    }
+    if (item == 4u && !on_queue) {
+        char msg[200];
+        mui_confirm_text(0, mui_base_name(path), 0, 0, msg, sizeof msg);
+        if (MUI_Request(s->app, s->win, 0, "Selecta", "*Remove|Cancel", "%s", (ULONG)msg) != 1) {
+            return;
+        }
+    }
+    if (mui_song_menu_line(item, path, qid, pl, on_queue, line, sizeof line) == 0u || !mui_engine_line(s, line)) {
+        return;
+    }
+    follow = mui_song_menu_follow(item);
+    if (follow != NULL) {
+        mui_engine_line(s, follow);
+    }
+    mui_p4_note(s, P4_SONGMENU, line);
+}
+
+/* MUI-P4-10: the Settings window, one row per sel_uim_pref_row. Built on the first open; each gadget change sends PREF_SET. */
+static Object* mui_pref_gadget(mui_state* s, uint32_t i, const sel_uim_pref_row* r) {
+    const sel_host* host = sel_engine_plugin_host(s->engine);
+    const char* cur = host != NULL && host->config_get != NULL ? host->config_get(host, r->key, "") : "";
+    Object* o = NULL;
+    LONG id = CTL_PREF_BASE + (LONG)i;
+    if (cur == NULL) {
+        cur = "";
+    }
+    if (r->ui == (uint32_t)SEL_UIM_PREF_CYCLE) {
+        uint32_t n = 0, act = 0;
+        char* p;
+        snprintf(s->set_choice[i], sizeof s->set_choice[i], "%s", r->choices);
+        for (p = s->set_choice[i]; n < 9u;) {
+            s->set_entry[i][n++] = p;
+            p = strchr(p, ',');
+            if (p == NULL) {
+                break;
+            }
+            *p++ = '\0';
+        }
+        s->set_entry[i][n] = NULL;
+        for (act = 0; act < n; act++) {
+            if (strcmp(s->set_entry[i][act], cur) == 0) {
+                break;
+            }
+        }
+        o = mui_make_cycle(s->set_entry[i], id);
+        if (o != NULL && act < n) {
+            set(o, MUIA_Cycle_Active, (ULONG)act);
+        }
+    } else if (r->ui == (uint32_t)SEL_UIM_PREF_CHECK) {
+        o = MUI_NewObject((char*)MUIC_Image, MUIA_Image_Spec, MUII_CheckMark, MUIA_InputMode, MUIV_InputMode_Toggle, MUIA_Selected,
+                          (ULONG)(cur[0] == '1' ? TRUE : FALSE), MUIA_ShowSelState, FALSE, MUIA_Frame, MUIV_Frame_ImageButton, TAG_DONE);
+        if (o != NULL) {
+            DoMethod(o, MUIM_Notify, MUIA_Selected, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
+        }
+    } else if (r->ui == (uint32_t)SEL_UIM_PREF_SLIDER) {
+        long lo = 0, hi = 100;
+        sscanf(r->choices, "%ld,%ld", &lo, &hi);
+        o = MUI_NewObject((char*)MUIC_Slider, MUIA_Slider_Horiz, TRUE, MUIA_Slider_Min, (LONG)lo, MUIA_Slider_Max, (LONG)hi, MUIA_Slider_Level,
+                          cur[0] != '\0' ? (LONG)strtol(cur, NULL, 10) : (LONG)lo, TAG_DONE);
+        if (o != NULL) {
+            DoMethod(o, MUIM_Notify, MUIA_Slider_Level, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
+        }
+    } else {
+        o = mui_make_string(id);
+        if (o != NULL) {
+            set(o, MUIA_String_Contents, (ULONG)cur);
+        }
+    }
+    return o;
+}
+
+static void mui_settings_open(mui_state* s) {
+    uint32_t i, n = sel_uim_pref_row_count();
+    Object* grid;
+    if (s->set_win == NULL) {
+        if (n > MUI_PREF_MAX) {
+            n = MUI_PREF_MAX;
+        }
+        grid = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Columns, 2, TAG_DONE);
+        if (grid == NULL) {
+            return;
+        }
+        for (i = 0; i < n; i++) {
+            const sel_uim_pref_row* r = sel_uim_pref_row_at(i);
+            Object* g = r != NULL ? mui_pref_gadget(s, i, r) : NULL;
+            if (g == NULL) {
+                continue;
+            }
+            s->set_ctl[i] = g;
+            DoMethod(grid, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG)r->label, MUIA_Text_PreParse, (ULONG) "\033r", TAG_DONE));
+            DoMethod(grid, OM_ADDMEMBER, g);
+        }
+        s->set_win = MUI_NewObject((char*)MUIC_Window, MUIA_Window_Title, (ULONG) "Selecta Settings", MUIA_Window_ID, 0x53455453UL,
+                                   MUIA_Window_RootObject, (ULONG)grid, TAG_DONE);
+        if (s->set_win == NULL) {
+            return;
+        }
+        DoMethod(s->app, OM_ADDMEMBER, s->set_win);
+    }
+    set(s->set_win, MUIA_Window_Open, TRUE);
+}
+
+/* A Settings gadget changed: build the value the pref row expects and send PREF_SET key "value". */
+static void mui_pref_fire(mui_state* s, uint32_t i) {
+    const sel_uim_pref_row* r = i < MUI_PREF_MAX ? sel_uim_pref_row_at(i) : NULL;
+    ULONG v = 0;
+    char val[160], line[300];
+    if (r == NULL || s->set_ctl[i] == NULL) {
+        return;
+    }
+    val[0] = '\0';
+    if (r->ui == (uint32_t)SEL_UIM_PREF_CYCLE) {
+        GetAttr(MUIA_Cycle_Active, s->set_ctl[i], &v);
+        snprintf(val, sizeof val, "%s", v < 9u && s->set_entry[i][v] != NULL ? s->set_entry[i][v] : "");
+    } else if (r->ui == (uint32_t)SEL_UIM_PREF_CHECK) {
+        GetAttr(MUIA_Selected, s->set_ctl[i], &v);
+        snprintf(val, sizeof val, "%d", v ? 1 : 0);
+    } else if (r->ui == (uint32_t)SEL_UIM_PREF_SLIDER) {
+        GetAttr(MUIA_Slider_Level, s->set_ctl[i], &v);
+        snprintf(val, sizeof val, "%ld", (long)v);
+    } else {
+        GetAttr(MUIA_String_Contents, s->set_ctl[i], &v);
+        snprintf(val, sizeof val, "%s", v != 0 ? (const char*)v : "");
+    }
+    sel_uim_pref_line(r->key, val, line, sizeof line);
+    if (mui_engine_line(s, line)) {
+        mui_p4_note(s, P4_PREF, line);
+    }
+}
+
 static void mui_p4_fire(mui_state* s, uint32_t which) {
     char line[200], lines[3][160];
     const sel_view_state* view;
@@ -858,11 +1283,16 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
     case P4_PDELETE:
         if (row != NULL && row->kind == (uint32_t)SEL_ROW_PLAYLIST) {
             GetAttr(MUIA_String_Contents, s->str_cmd, &text);
+            s->sm_playlist = row->id;
             if (mui_playlist_line(which == P4_POPEN ? "open" : which == P4_PRENAME ? "rename" : "delete", row->id, (const char*)text, line, sizeof line)
                 && mui_engine_line(s, line)) {
                 mui_p4_note(s, which, line);
             }
         }
+        break;
+    case P4_SETTINGS:
+        mui_settings_open(s);
+        mui_p4_note(s, which, "Settings window");
         break;
     case P4_HELP:
         mui_help_open(s);
@@ -903,6 +1333,10 @@ static void mui_control_fire(mui_state* s, LONG id) {
                 s->p4[P4_CRUMB]++;
             }
         }
+    } else if (id >= CTL_SM_BASE && id < CTL_SM_BASE + (LONG)SEL_UIM_SONG_MENU_ITEMS) {
+        mui_song_menu_fire(s, (uint32_t)(id - CTL_SM_BASE));
+    } else if (id >= CTL_PREF_BASE && id < CTL_PREF_BASE + (LONG)MUI_PREF_MAX) {
+        mui_pref_fire(s, (uint32_t)(id - CTL_PREF_BASE));
     } else if (id >= CTL_P4_BASE && id < CTL_P4_BASE + (LONG)P4_COUNT) {
         mui_p4_fire(s, (uint32_t)(id - CTL_P4_BASE));
     } else if (id == CTL_CLIP_COPY) {
@@ -1030,7 +1464,7 @@ static void* mui_open(const sel_ui_open_args* a) {
                     Child, s->balance[0] = BalanceObject, End,
                     Child, s->slot[MUI_SLOT_MAIN] = mui_main_group(s),
                     Child, s->balance[1] = BalanceObject, End,
-                    Child, s->slot[MUI_SLOT_DETAIL] = VGroup, Child, TextObject, MUIA_Text_Contents, (ULONG) "Details", End, Child, HVSpace, End,
+                    Child, s->slot[MUI_SLOT_DETAIL] = mui_detail_group(s),
                 End,
                 Child, s->slot[MUI_SLOT_PLAYER] = mui_player_group(s),
             End, End, End;

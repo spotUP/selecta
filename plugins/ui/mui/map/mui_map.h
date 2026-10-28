@@ -224,6 +224,11 @@ uint32_t mui_search_lines(const char* text, char lines[3][160]);
 void mui_queue_line(const char* verb, uint32_t id, uint32_t to_id, char* out, size_t cap); /* "move", "remove", "clear" */
 /* MUI-P4-5 playlists: action is "open", "rename" or "delete"; name is only used by rename. Returns 0 for an unknown action. */
 uint32_t mui_playlist_line(const char* action, uint32_t id, const char* name, char* out, size_t cap);
+/* MUI-P4-6 song menu: the line of item 0..4 (sel_uim_song_menu_label) for the song at path. Play is OPEN and is followed by the
+ * line mui_song_menu_follow gives (PLAY); item 3 needs a playlist id; item 4 is QUEUE_REMOVE on the queue page (qid), else
+ * LIBRARY_REMOVE. Returns the line length, 0 when the item has no line. */
+uint32_t mui_song_menu_line(uint32_t item, const char* path, uint32_t qid, uint32_t playlist_id, int on_queue, char* out, size_t cap);
+const char* mui_song_menu_follow(uint32_t item);
 /* MUI-P4-7 likes and ratings: the Cycle entry index 0..5 (0 is None) to its line, and the heart. */
 void mui_rating_line(uint32_t cycle_index, char* out, size_t cap);
 const char* mui_like_line(void);
@@ -243,6 +248,7 @@ void mui_tracker_cell_text(const sel_rp_cell* cell, char* out, size_t cap);
 
 /* MUI-P5-6 drop and clipboard: an AppWindow argument to its line (file QUEUE_ADD, drawer LIBRARY_SCAN); the text of
  * Copy Song Title; its IFF FTXT image for clipboard.device. Each returns the length, 0 when it does not fit or is empty. */
+uint32_t mui_path_line(const char* head, const char* path, char* out, size_t cap);
 uint32_t mui_drop_line(const char* path, int is_dir, char* out, size_t cap);
 uint32_t mui_clip_text(const char* artist, const char* title, char* out, size_t cap);
 uint32_t mui_clip_iff(const char* text, uint32_t n, uint8_t* out, size_t cap);
