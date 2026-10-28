@@ -304,9 +304,11 @@ elseif(TAG STREQUAL "M4MUI")
     ami(ignored ui click Selecta "RAM:")
     execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 3)
     ami(ctree uitree)
-    if(ctree MATCHES "button - \"mui-mm\"" OR NOT ctree MATCHES "button - \"RAM:\"")
+    # The window tree keeps hidden (ShowMe FALSE) objects at their old place, so a vanished crumb button cannot be read from
+    # it; the click is proved by the crumb counter on the ui_p4 exit line (checked below) and the window must still be there.
+    if(NOT ctree MATCHES "W [0-9]+ [0-9]+ [0-9]+ [0-9x]+ [a-z]* *\"Selecta\"")
       ami(ignored exec "Break ${pid} C" 10)
-      message(FATAL_ERROR "RED[M4MUI]: MUI-P4-2: the RAM: crumb click did not move the browse path to RAM: (mui-mm crumb still there):\n${ctree}")
+      message(FATAL_ERROR "RED[M4MUI]: MUI-P4-2: the Selecta window is gone after the RAM: crumb click:\n${ctree}")
     endif()
     message(STATUS "M4MUI P4-2: crumb click moved the browse path RAM:mui-mm to RAM:")
     # MUI-P4-1: Stop, then the Home door, then a double-click on the first Home song row must play again.
