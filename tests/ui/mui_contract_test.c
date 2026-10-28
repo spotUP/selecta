@@ -1014,6 +1014,36 @@ static void test_screen_plan(void) {
     CHECK(strstr(src, "_minheight(s->root)") != NULL, "mui_open does not report the measured window minimum");
 }
 
+/* I675 (D-M4-3): on the own SELECTA screen the main window is a borderless backdrop window without drag bar, depth, size or
+ * close gadget; on Workbench (compact mode) it keeps normal borders. mui_open must take the attributes from
+ * mui_window_attrs (sentinel counter + source wiring), decided by the same g_scr test TH_SCR uses. */
+static void test_window_borderless(void) {
+    mui_window_attrs_t a;
+    uint32_t before = mui_window_attrs_calls();
+    static char src[400000];
+    FILE* f = fopen(MUI_UI_SOURCE, "rb");
+    size_t n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    mui_window_attrs(1, &a);
+    CHECK(a.borderless == 1 && a.backdrop == 1 && a.dragbar == 0 && a.depthgadget == 0 && a.sizegadget == 0 && a.closegadget == 0,
+          "own screen is not a borderless backdrop window");
+    mui_window_attrs(0, &a);
+    CHECK(a.borderless == 0 && a.backdrop == 0 && a.dragbar == 1 && a.depthgadget == 1 && a.sizegadget == 1 && a.closegadget == 1,
+          "Workbench window lost its borders");
+    CHECK(mui_window_attrs_calls() == before + 2u, "attrs sentinel %u", (unsigned)mui_window_attrs_calls());
+    CHECK(strstr(src, "mui_window_attrs(g_scr != NULL, &wattr)") != NULL, "mui_open does not choose attributes by own screen");
+    CHECK(strstr(src, "MUIA_Window_Borderless, (ULONG)wattr.borderless") != NULL &&
+              strstr(src, "MUIA_Window_Backdrop, (ULONG)wattr.backdrop") != NULL &&
+              strstr(src, "MUIA_Window_DragBar, (ULONG)wattr.dragbar") != NULL &&
+              strstr(src, "MUIA_Window_DepthGadget, (ULONG)wattr.depthgadget") != NULL &&
+              strstr(src, "MUIA_Window_SizeGadget, (ULONG)wattr.sizegadget") != NULL &&
+              strstr(src, "MUIA_Window_CloseGadget, (ULONG)wattr.closegadget") != NULL,
+          "the main WindowObject does not apply the attributes");
+}
+
 /* Regression (I656): with the I651 icons every button grew by 24 + 6 + 20 px, the tool row 2 reached ~860 px and MUI refused to
  * open the window (MUIA_Window_Open read back 0 on rig 3). Each button row's summed minimum width, from the constants and the
  * label tables mui_ui.c builds from, must fit the smallest supported screen (640 px, plan P6-2). The rows must also be built
@@ -1190,6 +1220,8 @@ int main(int argc, char** argv) {
         test_layout_before_open();
     } else if (strcmp(argv[1], "screen-plan") == 0) {
         test_screen_plan();
+    } else if (strcmp(argv[1], "window-borderless") == 0) {
+        test_window_borderless();
     } else if (strcmp(argv[1], "toolrows") == 0) {
         test_toolrows();
     } else if (strcmp(argv[1], "tracker") == 0) {

@@ -54,3 +54,18 @@ uint32_t mui_screen_plans(void) {
 uint32_t mui_screen_laced(void) {
     return g_laced;
 }
+
+static uint32_t g_attr_calls;
+
+void mui_window_attrs(int own_screen, mui_window_attrs_t* out) {
+    if (out == NULL) {
+        return;
+    }
+    g_attr_calls++;
+    out->borderless = out->backdrop = (uint8_t)(own_screen != 0);
+    out->dragbar = out->depthgadget = out->sizegadget = out->closegadget = (uint8_t)(own_screen == 0);
+}
+
+uint32_t mui_window_attrs_calls(void) {
+    return g_attr_calls;
+}

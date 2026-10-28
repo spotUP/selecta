@@ -296,6 +296,15 @@ typedef struct mui_screen_plan_t {
 uint32_t mui_screen_plan(uint32_t wb_mode, uint32_t wb_w, uint32_t wb_h, int foreign, uint32_t need_h, mui_screen_plan_t* out);
 uint32_t mui_screen_plans(void);
 uint32_t mui_screen_laced(void);
+/* I675 (D-M4-3): which window attributes the main window gets. On Selecta's own SELECTA screen (the full screen default) it is
+ * a borderless backdrop window with no drag bar, depth, size or close gadget, filling the screen; on Workbench (compact mode)
+ * it keeps the normal borders. 1 = set the MUIA_Window_* attribute TRUE, 0 = FALSE. mui_window_attrs_calls counts the calls
+ * (sentinel: mui_open must reach it). */
+typedef struct mui_window_attrs_t {
+    uint8_t borderless, backdrop, dragbar, depthgadget, sizegadget, closegadget;
+} mui_window_attrs_t;
+void mui_window_attrs(int own_screen, mui_window_attrs_t* out);
+uint32_t mui_window_attrs_calls(void);
 /* MUI-P8 (plan 2026-10-25-amiga-mui.md section P8): parity rows the first MUI pass left out. Every action here is fired by
  * its shared action-table id (mui_menu_line), the same line the desktop sends; nothing keeps a second list. */
 /* Fires the table line of action `id` through send; returns 1 when the line was sent. mui_action_fires() is the call-count

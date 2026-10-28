@@ -1816,6 +1816,7 @@ static void* mui_open(const sel_ui_open_args* a) {
     mui_state* s = &g_state;
     ULONG open = 0;
     Object* strip;
+    mui_window_attrs_t wattr;
     s->engine = a != NULL ? a->engine : NULL;
     MUIMasterBase = OpenLibrary((CONST_STRPTR)MUIMASTER_NAME, 19);
     if (MUIMasterBase == NULL) {
@@ -1825,12 +1826,17 @@ static void* mui_open(const sel_ui_open_args* a) {
     mui_theme_init();
     strip = mui_menu_strip();
     sel_uim_init(&s->uim);
+    /* I675 (D-M4-3): borderless backdrop window on the own screen, normal borders on Workbench (g_scr == NULL). */
+    mui_window_attrs(g_scr != NULL, &wattr);
     /* MUI-P4-17: MUIA_Application_Base is the settings identity only. The shell opened the one ARexx port SELECTA before this
      * UI (arexx_open, apps/selecta/main.c), so MUI takes SELECTA.1 for its own built-in commands and no MUIA_Application_Commands
      * table is given: PLAY and every other command reach the engine through the shell's port, one command set (plan section 5). */
     s->app = ApplicationObject, MUIA_Application_Title, (ULONG) "Selecta", MUIA_Application_Base, (ULONG) "SELECTA",
         MUIA_Application_Version, (ULONG) "$VER: Selecta MUI 1.0",
         SubWindow, s->win = WindowObject, TH_SCR MUIA_Window_Title, (ULONG) "Selecta", MUIA_Window_ID, SEL_MAKE_ID('S', 'E', 'L', 'M'), MUIA_Window_AppWindow, TRUE,
+            MUIA_Window_Borderless, (ULONG)wattr.borderless, MUIA_Window_Backdrop, (ULONG)wattr.backdrop, MUIA_Window_DragBar, (ULONG)wattr.dragbar,
+            MUIA_Window_DepthGadget, (ULONG)wattr.depthgadget, MUIA_Window_SizeGadget, (ULONG)wattr.sizegadget,
+            MUIA_Window_CloseGadget, (ULONG)wattr.closegadget,
             /* D-M4-3: full screen by default; width and height are 100 percent of the public screen area MUI can use.
              * The HVSpace child gives the group unbounded height: a lone Text object has a fixed maximum height and MUI
              * never sizes a window beyond its contents' maximum, which left the window 41 pixels high. */
