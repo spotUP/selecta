@@ -1282,6 +1282,15 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
   set_tests_properties(rig-m4-aga-first-light PROPERTIES LABELS rig RESOURCE_LOCK rig
     SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  # I623: a Ctrl-C that a bsdsocket wait swallows must survive the net layer, so Selecta quits on Break.
+  add_test(NAME rig-i623-net-break
+    COMMAND "${CMAKE_COMMAND}" -DTAG=I623NET "-DRIG_DIR=${SEL_RIG_DIR}"
+      "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta"
+      "-DNET_BREAK=${SEL_MUI_BUILD}/src/library/selecta-net-break"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-i623-net-break"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
+  set_tests_properties(rig-i623-net-break PROPERTIES LABELS rig RESOURCE_LOCK rig
+    SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
 endif()
 # I122/I123/I126: paula14 split tables, chip double buffer through a recording bus, routing of PCM outputs.
 set(SEL_P14_DIR "${PROJECT_SOURCE_DIR}/plugins/outputs/paula14")

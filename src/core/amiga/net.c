@@ -71,15 +71,32 @@ void sel_net_stats_get(sel_net_stats* out) {
     *out = g_stats;
 }
 
+/* bsdsocket's default break mask is SIGBREAKF_CTRL_C: a Ctrl-C that arrives while a
+ * blocking call waits (or is already pending) aborts that call with EINTR and the stack
+ * CLEARS the signal bit. Networking runs inline on the main task, so the UI's own poll
+ * never saw the user's break and Selecta did not quit (I623, measured on rig 3:
+ * ctrl_c_before=1 ctrl_c_after=0, errno 4). Raise the bit again so the call still fails
+ * fast and the break reaches the main loop. */
+static void keep_break(void) {
+    if (Errno() == EINTR) {
+        SetSignal(SIGBREAKF_CTRL_C, SIGBREAKF_CTRL_C);
+    }
+}
+
 /* mode 0 = readable, 1 = writable. Returns the WaitSelect result. */
 static long wait_sock(long s, int mode, unsigned ms) {
     fd_set set;
     struct timeval tv;
+    long r;
     FD_ZERO(&set);
     FD_SET(s, &set);
     tv.tv_secs = (long)(ms / 1000u);
     tv.tv_micro = (long)(ms % 1000u) * 1000L;
-    return mode == 0 ? WaitSelect(s + 1, &set, NULL, NULL, &tv, NULL) : WaitSelect(s + 1, NULL, &set, NULL, &tv, NULL);
+    r = mode == 0 ? WaitSelect(s + 1, &set, NULL, NULL, &tv, NULL) : WaitSelect(s + 1, NULL, &set, NULL, &tv, NULL);
+    if (r < 0) {
+        keep_break();
+    }
+    return r;
 }
 
 int sel_net_open(const char* host, unsigned port, unsigned connect_ms) {
@@ -117,6 +134,7 @@ int sel_net_open(const char* host, unsigned port, unsigned connect_ms) {
     } else {
         struct hostent* he = gethostbyname((STRPTR)target);
         if (he == NULL || he->h_addrtype != AF_INET || he->h_length != 4) {
+            keep_break(); /* the resolver waits on the stack too */
             return SEL_NET_E_RESOLVE;
         }
         memcpy(&ip, he->h_addr, 4);
@@ -134,6 +152,7 @@ int sel_net_open(const char* host, unsigned port, unsigned connect_ms) {
         int e = Errno();
         long w;
         if (e != EINPROGRESS) {
+            keep_break();
             CloseSocket(s);
             return SEL_NET_E_CONNECT;
         }
