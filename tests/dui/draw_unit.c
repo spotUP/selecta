@@ -638,6 +638,34 @@ static void test_tall_pixels(uint32_t format) {
     drop(c);
 }
 
+/* I588: a glyph on tall pixels is centred in canvas rows, rounded to the nearest row. Layout box y 5, h 33, glyph 16:
+ * the ideal top is layout 13.5 = row 6.75, so the glyph starts on row 7 (centring in layout pixels and flooring y / 2
+ * put it on row 6, three quarters of a row high). */
+static void test_icon_centre_tall(void) {
+    static uint8_t mask[16 * 8];
+    static const int32_t sizes[1] = {16};
+    const uint8_t* alpha[1];
+    sel_gui_icons ic;
+    sel_gui_canvas* c = make(SEL_GUI_RGBA32, 64, 32);
+    int32_t y, top = -1, bot = -1;
+    memset(mask, 255, sizeof mask);
+    alpha[0] = mask;
+    ic.count = 1u;
+    ic.size_n = 1u;
+    ic.sizes = sizes;
+    ic.alpha = alpha;
+    c->ydiv = 2;
+    CHECK(sel_gui_icon_draw(c, &ic, 0u, R(8, 5, 32, 33), 16, 0xFFFFFFFFu) == 16);
+    for (y = 0; y < 32; y++) {
+        if (sel_gui_pixel(c, 24, y) != 0u) {
+            top = top < 0 ? y : top;
+            bot = y;
+        }
+    }
+    CHECK(top == 7 && bot == 14);
+    drop(c);
+}
+
 int main(void) {
     test_icon_resample();
     test_span_equals_pixel(SEL_GUI_RGBA32);
@@ -650,6 +678,7 @@ int main(void) {
     test_round_rect();
     test_tall_pixels(SEL_GUI_RGBA32);
     test_tall_pixels(SEL_GUI_INDEX8);
+    test_icon_centre_tall();
     test_round_frame();
     test_gradient();
     test_line_mask_image();

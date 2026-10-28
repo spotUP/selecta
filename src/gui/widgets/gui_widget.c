@@ -33,8 +33,14 @@ static int32_t icon_draw_raw(sel_gui_canvas* c, const sel_gui_icons* ic, uint32_
     }
     n = ic->sizes[pick];
     rows = n / (c->ydiv > 1 ? c->ydiv : 1); /* I468: on tall pixels the masks hold n / ydiv rows (desktop_ui.c builds them) */
-    sel_gui_blit_mask(c, box.x + (box.w - n) / 2, box.y + (box.h - n) / 2,
+    {
+        /* I588: on tall pixels the glyph is centred in canvas rows (rounded to the nearest row) and handed to the blit
+         * on a row boundary; centring in layout pixels let the blit floor y / ydiv and lose half a row. */
+        int32_t yd = c->ydiv > 1 ? c->ydiv : 1;
+        int32_t y = yd > 1 ? ((2 * box.y + box.h - n + yd) / (2 * yd)) * yd : box.y + (box.h - n) / 2;
+        sel_gui_blit_mask(c, box.x + (box.w - n) / 2, y,
                       ic->alpha[pick] + (size_t)id * (size_t)n * (size_t)rows, n, rows, n, argb);
+    }
     return n;
 }
 
