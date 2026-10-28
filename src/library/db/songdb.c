@@ -178,6 +178,30 @@ static int op_composer_next(sqlite3* db, const sel_genre_op* op, int64_t* id) {
     return rc == SQLITE_DONE ? SQLITE_OK : rc;
 }
 
+/* SEL_FORMAT_LIST (I615c): the formats of the catalogue with their song counts, most songs first, streamed through op->row. */
+static int op_format_list(sqlite3* db, const sel_genre_op* op, int64_t* id) {
+    sqlite3_stmt* st = NULL;
+    int64_t rows = 0;
+    int rc = sqlite3_prepare_v2(db, "SELECT format, COUNT(*) FROM songs WHERE format <> '' GROUP BY format ORDER BY COUNT(*) DESC, format", -1, &st, NULL);
+
+    *id = 0;
+    if (rc != SQLITE_OK) return rc;
+    while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
+        char num[16];
+        const char* f[2];
+
+        snprintf(num, sizeof num, "%d", sqlite3_column_int(st, 1));
+        f[0] = (const char*)sqlite3_column_text(st, 0);
+        f[1] = num;
+        rows++;
+        if (op->row(op->row_ctx, f) != 0) break;
+    }
+    sqlite3_finalize(st);
+    if (rc != SQLITE_ROW && rc != SQLITE_DONE) return rc;
+    *id = rows;
+    return SQLITE_OK;
+}
+
 /* SEL_COMPOSER_LIST: every composer, one row per canonical spelling with its distinct song count, streamed through op->row in one pass (I528: a per-row OFFSET re-ran the whole GROUP BY for each composer). */
 static int op_composer_list(sqlite3* db, const sel_genre_op* op, int64_t* id) {
     static const char* const sql[2] = {
@@ -255,6 +279,9 @@ int sel_library_songdb_op(sel_library* lib, const sel_genre_op* op, int* found, 
         rc = op_apply(lib->db, op, found);
     } else if (op->op == SEL_COMPOSER_NEXT && op->out != NULL) {
         rc = op_composer_next(lib->db, op, id);
+        *found = *id != 0;
+    } else if (op->op == SEL_FORMAT_LIST && op->row != NULL) {
+        rc = op_format_list(lib->db, op, id);
         *found = *id != 0;
     } else if (op->op == SEL_COMPOSER_LIST && op->row != NULL) {
         rc = op_composer_list(lib->db, op, id);
@@ -408,6 +435,34 @@ int sel_library_composer_list(sel_library* lib, sel_composer_list_fn fn, void* c
     memset(&op, 0, sizeof op);
     op.op = SEL_COMPOSER_LIST;
     op.row = composer_row;
+    op.row_ctx = &k;
+    if (sel_genre_call(lib, &op, &rows) < 0) return -1;
+    return (int)rows;
+}
+
+typedef struct format_sink {
+    sel_format_list_fn fn;
+    void* ctx;
+} format_sink;
+
+static int format_row(void* ctx, const char* const* f) {
+    format_sink* k = ctx;
+
+    if (k->fn != NULL) k->fn(k->ctx, f[0], (uint32_t)strtoul(f[1], NULL, 10));
+    return 0;
+}
+
+int sel_library_format_list(sel_library* lib, sel_format_list_fn fn, void* ctx) {
+    format_sink k;
+    sel_genre_op op;
+    int64_t rows = 0;
+
+    if (lib == NULL) return -1;
+    k.fn = fn;
+    k.ctx = ctx;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_FORMAT_LIST;
+    op.row = format_row;
     op.row_ctx = &k;
     if (sel_genre_call(lib, &op, &rows) < 0) return -1;
     return (int)rows;

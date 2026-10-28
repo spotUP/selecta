@@ -141,7 +141,7 @@
     X(RATE) X(VOTE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
     X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(PLAYLIST_ADD_SONG) X(PLAYLIST_IMPORT) X(PLAYLIST_ADD_FOLDER) X(PLAYLIST_REMOVE_SONG) X(PLAYLIST_PLAY) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
     X(SONGS_RANGES) X(SONGS_PLAY) X(SONGS_PLAY_NEXT) X(SONGS_QUEUE_ADD) X(SONGS_PLAYLIST_ADD) X(SONGS_REMOVE) \
-    X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(COMPOSERS_HIDE) X(COMPOSERS_VIEW) \
+    X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(FORMATS_SHOW) X(COMPOSERS_HIDE) X(COMPOSERS_VIEW) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
     X(VIEW_CURSOR)                                                                            \
@@ -300,6 +300,7 @@ struct sel_engine {
     uint32_t links_parsed, links_made;         /* share links OPEN parsed / SHARE wrote (I180 sentinels) */
     char stats[2048];                          /* rows of the open stats screen, "label\0value\0" pairs (I192) */
     char* composers;                           /* DUI-P4-3 library page: "canon\0display\0songs\0" per composer, then "\0"; grown to the library (I303), NULL before the first COMPOSERS_SHOW */
+    char* formats;                             /* I615c: "format\0songs\0" per song format, then "\0"; NULL before the first FORMATS_SHOW */
     char* composer_page;                       /* the drilled-into composer: "canon\0display\0songs\0" then "key\0name\0" per song, then "\0"; grown to its songs (I303), NULL: none */
     uint32_t composers_open, composer_queries; /* the Library page is up / queries made against the library for it */
     char composer_filter[64];                  /* I611: COMPOSERS_VIEW text filter on the composer rows (empty: all) */
@@ -4787,6 +4788,33 @@ static void composer_page_row(void* ctx, const char* key, const char* name, cons
     f->n++;
 }
 
+static void format_list_row(void* ctx, const char* format, uint32_t songs) {
+    char num[16];
+    const char* parts[2];
+    snprintf(num, sizeof num, "%u", (unsigned)songs);
+    parts[0] = format;
+    parts[1] = num;
+    composer_put((composer_fill*)ctx, parts, 2);
+}
+
+/* FORMATS_SHOW (I615c): reads the song formats of the catalogue with their song counts into the state, the data of the Browse page's
+ * Formats tiles. */
+static void cmd_FORMATS_SHOW(sel_engine* e, const sel_message* m) {
+    composer_fill f;
+    (void)m;
+    if (e->lib == NULL) {
+        sel_engine_report_error(e, "no_library", "FORMATS_SHOW");
+        return;
+    }
+    memset(&f, 0, sizeof f);
+    f.host = e->host;
+    if (sel_library_format_list(e->lib, format_list_row, &f) < 0) {
+        composer_release(e->host, &f.buf);
+    }
+    composer_release(e->host, &e->formats);
+    e->formats = composer_take(&f);
+}
+
 /* COMPOSERS_SHOW [name]: opens the Library page (DUI-P4-3): every composer with its song count, and with a name the
  * drilldown page of that composer (its songs and their count, from the library's composer page). */
 static void cmd_COMPOSERS_SHOW(sel_engine* e, const sel_message* m) {
@@ -6340,6 +6368,7 @@ void sel_engine_destroy(sel_engine* e) {
         sel_history_free(&e->history, e->host);
         composer_release(e->host, &e->composers);
         composer_release(e->host, &e->composer_page);
+        composer_release(e->host, &e->formats);
         if (e->order) {
             e->host->mem_free(e->host, e->order);
         }
@@ -6495,6 +6524,7 @@ static void refresh_snapshot(sel_engine* e) {
     e->state.stats = e->stats_open ? e->stats : NULL;
     e->state.composers = e->composers_open ? e->composers : NULL;
     e->state.composer_page = e->composers_open ? e->composer_page : NULL;
+    e->state.formats = e->formats;
     e->state.panel = e->panel_rows > 0 ? e->panel : NULL;
     e->state.panel_rows = e->panel_rows;
     e->state.panel_serial = e->panel_loads;

@@ -1,7 +1,7 @@
 # dui-topbar (I615): the window-wide top bar of the Mac desktop UI. -DSELECTA -DSONGS -DWORK
 # 1. The layout gives a bar with a round Home button, then the search field, and the Browse button inside the field's right end;
 #    the stats dump the three rects (topbar line) and the frames drawn.
-# 2. A pointer click on Home opens the Home page, a click on Browse opens the Library browse page; the counters count them.
+# 2. A pointer click on Home opens the Home page, a click on Browse opens the Browse tiles page (I615c); the counters count them.
 # 3. A click in the field opens Search with the keyboard in the field; typing still gives the fixture's mod count of results.
 # The `topbar N` input command clicks the centre of part N (0 Home, 1 field, 2 Browse) through the pointer path.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
@@ -76,7 +76,7 @@ bar_run(home library "topbar 0\nwait 100\n")
 expect_eq("page after a click on Home" "${home_page}" "home")
 expect_eq("Home clicks" "${home_homec}" 1)
 bar_run(browse home "topbar 2\nwait 100\n")
-expect_eq("page after a click on Browse" "${browse_page}" "library")
+expect_eq("page after a click on Browse" "${browse_page}" "browse")
 expect_eq("Browse clicks" "${browse_browsec}" 1)
 expect_eq("Browse does not count as Home" "${browse_homec}" 0)
 

@@ -1,6 +1,7 @@
 /* Desktop UI plugin (M3d, DUI-P1-4). It renders the engine snapshot through the shared UI model
  * (include/selecta/uimodel.h): one widget per region, redrawn only when the region's dirty bit is set. Drawing goes
  * to a backend: `mem` (headless, no SDL, DUI-P2-6) or `sdl` (a window, DUI-P2-7), selected with `--backend`. */
+#include <ctype.h>
 #include <selecta/plugin.h>
 #include <selecta/engine.h>
 #include <selecta/ui.h>
@@ -76,8 +77,8 @@ static const int g_icon_sizes[DESK_ICON_SIZES] = {16, 20, 24, 32};
 /* The pages the sidebar doors and --view reach (I262). One list: --view names, door clicks, keys and the stats sentinel
  * all use it. */
 #define PG_HIST_MAX 16u
-typedef enum { PG_HOME, PG_SEARCH, PG_LIBRARY, PG_PLAYLISTS, PG_QUEUE, PG_NOWPLAYING, PG_SONGS, PG_SONGINFO, PG_VIZ, PG_TRACKER, PG_SHELF, PG_COUNT } desk_page;
-static const char* const g_page_name[PG_COUNT] = {"home", "search", "library", "playlists", "queue", "nowplaying", "songs", "songinfo", "viz", "tracker", "shelf"};
+typedef enum { PG_HOME, PG_SEARCH, PG_LIBRARY, PG_PLAYLISTS, PG_QUEUE, PG_NOWPLAYING, PG_SONGS, PG_SONGINFO, PG_VIZ, PG_TRACKER, PG_SHELF, PG_BROWSE, PG_COUNT } desk_page;
+static const char* const g_page_name[PG_COUNT] = {"home", "search", "library", "playlists", "queue", "nowplaying", "songs", "songinfo", "viz", "tracker", "shelf", "browse"};
 #define SHOW_ALL_LABEL "Show all" /* I617: the link at the right end of every Home shelf header */
 #define SHOW_ALL_PX 14
 /* The sidebar doors in order: Spotify's Home, Search and Your Library, then Playlists, Queue and Now Playing. */
@@ -281,6 +282,9 @@ typedef struct desk {
     int32_t np_rating;                /* filled rating marks of the last Now Playing draw (I288) */
     uint32_t lib_searches;   /* LIBRARY_SEARCH lines sent for typed queries: STAT_LIBRARY_SEARCHES */
     uint32_t search_draws, search_rows;  /* search view frames drawn, result rows in the last one */
+    int browse_filter;       /* I615c: the Search page shows a Browse tile's filter: its results draw as the tile grid whatever the view style */
+    uint32_t browse_draws, browse_opens, browse_n; /* I615c: Browse page frames drawn, tiles opened, tiles in the last frame */
+    sel_gui_rect browse_rect[48];                  /* I615c: the tile rects of the last frame (hit test and the "browse" input verb) */
     uint32_t search_grid_draws, search_flow_draws; /* I615b: search frames drawn as the tile grid / the cover flow */
     uint32_t search_facet;   /* the facet chip in force: 0 All, 1 Songs, 2 Albums, 3 Artists */
     uint32_t search_groups[3], search_drawn;  /* group counts read from the drawn headings, rows drawn in the last search frame */
@@ -3302,6 +3306,62 @@ typedef struct {
     int32_t name_x, name_w, kind_x, kind_w, count_x, count_w;
 } src_cols;
 static void src_columns(desk* d, sel_gui_rect r, src_cols* c);
+/* ---- I615c: the Browse page behind the top bar Browse icon. Big coloured tiles built from the catalog: the formats (FORMATS_SHOW,
+ * the catalog's song formats with their counts), the composers (COMPOSERS_SHOW, the list the Library page
+ * and the Home composers shelf use) and the sources (the SOURCES rows of the Sources tab). A format or source tile opens the
+ * Search page with that filter as its query (format:mod, source:local), drawn as the tile grid by draw_grid_rows; a composer
+ * tile opens the composer's songs as the Home composers shelf does. Each is a page change, so Back returns to the tiles. */
+enum { BROWSE_MAX = 48, BROWSE_FORMATS = 24, BROWSE_COMPOSERS = 6, BROWSE_SOURCES = 6, BROWSE_TILE_H = 88, BROWSE_TILE_MIN_W = 200, BROWSE_HEAD_H = 40, BROWSE_PALETTE = 5 };
+typedef struct browse_tile {
+    uint32_t kind; /* 0 format, 1 composer, 2 source */
+    char label[48], arg[96];
+    uint32_t count;
+} browse_tile;
+
+static uint32_t browse_tiles(const desk* d, browse_tile* out, uint32_t cap) {
+    const sel_state* st = sel_engine_state(d->engine);
+    uint32_t n = 0, i, k;
+    if (st->formats != NULL) { /* FORMATS_SHOW: format, song count per entry */
+        const char* p = st->formats;
+        while (*p != '\0' && n < cap && n < BROWSE_FORMATS) {
+            const char* cnt = lib_next(p);
+            out[n].kind = 0u;
+            out[n].count = (uint32_t)strtoul(cnt, NULL, 10);
+            snprintf(out[n].label, sizeof out[n].label, "%s", p);
+            snprintf(out[n].arg, sizeof out[n].arg, "%s", p);
+            for (k = 0; out[n].arg[k] != '\0'; k++) { /* the query values are lower case */
+                out[n].arg[k] = (char)tolower((unsigned char)out[n].arg[k]);
+            }
+            n++;
+            p = lib_next(cnt);
+        }
+    }
+    if (st->composers != NULL) {
+        const char* p = st->composers;
+        for (k = 0; *p != '\0' && k < BROWSE_COMPOSERS && n < cap; k++) {
+            const char* disp = lib_next(p);
+            const char* cnt = lib_next(disp);
+            out[n].kind = 1u;
+            out[n].count = (uint32_t)strtoul(cnt, NULL, 10);
+            snprintf(out[n].label, sizeof out[n].label, "%s", disp);
+            snprintf(out[n].arg, sizeof out[n].arg, "%s", p);
+            n++;
+            p = lib_next(cnt);
+        }
+    }
+    for (i = 0, k = 0; i < d->src_n && k < BROWSE_SOURCES && n < cap; i++) {
+        if (d->src[i].enabled) {
+            out[n].kind = 2u;
+            out[n].count = d->src[i].count;
+            snprintf(out[n].label, sizeof out[n].label, "%s", d->src[i].name);
+            snprintf(out[n].arg, sizeof out[n].arg, "%s", d->src[i].key);
+            n++;
+            k++;
+        }
+    }
+    return n;
+}
+
 /* The Library lists the UI draws itself (the composers and a composer's songs) scroll by a pixel offset, lib_q16, as the
  * Songs page does (I303); the engine view modes scroll the engine's window instead (lib_wheel) and draw at offset 0. */
 static int lib_ui_list(const desk* d, const sel_state* st) {
@@ -5562,6 +5622,14 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "scan_mid %u\n", (unsigned)d->scan_mid);
     o = dump_put(d, o, "search draws %u rows %u query %s\n",
                           (unsigned)d->search_draws, (unsigned)d->search_rows, d->query);
+    o = dump_put(d, o, "browse draws=%u tiles=%u opens=%u filter=%d\n", (unsigned)d->browse_draws, (unsigned)d->browse_n, (unsigned)d->browse_opens, d->browse_filter);
+    {
+        browse_tile bt[BROWSE_MAX];
+        uint32_t bn = browse_tiles(d, bt, BROWSE_MAX), bi;
+        for (bi = 0; d->page == PG_BROWSE && bi < bn; bi++) {
+            o = dump_put(d, o, "browse tile %u %u %s\n", (unsigned)bi, (unsigned)bt[bi].kind, bt[bi].label);
+        }
+    }
     o = dump_put(d, o, "search view grid=%u flow=%u\n", (unsigned)d->search_grid_draws, (unsigned)d->search_flow_draws);
     o = dump_put(d, o, "search groups songs=%u albums=%u artists=%u facet=%u drawn=%u\n",
                           (unsigned)d->search_groups[0], (unsigned)d->search_groups[1], (unsigned)d->search_groups[2],
@@ -6943,6 +7011,90 @@ static sel_gui_rect search_facet_rect(desk* d, sel_gui_rect mn, uint32_t k) {
                    lpx(d, HOME_CHIP_H));
 }
 
+/* The Browse tile colours are design tokens, one per tile in turn. */
+static const int browse_palette[BROWSE_PALETTE] = {SEL_GUI_TOKEN_ACCENT, SEL_GUI_TOKEN_HEADER_TINT, SEL_GUI_TOKEN_SUCCESS, SEL_GUI_TOKEN_ERROR, SEL_GUI_TOKEN_WARNING};
+static const char* const browse_head[3] = {"Formats", "Composers", "Sources"};
+
+static void draw_browse(desk* d) {
+    sel_gui_rect mn = region_rect(d, "main");
+    browse_tile t[BROWSE_MAX];
+    uint32_t n = browse_tiles(d, t, BROWSE_MAX), i, cols, kind, col;
+    int32_t gap = lpx(d, GRID_GAP), margin = lpx(d, LIB_MARGIN), avail = mn.w - 2 * margin, tw, th = lpx(d, BROWSE_TILE_H), y = mn.y + lpx(d, 16);
+    sel_gui_clip_push(d->canvas, mn);
+    cols = avail >= lpx(d, BROWSE_TILE_MIN_W) ? (uint32_t)((avail + gap) / (lpx(d, BROWSE_TILE_MIN_W) + gap)) : 1u;
+    tw = (avail - (int32_t)(cols - 1u) * gap) / (int32_t)cols;
+    for (i = 0; i < BROWSE_MAX; i++) {
+        d->browse_rect[i] = rect_of(0, 0, 0, 0);
+    }
+    for (kind = 0; kind < 3u; kind++) {
+        int head = 0;
+        col = 0;
+        for (i = 0; i < n; i++) {
+            sel_gui_rect r;
+            char sub[24];
+            int32_t pad;
+            if (t[i].kind != kind) {
+                continue;
+            }
+            if (!head) {
+                draw_text(d, rect_of(mn.x + margin, y, avail, lpx(d, BROWSE_HEAD_H)), browse_head[kind], 1, 18, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+                y += lpx(d, BROWSE_HEAD_H);
+                head = 1;
+            }
+            r = rect_of(mn.x + margin + (int32_t)col * (tw + gap), y, tw, th);
+            pad = lpx(d, 12);
+            if (r.y < mn.y + mn.h) {
+                sel_gui_round_rect(d->canvas, r, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]), ARGB(d->theme.token[browse_palette[i % BROWSE_PALETTE]]));
+                draw_text(d, rect_of(r.x + pad, r.y + pad, r.w - 2 * pad, lpx(d, 28)), t[i].label, 1, 18, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+                snprintf(sub, sizeof sub, "%u songs", (unsigned)t[i].count);
+                draw_text(d, rect_of(r.x + pad, r.y + r.h - pad - lpx(d, 18), r.w - 2 * pad, lpx(d, 18)), sub, 0, 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+                d->browse_rect[i] = r;
+            }
+            col++;
+            if (col == cols) {
+                col = 0;
+                y += th + gap;
+            }
+        }
+        if (head && col != 0u) {
+            y += th + gap;
+        }
+    }
+    d->browse_n = n;
+    d->browse_draws++;
+    sel_gui_clip_pop(d->canvas);
+    sel_gui_dirty_add(d->canvas, mn);
+}
+
+static int browse_click(desk* d, int32_t x, int32_t y) {
+    browse_tile t[BROWSE_MAX];
+    uint32_t n = browse_tiles(d, t, BROWSE_MAX), i;
+    for (i = 0; i < n && i < d->browse_n; i++) {
+        if (!in_rect(d->browse_rect[i], x, y)) {
+            continue;
+        }
+        d->browse_opens++;
+        if (t[i].kind == 1u) {
+            char req[256];
+            desk_composer_request(req, sizeof req, t[i].arg); /* built first: the page change replaces the catalog */
+            desk_page_goto(d, PG_LIBRARY);
+            d->lib_q16 = 0;
+            desk_send(d, req);
+        } else {
+            snprintf(d->query, sizeof d->query, "%s:%s", t[i].kind == 0u ? "format" : "source", t[i].arg);
+            d->qlen = strlen(d->query);
+            d->search_facet = 0u;
+            d->search_keep = 1;
+            desk_page_goto(d, PG_SEARCH);
+            d->search_keep = 0;
+            d->browse_filter = 1;
+            desk_search_fire(d);
+        }
+        return 1;
+    }
+    return 0;
+}
+
 static void draw_search(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     sel_gui_rect mn = draw_panel(d, "main");
@@ -6967,7 +7119,7 @@ static void draw_search(desk* d) {
     }
     y = mn.y + lpx(d, SEARCH_FIELD_Y + SEARCH_FIELD_H + 16) + lpx(d, HOME_CHIP_H + 16);
     d->search_groups[0] = d->search_groups[1] = d->search_groups[2] = 0;
-    if (v != NULL && (v->style == (uint32_t)SEL_VIEW_STYLE_GRID || v->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW)) {
+    if (v != NULL && (d->browse_filter || v->style == (uint32_t)SEL_VIEW_STYLE_GRID || v->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW)) {
         /* I615b: the results follow the view mode the user picked. Grid and Cover Flow draw the entries of the shown facet as
          * artwork tiles, the same renderers as the Library; the group headings only feed the counts. Only song entries keep
          * their key, so only they open the song menu. */
@@ -6998,7 +7150,7 @@ static void draw_search(desk* d) {
         fv.window_start = 0;
         fv.row_n = fv.row_count = n;
         fv.rows = tiles;
-        if (v->style == (uint32_t)SEL_VIEW_STYLE_GRID) {
+        if (d->browse_filter || v->style == (uint32_t)SEL_VIEW_STYLE_GRID) {
             draw_grid_rows(d, mn, &fv, y, 0);
             d->search_grid_draws++;
         } else {
@@ -7052,6 +7204,10 @@ static void draw_home_content(desk* d) {
     d->sm_n = 0;
     np_title_reg(d);
     hover_prune(d, region_rect(d, "main")); /* the main region lists its controls afresh: a page change leaves none behind */
+    if (d->page == PG_BROWSE) {
+        draw_browse(d);
+        return;
+    }
     if ((d->search_on && !(d->pl_page && d->pls_id != 0u)) || d->page == PG_SEARCH) { /* I652a: an open playlist keeps its page, its search shows inside it; the Search page always draws its own field and facet chips, also before a query */
         draw_search(d);
         return;
@@ -7295,7 +7451,7 @@ static void draw_topbar(desk* d) {
     d->topbar_draws++;
 }
 
-/* I615: a click on the top bar: Home opens the Home page, Browse the Library browse page, the field takes the keyboard on the
+/* I615: a click on the top bar: Home opens the Home page, Browse the Browse tiles page (I615c), the field takes the keyboard on the
  * Search page. 1 when the click was the bar's. */
 static int topbar_click(desk* d, int32_t x, int32_t y) {
     if (!topbar_shown(d)) {
@@ -7308,7 +7464,7 @@ static int topbar_click(desk* d, int32_t x, int32_t y) {
     }
     if (in_rect(topbar_part(d, TOPBAR_BROWSE), x, y)) {
         d->topbar_browse_clicks++;
-        desk_page_goto(d, PG_LIBRARY);
+        desk_page_goto(d, PG_BROWSE);
         return 1;
     }
     if (in_rect(topbar_part(d, TOPBAR_FIELD), x, y)) {
@@ -7395,6 +7551,9 @@ static void desk_page_flags(desk* d, desk_page pg) {
     d->tr_asked = 0u;
     d->np_page = pg == PG_NOWPLAYING;
     d->search_on = 0;
+    if (pg != PG_SEARCH) {
+        d->browse_filter = 0;
+    }
     d->open_tile = 0;
     d->hist_n = 0u; /* the view history is per page */
 }
@@ -7464,6 +7623,11 @@ static void desk_page_load(desk* d, desk_page pg) {
             lib_grid_source(d);
         }
         desk_send(d, "STATS_SHOW");
+    } else if (pg == PG_BROWSE) { /* I615c: the catalog the tiles are built from: the formats (the grouped library view), the composers and the sources */
+        desk_send(d, "FORMATS_SHOW");
+        desk_send(d, "COMPOSERS_SHOW");
+        d->src_wait = 1;
+        desk_send(d, "SOURCES");
     } else if (pg == PG_PLAYLISTS || pg == PG_SONGS) { /* the folders source holds the saved playlists */
         desk_send(d, "VIEW_SOURCE folders");
         desk_send(d, "VIEW_WINDOW 64");
@@ -7566,6 +7730,9 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
     const sel_state* st = sel_engine_state(d->engine);
     sel_gui_rect mn = region_rect(d, "main");
     uint32_t i;
+    if (d->page == PG_BROWSE && in_rect(mn, x, y)) {
+        return browse_click(d, x, y);
+    }
     if (d->page == PG_SEARCH && in_rect(mn, x, y)) { /* a facet chip filters the drawn groups; without results it is kept for the next ones */
         for (i = 0; i < SEARCH_FACETS; i++) {
             if (in_rect(search_facet_rect(d, panel_rect(d, "main"), i), x, y)) {
@@ -10855,6 +11022,15 @@ static int desk_replay_input(desk* d) {
             pointer_sent = d->sends != sent;
         } else if (sscanf(line, "topbar %u", &n) == 1 && n <= TOPBAR_BROWSE && topbar_shown(d)) { /* I615: a click on the centre of top bar part n (0 Home, 1 field, 2 Browse) */
             sel_gui_rect r = topbar_part(d, (int)n);
+            sel_gui_input ck;
+            memset(&ck, 0, sizeof ck);
+            ck.kind = SEL_GUI_IN_CLICK;
+            ck.x = r.x + r.w / 2;
+            ck.y = r.y + r.h / 2;
+            opened |= desk_route_input(d, &ck);
+            pointer_sent = d->sends != sent;
+        } else if (sscanf(line, "browse %u", &n) == 1 && n < d->browse_n) { /* I615c: a click on the centre of Browse tile n of the last frame */
+            sel_gui_rect r = d->browse_rect[n];
             sel_gui_input ck;
             memset(&ck, 0, sizeof ck);
             ck.kind = SEL_GUI_IN_CLICK;

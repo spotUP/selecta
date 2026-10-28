@@ -182,6 +182,7 @@ typedef struct sel_state {
     uint32_t library_songs;     /* DUI-P4-18: songs in the catalogue, re-counted when library_serial changes (the Clear Library dialog names it) */
     const char* stats;          /* I192: the stats screen is open: "label\0value\0" pairs read from the stats SQL views, then "\0"; NULL: closed */
     const char* composers;      /* DUI-P4-3: the Library page is open: "canon\0display\0songs\0" per composer (decimal count), then "\0"; NULL: closed */
+    const char* formats;        /* I615c: the song formats of the catalogue after FORMATS_SHOW: "format\0songs\0" per format (decimal count, most songs first), then "\0"; NULL before the first FORMATS_SHOW */
     const char* composer_page;  /* the composer drilled into: "canon\0display\0songs\0", then "key\0name\0" per song, then "\0"; NULL: none */
     uint32_t lyric_source;      /* I193: SEL_LYRIC_*: where the lyrics of the open song come from */
     const char* lyric_text;     /* plain lyrics (song message, or unsynced text), NULL: none or synced */

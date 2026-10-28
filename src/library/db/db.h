@@ -53,6 +53,7 @@ enum {
     SEL_DUP_PICK,       /* I184b: next local song with id > `after` that has no md5, not hashed: `out` = key NUL path NUL, reply [2] = its id (0: none left) */
     SEL_DUP_STORE,      /* I184b: store md5 `value` for local song key `key` (songs and files tables) */
     SEL_COMPOSER_LIST,  /* DUI-P4-3: every composer (by display name, Unknown composer last) streamed through `row` in one request: canon, display, song count (decimal); reply [2] = row count (I528) */
+    SEL_FORMAT_LIST,    /* I615c: every song format with its song count (most songs first) streamed through `row`: format, song count (decimal); reply [2] = row count */
     SEL_SOURCE_SONGS    /* DUI-P4-3: songs rows of source id `key`: `out` = decimal count NUL, reply [0] = 1 */
 };
 /* One albums/artwork operation (SEL_LIB_REQ_ART, DUI-P2-4). Reply INT [0]: SEL_ART_FIND the id of the albums row the song belongs to (0: none),
@@ -525,6 +526,11 @@ int sel_library_composer_page(sel_library* lib, const char* name, sel_composer_r
  * rows, -1 on a library error. */
 typedef void (*sel_composer_list_fn)(void* ctx, const char* canon, const char* display, uint32_t songs);
 int sel_library_composer_list(sel_library* lib, sel_composer_list_fn fn, void* ctx);
+
+/* Every song format of the catalogue with its song count (I615c), most songs first: calls `fn(ctx, format, songs)` each. Returns the
+ * number of formats, or -1 without a library. */
+typedef void (*sel_format_list_fn)(void* ctx, const char* format, uint32_t songs);
+int sel_library_format_list(sel_library* lib, sel_format_list_fn fn, void* ctx);
 /* Songs rows of source id `source` (the SOURCES command, DUI-P4-3); -1 on a library error. */
 int sel_library_source_songs(sel_library* lib, const char* source);
 /* Switched-off sources (I265): `csv` is the library.sources_off pref, comma separated ids. A song whose key carries one

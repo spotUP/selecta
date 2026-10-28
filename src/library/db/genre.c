@@ -100,7 +100,7 @@ void sel_library_genre_op(sel_library* lib, const sel_genre_op* op, sel_message*
                      " (SELECT 1 FROM stickers WHERE key = ?1 AND name = 'tag.genre')",
                      op, 0);
         found = rc == SQLITE_OK && sqlite3_changes(lib->db) > 0;
-    } else if ((op->op >= SEL_SONGDB_GET && op->op <= SEL_COMPOSER_NEXT) || op->op == SEL_COMPOSER_LIST || op->op == SEL_SOURCE_SONGS) {
+    } else if ((op->op >= SEL_SONGDB_GET && op->op <= SEL_COMPOSER_NEXT) || op->op == SEL_COMPOSER_LIST || op->op == SEL_FORMAT_LIST || op->op == SEL_SOURCE_SONGS) {
         rc = sel_library_songdb_op(lib, op, &found, &id);
     } else if (op->op == SEL_SIMILAR_NEXT || op->op == SEL_ALSOBY_NEXT) {
         rc = sel_library_similar_op(lib, op, &found, &id);
@@ -139,6 +139,7 @@ static uint32_t row_fields(uint32_t op) {
     case SEL_ALSOBY_NEXT:
     case SEL_DUP_NEXT:
     case SEL_COMPOSER_LIST: return 3u;
+    case SEL_FORMAT_LIST: return 2u;
     default: return 0u;
     }
 }
