@@ -1,7 +1,9 @@
 /* MUI parity rows of plan 2026-10-25-amiga-mui.md section P8 (MUI-P8-1..15). Pure C, host-testable. Every action is read
  * from the shared action table (src/uimodel/actions.c) the desktop UI reads; the models are sel_uim_*. */
 #include <selecta/uimodel.h>
+#include <selecta/uimodel/doors.h>
 
+#include <stdio.h>
 #include <string.h>
 
 #include "mui_map.h"
@@ -100,4 +102,100 @@ uint32_t mui_scope_fire(uint32_t i, mui_send_fn send, void* ctx) {
         sent += send(ctx, "VIEW_SOURCE queue") != 0; /* re-read the queue window */
     }
     return sent;
+}
+
+#include <selecta/uimodel/viewcmds.h>
+
+/* MUI-P8-5 */
+static const char* const k_viewbtn[2] = {"New Folder", "New Playlist"};
+
+const char* mui_viewbtn_label(uint32_t i) {
+    return i < MUI_VIEWBTN_COUNT ? (i < 2u ? k_viewbtn[i] : sel_uim_flag_label(i - 2u)) : NULL;
+}
+
+uint32_t mui_viewbtn_fire(uint32_t i, const char* text, uint32_t folder, mui_send_fn send, void* ctx) {
+    char line[SEL_UIM_CMD_MAX];
+    uint32_t n = i < 2u ? sel_uim_plbtn_line(i, text, folder, line, sizeof line) : sel_uim_flag_line(i - 2u, text, line, sizeof line);
+    g_view_fires++;
+    return n != 0u && send != NULL && send(ctx, line) != 0;
+}
+
+/* MUI-P8-12 */
+uint32_t mui_tile_steps(void) { return SEL_UIM_TILE_STEPS; }
+int32_t mui_tile_step(uint32_t i) { return sel_uim_tile_step(i); }
+
+/* MUI-P8-14 */
+static uint32_t g_pref_sets;
+
+uint32_t mui_pref_sets(void) { return g_pref_sets; }
+
+static uint32_t pref_send(uint32_t n, const char* line, mui_send_fn send, void* ctx) {
+    g_pref_sets++;
+    return n != 0u && send != NULL && send(ctx, line) != 0;
+}
+
+uint32_t mui_amiga_hotkeys_set(int enabled, mui_send_fn send, void* ctx) {
+    char line[SEL_UIM_CMD_MAX];
+    return pref_send(sel_uim_hotkeys_line(enabled, line, sizeof line), line, send, ctx);
+}
+
+uint32_t mui_amiga_priority_set(int32_t v, mui_send_fn send, void* ctx) {
+    char line[SEL_UIM_CMD_MAX];
+    return pref_send(sel_uim_priority_line(v, line, sizeof line), line, send, ctx);
+}
+
+uint32_t mui_amiga_group_set(const char* path, mui_send_fn send, void* ctx) {
+    char line[SEL_UIM_CMD_MAX];
+    return pref_send(sel_uim_groupfile_line(path, line, sizeof line), line, send, ctx);
+}
+
+/* MUI-P8-13 */
+static uint32_t g_page_switches;
+
+uint32_t mui_page_switches(void) { return g_page_switches; }
+
+uint32_t mui_door_activate(uint32_t i, mui_send_fn send, void* ctx, const char** page) {
+    const char* line = mui_door_line(i);
+    const sel_uim_door* d = sel_uim_door_at(i);
+    if (page != NULL) {
+        *page = NULL;
+    }
+    if (d == NULL) {
+        return 0;
+    }
+    if (line == NULL) {
+        g_page_switches++;
+        if (page != NULL) {
+            *page = d->page;
+        }
+        return 0;
+    }
+    return send != NULL && send(ctx, line) != 0;
+}
+
+/* MUI-P8-6 */
+static uint32_t g_stats_builds;
+
+uint32_t mui_stats_builds(void) { return g_stats_builds; }
+
+uint32_t mui_stats_text(const char* stats, int more, char* out, uint32_t cap) {
+    uint32_t i, n = sel_uim_stats_shown(stats, more), len = 0;
+    g_stats_builds++;
+    if (cap == 0u) {
+        return 0;
+    }
+    out[0] = '\0';
+    for (i = 0; i < n; i++) {
+        const char *l, *v;
+        int w;
+        if (sel_uim_stats_row(stats, i, &l, &v) == 0u) {
+            break;
+        }
+        w = snprintf(out + len, cap - len, "%s: %s\n", l, v);
+        if (w < 0 || (uint32_t)w >= cap - len) {
+            break;
+        }
+        len += (uint32_t)w;
+    }
+    return len;
 }

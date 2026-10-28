@@ -298,4 +298,27 @@ const char* mui_scope_label(uint32_t i);
 uint32_t mui_scope_fire(uint32_t i, mui_send_fn send, void* ctx);
 uint32_t mui_view_fires(void);
 
+/* MUI-P8-5: the Playlists and Song info buttons; MUI-P8-12: tile size Slider steps; MUI-P8-14: Amiga runtime prefs. All read the
+ * shared model (uimodel/viewcmds.h, uimodel/browse.h). Each fire returns how many lines were sent. */
+#define MUI_VIEWBTN_COUNT 5u
+const char* mui_viewbtn_label(uint32_t i); /* 0 New Folder, 1 New Playlist, 2 Mark Wrong, 3 Skip Song, 4 Save Note */
+uint32_t mui_viewbtn_fire(uint32_t i, const char* text, uint32_t folder, mui_send_fn send, void* ctx);
+uint32_t mui_tile_steps(void);
+int32_t mui_tile_step(uint32_t i);
+uint32_t mui_amiga_hotkeys_set(int enabled, mui_send_fn send, void* ctx);
+uint32_t mui_amiga_priority_set(int32_t v, mui_send_fn send, void* ctx);
+uint32_t mui_amiga_group_set(const char* path, mui_send_fn send, void* ctx);
+uint32_t mui_pref_sets(void); /* call-count sentinel: pref sets sent */
+
+/* MUI-P8-13: activate door i. A door with an engine line sends it; Now Playing and Song Information have none and switch the
+ * MUI's own page group instead: *page gets the door's page name ("nowplaying", "songinfo"), no engine line is sent. Returns the
+ * lines sent; mui_page_switches() counts the page switches. */
+uint32_t mui_door_activate(uint32_t i, mui_send_fn send, void* ctx, const char** page);
+uint32_t mui_page_switches(void);
+
+/* MUI-P8-6: the Library Statistics panel. The panel text is the shared model's rows ("label: value" lines), Less shows the first
+ * SEL_UIM_STATS_LESS, More all of them; NULL stats (Hide) gives an empty text. Returns the bytes written. */
+uint32_t mui_stats_text(const char* stats, int more, char* out, uint32_t cap);
+uint32_t mui_stats_builds(void); /* call-count sentinel */
+
 #endif

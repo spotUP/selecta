@@ -1,7 +1,9 @@
 /* MUI-P8 parity tests (plan 2026-10-25-amiga-mui.md section P8). Usage: mui_p8_test <name>. Host only; each test fakes the
  * engine with a send function that records the lines. */
 #include <selecta/uimodel.h>
+#include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/keys.h>
+#include <selecta/uimodel/viewcmds.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -158,6 +160,117 @@ static void test_queue_scope(void) {
     CHECK(mui_view_fires() - base == 4u, "sentinel");
 }
 
+/* mui-p8-view-buttons (MUI-P8-5) */
+static void test_view_buttons(void) {
+    static const char* const want_label[MUI_VIEWBTN_COUNT] = {"New Folder", "New Playlist", "Mark Wrong", "Skip Song", "Save Note"};
+    static const char* const want_line[MUI_VIEWBTN_COUNT] = {"FOLDER_ADD \"Mixes\" 3", "PLAYLIST_CREATE \"Mixes\" 3", "FLAG wrong \"Mixes\"", "FLAG skip", "NOTE \"Mixes\""};
+    fake_engine e;
+    uint32_t i, base = mui_view_fires();
+    CHECK(mui_viewbtn_label(MUI_VIEWBTN_COUNT) == NULL, "button past the count");
+    for (i = 0; i < MUI_VIEWBTN_COUNT; i++) {
+        CHECK(mui_viewbtn_label(i) != NULL && strcmp(mui_viewbtn_label(i), want_label[i]) == 0, "button %u label", (unsigned)i);
+        memset(&e, 0, sizeof e);
+        CHECK(mui_viewbtn_fire(i, "Mixes", 3, fake_send, &e) == 1u && e.n == 1u && strcmp(e.lines[0], want_line[i]) == 0, "button %u: %u lines '%s'", (unsigned)i, (unsigned)e.n, e.lines[0]);
+    }
+    memset(&e, 0, sizeof e);
+    mui_viewbtn_fire(3, "", 0, fake_send, &e);
+    mui_viewbtn_fire(2, "", 0, fake_send, &e);
+    mui_viewbtn_fire(4, NULL, 0, fake_send, &e);
+    CHECK(e.n == 3u && strcmp(e.lines[0], "FLAG skip") == 0 && strcmp(e.lines[1], "FLAG wrong") == 0 && strcmp(e.lines[2], "NOTE") == 0, "empty note lines");
+    memset(&e, 0, sizeof e);
+    CHECK(mui_viewbtn_fire(MUI_VIEWBTN_COUNT, "x", 0, fake_send, &e) == 0u && e.n == 0u, "a bad button sent a line");
+    CHECK(mui_view_fires() - base == 9u, "sentinel %u, want 9", (unsigned)(mui_view_fires() - base));
+}
+
+/* mui-p8-tile-steps (MUI-P8-12): the Slider steps are the desktop's (sel_uim_tile_step, which the desktop reads too). */
+static void test_tile_steps(void) {
+    uint32_t i;
+    char cmd[512];
+    FILE* f;
+    char out[256] = "";
+    CHECK(mui_tile_steps() == 5u, "%u steps", (unsigned)mui_tile_steps());
+    for (i = 0; i < 5u; i++) {
+        CHECK(mui_tile_step(i) == sel_uim_tile_step(i) && mui_tile_step(i) > 0, "step %u", (unsigned)i);
+    }
+    CHECK(mui_tile_step(5) == 0, "step past the count");
+    CHECK(mui_tile_step(0) < mui_tile_step(4), "steps not increasing");
+    /* the written exemption: no MUI source reads ui.desktop.zoom */
+    snprintf(cmd, sizeof cmd, "grep -rl 'desktop\\.zoom' %s/plugins/ui/mui --include=*.c --include=*.h", MUI_SRC_ROOT);
+    f = popen(cmd, "r");
+    CHECK(f != NULL, "popen");
+    if (f != NULL) {
+        CHECK(fgets(out, sizeof out, f) == NULL, "a MUI source reads ui.desktop.zoom: %s", out);
+        pclose(f);
+    }
+}
+
+/* mui-p8-amiga-settings (MUI-P8-14) */
+static void test_amiga_settings(void) {
+    fake_engine e;
+    uint32_t base = mui_pref_sets();
+    memset(&e, 0, sizeof e);
+    CHECK(mui_amiga_hotkeys_set(1, fake_send, &e) == 1u, "hotkeys not sent");
+    CHECK(mui_amiga_priority_set(3, fake_send, &e) == 1u, "priority not sent");
+    CHECK(mui_amiga_group_set("SYS:Prefs/Hippo.group", fake_send, &e) == 1u, "group not sent");
+    CHECK(e.n == 3u && strcmp(e.lines[0], "PREF_SET amiga.hotkeys 1") == 0 && strcmp(e.lines[1], "PREF_SET amiga.task_priority 3") == 0 && strcmp(e.lines[2], "PREF_SET amiga.group_file \"SYS:Prefs/Hippo.group\"") == 0, "lines: '%s' '%s' '%s'", e.lines[0], e.lines[1], e.lines[2]);
+    CHECK(mui_pref_sets() - base == 3u, "pref-set count %u, want 3", (unsigned)(mui_pref_sets() - base));
+    memset(&e, 0, sizeof e);
+    mui_amiga_priority_set(99, fake_send, &e);
+    mui_amiga_priority_set(-99, fake_send, &e);
+    CHECK(e.n == 2u && strcmp(e.lines[0], "PREF_SET amiga.task_priority 5") == 0 && strcmp(e.lines[1], "PREF_SET amiga.task_priority -5") == 0, "clamp: '%s' '%s'", e.lines[0], e.lines[1]);
+}
+
+/* mui-p8-doors (MUI-P8-13) */
+static void test_doors(void) {
+    static const char* const want_line[7] = {"VIEW_SOURCE home", "VIEW_SOURCE search", "VIEW_SHOW browse", "VIEW_SOURCE folders", "VIEW_SHOW queue", NULL, NULL};
+    static const char* const want_page[7] = {NULL, NULL, NULL, NULL, NULL, "nowplaying", "songinfo"};
+    fake_engine e;
+    uint32_t i, base = mui_page_switches();
+    CHECK(mui_door_count() == 7u, "%u doors", (unsigned)mui_door_count());
+    for (i = 0; i < 7u; i++) {
+        const char* page = "x";
+        uint32_t before;
+        memset(&e, 0, sizeof e);
+        before = e.n;
+        mui_door_activate(i, fake_send, &e, &page);
+        if (want_line[i] != NULL) {
+            CHECK(e.n == before + 1u && strcmp(e.lines[0], want_line[i]) == 0 && page == NULL, "door %u: %u lines", (unsigned)i, (unsigned)e.n);
+        } else {
+            CHECK(e.n == 0u && page != NULL && strcmp(page, want_page[i]) == 0, "door %u: %u lines, page '%s'", (unsigned)i, (unsigned)e.n, page != NULL ? page : "(null)");
+        }
+    }
+    CHECK(mui_page_switches() - base == 2u, "page-switch sentinel %u, want 2", (unsigned)(mui_page_switches() - base));
+}
+
+/* mui-p8-statistics (MUI-P8-6) */
+static void test_statistics(void) {
+    static const char stats[] = "Songs\0" "120\0" "Albums\0" "12\0" "Artists\0" "7\0" "Formats\0" "5\0" "Plays\0" "99\0" "Hours\0" "8\0\0";
+    char less[256], more[256], none[16];
+    uint32_t base = mui_stats_builds(), nl, nm, rows = sel_uim_stats_rows(stats), i, lines = 0;
+    const char *l, *v;
+    CHECK(rows == 6u, "%u model rows, want 6", (unsigned)rows);
+    nl = mui_stats_text(stats, 0, less, sizeof less);
+    nm = mui_stats_text(stats, 1, more, sizeof more);
+    for (i = 0; i < nm; i++) {
+        lines += more[i] == '\n';
+    }
+    CHECK(lines == rows, "More shows %u lines, model has %u", (unsigned)lines, (unsigned)rows);
+    lines = 0;
+    for (i = 0; i < nl; i++) {
+        lines += less[i] == '\n';
+    }
+    CHECK(lines == SEL_UIM_STATS_LESS && nl < nm, "Less shows %u lines", (unsigned)lines);
+    for (i = 0; i < rows; i++) {
+        char want[64];
+        CHECK(sel_uim_stats_row(stats, i, &l, &v) == 1u, "row %u", (unsigned)i);
+        snprintf(want, sizeof want, "%s: %s\n", l, v);
+        CHECK(strstr(more, want) != NULL, "panel lacks '%s'", want);
+    }
+    CHECK(sel_uim_stats_row(stats, rows, &l, &v) == 0u, "row past the count");
+    CHECK(mui_stats_text(NULL, 1, none, sizeof none) == 0u && none[0] == '\0', "Hide/closed text not empty");
+    CHECK(mui_stats_builds() - base == 3u, "sentinel %u, want 3", (unsigned)(mui_stats_builds() - base));
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -170,6 +283,16 @@ int main(int argc, char** argv) {
         test_library_modes();
     } else if (strcmp(argv[1], "queue-scope") == 0) {
         test_queue_scope();
+    } else if (strcmp(argv[1], "view-buttons") == 0) {
+        test_view_buttons();
+    } else if (strcmp(argv[1], "tile-steps") == 0) {
+        test_tile_steps();
+    } else if (strcmp(argv[1], "amiga-settings") == 0) {
+        test_amiga_settings();
+    } else if (strcmp(argv[1], "doors") == 0) {
+        test_doors();
+    } else if (strcmp(argv[1], "statistics") == 0) {
+        test_statistics();
     } else {
         printf("unknown test %s\n", argv[1]);
         return 2;
