@@ -329,6 +329,7 @@ typedef struct desk {
     uint32_t lit_doors;      /* bit i set: sidebar door i was drawn raised in the last frame (nav sentinel) */
     sel_engine_library_item side_items[SIDE_LIB_MAX]; /* I608: the saved playlists listed under the doors */
     uint32_t side_n, side_stale, side_draws, side_rows, side_opens, side_empty_draws, side_create_clicks; /* items held, reload wanted, frames drawn, rows drawn in the last one, rows opened */
+    uint32_t side_open_n, side_open_tries; /* I646: the sidebar count a just created playlist brings the list to (0 = none pending), frames waited */
     sel_gui_rect side_empty_btn; /* I627: the empty-state Create playlist button, zero size when not drawn */
     int32_t side_y_q16; /* the list's scroll offset in Q16 logical pixels */
     int np_page;             /* the main region shows the Now Playing page */
@@ -3798,6 +3799,13 @@ static int pls_row_visible(desk* d, sel_gui_rect mn, uint32_t slot) {
     return pls_row_rect(d, mn, slot).y + lpx(d, SONG_ROW_H) <= mn.y + mn.h;
 }
 
+/* I646: the playlist's name, drawn big; a click makes it the name field (Enter renames, Escape keeps the name). */
+static sel_gui_rect pls_title_rect(desk* d, sel_gui_rect mn) {
+    sel_gui_rect cv = pls_cover_rect(d, mn);
+    int32_t tx = cv.x + cv.w + lpx(d, PLS_GAP);
+    return rect_of(tx, cv.y + lpx(d, 24), mn.x + mn.w - tx - lpx(d, HOME_MARGIN), lpx(d, page_title_h(d)));
+}
+
 static void draw_playlist_page(desk* d, sel_gui_rect mn) {
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     uint32_t surf = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
@@ -3811,7 +3819,13 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
     draw_button(d, pls_back_rect(d, mn), surf, "Back to Playlists", 13, text);
     sel_gui_genart_draw(d->canvas, cv, "album", sel_gui_str_hash(d->pls_name));
     draw_text(d, rect_of(tx, cv.y, mn.x + mn.w - tx - lpx(d, HOME_MARGIN), lpx(d, 20)), "Playlist", 0, 13, muted);
-    draw_text(d, rect_of(tx, cv.y + lpx(d, 24), mn.x + mn.w - tx - lpx(d, HOME_MARGIN), lpx(d, page_title_h(d))), d->pls_name, 1, 32, text);
+    draw_text(d, pls_title_rect(d, mn), d->pl_edit && d->pl_nlen > 0u ? d->pl_name : d->pls_name, 1, 32, d->pl_edit && d->pl_nlen == 0u ? muted : text);
+    if (d->pl_edit) { /* the caret: a thin bar where typing goes (the typed text's end, the start while the field is empty) */
+        sel_gui_rect tr = pls_title_rect(d, mn);
+        const sel_gui_atlas* at = desk_font(d, 1, 32);
+        int32_t tw = at != NULL ? sel_gui_text_width(at, d->pl_name, d->pl_nlen) : 0, ch = tr.h - lpx(d, 8), cw = lpx(d, 2) > 0 ? lpx(d, 2) : 1;
+        sel_gui_fill_rect(d->canvas, rect_of(tr.x + tw, tr.y + (tr.h - ch) / 2, cw, ch), text);
+    }
     snprintf(count, sizeof count, "%u %s", (unsigned)d->pls_n, d->pls_n == 1u ? "song" : "songs");
     draw_text(d, rect_of(tx, cv.y + lpx(d, 24) + lpx(d, page_title_h(d)), pb.w * 2, lpx(d, 20)), count, 0, 13, muted);
     draw_button(d, pb, accent, "Play", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
@@ -3951,6 +3965,14 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
     if (ev->kind != SEL_GUI_IN_CLICK || ev->button != 0u) {
         return 0;
     }
+    d->pl_edit = in_rect(pls_title_rect(d, mn), ev->x, ev->y); /* I646: the name field */
+    if (d->pl_edit) {
+        d->pl_nlen = 0u;
+        d->pl_name[0] = '\0';
+        d->repaint = 1;
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        return 1;
+    }
     if (in_rect(pls_back_rect(d, mn), ev->x, ev->y)) {
         pls_close(d);
         return 1;
@@ -4018,7 +4040,12 @@ static int pl_pointer(desk* d, const sel_gui_input* ev) {
 
 /* A typed key while the name field is focused: printable keys append, Backspace deletes, Enter and Escape leave. */
 static int pl_key(desk* d, const sel_gui_input* ev) {
-    if (ev->code == 13u || ev->code == 27u) {
+    if (ev->code == 13u && d->pls_id != 0u && d->pl_nlen > 0u) { /* I646: the open playlist's name field: Enter renames it */
+        char line[160];
+        snprintf(d->pls_name, sizeof d->pls_name, "%s", d->pl_name);
+        snprintf(line, sizeof line, "PLAYLIST_RENAME %u \"%s\"", (unsigned)d->pls_id, pl_take_name(d, ""));
+        pl_send(d, line);
+    } else if (ev->code == 13u || ev->code == 27u) {
         d->pl_edit = 0;
     } else if (ev->code == 127u) {
         if (d->pl_nlen > 0u) {
@@ -4977,9 +5004,9 @@ static const char* library_dump_build(desk* d) {
     if (d->pl_page && d->pls_id != 0u) { /* I633: the open playlist page: its songs in order and the geometry a script clicks */
         sel_gui_rect pmn = region_rect(d, "main"), bk = pls_back_rect(d, pmn), pp = pls_play_rect(d, pmn);
         uint32_t j;
-        o = dump_put(d, o, "plpage id=%u name=[%s] songs=%u rows=%u draws=%u back=%d,%d,%d,%d play=%d,%d,%d,%d\n", (unsigned)d->pls_id, d->pls_name,
+        o = dump_put(d, o, "plpage id=%u name=[%s] songs=%u rows=%u draws=%u back=%d,%d,%d,%d play=%d,%d,%d,%d edit=%d\n", (unsigned)d->pls_id, d->pls_name,
                      (unsigned)d->pls_n, (unsigned)d->pls_rows, (unsigned)d->pls_draws, (int)bk.x, (int)bk.y, (int)bk.w, (int)bk.h,
-                     (int)pp.x, (int)pp.y, (int)pp.w, (int)pp.h);
+                     (int)pp.x, (int)pp.y, (int)pp.w, (int)pp.h, d->pl_edit);
         for (j = 0; d->pls_scroll + j < d->pls_n && pls_row_visible(d, pmn, j) && o + 400u < sizeof d->library_dump; j++) {
             sel_gui_rect r = pls_row_rect(d, pmn, j);
             o = dump_put(d, o, "plsong %u %d %d %d %d file=%s title=%s\n", (unsigned)j, (int)r.x, (int)r.y, (int)r.w, (int)r.h, path_base(pls_key(d, d->pls_scroll + j)),
@@ -6915,6 +6942,19 @@ static int32_t side_lib_max_q16(const desk* d) {
 static void side_lib_reload(desk* d) {
     d->side_n = sel_engine_library_playlist_items(d->engine, d->side_items, SIDE_LIB_MAX);
     d->side_stale = 0u;
+    if (d->side_open_n != 0u) { /* I646: Create playlist asked to open the new playlist once the engine has made it */
+        if (d->page != PG_PLAYLISTS || ++d->side_open_tries > 300u) {
+            d->side_open_n = 0u;
+        } else if (d->side_n >= d->side_open_n) { /* the list is oldest first: the new one is last */
+            d->side_open_n = 0u;
+            pls_open(d, d->side_items[d->side_n - 1u].id, d->side_items[d->side_n - 1u].name);
+            d->pl_nlen = 0u;
+            d->pl_name[0] = '\0';
+            d->pl_edit = 1; /* the name field has the keyboard: typing renames it */
+        } else {
+            d->side_stale = 1u; /* the engine has not applied PLAYLIST_CREATE yet */
+        }
+    }
     d->side_y_q16 = d->side_y_q16 > side_lib_max_q16(d) ? side_lib_max_q16(d) : d->side_y_q16;
 }
 
@@ -6964,7 +7004,7 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
             sel_gui_rect card = rect_of(v.x + pad, v.y + lpx(d, 4), cw, ch);
             sel_gui_round_rect(d->canvas, card, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
             draw_text(d, rect_of(card.x + pad, card.y + lpx(d, 12), card.w - 2 * pad, lpx(d, 20)), "Create your first playlist", 1, 14, text);
-            draw_text(d, rect_of(card.x + pad, card.y + lpx(d, 34), card.w - 2 * pad, lpx(d, 18)), "It's easy, we'll help you", 0, 12, muted);
+            draw_text(d, rect_of(card.x + pad, card.y + lpx(d, 34), card.w - 2 * pad, lpx(d, 18)), "Name it, then add songs from your library", 0, 12, muted);
             d->side_empty_btn = rect_of(card.x + pad, card.y + lpx(d, 68), bw < card.w - 2 * pad ? bw : card.w - 2 * pad, lpx(d, 36));
             draw_button(d, d->side_empty_btn, text, "Create playlist", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
             d->side_empty_draws++;
@@ -8517,6 +8557,9 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         }
         if (d->side_empty_btn.w > 0 && d->side_n == 0u && in_rect(d->side_empty_btn, ev->x, ev->y)) { /* I627: the empty-state button */
             d->side_create_clicks++;
+            d->side_open_n = d->side_n + 1u; /* I646: create and open, like Spotify: the new playlist opens once it appears */
+            d->side_open_tries = 0u;
+            desk_page_goto(d, PG_PLAYLISTS);
             d->repaint = 1;
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
             return pl_create(d, 0u);
