@@ -96,6 +96,10 @@ int arexx_hook_event(int song_opened, const char* script, arexx_launch_fn launch
     return 1;
 }
 
+const char* arexx_message_line(unsigned long action, const char* arg0) {
+    return (action & 0xFF000000ul) == 0x01000000ul ? arg0 : NULL; /* RXCODEMASK, RXCOMM of rexx/storage.h */
+}
+
 void arexx_closing_result(arexx_result* out, arexx_counters* counters) {
     out->result1 = AREXX_RC_CLOSING;
     out->has_string = 0;

@@ -796,7 +796,9 @@ if(NOT SEL_AMIGA)
   add_test(NAME arexx-batch COMMAND arexx_test batch)
   add_test(NAME arexx-hook COMMAND arexx_test hook)
   add_test(NAME arexx-scripts COMMAND arexx_test scripts ${PROJECT_SOURCE_DIR}/dist/amiga/rexx)
-  set_tests_properties(arexx-dispatch-reach arexx-dispatch-rc arexx-port-names arexx-batch arexx-hook arexx-scripts PROPERTIES TIMEOUT 60 LABELS engine
+  add_test(NAME arexx-message-line COMMAND arexx_test msgline)
+  add_test(NAME arexx-queue-argnames COMMAND arexx_test argnames)
+  set_tests_properties(arexx-dispatch-reach arexx-dispatch-rc arexx-port-names arexx-batch arexx-hook arexx-scripts arexx-message-line arexx-queue-argnames PROPERTIES TIMEOUT 60 LABELS engine
                        PASS_REGULAR_EXPRESSION "arexx_test [a-z]+ ok")
   # M4-AX-2-1: the commands.def build check accepts the real table and rejects a row without a label and one whose
   # argnames do not match the signature.
