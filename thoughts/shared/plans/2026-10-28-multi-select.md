@@ -1,7 +1,7 @@
 ---
 date: 2026-10-28
 author: spotUP
-status: draft
+status: decided
 implements: ledger row I632 (multi-select songs and bulk song-menu operations, desktop and MUI)
 related: thoughts/shared/plans/2026-10-24-desktop-ui.md, thoughts/shared/plans/2026-10-25-amiga-mui.md (MUI-P4-6), thoughts/shared/plans/2026-10-22-architecture-design.md
 ---
@@ -181,3 +181,15 @@ same N labels. The context menu itself is MUI-P4-6, still open (no `MUIA_Context
 9. **D9 Selection limit.** (Recommended) 32 separate runs (Cmd-A or any Shift range is one run); a 33rd toggle toasts "Too many
    separate selections". Alt: unlimited runs with an allocated list. Trade-off: the cap keeps the model allocation-free and
    the bulk line under 512 bytes.
+
+## 9. Decisions taken (Johan, 2026-10-28)
+
+- D1 Plain click selects that row only: taken as recommended (standard desktop convention, not put to Johan).
+- D2 Sort, filter or search change clears the selection: Johan, recommended.
+- D3 Right-click on an unselected row makes the selection that row: Johan, recommended.
+- D4 Play on N songs inserts them after the playing song, in list order, and starts the first: Johan, recommended.
+- D5 Remove from Library on N songs: one confirm dialog naming the count: Johan, recommended.
+- D6 Cmd-A selects the whole list: taken as recommended (standard convention, not put to Johan).
+- D7 Dragging a selection is a later row, not part of I632: Johan, recommended.
+- D8 MUI uses `MUIV_Listview_MultiSelect_Default` (the user's MUI prefs decide): Johan, recommended.
+- D9 **Unlimited selection runs** (Johan chose against the recommendation). Section 3's fixed 32-run model changes: the run array grows on the heap (doubling, owned by the shared model in `src/uimodel/select.c`), allocation failure keeps the existing selection and shows a toast, and the model gets an explicit free on list change and UI shutdown. The SONGS_* verbs must accept a range list longer than one command line: rows I632a/I632b must settle how (for example the engine reads the ranges from the shared model, or the UI sends them in continuation lines) before coding.
