@@ -178,14 +178,15 @@ static char g_menu_sc[MENU_MAX][2];
 static uint32_t g_menu_n;
 
 /* MUI-P4-6: the five Song menu items (labels from sel_uim_song_menu_label, the desktop's set) under `parent`. They sit in the
- * window menu strip (keys 1 to 5, the rig drives them with ui menushort) and in the Listview's context menu (right mouse). */
+ * window menu strip and in the Listview's context menu (right mouse). Both carry keys 1 to 5: while the pointer is over the Listview MUI
+ * swaps the window strip for the context strip, so a strip without the keys leaves the shortcuts dead over the list. */
 static Object* g_sm_item[2][SEL_UIM_SONG_MENU_ITEMS];
 static void mui_song_menu_items(Object* parent, uint32_t which) {
     static const char* const keys[SEL_UIM_SONG_MENU_ITEMS] = {"1", "2", "3", "4", "5"};
     uint32_t i;
     for (i = 0; i < SEL_UIM_SONG_MENU_ITEMS; i++) {
         Object* it = MUI_NewObject((char*)MUIC_Menuitem, MUIA_Menuitem_Title, (ULONG)sel_uim_song_menu_label(i, 0),
-                                   MUIA_Menuitem_Shortcut, (ULONG)(which == 0u ? keys[i] : NULL), TAG_DONE);
+                                   MUIA_Menuitem_Shortcut, (ULONG)keys[i], TAG_DONE);
         g_sm_item[which][i] = it;
         if (it != NULL) {
             DoMethod(parent, OM_ADDMEMBER, it);
