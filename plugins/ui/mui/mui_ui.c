@@ -52,6 +52,12 @@ typedef struct mui_cells {
     mui_row_extra extra; /* album, length, format */
 } mui_cells;
 
+/* MUI-P4: the tool row gadgets and their counters in the ui_p4 sentinel. */
+enum { P4_SEARCH, P4_CMD, P4_LIKE, P4_RATING, P4_SUBSONG, P4_QREMOVE, P4_QCLEAR, P4_QUP, P4_QDOWN, P4_POPEN, P4_PRENAME, P4_PDELETE,
+       P4_CLEARLIB, P4_COUNT };
+static const char* const p4_name[P4_COUNT] = {"search", "cmd", "like", "rating", "subsong", "qremove", "qclear", "qup", "qdown",
+                                              "popen", "prename", "pdelete", "clearlib"};
+
 typedef struct mui_state {
     uint32_t opens; /* ui_open_mui sentinel (MUI-P1-5): windows opened */
     uint32_t wake_mask; /* engine wake signal (MUI-P1-7), 0 where there is none */
@@ -60,7 +66,9 @@ typedef struct mui_state {
     uint32_t transport_hits; /* transport buttons and sliders that sent their line (MUI-P2-5): stat transport_hits */
     uint32_t row_plays;      /* list rows activated by double click (MUI-P3-1): stat row_plays */
     uint32_t drops;          /* AppWindow arguments sent to the engine (MUI-P5-6): stat drops */
-    sel_tag stats[7];
+    sel_tag stats[8];
+    char p4_stat[160];       /* MUI-P4: the sentinel printed as ui_p4: how often each P4 gadget sent its line */
+    uint32_t p4[P4_COUNT];
     sel_uim uim;             /* the frame model the controls are driven from (MUI-P2-6) */
     char list_stat[480];     /* the list sentinel printed as ui_list: back end, style, columns, rows (native List only) */
 #ifdef SEL_MUI_NATIVE
@@ -87,6 +95,12 @@ typedef struct mui_state {
     mui_cells cell[MUI_ROWS_MAX];   /* MUI-P3-4: the List entries; the display hook reads the cells from them */
     char col_fmt[32];               /* MUIA_List_Format of the shown column set (mui_columns_format) */
     uint32_t col_bp;                /* the breakpoint col_fmt was built for */
+    Object* str_search;             /* MUI-P4-3 */
+    Object* str_cmd;                /* MUI-P4-13 */
+    Object* cyc_rating;             /* MUI-P4-7 */
+    Object* cyc_subsong;            /* MUI-P4-9 */
+    Object* status;                 /* the last line a P4 gadget sent */
+    char status_buf[160];
     Object* crumb;                  /* MUI-P3-3: the drilldown breadcrumb line above the list */
     char crumb_buf[128];
     uint32_t list_sig;
@@ -220,6 +234,9 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_LIST_SEL 0x2111L
 #define CTL_DOOR_BASE 0x2200L /* MUI-P4-0: one button per sidebar door */
 #define MUI_DOOR_MAX 8u
+#define CTL_P4_BASE 0x2300L /* MUI-P4: CTL_P4_BASE + P4_* */
+static const char* const p4_rating_entries[] = {"None", "1 star", "2 stars", "3 stars", "4 stars", "5 stars", NULL};
+static const char* const p4_subsong_entries[] = {"Subsong 1", "Subsong 2", "Subsong 3", "Subsong 4", "Subsong 5", "Subsong 6", "Subsong 7", "Subsong 8", NULL};
 
 /* I564: a Text object reads "_" in its contents as the hotkey mark and drops it, so a file name such as
  * "that_meme_again.mod" shows as "thatmemeagain.mod". MUIA_Text_HiCharIdx names the mark character; MUI_NOMARK is a control
@@ -341,6 +358,60 @@ static void mui_list_header(char* out, size_t cap) {
 }
 
 /* MUI-P3-1: the 3.8 Listview with its plain List (the back end mui_list_backend_pick gives without NList). */
+static Object* mui_make_string(LONG id) {
+    Object* o = MUI_NewObject((char*)MUIC_String, MUIA_Frame, MUIV_Frame_String, MUIA_String_MaxLen, 159, MUIA_String_Contents, (ULONG) "", TAG_DONE);
+    if (o != NULL) {
+        DoMethod(o, MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
+    }
+    return o;
+}
+
+static Object* mui_make_cycle(const char* const* entries, LONG id) {
+    Object* o = MUI_NewObject((char*)MUIC_Cycle, MUIA_Cycle_Entries, (ULONG)entries, TAG_DONE);
+    if (o != NULL) {
+        DoMethod(o, MUIM_Notify, MUIA_Cycle_Active, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
+    }
+    return o;
+}
+
+/* MUI-P4: the tool rows above the list: search and command line Strings, the like button, the rating and subsong Cycles,
+ * the queue and playlist actions of the cursor row, and Clear Library (confirmed by a MUI_Request). */
+static Object* mui_tool_group(mui_state* s) {
+    static const struct { const char* label; uint32_t which; } btns[] = {
+        {"Like", P4_LIKE}, {"Remove From Queue", P4_QREMOVE}, {"Clear Queue", P4_QCLEAR}, {"Move Up", P4_QUP}, {"Move Down", P4_QDOWN},
+        {"Open Playlist", P4_POPEN}, {"Rename Playlist", P4_PRENAME}, {"Delete Playlist", P4_PDELETE}, {"Clear Library", P4_CLEARLIB}};
+    Object* g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+    Object* r1 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    Object* r2 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    uint32_t i;
+    if (g == NULL || r1 == NULL || r2 == NULL) {
+        return NULL;
+    }
+    s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH);
+    s->str_cmd = mui_make_string(CTL_P4_BASE + P4_CMD);
+    s->cyc_rating = mui_make_cycle(p4_rating_entries, CTL_P4_BASE + P4_RATING);
+    s->cyc_subsong = mui_make_cycle(p4_subsong_entries, CTL_P4_BASE + P4_SUBSONG);
+    snprintf(s->status_buf, sizeof s->status_buf, "Ready");
+    s->status = MUI_NewObject((char*)MUIC_Text, MUIA_Frame, MUIV_Frame_Text, MUIA_Text_Contents, (ULONG)s->status_buf, MUIA_Text_HiCharIdx, MUI_NOMARK, TAG_DONE);
+    if (s->str_search == NULL || s->str_cmd == NULL || s->cyc_rating == NULL || s->cyc_subsong == NULL || s->status == NULL) {
+        return NULL;
+    }
+    DoMethod(r1, OM_ADDMEMBER, s->str_search);
+    DoMethod(r1, OM_ADDMEMBER, s->str_cmd);
+    for (i = 0; i < sizeof btns / sizeof btns[0]; i++) {
+        Object* b = mui_make_button(btns[i].label, CTL_P4_BASE + (LONG)btns[i].which);
+        if (b != NULL) {
+            DoMethod(r2, OM_ADDMEMBER, b);
+        }
+    }
+    DoMethod(r2, OM_ADDMEMBER, s->cyc_rating);
+    DoMethod(r2, OM_ADDMEMBER, s->cyc_subsong);
+    DoMethod(g, OM_ADDMEMBER, r1);
+    DoMethod(g, OM_ADDMEMBER, r2);
+    DoMethod(g, OM_ADDMEMBER, s->status);
+    return g;
+}
+
 static Object* mui_main_group(mui_state* s) {
     Object* g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
     s->col_bp = SEL_UIM_BP_COUNT;
@@ -360,6 +431,13 @@ static Object* mui_main_group(mui_state* s) {
     DoMethod(s->listview, MUIM_Notify, MUIA_Listview_DoubleClick, TRUE, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_DBL);
     DoMethod(s->list, MUIM_Notify, MUIA_List_Active, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_SEL);
     s->list_active_set = -1;
+    {
+        Object* tools = mui_tool_group(s);
+        if (tools == NULL) {
+            return NULL;
+        }
+        DoMethod(g, OM_ADDMEMBER, tools);
+    }
     DoMethod(g, OM_ADDMEMBER, s->crumb);
     DoMethod(g, OM_ADDMEMBER, s->listview);
     /* MUI-P5-1: the canvas object sits beside the list, hidden until the style switch (MUI-P3-5) shows it. */
@@ -564,6 +642,116 @@ static ULONG mui_drop_hook(struct Hook* hook, Object* obj, struct AppMessage** m
 
 /* A control's ReturnID: the line is the action table's (buttons, through mui_menu_line like the menu) or the shared
  * slider and list lines of the map layer. */
+/* MUI-P4: one P4 gadget fired. The line comes from the shared mapping (map/mui_*.c); the count is the ui_p4 sentinel. */
+static const sel_view_row* mui_cursor_row(mui_state* s, const sel_view_state** vout) {
+    const sel_view_state* view = sel_engine_state(s->engine)->view;
+    *vout = view;
+    if (view == NULL || view->cursor < view->window_start || view->cursor - view->window_start >= view->row_n) {
+        return NULL;
+    }
+    return &view->rows[view->cursor - view->window_start];
+}
+
+static void mui_p4_note(mui_state* s, uint32_t which, const char* line) {
+    s->p4[which]++;
+    snprintf(s->status_buf, sizeof s->status_buf, "%s: %s", p4_name[which], line);
+    set(s->status, MUIA_Text_Contents, (ULONG)s->status_buf);
+}
+
+static int mui_cmd_send(void* ctx, const char* line) {
+    return mui_engine_line((mui_state*)ctx, line);
+}
+
+static void mui_p4_fire(mui_state* s, uint32_t which) {
+    char line[200], lines[3][160];
+    const sel_view_state* view;
+    const sel_view_row* row = mui_cursor_row(s, &view);
+    ULONG text = 0, act = 0;
+    uint32_t n, i;
+    switch (which) {
+    case P4_SEARCH:
+        GetAttr(MUIA_String_Contents, s->str_search, &text);
+        n = mui_search_lines((const char*)text, lines);
+        for (i = 0; i < n; i++) {
+            mui_engine_line(s, lines[i]);
+        }
+        if (n > 0) {
+            mui_p4_note(s, which, lines[0]);
+        }
+        break;
+    case P4_CMD:
+        GetAttr(MUIA_String_Contents, s->str_cmd, &text);
+        if (mui_cmdline_submit(mui_cmd_send, s, (const char*)text)) {
+            mui_p4_note(s, which, (const char*)text);
+        }
+        break;
+    case P4_LIKE:
+        if (mui_engine_line(s, mui_like_line())) {
+            mui_p4_note(s, which, mui_like_line());
+        }
+        break;
+    case P4_RATING:
+        GetAttr(MUIA_Cycle_Active, s->cyc_rating, &act);
+        mui_rating_line((uint32_t)act, line, sizeof line);
+        if (mui_engine_line(s, line)) {
+            mui_p4_note(s, which, line);
+        }
+        break;
+    case P4_SUBSONG:
+        GetAttr(MUIA_Cycle_Active, s->cyc_subsong, &act);
+        if (mui_subsong_cycle_line((uint32_t)act, s->uim.frame.subsong_count, line, sizeof line) && mui_engine_line(s, line)) {
+            mui_p4_note(s, which, line);
+        }
+        break;
+    case P4_QCLEAR:
+        mui_queue_line("clear", 0, 0, line, sizeof line);
+        if (mui_engine_line(s, line)) {
+            mui_p4_note(s, which, line);
+        }
+        break;
+    case P4_QREMOVE:
+    case P4_QUP:
+    case P4_QDOWN:
+        if (row != NULL && row->kind == (uint32_t)SEL_ROW_QUEUE) {
+            uint32_t at = view->cursor - view->window_start;
+            const sel_view_row* other = which == P4_QUP ? (at > 0 ? &view->rows[at - 1] : NULL) : (at + 1 < view->row_n ? &view->rows[at + 1] : NULL);
+            if (which == P4_QREMOVE) {
+                mui_queue_line("remove", row->id, 0, line, sizeof line);
+            } else if (other != NULL) {
+                mui_queue_line("move", row->id, other->id, line, sizeof line);
+            } else {
+                break;
+            }
+            if (mui_engine_line(s, line)) {
+                mui_p4_note(s, which, line);
+            }
+        }
+        break;
+    case P4_POPEN:
+    case P4_PRENAME:
+    case P4_PDELETE:
+        if (row != NULL && row->kind == (uint32_t)SEL_ROW_PLAYLIST) {
+            GetAttr(MUIA_String_Contents, s->str_cmd, &text);
+            if (mui_playlist_line(which == P4_POPEN ? "open" : which == P4_PRENAME ? "rename" : "delete", row->id, (const char*)text, line, sizeof line)
+                && mui_engine_line(s, line)) {
+                mui_p4_note(s, which, line);
+            }
+        }
+        break;
+    case P4_CLEARLIB: {
+        /* MUI-P4-12: the confirm text is shared; MUI_Request returns 1 for the first (Clear) button. */
+        char msg[200];
+        mui_confirm_text(1, "Clear Library", 0, 0, msg, sizeof msg);
+        if (MUI_Request(s->app, s->win, 0, "Selecta", "*Clear|Cancel", "%s", (ULONG)msg) == 1 && mui_engine_line(s, mui_confirm_line(1))) {
+            mui_p4_note(s, which, mui_confirm_line(1));
+        }
+        break;
+    }
+    default:
+        break;
+    }
+}
+
 static void mui_control_fire(mui_state* s, LONG id) {
     char line[64];
     LONG v = 0;
@@ -573,6 +761,8 @@ static void mui_control_fire(mui_state* s, LONG id) {
         }
     } else if (id >= CTL_DOOR_BASE && id < CTL_DOOR_BASE + (LONG)MUI_DOOR_MAX) {
         mui_engine_line(s, mui_door_line((uint32_t)(id - CTL_DOOR_BASE))); /* the page switch: the engine moves the main view's source */
+    } else if (id >= CTL_P4_BASE && id < CTL_P4_BASE + (LONG)P4_COUNT) {
+        mui_p4_fire(s, (uint32_t)(id - CTL_P4_BASE));
     } else if (id == CTL_CLIP_COPY) {
         mui_clip_copy(s);
     } else if (id == CTL_SEEK) {
@@ -870,8 +1060,17 @@ static const sel_tag* mui_stats(void* state) {
     s->stats[4].value = s->drops;
     s->stats[5].tag = SEL_UI_STAT_LIST_VIEW;
     s->stats[5].value = (uintptr_t)s->list_stat;
-    s->stats[6].tag = SEL_TAG_END;
-    s->stats[6].value = 0;
+    {
+        uint32_t k, off = 0;
+        s->p4_stat[0] = '\0';
+        for (k = 0; k < P4_COUNT && off < sizeof s->p4_stat; k++) {
+            off += (uint32_t)snprintf(s->p4_stat + off, sizeof s->p4_stat - off, "%s%s=%u", k ? " " : "", p4_name[k], (unsigned)s->p4[k]);
+        }
+    }
+    s->stats[6].tag = SEL_UI_STAT_MUI_P4;
+    s->stats[6].value = (uintptr_t)s->p4_stat;
+    s->stats[7].tag = SEL_TAG_END;
+    s->stats[7].value = 0;
     return s->stats;
 }
 
