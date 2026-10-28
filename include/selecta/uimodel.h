@@ -158,6 +158,11 @@ typedef struct sel_uim_layout {
     sel_uim_region regions[SEL_UIM_LAYOUT_REGIONS];
 } sel_uim_layout;
 
+/* DUI-P1-11 (D-DUI-2): the decided breakpoint edges in logical pixels, one place for the layout, the tests and the MUI. */
+#define SEL_UIM_BP_THREE_COLUMN_MIN 1100u
+#define SEL_UIM_BP_TWO_COLUMN_MIN 900u
+#define SEL_UIM_BP_ICON_SIDEBAR_MIN 700u
+
 const char* sel_uim_breakpoint_name(uint32_t bp);
 uint32_t sel_uim_breakpoint_for(uint32_t width);
 /* I526: the layout tier. SEL_UIM_TIER_BITMAP is the native 640 wide bitmap-font screen (AGA 640x256 at scale 1.0): the

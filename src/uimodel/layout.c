@@ -28,13 +28,13 @@ uint32_t sel_uim_breakpoint_for_tier(uint32_t width, uint32_t tier) {
 }
 
 uint32_t sel_uim_breakpoint_for(uint32_t width) {
-    if (width >= 1200u) {
+    if (width >= SEL_UIM_BP_THREE_COLUMN_MIN) {
         return SEL_UIM_BP_THREE_COLUMN;
     }
-    if (width >= 900u) {
+    if (width >= SEL_UIM_BP_TWO_COLUMN_MIN) {
         return SEL_UIM_BP_TWO_COLUMN;
     }
-    if (width >= 700u) {
+    if (width >= SEL_UIM_BP_ICON_SIDEBAR_MIN) {
         return SEL_UIM_BP_ICON_SIDEBAR;
     }
     return SEL_UIM_BP_MINI_SUGGESTION;
