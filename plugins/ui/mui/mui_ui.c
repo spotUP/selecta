@@ -1012,6 +1012,9 @@ static void* mui_open(const sel_ui_open_args* a) {
     }
     strip = mui_menu_strip();
     sel_uim_init(&s->uim);
+    /* MUI-P4-17: MUIA_Application_Base is the settings identity only. The shell opened the one ARexx port SELECTA before this
+     * UI (arexx_open, apps/selecta/main.c), so MUI takes SELECTA.1 for its own built-in commands and no MUIA_Application_Commands
+     * table is given: PLAY and every other command reach the engine through the shell's port, one command set (plan section 5). */
     s->app = ApplicationObject, MUIA_Application_Title, (ULONG) "Selecta", MUIA_Application_Base, (ULONG) "SELECTA",
         MUIA_Application_Version, (ULONG) "$VER: Selecta MUI 1.0",
         SubWindow, s->win = WindowObject, MUIA_Window_Title, (ULONG) "Selecta", MUIA_Window_ID, SEL_MAKE_ID('S', 'E', 'L', 'M'), MUIA_Window_AppWindow, TRUE,
