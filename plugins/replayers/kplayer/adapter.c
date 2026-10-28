@@ -53,6 +53,7 @@ typedef struct kp_state {
     uint8_t* work;   /* SEL_MEM_SAMPLE, KP_WORK_SIZE bytes */
     uint32_t playing;
     uint8_t last_songover; /* k_songover as last seen by rp_hw_poll */
+    sel_tag meta[2];       /* I605: SEL_META_DURATION_MS from the walker, or just the end tag */
 } kp_state;
 
 static kp_state* g_owner;
@@ -123,10 +124,26 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     s->source = src->data;
     s->source_size = src->size;
     memset(s->work, 0, KP_WORK_SIZE);
+    /* I605: the walker's song length is the duration the engine's seek bar needs. */
+    {
+        uint32_t length_ms = 0;
+        if (kp_walk_length(s->source, s->source_size, &length_ms) && length_ms != 0u) {
+            s->meta[0].tag = SEL_META_DURATION_MS;
+            s->meta[0].value = length_ms;
+            s->meta[1].tag = SEL_TAG_END;
+        } else {
+            s->meta[0].tag = SEL_TAG_END;
+        }
+    }
     info->voice_count = 4;
     info->subsong_count = 1;
     info->default_subsong = 0;
     return s;
+}
+
+static const sel_tag* rp_metadata(void* state) {
+    kp_state* s = (kp_state*)state;
+    return s != NULL ? s->meta : NULL;
 }
 
 static void rp_close(void* state) {
@@ -250,7 +267,7 @@ static void rp_hw_release(void* state) {
     stop((kp_state*)state);
 }
 
-static sel_tag g_hooks[16];
+static sel_tag g_hooks[17];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -277,7 +294,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[12], SEL_RP_PRIORITY, 10); /* the native player outranks nuade for M.K. on Amiga */
     set(&g_hooks[13], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
     set(&g_hooks[14], SEL_RP_POSITION, SEL_TAG_FN(rp_position));
-    set(&g_hooks[15], SEL_TAG_END, 0);
+    set(&g_hooks[15], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
+    set(&g_hooks[16], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "kplayer");

@@ -22,4 +22,8 @@ typedef struct kp_walk_pos {
  * the row start, so it lies at most one row (speed * 2.5 s / tempo) before `ms`. */
 int kp_walk_find(const uint8_t* mod, size_t size, uint32_t ms, kp_walk_pos* out);
 
+/* The song length: the time at which KPlayer's k_songover would count (the last order finishes, or a position jump
+ * back onto itself). Returns 1 and sets *length_ms, or 0 when the module is malformed or never ends. */
+int kp_walk_length(const uint8_t* mod, size_t size, uint32_t* length_ms);
+
 #endif

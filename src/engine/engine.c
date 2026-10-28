@@ -33,6 +33,7 @@
 #include "shuffle.h"
 #include "local.h"
 #include "song_key.h"
+#include "songlen.h"
 #include "export/export.h"
 #include "prefs.h"
 #include "view.h"
@@ -233,6 +234,10 @@ typedef struct sel_slot {
     uint32_t stream_noted; /* audio side: the first-audio sentinel ran */
     char* path; /* kept for SUBSONG, which reopens the file in the idle slot */
     uint32_t subsong;
+    char dbl_key[SEL_UADE_KEY_CHARS + 1u]; /* I605: UADE content key of the file, for the song length database */
+    uint32_t dbl_state;   /* 0 key not read yet, 1 key valid, 2 unreadable (stream, archive member, missing) */
+    uint32_t dbl_sub;     /* subsong + 1 that dbl_ms answers, 0 = not looked up */
+    uint32_t dbl_ms;      /* database length of that subsong, 0 = none */
     sel_mixer mixer;
     sel_scheduler sched;
     uint32_t frames_left; /* frames of the current tick still to mix */
@@ -2099,6 +2104,9 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     sl->stream = live;
     sl->fstream = fs;
     sl->stream_noted = 0;
+    sl->dbl_state = 0;
+    sl->dbl_sub = 0;
+    sl->dbl_ms = 0;
     sl->path = e->host->mem_alloc(e->host, strlen(path) + 1u, SEL_MEM_FAST);
     if (sl->path != NULL) {
         memcpy(sl->path, path, strlen(path) + 1u);
@@ -5753,6 +5761,23 @@ static void lyrics_poll(sel_engine* e, const sel_slot* sl) {
     }
 }
 
+
+/* I605: the song length database (<config_dir>/songlengths.bin) answers when the player published no duration.
+ * The key is read once per song, the lookup once per subsong; a missing file, an unreadable path or an unknown
+ * key leaves the duration 0. */
+static uint32_t songlen_db_ms(sel_engine* e, sel_slot* sl) {
+    char path[sizeof e->config_dir + 32];
+    uint32_t ms = 0;
+    if (sl->dbl_sub == sl->subsong + 1u) return sl->dbl_ms;
+    if (sl->dbl_state == 0u) sl->dbl_state = sl->path != NULL && sel_uade_key_file(sl->path, sl->dbl_key) ? 1u : 2u;
+    sl->dbl_sub = sl->subsong + 1u;
+    sl->dbl_ms = 0;
+    if (sl->dbl_state != 1u || e->config_dir[0] == '\0') return 0;
+    snprintf(path, sizeof path, "%s/%s", e->config_dir, SEL_SONGLEN_NAME);
+    if (sel_songlen_lookup(path, sl->dbl_key, sl->subsong, &ms, NULL)) sl->dbl_ms = ms;
+    return sl->dbl_ms;
+}
+
 static void refresh_snapshot(sel_engine* e) {
     const sel_slot* sl = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
     sel_song_state* song = &e->state.song;
@@ -5818,6 +5843,7 @@ static void refresh_snapshot(sel_engine* e) {
             song->meta = sel_meta_utf8(song->meta, e->state_meta, SEL_META_UTF8_TAGS, e->state_text, sizeof e->state_text);
         }
         song->duration_ms = (uint32_t)sel_tag_find(song->meta, SEL_META_DURATION_MS, 0);
+        if (song->duration_ms == 0u) song->duration_ms = songlen_db_ms(e, &e->slot[e->cur]);
         song->path = sl->path;
         if (sl->path != NULL && strncmp(sl->path, e->lyr_for, sizeof e->lyr_for) != 0) {
             snprintf(e->lyr_for, sizeof e->lyr_for, "%s", sl->path);
