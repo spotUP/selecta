@@ -354,6 +354,12 @@ static struct {
     (ULONG)MUIA_Frame, g_th[role].on ? (ULONG)g_th[role].look.frame : (ULONG)(frame_off),
 #define TH_BG_OR(role, spec) MUIA_Background, g_th[role].on ? (ULONG)g_th[role].look.background : (ULONG)(spec),
 
+/* I659: MUI never closes a window by itself; the close gadget only sets MUIA_Window_CloseRequest. Every secondary window
+ * closes itself on that request (the main window quits the application instead, see the notify in mui_open). */
+static void mui_close_on_request(Object* win) {
+    DoMethod(win, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, MUIV_Notify_Self, 3, MUIM_Set, MUIA_Window_Open, FALSE);
+}
+
 /* Reads the screen's text pen colour (the user's MUI text pen is the DrawInfo text pen unless MUI prefs change it) and
  * switches every role on whose background keeps that text readable. */
 static void mui_theme_init(void) {
@@ -1209,6 +1215,7 @@ static void mui_help_open(mui_state* s) {
             return;
         }
         DoMethod(s->app, OM_ADDMEMBER, s->help_win);
+        mui_close_on_request(s->help_win);
         DoMethod(lst, MUIM_List_Insert, (ULONG)s->help_ptr, (LONG)n, MUIV_List_Insert_Bottom);
     }
     set(s->help_win, MUIA_Window_Open, TRUE);
@@ -1338,6 +1345,7 @@ static void mui_settings_open(mui_state* s) {
             return;
         }
         DoMethod(s->app, OM_ADDMEMBER, s->set_win);
+        mui_close_on_request(s->set_win);
     }
     set(s->set_win, MUIA_Window_Open, TRUE);
 }
