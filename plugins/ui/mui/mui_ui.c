@@ -664,7 +664,7 @@ static Object* mui_main_group(mui_state* s) {
     if (g == NULL || s->list == NULL || s->crumb == NULL) {
         return NULL;
     }
-    s->listview = mui_listview_new(s->list); /* Selecta_Listview: Amiga-1..5 over the list (I558) */
+    s->listview = mui_listview_new(s->list, (ULONG)CTL_SM_BASE, (ULONG)SEL_UIM_SONG_MENU_ITEMS); /* Selecta_Listview: Amiga-1..5 over the list (I558) */
     if (s->listview == NULL) {
         return NULL;
     }

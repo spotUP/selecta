@@ -16,12 +16,12 @@
 
 extern struct Library* MUIMasterBase;
 
-#define LV_CTL_SM_LO 0x2500L /* mui_ui.c CTL_SM_BASE */
 #define LV_KEY_1 0x01 /* rawkey code of the 1 key, 2..5 follow */
-#define LV_SM_COUNT 5
 
 static struct MUI_CustomClass* g_lv_class;
 static struct MUI_EventHandlerNode g_lv_ehn; /* one song Listview per process */
+static ULONG g_lv_sm_base; /* ReturnID of Song menu item 0, from mui_ui.c CTL_SM_BASE */
+static ULONG g_lv_sm_count;
 
 static ULONG __attribute__((used)) lv_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
@@ -52,8 +52,8 @@ static ULONG __attribute__((used)) lv_dispatch_c(struct IClass* cl, Object* obj,
         /* Measured on rig 3: Amiga-1 over the list arrives as IDCMP_RAWKEY (right Amiga 0x67, then code 1 with
          * IEQUALIFIER_RCOMMAND), never as IDCMP_MENUPICK. Off the list Intuition turns the same keys into MENUPICK of the window strip. */
         if (im != NULL && im->Class == IDCMP_RAWKEY && (im->Qualifier & IEQUALIFIER_RCOMMAND) != 0 && (im->Qualifier & IEQUALIFIER_REPEAT) == 0 &&
-            im->Code >= LV_KEY_1 && im->Code < LV_KEY_1 + LV_SM_COUNT && im->MouseX >= _left(obj) && im->MouseX <= _right(obj) && im->MouseY >= _top(obj) && im->MouseY <= _bottom(obj)) {
-            DoMethod(_app(obj), MUIM_Application_ReturnID, LV_CTL_SM_LO + (ULONG)(im->Code - LV_KEY_1));
+            im->Code >= LV_KEY_1 && im->Code < LV_KEY_1 + g_lv_sm_count && im->MouseX >= _left(obj) && im->MouseX <= _right(obj) && im->MouseY >= _top(obj) && im->MouseY <= _bottom(obj)) {
+            DoMethod(_app(obj), MUIM_Application_ReturnID, g_lv_sm_base + (ULONG)(im->Code - LV_KEY_1));
             return MUI_EventHandlerRC_Eat;
         }
         return 0;
@@ -61,7 +61,9 @@ static ULONG __attribute__((used)) lv_dispatch_c(struct IClass* cl, Object* obj,
     return DoSuperMethodA(cl, obj, msg);
 }
 
-Object* mui_listview_new(Object* list) {
+Object* mui_listview_new(Object* list, ULONG sm_base, ULONG sm_count) {
+    g_lv_sm_base = sm_base;
+    g_lv_sm_count = sm_count;
     if (g_lv_class == NULL) {
         g_lv_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Listview, NULL, 0, (APTR)(uintptr_t)lv_dispatch);
     }
