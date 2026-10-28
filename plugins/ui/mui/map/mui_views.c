@@ -58,6 +58,22 @@ uint32_t mui_state_view_of(uint32_t source) {
            : source == SEL_VIEW_FOLDERS ? SEL_UIM_SV_PLAYLISTS : SEL_UIM_SV_LIBRARY;
 }
 
+int mui_view_is_empty(const sel_view_state* v) {
+    uint32_t i;
+    if (v == NULL || v->row_count == 0) {
+        return 1;
+    }
+    if (v->source != SEL_VIEW_HOME && v->source != SEL_VIEW_SEARCH) {
+        return 0;
+    }
+    for (i = 0; i < v->row_n; i++) {
+        if (v->rows[i].kind != (uint32_t)SEL_ROW_HEADING) {
+            return 0;
+        }
+    }
+    return v->row_n == v->row_count;
+}
+
 /* MUI-P4-11: one status line, 3 s, errors 6 s; a new message replaces the visible one. */
 uint32_t mui_toast_ms(int is_error) {
     return is_error ? 6000u : 3000u;

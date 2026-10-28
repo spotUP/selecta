@@ -577,14 +577,23 @@ static void mui_refresh(mui_state* s) {
                 DoMethod(s->crumb_row, MUIM_Group_ExitChange);
                 DoMethod((Object*)parent, MUIM_Group_ExitChange);
             }
-            stxt = v->row_count == 0 ? sel_uim_state_text(mui_state_view_of(v->source), SEL_UIM_ST_EMPTY) : NULL;
+            stxt = mui_view_is_empty(v) ? sel_uim_state_text(mui_state_view_of(v->source), SEL_UIM_ST_EMPTY) : NULL;
             if (stxt == NULL) {
                 stxt = "";
             }
             if (strcmp(stxt, s->state_buf) != 0) {
+                ULONG sparent = 0;
                 snprintf(s->state_buf, sizeof s->state_buf, "%s", stxt);
+                GetAttr(MUIA_Parent, s->state_txt, &sparent);
+                /* A ShowMe change needs the group's layout pass, like the crumb row above. */
+                if (sparent != 0) {
+                    DoMethod((Object*)sparent, MUIM_Group_InitChange);
+                }
                 set(s->state_txt, MUIA_Text_Contents, (ULONG)(s->state_buf[0] != '\0' ? s->state_buf : " "));
                 set(s->state_txt, MUIA_ShowMe, s->state_buf[0] != '\0' ? TRUE : FALSE);
+                if (sparent != 0) {
+                    DoMethod((Object*)sparent, MUIM_Group_ExitChange);
+                }
                 if (s->state_buf[0] != '\0') {
                     s->p4[P4_STATE]++;
                 }

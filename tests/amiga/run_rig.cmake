@@ -190,7 +190,9 @@ elseif(TAG STREQUAL "M4MUI")
     ami(ignored exec "Delete >NIL: RAM:mui-mm ALL QUIET" 10)
     ami(ignored exec "MakeDir RAM:mui-mm" 10)
     ami(ignored put "${SONG}" "RAM:mui-mm/${SONG_NAME}")
-    file(WRITE "${WORK}/mui.script" "Stack 200000\n${P} --ui mui --start-dir RAM:mui-mm --stats >RAM:mui-out.txt\n")
+    # Home lists a played local song only when it is in the library (I555, user.c home list), so the start drawer is scanned
+    # in before the UI opens (--exec LIBRARY_SCAN); MUI-P4-1 double-clicks the Home row of that song.
+    file(WRITE "${WORK}/mui.script" "Stack 200000\n${P} --ui mui --start-dir RAM:mui-mm --exec \"LIBRARY_SCAN RAM:mui-mm\" --stats >RAM:mui-out.txt\n")
   else()
     file(WRITE "${WORK}/mui.script" "Stack 200000\n${P} --ui mui --stats >RAM:mui-out.txt\n")
   endif()

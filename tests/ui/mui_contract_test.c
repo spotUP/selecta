@@ -542,6 +542,23 @@ static void test_home(void) {
     CHECK(mui_home_lines(&v, 3, lines) == 0 && mui_home_lines(&v, 9, lines) == 0, "heading or outside window sends nothing");
 }
 
+static void test_view_empty(void) {
+    sel_view_row r[2];
+    sel_view_state v;
+    memset(r, 0, sizeof r);
+    memset(&v, 0, sizeof v);
+    CHECK(mui_view_is_empty(&v) == 1, "no rows is empty");
+    v.rows = r; v.row_n = 1; v.row_count = 1; v.source = SEL_VIEW_SEARCH;
+    r[0].kind = SEL_ROW_HEADING; /* "Songs (0)" */
+    CHECK(mui_view_is_empty(&v) == 1, "search with only a heading is empty");
+    v.source = SEL_VIEW_HOME;
+    CHECK(mui_view_is_empty(&v) == 1, "home with only headings is empty");
+    r[0].kind = SEL_ROW_HEADING; r[1].kind = SEL_ROW_HOME; v.row_n = 2; v.row_count = 2;
+    CHECK(mui_view_is_empty(&v) == 0, "home with an entry is not empty");
+    r[0].kind = SEL_ROW_FILE; v.row_n = 1; v.row_count = 1; v.source = SEL_VIEW_BROWSE;
+    CHECK(mui_view_is_empty(&v) == 0, "a browse row is not empty");
+}
+
 static void test_library(void) {
     mui_crumb c[8];
     CHECK(mui_path_crumbs("/home/x/songs", c, 8) == 3 && strcmp(c[0].name, "home") == 0 && strcmp(c[2].name, "songs") == 0 && c[2].end == 13u,
@@ -812,6 +829,7 @@ int main(int argc, char** argv) {
         test_cmdline();
     } else if (strcmp(argv[1], "states") == 0) {
         test_states();
+        test_view_empty();
     } else if (strcmp(argv[1], "tracker") == 0) {
         test_tracker();
     } else {
