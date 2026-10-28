@@ -155,7 +155,7 @@ if(NOT h0 MATCHES "nagdlg opens 0 done 0\n" OR NOT h0 MATCHES "nag 0 syncs 0\n")
   message(FATAL_ERROR "the dialog opened at start on Home:\n${h0}")
 endif()
 # The first Library visit from Home opens it once; Not now closes it; Home and Library again do not open it a second time.
-rect_center(libdoor "${h0}" "door 2")
+rect_center(libdoor "${h0}" "sidehdr title") # I673: the Your Library header is the Library door
 rect_center(homedoor "${h0}" "door 0")
 rect_center(later "${o0}" "naglater")
 click_at(d1 ${libdoor_x} ${libdoor_y} 300)

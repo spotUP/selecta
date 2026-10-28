@@ -1,5 +1,5 @@
 # dui-hover-instant (DUI-P3-13, I351, I356, I359): hover switches instantly both ways. -DSELECTA -DSONGS -DWORK
-# A mem run lists the door rectangles. A live run moves the pointer onto door 2 at 500 ms, onto door 3 at 550 ms and quits at
+# A mem run lists the door rectangles. A live run moves the pointer onto door 3 at 500 ms, onto door 4 at 550 ms and quits at
 # 610 ms: the stats line `hover_ink=<weight>` has weight == 65536 (the in tween restarted at 550 ms would give about 85% at the
 # last painted frame, 31558 before I351). Left-door ink at 60 ms is dui-hover-sidebar-ink.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
@@ -12,7 +12,7 @@ endif()
 set(ENV{SDL_VIDEODRIVER} dummy)
 set(args --ui desktop --view songs --canvas 1280x800)
 dui_run(o0 ${args} --backend mem --clock fixed --stats)
-foreach(k 2 3)
+foreach(k 3 4)
   if(NOT "${o0}" MATCHES "door ${k} (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+)\n")
     message(FATAL_ERROR "no 'door ${k}' rectangle in the stats:\n${o0}")
   endif()
@@ -21,7 +21,7 @@ foreach(k 2 3)
 endforeach()
 set(ENV{SELECTA_SDL_TEST_LIVE} 1)
 file(REMOVE_RECURSE "${WORK}/cfg")
-set(ENV{SELECTA_SDL_TEST_TIMED} "m${x2},${y2}@500 m${x3},${y3}@550 q@610")
+set(ENV{SELECTA_SDL_TEST_TIMED} "m${x3},${y3}@500 m${x4},${y4}@550 q@610")
 dui_run(o1 ${args} --backend sdl --stats)
 if(NOT "${o1}" MATCHES "hover_ink=([0-9]+)\n")
   message(FATAL_ERROR "no hover_ink line in:\n${o1}")

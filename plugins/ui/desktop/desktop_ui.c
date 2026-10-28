@@ -5933,7 +5933,7 @@ static const char* library_dump_build(desk* d) {
                          (int)rr.w, (int)rr.h);
         }
         if (o + 300u < sizeof d->library_dump) { /* one control per layout region, where dui-hover-regions moves the pointer (DUI-P3-8) */
-            sel_gui_rect dr = sidebar_door_rect(d, 2u), pb = desk_button_rect(d, SLOT_PLAY), tl;
+            sel_gui_rect dr = sidebar_door_rect(d, 3u), pb = desk_button_rect(d, SLOT_PLAY), tl;
             tl = home_shelf_mode(sel_engine_state(d->engine)) ? shelf_tile_rect(d, 0u, 0u) : tile_rect(d, 0u);
             o = dump_put(d, o, "hover_ctl sidebar %d %d %d %d main %d %d %d %d player %d %d %d %d detail %d %d %d %d nav %d %d %d %d\n",
                          (int)dr.x, (int)dr.y, (int)dr.w, (int)dr.h, (int)tl.x, (int)tl.y, (int)tl.w, (int)tl.h, (int)pb.x, (int)pb.y,

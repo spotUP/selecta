@@ -153,7 +153,18 @@ expect_eq("only the Queue door is lit after leaving Search by a door (bit 4)" "$
 nav_run(sk home "wait 100\nkey /\nwait 100\nkey Escape\nwait 100\nkey l\nwait 100\n")
 expect_eq("leaving Search by a page key" "${sk_page}" "library")
 nav_run(sl home "wait 100\ntopbar 1\nwait 100\nkey /\nwait 100\nkey Escape\nwait 100\nkey l\nwait 100\n")
-expect_eq("only the Library door is lit after a page key leaves Search (bit 2)" "${sl_lit}" "4")
+# The labelled sidebar has no Library door row (I673: the Your Library header is the door and shows the page state), so no door bit is lit.
+expect_eq("no door row is lit on the labelled sidebar after a page key leaves Search" "${sl_lit}" "0")
+# The icon rail keeps the Library door row: it lights bit 2 on the Library page.
+file(REMOVE_RECURSE "${WORK}/cfg")
+file(WRITE "${WORK}/slr.txt" "wait 100\ntopbar 1\nwait 100\nkey /\nwait 100\nkey Escape\nwait 100\nkey l\nwait 100\n")
+dui_run(slr --ui desktop --backend mem --view home --canvas 899x700 --clock fixed --stats ${NAV_ARGS}
+  --exec "QUEUE_ADD ${WORK}/banana.mod" --exec "QUEUE_ADD ${WORK}/apple.mod" --exec "QUEUE_ADD ${WORK}/cherry.mod"
+  --input "${WORK}/slr.txt")
+if(NOT slr MATCHES "lit=([0-9]+)")
+  message(FATAL_ERROR "no lit field in the icon rail run:\n${slr}")
+endif()
+expect_eq("only the Library door is lit on the icon rail after a page key leaves Search (bit 2)" "${CMAKE_MATCH_1}" "4")
 
 # 8. a click on the Home search field goes to Search with the field focused (I266 f), the field and its ring one rect (g)
 nav_run(hf home "wait 100\n")
