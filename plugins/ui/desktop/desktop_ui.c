@@ -3030,12 +3030,7 @@ static sel_gui_rect lib_stats_more_rect(desk* d, sel_gui_rect sr) {
 }
 
 static uint32_t lib_stats_rows(const sel_state* st) {
-    uint32_t n = 0;
-    const char* p;
-    for (p = st->stats; p != NULL && *p != '\0'; n++) {
-        p = lib_next(lib_next(p));
-    }
-    return n;
+    return sel_uim_stats_rows(st->stats);
 }
 
 static sel_gui_rect lib_stats_panel_rect(desk* d, sel_gui_rect sr, const sel_state* st) {

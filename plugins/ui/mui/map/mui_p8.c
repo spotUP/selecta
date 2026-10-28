@@ -3,6 +3,7 @@
 #include <selecta/uimodel.h>
 #include <selecta/uimodel/doors.h>
 
+#include <stdio.h>
 #include <string.h>
 
 #include "mui_map.h"
@@ -170,4 +171,31 @@ uint32_t mui_door_activate(uint32_t i, mui_send_fn send, void* ctx, const char**
         return 0;
     }
     return send != NULL && send(ctx, line) != 0;
+}
+
+/* MUI-P8-6 */
+static uint32_t g_stats_builds;
+
+uint32_t mui_stats_builds(void) { return g_stats_builds; }
+
+uint32_t mui_stats_text(const char* stats, int more, char* out, uint32_t cap) {
+    uint32_t i, n = sel_uim_stats_shown(stats, more), len = 0;
+    g_stats_builds++;
+    if (cap == 0u) {
+        return 0;
+    }
+    out[0] = '\0';
+    for (i = 0; i < n; i++) {
+        const char *l, *v;
+        int w;
+        if (sel_uim_stats_row(stats, i, &l, &v) == 0u) {
+            break;
+        }
+        w = snprintf(out + len, cap - len, "%s: %s\n", l, v);
+        if (w < 0 || (uint32_t)w >= cap - len) {
+            break;
+        }
+        len += (uint32_t)w;
+    }
+    return len;
 }

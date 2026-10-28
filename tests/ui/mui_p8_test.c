@@ -3,6 +3,7 @@
 #include <selecta/uimodel.h>
 #include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/keys.h>
+#include <selecta/uimodel/viewcmds.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -241,6 +242,35 @@ static void test_doors(void) {
     CHECK(mui_page_switches() - base == 2u, "page-switch sentinel %u, want 2", (unsigned)(mui_page_switches() - base));
 }
 
+/* mui-p8-statistics (MUI-P8-6) */
+static void test_statistics(void) {
+    static const char stats[] = "Songs\0" "120\0" "Albums\0" "12\0" "Artists\0" "7\0" "Formats\0" "5\0" "Plays\0" "99\0" "Hours\0" "8\0\0";
+    char less[256], more[256], none[16];
+    uint32_t base = mui_stats_builds(), nl, nm, rows = sel_uim_stats_rows(stats), i, lines = 0;
+    const char *l, *v;
+    CHECK(rows == 6u, "%u model rows, want 6", (unsigned)rows);
+    nl = mui_stats_text(stats, 0, less, sizeof less);
+    nm = mui_stats_text(stats, 1, more, sizeof more);
+    for (i = 0; i < nm; i++) {
+        lines += more[i] == '\n';
+    }
+    CHECK(lines == rows, "More shows %u lines, model has %u", (unsigned)lines, (unsigned)rows);
+    lines = 0;
+    for (i = 0; i < nl; i++) {
+        lines += less[i] == '\n';
+    }
+    CHECK(lines == SEL_UIM_STATS_LESS && nl < nm, "Less shows %u lines", (unsigned)lines);
+    for (i = 0; i < rows; i++) {
+        char want[64];
+        CHECK(sel_uim_stats_row(stats, i, &l, &v) == 1u, "row %u", (unsigned)i);
+        snprintf(want, sizeof want, "%s: %s\n", l, v);
+        CHECK(strstr(more, want) != NULL, "panel lacks '%s'", want);
+    }
+    CHECK(sel_uim_stats_row(stats, rows, &l, &v) == 0u, "row past the count");
+    CHECK(mui_stats_text(NULL, 1, none, sizeof none) == 0u && none[0] == '\0', "Hide/closed text not empty");
+    CHECK(mui_stats_builds() - base == 3u, "sentinel %u, want 3", (unsigned)(mui_stats_builds() - base));
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -261,6 +291,8 @@ int main(int argc, char** argv) {
         test_amiga_settings();
     } else if (strcmp(argv[1], "doors") == 0) {
         test_doors();
+    } else if (strcmp(argv[1], "statistics") == 0) {
+        test_statistics();
     } else {
         printf("unknown test %s\n", argv[1]);
         return 2;

@@ -2,6 +2,7 @@
 #include <selecta/uimodel/viewcmds.h>
 
 #include <stdio.h>
+#include <string.h>
 
 static uint32_t done(int n, uint32_t cap) { return n > 0 && (uint32_t)n < cap ? (uint32_t)n : 0u; }
 
@@ -42,4 +43,38 @@ uint32_t sel_uim_priority_line(int32_t v, char* out, uint32_t cap) {
 
 uint32_t sel_uim_groupfile_line(const char* path, char* out, uint32_t cap) {
     return done(snprintf(out, cap, "PREF_SET amiga.group_file \"%s\"", path != NULL ? path : ""), cap);
+}
+
+uint32_t sel_uim_stats_rows(const char* stats) {
+    uint32_t n = 0;
+    const char* p;
+    for (p = stats; p != NULL && *p != '\0'; n++) {
+        p += strlen(p) + 1u;
+        p += strlen(p) + 1u;
+    }
+    return n;
+}
+
+uint32_t sel_uim_stats_row(const char* stats, uint32_t i, const char** label, const char** value) {
+    const char* p = stats;
+    uint32_t k;
+    for (k = 0; p != NULL && *p != '\0' && k < i; k++) {
+        p += strlen(p) + 1u;
+        p += strlen(p) + 1u;
+    }
+    if (p == NULL || *p == '\0') {
+        return 0;
+    }
+    if (label != NULL) {
+        *label = p;
+    }
+    if (value != NULL) {
+        *value = p + strlen(p) + 1u;
+    }
+    return 1;
+}
+
+uint32_t sel_uim_stats_shown(const char* stats, int more) {
+    uint32_t n = sel_uim_stats_rows(stats);
+    return more || n <= SEL_UIM_STATS_LESS ? n : SEL_UIM_STATS_LESS;
 }

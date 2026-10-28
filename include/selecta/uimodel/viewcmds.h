@@ -19,6 +19,14 @@ uint32_t sel_uim_plbtn_line(uint32_t button, const char* name, uint32_t folder, 
 const char* sel_uim_flag_label(uint32_t button);
 uint32_t sel_uim_flag_line(uint32_t button, const char* note, char* out, uint32_t cap);
 
+/* Library statistics (MUI-P8-6): sel_state.stats is "label\0value\0" pairs ended by "\0"; NULL when closed. */
+#define SEL_UIM_STATS_LESS 4u /* rows the collapsed panel shows */
+uint32_t sel_uim_stats_rows(const char* stats);
+/* Row i's label and value (NULL pointers allowed); 0 past the count. */
+uint32_t sel_uim_stats_row(const char* stats, uint32_t i, const char** label, const char** value);
+/* Rows shown: all when `more`, else at most SEL_UIM_STATS_LESS. */
+uint32_t sel_uim_stats_shown(const char* stats, int more);
+
 /* Amiga runtime prefs (MUI-P8-14). */
 #define SEL_UIM_PRIORITY_MIN (-5)
 #define SEL_UIM_PRIORITY_MAX 5

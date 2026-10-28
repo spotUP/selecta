@@ -316,4 +316,9 @@ uint32_t mui_pref_sets(void); /* call-count sentinel: pref sets sent */
 uint32_t mui_door_activate(uint32_t i, mui_send_fn send, void* ctx, const char** page);
 uint32_t mui_page_switches(void);
 
+/* MUI-P8-6: the Library Statistics panel. The panel text is the shared model's rows ("label: value" lines), Less shows the first
+ * SEL_UIM_STATS_LESS, More all of them; NULL stats (Hide) gives an empty text. Returns the bytes written. */
+uint32_t mui_stats_text(const char* stats, int more, char* out, uint32_t cap);
+uint32_t mui_stats_builds(void); /* call-count sentinel */
+
 #endif
