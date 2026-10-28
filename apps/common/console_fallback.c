@@ -5,11 +5,11 @@
 #include <stdlib.h>
 
 #ifndef __AMIGA__
-#include <unistd.h>
-
-static int host_attached(void) { return isatty(0) && isatty(1); }
+/* The host text UI runs on pipes as well as on a terminal (scripts and the mui-open-nomui test drive it that way), so the
+ * host always counts as attached; only the Amiga shell needs a console window opened for it. */
+static int host_attached(void) { return 1; }
 static int host_open(char* err, size_t cap) {
-    snprintf(err, cap, "no terminal is attached and none can be opened on this system");
+    snprintf(err, cap, "no console can be opened on this system");
     return 0;
 }
 static void host_close(void) {}
