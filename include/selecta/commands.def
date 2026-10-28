@@ -105,6 +105,15 @@ SEL_CMD(PLAYLIST_RENAME, "us", "playlists", "playlist name", "Rename Playlist")
 SEL_CMD(PLAYLIST_DEL, "u", "playlists", "playlist", "Delete Playlist")
 SEL_CMD(LIBRARY_REMOVE, "s", "playlists", "path", "Remove From Library")
 SEL_CMD(LIBRARY_CLEAR, "", "playlists", "", "Clear Library")
+/* Multi-select bulk verbs (I632b). list is `view`, `queue` or `playlist:<id>`; version is the list's version at selection time
+ * (sel_view_state.version, queue_version, playlist revision); ranges is "0-11,40,52-60". A mismatch answers ERROR stale and
+ * changes nothing. SONGS_RANGES stages more ranges text for the next bulk verb (a selection longer than one command line). */
+SEL_CMD(SONGS_RANGES, "s", "playlists", "ranges", "Stage Selection Ranges")
+SEL_CMD(SONGS_PLAY, "sus", "playlists", "list version ranges", "Play Selected Songs")
+SEL_CMD(SONGS_PLAY_NEXT, "sus", "playlists", "list version ranges", "Play Selected Songs Next")
+SEL_CMD(SONGS_QUEUE_ADD, "sus", "playlists", "list version ranges", "Add Selected Songs To Queue")
+SEL_CMD(SONGS_PLAYLIST_ADD, "usus", "playlists", "playlist list version ranges", "Add Selected Songs To Playlist")
+SEL_CMD(SONGS_REMOVE, "sus", "playlists", "list version ranges", "Remove Selected Songs")
 SEL_CMD(STICKER_LIST, "s", "playlists", "path", "List Stickers")
 SEL_CMD(PREF_GET, "s", "playlists", "key", "Get Preference")
 SEL_CMD(PREF_SET, "ss", "playlists", "key value", "Set Preference")

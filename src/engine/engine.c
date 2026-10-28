@@ -15,6 +15,7 @@
 #include <selecta/machine.h>
 
 #include <selecta/plugin.h>
+#include <selecta/ranges.h>
 #include <selecta/replayer.h>
 #include <selecta/tags.h>
 #include <selecta/ui.h>
@@ -138,6 +139,7 @@
     X(NOTE)                                                                                   \
     X(RATE) X(VOTE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
     X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(PLAYLIST_ADD_SONG) X(PLAYLIST_IMPORT) X(PLAYLIST_ADD_FOLDER) X(PLAYLIST_REMOVE_SONG) X(PLAYLIST_PLAY) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
+    X(SONGS_RANGES) X(SONGS_PLAY) X(SONGS_PLAY_NEXT) X(SONGS_QUEUE_ADD) X(SONGS_PLAYLIST_ADD) X(SONGS_REMOVE) \
     X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(COMPOSERS_HIDE) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
@@ -282,6 +284,9 @@ struct sel_engine {
     uint32_t folder_view_rows;                 /* rows the folders view source built (I179 sentinel) */
     uint32_t import_runs, import_added, import_missing; /* PLAYLIST_IMPORT sentinel and last result (I652c) */
     uint32_t pl_fail_runs, pl_fail_reason;     /* last failed PLAYLIST_IMPORT / PLAYLIST_ADD_FOLDER: counter and SEL_PLFAIL_* (I652e) */
+    uint32_t songs_runs, songs_done, songs_stale; /* SONGS_* sentinel, songs handled by the last verb, stale refusals (I632b) */
+    char* songs_ranges;                        /* SONGS_RANGES staging: ranges text for the next SONGS_* verb, heap, NULL none */
+    size_t songs_ranges_len;
     uint32_t addf_runs, addf_added;            /* PLAYLIST_ADD_FOLDER sentinel and songs the last run appended (I652d) */
     /* I652d: the PLAYLIST_ADD_FOLDER in flight: its scan collects the module paths (scan thread) into addf_buf, NUL separated;
      * scan_collect sorts them and appends them to playlist addf_id. */
@@ -3140,25 +3145,30 @@ static void cmd_QUEUE_PLAY_NEXT(sel_engine* e, const sel_message* m) {
     queue_insert(e, at, m->args[0].v.s, "QUEUE_PLAY_NEXT");
 }
 
-static void cmd_QUEUE_REMOVE(sel_engine* e, const sel_message* m) {
-    uint32_t id = m->args[0].v.u;
+/* Takes one entry out of the queue (no history snapshot, no event: the caller owns both). Returns its former position or
+ * SEL_QUEUE_NONE. The playing song keeps playing; the entry now at its position is next. */
+static uint32_t queue_take(sel_engine* e, uint32_t id) {
     uint32_t at = sel_queue_index_of(&e->queue, id);
-    if (at != SEL_QUEUE_NONE) {
-        sel_history_record(&e->history, &e->queue);
-        sel_history_bury(&e->history, &e->queue, at);
-        sel_queue_remove(&e->queue, id);
-    }
-    if (at == SEL_QUEUE_NONE) {
-        sel_engine_report_error(e, "range", "QUEUE_REMOVE");
-        return;
-    }
+    if (at == SEL_QUEUE_NONE) return SEL_QUEUE_NONE;
+    sel_history_bury(&e->history, &e->queue, at);
+    sel_queue_remove(&e->queue, id);
     if (id == e->q_playing) {
-        /* the song keeps playing; the entry now at this position is next */
         e->q_playing = 0;
         e->q_hint = at;
     } else if (e->q_playing == 0 && at < e->q_hint) {
         e->q_hint--;
     }
+    return at;
+}
+
+static void cmd_QUEUE_REMOVE(sel_engine* e, const sel_message* m) {
+    uint32_t id = m->args[0].v.u;
+    if (sel_queue_index_of(&e->queue, id) == SEL_QUEUE_NONE) {
+        sel_engine_report_error(e, "range", "QUEUE_REMOVE");
+        return;
+    }
+    sel_history_record(&e->history, &e->queue);
+    queue_take(e, id);
     emit_queue_changed(e);
 }
 
@@ -5437,6 +5447,374 @@ int sel_engine_view_row_path(sel_engine* e, uint32_t row, char* out, size_t cap)
     return 1;
 }
 
+/* ---- SONGS_* bulk verbs (I632b, multi-select plan section 4) --------------------------------------------------------------
+ * One verb resolves a whole selection ("0-11,40,52-60") against the engine's own list, so the order, the single history
+ * snapshot and the single QUEUE_CHANGED hold however many songs it names. The ranges text may be longer than one command line:
+ * SONGS_RANGES stages chunks that the next SONGS_* verb prepends to its own. The count of songs handled is the sentinel
+ * songs_runs / songs_done in the engine stats, the same way PLAYLIST_IMPORT reports (import_added). */
+
+enum { SONGS_QUEUE, SONGS_VIEW, SONGS_PLAYLIST };
+
+typedef struct songs_sel {
+    int kind;
+    uint32_t plid;
+    uint32_t count;        /* rows in the list */
+    uint32_t* idx;         /* the selected row indices, ascending */
+    uint32_t n;
+    char* keys;            /* playlist: the keys, NUL separated */
+    const char** key_at;   /* playlist: key of row i */
+    char* pbuf;            /* the selected songs' paths, NUL separated, in list order (resolved before any verb moves a row) */
+    const char** plist;    /* path of the j-th song of the selection; rows that name no song are left out */
+    uint32_t pn;
+} songs_sel;
+
+static void songs_sel_free(songs_sel* s) {
+    free(s->idx);
+    free(s->keys);
+    free(s->key_at);
+    free(s->pbuf);
+    free(s->plist);
+    memset(s, 0, sizeof *s);
+}
+
+static void cmd_SONGS_RANGES(sel_engine* e, const sel_message* m) {
+    size_t n = strlen(m->args[0].v.s);
+    char* grown = (char*)realloc(e->songs_ranges, e->songs_ranges_len + n + 2u);
+    if (grown == NULL) {
+        sel_engine_report_error(e, "no_memory", "SONGS_RANGES");
+        return;
+    }
+    e->songs_ranges = grown;
+    if (e->songs_ranges_len > 0u && n > 0u) e->songs_ranges[e->songs_ranges_len++] = ',';
+    memcpy(e->songs_ranges + e->songs_ranges_len, m->args[0].v.s, n + 1u);
+    e->songs_ranges_len += n;
+}
+
+static void songs_unstage(sel_engine* e) {
+    free(e->songs_ranges);
+    e->songs_ranges = NULL;
+    e->songs_ranges_len = 0u;
+}
+
+static int songs_resolve(sel_engine* e, const char* verb, songs_sel* s);
+
+/* Binds the verb's list, checks the version and expands the ranges. 0: nothing to do (an ERROR was reported, or stale). */
+static int songs_open(sel_engine* e, const char* verb, const char* list, uint32_t version, const char* inline_ranges,
+                      songs_sel* s) {
+    uint32_t pass, have;
+    char* text = NULL;
+    const char* p;
+    size_t sl = e->songs_ranges_len, il = strlen(inline_ranges);
+    uint32_t lo, hi, prev_hi = 0;
+    int first = 1, rc;
+
+    memset(s, 0, sizeof *s);
+    if (strcmp(list, "queue") == 0) {
+        s->kind = SONGS_QUEUE;
+        s->count = e->queue.count;
+        have = e->queue.version;
+    } else if (strcmp(list, "view") == 0) {
+        sel_view_src vs;
+        const sel_view_state* v = &e->view.pub;
+        s->kind = SONGS_VIEW;
+        view_src(e, &vs);
+        sel_view_refresh(&e->view, &vs);
+        if (v->source == SEL_VIEW_FOLDERS || ((v->source == SEL_VIEW_QUEUE || v->source == SEL_VIEW_QUERY) &&
+                                              (v->style == SEL_VIEW_STYLE_TREE || v->style == SEL_VIEW_STYLE_DRILLDOWN))) {
+            sel_engine_report_error(e, "bad_list", verb);
+            songs_unstage(e);
+            return 0;
+        }
+        s->count = v->row_count;
+        have = v->version;
+    } else if (strncmp(list, "playlist:", 9) == 0 && list[9] >= '0' && list[9] <= '9') {
+        uint32_t n = 0, i;
+        char* k;
+        s->kind = SONGS_PLAYLIST;
+        s->plid = (uint32_t)strtoul(list + 9, NULL, 10);
+        {
+            sel_view_src vs;
+            view_src(e, &vs);
+            sel_view_refresh(&e->view, &vs);
+            have = e->view.pub.version; /* fgen is in its signature: every playlist change reloads the folder rows */
+        }
+        s->keys = (char*)malloc(PLAYLIST_KEYS_CAP);
+        if (e->lib == NULL || s->keys == NULL || sel_library_playlist_keys(e->lib, s->plid, s->keys, PLAYLIST_KEYS_CAP, &n) != SEL_FOLDER_OK) {
+            sel_engine_report_error(e, "bad_list", verb);
+            songs_sel_free(s);
+            songs_unstage(e);
+            return 0;
+        }
+        s->key_at = (const char**)malloc(((size_t)n + 1u) * sizeof *s->key_at);
+        if (s->key_at == NULL) {
+            sel_engine_report_error(e, "no_memory", verb);
+            songs_sel_free(s);
+            songs_unstage(e);
+            return 0;
+        }
+        for (i = 0, k = s->keys; i < n; i++, k += strlen(k) + 1u) s->key_at[i] = k;
+        s->count = n;
+    } else {
+        sel_engine_report_error(e, "bad_list", verb);
+        songs_unstage(e);
+        return 0;
+    }
+    if (version != have) {
+        e->songs_stale++;
+        sel_engine_report_error(e, "stale", verb);
+        songs_sel_free(s);
+        songs_unstage(e);
+        return 0;
+    }
+    text = (char*)malloc(sl + il + 2u);
+    if (text == NULL) {
+        sel_engine_report_error(e, "no_memory", verb);
+        songs_sel_free(s);
+        songs_unstage(e);
+        return 0;
+    }
+    text[0] = '\0';
+    if (sl > 0u) memcpy(text, e->songs_ranges, sl + 1u);
+    if (il > 0u) {
+        if (sl > 0u) strcat(text, ",");
+        strcat(text, inline_ranges);
+    }
+    songs_unstage(e);
+    for (pass = 0; pass < 2u; pass++) {
+        s->n = 0;
+        first = 1;
+        p = text;
+        while ((rc = sel_ranges_next(&p, &lo, &hi)) == 1) {
+            uint32_t i;
+            if (hi >= s->count || (!first && lo <= prev_hi)) {
+                rc = -1;
+                break;
+            }
+            for (i = lo; i <= hi; i++) {
+                if (pass == 1u) s->idx[s->n] = i;
+                s->n++;
+            }
+            prev_hi = hi;
+            first = 0;
+        }
+        if (rc < 0) {
+            sel_engine_report_error(e, "range", verb);
+            free(text);
+            songs_sel_free(s);
+            return 0;
+        }
+        if (pass == 0u) {
+            s->idx = (uint32_t*)malloc(((size_t)s->n + 1u) * sizeof *s->idx);
+            if (s->idx == NULL) {
+                sel_engine_report_error(e, "no_memory", verb);
+                free(text);
+                songs_sel_free(s);
+                return 0;
+            }
+        }
+    }
+    free(text);
+    if (!songs_resolve(e, verb, s)) {
+        songs_sel_free(s);
+        return 0;
+    }
+    return 1;
+}
+
+/* The path of selected row `i` into out; 0 when the row names no song (a divider, a directory, an album or heading row). */
+static int songs_row_path(sel_engine* e, const songs_sel* s, uint32_t i, char* out, size_t cap) {
+    const char* path = NULL;
+    uint32_t at = s->idx[i];
+    if (s->kind == SONGS_PLAYLIST) {
+        path = s->key_at[at];
+    } else if (s->kind == SONGS_QUEUE) {
+        path = row_is_divider(&e->queue, at) ? NULL : sel_queue_path(&e->queue, at);
+    } else {
+        const sel_view_state* v = &e->view.pub;
+        if (v->source == SEL_VIEW_BROWSE) {
+            return at < e->browse.count && !e->browse.entries[at].is_dir &&
+                   sel_browse_join(out, cap, e->browse.path, sel_browse_name(&e->browse, at));
+        }
+        if (v->source == SEL_VIEW_HOME || v->source == SEL_VIEW_SEARCH) {
+            const sel_view_row* r = &e->view.frows[at];
+            path = r->kind == SEL_ROW_HOME && !r->album && !r->composer ? r->key : NULL;
+        } else {
+            const sel_queue* q = v->source == SEL_VIEW_QUERY ? &e->qview : &e->queue;
+            path = row_is_divider(q, at) ? NULL : sel_queue_path(q, at);
+        }
+    }
+    if (path == NULL || strlen(path) >= cap) return 0;
+    memcpy(out, path, strlen(path) + 1u);
+    return 1;
+}
+
+/* Resolves every selected row to its path once, up front: a verb that inserts or removes moves the rows under the indices. */
+static int songs_resolve(sel_engine* e, const char* verb, songs_sel* s) {
+    char path[SEL_DEFERRED_PATH_MAX];
+    size_t used = 0, cap = 0;
+    uint32_t i, j;
+    s->plist = (const char**)malloc(((size_t)s->n + 1u) * sizeof *s->plist);
+    if (s->plist == NULL) {
+        sel_engine_report_error(e, "no_memory", verb);
+        return 0;
+    }
+    for (i = 0; i < s->n; i++) {
+        size_t l;
+        if (!songs_row_path(e, s, i, path, sizeof path)) continue;
+        l = strlen(path) + 1u;
+        if (used + l > cap) {
+            char* grown = (char*)realloc(s->pbuf, cap = (used + l) * 2u);
+            if (grown == NULL) {
+                sel_engine_report_error(e, "no_memory", verb);
+                return 0;
+            }
+            s->pbuf = grown;
+        }
+        memcpy(s->pbuf + used, path, l);
+        used += l;
+        s->pn++;
+    }
+    for (i = 0, j = 0; j < s->pn; j++, i += (uint32_t)strlen(s->pbuf + i) + 1u) s->plist[j] = s->pbuf + i;
+    return 1;
+}
+
+static void songs_done(sel_engine* e, const char* verb, uint32_t done) {
+    char msg[48];
+    e->songs_runs++;
+    e->songs_done = done;
+    snprintf(msg, sizeof msg, "%s %u", verb, (unsigned)done);
+    emit_log(e, "songs", msg);
+}
+
+/* Inserts the selection into the queue as one history step and one QUEUE_CHANGED. at == SEL_QUEUE_NONE appends. Returns the
+ * songs inserted; *first receives the queue position of the first one. */
+static uint32_t songs_insert(sel_engine* e, const char* verb, const songs_sel* s, uint32_t at, uint32_t* first) {
+    uint32_t i, done = 0, id;
+    sel_history_record(&e->history, &e->queue);
+    for (i = 0; i < s->pn; i++) {
+        if (!sel_queue_insert(&e->queue, at == SEL_QUEUE_NONE ? SEL_QUEUE_NONE : at + done, s->plist[i], &id)) {
+            sel_engine_report_error(e, "queue_full", verb);
+            break;
+        }
+        if (done == 0u) *first = at == SEL_QUEUE_NONE ? sel_queue_index_of(&e->queue, id) : at;
+        done++;
+    }
+    if (done == 0u) {
+        sel_history_forget(&e->history);
+    } else {
+        emit_queue_changed(e);
+    }
+    return done;
+}
+
+static uint32_t songs_after_playing(const sel_engine* e) {
+    return e->q_playing ? sel_queue_index_of(&e->queue, e->q_playing) + 1u : e->q_hint;
+}
+
+static void songs_play_next(sel_engine* e, const char* verb, const char* list, uint32_t version, const char* ranges) {
+    songs_sel s;
+    uint32_t first = 0;
+    if (!songs_open(e, verb, list, version, ranges, &s)) return;
+    songs_done(e, verb, songs_insert(e, verb, &s, songs_after_playing(e), &first));
+    songs_sel_free(&s);
+}
+
+static void cmd_SONGS_PLAY_NEXT(sel_engine* e, const sel_message* m) {
+    songs_play_next(e, "SONGS_PLAY_NEXT", m->args[0].v.s, m->args[1].v.u, m->args[2].v.s);
+}
+
+static void cmd_SONGS_QUEUE_ADD(sel_engine* e, const sel_message* m) {
+    songs_sel s;
+    uint32_t first = 0;
+    if (!songs_open(e, "SONGS_QUEUE_ADD", m->args[0].v.s, m->args[1].v.u, m->args[2].v.s, &s)) return;
+    songs_done(e, "SONGS_QUEUE_ADD", songs_insert(e, "SONGS_QUEUE_ADD", &s, SEL_QUEUE_NONE, &first));
+    songs_sel_free(&s);
+}
+
+/* D4: the songs join the queue after the playing one, in list order, and the first starts. Rows of the queue itself are
+ * already queued: the first selected one starts where it is. */
+static void cmd_SONGS_PLAY(sel_engine* e, const sel_message* m) {
+    songs_sel s;
+    uint32_t first = 0, done = 0, i;
+    if (!songs_open(e, "SONGS_PLAY", m->args[0].v.s, m->args[1].v.u, m->args[2].v.s, &s)) return;
+    if (s.kind == SONGS_QUEUE) {
+        for (i = 0; i < s.n; i++) {
+            if (!row_is_divider(&e->queue, s.idx[i])) {
+                if (done++ == 0u) first = s.idx[i];
+            }
+        }
+        if (done > 0u) queue_start(e, first);
+    } else {
+        done = songs_insert(e, "SONGS_PLAY", &s, songs_after_playing(e), &first);
+        if (done > 0u) queue_start(e, first);
+    }
+    songs_done(e, "SONGS_PLAY", done);
+    songs_sel_free(&s);
+}
+
+static void cmd_SONGS_PLAYLIST_ADD(sel_engine* e, const sel_message* m) {
+    songs_sel s;
+    uint32_t i, done = 0;
+    if (!folder_ready(e, "SONGS_PLAYLIST_ADD")) return;
+    if (!songs_open(e, "SONGS_PLAYLIST_ADD", m->args[1].v.s, m->args[2].v.u, m->args[3].v.s, &s)) return;
+    for (i = 0; i < s.pn; i++) {
+        int rc = sel_library_playlist_add_song(e->lib, m->args[0].v.u, s.plist[i]);
+        if (rc != SEL_FOLDER_OK) {
+            folder_report(e, rc, "SONGS_PLAYLIST_ADD");
+            break;
+        }
+        done++;
+    }
+    if (done > 0u) folders_reload(e);
+    songs_done(e, "SONGS_PLAYLIST_ADD", done);
+    songs_sel_free(&s);
+}
+
+static void cmd_SONGS_REMOVE(sel_engine* e, const sel_message* m) {
+    songs_sel s;
+    uint32_t i, done = 0;
+    if (!songs_open(e, "SONGS_REMOVE", m->args[0].v.s, m->args[1].v.u, m->args[2].v.s, &s)) return;
+    if (s.kind == SONGS_QUEUE) {
+        uint32_t* ids = (uint32_t*)malloc(((size_t)s.n + 1u) * sizeof *ids);
+        if (ids == NULL) {
+            sel_engine_report_error(e, "no_memory", "SONGS_REMOVE");
+        } else {
+            for (i = 0; i < s.n; i++) ids[i] = e->queue.entries[s.idx[i]].id;
+            if (s.n > 0u) sel_history_record(&e->history, &e->queue);
+            for (i = 0; i < s.n; i++) {
+                if (queue_take(e, ids[i]) != SEL_QUEUE_NONE) done++;
+            }
+            if (done > 0u) emit_queue_changed(e);
+            free(ids);
+        }
+    } else if (s.kind == SONGS_PLAYLIST) {
+        if (folder_ready(e, "SONGS_REMOVE")) {
+            for (i = s.n; i > 0u; i--) { /* high to low: the lower indices stay valid */
+                int rc = sel_library_playlist_remove_song(e->lib, s.plid, s.idx[i - 1u]);
+                if (rc != SEL_FOLDER_OK) {
+                    folder_report(e, rc, "SONGS_REMOVE");
+                    break;
+                }
+                done++;
+            }
+            if (done > 0u) folders_reload(e);
+        }
+    } else if (folder_ready(e, "SONGS_REMOVE")) {
+        for (i = 0; i < s.pn; i++) {
+            uint32_t removed = 0;
+            int rc = sel_library_song_remove(e->lib, s.plist[i], &removed);
+            if (rc != SEL_FOLDER_OK) {
+                folder_report(e, rc, "SONGS_REMOVE");
+                break;
+            }
+            done++;
+        }
+        if (done > 0u) library_catalogue_changed(e);
+    }
+    songs_done(e, "SONGS_REMOVE", done);
+    songs_sel_free(&s);
+}
+
 static void cmd_VIEW_SHOW(sel_engine* e, const sel_message* m) {
     sel_view_src s;
     view_src(e, &s);
@@ -5856,6 +6234,7 @@ void sel_engine_destroy(sel_engine* e) {
             close_slot(e, &e->slot[i]);
         }
         if (e->addf_buf != NULL) e->host->mem_free(e->host, e->addf_buf);
+        free(e->songs_ranges);
         sel_spsc_free(&e->cmd_q, e->host);
         sel_spsc_free(&e->evt_q, e->host);
         sel_spsc_free(&e->swap_q, e->host);
@@ -6348,6 +6727,9 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->addf_added = e->addf_added;
     out->pl_fail_runs = e->pl_fail_runs;
     out->pl_fail_reason = e->pl_fail_reason;
+    out->songs_runs = e->songs_runs;
+    out->songs_done = e->songs_done;
+    out->songs_stale = e->songs_stale;
     out->import_missing = e->import_missing;
     out->links_parsed = e->links_parsed;
     out->links_made = e->links_made;
