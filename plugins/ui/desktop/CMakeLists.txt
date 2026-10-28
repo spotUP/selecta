@@ -75,7 +75,7 @@ else()
   add_executable(gui_fontbake "${PROJECT_SOURCE_DIR}/tools/gui_fontbake.c" atlas_build.c amiga_font.c "${PROJECT_SOURCE_DIR}/src/gui/widgets/gui_icon_pack.c")
   target_include_directories(gui_fontbake PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop"
     "${PROJECT_SOURCE_DIR}/third_party/stb")
-  target_link_libraries(gui_fontbake PRIVATE m)
+  target_link_libraries(gui_fontbake PRIVATE m selecta_archive)
   set(FONTBAKE_CMD gui_fontbake)
   set(FONTBAKE_DEP gui_fontbake)
 endif()
@@ -86,7 +86,7 @@ add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/font_baked.c"
   COMMAND ${FONTBAKE_CMD} "${FONT_SRC}/Inter-Regular.ttf" "${FONT_SRC}/Inter-SemiBold.ttf" "${CMAKE_CURRENT_BINARY_DIR}/font_baked.c"
     "mini4:${AMIGA_MINI_DIR}/mini4/6" "mini4:${AMIGA_MINI_DIR}/mini4/8" "mini6:${AMIGA_MINI_DIR}/mini6/6" "mini6:${AMIGA_MINI_DIR}/mini6/8" "mini8:${AMIGA_MINI_DIR}/mini8/8"
-  DEPENDS ${FONTBAKE_DEP} "${FONT_SRC}/Inter-Regular.ttf" "${FONT_SRC}/Inter-SemiBold.ttf" ${AMIGA_MINI_FILES}
+  DEPENDS ${FONTBAKE_DEP} ${SELECTA_FONTBAKE_EXE} "${FONT_SRC}/Inter-Regular.ttf" "${FONT_SRC}/Inter-SemiBold.ttf" ${AMIGA_MINI_FILES}
   COMMENT "Baking the text atlases")
 list(APPEND FONT_GEN "${CMAKE_CURRENT_BINARY_DIR}/font_baked.c")
 if(NOT SEL_AMIGA)
@@ -94,17 +94,17 @@ if(NOT SEL_AMIGA)
   add_executable(dui_font_baked_unit "${PROJECT_SOURCE_DIR}/tests/dui/font_baked_unit.c" atlas_build.c "${PROJECT_SOURCE_DIR}/src/gui/widgets/gui_icon_pack.c" ${FONT_GEN})
   target_include_directories(dui_font_baked_unit PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop"
     "${PROJECT_SOURCE_DIR}/third_party/stb")
-  target_link_libraries(dui_font_baked_unit PRIVATE m)
+  target_link_libraries(dui_font_baked_unit PRIVATE m selecta_archive)
   # dui-font-tall (I538): the ydiv 2 atlases have no vertical partial coverage; the ydiv 1 atlases are unchanged.
   add_executable(dui_font_tall_unit "${PROJECT_SOURCE_DIR}/tests/dui/font_tall_unit.c" atlas_build.c "${PROJECT_SOURCE_DIR}/src/gui/widgets/gui_icon_pack.c" ${FONT_GEN})
   target_include_directories(dui_font_tall_unit PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop"
     "${PROJECT_SOURCE_DIR}/third_party/stb")
-  target_link_libraries(dui_font_tall_unit PRIVATE m)
+  target_link_libraries(dui_font_tall_unit PRIVATE m selecta_archive)
   # dui-font-roles (I526-P4): the role table and the 6-row fallback.
   add_executable(dui_font_roles_unit "${PROJECT_SOURCE_DIR}/tests/dui/font_roles_unit.c" font_roles.c atlas_build.c "${PROJECT_SOURCE_DIR}/src/gui/widgets/gui_icon_pack.c" stb_impl.c ${FONT_GEN})
   target_include_directories(dui_font_roles_unit PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop"
     "${PROJECT_SOURCE_DIR}/third_party/stb")
-  target_link_libraries(dui_font_roles_unit PRIVATE m)
+  target_link_libraries(dui_font_roles_unit PRIVATE m selecta_archive)
   # dui-amiga-font (I526-P1): the bitmap .font reader against hand-decoded rows.
   add_executable(dui_amiga_font_unit "${PROJECT_SOURCE_DIR}/tests/dui/amiga_font_unit.c" amiga_font.c)
   target_include_directories(dui_amiga_font_unit PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop")
@@ -127,7 +127,7 @@ endif()
 if(SEL_AMIGA)
   target_compile_definitions(sel_plugin_desktop_ui PRIVATE SEL_DESKTOP_NO_TTF=1)
 endif()
-target_link_libraries(sel_plugin_desktop_ui PUBLIC selecta_uimodel selecta_gui)
+target_link_libraries(sel_plugin_desktop_ui PUBLIC selecta_uimodel selecta_gui selecta_archive)
 if(SEL_AMIGA)
   target_include_directories(sel_plugin_desktop_ui PRIVATE "${PROJECT_SOURCE_DIR}/plugins/shared") # amiga/p96_write.h
 endif()

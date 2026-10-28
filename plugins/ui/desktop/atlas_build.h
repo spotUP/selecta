@@ -21,8 +21,11 @@ void desk_atlas_free(const sel_gui_atlas* at);
  * host tool tools/gui_fontbake.c so the baked set cannot drift from what the UI asks for. */
 #define DESK_FONT_SIZE_N 10
 #define DESK_FONT_SIZES 11, 12, 13, 14, 15, 16, 18, 22, 24, 32
-/* The UI scales (Q16) the atlases are baked for: the fit floor 0.625 (the 672x270 and 640x512 Amiga screens) and 1.0.
- * Other scales build at run time, as before. */
+/* The UI scales (Q16) the atlases are baked for: the fit floor 0.625 (the 672x270 and 640x512 Amiga screens) and 1.0
+ * (fit on a large screen and the bitmap tier, zoom 100). The 68k image has no TrueType fallback (I587), so a scale
+ * missing here is a font miss on the Amiga; tests/dui/font_baked_unit.c fails when one of these is not baked. Zoom 75,
+ * 125 and 150 and fit between 0.625 and 1.0 build at run time on the host only: baking them costs about 918 KB of
+ * image and pushes vamos over -m 8192 (open, I587). */
 #define DESK_FONT_BAKE_SCALES_Q16 40960, 65536
 /* The tall-pixel (ydiv 2) Inter set (I526): SemiBold headlines only, at scale 1.0 (I545: px 24 is 12 rows, px 18 is 9).
  * Body text at ydiv 2 uses the Amiga bitmap fonts below. */

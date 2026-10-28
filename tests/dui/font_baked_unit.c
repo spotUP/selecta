@@ -85,6 +85,24 @@ int main(void) {
             }
         }
     }
+    /* I587: the Amiga image has no TrueType fallback, so every size the Amiga UI asks for must be baked: the fit floor
+     * (0.625) and scale 1.0, for both weights, at every size token. Zoom 75/125/150 are open (image size, I587). */
+    {
+        static const int zoom_q16[] = {65536, 40960};
+        static const int size[] = {DESK_FONT_SIZES};
+        int z, t, w;
+        for (z = 0; z < 2; z++) {
+            for (t = 0; t < DESK_FONT_SIZE_N; t++) {
+                for (w = 0; w < 2; w++) {
+                    int px = (int)(((long long)size[t] * zoom_q16[z] + 32768) >> 16);
+                    if (desk_atlas_baked(w, px, 1) == NULL) {
+                        fprintf(stderr, "font_baked_unit: weight %d size %d at scale %d/65536 (px %d) is not baked\n", w, size[t], zoom_q16[z], px);
+                        bad++;
+                    }
+                }
+            }
+        }
+    }
     printf("font_baked_unit compared=%d bad=%d\n", compared, bad);
     return bad != 0;
 }

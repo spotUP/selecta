@@ -22,7 +22,7 @@
 
 #include "atlas_build.h"
 
-#include <selecta/gui/gui_icons.h>
+#include <miniz.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -176,17 +176,17 @@ int main(int argc, char** argv) {
             fprintf(o, "{0,0,0}\n");
         }
         n = (uint32_t)(at->page_w * at->page_h);
-        /* I587: the page is stored packed by the icon packer; the round trip is checked here, per atlas. */
+        /* I587: the page is stored as raw deflate (miniz, level 10); the round trip is checked here, per atlas. */
         {
-            uint8_t* buf = (uint8_t*)malloc((size_t)n + (size_t)n / 128u + 2u);
+            size_t plen = 0;
+            uint8_t* buf = (uint8_t*)tdefl_compress_mem_to_heap(at->alpha, (size_t)n, &plen,
+                                                              tdefl_create_comp_flags_from_zip_params(10, -15, MZ_DEFAULT_STRATEGY));
             uint8_t* chk = (uint8_t*)malloc((size_t)n + 1u);
-            size_t plen;
             if (buf == NULL || chk == NULL) {
                 return 1;
             }
-            plen = sel_gui_icon_pack(at->alpha, n, buf);
-            if (!sel_gui_pack_decode(buf, plen, chk, n) || memcmp(chk, at->alpha, n) != 0) {
-                fprintf(stderr, "gui_fontbake: atlas %d does not round trip through the packer\n", i);
+            if (tinfl_decompress_mem_to_mem(chk, n, buf, plen, 0) != n || memcmp(chk, at->alpha, n) != 0) {
+                fprintf(stderr, "gui_fontbake: atlas %d does not round trip through deflate\n", i);
                 return 1;
             }
             fprintf(o, "};\nstatic const uint8_t k_a%d[] = {", i);
@@ -195,7 +195,7 @@ int main(int argc, char** argv) {
             }
             fprintf(o, "\n};\n");
             packed_n[i] = (uint32_t)plen;
-            free(buf);
+            mz_free(buf);
             free(chk);
         }
     }

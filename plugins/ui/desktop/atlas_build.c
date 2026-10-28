@@ -1,7 +1,7 @@
 /* Atlas builder (DUI-P2-3); see atlas_build.h. */
 #include "atlas_build.h"
 
-#include <selecta/gui/gui_icons.h>
+#include <miniz.h>
 
 #ifdef __clang__
 #pragma GCC diagnostic push
@@ -200,7 +200,7 @@ sel_gui_atlas* desk_atlas_build_tall(const unsigned char* ttf, int pixel_size, i
 
 /* I587: the decoded pages. The table stores each page packed; a page is expanded the first time its atlas is asked for
  * and then kept for the life of the process (desk_atlas_free leaves it alone), parallel to sel_font_baked. */
-static sel_gui_atlas* g_decoded;
+static sel_gui_atlas* g_decoded; /* pages are raw deflate (tools/gui_fontbake.c), inflated with the miniz tinfl the archive adapter links */
 
 const sel_gui_atlas* desk_atlas_baked(int family, int pixel_size, int ydiv) {
     uint32_t i;
@@ -217,7 +217,7 @@ const sel_gui_atlas* desk_atlas_baked(int family, int pixel_size, int ydiv) {
             }
             if (g_decoded[i].alpha == NULL) {
                 page = (uint8_t*)malloc(total);
-                if (page == NULL || !sel_gui_pack_decode(b->packed, b->packed_n, page, total)) {
+                if (page == NULL || tinfl_decompress_mem_to_mem(page, total, b->packed, b->packed_n, 0) != total) {
                     free(page);
                     return NULL;
                 }
