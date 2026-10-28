@@ -30,6 +30,6 @@ target_link_libraries(sel_plugin_mui_ui PUBLIC mui_map)
 if(SEL_AMIGA)
   # libmui.a (toolchain) holds the out-of-line varargs MUI_NewObject the ApplicationObject/End idiom needs (I508).
   target_link_libraries(sel_plugin_mui_ui PUBLIC mui)
-  target_sources(sel_plugin_mui_ui PRIVATE mui_canvas_class.c mui_listview_class.c mui_aabtn_class.c)
+  target_sources(sel_plugin_mui_ui PRIVATE mui_canvas_class.c mui_listview_class.c mui_aabtn_class.c mui_aa_draw.c)
   target_include_directories(sel_plugin_mui_ui PRIVATE "${PROJECT_SOURCE_DIR}/plugins/shared") # amiga/p96_write.h
 endif()
