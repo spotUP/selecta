@@ -494,6 +494,7 @@ static void desk_relayout(desk* d);
 static void side_wide_toggle(desk* d);
 enum { SIDE_HDR_PLUS = 1, SIDE_HDR_WIDE = 2, SIDE_HDR_COUNT = 2 }; /* I609: Your Library header controls */
 static sel_gui_rect side_hdr_rect(const desk* d, uint32_t which);
+static sel_gui_rect side_hdr_title_rect(const desk* d);
 static int desk_set_density(desk* d, int32_t density);
 static int32_t desk_scale_for(const desk* d, int32_t w, int32_t h);
 static int desk_present(desk* d);
@@ -5870,6 +5871,10 @@ static const char* library_dump_build(desk* d) {
                          (unsigned)d->side_plus_clicks, (unsigned)d->side_wide_clicks, (unsigned)d->side_wide, (int)region_rect(d, "sidebar").w,
                          (int)r.x, (int)r.y, (int)r.w, (int)r.h, (unsigned)d->side_tween_frames);
         }
+        {
+            sel_gui_rect tr = side_hdr_title_rect(d);
+            o = dump_put(d, o, "sidehdr title %d %d %d %d\n", (int)tr.x, (int)tr.y, (int)tr.w, (int)tr.h); /* I673 */
+        }
         o = dump_put(d, o, "sidechips chip=%u filters=%u scrolls=%u single=%d\n", (unsigned)d->side_chip, (unsigned)d->side_filters,
                      (unsigned)d->side_chip_scrolls, side_chip_single(d));
         for (k = 0; k < 4u && side_chips_h(d) > 0; k++) {
@@ -7935,13 +7940,30 @@ static desk_page door_page(uint32_t i) {
     return PG_HOME;
 }
 
+/* I673: the labelled sidebar opens the Library page from the "Your Library" header (Spotify), so the Library door row would only repeat
+ * it and is not shown there; the icon-only rail has no header title and keeps the door. */
+static int desk_door_shown(const desk* d, uint32_t i) {
+    if (!sel_uim_door_shown(i, topbar_shown(d))) {
+        return 0;
+    }
+    return !(door_page(i) == PG_LIBRARY && region_rect(d, "sidebar").w > lpx(d, 120));
+}
+
+static uint32_t desk_door_slot(const desk* d, uint32_t i) {
+    uint32_t k, n = 0;
+    for (k = 0; k < i && k < (uint32_t)DOOR_COUNT; k++) {
+        n += (uint32_t)desk_door_shown(d, k);
+    }
+    return n;
+}
+
 /* The row of door i, shared by the drawing and the click: the panel inset of draw_panel, the brand, then the rows. */
 static sel_gui_rect sidebar_door_rect(const desk* d, uint32_t i) {
     sel_gui_rect r = region_rect(d, "sidebar");
     int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     int32_t g = sp / 2, row = lpx(d, 40);
-    int32_t y = r.y + g + 2 * sp + lpx(d, HOME_BRAND) + lpx(d, 12) + (int32_t)sel_uim_door_slot(i, topbar_shown(d)) * row;
-    if (!sel_uim_door_shown(i, topbar_shown(d))) { /* I615a: the top bar owns this page: no row */
+    int32_t y = r.y + g + 2 * sp + lpx(d, HOME_BRAND) + lpx(d, 12) + (int32_t)desk_door_slot(d, i) * row;
+    if (!desk_door_shown(d, i)) { /* I615a: the top bar owns this page: no row; I673: so does the Your Library header */
         return rect_of(r.x, y, 0, 0);
     }
     return rect_of(r.x + g + sp, y, r.w - 2 * g - 2 * sp, row);
@@ -8005,6 +8027,16 @@ static sel_gui_rect side_hdr_rect(const desk* d, uint32_t which) {
         return rect_of(0, 0, 0, 0);
     }
     return rect_of(h.x + h.w - pad - sz - (desk_bitmap_text(d) ? 0 : sz + lpx(d, 4)), y, sz, sz);
+}
+
+/* I673: the "Your Library" title at the left of the header band is the door to the Library page; empty on the icon-only rail. */
+static sel_gui_rect side_hdr_title_rect(const desk* d) {
+    sel_gui_rect h = side_lib_header_rect(d);
+    int32_t w = side_hdr_rect(d, SIDE_HDR_PLUS).x - lpx(d, 4) - h.x;
+    if (region_rect(d, "sidebar").w <= lpx(d, 120) || w <= 0) {
+        return rect_of(0, 0, 0, 0);
+    }
+    return rect_of(h.x, h.y, w, h.h);
 }
 
 static int32_t side_hdr_at(const desk* d, int32_t x, int32_t y) {
@@ -8132,6 +8164,10 @@ static int side_chip_keeps_playlists(const desk* d) {
     return d->side_chip == 0u || d->side_chip == 1u;
 }
 
+/* I673: the Library page mode each kind chip opens, in chip order from Albums: Albums and Artists the Columns browser, Composers the
+ * composers list (the page has no tab of its own for Albums and Artists). */
+static const uint32_t side_chip_lib_mode[3] = {2u, 2u, 0u};
+
 /* A click on a chip: the chip in force again clears the filter, another one takes over. A chevron steps the filter one back or on, from All to the last chip, stopping at both ends (I669). */
 static void side_chip_click(desk* d, int32_t c) {
     if (c == SIDE_CHIPS) {
@@ -8147,6 +8183,10 @@ static void side_chip_click(desk* d, int32_t c) {
     d->side_stale = 1u; /* the list is read again through the filter */
     d->repaint = 1;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    if (d->side_chip >= 2u) { /* I673: Albums, Artists and Composers list what only the Library page holds: open it on that kind */
+        desk_page_goto(d, PG_LIBRARY);
+        lib_set_mode(d, side_chip_lib_mode[d->side_chip - 2u]);
+    }
 }
 
 /* I611: the tools row under the chips: magnifier and filter field on the left, the sort label on the right. */
@@ -8486,7 +8526,14 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
     }
     if (labels) {
         int32_t hw = side_hdr_rect(d, SIDE_HDR_PLUS).x - lpx(d, 4) - (hd.x + pad);
-        draw_text(d, rect_of(hd.x + pad, hd.y, hw > 0 ? hw : 0, hd.h), "Your Library", 1, 15, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        sel_gui_rect tr = side_hdr_title_rect(d);
+        uint32_t ink = ARGB(d->theme.token[d->page == PG_LIBRARY ? SEL_GUI_TOKEN_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]);
+        if (d->page == PG_LIBRARY) {
+            hover_reg(d, tr);
+        } else {
+            ink = hover_ink_of(d, tr, ink, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        }
+        draw_text(d, rect_of(hd.x + pad, hd.y, hw > 0 ? hw : 0, hd.h), "Your Library", 1, 15, ink);
     }
     for (i = 1u; i <= (uint32_t)SIDE_HDR_COUNT; i++) { /* I609: Create Playlist and Expand/Collapse Library */
         sel_gui_rect br = side_hdr_rect(d, i);
@@ -8607,7 +8654,7 @@ static void draw_sidebar(desk* d) {
     d->doors_drawn = 0u;
     for (i = 0; i < DOOR_COUNT; i++) {
         sel_gui_rect r = sidebar_door_rect(d, i);
-        if (!sel_uim_door_shown(i, topbar_shown(d))) { /* I615a: Home and Search live in the top bar */
+        if (!desk_door_shown(d, i)) { /* I615a: Home and Search live in the top bar; I673: Your Library is the header */
             continue;
         }
         d->doors_drawn |= 1u << i;
@@ -10285,6 +10332,10 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         if (door >= 0) {
             d->nav_clicks++;
             return desk_page_goto(d, door_page((uint32_t)door));
+        }
+        if (in_rect(side_hdr_title_rect(d), ev->x, ev->y)) { /* I673: the "Your Library" header is the door to the Library page */
+            d->nav_clicks++;
+            return desk_page_goto(d, PG_LIBRARY);
         }
         door = side_hdr_at(d, ev->x, ev->y);
         if (door == SIDE_HDR_PLUS) { /* I609: the header plus */
