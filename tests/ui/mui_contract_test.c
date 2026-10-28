@@ -284,7 +284,9 @@ static void test_relayout(void) {
         }
     }
     mui_layout_map(&m, 1280, 720);
-    CHECK(mui_layout_relayout(&m, 1100, 720, &flips) == 1 && flips == 1, "1280 to 1100 hides only detail (flips %u)", flips);
+    /* The three-column edge is SEL_UIM_BP_THREE_COLUMN_MIN (1100, DUI-P1-11): 1100 itself is still three-column. */
+    CHECK(mui_layout_relayout(&m, SEL_UIM_BP_THREE_COLUMN_MIN, 720, &flips) == 0 && flips == 0, "1100 stays three-column (flips %u)", flips);
+    CHECK(mui_layout_relayout(&m, SEL_UIM_BP_THREE_COLUMN_MIN - 1u, 720, &flips) == 1 && flips == 1, "one below the edge hides only detail (flips %u)", flips);
     CHECK(mui_layout_relayout(&m, 1000, 720, &flips) == 0 && flips == 0, "same breakpoint changes no visibility");
 }
 
