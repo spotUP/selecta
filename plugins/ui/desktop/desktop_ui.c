@@ -352,6 +352,7 @@ typedef struct desk {
     sel_engine_library_item side_items[SIDE_LIB_MAX]; /* I608: the saved playlists listed under the doors */
     uint32_t side_n, side_stale, side_draws, side_rows, side_opens, side_empty_draws, side_create_clicks; /* items held, reload wanted, frames drawn, rows drawn in the last one, rows opened */
     uint32_t side_open_n, side_open_tries; /* I646: the sidebar count a just created playlist brings the list to (0 = none pending), frames waited */
+    uint32_t side_wide, side_plus_clicks, side_wide_clicks; /* I609: the sidebar is widened; header Create Playlist and width toggle clicks */
     sel_gui_rect side_empty_btn; /* I627: the empty-state Create playlist button, zero size when not drawn */
     int32_t side_y_q16; /* the list's scroll offset in Q16 logical pixels */
     int np_page;             /* the main region shows the Now Playing page */
@@ -466,6 +467,8 @@ typedef struct desk {
 static int desk_resize(desk* d, int32_t w, int32_t h);
 static int desk_set_scale(desk* d, int32_t scale_q16);
 static void desk_relayout(desk* d);
+enum { SIDE_HDR_PLUS = 1, SIDE_HDR_WIDE = 2, SIDE_HDR_COUNT = 2 }; /* I609: Your Library header controls */
+static sel_gui_rect side_hdr_rect(const desk* d, uint32_t which);
 static int desk_set_density(desk* d, int32_t density);
 static int32_t desk_scale_for(const desk* d, int32_t w, int32_t h);
 static int desk_present(desk* d);
@@ -4248,6 +4251,17 @@ static int pl_create(desk* d, uint32_t folder) {
     return pl_send(d, line);
 }
 
+/* I646, I609: Create Playlist from the sidebar (the empty-state button and the header plus): create and open, like Spotify, the
+ * new playlist opens once the engine has made it. The one path; the action itself is pl_create. */
+static int side_create_playlist(desk* d) {
+    d->side_open_n = d->side_n + 1u;
+    d->side_open_tries = 0u;
+    desk_page_goto(d, PG_PLAYLISTS);
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    return pl_create(d, 0u);
+}
+
 static int pl_button_click(desk* d, const sel_view_state* v, uint32_t k) {
     int32_t sel = pl_sel_row(d, v);
     char line[160];
@@ -5537,6 +5551,12 @@ static const char* library_dump_build(desk* d) {
                      (unsigned)d->side_n, (unsigned)d->side_opens, (int)d->side_y_q16, (int)side_lib_max_q16(d));
         o = dump_put(d, o, "sideempty draws=%u clicks=%u btn %d %d %d %d\n", (unsigned)d->side_empty_draws, (unsigned)d->side_create_clicks,
                      (int)d->side_empty_btn.x, (int)d->side_empty_btn.y, (int)d->side_empty_btn.w, (int)d->side_empty_btn.h);
+        for (k = 1u; k <= (uint32_t)SIDE_HDR_COUNT; k++) { /* I609: header controls and their counters */
+            sel_gui_rect r = side_hdr_rect(d, k);
+            o = dump_put(d, o, "sidehdr %s plus_clicks=%u wide_clicks=%u wide=%u sidebar_w=%d rect %d %d %d %d\n", k == SIDE_HDR_PLUS ? "plus" : "wide",
+                         (unsigned)d->side_plus_clicks, (unsigned)d->side_wide_clicks, (unsigned)d->side_wide, (int)region_rect(d, "sidebar").w,
+                         (int)r.x, (int)r.y, (int)r.w, (int)r.h);
+        }
         for (k = 0; k < d->side_n && k < 8u; k++) {
             sel_gui_rect r = side_lib_row_rect(d, k);
             o = dump_put(d, o, "sidelib_row %u %d %d %d %d %s\n", (unsigned)k, (int)r.x, (int)r.y, (int)r.w, (int)r.h, d->side_items[k].name);
@@ -7371,6 +7391,42 @@ static sel_gui_rect side_lib_header_rect(const desk* d) {
     return rect_of(r.x, r.y + r.h + lpx(d, 8), r.w, h);
 }
 
+/* I609: the header controls. Create Playlist (plus) and Expand/Collapse Library (chevron) sit at the band's right end, 28 px
+ * squares; the icon-only rail keeps the width toggle alone, centred, and the bitmap (Amiga) tier only the plus: it has no
+ * wider layout. A zero rectangle is a control that is not drawn. */
+#define TIP_HDR_BASE (TIP_CTL_BASE + (int32_t)CTL_COUNT)
+
+static sel_gui_rect side_hdr_rect(const desk* d, uint32_t which) {
+    sel_gui_rect h = side_lib_header_rect(d);
+    int32_t sz = lpx(d, 28), pad = lpx(d, 8), y = h.y + (h.h - sz) / 2;
+    int rail = region_rect(d, "sidebar").w <= lpx(d, 120);
+    if (which == SIDE_HDR_WIDE) {
+        if (desk_bitmap_text(d)) {
+            return rect_of(0, 0, 0, 0);
+        }
+        return rect_of(rail ? h.x + (h.w - sz) / 2 : h.x + h.w - pad - sz, y, sz, sz);
+    }
+    if (rail) {
+        return rect_of(0, 0, 0, 0);
+    }
+    return rect_of(h.x + h.w - pad - sz - (desk_bitmap_text(d) ? 0 : sz + lpx(d, 4)), y, sz, sz);
+}
+
+static int32_t side_hdr_at(const desk* d, int32_t x, int32_t y) {
+    uint32_t k;
+    for (k = 1u; k <= (uint32_t)SIDE_HDR_COUNT; k++) {
+        sel_gui_rect r = side_hdr_rect(d, k);
+        if (r.w > 0 && in_rect(r, x, y)) {
+            return (int32_t)k;
+        }
+    }
+    return 0;
+}
+
+static const char* side_hdr_label(const desk* d, uint32_t which) {
+    return which == SIDE_HDR_PLUS ? "Create Playlist" : d->side_wide ? "Collapse Library" : "Expand Library";
+}
+
 static sel_gui_rect side_lib_view_rect(const desk* d) {
     sel_gui_rect sb = region_rect(d, "sidebar"), h = side_lib_header_rect(d);
     int32_t y = h.y + h.h, bottom = sb.y + sb.h - lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
@@ -7439,7 +7495,16 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
         side_lib_reload(d);
     }
     if (labels) {
-        draw_text(d, rect_of(hd.x + pad, hd.y, hd.w - 2 * pad, hd.h), "Your Library", 1, 15, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        int32_t hw = side_hdr_rect(d, SIDE_HDR_PLUS).x - lpx(d, 4) - (hd.x + pad);
+        draw_text(d, rect_of(hd.x + pad, hd.y, hw > 0 ? hw : 0, hd.h), "Your Library", 1, 15, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    }
+    for (i = 1u; i <= (uint32_t)SIDE_HDR_COUNT; i++) { /* I609: Create Playlist and Expand/Collapse Library */
+        sel_gui_rect br = side_hdr_rect(d, i);
+        uint32_t ic = i == SIDE_HDR_PLUS ? SEL_GUI_ICON_PLUS : d->side_wide ? SEL_GUI_ICON_CHEVRON_LEFT : SEL_GUI_ICON_CHEVRON_RIGHT;
+        if (br.w > 0) {
+            uint32_t ink = hover_ink_of(d, br, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]), ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+            sel_gui_icon_draw(d->canvas, &d->icons, ic, rect_of(br.x + lpx(d, 4), br.y + lpx(d, 4), lpx(d, 20), lpx(d, 20)), lpx(d, 20), ink);
+        }
     }
     d->side_rows = 0u;
     d->side_empty_btn = rect_of(0, 0, 0, 0);
@@ -7887,7 +7952,13 @@ static void desk_draw_tip(desk* d) {
     door = d->tip_shown - 1 - (int32_t)TRANSPORT_COUNT;
     pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     w = sel_gui_text_width(at, d->tip_text, strlen(d->tip_text)) + 2 * pad;
-    if (d->tip_shown > TIP_CTL_BASE) { /* I244: the box sits above its control */
+    if (d->tip_shown > TIP_HDR_BASE) { /* I609: the box sits below its header control, right edge kept inside the sidebar */
+        b = side_hdr_rect(d, (uint32_t)(d->tip_shown - TIP_HDR_BASE));
+        box = rect_of(b.x + b.w - w, b.y + b.h + lpx(d, 4), w, lpx(d, TIP_H));
+        if (box.x < 0) {
+            box.x = 0;
+        }
+    } else if (d->tip_shown > TIP_CTL_BASE) { /* I244: the box sits above its control */
         b = desk_ctl_rect(d, (uint32_t)(d->tip_shown - TIP_CTL_BASE - 1));
         box = rect_of(b.x + b.w / 2 - w / 2, b.y - lpx(d, TIP_H + 4), w, lpx(d, TIP_H));
     } else if (door >= (int32_t)DOOR_COUNT) { /* a Library style segment: the box sits below it, centred */
@@ -7960,6 +8031,10 @@ static int desk_tip_pointer(desk* d, int32_t x, int32_t y) {
             }
         }
     }
+    if (btn == 0 && x >= 0) { /* I609: the Your Library header controls */
+        int32_t k = side_hdr_at(d, x, y);
+        btn = k > 0 ? TIP_HDR_BASE + k : 0;
+    }
     if (btn == 0 && x >= 0) { /* I244: the visualizer switch and the Now Playing heart */
         int32_t c = desk_ctl_at(d, x, y);
         btn = c > 0 ? TIP_CTL_BASE + c : 0;
@@ -7995,7 +8070,9 @@ static void desk_tip_tick(desk* d) {
     if (d->tip_btn <= 0 || d->tip_shown > 0 || d->now_ms < d->tip_since + TIP_DELAY_MS) {
         return;
     }
-    if (d->tip_btn > TIP_CTL_BASE) { /* I244: an action-bound control: the action's tooltip text */
+    if (d->tip_btn > TIP_HDR_BASE) { /* I609: a Your Library header control: its full label */
+        snprintf(d->tip_text, sizeof d->tip_text, "%s", side_hdr_label(d, (uint32_t)(d->tip_btn - TIP_HDR_BASE)));
+    } else if (d->tip_btn > TIP_CTL_BASE) { /* I244: an action-bound control: the action's tooltip text */
         a = desk_action_by_id(desk_ctl_action(d, (uint32_t)(d->tip_btn - TIP_CTL_BASE - 1)));
         if (a == NULL) {
             return;
@@ -9123,14 +9200,22 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
             d->nav_clicks++;
             return desk_page_goto(d, door_page((uint32_t)door));
         }
-        if (d->side_empty_btn.w > 0 && d->side_n == 0u && in_rect(d->side_empty_btn, ev->x, ev->y)) { /* I627: the empty-state button */
-            d->side_create_clicks++;
-            d->side_open_n = d->side_n + 1u; /* I646: create and open, like Spotify: the new playlist opens once it appears */
-            d->side_open_tries = 0u;
-            desk_page_goto(d, PG_PLAYLISTS);
+        door = side_hdr_at(d, ev->x, ev->y);
+        if (door == SIDE_HDR_PLUS) { /* I609: the header plus */
+            d->side_plus_clicks++;
+            return side_create_playlist(d);
+        }
+        if (door == SIDE_HDR_WIDE) { /* I609: widen or narrow the sidebar through the layout */
+            d->side_wide_clicks++;
+            d->side_wide = !d->side_wide;
+            desk_relayout(d);
             d->repaint = 1;
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
-            return pl_create(d, 0u);
+            return 1;
+        }
+        if (d->side_empty_btn.w > 0 && d->side_n == 0u && in_rect(d->side_empty_btn, ev->x, ev->y)) { /* I627: the empty-state button */
+            d->side_create_clicks++;
+            return side_create_playlist(d);
         }
         door = side_lib_at(d, ev->x, ev->y); /* I608: a library row opens that item in the main region */
         if (door >= 0) {
@@ -10269,8 +10354,9 @@ static int32_t desk_scale_for(const desk* d, int32_t w, int32_t h) {
 /* The layout runs at the logical size: the canvas divided by the scale. */
 static void desk_relayout(desk* d) {
     uint32_t lh = (uint32_t)px_to_logical(d, cvh(d));
-    sel_uim_layout_compute_bar(&d->layout, (uint32_t)px_to_logical(d, d->canvas->w), lh,
-                               desk_bitmap_text(d) ? SEL_UIM_TIER_BITMAP : SEL_UIM_TIER_DEFAULT, desk_rail_w(d), sel_uim_footer_height(lh));
+    sel_uim_layout_compute_expand(&d->layout, (uint32_t)px_to_logical(d, d->canvas->w), lh,
+                                  desk_bitmap_text(d) ? SEL_UIM_TIER_BITMAP : SEL_UIM_TIER_DEFAULT, desk_rail_w(d), sel_uim_footer_height(lh),
+                                  d->side_wide);
 }
 
 /* The backend density changed (a window moved to another screen): the scale follows, the zoom stays. */

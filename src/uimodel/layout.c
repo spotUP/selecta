@@ -11,6 +11,9 @@
 #define SIDEBAR_WIDE 220
 #define SIDEBAR_NARROW 200
 #define SIDEBAR_ICONS 56
+#define SIDEBAR_EXPANDED_WIDE 360 /* I609: the widened Your Library sidebar, three-column layout */
+#define SIDEBAR_EXPANDED_NARROW 320 /* two-column layout */
+#define SIDEBAR_EXPANDED_ICONS 220 /* the icon rail opens to a labelled sidebar */
 #define SIDEBAR_RAIL_LABELLED 160 /* I526 D1: the bitmap tier rail, mini8 labels beside the icon */
 #define DETAIL_W 320
 #define MAIN_MIN_W 240
@@ -76,6 +79,13 @@ uint32_t sel_uim_footer_height(uint32_t height) {
 /* As compute_rail with the player bar height chosen by the caller (the desktop UI passes sel_uim_footer_height). */
 void sel_uim_layout_compute_bar(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t rail_w,
                                 uint32_t bar_height) {
+    sel_uim_layout_compute_expand(l, width, height, tier, rail_w, bar_height, 0u);
+}
+
+/* I609: as compute_bar; `expand` widens the sidebar (Spotify's Expand Library). The bitmap tier and the mini layout have no
+ * wider form and ignore it. */
+void sel_uim_layout_compute_expand(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t rail_w,
+                                   uint32_t bar_height, uint32_t expand) {
     uint32_t bp = sel_uim_breakpoint_for_tier(width, tier);
     uint32_t bar_h = height > bar_height ? bar_height : height;
     uint32_t body_h = height - bar_h;
@@ -85,16 +95,16 @@ void sel_uim_layout_compute_bar(sel_uim_layout* l, uint32_t width, uint32_t heig
     l->height = height;
     l->breakpoint = bp;
     if (bp == SEL_UIM_BP_THREE_COLUMN) {
-        side = SIDEBAR_WIDE;
+        side = expand ? SIDEBAR_EXPANDED_WIDE : SIDEBAR_WIDE;
         detail = DETAIL_W;
     } else if (bp == SEL_UIM_BP_TWO_COLUMN) {
-        side = SIDEBAR_NARROW;
+        side = expand ? SIDEBAR_EXPANDED_NARROW : SIDEBAR_NARROW;
     } else if (bp == SEL_UIM_BP_ICON_SIDEBAR) {
         if (tier == SEL_UIM_TIER_BITMAP) {
             side = rail_w > SIDEBAR_RAIL_LABELLED ? rail_w : SIDEBAR_RAIL_LABELLED;
             side = side > width / 3u ? (width / 3u > SIDEBAR_RAIL_LABELLED ? width / 3u : SIDEBAR_RAIL_LABELLED) : side;
         } else {
-            side = SIDEBAR_ICONS;
+            side = expand ? SIDEBAR_EXPANDED_ICONS : SIDEBAR_ICONS;
         }
     } else {
         top = body_h > BANNER_H ? BANNER_H : body_h;
