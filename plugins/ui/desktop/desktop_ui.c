@@ -1962,13 +1962,15 @@ static uint32_t quick_hover_index(const sel_state* st, uint32_t k) {
     return flat + k;
 }
 
-/* The shelf whose band holds the canvas row y, or SHELF_NONE. */
+/* The shelf whose cover row holds the canvas row y, or SHELF_NONE (I630). The cover row is the art row the round buttons sit
+ * on: not the shelf title above it and not the title and artist lines under it. */
 static uint32_t shelf_at_y(desk* d, int32_t y) {
     shelf sh[SHELF_MAX];
     uint32_t s, n = home_shelves(sel_engine_state(d->engine), sh);
     for (s = 0; s < n; s++) {
         int32_t top = shelf_top(d, s);
-        if (y >= top && y < top + lpx(d, SHELF_HEAD_H) + shelf_card_h(d)) {
+        int32_t art_y = top + lpx(d, SHELF_HEAD_H);
+        if (y >= art_y && y < art_y + lpx(d, g_tile_steps[d->tile_step])) {
             return s;
         }
     }
@@ -2130,6 +2132,15 @@ static int32_t shelf_page_q16(desk* d) {
 static uint32_t shelf_hover_of(desk* d, int32_t x, int32_t y) {
     uint32_t s = shelf_at_y(d, y);
     return s != SHELF_NONE && s < 8u && in_rect(region_rect(d, "main"), x, y) ? s + 1u : 0u;
+}
+
+/* I630: the one place that decides which shelf owns the buttons. The pointer is at canvas point (x, y): hover_shelf1 (what the
+ * click hits) and the fade/grow targets (what is drawn) are set together, from the cover row under the pointer. Called by
+ * pointer moves and by the wheel, which moves the content under a still pointer. Returns 1 when a target changed. */
+static int shelf_nav_pointer(desk* d, int32_t x, int32_t y, uint32_t shelf1) {
+    int changed = shelf1 != d->hover_shelf1;
+    d->hover_shelf1 = shelf1;
+    return shelf_nav_hover(d, x, y, shelf1) | changed;
 }
 
 /* A click on a visible button moves its shelf by one page. Returns 1 when the click hit a button. */
@@ -8444,12 +8455,7 @@ static int desk_hover_move(desk* d, int32_t x, int32_t y) {
         d->hover_tile = tile;
         changed = 1;
     }
-    if (shelf1 != d->hover_shelf1) { /* I607: the previous/next buttons follow the shelf under the pointer */
-        d->hover_shelf1 = shelf1;
-        tile_moved = 1;
-        changed = 1;
-    }
-    if (d->page == PG_HOME && d->home && shelf_nav_hover(d, x, y, d->hover_shelf1)) { /* I630: fade and grow targets */
+    if (shelf_nav_pointer(d, x, y, shelf1)) { /* I607, I630: the buttons follow the cover row under the pointer */
         tile_moved = 1;
         changed = 1;
     }
@@ -8528,7 +8534,7 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
             /* Rule (I607): the wheel never scrolls a shelf sideways, a horizontal swipe included; the vertical wheel
              * scrolls the whole Home content wherever the pointer is. A shelf moves only by its previous/next buttons. */
             home_scroll_y(d, -ev->dy);
-            d->hover_shelf1 = shelf_hover_of(d, d->ptr_x, d->ptr_y); /* the content moved under a still pointer */
+            shelf_nav_pointer(d, d->ptr_x, d->ptr_y, shelf_hover_of(d, d->ptr_x, d->ptr_y)); /* the content moved under a still pointer */
             d->sm_open = 0;
             draw_home(d);
             return 1;
@@ -8851,12 +8857,12 @@ static int desk_replay_input(desk* d) {
             d->hover_frame = 1;
             draw_home(d);
             opened |= desk_event_frame(d, 1);
-        } else if (strncmp(line, "navsnap", 7) == 0) { /* I630: records shelf 0's button opacity, both button scales and scroll as of now, mid-tween, for the dump */
+        } else if (strncmp(line, "navsnap", 7) == 0) { /* I630: records shelf 0's button opacity (alpha1= shelf 1's), both button scales and scroll as of now, mid-tween, for the dump */
             size_t at = strlen(d->flow_snaps);
             if (at + 128u < sizeof d->flow_snaps) {
-                snprintf(d->flow_snaps + at, sizeof d->flow_snaps - at, "nav snap alpha=%d scale_prev=%d scale_next=%d scroll=%d\n",
+                snprintf(d->flow_snaps + at, sizeof d->flow_snaps - at, "nav snap alpha=%d scale_prev=%d scale_next=%d scroll=%d alpha1=%d\n",
                          d->nav_shelf1 == 1u ? (int)nav_fade_now(d) : 0, (int)nav_scale_now(d, 0u), (int)nav_scale_now(d, 1u),
-                         (int)(shelf_pos_q16(d, 0u) >> 16));
+                         (int)(shelf_pos_q16(d, 0u) >> 16), d->nav_shelf1 == 2u ? (int)nav_fade_now(d) : 0);
             }
         } else if (strncmp(line, "flowsnap", 8) == 0) { /* records the covers of the last cover flow frame, mid-glide, for the dump */
             size_t at = strlen(d->flow_snaps), m;
