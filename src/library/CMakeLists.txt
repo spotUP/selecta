@@ -36,6 +36,9 @@ target_sources(selecta_library PRIVATE ${SEL_NET_SOURCE} net/netpolicy.c net/htt
 if(SEL_AMIGA)
   # Plain HTTP and FTP on the Amiga (D-M3-4): no TLS library, tls.c compiles its stubs.
   target_compile_definitions(selecta_library PRIVATE SEL_NO_TLS)
+  # I623: a Ctrl-C swallowed by a bsdsocket wait must survive the net layer (rig-i623-net-break).
+  add_executable(selecta-net-break ${PROJECT_SOURCE_DIR}/tests/amiga/net_break.c)
+  target_link_libraries(selecta-net-break PRIVATE selecta_library)
 else()
   add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/mbedtls ${CMAKE_BINARY_DIR}/third_party/mbedtls)
   target_link_libraries(selecta_library PUBLIC selecta_mbedtls)
