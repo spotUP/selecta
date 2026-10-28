@@ -8816,12 +8816,19 @@ static void desk_build_icons(desk* d) {
         d->icon_px[i] = px;
         for (s = 0; s < sel_gui_icons_baked.size_n; s++) {
             int32_t bs = sel_gui_icons_baked.sizes[s];
-            if (bs == px && yd == 1) {
-                d->icon_alpha[i] = sel_gui_icons_baked.alpha[s];
-                exact = 1;
+            if (bs == px) {
+                /* I588: the exact bake is used 1:1 on square pixels; on tall pixels it is still the source, so the
+                 * only resample is the 2:1 row merge (no 6:5 / 12:5 weights from the next larger size) */
+                if (yd == 1) {
+                    d->icon_alpha[i] = sel_gui_icons_baked.alpha[s];
+                    exact = 1;
+                } else {
+                    from = s;
+                    have = 1;
+                }
                 break;
             }
-            /* the source: the smallest baked size above the target (sizes ascend), else the largest */
+            /* no exact size: the smallest baked size above the target (sizes ascend), else the largest */
             if (bs > px && !have) {
                 from = s;
                 have = 1;
