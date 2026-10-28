@@ -11,6 +11,7 @@
  * The audio thread therefore never opens, closes or allocates a song. The
  * rings are sel_spsc instances of their own: the command ring has the pump
  * thread as its consumer, these two have the audio thread on one end. */
+#include <selecta/uimodel/browse.h>
 #include <selecta/engine.h>
 #include <selecta/machine.h>
 
@@ -140,7 +141,7 @@
     X(RATE) X(VOTE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
     X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(PLAYLIST_ADD_SONG) X(PLAYLIST_IMPORT) X(PLAYLIST_ADD_FOLDER) X(PLAYLIST_REMOVE_SONG) X(PLAYLIST_PLAY) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
     X(SONGS_RANGES) X(SONGS_PLAY) X(SONGS_PLAY_NEXT) X(SONGS_QUEUE_ADD) X(SONGS_PLAYLIST_ADD) X(SONGS_REMOVE) \
-    X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(COMPOSERS_HIDE) \
+    X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(COMPOSERS_HIDE) X(COMPOSERS_VIEW) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
     X(VIEW_CURSOR)                                                                            \
@@ -301,6 +302,8 @@ struct sel_engine {
     char* composers;                           /* DUI-P4-3 library page: "canon\0display\0songs\0" per composer, then "\0"; grown to the library (I303), NULL before the first COMPOSERS_SHOW */
     char* composer_page;                       /* the drilled-into composer: "canon\0display\0songs\0" then "key\0name\0" per song, then "\0"; grown to its songs (I303), NULL: none */
     uint32_t composers_open, composer_queries; /* the Library page is up / queries made against the library for it */
+    char composer_filter[64];                  /* I611: COMPOSERS_VIEW text filter on the composer rows (empty: all) */
+    uint32_t composer_sort, composer_views;    /* I611: COMPOSERS_VIEW sort (SEL_UIM_LSORT_*) and how many COMPOSERS_VIEW commands ran (sentinel) */
     uint32_t stats_open, stats_queries;        /* the screen is up / queries made against the stats views (I192 sentinel) */
     char panel[1024];                          /* catalogue rows of the open song, "label\0value\0" pairs (I185) */
     uint32_t songs_counted_at;                 /* DUI-P4-18: library_changes + 1 when state.library_songs was counted */
@@ -4685,14 +4688,93 @@ static char* composer_take(composer_fill* f) {
     return f->buf != NULL ? f->buf : k_composers_empty;
 }
 
+/* I611: the composer list callback keeps only rows whose display text matches the COMPOSERS_VIEW filter. */
+typedef struct composer_list_ctx {
+    composer_fill fill;
+    const char* filter;
+} composer_list_ctx;
+
 static void composer_list_row(void* ctx, const char* canon, const char* display, uint32_t songs) {
+    composer_list_ctx* c = (composer_list_ctx*)ctx;
     char num[16];
     const char* parts[3];
+    if (!sel_uim_lfilter_match(display, c->filter)) return;
     snprintf(num, sizeof num, "%u", (unsigned)songs);
     parts[0] = canon;
     parts[1] = display;
     parts[2] = num;
-    composer_put((composer_fill*)ctx, parts, 3);
+    composer_put(&c->fill, parts, 3);
+}
+
+typedef struct composer_row_ref {
+    const char *canon, *display;
+    uint32_t songs;
+} composer_row_ref;
+
+/* I611: the sort of the Library page rows, by the shared Your Library model: Recents keeps the library order, Recently added
+ * puts the composers with more songs first (a composer has no date), Alphabetical and Creator compare the display text. A stable
+ * binary insertion keeps equal rows in library order. Rewrites *blk; on a failed allocation the unsorted block stays. */
+static void composer_sort_block(const sel_host* host, char** blk, uint32_t sort) {
+    composer_row_ref* a;
+    composer_fill out;
+    const char* p;
+    uint32_t n = 0, i, cnt = 0;
+    if (sort == SEL_UIM_LSORT_RECENTS || *blk == NULL || *blk == k_composers_empty) return;
+    for (p = *blk; *p != '\0'; cnt++) {
+        p += strlen(p) + 1u;
+        p += strlen(p) + 1u;
+        p += strlen(p) + 1u;
+    }
+    a = host->mem_alloc(host, (size_t)cnt * sizeof *a, SEL_MEM_FAST);
+    if (a == NULL) return;
+    for (p = *blk; *p != '\0';) {
+        composer_row_ref r;
+        uint32_t lo = 0, hi = n;
+        r.canon = p;
+        p += strlen(p) + 1u;
+        r.display = p;
+        p += strlen(p) + 1u;
+        r.songs = (uint32_t)strtoul(p, NULL, 10);
+        p += strlen(p) + 1u;
+        while (lo < hi) {
+            uint32_t mid = (lo + hi) / 2u;
+            if (sel_uim_lsort_cmp(sort, a[mid].display, a[mid].songs, a[mid].display, r.display, r.songs, r.display) > 0) hi = mid;
+            else lo = mid + 1u;
+        }
+        memmove(a + lo + 1u, a + lo, (size_t)(n - lo) * sizeof *a);
+        a[lo] = r;
+        n++;
+    }
+    memset(&out, 0, sizeof out);
+    out.host = host;
+    for (i = 0; i < n; i++) {
+        char num[16];
+        const char* parts[3];
+        snprintf(num, sizeof num, "%u", (unsigned)a[i].songs);
+        parts[0] = a[i].canon;
+        parts[1] = a[i].display;
+        parts[2] = num;
+        composer_put(&out, parts, 3);
+    }
+    if (out.buf != NULL) {
+        composer_release(host, blk);
+        *blk = out.buf;
+    }
+    host->mem_free(host, a);
+}
+
+/* The composer list under the COMPOSERS_VIEW filter and sort (all composers, library order, until one is set). */
+static void composers_fill_list(sel_engine* e) {
+    composer_list_ctx c;
+    memset(&c, 0, sizeof c);
+    c.fill.host = e->host;
+    c.filter = e->composer_filter;
+    if (sel_library_composer_list(e->lib, composer_list_row, &c) < 0) {
+        composer_release(e->host, &c.fill.buf);
+    }
+    composer_release(e->host, &e->composers);
+    e->composers = composer_take(&c.fill);
+    composer_sort_block(e->host, &e->composers, e->composer_sort);
 }
 
 static void composer_page_row(void* ctx, const char* key, const char* name, const char* disp) {
@@ -4716,14 +4798,8 @@ static void cmd_COMPOSERS_SHOW(sel_engine* e, const sel_message* m) {
     }
     e->composer_queries++;
     snprintf(want, sizeof want, "%s", m->argc > 0 ? m->args[0].v.s : "");
-    composer_release(e->host, &e->composers);
     composer_release(e->host, &e->composer_page);
-    memset(&f, 0, sizeof f);
-    f.host = e->host;
-    if (sel_library_composer_list(e->lib, composer_list_row, &f) < 0) {
-        composer_release(e->host, &f.buf);
-    }
-    e->composers = composer_take(&f);
+    composers_fill_list(e);
     if (want[0] != '\0') {
         const char* name = want;
         char num[16], disp[SEL_COMPOSER_MAX];
@@ -4760,6 +4836,19 @@ static void cmd_COMPOSERS_SHOW(sel_engine* e, const sel_message* m) {
         composer_release(e->host, &p.buf);
     }
     e->composers_open = 1;
+}
+
+/* COMPOSERS_VIEW filter sort (I611): the Library page's tools row. The text filter and the sort (0 Recents, 1 Recently added,
+ * 2 Alphabetical, 3 Creator) stay with the engine and apply to every later COMPOSERS_SHOW; an open page is rebuilt now. */
+static void cmd_COMPOSERS_VIEW(sel_engine* e, const sel_message* m) {
+    uint32_t sort = (uint32_t)m->args[1].v.u;
+    snprintf(e->composer_filter, sizeof e->composer_filter, "%s", m->args[0].v.s);
+    e->composer_sort = sort < SEL_UIM_LSORTS ? sort : 0u;
+    e->composer_views++;
+    if (e->composers_open && e->lib != NULL) {
+        e->composer_queries++;
+        composers_fill_list(e);
+    }
 }
 
 static void cmd_COMPOSERS_HIDE(sel_engine* e, const sel_message* m) {

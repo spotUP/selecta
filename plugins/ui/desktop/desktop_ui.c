@@ -369,6 +369,7 @@ typedef struct desk {
     uint32_t side_chip, side_filters, side_chip_scrolls; /* I610: the library chip in force (0 none, else 1 + index), filter passes run, chevron scrolls */
     uint32_t side_sort, side_view; /* I611: the Your Library sort (SEL_UIM_LSORT_*) and view size (SEL_UIM_LVIEW_*) */
     uint32_t side_prefs_read, side_pref_sets; /* I611: the sort/view prefs were read once; PREF_SET lines sent for them */
+    uint32_t lib_view_sends; /* I611: COMPOSERS_VIEW lines sent for the Library page rows */
     uint32_t lib_tools_draws, lib_tools_clicks, lib_sort_keys; /* I611: Library page tools row draws and clicks, Sort key presses */
     uint32_t lf_open, lf_edit, lf_len; /* I611: the filter field is shown, has the keyboard, and holds this many characters */
     char lf_text[64];
@@ -5753,6 +5754,12 @@ static const char* library_dump_build(desk* d) {
                              (unsigned)d->lib_tools_clicks, (unsigned)d->lib_sort_keys, (unsigned)d->side_pref_sets, (int)lm.x, (int)lm.y, (int)lm.w, (int)lm.h,
                              (int)ls.x, (int)ls.y, (int)ls.w, (int)ls.h);
             }
+            {
+                const sel_state* ps = sel_engine_state(d->engine);
+                const char* r0 = ps->composers != NULL ? lib_rows_first(ps) : NULL;
+                o = dump_put(d, o, "libpage rows=%u first=[%s] view_sends=%u\n", (unsigned)(ps->composers != NULL ? lib_list_n(ps) : 0u),
+                             r0 != NULL && *r0 != '\0' ? lib_next(r0) : "", (unsigned)d->lib_view_sends);
+            }
             o = dump_put(d, o, "sidetools_rect mag %d %d %d %d sort %d %d %d %d field %d %d %d %d\n", (int)mg.x, (int)mg.y, (int)mg.w, (int)mg.h,
                          (int)sr.x, (int)sr.y, (int)sr.w, (int)sr.h, (int)fr.x, (int)fr.y, (int)fr.w, (int)fr.h);
             if (d->sm_open && d->sm_step == 4) {
@@ -8060,6 +8067,8 @@ static void side_lib_reload(desk* d) {
 }
 
 /* The sort and view choice survive a restart: ui.desktop.library_sort and ui.desktop.library_view (include/selecta/prefs.def). Read once, written on every pick. */
+static void lib_view_push(desk* d);
+
 static void lsort_prefs_load(desk* d) {
     const char* v;
     if (d->side_prefs_read) {
@@ -8074,6 +8083,25 @@ static void lsort_prefs_load(desk* d) {
     if (v != NULL && v[0] >= '0' && v[0] < (char)('0' + SEL_UIM_LVIEWS) && v[1] == '\0') {
         d->side_view = (uint32_t)(v[0] - '0');
     }
+    if (d->side_sort != 0u) { /* the saved sort also orders the Library page rows */
+        lib_view_push(d);
+    }
+}
+
+/* I611: the Library page rows are the engine's composer list; the filter text and sort of the tools row (the state the sidebar
+ * Your Library list shares) go to the engine as COMPOSERS_VIEW, the one place that filters and orders them. */
+static void lib_view_push(desk* d) {
+    char line[160];
+    size_t o = (size_t)snprintf(line, sizeof line, "COMPOSERS_VIEW \"");
+    for (const char* c = d->lf_text; *c != '\0' && o + 4u < sizeof line - 8u; c++) {
+        if (*c == '"' || *c == '\\') {
+            line[o++] = '\\';
+        }
+        line[o++] = *c;
+    }
+    snprintf(line + o, sizeof line - o, "\" %u", (unsigned)d->side_sort);
+    desk_send(d, line);
+    d->lib_view_sends++;
 }
 
 static void lsort_prefs_save(desk* d, const char* key, uint32_t value) {
@@ -8087,6 +8115,7 @@ static void side_sort_pick(desk* d, uint32_t sort) {
     d->side_sort = sort;
     lsort_prefs_save(d, "ui.desktop.library_sort", sort);
     d->side_sort_picks++;
+    lib_view_push(d);
     d->side_stale = 1u;
     d->side_y_q16 = 0;
     d->repaint = 1;
@@ -8111,6 +8140,7 @@ static void tl_click(desk* d, sel_gui_rect t, int32_t k) {
             d->lf_len = 0u;
             d->lf_text[0] = '\0';
             d->side_stale = 1u;
+            lib_view_push(d);
         }
     } else if (k == 2) {
         d->lf_edit = 1;
@@ -8137,6 +8167,7 @@ static int lf_key(desk* d, const sel_gui_input* ev) {
         if (d->lf_len > 0u) {
             d->lf_text[--d->lf_len] = '\0';
             d->side_stale = 1u;
+            lib_view_push(d);
             d->side_filter_keys++;
         }
     } else if (ev->code >= 32u && ev->code < 127u && (ev->mods & (TXT_MOD_CTRL | TXT_MOD_ALT)) == 0u) {
@@ -8144,6 +8175,7 @@ static int lf_key(desk* d, const sel_gui_input* ev) {
             d->lf_text[d->lf_len++] = (char)ev->code;
             d->lf_text[d->lf_len] = '\0';
             d->side_stale = 1u;
+            lib_view_push(d);
             d->side_filter_keys++;
         }
     } else {

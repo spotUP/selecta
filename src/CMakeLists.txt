@@ -10,6 +10,7 @@ add_library(selecta_core STATIC
   host/log.c
   engine/spsc.c
   engine/engine.c
+  engine/libsort.c
   engine/claims.c
   engine/queue.c
   engine/history.c
