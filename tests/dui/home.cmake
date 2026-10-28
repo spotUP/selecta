@@ -2,7 +2,7 @@
 # The fixture library gets a seeded play history (oldest to newest: songs 3, 1, 5, 2, 6, 4; songs 3, 5, 6, 4 skipped).
 # 1. "Recently played" holds the last 6 songs, newest first: 4 6 2 5 1 3 (checked in order from the ui_home dump).
 # 2. "Jump back in" holds the albums of the skipped songs, newest first (engine rule: an unfinished play).
-# 3. Each shelf scrolls on its own: the wheel over shelf 0 moves only shelf 0, over shelf 1 only shelf 1.
+# 3. Shelf buttons (I607): the wheel never moves a shelf sideways; round previous/next buttons show on the hovered shelf only and page it.
 # 4. Activating tile 0 sends play to the engine: play_state 1 and songs_opened=1.
 # 5. Revert check: a dump built with the order of the history reversed must fail the same assertion.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
@@ -132,19 +132,156 @@ if("${recent}" STREQUAL "${reversed}")
   message(FATAL_ERROR "revert check: the reversed history order matches, the order assertion cannot fail")
 endif()
 
-# 3. Independent scrolling. Shelf 0 band is y 172-418, shelf 1 starts at y 434 at this canvas; 700 wide makes both overflow.
-home_run(s0only "move 400 444\nwheel -3 0\n")
-shelf_scrolls(b0 b1 "${s0only}")
-if(NOT b0 GREATER 0)
-  message(FATAL_ERROR "wheel over shelf 0 did not scroll it: ${b0}")
+# 3. Shelf buttons (I607). The wheel never scrolls a shelf sideways, vertical or horizontal; the page scrolls instead.
+# Round previous/next buttons show only on the shelf under the pointer; previous is hidden at the shelf start; a click on
+# next moves that shelf (and only that one) by one page of covers and then shows previous; a click on previous returns.
+# Shelf 0 band is y 172-418, shelf 1 starts at y 434 at this canvas; 700 wide makes both overflow. The dump's shelf_nav
+# lines are what the last paint drew, so a button that was not painted reads 0.
+function(home_stat outvar out key)
+  if(NOT "${out}" MATCHES "ui_home id=desktop [^\n]*${key}=([0-9]+)")
+    message(FATAL_ERROR "no ${key} in the ui_home line of:\n${out}")
+  endif()
+  set(${outvar} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+endfunction()
+function(shelf_nav out s what)
+  if(NOT "${out}" MATCHES "shelf_nav ${s} prev=([01]) next=([01]) prev_at=(-?[0-9]+),(-?[0-9]+) next_at=(-?[0-9]+),(-?[0-9]+) labels=Previous,Next")
+    message(FATAL_ERROR "${what}: no shelf_nav ${s} line in:\n${out}")
+  endif()
+  set(nav_prev ${CMAKE_MATCH_1} PARENT_SCOPE)
+  set(nav_next ${CMAKE_MATCH_2} PARENT_SCOPE)
+  set(nav_prev_x ${CMAKE_MATCH_3} PARENT_SCOPE)
+  set(nav_prev_y ${CMAKE_MATCH_4} PARENT_SCOPE)
+  set(nav_next_x ${CMAKE_MATCH_5} PARENT_SCOPE)
+  set(nav_next_y ${CMAKE_MATCH_6} PARENT_SCOPE)
+endfunction()
+shelf_nav("${idle}" 0 "idle")
+expect_eq("previous button with the pointer elsewhere" "${nav_prev}" 0)
+expect_eq("next button with the pointer elsewhere" "${nav_next}" 0)
+home_run(over0 "move 400 444\n")
+shelf_nav("${over0}" 0 "hover shelf 0")
+expect_eq("previous button hidden at the shelf start" "${nav_prev}" 0)
+expect_eq("next button shown while hovering the shelf" "${nav_next}" 1)
+set(nx ${nav_next_x})
+set(ny ${nav_next_y})
+shelf_nav("${over0}" 1 "hover shelf 0")
+expect_eq("shelf 1 next button while hovering shelf 0" "${nav_next}" 0)
+# The wheel moves the page, never the shelf.
+home_run(wheel_v "move 400 444\nwheel 0 -3\n")
+shelf_scrolls(w0 w1 "${wheel_v}")
+expect_eq("shelf 0 after a vertical wheel over it" "${w0}" 0)
+home_stat(wy "${wheel_v}" scroll_y)
+if(NOT wy GREATER 0)
+  message(FATAL_ERROR "the vertical wheel over a shelf did not scroll the page: scroll_y=${wy}")
 endif()
-expect_eq("shelf 1 after wheel over shelf 0" "${b1}" 0)
-home_run(s1only "move 400 614\nwheel -3 0\n")
-shelf_scrolls(c0 c1 "${s1only}")
-if(NOT c1 GREATER 0)
-  message(FATAL_ERROR "wheel over shelf 1 did not scroll it: ${c1}")
+home_run(wheel_h "move 400 444\nwheel -3 0\nwheel 3 0\n")
+shelf_scrolls(h0 h1 "${wheel_h}")
+expect_eq("shelf 0 after a horizontal wheel over it" "${h0}" 0)
+expect_eq("shelf 1 after a horizontal wheel over shelf 0" "${h1}" 0)
+# A click on next moves shelf 0 by one page; shelf 1 stays; previous now shows.
+home_run(page1 "move 400 444\nclick ${nx} ${ny}\n")
+shelf_scrolls(p0 p1 "${page1}")
+if(NOT p0 GREATER 0)
+  message(FATAL_ERROR "the next button did not move shelf 0: ${p0} in:\n${page1}")
 endif()
-expect_eq("shelf 0 after wheel over shelf 1" "${c0}" 0)
+expect_eq("shelf 1 after the next button of shelf 0" "${p1}" 0)
+shelf_nav("${page1}" 0 "after next")
+expect_eq("previous button shown once the shelf moved" "${nav_prev}" 1)
+set(px ${nav_prev_x})
+set(py ${nav_prev_y})
+home_run(back "move 400 444\nclick ${nx} ${ny}\nclick ${px} ${py}\n")
+shelf_scrolls(b0 b1 "${back}")
+expect_eq("shelf 0 after next then previous" "${b0}" 0)
+dui_stat(played_by_button "${page1}" desktop play_state)
+expect_eq("a button click does not activate the tile under it" "${played_by_button}" 0)
+
+# 3b. Shelf button motion (I630). The buttons fade in on hover, a click eases the shelf one page on, and the button under the
+# pointer grows to about 1.1x (scale 72090 of 65536) and shrinks back on leave. The run ends by finishing every tween, so the
+# motion is read with `navsnap` lines taken mid-tween: a value strictly between its ends proves the tween ran (a pop or a hard
+# jump has none).
+function(expect_between what v lo hi)
+  if(NOT v GREATER lo OR NOT v LESS hi)
+    message(FATAL_ERROR "${what}: ${v} is not strictly between ${lo} and ${hi}")
+  endif()
+endfunction()
+string(CONCAT motion_in
+  "move 400 444\nwait 32\nnavsnap\nwait 32\nnavsnap\nwait 400\nnavsnap\n"
+  "move ${nx} ${ny}\nwait 32\nnavsnap\nwait 400\nnavsnap\n"
+  "click ${nx} ${ny}\nwait 48\nnavsnap\nwait 48\nnavsnap\nwait 600\nnavsnap\n"
+  "move 400 444\nwait 32\nnavsnap\nwait 400\nnavsnap\n"
+  "move 5 5\nwait 32\nnavsnap\nwait 400\nnavsnap\n")
+home_run(motion "${motion_in}")
+string(REGEX MATCHALL "nav snap alpha=[-0-9]+ scale_prev=[0-9]+ scale_next=[0-9]+ scroll=[0-9]+" snaps "${motion}")
+list(LENGTH snaps n_snaps)
+expect_eq("navsnap lines in the dump" "${n_snaps}" 12)
+set(i 0)
+foreach(s IN LISTS snaps)
+  string(REGEX REPLACE "nav snap alpha=([-0-9]+) scale_prev=([0-9]+) scale_next=([0-9]+) scroll=([0-9]+)" "\\1;\\2;\\3;\\4" f "${s}")
+  list(GET f 0 sn${i}_alpha)
+  list(GET f 1 sn${i}_prev)
+  list(GET f 2 sn${i}_next)
+  list(GET f 3 sn${i}_scroll)
+  math(EXPR i "${i} + 1")
+endforeach()
+# Fade: rising over frames after the pointer enters the shelf, full when it ends, back to zero after the pointer left.
+expect_between("button opacity 32 ms after hover" ${sn0_alpha} 0 65536)
+expect_between("button opacity 64 ms after hover" ${sn1_alpha} ${sn0_alpha} 65536)
+expect_eq("button opacity once the fade is over" "${sn2_alpha}" 65536)
+expect_between("button opacity 32 ms after the pointer left the shelf" ${sn10_alpha} 0 65536)
+expect_eq("button opacity once faded out" "${sn11_alpha}" 0)
+# What the paint drew, as the alpha byte (I630 flicker): mid-fade partly opaque, and fully opaque once the fade is over. A Q16
+# 65536 shifted down to 256 wraps to alpha 0, so the buttons vanished the moment their fade-in ended.
+string(REGEX MATCHALL "nav snap [^\n]* painted=[0-9]+" painted_snaps "${motion}")
+list(GET painted_snaps 0 pa0)
+list(GET painted_snaps 2 pa2)
+string(REGEX REPLACE ".* painted=([0-9]+)" "\\1" pa0 "${pa0}")
+string(REGEX REPLACE ".* painted=([0-9]+)" "\\1" pa2 "${pa2}")
+expect_between("painted button alpha 32 ms after hover" ${pa0} 0 255)
+expect_eq("painted button alpha once the fade is over" "${pa2}" 255)
+# Grow: the hovered next button scales up while the previous one stays, and it returns on leave.
+expect_eq("next button scale before it is hovered" "${sn2_next}" 65536)
+expect_between("next button scale 32 ms after the pointer entered it" ${sn3_next} 65536 72090)
+expect_eq("next button scale while hovered" "${sn4_next}" 72090)
+expect_eq("previous button scale while next is hovered" "${sn4_prev}" 65536)
+expect_between("next button scale 32 ms after the pointer left it" ${sn8_next} 65536 72090)
+expect_eq("next button scale after leaving it" "${sn9_next}" 65536)
+# Easing: the click passes intermediate positions and settles exactly where the instant jump of section 3 ended.
+expect_eq("shelf 0 before the click" "${sn4_scroll}" 0)
+expect_between("shelf 0 48 ms into the scroll" ${sn5_scroll} 0 ${p0})
+expect_between("shelf 0 96 ms into the scroll" ${sn6_scroll} ${sn5_scroll} ${p0})
+expect_eq("shelf 0 once the eased scroll settled (one page)" "${sn7_scroll}" "${p0}")
+
+# 3c. The buttons belong to the cover row under the pointer (I630 fix). The shelf title row and the title/artist lines under the
+# covers do not trigger them, a hover that is then left alone (no further move) keeps them at full opacity, and a wheel after the
+# hover keeps the drawn shelf and the hovered shelf the same one.
+shelf_nav("${over0}" 1 "hover shelf 0")
+set(cover1_y ${nav_next_y})
+math(EXPR title_y "${ny} - 100")
+math(EXPR caption_y "${ny} + 100")
+function(snap_alphas out idx)
+  string(REGEX MATCHALL "nav snap alpha=[-0-9]+ scale_prev=[0-9]+ scale_next=[0-9]+ scroll=[0-9]+ alpha1=[-0-9]+" all "${out}")
+  list(GET all ${idx} one)
+  string(REGEX REPLACE "nav snap alpha=([-0-9]+) .* alpha1=([-0-9]+)" "\\1;\\2" f "${one}")
+  list(GET f 0 a0)
+  list(GET f 1 a1)
+  set(snap_a0 ${a0} PARENT_SCOPE)
+  set(snap_a1 ${a1} PARENT_SCOPE)
+endfunction()
+home_run(rowt "move 400 ${title_y}\nwait 400\nnavsnap\nmove 400 ${caption_y}\nwait 400\nnavsnap\n")
+snap_alphas("${rowt}" 0)
+expect_eq("shelf 0 buttons while the pointer is on the shelf title row" "${snap_a0}" 0)
+snap_alphas("${rowt}" 1)
+expect_eq("shelf 0 buttons while the pointer is on the caption lines" "${snap_a0}" 0)
+home_run(rowh "move 400 ${ny}\nwait 400\nnavsnap\nwait 800\nnavsnap\nmove 400 ${cover1_y}\nwait 400\nnavsnap\n")
+snap_alphas("${rowh}" 1)
+expect_eq("shelf 0 buttons stay after the fade when the pointer rests" "${snap_a0}" 65536)
+snap_alphas("${rowh}" 2)
+expect_eq("shelf 0 buttons after the pointer moved to shelf 1" "${snap_a0}" 0)
+expect_eq("shelf 1 buttons on the shelf 1 cover row" "${snap_a1}" 65536)
+home_run(roww "move 400 ${cover1_y}\nwait 400\nwheel 0 -3\nwait 400\nnavsnap\n")
+snap_alphas("${roww}" 0)
+if(snap_a0 GREATER 0 AND snap_a1 GREATER 0)
+  message(FATAL_ERROR "both shelves draw buttons after a wheel")
+endif()
 
 # 4. Activation: tile 0 of shelf 0 plays the newest song through the engine.
 dui_stat(state0 "${idle}" desktop play_state)
@@ -160,12 +297,6 @@ endif()
 # tile's song key (tile_queued counts it). Tile 0 of shelf 0 is a song at this canvas; the item sits at the click point.
 # 7. Vertical overflow (I247): the shelves are taller than the main panel, so a wheel over the greeting block (not over
 # tile cards) scrolls the whole content, home_scroll_y > 0, while the shelves' own horizontal scroll stays 0.
-function(home_stat outvar out key)
-  if(NOT "${out}" MATCHES "ui_home id=desktop [^\n]*${key}=([0-9]+)")
-    message(FATAL_ERROR "no ${key} in the ui_home line of:\n${out}")
-  endif()
-  set(${outvar} "${CMAKE_MATCH_1}" PARENT_SCOPE)
-endfunction()
 home_run(probe "wait 1\n")
 home_stat(q0 "${probe}" tile_queued)
 expect_eq("tile_queued idle" "${q0}" 0)

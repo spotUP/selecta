@@ -31,6 +31,15 @@ typedef struct arexx_result {
 void arexx_dispatch(const char* arg0, int want_result, arexx_exec_fn exec, void* exec_ctx, char* reply, size_t cap,
                     arexx_result* out, arexx_counters* counters);
 
+/* Close-time batch end (open question 8): when a BEGIN is still open the port sends END through `exec` before the
+ * port goes away, so the engine does not hold events forever. Returns 1 when END was sent. */
+int arexx_end_batch(int batch_open, arexx_exec_fn exec, void* exec_ctx, char* reply, size_t cap,
+                    arexx_counters* counters);
+
+/* The command line of a message: `arg0` when the action code (the top byte of rm_Action, RXCODEMASK) is RXCOMM, else
+ * NULL. Whether the sender built the message with CreateRexxMsg is not part of the decision. */
+const char* arexx_message_line(unsigned long action, const char* arg0);
+
 /* The closing reply for a message left in the queue at exit: RC 20, `port_closing`. */
 void arexx_closing_result(arexx_result* out, arexx_counters* counters);
 
@@ -40,6 +49,22 @@ int arexx_port_name(unsigned n, char* out, size_t cap);
 /* The --stats line: `arexx_port=SELECTA arexx_cmds=N arexx_errors=M`, or `arexx=off` when `port` is NULL. */
 void arexx_stats_line(char* out, size_t cap, const char* port, const arexx_counters* c);
 
+/* Song-change hook (M4-AX-4-2, Amiga only): OPTION hook_command names an ARexx script; each SONG_OPENED runs
+ * `rx <script>` asynchronously through `launch`. A launch that fails (script missing, no RexxMast) gives one log
+ * line in `logline` and never stops the shell. */
+typedef int (*arexx_launch_fn)(void* ctx, const char* script, const char* cmdline); /* 1: started */
+typedef struct arexx_hook_stats {
+    unsigned fired;  /* launches that started */
+    unsigned failed; /* launches that did not */
+} arexx_hook_stats;
+
+/* Builds `rx "<script>"` (quotes in the path are refused: 0). */
+int arexx_hook_cmdline(const char* script, char* out, size_t cap);
+/* One event: acts only when `song_opened`; a NULL or empty script does nothing. Returns 1 started, 0 failed
+ * (logline filled), -1 nothing to do. */
+int arexx_hook_event(int song_opened, const char* script, arexx_launch_fn launch, void* launch_ctx,
+                     arexx_hook_stats* st, char* logline, size_t cap);
+
 #ifdef __amigaos__
 typedef struct arexx_port arexx_port;
 /* Opens rexxsyslib.library and adds the first free port name. NULL leaves ARexx off. */
@@ -48,8 +73,12 @@ const char* arexx_name(const arexx_port* p);
 const arexx_counters* arexx_stats(const arexx_port* p);
 /* Takes up to AREXX_MSGS_PER_TURN messages and replies to each; returns how many. */
 unsigned arexx_poll(arexx_port* p, arexx_exec_fn exec, void* exec_ctx);
-/* RemPort, replies every queued message with RC 20, closes the library. */
-void arexx_close(arexx_port* p);
+/* Ends an open batch through `exec` (open question 8), then RemPort, replies every queued message with RC 20 and
+ * closes the library. Runs on every way out of the shell loop. */
+void arexx_close(arexx_port* p, arexx_exec_fn exec, void* exec_ctx, int batch_open);
+/* The launcher for arexx_hook_event: checks the script exists and RexxMast is running (port "REXX"), then
+ * SystemTags(SYS_Asynch). */
+int arexx_hook_launch(void* ctx, const char* script, const char* cmdline);
 #endif
 
 #endif /* SELECTA_AREXX_H */

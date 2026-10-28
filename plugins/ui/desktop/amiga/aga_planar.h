@@ -73,9 +73,13 @@ int desk_aga_pick_size(int32_t* w, int32_t* h, int ntsc, int32_t max_w, int32_t 
  * window is black. Without it the border shows COLOR00, which the desktop palette holds as the accent blue. */
 #define DESK_AGA_BPLCON3 0x0C20u
 
-/* I566: the screen fills the visible area. max_w x max_h is what QueryOverscan(OSCAN_MAX) reports for the HIRES mode;
- * the canvas takes it rounded to what the c2p needs (width a multiple of 32, height a multiple of 8). A mode that
- * offers less than the standard 640 x lines gets the standard size. */
+/* I566: the screen fills the user's Overscan preferences area, as Workbench does: QueryOverscan type OSCAN_STANDARD (2),
+ * never OSCAN_MAX (3), which reaches beyond what a monitor (or the FS-UAE window) shows and cut the left side off. */
+#define DESK_AGA_OSCAN_TYPE 2
+
+/* I566: the screen fills the visible area. max_w x max_h is what QueryOverscan(DESK_AGA_OSCAN_TYPE) reports for the HIRES
+ * mode; the canvas takes it rounded to what the c2p needs (width a multiple of 32, height a multiple of 8). Untuned
+ * preferences report 640 x 256 (640 x 200 NTSC) or less, which gets the standard size and the normal screen. */
 void desk_aga_fit_size(int32_t max_w, int32_t max_h, int ntsc, int32_t* w, int32_t* h);
 
 /* I566: the setting ui.desktop.overscan. Off: the standard 640 x lines screen (the overscan area is reported as 0 x 0, so
@@ -87,7 +91,7 @@ void desk_aga_overscan_area(int overscan, int32_t* max_w, int32_t* max_h);
 #define DESK_AGA_VTAG_BORDERBLANK_SET 0x80000005u
 int desk_aga_border_blank_tags(uint32_t tags[4]);
 
-/* The DClip rectangle (left, top, right, bottom, inclusive) of a w x h screen centred inside the OSCAN_MAX rectangle. */
+/* The DClip rectangle (left, top, right, bottom, inclusive) of a w x h screen centred inside the OSCAN_STANDARD rectangle. */
 void desk_aga_fit_clip(const int32_t max_rect[4], int32_t w, int32_t h, int32_t out[4]);
 
 #endif

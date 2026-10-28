@@ -243,7 +243,8 @@ SEL_TAG(UI, STAT_HOME_EMPTY,       0x5056, INT)
 SEL_TAG(UI, STAT_DROPS,            0x5057, INT)
 SEL_TAG(UI, STAT_SCANS,            0x5058, INT)
 SEL_TAG(UI, STAT_BACKEND,          0x5059, STR)
-SEL_TAG(UI, STAT_LIST_VIEW,        0x509A, STR) /* MUI list sentinel (MUI-P3-2..P3-4): back end, style, column set, rows */
+SEL_TAG(UI, STAT_LIST_VIEW,        0x50E2, STR) /* MUI list sentinel (MUI-P3-2..P3-4): back end, style, column set, rows */
+SEL_TAG(UI, STAT_MUI_P4,           0x50E1, STR) /* MUI-P4 gadget sentinel: how often each P4 gadget sent its line */
 SEL_TAG(UI, STAT_SCREEN_DEPTH,     0x505A, INT)
 /* I355: flushes that carried the text UI start screen. */
 SEL_TAG(UI, STAT_SPLASH_FRAMES,    0x505B, INT)
@@ -373,6 +374,9 @@ SEL_TAG(SRC, DESCRIPTOR,       0x7017, PTR)
  * the desktop should offer a sync on launch (sel_source_sync_due: a remote, enabled source never synced or stale). */
 SEL_TAG(SRC, SYNCED,           0x7018, INT)
 SEL_TAG(SRC, DUE,              0x7019, INT)
+/* SOURCES rows (I582): unix time (whole days) the user snoozed this source's sync offer with the banner's Sync button while the
+ * row was unticked (library.sync_snoozed); 0 none. The desktop writes the pref back from these, so it never reads prefs. */
+SEL_TAG(SRC, SNOOZED,          0x701a, INT)
 
 /* META STR values come from the song file. The host stores and draws UTF-8: a value that is valid UTF-8 is kept,
  * anything else is read as ISO-8859-1 (Amiga module text) and converted where it enters the host (I444,

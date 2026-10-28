@@ -41,6 +41,15 @@ static void expect(const char* name, uint32_t ms, int found, uint32_t songpos, u
     }
 }
 
+static void expect_length(const char* name, uint32_t want_ms, int want_found) {
+    uint32_t got_ms = 0;
+    int got = kp_walk_length(g_mod, sizeof g_mod, &got_ms);
+    if (got != want_found || (want_found && got_ms != want_ms)) {
+        printf("FAIL %s: got %d length=%u want %d length=%u\n", name, got, (unsigned)got_ms, want_found, (unsigned)want_ms);
+        g_fail = 1;
+    }
+}
+
 int main(void) {
     kp_walk_pos p;
 
@@ -105,6 +114,21 @@ int main(void) {
     mod_reset(2);
     g_mod[952] = 9;
     expect("pattern past the data", 0, 0, 0, 0, 0, 0, 0);
+
+    /* I605: the song length, where k_songover would count. Two plain orders: 128 rows of 120 ms. */
+    mod_reset(2);
+    expect_length("length two orders", 15360, 1);
+    /* B01 on the last order's row 10 is the song end after that row. */
+    mod_reset(2);
+    fx(1, 10, 0, 0x0b, 0x01);
+    expect_length("length position jump end", 7680 + 11 * 120, 1);
+    /* F03 on row 0 sets speed 3 for the whole song: 128 rows of 60 ms. */
+    mod_reset(2);
+    fx(0, 0, 0, 0x0f, 0x03);
+    expect_length("length with speed change", 7680, 1);
+    mod_reset(2);
+    g_mod[952] = 9;
+    expect_length("length of a malformed module", 0, 0);
 
     if (g_fail) {
         return 1;

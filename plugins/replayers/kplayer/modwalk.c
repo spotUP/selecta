@@ -18,12 +18,14 @@ typedef struct mw_channel {
     uint8_t loop_count; /* n_loopcount */
 } mw_channel;
 
-int kp_walk_find(const uint8_t* mod, size_t size, uint32_t ms, kp_walk_pos* out) {
+/* One walker: finds the row at `ms` (find) or, with end_ms != NULL, the time the song ends (length). The song ends
+ * where KPlayer's k_songover would count. */
+static int walk(const uint8_t* mod, size_t size, uint32_t ms, kp_walk_pos* out, uint32_t* end_ms) {
     mw_channel ch[4] = {{0, 0}, {0, 0}, {0, 0}, {0, 0}};
     uint64_t target_us = (uint64_t)ms * 1000u;
     uint64_t now_us = 0;
     uint32_t songpos = 0, row = 0, speed = 6, tempo = 125, length, rows;
-    if (mod == NULL || out == NULL || size < MW_PATTERNS_AT) {
+    if (mod == NULL || (out == NULL && end_ms == NULL) || size < MW_PATTERNS_AT) {
         return 0;
     }
     length = mod[MW_LENGTH_AT];
@@ -91,7 +93,7 @@ int kp_walk_find(const uint8_t* mod, size_t size, uint32_t ms, kp_walk_pos* out)
             }
         }
         row_us = (uint64_t)speed * (delay != 0u ? delay : 1u) * 2500000u / tempo;
-        if (target_us < now_us + row_us) {
+        if (end_ms == NULL && target_us < now_us + row_us) {
             /* KPlayer replays this row's effects itself, so the state is the one in force before them. */
             out->songpos = (uint8_t)songpos;
             out->row = (uint8_t)row;
@@ -101,6 +103,10 @@ int kp_walk_find(const uint8_t* mod, size_t size, uint32_t ms, kp_walk_pos* out)
             return 1;
         }
         if (ended) {
+            if (end_ms != NULL) {
+                *end_ms = (uint32_t)((now_us + row_us) / 1000u);
+                return 1;
+            }
             return 0; /* the song ends as this row finishes, at or before the target */
         }
         now_us += row_us;
@@ -114,9 +120,21 @@ int kp_walk_find(const uint8_t* mod, size_t size, uint32_t ms, kp_walk_pos* out)
             row = pbreakpos;
             songpos = posjump && next_pos != NO_JUMP ? next_pos : songpos + 1u;
             if (songpos >= length) {
+                if (end_ms != NULL) {
+                    *end_ms = (uint32_t)(now_us / 1000u);
+                    return 1;
+                }
                 return 0; /* k_songover: the song wraps to position 0 before the target */
             }
         }
     }
     return 0;
+}
+
+int kp_walk_find(const uint8_t* mod, size_t size, uint32_t ms, kp_walk_pos* out) {
+    return walk(mod, size, ms, out, NULL);
+}
+
+int kp_walk_length(const uint8_t* mod, size_t size, uint32_t* length_ms) {
+    return length_ms != NULL && walk(mod, size, 0, NULL, length_ms);
 }

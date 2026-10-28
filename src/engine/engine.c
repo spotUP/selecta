@@ -33,6 +33,7 @@
 #include "shuffle.h"
 #include "local.h"
 #include "song_key.h"
+#include "songlen.h"
 #include "export/export.h"
 #include "prefs.h"
 #include "view.h"
@@ -136,7 +137,7 @@
     X(FLAG)                                                                                   \
     X(NOTE)                                                                                   \
     X(RATE) X(VOTE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
-    X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(PLAYLIST_ADD_SONG) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
+    X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(PLAYLIST_ADD_SONG) X(PLAYLIST_REMOVE_SONG) X(PLAYLIST_PLAY) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
     X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(COMPOSERS_HIDE) \
     X(KEEP)                                                                                   \
     X(VIEW_SHOW)                                                                              \
@@ -233,6 +234,10 @@ typedef struct sel_slot {
     uint32_t stream_noted; /* audio side: the first-audio sentinel ran */
     char* path; /* kept for SUBSONG, which reopens the file in the idle slot */
     uint32_t subsong;
+    char dbl_key[SEL_UADE_KEY_CHARS + 1u]; /* I605: UADE content key of the file, for the song length database */
+    uint32_t dbl_state;   /* 0 key not read yet, 1 key valid, 2 unreadable (stream, archive member, missing) */
+    uint32_t dbl_sub;     /* subsong + 1 that dbl_ms answers, 0 = not looked up */
+    uint32_t dbl_ms;      /* database length of that subsong, 0 = none */
     sel_mixer mixer;
     sel_scheduler sched;
     uint32_t frames_left; /* frames of the current tick still to mix */
@@ -264,6 +269,7 @@ struct sel_engine {
     uint32_t votes_generation;             /* moves when a count is stored; the view re-reads its vote texts */
     uint32_t art_generation;               /* moves when a scan or sync may have added or renamed albums; the view re-reads its artwork ids */
     uint32_t ui_view_styles; /* sel_view_style bits the active UI offers (SEL_UI_VIEW_STYLES), set by the shell */
+    char last_error[SEL_RESULT_LINE_MAX];   /* the latest ERROR as `<code> <detail>`, reported by STATUS (plan 8a Q6) */
     uint32_t quit;           /* QUIT was asked: the shell takes it between turns (sel_engine_take_quit) */
     uint32_t quit_at_end;    /* QUIT inside BEGIN: becomes `quit` at END */
     char ui_switch[16];      /* id named by the last UI_SWITCH, "" none: the shell owns the UIs and takes it (I238) */
@@ -427,7 +433,7 @@ struct sel_engine {
     sel_tag st_tags[8][5];
     uint32_t sources_listed;                  /* SOURCES rows answered (DUI-P4-3) */
     uint32_t evt_dropped;                     /* events emit() could not queue because evt_q was full (I546) */
-    sel_tag src_tags[16][9];                  /* one SOURCES row per registered source (registry holds 16) */
+    sel_tag src_tags[16][10];                  /* one SOURCES row per registered source (registry holds 16) */
     char st_key[8][SEL_DEFERRED_PATH_MAX];
     char st_name[8][128];
     char st_value[8][SEL_STICKER_VALUE_MAX];
@@ -657,6 +663,7 @@ void sel_engine_scan_wait(sel_engine* e, sel_event_sink sink, void* ctx) {
 void sel_engine_report_error(sel_engine* e, const char* code, const char* detail) {
     sel_message m;
     char* slot = e->error_detail[e->error_slot++ & 7u];
+    snprintf(e->last_error, sizeof e->last_error, "%s%s%s", code, detail != NULL ? " " : "", detail != NULL ? detail : "");
     evt_init(&m, SEL_EVT_ERROR);
     evt_str(&m, code);
     if (detail) {
@@ -1246,6 +1253,9 @@ static void cmd_STATUS(sel_engine* e, const sel_message* m) {
     snprintf(line, sizeof line, "random=%s", st->options[SEL_OPT_RANDOM]);
     emit_result(e, line);
     snprintf(line, sizeof line, "queue_pos=%u/%u", (unsigned)pos, (unsigned)st->queue_count);
+    emit_result(e, line);
+    /* the text of the latest failure: over ARexx RC=10 carries only a number, so a script reads the reason here */
+    snprintf(line, sizeof line, "last_error=%s", e->last_error);
     emit_result(e, line);
 }
 
@@ -2094,6 +2104,9 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     sl->stream = live;
     sl->fstream = fs;
     sl->stream_noted = 0;
+    sl->dbl_state = 0;
+    sl->dbl_sub = 0;
+    sl->dbl_ms = 0;
     sl->path = e->host->mem_alloc(e->host, strlen(path) + 1u, SEL_MEM_FAST);
     if (sl->path != NULL) {
         memcpy(sl->path, path, strlen(path) + 1u);
@@ -4048,7 +4061,7 @@ static void sources_row(void* ctx, const char* id, const char* name, const char*
     sel_tag* t;
     sel_message r;
     int songs, enabled;
-    int64_t synced;
+    int64_t synced, snoozed, notice;
     if (f->n >= 16u) return;
     t = e->src_tags[f->n++];
     songs = e->lib != NULL ? sel_library_source_songs(e->lib, id) : 0;
@@ -4069,12 +4082,16 @@ static void sources_row(void* ctx, const char* id, const char* name, const char*
     t[6].tag = SEL_SRC_SYNCED;
     t[6].value = (uintptr_t)synced;
     t[7].tag = SEL_SRC_DUE; /* I527: only a remote, enabled source of an open library is offered a sync */
+    snoozed = sel_source_snooze_at(e->prefs.value[SEL_PREF_LIBRARY_SYNC_SNOOZED], id); /* I582: per source, beside the global Not now */
+    notice = strtoll(e->prefs.value[SEL_PREF_LIBRARY_SYNC_NOTICE_AT], NULL, 10);
     t[7].value = (remote && enabled && e->lib != NULL &&
-                  sel_source_sync_due(synced, strtoll(e->prefs.value[SEL_PREF_LIBRARY_SYNC_NOTICE_AT], NULL, 10), (int64_t)time(NULL),
+                  sel_source_sync_due(synced, snoozed > notice ? snoozed : notice, (int64_t)time(NULL),
                                       (uint32_t)strtoul(e->prefs.value[SEL_PREF_LIBRARY_SYNC_STALE_DAYS], NULL, 10)))
                      ? 1u : 0u;
-    t[8].tag = SEL_TAG_END;
-    t[8].value = 0;
+    t[8].tag = SEL_SRC_SNOOZED;
+    t[8].value = (uintptr_t)snoozed;
+    t[9].tag = SEL_TAG_END;
+    t[9].value = 0;
     evt_init(&r, SEL_EVT_LIBRARY_RESULT);
     evt_tags(&r, t);
     emit(e, &r);
@@ -4726,6 +4743,37 @@ static void cmd_PLAYLIST_ADD_SONG(sel_engine* e, const sel_message* m) {
     else folders_reload(e);
 }
 
+#define PLAYLIST_KEYS_CAP 65536u
+
+/* PLAYLIST_REMOVE_SONG id index (I633): drops the entry at `index` (position order) from a saved playlist. */
+static void cmd_PLAYLIST_REMOVE_SONG(sel_engine* e, const sel_message* m) {
+    int rc;
+    if (!folder_ready(e, "PLAYLIST_REMOVE_SONG")) return;
+    rc = sel_library_playlist_remove_song(e->lib, (uint32_t)m->args[0].v.u, (uint32_t)m->args[1].v.u);
+    if (rc != SEL_FOLDER_OK) folder_report(e, rc, "PLAYLIST_REMOVE_SONG");
+    else folders_reload(e);
+}
+
+/* Appends the songs of a saved playlist to the queue and starts the first of them (VIEW_ACTIVATE on a playlist row,
+ * PLAYLIST_PLAY). */
+static void playlist_play(sel_engine* e, uint32_t id, const char* why) {
+    uint32_t n = 0, before = e->queue.count;
+    const char* k;
+    char* keys;
+    if (e->lib == NULL) return;
+    keys = (char*)malloc(PLAYLIST_KEYS_CAP);
+    if (keys == NULL) return;
+    if (sel_library_playlist_keys(e->lib, id, keys, PLAYLIST_KEYS_CAP, &n) == SEL_FOLDER_OK) {
+        for (k = keys; *k != '\0'; k += strlen(k) + 1u) queue_insert(e, e->queue.count, k, why);
+        if (e->queue.count > before) queue_start(e, before);
+    }
+    free(keys);
+}
+
+static void cmd_PLAYLIST_PLAY(sel_engine* e, const sel_message* m) {
+    playlist_play(e, (uint32_t)m->args[0].v.u, "PLAYLIST_PLAY");
+}
+
 static void cmd_PLAYLIST_RENAME(sel_engine* e, const sel_message* m) {
     int rc;
     if (!folder_ready(e, "PLAYLIST_RENAME")) return;
@@ -5166,6 +5214,26 @@ uint32_t sel_engine_library_playlists(sel_engine* e) {
     return playlists;
 }
 
+uint32_t sel_engine_library_playlist_items(sel_engine* e, sel_engine_library_item* out, uint32_t max) {
+    char buf[8192];
+    uint32_t rows = 0, n = 0;
+    const char* p;
+    if (e->lib == NULL || sel_library_folder_playlists(e->lib, 0u, buf, sizeof buf, &rows) != SEL_FOLDER_OK) return 0u;
+    for (p = buf; *p != '\0' && n < max; n++) { /* "id\0name\0" pairs, then an empty string */
+        const char* name = p + strlen(p) + 1u;
+        out[n].id = (uint32_t)strtoul(p, NULL, 10);
+        snprintf(out[n].name, sizeof out[n].name, "%s", name);
+        p = name + strlen(name) + 1u;
+    }
+    return n;
+}
+
+uint32_t sel_engine_library_playlist_keys(sel_engine* e, uint32_t id, char* out, uint32_t cap) {
+    uint32_t n = 0;
+    if (e->lib == NULL || sel_library_playlist_keys(e->lib, id, out, cap, &n) != SEL_FOLDER_OK) return 0u;
+    return n;
+}
+
 int sel_engine_song_title(sel_engine* e, const char* ref, char* out, size_t cap) {
     return e->lib != NULL && sel_library_song_title(e->lib, ref, out, cap);
 }
@@ -5217,6 +5285,10 @@ static void cmd_UI_SWITCH(sel_engine* e, const sel_message* m) {
         return;
     }
     strcpy(e->ui_switch, id);
+}
+
+int sel_engine_in_batch(const sel_engine* e) {
+    return e->in_batch != 0u;
 }
 
 int sel_engine_take_quit(sel_engine* e) {
@@ -5407,19 +5479,7 @@ static void cmd_VIEW_ACTIVATE(sel_engine* e, const sel_message* m) {
         /* A playlist row loads the playlist into the queue and starts its first song; a folder row has
          * nothing to start (the tree is always shown open). */
         const sel_view_row* r = &e->view.frows[at];
-        char keys[4096];
-        uint32_t n = 0, before = e->queue.count;
-        const char* k;
-        if (r->kind != SEL_ROW_PLAYLIST || e->lib == NULL ||
-            sel_library_playlist_keys(e->lib, r->id, keys, sizeof keys, &n) != SEL_FOLDER_OK) {
-            return;
-        }
-        for (k = keys; *k != '\0'; k += strlen(k) + 1u) {
-            queue_insert(e, e->queue.count, k, "VIEW_ACTIVATE");
-        }
-        if (e->queue.count > before) {
-            queue_start(e, before);
-        }
+        if (r->kind == SEL_ROW_PLAYLIST) playlist_play(e, r->id, "VIEW_ACTIVATE");
         return;
     }
     if (v->source != SEL_VIEW_BROWSE) {
@@ -5740,6 +5800,23 @@ static void lyrics_poll(sel_engine* e, const sel_slot* sl) {
     }
 }
 
+
+/* I605: the song length database (<config_dir>/songlengths.bin) answers when the player published no duration.
+ * The key is read once per song, the lookup once per subsong; a missing file, an unreadable path or an unknown
+ * key leaves the duration 0. */
+static uint32_t songlen_db_ms(sel_engine* e, sel_slot* sl) {
+    char path[sizeof e->config_dir + 32];
+    uint32_t ms = 0;
+    if (sl->dbl_sub == sl->subsong + 1u) return sl->dbl_ms;
+    if (sl->dbl_state == 0u) sl->dbl_state = sl->path != NULL && sel_uade_key_file(sl->path, sl->dbl_key) ? 1u : 2u;
+    sl->dbl_sub = sl->subsong + 1u;
+    sl->dbl_ms = 0;
+    if (sl->dbl_state != 1u || e->config_dir[0] == '\0') return 0;
+    snprintf(path, sizeof path, "%s/%s", e->config_dir, SEL_SONGLEN_NAME);
+    if (sel_songlen_lookup(path, sl->dbl_key, sl->subsong, &ms, NULL)) sl->dbl_ms = ms;
+    return sl->dbl_ms;
+}
+
 static void refresh_snapshot(sel_engine* e) {
     const sel_slot* sl = e->cur == SEL_SLOT_NONE ? NULL : &e->slot[e->cur];
     sel_song_state* song = &e->state.song;
@@ -5805,6 +5882,7 @@ static void refresh_snapshot(sel_engine* e) {
             song->meta = sel_meta_utf8(song->meta, e->state_meta, SEL_META_UTF8_TAGS, e->state_text, sizeof e->state_text);
         }
         song->duration_ms = (uint32_t)sel_tag_find(song->meta, SEL_META_DURATION_MS, 0);
+        if (song->duration_ms == 0u) song->duration_ms = songlen_db_ms(e, &e->slot[e->cur]);
         song->path = sl->path;
         if (sl->path != NULL && strncmp(sl->path, e->lyr_for, sizeof e->lyr_for) != 0) {
             snprintf(e->lyr_for, sizeof e->lyr_for, "%s", sl->path);

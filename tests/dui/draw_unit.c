@@ -87,6 +87,39 @@ static void test_round_rect(void) {
     CHECK(sel_gui_pixel(c, 4, 4) == sel_gui_pixel(c, 0, 0));
     CHECK(sel_gui_pixel(c, 20, 20) != sel_gui_pixel(c, 0, 0));
     drop(c);
+    /* I588: INDEX8 corners carry in-between shades (a blended edge), not only the fill and the ground. The accent over
+     * the surface colour has reserved steps between them in the 32-entry UI palette. */
+    {
+        uint32_t shades = 0u, fill, ground, p;
+        c = make(SEL_GUI_INDEX8, 40, 40);
+        sel_gui_fill_rect(c, R(0, 0, 40, 40), 0xFF1E1E24u);
+        sel_gui_round_rect(c, R(4, 4, 32, 32), 8, 0xFF3B82F6u);
+        fill = sel_gui_pixel(c, 20, 20);
+        ground = sel_gui_pixel(c, 0, 0);
+        CHECK(fill != ground);
+        for (y = 4; y < 12; y++) {
+            for (x = 4; x < 12; x++) {
+                p = sel_gui_pixel(c, x, y);
+                shades += p != fill && p != ground;
+            }
+        }
+        CHECK(shades >= 4u);                           /* a hard threshold leaves zero in-between pixels */
+        drop(c);
+        c = make(SEL_GUI_INDEX8, 40, 40);
+        sel_gui_fill_rect(c, R(0, 0, 40, 40), 0xFF1E1E24u);
+        sel_gui_round_frame(c, R(4, 4, 32, 32), 8, 2, 0xFF3B82F6u);
+        fill = sel_gui_pixel(c, 20, 4);
+        ground = sel_gui_pixel(c, 0, 0);
+        shades = 0u;
+        for (y = 4; y < 12; y++) {
+            for (x = 4; x < 12; x++) {
+                p = sel_gui_pixel(c, x, y);
+                shades += p != fill && p != ground;
+            }
+        }
+        CHECK(shades >= 4u);
+        drop(c);
+    }
 }
 
 /* sel_gui_round_frame: a ring of the given width along the rounded edge, hollow inside, corners cut by the radius. */
@@ -197,12 +230,20 @@ static void test_blit_image_round(void) {
     partial = 0u;
     for (y = 4; y < 12; y++) {
         for (x = 4; x < 12; x++) {
-            uint32_t want = chan(sel_gui_pixel(c, x, y), 16) >= 128u ? red8 : bg8;
-            CHECK(sel_gui_pixel(ic, x, y) == want);
-            partial += want == red8;
+            uint32_t p = sel_gui_pixel(c, x, y), r = chan(p, 16);
+            /* I595: INDEX8 blends the edge like RGBA32 (no hard drop at half coverage): untouched where nothing
+             * is covered, the source index where fully covered, a changed index wherever the coverage is real. */
+            if (r == 0u) {
+                CHECK(sel_gui_pixel(ic, x, y) == bg8);
+            } else if (r == 255u) {
+                CHECK(sel_gui_pixel(ic, x, y) == red8);
+            } else if (r >= 128u) {
+                CHECK(sel_gui_pixel(ic, x, y) != bg8);
+            }
+            partial += r != 0u && r != 255u && r >= 128u;
         }
     }
-    CHECK(partial > 20u && partial < 64u);             /* the arc keeps some corner pixels and drops others */
+    CHECK(partial > 4u);                               /* the arc has blended pixels to check */
     drop(ic);
     drop(c);
 }
@@ -409,13 +450,7 @@ static void ref_px(sel_gui_canvas* c, int32_t x, int32_t y, uint32_t cov, uint32
     if (cov == 0u) {
         return;
     }
-    if (c->format == SEL_GUI_INDEX8) {
-        if (cov < 8u) {
-            return;
-        }
-    } else {
-        a = (a * cov + 8u) / 16u;
-    }
+    a = (a * cov + 8u) / 16u; /* I588: INDEX8 blends like RGBA32 (the span fill snaps to the nearest palette entry) */
     sel_gui_fill_rect(c, R(x, y, 1, 1), (a << 24) | (argb & 0xFFFFFFu));
 }
 
@@ -611,6 +646,34 @@ static void test_tall_pixels(uint32_t format) {
     drop(c);
 }
 
+/* I588: a glyph on tall pixels is centred in canvas rows, rounded to the nearest row. Layout box y 5, h 33, glyph 16:
+ * the ideal top is layout 13.5 = row 6.75, so the glyph starts on row 7 (centring in layout pixels and flooring y / 2
+ * put it on row 6, three quarters of a row high). */
+static void test_icon_centre_tall(void) {
+    static uint8_t mask[16 * 8];
+    static const int32_t sizes[1] = {16};
+    const uint8_t* alpha[1];
+    sel_gui_icons ic;
+    sel_gui_canvas* c = make(SEL_GUI_RGBA32, 64, 32);
+    int32_t y, top = -1, bot = -1;
+    memset(mask, 255, sizeof mask);
+    alpha[0] = mask;
+    ic.count = 1u;
+    ic.size_n = 1u;
+    ic.sizes = sizes;
+    ic.alpha = alpha;
+    c->ydiv = 2;
+    CHECK(sel_gui_icon_draw(c, &ic, 0u, R(8, 5, 32, 33), 16, 0xFFFFFFFFu) == 16);
+    for (y = 0; y < 32; y++) {
+        if (sel_gui_pixel(c, 24, y) != 0u) {
+            top = top < 0 ? y : top;
+            bot = y;
+        }
+    }
+    CHECK(top == 7 && bot == 14);
+    drop(c);
+}
+
 int main(void) {
     test_icon_resample();
     test_span_equals_pixel(SEL_GUI_RGBA32);
@@ -623,6 +686,7 @@ int main(void) {
     test_round_rect();
     test_tall_pixels(SEL_GUI_RGBA32);
     test_tall_pixels(SEL_GUI_INDEX8);
+    test_icon_centre_tall();
     test_round_frame();
     test_gradient();
     test_line_mask_image();

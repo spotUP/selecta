@@ -445,6 +445,15 @@ const char* sel_engine_view_cursor_key(sel_engine* e);
 int sel_engine_view_row_path(sel_engine* e, uint32_t row, char* out, size_t cap);
 /* DUI-P4-18: playlists in the library now (the Clear Library dialog names the count it deletes); 0 without a library. */
 uint32_t sel_engine_library_playlists(sel_engine* e);
+/* I608: the sidebar Your Library list. One saved playlist: its id and display name. */
+typedef struct sel_engine_library_item {
+    uint32_t id;
+    char name[96];
+} sel_engine_library_item;
+/* Fills out[0..max) with the saved playlists in the library, oldest first, and returns how many were written; 0 without a library. */
+uint32_t sel_engine_library_playlist_items(sel_engine* e, sel_engine_library_item* out, uint32_t max);
+/* I633: the song keys of saved playlist `id` in position order into out as "key\0key\0...\0\0"; returns how many. */
+uint32_t sel_engine_library_playlist_keys(sel_engine* e, uint32_t id, char* out, uint32_t cap);
 /* DUI-P4-18: the catalogue title of the song at `ref` (path or key) into out; 1 when it has one, else 0 (callers fall back to the file name). */
 int sel_engine_song_title(sel_engine* e, const char* ref, char* out, size_t cap);
 /* I258: the Queue page group of the song at `ref`: its album, else its source, into out; 1 when the song is catalogued, else 0 and out empty. */
@@ -494,6 +503,8 @@ void sel_engine_set_ui_view_styles(sel_engine* e, uint32_t mask);
 int sel_engine_take_ui_switch(sel_engine* e, char* id, size_t cap);
 /* 1 once after a QUIT command (inside BEGIN: after END); the shell then ends its run as if the primary UI returned -1. */
 int sel_engine_take_quit(sel_engine* e);
+/* 1 while a BEGIN is open (the ARexx port ends it at close, plan M4-AX section 5). */
+int sel_engine_in_batch(const sel_engine* e);
 
 SEL_EXTERN_C_END
 

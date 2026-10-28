@@ -8,6 +8,8 @@
 
 #include <selecta/engine.h>
 #include <selecta/uimodel.h>
+#include <selecta/uimodel/panels.h>
+#include <selecta/uimodel/sources.h>
 
 /* The view styles the MUI UI offers. An RTG screen offers every style (6). A planar screen shows artwork and grid tiles
  * as cached 1-bit dithered images (MUI-P5-7, I509), so all but cover flow (5); the classic three alone no longer fit. */
@@ -197,6 +199,12 @@ typedef struct mui_crumb {
 } mui_crumb;
 uint32_t mui_path_crumbs(const char* path, mui_crumb* out, uint32_t cap);
 
+/* MUI-P4-15: which state-text view (sel_uim_state_view) a view source shows its empty line for. */
+uint32_t mui_state_view_of(uint32_t source);
+/* MUI-P4-15: 1 when the view shows no entry. The Home and Search sources always carry section headings ("Songs (0)",
+ * "Recently played"), so row_count alone is never 0 there; they are empty when no row is anything but a heading. */
+int mui_view_is_empty(const sel_view_state* v);
+
 /* MUI-P4-11: the one-line status that stands in for a toast. */
 typedef struct mui_toast {
     char text[160];
@@ -218,6 +226,11 @@ uint32_t mui_search_lines(const char* text, char lines[3][160]);
 void mui_queue_line(const char* verb, uint32_t id, uint32_t to_id, char* out, size_t cap); /* "move", "remove", "clear" */
 /* MUI-P4-5 playlists: action is "open", "rename" or "delete"; name is only used by rename. Returns 0 for an unknown action. */
 uint32_t mui_playlist_line(const char* action, uint32_t id, const char* name, char* out, size_t cap);
+/* MUI-P4-6 song menu: the line of item 0..4 (sel_uim_song_menu_label) for the song at path. Play is OPEN and is followed by the
+ * line mui_song_menu_follow gives (PLAY); item 3 needs a playlist id; item 4 is QUEUE_REMOVE on the queue page (qid), else
+ * LIBRARY_REMOVE. Returns the line length, 0 when the item has no line. */
+uint32_t mui_song_menu_line(uint32_t item, const char* path, uint32_t qid, uint32_t playlist_id, int on_queue, char* out, size_t cap);
+const char* mui_song_menu_follow(uint32_t item);
 /* MUI-P4-7 likes and ratings: the Cycle entry index 0..5 (0 is None) to its line, and the heart. */
 void mui_rating_line(uint32_t cycle_index, char* out, size_t cap);
 const char* mui_like_line(void);
@@ -237,8 +250,126 @@ void mui_tracker_cell_text(const sel_rp_cell* cell, char* out, size_t cap);
 
 /* MUI-P5-6 drop and clipboard: an AppWindow argument to its line (file QUEUE_ADD, drawer LIBRARY_SCAN); the text of
  * Copy Song Title; its IFF FTXT image for clipboard.device. Each returns the length, 0 when it does not fit or is empty. */
+uint32_t mui_path_line(const char* head, const char* path, char* out, size_t cap);
 uint32_t mui_drop_line(const char* path, int is_dir, char* out, size_t cap);
 uint32_t mui_clip_text(const char* artist, const char* title, char* out, size_t cap);
 uint32_t mui_clip_iff(const char* text, uint32_t n, uint8_t* out, size_t cap);
+
+
+/* One horizontal MUI row is never narrower than its widest labels summed. Thirteen controls (eleven buttons and two cycles) in one
+ * row made the window wider than the 800 pixel screen and MUI refused to open it (MUIA_Window_Open stayed 0) once Settings
+ * joined them (MUI-P4-10): the first MUI_TOOL_ROW2 buttons stay in row 2, the rest and the cycles go to row 3. */
+#define MUI_TOOL_BTNS 11u
+#define MUI_TOOL_ROW2 7u
+extern const char* const mui_tool_labels[MUI_TOOL_BTNS];
+/* Label characters in tool row 2 (row 0) or row 3 (row 1). */
+uint32_t mui_tool_row_chars(uint32_t row);
+/* MUI-P8 (plan 2026-10-25-amiga-mui.md section P8): parity rows the first MUI pass left out. Every action here is fired by
+ * its shared action-table id (mui_menu_line), the same line the desktop sends; nothing keeps a second list. */
+/* Fires the table line of action `id` through send; returns 1 when the line was sent. mui_action_fires() is the call-count
+ * sentinel the tests read. */
+uint32_t mui_action_fire(const char* id, mui_send_fn send, void* ctx);
+uint32_t mui_action_fires(void);
+/* MUI-P8-1: the album and speed actions, as transport-area buttons (the menu items and keys come from the table). */
+enum { MUI_EXTRA_COUNT = 6 };
+const char* mui_extra_action(uint32_t i); /* action id, NULL past the count */
+const char* mui_extra_label(uint32_t i);  /* the action's label, the desktop's words */
+const char* mui_extra_tip(uint32_t i);    /* the action's tooltip text */
+
+/* MUI-P8-2: Unsolo All Voices and Toggle Filter Light are table actions (ids solo_clear, filter_led: menu and key come
+ * from the table). F1..F10 recall and Shift+F1..F10 store a program through the shared model sel_uim_fkey_*. */
+typedef struct mui_fkey_bind {
+    uint32_t code, mods; /* TXT_KEY_F1.. and TXT_MOD_SHIFT for a store */
+    uint32_t slot;       /* 1..10 */
+    int store;
+} mui_fkey_bind;
+/* 20 rows: ten recalls, then ten stores. Returns the row count (may exceed cap; only cap rows are written). */
+uint32_t mui_fkeys_build(mui_fkey_bind* out, uint32_t cap);
+/* A pressed key: sends the program's lines through send, one call each. Returns the lines sent, 0 for a key that is no
+ * program key. */
+uint32_t mui_fkey_fire(uint32_t code, uint32_t mods, mui_send_fn send, void* ctx);
+
+/* MUI-P8-3: the Library mode Cycle (Composers, Tree, Columns, Files, History, Sources: the desktop's words, from
+ * uimodel/browse.h). mui_libmode_fire sends the mode's lines (window_rows high) and returns how many were sent.
+ * MUI-P8-4: the Queue scope Cycle (library, album, playlist); a choice sends SCOPE <name> then re-reads the queue window.
+ * mui_view_fires() is the call-count sentinel for both. Visual Layout is the table action layout_visual (menu and key). */
+enum { MUI_LIBMODE_COUNT = 6, MUI_SCOPE_COUNT = 3 };
+const char* mui_libmode_label(uint32_t i);
+uint32_t mui_libmode_fire(uint32_t i, uint32_t window_rows, mui_send_fn send, void* ctx);
+const char* mui_scope_label(uint32_t i);
+uint32_t mui_scope_fire(uint32_t i, mui_send_fn send, void* ctx);
+uint32_t mui_view_fires(void);
+
+/* MUI-P8-5: the Playlists and Song info buttons; MUI-P8-12: tile size Slider steps; MUI-P8-14: Amiga runtime prefs. All read the
+ * shared model (uimodel/viewcmds.h, uimodel/browse.h). Each fire returns how many lines were sent. */
+#define MUI_VIEWBTN_COUNT 5u
+const char* mui_viewbtn_label(uint32_t i); /* 0 New Folder, 1 New Playlist, 2 Mark Wrong, 3 Skip Song, 4 Save Note */
+uint32_t mui_viewbtn_fire(uint32_t i, const char* text, uint32_t folder, mui_send_fn send, void* ctx);
+uint32_t mui_tile_steps(void);
+int32_t mui_tile_step(uint32_t i);
+uint32_t mui_amiga_hotkeys_set(int enabled, mui_send_fn send, void* ctx);
+uint32_t mui_amiga_priority_set(int32_t v, mui_send_fn send, void* ctx);
+uint32_t mui_amiga_group_set(const char* path, mui_send_fn send, void* ctx);
+uint32_t mui_pref_sets(void); /* call-count sentinel: pref sets sent */
+
+/* MUI-P8-13: activate door i. A door with an engine line sends it; Now Playing and Song Information have none and switch the
+ * MUI's own page group instead: *page gets the door's page name ("nowplaying", "songinfo"), no engine line is sent. Returns the
+ * lines sent; mui_page_switches() counts the page switches. */
+uint32_t mui_door_activate(uint32_t i, mui_send_fn send, void* ctx, const char** page);
+uint32_t mui_page_switches(void);
+
+/* MUI-P8-6: the Library Statistics panel. The panel text is the shared model's rows ("label: value" lines), Less shows the first
+ * SEL_UIM_STATS_LESS, More all of them; NULL stats (Hide) gives an empty text. Returns the bytes written. */
+uint32_t mui_stats_text(const char* stats, int more, char* out, uint32_t cap);
+uint32_t mui_stats_builds(void); /* call-count sentinel */
+
+
+/* MUI-P8-7: the Activity, Downloads and Extra Files panes. Ids 0..2 index sel_uim_panel_*; the menu ids (MUIA_UserData of the menu
+ * items) are MUI_ID_PANEL_BASE + pane, above every control id P8-5..P8-14 uses. The Activity key is Ctrl+A and toggles that pane. */
+#define MUI_ID_PANEL_BASE 0x8700u
+#define MUI_PANES 3u
+uint32_t mui_panel_menu_id(uint32_t pane);
+uint32_t mui_panel_key_pane(uint32_t code, uint32_t mods); /* pane the key opens or closes, MUI_PANES for none */
+uint32_t mui_panel_toggle(uint32_t pane);                   /* toggles the pane's open bit, returns the open mask */
+uint32_t mui_panel_open_mask(void);
+uint32_t mui_panel_text(uint32_t pane, const sel_uim_net* st, char* out, uint32_t cap); /* the pane's rows, one per line */
+uint32_t mui_panel_builds(void);                            /* call-count sentinel */
+
+/* MUI-P8-8: Sources page and sync offer, search source. Every fire returns the lines sent. */
+uint32_t mui_source_toggle(const sel_uim_source* s, uint32_t n, uint32_t flip, mui_send_fn send, void* ctx); /* off list, then SOURCES */
+uint32_t mui_source_sync(const sel_uim_source* s, mui_send_fn send, void* ctx);                                 /* LIBRARY_SYNC, then SOURCES */
+const char* mui_source_status(int pending, int failed, int64_t synced);
+uint32_t mui_offer_not_now(int64_t now, mui_send_fn send, void* ctx);                                         /* Not now button */
+uint32_t mui_offer_sync(const sel_uim_source* s, uint32_t n, uint32_t ticked, mui_send_fn send, void* ctx);   /* Sync button */
+const char* mui_search_source_label(uint32_t i);
+uint32_t mui_search_source_set(uint32_t i, mui_send_fn send, void* ctx);
+uint32_t mui_source_fires(void); /* call-count sentinel */
+
+/* MUI-P8-9: info line pieces. */
+int32_t mui_info_mode_key(char key);
+uint32_t mui_info_scroll_next(uint32_t offset, uint32_t text_len, int no_scroll);
+const char* mui_info_ahi(int active);
+uint32_t mui_info_downloaded(const sel_uim_net* st, char* out, uint32_t cap);
+const char* mui_list_kept_cell(int kept); /* column 0 of a list row */
+
+/* MUI-P8-10: MUIA_ShortHelp texts. Transport button i for the frame: the action's tip text with its key hint (sel_uim_action_tip_text);
+ * sidebar door i: the door label. mui_tooltip_hover copies the text to the status line and counts the update. */
+uint32_t mui_tooltip_transport(uint32_t button, const sel_uim_frame* f, char* out, uint32_t cap);
+uint32_t mui_tooltip_door(uint32_t i, char* out, uint32_t cap);
+uint32_t mui_tooltip_hover(const char* tip, char* status, uint32_t cap);
+uint32_t mui_tooltip_hovers(void);
+
+/* MUI-P8-11: remembered state. close stores geometry, open panes, visualiser and browse view as PREF_SET lines through `send`;
+ * open reads them back through `get` (the pref value of a key, NULL when unset). */
+typedef struct mui_remember {
+    int32_t x, y;
+    uint32_t w, h;
+    uint32_t panes;
+    char viz[32];
+    char browse[32];
+} mui_remember;
+typedef const char* (*mui_pref_get_fn)(void* ctx, const char* key);
+uint32_t mui_remember_close(const mui_remember* r, mui_send_fn send, void* ctx);
+uint32_t mui_remember_open(mui_remember* r, mui_pref_get_fn get, void* ctx); /* returns how many of the four items were found */
 
 #endif

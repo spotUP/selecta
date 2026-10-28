@@ -59,6 +59,47 @@ void arexx_dispatch(const char* arg0, int want_result, arexx_exec_fn exec, void*
     counters->cmds++;
 }
 
+int arexx_end_batch(int batch_open, arexx_exec_fn exec, void* exec_ctx, char* reply, size_t cap,
+                    arexx_counters* counters) {
+    arexx_result r;
+    if (!batch_open) {
+        return 0;
+    }
+    arexx_dispatch("END", 0, exec, exec_ctx, reply, cap, &r, counters);
+    return 1;
+}
+
+int arexx_hook_cmdline(const char* script, char* out, size_t cap) {
+    if (script == NULL || script[0] == '\0' || strchr(script, '"') != NULL) {
+        return 0;
+    }
+    return snprintf(out, cap, "rx \"%s\"", script) < (int)cap;
+}
+
+int arexx_hook_event(int song_opened, const char* script, arexx_launch_fn launch, void* launch_ctx,
+                     arexx_hook_stats* st, char* logline, size_t cap) {
+    char cmd[512];
+    if (!song_opened || script == NULL || script[0] == '\0') {
+        return -1;
+    }
+    if (!arexx_hook_cmdline(script, cmd, sizeof cmd)) {
+        snprintf(logline, cap, "hook_command bad_script %s", script);
+        st->failed++;
+        return 0;
+    }
+    if (!launch(launch_ctx, script, cmd)) {
+        snprintf(logline, cap, "hook_command failed %s", script);
+        st->failed++;
+        return 0;
+    }
+    st->fired++;
+    return 1;
+}
+
+const char* arexx_message_line(unsigned long action, const char* arg0) {
+    return (action & 0xFF000000ul) == 0x01000000ul ? arg0 : NULL; /* RXCODEMASK, RXCOMM of rexx/storage.h */
+}
+
 void arexx_closing_result(arexx_result* out, arexx_counters* counters) {
     out->result1 = AREXX_RC_CLOSING;
     out->has_string = 0;

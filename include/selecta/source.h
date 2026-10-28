@@ -5,6 +5,8 @@
 
 #include <selecta/host.h>
 #include <selecta/tags.h>
+#include <stdlib.h>
+#include <string.h>
 
 SEL_EXTERN_C_BEGIN
 
@@ -79,6 +81,22 @@ static inline int sel_source_sync_due(int64_t synced, int64_t notice_at, int64_t
     if (days == 0u) return 0;
     if (from <= 0) return 1;
     return now - from >= (int64_t)days * 86400;
+}
+
+/* I582: the snooze time (unix seconds, whole days) the `library.sync_snoozed` list "id:days,id:days" holds for `id`; 0 none. */
+static inline int64_t sel_source_snooze_at(const char* csv, const char* id) {
+    size_t n;
+    const char* p;
+    if (csv == NULL || id == NULL || id[0] == '\0') return 0;
+    n = strlen(id);
+    for (p = csv; *p != '\0';) {
+        const char* end = strchr(p, ',');
+        size_t len = end != NULL ? (size_t)(end - p) : strlen(p);
+        if (len > n && p[n] == ':' && strncmp(p, id, n) == 0) return (int64_t)strtoll(p + n + 1, NULL, 10) * 86400;
+        p += len;
+        if (*p == ',') p++;
+    }
+    return 0;
 }
 
 SEL_EXTERN_C_END

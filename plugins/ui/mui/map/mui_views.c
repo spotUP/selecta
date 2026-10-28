@@ -53,6 +53,27 @@ uint32_t mui_path_crumbs(const char* path, mui_crumb* out, uint32_t cap) {
     return n;
 }
 
+uint32_t mui_state_view_of(uint32_t source) {
+    return source == SEL_VIEW_QUEUE ? SEL_UIM_SV_QUEUE : source == SEL_VIEW_QUERY || source == SEL_VIEW_SEARCH ? SEL_UIM_SV_SEARCH
+           : source == SEL_VIEW_FOLDERS ? SEL_UIM_SV_PLAYLISTS : SEL_UIM_SV_LIBRARY;
+}
+
+int mui_view_is_empty(const sel_view_state* v) {
+    uint32_t i;
+    if (v == NULL || v->row_count == 0) {
+        return 1;
+    }
+    if (v->source != SEL_VIEW_HOME && v->source != SEL_VIEW_SEARCH) {
+        return 0;
+    }
+    for (i = 0; i < v->row_n; i++) {
+        if (v->rows[i].kind != (uint32_t)SEL_ROW_HEADING) {
+            return 0;
+        }
+    }
+    return v->row_n == v->row_count;
+}
+
 /* MUI-P4-11: one status line, 3 s, errors 6 s; a new message replaces the visible one. */
 uint32_t mui_toast_ms(int is_error) {
     return is_error ? 6000u : 3000u;
@@ -104,6 +125,37 @@ void mui_queue_line(const char* verb, uint32_t id, uint32_t to_id, char* out, si
     } else {
         out[0] = '\0';
     }
+}
+
+/* MUI-P4-6: the lines the desktop song menu sends per item (desktop_ui.c, the sm_open branch). */
+uint32_t mui_song_menu_line(uint32_t item, const char* path, uint32_t qid, uint32_t playlist_id, int on_queue, char* out, size_t cap) {
+    char head[40];
+    out[0] = '\0';
+    switch (item) {
+    case 0:
+        return mui_path_line("OPEN", path, out, cap);
+    case 1:
+        return mui_path_line("QUEUE_PLAY_NEXT", path, out, cap);
+    case 2:
+        return mui_path_line("QUEUE_ADD", path, out, cap);
+    case 3:
+        if (playlist_id == 0u) {
+            return 0;
+        }
+        snprintf(head, sizeof head, "PLAYLIST_ADD_SONG %u", (unsigned)playlist_id);
+        return mui_path_line(head, path, out, cap);
+    case 4:
+        if (on_queue) {
+            return qid != 0u ? (uint32_t)snprintf(out, cap, "QUEUE_REMOVE %u", (unsigned)qid) : 0u;
+        }
+        return mui_path_line("LIBRARY_REMOVE", path, out, cap);
+    default:
+        return 0;
+    }
+}
+
+const char* mui_song_menu_follow(uint32_t item) {
+    return item == 0u ? "PLAY" : NULL;
 }
 
 /* MUI-P4-5: playlist row actions. Open activates the row the list cursor is on (the list click sets VIEW_CURSOR first). */

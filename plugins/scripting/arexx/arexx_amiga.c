@@ -7,6 +7,8 @@
 #include <proto/exec.h>
 #include <proto/rexxsyslib.h>
 #include <rexx/storage.h>
+#include <dos/dostags.h>
+#include <proto/dos.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -85,10 +87,9 @@ unsigned arexx_poll(arexx_port* p, arexx_exec_fn exec, void* exec_ctx) {
     unsigned n = 0;
     while (n < AREXX_MSGS_PER_TURN && (m = (struct RexxMsg*)GetMsg(p->port)) != NULL) {
         arexx_result r;
-        const char* line = NULL;
-        if (IsRexxMsg(m) && (m->rm_Action & RXCODEMASK) == RXCOMM) {
-            line = (const char*)ARG0(m);
-        }
+        /* No IsRexxMsg() gate: it rejects messages a sender builds without CreateRexxMsg (wasabid), and the action
+         * code is what separates a command from anything else (I597). */
+        const char* line = arexx_message_line((unsigned long)m->rm_Action, (const char*)ARG0(m));
         arexx_dispatch(line, (m->rm_Action & RXFF_RESULT) != 0, exec, exec_ctx, reply, sizeof reply, &r,
                        &p->counters);
         reply_with(p, m, &r);
@@ -97,8 +98,10 @@ unsigned arexx_poll(arexx_port* p, arexx_exec_fn exec, void* exec_ctx) {
     return n;
 }
 
-void arexx_close(arexx_port* p) {
+void arexx_close(arexx_port* p, arexx_exec_fn exec, void* exec_ctx, int batch_open) {
+    static char reply[16384u];
     struct RexxMsg* m;
+    (void)arexx_end_batch(batch_open, exec, exec_ctx, reply, sizeof reply, &p->counters);
     Forbid();
     RemPort(p->port);
     while ((m = (struct RexxMsg*)GetMsg(p->port)) != NULL) {
@@ -110,5 +113,39 @@ void arexx_close(arexx_port* p) {
     DeleteMsgPort(p->port);
     CloseLibrary(p->rexx);
     free(p);
+}
+
+/* Song-change hook launcher (M4-AX-4-2): refuses early when the script file or RexxMast (port "REXX") is missing,
+ * so the caller gets one log line; otherwise rx runs detached (SYS_Asynch) and the shell loop never waits for it. */
+int arexx_hook_launch(void* ctx, const char* script, const char* cmdline) {
+    BPTR lock;
+    BPTR nil_in;
+    BPTR nil_out;
+    LONG rc;
+    (void)ctx;
+    lock = Lock((CONST_STRPTR)script, ACCESS_READ);
+    if (lock == 0) {
+        return 0;
+    }
+    UnLock(lock);
+    Forbid();
+    rc = FindPort((CONST_STRPTR)"REXX") != NULL;
+    Permit();
+    if (!rc) {
+        return 0;
+    }
+    nil_in = Open((CONST_STRPTR)"NIL:", MODE_OLDFILE);
+    nil_out = Open((CONST_STRPTR)"NIL:", MODE_NEWFILE);
+    rc = SystemTags((CONST_STRPTR)cmdline, SYS_Input, nil_in, SYS_Output, nil_out, SYS_Asynch, TRUE, TAG_END);
+    if (rc == -1) { /* SystemTags did not take the handles over */
+        if (nil_in != 0) {
+            Close(nil_in);
+        }
+        if (nil_out != 0) {
+            Close(nil_out);
+        }
+        return 0;
+    }
+    return 1;
 }
 #endif

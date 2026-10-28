@@ -25,8 +25,12 @@ else()
     COMMENT "clang-format missing")
 endif()
 
-add_custom_target(lint DEPENDS all sdk-isolation
+# "all" is a phony target under Ninja only; Makefile generators read DEPENDS all as a file and stop with "No rule to make
+# target 'all'". Build it through cmake --build so lint works under every generator.
+add_custom_target(lint
+  COMMAND "${CMAKE_COMMAND}" --build "${PROJECT_BINARY_DIR}"
   COMMENT "-Werror build, SDK isolation and clang-tidy")
+add_dependencies(lint sdk-isolation)
 if(SEL_CLANG_TIDY)
   add_custom_target(lint-tidy
     COMMAND "${SEL_CLANG_TIDY}" -p "${PROJECT_BINARY_DIR}" ${SEL_ALL_SOURCES}

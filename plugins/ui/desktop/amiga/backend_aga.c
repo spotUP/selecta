@@ -64,7 +64,7 @@ struct desk_aga {
     /* I441: the installed copper list and the changes it was built from */
     struct UCopList* ucl;
     sel_gui_copper_change cop[AGA_COPPER_MAX];
-    uint32_t cop_n, cop_installs;
+    uint32_t cop_n, cop_installs, cop_logged;
 };
 
 static void c2p_bands(desk_aga* b, const uint8_t* chunky, const desk_aga_band* band, uint32_t n) {
@@ -107,12 +107,14 @@ static void max_overscan(int ntsc, int32_t rect[4]) {
     ULONG hires = (ntsc ? NTSC_MONITOR_ID : PAL_MONITOR_ID) | HIRES_KEY;
     rect[0] = rect[1] = rect[2] = rect[3] = 0;
     if (!g_overscan) return; /* off: no QueryOverscan at all (I566: the hang suspect); pick_size keeps the standard size */
-    if (QueryOverscan(hires, &r, OSCAN_MAX)) {
+    if (QueryOverscan(hires, &r, DESK_AGA_OSCAN_TYPE)) {
         rect[0] = r.MinX;
         rect[1] = r.MinY;
         rect[2] = r.MaxX;
         rect[3] = r.MaxY;
     }
+    /* I566: the area decides the Fill Screen size; the log shows what the Overscan preferences gave */
+    fprintf(stderr, "aga: overscan area %ld,%ld..%ld,%ld\n", (long)rect[0], (long)rect[1], (long)rect[2], (long)rect[3]);
 }
 
 static ULONG pick_mode(int32_t* w, int32_t* h) {
@@ -135,7 +137,10 @@ void desk_aga_default_size(int32_t* w, int32_t* h) {
     *w = 0;
     *h = 0;
     GfxBase = (struct GfxBase*)OpenLibrary((CONST_STRPTR) "graphics.library", 39);
-    if (GfxBase != NULL) {
+    /* I566: QueryOverscan is an intuition.library call; through the NULL IntuitionBase it jumped into low memory and froze the
+     * whole machine as soon as ui.desktop.overscan was read. */
+    IntuitionBase = (struct IntuitionBase*)OpenLibrary((CONST_STRPTR) "intuition.library", 39);
+    if (GfxBase != NULL && IntuitionBase != NULL) {
         int ntsc = (GfxBase->DisplayFlags & NTSC) != 0;
         int32_t mr[4];
         int32_t mw, mh;
@@ -145,6 +150,8 @@ void desk_aga_default_size(int32_t* w, int32_t* h) {
         desk_aga_overscan_area(g_overscan, &mw, &mh);
         (void)desk_aga_pick_size(w, h, ntsc, mw, mh);
     }
+    if (IntuitionBase != NULL) CloseLibrary((struct Library*)IntuitionBase);
+    IntuitionBase = NULL;
     if (GfxBase != NULL) CloseLibrary((struct Library*)GfxBase);
     GfxBase = NULL;
 }
@@ -191,7 +198,7 @@ desk_aga* desk_aga_open(int32_t w, int32_t h, int index8) {
     }
     {
         /* I566: a screen larger than the standard 640 x lines is the overscan fit: its display clip sits centred in the
-         * OSCAN_MAX area, otherwise the clip stays the standard one and the rest of the display is border. */
+         * user's OSCAN_STANDARD area, otherwise the clip stays the standard one and the rest of the display is border. */
         int32_t mr[4], dc[4];
         struct Rectangle clip;
         int fit = w > 640 || h > ((GfxBase->DisplayFlags & NTSC) ? 200 : 256);
@@ -328,6 +335,8 @@ static void copper_install(desk_aga* b, const sel_gui_copper_change* ch, uint32_
         FreeMem(old, sizeof *old);
     }
     b->ucl = nl;
+    fprintf(stderr, "aga: copper list installed: %lu changes, UCopIns=%s, copper list=%s\n", (unsigned long)n,
+            b->screen->ViewPort.UCopIns != NULL ? "set" : "NULL", b->screen->ViewPort.UCopIns != NULL && b->screen->ViewPort.UCopIns->FirstCopList != NULL ? "built" : "NULL");
     memcpy(b->cop, ch, n * sizeof ch[0]);
     b->cop_n = n;
     b->cop_installs++;
@@ -343,6 +352,7 @@ void desk_aga_present(desk_aga* b, const sel_gui_canvas* c) {
         desk_aga_rgb32_table(b->palette, 0, 256, b->rgb32);
         LoadRGB32(&b->screen->ViewPort, (ULONG*)b->rgb32);
     }
+    if (b->cop_logged++ == 0u) fprintf(stderr, "aga: present: copper_pens=%lu copper_n=%lu\n", (unsigned long)c->copper_pens, (unsigned long)c->copper_n);
     if (c->copper_pens > 0u) {
         sel_gui_copper_change ch[AGA_COPPER_MAX];
         uint32_t nc = sel_gui_copper_changes(c, ch, AGA_COPPER_MAX);

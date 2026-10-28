@@ -123,7 +123,9 @@ if(NOT "${home_after}" MATCHES "ui_drop id=desktop drops=1 scans=1")
 endif()
 string(REGEX MATCHALL "shelf 0 tile [0-9]+ [^\n]*" home_before_tiles "${home_before}")
 string(REGEX MATCHALL "shelf 0 tile [0-9]+ [^\n]*" home_after_tiles "${home_after}")
-if("${home_before_tiles}" STREQUAL "" OR "${home_before_tiles}" STREQUAL "${home_after_tiles}")
+# The seeded play is of a local: song that is not in the library before the drop, so Home hides it (I555); the
+# scan puts the song in the library and Home must reload and show the row.
+if("${home_after_tiles}" STREQUAL "" OR "${home_before_tiles}" STREQUAL "${home_after_tiles}")
   message(FATAL_ERROR "Home kept its rows after the scan:\nbefore ${home_before_tiles}\nafter ${home_after_tiles}")
 endif()
 if(NOT "${home_after}" MATCHES "nav page=home ")

@@ -123,6 +123,7 @@ enum {
     SEL_USER_PLAYLIST_ADD_SONG, /* I241: at = playlist id, value = one song key appended at the next position */
     SEL_USER_PLAYLIST_RENAME,   /* DUI-P4-9: at = playlist id, name = new title */
     SEL_USER_PLAYLIST_DEL,      /* DUI-P4-9: at = playlist id; removes its entries and the row */
+    SEL_USER_PLAYLIST_REMOVE_SONG, /* I633: at = playlist id, to = entry index in position order; drops that one entry */
     SEL_USER_SONG_REMOVE,       /* DUI-P4-18: value = song key or path; drops the catalogue rows of the song, its composers and the artwork of an album left without songs; reply [2] = songs removed */
     SEL_USER_LIBRARY_COUNT,     /* DUI-P4-18: reply [2] = songs in the catalogue */
     SEL_USER_LIBRARY_CLEAR,     /* DUI-P4-18 (Q16): drops every catalogue row and every playlist, folder, rating, note and other per-song user row; settings stay; reply [2] = songs removed */
@@ -392,6 +393,7 @@ int sel_library_folder_move(sel_library* lib, uint32_t id, uint32_t parent);
 int sel_library_folder_del(sel_library* lib, uint32_t id);
 int sel_library_playlist_move(sel_library* lib, uint32_t id, uint32_t folder);
 int sel_library_playlist_add_song(sel_library* lib, uint32_t id, const char* key);
+int sel_library_playlist_remove_song(sel_library* lib, uint32_t id, uint32_t index);
 int sel_library_playlist_rename(sel_library* lib, uint32_t id, const char* name);
 int sel_library_playlist_del(sel_library* lib, uint32_t id);
 /* DUI-P4-18: remove one song (key or path) / every song from the catalogue; *removed = songs dropped. The audio files are never touched. */

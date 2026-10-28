@@ -3,7 +3,7 @@
 # replaces its red entry with the real test and removes its id from tests/ratchet/unimplemented.txt. Red entries also
 # carry label dui-red, so a run of the finished milestones (M3 finish line) can leave them out with -LE dui-red while
 # dui-ratchet keeps the red count honest.
-set(SEL_DUI_REAL dui-font-baked dui-ratchet dui-build-deps dui-uim-frame dui-ui-switch dui-ui-multi dui-mode-pref dui-lift-parity dui-actions dui-layout dui-parity-matrix dui-governor dui-tokens dui-draw dui-dirty dui-text dui-artwork dui-genart dui-golden-home dui-sdl dui-widgets dui-hidpi dui-anim dui-keys dui-mouse dui-tooltips dui-gestures dui-frame dui-home dui-library dui-styles dui-grid-coverflow dui-search dui-nowplaying dui-queue dui-playlists dui-songinfo dui-overlays dui-nav dui-viz dui-tracker dui-drop dui-m68k-nofloat dui-hover-live dui-hover-rows dui-hover-sidebar-ink dui-hover-instant dui-hover-nowplaying dui-hover-regions dui-library-reload dui-library-unknown-composer dui-song-menu dui-library-remove dui-aga-budget dui-library-style dui-coverflow-slide dui-stats-panel)
+set(SEL_DUI_REAL dui-font-baked dui-ratchet dui-build-deps dui-uim-frame dui-ui-switch dui-ui-multi dui-mode-pref dui-lift-parity dui-actions dui-layout dui-breakpoints dui-parity-matrix dui-governor dui-tokens dui-draw dui-dirty dui-text dui-artwork dui-genart dui-golden-home dui-sdl dui-widgets dui-hidpi dui-anim dui-keys dui-mouse dui-tooltips dui-gestures dui-frame dui-home dui-library dui-styles dui-grid-coverflow dui-search dui-nowplaying dui-queue dui-playlists dui-songinfo dui-overlays dui-nav dui-viz dui-tracker dui-drop dui-m68k-nofloat dui-hover-live dui-hover-rows dui-hover-sidebar-ink dui-hover-instant dui-hover-nowplaying dui-hover-regions dui-library-reload dui-library-unknown-composer dui-song-menu dui-playlist-page dui-library-remove dui-aga-budget dui-library-style dui-coverflow-slide dui-stats-panel)
 
 add_test(NAME dui-ratchet
   COMMAND "${CMAKE_COMMAND}"
@@ -35,6 +35,12 @@ if(NOT SEL_AMIGA)
   set_tests_properties(dui-font-baked PROPERTIES LABELS dui TIMEOUT 120 ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/dui-font-baked.tmp")
 endif()
 if(NOT SEL_AMIGA)
+  # ui-stat-tags (I603): no two SEL_UI_STAT_* tags share a value (PT_MS_OVERLAY and LIST_VIEW did).
+  add_test(NAME ui-stat-tags COMMAND "${CMAKE_COMMAND}" "-DTAGS_DEF=${PROJECT_SOURCE_DIR}/include/selecta/tags.def"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/stat_tags.cmake")
+  set_tests_properties(ui-stat-tags PROPERTIES LABELS ui-stat-tags TIMEOUT 30)
+endif()
+if(NOT SEL_AMIGA)
   # dui-amiga-font (I526-P1): the bitmap .font reader, unit level (host only).
   add_test(NAME dui-amiga-font COMMAND dui_amiga_font_unit)
   set_tests_properties(dui-amiga-font PROPERTIES LABELS amiga-font TIMEOUT 60) # ledger row, not a plan item: no dui label, dui-ratchet counts dui against the plan ids
@@ -46,7 +52,7 @@ if(NOT SEL_AMIGA)
   set_tests_properties(dui-font-roles PROPERTIES LABELS font-roles TIMEOUT 60) # ledger row, not a plan item: no dui label, dui-ratchet counts dui against the plan ids
 endif()
 if(NOT SEL_AMIGA)
-  foreach(spec "dui-uim-frame:uim_frame" "dui-ui-switch:ui_switch" "dui-ui-multi:ui_multi" "dui-mode-pref:mode_pref" "dui-actions:actions" "dui-layout:layout" "dui-governor:governor" "dui-tokens:tokens" "dui-draw:draw" "dui-dirty:dirty" "dui-text:text" "dui-artwork:artwork" "dui-genart:genart" "dui-golden-home:golden_home" "dui-sdl:sdl" "dui-widgets:widgets" "dui-hidpi:hidpi" "dui-anim:anim" "dui-keys:keys" "dui-mouse:mouse" "dui-tooltips:tooltips" "dui-gestures:gestures" "dui-frame:frame" "dui-home:home" "dui-library:library" "dui-styles:styles" "dui-grid-coverflow:grid_coverflow" "dui-search:search" "dui-nowplaying:nowplaying" "dui-queue:queue" "dui-queue-scroll:queue_scroll" "dui-playlists:playlists" "dui-songinfo:songinfo" "dui-overlays:overlays" "dui-nav:nav" "dui-viz:viz" "dui-tracker:tracker" "dui-drop:drop" "dui-footer:footer" "dui-screen:screen" "dui-hover-live:hover_live" "dui-hover-rows:hover_rows" "dui-hover-sidebar-ink:hover_sidebar_ink" "dui-hover-instant:hover_instant" "dui-hover-nowplaying:hover_nowplaying" "dui-hover-regions:hover_regions" "dui-scan-ui:scan_ui" "dui-library-reload:library_reload" "dui-library-unknown-composer:library_unknown_composer" "dui-song-menu:song_menu" "dui-library-remove:library_remove" "dui-song-menu-live:song_menu_live" "dui-song-menu-lists:song_menu_lists" "keys-live:keys_live" "dui-aga-budget:aga_budget" "dui-library-style:library_style" "dui-stats-panel:stats_panel" "dui-home-cover-shadow:home_cover_shadow" "dui-coverflow-slide:coverflow_slide" "dui-view-exec-order:view_exec_order" "dui-zoom:zoom" "dui-list-keys:list_keys" "dui-library-sources:library_sources" "dui-library-scroll:library_scroll" "dui-library-scroll-drag:library_scroll_drag" "dui-sources-counters:sources_counters" "dui-sync-banner:sync_banner" "dui-tall-pixels:tall_pixels" "dui-aga-native-text:aga_native_text" "window-raise:window_raise" "dui-idle-turns:idle_turns")
+  foreach(spec "dui-uim-frame:uim_frame" "dui-ui-switch:ui_switch" "dui-ui-multi:ui_multi" "dui-mode-pref:mode_pref" "dui-actions:actions" "dui-layout:layout" "dui-breakpoints:breakpoints" "dui-governor:governor" "dui-tokens:tokens" "dui-draw:draw" "dui-dirty:dirty" "dui-text:text" "dui-artwork:artwork" "dui-genart:genart" "dui-golden-home:golden_home" "dui-sdl:sdl" "dui-widgets:widgets" "dui-hidpi:hidpi" "dui-anim:anim" "dui-keys:keys" "dui-mouse:mouse" "dui-tooltips:tooltips" "dui-gestures:gestures" "dui-frame:frame" "dui-home:home" "dui-library:library" "dui-styles:styles" "dui-grid-coverflow:grid_coverflow" "dui-search:search" "dui-nowplaying:nowplaying" "dui-queue:queue" "dui-queue-scroll:queue_scroll" "dui-playlists:playlists" "dui-songinfo:songinfo" "dui-overlays:overlays" "dui-nav:nav" "dui-viz:viz" "dui-tracker:tracker" "dui-drop:drop" "dui-footer:footer" "dui-footer-one-row:footer_one_row" "dui-screen:screen" "dui-hover-live:hover_live" "dui-hover-rows:hover_rows" "dui-hover-sidebar-ink:hover_sidebar_ink" "dui-hover-instant:hover_instant" "dui-hover-nowplaying:hover_nowplaying" "dui-hover-regions:hover_regions" "dui-scan-ui:scan_ui" "dui-library-reload:library_reload" "dui-library-unknown-composer:library_unknown_composer" "dui-song-menu:song_menu" "dui-library-remove:library_remove" "dui-song-menu-live:song_menu_live" "dui-song-menu-lists:song_menu_lists" "keys-live:keys_live" "dui-aga-budget:aga_budget" "dui-library-style:library_style" "dui-stats-panel:stats_panel" "dui-home-cover-shadow:home_cover_shadow" "dui-coverflow-slide:coverflow_slide" "dui-view-exec-order:view_exec_order" "dui-zoom:zoom" "dui-list-keys:list_keys" "dui-library-sources:library_sources" "dui-library-scroll:library_scroll" "dui-library-scroll-drag:library_scroll_drag" "dui-sources-counters:sources_counters" "dui-sync-banner:sync_banner" "dui-tall-pixels:tall_pixels" "dui-aga-button-polish:aga_button_polish" "dui-aga-native-text:aga_native_text" "window-raise:window_raise" "dui-idle-turns:idle_turns" "dui-start-home:start_home" "dui-home-tile-tint:home_tile_tint" "dui-sidebar-library:sidebar_library" "dui-playlist-page:playlist_page" "dui-quit-dialog:quit_dialog" "dui-home-copper:home_copper")
     string(REPLACE ":" ";" pair "${spec}")
     list(GET pair 0 tname)
     list(GET pair 1 script)
@@ -61,7 +67,7 @@ if(NOT SEL_AMIGA)
     file(MAKE_DIRECTORY "${tmpdir}")
     # dui-nav is ledger row I262, not a plan item: label nav, not dui or dui-extra: dui-ratchet counts tests whose label matches the regex dui against the plan ids.
     set(tlabel dui)
-    if(tname STREQUAL "dui-nav" OR tname STREQUAL "dui-footer" OR tname STREQUAL "dui-screen" OR tname STREQUAL "dui-scan-ui") # dui-footer is ledger row I312, not a plan item
+    if(tname STREQUAL "dui-nav" OR tname STREQUAL "dui-footer" OR tname STREQUAL "dui-footer-one-row" OR tname STREQUAL "dui-screen" OR tname STREQUAL "dui-scan-ui") # dui-footer is ledger row I312, not a plan item
       set(tlabel nav)
     elseif(tname STREQUAL "dui-song-menu-live" OR tname STREQUAL "dui-song-menu-lists") # I371: more cases of DUI-P4-16, whose one dui test is dui-song-menu; label song-menu keeps dui-ratchet at one test per plan id
       set(tlabel song-menu)
@@ -71,6 +77,8 @@ if(NOT SEL_AMIGA)
       set(tlabel list-keys)
     elseif(tname STREQUAL "dui-tall-pixels") # I468 I457: AGA 640x256 tall-pixel layout, not a plan item
       set(tlabel tall-pixels)
+    elseif(tname STREQUAL "dui-aga-button-polish") # I588: AGA transport glyph and button edge, not a plan item
+      set(tlabel aga-button-polish)
     elseif(tname STREQUAL "dui-home-cover-shadow") # I507: a case of DUI-P4-2 (dui-home); label home-cover-shadow keeps dui-ratchet at one test per plan id
       set(tlabel home-cover-shadow)
     elseif(tname STREQUAL "window-raise") # I501: the SDL window raises on open; not a plan item, so no dui label
@@ -83,10 +91,18 @@ if(NOT SEL_AMIGA)
       set(tlabel sync-banner)
     elseif(tname STREQUAL "keys-live") # I268: real SDL key events through desk_sdl_poll; not a plan item, so no dui label
       set(tlabel keys-live)
-    elseif(tname STREQUAL "dui-aga-native-text" OR tname STREQUAL "dui-idle-turns" OR tname STREQUAL "dui-library-scroll" OR tname STREQUAL "dui-library-scroll-drag" OR tname STREQUAL "dui-sources-counters") # I526 I525 I541 I549 I546: ledger rows, not plan items; their own label keeps dui-ratchet at one test per plan id
+    elseif(tname STREQUAL "dui-aga-native-text" OR tname STREQUAL "dui-idle-turns" OR tname STREQUAL "dui-library-scroll" OR tname STREQUAL "dui-library-scroll-drag" OR tname STREQUAL "dui-sources-counters" OR tname STREQUAL "dui-quit-dialog") # I526 I525 I541 I549 I546: ledger rows, not plan items; their own label keeps dui-ratchet at one test per plan id
       string(REPLACE "dui-" "" tlabel "${tname}")
     elseif(tname STREQUAL "dui-view-exec-order") # I398: --view enters its page before --exec runs; ledger row, not a plan item
       set(tlabel view-exec-order)
+    elseif(tname STREQUAL "dui-home-tile-tint") # I600: idle Home cards have no dark fill over the tint, a case of DUI-P4-2 (dui-home); not a plan item
+      set(tlabel home-tile-tint)
+    elseif(tname STREQUAL "dui-home-copper") # I628: Home background and generated covers ride the AGA copper; ledger row, not a plan item
+      set(tlabel home-copper)
+    elseif(tname STREQUAL "dui-sidebar-library") # I608: the sidebar Your Library list; ledger row, not a plan item
+      set(tlabel sidebar-library)
+    elseif(tname STREQUAL "dui-start-home") # I594: Home is drawn at start without --view; ledger row, not a plan item
+      set(tlabel start-home)
     endif()
     set_tests_properties(${tname} PROPERTIES LABELS ${tlabel} TIMEOUT 120 ENVIRONMENT "TMPDIR=${tmpdir}")
   endforeach()
@@ -172,6 +188,7 @@ set_tests_properties(dui-art-thread-amiga PROPERTIES TIMEOUT 60)
 add_executable(dui_aga_planar_unit aga_planar_unit.c ${PROJECT_SOURCE_DIR}/plugins/ui/desktop/amiga/aga_planar.c)
 target_include_directories(dui_aga_planar_unit PRIVATE ${PROJECT_SOURCE_DIR}/plugins/ui/desktop)
 target_link_libraries(dui_aga_planar_unit PRIVATE selecta_gui)
+target_compile_definitions(dui_aga_planar_unit PRIVATE SELECTA_AGA_BACKEND_SRC="${PROJECT_SOURCE_DIR}/plugins/ui/desktop/amiga/backend_aga.c")
 add_test(NAME dui-aga-planar COMMAND dui_aga_planar_unit)
 set_tests_properties(dui-aga-planar PROPERTIES TIMEOUT 60)
 
@@ -214,3 +231,9 @@ set_tests_properties(dui-copper-gradient PROPERTIES TIMEOUT 60)
 add_executable(dui_stopped_clock_unit stopped_clock_unit.c)
 target_link_libraries(dui_stopped_clock_unit PRIVATE selecta_uimodel)
 add_test(NAME dui-stopped-clock COMMAND dui_stopped_clock_unit)
+
+# I595: INDEX8 anti-aliased edges blend against the destination real colour: art band cube over artwork, the row colour over a copper pen.
+add_executable(dui_index8_blend_unit index8_blend_unit.c)
+target_link_libraries(dui_index8_blend_unit PRIVATE selecta_gui)
+add_test(NAME dui-index8-blend COMMAND dui_index8_blend_unit)
+set_tests_properties(dui-index8-blend PROPERTIES TIMEOUT 60)

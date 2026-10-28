@@ -6,6 +6,7 @@
 #include <selecta/source.h>
 #include "source/descriptor.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 unsigned sel_testsrc_sync_calls;
@@ -19,6 +20,9 @@ static int testsrc_sync(const sel_host* host, const char* arg, int64_t now, sel_
     (void)now;
     (void)cap;
     sel_testsrc_sync_calls++;
+    if (getenv("SELECTA_TESTSRC_FAIL") != NULL) { /* I582: the dui-sync-banner test makes this source fail like a source without network */
+        return 0;
+    }
     if (cat == NULL || !cat->begin(host, "testsrc")) {
         return 0;
     }

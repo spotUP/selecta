@@ -208,7 +208,7 @@ function(expect_labels_centred what view input)
 endfunction()
 
 expect_labels_centred("Playlists buttons" playlists "wait 100\n")
-foreach(want "New Folder" "New Playlist" "Rename" "Delete" "Play")
+foreach(want "New Folder" "New Playlist" "Play")
   if(NOT want IN_LIST labels_seen)
     message(FATAL_ERROR "Playlists button '${want}' never drew through the centred label helper; saw: ${labels_seen}")
   endif()

@@ -95,6 +95,16 @@ static void sink(void* ctx, const sel_message* evt) {
         }
     }
     sel_int_session_event((sel_int_session*)((void**)ctx)[2], evt);
+#ifdef __amigaos__
+    if (evt->id == SEL_EVT_SONG_OPENED && ((void**)ctx)[0] != NULL) { /* hook_command (Amiga only, open question 9): one launch per opened song */
+        static arexx_hook_stats hook_stats;
+        char logline[160];
+        const char* script = sel_engine_state((sel_engine*)((void**)ctx)[0])->options[SEL_OPT_HOOK_COMMAND];
+        if (arexx_hook_event(1, script, arexx_hook_launch, NULL, &hook_stats, logline, sizeof logline) == 0) {
+            fprintf(stderr, "log %s\n", logline);
+        }
+    }
+#endif
 }
 
 static int g_mark_audio;
@@ -317,6 +327,12 @@ static void ctl_fwd(void* ctx, const sel_message* evt) {
 static int arexx_exec(void* ctx, const char* line, char* reply, size_t cap, int* rc) {
     ctl_ctx* c = ctx;
     return sel_ctl_exec_fwd(c->engine, line, reply, cap, rc, ctl_fwd, c);
+}
+/* Every way out of the shell loop closes the port through here: an open BEGIN is ended, queued messages get RC 20. */
+static void arexx_shutdown(arexx_port* p, ctl_ctx* c) {
+    if (p != NULL) {
+        arexx_close(p, arexx_exec, c, sel_engine_in_batch(c->engine));
+    }
 }
 #endif
 #ifndef SEL_NO_CONTROL_SOCKET
@@ -614,7 +630,7 @@ int main(int argc, char** argv)
         snprintf(cmd, sizeof cmd, "LIBRARY_BROWSE %s", start);
         send_line(e, cmd);
         const char* view = option(argc, argv, "--view", "");
-        int own = strcmp(ui_id, "desktop") == 0 && (strcmp(view, "home") == 0 || strcmp(view, "library") == 0 ||
+        int own = strcmp(ui_id, "desktop") == 0 && (view[0] == '\0' || strcmp(view, "home") == 0 || strcmp(view, "library") == 0 || /* no --view: the desktop UI starts on Home (I594) */
                                                      strcmp(view, "playlists") == 0 || strcmp(view, "songs") == 0);
         /* the desktop UI enters these pages itself (desk_page_goto), the one place their engine verbs live (I266) */
         if (!own) {
@@ -650,6 +666,9 @@ int main(int argc, char** argv)
             char pool[1024];
             if (strncmp(argv[a + 1], "UI_SWITCH ", 10) == 0) { /* the shell owns the UIs, not the engine */
                 if (ui_switch(argv[a + 1] + 10, &args, ctx) < 0) {
+                    #ifdef __amigaos__
+                    arexx_shutdown(arexx, &cc);
+                    #endif
                     return 1;
                 }
             } else if (sel_engine_send_line(e, argv[a + 1], pool, sizeof pool) == SEL_CODEC_OK) {
@@ -674,6 +693,9 @@ int main(int argc, char** argv)
             char want[16];
             if (sel_engine_take_ui_switch(e, want, sizeof want)) { /* the shell owns the UIs: switch between turns */
                 if (ui_switch(want, &args, ctx) < 0) {
+                    #ifdef __amigaos__
+                    arexx_shutdown(arexx, &cc);
+                    #endif
                     return 1;
                 }
                 continue;
@@ -821,6 +843,7 @@ int main(int argc, char** argv)
             printf("ui_drop id=%s drops=%u scans=%u\n", g_uis[u].id, (unsigned)sel_tag_find(us, SEL_UI_STAT_DROPS, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_SCANS, 0));
             printf("ui_list id=%s %s\n", g_uis[u].id, (const char*)sel_tag_find(us, SEL_UI_STAT_LIST_VIEW, (uintptr_t) ""));
+            printf("ui_p4 id=%s %s\n", g_uis[u].id, (const char*)sel_tag_find(us, SEL_UI_STAT_MUI_P4, (uintptr_t) ""));
             printf("ui_backend id=%s backend=%s depth=%u\n", g_uis[u].id,
                    (const char*)sel_tag_find(us, SEL_UI_STAT_BACKEND, (uintptr_t)""),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_SCREEN_DEPTH, 0));
@@ -854,9 +877,7 @@ int main(int argc, char** argv)
         arexx_stats_line(line, sizeof line, arexx != NULL ? arexx_name(arexx) : NULL,
                          arexx != NULL ? arexx_stats(arexx) : &none);
         printf("%s\n", line);
-        if (arexx != NULL) {
-            arexx_close(arexx);
-        }
+        arexx_shutdown(arexx, &cc);
     }
 #endif
 #ifndef SEL_NO_CONTROL_SOCKET

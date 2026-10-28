@@ -119,8 +119,9 @@ foreach(t b c d e)
     message(FATAL_ERROR "${t}: the first visible source is still row ${row_${t}}; this input must scroll the list without a wheel:\n${${t}}")
   endif()
 endforeach()
-if(NOT row_b GREATER row_c OR NOT row_c GREATER row_e)
-  message(FATAL_ERROR "drag to the track end (${row_b}) must go beyond one page (${row_c}), which goes beyond one row (${row_e})")
+# I604: with the one-row footer (I601) the 9 sources scroll only 3 rows, so one page already reaches the end: the drag may equal the page.
+if(NOT row_b GREATER_EQUAL row_c OR NOT row_c GREATER row_e)
+  message(FATAL_ERROR "drag to the track end (${row_b}) must reach at least one page (${row_c}), which goes beyond one row (${row_e})")
 endif()
 
 # F (I542): a click at the centre of the second switch changes exactly one source's enabled flag.

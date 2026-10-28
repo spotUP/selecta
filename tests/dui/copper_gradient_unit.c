@@ -58,11 +58,18 @@ int main(void) {
     sel_gui_gradient(c, rc(0, 4, 64, 11), 1, 0xFF000000u, 0xFFFF0A64u);
     sel_gui_clip_pop(c);
     CHECK(c->copper_n == 1u);
-    /* a second, different gradient takes the next pen; a flat gradient yields one change */
+    /* I628: a second, different gradient on disjoint rows rides the same pen (the copper reloads it); a flat gradient
+     * yields one change */
     sel_gui_gradient(c, rc(0, 20, 64, 6), 1, 0xFF336699u, 0xFF336699u);
     n = sel_gui_copper_changes(c, ch, 64);
-    CHECK(c->copper_n == 2u && px[20 * 64] == 254);
-    CHECK(n == 12u); /* 11 + 1 */
+    CHECK(c->copper_n == 2u && px[20 * 64] == 255);
+    CHECK(n == 12u && ch[11].y == 20 && ch[11].pen == 255u && ch[11].rgb == 0x336699u); /* 11 + 1 */
+    /* I628: a gradient on rows another pen holds takes the next pen */
+    sel_gui_gradient(c, rc(0, 10, 64, 4), 1, 0xFF000000u, 0xFF00FF00u);
+    CHECK(c->copper_n == 3u && px[10 * 64] == 254);
+    /* I628/I510: a gradient on exactly the rows of a recorded one shares its key: one line colour per row band */
+    sel_gui_gradient(c, rc(0, 10, 64, 4), 1, 0xFF112233u, 0xFF445566u);
+    CHECK(c->copper_n == 3u && px[10 * 64] == 254);
     /* a whole-canvas repaint hands the pens out again */
     sel_gui_dirty_add(c, rc(0, 0, 64, 32));
     CHECK(c->copper_n == 0u);
@@ -74,11 +81,11 @@ int main(void) {
     CHECK(c->copper_filled == 0u && sel_gui_copper_changes(c, ch, 64) == 0u && px[4 * 64] != 255);
     free(c);
     free(px);
-    /* pens exhausted: the second distinct gradient is drawn dithered */
+    /* pens exhausted: a second gradient on overlapping rows is drawn dithered (and counted as a miss) */
     c = make(&px, 64, 32, 1u, 1);
     sel_gui_gradient(c, rc(0, 0, 64, 8), 1, 0xFF000000u, 0xFFFFFFFFu);
-    sel_gui_gradient(c, rc(0, 10, 64, 8), 1, 0xFF000000u, 0xFF00FF00u);
-    CHECK(c->copper_n == 1u && c->copper_filled == 8u);
+    sel_gui_gradient(c, rc(0, 4, 64, 8), 1, 0xFF000000u, 0xFF00FF00u);
+    CHECK(c->copper_n == 1u && c->copper_filled == 8u && c->copper_miss == 1u);
     free(c);
     free(px);
     /* I468: ydiv 2 lays out in 64 rows, the screen has 32; the gradient rows are screen rows */

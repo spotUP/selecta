@@ -5,3 +5,7 @@ build/
 
 # Claude Code agent worktrees
 .claude/worktrees/
+
+# Johan's personal MUI keyfile: lives only in the rig master disk SYS:S/, never in the repo or a Selecta kit
+MUI.key
+*.key

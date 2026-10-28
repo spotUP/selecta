@@ -8,7 +8,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "mui_icons.h"
 #include "mui_map.h"
+#include "mui_theme.h"
+
+#include <selecta/uimodel/doors.h>
+#include <selecta/uimodel/theme.h>
 
 extern const sel_tag* sel_plugin_entry_mui_test(uint32_t host_api);
 
@@ -134,6 +139,53 @@ static void test_menu(void) {
 
 /* mui-style-menu (MUI-P3-8): View > Style entries equal the mask popcount (planar 5, RTG 6) and each entry sends
  * "VIEW_STYLE <label>" for a style in the mask. */
+
+/* I648: the MUI look comes from the desktop UI tokens. The native build path (mui_ui.c) is compiled only on the Amiga, so
+ * this test checks both halves it is made of: the token mapping (with a call counter) and that mui_ui.c asks for each role
+ * through TH_TAGS and keeps no hardcoded button frame or background. */
+static void test_theme(void) {
+    txt_theme th;
+    mui_theme_look lk;
+    char want[40];
+    uint32_t before = mui_theme_applied();
+    FILE* f;
+    char src[400000];
+    size_t n;
+    int role;
+    static const char* const names[MUI_TH_COUNT] = {"MUI_TH_WINDOW", "MUI_TH_PANEL", "MUI_TH_BUTTON", "MUI_TH_FIELD", "MUI_TH_LIST", "MUI_TH_STATUS"};
+    txt_theme_default(&th);
+    CHECK(mui_theme_look_for(MUI_TH_WINDOW, th.token, &lk) == 1, "window look");
+    snprintf(want, sizeof want, "2:%08x,%08x,%08x", (unsigned)(((th.token[SEL_GUI_TOKEN_BACKGROUND] >> 16) & 0xFF) * 0x01010101u),
+             (unsigned)(((th.token[SEL_GUI_TOKEN_BACKGROUND] >> 8) & 0xFF) * 0x01010101u), (unsigned)((th.token[SEL_GUI_TOKEN_BACKGROUND] & 0xFF) * 0x01010101u));
+    CHECK(strcmp(lk.background, want) == 0, "window background %s want %s", lk.background, want);
+    CHECK(lk.frame == MUI_FRAME_NONE, "window frame %u", (unsigned)lk.frame);
+    CHECK(mui_theme_look_for(MUI_TH_BUTTON, th.token, &lk) == 1 && lk.bg_rgb == th.token[SEL_GUI_TOKEN_SURFACE_RAISED] && lk.frame == MUI_FRAME_TEXT,
+          "button look from SURFACE_RAISED, thin frame");
+    CHECK(mui_theme_look_for(MUI_TH_FIELD, th.token, &lk) == 1 && lk.frame == MUI_FRAME_STRING, "field frame");
+    CHECK(mui_theme_look_for(MUI_TH_LIST, th.token, &lk) == 1 && lk.bg_rgb == th.token[SEL_GUI_TOKEN_SURFACE], "list look from SURFACE");
+    CHECK(mui_theme_look_for(MUI_TH_PANEL, th.token, &lk) == 1 && mui_theme_look_for(MUI_TH_STATUS, th.token, &lk) == 1 && lk.bg_rgb == th.token[SEL_GUI_TOKEN_PANEL],
+          "panel and status looks");
+    CHECK(mui_theme_applied() - before == 6, "applied count %u", (unsigned)(mui_theme_applied() - before));
+    CHECK(mui_theme_look_for(MUI_TH_COUNT, th.token, &lk) == 0 && mui_theme_look_for(MUI_TH_WINDOW, NULL, &lk) == 0, "bad input refused");
+    CHECK(mui_theme_readable(th.token[SEL_GUI_TOKEN_TEXT], th.token[SEL_GUI_TOKEN_BACKGROUND]) == 1, "light text on the dark theme is readable");
+    CHECK(mui_theme_readable(0x000000u, th.token[SEL_GUI_TOKEN_BACKGROUND]) == 0, "black MUI text on the dark theme is not readable: theme stays off");
+    f = fopen(MUI_UI_SOURCE, "rb");
+    CHECK(f != NULL, "open %s", MUI_UI_SOURCE);
+    if (f == NULL) {
+        return;
+    }
+    n = fread(src, 1, sizeof src - 1, f);
+    fclose(f);
+    src[n] = 0;
+    for (role = 0; role < MUI_TH_COUNT; role++) {
+        char key[64];
+        snprintf(key, sizeof key, "TH_TAGS(%s,", names[role]);
+        CHECK(strstr(src, key) != NULL, "mui_ui.c never builds role %s through TH_TAGS", names[role]);
+    }
+    CHECK(strstr(src, "MUIA_Frame, MUIV_Frame_Button") == NULL, "button frame is hardcoded in mui_ui.c");
+    CHECK(strstr(src, "MUIA_Background, MUII_ButtonBack") == NULL, "button background is hardcoded in mui_ui.c");
+}
+
 static void test_style_menu(void) {
     static mui_menu_item items[512];
     uint32_t pass, i, n;
@@ -432,13 +484,20 @@ static void test_list_drill(void) {
 
 static void test_columns(void) {
     uint8_t c[MUI_COL_COUNT];
-    char f[32];
+    char f[48];
     static const uint32_t want[4] = {5, 4, 3, 2};
     uint32_t bp;
     for (bp = 0; bp < 4; bp++) {
         CHECK(mui_columns_for(bp, c) == want[bp] && c[0] == MUI_COL_TITLE, "breakpoint %u has %u columns", bp, mui_columns_for(bp, c));
         mui_columns_format(bp, f, sizeof f);
-        CHECK(strlen(f) == 4u * (want[bp] - 1u), "format '%s' at %u", f, bp);
+        {
+            uint32_t bars = 0, k;
+            for (k = 0; f[k] != '\0'; k++) {
+                bars += strncmp(f + k, "BAR,", 4) == 0;
+            }
+            CHECK(bars == want[bp] - 1u, "format '%s' has %u BAR separators at %u", f, bars, bp);
+            CHECK(strncmp(f, "W=40 BAR,W=25", 13) == 0, "title and artist carry weights: '%s' at %u", f, bp);
+        }
     }
 }
 
@@ -542,6 +601,23 @@ static void test_home(void) {
     CHECK(mui_home_lines(&v, 3, lines) == 0 && mui_home_lines(&v, 9, lines) == 0, "heading or outside window sends nothing");
 }
 
+static void test_view_empty(void) {
+    sel_view_row r[2];
+    sel_view_state v;
+    memset(r, 0, sizeof r);
+    memset(&v, 0, sizeof v);
+    CHECK(mui_view_is_empty(&v) == 1, "no rows is empty");
+    v.rows = r; v.row_n = 1; v.row_count = 1; v.source = SEL_VIEW_SEARCH;
+    r[0].kind = SEL_ROW_HEADING; /* "Songs (0)" */
+    CHECK(mui_view_is_empty(&v) == 1, "search with only a heading is empty");
+    v.source = SEL_VIEW_HOME;
+    CHECK(mui_view_is_empty(&v) == 1, "home with only headings is empty");
+    r[0].kind = SEL_ROW_HEADING; r[1].kind = SEL_ROW_HOME; v.row_n = 2; v.row_count = 2;
+    CHECK(mui_view_is_empty(&v) == 0, "home with an entry is not empty");
+    r[0].kind = SEL_ROW_FILE; v.row_n = 1; v.row_count = 1; v.source = SEL_VIEW_BROWSE;
+    CHECK(mui_view_is_empty(&v) == 0, "a browse row is not empty");
+}
+
 static void test_library(void) {
     mui_crumb c[8];
     CHECK(mui_path_crumbs("/home/x/songs", c, 8) == 3 && strcmp(c[0].name, "home") == 0 && strcmp(c[2].name, "songs") == 0 && c[2].end == 13u,
@@ -609,6 +685,22 @@ static void test_song_menu(void) {
         CHECK(strcmp(sel_uim_song_menu_label(i, 0), want[i]) == 0, "item %u '%s'", (unsigned)i, sel_uim_song_menu_label(i, 0));
     }
     CHECK(strcmp(sel_uim_song_menu_label(4, 1), "Remove from Queue") == 0 && sel_uim_song_menu_label(5, 0) == NULL, "queue page, bound");
+    {
+        char o[96];
+        CHECK(mui_song_menu_line(0, "A:b\"c.mod", 0, 0, 0, o, sizeof o) > 0 && strcmp(o, "OPEN \"A:b\\\"c.mod\"") == 0, "play '%s'", o);
+        CHECK(strcmp(mui_song_menu_follow(0), "PLAY") == 0 && mui_song_menu_follow(2) == NULL, "play follows with PLAY");
+        mui_song_menu_line(1, "x.mod", 0, 0, 0, o, sizeof o);
+        CHECK(strcmp(o, "QUEUE_PLAY_NEXT \"x.mod\"") == 0, "next '%s'", o);
+        mui_song_menu_line(2, "x.mod", 0, 0, 0, o, sizeof o);
+        CHECK(strcmp(o, "QUEUE_ADD \"x.mod\"") == 0, "add '%s'", o);
+        CHECK(mui_song_menu_line(3, "x.mod", 0, 0, 0, o, sizeof o) == 0, "playlist needs an id");
+        mui_song_menu_line(3, "x.mod", 7, 7, 0, o, sizeof o);
+        CHECK(strcmp(o, "PLAYLIST_ADD_SONG 7 \"x.mod\"") == 0, "playlist '%s'", o);
+        mui_song_menu_line(4, "x.mod", 9, 0, 1, o, sizeof o);
+        CHECK(strcmp(o, "QUEUE_REMOVE 9") == 0, "queue remove '%s'", o);
+        mui_song_menu_line(4, "x.mod", 0, 0, 0, o, sizeof o);
+        CHECK(strcmp(o, "LIBRARY_REMOVE \"x.mod\"") == 0, "library remove '%s'", o);
+    }
 }
 
 static void test_like_rating(void) {
@@ -737,6 +829,80 @@ static void test_tracker(void) {
     CHECK(strstr(o, " .. .. ...") != NULL, "empty cell '%s'", o);
 }
 
+/* Regression (MUI-P4-10): eleven buttons and two cycles in one row made the window wider than the 800 pixel screen and
+ * MUIA_Window_Open stayed 0 on the Amiga. Each tool row must stay narrow enough. */
+static void test_toolrows(void) {
+    uint32_t r;
+    for (r = 0; r < 2u; r++) {
+        if (mui_tool_row_chars(r) == 0u || mui_tool_row_chars(r) > 64u) {
+            fprintf(stderr, "FAIL tool row %u holds %u label characters (1..64 fit an 800 pixel window)\n", (unsigned)r, (unsigned)mui_tool_row_chars(r));
+            failures++;
+        }
+    }
+}
+
+/* I651: every MUI button is built with an icon. The keys below are the real button sources (transport actions for both play
+ * states, extras, doors, toolbar labels, crumb); each must resolve to a baked Lucide body, the lookup counter must rise by
+ * exactly that many, and mui_ui.c must build the image (Bodychunk with the theme palette) and the bigger padding. */
+static void test_icon_buttons(void) {
+    static char src[400000];
+    sel_uim_frame fr;
+    txt_theme th;
+    uint32_t pal[12], before = mui_icon_resolved(), want = 0, i, b, st;
+    size_t n;
+    FILE* f;
+    memset(&fr, 0, sizeof fr);
+    for (st = 0; st < 2; st++) {
+        fr.play = st ? SEL_PLAYING : SEL_STOPPED;
+        for (b = 0; b < MUI_BTN_COUNT; b++) {
+            const char* a = mui_transport_action(b, &fr);
+            CHECK(a != NULL && mui_icon_body(mui_icon_id(a)) != NULL, "transport button %u state %u has no icon", (unsigned)b, (unsigned)st);
+            want++;
+        }
+    }
+    for (i = 0; mui_extra_action(i) != NULL; i++, want++) {
+        CHECK(mui_icon_body(mui_icon_id(mui_extra_action(i))) != NULL, "extra %s has no icon", mui_extra_action(i));
+    }
+    for (i = 0; i < SEL_UIM_DOOR_COUNT; i++, want++) {
+        CHECK(mui_icon_body(mui_icon_id(sel_uim_door_at(i)->page)) != NULL, "door %s has no icon", sel_uim_door_at(i)->page);
+    }
+    for (i = 0; i < MUI_TOOL_BTNS; i++, want++) {
+        CHECK(mui_icon_body(mui_icon_id(mui_tool_labels[i])) != NULL, "tool %s has no icon", mui_tool_labels[i]);
+    }
+    CHECK(mui_icon_body(mui_icon_id("crumb")) != NULL, "crumb has no icon");
+    want++;
+    CHECK(mui_icon_resolved() - before == want, "icon lookups %u want %u", (unsigned)(mui_icon_resolved() - before), (unsigned)want);
+    CHECK(mui_icon_id("no such button") < 0 && mui_icon_body(-1) == NULL, "unknown key has no icon");
+    {
+        const uint8_t* body = mui_icon_body(mui_icon_id("play"));
+        size_t k, bytes = (size_t)mui_icon_body_px * (((mui_icon_body_px + 15) / 16) * 2) * 2, ink = 0;
+        CHECK(mui_icon_body_px == MUI_ICON_PX, "baked edge %u", (unsigned)mui_icon_body_px);
+        for (k = 0; k < bytes; k++) {
+            ink += body[k] != 0;
+        }
+        CHECK(ink > 8, "play body is empty");
+    }
+    txt_theme_default(&th);
+    mui_icon_palette(th.token, 1, pal);
+    CHECK(pal[0] == (th.token[SEL_GUI_TOKEN_SURFACE_RAISED] >> 16 & 0xFFu) * 0x01010101u && pal[9] == (th.token[SEL_GUI_TOKEN_TEXT] >> 16 & 0xFFu) * 0x01010101u,
+          "palette runs from the button face to the text colour");
+    CHECK(MUI_BTN_PAD_X >= 8 && MUI_BTN_PAD_Y >= 4 && MUI_ICON_PX >= 24, "buttons are bigger than the 1 px text-only ones");
+    f = fopen(MUI_UI_SOURCE, "rb");
+    CHECK(f != NULL, "open %s", MUI_UI_SOURCE);
+    if (f == NULL) {
+        return;
+    }
+    n = fread(src, 1, sizeof src - 1, f);
+    fclose(f);
+    src[n] = 0;
+    CHECK(strstr(src, "MUIC_Bodychunk") != NULL && strstr(src, "mui_icon_palette(") != NULL && strstr(src, "MUI_BTN_PAD_X") != NULL,
+          "mui_ui.c builds no icon image");
+    CHECK(strstr(src, "mui_make_button(mui_door_label(i), sel_uim_door_at(i)->page,") != NULL &&
+              strstr(src, "mui_make_button(mui_tool_labels[i], mui_tool_labels[i],") != NULL && strstr(src, "mui_make_button_w(s->crumb_lbl[k], \"crumb\",") != NULL &&
+              strstr(src, "mui_make_button_i(s->btn_label[i], mui_transport_action(") != NULL && strstr(src, "mui_make_button(mui_extra_label(i), mui_extra_action(i),") != NULL,
+          "a button call site passes no icon key");
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -772,6 +938,8 @@ int main(int argc, char** argv) {
     } else if (strcmp(argv[1], "columns") == 0) {
         test_columns();
         test_row_cells();
+    } else if (strcmp(argv[1], "theme") == 0) {
+        test_theme();
     } else if (strcmp(argv[1], "style-menu") == 0) {
         test_style_menu();
     } else if (strcmp(argv[1], "style-mask") == 0) {
@@ -812,6 +980,11 @@ int main(int argc, char** argv) {
         test_cmdline();
     } else if (strcmp(argv[1], "states") == 0) {
         test_states();
+        test_view_empty();
+    } else if (strcmp(argv[1], "icon-buttons") == 0) {
+        test_icon_buttons();
+    } else if (strcmp(argv[1], "toolrows") == 0) {
+        test_toolrows();
     } else if (strcmp(argv[1], "tracker") == 0) {
         test_tracker();
     } else {

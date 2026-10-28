@@ -189,6 +189,27 @@ static void test_overscan_fit(void) {
     CHECK(desk_aga_pick_size(&w, &h, 1, 724, 241) == 1 && w == 704 && h == 240); /* NTSC */
     desk_aga_fit_clip(rect, 704, 280, clip);
     CHECK(clip[0] == -62 && clip[2] == 641 && clip[1] == -14 && clip[3] == 265);
+    /* I624: PAL maximum overscan 0,0..677,270 = 678 x 271 picks 672 x 264; the clip must start on a lores pixel. */
+    {
+        int32_t r2[4] = {0, 0, 677, 270}, c2[4], pw = 0, ph = 0;
+        CHECK(desk_aga_pick_size(&pw, &ph, 0, 678, 271) == 1 && pw == 672 && ph == 264);
+        desk_aga_fit_clip(r2, pw, ph, c2);
+        CHECK((c2[0] & 1) == 0 && c2[0] == 2 && c2[2] - c2[0] + 1 == 672 && c2[2] <= 677);
+        CHECK(c2[1] == 3 && c2[3] == 266);
+    }
+}
+
+/* I566: Fill Screen follows the Overscan preferences (OSCAN_STANDARD = 2), not OSCAN_MAX (3). Untuned preferences give the
+ * normal screen; a tuned PAL area of 692 x 270 gives 672 x 264, centred in that area. */
+static void test_overscan_standard(void) {
+    int32_t w = 0, h = 0, rect[4] = {-26, -7, 665, 262}, clip[4];
+    CHECK(DESK_AGA_OSCAN_TYPE == 2);
+    CHECK(desk_aga_pick_size(&w, &h, 0, 640, 256) == 1 && w == 640 && h == 256); /* untuned: the normal screen */
+    w = 0;
+    h = 0;
+    CHECK(desk_aga_pick_size(&w, &h, 0, 692, 270) == 1 && w == 672 && h == 264);
+    desk_aga_fit_clip(rect, w, h, clip);
+    CHECK(clip[0] == -16 && clip[2] == 655 && clip[1] == -4 && clip[3] == 259);
 }
 
 /* I574: a 68020 (rig 2, the A1200) gets Kalms' 030 c2p; the C reference there took 16 s per 640x256 frame and froze
@@ -213,12 +234,42 @@ static void test_c2p_pick_large_planes(void) {
     CHECK(desk_aga_c2p_pick(1u << 1, 16385u) == 1u);
 }
 
+/* I566: QueryOverscan is an intuition.library call. desk_aga_default_size opened graphics.library only, so with
+ * ui.desktop.overscan=1 the call went through a NULL IntuitionBase and froze the whole Amiga (rig 2). The backend is
+ * Amiga-only, so this reads its source: every function that reaches QueryOverscan (max_overscan) must run after
+ * intuition.library is opened. */
+static void test_query_overscan_has_intuition(void) {
+    FILE* f = fopen(SELECTA_AGA_BACKEND_SRC, "rb");
+    static char src[40000];
+    size_t n, cap;
+    char *def, *end, *mo, *cl;
+    CHECK(f != NULL);
+    if (f == NULL) return;
+    n = fread(src, 1, sizeof src - 1, f);
+    fclose(f);
+    src[n] = 0;
+    cap = n;
+    (void)cap;
+    def = strstr(src, "void desk_aga_default_size(");
+    CHECK(def != NULL);
+    if (def == NULL) return;
+    end = strstr(def, "\nstatic int fail(");
+    CHECK(end != NULL);
+    if (end == NULL) return;
+    *end = 0;
+    mo = strstr(def, "max_overscan(");
+    cl = strstr(def, "\"intuition.library\"");
+    CHECK(mo != NULL && cl != NULL && cl < mo);
+}
+
 int main(void) {
+    test_query_overscan_has_intuition();
     test_c2p_pick();
     test_c2p_pick_large_planes();
     test_pick_size();
     test_border_blank();
     test_overscan_fit();
+    test_overscan_standard();
     test_overscan_setting();
     test_bit_layout();
     test_round_trip_and_bands();

@@ -6,6 +6,7 @@
 #include <string.h>
 
 #define BAR_H 72
+#define BAR_ONE_ROW_H 40 /* DUI-P4-20: the footer as one row on a short canvas */
 #define BANNER_H 40
 #define SIDEBAR_WIDE 220
 #define SIDEBAR_NARROW 200
@@ -28,13 +29,13 @@ uint32_t sel_uim_breakpoint_for_tier(uint32_t width, uint32_t tier) {
 }
 
 uint32_t sel_uim_breakpoint_for(uint32_t width) {
-    if (width >= 1200u) {
+    if (width >= SEL_UIM_BP_THREE_COLUMN_MIN) {
         return SEL_UIM_BP_THREE_COLUMN;
     }
-    if (width >= 900u) {
+    if (width >= SEL_UIM_BP_TWO_COLUMN_MIN) {
         return SEL_UIM_BP_TWO_COLUMN;
     }
-    if (width >= 700u) {
+    if (width >= SEL_UIM_BP_ICON_SIDEBAR_MIN) {
         return SEL_UIM_BP_ICON_SIDEBAR;
     }
     return SEL_UIM_BP_MINI_SUGGESTION;
@@ -63,8 +64,20 @@ void sel_uim_layout_compute_tier(sel_uim_layout* l, uint32_t width, uint32_t hei
 /* I547: rail_w is the labelled rail width the caller measured from its font (0: SIDEBAR_RAIL_LABELLED). It is never
  * narrower than the default and never wider than a third of the window. */
 void sel_uim_layout_compute_rail(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t rail_w) {
+    sel_uim_layout_compute_bar(l, width, height, tier, rail_w, BAR_H);
+}
+
+/* DUI-P4-20: the player bar height for a canvas height: one row on a short canvas (SEL_UIM_FOOTER_ONE_ROW_MAX_H and below),
+ * the two row bar otherwise. */
+uint32_t sel_uim_footer_height(uint32_t height) {
+    return height <= SEL_UIM_FOOTER_ONE_ROW_MAX_H ? BAR_ONE_ROW_H : BAR_H;
+}
+
+/* As compute_rail with the player bar height chosen by the caller (the desktop UI passes sel_uim_footer_height). */
+void sel_uim_layout_compute_bar(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t rail_w,
+                                uint32_t bar_height) {
     uint32_t bp = sel_uim_breakpoint_for_tier(width, tier);
-    uint32_t bar_h = height > BAR_H ? BAR_H : height;
+    uint32_t bar_h = height > bar_height ? bar_height : height;
     uint32_t body_h = height - bar_h;
     uint32_t side = 0, detail = 0, top = 0, main_w;
     memset(l, 0, sizeof *l);
