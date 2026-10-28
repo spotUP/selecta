@@ -30,6 +30,20 @@ uint32_t sel_uim_scope_line(uint32_t i, char* out, uint32_t cap);
 /* The grid and home shelf tile size steps in logical pixels (96..208); 0 past the count. */
 int32_t sel_uim_tile_step(uint32_t i);
 
+/* I611: the Your Library sort choices and view sizes, one model for every UI. */
+#define SEL_UIM_LSORTS 4u
+enum { SEL_UIM_LSORT_RECENTS = 0, SEL_UIM_LSORT_ADDED = 1, SEL_UIM_LSORT_ALPHA = 2, SEL_UIM_LSORT_CREATOR = 3 };
+const char* sel_uim_lsort_label(uint32_t i); /* "Recents", "Recently added", "Alphabetical", "Creator"; NULL past the count */
+#define SEL_UIM_LVIEWS 4u
+enum { SEL_UIM_LVIEW_COMPACT = 0, SEL_UIM_LVIEW_LIST = 1, SEL_UIM_LVIEW_SMALL = 2, SEL_UIM_LVIEW_LARGE = 3 };
+const char* sel_uim_lview_label(uint32_t i); /* "Compact list", "List", "Small grid", "Large grid"; NULL past the count */
+/* Orders two library entries under sort `mode`: <0 a first, >0 b first, 0 equal. Recents keeps the engine order (0), Recently added
+ * puts the larger `added` first, Alphabetical and Creator compare case-insensitively (Creator then name). */
+int32_t sel_uim_lsort_cmp(uint32_t mode, const char* a_name, uint32_t a_added, const char* a_creator, const char* b_name,
+                          uint32_t b_added, const char* b_creator);
+/* 1 when `name` contains `filter` ignoring case (an empty filter matches everything). */
+int32_t sel_uim_lfilter_match(const char* name, const char* filter);
+
 #ifdef __cplusplus
 }
 #endif

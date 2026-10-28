@@ -466,6 +466,8 @@ uint32_t sel_engine_library_playlists(sel_engine* e);
 typedef struct sel_engine_library_item {
     uint32_t id;
     char name[96];
+    uint32_t added; /* I611: creation order (ids grow with each new playlist), larger is newer */
+    char creator[32]; /* I611: who made it; local playlists belong to the local user */
 } sel_engine_library_item;
 /* Fills out[0..max) with the saved playlists in the library, oldest first, and returns how many were written; 0 without a library. */
 uint32_t sel_engine_library_playlist_items(sel_engine* e, sel_engine_library_item* out, uint32_t max);

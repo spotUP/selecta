@@ -5401,7 +5401,9 @@ uint32_t sel_engine_library_playlist_items(sel_engine* e, sel_engine_library_ite
     for (p = buf; *p != '\0' && n < max; n++) { /* "id\0name\0" pairs, then an empty string */
         const char* name = p + strlen(p) + 1u;
         out[n].id = (uint32_t)strtoul(p, NULL, 10);
+        out[n].added = out[n].id; /* ids grow with every new playlist: creation order */
         snprintf(out[n].name, sizeof out[n].name, "%s", name);
+        snprintf(out[n].creator, sizeof out[n].creator, "You"); /* every saved playlist is local, made by the local user */
         p = name + strlen(name) + 1u;
     }
     return n;
