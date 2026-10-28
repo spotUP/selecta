@@ -35,6 +35,12 @@ if(NOT SEL_AMIGA)
   set_tests_properties(dui-font-baked PROPERTIES LABELS dui TIMEOUT 120 ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/dui-font-baked.tmp")
 endif()
 if(NOT SEL_AMIGA)
+  # ui-stat-tags (I603): no two SEL_UI_STAT_* tags share a value (PT_MS_OVERLAY and LIST_VIEW did).
+  add_test(NAME ui-stat-tags COMMAND "${CMAKE_COMMAND}" "-DTAGS_DEF=${PROJECT_SOURCE_DIR}/include/selecta/tags.def"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/stat_tags.cmake")
+  set_tests_properties(ui-stat-tags PROPERTIES LABELS ui-stat-tags TIMEOUT 30)
+endif()
+if(NOT SEL_AMIGA)
   # dui-amiga-font (I526-P1): the bitmap .font reader, unit level (host only).
   add_test(NAME dui-amiga-font COMMAND dui_amiga_font_unit)
   set_tests_properties(dui-amiga-font PROPERTIES LABELS amiga-font TIMEOUT 60) # ledger row, not a plan item: no dui label, dui-ratchet counts dui against the plan ids
