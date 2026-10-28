@@ -357,6 +357,9 @@ void sel_engine_set_paula_output(sel_engine* e, uint32_t on);
 /* Per-song replayer options, "plugin.key=value,..." (D-M2-8): beats the global pref rp.config. They live in
  * the library DB (sticker rp.config of the song key, sel_library_song_config_set) and are read at OPEN (I170). */
 
+/* Why the last PLAYLIST_IMPORT / PLAYLIST_ADD_FOLDER failed (sel_engine_stats.pl_fail_reason, I652e). */
+enum { SEL_PLFAIL_NONE = 0, SEL_PLFAIL_UNREADABLE = 1, SEL_PLFAIL_BUSY = 2, SEL_PLFAIL_OTHER = 3 };
+
 typedef struct sel_engine_stats {
     uint32_t ticks;        /* replayer ticks run */
     uint32_t voice_ops;    /* calls through the voices API */
@@ -396,6 +399,8 @@ typedef struct sel_engine_stats {
     uint32_t import_added;        /* songs the last PLAYLIST_IMPORT appended */
     uint32_t addf_runs;           /* PLAYLIST_ADD_FOLDER scans finished and appended (I652d sentinel) */
     uint32_t addf_added;          /* songs the last PLAYLIST_ADD_FOLDER appended */
+    uint32_t pl_fail_runs;        /* PLAYLIST_IMPORT / PLAYLIST_ADD_FOLDER runs that failed (I652e) */
+    uint32_t pl_fail_reason;      /* SEL_PLFAIL_* of the last failed run */
     uint32_t import_missing;      /* entries of the last PLAYLIST_IMPORT whose file does not exist */
     uint32_t sticker_ops;         /* STICKER_* commands run against the library (I176 sentinel) */
     uint32_t links_parsed;        /* share links OPEN parsed (I180 sentinel) */

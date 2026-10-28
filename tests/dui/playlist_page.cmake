@@ -267,3 +267,18 @@ list(GET f2rows 2 r2)
 if(NOT "${r0}" MATCHES "file=b.mod$" OR NOT "${r1}" MATCHES "file=a.mod$" OR NOT "${r2}" MATCHES "file=z.mod$")
   message(FATAL_ERROR "Add Folder songs are not in path order:\n${r0}\n${r1}\n${r2}")
 endif()
+
+# 9. I652e: a folder that cannot be read ends in an error toast, not "0 songs added". The same empty playlist, --dialog-answer a missing path.
+dui_run(g_init --db "${WORK}/addf_bad.db" --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats
+  --exec "PLAYLIST_CREATE echo")
+set(gcommon --ui desktop --backend mem --view home --clock fixed --stats --db "${WORK}/addf_bad.db" --canvas 1280x800)
+dui_run(g1 ${gcommon} --input "${WORK}/find1.txt")
+pp_centre(gbtn "${g1}" "plfindbtn 2")
+file(WRITE "${WORK}/addf_bad.txt" "click ${fside}\nwait 100\nclick ${gbtn}\nwait 1500\n")
+dui_run(g2 ${gcommon} --dialog-answer "${WORK}/no_such_folder" --input "${WORK}/addf_bad.txt")
+if(NOT "${g2}" MATCHES "toast_text Could not read that folder or file")
+  message(FATAL_ERROR "a missing folder did not raise the error toast in:\n${g2}")
+endif()
+if("${g2}" MATCHES "songs added")
+  message(FATAL_ERROR "a failed Add Folder still toasted a count in:\n${g2}")
+endif()

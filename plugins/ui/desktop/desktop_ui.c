@@ -212,6 +212,7 @@ typedef struct desk {
     uint32_t add_drawn;      /* I652b: Add controls drawn on the Library rows this frame */
     int imp_wait;            /* I652c: a playlist dialog is open, its answer arrives as a drop: 1 playlist file, 2 folder (I652d) */
     uint32_t addf_sent, addf_seen; /* I652d sentinels: PLAYLIST_ADD_FOLDER lines sent / engine folder adds the UI has shown */
+    uint32_t pl_fail_seen; /* I652e: engine import / add-folder failures the UI has shown */
     uint32_t imp_sent, imp_seen; /* I652c sentinels: PLAYLIST_IMPORT lines sent / engine import runs the UI has shown */
     uint32_t pls_adds;       /* I652a: PLAYLIST_ADD_SONG lines sent from the empty-playlist search */
     uint32_t pls_find_sig;   /* I652a: signature of the search result last drawn under the empty playlist's field */
@@ -9437,6 +9438,22 @@ static int desk_pls_folder_pick(desk* d) {
     return 1;
 }
 
+/* I652e: a PLAYLIST_IMPORT or PLAYLIST_ADD_FOLDER failed: say why instead of "0 songs added". Returns 1 when it toasted. */
+static int desk_pl_fail_follow(desk* d, const sel_engine_stats* es) {
+    if (es->pl_fail_runs == d->pl_fail_seen) {
+        return 0;
+    }
+    d->pl_fail_seen = es->pl_fail_runs;
+    if (es->pl_fail_reason == SEL_PLFAIL_BUSY) {
+        desk_toast(d, "A library scan is running");
+    } else if (es->pl_fail_reason == SEL_PLFAIL_UNREADABLE) {
+        desk_toast(d, "Could not read that folder or file");
+    } else {
+        desk_toast(d, "Could not add the songs");
+    }
+    return 1;
+}
+
 /* The engine finished a PLAYLIST_ADD_FOLDER: report the count and reload the page (the sidebar count too). */
 static void desk_addf_follow(desk* d) {
     sel_engine_stats es;
@@ -9470,6 +9487,21 @@ static void desk_import_follow(desk* d) {
     d->side_stale = 1u;
     d->repaint = 1;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+}
+
+/* Both playlist jobs report through here: a failure toast replaces the count toast of the same run. */
+static void desk_playlist_job_follow(desk* d) {
+    sel_engine_stats es;
+    sel_engine_stats_get(d->engine, &es);
+    if (desk_pl_fail_follow(d, &es)) {
+        d->imp_seen = es.import_runs;
+        d->addf_seen = es.addf_runs;
+        d->pls_stale = 1u;
+        d->repaint = 1;
+        return;
+    }
+    desk_import_follow(d);
+    desk_addf_follow(d);
 }
 
 static int desk_add_folder(desk* d) {
@@ -10574,8 +10606,7 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
         return -1; /* the Quit Selecta dialog was confirmed: end the loop as a closed window does (I623) */
     }
     desk_library_follow(d);
-    desk_import_follow(d);
-    desk_addf_follow(d);
+    desk_playlist_job_follow(d);
     if (!d->nag_asked) { /* sync on launch (I527): the engine marks remote sources never synced or stale in its SOURCES rows; asked on the first turn, when the engine answers UI events */
         d->nag_asked = 1;
         d->src_wait = 1;
