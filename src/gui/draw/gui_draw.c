@@ -1110,6 +1110,11 @@ static int copper_gradient(sel_gui_canvas* c, sel_gui_rect r, uint32_t a, uint32
     }
     for (i = 0; i < c->copper_n; i++) {
         if (c->copper_key[i].ry == r.y && c->copper_key[i].rh == r.h) {
+            /* I628: a copper pen is one colour per scanline, so a band holds one gradient. A cover with other colours on
+             * the same rows would show the first cover's colours: it dithers in its own instead. */
+            if (c->copper_key[i].a != (a & 0xFFFFFFu) || c->copper_key[i].b != (b & 0xFFFFFFu)) {
+                return 0;
+            }
             k = &c->copper_key[i];
             break;
         }
