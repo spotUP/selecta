@@ -107,7 +107,7 @@ static void max_overscan(int ntsc, int32_t rect[4]) {
     ULONG hires = (ntsc ? NTSC_MONITOR_ID : PAL_MONITOR_ID) | HIRES_KEY;
     rect[0] = rect[1] = rect[2] = rect[3] = 0;
     if (!g_overscan) return; /* off: no QueryOverscan at all (I566: the hang suspect); pick_size keeps the standard size */
-    if (QueryOverscan(hires, &r, OSCAN_MAX)) {
+    if (QueryOverscan(hires, &r, DESK_AGA_OSCAN_TYPE)) {
         rect[0] = r.MinX;
         rect[1] = r.MinY;
         rect[2] = r.MaxX;
@@ -196,7 +196,7 @@ desk_aga* desk_aga_open(int32_t w, int32_t h, int index8) {
     }
     {
         /* I566: a screen larger than the standard 640 x lines is the overscan fit: its display clip sits centred in the
-         * OSCAN_MAX area, otherwise the clip stays the standard one and the rest of the display is border. */
+         * user's OSCAN_STANDARD area, otherwise the clip stays the standard one and the rest of the display is border. */
         int32_t mr[4], dc[4];
         struct Rectangle clip;
         int fit = w > 640 || h > ((GfxBase->DisplayFlags & NTSC) ? 200 : 256);

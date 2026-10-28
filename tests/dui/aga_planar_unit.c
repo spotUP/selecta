@@ -191,6 +191,19 @@ static void test_overscan_fit(void) {
     CHECK(clip[0] == -62 && clip[2] == 641 && clip[1] == -14 && clip[3] == 265);
 }
 
+/* I566: Fill Screen follows the Overscan preferences (OSCAN_STANDARD = 2), not OSCAN_MAX (3). Untuned preferences give the
+ * normal screen; a tuned PAL area of 692 x 270 gives 672 x 264, centred in that area. */
+static void test_overscan_standard(void) {
+    int32_t w = 0, h = 0, rect[4] = {-26, -7, 665, 262}, clip[4];
+    CHECK(DESK_AGA_OSCAN_TYPE == 2);
+    CHECK(desk_aga_pick_size(&w, &h, 0, 640, 256) == 1 && w == 640 && h == 256); /* untuned: the normal screen */
+    w = 0;
+    h = 0;
+    CHECK(desk_aga_pick_size(&w, &h, 0, 692, 270) == 1 && w == 672 && h == 264);
+    desk_aga_fit_clip(rect, w, h, clip);
+    CHECK(clip[0] == -16 && clip[2] == 655 && clip[1] == -4 && clip[3] == 259);
+}
+
 /* I574: a 68020 (rig 2, the A1200) gets Kalms' 030 c2p; the C reference there took 16 s per 640x256 frame and froze
  * the pointer. 68040/060 keep the 040 routine; only a 68000/010 falls back to the reference. */
 static void test_c2p_pick(void) {
@@ -248,6 +261,7 @@ int main(void) {
     test_pick_size();
     test_border_blank();
     test_overscan_fit();
+    test_overscan_standard();
     test_overscan_setting();
     test_bit_layout();
     test_round_trip_and_bands();
