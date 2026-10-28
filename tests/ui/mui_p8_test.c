@@ -110,6 +110,54 @@ static void test_voices_programs(void) {
     CHECK(mui_fkey_fire(TXT_KEY_F1 + 10u, 0, fake_send, &e) == 0u && mui_fkey_fire('a', 0, fake_send, &e) == 0u && e.n == 0u, "a non-program key sent a line");
 }
 
+/* mui-p8-library-modes (MUI-P8-3) */
+static void test_library_modes(void) {
+    static const char* const want_name[MUI_LIBMODE_COUNT] = {"Composers", "Tree", "Columns", "Files", "History", "Sources"};
+    static const char* const want_first[MUI_LIBMODE_COUNT] = {"VIEW_STYLE regular", "LIBRARY_SEARCH \"\"", "LIBRARY_SEARCH \"\"", "VIEW_STYLE regular", "VIEW_STYLE regular", "SOURCES"};
+    static const char* const layouts[4] = {"layout_full", "layout_window", "layout_mini", "layout_visual"};
+    static mui_menu_item items[512];
+    fake_engine e;
+    uint32_t i, m, menu_n = mui_menu_build(items, 512), base = mui_view_fires(), abase = mui_action_fires();
+    CHECK(mui_libmode_label(MUI_LIBMODE_COUNT) == NULL, "mode past the count");
+    for (i = 0; i < MUI_LIBMODE_COUNT; i++) {
+        CHECK(mui_libmode_label(i) != NULL && strcmp(mui_libmode_label(i), want_name[i]) == 0, "mode %u label", (unsigned)i);
+        memset(&e, 0, sizeof e);
+        CHECK(mui_libmode_fire(i, 12, fake_send, &e) == e.n && e.n >= 1u, "mode %u: %u lines", (unsigned)i, (unsigned)e.n);
+        CHECK(strcmp(e.lines[0], want_first[i]) == 0, "mode %u first line '%s'", (unsigned)i, e.lines[0]);
+    }
+    memset(&e, 0, sizeof e);
+    mui_libmode_fire(4, 12, fake_send, &e);
+    CHECK(e.n == 3u && strcmp(e.lines[1], "VIEW_SOURCE home") == 0 && strcmp(e.lines[2], "VIEW_WINDOW 12") == 0, "History lines");
+    CHECK(mui_view_fires() - base == 7u, "sentinel %u, want 7", (unsigned)(mui_view_fires() - base));
+    for (i = 0; i < 4; i++) {
+        uint32_t in_menu = 0;
+        for (m = 0; m < menu_n; m++) {
+            in_menu += strcmp(items[m].id, layouts[i]) == 0;
+        }
+        CHECK(in_menu == 1u, "%s: %u menu items", layouts[i], (unsigned)in_menu);
+    }
+    memset(&e, 0, sizeof e);
+    CHECK(mui_action_fire("layout_visual", fake_send, &e) == 1u && e.n == 1u && mui_action_fires() - abase == 1u, "Visual Layout not sent");
+}
+
+/* mui-p8-queue-scope (MUI-P8-4) */
+static void test_queue_scope(void) {
+    static const char* const want[MUI_SCOPE_COUNT] = {"library", "album", "playlist"};
+    fake_engine e;
+    uint32_t i, base = mui_view_fires();
+    CHECK(mui_scope_label(MUI_SCOPE_COUNT) == NULL, "scope past the count");
+    for (i = 0; i < MUI_SCOPE_COUNT; i++) {
+        char line[32];
+        snprintf(line, sizeof line, "SCOPE %s", want[i]);
+        CHECK(mui_scope_label(i) != NULL && strcmp(mui_scope_label(i), want[i]) == 0, "scope %u label", (unsigned)i);
+        memset(&e, 0, sizeof e);
+        CHECK(mui_scope_fire(i, fake_send, &e) == 2u && strcmp(e.lines[0], line) == 0 && strcmp(e.lines[1], "VIEW_SOURCE queue") == 0, "scope %u: '%s' %u lines", (unsigned)i, e.lines[0], (unsigned)e.n);
+    }
+    memset(&e, 0, sizeof e);
+    CHECK(mui_scope_fire(MUI_SCOPE_COUNT, fake_send, &e) == 0u && e.n == 0u, "a bad scope sent a line");
+    CHECK(mui_view_fires() - base == 4u, "sentinel");
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -118,6 +166,10 @@ int main(int argc, char** argv) {
         test_transport_extras();
     } else if (strcmp(argv[1], "voices-programs") == 0) {
         test_voices_programs();
+    } else if (strcmp(argv[1], "library-modes") == 0) {
+        test_library_modes();
+    } else if (strcmp(argv[1], "queue-scope") == 0) {
+        test_queue_scope();
     } else {
         printf("unknown test %s\n", argv[1]);
         return 2;

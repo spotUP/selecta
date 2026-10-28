@@ -69,3 +69,35 @@ uint32_t mui_fkey_fire(uint32_t code, uint32_t mods, mui_send_fn send, void* ctx
     }
     return sent;
 }
+
+#include <selecta/uimodel/browse.h>
+
+/* MUI-P8-3, P8-4: the Library mode Cycle and the Queue scope Cycle read the shared browse model. */
+static uint32_t g_view_fires;
+
+uint32_t mui_view_fires(void) { return g_view_fires; }
+
+const char* mui_libmode_label(uint32_t i) { return sel_uim_libmode_name(i); }
+
+uint32_t mui_libmode_fire(uint32_t i, uint32_t window_rows, mui_send_fn send, void* ctx) {
+    char lines[SEL_UIM_LIB_LINES][SEL_UIM_LIB_LINE_MAX];
+    uint32_t k, n = sel_uim_libmode_lines(i, window_rows, lines), sent = 0;
+    g_view_fires++;
+    for (k = 0; send != NULL && k < n; k++) {
+        sent += send(ctx, lines[k]) != 0;
+    }
+    return sent;
+}
+
+const char* mui_scope_label(uint32_t i) { return sel_uim_scope_name(i); }
+
+uint32_t mui_scope_fire(uint32_t i, mui_send_fn send, void* ctx) {
+    char line[32];
+    uint32_t sent = 0;
+    g_view_fires++;
+    if (sel_uim_scope_line(i, line, sizeof line) != 0u && send != NULL) {
+        sent += send(ctx, line) != 0;
+        sent += send(ctx, "VIEW_SOURCE queue") != 0; /* re-read the queue window */
+    }
+    return sent;
+}

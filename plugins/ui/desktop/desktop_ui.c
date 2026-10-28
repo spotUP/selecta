@@ -15,6 +15,7 @@
 #include <selecta/gui/gui_text.h>
 #include <selecta/gui/gui_widget.h>
 #include <selecta/gui/gui_input.h>
+#include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/cmdline.h>
 #include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/keybind.h>
@@ -1257,8 +1258,7 @@ static void draw_widgets(desk* d) {
 #define TILE_ART 144 /* logical, the default step */
 #define TILE_STEP_DEFAULT 2u
 #define SCROLL_NOTCH 16 /* logical pixels one wheel notch scrolls */
-static const int32_t g_tile_steps[] = {96, 120, 144, 176, 208}; /* the tile size token steps, logical pixels */
-#define TILE_STEPS ((uint32_t)(sizeof g_tile_steps / sizeof g_tile_steps[0]))
+#define TILE_STEPS SEL_UIM_TILE_STEPS /* the tile size steps are shared: uimodel/browse.h */
 #define HOME_MAX_LINES 2
 
 /* Home layout (Main.dc.html), logical pixels from the main panel's top: the header with the search field, the
@@ -1274,7 +1274,7 @@ enum { HOME_MARGIN = 24, HOME_SEARCH_MAX = 360, HOME_GREET_Y = 72,
 static sel_gui_rect tile_rect(desk* d, uint32_t i) {
     int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
     sel_gui_rect mn = region_rect(d, "main");
-    int32_t art = lpx(d, g_tile_steps[d->tile_step]);
+    int32_t art = lpx(d, sel_uim_tile_step(d->tile_step));
     int32_t gap = lpx(d, HOME_TILE_GAP);
     int32_t cw = art + 2 * pad;
     int32_t cols = (mn.w - 2 * lpx(d, HOME_MARGIN) + 2 * pad + gap) / (cw + gap);
@@ -1826,7 +1826,7 @@ static uint32_t art_keys(const sel_state* st, const char** out, uint32_t cap) {
 
 static int32_t shelf_card_h(desk* d) {
     int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
-    return pad + lpx(d, g_tile_steps[d->tile_step]) + lpx(d, HOME_TILE_TEXT_GAP + HOME_TITLE_H + HOME_META_H) + pad;
+    return pad + lpx(d, sel_uim_tile_step(d->tile_step)) + lpx(d, HOME_TILE_TEXT_GAP + HOME_TITLE_H + HOME_META_H) + pad;
 }
 
 /* Whole Home content height in logical pixels: the header, then every shelf. */
@@ -1858,7 +1858,7 @@ static int32_t shelf_pos_q16(const desk* d, uint32_t s) {
 static int32_t shelf_max_q16(desk* d, const shelf* sh) {
     int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
     sel_gui_rect mn = region_rect(d, "main");
-    int32_t cw = lpx(d, g_tile_steps[d->tile_step]) + 2 * pad + lpx(d, HOME_TILE_GAP);
+    int32_t cw = lpx(d, sel_uim_tile_step(d->tile_step)) + 2 * pad + lpx(d, HOME_TILE_GAP);
     int32_t total = (int32_t)sh->tiles * cw;
     int32_t vis = mn.w - 2 * lpx(d, HOME_MARGIN) + 2 * pad;
     int32_t unit = lpx(d, 1) > 0 ? lpx(d, 1) : 1;
@@ -1868,7 +1868,7 @@ static int32_t shelf_max_q16(desk* d, const shelf* sh) {
 static sel_gui_rect shelf_tile_rect(desk* d, uint32_t s, uint32_t k) {
     int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
     sel_gui_rect mn = region_rect(d, "main");
-    int32_t cw = lpx(d, g_tile_steps[d->tile_step]) + 2 * pad;
+    int32_t cw = lpx(d, sel_uim_tile_step(d->tile_step)) + 2 * pad;
     return rect_of(mn.x + lpx(d, HOME_MARGIN) - pad + (int32_t)k * (cw + lpx(d, HOME_TILE_GAP)) - lpx(d, shelf_pos_q16(d, s) >> 16),
                    shelf_top(d, s) + lpx(d, SHELF_HEAD_H) - pad, cw, shelf_card_h(d));
 }
@@ -1980,7 +1980,7 @@ static uint32_t shelf_at_y(desk* d, int32_t y) {
     for (s = 0; s < n; s++) {
         int32_t top = shelf_top(d, s);
         int32_t art_y = top + lpx(d, SHELF_HEAD_H);
-        if (y >= art_y && y < art_y + lpx(d, g_tile_steps[d->tile_step])) {
+        if (y >= art_y && y < art_y + lpx(d, sel_uim_tile_step(d->tile_step))) {
             return s;
         }
     }
@@ -2049,7 +2049,7 @@ static void home_scroll_y(desk* d, int32_t notches_q16) {
 static sel_gui_rect shelf_nav_rect(desk* d, uint32_t s, int next) {
     sel_gui_rect mn = region_rect(d, "main");
     int32_t ps = lpx(d, HOME_PLAY_SIZE);
-    int32_t y = shelf_top(d, s) + lpx(d, SHELF_HEAD_H) + (lpx(d, g_tile_steps[d->tile_step]) - ps) / 2;
+    int32_t y = shelf_top(d, s) + lpx(d, SHELF_HEAD_H) + (lpx(d, sel_uim_tile_step(d->tile_step)) - ps) / 2;
     int32_t x = next ? mn.x + mn.w - lpx(d, HOME_MARGIN) - ps : mn.x + lpx(d, HOME_MARGIN);
     return rect_of(x, y, ps, ps);
 }
@@ -2137,7 +2137,7 @@ static int shelf_nav_hover(desk* d, int32_t x, int32_t y, uint32_t shelf1) {
 static int32_t shelf_page_q16(desk* d) {
     int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]);
     sel_gui_rect mn = region_rect(d, "main");
-    int32_t cw = lpx(d, g_tile_steps[d->tile_step]) + 2 * pad + lpx(d, HOME_TILE_GAP);
+    int32_t cw = lpx(d, sel_uim_tile_step(d->tile_step)) + 2 * pad + lpx(d, HOME_TILE_GAP);
     int32_t vis = mn.w - 2 * lpx(d, HOME_MARGIN) + 2 * pad;
     int32_t unit = lpx(d, 1) > 0 ? lpx(d, 1) : 1;
     int32_t n = cw > 0 ? vis / cw : 1;
@@ -2192,8 +2192,6 @@ static int shelf_nav_click(desk* d, int32_t x, int32_t y) {
 
 /* Every song row offers five items. The last removes the queue entry on the Queue page and the song from the library
  * everywhere else (DUI-P4-18). */
-static const char* const queue_scope_name[3] = {"library", "album", "playlist"};
-static const char* const queue_scope_label[3] = {"Scope: Library", "Scope: Album", "Scope: Playlist"};
 
 static int song_menu_count(const desk* d) {
     return SONG_MENU_ITEMS + (d->sm_ref.pl_id != 0u ? 1 : 0); /* I633: a playlist row adds Remove from Playlist */
@@ -2335,7 +2333,7 @@ static void song_menu_draw(desk* d) {
         for (k = 0; k < n; k++) {
             sel_gui_rect m = song_menu_item_rect(d, k);
             int lit = hover_weight(d, m) > 0;
-            const char* label = d->sm_step == 0 ? song_menu_label(d, k) : d->sm_step == 2 ? queue_scope_label[k] : "No playlists";
+            const char* label = d->sm_step == 0 ? song_menu_label(d, k) : d->sm_step == 2 ? sel_uim_scope_label((uint32_t)k) : "No playlists";
             hover_reg(d, m);
             if (lit) {
                 sel_gui_round_rect(d->canvas, rect_of(m.x + inset, m.y, m.w - 2 * inset, m.h),
@@ -2647,7 +2645,7 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
             }
             if (d->sm_step == 2) { /* the same verb the old cycle button sent, now for the chosen scope */
                 char line[32];
-                snprintf(line, sizeof line, "SCOPE %s", queue_scope_name[k]);
+                sel_uim_scope_line((uint32_t)k, line, sizeof line);
                 d->queue_cmds++;
                 desk_send(d, line);
             } else if (d->sm_step == 1) {
@@ -3059,14 +3057,13 @@ static int lib_row_hit(desk* d, sel_gui_rect mn, uint32_t i, int32_t x, int32_t 
 
 /* The Library page modes (slice B): the composers list, the tree and the column browser. The last two show the engine's
  * own view rows (VIEW_STYLE tree / drilldown over a LIBRARY_SEARCH result), the same commands the text UI sends. */
-enum { LIB_MODES = 6, LIB_TAB_PAD = 10, LIB_WINDOW_ROWS = 12 };
-static const char* const lib_mode_name[LIB_MODES] = {"Composers", "Tree", "Columns", "Files", "History", "Sources"};
+enum { LIB_MODES = SEL_UIM_LIB_MODES, LIB_TAB_PAD = 10, LIB_WINDOW_ROWS = 12 };
 
 /* I440: a tab is as wide as its label (bold, the active look) plus a pad on each side, so the right end of the tab row
  * is free for the style chooser. */
 static int32_t lib_tab_text_w(desk* d, uint32_t i) {
     const sel_gui_atlas* at = desk_font(d, 1, 14);
-    return at != NULL ? sel_gui_text_width(at, lib_mode_name[i], strlen(lib_mode_name[i])) : 0;
+    return at != NULL ? sel_gui_text_width(at, sel_uim_libmode_name(i), strlen(sel_uim_libmode_name(i))) : 0;
 }
 
 /* I537: the pad on each side of a tab label. LIB_TAB_PAD when the whole row fits the page between its margins, less (down to
@@ -3292,7 +3289,7 @@ enum { QUEUE_BTN_Y = 64, QUEUE_BTN_H = 32, QUEUE_BTN_W = 128, QUEUE_BTN_GAP = 8,
 static uint32_t queue_scope_index(const sel_state* st) {
     uint32_t k;
     for (k = 0; k < 3u; k++) {
-        if (strcmp(st->options[SEL_OPT_SCOPE], queue_scope_name[k]) == 0) {
+        if (strcmp(st->options[SEL_OPT_SCOPE], sel_uim_scope_name((uint32_t)k)) == 0) {
             return k;
         }
     }
@@ -3474,7 +3471,7 @@ static void draw_queue(desk* d) {
     draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, page_title_h(d))), "Queue", 1, 32, text);
     for (i = 0; i < QUEUE_BUTTONS; i++) {
         sel_gui_rect b = queue_btn_rect(d, mn, i);
-        const char* label = i == 0u ? "Undo" : i == 1u ? "Redo" : i == 2u ? "Reshuffle" : queue_scope_label[queue_scope_index(st)];
+        const char* label = i == 0u ? "Undo" : i == 1u ? "Redo" : i == 2u ? "Reshuffle" : sel_uim_scope_label(queue_scope_index(st));
         int live = i == 0u ? es.undo_depth > 0u : i == 1u ? es.redo_depth > 0u : 1;
         draw_button(d, b, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), label, 13, live ? text : muted);
     }
@@ -4775,7 +4772,7 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "drill %s|%s\nback %d %d %d %d\n", lib_next(p), lib_next(lib_next(p)), (int)br.x, (int)br.y, (int)br.w,
                      (int)br.h);
     }
-    o = dump_put(d, o, "mode %s\nscroll %d\nlibempty %s\n", lib_mode_name[d->lib_mode], (int)(d->lib_q16 >> 16), d->empty_text);
+    o = dump_put(d, o, "mode %s\nscroll %d\nlibempty %s\n", sel_uim_libmode_name(d->lib_mode), (int)(d->lib_q16 >> 16), d->empty_text);
     for (i = 0; i < LIB_MODES; i++) {
         sel_gui_rect tr = lib_tab_rect(d, panel_rect(d, "main"), i);
         o = dump_put(d, o, "tab %u %d %d %d %d\n", (unsigned)i, (int)tr.x, (int)tr.y, (int)tr.w, (int)tr.h);
@@ -5063,7 +5060,7 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o,
                               "queue draws %u rows %u cmds %u hash %08x count %u undo %u redo %u scope %s\n", (unsigned)d->queue_draws,
                               (unsigned)d->queue_rows, (unsigned)d->queue_cmds, (unsigned)queue_hash(st), (unsigned)st->queue_count,
-                              (unsigned)qs.undo_depth, (unsigned)qs.redo_depth, queue_scope_name[queue_scope_index(st)]);
+                              (unsigned)qs.undo_depth, (unsigned)qs.redo_depth, sel_uim_scope_name(queue_scope_index(st)));
         o = dump_put(d, o, "qdrag from %d gap %d paints %u\n", (int)d->qdrag_from, (int)d->qdrag_gap, (unsigned)d->qdrag_paints);
         for (i = 0; i < QUEUE_BUTTONS; i++) {
             sel_gui_rect b = queue_btn_rect(d, qmn, i);
@@ -5513,10 +5510,10 @@ static void draw_library(desk* d) {
         for (m = 0; m < LIB_MODES; m++) { /* the mode tabs: the active one in the accent colour */
             sel_gui_rect tr = lib_tab_rect(d, mn, m);
             if (m == d->lib_mode) { /* the active tab is filled like the selected Home and Search chips (I362) */
-                draw_button_pad(d, tr, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), lib_mode_name[m], 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]),
+                draw_button_pad(d, tr, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]), sel_uim_libmode_name(m), 14, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]),
                                 lib_tab_pad(d));
             } else { /* I547: the centring pad is the tab's own pad, so a tab squeezed below 8 px still shows its whole label */
-                draw_text_centered_pad(d, tr, lib_mode_name[m], 0, 14, muted, lib_tab_pad(d)); /* centred as on the active pill (I445) */
+                draw_text_centered_pad(d, tr, sel_uim_libmode_name(m), 0, 14, muted, lib_tab_pad(d)); /* centred as on the active pill (I445) */
             }
         }
         if (lib_view_on(d, st) && d->lib_mode == 2u && st->view->drill_n > 0u) {
@@ -5837,30 +5834,19 @@ static void draw_lib_sources(desk* d, sel_gui_rect mn) {
 }
 
 static int lib_set_mode(desk* d, uint32_t mode) {
-    char line[64];
+    char lines[SEL_UIM_LIB_LINES][SEL_UIM_LIB_LINE_MAX];
+    uint32_t i, n;
     if (mode == d->lib_mode) {
         return 0;
     }
     d->lib_mode = mode;
     d->lib_q16 = 0;
-    if (mode == 5u) { /* Sources: the engine's registered sources, one row each (I265) */
-        d->src_wait = 1;
-        desk_send(d, "SOURCES");
-    } else if (mode == 0u) {
-        desk_send(d, "VIEW_STYLE regular");
-        desk_send(d, "VIEW_SOURCE queue");
-    } else if (mode >= 3u) { /* Files and History show the browse and home sources as the text UI does */
-        desk_send(d, "VIEW_STYLE regular");
-        desk_send(d, mode == 3u ? "VIEW_SOURCE browse" : "VIEW_SOURCE home");
-        snprintf(line, sizeof line, "VIEW_WINDOW %u", (unsigned)LIB_WINDOW_ROWS);
-        desk_send(d, line);
-    } else {
-        desk_send(d, "LIBRARY_SEARCH \"\"");
-        desk_send(d, "VIEW_SOURCE query");
-        snprintf(line, sizeof line, "VIEW_WINDOW %u", (unsigned)LIB_WINDOW_ROWS);
-        desk_send(d, line);
-        desk_send(d, mode == 1u ? "VIEW_STYLE tree" : "VIEW_STYLE drilldown");
-        desk_send(d, "VIEW_GROUP format");
+    if (mode == SEL_UIM_LIB_SOURCES) {
+        d->src_wait = 1; /* Sources: the engine's registered sources, one row each (I265) */
+    }
+    n = sel_uim_libmode_lines(mode, (uint32_t)LIB_WINDOW_ROWS, lines); /* the shared model owns what each mode sends (MUI-P8-3) */
+    for (i = 0; i < n; i++) {
+        desk_send(d, lines[i]);
     }
     return 1;
 }
@@ -10321,7 +10307,7 @@ static const sel_tag* desk_stats(void* state) {
     d->stats[41].tag = SEL_UI_STAT_GESTURES;
     d->stats[41].value = d->gestures;
     d->stats[42].tag = SEL_UI_STAT_TILE_SIZE;
-    d->stats[42].value = (uintptr_t)g_tile_steps[d->tile_step];
+    d->stats[42].value = (uintptr_t)sel_uim_tile_step(d->tile_step);
     d->stats[43].tag = SEL_UI_STAT_SCROLL_PX;
     d->stats[43].value = (uintptr_t)(d->scroll_q16 >> 16);
     d->stats[44].tag = SEL_UI_STAT_OPEN_TILE;
