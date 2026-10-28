@@ -15,6 +15,19 @@ extern "C" {
  * for a bad button. */
 uint32_t sel_uim_plbtn_line(uint32_t button, const char* name, uint32_t folder, char* out, uint32_t cap);
 
+/* Playlist rename and delete (the opened playlist page's More menu, the row context menu). The rename line needs a non-empty
+ * name (0 otherwise). `folder` selects FOLDER_DEL over PLAYLIST_DEL. Returns the line length, 0 on a bad argument. */
+uint32_t sel_uim_plrename_line(uint32_t id, const char* name, char* out, uint32_t cap);
+uint32_t sel_uim_pldel_line(uint32_t folder, uint32_t id, char* out, uint32_t cap);
+
+/* The context menu of a playlist (folder = 0: Rename, Delete) or a folder (Delete only): item k's action, and its label. */
+enum { SEL_UIM_PLACT_NONE = 0, SEL_UIM_PLACT_RENAME = 1, SEL_UIM_PLACT_DELETE = 2 };
+uint32_t sel_uim_plmenu_action(uint32_t folder, uint32_t k);
+const char* sel_uim_plmenu_label(uint32_t action);
+
+/* The question of the Delete confirm dialog. */
+uint32_t sel_uim_pldel_text(uint32_t folder, const char* name, char* out, uint32_t cap);
+
 /* Song Information buttons: 0 Mark Wrong, 1 Skip Song, 2 Save Note (`note` may be empty or NULL). */
 const char* sel_uim_flag_label(uint32_t button);
 uint32_t sel_uim_flag_line(uint32_t button, const char* note, char* out, uint32_t cap);
