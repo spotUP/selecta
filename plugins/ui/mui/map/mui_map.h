@@ -197,6 +197,9 @@ typedef struct mui_crumb {
 } mui_crumb;
 uint32_t mui_path_crumbs(const char* path, mui_crumb* out, uint32_t cap);
 
+/* MUI-P4-15: which state-text view (sel_uim_state_view) a view source shows its empty line for. */
+uint32_t mui_state_view_of(uint32_t source);
+
 /* MUI-P4-11: the one-line status that stands in for a toast. */
 typedef struct mui_toast {
     char text[160];

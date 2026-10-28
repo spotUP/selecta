@@ -53,6 +53,11 @@ uint32_t mui_path_crumbs(const char* path, mui_crumb* out, uint32_t cap) {
     return n;
 }
 
+uint32_t mui_state_view_of(uint32_t source) {
+    return source == SEL_VIEW_QUEUE ? SEL_UIM_SV_QUEUE : source == SEL_VIEW_QUERY || source == SEL_VIEW_SEARCH ? SEL_UIM_SV_SEARCH
+           : source == SEL_VIEW_FOLDERS ? SEL_UIM_SV_PLAYLISTS : SEL_UIM_SV_LIBRARY;
+}
+
 /* MUI-P4-11: one status line, 3 s, errors 6 s; a new message replaces the visible one. */
 uint32_t mui_toast_ms(int is_error) {
     return is_error ? 6000u : 3000u;
