@@ -287,4 +287,15 @@ uint32_t mui_fkeys_build(mui_fkey_bind* out, uint32_t cap);
  * program key. */
 uint32_t mui_fkey_fire(uint32_t code, uint32_t mods, mui_send_fn send, void* ctx);
 
+/* MUI-P8-3: the Library mode Cycle (Composers, Tree, Columns, Files, History, Sources: the desktop's words, from
+ * uimodel/browse.h). mui_libmode_fire sends the mode's lines (window_rows high) and returns how many were sent.
+ * MUI-P8-4: the Queue scope Cycle (library, album, playlist); a choice sends SCOPE <name> then re-reads the queue window.
+ * mui_view_fires() is the call-count sentinel for both. Visual Layout is the table action layout_visual (menu and key). */
+enum { MUI_LIBMODE_COUNT = 6, MUI_SCOPE_COUNT = 3 };
+const char* mui_libmode_label(uint32_t i);
+uint32_t mui_libmode_fire(uint32_t i, uint32_t window_rows, mui_send_fn send, void* ctx);
+const char* mui_scope_label(uint32_t i);
+uint32_t mui_scope_fire(uint32_t i, mui_send_fn send, void* ctx);
+uint32_t mui_view_fires(void);
+
 #endif
