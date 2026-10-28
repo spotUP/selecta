@@ -203,7 +203,6 @@ typedef struct desk {
     uint32_t* pls_off;       /* offset of each key in pls_buf */
     char (*pls_title)[96];   /* the catalogue title of each song, read once per reload */
     uint32_t pls_want, pls_n, pls_stale, pls_scroll, pls_draws, pls_rows; /* songs, reload wanted, first row shown, frames drawn, rows in the last one */
-    int pl_confirm;          /* 1 while the Delete button waits for its confirmation */
     int pl_edit;             /* 1 while the name field has the keyboard */
     char pl_name[64];
     size_t pl_nlen;
@@ -287,7 +286,11 @@ typedef struct desk {
     uint32_t dlg_playlists;  /* playlists the Clear Library dialog names */
     int quit_req;            /* I623: the Quit Selecta dialog was confirmed; the turn ends the UI loop like a closed window */
     uint32_t dlg_opens, dlg_confirms, dlg_cancels; /* sentinels: dialogs opened / confirmed / cancelled */
-    int sm_step;             /* 0 the items, 1 the playlist chooser, 2 the Queue scope choices (I258) */
+    int sm_step;             /* 0 the items, 1 the playlist chooser, 2 the Queue scope choices (I258), 3 the playlist or folder menu (I647) */
+    uint32_t sm_pl_id;       /* I647: the playlist or folder the step 3 menu acts on */
+    uint32_t sm_pl_folder;   /* 1 = that row is a folder (the menu offers Delete only) */
+    char sm_pl_name[64];
+    uint32_t dlg_pl_id, dlg_pl_folder; /* the playlist or folder a Delete dialog names (I647) */
     song_ref sm_ref;         /* the song it was opened on */
     song_row sm_rows[SM_ROWS]; /* the song rows drawn in the main region this frame: the one registry every page feeds */
     uint32_t sm_n, sm_opens, sm_picks, sm_pl_adds;
@@ -2216,6 +2219,9 @@ static int32_t song_menu_n(const desk* d) {
     if (d->sm_step == 2) {
         return 3;
     }
+    if (d->sm_step == 3) {
+        return d->sm_pl_folder ? 1 : 2;
+    }
     n = d->side_n < 8u ? (int32_t)d->side_n : 8;
     return n > 0 ? n : 1;
 }
@@ -2242,6 +2248,24 @@ static void song_menu_open(desk* d, int32_t x, int32_t y, const song_ref* ref) {
     d->menus++;
     d->sm_opens++;
 }
+
+/* I647: the same menu with a playlist's (Rename, Delete) or a folder's (Delete) items. The sidebar sits left of the main region the
+ * menu is clipped to, so the menu opens at the main region's left edge there. */
+static void plmenu_open(desk* d, int32_t x, int32_t y, uint32_t id, uint32_t folder, const char* name) {
+    sel_gui_rect mn = region_rect(d, "main");
+    d->sm_pl_id = id;
+    d->sm_pl_folder = folder;
+    snprintf(d->sm_pl_name, sizeof d->sm_pl_name, "%s", name != NULL ? name : "");
+    d->sm_open = 1;
+    d->sm_step = 3;
+    d->menu_x = x < mn.x ? mn.x : x;
+    d->menu_y = y;
+    d->menus++;
+}
+
+static void pl_rename_begin(desk* d, uint32_t id, const char* name);
+static void pls_close(desk* d);
+static int pl_send(desk* d, const char* line);
 
 /* The Queue page Scope button opens the same menu with the three scope choices (I258); a pick sends SCOPE <name>. */
 static void scope_menu_open(desk* d, int32_t x, int32_t y) {
@@ -2336,7 +2360,8 @@ static void song_menu_draw(desk* d) {
         for (k = 0; k < n; k++) {
             sel_gui_rect m = song_menu_item_rect(d, k);
             int lit = hover_weight(d, m) > 0;
-            const char* label = d->sm_step == 0 ? song_menu_label(d, k) : d->sm_step == 2 ? sel_uim_scope_label((uint32_t)k) : "No playlists";
+            const char* label = d->sm_step == 0 ? song_menu_label(d, k) : d->sm_step == 2 ? sel_uim_scope_label((uint32_t)k)
+                              : d->sm_step == 3 ? sel_uim_plmenu_label(sel_uim_plmenu_action(d->sm_pl_folder, (uint32_t)k)) : "No playlists";
             hover_reg(d, m);
             if (lit) {
                 sel_gui_round_rect(d->canvas, rect_of(m.x + inset, m.y, m.w - 2 * inset, m.h),
@@ -2358,7 +2383,7 @@ static void song_menu_draw(desk* d) {
  * the song count. Nothing is sent until Confirm; Cancel, Escape or a click outside close it. ---- */
 
 enum { NAG_BOX = 20, NAG_COL_ROWS = 4, NAG_ROW_H = 32, NAG_MAX = 16 };
-enum { DLG_NONE = 0, DLG_REMOVE = 1, DLG_CLEAR = 2, DLG_SYNC = 3, DLG_QUIT = 4 };
+enum { DLG_NONE = 0, DLG_REMOVE = 1, DLG_CLEAR = 2, DLG_SYNC = 3, DLG_QUIT = 4, DLG_PLDEL = 5 };
 
 static const char* path_base(const char* p);
 
@@ -2539,11 +2564,25 @@ static void dlg_open_quit(desk* d) {
     d->dlg_opens++;
 }
 
+static void dlg_open_pldel(desk* d, uint32_t id, uint32_t folder, const char* name) {
+    d->dlg_pl_id = id;
+    d->dlg_pl_folder = folder;
+    sel_uim_pldel_text(folder, name, d->dlg_text, sizeof d->dlg_text);
+    d->dlg_open = DLG_PLDEL;
+    d->dlg_opens++;
+}
+
 static const char* dlg_title(const desk* d) {
+    if (d->dlg_open == DLG_PLDEL) {
+        return d->dlg_pl_folder ? "Delete Folder" : "Delete Playlist";
+    }
     return d->dlg_open == DLG_CLEAR ? "Clear Library" : d->dlg_open == DLG_QUIT ? "Quit" : "Remove from Library";
 }
 
 static const char* dlg_confirm_label(const desk* d) {
+    if (d->dlg_open == DLG_PLDEL) {
+        return "Delete";
+    }
     return d->dlg_open == DLG_CLEAR ? "Clear Library" : d->dlg_open == DLG_QUIT ? "Quit" : "Remove";
 }
 
@@ -2559,6 +2598,16 @@ static void dlg_close(desk* d, int confirm) {
     }
     if (confirm && kind == DLG_QUIT) {
         d->quit_req = 1;
+    }
+    if (confirm && kind == DLG_PLDEL) { /* I647: the verb goes out, and an opened page of that playlist gives way to the list */
+        char line[48];
+        sel_uim_pldel_line(d->dlg_pl_folder, d->dlg_pl_id, line, sizeof line);
+        d->pl_sel_id = 0u;
+        pl_send(d, line);
+        if (!d->dlg_pl_folder && d->pls_id == d->dlg_pl_id) {
+            pls_close(d);
+        }
+        desk_toast(d, d->dlg_pl_folder ? "Folder deleted" : "Playlist deleted");
     }
     if (confirm) {
         d->dlg_confirms++;
@@ -2640,11 +2689,22 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
         return 0;
     }
     if (d->sm_open) {
-        int32_t k, n = d->sm_step == 0 ? song_menu_count(d) : d->sm_step == 2 ? 3 : 8;
+        int32_t k, n = d->sm_step == 0 ? song_menu_count(d) : d->sm_step == 2 ? 3 : d->sm_step == 3 ? song_menu_n(d) : 8;
         int keep = 0;
         for (k = 0; k < n; k++) {
             if (!in_rect(song_menu_item_rect(d, k), ev->x, ev->y)) {
                 continue;
+            }
+            if (d->sm_step == 3) { /* I647: Rename puts the name field into editing, Delete asks first */
+                uint32_t act = sel_uim_plmenu_action(d->sm_pl_folder, (uint32_t)k);
+                d->sm_open = 0;
+                if (act == SEL_UIM_PLACT_RENAME) {
+                    pl_rename_begin(d, d->sm_pl_id, d->sm_pl_name);
+                } else if (act == SEL_UIM_PLACT_DELETE) {
+                    dlg_open_pldel(d, d->sm_pl_id, d->sm_pl_folder, d->sm_pl_name);
+                }
+                draw_home(d);
+                return 1;
             }
             if (d->sm_step == 2) { /* the same verb the old cycle button sent, now for the chosen scope */
                 char line[32];
@@ -3614,7 +3674,7 @@ static int queue_pointer(desk* d, const sel_gui_input* ev) {
  * FOLDER_MOVE, VIEW_ACTIVATE on the folders source); the page only draws the rows and sends those verbs. A new
  * folder or playlist goes into the selected folder (or the folder that holds the selected playlist). Dragging a row
  * onto a folder row moves it there. */
-enum { PL_BUTTONS = 5, PL_NAME_Y = 104, PL_NAME_W = 408, PL_LIST_Y = 152, PL_INDENT = 24, PL_SLOTS = 6 };
+enum { PL_BUTTONS = 3, PL_NAME_Y = 104, PL_NAME_W = 408, PL_LIST_Y = 152, PL_INDENT = 24, PL_SLOTS = 6 };
 
 static sel_gui_rect pl_name_rect(desk* d, sel_gui_rect mn) {
     return rect_of(mn.x + lpx(d, HOME_MARGIN), mn.y + lpx(d, page_y(d, PL_NAME_Y)), lpx(d, PL_NAME_W), lpx(d, QUEUE_BTN_H));
@@ -3686,14 +3746,8 @@ static uint32_t pl_hash(const sel_view_state* v) {
     return h;
 }
 
-static const char* pl_button_label(const desk* d, uint32_t k) {
-    if (d->pl_confirm && k == 2u) {
-        return "Cancel";
-    }
-    if (d->pl_confirm && k == 3u) {
-        return "Confirm Delete";
-    }
-    return k == 0u ? "New Folder" : k == 1u ? "New Playlist" : k == 2u ? "Rename" : k == 3u ? "Delete" : "Play";
+static const char* pl_button_label(uint32_t k) {
+    return k == 0u ? "New Folder" : k == 1u ? "New Playlist" : "Play";
 }
 
 /* ---- The playlist page (I633): the Playlists page shows one saved playlist as a Spotify-style page: cover, name, song count,
@@ -3760,9 +3814,23 @@ static void pls_open(desk* d, uint32_t id, const char* name) {
     snprintf(d->pls_name, sizeof d->pls_name, "%s", name != NULL ? name : "Playlist");
     d->pl_sel_kind = (uint32_t)SEL_ROW_PLAYLIST;
     d->pl_sel_id = id;
-    d->pl_confirm = 0;
     d->pl_edit = 0;
     pls_reload(d);
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+}
+
+/* I647: Rename from a menu: the playlist's page opens and its title is the name field with the keyboard (as Create playlist, I646). */
+static void pl_rename_begin(desk* d, uint32_t id, const char* name) {
+    if (d->page != PG_PLAYLISTS) {
+        desk_page_goto(d, PG_PLAYLISTS);
+    }
+    if (d->pls_id != id) {
+        pls_open(d, id, name);
+    }
+    d->pl_nlen = 0u;
+    d->pl_name[0] = '\0';
+    d->pl_edit = 1;
     d->repaint = 1;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
 }
@@ -3788,6 +3856,12 @@ static sel_gui_rect pls_cover_rect(desk* d, sel_gui_rect mn) {
 static sel_gui_rect pls_play_rect(desk* d, sel_gui_rect mn) {
     sel_gui_rect c = pls_cover_rect(d, mn);
     return rect_of(c.x + c.w + lpx(d, PLS_GAP), c.y + c.h - lpx(d, QUEUE_BTN_H), lpx(d, QUEUE_BTN_W), lpx(d, QUEUE_BTN_H));
+}
+
+/* I647: More, beside Play: the menu with Rename and Delete. */
+static sel_gui_rect pls_more_rect(desk* d, sel_gui_rect mn) {
+    sel_gui_rect pb = pls_play_rect(d, mn);
+    return rect_of(pb.x + pb.w + lpx(d, QUEUE_BTN_GAP), pb.y, pb.w, pb.h);
 }
 
 static sel_gui_rect pls_row_rect(desk* d, sel_gui_rect mn, uint32_t slot) {
@@ -3829,6 +3903,7 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
     snprintf(count, sizeof count, "%u %s", (unsigned)d->pls_n, d->pls_n == 1u ? "song" : "songs");
     draw_text(d, rect_of(tx, cv.y + lpx(d, 24) + lpx(d, page_title_h(d)), pb.w * 2, lpx(d, 20)), count, 0, 13, muted);
     draw_button(d, pb, accent, "Play", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
+    draw_button(d, pls_more_rect(d, mn), surf, "More", 13, text);
     for (slot = 0; d->pls_scroll + slot < d->pls_n && pls_row_visible(d, mn, slot); slot++, shown++) {
         uint32_t i = d->pls_scroll + slot;
         sel_gui_rect r = pls_row_rect(d, mn, slot);
@@ -3869,8 +3944,8 @@ static void draw_playlists(desk* d) {
     draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, page_title_h(d))), "Playlists", 1, 32, text);
     for (i = 0; i < PL_BUTTONS; i++) {
         sel_gui_rect b = queue_btn_rect(d, mn, i);
-        int live = i < 2u || i == 4u ? 1 : sel >= 0 && (i == 3u || v->rows[sel].kind == (uint32_t)SEL_ROW_PLAYLIST);
-        draw_button(d, b, d->pl_confirm && i == 3u ? accent : surf, pl_button_label(d, i), 13, live ? text : muted);
+        int live = i < 2u ? 1 : sel >= 0 && v->rows[sel].kind == (uint32_t)SEL_ROW_PLAYLIST;
+        draw_button(d, b, surf, pl_button_label(i), 13, live ? text : muted);
     }
     sel_gui_round_rect(d->canvas, nm, rad, surf);
     draw_text(d, rect_of(nm.x + lpx(d, 12), nm.y, nm.w - lpx(d, 24), nm.h), d->pl_nlen > 0u ? d->pl_name : "Name", d->pl_edit, 13,
@@ -3922,31 +3997,12 @@ static int pl_button_click(desk* d, const sel_view_state* v, uint32_t k) {
     char line[160];
     d->repaint = 1;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
-    if (d->pl_confirm) { /* Cancel (slot 2) or Confirm Delete (slot 3); any other button also cancels */
-        d->pl_confirm = 0;
-        if (k == 3u && sel >= 0) {
-            snprintf(line, sizeof line, "%s %u", v->rows[sel].kind == (uint32_t)SEL_ROW_FOLDER ? "FOLDER_DEL" : "PLAYLIST_DEL",
-                     (unsigned)v->rows[sel].id);
-            d->pl_sel_id = 0u;
-            return pl_send(d, line);
-        }
-        return 1;
-    }
     switch (k) {
     case 0u:
         sel_uim_plbtn_line(0u, pl_take_name(d, "New Folder"), pl_target_folder(d, v), line, sizeof line);
         return pl_send(d, line);
     case 1u:
         return pl_create(d, pl_target_folder(d, v));
-    case 2u:
-        if (sel < 0 || v->rows[sel].kind != (uint32_t)SEL_ROW_PLAYLIST || d->pl_nlen == 0u) {
-            return 1; /* a folder has no rename verb; a playlist needs a typed name */
-        }
-        snprintf(line, sizeof line, "PLAYLIST_RENAME %u \"%s\"", (unsigned)v->rows[sel].id, pl_take_name(d, ""));
-        return pl_send(d, line);
-    case 3u:
-        d->pl_confirm = sel >= 0;
-        return 1;
     default:
         if (sel < 0 || v->rows[sel].kind != (uint32_t)SEL_ROW_PLAYLIST) {
             return 1;
@@ -3975,6 +4031,12 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
     }
     if (in_rect(pls_back_rect(d, mn), ev->x, ev->y)) {
         pls_close(d);
+        return 1;
+    }
+    if (in_rect(pls_more_rect(d, mn), ev->x, ev->y)) {
+        sel_gui_rect mr = pls_more_rect(d, mn);
+        plmenu_open(d, mr.x, mr.y + mr.h, d->pls_id, 0u, d->pls_name);
+        d->repaint = 1;
         return 1;
     }
     if (in_rect(pls_play_rect(d, mn), ev->x, ev->y)) {
@@ -4028,7 +4090,6 @@ static int pl_pointer(desk* d, const sel_gui_input* ev) {
     if (row >= 0) {
         d->pl_sel_kind = v->rows[row].kind;
         d->pl_sel_id = v->rows[row].id;
-        d->pl_confirm = 0;
         if (v->rows[row].kind == (uint32_t)SEL_ROW_PLAYLIST) { /* I633: a playlist row opens its page */
             pls_open(d, v->rows[row].id, v->rows[row].text);
         }
@@ -4038,12 +4099,36 @@ static int pl_pointer(desk* d, const sel_gui_input* ev) {
     return 1;
 }
 
+/* I647: a right-click (or ctrl-click) on a playlist or folder row of the Playlists list, or on a playlist row of the sidebar's Your
+ * Library list, opens the Rename / Delete menu. */
+static int plmenu_pointer(desk* d, const sel_gui_input* ev) {
+    int32_t row, sr;
+    if (ev->kind != SEL_GUI_IN_CLICK || !(ev->button == 1u || (ev->button == 0u && (ev->mods & TXT_MOD_CTRL) != 0u))) {
+        return 0;
+    }
+    sr = side_lib_at(d, ev->x, ev->y);
+    if (sr >= 0) {
+        plmenu_open(d, ev->x, ev->y, d->side_items[sr].id, 0u, d->side_items[sr].name);
+    } else if (d->pl_page && d->pls_id == 0u) {
+        const sel_view_state* v = pl_view(sel_engine_state(d->engine));
+        row = v != NULL ? pl_row_at(d, region_rect(d, "main"), ev->x, ev->y) : -1;
+        if (row < 0) {
+            return 0;
+        }
+        plmenu_open(d, ev->x, ev->y, v->rows[row].id, v->rows[row].kind == (uint32_t)SEL_ROW_FOLDER, v->rows[row].text);
+    } else {
+        return 0;
+    }
+    draw_home(d);
+    return 1;
+}
+
 /* A typed key while the name field is focused: printable keys append, Backspace deletes, Enter and Escape leave. */
 static int pl_key(desk* d, const sel_gui_input* ev) {
     if (ev->code == 13u && d->pls_id != 0u && d->pl_nlen > 0u) { /* I646: the open playlist's name field: Enter renames it */
         char line[160];
         snprintf(d->pls_name, sizeof d->pls_name, "%s", d->pl_name);
-        snprintf(line, sizeof line, "PLAYLIST_RENAME %u \"%s\"", (unsigned)d->pls_id, pl_take_name(d, ""));
+        sel_uim_plrename_line(d->pls_id, pl_take_name(d, ""), line, sizeof line);
         pl_send(d, line);
     } else if (ev->code == 13u || ev->code == 27u) {
         d->pl_edit = 0;
@@ -4799,6 +4884,10 @@ static const char* library_dump_build(desk* d) {
         uint32_t k, n = d->nagdlg_n, idx;
         sel_gui_rect pm = panel_rect(d, "main");
         o = dump_put(d, o, "nag %u syncs %u\n", (unsigned)(d->dlg_open == DLG_SYNC ? d->nagdlg_n : 0u), (unsigned)d->nag_syncs);
+        if (d->dlg_open == DLG_PLDEL) { /* I647: the Delete confirm's buttons, for a script to click */
+            sel_gui_rect cb = dlg_button_rect(d, 1u);
+            o = dump_put(d, o, "dlgconfirm %d %d %d %d\n", (int)cb.x, (int)cb.y, (int)cb.w, (int)cb.h);
+        }
         o = dump_put(d, o, "nagdlg opens %u done %d\nliststart %d\n", (unsigned)d->nagdlg_opens, d->nag_done, (int)(pm.y + lib_list_y(d)));
         if (d->dlg_open == DLG_SYNC) {
             sel_gui_rect sy = nagdlg_button_rect(d, 2u), lt = nagdlg_button_rect(d, 1u), nv = nagdlg_button_rect(d, 0u), pn = dlg_panel_rect(d);
@@ -4979,9 +5068,9 @@ static const char* library_dump_build(desk* d) {
         const sel_view_state* pv = pl_view(st);
         sel_gui_rect pmn = region_rect(d, "main"), pn = pl_name_rect(d, pmn);
         o = dump_put(d, o,
-                              "pl draws %u rows %u cmds %u opens %u count %u hash %08x sel %u confirm %d queue %u\n", (unsigned)d->pl_draws,
+                              "pl draws %u rows %u cmds %u opens %u count %u hash %08x sel %u queue %u\n", (unsigned)d->pl_draws,
                               (unsigned)d->pl_rows, (unsigned)d->pl_cmds, (unsigned)d->folder_opens, pv != NULL ? (unsigned)pv->row_n : 0u,
-                              (unsigned)pl_hash(pv), (unsigned)d->pl_sel_id, d->pl_confirm, (unsigned)st->queue_count);
+                              (unsigned)pl_hash(pv), (unsigned)d->pl_sel_id, (unsigned)st->queue_count);
         for (i = 0; i < PL_BUTTONS; i++) {
             sel_gui_rect b = queue_btn_rect(d, pmn, i);
             o = dump_put(d, o, "plbtn %u %d %d %d %d\n", (unsigned)i, (int)b.x,
@@ -5002,11 +5091,12 @@ static const char* library_dump_build(desk* d) {
         }
     }
     if (d->pl_page && d->pls_id != 0u) { /* I633: the open playlist page: its songs in order and the geometry a script clicks */
-        sel_gui_rect pmn = region_rect(d, "main"), bk = pls_back_rect(d, pmn), pp = pls_play_rect(d, pmn);
+        sel_gui_rect pmn = region_rect(d, "main"), bk = pls_back_rect(d, pmn), pp = pls_play_rect(d, pmn), pm = pls_more_rect(d, pmn);
         uint32_t j;
         o = dump_put(d, o, "plpage id=%u name=[%s] songs=%u rows=%u draws=%u back=%d,%d,%d,%d play=%d,%d,%d,%d edit=%d\n", (unsigned)d->pls_id, d->pls_name,
                      (unsigned)d->pls_n, (unsigned)d->pls_rows, (unsigned)d->pls_draws, (int)bk.x, (int)bk.y, (int)bk.w, (int)bk.h,
                      (int)pp.x, (int)pp.y, (int)pp.w, (int)pp.h, d->pl_edit);
+        o = dump_put(d, o, "plmore %d %d %d %d\n", (int)pm.x, (int)pm.y, (int)pm.w, (int)pm.h);
         for (j = 0; d->pls_scroll + j < d->pls_n && pls_row_visible(d, pmn, j) && o + 400u < sizeof d->library_dump; j++) {
             sel_gui_rect r = pls_row_rect(d, pmn, j);
             o = dump_put(d, o, "plsong %u %d %d %d %d file=%s title=%s\n", (unsigned)j, (int)r.x, (int)r.y, (int)r.w, (int)r.h, path_base(pls_key(d, d->pls_scroll + j)),
@@ -8239,7 +8329,7 @@ static int lib_ui_key(desk* d, const sel_gui_input* ev) {
 static int pl_list_key(desk* d, const sel_gui_input* ev) {
     const sel_view_state* v = pl_view(sel_engine_state(d->engine));
     int32_t sel = pl_sel_row(d, v), to;
-    if (ev->mods != 0u || v == NULL || v->row_n == 0u || d->pl_confirm || d->pls_id != 0u) {
+    if (ev->mods != 0u || v == NULL || v->row_n == 0u || d->dlg_open || d->pls_id != 0u) {
         return 0;
     }
     if (ev->code == 13u) {
@@ -8247,7 +8337,7 @@ static int pl_list_key(desk* d, const sel_gui_input* ev) {
             return 0;
         }
         d->kb_activates++;
-        return pl_button_click(d, v, 4u);
+        return pl_button_click(d, v, 2u);
     }
     to = list_nav(ev->code, sel, (int32_t)v->row_n, 5);
     if (to == LIST_NAV_NONE) {
@@ -8532,6 +8622,9 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         return ev->kind == SEL_GUI_IN_CLICK ? overlay_click(d, ev) : 0;
     }
     if (song_menu_pointer(d, ev)) {
+        return 1;
+    }
+    if (plmenu_pointer(d, ev)) {
         return 1;
     }
     if (footer_bar_pointer(d, ev)) {

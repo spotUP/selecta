@@ -17,6 +17,29 @@ uint32_t sel_uim_plbtn_line(uint32_t button, const char* name, uint32_t folder, 
                         : done(snprintf(out, cap, "PLAYLIST_CREATE \"%s\" %u", name, (unsigned)folder), cap);
 }
 
+uint32_t sel_uim_plrename_line(uint32_t id, const char* name, char* out, uint32_t cap) {
+    return name == NULL || name[0] == '\0' ? 0u : done(snprintf(out, cap, "PLAYLIST_RENAME %u \"%s\"", (unsigned)id, name), cap);
+}
+
+uint32_t sel_uim_pldel_line(uint32_t folder, uint32_t id, char* out, uint32_t cap) {
+    return done(snprintf(out, cap, "%s %u", folder ? "FOLDER_DEL" : "PLAYLIST_DEL", (unsigned)id), cap);
+}
+
+uint32_t sel_uim_plmenu_action(uint32_t folder, uint32_t k) {
+    if (folder) {
+        return k == 0u ? SEL_UIM_PLACT_DELETE : SEL_UIM_PLACT_NONE; /* a folder has no rename verb */
+    }
+    return k == 0u ? SEL_UIM_PLACT_RENAME : k == 1u ? SEL_UIM_PLACT_DELETE : SEL_UIM_PLACT_NONE;
+}
+
+const char* sel_uim_plmenu_label(uint32_t action) {
+    return action == SEL_UIM_PLACT_RENAME ? "Rename" : action == SEL_UIM_PLACT_DELETE ? "Delete" : NULL;
+}
+
+uint32_t sel_uim_pldel_text(uint32_t folder, const char* name, char* out, uint32_t cap) {
+    return done(snprintf(out, cap, "Delete %s \"%s\"? This cannot be undone.", folder ? "folder" : "playlist", name != NULL ? name : ""), cap);
+}
+
 const char* sel_uim_flag_label(uint32_t k) { return k == 0u ? "Mark Wrong" : k == 1u ? "Skip Song" : k == 2u ? "Save Note" : NULL; }
 
 uint32_t sel_uim_flag_line(uint32_t k, const char* note, char* out, uint32_t cap) {

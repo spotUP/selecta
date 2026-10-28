@@ -5,7 +5,7 @@
 # run is a reload of what an earlier one stored.
 # 1. Create a folder, select it, create a playlist in it, then reload the library: the folder holds the playlist (the
 #    plan line) and the reload counted one folder open (STAT_FOLDER_OPENS).
-# 2. Rename, delete with a confirm (Cancel keeps it), and drag a playlist onto another folder.
+# 2. Rename and Delete from the row's right-click menu (I647), and drag a playlist onto another folder.
 # 3. I241: on the Songs page a drag of one song row onto a playlist target adds exactly one entry to that playlist.
 # 4. Sentinel `pl draws` and `cmds` prove the page drew and the pointer code sent each verb; a golden pins the frame.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
@@ -17,19 +17,18 @@ foreach(n one two three)
 endforeach()
 
 # pl_run(<tag> <input script> [extra dui_run args]) runs the Playlists page on the library file PLDB and sets <tag>_out,
-# _draws, _rows, _cmds, _opens, _confirm, _queue and _canvas.
+# _draws, _rows, _cmds, _opens, _queue and _canvas.
 function(pl_run tag input)
   file(WRITE "${WORK}/${tag}.txt" "${input}")
   dui_run(o --ui desktop --backend mem --view playlists --canvas 1280x800 --clock fixed --stats
     --db "${PLDB}" ${ARGN} --input "${WORK}/${tag}.txt")
-  if(NOT "${o}" MATCHES "pl draws ([0-9]+) rows ([0-9]+) cmds ([0-9]+) opens ([0-9]+) count ([0-9]+) hash ([0-9a-f]+) sel ([0-9]+) confirm ([0-9]+) queue ([0-9]+)")
+  if(NOT "${o}" MATCHES "pl draws ([0-9]+) rows ([0-9]+) cmds ([0-9]+) opens ([0-9]+) count ([0-9]+) hash ([0-9a-f]+) sel ([0-9]+) queue ([0-9]+)")
     message(FATAL_ERROR "no pl sentinel in:\n${o}")
   endif()
   set(${tag}_draws "${CMAKE_MATCH_1}" PARENT_SCOPE)
   set(${tag}_rows "${CMAKE_MATCH_2}" PARENT_SCOPE)
   set(${tag}_cmds "${CMAKE_MATCH_3}" PARENT_SCOPE)
-  set(${tag}_confirm "${CMAKE_MATCH_8}" PARENT_SCOPE)
-  set(${tag}_queue "${CMAKE_MATCH_9}" PARENT_SCOPE)
+  set(${tag}_queue "${CMAKE_MATCH_8}" PARENT_SCOPE)
   if(NOT "${o}" MATCHES "folders_screen opens=([0-9]+)")
     message(FATAL_ERROR "no folders_screen opens in:\n${o}")
   endif()
@@ -43,6 +42,25 @@ endfunction()
 function(centre_of outvar dump key idx)
   if(NOT "${dump}" MATCHES "${key} ${idx} ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)")
     message(FATAL_ERROR "no ${key} ${idx} geometry in:\n${dump}")
+  endif()
+  math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+  math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+  set(${outvar} "${cx} ${cy}" PARENT_SCOPE)
+endfunction()
+
+# menu_item(<out var> <"x y" of the click> <item index>) is "x y" of a context menu item: the menu opens at the click, 24 px items (I647).
+function(menu_item outvar at k)
+  string(REGEX MATCH "^[0-9]+" mx "${at}")
+  string(REGEX MATCH "[0-9]+$" my "${at}")
+  math(EXPR ix "${mx} + 10")
+  math(EXPR iy "${my} + ${k} * 24 + 12")
+  set(${outvar} "${ix} ${iy}" PARENT_SCOPE)
+endfunction()
+
+# centre_of_line(<out var> <dump> <key>) is "x y", the centre of the dumped line "<key> x y w h".
+function(centre_of_line outvar dump key)
+  if(NOT "${dump}" MATCHES "${key} ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)")
+    message(FATAL_ERROR "no ${key} geometry in:\n${dump}")
   endif()
   math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
   math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
@@ -78,7 +96,7 @@ expect_eq("verbs sent by an idle page" "${a_cmds}" 0)
 if(NOT "${a_out}" MATCHES "\nempty No playlists yet. Type a name and choose New Playlist.\n")
   message(FATAL_ERROR "an empty Playlists page must draw its empty state in:\n${a_out}")
 endif()
-foreach(i 0 1 2 3 4)
+foreach(i 0 1 2)
   centre_of(btn${i} "${a_out}" plbtn ${i})
 endforeach()
 centre_of(name "${a_out}" plname 0)
@@ -106,21 +124,15 @@ if(r_opens LESS 1)
   message(FATAL_ERROR "the reload did not count a folder open (opens ${r_opens})")
 endif()
 # Play loads the playlist into the queue: one entry
-pl_run(p "click ${slot1}\nwait 100\nkey escape\nwait 50\nclick ${btn4}\nwait 100\n")
+pl_run(p "click ${slot1}\nwait 100\nkey escape\nwait 50\nclick ${btn2}\nwait 100\n")
 expect_eq("queue entries after Play" "${p_queue}" 1)
 
-# 2. rename (needs a typed name), cancel a delete
-pl_run(n "click ${slot1}\nwait 100\nkey escape\nwait 50\nclick ${name}\n${t_cab}click ${btn2}\nwait 100\n")
+# 2. I647: Rename is in the row's right-click menu (the toolbar has no Rename); it names the playlist in its title field
+menu_item(m_rename "${slot1}" 0)
+pl_run(n "rclick ${slot1}\nwait 50\nclick ${m_rename}\nwait 100\n${t_cab}key enter\nwait 100\nkey escape\nwait 100\n")
 if(NOT "${n_out}" MATCHES "plrow 1 playlist [0-9]+ 1 cab")
-  message(FATAL_ERROR "Rename did not rename the playlist in:\n${n_out}")
+  message(FATAL_ERROR "the right-click Rename did not rename the playlist in:\n${n_out}")
 endif()
-pl_run(dc "click ${slot1}\nwait 100\nkey escape\nwait 50\nclick ${btn3}\nwait 100\n")
-expect_eq("confirm pending after Delete" "${dc_confirm}" 1)
-centre_of(cancel "${dc_out}" plbtn 2)
-centre_of(confirm "${dc_out}" plbtn 3)
-pl_run(dk "click ${slot1}\nwait 100\nkey escape\nwait 50\nclick ${btn3}\nwait 100\nclick ${cancel}\nwait 100\n")
-expect_eq("rows after Cancel" "${dk_rows}" 2)
-expect_eq("confirm pending after Cancel" "${dk_confirm}" 0)
 
 # drag a playlist onto another folder: a second folder, then drag the playlist onto it
 pl_run(f "click ${name}\n${t_box}click ${btn0}\nwait 100\n")
@@ -135,9 +147,13 @@ if(NOT "${m2_out}" MATCHES "plrow ([0-9]) folder [0-9]+ 0 box\nplrow ([0-9]) pla
   message(FATAL_ERROR "the playlist is not under 'box' after the move and a reload in:\n${m2_out}")
 endif()
 
-# delete with a confirm removes the playlist, and the reload agrees
+# I647: Delete in the row's right-click menu opens the confirm; Confirm removes the playlist, and the reload agrees
 centre_of(cabslot "${m2_out}" plslot ${CMAKE_MATCH_2})
-pl_run(x "click ${cabslot}\nwait 100\nkey escape\nwait 50\nclick ${btn3}\nwait 100\nclick ${confirm}\nwait 100\n")
+menu_item(m_delete "${cabslot}" 1)
+pl_run(dc "rclick ${cabslot}\nwait 50\nclick ${m_delete}\nwait 100\n")
+expect_eq("rows while the Delete confirm is open" "${dc_rows}" 3)
+centre_of_line(confirm "${dc_out}" dlgconfirm)
+pl_run(x "rclick ${cabslot}\nwait 50\nclick ${m_delete}\nwait 100\nclick ${confirm}\nwait 100\n")
 expect_eq("rows after a confirmed Delete" "${x_rows}" 2)
 pl_run(x2 "wait 100\n")
 expect_eq("rows after Delete and a reload" "${x2_rows}" 2)
@@ -146,7 +162,7 @@ expect_eq("rows after Delete and a reload" "${x2_rows}" 2)
 # playlist target (below Queue in the sidebar) appends exactly one entry to it. Play on the Playlists page reads it back.
 set(PLDB "${WORK}/drop.db")
 pl_run(s0 "click ${name}\n${t_new}click ${btn1}\nwait 100\n" --exec "QUEUE_ADD ${WORK}/one.mod")
-pl_run(s1 "click ${slot0}\nwait 100\nkey escape\nwait 50\nclick ${btn4}\nwait 100\n")
+pl_run(s1 "click ${slot0}\nwait 100\nkey escape\nwait 50\nclick ${btn2}\nwait 100\n")
 expect_eq("entries of the new playlist before the drop" "${s1_queue}" 1)
 file(WRITE "${WORK}/drop.txt" "drag 600 142 870 150\nwait 100\n")
 dui_run(drop --ui desktop --backend mem --view songs --canvas 1280x800 --clock fixed --stats --db "${PLDB}"
@@ -155,7 +171,7 @@ dui_run(drop --ui desktop --backend mem --view songs --canvas 1280x800 --clock f
 if(NOT "${drop}" MATCHES "drags=1")
   message(FATAL_ERROR "the drop on the playlist target was not counted in:\n${drop}")
 endif()
-pl_run(s2 "click ${slot0}\nwait 100\nkey escape\nwait 50\nclick ${btn4}\nwait 100\n")
+pl_run(s2 "click ${slot0}\nwait 100\nkey escape\nwait 50\nclick ${btn2}\nwait 100\n")
 expect_eq("entries of the playlist after one dropped song" "${s2_queue}" 2)
 
 # 4. the golden of the untouched page
