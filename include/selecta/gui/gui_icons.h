@@ -24,6 +24,7 @@
     X(PLUS, "plus") \
     X(MINUS, "minus") \
     X(CHEVRON_DOWN, "chevron-down") \
+    X(CHEVRON_LEFT, "chevron-left") \
     X(CHEVRON_RIGHT, "chevron-right") \
     X(LIST, "list") \
     X(LIBRARY, "library") \
