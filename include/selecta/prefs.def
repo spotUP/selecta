@@ -74,3 +74,16 @@ SEL_PREF(SCROBBLE_LASTFM_KEY,     "scrobble.lastfm_key",     "",                
 SEL_PREF(SCROBBLE_LASTFM_SECRET,  "scrobble.lastfm_secret",  "",                                  SEL_PREF_PLAIN)
 SEL_PREF(SCROBBLE_LASTFM_SESSION, "scrobble.lastfm_session", "",                                  SEL_PREF_PLAIN)
 #endif
+/* Search source of the search field (MUI-P8-8): Library, Web or Demozoo (src/uimodel/sources.c). */
+SEL_PREF(SEARCH_SOURCE,           "search.source",           "Library",                           SEL_PREF_PLAIN)
+/* MUI state kept on close (MUI-P8-11, src/uimodel/panels.c): window geometry "x,y,w,h", the open panes bit mask and the
+ * browse view. Empty: the MUI defaults. The visualiser is ui.desktop.viz, shared with the desktop UI. */
+SEL_PREF(UI_MUI_GEOMETRY,         "ui.mui.geometry",         "",                                  SEL_PREF_PLAIN)
+SEL_PREF(UI_MUI_PANES,            "ui.mui.panes",            "",                                  SEL_PREF_PLAIN)
+SEL_PREF(UI_MUI_BROWSE_VIEW,      "ui.mui.browse_view",      "",                                  SEL_PREF_PLAIN)
+/* Amiga runtime settings (MUI-P8-14): Commodities hotkeys 1 on / 0 off, the main task priority (-5 to 5, clamped by
+ * sel_uim_priority_clamp; audio.priority is the audio task's) and the HippoPlayer-style group file path. Stored only: the
+ * engine does not act on them yet (I643, M4-P12-12). */
+SEL_PREF(AMIGA_HOTKEYS,           "amiga.hotkeys",           "1",                                 SEL_PREF_PLAIN)
+SEL_PREF(AMIGA_TASK_PRIORITY,     "amiga.task_priority",     "0",                                 SEL_PREF_PLAIN)
+SEL_PREF(AMIGA_GROUP_FILE,        "amiga.group_file",        "",                                  SEL_PREF_PLAIN)

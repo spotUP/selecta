@@ -5,6 +5,8 @@
 #include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/keys.h>
 #include <selecta/uimodel/viewcmds.h>
+#include <selecta/uimodel/panels.h>
+#include <selecta/uimodel/sources.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -454,6 +456,32 @@ static void test_remember(void) {
     CHECK(b.panes == 5u && strcmp(b.viz, "viz_scope") == 0 && strcmp(b.browse, "columns") == 0, "panes/viz/browse: %u %s %s", (unsigned)b.panes, b.viz, b.browse);
 }
 
+/* Every PREF_SET line a P8 mapping sends names a key of prefs.def, or the engine rejects it (I643). */
+static int pref_known(const char* line) {
+    char key[64];
+    if (sscanf(line, "PREF_SET %63s", key) != 1) {
+        return 0;
+    }
+#define SEL_PREF(id, pkey, def, kind) if (strcmp(pkey, key) == 0) return 1;
+#include <selecta/prefs.def>
+#undef SEL_PREF
+    return 0;
+}
+
+static void test_pref_keys(void) {
+    char o[SEL_UIM_CMD_MAX];
+    uint32_t i;
+    for (i = 0; i < SEL_UIM_REM_COUNT; i++) {
+        CHECK(sel_uim_remember_line(i, "x", o, sizeof o) != 0u && pref_known(o), "remembered item %u: '%s'", (unsigned)i, o);
+    }
+    CHECK(sel_uim_search_source_line(0u, o, sizeof o) != 0u && pref_known(o), "search source: '%s'", o);
+    CHECK(sel_uim_hotkeys_line(1, o, sizeof o) != 0u && pref_known(o), "hotkeys: '%s'", o);
+    CHECK(sel_uim_priority_line(2, o, sizeof o) != 0u && pref_known(o), "task priority: '%s'", o);
+    CHECK(sel_uim_groupfile_line("S:Selecta.group", o, sizeof o) != 0u && pref_known(o), "group file: '%s'", o);
+    CHECK(sel_uim_sources_off_line(NULL, 0u, 0u, 0u, o, sizeof o) != 0u && pref_known(o), "sources off: '%s'", o);
+    CHECK(sel_uim_sync_notnow_line(1, o, sizeof o) != 0u && pref_known(o), "not now: '%s'", o);
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -486,6 +514,8 @@ int main(int argc, char** argv) {
         test_doors();
     } else if (strcmp(argv[1], "statistics") == 0) {
         test_statistics();
+    } else if (strcmp(argv[1], "pref-keys") == 0) {
+        test_pref_keys();
     } else {
         printf("unknown test %s\n", argv[1]);
         return 2;
