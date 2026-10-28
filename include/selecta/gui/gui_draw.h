@@ -34,6 +34,8 @@ enum { SEL_GUI_PROF_FILL = 0, SEL_GUI_PROF_SCRIM, SEL_GUI_PROF_ROUND, SEL_GUI_PR
        /* I395: the non-primitive paint costs: dirty-rect merge, clip and region set, palette rebuild (cube), tile quantise, art lookup */
        SEL_GUI_PROF_DIRTY, SEL_GUI_PROF_CLIP, SEL_GUI_PROF_PALETTE, SEL_GUI_PROF_QUANT, SEL_GUI_PROF_ART, SEL_GUI_PROF_COUNT };
 
+#define SEL_GUI_COPPER_KEYS 16u /* I628: gradients recorded per canvas, over at most 4 pens */
+
 typedef struct sel_gui_canvas {
     uint32_t format; /* SEL_GUI_RGBA32 or SEL_GUI_INDEX8 */
     int32_t w, h;
@@ -68,15 +70,21 @@ typedef struct sel_gui_canvas {
     /* I441: copper gradients. A backend with a per-scanline palette (the AGA copper) sets copper_pens through
      * sel_gui_copper_enable; opaque vertical gradients on an INDEX8 canvas then fill with one reserved pen (255 down)
      * per distinct gradient and record it in copper_key, and the backend loads the pen's colour per line from
-     * sel_gui_copper_changes. The rows are canvas rows, so ydiv is already applied. */
+     * sel_gui_copper_changes. The rows are canvas rows, so ydiv is already applied.
+     * I628: a pen is a per-scanline colour, so one pen carries several gradients on disjoint rows (the copper reloads
+     * it where the next one starts). Gradients on exactly the same rows share one key and so one line colour (the
+     * I510 decision: the covers of one shelf row share the row's colour, taken from the first cover drawn). */
     uint32_t copper_pens;
-    uint32_t copper_n;
+    uint32_t copper_n;      /* keys in use */
+    uint32_t copper_mask;   /* bit (255 - pen) set while a key holds that pen */
     uint32_t copper_filled; /* gradient rows drawn with a copper pen since init: the sentinel for I441 */
+    uint32_t copper_miss;   /* copper-able gradients that found no free pen and dithered (I628) */
     struct sel_gui_copper_key {
         int32_t ry, rh;  /* the gradient rectangle's canvas rows: the colour depends on (y - ry) / (rh - 1) */
         int32_t y0, y1;  /* canvas rows [y0, y1) actually filled with the pen */
         uint32_t a, b;   /* 0xRRGGBB ends */
-    } copper_key[4];
+        uint32_t pen;    /* palette index, 255 down to 256 - copper_pens */
+    } copper_key[SEL_GUI_COPPER_KEYS];
 } sel_gui_canvas;
 
 /* I441: one change of a copper pen colour: from canvas row y on, `pen` shows rgb (0xRRGGBB) until its next change. */
