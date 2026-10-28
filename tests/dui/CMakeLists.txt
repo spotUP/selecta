@@ -46,7 +46,7 @@ if(NOT SEL_AMIGA)
   set_tests_properties(dui-font-roles PROPERTIES LABELS font-roles TIMEOUT 60) # ledger row, not a plan item: no dui label, dui-ratchet counts dui against the plan ids
 endif()
 if(NOT SEL_AMIGA)
-  foreach(spec "dui-uim-frame:uim_frame" "dui-ui-switch:ui_switch" "dui-ui-multi:ui_multi" "dui-mode-pref:mode_pref" "dui-actions:actions" "dui-layout:layout" "dui-governor:governor" "dui-tokens:tokens" "dui-draw:draw" "dui-dirty:dirty" "dui-text:text" "dui-artwork:artwork" "dui-genart:genart" "dui-golden-home:golden_home" "dui-sdl:sdl" "dui-widgets:widgets" "dui-hidpi:hidpi" "dui-anim:anim" "dui-keys:keys" "dui-mouse:mouse" "dui-tooltips:tooltips" "dui-gestures:gestures" "dui-frame:frame" "dui-home:home" "dui-library:library" "dui-styles:styles" "dui-grid-coverflow:grid_coverflow" "dui-search:search" "dui-nowplaying:nowplaying" "dui-queue:queue" "dui-queue-scroll:queue_scroll" "dui-playlists:playlists" "dui-songinfo:songinfo" "dui-overlays:overlays" "dui-nav:nav" "dui-viz:viz" "dui-tracker:tracker" "dui-drop:drop" "dui-footer:footer" "dui-screen:screen" "dui-hover-live:hover_live" "dui-hover-rows:hover_rows" "dui-hover-sidebar-ink:hover_sidebar_ink" "dui-hover-instant:hover_instant" "dui-hover-nowplaying:hover_nowplaying" "dui-hover-regions:hover_regions" "dui-scan-ui:scan_ui" "dui-library-reload:library_reload" "dui-library-unknown-composer:library_unknown_composer" "dui-song-menu:song_menu" "dui-library-remove:library_remove" "dui-song-menu-live:song_menu_live" "dui-song-menu-lists:song_menu_lists" "keys-live:keys_live" "dui-aga-budget:aga_budget" "dui-library-style:library_style" "dui-stats-panel:stats_panel" "dui-home-cover-shadow:home_cover_shadow" "dui-coverflow-slide:coverflow_slide" "dui-view-exec-order:view_exec_order" "dui-zoom:zoom" "dui-list-keys:list_keys" "dui-library-sources:library_sources" "dui-library-scroll:library_scroll" "dui-library-scroll-drag:library_scroll_drag" "dui-sources-counters:sources_counters" "dui-sync-banner:sync_banner" "dui-tall-pixels:tall_pixels" "dui-aga-button-polish:aga_button_polish" "dui-aga-native-text:aga_native_text" "window-raise:window_raise" "dui-idle-turns:idle_turns")
+  foreach(spec "dui-uim-frame:uim_frame" "dui-ui-switch:ui_switch" "dui-ui-multi:ui_multi" "dui-mode-pref:mode_pref" "dui-actions:actions" "dui-layout:layout" "dui-governor:governor" "dui-tokens:tokens" "dui-draw:draw" "dui-dirty:dirty" "dui-text:text" "dui-artwork:artwork" "dui-genart:genart" "dui-golden-home:golden_home" "dui-sdl:sdl" "dui-widgets:widgets" "dui-hidpi:hidpi" "dui-anim:anim" "dui-keys:keys" "dui-mouse:mouse" "dui-tooltips:tooltips" "dui-gestures:gestures" "dui-frame:frame" "dui-home:home" "dui-library:library" "dui-styles:styles" "dui-grid-coverflow:grid_coverflow" "dui-search:search" "dui-nowplaying:nowplaying" "dui-queue:queue" "dui-queue-scroll:queue_scroll" "dui-playlists:playlists" "dui-songinfo:songinfo" "dui-overlays:overlays" "dui-nav:nav" "dui-viz:viz" "dui-tracker:tracker" "dui-drop:drop" "dui-footer:footer" "dui-screen:screen" "dui-hover-live:hover_live" "dui-hover-rows:hover_rows" "dui-hover-sidebar-ink:hover_sidebar_ink" "dui-hover-instant:hover_instant" "dui-hover-nowplaying:hover_nowplaying" "dui-hover-regions:hover_regions" "dui-scan-ui:scan_ui" "dui-library-reload:library_reload" "dui-library-unknown-composer:library_unknown_composer" "dui-song-menu:song_menu" "dui-library-remove:library_remove" "dui-song-menu-live:song_menu_live" "dui-song-menu-lists:song_menu_lists" "keys-live:keys_live" "dui-aga-budget:aga_budget" "dui-library-style:library_style" "dui-stats-panel:stats_panel" "dui-home-cover-shadow:home_cover_shadow" "dui-coverflow-slide:coverflow_slide" "dui-view-exec-order:view_exec_order" "dui-zoom:zoom" "dui-list-keys:list_keys" "dui-library-sources:library_sources" "dui-library-scroll:library_scroll" "dui-library-scroll-drag:library_scroll_drag" "dui-sources-counters:sources_counters" "dui-sync-banner:sync_banner" "dui-tall-pixels:tall_pixels" "dui-aga-button-polish:aga_button_polish" "dui-aga-native-text:aga_native_text" "window-raise:window_raise" "dui-idle-turns:idle_turns" "dui-start-home:start_home")
     string(REPLACE ":" ";" pair "${spec}")
     list(GET pair 0 tname)
     list(GET pair 1 script)
@@ -89,6 +89,8 @@ if(NOT SEL_AMIGA)
       string(REPLACE "dui-" "" tlabel "${tname}")
     elseif(tname STREQUAL "dui-view-exec-order") # I398: --view enters its page before --exec runs; ledger row, not a plan item
       set(tlabel view-exec-order)
+    elseif(tname STREQUAL "dui-start-home") # I594: Home is drawn at start without --view; ledger row, not a plan item
+      set(tlabel start-home)
     endif()
     set_tests_properties(${tname} PROPERTIES LABELS ${tlabel} TIMEOUT 120 ENVIRONMENT "TMPDIR=${tmpdir}")
   endforeach()
@@ -217,3 +219,9 @@ set_tests_properties(dui-copper-gradient PROPERTIES TIMEOUT 60)
 add_executable(dui_stopped_clock_unit stopped_clock_unit.c)
 target_link_libraries(dui_stopped_clock_unit PRIVATE selecta_uimodel)
 add_test(NAME dui-stopped-clock COMMAND dui_stopped_clock_unit)
+
+# I595: INDEX8 anti-aliased edges blend against the destination real colour: art band cube over artwork, the row colour over a copper pen.
+add_executable(dui_index8_blend_unit index8_blend_unit.c)
+target_link_libraries(dui_index8_blend_unit PRIVATE selecta_gui)
+add_test(NAME dui-index8-blend COMMAND dui_index8_blend_unit)
+set_tests_properties(dui-index8-blend PROPERTIES TIMEOUT 60)

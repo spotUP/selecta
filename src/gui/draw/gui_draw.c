@@ -381,19 +381,49 @@ uint32_t sel_gui_present(sel_gui_canvas* c) {
 
 static const uint8_t g_bayer[16] = {0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5};
 
-static uint32_t cube_index(sel_gui_canvas* c, uint32_t r, uint32_t g, uint32_t b) {
+/* Nearest palette index of a colour inside one region: the UI cube for SEL_GUI_RGN_UI, the region's own cube for the
+ * art, tile, panel and cover-flow bands. The pen is marked used in that region. */
+static uint32_t cube_index_in(sel_gui_canvas* c, uint32_t region, uint32_t r, uint32_t g, uint32_t b) {
     uint32_t at = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3), idx;
-    if (c->region >= SEL_GUI_RGN_ART && (c->rcube_stale & (1u << (c->region - SEL_GUI_RGN_ART))) != 0u &&
-        c->colours > g_rgn_base[c->region - SEL_GUI_RGN_ART]) {
-        uint32_t k = c->region - SEL_GUI_RGN_ART, lo = g_rgn_base[k], sz = g_rgn_size[k] - (k == 3u ? c->copper_pens : 0u);
+    if (region >= SEL_GUI_RGN_ART && (c->rcube_stale & (1u << (region - SEL_GUI_RGN_ART))) != 0u &&
+        c->colours > g_rgn_base[region - SEL_GUI_RGN_ART]) {
+        uint32_t k = region - SEL_GUI_RGN_ART, lo = g_rgn_base[k], sz = g_rgn_size[k] - (k == 3u ? c->copper_pens : 0u);
         build_cube(c->rcube[k], c->palette + lo, c->colours - lo < sz ? c->colours - lo : sz, &c->cube_ops);
         c->rcube_stale &= ~(1u << k);
     }
-    idx = c->region >= SEL_GUI_RGN_ART
-              ? g_rgn_base[c->region - SEL_GUI_RGN_ART] + c->rcube[c->region - SEL_GUI_RGN_ART][at]
-              : c->cube[at];
-    c->used[c->region][idx >> 5] |= 1u << (idx & 31u);
+    idx = region >= SEL_GUI_RGN_ART ? g_rgn_base[region - SEL_GUI_RGN_ART] + c->rcube[region - SEL_GUI_RGN_ART][at]
+                                    : c->cube[at];
+    c->used[region][idx >> 5] |= 1u << (idx & 31u);
     return idx;
+}
+
+static uint32_t cube_index(sel_gui_canvas* c, uint32_t r, uint32_t g, uint32_t b) {
+    return cube_index_in(c, c->region, r, g, b);
+}
+
+static uint32_t copper_rgb(const struct sel_gui_copper_key* k, int32_t y);
+
+/* 1 when palette index idx is a live copper pen (I441): its colour changes per row, palette[idx] is only a stand-in. */
+static int is_copper_pen(const sel_gui_canvas* c, uint32_t idx) {
+    return c->copper_n > 0u && idx >= 256u - c->copper_n;
+}
+
+/* The colour a destination pixel really shows: the row's copper colour for a copper pen, else its palette entry. */
+static uint32_t dest_rgb(const sel_gui_canvas* c, uint32_t idx, int32_t y) {
+    return is_copper_pen(c, idx) ? copper_rgb(&c->copper_key[255u - idx], y) : c->palette[idx];
+}
+
+/* The region whose cube maps a blend over destination index idx (I595): an index inside an art band maps through
+ * that band's cube, so the edge picks a real cover colour; a UI index, or a copper pen (a blend never lands on
+ * one), maps through the drawing region. */
+static uint32_t dest_region(const sel_gui_canvas* c, uint32_t idx) {
+    uint32_t k;
+    if (idx < g_rgn_base[0] || is_copper_pen(c, idx)) {
+        return c->region;
+    }
+    for (k = 3u; idx < g_rgn_base[k]; k--) {
+    }
+    return SEL_GUI_RGN_ART + k;
 }
 
 static uint32_t clampc(int32_t v) { return v < 0 ? 0u : v > 255 ? 255u : (uint32_t)v; }
@@ -416,14 +446,16 @@ static void put(sel_gui_canvas* c, int32_t x, int32_t y, uint32_t argb, int32_t 
         *p = 0xFF000000u | (sr << 16) | (sg << 8) | sb;
     } else {
         uint8_t* p = px8(c, x, y);
+        uint32_t region = c->region;
         if (a < 255u) {
-            uint32_t d = c->palette[*p];
+            uint32_t d = dest_rgb(c, *p, y);
             sr = div255(sr * a + ((d >> 16) & 255u) * (255u - a));
             sg = div255(sg * a + ((d >> 8) & 255u) * (255u - a));
             sb = div255(sb * a + (d & 255u) * (255u - a));
+            region = dest_region(c, *p);
         }
-        *p = (uint8_t)cube_index(c, clampc((int32_t)sr + dither), clampc((int32_t)sg + dither),
-                                 clampc((int32_t)sb + dither));
+        *p = (uint8_t)cube_index_in(c, region, clampc((int32_t)sr + dither), clampc((int32_t)sg + dither),
+                                    clampc((int32_t)sb + dither));
     }
 }
 
@@ -489,7 +521,9 @@ static void fill_span(fill_ctx* f, int32_t x0, int32_t x1, int32_t y) {
         uint8_t* p = px8(c, x0, y);
         for (x = x0; x < x1; x++, p++) {
             uint8_t d = *p;
-            if (f->lut[d] == 0xFFFFu) {
+            if (is_copper_pen(c, d)) { /* the destination colour changes per row: no table */
+                put(c, x, y, f->argb, 0);
+            } else if (f->lut[d] == 0xFFFFu) {
                 put(c, x, y, f->argb, 0);
                 f->lut[d] = *p;
             } else {
@@ -776,7 +810,7 @@ static void blit_mask_raw(sel_gui_canvas* c, int32_t x, int32_t y, const uint8_t
                 if (a == 0u) {
                     continue;
                 }
-                if (key != memo_key) {
+                if (key != memo_key || (a < 255u && is_copper_pen(c, *d))) { /* a copper pen differs on every row */
                     put(c, px, py, (a << 24) | (tint & 0xFFFFFFu), 0);
                     memo_val = *d;
                     memo_key = key;
@@ -831,7 +865,7 @@ static void blit_image_raw(sel_gui_canvas* c, sel_gui_rect dst, const uint32_t* 
 }
 
 /* I477: nearest image blit whose corners follow a rounded rect of `radius` (the card behind it). Edge pixels blend the
- * source by round_cov coverage over what is already there; INDEX8 keeps or drops a pixel at half coverage. */
+ * source by round_cov coverage over what is already there. */
 static void blit_image_round_raw(sel_gui_canvas* c, sel_gui_rect dst, const uint32_t* src, int32_t sw, int32_t sh,
                                  int32_t sstride, int32_t radius, int32_t k) {
     sel_gui_rect v;
@@ -856,13 +890,7 @@ static void blit_image_round_raw(sel_gui_canvas* c, sel_gui_rect dst, const uint
                 continue;
             }
             if (cov < 16u) {
-                if (c->format == SEL_GUI_INDEX8) {
-                    if (cov < 8u) {
-                        continue;
-                    }
-                } else {
-                    col = ((((col >> 24) * cov + 8u) / 16u) << 24) | (col & 0xFFFFFFu);
-                }
+                col = ((((col >> 24) * cov + 8u) / 16u) << 24) | (col & 0xFFFFFFu);
             }
             put(c, x, y, col, 0);
         }
