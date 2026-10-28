@@ -821,6 +821,7 @@ int main(int argc, char** argv)
             printf("ui_drop id=%s drops=%u scans=%u\n", g_uis[u].id, (unsigned)sel_tag_find(us, SEL_UI_STAT_DROPS, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_SCANS, 0));
             printf("ui_list id=%s %s\n", g_uis[u].id, (const char*)sel_tag_find(us, SEL_UI_STAT_LIST_VIEW, (uintptr_t) ""));
+            printf("ui_p4 id=%s %s\n", g_uis[u].id, (const char*)sel_tag_find(us, SEL_UI_STAT_MUI_P4, (uintptr_t) ""));
             printf("ui_backend id=%s backend=%s depth=%u\n", g_uis[u].id,
                    (const char*)sel_tag_find(us, SEL_UI_STAT_BACKEND, (uintptr_t)""),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_SCREEN_DEPTH, 0));
