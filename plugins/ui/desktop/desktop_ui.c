@@ -941,6 +941,15 @@ static sel_gui_rect vol_bar_rect(const desk* d) {
     return rect_of(pl.x + pl.w - sp - lpx(d, 96), pl.y + sp + lpx(d, 40), lpx(d, 96), lpx(d, 4));
 }
 
+/* The window-level overlays (the song menu and the dialog) float above every region, so a repaint of ANY region (the
+ * sidebar hover fade, the queue widget) must end with this pass or it paints over the part of them it overlaps. */
+static void song_menu_draw(desk* d);
+static void dlg_draw(desk* d);
+static void desk_draw_window_overlays(desk* d) {
+    song_menu_draw(d);
+    dlg_draw(d);
+}
+
 static void draw_widget(desk* d, uint32_t bit) {
     const sel_uim_frame* f = &d->uim.frame;
     int32_t sp = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
@@ -971,6 +980,8 @@ static void draw_widget(desk* d, uint32_t bit) {
         desk_pt_lap(d, PT_SIDEBAR);
         if (d->home) {
             draw_home(d);
+        } else {
+            desk_draw_window_overlays(d);
         }
     } else if (bit == SEL_UIM_DIRTY_TRANSPORT) {
         draw_transport(d);
@@ -5894,8 +5905,7 @@ static void draw_home(desk* d) {
     sel_gui_rect mn = region_rect(d, "main");
     int32_t view = sel_gui_tween_value(&d->tl, ANIM_KEY_VIEW, 65536);
     draw_home_content(d);
-    song_menu_draw(d);
-    dlg_draw(d);
+    desk_draw_window_overlays(d);
     draw_nav_arrows(d, mn);
     if (view < 65536) {
         sel_gui_scrim(d->canvas, rect_of(mn.x, songs_top(d), mn.w, mn.y + mn.h - songs_top(d)),
@@ -6892,6 +6902,7 @@ static void hover_repaint(desk* d) {
     if (b != a) {
         hover_paint_region(d, b);
     }
+    desk_draw_window_overlays(d);
 }
 
 /* True when a running tween repaints the main region: a hovered control or tile in it, one the pointer left, or the view or
