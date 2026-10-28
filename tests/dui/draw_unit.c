@@ -87,6 +87,39 @@ static void test_round_rect(void) {
     CHECK(sel_gui_pixel(c, 4, 4) == sel_gui_pixel(c, 0, 0));
     CHECK(sel_gui_pixel(c, 20, 20) != sel_gui_pixel(c, 0, 0));
     drop(c);
+    /* I588: INDEX8 corners carry in-between shades (a blended edge), not only the fill and the ground. The accent over
+     * the surface colour has reserved steps between them in the 32-entry UI palette. */
+    {
+        uint32_t shades = 0u, fill, ground, p;
+        c = make(SEL_GUI_INDEX8, 40, 40);
+        sel_gui_fill_rect(c, R(0, 0, 40, 40), 0xFF1E1E24u);
+        sel_gui_round_rect(c, R(4, 4, 32, 32), 8, 0xFF3B82F6u);
+        fill = sel_gui_pixel(c, 20, 20);
+        ground = sel_gui_pixel(c, 0, 0);
+        CHECK(fill != ground);
+        for (y = 4; y < 12; y++) {
+            for (x = 4; x < 12; x++) {
+                p = sel_gui_pixel(c, x, y);
+                shades += p != fill && p != ground;
+            }
+        }
+        CHECK(shades >= 4u);                           /* a hard threshold leaves zero in-between pixels */
+        drop(c);
+        c = make(SEL_GUI_INDEX8, 40, 40);
+        sel_gui_fill_rect(c, R(0, 0, 40, 40), 0xFF1E1E24u);
+        sel_gui_round_frame(c, R(4, 4, 32, 32), 8, 2, 0xFF3B82F6u);
+        fill = sel_gui_pixel(c, 20, 4);
+        ground = sel_gui_pixel(c, 0, 0);
+        shades = 0u;
+        for (y = 4; y < 12; y++) {
+            for (x = 4; x < 12; x++) {
+                p = sel_gui_pixel(c, x, y);
+                shades += p != fill && p != ground;
+            }
+        }
+        CHECK(shades >= 4u);
+        drop(c);
+    }
 }
 
 /* sel_gui_round_frame: a ring of the given width along the rounded edge, hollow inside, corners cut by the radius. */
@@ -409,13 +442,7 @@ static void ref_px(sel_gui_canvas* c, int32_t x, int32_t y, uint32_t cov, uint32
     if (cov == 0u) {
         return;
     }
-    if (c->format == SEL_GUI_INDEX8) {
-        if (cov < 8u) {
-            return;
-        }
-    } else {
-        a = (a * cov + 8u) / 16u;
-    }
+    a = (a * cov + 8u) / 16u; /* I588: INDEX8 blends like RGBA32 (the span fill snaps to the nearest palette entry) */
     sel_gui_fill_rect(c, R(x, y, 1, 1), (a << 24) | (argb & 0xFFFFFFu));
 }
 
