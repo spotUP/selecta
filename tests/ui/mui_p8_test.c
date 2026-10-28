@@ -219,6 +219,28 @@ static void test_amiga_settings(void) {
     CHECK(e.n == 2u && strcmp(e.lines[0], "PREF_SET amiga.task_priority 5") == 0 && strcmp(e.lines[1], "PREF_SET amiga.task_priority -5") == 0, "clamp: '%s' '%s'", e.lines[0], e.lines[1]);
 }
 
+/* mui-p8-doors (MUI-P8-13) */
+static void test_doors(void) {
+    static const char* const want_line[7] = {"VIEW_SOURCE home", "VIEW_SOURCE search", "VIEW_SHOW browse", "VIEW_SOURCE folders", "VIEW_SHOW queue", NULL, NULL};
+    static const char* const want_page[7] = {NULL, NULL, NULL, NULL, NULL, "nowplaying", "songinfo"};
+    fake_engine e;
+    uint32_t i, base = mui_page_switches();
+    CHECK(mui_door_count() == 7u, "%u doors", (unsigned)mui_door_count());
+    for (i = 0; i < 7u; i++) {
+        const char* page = "x";
+        uint32_t before;
+        memset(&e, 0, sizeof e);
+        before = e.n;
+        mui_door_activate(i, fake_send, &e, &page);
+        if (want_line[i] != NULL) {
+            CHECK(e.n == before + 1u && strcmp(e.lines[0], want_line[i]) == 0 && page == NULL, "door %u: %u lines", (unsigned)i, (unsigned)e.n);
+        } else {
+            CHECK(e.n == 0u && page != NULL && strcmp(page, want_page[i]) == 0, "door %u: %u lines, page '%s'", (unsigned)i, (unsigned)e.n, page != NULL ? page : "(null)");
+        }
+    }
+    CHECK(mui_page_switches() - base == 2u, "page-switch sentinel %u, want 2", (unsigned)(mui_page_switches() - base));
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -237,6 +259,8 @@ int main(int argc, char** argv) {
         test_tile_steps();
     } else if (strcmp(argv[1], "amiga-settings") == 0) {
         test_amiga_settings();
+    } else if (strcmp(argv[1], "doors") == 0) {
+        test_doors();
     } else {
         printf("unknown test %s\n", argv[1]);
         return 2;

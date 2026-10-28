@@ -310,4 +310,10 @@ uint32_t mui_amiga_priority_set(int32_t v, mui_send_fn send, void* ctx);
 uint32_t mui_amiga_group_set(const char* path, mui_send_fn send, void* ctx);
 uint32_t mui_pref_sets(void); /* call-count sentinel: pref sets sent */
 
+/* MUI-P8-13: activate door i. A door with an engine line sends it; Now Playing and Song Information have none and switch the
+ * MUI's own page group instead: *page gets the door's page name ("nowplaying", "songinfo"), no engine line is sent. Returns the
+ * lines sent; mui_page_switches() counts the page switches. */
+uint32_t mui_door_activate(uint32_t i, mui_send_fn send, void* ctx, const char** page);
+uint32_t mui_page_switches(void);
+
 #endif

@@ -1,6 +1,7 @@
 /* MUI parity rows of plan 2026-10-25-amiga-mui.md section P8 (MUI-P8-1..15). Pure C, host-testable. Every action is read
  * from the shared action table (src/uimodel/actions.c) the desktop UI reads; the models are sel_uim_*. */
 #include <selecta/uimodel.h>
+#include <selecta/uimodel/doors.h>
 
 #include <string.h>
 
@@ -145,4 +146,28 @@ uint32_t mui_amiga_priority_set(int32_t v, mui_send_fn send, void* ctx) {
 uint32_t mui_amiga_group_set(const char* path, mui_send_fn send, void* ctx) {
     char line[SEL_UIM_CMD_MAX];
     return pref_send(sel_uim_groupfile_line(path, line, sizeof line), line, send, ctx);
+}
+
+/* MUI-P8-13 */
+static uint32_t g_page_switches;
+
+uint32_t mui_page_switches(void) { return g_page_switches; }
+
+uint32_t mui_door_activate(uint32_t i, mui_send_fn send, void* ctx, const char** page) {
+    const char* line = mui_door_line(i);
+    const sel_uim_door* d = sel_uim_door_at(i);
+    if (page != NULL) {
+        *page = NULL;
+    }
+    if (d == NULL) {
+        return 0;
+    }
+    if (line == NULL) {
+        g_page_switches++;
+        if (page != NULL) {
+            *page = d->page;
+        }
+        return 0;
+    }
+    return send != NULL && send(ctx, line) != 0;
 }
