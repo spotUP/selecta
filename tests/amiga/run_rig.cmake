@@ -304,8 +304,39 @@ elseif(TAG STREQUAL "M4MUI")
     ami(ignored ui click Selecta "${tool}")
     execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 2)
   endforeach()
+  # MUI-P4-3 / MUI-P4-13: the two String gadgets (search first, command line second) are typed into with the rig's
+  # settext (click, cut, type, Return); each Return must send its line (search>=1, cmd>=1 on the ui_p4 line).
   ami(ignored ui click Selecta Stop)
   execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 3)
+  # `ui settext` addresses a gadget by id, and every MUI gadget has id 0 in the uitree, so it cannot reach a String gadget.
+  # Needed verb: `ui settext <window> <kind>:<n> <text>` (n-th gadget of that kind). Until then: gclick on the first string
+  # gadget (search), cut (ramiga+x, key x = 0x32 with qualifier 0x80), type the text and Return; then Tab to the command line.
+  ami(ignored gclick Selecta string)
+  ami(ignored key 32 80)
+  ami(ignored type "abc\r")
+  execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 2)
+  # MUI-P4-13 (command line, the second String gadget) is NOT driven: `gclick` and `ui settext` reach only the first one;
+  # the cmd key stays out of the check below.
+  # MUI-P4-7 (rating Cycle) is NOT driven here: a MUI 3.8 Cycle popup is an overlay, not a window in the uitree, and ami.py
+  # has no verb that picks a Cycle entry (needed: `ui cyclepick <win> <gadget id> <entry index>`). The rating key stays out of the check.
+  # MUI-P4-14: the Help button opens a second window listing the action rows.
+  ami(ignored ui click Selecta Help)
+  execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 3)
+  ami(htree uitree)
+  if(NOT htree MATCHES "W [0-9]+ [0-9-]+ [0-9-]+ [0-9]+x[0-9]+ [a-z-]+ \"Selecta Help\"")
+    ami(ignored exec "Break ${pid} C" 10)
+    message(FATAL_ERROR "RED[M4MUI]: MUI-P4-14: no \"Selecta Help\" window after the Help click:\n${htree}")
+  endif()
+  # MUI-P4-12: Clear Library raises a MUI_Request; its Clear button confirms (clearlib>=1).
+  ami(ignored ui click Selecta "Clear Library")
+  execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 3)
+  ami(rtree uitree)
+  message(STATUS "M4MUI P4-12: requester tree: ${rtree}")
+  ami(ignored ui click Selecta Clear)
+  ami(ignored gclick "Selecta Help" sys:close)
+  execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 2)
+  # MUI-P4-11: the status line (toast) goes back to Ready 3 s after the last note.
+  execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 6)
   ami(ignored exec "Break ${pid} C" 10)
   # MUI_DisposeObject, the stats print and the exit take a few seconds on the 68020: poll up to 30 s.
   foreach(i RANGE 1 6)
@@ -336,7 +367,7 @@ elseif(TAG STREQUAL "M4MUI")
   if(NOT out MATCHES "view_source=search")
     message(FATAL_ERROR "RED[M4MUI]: MUI-P4-0: the Search door did not switch the view (view_source=search missing):\n${out}")
   endif()
-  foreach(k like qclear)
+  foreach(k like qclear search help clearlib toast)
     if(NOT out MATCHES "ui_p4 id=mui[^\n]* ${k}=([0-9]+)" OR CMAKE_MATCH_1 LESS 1)
       message(FATAL_ERROR "RED[M4MUI]: MUI-P4: the ${k} gadget click did not send its line (${k}>=1 missing on the ui_p4 line):\n${out}")
     endif()

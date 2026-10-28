@@ -43,6 +43,7 @@ struct Library* MUIMasterBase;
 /* MUI-P1-4: a distinct error on stderr (the shell keeps the text UI) and, on the Amiga, an EasyRequest. */
 static void mui_report(mui_fail why);
 
+#define MUI_HELP_MAX 160 /* MUI-P4-14: most help rows shown (one per action table row) */
 #define MUI_ROWS_MAX 64 /* most rows one window of the list holds (MUI-P3-1: only the engine window is inserted) */
 
 /* One List entry. The title text comes first so that anything reading an entry as a string (the rig's gadget list) sees it. */
@@ -54,9 +55,9 @@ typedef struct mui_cells {
 
 /* MUI-P4: the tool row gadgets and their counters in the ui_p4 sentinel. */
 enum { P4_SEARCH, P4_CMD, P4_LIKE, P4_RATING, P4_SUBSONG, P4_QREMOVE, P4_QCLEAR, P4_QUP, P4_QDOWN, P4_POPEN, P4_PRENAME, P4_PDELETE,
-       P4_CLEARLIB, P4_COUNT };
+       P4_CLEARLIB, P4_HELP, P4_HOME, P4_TOAST, P4_COUNT };
 static const char* const p4_name[P4_COUNT] = {"search", "cmd", "like", "rating", "subsong", "qremove", "qclear", "qup", "qdown",
-                                              "popen", "prename", "pdelete", "clearlib"};
+                                              "popen", "prename", "pdelete", "clearlib", "help", "home", "toast"};
 
 typedef struct mui_state {
     uint32_t opens; /* ui_open_mui sentinel (MUI-P1-5): windows opened */
@@ -99,7 +100,11 @@ typedef struct mui_state {
     Object* str_cmd;                /* MUI-P4-13 */
     Object* cyc_rating;             /* MUI-P4-7 */
     Object* cyc_subsong;            /* MUI-P4-9 */
-    Object* status;                 /* the last line a P4 gadget sent */
+    Object* status;                 /* the last line a P4 gadget sent (MUI-P4-11: the one-line toast) */
+    mui_toast toast;                /* MUI-P4-11 */
+    Object* help_win;               /* MUI-P4-14: created on the first Help click */
+    char help_buf[MUI_HELP_MAX][96];
+    const char* help_ptr[MUI_HELP_MAX + 1];
     char status_buf[160];
     Object* crumb;                  /* MUI-P3-3: the drilldown breadcrumb line above the list */
     char crumb_buf[128];
@@ -119,6 +124,7 @@ static void put_tag(sel_tag* t, uint32_t tag, uintptr_t value) {
 }
 
 #ifdef SEL_MUI_NATIVE
+static uint32_t mui_now_ms(void);
 /* MUI-P2-3: the Menustrip built from the action table (mui_menu_build). MUI keeps the title and shortcut pointers, so the
  * rows and the one-character shortcut strings are static. A Menuitem trigger is a ReturnID (MENU_ID_BASE + row) that the
  * wait loop turns into the row's protocol line for the engine (MUI-P2-4). */
@@ -379,7 +385,7 @@ static Object* mui_make_cycle(const char* const* entries, LONG id) {
 static Object* mui_tool_group(mui_state* s) {
     static const struct { const char* label; uint32_t which; } btns[] = {
         {"Like", P4_LIKE}, {"Remove From Queue", P4_QREMOVE}, {"Clear Queue", P4_QCLEAR}, {"Move Up", P4_QUP}, {"Move Down", P4_QDOWN},
-        {"Open Playlist", P4_POPEN}, {"Rename Playlist", P4_PRENAME}, {"Delete Playlist", P4_PDELETE}, {"Clear Library", P4_CLEARLIB}};
+        {"Help", P4_HELP}, {"Open Playlist", P4_POPEN}, {"Rename Playlist", P4_PRENAME}, {"Delete Playlist", P4_PDELETE}, {"Clear Library", P4_CLEARLIB}};
     Object* g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
     Object* r1 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     Object* r2 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
@@ -460,6 +466,11 @@ static void mui_refresh(mui_state* s) {
     const sel_view_state* v;
     if (st == NULL) {
         return;
+    }
+    if (mui_toast_tick(&s->toast, mui_now_ms())) { /* MUI-P4-11: the toast went away after 3 s (6 s for an error) */
+        snprintf(s->status_buf, sizeof s->status_buf, "Ready");
+        set(s->status, MUIA_Text_Contents, (ULONG)s->status_buf);
+        s->p4[P4_TOAST]++;
     }
     s->uim.dirty |= sel_uim_update(&s->uim, st);
     attrs = mui_dirty_attrs(sel_uim_take_dirty(&s->uim));
@@ -652,10 +663,46 @@ static const sel_view_row* mui_cursor_row(mui_state* s, const sel_view_state** v
     return &view->rows[view->cursor - view->window_start];
 }
 
+/* Milliseconds from dos DateStamp (wraps; the toast code compares differences only). */
+static uint32_t mui_now_ms(void) {
+    struct DateStamp ds;
+    DateStamp(&ds);
+    return (uint32_t)ds.ds_Minute * 60000u + (uint32_t)ds.ds_Tick * 20u + (uint32_t)ds.ds_Days * 86400000u;
+}
+
 static void mui_p4_note(mui_state* s, uint32_t which, const char* line) {
     s->p4[which]++;
     snprintf(s->status_buf, sizeof s->status_buf, "%s: %s", p4_name[which], line);
+    mui_toast_show(&s->toast, s->status_buf, 0, mui_now_ms());
     set(s->status, MUIA_Text_Contents, (ULONG)s->status_buf);
+}
+
+/* MUI-P4-14: the Help window, one List row per action table row (mui_help_row). Built once, then only opened. */
+static void mui_help_open(mui_state* s) {
+    uint32_t i, n = mui_help_count();
+    Object* lst;
+    if (s->help_win == NULL) {
+        if (n > MUI_HELP_MAX) {
+            n = MUI_HELP_MAX;
+        }
+        for (i = 0; i < n; i++) {
+            mui_help_row(i, s->help_buf[i], sizeof s->help_buf[i]);
+            s->help_ptr[i] = s->help_buf[i];
+        }
+        s->help_ptr[n] = NULL;
+        lst = MUI_NewObject((char*)MUIC_List, MUIA_Frame, MUIV_Frame_InputList, TAG_DONE);
+        if (lst == NULL) {
+            return;
+        }
+        s->help_win = MUI_NewObject((char*)MUIC_Window, MUIA_Window_Title, (ULONG) "Selecta Help", MUIA_Window_ID, 0x48454C50UL,
+                                    MUIA_Window_RootObject, (ULONG)MUI_NewObject((char*)MUIC_Listview, MUIA_Listview_List, (ULONG)lst, TAG_DONE), TAG_DONE);
+        if (s->help_win == NULL) {
+            return;
+        }
+        DoMethod(s->app, OM_ADDMEMBER, s->help_win);
+        DoMethod(lst, MUIM_List_Insert, (ULONG)s->help_ptr, (LONG)n, MUIV_List_Insert_Bottom);
+    }
+    set(s->help_win, MUIA_Window_Open, TRUE);
 }
 
 static int mui_cmd_send(void* ctx, const char* line) {
@@ -738,6 +785,10 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
             }
         }
         break;
+    case P4_HELP:
+        mui_help_open(s);
+        mui_p4_note(s, which, "Help window");
+        break;
     case P4_CLEARLIB: {
         /* MUI-P4-12: the confirm text is shared; MUI_Request returns 1 for the first (Clear) button. */
         char msg[200];
@@ -796,6 +847,17 @@ static void mui_control_fire(mui_state* s, LONG id) {
             mui_list_toggle_line(&view->rows[v], line, sizeof line);
             mui_engine_line(s, line);
             return;
+        }
+        if (id == CTL_LIST_DBL && (uint32_t)v < view->row_n) {
+            char hl[3][48];
+            if (mui_home_lines(view, (uint32_t)v, hl) == 3) { /* MUI-P4-1: a Home row plays the song or opens the album */
+                mui_list_pending_clear(&s->list_pending);
+                mui_engine_line(s, hl[0]);
+                mui_engine_line(s, hl[1]);
+                mui_engine_line(s, hl[2]);
+                s->p4[P4_HOME]++;
+                return;
+            }
         }
         if (id == CTL_LIST_SEL) {
             int32_t shown = view->cursor >= view->window_start && view->cursor - view->window_start < view->window_rows
