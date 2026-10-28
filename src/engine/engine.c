@@ -5183,6 +5183,20 @@ uint32_t sel_engine_library_playlists(sel_engine* e) {
     return playlists;
 }
 
+uint32_t sel_engine_library_playlist_items(sel_engine* e, sel_engine_library_item* out, uint32_t max) {
+    char buf[8192];
+    uint32_t rows = 0, n = 0;
+    const char* p;
+    if (e->lib == NULL || sel_library_folder_playlists(e->lib, 0u, buf, sizeof buf, &rows) != SEL_FOLDER_OK) return 0u;
+    for (p = buf; *p != '\0' && n < max; n++) { /* "id\0name\0" pairs, then an empty string */
+        const char* name = p + strlen(p) + 1u;
+        out[n].id = (uint32_t)strtoul(p, NULL, 10);
+        snprintf(out[n].name, sizeof out[n].name, "%s", name);
+        p = name + strlen(name) + 1u;
+    }
+    return n;
+}
+
 int sel_engine_song_title(sel_engine* e, const char* ref, char* out, size_t cap) {
     return e->lib != NULL && sel_library_song_title(e->lib, ref, out, cap);
 }
