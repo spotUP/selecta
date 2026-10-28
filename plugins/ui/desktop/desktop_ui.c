@@ -17,6 +17,7 @@
 #include <selecta/gui/gui_input.h>
 #include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/viewcmds.h>
+#include <selecta/uimodel/sources.h>
 #include <selecta/uimodel/cmdline.h>
 #include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/keybind.h>
@@ -5658,21 +5659,17 @@ static int src_remote(const desk* d, uint32_t i) {
 
 /* Sends the switch-off list with source `flip` toggled and the `force_off` sources off (Never, I602), then asks SOURCES for the stored state. */
 static int src_off_send(desk* d, uint32_t flip, uint32_t force_off) {
-    char line[256], csv[160];
-    size_t n = 0;
-    uint32_t k;
-    csv[0] = '\0';
-    for (k = 0; k < d->src_n; k++) {
-        int off = (force_off & (1u << k)) != 0u || (k == flip ? d->src[k].enabled : !d->src[k].enabled);
-        if (off) {
-            n += (size_t)snprintf(csv + n, sizeof csv - n, "%s%s", n > 0 ? "," : "", d->src[k].key);
-            if (n >= sizeof csv) {
-                n = sizeof csv - 1u;
-            }
-        }
+    sel_uim_source m[32];
+    char line[256];
+    uint32_t k, n = d->src_n < 32u ? d->src_n : 32u;
+    for (k = 0; k < n; k++) {
+        m[k].key = d->src[k].key;
+        m[k].path = d->src[k].path;
+        m[k].enabled = d->src[k].enabled;
     }
-    snprintf(line, sizeof line, "PREF_SET library.sources_off \"%s\"", csv);
-    desk_send(d, line);
+    if (sel_uim_sources_off_line(m, n, flip, force_off, line, sizeof line) != 0u) {
+        desk_send(d, line);
+    }
     d->src_wait = 1;
     return desk_send(d, "SOURCES");
 }
@@ -5703,7 +5700,7 @@ static int src_click(desk* d, sel_gui_rect mn, int32_t x, int32_t y) {
 /* One LIBRARY_SYNC per ticked source, the same message the Sources page Sync button sends (src_sync_send). */
 static void src_sync_send(desk* d, uint32_t i) {
     char line[256], msg[64];
-    snprintf(line, sizeof line, "LIBRARY_SYNC %s \"%s\"", d->src[i].key, d->src[i].path);
+    sel_uim_sync_line(d->src[i].key, d->src[i].path, line, sizeof line);
     d->sync_pending |= 1u << i;
     d->sync_failed &= ~(1u << i);
     snprintf(d->src_syncing, sizeof d->src_syncing, "%s", d->src[i].name);
@@ -5767,7 +5764,7 @@ static void nag_snooze(desk* d, uint32_t unticked) {
  * counts from. Sync stores no global notice (I582): its ticked rows stay due until their sync succeeds. */
 static void nag_dismiss(desk* d) {
     char line[96];
-    snprintf(line, sizeof line, "PREF_SET library.sync_notice_at %lld", (long long)time(NULL));
+    sel_uim_sync_notnow_line((int64_t)time(NULL), line, sizeof line);
     desk_send(d, line);
     d->src_wait = 1;
     desk_send(d, "SOURCES");

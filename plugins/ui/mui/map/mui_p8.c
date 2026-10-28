@@ -199,3 +199,168 @@ uint32_t mui_stats_text(const char* stats, int more, char* out, uint32_t cap) {
     }
     return len;
 }
+
+#include <selecta/uimodel/panels.h>
+#include <selecta/uimodel/sources.h>
+#include <selecta/uimodel/viewcmds.h>
+
+/* MUI-P8-7 */
+static uint32_t g_panel_open, g_panel_builds;
+
+uint32_t mui_panel_menu_id(uint32_t pane) { return pane < MUI_PANES ? MUI_ID_PANEL_BASE + pane : 0u; }
+
+uint32_t mui_panel_key_pane(uint32_t code, uint32_t mods) { return code == 'a' && mods == TXT_MOD_CTRL ? SEL_UIM_PANEL_ACTIVITY : MUI_PANES; }
+
+uint32_t mui_panel_toggle(uint32_t pane) {
+    if (pane < MUI_PANES) {
+        g_panel_open ^= 1u << pane;
+    }
+    return g_panel_open;
+}
+
+uint32_t mui_panel_open_mask(void) { return g_panel_open; }
+
+uint32_t mui_panel_builds(void) { return g_panel_builds; }
+
+uint32_t mui_panel_text(uint32_t pane, const sel_uim_net* st, char* out, uint32_t cap) {
+    uint32_t i, n = sel_uim_panel_row_count(pane), used = 0;
+    g_panel_builds++;
+    if (cap > 0u) {
+        out[0] = '\0';
+    }
+    for (i = 0; i < n; i++) {
+        char row[96];
+        uint32_t len = sel_uim_panel_row(pane, st, i, row, sizeof row);
+        if (len != 0u && used + len + 2u <= cap) {
+            memcpy(out + used, row, len);
+            out[used + len] = '\n';
+            out[used + len + 1u] = '\0';
+            used += len + 1u;
+        }
+    }
+    return used;
+}
+
+/* MUI-P8-8 */
+static uint32_t g_source_fires;
+
+uint32_t mui_source_fires(void) { return g_source_fires; }
+
+static uint32_t send_line(uint32_t n, const char* line, mui_send_fn send, void* ctx) {
+    return n != 0u && send != NULL && send(ctx, line) != 0;
+}
+
+uint32_t mui_source_toggle(const sel_uim_source* s, uint32_t n, uint32_t flip, mui_send_fn send, void* ctx) {
+    char line[256];
+    uint32_t sent = send_line(sel_uim_sources_off_line(s, n, flip, 0u, line, sizeof line), line, send, ctx);
+    g_source_fires++;
+    return sent + (send != NULL && send(ctx, "SOURCES") != 0);
+}
+
+uint32_t mui_source_sync(const sel_uim_source* s, mui_send_fn send, void* ctx) {
+    char line[256];
+    uint32_t sent = send_line(sel_uim_sync_line(s->key, s->path, line, sizeof line), line, send, ctx);
+    g_source_fires++;
+    return sent + (send != NULL && send(ctx, "SOURCES") != 0);
+}
+
+const char* mui_source_status(int pending, int failed, int64_t synced) { return sel_uim_sync_status(pending, failed, synced); }
+
+uint32_t mui_offer_not_now(int64_t now, mui_send_fn send, void* ctx) {
+    char line[96];
+    uint32_t sent = send_line(sel_uim_sync_notnow_line(now, line, sizeof line), line, send, ctx);
+    g_source_fires++;
+    return sent + (send != NULL && send(ctx, "SOURCES") != 0);
+}
+
+uint32_t mui_offer_sync(const sel_uim_source* s, uint32_t n, uint32_t ticked, mui_send_fn send, void* ctx) {
+    char line[256];
+    uint32_t i, sent = 0;
+    g_source_fires++;
+    for (i = 0; i < n; i++) {
+        if ((ticked & (1u << i)) != 0u) {
+            sent += send_line(sel_uim_sync_line(s[i].key, s[i].path, line, sizeof line), line, send, ctx);
+        }
+    }
+    return sent;
+}
+
+const char* mui_search_source_label(uint32_t i) { return sel_uim_search_source_name(i); }
+
+uint32_t mui_search_source_set(uint32_t i, mui_send_fn send, void* ctx) {
+    char line[96];
+    g_source_fires++;
+    return send_line(sel_uim_search_source_line(i, line, sizeof line), line, send, ctx);
+}
+
+/* MUI-P8-9 */
+int32_t mui_info_mode_key(char key) { return sel_uim_info_mode_for_key(key); }
+uint32_t mui_info_scroll_next(uint32_t offset, uint32_t text_len, int no_scroll) { return sel_uim_info_scroll_next(offset, text_len, no_scroll); }
+const char* mui_info_ahi(int active) { return sel_uim_info_ahi_text(active); }
+uint32_t mui_info_downloaded(const sel_uim_net* st, char* out, uint32_t cap) { return sel_uim_info_downloaded_text(st, out, cap); }
+const char* mui_list_kept_cell(int kept) { return sel_uim_kept_marker(kept); }
+
+/* MUI-P8-10 */
+static uint32_t g_hovers;
+
+uint32_t mui_tooltip_transport(uint32_t button, const sel_uim_frame* f, char* out, uint32_t cap) {
+    const sel_uim_action* a = action_by_id(mui_transport_action(button, f));
+    return a != NULL ? (uint32_t)sel_uim_action_tip_text(a, out, cap) : 0u;
+}
+
+uint32_t mui_tooltip_door(uint32_t i, char* out, uint32_t cap) {
+    const sel_uim_door* d = sel_uim_door_at(i);
+    return d != NULL ? (uint32_t)snprintf(out, cap, "%s", d->label) : 0u;
+}
+
+uint32_t mui_tooltip_hover(const char* tip, char* status, uint32_t cap) {
+    g_hovers++;
+    return (uint32_t)snprintf(status, cap, "%s", tip);
+}
+
+uint32_t mui_tooltip_hovers(void) { return g_hovers; }
+
+/* MUI-P8-11 */
+uint32_t mui_remember_close(const mui_remember* r, mui_send_fn send, void* ctx) {
+    char value[48], line[SEL_UIM_CMD_MAX];
+    uint32_t sent = 0;
+    snprintf(value, sizeof value, "%d %d %u %u", (int)r->x, (int)r->y, (unsigned)r->w, (unsigned)r->h);
+    sent += send_line(sel_uim_remember_line(SEL_UIM_REM_GEOMETRY, value, line, sizeof line), line, send, ctx);
+    snprintf(value, sizeof value, "%u", (unsigned)r->panes);
+    sent += send_line(sel_uim_remember_line(SEL_UIM_REM_PANES, value, line, sizeof line), line, send, ctx);
+    sent += send_line(sel_uim_remember_line(SEL_UIM_REM_VISUALISER, r->viz, line, sizeof line), line, send, ctx);
+    sent += send_line(sel_uim_remember_line(SEL_UIM_REM_BROWSE, r->browse, line, sizeof line), line, send, ctx);
+    return sent;
+}
+
+uint32_t mui_remember_open(mui_remember* r, mui_pref_get_fn get, void* ctx) {
+    const char* v;
+    int x, y;
+    unsigned w, h, panes;
+    uint32_t found = 0;
+    memset(r, 0, sizeof *r);
+    v = get != NULL ? get(ctx, sel_uim_remember_key(SEL_UIM_REM_GEOMETRY)) : NULL;
+    if (v != NULL && sscanf(v, "%d %d %u %u", &x, &y, &w, &h) == 4) {
+        r->x = x;
+        r->y = y;
+        r->w = w;
+        r->h = h;
+        found++;
+    }
+    v = get != NULL ? get(ctx, sel_uim_remember_key(SEL_UIM_REM_PANES)) : NULL;
+    if (v != NULL && sscanf(v, "%u", &panes) == 1) {
+        r->panes = panes;
+        found++;
+    }
+    v = get != NULL ? get(ctx, sel_uim_remember_key(SEL_UIM_REM_VISUALISER)) : NULL;
+    if (v != NULL) {
+        snprintf(r->viz, sizeof r->viz, "%s", v);
+        found++;
+    }
+    v = get != NULL ? get(ctx, sel_uim_remember_key(SEL_UIM_REM_BROWSE)) : NULL;
+    if (v != NULL) {
+        snprintf(r->browse, sizeof r->browse, "%s", v);
+        found++;
+    }
+    return found;
+}
