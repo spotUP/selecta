@@ -281,6 +281,7 @@ typedef struct desk {
     int32_t np_rating;                /* filled rating marks of the last Now Playing draw (I288) */
     uint32_t lib_searches;   /* LIBRARY_SEARCH lines sent for typed queries: STAT_LIBRARY_SEARCHES */
     uint32_t search_draws, search_rows;  /* search view frames drawn, result rows in the last one */
+    uint32_t search_grid_draws, search_flow_draws; /* I615b: search frames drawn as the tile grid / the cover flow */
     uint32_t search_facet;   /* the facet chip in force: 0 All, 1 Songs, 2 Albums, 3 Artists */
     uint32_t search_groups[3], search_drawn;  /* group counts read from the drawn headings, rows drawn in the last search frame */
     size_t qlen;
@@ -5561,6 +5562,7 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "scan_mid %u\n", (unsigned)d->scan_mid);
     o = dump_put(d, o, "search draws %u rows %u query %s\n",
                           (unsigned)d->search_draws, (unsigned)d->search_rows, d->query);
+    o = dump_put(d, o, "search view grid=%u flow=%u\n", (unsigned)d->search_grid_draws, (unsigned)d->search_flow_draws);
     o = dump_put(d, o, "search groups songs=%u albums=%u artists=%u facet=%u drawn=%u\n",
                           (unsigned)d->search_groups[0], (unsigned)d->search_groups[1], (unsigned)d->search_groups[2],
                           (unsigned)d->search_facet, (unsigned)d->search_drawn);
@@ -6040,11 +6042,12 @@ static void lib_tile_text(desk* d, sel_gui_rect ar, int32_t y, const sel_view_ro
     }
 }
 
-static void draw_lib_grid(desk* d, sel_gui_rect mn) {
-    const sel_view_state* v = sel_engine_state(d->engine)->view;
+/* The tile grid over the rows of v from the absolute y y0 down. The Library draws the engine's view and registers its rows with
+ * lib_view_row_reg; the Search page (I615b) draws a filtered copy of its rows and registers the songs with the song menu. */
+static void draw_grid_rows(desk* d, sel_gui_rect mn, const sel_view_state* v, int32_t y0, int lib_reg) {
     int32_t pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_TILE_PAD]), gap = lpx(d, GRID_GAP), art = lpx(d, GRID_ART);
     int32_t tw = art + 2 * pad, th = pad + art + lpx(d, HOME_TILE_TEXT_GAP) + lpx(d, HOME_TITLE_H) + lpx(d, HOME_META_H) + pad;
-    int32_t y0 = mn.y + lib_body_y(d, sel_engine_state(d->engine)), vis = (mn.y + mn.h - y0 + gap) / (th + gap);
+    int32_t vis = (mn.y + mn.h - y0 + gap) / (th + gap);
     uint32_t cols = lib_grid_cols(d, mn), i, first, panel = ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]);
     uint32_t cur_row = v->cursor / cols;
     first = vis > 0 && cur_row >= (uint32_t)vis ? cur_row - (uint32_t)vis + 1u : 0u;
@@ -6071,11 +6074,19 @@ static void draw_lib_grid(desk* d, sel_gui_rect mn) {
         sel_gui_genart_draw(d->canvas, ar, "album", sel_gui_str_hash(r->text != NULL ? r->text : ""));
         lib_tile_text(d, ar, ar.y + ar.h + lpx(d, HOME_TILE_TEXT_GAP), r, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]),
                       ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]), 0);
-        lib_view_row_reg(d, mn, sel_engine_state(d->engine), i, t);
+        if (lib_reg) {
+            lib_view_row_reg(d, mn, sel_engine_state(d->engine), i, t);
+        } else if (r->key != NULL) {
+            song_row_reg(d, t, r->key, 0, 0, 0);
+        }
         sel_gui_dirty_add(d->canvas, t);
         d->grid_tiles++;
         d->grid_box = rect_union(d->grid_box, t);
     }
+}
+
+static void draw_lib_grid(desk* d, sel_gui_rect mn) {
+    draw_grid_rows(d, mn, sel_engine_state(d->engine)->view, mn.y + lib_body_y(d, sel_engine_state(d->engine)), 1);
 }
 
 /* Fractional centre of the cover flow in 16.16 listing indices: the cursor at rest, gliding from flow_from to it as gl runs 0..65536. */
@@ -6107,12 +6118,11 @@ static void flow_slot(int32_t big, int32_t a, int32_t* sz, int32_t* off, int32_t
  * darkening the far ones. No perspective. Each cover sits at a fractional slot p = index - centre (16.16); its size, offset and
  * scrim are continuous in |p| and the covers are drawn far to near, so a glide moves every cover smoothly from its old slot to
  * its new one (I400). */
-static void draw_lib_flow(desk* d, sel_gui_rect mn) {
-    const sel_view_state* v = sel_engine_state(d->engine)->view;
+static void draw_flow_rows(desk* d, sel_gui_rect mn, const sel_view_state* v, int32_t body_y, int lib_reg) {
     int32_t mg = lpx(d, LIB_MARGIN), right = mn.x + mn.w; /* the flow has no Statistics strip and uses the whole main width (I382, I391) */
     int32_t ref = lpx(d, FLOW_ART), avail = right - mn.x - 2 * mg, cx = (mn.x + right) / 2, y0;
     int32_t capt = lpx(d, HOME_TILE_TEXT_GAP + HOME_TITLE_H + HOME_META_H); /* the caption block under the centre cover */
-    int32_t top = mn.y + lib_body_y(d, sel_engine_state(d->engine)) + mg, area_h = mn.y + mn.h - mg - top; /* free height: below the tab row to the panel bottom */
+    int32_t top = body_y + mg, area_h = mn.y + mn.h - mg - top; /* free height: below the tab row to the panel bottom */
     int32_t full = flow_stack_w(ref); /* width of the whole stack at the reference size */
     int32_t fit_w = ref * (avail > 0 ? avail : 0) / full, fit_h = area_h - capt; /* the centre cover that fills the width / the height */
     int32_t big = fit_w < fit_h ? fit_w : fit_h;
@@ -6162,7 +6172,11 @@ static void draw_lib_flow(desk* d, sel_gui_rect mn) {
             sel_gui_scrim(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_SCRIM]) & 0xFFFFFFu, (uint32_t)alpha);
         }
         if (j + 1u == n) {
-            lib_view_row_reg(d, mn, sel_engine_state(d->engine), (uint32_t)(cv[j].g - (int64_t)v->window_start), r);
+            if (lib_reg) {
+                lib_view_row_reg(d, mn, sel_engine_state(d->engine), (uint32_t)(cv[j].g - (int64_t)v->window_start), r);
+            } else if (row->key != NULL) {
+                song_row_reg(d, r, row->key, 0, 0, 0);
+            }
         }
         d->flow_rec[j].g = (int32_t)cv[j].g;
         d->flow_rec[j].x = r.x;
@@ -6175,6 +6189,10 @@ static void draw_lib_flow(desk* d, sel_gui_rect mn) {
                       ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]), 1);
     }
     sel_gui_dirty_add(d->canvas, rect_of(mn.x, top, right - mn.x, area_h)); /* the whole free area: the stack moves with the canvas size */
+}
+
+static void draw_lib_flow(desk* d, sel_gui_rect mn) {
+    draw_flow_rows(d, mn, sel_engine_state(d->engine)->view, mn.y + lib_body_y(d, sel_engine_state(d->engine)), 1);
 }
 
 static void draw_library(desk* d) {
@@ -6892,7 +6910,7 @@ static void desk_search_fire(desk* d) {
     (void)sel_uim_search_line(d->query, line, sizeof line);
     desk_send(d, line);
     desk_send(d, "VIEW_SOURCE search"); /* the engine groups the result by type: Songs, Albums, Artists */
-    desk_send(d, "VIEW_STYLE regular");
+    /* the view style stays as the user picked it (grid, cover flow, list): draw_search renders the results in it (I615b) */
     snprintf(line, sizeof line, "VIEW_WINDOW %u", (unsigned)SEARCH_WINDOW_ROWS);
     desk_send(d, line);
     d->searches++;
@@ -6949,7 +6967,46 @@ static void draw_search(desk* d) {
     }
     y = mn.y + lpx(d, SEARCH_FIELD_Y + SEARCH_FIELD_H + 16) + lpx(d, HOME_CHIP_H + 16);
     d->search_groups[0] = d->search_groups[1] = d->search_groups[2] = 0;
-    if (v != NULL) { /* the engine's groups: a heading row (type and count) starts each, its entries follow */
+    if (v != NULL && (v->style == (uint32_t)SEL_VIEW_STYLE_GRID || v->style == (uint32_t)SEL_VIEW_STYLE_COVERFLOW)) {
+        /* I615b: the results follow the view mode the user picked. Grid and Cover Flow draw the entries of the shown facet as
+         * artwork tiles, the same renderers as the Library; the group headings only feed the counts. Only song entries keep
+         * their key, so only they open the song menu. */
+        sel_view_row tiles[SEARCH_WINDOW_ROWS];
+        sel_view_state fv = *v;
+        uint32_t group = 0, n = 0;
+        int show = 0;
+        fv.cursor = 0;
+        for (k = 0; k < v->row_n && n < SEARCH_WINDOW_ROWS; k++) {
+            const sel_view_row* r = &v->rows[k];
+            if (r->kind == SEL_ROW_HEADING) {
+                const char* t = r->text != NULL ? r->text : "", *par = strchr(t, '(');
+                group = strncmp(t, "Songs", 5) == 0 ? 1u : strncmp(t, "Albums", 6) == 0 ? 2u : 3u;
+                show = d->search_facet == 0u || d->search_facet == group;
+                d->search_groups[group - 1u] = (uint32_t)strtoul(par != NULL ? par + 1 : "0", NULL, 10);
+            } else if (show) {
+                tiles[n] = *r;
+                if (group != 1u || r->album) {
+                    tiles[n].key = NULL;
+                }
+                if (v->window_start + k == v->cursor) {
+                    fv.cursor = n;
+                }
+                shown += group == 1u;
+                n++;
+            }
+        }
+        fv.window_start = 0;
+        fv.row_n = fv.row_count = n;
+        fv.rows = tiles;
+        if (v->style == (uint32_t)SEL_VIEW_STYLE_GRID) {
+            draw_grid_rows(d, mn, &fv, y, 0);
+            d->search_grid_draws++;
+        } else {
+            draw_flow_rows(d, mn, &fv, y, 0);
+            d->search_flow_draws++;
+        }
+        d->search_drawn = n;
+    } else if (v != NULL) { /* the engine's groups: a heading row (type and count) starts each, its entries follow */
         uint32_t group = 0, drawn_all = 0;
         int show = 0;
         for (k = 0; k < v->row_n; k++) {

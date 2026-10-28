@@ -1,0 +1,52 @@
+# dui-search-view-mode (I615b): search results opened from the top bar follow the view mode the user picked. -DSELECTA -DSONGS -DWORK
+# 1. Grid mode (VIEW_STYLE grid), a click in the top bar field and a typed query: the search frame is drawn by the tile grid
+#    (stats "search view grid=N": N > 0, flow = 0) and still lists the fixture's mod count of songs.
+# 2. Cover Flow mode: the search frame is drawn by the cover flow (flow = N > 0, grid = 0).
+# 3. List mode: neither renderer ran (grid = 0, flow = 0); the list sentinel "search draws" still counts.
+get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+include("${HERE}/dui_run.cmake")
+file(REMOVE_RECURSE "${WORK}")
+file(MAKE_DIRECTORY "${WORK}")
+find_program(SQLITE3 sqlite3)
+if(NOT SQLITE3)
+  message(FATAL_ERROR "dui-search-view-mode needs the sqlite3 command line tool to load the fixture library")
+endif()
+set(db "${WORK}/library.db")
+dui_run(init --db "${db}" --ui desktop --backend mem --view home --canvas 900x600 --clock fixed --stats)
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db}" INPUT_FILE "${HERE}/fixture_library.sql"
+  RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "loading the fixture failed: ${err}")
+endif()
+file(READ "${HERE}/fixture_library.sql" fixture)
+string(REGEX MATCHALL "INSERT INTO songs\\([^\n]*'mod', [0-9]+," mods "${fixture}")
+list(LENGTH mods mod_count)
+
+function(mode_run tag style)
+  file(REMOVE_RECURSE "${WORK}/cfg")
+  file(WRITE "${WORK}/${tag}.txt"
+    "exec VIEW_STYLE ${style}\nwait 100\ntopbar 1\nkey f\nkey o\nkey r\nkey m\nkey a\nkey t\nkey :\nkey m\nkey o\nkey d\nwait 600\n")
+  dui_run(o --db "${db}" --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats --input "${WORK}/${tag}.txt")
+  if(NOT "${o}" MATCHES "search view grid=([0-9]+) flow=([0-9]+)\n")
+    message(FATAL_ERROR "no 'search view' line in:\n${o}")
+  endif()
+  set(${tag}_grid ${CMAKE_MATCH_1} PARENT_SCOPE)
+  set(${tag}_flow ${CMAKE_MATCH_2} PARENT_SCOPE)
+  if(NOT "${o}" MATCHES "search draws ([0-9]+) rows ${mod_count} query format:mod\n")
+    message(FATAL_ERROR "${tag}: typing in the top bar field must give ${mod_count} mod results:\n${o}")
+  endif()
+  set(${tag}_draws ${CMAKE_MATCH_1} PARENT_SCOPE)
+endfunction()
+
+mode_run(grid grid)
+if(grid_grid LESS 1 OR NOT grid_flow EQUAL 0)
+  message(FATAL_ERROR "grid mode: the search results must be drawn by the tile grid (grid=${grid_grid} flow=${grid_flow})")
+endif()
+mode_run(flow coverflow)
+if(flow_flow LESS 1 OR NOT flow_grid EQUAL 0)
+  message(FATAL_ERROR "cover flow mode: the search results must be drawn by the cover flow (grid=${flow_grid} flow=${flow_flow})")
+endif()
+mode_run(list regular)
+if(NOT list_grid EQUAL 0 OR NOT list_flow EQUAL 0 OR list_draws LESS 1)
+  message(FATAL_ERROR "list mode: neither tile renderer may run (grid=${list_grid} flow=${list_flow} draws=${list_draws})")
+endif()
