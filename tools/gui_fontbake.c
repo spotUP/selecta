@@ -22,6 +22,8 @@
 
 #include "atlas_build.h"
 
+#include <miniz.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -80,6 +82,7 @@ int main(int argc, char** argv) {
     static const char* const amiga_names[] = {"mini4", "mini6", "mini8"};
     unsigned char* ttf[2];
     bake_entry ent[96];
+    uint32_t packed_n[96];
     int pxs[64], npx = 0, ne = 0, w, i, k, a;
     FILE* o;
     if (argc < 4) {
@@ -173,19 +176,36 @@ int main(int argc, char** argv) {
             fprintf(o, "{0,0,0}\n");
         }
         n = (uint32_t)(at->page_w * at->page_h);
-        fprintf(o, "};\nstatic const uint8_t k_a%d[] = {", i);
-        for (g = 0; g < n; g++) {
-            fprintf(o, "%s%u,", g % 32 == 0 ? "\n" : "", (unsigned)at->alpha[g]);
+        /* I587: the page is stored as raw deflate (miniz, level 10); the round trip is checked here, per atlas. */
+        {
+            size_t plen = 0;
+            uint8_t* buf = (uint8_t*)tdefl_compress_mem_to_heap(at->alpha, (size_t)n, &plen,
+                                                              tdefl_create_comp_flags_from_zip_params(10, -15, MZ_DEFAULT_STRATEGY));
+            uint8_t* chk = (uint8_t*)malloc((size_t)n + 1u);
+            if (buf == NULL || chk == NULL) {
+                return 1;
+            }
+            if (tinfl_decompress_mem_to_mem(chk, n, buf, plen, 0) != n || memcmp(chk, at->alpha, n) != 0) {
+                fprintf(stderr, "gui_fontbake: atlas %d does not round trip through deflate\n", i);
+                return 1;
+            }
+            fprintf(o, "};\nstatic const uint8_t k_a%d[] = {", i);
+            for (g = 0; g < plen; g++) {
+                fprintf(o, "%s%u,", g % 32 == 0 ? "\n" : "", (unsigned)buf[g]);
+            }
+            fprintf(o, "\n};\n");
+            packed_n[i] = (uint32_t)plen;
+            mz_free(buf);
+            free(chk);
         }
-        fprintf(o, "\n};\n");
     }
     fprintf(o, "\nconst desk_baked_font sel_font_baked[] = {\n");
     for (i = 0; i < ne; i++) {
         const sel_gui_atlas* at = ent[i].at;
-        fprintf(o, "{%d,%d,%d,{k_g%d,%uu,k_k%d,%uu,k_a%d,%d,%d,%d,%d,", ent[i].family, ent[i].px, ent[i].ydiv, i,
-                (unsigned)at->glyph_n, i, (unsigned)at->kern_n, i, at->page_w, at->page_h, at->ascent, at->line_height);
-        fprintf(o, "{%uu,%u,%u,%u,%u,%d,%d,%u}}},\n", (unsigned)at->missing.cp, at->missing.x, at->missing.y,
-                at->missing.w, at->missing.h, at->missing.bx, at->missing.by, at->missing.adv);
+        fprintf(o, "{%d,%d,%d,{k_g%d,%uu,k_k%d,%uu,0,%d,%d,%d,%d,", ent[i].family, ent[i].px, ent[i].ydiv, i,
+                (unsigned)at->glyph_n, i, (unsigned)at->kern_n, at->page_w, at->page_h, at->ascent, at->line_height);
+        fprintf(o, "{%uu,%u,%u,%u,%u,%d,%d,%u}},k_a%d,%uu},\n", (unsigned)at->missing.cp, at->missing.x, at->missing.y,
+                at->missing.w, at->missing.h, at->missing.bx, at->missing.by, at->missing.adv, i, (unsigned)packed_n[i]);
     }
     fprintf(o, "};\nconst uint32_t sel_font_baked_n = %d;\n", ne);
     fclose(o);

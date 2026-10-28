@@ -28,16 +28,9 @@ size_t sel_gui_icon_pack(const uint8_t* src, size_t n, uint8_t* dst) {
     return o;
 }
 
-int sel_gui_icon_unpack(const sel_gui_icons_packed* p, uint32_t size_idx, uint32_t id, uint8_t* dst) {
-    const uint8_t* s;
-    const uint8_t* end;
-    size_t total, o = 0;
-    if (p == NULL || size_idx >= p->size_n || id >= p->count) {
-        return 0;
-    }
-    total = (size_t)p->sizes[size_idx] * (size_t)p->sizes[size_idx];
-    s = p->stream[size_idx] + p->off[size_idx][id];
-    end = p->stream[size_idx] + p->off[size_idx][id + 1u];
+int sel_gui_pack_decode(const uint8_t* s, size_t n, uint8_t* dst, size_t total) {
+    const uint8_t* end = s + n;
+    size_t o = 0;
     while (o < total && s < end) {
         unsigned c = *s++;
         if (c < 128u) {
@@ -60,4 +53,14 @@ int sel_gui_icon_unpack(const sel_gui_icons_packed* p, uint32_t size_idx, uint32
         }
     }
     return o == total && s == end;
+}
+
+int sel_gui_icon_unpack(const sel_gui_icons_packed* p, uint32_t size_idx, uint32_t id, uint8_t* dst) {
+    size_t total;
+    if (p == NULL || size_idx >= p->size_n || id >= p->count) {
+        return 0;
+    }
+    total = (size_t)p->sizes[size_idx] * (size_t)p->sizes[size_idx];
+    return sel_gui_pack_decode(p->stream[size_idx] + p->off[size_idx][id], p->off[size_idx][id + 1u] - p->off[size_idx][id],
+                               dst, total);
 }

@@ -34,12 +34,12 @@ int main(void) {
     for (e = 0; e < sel_font_baked_n; e++) {
         const desk_baked_font* b = &sel_font_baked[e];
         sel_gui_atlas* r = b->family >= DESK_FAMILY_MINI4 ? NULL : desk_atlas_build_tall(b->family == DESK_FAMILY_INTER_SEMIBOLD ? sel_font_inter_semibold : sel_font_inter_regular, b->px, b->ydiv);
-        const sel_gui_atlas* a = &b->at;
+        const sel_gui_atlas* a = desk_atlas_baked(b->family, b->px, b->ydiv); /* I587: the packed page, decoded */
         int ok;
         if (b->family >= DESK_FAMILY_MINI4) { /* Amiga bitmap atlases are checked by dui-amiga-font */
             continue;
         }
-        ok = r != NULL && a->glyph_n == r->glyph_n && a->kern_n == r->kern_n && a->page_w == r->page_w &&
+        ok = r != NULL && a != NULL && b->packed_n < (uint32_t)(r->page_w * r->page_h) && a->glyph_n == r->glyph_n && a->kern_n == r->kern_n && a->page_w == r->page_w &&
                  a->page_h == r->page_h && a->ascent == r->ascent && a->line_height == r->line_height &&
                  same_glyph(&a->missing, &r->missing) && memcmp(a->alpha, r->alpha, (size_t)a->page_w * (size_t)a->page_h) == 0;
         for (i = 0; ok && i < a->glyph_n; i++) {
@@ -81,6 +81,44 @@ int main(void) {
             }
             if (l == NULL || l->h < rows_lo[k] || l->h > rows_hi[k]) {
                 fprintf(stderr, "font_baked_unit: semibold %d ydiv 2: 'L' is %d rows, want %d to %d\n", px[k], l == NULL ? -1 : (int)l->h, rows_lo[k], rows_hi[k]);
+                bad++;
+            }
+        }
+    }
+    /* I587: the Amiga image has no TrueType fallback, so every size the Amiga UI asks for must be baked: the fit floor
+     * (0.625) and scale 1.0, for both weights, at every size token. Zoom 75/125/150 are open (image size, I587). */
+    {
+        static const int zoom_q16[] = {65536, 40960};
+        static const int size[] = {DESK_FONT_SIZES};
+        int z, t, w;
+        for (z = 0; z < 2; z++) {
+            for (t = 0; t < DESK_FONT_SIZE_N; t++) {
+                for (w = 0; w < 2; w++) {
+                    int px = (int)(((long long)size[t] * zoom_q16[z] + 32768) >> 16);
+                    if (desk_atlas_baked(w, px, 1) == NULL) {
+                        fprintf(stderr, "font_baked_unit: weight %d size %d at scale %d/65536 (px %d) is not baked\n", w, size[t], zoom_q16[z], px);
+                        bad++;
+                    }
+                }
+            }
+        }
+    }
+    /* I587: the Amiga snap and fit take only baked scales (0.625 = 40960, 1.0 = 65536). */
+    {
+        static const int snap_in[] = {49152, 40960, 65536, 81920, 98304, 51200, 52429};
+        static const int snap_out[] = {40960, 40960, 65536, 65536, 65536, 40960, 40960};
+        static const int fit_in[] = {40960, 51200, 65535, 65536, 70000};
+        static const int fit_out[] = {40960, 40960, 40960, 65536, 65536};
+        size_t k;
+        for (k = 0; k < sizeof snap_in / sizeof snap_in[0]; k++) {
+            if (desk_baked_scale_snap_q16(snap_in[k]) != snap_out[k]) {
+                fprintf(stderr, "font_baked_unit: snap(%d) = %d, want %d\n", snap_in[k], (int)desk_baked_scale_snap_q16(snap_in[k]), snap_out[k]);
+                bad++;
+            }
+        }
+        for (k = 0; k < sizeof fit_in / sizeof fit_in[0]; k++) {
+            if (desk_baked_scale_fit_q16(fit_in[k]) != fit_out[k]) {
+                fprintf(stderr, "font_baked_unit: fit(%d) = %d, want %d\n", fit_in[k], (int)desk_baked_scale_fit_q16(fit_in[k]), fit_out[k]);
                 bad++;
             }
         }
