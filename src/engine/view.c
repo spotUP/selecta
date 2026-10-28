@@ -570,8 +570,8 @@ int sel_view_drill(sel_view* v, const sel_view_src* s, uint32_t level, const cha
     return 1;
 }
 
-/* Enter on the cursor row. Returns 1 with the queue index of a song to start;
- * 0 when the row was a node (tree: toggled, drilldown: drilled into). */
+/* Queue index of the song on display row `row`. Returns 0 for a tree or
+ * drilldown node row, which names no song (I632b2). */
 int sel_view_song_at(const sel_view* v, const sel_view_src* s, uint32_t row, uint32_t* queue_index) {
     int node;
     uint32_t id;
@@ -587,6 +587,8 @@ int sel_view_song_at(const sel_view* v, const sel_view_src* s, uint32_t row, uin
     return *queue_index != SEL_QUEUE_NONE;
 }
 
+/* Enter on the cursor row. Returns 1 with the queue index of a song to start;
+ * 0 when the row was a node (tree: toggled, drilldown: drilled into). */
 int sel_view_enter(sel_view* v, const sel_view_src* s, uint32_t* queue_index) {
     int node;
     uint32_t id;
