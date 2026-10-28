@@ -2182,6 +2182,12 @@ if(NOT SEL_AMIGA)
     TIMEOUT 90 PASS_REGULAR_EXPRESSION "stream_record_ok")
 
   # I517 phase 1: LIBRARY_SYNC dispatches through the source's own `sync` (call count, args, stats tags, host services).
+  # I652c: PLAYLIST_IMPORT appends the existing files of an .m3u in order and counts the missing ones.
+  add_executable(playlist_import_test engine/playlist_import_test.c)
+  target_include_directories(playlist_import_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
+  target_link_libraries(playlist_import_test PRIVATE selecta_library selecta_core)
+  add_test(NAME engine-playlist-import COMMAND playlist_import_test)
+  set_tests_properties(engine-playlist-import PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "playlist_import_ok")
   add_executable(library_sync_dispatch_test engine/library_sync_dispatch_test.c)
   target_include_directories(library_sync_dispatch_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
   target_link_libraries(library_sync_dispatch_test PRIVATE selecta_library selecta_core)
