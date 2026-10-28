@@ -161,6 +161,8 @@ same N labels. The context menu itself is MUI-P4-6, still open (no `MUIA_Context
 - [ ] **I632d** Desktop wiring: `song_ref.list_index` at every list call site (section 2), click/Cmd/Shift/Cmd-A/Escape, Shift+arrows,
   selection paint. Test `dui-select-lists`: per list (Library view, Search, drilldown, composer list, Queue, playlist page) the
   scripted clicks give the expected `count`/runs in `--stats`; scroll keeps it, sort clears it.
+  - Status 2026-10-28: wiring and Queue test merged c2c2b882 (agent commit b9689ce8). OPEN (I632d2): test cases for Library
+    view, Search, drilldown, composer list, playlist page; scroll keeps, sort clears. Not ticked until those pass.
 - [ ] **I632e** Song menu for N: label `n` argument, dispatch through `SONGS_*`, one confirm dialog for N library removal, count
   toasts. **Reachability test `dui-multiselect`** drives the desktop UI top-level entry (the scripted-input path the other `dui-*`
   tests use) on the Library view: click row 0, Cmd-click rows 2 and 5, right-click row 2, Add 3 Songs to Playlist, pick playlist
