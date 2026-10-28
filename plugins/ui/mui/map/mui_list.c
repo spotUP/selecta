@@ -105,15 +105,24 @@ uint32_t mui_columns_for(uint32_t breakpoint, uint8_t out[MUI_COL_COUNT]) {
     return n;
 }
 
+/* I637: the plain List sizes a column without W= to its widest cell (W=-1), so short names left the columns packed at the
+ * left edge ("collapsed"). Title, Artist and Album carry weights and share the width the fixed Length / Format cells leave. */
+static const char* const k_col_weight[MUI_COL_COUNT] = {"W=40", "W=25", "W=25", "", ""};
+
 void mui_columns_format(uint32_t breakpoint, char* out, size_t cap) {
     uint8_t cols[MUI_COL_COUNT];
     uint32_t i, n = mui_columns_for(breakpoint, cols);
     size_t used = 0;
-    for (i = 0; i + 1u < n && used + 5u < cap; i++) {
-        memcpy(out + used, "BAR,", 4);
-        used += 4;
+    out[0] = '\0';
+    for (i = 0; i < n; i++) {
+        const char* w = k_col_weight[cols[i]];
+        int put = snprintf(out + used, cap - used, "%s%s%s%s", w, w[0] != '\0' && i + 1u < n ? " " : "", i + 1u < n ? "BAR" : "", i + 1u < n ? "," : "");
+        if (put < 0 || (size_t)put >= cap - used) {
+            out[used] = '\0';
+            return;
+        }
+        used += (size_t)put;
     }
-    out[used] = '\0';
 }
 
 const char* mui_row_cell(const sel_view_row* r, uint32_t column) {
