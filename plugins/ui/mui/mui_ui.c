@@ -396,7 +396,9 @@ static void mui_screen_open(const uint32_t* tokens) {
     struct Screen* wb;
     struct DisplayInfo di;
     ULONG mode = INVALID_ID;
-    ULONG depth = 4;
+    ULONG wb_w = 0, wb_h = 0;
+    int foreign = 0;
+    mui_screen_plan_t plan;
     ULONG pal[2 + MUI_PEN_COUNT * 3];
     int i;
     for (i = 0; i < MUI_PEN_COUNT; i++) {
@@ -408,13 +410,29 @@ static void mui_screen_open(const uint32_t* tokens) {
     wb = LockPubScreen(NULL);
     if (wb != NULL) {
         mode = GetVPModeID(&wb->ViewPort);
+        wb_w = (ULONG)wb->Width;
+        wb_h = (ULONG)wb->Height;
         memset(&di, 0, sizeof di);
         if (mode != (ULONG)INVALID_ID && GetDisplayInfoData(NULL, (UBYTE*)&di, sizeof di, DTAG_DISP, mode) > 0 &&
             (di.PropertyFlags & DIPF_IS_FOREIGN) != 0) {
-            depth = 8; /* RTG mode: no chip RAM bitplanes, 256 colours cost nothing */
+            foreign = 1; /* RTG mode */
         }
         UnlockPubScreen(NULL, wb);
     }
+    /* I671: MUI 3.8 refuses a window taller than its screen, and the layout is taller than a 640x256 AGA Workbench. The plan
+     * (map/mui_screen.c) keeps the Workbench mode when the layout fits and takes its interlaced variant (height doubled) when
+     * it does not; a laced mode the chipset cannot show keeps the Workbench mode and the window failure says why. */
+    mui_screen_plan((uint32_t)mode, (uint32_t)wb_w, (uint32_t)wb_h, foreign, mui_layout_min_height(), &plan);
+    if (plan.laced && ModeNotAvailable(plan.mode) != 0) {
+        fprintf(stderr, "selecta mui: laced mode %08lx not available, keeping the Workbench mode\n", (unsigned long)plan.mode);
+        plan.mode = mode;
+        plan.height = wb_h;
+        plan.laced = 0;
+    }
+    fprintf(stderr, "selecta mui: screen plan mode %08lx %lux%lu depth %lu (layout needs %lu px high, Workbench is %lu)\n",
+            (unsigned long)plan.mode, (unsigned long)plan.width, (unsigned long)plan.height, (unsigned long)plan.depth,
+            (unsigned long)mui_layout_min_height(), (unsigned long)wb_h);
+    mode = plan.mode;
     pal[0] = ((ULONG)MUI_PEN_COUNT << 16) | 0u;
     for (i = 0; i < MUI_PEN_COUNT; i++) {
         pal[1 + i * 3] = g_plan.rgb32[i][0];
@@ -422,7 +440,7 @@ static void mui_screen_open(const uint32_t* tokens) {
         pal[3 + i * 3] = g_plan.rgb32[i][2];
     }
     pal[1 + MUI_PEN_COUNT * 3] = 0;
-    g_scr = OpenScreenTags(NULL, SA_DisplayID, mode, SA_Overscan, OSCAN_TEXT, SA_Depth, depth, SA_Colors32, (ULONG)pal, SA_Pens,
+    g_scr = OpenScreenTags(NULL, SA_DisplayID, mode, SA_Overscan, OSCAN_TEXT, SA_Depth, (ULONG)plan.depth, SA_Colors32, (ULONG)pal, SA_Pens,
                            (ULONG)g_plan.dri_pens, SA_SharePens, TRUE, SA_PubName, (ULONG)MUI_PUB_NAME, SA_Title, (ULONG) "Selecta",
                            SA_Type, PUBLICSCREEN, TAG_DONE);
     if (g_scr == NULL) {
@@ -1831,14 +1849,28 @@ static void* mui_open(const sel_ui_open_args* a) {
     mui_layout_for_screen(s);
     set(s->win, MUIA_Window_Open, TRUE);
     GetAttr(MUIA_Window_Open, s->win, &open); /* MUI opens the window inside the set; 0 here means it failed */
+    {
+        /* I671 measurement: the minimum the root group asked for (MUIM_AskMinMax ran inside the open attempt, the values
+         * stay in the object after a refusal) next to the screen it had to fit. --log on the rig records both lines. */
+        struct Screen* scr = g_scr != NULL ? g_scr : LockPubScreen(NULL);
+        fprintf(stderr, "selecta mui: window minimum %ldx%ld, screen %dx%d, open %lu\n", (long)_minwidth(s->root),
+                (long)_minheight(s->root), scr != NULL ? (int)scr->Width : 0, scr != NULL ? (int)scr->Height : 0,
+                (unsigned long)open);
+        if (scr != NULL && scr != g_scr) {
+            UnlockPubScreen(NULL, scr);
+        }
+    }
     if (!open) {
+        static char why[96];
+        snprintf(why, sizeof why, "(the layout needs %ldx%ld px, more than the screen shows)", (long)_minwidth(s->root),
+                 (long)_minheight(s->root));
         MUI_DisposeObject(s->app);
         s->app = NULL;
         s->win = NULL;
         mui_screen_close();
         CloseLibrary(MUIMasterBase);
         MUIMasterBase = NULL;
-        mui_report(MUI_FAIL_NO_WINDOW, "(the layout does not fit the screen)");
+        mui_report(MUI_FAIL_NO_WINDOW, why);
         return NULL;
     }
     s->wake_mask = 0;

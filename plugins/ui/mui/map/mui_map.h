@@ -270,6 +270,32 @@ uint32_t mui_tool_row_chars(uint32_t row);
 uint32_t mui_tool_row_width(uint32_t row);
 uint32_t mui_transport_row_width(uint32_t row);
 uint32_t mui_extra_row_width(void);
+
+/* I671: height model and screen plan (map/mui_screen.c). MUI 3.8 refuses a window whose minimum height does not fit the
+ * screen; the model sums the rows of the mini layout from the builder constants, and the plan picks the screen mode the own
+ * SELECTA screen opens in: the Workbench mode, or its interlaced variant (height doubled) when the Workbench is a native
+ * mode too short for the model. Row heights in pixels for the topaz 8 font: framed string, framed text, slider knob row,
+ * group spacing between children, window title bar plus borders; MUI_LIST_MIN_ROWS entries below the list title. */
+enum { MUI_FONT_H = 8, MUI_STRING_H = 14, MUI_TEXT_FRAMED_H = 12, MUI_SLIDER_H = 12, MUI_GROUP_SPACING = 4, MUI_WIN_CHROME_H = 24, MUI_LIST_MIN_ROWS = 2 };
+/* The LACE bit of a graphics.library mode id, and the id LockPubScreen failure leaves (INVALID_ID). */
+#define MUI_MODE_LACE 0x00000004u
+#define MUI_INVALID_MODE 0xFFFFFFFFu
+/* Height of one icon button: icon, vertical padding, frame. */
+uint32_t mui_button_height(void);
+/* Minimum window height of the mini layout (the breakpoint a 640 px wide screen gets). */
+uint32_t mui_layout_min_height(void);
+typedef struct mui_screen_plan_t {
+    uint32_t mode;          /* SA_DisplayID for the own screen */
+    uint32_t width, height; /* expected screen size */
+    uint32_t depth;         /* 8 on a foreign (RTG) mode, 4 on a native one */
+    uint8_t laced;          /* 1 when the plan added the LACE bit */
+} mui_screen_plan_t;
+/* Plans the own screen from the Workbench mode and size, its DIPF_IS_FOREIGN flag, and the height the layout needs. Returns 1
+ * when it chose the laced variant, 0 when the Workbench mode is kept. mui_screen_plans / mui_screen_laced count the calls
+ * and the laced picks (sentinels). */
+uint32_t mui_screen_plan(uint32_t wb_mode, uint32_t wb_w, uint32_t wb_h, int foreign, uint32_t need_h, mui_screen_plan_t* out);
+uint32_t mui_screen_plans(void);
+uint32_t mui_screen_laced(void);
 /* MUI-P8 (plan 2026-10-25-amiga-mui.md section P8): parity rows the first MUI pass left out. Every action here is fired by
  * its shared action-table id (mui_menu_line), the same line the desktop sends; nothing keeps a second list. */
 /* Fires the table line of action `id` through send; returns 1 when the line was sent. mui_action_fires() is the call-count

@@ -962,6 +962,42 @@ static void test_layout_before_open(void) {
     CHECK(strstr(src, "mui_layout_map(&s->lay, 1280, 720)") == NULL, "mui_open still applies a fixed 1280x720 layout");
 }
 
+/* Regression (I671): on rig 2 (AGA, Workbench PAL hires 640x256, mode 0x29000) MUI 3.8 refused the window (MUIA_Window_Open
+ * read back 0): the mini layout is taller than the screen. The height model must say so (taller than 256, within 512), the
+ * plan must open the own screen in the laced variant of a native mode that is too short (height doubled, mode | LACE), keep
+ * a laced or tall enough mode, keep an RTG mode at depth 8, and mui_screen_open must apply the plan (sentinel wiring). */
+static void test_screen_plan(void) {
+    mui_screen_plan_t p;
+    uint32_t need = mui_layout_min_height();
+    uint32_t before = mui_screen_plans();
+    static char src[400000];
+    FILE* f = fopen(MUI_UI_SOURCE, "rb");
+    size_t n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    CHECK(mui_button_height() == MUI_ICON_PX + 2u * MUI_BTN_PAD_Y + MUI_BTN_FRAME, "button height %u", (unsigned)mui_button_height());
+    CHECK(need > 256u && need <= 512u, "mini layout minimum height %u must be taller than 256 and fit 512", (unsigned)need);
+    CHECK(mui_screen_plan(0x29000u, 640u, 256u, 0, need, &p) == 1 && p.laced && p.mode == 0x29004u && p.width == 640u &&
+              p.height == 512u && p.depth == 4u,
+          "AGA 640x256 plan: laced %u mode %08x %ux%u depth %u", (unsigned)p.laced, (unsigned)p.mode, (unsigned)p.width,
+          (unsigned)p.height, (unsigned)p.depth);
+    CHECK(mui_screen_plan(0x29004u, 640u, 512u, 0, need, &p) == 0 && !p.laced && p.mode == 0x29004u && p.height == 512u,
+          "laced 640x512 plan changed: mode %08x height %u", (unsigned)p.mode, (unsigned)p.height);
+    CHECK(mui_screen_plan(0x29000u, 640u, 256u, 0, 200u, &p) == 0 && p.mode == 0x29000u, "a fitting layout still laces");
+    CHECK(mui_screen_plan(0x50041303u, 800u, 600u, 1, need, &p) == 0 && !p.laced && p.depth == 8u && p.mode == 0x50041303u,
+          "RTG 800x600 plan: laced %u depth %u", (unsigned)p.laced, (unsigned)p.depth);
+    CHECK(mui_screen_plan(MUI_INVALID_MODE, 0u, 0u, 0, need, &p) == 0 && p.mode == MUI_INVALID_MODE, "invalid mode laced");
+    CHECK(mui_screen_plans() == before + 5u && mui_screen_laced() >= 1u, "plan sentinels %u %u", (unsigned)mui_screen_plans(),
+          (unsigned)mui_screen_laced());
+    CHECK(strstr(src, "mui_screen_plan((uint32_t)mode") != NULL && strstr(src, "SA_DisplayID, mode") != NULL &&
+              strstr(src, "mode = plan.mode;") != NULL && strstr(src, "SA_Depth, (ULONG)plan.depth") != NULL,
+          "mui_screen_open does not open the own screen from mui_screen_plan");
+    CHECK(strstr(src, "ModeNotAvailable(plan.mode)") != NULL, "mui_screen_open does not check the laced mode is available");
+    CHECK(strstr(src, "_minheight(s->root)") != NULL, "mui_open does not report the measured window minimum");
+}
+
 /* Regression (I656): with the I651 icons every button grew by 24 + 6 + 20 px, the tool row 2 reached ~860 px and MUI refused to
  * open the window (MUIA_Window_Open read back 0 on rig 3). Each button row's summed minimum width, from the constants and the
  * label tables mui_ui.c builds from, must fit the smallest supported screen (640 px, plan P6-2). The rows must also be built
@@ -1136,6 +1172,8 @@ int main(int argc, char** argv) {
     } else if (strcmp(argv[1], "icon-rows") == 0) {
         test_icon_button_rows();
         test_layout_before_open();
+    } else if (strcmp(argv[1], "screen-plan") == 0) {
+        test_screen_plan();
     } else if (strcmp(argv[1], "toolrows") == 0) {
         test_toolrows();
     } else if (strcmp(argv[1], "tracker") == 0) {

@@ -18,7 +18,7 @@ add_custom_command(
     "${CMAKE_CURRENT_BINARY_DIR}/mui_iconbake_unused.c" 24 --mui "${CMAKE_CURRENT_BINARY_DIR}/mui_icons_baked.c"
   DEPENDS "${MUI_ICONBAKE_EXE}" "${PROJECT_SOURCE_DIR}/include/selecta/gui/gui_icons.h" ${MUI_LUCIDE_SVGS}
   COMMENT "Baking the MUI icon bodies")
-add_library(mui_map STATIC map/mui_style.c map/mui_wait.c map/mui_probe.c map/mui_menu.c map/mui_layout.c map/mui_controls.c map/mui_list.c map/mui_views.c map/mui_canvas.c map/mui_viz.c map/mui_copper.c map/mui_drop.c map/mui_p8.c map/mui_theme.c map/mui_pens.c map/mui_aa.c map/mui_icons.c "${CMAKE_CURRENT_BINARY_DIR}/mui_icons_baked.c")
+add_library(mui_map STATIC map/mui_style.c map/mui_wait.c map/mui_probe.c map/mui_menu.c map/mui_layout.c map/mui_controls.c map/mui_list.c map/mui_views.c map/mui_canvas.c map/mui_viz.c map/mui_copper.c map/mui_drop.c map/mui_p8.c map/mui_theme.c map/mui_pens.c map/mui_aa.c map/mui_icons.c map/mui_screen.c "${CMAKE_CURRENT_BINARY_DIR}/mui_icons_baked.c")
 target_link_libraries(mui_map PUBLIC selecta_uimodel selecta_gui)
 target_include_directories(mui_map PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/map" PRIVATE "${PROJECT_SOURCE_DIR}/include")
 
