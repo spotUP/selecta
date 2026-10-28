@@ -9,6 +9,7 @@
 #include "ctlexec.h"
 #include <selecta/engine.h>
 #include <selecta/host.h>
+#include <selecta/protocol.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -84,6 +85,20 @@ int main(int argc, char** argv) {
         CHECK(c.cmds == 0 && c.errors == 6);
         arexx_closing_result(&r, &c);
         CHECK(r.result1 == AREXX_RC_CLOSING && strcmp(r.text, "port_closing") == 0 && c.errors == 7);
+    } else if (strcmp(mode, "msgline") == 0) {
+        /* I597: a command message is recognised by its action code alone (RXCOMM 0x01000000, RXFF_RESULT 0x00020000
+         * may be set), whoever built it. */
+        CHECK(arexx_message_line(0x01000000ul, "STATUS") != NULL);
+        CHECK(arexx_message_line(0x01020000ul, "STATUS") != NULL && strcmp(arexx_message_line(0x01020000ul, "STATUS"), "STATUS") == 0);
+        CHECK(arexx_message_line(0x02000000ul, "STATUS") == NULL);
+        CHECK(arexx_message_line(0, "STATUS") == NULL);
+        arexx_dispatch(arexx_message_line(0x01020000ul, "STATUS"), 1, exec_shared, &x, reply, sizeof reply, &r, &c);
+        CHECK(r.result1 == 0 && c.cmds == 1 && c.errors == 0 && x.calls == 1);
+    } else if (strcmp(mode, "argnames") == 0) {
+        /* The queue verbs take entry ids; the table must say so (the old name was "index"). */
+        CHECK(strcmp(sel_cmd_argnames(SEL_CMD_QUEUE_REMOVE), "id") == 0);
+        CHECK(strcmp(sel_cmd_argnames(SEL_CMD_QUEUE_MOVE), "from_id to_id") == 0);
+        CHECK(strcmp(sel_cmd_argnames(SEL_CMD_QUEUE_SWAP), "first_id second_id") == 0);
     } else if (strcmp(mode, "names") == 0) {
         unsigned n = 0;
         CHECK(arexx_port_name(0, name, sizeof name) && strcmp(name, "SELECTA") == 0);

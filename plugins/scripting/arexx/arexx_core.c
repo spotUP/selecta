@@ -59,6 +59,10 @@ void arexx_dispatch(const char* arg0, int want_result, arexx_exec_fn exec, void*
     counters->cmds++;
 }
 
+const char* arexx_message_line(unsigned long action, const char* arg0) {
+    return (action & 0xFF000000ul) == 0x01000000ul ? arg0 : NULL; /* RXCODEMASK, RXCOMM of rexx/storage.h */
+}
+
 void arexx_closing_result(arexx_result* out, arexx_counters* counters) {
     out->result1 = AREXX_RC_CLOSING;
     out->has_string = 0;

@@ -85,10 +85,9 @@ unsigned arexx_poll(arexx_port* p, arexx_exec_fn exec, void* exec_ctx) {
     unsigned n = 0;
     while (n < AREXX_MSGS_PER_TURN && (m = (struct RexxMsg*)GetMsg(p->port)) != NULL) {
         arexx_result r;
-        const char* line = NULL;
-        if (IsRexxMsg(m) && (m->rm_Action & RXCODEMASK) == RXCOMM) {
-            line = (const char*)ARG0(m);
-        }
+        /* No IsRexxMsg() gate: it rejects messages a sender builds without CreateRexxMsg (wasabid), and the action
+         * code is what separates a command from anything else (I597). */
+        const char* line = arexx_message_line((unsigned long)m->rm_Action, (const char*)ARG0(m));
         arexx_dispatch(line, (m->rm_Action & RXFF_RESULT) != 0, exec, exec_ctx, reply, sizeof reply, &r,
                        &p->counters);
         reply_with(p, m, &r);

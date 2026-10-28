@@ -31,6 +31,10 @@ typedef struct arexx_result {
 void arexx_dispatch(const char* arg0, int want_result, arexx_exec_fn exec, void* exec_ctx, char* reply, size_t cap,
                     arexx_result* out, arexx_counters* counters);
 
+/* The command line of a message: `arg0` when the action code (the top byte of rm_Action, RXCODEMASK) is RXCOMM, else
+ * NULL. Whether the sender built the message with CreateRexxMsg is not part of the decision. */
+const char* arexx_message_line(unsigned long action, const char* arg0);
+
 /* The closing reply for a message left in the queue at exit: RC 20, `port_closing`. */
 void arexx_closing_result(arexx_result* out, arexx_counters* counters);
 

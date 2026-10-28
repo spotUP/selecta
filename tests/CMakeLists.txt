@@ -788,7 +788,9 @@ if(NOT SEL_AMIGA)
   add_test(NAME arexx-dispatch-reach COMMAND arexx_test reach)
   add_test(NAME arexx-dispatch-rc COMMAND arexx_test rc)
   add_test(NAME arexx-port-names COMMAND arexx_test names)
-  set_tests_properties(arexx-dispatch-reach arexx-dispatch-rc arexx-port-names PROPERTIES TIMEOUT 60 LABELS engine
+  add_test(NAME arexx-message-line COMMAND arexx_test msgline)
+  add_test(NAME arexx-queue-argnames COMMAND arexx_test argnames)
+  set_tests_properties(arexx-dispatch-reach arexx-dispatch-rc arexx-port-names arexx-message-line arexx-queue-argnames PROPERTIES TIMEOUT 60 LABELS engine
                        PASS_REGULAR_EXPRESSION "arexx_test [a-z]+ ok")
   # M4-AX-2-1: the commands.def build check accepts the real table and rejects a row without a label and one whose
   # argnames do not match the signature.
