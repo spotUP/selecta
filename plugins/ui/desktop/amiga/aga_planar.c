@@ -181,7 +181,11 @@ void desk_aga_fit_size(int32_t max_w, int32_t max_h, int ntsc, int32_t* w, int32
 }
 
 void desk_aga_fit_clip(const int32_t max_rect[4], int32_t w, int32_t h, int32_t out[4]) {
-    out[0] = max_rect[0] + ((max_rect[2] - max_rect[0] + 1) - w) / 2;
+    /* I624: DIWSTRT/DIWSTOP and the DDF fetch count in lores pixels (2 hires pixels), so a clip whose left edge is an odd
+     * hires pixel is rounded down to the lores pixel under it: the display window then starts one hires pixel before the
+     * bitmap's first column and COLOR00 shows there. The 678 wide PAL maximum overscan centres a 672 wide screen at x = 3.
+     * The left edge is always even (w is a multiple of 32, so the right edge follows). */
+    out[0] = (max_rect[0] + ((max_rect[2] - max_rect[0] + 1) - w) / 2) & ~1;
     out[1] = max_rect[1] + ((max_rect[3] - max_rect[1] + 1) - h) / 2;
     out[2] = out[0] + w - 1;
     out[3] = out[1] + h - 1;
