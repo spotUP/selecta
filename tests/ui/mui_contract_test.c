@@ -276,6 +276,35 @@ static void test_relayout(void) {
     CHECK(mui_layout_relayout(&m, 1000, 720, &flips) == 0 && flips == 0, "same breakpoint changes no visibility");
 }
 
+/* mui-relayout-open (I656): the open sequence (default map, width 0, first real size 792) never leaves the narrow-window
+ * suggestion shown at icon-sidebar width, and the suggestion object is created hidden: an object hidden only after the
+ * window opened stays listed in the screen's object tree with a stale box. */
+static void test_open_no_suggestion(void) {
+    mui_layout_map_t m;
+    uint32_t flips;
+    char line[512];
+    int found = 0;
+    FILE* f = fopen(MUI_UI_SOURCE, "r");
+    mui_layout_map(&m, 1280, 720);
+    m.width = 0;
+    m.breakpoint = SEL_UIM_BP_COUNT;
+    mui_layout_relayout(&m, 792, 576, &flips);
+    CHECK(m.show[MUI_SLOT_SUGGESTION] == 0, "792 wide shows no suggestion");
+    mui_layout_relayout(&m, 600, 576, &flips);
+    CHECK(m.show[MUI_SLOT_SUGGESTION] == 1, "600 wide (mini) shows the suggestion");
+    CHECK(f != NULL, "mui_ui.c readable");
+    while (f != NULL && fgets(line, sizeof line, f) != NULL) {
+        if (strstr(line, "slot[MUI_SLOT_SUGGESTION] = TextObject") != NULL) {
+            found = 1;
+            CHECK(strstr(line, "MUIA_ShowMe, FALSE") != NULL, "suggestion object is created hidden");
+        }
+    }
+    CHECK(found, "suggestion object creation found");
+    if (f != NULL) {
+        fclose(f);
+    }
+}
+
 /* mui-transport-map (MUI-P2-5): the buttons reach exactly the action rows whose icon is a transport icon. */
 static int is_transport_icon(const sel_uim_action* a) {
     const char* icon = a->icon;
@@ -949,6 +978,7 @@ int main(int argc, char** argv) {
         test_weights();
     } else if (strcmp(argv[1], "relayout") == 0) {
         test_relayout();
+        test_open_no_suggestion();
     } else if (strcmp(argv[1], "transport") == 0) {
         test_transport();
     } else if (strcmp(argv[1], "dirty") == 0) {
