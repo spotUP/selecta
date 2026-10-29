@@ -122,6 +122,12 @@ enum { PT_CANVAS = 0, PT_SONG, PT_SIDEBAR, PT_MAIN, PT_TRANSPORT, PT_PROGRESS, P
 enum { SIDE_CHIPS = 6 }; /* I610, I678b: the kind chips of the Your Library sidebar */
 #define SIDE_LIB_MAX 64u /* I608: playlists the sidebar list holds */
 
+/* I678h3: the artist, album and album id of one collection page song, read from the db row once per reload (sel_engine_song_meta). */
+typedef struct pls_meta_row {
+    char artist[96], album[96];
+    uint32_t album_id; /* the albums row of the song's album; 0 when the album is not in the table */
+} pls_meta_row;
+
 typedef struct desk {
     sel_engine* engine;
     const sel_host* host;
@@ -224,6 +230,11 @@ typedef struct desk {
     char* pls_buf;           /* its song keys, NUL separated, in playlist order */
     uint32_t* pls_off;       /* offset of each key in pls_buf */
     char (*pls_title)[96];   /* the catalogue title of each song, read once per reload */
+    pls_meta_row* pls_meta;  /* I678h3: the artist and album of each song, read once per reload */
+    sel_gui_rect si_composer; /* I678h3: the Song Information composer link, zero width when the page has no composer row */
+    char si_composer_key[SEL_COMPOSER_MAX]; /* its composer canon, from the song's db row */
+    char si_composer_ref[512]; /* the song path si_composer_key was read for */
+    int32_t si_composer_row; /* the info row index of the Author tag, -1 when the song has none */
     uint32_t pls_want, pls_n, pls_stale, pls_scroll, pls_draws, pls_rows; /* songs, reload wanted, first row shown, frames drawn, rows in the last one */
     int pl_edit;             /* 1 while the name field has the keyboard */
     char pl_name[64];
@@ -459,7 +470,7 @@ typedef struct desk {
     sel_tag stats[100 + 2 * (SEL_GUI_PROF_COUNT + PT_COUNT) + 2 * SEL_GUI_PROF_COUNT + 10];
     char* input_at;         /* where the scripted input resumes after a turn that sent an engine line */
     uint32_t sends;         /* engine lines sent so far: the replay yields a turn so the shell pumps them */
-    char library_dump[8192]; /* the Library page as text for the stats (DUI-P4-3) */
+    char library_dump[16384]; /* the Library page as text for the stats (DUI-P4-3) */
     uint32_t library_sig;    /* hash of the Library page last drawn: a change redraws */
     sel_gui_rect grid_box;                       /* bounding box of the tiles of the last grid frame (I379) */
     sel_gui_rect flow_cover, flow_area;          /* the centre cover and the free area of the last cover flow frame (I391) */
@@ -4155,6 +4166,8 @@ static void pls_free(desk* d) {
     free(d->pls_buf);
     free(d->pls_off);
     free(d->pls_title);
+    free(d->pls_meta);
+    d->pls_meta = NULL;
     free(d->pls_ord);
     d->pls_ord = NULL;
     d->pls_vn = 0u;
@@ -4227,11 +4240,14 @@ static void pls_reload(desk* d) {
     }
     d->pls_off = (uint32_t*)malloc((n + 1u) * sizeof *d->pls_off);
     d->pls_title = (char(*)[96])malloc((n + 1u) * sizeof *d->pls_title);
-    if (d->pls_off == NULL || d->pls_title == NULL) {
+    d->pls_meta = (pls_meta_row*)calloc(n + 1u, sizeof *d->pls_meta);
+    if (d->pls_off == NULL || d->pls_title == NULL || d->pls_meta == NULL) {
         free(d->pls_off);
         free(d->pls_title);
+        free(d->pls_meta);
         d->pls_off = NULL;
         d->pls_title = NULL;
+        d->pls_meta = NULL;
         free(buf);
         return;
     }
@@ -4240,6 +4256,16 @@ static void pls_reload(desk* d) {
         d->pls_off[i] = (uint32_t)(k - buf);
         if (!sel_engine_song_title(d->engine, k, d->pls_title[i], sizeof d->pls_title[i])) {
             snprintf(d->pls_title[i], sizeof d->pls_title[i], "%s", path_base(k));
+        }
+        {   /* I678h3: artist, album, album id, composer canon of the db row; the links route on these, never on UI name matching */
+            char m[SEL_COMPOSER_MAX + 224];
+            if (sel_engine_song_meta(d->engine, k, m, sizeof m)) {
+                const char* alb = m + strlen(m) + 1u;
+                const char* aid = alb + strlen(alb) + 1u;
+                snprintf(d->pls_meta[i].artist, sizeof d->pls_meta[i].artist, "%s", m);
+                snprintf(d->pls_meta[i].album, sizeof d->pls_meta[i].album, "%s", alb);
+                d->pls_meta[i].album_id = (uint32_t)strtoul(aid, NULL, 10);
+            }
         }
     }
     d->pls_n = i;
@@ -4909,6 +4935,36 @@ static int col_src_click(desk* d, sel_gui_rect mn, int32_t x, int32_t y) {
     return 0;
 }
 
+/* I678h3: a collection page song row is the number, the title, the artist link, the album link and (on a kind page) the Plays column. The
+ * title takes 45 percent of the room left of the Plays column, the artist 28 percent, the album the rest. */
+static int32_t pls_cols_w(desk* d, sel_gui_rect r) {
+    int32_t w = r.w - lpx(d, 56) - lpx(d, 180);
+    return w > 0 ? w : 0;
+}
+
+static int32_t pls_title_w(desk* d, sel_gui_rect r) {
+    return pls_cols_w(d, r) * 45 / 100;
+}
+
+/* The link rects of song `i` on row `r`: the text width, capped at its column; zero width when the song has no artist or album. */
+static void pls_link_rects(desk* d, sel_gui_rect r, uint32_t i, sel_gui_rect* art, sel_gui_rect* alb) {
+    const sel_gui_atlas* at = desk_font(d, 0, 13);
+    int32_t cw = pls_cols_w(d, r), ax = r.x + lpx(d, 56) + pls_title_w(d, r), aw = cw * 28 / 100, bx = ax + aw, bw = cw - pls_title_w(d, r) - aw, tw;
+    memset(art, 0, sizeof *art);
+    memset(alb, 0, sizeof *alb);
+    if (d->pls_meta == NULL || at == NULL) {
+        return;
+    }
+    if (d->pls_meta[i].artist[0] != '\0') {
+        tw = sel_gui_text_width(at, d->pls_meta[i].artist, strlen(d->pls_meta[i].artist));
+        *art = rect_of(ax, r.y, tw < aw - lpx(d, 8) ? tw : aw - lpx(d, 8), r.h);
+    }
+    if (d->pls_meta[i].album[0] != '\0') {
+        tw = sel_gui_text_width(at, d->pls_meta[i].album, strlen(d->pls_meta[i].album));
+        *alb = rect_of(bx, r.y, tw < bw - lpx(d, 8) ? tw : bw - lpx(d, 8), r.h);
+    }
+}
+
 static void draw_playlist_page(desk* d, sel_gui_rect mn) {
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     uint32_t surf = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
@@ -4992,7 +5048,17 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
         }
         snprintf(num, sizeof num, "%u", (unsigned)(pos + 1u));
         draw_text(d, rect_of(r.x + lpx(d, 12), r.y, lpx(d, 36), r.h), num, 0, 14, muted);
-        draw_text(d, rect_of(r.x + lpx(d, 56), r.y, r.w - lpx(d, 56) - lpx(d, 40), r.h), d->pls_title[i], 0, 14, row_ink(d, r, text));
+        draw_text(d, rect_of(r.x + lpx(d, 56), r.y, pls_title_w(d, r), r.h), d->pls_title[i], 0, 14, row_ink(d, r, text));
+        {   /* I678h3: the artist and album columns, drawn as links in the meta-line artist's style */
+            sel_gui_rect la, lb;
+            pls_link_rects(d, r, i, &la, &lb);
+            if (la.w > 0) {
+                draw_text(d, la, d->pls_meta[i].artist, 0, 13, text);
+            }
+            if (lb.w > 0) {
+                draw_text(d, lb, d->pls_meta[i].album, 0, 13, text);
+            }
+        }
         if (d->col_kind == (uint32_t)SEL_LIB_ITEM_RECENT && d->col_plays != NULL && d->col_plays[i] > 0u) { /* I678g: the Played column: the day of the last play */
             char pl[40];
             time_t at = (time_t)d->col_plays[i];
@@ -5228,9 +5294,28 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
         return desk_send(d, line);
     }
     for (slot = 0; d->pls_scroll + slot < col_song_rows(d) && pls_row_visible(d, mn, slot); slot++) {
-        if (in_rect(pls_row_rect(d, mn, slot), ev->x, ev->y)) {
-            return pls_play_pos(d, d->pls_scroll + slot);
+        sel_gui_rect row = pls_row_rect(d, mn, slot), la, lb;
+        uint32_t real = d->pls_ord[d->pls_scroll + slot];
+        if (!in_rect(row, ev->x, ev->y)) {
+            continue;
         }
+        pls_link_rects(d, row, real, &la, &lb);
+        if (la.w > 0 && in_rect(la, ev->x, ev->y)) { /* I678h3: the row's artist opens the artist page */
+            char artist[96];
+            snprintf(artist, sizeof artist, "%s", d->pls_meta[real].artist);
+            desk_route(d, SEL_ROUTE_TRACK_ARTIST, (uint32_t)SEL_LIB_ITEM_ARTIST, 0u, artist, artist, "");
+            return 1;
+        }
+        if (lb.w > 0 && in_rect(lb, ev->x, ev->y)) { /* the row's album opens the album page, by the db row's album id */
+            char idkey[16];
+            if (d->pls_meta[real].album_id != 0u) {
+                snprintf(idkey, sizeof idkey, "%u", (unsigned)d->pls_meta[real].album_id);
+                desk_route(d, SEL_ROUTE_TRACK_ALBUM, (uint32_t)SEL_LIB_ITEM_ALBUM, d->pls_meta[real].album_id, idkey, d->pls_meta[real].album,
+                           d->pls_meta[real].artist);
+                return 1;
+            }
+        }
+        return pls_play_pos(d, d->pls_scroll + slot);
     }
     return 0;
 }
@@ -5272,7 +5357,9 @@ static int pl_pointer(desk* d, const sel_gui_input* ev) {
         d->pl_sel_kind = v->rows[row].kind;
         d->pl_sel_id = v->rows[row].id;
         if (v->rows[row].kind == (uint32_t)SEL_ROW_PLAYLIST) { /* I633: a playlist row opens its page */
-            pls_open(d, v->rows[row].id, v->rows[row].text);
+            char idkey[16];
+            snprintf(idkey, sizeof idkey, "%u", (unsigned)v->rows[row].id);
+            desk_route(d, SEL_ROUTE_SIDEBAR_ROW, (uint32_t)SEL_LIB_ITEM_PLAYLIST, v->rows[row].id, idkey, v->rows[row].text, ""); /* I678h3: through the route history */
         }
     }
     d->repaint = 1;
@@ -5372,12 +5459,31 @@ static void si_clean(char* val) {
     }
 }
 
+/* I678h3: the canon of the open song's first composer (the db row), cached by song path in si_composer_key. */
+static void si_composer_load(desk* d, const sel_state* st) {
+    char m[SEL_COMPOSER_MAX + 224];
+    const char* p = m;
+    size_t k;
+    if (st->song.path == NULL || strcmp(d->si_composer_ref, st->song.path) == 0) {
+        return;
+    }
+    snprintf(d->si_composer_ref, sizeof d->si_composer_ref, "%s", st->song.path);
+    d->si_composer_key[0] = '\0';
+    if (sel_engine_song_meta(d->engine, st->song.path, m, sizeof m)) {
+        for (k = 0; k < 3u; k++) {
+            p += strlen(p) + 1u;
+        }
+        snprintf(d->si_composer_key, sizeof d->si_composer_key, "%s", p);
+    }
+}
+
 /* Calls emit(d, label, value, row index) for every info row in order: the metadata tags, then the panel pairs. The
  * drawing and the geometry dump share this walk, so the dumped rows are the drawn rows. */
 static uint32_t si_walk(desk* d, const sel_state* st, void (*emit)(desk*, const char*, const char*, uint32_t)) {
     const uintptr_t absent = (uintptr_t)-1;
     uint32_t n = 0, tag;
     char label[32], val[2048];
+    d->si_composer_row = -1;
     for (tag = SEL_META_TITLE; sel_tag_name(tag) != NULL; tag++) {
         uintptr_t v = sel_tag_find(st->song.meta, tag, absent);
         sel_tag_type type = SEL_TT_INT;
@@ -5399,6 +5505,10 @@ static uint32_t si_walk(desk* d, const sel_state* st, void (*emit)(desk*, const 
             const char* value = p + strlen(p) + 1;
             snprintf(val, sizeof val, "%s", value);
             si_clean(val);
+            if (strcmp(p, "Composer") == 0) { /* I678h3: the catalogue's Composer row links to the composer the db row names */
+                si_composer_load(d, st);
+                d->si_composer_row = d->si_composer_key[0] != '\0' ? (int32_t)n : -1;
+            }
             emit(d, p, val, n++);
             p = value + strlen(value) + 1;
         }
@@ -5431,14 +5541,24 @@ static int32_t si_row_y(desk* d, sel_gui_rect mn) {
     return si_list_top(d, mn) + d->si_cy - lpx(d, d->si_y_q16 >> 16);
 }
 
+/* I678h3: the composer link rect of the info row `i` at screen top y: the value text's width on its first line. */
+static void si_composer_rect(desk* d, sel_gui_rect mn, const char* value, uint32_t i, int32_t y) {
+    const sel_gui_atlas* at = desk_font(d, 0, 13);
+    int32_t tw = at != NULL ? sel_gui_text_width(at, value, strlen(value)) : 0;
+    if ((int32_t)i != d->si_composer_row || si_lines(d, mn, value) > 1) {
+        return;
+    }
+    d->si_composer = rect_of(mn.x + lpx(d, HOME_MARGIN) + lpx(d, 160), y, tw < si_value_w(d, mn) ? tw : si_value_w(d, mn), lpx(d, SI_ROW_H));
+}
+
 static void si_draw_row(desk* d, const char* label, const char* value, uint32_t i) {
     sel_gui_rect mn = region_rect(d, "main");
     int32_t h = si_row_h(d, mn, value), y = si_row_y(d, mn), half = lpx(d, 160);
-    (void)i;
     d->si_cy += h;
     if (y + h <= si_list_top(d, mn) || y >= mn.y + mn.h) {
         return;
     }
+    si_composer_rect(d, mn, value, i, y);
     draw_text(d, rect_of(mn.x + lpx(d, HOME_MARGIN), y, half, lpx(d, SI_ROW_H)), label, 0, 12, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
     if (si_lines(d, mn, value) > 1) {
         sel_gui_text_wrap(d->canvas, desk_font(d, 0, 13), rect_of(mn.x + lpx(d, HOME_MARGIN) + half, y, si_value_w(d, mn), h), value,
@@ -5472,6 +5592,7 @@ static void si_dump_row(desk* d, const char* label, const char* value, uint32_t 
         flat[k] = flat[k] == '\n' ? ' ' : flat[k];
     }
     d->si_cy += h;
+    si_composer_rect(d, mn, value, i, y);
     if (o + 2600u < sizeof d->library_dump) {
         snprintf(d->library_dump + o, sizeof d->library_dump - o, "sirow %u %s|%s\nsigeo %u %d %d %d\n", (unsigned)i, label, flat,
                  (unsigned)i, (int)y, (int)h, (int)si_lines(d, mn, value));
@@ -5964,6 +6085,7 @@ static void draw_songinfo(desk* d) {
               d->si_nlen > 0u ? text : muted);
     d->si_rows = 0;
     sel_gui_clip_push(d->canvas, rect_of(mn.x, si_list_top(d, mn), mn.w, mn.y + mn.h - si_list_top(d, mn)));
+    memset(&d->si_composer, 0, sizeof d->si_composer);
     si_walk_from_top(d, st, si_draw_row);
     sel_gui_clip_pop(d->canvas);
     if (d->si_rows == 0u) {
@@ -5986,6 +6108,12 @@ static int si_pointer(desk* d, const sel_gui_input* ev) {
     uint32_t k;
     if (ev->kind != SEL_GUI_IN_CLICK || ev->button != 0u) {
         return 0;
+    }
+    if (d->si_composer.w > 0 && d->si_composer_key[0] != '\0' && in_rect(d->si_composer, ev->x, ev->y)) { /* I678h3: the composer opens the composer page */
+        char canon[SEL_COMPOSER_MAX];
+        snprintf(canon, sizeof canon, "%s", d->si_composer_key);
+        desk_route(d, SEL_ROUTE_SONGINFO_COMPOSER, (uint32_t)SEL_LIB_ITEM_COMPOSER, 0u, canon, canon, "");
+        return 1;
     }
     for (k = 0; k < SI_BUTTONS; k++) {
         if (in_rect(queue_btn_rect(d, mn, k), ev->x, ev->y)) {
@@ -6373,6 +6501,13 @@ static const char* library_dump_build(desk* d) {
             o = dump_put(d, o, "plsong %u %d %d %d %d file=%s title=%s\n", (unsigned)j, (int)r.x, (int)r.y, (int)r.w, (int)r.h, path_base(pls_key(d, real)),
                          d->pls_title[real]);
         }
+        for (j = 0; d->pls_meta != NULL && d->pls_scroll + j < d->pls_vn && pls_row_visible(d, pmn, j) && o + 400u < sizeof d->library_dump; j++) {
+            sel_gui_rect r = pls_row_rect(d, pmn, j), la, lb; /* I678h3: the link rects and the db row ids behind them, after the plsong lines */
+            uint32_t real = d->pls_ord[d->pls_scroll + j];
+            pls_link_rects(d, r, real, &la, &lb);
+            o = dump_put(d, o, "plsonglink %u artist %d %d %d %d album %d %d %d %d album_id=%u\n", (unsigned)j, (int)la.x, (int)la.y, (int)la.w, (int)la.h,
+                         (int)lb.x, (int)lb.y, (int)lb.w, (int)lb.h, (unsigned)d->pls_meta[real].album_id);
+        }
     }
     if (d->si_page) { /* the Song Information page geometry and rows (DUI-P4-10) */
         sel_gui_rect smn = region_rect(d, "main"), sn = pl_name_rect(d, smn);
@@ -6389,8 +6524,11 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "sipanel %d %d\n", (int)si_list_top(d, smn),
                               (int)(smn.y + smn.h));
         d->si_cy = 0;
+        memset(&d->si_composer, 0, sizeof d->si_composer);
         si_walk(d, st, si_dump_row);
         o = strlen(d->library_dump);
+        o = dump_put(d, o, "sicomposer %d %d %d %d key=%s\n", (int)d->si_composer.x, (int)d->si_composer.y, (int)d->si_composer.w, (int)d->si_composer.h,
+                     d->si_composer_key);
     }
     if (d->tr_page) { /* the Tracker page geometry, position and playing row (DUI-P4-12) */
         sel_gui_rect tmn = region_rect(d, "main");
@@ -8490,7 +8628,7 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
                     d->search_facet = i;
                     d->search_keep = 1;
                 }
-                moved = desk_page_goto(d, i == 0u ? PG_SEARCH : i == 1u ? PG_SONGS : i == 2u ? PG_LIBRARY : PG_PLAYLISTS);
+                moved = desk_route_door(d, i == 0u ? PG_SEARCH : i == 1u ? PG_SONGS : i == 2u ? PG_LIBRARY : PG_PLAYLISTS); /* I678h3: a chip is a door, so Back returns to Home */
                 d->search_keep = 0;
                 return moved;
             }

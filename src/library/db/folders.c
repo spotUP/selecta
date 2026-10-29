@@ -287,6 +287,38 @@ static int song_group(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     return SQLITE_OK;
 }
 
+/* I678h3: the artist, album, album id and first composer canon of one song as four NUL terminated strings (empty when absent). The album id
+ * is the albums row of the song's (album, artist), the join art.c uses, so a track row's album link never matches names in the UI. */
+static int song_meta(sqlite3* db, const sel_user_op* op, int64_t* rows) {
+    char key[SEL_SONG_KEY_MAX];
+    sqlite3_stmt* st;
+    uint32_t used = 0;
+    int i;
+    *rows = 0;
+    if (op->value == NULL || op->out == NULL || op->out_cap < 5u || !sel_song_key_of(op->value, key, sizeof key)) return SQLITE_MISUSE;
+    memset(op->out, 0, 4u);
+    st = prep(db, "SELECT COALESCE(s.artist,''), COALESCE(s.album,''),"
+                  " COALESCE((SELECT CAST(a.id AS TEXT) FROM albums a WHERE a.name = s.album AND a.artist IS s.artist ORDER BY a.id LIMIT 1),''),"
+                  " COALESCE((SELECT c.canon FROM song_composers c WHERE c.song_key = s.key ORDER BY c.canon LIMIT 1),'')"
+                  " FROM songs s WHERE s.key = ?1");
+    if (st == NULL) return SQLITE_ERROR;
+    sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        for (i = 0; i < 4; i++) {
+            const char* t = (const char*)sqlite3_column_text(st, i);
+            size_t n = t != NULL ? strlen(t) : 0u;
+            if (used + n + 2u > op->out_cap) break; /* leaves room for the final NUL */
+            if (n > 0u) memcpy(op->out + used, t, n);
+            op->out[used + n] = '\0';
+            used += (uint32_t)n + 1u;
+        }
+        op->out[used] = '\0';
+        *rows = 1;
+    }
+    sqlite3_finalize(st);
+    return SQLITE_OK;
+}
+
 /* Appends `a` NUL `b` NUL to out; false when it does not fit (leaving room for the final empty string). */
 static int put_pair(char* out, uint32_t cap, uint32_t* used, const char* a, const char* b) {
     size_t la = strlen(a) + 1u, lb = b != NULL ? strlen(b) + 1u : 0u;
@@ -397,6 +429,7 @@ int sel_folder_exec(sqlite3* db, const sel_user_op* op, int64_t* rows, int32_t c
     case SEL_USER_LIBRARY_CLEAR: return library_clear(db, rows);
     case SEL_USER_SONG_TITLE: return song_title(db, op, rows);
     case SEL_USER_SONG_GROUP: return song_group(db, op, rows);
+    case SEL_USER_SONG_META: return song_meta(db, op, rows);
     case SEL_USER_FOLDER_PLAYLISTS: return folder_playlists(db, op, rows);
     case SEL_USER_PLAYLIST_KEYS: return playlist_keys(db, op, rows);
     case SEL_USER_FOLDER_TREE: return folder_tree(db, op, rows);

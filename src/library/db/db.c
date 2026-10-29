@@ -630,6 +630,19 @@ int sel_library_song_title(sel_library* lib, const char* ref, char* out, size_t 
     return folder_call(lib, &op, &found) == SEL_FOLDER_OK && found == 1u;
 }
 
+int sel_library_song_meta(sel_library* lib, const char* ref, char* out, size_t cap) {
+    sel_user_op op;
+    uint32_t found = 0;
+    if (out == NULL || cap < 5u) return 0;
+    memset(out, 0, 4u);
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_SONG_META;
+    op.value = ref;
+    op.out = out;
+    op.out_cap = (uint32_t)cap;
+    return folder_call(lib, &op, &found) == SEL_FOLDER_OK && found == 1u;
+}
+
 int sel_library_song_group(sel_library* lib, const char* ref, char* out, size_t cap) {
     sel_user_op op;
     uint32_t found = 0;
