@@ -133,6 +133,21 @@ static void test_state(void) {
     free(draw);
 }
 
+/* I667b-2 mui-aa-check: the class really implements the toggle role (checkbox) through the shared helpers: toggle input mode and a
+ * MUIA_Selected notification, the box from the metrics (check_px), the DIVIDER outline token and the check icon drawn with aabtn_icon. */
+static void test_check(void) {
+    char* cls = slurp(AABTN_SOURCE);
+    CHECK(cls != NULL, "class source readable");
+    if (cls == NULL) {
+        return;
+    }
+    CHECK(strstr(cls, "MUIV_InputMode_Toggle") != NULL && strstr(cls, "MUIA_Selected") != NULL, "toggle input mode or selected notify missing");
+    CHECK(strstr(cls, "MUI_AA_ROLE_TOGGLE") != NULL && strstr(cls, "check_px") != NULL && strstr(cls, "SEL_GUI_TOKEN_DIVIDER") != NULL, "toggle box not drawn from metrics and tokens");
+    CHECK(strstr(cls, "MUI_AA_SELECTED") != NULL && strstr(cls, "aabtn_icon(") != NULL, "checked state does not draw the check icon");
+    CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "TT_") == NULL, "class holds no pen or ttengine code of its own");
+    free(cls);
+}
+
 int main(int argc, char** argv) {
     const char* t = argc > 1 ? argv[1] : "";
     if (!strcmp(t, "round")) {
@@ -143,6 +158,8 @@ int main(int argc, char** argv) {
         test_state();
     } else if (!strcmp(t, "tokens")) {
         test_tokens();
+    } else if (!strcmp(t, "check")) {
+        test_check();
     } else {
         printf("usage: round|ramp|state|tokens\n");
         return 2;

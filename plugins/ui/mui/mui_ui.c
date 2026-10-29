@@ -70,10 +70,10 @@ typedef struct mui_cells {
 /* MUI-P4: the tool row gadgets and their counters in the ui_p4 sentinel. */
 #define MUI_CRUMB_MAX 6u
 enum { P4_SEARCH, P4_CMD, P4_LIKE, P4_RATING, P4_SUBSONG, P4_QREMOVE, P4_QCLEAR, P4_QUP, P4_QDOWN, P4_POPEN, P4_PRENAME, P4_PDELETE,
-       P4_CLEARLIB, P4_HELP, P4_HOME, P4_TOAST, P4_CRUMB, P4_STATE, P4_SETTINGS, P4_SONGMENU, P4_NP, P4_SONGINFO, P4_PREF, P4_TRACKER,
+       P4_CLEARLIB, P4_PNEW, P4_HELP, P4_HOME, P4_TOAST, P4_CRUMB, P4_STATE, P4_SETTINGS, P4_SONGMENU, P4_NP, P4_SONGINFO, P4_PREF, P4_TRACKER,
        P4_COUNT };
 static const char* const p4_name[P4_COUNT] = {"search", "cmd", "like", "rating", "subsong", "qremove", "qclear", "qup", "qdown",
-                                              "popen", "prename", "pdelete", "clearlib", "help", "home", "toast", "crumb", "state", "settings",
+                                              "popen", "prename", "pdelete", "clearlib", "pnew", "help", "home", "toast", "crumb", "state", "settings",
                                               "songmenu", "np", "songinfo", "pref", "tracker"};
 #define MUI_PREF_MAX 12u   /* MUI-P4-10: most Settings rows (sel_uim_pref_row_count) */
 #define MUI_INFO_MAX 24u   /* MUI-P4-9: most song info rows */
@@ -177,7 +177,7 @@ static void put_tag(sel_tag* t, uint32_t tag, uintptr_t value) {
 #ifdef SEL_MUI_NATIVE
 static uint32_t mui_now_ms(void);
 /* The tool button order is the label order of mui_tool_labels (map/mui_layout.c, tested on the host): this lists each button's id. */
-static const uint32_t g_tool_which[MUI_TOOL_BTNS] = {P4_LIKE, P4_QREMOVE, P4_QCLEAR, P4_QUP, P4_QDOWN, P4_HELP, P4_SETTINGS, P4_POPEN, P4_PRENAME, P4_PDELETE, P4_CLEARLIB};
+static const uint32_t g_tool_which[MUI_TOOL_BTNS] = {P4_LIKE, P4_QREMOVE, P4_QCLEAR, P4_QUP, P4_QDOWN, P4_HELP, P4_SETTINGS, P4_PNEW, P4_POPEN, P4_PRENAME, P4_PDELETE, P4_CLEARLIB};
 /* MUI-P2-3: the Menustrip built from the action table (mui_menu_build). MUI keeps the title and shortcut pointers, so the
  * rows and the one-character shortcut strings are static. A Menuitem trigger is a ReturnID (MENU_ID_BASE + row) that the
  * wait loop turns into the row's protocol line for the engine (MUI-P2-4). */
@@ -571,6 +571,7 @@ static Object* mui_make_button_i(const char* label, const char* widest, const ch
     sp.role = role;
     sp.id = id;
     sp.weight = weight;
+    sp.selected = 0;
     return mui_aabtn_new(&sp);
 }
 
@@ -584,6 +585,23 @@ static Object* mui_make_button_icon(const char* label, const char* icon_key, LON
 
 static Object* mui_make_button(const char* label, const char* icon_key, LONG id) {
     return mui_make_button_w(label, icon_key, id, 100);
+}
+
+/* I667b-2 (design 3.1, AACheck): the four prefs checkboxes are Selecta_AAButton objects with role toggle: a rounded box, ACCENT
+ * with a check icon when on. MUIA_Selected is the value (mui_p4_pref reads it) and every change returns id. */
+static Object* mui_make_check(const char* label, int on, LONG id) {
+    mui_aabtn_spec sp;
+    sp.caption = label;
+    sp.widest = label;
+    sp.help = NULL;
+    sp.icon = mui_icon_id("check");
+    sp.alt_icon = -1;
+    sp.icon_only = 1;
+    sp.role = MUI_AA_ROLE_TOGGLE;
+    sp.id = id;
+    sp.weight = 0;
+    sp.selected = on;
+    return mui_aabtn_new(&sp);
 }
 
 static Object* mui_make_text(mui_state* s, uint32_t attr, const char* initial, mui_label label) {
@@ -750,7 +768,10 @@ static Object* mui_tool_group(mui_state* s) {
     DoMethod(r1, OM_ADDMEMBER, s->str_search);
     DoMethod(r1, OM_ADDMEMBER, s->str_cmd);
     for (i = 0; i < MUI_TOOL_BTNS; i++) {
-        Object* b = mui_make_button_icon(mui_tool_labels[i], mui_tool_labels[i], CTL_P4_BASE + (LONG)g_tool_which[i]);
+        /* New Playlist is the accent button of the row (design 3.1); the others are plain icon buttons. */
+        Object* b = g_tool_which[i] == P4_PNEW
+                        ? mui_make_button_i(mui_tool_labels[i], mui_tool_labels[i], mui_tool_labels[i], NULL, CTL_P4_BASE + (LONG)g_tool_which[i], 100, 1, MUI_AA_ROLE_ACCENT)
+                        : mui_make_button_icon(mui_tool_labels[i], mui_tool_labels[i], CTL_P4_BASE + (LONG)g_tool_which[i]);
         if (b != NULL) {
             DoMethod(i < MUI_TOOL_ROW2 ? r2 : r3, OM_ADDMEMBER, b);
         }
@@ -1404,11 +1425,7 @@ static Object* mui_pref_gadget(mui_state* s, uint32_t i, const sel_uim_pref_row*
             set(o, MUIA_Cycle_Active, (ULONG)act);
         }
     } else if (r->ui == (uint32_t)SEL_UIM_PREF_CHECK) {
-        o = MUI_NewObject((char*)MUIC_Image, MUIA_Image_Spec, MUII_CheckMark, MUIA_InputMode, MUIV_InputMode_Toggle, MUIA_Selected,
-                          (ULONG)(cur[0] == '1' ? TRUE : FALSE), MUIA_ShowSelState, FALSE, MUIA_Frame, MUIV_Frame_ImageButton, TAG_DONE);
-        if (o != NULL) {
-            DoMethod(o, MUIM_Notify, MUIA_Selected, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
-        }
+        o = mui_make_check(r->label, cur[0] == '1', id);
     } else if (r->ui == (uint32_t)SEL_UIM_PREF_SLIDER) {
         long lo = 0, hi = 100;
         sscanf(r->choices, "%ld,%ld", &lo, &hi);
@@ -1561,6 +1578,13 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
                 && mui_engine_line(s, line)) {
                 mui_p4_note(s, which, line);
             }
+        }
+        break;
+    case P4_PNEW:
+        /* The name comes from the command field (as Rename does); empty gives the default "New Playlist" (mui_viewbtn_fire). */
+        GetAttr(MUIA_String_Contents, s->str_cmd, &text);
+        if (mui_viewbtn_fire(1, (const char*)text, 0, mui_p8_send, s)) {
+            mui_p4_note(s, which, "New Playlist");
         }
         break;
     case P4_SETTINGS:

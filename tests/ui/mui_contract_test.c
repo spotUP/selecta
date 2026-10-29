@@ -953,8 +953,8 @@ static void test_tracker(void) {
 static void test_toolrows(void) {
     uint32_t r;
     for (r = 0; r < 2u; r++) {
-        if (mui_tool_row_chars(r) == 0u || mui_tool_row_chars(r) > 64u) {
-            fprintf(stderr, "FAIL tool row %u holds %u label characters (1..64 fit an 800 pixel window)\n", (unsigned)r, (unsigned)mui_tool_row_chars(r));
+        if (mui_tool_row_chars(r) == 0u || mui_tool_row_chars(r) > 72u) {
+            fprintf(stderr, "FAIL tool row %u holds %u label characters (1..72; the buttons are icon-only, the pixel width is checked by icon-rows)\n", (unsigned)r, (unsigned)mui_tool_row_chars(r));
             failures++;
         }
     }
@@ -1081,7 +1081,7 @@ static void test_icon_button_rows(void) {
 /* I667b wired: every button the builder makes goes through the one AAButton constructor. The Amiga half cannot run on the host,
  * so the proof is the structure that produces the count: the five call-site families (transport, extras, doors, toolbar,
  * crumbs) reach mui_make_button_i through the wrappers, mui_make_button_i makes the object with mui_aabtn_new only (no stock
- * Group button, no Bodychunk), and the family sizes add up to the 36 buttons the design lists. The rig reads mui_aabtn_made(). */
+ * Group button, no Bodychunk), and the family sizes add up to the 37 buttons the design lists (36 + New Playlist, I667b-2). The rig reads mui_aabtn_made(). */
 static const char* fn_body(const char* src, const char* head, char* out, size_t cap) {
     const char* a = strstr(src, head);
     const char* e;
@@ -1114,7 +1114,7 @@ static void test_aabtn_wired(const char* src) {
     CHECK(strstr(src, "MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_Group_HorizSpacing, MUI_BTN_ICON_GAP") == NULL, "mui_ui.c still builds a stock group button");
     CHECK(strstr(src, "mui_aabtn_new(") != NULL && strstr(src, "mui_aabtn_set_caption(s->btn[i], label)") != NULL, "transport labels do not reach the class");
     total = MUI_BTN_COUNT + MUI_EXTRA_COUNT + SEL_UIM_DOOR_COUNT + MUI_TOOL_BTNS + crumbs;
-    CHECK(crumbs == 6u && total == 36u, "button families add up to %u (crumbs %u), design lists 36", total, crumbs);
+    CHECK(crumbs == 6u && total == 37u, "button families add up to %u (crumbs %u), design lists 37", total, crumbs);
 }
 
 /* I651: every MUI button is built with an icon. The keys below are the real button sources (transport actions for both play
@@ -1214,6 +1214,102 @@ static void test_aabtn_tokens(void) {
     CHECK(mui_aa_state_calls() > calls, "state sentinel did not move");
 }
 
+static char* ui_source(void) {
+    static char src[400000];
+    FILE* f = fopen(MUI_UI_SOURCE, "rb");
+    size_t n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    return n > 0 ? src : NULL;
+}
+
+/* I667b-2 mui-aacheck (design 3.1, AACheck): the four prefs checkboxes are built by the AAButton class with role toggle. The Amiga
+ * half cannot run here, so the proof is the structure that produces them: the prefs rows with ui CHECK are counted from the
+ * uimodel table (4), the SEL_UIM_PREF_CHECK branch of the settings builder calls mui_make_check (no stock Image/CheckMark left),
+ * mui_make_check reaches mui_aabtn_new with MUI_AA_ROLE_TOGGLE, and the toggle colours are the named tokens. */
+static void test_aacheck(void) {
+    char body[4000];
+    const char* src = ui_source();
+    txt_theme th;
+    uint32_t i, checks = 0, face, text;
+    mui_aa_metrics_t m;
+    const char* br;
+    const char* key = "r->ui == (uint32_t)SEL_UIM_PREF_CHECK) {\n        o = ";
+    for (i = 0; i < sel_uim_pref_row_count(); i++) {
+        checks += sel_uim_pref_row_at(i)->ui == (uint32_t)SEL_UIM_PREF_CHECK;
+    }
+    CHECK(checks == 4u, "prefs table has %u checkbox rows, design lists 4", (unsigned)checks);
+    CHECK(src != NULL, "read mui_ui.c");
+    if (src == NULL) {
+        return;
+    }
+    br = strstr(src, key);
+    CHECK(br != NULL && strncmp(br + strlen(key), "mui_make_check(", 15) == 0, "the checkbox branch does not build through mui_make_check");
+    CHECK(fn_body(src, "static Object* mui_make_check(", body, sizeof body) != NULL && strstr(body, "MUI_AA_ROLE_TOGGLE") != NULL &&
+              strstr(body, "mui_aabtn_new(&sp)") != NULL && strstr(body, "MUIC_Image") == NULL,
+          "mui_make_check does not build a toggle AAButton");
+    CHECK(strstr(src, "MUII_CheckMark") == NULL, "mui_ui.c still builds a stock check image");
+    txt_theme_default(&th);
+    mui_aa_button_rgb(th.token, MUI_AA_ROLE_TOGGLE, MUI_AA_NORMAL, &face, &text);
+    CHECK(face == th.token[SEL_GUI_TOKEN_SURFACE_RAISED] && text == th.token[SEL_GUI_TOKEN_TEXT], "unchecked box face %06X", (unsigned)face);
+    mui_aa_button_rgb(th.token, MUI_AA_ROLE_TOGGLE, MUI_AA_SELECTED, &face, &text);
+    CHECK(face == th.token[SEL_GUI_TOKEN_ACCENT] && text == th.token[SEL_GUI_TOKEN_TEXT], "checked box face %06X", (unsigned)face);
+    mui_aa_button_rgb(th.token, MUI_AA_ROLE_TOGGLE, MUI_AA_DISABLED, &face, &text);
+    CHECK(text == th.token[SEL_GUI_TOKEN_TEXT_DISABLED], "disabled check ink %06X", (unsigned)text);
+    CHECK(mui_icon_body(mui_icon_id("check")) != NULL, "check icon missing");
+    mui_aa_metrics(13, &m);
+    CHECK(m.check_px == 16, "box edge %d, design says 16", m.check_px);
+    mui_aa_metrics(0, &m);
+    CHECK(m.check_px > 0 && m.check_px <= m.height, "tier S box %d does not fit height %d", m.check_px, m.height);
+}
+
+/* I667b-2 mui-newplaylist (closes I661): New Playlist is the 12th toolbar button. Label, icon, the id table and the fire path
+ * are checked from the structures that produce them: mui_tool_labels, g_tool_which in mui_ui.c (one entry per label, P4_PNEW at
+ * the New Playlist slot), and the P4_PNEW case fires mui_viewbtn_fire(1, ...) which sends PLAYLIST_CREATE. */
+static void test_newplaylist(void) {
+    const char* src = ui_source();
+    uint32_t i, at = MUI_TOOL_BTNS, fires = mui_view_fires();
+    const char* w;
+    const char* p;
+    char tbl[600];
+    unsigned n = 0, k;
+    CHECK(MUI_TOOL_BTNS == 12u, "toolbar has %u buttons, want 12", (unsigned)MUI_TOOL_BTNS);
+    for (i = 0; i < MUI_TOOL_BTNS; i++) {
+        if (strcmp(mui_tool_labels[i], "New Playlist") == 0) {
+            at = i;
+        }
+    }
+    CHECK(at < MUI_TOOL_BTNS, "mui_tool_labels has no New Playlist");
+    CHECK(mui_icon_body(mui_icon_id("New Playlist")) != NULL, "New Playlist has no icon");
+    CHECK(src != NULL, "read mui_ui.c");
+    if (src == NULL) {
+        return;
+    }
+    w = strstr(src, "g_tool_which[MUI_TOOL_BTNS] = {");
+    CHECK(w != NULL, "g_tool_which missing");
+    if (w != NULL) {
+        w = strchr(w, '{') + 1;
+        k = (unsigned)(strchr(w, '}') - w);
+        snprintf(tbl, sizeof tbl, "%.*s", (int)k, w);
+        for (p = tbl; *p != 0; p++) {
+            n += *p == ',';
+        }
+        CHECK(n + 1 == MUI_TOOL_BTNS, "g_tool_which has %u ids for %u buttons", n + 1, (unsigned)MUI_TOOL_BTNS);
+        for (p = tbl, i = 0; i < at && p != NULL; i++) {
+            p = strchr(p, ',');
+            p = p != NULL ? p + 1 : NULL;
+        }
+        CHECK(p != NULL && strncmp(p + strspn(p, " \n"), "P4_PNEW", 7) == 0, "id slot %u is not P4_PNEW", (unsigned)at);
+    }
+    CHECK(strstr(src, "case P4_PNEW:") != NULL && strstr(src, "mui_viewbtn_fire(1,") != NULL, "P4_PNEW does not fire mui_viewbtn_fire(1)");
+    CHECK(strstr(src, "\"pnew\"") != NULL, "p4_name has no pnew");
+    g_sent = 0;
+    CHECK(mui_viewbtn_fire(1, "", 0, fake_send, NULL) == 1 && g_sent == 1 && strcmp(g_sent_line, "PLAYLIST_CREATE \"New Playlist\" 0") == 0, "fire sent '%s'", g_sent_line);
+    CHECK(mui_view_fires() == fires + 1u, "fire counter %u want %u", (unsigned)mui_view_fires(), (unsigned)(fires + 1u));
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -1295,6 +1391,10 @@ int main(int argc, char** argv) {
     } else if (strcmp(argv[1], "states") == 0) {
         test_states();
         test_view_empty();
+    } else if (strcmp(argv[1], "aacheck") == 0) {
+        test_aacheck();
+    } else if (strcmp(argv[1], "newplaylist") == 0) {
+        test_newplaylist();
     } else if (strcmp(argv[1], "aabtn-tokens") == 0) {
         test_aabtn_tokens();
     } else if (strcmp(argv[1], "icon-buttons") == 0) {

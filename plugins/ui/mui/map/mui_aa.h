@@ -25,7 +25,8 @@ uint32_t mui_aa_pressed_rgb(uint32_t face);
 /* I667a (design 2026-10-28-mui-custom-classes.md section 2): shared state, tier and metric tables of every Selecta_AA class.
  * Colours come from the token array (txt_theme.token), never from literals here. */
 enum { MUI_AA_NORMAL, MUI_AA_HOVER, MUI_AA_PRESSED, MUI_AA_DISABLED, MUI_AA_SELECTED };
-enum { MUI_AA_ROLE_NORMAL, MUI_AA_ROLE_ACCENT, MUI_AA_ROLE_GHOST };
+/* TOGGLE (I667b-2, AACheck): checkbox box; off = raised face, on (state SELECTED) = ACCENT face, ink TEXT. */
+enum { MUI_AA_ROLE_NORMAL, MUI_AA_ROLE_ACCENT, MUI_AA_ROLE_GHOST, MUI_AA_ROLE_TOGGLE };
 /* Screen tiers by rows (section 3): S 640x256 and 320x256, M up to 600 rows, L up to 800, XL above. */
 enum { MUI_AA_TIER_S, MUI_AA_TIER_M, MUI_AA_TIER_L, MUI_AA_TIER_XL };
 /* Coverage ramp kinds (section 4): AGA four held token pens, RTG eight blended pens, TC none (ttengine blends). */
@@ -33,7 +34,7 @@ enum { MUI_AA_RAMP_AGA, MUI_AA_RAMP_RTG, MUI_AA_RAMP_TC };
 #define MUI_AA_RAMP_MAX 8
 
 typedef struct mui_aa_metrics_t {
-    int font_px, pad_x, pad_y, icon_px, icon_gap, height, radius;
+    int font_px, pad_x, pad_y, icon_px, icon_gap, height, radius, check_px; /* check_px: AACheck box edge (16, tier S 12) */
 } mui_aa_metrics_t;
 
 /* Face colour of a control in a state: normal = face, hover = SURFACE_HOVER, pressed and selected = SURFACE_PRESSED,

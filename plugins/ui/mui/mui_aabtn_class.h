@@ -17,6 +17,7 @@ typedef struct mui_aabtn_spec {
     int icon_only;        /* no caption drawn (dense rows); the caption stays the ShortHelp */
     int role;             /* MUI_AA_ROLE_NORMAL, _ACCENT or _GHOST */
     LONG id;              /* MUIM_Application_ReturnID on release */
+    int selected;         /* role toggle: initial checked state */
     LONG weight;          /* MUIA_Weight: 100 shares the row, 0 sizes to the contents */
 } mui_aabtn_spec;
 

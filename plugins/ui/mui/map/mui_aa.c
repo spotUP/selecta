@@ -111,6 +111,10 @@ void mui_aa_button_rgb(const uint32_t* token, int role, int state, uint32_t* fac
         t = token[SEL_GUI_TOKEN_ACCENT_TEXT];
         /* The accent face keeps its colour on hover and press (no accent hover token); the press shows as the pressed token. */
         f = state == MUI_AA_PRESSED || state == MUI_AA_SELECTED ? mui_aa_state_rgb(token, f, state) : f;
+    } else if (role == MUI_AA_ROLE_TOGGLE) {
+        /* AACheck: checked = ACCENT box with a TEXT check, unchecked = raised box (hover shows the hover token). */
+        f = state == MUI_AA_SELECTED ? token[SEL_GUI_TOKEN_ACCENT] : mui_aa_state_rgb(token, token[SEL_GUI_TOKEN_SURFACE_RAISED], state);
+        t = token[SEL_GUI_TOKEN_TEXT];
     } else if (role == MUI_AA_ROLE_GHOST) {
         /* Ghost sits on the panel (MUI_TH_PANEL = SURFACE in mui_theme.c); only a selected door is raised. */
         f = token[SEL_GUI_TOKEN_SURFACE];
@@ -173,4 +177,5 @@ void mui_aa_metrics(int font_px, mui_aa_metrics_t* out) {
     out->icon_gap = 6;
     out->height = small ? out->font_px + 2 * out->pad_y : (out->font_px > out->icon_px ? out->font_px : out->icon_px) + 2 * out->pad_y;
     out->radius = small ? 4 : 6;
+    out->check_px = small ? 12 : 16;
 }

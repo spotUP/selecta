@@ -38,6 +38,9 @@ static int aabtn_state(Object* obj, const aabtn_data* d) {
     ULONG sel = 0, dis = 0;
     GetAttr(MUIA_Selected, obj, &sel);
     GetAttr(MUIA_Disabled, obj, &dis);
+    if (d->role == MUI_AA_ROLE_TOGGLE) { /* AACheck: Selected is the checked value, not a press */
+        return dis ? MUI_AA_DISABLED : sel ? MUI_AA_SELECTED : d->hover ? MUI_AA_HOVER : MUI_AA_NORMAL;
+    }
     return dis ? MUI_AA_DISABLED : sel ? MUI_AA_PRESSED : d->hover ? MUI_AA_HOVER : MUI_AA_NORMAL;
 }
 
@@ -59,6 +62,7 @@ static ULONG aabtn_setup(struct IClass* cl, Object* obj, Msg msg) {
         aa_pen(&d->aa, face);
     }
     aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]);
+    aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_DIVIDER]);
     if (!d->icon_only) {
         tw = aa_text_width(&d->aa, obj, d->widest);
     }
@@ -66,6 +70,9 @@ static ULONG aabtn_setup(struct IClass* cl, Object* obj, Msg msg) {
     d->minh = d->m.height;
     if (!d->icon_only && aa_text_height(&d->aa, obj) + 2 * d->m.pad_y > d->minh) {
         d->minh = aa_text_height(&d->aa, obj) + 2 * d->m.pad_y;
+    }
+    if (d->role == MUI_AA_ROLE_TOGGLE) { /* AACheck: a fixed square box */
+        d->minw = d->minh = d->m.check_px;
     }
     d->ehn.ehn_Priority = 0;
     d->ehn.ehn_Flags = 0;
@@ -89,7 +96,7 @@ static ULONG aabtn_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMinM
     DoSuperMethodA(cl, obj, (Msg)msg);
     msg->MinMaxInfo->MinWidth += d->minw;
     msg->MinMaxInfo->DefWidth += d->minw;
-    msg->MinMaxInfo->MaxWidth = MUI_MAXMAX;
+    msg->MinMaxInfo->MaxWidth = d->role == MUI_AA_ROLE_TOGGLE ? msg->MinMaxInfo->MinWidth : MUI_MAXMAX;
     msg->MinMaxInfo->MinHeight += d->minh;
     msg->MinMaxInfo->DefHeight += d->minh;
     msg->MinMaxInfo->MaxHeight += d->minh;
@@ -150,6 +157,24 @@ static ULONG aabtn_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     h = _mheight(obj);
     state = aabtn_state(obj, d);
     mui_aa_button_rgb(d->aa.tok, d->role, state, &face, &text);
+    if (d->role == MUI_AA_ROLE_TOGGLE) {
+        /* AACheck: DIVIDER outline round the raised box; the checked box is the ACCENT fill with the TEXT check icon. */
+        int bx = l + (w - d->m.check_px) / 2, by = t + (h - d->m.check_px) / 2, cp = d->m.check_px;
+        aa_round_fill(rp, bx, by, cp, cp, d->m.radius, aa_pen(&d->aa, state == MUI_AA_SELECTED ? face : d->aa.tok[SEL_GUI_TOKEN_DIVIDER]));
+        if (state != MUI_AA_SELECTED) {
+            aa_round_fill(rp, bx + 1, by + 1, cp - 2, cp - 2, d->m.radius > 1 ? d->m.radius - 1 : 0, aa_pen(&d->aa, face));
+        } else {
+            aabtn_icon(d, rp, icon, bx + 2, by + 2, cp - 4, face, text);
+        }
+        if (_win(obj) != NULL) {
+            GetAttr(MUIA_Window_ActiveObject, _win(obj), &active);
+            if ((Object*)active == obj) {
+                aa_round_frame(rp, bx, by, cp, cp, d->m.radius, aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]));
+            }
+        }
+        d->backend = d->aa.backend + 1;
+        return 0;
+    }
     aa_round_fill(rp, l, t, w, h, d->m.radius, aa_pen(&d->aa, face));
     if (!d->icon_only) {
         tw = aa_text_width(&d->aa, obj, d->caption);
@@ -218,7 +243,8 @@ Object* mui_aabtn_new(const mui_aabtn_spec* sp) {
     if (g_class == NULL) {
         return NULL;
     }
-    o = NewObject(g_class->mcc_Class, NULL, MUIA_Frame, MUIV_Frame_None, MUIA_InputMode, MUIV_InputMode_RelVerify, MUIA_Weight, (ULONG)sp->weight,
+    o = NewObject(g_class->mcc_Class, NULL, MUIA_Frame, MUIV_Frame_None, MUIA_InputMode,
+                  sp->role == MUI_AA_ROLE_TOGGLE ? MUIV_InputMode_Toggle : MUIV_InputMode_RelVerify, MUIA_Selected, (ULONG)(sp->selected ? TRUE : FALSE), MUIA_Weight, (ULONG)sp->weight,
                   MUIA_CycleChain, TRUE, MUIA_ShortHelp, (ULONG)(sp->help != NULL ? sp->help : sp->caption), TAG_DONE);
     if (o != NULL) {
         d = INST_DATA(g_class->mcc_Class, o);
@@ -228,7 +254,11 @@ Object* mui_aabtn_new(const mui_aabtn_spec* sp) {
         d->icon[1] = sp->alt_icon;
         d->icon_only = sp->icon_only && sp->icon >= 0;
         d->role = sp->role;
-        DoMethod(o, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)sp->id);
+        if (sp->role == MUI_AA_ROLE_TOGGLE) {
+            DoMethod(o, MUIM_Notify, MUIA_Selected, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)sp->id);
+        } else {
+            DoMethod(o, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)sp->id);
+        }
         g_made++;
     }
     return o;

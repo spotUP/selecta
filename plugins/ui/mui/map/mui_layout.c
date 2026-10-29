@@ -10,7 +10,7 @@
 static const char* const k_slot_names[MUI_SLOT_COUNT] = {"suggestion", "sidebar", "main", "detail", "player"};
 
 const char* const mui_tool_labels[MUI_TOOL_BTNS] = {"Like", "Remove From Queue", "Clear Queue", "Move Up", "Move Down", "Help", "Settings",
-                                                    "Open Playlist", "Rename Playlist", "Delete Playlist", "Clear Library"};
+                                                    "New Playlist", "Open Playlist", "Rename Playlist", "Delete Playlist", "Clear Library"};
 
 uint32_t mui_tool_row_chars(uint32_t row) {
     uint32_t i, n = 0;

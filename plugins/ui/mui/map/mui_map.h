@@ -262,7 +262,7 @@ uint32_t mui_clip_iff(const char* text, uint32_t n, uint8_t* out, size_t cap);
 /* One horizontal MUI row is never narrower than its widest labels summed. Thirteen controls (eleven buttons and two cycles) in one
  * row made the window wider than the 800 pixel screen and MUI refused to open it (MUIA_Window_Open stayed 0) once Settings
  * joined them (MUI-P4-10): the first MUI_TOOL_ROW2 buttons stay in row 2, the rest and the cycles go to row 3. */
-#define MUI_TOOL_BTNS 11u
+#define MUI_TOOL_BTNS 12u
 #define MUI_TOOL_ROW2 7u
 extern const char* const mui_tool_labels[MUI_TOOL_BTNS];
 /* Label characters in tool row 2 (row 0) or row 3 (row 1). */
