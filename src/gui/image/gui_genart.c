@@ -51,7 +51,7 @@ uint32_t sel_gui_cover_tone_of(uint32_t title_hash) {
 
 uint32_t sel_gui_cover_palette(uint32_t out[32], const uint32_t* tokens) {
     uint32_t tones = sel_gui_cover_aga_tones(), f, t, n = 0u;
-    uint32_t text = tokens[SEL_GUI_TOKEN_ACCENT_TEXT] & 0xFFFFFFu;
+    uint32_t text = tokens[SEL_GUI_TOKEN_COVER_TEXT] & 0xFFFFFFu;
 
     for (f = 0u; f < SEL_PLATFORM_FAMILY_COUNT; f++) {
         for (t = 0u; t < tones; t++) {
@@ -200,7 +200,7 @@ void sel_gui_cover_draw(sel_gui_canvas* c, sel_gui_rect r, uint32_t family, uint
     c->region = SEL_GUI_RGN_ART;
     tone = (c->format == SEL_GUI_INDEX8 && sel_gui_cover_aga_tones() == 1u) ? 0u : sel_gui_cover_tone_of(title_hash);
     field = 0xFF000000u | sel_gui_cover_tone(tokens, family, tone);
-    text = 0xFF000000u | (tokens[SEL_GUI_TOKEN_ACCENT_TEXT] & 0xFFFFFFu);
+    text = 0xFF000000u | (tokens[SEL_GUI_TOKEN_COVER_TEXT] & 0xFFFFFFu);
     sel_gui_fill_rect(c, r, field);
 
     edge = r.w < r.h ? r.w : r.h;

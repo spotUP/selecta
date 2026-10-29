@@ -49,7 +49,8 @@ extern "C" {
     X(COVER_PC_ENGINE, "gui.cover.pc_engine", 0x854D0Eu, 0u, 0xFFFFFFu) \
     X(COVER_MSX, "gui.cover.msx", 0x475569u, 0u, 0xFFFFFFu)          \
     X(COVER_MEGA_DRIVE, "gui.cover.mega_drive", 0x1D4ED8u, 0u, 0xFFFFFFu) \
-    X(COVER_CONSOLE, "gui.cover.console", 0x52525Bu, 0u, 0xFFFFFFu)
+    X(COVER_CONSOLE, "gui.cover.console", 0x52525Bu, 0u, 0xFFFFFFu) \
+    X(COVER_TEXT, "gui.cover.text", 0xFFFFFFu, 0u, 0xFFFFFFu)
 
 /* Layer 1 (D-DUI-9): base tokens. A theme swaps these and the role tokens above follow. X(id, file key, default, min,
  * max). A value may be written as `@gui.base.<name>` (a reference to another base token). Widgets read roles only. */

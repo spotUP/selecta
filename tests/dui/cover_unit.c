@@ -207,7 +207,7 @@ static double lum(uint32_t rgb) {
 
 static void test_contrast(void) {
     uint32_t f;
-    double lt = lum(g_tokens[SEL_GUI_TOKEN_ACCENT_TEXT]);
+    double lt = lum(g_tokens[SEL_GUI_TOKEN_COVER_TEXT]);
 
     /* The platform families only: the Music family is the accent colour, whose contrast is the theme's own. */
     for (f = 1u; f < SEL_PLATFORM_FAMILY_COUNT; f++) {
@@ -221,7 +221,7 @@ static void test_contrast(void) {
 }
 
 static void test_aga_palette(void) {
-    uint32_t pal[32], tones, f, t, text = g_tokens[SEL_GUI_TOKEN_ACCENT_TEXT] & 0xFFFFFFu;
+    uint32_t pal[32], tones, f, t, text = g_tokens[SEL_GUI_TOKEN_COVER_TEXT] & 0xFFFFFFu;
     uint32_t used;
     sel_gui_canvas* c = make(SEL_GUI_INDEX8, 64, 64);
 
@@ -247,7 +247,9 @@ static void test_aga_palette(void) {
 static void test_draw(void) {
     static const uint8_t alpha[16] = {255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255};
     sel_gui_atlas font;
-    uint32_t f, text = 0xFF000000u | g_tokens[SEL_GUI_TOKEN_ACCENT_TEXT];
+    uint32_t f, text = 0xFF000000u | g_tokens[SEL_GUI_TOKEN_COVER_TEXT];
+
+    CHECK(text == 0xFFFFFFFFu); /* Johan 2026-10-29: the family word and mark are white on the Mac covers */
 
     memset(&font, 0, sizeof font); /* no glyphs: every character draws the missing box, a 4x4 block */
     font.alpha = alpha;

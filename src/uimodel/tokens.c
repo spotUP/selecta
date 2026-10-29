@@ -70,7 +70,7 @@ static const uint32_t b_max[SEL_GUI_BASE_COUNT] = {
     SEL_GUI_BASE_TOKENS(X)
 #undef X
 };
-/* Stored as base + 1 so a role without an entry (ACCENT_TEXT, the cover colours) is 0 = a literal value, not GREY_0. */
+/* Stored as base + 1 so a role without an entry (ACCENT_TEXT, the cover colours and cover text) is 0 = a literal value, not GREY_0. */
 static const int k_ref[SEL_GUI_TOKEN_COUNT] = {
 #define X(role, base) [SEL_GUI_TOKEN_##role] = SEL_GUI_BASE_##base + 1,
     SEL_GUI_TOKEN_REFS(X)
