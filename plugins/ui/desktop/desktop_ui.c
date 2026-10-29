@@ -436,7 +436,7 @@ typedef struct desk {
     int32_t home_y_q16;      /* vertical scroll of the whole Home content in logical pixels, Q16 (I247) */
     uint32_t tile_queued;    /* tiles sent to the engine as queue next through the tile menu */
     uint32_t home_sig;       /* source and row count of the last HOME window drawn: a change redraws */
-    char home_dump[3072];    /* shelves as text for the stats */
+    char home_dump[6144];    /* shelves as text for the stats */
     uint32_t art_ms_max;     /* I377: longest single art_load on the UI thread, host clock ms */
     uint32_t turn_ms_max;    /* I377: longest turn of desk_wait without its poll wait, host clock ms */
     uint32_t poll_ms;        /* I377: poll wait accumulated inside the running turn */
@@ -1822,7 +1822,7 @@ static void draw_home_header(desk* d, sel_gui_rect mn, int with_section) {
  * song and album rows after it are its tiles; a row without a key (the "new this week" count line) is plain text.
  * Each shelf scrolls horizontally on its own. ---- */
 enum { NAV_PREV = 1, NAV_NEXT = 2, HOME_NAV_GROW_Q16 = 6554 /* the hovered button grows to about 1.1x (I630) */ }; /* I607: the shelf buttons, bits of shelf_nav_drawn */
-enum { SHELF_MAX = 6, SHELF_HEAD_H = HOME_SECTION_H + HOME_SHADOW_R + HOME_HEAD_GAP, SHELF_GAP = 16, SHELF_WINDOW = 32, SHELF_NONE = 0x7FFFFFFF };
+enum { SHELF_MAX = 8, SHELF_HEAD_H = HOME_SECTION_H + HOME_SHADOW_R + HOME_HEAD_GAP, SHELF_GAP = 16, SHELF_WINDOW = 32, SHELF_NONE = 0x7FFFFFFF };
 
 typedef struct shelf {
     uint32_t head;  /* index of the heading in the view window */
@@ -2121,6 +2121,11 @@ static uintptr_t home_dump_build(desk* d) {
             const sel_view_row* r = &st->view->rows[shelf_tile_row(st, &sh[s], k)];
             o += (size_t)snprintf(d->home_dump + o, sizeof d->home_dump - o, "shelf %u tile %u %s|%s|%s|%s\n", (unsigned)s, (unsigned)k,
                                   st->view->rows[sh[s].head].text, r->key, r->text, r->artist != NULL ? r->artist : "");
+            {
+                sel_gui_rect tr = shelf_tile_rect(d, s, k); /* I678j: "shelf_at S K x y" is the tile centre, where a test clicks */
+                o += (size_t)snprintf(d->home_dump + o, sizeof d->home_dump - o, "shelf_at %u %u %d %d\n", (unsigned)s, (unsigned)k,
+                                      (int)(tr.x + tr.w / 2), (int)(tr.y + tr.h / 2));
+            }
         }
     }
     return (uintptr_t)n;
@@ -2191,6 +2196,10 @@ static int desk_page_goto(desk* d, desk_page pg);
 static void desk_composer_open(desk* d, const char* canon, const char* display);
 
 static void shelf_activate_row(desk* d, uint32_t row);
+static void desk_item_open(desk* d, uint32_t kind, uint32_t id, const char* key, const char* name, const char* sub, int pinned);
+static void desk_quoted_request(char* line, size_t cap, const char* head, const char* arg);
+static void pls_open(desk* d, uint32_t id, const char* name);
+static void col_kind_open(desk* d, uint32_t kind, const char* key, const char* name, const char* sub);
 
 static void shelf_activate(desk* d, uint32_t s, uint32_t k) {
     const sel_state* st = sel_engine_state(d->engine);
@@ -2223,11 +2232,46 @@ static void shelf_activate_row(desk* d, uint32_t row) {
         d->shelf_plays++;
         return;
     }
+    if (st->view->rows[row].item_kind != 0u) { /* I678j: an item card opens that item's page */
+        char key[160], name[256], sub[160]; /* copied first: the page change replaces the view */
+        uint32_t kind = st->view->rows[row].item_kind - 1u;
+        const char* art = st->view->rows[row].artist;
+        snprintf(key, sizeof key, "%s", st->view->rows[row].key != NULL ? st->view->rows[row].key : "");
+        snprintf(name, sizeof name, "%s", st->view->rows[row].text);
+        snprintf(sub, sizeof sub, "%s", art != NULL ? art : "");
+        desk_item_open(d, kind, (uint32_t)strtoul(key, NULL, 10), key, name, sub, kind == (uint32_t)SEL_LIB_ITEM_LIKED);
+        d->shelf_plays++;
+        return;
+    }
     snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)(st->view->window_start + row));
     desk_send(d, line);
     desk_send(d, "VIEW_ACTIVATE");
     desk_send(d, "VIEW_SOURCE home");
     d->shelf_plays++;
+}
+
+/* I678j: opens a library item: the sidebar row and a Home card share this path. Playlist, album, artist and composer open their
+ * collection page (feeding Recents); the other kinds record the identity so the row is marked open. */
+static void desk_item_open(desk* d, uint32_t kind, uint32_t id, const char* key, const char* name, const char* sub, int pinned) {
+    int paged = kind >= (uint32_t)SEL_LIB_ITEM_ALBUM && kind <= (uint32_t)SEL_LIB_ITEM_COMPOSER;
+    if (!pinned && !paged) { /* I678c: opening an item page feeds Recents; the engine stores it so every UI shares the order */
+        char touch[160];
+        char head[32];
+        snprintf(head, sizeof head, "COLLECTION_OPEN %u", (unsigned)kind); /* I678e: records Recents as LIBRARY_TOUCH did */
+        desk_quoted_request(touch, sizeof touch, head, key);
+        desk_send(d, touch);
+    }
+    if (kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST) {
+        desk_page_goto(d, PG_COLLECTION);
+        pls_open(d, id, name); /* I633: the playlist's page of songs */
+    } else if (paged) {
+        desk_page_goto(d, PG_COLLECTION); /* I678f: album, artist and composer open the collection page with their kind */
+        col_kind_open(d, kind, key, name, sub);
+    } else { /* I678b: record the identity so the row is marked open; the kind pages land with I678e */
+        d->side_open_kind = kind + 1u;
+        d->side_open_page = (uint32_t)d->page + 1u;
+        snprintf(d->side_open_key, sizeof d->side_open_key, "%s", key);
+    }
 }
 
 /* Scrolls the whole Home content by wheel notches (positive = toward the end), clamped to the overflow. */
@@ -11103,24 +11147,8 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         door = side_lib_at(d, ev->x, ev->y); /* I608: a library row opens that item in the main region */
         if (door >= 0) {
             d->side_opens++;
-            if (!d->side_items[door].pinned && !(d->side_items[door].kind >= (uint32_t)SEL_LIB_ITEM_ALBUM && d->side_items[door].kind <= (uint32_t)SEL_LIB_ITEM_COMPOSER)) { /* I678c: opening an item page feeds Recents; the engine stores it so every UI shares the order */
-                char touch[160];
-                char head[32];
-                snprintf(head, sizeof head, "COLLECTION_OPEN %u", (unsigned)d->side_items[door].kind); /* I678e: records Recents as LIBRARY_TOUCH did */
-                desk_quoted_request(touch, sizeof touch, head, d->side_items[door].key);
-                desk_send(d, touch);
-            }
-            if (d->side_items[door].kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST) {
-                desk_page_goto(d, PG_COLLECTION);
-                pls_open(d, d->side_items[door].id, d->side_items[door].name); /* I633: the playlist's page of songs */
-            } else if (d->side_items[door].kind >= (uint32_t)SEL_LIB_ITEM_ALBUM && d->side_items[door].kind <= (uint32_t)SEL_LIB_ITEM_COMPOSER) {
-                desk_page_goto(d, PG_COLLECTION); /* I678f: album, artist and composer open the collection page with their kind */
-                col_kind_open(d, d->side_items[door].kind, d->side_items[door].key, d->side_items[door].name, d->side_items[door].sub);
-            } else { /* I678b: record the identity so the row is marked open; the kind pages land with I678e */
-                d->side_open_kind = d->side_items[door].kind + 1u;
-                d->side_open_page = (uint32_t)d->page + 1u;
-                snprintf(d->side_open_key, sizeof d->side_open_key, "%s", d->side_items[door].key);
-            }
+            desk_item_open(d, d->side_items[door].kind, d->side_items[door].id, d->side_items[door].key, d->side_items[door].name,
+                           d->side_items[door].sub, d->side_items[door].pinned);
             d->repaint = 1;
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
             return 1;
