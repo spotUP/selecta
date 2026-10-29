@@ -99,6 +99,20 @@ const char* sel_uim_library_item_type(uint32_t kind) {
     }
 }
 
+/* I678k: the one-letter kind mark of the bitmap tier's sidebar rows (design section 12): P, A, R, C, S; a pinned row is "*". */
+const char* sel_uim_library_item_mark(uint32_t kind, int pinned) {
+    if (pinned) {
+        return "*";
+    }
+    switch (kind) {
+    case SEL_LIB_ITEM_ALBUM: return "A";
+    case SEL_LIB_ITEM_ARTIST: return "R";
+    case SEL_LIB_ITEM_COMPOSER: return "C";
+    case SEL_LIB_ITEM_SOURCE: return "S";
+    default: return "P";
+    }
+}
+
 /* I678d: "2 days ago" for the Date Added and Played columns. `then` 0 (never) or a value that is not an epoch time (a playlist's
  * creation order) writes "-"; a time in the future counts as now. One formatter for every UI. */
 uint32_t sel_uim_relative_time(int64_t now, uint32_t then, char* out, uint32_t cap) {

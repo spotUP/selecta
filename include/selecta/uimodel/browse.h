@@ -61,6 +61,8 @@ int32_t sel_uim_lfilter_match(const char* name, const char* filter);
 uint32_t sel_uim_library_item_subtitle(uint32_t kind, const char* sub, uint32_t songs, char* out, uint32_t cap);
 /* I678d: the kind of a row as one word ("Playlist", "Album", "Artist", "Composer", "Source"); the pinned kinds are "Playlist". */
 const char* sel_uim_library_item_type(uint32_t kind);
+/* I678k: the one-letter kind mark of the bitmap tier ("P" playlist, "A" album, "R" artist, "C" composer, "S" source; "*" for a pinned row). */
+const char* sel_uim_library_item_mark(uint32_t kind, int pinned);
 /* I678d: "5 minutes ago", "2 days ago" for the Date Added and Played columns; "-" when `then` is 0 or not an epoch time. */
 uint32_t sel_uim_relative_time(int64_t now, uint32_t then, char* out, uint32_t cap);
 

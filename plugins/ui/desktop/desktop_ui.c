@@ -407,7 +407,7 @@ typedef struct desk {
     uint32_t lib_tools_draws, lib_tools_clicks, lib_sort_keys; /* I611: Library page tools row draws and clicks, Sort key presses */
     uint32_t lf_open, lf_edit, lf_len; /* I611: the filter field is shown, has the keyboard, and holds this many characters */
     char lf_text[64];
-    uint32_t side_sorts, side_sort_picks, side_view_picks, side_menu_opens, side_filter_keys; /* I611: sort passes run, menu picks, menu opens, typed filter keys */
+    uint32_t side_sorts, side_sort_picks, side_view_picks, side_menu_opens, side_filter_keys, side_chip_cycles, side_marks, col_flat_draws; /* I678k: K presses that stepped the chip, kind marks drawn; */ /* I611: sort passes run, menu picks, menu opens, typed filter keys */
     int np_page;             /* the main region shows the Now Playing page */
     int view_pending;        /* --view named a page: desk_open enters it through desk_page_apply, before the --exec lines */
     desk_page view_pg;
@@ -736,6 +736,8 @@ static sel_gui_rect region_rect(const desk* d, const char* name) {
 /* I526: the bitmap tier is the native AGA 640x256 screen (ydiv 2): fit zoom 1.0, Amiga bitmap fonts and two Inter
  * headline sizes through the role table of font_roles.c. */
 static int desk_bitmap_text(const desk* d) { return d->canvas != NULL && d->canvas->ydiv > 1; }
+/* I678k (design section 12): the bitmap tier lists Your Library in the Compact view only; the grid and list views are not offered. */
+static uint32_t side_view_of(const desk* d) { return desk_bitmap_text(d) ? SEL_UIM_LVIEW_COMPACT : d->side_view; }
 /* The page title box: 40 layout units for the 32 px title; on the bitmap tier (I545) the 12-row headline (px 24, line
  * 29 units) needs 32, which returns 4 screen rows to the page below it. One rule for every page. */
 enum { PAGE_TITLE_H = 40, PAGE_TITLE_H_BITMAP = 32 };
@@ -2604,7 +2606,7 @@ static void song_menu_draw(desk* d) {
                     static const uint32_t seg_icon[SEL_UIM_LVIEWS] = {SEL_GUI_ICON_LIST, SEL_GUI_ICON_GALLERY_HORIZONTAL, SEL_GUI_ICON_LAYOUT_GRID, SEL_GUI_ICON_SQUARE};
                     for (g = 0; g < SEL_UIM_LVIEWS; g++) {
                         sel_gui_rect sr = lmenu_strip_rect(d, g);
-                        int on = d->side_view == g;
+                        int on = side_view_of(d) == g;
                         hover_reg(d, sr);
                         if (on || hover_weight(d, sr) > 0) {
                             sel_gui_round_rect(d->canvas, sr, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_SMALL]),
@@ -4367,9 +4369,15 @@ static sel_gui_rect pls_back_rect(desk* d, sel_gui_rect mn) {
     return rect_of(mn.x + lpx(d, HOME_MARGIN), mn.y + lpx(d, 16), lpx(d, QUEUE_BTN_W), lpx(d, QUEUE_BTN_H));
 }
 
+/* I678k (design section 12): the collection header's cover on the bitmap tier is 64 px at 640 wide and absent at 320; the header
+ * keeps its height (the title, count and buttons need it) so the rows below do not move. */
+static int32_t col_header_art_px(const desk* d) {
+    return !desk_bitmap_text(d) ? PLS_COVER : d->canvas->w >= 640 ? 64 : 0;
+}
+
 static sel_gui_rect pls_cover_rect(desk* d, sel_gui_rect mn) {
     sel_gui_rect b = pls_back_rect(d, mn);
-    return rect_of(b.x, b.y + b.h + lpx(d, 16), lpx(d, PLS_COVER), lpx(d, PLS_COVER));
+    return rect_of(b.x, b.y + b.h + lpx(d, 16), lpx(d, col_header_art_px(d)), lpx(d, desk_bitmap_text(d) ? 64 : PLS_COVER));
 }
 
 static sel_gui_rect pls_play_rect(desk* d, sel_gui_rect mn) {
@@ -4815,9 +4823,16 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
     if (d->pls_stale) {
         pls_reload(d);
     }
-    sel_gui_gradient(d->canvas, rect_of(mn.x, mn.y, mn.w, cv.y + cv.h + lpx(d, PLS_GAP) - mn.y), 1, d->col_top, ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
+    if (desk_bitmap_text(d)) { /* I678k: a flat panel colour header, no gradient */
+        sel_gui_fill_rect(d->canvas, rect_of(mn.x, mn.y, mn.w, cv.y + cv.h + lpx(d, PLS_GAP) - mn.y), ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
+        d->col_flat_draws++;
+    } else {
+        sel_gui_gradient(d->canvas, rect_of(mn.x, mn.y, mn.w, cv.y + cv.h + lpx(d, PLS_GAP) - mn.y), 1, d->col_top, ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
+    }
     draw_button(d, pls_back_rect(d, mn), surf, d->col_kind != 0u ? "Back" : "Back to Playlists", 13, text);
-    if (d->col_kind == (uint32_t)SEL_LIB_ITEM_ARTIST || d->col_kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) { /* D6: a round avatar in the cover colour */
+    if (cv.w == 0) {
+        /* I678k: no cover at 320 wide */
+    } else if (d->col_kind == (uint32_t)SEL_LIB_ITEM_ARTIST || d->col_kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) { /* D6: a round avatar in the cover colour */
         col_round_art(d, cv);
     } else {
         sel_gui_genart_draw(d->canvas, cv, "album", sel_gui_str_hash(d->pls_name));
@@ -6157,6 +6172,9 @@ static const char* library_dump_build(desk* d) {
             }
         }
     }
+    if (d->page == PG_COLLECTION) { /* I678k: the header art width and the flat draws, printed with no collection open (the 320 wide tier has no sidebar to open one) */
+        o = dump_put(d, o, "colhdr art_px=%d flat=%u\n", (int)col_header_art_px(d), (unsigned)d->col_flat_draws);
+    }
     if (d->pl_page && d->pls_id != 0u) { /* I633: the open playlist page: its songs in order and the geometry a script clicks */
         sel_gui_rect pmn = region_rect(d, "main"), bk = pls_back_rect(d, pmn), pp = pls_play_rect(d, pmn), pm = pls_more_rect(d, pmn);
         uint32_t j;
@@ -6168,11 +6186,11 @@ static const char* library_dump_build(desk* d) {
             sel_gui_rect cs = col_sort_rect(d, pmn), cf = col_find_rect(d, pmn);
             sel_engine_stats cst;
             sel_engine_stats_get(d->engine, &cst);
-            o = dump_put(d, o, "collection kind=%s opens=%u dominants=%u cover=%d color=%08x top=%08x sort=%u q=[%s] shown=%u of=%u search=%d sortbtn=%d,%d,%d,%d find=%d,%d,%d,%d\n",
+            o = dump_put(d, o, "collection kind=%s opens=%u dominants=%u cover=%d color=%08x top=%08x sort=%u q=[%s] shown=%u of=%u search=%d sortbtn=%d,%d,%d,%d find=%d,%d,%d,%d header_art_px=%d flat=%u\n",
                          d->col_kind == 0u ? "playlist" : d->col_kind == (uint32_t)SEL_LIB_ITEM_ALBUM ? "album" : d->col_kind == (uint32_t)SEL_LIB_ITEM_ARTIST ? "artist" : "composer",
                          (unsigned)cst.collection_opens, (unsigned)art_dominants(d->art), d->col_cover, (unsigned)d->col_color, (unsigned)d->col_top,
                          (unsigned)d->col_sort, d->col_q, (unsigned)d->pls_vn, (unsigned)d->pls_n, d->col_search, (int)cs.x, (int)cs.y, (int)cs.w, (int)cs.h,
-                         (int)cf.x, (int)cf.y, (int)cf.w, (int)cf.h);
+                         (int)cf.x, (int)cf.y, (int)cf.w, (int)cf.h, (int)pls_cover_rect(d, pmn).w, (unsigned)d->col_flat_draws);
             if (d->col_kind != 0u) { /* I678f: the kind page's shelves, the Popular limit and the geometry a script clicks */
                 sel_gui_rect mr = col_more_rect(d, pmn), c0 = col_card_rect(d, pmn, 0u, 0u), c2 = col_card_rect(d, pmn, 2u, 0u), sh = pls_more_rect(d, pmn);
                 o = dump_put(d, o, "kindpage label=%s key=[%s] sub=[%s] queries=%u popular=%u rows=%u shelf albums=%u appears=%u more=%u spellings=%u showmore=%d,%d,%d,%d albumcard=%d,%d,%d,%d morecard=%d,%d,%d,%d name=[%s] year=%u shuffle=%d,%d,%d,%d\n",
@@ -6318,7 +6336,7 @@ static const char* library_dump_build(desk* d) {
         {   /* I611: the tools row and the sort/view menu */
             sel_gui_rect mg = side_mag_rect(d), sr = side_sort_rect(d), fr = side_field_rect(d);
             o = dump_put(d, o, "sidetools sort=%u view=%u filter=[%s] open=%u edit=%u cols=%u sorts=%u sort_picks=%u view_picks=%u menu_opens=%u filter_keys=%u\n",
-                         (unsigned)d->side_sort, (unsigned)d->side_view, d->lf_text, (unsigned)d->lf_open, (unsigned)d->lf_edit, (unsigned)side_lib_cols(d),
+                         (unsigned)d->side_sort, (unsigned)side_view_of(d), d->lf_text, (unsigned)d->lf_open, (unsigned)d->lf_edit, (unsigned)side_lib_cols(d),
                          (unsigned)d->side_sorts, (unsigned)d->side_sort_picks, (unsigned)d->side_view_picks, (unsigned)d->side_menu_opens,
                          (unsigned)d->side_filter_keys);
             {
@@ -6373,7 +6391,7 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "showall draws=%u clicks=%u page_draws=%u opens=%u open=%u tiles=%u at %d %d %d %d\n", (unsigned)d->show_all_draws,
                      (unsigned)d->show_all_clicks, (unsigned)d->shelf_page_draws, (unsigned)d->shelf_page_opens, (unsigned)d->shelf_open,
                      (unsigned)d->shelf_page_tiles, (int)d->show_all_rect[0].x, (int)d->show_all_rect[0].y, (int)d->show_all_rect[0].w, (int)d->show_all_rect[0].h);
-        o = dump_put(d, o, "sidelib_density view=%u row_h=%d cols=%u table=%u table_head=%d sidebar_w=%d canvas_w=%d card_h=%d pinned=%u sub=%u sub_clicks=%u sub_btn %d %d %d %d\n", (unsigned)d->side_view,
+        o = dump_put(d, o, "sidelib_density view=%u row_h=%d cols=%u table=%u table_head=%d sidebar_w=%d canvas_w=%d card_h=%d pinned=%u sub=%u sub_clicks=%u sub_btn %d %d %d %d\n", (unsigned)side_view_of(d),
                      (int)side_lib_row_h(d), (unsigned)side_lib_cols(d), (unsigned)side_table(d), (int)side_table_head_h(d), (int)region_rect(d, "sidebar").w,
                      (int)d->canvas->w, (int)side_card_h(d), (unsigned)side_pinned_n(d), (unsigned)d->side_sub, (unsigned)d->side_sub_clicks, (int)d->side_sub_btn.x,
                      (int)d->side_sub_btn.y, (int)d->side_sub_btn.w, (int)d->side_sub_btn.h);
@@ -6389,8 +6407,8 @@ static const char* library_dump_build(desk* d) {
             sel_gui_rect tr = side_hdr_title_rect(d);
             o = dump_put(d, o, "sidehdr title %d %d %d %d\n", (int)tr.x, (int)tr.y, (int)tr.w, (int)tr.h); /* I673 */
         }
-        o = dump_put(d, o, "sidechips chip=%u filters=%u scrolls=%u single=%d\n", (unsigned)d->side_chip, (unsigned)d->side_filters,
-                     (unsigned)d->side_chip_scrolls, side_chip_single(d));
+        o = dump_put(d, o, "sidechips chip=%u filters=%u scrolls=%u single=%d cycles=%u marks=%u\n", (unsigned)d->side_chip, (unsigned)d->side_filters,
+                     (unsigned)d->side_chip_scrolls, side_chip_single(d), (unsigned)d->side_chip_cycles, (unsigned)d->side_marks);
         {
             sel_gui_rect xr = side_chip_chevron(d, 0);
             o = dump_put(d, o, "sidechip_x %d %d %d %d %d\n", side_chip_has_x(d), (int)xr.x, (int)xr.y, (int)xr.w, (int)xr.h);
@@ -8759,9 +8777,9 @@ static sel_gui_rect lib_tools_rect(desk* d, sel_gui_rect mn) {
 
 /* The view size sets the cell: columns and cell height. The rail (icons only) always lists. */
 static uint32_t side_lib_cols(const desk* d) {
-    int32_t w = region_rect(d, "sidebar").w - lpx(d, 8), cell = d->side_view == SEL_UIM_LVIEW_SMALL ? lpx(d, 72) : lpx(d, 104);
+    int32_t w = region_rect(d, "sidebar").w - lpx(d, 8), cell = side_view_of(d) == SEL_UIM_LVIEW_SMALL ? lpx(d, 72) : lpx(d, 104);
     uint32_t n;
-    if (side_chips_h(d) == 0 || d->side_view < SEL_UIM_LVIEW_SMALL) {
+    if (side_chips_h(d) == 0 || side_view_of(d) < SEL_UIM_LVIEW_SMALL) {
         return 1u;
     }
     n = (uint32_t)(w / cell);
@@ -8770,7 +8788,7 @@ static uint32_t side_lib_cols(const desk* d) {
 
 /* I678d: the expanded sidebar in List density is a table (Title, Type, Date Added, Played) with a header row above the rows. */
 static int side_table(const desk* d) {
-    return d->side_wide && side_chips_h(d) > 0 && d->side_view == SEL_UIM_LVIEW_LIST;
+    return d->side_wide && side_chips_h(d) > 0 && side_view_of(d) == SEL_UIM_LVIEW_LIST;
 }
 
 static int32_t side_table_head_h(const desk* d) {
@@ -8789,15 +8807,15 @@ static int32_t side_lib_row_h(const desk* d) {
     if (side_chips_h(d) == 0) {
         return lpx(d, 56);
     }
-    if (d->side_view == SEL_UIM_LVIEW_LIST) {
+    if (side_view_of(d) == SEL_UIM_LVIEW_LIST) {
         return lpx(d, 48);
     }
-    if (d->side_view == SEL_UIM_LVIEW_COMPACT) {
+    if (side_view_of(d) == SEL_UIM_LVIEW_COMPACT) {
         return lpx(d, 32);
     }
     {
         int32_t cw = side_lib_view_rect(d).w / (int32_t)side_lib_cols(d);
-        return d->side_view == SEL_UIM_LVIEW_SMALL ? cw : cw + lpx(d, 36);
+        return side_view_of(d) == SEL_UIM_LVIEW_SMALL ? cw : cw + lpx(d, 36);
     }
 }
 
@@ -9245,11 +9263,11 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
         if (open) {
             sel_gui_round_rect(d->canvas, r, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
         }
-        if (labels && d->side_view >= SEL_UIM_LVIEW_SMALL) { /* I611: grid cells: the cover fills the cell, the large grid names it below */
+        if (labels && side_view_of(d) >= SEL_UIM_LVIEW_SMALL) { /* I611: grid cells: the cover fills the cell, the large grid names it below */
             int32_t g = lpx(d, 4), cs = r.w - 2 * g;
             ar = rect_of(r.x + g, r.y + g, cs, cs);
             side_item_thumb(d, ar, &d->side_items[i]);
-            if (d->side_view == SEL_UIM_LVIEW_LARGE) {
+            if (side_view_of(d) == SEL_UIM_LVIEW_LARGE) {
                 char gsub[128];
                 draw_text(d, rect_of(ar.x, ar.y + cs, cs, lpx(d, 18)), d->side_items[i].name, 1, 12, open ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : row_ink(d, r, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT])));
                 sel_uim_library_item_subtitle(d->side_items[i].kind, d->side_items[i].sub, d->side_items[i].songs, gsub, sizeof gsub);
@@ -9258,11 +9276,19 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
             d->side_rows++;
             continue;
         }
-        if (labels && d->side_view == SEL_UIM_LVIEW_COMPACT) { /* I678d: compact: no cover, the bold title then a muted "Type - Subtitle" on one line */
+        if (labels && side_view_of(d) == SEL_UIM_LVIEW_COMPACT) { /* I678d: compact: no cover, the bold title then a muted "Type - Subtitle" on one line */
             char sub[128], line[256];
             int32_t tx = r.x + pad, tw = r.x + r.w - pad - tx, nw;
             uint32_t ink = open ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : row_ink(d, r, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
             sel_uim_library_item_subtitle(d->side_items[i].kind, d->side_items[i].sub, d->side_items[i].songs, sub, sizeof sub);
+            if (desk_bitmap_text(d)) { /* I678k (design section 12): text row: a muted one-letter kind mark, then the name; no type column */
+                int32_t mw = lpx(d, 14);
+                draw_text(d, rect_of(tx, r.y, mw, r.h), sel_uim_library_item_mark(d->side_items[i].kind, d->side_items[i].pinned), 0, 12, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+                draw_text(d, rect_of(tx + mw + gap / 2, r.y, tw - mw - gap / 2, r.h), d->side_items[i].name, 0, 14, ink);
+                d->side_marks++;
+                d->side_rows++;
+                continue;
+            }
             nw = tw * 55 / 100;
             draw_text(d, rect_of(tx, r.y, nw, r.h), d->side_items[i].name, 1, 14, ink);
             snprintf(line, sizeof line, "%s%s%s", sel_uim_library_item_type(d->side_items[i].kind), sub[0] ? " \xE2\x80\xA2 " : "", sub);
@@ -10164,7 +10190,7 @@ static void desk_bind_actions(desk* d) {
                 txt_bindings_load(&d->binds, row, NULL);
             }
         }
-        txt_bindings_load(&d->binds, "M-Left @back\nM-Right @forward\n", NULL); /* the browser keys: Alt+Left and Alt+Right */
+        txt_bindings_load(&d->binds, "M-Left @back\nM-Right @forward\nS-Backspace @forward\n", NULL); /* the browser keys: Alt+Left and Alt+Right */
     }
 }
 
@@ -10716,6 +10742,11 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
     }
     if (ev->code == '/' && ev->mods == 0u) {
         return desk_page_goto(d, PG_SEARCH);
+    }
+    if (ev->code == 'k' && ev->mods == 0u && desk_bitmap_text(d) && side_chips_h(d) > 0) { /* I678k: the bitmap tier's one chip button: K steps it through All and the chips, wrapping */
+        side_chip_click(d, d->side_chip < (uint32_t)SIDE_CHIPS ? SIDE_CHIPS + 1 : SIDE_CHIPS + 2);
+        d->side_chip_cycles++;
+        return desk_present(d);
     }
     if (ev->code == 'o' && ev->mods == 0u && desk_bitmap_text(d)) { /* I611: the bitmap tier has no Sort by menu: O cycles the Your Library sort like a click on the label */
         lsort_prefs_load(d);
