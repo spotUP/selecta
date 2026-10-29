@@ -60,19 +60,21 @@ const char* mui_menu_line(const char* id);
 /* MUI-P2-1: the five layout regions as fixed object slots. The objects are created once; a breakpoint only changes
  * which are shown (MUIA_ShowMe), never how many exist (MUI-P2-2). weight_w feeds MUIA_HorizWeight of the body row
  * children (sidebar, main, detail) and weight_h MUIA_VertWeight of body versus player; a hidden slot has show 0. */
-enum { MUI_SLOT_SUGGESTION = 0, MUI_SLOT_SIDEBAR, MUI_SLOT_MAIN, MUI_SLOT_DETAIL, MUI_SLOT_PLAYER, MUI_SLOT_COUNT };
+enum { MUI_SLOT_SUGGESTION = 0, MUI_SLOT_SIDEBAR, MUI_SLOT_MAIN, MUI_SLOT_DETAIL, MUI_SLOT_PLAYER, MUI_SLOT_TOPBAR, MUI_SLOT_COUNT };
 typedef struct mui_layout_map_t {
     uint32_t width, height;
     uint32_t breakpoint; /* SEL_UIM_BP_* from sel_uim_breakpoint_for */
+    uint32_t tier;       /* SEL_UIM_TIER_* the map was computed for (I615d) */
     uint8_t show[MUI_SLOT_COUNT];
     uint32_t weight_w[MUI_SLOT_COUNT];
     uint32_t weight_h[MUI_SLOT_COUNT];
     uint8_t balance_sidebar_main, balance_main_detail; /* Balance object between two shown panels */
 } mui_layout_map_t;
-void mui_layout_map(mui_layout_map_t* m, uint32_t width, uint32_t height);
+/* I615d: `tier` is SEL_UIM_TIER_DEFAULT on an RTG screen (top bar slot shown), SEL_UIM_TIER_BITMAP on a native planar screen. */
+void mui_layout_map(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier);
 /* Recompute for a new window size. Returns 1 when the breakpoint changed (the caller re-applies ShowMe, *flips counts
  * the slots whose visibility changed), 0 when only weights move. */
-uint32_t mui_layout_relayout(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t* flips);
+uint32_t mui_layout_relayout(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t* flips);
 
 /* MUI-P2-5: the transport row. Six buttons; the action each sends depends on the frame (Play/Pause on the play state,
  * Repeat cycles off, all, one, Random toggles). Labels and ids come from the action table, so the text is the full
@@ -206,6 +208,9 @@ uint32_t mui_home_lines(const sel_view_state* v, uint32_t row, char lines[3][48]
 uint32_t mui_door_count(void);
 const char* mui_door_label(uint32_t i);
 const char* mui_door_line(uint32_t i);
+/* I615d: the top bar Browse button's engine lines (the rich UI's PG_BROWSE page load). Home sends mui_door_line(0). */
+#define MUI_TOPBAR_BROWSE_LINES 3u
+extern const char* const mui_topbar_browse_lines[MUI_TOPBAR_BROWSE_LINES];
 
 /* MUI-P4-2: Library breadcrumbs. Pieces of a browse path split on "/" and the AmigaDOS ":" (the volume keeps its colon);
  * `end` is the length of the path up to and including the piece, so a click on a crumb opens path[0..end). Returns the

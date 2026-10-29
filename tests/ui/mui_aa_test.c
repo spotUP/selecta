@@ -676,7 +676,7 @@ static void test_field_plan(void) {
 }
 
 /* I667h mui-field-source: the MUI UI builds every string gadget through AAField, counted from the source: no stock MUIC_String left in
- * mui_ui.c, the helper definition plus the two tool-row sites plus the settings site = 4 "mui_make_string(" spellings, one AAField
+ * mui_ui.c, the helper definition plus the top bar site, the two tool-row sites and the settings site = 5 "mui_make_string(" spellings, one AAField
  * constructor call, the class freed, drawn through the shared helpers and in the build. */
 static void test_field_source(void) {
     char* ui = slurp(UI_SOURCE);
@@ -688,7 +688,7 @@ static void test_field_source(void) {
     }
     CHECK(count_of(ui, "MUIC_String") == 0, "stock string left in mui_ui.c: %d", count_of(ui, "MUIC_String"));
     CHECK(count_of(ui, "TH_TAGS(MUI_TH_FIELD") == 0, "stock string frame left in mui_ui.c");
-    CHECK(count_of(ui, "mui_make_string(") == 4, "string constructor sites: %d (definition + 3)", count_of(ui, "mui_make_string("));
+    CHECK(count_of(ui, "mui_make_string(") == 5, "string constructor sites: %d (definition + 4)", count_of(ui, "mui_make_string("));
     CHECK(count_of(ui, "mui_aafield_new(") == 1, "one AAField constructor call: %d", count_of(ui, "mui_aafield_new("));
     CHECK(count_of(ui, "mui_aafield_class_free(") == 1, "class freed in mui_close");
     CHECK(strstr(cls, "mui_aa_field_plan(") != NULL && strstr(cls, "mui_aa_field_height(") != NULL && strstr(cls, "aa_round_fill_hole(") != NULL,

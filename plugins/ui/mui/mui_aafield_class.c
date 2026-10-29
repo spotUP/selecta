@@ -27,6 +27,7 @@ extern struct Library* MUIMasterBase;
 typedef struct aafield_data {
     Object* str;
     mui_aa_field_t m;
+    int max_w;
     aa_ctx aa;
     int pens_logged; /* the old String pens went to stderr once (I667n evidence) */
 } aafield_data;
@@ -77,6 +78,12 @@ static ULONG aafield_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMi
     ch = msg->MinMaxInfo->MinHeight - 2 * (d->m.pad_y + d->m.outline);
     h = mui_aa_field_height(&d->m, ch);
     msg->MinMaxInfo->MinHeight = msg->MinMaxInfo->DefHeight = msg->MinMaxInfo->MaxHeight = h;
+    if (d->max_w > 0 && msg->MinMaxInfo->MaxWidth > d->max_w) {
+        msg->MinMaxInfo->MaxWidth = d->max_w;
+        if (msg->MinMaxInfo->DefWidth > d->max_w) {
+            msg->MinMaxInfo->DefWidth = d->max_w;
+        }
+    }
     return 0;
 }
 
@@ -203,6 +210,7 @@ Object* mui_aafield_new(const mui_aafield_spec* sp) {
         return NULL;
     }
     ((aafield_data*)INST_DATA(g_class->mcc_Class, o))->str = str;
+    ((aafield_data*)INST_DATA(g_class->mcc_Class, o))->max_w = sp->max_w;
     if (sp->id != 0) {
         DoMethod(str, MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)sp->id);
     }

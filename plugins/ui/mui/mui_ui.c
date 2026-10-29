@@ -108,7 +108,7 @@ typedef struct mui_state {
     struct timerequest* treq;       /* NULL when timer.device failed: the wait then falls back to Delay(1) */
     Object* win;
     Object* root;                   /* window contents: its MUIA_Width drives the breakpoint (MUI-P2-2) */
-    Object* slot[MUI_SLOT_COUNT];   /* the five layout regions, created once, shown or hidden */
+    Object* slot[MUI_SLOT_COUNT];   /* the five layout regions and the top bar, created once, shown or hidden */
     Object* balance[2];             /* sidebar|main and main|detail */
     mui_layout_map_t lay;
     Object* canvas;                 /* MUI-P5-1 Selecta_Canvas, NULL when MUI refused the class */
@@ -353,6 +353,7 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_VOLUME 0x2101L
 #define CTL_LIST_DBL 0x2110L
 #define CTL_LIST_SEL 0x2111L
+#define CTL_TOPBAR_BROWSE 0x2800L /* I615d: the top bar Browse button */
 #define CTL_DOOR_BASE 0x2200L /* MUI-P4-0: one button per sidebar door */
 #define MUI_DOOR_MAX 8u
 #define CTL_CRUMB_BASE 0x2400L /* MUI-P4-2: one button per breadcrumb piece */
@@ -630,11 +631,15 @@ static Object* mui_aapanel(int role, int fixed_px) {
 }
 
 /* MUI-P4-0: the sidebar slot content, one button per door of the shared uimodel table (mui_door_label). */
-static Object* mui_sidebar_group(void) {
+static Object* mui_sidebar_group(int top_bar) {
     Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
     uint32_t i;
     for (i = 0; g != NULL && i < mui_door_count() && i < MUI_DOOR_MAX; i++) {
-        Object* b = mui_make_button_left(mui_door_label(i), sel_uim_door_at(i)->page, CTL_DOOR_BASE + (LONG)i);
+        Object* b;
+        if (!sel_uim_door_shown(i, top_bar)) { /* I615d (design 8.4): the top bar owns Home and Search */
+            continue;
+        }
+        b = mui_make_button_left(mui_door_label(i), sel_uim_door_at(i)->page, CTL_DOOR_BASE + (LONG)i);
         if (b != NULL) {
             DoMethod(g, OM_ADDMEMBER, b);
         }
@@ -737,12 +742,13 @@ static void mui_list_header(char* out, size_t cap) {
 }
 
 /* MUI-P3-1: the 3.8 Listview with its plain List (the back end mui_list_backend_pick gives without NList). */
-static Object* mui_make_string(LONG id) {
+static Object* mui_make_string(LONG id, int max_w) {
     /* I667h (design 3.4): every string gadget is a Selecta_AAField (mui_aafield_class.c). */
     mui_aafield_spec sp;
     sp.tokens = g_tokens;
     sp.maxlen = 159;
     sp.id = id;
+    sp.max_w = max_w;
     return mui_aafield_new(&sp);
 }
 
@@ -758,6 +764,28 @@ static Object* mui_make_cycle(const char* const* entries, LONG active, LONG id) 
     return mui_aacycle_new(&sp);
 }
 
+/* I615d (design 8.3): the window-wide top bar of the DEFAULT tier, centred like topbar_compute: Home (round icon button), the search field
+ * and Browse joined to its right end by a 1 px divider. Built only on an RTG screen; on the bitmap tier the slot is an empty hidden group
+ * (the search field then stays in the tool row). One search String and one control id (CTL_P4_BASE + P4_SEARCH) either way. */
+static Object* mui_topbar_group(mui_state* s) {
+    static char div_spec[40];
+    Object* g = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    if (g == NULL || !g_screen_rtg) {
+        return g;
+    }
+    s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH, (int)SEL_UIM_TOPBAR_FIELD_MAX);
+    mui_theme_bg_spec(g_tokens[SEL_GUI_TOKEN_DIVIDER], div_spec, sizeof div_spec);
+    DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    DoMethod(g, OM_ADDMEMBER, mui_make_button_i("Home", "Home", "home", NULL, CTL_DOOR_BASE + 0, 0, 1, MUI_AA_ROLE_NORMAL));
+    if (s->str_search != NULL) {
+        DoMethod(g, OM_ADDMEMBER, s->str_search);
+    }
+    DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, MUIA_FixWidth, 1, MUIA_Background, (ULONG)div_spec, TAG_DONE));
+    DoMethod(g, OM_ADDMEMBER, mui_make_button_i("Browse", "Browse", "library", NULL, CTL_TOPBAR_BROWSE, 0, 1, MUI_AA_ROLE_NORMAL));
+    DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    return g;
+}
+
 /* MUI-P4: the tool rows above the list: search and command line Strings, the like button, the rating and subsong Cycles,
  * the queue and playlist actions of the cursor row, and Clear Library (confirmed by a MUI_Request). */
 static Object* mui_tool_group(mui_state* s) {
@@ -769,16 +797,20 @@ static Object* mui_tool_group(mui_state* s) {
     if (g == NULL || r1 == NULL || r2 == NULL || r3 == NULL) {
         return NULL;
     }
-    s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH);
-    s->str_cmd = mui_make_string(CTL_P4_BASE + P4_CMD);
+    if (!g_screen_rtg) { /* I615d: on the DEFAULT tier the search field lives in the top bar */
+        s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH, 0);
+    }
+    s->str_cmd = mui_make_string(CTL_P4_BASE + P4_CMD, 0);
     s->cyc_rating = mui_make_cycle(p4_rating_entries, 0, CTL_P4_BASE + P4_RATING);
     s->cyc_subsong = mui_make_cycle(p4_subsong_entries, 0, CTL_P4_BASE + P4_SUBSONG);
     snprintf(s->status_buf, sizeof s->status_buf, "Ready");
     s->status = mui_aatext(s->status_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1, 0);
-    if (s->str_search == NULL || s->str_cmd == NULL || s->cyc_rating == NULL || s->cyc_subsong == NULL || s->status == NULL) {
+    if ((!g_screen_rtg && s->str_search == NULL) || s->str_cmd == NULL || s->cyc_rating == NULL || s->cyc_subsong == NULL || s->status == NULL) {
         return NULL;
     }
-    DoMethod(r1, OM_ADDMEMBER, s->str_search);
+    if (!g_screen_rtg) {
+        DoMethod(r1, OM_ADDMEMBER, s->str_search);
+    }
     DoMethod(r1, OM_ADDMEMBER, s->str_cmd);
     for (i = 0; i < MUI_TOOL_BTNS; i++) {
         /* New Playlist is the accent button of the row (design 3.1); the others are plain icon buttons. */
@@ -1553,7 +1585,7 @@ static Object* mui_pref_gadget(mui_state* s, uint32_t i, const sel_uim_pref_row*
         sscanf(r->choices, "%ld,%ld", &lo, &hi);
         o = mui_make_slider(lo, hi, cur[0] != '\0' ? strtol(cur, NULL, 10) : lo, id);
     } else {
-        o = mui_make_string(id);
+        o = mui_make_string(id, 0);
         if (o != NULL) {
             set(o, MUIA_String_Contents, (ULONG)cur);
         }
@@ -1748,6 +1780,11 @@ static void mui_control_fire(mui_state* s, LONG id) {
         if (mui_action_fire(mui_extra_action((uint32_t)(id - CTL_EXTRA_BASE)), mui_p8_send, s)) {
             s->transport_hits++;
         }
+    } else if (id == CTL_TOPBAR_BROWSE) {
+        uint32_t k; /* I615d: what the rich top bar Browse slice sends (desk_page_load PG_BROWSE) */
+        for (k = 0; k < MUI_TOPBAR_BROWSE_LINES; k++) {
+            mui_engine_line(s, mui_topbar_browse_lines[k]);
+        }
     } else if (id >= CTL_DOOR_BASE && id < CTL_DOOR_BASE + (LONG)MUI_DOOR_MAX) {
         mui_engine_line(s, mui_door_line((uint32_t)(id - CTL_DOOR_BASE))); /* the page switch: the engine moves the main view's source */
     } else if (id >= CTL_CRUMB_BASE && id < CTL_CRUMB_BASE + (LONG)MUI_CRUMB_MAX) {
@@ -1834,7 +1871,8 @@ static void mui_apply_layout(mui_state* s) {
     for (i = 0; i < MUI_SLOT_COUNT; i++) {
         set(s->slot[i], MUIA_ShowMe, s->lay.show[i] ? TRUE : FALSE);
         set(s->slot[i], MUIA_HorizWeight, s->lay.weight_w[i] > 0 ? s->lay.weight_w[i] : 1);
-        set(s->slot[i], MUIA_VertWeight, s->lay.weight_h[i] > 0 ? s->lay.weight_h[i] : 1);
+        /* I615d (design 8.2): the top bar takes the height of its children (VertWeight 0), the body the rest. */
+        set(s->slot[i], MUIA_VertWeight, i == MUI_SLOT_TOPBAR ? 0 : s->lay.weight_h[i] > 0 ? s->lay.weight_h[i] : 1);
     }
     set(s->balance[0], MUIA_ShowMe, s->lay.balance_sidebar_main ? TRUE : FALSE);
     set(s->balance[1], MUIA_ShowMe, s->lay.balance_main_detail ? TRUE : FALSE);
@@ -1852,7 +1890,7 @@ static void mui_layout_for_screen(mui_state* s) {
             UnlockPubScreen(NULL, scr);
         }
     }
-    mui_layout_map(&s->lay, w, h);
+    mui_layout_map(&s->lay, w, h, g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP);
     mui_apply_layout(s);
 }
 
@@ -1869,7 +1907,7 @@ static void mui_check_resize(mui_state* s) {
     if (w == 0 || (w == s->lay.width && h == s->lay.height)) {
         return;
     }
-    if (mui_layout_relayout(&s->lay, (uint32_t)w, (uint32_t)h, &flips)) {
+    if (mui_layout_relayout(&s->lay, (uint32_t)w, (uint32_t)h, g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP, &flips)) {
         mui_apply_layout(s);
     }
 }
@@ -1917,9 +1955,10 @@ static void* mui_open(const sel_ui_open_args* a) {
             MUIA_Window_Width, MUIV_Window_Width_Screen(100), MUIA_Window_Height, MUIV_Window_Height_Screen(100),
             MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Centered, MUIA_Window_Menustrip, (ULONG)strip,
             WindowContents, s->root = VGroup, TH_TAGS(MUI_TH_WINDOW, MUI_FRAME_NONE)
+                Child, s->slot[MUI_SLOT_TOPBAR] = mui_topbar_group(s),
                 Child, s->slot[MUI_SLOT_SUGGESTION] = mui_aatext("Window is narrow: try the mini layout", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0, 1),
                 Child, HGroup,
-                    Child, s->slot[MUI_SLOT_SIDEBAR] = mui_sidebar_group(),
+                    Child, s->slot[MUI_SLOT_SIDEBAR] = mui_sidebar_group(g_screen_rtg),
                     Child, s->balance[0] = mui_aabalance_new(),
                     Child, s->slot[MUI_SLOT_MAIN] = mui_main_group(s),
                     Child, s->balance[1] = mui_aabalance_new(),

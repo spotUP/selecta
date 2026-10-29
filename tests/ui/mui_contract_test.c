@@ -499,51 +499,95 @@ static void test_menu_dispatch(void) {
     CHECK(mui_menu_line("no_such_action") == NULL, "unknown id has a line");
 }
 
-/* mui-weights (MUI-P2-1): horizontal weights equal the region widths and sum to the window width. */
+/* mui-weights (MUI-P2-1, I615d design 8.5): horizontal weights equal the region widths and sum to the window width, on both tiers; the vertical
+ * weights (player + main + suggestion + top bar) sum to the height; the top bar slot follows the layout's top bar. */
 static void test_weights(void) {
     static const uint32_t widths[] = {1280, 1024, 800, 640};
-    uint32_t i;
-    for (i = 0; i < 4; i++) {
-        mui_layout_map_t m;
-        sel_uim_layout l;
-        uint32_t sum, s;
-        mui_layout_map(&m, widths[i], 720);
-        sel_uim_layout_compute(&l, widths[i], 720);
-        sum = m.weight_w[MUI_SLOT_SIDEBAR] + m.weight_w[MUI_SLOT_MAIN] + m.weight_w[MUI_SLOT_DETAIL];
-        CHECK(sum == widths[i], "width %u: body weights sum %u", widths[i], sum);
-        for (s = 0; s < l.count; s++) {
-            const char* n = l.regions[s].name;
-            uint32_t slot = strcmp(n, "sidebar") == 0 ? MUI_SLOT_SIDEBAR : strcmp(n, "main") == 0 ? MUI_SLOT_MAIN : strcmp(n, "detail") == 0 ? MUI_SLOT_DETAIL : MUI_SLOT_COUNT;
-            if (slot != MUI_SLOT_COUNT) {
-                CHECK(m.weight_w[slot] == l.regions[s].w, "width %u: %s weight %u != region %u", widths[i], n, m.weight_w[slot], l.regions[s].w);
+    static const uint32_t tiers[] = {SEL_UIM_TIER_DEFAULT, SEL_UIM_TIER_BITMAP};
+    uint32_t i, t;
+    for (t = 0; t < 2; t++) {
+        for (i = 0; i < 4; i++) {
+            mui_layout_map_t m;
+            sel_uim_layout l;
+            uint32_t sum, s;
+            mui_layout_map(&m, widths[i], 720, tiers[t]);
+            sel_uim_layout_compute_tier(&l, widths[i], 720, tiers[t]);
+            sum = m.weight_w[MUI_SLOT_SIDEBAR] + m.weight_w[MUI_SLOT_MAIN] + m.weight_w[MUI_SLOT_DETAIL];
+            CHECK(sum == widths[i], "tier %u width %u: body weights sum %u", tiers[t], widths[i], sum);
+            for (s = 0; s < l.count; s++) {
+                const char* n = l.regions[s].name;
+                uint32_t slot = strcmp(n, "sidebar") == 0 ? MUI_SLOT_SIDEBAR : strcmp(n, "main") == 0 ? MUI_SLOT_MAIN : strcmp(n, "detail") == 0 ? MUI_SLOT_DETAIL : MUI_SLOT_COUNT;
+                if (slot != MUI_SLOT_COUNT) {
+                    CHECK(m.weight_w[slot] == l.regions[s].w, "tier %u width %u: %s weight %u != region %u", tiers[t], widths[i], n, m.weight_w[slot], l.regions[s].w);
+                }
             }
+            CHECK(m.weight_h[MUI_SLOT_PLAYER] + m.weight_h[MUI_SLOT_MAIN] + m.weight_h[MUI_SLOT_SUGGESTION] + m.weight_h[MUI_SLOT_TOPBAR] == 720,
+                  "tier %u width %u: vertical weights", tiers[t], widths[i]);
+            CHECK(m.show[MUI_SLOT_TOPBAR] == (l.topbar.h > 0u), "tier %u width %u: top bar slot shown %u, layout top bar %u", tiers[t], widths[i], m.show[MUI_SLOT_TOPBAR], l.topbar.h);
+            if (tiers[t] == SEL_UIM_TIER_BITMAP) {
+                CHECK(m.show[MUI_SLOT_TOPBAR] == 0, "bitmap tier width %u has no top bar", widths[i]);
+            }
+            CHECK(m.balance_sidebar_main == (m.show[MUI_SLOT_SIDEBAR] && m.show[MUI_SLOT_MAIN]), "balance sidebar");
+            CHECK(m.balance_main_detail == (widths[i] >= 1200), "balance detail at %u", widths[i]);
         }
-        CHECK(m.weight_h[MUI_SLOT_PLAYER] + m.weight_h[MUI_SLOT_MAIN] + m.weight_h[MUI_SLOT_SUGGESTION] == 720, "width %u: vertical weights", widths[i]);
-        CHECK(m.balance_sidebar_main == (m.show[MUI_SLOT_SIDEBAR] && m.show[MUI_SLOT_MAIN]), "balance sidebar");
-        CHECK(m.balance_main_detail == (widths[i] >= 1200), "balance detail at %u", widths[i]);
     }
+}
+
+/* mui-topbar (I615d, design 8.5): the real mui_layout_map entry on the DEFAULT tier shows the top bar slot with the layout's height, the bitmap
+ * tier does not; Home resolves to the Home door's line and Browse to the rich UI's Browse page lines; the sidebar drops Home and Search only
+ * with the top bar. mui_ui.c wires the tier to the screen and the slot to the window. */
+static void test_topbar(void) {
+    mui_layout_map_t m;
+    sel_uim_layout l;
+    static char src[400000];
+    size_t n;
+    FILE* f;
+    uint32_t i, shown_top = 0, shown_plain = 0;
+    mui_layout_map(&m, 1280, 720, SEL_UIM_TIER_DEFAULT);
+    sel_uim_layout_compute_tier(&l, 1280, 720, SEL_UIM_TIER_DEFAULT);
+    CHECK(l.topbar.h == SEL_UIM_TOPBAR_H && m.show[MUI_SLOT_TOPBAR] == 1 && m.weight_h[MUI_SLOT_TOPBAR] == SEL_UIM_TOPBAR_H && m.weight_w[MUI_SLOT_TOPBAR] == 1280,
+          "default tier: top bar slot shown %u weight_h %u", m.show[MUI_SLOT_TOPBAR], m.weight_h[MUI_SLOT_TOPBAR]);
+    mui_layout_map(&m, 1280, 720, SEL_UIM_TIER_BITMAP);
+    CHECK(m.show[MUI_SLOT_TOPBAR] == 0 && m.weight_h[MUI_SLOT_TOPBAR] == 0, "bitmap tier: no top bar slot");
+    CHECK(mui_door_line(0) != NULL && strcmp(mui_door_line(0), "VIEW_SOURCE home") == 0, "Home sends the Home door line");
+    CHECK(MUI_TOPBAR_BROWSE_LINES == 3u && strcmp(mui_topbar_browse_lines[0], "FORMATS_SHOW") == 0 && strcmp(mui_topbar_browse_lines[1], "COMPOSERS_SHOW") == 0 &&
+              strcmp(mui_topbar_browse_lines[2], "SOURCES") == 0, "Browse sends the rich UI's PG_BROWSE lines");
+    for (i = 0; i < mui_door_count(); i++) {
+        shown_top += (uint32_t)sel_uim_door_shown(i, 1);
+        shown_plain += (uint32_t)sel_uim_door_shown(i, 0);
+    }
+    CHECK(shown_top == 5u && shown_plain == 7u && !sel_uim_door_shown(0, 1) && !sel_uim_door_shown(1, 1), "doors with the top bar %u, without %u", shown_top, shown_plain);
+    f = fopen(MUI_UI_SOURCE, "r");
+    CHECK(f != NULL, "mui_ui.c readable");
+    n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    CHECK(strstr(src, "g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP") != NULL && strstr(src, "s->slot[MUI_SLOT_TOPBAR] = mui_topbar_group(s)") != NULL &&
+              strstr(src, "sel_uim_door_shown(i, top_bar)") != NULL, "mui_ui.c passes the screen tier, builds the top bar slot and filters the doors");
 }
 
 /* mui-relayout (MUI-P2-2): the shown set per breakpoint; the slot count is fixed, and sel_uim_breakpoint_for_tier (bitmap tier, I674: 640 keeps a rail) decides. */
 static void test_relayout(void) {
     static const uint32_t widths[] = {1280, 1024, 800, 640};
-    static const uint8_t want[4][MUI_SLOT_COUNT] = {{0, 1, 1, 1, 1}, {0, 1, 1, 0, 1}, {0, 1, 1, 0, 1}, {0, 1, 1, 0, 1}};
+    static const uint8_t want[4][MUI_SLOT_COUNT] = {{0, 1, 1, 1, 1, 0}, {0, 1, 1, 0, 1, 0}, {0, 1, 1, 0, 1, 0}, {0, 1, 1, 0, 1, 0}};
     mui_layout_map_t m;
     uint32_t i, s, flips = 99;
-    mui_layout_map(&m, 1280, 720);
+    mui_layout_map(&m, 1280, 720, SEL_UIM_TIER_BITMAP);
     for (i = 0; i < 4; i++) {
-        uint32_t changed = mui_layout_relayout(&m, widths[i], 720, &flips);
+        uint32_t changed = mui_layout_relayout(&m, widths[i], 720, SEL_UIM_TIER_BITMAP, &flips);
         CHECK(m.breakpoint == sel_uim_breakpoint_for_tier(widths[i], SEL_UIM_TIER_BITMAP), "breakpoint at %u", widths[i]);
         CHECK(changed == (i != 0 && sel_uim_breakpoint_for_tier(widths[i], SEL_UIM_TIER_BITMAP) != sel_uim_breakpoint_for_tier(widths[i - 1], SEL_UIM_TIER_BITMAP)), "changed flag at %u", widths[i]);
         for (s = 0; s < MUI_SLOT_COUNT; s++) {
             CHECK(m.show[s] == want[i][s], "width %u slot %u show %u", widths[i], s, m.show[s]);
         }
     }
-    mui_layout_map(&m, 1280, 720);
+    mui_layout_map(&m, 1280, 720, SEL_UIM_TIER_BITMAP);
     /* The three-column edge is SEL_UIM_BP_THREE_COLUMN_MIN (1100, DUI-P1-11): 1100 itself is still three-column. */
-    CHECK(mui_layout_relayout(&m, SEL_UIM_BP_THREE_COLUMN_MIN, 720, &flips) == 0 && flips == 0, "1100 stays three-column (flips %u)", flips);
-    CHECK(mui_layout_relayout(&m, SEL_UIM_BP_THREE_COLUMN_MIN - 1u, 720, &flips) == 1 && flips == 1, "one below the edge hides only detail (flips %u)", flips);
-    CHECK(mui_layout_relayout(&m, 1000, 720, &flips) == 0 && flips == 0, "same breakpoint changes no visibility");
+    CHECK(mui_layout_relayout(&m, SEL_UIM_BP_THREE_COLUMN_MIN, 720, SEL_UIM_TIER_BITMAP, &flips) == 0 && flips == 0, "1100 stays three-column (flips %u)", flips);
+    CHECK(mui_layout_relayout(&m, SEL_UIM_BP_THREE_COLUMN_MIN - 1u, 720, SEL_UIM_TIER_BITMAP, &flips) == 1 && flips == 1, "one below the edge hides only detail (flips %u)", flips);
+    CHECK(mui_layout_relayout(&m, 1000, 720, SEL_UIM_TIER_BITMAP, &flips) == 0 && flips == 0, "same breakpoint changes no visibility");
 }
 
 /* mui-relayout-open (I656): the open sequence (default map, width 0, first real size 792) never leaves the narrow-window
@@ -555,17 +599,17 @@ static void test_open_no_suggestion(void) {
     char line[512];
     int found = 0;
     FILE* f = fopen(MUI_UI_SOURCE, "r");
-    mui_layout_map(&m, 1280, 720);
+    mui_layout_map(&m, 1280, 720, SEL_UIM_TIER_BITMAP);
     m.width = 0;
     m.breakpoint = SEL_UIM_BP_COUNT;
-    mui_layout_relayout(&m, 792, 576, &flips);
+    mui_layout_relayout(&m, 792, 576, SEL_UIM_TIER_BITMAP, &flips);
     CHECK(m.show[MUI_SLOT_SUGGESTION] == 0, "792 wide shows no suggestion");
-    mui_layout_relayout(&m, 560, 576, &flips);
+    mui_layout_relayout(&m, 560, 576, SEL_UIM_TIER_BITMAP, &flips);
     CHECK(m.show[MUI_SLOT_SUGGESTION] == 1, "560 wide (mini) shows the suggestion");
     /* I674: the 640 wide own screen (window 600-699) keeps a rail and shows no "Window is narrow" hint. */
-    mui_layout_relayout(&m, 600, 576, &flips);
+    mui_layout_relayout(&m, 600, 576, SEL_UIM_TIER_BITMAP, &flips);
     CHECK(m.show[MUI_SLOT_SUGGESTION] == 0 && m.show[MUI_SLOT_SIDEBAR] == 1, "600 wide shows a rail, no suggestion");
-    mui_layout_relayout(&m, 640, 512, &flips);
+    mui_layout_relayout(&m, 640, 512, SEL_UIM_TIER_BITMAP, &flips);
     CHECK(m.show[MUI_SLOT_SUGGESTION] == 0, "640 wide shows no suggestion");
     CHECK(f != NULL, "mui_ui.c readable");
     while (f != NULL && fgets(line, sizeof line, f) != NULL) {
@@ -898,6 +942,15 @@ static void test_doors(void) {
     }
     CHECK(lines == 5u && strcmp(mui_door_line(1), "VIEW_SOURCE search") == 0 && mui_door_line(5) == NULL, "five main-view lines");
     CHECK(mui_door_label(7) == NULL && mui_door_line(7) == NULL, "past the table");
+    /* I615d (design 8.4): with the top bar (DEFAULT tier) Home and Search leave the sidebar, the bitmap tier keeps all seven. */
+    for (i = 0, lines = 0; i < 7u; i++) {
+        lines += (uint32_t)sel_uim_door_shown(i, 1);
+    }
+    CHECK(lines == 5u && !sel_uim_door_shown(0, 1) && !sel_uim_door_shown(1, 1) && sel_uim_door_shown(2, 1), "five doors with the top bar, not Home or Search");
+    for (i = 0, lines = 0; i < 7u; i++) {
+        lines += (uint32_t)sel_uim_door_shown(i, 0);
+    }
+    CHECK(lines == 7u, "seven doors on the bitmap tier");
 }
 
 static void test_home(void) {
@@ -1172,7 +1225,7 @@ static void test_layout_before_open(void) {
         fclose(f);
     }
     src[n] = 0;
-    mui_layout_map(&m, 640u, 256u);
+    mui_layout_map(&m, 640u, 256u, SEL_UIM_TIER_BITMAP);
     CHECK(m.show[MUI_SLOT_MAIN] && m.show[MUI_SLOT_PLAYER] && !m.show[MUI_SLOT_SIDEBAR] && !m.show[MUI_SLOT_DETAIL],
           "640x256 layout shows sidebar %u detail %u", (unsigned)m.show[MUI_SLOT_SIDEBAR], (unsigned)m.show[MUI_SLOT_DETAIL]);
     pick = strstr(src, "    mui_layout_for_screen(s);\n    set(s->win, MUIA_Window_Open, TRUE);");
@@ -1674,6 +1727,8 @@ int main(int argc, char** argv) {
         test_list_pending();
     } else if (strcmp(argv[1], "list-backends") == 0) {
         test_list_backends();
+    } else if (strcmp(argv[1], "topbar") == 0) {
+        test_topbar();
     } else if (strcmp(argv[1], "doors") == 0) {
         test_doors();
     } else if (strcmp(argv[1], "home") == 0) {
