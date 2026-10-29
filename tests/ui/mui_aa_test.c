@@ -478,7 +478,13 @@ static void test_field_plan(void) {
     mui_aa_field_plan(th.token, &m, 1, ops);
     CHECK(ops[0].rgb == 0x93C5FDu && ops[1].rgb == 0x2A2A32u, "focus outline FOCUS_RING 93C5FD, face unchanged: %06X", (unsigned)ops[0].rgb);
     CHECK(mui_aa_field_height(&m, 10) == m.height && mui_aa_field_height(&m, 40) == 40 + 2 * (m.pad_y + m.outline), "height grows only when the text needs it");
-    CHECK(mui_aa_field_calls() == before + 6, "sentinel counts the maths calls");
+    {   /* I667h4: the text line is centred: equal room above and below (+-1 px) */
+        int top = mui_aa_field_text_top(&m, 36, 13);
+        int above = top, below = 36 - top - 13;
+        CHECK(above - below >= -1 && above - below <= 1, "text line centred in a 36 px field: above %d below %d", above, below);
+        CHECK(mui_aa_field_text_top(&m, 36, 40) == m.pad_y + m.outline, "no spare room: the line sits at the padding");
+    }
+    CHECK(mui_aa_field_calls() == before + 8, "sentinel counts the maths calls");
 }
 
 /* I667h mui-field-source: the MUI UI builds every string gadget through AAField, counted from the source: no stock MUIC_String left in

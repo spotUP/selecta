@@ -446,6 +446,13 @@ int mui_aa_field_height(const mui_aa_field_t* m, int ch) {
     return need > m->height ? need : m->height;
 }
 
+int mui_aa_field_text_top(const mui_aa_field_t* m, int h, int ch) {
+    int top = m->pad_y + m->outline;
+    int extra = h - 2 * top - ch;
+    g_field_calls++;
+    return top + (extra > 0 ? extra / 2 : 0);
+}
+
 /* I667i (design 3.5 AAScroller, 3.6 AAList). */
 static uint32_t g_scroller_calls;
 static uint32_t g_list_calls;

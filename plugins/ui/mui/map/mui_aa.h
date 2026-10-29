@@ -162,6 +162,9 @@ void mui_aa_field_metrics(int font_px, mui_aa_field_t* out);
 int mui_aa_field_plan(const uint32_t* token, const mui_aa_field_t* m, int focus, mui_aa_check_op_t* out);
 /* Field height for a content (text) height ch: the AAButton height, taller when the text needs it. */
 int mui_aa_field_height(const mui_aa_field_t* m, int ch);
+/* Top edge of the text line (height ch) inside a field of height h: the room above and below the line is equal, so the group
+ * centres the inner string with one flexible VSpace(0) on each side (I667h4). */
+int mui_aa_field_text_top(const mui_aa_field_t* m, int h, int ch);
 /* Calls of the field maths above: the sentinel that the class (and not a copy) runs it. */
 uint32_t mui_aa_field_calls(void);
 
