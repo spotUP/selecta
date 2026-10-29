@@ -2,7 +2,7 @@
 date: 2026-10-29
 topic: Spotify as a Selecta source (I654): login, playback backends, Amiga tier, song keys, playlists, terms, build rows
 tags: [plan, source, spotify, soloist, librespot, cspot, connect, m5]
-status: plan, not implemented; decisions D-SP-1..D-SP-6 open for Johan (section 8)
+status: plan, not implemented; decisions D-SP-1..D-SP-6 answered by Johan 2026-10-29 (section 8a)
 rows: I654 in thoughts/spot/todos.md; build rows I654a-I654i proposed in section 7 (not yet in the ledger)
 ---
 
@@ -276,3 +276,19 @@ independent and optional.
   write scopes add a row of work and more terms surface.
 - **D-SP-6 Podcasts and audiobooks.** (a) Tracks only in v1 (Recommended): one id space, smaller UI. (b) Include
   episodes: wider catalogue, but a second key form and chapter handling.
+
+## 8a. Johan's answers (2026-10-29)
+
+- D-SP-1: (b) go-librespot only. No Soloist backend and no external-playback engine mode. Spotify audio goes
+  through Selecta's engine (DSP, visualizers, Amiga proxy). Risk accepted: go-librespot depends on librespot, whose
+  playback is broken since 10 Aug 2026 (issue #1737); I654a is the live gate and must pass before I654f starts.
+  Row changes: I654e is dropped (Soloist backend and external-playback design); I654f (go-librespot PCM backend)
+  follows I654c directly.
+- D-SP-2: (a) Remote control plus PCM proxy from a desktop Selecta (I654h).
+- D-SP-3: (a) Each user registers their own Spotify developer app and pastes the client ID.
+- D-SP-4: (b) Run the cspot/Tremor measurement spike now (I654i is an active row, not optional).
+- D-SP-5: (b) Live two-way playlist sync, not a one-shot import. I654g grows: sync design (conflict rule, change
+  detection, rate limits, what the Nov 2024 Web API change still allows for new apps) before code.
+- D-SP-6: (b) Include podcasts and audiobooks in v1. Section 4 rule "tracks only, parse rejects episodes" is replaced:
+  keys accept episode and audiobook-chapter ids; search, UI and playlist rows must handle them. New row I654j.
+
