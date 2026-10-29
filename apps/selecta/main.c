@@ -359,17 +359,11 @@ static int arexx_exec(void* ctx, const char* line, char* reply, size_t cap, int*
     ctl_ctx* c = ctx;
     return sel_ctl_exec_fwd(c->engine, line, reply, cap, rc, ctl_fwd, c);
 }
-/* I676b: ARexx THEME [path]. The primary UI checks the file (SEL_UI_THEME); when it accepts, the main loop reopens that UI between
- * turns (ui_switch to its own id), which repaints the whole window from the new tokens. */
-static int g_theme_reopen;
+/* I676b/I676c: ARexx THEME [path]. The primary UI checks the file and repaints itself live (SEL_UI_THEME); no reopen. */
 static int arexx_theme(void* ctx, const char* path) {
     shell_ui* u = &g_uis[0];
     (void)ctx;
-    if (u->theme == NULL || u->state == NULL || u->theme(u->state, path) != 0) {
-        return 1;
-    }
-    g_theme_reopen = 1;
-    return 0;
+    return u->theme == NULL || u->state == NULL || u->theme(u->state, path) != 0;
 }
 /* Every way out of the shell loop closes the port through here: an open BEGIN is ended, queued messages get RC 20. */
 static void arexx_shutdown(arexx_port* p, ctl_ctx* c) {
@@ -780,16 +774,6 @@ int main(int argc, char** argv)
                 continue;
             }
         }
-#ifdef __amigaos__
-        if (g_theme_reopen) { /* I676b: THEME was accepted: close and reopen the primary UI on the new tokens */
-            g_theme_reopen = 0;
-            if (ui_switch(g_uis[0].id, &args, ctx) < 0) {
-                arexx_shutdown(arexx, &cc);
-                return 1;
-            }
-            continue;
-        }
-#endif
         if (r < 0 || sel_engine_take_quit(e)) { /* QUIT ends the run like the primary UI's quit key */
             break;
         }

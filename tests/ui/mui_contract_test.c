@@ -300,6 +300,90 @@ static void test_theme_live(const char* dir) {
     remove(bad_path);
 }
 
+/* I676c: the live THEME. The handler is the plugin's own SEL_UI_THEME hook (what main.c registers), driven through arexx_dispatch.
+ * Pens change in the same call that answers rc 0, and no window is closed or opened: the hook's source holds no open or close, and
+ * main.c holds no reopen. Fake ops record what the repaint received. */
+static uint32_t g_live_pal_calls, g_live_cls_calls, g_live_pal_accent;
+static void live_palette(void* ctx, const uint32_t* tokens) {
+    (void)ctx;
+    g_live_pal_calls++;
+    g_live_pal_accent = tokens[SEL_GUI_TOKEN_ACCENT];
+}
+static void live_classes(void* ctx) {
+    (void)ctx;
+    g_live_cls_calls++;
+}
+
+static void test_theme_live_repaint(const char* dir) {
+    char env_path[512], new_path[512], line[600], reply[128], src[262144];
+    const sel_tag* hooks = (const sel_tag*)sel_tag_find(sel_plugin_entry_mui_test(1u), SEL_PLUGIN_TAGS, 0);
+    int (*hook)(void*, const char*) = (int (*)(void*, const char*))sel_tag_find(hooks, SEL_UI_THEME, 0);
+    mui_theme_live_ops ops;
+    uint32_t live0;
+    FILE* f;
+    size_t n;
+    char* body;
+    snprintf(env_path, sizeof env_path, "%s/mui-liverp-env.tmp", dir);
+    snprintf(new_path, sizeof new_path, "%s/mui-liverp-new.tmp", dir);
+    write_theme(env_path, "gui.accent = 0x112233\n");
+    write_theme(new_path, "gui.accent = 0x445566\n");
+    CHECK(hook != NULL, "the plugin offers SEL_UI_THEME");
+    g_theme_env = env_path;
+
+    /* the apply path: new tokens reach the palette once, the classes repaint once */
+    ops.palette = live_palette;
+    ops.classes = live_classes;
+    ops.ctx = NULL;
+    live0 = mui_theme_live_applied();
+    CHECK(mui_theme_request(env_path, new_path) == 0, "request accepted");
+    CHECK(mui_theme_apply_live(&ops, env_path, NULL) == 0, "live apply ran");
+    CHECK(g_live_pal_calls == 1 && g_live_cls_calls == 1, "palette %u and classes %u calls", (unsigned)g_live_pal_calls, (unsigned)g_live_cls_calls);
+    CHECK(g_live_pal_accent == 0x445566u, "the palette got the new accent, got %06x", (unsigned)g_live_pal_accent);
+    CHECK(mui_theme_tokens()[SEL_GUI_TOKEN_ACCENT] == 0x445566u, "the token store (what aa_setup and aa_retheme_all copy) holds the new accent");
+    CHECK(mui_theme_live_applied() == live0 + 1u, "live sentinel");
+    CHECK(mui_theme_apply_live(NULL, env_path, NULL) == -1, "no ops: refused");
+
+    /* through the ARexx port: rc 0 comes with a live apply, a refusal with none */
+    arexx_set_theme_handler(hook, NULL);
+    live0 = mui_theme_live_applied();
+    snprintf(line, sizeof line, "THEME \"%s\"", new_path);
+    CHECK(theme_cmd(line, reply, sizeof reply) == AREXX_RC_OK, "THEME accepted through the hook");
+    CHECK(mui_theme_live_applied() == live0 + 1u, "the THEME ran the live apply, not a reopen");
+    write_theme(env_path, "garbage\n");
+    CHECK(theme_cmd("THEME", reply, sizeof reply) == AREXX_RC_FAILED, "bad file refused");
+    CHECK(mui_theme_live_applied() == live0 + 1u, "a refused THEME repaints nothing");
+    arexx_set_theme_handler(NULL, NULL);
+
+    /* no close or open on the THEME path (call-count sentinel by source): the hook, the live ops and main.c */
+    f = fopen(MUI_UI_SOURCE, "rb");
+    n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    body = strstr(src, "static void mui_live_palette(");
+    CHECK(body != NULL && strstr(body, "SetRGB32") != NULL, "the live palette reloads the held pens in place");
+    body = strstr(src, "static int mui_theme_hook(void* state, const char* path) {");
+    CHECK(body != NULL, "hook found");
+    if (body != NULL) {
+        char* end = strstr(body, "\n}\n");
+        if (end != NULL) {
+            *end = 0;
+        }
+        CHECK(strstr(body, "MUIA_Window_Open") == NULL && strstr(body, "mui_close") == NULL && strstr(body, "mui_open") == NULL &&
+                  strstr(body, "ui_switch") == NULL, "the THEME hook neither closes nor opens the window");
+    }
+    f = fopen(MUI_DIR "/../../../apps/selecta/main.c", "rb");
+    n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    CHECK(n > 0 && strstr(src, "g_theme_reopen") == NULL, "main.c has no THEME reopen path");
+    remove(env_path);
+    remove(new_path);
+}
+
 static void test_pens(void) {
     txt_theme th;
     mui_pens_plan pl;
@@ -1739,6 +1823,8 @@ int main(int argc, char** argv) {
         test_theme();
     } else if (strcmp(argv[1], "theme-live") == 0) {
         test_theme_live(argc > 2 ? argv[2] : ".");
+    } else if (strcmp(argv[1], "theme-live-repaint") == 0) {
+        test_theme_live_repaint(argc > 2 ? argv[2] : ".");
     } else if (strcmp(argv[1], "theme-file") == 0) {
         test_theme_file(argc > 2 ? argv[2] : ".");
     } else if (strcmp(argv[1], "pens") == 0) {

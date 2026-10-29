@@ -132,9 +132,30 @@ LONG aa_pen(aa_ctx* c, uint32_t rgb) {
     return c->pen[c->npens++];
 }
 
+static aa_ctx* g_ctx_list;
+
+static void ctx_unlink(aa_ctx* c) {
+    aa_ctx** p;
+    for (p = &g_ctx_list; *p != NULL; p = &(*p)->next) {
+        if (*p == c) {
+            *p = c->next;
+            break;
+        }
+    }
+    c->next = NULL;
+    c->linked = 0;
+}
+
 void aa_setup(Object* obj, aa_ctx* c, const uint32_t* rgb, int n) {
     int i, depth;
+    if (c->linked) {
+        ctx_unlink(c);
+    }
     memset(c, 0, sizeof *c);
+    c->obj = obj;
+    c->next = g_ctx_list;
+    g_ctx_list = c;
+    c->linked = 1;
     memcpy(c->tok, mui_theme_tokens(), sizeof c->tok);
     c->scr = _screen(obj);
     c->cm = c->scr->ViewPort.ColorMap;
@@ -174,6 +195,9 @@ int aa_live(Object* obj) {
 
 void aa_cleanup(aa_ctx* c) {
     int i;
+    if (c->linked) {
+        ctx_unlink(c);
+    }
     if (c->cm != NULL) {
         for (i = 0; i < c->npens; i++) {
             if (c->pen[i] >= 0) {
@@ -329,4 +353,30 @@ void aa_free(void) {
         CloseLibrary(TTEngineBase);
         TTEngineBase = NULL;
     }
+}
+
+static void ctx_release_pens(aa_ctx* c) {
+    int i;
+    if (c->cm != NULL) {
+        for (i = 0; i < c->npens; i++) {
+            if (c->pen[i] >= 0) {
+                ReleasePen(c->cm, c->pen[i]);
+            }
+        }
+    }
+    c->npens = 0;
+}
+
+uint32_t aa_retheme_all(void) {
+    aa_ctx* c;
+    uint32_t n = 0;
+    for (c = g_ctx_list; c != NULL; c = c->next) {
+        ctx_release_pens(c);
+        memcpy(c->tok, mui_theme_tokens(), sizeof c->tok);
+        if (aa_live(c->obj)) {
+            MUI_Redraw(c->obj, MADF_DRAWOBJECT);
+        }
+        n++;
+    }
+    return n;
 }

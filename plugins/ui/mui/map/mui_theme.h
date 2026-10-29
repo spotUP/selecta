@@ -66,6 +66,16 @@ int mui_theme_load(txt_theme* t, const char* env_path, const char* arg_path);
 int mui_theme_request(const char* env_path, const char* path);
 void mui_theme_resolve(txt_theme* t, const char* env_path, const char* launch_arg);
 uint32_t mui_theme_requests(void);
+/* I676c: the live repaint. Resolves the tokens (mui_theme_resolve), stores them (mui_theme_tokens_set), then calls ops->palette
+ * (the screen's held pens take the new palette) and ops->classes (every AA class releases its pens, re-obtains them from the
+ * stored tokens and redraws). No window is closed or opened. mui_theme_live_applied counts the calls that ran both (sentinel). */
+typedef struct mui_theme_live_ops {
+    void (*palette)(void* ctx, const uint32_t* tokens);
+    void (*classes)(void* ctx);
+    void* ctx;
+} mui_theme_live_ops;
+int mui_theme_apply_live(const mui_theme_live_ops* ops, const char* env_path, const char* launch_arg);
+uint32_t mui_theme_live_applied(void);
 /* Count of mui_theme_look_for calls that succeeded since start (sentinel for the build path test). */
 uint32_t mui_theme_applied(void);
 /* I676: the tokens in force (theme file applied). Set once per window open by the UI; drawing classes read them here. */

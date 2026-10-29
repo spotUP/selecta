@@ -49,6 +49,7 @@ struct Library* MUIMasterBase;
 #include "mui_aalist_class.h"
 #include "mui_aafield_class.h"
 #include "mui_aatext_class.h"
+#include "mui_aa_draw.h"
 #include "map/mui_aa.h"
 #include "mui_canvas_class.h"
 #include "mui_vizarea_class.h"
@@ -185,12 +186,17 @@ static sel_tag g_desc[5];
 
 #define MUI_THEME_ENV_PATH "ENV:Selecta/theme"
 
-/* I676b: SEL_UI_THEME hook, called by the ARexx command THEME. 0: the file is valid and the next window open uses it; the shell then
- * closes and reopens this UI, which releases the screen pens and builds the window tree again from the new tokens (the same path
- * as the first open). Non-zero: refused, nothing changed. */
+/* I676b/I676c: SEL_UI_THEME hook, called by the ARexx command THEME. 0: the file is valid, remembered for the next open and applied
+ * to the open UI now (mui_theme_live_now: palette and AA classes repaint in place, no window close or open). Non-zero: refused,
+ * nothing changed. */
+static char g_theme_arg[256]; /* the launch --theme path, kept so a live THEME resolves the same way the open did */
+static int mui_theme_live_now(void);
 static int mui_theme_hook(void* state, const char* path) {
     (void)state;
-    return mui_theme_request(MUI_THEME_ENV_PATH, path);
+    if (mui_theme_request(MUI_THEME_ENV_PATH, path) != 0) {
+        return -1;
+    }
+    return mui_theme_live_now();
 }
 
 static void put_tag(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -485,22 +491,13 @@ static void mui_close_on_request(Object* win) {
     DoMethod(win, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, MUIV_Notify_Self, 3, MUIM_Set, MUIA_Window_Open, FALSE);
 }
 
-/* Reads the colours of the screen DrawInfo pens and decides the look once for all roles. */
-static void mui_theme_init(const sel_ui_open_args* a) {
-    txt_theme th;
+/* Reads the colours of the screen DrawInfo pens and decides the look once for all roles. Runs at window open and again for a live
+ * THEME (I676c): the same decision from the tokens in force, the screen already open. */
+static void mui_theme_decide(const uint32_t* token) {
     uint32_t pen_rgb[8] = {0, 0, 0, 0, 0, 0, 0, 0};
     int pen;
     struct Screen* scr;
     int i;
-    const char* theme_arg = NULL;
-    /* I676: ENV:Selecta/theme (Amarchy writes it), then --theme <file> over it, before any pen is allocated. */
-    for (i = 0; a != NULL && i + 1 < a->argc; i++) {
-        if (strcmp(a->argv[i], "--theme") == 0) {
-            theme_arg = a->argv[i + 1];
-        }
-    }
-    mui_theme_resolve(&th, MUI_THEME_ENV_PATH, theme_arg); /* I676b: a THEME request made earlier wins over --theme */
-    mui_screen_open(th.token);
     scr = LockPubScreen(g_scr != NULL ? (CONST_STRPTR)MUI_PUB_NAME : NULL);
     if (scr != NULL) {
         struct DrawInfo* dri = GetScreenDrawInfo(scr);
@@ -518,14 +515,58 @@ static void mui_theme_init(const sel_ui_open_args* a) {
      * screen pens only; ESC plus a pen digit in PreParse picks one. No readable pen: every role stays off and the user's
      * MUI look is untouched. Otherwise all roles are on together and all text uses that pen. The string gadget (FIELD)
      * cannot take pen escapes, so it keeps the user's MUI look. */
-    pen = mui_theme_pick_pen(pen_rgb, 8, th.token);
-    g_text_rgb = th.token[SEL_GUI_TOKEN_TEXT];
-    mui_theme_tokens_set(th.token);
+    pen = mui_theme_pick_pen(pen_rgb, 8, token);
+    g_text_rgb = token[SEL_GUI_TOKEN_TEXT];
+    mui_theme_tokens_set(token);
     g_tokens = mui_theme_tokens();
     for (i = 0; i < MUI_TH_COUNT; i++) {
-        g_th[i].on = mui_theme_look_for((mui_theme_role)i, th.token, &g_th[i].look) && pen >= 0 && i != MUI_TH_FIELD;
+        g_th[i].on = mui_theme_look_for((mui_theme_role)i, token, &g_th[i].look) && pen >= 0 && i != MUI_TH_FIELD;
     }
-    /* The look off keeps the alignment escapes the labels always had. */
+}
+
+static void mui_theme_init(const sel_ui_open_args* a) {
+    txt_theme th;
+    int i;
+    const char* theme_arg = NULL;
+    /* I676: ENV:Selecta/theme (Amarchy writes it), then --theme <file> over it, before any pen is allocated. */
+    for (i = 0; a != NULL && i + 1 < a->argc; i++) {
+        if (strcmp(a->argv[i], "--theme") == 0) {
+            theme_arg = a->argv[i + 1];
+        }
+    }
+    snprintf(g_theme_arg, sizeof g_theme_arg, "%s", theme_arg != NULL ? theme_arg : "");
+    mui_theme_resolve(&th, MUI_THEME_ENV_PATH, theme_arg); /* I676b: a THEME request made earlier wins over --theme */
+    mui_screen_open(th.token);
+    mui_theme_decide(th.token);
+}
+
+/* I676c: the live THEME. Same palette slots, new colours: the held pens of the own screen are re-loaded in place (SetRGB32), so
+ * everything MUI and the stock objects drew with them follows; the AA classes then re-obtain their pens from the stored tokens
+ * and redraw (aa_retheme_all). Pen numbers, the window tree, the lists and their rows are untouched: nothing is closed or opened. */
+static void mui_live_palette(void* ctx, const uint32_t* tokens) {
+    int i;
+    (void)ctx;
+    if (g_scr != NULL && mui_pens_plan_for(tokens, &g_plan)) {
+        for (i = 0; i < MUI_PEN_TOTAL; i++) {
+            if (g_pen_held[i] >= 0) {
+                SetRGB32(&g_scr->ViewPort, (ULONG)g_pen_held[i], g_plan.rgb32[i][0], g_plan.rgb32[i][1], g_plan.rgb32[i][2]);
+            }
+        }
+    }
+    mui_theme_decide(tokens);
+}
+
+static void mui_live_classes(void* ctx) {
+    (void)ctx;
+    aa_retheme_all();
+}
+
+static int mui_theme_live_now(void) {
+    mui_theme_live_ops ops;
+    ops.palette = mui_live_palette;
+    ops.classes = mui_live_classes;
+    ops.ctx = NULL;
+    return mui_theme_apply_live(&ops, MUI_THEME_ENV_PATH, g_theme_arg[0] != '\0' ? g_theme_arg : NULL);
 }
 
 /* I667b (design 2026-10-28-mui-custom-classes.md section 3.1): the one button constructor. Every Selecta button (transport,
@@ -2153,6 +2194,22 @@ static void* mui_open(const sel_ui_open_args* a) {
     (void)a;
     mui_report(mui_present() ? MUI_FAIL_NO_WINDOW : MUI_FAIL_NO_LIBRARY, "");
     return NULL; /* the host has no MUI: the shell keeps its current UI */
+}
+
+/* Host: no screen, no AA classes; the live THEME runs the same apply path with nothing to repaint (the contract test counts it). */
+static void mui_live_none(void* ctx, const uint32_t* tokens) {
+    (void)ctx;
+    (void)tokens;
+}
+static void mui_live_none_classes(void* ctx) {
+    (void)ctx;
+}
+static int mui_theme_live_now(void) {
+    mui_theme_live_ops ops;
+    ops.palette = mui_live_none;
+    ops.classes = mui_live_none_classes;
+    ops.ctx = NULL;
+    return mui_theme_apply_live(&ops, MUI_THEME_ENV_PATH, g_theme_arg[0] != '\0' ? g_theme_arg : NULL);
 }
 
 static int mui_wait(void* state, uint32_t timeout_ms) {

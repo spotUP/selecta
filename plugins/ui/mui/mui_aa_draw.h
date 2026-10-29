@@ -26,12 +26,18 @@ typedef struct aa_ctx {
     uint32_t pen_rgb[AA_MAX_PENS];
     LONG pen[AA_MAX_PENS];
     uint32_t tok[SEL_GUI_TOKEN_COUNT];
+    Object* obj;           /* I676c: the owning class object, for the live THEME redraw */
+    struct aa_ctx* next;   /* I676c: every set-up context is in one list (aa_setup .. aa_cleanup) */
+    int linked;
 } aa_ctx;
 
 /* Backend, font, and the n colours in rgb[] as held pens. Call from MUIM_Setup after the super class. */
 void aa_setup(Object* obj, aa_ctx* c, const uint32_t* rgb, int n);
 /* Another font size on top of aa_setup (the title tone, base + 4); the bitmap tier and a failed open keep the base font. */
 void aa_set_font_px(aa_ctx* c, int px);
+/* I676c (live THEME): every set-up context drops its pens, copies the tokens in force (mui_theme_tokens), and its object redraws;
+ * pens are re-obtained lazily by aa_pen at the next draw. Returns how many contexts were refreshed. */
+uint32_t aa_retheme_all(void);
 /* Releases every held pen and the font reference. Call from MUIM_Cleanup. */
 void aa_cleanup(aa_ctx* c);
 /* True when obj sits in an open window (between MUIM_Setup and MUIM_Cleanup). _win(obj) alone reads through the render

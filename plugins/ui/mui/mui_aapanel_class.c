@@ -22,9 +22,8 @@
 extern struct Library* MUIMasterBase;
 
 typedef struct aapanel_data {
-    int role, radius;
+    int role;
     aa_ctx aa;
-    LONG back_pen;
 } aapanel_data;
 
 static struct MUI_CustomClass* g_class;
@@ -37,8 +36,6 @@ static ULONG aapanel_setup(struct IClass* cl, Object* obj, Msg msg) {
         return FALSE;
     }
     aa_setup(obj, &d->aa, NULL, 0);
-    d->radius = mui_aa_panel_radius(d->aa.tok, d->aa.font_px);
-    d->back_pen = aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_BACKGROUND]);
     return TRUE;
 }
 
@@ -52,7 +49,7 @@ static ULONG aapanel_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
     aapanel_data* d = INST_DATA(cl, obj);
     ULONG r = DoSuperMethodA(cl, obj, (Msg)msg);
     if (msg->flags & MADF_DRAWOBJECT) {
-        aa_round_corners(_rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), d->radius, d->back_pen);
+        aa_round_corners(_rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), mui_aa_panel_radius(d->aa.tok, d->aa.font_px), aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_BACKGROUND])); /* I676c: read at draw, a live THEME changes both */
     }
     return r;
 }
