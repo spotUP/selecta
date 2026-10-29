@@ -39,6 +39,13 @@ int32_t mui_list_pending_resolve(mui_list_pending* p, int32_t snapshot_active) {
     return snapshot_active;
 }
 
+uint32_t mui_list_dbl_row_calls;
+
+int32_t mui_list_dbl_row(int32_t picked, int32_t active) {
+    mui_list_dbl_row_calls++;
+    return picked >= 0 ? picked : active;
+}
+
 uint32_t mui_list_build(const mui_list_backend* be, mui_list_entry* out, uint32_t cap, const sel_view_state* v, int32_t* active) {
     uint32_t i, n = v->row_n;
     if (n > v->window_rows) {

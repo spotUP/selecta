@@ -25,7 +25,7 @@
 #define AAL_WHEEL_STEP 3
 
 typedef struct aalist_data {
-    long count, active, first, hover, vis;
+    long count, active, first, hover, vis, picked;
     mui_aalist_row_fn row;
     mui_aalist_cell_fn cell;
     mui_aalist_cols cols;
@@ -245,6 +245,7 @@ static ULONG aalist_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEve
                 int dbl = r == d->last_row && DoubleClick(d->last_s, d->last_m, im->Seconds, im->Micros);
                 aalist_set_active(obj, d, r);
                 if (dbl || !d->double_pick) {
+                    d->picked = r;
                     set(obj, AAL_Picked, (ULONG)r);
                 }
                 d->last_row = dbl ? -1 : r;
@@ -282,6 +283,7 @@ static ULONG aalist_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEve
     case 0x44:
     case 0x43:
         if (d->active >= 0) {
+            d->picked = d->active;
             set(obj, AAL_Picked, (ULONG)d->active);
             return MUI_EventHandlerRC_Eat;
         }
@@ -340,6 +342,7 @@ static ULONG aalist_get(struct IClass* cl, Object* obj, struct opGet* msg) {
     case AAL_Count: *msg->opg_Storage = (ULONG)d->count; return TRUE;
     case AAL_Active: *msg->opg_Storage = (ULONG)d->active; return TRUE;
     case AAL_First: *msg->opg_Storage = (ULONG)d->first; return TRUE;
+    case AAL_Picked: *msg->opg_Storage = (ULONG)d->picked; return TRUE;
     case AAL_Playing: *msg->opg_Storage = (ULONG)d->playing; return TRUE;
     }
     return DoSuperMethodA(cl, obj, (Msg)msg);
@@ -451,6 +454,7 @@ Object* mui_aalist_new(const mui_aalist_spec* spec, Object** list_out) {
     }
     d->playing = -1;
     d->last_row = -1;
+    d->picked = -1;
     d->title = spec->title;
     d->double_pick = spec->double_pick;
     d->no_select = spec->no_select;

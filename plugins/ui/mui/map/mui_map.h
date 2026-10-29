@@ -166,6 +166,11 @@ void mui_list_pending_clear(mui_list_pending* p);
 /* The row a rebuild selects: the pending target while the snapshot still shows the cursor it had at arm time; the
  * snapshot's own position once it moved (the pending selection is then settled and cleared). */
 int32_t mui_list_pending_resolve(mui_list_pending* p, int32_t snapshot_active);
+/* MUI-P3-1: the row a double click acts on. The list reports the row the user clicked (picked, -1 when none); the
+ * List cursor (active) can be moved by a list refresh between the click and the app loop handling it, so the clicked
+ * row wins and the cursor is only the fallback. */
+int32_t mui_list_dbl_row(int32_t picked, int32_t active);
+extern uint32_t mui_list_dbl_row_calls; /* sentinel: how often the decision ran */
 /* Tree style: the engine line a click on a node row sends (VIEW_EXPAND/VIEW_COLLAPSE <node id>); "" for a non-node. */
 void mui_list_toggle_line(const sel_view_row* r, char* out, size_t cap);
 /* Drilldown breadcrumb "Queue by folder  Drilldown > a > b" from the shared title function. */
