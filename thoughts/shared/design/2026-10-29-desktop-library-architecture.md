@@ -1,7 +1,7 @@
 ---
 date: 2026-10-29
 author: Opus agent for musicplayer-55
-status: draft
+status: decided
 ledger: I678
 ---
 
@@ -369,7 +369,10 @@ at the end of the batch on a real mod (memory real-song-for-rig-checks).
 
 ---
 
-## 13. Open decisions for Johan
+## 13. Decisions (Johan, AskUserQuestion 2026-10-29)
+
+Johan chose the recommended option (a) for every decision: D1 the title does nothing; D2 a "Local Files" chip; D3 the Library page retires; D4 Alphabetical ignores a leading "The"; D5 Home chips All, Music, Modules, Chiptunes; D6 generated round art from the name hash. The options as asked:
+
 
 - D1 Header title "Your Library" click: (a) nothing, as Spotify (Recommended: the title is a label in Spotify; the chips and
   rows do the work); (b) clears the chip and filter; (c) keeps opening the Library page until I678i lands.
