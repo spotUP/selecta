@@ -967,7 +967,7 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
         char* t = v->ftext + (size_t)n * SEL_VIEW_FOLDER_NAME;
         char* key = v->fkey + pool;
         size_t len = 0, klen = 0;
-        uint32_t count = 1, album = 0, composer = 0;
+        uint32_t count = 1, album = 0, composer = 0, album_id = 0;
         char *art = NULL, *sart = NULL;
         key[0] = '\0';
         if ((kind == 'H' || kind == 'Q' || kind == 'S' || kind == 'C') && p[1] == ' ') {
@@ -987,7 +987,7 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
                 }
                 if (*tab == '\t') { /* "<key>\t<entry>"; a leading @ marks an album */
                     size_t raw, name;
-                    const char* us;
+                    const char *us, *end;
                     if (*p == '@') {
                         album = 1;
                         p++;
@@ -998,12 +998,25 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
                     /* A key is never cut: one that does not fit the pool or the key limit leaves the row without a key.
                      * I471: an album key may carry its artist after a 0x1f byte ("<album>\x1f<artist>"); the row key is the album
                      * name alone and art_ref the whole string, so the artwork provider can tell same-named albums apart. */
-                    raw = name = (size_t)(tab - p);
+                    {   /* I678h2: an album row ends its key with 0x1e and albums.id, so the tile opens the album page without matching names */
+                        const char* idsep = p;
+                        while (idsep < tab && *idsep != '\x1e') {
+                            idsep++;
+                        }
+                        if (idsep < tab) {
+                            const char* q = idsep + 1;
+                            while (q < tab && *q >= '0' && *q <= '9') {
+                                album_id = album_id * 10u + (uint32_t)(*q++ - '0');
+                            }
+                        }
+                        end = idsep;
+                    }
+                    raw = name = (size_t)(end - p);
                     us = p;
-                    while (us < tab && *us != '\x1f') {
+                    while (us < end && *us != '\x1f') {
                         us++;
                     }
-                    if (us < tab) {
+                    if (us < end) {
                         name = (size_t)(us - p); /* I482: a song key carries its artist after 0x1f too; the key is the part before it */
                     }
                     if (raw + 1u <= SEL_VIEW_KEY_MAX && pool + name + raw + 3u <= SEL_VIEW_HOME_TEXT_MAX) {
@@ -1036,6 +1049,7 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
             t[len] = '\0';
             v->frows[n].key = key[0] != '\0' ? key : NULL;
             v->frows[n].album = album;
+            v->frows[n].art_id = album ? album_id : 0u;
             v->frows[n].composer = composer;
             v->frows[n].quick = kind == 'Q';
             v->frows[n].art_ref = key[0] != '\0' && !composer ? art : NULL;

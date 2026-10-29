@@ -24,6 +24,7 @@ static const struct {
     [SEL_ROUTE_ALBUM_CARD] = {SEL_ROUTE_PAGE_COLLECTION, SEL_LIB_ITEM_ALBUM, 0, 0},
     [SEL_ROUTE_SONGINFO_COMPOSER] = {SEL_ROUTE_PAGE_COLLECTION, SEL_LIB_ITEM_COMPOSER, 0, 0},
     [SEL_ROUTE_BROWSE_TILE] = {SEL_ROUTE_PAGE_COLLECTION, KIND_ITEM, 0, 0},
+    [SEL_ROUTE_DOOR_PAGE] = {SEL_ROUTE_PAGE_OTHER_BASE, KIND_ITEM, 0, 0},
     [SEL_ROUTE_TRACK_ROW] = {SEL_ROUTE_PAGE_NONE, 0, 1, 0},
 };
 
@@ -34,6 +35,9 @@ int sel_route_resolve(sel_route_target target, uint32_t item_kind, sel_route* ou
         r.kind = g_route[target].kind == KIND_ITEM ? item_kind : g_route[target].kind;
         r.plays = g_route[target].plays;
         r.marks_sidebar = g_route[target].marks;
+        if (target == SEL_ROUTE_DOOR_PAGE) { /* a door page the table does not name: 100 + the UI page, as the history writes a plain page entry */
+            r.page += item_kind;
+        }
         if (r.page != SEL_ROUTE_PAGE_COLLECTION) {
             r.kind = 0;
         }

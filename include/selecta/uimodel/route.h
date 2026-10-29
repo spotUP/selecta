@@ -22,11 +22,19 @@ typedef enum sel_route_target {
     SEL_ROUTE_ALBUM_CARD,        /* album card in "More by" or artist "Albums" */
     SEL_ROUTE_SONGINFO_COMPOSER, /* composer name in Song Information */
     SEL_ROUTE_BROWSE_TILE,       /* Browse tile (format, composer, source) */
+    SEL_ROUTE_DOOR_PAGE,         /* sidebar door of any other page (Songs, Library, Playlists ...): `item_kind` carries the UI page number (I678h2) */
     SEL_ROUTE_TRACK_ROW,         /* track row double-click / Enter: plays, no page */
     SEL_ROUTE_TARGETS
 } sel_route_target;
 
-typedef enum sel_route_page { SEL_ROUTE_PAGE_NONE = 0, SEL_ROUTE_PAGE_HOME, SEL_ROUTE_PAGE_SEARCH, SEL_ROUTE_PAGE_SHELF, SEL_ROUTE_PAGE_COLLECTION } sel_route_page;
+typedef enum sel_route_page {
+    SEL_ROUTE_PAGE_NONE = 0,
+    SEL_ROUTE_PAGE_HOME,
+    SEL_ROUTE_PAGE_SEARCH,
+    SEL_ROUTE_PAGE_SHELF,
+    SEL_ROUTE_PAGE_COLLECTION,
+    SEL_ROUTE_PAGE_OTHER_BASE = 100 /* 100 + the UI page number: the pages the table does not name */
+} sel_route_page;
 
 typedef struct sel_route {
     uint32_t page;     /* sel_route_page; NONE when the click opens no page */

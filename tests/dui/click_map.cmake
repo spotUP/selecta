@@ -8,7 +8,8 @@
 #   Home, a click on the sidebar album row (album page), a click on the artist name of its meta line (artist page), Back (album page,
 #   same scroll), Back (Home), Forward (album page).
 #   cur: home, collection:album, collection:artist, collection:album, home, collection:album; route_calls stays 2 over the last three.
-# Gap, not tested: a Home album tile carries the album name, not the album id, so it cannot open the album page yet (report I678h).
+# I678h2: the Home album tile opens the album page by album id (quicktile 0), and Back and Forward onto a collection page restore it
+# without COLLECTION_OPEN touching Recents (lib_touch_calls of the `sidelib` line counts the touches).
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -28,7 +29,8 @@ string(CONCAT seed
   "UPDATE songs SET key = 'local:' || path WHERE key LIKE 'fixture:%'; "
   "INSERT INTO songs(key, source, path, name, artist, album, format, year, added) VALUES"
   "('local:fixture/7.mod','local','fixture/7.mod','Seven','Chris Huelsbeck','Lotus Turbo Challenge','mod',1992,1),"
-  "('local:fixture/8.mod','local','fixture/8.mod','Eight','Chris Huelsbeck','Lotus Turbo Challenge','mod',1992,1)")
+  "('local:fixture/8.mod','local','fixture/8.mod','Eight','Chris Huelsbeck','Lotus Turbo Challenge','mod',1992,1); "
+  "INSERT INTO history(key, played_at, skipped) VALUES('local:fixture/7.mod', 100, 0)")
 execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db}" "${seed}" RESULT_VARIABLE rc ERROR_VARIABLE err)
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "seeding the click map failed: ${err}")
@@ -148,3 +150,22 @@ step(d7 s7 "click ROW\nwait 100\ntopbar 0\nwait 100\n")
 read_route(r7 "${d7}")
 expect_eq("step 7 page" "${r7_cur}" "home")
 expect_eq("step 7 routed" "${r7_calls}" "2")
+
+# 8. I678h2: the Home album tile opens the album page by id; the artist link follows; Back, Back, Forward replay without routing and
+# without touching Recents (the tile and the artist link are the only two touches).
+file(WRITE "${WORK}/tile.txt" "wait 100\nquicktile 0\nwait 100\n")
+dui_run(run_tile ${common} --input "${WORK}/tile.txt")
+read_route(r8 "${run_tile}")
+expect_eq("step 8 page (Home album tile)" "${r8_cur}" "collection:album")
+expect_eq("step 8 routed" "${r8_calls}" "1")
+expect_eq("step 8 history" "${r8_n}/${r8_pos}" "2/1")
+file(WRITE "${WORK}/tile2.txt" "wait 100\nquicktile 0\nwait 100\nclick ${r8_artist}\nwait 100\n${back}${back}${fwd}")
+dui_run(run_tile2 ${common} --input "${WORK}/tile2.txt")
+read_route(r9 "${run_tile2}")
+expect_eq("step 9 page (album, artist, Back, Back, Forward)" "${r9_cur}" "collection:album")
+expect_eq("step 9 routed (Forward replay not counted)" "${r9_calls}" "2")
+expect_eq("step 9 history" "${r9_n}/${r9_pos}" "3/1")
+if(NOT "${run_tile2}" MATCHES "sidelib draws=[0-9]+ rows=[0-9]+ items=[0-9]+ opens=[0-9]+ y=-?[0-9]+ max=[0-9]+ item_calls=[0-9]+ lib_touch_calls=([0-9]+)")
+  message(FATAL_ERROR "no sidelib line in:\n${run_tile2}")
+endif()
+expect_eq("step 9 Recents touched only by the two opens" "${CMAKE_MATCH_1}" "2")

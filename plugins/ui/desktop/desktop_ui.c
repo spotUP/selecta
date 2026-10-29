@@ -2189,6 +2189,7 @@ static uint32_t shelf_at_y(desk* d, int32_t y) {
  * song or opens an album search; the HOME source is then asked for again so the shelves follow the new history. */
 static int desk_page_goto(desk* d, desk_page pg);
 static int desk_route(desk* d, sel_route_target target, uint32_t item_kind, uint32_t id, const char* key, const char* name, const char* sub);
+static int desk_route_door(desk* d, desk_page pg);
 static void desk_composer_open(desk* d, const char* canon, const char* display);
 
 static void shelf_activate_row(desk* d, uint32_t row);
@@ -2220,7 +2221,17 @@ static void shelf_activate_row(desk* d, uint32_t row) {
     if (st->view->rows[row].composer) { /* I479: a composer tile opens that composer's page */
         char canon[SEL_COMPOSER_MAX]; /* copied first: the page change replaces the view */
         snprintf(canon, sizeof canon, "%s", st->view->rows[row].key);
-        desk_composer_open(d, canon, canon); /* I678f: the composer's collection page */
+        desk_route(d, SEL_ROUTE_HOME_TILE, (uint32_t)SEL_LIB_ITEM_COMPOSER, 0u, canon, canon, ""); /* I678f/I678h2: the composer's collection page */
+        d->shelf_plays++;
+        return;
+    }
+    if (st->view->rows[row].album && st->view->rows[row].art_id != 0u) { /* I678h2: an album tile opens the album page by the id its row carries */
+        char key[16], name[96], sub[96];
+        uint32_t id = st->view->rows[row].art_id; /* copied first: the page change replaces the view */
+        snprintf(key, sizeof key, "%u", (unsigned)id);
+        snprintf(name, sizeof name, "%s", st->view->rows[row].key != NULL ? st->view->rows[row].key : "");
+        snprintf(sub, sizeof sub, "%s", st->view->rows[row].artist != NULL ? st->view->rows[row].artist : "");
+        desk_route(d, SEL_ROUTE_HOME_TILE, (uint32_t)SEL_LIB_ITEM_ALBUM, id, key, name, sub);
         d->shelf_plays++;
         return;
     }
@@ -4495,7 +4506,7 @@ static sel_gui_rect col_more_rect(desk* d, sel_gui_rect mn) { /* the Show more r
 }
 
 static void desk_quoted_request(char* line, size_t cap, const char* head, const char* arg);
-static void col_kind_open(desk* d, uint32_t kind, const char* key, const char* name, const char* sub) {
+static void col_kind_open(desk* d, uint32_t kind, const char* key, const char* name, const char* sub, int restore) {
     pls_open(d, COL_KIND_ID, name);
     d->col_kind = col_ui_kind(kind);
     d->col_popular = 5u;
@@ -4512,6 +4523,10 @@ static void col_kind_open(desk* d, uint32_t kind, const char* key, const char* n
         char head[32];
         snprintf(head, sizeof head, "COLLECTION_OPEN %u", (unsigned)kind);
         desk_quoted_request(open, sizeof open, head, d->col_key);
+        if (restore) { /* Back and Forward rebuild the page without touching Recents (I678h2) */
+            size_t n = strlen(open);
+            snprintf(open + n, sizeof open - n, " 1");
+        }
         desk_send(d, open);
     }
     if (kind == (uint32_t)SEL_LIB_ITEM_SOURCE) { /* I678g: the source status block reads the registered sources */
@@ -8125,7 +8140,7 @@ static int topbar_click(desk* d, int32_t x, int32_t y) {
     }
     if (in_rect(topbar_part(d, TOPBAR_BROWSE), x, y)) {
         d->topbar_browse_clicks++;
-        desk_page_goto(d, PG_BROWSE);
+        desk_route_door(d, PG_BROWSE);
         return 1;
     }
     if (in_rect(topbar_part(d, TOPBAR_FIELD), x, y)) {
@@ -8384,14 +8399,14 @@ static int shelf_header_enter(desk* d) {
 /* Back (dir -1) and Forward (+1) in the page history. Returns 1 when the picture changed. */
 /* Fills the page an entry names, after desk_page_goto opened it: a playlist or a kind page asks the engine for its items. A bare entry
  * (a door page) has nothing to fill. */
-static void desk_route_enter(desk* d, const sel_route_entry* e) {
+static void desk_route_enter(desk* d, const sel_route_entry* e, int restore) {
     if (e->page != (uint32_t)SEL_ROUTE_PAGE_COLLECTION) {
         return;
     }
     if (e->kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST) {
         pls_open(d, e->id, e->name);
     } else if (e->kind != 0u || e->key[0] != '\0' || e->name[0] != '\0') {
-        col_kind_open(d, e->kind, e->key, e->name, e->sub);
+        col_kind_open(d, e->kind, e->key, e->name, e->sub, restore);
     }
 }
 
@@ -8410,7 +8425,7 @@ static int desk_page_walk(desk* d, int dir) {
         d->shelf_open = e.id;
     }
     moved = desk_page_goto(d, desk_page_of(e.page));
-    desk_route_enter(d, &e);
+    desk_route_enter(d, &e, 1);
     if (e.page == (uint32_t)SEL_ROUTE_PAGE_COLLECTION) {
         d->pls_scroll = (uint32_t)e.scroll; /* the page is where it was left */
     }
@@ -8432,9 +8447,20 @@ static int desk_route(desk* d, sel_route_target target, uint32_t item_kind, uint
         d->shelf_open = e.id;
     }
     desk_page_goto(d, desk_page_of(e.page));
-    desk_route_enter(d, &e);
+    desk_route_enter(d, &e, 0);
     d->pg_walk = 0;
     return 1;
+}
+
+/* A door of any page goes through the route table (I678h2): Home and Search have their own targets, every other page is a door page. */
+static int desk_route_door(desk* d, desk_page pg) {
+    if (pg == PG_HOME) {
+        return desk_route(d, SEL_ROUTE_DOOR_HOME, 0u, 0u, "", "", "");
+    }
+    if (pg == PG_SEARCH) {
+        return desk_route(d, SEL_ROUTE_DOOR_SEARCH, 0u, 0u, "", "", "");
+    }
+    return desk_route(d, SEL_ROUTE_DOOR_PAGE, (uint32_t)pg, 0u, "", "", "");
 }
 
 /* A click at (x, y): opens the tile under it. Returns 1 when a tile opened. */
@@ -11300,7 +11326,7 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         }
         if (door >= 0) {
             d->nav_clicks++;
-            return desk_page_goto(d, door_page((uint32_t)door));
+            return desk_route_door(d, door_page((uint32_t)door));
         }
         if (in_rect(side_hdr_title_rect(d), ev->x, ev->y)) { /* I678h (D1): the "Your Library" title opens nothing; the route table counts the click */
             d->nav_clicks++;
@@ -11340,6 +11366,7 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         door = side_chip_at(d, ev->x, ev->y); /* I610: a library chip or chevron */
         if (door >= 0) {
             side_chip_click(d, door);
+            desk_route(d, SEL_ROUTE_CHIP, 0u, 0u, "", "", ""); /* I678h2: a chip opens nothing; the route table counts the click (section 9) */
             return 1;
         }
         door = side_lib_at(d, ev->x, ev->y); /* I608: a library row opens that item in the main region */

@@ -5198,7 +5198,8 @@ static void cmd_COLLECTION_OPEN(sel_engine* e, const sel_message* m) {
     int rc;
     uint32_t kind = (uint32_t)m->args[0].v.u;
     if (!folder_ready(e, "COLLECTION_OPEN")) return;
-    if (kind != (uint32_t)SEL_LIB_ITEM_LIKED && kind != (uint32_t)SEL_LIB_ITEM_RECENT && kind != (uint32_t)SEL_LIB_ITEM_LOCAL) { /* the pinned rows stay out of Recents */
+    int restore = m->argc > 2 && m->args[2].v.u != 0u; /* I678h2: Back / Forward rebuild the page they return to; that is not an open, Recents stays as it is */
+    if (!restore && kind != (uint32_t)SEL_LIB_ITEM_LIKED && kind != (uint32_t)SEL_LIB_ITEM_RECENT && kind != (uint32_t)SEL_LIB_ITEM_LOCAL) { /* the pinned rows stay out of Recents */
         rc = sel_library_touch(e->lib, kind, m->args[1].v.s, (int64_t)time(NULL));
         if (rc != SEL_FOLDER_OK) {
             folder_report(e, rc, "COLLECTION_OPEN");
@@ -5206,7 +5207,7 @@ static void cmd_COLLECTION_OPEN(sel_engine* e, const sel_message* m) {
         }
         e->lib_touch_calls++;
     }
-    e->collection_opens++;
+    if (!restore) e->collection_opens++;
     e->collection_kind = kind;
     snprintf(e->collection_key, sizeof e->collection_key, "%s", m->args[1].v.s);
     if (kind < (uint32_t)SEL_LIB_ITEM_KINDS && kind != (uint32_t)SEL_LIB_ITEM_PLAYLIST) coll_build_page(e, kind, e->collection_key);

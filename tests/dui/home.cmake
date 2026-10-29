@@ -569,8 +569,14 @@ function(dui_stat_line_rows out var)
   endif()
   set(${var} "${CMAKE_MATCH_1}" PARENT_SCOPE)
 endfunction()
-album_run(act "${db4}" "tile 7\nexec VIEW_SOURCE query\nwait 1\n")
-expect_album_rows("${act}" "the Other Artist shelf tile opens its own album" 1 "fixture:9")
+# I678h2: an album tile opens the album page by album id (a collection page, not the query view), so the page lists that album only.
+function(expect_album_page out what songs)
+  if(NOT "${out}" MATCHES "collection kind=album [^\n]* of=${songs} ")
+    message(FATAL_ERROR "${what}: no album page of ${songs} songs in:\n${out}")
+  endif()
+endfunction()
+album_run(act "${db4}" "tile 7\nwait 1\n")
+expect_album_page("${act}" "the Other Artist shelf tile opens its own album" 1)
 
 # 10c. I473: the same for Search album rows. album:Lotus lists both albums; the Albums group has one row per name and artist
 # (rows: heading, 4 songs, heading, 2 albums, ...). Row 5 is the Chris Huelsbeck album (2 songs: fixture:1 first) and row 6 the
@@ -645,8 +651,8 @@ quick_run(none_out "${edb}" 700x800 "wait 1\n")
 quick_count(none_n "${none_out}")
 expect_eq("quick picks without history" "${none_n}" 0)
 # Activating quick pick 1 (Monkey Island, songs 2 and 6) opens that album's two songs, exactly like its shelf tile (I473 path).
-quick_run(qact "${few_db}" 1000x1400 "quicktile 1\nexec VIEW_SOURCE query\nwait 1\n")
-expect_album_rows("${qact}" "quick pick 1 opens its album (Monkey Island: fixture:2 and fixture:6)" 2 "fixture:2")
+quick_run(qact "${few_db}" 1000x1400 "quicktile 1\nwait 1\n")
+expect_album_page("${qact}" "quick pick 1 opens its album (Monkey Island: fixture:2 and fixture:6)" 2)
 
 # I490: the pointer over quick-pick tile 1 lights that card like a hovered shelf card: the dump carries quick_hover with the
 # lit fill (the panel mixed to the surface token), and no such line while no quick tile is hovered.

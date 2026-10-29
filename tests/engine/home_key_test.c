@@ -71,6 +71,65 @@ static void long_artist(const sel_host* host) {
     sel_library_close(lib);
 }
 
+/* I678h2: a Home album tile carries albums.id, so the UI opens the album page by id and never matches names. The library writes the id after
+ * 0x1e in the key, the view parses it into art_id, and the name and artist the tile draws stay as they were. */
+static void album_id(const sel_host* host) {
+    sel_library* lib = sel_library_open(host, sel_machine_fake("a060"), 0, ":memory:");
+    sel_view v;
+    sel_scan_row row;
+    sel_scan_batch b;
+    sel_message reply;
+    sel_art_op art;
+    uint8_t png[4] = {1, 2, 3, 4};
+    uint32_t lines = 0, i, seen = 0;
+    int64_t want = 0;
+
+    check(lib != NULL, "i678h2 library opens");
+    if (lib == NULL) return;
+    memset(&v, 0, sizeof v);
+    check(sel_view_init(&v, host, 20u), "i678h2 view init");
+    memset(&row, 0, sizeof row);
+    row.source = "local";
+    row.path = "/m/one.mod";
+    row.format = "mod";
+    row.artist = "Art Ist";
+    row.album = "Some Album";
+    row.name = "One";
+    memset(&b, 0, sizeof b);
+    b.rows = &row;
+    b.count = 1;
+    b.now = 1;
+    check(sel_library_request(lib, SEL_LIB_REQ_SCAN_BATCH, &b, &reply) && reply.args[1].v.i == 0, "i678h2 scan");
+    memset(&art, 0, sizeof art);
+    art.op = SEL_ART_STORE;
+    art.kind = "cover";
+    art.data = png;
+    art.len = sizeof png;
+    art.name = "Some Album";
+    art.artist = "Art Ist";
+    check(sel_library_request(lib, SEL_LIB_REQ_ART, &art, &reply), "i678h2 albums row created");
+    memset(&art, 0, sizeof art);
+    art.op = SEL_ART_FIND;
+    art.ref = "local:/m/one.mod";
+    check(sel_library_request(lib, SEL_LIB_REQ_ART, &art, &reply), "i678h2 album id found");
+    want = reply.args[0].v.i;
+    check(want > 0, "i678h2 the albums row has an id");
+    check(sel_library_history_add(lib, "local:/m/one.mod", 100, 0), "i678h2 history add");
+    check(sel_library_home(lib, 10, v.htext, SEL_VIEW_HOME_TEXT_MAX, &lines), "i678h2 home text");
+    sel_view_set_home(&v, v.htext);
+    for (i = 0; i < v.frow_n; i++) {
+        if (v.frows[i].album && v.frows[i].key != NULL) {
+            seen++;
+            check(strcmp(v.frows[i].key, "Some Album") == 0, "i678h2 album key is the name alone");
+            check(v.frows[i].artist != NULL && strcmp(v.frows[i].artist, "Art Ist") == 0, "i678h2 album artist kept");
+            check(v.frows[i].art_id == (uint32_t)want, "i678h2 album tile carries albums.id");
+        }
+    }
+    check(seen >= 1u, "i678h2 an album tile exists");
+    sel_view_free(&v, host);
+    sel_library_close(lib);
+}
+
 int main(void) {
     const sel_host* host = sel_host_default();
     sel_library* lib = sel_library_open(host, sel_machine_fake("a060"), 0, ":memory:");
@@ -122,6 +181,7 @@ int main(void) {
     sel_view_free(&v, host);
     sel_library_close(lib);
     long_artist(host);
+    album_id(host);
     printf(fails ? "home-key: %d failure(s)\n" : "home-key: ok\n", fails);
     return fails ? 1 : 0;
 }

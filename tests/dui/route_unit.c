@@ -36,6 +36,7 @@ int main(void) {
     CHECK(sel_route_resolve(SEL_ROUTE_SONGINFO_COMPOSER, 0, &r) && r.kind == SEL_LIB_ITEM_COMPOSER);
     CHECK(sel_route_resolve(SEL_ROUTE_BROWSE_TILE, SEL_LIB_ITEM_COMPOSER, &r) && r.kind == SEL_LIB_ITEM_COMPOSER);
     CHECK(!sel_route_resolve(SEL_ROUTE_TRACK_ROW, 0, &r) && r.plays);
+    CHECK(sel_route_resolve(SEL_ROUTE_DOOR_PAGE, 3, &r) && r.page == SEL_ROUTE_PAGE_OTHER_BASE + 3u && r.kind == 0); /* I678h2: a door of any other page is 100 + the UI page */
     CHECK(strcmp(sel_route_kind_name(SEL_LIB_ITEM_ALBUM), "album") == 0 && strcmp(sel_route_page_name(SEL_ROUTE_PAGE_COLLECTION), "collection") == 0);
 
     sel_route_hist_init(&h); /* sel_route_go counts every call, opening or not */
