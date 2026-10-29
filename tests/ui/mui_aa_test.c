@@ -893,7 +893,7 @@ static void test_list_source(void) {
     CHECK(count_of(ui, "mui_aalist_new(") == 3 && count_of(ui, "mui_string_aalist(") == 4, "AAList builders: new %d, string %d", count_of(ui, "mui_aalist_new("), count_of(ui, "mui_string_aalist("));
     CHECK(count_of(ui, "sp.cols = &s->main_cols;") == 1 && count_of(ui, "sp.title = 1;") == 1 && count_of(ui, "sp.double_pick = 1;") == 1 && count_of(ui, "sp.no_select = 1;") == 1,
           "main list columns, title row, double pick and lyrics no_select");
-    CHECK(count_of(ui, "AAL_Columns") == 1 && count_of(ui, "AAL_Playing") == 1 && count_of(ui, "AAL_Picked") == 1, "columns %d, playing %d, picked %d", count_of(ui, "AAL_Columns"),
+    CHECK(count_of(ui, "AAL_Columns") == 1 && count_of(ui, "AAL_Playing") == 1 && count_of(ui, "AAL_Picked") == 2, "columns %d, playing %d, picked %d", count_of(ui, "AAL_Columns"),
           count_of(ui, "AAL_Playing"), count_of(ui, "AAL_Picked"));
     CHECK(count_of(ui, "mui_list_display(&g_list_hook") == 2 && strstr(ui, "static const char* mui_main_cell(") != NULL, "cells come from the display hook");
     CHECK(strstr(ui, "mui_text_lines(s->np_lyric_buf)") != NULL && strstr(ui, "mui_text_line(s->np_lyric_buf") != NULL, "lyrics rows from the pure line helpers");

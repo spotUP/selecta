@@ -1031,6 +1031,38 @@ static void test_list_pending(void) {
     CHECK(mui_list_pending_resolve(&p, 0) == 0, "cleared (double-click sent): snapshot wins");
 }
 
+/* MUI-P3-1 (I716): a double click acts on the row the list reported as picked, not on the List cursor a refresh may have
+ * moved since; the DBL branch of mui_ui.c reads the picked row from the list and decides through mui_list_dbl_row. */
+static void test_list_dbl_row(void) {
+    static char src[400000];
+    uint32_t c0 = mui_list_dbl_row_calls;
+    FILE* f = fopen(MUI_UI_SOURCE, "rb");
+    size_t n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    const char* dbl;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    CHECK(mui_list_dbl_row(1, 0) == 1, "picked row 1 wins over a cursor moved back to row 0");
+    CHECK(mui_list_dbl_row(2, 5) == 2, "picked wins over any cursor");
+    CHECK(mui_list_dbl_row(-1, 3) == 3, "nothing picked: the cursor row");
+    CHECK(mui_list_dbl_row(0, 0) == 0, "row 0 picked stays row 0");
+    CHECK(mui_list_dbl_row_calls == c0 + 4, "the decision ran %u times, expected 4", (unsigned)(mui_list_dbl_row_calls - c0));
+    dbl = strstr(src, "if (id == CTL_LIST_DBL) {");
+    CHECK(dbl != NULL && strstr(dbl, "GetAttr(AAL_Picked, s->list") != NULL && strstr(dbl, "mui_list_dbl_row(") != NULL &&
+              strstr(dbl, "mui_list_dbl_row(") < strstr(dbl, "VIEW_ACTIVATE"),
+          "the DBL branch of mui_ui.c reads AAL_Picked and decides through mui_list_dbl_row before VIEW_ACTIVATE");
+    n = 0;
+    f = fopen(MUI_DIR "/mui_aalist_class.c", "rb");
+    n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    CHECK(strstr(src, "d->picked = r;") != NULL && strstr(src, "case AAL_Picked: *msg->opg_Storage = (ULONG)d->picked") != NULL,
+          "the AAList class stores the picked row and answers AAL_Picked");
+}
+
 static void test_list_backends(void) {
     static sel_view_row rows[40];
     static char txt[40][32];
@@ -1880,6 +1912,8 @@ int main(int argc, char** argv) {
         test_style_mask();
     } else if (strcmp(argv[1], "list-pending") == 0) {
         test_list_pending();
+    } else if (strcmp(argv[1], "list-dbl-row") == 0) {
+        test_list_dbl_row();
     } else if (strcmp(argv[1], "list-backends") == 0) {
         test_list_backends();
     } else if (strcmp(argv[1], "topbar") == 0) {

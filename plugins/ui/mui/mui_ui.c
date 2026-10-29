@@ -1868,6 +1868,11 @@ static void mui_control_fire(mui_state* s, LONG id) {
     } else if (id == CTL_LIST_SEL || id == CTL_LIST_DBL) {
         const sel_view_state* view = sel_engine_state(s->engine)->view;
         GetAttr(AAL_Active, s->list, (ULONG*)&v);
+        if (id == CTL_LIST_DBL) {
+            long picked = -1;
+            GetAttr(AAL_Picked, s->list, (ULONG*)&picked);
+            v = mui_list_dbl_row((int32_t)picked, (int32_t)v);
+        }
         if (view == NULL || v < 0 || (id == CTL_LIST_SEL && v == s->list_active_set)) {
             return;
         }
