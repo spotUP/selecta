@@ -1,0 +1,126 @@
+# dui-nowplaying-panel (I619): the right Now Playing panel, Spotify style, through the real desktop UI entry.
+#   -DSELECTA -DSONGS -DWORK
+# Reachability test for the row: one script plays a playlist and clicks the panel's controls with real pointer events.
+# The dump prints `np_panel context=[<heading>] add X Y W H add_clicks=<n> toggle X Y W H toggle_clicks=<n> hidden=<0|1>
+# detail_w=<w> main_w=<w>`. `add_clicks` and `toggle_clicks` are sentinels that grow only inside the click handlers.
+# 1. Play the playlist "alpha" from its page: the panel heading is the playlist name (not the plain "Now Playing" fallback)
+#    and the panel is shown (hidden=0, detail_w=320).
+# 2. A click on the round add button reaches the add action: add_clicks=1 and the song is liked (the dump's `liked 1`).
+# 3. A click on the top bar toggle hides the panel: hidden=1, detail_w=0 and the main region is exactly detail_w wider.
+# 4. A second click restores it: hidden=0, detail_w and main_w as in 1.
+get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+include("${HERE}/dui_run.cmake")
+file(REMOVE_RECURSE "${WORK}")
+file(MAKE_DIRECTORY "${WORK}")
+foreach(n a b)
+  file(COPY_FILE "${SONGS}/selecta-test.mod" "${WORK}/${n}.mod")
+endforeach()
+set(db "${WORK}/lib.db")
+
+function(expect_eq what got want)
+  if(NOT "${got}" STREQUAL "${want}")
+    message(FATAL_ERROR "${what}: got '${got}', expected '${want}'")
+  endif()
+endfunction()
+
+function(centre outvar out re)
+  if(NOT "${out}" MATCHES "${re}")
+    message(FATAL_ERROR "no '${re}' in:\n${out}")
+  endif()
+  math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+  math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+  set(${outvar} "${cx} ${cy}" PARENT_SCOPE)
+endfunction()
+
+# parse the np_panel line into np_<field> variables in the caller (CMake keeps nine match groups, so two matches)
+function(np_parse out)
+  if(NOT "${out}" MATCHES "np_panel context=\\[([^]]*)\\] add (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) add_clicks=([0-9]+) toggle (-?[0-9]+) (-?[0-9]+)")
+    message(FATAL_ERROR "no np_panel line in:\n${out}")
+  endif()
+  set(np_context "${CMAKE_MATCH_1}" PARENT_SCOPE)
+  set(np_add "${CMAKE_MATCH_2} ${CMAKE_MATCH_3} ${CMAKE_MATCH_4} ${CMAKE_MATCH_5}" PARENT_SCOPE)
+  set(np_add_w "${CMAKE_MATCH_4}" PARENT_SCOPE)
+  set(np_add_clicks "${CMAKE_MATCH_6}" PARENT_SCOPE)
+  if(NOT "${out}" MATCHES "np_panel context=[^\n]* toggle (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) toggle_clicks=([0-9]+) hidden=([0-9]+) detail_w=(-?[0-9]+) main_w=(-?[0-9]+)")
+    message(FATAL_ERROR "bad np_panel tail in:\n${out}")
+  endif()
+  set(np_toggle "${CMAKE_MATCH_1} ${CMAKE_MATCH_2} ${CMAKE_MATCH_3} ${CMAKE_MATCH_4}" PARENT_SCOPE)
+  set(np_toggle_clicks "${CMAKE_MATCH_5}" PARENT_SCOPE)
+  set(np_hidden "${CMAKE_MATCH_6}" PARENT_SCOPE)
+  set(np_detail_w "${CMAKE_MATCH_7}" PARENT_SCOPE)
+  set(np_main_w "${CMAKE_MATCH_8}" PARENT_SCOPE)
+endfunction()
+
+dui_run(seed --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats --db "${db}"
+  --exec "QUEUE_ADD ${WORK}/a.mod" --exec "PLAYLIST_CREATE alpha" --exec "PLAYLIST_ADD_SONG 1 ${WORK}/b.mod")
+set(common --ui desktop --backend mem --view home --clock fixed --stats --db "${db}" --canvas 1280x800)
+
+# Geometry: the sidebar row of "alpha", then the Play button of its page.
+file(WRITE "${WORK}/idle.txt" "wait 100\n")
+dui_run(i0 ${common} --input "${WORK}/idle.txt")
+centre(side "${i0}" "sidelib_row 0 ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)")
+file(WRITE "${WORK}/open.txt" "click ${side}\nwait 100\n")
+dui_run(o1 ${common} --input "${WORK}/open.txt")
+if(NOT "${o1}" MATCHES "play=([0-9]+),([0-9]+),([0-9]+),([0-9]+)")
+  message(FATAL_ERROR "no plpage play rect in:\n${o1}")
+endif()
+math(EXPR px "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+math(EXPR py "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+set(play_script "click ${side}\nwait 100\nclick ${px} ${py}\nwait 300\n")
+
+# 1. Play the playlist: the panel is headed by its name.
+file(WRITE "${WORK}/play.txt" "${play_script}")
+dui_run(p1 ${common} --input "${WORK}/play.txt")
+np_parse("${p1}")
+expect_eq("heading" "${np_context}" "alpha")
+expect_eq("shown at first" "${np_hidden}" "0")
+expect_eq("panel width" "${np_detail_w}" "320")
+expect_eq("add clicks at rest" "${np_add_clicks}" "0")
+if(np_add_w LESS 1)
+  message(FATAL_ERROR "the round add button was not drawn:\n${p1}")
+endif()
+set(main_shown "${np_main_w}")
+set(add_at "${np_add}")
+set(toggle_at "${np_toggle}")
+if(NOT "${toggle_at}" MATCHES "^[0-9]+ [0-9]+ [1-9][0-9]* [1-9][0-9]*$")
+  message(FATAL_ERROR "the panel toggle was not drawn: '${toggle_at}'")
+endif()
+if(NOT "${add_at}" MATCHES "^([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)$")
+  message(FATAL_ERROR "bad add rect '${add_at}'")
+endif()
+math(EXPR ax "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+math(EXPR ay "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+if(NOT "${toggle_at}" MATCHES "^([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)$")
+  message(FATAL_ERROR "bad toggle rect '${toggle_at}'")
+endif()
+math(EXPR tx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+math(EXPR ty "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+
+# 2. The add button reaches the add action.
+file(WRITE "${WORK}/add.txt" "${play_script}click ${ax} ${ay}\nwait 200\n")
+dui_run(a1 ${common} --input "${WORK}/add.txt")
+np_parse("${a1}")
+expect_eq("add clicks" "${np_add_clicks}" "1")
+if(NOT "${a1}" MATCHES "liked 1")
+  message(FATAL_ERROR "the add click did not like the song:\n${a1}")
+endif()
+
+# 3. The toggle hides the panel and gives its width to main.
+file(WRITE "${WORK}/hide.txt" "${play_script}click ${tx} ${ty}\nwait 200\n")
+dui_run(h1 ${common} --input "${WORK}/hide.txt")
+np_parse("${h1}")
+expect_eq("toggle clicks after hide" "${np_toggle_clicks}" "1")
+expect_eq("hidden" "${np_hidden}" "1")
+expect_eq("detail width when hidden" "${np_detail_w}" "0")
+math(EXPR want_main "${main_shown} + 320")
+expect_eq("main width when hidden" "${np_main_w}" "${want_main}")
+
+# 4. A second click restores the panel.
+file(WRITE "${WORK}/show.txt" "${play_script}click ${tx} ${ty}\nwait 200\nclick ${tx} ${ty}\nwait 200\n")
+dui_run(s1 ${common} --input "${WORK}/show.txt")
+np_parse("${s1}")
+expect_eq("toggle clicks after show" "${np_toggle_clicks}" "2")
+expect_eq("hidden again" "${np_hidden}" "0")
+expect_eq("detail width restored" "${np_detail_w}" "320")
+expect_eq("main width restored" "${np_main_w}" "${main_shown}")
+message(STATUS "dui-nowplaying-panel: heading, add action, hide and show verified")

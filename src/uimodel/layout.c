@@ -113,6 +113,13 @@ static void topbar_compute(sel_uim_layout* l, uint32_t width, uint32_t tb_h) {
  * wider form and ignore it. */
 void sel_uim_layout_compute_expand(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t rail_w,
                                    uint32_t bar_height, uint32_t expand) {
+    sel_uim_layout_compute_panel(l, width, height, tier, rail_w, bar_height, expand, 0u);
+}
+
+/* I619: as compute_expand; a non-zero `detail_hidden` drops the Now Playing column of the three column breakpoint, the main
+ * region taking its width. */
+void sel_uim_layout_compute_panel(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t rail_w,
+                                  uint32_t bar_height, uint32_t expand, uint32_t detail_hidden) {
     uint32_t bp = sel_uim_breakpoint_for_tier(width, tier);
     uint32_t bar_h = height > bar_height ? bar_height : height;
     uint32_t tb_h = (tier != SEL_UIM_TIER_BITMAP && bp != SEL_UIM_BP_MINI_SUGGESTION && height >= bar_h + SEL_UIM_TOPBAR_H + MAIN_MIN_H)
@@ -125,7 +132,7 @@ void sel_uim_layout_compute_expand(sel_uim_layout* l, uint32_t width, uint32_t h
     l->breakpoint = bp;
     if (bp == SEL_UIM_BP_THREE_COLUMN) {
         side = expand ? SIDEBAR_EXPANDED_WIDE : SIDEBAR_WIDE;
-        detail = DETAIL_W;
+        detail = detail_hidden ? 0u : DETAIL_W;
     } else if (bp == SEL_UIM_BP_TWO_COLUMN) {
         side = expand ? SIDEBAR_EXPANDED_NARROW : SIDEBAR_NARROW;
     } else if (bp == SEL_UIM_BP_ICON_SIDEBAR) {

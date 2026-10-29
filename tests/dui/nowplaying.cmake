@@ -9,7 +9,7 @@
 # 3b. I257: genart runs once per Now Playing draw (`genart N` equals `draws N` in the dump).
 # 4. I288: a click on the fourth rating mark of an unrated song fills four marks in the same run (`rating N` in the dump is
 #    the count the last Now Playing draw filled). Run A reads the mark rectangles, run B clicks there.
-# 4b. I446: `nowplaying title Y H like L artist A`: H is 22 with no artist (40 with one), and L - Y - H is 4.
+# 4b. I446: `nowplaying title Y H like L artist A`: H is 28 with no artist (46 with one; I619 bigger title), and L - Y - H is 4.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 set(fx "${HERE}/../m3/lyrics")
@@ -59,7 +59,7 @@ function(np_run tag seek_ms)
   if(NOT "${o}" MATCHES "nowplaying art (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+) panel (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)")
     message(FATAL_ERROR "no nowplaying art line in:\n${o}")
   endif()
-  math(EXPR want "${CMAKE_MATCH_7} - 2 * ${tok}")
+  math(EXPR want "${CMAKE_MATCH_7}") # I619: the cover is full bleed, the whole panel width
   if(NOT CMAKE_MATCH_3 EQUAL want OR NOT CMAKE_MATCH_4 EQUAL CMAKE_MATCH_3)
     message(FATAL_ERROR "Now Playing cover is ${CMAKE_MATCH_3}x${CMAKE_MATCH_4}, want a ${want}x${want} square spanning the panel width ${CMAKE_MATCH_7}")
   endif()
@@ -68,9 +68,9 @@ function(np_run tag seek_ms)
     message(FATAL_ERROR "no nowplaying title line in:\n${o}")
   endif()
   if(CMAKE_MATCH_4 EQUAL 0)
-    set(want_h 22)
+    set(want_h 28)
   else()
-    set(want_h 40)
+    set(want_h 46)
   endif()
   math(EXPR gap "${CMAKE_MATCH_3} - ${CMAKE_MATCH_1} - ${CMAKE_MATCH_2}")
   if(NOT CMAKE_MATCH_2 EQUAL want_h OR NOT gap EQUAL 4)

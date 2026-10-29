@@ -366,6 +366,10 @@ typedef struct desk {
     int32_t shelf_back_y_q16;                              /* I617: the Home scroll kept while the Shelf page is open */
     uint32_t show_all_draws, show_all_clicks, shelf_page_draws, shelf_page_opens, shelf_page_tiles; /* I617: Show all links drawn, clicked, and Shelf page frames drawn */
     sel_gui_rect show_all_rect[8];                 /* I617: the Show all link of each shelf as last drawn, w 0 when not drawn */
+    uint32_t detail_hidden, np_toggle_clicks, np_add_clicks; /* I619: the Now Playing column is hidden; clicks on its top bar toggle and on the add button */
+    sel_gui_rect np_add;                                      /* I619: the round add-to-library button beside the track title */
+    char np_ctx_shown[96];                                     /* I619: the heading the last Now Playing draw showed */
+    char np_ctx[96];                                          /* I619: the playlist the playing song was started from, "" when none */
     uint32_t topbar_draws, topbar_home_clicks, topbar_browse_clicks; /* I615: top bar frames drawn, Home and Browse button clicks */
     uint32_t side_wide, side_plus_clicks, side_wide_clicks; /* I609: the sidebar is widened; header Create Playlist and width toggle clicks */
     uint32_t side_anim, side_from, side_to, side_tween_frames; /* I668: the width tween runs, its ends in logical px, frames relaid out by it */
@@ -1657,6 +1661,15 @@ static sel_gui_rect topbar_part(const desk* d, int part) {
 
 static int topbar_shown(const desk* d) {
     return d->layout.topbar.h > 0u;
+}
+
+/* I619: the round Hide / Show Now Playing button at the top bar's right end; empty unless the layout has the three columns and the bar. */
+static sel_gui_rect np_toggle_rect(const desk* d) {
+    sel_gui_rect hm = topbar_part(d, TOPBAR_HOME);
+    if (!topbar_shown(d) || d->layout.breakpoint != SEL_UIM_BP_THREE_COLUMN) {
+        return rect_of(0, 0, 0, 0);
+    }
+    return rect_of(lpx(d, (int32_t)d->layout.width) - lpx(d, 16) - hm.w, hm.y, hm.w, hm.h);
 }
 
 static sel_gui_rect search_field_rect(const desk* d, sel_gui_rect mn) {
@@ -4602,12 +4615,14 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
         return 1;
     }
     if (in_rect(pls_play_rect(d, mn), ev->x, ev->y)) {
+        snprintf(d->np_ctx, sizeof d->np_ctx, "%s", d->pls_name); /* I619: the Now Playing panel names the playlist */
         snprintf(line, sizeof line, "PLAYLIST_PLAY %u", (unsigned)d->pls_id);
         d->repaint = 1;
         return desk_send(d, line);
     }
     for (slot = 0; d->pls_scroll + slot < d->pls_n && pls_row_visible(d, mn, slot); slot++) {
         if (in_rect(pls_row_rect(d, mn, slot), ev->x, ev->y)) {
+            snprintf(d->np_ctx, sizeof d->np_ctx, "%s", d->pls_name); /* I619 */
             desk_play_path(d, pls_key(d, d->pls_scroll + slot));
             d->row_plays++;
             return 1;
@@ -5391,7 +5406,7 @@ static const char* lib_kind_name(uint32_t kind) {
 }
 
 /* I244: the action-bound controls besides the transport row (see desk_ctl_rect). */
-enum { CTL_VIZ_N = 6, CTL_LIKE = 6, CTL_COUNT = 7 };
+enum { CTL_VIZ_N = 6, CTL_LIKE = 6, CTL_NP_ADD = 7, CTL_NP_PANEL = 8, CTL_COUNT = 9 }; /* I619: the add button and the panel toggle */
 #define TIP_CTL_BASE ((int32_t)(TRANSPORT_COUNT + DOOR_COUNT + LIB_STYLES))
 static sel_gui_rect desk_ctl_rect(const desk* d, uint32_t c); /* defined with the tooltip tracker */
 static const char* desk_ctl_action(const desk* d, uint32_t c);
@@ -5859,6 +5874,12 @@ static const char* library_dump_build(desk* d) {
                          (unsigned)d->topbar_draws, topbar_shown(d), (int)th.x, (int)th.y, (int)th.w, (int)th.h, (int)tf.x, (int)tf.y,
                          (int)tf.w, (int)tf.h, (int)tb.x, (int)tb.y, (int)tb.w, (int)tb.h, (unsigned)d->topbar_home_clicks,
                          (unsigned)d->topbar_browse_clicks);
+        }
+        {
+            sel_gui_rect ta = d->np_add, tt = np_toggle_rect(d), md = region_rect(d, "main");
+            o = dump_put(d, o, "np_panel context=[%s] add %d %d %d %d add_clicks=%u toggle %d %d %d %d toggle_clicks=%u hidden=%u detail_w=%d main_w=%d\n",
+                         d->np_ctx_shown, (int)ta.x, (int)ta.y, (int)ta.w, (int)ta.h, (unsigned)d->np_add_clicks, (int)tt.x, (int)tt.y,
+                         (int)tt.w, (int)tt.h, (unsigned)d->np_toggle_clicks, (unsigned)d->detail_hidden, (int)region_rect(d, "detail").w, (int)md.w);
         }
         o = dump_put(d, o, "showall draws=%u clicks=%u page_draws=%u opens=%u open=%u tiles=%u at %d %d %d %d\n", (unsigned)d->show_all_draws,
                      (unsigned)d->show_all_clicks, (unsigned)d->shelf_page_draws, (unsigned)d->shelf_page_opens, (unsigned)d->shelf_open,
@@ -7452,6 +7473,15 @@ static void draw_topbar(desk* d) {
     sel_gui_fill_rect(d->canvas, rect_of(br.x, br.y + (br.h - dh) / 2, dw, dh), ARGB(d->theme.token[SEL_GUI_TOKEN_DIVIDER]));
     sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_LAYOUT_GRID, rect_of(br.x + (br.w - ic) / 2, br.y + (br.h - ic) / 2, ic, ic), ic,
                       ARGB(d->theme.token[d->page == PG_LIBRARY ? SEL_GUI_TOKEN_TEXT : SEL_GUI_TOKEN_TEXT_MUTED]));
+    {
+        sel_gui_rect tg = np_toggle_rect(d);
+        if (tg.w > 0) { /* I619: Hide / Show Now Playing, pointing at the side the column moves to */
+            hover_reg(d, tg);
+            sel_gui_round_rect(d->canvas, tg, tg.h / 2, hover_fill_of(d, tg, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED])));
+            sel_gui_icon_draw(d->canvas, &d->icons, d->detail_hidden ? SEL_GUI_ICON_CHEVRON_LEFT : SEL_GUI_ICON_CHEVRON_RIGHT,
+                              rect_of(tg.x + (tg.w - ic) / 2, tg.y + (tg.h - ic) / 2, ic, ic), ic, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        }
+    }
     sel_gui_dirty_add(d->canvas, bar);
     d->topbar_draws++;
 }
@@ -7461,6 +7491,14 @@ static void draw_topbar(desk* d) {
 static int topbar_click(desk* d, int32_t x, int32_t y) {
     if (!topbar_shown(d)) {
         return 0;
+    }
+    if (np_toggle_rect(d).w > 0 && in_rect(np_toggle_rect(d), x, y)) { /* I619: hide or show the Now Playing column; the main region takes its width */
+        d->np_toggle_clicks++;
+        d->detail_hidden = d->detail_hidden ? 0u : 1u;
+        desk_relayout(d);
+        d->repaint = 1;
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        return 1;
     }
     if (in_rect(topbar_part(d, TOPBAR_HOME), x, y)) {
         d->topbar_home_clicks++;
@@ -8755,17 +8793,36 @@ static void draw_nowplaying(desk* d) {
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     uint32_t accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
     int32_t side = pn.w - 2 * sp, asz, y, rating = 0, liked = 0, ic = lpx(d, 20);
-    sel_gui_rect ar, band;
+    sel_gui_rect ar, band, hdr;
     uint32_t k, first;
+    const char* ctx;
     d->np_title = rect_of(0, 0, 0, 0);
+    d->np_add = rect_of(0, 0, 0, 0);
+    d->np_like = rect_of(0, 0, 0, 0);
+    d->np_ctx_shown[0] = '\0';
     if (dt.w <= 0 || dt.h <= 0) {
         return;
     }
     draw_panel(d, "detail");
+    /* I619: the context the song plays from heads the panel (Spotify): the playlist, else the release, else the plain heading. */
+    ctx = d->np_ctx;
+    if (ctx[0] == '\0' && st->panel != NULL) {
+        const char* q = st->panel;
+        while (*q != '\0') {
+            const char* v = q + strlen(q) + 1;
+            if (strcmp(q, "Release") == 0 && v[0] != '\0') {
+                ctx = v;
+            }
+            q = v + strlen(v) + 1;
+        }
+    }
+    hdr = rect_of(pn.x + sp, dt.y + sp, side, lpx(d, 28));
+    draw_text(d, hdr, ctx[0] != '\0' ? ctx : "Now Playing", 1, 20, text);
+    snprintf(d->np_ctx_shown, sizeof d->np_ctx_shown, "%s", ctx[0] != '\0' ? ctx : "Now Playing");
     /* The artwork spans the full content width between the two insets and stays square, so its height follows the panel
      * width (I443); the text lines below share the same insets (I404). */
-    asz = side;
-    ar = rect_of(pn.x + sp, dt.y + 2 * sp, asz, asz);
+    asz = pn.w; /* I619: the artwork is full bleed, the whole panel width, and fades into the panel colour at its bottom */
+    ar = rect_of(pn.x, hdr.y + hdr.h + sp, asz, asz);
     d->np_art = ar;
     d->np_panel = pn;
     sel_gui_genart_draw(d->canvas, ar, f->format, sel_gui_str_hash(f->title));
@@ -8788,13 +8845,40 @@ static void draw_nowplaying(desk* d) {
             }
         }
     }
+    {
+        int32_t fh = asz / 3, n = fh / lpx(d, 2) > 0 ? fh / lpx(d, 2) : 1, i; /* the fade: strips of the panel colour, opaque at the bottom */
+        uint32_t pc = ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]) & 0xFFFFFFu;
+        for (i = 0; i < n; i++) {
+            sel_gui_scrim(d->canvas, rect_of(ar.x, ar.y + ar.h - fh + i * fh / n, ar.w, (i + 1) * fh / n - i * fh / n), pc,
+                          (uint32_t)(255 * (i + 1) / n));
+        }
+    }
     y = ar.y + ar.h + sp;
-    draw_text(d, rect_of(pn.x + sp, y, side, lpx(d, 22)), f->title, 1, 16, text);
+    {
+        int32_t bd = lpx(d, 32), tw = side - bd - sp; /* I619: the round add button sits beside the big title, the title keeps the rest */
+        uint32_t lk = 0u;
+        if (st->panel != NULL) {
+            const char* q = st->panel;
+            while (*q != '\0') {
+                const char* v = q + strlen(q) + 1;
+                lk |= strcmp(q, "Liked") == 0;
+                q = v + strlen(v) + 1;
+            }
+        }
+        d->np_add = rect_of(pn.x + sp + side - bd, y, bd, bd);
+        hover_reg(d, d->np_add);
+        sel_gui_round_rect(d->canvas, d->np_add, bd / 2, hover_ink_of(d, d->np_add, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]), text));
+        sel_gui_round_rect(d->canvas, rect_of(d->np_add.x + lpx(d, 2), d->np_add.y + lpx(d, 2), bd - 2 * lpx(d, 2), bd - 2 * lpx(d, 2)), bd / 2 - lpx(d, 2),
+                           ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
+        sel_gui_icon_draw(d->canvas, &d->icons, lk ? SEL_GUI_ICON_CHECK : SEL_GUI_ICON_PLUS,
+                          rect_of(d->np_add.x + (bd - ic) / 2, d->np_add.y + (bd - ic) / 2, ic, ic), ic, lk ? accent : text);
+        draw_text(d, rect_of(pn.x + sp, y, tw, lpx(d, 28)), f->title, 1, 20, text);
+    }
     /* No artist: the artist line takes no height, so the like row follows the title (I446). */
     if (f->artist[0] != '\0') {
-        draw_text(d, rect_of(pn.x + sp, y + lpx(d, 22), side, lpx(d, 18)), f->artist, 0, 13, muted);
+        draw_text(d, rect_of(pn.x + sp, y + lpx(d, 28), side, lpx(d, 18)), f->artist, 0, 13, muted);
     }
-    d->np_title = rect_of(pn.x + sp, y, side, lpx(d, f->artist[0] != '\0' ? 40 : 22));
+    d->np_title = rect_of(pn.x + sp, y, side - lpx(d, 32) - sp, lpx(d, f->artist[0] != '\0' ? 46 : 28)); /* I619: not under the add button */
     np_title_reg(d);
     /* Like and rating: the library's rating row gives the filled marks; a click sends LIKE or RATE n like the text UI. */
     y += d->np_title.h + lpx(d, 4);
@@ -9075,10 +9159,22 @@ static sel_gui_rect desk_ctl_rect(const desk* d, uint32_t c) {
     if (c == (uint32_t)CTL_LIKE) {
         return d->np_draws > 0u ? d->np_like : rect_of(0, 0, 0, 0);
     }
+    if (c == (uint32_t)CTL_NP_ADD) {
+        return d->np_draws > 0u ? d->np_add : rect_of(0, 0, 0, 0);
+    }
+    if (c == (uint32_t)CTL_NP_PANEL) {
+        return np_toggle_rect(d);
+    }
     return c % 3u < d->viz_n ? d->viz_btn[c / 3u][c % 3u] : rect_of(0, 0, 0, 0);
 }
 
 static const char* desk_ctl_action(const desk* d, uint32_t c) {
+    if (c == (uint32_t)CTL_NP_ADD) {
+        return "np_add";
+    }
+    if (c == (uint32_t)CTL_NP_PANEL) {
+        return "np_panel";
+    }
     return c == (uint32_t)CTL_LIKE ? "like" : d->viz_id[c % 3u];
 }
 
@@ -9163,11 +9259,18 @@ static void desk_tip_tick(desk* d) {
     if (d->tip_btn > TIP_HDR_BASE) { /* I609: a Your Library header control: its full label */
         snprintf(d->tip_text, sizeof d->tip_text, "%s", side_hdr_label(d, (uint32_t)(d->tip_btn - TIP_HDR_BASE)));
     } else if (d->tip_btn > TIP_CTL_BASE) { /* I244: an action-bound control: the action's tooltip text */
-        a = desk_action_by_id(desk_ctl_action(d, (uint32_t)(d->tip_btn - TIP_CTL_BASE - 1)));
-        if (a == NULL) {
-            return;
+        uint32_t c = (uint32_t)(d->tip_btn - TIP_CTL_BASE - 1);
+        if (c == (uint32_t)CTL_NP_ADD) { /* I619: the add button reads Add to Liked Songs, or Remove when the song is liked already */
+            snprintf(d->tip_text, sizeof d->tip_text, "%s", d->np_liked ? "Remove from Liked Songs" : "Add to Liked Songs");
+        } else if (c == (uint32_t)CTL_NP_PANEL) {
+            snprintf(d->tip_text, sizeof d->tip_text, "%s", d->detail_hidden ? "Show Now Playing Panel" : "Hide Now Playing Panel");
+        } else {
+            a = desk_action_by_id(desk_ctl_action(d, c));
+            if (a == NULL) {
+                return;
+            }
+            sel_uim_action_tip_text(a, d->tip_text, sizeof d->tip_text);
         }
-        sel_uim_action_tip_text(a, d->tip_text, sizeof d->tip_text);
     } else if (d->tip_btn > (int32_t)(TRANSPORT_COUNT + DOOR_COUNT)) { /* a Library style segment */
         snprintf(d->tip_text, sizeof d->tip_text, "%s", lib_style_name[d->tip_btn - 1 - (int32_t)(TRANSPORT_COUNT + DOOR_COUNT)]);
     } else if (d->tip_btn > (int32_t)TRANSPORT_COUNT) { /* a rail door: its full label */
@@ -10386,6 +10489,11 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
             return viz_switch_click(d, vb);
         }
     }
+    if (ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u && d->np_draws > 0u && d->np_add.w > 0 && in_rect(d->np_add, ev->x, ev->y)) {
+        d->clicks++; /* I619: the add button works on every page, the Playlists page included */
+        d->np_add_clicks++;
+        return desk_send(d, "LIKE");
+    }
     if (d->queue_page) {
         return in_main ? queue_pointer(d, ev) : 0;
     }
@@ -11528,9 +11636,9 @@ static int32_t desk_scale_for(const desk* d, int32_t w, int32_t h) {
 /* The layout runs at the logical size: the canvas divided by the scale. */
 static void desk_layout_into(desk* d, sel_uim_layout* l) {
     uint32_t lh = (uint32_t)px_to_logical(d, cvh(d));
-    sel_uim_layout_compute_expand(l, (uint32_t)px_to_logical(d, d->canvas->w), lh,
-                                  desk_bitmap_text(d) ? SEL_UIM_TIER_BITMAP : SEL_UIM_TIER_DEFAULT, desk_rail_w(d), sel_uim_footer_height(lh),
-                                  d->side_wide);
+    sel_uim_layout_compute_panel(l, (uint32_t)px_to_logical(d, d->canvas->w), lh,
+                                 desk_bitmap_text(d) ? SEL_UIM_TIER_BITMAP : SEL_UIM_TIER_DEFAULT, desk_rail_w(d), sel_uim_footer_height(lh),
+                                 d->side_wide, d->detail_hidden);
 }
 
 /* I668: while the width tween runs the sidebar is between its two ends and the main region takes the rest. */
