@@ -44,6 +44,7 @@ struct Library* MUIMasterBase;
 #include "mui_aapanel_class.h"
 #include "mui_aaslider_class.h"
 #include "mui_aacycle_class.h"
+#include "mui_aafield_class.h"
 #include "mui_aatext_class.h"
 #include "map/mui_aa.h"
 #include "mui_canvas_class.h"
@@ -741,11 +742,12 @@ static void mui_list_header(char* out, size_t cap) {
 
 /* MUI-P3-1: the 3.8 Listview with its plain List (the back end mui_list_backend_pick gives without NList). */
 static Object* mui_make_string(LONG id) {
-    Object* o = MUI_NewObject((char*)MUIC_String, TH_TAGS(MUI_TH_FIELD, MUIV_Frame_String) MUIA_String_MaxLen, 159, MUIA_String_Contents, (ULONG) "", TAG_DONE);
-    if (o != NULL) {
-        DoMethod(o, MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
-    }
-    return o;
+    /* I667h (design 3.4): every string gadget is a Selecta_AAField (mui_aafield_class.c). */
+    mui_aafield_spec sp;
+    sp.tokens = g_tokens;
+    sp.maxlen = 159;
+    sp.id = id;
+    return mui_aafield_new(&sp);
 }
 
 static Object* mui_make_cycle(const char* const* entries, LONG id) {
@@ -1943,6 +1945,7 @@ static void mui_close(void* state) {
         mui_aapanel_class_free();
         mui_aaslider_class_free();
         mui_aacycle_class_free();
+        mui_aafield_class_free();
         mui_aabtn_class_free();
         mui_listview_class_free();
     }

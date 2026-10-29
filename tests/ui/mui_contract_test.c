@@ -304,6 +304,11 @@ static void test_theme(void) {
             CHECK(strstr(src, "mui_aapanel(MUI_AA_PANEL_PANEL") != NULL, "mui_ui.c builds no AAPanel panel group");
             continue;
         }
+        if (role == MUI_TH_FIELD) {
+            /* exemption (I667h, design 3.4): string gadgets are AAField objects that draw from mui_aa_field_plan; mui-field-source proves no stock string is left */
+            CHECK(strstr(src, "mui_aafield_new(") != NULL, "mui_ui.c builds no AAField string");
+            continue;
+        }
         if (role == MUI_TH_STATUS) {
             /* exemption (I667d, design 3.7): status lines are AAText objects; mui_aatext reads the role look from g_th[MUI_TH_STATUS] */
             CHECK(strstr(src, "g_th[MUI_TH_STATUS].look.frame") != NULL && strstr(src, "g_th[MUI_TH_STATUS].look.background") != NULL, "mui_aatext does not take the status frame and background from the role look");

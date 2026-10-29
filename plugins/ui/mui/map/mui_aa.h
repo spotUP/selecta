@@ -145,6 +145,22 @@ int mui_aa_cycle_valid(int v, int n);
 /* Calls of the cycle maths above: the sentinel that the class (and not a copy) runs it. */
 uint32_t mui_aa_cycle_calls(void);
 
+/* I667h (design 3.4, AAField): the string gadget's flat rounded field. Face SURFACE, 1 px outline DIVIDER (FOCUS_RING while the field
+ * is the active object), radius per tier (RADIUS 6, tier S 4), height as AAButton, inner pad 8 on every tier (more than the radius,
+ * so the inner stock String never reaches the rounded corners). Tested on the host (mui-field-plan). */
+typedef struct mui_aa_field_t {
+    int height, pad_x, pad_y, radius, outline;
+} mui_aa_field_t;
+void mui_aa_field_metrics(int font_px, mui_aa_field_t* out);
+/* Paint plan, painted in order, box-relative: op 0 the outline colour over the whole box (rounded), op 1 the face inset by the outline.
+ * Returns the op count (MUI_AA_FIELD_OPS). */
+#define MUI_AA_FIELD_OPS 2
+int mui_aa_field_plan(const uint32_t* token, const mui_aa_field_t* m, int focus, mui_aa_check_op_t* out);
+/* Field height for a content (text) height ch: the AAButton height, taller when the text needs it. */
+int mui_aa_field_height(const mui_aa_field_t* m, int ch);
+/* Calls of the field maths above: the sentinel that the class (and not a copy) runs it. */
+uint32_t mui_aa_field_calls(void);
+
 #ifdef __cplusplus
 }
 #endif

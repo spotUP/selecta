@@ -458,6 +458,55 @@ static void test_cycle_source(void) {
     free(cm);
 }
 
+/* I667h mui-field-plan: AAField maths. Face SURFACE 1E1E24, outline DIVIDER 2C2C34, FOCUS_RING 93C5FD while active, radius 6 (tier S 4),
+ * height as AAButton, pad 8, the text height widens the field, and every call counts on the sentinel the class reads. */
+static void test_field_plan(void) {
+    txt_theme th;
+    mui_aa_field_t m, s;
+    mui_aa_metrics_t b;
+    mui_aa_check_op_t ops[MUI_AA_FIELD_OPS];
+    uint32_t before = mui_aa_field_calls();
+    txt_theme_default(&th);
+    mui_aa_field_metrics(13, &m);
+    mui_aa_field_metrics(0, &s);
+    mui_aa_metrics(13, &b);
+    CHECK(m.height == b.height && m.radius == 6 && m.pad_x == 8 && m.outline == 1, "tier M metrics: h %d r %d pad %d", m.height, m.radius, m.pad_x);
+    CHECK(s.radius == 4 && s.pad_x == 8 && s.pad_x > s.radius, "tier S radius 4, pad 8 clears it");
+    CHECK(mui_aa_field_plan(th.token, &m, 0, ops) == MUI_AA_FIELD_OPS, "op count");
+    CHECK(ops[0].rgb == 0x2C2C34u && ops[0].inset == 0 && ops[0].radius == 6, "outline DIVIDER 2C2C34: %06X", (unsigned)ops[0].rgb);
+    CHECK(ops[1].rgb == 0x1E1E24u && ops[1].inset == 1 && ops[1].radius == 5, "face SURFACE 1E1E24 inside the outline: %06X", (unsigned)ops[1].rgb);
+    mui_aa_field_plan(th.token, &m, 1, ops);
+    CHECK(ops[0].rgb == 0x93C5FDu && ops[1].rgb == 0x1E1E24u, "focus outline FOCUS_RING 93C5FD, face unchanged: %06X", (unsigned)ops[0].rgb);
+    CHECK(mui_aa_field_height(&m, 10) == m.height && mui_aa_field_height(&m, 40) == 40 + 2 * (m.pad_y + m.outline), "height grows only when the text needs it");
+    CHECK(mui_aa_field_calls() == before + 6, "sentinel counts the maths calls");
+}
+
+/* I667h mui-field-source: the MUI UI builds every string gadget through AAField, counted from the source: no stock MUIC_String left in
+ * mui_ui.c, the helper definition plus the two tool-row sites plus the settings site = 4 "mui_make_string(" spellings, one AAField
+ * constructor call, the class freed, drawn through the shared helpers and in the build. */
+static void test_field_source(void) {
+    char* ui = slurp(UI_SOURCE);
+    char* cls = slurp(AAFIELD_SOURCE);
+    char* cm = slurp(MUI_CMAKE);
+    CHECK(ui != NULL && cls != NULL && cm != NULL, "sources readable");
+    if (ui == NULL || cls == NULL || cm == NULL) {
+        return;
+    }
+    CHECK(count_of(ui, "MUIC_String") == 0, "stock string left in mui_ui.c: %d", count_of(ui, "MUIC_String"));
+    CHECK(count_of(ui, "TH_TAGS(MUI_TH_FIELD") == 0, "stock string frame left in mui_ui.c");
+    CHECK(count_of(ui, "mui_make_string(") == 4, "string constructor sites: %d (definition + 3)", count_of(ui, "mui_make_string("));
+    CHECK(count_of(ui, "mui_aafield_new(") == 1, "one AAField constructor call: %d", count_of(ui, "mui_aafield_new("));
+    CHECK(count_of(ui, "mui_aafield_class_free(") == 1, "class freed in mui_close");
+    CHECK(strstr(cls, "mui_aa_field_plan(") != NULL && strstr(cls, "mui_aa_field_height(") != NULL && strstr(cls, "aa_round_fill(") != NULL,
+          "class does not draw through the shared field helpers");
+    CHECK(strstr(cls, "MUIV_Frame_None") != NULL && strstr(cls, "MUIV_Frame_String") == NULL, "inner string must have no stock frame");
+    CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "0x1") == NULL, "class holds no pen code or colour literal of its own");
+    CHECK(strstr(cm, "mui_aafield_class.c") != NULL, "class not in the build");
+    free(ui);
+    free(cls);
+    free(cm);
+}
+
 int main(int argc, char** argv) {
     const char* t = argc > 1 ? argv[1] : "";
     if (!strcmp(t, "round")) {
@@ -492,6 +541,10 @@ int main(int argc, char** argv) {
         test_cycle_step();
     } else if (!strcmp(t, "cycle-source")) {
         test_cycle_source();
+    } else if (!strcmp(t, "field-plan")) {
+        test_field_plan();
+    } else if (!strcmp(t, "field-source")) {
+        test_field_source();
     } else {
         printf("usage: round|ramp|state|tokens\n");
         return 2;

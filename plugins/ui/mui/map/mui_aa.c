@@ -415,3 +415,33 @@ int mui_aa_cycle_valid(int v, int n) {
 int mui_aa_text_maxw(int fixed, int defw) {
     return fixed ? defw : MUI_AA_TEXT_UNBOUNDED;
 }
+
+static uint32_t g_field_calls;
+
+uint32_t mui_aa_field_calls(void) {
+    return g_field_calls;
+}
+
+void mui_aa_field_metrics(int font_px, mui_aa_field_t* out) {
+    mui_aa_metrics_t b;
+    g_field_calls++;
+    mui_aa_metrics(font_px, &b);
+    out->height = b.height;
+    out->radius = b.radius;
+    out->pad_x = 8; /* same on every tier: the group's inner offsets are fixed at construction, before the screen tier is known */
+    out->pad_y = 2;
+    out->outline = 1;
+}
+
+int mui_aa_field_plan(const uint32_t* token, const mui_aa_field_t* m, int focus, mui_aa_check_op_t* out) {
+    g_field_calls++;
+    out[0].inset = 0, out[0].radius = m->radius, out[0].rgb = token[focus ? SEL_GUI_TOKEN_FOCUS_RING : SEL_GUI_TOKEN_DIVIDER];
+    out[1].inset = m->outline, out[1].radius = m->radius > m->outline ? m->radius - m->outline : 0, out[1].rgb = token[SEL_GUI_TOKEN_SURFACE];
+    return MUI_AA_FIELD_OPS;
+}
+
+int mui_aa_field_height(const mui_aa_field_t* m, int ch) {
+    int need = ch + 2 * (m->pad_y + m->outline);
+    g_field_calls++;
+    return need > m->height ? need : m->height;
+}
