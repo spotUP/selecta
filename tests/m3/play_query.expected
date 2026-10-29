@@ -65,3 +65,5 @@ prefetch_fetches=0
 smart_requests=0
 smart_fetches=0
 smart_skipped=0
+zip_members=0
+zip_requests=0

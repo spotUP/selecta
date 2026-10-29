@@ -1,0 +1,7 @@
+# I695d: sndh tunes the site serves no loose file for come out of the year zip.
+# 1. Dubmood/DMA/Too_Drunk_To_Fuck.sndh: loose URL 404s, the deflated zip member is fetched and inflated
+# 2. Dubmood/DMA/Stored_Tune.sndh: same, stored member
+# 3. the first again: a cache hit, no request
+LIBRARY_FETCH sndh:Dubmood/DMA/Too_Drunk_To_Fuck.sndh
+LIBRARY_FETCH sndh:Dubmood/DMA/Stored_Tune.sndh
+LIBRARY_FETCH sndh:Dubmood/DMA/Too_Drunk_To_Fuck.sndh

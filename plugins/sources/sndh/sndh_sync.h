@@ -13,6 +13,7 @@
 #include <stdio.h>
 
 #define SEL_SNDH_CD "sndh.cd"                /* the central directory bytes, as downloaded */
+#define SEL_SNDH_ZIPURL "sndh.zipurl"        /* the URL of the zip the directory came from (read by the cache, I695d) */
 #define SEL_SNDH_FOLDER "sndh_lf/"           /* the folder of long file names inside the zip */
 #define SEL_SNDH_ROOT "sndh/sndh_lf/"        /* where the tunes live on the site: <site>/sndh/sndh_lf/<path> */
 #define SEL_SNDH_PATH_MAX 512u

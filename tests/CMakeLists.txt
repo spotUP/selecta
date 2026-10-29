@@ -1938,6 +1938,15 @@ if(NOT SEL_AMIGA)
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "sndh_net_ok")
 endif()
 
+# Row I695d: a sndh tune with no loose file on the site comes out of the year zip (Range requests + inflate).
+if(NOT SEL_AMIGA)
+  add_test(NAME source-sndh-zip-member
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3" -P "${SEL_NET_DIR}/sndh_zip_member.cmake")
+  set_tests_properties(source-sndh-zip-member PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "sndh_zip_member_ok")
+endif()
+
 # Row I415: LIBRARY_SYNC zxart <url> over the zxart.ee fixture.
 if(NOT SEL_AMIGA)
   add_test(NAME source-zxart-net

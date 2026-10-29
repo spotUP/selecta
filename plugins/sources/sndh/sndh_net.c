@@ -81,6 +81,15 @@ int sel_sndh_net_sync(const sel_host* host, const char* base, sel_sndh_sync_stat
         goto done;
     }
     net->list_bytes = (uint32_t)got;
+    /* The zip's URL stays beside the directory: the cache takes a tune the site has no loose file for from the zip. */
+    if (snprintf(tail, sizeof tail, "%s/%s", dir, SEL_SNDH_ZIPURL) < (int)sizeof tail) {
+        FILE* f = fopen(tail, "wb");
+
+        if (f != NULL) {
+            fputs(zip, f);
+            fclose(f);
+        }
+    }
     ok = 1;
 done:
     host->mem_free(host, buf);
