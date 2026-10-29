@@ -209,6 +209,11 @@ typedef struct desk {
     uint32_t pl_sel_kind, pl_sel_id; /* the selected row: SEL_ROW_FOLDER or SEL_ROW_PLAYLIST and its database id (0 = none) */
     uint32_t col_kind;       /* I678f: 0 = a playlist, else SEL_LIB_ITEM_ALBUM / ARTIST / COMPOSER: the kind the collection page shows (pls_id is COL_KIND_ID then) */
     char col_sub[96];        /* the album's artist (the side item's sub) */
+    uint32_t col_year;       /* the album's year (0 unknown) */
+    uint32_t* col_av;        /* the artist / composer avatar: generated art of the name, rendered once and drawn through a circle mask (D6) */
+    int32_t col_av_w;
+    uint32_t col_av_hash;
+    uint32_t col_open_serial; /* serial of the published collection page when this page was opened: only a newer page is this page's */
     char col_key[256];       /* the item key of a kind page (album id, artist name, composer canon) */
     uint32_t* col_plays;     /* plays of each loaded song of a kind page */
     uint32_t col_popular;    /* artist page: Popular rows shown (5, or 10 after Show more) */
@@ -4122,6 +4127,9 @@ static void col_cover_refresh(desk* d);
 enum { COL_MAX_SONGS = 8192, COL_SHELF_MAX = 24 };
 
 static void pls_free(desk* d) {
+    free(d->col_av);
+    d->col_av = NULL;
+    d->col_av_w = 0;
     free(d->col_plays);
     d->col_plays = NULL;
     free(d->pls_buf);
@@ -4151,13 +4159,48 @@ static void pls_reload(desk* d) {
     if (buf == NULL) {
         return;
     }
-    if (d->col_kind != 0u) { /* I678f: an album, artist or composer: the songs and the shelves come from the collection lists */
+    if (d->col_kind != 0u) { /* I678f: an album, artist or composer: COLLECTION_OPEN made the page, the UI only reads state.collection */
+        const sel_collection_page* pg = sel_engine_state(d->engine)->collection;
         uint32_t sh;
-        d->col_plays = (uint32_t*)calloc(COL_MAX_SONGS, sizeof *d->col_plays);
-        n = sel_engine_collection_songs(d->engine, d->col_kind, d->col_key, buf, CAP, d->col_plays, COL_MAX_SONGS);
-        for (sh = 0; sh < 4u; sh++) {
-            d->col_shelf_n[sh] = sel_engine_collection_shelf(d->engine, d->col_kind, d->col_key, sh + 1u, d->col_shelf[sh], COL_SHELF_MAX,
-                                                            &d->col_shelf_total[sh]);
+        n = 0u;
+        buf[0] = '\0';
+        if (pg == NULL || pg->kind != d->col_kind || strcmp(pg->key, d->col_key) != 0 || pg->serial == d->col_open_serial) {
+            d->pls_stale = 1u; /* the engine has not built the page yet: ask again next frame */
+        } else {
+            const char* r;
+            size_t len = 0;
+            for (r = pg->rows, i = 0; i < pg->songs && *r != '\0'; i++) {
+                len += strlen(r) + 1u;
+                r += strlen(r) + 1u;
+                r += strlen(r) + 1u;
+            }
+            free(buf);
+            buf = (char*)malloc(len + 2u);
+            d->col_plays = (uint32_t*)calloc(pg->songs + 1u, sizeof *d->col_plays);
+            if (buf == NULL || d->col_plays == NULL) {
+                free(buf);
+                free(d->col_plays);
+                d->col_plays = NULL;
+                return;
+            }
+            for (r = pg->rows, k = buf, len = 0, i = 0; i < pg->songs && *r != '\0'; i++) {
+                size_t kl = strlen(r) + 1u;
+                memcpy(buf + len, r, kl);
+                len += kl;
+                r += kl;
+                d->col_plays[i] = (uint32_t)strtoul(r, NULL, 10);
+                r += strlen(r) + 1u;
+                n++;
+            }
+            buf[len] = '\0';
+            snprintf(d->pls_name, sizeof d->pls_name, "%s", pg->title);
+            snprintf(d->col_sub, sizeof d->col_sub, "%s", pg->sub);
+            d->col_year = pg->year;
+            for (sh = 0; sh < 4u; sh++) {
+                d->col_shelf_n[sh] = pg->shelf_n[sh];
+                d->col_shelf_total[sh] = pg->shelf_total[sh];
+                memcpy(d->col_shelf[sh], pg->shelf[sh], sizeof d->col_shelf[sh]);
+            }
         }
     } else {
         n = sel_engine_library_playlist_keys(d->engine, d->pls_id, buf, CAP);
@@ -4439,6 +4482,7 @@ static sel_gui_rect col_more_rect(desk* d, sel_gui_rect mn) { /* the Show more r
     return rect_of(r.x, r.y + ((int32_t)col_song_rows(d) - (int32_t)d->pls_scroll) * lpx(d, SONG_ROW_H), lpx(d, 160), lpx(d, SONG_ROW_H));
 }
 
+static void desk_quoted_request(char* line, size_t cap, const char* head, const char* arg);
 static void col_kind_open(desk* d, uint32_t kind, const char* key, const char* name, const char* sub) {
     pls_open(d, COL_KIND_ID, name);
     d->col_kind = kind;
@@ -4446,6 +4490,18 @@ static void col_kind_open(desk* d, uint32_t kind, const char* key, const char* n
     memset(d->col_shelf_n, 0, sizeof d->col_shelf_n);
     snprintf(d->col_key, sizeof d->col_key, "%s", key != NULL ? key : "");
     snprintf(d->col_sub, sizeof d->col_sub, "%s", sub != NULL ? sub : "");
+    d->col_year = 0u;
+    {
+        const sel_collection_page* pg = sel_engine_state(d->engine)->collection;
+        d->col_open_serial = pg != NULL ? pg->serial : 0u;
+    }
+    { /* every open of an album, artist or composer page is one COLLECTION_OPEN: it feeds Recents and makes the page (I678f) */
+        char open[160];
+        char head[32];
+        snprintf(head, sizeof head, "COLLECTION_OPEN %u", (unsigned)kind);
+        desk_quoted_request(open, sizeof open, head, d->col_key);
+        desk_send(d, open);
+    }
     pls_reload(d);
     d->pl_sel_kind = 0u;
     d->pl_sel_id = 0u;
@@ -4523,17 +4579,39 @@ static int col_kind_click(desk* d, sel_gui_rect mn, int32_t x, int32_t y) {
     return 0;
 }
 
-/* Play on a kind page: the first song plays and the rest queue behind it. */
-static int col_kind_play(desk* d) {
-    uint32_t i;
-    if (d->pls_n == 0u) {
+/* Play on a kind page: the first song plays and every other song of the collection queues behind it (queue_count = N). Shuffle
+ * plays the same songs in a random order (Fisher-Yates over the indexes). */
+static int col_kind_play(desk* d, int shuffle) {
+    uint32_t i, n = d->pls_n, *ord, seed;
+    if (n == 0u) {
         return 1;
     }
-    snprintf(d->np_ctx, sizeof d->np_ctx, "%s", d->pls_name);
-    desk_play_path(d, pls_key(d, 0u));
-    for (i = 1; i < d->pls_n && i < 200u; i++) {
-        desk_send_path(d, "QUEUE_ADD", pls_key(d, i));
+    ord = (uint32_t*)malloc(n * sizeof *ord);
+    if (ord == NULL) {
+        return 1;
     }
+    for (i = 0; i < n; i++) {
+        ord[i] = i;
+    }
+    if (shuffle) {
+        seed = (uint32_t)time(NULL) ^ (n * 2654435761u) ^ 0x9E3779B9u;
+        for (i = n - 1u; i > 0u; i--) {
+            uint32_t j, t;
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            j = seed % (i + 1u);
+            t = ord[i];
+            ord[i] = ord[j];
+            ord[j] = t;
+        }
+    }
+    snprintf(d->np_ctx, sizeof d->np_ctx, "%s", d->pls_name);
+    desk_play_path(d, pls_key(d, ord[0]));
+    for (i = 1; i < n; i++) {
+        desk_send_path(d, "QUEUE_ADD", pls_key(d, ord[i]));
+    }
+    free(ord);
     d->repaint = 1;
     return 1;
 }
@@ -4705,6 +4783,28 @@ static void add_mode_back(desk* d) {
     pls_open(d, id, name);
 }
 
+/* D6: the artist / composer avatar is the generated art of the name inside a circle. The art is drawn once into an offscreen
+ * tile (sel_gui_genart_draw) and blitted through the rounded-rect mask with radius = half the edge. */
+static void col_round_art(desk* d, sel_gui_rect r) {
+    uint32_t hash = sel_gui_str_hash(d->pls_name);
+    if (r.w <= 0 || r.h != r.w) {
+        return;
+    }
+    if (d->col_av == NULL || d->col_av_w != r.w || d->col_av_hash != hash) {
+        sel_gui_canvas tile;
+        free(d->col_av);
+        d->col_av = (uint32_t*)calloc((size_t)r.w * (size_t)r.w, sizeof *d->col_av);
+        if (d->col_av == NULL) {
+            return;
+        }
+        sel_gui_canvas_init(&tile, SEL_GUI_RGBA32, r.w, r.w, d->col_av);
+        sel_gui_genart_draw(&tile, rect_of(0, 0, r.w, r.w), "album", hash);
+        d->col_av_w = r.w;
+        d->col_av_hash = hash;
+    }
+    sel_gui_blit_image_round(d->canvas, r, d->col_av, r.w, r.w, r.w, r.w / 2);
+}
+
 static void draw_playlist_page(desk* d, sel_gui_rect mn) {
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     uint32_t surf = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
@@ -4718,7 +4818,7 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
     sel_gui_gradient(d->canvas, rect_of(mn.x, mn.y, mn.w, cv.y + cv.h + lpx(d, PLS_GAP) - mn.y), 1, d->col_top, ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
     draw_button(d, pls_back_rect(d, mn), surf, d->col_kind != 0u ? "Back" : "Back to Playlists", 13, text);
     if (d->col_kind == (uint32_t)SEL_LIB_ITEM_ARTIST || d->col_kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) { /* D6: a round avatar in the cover colour */
-        sel_gui_round_rect(d->canvas, cv, cv.w / 2, d->col_color);
+        col_round_art(d, cv);
     } else {
         sel_gui_genart_draw(d->canvas, cv, "album", sel_gui_str_hash(d->pls_name));
     }
@@ -4735,13 +4835,15 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
         snprintf(count, sizeof count, "%u %s, %u %s", (unsigned)d->col_shelf_total[0], d->col_shelf_total[0] == 1u ? "album" : "albums", (unsigned)d->pls_n,
                  d->pls_n == 1u ? "song" : "songs");
     } else if (d->col_kind == (uint32_t)SEL_LIB_ITEM_ALBUM && d->col_sub[0] != '\0') {
-        snprintf(count, sizeof count, "%s, %u %s", d->col_sub, (unsigned)d->pls_n, d->pls_n == 1u ? "song" : "songs");
+        if (d->col_year != 0u) {
+            snprintf(count, sizeof count, "%s, %u, %u %s", d->col_sub, (unsigned)d->col_year, (unsigned)d->pls_n, d->pls_n == 1u ? "song" : "songs");
+        } else {
+            snprintf(count, sizeof count, "%s, %u %s", d->col_sub, (unsigned)d->pls_n, d->pls_n == 1u ? "song" : "songs");
+        }
     }
     draw_text(d, rect_of(tx, cv.y + lpx(d, 24) + lpx(d, page_title_h(d)), pb.w * 4, lpx(d, 20)), count, 0, 13, muted);
     draw_button(d, pb, accent, "Play", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
-    if (d->col_kind == 0u) {
-        draw_button(d, pls_more_rect(d, mn), surf, "More", 13, text);
-    }
+    draw_button(d, pls_more_rect(d, mn), surf, d->col_kind == 0u ? "More" : "Shuffle", 13, text);
     if (d->pls_n > 0u) { /* I678e: the sort button and the search field */
         sel_gui_rect fr = col_find_rect(d, mn);
         draw_button(d, col_sort_rect(d, mn), surf, d->col_sort == 1u ? "Sort: Title" : "Sort: Custom Order", 13, text);
@@ -4962,8 +5064,11 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
         d->repaint = 1;
         return 1;
     }
+    if (d->col_kind != 0u && in_rect(pls_more_rect(d, mn), ev->x, ev->y)) { /* the Shuffle button */
+        return col_kind_play(d, 1);
+    }
     if (d->col_kind != 0u && in_rect(pls_play_rect(d, mn), ev->x, ev->y)) {
-        return col_kind_play(d);
+        return col_kind_play(d, 0);
     }
     if (in_rect(pls_play_rect(d, mn), ev->x, ev->y)) {
         snprintf(d->np_ctx, sizeof d->np_ctx, "%s", d->pls_name); /* I619: the Now Playing panel names the playlist */
@@ -6069,11 +6174,12 @@ static const char* library_dump_build(desk* d) {
                          (unsigned)d->col_sort, d->col_q, (unsigned)d->pls_vn, (unsigned)d->pls_n, d->col_search, (int)cs.x, (int)cs.y, (int)cs.w, (int)cs.h,
                          (int)cf.x, (int)cf.y, (int)cf.w, (int)cf.h);
             if (d->col_kind != 0u) { /* I678f: the kind page's shelves, the Popular limit and the geometry a script clicks */
-                sel_gui_rect mr = col_more_rect(d, pmn), c0 = col_card_rect(d, pmn, 0u, 0u), c2 = col_card_rect(d, pmn, 2u, 0u);
-                o = dump_put(d, o, "kindpage label=%s key=[%s] sub=[%s] queries=%u popular=%u rows=%u shelf albums=%u appears=%u more=%u spellings=%u showmore=%d,%d,%d,%d albumcard=%d,%d,%d,%d morecard=%d,%d,%d,%d\n",
+                sel_gui_rect mr = col_more_rect(d, pmn), c0 = col_card_rect(d, pmn, 0u, 0u), c2 = col_card_rect(d, pmn, 2u, 0u), sh = pls_more_rect(d, pmn);
+                o = dump_put(d, o, "kindpage label=%s key=[%s] sub=[%s] queries=%u popular=%u rows=%u shelf albums=%u appears=%u more=%u spellings=%u showmore=%d,%d,%d,%d albumcard=%d,%d,%d,%d morecard=%d,%d,%d,%d name=[%s] year=%u shuffle=%d,%d,%d,%d\n",
                              col_kind_label(d), d->col_key, d->col_sub, (unsigned)cst.collection_queries, (unsigned)d->col_popular, (unsigned)col_song_rows(d),
                              (unsigned)d->col_shelf_total[0], (unsigned)d->col_shelf_total[1], (unsigned)d->col_shelf_total[2], (unsigned)d->col_shelf_total[3],
-                             (int)mr.x, (int)mr.y, (int)mr.w, (int)mr.h, (int)c0.x, (int)c0.y, (int)c0.w, (int)c0.h, (int)c2.x, (int)c2.y, (int)c2.w, (int)c2.h);
+                             (int)mr.x, (int)mr.y, (int)mr.w, (int)mr.h, (int)c0.x, (int)c0.y, (int)c0.w, (int)c0.h, (int)c2.x, (int)c2.y, (int)c2.w, (int)c2.h,
+                             d->pls_name, (unsigned)d->col_year, (int)sh.x, (int)sh.y, (int)sh.w, (int)sh.h);
             }
         }
         if (d->pls_n == 0u) {
@@ -10997,7 +11103,7 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         door = side_lib_at(d, ev->x, ev->y); /* I608: a library row opens that item in the main region */
         if (door >= 0) {
             d->side_opens++;
-            if (!d->side_items[door].pinned) { /* I678c: opening an item page feeds Recents; the engine stores it so every UI shares the order */
+            if (!d->side_items[door].pinned && !(d->side_items[door].kind >= (uint32_t)SEL_LIB_ITEM_ALBUM && d->side_items[door].kind <= (uint32_t)SEL_LIB_ITEM_COMPOSER)) { /* I678c: opening an item page feeds Recents; the engine stores it so every UI shares the order */
                 char touch[160];
                 char head[32];
                 snprintf(head, sizeof head, "COLLECTION_OPEN %u", (unsigned)d->side_items[door].kind); /* I678e: records Recents as LIBRARY_TOUCH did */

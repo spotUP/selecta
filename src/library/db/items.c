@@ -252,6 +252,7 @@ static const char* collection_sql(uint32_t kind, uint32_t shelf) {
                    ? ALBUM_COLS " WHERE a.id<>CAST(?1 AS INTEGER) AND IFNULL(a.artist,'')<>''"
                                 " AND a.artist=(SELECT artist FROM albums WHERE id=CAST(?1 AS INTEGER))" NEWEST
                    : NULL;
+    case SEL_COLL_HEAD: return kind == SEL_LIB_ITEM_ALBUM ? ALBUM_COLS " WHERE a.id=CAST(?1 AS INTEGER)" : NULL;
     case SEL_COLL_SPELLINGS:
         return kind == SEL_LIB_ITEM_COMPOSER ? "SELECT display,display,'',0,n FROM composer_spellings WHERE canon=?1 ORDER BY n DESC, display"
                                              : NULL;

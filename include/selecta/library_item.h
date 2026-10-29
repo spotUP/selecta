@@ -26,7 +26,8 @@ enum {
     SEL_COLL_ALBUMS,    /* artist page "Albums": album id, name, artist, year, songs (newest first) */
     SEL_COLL_APPEARS,   /* artist page "Appears On": albums of other artists that hold a song by the artist */
     SEL_COLL_MORE,      /* album page "More by": the other albums of the album's artist */
-    SEL_COLL_SPELLINGS  /* composer page "Spellings": display, "", "", 0, songs written under that spelling */
+    SEL_COLL_SPELLINGS, /* composer page "Spellings": display, "", "", 0, songs written under that spelling */
+    SEL_COLL_HEAD       /* album page header: the album's own row (id, name, artist, year, songs) */
 };
 
 /* One row of the list. `key` is the stable id a click routes on (playlist id, album id, artist name, composer canon, source id,

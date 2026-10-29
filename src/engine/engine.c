@@ -457,6 +457,8 @@ struct sel_engine {
     char collection_key[128];                 /* and its library key */
     uint32_t library_items_calls;             /* sel_engine_library_items calls that reached the library (I678a) */
     uint32_t collection_queries;              /* collection page lists that reached the library (I678f) */
+    sel_collection_page coll;                 /* the page COLLECTION_OPEN built (I678f), published as state.collection */
+    char* coll_rows;                          /* its song block, heap */
     uint32_t evt_dropped;                     /* events emit() could not queue because evt_q was full (I546) */
     sel_tag src_tags[16][10];                  /* one SOURCES row per registered source (registry holds 16) */
     char st_key[8][SEL_DEFERRED_PATH_MAX];
@@ -5093,20 +5095,113 @@ static void cmd_LIBRARY_TOUCH(sel_engine* e, const sel_message* m) {
     else e->lib_touch_calls++;
 }
 
-/* I678e: a collection page (playlist today; album, artist, composer, source in I678f) was opened. The engine records which one and feeds
- * Recents exactly as LIBRARY_TOUCH does, so every UI shares the order and the page open is one command. */
+/* ---- I678f: the page COLLECTION_OPEN builds for an album, artist or composer (design doc section 7/8) ---- */
+typedef struct coll_build {
+    composer_fill rows;
+    uint32_t n;
+} coll_build;
+
+static void coll_song_row(void* ctx, const char* const* f) { /* key, name, artist, album, plays */
+    coll_build* b = (coll_build*)ctx;
+    const char* parts[2];
+    parts[0] = f[0];
+    parts[1] = f[4];
+    composer_put(&b->rows, parts, 2);
+    b->n++;
+}
+
+static void coll_composer_row(void* ctx, const char* key, const char* name, const char* disp) {
+    coll_build* b = (coll_build*)ctx;
+    const char* parts[2];
+    (void)name;
+    (void)disp;
+    parts[0] = key;
+    parts[1] = "0";
+    composer_put(&b->rows, parts, 2);
+    b->n++;
+}
+
+typedef struct coll_shelf_sink {
+    sel_engine_collection_row* out;
+    uint32_t n, total;
+} coll_shelf_sink;
+
+static void coll_shelf_row(void* ctx, const char* const* f) { /* id, name, artist, year, songs */
+    coll_shelf_sink* k = (coll_shelf_sink*)ctx;
+    sel_engine_collection_row* r;
+    k->total++;
+    if (k->n >= SEL_COLLECTION_SHELF_MAX) return;
+    r = &k->out[k->n++];
+    r->id = (uint32_t)strtoul(f[0], NULL, 10);
+    snprintf(r->name, sizeof r->name, "%s", f[1]);
+    snprintf(r->artist, sizeof r->artist, "%s", f[2]);
+    r->year = (uint32_t)strtoul(f[3], NULL, 10);
+    r->songs = (uint32_t)strtoul(f[4], NULL, 10);
+}
+
+static void coll_build_page(sel_engine* e, uint32_t kind, const char* key) {
+    sel_collection_page* pg = &e->coll;
+    coll_build b;
+    uint32_t sh;
+    uint32_t serial = pg->serial + 1u;
+    sel_engine_collection_row head;
+    coll_shelf_sink hk;
+
+    memset(&b, 0, sizeof b);
+    b.rows.host = e->host;
+    memset(pg, 0, sizeof *pg);
+    pg->serial = serial;
+    pg->kind = kind;
+    snprintf(pg->key, sizeof pg->key, "%s", key);
+    for (sh = 0; sh < (uint32_t)SEL_COLLECTION_SHELVES; sh++) {
+        coll_shelf_sink k;
+        memset(&k, 0, sizeof k);
+        k.out = pg->shelf[sh];
+        if (sel_library_collection(e->lib, kind, key, sh + 1u, coll_shelf_row, &k) >= 0) e->collection_queries++;
+        pg->shelf_n[sh] = k.n;
+        pg->shelf_total[sh] = k.total;
+    }
+    memset(&head, 0, sizeof head);
+    hk.out = &head;
+    hk.n = hk.total = 0u;
+    if (kind == (uint32_t)SEL_LIB_ITEM_ALBUM) {
+        if (sel_library_collection(e->lib, kind, key, SEL_COLL_HEAD, coll_shelf_row, &hk) >= 0) e->collection_queries++;
+        snprintf(pg->title, sizeof pg->title, "%s", head.name);
+        snprintf(pg->sub, sizeof pg->sub, "%s", head.artist);
+        pg->year = head.year;
+    } else if (kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) { /* the most used spelling is the display name */
+        snprintf(pg->title, sizeof pg->title, "%s", pg->shelf_n[3] > 0u ? pg->shelf[3][0].name : key);
+    } else {
+        snprintf(pg->title, sizeof pg->title, "%s", key);
+    }
+    if (kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) {
+        if (sel_library_composer_page(e->lib, key, coll_composer_row, &b) >= 0) e->collection_queries++;
+    } else if (sel_library_collection(e->lib, kind, key, SEL_COLL_SONGS, coll_song_row, &b) >= 0) {
+        e->collection_queries++;
+    }
+    composer_release(e->host, &e->coll_rows);
+    e->coll_rows = composer_take(&b.rows);
+    pg->rows = e->coll_rows;
+    pg->songs = b.n;
+}
+
+/* I678e: a collection page was opened. The engine records which one and feeds Recents exactly as LIBRARY_TOUCH does, so every UI shares the
+ * order and the page open is one command. I678f: for an album, artist or composer it also builds the page (songs, header, shelves) and
+ * publishes it as state.collection; the UI only reads that. */
 static void cmd_COLLECTION_OPEN(sel_engine* e, const sel_message* m) {
     int rc;
+    uint32_t kind = (uint32_t)m->args[0].v.u;
     if (!folder_ready(e, "COLLECTION_OPEN")) return;
-    rc = sel_library_touch(e->lib, (uint32_t)m->args[0].v.u, m->args[1].v.s, (int64_t)time(NULL));
+    rc = sel_library_touch(e->lib, kind, m->args[1].v.s, (int64_t)time(NULL));
     if (rc != SEL_FOLDER_OK) {
         folder_report(e, rc, "COLLECTION_OPEN");
         return;
     }
     e->lib_touch_calls++;
     e->collection_opens++;
-    e->collection_kind = (uint32_t)m->args[0].v.u;
+    e->collection_kind = kind;
     snprintf(e->collection_key, sizeof e->collection_key, "%s", m->args[1].v.s);
+    if (kind >= (uint32_t)SEL_LIB_ITEM_ALBUM && kind <= (uint32_t)SEL_LIB_ITEM_COMPOSER) coll_build_page(e, kind, e->collection_key);
 }
 
 static void cmd_PLAYLIST_DEL(sel_engine* e, const sel_message* m) {
@@ -5596,77 +5691,6 @@ uint32_t sel_engine_library_items(sel_engine* e, uint32_t kind_mask, uint32_t of
 }
 
 /* ---- I678f: the lists of the album, artist and composer pages (design doc section 8) ---- */
-typedef struct coll_songs_sink {
-    char* out;
-    uint32_t cap, used, n;
-    uint32_t* plays;
-    uint32_t max_plays;
-} coll_songs_sink;
-
-static void coll_song_row(void* ctx, const char* const* f) {
-    coll_songs_sink* k = ctx;
-    size_t len = strlen(f[0]) + 1u;
-
-    if (k->used + len + 1u > k->cap) return; /* the page shows what fits; the closing NUL stays */
-    memcpy(k->out + k->used, f[0], len);
-    k->used += (uint32_t)len;
-    if (k->plays != NULL && k->n < k->max_plays) k->plays[k->n] = (uint32_t)strtoul(f[4], NULL, 10);
-    k->n++;
-}
-
-uint32_t sel_engine_collection_songs(sel_engine* e, uint32_t kind, const char* key, char* out, uint32_t cap, uint32_t* plays,
-                                     uint32_t max_plays) {
-    coll_songs_sink k;
-
-    if (out == NULL || cap < 2u) return 0u;
-    out[0] = '\0';
-    out[1] = '\0';
-    if (e->lib == NULL || key == NULL) return 0u;
-    memset(&k, 0, sizeof k);
-    k.out = out;
-    k.cap = cap;
-    k.plays = plays;
-    k.max_plays = max_plays;
-    if (sel_library_collection(e->lib, kind, key, SEL_COLL_SONGS, coll_song_row, &k) < 0) return 0u;
-    out[k.used] = '\0';
-    e->collection_queries++;
-    return k.n;
-}
-
-typedef struct coll_shelf_sink {
-    sel_engine_collection_row* out;
-    uint32_t max, n, total;
-} coll_shelf_sink;
-
-static void coll_shelf_row(void* ctx, const char* const* f) {
-    coll_shelf_sink* k = ctx;
-    sel_engine_collection_row* r;
-
-    k->total++;
-    if (k->n >= k->max) return;
-    r = &k->out[k->n++];
-    r->id = (uint32_t)strtoul(f[0], NULL, 10);
-    snprintf(r->name, sizeof r->name, "%s", f[1]);
-    snprintf(r->artist, sizeof r->artist, "%s", f[2]);
-    r->year = (uint32_t)strtoul(f[3], NULL, 10);
-    r->songs = (uint32_t)strtoul(f[4], NULL, 10);
-}
-
-uint32_t sel_engine_collection_shelf(sel_engine* e, uint32_t kind, const char* key, uint32_t shelf, sel_engine_collection_row* out,
-                                     uint32_t max, uint32_t* total) {
-    coll_shelf_sink k;
-
-    if (total != NULL) *total = 0u;
-    if (e->lib == NULL || key == NULL || out == NULL) return 0u;
-    memset(&k, 0, sizeof k);
-    k.out = out;
-    k.max = max;
-    if (sel_library_collection(e->lib, kind, key, shelf, coll_shelf_row, &k) < 0) return 0u;
-    e->collection_queries++;
-    if (total != NULL) *total = k.total;
-    return k.n;
-}
-
 uint32_t sel_engine_library_playlist_keys(sel_engine* e, uint32_t id, char* out, uint32_t cap) {
     uint32_t n = 0;
     if (e->lib == NULL || sel_library_playlist_keys(e->lib, id, out, cap, &n) != SEL_FOLDER_OK) return 0u;
@@ -6509,6 +6533,7 @@ void sel_engine_destroy(sel_engine* e) {
         sel_history_free(&e->history, e->host);
         composer_release(e->host, &e->composers);
         composer_release(e->host, &e->composer_page);
+        composer_release(e->host, &e->coll_rows);
         composer_release(e->host, &e->formats);
         if (e->order) {
             e->host->mem_free(e->host, e->order);
@@ -6666,6 +6691,7 @@ static void refresh_snapshot(sel_engine* e) {
     e->state.composers = e->composers_open ? e->composers : NULL;
     e->state.composer_page = e->composers_open ? e->composer_page : NULL;
     e->state.formats = e->formats;
+    e->state.collection = e->coll.serial != 0u ? &e->coll : NULL;
     e->state.panel = e->panel_rows > 0 ? e->panel : NULL;
     e->state.panel_rows = e->panel_rows;
     e->state.panel_serial = e->panel_loads;

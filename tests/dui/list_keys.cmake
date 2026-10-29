@@ -144,27 +144,8 @@ if(NOT "${c2}" MATCHES "collection kind=composer [^\n]* of=1 ")
   message(FATAL_ERROR "Enter on the focused composer row must open that composer's collection page:\n${c2}")
 endif()
 
-# Drilldown (the library also lists the Unknown composer, so Play Composer is row 0 and Home reaches it): the song row plays on Enter, as the click of I299 does.
-file(COPY_FILE "${SONGS}/selecta-test.mod" "${WORK}/Played.mod")
-string(CONCAT play_seed
-  "INSERT INTO songs(key, source, path, name, artist, album, format, year, genre, duration_ms, added) VALUES('${WORK}/Played.mod', 'local', '${WORK}/Played.mod', 'Played', 'Anon', 'Disk', 'mod', 1990, 'Chiptune', 1000, 1700000010); "
-  "INSERT INTO song_composers(song_key, canon, display) VALUES('${WORK}/Played.mod', 'play composer', 'Play Composer')")
-lf_db(play "${play_seed}")
-set(pdb "${lf_db_path}")
-lf_run(d0 library "wait 1\n" --db "${pdb}")
-if(NOT "${d0}" MATCHES "row 0 ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)\n")
-  message(FATAL_ERROR "no row 0 rectangle in:\n${d0}")
-endif()
-math(EXPR dx "${CMAKE_MATCH_1} + 10")
-math(EXPR dy "${CMAKE_MATCH_2} + 8")
-set(dpre "wait 1\nmove ${dx} ${dy}\nclick ${dx} ${dy}\nwait 20\n")
-lf_run(d1 library "${dpre}key home\nwait 1\n" --db "${pdb}")
-lf_expect("drilldown Home" "${d1}" 0 0 0)
-lf_run(d2 library "${dpre}key home\nkey enter\nwait 20\n" --db "${pdb}")
-lf_expect("drilldown Enter" "${d2}" 0 1 1)
-if(NOT "${d2}" MATCHES "songs_opened=1")
-  message(FATAL_ERROR "Enter on the drilldown song row must open the song:\n${d2}")
-endif()
+# I678f: the composer drilldown is gone, so its Home/Enter song-row keys went with it. The collection page has no keyboard focus on
+# its song rows yet (open, reported with I678f); the click that plays a song row is covered by dui-library (I299).
 
 # Grid and cover flow: Right moves the cursor tile, Enter opens it (counted as an activation).
 set(gq "")
