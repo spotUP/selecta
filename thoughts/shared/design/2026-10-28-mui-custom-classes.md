@@ -200,6 +200,25 @@ RTG and TC; on AGA within the 12-bit-to-8-bit rounding of the exact SA_Colors32 
 - Host test: `mui-tabs`: active index set by click and by keys.
 - Rig: active underline 3B82F6.
 
+### 3.10 AABalance (pane dividers)
+
+Johan 2026-10-29 on rig 2: "the drag bar doesnt look modern yet". The two stock BalanceObjects between sidebar, main and
+detail (mui_ui.c window build, `s->balance[0..1]`) draw the MUI prefs 3D bar.
+
+- Superclass MUIC_Balance (`MUI_CreateCustomClass(NULL, MUIC_Balance, ...)`), so dragging, the resize maths and the
+  weights stay MUI's. Overrides AskMinMax and Draw only. Draw with MADF_DRAWOBJECT paints the full box in the window
+  BACKGROUND, then a centred vertical line; it never calls DoSuperMethod for the draw, so no prefs frame or 3D bar shows.
+  `MUIA_Frame` MUIV_Frame_None at create.
+- Tokens: box BACKGROUND 121214 (the gap colour between AAPanels, 3.8), line DIVIDER 2C2C34. No hover colour: MUI 3.8
+  Balance gives no hover event without an extra IDCMP handler, and the desktop handle is equally quiet.
+- Sizes: box width = outer gap 8 (S 4), so the divider is the panel gap itself; line 1 px, inset 8 px top and bottom (S 4).
+- Pure helper in map/mui_aa.c: `mui_aa_balance_line(box_w, box_h, small, out rect)` gives the line rect; host test
+  `mui-balance-geom`: line x centred, inset, clamp for boxes shorter than two insets. Sentinel `mui_aabal_made()` equals 2
+  after the window build (counted from the builder, like `mui_aabtn_made`).
+- Fallback if the subclass cannot be made on MUI 3.8 (class not public): stock BalanceObject with `MUIA_Frame`
+  MUIV_Frame_None and `MUIA_Background` the BACKGROUND pen spec; report it, do not ship a 3D bar.
+- Rig: a pixel in the divider box 121214, a pixel on its centre line 2C2C34; no light pixels (above 80 grey) in the box.
+
 AACheck (4 pref rows) is built inside 3.1 as AAButton role `toggle`: 16 px rounded box as the desktop d_checkbox
 (I667b-3): radius RADIUS_SMALL, corners SURFACE, off face SURFACE with a TEXT_MUTED outline, on face ACCENT with an ACCENT_TEXT tick.
 
@@ -253,6 +272,7 @@ prefs text pen and logs once. Host test: `mui-theme` covers the maths; the class
 - I667h: AAField (3.4).
 - I667i: AAList and AAScroller (3.6, 3.5; closes I662 AAList and the I663 list parts).
 - I667j: AATabs (3.9).
+- I667l: AABalance pane dividers (3.10).
 - I667k: rig pass RTG and AGA, every hex in section 3, Johan look (one rig run per batch at the end).
 
 ## 7. Open points
