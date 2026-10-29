@@ -87,8 +87,7 @@ const char* mui_transport_action(uint32_t button, const sel_uim_frame* f);
 const char* mui_transport_label(uint32_t button, const sel_uim_frame* f);
 /* I667b: longest label over every state of a transport button (sizes the AAButton). */
 const char* mui_transport_widest(uint32_t button);
-/* I667b5 (owner 2026-10-29): 1 when the transport button shows only its icon (Previous, Play/Pause, Next, Repeat, Shuffle); the label is the
- * tooltip. Stop keeps its caption. */
+/* I667b5 (owner 2026-10-29): 1 when the transport button shows only its icon (all six, Stop too); the label is the tooltip. */
 int mui_transport_icon_only(uint32_t button);
 /* 1 when the button is lit: Repeat while repeating (all or one), Shuffle while shuffle is on; drawn as the SELECTED face because the icon
  * does not change with the state. */

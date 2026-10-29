@@ -320,7 +320,7 @@ static void test_btn_align(void) {
     free(cls);
 }
 
-/* I667b5 mui-transport-icons: Previous, Play/Pause, Next, Repeat and Shuffle are icon-only (label = tooltip) and lit by state; Stop keeps its caption.
+/* I667b5 mui-transport-icons: every transport button (Stop too, Johan 2026-10-29) is icon-only (label = tooltip); Repeat and Shuffle are lit by state.
  * All six share the first row. */
 static void test_transport_icons(void) {
     char* ui = slurp(UI_SOURCE);
@@ -328,8 +328,9 @@ static void test_transport_icons(void) {
     uint32_t b;
     memset(&f, 0, sizeof f);
     for (b = 0; b < MUI_BTN_COUNT; b++) {
-        CHECK(mui_transport_icon_only(b) == (b != MUI_BTN_STOP), "button %u icon-only %d", (unsigned)b, mui_transport_icon_only(b));
+        CHECK(mui_transport_icon_only(b) == 1, "button %u icon-only %d", (unsigned)b, mui_transport_icon_only(b));
     }
+    CHECK(mui_transport_icon_only(MUI_BTN_COUNT) == 0, "no icon-only past the last button");
     CHECK(MUI_TRANSPORT_ROW1 == MUI_BTN_COUNT, "all transport buttons in the first row");
     CHECK(mui_transport_on(MUI_BTN_REPEAT, &f) == 0 && mui_transport_on(MUI_BTN_RANDOM, &f) == 0, "off at start");
     f.repeat_mode = 1;

@@ -64,7 +64,7 @@ const char* mui_transport_widest(uint32_t button) {
 }
 
 int mui_transport_icon_only(uint32_t button) {
-    return button != MUI_BTN_STOP && button < MUI_BTN_COUNT;
+    return button < MUI_BTN_COUNT;
 }
 
 int mui_transport_on(uint32_t button, const sel_uim_frame* f) {
