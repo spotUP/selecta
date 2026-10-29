@@ -1828,6 +1828,9 @@ static void draw_home_header(desk* d, sel_gui_rect mn, int with_section) {
  * Each shelf scrolls horizontally on its own. ---- */
 enum { NAV_PREV = 1, NAV_NEXT = 2, HOME_NAV_GROW_Q16 = 6554 /* the hovered button grows to about 1.1x (I630) */ }; /* I607: the shelf buttons, bits of shelf_nav_drawn */
 enum { SHELF_MAX = 8, SHELF_HEAD_H = HOME_SECTION_H + HOME_SHADOW_R + HOME_HEAD_GAP, SHELF_GAP = 16, SHELF_WINDOW = 32, SHELF_NONE = 0x7FFFFFFF };
+/* The Home view window holds every row the store writes for Home (the quick grid and up to SHELF_MAX shelves of at most 10
+ * tiles each, see home_reload): Home scrolls by pixels, not by window, so a row past the window is a shelf that never shows. */
+enum { HOME_WINDOW_ROWS = 128 };
 
 typedef struct shelf {
     uint32_t head;  /* index of the heading in the view window */
@@ -8165,7 +8168,9 @@ static void desk_page_push(desk* d, desk_page from, desk_page pg) {
 static void desk_page_load(desk* d, desk_page pg) {
     if (pg == PG_HOME || pg == PG_SHELF) { /* the Shelf page reads the Home source too */
         desk_send(d, "VIEW_SOURCE home");
-        desk_send(d, "VIEW_WINDOW 32");
+        char win[32];
+        snprintf(win, sizeof win, "VIEW_WINDOW %u", (unsigned)HOME_WINDOW_ROWS);
+        desk_send(d, win);
     } else if (pg == PG_LIBRARY) {
         d->lib_q16 = 0;
         desk_send(d, "VIEW_SHOW browse");

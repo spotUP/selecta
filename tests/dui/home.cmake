@@ -415,10 +415,11 @@ home2_run(two "wait 1\n")
 shelf_keys(jump2 "${two}" 1)
 expect_eq("Jump back in with a song without an album" "${jump2}" "fixture:7;Ünïcødé Álbum åäö;Monkey Island Theme (Extended Remaster Edition With A Very Long Title);Lotus Turbo Challenge;Strange Sounds from Beyond")
 # (c) New this week lists the song added today.
-shelf_keys(fresh2 "${two}" 5)
+shelf_keys(fresh2 "${two}" 4)
 expect_eq("New this week holds the song added today" "${fresh2}" "fixture:8")
-if(NOT "${two}" MATCHES "shelf 5 tile 0 New This Week\\|" OR NOT "${two}" MATCHES "ui_home id=desktop shelves=6 ")
-  message(FATAL_ERROR "New This Week is not the sixth shelf (after Your Composers, section 11) in:\n${two}")
+if(NOT "${two}" MATCHES "shelf 4 tile 0 New This Week\\|" OR NOT "${two}" MATCHES "shelf 5 tile 0 More Like "
+   OR NOT "${two}" MATCHES "ui_home id=desktop shelves=6 ")
+  message(FATAL_ERROR "New This Week is not the fifth shelf (after Your Composers, before More Like, section 11) in:\n${two}")
 endif()
 # (d) A Home taller than the canvas: the wheel over tile cards scrolls it to the same limit as the wheel over the
 # header block, and that limit is the bottom of the last shelf (home_max_y_q16 = content height minus panel height).
@@ -508,13 +509,13 @@ endif()
 file(REMOVE_RECURSE "${WORK}/cfg")
 file(WRITE "${WORK}/in.txt" "wait 1\n")
 dui_run(small --db "${db3}" --ui desktop --backend mem --view home --canvas 700x600 --clock fixed --stats --input "${WORK}/in.txt")
-if(NOT "${small}" MATCHES "ui_home id=desktop shelves=2 ")
-  message(FATAL_ERROR "a 4-song library must show the Your Composers shelf and the fill, empty shelves hidden, in:\n${small}")
+if(NOT "${small}" MATCHES "ui_home id=desktop shelves=1 ")
+  message(FATAL_ERROR "a 4-song library with no composers must show the fill as its one shelf, empty shelves hidden, in:\n${small}")
 endif()
-if(NOT "${small}" MATCHES "shelf 1 tile 0 From your library\\|")
+if(NOT "${small}" MATCHES "shelf 0 tile 0 From your library\\|")
   message(FATAL_ERROR "the fill shelf heading is missing in:\n${small}")
 endif()
-shelf_keys(fill "${small}" 1)
+shelf_keys(fill "${small}" 0)
 expect_eq("fill shelf holds the 4 songs, newest added first" "${fill}" "${WORK}/a.mod;fixture:3;fixture:2;fixture:1")
 foreach(empty "Recently Played" "Jump Back In" "New This Week")
   if("${small}" MATCHES "shelf [0-9]+ tile [0-9]+ ${empty}\\|")
@@ -523,8 +524,9 @@ foreach(empty "Recently Played" "Jump Back In" "New This Week")
 endforeach()
 
 # ---- I479 (DUI-P4-2): the "Your composers" shelf ----
-# A copy of the 4-song library with composers: Huelsbeck has 3 songs, Galway 1. The fill shelf is shelf 0 and the composers shelf
-# is shelf 1, tile 0 = the composer with the most songs (key = canon, title = display name). Activating tile 4 (flat index: the 4
+# A copy of the 4-song library with composers: Huelsbeck has 3 songs, Hubbard 1. Your Composers is shelf 0 (design section 11 puts it
+# before the fill shelf), tile 0 = the composer with the most songs (key = canon, title = display name). Songs with no composer get
+# no card (I678j part 4). Activating tile 4 (flat index: the 4
 # fill tiles come first) must open that composer's songs on the Library page (drill line: display|3). The library with no composer
 # (db3 above) draws no such shelf. Revert check: without the shelf the dump has shelves=1 and no tile 4.
 set(db7 "${WORK}/library7.db")
@@ -555,7 +557,7 @@ if(NOT "${comps}" MATCHES "shelf 0 tile 0 Your Composers\\|")
   message(FATAL_ERROR "the Your composers heading is not shelf 1 in:\n${comps}")
 endif()
 shelf_keys(comp_keys "${comps}" 0)
-expect_eq("Your composers tiles, most songs first" "${comp_keys}" "chris huelsbeck;rob hubbard;(unknown)")
+expect_eq("Your composers tiles, most songs first" "${comp_keys}" "chris huelsbeck;rob hubbard")
 if(NOT "${comps}" MATCHES "Chris Huelsbeck")
   message(FATAL_ERROR "the composer display name is not the tile title in:\n${comps}")
 endif()
@@ -564,7 +566,7 @@ if(NOT "${comp_open}" MATCHES "collection kind=composer [^\n]* of=3 ")
   message(FATAL_ERROR "activating the composer tile did not open its 3 songs in:\n${comp_open}")
 endif()
 
-# 10b. I473: the album is its name and artist when it is opened too. Shelf 0 holds 8 tiles (mixed Recently Played), so tile 8 is the first tile of Jump
+# 10b. I473: the album is its name and artist when it is opened too. Shelf 0 holds 9 tiles (mixed Recently Played), so tile 9 is the first tile of Jump
 # back in: "Lotus Turbo Challenge - Other Artist" (the dump above). Activating it runs the album search; the query source then
 # lists that album's songs only (fixture:9). Before the fix it ran album:"Lotus Turbo Challenge" alone and listed 3 songs
 # (this album's one and the other album's two). The run uses a fresh copy of the seeded db (a run consumes the home history).
@@ -587,7 +589,7 @@ function(dui_stat_line_rows out var)
   endif()
   set(${var} "${CMAKE_MATCH_1}" PARENT_SCOPE)
 endfunction()
-album_run(act "${db4}" "tile 8\nexec VIEW_SOURCE query\nwait 1\n")
+album_run(act "${db4}" "tile 9\nexec VIEW_SOURCE query\nwait 1\n")
 expect_album_rows("${act}" "the Other Artist shelf tile opens its own album" 1 "fixture:9")
 
 # 10c. I473: the same for Search album rows. album:Lotus lists both albums; the Albums group has one row per name and artist

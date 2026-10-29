@@ -7,10 +7,11 @@
 # covers of one shelf row share the row's key (the I510 decision). Rendered at 640x256 ydiv 2 INDEX8 with the copper on
 # (--copper 4, what the aga backend enables), the "copper" stats lines must show:
 #  1. the three generated covers of the shelf row have three different colour pairs, and a copper pen shows one colour per
-#     scanline: the first cover rides the row's key, the other two dither in their own colours (keys=2, miss=2). A cover
+#     scanline: the first cover rides the row's key, the other two dither in their own colours (miss=2). The quick-access
+#     grid above the shelves (design section 11) is a second cover row with its own key, so keys = background + 2 rows. A cover
 #     that reused the first one's key would show cover 1's colours (Johan's decision 1); miss=0 here means that bug;
 #  2. a background key that spans the page: over 150 of the 256 rows, from the main region's top to its bottom;
-#  3. the shelf row holds exactly one cover key (no two keys on the same rows), on one pen.
+#  3. each cover row (quick grid, shelf) holds exactly one cover key (no two keys on the same rows), all on one pen.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -42,8 +43,8 @@ endif()
 set(keys ${CMAKE_MATCH_1})
 set(miss ${CMAKE_MATCH_2})
 message(STATUS "copper keys=${keys} miss=${miss} changes=${CMAKE_MATCH_3}")
-if(NOT miss EQUAL 2 OR NOT keys EQUAL 2)
-  message(FATAL_ERROR "expected the background key plus one cover key and 2 dithered covers (keys=2 miss=2), got keys=${keys} miss=${miss}:\n${shot}")
+if(NOT miss EQUAL 2)
+  message(FATAL_ERROR "expected 2 dithered covers on the shelf row (miss=2), got keys=${keys} miss=${miss}:\n${shot}")
 endif()
 string(REGEX MATCHALL "copper_key [0-9]+ -?[0-9]+ [0-9]+ -?[0-9]+ [0-9]+" lines "${shot}")
 set(bg "")
@@ -75,7 +76,7 @@ list(LENGTH cover_pens npens)
 string(REGEX MATCHALL "\nshelf [0-9]+ tile [0-9]+ " tiles "${shot}")
 list(LENGTH tiles ntiles)
 message(STATUS "background ${bg}; cover rows ${rows}; cover pens ${cover_pens}; shelf tiles ${ntiles}")
-if(NOT nrows EQUAL 1 OR ntiles LESS 3)
+if(nrows LESS 2 OR ntiles LESS 3)
   message(FATAL_ERROR "the fixture drew ${ntiles} shelf tiles and ${nrows} cover keys: too few to test the copper covers:\n${shot}")
 endif()
 if(NOT nrows EQUAL nurows)
@@ -83,4 +84,8 @@ if(NOT nrows EQUAL nurows)
 endif()
 if(NOT npens EQUAL 1)
   message(FATAL_ERROR "the cover rows ride ${npens} pens (${cover_pens}): disjoint rows should share one")
+endif()
+math(EXPR want_keys "${nrows} + 1")
+if(NOT keys EQUAL want_keys)
+  message(FATAL_ERROR "expected the background key plus one key per cover row (keys=${want_keys}), got keys=${keys}:\n${shot}")
 endif()
