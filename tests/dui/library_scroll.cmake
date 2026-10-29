@@ -5,6 +5,10 @@
 #   A: the Sources tab has more rows than fit, so a scrollbar is shown, at offset 0.
 #   B: a drag in the bar track, C: a click in the track below the handle, D: Page Down, E: Down: each moves the first visible source.
 #   F: a click at the centre of one switch changes exactly one source's enabled flag (I542).
+# SKIPPED (I678i): the subject, the Library Sources tab list at AGA size, is retired. Section 10 moves Sources to the Sources chip and source pages; the bitmap-tier scroll of those is I678k (dui-aga-library).
+message(STATUS "library_scroll: SKIPPED, the subject, the Library Sources tab list at AGA size, is retired. Section 10 moves Sources to the Sources chip and source pages; the bitmap-tier scroll of those is I678k (dui-aga-library).")
+return()
+
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")

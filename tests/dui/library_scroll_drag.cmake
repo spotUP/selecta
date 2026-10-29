@@ -7,6 +7,10 @@
 #   A: the held moves scroll the list to the track end before any release (q16 > 0, handle moved down).
 #   B: one present per held move (N == number of moves), each below 40 percent of a full 640x256 frame (163840 pixels).
 # The queue half (N mouse reports cost one frame, not N) is gui-input-map's coalesce check: the backends queue through it.
+# SKIPPED (I678i): the subject, scrollbar drag on the Library Sources tab, is retired. Section 10 moves Sources to the Sources chip and source pages; the bitmap-tier scroll of those is I678k (dui-aga-library).
+message(STATUS "library_scroll_drag: SKIPPED, the subject, scrollbar drag on the Library Sources tab, is retired. Section 10 moves Sources to the Sources chip and source pages; the bitmap-tier scroll of those is I678k (dui-aga-library).")
+return()
+
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
