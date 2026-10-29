@@ -174,6 +174,12 @@ enum { MUI_COL_TITLE = 0, MUI_COL_ARTIST, MUI_COL_ALBUM, MUI_COL_LENGTH, MUI_COL
 uint32_t mui_columns_for(uint32_t breakpoint, uint8_t out[MUI_COL_COUNT]);
 /* MUIA_List_Format string for those columns: "BAR," per column but the last. */
 void mui_columns_format(uint32_t breakpoint, char* out, size_t cap);
+/* I667i2: the weight of each shown column (0 = fixed to its sample width), the table the format string uses; returns the column count. */
+/* I667i2: the lyrics as rows of an AAList: number of newline separated lines (a trailing newline adds none, empty text has 0) and line row
+ * copied into out (cut to cap - 1; empty past the last line). */
+uint32_t mui_text_lines(const char* text);
+void mui_text_line(const char* text, uint32_t row, char* out, size_t cap);
+uint32_t mui_columns_weights(uint32_t breakpoint, int weight_out[MUI_COL_COUNT]);
 /* Cell text of one row; "" for the columns the engine row does not carry (the view model rows hold title and artist). */
 const char* mui_row_cell(const sel_view_row* r, uint32_t column);
 /* MUI-P3-4: the album, length and format cells of one row. The engine rows carry only title and artist, so these come from the

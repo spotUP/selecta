@@ -309,6 +309,11 @@ static void test_theme(void) {
             CHECK(strstr(src, "mui_aafield_new(") != NULL, "mui_ui.c builds no AAField string");
             continue;
         }
+        if (role == MUI_TH_LIST) {
+            /* exemption (I667i2, design 3.6): lists are AAList objects that draw from tokens; mui-list-source proves no stock list is left */
+            CHECK(strstr(src, "mui_aalist_new(") != NULL, "mui_ui.c builds no AAList");
+            continue;
+        }
         if (role == MUI_TH_STATUS) {
             /* exemption (I667d, design 3.7): status lines are AAText objects; mui_aatext reads the role look from g_th[MUI_TH_STATUS] */
             CHECK(strstr(src, "g_th[MUI_TH_STATUS].look.frame") != NULL && strstr(src, "g_th[MUI_TH_STATUS].look.background") != NULL, "mui_aatext does not take the status frame and background from the role look");

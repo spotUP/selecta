@@ -210,6 +210,13 @@ uint32_t mui_aa_list_calls(void);
 int mui_aa_list_col_x(const mui_aa_list_t* m, int col, const int* w);
 /* MUIA_List_Format DELTA of a column followed by a divider (BAR): MUI centres the BAR in the delta, so gap on each side needs 2 * gap. */
 int mui_aa_list_delta(const mui_aa_list_t* m);
+/* I667i2: column widths of a multi-column list face of width total. Column k with weight[k] > 0 shares what is left after the fixed columns
+ * (fixed[k] px each, weight 0) and the dividers (2 * gap + 1 each) and both pads, by weight; out[k] is its ink width (never negative). */
+void mui_aa_list_col_widths(const mui_aa_list_t* m, int total, int n, const int* weight, const int* fixed, int* out);
+/* Height of the title row (the column header): row_h when the list has one, else 0. */
+int mui_aa_list_title_h(const mui_aa_list_t* m, int has_title);
+/* Secondary column text (TEXT_MUTED, also the header text) and the header divider / column divider colour (DIVIDER). Any out pointer may be NULL. */
+void mui_aa_list_header_rgb(const uint32_t* token, uint32_t* muted, uint32_t* divider);
 
 #ifdef __cplusplus
 }

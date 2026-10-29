@@ -27,6 +27,12 @@
 typedef struct aalist_data {
     long count, active, first, hover, vis;
     mui_aalist_row_fn row;
+    mui_aalist_cell_fn cell;
+    mui_aalist_cols cols;
+    long playing;
+    int title, double_pick, no_select;
+    ULONG last_s, last_m;
+    long last_row;
     void* ctx;
     int max_rows;
     Object* scroller;
@@ -55,8 +61,17 @@ static int aalist_width(void* ctx, const char* s, int len) {
     return aa_text_width(&f->d->aa, f->self, buf);
 }
 
+static int aalist_title_h(const aalist_data* d) {
+    return mui_aa_list_title_h(&d->m, d->title);
+}
+
 static int aalist_visible(Object* obj, const aalist_data* d) {
-    return mui_aa_list_visible(&d->m, _mheight(obj));
+    return mui_aa_list_visible(&d->m, _mheight(obj) - aalist_title_h(d));
+}
+
+static const char* aalist_text(const aalist_data* d, long row, int col) {
+    const char* s = d->cell != NULL ? d->cell(d->ctx, row, col) : (col == 0 && d->row != NULL ? d->row(d->ctx, row) : NULL);
+    return s != NULL ? s : "";
 }
 
 /* Tell the scroller the window of rows (no notification back: the scroller only reports user drags). */
@@ -86,6 +101,9 @@ static ULONG aalist_setup(struct IClass* cl, Object* obj, Msg msg) {
     }
     mui_aa_list_row_rgb(d->aa.tok, MUI_AA_NORMAL, 1, NULL, &text);
     aa_pen(&d->aa, text);
+    mui_aa_list_header_rgb(d->aa.tok, &text, &face);
+    aa_pen(&d->aa, text);
+    aa_pen(&d->aa, face);
     d->hover = -1;
     d->ehn.ehn_Priority = 0;
     d->ehn.ehn_Flags = 0;
@@ -106,12 +124,12 @@ static ULONG aalist_cleanup(struct IClass* cl, Object* obj, Msg msg) {
 static ULONG aalist_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMinMax* msg) {
     aalist_data* d = INST_DATA(cl, obj);
     long rows = d->count < d->max_rows ? d->count : d->max_rows;
-    int h = 2 * d->m.pad_y + (int)(rows < 1 ? 1 : rows) * d->m.row_h;
+    int h = 2 * d->m.pad_y + aalist_title_h(d) + (int)(rows < 1 ? 1 : rows) * d->m.row_h;
     DoSuperMethodA(cl, obj, (Msg)msg);
     msg->MinMaxInfo->MinWidth += 2 * d->m.pad_x + 40;
     msg->MinMaxInfo->DefWidth += 2 * d->m.pad_x + 120;
     msg->MinMaxInfo->MaxWidth = MUI_MAXMAX;
-    msg->MinMaxInfo->MinHeight += 2 * d->m.pad_y + d->m.row_h;
+    msg->MinMaxInfo->MinHeight += 2 * d->m.pad_y + aalist_title_h(d) + d->m.row_h;
     msg->MinMaxInfo->DefHeight += h;
     msg->MinMaxInfo->MaxHeight = MUI_MAXMAX;
     return 0;
@@ -121,8 +139,9 @@ static ULONG aalist_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
     aalist_data* d = INST_DATA(cl, obj);
     struct RastPort* rp;
     long k, vis, row;
-    int l, t, w, h, th, tx, tw;
-    uint32_t face, text;
+    int l, t, w, h, th, c, n, th_h, y0;
+    int cw[MUI_AALIST_COLS], fixed[MUI_AALIST_COLS];
+    uint32_t face, text, muted, divider;
     DoSuperMethodA(cl, obj, (Msg)msg);
     if (!(msg->flags & (MADF_DRAWOBJECT | MADF_DRAWUPDATE))) {
         return 0;
@@ -134,34 +153,59 @@ static ULONG aalist_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
     h = _mheight(obj);
     vis = aalist_visible(obj, d);
     if (vis != d->vis) {
-        d->first = mui_aa_list_clamp_first(d->first, vis, d->count);
+        d->first = mui_aa_list_scroll_to(d->first, vis, d->count, d->active);
         aalist_sync_scroller(obj, d);
     }
     mui_aa_list_row_rgb(d->aa.tok, MUI_AA_NORMAL, 0, &face, &text);
+    mui_aa_list_header_rgb(d->aa.tok, &muted, &divider);
     aa_round_fill(rp, l, t, w, h, 0, aa_pen(&d->aa, face));
     th = aa_text_height(&d->aa, obj);
-    tx = mui_aa_list_col_x(&d->m, 0, NULL);
-    tw = w - tx - d->m.pad_x;
+    n = d->cols.n < 1 ? 1 : d->cols.n;
+    th_h = aalist_title_h(d);
+    y0 = t + d->m.pad_y;
+    for (c = 0; c < n; c++) {
+        fixed[c] = d->cols.weight[c] > 0 || d->cols.sample[c] == NULL ? 0 : aa_text_width(&d->aa, obj, d->cols.sample[c]);
+    }
+    if (d->cols.n < 1) {
+        cw[0] = w - 2 * d->m.pad_x;
+    } else {
+        mui_aa_list_col_widths(&d->m, w, n, d->cols.weight, fixed, cw);
+    }
+    if (d->title) {
+        for (c = 0; c < n; c++) {
+            aalist_fit fit;
+            char buf[AAL_TEXT_CAP];
+            fit.d = d;
+            fit.self = obj;
+            mui_aa_text_fit(aalist_text(d, -1, c), cw[c], aalist_width, &fit, buf, (int)sizeof buf);
+            aa_text(&d->aa, obj, rp, l + mui_aa_list_col_x(&d->m, c, cw), y0 + (d->m.row_h - th) / 2, buf, muted, face);
+        }
+        aa_round_fill(rp, l, y0 + th_h - 1, w, 1, 0, aa_pen(&d->aa, divider));
+    }
+    for (c = 1; c < n; c++) {
+        aa_round_fill(rp, l + mui_aa_list_col_x(&d->m, c, cw) - d->m.gap - 1, y0, 1, h - 2 * d->m.pad_y, 0, aa_pen(&d->aa, divider));
+    }
     for (k = 0; k < vis && d->first + k < d->count; k++) {
-        aalist_fit fit;
-        char buf[AAL_TEXT_CAP];
-        const char* s;
-        int y = t + d->m.pad_y + (int)k * d->m.row_h;
+        int y = y0 + th_h + (int)k * d->m.row_h;
         int st;
         row = d->first + k;
         st = row == d->active ? MUI_AA_SELECTED : row == d->hover ? MUI_AA_HOVER : MUI_AA_NORMAL;
-        mui_aa_list_row_rgb(d->aa.tok, st, 0, &face, &text);
+        mui_aa_list_row_rgb(d->aa.tok, st, row == d->playing, &face, &text);
         if (st != MUI_AA_NORMAL) {
             aa_round_fill(rp, l + 2, y, w - 4, d->m.row_h, d->m.radius, aa_pen(&d->aa, face));
+            for (c = 1; c < n; c++) { /* the column dividers stay visible over the row highlight */
+                aa_round_fill(rp, l + mui_aa_list_col_x(&d->m, c, cw) - d->m.gap - 1, y, 1, d->m.row_h, 0, aa_pen(&d->aa, divider));
+            }
         }
-        s = d->row != NULL ? d->row(d->ctx, row) : NULL;
-        if (s == NULL) {
-            s = "";
+        for (c = 0; c < n; c++) {
+            aalist_fit fit;
+            char buf[AAL_TEXT_CAP];
+            uint32_t col = c == 0 ? text : muted;
+            fit.d = d;
+            fit.self = obj;
+            mui_aa_text_fit(aalist_text(d, row, c), cw[c], aalist_width, &fit, buf, (int)sizeof buf);
+            aa_text(&d->aa, obj, rp, l + mui_aa_list_col_x(&d->m, c, cw), y + (d->m.row_h - th) / 2, buf, col, face);
         }
-        fit.d = d;
-        fit.self = obj;
-        mui_aa_text_fit(s, tw, aalist_width, &fit, buf, (int)sizeof buf);
-        aa_text(&d->aa, obj, rp, l + tx, y + (d->m.row_h - th) / 2, buf, text, face);
     }
     return 0;
 }
@@ -187,7 +231,7 @@ static ULONG aalist_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEve
     in = im->MouseX >= _left(obj) && im->MouseX <= _right(obj) && im->MouseY >= _top(obj) && im->MouseY <= _bottom(obj);
     vis = aalist_visible(obj, d);
     if (im->Class == IDCMP_MOUSEMOVE) {
-        long hv = in ? mui_aa_list_row_at(&d->m, im->MouseY - _mtop(obj), d->first, d->count) : -1;
+        long hv = in && !d->no_select ? mui_aa_list_row_at(&d->m, im->MouseY - _mtop(obj) - aalist_title_h(d), d->first, d->count) : -1;
         if (hv != d->hover) {
             d->hover = hv;
             MUI_Redraw(obj, MADF_DRAWOBJECT);
@@ -195,11 +239,17 @@ static ULONG aalist_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEve
         return 0;
     }
     if (im->Class == IDCMP_MOUSEBUTTONS) {
-        if (im->Code == SELECTDOWN && in) {
-            long r = mui_aa_list_row_at(&d->m, im->MouseY - _mtop(obj), d->first, d->count);
+        if (im->Code == SELECTDOWN && in && !d->no_select) {
+            long r = mui_aa_list_row_at(&d->m, im->MouseY - _mtop(obj) - aalist_title_h(d), d->first, d->count);
             if (r >= 0) {
+                int dbl = r == d->last_row && DoubleClick(d->last_s, d->last_m, im->Seconds, im->Micros);
                 aalist_set_active(obj, d, r);
-                set(obj, AAL_Picked, (ULONG)r);
+                if (dbl || !d->double_pick) {
+                    set(obj, AAL_Picked, (ULONG)r);
+                }
+                d->last_row = dbl ? -1 : r;
+                d->last_s = im->Seconds;
+                d->last_m = im->Micros;
                 return MUI_EventHandlerRC_Eat;
             }
         }
@@ -219,7 +269,7 @@ static ULONG aalist_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEve
         }
         return 0;
     }
-    if (!in && (Object*)act != obj) {
+    if (d->no_select || (!in && (Object*)act != obj)) {
         return 0;
     }
     switch (im->Code) {
@@ -246,17 +296,32 @@ static ULONG aalist_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEve
 static ULONG aalist_set(struct IClass* cl, Object* obj, struct opSet* msg) {
     aalist_data* d = INST_DATA(cl, obj);
     struct TagItem *tc = FindTagItem(AAL_Count, msg->ops_AttrList), *ta = FindTagItem(AAL_Active, msg->ops_AttrList),
-                   *tf = FindTagItem(AAL_First, msg->ops_AttrList);
+                   *tf = FindTagItem(AAL_First, msg->ops_AttrList), *tcol = FindTagItem(AAL_Columns, msg->ops_AttrList),
+                   *tp = FindTagItem(AAL_Playing, msg->ops_AttrList);
     int changed = 0;
-    if (tc != NULL && (long)tc->ti_Data != d->count) {
+    if (tcol != NULL && tcol->ti_Data != 0) {
+        d->cols = *(const mui_aalist_cols*)tcol->ti_Data;
+        changed = 1;
+    }
+    if (tp != NULL && (long)tp->ti_Data != d->playing) {
+        d->playing = (long)tp->ti_Data;
+        changed = 1;
+    }
+    if (tc != NULL) { /* the rows may have new text under the same count: always redraw */
         d->count = (long)tc->ti_Data;
-        d->active = mui_aa_list_clamp_active(d->active, d->count);
+        d->active = d->active < 0 ? -1 : mui_aa_list_clamp_active(d->active, d->count); /* none stays none */
         d->first = mui_aa_list_clamp_first(d->first, d->vis, d->count);
         changed = 1;
     }
     if (ta != NULL && (long)ta->ti_Data != d->active) {
-        d->active = mui_aa_list_clamp_active((long)ta->ti_Data, d->count);
+        d->active = (long)ta->ti_Data < 0 ? -1 : mui_aa_list_clamp_active((long)ta->ti_Data, d->count);
+        if (d->active >= 0) {
+            d->first = mui_aa_list_scroll_to(d->first, d->vis, d->count, d->active); /* a program-set active row scrolls into view */
+        }
         changed = 1;
+    }
+    if (d->no_select) {
+        d->active = -1;
     }
     if (tf != NULL && (long)tf->ti_Data != d->first) {
         d->first = mui_aa_list_clamp_first((long)tf->ti_Data, d->vis, d->count);
@@ -275,6 +340,7 @@ static ULONG aalist_get(struct IClass* cl, Object* obj, struct opGet* msg) {
     case AAL_Count: *msg->opg_Storage = (ULONG)d->count; return TRUE;
     case AAL_Active: *msg->opg_Storage = (ULONG)d->active; return TRUE;
     case AAL_First: *msg->opg_Storage = (ULONG)d->first; return TRUE;
+    case AAL_Playing: *msg->opg_Storage = (ULONG)d->playing; return TRUE;
     }
     return DoSuperMethodA(cl, obj, (Msg)msg);
 }
@@ -334,12 +400,21 @@ Object* mui_aalist_new(const mui_aalist_spec* spec, Object** list_out) {
     }
     d = INST_DATA(g_list_class->mcc_Class, list);
     d->count = spec->count;
-    d->active = mui_aa_list_clamp_active(spec->active, spec->count);
+    d->active = spec->no_select ? -1 : mui_aa_list_clamp_active(spec->active, spec->count);
     d->first = 0;
     d->hover = -1;
     d->row = spec->row;
     d->ctx = spec->ctx;
     d->max_rows = spec->max_rows > 0 ? spec->max_rows : 8;
+    d->cell = spec->cell;
+    if (spec->cols != NULL) {
+        d->cols = *spec->cols;
+    }
+    d->playing = -1;
+    d->last_row = -1;
+    d->title = spec->title;
+    d->double_pick = spec->double_pick;
+    d->no_select = spec->no_select;
     d->scroller = scroller;
     DoMethod(scroller, MUIM_Notify, AAS_First, MUIV_EveryTime, list, 3, MUIM_Set, AAL_First, MUIV_TriggerValue);
     g_list_made++;

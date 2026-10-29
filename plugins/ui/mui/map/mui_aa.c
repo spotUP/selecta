@@ -639,3 +639,37 @@ void mui_aa_list_row_rgb(const uint32_t* token, int row_state, int playing, uint
         *text = playing ? token[SEL_GUI_TOKEN_ACCENT] : token[SEL_GUI_TOKEN_TEXT];
     }
 }
+
+void mui_aa_list_col_widths(const mui_aa_list_t* m, int total, int n, const int* weight, const int* fixed, int* out) {
+    int k, avail, wsum = 0;
+    g_list_calls++;
+    avail = total - 2 * m->pad_x - (n > 1 ? (n - 1) * (2 * m->gap + 1) : 0);
+    for (k = 0; k < n; k++) {
+        if (weight[k] > 0) {
+            wsum += weight[k];
+        } else {
+            avail -= fixed[k];
+        }
+    }
+    if (avail < 0) {
+        avail = 0;
+    }
+    for (k = 0; k < n; k++) {
+        out[k] = weight[k] > 0 ? avail * weight[k] / wsum : fixed[k];
+    }
+}
+
+int mui_aa_list_title_h(const mui_aa_list_t* m, int has_title) {
+    g_list_calls++;
+    return has_title ? m->row_h : 0;
+}
+
+void mui_aa_list_header_rgb(const uint32_t* token, uint32_t* muted, uint32_t* divider) {
+    g_list_calls++;
+    if (muted != NULL) {
+        *muted = token[SEL_GUI_TOKEN_TEXT_MUTED];
+    }
+    if (divider != NULL) {
+        *divider = token[SEL_GUI_TOKEN_DIVIDER];
+    }
+}

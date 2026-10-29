@@ -639,6 +639,50 @@ static void test_list_rows(void) {
     }
 }
 
+/* I667i2 mui-list-cols (design 3.6): column widths from weights and fixed samples, title row height, header colours, lyrics lines. */
+static void test_list_cols(void) {
+    mui_aa_list_t m;
+    txt_theme th;
+    uint32_t calls0 = mui_aa_list_calls(), muted = 0, divider = 0;
+    int weight[3] = {40, 25, 25}, fixed[3] = {0, 0, 0}, out[3], sum, k;
+    int wf[5] = {40, 25, 0, 0, 0}, ff[5] = {0, 0, 0, 56, 48}, o5[5];
+    int w[MUI_COL_COUNT];
+    char f[160], line[16];
+    uint32_t bp, n;
+    txt_theme_default(&th);
+    mui_aa_list_metrics(13, &m);
+    mui_aa_list_col_widths(&m, 600, 3, weight, fixed, out);
+    sum = out[0] + out[1] + out[2];
+    CHECK(out[0] > out[1] && out[1] == out[2] && sum <= 600 && sum >= 500, "weighted widths %d %d %d (sum %d)", out[0], out[1], out[2], sum);
+    mui_aa_list_col_widths(&m, 600, 5, wf, ff, o5);
+    CHECK(o5[3] == 56 && o5[4] == 48 && o5[0] > o5[1] && o5[0] + o5[1] + o5[3] + o5[4] <= 600, "fixed columns keep their width: %d %d %d", o5[0], o5[3], o5[4]);
+    mui_aa_list_col_widths(&m, 20, 3, weight, fixed, out);
+    CHECK(out[0] >= 0 && out[1] >= 0 && out[2] >= 0, "a narrow list never gets a negative width");
+    CHECK(mui_aa_list_title_h(&m, 1) == m.row_h && mui_aa_list_title_h(&m, 0) == 0, "title row is one row high, none without a title");
+    mui_aa_list_header_rgb(th.token, &muted, &divider);
+    CHECK(muted == th.token[SEL_GUI_TOKEN_TEXT_MUTED] && divider == th.token[SEL_GUI_TOKEN_DIVIDER], "header colours are the TEXT_MUTED and DIVIDER tokens");
+    CHECK(mui_aa_list_calls() > calls0, "sentinel did not move");
+    for (bp = 0; bp < 4; bp++) {
+        n = mui_columns_weights(bp, w);
+        mui_columns_format(bp, f, sizeof f);
+        CHECK(n == mui_columns_for(bp, (uint8_t[MUI_COL_COUNT]){0}) && n >= 1 && n <= MUI_COL_COUNT, "bp %u columns %u", (unsigned)bp, (unsigned)n);
+        for (k = 0; k < (int)n; k++) {
+            char want[16];
+            snprintf(want, sizeof want, "W=%d", w[k]);
+            CHECK(w[k] >= 0 && (w[k] == 0 || strstr(f, want) != NULL), "bp %u: weight %d of column %d not in format '%s'", (unsigned)bp, w[k], k, f);
+        }
+    }
+    CHECK(mui_text_lines(NULL) == 0 && mui_text_lines("") == 0 && mui_text_lines("a") == 1 && mui_text_lines("a\nb") == 2 && mui_text_lines("a\nb\n") == 2 && mui_text_lines("a\n\nb") == 3, "line count");
+    mui_text_line("one\ntwo\nthree", 1, line, sizeof line);
+    CHECK(strcmp(line, "two") == 0, "line 1 '%s'", line);
+    mui_text_line("one\ntwo\nthree", 2, line, sizeof line);
+    CHECK(strcmp(line, "three") == 0, "line 2 '%s'", line);
+    mui_text_line("one\ntwo", 5, line, sizeof line);
+    CHECK(line[0] == '\0', "past the last line is empty");
+    mui_text_line("abcdefghijklmnop", 0, line, 6);
+    CHECK(strcmp(line, "abcde") == 0, "cut to the buffer: '%s'", line);
+}
+
 /* I667i mui-list-source: the cycle popup is an AAList, the lists of the middle column carry the left pad, both classes are built, freed once,
  * drawn through the shared helpers, hold no colour literal and no pen code. */
 static void test_list_source(void) {
@@ -654,7 +698,24 @@ static void test_list_source(void) {
     CHECK(count_of(cy, "MUIC_List") == 0 && count_of(cy, "mui_aalist_new(") == 1, "popup must be an AAList: stock %d, aalist %d", count_of(cy, "MUIC_List"), count_of(cy, "mui_aalist_new("));
     CHECK(count_of(cy, "AAL_Picked") >= 1, "popup listens to AAL_Picked");
     CHECK(count_of(ui, "mui_aalist_class_free(") == 1, "AAList class freed once in mui_close");
-    CHECK(count_of(ui, "MUIA_InnerLeft, (ULONG)mui_list_pad_x()") == 4, "left pad on the main, info, tracks and help list: %d", count_of(ui, "MUIA_InnerLeft, (ULONG)mui_list_pad_x()"));
+    /* I667i2 (design 3.6): main, info, tracks, help and lyrics lists are AALists; no stock list, floattext or listview is left. */
+    CHECK(count_of(ui, "MUIC_List") == 0 && count_of(ui, "MUIC_Floattext") == 0 && count_of(ui, "MUIC_Listview") == 0, "stock list classes left in mui_ui.c: %d %d %d",
+          count_of(ui, "MUIC_List"), count_of(ui, "MUIC_Floattext"), count_of(ui, "MUIC_Listview"));
+    CHECK(count_of(ui, "MUIM_List_") == 0 && count_of(ui, "MUIA_List_") == 0 && count_of(ui, "mui_list_pad_x") == 0, "stock list calls left in mui_ui.c");
+    CHECK(count_of(ui, "mui_aalist_new(") == 3 && count_of(ui, "mui_string_aalist(") == 4, "AAList builders: new %d, string %d", count_of(ui, "mui_aalist_new("), count_of(ui, "mui_string_aalist("));
+    CHECK(count_of(ui, "sp.cols = &s->main_cols;") == 1 && count_of(ui, "sp.title = 1;") == 1 && count_of(ui, "sp.double_pick = 1;") == 1 && count_of(ui, "sp.no_select = 1;") == 1,
+          "main list columns, title row, double pick and lyrics no_select");
+    CHECK(count_of(ui, "AAL_Columns") == 1 && count_of(ui, "AAL_Playing") == 1 && count_of(ui, "AAL_Picked") == 1, "columns %d, playing %d, picked %d", count_of(ui, "AAL_Columns"),
+          count_of(ui, "AAL_Playing"), count_of(ui, "AAL_Picked"));
+    CHECK(count_of(ui, "mui_list_display(&g_list_hook") == 2 && strstr(ui, "static const char* mui_main_cell(") != NULL, "cells come from the display hook");
+    CHECK(strstr(ui, "mui_text_lines(s->np_lyric_buf)") != NULL && strstr(ui, "mui_text_line(s->np_lyric_buf") != NULL, "lyrics rows from the pure line helpers");
+    CHECK(strstr(ui, "aa_live(") == NULL || strstr(ui, "_win(obj) != NULL") == NULL, "aa_live, not _win, guards a live object");
+    {
+        char* lv = slurp(LISTVIEW_SOURCE);
+        CHECK(lv != NULL && strstr(lv, "MUIC_Group") != NULL && strstr(lv, "MUIC_Listview") == NULL && strstr(lv, "MUIA_Group_Child") != NULL && strstr(lv, "ReturnID") != NULL,
+              "Selecta_Listview is a Group around the AAList and still sends the song menu ReturnID");
+        free(lv);
+    }
     CHECK(strstr(ls, "mui_aa_list_row_rgb(") != NULL && strstr(ls, "mui_aa_list_move(") != NULL && strstr(ls, "mui_aa_list_col_x(") != NULL && strstr(ls, "aa_round_fill(") != NULL,
           "list does not draw through the shared helpers");
     CHECK(strstr(sc, "mui_aa_scroller_geom(") != NULL && strstr(sc, "mui_aa_scroller_rgb(") != NULL && strstr(sc, "aa_round_fill(") != NULL, "scroller does not draw through the shared helpers");
@@ -712,6 +773,8 @@ int main(int argc, char** argv) {
         test_scroller_geom();
     } else if (!strcmp(t, "list-rows")) {
         test_list_rows();
+    } else if (!strcmp(t, "list-cols")) {
+        test_list_cols();
     } else if (!strcmp(t, "list-source")) {
         test_list_source();
     } else {

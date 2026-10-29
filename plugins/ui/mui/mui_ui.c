@@ -122,8 +122,9 @@ typedef struct mui_state {
     mui_list_entry entries[MUI_ROWS_MAX];
     const char* entry_ptr[MUI_ROWS_MAX + 1];
     mui_cells cell[MUI_ROWS_MAX];   /* MUI-P3-4: the List entries; the display hook reads the cells from them */
-    char col_fmt_th[256];            /* I660: col_fmt with the text pen preparse per column (what MUI gets) */
-    char col_fmt[128];               /* MUIA_List_Format of the shown column set (mui_columns_format) */
+    mui_aalist_cols main_cols;       /* I667i2: weights and fixed-width samples of the shown columns */
+    char lyric_line[256];            /* I667i2: the lyrics line handed to the lyrics AAList */
+    char col_fmt[128];               /* the shown column set as MUI format text (mui_columns_format), the rig read-back */
     uint32_t col_bp;                /* the breakpoint col_fmt was built for */
     Object* str_search;             /* MUI-P4-3 */
     Object* str_cmd;                /* MUI-P4-13 */
@@ -470,41 +471,6 @@ static void mui_close_on_request(Object* win) {
     DoMethod(win, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, MUIV_Notify_Self, 3, MUIM_Set, MUIA_Window_Open, FALSE);
 }
 
-/* I660: PreParse pen escape of the List columns (MUIC_List, outside the AAText inventory); every text line is an AAText (I667d). */
-static char g_pre[4];
-static char g_list_fmt1[8]; /* one-column list format carrying the pen preparse ("P=" + pen), empty when off */
-
-/* I667i: left pad of the text inside a list face (design 3.6: 10 px; the stock lists sat 5 px from the frame, Johan 2026-10-29). */
-static int mui_list_pad_x(void) {
-    mui_aa_list_t m;
-    mui_aa_list_metrics(13, &m);
-    return m.pad_x;
-}
-
-/* col_fmt (comma separated column specs) with "P=<pen escape> " in front of each column, so list text uses the look pen. */
-static void mui_col_format_themed(const char* in, char* out, size_t cap) {
-    size_t used = 0;
-    if (g_pre[0] == '\0') {
-        snprintf(out, cap, "%s", in);
-        return;
-    }
-    out[0] = '\0';
-    for (;;) {
-        const char* comma = strchr(in, ',');
-        size_t len = comma != NULL ? (size_t)(comma - in) : strlen(in);
-        int put = snprintf(out + used, cap - used, "P=%s %.*s%s", g_pre, (int)len, in, comma != NULL ? "," : "");
-        if (put < 0 || (size_t)put >= cap - used) {
-            out[used] = '\0';
-            return;
-        }
-        used += (size_t)put;
-        if (comma == NULL) {
-            return;
-        }
-        in = comma + 1;
-    }
-}
-
 /* Reads the colours of the screen DrawInfo pens and decides the look once for all roles. */
 static void mui_theme_init(void) {
     txt_theme th;
@@ -538,11 +504,6 @@ static void mui_theme_init(void) {
         g_th[i].on = mui_theme_look_for((mui_theme_role)i, th.token, &g_th[i].look) && pen >= 0 && i != MUI_TH_FIELD;
     }
     /* The look off keeps the alignment escapes the labels always had. */
-    g_pre[0] = g_list_fmt1[0] = 0;
-    if (pen >= 0) {
-        sprintf(g_pre, "\033%d", pen);
-        sprintf(g_list_fmt1, "P=%s", g_pre);
-    }
 }
 
 /* I667b (design 2026-10-28-mui-custom-classes.md section 3.1): the one button constructor. Every Selecta button (transport,
@@ -723,7 +684,7 @@ static Object* mui_player_group(mui_state* s) {
 }
 
 /* MUI-P3-4: the List's display hook. The entry is the row's cell array; a NULL entry asks for the column titles
- * (MUIA_List_Title TRUE). The columns shown are mui_columns_for(breakpoint): the rest are hidden by width. */
+ * (title row on). The columns shown are mui_columns_for(breakpoint): the rest are hidden by width. */
 static struct Hook g_list_hook;
 static uint32_t g_list_hook_calls;
 static ULONG mui_list_display(struct Hook* hook, char** array, mui_cells* cells) {
@@ -817,26 +778,89 @@ static Object* mui_tool_group(mui_state* s) {
     return g;
 }
 
+/* I667i2: the main list's columns (weights and fixed-width samples) for a breakpoint. */
+static void mui_main_cols_fill(uint32_t bp, mui_aalist_cols* out) {
+    static const char* const sample[MUI_COL_COUNT] = {NULL, NULL, NULL, "00:00:00", "Format"};
+    uint8_t cols[MUI_COL_COUNT];
+    uint32_t k, n;
+    memset(out, 0, sizeof *out);
+    n = mui_columns_for(bp, cols);
+    out->n = (int)mui_columns_weights(bp, out->weight);
+    for (k = 0; k < n && k < MUI_AALIST_COLS; k++) {
+        out->sample[k] = sample[cols[k]];
+    }
+}
+
+/* I667i2: the AAList cell callback of the main list; the display hook stays the one source of the texts (row -1: the column titles). */
+static const char* mui_main_cell(void* ctx, long row, int col) {
+    mui_state* s = (mui_state*)ctx;
+    char* arr[MUI_COL_COUNT];
+    uint32_t k;
+    if (col < 0 || col >= MUI_COL_COUNT || (row >= 0 && s->entry_ptr[row] == NULL)) {
+        return "";
+    }
+    for (k = 0; k < MUI_COL_COUNT; k++) {
+        arr[k] = (char*)"";
+    }
+    (void)mui_list_display(&g_list_hook, arr, row < 0 ? NULL : (mui_cells*)s->entry_ptr[row]);
+    return arr[col];
+}
+
+/* I667i2: one row per string of a NULL-terminated pointer array (info, tracks, help). */
+static const char* mui_ptr_row(void* ctx, long row) {
+    return ((const char* const*)ctx)[row];
+}
+
+/* I667i2: the lyrics row callback: line row of np_lyric_buf. */
+static const char* mui_lyric_row(void* ctx, long row) {
+    mui_state* s = (mui_state*)ctx;
+    mui_text_line(s->np_lyric_buf, (uint32_t)row, s->lyric_line, sizeof s->lyric_line);
+    return s->lyric_line;
+}
+
+/* One AAList (list and flat AAScroller) over a string array; *list_out is the list object. */
+static Object* mui_string_aalist(void* ctx, long count, int rows, Object** list_out) {
+    mui_aalist_spec sp;
+    memset(&sp, 0, sizeof sp);
+    sp.count = count;
+    sp.active = -1;
+    sp.row = mui_ptr_row;
+    sp.ctx = ctx;
+    sp.max_rows = rows;
+    return mui_aalist_new(&sp, list_out);
+}
+
 static Object* mui_main_group(mui_state* s) {
     Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
     s->col_bp = SEL_UIM_BP_COUNT;
     mui_columns_format(s->col_bp, s->col_fmt, sizeof s->col_fmt);
-    mui_col_format_themed(s->col_fmt, s->col_fmt_th, sizeof s->col_fmt_th);
+    mui_main_cols_fill(s->col_bp, &s->main_cols);
     g_list_hook.h_Entry = (__typeof__(g_list_hook.h_Entry))(void (*)(void))HookEntry;
     g_list_hook.h_SubEntry = (__typeof__(g_list_hook.h_SubEntry))(void (*)(void))mui_list_display;
     s->crumb = mui_aatext(" ", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0, 1);
-    s->list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_List_DisplayHook, (ULONG)&g_list_hook, MUIA_InnerLeft, (ULONG)mui_list_pad_x(),
-                            MUIA_List_Format, (ULONG)s->col_fmt_th, MUIA_List_Title, TRUE, TAG_DONE);
-    if (g == NULL || s->list == NULL || s->crumb == NULL) {
-        return NULL;
+    {
+        mui_aalist_spec sp;
+        Object* lg;
+        memset(&sp, 0, sizeof sp);
+        sp.active = -1;
+        sp.cell = mui_main_cell;
+        sp.ctx = s;
+        sp.cols = &s->main_cols;
+        sp.title = 1;
+        sp.double_pick = 1;
+        sp.max_rows = 12;
+        lg = mui_aalist_new(&sp, &s->list); /* I667i2: AAList with columns, title row and the display hook (design 3.6) */
+        if (g == NULL || lg == NULL || s->list == NULL || s->crumb == NULL) {
+            return NULL;
+        }
+        s->listview = mui_listview_new(lg, (ULONG)CTL_SM_BASE, (ULONG)SEL_UIM_SONG_MENU_ITEMS); /* Selecta_Listview: Amiga-1..5 over the list (I558) */
     }
-    s->listview = mui_listview_new(s->list, (ULONG)CTL_SM_BASE, (ULONG)SEL_UIM_SONG_MENU_ITEMS); /* Selecta_Listview: Amiga-1..5 over the list (I558) */
     if (s->listview == NULL) {
         return NULL;
     }
     set(s->listview, MUIA_ContextMenu, (ULONG)mui_song_context_menu()); /* MUI-P4-6: right mouse button */
-    DoMethod(s->listview, MUIM_Notify, MUIA_Listview_DoubleClick, TRUE, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_DBL);
-    DoMethod(s->list, MUIM_Notify, MUIA_List_Active, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_SEL);
+    DoMethod(s->list, MUIM_Notify, AAL_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_DBL);
+    DoMethod(s->list, MUIM_Notify, AAL_Active, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_SEL);
     s->list_active_set = -1;
     {
         Object* tools = mui_tool_group(s);
@@ -891,8 +915,9 @@ static Object* mui_np_text(char* buf, size_t cap, const char* init, mui_label la
 static Object* mui_detail_group(mui_state* s) {
     Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
     Object* art = mui_aapanel(MUI_AA_PANEL_RAISED, 64);
-    Object* lyr_list = MUI_NewObject((char*)MUIC_Floattext, MUIA_Floattext_Text, (ULONG)s->np_lyric_buf, TAG_DONE);
     Object* lyr_view;
+    Object* info_g;
+    Object* trk_g;
     uint32_t i;
     if (g == NULL) {
         return NULL;
@@ -901,10 +926,20 @@ static Object* mui_detail_group(mui_state* s) {
     s->np_title = mui_np_text(s->np_buf[0], sizeof s->np_buf[0], " ", MUI_LBL_TITLE);
     s->np_artist = mui_np_text(s->np_buf[1], sizeof s->np_buf[1], " ", MUI_LBL_ARTIST);
     s->np_album = mui_np_text(s->np_buf[2], sizeof s->np_buf[2], " ", MUI_LBL_ALBUM);
-    s->np_lyrics = lyr_list;
-    lyr_view = lyr_list != NULL ? MUI_NewObject((char*)MUIC_Listview, MUIA_Listview_List, (ULONG)lyr_list, TAG_DONE) : NULL;
-    s->info_list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_InnerLeft, (ULONG)mui_list_pad_x(), MUIA_List_Format, (ULONG)g_list_fmt1, TAG_DONE);
-    s->trk_list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_InnerLeft, (ULONG)mui_list_pad_x(), MUIA_List_Format, (ULONG)g_list_fmt1, TAG_DONE);
+    {
+        mui_aalist_spec sp;
+        memset(&sp, 0, sizeof sp);
+        sp.active = -1;
+        sp.row = mui_lyric_row;
+        sp.ctx = s;
+        sp.max_rows = 3;
+        sp.no_select = 1; /* lyrics: one column, no selection, wheel only (design 3.6) */
+        lyr_view = mui_aalist_new(&sp, &s->np_lyrics);
+    }
+    s->info_ptr[0] = NULL;
+    s->trk_ptr[0] = NULL;
+    info_g = mui_string_aalist(s->info_ptr, 0, 6, &s->info_list);
+    trk_g = mui_string_aalist(s->trk_ptr, 0, 8, &s->trk_list);
     s->trk_group = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
     if (art != NULL) {
         DoMethod(art, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE)); /* a group needs one child */
@@ -929,11 +964,11 @@ static Object* mui_detail_group(mui_state* s) {
         s->np_up[i] = mui_np_text(s->np_up_buf[i], sizeof s->np_up_buf[i], " ", MUI_LBL_UPCOMING);
         DoMethod(g, OM_ADDMEMBER, s->np_up[i]);
     }
-    if (s->info_list != NULL) {
-        DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Listview, MUIA_Listview_List, (ULONG)s->info_list, TAG_DONE));
+    if (info_g != NULL) {
+        DoMethod(g, OM_ADDMEMBER, info_g);
     }
-    if (s->trk_group != NULL && s->trk_list != NULL) {
-        DoMethod(s->trk_group, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Listview, MUIA_Listview_List, (ULONG)s->trk_list, TAG_DONE));
+    if (s->trk_group != NULL && trk_g != NULL) {
+        DoMethod(s->trk_group, OM_ADDMEMBER, trk_g);
         DoMethod(g, OM_ADDMEMBER, s->trk_group);
     }
     return g;
@@ -1010,7 +1045,7 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
     } else {
         s->np_lyric_buf[0] = '\0';
     }
-    set(s->np_lyrics, MUIA_Floattext_Text, (ULONG)s->np_lyric_buf);
+    set(s->np_lyrics, AAL_Count, (ULONG)mui_text_lines(s->np_lyric_buf));
     /* Next in queue: the three entries after the playing one. */
     n = 0;
     for (i = 0; i < st->queue_count && st->queue != NULL; i++) {
@@ -1030,7 +1065,6 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
     /* Song information: one "Label: value" row per meta tag the song carries, then the subsong line. */
     if (s->info_list != NULL) {
         uint32_t tag, rows = 0;
-        DoMethod(s->info_list, MUIM_List_Clear);
         for (tag = SEL_META_TITLE; so->path != NULL && sel_tag_name(tag) != NULL && rows < MUI_INFO_MAX - 1u; tag++) {
             sel_tag_type ty;
             char lab[48], val[96];
@@ -1057,15 +1091,15 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
             rows++;
         }
         s->info_ptr[rows] = NULL;
+        set(s->info_list, AAL_Count, (ULONG)rows);
         if (rows > 0u) {
-            DoMethod(s->info_list, MUIM_List_Insert, (ULONG)s->info_ptr, (LONG)rows, MUIV_List_Insert_Bottom);
             s->p4[P4_SONGINFO]++;
         }
     }
     /* Tracker pattern rows, only when the engine answered with pattern data. */
     if (s->trk_list != NULL) {
         uint32_t rows = 0;
-        DoMethod(s->trk_list, MUIM_List_Clear);
+        s->trk_ptr[0] = NULL;
         if (pv != NULL && pv->valid != 0u) {
             uint32_t ch = pv->channels < MUI_TRK_CHANNELS ? pv->channels : MUI_TRK_CHANNELS;
             for (i = 0; i < pv->row_n && rows < MUI_TRK_ROWS; i++) {
@@ -1083,11 +1117,11 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
                 rows++;
             }
             s->trk_ptr[rows] = NULL;
-            DoMethod(s->trk_list, MUIM_List_Insert, (ULONG)s->trk_ptr, (LONG)rows, MUIV_List_Insert_Bottom);
             if (rows > 0u) {
                 s->p4[P4_TRACKER]++;
             }
         }
+        set(s->trk_list, AAL_Count, (ULONG)rows);
         set(s->trk_group, MUIA_ShowMe, rows > 0u ? TRUE : FALSE);
     }
 }
@@ -1153,8 +1187,8 @@ static void mui_refresh(mui_state* s) {
         if (s->lay.breakpoint != s->col_bp && s->lay.breakpoint < SEL_UIM_BP_COUNT) { /* MUI-P3-4: another column set */
             s->col_bp = s->lay.breakpoint;
             mui_columns_format(s->col_bp, s->col_fmt, sizeof s->col_fmt);
-            mui_col_format_themed(s->col_fmt, s->col_fmt_th, sizeof s->col_fmt_th);
-            set(s->list, MUIA_List_Format, (ULONG)s->col_fmt_th);
+            mui_main_cols_fill(s->col_bp, &s->main_cols);
+            set(s->list, AAL_Columns, (ULONG)&s->main_cols);
         }
         {
             uint32_t drill = v->style == SEL_VIEW_STYLE_DRILLDOWN; /* MUI-P3-3: the breadcrumb line, drilldown only */
@@ -1219,6 +1253,7 @@ static void mui_refresh(mui_state* s) {
             sig = (sig ^ 0xffu) * 16777619u;
         }
         if (sig != s->list_sig) {
+            long playing = -1; /* the row whose title draws in ACCENT */
             s->list_sig = sig;
             for (i = 0; i < n; i++) {
                 snprintf(s->cell[i].title, sizeof s->cell[i].title, "%s", s->entries[i].text);
@@ -1231,17 +1266,14 @@ static void mui_refresh(mui_state* s) {
                     }
                     mui_row_extra_fill(st, &v->rows[i], grp, &s->cell[i].extra);
                 }
+                if (v->rows[i].kind == SEL_ROW_QUEUE && st->song.queue_id != 0u && v->rows[i].id == st->song.queue_id) {
+                    playing = (long)i;
+                }
                 s->entry_ptr[i] = (const char*)&s->cell[i];
             }
             s->entry_ptr[n] = NULL;
-            set(s->list, MUIA_List_Quiet, TRUE);
-            DoMethod(s->list, MUIM_List_Clear);
-            if (n > 0) {
-                DoMethod(s->list, MUIM_List_Insert, (ULONG)s->entry_ptr, (LONG)n, MUIV_List_Insert_Bottom);
-            }
             s->list_active_set = active;
-            set(s->list, MUIA_List_Active, active < 0 ? (LONG)MUIV_List_Active_Off : (LONG)active);
-            set(s->list, MUIA_List_Quiet, FALSE);
+            SetAttrs(s->list, AAL_Count, (ULONG)n, AAL_Playing, (ULONG)playing, AAL_Active, (ULONG)(active < 0 ? -1L : (long)active), TAG_DONE);
         }
         /* The sentinel the exit stats print (ui_list): which back end, style and column set the List runs, and how often its display hook ran. */
         {
@@ -1372,7 +1404,7 @@ static void mui_p4_note(mui_state* s, uint32_t which, const char* line) {
 /* MUI-P4-14: the Help window, one List row per action table row (mui_help_row). Built once, then only opened. */
 static void mui_help_open(mui_state* s) {
     uint32_t i, n = mui_help_count();
-    Object* lst;
+    Object *lst, *lst_g;
     if (s->help_win == NULL) {
         if (n > MUI_HELP_MAX) {
             n = MUI_HELP_MAX;
@@ -1382,18 +1414,17 @@ static void mui_help_open(mui_state* s) {
             s->help_ptr[i] = s->help_buf[i];
         }
         s->help_ptr[n] = NULL;
-        lst = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_InnerLeft, (ULONG)mui_list_pad_x(), MUIA_List_Format, (ULONG)g_list_fmt1, TAG_DONE);
-        if (lst == NULL) {
+        lst_g = mui_string_aalist(s->help_ptr, (long)n, 16, &lst);
+        if (lst_g == NULL || lst == NULL) {
             return;
         }
         s->help_win = MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, (ULONG) "Selecta Help", MUIA_Window_ID, 0x48454C50UL,
-                                    MUIA_Window_RootObject, (ULONG)MUI_NewObject((char*)MUIC_Listview, MUIA_Listview_List, (ULONG)lst, TAG_DONE), TAG_DONE);
+                                    MUIA_Window_RootObject, (ULONG)lst_g, TAG_DONE);
         if (s->help_win == NULL) {
             return;
         }
         DoMethod(s->app, OM_ADDMEMBER, s->help_win);
         mui_close_on_request(s->help_win);
-        DoMethod(lst, MUIM_List_Insert, (ULONG)s->help_ptr, (LONG)n, MUIV_List_Insert_Bottom);
     }
     set(s->help_win, MUIA_Window_Open, TRUE);
 }
@@ -1711,7 +1742,7 @@ static void mui_control_fire(mui_state* s, LONG id) {
         s->vol_set = v;
     } else if (id == CTL_LIST_SEL || id == CTL_LIST_DBL) {
         const sel_view_state* view = sel_engine_state(s->engine)->view;
-        GetAttr(MUIA_List_Active, s->list, (ULONG*)&v);
+        GetAttr(AAL_Active, s->list, (ULONG*)&v);
         if (view == NULL || v < 0 || (id == CTL_LIST_SEL && v == s->list_active_set)) {
             return;
         }

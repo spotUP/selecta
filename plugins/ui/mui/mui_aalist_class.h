@@ -15,13 +15,32 @@
 #define AAL_First (TAG_USER + 0x53410503UL)  /* LONG: first visible row (notifies) */
 #define AAL_Picked (TAG_USER + 0x53410504UL) /* LONG: row chosen by click or Return (notifies every time) */
 
+#define AAL_Columns (TAG_USER + 0x53410505UL) /* ptr to mui_aalist_cols, copied (I667i2): the shown columns, may change while live */
+#define AAL_Playing (TAG_USER + 0x53410506UL) /* LONG: row whose first column is drawn in ACCENT, -1 none (I667i2) */
+
+#define MUI_AALIST_COLS 5
+
 typedef const char* (*mui_aalist_row_fn)(void* ctx, long row);
+/* Cell text of a multi-column list; row -1 asks the column title (the title row). */
+typedef const char* (*mui_aalist_cell_fn)(void* ctx, long row, int col);
+
+/* Columns: weight > 0 shares the free width by weight, weight 0 is as wide as sample[k] (NULL = empty). */
+typedef struct mui_aalist_cols {
+    int n;
+    int weight[MUI_AALIST_COLS];
+    const char* sample[MUI_AALIST_COLS];
+} mui_aalist_cols;
 
 typedef struct mui_aalist_spec {
     long count, active;
     mui_aalist_row_fn row;
     void* ctx;
     int max_rows; /* default height in rows (0 = 8) */
+    mui_aalist_cell_fn cell; /* I667i2: multi-column rows (used instead of row) */
+    const mui_aalist_cols* cols;
+    int title;       /* a title row above the rows (cell asked for row -1) */
+    int double_pick; /* AAL_Picked only on a double click or Return (a single click just selects) */
+    int no_select;   /* lyrics: no hover, no selection, wheel only */
 } mui_aalist_spec;
 
 /* The group (list + scroller). *list_out receives the list object (the one that carries the AAL_* attributes). */

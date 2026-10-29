@@ -67,12 +67,13 @@ Object* mui_listview_new(Object* list, ULONG sm_base, ULONG sm_count) {
     g_lv_sm_base = sm_base;
     g_lv_sm_count = sm_count;
     if (g_lv_class == NULL) {
-        g_lv_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Listview, NULL, 0, (APTR)(uintptr_t)lv_dispatch);
+        g_lv_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Group, NULL, 0, (APTR)(uintptr_t)lv_dispatch);
     }
     if (g_lv_class == NULL) {
         return NULL;
     }
-    return NewObject(g_lv_class->mcc_Class, NULL, MUIA_Listview_List, (ULONG)list, TAG_DONE);
+    /* I667i2: a Group around the AAList group (was a stock Listview around a stock List). */
+    return NewObject(g_lv_class->mcc_Class, NULL, MUIA_Group_Horiz, TRUE, MUIA_Group_Spacing, 0, MUIA_Group_Child, (ULONG)list, TAG_DONE);
 }
 
 void mui_listview_class_free(void) {
