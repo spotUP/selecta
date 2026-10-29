@@ -34,3 +34,20 @@ Also: the volume row in item 3 was clicked at mid; Play glyph also 93C5FD 88 px 
 ### Tests and revert proof
 - mui-i667n-root (tests/ui/mui_aa_test.c test_i667n_root): string_bg = 2A2A32 for both focus states with the call sentinel +2; precision plan is exact then GUI; aafield_draw calls aafield_string_pens(d) before DoSuperMethodA; obtain() uses the plan and has no fixed PRECISION_GUI.
 - Revert proof: with the draw call removed, line 629 fails ("field sets the string pens before the super draws the gadget"). With obtain() back to a fixed PRECISION_GUI, line 638 fails ("aa_pen obtains through the precision plan, no fixed GUI precision").
+
+
+## Recheck after e75ba5f1
+
+Build: build/amiga selecta rebuilt from main e75ba5f1 (ninja rc 0). Host: mui-aabtn-tokens, mui-aacheck, mui-i667n, mui-i667n-root 4/4 passed.
+Rig 2 (purpose "musicplayer-55: I667n field and Play glyph recheck"), binary as RAM:SelectaMUI, meme.mod queued, Play clicked, search field clicked; `ami.py shot`, PIL histograms of the uitree boxes.
+
+| Mode | Element | Expected | Measured | Result | Screenshot |
+|---|---|---|---|---|---|
+| AGA | search String box (199,20 199x11) | 2A2A32 | 121214 2123 px, 1E1E24 66 px (cursor) | FAIL | /private/tmp/claude-501/-Users-spot-Code-MusicPlayer/7b6e9b73-f7a9-4810-b8de-0f5891b82b93/scratchpad/i667n_aga.png |
+| AGA | command String box (420,20 200x11) | 2A2A32 | 121214 2200 px | FAIL | same |
+| AGA | Play glyph | C8C8D0 (by design) | C8C8D0 68 px, 93C5FD 88 px | PASS | same |
+| RTG | search String box (234,22 262x8) | 2A2A32 | 121214 2032 px, EDEDEB 64 px (cursor) | FAIL | /private/tmp/claude-501/-Users-spot-Code-MusicPlayer/7b6e9b73-f7a9-4810-b8de-0f5891b82b93/scratchpad/i667n_rtg.png |
+| RTG | command String box (518,22 262x8) | 2A2A32 | 121214 2096 px | FAIL | same |
+| RTG | Play glyph | E4E4EA | C8C8D0 68 px, 93C5FD 88 px, E4E4EA 0 px | FAIL | same |
+
+Not measured: Settings window field (not opened, call budget). Stderr pens line NOT captured: Execute/Run drop stderr (`2>` in the script created no file; `ami.py exec` returns no output for the long-running app), so whether aafield_string_pens() ran and what the old pens were is unknown. Next step: make the line reach a file (a Selecta log option, or a stats field) before guessing again; also confirm the new binary was the one deployed (put of build/amiga/apps/selecta/selecta after the e75ba5f1 rebuild, so it was).
