@@ -51,6 +51,10 @@ pc_line(lh "${oh}")
 if(NOT lh MATCHES "^amiga amiga ")
   message(FATAL_ERROR "playing mod: want np=amiga bar=amiga, got: ${lh}\n${oh}")
 endif()
+# I693b (Johan 2026-10-29): the Now Playing fade covers the bottom third, where the family word sits, so a platform cover is not faded.
+if(NOT "${oh}" MATCHES "nowplaying fade 0\n")
+  message(FATAL_ERROR "playing mod: want nowplaying fade 0 over the platform cover, got:\n${oh}")
+endif()
 dui_run(op --db "${WORK}/p.db" --ui desktop --backend mem --view nowplaying --canvas 1280x800 --clock fixed --stats
   --exec "OPEN ${fx}/ambient.mod")
 pc_line(lp "${op}")
@@ -69,6 +73,9 @@ dui_run(oa ${common} --input "${WORK}/play.txt")
 pc_line(la "${oa}")
 if(NOT la MATCHES "^none none ")
   message(FATAL_ERROR "covered song: want np=none bar=none, got: ${la}\n${oa}")
+endif()
+if(NOT "${oa}" MATCHES "nowplaying fade [1-9][0-9]*\n")
+  message(FATAL_ERROR "covered song: want the Now Playing fade over real art, got:\n${oa}")
 endif()
 
 # 5 (I691b2): the word follows design section 2: only on covers of 64 logical px and up, sized edge/7 snapped to the type scale.

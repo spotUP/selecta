@@ -306,6 +306,7 @@ typedef struct desk {
     uint32_t lib_off_page;   /* Library page draws while another page is current (sentinel, must stay 0: I274) */
     uint32_t np_draws;       /* Now Playing panel draws (sentinel) */
     uint32_t np_genart;      /* platform cover draws by the Now Playing panel: one per draw (DUI-P4-7, I691b) */
+    uint32_t np_fade;        /* fade strips over the Now Playing artwork last draw: 0 on a platform cover, whose word sits in the faded third (I693b) */
     uint32_t pc_np, pc_bar, pc_page, pc_tile0, pc_draws, pc_shelf, pc_grid, pc_flow, pc_side, pc_header; /* I691d: shelf, grid, flow, sidebar and page header */ /* I691b: family + 1 of the last platform cover per song site, 0 = real art won; draws = all fallback draws */
     uint32_t cover_np, cover_bar, cover_side; /* I692: real covers (art_tile) drawn by the Now Playing panel and page, the player bar, the sidebar rows */
     sel_gui_rect np_title;      /* the Now Playing title and artist lines, w 0 = not drawn: a song row of the song menu (I372) */
@@ -6432,6 +6433,7 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "nowplaying title %d %d like %d artist %u\n", (int)d->np_title.y, (int)d->np_title.h, (int)d->np_like.y,
                  (unsigned)(d->np_text_artist[0] != '\0'));
     o = dump_put(d, o, "cover_tiles np=%u bar=%u side=%u\n", (unsigned)d->cover_np, (unsigned)d->cover_bar, (unsigned)d->cover_side);
+    o = dump_put(d, o, "nowplaying fade %u\n", (unsigned)d->np_fade);
     o = dump_put(d, o, "platform_covers np=%s bar=%s page=%s tile0=%s draws=%u shelf=%s grid=%s flow=%s side=%s header=%s\n", pc_name(d->pc_np), pc_name(d->pc_bar),
                  pc_name(d->pc_page), pc_name(d->pc_tile0), (unsigned)d->pc_draws, pc_name(d->pc_shelf), pc_name(d->pc_grid), pc_name(d->pc_flow),
                  pc_name(d->pc_side), pc_name(d->pc_header));
@@ -9994,9 +9996,11 @@ static void draw_nowplaying(desk* d) {
             }
         }
     }
-    {
+    d->np_fade = 0u;
+    if (d->pc_np == 0u) { /* I693b, Johan 2026-10-29: only real art fades into the panel; a platform cover keeps its family word */
         int32_t fh = asz / 3, n = fh / lpx(d, 2) > 0 ? fh / lpx(d, 2) : 1, i; /* the fade: strips of the panel colour, opaque at the bottom */
         uint32_t pc = ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]) & 0xFFFFFFu;
+        d->np_fade = (uint32_t)n;
         for (i = 0; i < n; i++) {
             sel_gui_scrim(d->canvas, rect_of(ar.x, ar.y + ar.h - fh + i * fh / n, ar.w, (i + 1) * fh / n - i * fh / n), pc,
                           (uint32_t)(255 * (i + 1) / n));
