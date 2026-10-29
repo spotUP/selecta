@@ -145,7 +145,7 @@ Each row has a finish line; done means its reachability test drives the web buil
 | I694k | Deploy: Docker stage builds the WASM, nginx serves it with COOP/COEP under the DEViLBOX host, deploy through the existing release + webhook | Live URL loads on the phone |
 | I694l | Licence: UADE and nuade are GPL; the public build ships a source offer (link to the exact source commit) and lists every third-party licence in an About page | About page lists all licences; source link resolves |
 | I694m | PWA: manifest, icon, service worker cache of the WASM, "Add to Home Screen" | App opens from the home screen without the browser bar |
-| I694n | Spotify on the web, per D-WEB-2 | Gated; not started before the decision |
+| I694n | Spotify on the web as a Connect remote (D-WEB-2 final): Web API device control and playlist id sync, no audio path | After I694a-m |
 
 Order: I694a first (its failure list may add rows). Then I694b, I694c, I694d in parallel tracks; I694e after I694b; I694f,
 I694g after I694c; I694h and I694j after I694d; I694i can start at once (uimodel work, Mac-testable); I694k, I694l, I694m
@@ -167,6 +167,7 @@ Answers are written into section 9a when Johan gives them.
 - D-WEB-1: own subdomain on the DEViLBOX host and nginx (for example `selecta.uprough.net`), so the app has its own
   origin, its own OPFS storage and its own COOP/COEP headers.
 - D-WEB-2: first answer "no Spotify on the web"; Johan then asked for proper licensing research before deferring it.
+- D-WEB-2 (final, 2026-10-29, after research thoughts/shared/research/2026-10-29-spotify-licensing.md): Spotify Connect remote only. The web build sends play, pause, seek and queue commands through the Web API to the user's own Spotify device and syncs playlist ids; no Spotify audio passes through Selecta (no Web Playback SDK, no server-side librespot). Consequences: no crossfade, DSP or visualizer on Spotify rows; Spotify rows in mixed playlists hand off to the Connect device; attribution, link back and cover art per Developer Policy II.4/II.5; stored rows keep ids and minimal display fields only (Terms IV.3).
   I694n waits for I694o (thoughts/shared/research/2026-10-29-spotify-licensing.md); the decision is asked again with the findings.
 - D-WEB-3: web rows run inside the Mac track, queued after the current Mac rows. No third agent track.
 - D-WEB-4: public user data syncs through the DEViLBOX login (playlists, ratings, history), using existing routes where
