@@ -306,6 +306,7 @@ typedef struct desk {
     uint32_t browse_draws, browse_opens, browse_n; /* I615c: Browse page frames drawn, tiles opened, tiles in the last frame */
     sel_gui_rect browse_rect[48];                  /* I615c: the tile rects of the last frame (hit test and the "browse" input verb) */
     uint32_t search_grid_draws, search_flow_draws; /* I615b: search frames drawn as the tile grid / the cover flow */
+    uint32_t home_chip;      /* the Home format chip in force: 0 All, 1 Music, 2 Modules, 3 Chiptunes (I678j) */
     uint32_t search_facet;   /* the facet chip in force: 0 All, 1 Songs, 2 Albums, 3 Artists */
     uint32_t search_groups[3], search_drawn;  /* group counts read from the drawn headings, rows drawn in the last search frame */
     size_t qlen;
@@ -1763,7 +1764,11 @@ static void desk_draw_query(desk* d, sel_gui_rect sr, const char* hint) {
 /* The Home header chips: All opens Search, Songs the Songs page, Composers the Library, Playlists the
  * Playlists page (desk_click). */
 enum { HOME_CHIPS = 4 };
-static const char* const home_chip_name[HOME_CHIPS] = {"All", "Songs", "Composers", "Playlists"};
+/* The Home chips filter the Home shelves by format family (design doc section 11); the engine does the filtering, the chip is sent as
+ * "VIEW_SOURCE home:<name>". The empty-field hint keeps naming what the search field searches. */
+static const char* const home_chip_name[HOME_CHIPS] = {"All", "Music", "Modules", "Chiptunes"};
+static const char* const home_chip_arg[HOME_CHIPS] = {"all", "music", "modules", "chiptunes"};
+static const char* const home_hint_name[HOME_CHIPS] = {"All", "Songs", "Composers", "Playlists"};
 
 static sel_gui_rect home_chip_rect(desk* d, sel_gui_rect mn, uint32_t k) {
     const sel_gui_atlas* chip = desk_font(d, 1, 13);
@@ -1802,14 +1807,14 @@ static void draw_home_header(desk* d, sel_gui_rect mn, int with_section) {
         sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_SEARCH, rect_of(sr.x + lpx(d, 14), sr.y + (sr.h - ic) / 2, ic, ic), ic,
                           muted);
         d->home_parts |= HP_SEARCH_ICON;
-        search_hint(d, hint, sizeof hint, home_chip_name, HOME_CHIPS);
+        search_hint(d, hint, sizeof hint, home_hint_name, HOME_CHIPS);
         desk_draw_query(d, sr, hint);
     }
     draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, HOME_GREET_Y), mn.w - 2 * mg, lpx(d, HOME_GREET_H)), "Welcome back", 1, 32, text);
     d->home_parts |= HP_GREETING;
     for (k = 0; k < HOME_CHIPS && chip != NULL; k++) {
         sel_gui_rect cr = home_chip_rect(d, mn, (uint32_t)k);
-        draw_chip(d, cr, home_chip_name[k], k == 0, SEL_GUI_TOKEN_SURFACE_RAISED);
+        draw_chip(d, cr, home_chip_name[k], (uint32_t)k == d->home_chip, SEL_GUI_TOKEN_SURFACE_RAISED);
     }
     d->home_parts |= HP_CHIPS;
     if (with_section) {
@@ -7977,7 +7982,7 @@ static void draw_topbar(desk* d) {
     sel_gui_round_rect(d->canvas, sr, sr.h / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
     sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_SEARCH, rect_of(sr.x + lpx(d, 14), sr.y + (sr.h - ic) / 2, ic, ic), ic,
                       ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
-    search_hint(d, hint, sizeof hint, home_chip_name, HOME_CHIPS);
+    search_hint(d, hint, sizeof hint, home_hint_name, HOME_CHIPS);
     desk_draw_query(d, sr, hint);
     sel_gui_fill_rect(d->canvas, rect_of(br.x, br.y + (br.h - dh) / 2, dw, dh), ARGB(d->theme.token[SEL_GUI_TOKEN_DIVIDER]));
     sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_LAYOUT_GRID, rect_of(br.x + (br.w - ic) / 2, br.y + (br.h - ic) / 2, ic, ic), ic,
@@ -8293,14 +8298,12 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
     if (d->page == PG_HOME && d->open_tile == 0 && !d->songs && st->composers == NULL && in_rect(mn, x, y)) {
         for (i = 0; i < HOME_CHIPS; i++) { /* the Home header chips */
             if (in_rect(home_chip_rect(d, panel_rect(d, "main"), i), x, y)) {
-                int moved;
-                if (i == 0u) {
-                    d->search_facet = i;
-                    d->search_keep = 1;
-                }
-                moved = desk_page_goto(d, i == 0u ? PG_SEARCH : i == 1u ? PG_SONGS : i == 2u ? PG_LIBRARY : PG_PLAYLISTS);
-                d->search_keep = 0;
-                return moved;
+                char line[40];
+                d->home_chip = i;
+                snprintf(line, sizeof line, "VIEW_SOURCE home:%s", home_chip_arg[i]);
+                desk_send(d, line);
+                d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+                return 1;
             }
         }
     }

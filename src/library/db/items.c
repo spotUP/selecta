@@ -339,28 +339,58 @@ int sel_library_collection(sel_library* lib, uint32_t kind, const char* key, uin
     " WHEN 6 THEN (SELECT COUNT(*) FROM history h JOIN song_composers c ON c.song_key=h.key WHERE c.canon=ik)" \
     " WHEN 3 THEN (SELECT COUNT(*) FROM history h JOIN playlist_entries e ON e.key=h.key WHERE e.playlist_id=CAST(ik AS INTEGER)) ELSE 0 END)"
 
-int sel_home_items(sqlite3* db, uint32_t shelf, uint32_t limit, sel_home_item_fn fn, void* ctx) {
+/* Format families of the Home chips, one place (lower-case songs.format values). Modules: tracker formats; Chiptunes: SID, AY, SAP and the
+ * other chip-synth formats; Music: everything else (a song with no format included). */
+#define HOME_TRACKERS "'mod','xm','it','s3m','med','mmd0','mmd1','mmd2','mmd3','stk','nst','okt','digi','dbm','far','ult','mtm','669','gtk','symmod','ahx','hvl','fc14','fc13','hip','hipc','hip7','dw','fred','bp','bp3','sid1','sid2','dm1','dm2','sfx','tfx','mc','rh'"
+#define HOME_CHIPS_FMT "'sid','psid','rsid','ay','ym','sap','nsf','nsfe','spc','gbs','vgm','vgz','kss','hes','gym','pt3','pt2','stc','sqt','asc','psc','fxm','pt1','stp'"
+
+void sel_home_chip_sql(uint32_t chip, const char* col, char* out, size_t cap) {
+    switch (chip) {
+    case SEL_HOME_CHIP_MODULES: snprintf(out, cap, "lower(COALESCE(%s,'')) IN (" HOME_TRACKERS ")", col); break;
+    case SEL_HOME_CHIP_CHIPTUNES: snprintf(out, cap, "lower(COALESCE(%s,'')) IN (" HOME_CHIPS_FMT ")", col); break;
+    case SEL_HOME_CHIP_MUSIC: snprintf(out, cap, "lower(COALESCE(%s,'')) NOT IN (" HOME_TRACKERS "," HOME_CHIPS_FMT ")", col); break;
+    default: snprintf(out, cap, "1"); break;
+    }
+}
+
+int sel_home_items(sqlite3* db, uint32_t shelf, uint32_t chip, uint32_t limit, sel_home_item_fn fn, void* ctx) {
     static const char* const tail[SEL_HOME_SHELVES] = {
         /* quick access: Liked Songs first, then the newest by recency */
-        " WHERE k=0 OR " HOME_REC ">0 ORDER BY (k<>0)," HOME_REC " DESC, sn COLLATE NOCASE, tie LIMIT ?1",
+        " WHERE (k=0 OR " HOME_REC ">0) AND %s ORDER BY (k<>0)," HOME_REC " DESC, sn COLLATE NOCASE, tie LIMIT ?1",
         /* recently played items: albums, playlists, composers with a play */
-        " WHERE k IN (3,4,6) AND lp>0 ORDER BY lp DESC, sn COLLATE NOCASE, tie LIMIT ?1",
+        " WHERE k IN (3,4,6) AND lp>0 AND %s ORDER BY lp DESC, sn COLLATE NOCASE, tie LIMIT ?1",
         /* your albums, most played first */
-        " WHERE k=4 AND " HOME_PLAYS ">0 ORDER BY " HOME_PLAYS " DESC, sn COLLATE NOCASE, tie LIMIT ?1",
+        " WHERE k=4 AND " HOME_PLAYS ">0 AND %s ORDER BY " HOME_PLAYS " DESC, sn COLLATE NOCASE, tie LIMIT ?1",
+        /* your composers, most played first (every composer, so a library with no plays still lists them) */
+        " WHERE k=6 AND %s ORDER BY " HOME_PLAYS " DESC, sn COLLATE NOCASE, tie LIMIT ?1",
         /* your playlists, most played first */
-        " WHERE k=3 ORDER BY " HOME_PLAYS " DESC, sn COLLATE NOCASE, tie LIMIT ?1"};
+        " WHERE k=3 AND %s ORDER BY " HOME_PLAYS " DESC, sn COLLATE NOCASE, tie LIMIT ?1"};
     static const uint32_t mask[SEL_HOME_SHELVES] = {
         SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_LIKED) | SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST) | SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_ALBUM) |
             SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_ARTIST) | SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_COMPOSER),
         SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST) | SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_ALBUM) | SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_COMPOSER),
-        SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_ALBUM), SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST)};
-    char inner[8192], sql[9000];
+        SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_ALBUM), SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_COMPOSER), SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST)};
+    char inner[8192], sql[9400], fam[600], has[1800];
     sqlite3_stmt* st = NULL;
     uint32_t n = 0;
     int rc;
 
     if (shelf >= SEL_HOME_SHELVES || !build_sql(mask[shelf], inner, sizeof inner)) return SQLITE_MISUSE;
-    snprintf(sql, sizeof sql, "WITH " HOME_T " AS (%s) SELECT k,ik,nm,sub FROM t%s", inner, tail[shelf]);
+    /* The chip keeps an item with a song of the family; Quick access is not filtered (design doc section 11: the chips filter the shelves). */
+    sel_home_chip_sql(shelf == SEL_HOME_QUICK ? SEL_HOME_CHIP_ALL : chip, "s.format", fam, sizeof fam);
+    if (shelf == SEL_HOME_QUICK || chip == SEL_HOME_CHIP_ALL) {
+        snprintf(has, sizeof has, "1");
+    } else snprintf(has, sizeof has,
+             "(CASE k WHEN 4 THEN EXISTS(SELECT 1 FROM songs s WHERE s.album IS nm AND s.artist IS NULLIF(sub,'') AND %s)"
+             " WHEN 6 THEN EXISTS(SELECT 1 FROM song_composers c JOIN songs s ON s.key=c.song_key WHERE c.canon=ik AND %s)"
+             " WHEN 3 THEN EXISTS(SELECT 1 FROM playlist_entries e JOIN songs s ON s.key=e.key WHERE e.playlist_id=CAST(ik AS INTEGER) AND %s)"
+             " ELSE 1 END)",
+             fam, fam, fam);
+    {
+        char tl[3000];
+        snprintf(tl, sizeof tl, tail[shelf], has);
+        snprintf(sql, sizeof sql, "WITH " HOME_T " AS (%s) SELECT k,ik,nm,sub FROM t%s", inner, tl);
+    }
     rc = sqlite3_prepare_v2(db, sql, -1, &st, NULL);
     if (rc != SQLITE_OK) return rc;
     sqlite3_bind_int64(st, 1, limit);

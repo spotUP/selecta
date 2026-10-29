@@ -702,11 +702,16 @@ int sel_library_folder_tree(sel_library* lib, char* out, uint32_t cap, uint32_t*
 }
 
 int sel_library_home(sel_library* lib, uint32_t limit, char* out, uint32_t cap, uint32_t* lines) {
+    return sel_library_home_chip(lib, 0, limit, out, cap, lines);
+}
+
+int sel_library_home_chip(sel_library* lib, uint32_t chip, uint32_t limit, char* out, uint32_t cap, uint32_t* lines) {
     sel_user_op op;
     sel_message reply;
     memset(&op, 0, sizeof op);
     memset(&reply, 0, sizeof reply);
     op.op = SEL_USER_HOME;
+    op.chip = chip;
     op.at = limit;
     op.out = out;
     op.out_cap = cap;

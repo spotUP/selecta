@@ -282,6 +282,7 @@ struct sel_engine {
     uint32_t analyse_jobs, analyse_speed, analyse_gated; /* I187 sentinels: jobs stored, x real time, R128 (not fallback) */
     int32_t analyse_lufs_cdb, analyse_gain_cdb, analyse_peak_cdb;
     uint32_t home_item_shelves;                /* I678j sentinel: item shelves the home text carried */
+    uint32_t home_chip;                        /* Home format chip: SEL_HOME_CHIP_* (I678j) */
     uint32_t home_rows;                        /* entries the home view source shows (I191 sentinel) */
     uint32_t folder_view_rows;                 /* rows the folders view source built (I179 sentinel) */
     uint32_t import_runs, import_added, import_missing; /* PLAYLIST_IMPORT sentinel and last result (I652c) */
@@ -4498,7 +4499,7 @@ static void home_reload(sel_engine* e) {
         return;
     }
     text[0] = '\0';
-    if (e->lib != NULL && !sel_library_home(e->lib, 10, text, SEL_VIEW_HOME_TEXT_MAX, &lines)) {
+    if (e->lib != NULL && !sel_library_home_chip(e->lib, e->home_chip, 10, text, SEL_VIEW_HOME_TEXT_MAX, &lines)) {
         text[0] = '\0';
     }
     e->home_rows += sel_view_set_home(&e->view, text);
@@ -5570,6 +5571,15 @@ static void cmd_VIEW_SOURCE(sel_engine* e, const sel_message* m) {
     sel_view_src s;
     uint32_t i;
 
+    if (strncmp(what, "home:", 5) == 0) { /* "home:<chip>" selects the Home format chip: all, music, modules, chiptunes */
+        static const char* const chip_name[SEL_HOME_CHIPS] = {"all", "music", "modules", "chiptunes"};
+        uint32_t c;
+        e->home_chip = SEL_HOME_CHIP_ALL;
+        for (c = 0; c < SEL_HOME_CHIPS; c++) {
+            if (strcmp(what + 5, chip_name[c]) == 0) e->home_chip = c;
+        }
+        what = "home";
+    }
     if (strcmp(what, "playlist") == 0) {
         what = "queue"; /* the playlist being played is the queue; playlist folders arrive with I19x */
     }

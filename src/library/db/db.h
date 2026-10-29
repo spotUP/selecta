@@ -161,6 +161,9 @@ enum { SEL_RATING_LOCAL = 0, SEL_RATING_QUEUE = 1, SEL_RATING_SERVER = 2 };
 /* Why a folder op was refused: reply [0] = 0, [1] = SQLITE_CONSTRAINT, [2] = one of these. */
 enum { SEL_FOLDER_OK = 0, SEL_FOLDER_ERR_NO_FOLDER = 1, SEL_FOLDER_ERR_CYCLE = 2, SEL_FOLDER_ERR_NOT_EMPTY = 3,
        SEL_FOLDER_ERR_NO_PLAYLIST = 4, SEL_FOLDER_ERR_FAILED = 5 };
+/* I678j: the Home format chips. */
+enum { SEL_HOME_CHIP_ALL = 0, SEL_HOME_CHIP_MUSIC, SEL_HOME_CHIP_MODULES, SEL_HOME_CHIP_CHIPTUNES, SEL_HOME_CHIPS };
+
 typedef struct sel_user_op {
     uint32_t op;       /* SEL_USER_* */
     const char* key;   /* song key */
@@ -172,6 +175,7 @@ typedef struct sel_user_op {
     int32_t duration_ms; /* HISTORY: 0 = unknown */
     char* out;           /* STICKER_GET: value, "" when absent */
     uint32_t out_cap;
+    uint32_t chip;       /* HOME: the Home chip (SEL_HOME_CHIP_*, I678j) */
 } sel_user_op;
 
 /* One meta key/value (text). set != 0 stores `value`; set == 0 reads into `value` (capacity `cap`, "" when the
@@ -424,6 +428,7 @@ int sel_library_folder_tree(sel_library* lib, char* out, uint32_t cap, uint32_t*
  * and no finished play of it) and New this week (the modland changelog count stored by the sync), at most `limit`
  * entries per list section. Lines: `H <heading>`, `S <entry>`, `C <count> <entry>`. 1 on success. */
 int sel_library_home(sel_library* lib, uint32_t limit, char* out, uint32_t cap, uint32_t* lines);
+int sel_library_home_chip(sel_library* lib, uint32_t chip, uint32_t limit, char* out, uint32_t cap, uint32_t* lines); /* I678j: filtered by a Home chip */
 int sel_library_user_counts(sel_library* lib, uint32_t* history, uint32_t* flags, uint32_t* notes, uint32_t* pending_push);
 /* Marks song key `key` in table "kept" or "liked" (seeding and tests). 1 on success. */
 int sel_library_mark(sel_library* lib, const char* table, const char* key);
