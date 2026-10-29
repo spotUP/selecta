@@ -185,6 +185,14 @@ tests/dui/aga_budget.cmake still passes with palette entries 32..58 equal to the
 written: no live MUI site calls the canvas grid or art path today; the MUI rig check happens with the MUI row that
 wires a grid.
 
+I691e as built: `mui_canvas.c` draws `sel_gui_cover_draw` with the family of `sel_platform_of_ext(format)` in the default theme
+tokens (no word); `MUI_ART_GENART` became `MUI_ART_COVER`; `sel_gui_genart_draw`, `sel_gui_genart_palette`, `sel_gui_genart_chip`
+and the hsv gradient code are gone (`gui_genart.c`/`.h` stay as the cover module, with `sel_gui_str_hash`);
+`sel_gui_palette_budget` leaves entries 32..63 grey and the desktop calls `sel_gui_cover_palette(pal + 32, tokens)` after it.
+Reachability exemption: no live MUI site draws a platform cover (the canvas grid and art path have no caller outside
+tests/ui/mui_canvas_test.c), so the MUI cover is proven through the canvas functions only; the MUI rig check belongs to the MUI row
+that wires a grid.
+
 Rig check at the end of the batch (Mac first: Home, Library grid, cover flow, album page, Now Playing with a .mod
 from the Modland mirror; then the AGA tier on the rig with virgill-that_meme_again.mod).
 

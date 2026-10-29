@@ -4934,7 +4934,7 @@ static void add_mode_back(desk* d) {
 }
 
 /* D6: the artist / composer avatar is the generated art of the name inside a circle. The art is drawn once into an offscreen
- * tile (sel_gui_genart_draw) and blitted through the rounded-rect mask with radius = half the edge. */
+ * tile (family_platform_cover) and blitted through the rounded-rect mask with radius = half the edge. */
 static void col_round_art(desk* d, sel_gui_rect r) {
     uint32_t hash = sel_gui_str_hash(d->pls_name);
     if (r.w <= 0 || r.h != r.w) {
@@ -8241,7 +8241,7 @@ static void draw_home_content(desk* d) {
             sel_gui_blit_image_round(d->canvas, ar, art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]));
             sel_gui_set_region(d->canvas, SEL_GUI_RGN_UI);
         } else {
-            /* No cover: the generated art of the song's format and chip (gui_genart.h). */
+            /* No cover: the platform cover of the song's family (gui_genart.h). */
             song_platform_cover(d, ar, st->queue_text + st->queue[i].path_offset, name, &pc_slot);
         }
         if (i == 0u) {
@@ -12806,6 +12806,7 @@ static int desk_make_canvas(desk* d, const char* size, int32_t def_w, int32_t de
             ui[k] = d->theme.token[ui_tokens[k]];
         }
         sel_gui_palette_budget(pal, ui, k);
+        sel_gui_cover_palette(pal + 32, d->theme.token); /* I691e: entries 32..63 hold the platform cover tones */
         sel_gui_palette_headline_shades(pal, d->theme.token[SEL_GUI_TOKEN_TEXT], d->theme.token[SEL_GUI_TOKEN_BACKGROUND],
             d->theme.token[SEL_GUI_TOKEN_TEXT], d->theme.token[SEL_GUI_TOKEN_SURFACE]); /* I526-P2b */
         sel_gui_set_palette(d->canvas, pal, 0u, 256u);

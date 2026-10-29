@@ -159,7 +159,10 @@ void sel_gui_palette_budget(uint32_t* p, const uint32_t* ui, uint32_t n) {
     }
     p[30] = 0x000000u;
     p[31] = 0xFFFFFFu;
-    sel_gui_genart_palette(p + 32);
+    for (i = 0; i < 32u; i++) { /* the cover slots: grey until the caller fills them with sel_gui_cover_palette (I691e) */
+        uint32_t v = (i * 255u) / 31u;
+        p[32u + i] = (v << 16) | (v << 8) | v;
+    }
     for (i = 0; i < 192u; i++) { /* three artwork sub-palettes, grey ramps until a quantiser fills them */
         uint32_t v = ((i & 63u) * 255u) / 63u;
         p[64u + i] = (v << 16) | (v << 8) | v;

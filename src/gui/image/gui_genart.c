@@ -13,16 +13,6 @@ uint32_t sel_gui_str_hash(const char* s) {
     return h;
 }
 
-const char* sel_gui_genart_chip(const char* format) {
-    switch (sel_platform_of_ext(format)) {
-    case SEL_PLATFORM_FAMILY_AMIGA: return "paula";
-    case SEL_PLATFORM_FAMILY_COMMODORE_64: return "sid";
-    case SEL_PLATFORM_FAMILY_ATARI: return "ay";
-    case SEL_PLATFORM_FAMILY_NES: return "2a03";
-    default: return "software";
-    }
-}
-
 /* ---- Platform covers (I691a) ---- */
 
 enum { COVER_TONES = 3, ART_SLOTS = 32 };
@@ -225,83 +215,4 @@ void sel_gui_cover_draw(sel_gui_canvas* c, sel_gui_rect r, uint32_t family, uint
     }
     c->region = region;
     sel_gui_prof_end(c, SEL_GUI_PROF_GENART, t0);
-}
-
-/* hue 0..1535 (six regions of 256), saturation and value 0..255. */
-static uint32_t hsv(uint32_t hue, uint32_t s, uint32_t v) {
-    uint32_t region = (hue / 256u) % 6u, f = hue % 256u;
-    uint32_t p = v * (255u - s) / 255u;
-    uint32_t q = v * (255u - s * f / 255u) / 255u;
-    uint32_t t = v * (255u - s * (255u - f) / 255u) / 255u;
-    uint32_t r, g, b;
-
-    switch (region) {
-    case 0: r = v; g = t; b = p; break;
-    case 1: r = q; g = v; b = p; break;
-    case 2: r = p; g = v; b = t; break;
-    case 3: r = p; g = q; b = v; break;
-    case 4: r = t; g = p; b = v; break;
-    default: r = v; g = p; b = q; break;
-    }
-    return 0xFF000000u | (r << 16) | (g << 8) | b;
-}
-
-void sel_gui_genart_palette(uint32_t out[32]) {
-    uint32_t i;
-    for (i = 0; i < 16u; i++) {
-        out[i] = hsv(i * 96u, 185u, 85u) & 0xFFFFFFu;       /* the gradient's start: saturation 170-201, value 70-101 */
-        out[16u + i] = hsv(i * 96u, 200u, 215u) & 0xFFFFFFu; /* its end: saturation 200, value 200-231 */
-    }
-}
-
-static void genart_draw(sel_gui_canvas* c, sel_gui_rect r, const char* format, uint32_t title_hash);
-
-void sel_gui_genart_draw(sel_gui_canvas* c, sel_gui_rect r, const char* format, uint32_t title_hash) {
-    uint32_t was = c->region;
-    uint32_t t0 = sel_gui_prof_begin(c);
-    c->region = SEL_GUI_RGN_ART;
-    genart_draw(c, r, format, title_hash);
-    c->region = was;
-    sel_gui_prof_end(c, SEL_GUI_PROF_GENART, t0);
-}
-
-static void genart_draw(sel_gui_canvas* c, sel_gui_rect r, const char* format, uint32_t title_hash) {
-    char f[16];
-    uint32_t fh, ch, hue, a, b, bits;
-    int32_t cell, ox, oy, x, y;
-    sel_gui_rect g;
-
-    sel_platform_lower(f, format, sizeof f);
-    fh = sel_gui_str_hash(f);
-    ch = sel_gui_str_hash(sel_gui_genart_chip(f));
-    hue = (ch % 1536u + (title_hash >> 8) % 192u) % 1536u; /* the chip sets the colour family, the title nudges it */
-    a = hsv(hue, 170u + (fh & 31u), 70u + (title_hash & 31u));
-    b = hsv((hue + 128u + (fh >> 5) % 128u) % 1536u, 200u, 200u + ((title_hash >> 16) & 31u));
-    sel_gui_gradient(c, r, 1, a, b);
-
-    /* The glyph: a mirrored 5x5 pattern from the format hash and the title hash, centred. The title
-     * must reach the glyph, not only the gradient: tiles of one format (a shelf of .mod files) would
-     * otherwise all carry the same glyph (I360). */
-    cell = r.w / 8;
-    if (cell < 1) {
-        return;
-    }
-    ox = r.x + (r.w - 5 * cell) / 2;
-    oy = r.y + (r.h - 5 * cell) / 2;
-    bits = fh ^ (fh >> 15) ^ (title_hash * 2654435761u >> 11);
-    for (y = 0; y < 5; y++) {
-        for (x = 0; x < 3; x++) {
-            if (((bits >> (uint32_t)(y * 3 + x)) & 1u) != 0u) {
-                g.y = oy + y * cell;
-                g.w = cell;
-                g.h = cell;
-                g.x = ox + x * cell;
-                sel_gui_fill_rect(c, g, 0xFFF4F4F4u);
-                g.x = ox + (4 - x) * cell;
-                if (x != 2) {
-                    sel_gui_fill_rect(c, g, 0xFFF4F4F4u);
-                }
-            }
-        }
-    }
 }

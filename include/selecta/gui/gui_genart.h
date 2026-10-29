@@ -19,9 +19,6 @@ extern "C" {
 /* FNV-1a of a NUL-terminated string. */
 uint32_t sel_gui_str_hash(const char* s);
 
-/* The chip a format plays on: "paula", "sid", "ay", "2a03", "software". Derived from the family. */
-const char* sel_gui_genart_chip(const char* format);
-
 /* Tones per family in the cover palette and on an INDEX8 canvas: 3 when SEL_PLATFORM_FAMILY_COUNT * 3 colours plus the
  * text colour fit the 32 artwork palette slots, else 1 (every family keeps its base tone, table order). */
 uint32_t sel_gui_cover_aga_tones(void);
@@ -36,11 +33,6 @@ uint32_t sel_gui_cover_palette(uint32_t out[32], const uint32_t* tokens);
 /* Draws the cover of `family` into `r`. `label_font` NULL draws no name. */
 void sel_gui_cover_draw(sel_gui_canvas* c, sel_gui_rect r, uint32_t family, uint32_t title_hash, const uint32_t* tokens,
                         const sel_gui_atlas* label_font);
-
-/* Legacy gradient art, replaced by sel_gui_cover_draw at the call sites in I691b-e and removed in I691e. */
-/* The 32 colours the generated art is drawn from, for the INDEX8 budget: 16 hues at the gradient's dark and bright ends. */
-void sel_gui_genart_palette(uint32_t out[32]);
-void sel_gui_genart_draw(sel_gui_canvas* c, sel_gui_rect r, const char* format, uint32_t title_hash);
 
 #ifdef __cplusplus
 }
