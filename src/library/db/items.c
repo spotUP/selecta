@@ -235,6 +235,7 @@ static const char* collection_sql(uint32_t kind, uint32_t shelf) {
         if (kind == SEL_LIB_ITEM_ALBUM) {
             return SONG_COLS " JOIN albums a ON a.id=CAST(?1 AS INTEGER) AND s.album IS a.name AND s.artist IS a.artist ORDER BY s.id";
         }
+        if (kind == SEL_COLLECTION_LIKED) return SONG_COLS " JOIN liked l ON l.key=s.key ORDER BY l.at DESC, s.id"; /* ?1 is unused */
         if (kind == SEL_LIB_ITEM_ARTIST) return SONG_COLS " WHERE s.artist=?1" BY_PLAYS;
         if (kind == SEL_LIB_ITEM_COMPOSER) {
             return SONG_COLS " WHERE CASE WHEN ?1='" SEL_COMPOSER_UNKNOWN_CANON "' THEN NOT EXISTS"

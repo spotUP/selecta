@@ -4,6 +4,10 @@
 #ifndef SELECTA_LIBRARY_ITEM_H
 #define SELECTA_LIBRARY_ITEM_H
 
+/* I678j4: the collection kind of the pinned Liked Songs page. It is not a row kind of the items table (kind 0 means a playlist page in
+ * the UI), so it has its own value. */
+#define SEL_COLLECTION_LIKED 100u
+
 enum {
     SEL_LIB_ITEM_LIKED = 0,  /* pinned: Liked Songs */
     SEL_LIB_ITEM_RECENT = 1, /* pinned: Recently Played */

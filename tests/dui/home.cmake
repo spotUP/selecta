@@ -653,6 +653,12 @@ quick_run(qact "${few_db}" 1000x1400 "quicktile 4\nwait 300\n")
 if(NOT "${qact}" MATCHES "page=collection" OR NOT "${qact}" MATCHES "collection kind=album ")
   message(FATAL_ERROR "quick tile 4 did not open the album collection page in:\n${qact}")
 endif()
+# I678j4: quick tile 0 (Liked Songs) opens the Liked page: the collection page of kind liked, built by the engine from the liked table
+# (no Recents touch), listing the liked songs through the shared song-list rows. The dump names the page "collection" and the kind "liked".
+quick_run(qliked "${few_db}" 1000x1400 "quicktile 0\nwait 300\n")
+if(NOT "${qliked}" MATCHES "page=collection" OR NOT "${qliked}" MATCHES "collection kind=liked ")
+  message(FATAL_ERROR "quick tile 0 (Liked Songs) did not open the liked page in:\n${qliked}")
+endif()
 # I490: the pointer over quick-pick tile 1 lights that card like a hovered shelf card: the dump carries quick_hover with the
 # lit fill (the panel mixed to the surface token), and no such line while no quick tile is hovered.
 quick_run(qidle "${few_db}" 1000x1400 "wait 1\n")

@@ -2258,7 +2258,8 @@ static void shelf_activate_row(desk* d, uint32_t row) {
 /* I678j: opens a library item: the sidebar row and a Home card share this path. Playlist, album, artist and composer open their
  * collection page (feeding Recents); the other kinds record the identity so the row is marked open. */
 static void desk_item_open(desk* d, uint32_t kind, uint32_t id, const char* key, const char* name, const char* sub, int pinned) {
-    int paged = kind >= (uint32_t)SEL_LIB_ITEM_ALBUM && kind <= (uint32_t)SEL_LIB_ITEM_COMPOSER;
+    int paged = (kind >= (uint32_t)SEL_LIB_ITEM_ALBUM && kind <= (uint32_t)SEL_LIB_ITEM_COMPOSER) || (pinned && kind == (uint32_t)SEL_LIB_ITEM_LIKED);
+    if (pinned && kind == (uint32_t)SEL_LIB_ITEM_LIKED) kind = SEL_COLLECTION_LIKED; /* I678j4: the Liked Songs page */
     if (!pinned && !paged) { /* I678c: opening an item page feeds Recents; the engine stores it so every UI shares the order */
         char touch[160];
         char head[32];
@@ -4461,6 +4462,7 @@ static const char* col_kind_label(const desk* d) {
     return d->col_kind == (uint32_t)SEL_LIB_ITEM_ALBUM      ? "Album"
            : d->col_kind == (uint32_t)SEL_LIB_ITEM_ARTIST   ? "Artist"
            : d->col_kind == (uint32_t)SEL_LIB_ITEM_COMPOSER ? "Composer"
+           : d->col_kind == SEL_COLLECTION_LIKED            ? "Playlist"
                                                             : "Playlist";
 }
 
@@ -6218,7 +6220,7 @@ static const char* library_dump_build(desk* d) {
             sel_engine_stats cst;
             sel_engine_stats_get(d->engine, &cst);
             o = dump_put(d, o, "collection kind=%s opens=%u dominants=%u cover=%d color=%08x top=%08x sort=%u q=[%s] shown=%u of=%u search=%d sortbtn=%d,%d,%d,%d find=%d,%d,%d,%d\n",
-                         d->col_kind == 0u ? "playlist" : d->col_kind == (uint32_t)SEL_LIB_ITEM_ALBUM ? "album" : d->col_kind == (uint32_t)SEL_LIB_ITEM_ARTIST ? "artist" : "composer",
+                         d->col_kind == 0u ? "playlist" : d->col_kind == (uint32_t)SEL_LIB_ITEM_ALBUM ? "album" : d->col_kind == (uint32_t)SEL_LIB_ITEM_ARTIST ? "artist" : d->col_kind == SEL_COLLECTION_LIKED ? "liked" : "composer",
                          (unsigned)cst.collection_opens, (unsigned)art_dominants(d->art), d->col_cover, (unsigned)d->col_color, (unsigned)d->col_top,
                          (unsigned)d->col_sort, d->col_q, (unsigned)d->pls_vn, (unsigned)d->pls_n, d->col_search, (int)cs.x, (int)cs.y, (int)cs.w, (int)cs.h,
                          (int)cf.x, (int)cf.y, (int)cf.w, (int)cf.h);

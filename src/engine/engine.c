@@ -5185,6 +5185,8 @@ static void coll_build_page(sel_engine* e, uint32_t kind, const char* key) {
         pg->year = head.year;
     } else if (kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) { /* the most used spelling is the display name */
         snprintf(pg->title, sizeof pg->title, "%s", pg->shelf_n[3] > 0u ? pg->shelf[3][0].name : key);
+    } else if (kind == SEL_COLLECTION_LIKED) {
+        snprintf(pg->title, sizeof pg->title, "Liked Songs");
     } else {
         snprintf(pg->title, sizeof pg->title, "%s", key);
     }
@@ -5206,16 +5208,16 @@ static void cmd_COLLECTION_OPEN(sel_engine* e, const sel_message* m) {
     int rc;
     uint32_t kind = (uint32_t)m->args[0].v.u;
     if (!folder_ready(e, "COLLECTION_OPEN")) return;
-    rc = sel_library_touch(e->lib, kind, m->args[1].v.s, (int64_t)time(NULL));
+    rc = kind == SEL_COLLECTION_LIKED ? SEL_FOLDER_OK : sel_library_touch(e->lib, kind, m->args[1].v.s, (int64_t)time(NULL)); /* a pinned page is not a Recent */
     if (rc != SEL_FOLDER_OK) {
         folder_report(e, rc, "COLLECTION_OPEN");
         return;
     }
-    e->lib_touch_calls++;
+    if (kind != SEL_COLLECTION_LIKED) e->lib_touch_calls++;
     e->collection_opens++;
     e->collection_kind = kind;
     snprintf(e->collection_key, sizeof e->collection_key, "%s", m->args[1].v.s);
-    if (kind >= (uint32_t)SEL_LIB_ITEM_ALBUM && kind <= (uint32_t)SEL_LIB_ITEM_COMPOSER) coll_build_page(e, kind, e->collection_key);
+    if ((kind >= (uint32_t)SEL_LIB_ITEM_ALBUM && kind <= (uint32_t)SEL_LIB_ITEM_COMPOSER) || kind == SEL_COLLECTION_LIKED) coll_build_page(e, kind, e->collection_key);
 }
 
 static void cmd_PLAYLIST_DEL(sel_engine* e, const sel_message* m) {
