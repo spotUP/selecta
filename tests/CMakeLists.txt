@@ -540,7 +540,8 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-viz-surface COMMAND mui_viz_test surface)
   add_test(NAME mui-budget COMMAND mui_viz_test budget)
   add_test(NAME mui-copper-tint COMMAND mui_viz_test copper)
-  set_tests_properties(mui-viz-surface mui-budget mui-copper-tint PROPERTIES TIMEOUT 30 LABELS mui)
+  add_test(NAME mui-viz-set COMMAND mui_viz_test set)
+  set_tests_properties(mui-viz-surface mui-budget mui-copper-tint mui-viz-set PROPERTIES TIMEOUT 30 LABELS mui)
   add_executable(gui_dither_test ui/gui_dither_test.c)
   target_link_libraries(gui_dither_test PRIVATE selecta_gui)
   target_compile_definitions(gui_dither_test PRIVATE GRADIENT_GOLDEN=0x6b25f44c8d897ac0ull COVER_GOLDEN=0x5feee6196fcf1ca2ull)
@@ -1292,6 +1293,15 @@ if(NOT SEL_AMIGA)
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-list"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
   set_tests_properties(rig-m4-mui-list PROPERTIES LABELS rig RESOURCE_LOCK rig
+    SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  # I684 / MUI-P5-3 / MUI-P5-5: the Now Playing visualizer renders into the MUI window (vizframes > 0 in the ui_p4 exit stats).
+  # Run as UPTERM_RIG=<n> ctest -R rig-m4-mui-viz; needs SEL_MUI_SONG.
+  add_test(NAME rig-m4-mui-viz
+    COMMAND "${CMAKE_COMMAND}" -DTAG=M4MUIVIZ "-DRIG_DIR=${SEL_RIG_DIR}"
+      "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta" "-DSONG=${SEL_MUI_SONG}"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-viz"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
+  set_tests_properties(rig-m4-mui-viz PROPERTIES LABELS rig RESOURCE_LOCK rig
     SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
   # MUI-P5-6: an icon dragged from a Workbench drawer window onto the MUI window (AppWindow drop) and Edit > Copy Song Title
   # (clipboard.device). Needs a rig started with --no-dopus (plain Workbench) and SEL_MUI_SONG.

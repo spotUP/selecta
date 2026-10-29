@@ -40,7 +40,7 @@ typedef char canvas_data_fits_uword[(sizeof(canvas_data) < 65536u) ? 1 : -1];
 
 static struct MUI_CustomClass* g_class;
 
-static void canvas_push(struct Library* p96, const uint32_t* px, int32_t w, int32_t h, struct RastPort* rp, int32_t dx, int32_t dy) {
+void mui_canvas_push(struct Library* p96, const uint32_t* px, int32_t w, int32_t h, struct RastPort* rp, int32_t dx, int32_t dy) {
     struct p96_render_info ri;
     ri.memory = (APTR)px;
     ri.pad = 0;
@@ -81,7 +81,7 @@ static ULONG canvas_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
     }
     if (mui_canvas_fit(d->mc, (sel_gui_rect){_mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj)})) {
         mui_canvas_draw_grid(d->mc, &d->style, d->tiles, d->n, d->cursor, d->art, d->art_ctx);
-        canvas_push(d->p96, d->mc->pix, d->mc->c.w, d->mc->c.h, _rp(obj), _mleft(obj), _mtop(obj));
+        mui_canvas_push(d->p96, d->mc->pix, d->mc->c.w, d->mc->c.h, _rp(obj), _mleft(obj), _mtop(obj));
     }
     return 0;
 }

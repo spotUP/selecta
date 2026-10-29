@@ -49,6 +49,7 @@ struct Library* MUIMasterBase;
 #include "mui_aatext_class.h"
 #include "map/mui_aa.h"
 #include "mui_canvas_class.h"
+#include "mui_vizarea_class.h"
 #include "mui_listview_class.h"
 #define SEL_MAKE_ID(a, b, c, d) (((ULONG)(a) << 24) | ((ULONG)(b) << 16) | ((ULONG)(c) << 8) | (ULONG)(d))
 
@@ -77,10 +78,10 @@ typedef struct mui_cells {
 #define MUI_CRUMB_MAX 6u
 enum { P4_SEARCH, P4_CMD, P4_LIKE, P4_RATING, P4_SUBSONG, P4_QREMOVE, P4_QCLEAR, P4_QUP, P4_QDOWN, P4_POPEN, P4_PRENAME, P4_PDELETE,
        P4_CLEARLIB, P4_PNEW, P4_HELP, P4_HOME, P4_TOAST, P4_CRUMB, P4_STATE, P4_SETTINGS, P4_SONGMENU, P4_NP, P4_SONGINFO, P4_PREF, P4_TRACKER,
-       P4_COUNT };
+       P4_VIZPICK, P4_VIZFRAMES, P4_COUNT };
 static const char* const p4_name[P4_COUNT] = {"search", "cmd", "like", "rating", "subsong", "qremove", "qclear", "qup", "qdown",
                                               "popen", "prename", "pdelete", "clearlib", "pnew", "help", "home", "toast", "crumb", "state", "settings",
-                                              "songmenu", "np", "songinfo", "pref", "tracker"};
+                                              "songmenu", "np", "songinfo", "pref", "tracker", "vizpick", "vizframes"};
 #define MUI_PREF_MAX 12u   /* MUI-P4-10: most Settings rows (sel_uim_pref_row_count) */
 #define MUI_INFO_MAX 24u   /* MUI-P4-9: most song info rows */
 #define MUI_TRK_ROWS 16u   /* MUI-P4-16: pattern rows shown */
@@ -95,7 +96,7 @@ typedef struct mui_state {
     uint32_t row_plays;      /* list rows activated by double click (MUI-P3-1): stat row_plays */
     uint32_t drops;          /* AppWindow arguments sent to the engine (MUI-P5-6): stat drops */
     sel_tag stats[8];
-    char p4_stat[400];       /* MUI-P4: the sentinel printed as ui_p4: how often each P4 gadget sent its line */
+    char p4_stat[480];       /* MUI-P4: the sentinel printed as ui_p4: how often each P4 gadget sent its line */
     uint32_t p4[P4_COUNT];
     sel_uim uim;             /* the frame model the controls are driven from (MUI-P2-6) */
     char list_stat[480];     /* the list sentinel printed as ui_list: back end, style, columns, rows (native List only) */
@@ -141,6 +142,10 @@ typedef struct mui_state {
     Object* np_title;               /* MUI-P4-8 Now Playing group in the detail slot */
     Object* np_artist;
     Object* np_album;
+    Object* viz_area;               /* I684: the Now Playing visualizer (Selecta_VizArea) and its plugin picker */
+    Object* cyc_viz;
+    mui_vizset vizset;
+    mui_find_plugin_fn find_plugin;
     Object* np_lyrics;
     Object* np_up[3];
     char np_buf[3][112];
@@ -903,6 +908,17 @@ static Object* mui_detail_group(mui_state* s) {
     DoMethod(g, OM_ADDMEMBER, s->np_title);
     DoMethod(g, OM_ADDMEMBER, s->np_artist);
     DoMethod(g, OM_ADDMEMBER, s->np_album);
+    if (s->vizset.n > 0u) {
+        s->cyc_viz = mui_make_cycle(s->vizset.name_, CTL_P4_BASE + P4_VIZPICK);
+        if (s->cyc_viz != NULL) {
+            set(s->cyc_viz, AAC_Active, (ULONG)s->vizset.sel);
+        }
+        s->viz_area = mui_vizarea_new(&s->vizset, g_tokens, 1);
+        if (s->cyc_viz != NULL && s->viz_area != NULL) {
+            DoMethod(g, OM_ADDMEMBER, s->viz_area);
+            DoMethod(g, OM_ADDMEMBER, s->cyc_viz);
+        }
+    }
     if (lyr_view != NULL) {
         DoMethod(g, OM_ADDMEMBER, lyr_view);
     }
@@ -1088,6 +1104,12 @@ static void mui_refresh(mui_state* s) {
         s->p4[P4_TOAST]++;
     }
     s->uim.dirty |= sel_uim_update(&s->uim, st);
+    if (s->viz_area != NULL) { /* I684: one visualizer step per wait turn, on the newest engine frame */
+        sel_uim_budget vb;
+        if (sel_uim_budget_for(&vb, "rgba32") && mui_vizarea_step(s->viz_area, st->viz, &vb, mui_now_ms())) {
+            s->p4[P4_VIZFRAMES] = mui_vizarea_frames(s->viz_area);
+        }
+    }
     attrs = mui_dirty_attrs(sel_uim_take_dirty(&s->uim));
     f = &s->uim.frame;
     for (a = 0; a < MUI_ATTR_COUNT; a++) {
@@ -1558,6 +1580,16 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
             mui_p4_note(s, which, line);
         }
         break;
+    case P4_VIZPICK:
+        GetAttr(AAC_Active, s->cyc_viz, &act);
+        if ((uint32_t)act < s->vizset.n) {
+            s->vizset.sel = (uint32_t)act;
+            s->vizset.seq = 0u; /* draw the new plugin on the very next frame */
+            if (mui_vizset_line(&s->vizset) != NULL && mui_engine_line(s, mui_vizset_line(&s->vizset))) {
+                mui_p4_note(s, which, mui_vizset_line(&s->vizset));
+            }
+        }
+        break;
     case P4_SUBSONG:
         GetAttr(AAC_Active, s->cyc_subsong, &act);
         if (mui_subsong_cycle_line((uint32_t)act, s->uim.frame.subsong_count, line, sizeof line) && mui_engine_line(s, line)) {
@@ -1777,12 +1809,18 @@ static void* mui_open(const sel_ui_open_args* a) {
     Object* strip;
     mui_window_attrs_t wattr;
     s->engine = a != NULL ? a->engine : NULL;
+    s->find_plugin = a != NULL ? a->find_plugin : NULL;
     MUIMasterBase = OpenLibrary((CONST_STRPTR)MUIMASTER_NAME, 19);
     if (MUIMasterBase == NULL) {
         mui_report(MUI_FAIL_NO_LIBRARY, "");
         return NULL;
     }
     mui_theme_init();
+    {   /* I684: the viz plugins the desktop lists, the initial one from the same ui.desktop.viz pref */
+        const sel_host* vh = s->engine != NULL ? sel_engine_plugin_host(s->engine) : NULL;
+        const char* pref = vh != NULL && vh->config_get != NULL ? vh->config_get(vh, "ui.desktop.viz", "") : "";
+        (void)mui_vizset_load(&s->vizset, s->find_plugin, pref);
+    }
     strip = mui_menu_strip();
     sel_uim_init(&s->uim);
     /* I675 (D-M4-3): borderless backdrop window on the own screen, normal borders on Workbench (g_scr == NULL). The borderless
@@ -1949,6 +1987,7 @@ static void mui_close(void* state) {
         s->win = NULL;
         s->canvas = NULL;
         mui_canvas_class_free();
+        mui_vizarea_class_free();
         mui_aatext_class_free();
         mui_aapanel_class_free();
         mui_aaslider_class_free();

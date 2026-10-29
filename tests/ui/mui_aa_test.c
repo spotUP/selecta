@@ -432,7 +432,7 @@ static void test_cycle_step(void) {
 }
 
 /* I667g mui-cycle-source: the MUI UI builds every cycle through AACycle: no MUIC_Cycle left; the helper definition plus three calls
- * (rating, subsong, settings) = 4 "mui_make_cycle(" spellings, one AACycle constructor call. */
+ * (rating, subsong, settings, viz pick) = 5 "mui_make_cycle(" spellings, one AACycle constructor call. */
 static void test_cycle_source(void) {
     char* ui = slurp(UI_SOURCE);
     char* cls = slurp(AACYCLE_SOURCE);
@@ -442,7 +442,7 @@ static void test_cycle_source(void) {
         return;
     }
     CHECK(count_of(ui, "MUIC_Cycle") == 0 && count_of(ui, "MUIA_Cycle_") == 0, "stock cycle left in mui_ui.c");
-    CHECK(count_of(ui, "mui_make_cycle(") == 4, "cycle constructor sites: %d (definition + 3)", count_of(ui, "mui_make_cycle("));
+    CHECK(count_of(ui, "mui_make_cycle(") == 5, "cycle constructor sites: %d (definition + 4)", count_of(ui, "mui_make_cycle("));
     CHECK(count_of(ui, "mui_aacycle_new(") == 1, "one AACycle constructor call: %d", count_of(ui, "mui_aacycle_new("));
     CHECK(count_of(ui, "mui_aacycle_class_free(") == 1, "class freed in mui_close");
     CHECK(strstr(cls, "mui_aa_cycle_rgb(") != NULL && strstr(cls, "mui_aa_cycle_step(") != NULL && strstr(cls, "mui_aa_cycle_chevron_row(") != NULL &&
