@@ -10,7 +10,8 @@
 
 typedef struct mui_aabtn_spec {
     const char* caption;  /* shown text; also the ShortHelp unless help is set */
-    const char* widest;   /* longest caption the button will show (sets the minimum width); NULL = caption */
+    const char* widest;   /* longest caption the button will show (sets the minimum width); NULL = fit: the width follows
+                           * every caption mui_aabtn_set_caption gives it */
     const char* help;     /* ShortHelp, NULL = caption */
     int icon;             /* sel_gui_icon id of the icon, -1 none */
     int alt_icon;         /* icon swapped in by mui_aabtn_set_icon, -1 none (kept for the page-group buttons: play/pause) */

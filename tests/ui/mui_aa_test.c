@@ -315,6 +315,14 @@ static void test_btn_align(void) {
         CHECK(strstr(cls, "mui_aa_btn_content_x(") != NULL && strstr(cls, "(w - cw) / 2") == NULL, "class centres by hand instead of the shared helper");
         CHECK(count_of(ui, "mui_make_button_left(") == 2, "door buttons built left aligned: %d sites (definition + door row)", count_of(ui, "mui_make_button_left("));
         CHECK(count_of(ui, "sp.align = align;") == 2 && count_of(ui, "sp.align = MUI_AA_ALIGN_CENTRE;") == 1, "every button spec sets align");
+        /* Johan rig 2 2026-10-29: the "> PROGDIR:" breadcrumb text ran past its button. The width was measured once at setup from the
+         * blank first caption; a fit button (NULL widest) now re-measures at every layout from the caption it was last given. */
+        CHECK(strstr(cls, "aabtn_measure(obj, d);") != NULL && count_of(cls, "aa_text_width(&d->aa, obj, d->widest)") == 1, "width not measured at layout");
+        CHECK(strstr(cls, "d->fit = sp->widest == NULL;") != NULL && strstr(cls, "if (d->fit) {\n        strncpy(d->widest, caption") != NULL,
+              "fit button does not follow its caption");
+        CHECK(strstr(ui, "mui_make_button_i(label, NULL, icon_key, NULL, id, weight, 0, MUI_AA_ROLE_GHOST)") != NULL &&
+                  strstr(ui, "s->crumb_btn[k] = mui_make_button_w(") != NULL,
+              "breadcrumb buttons are not fit buttons");
     }
     free(ui);
     free(cls);

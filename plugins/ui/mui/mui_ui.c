@@ -555,7 +555,7 @@ static Object* mui_make_button_i(const char* label, const char* widest, const ch
 }
 
 static Object* mui_make_button_w(const char* label, const char* icon_key, LONG id, LONG weight) {
-    return mui_make_button_i(label, label, icon_key, NULL, id, weight, 0, MUI_AA_ROLE_GHOST);
+    return mui_make_button_i(label, NULL, icon_key, NULL, id, weight, 0, MUI_AA_ROLE_GHOST); /* fit: breadcrumb captions change */
 }
 
 static Object* mui_make_button_icon(const char* label, const char* icon_key, LONG id) {

@@ -25,7 +25,7 @@ extern struct Library* MUIMasterBase;
 
 typedef struct aabtn_data {
     char caption[48], widest[48];
-    int icon[2], alt, icon_only, role, hover, backend, minw, minh, align, on;
+    int icon[2], alt, icon_only, role, hover, backend, minw, minh, align, on, fit;
     mui_aa_metrics_t m;
     aa_ctx aa;
     struct MUI_EventHandlerNode ehn;
@@ -51,7 +51,7 @@ static int aabtn_cur_icon(const aabtn_data* d) {
 static ULONG aabtn_setup(struct IClass* cl, Object* obj, Msg msg) {
     aabtn_data* d = INST_DATA(cl, obj);
     uint32_t face, text;
-    int tw = 0, st;
+    int st;
     if (!DoSuperMethodA(cl, obj, msg)) {
         return FALSE;
     }
@@ -64,17 +64,6 @@ static ULONG aabtn_setup(struct IClass* cl, Object* obj, Msg msg) {
     aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]);
     aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_TEXT_MUTED]);
     aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_SURFACE]);
-    if (!d->icon_only) {
-        tw = aa_text_width(&d->aa, obj, d->widest);
-    }
-    d->minw = 2 * d->m.pad_x + (aabtn_cur_icon(d) >= 0 ? d->m.icon_px : 0) + (tw > 0 ? (aabtn_cur_icon(d) >= 0 ? d->m.icon_gap : 0) + tw : 0);
-    d->minh = d->m.height;
-    if (!d->icon_only && aa_text_height(&d->aa, obj) + 2 * d->m.pad_y > d->minh) {
-        d->minh = aa_text_height(&d->aa, obj) + 2 * d->m.pad_y;
-    }
-    if (d->role == MUI_AA_ROLE_TOGGLE) { /* AACheck: a fixed square box */
-        d->minw = d->minh = d->m.check_px;
-    }
     d->ehn.ehn_Priority = 0;
     d->ehn.ehn_Flags = 0;
     d->ehn.ehn_Object = obj;
@@ -92,9 +81,27 @@ static ULONG aabtn_cleanup(struct IClass* cl, Object* obj, Msg msg) {
     return DoSuperMethodA(cl, obj, msg);
 }
 
+/* Size from the widest caption. Runs at every layout (AskMinMax), so a fit button (no widest in its spec, e.g. a breadcrumb) grows with
+ * the caption mui_aabtn_set_caption gave it inside the caller's InitChange/ExitChange. */
+static void aabtn_measure(Object* obj, aabtn_data* d) {
+    int tw = 0;
+    if (!d->icon_only) {
+        tw = aa_text_width(&d->aa, obj, d->widest);
+    }
+    d->minw = 2 * d->m.pad_x + (aabtn_cur_icon(d) >= 0 ? d->m.icon_px : 0) + (tw > 0 ? (aabtn_cur_icon(d) >= 0 ? d->m.icon_gap : 0) + tw : 0);
+    d->minh = d->m.height;
+    if (!d->icon_only && aa_text_height(&d->aa, obj) + 2 * d->m.pad_y > d->minh) {
+        d->minh = aa_text_height(&d->aa, obj) + 2 * d->m.pad_y;
+    }
+    if (d->role == MUI_AA_ROLE_TOGGLE) { /* AACheck: a fixed square box */
+        d->minw = d->minh = d->m.check_px;
+    }
+}
+
 static ULONG aabtn_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMinMax* msg) {
     aabtn_data* d = INST_DATA(cl, obj);
     DoSuperMethodA(cl, obj, (Msg)msg);
+    aabtn_measure(obj, d);
     msg->MinMaxInfo->MinWidth += d->minw;
     msg->MinMaxInfo->DefWidth += d->minw;
     msg->MinMaxInfo->MaxWidth = d->role == MUI_AA_ROLE_TOGGLE ? msg->MinMaxInfo->MinWidth : MUI_MAXMAX;
@@ -253,6 +260,7 @@ Object* mui_aabtn_new(const mui_aabtn_spec* sp) {
         d = INST_DATA(g_class->mcc_Class, o);
         strncpy(d->caption, sp->caption, sizeof d->caption - 1);
         strncpy(d->widest, sp->widest != NULL ? sp->widest : sp->caption, sizeof d->widest - 1);
+        d->fit = sp->widest == NULL;
         d->icon[0] = sp->icon;
         d->icon[1] = sp->alt_icon;
         d->icon_only = sp->icon_only && sp->icon >= 0;
@@ -278,6 +286,10 @@ void mui_aabtn_set_caption(Object* obj, const char* caption) {
         return;
     }
     strncpy(d->caption, caption, sizeof d->caption - 1);
+    if (d->fit) {
+        strncpy(d->widest, caption, sizeof d->widest - 1);
+        d->widest[sizeof d->widest - 1] = '\0';
+    }
     SetAttrs(obj, MUIA_ShortHelp, (ULONG)d->caption, TAG_DONE); /* icon-only buttons: the state text is the tooltip */
     MUI_Redraw(obj, MADF_DRAWOBJECT);
 }
