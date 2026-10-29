@@ -9,6 +9,23 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* The format of a play (I678j): the songs row's, else the lower-case extension of the key ("" when it has none or it is not 1..5 letters or digits). */
+static void play_format(const char* key, char* out, size_t cap) {
+    const char* dot = strrchr(key, '.');
+    size_t n, i;
+    out[0] = '\0';
+    if (dot == NULL || strchr(dot, '/') != NULL) return;
+    n = strlen(dot + 1);
+    if (n < 1 || n > 5 || n >= cap) return;
+    for (i = 0; i < n; i++) {
+        char c = dot[1 + i];
+        if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))) { out[0] = '\0'; return; }
+        out[i] = c;
+    }
+    out[n] = '\0';
+}
+
 static int user_exec(sqlite3* db, const char* sql, const sel_user_op* op, int shape) {
     sqlite3_stmt* st = NULL;
     int rc = sqlite3_prepare_v2(db, sql, -1, &st, NULL);
@@ -18,6 +35,11 @@ static int user_exec(sqlite3* db, const char* sql, const sel_user_op* op, int sh
         sqlite3_bind_int64(st, 2, op->at);
         sqlite3_bind_int(st, 3, op->skipped != 0);
         if (op->duration_ms > 0) sqlite3_bind_int(st, 4, op->duration_ms);
+        {
+            char fmt[8];
+            play_format(op->key, fmt, sizeof fmt);
+            if (fmt[0] != '\0') sqlite3_bind_text(st, 5, fmt, -1, SQLITE_TRANSIENT);
+        }
     } else if (shape == 2) { /* liked, kept */
         sqlite3_bind_int64(st, 2, op->at);
     } else if (shape == 3) { /* sticker set */
@@ -574,7 +596,8 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
             sqlite3_finalize(st);
         }
     } else if (op->op == SEL_USER_HISTORY) {
-        rc = user_exec(lib->db, "INSERT INTO history(key, played_at, skipped, duration_ms) VALUES(?1, ?2, ?3, ?4)", op, 1);
+        rc = user_exec(lib->db, "INSERT INTO history(key, played_at, skipped, duration_ms, format)"
+                         " VALUES(?1, ?2, ?3, ?4, COALESCE((SELECT format FROM songs WHERE key = ?1), ?5))", op, 1);
     } else if (op->op == SEL_USER_LIKE) {
         rc = user_exec(lib->db, "INSERT OR REPLACE INTO liked(key, at) VALUES(?1, ?2)", op, 2);
     } else if (op->op == SEL_USER_UNLIKE) {

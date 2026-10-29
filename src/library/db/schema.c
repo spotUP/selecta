@@ -193,8 +193,17 @@ static const char SCHEMA_V8[] =
 static const char SCHEMA_V9[] =
     "CREATE TABLE opened(kind INTEGER NOT NULL, id TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(kind, id)) WITHOUT ROWID;";
 
-static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4,
-                                           SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9};
+/* I678j: the format of a play, so a Modland or stream play (no songs row) still files under a Home format chip. A library play takes
+ * songs.format; any other play takes the lower-case extension of its key (at most 5 characters). Earlier rows are filled the same way. */
+#define V10_EXT "lower(substr(key, length(rtrim(key, replace(key, '.', ''))) + 1))"
+static const char SCHEMA_V10[] =
+    "ALTER TABLE history ADD COLUMN format TEXT;"
+    "UPDATE history SET format = (SELECT s.format FROM songs s WHERE s.key = history.key);"
+    "UPDATE history SET format = " V10_EXT " WHERE format IS NULL AND instr(key, '.') > 0"
+    " AND length(" V10_EXT ") BETWEEN 1 AND 5 AND " V10_EXT " NOT GLOB '*[^a-z0-9]*';";
+
+static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5,
+                                           SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 

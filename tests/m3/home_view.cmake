@@ -28,7 +28,9 @@ string(CONCAT seed
   "INSERT INTO history(key, played_at, skipped) VALUES('local:selecta-test.mod', 4102444800, 0); "
   "INSERT INTO meta(key, value) VALUES('modland.new_this_week', '7') ON CONFLICT(key) DO UPDATE SET value = '7'")
 sql("${seed}" ignore)
-sql("SELECT COUNT(DISTINCT key) FROM history;" recent)
+# I678j: Recently Played lists items (albums, playlists, composers) with a finished play, plus stream and Modland plays; a local song with no
+# album has no card. Here the only finished-play songs have no album, so the shelf is empty and its heading is not shown.
+sql("SELECT COUNT(DISTINCT s.album) FROM history h JOIN songs s ON s.key = h.key WHERE h.skipped = 0 AND s.album IS NOT NULL;" recent)
 string(CONCAT jumpq
   "SELECT COUNT(DISTINCT s.album) FROM history h JOIN songs s ON s.key = h.key WHERE h.skipped = 1 AND s.album IS NOT NULL "
   "AND NOT EXISTS (SELECT 1 FROM history f WHERE f.key = h.key AND f.skipped = 0);")
@@ -40,8 +42,8 @@ sql("SELECT COUNT(*) FROM (SELECT 1 FROM songs WHERE key NOT IN (SELECT key FROM
 # so the items are Liked Songs and one artist per distinct played artist, at most 8.
 sql("SELECT MIN(8, 1 + COUNT(DISTINCT s.artist)) FROM history h JOIN songs s ON s.key = h.key WHERE s.artist IS NOT NULL AND s.artist <> '';" quick)
 math(EXPR want "${recent} + ${jump} + ${fresh} + ${fill} + ${quick}")
-if(NOT recent EQUAL 2 OR NOT jump EQUAL 1 OR NOT fresh EQUAL 7 OR NOT fill EQUAL 3 OR NOT quick EQUAL 2)
-  message(FATAL_ERROR "seed counts recent=${recent} jump=${jump} new=${fresh} fill=${fill} quick=${quick}, want 2 1 7 3 2")
+if(NOT recent EQUAL 0 OR NOT jump EQUAL 1 OR NOT fresh EQUAL 7 OR NOT fill EQUAL 3 OR NOT quick EQUAL 2)
+  message(FATAL_ERROR "seed counts recent=${recent} jump=${jump} new=${fresh} fill=${fill} quick=${quick}, want 0 1 7 3 2")
 endif()
 execute_process(
   COMMAND "${SELECTA}" --output null --size 80x25 --start-dir "${CWD}" --db "${db}"
@@ -61,6 +63,10 @@ if(NOT EXISTS "${GOLDEN}")
   file(WRITE "${GOLDEN}" "${screen}")
   message(FATAL_ERROR "golden written; review it")
 endif()
+# I678j: a library with no composer tags has no Your Composers shelf (the Unknown composer group is not a composer).
+if(screen MATCHES "Your Composers" OR screen MATCHES "Unknown composer")
+  message(FATAL_ERROR "Home lists an Unknown composer card with no composers:\n${screen}")
+endif()
 file(READ "${GOLDEN}" golden)
 if(NOT screen STREQUAL golden)
   message(FATAL_ERROR "screen differs from ${GOLDEN}\nexpected:\n${golden}\ngot:\n${screen}")
@@ -77,20 +83,6 @@ function(run_keys keys dump result)
   endif()
   set(${result} "${o}" PARENT_SCOPE)
 endfunction()
-# Song row: the song starts. songs_opened counts it, the queue holds it and the status line shows Playing with the module
-# title of selecta-test.mod, the newest play in the database.
-run_keys("${KEYS_SONG}" "${WORK}/song.txt" song_out)
-file(READ "${WORK}/song.txt" song_screen)
-sql("SELECT key FROM history GROUP BY key ORDER BY MAX(played_at) DESC, key LIMIT 1;" newest)
-if(NOT song_out MATCHES "songs_opened=1 ")
-  message(FATAL_ERROR "Enter on a Recently played row did not open the song:\n${song_out}")
-endif()
-if(NOT song_out MATCHES "playlist_entries=1 ")
-  message(FATAL_ERROR "Enter on a Recently played row did not queue the song:\n${song_out}")
-endif()
-if(NOT newest STREQUAL "local:selecta-test.mod" OR NOT song_screen MATCHES "Playing  selecta test")
-  message(FATAL_ERROR "screen does not show ${newest} (module title selecta test) playing:\n${song_screen}")
-endif()
 # Album row: the album's songs are listed in the library view (query source) and none starts.
 run_keys("${KEYS_ALBUM}" "${WORK}/album.txt" album_out)
 file(READ "${WORK}/album.txt" album_screen)
@@ -130,4 +122,4 @@ file(READ "${WORK}/long.txt" long_screen)
 if(NOT long_out MATCHES "view_source=query " OR NOT long_out MATCHES "songs_opened=0 " OR NOT long_screen MATCHES "mk tune")
   message(FATAL_ERROR "127-byte album name did not list its songs:\n${long_out}\n${long_screen}")
 endif()
-message(STATUS "home_rows=${want} song_row=${newest} album_row=Hardcore Heroes")
+message(STATUS "home_rows=${want} album_row=Hardcore Heroes")

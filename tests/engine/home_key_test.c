@@ -1,6 +1,7 @@
 /* I263: a song key (a file path) crosses the home view whole. The library writes the home text, the view parses it
  * into row keys, and the play verb queues r->key as it stands, so the key must come out of the view byte for byte.
- * A 300-byte path was cut at 127 bytes by the old per-row key slot. */
+ * A 300-byte path was cut at 127 bytes by the old per-row key slot. Since I678j the Home song shelves list a song with a skipped play (Jump Back In);
+ * a finished library song with no album has no card, so the plays here are skips. */
 #include <selecta/host.h>
 #include <selecta/machine.h>
 #include "db.h"
@@ -15,6 +16,33 @@ static void check(int ok, const char* what) {
         printf("FAIL %s\n", what);
         fails++;
     }
+}
+
+/* I678j: the format is stored with each play, so a Modland module play files under the Modules chip, a stream under Music. Written through
+ * sel_library_history_add (the store derives the format from the key), read back through the chip-filtered Home text. */
+static int chip_has(sel_library* lib, uint32_t chip, const char* key) {
+    static char text[65536];
+    uint32_t lines = 0;
+    text[0] = '\0';
+    if (!sel_library_home_chip(lib, chip, 20, text, sizeof text, &lines)) return -1;
+    return strstr(text, key) != NULL;
+}
+
+static void play_format_chips(const sel_host* host) {
+    sel_library* lib = sel_library_open(host, sel_machine_fake("a060"), 0, ":memory:");
+    const char* mod = "modland:Protracker/Jester/old.mod";
+    const char* radio = "http://radio.example/stream";
+    check(lib != NULL, "play format library opens");
+    if (lib == NULL) return;
+    check(sel_library_history_add(lib, mod, 100, 0), "play format: modland add");
+    check(sel_library_history_add(lib, radio, 200, 0), "play format: stream add");
+    check(chip_has(lib, SEL_HOME_CHIP_ALL, mod) == 1 && chip_has(lib, SEL_HOME_CHIP_ALL, radio) == 1, "play format: All holds both");
+    check(chip_has(lib, SEL_HOME_CHIP_MODULES, mod) == 1, "play format: Modland .mod under Modules");
+    check(chip_has(lib, SEL_HOME_CHIP_MODULES, radio) == 0, "play format: stream not under Modules");
+    check(chip_has(lib, SEL_HOME_CHIP_MUSIC, radio) == 1, "play format: stream under Music");
+    check(chip_has(lib, SEL_HOME_CHIP_MUSIC, mod) == 0, "play format: Modland .mod not under Music");
+    check(chip_has(lib, SEL_HOME_CHIP_CHIPTUNES, mod) == 0, "play format: Modland .mod not under Chiptunes");
+    sel_library_close(lib);
 }
 
 /* I486: a key near the limit plus a long multi-byte artist. The key must survive whole (activation opens it), the artist is cut
@@ -53,7 +81,7 @@ static void long_artist(const sel_host* host) {
     b.count = 1;
     b.now = 1;
     check(sel_library_request(lib, SEL_LIB_REQ_SCAN_BATCH, &b, &reply) && reply.args[1].v.i == 0, "i486 scan");
-    check(sel_library_history_add(lib, key, 100, 0), "i486 history add");
+    check(sel_library_history_add(lib, key, 100, 1), "i486 history add");
     check(sel_library_home(lib, 10, v.htext, SEL_VIEW_HOME_TEXT_MAX, &lines), "i486 home text");
     sel_view_set_home(&v, v.htext);
     for (i = 0; i < v.frow_n; i++) {
@@ -108,8 +136,8 @@ int main(void) {
         b2.now = 1;
         check(sel_library_request(lib, SEL_LIB_REQ_SCAN_BATCH, &b2, &reply2) && reply2.args[1].v.i == 0, "scan both songs");
     }
-    check(sel_library_history_add(lib, key, 100, 0), "history add 300");
-    check(sel_library_history_add(lib, key2, 200, 0), "history add 1190");
+    check(sel_library_history_add(lib, key, 100, 1), "history add 300");
+    check(sel_library_history_add(lib, key2, 200, 1), "history add 1190");
     check(sel_library_home(lib, 10, v.htext, SEL_VIEW_HOME_TEXT_MAX, &lines), "home text");
     rows = sel_view_set_home(&v, v.htext);
     check(rows >= 2u, "home entries counted");
@@ -122,6 +150,7 @@ int main(void) {
     sel_view_free(&v, host);
     sel_library_close(lib);
     long_artist(host);
+    play_format_chips(host);
     printf(fails ? "home-key: %d failure(s)\n" : "home-key: ok\n", fails);
     return fails ? 1 : 0;
 }

@@ -361,8 +361,9 @@ int sel_home_items(sqlite3* db, uint32_t shelf, uint32_t chip, uint32_t limit, s
         " WHERE k IN (3,4,6) AND lp>0 AND %s ORDER BY lp DESC, sn COLLATE NOCASE, tie LIMIT ?1",
         /* your albums, most played first */
         " WHERE k=4 AND " HOME_PLAYS ">0 AND %s ORDER BY " HOME_PLAYS " DESC, sn COLLATE NOCASE, tie LIMIT ?1",
-        /* your composers, most played first (every composer, so a library with no plays still lists them) */
-        " WHERE k=6 AND %s ORDER BY " HOME_PLAYS " DESC, sn COLLATE NOCASE, tie LIMIT ?1",
+        /* your composers, most played first (every composer, so a library with no plays still lists them; the Unknown composer group is
+         * not a composer, so a library with none has no shelf) */
+        " WHERE k=6 AND ik<>'" SEL_COMPOSER_UNKNOWN_CANON "' AND %s ORDER BY " HOME_PLAYS " DESC, sn COLLATE NOCASE, tie LIMIT ?1",
         /* your playlists, most played first */
         " WHERE k=3 AND %s ORDER BY " HOME_PLAYS " DESC, sn COLLATE NOCASE, tie LIMIT ?1"};
     static const uint32_t mask[SEL_HOME_SHELVES] = {
@@ -388,9 +389,9 @@ int sel_home_items(sqlite3* db, uint32_t shelf, uint32_t chip, uint32_t limit, s
              fam, fam, fam);
     if (shelf == SEL_HOME_RECENT) {
         /* Johan 2026-10-29: a stream or Modland play (a history key with no songs row, not a vanished library file) is a single-song card
-         * in this shelf, ordered by its last play together with the items. It has no format, so only the All and Music chips keep it. */
+         * in this shelf, ordered by its last play together with the items. Its format is the one stored with the play (history.format), so it files under the Modules, Chiptunes or Music chip. */
         char nofam[600];
-        sel_home_chip_sql(chip, "NULL", nofam, sizeof nofam);
+        sel_home_chip_sql(chip, "h.format", nofam, sizeof nofam);
         snprintf(sql, sizeof sql,
                  "WITH " HOME_T " AS (%s) SELECT k,ik,nm,sub FROM ("
                  "SELECT k,ik,nm,sub,lp AS lpx,sn,tie FROM t WHERE k IN (3,4,6) AND lp>0 AND %s"
