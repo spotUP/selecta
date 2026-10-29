@@ -77,6 +77,31 @@ static int make_parent(const char* file) {
     return sel_config_mkdir(dir);
 }
 
+/* A failed fetch leaves no empty folders behind (I695a): removes the now empty directories above `file`, one per
+ * folder level of `path`, never the source's own folder. remove() takes empty directories only, so a folder that
+ * holds another song stays. */
+static void drop_empty_parents(const char* file, const char* path) {
+    char dir[SEL_CACHE_PATH_MAX];
+    const char* p;
+    size_t n = strlen(file);
+
+    if (n >= sizeof dir) {
+        return;
+    }
+    memcpy(dir, file, n + 1u);
+    for (p = path; (p = strchr(p, '/')) != NULL; p++) {
+        char* slash = strrchr(dir, '/');
+
+        if (slash == NULL) {
+            return;
+        }
+        *slash = '\0';
+        if (remove(dir) != 0) {
+            return;
+        }
+    }
+}
+
 static int file_exists(const char* path) {
     FILE* f = fopen(path, "rb");
     if (f == NULL) {
@@ -235,6 +260,7 @@ sel_cache_result sel_cache_fetch(sel_cache* c, const char* source, const char* p
     c->slice.fails = 0;
     c->slice.active = 0;
     remove(part);
+    drop_empty_parents(out, path);
     return res.rejected > 0 ? SEL_CACHE_MD5 : SEL_CACHE_FAILED;
 }
 
