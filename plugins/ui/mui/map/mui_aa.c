@@ -315,3 +315,67 @@ int mui_aa_progress_fill_w(int w, long value, long max) {
     }
     return value >= max ? w : (int)(((long)w * value + max / 2) / max);
 }
+
+static uint32_t g_cycle_calls;
+
+uint32_t mui_aa_cycle_calls(void) {
+    return g_cycle_calls;
+}
+
+void mui_aa_cycle_metrics(int font_px, mui_aa_cycle_t* out) {
+    mui_aa_metrics_t b;
+    g_cycle_calls++;
+    mui_aa_metrics(font_px, &b);
+    out->height = b.height;
+    out->pad_x = b.pad_x;
+    out->radius = b.radius;
+    out->chev_w = font_px <= 0 ? 6 : 8;
+    out->chev_h = out->chev_w / 2;
+    out->gap = font_px <= 0 ? 6 : 8;
+}
+
+void mui_aa_cycle_rgb(const uint32_t* token, int state, uint32_t* face, uint32_t* text, uint32_t* chevron, uint32_t* popup_bg, uint32_t* row_hover) {
+    g_cycle_calls++;
+    if (face != NULL) {
+        *face = mui_aa_state_rgb(token, token[SEL_GUI_TOKEN_SURFACE_RAISED], state);
+    }
+    if (text != NULL) {
+        *text = mui_aa_text_rgb(token, token[SEL_GUI_TOKEN_TEXT], state);
+    }
+    if (chevron != NULL) {
+        *chevron = state == MUI_AA_DISABLED ? token[SEL_GUI_TOKEN_TEXT_DISABLED] : token[SEL_GUI_TOKEN_TEXT_MUTED];
+    }
+    if (popup_bg != NULL) {
+        *popup_bg = token[SEL_GUI_TOKEN_SURFACE];
+    }
+    if (row_hover != NULL) {
+        *row_hover = token[SEL_GUI_TOKEN_SURFACE_HOVER];
+    }
+}
+
+int mui_aa_cycle_min_w(const mui_aa_cycle_t* m, int widest_text_w) {
+    g_cycle_calls++;
+    return 2 * m->pad_x + widest_text_w + m->gap + m->chev_w;
+}
+
+void mui_aa_cycle_chevron_row(const mui_aa_cycle_t* m, int r, int* x, int* w) {
+    g_cycle_calls++;
+    *x = r;
+    *w = m->chev_w - 2 * r;
+    if (*w < 1) {
+        *w = 1;
+    }
+}
+
+int mui_aa_cycle_step(int active, int n, int dir) {
+    g_cycle_calls++;
+    if (n <= 0) {
+        return 0;
+    }
+    return ((active + dir) % n + n) % n;
+}
+
+int mui_aa_cycle_valid(int v, int n) {
+    g_cycle_calls++;
+    return v >= 0 && v < n;
+}

@@ -323,6 +323,75 @@ static void test_slider_source(void) {
     free(cm);
 }
 
+/* I667g mui-cycle-step: Up/Down wrap, the valid range, sizes per tier, colours per state, chevron rows; the sentinel proves the shared
+ * maths ran. */
+static void test_cycle_step(void) {
+    static const int fonts[4] = {0, 13, 15, 17};
+    static const int counts[3] = {2, 3, 6};
+    txt_theme th;
+    uint32_t face, text, chev, pop, hov;
+    uint32_t before = mui_aa_cycle_calls();
+    int i, k, a;
+    txt_theme_default(&th);
+    for (i = 0; i < 3; i++) {
+        int n = counts[i];
+        CHECK(mui_aa_cycle_step(0, n, -1) == n - 1, "n %d: Up from the first wraps to the last", n);
+        CHECK(mui_aa_cycle_step(n - 1, n, 1) == 0, "n %d: Down from the last wraps to the first", n);
+        for (a = 0; a < n; a++) {
+            CHECK(mui_aa_cycle_step(a, n, 1) == (a + 1) % n && mui_aa_cycle_step(mui_aa_cycle_step(a, n, 1), n, -1) == a, "n %d: step %d and back", n, a);
+            CHECK(mui_aa_cycle_valid(a, n), "n %d: %d valid", n, a);
+        }
+        CHECK(!mui_aa_cycle_valid(-1, n) && !mui_aa_cycle_valid(n, n), "n %d: out of range refused", n);
+    }
+    CHECK(mui_aa_cycle_step(3, 0, 1) == 0 && !mui_aa_cycle_valid(0, 0), "empty cycle");
+    for (i = 0; i < 4; i++) {
+        mui_aa_cycle_t m;
+        mui_aa_metrics_t b;
+        mui_aa_cycle_metrics(fonts[i], &m);
+        mui_aa_metrics(fonts[i], &b);
+        CHECK(m.height == b.height && m.pad_x == b.pad_x && m.radius == b.radius, "tier %d shares the button metrics", i);
+        CHECK(m.chev_w == (i == 0 ? 6 : 8) && m.chev_h == m.chev_w / 2 && m.gap == (i == 0 ? 6 : 8), "tier %d chevron %dx%d gap %d", i, m.chev_w, m.chev_h, m.gap);
+        CHECK(mui_aa_cycle_min_w(&m, 50) == 2 * m.pad_x + 50 + m.gap + m.chev_w, "tier %d minimum width", i);
+        for (k = 0; k < m.chev_h; k++) {
+            int x, w;
+            mui_aa_cycle_chevron_row(&m, k, &x, &w);
+            CHECK(x == k && w == m.chev_w - 2 * k && w >= 1, "tier %d chevron row %d: x %d w %d", i, k, x, w);
+        }
+    }
+    mui_aa_cycle_rgb(th.token, MUI_AA_NORMAL, &face, &text, &chev, &pop, &hov);
+    CHECK(face == th.token[SEL_GUI_TOKEN_SURFACE_RAISED] && text == th.token[SEL_GUI_TOKEN_TEXT] && chev == th.token[SEL_GUI_TOKEN_TEXT_MUTED] &&
+              pop == th.token[SEL_GUI_TOKEN_SURFACE] && hov == th.token[SEL_GUI_TOKEN_SURFACE_HOVER],
+          "normal colours");
+    mui_aa_cycle_rgb(th.token, MUI_AA_DISABLED, &face, &text, &chev, NULL, NULL);
+    CHECK(text == th.token[SEL_GUI_TOKEN_TEXT_DISABLED] && chev == th.token[SEL_GUI_TOKEN_TEXT_DISABLED], "disabled text and chevron");
+    mui_aa_cycle_rgb(th.token, MUI_AA_NORMAL, NULL, NULL, NULL, NULL, NULL);
+    CHECK(mui_aa_cycle_calls() > before + 30, "sentinel: cycle maths ran (%u)", (unsigned)(mui_aa_cycle_calls() - before));
+}
+
+/* I667g mui-cycle-source: the MUI UI builds every cycle through AACycle: no MUIC_Cycle left; the helper definition plus three calls
+ * (rating, subsong, settings) = 4 "mui_make_cycle(" spellings, one AACycle constructor call. */
+static void test_cycle_source(void) {
+    char* ui = slurp(UI_SOURCE);
+    char* cls = slurp(AACYCLE_SOURCE);
+    char* cm = slurp(MUI_CMAKE);
+    CHECK(ui != NULL && cls != NULL && cm != NULL, "sources readable");
+    if (ui == NULL || cls == NULL || cm == NULL) {
+        return;
+    }
+    CHECK(count_of(ui, "MUIC_Cycle") == 0 && count_of(ui, "MUIA_Cycle_") == 0, "stock cycle left in mui_ui.c");
+    CHECK(count_of(ui, "mui_make_cycle(") == 4, "cycle constructor sites: %d (definition + 3)", count_of(ui, "mui_make_cycle("));
+    CHECK(count_of(ui, "mui_aacycle_new(") == 1, "one AACycle constructor call: %d", count_of(ui, "mui_aacycle_new("));
+    CHECK(count_of(ui, "mui_aacycle_class_free(") == 1, "class freed in mui_close");
+    CHECK(strstr(cls, "mui_aa_cycle_rgb(") != NULL && strstr(cls, "mui_aa_cycle_step(") != NULL && strstr(cls, "mui_aa_cycle_chevron_row(") != NULL &&
+              strstr(cls, "aa_round_fill(") != NULL,
+          "class does not draw through the shared cycle helpers");
+    CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "0x1") == NULL, "class holds no pen code or colour literal of its own");
+    CHECK(strstr(cm, "mui_aacycle_class.c") != NULL, "class not in the build");
+    free(ui);
+    free(cls);
+    free(cm);
+}
+
 int main(int argc, char** argv) {
     const char* t = argc > 1 ? argv[1] : "";
     if (!strcmp(t, "round")) {
@@ -347,6 +416,10 @@ int main(int argc, char** argv) {
         test_slider_geom();
     } else if (!strcmp(t, "slider-source")) {
         test_slider_source();
+    } else if (!strcmp(t, "cycle-step")) {
+        test_cycle_step();
+    } else if (!strcmp(t, "cycle-source")) {
+        test_cycle_source();
     } else {
         printf("usage: round|ramp|state|tokens\n");
         return 2;

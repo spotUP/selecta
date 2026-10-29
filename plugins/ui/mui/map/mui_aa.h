@@ -108,6 +108,26 @@ int mui_aa_progress_fill_w(int w, long value, long max);
 /* Calls of the slider/progress maths above: the sentinel that the classes (and not a copy) run it. */
 uint32_t mui_aa_slider_calls(void);
 
+/* I667g (design 3.3, AACycle): face, text, chevron and popup colours by state, the chevron triangle, the minimum width, and the
+ * Up/Down step with wrap. Tested on the host (mui-cycle-step). Chevron 8 px wide, gap 8 (tier S: 6 and 6). */
+typedef struct mui_aa_cycle_t {
+    int height, pad_x, radius, chev_w, chev_h, gap;
+} mui_aa_cycle_t;
+void mui_aa_cycle_metrics(int font_px, mui_aa_cycle_t* out);
+/* Face SURFACE_RAISED (hover/pressed per state), value text TEXT (TEXT_DISABLED when disabled), chevron TEXT_MUTED (TEXT_DISABLED when
+ * disabled), popup background SURFACE, popup row hover SURFACE_HOVER. Any out pointer may be NULL. */
+void mui_aa_cycle_rgb(const uint32_t* token, int state, uint32_t* face, uint32_t* text, uint32_t* chevron, uint32_t* popup_bg, uint32_t* row_hover);
+/* Minimum width: padding both sides, the widest entry, the gap and the chevron. */
+int mui_aa_cycle_min_w(const mui_aa_cycle_t* m, int widest_text_w);
+/* Row r (0 .. chev_h-1, top first) of the downward chevron triangle: x offset from the chevron left edge and the width. */
+void mui_aa_cycle_chevron_row(const mui_aa_cycle_t* m, int r, int* x, int* w);
+/* Active entry after a step of dir (-1 up, +1 down) in n entries, wrapping at both ends; n <= 0 gives 0. */
+int mui_aa_cycle_step(int active, int n, int dir);
+/* Whether v is a valid AAC_Active for n entries (a popup pick of "no row" is ignored). */
+int mui_aa_cycle_valid(int v, int n);
+/* Calls of the cycle maths above: the sentinel that the class (and not a copy) runs it. */
+uint32_t mui_aa_cycle_calls(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -43,6 +43,7 @@ struct Library* MUIMasterBase;
 #include "mui_aabtn_class.h"
 #include "mui_aapanel_class.h"
 #include "mui_aaslider_class.h"
+#include "mui_aacycle_class.h"
 #include "mui_aatext_class.h"
 #include "map/mui_aa.h"
 #include "mui_canvas_class.h"
@@ -738,11 +739,12 @@ static Object* mui_make_string(LONG id) {
 }
 
 static Object* mui_make_cycle(const char* const* entries, LONG id) {
-    Object* o = MUI_NewObject((char*)MUIC_Cycle, MUIA_Cycle_Entries, (ULONG)entries, TAG_DONE);
-    if (o != NULL) {
-        DoMethod(o, MUIM_Notify, MUIA_Cycle_Active, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
-    }
-    return o;
+    /* I667g (design 3.3): every cycle is a Selecta_AACycle (mui_aacycle_class.c). */
+    mui_aacycle_spec sp;
+    sp.entries = entries;
+    sp.active = 0;
+    sp.id = id;
+    return mui_aacycle_new(&sp);
 }
 
 /* MUI-P4: the tool rows above the list: search and command line Strings, the like button, the rating and subsong Cycles,
@@ -1423,7 +1425,7 @@ static Object* mui_pref_gadget(mui_state* s, uint32_t i, const sel_uim_pref_row*
         }
         o = mui_make_cycle(s->set_entry[i], id);
         if (o != NULL && act < n) {
-            set(o, MUIA_Cycle_Active, (ULONG)act);
+            set(o, AAC_Active, (ULONG)act);
         }
     } else if (r->ui == (uint32_t)SEL_UIM_PREF_CHECK) {
         o = mui_make_check(r->label, cur[0] == '1', id);
@@ -1482,7 +1484,7 @@ static void mui_pref_fire(mui_state* s, uint32_t i) {
     }
     val[0] = '\0';
     if (r->ui == (uint32_t)SEL_UIM_PREF_CYCLE) {
-        GetAttr(MUIA_Cycle_Active, s->set_ctl[i], &v);
+        GetAttr(AAC_Active, s->set_ctl[i], &v);
         snprintf(val, sizeof val, "%s", v < 9u && s->set_entry[i][v] != NULL ? s->set_entry[i][v] : "");
     } else if (r->ui == (uint32_t)SEL_UIM_PREF_CHECK) {
         GetAttr(MUIA_Selected, s->set_ctl[i], &v);
@@ -1529,14 +1531,14 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
         }
         break;
     case P4_RATING:
-        GetAttr(MUIA_Cycle_Active, s->cyc_rating, &act);
+        GetAttr(AAC_Active, s->cyc_rating, &act);
         mui_rating_line((uint32_t)act, line, sizeof line);
         if (mui_engine_line(s, line)) {
             mui_p4_note(s, which, line);
         }
         break;
     case P4_SUBSONG:
-        GetAttr(MUIA_Cycle_Active, s->cyc_subsong, &act);
+        GetAttr(AAC_Active, s->cyc_subsong, &act);
         if (mui_subsong_cycle_line((uint32_t)act, s->uim.frame.subsong_count, line, sizeof line) && mui_engine_line(s, line)) {
             mui_p4_note(s, which, line);
         }
@@ -1929,6 +1931,7 @@ static void mui_close(void* state) {
         mui_aatext_class_free();
         mui_aapanel_class_free();
         mui_aaslider_class_free();
+        mui_aacycle_class_free();
         mui_aabtn_class_free();
         mui_listview_class_free();
     }
