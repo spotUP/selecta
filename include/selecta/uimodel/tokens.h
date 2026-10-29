@@ -37,7 +37,19 @@ extern "C" {
     X(HEADER_TINT, "gui.header_tint", 0x2B2350u, 0u, 0xFFFFFFu)      \
     X(TRACK, "gui.track", 0x3A3A44u, 0u, 0xFFFFFFu)                  \
     X(HOVER_LIGHT, "gui.hover_light", 0xE4E4EAu, 0u, 0xFFFFFFu)      \
-    X(TILE_PAD, "gui.tile_pad", 10u, 0u, 64u)
+    X(TILE_PAD, "gui.tile_pad", 10u, 0u, 64u)                        \
+    X(COVER_AMIGA, "gui.cover.amiga", 0xB4390Au, 0u, 0xFFFFFFu)      \
+    X(COVER_COMMODORE_64, "gui.cover.commodore_64", 0x4338CAu, 0u, 0xFFFFFFu) \
+    X(COVER_ATARI, "gui.cover.atari", 0x14703Au, 0u, 0xFFFFFFu)      \
+    X(COVER_ZX_SPECTRUM, "gui.cover.zx_spectrum", 0xB91C1Cu, 0u, 0xFFFFFFu) \
+    X(COVER_PC_TRACKER, "gui.cover.pc_tracker", 0x0B6A82u, 0u, 0xFFFFFFu) \
+    X(COVER_NES, "gui.cover.nes", 0x9D174Du, 0u, 0xFFFFFFu)          \
+    X(COVER_GAME_BOY, "gui.cover.game_boy", 0x3F6212u, 0u, 0xFFFFFFu) \
+    X(COVER_SNES, "gui.cover.snes", 0x6D28D9u, 0u, 0xFFFFFFu)        \
+    X(COVER_PC_ENGINE, "gui.cover.pc_engine", 0x854D0Eu, 0u, 0xFFFFFFu) \
+    X(COVER_MSX, "gui.cover.msx", 0x475569u, 0u, 0xFFFFFFu)          \
+    X(COVER_MEGA_DRIVE, "gui.cover.mega_drive", 0x1D4ED8u, 0u, 0xFFFFFFu) \
+    X(COVER_CONSOLE, "gui.cover.console", 0x52525Bu, 0u, 0xFFFFFFu)
 
 /* Layer 1 (D-DUI-9): base tokens. A theme swaps these and the role tokens above follow. X(id, file key, default, min,
  * max). A value may be written as `@gui.base.<name>` (a reference to another base token). Widgets read roles only. */
@@ -127,7 +139,7 @@ int sel_gui_base_find(const char* name, uint32_t len);
 /* Base token a role follows in the Selecta Dark preset. */
 int sel_gui_token_default_ref(sel_gui_token t);
 /* Bit mask (1 << token) of the tokens that differ between two token arrays. */
-uint32_t sel_gui_tokens_diff(const uint32_t* a, const uint32_t* b);
+uint64_t sel_gui_tokens_diff(const uint32_t* a, const uint32_t* b);
 
 #ifdef __cplusplus
 }

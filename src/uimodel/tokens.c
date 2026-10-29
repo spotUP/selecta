@@ -39,11 +39,12 @@ int sel_gui_token_find(const char* name, uint32_t len) {
     return -1;
 }
 
-uint32_t sel_gui_tokens_diff(const uint32_t* a, const uint32_t* b) {
-    uint32_t mask = 0u, i;
+uint64_t sel_gui_tokens_diff(const uint32_t* a, const uint32_t* b) {
+    uint64_t mask = 0u;
+    uint32_t i;
     for (i = 0; i < SEL_GUI_TOKEN_COUNT; i++) {
         if (a[i] != b[i]) {
-            mask |= 1u << i;
+            mask |= (uint64_t)1u << i;
         }
     }
     return mask;
@@ -69,8 +70,9 @@ static const uint32_t b_max[SEL_GUI_BASE_COUNT] = {
     SEL_GUI_BASE_TOKENS(X)
 #undef X
 };
+/* Stored as base + 1 so a role without an entry (ACCENT_TEXT, the cover colours) is 0 = a literal value, not GREY_0. */
 static const int k_ref[SEL_GUI_TOKEN_COUNT] = {
-#define X(role, base) [SEL_GUI_TOKEN_##role] = SEL_GUI_BASE_##base,
+#define X(role, base) [SEL_GUI_TOKEN_##role] = SEL_GUI_BASE_##base + 1,
     SEL_GUI_TOKEN_REFS(X)
 #undef X
 };
@@ -90,4 +92,4 @@ int sel_gui_base_find(const char* name, uint32_t len) {
     return -1;
 }
 
-int sel_gui_token_default_ref(sel_gui_token t) { return (unsigned)t < SEL_GUI_TOKEN_COUNT ? k_ref[t] : -1; }
+int sel_gui_token_default_ref(sel_gui_token t) { return (unsigned)t < SEL_GUI_TOKEN_COUNT ? k_ref[t] - 1 : -1; }

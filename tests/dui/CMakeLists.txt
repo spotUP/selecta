@@ -42,6 +42,11 @@ if(NOT SEL_AMIGA)
 endif()
 if(NOT SEL_AMIGA)
   # dui-amiga-font (I526-P1): the bitmap .font reader, unit level (host only).
+  # cover_unit (I691a): platform family resolver, tones and AGA palette of the platform covers, unit level.
+  add_executable(cover_unit cover_unit.c)
+  target_link_libraries(cover_unit PRIVATE selecta_gui selecta_uimodel selecta_library)
+  add_test(NAME cover_unit COMMAND cover_unit)
+  set_tests_properties(cover_unit PROPERTIES LABELS cover TIMEOUT 60) # ledger row, not a plan item: no dui label
   add_test(NAME dui-amiga-font COMMAND dui_amiga_font_unit)
   set_tests_properties(dui-amiga-font PROPERTIES LABELS amiga-font TIMEOUT 60) # ledger row, not a plan item: no dui label, dui-ratchet counts dui against the plan ids
   # dui-font-tall (I538): AGA atlases baked for 1:2 pixels, SDL atlases unchanged.

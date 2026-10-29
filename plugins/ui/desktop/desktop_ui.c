@@ -12575,18 +12575,19 @@ static void desk_print_tokens(const desk* d) {
         SEL_GUI_TOKENS(X)
 #undef X
     };
-    uint32_t changed = sel_gui_tokens_diff(d->theme.token, none), i, n = 0u;
+    uint64_t changed = sel_gui_tokens_diff(d->theme.token, none);
+    uint32_t i, n = 0u;
     printf("pixel widget=play_button rgb=0x%06x\n", (unsigned)d->theme.token[SEL_GUI_TOKEN_ACCENT]);
     printf("pixel widget=panel rgb=0x%06x\n", (unsigned)d->theme.token[SEL_GUI_TOKEN_SURFACE]);
     printf("pixel widget=label rgb=0x%06x\n", (unsigned)d->theme.token[SEL_GUI_TOKEN_TEXT]);
     printf("metric name=corner_radius px=%u\n", (unsigned)d->theme.token[SEL_GUI_TOKEN_RADIUS]);
     printf("metric name=gap px=%u\n", (unsigned)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     for (i = 0; i < SEL_GUI_TOKEN_COUNT; i++) {
-        n += (changed >> i) & 1u;
+        n += (uint32_t)((changed >> i) & 1u);
     }
     printf("tokens count=%u changed=%u\n", (unsigned)SEL_GUI_TOKEN_COUNT, (unsigned)n);
     for (i = 0; i < SEL_GUI_TOKEN_COUNT; i++) {
-        if ((changed >> i) & 1u) {
+        if (((changed >> i) & 1u) != 0u) {
             printf("token changed=%s\n", sel_gui_token_name((sel_gui_token)i));
         }
     }
