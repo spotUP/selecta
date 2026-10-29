@@ -142,7 +142,7 @@ static void test_check(void) {
         return;
     }
     CHECK(strstr(cls, "MUIV_InputMode_Toggle") != NULL && strstr(cls, "MUIA_Selected") != NULL, "toggle input mode or selected notify missing");
-    CHECK(strstr(cls, "MUI_AA_ROLE_TOGGLE") != NULL && strstr(cls, "check_px") != NULL && strstr(cls, "SEL_GUI_TOKEN_DIVIDER") != NULL, "toggle box not drawn from metrics and tokens");
+    CHECK(strstr(cls, "MUI_AA_ROLE_TOGGLE") != NULL && strstr(cls, "check_px") != NULL && strstr(cls, "mui_aa_check_plan(") != NULL, "toggle box not drawn from the shared check plan");
     CHECK(strstr(cls, "MUI_AA_SELECTED") != NULL && strstr(cls, "aabtn_icon(") != NULL, "checked state does not draw the check icon");
     CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "TT_") == NULL, "class holds no pen or ttengine code of its own");
     free(cls);

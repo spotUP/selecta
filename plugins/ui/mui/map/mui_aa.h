@@ -25,7 +25,7 @@ uint32_t mui_aa_pressed_rgb(uint32_t face);
 /* I667a (design 2026-10-28-mui-custom-classes.md section 2): shared state, tier and metric tables of every Selecta_AA class.
  * Colours come from the token array (txt_theme.token), never from literals here. */
 enum { MUI_AA_NORMAL, MUI_AA_HOVER, MUI_AA_PRESSED, MUI_AA_DISABLED, MUI_AA_SELECTED };
-/* TOGGLE (I667b-2, AACheck): checkbox box; off = raised face, on (state SELECTED) = ACCENT face, ink TEXT. */
+/* TOGGLE (I667b-2, AACheck): checkbox box; off = SURFACE face (desktop checkbox), on (state SELECTED) = ACCENT face, ink ACCENT_TEXT. */
 enum { MUI_AA_ROLE_NORMAL, MUI_AA_ROLE_ACCENT, MUI_AA_ROLE_GHOST, MUI_AA_ROLE_TOGGLE };
 /* Screen tiers by rows (section 3): S 640x256 and 320x256, M up to 600 rows, L up to 800, XL above. */
 enum { MUI_AA_TIER_S, MUI_AA_TIER_M, MUI_AA_TIER_L, MUI_AA_TIER_XL };
@@ -44,6 +44,15 @@ uint32_t mui_aa_state_rgb(const uint32_t* token, uint32_t face, int state);
 uint32_t mui_aa_text_rgb(const uint32_t* token, uint32_t text, int state);
 /* Face and caption of a button role in a state (accent: ACCENT and ACCENT_TEXT; ghost: PANEL, selected SURFACE_RAISED). */
 void mui_aa_button_rgb(const uint32_t* token, int role, int state, uint32_t* face, uint32_t* text);
+/* AACheck box paint plan (design 3.1, desktop d_checkbox): ops painted in order into the check_px square, each a rounded fill inset
+ * from the box edge. Op 0 fills the square corners with the parent background (SURFACE = MUI_TH_PANEL); checked = one ACCENT
+ * box; off = TEXT_MUTED outline (TEXT_DISABLED when disabled) then the face inside it. Corner radius = RADIUS_SMALL (tier S half). */
+typedef struct mui_aa_check_op_t {
+    int inset, radius;
+    uint32_t rgb;
+} mui_aa_check_op_t;
+#define MUI_AA_CHECK_OPS 3
+int mui_aa_check_plan(const uint32_t* token, const mui_aa_metrics_t* m, int state, mui_aa_check_op_t* out);
 /* Number of times the three functions above ran: the sentinel that the classes (and not a copy) pick the colours. */
 uint32_t mui_aa_state_calls(void);
 /* Coverage ramp for a kind into out[] (>= MUI_AA_RAMP_MAX); returns the slot count. AGA: face, TEXT_DISABLED, TEXT_MUTED, TEXT

@@ -62,7 +62,8 @@ static ULONG aabtn_setup(struct IClass* cl, Object* obj, Msg msg) {
         aa_pen(&d->aa, face);
     }
     aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]);
-    aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_DIVIDER]);
+    aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_TEXT_MUTED]);
+    aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_SURFACE]);
     if (!d->icon_only) {
         tw = aa_text_width(&d->aa, obj, d->widest);
     }
@@ -158,18 +159,20 @@ static ULONG aabtn_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     state = aabtn_state(obj, d);
     mui_aa_button_rgb(d->aa.tok, d->role, state, &face, &text);
     if (d->role == MUI_AA_ROLE_TOGGLE) {
-        /* AACheck: DIVIDER outline round the raised box; the checked box is the ACCENT fill with the TEXT check icon. */
+        /* AACheck: the paint plan (mui_aa_check_plan) draws corners, outline and face; the checked box is ACCENT with the ACCENT_TEXT check icon. */
         int bx = l + (w - d->m.check_px) / 2, by = t + (h - d->m.check_px) / 2, cp = d->m.check_px;
-        aa_round_fill(rp, bx, by, cp, cp, d->m.radius, aa_pen(&d->aa, state == MUI_AA_SELECTED ? face : d->aa.tok[SEL_GUI_TOKEN_DIVIDER]));
-        if (state != MUI_AA_SELECTED) {
-            aa_round_fill(rp, bx + 1, by + 1, cp - 2, cp - 2, d->m.radius > 1 ? d->m.radius - 1 : 0, aa_pen(&d->aa, face));
-        } else {
+        mui_aa_check_op_t ops[MUI_AA_CHECK_OPS];
+        int n = mui_aa_check_plan(d->aa.tok, &d->m, state, ops), k;
+        for (k = 0; k < n; k++) {
+            aa_round_fill(rp, bx + ops[k].inset, by + ops[k].inset, cp - 2 * ops[k].inset, cp - 2 * ops[k].inset, ops[k].radius, aa_pen(&d->aa, ops[k].rgb));
+        }
+        if (state == MUI_AA_SELECTED) {
             aabtn_icon(d, rp, icon, bx + 2, by + 2, cp - 4, face, text);
         }
         if (_win(obj) != NULL) {
             GetAttr(MUIA_Window_ActiveObject, _win(obj), &active);
             if ((Object*)active == obj) {
-                aa_round_frame(rp, bx, by, cp, cp, d->m.radius, aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]));
+                aa_round_frame(rp, bx, by, cp, cp, ops[n - 1].inset > 0 ? ops[n - 1].radius + ops[n - 1].inset : ops[n - 1].radius, aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]));
             }
         }
         d->backend = d->aa.backend + 1;

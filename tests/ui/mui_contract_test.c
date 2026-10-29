@@ -1257,9 +1257,9 @@ static void test_aacheck(void) {
     CHECK(strstr(src, "MUII_CheckMark") == NULL, "mui_ui.c still builds a stock check image");
     txt_theme_default(&th);
     mui_aa_button_rgb(th.token, MUI_AA_ROLE_TOGGLE, MUI_AA_NORMAL, &face, &text);
-    CHECK(face == th.token[SEL_GUI_TOKEN_SURFACE_RAISED] && text == th.token[SEL_GUI_TOKEN_TEXT], "unchecked box face %06X", (unsigned)face);
+    CHECK(face == th.token[SEL_GUI_TOKEN_SURFACE] && text == th.token[SEL_GUI_TOKEN_ACCENT_TEXT], "unchecked box face %06X", (unsigned)face);
     mui_aa_button_rgb(th.token, MUI_AA_ROLE_TOGGLE, MUI_AA_SELECTED, &face, &text);
-    CHECK(face == th.token[SEL_GUI_TOKEN_ACCENT] && text == th.token[SEL_GUI_TOKEN_TEXT], "checked box face %06X", (unsigned)face);
+    CHECK(face == th.token[SEL_GUI_TOKEN_ACCENT] && text == th.token[SEL_GUI_TOKEN_ACCENT_TEXT], "checked box face %06X ink %06X (desktop d_checkbox: accent_text)", (unsigned)face, (unsigned)text);
     mui_aa_button_rgb(th.token, MUI_AA_ROLE_TOGGLE, MUI_AA_DISABLED, &face, &text);
     CHECK(text == th.token[SEL_GUI_TOKEN_TEXT_DISABLED], "disabled check ink %06X", (unsigned)text);
     CHECK(mui_icon_body(mui_icon_id("check")) != NULL, "check icon missing");
@@ -1267,6 +1267,27 @@ static void test_aacheck(void) {
     CHECK(m.check_px == 16, "box edge %d, design says 16", m.check_px);
     mui_aa_metrics(0, &m);
     CHECK(m.check_px > 0 && m.check_px <= m.height, "tier S box %d does not fit height %d", m.check_px, m.height);
+    {
+        /* I667b-3: the paint plan the class executes (class source calls it), checked against the desktop d_checkbox. */
+        mui_aa_check_op_t op[MUI_AA_CHECK_OPS];
+        uint32_t calls = mui_aa_state_calls();
+        int n;
+        mui_aa_metrics(13, &m);
+        n = mui_aa_check_plan(th.token, &m, MUI_AA_NORMAL, op);
+        CHECK(mui_aa_state_calls() > calls, "plan did not run the shared colour path");
+        CHECK(n == 3 && op[0].inset == 0 && op[0].radius == 0 && op[0].rgb == th.token[SEL_GUI_TOKEN_SURFACE], "corners not filled with the parent background");
+        CHECK(op[1].inset == 0 && op[1].radius == (int)th.token[SEL_GUI_TOKEN_RADIUS_SMALL] && op[1].radius < m.check_px / 2 && op[1].radius > 0,
+              "off box radius %d is not the small corner radius (circle would be %d)", op[1].radius, m.check_px / 2);
+        CHECK(op[1].rgb == th.token[SEL_GUI_TOKEN_TEXT_MUTED] && op[1].rgb != op[2].rgb, "off outline %06X is not the visible muted pen", (unsigned)op[1].rgb);
+        CHECK(op[2].inset == 2 && op[2].rgb == th.token[SEL_GUI_TOKEN_SURFACE], "off face inside a 2 px outline wrong");
+        n = mui_aa_check_plan(th.token, &m, MUI_AA_SELECTED, op);
+        CHECK(n == 2 && op[1].rgb == th.token[SEL_GUI_TOKEN_ACCENT] && op[1].radius == (int)th.token[SEL_GUI_TOKEN_RADIUS_SMALL], "checked plan wrong");
+        n = mui_aa_check_plan(th.token, &m, MUI_AA_DISABLED, op);
+        CHECK(n == 3 && op[1].rgb == th.token[SEL_GUI_TOKEN_TEXT_DISABLED], "disabled outline wrong");
+        mui_aa_metrics(0, &m);
+        n = mui_aa_check_plan(th.token, &m, MUI_AA_NORMAL, op);
+        CHECK(n == 3 && op[1].radius == (int)th.token[SEL_GUI_TOKEN_RADIUS_SMALL] / 2 && op[2].inset == 1, "tier S plan wrong");
+    }
 }
 
 /* I667b-2 mui-newplaylist (closes I661): New Playlist is the 12th toolbar button. Label, icon, the id table and the fire path
