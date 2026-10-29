@@ -106,10 +106,8 @@ static ULONG __attribute__((used)) aabal_dispatch_c(struct IClass* cl, Object* o
 /* Design 3.10 fallback: when MUI refuses the Balance subclass, a frameless stock Balance on the BACKGROUND face keeps the window
  * openable (a NULL child would fail the whole window tree). */
 static Object* aabal_stock(void) {
-    txt_theme th;
     uint32_t box, line;
-    txt_theme_default(&th);
-    mui_aa_balance_rgb(th.token, &box, &line);
+    mui_aa_balance_rgb(mui_theme_tokens(), &box, &line);
     mui_theme_bg_spec(box, g_bg_spec, sizeof g_bg_spec);
     return MUI_NewObject((char*)MUIC_Balance, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Background, (ULONG)g_bg_spec, TAG_DONE);
 }

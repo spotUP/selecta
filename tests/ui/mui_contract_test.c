@@ -190,6 +190,30 @@ static void test_theme_file(const char* dir) {
     th = def;
     CHECK(mui_theme_load(&th, NULL, arg_path) == 0 && th.token[SEL_GUI_TOKEN_ACCENT] == def.token[SEL_GUI_TOKEN_ACCENT], "malformed file leaves the built-in tokens");
     CHECK(mui_pens_planned() - before >= 3, "pen plan ran (sentinel)");
+    /* I676 (rig 2: accent stayed 3B82F6): the loaded tokens must reach the drawing classes. They read mui_theme_tokens(); a class
+     * calling txt_theme_default itself draws the built-in colour whatever the file says. */
+    th = def;
+    mui_theme_load(&th, env_path, NULL);
+    mui_theme_tokens_set(th.token);
+    CHECK(mui_theme_tokens()[SEL_GUI_TOKEN_ACCENT] == 0x112233u, "token store carries the file accent, got %06x", (unsigned)mui_theme_tokens()[SEL_GUI_TOKEN_ACCENT]);
+    {
+        static const char* const files[] = {"mui_aa_draw.c", "mui_aabalance_class.c", "mui_aabtn_class.c", "mui_aapanel_class.c", "mui_aatext_class.c", "mui_aafield_class.c"};
+        static char src[400000];
+        size_t k, n;
+        for (k = 0; k < sizeof files / sizeof files[0]; k++) {
+            char path[600];
+            FILE* sf;
+            snprintf(path, sizeof path, "%s/%s", MUI_DIR, files[k]);
+            sf = fopen(path, "rb");
+            if (sf == NULL) {
+                continue;
+            }
+            n = fread(src, 1, sizeof src - 1, sf);
+            fclose(sf);
+            src[n] = 0;
+            CHECK(strstr(src, "txt_theme_default") == NULL, "%s builds its own built-in tokens instead of mui_theme_tokens()", files[k]);
+        }
+    }
     remove(env_path);
     remove(arg_path);
 }

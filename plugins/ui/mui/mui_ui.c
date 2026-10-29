@@ -371,7 +371,7 @@ static struct {
     mui_theme_look look;
     int on;
 } g_th[MUI_TH_COUNT];
-static uint32_t g_tokens[SEL_GUI_TOKEN_COUNT]; /* I667e: the theme tokens, for the panel faces */
+static const uint32_t* g_tokens; /* I667e: the theme tokens for the panel faces; = mui_theme_tokens(), set in mui_theme_init */
 static uint32_t g_text_rgb; /* I665: the TEXT token, caption colour of the flat button */
 
 #define TH_TAGS(role, frame_off) \
@@ -520,7 +520,8 @@ static void mui_theme_init(const sel_ui_open_args* a) {
      * cannot take pen escapes, so it keeps the user's MUI look. */
     pen = mui_theme_pick_pen(pen_rgb, 8, th.token);
     g_text_rgb = th.token[SEL_GUI_TOKEN_TEXT];
-    memcpy(g_tokens, th.token, sizeof g_tokens);
+    mui_theme_tokens_set(th.token);
+    g_tokens = mui_theme_tokens();
     for (i = 0; i < MUI_TH_COUNT; i++) {
         g_th[i].on = mui_theme_look_for((mui_theme_role)i, th.token, &g_th[i].look) && pen >= 0 && i != MUI_TH_FIELD;
     }

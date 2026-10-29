@@ -68,6 +68,9 @@ void mui_theme_resolve(txt_theme* t, const char* env_path, const char* launch_ar
 uint32_t mui_theme_requests(void);
 /* Count of mui_theme_look_for calls that succeeded since start (sentinel for the build path test). */
 uint32_t mui_theme_applied(void);
+/* I676: the tokens in force (theme file applied). Set once per window open by the UI; drawing classes read them here. */
+void mui_theme_tokens_set(const uint32_t* tokens);
+const uint32_t* mui_theme_tokens(void);
 uint32_t mui_theme_applied_role(mui_theme_role role);
 
 #ifdef __cplusplus

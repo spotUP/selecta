@@ -192,3 +192,23 @@ int mui_theme_request(const char* env_path, const char* path) {
 uint32_t mui_theme_requests(void) {
     return g_requests;
 }
+
+/* I676: the one store of the tokens in force. mui_theme_init stores the resolved theme here; every drawing class (aa_setup, the
+ * balance fallback) reads it, so no class builds its own built-in copy and ignores the theme file. Unset: the built-in tokens. */
+static txt_theme g_tokens_theme;
+static int g_tokens_set;
+
+void mui_theme_tokens_set(const uint32_t* tokens) {
+    if (tokens != NULL) {
+        memcpy(g_tokens_theme.token, tokens, sizeof g_tokens_theme.token);
+        g_tokens_set = 1;
+    }
+}
+
+const uint32_t* mui_theme_tokens(void) {
+    if (!g_tokens_set) {
+        txt_theme_default(&g_tokens_theme);
+        g_tokens_set = 1;
+    }
+    return g_tokens_theme.token;
+}

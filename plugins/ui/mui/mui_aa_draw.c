@@ -134,10 +134,8 @@ LONG aa_pen(aa_ctx* c, uint32_t rgb) {
 
 void aa_setup(Object* obj, aa_ctx* c, const uint32_t* rgb, int n) {
     int i, depth;
-    txt_theme th;
     memset(c, 0, sizeof *c);
-    txt_theme_default(&th);
-    memcpy(c->tok, th.token, sizeof c->tok);
+    memcpy(c->tok, mui_theme_tokens(), sizeof c->tok);
     c->scr = _screen(obj);
     c->cm = c->scr->ViewPort.ColorMap;
     depth = (int)GetBitMapAttr(c->scr->RastPort.BitMap, BMA_DEPTH);
