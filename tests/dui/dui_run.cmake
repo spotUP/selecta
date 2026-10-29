@@ -27,3 +27,13 @@ function(dui_stat outvar out ui key)
   endif()
   set(${outvar} "${CMAKE_MATCH_2}" PARENT_SCOPE)
 endfunction()
+
+# I678i: the Library page (and its Composers rows) is retired; a composer's collection page opens from the Browse page's
+# composer tile. dui_browse_composer_input(<out var> <prefix> <dump of a run of <prefix>topbar 2>) returns the input script that
+# repeats <prefix> and opens the first composer tile (`browse <n>`, tile kind 1 on the `browse tile <n> <kind> <label>` lines).
+function(dui_browse_composer_input outvar prefix dump)
+  if(NOT "${dump}" MATCHES "browse tile ([0-9]+) 1 ")
+    message(FATAL_ERROR "no composer tile on the Browse page:\n${dump}")
+  endif()
+  set(${outvar} "${prefix}topbar 2\nwait 3\nbrowse ${CMAKE_MATCH_1}\nwait 3\n" PARENT_SCOPE)
+endfunction()
