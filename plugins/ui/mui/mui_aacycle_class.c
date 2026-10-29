@@ -161,7 +161,9 @@ static void aacycle_open_popup(Object* obj, aacycle_data* d) {
     if (list == NULL) {
         return;
     }
-    d->popup = MUI_NewObject((char*)MUIC_Window, MUIA_Window_Borderless, TRUE, MUIA_Window_DragBar, FALSE, MUIA_Window_CloseGadget, FALSE,
+    /* The popup opens on the cycle's own screen; without MUIA_Window_Screen MUI opens it on the default public screen and brings
+     * that screen to the front, hiding Selecta's screen (Johan rig 2 2026-10-29). */
+    d->popup = MUI_NewObject((char*)MUIC_Window, MUIA_Window_Screen, (ULONG)_screen(obj), MUIA_Window_Borderless, TRUE, MUIA_Window_DragBar, FALSE, MUIA_Window_CloseGadget, FALSE,
                              MUIA_Window_SizeGadget, FALSE, MUIA_Window_DepthGadget, FALSE, MUIA_Window_LeftEdge, (ULONG)(win->LeftEdge + _left(obj)),
                              MUIA_Window_TopEdge, (ULONG)(win->TopEdge + _bottom(obj) + 1), MUIA_Window_Width, (ULONG)_width(obj),
                              MUIA_Window_RootObject, (ULONG)list, TAG_DONE);

@@ -387,6 +387,9 @@ static void test_cycle_source(void) {
           "class does not draw through the shared cycle helpers");
     CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "0x1") == NULL, "class holds no pen code or colour literal of its own");
     CHECK(strstr(cm, "mui_aacycle_class.c") != NULL, "class not in the build");
+    /* The popup window names the cycle's screen; without it MUI opens the popup on the default public screen and Selecta's screen
+     * drops behind it (rig 2, 2026-10-29). */
+    CHECK(strstr(cls, "MUIC_Window, MUIA_Window_Screen, (ULONG)_screen(obj)") != NULL, "popup window does not open on the cycle's screen");
     free(ui);
     free(cls);
     free(cm);
