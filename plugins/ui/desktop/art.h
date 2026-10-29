@@ -22,6 +22,10 @@ void art_close(desk_art* a);
 void art_load(desk_art* a, const char* const* titles, uint32_t n);
 /* The tile pixels (DESK_ART_TILE_EDGE squared) of the album of the song at queue path `title`, NULL when it has no artwork. */
 const uint32_t* art_tile(desk_art* a, const char* title);
+/* I678e: the dominant colour (0xAARRGGBB) of the cover of the album of the song at `title`; 0 when it has no artwork. Computed once per art
+ * entry and cached; art_dominants counts the computations. */
+int art_dominant(desk_art* a, const char* title, uint32_t* argb);
+uint32_t art_dominants(const desk_art* a);
 /* Covers decoded since open (STAT_ART_DECODES). */
 uint32_t art_decodes(const desk_art* a);
 

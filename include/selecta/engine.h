@@ -415,6 +415,7 @@ typedef struct sel_engine_stats {
     uint32_t links_made;          /* share links SHARE wrote (I180 sentinel) */
     uint32_t sources_listed;      /* SOURCES rows the engine queued for the UI (I546 sentinel) */
     uint32_t lib_touch_calls;   /* LIBRARY_TOUCH commands applied (I678c sentinel: Recents order has a written opened time) */
+    uint32_t collection_opens;  /* COLLECTION_OPEN commands applied (I678e sentinel: a collection page was opened through the engine) */
     uint32_t library_items_calls; /* sel_engine_library_items calls that reached the library (I678a sentinel) */
     uint32_t evt_dropped;         /* events dropped because the event queue was full (I546 sentinel) */
     uint32_t radio_appends;       /* songs RADIO appended to the queue (I186 sentinel) */

@@ -139,7 +139,7 @@
     X(FLAG)                                                                                   \
     X(NOTE)                                                                                   \
     X(RATE) X(VOTE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
-    X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(PLAYLIST_ADD_SONG) X(PLAYLIST_IMPORT) X(PLAYLIST_ADD_FOLDER) X(PLAYLIST_REMOVE_SONG) X(PLAYLIST_PLAY) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_TOUCH) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
+    X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(PLAYLIST_ADD_SONG) X(PLAYLIST_IMPORT) X(PLAYLIST_ADD_FOLDER) X(PLAYLIST_REMOVE_SONG) X(PLAYLIST_PLAY) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_TOUCH) X(COLLECTION_OPEN) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
     X(SONGS_RANGES) X(SONGS_PLAY) X(SONGS_PLAY_NEXT) X(SONGS_QUEUE_ADD) X(SONGS_PLAYLIST_ADD) X(SONGS_REMOVE) \
     X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(FORMATS_SHOW) X(COMPOSERS_HIDE) X(COMPOSERS_VIEW) \
     X(KEEP)                                                                                   \
@@ -452,6 +452,9 @@ struct sel_engine {
     sel_tag st_tags[8][5];
     uint32_t sources_listed;                  /* SOURCES rows answered (DUI-P4-3) */
     uint32_t lib_touch_calls;                 /* LIBRARY_TOUCH commands applied (I678c) */
+    uint32_t collection_opens;                /* COLLECTION_OPEN commands applied (I678e) */
+    uint32_t collection_kind;                 /* the collection page last opened: its kind (SEL_LIB_ITEM_*) */
+    char collection_key[128];                 /* and its library key */
     uint32_t library_items_calls;             /* sel_engine_library_items calls that reached the library (I678a) */
     uint32_t evt_dropped;                     /* events emit() could not queue because evt_q was full (I546) */
     sel_tag src_tags[16][10];                  /* one SOURCES row per registered source (registry holds 16) */
@@ -5089,6 +5092,22 @@ static void cmd_LIBRARY_TOUCH(sel_engine* e, const sel_message* m) {
     else e->lib_touch_calls++;
 }
 
+/* I678e: a collection page (playlist today; album, artist, composer, source in I678f) was opened. The engine records which one and feeds
+ * Recents exactly as LIBRARY_TOUCH does, so every UI shares the order and the page open is one command. */
+static void cmd_COLLECTION_OPEN(sel_engine* e, const sel_message* m) {
+    int rc;
+    if (!folder_ready(e, "COLLECTION_OPEN")) return;
+    rc = sel_library_touch(e->lib, (uint32_t)m->args[0].v.u, m->args[1].v.s, (int64_t)time(NULL));
+    if (rc != SEL_FOLDER_OK) {
+        folder_report(e, rc, "COLLECTION_OPEN");
+        return;
+    }
+    e->lib_touch_calls++;
+    e->collection_opens++;
+    e->collection_kind = (uint32_t)m->args[0].v.u;
+    snprintf(e->collection_key, sizeof e->collection_key, "%s", m->args[1].v.s);
+}
+
 static void cmd_PLAYLIST_DEL(sel_engine* e, const sel_message* m) {
     int rc;
     if (!folder_ready(e, "PLAYLIST_DEL")) return;
@@ -6913,6 +6932,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->sources_listed = e->sources_listed;
     out->library_items_calls = e->library_items_calls;
     out->lib_touch_calls = e->lib_touch_calls;
+    out->collection_opens = e->collection_opens;
     out->evt_dropped = e->evt_dropped;
     out->radio_appends = e->radio_appends;
     out->net_cancels = e->net_cancels;

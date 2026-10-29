@@ -60,8 +60,8 @@ file(WRITE "${WORK}/click.txt" "click ${c1}\nwait 100\n")
 dui_run(w2 ${common} --canvas 1280x800 --input "${WORK}/click.txt")
 sl_parse(w2 "${w2}")
 expect_eq("opens after click" "${w2_opens}" "1")
-if(NOT "${w2}" MATCHES "nav page=playlists")
-  message(FATAL_ERROR "the click did not go to the Playlists page:\n${w2}")
+if(NOT "${w2}" MATCHES "nav page=collection")
+  message(FATAL_ERROR "the click did not go to the collection page:\n${w2}")
 endif()
 
 # 3. Icon-sidebar layout: covers only, still clickable.
@@ -134,8 +134,8 @@ expect_eq("rows after create" "${e2_rows}" "1")
 
 # 6. I646: Create playlist creates AND opens, like Spotify: the Playlists page shows the new playlist (plpage with its id) and
 # the name field has the keyboard (edit=1), so typing renames it. Typing "Road" and Enter renames it to Road.
-if(NOT "${e2}" MATCHES "nav page=playlists")
-  message(FATAL_ERROR "the card click did not go to the Playlists page:\n${e2}")
+if(NOT "${e2}" MATCHES "nav page=collection")
+  message(FATAL_ERROR "the card click did not go to the collection page:\n${e2}")
 endif()
 if(NOT "${e2}" MATCHES "plpage id=([0-9]+) name=\\[New Playlist\\] [^\n]* edit=1")
   message(FATAL_ERROR "the new playlist was not opened with the name field focused in:\n${e2}")
@@ -321,7 +321,7 @@ hdr_field(pc "${h1}" plus plus_clicks)
 expect_eq("header plus clicks" "${pc}" "1")
 sl_parse(h1 "${h1}")
 expect_eq("library items after the header plus" "${h1_items}" "7")
-if(NOT "${h1}" MATCHES "nav page=playlists")
+if(NOT "${h1}" MATCHES "nav page=collection")
   message(FATAL_ERROR "the header plus did not open the Playlists page in:\n${h1}")
 endif()
 

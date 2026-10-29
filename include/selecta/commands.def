@@ -106,6 +106,7 @@ SEL_CMD(PLAYLIST_PLAY, "u", "playlists", "playlist", "Play Playlist")
 SEL_CMD(PLAYLIST_RENAME, "us", "playlists", "playlist name", "Rename Playlist")
 SEL_CMD(PLAYLIST_DEL, "u", "playlists", "playlist", "Delete Playlist")
 SEL_CMD(LIBRARY_TOUCH, "us", "playlists", "kind id", "Touch Library Item")
+SEL_CMD(COLLECTION_OPEN, "us", "playlists", "kind key", "Open Collection Page")
 SEL_CMD(LIBRARY_REMOVE, "s", "playlists", "path", "Remove From Library")
 SEL_CMD(LIBRARY_CLEAR, "", "playlists", "", "Clear Library")
 /* Multi-select bulk verbs (I632b). list is `view`, `queue` or `playlist:<id>`; version is the list's version at selection time

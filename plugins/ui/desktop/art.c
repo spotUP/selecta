@@ -12,6 +12,8 @@
 typedef struct art_entry {
     char title[ART_TITLE_MAX];
     int64_t album; /* 0 = no such album */
+    uint32_t dominant; /* I678e: the cover's dominant colour, 0xAARRGGBB */
+    uint8_t dominant_ready;
 } art_entry;
 
 struct desk_art {
@@ -22,6 +24,7 @@ struct desk_art {
     int64_t bad[ART_TITLES]; /* albums whose cover failed to load */
     uint32_t bad_n;
     uint32_t decodes;
+    uint32_t dominants; /* I678e: dominant colours computed (once per art entry, not per frame) */
     /* The current load: written by the caller before the worker starts, read by the worker, quiet after the
      * join. The cache is touched by one thread at a time. */
     const char* const* titles;
@@ -182,6 +185,55 @@ const uint32_t* art_tile(desk_art* a, const char* title) {
         return NULL;
     }
     return sel_gui_art_cache_get(a->cache, SEL_GUI_ART_TILE, e->album);
+}
+
+/* The dominant colour of a tile: the most populated bucket of a 4x4x4 colour histogram, ignoring near black and near white, as the mean
+ * of the pixels in it. A tile of only black or white gives the plain mean. */
+static uint32_t tile_dominant(const uint32_t* px) {
+    uint32_t count[64] = {0}, sum[64][3] = {{0}}, all[3] = {0}, best = 0, bestn = 0, i, n = (uint32_t)DESK_ART_TILE_EDGE * DESK_ART_TILE_EDGE;
+    for (i = 0; i < n; i++) {
+        uint32_t c = px[i], r = (c >> 16) & 255u, g = (c >> 8) & 255u, b = c & 255u, hi = r > g ? (r > b ? r : b) : (g > b ? g : b);
+        uint32_t lo = r < g ? (r < b ? r : b) : (g < b ? g : b), k = (r >> 6) * 16u + (g >> 6) * 4u + (b >> 6);
+        all[0] += r;
+        all[1] += g;
+        all[2] += b;
+        if (hi < 40u || lo > 215u) {
+            continue;
+        }
+        count[k]++;
+        sum[k][0] += r;
+        sum[k][1] += g;
+        sum[k][2] += b;
+    }
+    for (i = 0; i < 64u; i++) {
+        if (count[i] > bestn) {
+            bestn = count[i];
+            best = i;
+        }
+    }
+    if (bestn == 0u) {
+        return 0xFF000000u | ((all[0] / n) << 16) | ((all[1] / n) << 8) | (all[2] / n);
+    }
+    return 0xFF000000u | ((sum[best][0] / bestn) << 16) | ((sum[best][1] / bestn) << 8) | (sum[best][2] / bestn);
+}
+
+int art_dominant(desk_art* a, const char* title, uint32_t* argb) {
+    art_entry* e;
+    const uint32_t* tile;
+    if (a == NULL || (e = find_entry(a, title)) == NULL || e->album == 0 || (tile = art_tile(a, title)) == NULL) {
+        return 0;
+    }
+    if (!e->dominant_ready) {
+        e->dominant = tile_dominant(tile);
+        e->dominant_ready = 1u;
+        a->dominants++;
+    }
+    *argb = e->dominant;
+    return 1;
+}
+
+uint32_t art_dominants(const desk_art* a) {
+    return a != NULL ? a->dominants : 0u;
 }
 
 uint32_t art_decodes(const desk_art* a) {

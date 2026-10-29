@@ -78,8 +78,8 @@ static const int g_icon_sizes[DESK_ICON_SIZES] = {16, 20, 24, 32};
 /* The pages the sidebar doors and --view reach (I262). One list: --view names, door clicks, keys and the stats sentinel
  * all use it. */
 #define PG_HIST_MAX 16u
-typedef enum { PG_HOME, PG_SEARCH, PG_LIBRARY, PG_PLAYLISTS, PG_QUEUE, PG_NOWPLAYING, PG_SONGS, PG_SONGINFO, PG_VIZ, PG_TRACKER, PG_SHELF, PG_BROWSE, PG_COUNT } desk_page;
-static const char* const g_page_name[PG_COUNT] = {"home", "search", "library", "playlists", "queue", "nowplaying", "songs", "songinfo", "viz", "tracker", "shelf", "browse"};
+typedef enum { PG_HOME, PG_SEARCH, PG_LIBRARY, PG_PLAYLISTS, PG_QUEUE, PG_NOWPLAYING, PG_SONGS, PG_SONGINFO, PG_VIZ, PG_TRACKER, PG_SHELF, PG_BROWSE, PG_COLLECTION, PG_COUNT } desk_page;
+static const char* const g_page_name[PG_COUNT] = {"home", "search", "library", "playlists", "queue", "nowplaying", "songs", "songinfo", "viz", "tracker", "shelf", "browse", "collection"};
 #define SHOW_ALL_LABEL "Show all" /* I617: the link at the right end of every Home shelf header */
 #define SHOW_ALL_PX 14
 /* The sidebar doors in order: Spotify's Home, Search and Your Library, then Playlists, Queue and Now Playing. */
@@ -215,6 +215,12 @@ typedef struct desk {
     uint32_t pls_want, pls_n, pls_stale, pls_scroll, pls_draws, pls_rows; /* songs, reload wanted, first row shown, frames drawn, rows in the last one */
     int pl_edit;             /* 1 while the name field has the keyboard */
     char pl_name[64];
+    uint32_t* pls_ord;       /* I678e: the shown songs as indices into pls_off: the search filter, then the sort */
+    uint32_t pls_vn, col_sort, col_color, col_top; /* shown songs, sort (0 custom order, 1 title), header cover colour and the band's top colour */
+    int col_cover;           /* 1 when col_color came from the first song's cover */
+    int col_search;          /* 1 while the collection's search field has the keyboard */
+    char col_q[64];
+    size_t col_qlen;
     uint32_t pls_min;        /* I652a: the page must list at least this many songs (an Add is still on its way to the engine) */
     uint32_t add_id;         /* I652b: the playlist the Library page adds to (0 = the Library page is not in add mode) */
     char add_name[96];
@@ -4124,10 +4130,16 @@ static const char* pl_button_label(uint32_t k) {
 /* ---- The playlist page (I633): the Playlists page shows one saved playlist as a Spotify-style page: cover, name, song count,
  * a Play button and the songs as shared song rows (song_row_reg, so the song menu, keyboard focus and drag work). The keys
  * come from the library (sel_engine_library_playlist_keys); nothing here reads SQL. ---- */
+static void col_rebuild(desk* d);
+static void col_cover_refresh(desk* d);
+
 static void pls_free(desk* d) {
     free(d->pls_buf);
     free(d->pls_off);
     free(d->pls_title);
+    free(d->pls_ord);
+    d->pls_ord = NULL;
+    d->pls_vn = 0u;
     d->pls_buf = NULL;
     d->pls_off = NULL;
     d->pls_title = NULL;
@@ -4178,9 +4190,84 @@ static void pls_reload(desk* d) {
     } else {
         d->pls_min = 0u;
     }
-    if (d->pls_scroll >= d->pls_n) {
+    col_rebuild(d);
+    col_cover_refresh(d);
+    if (d->pls_scroll >= d->pls_vn) {
         d->pls_scroll = 0u;
     }
+}
+
+/* ---- I678e: the collection page (design doc 7): one page for a playlist now, an album, artist or composer later. The search
+ * filter and the sort live here as an order over the loaded songs; the header colour is the dominant colour of the cover. ---- */
+static const desk* g_col_d;
+
+static int col_ci_cmp(const char* a, const char* b) {
+    for (; *a != '\0' && *b != '\0'; a++, b++) {
+        int x = tolower((unsigned char)*a), y = tolower((unsigned char)*b);
+        if (x != y) {
+            return x - y;
+        }
+    }
+    return tolower((unsigned char)*a) - tolower((unsigned char)*b);
+}
+
+static int col_match(const char* title, const char* q) {
+    size_t n = strlen(q), i, m = strlen(title);
+    for (i = 0; i + n <= m; i++) {
+        size_t j;
+        for (j = 0; j < n && tolower((unsigned char)title[i + j]) == tolower((unsigned char)q[j]); j++) {
+        }
+        if (j == n) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int col_order_cmp(const void* a, const void* b) {
+    uint32_t x = *(const uint32_t*)a, y = *(const uint32_t*)b;
+    int c = col_ci_cmp(g_col_d->pls_title[x], g_col_d->pls_title[y]);
+    return c != 0 ? c : (x < y ? -1 : x > y);
+}
+
+static void col_rebuild(desk* d) {
+    uint32_t i, n = 0u;
+    free(d->pls_ord);
+    d->pls_ord = (uint32_t*)malloc((d->pls_n + 1u) * sizeof *d->pls_ord);
+    d->pls_vn = 0u;
+    if (d->pls_ord == NULL) {
+        return;
+    }
+    for (i = 0; i < d->pls_n; i++) {
+        if (d->col_qlen == 0u || col_match(d->pls_title[i], d->col_q)) {
+            d->pls_ord[n++] = i;
+        }
+    }
+    if (d->col_sort == 1u && n > 1u) {
+        g_col_d = d;
+        qsort(d->pls_ord, n, sizeof *d->pls_ord, col_order_cmp);
+    }
+    d->pls_vn = n;
+}
+
+/* The header colour: the dominant colour of the first song's cover, else the accent. The band fades from it into the panel. */
+static void col_cover_refresh(desk* d) {
+    uint32_t c = 0u;
+    const char* key = d->pls_n > 0u ? pls_key(d, 0u) : NULL;
+    d->col_cover = 0;
+    if (key != NULL && d->art != NULL) {
+        art_load(d->art, &key, 1u);
+        d->col_cover = art_dominant(d->art, key, &c);
+    }
+    d->col_color = d->col_cover ? c : ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
+    d->col_top = desk_mix(ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]), d->col_color, 40000);
+}
+
+static void col_changed(desk* d) {
+    col_rebuild(d);
+    d->pls_scroll = 0u;
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
 }
 
 /* Opens playlist `id` on the Playlists page (the sidebar Your Library row and a playlist row of the tree). */
@@ -4197,6 +4284,10 @@ static void pls_open(desk* d, uint32_t id, const char* name) {
     d->pl_sel_kind = (uint32_t)SEL_ROW_PLAYLIST;
     d->pl_sel_id = id;
     d->pl_edit = 0;
+    d->col_sort = 0u; /* I678e: a collection opens in its own order, unfiltered */
+    d->col_qlen = 0u;
+    d->col_q[0] = '\0';
+    d->col_search = 0;
     pls_reload(d);
     d->repaint = 1;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
@@ -4204,8 +4295,8 @@ static void pls_open(desk* d, uint32_t id, const char* name) {
 
 /* I647: Rename from a menu: the playlist's page opens and its title is the name field with the keyboard (as Create playlist, I646). */
 static void pl_rename_begin(desk* d, uint32_t id, const char* name) {
-    if (d->page != PG_PLAYLISTS) {
-        desk_page_goto(d, PG_PLAYLISTS);
+    if (d->page != PG_COLLECTION) {
+        desk_page_goto(d, PG_COLLECTION);
     }
     if (d->pls_id != id) {
         pls_open(d, id, name);
@@ -4245,6 +4336,17 @@ static sel_gui_rect pls_play_rect(desk* d, sel_gui_rect mn) {
 static sel_gui_rect pls_more_rect(desk* d, sel_gui_rect mn) {
     sel_gui_rect pb = pls_play_rect(d, mn);
     return rect_of(pb.x + pb.w + lpx(d, QUEUE_BTN_GAP), pb.y, pb.w, pb.h);
+}
+
+/* I678e: the action row's sort button and search field, right of More (shown while the collection has songs). */
+static sel_gui_rect col_sort_rect(desk* d, sel_gui_rect mn) {
+    sel_gui_rect m = pls_more_rect(d, mn);
+    return rect_of(m.x + m.w + lpx(d, QUEUE_BTN_GAP), m.y, m.w + lpx(d, 48), m.h);
+}
+
+static sel_gui_rect col_find_rect(desk* d, sel_gui_rect mn) {
+    sel_gui_rect b = pls_back_rect(d, mn); /* right end of the Back row: the action row has no room left of the content edge */
+    return rect_of(mn.x + mn.w - lpx(d, HOME_MARGIN) - lpx(d, 220), b.y, lpx(d, 220), b.h);
 }
 
 static sel_gui_rect pls_row_rect(desk* d, sel_gui_rect mn, uint32_t slot) {
@@ -4419,7 +4521,7 @@ static void add_mode_back(desk* d) {
     uint32_t id = d->add_id;
     char name[sizeof d->add_name];
     snprintf(name, sizeof name, "%s", d->add_name);
-    desk_page_goto(d, PG_PLAYLISTS);
+    desk_page_goto(d, PG_COLLECTION);
     pls_open(d, id, name);
 }
 
@@ -4433,6 +4535,7 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
     if (d->pls_stale) {
         pls_reload(d);
     }
+    sel_gui_gradient(d->canvas, rect_of(mn.x, mn.y, mn.w, cv.y + cv.h + lpx(d, PLS_GAP) - mn.y), 1, d->col_top, ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
     draw_button(d, pls_back_rect(d, mn), surf, "Back to Playlists", 13, text);
     sel_gui_genart_draw(d->canvas, cv, "album", sel_gui_str_hash(d->pls_name));
     draw_text(d, rect_of(tx, cv.y, mn.x + mn.w - tx - lpx(d, HOME_MARGIN), lpx(d, 20)), "Playlist", 0, 13, muted);
@@ -4447,8 +4550,19 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
     draw_text(d, rect_of(tx, cv.y + lpx(d, 24) + lpx(d, page_title_h(d)), pb.w * 2, lpx(d, 20)), count, 0, 13, muted);
     draw_button(d, pb, accent, "Play", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
     draw_button(d, pls_more_rect(d, mn), surf, "More", 13, text);
-    for (slot = 0; d->pls_scroll + slot < d->pls_n && pls_row_visible(d, mn, slot); slot++, shown++) {
-        uint32_t i = d->pls_scroll + slot;
+    if (d->pls_n > 0u) { /* I678e: the sort button and the search field */
+        sel_gui_rect fr = col_find_rect(d, mn);
+        draw_button(d, col_sort_rect(d, mn), surf, d->col_sort == 1u ? "Sort: Title" : "Sort: Custom Order", 13, text);
+        sel_gui_round_rect(d->canvas, fr, rad, surf);
+        draw_text(d, rect_of(fr.x + lpx(d, 12), fr.y, fr.w - lpx(d, 24), fr.h), d->col_qlen > 0u ? d->col_q : "Search in this collection", 0, 13, d->col_qlen > 0u ? text : muted);
+        if (d->col_search) {
+            const sel_gui_atlas* at = desk_font(d, 0, 13);
+            int32_t tw = at != NULL ? sel_gui_text_width(at, d->col_q, d->col_qlen) : 0, ch = fr.h - lpx(d, 12), cw = lpx(d, 2) > 0 ? lpx(d, 2) : 1;
+            sel_gui_fill_rect(d->canvas, rect_of(fr.x + lpx(d, 12) + tw, fr.y + (fr.h - ch) / 2, cw, ch), text);
+        }
+    }
+    for (slot = 0; d->pls_scroll + slot < d->pls_vn && pls_row_visible(d, mn, slot); slot++, shown++) {
+        uint32_t pos = d->pls_scroll + slot, i = d->pls_ord[pos];
         sel_gui_rect r = pls_row_rect(d, mn, slot);
         char num[16];
         song_row* e = song_row_reg(d, r, pls_key(d, i), 0u, 0, 0);
@@ -4460,7 +4574,7 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
         if (in_rect(r, d->ptr_x, d->ptr_y)) {
             sel_gui_round_rect(d->canvas, r, rad, surf);
         }
-        snprintf(num, sizeof num, "%u", (unsigned)(i + 1u));
+        snprintf(num, sizeof num, "%u", (unsigned)(pos + 1u));
         draw_text(d, rect_of(r.x + lpx(d, 12), r.y, lpx(d, 36), r.h), num, 0, 14, muted);
         draw_text(d, rect_of(r.x + lpx(d, 56), r.y, r.w - lpx(d, 56) - lpx(d, 40), r.h), d->pls_title[i], 0, 14, row_ink(d, r, text));
     }
@@ -4544,7 +4658,7 @@ static int pl_create(desk* d, uint32_t folder) {
 static int side_create_playlist(desk* d) {
     d->side_open_n = sel_engine_library_playlists(d->engine) + 1u; /* I678b: playlists only, the list holds more kinds */
     d->side_open_tries = 0u;
-    desk_page_goto(d, PG_PLAYLISTS);
+    desk_page_goto(d, PG_COLLECTION);
     d->repaint = 1;
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
     return pl_create(d, 0u);
@@ -4611,6 +4725,22 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
             }
         }
     }
+    if (d->pls_n > 0u) { /* I678e: the sort button cycles Custom Order and Title; the search field takes the keyboard */
+        if (in_rect(col_sort_rect(d, mn), ev->x, ev->y)) {
+            d->col_sort = d->col_sort == 0u ? 1u : 0u;
+            d->col_search = 0;
+            d->pl_edit = 0;
+            col_changed(d);
+            return 1;
+        }
+        d->col_search = in_rect(col_find_rect(d, mn), ev->x, ev->y);
+        if (d->col_search) {
+            d->pl_edit = 0;
+            d->repaint = 1;
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+            return 1;
+        }
+    }
     d->pl_edit = in_rect(pls_title_rect(d, mn), ev->x, ev->y); /* I646: the name field */
     if (d->pl_edit) {
         d->pl_nlen = 0u;
@@ -4635,10 +4765,10 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
         d->repaint = 1;
         return desk_send(d, line);
     }
-    for (slot = 0; d->pls_scroll + slot < d->pls_n && pls_row_visible(d, mn, slot); slot++) {
+    for (slot = 0; d->pls_scroll + slot < d->pls_vn && pls_row_visible(d, mn, slot); slot++) {
         if (in_rect(pls_row_rect(d, mn, slot), ev->x, ev->y)) {
             snprintf(d->np_ctx, sizeof d->np_ctx, "%s", d->pls_name); /* I619 */
-            desk_play_path(d, pls_key(d, d->pls_scroll + slot));
+            desk_play_path(d, pls_key(d, d->pls_ord[d->pls_scroll + slot]));
             d->row_plays++;
             return 1;
         }
@@ -4716,6 +4846,26 @@ static int plmenu_pointer(desk* d, const sel_gui_input* ev) {
     }
     draw_home(d);
     return 1;
+}
+
+/* I678e: a typed key while the collection's search field has the keyboard; every change refilters the songs. */
+static int col_key(desk* d, const sel_gui_input* ev) {
+    if (ev->code == 13u || ev->code == 27u) {
+        d->col_search = 0;
+        d->repaint = 1;
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        return desk_present(d);
+    }
+    if (ev->code == 127u && d->col_qlen > 0u) {
+        d->col_q[--d->col_qlen] = '\0';
+    } else if (ev->code >= 32u && ev->code < 127u && (ev->mods & (TXT_MOD_CTRL | TXT_MOD_ALT)) == 0u && d->col_qlen + 1u < sizeof d->col_q) {
+        d->col_q[d->col_qlen++] = (char)ev->code;
+        d->col_q[d->col_qlen] = '\0';
+    } else {
+        return 0;
+    }
+    col_changed(d);
+    return desk_present(d);
 }
 
 /* A typed key while the name field is focused: printable keys append, Backspace deletes, Enter and Escape leave. */
@@ -5713,6 +5863,15 @@ static const char* library_dump_build(desk* d) {
                      (unsigned)d->pls_n, (unsigned)d->pls_rows, (unsigned)d->pls_draws, (int)bk.x, (int)bk.y, (int)bk.w, (int)bk.h,
                      (int)pp.x, (int)pp.y, (int)pp.w, (int)pp.h, d->pl_edit);
         o = dump_put(d, o, "plmore %d %d %d %d\n", (int)pm.x, (int)pm.y, (int)pm.w, (int)pm.h);
+        { /* I678e: the collection header, action row and the engine's open sentinel */
+            sel_gui_rect cs = col_sort_rect(d, pmn), cf = col_find_rect(d, pmn);
+            sel_engine_stats cst;
+            sel_engine_stats_get(d->engine, &cst);
+            o = dump_put(d, o, "collection kind=playlist opens=%u dominants=%u cover=%d color=%08x top=%08x sort=%u q=[%s] shown=%u of=%u search=%d sortbtn=%d,%d,%d,%d find=%d,%d,%d,%d\n",
+                         (unsigned)cst.collection_opens, (unsigned)art_dominants(d->art), d->col_cover, (unsigned)d->col_color, (unsigned)d->col_top,
+                         (unsigned)d->col_sort, d->col_q, (unsigned)d->pls_vn, (unsigned)d->pls_n, d->col_search, (int)cs.x, (int)cs.y, (int)cs.w, (int)cs.h,
+                         (int)cf.x, (int)cf.y, (int)cf.w, (int)cf.h);
+        }
         if (d->pls_n == 0u) {
             sel_gui_rect fb = pls_find_btn_rect(d, pmn, 0u);
             sel_gui_rect ib = pls_find_btn_rect(d, pmn, 1u);
@@ -5739,10 +5898,11 @@ static const char* library_dump_build(desk* d) {
                 o = dump_put(d, o, "plfindadd %u %d %d %d %d key=%s\n", (unsigned)j, (int)fa.x, (int)fa.y, (int)fa.w, (int)fa.h, fr != NULL ? fr->key : "");
             }
         }
-        for (j = 0; d->pls_scroll + j < d->pls_n && pls_row_visible(d, pmn, j) && o + 400u < sizeof d->library_dump; j++) {
+        for (j = 0; d->pls_scroll + j < d->pls_vn && pls_row_visible(d, pmn, j) && o + 400u < sizeof d->library_dump; j++) {
             sel_gui_rect r = pls_row_rect(d, pmn, j);
-            o = dump_put(d, o, "plsong %u %d %d %d %d file=%s title=%s\n", (unsigned)j, (int)r.x, (int)r.y, (int)r.w, (int)r.h, path_base(pls_key(d, d->pls_scroll + j)),
-                         d->pls_title[d->pls_scroll + j]);
+            uint32_t real = d->pls_ord[d->pls_scroll + j];
+            o = dump_put(d, o, "plsong %u %d %d %d %d file=%s title=%s\n", (unsigned)j, (int)r.x, (int)r.y, (int)r.w, (int)r.h, path_base(pls_key(d, real)),
+                         d->pls_title[real]);
         }
     }
     if (d->si_page) { /* the Song Information page geometry and rows (DUI-P4-10) */
@@ -7619,7 +7779,7 @@ static void desk_page_flags(desk* d, desk_page pg) {
     d->lib_focus = -1;
     d->kb_list = 0;
     d->queue_page = pg == PG_QUEUE;
-    d->pl_page = pg == PG_PLAYLISTS;
+    d->pl_page = pg == PG_PLAYLISTS || pg == PG_COLLECTION;
     d->pls_id = 0u;
     d->add_id = 0u; /* I652b: leaving or entering a page ends the Library's add mode */
     d->si_page = pg == PG_SONGINFO;
@@ -7706,7 +7866,7 @@ static void desk_page_load(desk* d, desk_page pg) {
         desk_send(d, "COMPOSERS_SHOW");
         d->src_wait = 1;
         desk_send(d, "SOURCES");
-    } else if (pg == PG_PLAYLISTS || pg == PG_SONGS) { /* the folders source holds the saved playlists */
+    } else if (pg == PG_PLAYLISTS || pg == PG_COLLECTION || pg == PG_SONGS) { /* the folders source holds the saved playlists */
         desk_send(d, "VIEW_SOURCE folders");
         desk_send(d, "VIEW_WINDOW 64");
         d->folder_opens++;
@@ -8454,7 +8614,7 @@ static void side_lib_reload(desk* d) {
     d->side_stale = 0u;
     d->side_filters++; /* I610: filter passes run */
     if (d->side_open_n != 0u) { /* I646: Create playlist asked to open the new playlist once the engine has made it */
-        if (d->page != PG_PLAYLISTS || ++d->side_open_tries > 300u) {
+        if (d->page != PG_COLLECTION || ++d->side_open_tries > 300u) {
             d->side_open_n = 0u;
         } else if (d->side_n >= d->side_open_n) { /* the list is oldest first: the new one is last */
             d->side_open_n = 0u;
@@ -8647,7 +8807,7 @@ static int32_t side_lib_at(const desk* d, int32_t x, int32_t y) {
 static int side_lib_open_item(const desk* d, uint32_t i) {
     const sel_engine_library_item* it = &d->side_items[i];
     if (it->kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST) {
-        return d->page == PG_PLAYLISTS && d->pl_sel_kind == (uint32_t)SEL_ROW_PLAYLIST && d->pl_sel_id == it->id;
+        return d->page == PG_COLLECTION && d->pl_sel_kind == (uint32_t)SEL_ROW_PLAYLIST && d->pl_sel_id == it->id;
     }
     /* I678b: the other kinds have no page of their own yet: the row last opened stays marked while that page is still showing */
     return d->side_open_kind == it->kind + 1u && d->side_open_page == (uint32_t)d->page + 1u && strcmp(d->side_open_key, it->key) == 0;
@@ -10234,6 +10394,9 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
     if (d->lf_edit) { /* I611: the Your Library filter field has the keyboard */
         return lf_key(d, ev);
     }
+    if (d->pl_page && d->col_search) { /* I678e: the collection's search field has the keyboard */
+        return col_key(d, ev);
+    }
     if (d->pl_page && d->pl_edit) { /* the name field of the Playlists page has the keyboard */
         return pl_key(d, ev);
     }
@@ -10683,12 +10846,12 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
             if (!d->side_items[door].pinned) { /* I678c: opening an item page feeds Recents; the engine stores it so every UI shares the order */
                 char touch[160];
                 char head[32];
-                snprintf(head, sizeof head, "LIBRARY_TOUCH %u", (unsigned)d->side_items[door].kind);
+                snprintf(head, sizeof head, "COLLECTION_OPEN %u", (unsigned)d->side_items[door].kind); /* I678e: records Recents as LIBRARY_TOUCH did */
                 desk_quoted_request(touch, sizeof touch, head, d->side_items[door].key);
                 desk_send(d, touch);
             }
             if (d->side_items[door].kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST) {
-                desk_page_goto(d, PG_PLAYLISTS);
+                desk_page_goto(d, PG_COLLECTION);
                 pls_open(d, d->side_items[door].id, d->side_items[door].name); /* I633: the playlist's page of songs */
             } else { /* I678b: record the identity so the row is marked open; the kind pages land with I678e */
                 d->side_open_kind = d->side_items[door].kind + 1u;
@@ -10906,7 +11069,7 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
             return 1;
         }
         if (d->pl_page && d->pls_id != 0u && ev->dy != 0) { /* I633: the playlist's songs scroll a row a notch */
-            if (ev->dy < 0 && d->pls_scroll + 1u < d->pls_n) {
+            if (ev->dy < 0 && d->pls_scroll + 1u < d->pls_vn) {
                 d->pls_scroll++;
             } else if (ev->dy > 0 && d->pls_scroll > 0u) {
                 d->pls_scroll--;
