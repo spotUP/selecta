@@ -456,6 +456,19 @@ int sel_library_mark(sel_library* lib, const char* table, const char* key) {
     return ok;
 }
 
+int sel_library_fetch_status(sel_library* lib) {
+    sel_cache* c = cache_get(lib);
+    int st;
+
+    if (c == NULL) {
+        return 0;
+    }
+    cache_lock(lib);
+    st = c->last_status;
+    cache_unlock(lib);
+    return st;
+}
+
 int sel_library_fetch(sel_library* lib, const char* spec, const char* rules, char* out, size_t cap, uint32_t* files) {
     char source[24];
     char path[SEL_CACHE_PATH_MAX];

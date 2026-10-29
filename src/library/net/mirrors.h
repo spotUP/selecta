@@ -35,6 +35,7 @@ typedef struct sel_mirror_res {
     unsigned retries; /* attempts after the first */
     unsigned rejected; /* complete bodies the verify callback refused (md5 mismatch) */
     int served;       /* index into the set, -1 when every mirror failed */
+    int status;       /* HTTP status of the last failed attempt, 0 when none answered (I695b) */
     char url[SEL_MIRROR_URL_MAX + SEL_MIRROR_PATH_MAX];
     unsigned long body_bytes;
     unsigned order[SEL_MIRROR_MAX]; /* the rank order used, indices into the set */

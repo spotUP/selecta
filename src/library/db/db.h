@@ -324,6 +324,7 @@ int sel_library_run(sel_library* lib, uint32_t req, sel_lib_job* job);
  * song and the companions `rules` name (sel_companion_rules) land in the handle's file cache. 1 with
  * the cache path in `out` and the files delivered in `files`; 0 on failure; -1 when every mirror
  * delivered a body whose md5 differs. */
+int sel_library_fetch_status(sel_library* lib); /* HTTP status of the last failed sel_library_fetch, 0 when none (I695b) */
 int sel_library_fetch(sel_library* lib, const char* spec, const char* rules, char* out, size_t cap, uint32_t* files);
 /* Cache counters; 0 when the handle served no fetch. */
 struct sel_cache_stats;

@@ -72,6 +72,7 @@ typedef struct sel_cache {
     unsigned slice_ms;      /* > 0: a fetch returns SEL_CACHE_PENDING after about this many milliseconds of body, and a
                              * stalled attempt after SEL_CACHE_SLICE_STALL_MS; one mirror per call (I168b) */
     sel_cache_slice slice;
+    int last_status;        /* HTTP status of the last failed fetch (404 for a file the mirror does not serve), 0 when none (I695b) */
     volatile int* cancel;   /* non-NULL: a download stops at its next body chunk once *cancel is set (I168a) */
 } sel_cache;
 

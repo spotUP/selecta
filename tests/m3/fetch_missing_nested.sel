@@ -1,0 +1,2 @@
+# I695a: a song below a folder the mirror does not serve (404) fails and leaves no empty folder.
+LIBRARY_FETCH modland:Protracker/nodir/sub/ghost.mod
