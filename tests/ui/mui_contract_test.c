@@ -1751,6 +1751,36 @@ static void test_live_guard(void) {
     CHECK(strstr(src, "muiRenderInfo(obj) != NULL && _win(obj) != NULL") != NULL, "aa_live does not check the render info before _win");
 }
 
+/* I713: the rig's wasabid lists AAList rows as items by calling AAM_GetRow (the class's documented read-back, mui_aalist_class.h).
+ * The class is Amiga-only, so the contract is checked in the sources: the header declares the method and its message, the
+ * dispatcher answers it, and the handler gives the row text, the selection and the on-screen box wasabid clicks. */
+static void test_aalist_getrow(void) {
+    static char src[200000];
+    char path[1024];
+    size_t n;
+    FILE* f;
+    snprintf(path, sizeof path, "%s/mui_aalist_class.h", MUI_DIR);
+    f = fopen(path, "rb");
+    CHECK(f != NULL, "open %s", path);
+    n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    CHECK(strstr(src, "#define AAM_GetRow") != NULL && strstr(src, "mui_aalist_getrow;") != NULL, "mui_aalist_class.h declares no AAM_GetRow message");
+    snprintf(path, sizeof path, "%s/mui_aalist_class.c", MUI_DIR);
+    f = fopen(path, "rb");
+    CHECK(f != NULL, "open %s", path);
+    n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    CHECK(strstr(src, "case AAM_GetRow:") != NULL, "the AAList dispatcher does not answer AAM_GetRow");
+    CHECK(strstr(src, "g->selected = ") != NULL && strstr(src, "g->y = _mtop(obj) + d->m.pad_y + aalist_title_h(d)") != NULL,
+          "AAM_GetRow does not give the selection and the row box drawn by aalist_draw");
+}
+
 /* Regression (I684a, the crash itself): mui_detail_group built the visualizer cycle and then called set(AAC_Active) before
  * the cycle was in the application tree. The set fired the MUIV_Notify_Application notification with no global info, MUI read
  * the application through a NULL pointer, and rig 2 crashed at every start whose saved visualizer was not the first. The
@@ -1908,6 +1938,7 @@ int main(int argc, char** argv) {
         test_tracker();
     } else if (strcmp(argv[1], "live-guard") == 0) {
         test_live_guard();
+        test_aalist_getrow();
     } else if (strcmp(argv[1], "cycle-initial") == 0) {
         test_cycle_initial();
     } else if (strcmp(argv[1], "screen-rtg-flag") == 0) {

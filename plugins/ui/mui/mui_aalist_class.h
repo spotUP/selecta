@@ -20,6 +20,21 @@
 
 #define MUI_AALIST_COLS 5
 
+/* AAM_GetRow (I713): the read-back method for tools that drive the window from outside (the rig's wasabid lists a row as an item and
+ * double-clicks it by its text). The class has no public parent that knows its rows, so this is its documented accessor. The caller fills
+ * row and text/cap; the method returns TRUE when the row exists and sets: text = the cell texts of the row joined by two spaces (empty
+ * cells left out, truncated to cap), x/y/w/h = the row's box in window coordinates (all 0 when the row is scrolled out of view or the
+ * list is not shown), selected = 1 on the active row. */
+#define AAM_GetRow (TAG_USER + 0x53410510UL)
+typedef struct mui_aalist_getrow {
+    ULONG MethodID; /* AAM_GetRow */
+    LONG row;
+    char* text;
+    LONG cap;
+    LONG x, y, w, h;
+    LONG selected;
+} mui_aalist_getrow;
+
 typedef const char* (*mui_aalist_row_fn)(void* ctx, long row);
 /* Cell text of a multi-column list; row -1 asks the column title (the title row). */
 typedef const char* (*mui_aalist_cell_fn)(void* ctx, long row, int col);
