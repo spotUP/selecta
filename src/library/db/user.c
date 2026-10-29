@@ -322,6 +322,43 @@ static int home_list(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t
     return SQLITE_OK;
 }
 
+
+typedef struct home_item_sink {
+    const sel_user_op* op;
+    uint32_t* used;
+    int64_t* rows;
+} home_item_sink;
+
+/* One `I` line: `I #<kind>:<key>[\x1f<artist>]\t<name>`; the view parses it into a row with item_kind set. */
+static void home_item_line(void* ctx, uint32_t kind, const char* key, const char* name, const char* sub) {
+    home_item_sink* k = ctx;
+    char line[SEL_SONG_KEY_MAX + 2 + 256];
+    snprintf(line, sizeof line, "#%u:%.*s%s%.*s\t%.200s", (unsigned)kind, 90, key, sub[0] != '\0' ? "\x1f" : "", 90, sub, name);
+    home_put(k->op, k->used, k->rows, "S", line);
+}
+
+/* A heading and the item lines of one shelf; no rows: no heading (an empty shelf is not shown). Item shelves are counted by the
+ * caller through the `I` lines the view parser sees. */
+static int home_items(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t* rows, uint32_t shelf, const char* tag, const char* heading,
+                      uint32_t limit) {
+    home_item_sink k;
+    uint32_t mark = *used;
+    int64_t rmark = *rows;
+    int n;
+    k.op = op;
+    k.used = used;
+    k.rows = rows;
+    home_put(op, used, rows, tag, heading);
+    n = sel_home_items(db, shelf, limit, home_item_line, &k);
+    if (n < 0) return n;
+    if (n == 0) { /* drop the heading just written */
+        *used = mark;
+        *rows = rmark;
+        op->out[mark] = '\0';
+    }
+    return SQLITE_OK;
+}
+
 #define HOME_FILL_FROM \
     " FROM songs WHERE key NOT IN (SELECT key FROM history) AND added < CAST(strftime('%s', 'now') AS INTEGER) - 604800"
 
@@ -336,21 +373,10 @@ static int home_text(sqlite3* db, const sel_user_op* op, int64_t* rows) {
 
     op->out[0] = '\0';
     *rows = 0;
-    /* I478: Quick picks leads Home: the most recent distinct albums from the play history, at most 8 (two rows of four).
-     * Playlists carry no play history, so they never appear here. No played album: no heading, no grid. */
-    rc = sqlite3_prepare_v2(db, "SELECT EXISTS(SELECT 1 FROM history h JOIN songs s ON s.key = h.key WHERE s.album IS NOT NULL AND s.album <> '')", -1, &st, NULL);
+    /* I678j: Quick access leads Home (design doc section 11): up to 8 items, Liked Songs pinned first, then the newest by the Recents
+     * order across all kinds (sel_home_items, the sidebar's source). */
+    rc = home_items(db, op, &used, rows, SEL_HOME_QUICK, "Q", "Quick access", 8);
     if (rc != SQLITE_OK) return rc;
-    fill = sqlite3_step(st) == SQLITE_ROW && sqlite3_column_int(st, 0) != 0;
-    sqlite3_finalize(st);
-    st = NULL;
-    if (fill) {
-        home_put(op, &used, rows, "Q", "Quick picks");
-        rc = home_list(db, op, &used, rows,
-                       "SELECT s.album, s.artist, s.album, 1 FROM history h JOIN songs s ON s.key = h.key"
-                       " WHERE s.album IS NOT NULL AND s.album <> ''"
-                       " GROUP BY s.album, COALESCE(s.artist, '') ORDER BY MAX(h.played_at) DESC, s.album LIMIT MIN(?1, 8)");
-        if (rc != SQLITE_OK) return rc;
-    }
     /* I555: a history row of a library song (key "local:<path>", sel_song_key_of) that left the library is not listed; keys
      * of any other source (streams, Modland, HippoPlayer, ASMA, radio) have no songs row and still show. */
     home_put(op, &used, rows, "H", "Recently played");
@@ -371,6 +397,13 @@ static int home_text(sqlite3* db, const sel_user_op* op, int64_t* rows) {
                    " AND (s.key IS NOT NULL OR substr(h.key, 1, 6) <> 'local:')"
                    " AND NOT EXISTS (SELECT 1 FROM history f WHERE f.key = h.key AND f.skipped = 0) GROUP BY h.key)"
                    " GROUP BY CASE WHEN a THEN album || char(31) || COALESCE(artist, '') ELSE key END ORDER BY recent DESC, 3, 2 LIMIT ?1");
+    if (rc != SQLITE_OK) return rc;
+    /* I678j: the item shelves: Recently Played items, then Your Albums and Your Playlists (most played first). */
+    rc = home_items(db, op, &used, rows, SEL_HOME_RECENT, "H", "Recently played items", op->at > 0 ? (uint32_t)op->at : 10u);
+    if (rc != SQLITE_OK) return rc;
+    rc = home_items(db, op, &used, rows, SEL_HOME_ALBUMS, "H", "Your albums", op->at > 0 ? (uint32_t)op->at : 10u);
+    if (rc != SQLITE_OK) return rc;
+    rc = home_items(db, op, &used, rows, SEL_HOME_PLAYLISTS, "H", "Your playlists", op->at > 0 ? (uint32_t)op->at : 10u);
     if (rc != SQLITE_OK) return rc;
     /* I311: New this week lists the songs added to the library in the last 7 days, newest first, then the Modland
      * count line when one is stored. */

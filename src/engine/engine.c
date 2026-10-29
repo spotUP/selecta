@@ -281,6 +281,7 @@ struct sel_engine {
     uint32_t cue_sets, cue_gotos, sticker_ops; /* sentinels of I175 / I176 */
     uint32_t analyse_jobs, analyse_speed, analyse_gated; /* I187 sentinels: jobs stored, x real time, R128 (not fallback) */
     int32_t analyse_lufs_cdb, analyse_gain_cdb, analyse_peak_cdb;
+    uint32_t home_item_shelves;                /* I678j sentinel: item shelves the home text carried */
     uint32_t home_rows;                        /* entries the home view source shows (I191 sentinel) */
     uint32_t folder_view_rows;                 /* rows the folders view source built (I179 sentinel) */
     uint32_t import_runs, import_added, import_missing; /* PLAYLIST_IMPORT sentinel and last result (I652c) */
@@ -4501,6 +4502,18 @@ static void home_reload(sel_engine* e) {
         text[0] = '\0';
     }
     e->home_rows += sel_view_set_home(&e->view, text);
+    /* I678j sentinel: item shelves sent (a run of "S #<kind>:" lines under one heading). */
+    {
+        const char* l = text;
+        int prev_item = 0;
+        while (*l != '\0') {
+            int item = l[0] == 'S' && l[1] == ' ' && l[2] == '#' && l[3] >= '0' && l[3] <= '9' && l[4] == ':';
+            if (item && !prev_item) e->home_item_shelves++;
+            prev_item = item;
+            while (*l != '\0' && *l != '\n') l++;
+            if (*l == '\n') l++;
+        }
+    }
 }
 
 /* DUI-P4-6: the search source. The last library search grouped by type (Songs, Albums, Artists) as heading rows
@@ -7049,6 +7062,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     }
     out->radio_min_ahead = e->radio_min_ahead;
     out->home_rows = e->home_rows;
+    out->home_item_shelves = e->home_item_shelves;
     out->folder_view_rows = e->folder_view_rows;
     out->panel_loads = e->panel_loads;
     out->stats_queries = e->stats_queries;

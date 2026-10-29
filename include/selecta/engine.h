@@ -96,6 +96,7 @@ typedef struct sel_view_row {
     const char* key;   /* SEL_ROW_HOME: the song key to play or, when album is 1, the album name to open; NULL else (I191a) */
     uint32_t album;    /* SEL_ROW_HOME: 1 when key names an album, 0 when it names a song */
     uint32_t quick;    /* I478: SEL_ROW_HEADING: 1 for the Quick picks heading; the Home rows after it are the quick-pick grid, not a shelf */
+    uint32_t item_kind; /* I678j: SEL_ROW_HOME: 1 + SEL_LIB_ITEM_* when the tile is a library item (key = the item key); activating it opens its page; 0 else */
     uint32_t composer; /* I479: SEL_ROW_HOME: 1 when key is a composer canon (the Your composers shelf); activating it opens that composer's songs */
     const char* art_ref; /* SEL_ROW_HOME: what the artwork provider resolves: key, or "<album>\x1f<artist>" for an album with a known artist (I471); NULL else */
     const char* artist; /* I476: the album artist the tile draws under its title (Home album tiles, grid and cover flow rows); NULL when unknown */
@@ -421,6 +422,7 @@ typedef struct sel_engine_stats {
     uint32_t analyse_gated;       /* last ANALYSE job: 1 = R128 gated result, 0 = RMS+peak fallback */
     uint32_t cue_sets;            /* CUE_SET rows stored (I175 sentinel) */
     uint32_t cue_gotos;           /* CUE_GOTO seeks made (I175 sentinel) */
+    uint32_t home_item_shelves;   /* I678j sentinel: Home item shelves (quick access, recents, albums, playlists) the engine sent */
     uint32_t home_rows;           /* entries the home view source built: plays + albums to resume + new this week (I191 sentinel) */
     uint32_t folder_view_rows;    /* rows the folders view source built from the library tree (I179 sentinel) */
     uint32_t stats_queries;       /* STATS_SHOW queries run against the stats views (I192 sentinel) */

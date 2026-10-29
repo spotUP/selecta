@@ -122,6 +122,10 @@ int sel_json_string(const char* json, const char* name, char* out, size_t cap);
 int sel_library_tag_composer(sqlite3* db, const char* key, const char* author); /* I296: scan's author tag row */
 int sel_library_songdb_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id);
 int sel_library_items_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id); /* I678a, items.c */
+/* I678j: the Home feed's item shelves (items.c): SEL_HOME_QUICK .. SEL_HOME_PLAYLISTS, `limit` rows each; returns the rows or a sqlite error code. */
+enum { SEL_HOME_QUICK = 0, SEL_HOME_RECENT, SEL_HOME_ALBUMS, SEL_HOME_PLAYLISTS, SEL_HOME_SHELVES };
+typedef void (*sel_home_item_fn)(void* ctx, uint32_t kind, const char* key, const char* name, const char* sub);
+int sel_home_items(sqlite3* db, uint32_t shelf, uint32_t limit, sel_home_item_fn fn, void* ctx);
 int sel_library_collection_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id); /* I678f, items.c */
 int sel_library_songdb_resolve(sel_library* lib, const char* ukey, const char* path, const char* song_key,
                                sel_genre_stats* stats);

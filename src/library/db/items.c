@@ -327,3 +327,47 @@ int sel_library_collection(sel_library* lib, uint32_t kind, const char* key, uin
     if (sel_genre_call(lib, &op, &rows) < 0) return -1;
     return (int)rows;
 }
+
+/* ---- I678j: the item lines of the Home feed (design doc section 11) ----
+ * Runs on the worker inside SEL_USER_HOME (db in hand), so it cannot call sel_library_items. It reuses build_sql: the same parts, so
+ * Home and the sidebar read one source. Recency is the newer of last_played and opened, as the Recents order of section 5. */
+#define HOME_T "t(k,ik,nm,sub,songs,added,lp,art,pinned,sn,tie,op)"
+#define HOME_REC "MAX(lp,op)"
+/* Plays of the item: finished plays of its songs (albums by name and artist, composers by canon, playlists by entry). */
+#define HOME_PLAYS \
+    "(CASE k WHEN 4 THEN (SELECT COUNT(*) FROM history h JOIN songs s ON s.key=h.key WHERE s.album IS nm AND s.artist IS NULLIF(sub,''))" \
+    " WHEN 6 THEN (SELECT COUNT(*) FROM history h JOIN song_composers c ON c.song_key=h.key WHERE c.canon=ik)" \
+    " WHEN 3 THEN (SELECT COUNT(*) FROM history h JOIN playlist_entries e ON e.key=h.key WHERE e.playlist_id=CAST(ik AS INTEGER)) ELSE 0 END)"
+
+int sel_home_items(sqlite3* db, uint32_t shelf, uint32_t limit, sel_home_item_fn fn, void* ctx) {
+    static const char* const tail[SEL_HOME_SHELVES] = {
+        /* quick access: Liked Songs first, then the newest by recency */
+        " WHERE k=0 OR " HOME_REC ">0 ORDER BY (k<>0)," HOME_REC " DESC, sn COLLATE NOCASE, tie LIMIT ?1",
+        /* recently played items: albums, playlists, composers with a play */
+        " WHERE k IN (3,4,6) AND lp>0 ORDER BY lp DESC, sn COLLATE NOCASE, tie LIMIT ?1",
+        /* your albums, most played first */
+        " WHERE k=4 AND " HOME_PLAYS ">0 ORDER BY " HOME_PLAYS " DESC, sn COLLATE NOCASE, tie LIMIT ?1",
+        /* your playlists, most played first */
+        " WHERE k=3 ORDER BY " HOME_PLAYS " DESC, sn COLLATE NOCASE, tie LIMIT ?1"};
+    static const uint32_t mask[SEL_HOME_SHELVES] = {
+        SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_LIKED) | SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST) | SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_ALBUM) |
+            SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_ARTIST) | SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_COMPOSER),
+        SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST) | SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_ALBUM) | SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_COMPOSER),
+        SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_ALBUM), SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST)};
+    char inner[8192], sql[9000];
+    sqlite3_stmt* st = NULL;
+    uint32_t n = 0;
+    int rc;
+
+    if (shelf >= SEL_HOME_SHELVES || !build_sql(mask[shelf], inner, sizeof inner)) return SQLITE_MISUSE;
+    snprintf(sql, sizeof sql, "WITH " HOME_T " AS (%s) SELECT k,ik,nm,sub FROM t%s", inner, tail[shelf]);
+    rc = sqlite3_prepare_v2(db, sql, -1, &st, NULL);
+    if (rc != SQLITE_OK) return rc;
+    sqlite3_bind_int64(st, 1, limit);
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        fn(ctx, (uint32_t)sqlite3_column_int(st, 0), text(st, 1), text(st, 2), text(st, 3));
+        n++;
+    }
+    sqlite3_finalize(st);
+    return (int)n;
+}
