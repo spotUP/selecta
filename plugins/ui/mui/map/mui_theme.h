@@ -5,6 +5,7 @@
 #ifndef SELECTA_MUI_THEME_H
 #define SELECTA_MUI_THEME_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -31,6 +32,8 @@ typedef struct mui_theme_look {
 } mui_theme_look;
 
 /* tokens: the SEL_GUI_TOKEN_COUNT array of a txt_theme. Fills *out and counts one application; returns 0 on bad input. */
+/* MUIA_Background spec string "2:rrrrrrrr,gggggggg,bbbbbbbb" for a 0xRRGGBB colour (cap >= 40). */
+void mui_theme_bg_spec(uint32_t rgb, char* out, size_t cap);
 int mui_theme_look_for(mui_theme_role role, const uint32_t* tokens, mui_theme_look* out);
 /* The theme stays off when the user's MUI text pen (0xRRGGBB) would not be readable on the role background: dark text on a
  * dark Selecta surface. WCAG-style ratio in integer tenths, at least 40 (4.0) is readable. */

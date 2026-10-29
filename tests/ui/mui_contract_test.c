@@ -12,6 +12,7 @@
 #include "mui_aa.h"
 #include "mui_icons.h"
 #include "mui_map.h"
+#include "mui_aa.h"
 #include "mui_theme.h"
 #include "mui_pens.h"
 
@@ -255,6 +256,14 @@ static void test_theme(void) {
     CHECK(mui_theme_look_for(MUI_TH_PANEL, th.token, &lk) == 1 && mui_theme_look_for(MUI_TH_STATUS, th.token, &lk) == 1 && lk.bg_rgb == th.token[SEL_GUI_TOKEN_PANEL],
           "panel and status looks");
     CHECK(mui_theme_applied() - before == 6, "applied count %u", (unsigned)(mui_theme_applied() - before));
+    /* I667e: AAPanel roles map to the tokens (panel PANEL 141418, surface SURFACE, raised SURFACE_RAISED), radius RADIUS_LARGE 8 (tier S 4), spacing 8. */
+    CHECK(mui_aa_panel_rgb(th.token, MUI_AA_PANEL_PANEL) == th.token[SEL_GUI_TOKEN_PANEL] && mui_aa_panel_rgb(th.token, MUI_AA_PANEL_PANEL) == 0x141418u, "panel role is PANEL");
+    CHECK(mui_aa_panel_rgb(th.token, MUI_AA_PANEL_SURFACE) == th.token[SEL_GUI_TOKEN_SURFACE], "surface role is SURFACE");
+    CHECK(mui_aa_panel_rgb(th.token, MUI_AA_PANEL_RAISED) == th.token[SEL_GUI_TOKEN_SURFACE_RAISED], "raised role is SURFACE_RAISED");
+    CHECK(mui_aa_panel_radius(th.token, 13) == 8 && mui_aa_panel_radius(th.token, 0) == 4, "panel radius 8, tier S 4");
+    CHECK(mui_aa_panel_spacing(th.token) == 8, "panel spacing 8");
+    mui_theme_bg_spec(0x141418u, want, sizeof want);
+    CHECK(strcmp(want, "2:14141414,14141414,18181818") == 0, "background spec %s", want);
     CHECK(mui_theme_look_for(MUI_TH_COUNT, th.token, &lk) == 0 && mui_theme_look_for(MUI_TH_WINDOW, NULL, &lk) == 0, "bad input refused");
     CHECK(mui_theme_readable(th.token[SEL_GUI_TOKEN_TEXT], th.token[SEL_GUI_TOKEN_BACKGROUND]) == 1, "light text on the dark theme is readable");
     CHECK(mui_theme_readable(0x000000u, th.token[SEL_GUI_TOKEN_BACKGROUND]) == 0, "black MUI text on the dark theme is not readable: theme stays off");
@@ -289,6 +298,11 @@ static void test_theme(void) {
         char key[64];
         if (role == MUI_TH_BUTTON) {
             continue; /* exemption: buttons are AAButton objects that draw from mui_aa_button_rgb, no stock frame role (design 3.1) */
+        }
+        if (role == MUI_TH_PANEL) {
+            /* exemption (I667e, design 3.8): panel groups are AAPanel objects that draw from mui_aa_panel_rgb; mui-panel-source proves no TH_TAGS panel is left */
+            CHECK(strstr(src, "mui_aapanel(MUI_AA_PANEL_PANEL") != NULL, "mui_ui.c builds no AAPanel panel group");
+            continue;
         }
         if (role == MUI_TH_STATUS) {
             /* exemption (I667d, design 3.7): status lines are AAText objects; mui_aatext reads the role look from g_th[MUI_TH_STATUS] */

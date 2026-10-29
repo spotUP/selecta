@@ -224,6 +224,29 @@ static void test_text_source(void) {
     free(cm);
 }
 
+/* I667e mui-panel-source: the MUI UI builds every panel through AAPanel, counted from the source: no TH PANEL group left, the helper
+ * definition plus five calls (sidebar, player, main, detail, art frame) = 6 "mui_aapanel(" spellings, one AAPanel constructor call. */
+static void test_panel_source(void) {
+    char* ui = slurp(UI_SOURCE);
+    char* cls = slurp(AAPANEL_SOURCE);
+    char* cm = slurp(MUI_CMAKE);
+    CHECK(ui != NULL && cls != NULL && cm != NULL, "sources readable");
+    if (ui == NULL || cls == NULL || cm == NULL) {
+        return;
+    }
+    CHECK(count_of(ui, "TH_TAGS(MUI_TH_PANEL") == 0, "TH PANEL group left in mui_ui.c: %d", count_of(ui, "TH_TAGS(MUI_TH_PANEL"));
+    CHECK(count_of(ui, "MUIA_Frame, MUIV_Frame_Group") == 0, "plain art frame left in mui_ui.c");
+    CHECK(count_of(ui, "mui_aapanel(") == 6, "panel constructor sites: %d (definition + 5)", count_of(ui, "mui_aapanel("));
+    CHECK(count_of(ui, "mui_aapanel_new(") == 1, "one AAPanel constructor call: %d", count_of(ui, "mui_aapanel_new("));
+    CHECK(strstr(cls, "mui_aa_panel_rgb(") != NULL && strstr(cls, "mui_aa_panel_radius(") != NULL && strstr(cls, "aa_round_fill(") != NULL,
+          "class does not draw through the shared panel helpers");
+    CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "0x1") == NULL, "class holds no pen code or colour literal of its own");
+    CHECK(strstr(cm, "mui_aapanel_class.c") != NULL, "class not in the build");
+    free(ui);
+    free(cls);
+    free(cm);
+}
+
 int main(int argc, char** argv) {
     const char* t = argc > 1 ? argv[1] : "";
     if (!strcmp(t, "round")) {
@@ -242,6 +265,8 @@ int main(int argc, char** argv) {
         test_text_tone();
     } else if (!strcmp(t, "text-source")) {
         test_text_source();
+    } else if (!strcmp(t, "panel-source")) {
+        test_panel_source();
     } else {
         printf("usage: round|ramp|state|tokens\n");
         return 2;

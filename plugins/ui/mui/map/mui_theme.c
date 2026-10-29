@@ -6,6 +6,12 @@
 
 static uint32_t g_applied[MUI_TH_COUNT];
 
+void mui_theme_bg_spec(uint32_t rgb, char* out, size_t cap) {
+    /* MUI RGB image spec: each 8-bit component replicated to 32 bits. */
+    snprintf(out, cap, "2:%08x,%08x,%08x", (unsigned)(((rgb >> 16) & 0xFFu) * 0x01010101u), (unsigned)(((rgb >> 8) & 0xFFu) * 0x01010101u),
+             (unsigned)((rgb & 0xFFu) * 0x01010101u));
+}
+
 int mui_theme_look_for(mui_theme_role role, const uint32_t* tokens, mui_theme_look* out) {
     uint32_t rgb;
     uint32_t frame = MUI_FRAME_NONE;
@@ -35,9 +41,7 @@ int mui_theme_look_for(mui_theme_role role, const uint32_t* tokens, mui_theme_lo
         rgb = tokens[SEL_GUI_TOKEN_PANEL];
         break;
     }
-    /* MUI RGB image spec: each 8-bit component replicated to 32 bits. */
-    snprintf(out->background, sizeof out->background, "2:%08x,%08x,%08x", (unsigned)(((rgb >> 16) & 0xFFu) * 0x01010101u),
-             (unsigned)(((rgb >> 8) & 0xFFu) * 0x01010101u), (unsigned)((rgb & 0xFFu) * 0x01010101u));
+    mui_theme_bg_spec(rgb, out->background, sizeof out->background);
     out->frame = frame;
     out->bg_rgb = rgb;
     g_applied[role]++;

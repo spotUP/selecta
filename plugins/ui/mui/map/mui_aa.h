@@ -82,6 +82,14 @@ typedef int (*mui_aa_width_fn)(void* ctx, const char* s, int len);
  * does, empty when max_w cannot hold the dots). out gets at most cap-1 bytes; returns the length written. */
 int mui_aa_text_fit(const char* s, int max_w, mui_aa_width_fn width, void* ctx, char* out, int cap);
 
+/* I667e (design 3.8, AAPanel): rounded panel groups. Role -> face token (panel PANEL, surface SURFACE, raised SURFACE_RAISED),
+ * corner radius RADIUS_LARGE (tier S, font_px 0: half), inner padding and spacing SPACING. Tested on the host. */
+enum { MUI_AA_PANEL_PANEL, MUI_AA_PANEL_SURFACE, MUI_AA_PANEL_RAISED, MUI_AA_PANEL_ROLES };
+int mui_aa_panel_token(int role);
+uint32_t mui_aa_panel_rgb(const uint32_t* token, int role);
+int mui_aa_panel_radius(const uint32_t* token, int font_px);
+int mui_aa_panel_spacing(const uint32_t* token);
+
 #ifdef __cplusplus
 }
 #endif

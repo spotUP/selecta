@@ -241,3 +241,20 @@ int mui_aa_text_fit(const char* s, int max_w, mui_aa_width_fn width, void* ctx, 
     memcpy(out + n, dots, 4);
     return n + 3;
 }
+
+int mui_aa_panel_token(int role) {
+    return role == MUI_AA_PANEL_SURFACE ? SEL_GUI_TOKEN_SURFACE : role == MUI_AA_PANEL_RAISED ? SEL_GUI_TOKEN_SURFACE_RAISED : SEL_GUI_TOKEN_PANEL;
+}
+
+uint32_t mui_aa_panel_rgb(const uint32_t* token, int role) {
+    return token[mui_aa_panel_token(role)];
+}
+
+int mui_aa_panel_radius(const uint32_t* token, int font_px) {
+    int r = (int)token[SEL_GUI_TOKEN_RADIUS_LARGE];
+    return font_px <= 0 ? r / 2 : r;
+}
+
+int mui_aa_panel_spacing(const uint32_t* token) {
+    return (int)token[SEL_GUI_TOKEN_SPACING];
+}

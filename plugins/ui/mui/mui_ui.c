@@ -41,6 +41,7 @@
 #include <proto/muimaster.h>
 struct Library* MUIMasterBase;
 #include "mui_aabtn_class.h"
+#include "mui_aapanel_class.h"
 #include "mui_aatext_class.h"
 #include "map/mui_aa.h"
 #include "mui_canvas_class.h"
@@ -347,6 +348,7 @@ static struct {
     mui_theme_look look;
     int on;
 } g_th[MUI_TH_COUNT];
+static uint32_t g_tokens[SEL_GUI_TOKEN_COUNT]; /* I667e: the theme tokens, for the panel faces */
 static uint32_t g_text_rgb; /* I665: the TEXT token, caption colour of the flat button */
 
 #define TH_TAGS(role, frame_off) \
@@ -513,6 +515,7 @@ static void mui_theme_init(void) {
      * cannot take pen escapes, so it keeps the user's MUI look. */
     pen = mui_theme_pick_pen(pen_rgb, 8, th.token);
     g_text_rgb = th.token[SEL_GUI_TOKEN_TEXT];
+    memcpy(g_tokens, th.token, sizeof g_tokens);
     for (i = 0; i < MUI_TH_COUNT; i++) {
         g_th[i].on = mui_theme_look_for((mui_theme_role)i, th.token, &g_th[i].look) && pen >= 0 && i != MUI_TH_FIELD;
     }
@@ -603,9 +606,19 @@ static Object* mui_make_slider(LONG max, LONG id) {
     return o;
 }
 
+/* I667e (design 3.8): the one panel constructor. Every Selecta panel group is a Selecta_AAPanel (mui_aapanel_class.c): a rounded face in
+ * the role token colour (panel, surface, raised) over the window background. fixed_px > 0 is the square art frame. */
+static Object* mui_aapanel(int role, int fixed_px) {
+    mui_aapanel_spec sp;
+    sp.tokens = g_tokens;
+    sp.role = role;
+    sp.fixed_px = fixed_px;
+    return mui_aapanel_new(&sp);
+}
+
 /* MUI-P4-0: the sidebar slot content, one button per door of the shared uimodel table (mui_door_label). */
 static Object* mui_sidebar_group(void) {
-    Object* g = MUI_NewObject((char*)MUIC_Group, TH_TAGS(MUI_TH_PANEL, MUI_FRAME_NONE) TAG_DONE);
+    Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
     uint32_t i;
     for (i = 0; g != NULL && i < mui_door_count() && i < MUI_DOOR_MAX; i++) {
         Object* b = mui_make_button(mui_door_label(i), sel_uim_door_at(i)->page, CTL_DOOR_BASE + (LONG)i);
@@ -658,7 +671,7 @@ static Object* mui_player_group(mui_state* s) {
     s->seek = mui_make_slider(MUI_SEEK_MAX, CTL_SEEK);
     row2 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     row3 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
-    g = MUI_NewObject((char*)MUIC_Group, TH_TAGS(MUI_TH_PANEL, MUI_FRAME_NONE) TAG_DONE);
+    g = mui_aapanel(MUI_AA_PANEL_SURFACE, 0);
     if (row1 == NULL || row1b == NULL || row2 == NULL || row3 == NULL || g == NULL || s->vol == NULL || s->seek == NULL) {
         return NULL;
     }
@@ -770,7 +783,7 @@ static Object* mui_tool_group(mui_state* s) {
 }
 
 static Object* mui_main_group(mui_state* s) {
-    Object* g = MUI_NewObject((char*)MUIC_Group, TH_TAGS(MUI_TH_PANEL, MUI_FRAME_NONE) TAG_DONE);
+    Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
     s->col_bp = SEL_UIM_BP_COUNT;
     mui_columns_format(s->col_bp, s->col_fmt, sizeof s->col_fmt);
     mui_col_format_themed(s->col_fmt, s->col_fmt_th, sizeof s->col_fmt_th);
@@ -841,8 +854,8 @@ static Object* mui_np_text(char* buf, size_t cap, const char* init, mui_label la
 }
 
 static Object* mui_detail_group(mui_state* s) {
-    Object* g = MUI_NewObject((char*)MUIC_Group, TH_TAGS(MUI_TH_PANEL, MUI_FRAME_NONE) TAG_DONE);
-    Object* art = MUI_NewObject((char*)MUIC_Rectangle, MUIA_Frame, MUIV_Frame_Group, MUIA_FixHeight, 64, MUIA_FixWidth, 64, TAG_DONE);
+    Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
+    Object* art = mui_aapanel(MUI_AA_PANEL_RAISED, 64);
     Object* lyr_list = MUI_NewObject((char*)MUIC_Floattext, MUIA_Floattext_Text, (ULONG)s->np_lyric_buf, TAG_DONE);
     Object* lyr_view;
     uint32_t i;
@@ -859,6 +872,7 @@ static Object* mui_detail_group(mui_state* s) {
     s->trk_list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_List_Format, (ULONG)g_list_fmt1, TAG_DONE);
     s->trk_group = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
     if (art != NULL) {
+        DoMethod(art, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE)); /* a group needs one child */
         DoMethod(g, OM_ADDMEMBER, art);
     }
     DoMethod(g, OM_ADDMEMBER, s->np_title);
@@ -1914,6 +1928,7 @@ static void mui_close(void* state) {
         s->canvas = NULL;
         mui_canvas_class_free();
         mui_aatext_class_free();
+        mui_aapanel_class_free();
         mui_aabtn_class_free();
         mui_listview_class_free();
     }
