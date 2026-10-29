@@ -386,7 +386,19 @@ int sel_home_items(sqlite3* db, uint32_t shelf, uint32_t chip, uint32_t limit, s
              " WHEN 3 THEN EXISTS(SELECT 1 FROM playlist_entries e JOIN songs s ON s.key=e.key WHERE e.playlist_id=CAST(ik AS INTEGER) AND %s)"
              " ELSE 1 END)",
              fam, fam, fam);
-    {
+    if (shelf == SEL_HOME_RECENT) {
+        /* Johan 2026-10-29: a stream or Modland play (a history key with no songs row, not a vanished library file) is a single-song card
+         * in this shelf, ordered by its last play together with the items. It has no format, so only the All and Music chips keep it. */
+        char nofam[600];
+        sel_home_chip_sql(chip, "NULL", nofam, sizeof nofam);
+        snprintf(sql, sizeof sql,
+                 "WITH " HOME_T " AS (%s) SELECT k,ik,nm,sub FROM ("
+                 "SELECT k,ik,nm,sub,lp AS lpx,sn,tie FROM t WHERE k IN (3,4,6) AND lp>0 AND %s"
+                 " UNION ALL SELECT %u,h.key,h.key,'',MAX(h.played_at),h.key,h.key FROM history h"
+                 " WHERE NOT EXISTS(SELECT 1 FROM songs s WHERE s.key=h.key) AND substr(h.key,1,6)<>'local:' AND %s GROUP BY h.key)"
+                 " ORDER BY lpx DESC, sn COLLATE NOCASE, tie LIMIT ?1",
+                 inner, has, (unsigned)SEL_HOME_ITEM_SONG, nofam);
+    } else {
         char tl[3000];
         snprintf(tl, sizeof tl, tail[shelf], has);
         snprintf(sql, sizeof sql, "WITH " HOME_T " AS (%s) SELECT k,ik,nm,sub FROM t%s", inner, tl);

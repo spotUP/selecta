@@ -336,6 +336,11 @@ typedef struct home_item_sink {
 static void home_item_line(void* ctx, uint32_t kind, const char* key, const char* name, const char* sub) {
     home_item_sink* k = ctx;
     char line[SEL_SONG_KEY_MAX + 2 + 256];
+    if (kind == SEL_HOME_ITEM_SONG) { /* a single-song card: the song line the song shelves use, key then tab then name */
+        snprintf(line, sizeof line, "%.*s\t%.200s", SEL_SONG_KEY_MAX - 1, key, name);
+        home_put(k->op, k->used, k->rows, "S", line);
+        return;
+    }
     snprintf(line, sizeof line, "#%u:%.*s%s%.*s\t%.200s", (unsigned)kind, 90, key, sub[0] != '\0' ? "\x1f" : "", 90, sub, name);
     home_put(k->op, k->used, k->rows, "S", line);
 }

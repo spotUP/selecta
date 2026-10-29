@@ -123,6 +123,8 @@ int sel_library_tag_composer(sqlite3* db, const char* key, const char* author); 
 int sel_library_songdb_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id);
 int sel_library_items_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id); /* I678a, items.c */
 /* I678j: the Home feed's item shelves (items.c): SEL_HOME_QUICK .. SEL_HOME_PLAYLISTS, `limit` rows each; returns the rows or a sqlite error code. */
+/* The item kind of a Home line that is a plain song (a stream or Modland play with no songs row), not a collection item. */
+enum { SEL_HOME_ITEM_SONG = 255 };
 enum { SEL_HOME_QUICK = 0, SEL_HOME_RECENT, SEL_HOME_ALBUMS, SEL_HOME_COMPOSERS, SEL_HOME_PLAYLISTS, SEL_HOME_SHELVES };
 /* The Home chips (design doc section 11): All, Music (neither tracker nor chip formats), Modules (tracker formats), Chiptunes. */
 /* Writes the SQL condition "song of the chip's format family" over `col` (a songs.format column expression) into out; "1" for All. */
