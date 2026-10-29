@@ -235,6 +235,7 @@ typedef struct desk {
     char si_composer_key[SEL_COMPOSER_MAX]; /* its composer canon, from the song's db row */
     char si_composer_ref[512]; /* the song path si_composer_key was read for */
     int32_t si_composer_row; /* the info row index of the Author tag, -1 when the song has none */
+    int32_t pls_playing; /* I690: the position of the playing song in the drawn collection page, -1 when none */
     uint32_t pls_want, pls_n, pls_stale, pls_scroll, pls_draws, pls_rows; /* songs, reload wanted, first row shown, frames drawn, rows in the last one */
     int pl_edit;             /* 1 while the name field has the keyboard */
     char pl_name[64];
@@ -900,6 +901,13 @@ static uint32_t hover_ink_of(desk* d, sel_gui_rect box, uint32_t muted, uint32_t
         d->ink_in = w;
     }
     return desk_mix(muted, full, w);
+}
+
+/* I690: a song list marks the row whose song the engine plays. One test for every list: the playing song is the engine's
+ * state (song.path), never the row the user clicked, so the mark follows Next, Previous and the auto-advance. */
+static int song_playing(desk* d, const char* path) {
+    const char* cur = sel_engine_state(d->engine)->song.path;
+    return cur != NULL && path != NULL && strcmp(cur, path) == 0;
 }
 
 /* The ink of a list row (I345): a muted row warms to the text ink, a text row to the accent, an accent row (the selected or
@@ -5053,9 +5061,11 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
             sel_gui_fill_rect(d->canvas, rect_of(fr.x + lpx(d, 12) + tw, fr.y + (fr.h - ch) / 2, cw, ch), text);
         }
     }
+    d->pls_playing = -1;
     for (slot = 0; d->pls_scroll + slot < col_song_rows(d) && pls_row_visible(d, mn, slot); slot++, shown++) {
         uint32_t pos = d->pls_scroll + slot, i = d->pls_ord[pos];
         sel_gui_rect r = pls_row_rect(d, mn, slot);
+        int playing = song_playing(d, pls_key(d, i)); /* I690 */
         char num[16];
         song_row* e = song_row_reg(d, r, pls_key(d, i), 0u, 0, 0);
         if (e != NULL && d->col_kind == 0u) {
@@ -5069,8 +5079,14 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
             sel_gui_round_rect(d->canvas, r, rad, surf);
         }
         snprintf(num, sizeof num, "%u", (unsigned)(pos + 1u));
-        draw_text(d, rect_of(r.x + lpx(d, 12), r.y, lpx(d, 36), r.h), num, 0, 14, muted);
-        draw_text(d, rect_of(r.x + lpx(d, 56), r.y, pls_title_w(d, r), r.h), d->pls_title[i], 0, 14, row_ink(d, r, text));
+        if (playing) { /* I690: the playing row shows the play icon for its number and an accent title */
+            int32_t ic = lpx(d, 18);
+            d->pls_playing = (int32_t)pos;
+            sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_PLAY, rect_of(r.x + lpx(d, 12), r.y + (r.h - ic) / 2, ic, ic), ic, accent);
+        } else {
+            draw_text(d, rect_of(r.x + lpx(d, 12), r.y, lpx(d, 36), r.h), num, 0, 14, muted);
+        }
+        draw_text(d, rect_of(r.x + lpx(d, 56), r.y, pls_title_w(d, r), r.h), d->pls_title[i], playing, 14, row_ink(d, r, playing ? accent : text));
         {   /* I678h3: the artist and album columns, drawn as links in the meta-line artist's style */
             sel_gui_rect la, lb;
             pls_link_rects(d, r, i, &la, &lb);
@@ -6524,6 +6540,7 @@ static const char* library_dump_build(desk* d) {
             o = dump_put(d, o, "plsong %u %d %d %d %d file=%s title=%s\n", (unsigned)j, (int)r.x, (int)r.y, (int)r.w, (int)r.h, path_base(pls_key(d, real)),
                          d->pls_title[real]);
         }
+        o = dump_put(d, o, "plplaying %d\n", (int)d->pls_playing); /* I690: the position of the playing song's row, -1 when none */
         for (j = 0; d->pls_meta != NULL && d->pls_scroll + j < d->pls_vn && pls_row_visible(d, pmn, j) && o + 400u < sizeof d->library_dump; j++) {
             sel_gui_rect r = pls_row_rect(d, pmn, j), la, lb; /* I678h3: the link rects and the db row ids behind them, after the plsong lines */
             uint32_t real = d->pls_ord[d->pls_scroll + j];
@@ -7194,8 +7211,13 @@ static void draw_library(desk* d) {
                 if (d->kb_list && st->view->window_start + k == st->view->cursor) { /* the keyboard focus row */
                     sel_gui_fill_rect(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
                 }
-                draw_text(d, rect_of(r.x + ind, r.y, r.w * 2 / 3 - ind, r.h), vr->text != NULL ? vr->text : "", node || head, 15,
-                          row_ink(d, r, node && vr->expanded ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : vr->kind == (uint32_t)SEL_ROW_HEADING ? muted : text));
+                {   /* I690: a song row of the list whose song plays takes the accent ink */
+                    char lp[sizeof((song_ref*)0)->path];
+                    int pl = !node && !head && (vr->kind == (uint32_t)SEL_ROW_HOME ? vr->album == 0u && song_playing(d, vr->key)
+                                                                                     : sel_engine_view_row_path(d->engine, k, lp, sizeof lp) && song_playing(d, lp));
+                    draw_text(d, rect_of(r.x + ind, r.y, r.w * 2 / 3 - ind, r.h), vr->text != NULL ? vr->text : "", node || head || pl, 15,
+                              row_ink(d, r, pl || (node && vr->expanded) ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : vr->kind == (uint32_t)SEL_ROW_HEADING ? muted : text));
+                }
                 if (node) {
                     snprintf(line, sizeof line, "%u songs", (unsigned)vr->count);
                     draw_text(d, rect_of(r.x + r.w * 2 / 3, r.y, r.w / 3, r.h), line, 0, 14, row_ink(d, r, muted));
@@ -7998,7 +8020,10 @@ static void draw_search(desk* d) {
                 if (d->kb_list && v->window_start + k == v->cursor) { /* the keyboard focus row (I498) */
                     sel_gui_fill_rect(d->canvas, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H)), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
                 }
-                draw_text(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H)), t, 0, 14, text);
+                {
+                    int pl = group == 1u && !r->album && song_playing(d, r->key); /* I690 */
+                    draw_text(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H)), t, pl, 14, pl ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : text);
+                }
                 if (group == 1u && !r->album && r->key != NULL) {
                     song_row_set_list(d, song_row_reg(d, rect_of(mn.x + mg, y, mn.w - 2 * mg, lpx(d, SEARCH_ROW_H)), r->key, 0, 0, 0), SEL_UIM_LIST_VIEW, (uint32_t)d->page, v->version, v->window_start + k);
                 }
