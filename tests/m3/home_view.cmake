@@ -5,7 +5,7 @@
 # newer play and the modland "new this week" count a changelog sync stores. The real selecta binary opens that file and
 # key H shows the home view. home_rows= must equal the sum counted from the database here with separate queries:
 # distinct songs played + albums with an unfinished play + the new-this-week count + the never-played library songs +
-# the Quick picks tiles (I478: distinct played albums, at most 8).
+# the Quick access tiles (I678j: Liked Songs plus one artist item per distinct played artist, at most 8; the fixture has no albums rows).
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
 set(db "${WORK}/h.db")
@@ -36,11 +36,12 @@ sql("${jumpq}" jump)
 sql("SELECT value FROM meta WHERE key = 'modland.new_this_week';" fresh)
 # I370: the library fill shelf lists the never-played songs older than a week (at most 10).
 sql("SELECT COUNT(*) FROM (SELECT 1 FROM songs WHERE key NOT IN (SELECT key FROM history) AND added < CAST(strftime('%s', 'now') AS INTEGER) - 604800 LIMIT 10);" fill)
-# I478: the Quick picks grid leads Home with the distinct played albums (album + artist), at most 8.
-sql("SELECT COUNT(*) FROM (SELECT 1 FROM history h JOIN songs s ON s.key = h.key WHERE s.album IS NOT NULL AND s.album <> '' GROUP BY s.album, COALESCE(s.artist, '') LIMIT 8);" quick)
+# I678j: Quick access leads Home with Liked Songs (always) and the Recents items; this fixture has no albums, playlists or composers rows,
+# so the items are Liked Songs and one artist per distinct played artist, at most 8.
+sql("SELECT MIN(8, 1 + COUNT(DISTINCT s.artist)) FROM history h JOIN songs s ON s.key = h.key WHERE s.artist IS NOT NULL AND s.artist <> '';" quick)
 math(EXPR want "${recent} + ${jump} + ${fresh} + ${fill} + ${quick}")
-if(NOT recent EQUAL 2 OR NOT jump EQUAL 1 OR NOT fresh EQUAL 7 OR NOT fill EQUAL 3 OR NOT quick EQUAL 1)
-  message(FATAL_ERROR "seed counts recent=${recent} jump=${jump} new=${fresh} fill=${fill} quick=${quick}, want 2 1 7 3 1")
+if(NOT recent EQUAL 2 OR NOT jump EQUAL 1 OR NOT fresh EQUAL 7 OR NOT fill EQUAL 3 OR NOT quick EQUAL 2)
+  message(FATAL_ERROR "seed counts recent=${recent} jump=${jump} new=${fresh} fill=${fill} quick=${quick}, want 2 1 7 3 2")
 endif()
 execute_process(
   COMMAND "${SELECTA}" --output null --size 80x25 --start-dir "${CWD}" --db "${db}"
