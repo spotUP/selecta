@@ -127,6 +127,7 @@ enum {
     SEL_USER_PLAYLIST_MOVE,/* I178: at = playlist id, to = folder id (0 = root) */
     SEL_USER_PLAYLIST_ADD, /* I178: name = title, at = folder id, value = song keys joined by newline; reply [2] = new id */
     SEL_USER_PLAYLIST_ADD_SONG, /* I241: at = playlist id, value = one song key appended at the next position */
+    SEL_USER_LIBRARY_TOUCH,     /* I678c: to = SEL_LIB_ITEM_* kind, name = item key, at = epoch seconds; records the item as opened */
     SEL_USER_PLAYLIST_RENAME,   /* DUI-P4-9: at = playlist id, name = new title */
     SEL_USER_PLAYLIST_DEL,      /* DUI-P4-9: at = playlist id; removes its entries and the row */
     SEL_USER_PLAYLIST_REMOVE_SONG, /* I633: at = playlist id, to = entry index in position order; drops that one entry */
@@ -401,6 +402,8 @@ int sel_library_playlist_move(sel_library* lib, uint32_t id, uint32_t folder);
 int sel_library_playlist_add_song(sel_library* lib, uint32_t id, const char* key);
 int sel_library_playlist_remove_song(sel_library* lib, uint32_t id, uint32_t index);
 int sel_library_playlist_rename(sel_library* lib, uint32_t id, const char* name);
+/* I678c: records that item (kind, key) was opened at `at` (epoch seconds); Recents reads it back through sel_library_items. */
+int sel_library_touch(sel_library* lib, uint32_t kind, const char* key, int64_t at);
 int sel_library_playlist_del(sel_library* lib, uint32_t id);
 /* DUI-P4-18: remove one song (key or path) / every song from the catalogue; *removed = songs dropped. The audio files are never touched. */
 int sel_library_song_remove(sel_library* lib, const char* ref, uint32_t* removed);

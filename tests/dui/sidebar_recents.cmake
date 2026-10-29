@@ -1,0 +1,81 @@
+# dui-sidebar-recents (I678c): the Recents order of the sidebar follows the newer of the last play and the last page open, through the
+# real desktop UI entry. -DSELECTA -DSONGS -DWORK
+# Fixture fixture_sidebar_recents.sql: three albums, only album 3 ever played. The dump prints `sidelib ... lib_touch_calls=<n>` and
+# `sidelib_row <i> x y w h pinned=<0|1> open=<0|1> kind=<k> <name>`.
+# 1. Fresh library: the first album row is Alb3 (played), then Alb1, Alb2 (never touched, engine name order); lib_touch_calls 0.
+# 2. A click on the Alb1 row sends LIBRARY_TOUCH: lib_touch_calls 1 (sentinel), Alb1 is now the first album row, then Alb3, Alb2, and the
+#    first unpinned row of the whole list is Alb1.
+# 3. A new process on the same library still lists Alb1 first: the opened time lives in the library, not in the UI.
+get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+include("${HERE}/dui_run.cmake")
+file(REMOVE_RECURSE "${WORK}")
+file(MAKE_DIRECTORY "${WORK}")
+find_program(SQLITE3 sqlite3)
+if(NOT SQLITE3)
+  message(FATAL_ERROR "dui-sidebar-recents needs the sqlite3 command line tool to load the fixture library")
+endif()
+set(db "${WORK}/lib.db")
+dui_run(init --ui desktop --backend mem --view home --canvas 1280x1400 --clock fixed --stats --db "${db}")
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db}" INPUT_FILE "${HERE}/fixture_sidebar_recents.sql"
+  RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "loading the fixture failed: ${err}")
+endif()
+
+function(expect_eq what got want)
+  if(NOT "${got}" STREQUAL "${want}")
+    message(FATAL_ERROR "${what}: got '${got}', expected '${want}'")
+  endif()
+endfunction()
+# Names of the drawn rows of kind `kind`, in drawn order, into ${out}; the centre of the row called `want` into row_xy.
+function(rows_of out dump kind want)
+  string(REGEX MATCHALL "sidelib_row [0-9]+ [0-9]+ [0-9]+ [0-9]+ [0-9]+ pinned=[01] open=[01] kind=${kind} [^\n]*" lines "${dump}")
+  set(names "")
+  foreach(l IN LISTS lines)
+    string(REGEX MATCH "sidelib_row [0-9]+ ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+) pinned=[01] open=[01] kind=${kind} (.*)" m "${l}")
+    list(APPEND names "${CMAKE_MATCH_5}")
+    if("${CMAKE_MATCH_5}" STREQUAL "${want}")
+      math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+      math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+      set(row_xy "${cx} ${cy}" PARENT_SCOPE)
+    endif()
+  endforeach()
+  set(${out} "${names}" PARENT_SCOPE)
+endfunction()
+function(touch_calls out dump)
+  if(NOT "${dump}" MATCHES "sidelib draws=[0-9]+ rows=[0-9]+ items=[0-9]+ opens=[0-9]+ y=-?[0-9]+ max=-?[0-9]+ item_calls=[0-9]+ lib_touch_calls=([0-9]+)")
+    message(FATAL_ERROR "no sidelib line with lib_touch_calls in:\n${dump}")
+  endif()
+  set(${out} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+endfunction()
+# The first unpinned row's name.
+function(first_unpinned out dump)
+  if(NOT "${dump}" MATCHES "pinned=0 open=[01] kind=[0-9]+ ([^\n]*)")
+    message(FATAL_ERROR "no unpinned sidebar row in:\n${dump}")
+  endif()
+  set(${out} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+endfunction()
+
+file(WRITE "${WORK}/idle.txt" "wait 100\n")
+set(common --ui desktop --backend mem --view home --clock fixed --stats --db "${db}" --canvas 1280x1400)
+dui_run(m1 ${common} --input "${WORK}/idle.txt")
+rows_of(albums1 "${m1}" 4 "Alb1")
+expect_eq("album order on a fresh library" "${albums1}" "Alb3;Alb1;Alb2")
+touch_calls(t1 "${m1}")
+expect_eq("touch calls before any open" "${t1}" "0")
+
+file(WRITE "${WORK}/click.txt" "click ${row_xy}\nwait 300\n")
+dui_run(m2 ${common} --input "${WORK}/click.txt")
+touch_calls(t2 "${m2}")
+expect_eq("touch calls after opening Alb1 (sentinel)" "${t2}" "1")
+rows_of(albums2 "${m2}" 4 "Alb1")
+expect_eq("album order after opening Alb1" "${albums2}" "Alb1;Alb3;Alb2")
+first_unpinned(top2 "${m2}")
+expect_eq("first unpinned row after opening Alb1" "${top2}" "Alb1")
+
+dui_run(m3 ${common} --input "${WORK}/idle.txt")
+rows_of(albums3 "${m3}" 4 "Alb1")
+expect_eq("album order in a new process" "${albums3}" "Alb1;Alb3;Alb2")
+touch_calls(t3 "${m3}")
+expect_eq("touch calls in a new process" "${t3}" "0")
+message(STATUS "dui-sidebar-recents ok")

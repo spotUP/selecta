@@ -189,8 +189,12 @@ static const char SCHEMA_V8[] =
     "CREATE TRIGGER songs_source_au AFTER UPDATE OF source ON songs WHEN new.source <> old.source BEGIN "
     V8_DROP("old") V8_ADD("new") "END;";
 
+/* I678c: when a Your Library item (kind, id as in the item list) was last opened; Recents orders by the newer of this and the last play. */
+static const char SCHEMA_V9[] =
+    "CREATE TABLE opened(kind INTEGER NOT NULL, id TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(kind, id)) WITHOUT ROWID;";
+
 static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4,
-                                           SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8};
+                                           SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 

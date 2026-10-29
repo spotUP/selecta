@@ -1,5 +1,6 @@
 /* Your Library filter and sort (I611): the one implementation, in the core so the engine (COMPOSERS_VIEW) and every UI share it.
  * Declared in include/selecta/uimodel/browse.h. */
+#include <selecta/library_item.h>
 #include <selecta/uimodel/browse.h>
 
 #include <ctype.h>
@@ -10,6 +11,34 @@ static int32_t lower_cmp(const char* a, const char* b) {
         int ca = tolower((unsigned char)*a), cb = tolower((unsigned char)*b);
         if (ca != cb) return ca < cb ? -1 : 1;
         if (ca == 0) return 0;
+    }
+}
+
+/* D4: "The Beatles" sorts under B, for artists only (an album or playlist called "The Wall" sorts under T). */
+static const char* the_skip(uint32_t kind, const char* s) {
+    if (kind == SEL_LIB_ITEM_ARTIST && tolower((unsigned char)s[0]) == 't' && tolower((unsigned char)s[1]) == 'h' &&
+        tolower((unsigned char)s[2]) == 'e' && s[3] == ' ' && s[4] != '\0') {
+        return s + 4;
+    }
+    return s;
+}
+
+int32_t sel_uim_lsort_item_cmp(uint32_t mode, const sel_uim_lsort_key* a, const sel_uim_lsort_key* b) {
+    int32_t c;
+    switch (mode) {
+    case SEL_UIM_LSORT_RECENTS: {
+        uint32_t ta = a->opened > a->last_played ? a->opened : a->last_played;
+        uint32_t tb = b->opened > b->last_played ? b->opened : b->last_played;
+        return ta == tb ? 0 : (ta > tb ? -1 : 1);
+    }
+    case SEL_UIM_LSORT_ADDED:
+        return a->added == b->added ? 0 : (a->added > b->added ? -1 : 1);
+    case SEL_UIM_LSORT_CREATOR:
+        c = lower_cmp(the_skip(a->kind, a->creator), the_skip(b->kind, b->creator));
+        if (c != 0) return c;
+        /* fall through */
+    default:
+        return lower_cmp(the_skip(a->kind, a->name), the_skip(b->kind, b->name));
     }
 }
 

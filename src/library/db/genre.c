@@ -142,7 +142,7 @@ static uint32_t row_fields(uint32_t op) {
     case SEL_DUP_NEXT:
     case SEL_COMPOSER_LIST: return 3u;
     case SEL_FORMAT_LIST: return 2u;
-    case SEL_LIBRARY_ITEMS: return 9u;
+    case SEL_LIBRARY_ITEMS: return 10u;
     default: return 0u;
     }
 }
@@ -196,7 +196,7 @@ int sel_genre_call(sel_library* lib, const sel_genre_op* op, int64_t* id) {
         const char* end = rows.text + rows.len;
 
         while (p < end) {
-            const char* f[9];
+            const char* f[10];
             uint32_t i;
 
             for (i = 0; i < rows.fields; i++) {

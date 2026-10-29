@@ -30,6 +30,7 @@ typedef struct sel_library_item {
     unsigned songs;
     unsigned added;
     unsigned last_played;
+    unsigned opened; /* I678c: epoch seconds the item was last opened (opened table), 0 never */
     unsigned art_id;
     int pinned;
 } sel_library_item;

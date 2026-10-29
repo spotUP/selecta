@@ -575,6 +575,16 @@ int sel_library_playlist_remove_song(sel_library* lib, uint32_t id, uint32_t ind
     return folder_call(lib, &op, NULL);
 }
 
+int sel_library_touch(sel_library* lib, uint32_t kind, const char* key, int64_t at) {
+    sel_user_op op;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_LIBRARY_TOUCH;
+    op.to = kind;
+    op.name = key;
+    op.at = at;
+    return folder_call(lib, &op, NULL);
+}
+
 int sel_library_playlist_rename(sel_library* lib, uint32_t id, const char* name) {
     sel_user_op op;
     memset(&op, 0, sizeof op);

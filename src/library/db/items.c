@@ -16,35 +16,41 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Columns of every part: 1 kind, 2 key, 3 name, 4 sub, 5 songs, 6 added, 7 last_played, 8 art_id, 9 pinned, 10 sort name, 11 tie. */
+/* Columns of every part: 1 kind, 2 key, 3 name, 4 sub, 5 songs, 6 added, 7 last_played, 8 art_id, 9 pinned, 10 sort name, 11 tie, 12 opened (opened table, I678c). */
 #define PART_LIKED \
-    "SELECT 0,'liked','Liked Songs','',(SELECT COUNT(*) FROM liked),0,IFNULL((SELECT MAX(at) FROM liked),0),0,1,'',0"
+    "SELECT 0,'liked','Liked Songs','',(SELECT COUNT(*) FROM liked),0,IFNULL((SELECT MAX(at) FROM liked),0),0,1,'',0,0"
 #define PART_RECENT \
     "SELECT 1,'recent','Recently Played','',(SELECT COUNT(DISTINCT key) FROM history),0," \
-    "IFNULL((SELECT MAX(played_at) FROM history),0),0,1,'',0"
+    "IFNULL((SELECT MAX(played_at) FROM history),0),0,1,'',0,0"
 #define PART_LOCAL \
-    "SELECT 2,'local','Local Files','',IFNULL((SELECT n FROM source_songs WHERE source='local'),0),0,0,0,1,'',0"
+    "SELECT 2,'local','Local Files','',IFNULL((SELECT n FROM source_songs WHERE source='local'),0),0,0,0,1,'',0,0"
 /* Playlists in creation order (ids grow); owner "You": every saved playlist is local. added = id, as the sidebar used. */
 #define PART_PLAYLIST \
     "SELECT 3,CAST(p.id AS TEXT),p.name,'You',(SELECT COUNT(*) FROM playlist_entries e WHERE e.playlist_id=p.id),p.id," \
     "IFNULL((SELECT MAX(h.played_at) FROM playlist_entries e JOIN history h ON h.key=e.key WHERE e.playlist_id=p.id),0),0,0," \
-    "'',p.id FROM playlists p"
+    "'',p.id," \
+    "IFNULL((SELECT at FROM opened WHERE kind=3 AND id=CAST(p.id AS TEXT)),0) FROM playlists p"
 #define PART_ALBUM \
     "SELECT 4,CAST(a.id AS TEXT),a.name,IFNULL(a.artist,''),IFNULL(sa.n,0),IFNULL(sa.ad,0),IFNULL(la.t,0),a.id,0," \
-    "a.name,a.id FROM albums a LEFT JOIN sa ON sa.al IS a.name AND sa.ar IS a.artist" \
+    "a.name,a.id," \
+    "IFNULL((SELECT at FROM opened WHERE kind=4 AND id=CAST(a.id AS TEXT)),0) FROM albums a LEFT JOIN sa ON sa.al IS a.name AND sa.ar IS a.artist" \
     " LEFT JOIN la ON la.al IS a.name AND la.ar IS a.artist"
 #define PART_ARTIST \
-    "SELECT 5,r.name,r.name,'',IFNULL(sr.n,0),IFNULL(sr.ad,0),IFNULL(lr.t,0),0,0,r.name,0 FROM" \
+    "SELECT 5,r.name,r.name,'',IFNULL(sr.n,0),IFNULL(sr.ad,0),IFNULL(lr.t,0),0,0,r.name,0," \
+    "IFNULL((SELECT at FROM opened WHERE kind=5 AND id=r.name),0) FROM" \
     " (SELECT artist AS name FROM songs WHERE artist<>'' UNION SELECT artist FROM albums WHERE artist<>'') r" \
     " LEFT JOIN sr ON sr.ar=r.name LEFT JOIN lr ON lr.ar=r.name"
 /* Composers: the maintained table plus the Unknown composer group, like SEL_COMPOSER_LIST. */
 #define PART_COMPOSER \
-    "SELECT 6,c.canon,c.display,'',c.songs,0,IFNULL(lc.t,0),0,0,c.display,0 FROM composers c LEFT JOIN lc ON lc.canon=c.canon" \
-    " UNION ALL SELECT 6,'" SEL_COMPOSER_UNKNOWN_CANON "','" SEL_COMPOSER_UNKNOWN_DISPLAY "','',n,0,0,0,0,'~',1" \
+    "SELECT 6,c.canon,c.display,'',c.songs,0,IFNULL(lc.t,0),0,0,c.display,0," \
+    "IFNULL((SELECT at FROM opened WHERE kind=6 AND id=c.canon),0) FROM composers c LEFT JOIN lc ON lc.canon=c.canon" \
+    " UNION ALL SELECT 6,'" SEL_COMPOSER_UNKNOWN_CANON "','" SEL_COMPOSER_UNKNOWN_DISPLAY "','',n,0,0,0,0,'~',1," \
+    "IFNULL((SELECT at FROM opened WHERE kind=6 AND id='" SEL_COMPOSER_UNKNOWN_CANON "'),0)" \
     " FROM composer_unknown WHERE n>0"
 /* Sources: the Local Files pinned row already stands for source 'local'. */
 #define PART_SOURCE \
-    "SELECT 7,s.source,s.source,'',s.n,0,IFNULL(ls.t,0),0,0,s.source,0 FROM source_songs s LEFT JOIN ls ON ls.source=s.source" \
+    "SELECT 7,s.source,s.source,'',s.n,0,IFNULL(ls.t,0),0,0,s.source,0," \
+    "IFNULL((SELECT at FROM opened WHERE kind=7 AND id=s.source),0) FROM source_songs s LEFT JOIN ls ON ls.source=s.source" \
     " WHERE s.source<>'local' AND s.n>0"
 
 static const char* const k_part[SEL_LIB_ITEM_KINDS] = {PART_LIKED, PART_RECENT, PART_LOCAL,    PART_PLAYLIST,
@@ -131,8 +137,8 @@ int sel_library_items_op(sel_library* lib, const sel_genre_op* op, int* found, i
     if (rc != SQLITE_OK) return rc;
     while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
         if (total >= (int64_t)op->offset && emitted < op->limit) {
-            char kind[24], songs[24], added[24], last[24], art[24], pinned[24];
-            const char* f[9];
+            char kind[24], songs[24], added[24], last[24], art[24], pinned[24], opened[24];
+            const char* f[10];
 
             num(kind, sizeof kind, st, 0);
             num(songs, sizeof songs, st, 4);
@@ -140,6 +146,7 @@ int sel_library_items_op(sel_library* lib, const sel_genre_op* op, int* found, i
             num(last, sizeof last, st, 6);
             num(art, sizeof art, st, 7);
             num(pinned, sizeof pinned, st, 8);
+            num(opened, sizeof opened, st, 11);
             f[0] = kind;
             f[1] = text(st, 1);
             f[2] = text(st, 2);
@@ -149,6 +156,7 @@ int sel_library_items_op(sel_library* lib, const sel_genre_op* op, int* found, i
             f[6] = last;
             f[7] = art;
             f[8] = pinned;
+            f[9] = opened;
             emitted++;
             (void)op->row(op->row_ctx, f);
         }
@@ -185,6 +193,7 @@ static int items_row(void* ctx, const char* const* f) {
     it->last_played = (unsigned)strtoul(f[6], NULL, 10);
     it->art_id = (unsigned)strtoul(f[7], NULL, 10);
     it->pinned = f[8][0] == '1';
+    it->opened = (unsigned)strtoul(f[9], NULL, 10);
     return 0;
 }
 

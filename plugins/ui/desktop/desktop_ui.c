@@ -363,6 +363,7 @@ typedef struct desk {
     uint32_t lit_doors;      /* bit i set: sidebar door i was drawn raised in the last frame (nav sentinel) */
     sel_engine_library_item side_items[SIDE_LIB_MAX]; /* I608: the saved playlists listed under the doors */
     uint32_t side_n, side_stale, side_draws, side_rows, side_opens, side_empty_draws, side_create_clicks; /* items held, reload wanted, frames drawn, rows drawn in the last one, rows opened */
+    uint32_t side_touch_seen;   /* I678c: lib_touch_calls last seen; a change reloads the list */
     uint32_t side_item_calls, side_open_kind, side_open_page; /* I678b: mixed-list reads, the kind and page of the last non-playlist row opened */
     char side_open_key[96];                                  /* I678b: the key of that row */
     uint32_t side_open_n, side_open_tries; /* I646: the sidebar count a just created playlist brings the list to (0 = none pending), frames waited */
@@ -1017,6 +1018,7 @@ static void draw_sidebar(desk* d);
 static int32_t side_lib_at(const desk* d, int32_t x, int32_t y);
 static int32_t side_lib_max_q16(const desk* d);
 static void side_lib_reload(desk* d);
+static uint32_t lib_touch_calls(desk* d);
 static int32_t side_chip_at(desk* d, int32_t x, int32_t y);
 static int32_t side_tools_at(const desk* d, int32_t x, int32_t y);
 static sel_gui_rect side_mag_rect(const desk* d);
@@ -5874,8 +5876,9 @@ static const char* library_dump_build(desk* d) {
             o = dump_put(d, o, "smenu %d %d %d %d\n", (int)m0.x, (int)m0.y, (int)m0.w, (int)(m0.h * song_menu_n(d)));
             o = dump_put(d, o, "smenu_pl step=%d playlists=%u sidebar_rows=%u\n", d->sm_step, (unsigned)d->sm_pl_n, (unsigned)d->side_n);
         }
-        o = dump_put(d, o, "sidelib draws=%u rows=%u items=%u opens=%u y=%d max=%d item_calls=%u\n", (unsigned)d->side_draws, (unsigned)d->side_rows,
-                     (unsigned)d->side_n, (unsigned)d->side_opens, (int)d->side_y_q16, (int)side_lib_max_q16(d), (unsigned)d->side_item_calls);
+        o = dump_put(d, o, "sidelib draws=%u rows=%u items=%u opens=%u y=%d max=%d item_calls=%u lib_touch_calls=%u\n", (unsigned)d->side_draws, (unsigned)d->side_rows,
+                     (unsigned)d->side_n, (unsigned)d->side_opens, (int)d->side_y_q16, (int)side_lib_max_q16(d), (unsigned)d->side_item_calls,
+                     (unsigned)lib_touch_calls(d));
         {
             sel_gui_rect th = topbar_part(d, TOPBAR_HOME), tf = topbar_part(d, TOPBAR_FIELD), tb = topbar_part(d, TOPBAR_BROWSE);
             o = dump_put(d, o, "sidebar_doors drawn=%u\n", (unsigned)d->doors_drawn);
@@ -6730,9 +6733,9 @@ static int lib_style_click(desk* d, uint32_t i) {
 
 /* The COMPOSERS_SHOW request that drills into one composer. A canon holds spaces: one quoted argument; the codec reads a
  * backslash as the escape of the next character. A click on a composer row and a refresh inside a drilldown both build it here. */
-static void desk_composer_request(char* line, size_t cap, const char* canon) {
-    size_t o = (size_t)snprintf(line, cap, "COMPOSERS_SHOW \"");
-    for (const char* c = canon; *c != '\0' && o + 3u < cap; c++) {
+static void desk_quoted_request(char* line, size_t cap, const char* head, const char* arg) {
+    size_t o = (size_t)snprintf(line, cap, "%s \"", head);
+    for (const char* c = arg; *c != '\0' && o + 3u < cap; c++) {
         if (*c == '"' || *c == '\\') {
             line[o++] = '\\';
         }
@@ -6741,6 +6744,8 @@ static void desk_composer_request(char* line, size_t cap, const char* canon) {
     line[o++] = '"';
     line[o] = '\0';
 }
+
+static void desk_composer_request(char* line, size_t cap, const char* canon) { desk_quoted_request(line, cap, "COMPOSERS_SHOW", canon); }
 
 /* Rows of the UI-drawn Library list: the registered sources on the Sources tab, else the composers or a composer's songs. */
 static uint32_t lib_rows_n(const desk* d, const sel_state* st) {
@@ -8351,6 +8356,12 @@ static int32_t side_lib_max_q16(const desk* d) {
 }
 
 /* I608, I631: the one read of the saved playlists, shared by the sidebar list and the song menu's Add to Playlist step. */
+static uint32_t lib_touch_calls(desk* d) {
+    sel_engine_stats ts;
+    sel_engine_stats_get(d->engine, &ts);
+    return ts.lib_touch_calls;
+}
+
 static void side_lib_reload(desk* d) {
     lsort_prefs_load(d);
     /* I678b: the chip is a kind mask the library applies; a pending Create Playlist reads playlists only (it waits for the new one). */
@@ -8386,8 +8397,13 @@ static void side_lib_reload(desk* d) {
         }
         for (i = pinned + 1u; i < d->side_n; i++) {
             sel_engine_library_item it = d->side_items[i];
-            for (j = i; j > pinned && sel_uim_lsort_cmp(d->side_sort, d->side_items[j - 1u].name, d->side_items[j - 1u].added, d->side_items[j - 1u].creator,
-                                                    it.name, it.added, it.creator) > 0; j--) {
+            sel_uim_lsort_key ka, kb = {it.kind, it.name, it.creator, it.added, it.last_played, it.opened};
+            for (j = i; j > pinned; j--) { /* I678c: the kind-aware order lives in the core (Recents, the "The" rule, Creator per kind) */
+                const sel_engine_library_item* p = &d->side_items[j - 1u];
+                ka = (sel_uim_lsort_key){p->kind, p->name, p->creator, p->added, p->last_played, p->opened};
+                if (sel_uim_lsort_item_cmp(d->side_sort, &ka, &kb) <= 0) {
+                    break;
+                }
                 d->side_items[j] = d->side_items[j - 1u];
             }
             d->side_items[j] = it;
@@ -8605,6 +8621,14 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
     int32_t pad = lpx(d, 12), cov = lpx(d, 44), gap = lpx(d, 12);
     int labels = sb.w > lpx(d, 120);
     uint32_t i;
+    {   /* I678c: the engine applied a LIBRARY_TOUCH (an opened time changed): the Recents order is stale */
+        sel_engine_stats ts;
+        sel_engine_stats_get(d->engine, &ts);
+        if (ts.lib_touch_calls != d->side_touch_seen) {
+            d->side_touch_seen = ts.lib_touch_calls;
+            d->side_stale = 1u;
+        }
+    }
     if (d->side_stale) { /* the saved playlists changed: read them again */
         side_lib_reload(d);
     }
@@ -10527,6 +10551,13 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         door = side_lib_at(d, ev->x, ev->y); /* I608: a library row opens that item in the main region */
         if (door >= 0) {
             d->side_opens++;
+            if (!d->side_items[door].pinned) { /* I678c: opening an item page feeds Recents; the engine stores it so every UI shares the order */
+                char touch[160];
+                char head[32];
+                snprintf(head, sizeof head, "LIBRARY_TOUCH %u", (unsigned)d->side_items[door].kind);
+                desk_quoted_request(touch, sizeof touch, head, d->side_items[door].key);
+                desk_send(d, touch);
+            }
             if (d->side_items[door].kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST) {
                 desk_page_goto(d, PG_PLAYLISTS);
                 pls_open(d, d->side_items[door].id, d->side_items[door].name); /* I633: the playlist's page of songs */

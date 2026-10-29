@@ -53,6 +53,11 @@ static const sel_engine_library_item* find(const sel_engine_library_item* rows, 
     return NULL;
 }
 
+static void quiet(void* ctx, const sel_message* evt) {
+    (void)ctx;
+    (void)evt;
+}
+
 static uint32_t calls(sel_engine* e) {
     sel_engine_stats s;
 
@@ -163,6 +168,44 @@ int main(void) {
     CHECK(strcmp(part[2].name, all[14].name) == 0);
     n = sel_engine_library_items(e, SEL_LIB_ITEM_ALL, 0, part, 5u, &total);
     CHECK(n == 5u && total == 15u); /* the window is capped, the total is not */
+
+    /* I678c: LIBRARY_TOUCH through the protocol line writes the opened table; Recents data and Creator per kind come back with the rows. */
+    {
+        char pool[256], line[128];
+        sel_engine_stats st;
+        const sel_engine_library_item* alb;
+
+        sel_engine_stats_get(e, &st);
+        CHECK(st.lib_touch_calls == 0u);
+        CHECK(sel_engine_library_items(e, SEL_LIB_ITEM_ALL, 0, all, 64u, &total) == 15u);
+        for (i = 0; i < 15u; i++) CHECK(all[i].opened == 0u); /* nothing opened yet */
+        alb = find(all, 15u, SEL_LIB_ITEM_ALBUM, "Alb2");
+        CHECK(alb != NULL && strcmp(alb->creator, "Bob") == 0); /* an album's creator is its artist */
+        it = find(all, 15u, SEL_LIB_ITEM_ARTIST, "Cy");
+        CHECK(it != NULL && strcmp(it->creator, "Cy") == 0); /* an artist is their own creator */
+        it = find(all, 15u, SEL_LIB_ITEM_PLAYLIST, "Mix");
+        CHECK(it != NULL && strcmp(it->creator, "You") == 0);
+        snprintf(line, sizeof line, "LIBRARY_TOUCH %u \"%s\"", (unsigned)SEL_LIB_ITEM_ALBUM, alb->key);
+        CHECK(sel_engine_send_line(e, line, pool, sizeof pool) == 0);
+        (void)sel_engine_pump(e, quiet, NULL);
+        sel_engine_stats_get(e, &st);
+        CHECK(st.lib_touch_calls == 1u); /* sentinel: the engine command ran and wrote */
+        CHECK(sel_engine_library_items(e, SEL_LIB_ITEM_ALL, 0, all, 64u, &total) == 15u);
+        alb = find(all, 15u, SEL_LIB_ITEM_ALBUM, "Alb2");
+        CHECK(alb != NULL && alb->opened > 1000000u); /* stamped with the clock */
+        it = find(all, 15u, SEL_LIB_ITEM_ALBUM, "Alb1");
+        CHECK(it != NULL && it->opened == 0u && it->last_played == 600u); /* only the touched item moved */
+        /* An artist key is its name, a composer key its canon; replacing keeps one row. */
+        CHECK(sel_library_touch(lib, SEL_LIB_ITEM_ARTIST, "Cy", 900) == 0);
+        CHECK(sel_library_touch(lib, SEL_LIB_ITEM_ARTIST, "Cy", 950) == 0);
+        CHECK(sel_library_touch(lib, SEL_LIB_ITEM_COMPOSER, "y", 40) == 0);
+        CHECK(scalar(lib, "SELECT COUNT(*) FROM opened") == 3);
+        CHECK(sel_engine_library_items(e, SEL_LIB_ITEM_ALL, 0, all, 64u, &total) == 15u);
+        it = find(all, 15u, SEL_LIB_ITEM_ARTIST, "Cy");
+        CHECK(it != NULL && it->opened == 950u);
+        it = find(all, 15u, SEL_LIB_ITEM_COMPOSER, "Y");
+        CHECK(it != NULL && it->opened == 40u);
+    }
 
     sel_engine_destroy(e);
     sel_library_close(lib);

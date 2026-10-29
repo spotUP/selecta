@@ -167,6 +167,17 @@ static int playlist_remove_song(sqlite3* db, const sel_user_op* op, int64_t* row
     return step_done(st);
 }
 
+static int library_touch(sqlite3* db, const sel_user_op* op) {
+    sqlite3_stmt* st;
+    if (op->name == NULL || op->name[0] == '\0') return SQLITE_MISUSE;
+    st = prep(db, "INSERT OR REPLACE INTO opened(kind, id, at) VALUES(?1, ?2, ?3)");
+    if (st == NULL) return SQLITE_ERROR;
+    sqlite3_bind_int64(st, 1, op->to);
+    sqlite3_bind_text(st, 2, op->name, -1, SQLITE_STATIC);
+    sqlite3_bind_int64(st, 3, op->at);
+    return step_done(st);
+}
+
 static int playlist_rename(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     sqlite3_stmt* st;
     if (op->name == NULL || op->name[0] == '\0') return SQLITE_MISUSE;
@@ -376,6 +387,7 @@ int sel_folder_exec(sqlite3* db, const sel_user_op* op, int64_t* rows, int32_t c
     case SEL_USER_PLAYLIST_ADD: return playlist_add(db, op, rows);
     case SEL_USER_PLAYLIST_ADD_SONG: return playlist_add_song(db, op, rows);
     case SEL_USER_PLAYLIST_REMOVE_SONG: return playlist_remove_song(db, op, rows);
+    case SEL_USER_LIBRARY_TOUCH: return library_touch(db, op);
     case SEL_USER_PLAYLIST_RENAME: return playlist_rename(db, op, rows);
     case SEL_USER_PLAYLIST_DEL: return playlist_del(db, op, rows);
     case SEL_USER_SONG_REMOVE: return song_remove(db, op, rows);

@@ -139,7 +139,7 @@
     X(FLAG)                                                                                   \
     X(NOTE)                                                                                   \
     X(RATE) X(VOTE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
-    X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(PLAYLIST_ADD_SONG) X(PLAYLIST_IMPORT) X(PLAYLIST_ADD_FOLDER) X(PLAYLIST_REMOVE_SONG) X(PLAYLIST_PLAY) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
+    X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(PLAYLIST_ADD_SONG) X(PLAYLIST_IMPORT) X(PLAYLIST_ADD_FOLDER) X(PLAYLIST_REMOVE_SONG) X(PLAYLIST_PLAY) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_TOUCH) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
     X(SONGS_RANGES) X(SONGS_PLAY) X(SONGS_PLAY_NEXT) X(SONGS_QUEUE_ADD) X(SONGS_PLAYLIST_ADD) X(SONGS_REMOVE) \
     X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(FORMATS_SHOW) X(COMPOSERS_HIDE) X(COMPOSERS_VIEW) \
     X(KEEP)                                                                                   \
@@ -451,6 +451,7 @@ struct sel_engine {
     uint32_t st_slot;                         /* STICKER answers: ring of 8, like lib_tags */
     sel_tag st_tags[8][5];
     uint32_t sources_listed;                  /* SOURCES rows answered (DUI-P4-3) */
+    uint32_t lib_touch_calls;                 /* LIBRARY_TOUCH commands applied (I678c) */
     uint32_t library_items_calls;             /* sel_engine_library_items calls that reached the library (I678a) */
     uint32_t evt_dropped;                     /* events emit() could not queue because evt_q was full (I546) */
     sel_tag src_tags[16][10];                  /* one SOURCES row per registered source (registry holds 16) */
@@ -5079,6 +5080,15 @@ static void cmd_PLAYLIST_RENAME(sel_engine* e, const sel_message* m) {
     else folders_reload(e);
 }
 
+/* I678c: the item page of Your Library row (kind, key) was opened; Recents orders by the newer of this and the last play, in every UI. */
+static void cmd_LIBRARY_TOUCH(sel_engine* e, const sel_message* m) {
+    int rc;
+    if (!folder_ready(e, "LIBRARY_TOUCH")) return;
+    rc = sel_library_touch(e->lib, (uint32_t)m->args[0].v.u, m->args[1].v.s, (int64_t)time(NULL));
+    if (rc != SEL_FOLDER_OK) folder_report(e, rc, "LIBRARY_TOUCH");
+    else e->lib_touch_calls++;
+}
+
 static void cmd_PLAYLIST_DEL(sel_engine* e, const sel_message* m) {
     int rc;
     if (!folder_ready(e, "PLAYLIST_DEL")) return;
@@ -5547,9 +5557,9 @@ uint32_t sel_engine_library_items(sel_engine* e, uint32_t kind_mask, uint32_t of
         o->songs = rows[i].songs;
         o->added = rows[i].added;
         o->last_played = rows[i].last_played;
+        o->opened = rows[i].opened;
         o->art_id = rows[i].art_id;
         o->pinned = rows[i].pinned;
-        if (rows[i].kind == SEL_LIB_ITEM_PLAYLIST) snprintf(o->creator, sizeof o->creator, "%s", rows[i].sub);
         if (rows[i].kind == SEL_LIB_ITEM_SOURCE) {
             source_name_ctx c;
             c.id = rows[i].key;
@@ -5557,6 +5567,9 @@ uint32_t sel_engine_library_items(sel_engine* e, uint32_t kind_mask, uint32_t of
             c.cap = sizeof o->name;
             (void)sel_source_each(source_name_row, &c);
         }
+        /* I678c: Creator (design section 5): playlists the owner, albums the artist, artists, composers and sources their own name. */
+        snprintf(o->creator, sizeof o->creator, "%s",
+                 rows[i].kind == SEL_LIB_ITEM_PLAYLIST || rows[i].kind == SEL_LIB_ITEM_ALBUM ? rows[i].sub : o->name);
     }
     free(rows);
     return n;
@@ -6899,6 +6912,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->links_made = e->links_made;
     out->sources_listed = e->sources_listed;
     out->library_items_calls = e->library_items_calls;
+    out->lib_touch_calls = e->lib_touch_calls;
     out->evt_dropped = e->evt_dropped;
     out->radio_appends = e->radio_appends;
     out->net_cancels = e->net_cancels;

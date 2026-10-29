@@ -41,6 +41,16 @@ const char* sel_uim_lview_label(uint32_t i); /* "Compact list", "List", "Small g
  * puts the larger `added` first, Alphabetical and Creator compare case-insensitively (Creator then name). */
 int32_t sel_uim_lsort_cmp(uint32_t mode, const char* a_name, uint32_t a_added, const char* a_creator, const char* b_name,
                           uint32_t b_added, const char* b_creator);
+/* I678c: the kind-aware order of Your Library rows (design section 5). Recents puts the newer of last_played and opened first,
+ * Recently added the larger `added`, Alphabetical and Creator compare names case-insensitively with a leading "The " ignored for
+ * artists (D4); Creator compares `creator` first. `kind` is a SEL_LIB_ITEM_* value. */
+typedef struct sel_uim_lsort_key {
+    uint32_t kind;
+    const char* name;
+    const char* creator;
+    uint32_t added, last_played, opened;
+} sel_uim_lsort_key;
+int32_t sel_uim_lsort_item_cmp(uint32_t mode, const sel_uim_lsort_key* a, const sel_uim_lsort_key* b);
 /* 1 when `name` contains `filter` ignoring case (an empty filter matches everything). */
 int32_t sel_uim_lfilter_match(const char* name, const char* filter);
 

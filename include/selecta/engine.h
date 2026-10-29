@@ -414,6 +414,7 @@ typedef struct sel_engine_stats {
     uint32_t links_parsed;        /* share links OPEN parsed (I180 sentinel) */
     uint32_t links_made;          /* share links SHARE wrote (I180 sentinel) */
     uint32_t sources_listed;      /* SOURCES rows the engine queued for the UI (I546 sentinel) */
+    uint32_t lib_touch_calls;   /* LIBRARY_TOUCH commands applied (I678c sentinel: Recents order has a written opened time) */
     uint32_t library_items_calls; /* sel_engine_library_items calls that reached the library (I678a sentinel) */
     uint32_t evt_dropped;         /* events dropped because the event queue was full (I546 sentinel) */
     uint32_t radio_appends;       /* songs RADIO appended to the queue (I186 sentinel) */
@@ -469,13 +470,14 @@ typedef struct sel_engine_library_item {
     uint32_t id;
     char name[96];
     uint32_t added; /* I611: creation order (ids grow with each new playlist), larger is newer */
-    char creator[32]; /* I611: who made it; local playlists belong to the local user */
+    char creator[96]; /* I611: who made it, per kind (I678c): playlist the owner, album its artist, artist/composer/source the name */
     /* I678a: the fields of the mixed Your Library list (sel_engine_library_items); the playlist-only call leaves them zero. */
     uint32_t kind;        /* SEL_LIB_ITEM_* (include/selecta/library_item.h) */
     char key[96];         /* stable id a click routes on: playlist id, album id, artist name, composer canon, source id, pinned key */
     char sub[96];         /* raw subtitle data (the album artist); the text is built by sel_uim_library_item_subtitle */
     uint32_t songs;       /* songs inside */
     uint32_t last_played; /* epoch seconds of the newest play of anything inside, 0 never */
+    uint32_t opened;      /* I678c: epoch seconds the item page was last opened, 0 never; Recents orders by the newer of this and last_played */
     uint32_t art_id;      /* albums.id of the cover, 0 none */
     int pinned;           /* 1: Liked Songs, Recently Played, Local Files */
 } sel_engine_library_item;
