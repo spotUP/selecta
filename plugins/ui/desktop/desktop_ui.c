@@ -235,6 +235,8 @@ typedef struct desk {
     char si_composer_key[SEL_COMPOSER_MAX]; /* its composer canon, from the song's db row */
     char si_composer_ref[512]; /* the song path si_composer_key was read for */
     int32_t si_composer_row; /* the info row index of the Author tag, -1 when the song has none */
+    uint32_t row_hover_fill; /* I690b: the fill the list row under the pointer was last painted with, 0 when none (dump line plhover) */
+    uint32_t link_hover;     /* I690b: 1 artist or 2 album link of a track row is underlined under the pointer, 0 none (dump line pllink) */
     int32_t pls_playing; /* I690: the position of the playing song in the drawn collection page, -1 when none */
     uint32_t pls_want, pls_n, pls_stale, pls_scroll, pls_draws, pls_rows; /* songs, reload wanted, first row shown, frames drawn, rows in the last one */
     uint32_t pls_family;     /* I691d: the majority family of the songs on the open page (an album, a person, a playlist), the header cover and the avatar */
@@ -558,6 +560,7 @@ static int overlay_refresh(desk* d);
 enum { ANIM_KEY_VIEW = 1, ANIM_KEY_TIP = 3, ANIM_KEY_FLOW = 4, ANIM_KEY_TOAST = 5, ANIM_KEY_NAV_FADE = 6, ANIM_KEY_NAV_SCROLL = 7, ANIM_KEY_NAV_SCALE = 8 /* +1 per direction */, ANIM_KEY_SIDE = 10 /* I668: sidebar width */ };
 enum { HR_NONE, HR_SIDEBAR, HR_MAIN, HR_DETAIL, HR_PLAYER };
 static int hover_region_of(const desk* d, sel_gui_rect box);
+static int in_rect(sel_gui_rect r, int32_t x, int32_t y);
 enum { SLOT_SUB_PREV, SLOT_SHUFFLE, SLOT_PREV, SLOT_PLAY, SLOT_NEXT, SLOT_REPEAT, SLOT_SUB_NEXT, TRANSPORT_COUNT };
 static sel_gui_rect desk_button_rect(const desk* d, uint32_t i);
 static const char* desk_slot_action(const desk* d, uint32_t i);
@@ -918,6 +921,29 @@ static int song_playing(desk* d, const char* path) {
 static uint32_t row_ink(desk* d, sel_gui_rect row, uint32_t rest) {
     uint32_t muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]), accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
     return hover_ink_of(d, row, rest, rest == muted ? ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]) : accent);
+}
+
+/* The background of a list row (I690b): hover, selected (keyboard focus or clicked) and playing are separate looks that combine.
+ * A selected row takes the raised surface, a row under the pointer the hover surface, a row that is both the pressed surface, so
+ * the pointer shows on every row, the selected one included. 0 = no fill. The pointer is read directly (not through hover_box) so
+ * a link inside the row, which owns the hover box while the pointer is on it, does not take the row's fill away. */
+static uint32_t list_row_fill(desk* d, sel_gui_rect row, int selected) {
+    int hovered = d->overlay == 0 && in_rect(row, d->ptr_x, d->ptr_y);
+    uint32_t fill = hovered ? ARGB(d->theme.token[selected ? SEL_GUI_TOKEN_SURFACE_PRESSED : SEL_GUI_TOKEN_SURFACE_HOVER])
+                            : selected ? ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]) : 0u;
+    if (hovered) {
+        d->row_hover_fill = fill;
+    }
+    return fill;
+}
+
+/* The hover look of a link inside a row (I690b), as Spotify: the text keeps its colour and is underlined while the pointer is on it. */
+static void link_hover_mark(desk* d, sel_gui_rect link, uint32_t id, uint32_t ink) {
+    hover_reg(d, link);
+    if (hover_weight(d, link) > 0) {
+        d->link_hover = id;
+        sel_gui_fill_rect(d->canvas, rect_of(link.x, link.y + link.h / 2 + lpx(d, 8), link.w, lpx(d, 1) > 0 ? lpx(d, 1) : 1), ink);
+    }
 }
 
 /* The fill of a control under the pointer: a plain surface fill fades to the surface-hover token; an accent fill brightens
@@ -1728,15 +1754,16 @@ static void draw_songs(desk* d) {
     for (i = 0; i < d->order_n; i++) {
         sel_gui_rect r = songs_row_rect(d, i);
         char name[256], format[16];
-        uint32_t q = d->order[i], rink;
+        uint32_t q = d->order[i], rink, fill;
         if (r.y >= mn.y + mn.h) {
             break;
         }
         if (r.y < songs_top(d) + lpx(d, SONG_HEADER_H)) { /* scrolled under the header */
             continue;
         }
-        if ((int32_t)i == d->row_focus) { /* the keyboard focus row takes the selected-row fill */
-            sel_gui_fill_rect(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+        fill = list_row_fill(d, r, (int32_t)i == d->row_focus); /* I690b: the selected row, the hovered row, or both */
+        if (fill != 0u) {
+            sel_gui_fill_rect(d->canvas, r, fill);
         }
         rink = row_ink(d, r, text);
         song_row_reg(d, r, st->queue_text + st->queue[q].path_offset, st->queue[q].id, 1, 0);
@@ -5118,10 +5145,13 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
         }
     }
     d->pls_playing = -1;
+    d->row_hover_fill = 0u;
+    d->link_hover = 0u;
     for (slot = 0; d->pls_scroll + slot < col_song_rows(d) && pls_row_visible(d, mn, slot); slot++, shown++) {
         uint32_t pos = d->pls_scroll + slot, i = d->pls_ord[pos];
         sel_gui_rect r = pls_row_rect(d, mn, slot);
         int playing = song_playing(d, pls_key(d, i)); /* I690 */
+        uint32_t fill;
         char num[16];
         song_row* e = song_row_reg(d, r, pls_key(d, i), 0u, 0, 0);
         if (e != NULL && d->col_kind == 0u) {
@@ -5129,10 +5159,9 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
             e->ref.pl_index = i;
             song_row_set_list(d, e, SEL_UIM_LIST_PLAYLIST, d->pls_id, d->pls_ver, i);
         }
-        if (d->col_kind != 0u && (int32_t)pos == d->col_focus) { /* I678f2: the keyboard focus row takes the selected-row fill */
-            sel_gui_round_rect(d->canvas, r, rad, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
-        } else if (in_rect(r, d->ptr_x, d->ptr_y)) {
-            sel_gui_round_rect(d->canvas, r, rad, surf);
+        fill = list_row_fill(d, r, d->col_kind != 0u && (int32_t)pos == d->col_focus); /* I678f2, I690b: focus, hover, or both */
+        if (fill != 0u) {
+            sel_gui_round_rect(d->canvas, r, rad, fill);
         }
         snprintf(num, sizeof num, "%u", (unsigned)(pos + 1u));
         if (playing) { /* I690: the playing row shows the play icon for its number and an accent title */
@@ -5148,9 +5177,11 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
             pls_link_rects(d, r, i, &la, &lb);
             if (la.w > 0) {
                 draw_text(d, la, d->pls_meta[i].artist, 0, 13, text);
+                link_hover_mark(d, la, 1u, text); /* I690b */
             }
             if (lb.w > 0) {
                 draw_text(d, lb, d->pls_meta[i].album, 0, 13, text);
+                link_hover_mark(d, lb, 2u, text);
             }
         }
         if (d->col_kind == (uint32_t)SEL_LIB_ITEM_RECENT && d->col_plays != NULL && d->col_plays[i] > 0u) { /* I678g: the Played column: the day of the last play */
@@ -6581,6 +6612,7 @@ static const char* library_dump_build(desk* d) {
             o = dump_put(d, o, "plsong %u %d %d %d %d file=%s title=%s\n", (unsigned)j, (int)r.x, (int)r.y, (int)r.w, (int)r.h, path_base(pls_key(d, real)),
                          d->pls_title[real]);
         }
+        o = dump_put(d, o, "plhover fill=%08x link=%u\n", (unsigned)d->row_hover_fill, (unsigned)d->link_hover); /* I690b: the fill of the hovered row, the underlined link */
         o = dump_put(d, o, "plplaying %d\n", (int)d->pls_playing); /* I690: the position of the playing song's row, -1 when none */
         for (j = 0; d->pls_meta != NULL && d->pls_scroll + j < d->pls_vn && pls_row_visible(d, pmn, j) && o + 400u < sizeof d->library_dump; j++) {
             sel_gui_rect r = pls_row_rect(d, pmn, j), la, lb; /* I678h3: the link rects and the db row ids behind them, after the plsong lines */

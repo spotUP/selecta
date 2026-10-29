@@ -225,3 +225,21 @@ dui_run(si_click ${sicommon} --input "${WORK}/si_click.txt")
 read_route(r13 "${si_click}")
 expect_eq("step 13 page (Song Information composer link)" "${r13_cur}" "collection:composer")
 expect_eq("step 13 routed" "${r13_calls}" "1")
+
+# 14. I690b: a link of a track row has a hover look. With the pointer on the artist link the `plhover` line reports link=1 (the link is
+# underlined), on the album link link=2, and the row under the pointer is filled (fill is not 0: the link must not take the row's
+# hover away). Off the links, link=0.
+step(d14 s14 "click ROW\nwait 100\nmove ${lk_artist}\nwait 100\n")
+if(NOT "${d14}" MATCHES "plhover fill=([0-9a-f]+) link=([0-9]+)")
+  message(FATAL_ERROR "no plhover line in:\n${d14}")
+endif()
+expect_eq("step 14 artist link hover" "${CMAKE_MATCH_2}" "1")
+if(CMAKE_MATCH_1 STREQUAL "00000000")
+  message(FATAL_ERROR "step 14: the row under the artist link has no hover fill")
+endif()
+step(d15 s15 "click ROW\nwait 100\nmove ${lk_album}\nwait 100\n")
+string(REGEX MATCH "plhover fill=([0-9a-f]+) link=([0-9]+)" d15m "${d15}")
+expect_eq("step 15 album link hover" "${CMAKE_MATCH_2}" "2")
+step(d16 s16 "click ROW\nwait 100\nmove 5 5\nwait 100\n")
+string(REGEX MATCH "plhover fill=([0-9a-f]+) link=([0-9]+)" d16m "${d16}")
+expect_eq("step 16 no link hover off the links" "${CMAKE_MATCH_2}" "0")
