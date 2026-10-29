@@ -1702,6 +1702,11 @@ if(NOT SEL_AMIGA)
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/local.manifest ${SEL_TESTMOD} ${SEL_TESTMOD})
   set_tests_properties(source-local PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_local_ok")
 
+  # I688: partial downloads (.part, .crdownload, .download, .partial) are not scanned.
+  add_test(NAME source-local-partial
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/source_local_partial.sh $<TARGET_FILE:selecta-cli> ${SEL_TESTMOD})
+  set_tests_properties(source-local-partial PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_local_partial_ok")
+
   # I276: library scan without --db fills the app's library.db in the config directory.
   add_test(NAME library-scan-default-db
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/scan_default_db.sh $<TARGET_FILE:selecta-cli> ${SEL_TESTMOD})
