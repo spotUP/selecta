@@ -16,6 +16,9 @@
 #include <proto/intuition.h>
 #include <proto/muimaster.h>
 
+#include <selecta/uimodel/theme.h>
+
+#include "map/mui_theme.h"
 #include "mui_aa_draw.h"
 
 extern struct Library* MUIMasterBase;
@@ -27,6 +30,7 @@ typedef struct aabal_data {
 
 static struct MUI_CustomClass* g_class;
 static uint32_t g_made;
+static char g_bg_spec[40]; /* fallback MUIA_Background string; MUI keeps the pointer, so it lives for the process */
 
 static ULONG aabal_setup(struct IClass* cl, Object* obj, Msg msg) {
     aabal_data* d = INST_DATA(cl, obj);
@@ -96,17 +100,28 @@ static ULONG __attribute__((used)) aabal_dispatch_c(struct IClass* cl, Object* o
     return DoSuperMethodA(cl, obj, msg);
 }
 
+/* Design 3.10 fallback: when MUI refuses the Balance subclass, a frameless stock Balance on the BACKGROUND face keeps the window
+ * openable (a NULL child would fail the whole window tree). */
+static Object* aabal_stock(void) {
+    txt_theme th;
+    uint32_t box, line;
+    txt_theme_default(&th);
+    mui_aa_balance_rgb(th.token, &box, &line);
+    mui_theme_bg_spec(box, g_bg_spec, sizeof g_bg_spec);
+    return MUI_NewObject((char*)MUIC_Balance, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Background, (ULONG)g_bg_spec, TAG_DONE);
+}
+
 Object* mui_aabalance_new(void) {
     Object* o;
     if (g_class == NULL) {
         g_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Balance, NULL, sizeof(aabal_data), (APTR)(uintptr_t)aabal_dispatch);
     }
     if (g_class == NULL) {
-        return NULL;
+        return aabal_stock();
     }
     o = NewObject(g_class->mcc_Class, NULL, MUIA_Frame, (ULONG)MUIV_Frame_None, TAG_DONE);
     if (o == NULL) {
-        return NULL;
+        return aabal_stock();
     }
     memset(INST_DATA(g_class->mcc_Class, o), 0, sizeof(aabal_data));
     g_made++;

@@ -354,6 +354,8 @@ static void test_balance_source(void) {
     CHECK(strstr(cls, "mui_aa_balance_width(") != NULL && strstr(cls, "mui_aa_balance_line(") != NULL && strstr(cls, "mui_aa_balance_rgb(") != NULL,
           "class does not run the shared balance helpers");
     CHECK(strstr(cls, "MUIC_Balance") != NULL && strstr(cls, "MUIV_Frame_None") != NULL, "class is not a frameless Balance subclass");
+    /* Design 3.10: a refused subclass must fall back to a frameless stock Balance, never a NULL child that fails the window. */
+    CHECK(count_of(cls, "return aabal_stock();") == 2 && strstr(cls, "return NULL;") == NULL, "constructor can return NULL instead of the stock Balance fallback");
     CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "0x1") == NULL && strstr(cls, "0x2") == NULL, "class holds no pen code or colour literal of its own");
     CHECK(strstr(cm, "mui_aabalance_class.c") != NULL, "class not in the build");
     free(ui);
