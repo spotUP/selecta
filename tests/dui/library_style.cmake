@@ -73,11 +73,13 @@ if(NOT gy EQUAL CMAKE_MATCH_1 OR NOT gx GREATER tend)
   message(FATAL_ERROR "the chooser is not on the tab row right of the tabs: Grid at ${gx},${gy}, tabs end ${tend} at y ${CMAKE_MATCH_1}")
 endif()
 # I440: a window too narrow for the labels gets the icons alone; no segment draws a label, and it still lies right of the
-# tabs.
-dui_run(n0 --db "${db}" --ui desktop --backend mem --view library --canvas 560x700 --clock fixed --stats)
+# tabs. Trigger (lib_style_compact): the labelled chooser does not fit between the last tab and the right margin. Browse
+# Folders has 2 tabs, so that takes a 400 px canvas (360..440 compact on the tab row; below ~330 the chooser moves to its
+# own row with labels, from ~480 the labels fit; 560 and 760 draw labels).
+dui_run(n0 --db "${db}" --ui desktop --backend mem --view library --canvas 400x700 --clock fixed --stats)
 string(REGEX MATCH "style_chooser 0 Grid (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) " _g "${n0}")
 if(_g STREQUAL "")
-  message(FATAL_ERROR "no style_chooser line at 560x700:\n${n0}")
+  message(FATAL_ERROR "no style_chooser line at 400x700:\n${n0}")
 endif()
 set(ny "${CMAKE_MATCH_2}")
 set(nx "${CMAKE_MATCH_1}")
