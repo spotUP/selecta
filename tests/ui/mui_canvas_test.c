@@ -112,15 +112,15 @@ static int test_art_path(void) {
     CHECK(mui_canvas_draw_art(&m, (sel_gui_rect){32, 32, 32, 32}, mui_art_path_for(0), src, 16, 16, "mod", "x") == MUI_ART_COVER &&
               sel_gui_pixel(&m.c, 42, 52) != 0x2040C0u,
           "planar ignores the cover and draws the platform cover");
-    /* I691e: the field is the Amiga family tone the title "x" picks, in the default theme's tokens (not the grey placeholder). */
+    /* I691e, I691f: the field is a gradient ending in (bottom row)  the Amiga family tone the title "x" picks, in the default theme's tokens (not the grey placeholder). */
     for (i = 0; i < SEL_GUI_TOKEN_COUNT; i++) {
         tokens[i] = sel_gui_token_default((sel_gui_token)i);
     }
-    CHECK((sel_gui_pixel(&m.c, 34, 62) & 0xFFFFFFu) ==
+    CHECK((sel_gui_pixel(&m.c, 34, 63) & 0xFFFFFFu) ==
               sel_gui_cover_tone(tokens, SEL_PLATFORM_FAMILY_AMIGA, sel_gui_cover_tone_of(sel_gui_str_hash("x"))),
-          "the cover of \"mod\" is the Amiga tone, got %06x", (unsigned)(sel_gui_pixel(&m.c, 34, 62) & 0xFFFFFFu));
+          "the cover of \"mod\" is the Amiga tone, got %06x", (unsigned)(sel_gui_pixel(&m.c, 34, 63) & 0xFFFFFFu));
     mui_canvas_draw_art(&m, (sel_gui_rect){0, 0, 32, 32}, MUI_ART_COVER, NULL, 0, 0, "sid", "x");
-    CHECK((sel_gui_pixel(&m.c, 2, 30) & 0xFFFFFFu) ==
+    CHECK((sel_gui_pixel(&m.c, 2, 31) & 0xFFFFFFu) ==
               sel_gui_cover_tone(tokens, SEL_PLATFORM_FAMILY_COMMODORE_64, sel_gui_cover_tone_of(sel_gui_str_hash("x"))),
           "the cover of \"sid\" is the Commodore 64 tone");
     CHECK(mui_canvas_draw_art(&m, (sel_gui_rect){0, 0, 32, 32}, MUI_ART_DATATYPE, NULL, 0, 0, "mod", "x") == MUI_ART_COVER,

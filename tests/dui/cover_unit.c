@@ -272,7 +272,9 @@ static void test_draw(void) {
             }
             c = make(SEL_GUI_RGBA32, 128, 128);
             sel_gui_cover_draw(c, R(0, 0, 128, 128), f, hash, g_tokens, &font);
-            field_ok += (sel_gui_pixel(c, 64, 64) & 0xFFFFFFu) == sel_gui_cover_tone(g_tokens, f, tone);
+            /* I691f: the field is a gradient, dark at the top to the tone on the bottom row (x = 2 is left of the word and the mark) */
+            field_ok += (sel_gui_pixel(c, 2, 127) & 0xFFFFFFu) == sel_gui_cover_tone(g_tokens, f, tone) &&
+                        (sel_gui_pixel(c, 2, 0) & 0xFFFFFFu) != (sel_gui_pixel(c, 2, 127) & 0xFFFFFFu);
             for (y = 64; y < 128; y++) {
                 for (x = 0; x < 64; x++) { /* bottom left quadrant: the word, never the mark */
                     big_word += (sel_gui_pixel(c, x, y) & 0xFFFFFFu) == (text & 0xFFFFFFu);

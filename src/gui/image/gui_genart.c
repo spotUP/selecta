@@ -64,6 +64,16 @@ uint32_t sel_gui_cover_palette(uint32_t out[32], const uint32_t* tokens) {
     return tones;
 }
 
+/* The dark end of a cover gradient: the tone scaled to 45% per channel (I691f). */
+static uint32_t cover_dark(uint32_t tone) {
+    uint32_t out = 0xFF000000u, sh;
+
+    for (sh = 0u; sh < 24u; sh += 8u) {
+        out |= (((tone >> sh) & 0xFFu) * 45u / 100u) << sh;
+    }
+    return out;
+}
+
 static void box(sel_gui_canvas* c, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t argb) {
     sel_gui_rect q;
 
@@ -201,7 +211,11 @@ void sel_gui_cover_draw(sel_gui_canvas* c, sel_gui_rect r, uint32_t family, uint
     tone = (c->format == SEL_GUI_INDEX8 && sel_gui_cover_aga_tones() == 1u) ? 0u : sel_gui_cover_tone_of(title_hash);
     field = 0xFF000000u | sel_gui_cover_tone(tokens, family, tone);
     text = 0xFF000000u | (tokens[SEL_GUI_TOKEN_COVER_TEXT] & 0xFFFFFFu);
-    sel_gui_fill_rect(c, r, field);
+    if (c->format == SEL_GUI_INDEX8) {
+        sel_gui_fill_rect(c, r, field); /* I691f: the 32 cover slots hold the tones, a gradient would leave them: AGA stays flat */
+    } else {
+        sel_gui_gradient(c, r, 1, cover_dark(field), field); /* I691f: dark shade at the top to the family tone at the bottom */
+    }
 
     edge = r.w < r.h ? r.w : r.h;
     margin = edge / 10;

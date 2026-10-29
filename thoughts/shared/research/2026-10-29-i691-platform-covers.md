@@ -64,9 +64,14 @@ mirror use; an unlisted Amiga prefix falls back to Music. If that gap matters, s
 
 Flat, Spotify-like (the reference design for the desktop UI):
 
-- **Field:** one solid fill of the family colour. No gradient sweep, no noise. The title hash picks one of three
-  tones of that colour (base, base mixed 12% toward black, base mixed 12% toward white) so a shelf of ten Amiga
-  albums is not ten identical squares (keeps the I360 property: two titles differ) while staying one family.
+- **Field (I691f, Johan 2026-10-29, reverses the flat fill):** a vertical gradient from a dark shade of the family tone (45% per
+  channel) at the top to the tone itself on the bottom row, drawn with `sel_gui_gradient` as the old genart did ("Family tone
+  gradient"). No noise. The title hash still picks one of three tones (base, base mixed 12% toward black, base mixed 12% toward
+  white) so a shelf of ten Amiga albums is not ten identical squares (keeps the I360 property: two titles differ) while staying one
+  family. Exemption: INDEX8 (AGA) canvases stay flat. The 32 cover palette slots (`sel_gui_cover_palette`) hold exactly the tones;
+  a gradient there would dither through the colour cube and leave the slots, so the AGA field is the solid tone.
+  Margin: the Now Playing panel draws a header band around the cover (above it and 4 px each side) tinted from the cover's average
+  colour; a flat cover made the band read as part of the cover, the gradient cover restores the contrast.
 - **Mark:** the family mark from the table above, top right, in `ACCENT_TEXT` at 85% over the field, sized edge/4,
   built only from `sel_gui_fill_rect` and `sel_gui_round_rect` (radius = half the side makes a circle). Integer only,
   vector (drawn per size), no bitmaps, no logos or trademarks.
