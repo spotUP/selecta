@@ -195,6 +195,9 @@ endif()
 
 add_subdirectory(m0)
 add_subdirectory(nuade_ab)
+if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(fixtures/plugin_dyn)
+endif()
 add_subdirectory(thread)
 
 # T5 negative path: a second tree with a broken descriptor must fail lint.

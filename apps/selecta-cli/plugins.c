@@ -86,17 +86,17 @@ int sel_cli_plugins(int argc, char** argv) {
         if (sel_tag_find(d, SEL_PLUGIN_KIND, 0) == SEL_PLUGIN_KIND_UI && !sel_registry_ui_listed(d)) {
             continue; /* a UI whose system library is absent is registered but not listed (MUI-P1-6) */
         }
-        printf("%s kind=%u version=%u\n", (const char*)sel_tag_find(d, SEL_PLUGIN_ID, (uintptr_t) "?"),
+        printf("%s kind=%u version=%u origin=%s\n", (const char*)sel_tag_find(d, SEL_PLUGIN_ID, (uintptr_t) "?"),
                (unsigned)sel_tag_find(d, SEL_PLUGIN_KIND, 0),
-               (unsigned)sel_tag_find(d, SEL_PLUGIN_VERSION, 0));
+               (unsigned)sel_tag_find(d, SEL_PLUGIN_VERSION, 0), sel_registry_origin(i));
     }
     if (stats) {
         const sel_registry_stats* st = sel_registry_get_stats();
         printf("registry_total=%u\nfiltered=%u\nhidden_min_cpu=%u\nhidden_needs_float=%u\n"
-               "hidden_memory=%u\nhidden_chip=%u\n",
+               "hidden_memory=%u\nhidden_chip=%u\ndyn_loaded=%u\ndyn_rejected=%u\n",
                (unsigned)st->total, (unsigned)st->filtered, (unsigned)st->hidden_min_cpu,
                (unsigned)st->hidden_needs_float, (unsigned)st->hidden_memory,
-               (unsigned)st->hidden_chip);
+               (unsigned)st->hidden_chip, (unsigned)st->dyn_loaded, (unsigned)st->dyn_rejected);
     }
     return 0;
 }

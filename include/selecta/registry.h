@@ -23,11 +23,23 @@ typedef struct sel_registry_stats {
     uint32_t hidden_needs_float; /* SEL_RP_NEEDS_FLOAT without an FPU */
     uint32_t hidden_memory;      /* SEL_RP_MEMORY above chip plus fast RAM */
     uint32_t hidden_chip;        /* SEL_OUT_MEM_CHIP above chip RAM */
+    uint32_t dyn_loaded;         /* dynamic modules accepted (I427a) */
+    uint32_t dyn_rejected;       /* dynamic modules skipped: no entry symbol, NULL entry, bad descriptor, duplicate id */
 } sel_registry_stats;
 
 /* Calls every entry once; keeps the plugins the machine can run (a sel_machine tag list, NULL =
  * no filter, the desktop probe passes everything). Returns the number kept. */
 uint32_t sel_registry_init_machine(const sel_host* host, const sel_tag* machine);
+/* Dynamic plugin entry (loader, design 2026-10-30-plugin-loader-sdk D1): a loader calls this before
+ * sel_registry_init_machine with the module's sel_plugin_entry and its path. Init walks the static array first,
+ * then these, through the same machine filter; a module whose plugin id is already registered is rejected
+ * (static wins) and counted in dyn_rejected. Returns 0 when the table is full. */
+int sel_registry_add_entry(sel_plugin_entry_fn entry, const char* origin);
+/* A loader's own reject (dlopen failure, missing entry symbol): logs one line with path and reason through the
+ * host and counts it in dyn_rejected. */
+void sel_registry_note_rejected(const char* path, const char* reason);
+/* Where plugin `index` (as sel_registry_get) came from: "static" or the module path; NULL out of range. */
+const char* sel_registry_origin(uint32_t index);
 /* sel_registry_init_machine(host, NULL). */
 uint32_t sel_registry_init(const sel_host* host);
 const sel_registry_stats* sel_registry_get_stats(void);

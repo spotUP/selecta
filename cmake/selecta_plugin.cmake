@@ -1,4 +1,10 @@
-# sel_add_plugin(<name> <kind> <source>... [THIRD_PARTY_INCLUDES <dir>...])
+# sel_add_plugin(<name> <kind> [MODULE] <source>... [THIRD_PARTY_INCLUDES <dir>...])
+#
+# MODULE (I427a, design 2026-10-30-plugin-loader-sdk D2) builds a loadable library sel_<name>.dylib / .so instead of
+# the static library: no SEL_PLUGIN_ENTRY rename (the module exports plain sel_plugin_entry, and nothing else),
+# the linker exporting only sel_plugin_entry, not added to SEL_PLUGINS, so neither registry nor core binary ever links it. The loader
+# (src/engine/loader_dl.c) finds it on the plugin search path. Output goes to LIBRARY_OUTPUT_DIRECTORY when the
+# caller sets the SEL_MODULE_OUTPUT_DIR variable, else the current binary directory.
 #
 # A plugin is a static library that sees only include/selecta (design doc
 # section 12, SDK isolation). Each plugin's entry symbol is renamed to
@@ -31,10 +37,33 @@ add_custom_target(sdk-isolation
   COMMENT "Every plugin compiles with include/ as its only project include path")
 
 function(sel_add_plugin name kind)
-  cmake_parse_arguments(PARSE_ARGV 2 SELP "" "" "THIRD_PARTY_INCLUDES")
+  cmake_parse_arguments(PARSE_ARGV 2 SELP "MODULE" "" "THIRD_PARTY_INCLUDES")
   set(sources ${SELP_UNPARSED_ARGUMENTS})
   if(NOT sources)
     message(FATAL_ERROR "sel_add_plugin(${name}): no sources")
+  endif()
+
+  if(SELP_MODULE)
+    add_library(sel_module_${name} MODULE ${sources})
+    target_include_directories(sel_module_${name} PRIVATE "${PROJECT_SOURCE_DIR}/include")
+    target_compile_definitions(sel_module_${name} PRIVATE SEL_PLUGIN_KIND_BUILD=${kind})
+    if(SELP_THIRD_PARTY_INCLUDES)
+      target_include_directories(sel_module_${name} PRIVATE ${SELP_THIRD_PARTY_INCLUDES})
+    endif()
+    set_target_properties(sel_module_${name} PROPERTIES
+      PREFIX "" OUTPUT_NAME "sel_${name}")
+    if(APPLE)
+      set_target_properties(sel_module_${name} PROPERTIES SUFFIX ".dylib")
+      target_link_options(sel_module_${name} PRIVATE "-Wl,-exported_symbol,_sel_plugin_entry")
+    else()
+      set_target_properties(sel_module_${name} PROPERTIES SUFFIX ".so")
+      target_link_options(sel_module_${name} PRIVATE
+        "-Wl,--version-script=${PROJECT_SOURCE_DIR}/cmake/sel_module.map")
+    endif()
+    if(SEL_MODULE_OUTPUT_DIR)
+      set_target_properties(sel_module_${name} PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${SEL_MODULE_OUTPUT_DIR}")
+    endif()
+    return()
   endif()
 
   add_library(sel_plugin_${name} STATIC ${sources})
