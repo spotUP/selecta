@@ -59,6 +59,13 @@ int mui_theme_pick_pen(const uint32_t* pen_rgb, uint32_t n, const uint32_t* toke
  * token. A NULL, missing, unreadable or malformed file leaves *t exactly as it was (no error dialog; a note on stderr for a
  * malformed one). Returns how many of the two files were applied (0..2). */
 int mui_theme_load(txt_theme* t, const char* env_path, const char* arg_path);
+/* I676b: ARexx THEME. mui_theme_request refuses (-1, nothing stored) a path, or with no path the env_path file, that is missing or
+ * malformed; otherwise it remembers the path (none: the ENV file) for the next window open and returns 0. mui_theme_resolve is the
+ * one place the tokens of a window open are decided: built-in, then env_path, then the remembered request path, else launch_arg
+ * (--theme), over it. mui_theme_requests counts accepted requests (sentinel). */
+int mui_theme_request(const char* env_path, const char* path);
+void mui_theme_resolve(txt_theme* t, const char* env_path, const char* launch_arg);
+uint32_t mui_theme_requests(void);
 /* Count of mui_theme_look_for calls that succeeded since start (sentinel for the build path test). */
 uint32_t mui_theme_applied(void);
 uint32_t mui_theme_applied_role(mui_theme_role role);

@@ -3,6 +3,7 @@
 #include <selecta/uimodel/tokens.h>
 
 #include <stdio.h>
+#include <string.h>
 
 static uint32_t g_applied[MUI_TH_COUNT];
 
@@ -161,4 +162,33 @@ int mui_theme_load(txt_theme* t, const char* env_path, const char* arg_path) {
         return 0;
     }
     return theme_apply_file(t, env_path) + theme_apply_file(t, arg_path);
+}
+
+/* I676b: the theme the next window open reads. A THEME request that validated stores its file here; mui_theme_resolve is the one
+ * place that turns (built-in, ENV file, launch --theme, request) into tokens, for the window open and for the tests. */
+static char g_request_path[256];
+static uint32_t g_requests;
+
+void mui_theme_resolve(txt_theme* t, const char* env_path, const char* launch_arg) {
+    txt_theme_default(t);
+    mui_theme_load(t, env_path, g_request_path[0] != '\0' ? g_request_path : launch_arg);
+}
+
+int mui_theme_request(const char* env_path, const char* path) {
+    txt_theme probe;
+    const char* file = path != NULL && path[0] != '\0' ? path : env_path;
+    if (file == NULL || file[0] == '\0' || (path != NULL && strlen(path) >= sizeof g_request_path)) {
+        return -1;
+    }
+    txt_theme_default(&probe);
+    if (mui_theme_load(&probe, NULL, file) != 1) { /* missing, unreadable or malformed: the whole request is refused */
+        return -1;
+    }
+    snprintf(g_request_path, sizeof g_request_path, "%s", path != NULL && path[0] != '\0' ? path : "");
+    g_requests++;
+    return 0;
+}
+
+uint32_t mui_theme_requests(void) {
+    return g_requests;
 }

@@ -62,6 +62,7 @@ typedef struct shell_ui {
     sel_ui_close_fn close;
     sel_ui_stats_fn stats;
     uint32_t view_styles; /* SEL_UI_VIEW_STYLES: sel_view_style bits the UI offers, 0 the classic three */
+    int (*theme)(void* state, const char* path); /* SEL_UI_THEME (I676b), NULL when the UI has none */
 } shell_ui;
 
 static shell_ui g_uis[SHELL_MAX_UIS];
@@ -236,6 +237,7 @@ static int ui_resolve(const char* id, shell_ui* u) {
     u->close = (sel_ui_close_fn)sel_tag_find(h, SEL_UI_CLOSE, 0);
     u->stats = (sel_ui_stats_fn)sel_tag_find(h, SEL_UI_STATS, 0);
     u->view_styles = (uint32_t)sel_tag_find(h, SEL_UI_VIEW_STYLES, 0);
+    u->theme = (int (*)(void*, const char*))sel_tag_find(h, SEL_UI_THEME, 0);
     return u->open != NULL && u->wait != NULL && u->close != NULL;
 }
 
@@ -356,6 +358,18 @@ static void ctl_fwd(void* ctx, const sel_message* evt) {
 static int arexx_exec(void* ctx, const char* line, char* reply, size_t cap, int* rc) {
     ctl_ctx* c = ctx;
     return sel_ctl_exec_fwd(c->engine, line, reply, cap, rc, ctl_fwd, c);
+}
+/* I676b: ARexx THEME [path]. The primary UI checks the file (SEL_UI_THEME); when it accepts, the main loop reopens that UI between
+ * turns (ui_switch to its own id), which repaints the whole window from the new tokens. */
+static int g_theme_reopen;
+static int arexx_theme(void* ctx, const char* path) {
+    shell_ui* u = &g_uis[0];
+    (void)ctx;
+    if (u->theme == NULL || u->state == NULL || u->theme(u->state, path) != 0) {
+        return 1;
+    }
+    g_theme_reopen = 1;
+    return 0;
 }
 /* Every way out of the shell loop closes the port through here: an open BEGIN is ended, queued messages get RC 20. */
 static void arexx_shutdown(arexx_port* p, ctl_ctx* c) {
@@ -635,6 +649,7 @@ int main(int argc, char** argv)
 #endif
 #ifdef __amigaos__
     arexx = arexx_open(); /* after the engine exists, before the first UI turn; NULL leaves ARexx off */
+    arexx_set_theme_handler(arexx_theme, NULL);
 #endif
 #ifndef SEL_NO_CONTROL_SOCKET
     /* I573: a scripted run (--keys, or the desktop UI's --input feeder) opens no control socket unless SELECTA_SOCKET asks.
@@ -765,6 +780,16 @@ int main(int argc, char** argv)
                 continue;
             }
         }
+#ifdef __amigaos__
+        if (g_theme_reopen) { /* I676b: THEME was accepted: close and reopen the primary UI on the new tokens */
+            g_theme_reopen = 0;
+            if (ui_switch(g_uis[0].id, &args, ctx) < 0) {
+                arexx_shutdown(arexx, &cc);
+                return 1;
+            }
+            continue;
+        }
+#endif
         if (r < 0 || sel_engine_take_quit(e)) { /* QUIT ends the run like the primary UI's quit key */
             break;
         }

@@ -180,8 +180,18 @@ typedef struct mui_state {
 } mui_state;
 
 static mui_state g_state;
-static sel_tag g_hooks[9];
+static sel_tag g_hooks[10];
 static sel_tag g_desc[5];
+
+#define MUI_THEME_ENV_PATH "ENV:Selecta/theme"
+
+/* I676b: SEL_UI_THEME hook, called by the ARexx command THEME. 0: the file is valid and the next window open uses it; the shell then
+ * closes and reopens this UI, which releases the screen pens and builds the window tree again from the new tokens (the same path
+ * as the first open). Non-zero: refused, nothing changed. */
+static int mui_theme_hook(void* state, const char* path) {
+    (void)state;
+    return mui_theme_request(MUI_THEME_ENV_PATH, path);
+}
 
 static void put_tag(sel_tag* t, uint32_t tag, uintptr_t value) {
     t->tag = tag;
@@ -474,8 +484,6 @@ static void mui_close_on_request(Object* win) {
     DoMethod(win, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, MUIV_Notify_Self, 3, MUIM_Set, MUIA_Window_Open, FALSE);
 }
 
-#define MUI_THEME_ENV_PATH "ENV:Selecta/theme"
-
 /* Reads the colours of the screen DrawInfo pens and decides the look once for all roles. */
 static void mui_theme_init(const sel_ui_open_args* a) {
     txt_theme th;
@@ -484,14 +492,13 @@ static void mui_theme_init(const sel_ui_open_args* a) {
     struct Screen* scr;
     int i;
     const char* theme_arg = NULL;
-    txt_theme_default(&th);
     /* I676: ENV:Selecta/theme (Amarchy writes it), then --theme <file> over it, before any pen is allocated. */
     for (i = 0; a != NULL && i + 1 < a->argc; i++) {
         if (strcmp(a->argv[i], "--theme") == 0) {
             theme_arg = a->argv[i + 1];
         }
     }
-    mui_theme_load(&th, MUI_THEME_ENV_PATH, theme_arg);
+    mui_theme_resolve(&th, MUI_THEME_ENV_PATH, theme_arg); /* I676b: a THEME request made earlier wins over --theme */
     mui_screen_open(th.token);
     scr = LockPubScreen(g_scr != NULL ? (CONST_STRPTR)MUI_PUB_NAME : NULL);
     if (scr != NULL) {
@@ -2166,7 +2173,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     /* MUI 3.8 absent: still registered so an explicit --ui mui reaches mui_open and its requester, but not listed
      * or auto-picked (MUI-P1-6, Johan 2026-10-27). */
     put_tag(&g_hooks[6], SEL_UI_PRESENT, (uintptr_t)(mui_present() != 0));
-    put_tag(&g_hooks[7], SEL_TAG_END, 0);
+    put_tag(&g_hooks[7], SEL_UI_THEME, SEL_TAG_FN(mui_theme_hook));
+    put_tag(&g_hooks[8], SEL_TAG_END, 0);
 
     put_tag(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_UI);
     put_tag(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "mui");

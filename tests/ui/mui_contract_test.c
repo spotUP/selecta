@@ -15,6 +15,7 @@
 #include "mui_aa.h"
 #include "mui_theme.h"
 #include "mui_pens.h"
+#include "arexx.h"
 
 #include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/theme.h>
@@ -191,6 +192,88 @@ static void test_theme_file(const char* dir) {
     CHECK(mui_pens_planned() - before >= 3, "pen plan ran (sentinel)");
     remove(env_path);
     remove(arg_path);
+}
+
+/* I676b: ARexx THEME. Drives arexx_dispatch (the port's entry) with the UI's handler; the window open reads the tokens through
+ * mui_theme_resolve, so the accent pen after a THEME is what a reopened window gets. The ENV path is an Amiga path, so the test
+ * uses a temp file as the "ENV" file. */
+static int theme_exec_never(void* ctx, const char* line, char* reply, size_t cap, int* rc) {
+    (void)ctx; (void)line; (void)reply; (void)cap;
+    *rc = 1; /* THEME must not reach the engine executor */
+    return 0;
+}
+
+static const char* g_theme_env;
+static int theme_handler(void* ctx, const char* path) {
+    (void)ctx;
+    return mui_theme_request(g_theme_env, path);
+}
+
+static long theme_cmd(const char* line, char* reply, size_t cap) {
+    arexx_result r;
+    arexx_counters c = {0, 0};
+    arexx_dispatch(line, 0, theme_exec_never, NULL, reply, cap, &r, &c);
+    return r.result1;
+}
+
+static uint32_t theme_accent(void) {
+    txt_theme th;
+    mui_pens_plan pl;
+    mui_theme_resolve(&th, g_theme_env, NULL);
+    return mui_pens_plan_for(th.token, &pl) == 1 ? pl.rgb[MUI_PEN_ACCENT] : 0xFFFFFFFFu;
+}
+
+static void test_theme_live(const char* dir) {
+    char env_path[512], new_path[512], bad_path[512], missing[512], line[600], reply[128];
+    txt_theme def;
+    uint32_t req0, accent0;
+    snprintf(env_path, sizeof env_path, "%s/mui-live-env.tmp", dir);
+    snprintf(new_path, sizeof new_path, "%s/mui-live-new.tmp", dir);
+    snprintf(bad_path, sizeof bad_path, "%s/mui-live-bad.tmp", dir);
+    snprintf(missing, sizeof missing, "%s/mui-live-missing.tmp", dir);
+    remove(missing);
+    g_theme_env = env_path;
+    txt_theme_default(&def);
+    write_theme(env_path, "gui.accent = 0x112233\n");
+    write_theme(new_path, "gui.accent = 0x445566\n");
+    write_theme(bad_path, "gui.accent = 0x778899\nnot a theme line\n");
+
+    /* no handler registered: refused */
+    arexx_set_theme_handler(NULL, NULL);
+    CHECK(theme_cmd("THEME", reply, sizeof reply) == AREXX_RC_FAILED, "THEME without a UI handler returns rc 10");
+    arexx_set_theme_handler(theme_handler, NULL);
+
+    accent0 = theme_accent();
+    CHECK(accent0 == 0x112233u, "start state: ENV accent, got %06x", (unsigned)accent0);
+    req0 = mui_theme_requests();
+
+    snprintf(line, sizeof line, "theme \"%s\"", new_path);
+    CHECK(theme_cmd(line, reply, sizeof reply) == AREXX_RC_OK, "THEME <path> accepted, rc 0");
+    CHECK(mui_theme_requests() == req0 + 1u, "the UI request ran (sentinel)");
+    CHECK(theme_accent() == 0x445566u, "THEME <path> changes the accent pen, got %06x", (unsigned)theme_accent());
+
+    /* malformed and missing: rc 10, tokens unchanged */
+    snprintf(line, sizeof line, "THEME %s", bad_path);
+    CHECK(theme_cmd(line, reply, sizeof reply) == AREXX_RC_FAILED, "malformed theme returns rc 10");
+    CHECK(strcmp(reply, "theme_refused") == 0, "refusal text, got '%s'", reply);
+    CHECK(theme_accent() == 0x445566u, "malformed theme leaves the tokens unchanged, got %06x", (unsigned)theme_accent());
+    snprintf(line, sizeof line, "THEME %s", missing);
+    CHECK(theme_cmd(line, reply, sizeof reply) == AREXX_RC_FAILED, "missing theme returns rc 10");
+    CHECK(theme_accent() == 0x445566u, "missing theme leaves the tokens unchanged");
+    CHECK(mui_theme_requests() == req0 + 1u, "refused requests are not counted");
+
+    /* bare THEME re-reads the ENV file */
+    write_theme(env_path, "gui.accent = 0x0A0B0C\n");
+    CHECK(theme_cmd("THEME", reply, sizeof reply) == AREXX_RC_OK, "bare THEME accepted");
+    CHECK(theme_accent() == 0x0A0B0Cu, "bare THEME re-reads ENV, got %06x", (unsigned)theme_accent());
+    write_theme(env_path, "garbage\n");
+    CHECK(theme_cmd("THEME", reply, sizeof reply) == AREXX_RC_FAILED, "malformed ENV file returns rc 10");
+    CHECK(theme_accent() == 0x0A0B0Cu || theme_accent() == def.token[SEL_GUI_TOKEN_ACCENT], "malformed ENV does not apply");
+
+    arexx_set_theme_handler(NULL, NULL);
+    remove(env_path);
+    remove(new_path);
+    remove(bad_path);
 }
 
 static void test_pens(void) {
@@ -1577,6 +1660,8 @@ int main(int argc, char** argv) {
         test_row_cells();
     } else if (strcmp(argv[1], "theme") == 0) {
         test_theme();
+    } else if (strcmp(argv[1], "theme-live") == 0) {
+        test_theme_live(argc > 2 ? argv[2] : ".");
     } else if (strcmp(argv[1], "theme-file") == 0) {
         test_theme_file(argc > 2 ? argv[2] : ".");
     } else if (strcmp(argv[1], "pens") == 0) {
