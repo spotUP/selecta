@@ -134,3 +134,31 @@ uint32_t mui_theme_applied(void) {
 uint32_t mui_theme_applied_role(mui_theme_role role) {
     return (unsigned)role < MUI_TH_COUNT ? g_applied[role] : 0;
 }
+
+/* Parses one theme file over *t; *t is untouched unless the whole file is readable and valid. */
+static int theme_apply_file(txt_theme* t, const char* path) {
+    char buf[4096];
+    size_t n;
+    int bad = 0;
+    txt_theme work = *t;
+    FILE* f;
+    if (path == NULL || path[0] == '\0' || (f = fopen(path, "rb")) == NULL) {
+        return 0;
+    }
+    n = fread(buf, 1, sizeof buf - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    if (txt_theme_parse(&work, buf, &bad) < 0) {
+        fprintf(stderr, "selecta mui: theme '%s' line %d is not a role or token line in range, ignored\n", path, bad);
+        return 0;
+    }
+    *t = work;
+    return 1;
+}
+
+int mui_theme_load(txt_theme* t, const char* env_path, const char* arg_path) {
+    if (t == NULL) {
+        return 0;
+    }
+    return theme_apply_file(t, env_path) + theme_apply_file(t, arg_path);
+}

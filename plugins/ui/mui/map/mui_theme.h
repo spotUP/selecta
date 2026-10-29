@@ -5,6 +5,8 @@
 #ifndef SELECTA_MUI_THEME_H
 #define SELECTA_MUI_THEME_H
 
+#include <selecta/uimodel/theme.h>
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -52,6 +54,11 @@ int mui_theme_pen_precisions(int* out, int cap);
  * Returns the pen number nearest to the theme TEXT colour that is readable on BACKGROUND, SURFACE, SURFACE_RAISED and PANEL, or
  * -1: the look then stays off for every role and the user's MUI look is left alone. */
 int mui_theme_pick_pen(const uint32_t* pen_rgb, uint32_t n, const uint32_t* tokens);
+/* I676: the desktop theme file format (txt_theme_parse, the one parser) read over *t once at window open. env_path (Amiga
+ * ENV:Selecta/theme, written by Amarchy) is applied first, then arg_path (--theme <file>) over it, so --theme wins token by
+ * token. A NULL, missing, unreadable or malformed file leaves *t exactly as it was (no error dialog; a note on stderr for a
+ * malformed one). Returns how many of the two files were applied (0..2). */
+int mui_theme_load(txt_theme* t, const char* env_path, const char* arg_path);
 /* Count of mui_theme_look_for calls that succeeded since start (sentinel for the build path test). */
 uint32_t mui_theme_applied(void);
 uint32_t mui_theme_applied_role(mui_theme_role role);

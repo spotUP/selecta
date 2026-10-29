@@ -474,14 +474,24 @@ static void mui_close_on_request(Object* win) {
     DoMethod(win, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, MUIV_Notify_Self, 3, MUIM_Set, MUIA_Window_Open, FALSE);
 }
 
+#define MUI_THEME_ENV_PATH "ENV:Selecta/theme"
+
 /* Reads the colours of the screen DrawInfo pens and decides the look once for all roles. */
-static void mui_theme_init(void) {
+static void mui_theme_init(const sel_ui_open_args* a) {
     txt_theme th;
     uint32_t pen_rgb[8] = {0, 0, 0, 0, 0, 0, 0, 0};
     int pen;
     struct Screen* scr;
     int i;
+    const char* theme_arg = NULL;
     txt_theme_default(&th);
+    /* I676: ENV:Selecta/theme (Amarchy writes it), then --theme <file> over it, before any pen is allocated. */
+    for (i = 0; a != NULL && i + 1 < a->argc; i++) {
+        if (strcmp(a->argv[i], "--theme") == 0) {
+            theme_arg = a->argv[i + 1];
+        }
+    }
+    mui_theme_load(&th, MUI_THEME_ENV_PATH, theme_arg);
     mui_screen_open(th.token);
     scr = LockPubScreen(g_scr != NULL ? (CONST_STRPTR)MUI_PUB_NAME : NULL);
     if (scr != NULL) {
@@ -1874,7 +1884,7 @@ static void* mui_open(const sel_ui_open_args* a) {
         mui_report(MUI_FAIL_NO_LIBRARY, "");
         return NULL;
     }
-    mui_theme_init();
+    mui_theme_init(a);
     {   /* I684: the viz plugins the desktop lists, the initial one from the same ui.desktop.viz pref */
         const sel_host* vh = s->engine != NULL ? sel_engine_plugin_host(s->engine) : NULL;
         const char* pref = vh != NULL && vh->config_get != NULL ? vh->config_get(vh, "ui.desktop.viz", "") : "";

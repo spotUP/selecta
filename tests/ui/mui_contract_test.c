@@ -148,6 +148,51 @@ static void test_menu(void) {
 /* I666: Selecta owns its screen, so the token colours exist there at exact values. The Amiga half (mui_ui.c) is compiled only on
  * the Amiga; this checks the plan it is built from (call counter, exact 32-bit components, DrawInfo text pen = soft grey token,
  * fits 16 colours for AGA) and that mui_ui.c opens the screen from that plan, obtains every colour exact and releases it. */
+/* I676: the theme file (desktop format, txt_theme_parse) changes the MUI accent pen colour; ENV file first, --theme over it;
+ * a missing or malformed file leaves the built-in value. dir: a writable directory for the two temp files. */
+static void write_theme(const char* path, const char* text) {
+    FILE* f = fopen(path, "wb");
+    if (f != NULL) {
+        fputs(text, f);
+        fclose(f);
+    }
+}
+
+static void test_theme_file(const char* dir) {
+    char env_path[512], arg_path[512], missing[512];
+    txt_theme def, th;
+    mui_pens_plan pl;
+    uint32_t before = mui_pens_planned();
+    snprintf(env_path, sizeof env_path, "%s/mui-theme-env.tmp", dir);
+    snprintf(arg_path, sizeof arg_path, "%s/mui-theme-arg.tmp", dir);
+    snprintf(missing, sizeof missing, "%s/mui-theme-missing.tmp", dir);
+    remove(missing);
+    txt_theme_default(&def);
+    CHECK(def.token[SEL_GUI_TOKEN_ACCENT] != 0x112233u && def.token[SEL_GUI_TOKEN_ACCENT] != 0x445566u, "built-in accent is neither test colour");
+    /* missing file: built-in value kept, nothing applied */
+    th = def;
+    CHECK(mui_theme_load(&th, missing, NULL) == 0 && mui_theme_load(&th, NULL, missing) == 0, "missing files apply nothing");
+    CHECK(mui_pens_plan_for(th.token, &pl) == 1 && pl.rgb[MUI_PEN_ACCENT] == def.token[SEL_GUI_TOKEN_ACCENT], "missing file keeps the built-in accent pen");
+    /* ENV file sets gui.accent: the accent pen colour follows */
+    write_theme(env_path, "# amarchy\ngui.accent = 0x112233\n");
+    th = def;
+    CHECK(mui_theme_load(&th, env_path, NULL) == 1, "env file applied");
+    CHECK(mui_pens_plan_for(th.token, &pl) == 1 && pl.rgb[MUI_PEN_ACCENT] == 0x112233u, "env gui.accent drives the accent pen, got %06x", (unsigned)pl.rgb[MUI_PEN_ACCENT]);
+    CHECK(pl.rgb[MUI_PEN_BACKGROUND] == def.token[SEL_GUI_TOKEN_BACKGROUND], "untouched tokens keep the built-in value");
+    /* --theme overrides the ENV file */
+    write_theme(arg_path, "gui.accent = 0x445566\n");
+    th = def;
+    CHECK(mui_theme_load(&th, env_path, arg_path) == 2, "both files applied");
+    CHECK(mui_pens_plan_for(th.token, &pl) == 1 && pl.rgb[MUI_PEN_ACCENT] == 0x445566u, "--theme wins over ENV, got %06x", (unsigned)pl.rgb[MUI_PEN_ACCENT]);
+    /* malformed file: ignored whole, earlier valid lines do not leak in */
+    write_theme(arg_path, "gui.accent = 0x778899\nnot a theme line\n");
+    th = def;
+    CHECK(mui_theme_load(&th, NULL, arg_path) == 0 && th.token[SEL_GUI_TOKEN_ACCENT] == def.token[SEL_GUI_TOKEN_ACCENT], "malformed file leaves the built-in tokens");
+    CHECK(mui_pens_planned() - before >= 3, "pen plan ran (sentinel)");
+    remove(env_path);
+    remove(arg_path);
+}
+
 static void test_pens(void) {
     txt_theme th;
     mui_pens_plan pl;
@@ -1532,6 +1577,8 @@ int main(int argc, char** argv) {
         test_row_cells();
     } else if (strcmp(argv[1], "theme") == 0) {
         test_theme();
+    } else if (strcmp(argv[1], "theme-file") == 0) {
+        test_theme_file(argc > 2 ? argv[2] : ".");
     } else if (strcmp(argv[1], "pens") == 0) {
         test_pens();
     } else if (strcmp(argv[1], "style-menu") == 0) {
