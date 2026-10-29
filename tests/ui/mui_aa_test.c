@@ -618,6 +618,9 @@ static void test_i667n_root(void) {
     txt_theme_default(&th);
     CHECK(mui_aa_field_string_bg(th.token, 0) == 0x2A2A32u && mui_aa_field_string_bg(th.token, 1) == 0x2A2A32u, "string background is the face 2A2A32 in both states");
     CHECK(mui_aa_field_calls() == before + 2, "string background counts on the field sentinel");
+    CHECK(mui_aa_field_string_gadget(0x0005u) && mui_aa_field_string_gadget(0x0004u) && mui_aa_field_string_gadget(0x1005u) &&
+              !mui_aa_field_string_gadget(0x0001u) && !mui_aa_field_string_gadget(0x0003u),
+          "string gadget kinds: strgclass custom (5) and classic string (4), not boolean or prop");
     CHECK(mui_theme_pen_precisions(prec, 4) == 2 && prec[0] == MUI_THEME_PRECISION_EXACT && prec[1] == MUI_THEME_PRECISION_GUI,
           "pen precisions exact then GUI: %d %d", prec[0], prec[1]);
     CHECK(fld != NULL && drw != NULL, "sources readable");
@@ -627,6 +630,8 @@ static void test_i667n_root(void) {
         const char* sup = draw != NULL ? strstr(draw, "DoSuperMethodA(") : NULL;
         const char* fn = strstr(fld, "static void aafield_string_pens(");
         CHECK(pens != NULL && sup != NULL && pens < sup, "field sets the string pens before the super draws the gadget");
+        CHECK(fn != NULL && strstr(fn, "mui_aa_field_string_gadget(g->GadgetType)") != NULL && strstr(fn, "!= GTYP_STRGADGET") == NULL,
+              "string pens accept the strgclass custom gadget MUI 3.8 makes (rig 2 GadgetType 0005)");
         CHECK(fn != NULL && strstr(fn, "mui_aa_field_string_bg(") != NULL && strstr(fn, "Extension->Pens[1] =") != NULL &&
                   strstr(fn, "Extension->ActivePens[1] =") != NULL,
               "string pens come from the field plan into both background slots");

@@ -451,6 +451,11 @@ uint32_t mui_aa_field_string_bg(const uint32_t* token, int focus) {
     return token[MUI_AA_FIELD_FACE];
 }
 
+int mui_aa_field_string_gadget(unsigned gadget_type) {
+    unsigned t = gadget_type & 0x0007u; /* GTYP_GTYPEMASK */
+    return t == 0x0004u || t == 0x0005u;  /* GTYP_STRGADGET, GTYP_CUSTOMGADGET */
+}
+
 int mui_aa_field_height(const mui_aa_field_t* m, int ch) {
     int need = ch + 2 * (m->pad_y + m->outline);
     g_field_calls++;

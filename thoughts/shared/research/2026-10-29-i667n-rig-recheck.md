@@ -51,3 +51,32 @@ Rig 2 (purpose "musicplayer-55: I667n field and Play glyph recheck"), binary as 
 | RTG | Play glyph | E4E4EA | C8C8D0 68 px, 93C5FD 88 px, E4E4EA 0 px | FAIL | same |
 
 Not measured: Settings window field (not opened, call budget). Stderr pens line NOT captured: Execute/Run drop stderr (`2>` in the script created no file; `ami.py exec` returns no output for the long-running app), so whether aafield_string_pens() ran and what the old pens were is unknown. Next step: make the line reach a file (a Selecta log option, or a stats field) before guessing again; also confirm the new binary was the one deployed (put of build/amiga/apps/selecta/selecta after the e75ba5f1 rebuild, so it was).
+
+## Cause hunt 2
+
+Rig 2 (RTG uaegfx 800x600, and the stored before-fix run), evidence from `Selecta --log RAM:sel.log` plus temporary diagnostics (removed before commit).
+
+### Field dark box (Johan: "The inputs have a darker rectangle in them")
+
+- Log: `field pens entry ... gadget 0x109c2dbc type 0005 ... ext 0x109c2e22`. MUI 3.8 String hands back a GTYP_CUSTOMGADGET (strgclass, type 5), not GTYP_STRGADGET (4).
+- `aafield_string_pens()` returned at the `!= GTYP_STRGADGET` check, so the `field string pens ... -> background` line never printed. StringExtend pens stayed 1/0 after the super draw; box pixel was pen 0 (121214). Pen 3 = 2A2A32 was obtained fine.
+- Fix: `mui_aa_field_string_gadget()` (map/mui_aa.c) accepts type 4 or 5; the field class uses it.
+- After fix the log shows `field string pens 1/3 active 1/3 -> background 3/3`.
+
+### RTG Play glyph
+
+- Log before fix: `screen plan mode 50041303 800x600 depth 4`. The uaegfx (P96) mode does not set DIPF_IS_FOREIGN, so `mui_screen_open` planned a 16-pen planar screen on RTG. All pens were taken: `obtain e4e4ea prec -1 failifbad 1 -> pen -1`, then the icon fell back to pen 1 (C8C8D0).
+- Fix: `mui_screen_is_rtg()` (map/mui_screen.c) = DIPF_IS_FOREIGN, or a non-BMF_STANDARD Workbench bitmap, or depth > 8.
+- After fix: `screen plan mode 50041303 800x600 depth 8`, `obtain e4e4ea ... -> pen 240 (e4e4ea)`.
+- Side effect: `g_screen_rtg` is now true on uaegfx, so the canvas and vizarea RTG paths (I684b) run there too.
+
+### Rig 2 pixels after fix
+
+| Check | Mode | Region | Result |
+|---|---|---|---|
+| Search box | RTG | 234,22 262x8 | 2A2A32 2096 px (focused 2032 + 64 cursor) PASS |
+| Command box | RTG | 518,22 262x8 | 2A2A32 2096 px PASS |
+| Play glyph | RTG | 123,481 105x30 | 3B82F6 3032, E4E4EA 46, ABC3EE 28 PASS |
+| Search, command box | AGA | 199,20 / 420,20 | not run (budget); next step |
+
+Rig 2 also logs `ttengine or Inter missing, plain text` (AA_PLAIN backend).

@@ -88,7 +88,7 @@ static void aafield_string_pens(aafield_data* d) {
     struct StringInfo* si;
     LONG pen[2];
     int k;
-    if (d->str == NULL || !GetAttr(MUIA_Gadget_Gadget, d->str, (ULONG*)&g) || g == NULL || (g->GadgetType & GTYP_GTYPEMASK) != GTYP_STRGADGET) {
+    if (d->str == NULL || !GetAttr(MUIA_Gadget_Gadget, d->str, (ULONG*)&g) || g == NULL || !mui_aa_field_string_gadget(g->GadgetType)) {
         return;
     }
     si = (struct StringInfo*)g->SpecialInfo;

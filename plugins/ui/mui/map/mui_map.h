@@ -312,6 +312,10 @@ typedef struct mui_screen_plan_t {
 uint32_t mui_screen_plan(uint32_t wb_mode, uint32_t wb_w, uint32_t wb_h, int foreign, uint32_t need_h, mui_screen_plan_t* out);
 uint32_t mui_screen_plans(void);
 uint32_t mui_screen_laced(void);
+/* I667n: the Workbench mode is RTG. Picasso96 (uaegfx) modes do not set DIPF_IS_FOREIGN, so the Workbench bitmap decides too: an
+ * RTG bitmap is not BMF_STANDARD (planar), and a planar one is never deeper than 8. Inputs are the DisplayInfo flag test, the
+ * BMA_FLAGS BMF_STANDARD test and BMA_DEPTH. */
+int mui_screen_is_rtg(int dipf_foreign, int bm_standard, uint32_t bm_depth);
 /* I675 (D-M4-3): which window attributes the main window gets. On Selecta's own SELECTA screen (the full screen default) it is
  * a borderless backdrop window with no drag bar, depth, size or close gadget, filling the screen; on Workbench (compact mode)
  * it keeps the normal borders. 1 = set the MUIA_Window_* attribute TRUE, 0 = FALSE. titled = 1: the window gets the title

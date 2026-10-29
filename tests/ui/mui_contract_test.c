@@ -1086,6 +1086,12 @@ static void test_screen_plan(void) {
               strstr(src, "mode = plan.mode;") != NULL && strstr(src, "SA_Depth, (ULONG)plan.depth") != NULL,
           "mui_screen_open does not open the own screen from mui_screen_plan");
     CHECK(strstr(src, "ModeNotAvailable(plan.mode)") != NULL, "mui_screen_open does not check the laced mode is available");
+    /* I667n: rig 2 uaegfx Workbench 0x50041303 800x600x24 has DIPF_IS_FOREIGN clear; the depth-4 plan held all 16 pens on RTG. */
+    CHECK(mui_screen_is_rtg(0, 0, 24u) && mui_screen_is_rtg(0, 1, 16u) && mui_screen_is_rtg(1, 1, 8u) && mui_screen_is_rtg(0, 0, 8u) &&
+              !mui_screen_is_rtg(0, 1, 8u) && !mui_screen_is_rtg(0, 1, 4u),
+          "RTG detection: a uaegfx bitmap without DIPF_IS_FOREIGN is RTG, a standard planar one is not");
+    CHECK(strstr(src, "foreign = mui_screen_is_rtg(") != NULL && strstr(src, "BMF_STANDARD") != NULL,
+          "mui_screen_open does not decide RTG through mui_screen_is_rtg with the Workbench bitmap");
     CHECK(strstr(src, "_minheight(s->root)") != NULL, "mui_open does not report the measured window minimum");
 }
 

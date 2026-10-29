@@ -417,10 +417,11 @@ static void mui_screen_open(const uint32_t* tokens) {
         wb_w = (ULONG)wb->Width;
         wb_h = (ULONG)wb->Height;
         memset(&di, 0, sizeof di);
-        if (mode != (ULONG)INVALID_ID && GetDisplayInfoData(NULL, (UBYTE*)&di, sizeof di, DTAG_DISP, mode) > 0 &&
-            (di.PropertyFlags & DIPF_IS_FOREIGN) != 0) {
-            foreign = 1; /* RTG mode */
-        }
+        /* I667n: uaegfx (Picasso96) modes leave DIPF_IS_FOREIGN clear, so the planar 16-pen plan ran on RTG; the bitmap decides too. */
+        foreign = mui_screen_is_rtg(mode != (ULONG)INVALID_ID && GetDisplayInfoData(NULL, (UBYTE*)&di, sizeof di, DTAG_DISP, mode) > 0 &&
+                                        (di.PropertyFlags & DIPF_IS_FOREIGN) != 0,
+                                    (GetBitMapAttr(wb->RastPort.BitMap, BMA_FLAGS) & BMF_STANDARD) != 0,
+                                    (uint32_t)GetBitMapAttr(wb->RastPort.BitMap, BMA_DEPTH));
         UnlockPubScreen(NULL, wb);
     }
     g_screen_rtg = foreign;

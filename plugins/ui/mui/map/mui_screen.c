@@ -55,6 +55,10 @@ uint32_t mui_screen_laced(void) {
     return g_laced;
 }
 
+int mui_screen_is_rtg(int dipf_foreign, int bm_standard, uint32_t bm_depth) {
+    return dipf_foreign || !bm_standard || bm_depth > 8u;
+}
+
 static uint32_t g_attr_calls;
 
 void mui_window_attrs(int own_screen, mui_window_attrs_t* out) {
