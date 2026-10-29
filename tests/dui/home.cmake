@@ -76,8 +76,10 @@ function(shelf_scrolls out_s0 out_s1 out)
   set(${out_s1} ${s1} PARENT_SCOPE)
 endfunction()
 
-# Mixed shelf (I678j, Johan 2026-10-29): stream and Modland plays are single-song cards, ordered by last play with the album items 4 2 1 3 and the composer card (section 11 item 3 lists composers).
-set(recent_want "${WORK}/b.mod;http://radio.example/stream;4;2;chris huelsbeck;modland:Protracker/Jester/old.mod;1;3")
+# Mixed shelf (I678j, Johan 2026-10-29): stream and Modland plays are single-song cards, ordered by their last finished play with the album
+# items 2 1 and the composer card (section 11 item 3 lists composers). I678j7: only finished plays count, so albums 4 and 3 (every play
+# skipped) are absent here and stay on Jump Back In.
+set(recent_want "${WORK}/b.mod;http://radio.example/stream;chris huelsbeck;2;modland:Protracker/Jester/old.mod;1")
 
 # 1 and 2. The shelves from the history.
 home_run(idle "wait 1\n")
@@ -87,6 +89,16 @@ endif()
 shelf_keys(recent "${idle}" 0)
 expect_eq("Recently played order" "${recent}" "${recent_want}")
 shelf_keys(jump "${idle}" 1)
+# I678j7: a skipped-only album (4 Ünïcødé Álbum åäö, 3 Strange Sounds from Beyond) is not on Recently Played, only on Jump Back In.
+foreach(skipped_only 4 3)
+  list(FIND recent "${skipped_only}" skipped_at)
+  if(NOT skipped_at EQUAL -1)
+    message(FATAL_ERROR "skipped-only album ${skipped_only} is on Recently Played: ${recent}")
+  endif()
+endforeach()
+if(NOT "${jump}" MATCHES "Ünïcødé Álbum åäö" OR NOT "${jump}" MATCHES "Strange Sounds from Beyond")
+  message(FATAL_ERROR "skipped-only albums are missing from Jump Back In: ${jump}")
+endif()
 expect_eq("Jump back in albums" "${jump}" "Ünïcødé Álbum åäö;Monkey Island Theme (Extended Remaster Edition With A Very Long Title);Lotus Turbo Challenge;Strange Sounds from Beyond")
 if(NOT idle MATCHES "shelf 0 tile 0 Recently Played\\|" OR NOT idle MATCHES "shelf 1 tile 0 Jump Back In\\|")
   message(FATAL_ERROR "shelf headings missing in:\n${idle}")
@@ -566,7 +578,7 @@ if(NOT "${comp_open}" MATCHES "collection kind=composer [^\n]* of=3 ")
   message(FATAL_ERROR "activating the composer tile did not open its 3 songs in:\n${comp_open}")
 endif()
 
-# 10b. I473: the album is its name and artist when it is opened too. Shelf 0 holds 9 tiles (mixed Recently Played), so tile 9 is the first tile of Jump
+# 10b. I473: the album is its name and artist when it is opened too. Shelf 0 holds 6 tiles (mixed Recently Played, finished plays only, I678j7), so tile 6 is the first tile of Jump
 # back in: "Lotus Turbo Challenge - Other Artist" (the dump above). Activating it runs the album search; the query source then
 # lists that album's songs only (fixture:9). Before the fix it ran album:"Lotus Turbo Challenge" alone and listed 3 songs
 # (this album's one and the other album's two). The run uses a fresh copy of the seeded db (a run consumes the home history).
@@ -595,7 +607,7 @@ function(expect_album_page out what songs)
     message(FATAL_ERROR "${what}: no album page of ${songs} songs in:\n${out}")
   endif()
 endfunction()
-album_run(act "${db4}" "tile 9\nwait 1\n")
+album_run(act "${db4}" "tile 6\nwait 1\n")
 expect_album_page("${act}" "the Other Artist shelf tile opens its own album" 1)
 
 # 10c. I473: the same for Search album rows. album:Lotus lists both albums; the Albums group has one row per name and artist

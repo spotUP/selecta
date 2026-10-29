@@ -28,11 +28,10 @@ string(CONCAT seed
   "INSERT INTO history(key, played_at, skipped) VALUES('local:selecta-test.mod', 4102444800, 0); "
   "INSERT INTO meta(key, value) VALUES('modland.new_this_week', '7') ON CONFLICT(key) DO UPDATE SET value = '7'")
 sql("${seed}" ignore)
-# I678j: Recently Played lists items (albums, playlists, composers) with a play, a skipped one included (the Recents recency of design
-# section 5), plus stream and Modland plays; a local song with no album has no card. Here the one album is the I687 trigger's row for the
-# seeded album, played once (skipped), so it is on Recently Played, Jump Back In and Your Albums.
-sql("SELECT COUNT(DISTINCT s.album) FROM history h JOIN songs s ON s.key = h.key WHERE s.album IS NOT NULL;" recent)
-# Your Albums: the albums with a play.
+# I678j7 (Johan 2026-10-29): Recently Played and Your Albums count finished plays only; an album with only skipped plays is on Jump Back
+# In alone. Here the one album (the seeded one) was played once, skipped, so it is on Jump Back In and on neither of the other two.
+sql("SELECT COUNT(DISTINCT s.album) FROM history h JOIN songs s ON s.key = h.key WHERE s.album IS NOT NULL AND h.skipped = 0;" recent)
+# Your Albums: the albums with a finished play.
 set(albums "${recent}")
 string(CONCAT jumpq
   "SELECT COUNT(DISTINCT s.album) FROM history h JOIN songs s ON s.key = h.key WHERE h.skipped = 1 AND s.album IS NOT NULL "
@@ -49,8 +48,8 @@ string(CONCAT quickq
   " + (SELECT COUNT(DISTINCT s.album) FROM history h JOIN songs s ON s.key = h.key WHERE s.album IS NOT NULL));")
 sql("${quickq}" quick)
 math(EXPR want "${recent} + ${jump} + ${albums} + ${fresh} + ${fill} + ${quick}")
-if(NOT recent EQUAL 1 OR NOT jump EQUAL 1 OR NOT fresh EQUAL 7 OR NOT fill EQUAL 3 OR NOT quick EQUAL 3)
-  message(FATAL_ERROR "seed counts recent=${recent} jump=${jump} new=${fresh} fill=${fill} quick=${quick}, want 1 1 7 3 3")
+if(NOT recent EQUAL 0 OR NOT jump EQUAL 1 OR NOT fresh EQUAL 7 OR NOT fill EQUAL 3 OR NOT quick EQUAL 3)
+  message(FATAL_ERROR "seed counts recent=${recent} jump=${jump} new=${fresh} fill=${fill} quick=${quick}, want 0 1 7 3 3")
 endif()
 execute_process(
   COMMAND "${SELECTA}" --output null --size 80x25 --start-dir "${CWD}" --db "${db}"

@@ -324,9 +324,12 @@ New this week; `db.h:414-417`), Your composers shelf (`engine.h:99`), Show all (
    only (decision D5 on the chip set).
 2. Quick access grid: 8 tiles (2 columns by 4 rows on narrow, 4 by 2 on wide), the 8 newest items by section 5 Recents across all
    kinds, pinned Liked Songs first. Same items as the sidebar's Recents top; one source.
-3. "Recently Played" (items, not songs: the albums, playlists, composers played lately).
+3. "Recently Played" (items, not songs: the albums, playlists, composers played lately). Finished plays only (Johan 2026-10-29):
+   a history row marked skipped does not count, so an album whose plays were all skipped is not on this shelf. The sidebar Recents
+   order (section 5) is unchanged and counts any play.
 4. "Jump Back In" (albums with a skipped song and no finished play: today's query).
-5. "Your Albums", "Your Composers", "Your Playlists" (most played first).
+5. "Your Albums", "Your Composers", "Your Playlists" (most played first). "Your Albums" counts finished plays only (Johan
+   2026-10-29): an album with only skipped plays is not on it and stays on "Jump Back In".
 6. "New This Week" (modland changelog count).
 7. "More Like <recent artist or composer>" from the similar-songs store (`src/library/db/similar.c`), when it has rows.
 Every card opens the item's collection page (section 9); a song card plays.

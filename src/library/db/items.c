@@ -388,12 +388,18 @@ int sel_library_collection(sel_library* lib, uint32_t kind, const char* key, uin
  * Home and the sidebar read one source. Recency is the newer of last_played and opened, as the Recents order of section 5. */
 #define HOME_T "t(k,ik,nm,sub,songs,added,lp,art,pinned,sn,tie,op)"
 #define HOME_REC "MAX(lp,op)"
-/* Plays of the item: every play of its songs, a skipped one included, as the Recents recency of section 5 (albums by name and artist,
- * composers by canon, playlists by entry). */
-#define HOME_PLAYS \
-    "(CASE k WHEN 4 THEN (SELECT COUNT(*) FROM history h JOIN songs s ON s.key=h.key WHERE s.album IS nm AND s.artist IS NULLIF(sub,''))" \
-    " WHEN 6 THEN (SELECT COUNT(*) FROM history h JOIN song_composers c ON c.song_key=h.key WHERE c.canon=ik)" \
-    " WHEN 3 THEN (SELECT COUNT(*) FROM history h JOIN playlist_entries e ON e.key=h.key WHERE e.playlist_id=CAST(ik AS INTEGER)) ELSE 0 END)"
+/* History of the item as one aggregate over its songs' history rows (albums by name and artist, composers by canon, playlists by entry);
+ * `agg` is the aggregate, `cond` an extra condition on h. HOME_PLAYS counts every play, a skipped one included, as the Recents recency of
+ * section 5. HOME_FIN counts finished plays only and HOME_FIN_LAST is the time of the last one: Recently Played and Your Albums use
+ * these (Johan 2026-10-29; an album with only skipped plays stays on Jump Back In). */
+#define HOME_HIST(agg, cond) \
+    "(CASE k WHEN 4 THEN (SELECT " agg " FROM history h JOIN songs s ON s.key=h.key WHERE s.album IS nm AND s.artist IS NULLIF(sub,'')" cond ")" \
+    " WHEN 6 THEN (SELECT " agg " FROM history h JOIN song_composers c ON c.song_key=h.key WHERE c.canon=ik" cond ")" \
+    " WHEN 3 THEN (SELECT " agg " FROM history h JOIN playlist_entries e ON e.key=h.key WHERE e.playlist_id=CAST(ik AS INTEGER)" cond ")" \
+    " ELSE 0 END)"
+#define HOME_PLAYS HOME_HIST("COUNT(*)", "")
+#define HOME_FIN HOME_HIST("COUNT(*)", " AND h.skipped=0")
+#define HOME_FIN_LAST "COALESCE(" HOME_HIST("MAX(h.played_at)", " AND h.skipped=0") ",0)"
 
 /* Format families of the Home chips, one place (lower-case songs.format values). Modules: tracker formats; Chiptunes: SID, AY, SAP and the
  * other chip-synth formats; Music: everything else (a song with no format included). */
@@ -414,9 +420,9 @@ int sel_home_items(sqlite3* db, uint32_t shelf, uint32_t chip, uint32_t limit, s
         /* quick access: Liked Songs first, then the newest by recency */
         " WHERE (k=0 OR " HOME_REC ">0) AND %s ORDER BY (k<>0)," HOME_REC " DESC, sn COLLATE NOCASE, tie LIMIT ?1",
         /* recently played items: albums, playlists, composers with a play */
-        " WHERE k IN (3,4,6) AND lp>0 AND %s ORDER BY lp DESC, sn COLLATE NOCASE, tie LIMIT ?1",
+        " WHERE k IN (3,4,6) AND " HOME_FIN ">0 AND %s ORDER BY " HOME_FIN_LAST " DESC, sn COLLATE NOCASE, tie LIMIT ?1",
         /* your albums, most played first */
-        " WHERE k=4 AND " HOME_PLAYS ">0 AND %s ORDER BY " HOME_PLAYS " DESC, sn COLLATE NOCASE, tie LIMIT ?1",
+        " WHERE k=4 AND " HOME_FIN ">0 AND %s ORDER BY " HOME_FIN " DESC, sn COLLATE NOCASE, tie LIMIT ?1",
         /* your composers, most played first (every composer, so a library with no plays still lists them; the Unknown composer group is
          * not a composer, so a library with none has no shelf) */
         " WHERE k=6 AND ik<>'" SEL_COMPOSER_UNKNOWN_CANON "' AND %s ORDER BY " HOME_PLAYS " DESC, sn COLLATE NOCASE, tie LIMIT ?1",
@@ -450,7 +456,7 @@ int sel_home_items(sqlite3* db, uint32_t shelf, uint32_t chip, uint32_t limit, s
         sel_home_chip_sql(chip, "h.format", nofam, sizeof nofam);
         snprintf(sql, sizeof sql,
                  "WITH " HOME_T " AS (%s) SELECT k,ik,nm,sub FROM ("
-                 "SELECT k,ik,nm,sub,lp AS lpx,sn,tie FROM t WHERE k IN (3,4,6) AND lp>0 AND %s"
+                 "SELECT k,ik,nm,sub," HOME_FIN_LAST " AS lpx,sn,tie FROM t WHERE k IN (3,4,6) AND " HOME_FIN ">0 AND %s"
                  " UNION ALL SELECT %u,h.key,h.key,'',MAX(h.played_at),h.key,h.key FROM history h"
                  " WHERE NOT EXISTS(SELECT 1 FROM songs s WHERE s.key=h.key) AND substr(h.key,1,6)<>'local:' AND %s GROUP BY h.key)"
                  " ORDER BY lpx DESC, sn COLLATE NOCASE, tie LIMIT ?1",
