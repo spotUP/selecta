@@ -411,3 +411,7 @@ int mui_aa_cycle_valid(int v, int n) {
     g_cycle_calls++;
     return v >= 0 && v < n;
 }
+
+int mui_aa_text_maxw(int fixed, int defw) {
+    return fixed ? defw : MUI_AA_TEXT_UNBOUNDED;
+}

@@ -19,6 +19,7 @@ typedef struct mui_aatext_spec {
     int ellipsis;         /* cut with "..." when wider than the box; the minimum width is then the dots */
     ULONG frame;          /* MUIA_Frame value, 0 = MUIV_Frame_None */
     ULONG background;     /* MUIA_Background value (spec string pointer), 0 = none */
+    int fixed;            /* nonzero: never wider than the default width of widest (mui_aa_text_maxw) */
     int hidden;           /* start with MUIA_ShowMe FALSE */
 } mui_aatext_spec;
 

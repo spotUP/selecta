@@ -588,10 +588,11 @@ static Object* mui_make_check(const char* label, int on, LONG id) {
 /* I667d (design 3.7): the one text constructor. Every Selecta text line is a Selecta_AAText (mui_aatext_class.c): antialiased in the
  * tone colour (normal TEXT, muted TEXT_MUTED, title TEXT at font + 4 px), aligned and cut with "..." at the width. framed = the
  * status look (panel background and text frame, MUI_TH_STATUS); the tone of a label comes from mui_pens_label_tone. */
-static Object* mui_aatext(const char* contents, int tone, int align, int framed, int hidden) {
+static Object* mui_aatext_sized(const char* contents, const char* widest, int tone, int align, int framed, int hidden) {
     mui_aatext_spec sp;
     sp.contents = contents;
-    sp.widest = NULL;
+    sp.widest = widest;
+    sp.fixed = widest != NULL;
     sp.tone = tone;
     sp.align = align;
     sp.ellipsis = 1;
@@ -601,9 +602,13 @@ static Object* mui_aatext(const char* contents, int tone, int align, int framed,
     return mui_aatext_new(&sp);
 }
 
+static Object* mui_aatext(const char* contents, int tone, int align, int framed, int hidden) {
+    return mui_aatext_sized(contents, NULL, tone, align, framed, hidden);
+}
+
 static Object* mui_make_text(mui_state* s, uint32_t attr, const char* initial, mui_label label) {
     snprintf(s->txt_buf[attr], sizeof s->txt_buf[attr], "%s", initial);
-    s->txt[attr] = mui_aatext(s->txt_buf[attr], mui_pens_label_tone(label), MUI_AA_ALIGN_LEFT, 1, 0);
+    s->txt[attr] = mui_aatext_sized(s->txt_buf[attr], mui_attr_fixwidth(attr), mui_pens_label_tone(label), MUI_AA_ALIGN_LEFT, 1, 0);
     return s->txt[attr];
 }
 

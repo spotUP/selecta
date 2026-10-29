@@ -84,6 +84,10 @@ typedef int (*mui_aa_width_fn)(void* ctx, const char* s, int len);
 /* Text that fits max_w: s itself when it fits, else the longest prefix plus "..." that fits (just "..." when not even one character
  * does, empty when max_w cannot hold the dots). out gets at most cap-1 bytes; returns the length written. */
 int mui_aa_text_fit(const char* s, int max_w, mui_aa_width_fn width, void* ctx, char* out, int cap);
+/* I667f3: the widest content a text line asks for. A fixed line (the seek row time labels) takes only its default width defw so the
+ * seek slider gets the rest of the row; any other line is unbounded (MUI_AA_TEXT_UNBOUNDED, the class maps it to MUI_MAXMAX). */
+#define MUI_AA_TEXT_UNBOUNDED (-1)
+int mui_aa_text_maxw(int fixed, int defw);
 
 /* I667e (design 3.8, AAPanel): rounded panel groups. Role -> face token (panel PANEL, surface SURFACE, raised SURFACE_RAISED),
  * corner radius RADIUS_LARGE (tier S, font_px 0: half), inner padding and spacing SPACING. Tested on the host. */

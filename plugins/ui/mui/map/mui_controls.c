@@ -127,6 +127,18 @@ const char* mui_attr_text(uint32_t attr, const sel_uim_frame* f) {
     }
 }
 
+const char* mui_attr_fixwidth(uint32_t attr) {
+    switch (attr) {
+    case MUI_ATTR_CLOCK:
+    case MUI_ATTR_LENGTH:
+        return "00:00:00";
+    case MUI_ATTR_REMAINING:
+        return "-00:00:00";
+    default:
+        return NULL;
+    }
+}
+
 uint32_t mui_keys_build(mui_key_bind* out, uint32_t cap) {
     uint32_t i, n = sel_uim_action_count(), count = 0;
     for (i = 0; i < n; i++) {

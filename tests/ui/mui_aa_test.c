@@ -157,6 +157,13 @@ static int adv10(void* ctx, const char* s, int len) {
     (void)s;
     return len * 10;
 }
+/* text-maxw (I667f3): a fixed text line (seek row time label) is never wider than its default width, any other is unbounded; the class
+ * source routes the decision through mui_aa_text_maxw and the label constructor marks a sized text fixed. */
+static void test_text_maxw(void) {
+    CHECK(mui_aa_text_maxw(1, 72) == 72, "fixed text max width is its default width");
+    CHECK(mui_aa_text_maxw(0, 72) == MUI_AA_TEXT_UNBOUNDED, "flexible text is unbounded");
+}
+
 static void test_text_fit(void) {
     char out[64];
     mui_aa_text_fit("abcdef", 60, adv10, NULL, out, (int)sizeof out);
@@ -215,7 +222,9 @@ static void test_text_source(void) {
     CHECK(count_of(ui, "MUIC_Text") == 0, "MUIC_Text left in mui_ui.c: %d", count_of(ui, "MUIC_Text"));
     CHECK(count_of(ui, "TextObject") == 0, "TextObject left in mui_ui.c: %d", count_of(ui, "TextObject"));
     CHECK(count_of(ui, "MUIA_Text_Contents") == 0 && count_of(ui, "MUIA_Text_PreParse") == 0, "Text attribute left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aatext(") == 9, "text constructor sites: %d (definition + 8)", count_of(ui, "mui_aatext("));
+    CHECK(count_of(ui, "mui_aatext(") == 8, "text constructor sites: %d (definition + 7; the eighth goes through mui_aatext_sized)", count_of(ui, "mui_aatext("));
+    CHECK(count_of(ui, "mui_aatext_sized(") == 3 && count_of(ui, "mui_attr_fixwidth(") == 1, "time labels sized through mui_attr_fixwidth");
+    CHECK(strstr(cls, "mui_aa_text_maxw(d->fixed, d->defw)") != NULL, "class max width not decided by mui_aa_text_maxw");
     CHECK(count_of(ui, "mui_aatext_new(") == 1, "one AAText constructor call: %d", count_of(ui, "mui_aatext_new("));
     CHECK(strstr(cls, "mui_aa_text_fit(") != NULL && strstr(cls, "mui_aa_tone_token(") != NULL && strstr(cls, "mui_aa_tone_font_px(") != NULL && strstr(cls, "aa_text(") != NULL,
           "class does not draw through the shared tone, fit and text helpers");
@@ -461,6 +470,8 @@ int main(int argc, char** argv) {
         test_tokens();
     } else if (!strcmp(t, "check")) {
         test_check();
+    } else if (!strcmp(t, "text-maxw")) {
+        test_text_maxw();
     } else if (!strcmp(t, "text-fit")) {
         test_text_fit();
     } else if (!strcmp(t, "text-tone")) {

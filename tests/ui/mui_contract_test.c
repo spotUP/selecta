@@ -458,6 +458,19 @@ static int is_transport_icon(const sel_uim_action* a) {
     return 0;
 }
 
+/* mui-seek-row (I667f3): the three time labels of the seek row are sized to a sample string, every other text keeps the
+ * flexible default; a sample is wide enough for h:mm:ss and its remaining form carries the minus sign. */
+static void test_seek_row(void) {
+    uint32_t a;
+    for (a = 0; a < MUI_ATTR_COUNT; a++) {
+        const char* f = mui_attr_fixwidth(a);
+        int label = a == MUI_ATTR_CLOCK || a == MUI_ATTR_REMAINING || a == MUI_ATTR_LENGTH;
+        CHECK((f != NULL) == label, "attr %u fixed width presence %d", a, f != NULL);
+    }
+    CHECK(strlen(mui_attr_fixwidth(MUI_ATTR_CLOCK)) >= strlen("0:00:00"), "clock sample too narrow");
+    CHECK(strlen(mui_attr_fixwidth(MUI_ATTR_REMAINING)) == strlen(mui_attr_fixwidth(MUI_ATTR_LENGTH)) + 1, "remaining sample lacks the minus sign");
+}
+
 static void test_transport(void) {
     uint32_t i, b, play, rep, rnd, n = sel_uim_action_count(), want = 0, got = 0;
     const char* reached[32];
@@ -1403,6 +1416,8 @@ int main(int argc, char** argv) {
     } else if (strcmp(argv[1], "relayout") == 0) {
         test_relayout();
         test_open_no_suggestion();
+    } else if (strcmp(argv[1], "seek-row") == 0) {
+        test_seek_row();
     } else if (strcmp(argv[1], "transport") == 0) {
         test_transport();
     } else if (strcmp(argv[1], "dirty") == 0) {

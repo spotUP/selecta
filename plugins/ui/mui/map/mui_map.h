@@ -108,6 +108,9 @@ enum {
 uint32_t mui_attr_region(uint32_t attr);              /* the one SEL_UIM_DIRTY_* bit, 0 for an unknown attr */
 uint32_t mui_dirty_attrs(uint32_t dirty);             /* bit mask of (1u << MUI_ATTR_*) to refresh */
 const char* mui_attr_text(uint32_t attr, const sel_uim_frame* f); /* text attrs; NULL for slider and button attrs */
+/* I667f3: the sample string a time label is sized to, so the seek row gives the labels their content width and the seek slider the
+ * rest. NULL for an attribute that keeps the flexible default (title, artist, format, status). */
+const char* mui_attr_fixwidth(uint32_t attr);
 
 /* MUI-P2-7: every action key as a binding. Keys of one character are Right Amiga menu shortcuts (the Menustrip
  * shortcut); named and modified keys (C-Enter, M-n, Space) go through a window event handler as code plus modifier

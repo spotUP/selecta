@@ -25,7 +25,7 @@ extern struct Library* MUIMasterBase;
 
 typedef struct aatext_data {
     char text[AAT_CAP], widest[AAT_CAP];
-    int tone, align, ellipsis, shown, minw, minh, defw;
+    int tone, align, ellipsis, fixed, shown, minw, minh, defw;
     aa_ctx aa;
     Object* self;
 } aatext_data;
@@ -76,7 +76,10 @@ static ULONG aatext_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMin
     DoSuperMethodA(cl, obj, (Msg)msg);
     msg->MinMaxInfo->MinWidth += d->minw;
     msg->MinMaxInfo->DefWidth += d->defw;
-    msg->MinMaxInfo->MaxWidth = MUI_MAXMAX;
+    {
+        int mw = mui_aa_text_maxw(d->fixed, d->defw);
+        msg->MinMaxInfo->MaxWidth = mw == MUI_AA_TEXT_UNBOUNDED ? MUI_MAXMAX : msg->MinMaxInfo->MaxWidth + mw;
+    }
     msg->MinMaxInfo->MinHeight += d->minh;
     msg->MinMaxInfo->DefHeight += d->minh;
     msg->MinMaxInfo->MaxHeight += d->minh;
@@ -168,6 +171,7 @@ Object* mui_aatext_new(const mui_aatext_spec* sp) {
         d->tone = sp->tone;
         d->align = sp->align;
         d->ellipsis = sp->ellipsis;
+        d->fixed = sp->fixed;
         g_made++;
     }
     return o;
