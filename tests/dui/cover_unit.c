@@ -125,6 +125,47 @@ static void test_names(void) {
     CHECK(sel_gui_platform_of_name("qqq.song") == SEL_GUI_FAMILY_MUSIC);
 }
 
+/* I691c: the majority rule. A tie goes to the family earlier in table order; Music wins only when alone. */
+static void tally_of(sel_gui_family_tally* t, const char* const* names) {
+    memset(t, 0, sizeof *t);
+    while (*names != NULL) {
+        sel_gui_family_tally_add(t, *names++);
+    }
+}
+
+static void test_majority(void) {
+    sel_gui_family_tally t;
+    char f[16];
+    const char* mixed[] = {"a.mp3", "b.mod", "c.mod", "d.mod", NULL};
+    const char* tie[] = {"a.xm", "b.xm", "c.mod", "d.mod", NULL};
+    const char* tie_rev[] = {"c.mod", "d.mod", "a.xm", "b.xm", NULL};
+    const char* plain[] = {"a.mp3", "b.ogg", NULL};
+    const char* stray[] = {"a.mp3", "b.mp3", "c.mp3", "d.xm", NULL};
+    const char* prefix[] = {"mod.song", "x.mp3", NULL};
+    const char* none[] = {NULL};
+
+    tally_of(&t, mixed);
+    CHECK(sel_gui_family_tally_majority(&t) == SEL_GUI_FAMILY_AMIGA);
+    sel_gui_family_tally_format(&t, f, sizeof f);
+    CHECK(f[0] != '\0' && sel_gui_platform_of_ext(f) == SEL_GUI_FAMILY_AMIGA);
+    tally_of(&t, tie);
+    CHECK(sel_gui_family_tally_majority(&t) == SEL_GUI_FAMILY_AMIGA); /* Amiga before PC Tracker */
+    tally_of(&t, tie_rev);
+    CHECK(sel_gui_family_tally_majority(&t) == SEL_GUI_FAMILY_AMIGA); /* independent of song order */
+    tally_of(&t, plain);
+    CHECK(sel_gui_family_tally_majority(&t) == SEL_GUI_FAMILY_MUSIC);
+    sel_gui_family_tally_format(&t, f, sizeof f);
+    CHECK(strcmp(f, "mp3") == 0);
+    tally_of(&t, stray);
+    CHECK(sel_gui_family_tally_majority(&t) == SEL_GUI_FAMILY_PC_TRACKER); /* Music never beats a real family, even 3 to 1 */
+    tally_of(&t, prefix);
+    CHECK(sel_gui_family_tally_majority(&t) == SEL_GUI_FAMILY_AMIGA);
+    tally_of(&t, none);
+    CHECK(sel_gui_family_tally_majority(&t) == SEL_GUI_FAMILY_MUSIC);
+    sel_gui_family_tally_format(&t, f, sizeof f);
+    CHECK(f[0] == '\0');
+}
+
 static void test_tones(void) {
     uint32_t seen[3] = {0u, 0u, 0u}, i, d = 0u;
     const char* titles[] = {"Axel F", "Cannon Fodder", "Monkey Island", "Lotus", "Turrican", "Elysium"};
@@ -266,6 +307,7 @@ int main(void) {
     }
     test_extensions();
     test_names();
+    test_majority();
     test_tones();
     test_contrast();
     test_aga_palette();

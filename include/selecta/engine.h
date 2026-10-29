@@ -99,6 +99,7 @@ typedef struct sel_view_row {
     uint32_t composer; /* I479: SEL_ROW_HOME: 1 when key is a composer canon (the Your composers shelf); activating it opens that composer's songs */
     const char* art_ref; /* SEL_ROW_HOME: what the artwork provider resolves: key, or "<album>\x1f<artist>" for an album with a known artist (I471); NULL else */
     const char* artist; /* I476: the album artist the tile draws under its title (Home album tiles, grid and cover flow rows); NULL when unknown */
+    const char* format; /* I691c: SEL_ROW_HOME album and composer tiles: the majority format of their songs (representative extension, resolve with sel_gui_platform_of_name); NULL else */
     uint32_t art_id;   /* grid, cover flow and compact queue rows: albums.id of the song's album (the artwork id), 0 none; a Home album tile: albums.id of that album (I678h2) */
 } sel_view_row;
 
@@ -162,6 +163,7 @@ typedef struct sel_engine_collection_row {
     char artist[96];
     uint32_t year;
     uint32_t songs;
+    char format[16]; /* I691c: majority format of the album's songs (shelf album rows), "" none */
 } sel_engine_collection_row;
 
 enum { SEL_COLLECTION_SHELVES = 4, SEL_COLLECTION_SHELF_MAX = 24 };
@@ -511,6 +513,7 @@ typedef struct sel_engine_library_item {
     uint32_t opened;      /* I678c: epoch seconds the item page was last opened, 0 never; Recents orders by the newer of this and last_played */
     uint32_t art_id;      /* albums.id of the cover, 0 none */
     int pinned;           /* 1: Liked Songs, Recently Played, Local Files */
+    char format[16];      /* I691c: majority format of the songs inside (representative extension), "" none */
 } sel_engine_library_item;
 /* I678a: the whole Your Library list of the kinds in `kind_mask` (SEL_LIB_ITEM_BIT): pinned rows, playlists, albums, artists,
  * composers, sources. Fills out[0..max) from row `offset`, returns the rows written (0 without a library); *total (when not NULL)

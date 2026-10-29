@@ -941,6 +941,7 @@ uint32_t sel_view_set_folders(sel_view* v, const char* tree) {
             v->frows[n].album = 0;
             v->frows[n].art_ref = NULL;
             v->frows[n].artist = NULL;
+            v->frows[n].format = NULL;
             n++;
         }
         while (*p != '\0' && *p != '\n') {
@@ -968,7 +969,7 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
         char* key = v->fkey + pool;
         size_t len = 0, klen = 0;
         uint32_t count = 1, album = 0, composer = 0, album_id = 0;
-        char *art = NULL, *sart = NULL;
+        char *art = NULL, *sart = NULL, *fmtp = NULL;
         key[0] = '\0';
         if ((kind == 'H' || kind == 'Q' || kind == 'S' || kind == 'C') && p[1] == ' ') {
             p += 2;
@@ -987,7 +988,8 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
                 }
                 if (*tab == '\t') { /* "<key>\t<entry>"; a leading @ marks an album */
                     size_t raw, name;
-                    const char *us, *end;
+                    const char *us, *end, *kend = tab, *fmt = NULL;
+                    size_t fmt_len = 0;
                     if (*p == '@') {
                         album = 1;
                         p++;
@@ -998,14 +1000,25 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
                     /* A key is never cut: one that does not fit the pool or the key limit leaves the row without a key.
                      * I471: an album key may carry its artist after a 0x1f byte ("<album>\x1f<artist>"); the row key is the album
                      * name alone and art_ref the whole string, so the artwork provider can tell same-named albums apart. */
+                    {   /* I691c: an album or composer tile ends its key with 0x1d and the majority format of its songs */
+                        const char* fs = p;
+                        while (fs < tab && *fs != '\x1d') {
+                            fs++;
+                        }
+                        if (fs < tab) {
+                            kend = fs;
+                            fmt = fs + 1;
+                            fmt_len = (size_t)(tab - fmt);
+                        }
+                    }
                     {   /* I678h2: an album row ends its key with 0x1e and albums.id, so the tile opens the album page without matching names */
                         const char* idsep = p;
-                        while (idsep < tab && *idsep != '\x1e') {
+                        while (idsep < kend && *idsep != '\x1e') {
                             idsep++;
                         }
-                        if (idsep < tab) {
+                        if (idsep < kend) {
                             const char* q = idsep + 1;
-                            while (q < tab && *q >= '0' && *q <= '9') {
+                            while (q < kend && *q >= '0' && *q <= '9') {
                                 album_id = album_id * 10u + (uint32_t)(*q++ - '0');
                             }
                         }
@@ -1039,6 +1052,12 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
                             pool += raw + 1u;
                         }
                         pool += klen + 1u;
+                        if (fmt_len > 0u && fmt_len < 16u && pool + fmt_len + 1u <= SEL_VIEW_HOME_TEXT_MAX) {
+                            fmtp = v->fkey + pool;
+                            memcpy(fmtp, fmt, fmt_len);
+                            fmtp[fmt_len] = '\0';
+                            pool += fmt_len + 1u;
+                        }
                     }
                     p = tab + 1;
                 }
@@ -1049,6 +1068,7 @@ uint32_t sel_view_set_home(sel_view* v, const char* text) {
             t[len] = '\0';
             v->frows[n].key = key[0] != '\0' ? key : NULL;
             v->frows[n].album = album;
+            v->frows[n].format = fmtp;
             v->frows[n].art_id = album ? album_id : 0u;
             v->frows[n].composer = composer;
             v->frows[n].quick = kind == 'Q';

@@ -193,6 +193,48 @@ uint32_t sel_gui_platform_of_name(const char* name) {
     return SEL_GUI_FAMILY_MUSIC;
 }
 
+void sel_gui_family_tally_add(sel_gui_family_tally* t, const char* name) {
+    uint32_t f = sel_gui_platform_of_name(name);
+    const char* ext;
+
+    t->n[f]++;
+    if (f == SEL_GUI_FAMILY_MUSIC && t->music_ext[0] == '\0') {
+        ext = sel_gui_path_ext(name);
+        if (ext != NULL) {
+            lower(t->music_ext, ext, sizeof t->music_ext);
+        }
+    }
+}
+
+uint32_t sel_gui_family_tally_majority(const sel_gui_family_tally* t) {
+    uint32_t f, best = SEL_GUI_FAMILY_MUSIC, top = 0;
+
+    for (f = SEL_GUI_FAMILY_MUSIC + 1u; f < SEL_GUI_FAMILY_COUNT; f++) { /* strictly greater: a tie keeps the earlier family */
+        if (t->n[f] > top) {
+            top = t->n[f];
+            best = f;
+        }
+    }
+    return best;
+}
+
+void sel_gui_family_tally_format(const sel_gui_family_tally* t, char* out, size_t cap) {
+    uint32_t f = sel_gui_family_tally_majority(t), i, rows = sel_gui_platform_ext_count();
+    const char* ext = "";
+
+    if (f == SEL_GUI_FAMILY_MUSIC) {
+        ext = t->music_ext;
+    } else {
+        for (i = 0; i < rows; i++) {
+            if (k_chips[i].family == f) {
+                ext = k_chips[i].ext;
+                break;
+            }
+        }
+    }
+    lower(out, ext, cap);
+}
+
 const char* sel_gui_platform_label(uint32_t family) {
     return family < SEL_GUI_FAMILY_COUNT ? k_label[family] : k_label[0];
 }

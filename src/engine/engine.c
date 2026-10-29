@@ -5137,6 +5137,7 @@ static void coll_shelf_row(void* ctx, const char* const* f) { /* id, name, artis
     snprintf(r->artist, sizeof r->artist, "%s", f[2]);
     r->year = (uint32_t)strtoul(f[3], NULL, 10);
     r->songs = (uint32_t)strtoul(f[4], NULL, 10);
+    snprintf(r->format, sizeof r->format, "%s", f[5]);
 }
 
 static void coll_build_page(sel_engine* e, uint32_t kind, const char* key) {
@@ -5684,6 +5685,7 @@ uint32_t sel_engine_library_items(sel_engine* e, uint32_t kind_mask, uint32_t of
         o->opened = rows[i].opened;
         o->art_id = rows[i].art_id;
         o->pinned = rows[i].pinned;
+        snprintf(o->format, sizeof o->format, "%s", rows[i].format);
         if (rows[i].kind == SEL_LIB_ITEM_SOURCE) {
             source_name_ctx c;
             c.id = rows[i].key;

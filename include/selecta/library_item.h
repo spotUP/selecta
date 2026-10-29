@@ -43,6 +43,7 @@ typedef struct sel_library_item {
     unsigned opened; /* I678c: epoch seconds the item was last opened (opened table), 0 never */
     unsigned art_id;
     int pinned;
+    char format[16]; /* I691c: majority format of the songs inside (representative extension), "" none */
 } sel_library_item;
 
 #endif

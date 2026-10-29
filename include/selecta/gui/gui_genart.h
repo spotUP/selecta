@@ -8,6 +8,7 @@
 #include <selecta/gui/gui_draw.h>
 #include <selecta/gui/gui_text.h>
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -45,6 +46,17 @@ const char* sel_gui_path_ext(const char* name);
 /* The family of a file name: its last extension ("x.mod"), else its Amiga prefix, the part before the first dot
  * ("mod.x"; the extension table plus the explicit UADE prefix list), case-insensitively. Music when neither is known. */
 uint32_t sel_gui_platform_of_name(const char* name);
+/* I691c: the majority family of a set of songs (an album, a person, a playlist). Feed every song name to _add; _majority is the family
+ * holding the most songs, a tie going to the family earlier in the enum (table) order, and SEL_GUI_FAMILY_MUSIC only when no other
+ * family has a song. _format writes the majority's representative extension (the first table extension of the family; the
+ * extension of the first song for Music) into out, empty for an empty tally. The engine hands that string to the UI as `format`. */
+typedef struct sel_gui_family_tally {
+    uint32_t n[SEL_GUI_FAMILY_COUNT];
+    char music_ext[16];
+} sel_gui_family_tally;
+void sel_gui_family_tally_add(sel_gui_family_tally* t, const char* name);
+uint32_t sel_gui_family_tally_majority(const sel_gui_family_tally* t);
+void sel_gui_family_tally_format(const sel_gui_family_tally* t, char* out, size_t cap);
 /* Number of rows of the one extension table (for tests). */
 uint32_t sel_gui_platform_ext_count(void);
 /* The UADE file name prefixes ("dum" of "dum.song") that map to the Amiga family. */

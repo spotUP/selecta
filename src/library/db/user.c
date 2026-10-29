@@ -3,6 +3,8 @@
  * One request, SEL_LIB_REQ_USER, runs on the worker like every other library request. */
 #include "db_internal.h"
 #include "folders.h"
+#include <selecta/gui/gui_genart.h>
+#include <selecta/library_item.h>
 #include "../source.h"
 
 #include <stdio.h>
@@ -315,17 +317,22 @@ static int home_list(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t
             }
             with_artist = alen > 0u;
         }
-        char idtag[16] = "";
+        char idtag[16] = "", fmt[16] = "", fmttag[24] = "", idkey[24] = "";
         if (album && ids != NULL) { /* I678h2: the album tile carries albums.id after 0x1e so the UI opens the page by id, never by name */
             sqlite3_reset(ids);
             sqlite3_bind_text(ids, 1, key, -1, SQLITE_STATIC);
             sqlite3_bind_text(ids, 2, artist, -1, SQLITE_STATIC);
             if (sqlite3_step(ids) == SQLITE_ROW) {
                 snprintf(idtag, sizeof idtag, "\x1e%lld", (long long)sqlite3_column_int64(ids, 0));
+                snprintf(idkey, sizeof idkey, "%lld", (long long)sqlite3_column_int64(ids, 0));
             }
         }
-        size_t at = (size_t)snprintf(line, sizeof line, "%s%s%s%.*s%s\t", album ? "@" : kind == 2 ? "&" : "", key != NULL ? key : "", with_artist ? "\x1f" : "",
-                                     (int)alen, with_artist ? artist : "", idtag);
+        /* I691c: an album or composer tile ends its key with 0x1d and the majority format of its songs (platform cover). */
+        if (album && idkey[0] != '\0') sel_db_majority_format(db, SEL_LIB_ITEM_ALBUM, idkey, fmt, sizeof fmt);
+        if (kind == 2) sel_db_majority_format(db, SEL_LIB_ITEM_COMPOSER, key != NULL ? key : "", fmt, sizeof fmt);
+        if (fmt[0] != '\0') snprintf(fmttag, sizeof fmttag, "\x1d%s", fmt);
+        size_t at = (size_t)snprintf(line, sizeof line, "%s%s%s%.*s%s%s\t", album ? "@" : kind == 2 ? "&" : "", key != NULL ? key : "", with_artist ? "\x1f" : "",
+                                     (int)alen, with_artist ? artist : "", idtag, fmttag);
         if (at >= sizeof line) at = sizeof line - 1u;
         /* I485: the entry text is the name alone; the artist travels in the key after 0x1f and the tile draws it on its own line. */
         snprintf(line + at, sizeof line - at, "%s", name);

@@ -56,8 +56,8 @@ enum {
     SEL_COMPOSER_LIST,  /* DUI-P4-3: every composer (by display name, Unknown composer last) streamed through `row` in one request: canon, display, song count (decimal); reply [2] = row count (I528) */
     SEL_FORMAT_LIST,    /* I615c: every song format with its song count (most songs first) streamed through `row`: format, song count (decimal); reply [2] = row count */
     SEL_SOURCE_SONGS,   /* DUI-P4-3: songs rows of source id `key`: `out` = decimal count NUL, reply [0] = 1 */
-    SEL_LIBRARY_ITEMS,  /* I678a: the Your Library list of the kinds in `mask`, rows [offset, offset + limit) streamed through `row`: kind, key, name, sub, songs, added, last played, art id, pinned (decimal text); reply [2] = total row count */
-    SEL_COLLECTION      /* I678f: one list of the collection page of item kind `offset`, key `key`: shelf `mask` (SEL_COLL_*) streamed through `row`: key, name, artist, year, number (decimal text); reply [2] = row count */
+    SEL_LIBRARY_ITEMS,  /* I678a: the Your Library list of the kinds in `mask`, rows [offset, offset + limit) streamed through `row`: kind, key, name, sub, songs, added, last played, art id, pinned, opened, majority format (I691c; decimal text except the last); reply [2] = total row count */
+    SEL_COLLECTION      /* I678f: one list of the collection page of item kind `offset`, key `key`: shelf `mask` (SEL_COLL_*) streamed through `row`: key, name, artist, year, number, majority format (I691c; decimal text except the last); reply [2] = row count */
 };
 /* One albums/artwork operation (SEL_LIB_REQ_ART, DUI-P2-4). Reply INT [0]: SEL_ART_FIND the id of the albums row the song belongs to (0: none),
  * SEL_ART_GET the blob size (0: none; `data` holds min(size, cap) bytes), SEL_ART_PUT 1 when stored,
