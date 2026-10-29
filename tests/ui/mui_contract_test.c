@@ -1033,11 +1033,11 @@ static void test_window_borderless(void) {
     }
     src[n] = 0;
     mui_window_attrs(1, &a);
-    CHECK(a.borderless == 1 && a.backdrop == 1 && a.dragbar == 0 && a.depthgadget == 0 && a.sizegadget == 0 && a.closegadget == 0,
-          "own screen is not a borderless backdrop window");
+    CHECK(a.borderless == 1 && a.backdrop == 1 && a.dragbar == 0 && a.depthgadget == 0 && a.sizegadget == 0 && a.closegadget == 0 && a.titled == 0,
+          "own screen is not an untitled borderless backdrop window");
     mui_window_attrs(0, &a);
-    CHECK(a.borderless == 0 && a.backdrop == 0 && a.dragbar == 1 && a.depthgadget == 1 && a.sizegadget == 1 && a.closegadget == 1,
-          "Workbench window lost its borders");
+    CHECK(a.borderless == 0 && a.backdrop == 0 && a.dragbar == 1 && a.depthgadget == 1 && a.sizegadget == 1 && a.closegadget == 1 && a.titled == 1,
+          "Workbench window lost its borders or title");
     CHECK(mui_window_attrs_calls() == before + 2u, "attrs sentinel %u", (unsigned)mui_window_attrs_calls());
     CHECK(strstr(src, "mui_window_attrs(g_scr != NULL, &wattr)") != NULL, "mui_open does not choose attributes by own screen");
     CHECK(strstr(src, "MUIA_Window_Borderless, (ULONG)wattr.borderless") != NULL &&
@@ -1049,6 +1049,10 @@ static void test_window_borderless(void) {
           "the main WindowObject does not apply the attributes");
     /* Rig 2 2026-10-29: Intuition draws the screen title bar in front of backdrop windows, so the SELECTA screen must
      * open without it or the borderless window still sits under a title bar. */
+    /* Rig 2 2026-10-29 (second look): the band stayed with SA_ShowTitle FALSE. The probe read BorderTop 9 on the WFLG_BORDERLESS
+     * window: Intuition gives any titled window a title bar, so the main window takes its title from the attributes. */
+    CHECK(strstr(src, "MUIA_Window_Title, wattr.titled ? (ULONG) \"Selecta\" : (ULONG)NULL") != NULL,
+          "the main window keeps its title (and Intuition's title bar) on the own screen");
     CHECK(strstr(src, "SA_ShowTitle, FALSE") != NULL, "the SELECTA screen shows its title bar over the backdrop window");
 }
 

@@ -300,10 +300,12 @@ uint32_t mui_screen_plans(void);
 uint32_t mui_screen_laced(void);
 /* I675 (D-M4-3): which window attributes the main window gets. On Selecta's own SELECTA screen (the full screen default) it is
  * a borderless backdrop window with no drag bar, depth, size or close gadget, filling the screen; on Workbench (compact mode)
- * it keeps the normal borders. 1 = set the MUIA_Window_* attribute TRUE, 0 = FALSE. mui_window_attrs_calls counts the calls
- * (sentinel: mui_open must reach it). */
+ * it keeps the normal borders. 1 = set the MUIA_Window_* attribute TRUE, 0 = FALSE. titled = 1: the window gets the title
+ * "Selecta", 0: MUIA_Window_Title NULL. Intuition draws a title bar on a WFLG_BORDERLESS window whenever it has a title
+ * (rig 2 2026-10-29: BorderTop 9, the 9-row band "Selecta" Johan saw), so the borderless window must be untitled.
+ * mui_window_attrs_calls counts the calls (sentinel: mui_open must reach it). */
 typedef struct mui_window_attrs_t {
-    uint8_t borderless, backdrop, dragbar, depthgadget, sizegadget, closegadget;
+    uint8_t borderless, backdrop, dragbar, depthgadget, sizegadget, closegadget, titled;
 } mui_window_attrs_t;
 void mui_window_attrs(int own_screen, mui_window_attrs_t* out);
 uint32_t mui_window_attrs_calls(void);

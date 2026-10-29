@@ -63,7 +63,7 @@ void mui_window_attrs(int own_screen, mui_window_attrs_t* out) {
     }
     g_attr_calls++;
     out->borderless = out->backdrop = (uint8_t)(own_screen != 0);
-    out->dragbar = out->depthgadget = out->sizegadget = out->closegadget = (uint8_t)(own_screen == 0);
+    out->dragbar = out->depthgadget = out->sizegadget = out->closegadget = out->titled = (uint8_t)(own_screen == 0);
 }
 
 uint32_t mui_window_attrs_calls(void) {
