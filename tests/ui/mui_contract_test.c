@@ -216,7 +216,7 @@ static void test_pens(void) {
     n = fread(src, 1, sizeof src - 1, f);
     fclose(f);
     src[n] = 0;
-    CHECK(strstr(src, "mui_make_text(s, MUI_ATTR_ARTIST, \"\", MUI_LBL_ARTIST)") != NULL && strstr(src, "mui_pens_label_slot(label)") != NULL,
+    CHECK(strstr(src, "mui_make_text(s, MUI_ATTR_ARTIST, \"\", MUI_LBL_ARTIST)") != NULL && strstr(src, "mui_pens_label_tone(label)") != NULL,
           "mui_ui.c routes the artist label through the label table");
     CHECK(strstr(src, "mui_pens_plan_for(") != NULL, "mui_ui.c builds the palette through mui_pens_plan_for");
     CHECK(strstr(src, "SA_Pens") != NULL && strstr(src, "SA_Colors32") != NULL && strstr(src, "SA_PubName") != NULL, "mui_ui.c opens its own public screen with the plan palette and DrawInfo pens");
@@ -289,6 +289,11 @@ static void test_theme(void) {
         char key[64];
         if (role == MUI_TH_BUTTON) {
             continue; /* exemption: buttons are AAButton objects that draw from mui_aa_button_rgb, no stock frame role (design 3.1) */
+        }
+        if (role == MUI_TH_STATUS) {
+            /* exemption (I667d, design 3.7): status lines are AAText objects; mui_aatext reads the role look from g_th[MUI_TH_STATUS] */
+            CHECK(strstr(src, "g_th[MUI_TH_STATUS].look.frame") != NULL && strstr(src, "g_th[MUI_TH_STATUS].look.background") != NULL, "mui_aatext does not take the status frame and background from the role look");
+            continue;
         }
         snprintf(key, sizeof key, "TH_TAGS(%s,", names[role]);
         CHECK(strstr(src, key) != NULL, "mui_ui.c never builds role %s through TH_TAGS", names[role]);
@@ -412,9 +417,9 @@ static void test_open_no_suggestion(void) {
     CHECK(m.show[MUI_SLOT_SUGGESTION] == 0, "640 wide shows no suggestion");
     CHECK(f != NULL, "mui_ui.c readable");
     while (f != NULL && fgets(line, sizeof line, f) != NULL) {
-        if (strstr(line, "slot[MUI_SLOT_SUGGESTION] = TextObject") != NULL) {
+        if (strstr(line, "slot[MUI_SLOT_SUGGESTION] = mui_aatext(") != NULL) {
             found = 1;
-            CHECK(strstr(line, "MUIA_ShowMe, FALSE") != NULL, "suggestion object is created hidden");
+            CHECK(strstr(line, "MUI_AA_ALIGN_LEFT, 0, 1)") != NULL, "suggestion object is created hidden");
         }
     }
     CHECK(found, "suggestion object creation found");

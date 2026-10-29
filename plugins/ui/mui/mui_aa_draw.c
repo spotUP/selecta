@@ -152,6 +152,19 @@ void aa_setup(Object* obj, aa_ctx* c, const uint32_t* rgb, int n) {
     }
 }
 
+void aa_set_font_px(aa_ctx* c, int px) {
+    APTR f;
+    if (c->font == NULL || px == c->font_px || px <= 0) {
+        return;
+    }
+    f = font_get(c->scr, px);
+    if (f != NULL) {
+        font_put(c->font);
+        c->font = f;
+        c->font_px = px;
+    }
+}
+
 void aa_cleanup(aa_ctx* c) {
     int i;
     if (c->cm != NULL) {

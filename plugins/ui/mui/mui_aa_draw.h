@@ -30,6 +30,8 @@ typedef struct aa_ctx {
 
 /* Backend, font, and the n colours in rgb[] as held pens. Call from MUIM_Setup after the super class. */
 void aa_setup(Object* obj, aa_ctx* c, const uint32_t* rgb, int n);
+/* Another font size on top of aa_setup (the title tone, base + 4); the bitmap tier and a failed open keep the base font. */
+void aa_set_font_px(aa_ctx* c, int px);
 /* Releases every held pen and the font reference. Call from MUIM_Cleanup. */
 void aa_cleanup(aa_ctx* c);
 /* Held pen for an RGB, obtained on first use; -1 when the table is full. */

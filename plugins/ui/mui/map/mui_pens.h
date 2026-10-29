@@ -64,6 +64,8 @@ typedef struct mui_pens_plan {
 int mui_pens_plan_for(const uint32_t* tokens, mui_pens_plan* out);
 /* Palette slot (MUI_PEN_TEXT or MUI_PEN_TEXT_MUTED) a label draws in; MUI_PEN_TEXT for an unknown label. */
 int mui_pens_label_slot(mui_label label);
+/* I667d: AAText tone (MUI_AA_TONE_*, map/mui_aa.h) of a label: title for the song title, muted where the label slot is TEXT_MUTED, else normal. */
+int mui_pens_label_tone(mui_label label);
 /* DrawInfo pen number 0..7 that the plan points at palette slot `slot` (the digit of a MUI text pen escape), or -1. The first
  * match wins, so DETAILPEN carries the muted slot and TEXTPEN stays the TEXT slot. */
 int mui_pens_dri_index(const mui_pens_plan* plan, int slot);

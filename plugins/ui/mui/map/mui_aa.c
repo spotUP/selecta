@@ -1,5 +1,7 @@
 #include "mui_aa.h"
 
+#include <string.h>
+
 static int isqrt(int v) {
     int r = 0;
     while ((r + 1) * (r + 1) <= v) {
@@ -195,4 +197,47 @@ int mui_aa_check_plan(const uint32_t* token, const mui_aa_metrics_t* m, int stat
     out[n].inset = 0, out[n].radius = r, out[n++].rgb = state == MUI_AA_DISABLED ? token[SEL_GUI_TOKEN_TEXT_DISABLED] : token[SEL_GUI_TOKEN_TEXT_MUTED];
     out[n].inset = line, out[n].radius = r > line ? r - line : 0, out[n++].rgb = face;
     return n;
+}
+
+int mui_aa_tone_token(int tone) {
+    return tone == MUI_AA_TONE_MUTED ? SEL_GUI_TOKEN_TEXT_MUTED : SEL_GUI_TOKEN_TEXT;
+}
+
+int mui_aa_tone_font_px(int tone, int base_px) {
+    return tone == MUI_AA_TONE_TITLE && base_px > 0 ? base_px + MUI_AA_TITLE_EXTRA_PX : base_px;
+}
+
+int mui_aa_align_x(int align, int w, int cw) {
+    int x = align == MUI_AA_ALIGN_CENTRE ? (w - cw) / 2 : align == MUI_AA_ALIGN_RIGHT ? w - cw : 0;
+    return x > 0 ? x : 0;
+}
+
+int mui_aa_text_fit(const char* s, int max_w, mui_aa_width_fn width, void* ctx, char* out, int cap) {
+    int len = (int)strlen(s), n, dots_w;
+    static const char dots[] = "...";
+    if (cap <= 0) {
+        return 0;
+    }
+    if (width(ctx, s, len) <= max_w) {
+        n = len < cap - 1 ? len : cap - 1;
+        memcpy(out, s, (size_t)n);
+        out[n] = '\0';
+        return n;
+    }
+    dots_w = width(ctx, dots, 3);
+    out[0] = '\0';
+    if (dots_w > max_w || cap < 4) {
+        return 0;
+    }
+    for (n = len - 1; n > 0; n--) {
+        if (n > cap - 4) {
+            continue;
+        }
+        if (width(ctx, s, n) + dots_w <= max_w) {
+            break;
+        }
+    }
+    memcpy(out, s, (size_t)n);
+    memcpy(out + n, dots, 4);
+    return n + 3;
 }

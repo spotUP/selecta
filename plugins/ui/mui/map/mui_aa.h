@@ -66,6 +66,22 @@ int mui_aa_tier(int screen_rows);
 /* Control heights and paddings of one tier table for a font size from mui_aa_font_px. */
 void mui_aa_metrics(int font_px, mui_aa_metrics_t* out);
 
+/* I667d (design 3.7, AAText): text tones, alignment and the ellipsis cut. Pure maths, tested on the host. */
+enum { MUI_AA_TONE_NORMAL, MUI_AA_TONE_MUTED, MUI_AA_TONE_TITLE };
+enum { MUI_AA_ALIGN_LEFT, MUI_AA_ALIGN_CENTRE, MUI_AA_ALIGN_RIGHT };
+#define MUI_AA_TITLE_EXTRA_PX 4
+/* SEL_GUI_TOKEN_* a tone draws in: normal and title TEXT, muted TEXT_MUTED. */
+int mui_aa_tone_token(int tone);
+/* Font pixel size of a tone for the screen base size from mui_aa_font_px: title = base + 4, others = base; the bitmap tier (0) stays 0. */
+int mui_aa_tone_font_px(int tone, int base_px);
+/* Left edge of content of width cw in a box of width w for an alignment (never left of 0). */
+int mui_aa_align_x(int align, int w, int cw);
+/* Ink width of the first len bytes of s, supplied by the drawing side (ttengine pixmap on the Amiga, an advance table in the test). */
+typedef int (*mui_aa_width_fn)(void* ctx, const char* s, int len);
+/* Text that fits max_w: s itself when it fits, else the longest prefix plus "..." that fits (just "..." when not even one character
+ * does, empty when max_w cannot hold the dots). out gets at most cap-1 bytes; returns the length written. */
+int mui_aa_text_fit(const char* s, int max_w, mui_aa_width_fn width, void* ctx, char* out, int cap);
+
 #ifdef __cplusplus
 }
 #endif

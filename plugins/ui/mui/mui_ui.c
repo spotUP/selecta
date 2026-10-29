@@ -41,6 +41,7 @@
 #include <proto/muimaster.h>
 struct Library* MUIMasterBase;
 #include "mui_aabtn_class.h"
+#include "mui_aatext_class.h"
 #include "map/mui_aa.h"
 #include "mui_canvas_class.h"
 #include "mui_listview_class.h"
@@ -337,13 +338,6 @@ static const char* const p4_rating_entries[] = {"None", "1 star", "2 stars", "3 
 static const char* const p4_subsong_entries[] = {"Subsong 1", "Subsong 2", "Subsong 3", "Subsong 4", "Subsong 5", "Subsong 6", "Subsong 7", "Subsong 8", NULL};
 #define CTL_EXTRA_BASE 0x2700L /* MUI-P8-1: album and speed buttons of the transport area */
 
-/* I564: a Text object reads "_" in its contents as the hotkey mark and drops it, so a file name such as
- * "that_meme_again.mod" shows as "thatmemeagain.mod". MUIA_Text_HiCharIdx names the mark character; MUI_NOMARK is a control
- * character no file name, title or label carries, so every "_" is shown verbatim. List rows do not parse the mark. */
-#ifndef MUIA_Text_HiCharIdx
-#define MUIA_Text_HiCharIdx 0x804214f5UL
-#endif
-#define MUI_NOMARK 1
 
 
 /* I648: the Selecta look. g_look is filled once at open from the txt_theme tokens (the desktop UI's table); an entry with
@@ -463,18 +457,8 @@ static void mui_close_on_request(Object* win) {
     DoMethod(win, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, MUIV_Notify_Self, 3, MUIM_Set, MUIA_Window_Open, FALSE);
 }
 
-/* I660: PreParse strings of every Text object (plain, centred, right); only the alignment escape when the look is off. */
-static char g_pre[4], g_pre_c[8], g_pre_r[8];
-/* I672: the same for the muted slot (TEXT_MUTED); equal to the primary strings when the screen cannot show it exactly. */
-static char g_pre_m[4], g_pre_m_c[8];
-
-/* PreParse for a label: the pen slot comes from mui_pens_label_slot (map/mui_pens.c), the single label table. */
-static const char* mui_pre_for(mui_label label, int centred) {
-    if (mui_pens_label_slot(label) == MUI_PEN_TEXT_MUTED) {
-        return centred ? g_pre_m_c : g_pre_m;
-    }
-    return centred ? g_pre_c : g_pre;
-}
+/* I660: PreParse pen escape of the List columns (MUIC_List, outside the AAText inventory); every text line is an AAText (I667d). */
+static char g_pre[4];
 static char g_list_fmt1[8]; /* one-column list format carrying the pen preparse ("P=" + pen), empty when off */
 
 /* col_fmt (comma separated column specs) with "P=<pen escape> " in front of each column, so list text uses the look pen. */
@@ -534,24 +518,9 @@ static void mui_theme_init(void) {
     }
     /* The look off keeps the alignment escapes the labels always had. */
     g_pre[0] = g_list_fmt1[0] = 0;
-    sprintf(g_pre_c, "\033c");
-    sprintf(g_pre_r, "\033r");
     if (pen >= 0) {
         sprintf(g_pre, "\033%d", pen);
-        sprintf(g_pre_c, "\033c\033%d", pen);
-        sprintf(g_pre_r, "\033r\033%d", pen);
         sprintf(g_list_fmt1, "P=%s", g_pre);
-    }
-    /* I672: DrawInfo pen mui_pens_dri_index(MUTED) must read exactly the TEXT_MUTED token on the screen, or the muted labels
-     * fall back to the primary pen (Workbench fallback screen). */
-    sprintf(g_pre_m, "%s", g_pre);
-    sprintf(g_pre_m_c, "%s", g_pre_c);
-    {
-        int mp = mui_pens_dri_index(&g_plan, MUI_PEN_TEXT_MUTED);
-        if (pen >= 0 && g_scr != NULL && mp >= 0 && mp < 8 && pen_rgb[mp] == th.token[SEL_GUI_TOKEN_TEXT_MUTED]) {
-            sprintf(g_pre_m, "\033%d", mp);
-            sprintf(g_pre_m_c, "\033c\033%d", mp);
-        }
     }
 }
 
@@ -604,10 +573,25 @@ static Object* mui_make_check(const char* label, int on, LONG id) {
     return mui_aabtn_new(&sp);
 }
 
+/* I667d (design 3.7): the one text constructor. Every Selecta text line is a Selecta_AAText (mui_aatext_class.c): antialiased in the
+ * tone colour (normal TEXT, muted TEXT_MUTED, title TEXT at font + 4 px), aligned and cut with "..." at the width. framed = the
+ * status look (panel background and text frame, MUI_TH_STATUS); the tone of a label comes from mui_pens_label_tone. */
+static Object* mui_aatext(const char* contents, int tone, int align, int framed, int hidden) {
+    mui_aatext_spec sp;
+    sp.contents = contents;
+    sp.widest = NULL;
+    sp.tone = tone;
+    sp.align = align;
+    sp.ellipsis = 1;
+    sp.frame = framed ? (g_th[MUI_TH_STATUS].on ? (ULONG)g_th[MUI_TH_STATUS].look.frame : (ULONG)MUIV_Frame_Text) : (ULONG)MUIV_Frame_None;
+    sp.background = framed && g_th[MUI_TH_STATUS].on ? (ULONG)g_th[MUI_TH_STATUS].look.background : 0UL;
+    sp.hidden = hidden;
+    return mui_aatext_new(&sp);
+}
+
 static Object* mui_make_text(mui_state* s, uint32_t attr, const char* initial, mui_label label) {
     snprintf(s->txt_buf[attr], sizeof s->txt_buf[attr], "%s", initial);
-    s->txt[attr] = MUI_NewObject((char*)MUIC_Text, TH_TAGS(MUI_TH_STATUS, MUIV_Frame_Text) MUIA_Text_Contents, (ULONG)s->txt_buf[attr], MUIA_Text_HiCharIdx, MUI_NOMARK,
-                                 MUIA_Text_PreParse, (ULONG)mui_pre_for(label, 0), TAG_DONE);
+    s->txt[attr] = mui_aatext(s->txt_buf[attr], mui_pens_label_tone(label), MUI_AA_ALIGN_LEFT, 1, 0);
     return s->txt[attr];
 }
 
@@ -761,7 +745,7 @@ static Object* mui_tool_group(mui_state* s) {
     s->cyc_rating = mui_make_cycle(p4_rating_entries, CTL_P4_BASE + P4_RATING);
     s->cyc_subsong = mui_make_cycle(p4_subsong_entries, CTL_P4_BASE + P4_SUBSONG);
     snprintf(s->status_buf, sizeof s->status_buf, "Ready");
-    s->status = MUI_NewObject((char*)MUIC_Text, TH_TAGS(MUI_TH_STATUS, MUIV_Frame_Text) MUIA_Text_Contents, (ULONG)s->status_buf, MUIA_Text_HiCharIdx, MUI_NOMARK, MUIA_Text_PreParse, (ULONG)g_pre, TAG_DONE);
+    s->status = mui_aatext(s->status_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1, 0);
     if (s->str_search == NULL || s->str_cmd == NULL || s->cyc_rating == NULL || s->cyc_subsong == NULL || s->status == NULL) {
         return NULL;
     }
@@ -792,7 +776,7 @@ static Object* mui_main_group(mui_state* s) {
     mui_col_format_themed(s->col_fmt, s->col_fmt_th, sizeof s->col_fmt_th);
     g_list_hook.h_Entry = (__typeof__(g_list_hook.h_Entry))(void (*)(void))HookEntry;
     g_list_hook.h_SubEntry = (__typeof__(g_list_hook.h_SubEntry))(void (*)(void))mui_list_display;
-    s->crumb = MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG)" ", MUIA_ShowMe, FALSE, MUIA_Text_PreParse, (ULONG)g_pre, TAG_DONE);
+    s->crumb = mui_aatext(" ", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0, 1);
     s->list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_List_DisplayHook, (ULONG)&g_list_hook,
                             MUIA_List_Format, (ULONG)s->col_fmt_th, MUIA_List_Title, TRUE, TAG_DONE);
     if (g == NULL || s->list == NULL || s->crumb == NULL) {
@@ -815,7 +799,7 @@ static Object* mui_main_group(mui_state* s) {
     }
     DoMethod(g, OM_ADDMEMBER, s->crumb);
     s->crumb_row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_ShowMe, FALSE, TAG_DONE);
-    s->state_txt = MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG)" ", MUIA_ShowMe, FALSE, MUIA_Text_PreParse, (ULONG)g_pre, TAG_DONE);
+    s->state_txt = mui_aatext(" ", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0, 1);
     if (s->crumb_row == NULL || s->state_txt == NULL) {
         return NULL;
     }
@@ -853,7 +837,7 @@ static Object* mui_main_group(mui_state* s) {
  * signature of the shown values changes. */
 static Object* mui_np_text(char* buf, size_t cap, const char* init, mui_label label) {
     snprintf(buf, cap, "%s", init);
-    return MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG)buf, MUIA_Text_PreParse, (ULONG)mui_pre_for(label, 0), TAG_DONE);
+    return mui_aatext(buf, mui_pens_label_tone(label), MUI_AA_ALIGN_LEFT, 0, 0);
 }
 
 static Object* mui_detail_group(mui_state* s) {
@@ -883,7 +867,7 @@ static Object* mui_detail_group(mui_state* s) {
     if (lyr_view != NULL) {
         DoMethod(g, OM_ADDMEMBER, lyr_view);
     }
-    DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG) "Next in Queue", MUIA_Text_PreParse, (ULONG)mui_pre_for(MUI_LBL_SECTION, 1), TAG_DONE));
+    DoMethod(g, OM_ADDMEMBER, mui_aatext("Next in Queue", mui_pens_label_tone(MUI_LBL_SECTION), MUI_AA_ALIGN_CENTRE, 0, 0));
     for (i = 0; i < 3; i++) {
         s->np_up[i] = mui_np_text(s->np_up_buf[i], sizeof s->np_up_buf[i], " ", MUI_LBL_UPCOMING);
         DoMethod(g, OM_ADDMEMBER, s->np_up[i]);
@@ -956,9 +940,9 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
     mui_flat(s->np_buf[0], sizeof s->np_buf[0], title != NULL && title[0] != '\0' ? title : " ");
     mui_flat(s->np_buf[1], sizeof s->np_buf[1], artist != NULL && artist[0] != '\0' ? artist : " ");
     mui_flat(s->np_buf[2], sizeof s->np_buf[2], album != NULL && album[0] != '\0' ? album : " ");
-    set(s->np_title, MUIA_Text_Contents, (ULONG)s->np_buf[0]);
-    set(s->np_artist, MUIA_Text_Contents, (ULONG)s->np_buf[1]);
-    set(s->np_album, MUIA_Text_Contents, (ULONG)s->np_buf[2]);
+    mui_aatext_set(s->np_title, s->np_buf[0]);
+    mui_aatext_set(s->np_artist, s->np_buf[1]);
+    mui_aatext_set(s->np_album, s->np_buf[2]);
     /* Lyrics: plain text whole; synced lyrics show the current line and the next. */
     lyr = st->lyric_text;
     if (lyr != NULL) {
@@ -981,7 +965,7 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
     for (i = 0; i < 3u; i++) {
         const char* p = n + i < st->queue_count && st->queue != NULL ? st->queue_text + st->queue[n + i].path_offset : NULL;
         mui_flat(s->np_up_buf[i], sizeof s->np_up_buf[i], p != NULL ? mui_base_name(p) : " ");
-        set(s->np_up[i], MUIA_Text_Contents, (ULONG)s->np_up_buf[i]);
+        mui_aatext_set(s->np_up[i], s->np_up_buf[i]);
     }
     if (title != NULL && title[0] != '\0') {
         s->p4[P4_NP]++;
@@ -1061,7 +1045,7 @@ static void mui_refresh(mui_state* s) {
     }
     if (mui_toast_tick(&s->toast, mui_now_ms())) { /* MUI-P4-11: the toast went away after 3 s (6 s for an error) */
         snprintf(s->status_buf, sizeof s->status_buf, "Ready");
-        set(s->status, MUIA_Text_Contents, (ULONG)s->status_buf);
+        mui_aatext_set(s->status, s->status_buf);
         s->p4[P4_TOAST]++;
     }
     s->uim.dirty |= sel_uim_update(&s->uim, st);
@@ -1074,7 +1058,7 @@ static void mui_refresh(mui_state* s) {
         if (s->txt[a] != NULL) {
             const char* t = mui_attr_text(a, f);
             snprintf(s->txt_buf[a], sizeof s->txt_buf[a], "%s", t != NULL && t[0] != '\0' ? t : " ");
-            set(s->txt[a], MUIA_Text_Contents, (ULONG)s->txt_buf[a]);
+            mui_aatext_set(s->txt[a], s->txt_buf[a]);
         } else if (a == MUI_ATTR_SEEK) {
             s->seek_set = (LONG)f->progress_q16;
             set(s->seek, MUIA_Slider_Level, s->seek_set);
@@ -1114,7 +1098,7 @@ static void mui_refresh(mui_state* s) {
             mui_list_breadcrumb(v, crumb, sizeof crumb);
             if (drill && strcmp(crumb, s->crumb_buf) != 0) {
                 snprintf(s->crumb_buf, sizeof s->crumb_buf, "%s", crumb);
-                set(s->crumb, MUIA_Text_Contents, (ULONG)s->crumb_buf);
+                mui_aatext_set(s->crumb, s->crumb_buf);
             }
             set(s->crumb, MUIA_ShowMe, drill ? TRUE : FALSE);
         }
@@ -1134,7 +1118,7 @@ static void mui_refresh(mui_state* s) {
                 for (k = 0; k < MUI_CRUMB_MAX; k++) {
                     if (k < np) {
                         snprintf(s->crumb_lbl[k], sizeof s->crumb_lbl[k], "%s", pieces[k].name);
-                        set(s->crumb_btn[k], MUIA_Text_Contents, (ULONG)s->crumb_lbl[k]);
+                        mui_aabtn_set_caption(s->crumb_btn[k], s->crumb_lbl[k]);
                     }
                     set(s->crumb_btn[k], MUIA_ShowMe, k < np ? TRUE : FALSE);
                 }
@@ -1154,7 +1138,7 @@ static void mui_refresh(mui_state* s) {
                 if (sparent != 0) {
                     DoMethod((Object*)sparent, MUIM_Group_InitChange);
                 }
-                set(s->state_txt, MUIA_Text_Contents, (ULONG)(s->state_buf[0] != '\0' ? s->state_buf : " "));
+                mui_aatext_set(s->state_txt, (s->state_buf[0] != '\0' ? s->state_buf : " "));
                 set(s->state_txt, MUIA_ShowMe, s->state_buf[0] != '\0' ? TRUE : FALSE);
                 if (sparent != 0) {
                     DoMethod((Object*)sparent, MUIM_Group_ExitChange);
@@ -1318,7 +1302,7 @@ static void mui_p4_note(mui_state* s, uint32_t which, const char* line) {
     s->p4[which]++;
     snprintf(s->status_buf, sizeof s->status_buf, "%s: %s", p4_name[which], line);
     mui_toast_show(&s->toast, s->status_buf, 0, mui_now_ms());
-    set(s->status, MUIA_Text_Contents, (ULONG)s->status_buf);
+    mui_aatext_set(s->status, s->status_buf);
 }
 
 /* MUI-P4-14: the Help window, one List row per action table row (mui_help_row). Built once, then only opened. */
@@ -1461,7 +1445,7 @@ static void mui_settings_open(mui_state* s) {
                 continue;
             }
             s->set_ctl[i] = g;
-            DoMethod(grid, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Text, MUIA_Text_Contents, (ULONG)r->label, MUIA_Text_PreParse, (ULONG)g_pre_r, TAG_DONE));
+            DoMethod(grid, OM_ADDMEMBER, mui_aatext(r->label, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_RIGHT, 0, 0));
             DoMethod(grid, OM_ADDMEMBER, g);
         }
         s->set_win = MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, (ULONG) "Selecta Settings", MUIA_Window_ID, 0x53455453UL,
@@ -1783,7 +1767,7 @@ static void* mui_open(const sel_ui_open_args* a) {
             MUIA_Window_Width, MUIV_Window_Width_Screen(100), MUIA_Window_Height, MUIV_Window_Height_Screen(100),
             MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Centered, MUIA_Window_Menustrip, (ULONG)strip,
             WindowContents, s->root = VGroup, TH_TAGS(MUI_TH_WINDOW, MUI_FRAME_NONE)
-                Child, s->slot[MUI_SLOT_SUGGESTION] = TextObject, MUIA_ShowMe, FALSE, MUIA_Text_Contents, (ULONG) "Window is narrow: try the mini layout", End,
+                Child, s->slot[MUI_SLOT_SUGGESTION] = mui_aatext("Window is narrow: try the mini layout", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0, 1),
                 Child, HGroup,
                     Child, s->slot[MUI_SLOT_SIDEBAR] = mui_sidebar_group(),
                     Child, s->balance[0] = BalanceObject, End,
@@ -1929,6 +1913,7 @@ static void mui_close(void* state) {
         s->win = NULL;
         s->canvas = NULL;
         mui_canvas_class_free();
+        mui_aatext_class_free();
         mui_aabtn_class_free();
         mui_listview_class_free();
     }

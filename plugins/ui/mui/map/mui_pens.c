@@ -4,6 +4,7 @@
 
 #include <selecta/uimodel/tokens.h>
 
+#include "mui_aa.h"
 #include "mui_icons.h"
 
 static uint32_t g_planned;
@@ -67,6 +68,13 @@ int mui_pens_label_slot(mui_label label) {
     default:
         return MUI_PEN_TEXT;
     }
+}
+
+int mui_pens_label_tone(mui_label label) {
+    if (label == MUI_LBL_TITLE) {
+        return MUI_AA_TONE_TITLE;
+    }
+    return mui_pens_label_slot(label) == MUI_PEN_TEXT_MUTED ? MUI_AA_TONE_MUTED : MUI_AA_TONE_NORMAL;
 }
 
 int mui_pens_dri_index(const mui_pens_plan* plan, int slot) {

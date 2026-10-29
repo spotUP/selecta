@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "mui_aa.h"
+#include "mui_pens.h"
 #include "mui_theme.h"
 #include <selecta/uimodel/theme.h>
 #include <selecta/uimodel/tokens.h>
@@ -148,6 +149,81 @@ static void test_check(void) {
     free(cls);
 }
 
+/* I667d mui-text-fit: the ellipsis cut on a fixed advance table (every byte 10 px wide, so "..." is 30 px). */
+static int adv10(void* ctx, const char* s, int len) {
+    (void)ctx;
+    (void)s;
+    return len * 10;
+}
+static void test_text_fit(void) {
+    char out[64];
+    mui_aa_text_fit("abcdef", 60, adv10, NULL, out, (int)sizeof out);
+    CHECK(strcmp(out, "abcdef") == 0, "text that fits stays whole: '%s'", out);
+    mui_aa_text_fit("abcdefgh", 60, adv10, NULL, out, (int)sizeof out);
+    CHECK(strcmp(out, "abc...") == 0, "cut at 60 px keeps 3 chars and dots: '%s'", out);
+    mui_aa_text_fit("abcdefgh", 65, adv10, NULL, out, (int)sizeof out);
+    CHECK(strcmp(out, "abc...") == 0, "spare pixels do not add half a char: '%s'", out);
+    mui_aa_text_fit("abcdefgh", 30, adv10, NULL, out, (int)sizeof out);
+    CHECK(strcmp(out, "...") == 0, "only the dots fit: '%s'", out);
+    mui_aa_text_fit("abcdefgh", 29, adv10, NULL, out, (int)sizeof out);
+    CHECK(out[0] == '\0', "dots do not fit: nothing drawn, got '%s'", out);
+    mui_aa_text_fit("", 5, adv10, NULL, out, (int)sizeof out);
+    CHECK(out[0] == '\0', "empty text stays empty");
+    mui_aa_text_fit("abcdefgh", 1000, adv10, NULL, out, 5);
+    CHECK(strlen(out) < 5, "output capped by cap: '%s'", out);
+}
+
+/* I667d mui-text-tone: tone -> token -> held pen slot, title = font + 4, label tones, alignment. */
+static void test_text_tone(void) {
+    CHECK(mui_aa_tone_token(MUI_AA_TONE_NORMAL) == SEL_GUI_TOKEN_TEXT, "normal tone is TEXT");
+    CHECK(mui_aa_tone_token(MUI_AA_TONE_MUTED) == SEL_GUI_TOKEN_TEXT_MUTED, "muted tone is TEXT_MUTED");
+    CHECK(mui_aa_tone_token(MUI_AA_TONE_TITLE) == SEL_GUI_TOKEN_TEXT, "title tone is TEXT");
+    CHECK(mui_pens_aga_slot(mui_aa_tone_token(MUI_AA_TONE_NORMAL)) == MUI_PEN_TEXT, "normal tone holds the TEXT pen");
+    CHECK(mui_pens_aga_slot(mui_aa_tone_token(MUI_AA_TONE_MUTED)) == MUI_PEN_TEXT_MUTED, "muted tone holds the TEXT_MUTED pen");
+    CHECK(mui_aa_tone_font_px(MUI_AA_TONE_TITLE, 15) == 19, "title is font + 4: %d", mui_aa_tone_font_px(MUI_AA_TONE_TITLE, 15));
+    CHECK(mui_aa_tone_font_px(MUI_AA_TONE_NORMAL, 15) == 15 && mui_aa_tone_font_px(MUI_AA_TONE_MUTED, 15) == 15, "other tones keep the font");
+    CHECK(mui_aa_tone_font_px(MUI_AA_TONE_TITLE, 0) == 0, "bitmap tier stays on its font");
+    CHECK(mui_pens_label_tone(MUI_LBL_TITLE) == MUI_AA_TONE_TITLE, "title label");
+    CHECK(mui_pens_label_slot(MUI_LBL_ALBUM) != MUI_PEN_TEXT_MUTED || mui_pens_label_tone(MUI_LBL_ALBUM) == MUI_AA_TONE_MUTED, "muted label slot gives muted tone");
+    CHECK(mui_pens_label_tone(MUI_LBL_SECTION) == (mui_pens_label_slot(MUI_LBL_SECTION) == MUI_PEN_TEXT_MUTED ? MUI_AA_TONE_MUTED : MUI_AA_TONE_NORMAL), "section label tone follows its pen slot");
+    CHECK(mui_aa_align_x(MUI_AA_ALIGN_LEFT, 100, 40) == 0 && mui_aa_align_x(MUI_AA_ALIGN_CENTRE, 100, 40) == 30 && mui_aa_align_x(MUI_AA_ALIGN_RIGHT, 100, 40) == 60,
+          "align offsets");
+}
+
+static int count_of(const char* hay, const char* needle) {
+    int n = 0;
+    const char* p = hay;
+    while ((p = strstr(p, needle)) != NULL) {
+        n++;
+        p += strlen(needle);
+    }
+    return n;
+}
+
+/* I667d mui-text-source: the MUI UI builds every text line through AAText: no MUIC_Text, TextObject or pen escape text left,
+ * eight construction sites (counted from the source: the helper definition plus eight calls = 9 "mui_aatext(" spellings). */
+static void test_text_source(void) {
+    char* ui = slurp(UI_SOURCE);
+    char* cls = slurp(AATEXT_SOURCE);
+    char* cm = slurp(MUI_CMAKE);
+    CHECK(ui != NULL && cls != NULL && cm != NULL, "sources readable");
+    if (ui == NULL || cls == NULL || cm == NULL) {
+        return;
+    }
+    CHECK(count_of(ui, "MUIC_Text") == 0, "MUIC_Text left in mui_ui.c: %d", count_of(ui, "MUIC_Text"));
+    CHECK(count_of(ui, "TextObject") == 0, "TextObject left in mui_ui.c: %d", count_of(ui, "TextObject"));
+    CHECK(count_of(ui, "MUIA_Text_Contents") == 0 && count_of(ui, "MUIA_Text_PreParse") == 0, "Text attribute left in mui_ui.c");
+    CHECK(count_of(ui, "mui_aatext(") == 9, "text constructor sites: %d (definition + 8)", count_of(ui, "mui_aatext("));
+    CHECK(count_of(ui, "mui_aatext_new(") == 1, "one AAText constructor call: %d", count_of(ui, "mui_aatext_new("));
+    CHECK(strstr(cls, "mui_aa_text_fit(") != NULL && strstr(cls, "mui_aa_tone_token(") != NULL && strstr(cls, "mui_aa_tone_font_px(") != NULL && strstr(cls, "aa_text(") != NULL,
+          "class does not draw through the shared tone, fit and text helpers");
+    CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "TT_") == NULL, "class holds no pen or ttengine code of its own");
+    CHECK(strstr(cm, "mui_aatext_class.c") != NULL, "class not in the build");
+    free(ui);
+    free(cls);
+    free(cm);
+}
+
 int main(int argc, char** argv) {
     const char* t = argc > 1 ? argv[1] : "";
     if (!strcmp(t, "round")) {
@@ -160,6 +236,12 @@ int main(int argc, char** argv) {
         test_tokens();
     } else if (!strcmp(t, "check")) {
         test_check();
+    } else if (!strcmp(t, "text-fit")) {
+        test_text_fit();
+    } else if (!strcmp(t, "text-tone")) {
+        test_text_tone();
+    } else if (!strcmp(t, "text-source")) {
+        test_text_source();
     } else {
         printf("usage: round|ramp|state|tokens\n");
         return 2;
