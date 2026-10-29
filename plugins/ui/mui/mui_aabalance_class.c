@@ -1,8 +1,8 @@
 /* Selecta_AABalance (I667l, design section 3.10). MUI 3.8: MUI_CreateCustomClass on Balance, same dispatcher pattern as
  * mui_aatabs_class.c. Dragging, the resize maths and the weights stay MUI's (super class). The class overrides AskMinMax (box width =
  * the panel gap, mui_aa_balance_width) and Draw: MADF_DRAWOBJECT / MADF_DRAWUPDATE paints the whole box in the BACKGROUND pen and a
- * centred 1 px DIVIDER line (mui_aa_balance_line / mui_aa_balance_rgb), and never calls the super class for the draw, so no prefs
- * frame or 3D bar shows. No hardcoded colour, no ObtainBestPen (held pens through aa_pen). */
+ * centred 1 px DIVIDER line (mui_aa_balance_line / mui_aa_balance_rgb) after the super draw (clip region, I667n); the box fill covers
+ * the super's 3D bar, so no prefs frame or bar shows. No hardcoded colour, no ObtainBestPen (held pens through aa_pen). */
 #include "mui_aabalance_class.h"
 
 #include <stdint.h>
@@ -65,7 +65,10 @@ static ULONG aabal_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     aabal_data* d = INST_DATA(cl, obj);
     struct RastPort* rp = _rp(obj);
     int lx, ly, lw, lh;
-    (void)cl;
+    /* I667n: the Area super class installs the object's clip region and the window layer lock for the draw; without it every RectFill
+     * below was clipped away (rig 2: box and line measured as the parent background only). The super paints its own bar first, the
+     * box fill below covers all of it. */
+    DoSuperMethodA(cl, obj, (Msg)msg);
     if (!(msg->flags & (MADF_DRAWOBJECT | MADF_DRAWUPDATE)) || rp == NULL) {
         return 0;
     }

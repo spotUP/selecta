@@ -130,7 +130,7 @@ static void test_state(void) {
               "class draws through mui_aa_button_rgb and aa_*");
         CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "TT_") == NULL, "class holds no pen or ttengine code of its own");
         CHECK(strstr(draw, "mui_aa_ramp_pens(") != NULL && strstr(draw, "mui_aa_ramp_slot(") != NULL &&
-                  strstr(draw, "mui_theme_readable(") != NULL && strstr(draw, "ReleasePen") != NULL,
+                  strstr(draw, "mui_theme_text_uses_token(") != NULL && strstr(draw, "ReleasePen") != NULL,
               "aa_draw uses the ramp, the contrast gate and releases pens");
     }
     free(cls);
@@ -564,6 +564,48 @@ static void test_cycle_source(void) {
     free(cm);
 }
 
+/* I667n mui-aa-i667n: the four rig mismatches of I667k, each at its root. (1) AABalance paints after the super draw (clip region); (2) the
+ * AAField inner String gets the face by an explicit set (the OM_NEW tag is ignored by the String class); (3) a volume below maximum
+ * leaves TRACK 3A3A44 pixels beside the fill (at maximum the fill covers the whole track by design); (4) truecolour text is drawn in
+ * the designed colour even where the pen contrast gate would refuse it (ACCENT_TEXT on ACCENT). */
+static void test_i667n(void) {
+    txt_theme th;
+    mui_aa_slider_t m;
+    mui_aa_slider_op_t ops[MUI_AA_SLIDER_OPS];
+    int n, i, track_w = 0, fill_w = 0;
+    char* bal = slurp(AABALANCE_SOURCE);
+    char* fld = slurp(AAFIELD_SOURCE);
+    txt_theme_default(&th);
+    CHECK(bal != NULL && fld != NULL, "sources readable");
+    if (bal != NULL) {
+        const char* draw = strstr(bal, "static ULONG aabal_draw(");
+        const char* sup = draw != NULL ? strstr(draw, "DoSuperMethodA(cl, obj, (Msg)msg);") : NULL;
+        const char* fill = draw != NULL ? strstr(draw, "RectFill(") : NULL;
+        CHECK(sup != NULL && fill != NULL && sup < fill, "balance draws before the super draw: no clip region, nothing paints");
+    }
+    if (fld != NULL) {
+        const char* mk = strstr(fld, "Object* mui_aafield_new(");
+        CHECK(mk != NULL && strstr(mk, "set(str, MUIA_Background, (ULONG)g_bg_spec);") != NULL, "inner String never gets the face by an explicit set");
+    }
+    mui_aa_slider_metrics(13, &m);
+    n = mui_aa_slider_plan(th.token, &m, MUI_AA_NORMAL, 83, 16, 50, 0, 100, ops);
+    for (i = 0; i < n; i++) {
+        if (ops[i].kind == MUI_AA_SLIDER_TRACK) {
+            track_w = ops[i].w;
+            CHECK(ops[i].rgb == 0x3A3A44u, "track colour %06X", (unsigned)ops[i].rgb);
+        } else if (ops[i].kind == MUI_AA_SLIDER_FILL) {
+            fill_w = ops[i].w;
+        }
+    }
+    CHECK(track_w == 83 && fill_w > 0 && fill_w < track_w, "half volume leaves track beside fill: track %d fill %d", track_w, fill_w);
+    CHECK(mui_theme_text_uses_token(1, 0, th.token[SEL_GUI_TOKEN_ACCENT_TEXT], th.token[SEL_GUI_TOKEN_ACCENT]), "truecolour: ACCENT_TEXT on ACCENT refused");
+    CHECK(!mui_theme_text_uses_token(0, 0, th.token[SEL_GUI_TOKEN_ACCENT_TEXT], th.token[SEL_GUI_TOKEN_ACCENT]), "pen backend: the gate must still refuse the unreadable pair");
+    CHECK(mui_theme_text_uses_token(0, 0, th.token[SEL_GUI_TOKEN_TEXT], th.token[SEL_GUI_TOKEN_SURFACE]) && !mui_theme_text_uses_token(1, 1, 0xFFFFFFu, 0u),
+          "readable pair passes on pens; the plain backend never uses the token");
+    free(bal);
+    free(fld);
+}
+
 /* I667h mui-field-plan: AAField maths. Face SURFACE_RAISED 2A2A32 (I667h2: Johan, SURFACE matched the panel), outline TRACK 3A3A44, FOCUS_RING 93C5FD while active, radius 6 (tier S 4),
  * height as AAButton, pad 8, the text height widens the field, and every call counts on the sentinel the class reads. */
 static void test_field_plan(void) {
@@ -900,6 +942,8 @@ int main(int argc, char** argv) {
         test_cycle_step();
     } else if (!strcmp(t, "cycle-source")) {
         test_cycle_source();
+    } else if (!strcmp(t, "i667n")) {
+        test_i667n();
     } else if (!strcmp(t, "field-plan")) {
         test_field_plan();
     } else if (!strcmp(t, "field-source")) {

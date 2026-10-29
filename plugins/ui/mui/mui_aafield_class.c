@@ -158,6 +158,9 @@ Object* mui_aafield_new(const mui_aafield_spec* sp) {
     if (str == NULL) {
         return NULL;
     }
+    /* I667n: the String class puts its own MUIA_Background (StringBack) first in its tag list, so the tag above is ignored at OM_NEW and
+     * the edit area drew the window colour (121214, the dark rectangle). An explicit set after creation is honoured. */
+    set(str, MUIA_Background, (ULONG)g_bg_spec);
     o = NewObject(g_class->mcc_Class, NULL, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Background, (ULONG)g_bg_spec, MUIA_FillArea, (ULONG)FALSE, MUIA_Group_Spacing, 0UL, MUIA_InnerLeft,
                   (ULONG)m.pad_x, MUIA_InnerRight, (ULONG)m.pad_x, MUIA_InnerTop, (ULONG)(m.pad_y + m.outline), MUIA_InnerBottom, (ULONG)(m.pad_y + m.outline),
                   MUIA_Group_Child, (ULONG)MUI_NewObject((char*)MUIC_Rectangle, MUIA_VertWeight, 100UL, TAG_DONE), /* flexible VSpace(0) above and below: MUI 3.8 centres a fixed-height child */

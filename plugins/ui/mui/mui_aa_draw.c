@@ -272,7 +272,7 @@ int aa_text_height(aa_ctx* c, Object* obj) {
 
 void aa_text(aa_ctx* c, Object* obj, struct RastPort* rp, int x, int y, const char* str, uint32_t fg, uint32_t bg) {
     int len = (int)strlen(str);
-    if (c->backend == AA_PLAIN || !mui_theme_readable(fg, bg)) {
+    if (!mui_theme_text_uses_token(c->backend == AA_TC, c->backend == AA_PLAIN, fg, bg)) {
         LONG pen = c->backend == AA_PLAIN ? aa_pen(c, fg) : (LONG)_dri(obj)->dri_Pens[TEXTPEN];
         SetFont(rp, _font(obj));
         SetAPen(rp, pen);

@@ -80,6 +80,12 @@ int mui_theme_readable(uint32_t text_rgb, uint32_t bg_rgb) {
     return hi * 10u / lo >= 40u;
 }
 
+/* I667n: a truecolour screen shows fg exactly as designed (no obtained pen to drift from the token), so the pen contrast gate does not
+ * apply there: ACCENT_TEXT on ACCENT is the designed pair even though it is below 4.0 (RTG Play glyph measured C8C8D0, not E4E4EA). */
+int mui_theme_text_uses_token(int truecolour, int plain, uint32_t fg_rgb, uint32_t bg_rgb) {
+    return !plain && (truecolour || mui_theme_readable(fg_rgb, bg_rgb));
+}
+
 static uint32_t lum_dist(uint32_t a, uint32_t b) {
     uint32_t x = lum(a), y = lum(b);
     return x > y ? x - y : y - x;
