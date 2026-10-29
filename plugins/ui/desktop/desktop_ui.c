@@ -207,7 +207,7 @@ typedef struct desk {
     char empty_text[64];     /* the one-line empty state the last page frame drew; empty when it drew none */
     uint32_t pl_draws, pl_rows, pl_cmds, folder_opens; /* frames drawn (sentinel), rows in the last one, verbs sent, folders source opens */
     uint32_t pl_sel_kind, pl_sel_id; /* the selected row: SEL_ROW_FOLDER or SEL_ROW_PLAYLIST and its database id (0 = none) */
-    uint32_t col_kind;       /* I678f: 0 = a playlist, else SEL_LIB_ITEM_ALBUM / ARTIST / COMPOSER: the kind the collection page shows (pls_id is COL_KIND_ID then) */
+    uint32_t col_kind;       /* I678f: 0 = a playlist, else SEL_LIB_ITEM_ALBUM / ARTIST / COMPOSER / RECENT / LOCAL / SOURCE, or COL_LIKED for Liked Songs (whose engine kind is 0): the kind the collection page shows (pls_id is COL_KIND_ID then) */
     char col_sub[96];        /* the album's artist (the side item's sub) */
     uint32_t col_year;       /* the album's year (0 unknown) */
     uint32_t* col_av;        /* the artist / composer avatar: generated art of the name, rendered once and drawn through a circle mask (D6) */
@@ -382,8 +382,7 @@ typedef struct desk {
     sel_engine_library_item side_items[SIDE_LIB_MAX]; /* I608: the saved playlists listed under the doors */
     uint32_t side_n, side_stale, side_draws, side_rows, side_opens, side_empty_draws, side_create_clicks; /* items held, reload wanted, frames drawn, rows drawn in the last one, rows opened */
     uint32_t side_touch_seen;   /* I678c: lib_touch_calls last seen; a change reloads the list */
-    uint32_t side_item_calls, side_open_kind, side_open_page; /* I678b: mixed-list reads, the kind and page of the last non-playlist row opened */
-    char side_open_key[96];                                  /* I678b: the key of that row */
+    uint32_t side_item_calls; /* I678b: mixed-list reads */
     uint32_t side_open_n, side_open_tries; /* I646: the sidebar count a just created playlist brings the list to (0 = none pending), frames waited */
     uint32_t shelf_open;                                   /* I617: the 1-based shelf the Shelf page shows in full, 0 when none */
     int32_t shelf_back_y_q16;                              /* I617: the Home scroll kept while the Shelf page is open */
@@ -4124,6 +4123,14 @@ static void col_rebuild(desk* d);
 static void col_cover_refresh(desk* d);
 
 #define COL_KIND_ID 0xFFFFFFFFu /* the pls_id of an album, artist or composer page: no playlist has it */
+#define COL_LIKED 0x100u        /* I678g: col_kind of Liked Songs; its engine kind SEL_LIB_ITEM_LIKED is 0, which col_kind uses for a playlist */
+
+static uint32_t col_ui_kind(uint32_t eng_kind) { return eng_kind == (uint32_t)SEL_LIB_ITEM_LIKED ? COL_LIKED : eng_kind; }
+static uint32_t col_eng_kind(const desk* d) { return d->col_kind == COL_LIKED ? (uint32_t)SEL_LIB_ITEM_LIKED : d->col_kind; }
+/* The three pinned rows show the wordmark header instead of a cover (design section 8). */
+static int col_wordmark(const desk* d) {
+    return d->col_kind == COL_LIKED || d->col_kind == (uint32_t)SEL_LIB_ITEM_RECENT || d->col_kind == (uint32_t)SEL_LIB_ITEM_LOCAL;
+}
 enum { COL_MAX_SONGS = 8192, COL_SHELF_MAX = 24 };
 
 static void pls_free(desk* d) {
@@ -4164,7 +4171,7 @@ static void pls_reload(desk* d) {
         uint32_t sh;
         n = 0u;
         buf[0] = '\0';
-        if (pg == NULL || pg->kind != d->col_kind || strcmp(pg->key, d->col_key) != 0 || pg->serial == d->col_open_serial) {
+        if (pg == NULL || pg->kind != col_eng_kind(d) || strcmp(pg->key, d->col_key) != 0 || pg->serial == d->col_open_serial) {
             d->pls_stale = 1u; /* the engine has not built the page yet: ask again next frame */
         } else {
             const char* r;
@@ -4412,6 +4419,8 @@ static const char* col_kind_label(const desk* d) {
     return d->col_kind == (uint32_t)SEL_LIB_ITEM_ALBUM      ? "Album"
            : d->col_kind == (uint32_t)SEL_LIB_ITEM_ARTIST   ? "Artist"
            : d->col_kind == (uint32_t)SEL_LIB_ITEM_COMPOSER ? "Composer"
+           : d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE   ? "Source"
+           : d->col_kind == (uint32_t)SEL_LIB_ITEM_LOCAL    ? "Source"
                                                             : "Playlist";
 }
 
@@ -4485,7 +4494,7 @@ static sel_gui_rect col_more_rect(desk* d, sel_gui_rect mn) { /* the Show more r
 static void desk_quoted_request(char* line, size_t cap, const char* head, const char* arg);
 static void col_kind_open(desk* d, uint32_t kind, const char* key, const char* name, const char* sub) {
     pls_open(d, COL_KIND_ID, name);
-    d->col_kind = kind;
+    d->col_kind = col_ui_kind(kind);
     d->col_popular = 5u;
     memset(d->col_shelf_n, 0, sizeof d->col_shelf_n);
     snprintf(d->col_key, sizeof d->col_key, "%s", key != NULL ? key : "");
@@ -4501,6 +4510,10 @@ static void col_kind_open(desk* d, uint32_t kind, const char* key, const char* n
         snprintf(head, sizeof head, "COLLECTION_OPEN %u", (unsigned)kind);
         desk_quoted_request(open, sizeof open, head, d->col_key);
         desk_send(d, open);
+    }
+    if (kind == (uint32_t)SEL_LIB_ITEM_SOURCE) { /* I678g: the source status block reads the registered sources */
+        d->src_wait = 1;
+        desk_send(d, "SOURCES");
     }
     pls_reload(d);
     d->pl_sel_kind = 0u;
@@ -4805,6 +4818,79 @@ static void col_round_art(desk* d, sel_gui_rect r) {
     sel_gui_blit_image_round(d->canvas, r, d->col_av, r.w, r.w, r.w, r.w / 2);
 }
 
+/* I678g: the source status block of a source page: the sync state and the same switch and Sync button as the Library Sources tab
+ * (src_toggle_send, src_sync_send). col_src_index is the registered source the page shows, d->src_n when the engine does not know it. */
+static int src_toggle_send(desk* d, uint32_t flip);
+static int src_remote(const desk* d, uint32_t i);
+
+static uint32_t col_src_index(const desk* d) {
+    uint32_t i;
+    if (d->col_kind != (uint32_t)SEL_LIB_ITEM_SOURCE) {
+        return d->src_n;
+    }
+    for (i = 0; i < d->src_n; i++) {
+        if (strcmp(d->src[i].key, d->col_key) == 0 || strcmp(d->src[i].name, d->col_key) == 0) {
+            return i;
+        }
+    }
+    return d->src_n;
+}
+
+/* The row the toggle and Sync button are laid out in: under the count line, right edge on the content margin. */
+static sel_gui_rect col_src_row(desk* d, sel_gui_rect mn) {
+    sel_gui_rect cv = pls_cover_rect(d, mn);
+    return rect_of(mn.x, cv.y + lpx(d, 44) + lpx(d, page_title_h(d)), mn.w - lpx(d, HOME_MARGIN) + lpx(d, 16), lpx(d, 40));
+}
+
+static void col_src_status(const desk* d, uint32_t i, char* out, size_t cap) {
+    if (i >= d->src_n) {
+        snprintf(out, cap, "Not a registered source");
+    } else if (!d->src[i].enabled) {
+        snprintf(out, cap, "%s, switched off", src_remote(d, i) ? "Remote" : "Local");
+    } else if (!src_remote(d, i)) {
+        snprintf(out, cap, "Local, switched on");
+    } else if (d->src[i].synced > 0) {
+        snprintf(out, cap, "Remote, last synced %lld days ago", (long long)((time(NULL) - d->src[i].synced) / 86400));
+    } else {
+        snprintf(out, cap, "Remote, never synced");
+    }
+}
+
+static void draw_col_src(desk* d, sel_gui_rect mn, uint32_t muted) {
+    uint32_t i = col_src_index(d);
+    sel_gui_rect r = col_src_row(d, mn), tg = src_toggle_rect(d, r), kn;
+    int32_t kd = tg.h - lpx(d, 6), tx = pls_cover_rect(d, mn).x + pls_cover_rect(d, mn).w + lpx(d, PLS_GAP);
+    char line[64];
+    col_src_status(d, i, line, sizeof line);
+    draw_text(d, rect_of(tx, r.y, src_sync_rect(d, r).x - tx, r.h), line, 0, 13, muted);
+    if (i < d->src_n) {
+        int on = d->src[i].enabled;
+        if (src_remote(d, i) && on) {
+            draw_button(d, src_sync_rect(d, r), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Sync", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        }
+        sel_gui_round_rect(d->canvas, tg, tg.h / 2, on ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]));
+        kn = rect_of(on ? tg.x + tg.w - kd - lpx(d, 3) : tg.x + lpx(d, 3), tg.y + lpx(d, 3), kd, kd);
+        sel_gui_round_rect(d->canvas, kn, kd / 2, on ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]) : muted);
+    }
+}
+
+static int col_src_click(desk* d, sel_gui_rect mn, int32_t x, int32_t y) {
+    uint32_t i = col_src_index(d);
+    sel_gui_rect r = col_src_row(d, mn);
+    if (i >= d->src_n) {
+        return 0;
+    }
+    if (in_rect(src_toggle_rect(d, r), x, y)) {
+        return src_toggle_send(d, i);
+    }
+    if (src_remote(d, i) && d->src[i].enabled && in_rect(src_sync_rect(d, r), x, y)) {
+        src_sync_send(d, i);
+        d->src_wait = 1;
+        return desk_send(d, "SOURCES");
+    }
+    return 0;
+}
+
 static void draw_playlist_page(desk* d, sel_gui_rect mn) {
     uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     uint32_t surf = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), accent = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
@@ -4819,6 +4905,9 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
     draw_button(d, pls_back_rect(d, mn), surf, d->col_kind != 0u ? "Back" : "Back to Playlists", 13, text);
     if (d->col_kind == (uint32_t)SEL_LIB_ITEM_ARTIST || d->col_kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) { /* D6: a round avatar in the cover colour */
         col_round_art(d, cv);
+    } else if (col_wordmark(d)) { /* I678g: Liked Songs, Recently Played, Local Files: the large wordmark title in the accent colour, no cover art */
+        sel_gui_round_rect(d->canvas, cv, rad, accent);
+        draw_text(d, rect_of(cv.x + lpx(d, 12), cv.y, cv.w - lpx(d, 24), cv.h), d->pls_name, 1, 22, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
     } else {
         sel_gui_genart_draw(d->canvas, cv, "album", sel_gui_str_hash(d->pls_name));
     }
@@ -4842,6 +4931,9 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
         }
     }
     draw_text(d, rect_of(tx, cv.y + lpx(d, 24) + lpx(d, page_title_h(d)), pb.w * 4, lpx(d, 20)), count, 0, 13, muted);
+    if (d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE) { /* I678g */
+        draw_col_src(d, mn, muted);
+    }
     draw_button(d, pb, accent, "Play", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
     draw_button(d, pls_more_rect(d, mn), surf, d->col_kind == 0u ? "More" : "Shuffle", 13, text);
     if (d->pls_n > 0u) { /* I678e: the sort button and the search field */
@@ -4871,7 +4963,19 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
         snprintf(num, sizeof num, "%u", (unsigned)(pos + 1u));
         draw_text(d, rect_of(r.x + lpx(d, 12), r.y, lpx(d, 36), r.h), num, 0, 14, muted);
         draw_text(d, rect_of(r.x + lpx(d, 56), r.y, r.w - lpx(d, 56) - lpx(d, 40), r.h), d->pls_title[i], 0, 14, row_ink(d, r, text));
-        if (d->col_kind != 0u && d->col_plays != NULL && d->col_plays[i] > 0u) { /* the Plays column */
+        if (d->col_kind == (uint32_t)SEL_LIB_ITEM_RECENT && d->col_plays != NULL && d->col_plays[i] > 0u) { /* I678g: the Played column: the day of the last play */
+            char pl[40];
+            time_t at = (time_t)d->col_plays[i];
+            struct tm tmv;
+            size_t n = 0;
+            memset(&tmv, 0, sizeof tmv);
+            if (gmtime_r(&at, &tmv) != NULL) {
+                n = strftime(pl, sizeof pl, "Played %Y-%m-%d", &tmv);
+            }
+            if (n > 0u) {
+                draw_text(d, rect_of(r.x + r.w - lpx(d, 168), r.y, lpx(d, 156), r.h), pl, 0, 13, muted);
+            }
+        } else if (d->col_kind != 0u && d->col_kind != (uint32_t)SEL_LIB_ITEM_RECENT && d->col_plays != NULL && d->col_plays[i] > 0u) { /* the Plays column */
             char pl[24];
             snprintf(pl, sizeof pl, "%u plays", (unsigned)d->col_plays[i]);
             draw_text(d, rect_of(r.x + r.w - lpx(d, 120), r.y, lpx(d, 108), r.h), pl, 0, 13, muted);
@@ -4996,6 +5100,9 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
         return 0;
     }
     if (d->col_kind != 0u && col_kind_click(d, mn, ev->x, ev->y)) { /* I678f: Show more, a shelf card */
+        return 1;
+    }
+    if (d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE && col_src_click(d, mn, ev->x, ev->y)) { /* I678g: the source switch and Sync */
         return 1;
     }
     if (d->pls_n == 0u && d->col_kind == 0u) { /* I652a: the search field of the empty playlist, and an Add on a result */
@@ -6169,7 +6276,7 @@ static const char* library_dump_build(desk* d) {
             sel_engine_stats cst;
             sel_engine_stats_get(d->engine, &cst);
             o = dump_put(d, o, "collection kind=%s opens=%u dominants=%u cover=%d color=%08x top=%08x sort=%u q=[%s] shown=%u of=%u search=%d sortbtn=%d,%d,%d,%d find=%d,%d,%d,%d\n",
-                         d->col_kind == 0u ? "playlist" : d->col_kind == (uint32_t)SEL_LIB_ITEM_ALBUM ? "album" : d->col_kind == (uint32_t)SEL_LIB_ITEM_ARTIST ? "artist" : "composer",
+                         d->col_kind == 0u ? "playlist" : d->col_kind == (uint32_t)SEL_LIB_ITEM_ALBUM ? "album" : d->col_kind == (uint32_t)SEL_LIB_ITEM_ARTIST ? "artist" : d->col_kind == (uint32_t)SEL_LIB_ITEM_COMPOSER ? "composer" : d->col_kind == COL_LIKED ? "liked" : d->col_kind == (uint32_t)SEL_LIB_ITEM_RECENT ? "recent" : d->col_kind == (uint32_t)SEL_LIB_ITEM_LOCAL ? "local" : "source",
                          (unsigned)cst.collection_opens, (unsigned)art_dominants(d->art), d->col_cover, (unsigned)d->col_color, (unsigned)d->col_top,
                          (unsigned)d->col_sort, d->col_q, (unsigned)d->pls_vn, (unsigned)d->pls_n, d->col_search, (int)cs.x, (int)cs.y, (int)cs.w, (int)cs.h,
                          (int)cf.x, (int)cf.y, (int)cf.w, (int)cf.h);
@@ -6180,6 +6287,16 @@ static const char* library_dump_build(desk* d) {
                              (unsigned)d->col_shelf_total[0], (unsigned)d->col_shelf_total[1], (unsigned)d->col_shelf_total[2], (unsigned)d->col_shelf_total[3],
                              (int)mr.x, (int)mr.y, (int)mr.w, (int)mr.h, (int)c0.x, (int)c0.y, (int)c0.w, (int)c0.h, (int)c2.x, (int)c2.y, (int)c2.w, (int)c2.h,
                              d->pls_name, (unsigned)d->col_year, (int)sh.x, (int)sh.y, (int)sh.w, (int)sh.h);
+                {
+                    char khst[64];
+                    sel_gui_rect hrow = col_src_row(d, pmn), stg = src_toggle_rect(d, hrow), ssy = src_sync_rect(d, hrow);
+                    uint32_t si = col_src_index(d);
+                    col_src_status(d, si, khst, sizeof khst);
+                    o = dump_put(d, o, "kindhead wordmark=%d played=%d source=%d status=[%s] toggle=%d,%d,%d,%d sync=%d,%d,%d,%d first=[%s]\n", col_wordmark(d),
+                                 d->col_kind == (uint32_t)SEL_LIB_ITEM_RECENT, d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE, d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE ? khst : "",
+                                 (int)stg.x, (int)stg.y, (int)stg.w, (int)stg.h, (int)ssy.x, (int)ssy.y, (int)ssy.w, (int)ssy.h,
+                                 d->pls_n > 0u && d->pls_ord != NULL ? pls_key(d, d->pls_ord[0]) : "");
+                }
             }
         }
         if (d->pls_n == 0u) {
@@ -9073,11 +9190,8 @@ static int side_lib_open_item(const desk* d, uint32_t i) {
     if (it->kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST) {
         return d->page == PG_COLLECTION && d->pl_sel_kind == (uint32_t)SEL_ROW_PLAYLIST && d->pl_sel_id == it->id;
     }
-    if (it->kind >= (uint32_t)SEL_LIB_ITEM_ALBUM && it->kind <= (uint32_t)SEL_LIB_ITEM_COMPOSER) { /* I678f: the kind page marks its own row */
-        return d->page == PG_COLLECTION && d->pls_id != 0u && d->col_kind == it->kind && strcmp(d->col_key, it->key) == 0;
-    }
-    /* I678b: the other kinds have no page of their own yet: the row last opened stays marked while that page is still showing */
-    return d->side_open_kind == it->kind + 1u && d->side_open_page == (uint32_t)d->page + 1u && strcmp(d->side_open_key, it->key) == 0;
+    /* I678f/I678g: every other kind has its own collection page, which marks its row */
+    return d->page == PG_COLLECTION && d->pls_id != 0u && d->col_kind == col_ui_kind(it->kind) && strcmp(d->col_key, it->key) == 0;
 }
 
 /* The tools row: magnifier, the filter field when open, and the sort label with the list icon (sidebar and Library page). */
@@ -11103,23 +11217,17 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         door = side_lib_at(d, ev->x, ev->y); /* I608: a library row opens that item in the main region */
         if (door >= 0) {
             d->side_opens++;
-            if (!d->side_items[door].pinned && !(d->side_items[door].kind >= (uint32_t)SEL_LIB_ITEM_ALBUM && d->side_items[door].kind <= (uint32_t)SEL_LIB_ITEM_COMPOSER)) { /* I678c: opening an item page feeds Recents; the engine stores it so every UI shares the order */
+            if (d->side_items[door].kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST) {
                 char touch[160];
                 char head[32];
-                snprintf(head, sizeof head, "COLLECTION_OPEN %u", (unsigned)d->side_items[door].kind); /* I678e: records Recents as LIBRARY_TOUCH did */
+                snprintf(head, sizeof head, "COLLECTION_OPEN %u", (unsigned)d->side_items[door].kind); /* I678c/e: opening a playlist feeds Recents; the engine stores it so every UI shares the order */
                 desk_quoted_request(touch, sizeof touch, head, d->side_items[door].key);
                 desk_send(d, touch);
-            }
-            if (d->side_items[door].kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST) {
                 desk_page_goto(d, PG_COLLECTION);
                 pls_open(d, d->side_items[door].id, d->side_items[door].name); /* I633: the playlist's page of songs */
-            } else if (d->side_items[door].kind >= (uint32_t)SEL_LIB_ITEM_ALBUM && d->side_items[door].kind <= (uint32_t)SEL_LIB_ITEM_COMPOSER) {
-                desk_page_goto(d, PG_COLLECTION); /* I678f: album, artist and composer open the collection page with their kind */
+            } else {
+                desk_page_goto(d, PG_COLLECTION); /* I678f/I678g: every other kind opens the collection page; col_kind_open sends COLLECTION_OPEN */
                 col_kind_open(d, d->side_items[door].kind, d->side_items[door].key, d->side_items[door].name, d->side_items[door].sub);
-            } else { /* I678b: record the identity so the row is marked open; the kind pages land with I678e */
-                d->side_open_kind = d->side_items[door].kind + 1u;
-                d->side_open_page = (uint32_t)d->page + 1u;
-                snprintf(d->side_open_key, sizeof d->side_open_key, "%s", d->side_items[door].key);
             }
             d->repaint = 1;
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;

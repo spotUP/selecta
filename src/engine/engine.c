@@ -5171,6 +5171,12 @@ static void coll_build_page(sel_engine* e, uint32_t kind, const char* key) {
         pg->year = head.year;
     } else if (kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) { /* the most used spelling is the display name */
         snprintf(pg->title, sizeof pg->title, "%s", pg->shelf_n[3] > 0u ? pg->shelf[3][0].name : key);
+    } else if (kind == (uint32_t)SEL_LIB_ITEM_LIKED) { /* I678g: the pinned rows and a source page have a fixed or keyed title */
+        snprintf(pg->title, sizeof pg->title, "Liked Songs");
+    } else if (kind == (uint32_t)SEL_LIB_ITEM_RECENT) {
+        snprintf(pg->title, sizeof pg->title, "Recently Played");
+    } else if (kind == (uint32_t)SEL_LIB_ITEM_LOCAL) {
+        snprintf(pg->title, sizeof pg->title, "Local Files");
     } else {
         snprintf(pg->title, sizeof pg->title, "%s", key);
     }
@@ -5186,22 +5192,24 @@ static void coll_build_page(sel_engine* e, uint32_t kind, const char* key) {
 }
 
 /* I678e: a collection page was opened. The engine records which one and feeds Recents exactly as LIBRARY_TOUCH does, so every UI shares the
- * order and the page open is one command. I678f: for an album, artist or composer it also builds the page (songs, header, shelves) and
+ * order and the page open is one command. I678f/I678g: for every kind but a playlist it also builds the page (songs, header, shelves) and
  * publishes it as state.collection; the UI only reads that. */
 static void cmd_COLLECTION_OPEN(sel_engine* e, const sel_message* m) {
     int rc;
     uint32_t kind = (uint32_t)m->args[0].v.u;
     if (!folder_ready(e, "COLLECTION_OPEN")) return;
-    rc = sel_library_touch(e->lib, kind, m->args[1].v.s, (int64_t)time(NULL));
-    if (rc != SEL_FOLDER_OK) {
-        folder_report(e, rc, "COLLECTION_OPEN");
-        return;
+    if (kind != (uint32_t)SEL_LIB_ITEM_LIKED && kind != (uint32_t)SEL_LIB_ITEM_RECENT && kind != (uint32_t)SEL_LIB_ITEM_LOCAL) { /* the pinned rows stay out of Recents */
+        rc = sel_library_touch(e->lib, kind, m->args[1].v.s, (int64_t)time(NULL));
+        if (rc != SEL_FOLDER_OK) {
+            folder_report(e, rc, "COLLECTION_OPEN");
+            return;
+        }
+        e->lib_touch_calls++;
     }
-    e->lib_touch_calls++;
     e->collection_opens++;
     e->collection_kind = kind;
     snprintf(e->collection_key, sizeof e->collection_key, "%s", m->args[1].v.s);
-    if (kind >= (uint32_t)SEL_LIB_ITEM_ALBUM && kind <= (uint32_t)SEL_LIB_ITEM_COMPOSER) coll_build_page(e, kind, e->collection_key);
+    if (kind < (uint32_t)SEL_LIB_ITEM_KINDS && kind != (uint32_t)SEL_LIB_ITEM_PLAYLIST) coll_build_page(e, kind, e->collection_key);
 }
 
 static void cmd_PLAYLIST_DEL(sel_engine* e, const sel_message* m) {

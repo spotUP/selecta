@@ -166,8 +166,8 @@ typedef struct sel_engine_collection_row {
 
 enum { SEL_COLLECTION_SHELVES = 4, SEL_COLLECTION_SHELF_MAX = 24 };
 
-/* I678f (design doc 2026-10-29-desktop-library-architecture.md section 7/8): the page COLLECTION_OPEN built for an album, artist or
- * composer, published in sel_state.collection. The UI only reads it. `serial` counts builds; `rows` is "key\0plays\0" per song in page
+/* I678f (design doc 2026-10-29-desktop-library-architecture.md section 7/8): the page COLLECTION_OPEN built for an album, artist,
+ * composer, source, Liked Songs, Recently Played or Local Files (I678g), published in sel_state.collection. The UI only reads it. `serial` counts builds; `rows` is "key\0plays\0" per song in page
  * order (an album in scan order, an artist most played first, a composer in library order with plays 0), then "\0". Shelves, index =
  * SEL_COLL_* - 1: Albums, Appears On, More by, Spellings; shelf_total counts the whole shelf, shelf the first SEL_COLLECTION_SHELF_MAX. */
 typedef struct sel_collection_page {

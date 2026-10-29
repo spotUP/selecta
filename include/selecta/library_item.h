@@ -22,7 +22,7 @@ enum {
 
 /* The lists of a collection page (design doc 2026-10-29-desktop-library-architecture.md section 8), shared by the library and the engine. */
 enum {
-    SEL_COLL_SONGS = 0, /* the songs in page order: song key, name, artist, album, plays (an album in scan order, an artist or composer by plays) */
+    SEL_COLL_SONGS = 0, /* the songs in page order: song key, name, artist, album, plays (an album in scan order, an artist or composer by plays; Liked Songs newest like first, Recently Played newest play first with the last play time in the number column, Local Files and a source in scan order) */
     SEL_COLL_ALBUMS,    /* artist page "Albums": album id, name, artist, year, songs (newest first) */
     SEL_COLL_APPEARS,   /* artist page "Appears On": albums of other artists that hold a song by the artist */
     SEL_COLL_MORE,      /* album page "More by": the other albums of the album's artist */
