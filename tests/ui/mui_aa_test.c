@@ -231,6 +231,9 @@ static void test_text_source(void) {
           "class does not draw through the shared tone, fit and text helpers");
     CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "TT_") == NULL, "class holds no pen or ttengine code of its own");
     CHECK(strstr(cm, "mui_aatext_class.c") != NULL, "class not in the build");
+    /* I716b: the text is readable by GetAttr(AAT_Contents) so wasabid's uitree lists it (rig check MUI-P3-1 waits for "Playing"). */
+    CHECK(strstr(cls, "case OM_GET:") != NULL && strstr(cls, "msg->opg_AttrID == AAT_Contents") != NULL && strstr(cls, "*msg->opg_Storage = (ULONG)(uintptr_t)d->text") != NULL,
+          "AAText does not answer OM_GET AAT_Contents");
     free(ui);
     free(cls);
     free(cm);
