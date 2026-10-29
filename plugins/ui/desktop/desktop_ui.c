@@ -1465,15 +1465,32 @@ static void draw_detail(desk* d) {
 
 /* The lower case family id of a pc_* slot (family + 1), "none" when real art won. */
 static const char* pc_name(uint32_t slot) {
-    return slot == 0u ? "none" : sel_gui_platform_id(slot - 1u);
+    return (slot & 0xFFu) == 0u ? "none" : sel_gui_platform_id((slot & 0xFFu) - 1u);
+}
+
+/* The logical pixel size of the word a cover drew (0 = none), kept in the bits above the family byte of a pc_* slot. */
+static uint32_t pc_word(uint32_t slot) {
+    return slot >> 8;
 }
 
 /* The song fallback (I691b): the platform cover of the family of `path`, drawn where a song has no real art. `slot` receives
  * family + 1 for the dump line `platform_covers`; draws counts every call, the sentinel of the fallback branch. */
 static void song_platform_cover(desk* d, sel_gui_rect ar, const char* path, const char* title, uint32_t* slot) {
     uint32_t family = sel_gui_platform_of_name(path);
-    sel_gui_cover_draw(d->canvas, ar, family, sel_gui_str_hash(title), d->theme.token, desk_font(d, 1, 14));
-    *slot = family + 1u;
+    int32_t edge = px_to_logical(d, ar.w < ar.h ? ar.w : ar.h); /* logical: a 2x canvas shows a 56 px bar thumb at 112 px */
+    int32_t want = edge / 7, px = 0, i;
+    const sel_gui_atlas* word = NULL;
+
+    if (edge >= 64) { /* design section 2: the word only on covers of 64 logical px and up, semibold, sized edge/7 */
+        for (i = 0; i < DESK_SIZES; i++) { /* the largest type scale size not above edge/7, the smallest when none fits */
+            if (g_sizes[i] <= want || px == 0) {
+                px = g_sizes[i];
+            }
+        }
+        word = desk_font(d, 1, px);
+    }
+    sel_gui_cover_draw(d->canvas, ar, family, sel_gui_str_hash(title), d->theme.token, word);
+    *slot = (family + 1u) | (word != NULL ? (uint32_t)px << 8 : 0u);
     d->pc_draws++;
 }
 
@@ -6381,6 +6398,8 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "cover_tiles np=%u bar=%u side=%u\n", (unsigned)d->cover_np, (unsigned)d->cover_bar, (unsigned)d->cover_side);
     o = dump_put(d, o, "platform_covers np=%s bar=%s page=%s tile0=%s draws=%u\n", pc_name(d->pc_np), pc_name(d->pc_bar), pc_name(d->pc_page),
                  pc_name(d->pc_tile0), (unsigned)d->pc_draws);
+    o = dump_put(d, o, "platform_cover_words np=%u bar=%u page=%u tile0=%u\n", (unsigned)pc_word(d->pc_np), (unsigned)pc_word(d->pc_bar),
+                 (unsigned)pc_word(d->pc_page), (unsigned)pc_word(d->pc_tile0));
     o = dump_put(d, o, "nowplaying keys end %d value %d\n",(int)d->np_key_end, (int)d->np_val_x);
     for (uint32_t tg = 0; tg <= SONG_PLAYLIST_TARGETS; tg += SONG_PLAYLIST_TARGETS) { /* I448: first and last drop target, then the rail */
         sel_gui_rect tr = songs_target_rect(d, tg);
