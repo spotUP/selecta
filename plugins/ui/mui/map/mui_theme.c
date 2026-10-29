@@ -86,6 +86,15 @@ int mui_theme_text_uses_token(int truecolour, int plain, uint32_t fg_rgb, uint32
     return !plain && (truecolour || mui_theme_readable(fg_rgb, bg_rgb));
 }
 
+int mui_theme_pen_precisions(int* out, int cap) {
+    static const int order[2] = {MUI_THEME_PRECISION_EXACT, MUI_THEME_PRECISION_GUI};
+    int i;
+    for (i = 0; i < 2 && i < cap; i++) {
+        out[i] = order[i];
+    }
+    return i;
+}
+
 static uint32_t lum_dist(uint32_t a, uint32_t b) {
     uint32_t x = lum(a), y = lum(b);
     return x > y ? x - y : y - x;

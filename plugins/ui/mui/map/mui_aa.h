@@ -162,6 +162,9 @@ void mui_aa_field_metrics(int font_px, mui_aa_field_t* out);
 #define MUI_AA_FIELD_FACE SEL_GUI_TOKEN_SURFACE_RAISED
 #define MUI_AA_FIELD_LINE SEL_GUI_TOKEN_TRACK
 int mui_aa_field_plan(const uint32_t* token, const mui_aa_field_t* m, int focus, mui_aa_check_op_t* out);
+/* I667n: background of the inner String gadget in a focus state: the face of the plan (op 1). MUI 3.8 String fills its box with the
+ * gadget's StringExtend background pen (Pens[1], ActivePens[1] when active), not with MUIA_Background, so the class sets that pen. */
+uint32_t mui_aa_field_string_bg(const uint32_t* token, int focus);
 /* Field height for a content (text) height ch: the AAButton height, taller when the text needs it. */
 int mui_aa_field_height(const mui_aa_field_t* m, int ch);
 /* Top edge of the text line (height ch) inside a field of height h: the room above and below the line is equal, so the group

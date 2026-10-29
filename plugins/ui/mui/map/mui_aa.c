@@ -445,6 +445,12 @@ int mui_aa_field_plan(const uint32_t* token, const mui_aa_field_t* m, int focus,
     return MUI_AA_FIELD_OPS;
 }
 
+uint32_t mui_aa_field_string_bg(const uint32_t* token, int focus) {
+    (void)focus; /* focus moves the outline only (op 0); the face stays */
+    g_field_calls++;
+    return token[MUI_AA_FIELD_FACE];
+}
+
 int mui_aa_field_height(const mui_aa_field_t* m, int ch) {
     int need = ch + 2 * (m->pad_y + m->outline);
     g_field_calls++;

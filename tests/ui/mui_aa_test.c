@@ -585,7 +585,7 @@ static void test_i667n(void) {
     }
     if (fld != NULL) {
         const char* mk = strstr(fld, "Object* mui_aafield_new(");
-        CHECK(mk != NULL && strstr(mk, "set(str, MUIA_Background, (ULONG)g_bg_spec);") != NULL, "inner String never gets the face by an explicit set");
+        CHECK(mk != NULL, "AAField constructor present");
     }
     mui_aa_slider_metrics(13, &m);
     n = mui_aa_slider_plan(th.token, &m, MUI_AA_NORMAL, 83, 16, 50, 0, 100, ops);
@@ -604,6 +604,41 @@ static void test_i667n(void) {
           "readable pair passes on pens; the plain backend never uses the token");
     free(bal);
     free(fld);
+}
+
+/* I667n mui-i667n-root (rig root causes): (1) MUI 3.8 String fills its box with the Intuition StringExtend background pen, so the
+ * field face must go into Pens[1] / ActivePens[1] before every draw (MUIA_Background never shows there); (2) aa_pen asked ObtainBestPen
+ * at GUI precision only, which matched ACCENT_TEXT E4E4EA to the held TEXT pen C8C8D0 on RTG: exact must come first, GUI last. */
+static void test_i667n_root(void) {
+    txt_theme th;
+    int prec[4] = {0, 0, 0, 0};
+    char* fld = slurp(AAFIELD_SOURCE);
+    char* drw = slurp(AADRAW_SOURCE);
+    uint32_t before = mui_aa_field_calls();
+    txt_theme_default(&th);
+    CHECK(mui_aa_field_string_bg(th.token, 0) == 0x2A2A32u && mui_aa_field_string_bg(th.token, 1) == 0x2A2A32u, "string background is the face 2A2A32 in both states");
+    CHECK(mui_aa_field_calls() == before + 2, "string background counts on the field sentinel");
+    CHECK(mui_theme_pen_precisions(prec, 4) == 2 && prec[0] == MUI_THEME_PRECISION_EXACT && prec[1] == MUI_THEME_PRECISION_GUI,
+          "pen precisions exact then GUI: %d %d", prec[0], prec[1]);
+    CHECK(fld != NULL && drw != NULL, "sources readable");
+    if (fld != NULL) {
+        const char* draw = strstr(fld, "static ULONG aafield_draw(");
+        const char* pens = draw != NULL ? strstr(draw, "aafield_string_pens(d);") : NULL;
+        const char* sup = draw != NULL ? strstr(draw, "DoSuperMethodA(") : NULL;
+        const char* fn = strstr(fld, "static void aafield_string_pens(");
+        CHECK(pens != NULL && sup != NULL && pens < sup, "field sets the string pens before the super draws the gadget");
+        CHECK(fn != NULL && strstr(fn, "mui_aa_field_string_bg(") != NULL && strstr(fn, "Extension->Pens[1] =") != NULL &&
+                  strstr(fn, "Extension->ActivePens[1] =") != NULL,
+              "string pens come from the field plan into both background slots");
+    }
+    if (drw != NULL) {
+        const char* ob = strstr(drw, "static LONG obtain(");
+        const char* end = ob != NULL ? strstr(ob, "\n}\n") : NULL;
+        const char* use = ob != NULL ? strstr(ob, "mui_theme_pen_precisions(") : NULL;
+        CHECK(use != NULL && end != NULL && use < end && strstr(drw, "PRECISION_GUI") == NULL, "aa_pen obtains through the precision plan, no fixed GUI precision");
+    }
+    free(fld);
+    free(drw);
 }
 
 /* I667h mui-field-plan: AAField maths. Face SURFACE_RAISED 2A2A32 (I667h2: Johan, SURFACE matched the panel), outline TRACK 3A3A44, FOCUS_RING 93C5FD while active, radius 6 (tier S 4),
@@ -944,6 +979,8 @@ int main(int argc, char** argv) {
         test_cycle_source();
     } else if (!strcmp(t, "i667n")) {
         test_i667n();
+    } else if (!strcmp(t, "i667n-root")) {
+        test_i667n_root();
     } else if (!strcmp(t, "field-plan")) {
         test_field_plan();
     } else if (!strcmp(t, "field-source")) {

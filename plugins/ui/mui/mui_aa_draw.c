@@ -108,8 +108,13 @@ static void font_put(APTR font) {
 }
 
 static LONG obtain(struct ColorMap* cm, uint32_t rgb) {
-    struct TagItem tl[2] = {{OBP_Precision, PRECISION_GUI}, {TAG_DONE, 0}};
-    return ObtainBestPenA(cm, ((rgb >> 16) & 0xFFu) * 0x01010101UL, ((rgb >> 8) & 0xFFu) * 0x01010101UL, (rgb & 0xFFu) * 0x01010101UL, tl);
+    int prec[2], n = mui_theme_pen_precisions(prec, 2), i;
+    LONG pen = -1;
+    for (i = 0; i < n && pen < 0; i++) {
+        struct TagItem tl[3] = {{OBP_Precision, (ULONG)(LONG)prec[i]}, {OBP_FailIfBad, (ULONG)(i + 1 < n)}, {TAG_DONE, 0}};
+        pen = ObtainBestPenA(cm, ((rgb >> 16) & 0xFFu) * 0x01010101UL, ((rgb >> 8) & 0xFFu) * 0x01010101UL, (rgb & 0xFFu) * 0x01010101UL, tl);
+    }
+    return pen;
 }
 
 LONG aa_pen(aa_ctx* c, uint32_t rgb) {

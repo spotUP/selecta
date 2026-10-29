@@ -4,11 +4,13 @@
 #include "mui_aafield_class.h"
 
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <clib/alib_protos.h>
 #include <clib/muimaster_protos.h>
 #include <intuition/intuition.h>
+#include <intuition/sghooks.h>
 #include <proto/exec.h>
 #include <proto/graphics.h>
 #include <proto/intuition.h>
@@ -26,6 +28,7 @@ typedef struct aafield_data {
     Object* str;
     mui_aa_field_t m;
     aa_ctx aa;
+    int pens_logged; /* the old String pens went to stderr once (I667n evidence) */
 } aafield_data;
 
 static struct MUI_CustomClass* g_class;
@@ -77,11 +80,44 @@ static ULONG aafield_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMi
     return 0;
 }
 
+/* I667n: MUI 3.8 String renders through an Intuition string gadget that fills its whole box with the StringExtend pens (MUI prefs
+ * string colours, the window pen 121214 on the rig), so MUIA_Background never shows inside it. The face pen goes into the background
+ * slot of both pen pairs; the text pens stay the user's. Runs before every draw: MUI may rebuild the gadget on setup. */
+static void aafield_string_pens(aafield_data* d) {
+    struct Gadget* g = NULL;
+    struct StringInfo* si;
+    LONG pen[2];
+    int k;
+    if (d->str == NULL || !GetAttr(MUIA_Gadget_Gadget, d->str, (ULONG*)&g) || g == NULL || (g->GadgetType & GTYP_GTYPEMASK) != GTYP_STRGADGET) {
+        return;
+    }
+    si = (struct StringInfo*)g->SpecialInfo;
+    if (si == NULL || si->Extension == NULL) {
+        return;
+    }
+    for (k = 0; k < 2; k++) {
+        pen[k] = aa_pen(&d->aa, mui_aa_field_string_bg(d->aa.tok, k));
+    }
+    if (!d->pens_logged) {
+        fprintf(stderr, "selecta mui: field string pens %u/%u active %u/%u -> background %ld/%ld\n", (unsigned)si->Extension->Pens[0],
+                (unsigned)si->Extension->Pens[1], (unsigned)si->Extension->ActivePens[0], (unsigned)si->Extension->ActivePens[1], (long)pen[0], (long)pen[1]);
+        d->pens_logged = 1;
+    }
+    if (pen[0] >= 0) {
+        si->Extension->Pens[1] = (UBYTE)pen[0];
+    }
+    if (pen[1] >= 0) {
+        si->Extension->ActivePens[1] = (UBYTE)pen[1];
+    }
+}
+
 static ULONG aafield_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     aafield_data* d = INST_DATA(cl, obj);
     /* The Group super fills the padding around the inner String with the parent background, so the face and outline go on after
      * it, around the String's box, which the super has drawn by then. */
-    ULONG r = DoSuperMethodA(cl, obj, (Msg)msg);
+    ULONG r;
+    aafield_string_pens(d);
+    r = DoSuperMethodA(cl, obj, (Msg)msg);
     if (msg->flags & MADF_DRAWOBJECT) {
         mui_aa_check_op_t ops[MUI_AA_FIELD_OPS];
         struct RastPort* rp = _rp(obj);
@@ -158,9 +194,6 @@ Object* mui_aafield_new(const mui_aafield_spec* sp) {
     if (str == NULL) {
         return NULL;
     }
-    /* I667n: the String class puts its own MUIA_Background (StringBack) first in its tag list, so the tag above is ignored at OM_NEW and
-     * the edit area drew the window colour (121214, the dark rectangle). An explicit set after creation is honoured. */
-    set(str, MUIA_Background, (ULONG)g_bg_spec);
     o = NewObject(g_class->mcc_Class, NULL, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Background, (ULONG)g_bg_spec, MUIA_FillArea, (ULONG)FALSE, MUIA_Group_Spacing, 0UL, MUIA_InnerLeft,
                   (ULONG)m.pad_x, MUIA_InnerRight, (ULONG)m.pad_x, MUIA_InnerTop, (ULONG)(m.pad_y + m.outline), MUIA_InnerBottom, (ULONG)(m.pad_y + m.outline),
                   MUIA_Group_Child, (ULONG)MUI_NewObject((char*)MUIC_Rectangle, MUIA_VertWeight, 100UL, TAG_DONE), /* flexible VSpace(0) above and below: MUI 3.8 centres a fixed-height child */

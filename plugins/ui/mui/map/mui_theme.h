@@ -40,6 +40,12 @@ int mui_theme_look_for(mui_theme_role role, const uint32_t* tokens, mui_theme_lo
 int mui_theme_readable(uint32_t text_rgb, uint32_t bg_rgb);
 /* True when aa_text draws fg itself: not the plain backend, and either a truecolour screen or fg readable on bg. */
 int mui_theme_text_uses_token(int truecolour, int plain, uint32_t fg_rgb, uint32_t bg_rgb);
+/* I667n: the ObtainBestPen precisions aa_pen tries, in order (graphics/view.h PRECISION_* values): exact first, so a screen with free
+ * pens (RTG) gets the token colour itself instead of the nearest shared pen (GUI precision matched ACCENT_TEXT E4E4EA to the held
+ * TEXT pen C8C8D0); GUI last, so a full AGA palette still maps to the nearest held pen. Returns the count written (<= cap). */
+#define MUI_THEME_PRECISION_EXACT (-1)
+#define MUI_THEME_PRECISION_GUI 32
+int mui_theme_pen_precisions(int* out, int cap);
 /* One decision for the whole look. MUI 3.8 draws object text with the screen DrawInfo pens only (the escape code ESC followed by
  * a pen number picks that pen; there is no RGB text pen), so the look needs one of those pens to be readable on every role
  * background. pen_rgb: the n screen pen colours (0xRRGGBB, index = DrawInfo pen number); tokens as in mui_theme_look_for.
