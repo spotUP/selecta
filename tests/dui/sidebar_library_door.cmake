@@ -60,15 +60,10 @@ run(hdr "wait 100\nclick ${hx} ${hy}\nwait 100\n")
 expect_eq("header click opens the Library page" "${hdr_page}" "library")
 expect_eq("header click counted as a navigation" "${hdr_clicks}" "1")
 
-# 3. The chips (single-label tier: the right chevron steps Playlists, Albums, Artists, Composers) open the Library page on their kind.
+# 3. I678b: the chips filter the sidebar list in place and never leave the page (the Library page is opened by the header only).
 run(c1 "wait 100\nclick ${rx} ${ry}\nwait 100\n")
 expect_eq("Playlists chip stays on Home" "${c1_page}" "home")
 run(c2 "wait 100\nclick ${rx} ${ry}\nwait 100\nclick ${rx} ${ry}\nwait 100\n")
-expect_eq("Albums chip opens the Library page" "${c2_page}" "library")
-expect_eq("Albums chip lists the Columns browser" "${c2_mode}" "Columns")
-run(c3 "wait 100\nclick ${rx} ${ry}\nwait 100\nclick ${rx} ${ry}\nwait 100\nclick ${rx} ${ry}\nwait 100\n")
-expect_eq("Artists chip opens the Library page" "${c3_page}" "library")
-expect_eq("Artists chip lists the Columns browser" "${c3_mode}" "Columns")
+expect_eq("Albums chip stays on Home" "${c2_page}" "home")
 run(c4 "wait 100\nclick ${rx} ${ry}\nwait 100\nclick ${rx} ${ry}\nwait 100\nclick ${rx} ${ry}\nwait 100\nclick ${rx} ${ry}\nwait 100\n")
-expect_eq("Composers chip opens the Library page" "${c4_page}" "library")
-expect_eq("Composers chip lists the Composers tab" "${c4_mode}" "Composers")
+expect_eq("Composers chip stays on Home" "${c4_page}" "home")

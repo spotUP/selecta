@@ -479,8 +479,6 @@ typedef struct sel_engine_library_item {
     uint32_t art_id;      /* albums.id of the cover, 0 none */
     int pinned;           /* 1: Liked Songs, Recently Played, Local Files */
 } sel_engine_library_item;
-/* Fills out[0..max) with the saved playlists in the library, oldest first, and returns how many were written; 0 without a library. */
-uint32_t sel_engine_library_playlist_items(sel_engine* e, sel_engine_library_item* out, uint32_t max);
 /* I678a: the whole Your Library list of the kinds in `kind_mask` (SEL_LIB_ITEM_BIT): pinned rows, playlists, albums, artists,
  * composers, sources. Fills out[0..max) from row `offset`, returns the rows written (0 without a library); *total (when not NULL)
  * is the row count of the whole list for paging. Source rows carry the registry display name. */

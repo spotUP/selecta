@@ -58,7 +58,7 @@ set(common --ui desktop --backend mem --view home --clock fixed --stats --db "${
 # Geometry: the sidebar row of "alpha", then the Play button of its page.
 file(WRITE "${WORK}/idle.txt" "wait 100\n")
 dui_run(i0 ${common} --input "${WORK}/idle.txt")
-centre(side "${i0}" "sidelib_row 0 ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)")
+centre(side "${i0}" "sidelib_row 3 ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)")
 file(WRITE "${WORK}/open.txt" "click ${side}\nwait 100\n")
 dui_run(o1 ${common} --input "${WORK}/open.txt")
 if(NOT "${o1}" MATCHES "play=([0-9]+),([0-9]+),([0-9]+),([0-9]+)")

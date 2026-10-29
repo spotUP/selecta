@@ -50,7 +50,7 @@ set(common --ui desktop --backend mem --view home --clock fixed --stats --db "${
 
 file(WRITE "${WORK}/idle.txt" "wait 100\n")
 dui_run(i0 ${common} --input "${WORK}/idle.txt")
-pp_centre(side "${i0}" "sidelib_row 0")
+pp_centre(side "${i0}" "sidelib_row 3")
 
 # 1. Sidebar row click: the page lists both songs in playlist order.
 file(WRITE "${WORK}/open.txt" "click ${side}\nwait 100\n")
@@ -136,7 +136,7 @@ if(NOT frc EQUAL 0)
 endif()
 set(fcommon --ui desktop --backend mem --view home --clock fixed --stats --db "${fdb}" --canvas 1280x800)
 dui_run(f0 ${fcommon} --input "${WORK}/idle.txt")
-pp_centre(fside "${f0}" "sidelib_row 0")
+pp_centre(fside "${f0}" "sidelib_row 3")
 file(WRITE "${WORK}/find1.txt" "click ${fside}\nwait 100\n")
 dui_run(f1 ${fcommon} --input "${WORK}/find1.txt")
 if(NOT "${f1}" MATCHES "plpage id=[0-9]+ name=\\[gamma\\] songs=0 ")

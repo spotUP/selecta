@@ -84,7 +84,7 @@ math(EXPR grew "${CMAKE_MATCH_1} - ${q0}")
 expect_eq("engine queue growth after Add to Queue" "${grew}" 1)
 
 # I631: Add to Playlist lists the saved playlists from the library on every page, not only while the Folders view is open.
-#   Violated invariant: the playlist step reads the same saved playlists as the sidebar (sel_engine_library_playlist_items).
+#   Violated invariant: the playlist step reads the same saved playlists as the sidebar (sel_engine_library_items, playlists only).
 #   It read the current view's rows, so on the Library page it showed "No playlists" and its click added nothing.
 # Item 4 (Add to Playlist) opens the playlist step at the same anchor; its first item is the playlist made before.
 math(EXPR px "${sx} + 10")
@@ -95,7 +95,7 @@ sm_field(adds "${added}" playlist_adds)
 expect_eq("Add to Playlist adds to the saved playlist from the Library page" "${adds}" 1)
 
 # I611 regression: Add to Playlist lists every saved playlist, not the sidebar's filtered list.
-#   Violated invariant: the song menu's playlist step reads the saved playlists (sel_engine_library_playlist_items), never the
+#   Violated invariant: the song menu's playlist step reads the saved playlists (sel_engine_library_items, playlists only), never the
 #   sidebar's list (side_items), which the Your Library filter field, the chips and the sort narrow. It called side_lib_reload, which
 #   applies the filter: with a filter that matches nothing the step showed "No playlists". The wide canvas shows the sidebar tools row.
 set(SM_CANVAS 1280x800)
