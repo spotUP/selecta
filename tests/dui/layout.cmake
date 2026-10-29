@@ -36,7 +36,7 @@ foreach(spec "1100:three-column" "1099:two-column" "900:two-column" "899:icon-si
     message(FATAL_ERROR "edge width ${w} must give ${id}:\n${edge}")
   endif()
 endforeach()
-# I526 P3: the bitmap tier (--ydiv 2) lays out in 1:1 pixels, so 640 wide gets the labelled rail (sidebar region 174 wide: the measured widest rail label plus icon and pads, I547);
+# I526 P3: the bitmap tier (--ydiv 2) lays out in 1:1 pixels, so 640 wide gets the labelled rail (sidebar region 166 wide: the measured widest rail label plus icon and pads, I547; the 8x8 bitmap font is 8 px a glyph, so Now Playing (11 characters) now sets the width where Your Library (12, 174 wide) did, before the door became Browse Folders with the short label Folders);
 # the default tier at the same width still gives the mini suggestion.
 dui_run(bm --ui desktop --backend mem --canvas 640x256 --ydiv 2 --zoom fit --resize 640x512)
 if(NOT bm MATCHES "layout width=640 height=512 id=icon-sidebar " OR NOT bm MATCHES "region name=sidebar x=0 y=0 w=166 ")
