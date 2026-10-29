@@ -247,6 +247,82 @@ static void test_panel_source(void) {
     free(cm);
 }
 
+/* I667f mui-slider-geom: sizes per tier, colours per state, value <-> knob position round trip, progress fill; the sentinel proves the
+ * shared maths ran. */
+static void test_slider_geom(void) {
+    static const int fonts[4] = {0, 13, 15, 17};
+    static const int knobs[4] = {8, 12, 14, 16};
+    static const int tracks[4] = {2, 4, 4, 4};
+    txt_theme th;
+    uint32_t track, fill, knob;
+    uint32_t before = mui_aa_slider_calls();
+    int i;
+    txt_theme_default(&th);
+    for (i = 0; i < 4; i++) {
+        mui_aa_slider_t m;
+        int w = 300, x, travel;
+        long v;
+        mui_aa_slider_metrics(fonts[i], &m);
+        CHECK(m.knob == knobs[i] && m.track_h == tracks[i] && m.radius == m.track_h / 2 && m.min_w == 80 && m.height == m.knob + 4,
+              "tier %d metrics knob %d track %d height %d", i, m.knob, m.track_h, m.height);
+        travel = w - m.knob;
+        CHECK(mui_aa_slider_knob_x(&m, w, 0, 0, 100) == 0, "min at left edge");
+        CHECK(mui_aa_slider_knob_x(&m, w, 100, 0, 100) == travel, "max at right edge: %d", mui_aa_slider_knob_x(&m, w, 100, 0, 100));
+        CHECK(mui_aa_slider_knob_x(&m, w, 500, 0, 100) == travel && mui_aa_slider_knob_x(&m, w, -5, 0, 100) == 0, "value clamped");
+        CHECK(mui_aa_slider_knob_x(&m, w, 50, 0, 100) == (travel + 1) / 2, "mid value mid travel");
+        CHECK(mui_aa_slider_value_at(&m, w, -40, 0, 100) == 0 && mui_aa_slider_value_at(&m, w, w + 40, 0, 100) == 100, "pointer clamped");
+        CHECK(mui_aa_slider_value_at(&m, w, m.knob / 2, 0, 100) == 0 && mui_aa_slider_value_at(&m, w, w - m.knob / 2, 0, 100) == 100,
+              "pointer on knob centre at the ends");
+        for (v = 0; v <= 100; v += 5) {
+            x = mui_aa_slider_knob_x(&m, w, v, 0, 100);
+            CHECK(mui_aa_slider_value_at(&m, w, x + m.knob / 2, 0, 100) - v <= 1 && v - mui_aa_slider_value_at(&m, w, x + m.knob / 2, 0, 100) <= 1,
+                  "round trip value %ld -> x %d -> %ld", v, x, mui_aa_slider_value_at(&m, w, x + m.knob / 2, 0, 100));
+        }
+        /* a range larger than the pixel travel: the pointer position survives value -> x within one pixel */
+        for (x = 0; x <= travel; x += 7) {
+            v = mui_aa_slider_value_at(&m, w, x + m.knob / 2, 0, 65536);
+            CHECK(mui_aa_slider_knob_x(&m, w, v, 0, 65536) == x, "x %d -> value %ld -> x %d", x, v, mui_aa_slider_knob_x(&m, w, v, 0, 65536));
+        }
+    }
+    mui_aa_slider_rgb(th.token, MUI_AA_NORMAL, &track, &fill, &knob);
+    CHECK(track == th.token[SEL_GUI_TOKEN_TRACK] && fill == th.token[SEL_GUI_TOKEN_ACCENT] && knob == th.token[SEL_GUI_TOKEN_TEXT], "normal colours");
+    mui_aa_slider_rgb(th.token, MUI_AA_HOVER, &track, &fill, &knob);
+    CHECK(fill == th.token[SEL_GUI_TOKEN_ACCENT] && knob == th.token[SEL_GUI_TOKEN_HOVER_LIGHT], "hover knob");
+    mui_aa_slider_rgb(th.token, MUI_AA_DISABLED, &track, &fill, &knob);
+    CHECK(track == th.token[SEL_GUI_TOKEN_TRACK] && fill == th.token[SEL_GUI_TOKEN_TEXT_DISABLED] && knob == th.token[SEL_GUI_TOKEN_TEXT_DISABLED],
+          "disabled colours");
+    mui_aa_slider_rgb(th.token, MUI_AA_NORMAL, NULL, NULL, NULL);
+    CHECK(mui_aa_progress_fill_w(200, 0, 100) == 0 && mui_aa_progress_fill_w(200, 100, 100) == 200 && mui_aa_progress_fill_w(200, 50, 100) == 100 &&
+              mui_aa_progress_fill_w(200, 500, 100) == 200 && mui_aa_progress_fill_w(200, -3, 100) == 0 && mui_aa_progress_fill_w(200, 5, 0) == 0,
+          "progress fill width");
+    CHECK(mui_aa_slider_calls() > before + 20, "sentinel: slider maths ran (%u)", (unsigned)(mui_aa_slider_calls() - before));
+}
+
+/* I667f mui-slider-source: the MUI UI builds every slider through AASlider: no MUIC_Slider, gauge or prop left, the helper definition
+ * plus three calls (volume, seek, settings) = 4 "mui_make_slider(" spellings, one AASlider constructor call. */
+static void test_slider_source(void) {
+    char* ui = slurp(UI_SOURCE);
+    char* cls = slurp(AASLIDER_SOURCE);
+    char* cm = slurp(MUI_CMAKE);
+    CHECK(ui != NULL && cls != NULL && cm != NULL, "sources readable");
+    if (ui == NULL || cls == NULL || cm == NULL) {
+        return;
+    }
+    CHECK(count_of(ui, "MUIC_Slider") == 0 && count_of(ui, "MUIA_Slider_") == 0, "stock slider left in mui_ui.c");
+    CHECK(count_of(ui, "MUIC_Gauge") == 0 && count_of(ui, "MUIC_Prop") == 0 && count_of(ui, "GaugeObject") == 0, "gauge or prop left in mui_ui.c");
+    CHECK(count_of(ui, "mui_make_slider(") == 4, "slider constructor sites: %d (definition + 3)", count_of(ui, "mui_make_slider("));
+    CHECK(count_of(ui, "mui_aaslider_new(") == 1, "one AASlider constructor call: %d", count_of(ui, "mui_aaslider_new("));
+    CHECK(count_of(ui, "mui_aaslider_class_free(") == 1, "class freed in mui_close");
+    CHECK(strstr(cls, "mui_aa_slider_rgb(") != NULL && strstr(cls, "mui_aa_slider_knob_x(") != NULL && strstr(cls, "mui_aa_slider_value_at(") != NULL &&
+              strstr(cls, "mui_aa_progress_fill_w(") != NULL && strstr(cls, "aa_round_fill(") != NULL,
+          "class does not draw through the shared slider helpers");
+    CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "0x1") == NULL, "class holds no pen code or colour literal of its own");
+    CHECK(strstr(cm, "mui_aaslider_class.c") != NULL, "class not in the build");
+    free(ui);
+    free(cls);
+    free(cm);
+}
+
 int main(int argc, char** argv) {
     const char* t = argc > 1 ? argv[1] : "";
     if (!strcmp(t, "round")) {
@@ -267,6 +343,10 @@ int main(int argc, char** argv) {
         test_text_source();
     } else if (!strcmp(t, "panel-source")) {
         test_panel_source();
+    } else if (!strcmp(t, "slider-geom")) {
+        test_slider_geom();
+    } else if (!strcmp(t, "slider-source")) {
+        test_slider_source();
     } else {
         printf("usage: round|ramp|state|tokens\n");
         return 2;

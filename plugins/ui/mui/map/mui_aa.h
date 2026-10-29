@@ -90,6 +90,24 @@ uint32_t mui_aa_panel_rgb(const uint32_t* token, int role);
 int mui_aa_panel_radius(const uint32_t* token, int font_px);
 int mui_aa_panel_spacing(const uint32_t* token);
 
+/* I667f (design 3.2, AASlider and AAProgress): track, fill and knob sizes per tier, the colours by state, and the value <-> knob
+ * position maths. Tested on the host. Knob 12 / 14 / 16 px at font 13 / 15 / 17 (tier S, font_px 0: 8, track 2). */
+typedef struct mui_aa_slider_t {
+    int track_h, radius, knob, min_w, height;
+} mui_aa_slider_t;
+void mui_aa_slider_metrics(int font_px, mui_aa_slider_t* out);
+/* Track, filled part and knob colours in a state (MUI_AA_NORMAL, _HOVER, _DISABLED): TRACK, ACCENT, TEXT (hover HOVER_LIGHT); disabled
+ * fill and knob TEXT_DISABLED. Any out pointer may be NULL. */
+void mui_aa_slider_rgb(const uint32_t* token, int state, uint32_t* track, uint32_t* fill, uint32_t* knob);
+/* Left edge of the knob inside a box of width w for a value in [lo, hi] (clamped); the knob stays fully inside the box. */
+int mui_aa_slider_knob_x(const mui_aa_slider_t* m, int w, long value, long lo, long hi);
+/* Value for a pointer at box x (the knob centre follows the pointer), clamped to [lo, hi]. */
+long mui_aa_slider_value_at(const mui_aa_slider_t* m, int w, int x, long lo, long hi);
+/* AAProgress: filled pixels of a bar of width w for value of max (clamped, max <= 0 gives 0). */
+int mui_aa_progress_fill_w(int w, long value, long max);
+/* Calls of the slider/progress maths above: the sentinel that the classes (and not a copy) run it. */
+uint32_t mui_aa_slider_calls(void);
+
 #ifdef __cplusplus
 }
 #endif

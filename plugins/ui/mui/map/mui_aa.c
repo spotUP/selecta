@@ -258,3 +258,60 @@ int mui_aa_panel_radius(const uint32_t* token, int font_px) {
 int mui_aa_panel_spacing(const uint32_t* token) {
     return (int)token[SEL_GUI_TOKEN_SPACING];
 }
+
+static uint32_t g_slider_calls;
+
+uint32_t mui_aa_slider_calls(void) {
+    return g_slider_calls;
+}
+
+void mui_aa_slider_metrics(int font_px, mui_aa_slider_t* out) {
+    g_slider_calls++;
+    out->track_h = font_px <= 0 ? 2 : 4;
+    out->radius = out->track_h / 2;
+    out->knob = font_px <= 0 ? 8 : font_px < 15 ? 12 : font_px < 17 ? 14 : 16;
+    out->min_w = 80;
+    out->height = out->knob + 4;
+}
+
+void mui_aa_slider_rgb(const uint32_t* token, int state, uint32_t* track, uint32_t* fill, uint32_t* knob) {
+    g_slider_calls++;
+    if (track != NULL) {
+        *track = token[SEL_GUI_TOKEN_TRACK];
+    }
+    if (fill != NULL) {
+        *fill = state == MUI_AA_DISABLED ? token[SEL_GUI_TOKEN_TEXT_DISABLED] : token[SEL_GUI_TOKEN_ACCENT];
+    }
+    if (knob != NULL) {
+        *knob = state == MUI_AA_DISABLED ? token[SEL_GUI_TOKEN_TEXT_DISABLED] : state == MUI_AA_HOVER ? token[SEL_GUI_TOKEN_HOVER_LIGHT] : token[SEL_GUI_TOKEN_TEXT];
+    }
+}
+
+int mui_aa_slider_knob_x(const mui_aa_slider_t* m, int w, long value, long lo, long hi) {
+    long travel = w - m->knob, span = hi - lo;
+    g_slider_calls++;
+    if (travel <= 0 || span <= 0) {
+        return 0;
+    }
+    value = value < lo ? lo : value > hi ? hi : value;
+    return (int)(((value - lo) * travel + span / 2) / span);
+}
+
+long mui_aa_slider_value_at(const mui_aa_slider_t* m, int w, int x, long lo, long hi) {
+    long travel = w - m->knob, span = hi - lo, p = (long)x - m->knob / 2, v;
+    g_slider_calls++;
+    if (travel <= 0 || span <= 0) {
+        return lo;
+    }
+    p = p < 0 ? 0 : p > travel ? travel : p;
+    v = lo + (p * span + travel / 2) / travel;
+    return v > hi ? hi : v;
+}
+
+int mui_aa_progress_fill_w(int w, long value, long max) {
+    g_slider_calls++;
+    if (max <= 0 || w <= 0 || value <= 0) {
+        return 0;
+    }
+    return value >= max ? w : (int)(((long)w * value + max / 2) / max);
+}

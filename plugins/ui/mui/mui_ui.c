@@ -42,6 +42,7 @@
 struct Library* MUIMasterBase;
 #include "mui_aabtn_class.h"
 #include "mui_aapanel_class.h"
+#include "mui_aaslider_class.h"
 #include "mui_aatext_class.h"
 #include "map/mui_aa.h"
 #include "mui_canvas_class.h"
@@ -598,12 +599,14 @@ static Object* mui_make_text(mui_state* s, uint32_t attr, const char* initial, m
     return s->txt[attr];
 }
 
-static Object* mui_make_slider(LONG max, LONG id) {
-    Object* o = MUI_NewObject((char*)MUIC_Slider, MUIA_Slider_Horiz, TRUE, MUIA_Slider_Min, 0, MUIA_Slider_Max, max, TAG_DONE);
-    if (o != NULL) {
-        DoMethod(o, MUIM_Notify, MUIA_Slider_Level, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
-    }
-    return o;
+/* I667f (design 3.2): the one slider constructor. Every Selecta slider (volume, seek, settings) is a Selecta_AASlider (mui_aaslider_class.c). */
+static Object* mui_make_slider(long lo, long hi, long value, LONG id) {
+    mui_aaslider_spec sp;
+    sp.lo = lo;
+    sp.hi = hi;
+    sp.value = value;
+    sp.id = id;
+    return mui_aaslider_new(&sp);
 }
 
 /* I667e (design 3.8): the one panel constructor. Every Selecta panel group is a Selecta_AAPanel (mui_aapanel_class.c): a rounded face in
@@ -667,8 +670,8 @@ static Object* mui_player_group(mui_state* s) {
             DoMethod(i < MUI_TRANSPORT_ROW1 ? row1 : row1b, OM_ADDMEMBER, s->btn[i]);
         }
     }
-    s->vol = mui_make_slider(MUI_VOLUME_MAX, CTL_VOLUME);
-    s->seek = mui_make_slider(MUI_SEEK_MAX, CTL_SEEK);
+    s->vol = mui_make_slider(0, MUI_VOLUME_MAX, 0, CTL_VOLUME);
+    s->seek = mui_make_slider(0, MUI_SEEK_MAX, 0, CTL_SEEK);
     row2 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     row3 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     g = mui_aapanel(MUI_AA_PANEL_SURFACE, 0);
@@ -1075,10 +1078,10 @@ static void mui_refresh(mui_state* s) {
             mui_aatext_set(s->txt[a], s->txt_buf[a]);
         } else if (a == MUI_ATTR_SEEK) {
             s->seek_set = (LONG)f->progress_q16;
-            set(s->seek, MUIA_Slider_Level, s->seek_set);
+            set(s->seek, MUIA_Numeric_Value, s->seek_set);
         } else if (a == MUI_ATTR_VOLUME) {
             s->vol_set = (LONG)f->volume;
-            set(s->vol, MUIA_Slider_Level, s->vol_set);
+            set(s->vol, MUIA_Numeric_Value, s->vol_set);
         }
     }
     for (i = 0; i < MUI_BTN_COUNT; i++) {
@@ -1427,11 +1430,7 @@ static Object* mui_pref_gadget(mui_state* s, uint32_t i, const sel_uim_pref_row*
     } else if (r->ui == (uint32_t)SEL_UIM_PREF_SLIDER) {
         long lo = 0, hi = 100;
         sscanf(r->choices, "%ld,%ld", &lo, &hi);
-        o = MUI_NewObject((char*)MUIC_Slider, MUIA_Slider_Horiz, TRUE, MUIA_Slider_Min, (LONG)lo, MUIA_Slider_Max, (LONG)hi, MUIA_Slider_Level,
-                          cur[0] != '\0' ? (LONG)strtol(cur, NULL, 10) : (LONG)lo, TAG_DONE);
-        if (o != NULL) {
-            DoMethod(o, MUIM_Notify, MUIA_Slider_Level, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
-        }
+        o = mui_make_slider(lo, hi, cur[0] != '\0' ? strtol(cur, NULL, 10) : lo, id);
     } else {
         o = mui_make_string(id);
         if (o != NULL) {
@@ -1489,7 +1488,7 @@ static void mui_pref_fire(mui_state* s, uint32_t i) {
         GetAttr(MUIA_Selected, s->set_ctl[i], &v);
         snprintf(val, sizeof val, "%d", v ? 1 : 0);
     } else if (r->ui == (uint32_t)SEL_UIM_PREF_SLIDER) {
-        GetAttr(MUIA_Slider_Level, s->set_ctl[i], &v);
+        GetAttr(MUIA_Numeric_Value, s->set_ctl[i], &v);
         snprintf(val, sizeof val, "%ld", (long)v);
     } else {
         GetAttr(MUIA_String_Contents, s->set_ctl[i], &v);
@@ -1641,14 +1640,14 @@ static void mui_control_fire(mui_state* s, LONG id) {
     } else if (id == CTL_CLIP_COPY) {
         mui_clip_copy(s);
     } else if (id == CTL_SEEK) {
-        GetAttr(MUIA_Slider_Level, s->seek, (ULONG*)&v);
+        GetAttr(MUIA_Numeric_Value, s->seek, (ULONG*)&v);
         if (v != s->seek_set && mui_seek_line((uint32_t)v, sel_engine_state(s->engine)->song.duration_ms, line, sizeof line)
             && mui_engine_line(s, line)) {
             s->transport_hits++;
         }
         s->seek_set = v;
     } else if (id == CTL_VOLUME) {
-        GetAttr(MUIA_Slider_Level, s->vol, (ULONG*)&v);
+        GetAttr(MUIA_Numeric_Value, s->vol, (ULONG*)&v);
         if (v != s->vol_set) {
             mui_volume_line((int32_t)v, line, sizeof line);
             if (mui_engine_line(s, line)) {
@@ -1929,6 +1928,7 @@ static void mui_close(void* state) {
         mui_canvas_class_free();
         mui_aatext_class_free();
         mui_aapanel_class_free();
+        mui_aaslider_class_free();
         mui_aabtn_class_free();
         mui_listview_class_free();
     }
