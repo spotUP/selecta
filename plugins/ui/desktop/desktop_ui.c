@@ -6115,6 +6115,10 @@ static const char* library_dump_build(desk* d) {
             o = dump_put(d, o, "browse tile %u %u %s\n", (unsigned)bi, (unsigned)bt[bi].kind, bt[bi].label);
         }
     }
+    for (uint32_t j = 0; d->page == PG_SEARCH && j < d->sm_n && o + 400u < sizeof d->library_dump; j++) { /* I714: the song rows a script double-clicks */
+        o = dump_put(d, o, "searchrow %u %d %d %d %d key=%s\n", (unsigned)j, (int)d->sm_rows[j].r.x, (int)d->sm_rows[j].r.y, (int)d->sm_rows[j].r.w,
+                     (int)d->sm_rows[j].r.h, d->sm_rows[j].ref.path);
+    }
     o = dump_put(d, o, "search view grid=%u flow=%u\n", (unsigned)d->search_grid_draws, (unsigned)d->search_flow_draws);
     o = dump_put(d, o, "search groups songs=%u albums=%u artists=%u facet=%u drawn=%u\n",
                           (unsigned)d->search_groups[0], (unsigned)d->search_groups[1], (unsigned)d->search_groups[2],
@@ -11015,6 +11019,27 @@ static int select_key(desk* d, const sel_gui_input* ev) {
     return 0;
 }
 
+/* I714: a double-click on a song row plays it on the lists whose single click does not (Search results, the Queue page), through
+ * the same desk_play_path their Enter key calls. The row registry (song_row_reg) holds exactly the song rows drawn: a heading, an
+ * album row or a queue divider is never in it, so those keep their click. The Songs page has its own double-click above; the
+ * playlist and kind pages, the Library lists and the Home tiles already play on the first click. */
+static int song_row_dblclick(desk* d, const sel_gui_input* ev) {
+    uint32_t i;
+    if (ev->kind != SEL_GUI_IN_CLICK || ev->button != 0u || ev->clicks < 2u || d->songs || (d->page != PG_SEARCH && !d->queue_page)) {
+        return 0;
+    }
+    for (i = 0; i < d->sm_n; i++) {
+        if (in_rect(d->sm_rows[i].r, ev->x, ev->y) && !(d->sm_rows[i].more.w > 0 && in_rect(d->sm_rows[i].more, ev->x, ev->y))) {
+            d->clicks++;
+            d->double_clicks++;
+            d->row_plays++;
+            desk_play_path(d, d->sm_rows[i].ref.path);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
     int region = sel_uim_hit(&d->layout, px_to_logical(d, ev->x), px_to_logical(d, ev->y));
     const char* rname = region >= 0 ? d->layout.regions[region].name : "";
@@ -11143,6 +11168,9 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         d->clicks++; /* I619: the add button works on every page, the Playlists page included */
         d->np_add_clicks++;
         return desk_send(d, "LIKE");
+    }
+    if (in_main && song_row_dblclick(d, ev)) {
+        return 1;
     }
     if (d->queue_page) {
         return in_main ? queue_pointer(d, ev) : 0;
