@@ -50,3 +50,17 @@ endif()
 if(NOT "${o}" MATCHES "search view grid=([0-9]+) flow=0\n" OR CMAKE_MATCH_1 LESS 1)
   message(FATAL_ERROR "the filtered page must be drawn by the tile grid:\n${o}")
 endif()
+
+# 3. I711: the Browse page scrolls with the wheel. At 1280x300 the tile grid is taller than the panel: before the wheel the last tile
+# is not drawn (lastvisible=0) and wheels=0; after a wheel past the end (the `browse scroll` sentinel counts the notches the
+# Browse scroll path took) the offset is the maximum and the last tile is drawn (lastvisible=1).
+file(WRITE "${WORK}/short.txt" "wait 100\ntopbar 2\nwait 600\n")
+dui_run(s0 --db "${db}" --ui desktop --backend mem --view home --canvas 1280x300 --clock fixed --stats --input "${WORK}/short.txt")
+if(NOT "${s0}" MATCHES "browse scroll y=0 max=([0-9]+) wheels=0 lastvisible=0\n" OR CMAKE_MATCH_1 LESS 1)
+  message(FATAL_ERROR "I711: at 1280x300 the Browse tiles must overflow the panel with the last tile out of view:\n${s0}")
+endif()
+file(WRITE "${WORK}/wheel.txt" "wait 100\ntopbar 2\nwait 600\nmove 600 150\nwheel 0 -200\nwait 200\n")
+dui_run(s1 --db "${db}" --ui desktop --backend mem --view home --canvas 1280x300 --clock fixed --stats --input "${WORK}/wheel.txt")
+if(NOT "${s1}" MATCHES "browse scroll y=([0-9]+) max=([0-9]+) wheels=([0-9]+) lastvisible=1\n" OR CMAKE_MATCH_3 LESS 1 OR NOT CMAKE_MATCH_1 EQUAL CMAKE_MATCH_2 OR CMAKE_MATCH_1 LESS 1)
+  message(FATAL_ERROR "I711: a wheel on the Browse page must scroll to the end and draw the last tile:\n${s1}")
+endif()

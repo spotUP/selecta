@@ -303,6 +303,8 @@ typedef struct desk {
     uint32_t lib_searches;   /* LIBRARY_SEARCH lines sent for typed queries: STAT_LIBRARY_SEARCHES */
     uint32_t search_draws, search_rows;  /* search view frames drawn, result rows in the last one */
     int browse_filter;       /* I615c: the Search page shows a Browse tile's filter: its results draw as the tile grid whatever the view style */
+    int32_t browse_y_q16;    /* I711: Browse page scroll offset in logical pixels, Q16, as queue_q16 */
+    uint32_t browse_wheels;  /* I711 sentinel: wheel notches the Browse page scroll path took */
     uint32_t browse_draws, browse_opens, browse_n; /* I615c: Browse page frames drawn, tiles opened, tiles in the last frame */
     sel_gui_rect browse_rect[48];                  /* I615c: the tile rects of the last frame (hit test and the "browse" input verb) */
     uint32_t search_grid_draws, search_flow_draws; /* I615b: search frames drawn as the tile grid / the cover flow */
@@ -3266,6 +3268,7 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
  * Stats page (F24) beside them. Every number comes from the engine state (COMPOSERS_SHOW, STATS_SHOW).
  * TODO DUI-P4-3 slice B/C: the tree, column browser, sources, Files and History pages hook in here, as further pages
  * of this view chosen by a segmented control above the list. */
+enum { GRID_ART = 160, GRID_GAP = 16, FLOW_ART = 240 };
 enum { LIB_MARGIN = 24, LIB_TITLE_Y = 24, LIB_TITLE_H = 40, LIB_TAB_H = 32, LIB_ROW_H = 48, LIB_STATS_H = 48, LIB_STATS_LINE = 24, LIB_STATS_MORE_W = 72, LIB_STATS_PANEL_COLS = 2 };
 
 /* I445: the Library header is three rows, the title, the tab row and the list, with a gap of two theme spacings between
@@ -3405,6 +3408,32 @@ static uint32_t browse_tiles(const desk* d, browse_tile* out, uint32_t cap) {
         }
     }
     return n;
+}
+
+/* I711: the Browse tile grid's column count and total content height (headings and tile rows), the one measure the drawer and the
+ * wheel clamp share. */
+static int32_t browse_content_h(desk* d, const browse_tile* t, uint32_t n, uint32_t* cols_out) {
+    sel_gui_rect mn = region_rect(d, "main");
+    int32_t gap = lpx(d, GRID_GAP), avail = mn.w - 2 * lpx(d, LIB_MARGIN), y = lpx(d, 16);
+    uint32_t cols = avail >= lpx(d, BROWSE_TILE_MIN_W) ? (uint32_t)((avail + gap) / (lpx(d, BROWSE_TILE_MIN_W) + gap)) : 1u, kind, i;
+    for (kind = 0; kind < 3u; kind++) {
+        uint32_t in_kind = 0;
+        for (i = 0; i < n; i++) {
+            in_kind += t[i].kind == kind;
+        }
+        if (in_kind != 0u) {
+            y += lpx(d, BROWSE_HEAD_H) + (int32_t)((in_kind + cols - 1u) / cols) * (lpx(d, BROWSE_TILE_H) + gap);
+        }
+    }
+    *cols_out = cols;
+    return y;
+}
+
+static int32_t browse_max_q16(desk* d) {
+    browse_tile t[BROWSE_MAX];
+    uint32_t n = browse_tiles(d, t, BROWSE_MAX), cols;
+    int32_t over = browse_content_h(d, t, n, &cols) + lpx(d, 16) - region_rect(d, "main").h;
+    return over > 0 ? px_to_logical_ceil(d, over) << 16 : 0;
 }
 
 /* The Library lists the UI draws itself (the composers and a composer's songs) scroll by a pixel offset, lib_q16, as the
@@ -6108,6 +6137,7 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "search draws %u rows %u query %s\n",
                           (unsigned)d->search_draws, (unsigned)d->search_rows, d->query);
     o = dump_put(d, o, "browse draws=%u tiles=%u opens=%u filter=%d\n", (unsigned)d->browse_draws, (unsigned)d->browse_n, (unsigned)d->browse_opens, d->browse_filter);
+    o = dump_put(d, o, "browse scroll y=%d max=%d wheels=%u lastvisible=%d\n", d->browse_y_q16, browse_max_q16(d), (unsigned)d->browse_wheels, d->browse_n > 0u && d->browse_rect[d->browse_n - 1u].h > 0);
     {
         browse_tile bt[BROWSE_MAX];
         uint32_t bn = browse_tiles(d, bt, BROWSE_MAX), bi;
@@ -6533,7 +6563,6 @@ static const char* library_dump_build(desk* d) {
 /* ---- Library grid and cover flow (DUI-P4-5): the engine's flat rows (VIEW_STYLE grid / coverflow) as artwork tiles.
  * Integer geometry only. Sizes are logical units on the 8-unit grid (the artwork size tokens of plan 2.2 are not in the
  * token table yet: tile and cover flow art are these constants). The art is the generated tile of the Home shelves. */
-enum { GRID_ART = 160, GRID_GAP = 16, FLOW_ART = 240 };
 
 /* Cover flow stack constants (I391): FLOW_SIDES neighbours per side; neighbour k sits k/FLOW_STEP_DIV of the centre size from the
  * centre line and is k/FLOW_SHRINK_DIV smaller. Each neighbour then shows (1/FLOW_STEP_DIV - 1/(2*FLOW_SHRINK_DIV)) of the centre
@@ -7512,9 +7541,14 @@ static void draw_browse(desk* d) {
     sel_gui_rect mn = region_rect(d, "main");
     browse_tile t[BROWSE_MAX];
     uint32_t n = browse_tiles(d, t, BROWSE_MAX), i, cols, kind, col;
-    int32_t gap = lpx(d, GRID_GAP), margin = lpx(d, LIB_MARGIN), avail = mn.w - 2 * margin, tw, th = lpx(d, BROWSE_TILE_H), y = mn.y + lpx(d, 16);
+    int32_t gap = lpx(d, GRID_GAP), margin = lpx(d, LIB_MARGIN), avail = mn.w - 2 * margin, tw, th = lpx(d, BROWSE_TILE_H), y;
+    int32_t max_q16 = browse_max_q16(d);
+    if (d->browse_y_q16 > max_q16) { /* a resize can shorten the overflow */
+        d->browse_y_q16 = max_q16;
+    }
+    y = mn.y + lpx(d, 16) - lpx_q16(d, d->browse_y_q16);
     sel_gui_clip_push(d->canvas, mn);
-    cols = avail >= lpx(d, BROWSE_TILE_MIN_W) ? (uint32_t)((avail + gap) / (lpx(d, BROWSE_TILE_MIN_W) + gap)) : 1u;
+    (void)browse_content_h(d, t, n, &cols);
     tw = (avail - (int32_t)(cols - 1u) * gap) / (int32_t)cols;
     for (i = 0; i < BROWSE_MAX; i++) {
         d->browse_rect[i] = rect_of(0, 0, 0, 0);
@@ -7536,7 +7570,7 @@ static void draw_browse(desk* d) {
             }
             r = rect_of(mn.x + margin + (int32_t)col * (tw + gap), y, tw, th);
             pad = lpx(d, 12);
-            if (r.y < mn.y + mn.h) {
+            if (r.y < mn.y + mn.h && r.y + r.h > mn.y) {
                 sel_gui_round_rect(d->canvas, r, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]), ARGB(d->theme.token[browse_palette[i % BROWSE_PALETTE]]));
                 draw_text(d, rect_of(r.x + pad, r.y + pad, r.w - 2 * pad, lpx(d, 28)), t[i].label, 1, 18, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
                 snprintf(sub, sizeof sub, "%u songs", (unsigned)t[i].count);
@@ -8126,6 +8160,7 @@ static void desk_page_load(desk* d, desk_page pg) {
         }
         desk_send(d, "STATS_SHOW");
     } else if (pg == PG_BROWSE) { /* I615c: the catalog the tiles are built from: the formats (the grouped library view), the composers and the sources */
+        d->browse_y_q16 = 0; /* I711: the tiles open at the top */
         desk_send(d, "FORMATS_SHOW");
         desk_send(d, "COMPOSERS_SHOW");
         d->src_wait = 1;
@@ -11350,6 +11385,14 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
         }
         if (d->page == PG_LIBRARY && (sel_engine_state(d->engine)->composers != NULL || d->lib_mode == 5u)) {
             return lib_wheel(d, ev->dy);
+        }
+        if (d->page == PG_BROWSE) { /* I711: the Browse tiles scroll when they overflow the panel, as the Queue page does */
+            int32_t max_q16 = browse_max_q16(d);
+            int64_t v = (int64_t)d->browse_y_q16 - (int64_t)ev->dy * SCROLL_NOTCH;
+            d->browse_y_q16 = v < 0 ? 0 : (v > max_q16 ? max_q16 : (int32_t)v);
+            d->browse_wheels++;
+            draw_home(d);
+            return 1;
         }
         if (d->page == PG_QUEUE && d->queue_page) { /* I258: the Queue page scrolls as the songs list does */
             sel_gui_rect mn = region_rect(d, "main");
