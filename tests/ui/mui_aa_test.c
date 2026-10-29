@@ -258,6 +258,62 @@ static void test_panel_source(void) {
     free(cm);
 }
 
+/* I667j mui-tabs: AATabs maths. The active index is set by a click (valid tab only) and by the Left/Right keys (clamped, no wrap); the
+ * underline is 2 px (tier S 1) at the bottom of the active tab's box; colours ACCENT line, TEXT_MUTED idle, TEXT active; the TAB button role
+ * paints TEXT_MUTED idle and TEXT when lit. The sentinel proves the shared helpers ran. */
+static void test_tabs(void) {
+    static const int fonts[4] = {0, 13, 15, 17};
+    txt_theme th;
+    uint32_t line, idle, act, face, text;
+    uint32_t before = mui_aa_tabs_calls();
+    int i, lx, ly, lw, lh;
+    txt_theme_default(&th);
+    CHECK(mui_aa_tabs_click(0, 3) == 0 && mui_aa_tabs_click(2, 3) == 2, "click on a tab picks it");
+    CHECK(mui_aa_tabs_click(3, 3) == -1 && mui_aa_tabs_click(-1, 3) == -1 && mui_aa_tabs_click(0, 0) == -1, "click outside the strip changes nothing");
+    CHECK(mui_aa_tabs_key(0x4E, 0, 3) == 1 && mui_aa_tabs_key(0x4E, 1, 3) == 2, "Right moves to the next tab");
+    CHECK(mui_aa_tabs_key(0x4F, 2, 3) == 1 && mui_aa_tabs_key(0x4F, 1, 3) == 0, "Left moves to the previous tab");
+    CHECK(mui_aa_tabs_key(0x4E, 2, 3) == 2 && mui_aa_tabs_key(0x4F, 0, 3) == 0, "keys clamp at both ends");
+    CHECK(mui_aa_tabs_key(0x44, 1, 3) == 1 && mui_aa_tabs_key(0x4E, 0, 0) == 0, "other keys and an empty strip keep the index");
+    for (i = 0; i < 4; i++) {
+        mui_aa_tabs_line(fonts[i], 10, 20, 50, 24, &lx, &ly, &lw, &lh);
+        CHECK(lx == 10 && lw == 50 && lh == (i == 0 ? 1 : 2) && ly == 20 + 24 - lh, "tier %d underline x %d y %d w %d h %d", i, lx, ly, lw, lh);
+    }
+    mui_aa_tabs_line(13, 0, 0, 5, 1, &lx, &ly, &lw, &lh);
+    CHECK(lh == 1 && ly == 0, "underline never taller than the tab");
+    mui_aa_tabs_rgb(th.token, &line, &idle, &act);
+    CHECK(line == th.token[SEL_GUI_TOKEN_ACCENT] && line == 0x3B82F6u, "underline is ACCENT 3B82F6");
+    CHECK(idle == th.token[SEL_GUI_TOKEN_TEXT_MUTED] && act == th.token[SEL_GUI_TOKEN_TEXT], "idle TEXT_MUTED, active TEXT");
+    mui_aa_button_rgb(th.token, MUI_AA_ROLE_TAB, MUI_AA_NORMAL, &face, &text);
+    CHECK(text == idle && face == th.token[SEL_GUI_TOKEN_PANEL], "idle tab button: muted text on the panel");
+    mui_aa_button_rgb(th.token, MUI_AA_ROLE_TAB, MUI_AA_SELECTED, &face, &text);
+    CHECK(text == act && face == th.token[SEL_GUI_TOKEN_PANEL], "lit tab button: TEXT, face unchanged");
+    CHECK(mui_aa_tabs_calls() > before, "tabs helpers did not run");
+}
+
+/* I667j mui-tabs-source: no stock Register is left in the MUI UI, the detail pane builds its tabs through one AATabs constructor
+ * call, and the class draws through the shared helpers with no colour literal. */
+static void test_tabs_source(void) {
+    char* ui = slurp(UI_SOURCE);
+    char* cls = slurp(AATABS_SOURCE);
+    char* cm = slurp(MUI_CMAKE);
+    CHECK(ui != NULL && cls != NULL && cm != NULL, "sources readable");
+    if (ui == NULL || cls == NULL || cm == NULL) {
+        return;
+    }
+    CHECK(count_of(ui, "MUIC_Register") == 0 && count_of(ui, "MUIA_Register_") == 0, "stock Register left in mui_ui.c");
+    CHECK(count_of(ui, "mui_aatabs_new(") == 1, "AATabs constructor calls in mui_ui.c: %d", count_of(ui, "mui_aatabs_new("));
+    CHECK(count_of(ui, "AATab_Active") >= 1 && count_of(ui, "MUIA_Group_ActivePage") >= 1, "tab strip not wired to the page group");
+    CHECK(count_of(ui, "mui_aatabs_class_free()") == 1, "class not freed at close");
+    CHECK(strstr(cls, "mui_aa_tabs_line(") != NULL && strstr(cls, "mui_aa_tabs_rgb(") != NULL && strstr(cls, "mui_aa_tabs_key(") != NULL && strstr(cls, "mui_aa_tabs_click(") != NULL,
+          "class does not run the shared tab helpers");
+    CHECK(strstr(cls, "MUI_AA_ROLE_TAB") != NULL, "tabs are not TAB role buttons");
+    CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "0x1") == NULL, "class holds no pen code or colour literal of its own");
+    CHECK(strstr(cm, "mui_aatabs_class.c") != NULL, "class not in the build");
+    free(ui);
+    free(cls);
+    free(cm);
+}
+
 /* I667f mui-slider-geom: sizes per tier, colours per state, fill width and pointer -> value, progress fill, and the update paint plan
  * (I667f2): op 0 erases the full box, then track and fill, no knob. The sentinel proves the shared maths ran. */
 static void test_slider_geom(void) {
@@ -751,6 +807,10 @@ int main(int argc, char** argv) {
         test_text_source();
     } else if (!strcmp(t, "panel-source")) {
         test_panel_source();
+    } else if (!strcmp(t, "tabs")) {
+        test_tabs();
+    } else if (!strcmp(t, "tabs-source")) {
+        test_tabs_source();
     } else if (!strcmp(t, "slider-geom")) {
         test_slider_geom();
     } else if (!strcmp(t, "btn-align")) {

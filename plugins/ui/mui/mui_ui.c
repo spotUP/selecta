@@ -42,6 +42,7 @@
 struct Library* MUIMasterBase;
 #include "mui_aabtn_class.h"
 #include "mui_aapanel_class.h"
+#include "mui_aatabs_class.h"
 #include "mui_aaslider_class.h"
 #include "mui_aacycle_class.h"
 #include "mui_aalist_class.h"
@@ -956,20 +957,46 @@ static Object* mui_detail_group(mui_state* s) {
             DoMethod(g, OM_ADDMEMBER, s->cyc_viz);
         }
     }
-    if (lyr_view != NULL) {
-        DoMethod(g, OM_ADDMEMBER, lyr_view);
-    }
-    DoMethod(g, OM_ADDMEMBER, mui_aatext("Next in Queue", mui_pens_label_tone(MUI_LBL_SECTION), MUI_AA_ALIGN_CENTRE, 0, 0));
-    for (i = 0; i < 3; i++) {
-        s->np_up[i] = mui_np_text(s->np_up_buf[i], sizeof s->np_up_buf[i], " ", MUI_LBL_UPCOMING);
-        DoMethod(g, OM_ADDMEMBER, s->np_up[i]);
-    }
-    if (info_g != NULL) {
-        DoMethod(g, OM_ADDMEMBER, info_g);
-    }
-    if (s->trk_group != NULL && trk_g != NULL) {
-        DoMethod(s->trk_group, OM_ADDMEMBER, trk_g);
-        DoMethod(g, OM_ADDMEMBER, s->trk_group);
+    /* I667j (design 3.9): the detail tabs. Lyrics (with the upcoming queue), Info and Tracks are the pages of one page Group, switched
+     * by an AATabs strip (a notification from AATab_Active to MUIA_Group_ActivePage), instead of one tall stack. */
+    {
+        static const char* const tab_names[] = {"Lyrics", "Info", "Tracks", NULL};
+        mui_aatabs_spec ts;
+        Object* tabs;
+        Object* pages = MUI_NewObject((char*)MUIC_Group, MUIA_Group_PageMode, (ULONG)TRUE, TAG_DONE);
+        Object* page_lyr = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+        Object* page_info = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+        Object* page_trk = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+        ts.captions = tab_names;
+        ts.active = 0;
+        tabs = mui_aatabs_new(&ts);
+        if (pages != NULL && page_lyr != NULL && page_info != NULL && page_trk != NULL && tabs != NULL) {
+            if (lyr_view != NULL) {
+                DoMethod(page_lyr, OM_ADDMEMBER, lyr_view);
+            }
+            DoMethod(page_lyr, OM_ADDMEMBER, mui_aatext("Next in Queue", mui_pens_label_tone(MUI_LBL_SECTION), MUI_AA_ALIGN_CENTRE, 0, 0));
+            for (i = 0; i < 3; i++) {
+                s->np_up[i] = mui_np_text(s->np_up_buf[i], sizeof s->np_up_buf[i], " ", MUI_LBL_UPCOMING);
+                DoMethod(page_lyr, OM_ADDMEMBER, s->np_up[i]);
+            }
+            if (info_g != NULL) {
+                DoMethod(page_info, OM_ADDMEMBER, info_g);
+            } else {
+                DoMethod(page_info, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+            }
+            if (s->trk_group != NULL && trk_g != NULL) {
+                DoMethod(s->trk_group, OM_ADDMEMBER, trk_g);
+                DoMethod(page_trk, OM_ADDMEMBER, s->trk_group);
+            } else {
+                DoMethod(page_trk, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+            }
+            DoMethod(pages, OM_ADDMEMBER, page_lyr);
+            DoMethod(pages, OM_ADDMEMBER, page_info);
+            DoMethod(pages, OM_ADDMEMBER, page_trk);
+            DoMethod(tabs, MUIM_Notify, AATab_Active, MUIV_EveryTime, pages, 3, MUIM_Set, MUIA_Group_ActivePage, MUIV_TriggerValue);
+            DoMethod(g, OM_ADDMEMBER, tabs);
+            DoMethod(g, OM_ADDMEMBER, pages);
+        }
     }
     return g;
 }
@@ -2020,6 +2047,7 @@ static void mui_close(void* state) {
         mui_vizarea_class_free();
         mui_aatext_class_free();
         mui_aapanel_class_free();
+        mui_aatabs_class_free();
         mui_aaslider_class_free();
         mui_aacycle_class_free();
         mui_aalist_class_free(); /* I667i: also frees the AAScroller class */

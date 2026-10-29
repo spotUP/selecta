@@ -26,7 +26,9 @@ uint32_t mui_aa_pressed_rgb(uint32_t face);
  * Colours come from the token array (txt_theme.token), never from literals here. */
 enum { MUI_AA_NORMAL, MUI_AA_HOVER, MUI_AA_PRESSED, MUI_AA_DISABLED, MUI_AA_SELECTED };
 /* TOGGLE (I667b-2, AACheck): checkbox box; off = SURFACE face (desktop checkbox), on (state SELECTED) = ACCENT face, ink ACCENT_TEXT. */
-enum { MUI_AA_ROLE_NORMAL, MUI_AA_ROLE_ACCENT, MUI_AA_ROLE_GHOST, MUI_AA_ROLE_TOGGLE };
+/* TAB (I667j, AATabs): a tab caption on the PANEL, TEXT_MUTED idle, TEXT while its tab is active (state SELECTED); the face never changes
+ * but for the hover token. */
+enum { MUI_AA_ROLE_NORMAL, MUI_AA_ROLE_ACCENT, MUI_AA_ROLE_GHOST, MUI_AA_ROLE_TOGGLE, MUI_AA_ROLE_TAB };
 /* Screen tiers by rows (section 3): S 640x256 and 320x256, M up to 600 rows, L up to 800, XL above. */
 enum { MUI_AA_TIER_S, MUI_AA_TIER_M, MUI_AA_TIER_L, MUI_AA_TIER_XL };
 /* Coverage ramp kinds (section 4): AGA four held token pens, RTG eight blended pens, TC none (ttengine blends). */
@@ -217,6 +219,17 @@ void mui_aa_list_col_widths(const mui_aa_list_t* m, int total, int n, const int*
 int mui_aa_list_title_h(const mui_aa_list_t* m, int has_title);
 /* Secondary column text (TEXT_MUTED, also the header text) and the header divider / column divider colour (DIVIDER). Any out pointer may be NULL. */
 void mui_aa_list_header_rgb(const uint32_t* token, uint32_t* muted, uint32_t* divider);
+
+/* I667j (design 3.9, AATabs): a row of tab captions with a 2 px ACCENT underline under the active one. Tested on the host (mui-tabs). */
+#define MUI_AA_TABS_LINE_PX 2
+/* Index after a click on tab i (out of range gives -1: no change) and after a key (Left 0x4F -1, Right 0x4E +1, clamped, no wrap; n <= 0 gives 0). */
+int mui_aa_tabs_click(int i, int n);
+int mui_aa_tabs_key(int code, int active, int n);
+/* Underline rectangle for the active tab whose box is (x, y, w, h): full tab width, MUI_AA_TABS_LINE_PX high (tier S, font_px 0: 1), at the bottom edge. */
+void mui_aa_tabs_line(int font_px, int x, int y, int w, int h, int* lx, int* ly, int* lw, int* lh);
+/* Underline ACCENT; caption colour idle TEXT_MUTED, active TEXT. Any out pointer may be NULL. */
+void mui_aa_tabs_rgb(const uint32_t* token, uint32_t* line, uint32_t* idle_text, uint32_t* active_text);
+uint32_t mui_aa_tabs_calls(void);
 
 #ifdef __cplusplus
 }

@@ -122,6 +122,10 @@ void mui_aa_button_rgb(const uint32_t* token, int role, int state, uint32_t* fac
         f = token[SEL_GUI_TOKEN_SURFACE];
         t = token[SEL_GUI_TOKEN_TEXT];
         f = state == MUI_AA_SELECTED ? token[SEL_GUI_TOKEN_SURFACE_RAISED] : mui_aa_state_rgb(token, f, state == MUI_AA_DISABLED ? MUI_AA_NORMAL : state);
+    } else if (role == MUI_AA_ROLE_TAB) {
+        /* AATabs: the tab sits on the PANEL the detail pane is built on; the active tab is told by TEXT and the underline, not by a face. */
+        f = state == MUI_AA_HOVER ? mui_aa_state_rgb(token, token[SEL_GUI_TOKEN_PANEL], state) : token[SEL_GUI_TOKEN_PANEL];
+        t = state == MUI_AA_SELECTED || state == MUI_AA_PRESSED ? token[SEL_GUI_TOKEN_TEXT] : token[SEL_GUI_TOKEN_TEXT_MUTED];
     } else {
         f = mui_aa_state_rgb(token, token[SEL_GUI_TOKEN_SURFACE_RAISED], state);
         t = token[SEL_GUI_TOKEN_TEXT];
@@ -671,5 +675,59 @@ void mui_aa_list_header_rgb(const uint32_t* token, uint32_t* muted, uint32_t* di
     }
     if (divider != NULL) {
         *divider = token[SEL_GUI_TOKEN_DIVIDER];
+    }
+}
+
+static uint32_t g_tabs_calls;
+
+uint32_t mui_aa_tabs_calls(void) {
+    return g_tabs_calls;
+}
+
+int mui_aa_tabs_click(int i, int n) {
+    g_tabs_calls++;
+    return i >= 0 && i < n ? i : -1;
+}
+
+int mui_aa_tabs_key(int code, int active, int n) {
+    int a;
+    g_tabs_calls++;
+    if (n <= 0) {
+        return 0;
+    }
+    a = active + (code == 0x4E ? 1 : code == 0x4F ? -1 : 0);
+    return a < 0 ? 0 : a >= n ? n - 1 : a;
+}
+
+void mui_aa_tabs_line(int font_px, int x, int y, int w, int h, int* lx, int* ly, int* lw, int* lh) {
+    int t = font_px > 0 ? MUI_AA_TABS_LINE_PX : 1;
+    g_tabs_calls++;
+    if (t > h) {
+        t = h;
+    }
+    if (lx != NULL) {
+        *lx = x;
+    }
+    if (ly != NULL) {
+        *ly = y + h - t;
+    }
+    if (lw != NULL) {
+        *lw = w;
+    }
+    if (lh != NULL) {
+        *lh = t;
+    }
+}
+
+void mui_aa_tabs_rgb(const uint32_t* token, uint32_t* line, uint32_t* idle_text, uint32_t* active_text) {
+    g_tabs_calls++;
+    if (line != NULL) {
+        *line = token[SEL_GUI_TOKEN_ACCENT];
+    }
+    if (idle_text != NULL) {
+        *idle_text = token[SEL_GUI_TOKEN_TEXT_MUTED];
+    }
+    if (active_text != NULL) {
+        *active_text = token[SEL_GUI_TOKEN_TEXT];
     }
 }

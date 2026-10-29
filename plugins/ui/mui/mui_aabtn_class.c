@@ -300,7 +300,9 @@ void mui_aabtn_set_on(Object* obj, int on) {
         return;
     }
     d->on = on != 0;
-    MUI_Redraw(obj, MADF_DRAWOBJECT);
+    if (aa_live(obj)) { /* AATabs sets the lit state while it builds, before any window exists (I684a) */
+        MUI_Redraw(obj, MADF_DRAWOBJECT);
+    }
 }
 
 void mui_aabtn_set_alt(Object* obj, int alt) {
