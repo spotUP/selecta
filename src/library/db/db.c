@@ -14,13 +14,18 @@ static uint32_t g_heap_bytes;
 static uint32_t g_heap_users;
 static uint32_t g_heap_allocs;
 
+/* The smallest tier of the D-M3-2 table (machines up to 4 MiB): 512 KiB plus 32 KiB (I687c). The songs(album) index of
+ * SCHEMA_V11 is one more page of the schema, and with it `library scan` into the 512 KiB heap ran out of memsys5 blocks
+ * (SQLITE_NOMEM, peak 311040 of 327680 bytes of the heap part). The extra 32 KiB gives the heap part 20 KiB more. */
+#define HEAP_SMALL_BYTES (544u * 1024u)
+
 uint32_t sel_library_heap_bytes(const sel_tag* machine) {
     unsigned long long ram =
         (unsigned long long)sel_tag_find(machine, SEL_MACHINE_FAST_RAM, 0) +
         (unsigned long long)sel_tag_find(machine, SEL_MACHINE_CHIP_RAM, 0);
 
     if (ram <= 4ull * 1024 * 1024) {
-        return 512u * 1024u;
+        return HEAP_SMALL_BYTES;
     }
     if (ram <= 16ull * 1024 * 1024) {
         return 2u * 1024u * 1024u;
@@ -36,7 +41,7 @@ const char* sel_library_sqlite_version(void) {
 }
 
 /* The smallest heap of the D-M3-2 table; SQLite still works in it. */
-#define HEAP_FLOOR_BYTES (512u * 1024u)
+#define HEAP_FLOOR_BYTES HEAP_SMALL_BYTES
 
 /* Page size of every database this build creates (SQLITE_DEFAULT_PAGE_SIZE). */
 #define PAGE_BYTES 4096u

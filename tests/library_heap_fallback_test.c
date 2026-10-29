@@ -37,9 +37,13 @@ static void check(int ok, const char* what) {
 }
 
 int main(void) {
+    /* sel_machine_fake returns one shared buffer: read the small tier before the a060 tag is taken. */
+    /* I687c: the 2 MB machine tier is 512 KiB + 32 KiB for the songs(album) index page of SCHEMA_V11. */
+    uint32_t small_tier = sel_library_heap_bytes(sel_machine_fake("a1200"));
     const sel_tag* a060 = sel_machine_fake("a060"); /* 66 MB: the 8 MiB tier */
     sel_library* lib;
 
+    check(small_tier == 544u * 1024u, "a1200 tier is 544 KiB");
     g_host = *sel_host_default();
     g_host.mem_alloc = capped_alloc;
     g_host.mem_free = plain_free;
@@ -65,7 +69,7 @@ int main(void) {
         sel_library_close(lib);
     }
 
-    /* Below the 512 KiB floor: the open still fails cleanly. */
+    /* Below the 544 KiB floor: the open still fails cleanly. */
     g_cap = 256u * 1024u;
     lib = sel_library_open(&g_host, a060, 0, ":memory:");
     check(lib == NULL, "open fails below the floor");

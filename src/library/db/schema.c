@@ -220,8 +220,12 @@ static const char SCHEMA_V10[] =
     "CREATE TRIGGER songs_album_au AFTER UPDATE OF album, artist ON songs BEGIN " V10_ADD("new") "END;"
     "CREATE TRIGGER songs_album_ad AFTER DELETE ON songs BEGIN " V10_DROP "END;";
 
-static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5,
-                                           SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10};
+/* I687c: the V10 delete trigger and the scan.c retag drop ask "does another song have this album" per deleted or retagged
+ * row; without an index each is a scan of songs. The 2 MB tier heap grew by 32 KiB for this index's page (db.c). */
+static const char SCHEMA_V11[] = "CREATE INDEX songs_album ON songs(album);";
+
+static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
+                                           SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 
