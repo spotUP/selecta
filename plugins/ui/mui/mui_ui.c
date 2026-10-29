@@ -763,11 +763,14 @@ static Object* mui_make_string(LONG id) {
     return mui_aafield_new(&sp);
 }
 
-static Object* mui_make_cycle(const char* const* entries, LONG id) {
+/* I684a: the initial entry goes in at OM_NEW. Setting the active entry before the object is in the application tree fires the
+ * MUIV_Notify_Application notification with no global info yet; MUI then reads the application through a NULL pointer and
+ * the Amiga crashed at start whenever the saved visualizer (or a settings cycle) was not the first entry. */
+static Object* mui_make_cycle(const char* const* entries, LONG active, LONG id) {
     /* I667g (design 3.3): every cycle is a Selecta_AACycle (mui_aacycle_class.c). */
     mui_aacycle_spec sp;
     sp.entries = entries;
-    sp.active = 0;
+    sp.active = active;
     sp.id = id;
     return mui_aacycle_new(&sp);
 }
@@ -785,8 +788,8 @@ static Object* mui_tool_group(mui_state* s) {
     }
     s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH);
     s->str_cmd = mui_make_string(CTL_P4_BASE + P4_CMD);
-    s->cyc_rating = mui_make_cycle(p4_rating_entries, CTL_P4_BASE + P4_RATING);
-    s->cyc_subsong = mui_make_cycle(p4_subsong_entries, CTL_P4_BASE + P4_SUBSONG);
+    s->cyc_rating = mui_make_cycle(p4_rating_entries, 0, CTL_P4_BASE + P4_RATING);
+    s->cyc_subsong = mui_make_cycle(p4_subsong_entries, 0, CTL_P4_BASE + P4_SUBSONG);
     snprintf(s->status_buf, sizeof s->status_buf, "Ready");
     s->status = mui_aatext(s->status_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1, 0);
     if (s->str_search == NULL || s->str_cmd == NULL || s->cyc_rating == NULL || s->cyc_subsong == NULL || s->status == NULL) {
@@ -909,10 +912,7 @@ static Object* mui_detail_group(mui_state* s) {
     DoMethod(g, OM_ADDMEMBER, s->np_artist);
     DoMethod(g, OM_ADDMEMBER, s->np_album);
     if (s->vizset.n > 0u) {
-        s->cyc_viz = mui_make_cycle(s->vizset.name_, CTL_P4_BASE + P4_VIZPICK);
-        if (s->cyc_viz != NULL) {
-            set(s->cyc_viz, AAC_Active, (ULONG)s->vizset.sel);
-        }
+        s->cyc_viz = mui_make_cycle(s->vizset.name_, (LONG)s->vizset.sel, CTL_P4_BASE + P4_VIZPICK);
         s->viz_area = mui_vizarea_new(&s->vizset, g_tokens, 1);
         if (s->cyc_viz != NULL && s->viz_area != NULL) {
             DoMethod(g, OM_ADDMEMBER, s->viz_area);
@@ -1466,10 +1466,7 @@ static Object* mui_pref_gadget(mui_state* s, uint32_t i, const sel_uim_pref_row*
                 break;
             }
         }
-        o = mui_make_cycle(s->set_entry[i], id);
-        if (o != NULL && act < n) {
-            set(o, AAC_Active, (ULONG)act);
-        }
+        o = mui_make_cycle(s->set_entry[i], act < n ? (LONG)act : 0, id);
     } else if (r->ui == (uint32_t)SEL_UIM_PREF_CHECK) {
         o = mui_make_check(r->label, cur[0] == '1', id);
     } else if (r->ui == (uint32_t)SEL_UIM_PREF_SLIDER) {

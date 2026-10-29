@@ -61,7 +61,7 @@ static int aalist_visible(Object* obj, const aalist_data* d) {
 
 /* Tell the scroller the window of rows (no notification back: the scroller only reports user drags). */
 static void aalist_sync_scroller(Object* obj, aalist_data* d) {
-    if (d->scroller != NULL && _win(obj) != NULL) {
+    if (d->scroller != NULL && aa_live(obj)) {
         d->vis = aalist_visible(obj, d);
         SetAttrs(d->scroller, MUIA_NoNotify, TRUE, AAS_Visible, (ULONG)d->vis, AAS_Entries, (ULONG)d->count, AAS_First, (ULONG)d->first, TAG_DONE);
     }
@@ -208,7 +208,7 @@ static ULONG aalist_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEve
     if (im->Class != IDCMP_RAWKEY || (im->Code & IECODE_UP_PREFIX)) {
         return 0;
     }
-    if (_win(obj) != NULL) {
+    if (aa_live(obj)) {
         GetAttr(MUIA_Window_ActiveObject, _win(obj), &act);
     }
     if (im->Code == AAL_WHEEL_UP || im->Code == AAL_WHEEL_DOWN) {
@@ -262,7 +262,7 @@ static ULONG aalist_set(struct IClass* cl, Object* obj, struct opSet* msg) {
         d->first = mui_aa_list_clamp_first((long)tf->ti_Data, d->vis, d->count);
         changed = 1;
     }
-    if (changed && _win(obj) != NULL) {
+    if (changed && aa_live(obj)) {
         aalist_sync_scroller(obj, d);
         MUI_Redraw(obj, MADF_DRAWOBJECT);
     }

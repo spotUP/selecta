@@ -34,7 +34,7 @@ static char g_bg_spec[40]; /* MUIA_Background string of the inner String; MUI ke
 
 static int aafield_focus(Object* obj, const aafield_data* d) {
     ULONG active = 0;
-    if (_win(obj) == NULL) {
+    if (!aa_live(obj)) {
         return 0;
     }
     GetAttr(MUIA_Window_ActiveObject, _win(obj), &active);

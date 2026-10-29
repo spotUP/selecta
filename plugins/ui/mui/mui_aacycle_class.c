@@ -43,7 +43,7 @@ static void aacycle_drop_popup(Object* obj, aacycle_data* d) {
     if (d->popup == NULL) {
         return;
     }
-    if (_win(obj) != NULL) {
+    if (aa_live(obj)) {
         GetAttr(MUIA_ApplicationObject, _win(obj), (ULONG*)&app);
     }
     set(d->popup, MUIA_Window_Open, FALSE);
@@ -139,7 +139,7 @@ static ULONG aacycle_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
         mui_aa_cycle_chevron_row(&d->m, r, &rx, &rw);
         aa_round_fill(rp, cx + rx, cy + r, rw, 1, 0, aa_pen(&d->aa, chev));
     }
-    if (_win(obj) != NULL) {
+    if (aa_live(obj)) {
         GetAttr(MUIA_Window_ActiveObject, _win(obj), &active);
         if ((Object*)active == obj) {
             aa_round_frame(rp, l + 1, t + 1, w - 2, h - 2, d->m.radius, aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]));
@@ -227,7 +227,7 @@ static ULONG aacycle_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEv
         }
         return 0;
     }
-    if (im->Class == IDCMP_RAWKEY && !dis && _win(obj) != NULL) {
+    if (im->Class == IDCMP_RAWKEY && !dis && aa_live(obj)) {
         GetAttr(MUIA_Window_ActiveObject, _win(obj), &act);
         if ((Object*)act == obj && (im->Code == 0x4C || im->Code == 0x4D)) { /* cursor up, cursor down */
             set(obj, AAC_Active, (ULONG)mui_aa_cycle_step(d->active, d->n, im->Code == 0x4C ? -1 : 1));
@@ -259,7 +259,7 @@ static ULONG aacycle_set(struct IClass* cl, Object* obj, struct opSet* msg) {
     struct TagItem* ta = FindTagItem(AAC_Active, msg->ops_AttrList);
     if (ta != NULL && mui_aa_cycle_valid((int)ta->ti_Data, d->n) && (int)ta->ti_Data != d->active) {
         d->active = (int)ta->ti_Data;
-        if (_win(obj) != NULL) {
+        if (aa_live(obj)) {
             MUI_Redraw(obj, MADF_DRAWOBJECT);
         }
     }

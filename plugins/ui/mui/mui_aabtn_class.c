@@ -176,7 +176,7 @@ static ULONG aabtn_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
         if (state == MUI_AA_SELECTED) {
             aabtn_icon(d, rp, icon, bx + 2, by + 2, cp - 4, face, text);
         }
-        if (_win(obj) != NULL) {
+        if (aa_live(obj)) {
             GetAttr(MUIA_Window_ActiveObject, _win(obj), &active);
             if ((Object*)active == obj) {
                 aa_round_frame(rp, bx, by, cp, cp, ops[n - 1].inset > 0 ? ops[n - 1].radius + ops[n - 1].inset : ops[n - 1].radius, aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]));
@@ -199,7 +199,7 @@ static ULONG aabtn_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     if (tw > 0) {
         aa_text(&d->aa, obj, rp, x, t + (h - th) / 2, d->caption, text, face);
     }
-    if (_win(obj) != NULL) {
+    if (aa_live(obj)) {
         GetAttr(MUIA_Window_ActiveObject, _win(obj), &active);
         if ((Object*)active == obj) {
             aa_round_frame(rp, l, t, w, h, d->m.radius, aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]));

@@ -1400,6 +1400,70 @@ static void test_newplaylist(void) {
     CHECK(mui_view_fires() == fires + 1u, "fire counter %u want %u", (unsigned)mui_view_fires(), (unsigned)(fires + 1u));
 }
 
+/* Regression (I684a): Selecta_AACycle's OM_SET redrew when _win(obj) != NULL. Before the first MUIM_Setup the render info
+ * is NULL, so _win(obj) reads address 0; on rig 2 that held garbage, the redraw ran on an object with no window and the
+ * Amiga crashed at start (set AAC_Active on the visualizer cycle in mui_detail_group). Every class must ask aa_live(),
+ * which checks the render info first; no class file may test _win(obj) against NULL on its own. */
+static void test_live_guard(void) {
+    static const char* const files[] = {"mui_aacycle_class.c", "mui_aafield_class.c", "mui_aabtn_class.c", "mui_aascroller_class.c",
+                                        "mui_aaslider_class.c", "mui_aalist_class.c", "mui_listview_class.c", "mui_aatext_class.c",
+                                        "mui_aapanel_class.c", "mui_vizarea_class.c", "mui_canvas_class.c"};
+    static char src[200000];
+    char path[1024];
+    size_t i, n;
+    FILE* f;
+    for (i = 0; i < sizeof files / sizeof files[0]; i++) {
+        snprintf(path, sizeof path, "%s/%s", MUI_DIR, files[i]);
+        f = fopen(path, "rb");
+        CHECK(f != NULL, "open %s", path);
+        if (f == NULL) {
+            continue;
+        }
+        n = fread(src, 1, sizeof src - 1, f);
+        fclose(f);
+        src[n] = 0;
+        CHECK(strstr(src, "_win(obj) != NULL") == NULL && strstr(src, "_win(obj) == NULL") == NULL,
+              "%s tests _win(obj) against NULL without the render info guard (use aa_live)", files[i]);
+    }
+    snprintf(path, sizeof path, "%s/mui_aa_draw.c", MUI_DIR);
+    f = fopen(path, "rb");
+    CHECK(f != NULL, "open %s", path);
+    n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    CHECK(strstr(src, "muiRenderInfo(obj) != NULL && _win(obj) != NULL") != NULL, "aa_live does not check the render info before _win");
+}
+
+/* Regression (I684a, the crash itself): mui_detail_group built the visualizer cycle and then called set(AAC_Active) before
+ * the cycle was in the application tree. The set fired the MUIV_Notify_Application notification with no global info, MUI read
+ * the application through a NULL pointer, and rig 2 crashed at every start whose saved visualizer was not the first. The
+ * settings cycles had the same shape. The initial entry must go in at OM_NEW (mui_make_cycle's active argument): mui_ui.c may
+ * not set AAC_Active at all; only the user's pick changes it. */
+static void test_cycle_initial(void) {
+    static char src[1000000];
+    const char* line;
+    FILE* f = fopen(MUI_UI_SOURCE, "rb");
+    size_t n;
+    CHECK(f != NULL, "open %s", MUI_UI_SOURCE);
+    if (f == NULL) {
+        return;
+    }
+    n = fread(src, 1, sizeof src - 1, f);
+    fclose(f);
+    src[n] = 0;
+    for (line = src; line != NULL && *line != 0;) {
+        const char* end = strchr(line, '\n');
+        size_t len = end != NULL ? (size_t)(end - line) : strlen(line);
+        char buf[512];
+        snprintf(buf, sizeof buf, "%.*s", (int)(len < sizeof buf - 1 ? len : sizeof buf - 1), line);
+        CHECK(!(strstr(buf, "set(") != NULL && strstr(buf, "AAC_Active") != NULL), "mui_ui.c sets AAC_Active after OM_NEW: %s", buf);
+        line = end != NULL ? end + 1 : NULL;
+    }
+    CHECK(strstr(src, "mui_make_cycle(s->vizset.name_, (LONG)s->vizset.sel,") != NULL, "visualizer cycle does not take the saved pick at OM_NEW");
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -1502,6 +1566,10 @@ int main(int argc, char** argv) {
         test_toolrows();
     } else if (strcmp(argv[1], "tracker") == 0) {
         test_tracker();
+    } else if (strcmp(argv[1], "live-guard") == 0) {
+        test_live_guard();
+    } else if (strcmp(argv[1], "cycle-initial") == 0) {
+        test_cycle_initial();
     } else {
         return 2;
     }

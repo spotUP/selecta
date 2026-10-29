@@ -6,6 +6,8 @@
  * class needs no instance data (BOOPSI cl_InstSize is a UWORD). */
 #include "mui_listview_class.h"
 
+#include "mui_aa_draw.h"
+
 #include <stdint.h>
 
 #include <clib/alib_protos.h>
@@ -33,7 +35,7 @@ __asm__(".text\n.even\n.globl _lv_dispatch\n_lv_dispatch:\n"
 static ULONG __attribute__((used)) lv_dispatch_c(struct IClass* cl, Object* obj, Msg msg) {
     if (msg->MethodID == MUIM_Setup) {
         ULONG r = DoSuperMethodA(cl, obj, msg);
-        if (r != 0 && _win(obj) != NULL) {
+        if (r != 0 && aa_live(obj)) {
             g_lv_ehn.ehn_Priority = 0;
             g_lv_ehn.ehn_Flags = 0;
             g_lv_ehn.ehn_Object = obj;

@@ -154,7 +154,7 @@ static ULONG aascroller_set(struct IClass* cl, Object* obj, struct opSet* msg) {
         d->entries = (long)te->ti_Data;
         changed = 1;
     }
-    if (changed && _win(obj) != NULL) {
+    if (changed && aa_live(obj)) {
         MUI_Redraw(obj, MADF_DRAWOBJECT);
     }
     return DoSuperMethodA(cl, obj, (Msg)msg);

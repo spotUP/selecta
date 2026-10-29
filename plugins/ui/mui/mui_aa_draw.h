@@ -34,6 +34,11 @@ void aa_setup(Object* obj, aa_ctx* c, const uint32_t* rgb, int n);
 void aa_set_font_px(aa_ctx* c, int px);
 /* Releases every held pen and the font reference. Call from MUIM_Cleanup. */
 void aa_cleanup(aa_ctx* c);
+/* True when obj sits in an open window (between MUIM_Setup and MUIM_Cleanup). _win(obj) alone reads through the render
+ * info, which is NULL before the first MUIM_Setup: that read returns whatever lies at address 0, and a redraw on that
+ * garbage window crashed the Amiga (I684a, AACycle set before the window opened). Use this before every redraw from
+ * OM_SET or an outside call. */
+int aa_live(Object* obj);
 /* Held pen for an RGB, obtained on first use; -1 when the table is full. */
 LONG aa_pen(aa_ctx* c, uint32_t rgb);
 /* Rows of RectFill with the insets of mui_aa_round_inset; radius 0 is one RectFill. */

@@ -165,6 +165,10 @@ void aa_set_font_px(aa_ctx* c, int px) {
     }
 }
 
+int aa_live(Object* obj) {
+    return obj != NULL && muiRenderInfo(obj) != NULL && _win(obj) != NULL;
+}
+
 void aa_cleanup(aa_ctx* c) {
     int i;
     if (c->cm != NULL) {
