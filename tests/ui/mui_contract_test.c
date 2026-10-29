@@ -1156,9 +1156,9 @@ static void test_aabtn_wired(const char* src) {
     if (c != NULL) {
         crumbs = (unsigned)strtoul(c + strlen("#define MUI_CRUMB_MAX "), NULL, 10);
     }
-    CHECK(fn_body(src, "static Object* mui_make_button_i(", body, sizeof body) != NULL && strstr(body, "mui_aabtn_new(&sp)") != NULL &&
+    CHECK(fn_body(src, "static Object* mui_make_button_ex(", body, sizeof body) != NULL && strstr(body, "mui_aabtn_new(&sp)") != NULL &&
               strstr(body, "MUIC_Group") == NULL && strstr(body, "MUIC_Text") == NULL && strstr(body, "MUIC_Bodychunk") == NULL,
-          "mui_make_button_i does not build through the AAButton class alone");
+          "mui_make_button_ex does not build through the AAButton class alone");
     for (k = 0; k < 3; k++) {
         CHECK(fn_body(src, wrappers[k], body, sizeof body) != NULL && strstr(body, "mui_make_button_") != NULL, "wrapper %s skips mui_make_button_i", wrappers[k]);
     }
@@ -1224,7 +1224,7 @@ static void test_icon_buttons(void) {
     src[n] = 0;
     CHECK(strstr(src, "MUIC_Bodychunk") == NULL && strstr(src, "mui_aabtn_new(&sp)") != NULL && strstr(src, "sp.icon = mui_icon_id(icon_key)") != NULL,
           "mui_ui.c builds the icon image outside the AAButton class");
-    CHECK(strstr(src, "mui_make_button(mui_door_label(i), sel_uim_door_at(i)->page,") != NULL &&
+    CHECK(strstr(src, "mui_make_button_left(mui_door_label(i), sel_uim_door_at(i)->page,") != NULL &&
               strstr(src, "mui_make_button_icon(mui_tool_labels[i], mui_tool_labels[i],") != NULL && strstr(src, "mui_make_button_w(s->crumb_lbl[k], \"crumb\",") != NULL &&
               strstr(src, "mui_make_button_i(s->btn_label[i], mui_transport_widest(i), mui_transport_action(") != NULL && strstr(src, "mui_make_button_icon(mui_extra_label(i), mui_extra_action(i),") != NULL,
           "a button call site passes no icon key");

@@ -25,7 +25,7 @@ extern struct Library* MUIMasterBase;
 
 typedef struct aabtn_data {
     char caption[48], widest[48];
-    int icon[2], alt, icon_only, role, hover, backend, minw, minh;
+    int icon[2], alt, icon_only, role, hover, backend, minw, minh, align, on;
     mui_aa_metrics_t m;
     aa_ctx aa;
     struct MUI_EventHandlerNode ehn;
@@ -41,7 +41,7 @@ static int aabtn_state(Object* obj, const aabtn_data* d) {
     if (d->role == MUI_AA_ROLE_TOGGLE) { /* AACheck: Selected is the checked value, not a press */
         return dis ? MUI_AA_DISABLED : sel ? MUI_AA_SELECTED : d->hover ? MUI_AA_HOVER : MUI_AA_NORMAL;
     }
-    return dis ? MUI_AA_DISABLED : sel ? MUI_AA_PRESSED : d->hover ? MUI_AA_HOVER : MUI_AA_NORMAL;
+    return dis ? MUI_AA_DISABLED : sel ? MUI_AA_PRESSED : d->on ? MUI_AA_SELECTED : d->hover ? MUI_AA_HOVER : MUI_AA_NORMAL;
 }
 
 static int aabtn_cur_icon(const aabtn_data* d) {
@@ -57,7 +57,7 @@ static ULONG aabtn_setup(struct IClass* cl, Object* obj, Msg msg) {
     }
     aa_setup(obj, &d->aa, NULL, 0);
     mui_aa_metrics(d->aa.font_px, &d->m);
-    for (st = MUI_AA_NORMAL; st <= MUI_AA_PRESSED; st++) {
+    for (st = MUI_AA_NORMAL; st <= MUI_AA_SELECTED; st++) {
         mui_aa_button_rgb(d->aa.tok, d->role, st, &face, &text);
         aa_pen(&d->aa, face);
     }
@@ -184,7 +184,7 @@ static ULONG aabtn_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
         th = aa_text_height(&d->aa, obj);
     }
     cw = (icon >= 0 ? d->m.icon_px : 0) + (icon >= 0 && tw > 0 ? d->m.icon_gap : 0) + tw;
-    x = l + (w - cw) / 2;
+    x = l + mui_aa_btn_content_x(d->align, w, cw, d->m.pad_x);
     if (icon >= 0) {
         aabtn_icon(d, rp, icon, x, t + (h - d->m.icon_px) / 2, d->m.icon_px, face, text);
         x += d->m.icon_px + d->m.icon_gap;
@@ -257,6 +257,7 @@ Object* mui_aabtn_new(const mui_aabtn_spec* sp) {
         d->icon[1] = sp->alt_icon;
         d->icon_only = sp->icon_only && sp->icon >= 0;
         d->role = sp->role;
+        d->align = sp->align;
         if (sp->role == MUI_AA_ROLE_TOGGLE) {
             DoMethod(o, MUIM_Notify, MUIA_Selected, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)sp->id);
         } else {
@@ -277,6 +278,16 @@ void mui_aabtn_set_caption(Object* obj, const char* caption) {
         return;
     }
     strncpy(d->caption, caption, sizeof d->caption - 1);
+    SetAttrs(obj, MUIA_ShortHelp, (ULONG)d->caption, TAG_DONE); /* icon-only buttons: the state text is the tooltip */
+    MUI_Redraw(obj, MADF_DRAWOBJECT);
+}
+
+void mui_aabtn_set_on(Object* obj, int on) {
+    aabtn_data* d = INST_DATA(g_class->mcc_Class, obj);
+    if (d->on == (on != 0)) {
+        return;
+    }
+    d->on = on != 0;
     MUI_Redraw(obj, MADF_DRAWOBJECT);
 }
 

@@ -55,8 +55,8 @@ uint32_t mui_transport_row_width(uint32_t row) {
             f.repeat_mode = (st >> 1) % 3u;
             f.random_on = (st / 6u) != 0u;
             l = mui_transport_label(b, &f);
-            if (l != NULL && mui_button_width(l, 0) > widest) {
-                widest = mui_button_width(l, 0);
+            if (l != NULL && mui_button_width(l, mui_transport_icon_only(b)) > widest) {
+                widest = mui_button_width(l, mui_transport_icon_only(b));
             }
         }
         n += widest;

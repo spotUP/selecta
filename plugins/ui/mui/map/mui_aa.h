@@ -76,6 +76,9 @@ int mui_aa_tone_token(int tone);
 int mui_aa_tone_font_px(int tone, int base_px);
 /* Left edge of content of width cw in a box of width w for an alignment (never left of 0). */
 int mui_aa_align_x(int align, int w, int cw);
+/* I667b4: left edge of a button's icon+caption content of width cw in a button of width w: the alignment inside the box inset by
+ * pad_x on both sides (mui_aa_align_x); centre = (w - cw) / 2, left = pad_x, right = w - cw - pad_x. */
+int mui_aa_btn_content_x(int align, int w, int cw, int pad_x);
 /* Ink width of the first len bytes of s, supplied by the drawing side (ttengine pixmap on the Amiga, an advance table in the test). */
 typedef int (*mui_aa_width_fn)(void* ctx, const char* s, int len);
 /* Text that fits max_w: s itself when it fits, else the longest prefix plus "..." that fits (just "..." when not even one character

@@ -19,6 +19,7 @@ typedef struct mui_aabtn_spec {
     LONG id;              /* MUIM_Application_ReturnID on release */
     int selected;         /* role toggle: initial checked state */
     LONG weight;          /* MUIA_Weight: 100 shares the row, 0 sizes to the contents */
+    int align;            /* MUI_AA_ALIGN_*: where icon+caption sit in the button (I667b4); MUI_AA_ALIGN_CENTRE for every button but the sidebar doors */
 } mui_aabtn_spec;
 
 Object* mui_aabtn_new(const mui_aabtn_spec* spec);
@@ -26,6 +27,8 @@ Object* mui_aabtn_new(const mui_aabtn_spec* spec);
 void mui_aabtn_set_caption(Object* obj, const char* caption);
 /* Which of the spec's two icons is shown (0 icon, 1 alt_icon); redraws. */
 void mui_aabtn_set_alt(Object* obj, int alt);
+/* Lit state of a momentary button (Repeat on, Shuffle on): drawn with the SELECTED face; redraws. */
+void mui_aabtn_set_on(Object* obj, int on);
 /* Which backend drew the last frame: 0 none yet, 1 plain MUI text (fallback), 2 ttengine truecolour, 3 ttengine palette ramp. */
 int mui_aabtn_backend(Object* obj);
 /* Buttons constructed since start (sentinel: equals the number of buttons the window build made). */

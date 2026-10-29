@@ -63,6 +63,14 @@ const char* mui_transport_widest(uint32_t button) {
     return best;
 }
 
+int mui_transport_icon_only(uint32_t button) {
+    return button != MUI_BTN_STOP && button < MUI_BTN_COUNT;
+}
+
+int mui_transport_on(uint32_t button, const sel_uim_frame* f) {
+    return button == MUI_BTN_REPEAT ? f->repeat_mode != 0 : button == MUI_BTN_RANDOM ? f->random_on != 0 : 0;
+}
+
 uint32_t mui_seek_line(uint32_t q16, uint32_t duration_ms, char* out, size_t cap) {
     if (q16 > MUI_SEEK_MAX) {
         q16 = MUI_SEEK_MAX;

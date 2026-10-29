@@ -534,7 +534,7 @@ static void mui_theme_init(void) {
  * colour, baked Lucide icon, antialiased caption. alt_key names a second icon shown after mui_aabtn_set_alt (play/pause).
  * icon_only buttons (dense rows) draw no caption so their row fits the smallest screen; the label stays the ShortHelp.
  * weight 100 shares the row, 0 sizes the button to its contents. Sizes come from mui_aa_metrics. */
-static Object* mui_make_button_i(const char* label, const char* widest, const char* icon_key, const char* alt_key, LONG id, LONG weight, int icon_only, int role) {
+static Object* mui_make_button_ex(const char* label, const char* widest, const char* icon_key, const char* alt_key, LONG id, LONG weight, int icon_only, int role, int align) {
     mui_aabtn_spec sp;
     sp.caption = label;
     sp.widest = widest;
@@ -546,7 +546,12 @@ static Object* mui_make_button_i(const char* label, const char* widest, const ch
     sp.id = id;
     sp.weight = weight;
     sp.selected = 0;
+    sp.align = align;
     return mui_aabtn_new(&sp);
+}
+
+static Object* mui_make_button_i(const char* label, const char* widest, const char* icon_key, const char* alt_key, LONG id, LONG weight, int icon_only, int role) {
+    return mui_make_button_ex(label, widest, icon_key, alt_key, id, weight, icon_only, role, MUI_AA_ALIGN_CENTRE);
 }
 
 static Object* mui_make_button_w(const char* label, const char* icon_key, LONG id, LONG weight) {
@@ -559,6 +564,11 @@ static Object* mui_make_button_icon(const char* label, const char* icon_key, LON
 
 static Object* mui_make_button(const char* label, const char* icon_key, LONG id) {
     return mui_make_button_w(label, icon_key, id, 100);
+}
+
+/* I667b4: a ghost button with icon and caption at the left (sidebar doors). */
+static Object* mui_make_button_left(const char* label, const char* icon_key, LONG id) {
+    return mui_make_button_ex(label, label, icon_key, NULL, id, 100, 0, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_LEFT);
 }
 
 /* I667b-2 (design 3.1, AACheck): the four prefs checkboxes are Selecta_AAButton objects with role toggle: a rounded box, ACCENT
@@ -575,6 +585,7 @@ static Object* mui_make_check(const char* label, int on, LONG id) {
     sp.id = id;
     sp.weight = 0;
     sp.selected = on;
+    sp.align = MUI_AA_ALIGN_CENTRE;
     return mui_aabtn_new(&sp);
 }
 
@@ -625,7 +636,7 @@ static Object* mui_sidebar_group(void) {
     Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
     uint32_t i;
     for (i = 0; g != NULL && i < mui_door_count() && i < MUI_DOOR_MAX; i++) {
-        Object* b = mui_make_button(mui_door_label(i), sel_uim_door_at(i)->page, CTL_DOOR_BASE + (LONG)i);
+        Object* b = mui_make_button_left(mui_door_label(i), sel_uim_door_at(i)->page, CTL_DOOR_BASE + (LONG)i);
         if (b != NULL) {
             DoMethod(g, OM_ADDMEMBER, b);
         }
@@ -658,17 +669,16 @@ static Object* mui_p8_extras_row(void) {
 /* The transport row and frame texts: three rows of one VGroup (the PLAYER slot content). */
 static Object* mui_player_group(mui_state* s) {
     sel_uim_frame zero;
-    Object *row1, *row1b, *row2, *row3, *g;
+    Object *row1, *row2, *row3, *g;
     uint32_t i;
     memset(&zero, 0, sizeof zero);
     row1 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
-    row1b = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE); /* I656: Repeat and Random, their state labels are long */
-    for (i = 0; row1 != NULL && row1b != NULL && i < MUI_BTN_COUNT; i++) {
+    for (i = 0; row1 != NULL && i < MUI_BTN_COUNT; i++) {
         s->btn_label[i] = mui_transport_label(i, &zero);
         s->btn[i] = mui_make_button_i(s->btn_label[i], mui_transport_widest(i), mui_transport_action(i, &zero), i == MUI_BTN_PLAY ? "pause" : NULL,
-                                      CTL_BTN_BASE + (LONG)i, 100, 0, i == MUI_BTN_PLAY ? MUI_AA_ROLE_ACCENT : MUI_AA_ROLE_NORMAL);
+                                      CTL_BTN_BASE + (LONG)i, 100, mui_transport_icon_only(i), i == MUI_BTN_PLAY ? MUI_AA_ROLE_ACCENT : MUI_AA_ROLE_NORMAL);
         if (s->btn[i] != NULL) {
-            DoMethod(i < MUI_TRANSPORT_ROW1 ? row1 : row1b, OM_ADDMEMBER, s->btn[i]);
+            DoMethod(row1, OM_ADDMEMBER, s->btn[i]);
         }
     }
     s->vol = mui_make_slider(0, MUI_VOLUME_MAX, 0, CTL_VOLUME);
@@ -676,7 +686,7 @@ static Object* mui_player_group(mui_state* s) {
     row2 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     row3 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     g = mui_aapanel(MUI_AA_PANEL_SURFACE, 0);
-    if (row1 == NULL || row1b == NULL || row2 == NULL || row3 == NULL || g == NULL || s->vol == NULL || s->seek == NULL) {
+    if (row1 == NULL || row2 == NULL || row3 == NULL || g == NULL || s->vol == NULL || s->seek == NULL) {
         return NULL;
     }
     DoMethod(row1, OM_ADDMEMBER, s->vol);
@@ -689,7 +699,6 @@ static Object* mui_player_group(mui_state* s) {
     DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_FORMAT, "        ", MUI_LBL_FORMAT));
     DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_STATUS, "Stopped", MUI_LBL_STATUS));
     DoMethod(g, OM_ADDMEMBER, row1);
-    DoMethod(g, OM_ADDMEMBER, row1b);
     DoMethod(g, OM_ADDMEMBER, mui_p8_extras_row());
     DoMethod(g, OM_ADDMEMBER, row2);
     DoMethod(g, OM_ADDMEMBER, row3);
@@ -1093,6 +1102,7 @@ static void mui_refresh(mui_state* s) {
             if (s->btn[i] != NULL) {
                 const char* act = mui_transport_action(i, f);
                 mui_aabtn_set_caption(s->btn[i], label);
+                mui_aabtn_set_on(s->btn[i], mui_transport_on((uint32_t)i, f));
                 mui_aabtn_set_alt(s->btn[i], i == MUI_BTN_PLAY && act != NULL && strcmp(act, "pause") == 0);
             }
         }

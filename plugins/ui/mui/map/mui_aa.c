@@ -212,6 +212,10 @@ int mui_aa_align_x(int align, int w, int cw) {
     return x > 0 ? x : 0;
 }
 
+int mui_aa_btn_content_x(int align, int w, int cw, int pad_x) {
+    return pad_x + mui_aa_align_x(align, w - 2 * pad_x, cw);
+}
+
 int mui_aa_text_fit(const char* s, int max_w, mui_aa_width_fn width, void* ctx, char* out, int cap) {
     int len = (int)strlen(s), n, dots_w;
     static const char dots[] = "...";

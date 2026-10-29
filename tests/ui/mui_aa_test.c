@@ -4,8 +4,10 @@
 #include <string.h>
 
 #include "mui_aa.h"
+#include "mui_map.h"
 #include "mui_pens.h"
 #include "mui_theme.h"
+#include <selecta/uimodel.h>
 #include <selecta/uimodel/theme.h>
 #include <selecta/uimodel/tokens.h>
 
@@ -299,6 +301,48 @@ static void test_slider_geom(void) {
     CHECK(mui_aa_slider_calls() > before + 20, "sentinel: slider maths ran (%u)", (unsigned)(mui_aa_slider_calls() - before));
 }
 
+/* I667b4 mui-btn-align: where icon+caption start in a button. Centre is unchanged, left sits pad_x from the edge, right pad_x from the other
+ * edge; content wider than the box never goes below the left pad. The sidebar doors are built left aligned, every other button centred. */
+static void test_btn_align(void) {
+    char* ui = slurp(UI_SOURCE);
+    char* cls = slurp(AABTN_SOURCE);
+    CHECK(mui_aa_btn_content_x(MUI_AA_ALIGN_CENTRE, 100, 40, 8) == (100 - 40) / 2, "centre x");
+    CHECK(mui_aa_btn_content_x(MUI_AA_ALIGN_LEFT, 100, 40, 8) == 8, "left x %d", mui_aa_btn_content_x(MUI_AA_ALIGN_LEFT, 100, 40, 8));
+    CHECK(mui_aa_btn_content_x(MUI_AA_ALIGN_RIGHT, 100, 40, 8) == 100 - 40 - 8, "right x");
+    CHECK(mui_aa_btn_content_x(MUI_AA_ALIGN_LEFT, 30, 40, 8) >= 8, "wide content keeps the pad");
+    CHECK(ui != NULL && cls != NULL, "sources readable");
+    if (ui != NULL && cls != NULL) {
+        CHECK(strstr(cls, "mui_aa_btn_content_x(") != NULL && strstr(cls, "(w - cw) / 2") == NULL, "class centres by hand instead of the shared helper");
+        CHECK(count_of(ui, "mui_make_button_left(") == 2, "door buttons built left aligned: %d sites (definition + door row)", count_of(ui, "mui_make_button_left("));
+        CHECK(count_of(ui, "sp.align = align;") == 2 && count_of(ui, "sp.align = MUI_AA_ALIGN_CENTRE;") == 1, "every button spec sets align");
+    }
+    free(ui);
+    free(cls);
+}
+
+/* I667b5 mui-transport-icons: Previous, Play/Pause, Next, Repeat and Shuffle are icon-only (label = tooltip) and lit by state; Stop keeps its caption.
+ * All six share the first row. */
+static void test_transport_icons(void) {
+    char* ui = slurp(UI_SOURCE);
+    sel_uim_frame f;
+    uint32_t b;
+    memset(&f, 0, sizeof f);
+    for (b = 0; b < MUI_BTN_COUNT; b++) {
+        CHECK(mui_transport_icon_only(b) == (b != MUI_BTN_STOP), "button %u icon-only %d", (unsigned)b, mui_transport_icon_only(b));
+    }
+    CHECK(MUI_TRANSPORT_ROW1 == MUI_BTN_COUNT, "all transport buttons in the first row");
+    CHECK(mui_transport_on(MUI_BTN_REPEAT, &f) == 0 && mui_transport_on(MUI_BTN_RANDOM, &f) == 0, "off at start");
+    f.repeat_mode = 1;
+    f.random_on = 1;
+    CHECK(mui_transport_on(MUI_BTN_REPEAT, &f) == 1 && mui_transport_on(MUI_BTN_RANDOM, &f) == 1 && mui_transport_on(MUI_BTN_PLAY, &f) == 0, "lit by state");
+    CHECK(ui != NULL, "ui source readable");
+    if (ui != NULL) {
+        CHECK(strstr(ui, "mui_transport_icon_only(i)") != NULL && strstr(ui, "row1b") == NULL, "mui_player_group does not build icon-only buttons in one row");
+        CHECK(strstr(ui, "mui_aabtn_set_on(") != NULL, "lit state not pushed to the buttons");
+    }
+    free(ui);
+}
+
 /* I667f mui-slider-source: the MUI UI builds every slider through AASlider: no MUIC_Slider, gauge or prop left, the helper definition
  * plus three calls (volume, seek, settings) = 4 "mui_make_slider(" spellings, one AASlider constructor call. */
 static void test_slider_source(void) {
@@ -418,6 +462,10 @@ int main(int argc, char** argv) {
         test_panel_source();
     } else if (!strcmp(t, "slider-geom")) {
         test_slider_geom();
+    } else if (!strcmp(t, "btn-align")) {
+        test_btn_align();
+    } else if (!strcmp(t, "transport-icons")) {
+        test_transport_icons();
     } else if (!strcmp(t, "slider-source")) {
         test_slider_source();
     } else if (!strcmp(t, "cycle-step")) {
