@@ -80,3 +80,17 @@ Rig 2 (RTG uaegfx 800x600, and the stored before-fix run), evidence from `Select
 | Search, command box | AGA | 199,20 / 420,20 | not run (budget); next step |
 
 Rig 2 also logs `ttengine or Inter missing, plain text` (AA_PLAIN backend).
+
+## Recheck after 9bbc2327
+
+Rig 2 (purpose "musicplayer-55: I667n AGA boxes and RTG visualizer check"), build/amiga selecta up to date on main 7b120c6d, meme.mod queued, Play clicked. Pixels by PIL on `ami.py shot`.
+
+| Check | Mode | Region | Result |
+|---|---|---|---|
+| Search box | AGA | 199,20 199x11 | 2A2A32 2189 of 2189 px (was 121214 2123) PASS |
+| Command box | AGA | 420,20 200x11 | 2A2A32 2200 of 2200 px PASS |
+| Play glyph | AGA | 100,390 83x30 | C8C8D0 68 px, 3B82F6 2302, 93C5FD 88 (focus ring); no E4E4EA, by design PASS |
+| Visualizer area | RTG 800x600 | whole screen, 3 shots 1 s apart | NOT PROVEN: only the seek bar row (37,561 to 693,568, 127 to 172 px) changes. The viz area lives in the Detail slot, which the layout hides below 1100 px wide (SEL_UIM_BP_THREE_COLUMN_MIN), so it is not on screen at 800x600 |
+| Hang on RTG | RTG | uitree and click response | no hang: Selecta answered a Play click 35+ s after start (5569 px changed), uitree 1.2 s; the seek bar kept moving |
+
+Open: a visible viz on RTG needs a screen of 1100 px or wider (no such uaegfx mode planned) or a layout that shows Detail at 800 px.
