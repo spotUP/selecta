@@ -13446,7 +13446,8 @@ static void desk_on_event(void* state, const sel_message* evt) {
         const char* code = evt->args[0].v.s;
         const char* detail = evt->argc > 1 && evt->args[1].type == SEL_ARG_STR ? evt->args[1].v.s : "";
 
-        if (strcmp(code, "open_failed") == 0 || strcmp(code, "no_replayer") == 0) {
+        if (strcmp(code, "open_failed") == 0 || strcmp(code, "no_replayer") == 0 || strcmp(code, "unsupported_kind") == 0 ||
+            strcmp(code, "replayer_incomplete") == 0) { /* I695e: a replayer that cannot run is a failed open too */
             desk_open_fail_toast(d, code, detail);
         }
         d->drop_playing = 0;
