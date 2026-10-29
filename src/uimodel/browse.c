@@ -1,5 +1,6 @@
 /* Library modes, queue scopes and tile steps: see include/selecta/uimodel/browse.h. */
 #include <selecta/uimodel/browse.h>
+#include <selecta/library_item.h>
 
 #include <ctype.h>
 #include <stdio.h>
@@ -60,3 +61,29 @@ static const char* const k_lview[SEL_UIM_LVIEWS] = {"Compact list", "List", "Sma
 const char* sel_uim_lsort_label(uint32_t i) { return i < SEL_UIM_LSORTS ? k_lsort[i] : NULL; }
 const char* sel_uim_lview_label(uint32_t i) { return i < SEL_UIM_LVIEWS ? k_lview[i] : NULL; }
 
+
+/* "\xe2\x80\xa2" is U+2022 BULLET, in the desktop atlas and the Amiga font map. */
+#define BULLET " \xe2\x80\xa2 "
+
+uint32_t sel_uim_library_item_subtitle(uint32_t kind, const char* sub, uint32_t songs, char* out, uint32_t cap) {
+    char count[32];
+    int n;
+
+    snprintf(count, sizeof count, "%u %s", (unsigned)songs, songs == 1u ? "song" : "songs");
+    if (sub == NULL) sub = "";
+    switch (kind) {
+    case SEL_LIB_ITEM_PLAYLIST:
+        n = snprintf(out, cap, "%s", sub); /* the owner name ("You") */
+        break;
+    case SEL_LIB_ITEM_ALBUM:
+        n = sub[0] != '\0' ? snprintf(out, cap, "Album" BULLET "%s", sub) : snprintf(out, cap, "Album");
+        break;
+    case SEL_LIB_ITEM_ARTIST: n = snprintf(out, cap, "Artist"); break;
+    case SEL_LIB_ITEM_COMPOSER: n = snprintf(out, cap, "Composer" BULLET "%s", count); break;
+    case SEL_LIB_ITEM_SOURCE: n = snprintf(out, cap, "Source" BULLET "%s", count); break;
+    default: /* the pinned kinds Liked, Recent, Local are playlists of the user's songs */
+        n = snprintf(out, cap, "Playlist" BULLET "%s", count);
+        break;
+    }
+    return n > 0 ? (uint32_t)n : 0u;
+}

@@ -451,6 +451,7 @@ struct sel_engine {
     uint32_t st_slot;                         /* STICKER answers: ring of 8, like lib_tags */
     sel_tag st_tags[8][5];
     uint32_t sources_listed;                  /* SOURCES rows answered (DUI-P4-3) */
+    uint32_t library_items_calls;             /* sel_engine_library_items calls that reached the library (I678a) */
     uint32_t evt_dropped;                     /* events emit() could not queue because evt_q was full (I546) */
     sel_tag src_tags[16][10];                  /* one SOURCES row per registered source (registry holds 16) */
     char st_key[8][SEL_DEFERRED_PATH_MAX];
@@ -5526,6 +5527,57 @@ uint32_t sel_engine_library_playlist_items(sel_engine* e, sel_engine_library_ite
     return n;
 }
 
+typedef struct source_name_ctx {
+    const char* id;
+    char* out;
+    size_t cap;
+} source_name_ctx;
+
+static void source_name_row(void* ctx, const char* id, const char* name, const char* home, int remote) {
+    source_name_ctx* c = (source_name_ctx*)ctx;
+    (void)home;
+    (void)remote;
+    if (strcmp(id, c->id) == 0) snprintf(c->out, c->cap, "%s", name);
+}
+
+uint32_t sel_engine_library_items(sel_engine* e, uint32_t kind_mask, uint32_t offset, sel_engine_library_item* out, uint32_t max,
+                                  uint32_t* total) {
+    sel_library_item* rows;
+    uint32_t i, n;
+    int got;
+    if (total != NULL) *total = 0;
+    if (e->lib == NULL || max == 0u) return 0u;
+    rows = (sel_library_item*)malloc((size_t)max * sizeof *rows);
+    if (rows == NULL) return 0u;
+    got = sel_library_items(e->lib, kind_mask, offset, rows, max, total);
+    e->library_items_calls++;
+    n = got > 0 ? (uint32_t)got : 0u;
+    for (i = 0; i < n; i++) {
+        sel_engine_library_item* o = &out[i];
+        memset(o, 0, sizeof *o);
+        o->kind = rows[i].kind;
+        o->id = rows[i].kind == SEL_LIB_ITEM_PLAYLIST ? (uint32_t)strtoul(rows[i].key, NULL, 10) : 0u;
+        snprintf(o->key, sizeof o->key, "%s", rows[i].key);
+        snprintf(o->name, sizeof o->name, "%s", rows[i].name);
+        snprintf(o->sub, sizeof o->sub, "%s", rows[i].sub);
+        o->songs = rows[i].songs;
+        o->added = rows[i].added;
+        o->last_played = rows[i].last_played;
+        o->art_id = rows[i].art_id;
+        o->pinned = rows[i].pinned;
+        if (rows[i].kind == SEL_LIB_ITEM_PLAYLIST) snprintf(o->creator, sizeof o->creator, "%s", rows[i].sub);
+        if (rows[i].kind == SEL_LIB_ITEM_SOURCE) {
+            source_name_ctx c;
+            c.id = rows[i].key;
+            c.out = o->name;
+            c.cap = sizeof o->name;
+            (void)sel_source_each(source_name_row, &c);
+        }
+    }
+    free(rows);
+    return n;
+}
+
 uint32_t sel_engine_library_playlist_keys(sel_engine* e, uint32_t id, char* out, uint32_t cap) {
     uint32_t n = 0;
     if (e->lib == NULL || sel_library_playlist_keys(e->lib, id, out, cap, &n) != SEL_FOLDER_OK) return 0u;
@@ -6862,6 +6914,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->links_parsed = e->links_parsed;
     out->links_made = e->links_made;
     out->sources_listed = e->sources_listed;
+    out->library_items_calls = e->library_items_calls;
     out->evt_dropped = e->evt_dropped;
     out->radio_appends = e->radio_appends;
     out->net_cancels = e->net_cancels;

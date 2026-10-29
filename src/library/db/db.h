@@ -10,6 +10,7 @@
 #define SELECTA_LIBRARY_DB_H
 
 #include <selecta/host.h>
+#include <selecta/library_item.h>
 #include <selecta/protocol.h>
 #include <selecta/tags.h>
 
@@ -54,7 +55,8 @@ enum {
     SEL_DUP_STORE,      /* I184b: store md5 `value` for local song key `key` (songs and files tables) */
     SEL_COMPOSER_LIST,  /* DUI-P4-3: every composer (by display name, Unknown composer last) streamed through `row` in one request: canon, display, song count (decimal); reply [2] = row count (I528) */
     SEL_FORMAT_LIST,    /* I615c: every song format with its song count (most songs first) streamed through `row`: format, song count (decimal); reply [2] = row count */
-    SEL_SOURCE_SONGS    /* DUI-P4-3: songs rows of source id `key`: `out` = decimal count NUL, reply [0] = 1 */
+    SEL_SOURCE_SONGS,   /* DUI-P4-3: songs rows of source id `key`: `out` = decimal count NUL, reply [0] = 1 */
+    SEL_LIBRARY_ITEMS   /* I678a: the Your Library list of the kinds in `mask`, rows [offset, offset + limit) streamed through `row`: kind, key, name, sub, songs, added, last played, art id, pinned (decimal text); reply [2] = total row count */
 };
 /* One albums/artwork operation (SEL_LIB_REQ_ART, DUI-P2-4). Reply INT [0]: SEL_ART_FIND the id of the albums row the song belongs to (0: none),
  * SEL_ART_GET the blob size (0: none; `data` holds min(size, cap) bytes), SEL_ART_PUT 1 when stored,
@@ -86,6 +88,9 @@ typedef struct sel_genre_op {
     uint32_t out_cap;
     sel_genre_row_fn row; /* I528: *_LIST/_NEXT list ops stream every row through this sink in ONE request; sel_genre_call buffers the rows on the library worker and calls the sink on the caller's thread after the reply, so the sink may call the library; reply [2] = row count */
     void* row_ctx;
+    uint32_t mask;     /* SEL_LIBRARY_ITEMS: kind bits (include/selecta/library_item.h) */
+    uint32_t offset;   /* SEL_LIBRARY_ITEMS: rows to skip */
+    uint32_t limit;    /* SEL_LIBRARY_ITEMS: rows to stream after the skipped ones */
 } sel_genre_op;
 
 /* Counters of one sel_library_genre_sync run. */
@@ -526,6 +531,11 @@ int sel_library_composer_page(sel_library* lib, const char* name, sel_composer_r
  * rows, -1 on a library error. */
 typedef void (*sel_composer_list_fn)(void* ctx, const char* canon, const char* display, uint32_t songs);
 int sel_library_composer_list(sel_library* lib, sel_composer_list_fn fn, void* ctx);
+
+/* I678a: the Your Library list (pinned rows, playlists, albums, artists, composers, sources) of the kinds in `kind_mask`
+ * (SEL_LIB_ITEM_BIT), ordered pinned first, then by kind and name. Fills out[0..max) from row `offset` and returns the rows
+ * written (-1: failed); *total (when not NULL) is the row count of the whole list, so a caller pages with a window. */
+int sel_library_items(sel_library* lib, uint32_t kind_mask, uint32_t offset, sel_library_item* out, uint32_t max, uint32_t* total);
 
 /* Every song format of the catalogue with its song count (I615c), most songs first: calls `fn(ctx, format, songs)` each. Returns the
  * number of formats, or -1 without a library. */

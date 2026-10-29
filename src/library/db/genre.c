@@ -102,6 +102,8 @@ void sel_library_genre_op(sel_library* lib, const sel_genre_op* op, sel_message*
         found = rc == SQLITE_OK && sqlite3_changes(lib->db) > 0;
     } else if ((op->op >= SEL_SONGDB_GET && op->op <= SEL_COMPOSER_NEXT) || op->op == SEL_COMPOSER_LIST || op->op == SEL_FORMAT_LIST || op->op == SEL_SOURCE_SONGS) {
         rc = sel_library_songdb_op(lib, op, &found, &id);
+    } else if (op->op == SEL_LIBRARY_ITEMS) {
+        rc = sel_library_items_op(lib, op, &found, &id);
     } else if (op->op == SEL_SIMILAR_NEXT || op->op == SEL_ALSOBY_NEXT) {
         rc = sel_library_similar_op(lib, op, &found, &id);
     } else if (op->op == SEL_DUP_HASH || op->op == SEL_DUP_NEXT || op->op == SEL_BEST_SOURCE || op->op == SEL_DUP_PICK
@@ -140,6 +142,7 @@ static uint32_t row_fields(uint32_t op) {
     case SEL_DUP_NEXT:
     case SEL_COMPOSER_LIST: return 3u;
     case SEL_FORMAT_LIST: return 2u;
+    case SEL_LIBRARY_ITEMS: return 9u;
     default: return 0u;
     }
 }
@@ -193,7 +196,7 @@ int sel_genre_call(sel_library* lib, const sel_genre_op* op, int64_t* id) {
         const char* end = rows.text + rows.len;
 
         while (p < end) {
-            const char* f[5];
+            const char* f[9];
             uint32_t i;
 
             for (i = 0; i < rows.fields; i++) {

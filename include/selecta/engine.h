@@ -414,6 +414,7 @@ typedef struct sel_engine_stats {
     uint32_t links_parsed;        /* share links OPEN parsed (I180 sentinel) */
     uint32_t links_made;          /* share links SHARE wrote (I180 sentinel) */
     uint32_t sources_listed;      /* SOURCES rows the engine queued for the UI (I546 sentinel) */
+    uint32_t library_items_calls; /* sel_engine_library_items calls that reached the library (I678a sentinel) */
     uint32_t evt_dropped;         /* events dropped because the event queue was full (I546 sentinel) */
     uint32_t radio_appends;       /* songs RADIO appended to the queue (I186 sentinel) */
     uint32_t radio_min_ahead;     /* fewest songs queued after the playing one after a radio top-up, 0xFFFFFFFF before RADIO (I186) */
@@ -469,9 +470,22 @@ typedef struct sel_engine_library_item {
     char name[96];
     uint32_t added; /* I611: creation order (ids grow with each new playlist), larger is newer */
     char creator[32]; /* I611: who made it; local playlists belong to the local user */
+    /* I678a: the fields of the mixed Your Library list (sel_engine_library_items); the playlist-only call leaves them zero. */
+    uint32_t kind;        /* SEL_LIB_ITEM_* (include/selecta/library_item.h) */
+    char key[96];         /* stable id a click routes on: playlist id, album id, artist name, composer canon, source id, pinned key */
+    char sub[96];         /* raw subtitle data (the album artist); the text is built by sel_uim_library_item_subtitle */
+    uint32_t songs;       /* songs inside */
+    uint32_t last_played; /* epoch seconds of the newest play of anything inside, 0 never */
+    uint32_t art_id;      /* albums.id of the cover, 0 none */
+    int pinned;           /* 1: Liked Songs, Recently Played, Local Files */
 } sel_engine_library_item;
 /* Fills out[0..max) with the saved playlists in the library, oldest first, and returns how many were written; 0 without a library. */
 uint32_t sel_engine_library_playlist_items(sel_engine* e, sel_engine_library_item* out, uint32_t max);
+/* I678a: the whole Your Library list of the kinds in `kind_mask` (SEL_LIB_ITEM_BIT): pinned rows, playlists, albums, artists,
+ * composers, sources. Fills out[0..max) from row `offset`, returns the rows written (0 without a library); *total (when not NULL)
+ * is the row count of the whole list for paging. Source rows carry the registry display name. */
+uint32_t sel_engine_library_items(sel_engine* e, uint32_t kind_mask, uint32_t offset, sel_engine_library_item* out, uint32_t max,
+                                  uint32_t* total);
 /* I633: the song keys of saved playlist `id` in position order into out as "key\0key\0...\0\0"; returns how many. */
 uint32_t sel_engine_library_playlist_keys(sel_engine* e, uint32_t id, char* out, uint32_t cap);
 /* DUI-P4-18: the catalogue title of the song at `ref` (path or key) into out; 1 when it has one, else 0 (callers fall back to the file name). */

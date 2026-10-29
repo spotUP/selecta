@@ -44,6 +44,12 @@ int32_t sel_uim_lsort_cmp(uint32_t mode, const char* a_name, uint32_t a_added, c
 /* 1 when `name` contains `filter` ignoring case (an empty filter matches everything). */
 int32_t sel_uim_lfilter_match(const char* name, const char* filter);
 
+/* I678a: the subtitle of a Your Library row (design 2026-10-29-desktop-library-architecture.md section 2), one formatter for every UI:
+ * the pinned kinds (Liked, Recent, Local) "Playlist • N songs", Composer and Source "Kind • N songs" (singular "1 song"), Playlist the owner (`sub`, "You"), Album
+ * "Album • <artist>" (just "Album" without one), Artist "Artist". `kind` is a SEL_LIB_ITEM_* value.
+ * Writes at most cap bytes with a NUL; returns the length that would fit without a cap (snprintf style). */
+uint32_t sel_uim_library_item_subtitle(uint32_t kind, const char* sub, uint32_t songs, char* out, uint32_t cap);
+
 #ifdef __cplusplus
 }
 #endif
