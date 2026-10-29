@@ -1464,6 +1464,23 @@ static void test_cycle_initial(void) {
     CHECK(strstr(src, "mui_make_cycle(s->vizset.name_, (LONG)s->vizset.sel,") != NULL, "visualizer cycle does not take the saved pick at OM_NEW");
 }
 
+/* I684b: the VizArea and canvas objects must get the real RTG flag of the screen (the foreign-mode test in mui_screen_open),
+ * not a literal 1; with 1 a planar AGA screen still ran the pixel step although nothing can draw there. */
+static void test_screen_rtg_flag(void) {
+    static char src[400000];
+    FILE* f = fopen(MUI_UI_SOURCE, "rb");
+    size_t n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    CHECK(strstr(src, "g_screen_rtg = foreign;") != NULL, "the flag is not taken from the foreign-mode test");
+    CHECK(strstr(src, "mui_vizarea_new(&s->vizset, g_tokens, g_screen_rtg)") != NULL, "VizArea does not get the screen RTG flag");
+    CHECK(strstr(src, "mui_canvas_new(&grid, g_screen_rtg)") != NULL, "canvas does not get the screen RTG flag");
+    CHECK(strstr(src, "mui_vizarea_new(&s->vizset, g_tokens, 1)") == NULL && strstr(src, "mui_canvas_new(&grid, 1)") == NULL,
+          "a hardcoded RTG flag came back");
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -1570,6 +1587,8 @@ int main(int argc, char** argv) {
         test_live_guard();
     } else if (strcmp(argv[1], "cycle-initial") == 0) {
         test_cycle_initial();
+    } else if (strcmp(argv[1], "screen-rtg-flag") == 0) {
+        test_screen_rtg_flag();
     } else {
         return 2;
     }

@@ -375,6 +375,7 @@ static uint32_t g_text_rgb; /* I665: the TEXT token, caption colour of the flat 
 static struct Screen* g_scr;
 static mui_pens_plan g_plan;
 static LONG g_pen_held[MUI_PEN_TOTAL];
+static int g_screen_rtg; /* I684b: the Workbench mode is a foreign (RTG) one; the own screen keeps that kind, planar stays planar */
 
 static void mui_screen_close(void) {
     int i;
@@ -407,9 +408,6 @@ static void mui_screen_open(const uint32_t* tokens) {
     for (i = 0; i < MUI_PEN_TOTAL; i++) {
         g_pen_held[i] = -1;
     }
-    if (!mui_pens_plan_for(tokens, &g_plan)) {
-        return;
-    }
     wb = LockPubScreen(NULL);
     if (wb != NULL) {
         mode = GetVPModeID(&wb->ViewPort);
@@ -421,6 +419,10 @@ static void mui_screen_open(const uint32_t* tokens) {
             foreign = 1; /* RTG mode */
         }
         UnlockPubScreen(NULL, wb);
+    }
+    g_screen_rtg = foreign;
+    if (!mui_pens_plan_for(tokens, &g_plan)) {
+        return;
     }
     /* I671: MUI 3.8 refuses a window taller than its screen, and the layout is taller than a 640x256 AGA Workbench. The plan
      * (map/mui_screen.c) keeps the Workbench mode when the layout fits and takes its interlaced variant (height doubled) when
@@ -868,7 +870,7 @@ static Object* mui_main_group(mui_state* s) {
     /* MUI-P5-1: the canvas object sits beside the list, hidden until the style switch (MUI-P3-5) shows it. */
     {
         static const mui_grid_style grid = {0xFF101010u, 0xFF303030u, 0xFFFFA000u, 96, 8, 8};
-        s->canvas = mui_canvas_new(&grid, 1);
+        s->canvas = mui_canvas_new(&grid, g_screen_rtg);
         if (s->canvas != NULL) {
             DoMethod(g, OM_ADDMEMBER, s->canvas);
         }
@@ -913,7 +915,7 @@ static Object* mui_detail_group(mui_state* s) {
     DoMethod(g, OM_ADDMEMBER, s->np_album);
     if (s->vizset.n > 0u) {
         s->cyc_viz = mui_make_cycle(s->vizset.name_, (LONG)s->vizset.sel, CTL_P4_BASE + P4_VIZPICK);
-        s->viz_area = mui_vizarea_new(&s->vizset, g_tokens, 1);
+        s->viz_area = mui_vizarea_new(&s->vizset, g_tokens, g_screen_rtg);
         if (s->cyc_viz != NULL && s->viz_area != NULL) {
             DoMethod(g, OM_ADDMEMBER, s->viz_area);
             DoMethod(g, OM_ADDMEMBER, s->cyc_viz);
