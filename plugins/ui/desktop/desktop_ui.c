@@ -23,6 +23,7 @@
 #include <selecta/uimodel/sources.h>
 #include <selecta/uimodel/cmdline.h>
 #include <selecta/uimodel/doors.h>
+#include <selecta/uimodel/route.h>
 #include <selecta/uimodel/keybind.h>
 #include <selecta/uimodel/keys.h>
 #include <selecta/uimodel/palette.h>
@@ -77,7 +78,6 @@ static const int g_icon_sizes[DESK_ICON_SIZES] = {16, 20, 24, 32};
 
 /* The pages the sidebar doors and --view reach (I262). One list: --view names, door clicks, keys and the stats sentinel
  * all use it. */
-#define PG_HIST_MAX 16u
 typedef enum { PG_HOME, PG_SEARCH, PG_LIBRARY, PG_PLAYLISTS, PG_QUEUE, PG_NOWPLAYING, PG_SONGS, PG_SONGINFO, PG_VIZ, PG_TRACKER, PG_SHELF, PG_BROWSE, PG_COLLECTION, PG_COUNT } desk_page;
 static const char* const g_page_name[PG_COUNT] = {"home", "search", "library", "playlists", "queue", "nowplaying", "songs", "songinfo", "viz", "tracker", "shelf", "browse", "collection"};
 #define SHOW_ALL_LABEL "Show all" /* I617: the link at the right end of every Home shelf header */
@@ -357,8 +357,8 @@ typedef struct desk {
     int32_t scroll_q16;      /* songs list scroll offset in logical pixels, Q16: precise wheel deltas are fractions of a pixel */
     int32_t hist[16];        /* view history (DUI-P3-4): the open_tile of each visited view, 0 = home */
     uint32_t hist_n, hist_pos;
-    desk_page pg_hist[PG_HIST_MAX]; /* page history (I266): the pages visited, desk_page_goto appends, Back and Forward move */
-    uint32_t pg_n, pg_pos;
+    sel_route_hist rh;       /* app-wide history (I266, I678h): the pages and collection pages visited, with their scroll; Back and Forward move */
+    sel_gui_rect col_artist; /* I678h: the artist name on an album page's meta line (a click opens the artist page); empty elsewhere */
     int baked_zoom;          /* I587: the Amiga tier (aga, rtg; --baked-zoom on the host): zoom and fit take only the baked scales */
     int copper_opt;          /* --copper N: copper pens on an INDEX8 canvas of any backend (the mem backend tests the AGA copper, I628); 0 = by backend */
     int ydiv_opt;            /* --ydiv N: forces the pixel aspect (the mem backend tests the AGA 640x256 layout); 0 = by backend */
@@ -2188,6 +2188,7 @@ static uint32_t shelf_at_y(desk* d, int32_t y) {
 /* Activates a shelf tile through the engine's own HOME path: the cursor goes to its row and VIEW_ACTIVATE plays a
  * song or opens an album search; the HOME source is then asked for again so the shelves follow the new history. */
 static int desk_page_goto(desk* d, desk_page pg);
+static int desk_route(desk* d, sel_route_target target, uint32_t item_kind, uint32_t id, const char* key, const char* name, const char* sub);
 static void desk_composer_open(desk* d, const char* canon, const char* display);
 
 static void shelf_activate_row(desk* d, uint32_t row);
@@ -4586,7 +4587,7 @@ static int col_kind_click(desk* d, sel_gui_rect mn, int32_t x, int32_t y) {
                 snprintf(key, sizeof key, "%u", (unsigned)c->id);
                 snprintf(name, sizeof name, "%s", c->name);
                 snprintf(sub, sizeof sub, "%s", c->artist);
-                col_kind_open(d, (uint32_t)SEL_LIB_ITEM_ALBUM, key, name, sub);
+                desk_route(d, SEL_ROUTE_ALBUM_CARD, 0u, c->id, key, name, sub);
                 return 1;
             }
         }
@@ -4932,7 +4933,17 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
             snprintf(count, sizeof count, "%s, %u %s", d->col_sub, (unsigned)d->pls_n, d->pls_n == 1u ? "song" : "songs");
         }
     }
-    draw_text(d, rect_of(tx, cv.y + lpx(d, 24) + lpx(d, page_title_h(d)), pb.w * 4, lpx(d, 20)), count, 0, 13, muted);
+    memset(&d->col_artist, 0, sizeof d->col_artist);
+    if (d->col_kind == (uint32_t)SEL_LIB_ITEM_ALBUM && d->col_sub[0] != '\0') { /* I678h: the artist name is a link to the artist page */
+        const sel_gui_atlas* at = desk_font(d, 0, 13);
+        size_t an = strlen(d->col_sub);
+        int32_t aw = at != NULL ? sel_gui_text_width(at, d->col_sub, an) : 0, ty = cv.y + lpx(d, 24) + lpx(d, page_title_h(d));
+        d->col_artist = rect_of(tx, ty, aw, lpx(d, 20));
+        draw_text(d, d->col_artist, d->col_sub, 0, 13, text);
+        draw_text(d, rect_of(tx + aw, ty, pb.w * 4, lpx(d, 20)), count + an, 0, 13, muted);
+    } else {
+        draw_text(d, rect_of(tx, cv.y + lpx(d, 24) + lpx(d, page_title_h(d)), pb.w * 4, lpx(d, 20)), count, 0, 13, muted);
+    }
     if (d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE) { /* I678g */
         draw_col_src(d, mn, muted);
     }
@@ -5110,6 +5121,12 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
     char line[48];
     if (ev->kind != SEL_GUI_IN_CLICK || ev->button != 0u) {
         return 0;
+    }
+    if (d->col_kind == (uint32_t)SEL_LIB_ITEM_ALBUM && d->col_artist.w > 0 && in_rect(d->col_artist, ev->x, ev->y)) { /* I678h: the artist name opens the artist page */
+        char artist[96];
+        snprintf(artist, sizeof artist, "%s", d->col_sub);
+        desk_route(d, SEL_ROUTE_META_ARTIST, (uint32_t)SEL_LIB_ITEM_ARTIST, 0u, artist, artist, "");
+        return 1;
     }
     if (d->col_kind != 0u && col_kind_click(d, mn, ev->x, ev->y)) { /* I678f: Show more, a shelf card */
         return 1;
@@ -6436,9 +6453,19 @@ static const char* library_dump_build(desk* d) {
     if (o + 400u < sizeof d->library_dump) { /* the page navigation (I262) */
         o = dump_put(d, o, "nav page=%s nav_clicks=%u nav_keys=%u doors=%u hist=%u pos=%u np_page_draws=%u arrow_clicks=%u lit=%u lib_off_page=%u\nfocus_ring %d %d %d %d\nsearch_field %d %d %d %d caret_draws=%u caret_rect %d %d %d %d\nnav_arrows %d %d %d %d %d %d %d %d\nnav_icons %u\n",
                               g_page_name[d->page], (unsigned)d->nav_clicks, (unsigned)d->nav_keys, (unsigned)DOOR_COUNT,
-                              (unsigned)d->pg_n, (unsigned)d->pg_pos, (unsigned)d->np_page_draws, (unsigned)d->nav_arrow_clicks, (unsigned)d->lit_doors, (unsigned)d->lib_off_page, (int)d->ring.x, (int)d->ring.y, (int)d->ring.w, (int)d->ring.h,
+                              (unsigned)d->rh.n, (unsigned)d->rh.pos, (unsigned)d->np_page_draws, (unsigned)d->nav_arrow_clicks, (unsigned)d->lit_doors, (unsigned)d->lib_off_page, (int)d->ring.x, (int)d->ring.y, (int)d->ring.w, (int)d->ring.h,
                               (int)d->field.x, (int)d->field.y, (int)d->field.w, (int)d->field.h, (unsigned)d->caret_draws, (int)d->caret.x, (int)d->caret.y, (int)d->caret.w, (int)d->caret.h, (int)d->nav_back.x, (int)d->nav_back.y, (int)d->nav_back.w,
                               (int)d->nav_back.h, (int)d->nav_fwd.x, (int)d->nav_fwd.y, (int)d->nav_fwd.w, (int)d->nav_fwd.h, (unsigned)d->nav_icon_draws);
+    }
+    if (o + 300u < sizeof d->library_dump) { /* the route table (I678h): clicks routed, the page the window is on, the history */
+        char cur[48];
+        if (d->page == PG_COLLECTION) {
+            snprintf(cur, sizeof cur, "collection:%s", sel_route_kind_name(d->col_kind != 0u ? col_eng_kind(d) : (uint32_t)SEL_LIB_ITEM_PLAYLIST));
+        } else {
+            snprintf(cur, sizeof cur, "%s", g_page_name[d->page]);
+        }
+        o = dump_put(d, o, "route route_calls=%u cur=%s n=%u pos=%u scroll=%u artist_rect %d %d %d %d\n", (unsigned)d->rh.calls, cur, (unsigned)d->rh.n,
+                     (unsigned)d->rh.pos, (unsigned)d->pls_scroll, (int)d->col_artist.x, (int)d->col_artist.y, (int)d->col_artist.w, (int)d->col_artist.h);
     }
     if (o + 1800u < sizeof d->library_dump) { /* the sidebar library list (I608): counters and the rectangle of each drawn row */
         uint32_t k;
@@ -7332,8 +7359,7 @@ static void desk_quoted_request(char* line, size_t cap, const char* head, const 
 }
 
 static void desk_composer_open(desk* d, const char* canon, const char* display) {
-    desk_page_goto(d, PG_COLLECTION);
-    col_kind_open(d, (uint32_t)SEL_LIB_ITEM_COMPOSER, canon, display, "");
+    desk_route(d, SEL_ROUTE_BROWSE_TILE, (uint32_t)SEL_LIB_ITEM_COMPOSER, 0u, canon, display, "");
 }
 
 /* Rows of the UI-drawn Library list: the registered sources on the Sources tab, else the composers or a composer's songs. */
@@ -7975,7 +8001,7 @@ static int nav_arrows_shown(const desk* d, sel_gui_rect mn) {
  * button each, the text colour while the history can move that way and the muted colour when it cannot. */
 static void draw_nav_arrows(desk* d, sel_gui_rect mn) {
     int32_t bs = lpx(d, 28), k;
-    int can[2] = {d->pg_pos > 0u, d->pg_pos + 1u < d->pg_n};
+    int can[2] = {sel_route_hist_can(&d->rh, -1), sel_route_hist_can(&d->rh, 1)};
     sel_gui_rect* slot[2] = {&d->nav_back, &d->nav_fwd};
     if (!nav_arrows_shown(d, mn)) {
         d->nav_back = rect_of(0, 0, 0, 0);
@@ -8094,7 +8120,7 @@ static int topbar_click(desk* d, int32_t x, int32_t y) {
     }
     if (in_rect(topbar_part(d, TOPBAR_HOME), x, y)) {
         d->topbar_home_clicks++;
-        desk_page_goto(d, PG_HOME);
+        desk_route(d, SEL_ROUTE_DOOR_HOME, 0u, 0u, "", "", "");
         return 1;
     }
     if (in_rect(topbar_part(d, TOPBAR_BROWSE), x, y)) {
@@ -8109,7 +8135,7 @@ static int topbar_click(desk* d, int32_t x, int32_t y) {
             d->repaint = 1;
         } else { /* the field is the Search page's field: the click goes there with the query kept */
             d->search_keep = 1;
-            desk_page_goto(d, PG_SEARCH);
+            desk_route(d, SEL_ROUTE_DOOR_SEARCH, 0u, 0u, "", "", "");
             d->search_keep = 0;
         }
         return 1;
@@ -8219,22 +8245,35 @@ static void desk_search_focus(desk* d, int keep_query) {
 
 /* Appends a page to the history (I266): the forward pages are dropped, the oldest falls off at the bound, a page equal
  * to the current one is not repeated. The first entry seeds the history with the page the window was on. */
-static void desk_page_push(desk* d, desk_page from, desk_page pg) {
-    if (d->pg_n == 0u) {
-        d->pg_hist[0] = from;
-        d->pg_n = 1u;
-        d->pg_pos = 0u;
-    }
-    d->pg_n = d->pg_pos + 1u;
-    if (d->pg_hist[d->pg_pos] == pg) {
-        return;
-    }
-    if (d->pg_n == PG_HIST_MAX) {
-        memmove(d->pg_hist, d->pg_hist + 1, (d->pg_n - 1u) * sizeof d->pg_hist[0]);
-        d->pg_n--;
-    }
-    d->pg_hist[d->pg_n++] = pg;
-    d->pg_pos = d->pg_n - 1u;
+static uint32_t route_page_of(desk_page pg) { /* the route table's page ids; the pages it does not name keep 100 + the desk page */
+    return pg == PG_HOME ? (uint32_t)SEL_ROUTE_PAGE_HOME
+           : pg == PG_SEARCH ? (uint32_t)SEL_ROUTE_PAGE_SEARCH
+           : pg == PG_SHELF ? (uint32_t)SEL_ROUTE_PAGE_SHELF
+           : pg == PG_COLLECTION ? (uint32_t)SEL_ROUTE_PAGE_COLLECTION
+                                 : 100u + (uint32_t)pg;
+}
+
+static desk_page desk_page_of(uint32_t rp) {
+    return rp == (uint32_t)SEL_ROUTE_PAGE_HOME ? PG_HOME
+           : rp == (uint32_t)SEL_ROUTE_PAGE_SEARCH ? PG_SEARCH
+           : rp == (uint32_t)SEL_ROUTE_PAGE_SHELF ? PG_SHELF
+           : rp == (uint32_t)SEL_ROUTE_PAGE_COLLECTION ? PG_COLLECTION
+           : rp >= 100u && rp - 100u < (uint32_t)PG_COUNT ? (desk_page)(rp - 100u)
+                                                            : PG_HOME;
+}
+
+/* The scroll the current page keeps while it is left (Home keeps its own across visits, so only a collection page needs it). */
+static int32_t desk_rt_scroll(const desk* d) { return d->page == PG_COLLECTION ? (int32_t)d->pls_scroll : 0; }
+
+/* Appends an entry to the history (I266, I678h): the first one seeds it with the page the window is on, the leaving page keeps its
+ * scroll, the forward entries are dropped, the oldest falls off at the bound, an entry equal to the current one is not repeated. */
+static void desk_rt_push(desk* d, const sel_route_entry* to) {
+    sel_route_entry cur;
+    memset(&cur, 0, sizeof cur);
+    cur.page = route_page_of(d->page);
+    sel_route_hist_seed(&d->rh, &cur);
+    sel_route_hist_scroll(&d->rh, desk_rt_scroll(d));
+    sel_route_hist_push(&d->rh, to);
 }
 
 /* The engine requests that fill a page: the view source and window, the Library screens, the kept search query. Entering
@@ -8276,8 +8315,12 @@ static void desk_page_load(desk* d, desk_page pg) {
 static void desk_page_apply(desk* d, desk_page pg) {
     const sel_state* st = sel_engine_state(d->engine);
     desk_page from = d->page;
-    if (!d->pg_walk) {
-        desk_page_push(d, from, pg);
+    if (!d->pg_walk) { /* a page-only entry; desk_route and the walk enter with pg_walk set, having pushed their own */
+        sel_route_entry e;
+        memset(&e, 0, sizeof e);
+        e.page = route_page_of(pg);
+        e.id = pg == PG_SHELF ? d->shelf_open : 0u;
+        desk_rt_push(d, &e);
     }
     if (pg != PG_LIBRARY) {
         d->stats_open = 0;
@@ -8306,10 +8349,9 @@ static int shelf_open_page(desk* d, uint32_t s) {
     if (d->page == PG_HOME) {
         d->shelf_back_y_q16 = d->home_y_q16;
     }
-    d->shelf_open = s + 1u;
     d->home_y_q16 = 0;
     d->shelf_page_opens++;
-    return desk_page_goto(d, PG_SHELF);
+    return desk_route(d, SEL_ROUTE_SHOW_ALL, 0u, s + 1u, "", "", "");
 }
 
 static int desk_page_goto(desk* d, desk_page pg) {
@@ -8340,19 +8382,59 @@ static int shelf_header_enter(desk* d) {
 }
 
 /* Back (dir -1) and Forward (+1) in the page history. Returns 1 when the picture changed. */
+/* Fills the page an entry names, after desk_page_goto opened it: a playlist or a kind page asks the engine for its items. A bare entry
+ * (a door page) has nothing to fill. */
+static void desk_route_enter(desk* d, const sel_route_entry* e) {
+    if (e->page != (uint32_t)SEL_ROUTE_PAGE_COLLECTION) {
+        return;
+    }
+    if (e->kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST) {
+        pls_open(d, e->id, e->name);
+    } else if (e->kind != 0u || e->key[0] != '\0' || e->name[0] != '\0') {
+        col_kind_open(d, e->kind, e->key, e->name, e->sub);
+    }
+}
+
 static int desk_page_walk(desk* d, int dir) {
     int moved;
-    if (dir < 0 && d->pg_pos > 0u) {
-        d->pg_pos--;
-    } else if (dir > 0 && d->pg_pos + 1u < d->pg_n) {
-        d->pg_pos++;
-    } else {
+    sel_route_entry e;
+    const sel_route_entry* w;
+    if (!sel_route_hist_can(&d->rh, dir)) {
         return 0;
     }
+    sel_route_hist_scroll(&d->rh, desk_rt_scroll(d));
+    w = sel_route_hist_walk(&d->rh, dir);
+    e = *w;
     d->pg_walk = 1;
-    moved = desk_page_goto(d, d->pg_hist[d->pg_pos]);
+    if (e.page == (uint32_t)SEL_ROUTE_PAGE_SHELF) {
+        d->shelf_open = e.id;
+    }
+    moved = desk_page_goto(d, desk_page_of(e.page));
+    desk_route_enter(d, &e);
+    if (e.page == (uint32_t)SEL_ROUTE_PAGE_COLLECTION) {
+        d->pls_scroll = (uint32_t)e.scroll; /* the page is where it was left */
+    }
     d->pg_walk = 0;
     return moved;
+}
+
+/* I678h: the one entry point of a click that opens a page (design doc section 9). The route table says which page; the history takes
+ * the entry (the leaving page keeps its scroll); the page opens through desk_page_goto and the entry fills it. Returns 1 when a page
+ * opened. A target that opens nothing (the "Your Library" title, a chip) is still counted. */
+static int desk_route(desk* d, sel_route_target target, uint32_t item_kind, uint32_t id, const char* key, const char* name, const char* sub) {
+    sel_route_entry e;
+    if (!sel_route_go(&d->rh, target, item_kind, id, key, name, sub, &e)) {
+        return 0;
+    }
+    desk_rt_push(d, &e);
+    d->pg_walk = 1;
+    if (e.page == (uint32_t)SEL_ROUTE_PAGE_SHELF) {
+        d->shelf_open = e.id;
+    }
+    desk_page_goto(d, desk_page_of(e.page));
+    desk_route_enter(d, &e);
+    d->pg_walk = 0;
+    return 1;
 }
 
 /* A click at (x, y): opens the tile under it. Returns 1 when a tile opened. */
@@ -11220,9 +11302,10 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
             d->nav_clicks++;
             return desk_page_goto(d, door_page((uint32_t)door));
         }
-        if (in_rect(side_hdr_title_rect(d), ev->x, ev->y)) { /* I673: the "Your Library" header is the door to the Library page */
+        if (in_rect(side_hdr_title_rect(d), ev->x, ev->y)) { /* I678h (D1): the "Your Library" title opens nothing; the route table counts the click */
             d->nav_clicks++;
-            return desk_page_goto(d, PG_LIBRARY);
+            desk_route(d, SEL_ROUTE_HEADER_TITLE, 0u, 0u, "", "", "");
+            return 1;
         }
         door = side_hdr_at(d, ev->x, ev->y);
         if (door == SIDE_HDR_PLUS) { /* I609: the header plus */
@@ -11268,12 +11351,10 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
                 snprintf(head, sizeof head, "COLLECTION_OPEN %u", (unsigned)d->side_items[door].kind); /* I678c/e: opening a playlist feeds Recents; the engine stores it so every UI shares the order */
                 desk_quoted_request(touch, sizeof touch, head, d->side_items[door].key);
                 desk_send(d, touch);
-                desk_page_goto(d, PG_COLLECTION);
-                pls_open(d, d->side_items[door].id, d->side_items[door].name); /* I633: the playlist's page of songs */
-            } else {
-                desk_page_goto(d, PG_COLLECTION); /* I678f/I678g: every other kind opens the collection page; col_kind_open sends COLLECTION_OPEN */
-                col_kind_open(d, d->side_items[door].kind, d->side_items[door].key, d->side_items[door].name, d->side_items[door].sub);
             }
+            /* I678h: the route table opens the page (a playlist's page of songs, I633; every other kind's collection page, I678f/I678g) */
+            desk_route(d, SEL_ROUTE_SIDEBAR_ROW, d->side_items[door].kind, d->side_items[door].id, d->side_items[door].key, d->side_items[door].name,
+                       d->side_items[door].sub);
             d->repaint = 1;
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
             return 1;

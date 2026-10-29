@@ -55,10 +55,13 @@ expect_eq("the Your Library door row is gone" "${lib_door_bit}" "0")
 math(EXPR rest_doors "${base_doors} & 120")
 expect_eq("doors 3..6 still drawn" "${rest_doors}" "120")
 
-# 2. A click on the header title opens the Library page.
+# 2. I678h (D1): a click on the header title opens nothing; the route table counts it.
 run(hdr "wait 100\nclick ${hx} ${hy}\nwait 100\n")
-expect_eq("header click opens the Library page" "${hdr_page}" "library")
-expect_eq("header click counted as a navigation" "${hdr_clicks}" "1")
+expect_eq("header click opens no page" "${hdr_page}" "home")
+expect_eq("header click counted as a click" "${hdr_clicks}" "1")
+if(NOT "${out}" MATCHES "route route_calls=1 cur=home ")
+  message(FATAL_ERROR "the header click did not reach the route table:\n${out}")
+endif()
 
 # 3. I678b: the chips filter the sidebar list in place and never leave the page (the Library page is opened by the header only).
 run(c1 "wait 100\nclick ${rx} ${ry}\nwait 100\n")
