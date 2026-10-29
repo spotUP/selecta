@@ -104,6 +104,8 @@ void sel_library_genre_op(sel_library* lib, const sel_genre_op* op, sel_message*
         rc = sel_library_songdb_op(lib, op, &found, &id);
     } else if (op->op == SEL_LIBRARY_ITEMS) {
         rc = sel_library_items_op(lib, op, &found, &id);
+    } else if (op->op == SEL_COLLECTION) {
+        rc = sel_library_collection_op(lib, op, &found, &id);
     } else if (op->op == SEL_SIMILAR_NEXT || op->op == SEL_ALSOBY_NEXT) {
         rc = sel_library_similar_op(lib, op, &found, &id);
     } else if (op->op == SEL_DUP_HASH || op->op == SEL_DUP_NEXT || op->op == SEL_BEST_SOURCE || op->op == SEL_DUP_PICK
@@ -143,6 +145,7 @@ static uint32_t row_fields(uint32_t op) {
     case SEL_COMPOSER_LIST: return 3u;
     case SEL_FORMAT_LIST: return 2u;
     case SEL_LIBRARY_ITEMS: return 10u;
+    case SEL_COLLECTION: return 5u;
     default: return 0u;
     }
 }

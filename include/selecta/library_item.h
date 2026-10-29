@@ -20,6 +20,15 @@ enum {
 #define SEL_LIB_ITEM_PINNED_MASK \
     (SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_LIKED) | SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_RECENT) | SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_LOCAL))
 
+/* The lists of a collection page (design doc 2026-10-29-desktop-library-architecture.md section 8), shared by the library and the engine. */
+enum {
+    SEL_COLL_SONGS = 0, /* the songs in page order: song key, name, artist, album, plays (an album in scan order, an artist or composer by plays) */
+    SEL_COLL_ALBUMS,    /* artist page "Albums": album id, name, artist, year, songs (newest first) */
+    SEL_COLL_APPEARS,   /* artist page "Appears On": albums of other artists that hold a song by the artist */
+    SEL_COLL_MORE,      /* album page "More by": the other albums of the album's artist */
+    SEL_COLL_SPELLINGS  /* composer page "Spellings": display, "", "", 0, songs written under that spelling */
+};
+
 /* One row of the list. `key` is the stable id a click routes on (playlist id, album id, artist name, composer canon, source id,
  * or the pinned key). `sub` is raw subtitle data (album artist); the display text is built by sel_uim_library_item_subtitle. */
 typedef struct sel_library_item {

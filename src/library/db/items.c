@@ -218,3 +218,111 @@ int sel_library_items(sel_library* lib, uint32_t kind_mask, uint32_t offset, sel
     if (total != NULL) *total = (uint32_t)rows;
     return (int)k.n;
 }
+
+/* ---- I678f: the lists of a collection page (design doc section 8) ----
+ * One statement per (kind, shelf). Every statement returns the five columns key, name, artist, year, number and binds the item key as ?1. */
+#define PLAYS "(SELECT COUNT(*) FROM history h WHERE h.key=s.key AND h.skipped=0)"
+#define SONG_COLS "SELECT s.key,IFNULL(s.name,''),IFNULL(s.artist,''),IFNULL(s.album,'')," PLAYS " FROM songs s"
+#define ALBUM_COLS \
+    "SELECT CAST(a.id AS TEXT),a.name,IFNULL(a.artist,''),IFNULL(a.year,0)," \
+    "(SELECT COUNT(*) FROM songs s WHERE s.album IS a.name AND s.artist IS a.artist) FROM albums a"
+#define BY_PLAYS " ORDER BY 5 DESC, 2 COLLATE NOCASE, s.id"
+#define NEWEST " ORDER BY IFNULL(a.year,0) DESC, a.name COLLATE NOCASE, a.id"
+
+static const char* collection_sql(uint32_t kind, uint32_t shelf) {
+    switch (shelf) {
+    case SEL_COLL_SONGS:
+        if (kind == SEL_LIB_ITEM_ALBUM) {
+            return SONG_COLS " JOIN albums a ON a.id=CAST(?1 AS INTEGER) AND s.album IS a.name AND s.artist IS a.artist ORDER BY s.id";
+        }
+        if (kind == SEL_LIB_ITEM_ARTIST) return SONG_COLS " WHERE s.artist=?1" BY_PLAYS;
+        if (kind == SEL_LIB_ITEM_COMPOSER) {
+            return SONG_COLS " WHERE CASE WHEN ?1='" SEL_COMPOSER_UNKNOWN_CANON "' THEN NOT EXISTS"
+                             " (SELECT 1 FROM song_composers c WHERE c.song_key=s.key)"
+                             " ELSE s.key IN (SELECT song_key FROM song_composers WHERE canon=?1) END" BY_PLAYS;
+        }
+        return NULL;
+    case SEL_COLL_ALBUMS: return kind == SEL_LIB_ITEM_ARTIST ? ALBUM_COLS " WHERE a.artist=?1" NEWEST : NULL;
+    case SEL_COLL_APPEARS:
+        return kind == SEL_LIB_ITEM_ARTIST
+                   ? ALBUM_COLS " WHERE IFNULL(a.artist,'')<>?1 AND EXISTS (SELECT 1 FROM songs s WHERE s.album IS a.name AND s.artist=?1)" NEWEST
+                   : NULL;
+    case SEL_COLL_MORE:
+        return kind == SEL_LIB_ITEM_ALBUM
+                   ? ALBUM_COLS " WHERE a.id<>CAST(?1 AS INTEGER) AND IFNULL(a.artist,'')<>''"
+                                " AND a.artist=(SELECT artist FROM albums WHERE id=CAST(?1 AS INTEGER))" NEWEST
+                   : NULL;
+    case SEL_COLL_SPELLINGS:
+        return kind == SEL_LIB_ITEM_COMPOSER ? "SELECT display,display,'',0,n FROM composer_spellings WHERE canon=?1 ORDER BY n DESC, display"
+                                             : NULL;
+    default: return NULL;
+    }
+}
+
+int sel_library_collection_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id) {
+    const char* sql = collection_sql(op->offset, op->mask);
+    sqlite3_stmt* st = NULL;
+    int64_t total = 0;
+    int rc;
+
+    *found = 0;
+    *id = 0;
+    if (op->row == NULL || op->key == NULL) return SQLITE_MISUSE;
+    if (sql == NULL) { /* a shelf the kind does not have is an empty list */
+        *found = 1;
+        return SQLITE_OK;
+    }
+    rc = sqlite3_prepare_v2(lib->db, sql, -1, &st, NULL);
+    if (rc != SQLITE_OK) return rc;
+    sqlite3_bind_text(st, 1, op->key, -1, SQLITE_TRANSIENT);
+    while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
+        char year[24], number[24];
+        const char* f[5];
+
+        num(year, sizeof year, st, 3);
+        num(number, sizeof number, st, 4);
+        f[0] = text(st, 0);
+        f[1] = text(st, 1);
+        f[2] = text(st, 2);
+        f[3] = op->mask == SEL_COLL_SONGS ? text(st, 3) : year;
+        f[4] = number;
+        total++;
+        (void)op->row(op->row_ctx, f);
+    }
+    sqlite3_finalize(st);
+    if (rc != SQLITE_DONE) return rc;
+    *id = total;
+    *found = 1;
+    return SQLITE_OK;
+}
+
+typedef struct collection_sink {
+    sel_collection_row_fn fn;
+    void* ctx;
+} collection_sink;
+
+static int collection_row(void* ctx, const char* const* f) {
+    collection_sink* k = ctx;
+
+    k->fn(k->ctx, f);
+    return 0;
+}
+
+int sel_library_collection(sel_library* lib, uint32_t kind, const char* key, uint32_t shelf, sel_collection_row_fn fn, void* ctx) {
+    collection_sink k;
+    sel_genre_op op;
+    int64_t rows = 0;
+
+    if (lib == NULL || key == NULL || fn == NULL) return -1;
+    k.fn = fn;
+    k.ctx = ctx;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_COLLECTION;
+    op.key = key;
+    op.offset = kind;
+    op.mask = shelf;
+    op.row = collection_row;
+    op.row_ctx = &k;
+    if (sel_genre_call(lib, &op, &rows) < 0) return -1;
+    return (int)rows;
+}

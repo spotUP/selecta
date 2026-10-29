@@ -542,7 +542,7 @@ if(NOT "${comps}" MATCHES "Chris Huelsbeck")
   message(FATAL_ERROR "the composer display name is not the tile title in:\n${comps}")
 endif()
 comp_run(comp_open "tile 4\nwait 1\n")
-if(NOT "${comp_open}" MATCHES "drill Chris Huelsbeck\\|3")
+if(NOT "${comp_open}" MATCHES "collection kind=composer [^\n]* of=3 ")
   message(FATAL_ERROR "activating the composer tile did not open its 3 songs in:\n${comp_open}")
 endif()
 

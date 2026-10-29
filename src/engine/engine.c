@@ -456,6 +456,7 @@ struct sel_engine {
     uint32_t collection_kind;                 /* the collection page last opened: its kind (SEL_LIB_ITEM_*) */
     char collection_key[128];                 /* and its library key */
     uint32_t library_items_calls;             /* sel_engine_library_items calls that reached the library (I678a) */
+    uint32_t collection_queries;              /* collection page lists that reached the library (I678f) */
     uint32_t evt_dropped;                     /* events emit() could not queue because evt_q was full (I546) */
     sel_tag src_tags[16][10];                  /* one SOURCES row per registered source (registry holds 16) */
     char st_key[8][SEL_DEFERRED_PATH_MAX];
@@ -5594,6 +5595,78 @@ uint32_t sel_engine_library_items(sel_engine* e, uint32_t kind_mask, uint32_t of
     return n;
 }
 
+/* ---- I678f: the lists of the album, artist and composer pages (design doc section 8) ---- */
+typedef struct coll_songs_sink {
+    char* out;
+    uint32_t cap, used, n;
+    uint32_t* plays;
+    uint32_t max_plays;
+} coll_songs_sink;
+
+static void coll_song_row(void* ctx, const char* const* f) {
+    coll_songs_sink* k = ctx;
+    size_t len = strlen(f[0]) + 1u;
+
+    if (k->used + len + 1u > k->cap) return; /* the page shows what fits; the closing NUL stays */
+    memcpy(k->out + k->used, f[0], len);
+    k->used += (uint32_t)len;
+    if (k->plays != NULL && k->n < k->max_plays) k->plays[k->n] = (uint32_t)strtoul(f[4], NULL, 10);
+    k->n++;
+}
+
+uint32_t sel_engine_collection_songs(sel_engine* e, uint32_t kind, const char* key, char* out, uint32_t cap, uint32_t* plays,
+                                     uint32_t max_plays) {
+    coll_songs_sink k;
+
+    if (out == NULL || cap < 2u) return 0u;
+    out[0] = '\0';
+    out[1] = '\0';
+    if (e->lib == NULL || key == NULL) return 0u;
+    memset(&k, 0, sizeof k);
+    k.out = out;
+    k.cap = cap;
+    k.plays = plays;
+    k.max_plays = max_plays;
+    if (sel_library_collection(e->lib, kind, key, SEL_COLL_SONGS, coll_song_row, &k) < 0) return 0u;
+    out[k.used] = '\0';
+    e->collection_queries++;
+    return k.n;
+}
+
+typedef struct coll_shelf_sink {
+    sel_engine_collection_row* out;
+    uint32_t max, n, total;
+} coll_shelf_sink;
+
+static void coll_shelf_row(void* ctx, const char* const* f) {
+    coll_shelf_sink* k = ctx;
+    sel_engine_collection_row* r;
+
+    k->total++;
+    if (k->n >= k->max) return;
+    r = &k->out[k->n++];
+    r->id = (uint32_t)strtoul(f[0], NULL, 10);
+    snprintf(r->name, sizeof r->name, "%s", f[1]);
+    snprintf(r->artist, sizeof r->artist, "%s", f[2]);
+    r->year = (uint32_t)strtoul(f[3], NULL, 10);
+    r->songs = (uint32_t)strtoul(f[4], NULL, 10);
+}
+
+uint32_t sel_engine_collection_shelf(sel_engine* e, uint32_t kind, const char* key, uint32_t shelf, sel_engine_collection_row* out,
+                                     uint32_t max, uint32_t* total) {
+    coll_shelf_sink k;
+
+    if (total != NULL) *total = 0u;
+    if (e->lib == NULL || key == NULL || out == NULL) return 0u;
+    memset(&k, 0, sizeof k);
+    k.out = out;
+    k.max = max;
+    if (sel_library_collection(e->lib, kind, key, shelf, coll_shelf_row, &k) < 0) return 0u;
+    e->collection_queries++;
+    if (total != NULL) *total = k.total;
+    return k.n;
+}
+
 uint32_t sel_engine_library_playlist_keys(sel_engine* e, uint32_t id, char* out, uint32_t cap) {
     uint32_t n = 0;
     if (e->lib == NULL || sel_library_playlist_keys(e->lib, id, out, cap, &n) != SEL_FOLDER_OK) return 0u;
@@ -6933,6 +7006,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->library_items_calls = e->library_items_calls;
     out->lib_touch_calls = e->lib_touch_calls;
     out->collection_opens = e->collection_opens;
+    out->collection_queries = e->collection_queries;
     out->evt_dropped = e->evt_dropped;
     out->radio_appends = e->radio_appends;
     out->net_cancels = e->net_cancels;

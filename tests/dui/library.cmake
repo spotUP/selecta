@@ -92,8 +92,12 @@ endif()
 math(EXPR cx "${CMAKE_MATCH_1} + 10")
 math(EXPR cy "${CMAKE_MATCH_2} + 8")
 lib_run(drilled "wait 1\nmove ${cx} ${cy}\nclick ${cx} ${cy}\nwait 1\n")
-if(NOT "${drilled}" MATCHES "drill Chris Huelsbeck\\|3\n")
-  message(FATAL_ERROR "click on the first composer row did not drill in to 3 songs:\n${drilled}")
+# I678f: a composer row opens the composer's collection page; the old drilldown (drill and back lines) is gone.
+if(NOT "${drilled}" MATCHES "page=collection" OR NOT "${drilled}" MATCHES "collection kind=composer [^\n]* of=3 ")
+  message(FATAL_ERROR "click on the first composer row did not open the composer page with 3 songs:\n${drilled}")
+endif()
+if("${drilled}" MATCHES "\ndrill |\nback ")
+  message(FATAL_ERROR "the composer drilldown is still dumped:\n${drilled}")
 endif()
 
 # Stats totals equal the CLI's.
@@ -114,19 +118,6 @@ foreach(r IN LISTS cli_rows)
     message(FATAL_ERROR "desktop stats lack '${want}' (from selecta-cli) in:\n${list}")
   endif()
 endforeach()
-
-# Back to the list.
-# The back line's rectangle comes from the drilldown's own "back x y w h" dump line; it sits above the song rows (I445).
-# The second click lands elsewhere than the first so the fixed clock does not fold the two clicks into a double click.
-if(NOT "${drilled}" MATCHES "back ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)\n")
-  message(FATAL_ERROR "no back rectangle in the drilldown dump:\n${drilled}")
-endif()
-math(EXPR bx "${CMAKE_MATCH_1} + 60")
-math(EXPR by "${CMAKE_MATCH_2} + 8")
-lib_run(back "wait 1\nmove ${cx} ${cy}\nclick ${cx} ${cy}\nwait 1\nmove ${bx} ${by}\nclick ${bx} ${by}\nwait 1\n")
-if("${back}" MATCHES "drill ")
-  message(FATAL_ERROR "back line did not leave the drilldown:\n${back}")
-endif()
 
 # ---- Slice B: tree and column browser ----
 # The tab rectangles come from the "tab I x y w h" dump lines.

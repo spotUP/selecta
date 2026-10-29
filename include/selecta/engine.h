@@ -416,6 +416,7 @@ typedef struct sel_engine_stats {
     uint32_t sources_listed;      /* SOURCES rows the engine queued for the UI (I546 sentinel) */
     uint32_t lib_touch_calls;   /* LIBRARY_TOUCH commands applied (I678c sentinel: Recents order has a written opened time) */
     uint32_t collection_opens;  /* COLLECTION_OPEN commands applied (I678e sentinel: a collection page was opened through the engine) */
+    uint32_t collection_queries; /* I678f sentinel: collection page lists (songs or shelf) that reached the library */
     uint32_t library_items_calls; /* sel_engine_library_items calls that reached the library (I678a sentinel) */
     uint32_t evt_dropped;         /* events dropped because the event queue was full (I546 sentinel) */
     uint32_t radio_appends;       /* songs RADIO appended to the queue (I186 sentinel) */
@@ -487,6 +488,23 @@ typedef struct sel_engine_library_item {
  * is the row count of the whole list for paging. Source rows carry the registry display name. */
 uint32_t sel_engine_library_items(sel_engine* e, uint32_t kind_mask, uint32_t offset, sel_engine_library_item* out, uint32_t max,
                                   uint32_t* total);
+/* I678f: the songs of the album, artist or composer page (kind SEL_LIB_ITEM_*, key as in sel_engine_library_item) in page order into
+ * out as "key\0key\0...\0\0" (like the playlist call); plays[i] (when not NULL, up to max_plays) is the count of finished plays of
+ * song i. Returns the songs written; the page order is the album's scan order, else most played first. */
+uint32_t sel_engine_collection_songs(sel_engine* e, uint32_t kind, const char* key, char* out, uint32_t cap, uint32_t* plays,
+                                     uint32_t max_plays);
+/* I678f: one row of a collection shelf: an album (id, name, artist, year, songs) or a composer spelling (name, songs). */
+typedef struct sel_engine_collection_row {
+    uint32_t id; /* albums.id of the cover, 0 none */
+    char name[96];
+    char artist[96];
+    uint32_t year;
+    uint32_t songs;
+} sel_engine_collection_row;
+/* I678f: shelf `shelf` (SEL_COLL_ALBUMS, SEL_COLL_APPEARS, SEL_COLL_MORE, SEL_COLL_SPELLINGS in library_item.h) of the page of item
+ * (kind, key); fills out[0..max), returns the rows written, *total (when not NULL) the rows of the whole shelf. */
+uint32_t sel_engine_collection_shelf(sel_engine* e, uint32_t kind, const char* key, uint32_t shelf, sel_engine_collection_row* out,
+                                     uint32_t max, uint32_t* total);
 /* I633: the song keys of saved playlist `id` in position order into out as "key\0key\0...\0\0"; returns how many. */
 uint32_t sel_engine_library_playlist_keys(sel_engine* e, uint32_t id, char* out, uint32_t cap);
 /* DUI-P4-18: the catalogue title of the song at `ref` (path or key) into out; 1 when it has one, else 0 (callers fall back to the file name). */

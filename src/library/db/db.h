@@ -56,7 +56,8 @@ enum {
     SEL_COMPOSER_LIST,  /* DUI-P4-3: every composer (by display name, Unknown composer last) streamed through `row` in one request: canon, display, song count (decimal); reply [2] = row count (I528) */
     SEL_FORMAT_LIST,    /* I615c: every song format with its song count (most songs first) streamed through `row`: format, song count (decimal); reply [2] = row count */
     SEL_SOURCE_SONGS,   /* DUI-P4-3: songs rows of source id `key`: `out` = decimal count NUL, reply [0] = 1 */
-    SEL_LIBRARY_ITEMS   /* I678a: the Your Library list of the kinds in `mask`, rows [offset, offset + limit) streamed through `row`: kind, key, name, sub, songs, added, last played, art id, pinned (decimal text); reply [2] = total row count */
+    SEL_LIBRARY_ITEMS,  /* I678a: the Your Library list of the kinds in `mask`, rows [offset, offset + limit) streamed through `row`: kind, key, name, sub, songs, added, last played, art id, pinned (decimal text); reply [2] = total row count */
+    SEL_COLLECTION      /* I678f: one list of the collection page of item kind `offset`, key `key`: shelf `mask` (SEL_COLL_*) streamed through `row`: key, name, artist, year, number (decimal text); reply [2] = row count */
 };
 /* One albums/artwork operation (SEL_LIB_REQ_ART, DUI-P2-4). Reply INT [0]: SEL_ART_FIND the id of the albums row the song belongs to (0: none),
  * SEL_ART_GET the blob size (0: none; `data` holds min(size, cap) bytes), SEL_ART_PUT 1 when stored,
@@ -539,6 +540,11 @@ int sel_library_composer_list(sel_library* lib, sel_composer_list_fn fn, void* c
  * (SEL_LIB_ITEM_BIT), ordered pinned first, then by kind and name. Fills out[0..max) from row `offset` and returns the rows
  * written (-1: failed); *total (when not NULL) is the row count of the whole list, so a caller pages with a window. */
 int sel_library_items(sel_library* lib, uint32_t kind_mask, uint32_t offset, sel_library_item* out, uint32_t max, uint32_t* total);
+
+/* I678f: one list of the collection page of item (kind, key) (SEL_COLL_*): calls `fn(ctx, f)` with the five column texts per row, valid
+ * only during the call. Returns the rows, -1 on a library error. */
+typedef void (*sel_collection_row_fn)(void* ctx, const char* const* f);
+int sel_library_collection(sel_library* lib, uint32_t kind, const char* key, uint32_t shelf, sel_collection_row_fn fn, void* ctx);
 
 /* Every song format of the catalogue with its song count (I615c), most songs first: calls `fn(ctx, format, songs)` each. Returns the
  * number of formats, or -1 without a library. */

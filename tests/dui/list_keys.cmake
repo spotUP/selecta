@@ -140,8 +140,8 @@ lf_run(c1 library "wait 2\nkey down\nwait 1\n" --db "${cdb}")
 lf_expect("composer list first Down lands on absolute row 0 (I505)" "${c1}" 0 0 0)
 lf_run(c2 library "wait 2\nkey down\nkey enter\nwait 2\n" --db "${cdb}")
 lf_expect("composer list Enter" "${c2}" -1 1 0)
-if(NOT "${c2}" MATCHES "drill Chris Huelsbeck\\|1\n")
-  message(FATAL_ERROR "Enter on the focused composer row must open that composer's drilldown:\n${c2}")
+if(NOT "${c2}" MATCHES "collection kind=composer [^\n]* of=1 ")
+  message(FATAL_ERROR "Enter on the focused composer row must open that composer's collection page:\n${c2}")
 endif()
 
 # Drilldown (the library also lists the Unknown composer, so Play Composer is row 0 and Home reaches it): the song row plays on Enter, as the click of I299 does.
