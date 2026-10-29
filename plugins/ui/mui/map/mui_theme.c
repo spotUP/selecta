@@ -212,3 +212,22 @@ const uint32_t* mui_theme_tokens(void) {
     }
     return g_tokens_theme.token;
 }
+
+static uint32_t g_live_applied;
+
+int mui_theme_apply_live(const mui_theme_live_ops* ops, const char* env_path, const char* launch_arg) {
+    txt_theme th;
+    if (ops == NULL || ops->palette == NULL || ops->classes == NULL) {
+        return -1;
+    }
+    mui_theme_resolve(&th, env_path, launch_arg);
+    mui_theme_tokens_set(th.token);
+    ops->palette(ops->ctx, mui_theme_tokens());
+    ops->classes(ops->ctx);
+    g_live_applied++;
+    return 0;
+}
+
+uint32_t mui_theme_live_applied(void) {
+    return g_live_applied;
+}
