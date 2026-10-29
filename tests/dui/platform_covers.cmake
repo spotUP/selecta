@@ -1,6 +1,6 @@
 # dui-platform-covers (I691b): a song without real art shows the platform cover of its file name's family. -DSELECTA -DWORK
 #   Design: thoughts/shared/research/2026-10-29-i691-platform-covers.md sections 3 and 4. Violated invariant: the song sites drew the
-#   anonymous genart gradient. The dump line `platform_covers np= bar= page= tile0= draws=` names the family (lower case id) each site
+#   anonymous genart gradient. The dump line `platform_covers np= bar= page= tile0= draws= shelf= grid= flow= side= header=` names the family (lower case id) each site
 #   drew, `none` when real art won; draws counts the fallback branch (the sentinel: it must move, so the cover code RAN).
 #   1. Home queue tiles: mod -> amiga, sid -> commodore_64, xm -> pc_tracker, spc -> snes (the family table, one row per ext), mp3 -> music.
 #   2. `mod.Tune` (Amiga prefix) -> amiga.
@@ -13,10 +13,13 @@ file(MAKE_DIRECTORY "${WORK}")
 set(fx "${HERE}/../m3/lyrics")
 
 function(pc_line outvar out)
-  if(NOT "${out}" MATCHES "platform_covers np=([a-z0-9_]+) bar=([a-z0-9_]+) page=([a-z0-9_]+) tile0=([a-z0-9_]+) draws=([0-9]+)\n")
+  if(NOT "${out}" MATCHES "platform_covers np=([a-z0-9_]+) bar=([a-z0-9_]+) page=([a-z0-9_]+) tile0=([a-z0-9_]+) draws=([0-9]+) shelf=([a-z0-9_]+) grid=([a-z0-9_]+) flow=([a-z0-9_]+) side=([a-z0-9_]+) header=[a-z0-9_]+\n")
     message(FATAL_ERROR "no platform_covers line in:\n${out}")
   endif()
   set(${outvar} "${CMAKE_MATCH_1} ${CMAKE_MATCH_2} ${CMAKE_MATCH_3} ${CMAKE_MATCH_4} ${CMAKE_MATCH_5}" PARENT_SCOPE)
+  set(more "shelf=${CMAKE_MATCH_6} grid=${CMAKE_MATCH_7} flow=${CMAKE_MATCH_8} side=${CMAKE_MATCH_9}")
+  string(REGEX MATCH "header=([a-z0-9_]+)\n" ignored "${out}") # CMake keeps only nine match groups
+  set(${outvar}_more "${more} header=${CMAKE_MATCH_1}" PARENT_SCOPE)
 endfunction()
 
 # 1 and 2: the first home tile of a queued (not playing) song.
@@ -97,3 +100,90 @@ foreach(sc 1 2)
     message(FATAL_ERROR "scale ${sc}: the Now Playing cover word is ${w_np} px; a large cover wants edge/7 (at least 14)\n${ow}")
   endif()
 endforeach()
+
+# 6 (I691d): the album and person sites. Fixture library (fixture_library.sql: albums 1 to 3 carry real art, album 4 none) plus an uncovered
+#   Amiga album "Uncovered" (two mod songs, no artwork). Each site draws the platform cover of the row's family, and a covered album wins
+#   with its art (`none`): Home shelf album tile, Library grid tile, cover flow, album page header, each a separate run because the dump
+#   names the last tile a site drew.
+find_program(SQLITE3 sqlite3)
+if(NOT SQLITE3)
+  message(FATAL_ERROR "dui-platform-covers needs the sqlite3 command line tool to load the fixture library")
+endif()
+set(db "${WORK}/mixed.db")
+dui_run(init --db "${db}" --ui desktop --backend mem --view home --canvas 900x600 --clock fixed --stats)
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db}" INPUT_FILE "${HERE}/fixture_library.sql"
+  RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "loading the fixture failed: ${err}")
+endif()
+string(CONCAT seed
+  "UPDATE songs SET key = 'local:' || path WHERE key LIKE 'fixture:%'; "
+  "INSERT INTO albums(id, name, artist, year, source) VALUES(5, 'Uncovered', 'Nobody', 1990, 'local'); "
+  "INSERT INTO songs(key, source, path, name, artist, album, format, year, added) VALUES"
+  "('local:fixture/7.mod','local','fixture/7.mod','Seven','Nobody','Uncovered','mod',1990,1),"
+  "('local:fixture/8.mod','local','fixture/8.mod','Eight','Nobody','Uncovered','mod',1990,1)")
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db}" "${seed}" RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "seeding the mixed library failed: ${err}")
+endif()
+
+# field(out dump key): one key=value of the platform_covers line.
+function(pc_field out dump key)
+  pc_line(l "${dump}")
+  if(NOT "${l_more}" MATCHES "${key}=([a-z0-9_]+)")
+    message(FATAL_ERROR "no ${key} in ${l_more}")
+  endif()
+  set(${out} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+endfunction()
+function(pc_draws out dump)
+  pc_line(l "${dump}")
+  separate_arguments(l)
+  list(GET l 4 n)
+  set(${out} "${n}" PARENT_SCOPE)
+endfunction()
+function(expect_site dump key want what)
+  pc_field(got "${dump}" ${key})
+  pc_draws(n "${dump}")
+  if(NOT got STREQUAL "${want}")
+    message(FATAL_ERROR "${what}: ${key}=${got}, want ${want}\n${dump}")
+  endif()
+  if(NOT want STREQUAL "none" AND n LESS 1)
+    message(FATAL_ERROR "${what}: draws=${n}: the platform cover never ran\n${dump}")
+  endif()
+endfunction()
+
+# Home shelf: a skipped song puts its album on the Jump back in shelf; the uncovered mod album is an Amiga tile.
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db}"
+  "INSERT INTO history(key, played_at, skipped) VALUES('local:fixture/7.mod', 100, 1),('local:fixture/8.mod', 200, 1)")
+dui_run(shelf_u --db "${db}" --ui desktop --backend mem --view home --canvas 1280x1400 --clock fixed --stats)
+expect_site("${shelf_u}" shelf amiga "Home shelf album tile")
+
+# Library grid and cover flow: queue one song per run, so the last tile drawn is that song's album.
+function(grid_run tag style song)
+  file(REMOVE_RECURSE "${WORK}/cfg")
+  file(WRITE "${WORK}/${tag}.txt" "exec VIEW_SOURCE queue\nexec VIEW_WINDOW 8\nexec VIEW_STYLE ${style}\nexec COMPOSERS_SHOW\nwait 100\nwait 600\n")
+  dui_run(o --db "${db}" --ui desktop --backend mem --view library --canvas 1280x800 --clock fixed --stats
+    --exec "QUEUE_ADD \"fixture/${song}\"" --input "${WORK}/${tag}.txt")
+  set(${tag} "${o}" PARENT_SCOPE)
+endfunction()
+grid_run(g_unc grid 7.mod)
+expect_site("${g_unc}" grid amiga "Library grid, uncovered mod album")
+grid_run(g_cov grid 1.mod)
+expect_site("${g_cov}" grid none "Library grid, covered album")
+grid_run(f_unc coverflow 7.mod)
+expect_site("${f_unc}" flow amiga "cover flow, uncovered mod album")
+grid_run(f_cov coverflow 1.mod)
+expect_site("${f_cov}" flow none "cover flow, covered album")
+
+# Album page header: the sidebar row of the uncovered album opens its page.
+set(common --ui desktop --backend mem --view home --clock fixed --stats --db "${db}" --canvas 1280x1400)
+file(WRITE "${WORK}/idle.txt" "wait 100\n")
+dui_run(idle ${common} --input "${WORK}/idle.txt")
+if(NOT "${idle}" MATCHES "sidelib_row [0-9]+ ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+) pinned=[01] open=[01] kind=4 Uncovered\n")
+  message(FATAL_ERROR "no sidebar row of the Uncovered album in:\n${idle}")
+endif()
+math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+file(WRITE "${WORK}/open.txt" "click ${cx} ${cy}\nwait 100\n")
+dui_run(hdr ${common} --input "${WORK}/open.txt")
+expect_site("${hdr}" header amiga "album page header")

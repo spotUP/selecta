@@ -237,6 +237,7 @@ typedef struct desk {
     int32_t si_composer_row; /* the info row index of the Author tag, -1 when the song has none */
     int32_t pls_playing; /* I690: the position of the playing song in the drawn collection page, -1 when none */
     uint32_t pls_want, pls_n, pls_stale, pls_scroll, pls_draws, pls_rows; /* songs, reload wanted, first row shown, frames drawn, rows in the last one */
+    uint32_t pls_family;     /* I691d: the majority family of the songs on the open page (an album, a person, a playlist), the header cover and the avatar */
     int pl_edit;             /* 1 while the name field has the keyboard */
     char pl_name[64];
     uint32_t* pls_ord;       /* I678e: the shown songs as indices into pls_off: the search filter, then the sort */
@@ -305,7 +306,7 @@ typedef struct desk {
     uint32_t lib_off_page;   /* Library page draws while another page is current (sentinel, must stay 0: I274) */
     uint32_t np_draws;       /* Now Playing panel draws (sentinel) */
     uint32_t np_genart;      /* platform cover draws by the Now Playing panel: one per draw (DUI-P4-7, I691b) */
-    uint32_t pc_np, pc_bar, pc_page, pc_tile0, pc_draws; /* I691b: family + 1 of the last platform cover per song site, 0 = real art won; draws = all fallback draws */
+    uint32_t pc_np, pc_bar, pc_page, pc_tile0, pc_draws, pc_shelf, pc_grid, pc_flow, pc_side, pc_header; /* I691d: shelf, grid, flow, sidebar and page header */ /* I691b: family + 1 of the last platform cover per song site, 0 = real art won; draws = all fallback draws */
     uint32_t cover_np, cover_bar, cover_side; /* I692: real covers (art_tile) drawn by the Now Playing panel and page, the player bar, the sidebar rows */
     sel_gui_rect np_title;      /* the Now Playing title and artist lines, w 0 = not drawn: a song row of the song menu (I372) */
     sel_gui_rect np_like, np_rate[5]; /* click targets of the like button and the five rating marks */
@@ -1473,10 +1474,10 @@ static uint32_t pc_word(uint32_t slot) {
     return slot >> 8;
 }
 
-/* The song fallback (I691b): the platform cover of the family of `path`, drawn where a song has no real art. `slot` receives
- * family + 1 for the dump line `platform_covers`; draws counts every call, the sentinel of the fallback branch. */
-static void song_platform_cover(desk* d, sel_gui_rect ar, const char* path, const char* title, uint32_t* slot) {
-    uint32_t family = sel_platform_of_name(path);
+/* The platform cover of `family` (I691b, I691d) on `cv`: the one drawing path of every fallback cover. `slot` receives family + 1
+ * (plus the word px above the family byte) for the dump line `platform_covers`; draws counts every call, the sentinel of the
+ * fallback branch. Covers under 64 logical px draw the field and mark only. */
+static void family_platform_cover(desk* d, sel_gui_canvas* cv, sel_gui_rect ar, uint32_t family, const char* title, uint32_t* slot) {
     int32_t edge = px_to_logical(d, ar.w < ar.h ? ar.w : ar.h); /* logical: a 2x canvas shows a 56 px bar thumb at 112 px */
     int32_t want = edge / 7, px = 0, i;
     const sel_gui_atlas* word = NULL;
@@ -1489,9 +1490,16 @@ static void song_platform_cover(desk* d, sel_gui_rect ar, const char* path, cons
         }
         word = desk_font(d, 1, px);
     }
-    sel_gui_cover_draw(d->canvas, ar, family, sel_gui_str_hash(title), d->theme.token, word);
-    *slot = (family + 1u) | (word != NULL ? (uint32_t)px << 8 : 0u);
+    sel_gui_cover_draw(cv, ar, family, sel_gui_str_hash(title != NULL ? title : ""), d->theme.token, word);
+    if (slot != NULL) {
+        *slot = (family + 1u) | (word != NULL ? (uint32_t)px << 8 : 0u);
+    }
     d->pc_draws++;
+}
+
+/* The song fallback (I691b): the platform cover of the family of the file name `path`. */
+static void song_platform_cover(desk* d, sel_gui_rect ar, const char* path, const char* title, uint32_t* slot) {
+    family_platform_cover(d, d->canvas, ar, sel_platform_of_name(path), title, slot);
 }
 
 /* The home view (DUI-P2-6): one tile per queue entry, its album artwork (DUI-P2-4) or else generated art of its
@@ -1554,6 +1562,23 @@ static int cover_draw(desk* d, sel_gui_rect ar, const char* key, int32_t radius)
     sel_gui_blit_image_round(d->canvas, ar, art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, radius);
     sel_gui_set_region(d->canvas, SEL_GUI_RGN_UI);
     return 1;
+}
+
+/* A grid or cover flow tile (I691d): the real art of the row first (precedence, design section 4), else the platform cover of its
+ * family: the row's majority format when the engine gave one, else the file name of its song `path`. `slot` as in
+ * family_platform_cover, 0 when real art won. */
+static uint32_t row_family(const sel_view_row* r, const char* path) {
+    const char* src = path != NULL ? path : r->key;
+    if (r->format != NULL && r->format[0] != '\0') return sel_platform_of_ext(r->format); /* the engine hands an extension, not a name */
+    return sel_platform_of_name(src != NULL ? src : "");
+}
+static void row_cover(desk* d, sel_gui_rect ar, const sel_view_row* r, const char* path, uint32_t* slot) {
+    const char* art = r->art_ref != NULL ? r->art_ref : path != NULL ? path : r->key;
+    if (r->art_id != 0u && cover_draw(d, ar, art, 0)) {
+        *slot = 0u;
+        return;
+    }
+    family_platform_cover(d, d->canvas, ar, row_family(r, path), r->text, slot);
 }
 
 /* Reads a pref. Prefs live in the engine, so they are answered by the engine's plugin host only; the host the UI
@@ -3214,7 +3239,8 @@ static void draw_quick(desk* d, sel_gui_rect mn) {
             sel_gui_blit_image_round(d->canvas, ar, art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, radius);
             sel_gui_set_region(d->canvas, SEL_GUI_RGN_UI);
         } else {
-            sel_gui_genart_draw(d->canvas, ar, "album", sel_gui_str_hash(r->text));
+            uint32_t slot;
+            family_platform_cover(d, d->canvas, ar, row_family(r, NULL), r->text, &slot);
         }
         draw_text(d, rect_of(t.x + t.h + gap, t.y, t.w - t.h - 2 * gap, t.h), r->text, 1, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
     }
@@ -3295,8 +3321,8 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
                 d->art_probe_fill = sel_gui_pixel(d->canvas, ar.x, ar.y - 1); /* the card or the tint just above the art, before it is drawn over */
                 sel_gui_set_region(d->canvas, SEL_GUI_RGN_UI);
             } else {
-                if (r->album || r->composer) { /* the album and person covers switch in I691d */
-                    sel_gui_genart_draw(d->canvas, ar, "album", sel_gui_str_hash(r->text));
+                if (r->album || r->composer) { /* I691d: the majority family of the album's or person's songs */
+                    family_platform_cover(d, d->canvas, ar, sel_platform_of_ext(r->format != NULL ? r->format : ""), r->text, &d->pc_shelf);
                 } else {
                     uint32_t slot;
                     song_platform_cover(d, ar, r->key, r->text, &slot);
@@ -4327,6 +4353,14 @@ static void pls_reload(desk* d) {
         }
     }
     d->pls_n = i;
+    {   /* I691d (Q3): the page's cover is the majority family of its songs, like an album's */
+        sel_platform_family_tally tally;
+        memset(&tally, 0, sizeof tally);
+        for (i = 0; i < d->pls_n; i++) {
+            sel_platform_family_tally_add(&tally, pls_key(d, i));
+        }
+        d->pls_family = sel_platform_family_tally_majority(&tally);
+    }
     if (d->pls_want != 0u && d->pls_n >= d->pls_want) { /* the engine has not applied the removal yet: ask again next frame */
         d->pls_stale = 1u;
     } else {
@@ -4656,7 +4690,8 @@ static void col_draw_shelves(desk* d, sel_gui_rect mn, uint32_t text, uint32_t m
             const sel_engine_collection_row* c = &d->col_shelf[sh][i];
             sel_gui_rect cr = col_card_rect(d, mn, sh, i);
             char yr[32];
-            sel_gui_genart_draw(d->canvas, cr, "album", sel_gui_str_hash(c->name));
+            uint32_t pcs; /* the shelf card never drew real art (a known gap, not this row's) */
+            family_platform_cover(d, d->canvas, cr, sel_platform_of_ext(c->format), c->name, &pcs);
             draw_text(d, rect_of(cr.x, cr.y + cr.h + lpx(d, 2), cr.w, lpx(d, 20)), c->name, 0, 13, text);
             if (c->year != 0u) {
                 snprintf(yr, sizeof yr, "%u", (unsigned)c->year);
@@ -4905,6 +4940,7 @@ static void col_round_art(desk* d, sel_gui_rect r) {
     if (r.w <= 0 || r.h != r.w) {
         return;
     }
+    hash += d->pls_family * 0x9E3779B1u; /* the family is part of the cache identity: the page's songs may change it */
     if (d->col_av == NULL || d->col_av_w != r.w || d->col_av_hash != hash) {
         sel_gui_canvas tile;
         free(d->col_av);
@@ -4913,7 +4949,7 @@ static void col_round_art(desk* d, sel_gui_rect r) {
             return;
         }
         sel_gui_canvas_init(&tile, SEL_GUI_RGBA32, r.w, r.w, d->col_av);
-        sel_gui_genart_draw(&tile, rect_of(0, 0, r.w, r.w), "album", hash);
+        family_platform_cover(d, &tile, rect_of(0, 0, r.w, r.w), d->pls_family, d->pls_name, &d->pc_header);
         d->col_av_w = r.w;
         d->col_av_hash = hash;
     }
@@ -5041,7 +5077,7 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
         sel_gui_round_rect(d->canvas, cv, rad, accent);
         draw_text(d, rect_of(cv.x + lpx(d, 12), cv.y, cv.w - lpx(d, 24), cv.h), d->pls_name, 1, 22, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT_TEXT]));
     } else {
-        sel_gui_genart_draw(d->canvas, cv, "album", sel_gui_str_hash(d->pls_name));
+        family_platform_cover(d, d->canvas, cv, d->pls_family, d->pls_name, &d->pc_header);
     }
     draw_text(d, rect_of(tx, cv.y, mn.x + mn.w - tx - lpx(d, HOME_MARGIN), lpx(d, 20)), col_kind_label(d), 0, 13, muted);
     draw_text(d, pls_title_rect(d, mn), d->pl_edit && d->pl_nlen > 0u ? d->pl_name : d->pls_name, 1, 32, d->pl_edit && d->pl_nlen == 0u ? muted : text);
@@ -6396,8 +6432,9 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "nowplaying title %d %d like %d artist %u\n", (int)d->np_title.y, (int)d->np_title.h, (int)d->np_like.y,
                  (unsigned)(d->np_text_artist[0] != '\0'));
     o = dump_put(d, o, "cover_tiles np=%u bar=%u side=%u\n", (unsigned)d->cover_np, (unsigned)d->cover_bar, (unsigned)d->cover_side);
-    o = dump_put(d, o, "platform_covers np=%s bar=%s page=%s tile0=%s draws=%u\n", pc_name(d->pc_np), pc_name(d->pc_bar), pc_name(d->pc_page),
-                 pc_name(d->pc_tile0), (unsigned)d->pc_draws);
+    o = dump_put(d, o, "platform_covers np=%s bar=%s page=%s tile0=%s draws=%u shelf=%s grid=%s flow=%s side=%s header=%s\n", pc_name(d->pc_np), pc_name(d->pc_bar),
+                 pc_name(d->pc_page), pc_name(d->pc_tile0), (unsigned)d->pc_draws, pc_name(d->pc_shelf), pc_name(d->pc_grid), pc_name(d->pc_flow),
+                 pc_name(d->pc_side), pc_name(d->pc_header));
     o = dump_put(d, o, "platform_cover_words np=%u bar=%u page=%u tile0=%u\n", (unsigned)pc_word(d->pc_np), (unsigned)pc_word(d->pc_bar),
                  (unsigned)pc_word(d->pc_page), (unsigned)pc_word(d->pc_tile0));
     o = dump_put(d, o, "nowplaying keys end %d value %d\n",(int)d->np_key_end, (int)d->np_val_x);
@@ -7002,6 +7039,17 @@ static void lib_view_row_reg(desk* d, sel_gui_rect mn, const sel_state* st, uint
     }
 }
 
+/* The cover of a grid or cover flow tile (I691d): the Library's rows get the song path from the engine (window slot `k`), a
+ * filtered copy (Search, k = UINT32_MAX) and Home rows carry their own key. */
+static void grid_row_cover(desk* d, sel_gui_rect ar, const sel_view_row* r, uint32_t k, uint32_t* slot) {
+    char path[sizeof((song_ref*)0)->path];
+    const char* p = NULL;
+    if (r->kind != (uint32_t)SEL_ROW_HOME && k != UINT32_MAX && sel_engine_view_row_path(d->engine, k, path, sizeof path)) {
+        p = path;
+    }
+    row_cover(d, ar, r, p, slot);
+}
+
 /* The caption under a tile: left-aligned for the grid, centred under the cover for the cover flow (I391). */
 static void lib_tile_text(desk* d, sel_gui_rect ar, int32_t y, const sel_view_row* r, uint32_t text, uint32_t muted, int centre) {
     const char* title = r->text != NULL ? r->text : "";
@@ -7047,7 +7095,7 @@ static void draw_grid_rows(desk* d, sel_gui_rect mn, const sel_view_state* v, in
         }
         sel_gui_round_rect(d->canvas, t, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]),
                            sel ? ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]) : panel);
-        sel_gui_genart_draw(d->canvas, ar, "album", sel_gui_str_hash(r->text != NULL ? r->text : ""));
+        grid_row_cover(d, ar, r, lib_reg ? i : UINT32_MAX, &d->pc_grid);
         lib_tile_text(d, ar, ar.y + ar.h + lpx(d, HOME_TILE_TEXT_GAP), r, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]),
                       ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]), 0);
         if (lib_reg) {
@@ -7143,7 +7191,7 @@ static void draw_flow_rows(desk* d, sel_gui_rect mn, const sel_view_state* v, in
             d->flow_cover = r;
             sel_gui_shadow_draw(d->canvas, &d->shadow, r, 0); /* the cover flow art is square */
         }
-        sel_gui_genart_draw(d->canvas, r, "album", sel_gui_str_hash(row->text != NULL ? row->text : ""));
+        grid_row_cover(d, r, row, lib_reg ? (uint32_t)(cv[j].g - (int64_t)v->window_start) : UINT32_MAX, &d->pc_flow);
         if (alpha > 0) {
             sel_gui_scrim(d->canvas, r, ARGB(d->theme.token[SEL_GUI_TOKEN_SCRIM]) & 0xFFFFFFu, (uint32_t)alpha);
         }
@@ -9580,11 +9628,13 @@ static void side_item_thumb(desk* d, sel_gui_rect ar, const sel_engine_library_i
         char ref[200];
         snprintf(ref, sizeof ref, it->sub[0] != '\0' ? "%s\x1f%s" : "%s", it->name, it->sub);
         if (cover_draw(d, ar, ref, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]))) {
+            d->pc_side = 0u;
             d->cover_side++;
             return;
         }
     }
-    sel_gui_genart_draw(d->canvas, ar, "album", sel_gui_str_hash(it->name));
+    d->pc_side = 0u;
+    family_platform_cover(d, d->canvas, ar, sel_platform_of_ext(it->format), it->name, &d->pc_side); /* I691d: mark only on this small thumb */
 }
 
 static void side_lib_draw(desk* d, sel_gui_rect sb) {
