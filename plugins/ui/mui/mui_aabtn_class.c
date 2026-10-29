@@ -111,17 +111,24 @@ static ULONG aabtn_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMinM
     return 0;
 }
 
-/* The baked icon (mui_icon_body_px square, 2 planes, rows interleaved, pen 0 transparent) scaled to px by nearest neighbour,
- * drawn as horizontal runs of one ramp pen from the face colour to the caption colour. */
+/* The baked icon body of exactly px (2 planes, rows interleaved, pen 0 transparent; I667m); a px with no body falls back to the
+ * largest body scaled by nearest neighbour. Drawn
+ * as horizontal runs of one ramp pen from the face colour to the caption colour. */
 static void aabtn_icon(aabtn_data* d, struct RastPort* rp, int icon, int x, int y, int px, uint32_t face, uint32_t ink) {
-    const uint8_t* body = mui_icon_body(icon);
-    int bp = (int)mui_icon_body_px, rb = ((bp + 15) / 16) * 2, dy, dx, run0, run_pen;
+    int bp = px;
+    const uint8_t* body = mui_icon_body(icon, px);
+    int rb, dy, dx, run0, run_pen;
     uint32_t col[4];
     LONG pen[4];
     int i;
+    if (body == NULL && mui_icon_size_count > 0) {
+        bp = (int)mui_icon_sizes[mui_icon_size_count - 1];
+        body = mui_icon_body(icon, bp);
+    }
     if (body == NULL || px <= 0) {
         return;
     }
+    rb = ((bp + 15) / 16) * 2;
     for (i = 1; i < 4; i++) {
         col[i] = mui_aa_ramp_rgb(ink, face, 4, i);
         pen[i] = aa_pen(&d->aa, col[i]);

@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "mui_aa.h"
+#include "mui_icons.h"
 #include "mui_map.h"
 #include "mui_pens.h"
 #include "mui_theme.h"
@@ -118,9 +119,9 @@ static void test_state(void) {
               mui_aa_font_px(256, 640) == 0 && mui_aa_font_px(256, 320) == 0,
           "font px by screen rows");
     mui_aa_metrics(13, &m);
-    CHECK(m.height == 36 && m.pad_x == 10 && m.pad_y == 6 && m.icon_px == 24 && m.radius == 6, "M metrics");
+    CHECK(m.height == 30 && m.pad_x == 10 && m.pad_y == 6 && m.icon_px == 18 && m.radius == 6, "M metrics");
     mui_aa_metrics(0, &m);
-    CHECK(m.height == 14 && m.pad_x == 6 && m.icon_px == 16 && m.radius == 4, "S metrics");
+    CHECK(m.height == 14 && m.pad_x == 6 && m.icon_px == 12 && m.radius == 4, "S metrics");
     cls = slurp(AABTN_SOURCE);
     draw = slurp(AADRAW_SOURCE);
     CHECK(cls != NULL && draw != NULL, "class sources readable");
@@ -834,9 +835,32 @@ static void test_list_source(void) {
     free(cm);
 }
 
+/* I667m (design 3.11): the tier icon table and the icon:text ratio, with a baked body for every icon at every tier size. */
+static void test_icon_ratio(void) {
+    static const int rows[4] = {256, 600, 800, 1024}, want_icon[4] = {12, 18, 20, 24}, want_font[4] = {8, 13, 15, 17};
+    int t;
+    uint32_t i, before;
+    for (t = 0; t < 4; t++) {
+        mui_aa_metrics_t m;
+        mui_aa_metrics(mui_aa_font_px(rows[t], 640), &m);
+        CHECK(m.icon_px == want_icon[t] && m.font_px == want_font[t], "tier rows %d: icon %d font %d", rows[t], m.icon_px, m.font_px);
+        if (t > 0) {
+            CHECK(m.icon_px * 10 >= m.font_px * 13 && m.icon_px * 10 <= m.font_px * 15, "tier rows %d: icon %d to font %d is outside 1.3 to 1.5", rows[t], m.icon_px, m.font_px);
+        }
+        CHECK(t == 0 || m.height == (m.font_px > m.icon_px ? m.font_px : m.icon_px) + 2 * m.pad_y, "height formula tier %d", t);
+        for (i = 0; i < mui_icon_body_count; i++) {
+            CHECK(mui_icon_body((int)i, m.icon_px) != NULL, "icon %u has no %d px body", (unsigned)i, m.icon_px);
+        }
+    }
+    before = mui_icon_body_lookups(18);
+    CHECK(mui_icon_body(0, 18) != NULL && mui_icon_body_lookups(18) == before + 1, "sentinel: the 18 px body set is the one looked up on tier M");
+}
+
 int main(int argc, char** argv) {
     const char* t = argc > 1 ? argv[1] : "";
-    if (!strcmp(t, "round")) {
+    if (!strcmp(t, "icon-ratio")) {
+        test_icon_ratio();
+    } else if (!strcmp(t, "round")) {
         test_round();
     } else if (!strcmp(t, "ramp")) {
         test_ramp();

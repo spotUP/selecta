@@ -1068,7 +1068,7 @@ static void test_screen_plan(void) {
         fclose(f);
     }
     src[n] = 0;
-    CHECK(mui_button_height() == MUI_ICON_PX + 2u * MUI_BTN_PAD_Y + MUI_BTN_FRAME, "button height %u", (unsigned)mui_button_height());
+    CHECK(mui_button_height() == (uint32_t)mui_model_icon_px() + 2u * MUI_BTN_PAD_Y + MUI_BTN_FRAME, "button height %u", (unsigned)mui_button_height());
     CHECK(need > 256u && need <= 512u, "mini layout minimum height %u must be taller than 256 and fit 512", (unsigned)need);
     CHECK(mui_screen_plan(0x29000u, 640u, 256u, 0, need, &p) == 1 && p.laced && p.mode == 0x29004u && p.width == 640u &&
               p.height == 512u && p.depth == 4u,
@@ -1206,27 +1206,27 @@ static void test_icon_buttons(void) {
         fr.play = st ? SEL_PLAYING : SEL_STOPPED;
         for (b = 0; b < MUI_BTN_COUNT; b++) {
             const char* a = mui_transport_action(b, &fr);
-            CHECK(a != NULL && mui_icon_body(mui_icon_id(a)) != NULL, "transport button %u state %u has no icon", (unsigned)b, (unsigned)st);
+            CHECK(a != NULL && mui_icon_body(mui_icon_id(a), 18) != NULL, "transport button %u state %u has no icon", (unsigned)b, (unsigned)st);
             want++;
         }
     }
     for (i = 0; mui_extra_action(i) != NULL; i++, want++) {
-        CHECK(mui_icon_body(mui_icon_id(mui_extra_action(i))) != NULL, "extra %s has no icon", mui_extra_action(i));
+        CHECK(mui_icon_body(mui_icon_id(mui_extra_action(i)), 18) != NULL, "extra %s has no icon", mui_extra_action(i));
     }
     for (i = 0; i < SEL_UIM_DOOR_COUNT; i++, want++) {
-        CHECK(mui_icon_body(mui_icon_id(sel_uim_door_at(i)->page)) != NULL, "door %s has no icon", sel_uim_door_at(i)->page);
+        CHECK(mui_icon_body(mui_icon_id(sel_uim_door_at(i)->page), 18) != NULL, "door %s has no icon", sel_uim_door_at(i)->page);
     }
     for (i = 0; i < MUI_TOOL_BTNS; i++, want++) {
-        CHECK(mui_icon_body(mui_icon_id(mui_tool_labels[i])) != NULL, "tool %s has no icon", mui_tool_labels[i]);
+        CHECK(mui_icon_body(mui_icon_id(mui_tool_labels[i]), 18) != NULL, "tool %s has no icon", mui_tool_labels[i]);
     }
-    CHECK(mui_icon_body(mui_icon_id("crumb")) != NULL, "crumb has no icon");
+    CHECK(mui_icon_body(mui_icon_id("crumb"), 18) != NULL, "crumb has no icon");
     want++;
     CHECK(mui_icon_resolved() - before == want, "icon lookups %u want %u", (unsigned)(mui_icon_resolved() - before), (unsigned)want);
-    CHECK(mui_icon_id("no such button") < 0 && mui_icon_body(-1) == NULL, "unknown key has no icon");
+    CHECK(mui_icon_id("no such button") < 0 && mui_icon_body(-1, 18) == NULL, "unknown key has no icon");
     {
-        const uint8_t* body = mui_icon_body(mui_icon_id("play"));
-        size_t k, bytes = (size_t)mui_icon_body_px * (((mui_icon_body_px + 15) / 16) * 2) * 2, ink = 0;
-        CHECK(mui_icon_body_px == MUI_ICON_PX, "baked edge %u", (unsigned)mui_icon_body_px);
+        const uint8_t* body = mui_icon_body(mui_icon_id("play"), 18);
+        size_t k, bytes = (size_t)18 * (((18 + 15) / 16) * 2) * 2, ink = 0;
+        CHECK(mui_icon_body(0, 17) == NULL && mui_icon_body(0, 24) != NULL, "bodies exist for the tier sizes only");
         for (k = 0; k < bytes; k++) {
             ink += body[k] != 0;
         }
@@ -1236,7 +1236,7 @@ static void test_icon_buttons(void) {
     mui_icon_palette(th.token, 1, pal);
     CHECK(pal[0] == (th.token[SEL_GUI_TOKEN_SURFACE_RAISED] >> 16 & 0xFFu) * 0x01010101u && pal[9] == (th.token[SEL_GUI_TOKEN_TEXT] >> 16 & 0xFFu) * 0x01010101u,
           "palette runs from the button face to the text colour");
-    CHECK(MUI_BTN_PAD_X >= 8 && MUI_BTN_PAD_Y >= 4 && MUI_ICON_PX >= 24, "buttons are bigger than the 1 px text-only ones");
+    CHECK(MUI_BTN_PAD_X >= 8 && MUI_BTN_PAD_Y >= 4 && mui_model_icon_px() >= 18, "buttons are bigger than the 1 px text-only ones");
     f = fopen(MUI_UI_SOURCE, "rb");
     CHECK(f != NULL, "open %s", MUI_UI_SOURCE);
     if (f == NULL) {
@@ -1332,7 +1332,7 @@ static void test_aacheck(void) {
     CHECK(face == th.token[SEL_GUI_TOKEN_ACCENT] && text == th.token[SEL_GUI_TOKEN_ACCENT_TEXT], "checked box face %06X ink %06X (desktop d_checkbox: accent_text)", (unsigned)face, (unsigned)text);
     mui_aa_button_rgb(th.token, MUI_AA_ROLE_TOGGLE, MUI_AA_DISABLED, &face, &text);
     CHECK(text == th.token[SEL_GUI_TOKEN_TEXT_DISABLED], "disabled check ink %06X", (unsigned)text);
-    CHECK(mui_icon_body(mui_icon_id("check")) != NULL, "check icon missing");
+    CHECK(mui_icon_body(mui_icon_id("check"), 18) != NULL, "check icon missing");
     mui_aa_metrics(13, &m);
     CHECK(m.check_px == 16, "box edge %d, design says 16", m.check_px);
     mui_aa_metrics(0, &m);
@@ -1377,7 +1377,7 @@ static void test_newplaylist(void) {
         }
     }
     CHECK(at < MUI_TOOL_BTNS, "mui_tool_labels has no New Playlist");
-    CHECK(mui_icon_body(mui_icon_id("New Playlist")) != NULL, "New Playlist has no icon");
+    CHECK(mui_icon_body(mui_icon_id("New Playlist"), 18) != NULL, "New Playlist has no icon");
     CHECK(src != NULL, "read mui_ui.c");
     if (src == NULL) {
         return;

@@ -179,7 +179,8 @@ void mui_aa_metrics(int font_px, mui_aa_metrics_t* out) {
     out->font_px = small ? 8 : font_px;
     out->pad_x = small ? 6 : 10;
     out->pad_y = small ? 3 : 6;
-    out->icon_px = small ? 16 : 24;
+    /* I667m (design 3.11): the one icon table, by tier font: S 12, M 18, L 20, XL 24 (desktop icon:text about 1.4). */
+    out->icon_px = small ? 12 : font_px <= 13 ? 18 : font_px <= 15 ? 20 : 24;
     out->icon_gap = 6;
     out->height = small ? out->font_px + 2 * out->pad_y : (out->font_px > out->icon_px ? out->font_px : out->icon_px) + 2 * out->pad_y;
     out->radius = small ? 4 : 6;

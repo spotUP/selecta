@@ -12,7 +12,7 @@
 static uint32_t g_plans, g_laced;
 
 uint32_t mui_button_height(void) {
-    return MUI_ICON_PX + 2u * MUI_BTN_PAD_Y + MUI_BTN_FRAME;
+    return (uint32_t)mui_model_icon_px() + 2u * MUI_BTN_PAD_Y + MUI_BTN_FRAME;
 }
 
 /* The mini layout (the breakpoint a 640 px screen gets: sidebar and detail hidden, suggestion hidden until the resize

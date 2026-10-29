@@ -1,5 +1,6 @@
 /* I651: button icon lookup and palette. See mui_icons.h. */
 #include "mui_icons.h"
+#include "mui_aa.h"
 
 #include <string.h>
 
@@ -7,6 +8,7 @@
 #include <selecta/uimodel/tokens.h>
 
 static uint32_t g_resolved;
+static uint32_t g_lookups[8];
 
 static const struct {
     const char* key;
@@ -42,8 +44,34 @@ int mui_icon_id(const char* key) {
     return -1;
 }
 
-const uint8_t* mui_icon_body(int icon) {
-    return icon >= 0 && (uint32_t)icon < mui_icon_body_count ? mui_icon_bodies[icon] : (const uint8_t*)0;
+const uint8_t* mui_icon_body(int icon, int px) {
+    uint32_t z;
+    if (icon < 0 || (uint32_t)icon >= mui_icon_body_count) {
+        return (const uint8_t*)0;
+    }
+    for (z = 0; z < mui_icon_size_count; z++) {
+        if ((int)mui_icon_sizes[z] == px) {
+            g_lookups[z]++;
+            return mui_icon_sets[z][icon];
+        }
+    }
+    return (const uint8_t*)0;
+}
+
+uint32_t mui_icon_body_lookups(int px) {
+    uint32_t z;
+    for (z = 0; z < mui_icon_size_count; z++) {
+        if ((int)mui_icon_sizes[z] == px) {
+            return g_lookups[z];
+        }
+    }
+    return 0;
+}
+
+int mui_model_icon_px(void) {
+    mui_aa_metrics_t m;
+    mui_aa_metrics(mui_aa_font_px(512, 0), &m);
+    return m.icon_px;
 }
 
 uint32_t mui_icon_resolved(void) {
@@ -67,7 +95,7 @@ void mui_icon_palette(const uint32_t* tokens, int themed, uint32_t out[12]) {
 }
 
 uint32_t mui_button_width(const char* label, int icon_only) {
-    uint32_t w = 2u * MUI_BTN_PAD_X + MUI_BTN_FRAME + MUI_ICON_PX;
+    uint32_t w = 2u * MUI_BTN_PAD_X + MUI_BTN_FRAME + (uint32_t)mui_model_icon_px();
     if (!icon_only && label != NULL) {
         w += MUI_BTN_ICON_GAP + (uint32_t)strlen(label) * MUI_FONT_W;
     }
