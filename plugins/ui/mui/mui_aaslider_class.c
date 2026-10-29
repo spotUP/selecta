@@ -130,7 +130,7 @@ static ULONG aaslider_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg
     return 0;
 }
 
-static void aaslider_move_to(Object* obj, aaslider_data* d, int mouse_x) {
+static void aaslider_move_to(Object* obj, int mouse_x) {
     long lo, hi, val, nv;
     aaslider_range(obj, &lo, &hi, &val);
     nv = mui_aa_slider_value_at(_mwidth(obj), mouse_x - _mleft(obj), lo, hi);
@@ -150,7 +150,7 @@ static ULONG aaslider_handle(struct IClass* cl, Object* obj, struct MUIP_HandleE
     if (im->Class == IDCMP_MOUSEMOVE) {
         int in = im->MouseX >= _left(obj) && im->MouseX <= _right(obj) && im->MouseY >= _top(obj) && im->MouseY <= _bottom(obj);
         if (d->drag && !dis) {
-            aaslider_move_to(obj, d, im->MouseX);
+            aaslider_move_to(obj, im->MouseX);
         }
         if (in != d->hover) {
             d->hover = in;
@@ -160,7 +160,7 @@ static ULONG aaslider_handle(struct IClass* cl, Object* obj, struct MUIP_HandleE
     }
     if (im->Code == SELECTDOWN && !dis && im->MouseX >= _left(obj) && im->MouseX <= _right(obj) && im->MouseY >= _top(obj) && im->MouseY <= _bottom(obj)) {
         d->drag = 1;
-        aaslider_move_to(obj, d, im->MouseX);
+        aaslider_move_to(obj, im->MouseX);
         MUI_Redraw(obj, MADF_DRAWOBJECT);
         return MUI_EventHandlerRC_Eat;
     }

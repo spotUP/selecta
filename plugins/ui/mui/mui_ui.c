@@ -562,10 +562,6 @@ static Object* mui_make_button_icon(const char* label, const char* icon_key, LON
     return mui_make_button_i(label, label, icon_key, NULL, id, 100, 1, MUI_AA_ROLE_NORMAL);
 }
 
-static Object* mui_make_button(const char* label, const char* icon_key, LONG id) {
-    return mui_make_button_w(label, icon_key, id, 100);
-}
-
 /* I667b4: a ghost button with icon and caption at the left (sidebar doors). */
 static Object* mui_make_button_left(const char* label, const char* icon_key, LONG id) {
     return mui_make_button_ex(label, label, icon_key, NULL, id, 100, 0, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_LEFT);

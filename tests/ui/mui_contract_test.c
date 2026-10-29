@@ -1150,7 +1150,7 @@ static const char* fn_body(const char* src, const char* head, char* out, size_t 
 
 static void test_aabtn_wired(const char* src) {
     char body[4000];
-    const char* wrappers[] = {"static Object* mui_make_button_w(", "static Object* mui_make_button_icon(", "static Object* mui_make_button("};
+    const char* wrappers[] = {"static Object* mui_make_button_w(", "static Object* mui_make_button_icon(", "static Object* mui_make_button_left("};
     unsigned crumbs = 0, total, k;
     const char* c = strstr(src, "#define MUI_CRUMB_MAX ");
     if (c != NULL) {
