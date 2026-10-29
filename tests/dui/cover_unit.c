@@ -56,18 +56,18 @@ typedef struct row {
 } row;
 
 static const row k_design[] = {
-    {SEL_GUI_FAMILY_AMIGA, "mod stk nst med mmd0 mmd1 mmd2 mmd3 okt digi dbm symmod fc13 fc14 hip hipc hip7 dw fred bp "
+    {SEL_PLATFORM_FAMILY_AMIGA, "mod stk nst med mmd0 mmd1 mmd2 mmd3 okt digi dbm symmod fc13 fc14 hip hipc hip7 dw fred bp "
                            "bp3 sid1 sid2 dm1 dm2 sfx tfx mc rh jpn ahx hvl"},
-    {SEL_GUI_FAMILY_COMMODORE_64, "sid"},
-    {SEL_GUI_FAMILY_ATARI, "ym sndh sap"},
-    {SEL_GUI_FAMILY_ZX_SPECTRUM, "ay"},
-    {SEL_GUI_FAMILY_PC_TRACKER, "xm s3m it mtm 669 far ult gtk rad"},
-    {SEL_GUI_FAMILY_NES, "nsf nsfe"},
-    {SEL_GUI_FAMILY_GAME_BOY, "gbs"},
-    {SEL_GUI_FAMILY_SNES, "spc"},
-    {SEL_GUI_FAMILY_PC_ENGINE, "hes"},
-    {SEL_GUI_FAMILY_MSX, "kss"},
-    {SEL_GUI_FAMILY_MEGA_DRIVE, "gym vgm"},
+    {SEL_PLATFORM_FAMILY_COMMODORE_64, "sid"},
+    {SEL_PLATFORM_FAMILY_ATARI, "ym sndh sap"},
+    {SEL_PLATFORM_FAMILY_ZX_SPECTRUM, "ay"},
+    {SEL_PLATFORM_FAMILY_PC_TRACKER, "xm s3m it mtm 669 far ult gtk rad"},
+    {SEL_PLATFORM_FAMILY_NES, "nsf nsfe"},
+    {SEL_PLATFORM_FAMILY_GAME_BOY, "gbs"},
+    {SEL_PLATFORM_FAMILY_SNES, "spc"},
+    {SEL_PLATFORM_FAMILY_PC_ENGINE, "hes"},
+    {SEL_PLATFORM_FAMILY_MSX, "kss"},
+    {SEL_PLATFORM_FAMILY_MEGA_DRIVE, "gym vgm"},
 };
 
 static void test_extensions(void) {
@@ -79,62 +79,62 @@ static void test_extensions(void) {
         strcpy(buf, k_design[i].exts);
         for (tok = strtok_r(buf, " ", &save); tok != NULL; tok = strtok_r(NULL, " ", &save)) {
             n++;
-            if (sel_gui_platform_of_ext(tok) != k_design[i].family) {
-                printf("FAIL extension %s maps to %u, want %u\n", tok, sel_gui_platform_of_ext(tok), k_design[i].family);
+            if (sel_platform_of_ext(tok) != k_design[i].family) {
+                printf("FAIL extension %s maps to %u, want %u\n", tok, sel_platform_of_ext(tok), k_design[i].family);
                 g_fail++;
             }
         }
     }
     printf("design extensions checked: %u\n", n);
     CHECK(n == 54u);
-    CHECK(sel_gui_platform_ext_count() >= n);
+    CHECK(sel_platform_ext_count() >= n);
 
     /* Every Modland row of the library table resolves to a platform family, none falls through to Music. */
     for (i = 0; i < sel_format_count(); i++) {
         const sel_format_entry* e = sel_format_get((uint32_t)i);
-        if (e == NULL || e->ext == NULL || sel_gui_platform_of_ext(e->ext) == SEL_GUI_FAMILY_MUSIC) {
+        if (e == NULL || e->ext == NULL || sel_platform_of_ext(e->ext) == SEL_PLATFORM_FAMILY_MUSIC) {
             printf("FAIL Modland row %u (%s) has no family\n", (unsigned)i, e != NULL && e->ext != NULL ? e->ext : "?");
             g_fail++;
         }
     }
     printf("modland rows checked: %u\n", (unsigned)sel_format_count());
 
-    CHECK(sel_gui_platform_of_ext("MOD") == SEL_GUI_FAMILY_AMIGA); /* any case */
-    CHECK(sel_gui_platform_of_ext("mp3") == SEL_GUI_FAMILY_MUSIC);
-    CHECK(sel_gui_platform_of_ext("zzz") == SEL_GUI_FAMILY_MUSIC);
-    CHECK(sel_gui_platform_of_ext(NULL) == SEL_GUI_FAMILY_MUSIC);
+    CHECK(sel_platform_of_ext("MOD") == SEL_PLATFORM_FAMILY_AMIGA); /* any case */
+    CHECK(sel_platform_of_ext("mp3") == SEL_PLATFORM_FAMILY_MUSIC);
+    CHECK(sel_platform_of_ext("zzz") == SEL_PLATFORM_FAMILY_MUSIC);
+    CHECK(sel_platform_of_ext(NULL) == SEL_PLATFORM_FAMILY_MUSIC);
 }
 
 static void test_names(void) {
-    CHECK(sel_gui_platform_of_name("song.mod") == SEL_GUI_FAMILY_AMIGA);
-    CHECK(sel_gui_platform_of_name("mod.song") == SEL_GUI_FAMILY_AMIGA); /* the Amiga prefix form */
-    CHECK(sel_gui_platform_of_name("dir/sub/SONG.XM") == SEL_GUI_FAMILY_PC_TRACKER);
-    CHECK(sel_gui_platform_of_name("DH0:Music/mod.song") == SEL_GUI_FAMILY_AMIGA);
-    CHECK(sel_gui_platform_of_name("a.b.sid") == SEL_GUI_FAMILY_COMMODORE_64);
-    CHECK(sel_gui_platform_of_name("x.mp3") == SEL_GUI_FAMILY_MUSIC);
-    CHECK(sel_gui_platform_of_name("noext") == SEL_GUI_FAMILY_MUSIC);
-    CHECK(sel_gui_platform_of_name("dir.d/noext") == SEL_GUI_FAMILY_MUSIC);
-    CHECK(sel_gui_platform_of_name("") == SEL_GUI_FAMILY_MUSIC);
-    CHECK(sel_gui_platform_of_name(NULL) == SEL_GUI_FAMILY_MUSIC);
+    CHECK(sel_platform_of_name("song.mod") == SEL_PLATFORM_FAMILY_AMIGA);
+    CHECK(sel_platform_of_name("mod.song") == SEL_PLATFORM_FAMILY_AMIGA); /* the Amiga prefix form */
+    CHECK(sel_platform_of_name("dir/sub/SONG.XM") == SEL_PLATFORM_FAMILY_PC_TRACKER);
+    CHECK(sel_platform_of_name("DH0:Music/mod.song") == SEL_PLATFORM_FAMILY_AMIGA);
+    CHECK(sel_platform_of_name("a.b.sid") == SEL_PLATFORM_FAMILY_COMMODORE_64);
+    CHECK(sel_platform_of_name("x.mp3") == SEL_PLATFORM_FAMILY_MUSIC);
+    CHECK(sel_platform_of_name("noext") == SEL_PLATFORM_FAMILY_MUSIC);
+    CHECK(sel_platform_of_name("dir.d/noext") == SEL_PLATFORM_FAMILY_MUSIC);
+    CHECK(sel_platform_of_name("") == SEL_PLATFORM_FAMILY_MUSIC);
+    CHECK(sel_platform_of_name(NULL) == SEL_PLATFORM_FAMILY_MUSIC);
 
     /* UADE prefix rule: a prefix that is in no extension row, only in the explicit eagleplayer list. */
-    CHECK(sel_gui_platform_of_ext("dum") == SEL_GUI_FAMILY_MUSIC);
-    CHECK(sel_gui_platform_of_name("dum.song") == SEL_GUI_FAMILY_AMIGA);
-    CHECK(sel_gui_platform_of_name("DUM.Song") == SEL_GUI_FAMILY_AMIGA);
-    CHECK(sel_gui_platform_of_name("mon_old.x") == SEL_GUI_FAMILY_AMIGA);
-    CHECK(sel_gui_platform_of_name("qqq.song") == SEL_GUI_FAMILY_MUSIC);
+    CHECK(sel_platform_of_ext("dum") == SEL_PLATFORM_FAMILY_MUSIC);
+    CHECK(sel_platform_of_name("dum.song") == SEL_PLATFORM_FAMILY_AMIGA);
+    CHECK(sel_platform_of_name("DUM.Song") == SEL_PLATFORM_FAMILY_AMIGA);
+    CHECK(sel_platform_of_name("mon_old.x") == SEL_PLATFORM_FAMILY_AMIGA);
+    CHECK(sel_platform_of_name("qqq.song") == SEL_PLATFORM_FAMILY_MUSIC);
 }
 
 /* I691c: the majority rule. A tie goes to the family earlier in table order; Music wins only when alone. */
-static void tally_of(sel_gui_family_tally* t, const char* const* names) {
+static void tally_of(sel_platform_family_tally* t, const char* const* names) {
     memset(t, 0, sizeof *t);
     while (*names != NULL) {
-        sel_gui_family_tally_add(t, *names++);
+        sel_platform_family_tally_add(t, *names++);
     }
 }
 
 static void test_majority(void) {
-    sel_gui_family_tally t;
+    sel_platform_family_tally t;
     char f[16];
     const char* mixed[] = {"a.mp3", "b.mod", "c.mod", "d.mod", NULL};
     const char* tie[] = {"a.xm", "b.xm", "c.mod", "d.mod", NULL};
@@ -145,24 +145,24 @@ static void test_majority(void) {
     const char* none[] = {NULL};
 
     tally_of(&t, mixed);
-    CHECK(sel_gui_family_tally_majority(&t) == SEL_GUI_FAMILY_AMIGA);
-    sel_gui_family_tally_format(&t, f, sizeof f);
-    CHECK(f[0] != '\0' && sel_gui_platform_of_ext(f) == SEL_GUI_FAMILY_AMIGA);
+    CHECK(sel_platform_family_tally_majority(&t) == SEL_PLATFORM_FAMILY_AMIGA);
+    sel_platform_family_tally_format(&t, f, sizeof f);
+    CHECK(f[0] != '\0' && sel_platform_of_ext(f) == SEL_PLATFORM_FAMILY_AMIGA);
     tally_of(&t, tie);
-    CHECK(sel_gui_family_tally_majority(&t) == SEL_GUI_FAMILY_AMIGA); /* Amiga before PC Tracker */
+    CHECK(sel_platform_family_tally_majority(&t) == SEL_PLATFORM_FAMILY_AMIGA); /* Amiga before PC Tracker */
     tally_of(&t, tie_rev);
-    CHECK(sel_gui_family_tally_majority(&t) == SEL_GUI_FAMILY_AMIGA); /* independent of song order */
+    CHECK(sel_platform_family_tally_majority(&t) == SEL_PLATFORM_FAMILY_AMIGA); /* independent of song order */
     tally_of(&t, plain);
-    CHECK(sel_gui_family_tally_majority(&t) == SEL_GUI_FAMILY_MUSIC);
-    sel_gui_family_tally_format(&t, f, sizeof f);
+    CHECK(sel_platform_family_tally_majority(&t) == SEL_PLATFORM_FAMILY_MUSIC);
+    sel_platform_family_tally_format(&t, f, sizeof f);
     CHECK(strcmp(f, "mp3") == 0);
     tally_of(&t, stray);
-    CHECK(sel_gui_family_tally_majority(&t) == SEL_GUI_FAMILY_PC_TRACKER); /* Music never beats a real family, even 3 to 1 */
+    CHECK(sel_platform_family_tally_majority(&t) == SEL_PLATFORM_FAMILY_PC_TRACKER); /* Music never beats a real family, even 3 to 1 */
     tally_of(&t, prefix);
-    CHECK(sel_gui_family_tally_majority(&t) == SEL_GUI_FAMILY_AMIGA);
+    CHECK(sel_platform_family_tally_majority(&t) == SEL_PLATFORM_FAMILY_AMIGA);
     tally_of(&t, none);
-    CHECK(sel_gui_family_tally_majority(&t) == SEL_GUI_FAMILY_MUSIC);
-    sel_gui_family_tally_format(&t, f, sizeof f);
+    CHECK(sel_platform_family_tally_majority(&t) == SEL_PLATFORM_FAMILY_MUSIC);
+    sel_platform_family_tally_format(&t, f, sizeof f);
     CHECK(f[0] == '\0');
 }
 
@@ -182,7 +182,7 @@ static void test_tones(void) {
     }
     CHECK(d >= 2u);
 
-    for (i = 0u; i < SEL_GUI_FAMILY_COUNT; i++) {
+    for (i = 0u; i < SEL_PLATFORM_FAMILY_COUNT; i++) {
         uint32_t base = sel_gui_cover_tone(g_tokens, i, 0u), dark = sel_gui_cover_tone(g_tokens, i, 1u),
                  light = sel_gui_cover_tone(g_tokens, i, 2u);
         int sh;
@@ -210,11 +210,11 @@ static void test_contrast(void) {
     double lt = lum(g_tokens[SEL_GUI_TOKEN_ACCENT_TEXT]);
 
     /* The platform families only: the Music family is the accent colour, whose contrast is the theme's own. */
-    for (f = 1u; f < SEL_GUI_FAMILY_COUNT; f++) {
+    for (f = 1u; f < SEL_PLATFORM_FAMILY_COUNT; f++) {
         double lb = lum(sel_gui_cover_tone(g_tokens, f, 0u));
         double ratio = (lt + 0.05) / (lb + 0.05);
         if (ratio < 4.5) {
-            printf("FAIL contrast of %s base tone is %.2f\n", sel_gui_platform_label(f), ratio);
+            printf("FAIL contrast of %s base tone is %.2f\n", sel_platform_label(f), ratio);
             g_fail++;
         }
     }
@@ -228,12 +228,12 @@ static void test_aga_palette(void) {
     tones = sel_gui_cover_palette(pal, g_tokens);
     CHECK(tones == sel_gui_cover_aga_tones());
     CHECK(tones == 1u || tones == 3u);
-    used = SEL_GUI_FAMILY_COUNT * tones + 1u; /* tones per family plus the text colour */
-    printf("aga palette: %u families x %u tone(s) + text = %u of 32 slots\n", (unsigned)SEL_GUI_FAMILY_COUNT, tones, used);
+    used = SEL_PLATFORM_FAMILY_COUNT * tones + 1u; /* tones per family plus the text colour */
+    printf("aga palette: %u families x %u tone(s) + text = %u of 32 slots\n", (unsigned)SEL_PLATFORM_FAMILY_COUNT, tones, used);
     CHECK(used <= 32u); /* the palette fits the free artwork slots (entries 32..63) */
     CHECK(pal[used - 1u] == text);
     sel_gui_set_palette(c, pal, 32u, 32u);
-    for (f = 0u; f < SEL_GUI_FAMILY_COUNT; f++) {
+    for (f = 0u; f < SEL_PLATFORM_FAMILY_COUNT; f++) {
         for (t = 0u; t < tones; t++) {
             CHECK(pal[f * tones + t] == sel_gui_cover_tone(g_tokens, f, t));
         }
@@ -260,7 +260,7 @@ static void test_draw(void) {
     font.missing.adv = 5;
     font.missing.by = 4;
 
-    for (f = 0u; f < SEL_GUI_FAMILY_COUNT; f++) {
+    for (f = 0u; f < SEL_PLATFORM_FAMILY_COUNT; f++) {
         uint32_t tone, field_ok = 0u, small_word = 0u, big_word = 0u, mark = 0u, hash;
         int32_t x, y;
         sel_gui_canvas* c;

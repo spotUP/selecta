@@ -13,242 +13,12 @@ uint32_t sel_gui_str_hash(const char* s) {
     return h;
 }
 
-typedef struct chip_row {
-    const char* ext;
-    uint8_t family;
-} chip_row;
-
-/* The one extension -> family table: the Modland names (library/formats_table.c) and the extensions the gme, ym and
- * openmpt replayers claim. Each console with formats of its own is its own family (Johan 2026-10-29). */
-#define F(f) SEL_GUI_FAMILY_##f
-static const chip_row k_chips[] = {
-    {"mod", F(AMIGA)},    {"stk", F(AMIGA)},    {"nst", F(AMIGA)},     {"med", F(AMIGA)},     {"mmd0", F(AMIGA)},
-    {"mmd1", F(AMIGA)},   {"mmd2", F(AMIGA)},   {"mmd3", F(AMIGA)},    {"okt", F(AMIGA)},     {"digi", F(AMIGA)},
-    {"dbm", F(AMIGA)},    {"symmod", F(AMIGA)}, {"fc13", F(AMIGA)},    {"fc14", F(AMIGA)},    {"hip", F(AMIGA)},
-    {"hipc", F(AMIGA)},   {"hip7", F(AMIGA)},   {"dw", F(AMIGA)},      {"fred", F(AMIGA)},    {"bp", F(AMIGA)},
-    {"bp3", F(AMIGA)},    {"sid1", F(AMIGA)},   {"sid2", F(AMIGA)},    {"dm1", F(AMIGA)},     {"dm2", F(AMIGA)},
-    {"sfx", F(AMIGA)},    {"tfx", F(AMIGA)},    {"mc", F(AMIGA)},      {"rh", F(AMIGA)},      {"jpn", F(AMIGA)},
-    {"ahx", F(AMIGA)},    {"hvl", F(AMIGA)},
-    {"sid", F(COMMODORE_64)},
-    {"ym", F(ATARI)},     {"sndh", F(ATARI)},   {"sap", F(ATARI)},
-    {"ay", F(ZX_SPECTRUM)},
-    {"xm", F(PC_TRACKER)}, {"s3m", F(PC_TRACKER)}, {"it", F(PC_TRACKER)}, {"mtm", F(PC_TRACKER)}, {"669", F(PC_TRACKER)},
-    {"far", F(PC_TRACKER)}, {"ult", F(PC_TRACKER)}, {"gtk", F(PC_TRACKER)}, {"rad", F(PC_TRACKER)},
-    {"nsf", F(NES)},      {"nsfe", F(NES)},
-    {"gbs", F(GAME_BOY)},
-    {"spc", F(SNES)},
-    {"hes", F(PC_ENGINE)},
-    {"kss", F(MSX)},
-    {"gym", F(MEGA_DRIVE)}, {"vgm", F(MEGA_DRIVE)},
-    {"mp3", F(MUSIC)},    {"mp2", F(MUSIC)},    {"ogg", F(MUSIC)},     {"flac", F(MUSIC)},
-};
-#undef F
-
-/* The Amiga file name prefixes the UADE eagleplayers claim ("dum.song"): every .extensions of third_party/nuade
- * players, matched on top of the extension table. Sorted (strcmp) for the binary search. */
-static const char* const k_uade_prefix[] = {
-    "aam", "abk", "adsc", "amc", "aps", "arp", "ash", "ast", "avp", "bd", "bds", "bfc", "bp", "bp2", "bp3",
-    "bsi", "bss", "bye", "cin", "core", "dat", "dh", "dl", "dl_deli", "dlm1", "dln", "dm", "dm1", "dm2",
-    "dmu", "dmu2", "dns", "dp", "dsc", "dsr", "dss", "dum", "dw", "dwold", "dz", "dzp", "ea", "emod", "ems",
-    "ex", "fc", "fc13", "fc14", "fc3", "fc4", "fp", "fred", "ftm", "fw", "glue", "gm", "gmc", "gray", "hd",
-    "hip", "hip7", "hipc", "hot", "is", "is10", "is20", "jam", "jb", "jc", "jcb", "jcbo", "jd", "jmf", "jo",
-    "jpn", "jpnd", "jpo", "jpold", "jt", "kh", "kim", "lme", "ma", "max", "mc", "mcmd", "mcmd_org", "mco",
-    "mcr", "md", "mg", "mii", "mk2", "mkii", "mkiio", "mm4", "mm8", "mmdc", "mod_adsc4", "mok", "mon",
-    "mon_old", "mso", "mth", "mug", "mug2", "mus", "mw", "okt", "okta", "one", "osp", "pap", "pn", "powt",
-    "ps", "psa", "psf", "pt", "ptm", "puma", "pvp", "qc", "qpa", "rh", "rho", "riff", "rj", "rjp", "rk",
-    "rkb", "s-c", "s7g", "sa", "sas", "sb", "sc", "scn", "scr", "sct", "scumm", "sd1", "sd2", "sdata", "sdr",
-    "sfx", "sg", "sid", "sid1", "sid2", "sj", "sm", "sm1", "sm2", "sm3", "smod", "smpro", "smus", "sng",
-    "snk", "snx", "soc", "sonic", "spl", "ss", "st", "sun", "syn", "synmod", "tf", "thm", "tiny", "tme",
-    "tmk", "tpu", "trc", "tro", "tron", "tronic", "tw", "two", "vss", "wb", "zm",};
-#define UADE_PREFIX_COUNT (sizeof k_uade_prefix / sizeof k_uade_prefix[0])
-
-static const char* const k_label[SEL_GUI_FAMILY_COUNT] = {"Music",       "Amiga",   "Commodore 64", "Atari", "ZX Spectrum",
-                                                          "PC Tracker",  "NES",     "Game Boy",     "SNES",  "PC Engine",
-                                                          "MSX",         "Mega Drive", "Console"};
-static const char* const k_id[SEL_GUI_FAMILY_COUNT] = {"music", "amiga", "commodore_64", "atari", "zx_spectrum",
-                                                       "pc_tracker", "nes", "game_boy", "snes", "pc_engine",
-                                                       "msx", "mega_drive", "console"};
-
-static void lower(char* dst, const char* src, size_t cap) {
-    size_t i;
-
-    for (i = 0; i + 1u < cap && src[i] != '\0'; i++) {
-        dst[i] = (src[i] >= 'A' && src[i] <= 'Z') ? (char)(src[i] + 32) : src[i];
-    }
-    dst[i] = '\0';
-}
-
-static int ext_row(const char* f) {
-    size_t i;
-
-    for (i = 0; i < sizeof k_chips / sizeof k_chips[0]; i++) {
-        if (strcmp(k_chips[i].ext, f) == 0) {
-            return (int)i;
-        }
-    }
-    return -1;
-}
-
-static int uade_prefix(const char* f) {
-    size_t lo = 0, hi = UADE_PREFIX_COUNT;
-
-    while (lo < hi) {
-        size_t mid = (lo + hi) / 2u;
-        int d = strcmp(f, k_uade_prefix[mid]);
-        if (d == 0) {
-            return 1;
-        }
-        if (d < 0) {
-            hi = mid;
-        } else {
-            lo = mid + 1u;
-        }
-    }
-    return 0;
-}
-
-uint32_t sel_gui_platform_ext_count(void) {
-    return (uint32_t)(sizeof k_chips / sizeof k_chips[0]);
-}
-
-uint32_t sel_gui_platform_uade_prefix_count(void) {
-    return (uint32_t)UADE_PREFIX_COUNT;
-}
-
-const char* sel_gui_platform_uade_prefix(uint32_t i) {
-    return i < UADE_PREFIX_COUNT ? k_uade_prefix[i] : "";
-}
-
-uint32_t sel_gui_platform_of_ext(const char* ext) {
-    char f[16];
-    int row;
-
-    if (ext == NULL) {
-        return SEL_GUI_FAMILY_MUSIC;
-    }
-    lower(f, ext, sizeof f);
-    row = ext_row(f);
-    return row >= 0 ? k_chips[row].family : SEL_GUI_FAMILY_MUSIC;
-}
-
-const char* sel_gui_path_ext(const char* name) {
-    const char *base, *p, *dot = NULL;
-
-    if (name == NULL) {
-        return NULL;
-    }
-    base = name;
-    for (p = name; *p != '\0'; p++) { /* the file part of a path ('/' or the Amiga ':') */
-        if (*p == '/' || *p == ':') {
-            base = p + 1;
-        }
-    }
-    for (p = base; *p != '\0'; p++) {
-        if (*p == '.') {
-            dot = p;
-        }
-    }
-    return dot != NULL ? dot + 1 : NULL;
-}
-
-uint32_t sel_gui_platform_of_name(const char* name) {
-    const char *base, *p, *dot, *first = NULL;
-    char f[16], pre[16];
-    size_t n;
-    int row;
-
-    dot = sel_gui_path_ext(name);
-    if (dot == NULL) {
-        return SEL_GUI_FAMILY_MUSIC;
-    }
-    base = name;
-    for (p = name; *p != '\0'; p++) {
-        if (*p == '/' || *p == ':') {
-            base = p + 1;
-        }
-    }
-    for (p = base; *p != '\0' && first == NULL; p++) {
-        if (*p == '.') {
-            first = p;
-        }
-    }
-    lower(f, dot, sizeof f); /* the last extension */
-    row = ext_row(f);
-    if (row >= 0) {
-        return k_chips[row].family;
-    }
-    n = (size_t)(first - base); /* the Amiga prefix */
-    if (n > 0u && n < sizeof pre) {
-        memcpy(pre, base, n);
-        pre[n] = '\0';
-        lower(f, pre, sizeof f);
-        row = ext_row(f);
-        if (row >= 0) {
-            return k_chips[row].family;
-        }
-        if (uade_prefix(f)) {
-            return SEL_GUI_FAMILY_AMIGA;
-        }
-    }
-    return SEL_GUI_FAMILY_MUSIC;
-}
-
-void sel_gui_family_tally_add(sel_gui_family_tally* t, const char* name) {
-    uint32_t f = sel_gui_platform_of_name(name);
-    const char* ext;
-
-    t->n[f]++;
-    if (f == SEL_GUI_FAMILY_MUSIC && t->music_ext[0] == '\0') {
-        ext = sel_gui_path_ext(name);
-        if (ext != NULL) {
-            lower(t->music_ext, ext, sizeof t->music_ext);
-        }
-    }
-}
-
-uint32_t sel_gui_family_tally_majority(const sel_gui_family_tally* t) {
-    uint32_t f, best = SEL_GUI_FAMILY_MUSIC, top = 0;
-
-    for (f = SEL_GUI_FAMILY_MUSIC + 1u; f < SEL_GUI_FAMILY_COUNT; f++) { /* strictly greater: a tie keeps the earlier family */
-        if (t->n[f] > top) {
-            top = t->n[f];
-            best = f;
-        }
-    }
-    return best;
-}
-
-void sel_gui_family_tally_format(const sel_gui_family_tally* t, char* out, size_t cap) {
-    uint32_t f = sel_gui_family_tally_majority(t), i, rows = sel_gui_platform_ext_count();
-    const char* ext = "";
-
-    if (f == SEL_GUI_FAMILY_MUSIC) {
-        ext = t->music_ext;
-    } else {
-        for (i = 0; i < rows; i++) {
-            if (k_chips[i].family == f) {
-                ext = k_chips[i].ext;
-                break;
-            }
-        }
-    }
-    lower(out, ext, cap);
-}
-
-const char* sel_gui_platform_label(uint32_t family) {
-    return family < SEL_GUI_FAMILY_COUNT ? k_label[family] : k_label[0];
-}
-
-const char* sel_gui_platform_id(uint32_t family) {
-    return family < SEL_GUI_FAMILY_COUNT ? k_id[family] : k_id[0];
-}
-
 const char* sel_gui_genart_chip(const char* format) {
-    switch (sel_gui_platform_of_ext(format)) {
-    case SEL_GUI_FAMILY_AMIGA: return "paula";
-    case SEL_GUI_FAMILY_COMMODORE_64: return "sid";
-    case SEL_GUI_FAMILY_ATARI: return "ay";
-    case SEL_GUI_FAMILY_NES: return "2a03";
+    switch (sel_platform_of_ext(format)) {
+    case SEL_PLATFORM_FAMILY_AMIGA: return "paula";
+    case SEL_PLATFORM_FAMILY_COMMODORE_64: return "sid";
+    case SEL_PLATFORM_FAMILY_ATARI: return "ay";
+    case SEL_PLATFORM_FAMILY_NES: return "2a03";
     default: return "software";
     }
 }
@@ -258,17 +28,17 @@ const char* sel_gui_genart_chip(const char* format) {
 enum { COVER_TONES = 3, ART_SLOTS = 32 };
 
 static uint32_t family_base(const uint32_t* tokens, uint32_t family) {
-    if (family >= SEL_GUI_FAMILY_COUNT) {
-        family = SEL_GUI_FAMILY_MUSIC;
+    if (family >= SEL_PLATFORM_FAMILY_COUNT) {
+        family = SEL_PLATFORM_FAMILY_MUSIC;
     }
-    if (family == SEL_GUI_FAMILY_MUSIC) {
+    if (family == SEL_PLATFORM_FAMILY_MUSIC) {
         return tokens[SEL_GUI_TOKEN_ACCENT] & 0xFFFFFFu;
     }
     return tokens[SEL_GUI_TOKEN_COVER_AMIGA + (family - 1u)] & 0xFFFFFFu;
 }
 
 uint32_t sel_gui_cover_aga_tones(void) {
-    return (SEL_GUI_FAMILY_COUNT * COVER_TONES + 1u <= ART_SLOTS) ? COVER_TONES : 1u;
+    return (SEL_PLATFORM_FAMILY_COUNT * COVER_TONES + 1u <= ART_SLOTS) ? COVER_TONES : 1u;
 }
 
 uint32_t sel_gui_cover_tone(const uint32_t* tokens, uint32_t family, uint32_t tone) {
@@ -293,7 +63,7 @@ uint32_t sel_gui_cover_palette(uint32_t out[32], const uint32_t* tokens) {
     uint32_t tones = sel_gui_cover_aga_tones(), f, t, n = 0u;
     uint32_t text = tokens[SEL_GUI_TOKEN_ACCENT_TEXT] & 0xFFFFFFu;
 
-    for (f = 0u; f < SEL_GUI_FAMILY_COUNT; f++) {
+    for (f = 0u; f < SEL_PLATFORM_FAMILY_COUNT; f++) {
         for (t = 0u; t < tones; t++) {
             out[n++] = sel_gui_cover_tone(tokens, f, t);
         }
@@ -335,19 +105,19 @@ static void family_mark(sel_gui_canvas* c, uint32_t family, int32_t x0, int32_t 
     q.w = s;
     q.h = s;
     switch (family) {
-    case SEL_GUI_FAMILY_AMIGA: {
+    case SEL_PLATFORM_FAMILY_AMIGA: {
         static const int32_t hh[4] = {8, 5, 7, 3};
         for (i = 0; i < 4; i++) {
             box(c, x0 + i * (s / 4), y0 + s - s * hh[i] / 8, s / 7, s * hh[i] / 8, fg);
         }
         break;
     }
-    case SEL_GUI_FAMILY_COMMODORE_64:
+    case SEL_PLATFORM_FAMILY_COMMODORE_64:
         for (i = 0; i < 3; i++) {
             box(c, x0, y0 + i * (s * 2 / 5), s * (3 - i) / 3, s / 5, fg);
         }
         break;
-    case SEL_GUI_FAMILY_ATARI: {
+    case SEL_PLATFORM_FAMILY_ATARI: {
         static const int32_t hh[3] = {6, 4, 6};
         for (i = 0; i < 3; i++) {
             box(c, x0 + i * (s * 2 / 5), y0 + s - s / 8 - s * hh[i] / 8, s / 5, s * hh[i] / 8, fg);
@@ -355,7 +125,7 @@ static void family_mark(sel_gui_canvas* c, uint32_t family, int32_t x0, int32_t 
         box(c, x0, y0 + s - s / 8, s, s / 8, fg);
         break;
     }
-    case SEL_GUI_FAMILY_ZX_SPECTRUM: {
+    case SEL_PLATFORM_FAMILY_ZX_SPECTRUM: {
         int32_t w = s / 8 < 1 ? 1 : s / 8;
         for (j = 0; j < s; j++) {
             for (k = 0; k < 4; k++) {
@@ -368,7 +138,7 @@ static void family_mark(sel_gui_canvas* c, uint32_t family, int32_t x0, int32_t 
         }
         break;
     }
-    case SEL_GUI_FAMILY_PC_TRACKER: {
+    case SEL_PLATFORM_FAMILY_PC_TRACKER: {
         static const uint32_t cells = 0xA5C3B9u;
         u = s / 6 < 1 ? 1 : s / 6;
         for (j = 0; j < 6; j++) {
@@ -380,12 +150,12 @@ static void family_mark(sel_gui_canvas* c, uint32_t family, int32_t x0, int32_t 
         }
         break;
     }
-    case SEL_GUI_FAMILY_NES:
+    case SEL_PLATFORM_FAMILY_NES:
         u = s / 3;
         box(c, x0, y0 + u, s, u, fg);
         box(c, x0 + u, y0, u, s, fg);
         break;
-    case SEL_GUI_FAMILY_GAME_BOY:
+    case SEL_PLATFORM_FAMILY_GAME_BOY:
         q.x = x0 + s / 6;
         q.w = s * 2 / 3;
         sel_gui_round_rect(c, q, s / 10, fg);
@@ -394,28 +164,28 @@ static void family_mark(sel_gui_canvas* c, uint32_t family, int32_t x0, int32_t 
         box(c, q.x + s / 5, y0 + s * 7 / 10, u, u, bg);
         box(c, q.x + q.w - s / 5 - u, y0 + s * 7 / 10, u, u, bg);
         break;
-    case SEL_GUI_FAMILY_SNES:
+    case SEL_PLATFORM_FAMILY_SNES:
         u = s / 3;
         disc(c, x0 + u, y0, u, fg);
         disc(c, x0 + u, y0 + s - u, u, fg);
         disc(c, x0, y0 + u, u, fg);
         disc(c, x0 + s - u, y0 + u, u, fg);
         break;
-    case SEL_GUI_FAMILY_PC_ENGINE:
+    case SEL_PLATFORM_FAMILY_PC_ENGINE:
         sel_gui_round_frame(c, q, s / 2, s / 6 < 1 ? 1 : s / 6, fg);
         break;
-    case SEL_GUI_FAMILY_MSX:
+    case SEL_PLATFORM_FAMILY_MSX:
         u = s / 3;
         box(c, x0, y0 + 2 * u, u, u, fg);
         box(c, x0 + u, y0 + u, u, u, fg);
         box(c, x0 + 2 * u, y0, u, u, fg);
         break;
-    case SEL_GUI_FAMILY_MEGA_DRIVE:
+    case SEL_PLATFORM_FAMILY_MEGA_DRIVE:
         u = s / 2;
         disc(c, x0, y0 + s / 4, u, fg);
         disc(c, x0 + s - u, y0 + s / 4, u, fg);
         break;
-    case SEL_GUI_FAMILY_CONSOLE:
+    case SEL_PLATFORM_FAMILY_CONSOLE:
         sel_gui_round_frame(c, q, s / 5, s / 8 < 1 ? 1 : s / 8, fg);
         break;
     default:
@@ -432,8 +202,8 @@ void sel_gui_cover_draw(sel_gui_canvas* c, sel_gui_rect r, uint32_t family, uint
     if (r.w <= 0 || r.h <= 0) {
         return;
     }
-    if (family >= SEL_GUI_FAMILY_COUNT) {
-        family = SEL_GUI_FAMILY_MUSIC;
+    if (family >= SEL_PLATFORM_FAMILY_COUNT) {
+        family = SEL_PLATFORM_FAMILY_MUSIC;
     }
     t0 = sel_gui_prof_begin(c);
     region = c->region;
@@ -451,7 +221,7 @@ void sel_gui_cover_draw(sel_gui_canvas* c, sel_gui_rect r, uint32_t family, uint
     }
     if (label_font != NULL && edge >= 64) {
         sel_gui_text_draw(c, label_font, r.x + margin, r.y + r.h - margin - label_font->line_height,
-                          sel_gui_platform_label(family), text, r.w - 2 * margin, NULL);
+                          sel_platform_label(family), text, r.w - 2 * margin, NULL);
     }
     c->region = region;
     sel_gui_prof_end(c, SEL_GUI_PROF_GENART, t0);
@@ -501,7 +271,7 @@ static void genart_draw(sel_gui_canvas* c, sel_gui_rect r, const char* format, u
     int32_t cell, ox, oy, x, y;
     sel_gui_rect g;
 
-    lower(f, format, sizeof f);
+    sel_platform_lower(f, format, sizeof f);
     fh = sel_gui_str_hash(f);
     ch = sel_gui_str_hash(sel_gui_genart_chip(f));
     hue = (ch % 1536u + (title_hash >> 8) % 192u) % 1536u; /* the chip sets the colour family, the title nudges it */

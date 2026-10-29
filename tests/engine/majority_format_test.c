@@ -30,7 +30,7 @@ static int g_fail;
         }                                               \
     } while (0)
 
-static uint32_t fam(const char* name_or_ext) { return sel_gui_platform_of_ext(name_or_ext); }
+static uint32_t fam(const char* name_or_ext) { return sel_platform_of_ext(name_or_ext); }
 
 typedef struct shelf_ctx {
     char fmt[4][16];
@@ -106,25 +106,25 @@ int main(void) {
     CHECK(st1.library_items_calls == st0.library_items_calls + 1u); /* sentinel: the call reached the library */
     CHECK(n >= 9u);
     it = find(all, n, SEL_LIB_ITEM_ALBUM, "Mixed");
-    CHECK(it != NULL && it->format[0] != '\0' && fam(it->format) == SEL_GUI_FAMILY_AMIGA); /* 3 mod beat 1 mp3 */
+    CHECK(it != NULL && it->format[0] != '\0' && fam(it->format) == SEL_PLATFORM_FAMILY_AMIGA); /* 3 mod beat 1 mp3 */
     it = find(all, n, SEL_LIB_ITEM_ALBUM, "Tied");
-    CHECK(it != NULL && fam(it->format) == SEL_GUI_FAMILY_AMIGA); /* 2 mod / 2 xm: Amiga before PC Tracker */
+    CHECK(it != NULL && fam(it->format) == SEL_PLATFORM_FAMILY_AMIGA); /* 2 mod / 2 xm: Amiga before PC Tracker */
     it = find(all, n, SEL_LIB_ITEM_ALBUM, "Plain");
-    CHECK(it != NULL && it->format[0] != '\0' && fam(it->format) == SEL_GUI_FAMILY_MUSIC); /* Music when alone */
+    CHECK(it != NULL && it->format[0] != '\0' && fam(it->format) == SEL_PLATFORM_FAMILY_MUSIC); /* Music when alone */
     it = find(all, n, SEL_LIB_ITEM_ALBUM, "Stray");
-    CHECK(it != NULL && fam(it->format) == SEL_GUI_FAMILY_PC_TRACKER); /* one tracker song beats a stray mp3 */
+    CHECK(it != NULL && fam(it->format) == SEL_PLATFORM_FAMILY_PC_TRACKER); /* one tracker song beats a stray mp3 */
     it = find(all, n, SEL_LIB_ITEM_ARTIST, "Bob");
-    CHECK(it != NULL && fam(it->format) == SEL_GUI_FAMILY_AMIGA);
+    CHECK(it != NULL && fam(it->format) == SEL_PLATFORM_FAMILY_AMIGA);
     it = find(all, n, SEL_LIB_ITEM_PLAYLIST, "Mod Mix");
-    CHECK(it != NULL && fam(it->format) == SEL_GUI_FAMILY_AMIGA);
+    CHECK(it != NULL && fam(it->format) == SEL_PLATFORM_FAMILY_AMIGA);
 
     /* 2. A collection shelf: the artist's albums carry the album's format in field 5. */
     memset(&sc, 0, sizeof sc);
     CHECK(sel_library_collection(lib, SEL_LIB_ITEM_ARTIST, "Bob", SEL_COLL_ALBUMS, shelf_row, &sc) >= 0);
-    CHECK(sc.n == 1u && strcmp(sc.name[0], "Tied") == 0 && sc.fmt[0][0] != '\0' && fam(sc.fmt[0]) == SEL_GUI_FAMILY_AMIGA);
+    CHECK(sc.n == 1u && strcmp(sc.name[0], "Tied") == 0 && sc.fmt[0][0] != '\0' && fam(sc.fmt[0]) == SEL_PLATFORM_FAMILY_AMIGA);
     memset(&sc, 0, sizeof sc);
     CHECK(sel_library_collection(lib, SEL_LIB_ITEM_ARTIST, "Ann", SEL_COLL_ALBUMS, shelf_row, &sc) >= 0);
-    CHECK(sc.n == 1u && sc.fmt[0][0] != '\0' && fam(sc.fmt[0]) == SEL_GUI_FAMILY_AMIGA);
+    CHECK(sc.n == 1u && sc.fmt[0][0] != '\0' && fam(sc.fmt[0]) == SEL_PLATFORM_FAMILY_AMIGA);
 
     /* 3. Home: the album tile of the played album, through the library text and the view parser. */
     memset(&v, 0, sizeof v);
@@ -134,7 +134,7 @@ int main(void) {
     for (i = 0; i < v.frow_n; i++) {
         if (v.frows[i].album && v.frows[i].key != NULL && strcmp(v.frows[i].key, "Mixed") == 0) {
             seen_tile = 1;
-            CHECK(v.frows[i].format != NULL && v.frows[i].format[0] != '\0' && fam(v.frows[i].format) == SEL_GUI_FAMILY_AMIGA);
+            CHECK(v.frows[i].format != NULL && v.frows[i].format[0] != '\0' && fam(v.frows[i].format) == SEL_PLATFORM_FAMILY_AMIGA);
             CHECK(v.frows[i].art_id != 0u); /* the id tag before the format tag still parses */
         }
     }

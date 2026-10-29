@@ -1465,7 +1465,7 @@ static void draw_detail(desk* d) {
 
 /* The lower case family id of a pc_* slot (family + 1), "none" when real art won. */
 static const char* pc_name(uint32_t slot) {
-    return (slot & 0xFFu) == 0u ? "none" : sel_gui_platform_id((slot & 0xFFu) - 1u);
+    return (slot & 0xFFu) == 0u ? "none" : sel_platform_id((slot & 0xFFu) - 1u);
 }
 
 /* The logical pixel size of the word a cover drew (0 = none), kept in the bits above the family byte of a pc_* slot. */
@@ -1476,7 +1476,7 @@ static uint32_t pc_word(uint32_t slot) {
 /* The song fallback (I691b): the platform cover of the family of `path`, drawn where a song has no real art. `slot` receives
  * family + 1 for the dump line `platform_covers`; draws counts every call, the sentinel of the fallback branch. */
 static void song_platform_cover(desk* d, sel_gui_rect ar, const char* path, const char* title, uint32_t* slot) {
-    uint32_t family = sel_gui_platform_of_name(path);
+    uint32_t family = sel_platform_of_name(path);
     int32_t edge = px_to_logical(d, ar.w < ar.h ? ar.w : ar.h); /* logical: a 2x canvas shows a 56 px bar thumb at 112 px */
     int32_t want = edge / 7, px = 0, i;
     const sel_gui_atlas* word = NULL;
@@ -1499,7 +1499,7 @@ static void song_platform_cover(desk* d, sel_gui_rect ar, const char* path, cons
 /* The format of queue entry i: its file extension, "" without one. */
 static void queue_format(const sel_state* st, uint32_t i, char* out, size_t cap) {
     const char* path = st->queue_text + st->queue[i].path_offset;
-    const char* ext = sel_gui_path_ext(path);
+    const char* ext = sel_platform_path_ext(path);
     if (ext == NULL || strlen(ext) >= cap) {
         out[0] = '\0';
         return;

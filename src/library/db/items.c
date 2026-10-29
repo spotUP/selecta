@@ -10,7 +10,7 @@
 
 #include "../composer.h"
 
-#include <selecta/gui/gui_genart.h>
+#include <selecta/platform.h>
 #include <selecta/library_item.h>
 
 #include <stdio.h>
@@ -147,7 +147,7 @@ static const char* format_sql(uint32_t kind) {
 void sel_db_majority_format(sqlite3* db, uint32_t kind, const char* key, char* out, size_t cap) {
     const char* q = format_sql(kind);
     sqlite3_stmt* st = NULL;
-    sel_gui_family_tally t;
+    sel_platform_family_tally t;
 
     out[0] = '\0';
     if (q == NULL || sqlite3_prepare_v2(db, q, -1, &st, NULL) != SQLITE_OK) return;
@@ -156,10 +156,10 @@ void sel_db_majority_format(sqlite3* db, uint32_t kind, const char* key, char* o
     while (sqlite3_step(st) == SQLITE_ROW) {
         const char* path = (const char*)sqlite3_column_text(st, 0);
 
-        if (path != NULL) sel_gui_family_tally_add(&t, path);
+        if (path != NULL) sel_platform_family_tally_add(&t, path);
     }
     sqlite3_finalize(st);
-    sel_gui_family_tally_format(&t, out, cap);
+    sel_platform_family_tally_format(&t, out, cap);
 }
 
 int sel_library_items_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id) {
