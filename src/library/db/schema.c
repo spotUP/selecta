@@ -197,18 +197,21 @@ static const char SCHEMA_V9[] =
  * art_store (an embedded cover found by the scan), so an album without a cover never reached the Library Albums list (PART_ALBUM
  * lists FROM albums). Keys are the ones art_store looks up: name, artist IS (empty = NULL), source NULL or the song's source, so a
  * later cover store finds this row instead of adding a second. The last song of an album takes the albums row and its artwork with it (the
- * delete trigger; the update trigger only adds, since orphan cleanup there inflates the scan upsert past the 512 KB heap, I577), like
+ * delete trigger; the update trigger only adds; a retag's orphan is dropped by scan.c, since any UPDATE trigger beyond this one breaks the 512 KB heap, I577), like
  * the row folders.c removes with a single song. */
 #define V10_ADD(r) \
     "INSERT INTO albums(name, artist, source) SELECT " r ".album, NULLIF(" r ".artist,''), " r ".source WHERE " r ".album IS NOT NULL" \
     " AND " r ".album <> '' AND NOT EXISTS (SELECT 1 FROM albums a WHERE a.name = " r ".album AND a.artist IS NULLIF(" r ".artist,'')" \
     " AND (a.source IS NULL OR a.source = " r ".source));"
-#define V10_GONE \
-    "(SELECT a.id FROM albums a WHERE a.name = old.album AND a.artist IS NULLIF(old.artist,'')" \
-    " AND NOT EXISTS (SELECT 1 FROM songs o WHERE o.album = old.album AND NULLIF(o.artist,'') IS NULLIF(old.artist,'')))"
-#define V10_DROP \
-    "DELETE FROM artwork WHERE old.album IS NOT NULL AND album_id IN " V10_GONE ";" \
-    "DELETE FROM albums WHERE old.album IS NOT NULL AND id IN " V10_GONE ";"
+#define V10_GONE_OF(alb, art) \
+    "(SELECT a.id FROM albums a WHERE a.name = " alb " AND a.artist IS NULLIF(" art ",'')" \
+    " AND NOT EXISTS (SELECT 1 FROM songs o WHERE o.album = " alb " AND NULLIF(o.artist,'') IS NULLIF(" art ",'')))"
+#define V10_DROP_OF(alb, art) \
+    "DELETE FROM artwork WHERE " alb " IS NOT NULL AND album_id IN " V10_GONE_OF(alb, art) ";" \
+    "DELETE FROM albums WHERE " alb " IS NOT NULL AND id IN " V10_GONE_OF(alb, art) ";"
+#define V10_DROP V10_DROP_OF("old.album", "old.artist")
+/* The same drop for a retag, bound as ?1 = old album, ?2 = old artist; the scan upsert runs it (scan.c) after it moves a song off its album. */
+const char SEL_SQL_ALBUM_DROP[] = V10_DROP_OF("?1", "?2");
 static const char SCHEMA_V10[] =
     "INSERT INTO albums(name, artist, source) SELECT s.album, NULLIF(s.artist,''), s.source FROM songs s WHERE s.album IS NOT NULL"
     " AND s.album <> '' AND NOT EXISTS (SELECT 1 FROM albums a WHERE a.name = s.album AND a.artist IS NULLIF(s.artist,'')"

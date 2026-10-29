@@ -6,6 +6,9 @@
 
 /* PRAGMA user_version, or -1 on error. */
 int sel_schema_version(sqlite3* db);
+
+/* Deletes the albums row (and its artwork) for album ?1, artist ?2 when no song is left in it (a retag moved the last one away). */
+extern const char SEL_SQL_ALBUM_DROP[];
 /* Applies every missing migration; 1 on success, 0 on failure or a DB newer than this build. */
 int sel_schema_migrate(sqlite3* db);
 

@@ -101,9 +101,29 @@ int main(void) {
     sql(db, "INSERT INTO songs(key, source, path, name, artist, album) VALUES('local:c1','local','c1','c','Zed','Covered')");
     check(scalar(db, "SELECT COUNT(*) FROM albums WHERE name='Covered'") == 1, "song after cover: one row");
 
-    /* Retagging adds the new album (the emptied old one stays: orphan cleanup in the update trigger blows the 512 KB scan heap, I577). */
-    sql(db, "UPDATE songs SET album='Retagged' WHERE key='local:c1'");
+    /* Retagging the only song of an album moves the row: the new album exists, the emptied one goes with its artwork (I687b). */
+    check(scalar(db, "SELECT COUNT(*) FROM artwork w JOIN albums a ON a.id=w.album_id WHERE a.name='Covered'") == 1, "Covered has artwork before the retag");
+    {
+        /* The scan upsert is the retag path (a rescan sees new tags): same key, new album. */
+        sel_scan_row row;
+        sel_scan_batch batch;
+        sel_message sreply;
+        memset(&row, 0, sizeof row);
+        row.source = "local";
+        row.path = "c1";
+        row.format = "mod";
+        row.artist = "Zed";
+        row.album = "Retagged";
+        row.name = "c";
+        batch.rows = &row;
+        batch.count = 1;
+        batch.now = 1;
+        sel_library_scan_batch(lib, &batch, &sreply);
+        check(sreply.args[1].v.i == SQLITE_OK, "retag scan batch ok");
+    }
     check(scalar(db, "SELECT COUNT(*) FROM albums WHERE name='Retagged'") == 1, "retag adds the new album");
+    check(scalar(db, "SELECT COUNT(*) FROM albums WHERE name='Covered'") == 0, "retag removes the emptied album");
+    check(scalar(db, "SELECT COUNT(*) FROM artwork w LEFT JOIN albums a ON a.id=w.album_id WHERE a.id IS NULL") == 0, "no orphan artwork");
 
     /* Deleting one of two songs keeps the row; the last one removes it. */
     sql(db, "DELETE FROM songs WHERE key='local:a1'");
