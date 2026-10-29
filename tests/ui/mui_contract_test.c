@@ -412,6 +412,21 @@ static void test_pens(void) {
         CHECK(pl.dri_pens[i] >= 0 && pl.dri_pens[i] < MUI_PEN_COUNT, "DrawInfo pen %d points at a palette slot", i);
         pens_rgb[i] = pl.rgb[pl.dri_pens[i]];
     }
+    /* I663: the Intuition frame parts (window title bar, borders, resize gadget, divider shading) are drawn from the screen
+     * DrawInfo pens, so each must resolve to a dark token (every channel below 0x60) and the bar and frame text to the TEXT
+     * token. DrawInfo pen order: DETAIL 0, BLOCK 1, TEXT 2, SHINE 3, SHADOW 4, FILL 5, FILLTEXT 6, BACKGROUND 7, HILIGHTTEXT 8,
+     * BARDETAIL 9, BARBLOCK 10, BARTRIM 11. Rig 2 pixel read (2026-10-29) found no light or blue-grey frame colour. */
+    {
+        static const int dark_pens[] = {1, 3, 4, 5, 7, 10, 11};
+        static const char* const dark_names[] = {"BLOCK", "SHINE", "SHADOW", "FILL", "BACKGROUND", "BARBLOCK (title bar)", "BARTRIM (frame trim)"};
+        for (i = 0; i < 7; i++) {
+            uint32_t c = pens_rgb[dark_pens[i]];
+            CHECK(((c >> 16) & 0xFFu) < 0x60u && ((c >> 8) & 0xFFu) < 0x60u && (c & 0xFFu) < 0x60u, "DrawInfo pen %s is a dark token, got %06x",
+                  dark_names[i], (unsigned)c);
+        }
+        CHECK(pl.dri_pens[10] == MUI_PEN_PANEL && pl.dri_pens[11] == MUI_PEN_BACKGROUND && pl.dri_pens[9] == MUI_PEN_TEXT,
+              "title bar: BARBLOCK is PANEL, BARTRIM is BACKGROUND, BARDETAIL is TEXT");
+    }
     /* I672 mui-pens-muted: secondary labels draw in TEXT_MUTED (A0A0AC), primary text stays TEXT (C8C8D0). The muted slot is a
      * DrawInfo pen (0..7) so the MUI text escape can select it; TEXTPEN stays the TEXT slot. */
     CHECK(pl.rgb[MUI_PEN_TEXT_MUTED] == 0xA0A0ACu && pl.rgb[MUI_PEN_TEXT_MUTED] == th.token[SEL_GUI_TOKEN_TEXT_MUTED], "pen table holds A0A0AC for TEXT_MUTED");
