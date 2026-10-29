@@ -3589,7 +3589,7 @@ static uint32_t browse_tiles(const desk* d, browse_tile* out, uint32_t cap) {
 /* I711: the Browse tile grid's column count and total content height (headings and tile rows), the one measure the drawer and the
  * wheel clamp share. */
 static int32_t browse_content_h(desk* d, const browse_tile* t, uint32_t n, uint32_t* cols_out) {
-    sel_gui_rect mn = region_rect(d, "main");
+    sel_gui_rect mn = panel_rect(d, "main");
     int32_t gap = lpx(d, GRID_GAP), avail = mn.w - 2 * lpx(d, LIB_MARGIN), y = lpx(d, 16);
     uint32_t cols = avail >= lpx(d, BROWSE_TILE_MIN_W) ? (uint32_t)((avail + gap) / (lpx(d, BROWSE_TILE_MIN_W) + gap)) : 1u, kind, i;
     for (kind = 0; kind < 4u; kind++) { /* I678i: four kinds, Folders included */
@@ -3608,7 +3608,7 @@ static int32_t browse_content_h(desk* d, const browse_tile* t, uint32_t n, uint3
 static int32_t browse_max_q16(desk* d) {
     browse_tile t[BROWSE_MAX];
     uint32_t n = browse_tiles(d, t, BROWSE_MAX), cols;
-    int32_t over = browse_content_h(d, t, n, &cols) + lpx(d, 16) - region_rect(d, "main").h;
+    int32_t over = browse_content_h(d, t, n, &cols) + lpx(d, 16) - panel_rect(d, "main").h;
     return over > 0 ? px_to_logical_ceil(d, over) << 16 : 0;
 }
 
@@ -7946,7 +7946,7 @@ static const int browse_palette[BROWSE_PALETTE] = {SEL_GUI_TOKEN_ACCENT, SEL_GUI
 static const char* const browse_head[4] = {"Formats", "Composers", "Sources", "Folders"};
 
 static void draw_browse(desk* d) {
-    sel_gui_rect mn = region_rect(d, "main");
+    sel_gui_rect mn = draw_panel(d, "main"); /* repaint the panel first: a scrolled frame must not keep the tiles of the frame before */
     browse_tile t[BROWSE_MAX];
     uint32_t n = browse_tiles(d, t, BROWSE_MAX), i, cols, kind, col, order;
     int32_t gap = lpx(d, GRID_GAP), margin = lpx(d, LIB_MARGIN), avail = mn.w - 2 * margin, tw, th = lpx(d, BROWSE_TILE_H), y;
