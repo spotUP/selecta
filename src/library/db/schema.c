@@ -193,8 +193,32 @@ static const char SCHEMA_V8[] =
 static const char SCHEMA_V9[] =
     "CREATE TABLE opened(kind INTEGER NOT NULL, id TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(kind, id)) WITHOUT ROWID;";
 
-static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4,
-                                           SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9};
+/* I687: every distinct (album, artist, source) of songs with a non-empty album has one albums row. Before this the only writer was
+ * art_store (an embedded cover found by the scan), so an album without a cover never reached the Library Albums list (PART_ALBUM
+ * lists FROM albums). Keys are the ones art_store looks up: name, artist IS (empty = NULL), source NULL or the song's source, so a
+ * later cover store finds this row instead of adding a second. The last song of an album takes the albums row and its artwork with it (the
+ * delete trigger; the update trigger only adds, since orphan cleanup there inflates the scan upsert past the 512 KB heap, I577), like
+ * the row folders.c removes with a single song. */
+#define V10_ADD(r) \
+    "INSERT INTO albums(name, artist, source) SELECT " r ".album, NULLIF(" r ".artist,''), " r ".source WHERE " r ".album IS NOT NULL" \
+    " AND " r ".album <> '' AND NOT EXISTS (SELECT 1 FROM albums a WHERE a.name = " r ".album AND a.artist IS NULLIF(" r ".artist,'')" \
+    " AND (a.source IS NULL OR a.source = " r ".source));"
+#define V10_GONE \
+    "(SELECT a.id FROM albums a WHERE a.name = old.album AND a.artist IS NULLIF(old.artist,'')" \
+    " AND NOT EXISTS (SELECT 1 FROM songs o WHERE o.album = old.album AND NULLIF(o.artist,'') IS NULLIF(old.artist,'')))"
+#define V10_DROP \
+    "DELETE FROM artwork WHERE old.album IS NOT NULL AND album_id IN " V10_GONE ";" \
+    "DELETE FROM albums WHERE old.album IS NOT NULL AND id IN " V10_GONE ";"
+static const char SCHEMA_V10[] =
+    "INSERT INTO albums(name, artist, source) SELECT s.album, NULLIF(s.artist,''), s.source FROM songs s WHERE s.album IS NOT NULL"
+    " AND s.album <> '' AND NOT EXISTS (SELECT 1 FROM albums a WHERE a.name = s.album AND a.artist IS NULLIF(s.artist,'')"
+    " AND (a.source IS NULL OR a.source = s.source)) GROUP BY s.album, NULLIF(s.artist,''), s.source;"
+    "CREATE TRIGGER songs_album_ai AFTER INSERT ON songs BEGIN " V10_ADD("new") "END;"
+    "CREATE TRIGGER songs_album_au AFTER UPDATE OF album, artist ON songs BEGIN " V10_ADD("new") "END;"
+    "CREATE TRIGGER songs_album_ad AFTER DELETE ON songs BEGIN " V10_DROP "END;";
+
+static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5,
+                                           SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 

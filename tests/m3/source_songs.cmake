@@ -30,7 +30,7 @@ if(NOT rc EQUAL 0)
   message(FATAL_ERROR "analyse failed rc=${rc}\n${a}${ae}")
 endif()
 sql("${db}" "PRAGMA user_version;" ver)
-expect_eq("schema version" "${ver}" "9")
+expect_eq("schema version" "${ver}" "10")
 
 # Part 1.
 sql("${db}" "INSERT INTO songs(key, source, path) VALUES('modland:a', 'modland', 'a'), ('modland:b', 'modland', 'b'),
@@ -45,14 +45,14 @@ sql("${db}" "${counted}" c)
 expect_eq("stored equals counted" "${s}" "${c}")
 
 # Part 2.
-sql("${db}" "DROP TRIGGER songs_source_ai; DROP TRIGGER songs_source_ad; DROP TRIGGER songs_source_au;
+sql("${db}" "DROP TRIGGER songs_source_ai; DROP TRIGGER songs_source_ad; DROP TRIGGER songs_source_au; DROP TRIGGER songs_album_ai; DROP TRIGGER songs_album_au; DROP TRIGGER songs_album_ad;
   DROP TABLE opened; DROP TABLE source_songs; INSERT INTO songs(key, source, path) VALUES('sndh:f', 'sndh', 'f'); PRAGMA user_version = 7;" ignore)
 execute_process(COMMAND "${CLI}" userdata --db "${db}" OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "userdata (migration open) failed rc=${rc}\n${o}${e}")
 endif()
 sql("${db}" "PRAGMA user_version;" ver)
-expect_eq("migrated schema version" "${ver}" "9")
+expect_eq("migrated schema version" "${ver}" "10")
 sql("${db}" "${stored}" s)
 expect_eq("migration fills source_songs" "${s}" "local=1 modland=3 sndh=1")
 
