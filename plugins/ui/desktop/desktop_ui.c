@@ -13019,6 +13019,7 @@ static void* desk_open(const sel_ui_open_args* a) {
     d->qdrag_from = -1;
     d->qdrag_gap = -1;
     d->tile_step = TILE_STEP_DEFAULT;
+    d->nav_scale_from[0] = d->nav_scale_to[0] = d->nav_scale_from[1] = d->nav_scale_to[1] = 65536; /* rest scale is 1.0, not 0: a zero here made the first pointer move off a shelf start a grow tween (I678j6) */
     d->engine = a->engine;
     d->host = a->host;
     d->find_plugin = a->find_plugin;
