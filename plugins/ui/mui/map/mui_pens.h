@@ -24,8 +24,16 @@ enum {
     MUI_PEN_ACCENT,
     MUI_PEN_DIVIDER,
     MUI_PEN_TEXT_MUTED, /* I672: secondary labels (artist, times, hints), the desktop TEXT_MUTED token; pen 7 of design section 4 */
-    MUI_PEN_COUNT
+    MUI_PEN_TEXT_DISABLED, /* I667c: the flat classes' pens, design section 4 AGA pen table (pens 8-12), all held exact */
+    MUI_PEN_TRACK,
+    MUI_PEN_SURFACE_HOVER,
+    MUI_PEN_SURFACE_PRESSED,
+    MUI_PEN_FOCUS_RING,
+    MUI_PEN_COUNT /* 13 token slots */
 };
+
+/* I667c: icon pens 13-15 (mui_icon_palette pens 1-3, opaque), loaded after the token slots; MUI_PEN_TOTAL fills the 16 AGA pens. */
+enum { MUI_PEN_ICON_FIRST = MUI_PEN_COUNT, MUI_PEN_ICON_COUNT = 3, MUI_PEN_TOTAL = MUI_PEN_COUNT + MUI_PEN_ICON_COUNT };
 
 /* AmigaOS DrawInfo pen count (DRI_VERSION 2: DETAILPEN .. BARTRIMPEN). */
 enum { MUI_DRI_PENS = 12 };
@@ -47,8 +55,8 @@ typedef enum {
 } mui_label;
 
 typedef struct mui_pens_plan {
-    uint32_t rgb[MUI_PEN_COUNT];     /* 0xRRGGBB per slot */
-    uint32_t rgb32[MUI_PEN_COUNT][3]; /* the same as 32-bit left-justified components (Amiga SetRGB32 / ObtainBestPen) */
+    uint32_t rgb[MUI_PEN_TOTAL];     /* 0xRRGGBB per slot (token slots, then the icon pens) */
+    uint32_t rgb32[MUI_PEN_TOTAL][3]; /* the same as 32-bit left-justified components (Amiga SetRGB32 / ObtainBestPen) */
     int16_t dri_pens[MUI_DRI_PENS + 1]; /* SA_Pens array: pen number per DrawInfo pen, terminated by -1 */
 } mui_pens_plan;
 
@@ -59,6 +67,10 @@ int mui_pens_label_slot(mui_label label);
 /* DrawInfo pen number 0..7 that the plan points at palette slot `slot` (the digit of a MUI text pen escape), or -1. The first
  * match wins, so DETAILPEN carries the muted slot and TEXTPEN stays the TEXT slot. */
 int mui_pens_dri_index(const mui_pens_plan* plan, int slot);
+/* I667c: AGA pen slot (0..MUI_PEN_COUNT-1) that draws SEL_GUI_TOKEN_* `token`: its own slot when the table holds it exactly, the
+ * nearest held pen for the three tokens the table leaves out (HOVER_LIGHT and ACCENT_TEXT -> TEXT, HEADER_TINT -> PANEL), -1 when
+ * the token has no slot. */
+int mui_pens_aga_slot(int token);
 /* Count of mui_pens_plan_for calls that succeeded since start (sentinel for the build path test). */
 uint32_t mui_pens_planned(void);
 

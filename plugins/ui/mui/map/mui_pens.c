@@ -4,6 +4,8 @@
 
 #include <selecta/uimodel/tokens.h>
 
+#include "mui_icons.h"
+
 static uint32_t g_planned;
 
 int mui_pens_plan_for(const uint32_t* tokens, mui_pens_plan* out) {
@@ -13,6 +15,7 @@ int mui_pens_plan_for(const uint32_t* tokens, mui_pens_plan* out) {
         MUI_PEN_TEXT_MUTED, MUI_PEN_PANEL,      MUI_PEN_TEXT,  MUI_PEN_DIVIDER, MUI_PEN_BACKGROUND, MUI_PEN_RAISED, MUI_PEN_TEXT,
         MUI_PEN_BACKGROUND, MUI_PEN_TEXT, MUI_PEN_TEXT, MUI_PEN_PANEL,    MUI_PEN_BACKGROUND, -1};
     int i;
+    uint32_t icon[12];
     if (tokens == NULL || out == NULL) {
         return 0;
     }
@@ -24,7 +27,16 @@ int mui_pens_plan_for(const uint32_t* tokens, mui_pens_plan* out) {
     out->rgb[MUI_PEN_ACCENT] = tokens[SEL_GUI_TOKEN_ACCENT];
     out->rgb[MUI_PEN_DIVIDER] = tokens[SEL_GUI_TOKEN_DIVIDER];
     out->rgb[MUI_PEN_TEXT_MUTED] = tokens[SEL_GUI_TOKEN_TEXT_MUTED];
-    for (i = 0; i < MUI_PEN_COUNT; i++) {
+    out->rgb[MUI_PEN_TEXT_DISABLED] = tokens[SEL_GUI_TOKEN_TEXT_DISABLED];
+    out->rgb[MUI_PEN_TRACK] = tokens[SEL_GUI_TOKEN_TRACK];
+    out->rgb[MUI_PEN_SURFACE_HOVER] = tokens[SEL_GUI_TOKEN_SURFACE_HOVER];
+    out->rgb[MUI_PEN_SURFACE_PRESSED] = tokens[SEL_GUI_TOKEN_SURFACE_PRESSED];
+    out->rgb[MUI_PEN_FOCUS_RING] = tokens[SEL_GUI_TOKEN_FOCUS_RING];
+    mui_icon_palette(tokens, 1, icon); /* pens 1-3 of the 4 pen icon palette are the opaque ones */
+    for (i = 0; i < MUI_PEN_ICON_COUNT; i++) {
+        out->rgb[MUI_PEN_ICON_FIRST + i] = ((icon[3 + i * 3] >> 24) << 16) | ((icon[4 + i * 3] >> 24) << 8) | (icon[5 + i * 3] >> 24);
+    }
+    for (i = 0; i < MUI_PEN_TOTAL; i++) {
         out->rgb32[i][0] = ((out->rgb[i] >> 16) & 0xFFu) * 0x01010101u;
         out->rgb32[i][1] = ((out->rgb[i] >> 8) & 0xFFu) * 0x01010101u;
         out->rgb32[i][2] = (out->rgb[i] & 0xFFu) * 0x01010101u;
@@ -68,4 +80,26 @@ int mui_pens_dri_index(const mui_pens_plan* plan, int slot) {
         }
     }
     return -1;
+}
+
+int mui_pens_aga_slot(int token) {
+    switch (token) {
+    case SEL_GUI_TOKEN_BACKGROUND: return MUI_PEN_BACKGROUND;
+    case SEL_GUI_TOKEN_TEXT: return MUI_PEN_TEXT;
+    case SEL_GUI_TOKEN_SURFACE: return MUI_PEN_SURFACE;
+    case SEL_GUI_TOKEN_SURFACE_RAISED: return MUI_PEN_RAISED;
+    case SEL_GUI_TOKEN_PANEL: return MUI_PEN_PANEL;
+    case SEL_GUI_TOKEN_ACCENT: return MUI_PEN_ACCENT;
+    case SEL_GUI_TOKEN_DIVIDER: return MUI_PEN_DIVIDER;
+    case SEL_GUI_TOKEN_TEXT_MUTED: return MUI_PEN_TEXT_MUTED;
+    case SEL_GUI_TOKEN_TEXT_DISABLED: return MUI_PEN_TEXT_DISABLED;
+    case SEL_GUI_TOKEN_TRACK: return MUI_PEN_TRACK;
+    case SEL_GUI_TOKEN_SURFACE_HOVER: return MUI_PEN_SURFACE_HOVER;
+    case SEL_GUI_TOKEN_SURFACE_PRESSED: return MUI_PEN_SURFACE_PRESSED;
+    case SEL_GUI_TOKEN_FOCUS_RING: return MUI_PEN_FOCUS_RING;
+    case SEL_GUI_TOKEN_HOVER_LIGHT:
+    case SEL_GUI_TOKEN_ACCENT_TEXT: return MUI_PEN_TEXT;
+    case SEL_GUI_TOKEN_HEADER_TINT: return MUI_PEN_PANEL;
+    default: return -1;
+    }
 }

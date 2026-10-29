@@ -369,14 +369,14 @@ static uint32_t g_text_rgb; /* I665: the TEXT token, caption colour of the flat 
 #define MUI_PUB_NAME "SELECTA"
 static struct Screen* g_scr;
 static mui_pens_plan g_plan;
-static LONG g_pen_held[MUI_PEN_COUNT];
+static LONG g_pen_held[MUI_PEN_TOTAL];
 
 static void mui_screen_close(void) {
     int i;
     if (g_scr == NULL) {
         return;
     }
-    for (i = 0; i < MUI_PEN_COUNT; i++) {
+    for (i = 0; i < MUI_PEN_TOTAL; i++) {
         if (g_pen_held[i] >= 0) {
             ReleasePen(g_scr->ViewPort.ColorMap, (ULONG)g_pen_held[i]);
             g_pen_held[i] = -1;
@@ -397,9 +397,9 @@ static void mui_screen_open(const uint32_t* tokens) {
     ULONG wb_w = 0, wb_h = 0;
     int foreign = 0;
     mui_screen_plan_t plan;
-    ULONG pal[2 + MUI_PEN_COUNT * 3];
+    ULONG pal[2 + MUI_PEN_TOTAL * 3];
     int i;
-    for (i = 0; i < MUI_PEN_COUNT; i++) {
+    for (i = 0; i < MUI_PEN_TOTAL; i++) {
         g_pen_held[i] = -1;
     }
     if (!mui_pens_plan_for(tokens, &g_plan)) {
@@ -431,13 +431,13 @@ static void mui_screen_open(const uint32_t* tokens) {
             (unsigned long)plan.mode, (unsigned long)plan.width, (unsigned long)plan.height, (unsigned long)plan.depth,
             (unsigned long)mui_layout_min_height(), (unsigned long)wb_h);
     mode = plan.mode;
-    pal[0] = ((ULONG)MUI_PEN_COUNT << 16) | 0u;
-    for (i = 0; i < MUI_PEN_COUNT; i++) {
+    pal[0] = ((ULONG)MUI_PEN_TOTAL << 16) | 0u;
+    for (i = 0; i < MUI_PEN_TOTAL; i++) {
         pal[1 + i * 3] = g_plan.rgb32[i][0];
         pal[2 + i * 3] = g_plan.rgb32[i][1];
         pal[3 + i * 3] = g_plan.rgb32[i][2];
     }
-    pal[1 + MUI_PEN_COUNT * 3] = 0;
+    pal[1 + MUI_PEN_TOTAL * 3] = 0;
     g_scr = OpenScreenTags(NULL, SA_DisplayID, mode, SA_Overscan, OSCAN_TEXT, SA_Depth, (ULONG)plan.depth, SA_Colors32, (ULONG)pal, SA_Pens,
                            (ULONG)g_plan.dri_pens, SA_SharePens, TRUE, SA_PubName, (ULONG)MUI_PUB_NAME, SA_Title, (ULONG) "Selecta",
                            SA_ShowTitle, FALSE, SA_Type, PUBLICSCREEN, TAG_DONE);
@@ -445,7 +445,7 @@ static void mui_screen_open(const uint32_t* tokens) {
         fprintf(stderr, "selecta mui: own screen did not open, using the Workbench screen\n");
         return;
     }
-    for (i = 0; i < MUI_PEN_COUNT; i++) {
+    for (i = 0; i < MUI_PEN_TOTAL; i++) {
         LONG pen = ObtainBestPen(g_scr->ViewPort.ColorMap, g_plan.rgb32[i][0], g_plan.rgb32[i][1], g_plan.rgb32[i][2], OBP_Precision,
                                  PRECISION_EXACT, OBP_FailIfBad, TRUE, TAG_DONE);
         g_pen_held[i] = pen;

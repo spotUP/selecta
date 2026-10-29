@@ -159,13 +159,13 @@ static void test_pens(void) {
     txt_theme_default(&th);
     CHECK(mui_pens_plan_for(th.token, &pl) == 1 && mui_pens_planned() - before == 1, "pen plan built once (sentinel)");
     CHECK(mui_pens_plan_for(NULL, &pl) == 0 && mui_pens_plan_for(th.token, NULL) == 0, "bad input refused");
-    CHECK(MUI_PEN_COUNT <= 16, "palette of %d fits an AGA 16 colour screen", (int)MUI_PEN_COUNT);
+    CHECK(MUI_PEN_TOTAL <= 16, "palette of %d fits an AGA 16 colour screen", (int)MUI_PEN_TOTAL);
     CHECK(pl.rgb[MUI_PEN_BACKGROUND] == th.token[SEL_GUI_TOKEN_BACKGROUND] && pl.rgb[MUI_PEN_SURFACE] == th.token[SEL_GUI_TOKEN_SURFACE] &&
               pl.rgb[MUI_PEN_RAISED] == th.token[SEL_GUI_TOKEN_SURFACE_RAISED] && pl.rgb[MUI_PEN_PANEL] == th.token[SEL_GUI_TOKEN_PANEL] &&
               pl.rgb[MUI_PEN_TEXT] == th.token[SEL_GUI_TOKEN_TEXT] && pl.rgb[MUI_PEN_ACCENT] == th.token[SEL_GUI_TOKEN_ACCENT],
           "every slot holds its token colour");
     CHECK(pl.rgb[MUI_PEN_TEXT] != 0xFFFFFFu && pl.rgb[MUI_PEN_BACKGROUND] != 0x000000u, "text is not white and the background is not black");
-    for (i = 0; i < MUI_PEN_COUNT; i++) {
+    for (i = 0; i < MUI_PEN_TOTAL; i++) {
         CHECK(pl.rgb32[i][0] == ((pl.rgb[i] >> 16) & 0xFFu) * 0x01010101u && pl.rgb32[i][1] == ((pl.rgb[i] >> 8) & 0xFFu) * 0x01010101u &&
                   pl.rgb32[i][2] == (pl.rgb[i] & 0xFFu) * 0x01010101u,
               "slot %d 32-bit components are the 8-bit token replicated (exact, no rounding)", i);
@@ -179,7 +179,31 @@ static void test_pens(void) {
      * DrawInfo pen (0..7) so the MUI text escape can select it; TEXTPEN stays the TEXT slot. */
     CHECK(pl.rgb[MUI_PEN_TEXT_MUTED] == 0xA0A0ACu && pl.rgb[MUI_PEN_TEXT_MUTED] == th.token[SEL_GUI_TOKEN_TEXT_MUTED], "pen table holds A0A0AC for TEXT_MUTED");
     CHECK(pl.rgb[MUI_PEN_TEXT] == 0xC8C8D0u, "TEXT stays C8C8D0");
-    CHECK(MUI_PEN_COUNT == 8, "depth 4 uses 8 of 16 pens, got %d", (int)MUI_PEN_COUNT);
+    /* I667c: 13 token slots (design section 4 AGA pen table), icon pens 13-15, 16 pens in all. */
+    CHECK(MUI_PEN_COUNT == 13 && MUI_PEN_TOTAL == 16 && MUI_PEN_ICON_FIRST == 13, "13 token slots then icon pens 13-15, got %d", (int)MUI_PEN_COUNT);
+    CHECK(MUI_PEN_TEXT_MUTED == 7 && MUI_PEN_TEXT_DISABLED == 8 && MUI_PEN_TRACK == 9 && MUI_PEN_SURFACE_HOVER == 10 &&
+              MUI_PEN_SURFACE_PRESSED == 11 && MUI_PEN_FOCUS_RING == 12,
+          "slots 7-12 are muted, disabled, track, hover, pressed, focus ring");
+    CHECK(pl.rgb[MUI_PEN_TEXT_DISABLED] == th.token[SEL_GUI_TOKEN_TEXT_DISABLED] && pl.rgb[MUI_PEN_TRACK] == th.token[SEL_GUI_TOKEN_TRACK] &&
+              pl.rgb[MUI_PEN_SURFACE_HOVER] == th.token[SEL_GUI_TOKEN_SURFACE_HOVER] &&
+              pl.rgb[MUI_PEN_SURFACE_PRESSED] == th.token[SEL_GUI_TOKEN_SURFACE_PRESSED] &&
+              pl.rgb[MUI_PEN_FOCUS_RING] == th.token[SEL_GUI_TOKEN_FOCUS_RING] && pl.rgb[MUI_PEN_TEXT_DISABLED] == 0x62626Eu &&
+              pl.rgb[MUI_PEN_TRACK] == 0x3A3A44u && pl.rgb[MUI_PEN_SURFACE_HOVER] == 0x34343Eu && pl.rgb[MUI_PEN_SURFACE_PRESSED] == 0x3E3E4Au &&
+              pl.rgb[MUI_PEN_FOCUS_RING] == 0x93C5FDu,
+          "slots 8-12 hold their token values");
+    {
+        uint32_t ip[12];
+        mui_icon_palette(th.token, 1, ip);
+        for (i = 0; i < MUI_PEN_ICON_COUNT; i++) {
+            CHECK(pl.rgb32[MUI_PEN_ICON_FIRST + i][0] == ip[3 + i * 3] && pl.rgb32[MUI_PEN_ICON_FIRST + i][1] == ip[4 + i * 3] &&
+                      pl.rgb32[MUI_PEN_ICON_FIRST + i][2] == ip[5 + i * 3],
+                  "icon pen %d is mui_icon_palette pen %d", 13 + i, 1 + i);
+        }
+    }
+    CHECK(mui_pens_aga_slot(SEL_GUI_TOKEN_ACCENT_TEXT) == MUI_PEN_TEXT && mui_pens_aga_slot(SEL_GUI_TOKEN_HOVER_LIGHT) == MUI_PEN_TEXT &&
+              mui_pens_aga_slot(SEL_GUI_TOKEN_HEADER_TINT) == MUI_PEN_PANEL && mui_pens_aga_slot(SEL_GUI_TOKEN_TRACK) == MUI_PEN_TRACK &&
+              mui_pens_aga_slot(SEL_GUI_TOKEN_FOCUS_RING) == MUI_PEN_FOCUS_RING,
+          "AGA fallback: ACCENT_TEXT and HOVER_LIGHT -> TEXT, HEADER_TINT -> PANEL, held tokens keep their slot");
     CHECK(mui_pens_label_slot(MUI_LBL_ARTIST) == MUI_PEN_TEXT_MUTED && mui_pens_label_slot(MUI_LBL_CLOCK) == MUI_PEN_TEXT_MUTED &&
               mui_pens_label_slot(MUI_LBL_SECTION) == MUI_PEN_TEXT_MUTED && mui_pens_label_slot(MUI_LBL_TITLE) == MUI_PEN_TEXT,
           "player artist line maps to the muted pen, the title keeps TEXT");
@@ -196,6 +220,10 @@ static void test_pens(void) {
           "mui_ui.c routes the artist label through the label table");
     CHECK(strstr(src, "mui_pens_plan_for(") != NULL, "mui_ui.c builds the palette through mui_pens_plan_for");
     CHECK(strstr(src, "SA_Pens") != NULL && strstr(src, "SA_Colors32") != NULL && strstr(src, "SA_PubName") != NULL, "mui_ui.c opens its own public screen with the plan palette and DrawInfo pens");
+    /* I667c sentinel: the screen palette loader and the held-pen loop run over the full table (13 token slots plus 3 icon pens). */
+    CHECK(strstr(src, "ULONG pal[2 + MUI_PEN_TOTAL * 3]") != NULL && strstr(src, "(ULONG)MUI_PEN_TOTAL << 16") != NULL &&
+              strstr(src, "g_pen_held[MUI_PEN_TOTAL]") != NULL && strstr(src, "pal[1 + MUI_PEN_TOTAL * 3] = 0") != NULL,
+          "mui_ui.c loads the 16 entry table through SA_Colors32 and holds every pen");
     CHECK(strstr(src, "PRECISION_EXACT") != NULL && strstr(src, "ObtainBestPen(") != NULL, "mui_ui.c obtains every token colour at exact precision");
     CHECK(strstr(src, "ReleasePen(") != NULL && strstr(src, "CloseScreen(") != NULL, "mui_ui.c releases the pens and closes the screen");
     CHECK(strstr(src, "MUIA_Window_PublicScreen") != NULL, "windows open on the Selecta screen");
