@@ -345,6 +345,43 @@ static ULONG aalist_get(struct IClass* cl, Object* obj, struct opGet* msg) {
     return DoSuperMethodA(cl, obj, (Msg)msg);
 }
 
+/* AAM_GetRow: see mui_aalist_class.h. The geometry is the one aalist_draw uses (pad_y, title row, row_h from first). */
+static ULONG aalist_getrow(struct IClass* cl, Object* obj, mui_aalist_getrow* g) {
+    aalist_data* d = INST_DATA(cl, obj);
+    int c, n = d->cols.n < 1 ? 1 : d->cols.n;
+    long used = 0;
+    if (g->row < 0 || g->row >= d->count || g->text == NULL || g->cap < 1) {
+        return FALSE;
+    }
+    g->text[0] = '\0';
+    for (c = 0; c < n; c++) {
+        const char* s = aalist_text(d, g->row, c);
+        long len = (long)strlen(s);
+        if (len == 0) {
+            continue;
+        }
+        if (used > 0 && used + 2 < g->cap) {
+            g->text[used++] = ' ';
+            g->text[used++] = ' ';
+        }
+        if (len > g->cap - 1 - used) {
+            len = g->cap - 1 - used;
+        }
+        memcpy(g->text + used, s, (size_t)len);
+        used += len;
+        g->text[used] = '\0';
+    }
+    g->x = g->y = g->w = g->h = 0;
+    g->selected = g->row == d->active;
+    if (aa_live(obj) && g->row >= d->first && g->row < d->first + aalist_visible(obj, d)) {
+        g->x = _mleft(obj);
+        g->y = _mtop(obj) + d->m.pad_y + aalist_title_h(d) + (int)(g->row - d->first) * d->m.row_h;
+        g->w = _mwidth(obj);
+        g->h = d->m.row_h;
+    }
+    return TRUE;
+}
+
 static ULONG __attribute__((used)) aalist_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
 extern ULONG aalist_dispatch(void);
@@ -358,6 +395,8 @@ static ULONG __attribute__((used)) aalist_dispatch_c(struct IClass* cl, Object* 
         return aalist_set(cl, obj, (struct opSet*)msg);
     case OM_GET:
         return aalist_get(cl, obj, (struct opGet*)msg);
+    case AAM_GetRow:
+        return aalist_getrow(cl, obj, (mui_aalist_getrow*)msg);
     case MUIM_Setup:
         return aalist_setup(cl, obj, msg);
     case MUIM_Cleanup:
