@@ -530,8 +530,8 @@ void sel_library_cache_report(const sel_library* lib) {
     if (sel_library_cache_stats(lib, &s)) {
         printf("cache_hits=%u\nfetches=%u\ncompanions=%u\nmd5_mismatches=%u\nmirror_tries=%u\n"
                "trim_runs=%u\nprefetches=%u\nprefetch_fetches=%u\nsmart_requests=%u\nsmart_fetches=%u\n"
-               "smart_skipped=%u\n",
+               "smart_skipped=%u\nzip_members=%u\nzip_requests=%u\n",
                s.cache_hits, s.fetches, s.companions, s.md5_mismatches, s.mirror_tries, s.trim_runs, s.prefetches,
-               s.prefetch_fetches, s.smart_requests, s.smart_fetches, s.smart_skipped);
+               s.prefetch_fetches, s.smart_requests, s.smart_fetches, s.smart_skipped, s.zip_members, s.zip_requests);
     }
 }

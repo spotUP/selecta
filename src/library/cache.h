@@ -46,6 +46,8 @@ typedef struct sel_cache_stats {
     unsigned smart_requests;   /* smart download requests finished (I169) */
     unsigned smart_fetches;    /* of those, songs downloaded (not already cached) */
     unsigned smart_skipped;    /* requests dropped because the cache was at its budget */
+    unsigned zip_members;      /* songs the mirrors lacked, taken from the source's zip by Range request (I695d sentinel) */
+    unsigned zip_requests;     /* HTTP requests those zip fetches sent */
 } sel_cache_stats;
 
 /* The state of a download that stopped at its time budget (I168b): the partial body stays in `<file>.part` and the
