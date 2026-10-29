@@ -34,7 +34,8 @@ string(CONCAT seed
   "INSERT INTO history(key, played_at, skipped) VALUES('${WORK}/a.mod', 6000, 1); "
   "INSERT INTO history(key, played_at, skipped) VALUES('modland:Protracker/Jester/old.mod', 3500, 0); "
   "INSERT INTO history(key, played_at, skipped) VALUES('http://radio.example/stream', 7000, 0); "
-  "INSERT INTO history(key, played_at, skipped) VALUES('${WORK}/b.mod', 8000, 0)")
+  "INSERT INTO history(key, played_at, skipped) VALUES('${WORK}/b.mod', 8000, 0); "
+  "INSERT INTO song_composers(song_key, canon, display) VALUES('fixture:1', 'chris huelsbeck', 'Chris Huelsbeck'), ('fixture:2', 'chris huelsbeck', 'Chris Huelsbeck')")
 execute_process(COMMAND "${SQLITE3}" "${db}" "PRAGMA trusted_schema = 1; ${seed}" RESULT_VARIABLE rc ERROR_VARIABLE err)
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "seeding the history failed: ${err}")
@@ -75,8 +76,8 @@ function(shelf_scrolls out_s0 out_s1 out)
   set(${out_s1} ${s1} PARENT_SCOPE)
 endfunction()
 
-# Mixed shelf (I678j, Johan 2026-10-29): stream and Modland plays are single-song cards, ordered by last play with the album items 4 2 1 3.
-set(recent_want "${WORK}/b.mod;http://radio.example/stream;4;2;modland:Protracker/Jester/old.mod;1;3")
+# Mixed shelf (I678j, Johan 2026-10-29): stream and Modland plays are single-song cards, ordered by last play with the album items 4 2 1 3 and the composer card (section 11 item 3 lists composers).
+set(recent_want "${WORK}/b.mod;http://radio.example/stream;4;2;chris huelsbeck;modland:Protracker/Jester/old.mod;1;3")
 
 # 1 and 2. The shelves from the history.
 home_run(idle "wait 1\n")
@@ -414,10 +415,10 @@ home2_run(two "wait 1\n")
 shelf_keys(jump2 "${two}" 1)
 expect_eq("Jump back in with a song without an album" "${jump2}" "fixture:7;Ünïcødé Álbum åäö;Monkey Island Theme (Extended Remaster Edition With A Very Long Title);Lotus Turbo Challenge;Strange Sounds from Beyond")
 # (c) New this week lists the song added today.
-shelf_keys(fresh2 "${two}" 4)
+shelf_keys(fresh2 "${two}" 5)
 expect_eq("New this week holds the song added today" "${fresh2}" "fixture:8")
-if(NOT "${two}" MATCHES "shelf 4 tile 0 New This Week\\|" OR NOT "${two}" MATCHES "ui_home id=desktop shelves=5 ")
-  message(FATAL_ERROR "New This Week is not the fifth shelf in:\n${two}")
+if(NOT "${two}" MATCHES "shelf 5 tile 0 New This Week\\|" OR NOT "${two}" MATCHES "ui_home id=desktop shelves=6 ")
+  message(FATAL_ERROR "New This Week is not the sixth shelf (after Your Composers, section 11) in:\n${two}")
 endif()
 # (d) A Home taller than the canvas: the wheel over tile cards scrolls it to the same limit as the wheel over the
 # header block, and that limit is the bottom of the last shelf (home_max_y_q16 = content height minus panel height).
@@ -499,7 +500,7 @@ endif()
 # three headings are asserted absent. Revert check: without the fill the dump has no shelf and shelves=0.
 set(db3 "${WORK}/library3.db")
 file(COPY_FILE "${db}" "${db3}")
-execute_process(COMMAND "${SQLITE3}" "${db3}" "PRAGMA trusted_schema = 1; DELETE FROM history; DELETE FROM songs WHERE id > 4"
+execute_process(COMMAND "${SQLITE3}" "${db3}" "PRAGMA trusted_schema = 1; DELETE FROM history; DELETE FROM song_composers; DELETE FROM songs WHERE id > 4"
   RESULT_VARIABLE rc ERROR_VARIABLE err)
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "cutting the library to 4 songs failed: ${err}")

@@ -13,3 +13,5 @@ INSERT INTO songs(key, source, path, name, artist, album, format, added) VALUES
 ('local:d.sid','local','d.sid','d','Dee','Alb4','sid',400),('local:e.mod','local','e.mod','e','Eve','Alb5','mod',500);
 INSERT INTO albums(name, artist) VALUES('Alb4','Dee'),('Alb5','Eve');
 INSERT INTO history(key, played_at) VALUES('local:d.sid',1600),('local:e.mod',1700);
+-- I678j: real composer rows so the Your Composers shelf of section 11 exists (Ann 2 songs, Bob 1).
+INSERT INTO song_composers(song_key, canon, display) VALUES('local:a.mod','ann','Ann'),('local:d.sid','ann','Ann'),('local:b.mod','bob','Bob');
