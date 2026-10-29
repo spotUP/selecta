@@ -233,6 +233,7 @@ sel_cache_result sel_cache_fetch(sel_cache* c, const char* source, const char* p
     ok = sel_mirrors_fetch_opts(set, path, &o, on_body, on_restart, on_verify, &s, &res);
     c->stats.mirror_tries += res.tries;
     c->stats.md5_mismatches += res.rejected;
+    c->last_status = ok ? 0 : res.status;
     if (s.f != NULL) {
         fclose(s.f);
     }

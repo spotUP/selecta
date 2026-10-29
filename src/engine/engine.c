@@ -1611,6 +1611,7 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
         uint32_t files = 0;
         sel_companion_rules(e->registry_count, e->registry_get, rules, sizeof rules);
         if (sel_library_fetch(e->lib, path, rules, cached, sizeof cached, &files) <= 0) {
+            e->open_status = sel_library_fetch_status(e->lib); /* I695b: the 404 of a file the mirror does not serve */
             return NULL;
         }
         path = cached;

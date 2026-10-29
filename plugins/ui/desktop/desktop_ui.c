@@ -491,6 +491,8 @@ typedef struct desk {
     uint32_t palette_opens, help_opens, palette_runs, cmdline_opens, cmdline_runs, overlay_sends_ok;
     uint32_t menu_picks[4];  /* context menu items picked: Play, Play Next, Add to Queue, Remove */
     uint32_t toasts;         /* toasts shown */
+    uint32_t open_fail_toasts; /* I695b sentinel: failed opens (any play, not only a drop) that raised their toast */
+    char open_fail_text[96]; /* I695b: the text of the last one */
     int toast_on;            /* 1 while a toast is on screen */
     int toast_out;           /* 1 while the toast fades out (toast_until is then the end of the fade) */
     uint32_t toast_until;    /* UI clock when the toast goes away */
@@ -6491,12 +6493,12 @@ static const char* library_dump_build(desk* d) {
         uint32_t k;
         o = dump_put(d, o,
                               "overlay kind=%d palette_opens=%u palette_runs=%u help_opens=%u cmdline_opens=%u cmdline_runs=%u sends_ok=%u "
-                              "toasts=%u toast_on=%d menu_picks=%u,%u,%u,%u last_verb=%s pal_count=%u queue=%u status=%s\n"
+                              "toasts=%u open_fail_toasts=%u open_fail_text=\"%s\" toast_on=%d menu_picks=%u,%u,%u,%u last_verb=%s pal_count=%u queue=%u status=%s\n"
                               "song_menu open=%d items=%d opens=%u picks=%u playlist_adds=%u rows=%u accent=%06x raised=%06x\n"
                               "dialog quits=%d open=%d opens=%u confirms=%u cancels=%u songs=%u playlists=%u cancel=%d,%d,%d,%d confirm=%d,%d,%d,%d clear=%d,%d,%d,%d\n",
                               d->overlay, (unsigned)d->palette_opens, (unsigned)d->palette_runs, (unsigned)d->help_opens,
                               (unsigned)d->cmdline_opens, (unsigned)d->cmdline_runs, (unsigned)d->overlay_sends_ok, (unsigned)d->toasts,
-                              d->toast_on, (unsigned)d->menu_picks[0], (unsigned)d->menu_picks[1], (unsigned)d->menu_picks[2],
+                              (unsigned)d->open_fail_toasts, d->open_fail_text, d->toast_on, (unsigned)d->menu_picks[0], (unsigned)d->menu_picks[1], (unsigned)d->menu_picks[2],
                               (unsigned)d->menu_picks[3], d->last_verb[0] != '\0' ? d->last_verb : "-", (unsigned)d->pal.count,
                               (unsigned)st->queue_count, d->cmd.status[0] != '\0' ? d->cmd.status : "-", d->sm_open, d->sm_open ? song_menu_count(d) : 0,
                               (unsigned)d->sm_opens, (unsigned)d->sm_picks, (unsigned)d->sm_pl_adds, (unsigned)d->sm_n,
@@ -12702,6 +12704,36 @@ static void* desk_open(const sel_ui_open_args* a) {
     return d;
 }
 
+/* I695b: the toast for a failed open, with the reason the engine reported. no_replayer names the format (the source id
+ * of the song key, so a source without a replayer needs no entry here); open_failed carries the HTTP status the engine
+ * put in front of its detail ("http_status=404 <url>"). */
+static void desk_open_fail_toast(desk* d, const char* code, const char* detail) {
+    char msg[sizeof d->open_fail_text];
+    const char* colon = strchr(detail, ':');
+    int status = 0;
+
+    if (strcmp(code, "no_replayer") == 0 && colon != NULL && colon != detail && colon - detail < 16) {
+        char fmt[16];
+        size_t i, n = (size_t)(colon - detail);
+
+        for (i = 0; i < n; i++) {
+            fmt[i] = (char)toupper((unsigned char)detail[i]);
+        }
+        fmt[n] = '\0';
+        snprintf(msg, sizeof msg, "No player for %s yet", fmt);
+    } else if (strcmp(code, "no_replayer") == 0) {
+        snprintf(msg, sizeof msg, "No player for that file type yet");
+    } else if (sscanf(detail, "http_status=%d", &status) == 1) {
+        snprintf(msg, sizeof msg, "That song could not be downloaded (HTTP %d)", status);
+    } else {
+        snprintf(msg, sizeof msg, "That song cannot be played");
+    }
+    memcpy(d->open_fail_text, msg, sizeof msg);
+    d->open_fail_toasts++;
+    desk_toast(d, msg);
+    d->repaint = 1;
+}
+
 /* The snapshot is refreshed at the end of a pump, after the events, so the model reads the state the previous
  * pump left: an event here and the wait below together never miss a change. */
 static void desk_on_event(void* state, const sel_message* evt) {
@@ -12788,10 +12820,14 @@ static void desk_on_event(void* state, const sel_message* evt) {
         desk_toast(d, "Cannot add that folder");
         d->repaint = 1;
     }
-    if (evt->id == SEL_EVT_ERROR && d->drop_playing && strcmp(evt->args[0].v.s, "open_failed") == 0) {
+    if (evt->id == SEL_EVT_ERROR && evt->argc > 0 && evt->args[0].type == SEL_ARG_STR) { /* I695b: every failed open, not only a drop */
+        const char* code = evt->args[0].v.s;
+        const char* detail = evt->argc > 1 && evt->args[1].type == SEL_ARG_STR ? evt->args[1].v.s : "";
+
+        if (strcmp(code, "open_failed") == 0 || strcmp(code, "no_replayer") == 0) {
+            desk_open_fail_toast(d, code, detail);
+        }
         d->drop_playing = 0;
-        desk_toast(d, "That file cannot be played");
-        d->repaint = 1;
     }
     sel_uim_update(&d->uim, sel_engine_state(d->engine));
 }
