@@ -30,7 +30,7 @@ endforeach()
 # Runs the cover flow with the key script ${script}; sets ${tag} to the "flow covers" entries (a list of g:x:size:a).
 function(flow_sample tag script)
   file(REMOVE_RECURSE "${WORK}/cfg")
-  file(WRITE "${WORK}/${tag}.txt" "exec VIEW_SOURCE queue\nexec VIEW_WINDOW 8\nexec VIEW_STYLE coverflow\nexec COMPOSERS_SHOW\nwait 100\n${script}")
+  file(WRITE "${WORK}/${tag}.txt" "exec VIEW_STYLE regular\nexec VIEW_SOURCE queue\nexec VIEW_WINDOW 8\nexec VIEW_STYLE coverflow\nexec COMPOSERS_SHOW\nwait 100\n${script}")
   dui_run(o --db "${db}" --ui desktop --backend mem --view library --canvas 1280x800 --clock fixed --stats --exec "PREF_SET ui.desktop.reduce_motion 0" ${queue}
     --input "${WORK}/${tag}.txt")
   # script `flowsnap` lines (the frame drawn so far, mid-glide): ${tag}_snaps = list of snap indexes, ${tag}_<i> = entries
