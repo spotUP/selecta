@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "mui_aa.h"
 #include "mui_map.h"
 
 static const mui_list_backend k_nlist = {"nlist", 1, 1};
@@ -113,10 +114,18 @@ void mui_columns_format(uint32_t breakpoint, char* out, size_t cap) {
     uint8_t cols[MUI_COL_COUNT];
     uint32_t i, n = mui_columns_for(breakpoint, cols);
     size_t used = 0;
+    mui_aa_list_t lm;
+    mui_aa_list_metrics(13, &lm); /* I667i: 8 px between a divider and the text on each side (design 3.6) */
     out[0] = '\0';
     for (i = 0; i < n; i++) {
         const char* w = k_col_weight[cols[i]];
-        int put = snprintf(out + used, cap - used, "%s%s%s%s", w, w[0] != '\0' && i + 1u < n ? " " : "", i + 1u < n ? "BAR" : "", i + 1u < n ? "," : "");
+        int last = i + 1u == n;
+        int put;
+        if (last) {
+            put = snprintf(out + used, cap - used, "%s", w);
+        } else {
+            put = snprintf(out + used, cap - used, "%s%sDELTA=%d BAR,", w, w[0] != '\0' ? " " : "", mui_aa_list_delta(&lm));
+        }
         if (put < 0 || (size_t)put >= cap - used) {
             out[used] = '\0';
             return;

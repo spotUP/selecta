@@ -668,7 +668,7 @@ static void test_list_drill(void) {
 
 static void test_columns(void) {
     uint8_t c[MUI_COL_COUNT];
-    char f[48];
+    char f[128];
     static const uint32_t want[4] = {5, 4, 3, 2};
     uint32_t bp;
     for (bp = 0; bp < 4; bp++) {
@@ -680,7 +680,7 @@ static void test_columns(void) {
                 bars += strncmp(f + k, "BAR,", 4) == 0;
             }
             CHECK(bars == want[bp] - 1u, "format '%s' has %u BAR separators at %u", f, bars, bp);
-            CHECK(strncmp(f, "W=40 BAR,W=25", 13) == 0, "title and artist carry weights: '%s' at %u", f, bp);
+            CHECK(strncmp(f, "W=40 DELTA=16 BAR,W=25", 22) == 0, "title and artist carry weights: '%s' at %u", f, bp);
         }
     }
 }

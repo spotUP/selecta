@@ -445,3 +445,190 @@ int mui_aa_field_height(const mui_aa_field_t* m, int ch) {
     g_field_calls++;
     return need > m->height ? need : m->height;
 }
+
+/* I667i (design 3.5 AAScroller, 3.6 AAList). */
+static uint32_t g_scroller_calls;
+static uint32_t g_list_calls;
+
+uint32_t mui_aa_scroller_calls(void) {
+    return g_scroller_calls;
+}
+
+uint32_t mui_aa_list_calls(void) {
+    return g_list_calls;
+}
+
+void mui_aa_scroller_metrics(int font_px, mui_aa_scroller_t* out) {
+    g_scroller_calls++;
+    out->width = font_px <= 0 ? 6 : 10;
+    out->radius = font_px <= 0 ? 2 : 4;
+    out->min_thumb = 20;
+}
+
+void mui_aa_scroller_rgb(const uint32_t* token, int state, uint32_t* track, uint32_t* thumb) {
+    g_scroller_calls++;
+    if (track != NULL) {
+        *track = token[SEL_GUI_TOKEN_SURFACE];
+    }
+    if (thumb != NULL) {
+        *thumb = (state == MUI_AA_HOVER || state == MUI_AA_PRESSED) ? token[SEL_GUI_TOKEN_SURFACE_PRESSED] : token[SEL_GUI_TOKEN_TRACK];
+    }
+}
+
+int mui_aa_scroller_geom(const mui_aa_scroller_t* m, int h, long first, long visible, long entries, int* thumb_y, int* thumb_h) {
+    long range, th, travel;
+    g_scroller_calls++;
+    if (h <= 0 || entries <= 0 || visible >= entries || visible <= 0) {
+        *thumb_y = 0;
+        *thumb_h = 0;
+        return 0; /* everything fits: no thumb */
+    }
+    th = h * visible / entries;
+    if (th < m->min_thumb) {
+        th = m->min_thumb;
+    }
+    if (th > h) {
+        th = h;
+    }
+    range = entries - visible;
+    first = first < 0 ? 0 : first > range ? range : first;
+    travel = h - th;
+    *thumb_h = (int)th;
+    *thumb_y = (int)(travel * first / range);
+    return 1;
+}
+
+long mui_aa_scroller_first_at(const mui_aa_scroller_t* m, int h, int thumb_h_grab, int y, long visible, long entries) {
+    long range, travel, th;
+    int ty, thh;
+    g_scroller_calls++;
+    if (!mui_aa_scroller_geom(m, h, 0, visible, entries, &ty, &thh)) {
+        return 0;
+    }
+    th = thh;
+    range = entries - visible;
+    travel = h - th;
+    y -= thumb_h_grab; /* the pointer holds the thumb at this offset from its top */
+    if (travel <= 0 || y <= 0) {
+        return 0;
+    }
+    if (y >= travel) {
+        return range;
+    }
+    return (range * y + travel / 2) / travel;
+}
+
+void mui_aa_list_metrics(int font_px, mui_aa_list_t* out) {
+    mui_aa_scroller_t s;
+    g_list_calls++;
+    mui_aa_scroller_metrics(font_px, &s);
+    out->row_h = font_px <= 0 ? 10 : font_px + 8;
+    out->pad_x = font_px <= 0 ? 6 : 10;
+    out->pad_y = font_px <= 0 ? 2 : 4; /* inside the list face above the first and below the last row (I667i: the cycle popup had none) */
+    out->gap = font_px <= 0 ? 6 : 8;
+    out->scroller_w = s.width;
+    out->radius = font_px <= 0 ? 4 : 6;
+}
+
+int mui_aa_list_col_x(const mui_aa_list_t* m, int col, const int* w) {
+    int x = m->pad_x, k;
+    g_list_calls++;
+    for (k = 0; k < col && w != NULL; k++) {
+        x += w[k] + 2 * m->gap + 1;
+    }
+    return x;
+}
+
+int mui_aa_list_delta(const mui_aa_list_t* m) {
+    g_list_calls++;
+    return 2 * m->gap;
+}
+
+int mui_aa_list_visible(const mui_aa_list_t* m, int h) {
+    g_list_calls++;
+    h -= 2 * m->pad_y;
+    return h < m->row_h ? 0 : h / m->row_h;
+}
+
+long mui_aa_list_clamp_first(long first, long visible, long count) {
+    long max;
+    g_list_calls++;
+    max = count - visible;
+    if (max < 0) {
+        max = 0;
+    }
+    return first < 0 ? 0 : first > max ? max : first;
+}
+
+long mui_aa_list_clamp_active(long active, long count) {
+    g_list_calls++;
+    if (count <= 0) {
+        return -1;
+    }
+    return active < 0 ? 0 : active >= count ? count - 1 : active;
+}
+
+long mui_aa_list_move(long active, long count, long visible, int key) {
+    long step;
+    g_list_calls++;
+    if (count <= 0) {
+        return -1;
+    }
+    step = visible > 1 ? visible - 1 : 1;
+    switch (key) {
+    case MUI_AA_LIST_KEY_UP:
+        active = active < 0 ? count - 1 : active - 1;
+        break;
+    case MUI_AA_LIST_KEY_DOWN:
+        active = active < 0 ? 0 : active + 1;
+        break;
+    case MUI_AA_LIST_KEY_PAGEUP:
+        active = active < 0 ? 0 : active - step;
+        break;
+    case MUI_AA_LIST_KEY_PAGEDOWN:
+        active = active < 0 ? 0 : active + step;
+        break;
+    case MUI_AA_LIST_KEY_HOME:
+        active = 0;
+        break;
+    case MUI_AA_LIST_KEY_END:
+        active = count - 1;
+        break;
+    default:
+        break;
+    }
+    return active < 0 ? 0 : active >= count ? count - 1 : active; /* no wrap in a list: clamps at both ends */
+}
+
+long mui_aa_list_scroll_to(long first, long visible, long count, long active) {
+    g_list_calls++;
+    if (active >= 0) {
+        if (active < first) {
+            first = active;
+        } else if (visible > 0 && active >= first + visible) {
+            first = active - visible + 1;
+        }
+    }
+    return mui_aa_list_clamp_first(first, visible, count);
+}
+
+long mui_aa_list_row_at(const mui_aa_list_t* m, int y, long first, long count) {
+    long row;
+    g_list_calls++;
+    y -= m->pad_y;
+    if (y < 0) {
+        return -1;
+    }
+    row = first + y / m->row_h;
+    return row >= count ? -1 : row;
+}
+
+void mui_aa_list_row_rgb(const uint32_t* token, int row_state, int playing, uint32_t* face, uint32_t* text) {
+    g_list_calls++;
+    if (face != NULL) {
+        *face = row_state == MUI_AA_SELECTED ? token[SEL_GUI_TOKEN_SURFACE_PRESSED] : row_state == MUI_AA_HOVER ? token[SEL_GUI_TOKEN_SURFACE_HOVER] : token[SEL_GUI_TOKEN_SURFACE];
+    }
+    if (text != NULL) {
+        *text = playing ? token[SEL_GUI_TOKEN_ACCENT] : token[SEL_GUI_TOKEN_TEXT];
+    }
+}

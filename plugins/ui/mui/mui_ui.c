@@ -44,6 +44,7 @@ struct Library* MUIMasterBase;
 #include "mui_aapanel_class.h"
 #include "mui_aaslider_class.h"
 #include "mui_aacycle_class.h"
+#include "mui_aalist_class.h"
 #include "mui_aafield_class.h"
 #include "mui_aatext_class.h"
 #include "map/mui_aa.h"
@@ -120,8 +121,8 @@ typedef struct mui_state {
     mui_list_entry entries[MUI_ROWS_MAX];
     const char* entry_ptr[MUI_ROWS_MAX + 1];
     mui_cells cell[MUI_ROWS_MAX];   /* MUI-P3-4: the List entries; the display hook reads the cells from them */
-    char col_fmt_th[96];            /* I660: col_fmt with the text pen preparse per column (what MUI gets) */
-    char col_fmt[48];               /* MUIA_List_Format of the shown column set (mui_columns_format) */
+    char col_fmt_th[256];            /* I660: col_fmt with the text pen preparse per column (what MUI gets) */
+    char col_fmt[128];               /* MUIA_List_Format of the shown column set (mui_columns_format) */
     uint32_t col_bp;                /* the breakpoint col_fmt was built for */
     Object* str_search;             /* MUI-P4-3 */
     Object* str_cmd;                /* MUI-P4-13 */
@@ -466,6 +467,13 @@ static void mui_close_on_request(Object* win) {
 static char g_pre[4];
 static char g_list_fmt1[8]; /* one-column list format carrying the pen preparse ("P=" + pen), empty when off */
 
+/* I667i: left pad of the text inside a list face (design 3.6: 10 px; the stock lists sat 5 px from the frame, Johan 2026-10-29). */
+static int mui_list_pad_x(void) {
+    mui_aa_list_t m;
+    mui_aa_list_metrics(13, &m);
+    return m.pad_x;
+}
+
 /* col_fmt (comma separated column specs) with "P=<pen escape> " in front of each column, so list text uses the look pen. */
 static void mui_col_format_themed(const char* in, char* out, size_t cap) {
     size_t used = 0;
@@ -807,7 +815,7 @@ static Object* mui_main_group(mui_state* s) {
     g_list_hook.h_Entry = (__typeof__(g_list_hook.h_Entry))(void (*)(void))HookEntry;
     g_list_hook.h_SubEntry = (__typeof__(g_list_hook.h_SubEntry))(void (*)(void))mui_list_display;
     s->crumb = mui_aatext(" ", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0, 1);
-    s->list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_List_DisplayHook, (ULONG)&g_list_hook,
+    s->list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_List_DisplayHook, (ULONG)&g_list_hook, MUIA_InnerLeft, (ULONG)mui_list_pad_x(),
                             MUIA_List_Format, (ULONG)s->col_fmt_th, MUIA_List_Title, TRUE, TAG_DONE);
     if (g == NULL || s->list == NULL || s->crumb == NULL) {
         return NULL;
@@ -885,8 +893,8 @@ static Object* mui_detail_group(mui_state* s) {
     s->np_album = mui_np_text(s->np_buf[2], sizeof s->np_buf[2], " ", MUI_LBL_ALBUM);
     s->np_lyrics = lyr_list;
     lyr_view = lyr_list != NULL ? MUI_NewObject((char*)MUIC_Listview, MUIA_Listview_List, (ULONG)lyr_list, TAG_DONE) : NULL;
-    s->info_list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_List_Format, (ULONG)g_list_fmt1, TAG_DONE);
-    s->trk_list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_List_Format, (ULONG)g_list_fmt1, TAG_DONE);
+    s->info_list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_InnerLeft, (ULONG)mui_list_pad_x(), MUIA_List_Format, (ULONG)g_list_fmt1, TAG_DONE);
+    s->trk_list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_InnerLeft, (ULONG)mui_list_pad_x(), MUIA_List_Format, (ULONG)g_list_fmt1, TAG_DONE);
     s->trk_group = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
     if (art != NULL) {
         DoMethod(art, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE)); /* a group needs one child */
@@ -1350,7 +1358,7 @@ static void mui_help_open(mui_state* s) {
             s->help_ptr[i] = s->help_buf[i];
         }
         s->help_ptr[n] = NULL;
-        lst = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_List_Format, (ULONG)g_list_fmt1, TAG_DONE);
+        lst = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_InnerLeft, (ULONG)mui_list_pad_x(), MUIA_List_Format, (ULONG)g_list_fmt1, TAG_DONE);
         if (lst == NULL) {
             return;
         }
@@ -1945,6 +1953,7 @@ static void mui_close(void* state) {
         mui_aapanel_class_free();
         mui_aaslider_class_free();
         mui_aacycle_class_free();
+        mui_aalist_class_free(); /* I667i: also frees the AAScroller class */
         mui_aafield_class_free();
         mui_aabtn_class_free();
         mui_listview_class_free();

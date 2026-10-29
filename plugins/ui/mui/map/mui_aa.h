@@ -165,6 +165,49 @@ int mui_aa_field_height(const mui_aa_field_t* m, int ch);
 /* Calls of the field maths above: the sentinel that the class (and not a copy) runs it. */
 uint32_t mui_aa_field_calls(void);
 
+/* I667i (design 3.5, AAScroller): the flat thumb-only scroll bar. Width 10 (tier S 6), thumb radius 4 (S 2), thumb minimum 20 high, track
+ * SURFACE (the list face), thumb TRACK, SURFACE_PRESSED while hovered or dragged. No arrow buttons. Tested on the host (mui-scroller-geom). */
+typedef struct mui_aa_scroller_t {
+    int width, radius, min_thumb;
+} mui_aa_scroller_t;
+void mui_aa_scroller_metrics(int font_px, mui_aa_scroller_t* out);
+void mui_aa_scroller_rgb(const uint32_t* token, int state, uint32_t* track, uint32_t* thumb);
+/* Thumb top and height inside a track of height h for the first visible entry; both 0 and a 0 return when everything fits. The thumb
+ * is at least min_thumb (at most h); first is clamped to [0, entries - visible]. */
+int mui_aa_scroller_geom(const mui_aa_scroller_t* m, int h, long first, long visible, long entries, int* thumb_y, int* thumb_h);
+/* First entry for a pointer at track y while the thumb is held grab pixels below its top; clamped to the ends. */
+long mui_aa_scroller_first_at(const mui_aa_scroller_t* m, int h, int grab, int y, long visible, long entries);
+uint32_t mui_aa_scroller_calls(void);
+
+/* I667i (design 3.6, AAList; popup look 3.3): row model maths of the virtual list. Row height font + 8 (tier S 10), left pad 10, a vertical pad
+ * of 4 (S 2) inside the face above the first and below the last row, column gap 8. Rows: SURFACE, hover SURFACE_HOVER, selected
+ * SURFACE_PRESSED, playing title ACCENT. Tested on the host (mui-list-rows). */
+typedef struct mui_aa_list_t {
+    int row_h, pad_x, pad_y, gap, scroller_w, radius;
+} mui_aa_list_t;
+enum { MUI_AA_LIST_KEY_UP, MUI_AA_LIST_KEY_DOWN, MUI_AA_LIST_KEY_PAGEUP, MUI_AA_LIST_KEY_PAGEDOWN, MUI_AA_LIST_KEY_HOME, MUI_AA_LIST_KEY_END };
+void mui_aa_list_metrics(int font_px, mui_aa_list_t* out);
+/* Whole rows that fit a list face of height h (after the vertical pads). */
+int mui_aa_list_visible(const mui_aa_list_t* m, int h);
+long mui_aa_list_clamp_first(long first, long visible, long count);
+/* Active row clamped into [0, count - 1]; -1 for an empty list. */
+long mui_aa_list_clamp_active(long active, long count);
+/* Active row after a key (MUI_AA_LIST_KEY_*), clamped (no wrap); an empty list gives -1, no active row starts at the first or last. */
+long mui_aa_list_move(long active, long count, long visible, int key);
+/* First row after scrolling just enough to show the active row. */
+long mui_aa_list_scroll_to(long first, long visible, long count, long active);
+/* Row under a pointer at list-relative y (-1 on the pads or past the last row). */
+long mui_aa_list_row_at(const mui_aa_list_t* m, int y, long first, long count);
+/* Row face (MUI_AA_NORMAL, _HOVER, _SELECTED) and text colour (ACCENT when playing). Any out pointer may be NULL. */
+void mui_aa_list_row_rgb(const uint32_t* token, int row_state, int playing, uint32_t* face, uint32_t* text);
+uint32_t mui_aa_list_calls(void);
+/* Left edge (list-relative x) of the text of column col (0-based) when column k is w[k] wide: pad_x for column 0, then each column adds its
+ * width, the gap on both sides of the divider and the 1 px divider. w may be NULL for column 0. Johan 2026-10-29: text sat 5 px from the frame
+ * and from the dividers; the target is pad_x at the edge and gap (8) on each side of a divider, header row included. */
+int mui_aa_list_col_x(const mui_aa_list_t* m, int col, const int* w);
+/* MUIA_List_Format DELTA of a column followed by a divider (BAR): MUI centres the BAR in the delta, so gap on each side needs 2 * gap. */
+int mui_aa_list_delta(const mui_aa_list_t* m);
+
 #ifdef __cplusplus
 }
 #endif

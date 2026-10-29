@@ -507,6 +507,117 @@ static void test_field_source(void) {
     free(cm);
 }
 
+
+/* I667i mui-scroller-geom (design 3.5): thumb geometry, colour tokens, widths and the sentinel. */
+static void test_scroller_geom(void) {
+    mui_aa_scroller_t m, ms;
+    txt_theme th;
+    int ty, th_h;
+    uint32_t track, thumb, calls0 = mui_aa_scroller_calls();
+    txt_theme_default(&th);
+    mui_aa_scroller_metrics(13, &m);
+    mui_aa_scroller_metrics(0, &ms);
+    CHECK(m.width == 10 && ms.width == 6 && m.radius == 4 && ms.radius == 2 && m.min_thumb == 20, "metrics %d/%d %d/%d %d", m.width, ms.width, m.radius, ms.radius, m.min_thumb);
+    CHECK(mui_aa_scroller_geom(&m, 200, 0, 20, 20, &ty, &th_h) == 0 && th_h == 0, "no thumb when everything fits");
+    CHECK(mui_aa_scroller_geom(&m, 200, 0, 10, 100, &ty, &th_h) == 1 && ty == 0 && th_h == 20, "top thumb %d %d (min 20)", ty, th_h);
+    CHECK(mui_aa_scroller_geom(&m, 200, 90, 10, 100, &ty, &th_h) == 1 && ty + th_h == 200, "bottom thumb ends at the track end: %d+%d", ty, th_h);
+    CHECK(mui_aa_scroller_geom(&m, 200, 500, 10, 100, &ty, &th_h) == 1 && ty + th_h == 200, "first clamped");
+    CHECK(mui_aa_scroller_geom(&m, 200, 0, 50, 100, &ty, &th_h) == 1 && th_h == 100, "half visible gives half track: %d", th_h);
+    CHECK(mui_aa_scroller_first_at(&m, 200, 10, -50, 10, 100) == 0 && mui_aa_scroller_first_at(&m, 200, 10, 900, 10, 100) == 90, "drag ends clamp");
+    mui_aa_scroller_rgb(th.token, MUI_AA_NORMAL, &track, &thumb);
+    CHECK(track == th.token[SEL_GUI_TOKEN_SURFACE] && thumb == th.token[SEL_GUI_TOKEN_TRACK] && thumb == 0x3A3A44u, "normal colours %06X %06X", (unsigned)track, (unsigned)thumb);
+    mui_aa_scroller_rgb(th.token, MUI_AA_HOVER, &track, &thumb);
+    CHECK(thumb == th.token[SEL_GUI_TOKEN_SURFACE_PRESSED] && thumb == 0x3E3E4Au, "hover thumb %06X", (unsigned)thumb);
+    CHECK(mui_aa_scroller_calls() > calls0, "sentinel did not move");
+}
+
+/* I667i mui-list-rows (design 3.6, Johan 2026-10-29): row metrics, key moves, clamps, row colours and the padding of the text. */
+static void test_list_rows(void) {
+    mui_aa_list_t m, ms;
+    txt_theme th;
+    uint32_t face, text, calls0 = mui_aa_list_calls();
+    int w[3] = {120, 80, 40}, k;
+    long a;
+    txt_theme_default(&th);
+    mui_aa_list_metrics(13, &m);
+    mui_aa_list_metrics(0, &ms);
+    CHECK(m.row_h == 21 && ms.row_h == 10 && m.pad_x == 10 && m.gap == 8 && m.pad_y >= 2, "metrics %d %d %d %d %d", m.row_h, ms.row_h, m.pad_x, m.gap, m.pad_y);
+    mui_aa_list_metrics(15, &ms);
+    CHECK(ms.row_h == 23, "L row %d", ms.row_h);
+    mui_aa_list_metrics(17, &ms);
+    CHECK(ms.row_h == 25, "XL row %d", ms.row_h);
+    /* Johan: text sat 5 px from the frame and from the dividers. First column at least the left pad, 8 px each side of a divider. */
+    CHECK(mui_aa_list_col_x(&m, 0, w) >= 10, "first column text x %d", mui_aa_list_col_x(&m, 0, w));
+    for (k = 1; k < 3; k++) {
+        int gap_after = mui_aa_list_col_x(&m, k, w) - (mui_aa_list_col_x(&m, k - 1, w) + w[k - 1]);
+        CHECK(gap_after >= 2 * 8, "text to text across divider %d: %d (8 each side)", k, gap_after);
+    }
+    CHECK(mui_aa_list_delta(&m) >= 16, "stock list DELTA %d centres the BAR, 8 each side", mui_aa_list_delta(&m));
+    CHECK(mui_aa_list_visible(&m, 2 * m.pad_y + 5 * m.row_h) == 5 && mui_aa_list_visible(&m, 3) == 0, "visible rows");
+    CHECK(mui_aa_list_row_at(&m, 0, 0, 10) == -1 && mui_aa_list_row_at(&m, m.pad_y, 0, 10) == 0 && mui_aa_list_row_at(&m, m.pad_y + m.row_h, 3, 10) == 4 &&
+              mui_aa_list_row_at(&m, m.pad_y + 20 * m.row_h, 0, 10) == -1,
+          "row_at");
+    CHECK(mui_aa_list_clamp_active(5, 0) == -1 && mui_aa_list_clamp_active(-3, 4) == 0 && mui_aa_list_clamp_active(9, 4) == 3, "active clamp");
+    CHECK(mui_aa_list_clamp_first(7, 5, 10) == 5 && mui_aa_list_clamp_first(3, 5, 4) == 0 && mui_aa_list_clamp_first(-1, 5, 10) == 0, "first clamp");
+    CHECK(mui_aa_list_move(0, 0, 5, MUI_AA_LIST_KEY_DOWN) == -1, "empty list has no active row");
+    CHECK(mui_aa_list_move(0, 1, 5, MUI_AA_LIST_KEY_DOWN) == 0 && mui_aa_list_move(0, 1, 5, MUI_AA_LIST_KEY_UP) == 0, "one row stays");
+    CHECK(mui_aa_list_move(0, 100, 10, MUI_AA_LIST_KEY_UP) == 0 && mui_aa_list_move(99, 100, 10, MUI_AA_LIST_KEY_DOWN) == 99, "no wrap");
+    a = mui_aa_list_move(50, 100, 10, MUI_AA_LIST_KEY_PAGEDOWN);
+    CHECK(a > 50 && a <= 60 && mui_aa_list_move(50, 100, 10, MUI_AA_LIST_KEY_PAGEUP) < 50, "page moves %ld", a);
+    CHECK(mui_aa_list_move(50, 100, 10, MUI_AA_LIST_KEY_HOME) == 0 && mui_aa_list_move(50, 100, 10, MUI_AA_LIST_KEY_END) == 99, "home end");
+    CHECK(mui_aa_list_scroll_to(0, 10, 100, 25) == 16 && mui_aa_list_scroll_to(40, 10, 100, 25) == 25 && mui_aa_list_scroll_to(5, 10, 100, 7) == 5, "scroll_to");
+    mui_aa_list_row_rgb(th.token, MUI_AA_NORMAL, 0, &face, &text);
+    CHECK(face == th.token[SEL_GUI_TOKEN_SURFACE] && text == th.token[SEL_GUI_TOKEN_TEXT], "normal row");
+    mui_aa_list_row_rgb(th.token, MUI_AA_HOVER, 0, &face, NULL);
+    CHECK(face == th.token[SEL_GUI_TOKEN_SURFACE_HOVER], "hover row");
+    mui_aa_list_row_rgb(th.token, MUI_AA_SELECTED, 1, &face, &text);
+    CHECK(face == th.token[SEL_GUI_TOKEN_SURFACE_PRESSED] && text == th.token[SEL_GUI_TOKEN_ACCENT], "selected playing row");
+    CHECK(mui_aa_list_calls() > calls0, "sentinel did not move");
+    {
+        char f[160];
+        uint32_t bp;
+        for (bp = 0; bp < 4; bp++) {
+            const char* p;
+            int n = 0;
+            mui_columns_format(bp, f, sizeof f);
+            for (p = f; (p = strstr(p, "DELTA=16 BAR")) != NULL; p++) {
+                n++;
+            }
+            CHECK(n == (int)mui_columns_for(bp, (uint8_t[8]){0}) - 1 || n >= 1, "format '%s' DELTA count %d", f, n);
+            CHECK(strstr(f, "DELTA=16") != NULL, "format '%s' carries DELTA=16", f);
+        }
+    }
+}
+
+/* I667i mui-list-source: the cycle popup is an AAList, the lists of the middle column carry the left pad, both classes are built, freed once,
+ * drawn through the shared helpers, hold no colour literal and no pen code. */
+static void test_list_source(void) {
+    char* ui = slurp(UI_SOURCE);
+    char* cy = slurp(AACYCLE_SOURCE);
+    char* ls = slurp(AALIST_SOURCE);
+    char* sc = slurp(AASCROLLER_SOURCE);
+    char* cm = slurp(MUI_CMAKE);
+    CHECK(ui != NULL && cy != NULL && ls != NULL && sc != NULL && cm != NULL, "sources readable");
+    if (ui == NULL || cy == NULL || ls == NULL || sc == NULL || cm == NULL) {
+        return;
+    }
+    CHECK(count_of(cy, "MUIC_List") == 0 && count_of(cy, "mui_aalist_new(") == 1, "popup must be an AAList: stock %d, aalist %d", count_of(cy, "MUIC_List"), count_of(cy, "mui_aalist_new("));
+    CHECK(count_of(cy, "AAL_Picked") >= 1, "popup listens to AAL_Picked");
+    CHECK(count_of(ui, "mui_aalist_class_free(") == 1, "AAList class freed once in mui_close");
+    CHECK(count_of(ui, "MUIA_InnerLeft, (ULONG)mui_list_pad_x()") == 4, "left pad on the main, info, tracks and help list: %d", count_of(ui, "MUIA_InnerLeft, (ULONG)mui_list_pad_x()"));
+    CHECK(strstr(ls, "mui_aa_list_row_rgb(") != NULL && strstr(ls, "mui_aa_list_move(") != NULL && strstr(ls, "mui_aa_list_col_x(") != NULL && strstr(ls, "aa_round_fill(") != NULL,
+          "list does not draw through the shared helpers");
+    CHECK(strstr(sc, "mui_aa_scroller_geom(") != NULL && strstr(sc, "mui_aa_scroller_rgb(") != NULL && strstr(sc, "aa_round_fill(") != NULL, "scroller does not draw through the shared helpers");
+    CHECK(strstr(ls, "mui_aascroller_new(") != NULL && strstr(ls, "mui_aascroller_class_free(") != NULL, "list builds and frees its scroller");
+    CHECK(strstr(ls, "ObtainBestPenA") == NULL && strstr(ls, "0x1") == NULL && strstr(sc, "ObtainBestPenA") == NULL && strstr(sc, "0x3") == NULL, "no pen code or colour literal in the classes");
+    CHECK(strstr(cm, "mui_aalist_class.c") != NULL && strstr(cm, "mui_aascroller_class.c") != NULL, "classes not in the build");
+    free(ui);
+    free(cy);
+    free(ls);
+    free(sc);
+    free(cm);
+}
+
 int main(int argc, char** argv) {
     const char* t = argc > 1 ? argv[1] : "";
     if (!strcmp(t, "round")) {
@@ -545,6 +656,12 @@ int main(int argc, char** argv) {
         test_field_plan();
     } else if (!strcmp(t, "field-source")) {
         test_field_source();
+    } else if (!strcmp(t, "scroller-geom")) {
+        test_scroller_geom();
+    } else if (!strcmp(t, "list-rows")) {
+        test_list_rows();
+    } else if (!strcmp(t, "list-source")) {
+        test_list_source();
     } else {
         printf("usage: round|ramp|state|tokens\n");
         return 2;
