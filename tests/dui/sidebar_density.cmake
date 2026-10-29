@@ -1,0 +1,195 @@
+# dui-sidebar-density (I678d): the four Your Library densities, the expanded table and the first-playlist card, through the real desktop UI entry.
+#   -DSELECTA -DSONGS -DWORK
+# Design 2026-10-29-desktop-library-architecture.md sections 4, 6 and 13. The dump prints
+#   `sidelib_density view=<v> row_h=<px> cols=<n> table=<0|1> table_head=<px> sidebar_w=<px> canvas_w=<px> card_h=<px> pinned=<n> sub=<n> sub_clicks=<n> sub_btn x y w h`
+#   `sideempty draws=<n> clicks=<n> btn x y w h`, and `sidelib_row <i> x y w h ...` per drawn row.
+# 1. Compact rows are 32 px, List rows 48 px (the real row rects, not only the number the dump claims).
+# 2. The small grid packs at least two cells per row and the large grid fewer (bigger cells), the large cell taller than the small one.
+# 3. Expanded sidebar in List density is the four-column table (Title, Type, Date Added, Played) and takes at least 40 percent of the window.
+# 4. With no playlist the Create your first playlist card is drawn (sentinel: sideempty draws >= 1) BELOW the third pinned row.
+# 5. With playlists in the library the card is not drawn.
+# 6. The Playlists chip offers the By You second-level chip; one click on it counts.
+get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+include("${HERE}/dui_run.cmake")
+file(REMOVE_RECURSE "${WORK}")
+file(MAKE_DIRECTORY "${WORK}")
+find_program(SQLITE3 sqlite3)
+if(NOT SQLITE3)
+  message(FATAL_ERROR "dui-sidebar-density needs the sqlite3 command line tool to load the fixture library")
+endif()
+
+function(expect_eq what got want)
+  if(NOT "${got}" STREQUAL "${want}")
+    message(FATAL_ERROR "${what}: got '${got}', expected '${want}'")
+  endif()
+endfunction()
+
+# Parse the density line of a dump into <tag>_view, _row_h, _cols, _table, _sidebar_w, _canvas_w, _card_h, _pinned, _sub_clicks and _sub (centre).
+function(dn_parse tag out)
+  if(NOT "${out}" MATCHES "sidelib_density view=([0-9]+) row_h=(-?[0-9]+) cols=([0-9]+) table=([0-9]+) table_head=(-?[0-9]+) sidebar_w=(-?[0-9]+) canvas_w=(-?[0-9]+) card_h=(-?[0-9]+) pinned=([0-9]+)")
+    message(FATAL_ERROR "no sidelib_density line in:\n${out}")
+  endif()
+  set(${tag}_view "${CMAKE_MATCH_1}" PARENT_SCOPE)
+  set(${tag}_row_h "${CMAKE_MATCH_2}" PARENT_SCOPE)
+  set(${tag}_cols "${CMAKE_MATCH_3}" PARENT_SCOPE)
+  set(${tag}_table "${CMAKE_MATCH_4}" PARENT_SCOPE)
+  set(${tag}_sidebar_w "${CMAKE_MATCH_6}" PARENT_SCOPE)
+  set(${tag}_canvas_w "${CMAKE_MATCH_7}" PARENT_SCOPE)
+  set(${tag}_card_h "${CMAKE_MATCH_8}" PARENT_SCOPE)
+  set(${tag}_pinned "${CMAKE_MATCH_9}" PARENT_SCOPE)
+  if(NOT "${out}" MATCHES "pinned=[0-9]+ sub=([0-9]+) sub_clicks=([0-9]+) sub_btn (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+)")
+    message(FATAL_ERROR "no sub fields in density line:\n${out}")
+  endif()
+  set(${tag}_sub "${CMAKE_MATCH_1}" PARENT_SCOPE)
+  set(${tag}_sub_clicks "${CMAKE_MATCH_2}" PARENT_SCOPE)
+  math(EXPR cx "${CMAKE_MATCH_3} + ${CMAKE_MATCH_5} / 2")
+  math(EXPR cy "${CMAKE_MATCH_4} + ${CMAKE_MATCH_6} / 2")
+  set(${tag}_sub_c "${cx} ${cy}" PARENT_SCOPE)
+  set(${tag}_sub_w "${CMAKE_MATCH_5}" PARENT_SCOPE)
+endfunction()
+
+# The real rect of row idx: sets <tag>_y and <tag>_h.
+function(row_rect tag out idx)
+  if(NOT "${out}" MATCHES "sidelib_row ${idx} (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+) ")
+    message(FATAL_ERROR "no sidelib_row ${idx} in:\n${out}")
+  endif()
+  set(${tag}_y "${CMAKE_MATCH_2}" PARENT_SCOPE)
+  set(${tag}_h "${CMAKE_MATCH_4}" PARENT_SCOPE)
+endfunction()
+
+function(centre outvar out pattern)
+  if(NOT "${out}" MATCHES "${pattern}")
+    message(FATAL_ERROR "no match for ${pattern} in:\n${out}")
+  endif()
+  math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+  math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+  set(${outvar} "${cx} ${cy}" PARENT_SCOPE)
+endfunction()
+
+# Empty library (three pinned rows, no playlist) and the mixed fixture library (playlists, albums, artists, composers, a source).
+set(db_empty "${WORK}/empty.db")
+set(db_mixed "${WORK}/mixed.db")
+dui_run(init1 --ui desktop --backend mem --view home --canvas 1280x1400 --clock fixed --stats --db "${db_empty}")
+dui_run(init2 --ui desktop --backend mem --view home --canvas 1280x1400 --clock fixed --stats --db "${db_mixed}")
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db_mixed}" INPUT_FILE "${HERE}/fixture_sidebar_mixed.sql"
+  RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "loading the fixture failed: ${err}")
+endif()
+
+file(WRITE "${WORK}/idle.txt" "wait 100\n")
+set(common_empty --ui desktop --backend mem --view home --clock fixed --stats --db "${db_empty}" --canvas 1280x1400)
+set(common_mixed --ui desktop --backend mem --view home --clock fixed --stats --db "${db_mixed}" --canvas 1280x1400)
+
+# 4. The card sits below the pinned rows of the default view (List).
+dui_run(e0 ${common_empty} --input "${WORK}/idle.txt")
+dn_parse(e0 "${e0}")
+expect_eq("default view is List" "${e0_view}" "1")
+expect_eq("three pinned rows" "${e0_pinned}" "3")
+if(NOT "${e0}" MATCHES "sideempty draws=([0-9]+) clicks=[0-9]+ btn (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)")
+  message(FATAL_ERROR "no sideempty line in:\n${e0}")
+endif()
+if(CMAKE_MATCH_1 LESS 1)
+  message(FATAL_ERROR "the first-playlist card never drew (draws=${CMAKE_MATCH_1})")
+endif()
+set(card_y "${CMAKE_MATCH_3}")
+row_rect(r2 "${e0}" 2)
+math(EXPR r2_bottom "${r2_y} + ${r2_h}")
+if(card_y LESS r2_bottom)
+  message(FATAL_ERROR "the card button (y=${card_y}) is not below the third pinned row (bottom ${r2_bottom})")
+endif()
+
+# 5. Playlists in the library: no card.
+dui_run(m0 ${common_mixed} --input "${WORK}/idle.txt")
+if(NOT "${m0}" MATCHES "sideempty draws=([0-9]+) ")
+  message(FATAL_ERROR "no sideempty line in:\n${m0}")
+endif()
+expect_eq("card draws with playlists present" "${CMAKE_MATCH_1}" "0")
+
+# 1. Row heights of the list and compact densities, from the drawn rects. Open the sort and view menu to find the view entries.
+if(NOT "${e0}" MATCHES "sidetools_rect mag [0-9]+ [0-9]+ [0-9]+ [0-9]+ sort (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)")
+  message(FATAL_ERROR "no sidetools_rect line in:\n${e0}")
+endif()
+math(EXPR sort_cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+math(EXPR sort_cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+set(sort_c "${sort_cx} ${sort_cy}")
+file(WRITE "${WORK}/menu.txt" "click ${sort_c}\nwait 100\n")
+dui_run(mn ${common_mixed} --input "${WORK}/menu.txt")
+centre(v_compact "${mn}" "lmenu_view 0 ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)")
+centre(v_small "${mn}" "lmenu_view 2 ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)")
+centre(v_large "${mn}" "lmenu_view 3 ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)")
+
+expect_eq("List row height" "${e0_row_h}" "48")
+dn_parse(m0 "${m0}")
+row_rect(m0r "${m0}" 4)
+expect_eq("List row rect height" "${m0r_h}" "48")
+
+file(WRITE "${WORK}/compact.txt" "click ${sort_c}\nwait 100\nclick ${v_compact}\nwait 100\n")
+dui_run(c1 ${common_mixed} --input "${WORK}/compact.txt")
+dn_parse(c1 "${c1}")
+expect_eq("Compact view chosen" "${c1_view}" "0")
+expect_eq("Compact row height" "${c1_row_h}" "32")
+row_rect(c1r "${c1}" 4)
+expect_eq("Compact row rect height" "${c1r_h}" "32")
+
+# 2. Grids.
+file(WRITE "${WORK}/small.txt" "click ${sort_c}\nwait 100\nclick ${v_small}\nwait 100\n")
+dui_run(s1 ${common_mixed} --input "${WORK}/small.txt")
+dn_parse(s1 "${s1}")
+expect_eq("Small view chosen" "${s1_view}" "2")
+file(WRITE "${WORK}/large.txt" "click ${sort_c}\nwait 100\nclick ${v_large}\nwait 100\n")
+dui_run(l1 ${common_mixed} --input "${WORK}/large.txt")
+dn_parse(l1 "${l1}")
+expect_eq("Large view chosen" "${l1_view}" "3")
+if(s1_cols LESS 2)
+  message(FATAL_ERROR "the small grid has ${s1_cols} column, expected at least 2")
+endif()
+if(l1_cols GREATER s1_cols)
+  message(FATAL_ERROR "the large grid (${l1_cols} columns) has more columns than the small grid (${s1_cols})")
+endif()
+if(NOT l1_row_h GREATER s1_row_h)
+  message(FATAL_ERROR "the large cell (${l1_row_h}) is not taller than the small cell (${s1_row_h})")
+endif()
+
+# 3. Expanded sidebar: the header chevron toggles it. List density becomes the four-column table, the sidebar at least 40 percent of the window.
+if(NOT "${e0}" MATCHES "sidehdr wide [^\n]* rect (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)")
+  message(FATAL_ERROR "no sidehdr wide line in:\n${e0}")
+endif()
+math(EXPR wide_cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+math(EXPR wide_cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+file(WRITE "${WORK}/wide.txt" "click ${wide_cx} ${wide_cy}\nwait 300\n")
+file(REMOVE_RECURSE "${WORK}/cfg") # the earlier run saved its density choice
+dui_run(w1 ${common_mixed} --input "${WORK}/wide.txt")
+dn_parse(w1 "${w1}")
+expect_eq("expanded List is the table" "${w1_table}" "1")
+math(EXPR w_pct "${w1_sidebar_w} * 100 / ${w1_canvas_w}")
+if(w_pct LESS 40)
+  message(FATAL_ERROR "the expanded sidebar is ${w1_sidebar_w} of ${w1_canvas_w} px (${w_pct} percent), expected at least 40")
+endif()
+expect_eq("narrow sidebar is not a table" "${m0_table}" "0")
+
+# 6. The By You second-level chip belongs to Playlists. Click Playlists, then By You.
+if(NOT "${m0}" MATCHES "sidechips [^\n]*")
+  message(FATAL_ERROR "no sidechips line in:\n${m0}")
+endif()
+file(WRITE "${WORK}/wide2.txt" "click ${wide_cx} ${wide_cy}\nwait 300\n")
+file(REMOVE_RECURSE "${WORK}/cfg")
+dui_run(w2 ${common_mixed} --input "${WORK}/wide2.txt")
+if(NOT "${w2}" MATCHES "sidechip 0 (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)")
+  message(FATAL_ERROR "no sidechip 0 rect in:\n${w2}")
+endif()
+# The six chips overflow the sidebar even when expanded, so chip 0 is the single control and the right chevron (one gap,
+# half a chevron square past its right edge) steps from All to Playlists.
+math(EXPR pl_cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} + 4 + ${CMAKE_MATCH_4} / 2")
+math(EXPR pl_cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+file(WRITE "${WORK}/chip1.txt" "click ${wide_cx} ${wide_cy}\nwait 300\nclick ${pl_cx} ${pl_cy}\nwait 100\n")
+dui_run(p1 ${common_mixed} --input "${WORK}/chip1.txt")
+dn_parse(p1 "${p1}")
+if(p1_sub_w LESS 1)
+  message(FATAL_ERROR "the By You chip is not drawn on the Playlists chip:\n${p1}")
+endif()
+file(WRITE "${WORK}/chip2.txt" "click ${wide_cx} ${wide_cy}\nwait 300\nclick ${pl_cx} ${pl_cy}\nwait 100\nclick ${p1_sub_c}\nwait 100\n")
+dui_run(p2 ${common_mixed} --input "${WORK}/chip2.txt")
+dn_parse(p2 "${p2}")
+expect_eq("one By You click" "${p2_sub_clicks}" "1")
+expect_eq("By You in force" "${p2_sub}" "1")

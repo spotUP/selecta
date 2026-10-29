@@ -109,6 +109,14 @@ static void topbar_compute(sel_uim_layout* l, uint32_t width, uint32_t tb_h) {
     topbar_set(&l->topbar_browse, "topbar-browse", (int32_t)(x0 + btn + gap + fw - btn), y, btn, btn);
 }
 
+/* I678d: the expanded Your Library sidebar is about 40 percent of the window (design section 6), never below `floor_w` (the I609 width)
+ * and never so wide that the main region drops under MAIN_MIN_W beside a `detail_w` column. */
+static uint32_t expanded_side(uint32_t width, uint32_t detail_w, uint32_t floor_w) {
+    uint32_t want = width * 2u / 5u, cap = width > detail_w + MAIN_MIN_W ? width - detail_w - MAIN_MIN_W : 0u;
+    want = want > cap ? cap : want;
+    return want > floor_w ? want : floor_w;
+}
+
 /* I609: as compute_bar; `expand` widens the sidebar (Spotify's Expand Library). The bitmap tier and the mini layout have no
  * wider form and ignore it. */
 void sel_uim_layout_compute_expand(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t rail_w,
@@ -131,10 +139,10 @@ void sel_uim_layout_compute_panel(sel_uim_layout* l, uint32_t width, uint32_t he
     l->height = height;
     l->breakpoint = bp;
     if (bp == SEL_UIM_BP_THREE_COLUMN) {
-        side = expand ? SIDEBAR_EXPANDED_WIDE : SIDEBAR_WIDE;
+        side = expand ? expanded_side(width, detail_hidden ? 0u : DETAIL_W, SIDEBAR_EXPANDED_WIDE) : SIDEBAR_WIDE;
         detail = detail_hidden ? 0u : DETAIL_W;
     } else if (bp == SEL_UIM_BP_TWO_COLUMN) {
-        side = expand ? SIDEBAR_EXPANDED_NARROW : SIDEBAR_NARROW;
+        side = expand ? expanded_side(width, 0u, SIDEBAR_EXPANDED_NARROW) : SIDEBAR_NARROW;
     } else if (bp == SEL_UIM_BP_ICON_SIDEBAR) {
         if (tier == SEL_UIM_TIER_BITMAP) {
             side = rail_w > SIDEBAR_RAIL_LABELLED ? rail_w : SIDEBAR_RAIL_LABELLED;

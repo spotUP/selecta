@@ -378,6 +378,8 @@ typedef struct desk {
     uint32_t topbar_draws, topbar_home_clicks, topbar_browse_clicks; /* I615: top bar frames drawn, Home and Browse button clicks */
     uint32_t side_wide, side_plus_clicks, side_wide_clicks; /* I609: the sidebar is widened; header Create Playlist and width toggle clicks */
     uint32_t side_anim, side_from, side_to, side_tween_frames; /* I668: the width tween runs, its ends in logical px, frames relaid out by it */
+    uint32_t side_sub, side_sub_clicks; /* I678d: the second-level chip in force (1 By You), clicks on it */
+    sel_gui_rect side_sub_btn;
     sel_gui_rect side_empty_btn; /* I627: the empty-state Create playlist button, zero size when not drawn */
     int32_t side_y_q16; /* the list's scroll offset in Q16 logical pixels */
     uint32_t side_chip, side_filters, side_chip_scrolls; /* I610: the library chip in force (0 none, else 1 + index), filter passes run, chevron scrolls */
@@ -1041,6 +1043,11 @@ static int side_chip_has_x(desk* d);
 static int side_lib_open_item(const desk* d, uint32_t i);
 static sel_gui_rect side_chip_rect(desk* d, uint32_t k);
 static int32_t side_chips_h(const desk* d);
+static int side_table(const desk* d);
+static int32_t side_table_head_h(const desk* d);
+static int32_t side_lib_row_h(const desk* d);
+static uint32_t side_pinned_n(const desk* d);
+static int32_t side_card_h(const desk* d);
 static sel_gui_rect side_chip_chevron(desk* d, int right);
 static sel_gui_rect side_lib_row_rect(const desk* d, uint32_t i);
 static void draw_nowplaying(desk* d);
@@ -5896,6 +5903,10 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "showall draws=%u clicks=%u page_draws=%u opens=%u open=%u tiles=%u at %d %d %d %d\n", (unsigned)d->show_all_draws,
                      (unsigned)d->show_all_clicks, (unsigned)d->shelf_page_draws, (unsigned)d->shelf_page_opens, (unsigned)d->shelf_open,
                      (unsigned)d->shelf_page_tiles, (int)d->show_all_rect[0].x, (int)d->show_all_rect[0].y, (int)d->show_all_rect[0].w, (int)d->show_all_rect[0].h);
+        o = dump_put(d, o, "sidelib_density view=%u row_h=%d cols=%u table=%u table_head=%d sidebar_w=%d canvas_w=%d card_h=%d pinned=%u sub=%u sub_clicks=%u sub_btn %d %d %d %d\n", (unsigned)d->side_view,
+                     (int)side_lib_row_h(d), (unsigned)side_lib_cols(d), (unsigned)side_table(d), (int)side_table_head_h(d), (int)region_rect(d, "sidebar").w,
+                     (int)d->canvas->w, (int)side_card_h(d), (unsigned)side_pinned_n(d), (unsigned)d->side_sub, (unsigned)d->side_sub_clicks, (int)d->side_sub_btn.x,
+                     (int)d->side_sub_btn.y, (int)d->side_sub_btn.w, (int)d->side_sub_btn.h);
         o = dump_put(d, o, "sideempty draws=%u clicks=%u btn %d %d %d %d\n", (unsigned)d->side_empty_draws, (unsigned)d->side_create_clicks,
                      (int)d->side_empty_btn.x, (int)d->side_empty_btn.y, (int)d->side_empty_btn.w, (int)d->side_empty_btn.h);
         for (k = 1u; k <= (uint32_t)SIDE_HDR_COUNT; k++) { /* I609: header controls and their counters */
@@ -8251,6 +8262,9 @@ static void side_chip_click(desk* d, int32_t c) {
     } else {
         d->side_chip = d->side_chip == (uint32_t)c + 1u ? 0u : (uint32_t)c + 1u;
     }
+    if (d->side_chip != 1u) {
+        d->side_sub = 0u; /* I678d: the second-level chips belong to Playlists */
+    }
     d->side_y_q16 = 0;
     d->side_stale = 1u; /* the list is read again through the filter */
     d->repaint = 1;
@@ -8330,28 +8344,87 @@ static uint32_t side_lib_cols(const desk* d) {
     return n > 0u ? n : 1u;
 }
 
+/* I678d: the expanded sidebar in List density is a table (Title, Type, Date Added, Played) with a header row above the rows. */
+static int side_table(const desk* d) {
+    return d->side_wide && side_chips_h(d) > 0 && d->side_view == SEL_UIM_LVIEW_LIST;
+}
+
+static int32_t side_table_head_h(const desk* d) {
+    return side_table(d) ? lpx(d, 24) : 0;
+}
+
 static sel_gui_rect side_lib_view_rect(const desk* d) {
     sel_gui_rect sb = region_rect(d, "sidebar"), h = side_lib_header_rect(d);
-    int32_t y = h.y + h.h + side_chips_h(d) + side_tools_h(d), bottom = sb.y + sb.h - lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
+    int32_t y = h.y + h.h + side_chips_h(d) + side_tools_h(d) + side_table_head_h(d), bottom = sb.y + sb.h - lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     return rect_of(h.x, y, h.w, bottom > y ? bottom - y : 0);
 }
 
+/* I678d: the four densities (design section 6): Compact 32 px one line, List 48 px with the cover, Small grid the cover alone,
+ * Large grid the cover with title and subtitle under it. The rail (icons only) always lists at 56 px. */
 static int32_t side_lib_row_h(const desk* d) {
-    if (side_chips_h(d) == 0 || d->side_view == SEL_UIM_LVIEW_LIST) {
+    if (side_chips_h(d) == 0) {
         return lpx(d, 56);
     }
+    if (d->side_view == SEL_UIM_LVIEW_LIST) {
+        return lpx(d, 48);
+    }
     if (d->side_view == SEL_UIM_LVIEW_COMPACT) {
-        return lpx(d, 36);
+        return lpx(d, 32);
     }
     {
         int32_t cw = side_lib_view_rect(d).w / (int32_t)side_lib_cols(d);
-        return d->side_view == SEL_UIM_LVIEW_SMALL ? cw : cw + lpx(d, 22);
+        return d->side_view == SEL_UIM_LVIEW_SMALL ? cw : cw + lpx(d, 36);
     }
 }
 
+static uint32_t side_pinned_n(const desk* d) {
+    uint32_t n = 0u;
+    while (n < d->side_n && d->side_items[n].pinned) {
+        n++;
+    }
+    return n;
+}
+
+/* I678d (Johan 2026-10-29): with no saved playlist, Spotify's "Create your first playlist" card sits BELOW the pinned rows on the
+ * default view. Its height, rounded up to whole rows; 0 when it is not shown (a chip of another kind, a filter, a playlist exists, bitmap tier). */
+static int32_t side_card_h(const desk* d) {
+    uint32_t i;
+    int32_t rh, ch = lpx(d, 128);
+    if (side_chips_h(d) == 0 || desk_bitmap_text(d) || d->side_chip > 1u || d->lf_text[0] != '\0' || d->side_open_n != 0u || side_lib_view_rect(d).h <= 0) {
+        return 0;
+    }
+    for (i = 0; i < d->side_n; i++) {
+        if (d->side_items[i].kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST) {
+            return 0;
+        }
+    }
+    rh = side_lib_row_h(d);
+    return ((ch + rh - 1) / rh) * rh;
+}
+
+/* Where row i sits: column, y from the top of the list (the card, when shown, pushes the rows after the pinned ones down). */
+static void side_lib_pos(const desk* d, uint32_t i, uint32_t* col, int32_t* y) {
+    uint32_t cols = side_lib_cols(d), pn = side_pinned_n(d), row;
+    int32_t extra = 0;
+    if (side_card_h(d) > 0 && i >= pn) {
+        row = (pn + cols - 1u) / cols + (i - pn) / cols;
+        *col = (i - pn) % cols;
+        extra = side_card_h(d);
+    } else {
+        row = i / cols;
+        *col = i % cols;
+    }
+    *y = (int32_t)row * side_lib_row_h(d) + extra;
+}
+
+static int32_t side_lib_total(const desk* d) {
+    uint32_t cols = side_lib_cols(d), pn = side_card_h(d) > 0 ? side_pinned_n(d) : 0u, rows;
+    rows = pn > 0u ? (pn + cols - 1u) / cols + (d->side_n - pn + cols - 1u) / cols : (d->side_n + cols - 1u) / cols;
+    return (int32_t)rows * side_lib_row_h(d) + side_card_h(d);
+}
+
 static int32_t side_lib_max_q16(const desk* d) {
-    uint32_t cols = side_lib_cols(d);
-    int32_t total = (int32_t)((d->side_n + cols - 1u) / cols) * side_lib_row_h(d), view = side_lib_view_rect(d).h;
+    int32_t total = side_lib_total(d), view = side_lib_view_rect(d).h;
     return total > view ? px_to_logical(d, total - view) << 16 : 0;
 }
 
@@ -8368,6 +8441,15 @@ static void side_lib_reload(desk* d) {
     d->side_n = sel_engine_library_items(d->engine, d->side_open_n != 0u ? SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST)
                                                                          : d->side_chip != 0u ? side_chip_mask[d->side_chip - 1u] : SEL_LIB_ITEM_ALL,
                                          0u, d->side_items, SIDE_LIB_MAX, NULL);
+    if (d->side_sub == 1u && d->side_chip == 1u && d->side_open_n == 0u) { /* I678d: By You keeps the playlists you made */
+        uint32_t a, b = 0u;
+        for (a = 0u; a < d->side_n; a++) {
+            if (strcmp(d->side_items[a].creator, "You") == 0) {
+                d->side_items[b++] = d->side_items[a];
+            }
+        }
+        d->side_n = b;
+    }
     d->side_item_calls++;
     d->side_stale = 0u;
     d->side_filters++; /* I610: filter passes run */
@@ -8541,9 +8623,10 @@ static sel_gui_rect lmenu_strip_rect(const desk* d, uint32_t seg) {
 
 static sel_gui_rect side_lib_row_rect(const desk* d, uint32_t i) {
     sel_gui_rect v = side_lib_view_rect(d);
-    uint32_t cols = side_lib_cols(d);
-    int32_t cw = v.w / (int32_t)cols;
-    return rect_of(v.x + (int32_t)(i % cols) * cw, v.y + (int32_t)(i / cols) * side_lib_row_h(d) - lpx(d, d->side_y_q16 >> 16), cw, side_lib_row_h(d));
+    uint32_t cols = side_lib_cols(d), col;
+    int32_t cw = v.w / (int32_t)cols, y;
+    side_lib_pos(d, i, &col, &y);
+    return rect_of(v.x + (int32_t)col * cw, v.y + y - lpx(d, d->side_y_q16 >> 16), cw, side_lib_row_h(d));
 }
 
 /* The row under a canvas point, -1 for none; rows scrolled out of the view do not count. */
@@ -8659,7 +8742,11 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
         sel_gui_rect band = side_chip_band(d, &ov), cr = side_chips_rect(d);
         sel_gui_clip_push(d->canvas, band);
         if (side_chip_single(d)) {
-            draw_chip(d, side_chip_rect(d, 0), d->side_chip == 0u ? "All" : side_chip_name[d->side_chip - 1u], d->side_chip != 0u, SEL_GUI_TOKEN_SURFACE_RAISED);
+            sel_gui_rect sr = side_chip_rect(d, 0);
+            if (d->side_chip == 1u && side_chip_has_x(d)) { /* I678d: room at the right end for the By You chip */
+                sr.w -= lpx(d, 64) + lpx(d, SIDE_CHIP_GAP);
+            }
+            draw_chip(d, sr, d->side_chip == 0u ? "All" : side_chip_name[d->side_chip - 1u], d->side_chip != 0u, SEL_GUI_TOKEN_SURFACE_RAISED);
         } else {
             for (k = 0; k < SIDE_CHIPS; k++) {
                 if (side_chip_rect(d, k).w > 0) { /* I678b: a selected chip hides the others */
@@ -8668,6 +8755,12 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
             }
         }
         sel_gui_clip_pop(d->canvas);
+        d->side_sub_btn = rect_of(0, 0, 0, 0);
+        if (d->side_chip == 1u && side_chip_has_x(d)) { /* I678d: the second-level chip of Playlists */
+            sel_gui_rect pr = side_chip_rect(d, 0);
+            d->side_sub_btn = rect_of(side_chip_single(d) ? pr.x + pr.w - lpx(d, 64) : pr.x + pr.w + lpx(d, SIDE_CHIP_GAP), pr.y, lpx(d, 64), pr.h);
+            draw_chip(d, d->side_sub_btn, "By You", d->side_sub == 1u, SEL_GUI_TOKEN_SURFACE_RAISED);
+        }
         if (side_chip_has_x(d)) { /* I678b: the round clear button left of the selected chip */
             sel_gui_rect xr = side_chip_chevron(d, 0);
             hover_reg(d, xr);
@@ -8691,20 +8784,29 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
     }
     if (d->side_n == 0u && labels && v.h > 0 && d->side_chip > 1u) { /* a chip of a kind without rows */
         draw_text(d, rect_of(v.x + pad, v.y, v.w - 2 * pad, lpx(d, 28)), "Nothing here yet.", 0, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
-    } else if (d->side_n == 0u && labels && v.h > 0) { /* I627: no saved playlist: Spotify's card with one button; one text line on the bitmap tier */
-        uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+    } else if (d->side_n == 0u && labels && v.h > 0 && desk_bitmap_text(d)) {
+        draw_text(d, rect_of(v.x + pad, v.y, v.w - 2 * pad, lpx(d, 28)), "No playlists yet.", 0, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
+    }
+    if (labels && side_table(d)) { /* I678d: the table header over the rows */
+        uint32_t muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+        int32_t hy = v.y - side_table_head_h(d), tw = v.w - 2 * pad, c1 = v.x + pad + tw * 52 / 100, c2 = v.x + pad + tw * 68 / 100, c3 = v.x + pad + tw * 84 / 100;
+        draw_text(d, rect_of(v.x + pad, hy, c1 - v.x - pad, side_table_head_h(d)), "Title", 1, 12, muted);
+        draw_text(d, rect_of(c1, hy, c2 - c1, side_table_head_h(d)), "Type", 1, 12, muted);
+        draw_text(d, rect_of(c2, hy, c3 - c2, side_table_head_h(d)), "Date Added", 1, 12, muted);
+        draw_text(d, rect_of(c3, hy, v.x + v.w - pad - c3, side_table_head_h(d)), "Played", 1, 12, muted);
+    }
+    if (labels && side_card_h(d) > 0) { /* I627, I678d: no saved playlist: Spotify's card with one button, below the pinned rows */
+        uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]), cn = side_pinned_n(d), cc = side_lib_cols(d);
         int32_t cw = v.w - 2 * pad, ch = lpx(d, 120), bw = lpx(d, 150);
-        if (desk_bitmap_text(d)) {
-            draw_text(d, rect_of(v.x + pad, v.y, cw, lpx(d, 28)), "No playlists yet.", 0, 14, muted);
-        } else if (v.h >= ch) {
-            sel_gui_rect card = rect_of(v.x + pad, v.y + lpx(d, 4), cw, ch);
-            sel_gui_round_rect(d->canvas, card, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
-            draw_text(d, rect_of(card.x + pad, card.y + lpx(d, 12), card.w - 2 * pad, lpx(d, 20)), "Create your first playlist", 1, 14, text);
-            draw_text(d, rect_of(card.x + pad, card.y + lpx(d, 34), card.w - 2 * pad, lpx(d, 18)), "Name it, then add songs from your library", 0, 12, muted);
-            d->side_empty_btn = rect_of(card.x + pad, card.y + lpx(d, 68), bw < card.w - 2 * pad ? bw : card.w - 2 * pad, lpx(d, 36));
-            draw_button(d, d->side_empty_btn, text, "Create playlist", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
-            d->side_empty_draws++;
-        }
+        sel_gui_rect card = rect_of(v.x + pad, v.y + (int32_t)((cn + cc - 1u) / cc) * side_lib_row_h(d) + lpx(d, 4) - lpx(d, d->side_y_q16 >> 16), cw, ch);
+        sel_gui_clip_push(d->canvas, v);
+        sel_gui_round_rect(d->canvas, card, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+        draw_text(d, rect_of(card.x + pad, card.y + lpx(d, 12), card.w - 2 * pad, lpx(d, 20)), "Create your first playlist", 1, 14, text);
+        draw_text(d, rect_of(card.x + pad, card.y + lpx(d, 34), card.w - 2 * pad, lpx(d, 18)), "Name it, then add songs from your library", 0, 12, muted);
+        d->side_empty_btn = rect_of(card.x + pad, card.y + lpx(d, 68), bw < card.w - 2 * pad ? bw : card.w - 2 * pad, lpx(d, 36));
+        draw_button(d, d->side_empty_btn, text, "Create playlist", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]));
+        d->side_empty_draws++;
+        sel_gui_clip_pop(d->canvas);
     }
     sel_gui_clip_push(d->canvas, v);
     for (i = 0; i < d->side_n; i++) {
@@ -8721,24 +8823,42 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
             ar = rect_of(r.x + g, r.y + g, cs, cs);
             side_item_thumb(d, ar, &d->side_items[i]);
             if (d->side_view == SEL_UIM_LVIEW_LARGE) {
-                draw_text(d, rect_of(ar.x, ar.y + cs, cs, lpx(d, 20)), d->side_items[i].name, 0, 12, open ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : row_ink(d, r, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT])));
+                char gsub[128];
+                draw_text(d, rect_of(ar.x, ar.y + cs, cs, lpx(d, 18)), d->side_items[i].name, 1, 12, open ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : row_ink(d, r, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT])));
+                sel_uim_library_item_subtitle(d->side_items[i].kind, d->side_items[i].sub, d->side_items[i].songs, gsub, sizeof gsub);
+                draw_text(d, rect_of(ar.x, ar.y + cs + lpx(d, 16), cs, lpx(d, 16)), gsub, 0, 11, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
             }
             d->side_rows++;
             continue;
         }
-        if (labels && d->side_view == SEL_UIM_LVIEW_COMPACT) { /* I611: compact list: a small cover and the name on one line */
-            int32_t cs = r.h - lpx(d, 8), tx;
-            ar = rect_of(r.x + pad, r.y + lpx(d, 4), cs, cs);
-            side_item_thumb(d, ar, &d->side_items[i]);
-            tx = ar.x + cs + gap;
-            draw_text(d, rect_of(tx, r.y, r.x + r.w - pad - tx, r.h), d->side_items[i].name, 1, 14, open ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : row_ink(d, r, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT])));
+        if (labels && d->side_view == SEL_UIM_LVIEW_COMPACT) { /* I678d: compact: no cover, the bold title then a muted "Type - Subtitle" on one line */
+            char sub[128], line[256];
+            int32_t tx = r.x + pad, tw = r.x + r.w - pad - tx, nw;
+            uint32_t ink = open ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : row_ink(d, r, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+            sel_uim_library_item_subtitle(d->side_items[i].kind, d->side_items[i].sub, d->side_items[i].songs, sub, sizeof sub);
+            nw = tw * 55 / 100;
+            draw_text(d, rect_of(tx, r.y, nw, r.h), d->side_items[i].name, 1, 14, ink);
+            snprintf(line, sizeof line, "%s%s%s", sel_uim_library_item_type(d->side_items[i].kind), sub[0] ? " \xE2\x80\xA2 " : "", sub);
+            draw_text(d, rect_of(tx + nw + gap, r.y, tw - nw - gap, r.h), line, 0, 12, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]));
             d->side_rows++;
             continue;
         }
+        cov = labels && r.h < lpx(d, 56) ? r.h - lpx(d, 8) : lpx(d, 44);
         ar = rect_of(r.x + (labels ? pad : (r.w - cov) / 2), r.y + (r.h - cov) / 2, cov, cov);
         side_item_thumb(d, ar, &d->side_items[i]);
         if (labels) {
             int32_t tx = ar.x + cov + gap, tw = r.x + r.w - pad - tx, th = lpx(d, 20);
+            if (side_table(d)) { /* I678d: the expanded table: Title | Type | Date Added | Played */
+                int32_t tt = v.w - 2 * pad, c1 = v.x + pad + tt * 52 / 100, c2 = v.x + pad + tt * 68 / 100, c3 = v.x + pad + tt * 84 / 100;
+                char when[48];
+                uint32_t mu = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+                tw = c1 - gap - tx;
+                sel_uim_relative_time((int64_t)time(NULL), d->side_items[i].kind == (uint32_t)SEL_LIB_ITEM_PLAYLIST ? 0u : d->side_items[i].added, when, sizeof when);
+                draw_text(d, rect_of(c1, r.y, c2 - c1, r.h), sel_uim_library_item_type(d->side_items[i].kind), 0, 12, mu);
+                draw_text(d, rect_of(c2, r.y, c3 - c2, r.h), when, 0, 12, mu);
+                sel_uim_relative_time((int64_t)time(NULL), d->side_items[i].last_played, when, sizeof when);
+                draw_text(d, rect_of(c3, r.y, v.x + v.w - pad - c3, r.h), when, 0, 12, mu);
+            }
             uint32_t ink = open ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : row_ink(d, r, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
             draw_text(d, rect_of(tx, ar.y + lpx(d, 2), tw, th), d->side_items[i].name, 1, 14, ink);
             char subtitle[128];
@@ -10534,13 +10654,22 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
             d->uim.dirty |= SEL_UIM_DIRTY_ALL;
             return 1;
         }
-        if (d->side_empty_btn.w > 0 && d->side_n == 0u && in_rect(d->side_empty_btn, ev->x, ev->y)) { /* I627: the empty-state button */
+        if (d->side_empty_btn.w > 0 && in_rect(d->side_empty_btn, ev->x, ev->y)) { /* I627: the empty-state button */
             d->side_create_clicks++;
             return side_create_playlist(d);
         }
         door = side_tools_at(d, ev->x, ev->y); /* I611: magnifier, filter field, sort label */
         if (door >= 0) {
             tl_click(d, side_tools_rect(d), door);
+            return 1;
+        }
+        if (d->side_sub_btn.w > 0 && in_rect(d->side_sub_btn, ev->x, ev->y)) { /* I678d: the second-level chip */
+            d->side_sub = d->side_sub == 1u ? 0u : 1u;
+            d->side_sub_clicks++;
+            d->side_y_q16 = 0;
+            d->side_stale = 1u;
+            d->repaint = 1;
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
             return 1;
         }
         door = side_chip_at(d, ev->x, ev->y); /* I610: a library chip or chevron */

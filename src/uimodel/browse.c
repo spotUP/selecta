@@ -87,3 +87,41 @@ uint32_t sel_uim_library_item_subtitle(uint32_t kind, const char* sub, uint32_t 
     }
     return n > 0 ? (uint32_t)n : 0u;
 }
+
+/* I678d: the Type column and the compact row of Your Library (design section 6): the kind as one word. */
+const char* sel_uim_library_item_type(uint32_t kind) {
+    switch (kind) {
+    case SEL_LIB_ITEM_ALBUM: return "Album";
+    case SEL_LIB_ITEM_ARTIST: return "Artist";
+    case SEL_LIB_ITEM_COMPOSER: return "Composer";
+    case SEL_LIB_ITEM_SOURCE: return "Source";
+    default: return "Playlist"; /* the playlists and the pinned kinds, which are playlists of the user's songs */
+    }
+}
+
+/* I678d: "2 days ago" for the Date Added and Played columns. `then` 0 (never) or a value that is not an epoch time (a playlist's
+ * creation order) writes "-"; a time in the future counts as now. One formatter for every UI. */
+uint32_t sel_uim_relative_time(int64_t now, uint32_t then, char* out, uint32_t cap) {
+    int64_t s = now - (int64_t)then, n;
+    const char* unit;
+    int w;
+    if (then < 1000000000u) {
+        w = snprintf(out, cap, "-");
+    } else if (s < 60) {
+        w = snprintf(out, cap, "Just now");
+    } else {
+        if (s < 3600) {
+            n = s / 60, unit = "minute";
+        } else if (s < 86400) {
+            n = s / 3600, unit = "hour";
+        } else if (s < 30 * 86400) {
+            n = s / 86400, unit = "day";
+        } else if (s < 365 * 86400) {
+            n = s / (30 * 86400), unit = "month";
+        } else {
+            n = s / (365 * 86400), unit = "year";
+        }
+        w = snprintf(out, cap, "%lld %s%s ago", (long long)n, unit, n == 1 ? "" : "s");
+    }
+    return w > 0 ? (uint32_t)w : 0u;
+}
