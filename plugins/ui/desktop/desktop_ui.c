@@ -5095,8 +5095,6 @@ static int pl_button_click(desk* d, const sel_view_state* v, uint32_t k) {
     }
 }
 
-/* One pointer event on an open playlist page: Back, Play, or a click on a song row plays that song. */
-
 /* Plays the song row at display position pos of the open playlist or collection page: the one path a click and Enter share. */
 static int pls_play_pos(desk* d, uint32_t pos) {
     snprintf(d->np_ctx, sizeof d->np_ctx, "%s", d->pls_name); /* I619 */
@@ -5105,6 +5103,7 @@ static int pls_play_pos(desk* d, uint32_t pos) {
     return 1;
 }
 
+/* One pointer event on an open playlist page: Back, Play, or a click on a song row plays that song. */
 static int pls_pointer(desk* d, const sel_gui_input* ev) {
     sel_gui_rect mn = region_rect(d, "main");
     uint32_t slot;
