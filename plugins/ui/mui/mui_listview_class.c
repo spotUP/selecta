@@ -6,6 +6,8 @@
  * class needs no instance data (BOOPSI cl_InstSize is a UWORD). */
 #include "mui_listview_class.h"
 
+#include "mui_aa_draw.h"
+
 #include <stdint.h>
 
 #include <clib/alib_protos.h>
@@ -33,7 +35,7 @@ __asm__(".text\n.even\n.globl _lv_dispatch\n_lv_dispatch:\n"
 static ULONG __attribute__((used)) lv_dispatch_c(struct IClass* cl, Object* obj, Msg msg) {
     if (msg->MethodID == MUIM_Setup) {
         ULONG r = DoSuperMethodA(cl, obj, msg);
-        if (r != 0 && _win(obj) != NULL) {
+        if (r != 0 && aa_live(obj)) {
             g_lv_ehn.ehn_Priority = 0;
             g_lv_ehn.ehn_Flags = 0;
             g_lv_ehn.ehn_Object = obj;
@@ -65,12 +67,13 @@ Object* mui_listview_new(Object* list, ULONG sm_base, ULONG sm_count) {
     g_lv_sm_base = sm_base;
     g_lv_sm_count = sm_count;
     if (g_lv_class == NULL) {
-        g_lv_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Listview, NULL, 0, (APTR)(uintptr_t)lv_dispatch);
+        g_lv_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Group, NULL, 0, (APTR)(uintptr_t)lv_dispatch);
     }
     if (g_lv_class == NULL) {
         return NULL;
     }
-    return NewObject(g_lv_class->mcc_Class, NULL, MUIA_Listview_List, (ULONG)list, TAG_DONE);
+    /* I667i2: a Group around the AAList group (was a stock Listview around a stock List). */
+    return NewObject(g_lv_class->mcc_Class, NULL, MUIA_Group_Horiz, TRUE, MUIA_Group_Spacing, 0, MUIA_Group_Child, (ULONG)list, TAG_DONE);
 }
 
 void mui_listview_class_free(void) {

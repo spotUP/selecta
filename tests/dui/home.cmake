@@ -439,8 +439,8 @@ expect_eq("wheel over cards reaches the last shelf" "${ycard}" "${ymax}")
 set(db3 "${WORK}/library3.db")
 file(COPY_FILE "${db}" "${db3}")
 string(CONCAT seed3
-  "INSERT INTO songs(id, key, source, path, name, artist, album, format, added) VALUES(9, 'fixture:9', 'local', 'fixture/9.mod', 'Lotus Again', 'Other Artist', 'Lotus Turbo Challenge', 'mod', 1700000009); "
   "INSERT INTO albums(id, name, artist, year, source) VALUES(5, 'Lotus Turbo Challenge', 'Other Artist', 1993, 'local'); "
+  "INSERT INTO songs(id, key, source, path, name, artist, album, format, added) VALUES(9, 'fixture:9', 'local', 'fixture/9.mod', 'Lotus Again', 'Other Artist', 'Lotus Turbo Challenge', 'mod', 1700000009); "
   "INSERT INTO artwork(album_id, kind, data) SELECT 5, 'cover', data FROM artwork WHERE album_id = 3 AND kind = 'cover'; "
   "INSERT INTO history(key, played_at, skipped) VALUES('fixture:9', 7500, 1)")
 execute_process(COMMAND "${SQLITE3}" "${db3}" "PRAGMA trusted_schema = 1; ${seed3}" RESULT_VARIABLE rc ERROR_VARIABLE err)
@@ -589,8 +589,14 @@ function(dui_stat_line_rows out var)
   endif()
   set(${var} "${CMAKE_MATCH_1}" PARENT_SCOPE)
 endfunction()
-album_run(act "${db4}" "tile 9\nexec VIEW_SOURCE query\nwait 1\n")
-expect_album_rows("${act}" "the Other Artist shelf tile opens its own album" 1 "fixture:9")
+# I678h2: an album tile opens the album page by album id (a collection page, not the query view), so the page lists that album only.
+function(expect_album_page out what songs)
+  if(NOT "${out}" MATCHES "collection kind=album [^\n]* of=${songs} ")
+    message(FATAL_ERROR "${what}: no album page of ${songs} songs in:\n${out}")
+  endif()
+endfunction()
+album_run(act "${db4}" "tile 9\nwait 1\n")
+expect_album_page("${act}" "the Other Artist shelf tile opens its own album" 1)
 
 # 10c. I473: the same for Search album rows. album:Lotus lists both albums; the Albums group has one row per name and artist
 # (rows: heading, 4 songs, heading, 2 albums, ...). Row 5 is the Chris Huelsbeck album (2 songs: fixture:1 first) and row 6 the

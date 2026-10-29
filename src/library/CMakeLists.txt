@@ -25,7 +25,7 @@ target_include_directories(selecta_library PUBLIC ${PROJECT_SOURCE_DIR}/include 
 add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/sqlite ${CMAKE_BINARY_DIR}/third_party/sqlite)
 target_sources(selecta_library PRIVATE db/amiga_vfs.c db/db.c db/index.c db/schema.c db/worker.c db/search.c db/scan.c db/user.c db/folders.c db/fetch.c db/rating_push.c db/vote_push.c db/lyrics_fetch.c db/job.c db/genre.c db/art.c db/songdb.c db/items.c db/similar.c db/duplicates.c devilbox_loudness.c devilbox_lyrics.c stream_open.c record_name.c songlen.c meta_utf8.c radio.c composer.c xxh32.c lyrics.c query.c regex.c share.c)
 target_include_directories(selecta_library PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/db)
-target_link_libraries(selecta_library PUBLIC selecta_sqlite)
+target_link_libraries(selecta_library PUBLIC selecta_sqlite selecta_platform) # I691c2: the platform family table lives in selecta_platform, never in the GUI
 if(SEL_AMIGA)
   target_compile_definitions(selecta_library PRIVATE SEL_LIBRARY_NO_THREAD)
 endif()

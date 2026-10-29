@@ -193,17 +193,49 @@ static const char SCHEMA_V8[] =
 static const char SCHEMA_V9[] =
     "CREATE TABLE opened(kind INTEGER NOT NULL, id TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(kind, id)) WITHOUT ROWID;";
 
+/* I687: every distinct (album, artist, source) of songs with a non-empty album has one albums row. Before this the only writer was
+ * art_store (an embedded cover found by the scan), so an album without a cover never reached the Library Albums list (PART_ALBUM
+ * lists FROM albums). Keys are the ones art_store looks up: name, artist IS (empty = NULL), source NULL or the song's source, so a
+ * later cover store finds this row instead of adding a second. The last song of an album takes the albums row and its artwork with it (the
+ * delete trigger; the update trigger only adds; a retag's orphan is dropped by scan.c, since any UPDATE trigger beyond this one breaks the 512 KB heap, I577), like
+ * the row folders.c removes with a single song. */
+#define V10_ADD(r) \
+    "INSERT INTO albums(name, artist, source) SELECT " r ".album, NULLIF(" r ".artist,''), " r ".source WHERE " r ".album IS NOT NULL" \
+    " AND " r ".album <> '' AND NOT EXISTS (SELECT 1 FROM albums a WHERE a.name = " r ".album AND a.artist IS NULLIF(" r ".artist,'')" \
+    " AND (a.source IS NULL OR a.source = " r ".source));"
+#define V10_GONE_OF(alb, art) \
+    "(SELECT a.id FROM albums a WHERE a.name = " alb " AND a.artist IS NULLIF(" art ",'')" \
+    " AND NOT EXISTS (SELECT 1 FROM songs o WHERE o.album = " alb " AND NULLIF(o.artist,'') IS NULLIF(" art ",'')))"
+#define V10_DROP_OF(alb, art) \
+    "DELETE FROM artwork WHERE " alb " IS NOT NULL AND album_id IN " V10_GONE_OF(alb, art) ";" \
+    "DELETE FROM albums WHERE " alb " IS NOT NULL AND id IN " V10_GONE_OF(alb, art) ";"
+#define V10_DROP V10_DROP_OF("old.album", "old.artist")
+/* The same drop for a retag, bound as ?1 = old album, ?2 = old artist; the scan upsert runs it (scan.c) after it moves a song off its album. */
+const char SEL_SQL_ALBUM_DROP[] = V10_DROP_OF("?1", "?2");
+static const char SCHEMA_V10[] =
+    "INSERT INTO albums(name, artist, source) SELECT s.album, NULLIF(s.artist,''), s.source FROM songs s WHERE s.album IS NOT NULL"
+    " AND s.album <> '' AND NOT EXISTS (SELECT 1 FROM albums a WHERE a.name = s.album AND a.artist IS NULLIF(s.artist,'')"
+    " AND (a.source IS NULL OR a.source = s.source)) GROUP BY s.album, NULLIF(s.artist,''), s.source;"
+    "CREATE TRIGGER songs_album_ai AFTER INSERT ON songs BEGIN " V10_ADD("new") "END;"
+    "CREATE TRIGGER songs_album_au AFTER UPDATE OF album, artist ON songs BEGIN " V10_ADD("new") "END;"
+    "CREATE TRIGGER songs_album_ad AFTER DELETE ON songs BEGIN " V10_DROP "END;";
+
+/* I687c: the V10 delete trigger and the scan.c retag drop ask "does another song have this album" per deleted or retagged
+ * row; without an index each is a scan of songs. The 2 MB tier heap grew by 32 KiB for this index's page (db.c). */
+static const char SCHEMA_V11[] = "CREATE INDEX songs_album ON songs(album);";
+
 /* I678j: the format of a play, so a Modland or stream play (no songs row) still files under a Home format chip. A library play takes
  * songs.format; any other play takes the lower-case extension of its key (at most 5 characters). Earlier rows are filled the same way. */
-#define V10_EXT "lower(substr(key, length(rtrim(key, replace(key, '.', ''))) + 1))"
-static const char SCHEMA_V10[] =
+#define V12_EXT "lower(substr(key, length(rtrim(key, replace(key, '.', ''))) + 1))"
+static const char SCHEMA_V12[] =
     "ALTER TABLE history ADD COLUMN format TEXT;"
     "UPDATE history SET format = (SELECT s.format FROM songs s WHERE s.key = history.key);"
-    "UPDATE history SET format = " V10_EXT " WHERE format IS NULL AND instr(key, '.') > 0"
-    " AND length(" V10_EXT ") BETWEEN 1 AND 5 AND " V10_EXT " NOT GLOB '*[^a-z0-9]*';";
+    "UPDATE history SET format = " V12_EXT " WHERE format IS NULL AND instr(key, '.') > 0"
+    " AND length(" V12_EXT ") BETWEEN 1 AND 5 AND " V12_EXT " NOT GLOB '*[^a-z0-9]*';";
 
-static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5,
-                                           SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10};
+static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
+                                           SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11,
+                                           SCHEMA_V12};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 

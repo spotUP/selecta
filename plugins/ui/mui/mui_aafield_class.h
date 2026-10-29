@@ -12,6 +12,7 @@
 typedef struct mui_aafield_spec {
     const uint32_t* tokens; /* theme token array (SEL_GUI_TOKEN_*) */
     int maxlen;
+    int max_w; /* I615d: cap the field's MaxWidth in px (the top bar field); 0 = unbounded */
     long id; /* MUIM_Application_ReturnID on MUIA_String_Acknowledge; 0 = no notification */
 } mui_aafield_spec;
 

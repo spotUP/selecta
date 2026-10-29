@@ -28,9 +28,12 @@ string(CONCAT seed
   "INSERT INTO history(key, played_at, skipped) VALUES('local:selecta-test.mod', 4102444800, 0); "
   "INSERT INTO meta(key, value) VALUES('modland.new_this_week', '7') ON CONFLICT(key) DO UPDATE SET value = '7'")
 sql("${seed}" ignore)
-# I678j: Recently Played lists items (albums, playlists, composers) with a finished play, plus stream and Modland plays; a local song with no
-# album has no card. Here the only finished-play songs have no album, so the shelf is empty and its heading is not shown.
-sql("SELECT COUNT(DISTINCT s.album) FROM history h JOIN songs s ON s.key = h.key WHERE h.skipped = 0 AND s.album IS NOT NULL;" recent)
+# I678j: Recently Played lists items (albums, playlists, composers) with a play, a skipped one included (the Recents recency of design
+# section 5), plus stream and Modland plays; a local song with no album has no card. Here the one album is the I687 trigger's row for the
+# seeded album, played once (skipped), so it is on Recently Played, Jump Back In and Your Albums.
+sql("SELECT COUNT(DISTINCT s.album) FROM history h JOIN songs s ON s.key = h.key WHERE s.album IS NOT NULL;" recent)
+# Your Albums: the albums with a play.
+set(albums "${recent}")
 string(CONCAT jumpq
   "SELECT COUNT(DISTINCT s.album) FROM history h JOIN songs s ON s.key = h.key WHERE h.skipped = 1 AND s.album IS NOT NULL "
   "AND NOT EXISTS (SELECT 1 FROM history f WHERE f.key = h.key AND f.skipped = 0);")
@@ -38,12 +41,16 @@ sql("${jumpq}" jump)
 sql("SELECT value FROM meta WHERE key = 'modland.new_this_week';" fresh)
 # I370: the library fill shelf lists the never-played songs older than a week (at most 10).
 sql("SELECT COUNT(*) FROM (SELECT 1 FROM songs WHERE key NOT IN (SELECT key FROM history) AND added < CAST(strftime('%s', 'now') AS INTEGER) - 604800 LIMIT 10);" fill)
-# I678j: Quick access leads Home with Liked Songs (always) and the Recents items; this fixture has no albums, playlists or composers rows,
-# so the items are Liked Songs and one artist per distinct played artist, at most 8.
-sql("SELECT MIN(8, 1 + COUNT(DISTINCT s.artist)) FROM history h JOIN songs s ON s.key = h.key WHERE s.artist IS NOT NULL AND s.artist <> '';" quick)
-math(EXPR want "${recent} + ${jump} + ${fresh} + ${fill} + ${quick}")
-if(NOT recent EQUAL 0 OR NOT jump EQUAL 1 OR NOT fresh EQUAL 7 OR NOT fill EQUAL 3 OR NOT quick EQUAL 2)
-  message(FATAL_ERROR "seed counts recent=${recent} jump=${jump} new=${fresh} fill=${fill} quick=${quick}, want 0 1 7 3 2")
+# I678j: Quick access leads Home with Liked Songs (always) and the Recents items (any play, skipped included); this fixture has no
+# playlists or composers, so the items are Liked Songs, one artist per distinct played artist and one album per distinct played album
+# (the I687 trigger files the seeded album), at most 8.
+string(CONCAT quickq
+  "SELECT MIN(8, 1 + (SELECT COUNT(DISTINCT s.artist) FROM history h JOIN songs s ON s.key = h.key WHERE s.artist IS NOT NULL AND s.artist <> '')"
+  " + (SELECT COUNT(DISTINCT s.album) FROM history h JOIN songs s ON s.key = h.key WHERE s.album IS NOT NULL));")
+sql("${quickq}" quick)
+math(EXPR want "${recent} + ${jump} + ${albums} + ${fresh} + ${fill} + ${quick}")
+if(NOT recent EQUAL 1 OR NOT jump EQUAL 1 OR NOT fresh EQUAL 7 OR NOT fill EQUAL 3 OR NOT quick EQUAL 3)
+  message(FATAL_ERROR "seed counts recent=${recent} jump=${jump} new=${fresh} fill=${fill} quick=${quick}, want 1 1 7 3 3")
 endif()
 execute_process(
   COMMAND "${SELECTA}" --output null --size 80x25 --start-dir "${CWD}" --db "${db}"

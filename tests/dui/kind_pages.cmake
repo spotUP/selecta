@@ -2,13 +2,15 @@
 # through the real desktop UI entry. -DSELECTA -DSONGS -DWORK
 # Fixture fixture_library.sql plus: songs 7 to 11 (Chris Huelsbeck, Lotus Turbo Challenge), song 12 (Chris Huelsbeck on album 3, so the
 # artist "Appears On" album 3), album 5 Second Quest by Chris Huelsbeck with song 13, composer rows for songs 1 and 5 under one canon
-# written two ways. So: album 1 has 7 songs and one "More by" album; the artist has 9 songs, 2 albums and 1 appearance; the composer
+# written two ways. Since I687 the songs_album_ai trigger keys an album by name and song artist, so song 12 also makes album 6
+# (Strange Sounds from Beyond by Chris Huelsbeck). So: album 1 has 7 songs and two "More by" albums; the artist has 9 songs, 3 albums
+# and 1 appearance (album 3); the composer
 # has 2 songs and 2 spellings.
 # The dump prints `collection kind=<kind> opens= ... of=` and, for a kind page, `kindpage label= key=[] sub=[] queries= popular= rows=
 # shelf albums= appears= more= spellings= showmore=x,y,w,h albumcard=x,y,w,h morecard=x,y,w,h`.
-# 1. Album: a click on the sidebar row opens page=collection kind=album, the songs equal the sqlite3 count, the "More by" shelf holds 1
-#    album and the Albums shelf none; the engine counted the query (queries >= 1, the sentinel that the new code ran).
-# 2. Artist: kind=artist, the songs equal the sqlite3 count, Popular shows 5 rows and Show more raises it to 9; Albums holds 2 and
+# 1. Album: a click on the sidebar row opens page=collection kind=album, the songs equal the sqlite3 count, the "More by" shelf holds 2
+#    albums and the Albums shelf none; the engine counted the query (queries >= 1, the sentinel that the new code ran).
+# 2. Artist: kind=artist, the songs equal the sqlite3 count, Popular shows 5 rows and Show more raises it to 9; Albums holds 3 and
 #    Appears On 1.
 # 3. A click on the first card of the Albums shelf opens that album's page (kind=album).
 # 4. Composer: kind=composer, 2 songs, 2 spellings, no Albums shelf; the Library page's composer row opens the same page and the
@@ -30,6 +32,7 @@ if(NOT rc EQUAL 0)
 endif()
 string(CONCAT seed
   "UPDATE songs SET key = 'local:' || path WHERE key LIKE 'fixture:%'; "
+  "INSERT INTO albums(id, name, artist, year, source) VALUES(5, 'Second Quest', 'Chris Huelsbeck', 1995, 'local'); "
   "INSERT INTO songs(key, source, path, name, artist, album, format, year, added) VALUES"
   "('local:fixture/7.mod','local','fixture/7.mod','Seven','Chris Huelsbeck','Lotus Turbo Challenge','mod',1992,1),"
   "('local:fixture/8.mod','local','fixture/8.mod','Eight','Chris Huelsbeck','Lotus Turbo Challenge','mod',1992,1),"
@@ -38,7 +41,6 @@ string(CONCAT seed
   "('local:fixture/11.mod','local','fixture/11.mod','Eleven','Chris Huelsbeck','Lotus Turbo Challenge','mod',1992,1),"
   "('local:fixture/12.mod','local','fixture/12.mod','Twelve','Chris Huelsbeck','Strange Sounds from Beyond','mod',1991,1),"
   "('local:fixture/13.mod','local','fixture/13.mod','Thirteen','Chris Huelsbeck','Second Quest','mod',1995,1); "
-  "INSERT INTO albums(id, name, artist, year, source) VALUES(5, 'Second Quest', 'Chris Huelsbeck', 1995, 'local'); "
   "INSERT INTO song_composers(song_key, canon, display) VALUES('local:fixture/1.mod', 'chris huelsbeck', 'Chris Huelsbeck'); "
   "INSERT INTO song_composers(song_key, canon, display) VALUES('local:fixture/5.sid', 'chris huelsbeck', 'Huelsbeck, Chris'); "
   "INSERT INTO history(key, played_at) VALUES('local:fixture/5.sid', 100),('local:fixture/5.sid', 200),('local:fixture/1.mod', 300)")
@@ -112,7 +114,7 @@ function(expect_kind dump kind label)
   endif()
 endfunction()
 
-set(common --ui desktop --backend mem --view home --clock fixed --stats --db "${db}" --canvas 1280x1400)
+set(common --ui desktop --backend mem --view home --clock fixed --stats --db "${db}" --canvas 1280x1600) # 1600: the source row sits below the album, artist and composer rows
 file(WRITE "${WORK}/idle.txt" "wait 100\n")
 # Each open touches Recents and reorders the sidebar, so the row is read from an idle run right before the run that clicks it.
 function(open_run out tag kind name script)
@@ -130,7 +132,7 @@ sql_count(want_alb "SELECT COUNT(*) FROM songs s JOIN albums a ON a.id=1 AND s.a
 col_field(of_alb "${alb}" of)
 expect_eq("album songs" "${of_alb}" "${want_alb}")
 kp_field(alb_more "${alb}" more)
-expect_eq("More by shelf" "${alb_more}" "1")
+expect_eq("More by shelf" "${alb_more}" "2")
 kp_field(alb_albums "${alb}" albums)
 expect_eq("an album has no Albums shelf" "${alb_albums}" "0")
 kp_field(alb_year "${alb}" year)
@@ -165,7 +167,7 @@ expect_eq("Popular limit" "${pop}" "5")
 kp_field(rows "${art}" rows)
 expect_eq("Popular rows" "${rows}" "5")
 kp_field(art_albums "${art}" albums)
-expect_eq("Albums shelf" "${art_albums}" "2")
+expect_eq("Albums shelf" "${art_albums}" "3")
 kp_field(art_app "${art}" appears)
 expect_eq("Appears On shelf" "${art_app}" "1")
 kp_rect(more_xy "${art}" showmore)
@@ -195,18 +197,14 @@ endif()
 expect_eq("composer display name" "${CMAKE_MATCH_1}" "Chris Huelsbeck")
 kp_field(com_alb "${com}" albums)
 expect_eq("a composer has no Albums shelf" "${com_alb}" "0")
-dui_run(lib_list --start-dir "${SONGS}" --db "${db}" --ui desktop --backend mem --view library --canvas 900x720 --clock fixed --stats --input "${WORK}/idle.txt")
-if(NOT "${lib_list}" MATCHES "composer ([0-9]+) chris huelsbeck\\|")
-  message(FATAL_ERROR "no composer row for chris huelsbeck in:\n${lib_list}")
+# I678i: the Library page is retired; the composer page opens from the composer's Browse page tile.
+file(WRITE "${WORK}/browse.txt" "topbar 2\nwait 3\n")
+dui_run(browse_list --start-dir "${SONGS}" --db "${db}" --ui desktop --backend mem --canvas 900x720 --clock fixed --stats --input "${WORK}/browse.txt")
+if(NOT "${browse_list}" MATCHES "browse tile ([0-9]+) 1 [^\n]*Huelsbeck")
+  message(FATAL_ERROR "no Browse composer tile for Chris Huelsbeck in:\n${browse_list}")
 endif()
-set(cidx "${CMAKE_MATCH_1}")
-if(NOT "${lib_list}" MATCHES "row ${cidx} ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)\n")
-  message(FATAL_ERROR "no row rectangle for composer ${cidx} in:\n${lib_list}")
-endif()
-math(EXPR rx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
-math(EXPR ry "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
-file(WRITE "${WORK}/libclick.txt" "click ${rx} ${ry}\nwait 100\n")
-dui_run(lib_click --start-dir "${SONGS}" --db "${db}" --ui desktop --backend mem --view library --canvas 900x720 --clock fixed --stats --input "${WORK}/libclick.txt")
+file(WRITE "${WORK}/libclick.txt" "topbar 2\nwait 3\nbrowse ${CMAKE_MATCH_1}\nwait 100\n")
+dui_run(lib_click --start-dir "${SONGS}" --db "${db}" --ui desktop --backend mem --canvas 900x720 --clock fixed --stats --input "${WORK}/libclick.txt")
 expect_kind("${lib_click}" composer Composer)
 foreach(gone "Back to all composers" "\ndrill " "\nback ")
   string(FIND "${lib_click}" "${gone}" at)
@@ -214,3 +212,44 @@ foreach(gone "Back to all composers" "\ndrill " "\nback ")
     message(FATAL_ERROR "the composer drilldown is still there ('${gone}'):\n${lib_click}")
   endif()
 endforeach()
+
+# 5. I678g: the pinned rows and a source. Liked Songs, Recently Played and Local Files show the wordmark header, a source page the
+# status block (design doc section 8). Seed: two liked songs (12 newer than 7), two songs of an unregistered source "hvsc".
+string(CONCAT seed2 "INSERT INTO liked(key, at) VALUES('local:fixture/7.mod', 10),('local:fixture/12.mod', 50); "
+  "INSERT INTO songs(key, source, path, name, artist, album, format, year, added) VALUES"
+  "('hvsc:a.sid','hvsc','a.sid','HvscA','Rob Hubbard','','sid',1986,1),('hvsc:b.sid','hvsc','b.sid','HvscB','Rob Hubbard','','sid',1986,1)")
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db}" "${seed2}" RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "seeding the pinned and source pages failed: ${err}")
+endif()
+# One field of the kindhead line.
+function(kh_field out dump field)
+  if(NOT "${dump}" MATCHES "kindhead ([^\n]* )?${field}=(\\[[^]]*\\]|[^ \n]*)")
+    message(FATAL_ERROR "no kindhead line with ${field} in:\n${dump}")
+  endif()
+  string(REGEX REPLACE "^\\[(.*)\\]$" "\\1" v "${CMAKE_MATCH_2}")
+  set(${out} "${v}" PARENT_SCOPE)
+endfunction()
+# kind row-name page-kind label wordmark played source count-query first-key
+function(expect_pinned tag kind rowname pkind label wordmark played source countq first)
+  open_run(pg ${tag} ${kind} "${rowname}" "")
+  expect_kind("${pg}" ${pkind} ${label})
+  sql_count(want "${countq}")
+  col_field(got "${pg}" of)
+  expect_eq("${tag} songs" "${got}" "${want}")
+  kh_field(w "${pg}" wordmark)
+  expect_eq("${tag} wordmark header" "${w}" "${wordmark}")
+  kh_field(p "${pg}" played)
+  expect_eq("${tag} Played column" "${p}" "${played}")
+  kh_field(s "${pg}" source)
+  expect_eq("${tag} source block" "${s}" "${source}")
+  kh_field(f "${pg}" first)
+  expect_eq("${tag} first song" "${f}" "${first}")
+  set(pg "${pg}" PARENT_SCOPE)
+endfunction()
+expect_pinned(liked 0 "Liked Songs" liked Playlist 1 0 0 "SELECT COUNT(*) FROM liked" "local:fixture/12.mod")
+expect_pinned(recent 1 "Recently Played" recent Playlist 1 1 0 "SELECT COUNT(DISTINCT h.key) FROM history h JOIN songs s ON s.key=h.key" "local:fixture/1.mod")
+expect_pinned(local 2 "Local Files" local Source 1 0 0 "SELECT COUNT(*) FROM songs WHERE source='local'" "local:fixture/1.mod")
+expect_pinned(src 7 "HVSC" source Source 0 0 1 "SELECT COUNT(*) FROM songs WHERE source='hvsc'" "hvsc:a.sid")
+kh_field(status "${pg}" status)
+expect_eq("the registered remote source status" "${status}" "Remote, never synced")

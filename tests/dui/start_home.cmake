@@ -4,7 +4,7 @@
 # empty main area. Startup now enters Home through the same path as the door.
 # Asserts, with the real entry point, a fixture library with a play history and NO --view:
 # 1. the dump holds the ui_home line with at least 2 shelves (Home was drawn);
-# 2. the shelf "Recently played" has tiles (the HOME source is live, not the browse source).
+# 2. the shelf "Recently Played" has tiles (the HOME source is live, not the browse source).
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -36,6 +36,6 @@ dui_run(o --db "${db}" --ui desktop --backend mem --format index8 --canvas 640x5
 if(NOT "${o}" MATCHES "ui_home id=desktop shelves=([0-9]+)" OR CMAKE_MATCH_1 LESS 2)
   message(FATAL_ERROR "no --view: Home was not drawn at start (need ui_home with at least 2 shelves) in:\n${o}")
 endif()
-if(NOT "${o}" MATCHES "shelf 0 tile 0 Recently played\\|")
-  message(FATAL_ERROR "no --view: the Recently played shelf has no tiles in:\n${o}")
+if(NOT "${o}" MATCHES "shelf 0 tile 0 Recently Played\\|")
+  message(FATAL_ERROR "no --view: the Recently Played shelf has no tiles in:\n${o}")
 endif()

@@ -170,6 +170,27 @@ static void worker(void* ctx) {
     }
 }
 
+int art_known(desk_art* a, const char* title) {
+    return a == NULL || find_entry(a, title) != NULL || a->count >= ART_TITLES || strlen(title) >= ART_TITLE_MAX;
+}
+
+void art_forget_misses(desk_art* a) {
+    uint32_t i, keep = 0u;
+    if (a == NULL) {
+        return;
+    }
+    for (i = 0; i < a->count; i++) {
+        if (a->entry[i].album != 0) {
+            if (keep != i) {
+                a->entry[keep] = a->entry[i];
+            }
+            keep++;
+        }
+    }
+    a->count = keep;
+    a->bad_n = 0u;
+}
+
 void art_load(desk_art* a, const char* const* titles, uint32_t n) {
     if (a == NULL) {
         return;

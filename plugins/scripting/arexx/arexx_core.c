@@ -29,6 +29,53 @@ static int is_idle(const char* s) {
     return s[4] == '\0' || s[4] == ' ' || s[4] == '\t';
 }
 
+static arexx_theme_fn g_theme_fn;
+static void* g_theme_ctx;
+
+void arexx_set_theme_handler(arexx_theme_fn fn, void* ctx) {
+    g_theme_fn = fn;
+    g_theme_ctx = ctx;
+}
+
+/* THEME [path]: the first token without regard to case. Returns 1 and the argument (trimmed, NULL when none) when it is. */
+static int is_theme(const char* s, char* path, size_t cap) {
+    static const char word[] = "THEME";
+    size_t i, n;
+    while (*s == ' ' || *s == '\t') {
+        s++;
+    }
+    for (i = 0; i < 5u; i++) {
+        char ch = s[i];
+        if (ch >= 'a' && ch <= 'z') {
+            ch = (char)(ch - 'a' + 'A');
+        }
+        if (ch != word[i]) {
+            return 0;
+        }
+    }
+    if (s[5] != '\0' && s[5] != ' ' && s[5] != '\t') {
+        return 0;
+    }
+    s += 5;
+    while (*s == ' ' || *s == '\t') {
+        s++;
+    }
+    n = strlen(s);
+    while (n > 0 && (s[n - 1] == ' ' || s[n - 1] == '\t')) {
+        n--;
+    }
+    if (n >= 2u && s[0] == '"' && s[n - 1] == '"') { /* ARexx scripts quote a path with spaces */
+        s++;
+        n -= 2u;
+    }
+    if (n >= cap) {
+        n = cap - 1u;
+    }
+    memcpy(path, s, n);
+    path[n] = '\0';
+    return 1;
+}
+
 void arexx_dispatch(const char* arg0, int want_result, arexx_exec_fn exec, void* exec_ctx, char* reply, size_t cap,
                     arexx_result* out, arexx_counters* counters) {
     int rc = 0;
@@ -44,6 +91,21 @@ void arexx_dispatch(const char* arg0, int want_result, arexx_exec_fn exec, void*
     if (is_idle(arg0)) {
         fail(out, counters, reply, cap, "idle_not_supported_over_arexx");
         return;
+    }
+    {   /* I676b: THEME belongs to the UI, not the engine; the registered handler answers it (0: accepted) */
+        char path[256];
+        if (is_theme(arg0, path, sizeof path)) {
+            rc = g_theme_fn == NULL ? 1 : g_theme_fn(g_theme_ctx, path[0] != '\0' ? path : NULL);
+            if (rc != 0) {
+                fail(out, counters, reply, cap, g_theme_fn == NULL ? "theme_not_supported" : "theme_refused");
+                return;
+            }
+            out->result1 = AREXX_RC_OK;
+            out->has_string = 0;
+            out->text = reply;
+            counters->cmds++;
+            return;
+        }
     }
     exec(exec_ctx, arg0, reply, cap, &rc);
     if (rc != 0) {

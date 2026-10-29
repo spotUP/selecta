@@ -7,7 +7,7 @@
 #include "mui_icons.h"
 #include "mui_map.h"
 
-static const char* const k_slot_names[MUI_SLOT_COUNT] = {"suggestion", "sidebar", "main", "detail", "player"};
+static const char* const k_slot_names[MUI_SLOT_COUNT] = {"suggestion", "sidebar", "main", "detail", "player", "topbar-slot"};
 
 const char* const mui_tool_labels[MUI_TOOL_BTNS] = {"Like", "Remove From Queue", "Clear Queue", "Move Up", "Move Down", "Help", "Settings",
                                                     "New Playlist", "Open Playlist", "Rename Playlist", "Delete Playlist", "Clear Library"};
@@ -64,16 +64,21 @@ uint32_t mui_transport_row_width(uint32_t row) {
     return n;
 }
 
-void mui_layout_map(mui_layout_map_t* m, uint32_t width, uint32_t height) {
+void mui_layout_map(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier) {
     sel_uim_layout l;
     uint32_t i, s;
     memset(m, 0, sizeof *m);
-    /* I674: MUI runs on the native Amiga screens, the bitmap tier: a 640 wide own screen (window 600-699) keeps a rail, it
-     * does not get the mini-layout suggestion (sel_uim_breakpoint_for_tier, I526). */
-    sel_uim_layout_compute_tier(&l, width, height, SEL_UIM_TIER_BITMAP);
+    /* I615d (design 8.1): the tier follows the screen as in the rich UI. A native planar screen is the bitmap tier (I674: a 640
+     * wide window keeps a rail, no mini-layout suggestion, no top bar); an RTG screen is the default tier with the top bar. */
+    sel_uim_layout_compute_tier(&l, width, height, tier);
     m->width = width;
     m->height = height;
     m->breakpoint = l.breakpoint;
+    m->tier = tier;
+    /* I615d (design 8.2): the top bar is its own field of the layout, not a region. */
+    m->show[MUI_SLOT_TOPBAR] = l.topbar.h > 0u;
+    m->weight_w[MUI_SLOT_TOPBAR] = width;
+    m->weight_h[MUI_SLOT_TOPBAR] = l.topbar.h;
     for (i = 0; i < l.count; i++) {
         for (s = 0; s < MUI_SLOT_COUNT; s++) {
             if (strcmp(l.regions[i].name, k_slot_names[s]) == 0) {
@@ -88,10 +93,10 @@ void mui_layout_map(mui_layout_map_t* m, uint32_t width, uint32_t height) {
     m->balance_main_detail = m->show[MUI_SLOT_MAIN] && m->show[MUI_SLOT_DETAIL];
 }
 
-uint32_t mui_layout_relayout(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t* flips) {
+uint32_t mui_layout_relayout(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t* flips) {
     mui_layout_map_t next;
     uint32_t s, n = 0;
-    mui_layout_map(&next, width, height);
+    mui_layout_map(&next, width, height, tier);
     if (next.breakpoint == m->breakpoint) {
         /* Same breakpoint: only the weights follow the new size, no object appears or disappears. */
         *m = next;

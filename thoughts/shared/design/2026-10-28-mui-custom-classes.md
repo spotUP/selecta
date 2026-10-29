@@ -140,12 +140,19 @@ RTG and TC; on AGA within the 12-bit-to-8-bit rounding of the exact SA_Colors32 
 ### 3.4 AAField (string)
 
 - Rewriting String editing is out of scope. AAField is a MUIC_Group subclass holding one stock MUIC_String with
-  `MUIA_Frame` MUIV_Frame_None and the field background spec; AAField Draw paints the rounded field face and outline
-  before DoSuperMethod. Text inside the gadget stays the MUI prefs font and pens (limit, section 4).
-- Tokens: face SURFACE 1E1E24, outline DIVIDER 2C2C34, focus outline FOCUS_RING 93C5FD, placeholder TEXT_MUTED.
+  `MUIA_Frame` MUIV_Frame_None and the field background spec; AAField Draw calls DoSuperMethod first, then, when
+  MADF_DRAWOBJECT is set, paints the rounded field face and outline around the inner String's box (aa_round_fill_hole).
+  Text inside the gadget stays the MUI prefs font and pens (limit, section 4).
+- Paint after super (I667h3, rig 2 2026-10-29): MUI fills MUIP_Draw flags inside the Area super call, and a Group super
+  fills the gaps between its children (inner padding included) with the parent background. Anything a Group subclass
+  paints before DoSuperMethod is skipped or painted over; Johan saw faint or invisible fields. Host test
+  `mui-field-draw-flags` checks every AA class reads the draw flags only after the super call.
+- Tokens: face SURFACE_RAISED 2A2A32, outline TRACK 3A3A44, focus outline FOCUS_RING 93C5FD, placeholder TEXT_MUTED.
+  (I667h2, Johan 2026-10-29 rig 2: "its hard to see the text fields, their color is very similiar to the bg color".
+  The first build used face SURFACE 1E1E24, the same colour as the SURFACE panels the fields sit on.)
 - Sizes: height as AAButton, inner pad 8, radius 6 (S 4).
 - Host test: `mui-theme` extended: field role face and outline tokens.
-- Rig: search field face 1E1E24, outline 2C2C34.
+- Rig: search field face 2A2A32, outline 3A3A44.
 
 ### 3.5 AAScroller
 
@@ -185,8 +192,9 @@ RTG and TC; on AGA within the 12-bit-to-8-bit rounding of the exact SA_Colors32 
 
 ### 3.8 AAPanel (rounded panel groups)
 
-- Superclass MUIC_Group. Attribute `AAG_Role` (panel, surface, raised). Draw paints the rounded face with `aa_round_fill`
-  over the parent background, then DoSuperMethod draws children. Replaces TH PANEL groups and the 64x64 art frame.
+- Superclass MUIC_Group. Attribute `AAG_Role` (panel, surface, raised). DoSuperMethod draws the face (group background)
+  and children first; then Draw paints only the corner wedges outside the rounded outline in the parent background
+  (`aa_round_corners`), for the same reason as 3.4 (paint after super). Replaces TH PANEL groups and the 64x64 art frame.
 - Tokens: panel PANEL 141418, surface SURFACE 1E1E24, window behind BACKGROUND 121214, header strip HEADER_TINT 2B2350.
 - Sizes: radius RADIUS_LARGE 8 (S 4), inner spacing SPACING 8, outer gap 8.
 - Host test: `mui-theme` extended: panel roles map to the tokens.
@@ -221,6 +229,32 @@ detail (mui_ui.c window build, `s->balance[0..1]`) draw the MUI prefs 3D bar.
 
 AACheck (4 pref rows) is built inside 3.1 as AAButton role `toggle`: 16 px rounded box as the desktop d_checkbox
 (I667b-3): radius RADIUS_SMALL, corners SURFACE, off face SURFACE with a TEXT_MUTED outline, on face ACCENT with an ACCENT_TEXT tick.
+
+### 3.11 Icon size follows the text size (I667m)
+
+Johan 2026-10-29 (Amiga rig 2): "the icon vs text sizes in the mui ui are off the icons looks big and the texts small
+compare to the mac ui".
+
+- Cause (measured): `mui_aa_metrics` (map/mui_aa.c) sets `icon_px` to 24 on every tier except S (16), while
+  `mui_aa_font_px` gives 13 px text on a 600-row screen. Icon:text is 1.85. The desktop UI draws 16-20 px icons next to
+  13-14 px text (desktop_ui.c: draw_widget 16, draw_nav_arrows 18, tl_draw 18, draw_topbar 20, draw_transport 20;
+  draw_text px counts: 13 x36, 14 x35, 12 x23). Desktop icon:text is about 1.4.
+- Rule: `icon_px` comes from the tier, in one table in `mui_aa_metrics`: S 12 (font 8), M 18 (font 13), L 20 (font 15),
+  XL 24 (font 17). The button height formula stays `max(font, icon) + 2 * pad_y`, so M buttons shrink from 36 to 30.
+- Icon bodies: `aabtn_icon` resamples the 24 px body by nearest neighbour; 24 to 18 drops rows and columns and breaks
+  1 px Lucide strokes. Bake one body set per tier size instead: `tools/gui_iconbake.c` emits bodies for 12, 16, 18, 20
+  and 24 px (`mui_icon_body(icon, px)`, about 25 KB for the whole set), and `aabtn_icon` picks the exact size. Resampling
+  stays only as the fallback for a size with no body. `MUI_ICON_PX` in map/mui_icons.h and its users in map/mui_screen.c
+  and map/mui_icons.c take the tier size from `mui_aa_metrics` instead of the constant; the contract check
+  `mui_icon_body_px == MUI_ICON_PX` becomes "a body exists for every tier icon size".
+- AACheck `check_px` and the AASlider knob stay as they are (they follow the font already).
+- Text: 13 px on 600 rows is already a larger share of the screen than 13-14 px in the Mac window, so the text size
+  stays. Johan's "texts small" is the ratio. The rig look decides; if text still reads small next to 18 px icons, the
+  next step is M font 14, not bigger icons.
+- Host test `mui-icon-ratio`: for each tier, icon_px / font_px is between 1.3 and 1.5 (S excepted: 12 / 8), and
+  `mui_icon_body(icon, icon_px)` is not NULL for every icon id. Sentinel: the bodies drawn count by size, so a test sees
+  the 18 px body used on tier M.
+- Rig 2: toolbar and transport icons 18 px tall at 13 px text; Johan look.
 
 ## 4. Screen limits
 
@@ -311,3 +345,75 @@ Johan on rig 2, verbatim: "can we make the texts slightly toned down, they are w
 - So none of the suspects holds on this rig: MUI 3.8 default pen specs (rig 2 has no ENV:MUI prefs for Selecta) resolve to the DrawInfo pens that mui_pens.c sets (TEXT at slot 1), the depth 4 palette load (SA_Colors32, 7 slots) lands exactly, and no label uses a fixed white pen. The pen wiring matches the design (section 4); there is no pen bug to fix.
 - What Johan sees as white is C8C8D0 on 121214/1E1E24 (contrast about 11:1) drawn by topaz 8 in one flat pen with no anti-aliasing. The desktop UI draws the same TEXT token only for primary text (titles, selected rows) and TEXT_MUTED A0A0AC for everything secondary (artists, hints, section labels, durations; about 20 sites in plugins/ui/desktop/desktop_ui.c). The MUI port has one text pen, so every label is primary-bright; that is the visible difference from the rich UI.
 - Not changed (decision for Johan): (a) give MUI a TEXT_MUTED pen slot (design section 4 already lists pen 7 TEXT_MUTED) and draw secondary MUI text in it, matching the desktop per label; or (b) lower the TEXT token itself, which changes the desktop and every golden. (a) follows the "MUI matches rich UI" goal; (b) is what the request says literally. Both need a pen budget check on depth 4 (7 of 16 pens used today).
+
+## 8. Top bar (I615d, 2026-10-29)
+
+Violated invariant: the MUI window is meant to show the regions of `sel_uim_layout` for its screen, and the rich UI on the
+same screen is the reference. The I615 top bar became a fourth band of the default tier (`l->topbar`, 56 logical px:
+Home button, search field, Browse slice), but the MUI map only knows five slots (suggestion, sidebar, main, detail,
+player). I674 then pinned `mui_layout_map` to `SEL_UIM_TIER_BITMAP` on every screen, which hides the gap on AGA
+(the bitmap tier has no top bar) but gives MUI on RTG the AGA layout. Meanwhile `mui-weights` still compares against
+`sel_uim_layout_compute` (default tier), so at 640 it compares the bitmap rail against a mini-suggestion layout. Root level:
+the tier choice and the slot map, both in `plugins/ui/mui/map/mui_layout.c`. The test only follows from that.
+
+### 8.1 Tier follows the screen, as in the rich UI
+
+- The rich UI takes the bitmap tier only when it draws bitmap text on a native screen (`desk_bitmap_text`,
+  plugins/ui/desktop/desktop_ui.c:12637). MUI follows the same rule through the existing RTG probe
+  (`mui_screen_is_rtg`, `g_screen_rtg`): RTG screen means `SEL_UIM_TIER_DEFAULT`, native planar screen means
+  `SEL_UIM_TIER_BITMAP`.
+- Signature: `mui_layout_map(m, width, height, tier)`; `mui_layout_relayout` takes the tier too. `mui_ui.c:1855` passes
+  `g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP`. The tier changes only when the screen reopens
+  (`ui_switch`), never on a resize, so the object tree is built knowing it.
+- Result: AGA MUI matches the AGA rich UI (no top bar; Home and Search stay sidebar doors). RTG MUI matches the Mac
+  layout (top bar; the sidebar drops Home and Search).
+
+### 8.2 Slot map
+
+- `MUI_SLOT_TOPBAR` is added after `MUI_SLOT_PLAYER` (enum order of the existing five is kept: tests index them).
+  `k_slot_names` does not list it, because `l->topbar` is a separate field, not a region. `mui_layout_map` sets
+  `show[TOPBAR] = l.topbar.h > 0` and `weight_h[TOPBAR] = l.topbar.h`. `weight_w[TOPBAR]` is the window width.
+- `mui_apply_layout` gives the top bar slot `MUIA_VertWeight 0`. Its height is the MUI height of its children (one
+  AAField line plus the frame), not 56 px, so it costs about 16 to 20 px on a 256 line screen and the body takes the rest.
+  The body weights stay what they are.
+- Invariant for the test: `weight_h[PLAYER] + weight_h[MAIN] + weight_h[SUGGESTION] + weight_h[TOPBAR] == height`.
+
+### 8.3 Objects (I667 classes only)
+
+`HGroup` in the window's first row, above the body row, built once when the tier is DEFAULT:
+
+| Part | Class | Reference |
+|---|---|---|
+| left and right fill | `HSpace(0)`, equal weights, so the group is centred like `topbar_compute` | layout.c `topbar_compute` |
+| Home | AAButton, round, icon only, Home icon, help text "Home" | 3.1 |
+| Search | AAField with placeholder "What do you want to play?"; AskMinMax caps MaxWidth at `SEL_UIM_TOPBAR_FIELD_MAX` | 3.4 |
+| Browse | AAButton, icon only, flat, joined to the field's right end by a 1 px divider in the BORDER token | 3.1, 3.4 |
+
+- The search String moves: on the DEFAULT tier `s->str_search` is created in the top bar and the tool row's first row
+  keeps only `str_cmd`. On the BITMAP tier it stays in the tool row as today. There is still one object and one control
+  id (`CTL_P4_BASE + P4_SEARCH`), so `mui_search_lines` and the P4_SEARCH handler do not change.
+- Home sends the same page line as the Home door (`CTL_DOOR_BASE + 0`). Browse sends the Browse page line that the
+  rich top bar Browse slice sends (reuse its page name from the rich UI; do not add a new one).
+
+### 8.4 Sidebar doors
+
+- `mui_door_count` and the door loop at mui_ui.c:637 use `sel_uim_door_shown(i, top_bar)` with
+  `top_bar = show[MUI_SLOT_TOPBAR]` at build time, the same helper as the rich sidebar. Doors are not removed on
+  relayout. Within the DEFAULT tier the top bar only disappears at the mini breakpoint, where the sidebar is hidden too.
+
+### 8.5 Tests (host, `mui_contract_test`)
+
+- `mui-weights`: both tiers, widths 1280, 1024, 800 and 640 at 720. It compares against `sel_uim_layout_compute_tier`
+  for the same tier and checks the 8.2 invariant. On DEFAULT it checks `show[TOPBAR] == (l.topbar.h > 0)`; on BITMAP it
+  checks `show[TOPBAR] == 0`.
+- `mui-doors`: door count is 7 on BITMAP and 5 on DEFAULT with a top bar; Home and Search are absent from the second list.
+- `mui-topbar` (new reachability test): it builds the map with the DEFAULT tier through the real `mui_layout_map` entry,
+  asserts the top bar slot is shown, and asserts that Home and Browse resolve to the page names of door 0 and the rich
+  Browse slice. Revert proof: without 8.2 it fails.
+- Rig check (rig 2, uaegfx RTG mode and an AGA mode): the RTG window shows the centred top bar, the AGA window does not,
+  and typing in the top bar field lists results as the tool row field did.
+
+### 8.6 Open points
+
+- At the mini breakpoint (RTG window under 700 px wide) the rich UI drops the top bar and MUI does the same, so the
+  search field is not visible there. Same as the rich UI; revisit only if Johan flags it.

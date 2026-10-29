@@ -13,7 +13,7 @@ extern "C" {
 
 /* Button geometry in pixels: the icon edge and the MUI inner padding around the button contents. The label sits right of
  * the icon; the old text-only button had MUI's default 1 px padding. */
-enum { MUI_ICON_PX = 24, MUI_BTN_PAD_X = 10, MUI_BTN_PAD_Y = 6, MUI_BTN_ICON_GAP = 6 };
+enum { MUI_BTN_PAD_X = 10, MUI_BTN_PAD_Y = 6, MUI_BTN_ICON_GAP = 6 };
 /* I656: an icon-only button is a group whose only child is a fixed-size image, so its maximum width is fixed and bounds the
  * row, then the root group, then MUIV_Window_Width_Screen (the window opened 446 px wide). Such a button gets this many
  * HSpace(0) children around the image: they have no minimum but are stretchable, so the button grows like a text button
@@ -29,16 +29,22 @@ enum { MUI_BTN_FRAME = 4, MUI_FONT_W = 8, MUI_SLIDER_MIN = 64, MUI_MIN_SCREEN_W 
 uint32_t mui_button_width(const char* label, int icon_only);
 
 /* The baked bodies (generated at build time): count, edge in px, and one body per sel_gui_icon. */
-extern const uint8_t* const mui_icon_bodies[];
+/* One set per size (mui_icon_sizes, ascending), one body per sel_gui_icon in each set. */
+extern const uint8_t* const* const mui_icon_sets[];
+extern const uint32_t mui_icon_size_count;
+extern const uint32_t mui_icon_sizes[];
 extern const uint32_t mui_icon_body_count;
-extern const uint32_t mui_icon_body_px;
 
 /* Icon id (a sel_gui_icon value) for a button key: a transport or extra action id ("play", "pitch_up"), a sidebar door page
  * ("home") or a toolbar label ("Clear Queue"); the breadcrumb button uses "crumb". -1 when the key has no icon. Counts each
  * resolved lookup (mui_icon_resolved). */
 int mui_icon_id(const char* key);
-/* The Bodychunk body of an icon (mui_icon_body_px square, 2 planes, row interleaved), NULL for an id out of range. */
-const uint8_t* mui_icon_body(int icon);
+/* The Bodychunk body of an icon at px edge (px square, 2 planes, row interleaved), NULL for an id out of range. */
+const uint8_t* mui_icon_body(int icon, int px);
+/* Icon edge the width and height models assume: the tier M size (mui_aa_metrics), the tier of the laced 640x512 screen. */
+int mui_model_icon_px(void);
+/* I667m sentinel: mui_icon_body lookups that found a body of this size since start. */
+uint32_t mui_icon_body_lookups(int px);
 /* Number of successful mui_icon_id lookups since start (sentinel for the build path test). */
 uint32_t mui_icon_resolved(void);
 

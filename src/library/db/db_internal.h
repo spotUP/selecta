@@ -98,6 +98,9 @@ void sel_library_search(sel_library* lib, sel_lib_job* job);
 void sel_library_save_view(sel_library* lib, sel_lib_job* job);
 void sel_library_import(sel_library* lib, sel_lib_job* job);
 int sel_library_register_regexp(sqlite3* db);
+/* I691c: the majority format of the songs behind one list item (SEL_LIB_ITEM_* kind and its key): the representative extension of the
+ * platform family holding most of its songs (sel_platform_family_tally), "" when it has none. Runs on the library thread. */
+void sel_db_majority_format(sqlite3* db, uint32_t kind, const char* key, char* out, size_t cap);
 
 /* scan.c: SEL_LIB_REQ_SCAN_BATCH. */
 void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_message* reply);

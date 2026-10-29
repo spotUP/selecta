@@ -4,11 +4,13 @@
 #include "mui_aafield_class.h"
 
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <clib/alib_protos.h>
 #include <clib/muimaster_protos.h>
 #include <intuition/intuition.h>
+#include <intuition/sghooks.h>
 #include <proto/exec.h>
 #include <proto/graphics.h>
 #include <proto/intuition.h>
@@ -25,7 +27,9 @@ extern struct Library* MUIMasterBase;
 typedef struct aafield_data {
     Object* str;
     mui_aa_field_t m;
+    int max_w;
     aa_ctx aa;
+    int pens_logged; /* the old String pens went to stderr once (I667n evidence) */
 } aafield_data;
 
 static struct MUI_CustomClass* g_class;
@@ -34,7 +38,7 @@ static char g_bg_spec[40]; /* MUIA_Background string of the inner String; MUI ke
 
 static int aafield_focus(Object* obj, const aafield_data* d) {
     ULONG active = 0;
-    if (_win(obj) == NULL) {
+    if (!aa_live(obj)) {
         return 0;
     }
     GetAttr(MUIA_Window_ActiveObject, _win(obj), &active);
@@ -74,21 +78,63 @@ static ULONG aafield_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMi
     ch = msg->MinMaxInfo->MinHeight - 2 * (d->m.pad_y + d->m.outline);
     h = mui_aa_field_height(&d->m, ch);
     msg->MinMaxInfo->MinHeight = msg->MinMaxInfo->DefHeight = msg->MinMaxInfo->MaxHeight = h;
+    if (d->max_w > 0 && msg->MinMaxInfo->MaxWidth > d->max_w) {
+        msg->MinMaxInfo->MaxWidth = d->max_w;
+        if (msg->MinMaxInfo->DefWidth > d->max_w) {
+            msg->MinMaxInfo->DefWidth = d->max_w;
+        }
+    }
     return 0;
+}
+
+/* I667n: MUI 3.8 String renders through an Intuition string gadget that fills its whole box with the StringExtend pens (MUI prefs
+ * string colours, the window pen 121214 on the rig), so MUIA_Background never shows inside it. The face pen goes into the background
+ * slot of both pen pairs; the text pens stay the user's. Runs before every draw: MUI may rebuild the gadget on setup. */
+static void aafield_string_pens(aafield_data* d) {
+    struct Gadget* g = NULL;
+    struct StringInfo* si;
+    LONG pen[2];
+    int k;
+    if (d->str == NULL || !GetAttr(MUIA_Gadget_Gadget, d->str, (ULONG*)&g) || g == NULL || !mui_aa_field_string_gadget(g->GadgetType)) {
+        return;
+    }
+    si = (struct StringInfo*)g->SpecialInfo;
+    if (si == NULL || si->Extension == NULL) {
+        return;
+    }
+    for (k = 0; k < 2; k++) {
+        pen[k] = aa_pen(&d->aa, mui_aa_field_string_bg(d->aa.tok, k));
+    }
+    if (!d->pens_logged) {
+        fprintf(stderr, "selecta mui: field string pens %u/%u active %u/%u -> background %ld/%ld\n", (unsigned)si->Extension->Pens[0],
+                (unsigned)si->Extension->Pens[1], (unsigned)si->Extension->ActivePens[0], (unsigned)si->Extension->ActivePens[1], (long)pen[0], (long)pen[1]);
+        d->pens_logged = 1;
+    }
+    if (pen[0] >= 0) {
+        si->Extension->Pens[1] = (UBYTE)pen[0];
+    }
+    if (pen[1] >= 0) {
+        si->Extension->ActivePens[1] = (UBYTE)pen[1];
+    }
 }
 
 static ULONG aafield_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     aafield_data* d = INST_DATA(cl, obj);
+    /* The Group super fills the padding around the inner String with the parent background, so the face and outline go on after
+     * it, around the String's box, which the super has drawn by then. */
+    ULONG r;
+    aafield_string_pens(d);
+    r = DoSuperMethodA(cl, obj, (Msg)msg);
     if (msg->flags & MADF_DRAWOBJECT) {
         mui_aa_check_op_t ops[MUI_AA_FIELD_OPS];
         struct RastPort* rp = _rp(obj);
         int n = mui_aa_field_plan(d->aa.tok, &d->m, aafield_focus(obj, d), ops), k;
         for (k = 0; k < n; k++) {
-            aa_round_fill(rp, _mleft(obj) + ops[k].inset, _mtop(obj) + ops[k].inset, _mwidth(obj) - 2 * ops[k].inset, _mheight(obj) - 2 * ops[k].inset, ops[k].radius,
-                          aa_pen(&d->aa, ops[k].rgb));
+            aa_round_fill_hole(rp, _left(obj) + ops[k].inset, _top(obj) + ops[k].inset, _width(obj) - 2 * ops[k].inset, _height(obj) - 2 * ops[k].inset,
+                               ops[k].radius, aa_pen(&d->aa, ops[k].rgb), _left(d->str), _top(d->str), _width(d->str), _height(d->str));
         }
     }
-    return DoSuperMethodA(cl, obj, (Msg)msg);
+    return r;
 }
 
 /* MUIA_String_Contents is the field's contents: set goes to the inner string, get reads it. Everything else is the group's. */
@@ -149,20 +195,22 @@ Object* mui_aafield_new(const mui_aafield_spec* sp) {
         return NULL;
     }
     mui_aa_field_metrics(0, &m); /* the paddings are the same on every tier */
-    mui_theme_bg_spec(sp->tokens[SEL_GUI_TOKEN_SURFACE], g_bg_spec, sizeof g_bg_spec);
+    mui_theme_bg_spec(sp->tokens[MUI_AA_FIELD_FACE], g_bg_spec, sizeof g_bg_spec);
     str = MUI_NewObject((char*)MUIC_String, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Background, (ULONG)g_bg_spec, MUIA_String_MaxLen, (ULONG)sp->maxlen,
                         MUIA_String_Contents, (ULONG) "", TAG_DONE);
     if (str == NULL) {
         return NULL;
     }
-    o = NewObject(g_class->mcc_Class, NULL, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_FillArea, (ULONG)FALSE, MUIA_Group_Spacing, 0UL, MUIA_InnerLeft,
+    o = NewObject(g_class->mcc_Class, NULL, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Background, (ULONG)g_bg_spec, MUIA_FillArea, (ULONG)FALSE, MUIA_Group_Spacing, 0UL, MUIA_InnerLeft,
                   (ULONG)m.pad_x, MUIA_InnerRight, (ULONG)m.pad_x, MUIA_InnerTop, (ULONG)(m.pad_y + m.outline), MUIA_InnerBottom, (ULONG)(m.pad_y + m.outline),
-                  MUIA_Group_Child, (ULONG)str, TAG_DONE);
+                  MUIA_Group_Child, (ULONG)MUI_NewObject((char*)MUIC_Rectangle, MUIA_VertWeight, 100UL, TAG_DONE), /* flexible VSpace(0) above and below: MUI 3.8 centres a fixed-height child */
+                  MUIA_Group_Child, (ULONG)str, MUIA_Group_Child, (ULONG)MUI_NewObject((char*)MUIC_Rectangle, MUIA_VertWeight, 100UL, TAG_DONE), TAG_DONE);
     if (o == NULL) {
         MUI_DisposeObject(str);
         return NULL;
     }
     ((aafield_data*)INST_DATA(g_class->mcc_Class, o))->str = str;
+    ((aafield_data*)INST_DATA(g_class->mcc_Class, o))->max_w = sp->max_w;
     if (sp->id != 0) {
         DoMethod(str, MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)sp->id);
     }

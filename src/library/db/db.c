@@ -14,13 +14,22 @@ static uint32_t g_heap_bytes;
 static uint32_t g_heap_users;
 static uint32_t g_heap_allocs;
 
+/* The smallest tier of the D-M3-2 table (machines up to 4 MiB): 512 KiB plus 32 KiB (I687c). The songs(album) index of
+ * SCHEMA_V11 is one more page of the schema, and with it `library scan` into the 512 KiB heap ran out of memsys5 blocks
+ * (SQLITE_NOMEM, peak 311040 of 327680 bytes of the heap part). The extra 32 KiB gives the heap part 20 KiB more. */
+#define HEAP_SMALL_BYTES (544u * 1024u)
+
+/* Lookaside of the small tier: 32400 bytes, just under the 32 KiB memsys5 block (the default asks 48000 -> 64 KiB). */
+#define LOOKASIDE_SMALL_SLOT 1200
+#define LOOKASIDE_SMALL_COUNT 27
+
 uint32_t sel_library_heap_bytes(const sel_tag* machine) {
     unsigned long long ram =
         (unsigned long long)sel_tag_find(machine, SEL_MACHINE_FAST_RAM, 0) +
         (unsigned long long)sel_tag_find(machine, SEL_MACHINE_CHIP_RAM, 0);
 
     if (ram <= 4ull * 1024 * 1024) {
-        return 512u * 1024u;
+        return HEAP_SMALL_BYTES;
     }
     if (ram <= 16ull * 1024 * 1024) {
         return 2u * 1024u * 1024u;
@@ -36,7 +45,7 @@ const char* sel_library_sqlite_version(void) {
 }
 
 /* The smallest heap of the D-M3-2 table; SQLite still works in it. */
-#define HEAP_FLOOR_BYTES (512u * 1024u)
+#define HEAP_FLOOR_BYTES HEAP_SMALL_BYTES
 
 /* Page size of every database this build creates (SQLITE_DEFAULT_PAGE_SIZE). */
 #define PAGE_BYTES 4096u
@@ -63,6 +72,15 @@ static int heap_configure(void* block, uint32_t bytes) {
     char* heap = (char*)block + (size_t)slot * slots;
 
     g_page_slots = slots;
+    /* Global SQLITE_CONFIG_LOOKASIDE (default for every connection), set before sqlite3_initialize next to the heap
+     * config. The default lookaside (1200 x 40 = 48000 bytes) is one memsys5 request that rounds up to a 64 KiB
+     * block; on the small tier 1200 x 27 = 32400 rounds to 32 KiB and frees 32 KiB of the heap part (I687d).
+     * Larger tiers keep the SQLite default. */
+    if (bytes <= HEAP_SMALL_BYTES) {
+        sqlite3_config(SQLITE_CONFIG_LOOKASIDE, LOOKASIDE_SMALL_SLOT, LOOKASIDE_SMALL_COUNT);
+    } else {
+        sqlite3_config(SQLITE_CONFIG_LOOKASIDE, 1200, 40);
+    }
     if (sqlite3_config(SQLITE_CONFIG_PAGECACHE, block, (int)slot, (int)slots) != SQLITE_OK) {
         return 0;
     }
@@ -624,6 +642,19 @@ int sel_library_song_title(sel_library* lib, const char* ref, char* out, size_t 
     out[0] = '\0';
     memset(&op, 0, sizeof op);
     op.op = SEL_USER_SONG_TITLE;
+    op.value = ref;
+    op.out = out;
+    op.out_cap = (uint32_t)cap;
+    return folder_call(lib, &op, &found) == SEL_FOLDER_OK && found == 1u;
+}
+
+int sel_library_song_meta(sel_library* lib, const char* ref, char* out, size_t cap) {
+    sel_user_op op;
+    uint32_t found = 0;
+    if (out == NULL || cap < 5u) return 0;
+    memset(out, 0, 4u);
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_SONG_META;
     op.value = ref;
     op.out = out;
     op.out_cap = (uint32_t)cap;

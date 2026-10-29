@@ -100,7 +100,8 @@ typedef struct sel_view_row {
     uint32_t composer; /* I479: SEL_ROW_HOME: 1 when key is a composer canon (the Your composers shelf); activating it opens that composer's songs */
     const char* art_ref; /* SEL_ROW_HOME: what the artwork provider resolves: key, or "<album>\x1f<artist>" for an album with a known artist (I471); NULL else */
     const char* artist; /* I476: the album artist the tile draws under its title (Home album tiles, grid and cover flow rows); NULL when unknown */
-    uint32_t art_id;   /* grid, cover flow and compact queue rows: albums.id of the song's album (the artwork id), 0 none */
+    const char* format; /* I691c: SEL_ROW_HOME album and composer tiles: the majority format of their songs (representative extension, resolve with sel_platform_of_name); NULL else */
+    uint32_t art_id;   /* grid, cover flow and compact queue rows: albums.id of the song's album (the artwork id), 0 none; a Home album tile: albums.id of that album (I678h2) */
 } sel_view_row;
 
 /* rows[0..row_n) are the visible window: listing indices window_start and up.
@@ -163,12 +164,13 @@ typedef struct sel_engine_collection_row {
     char artist[96];
     uint32_t year;
     uint32_t songs;
+    char format[16]; /* I691c: majority format of the album's songs (shelf album rows), "" none */
 } sel_engine_collection_row;
 
 enum { SEL_COLLECTION_SHELVES = 4, SEL_COLLECTION_SHELF_MAX = 24 };
 
-/* I678f (design doc 2026-10-29-desktop-library-architecture.md section 7/8): the page COLLECTION_OPEN built for an album, artist or
- * composer, published in sel_state.collection. The UI only reads it. `serial` counts builds; `rows` is "key\0plays\0" per song in page
+/* I678f (design doc 2026-10-29-desktop-library-architecture.md section 7/8): the page COLLECTION_OPEN built for an album, artist,
+ * composer, source, Liked Songs, Recently Played or Local Files (I678g), published in sel_state.collection. The UI only reads it. `serial` counts builds; `rows` is "key\0plays\0" per song in page
  * order (an album in scan order, an artist most played first, a composer in library order with plays 0), then "\0". Shelves, index =
  * SEL_COLL_* - 1: Albums, Appears On, More by, Spellings; shelf_total counts the whole shelf, shelf the first SEL_COLLECTION_SHELF_MAX. */
 typedef struct sel_collection_page {
@@ -513,6 +515,7 @@ typedef struct sel_engine_library_item {
     uint32_t opened;      /* I678c: epoch seconds the item page was last opened, 0 never; Recents orders by the newer of this and last_played */
     uint32_t art_id;      /* albums.id of the cover, 0 none */
     int pinned;           /* 1: Liked Songs, Recently Played, Local Files */
+    char format[16];      /* I691c: majority format of the songs inside (representative extension), "" none */
 } sel_engine_library_item;
 /* I678a: the whole Your Library list of the kinds in `kind_mask` (SEL_LIB_ITEM_BIT): pinned rows, playlists, albums, artists,
  * composers, sources. Fills out[0..max) from row `offset`, returns the rows written (0 without a library); *total (when not NULL)
@@ -525,6 +528,8 @@ uint32_t sel_engine_library_playlist_keys(sel_engine* e, uint32_t id, char* out,
 int sel_engine_song_title(sel_engine* e, const char* ref, char* out, size_t cap);
 /* I258: the Queue page group of the song at `ref`: its album, else its source, into out; 1 when the song is catalogued, else 0 and out empty. */
 int sel_engine_song_group(sel_engine* e, const char* ref, char* out, size_t cap);
+/* I678h3: the artist, album, album id (decimal) and first composer canon of the song at `ref` into out as four NUL terminated strings (empty when absent); 1 when catalogued. A track row links to those pages with them. */
+int sel_engine_song_meta(sel_engine* e, const char* ref, char* out, size_t cap);
 
 /* Fills `frames` stereo frames: the open song's mix while PLAYING, else
  * silence. Counts calls. Never allocates. */

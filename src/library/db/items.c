@@ -10,6 +10,7 @@
 
 #include "../composer.h"
 
+#include <selecta/platform.h>
 #include <selecta/library_item.h>
 
 #include <stdio.h>
@@ -123,6 +124,44 @@ static const char* text(sqlite3_stmt* st, int col) {
     return t != NULL ? t : "";
 }
 
+/* I691c: the song paths behind one list item, one statement per kind, ?1 the item key. */
+static const char* format_sql(uint32_t kind) {
+    switch (kind) {
+    case SEL_LIB_ITEM_ALBUM:
+        return "SELECT s.path FROM songs s JOIN albums a ON a.id=CAST(?1 AS INTEGER) AND s.album IS a.name AND s.artist IS a.artist";
+    case SEL_LIB_ITEM_ARTIST: return "SELECT path FROM songs WHERE artist=?1";
+    case SEL_LIB_ITEM_COMPOSER:
+        return "SELECT s.path FROM songs s WHERE CASE WHEN ?1='" SEL_COMPOSER_UNKNOWN_CANON "' THEN NOT EXISTS"
+               " (SELECT 1 FROM song_composers c WHERE c.song_key=s.key)"
+               " ELSE s.key IN (SELECT song_key FROM song_composers WHERE canon=?1) END";
+    case SEL_LIB_ITEM_PLAYLIST:
+        return "SELECT s.path FROM playlist_entries e JOIN songs s ON s.key=e.key WHERE e.playlist_id=CAST(?1 AS INTEGER)";
+    case SEL_LIB_ITEM_LIKED: return "SELECT s.path FROM songs s JOIN liked l ON l.key=s.key";
+    case SEL_LIB_ITEM_RECENT: return "SELECT s.path FROM songs s WHERE s.key IN (SELECT key FROM history)";
+    case SEL_LIB_ITEM_LOCAL: return "SELECT path FROM songs WHERE source='local'";
+    case SEL_LIB_ITEM_SOURCE: return "SELECT path FROM songs WHERE source=?1";
+    default: return NULL;
+    }
+}
+
+void sel_db_majority_format(sqlite3* db, uint32_t kind, const char* key, char* out, size_t cap) {
+    const char* q = format_sql(kind);
+    sqlite3_stmt* st = NULL;
+    sel_platform_family_tally t;
+
+    out[0] = '\0';
+    if (q == NULL || sqlite3_prepare_v2(db, q, -1, &st, NULL) != SQLITE_OK) return;
+    memset(&t, 0, sizeof t);
+    sqlite3_bind_text(st, 1, key != NULL ? key : "", -1, SQLITE_TRANSIENT); /* a statement without ?1 ignores the range error */
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        const char* path = (const char*)sqlite3_column_text(st, 0);
+
+        if (path != NULL) sel_platform_family_tally_add(&t, path);
+    }
+    sqlite3_finalize(st);
+    sel_platform_family_tally_format(&t, out, cap);
+}
+
 int sel_library_items_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id) {
     char sql[4096];
     sqlite3_stmt* st = NULL;
@@ -138,7 +177,8 @@ int sel_library_items_op(sel_library* lib, const sel_genre_op* op, int* found, i
     while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
         if (total >= (int64_t)op->offset && emitted < op->limit) {
             char kind[24], songs[24], added[24], last[24], art[24], pinned[24], opened[24];
-            const char* f[10];
+            char fmt[16];
+            const char* f[11];
 
             num(kind, sizeof kind, st, 0);
             num(songs, sizeof songs, st, 4);
@@ -157,6 +197,8 @@ int sel_library_items_op(sel_library* lib, const sel_genre_op* op, int* found, i
             f[7] = art;
             f[8] = pinned;
             f[9] = opened;
+            sel_db_majority_format(lib->db, (uint32_t)sqlite3_column_int(st, 0), text(st, 1), fmt, sizeof fmt);
+            f[10] = fmt;
             emitted++;
             (void)op->row(op->row_ctx, f);
         }
@@ -194,6 +236,7 @@ static int items_row(void* ctx, const char* const* f) {
     it->art_id = (unsigned)strtoul(f[7], NULL, 10);
     it->pinned = f[8][0] == '1';
     it->opened = (unsigned)strtoul(f[9], NULL, 10);
+    copy_text(it->format, sizeof it->format, f[10]);
     return 0;
 }
 
@@ -235,13 +278,19 @@ static const char* collection_sql(uint32_t kind, uint32_t shelf) {
         if (kind == SEL_LIB_ITEM_ALBUM) {
             return SONG_COLS " JOIN albums a ON a.id=CAST(?1 AS INTEGER) AND s.album IS a.name AND s.artist IS a.artist ORDER BY s.id";
         }
-        if (kind == SEL_COLLECTION_LIKED) return SONG_COLS " JOIN liked l ON l.key=s.key ORDER BY l.at DESC, s.id"; /* ?1 is unused */
         if (kind == SEL_LIB_ITEM_ARTIST) return SONG_COLS " WHERE s.artist=?1" BY_PLAYS;
         if (kind == SEL_LIB_ITEM_COMPOSER) {
             return SONG_COLS " WHERE CASE WHEN ?1='" SEL_COMPOSER_UNKNOWN_CANON "' THEN NOT EXISTS"
                              " (SELECT 1 FROM song_composers c WHERE c.song_key=s.key)"
                              " ELSE s.key IN (SELECT song_key FROM song_composers WHERE canon=?1) END" BY_PLAYS;
         }
+        if (kind == SEL_LIB_ITEM_LIKED) return SONG_COLS " JOIN liked l ON l.key=s.key ORDER BY l.at DESC, s.id";
+        if (kind == SEL_LIB_ITEM_RECENT) { /* I678g: newest play first; the number column is the time of the last play, not a play count */
+            return "SELECT s.key,IFNULL(s.name,''),IFNULL(s.artist,''),IFNULL(s.album,''),h.t FROM songs s"
+                   " JOIN (SELECT key, MAX(played_at) AS t FROM history GROUP BY key) h ON h.key=s.key ORDER BY h.t DESC, s.id";
+        }
+        if (kind == SEL_LIB_ITEM_LOCAL) return SONG_COLS " WHERE s.source='local' ORDER BY s.id";
+        if (kind == SEL_LIB_ITEM_SOURCE) return SONG_COLS " WHERE s.source=?1 ORDER BY s.id";
         return NULL;
     case SEL_COLL_ALBUMS: return kind == SEL_LIB_ITEM_ARTIST ? ALBUM_COLS " WHERE a.artist=?1" NEWEST : NULL;
     case SEL_COLL_APPEARS:
@@ -279,7 +328,8 @@ int sel_library_collection_op(sel_library* lib, const sel_genre_op* op, int* fou
     sqlite3_bind_text(st, 1, op->key, -1, SQLITE_TRANSIENT);
     while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
         char year[24], number[24];
-        const char* f[5];
+        const char* f[6];
+        char fmt[16] = "";
 
         num(year, sizeof year, st, 3);
         num(number, sizeof number, st, 4);
@@ -288,6 +338,10 @@ int sel_library_collection_op(sel_library* lib, const sel_genre_op* op, int* fou
         f[2] = text(st, 2);
         f[3] = op->mask == SEL_COLL_SONGS ? text(st, 3) : year;
         f[4] = number;
+        if (op->mask == SEL_COLL_ALBUMS || op->mask == SEL_COLL_APPEARS || op->mask == SEL_COLL_MORE || op->mask == SEL_COLL_HEAD) {
+            sel_db_majority_format(lib->db, SEL_LIB_ITEM_ALBUM, f[0], fmt, sizeof fmt); /* I691c: f[0] is the album id */
+        }
+        f[5] = fmt;
         total++;
         (void)op->row(op->row_ctx, f);
     }
@@ -334,7 +388,8 @@ int sel_library_collection(sel_library* lib, uint32_t kind, const char* key, uin
  * Home and the sidebar read one source. Recency is the newer of last_played and opened, as the Recents order of section 5. */
 #define HOME_T "t(k,ik,nm,sub,songs,added,lp,art,pinned,sn,tie,op)"
 #define HOME_REC "MAX(lp,op)"
-/* Plays of the item: finished plays of its songs (albums by name and artist, composers by canon, playlists by entry). */
+/* Plays of the item: every play of its songs, a skipped one included, as the Recents recency of section 5 (albums by name and artist,
+ * composers by canon, playlists by entry). */
 #define HOME_PLAYS \
     "(CASE k WHEN 4 THEN (SELECT COUNT(*) FROM history h JOIN songs s ON s.key=h.key WHERE s.album IS nm AND s.artist IS NULLIF(sub,''))" \
     " WHEN 6 THEN (SELECT COUNT(*) FROM history h JOIN song_composers c ON c.song_key=h.key WHERE c.canon=ik)" \

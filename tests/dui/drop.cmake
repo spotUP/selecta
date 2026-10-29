@@ -132,14 +132,7 @@ if(NOT "${home_after}" MATCHES "nav page=home ")
   message(FATAL_ERROR "the page changed during the scan:\n${home_after}")
 endif()
 
-reload_run(lib_before library "wait 3\n")
-reload_run(lib_after library "wait 1\ndrop ${WORK}/tagged\nwait 20\n")
-string(REGEX MATCHALL "\ncomposer [0-9]+ [^\n]*" lib_before_rows "${lib_before}")
-string(REGEX MATCHALL "\ncomposer [0-9]+ [^\n]*" lib_after_rows "${lib_after}")
-if(NOT "${lib_before_rows}" STREQUAL "" OR "${lib_after_rows}" STREQUAL "")
-  message(FATAL_ERROR "Composers did not fill after the scan:\nbefore ${lib_before_rows}\nafter ${lib_after_rows}")
-endif()
-if(NOT "${lib_after}" MATCHES "nav page=library ")
-  message(FATAL_ERROR "the page changed during the scan:\n${lib_after}")
-endif()
+# SKIPPED (I678i): the Library page Composers mode reload after a scan is retired. Composers are the sidebar chip and composer pages (section 10);
+# the Home half above stays. The sidebar reload on scan has no test row yet (Home shelves: I678j).
+message(STATUS "dui-drop: Library Composers reload skipped (page retired)")
 message(STATUS "dui-drop ok")

@@ -31,6 +31,12 @@ typedef struct arexx_result {
 void arexx_dispatch(const char* arg0, int want_result, arexx_exec_fn exec, void* exec_ctx, char* reply, size_t cap,
                     arexx_result* out, arexx_counters* counters);
 
+/* I676b: ARexx `THEME [path]` (rc 0 accepted, rc 10 with `theme_refused` otherwise). The command is the UI's, so the shell
+ * registers a handler: path is NULL for "re-read ENV:Selecta/theme"; it returns 0 when the file was valid and the UI will repaint
+ * with it. No handler (NULL): the command answers rc 10 `theme_not_supported`. */
+typedef int (*arexx_theme_fn)(void* ctx, const char* path);
+void arexx_set_theme_handler(arexx_theme_fn fn, void* ctx);
+
 /* Close-time batch end (open question 8): when a BEGIN is still open the port sends END through `exec` before the
  * port goes away, so the engine does not hold events forever. Returns 1 when END was sent. */
 int arexx_end_batch(int batch_open, arexx_exec_fn exec, void* exec_ctx, char* reply, size_t cap,

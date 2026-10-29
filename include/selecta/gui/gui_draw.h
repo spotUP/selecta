@@ -112,7 +112,7 @@ void sel_gui_set_region(sel_gui_canvas* c, uint32_t region);
 uint32_t sel_gui_region_colours(const sel_gui_canvas* c, uint32_t region);
 /* The budget palette: `ui` holds n theme colours (0xRRGGBB; ui[0] accent, ui[1] surface, ui[2] text, n >= 3, n <= 32)
  * for entries 0-31, the rest of those 32 are steps from the surface to the accent and the text; entries 32-63 are
- * the generated-art colours (sel_gui_genart_palette); each artwork sub-palette starts as a grey ramp. */
+ * the platform cover colours (sel_gui_cover_palette, filled by the caller); each artwork sub-palette starts as a grey ramp. */
 void sel_gui_palette_budget(uint32_t* rgb256, const uint32_t* ui, uint32_t n);
 /* I526-P2b: palette entries 24-29 are reserved for headline shades. A 2x-tall headline (Inter SemiBold at 22 or 32 px
  * on a ydiv 2 canvas) has few pixels per stroke, so its antialiased edge needs exact in-between colours, not the nearest

@@ -122,6 +122,10 @@ void mui_aa_button_rgb(const uint32_t* token, int role, int state, uint32_t* fac
         f = token[SEL_GUI_TOKEN_SURFACE];
         t = token[SEL_GUI_TOKEN_TEXT];
         f = state == MUI_AA_SELECTED ? token[SEL_GUI_TOKEN_SURFACE_RAISED] : mui_aa_state_rgb(token, f, state == MUI_AA_DISABLED ? MUI_AA_NORMAL : state);
+    } else if (role == MUI_AA_ROLE_TAB) {
+        /* AATabs: the tab sits on the PANEL the detail pane is built on; the active tab is told by TEXT and the underline, not by a face. */
+        f = state == MUI_AA_HOVER ? mui_aa_state_rgb(token, token[SEL_GUI_TOKEN_PANEL], state) : token[SEL_GUI_TOKEN_PANEL];
+        t = state == MUI_AA_SELECTED || state == MUI_AA_PRESSED ? token[SEL_GUI_TOKEN_TEXT] : token[SEL_GUI_TOKEN_TEXT_MUTED];
     } else {
         f = mui_aa_state_rgb(token, token[SEL_GUI_TOKEN_SURFACE_RAISED], state);
         t = token[SEL_GUI_TOKEN_TEXT];
@@ -175,7 +179,8 @@ void mui_aa_metrics(int font_px, mui_aa_metrics_t* out) {
     out->font_px = small ? 8 : font_px;
     out->pad_x = small ? 6 : 10;
     out->pad_y = small ? 3 : 6;
-    out->icon_px = small ? 16 : 24;
+    /* I667m (design 3.11): the one icon table, by tier font: S 12, M 18, L 20, XL 24 (desktop icon:text about 1.4). */
+    out->icon_px = small ? 12 : font_px <= 13 ? 18 : font_px <= 15 ? 20 : 24;
     out->icon_gap = 6;
     out->height = small ? out->font_px + 2 * out->pad_y : (out->font_px > out->icon_px ? out->font_px : out->icon_px) + 2 * out->pad_y;
     out->radius = small ? 4 : 6;
@@ -435,13 +440,347 @@ void mui_aa_field_metrics(int font_px, mui_aa_field_t* out) {
 
 int mui_aa_field_plan(const uint32_t* token, const mui_aa_field_t* m, int focus, mui_aa_check_op_t* out) {
     g_field_calls++;
-    out[0].inset = 0, out[0].radius = m->radius, out[0].rgb = token[focus ? SEL_GUI_TOKEN_FOCUS_RING : SEL_GUI_TOKEN_DIVIDER];
-    out[1].inset = m->outline, out[1].radius = m->radius > m->outline ? m->radius - m->outline : 0, out[1].rgb = token[SEL_GUI_TOKEN_SURFACE];
+    out[0].inset = 0, out[0].radius = m->radius, out[0].rgb = token[focus ? SEL_GUI_TOKEN_FOCUS_RING : MUI_AA_FIELD_LINE];
+    out[1].inset = m->outline, out[1].radius = m->radius > m->outline ? m->radius - m->outline : 0, out[1].rgb = token[MUI_AA_FIELD_FACE];
     return MUI_AA_FIELD_OPS;
+}
+
+uint32_t mui_aa_field_string_bg(const uint32_t* token, int focus) {
+    (void)focus; /* focus moves the outline only (op 0); the face stays */
+    g_field_calls++;
+    return token[MUI_AA_FIELD_FACE];
+}
+
+int mui_aa_field_string_gadget(unsigned gadget_type) {
+    unsigned t = gadget_type & 0x0007u; /* GTYP_GTYPEMASK */
+    return t == 0x0004u || t == 0x0005u;  /* GTYP_STRGADGET, GTYP_CUSTOMGADGET */
 }
 
 int mui_aa_field_height(const mui_aa_field_t* m, int ch) {
     int need = ch + 2 * (m->pad_y + m->outline);
     g_field_calls++;
     return need > m->height ? need : m->height;
+}
+
+int mui_aa_field_text_top(const mui_aa_field_t* m, int h, int ch) {
+    int top = m->pad_y + m->outline;
+    int extra = h - 2 * top - ch;
+    g_field_calls++;
+    return top + (extra > 0 ? extra / 2 : 0);
+}
+
+/* I667i (design 3.5 AAScroller, 3.6 AAList). */
+static uint32_t g_scroller_calls;
+static uint32_t g_list_calls;
+
+uint32_t mui_aa_scroller_calls(void) {
+    return g_scroller_calls;
+}
+
+uint32_t mui_aa_list_calls(void) {
+    return g_list_calls;
+}
+
+void mui_aa_scroller_metrics(int font_px, mui_aa_scroller_t* out) {
+    g_scroller_calls++;
+    out->width = font_px <= 0 ? 6 : 10;
+    out->radius = font_px <= 0 ? 2 : 4;
+    out->min_thumb = 20;
+}
+
+void mui_aa_scroller_rgb(const uint32_t* token, int state, uint32_t* track, uint32_t* thumb) {
+    g_scroller_calls++;
+    if (track != NULL) {
+        *track = token[SEL_GUI_TOKEN_SURFACE];
+    }
+    if (thumb != NULL) {
+        *thumb = (state == MUI_AA_HOVER || state == MUI_AA_PRESSED) ? token[SEL_GUI_TOKEN_SURFACE_PRESSED] : token[SEL_GUI_TOKEN_TRACK];
+    }
+}
+
+int mui_aa_scroller_geom(const mui_aa_scroller_t* m, int h, long first, long visible, long entries, int* thumb_y, int* thumb_h) {
+    long range, th, travel;
+    g_scroller_calls++;
+    if (h <= 0 || entries <= 0 || visible >= entries || visible <= 0) {
+        *thumb_y = 0;
+        *thumb_h = 0;
+        return 0; /* everything fits: no thumb */
+    }
+    th = h * visible / entries;
+    if (th < m->min_thumb) {
+        th = m->min_thumb;
+    }
+    if (th > h) {
+        th = h;
+    }
+    range = entries - visible;
+    first = first < 0 ? 0 : first > range ? range : first;
+    travel = h - th;
+    *thumb_h = (int)th;
+    *thumb_y = (int)(travel * first / range);
+    return 1;
+}
+
+long mui_aa_scroller_first_at(const mui_aa_scroller_t* m, int h, int thumb_h_grab, int y, long visible, long entries) {
+    long range, travel, th;
+    int ty, thh;
+    g_scroller_calls++;
+    if (!mui_aa_scroller_geom(m, h, 0, visible, entries, &ty, &thh)) {
+        return 0;
+    }
+    th = thh;
+    range = entries - visible;
+    travel = h - th;
+    y -= thumb_h_grab; /* the pointer holds the thumb at this offset from its top */
+    if (travel <= 0 || y <= 0) {
+        return 0;
+    }
+    if (y >= travel) {
+        return range;
+    }
+    return (range * y + travel / 2) / travel;
+}
+
+void mui_aa_list_metrics(int font_px, mui_aa_list_t* out) {
+    mui_aa_scroller_t s;
+    g_list_calls++;
+    mui_aa_scroller_metrics(font_px, &s);
+    out->row_h = font_px <= 0 ? 10 : font_px + 8;
+    out->pad_x = font_px <= 0 ? 6 : 10;
+    out->pad_y = font_px <= 0 ? 2 : 4; /* inside the list face above the first and below the last row (I667i: the cycle popup had none) */
+    out->gap = font_px <= 0 ? 6 : 8;
+    out->scroller_w = s.width;
+    out->radius = font_px <= 0 ? 4 : 6;
+}
+
+int mui_aa_list_col_x(const mui_aa_list_t* m, int col, const int* w) {
+    int x = m->pad_x, k;
+    g_list_calls++;
+    for (k = 0; k < col && w != NULL; k++) {
+        x += w[k] + 2 * m->gap + 1;
+    }
+    return x;
+}
+
+int mui_aa_list_delta(const mui_aa_list_t* m) {
+    g_list_calls++;
+    return 2 * m->gap;
+}
+
+int mui_aa_list_visible(const mui_aa_list_t* m, int h) {
+    g_list_calls++;
+    h -= 2 * m->pad_y;
+    return h < m->row_h ? 0 : h / m->row_h;
+}
+
+long mui_aa_list_clamp_first(long first, long visible, long count) {
+    long max;
+    g_list_calls++;
+    max = count - visible;
+    if (max < 0) {
+        max = 0;
+    }
+    return first < 0 ? 0 : first > max ? max : first;
+}
+
+long mui_aa_list_clamp_active(long active, long count) {
+    g_list_calls++;
+    if (count <= 0) {
+        return -1;
+    }
+    return active < 0 ? 0 : active >= count ? count - 1 : active;
+}
+
+long mui_aa_list_move(long active, long count, long visible, int key) {
+    long step;
+    g_list_calls++;
+    if (count <= 0) {
+        return -1;
+    }
+    step = visible > 1 ? visible - 1 : 1;
+    switch (key) {
+    case MUI_AA_LIST_KEY_UP:
+        active = active < 0 ? count - 1 : active - 1;
+        break;
+    case MUI_AA_LIST_KEY_DOWN:
+        active = active < 0 ? 0 : active + 1;
+        break;
+    case MUI_AA_LIST_KEY_PAGEUP:
+        active = active < 0 ? 0 : active - step;
+        break;
+    case MUI_AA_LIST_KEY_PAGEDOWN:
+        active = active < 0 ? 0 : active + step;
+        break;
+    case MUI_AA_LIST_KEY_HOME:
+        active = 0;
+        break;
+    case MUI_AA_LIST_KEY_END:
+        active = count - 1;
+        break;
+    default:
+        break;
+    }
+    return active < 0 ? 0 : active >= count ? count - 1 : active; /* no wrap in a list: clamps at both ends */
+}
+
+long mui_aa_list_scroll_to(long first, long visible, long count, long active) {
+    g_list_calls++;
+    if (active >= 0) {
+        if (active < first) {
+            first = active;
+        } else if (visible > 0 && active >= first + visible) {
+            first = active - visible + 1;
+        }
+    }
+    return mui_aa_list_clamp_first(first, visible, count);
+}
+
+long mui_aa_list_row_at(const mui_aa_list_t* m, int y, long first, long count) {
+    long row;
+    g_list_calls++;
+    y -= m->pad_y;
+    if (y < 0) {
+        return -1;
+    }
+    row = first + y / m->row_h;
+    return row >= count ? -1 : row;
+}
+
+void mui_aa_list_row_rgb(const uint32_t* token, int row_state, int playing, uint32_t* face, uint32_t* text) {
+    g_list_calls++;
+    if (face != NULL) {
+        *face = row_state == MUI_AA_SELECTED ? token[SEL_GUI_TOKEN_SURFACE_PRESSED] : row_state == MUI_AA_HOVER ? token[SEL_GUI_TOKEN_SURFACE_HOVER] : token[SEL_GUI_TOKEN_SURFACE];
+    }
+    if (text != NULL) {
+        *text = playing ? token[SEL_GUI_TOKEN_ACCENT] : token[SEL_GUI_TOKEN_TEXT];
+    }
+}
+
+void mui_aa_list_col_widths(const mui_aa_list_t* m, int total, int n, const int* weight, const int* fixed, int* out) {
+    int k, avail, wsum = 0;
+    g_list_calls++;
+    avail = total - 2 * m->pad_x - (n > 1 ? (n - 1) * (2 * m->gap + 1) : 0);
+    for (k = 0; k < n; k++) {
+        if (weight[k] > 0) {
+            wsum += weight[k];
+        } else {
+            avail -= fixed[k];
+        }
+    }
+    if (avail < 0) {
+        avail = 0;
+    }
+    for (k = 0; k < n; k++) {
+        out[k] = weight[k] > 0 ? avail * weight[k] / wsum : fixed[k];
+    }
+}
+
+int mui_aa_list_title_h(const mui_aa_list_t* m, int has_title) {
+    g_list_calls++;
+    return has_title ? m->row_h : 0;
+}
+
+void mui_aa_list_header_rgb(const uint32_t* token, uint32_t* muted, uint32_t* divider) {
+    g_list_calls++;
+    if (muted != NULL) {
+        *muted = token[SEL_GUI_TOKEN_TEXT_MUTED];
+    }
+    if (divider != NULL) {
+        *divider = token[SEL_GUI_TOKEN_DIVIDER];
+    }
+}
+
+static uint32_t g_tabs_calls;
+
+uint32_t mui_aa_tabs_calls(void) {
+    return g_tabs_calls;
+}
+
+int mui_aa_tabs_click(int i, int n) {
+    g_tabs_calls++;
+    return i >= 0 && i < n ? i : -1;
+}
+
+int mui_aa_tabs_key(int code, int active, int n) {
+    int a;
+    g_tabs_calls++;
+    if (n <= 0) {
+        return 0;
+    }
+    a = active + (code == 0x4E ? 1 : code == 0x4F ? -1 : 0);
+    return a < 0 ? 0 : a >= n ? n - 1 : a;
+}
+
+void mui_aa_tabs_line(int font_px, int x, int y, int w, int h, int* lx, int* ly, int* lw, int* lh) {
+    int t = font_px > 0 ? MUI_AA_TABS_LINE_PX : 1;
+    g_tabs_calls++;
+    if (t > h) {
+        t = h;
+    }
+    if (lx != NULL) {
+        *lx = x;
+    }
+    if (ly != NULL) {
+        *ly = y + h - t;
+    }
+    if (lw != NULL) {
+        *lw = w;
+    }
+    if (lh != NULL) {
+        *lh = t;
+    }
+}
+
+void mui_aa_tabs_rgb(const uint32_t* token, uint32_t* line, uint32_t* idle_text, uint32_t* active_text) {
+    g_tabs_calls++;
+    if (line != NULL) {
+        *line = token[SEL_GUI_TOKEN_ACCENT];
+    }
+    if (idle_text != NULL) {
+        *idle_text = token[SEL_GUI_TOKEN_TEXT_MUTED];
+    }
+    if (active_text != NULL) {
+        *active_text = token[SEL_GUI_TOKEN_TEXT];
+    }
+}
+
+static uint32_t g_balance_calls;
+
+uint32_t mui_aa_balance_calls(void) {
+    return g_balance_calls;
+}
+
+int mui_aa_balance_width(const uint32_t* token, int font_px) {
+    int g = (int)token[SEL_GUI_TOKEN_SPACING];
+    g_balance_calls++;
+    return font_px <= 0 ? g / 2 : g;
+}
+
+void mui_aa_balance_line(const uint32_t* token, int font_px, int box_w, int box_h, int* lx, int* ly, int* lw, int* lh) {
+    int inset = mui_aa_balance_width(token, font_px);
+    if (box_h < 2 * inset + 1) {
+        inset = 0;
+    }
+    if (lx != NULL) {
+        *lx = (box_w - 1) / 2;
+    }
+    if (ly != NULL) {
+        *ly = inset;
+    }
+    if (lw != NULL) {
+        *lw = box_w > 0 ? 1 : 0;
+    }
+    if (lh != NULL) {
+        *lh = box_h - 2 * inset > 0 ? box_h - 2 * inset : 0;
+    }
+}
+
+void mui_aa_balance_rgb(const uint32_t* token, uint32_t* box, uint32_t* line) {
+    g_balance_calls++;
+    if (box != NULL) {
+        *box = token[SEL_GUI_TOKEN_BACKGROUND];
+    }
+    if (line != NULL) {
+        *line = token[SEL_GUI_TOKEN_DIVIDER];
+    }
 }

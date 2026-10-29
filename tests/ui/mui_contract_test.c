@@ -15,6 +15,7 @@
 #include "mui_aa.h"
 #include "mui_theme.h"
 #include "mui_pens.h"
+#include "arexx.h"
 
 #include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/theme.h>
@@ -148,6 +149,157 @@ static void test_menu(void) {
 /* I666: Selecta owns its screen, so the token colours exist there at exact values. The Amiga half (mui_ui.c) is compiled only on
  * the Amiga; this checks the plan it is built from (call counter, exact 32-bit components, DrawInfo text pen = soft grey token,
  * fits 16 colours for AGA) and that mui_ui.c opens the screen from that plan, obtains every colour exact and releases it. */
+/* I676: the theme file (desktop format, txt_theme_parse) changes the MUI accent pen colour; ENV file first, --theme over it;
+ * a missing or malformed file leaves the built-in value. dir: a writable directory for the two temp files. */
+static void write_theme(const char* path, const char* text) {
+    FILE* f = fopen(path, "wb");
+    if (f != NULL) {
+        fputs(text, f);
+        fclose(f);
+    }
+}
+
+static void test_theme_file(const char* dir) {
+    char env_path[512], arg_path[512], missing[512];
+    txt_theme def, th;
+    mui_pens_plan pl;
+    uint32_t before = mui_pens_planned();
+    snprintf(env_path, sizeof env_path, "%s/mui-theme-env.tmp", dir);
+    snprintf(arg_path, sizeof arg_path, "%s/mui-theme-arg.tmp", dir);
+    snprintf(missing, sizeof missing, "%s/mui-theme-missing.tmp", dir);
+    remove(missing);
+    txt_theme_default(&def);
+    CHECK(def.token[SEL_GUI_TOKEN_ACCENT] != 0x112233u && def.token[SEL_GUI_TOKEN_ACCENT] != 0x445566u, "built-in accent is neither test colour");
+    /* missing file: built-in value kept, nothing applied */
+    th = def;
+    CHECK(mui_theme_load(&th, missing, NULL) == 0 && mui_theme_load(&th, NULL, missing) == 0, "missing files apply nothing");
+    CHECK(mui_pens_plan_for(th.token, &pl) == 1 && pl.rgb[MUI_PEN_ACCENT] == def.token[SEL_GUI_TOKEN_ACCENT], "missing file keeps the built-in accent pen");
+    /* ENV file sets gui.accent: the accent pen colour follows */
+    write_theme(env_path, "# amarchy\ngui.accent = 0x112233\n");
+    th = def;
+    CHECK(mui_theme_load(&th, env_path, NULL) == 1, "env file applied");
+    CHECK(mui_pens_plan_for(th.token, &pl) == 1 && pl.rgb[MUI_PEN_ACCENT] == 0x112233u, "env gui.accent drives the accent pen, got %06x", (unsigned)pl.rgb[MUI_PEN_ACCENT]);
+    CHECK(pl.rgb[MUI_PEN_BACKGROUND] == def.token[SEL_GUI_TOKEN_BACKGROUND], "untouched tokens keep the built-in value");
+    /* --theme overrides the ENV file */
+    write_theme(arg_path, "gui.accent = 0x445566\n");
+    th = def;
+    CHECK(mui_theme_load(&th, env_path, arg_path) == 2, "both files applied");
+    CHECK(mui_pens_plan_for(th.token, &pl) == 1 && pl.rgb[MUI_PEN_ACCENT] == 0x445566u, "--theme wins over ENV, got %06x", (unsigned)pl.rgb[MUI_PEN_ACCENT]);
+    /* malformed file: ignored whole, earlier valid lines do not leak in */
+    write_theme(arg_path, "gui.accent = 0x778899\nnot a theme line\n");
+    th = def;
+    CHECK(mui_theme_load(&th, NULL, arg_path) == 0 && th.token[SEL_GUI_TOKEN_ACCENT] == def.token[SEL_GUI_TOKEN_ACCENT], "malformed file leaves the built-in tokens");
+    CHECK(mui_pens_planned() - before >= 3, "pen plan ran (sentinel)");
+    /* I676 (rig 2: accent stayed 3B82F6): the loaded tokens must reach the drawing classes. They read mui_theme_tokens(); a class
+     * calling txt_theme_default itself draws the built-in colour whatever the file says. */
+    th = def;
+    mui_theme_load(&th, env_path, NULL);
+    mui_theme_tokens_set(th.token);
+    CHECK(mui_theme_tokens()[SEL_GUI_TOKEN_ACCENT] == 0x112233u, "token store carries the file accent, got %06x", (unsigned)mui_theme_tokens()[SEL_GUI_TOKEN_ACCENT]);
+    {
+        static const char* const files[] = {"mui_aa_draw.c", "mui_aabalance_class.c", "mui_aabtn_class.c", "mui_aapanel_class.c", "mui_aatext_class.c", "mui_aafield_class.c"};
+        static char src[400000];
+        size_t k, n;
+        for (k = 0; k < sizeof files / sizeof files[0]; k++) {
+            char path[600];
+            FILE* sf;
+            snprintf(path, sizeof path, "%s/%s", MUI_DIR, files[k]);
+            sf = fopen(path, "rb");
+            if (sf == NULL) {
+                continue;
+            }
+            n = fread(src, 1, sizeof src - 1, sf);
+            fclose(sf);
+            src[n] = 0;
+            CHECK(strstr(src, "txt_theme_default") == NULL, "%s builds its own built-in tokens instead of mui_theme_tokens()", files[k]);
+        }
+    }
+    remove(env_path);
+    remove(arg_path);
+}
+
+/* I676b: ARexx THEME. Drives arexx_dispatch (the port's entry) with the UI's handler; the window open reads the tokens through
+ * mui_theme_resolve, so the accent pen after a THEME is what a reopened window gets. The ENV path is an Amiga path, so the test
+ * uses a temp file as the "ENV" file. */
+static int theme_exec_never(void* ctx, const char* line, char* reply, size_t cap, int* rc) {
+    (void)ctx; (void)line; (void)reply; (void)cap;
+    *rc = 1; /* THEME must not reach the engine executor */
+    return 0;
+}
+
+static const char* g_theme_env;
+static int theme_handler(void* ctx, const char* path) {
+    (void)ctx;
+    return mui_theme_request(g_theme_env, path);
+}
+
+static long theme_cmd(const char* line, char* reply, size_t cap) {
+    arexx_result r;
+    arexx_counters c = {0, 0};
+    arexx_dispatch(line, 0, theme_exec_never, NULL, reply, cap, &r, &c);
+    return r.result1;
+}
+
+static uint32_t theme_accent(void) {
+    txt_theme th;
+    mui_pens_plan pl;
+    mui_theme_resolve(&th, g_theme_env, NULL);
+    return mui_pens_plan_for(th.token, &pl) == 1 ? pl.rgb[MUI_PEN_ACCENT] : 0xFFFFFFFFu;
+}
+
+static void test_theme_live(const char* dir) {
+    char env_path[512], new_path[512], bad_path[512], missing[512], line[600], reply[128];
+    txt_theme def;
+    uint32_t req0, accent0;
+    snprintf(env_path, sizeof env_path, "%s/mui-live-env.tmp", dir);
+    snprintf(new_path, sizeof new_path, "%s/mui-live-new.tmp", dir);
+    snprintf(bad_path, sizeof bad_path, "%s/mui-live-bad.tmp", dir);
+    snprintf(missing, sizeof missing, "%s/mui-live-missing.tmp", dir);
+    remove(missing);
+    g_theme_env = env_path;
+    txt_theme_default(&def);
+    write_theme(env_path, "gui.accent = 0x112233\n");
+    write_theme(new_path, "gui.accent = 0x445566\n");
+    write_theme(bad_path, "gui.accent = 0x778899\nnot a theme line\n");
+
+    /* no handler registered: refused */
+    arexx_set_theme_handler(NULL, NULL);
+    CHECK(theme_cmd("THEME", reply, sizeof reply) == AREXX_RC_FAILED, "THEME without a UI handler returns rc 10");
+    arexx_set_theme_handler(theme_handler, NULL);
+
+    accent0 = theme_accent();
+    CHECK(accent0 == 0x112233u, "start state: ENV accent, got %06x", (unsigned)accent0);
+    req0 = mui_theme_requests();
+
+    snprintf(line, sizeof line, "theme \"%s\"", new_path);
+    CHECK(theme_cmd(line, reply, sizeof reply) == AREXX_RC_OK, "THEME <path> accepted, rc 0");
+    CHECK(mui_theme_requests() == req0 + 1u, "the UI request ran (sentinel)");
+    CHECK(theme_accent() == 0x445566u, "THEME <path> changes the accent pen, got %06x", (unsigned)theme_accent());
+
+    /* malformed and missing: rc 10, tokens unchanged */
+    snprintf(line, sizeof line, "THEME %s", bad_path);
+    CHECK(theme_cmd(line, reply, sizeof reply) == AREXX_RC_FAILED, "malformed theme returns rc 10");
+    CHECK(strcmp(reply, "theme_refused") == 0, "refusal text, got '%s'", reply);
+    CHECK(theme_accent() == 0x445566u, "malformed theme leaves the tokens unchanged, got %06x", (unsigned)theme_accent());
+    snprintf(line, sizeof line, "THEME %s", missing);
+    CHECK(theme_cmd(line, reply, sizeof reply) == AREXX_RC_FAILED, "missing theme returns rc 10");
+    CHECK(theme_accent() == 0x445566u, "missing theme leaves the tokens unchanged");
+    CHECK(mui_theme_requests() == req0 + 1u, "refused requests are not counted");
+
+    /* bare THEME re-reads the ENV file */
+    write_theme(env_path, "gui.accent = 0x0A0B0C\n");
+    CHECK(theme_cmd("THEME", reply, sizeof reply) == AREXX_RC_OK, "bare THEME accepted");
+    CHECK(theme_accent() == 0x0A0B0Cu, "bare THEME re-reads ENV, got %06x", (unsigned)theme_accent());
+    write_theme(env_path, "garbage\n");
+    CHECK(theme_cmd("THEME", reply, sizeof reply) == AREXX_RC_FAILED, "malformed ENV file returns rc 10");
+    CHECK(theme_accent() == 0x0A0B0Cu || theme_accent() == def.token[SEL_GUI_TOKEN_ACCENT], "malformed ENV does not apply");
+
+    arexx_set_theme_handler(NULL, NULL);
+    remove(env_path);
+    remove(new_path);
+    remove(bad_path);
+}
+
 static void test_pens(void) {
     txt_theme th;
     mui_pens_plan pl;
@@ -309,6 +461,11 @@ static void test_theme(void) {
             CHECK(strstr(src, "mui_aafield_new(") != NULL, "mui_ui.c builds no AAField string");
             continue;
         }
+        if (role == MUI_TH_LIST) {
+            /* exemption (I667i2, design 3.6): lists are AAList objects that draw from tokens; mui-list-source proves no stock list is left */
+            CHECK(strstr(src, "mui_aalist_new(") != NULL, "mui_ui.c builds no AAList");
+            continue;
+        }
         if (role == MUI_TH_STATUS) {
             /* exemption (I667d, design 3.7): status lines are AAText objects; mui_aatext reads the role look from g_th[MUI_TH_STATUS] */
             CHECK(strstr(src, "g_th[MUI_TH_STATUS].look.frame") != NULL && strstr(src, "g_th[MUI_TH_STATUS].look.background") != NULL, "mui_aatext does not take the status frame and background from the role look");
@@ -366,51 +523,95 @@ static void test_menu_dispatch(void) {
     CHECK(mui_menu_line("no_such_action") == NULL, "unknown id has a line");
 }
 
-/* mui-weights (MUI-P2-1): horizontal weights equal the region widths and sum to the window width. */
+/* mui-weights (MUI-P2-1, I615d design 8.5): horizontal weights equal the region widths and sum to the window width, on both tiers; the vertical
+ * weights (player + main + suggestion + top bar) sum to the height; the top bar slot follows the layout's top bar. */
 static void test_weights(void) {
     static const uint32_t widths[] = {1280, 1024, 800, 640};
-    uint32_t i;
-    for (i = 0; i < 4; i++) {
-        mui_layout_map_t m;
-        sel_uim_layout l;
-        uint32_t sum, s;
-        mui_layout_map(&m, widths[i], 720);
-        sel_uim_layout_compute(&l, widths[i], 720);
-        sum = m.weight_w[MUI_SLOT_SIDEBAR] + m.weight_w[MUI_SLOT_MAIN] + m.weight_w[MUI_SLOT_DETAIL];
-        CHECK(sum == widths[i], "width %u: body weights sum %u", widths[i], sum);
-        for (s = 0; s < l.count; s++) {
-            const char* n = l.regions[s].name;
-            uint32_t slot = strcmp(n, "sidebar") == 0 ? MUI_SLOT_SIDEBAR : strcmp(n, "main") == 0 ? MUI_SLOT_MAIN : strcmp(n, "detail") == 0 ? MUI_SLOT_DETAIL : MUI_SLOT_COUNT;
-            if (slot != MUI_SLOT_COUNT) {
-                CHECK(m.weight_w[slot] == l.regions[s].w, "width %u: %s weight %u != region %u", widths[i], n, m.weight_w[slot], l.regions[s].w);
+    static const uint32_t tiers[] = {SEL_UIM_TIER_DEFAULT, SEL_UIM_TIER_BITMAP};
+    uint32_t i, t;
+    for (t = 0; t < 2; t++) {
+        for (i = 0; i < 4; i++) {
+            mui_layout_map_t m;
+            sel_uim_layout l;
+            uint32_t sum, s;
+            mui_layout_map(&m, widths[i], 720, tiers[t]);
+            sel_uim_layout_compute_tier(&l, widths[i], 720, tiers[t]);
+            sum = m.weight_w[MUI_SLOT_SIDEBAR] + m.weight_w[MUI_SLOT_MAIN] + m.weight_w[MUI_SLOT_DETAIL];
+            CHECK(sum == widths[i], "tier %u width %u: body weights sum %u", tiers[t], widths[i], sum);
+            for (s = 0; s < l.count; s++) {
+                const char* n = l.regions[s].name;
+                uint32_t slot = strcmp(n, "sidebar") == 0 ? MUI_SLOT_SIDEBAR : strcmp(n, "main") == 0 ? MUI_SLOT_MAIN : strcmp(n, "detail") == 0 ? MUI_SLOT_DETAIL : MUI_SLOT_COUNT;
+                if (slot != MUI_SLOT_COUNT) {
+                    CHECK(m.weight_w[slot] == l.regions[s].w, "tier %u width %u: %s weight %u != region %u", tiers[t], widths[i], n, m.weight_w[slot], l.regions[s].w);
+                }
             }
+            CHECK(m.weight_h[MUI_SLOT_PLAYER] + m.weight_h[MUI_SLOT_MAIN] + m.weight_h[MUI_SLOT_SUGGESTION] + m.weight_h[MUI_SLOT_TOPBAR] == 720,
+                  "tier %u width %u: vertical weights", tiers[t], widths[i]);
+            CHECK(m.show[MUI_SLOT_TOPBAR] == (l.topbar.h > 0u), "tier %u width %u: top bar slot shown %u, layout top bar %u", tiers[t], widths[i], m.show[MUI_SLOT_TOPBAR], l.topbar.h);
+            if (tiers[t] == SEL_UIM_TIER_BITMAP) {
+                CHECK(m.show[MUI_SLOT_TOPBAR] == 0, "bitmap tier width %u has no top bar", widths[i]);
+            }
+            CHECK(m.balance_sidebar_main == (m.show[MUI_SLOT_SIDEBAR] && m.show[MUI_SLOT_MAIN]), "balance sidebar");
+            CHECK(m.balance_main_detail == (widths[i] >= 1200), "balance detail at %u", widths[i]);
         }
-        CHECK(m.weight_h[MUI_SLOT_PLAYER] + m.weight_h[MUI_SLOT_MAIN] + m.weight_h[MUI_SLOT_SUGGESTION] == 720, "width %u: vertical weights", widths[i]);
-        CHECK(m.balance_sidebar_main == (m.show[MUI_SLOT_SIDEBAR] && m.show[MUI_SLOT_MAIN]), "balance sidebar");
-        CHECK(m.balance_main_detail == (widths[i] >= 1200), "balance detail at %u", widths[i]);
     }
+}
+
+/* mui-topbar (I615d, design 8.5): the real mui_layout_map entry on the DEFAULT tier shows the top bar slot with the layout's height, the bitmap
+ * tier does not; Home resolves to the Home door's line and Browse to the rich UI's Browse page lines; the sidebar drops Home and Search only
+ * with the top bar. mui_ui.c wires the tier to the screen and the slot to the window. */
+static void test_topbar(void) {
+    mui_layout_map_t m;
+    sel_uim_layout l;
+    static char src[400000];
+    size_t n;
+    FILE* f;
+    uint32_t i, shown_top = 0, shown_plain = 0;
+    mui_layout_map(&m, 1280, 720, SEL_UIM_TIER_DEFAULT);
+    sel_uim_layout_compute_tier(&l, 1280, 720, SEL_UIM_TIER_DEFAULT);
+    CHECK(l.topbar.h == SEL_UIM_TOPBAR_H && m.show[MUI_SLOT_TOPBAR] == 1 && m.weight_h[MUI_SLOT_TOPBAR] == SEL_UIM_TOPBAR_H && m.weight_w[MUI_SLOT_TOPBAR] == 1280,
+          "default tier: top bar slot shown %u weight_h %u", m.show[MUI_SLOT_TOPBAR], m.weight_h[MUI_SLOT_TOPBAR]);
+    mui_layout_map(&m, 1280, 720, SEL_UIM_TIER_BITMAP);
+    CHECK(m.show[MUI_SLOT_TOPBAR] == 0 && m.weight_h[MUI_SLOT_TOPBAR] == 0, "bitmap tier: no top bar slot");
+    CHECK(mui_door_line(0) != NULL && strcmp(mui_door_line(0), "VIEW_SOURCE home") == 0, "Home sends the Home door line");
+    CHECK(MUI_TOPBAR_BROWSE_LINES == 3u && strcmp(mui_topbar_browse_lines[0], "FORMATS_SHOW") == 0 && strcmp(mui_topbar_browse_lines[1], "COMPOSERS_SHOW") == 0 &&
+              strcmp(mui_topbar_browse_lines[2], "SOURCES") == 0, "Browse sends the rich UI's PG_BROWSE lines");
+    for (i = 0; i < mui_door_count(); i++) {
+        shown_top += (uint32_t)sel_uim_door_shown(i, 1);
+        shown_plain += (uint32_t)sel_uim_door_shown(i, 0);
+    }
+    CHECK(shown_top == 5u && shown_plain == 7u && !sel_uim_door_shown(0, 1) && !sel_uim_door_shown(1, 1), "doors with the top bar %u, without %u", shown_top, shown_plain);
+    f = fopen(MUI_UI_SOURCE, "r");
+    CHECK(f != NULL, "mui_ui.c readable");
+    n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    CHECK(strstr(src, "g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP") != NULL && strstr(src, "s->slot[MUI_SLOT_TOPBAR] = mui_topbar_group(s)") != NULL &&
+              strstr(src, "sel_uim_door_shown(i, top_bar)") != NULL, "mui_ui.c passes the screen tier, builds the top bar slot and filters the doors");
 }
 
 /* mui-relayout (MUI-P2-2): the shown set per breakpoint; the slot count is fixed, and sel_uim_breakpoint_for_tier (bitmap tier, I674: 640 keeps a rail) decides. */
 static void test_relayout(void) {
     static const uint32_t widths[] = {1280, 1024, 800, 640};
-    static const uint8_t want[4][MUI_SLOT_COUNT] = {{0, 1, 1, 1, 1}, {0, 1, 1, 0, 1}, {0, 1, 1, 0, 1}, {0, 1, 1, 0, 1}};
+    static const uint8_t want[4][MUI_SLOT_COUNT] = {{0, 1, 1, 1, 1, 0}, {0, 1, 1, 0, 1, 0}, {0, 1, 1, 0, 1, 0}, {0, 1, 1, 0, 1, 0}};
     mui_layout_map_t m;
     uint32_t i, s, flips = 99;
-    mui_layout_map(&m, 1280, 720);
+    mui_layout_map(&m, 1280, 720, SEL_UIM_TIER_BITMAP);
     for (i = 0; i < 4; i++) {
-        uint32_t changed = mui_layout_relayout(&m, widths[i], 720, &flips);
+        uint32_t changed = mui_layout_relayout(&m, widths[i], 720, SEL_UIM_TIER_BITMAP, &flips);
         CHECK(m.breakpoint == sel_uim_breakpoint_for_tier(widths[i], SEL_UIM_TIER_BITMAP), "breakpoint at %u", widths[i]);
         CHECK(changed == (i != 0 && sel_uim_breakpoint_for_tier(widths[i], SEL_UIM_TIER_BITMAP) != sel_uim_breakpoint_for_tier(widths[i - 1], SEL_UIM_TIER_BITMAP)), "changed flag at %u", widths[i]);
         for (s = 0; s < MUI_SLOT_COUNT; s++) {
             CHECK(m.show[s] == want[i][s], "width %u slot %u show %u", widths[i], s, m.show[s]);
         }
     }
-    mui_layout_map(&m, 1280, 720);
+    mui_layout_map(&m, 1280, 720, SEL_UIM_TIER_BITMAP);
     /* The three-column edge is SEL_UIM_BP_THREE_COLUMN_MIN (1100, DUI-P1-11): 1100 itself is still three-column. */
-    CHECK(mui_layout_relayout(&m, SEL_UIM_BP_THREE_COLUMN_MIN, 720, &flips) == 0 && flips == 0, "1100 stays three-column (flips %u)", flips);
-    CHECK(mui_layout_relayout(&m, SEL_UIM_BP_THREE_COLUMN_MIN - 1u, 720, &flips) == 1 && flips == 1, "one below the edge hides only detail (flips %u)", flips);
-    CHECK(mui_layout_relayout(&m, 1000, 720, &flips) == 0 && flips == 0, "same breakpoint changes no visibility");
+    CHECK(mui_layout_relayout(&m, SEL_UIM_BP_THREE_COLUMN_MIN, 720, SEL_UIM_TIER_BITMAP, &flips) == 0 && flips == 0, "1100 stays three-column (flips %u)", flips);
+    CHECK(mui_layout_relayout(&m, SEL_UIM_BP_THREE_COLUMN_MIN - 1u, 720, SEL_UIM_TIER_BITMAP, &flips) == 1 && flips == 1, "one below the edge hides only detail (flips %u)", flips);
+    CHECK(mui_layout_relayout(&m, 1000, 720, SEL_UIM_TIER_BITMAP, &flips) == 0 && flips == 0, "same breakpoint changes no visibility");
 }
 
 /* mui-relayout-open (I656): the open sequence (default map, width 0, first real size 792) never leaves the narrow-window
@@ -422,17 +623,17 @@ static void test_open_no_suggestion(void) {
     char line[512];
     int found = 0;
     FILE* f = fopen(MUI_UI_SOURCE, "r");
-    mui_layout_map(&m, 1280, 720);
+    mui_layout_map(&m, 1280, 720, SEL_UIM_TIER_BITMAP);
     m.width = 0;
     m.breakpoint = SEL_UIM_BP_COUNT;
-    mui_layout_relayout(&m, 792, 576, &flips);
+    mui_layout_relayout(&m, 792, 576, SEL_UIM_TIER_BITMAP, &flips);
     CHECK(m.show[MUI_SLOT_SUGGESTION] == 0, "792 wide shows no suggestion");
-    mui_layout_relayout(&m, 560, 576, &flips);
+    mui_layout_relayout(&m, 560, 576, SEL_UIM_TIER_BITMAP, &flips);
     CHECK(m.show[MUI_SLOT_SUGGESTION] == 1, "560 wide (mini) shows the suggestion");
     /* I674: the 640 wide own screen (window 600-699) keeps a rail and shows no "Window is narrow" hint. */
-    mui_layout_relayout(&m, 600, 576, &flips);
+    mui_layout_relayout(&m, 600, 576, SEL_UIM_TIER_BITMAP, &flips);
     CHECK(m.show[MUI_SLOT_SUGGESTION] == 0 && m.show[MUI_SLOT_SIDEBAR] == 1, "600 wide shows a rail, no suggestion");
-    mui_layout_relayout(&m, 640, 512, &flips);
+    mui_layout_relayout(&m, 640, 512, SEL_UIM_TIER_BITMAP, &flips);
     CHECK(m.show[MUI_SLOT_SUGGESTION] == 0, "640 wide shows no suggestion");
     CHECK(f != NULL, "mui_ui.c readable");
     while (f != NULL && fgets(line, sizeof line, f) != NULL) {
@@ -668,7 +869,7 @@ static void test_list_drill(void) {
 
 static void test_columns(void) {
     uint8_t c[MUI_COL_COUNT];
-    char f[48];
+    char f[128];
     static const uint32_t want[4] = {5, 4, 3, 2};
     uint32_t bp;
     for (bp = 0; bp < 4; bp++) {
@@ -680,7 +881,7 @@ static void test_columns(void) {
                 bars += strncmp(f + k, "BAR,", 4) == 0;
             }
             CHECK(bars == want[bp] - 1u, "format '%s' has %u BAR separators at %u", f, bars, bp);
-            CHECK(strncmp(f, "W=40 BAR,W=25", 13) == 0, "title and artist carry weights: '%s' at %u", f, bp);
+            CHECK(strncmp(f, "W=40 DELTA=16 BAR,W=25", 22) == 0, "title and artist carry weights: '%s' at %u", f, bp);
         }
     }
 }
@@ -765,6 +966,15 @@ static void test_doors(void) {
     }
     CHECK(lines == 5u && strcmp(mui_door_line(1), "VIEW_SOURCE search") == 0 && mui_door_line(5) == NULL, "five main-view lines");
     CHECK(mui_door_label(7) == NULL && mui_door_line(7) == NULL, "past the table");
+    /* I615d (design 8.4): with the top bar (DEFAULT tier) Home and Search leave the sidebar, the bitmap tier keeps all seven. */
+    for (i = 0, lines = 0; i < 7u; i++) {
+        lines += (uint32_t)sel_uim_door_shown(i, 1);
+    }
+    CHECK(lines == 5u && !sel_uim_door_shown(0, 1) && !sel_uim_door_shown(1, 1) && sel_uim_door_shown(2, 1), "five doors with the top bar, not Home or Search");
+    for (i = 0, lines = 0; i < 7u; i++) {
+        lines += (uint32_t)sel_uim_door_shown(i, 0);
+    }
+    CHECK(lines == 7u, "seven doors on the bitmap tier");
 }
 
 static void test_home(void) {
@@ -1039,7 +1249,7 @@ static void test_layout_before_open(void) {
         fclose(f);
     }
     src[n] = 0;
-    mui_layout_map(&m, 640u, 256u);
+    mui_layout_map(&m, 640u, 256u, SEL_UIM_TIER_BITMAP);
     CHECK(m.show[MUI_SLOT_MAIN] && m.show[MUI_SLOT_PLAYER] && !m.show[MUI_SLOT_SIDEBAR] && !m.show[MUI_SLOT_DETAIL],
           "640x256 layout shows sidebar %u detail %u", (unsigned)m.show[MUI_SLOT_SIDEBAR], (unsigned)m.show[MUI_SLOT_DETAIL]);
     pick = strstr(src, "    mui_layout_for_screen(s);\n    set(s->win, MUIA_Window_Open, TRUE);");
@@ -1063,7 +1273,7 @@ static void test_screen_plan(void) {
         fclose(f);
     }
     src[n] = 0;
-    CHECK(mui_button_height() == MUI_ICON_PX + 2u * MUI_BTN_PAD_Y + MUI_BTN_FRAME, "button height %u", (unsigned)mui_button_height());
+    CHECK(mui_button_height() == (uint32_t)mui_model_icon_px() + 2u * MUI_BTN_PAD_Y + MUI_BTN_FRAME, "button height %u", (unsigned)mui_button_height());
     CHECK(need > 256u && need <= 512u, "mini layout minimum height %u must be taller than 256 and fit 512", (unsigned)need);
     CHECK(mui_screen_plan(0x29000u, 640u, 256u, 0, need, &p) == 1 && p.laced && p.mode == 0x29004u && p.width == 640u &&
               p.height == 512u && p.depth == 4u,
@@ -1081,6 +1291,12 @@ static void test_screen_plan(void) {
               strstr(src, "mode = plan.mode;") != NULL && strstr(src, "SA_Depth, (ULONG)plan.depth") != NULL,
           "mui_screen_open does not open the own screen from mui_screen_plan");
     CHECK(strstr(src, "ModeNotAvailable(plan.mode)") != NULL, "mui_screen_open does not check the laced mode is available");
+    /* I667n: rig 2 uaegfx Workbench 0x50041303 800x600x24 has DIPF_IS_FOREIGN clear; the depth-4 plan held all 16 pens on RTG. */
+    CHECK(mui_screen_is_rtg(0, 0, 24u) && mui_screen_is_rtg(0, 1, 16u) && mui_screen_is_rtg(1, 1, 8u) && mui_screen_is_rtg(0, 0, 8u) &&
+              !mui_screen_is_rtg(0, 1, 8u) && !mui_screen_is_rtg(0, 1, 4u),
+          "RTG detection: a uaegfx bitmap without DIPF_IS_FOREIGN is RTG, a standard planar one is not");
+    CHECK(strstr(src, "foreign = mui_screen_is_rtg(") != NULL && strstr(src, "BMF_STANDARD") != NULL,
+          "mui_screen_open does not decide RTG through mui_screen_is_rtg with the Workbench bitmap");
     CHECK(strstr(src, "_minheight(s->root)") != NULL, "mui_open does not report the measured window minimum");
 }
 
@@ -1201,27 +1417,27 @@ static void test_icon_buttons(void) {
         fr.play = st ? SEL_PLAYING : SEL_STOPPED;
         for (b = 0; b < MUI_BTN_COUNT; b++) {
             const char* a = mui_transport_action(b, &fr);
-            CHECK(a != NULL && mui_icon_body(mui_icon_id(a)) != NULL, "transport button %u state %u has no icon", (unsigned)b, (unsigned)st);
+            CHECK(a != NULL && mui_icon_body(mui_icon_id(a), 18) != NULL, "transport button %u state %u has no icon", (unsigned)b, (unsigned)st);
             want++;
         }
     }
     for (i = 0; mui_extra_action(i) != NULL; i++, want++) {
-        CHECK(mui_icon_body(mui_icon_id(mui_extra_action(i))) != NULL, "extra %s has no icon", mui_extra_action(i));
+        CHECK(mui_icon_body(mui_icon_id(mui_extra_action(i)), 18) != NULL, "extra %s has no icon", mui_extra_action(i));
     }
     for (i = 0; i < SEL_UIM_DOOR_COUNT; i++, want++) {
-        CHECK(mui_icon_body(mui_icon_id(sel_uim_door_at(i)->page)) != NULL, "door %s has no icon", sel_uim_door_at(i)->page);
+        CHECK(mui_icon_body(mui_icon_id(sel_uim_door_at(i)->page), 18) != NULL, "door %s has no icon", sel_uim_door_at(i)->page);
     }
     for (i = 0; i < MUI_TOOL_BTNS; i++, want++) {
-        CHECK(mui_icon_body(mui_icon_id(mui_tool_labels[i])) != NULL, "tool %s has no icon", mui_tool_labels[i]);
+        CHECK(mui_icon_body(mui_icon_id(mui_tool_labels[i]), 18) != NULL, "tool %s has no icon", mui_tool_labels[i]);
     }
-    CHECK(mui_icon_body(mui_icon_id("crumb")) != NULL, "crumb has no icon");
+    CHECK(mui_icon_body(mui_icon_id("crumb"), 18) != NULL, "crumb has no icon");
     want++;
     CHECK(mui_icon_resolved() - before == want, "icon lookups %u want %u", (unsigned)(mui_icon_resolved() - before), (unsigned)want);
-    CHECK(mui_icon_id("no such button") < 0 && mui_icon_body(-1) == NULL, "unknown key has no icon");
+    CHECK(mui_icon_id("no such button") < 0 && mui_icon_body(-1, 18) == NULL, "unknown key has no icon");
     {
-        const uint8_t* body = mui_icon_body(mui_icon_id("play"));
-        size_t k, bytes = (size_t)mui_icon_body_px * (((mui_icon_body_px + 15) / 16) * 2) * 2, ink = 0;
-        CHECK(mui_icon_body_px == MUI_ICON_PX, "baked edge %u", (unsigned)mui_icon_body_px);
+        const uint8_t* body = mui_icon_body(mui_icon_id("play"), 18);
+        size_t k, bytes = (size_t)18 * (((18 + 15) / 16) * 2) * 2, ink = 0;
+        CHECK(mui_icon_body(0, 17) == NULL && mui_icon_body(0, 24) != NULL, "bodies exist for the tier sizes only");
         for (k = 0; k < bytes; k++) {
             ink += body[k] != 0;
         }
@@ -1231,7 +1447,7 @@ static void test_icon_buttons(void) {
     mui_icon_palette(th.token, 1, pal);
     CHECK(pal[0] == (th.token[SEL_GUI_TOKEN_SURFACE_RAISED] >> 16 & 0xFFu) * 0x01010101u && pal[9] == (th.token[SEL_GUI_TOKEN_TEXT] >> 16 & 0xFFu) * 0x01010101u,
           "palette runs from the button face to the text colour");
-    CHECK(MUI_BTN_PAD_X >= 8 && MUI_BTN_PAD_Y >= 4 && MUI_ICON_PX >= 24, "buttons are bigger than the 1 px text-only ones");
+    CHECK(MUI_BTN_PAD_X >= 8 && MUI_BTN_PAD_Y >= 4 && mui_model_icon_px() >= 18, "buttons are bigger than the 1 px text-only ones");
     f = fopen(MUI_UI_SOURCE, "rb");
     CHECK(f != NULL, "open %s", MUI_UI_SOURCE);
     if (f == NULL) {
@@ -1327,7 +1543,7 @@ static void test_aacheck(void) {
     CHECK(face == th.token[SEL_GUI_TOKEN_ACCENT] && text == th.token[SEL_GUI_TOKEN_ACCENT_TEXT], "checked box face %06X ink %06X (desktop d_checkbox: accent_text)", (unsigned)face, (unsigned)text);
     mui_aa_button_rgb(th.token, MUI_AA_ROLE_TOGGLE, MUI_AA_DISABLED, &face, &text);
     CHECK(text == th.token[SEL_GUI_TOKEN_TEXT_DISABLED], "disabled check ink %06X", (unsigned)text);
-    CHECK(mui_icon_body(mui_icon_id("check")) != NULL, "check icon missing");
+    CHECK(mui_icon_body(mui_icon_id("check"), 18) != NULL, "check icon missing");
     mui_aa_metrics(13, &m);
     CHECK(m.check_px == 16, "box edge %d, design says 16", m.check_px);
     mui_aa_metrics(0, &m);
@@ -1372,7 +1588,7 @@ static void test_newplaylist(void) {
         }
     }
     CHECK(at < MUI_TOOL_BTNS, "mui_tool_labels has no New Playlist");
-    CHECK(mui_icon_body(mui_icon_id("New Playlist")) != NULL, "New Playlist has no icon");
+    CHECK(mui_icon_body(mui_icon_id("New Playlist"), 18) != NULL, "New Playlist has no icon");
     CHECK(src != NULL, "read mui_ui.c");
     if (src == NULL) {
         return;
@@ -1398,6 +1614,87 @@ static void test_newplaylist(void) {
     g_sent = 0;
     CHECK(mui_viewbtn_fire(1, "", 0, fake_send, NULL) == 1 && g_sent == 1 && strcmp(g_sent_line, "PLAYLIST_CREATE \"New Playlist\" 0") == 0, "fire sent '%s'", g_sent_line);
     CHECK(mui_view_fires() == fires + 1u, "fire counter %u want %u", (unsigned)mui_view_fires(), (unsigned)(fires + 1u));
+}
+
+/* Regression (I684a): Selecta_AACycle's OM_SET redrew when _win(obj) != NULL. Before the first MUIM_Setup the render info
+ * is NULL, so _win(obj) reads address 0; on rig 2 that held garbage, the redraw ran on an object with no window and the
+ * Amiga crashed at start (set AAC_Active on the visualizer cycle in mui_detail_group). Every class must ask aa_live(),
+ * which checks the render info first; no class file may test _win(obj) against NULL on its own. */
+static void test_live_guard(void) {
+    static const char* const files[] = {"mui_aacycle_class.c", "mui_aafield_class.c", "mui_aabtn_class.c", "mui_aascroller_class.c",
+                                        "mui_aaslider_class.c", "mui_aalist_class.c", "mui_listview_class.c", "mui_aatext_class.c",
+                                        "mui_aapanel_class.c", "mui_vizarea_class.c", "mui_canvas_class.c"};
+    static char src[200000];
+    char path[1024];
+    size_t i, n;
+    FILE* f;
+    for (i = 0; i < sizeof files / sizeof files[0]; i++) {
+        snprintf(path, sizeof path, "%s/%s", MUI_DIR, files[i]);
+        f = fopen(path, "rb");
+        CHECK(f != NULL, "open %s", path);
+        if (f == NULL) {
+            continue;
+        }
+        n = fread(src, 1, sizeof src - 1, f);
+        fclose(f);
+        src[n] = 0;
+        CHECK(strstr(src, "_win(obj) != NULL") == NULL && strstr(src, "_win(obj) == NULL") == NULL,
+              "%s tests _win(obj) against NULL without the render info guard (use aa_live)", files[i]);
+    }
+    snprintf(path, sizeof path, "%s/mui_aa_draw.c", MUI_DIR);
+    f = fopen(path, "rb");
+    CHECK(f != NULL, "open %s", path);
+    n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    CHECK(strstr(src, "muiRenderInfo(obj) != NULL && _win(obj) != NULL") != NULL, "aa_live does not check the render info before _win");
+}
+
+/* Regression (I684a, the crash itself): mui_detail_group built the visualizer cycle and then called set(AAC_Active) before
+ * the cycle was in the application tree. The set fired the MUIV_Notify_Application notification with no global info, MUI read
+ * the application through a NULL pointer, and rig 2 crashed at every start whose saved visualizer was not the first. The
+ * settings cycles had the same shape. The initial entry must go in at OM_NEW (mui_make_cycle's active argument): mui_ui.c may
+ * not set AAC_Active at all; only the user's pick changes it. */
+static void test_cycle_initial(void) {
+    static char src[1000000];
+    const char* line;
+    FILE* f = fopen(MUI_UI_SOURCE, "rb");
+    size_t n;
+    CHECK(f != NULL, "open %s", MUI_UI_SOURCE);
+    if (f == NULL) {
+        return;
+    }
+    n = fread(src, 1, sizeof src - 1, f);
+    fclose(f);
+    src[n] = 0;
+    for (line = src; line != NULL && *line != 0;) {
+        const char* end = strchr(line, '\n');
+        size_t len = end != NULL ? (size_t)(end - line) : strlen(line);
+        char buf[512];
+        snprintf(buf, sizeof buf, "%.*s", (int)(len < sizeof buf - 1 ? len : sizeof buf - 1), line);
+        CHECK(!(strstr(buf, "set(") != NULL && strstr(buf, "AAC_Active") != NULL), "mui_ui.c sets AAC_Active after OM_NEW: %s", buf);
+        line = end != NULL ? end + 1 : NULL;
+    }
+    CHECK(strstr(src, "mui_make_cycle(s->vizset.name_, (LONG)s->vizset.sel,") != NULL, "visualizer cycle does not take the saved pick at OM_NEW");
+}
+
+/* I684b: the VizArea and canvas objects must get the real RTG flag of the screen (the foreign-mode test in mui_screen_open),
+ * not a literal 1; with 1 a planar AGA screen still ran the pixel step although nothing can draw there. */
+static void test_screen_rtg_flag(void) {
+    static char src[400000];
+    FILE* f = fopen(MUI_UI_SOURCE, "rb");
+    size_t n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    CHECK(strstr(src, "g_screen_rtg = foreign;") != NULL, "the flag is not taken from the foreign-mode test");
+    CHECK(strstr(src, "mui_vizarea_new(&s->vizset, g_tokens, g_screen_rtg)") != NULL, "VizArea does not get the screen RTG flag");
+    CHECK(strstr(src, "mui_canvas_new(&grid, g_screen_rtg)") != NULL, "canvas does not get the screen RTG flag");
+    CHECK(strstr(src, "mui_vizarea_new(&s->vizset, g_tokens, 1)") == NULL && strstr(src, "mui_canvas_new(&grid, 1)") == NULL,
+          "a hardcoded RTG flag came back");
 }
 
 int main(int argc, char** argv) {
@@ -1440,6 +1737,10 @@ int main(int argc, char** argv) {
         test_row_cells();
     } else if (strcmp(argv[1], "theme") == 0) {
         test_theme();
+    } else if (strcmp(argv[1], "theme-live") == 0) {
+        test_theme_live(argc > 2 ? argv[2] : ".");
+    } else if (strcmp(argv[1], "theme-file") == 0) {
+        test_theme_file(argc > 2 ? argv[2] : ".");
     } else if (strcmp(argv[1], "pens") == 0) {
         test_pens();
     } else if (strcmp(argv[1], "style-menu") == 0) {
@@ -1450,6 +1751,8 @@ int main(int argc, char** argv) {
         test_list_pending();
     } else if (strcmp(argv[1], "list-backends") == 0) {
         test_list_backends();
+    } else if (strcmp(argv[1], "topbar") == 0) {
+        test_topbar();
     } else if (strcmp(argv[1], "doors") == 0) {
         test_doors();
     } else if (strcmp(argv[1], "home") == 0) {
@@ -1502,6 +1805,12 @@ int main(int argc, char** argv) {
         test_toolrows();
     } else if (strcmp(argv[1], "tracker") == 0) {
         test_tracker();
+    } else if (strcmp(argv[1], "live-guard") == 0) {
+        test_live_guard();
+    } else if (strcmp(argv[1], "cycle-initial") == 0) {
+        test_cycle_initial();
+    } else if (strcmp(argv[1], "screen-rtg-flag") == 0) {
+        test_screen_rtg_flag();
     } else {
         return 2;
     }

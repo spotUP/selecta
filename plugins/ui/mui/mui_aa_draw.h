@@ -34,10 +34,20 @@ void aa_setup(Object* obj, aa_ctx* c, const uint32_t* rgb, int n);
 void aa_set_font_px(aa_ctx* c, int px);
 /* Releases every held pen and the font reference. Call from MUIM_Cleanup. */
 void aa_cleanup(aa_ctx* c);
+/* True when obj sits in an open window (between MUIM_Setup and MUIM_Cleanup). _win(obj) alone reads through the render
+ * info, which is NULL before the first MUIM_Setup: that read returns whatever lies at address 0, and a redraw on that
+ * garbage window crashed the Amiga (I684a, AACycle set before the window opened). Use this before every redraw from
+ * OM_SET or an outside call. */
+int aa_live(Object* obj);
 /* Held pen for an RGB, obtained on first use; -1 when the table is full. */
 LONG aa_pen(aa_ctx* c, uint32_t rgb);
 /* Rows of RectFill with the insets of mui_aa_round_inset; radius 0 is one RectFill. */
 void aa_round_fill(struct RastPort* rp, int x, int y, int w, int h, int radius, LONG pen);
+/* aa_round_fill that leaves the hole rectangle (hx, hy, hw, hh) untouched: for a Group subclass that paints after its super call
+ * around a child the super already drew. */
+void aa_round_fill_hole(struct RastPort* rp, int x, int y, int w, int h, int radius, LONG pen, int hx, int hy, int hw, int hh);
+/* Only the four corner wedges outside the rounded shape, in pen: rounds a box whose square face its background already filled. */
+void aa_round_corners(struct RastPort* rp, int x, int y, int w, int h, int radius, LONG pen);
 /* One pixel rounded outline, same inset maths. */
 void aa_round_frame(struct RastPort* rp, int x, int y, int w, int h, int radius, LONG pen);
 /* Caption pixel size. */

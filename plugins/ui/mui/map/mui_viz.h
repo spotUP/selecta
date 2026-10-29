@@ -7,6 +7,7 @@
 
 #include <selecta/plugin.h>
 #include <selecta/uimodel.h>
+#include <selecta/uimodel/tokens.h>
 #include <selecta/viz.h>
 
 #include <stdint.h>
@@ -22,6 +23,9 @@ typedef struct mui_viz {
     uint32_t frames;                   /* VIZ_FRAME calls that drew something: the rig sentinel */
 } mui_viz;
 
+/* Fills the palette from theme tokens (0xRRGGBB, SEL_GUI_TOKEN_COUNT of them) with the desktop strip's mapping: background =
+ * surface, grid = raised surface, primary = accent, secondary = muted text, accent = text. */
+void mui_viz_palette_from_tokens(mui_viz* v, const uint32_t* tokens);
 /* Finds the VIZ_FRAME hook in a plugin descriptor (what find_plugin(SEL_PLUGIN_KIND_VIZ, id) returns). Returns 0 when
  * the descriptor has none. */
 int mui_viz_bind(mui_viz* v, const sel_tag* desc);
@@ -44,5 +48,34 @@ typedef struct mui_gate {
 } mui_gate;
 /* 1 when a redraw at `now_ms` is allowed (and records it), 0 when it must wait. The first call is always allowed. */
 int mui_gate_due(mui_gate* g, uint32_t interval_ms, uint32_t now_ms);
+
+/* ---- Plugin set and tick (MUI-P5-3): what the Now Playing viz area shows ---- */
+#define MUI_VIZ_PLUGINS 3u
+typedef const sel_tag* (*mui_find_plugin_fn)(uint32_t kind, const char* id); /* sel_ui_open_args.find_plugin */
+typedef struct mui_vizset {
+    const char* id[MUI_VIZ_PLUGINS];
+    const char* name_[MUI_VIZ_PLUGINS + 1u]; /* display names, NULL terminated: the cycle gadget's entries */
+    sel_viz_render_fn fn[MUI_VIZ_PLUGINS];
+    uint32_t n, sel;     /* plugins found, index of the selected one */
+    uint32_t seq;        /* sequence number of the newest frame a tick allowed */
+    mui_gate gate;       /* frame budget (MUI-P5-5) */
+    uint32_t allowed;    /* ticks that allowed a render */
+} mui_vizset;
+/* Finds the viz plugins the desktop UI lists (scope, levels, spectrum: the ids of the View/Visualizer actions in the shared
+ * action table) with find_plugin(SEL_PLUGIN_KIND_VIZ, id), and selects `pref` (the ui.desktop.viz pref value, NULL or unknown =
+ * first). Returns how many were found. */
+uint32_t mui_vizset_load(mui_vizset* s, mui_find_plugin_fn find, const char* pref);
+/* Selects the plugin with action/plugin id `id`; returns its index, -1 when not found. */
+int mui_vizset_select(mui_vizset* s, const char* id);
+/* The engine line that persists the selection (the line the View/Visualizer menu sends), NULL when none is loaded. */
+const char* mui_vizset_line(const mui_vizset* s);
+/* 1 when a render of newest engine frame `f` is due at now_ms: a plugin is loaded, the frame is new (seq not 0, not the one
+ * last allowed) and the frame budget lets the tier redraw. Records the frame and time when it returns 1. */
+int mui_vizset_tick(mui_vizset* s, const sel_viz_frame* f, const sel_uim_budget* b, uint32_t now_ms);
+/* The whole per-frame step the viz area runs (tick, then render and expand): returns 1 when a w x h frame was rendered into
+ * `v` (the selected plugin, v->frames counts it) and expanded to `dst` (w * h words). 0 when the tick says wait or the
+ * surface does not fit. This is the one entry point the class and the host test both drive. */
+int mui_vizset_step(mui_vizset* s, mui_viz* v, const sel_viz_frame* f, const sel_uim_budget* b, uint32_t now_ms, uint32_t w,
+                    uint32_t h, uint32_t* dst);
 
 #endif /* MUI_VIZ_H */

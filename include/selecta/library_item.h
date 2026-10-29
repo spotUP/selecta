@@ -4,10 +4,6 @@
 #ifndef SELECTA_LIBRARY_ITEM_H
 #define SELECTA_LIBRARY_ITEM_H
 
-/* I678j4: the collection kind of the pinned Liked Songs page. It is not a row kind of the items table (kind 0 means a playlist page in
- * the UI), so it has its own value. */
-#define SEL_COLLECTION_LIKED 100u
-
 enum {
     SEL_LIB_ITEM_LIKED = 0,  /* pinned: Liked Songs */
     SEL_LIB_ITEM_RECENT = 1, /* pinned: Recently Played */
@@ -26,7 +22,7 @@ enum {
 
 /* The lists of a collection page (design doc 2026-10-29-desktop-library-architecture.md section 8), shared by the library and the engine. */
 enum {
-    SEL_COLL_SONGS = 0, /* the songs in page order: song key, name, artist, album, plays (an album in scan order, an artist or composer by plays) */
+    SEL_COLL_SONGS = 0, /* the songs in page order: song key, name, artist, album, plays (an album in scan order, an artist or composer by plays; Liked Songs newest like first, Recently Played newest play first with the last play time in the number column, Local Files and a source in scan order) */
     SEL_COLL_ALBUMS,    /* artist page "Albums": album id, name, artist, year, songs (newest first) */
     SEL_COLL_APPEARS,   /* artist page "Appears On": albums of other artists that hold a song by the artist */
     SEL_COLL_MORE,      /* album page "More by": the other albums of the album's artist */
@@ -47,6 +43,7 @@ typedef struct sel_library_item {
     unsigned opened; /* I678c: epoch seconds the item was last opened (opened table), 0 never */
     unsigned art_id;
     int pinned;
+    char format[16]; /* I691c: majority format of the songs inside (representative extension), "" none */
 } sel_library_item;
 
 #endif

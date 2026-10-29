@@ -5,6 +5,8 @@
 #ifndef SELECTA_MUI_THEME_H
 #define SELECTA_MUI_THEME_H
 
+#include <selecta/uimodel/theme.h>
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -38,14 +40,37 @@ int mui_theme_look_for(mui_theme_role role, const uint32_t* tokens, mui_theme_lo
 /* The theme stays off when the user's MUI text pen (0xRRGGBB) would not be readable on the role background: dark text on a
  * dark Selecta surface. WCAG-style ratio in integer tenths, at least 40 (4.0) is readable. */
 int mui_theme_readable(uint32_t text_rgb, uint32_t bg_rgb);
+/* True when aa_text draws fg itself: not the plain backend, and either a truecolour screen or fg readable on bg. */
+int mui_theme_text_uses_token(int truecolour, int plain, uint32_t fg_rgb, uint32_t bg_rgb);
+/* I667n: the ObtainBestPen precisions aa_pen tries, in order (graphics/view.h PRECISION_* values): exact first, so a screen with free
+ * pens (RTG) gets the token colour itself instead of the nearest shared pen (GUI precision matched ACCENT_TEXT E4E4EA to the held
+ * TEXT pen C8C8D0); GUI last, so a full AGA palette still maps to the nearest held pen. Returns the count written (<= cap). */
+#define MUI_THEME_PRECISION_EXACT (-1)
+#define MUI_THEME_PRECISION_GUI 32
+int mui_theme_pen_precisions(int* out, int cap);
 /* One decision for the whole look. MUI 3.8 draws object text with the screen DrawInfo pens only (the escape code ESC followed by
  * a pen number picks that pen; there is no RGB text pen), so the look needs one of those pens to be readable on every role
  * background. pen_rgb: the n screen pen colours (0xRRGGBB, index = DrawInfo pen number); tokens as in mui_theme_look_for.
  * Returns the pen number nearest to the theme TEXT colour that is readable on BACKGROUND, SURFACE, SURFACE_RAISED and PANEL, or
  * -1: the look then stays off for every role and the user's MUI look is left alone. */
 int mui_theme_pick_pen(const uint32_t* pen_rgb, uint32_t n, const uint32_t* tokens);
+/* I676: the desktop theme file format (txt_theme_parse, the one parser) read over *t once at window open. env_path (Amiga
+ * ENV:Selecta/theme, written by Amarchy) is applied first, then arg_path (--theme <file>) over it, so --theme wins token by
+ * token. A NULL, missing, unreadable or malformed file leaves *t exactly as it was (no error dialog; a note on stderr for a
+ * malformed one). Returns how many of the two files were applied (0..2). */
+int mui_theme_load(txt_theme* t, const char* env_path, const char* arg_path);
+/* I676b: ARexx THEME. mui_theme_request refuses (-1, nothing stored) a path, or with no path the env_path file, that is missing or
+ * malformed; otherwise it remembers the path (none: the ENV file) for the next window open and returns 0. mui_theme_resolve is the
+ * one place the tokens of a window open are decided: built-in, then env_path, then the remembered request path, else launch_arg
+ * (--theme), over it. mui_theme_requests counts accepted requests (sentinel). */
+int mui_theme_request(const char* env_path, const char* path);
+void mui_theme_resolve(txt_theme* t, const char* env_path, const char* launch_arg);
+uint32_t mui_theme_requests(void);
 /* Count of mui_theme_look_for calls that succeeded since start (sentinel for the build path test). */
 uint32_t mui_theme_applied(void);
+/* I676: the tokens in force (theme file applied). Set once per window open by the UI; drawing classes read them here. */
+void mui_theme_tokens_set(const uint32_t* tokens);
+const uint32_t* mui_theme_tokens(void);
 uint32_t mui_theme_applied_role(mui_theme_role role);
 
 #ifdef __cplusplus

@@ -62,13 +62,9 @@ expect_eq("scanned songs" "${n}" 3)
 field(shown "${list}" dialog songs)
 expect_eq("engine state library_songs" "${shown}" 3)
 
-# Row 0 of the library list is the Composers entry; drill in so the three songs show (as dui-song-menu does).
-if(NOT "${list}" MATCHES "row 0 ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)\n")
-  message(FATAL_ERROR "no row rectangle in the library dump:\n${list}")
-endif()
-math(EXPR cx "${CMAKE_MATCH_1} + 10")
-math(EXPR cy "${CMAKE_MATCH_2} + 8")
-set(drill "${scan}move ${cx} ${cy}\nclick ${cx} ${cy}\nwait 1\n")
+# I678i: the Library page is retired; the composer's collection page opens from its Browse page tile.
+run(browse "${scan}topbar 2\nwait 3\n")
+dui_browse_composer_input(drill "${scan}" "${browse}")
 run(drilled "${drill}")
 # I678f: the composer opens its collection page; its second song is the `plsong 1` row.
 if(NOT "${drilled}" MATCHES "plsong 1 ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+) ")

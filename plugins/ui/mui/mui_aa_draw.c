@@ -108,8 +108,13 @@ static void font_put(APTR font) {
 }
 
 static LONG obtain(struct ColorMap* cm, uint32_t rgb) {
-    struct TagItem tl[2] = {{OBP_Precision, PRECISION_GUI}, {TAG_DONE, 0}};
-    return ObtainBestPenA(cm, ((rgb >> 16) & 0xFFu) * 0x01010101UL, ((rgb >> 8) & 0xFFu) * 0x01010101UL, (rgb & 0xFFu) * 0x01010101UL, tl);
+    int prec[2], n = mui_theme_pen_precisions(prec, 2), i;
+    LONG pen = -1;
+    for (i = 0; i < n && pen < 0; i++) {
+        struct TagItem tl[3] = {{OBP_Precision, (ULONG)(LONG)prec[i]}, {OBP_FailIfBad, (ULONG)(i + 1 < n)}, {TAG_DONE, 0}};
+        pen = ObtainBestPenA(cm, ((rgb >> 16) & 0xFFu) * 0x01010101UL, ((rgb >> 8) & 0xFFu) * 0x01010101UL, (rgb & 0xFFu) * 0x01010101UL, tl);
+    }
+    return pen;
 }
 
 LONG aa_pen(aa_ctx* c, uint32_t rgb) {
@@ -129,10 +134,8 @@ LONG aa_pen(aa_ctx* c, uint32_t rgb) {
 
 void aa_setup(Object* obj, aa_ctx* c, const uint32_t* rgb, int n) {
     int i, depth;
-    txt_theme th;
     memset(c, 0, sizeof *c);
-    txt_theme_default(&th);
-    memcpy(c->tok, th.token, sizeof c->tok);
+    memcpy(c->tok, mui_theme_tokens(), sizeof c->tok);
     c->scr = _screen(obj);
     c->cm = c->scr->ViewPort.ColorMap;
     depth = (int)GetBitMapAttr(c->scr->RastPort.BitMap, BMA_DEPTH);
@@ -165,6 +168,10 @@ void aa_set_font_px(aa_ctx* c, int px) {
     }
 }
 
+int aa_live(Object* obj) {
+    return obj != NULL && muiRenderInfo(obj) != NULL && _win(obj) != NULL;
+}
+
 void aa_cleanup(aa_ctx* c) {
     int i;
     if (c->cm != NULL) {
@@ -192,6 +199,39 @@ void aa_round_fill(struct RastPort* rp, int x, int y, int w, int h, int radius, 
     for (row = 0; row < h; row++) {
         int in = mui_aa_round_inset(w, h, radius, row);
         RectFill(rp, x + in, y + row, x + w - 1 - in, y + row);
+    }
+}
+
+void aa_round_fill_hole(struct RastPort* rp, int x, int y, int w, int h, int radius, LONG pen, int hx, int hy, int hw, int hh) {
+    int row;
+    SetAPen(rp, pen);
+    for (row = 0; row < h; row++) {
+        int in = radius > 0 ? mui_aa_round_inset(w, h, radius, row) : 0, l = x + in, r = x + w - 1 - in, py = y + row;
+        if (py < hy || py >= hy + hh) {
+            RectFill(rp, l, py, r, py);
+            continue;
+        }
+        if (l < hx) {
+            RectFill(rp, l, py, hx - 1 < r ? hx - 1 : r, py);
+        }
+        if (r >= hx + hw) {
+            RectFill(rp, l > hx + hw ? l : hx + hw, py, r, py);
+        }
+    }
+}
+
+void aa_round_corners(struct RastPort* rp, int x, int y, int w, int h, int radius, LONG pen) {
+    int row;
+    if (radius <= 0) {
+        return;
+    }
+    SetAPen(rp, pen);
+    for (row = 0; row < h; row++) {
+        int in = mui_aa_round_inset(w, h, radius, row);
+        if (in > 0) {
+            RectFill(rp, x, y + row, x + in - 1, y + row);
+            RectFill(rp, x + w - in, y + row, x + w - 1, y + row);
+        }
     }
 }
 
@@ -235,7 +275,7 @@ int aa_text_height(aa_ctx* c, Object* obj) {
 
 void aa_text(aa_ctx* c, Object* obj, struct RastPort* rp, int x, int y, const char* str, uint32_t fg, uint32_t bg) {
     int len = (int)strlen(str);
-    if (c->backend == AA_PLAIN || !mui_theme_readable(fg, bg)) {
+    if (!mui_theme_text_uses_token(c->backend == AA_TC, c->backend == AA_PLAIN, fg, bg)) {
         LONG pen = c->backend == AA_PLAIN ? aa_pen(c, fg) : (LONG)_dri(obj)->dri_Pens[TEXTPEN];
         SetFont(rp, _font(obj));
         SetAPen(rp, pen);
