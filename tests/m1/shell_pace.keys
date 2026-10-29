@@ -1,0 +1,3 @@
+# I684c selecta-shell-pace: the song named on the command line plays while the shell takes turns; then quit.
+wait 400
+q

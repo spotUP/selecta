@@ -125,6 +125,7 @@ const sel_tag* sel_paula_out_describe(const sel_paula_out_kind* kind, sel_out_op
     set(&hooks[n++], SEL_OUT_VOICES, (uintptr_t)&g_voices_marker);
     set(&hooks[n++], SEL_OUT_VOICE_BACKEND, SEL_TAG_FN(out_voice_backend));
     set(&hooks[n++], SEL_OUT_VOICE_MAX, SEL_PAULA_VOICES);
+    set(&hooks[n++], SEL_OUT_UNPACED, 1); /* out_pump only pulls; nothing here waits (I684c) */
     if (kind->hardware) {
         set(&hooks[n++], SEL_OUT_PAULA_HW, 1);
     }

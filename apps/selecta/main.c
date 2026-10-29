@@ -17,6 +17,7 @@
 #include "amiga_start.h"
 #include "startup_error.h"
 #endif
+#include "shell_pace.h"
 #include <selecta/engine.h>
 #include <selecta/machine.h>
 #include <selecta/output.h>
@@ -111,9 +112,10 @@ static void sink(void* ctx, const sel_message* evt) {
 
 static int g_mark_audio;
 static int g_marked; /* the output's pull thread is marked as the audio thread */
+static volatile int g_pumping; /* the shell is inside so.pump: a pull now runs on the main thread, never the audio thread (I684c) */
 
 static uint32_t audio_pull(void* ctx, int16_t* stereo, uint32_t frames) {
-    if (g_mark_audio && !g_marked) { /* a clockless output pumps on the main thread */
+    if (g_mark_audio && !g_marked && !g_pumping) { /* a clockless output pumps on the main thread */
         sel_engine_mark_audio_thread((sel_engine*)ctx);
         g_marked = 1;
     }
@@ -132,6 +134,7 @@ typedef struct shell_output {
     sel_engine* engine;
     uint32_t rate; /* sel_registry_output_rate: the one rate for set_mix, open and the turn length */
     void* out; /* NULL while handed over */
+    int paced; /* 0: the output's pump never blocks (SEL_OUT_UNPACED), so the UI wait paces the turn (I684c) */
 } shell_output;
 
 static int shell_handover(void* ctx, uint32_t release) {
@@ -151,7 +154,7 @@ static int shell_handover(void* ctx, uint32_t release) {
         g_marked = 0; /* a new pull thread marks itself on its first call */
         so->set_source(so->out, audio_pull, so->engine);
     }
-    return 1;
+    return 1; /* so->paced is the same output's: a reopen keeps it */
 }
 
 static const sel_tag* hooks_of(uint32_t kind, const char* id) {
@@ -197,6 +200,7 @@ static int shell_switch_output(void* ctx, const char* id) {
     so->close = close_fn;
     so->set_source = source_fn;
     so->pump = pump_fn;
+    so->paced = sel_tag_find(oh, SEL_OUT_UNPACED, 0) == 0;
     so->out = out;
     return 1;
 }
@@ -429,6 +433,8 @@ int main(int argc, char** argv)
 #endif
     char cmd[1100];
     uint32_t waits = 0;
+    uint32_t wait_ms_min = 0xFFFFFFFFu; /* the smallest and largest UI wait the loop asked for (I684c) */
+    uint32_t wait_ms_max = 0;
     int r;
     int has_keys = option(argc, argv, "--keys", NULL) != NULL;
     /* Preferred media-session integration per OS; sel_registry_default_integration falls back
@@ -571,6 +577,7 @@ int main(int argc, char** argv)
     so.host = host;
     so.engine = e;
     so.out = out;
+    so.paced = sel_tag_find(oh, SEL_OUT_UNPACED, 0) == 0;
     sel_engine_set_handover(e, shell_handover, &so);
     sel_engine_set_output_switch(e, shell_switch_output, &so);
 
@@ -732,7 +739,15 @@ int main(int argc, char** argv)
     for (;;) {
         r = -1;
         for (u = 0; u < g_ui_count; u++) { /* the loop runs while any UI still has a turn to take */
-            int wr = g_uis[u].wait(g_uis[u].state, clockless ? SHELL_TURN_MS : 0u);
+            uint32_t wait_ms = sel_shell_wait_ms(clockless, so.out != NULL, so.paced, SHELL_TURN_MS);
+            int wr;
+            if (wait_ms < wait_ms_min) {
+                wait_ms_min = wait_ms;
+            }
+            if (wait_ms > wait_ms_max) {
+                wait_ms_max = wait_ms;
+            }
+            wr = g_uis[u].wait(g_uis[u].state, wait_ms);
             if (wr > r) {
                 r = wr;
             }
@@ -755,13 +770,15 @@ int main(int argc, char** argv)
         }
         waits++;
         if (so.out != NULL) {
+            g_pumping = 1;
             so.pump(so.out, so.rate * SHELL_TURN_MS / 1000u);
+            g_pumping = 0;
         }
         sel_engine_pump(e, sink, ctx);
         sel_int_session_poll(isess);
 #ifndef SEL_NO_CONTROL_SOCKET
         if (ctl_fd >= 0) {
-            socket_cmds += (unsigned)sel_ctl_serve(ctl_fd, clockless ? SHELL_TURN_MS : 0u, ctl_handle, &cc);
+            socket_cmds += (unsigned)sel_ctl_serve(ctl_fd, sel_shell_wait_ms(clockless, so.out != NULL, so.paced, SHELL_TURN_MS), ctl_handle, &cc);
         }
 #endif
 #ifdef __amigaos__
@@ -773,6 +790,7 @@ int main(int argc, char** argv)
 
     ust = ui_stats_of(&g_uis[0]);
     sel_engine_stats_get(e, &est);
+    printf("shell_wait_ms_min=%u shell_wait_ms_max=%u\n", (unsigned)(wait_ms_min == 0xFFFFFFFFu ? 0u : wait_ms_min), (unsigned)wait_ms_max); /* what the shell asked the UI to wait (I684c) */
     printf("ui_waits=%u flushes=%u keys=%u\n", (unsigned)waits, (unsigned)sel_tag_find(ust, SEL_UI_STAT_FLUSHES, 0),
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_KEYS, 0));
     printf("hw_handovers=%u hw_starts=%u replayer=%s\n", (unsigned)est.hw_handovers, (unsigned)est.hw_starts,

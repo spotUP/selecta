@@ -594,6 +594,21 @@ if(NOT SEL_AMIGA)
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/browse_play"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/browse_play.cmake")
 
+  # I684c: the shell loop paces on the UI wait unless the open output's pump blocks. Reachability through the real shell
+  # (paula-shadow: 20 ms every turn, ahi-shadow: 0) and the rule itself, handover included.
+  foreach(pace paula-shadow:20 ahi-shadow:0)
+    string(REPLACE ":" ";" pace_parts "${pace}")
+    list(GET pace_parts 0 pace_out)
+    list(GET pace_parts 1 pace_ms)
+    add_test(NAME selecta-shell-pace-${pace_out}
+      COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DMOD=${SEL_MKMOD}"
+        "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m1/shell_pace.keys" "-DOUTPUT=${pace_out}"
+        "-DWANT_MIN=${pace_ms}" "-DWANT_MAX=${pace_ms}" -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/shell_pace.cmake")
+  endforeach()
+  add_executable(shell_pace_unit m1/shell_pace_unit.c)
+  target_include_directories(shell_pace_unit PRIVATE ${PROJECT_SOURCE_DIR}/apps/common)
+  add_test(NAME shell-pace-unit COMMAND shell_pace_unit)
+
   # I563: an unregistered UI is a fatal start-up exit; it must go through the shared report (sel_startup_error),
   # whose count --stats prints, and carry the message. The Amiga requester half is the same call on the Amiga.
   add_test(NAME selecta-startup-error-report

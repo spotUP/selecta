@@ -109,6 +109,7 @@ SEL_TAG(OUT, STAT_AHI_RATE,     0x201D, INT) /* ahi outputs: sample rate in Hz *
 SEL_TAG(OUT, RATE_FOR,          0x201E, PTR) /* uint32_t (*)(const sel_tag* machine): the rate the output prefers on that machine; absent = 44100 */
 SEL_TAG(OUT, STAT_AHI_DECODE_MS, 0x201F, INT) /* ahi outputs: milliseconds spent pulling PCM from the source (decode and mix) */
 SEL_TAG(OUT, STAT_AHI_WAIT_MS,  0x2020, INT) /* ahi outputs: milliseconds blocked waiting for ahi.device to free a buffer */
+SEL_TAG(OUT, UNPACED,           0x2021, INT) /* 1 = OUT_PUMP never blocks (Paula): the shell paces its turns on the UI wait (I684c). Absent = the pump paces itself */
 
 /* DSP plugin rows (design doc section 5, include/selecta/dsp.h). */
 SEL_TAG(DSP, NAME,             0x3000, STR)
