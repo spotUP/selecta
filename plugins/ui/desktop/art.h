@@ -20,6 +20,11 @@ void art_close(desk_art* a);
  * thumb row back. Returns when the worker is done, so the frame that follows is deterministic; the interactive
  * backend will poll instead (DUI-P2-7). */
 void art_load(desk_art* a, const char* const* titles, uint32_t n);
+/* I692: 1 when art_load has resolved `title` already (or cannot hold it: table full, key too long), so a caller loads a single title only once. */
+int art_known(desk_art* a, const char* title);
+/* I689: drops the entries that resolved to no album and the failed-cover marks, so the next art_load looks them up again. Called when the
+ * library changes: a lookup that missed before the scan created the albums row must not outlive it. Entries with a cover stay. */
+void art_forget_misses(desk_art* a);
 /* The tile pixels (DESK_ART_TILE_EDGE squared) of the album of the song at queue path `title`, NULL when it has no artwork. */
 const uint32_t* art_tile(desk_art* a, const char* title);
 /* I678e: the dominant colour (0xAARRGGBB) of the cover of the album of the song at `title`; 0 when it has no artwork. Computed once per art

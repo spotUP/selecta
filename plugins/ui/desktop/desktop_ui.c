@@ -304,6 +304,7 @@ typedef struct desk {
     uint32_t lib_off_page;   /* Library page draws while another page is current (sentinel, must stay 0: I274) */
     uint32_t np_draws;       /* Now Playing panel draws (sentinel) */
     uint32_t np_genart;      /* genart_draw runs by the Now Playing panel: one per draw (DUI-P4-7) */
+    uint32_t cover_np, cover_bar, cover_side; /* I692: real covers (art_tile) drawn by the Now Playing panel and page, the player bar, the sidebar rows */
     sel_gui_rect np_title;      /* the Now Playing title and artist lines, w 0 = not drawn: a song row of the song menu (I372) */
     sel_gui_rect np_like, np_rate[5]; /* click targets of the like button and the five rating marks */
     int32_t np_inset_l, np_inset_r; /* gap between the Now Playing panel edge and its content, left and right: one spacing token (I404) */
@@ -1493,6 +1494,27 @@ static void load_tile_art(desk* d, const char* const* keys, uint32_t n) {
             d->art_ms_max = dt;
         }
     }
+}
+
+/* I692: the real cover of the song (queue path) or album ("<album>" or "<album>\x1f<artist>", art.h) that `key` names, drawn through the same
+ * art_tile blit as the album grid and the queue cards. Looks it up on first ask (art_known). Returns 0 when it has no cover: the caller draws
+ * the generated art then. */
+static int cover_draw(desk* d, sel_gui_rect ar, const char* key, int32_t radius) {
+    const uint32_t* art;
+    if (d->art == NULL || key == NULL || key[0] == '\0') {
+        return 0;
+    }
+    if (!art_known(d->art, key)) {
+        load_tile_art(d, &key, 1u);
+    }
+    art = art_tile(d->art, key);
+    if (art == NULL) {
+        return 0;
+    }
+    sel_gui_set_region(d->canvas, SEL_GUI_RGN_TILE);
+    sel_gui_blit_image_round(d->canvas, ar, art, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, DESK_ART_TILE_EDGE, radius);
+    sel_gui_set_region(d->canvas, SEL_GUI_RGN_UI);
+    return 1;
 }
 
 /* Reads a pref. Prefs live in the engine, so they are answered by the engine's plugin host only; the host the UI
@@ -6329,7 +6351,8 @@ static const char* library_dump_build(desk* d) {
                           (int)d->np_art.h, (int)d->np_panel.x, (int)d->np_panel.y, (int)d->np_panel.w, (int)d->np_panel.h);
     o = dump_put(d, o, "nowplaying title %d %d like %d artist %u\n", (int)d->np_title.y, (int)d->np_title.h, (int)d->np_like.y,
                  (unsigned)(d->np_text_artist[0] != '\0'));
-    o = dump_put(d, o, "nowplaying keys end %d value %d\n", (int)d->np_key_end, (int)d->np_val_x);
+    o = dump_put(d, o, "cover_tiles np=%u bar=%u side=%u\n", (unsigned)d->cover_np, (unsigned)d->cover_bar, (unsigned)d->cover_side);
+    o = dump_put(d, o, "nowplaying keys end %d value %d\n",(int)d->np_key_end, (int)d->np_val_x);
     for (uint32_t tg = 0; tg <= SONG_PLAYLIST_TARGETS; tg += SONG_PLAYLIST_TARGETS) { /* I448: first and last drop target, then the rail */
         sel_gui_rect tr = songs_target_rect(d, tg);
         o = dump_put(d, o, "songs_target %u %d %d %d %d\n", (unsigned)tg, (int)tr.x, (int)tr.y, (int)tr.w, (int)tr.h);
@@ -9494,6 +9517,14 @@ static void side_item_thumb(desk* d, sel_gui_rect ar, const sel_engine_library_i
         sel_gui_icon_draw(d->canvas, &d->icons, ic, rect_of(ar.x + ar.w / 4, ar.y + ar.h / 4, ar.w / 2, ar.h / 2), ar.w / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
         return;
     }
+    if (it->kind == (uint32_t)SEL_LIB_ITEM_ALBUM) { /* I692: an album row shows its cover, named like a Home album tile: "<album>\x1f<artist>" */
+        char ref[200];
+        snprintf(ref, sizeof ref, it->sub[0] != '\0' ? "%s\x1f%s" : "%s", it->name, it->sub);
+        if (cover_draw(d, ar, ref, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]))) {
+            d->cover_side++;
+            return;
+        }
+    }
     sel_gui_genart_draw(d->canvas, ar, "album", sel_gui_str_hash(it->name));
 }
 
@@ -9739,7 +9770,11 @@ static void draw_player_left(desk* d) {
     box = rect_of(ar.x + as + gap, ar.y, lpx(d, 300) - as - gap - sp, as);
     all = rect_of(pl.x, pl.y, lpx(d, 300) + sp, pl.h);
     sel_gui_fill_rect(d->canvas, all, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
-    sel_gui_genart_draw(d->canvas, ar, f->format, sel_gui_str_hash(f->title));
+    if (cover_draw(d, ar, sel_engine_state(d->engine)->song.path, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]))) { /* I692 */
+        d->cover_bar++;
+    } else {
+        sel_gui_genart_draw(d->canvas, ar, f->format, sel_gui_str_hash(f->title));
+    }
     d->home_parts |= HP_PLAYER_ART;
     draw_text(d, rect_of(box.x, box.y + lpx(d, 10), box.w, lpx(d, 18)), f->title, 1, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
     draw_text(d, rect_of(box.x, box.y + lpx(d, 30), box.w, lpx(d, 16)), f->artist, 0, 12,
@@ -9824,8 +9859,12 @@ static void draw_nowplaying(desk* d) {
     ar = rect_of(pn.x, hdr.y + hdr.h + sp, asz, asz);
     d->np_art = ar;
     d->np_panel = pn;
-    sel_gui_genart_draw(d->canvas, ar, f->format, sel_gui_str_hash(f->title));
-    d->np_genart++;
+    if (cover_draw(d, ar, st->song.path, 0)) { /* I692: the full-bleed cover; np_art_average below reads the pixels it drew */
+        d->cover_np++;
+    } else {
+        sel_gui_genart_draw(d->canvas, ar, f->format, sel_gui_str_hash(f->title));
+        d->np_genart++;
+    }
     /* The header tint is the artwork's own average colour blended into the header token, fading to the panel colour. The
      * artwork is drawn once, so the gradient is clipped to the band around it: above the artwork and on both sides. */
     band = rect_of(dt.x, dt.y, dt.w, 2 * sp + asz / 2);
@@ -10005,7 +10044,11 @@ static void draw_nowplaypage(desk* d) {
     sel_gui_clip_push(d->canvas, mn);
     draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 12), mn.w - 2 * mg - lpx(d, 80), lpx(d, page_title_h(d))), "Now Playing", 1, 32, text);
     ar = rect_of(mn.x + mg, mn.y + lpx(d, page_y(d, 64)), side, side);
-    sel_gui_genart_draw(d->canvas, ar, f->format, sel_gui_str_hash(f->title));
+    if (cover_draw(d, ar, st->song.path, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]))) { /* I692 */
+        d->cover_np++;
+    } else {
+        sel_gui_genart_draw(d->canvas, ar, f->format, sel_gui_str_hash(f->title));
+    }
     x = ar.x + ar.w + mg;
     y = ar.y;
     snprintf(d->np_text_title, sizeof d->np_text_title, "%s", st->song.path != NULL ? f->title : "");
@@ -11881,11 +11924,13 @@ static void desk_library_follow(desk* d) {
     }
     if (d->lib_serial_seen != UINT32_MAX) {
         d->lib_reloads++;
+        art_forget_misses(d->art); /* I689: a title that found no album before the scan made it must be looked up again */
         desk_page_load(d, d->page); /* I316: a drilldown stays (I302) */
         if (d->page == PG_LIBRARY && (d->lib_mode == 1u || d->lib_mode == 2u)) {
             desk_send(d, "LIBRARY_SEARCH \"\"");
         }
         d->repaint = 1;
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL; /* I689: the bar, the panel and the lists draw the covers the scan just made findable */
     }
     d->lib_serial_seen = serial;
 }
