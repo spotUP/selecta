@@ -1047,6 +1047,9 @@ static void test_window_borderless(void) {
               strstr(src, "MUIA_Window_SizeGadget, (ULONG)wattr.sizegadget") != NULL &&
               strstr(src, "MUIA_Window_CloseGadget, (ULONG)wattr.closegadget") != NULL,
           "the main WindowObject does not apply the attributes");
+    /* Rig 2 2026-10-29: Intuition draws the screen title bar in front of backdrop windows, so the SELECTA screen must
+     * open without it or the borderless window still sits under a title bar. */
+    CHECK(strstr(src, "SA_ShowTitle, FALSE") != NULL, "the SELECTA screen shows its title bar over the backdrop window");
 }
 
 /* Regression (I656): with the I651 icons every button grew by 24 + 6 + 20 px, the tool row 2 reached ~860 px and MUI refused to

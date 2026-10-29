@@ -440,7 +440,7 @@ static void mui_screen_open(const uint32_t* tokens) {
     pal[1 + MUI_PEN_COUNT * 3] = 0;
     g_scr = OpenScreenTags(NULL, SA_DisplayID, mode, SA_Overscan, OSCAN_TEXT, SA_Depth, (ULONG)plan.depth, SA_Colors32, (ULONG)pal, SA_Pens,
                            (ULONG)g_plan.dri_pens, SA_SharePens, TRUE, SA_PubName, (ULONG)MUI_PUB_NAME, SA_Title, (ULONG) "Selecta",
-                           SA_Type, PUBLICSCREEN, TAG_DONE);
+                           SA_ShowTitle, FALSE, SA_Type, PUBLICSCREEN, TAG_DONE);
     if (g_scr == NULL) {
         fprintf(stderr, "selecta mui: own screen did not open, using the Workbench screen\n");
         return;
