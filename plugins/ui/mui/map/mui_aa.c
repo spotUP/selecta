@@ -731,3 +731,44 @@ void mui_aa_tabs_rgb(const uint32_t* token, uint32_t* line, uint32_t* idle_text,
         *active_text = token[SEL_GUI_TOKEN_TEXT];
     }
 }
+
+static uint32_t g_balance_calls;
+
+uint32_t mui_aa_balance_calls(void) {
+    return g_balance_calls;
+}
+
+int mui_aa_balance_width(const uint32_t* token, int font_px) {
+    int g = (int)token[SEL_GUI_TOKEN_SPACING];
+    g_balance_calls++;
+    return font_px <= 0 ? g / 2 : g;
+}
+
+void mui_aa_balance_line(const uint32_t* token, int font_px, int box_w, int box_h, int* lx, int* ly, int* lw, int* lh) {
+    int inset = mui_aa_balance_width(token, font_px);
+    if (box_h < 2 * inset + 1) {
+        inset = 0;
+    }
+    if (lx != NULL) {
+        *lx = (box_w - 1) / 2;
+    }
+    if (ly != NULL) {
+        *ly = inset;
+    }
+    if (lw != NULL) {
+        *lw = box_w > 0 ? 1 : 0;
+    }
+    if (lh != NULL) {
+        *lh = box_h - 2 * inset > 0 ? box_h - 2 * inset : 0;
+    }
+}
+
+void mui_aa_balance_rgb(const uint32_t* token, uint32_t* box, uint32_t* line) {
+    g_balance_calls++;
+    if (box != NULL) {
+        *box = token[SEL_GUI_TOKEN_BACKGROUND];
+    }
+    if (line != NULL) {
+        *line = token[SEL_GUI_TOKEN_DIVIDER];
+    }
+}

@@ -314,6 +314,53 @@ static void test_tabs_source(void) {
     free(cm);
 }
 
+/* I667l mui-balance-geom: AABalance maths. Box width is the panel gap (SPACING 8, tier S 4), the line is 1 px wide, centred in the box,
+ * inset by the gap top and bottom, clamped to inset 0 for a box shorter than two insets plus one; colours BACKGROUND box, DIVIDER line. */
+static void test_balance_geom(void) {
+    static const int fonts[4] = {0, 13, 15, 17};
+    txt_theme th;
+    uint32_t box, line, before = mui_aa_balance_calls();
+    int i, lx, ly, lw, lh;
+    txt_theme_default(&th);
+    for (i = 0; i < 4; i++) {
+        int gap = i == 0 ? 4 : 8;
+        CHECK(mui_aa_balance_width(th.token, fonts[i]) == gap, "tier %d box width %d", i, mui_aa_balance_width(th.token, fonts[i]));
+        mui_aa_balance_line(th.token, fonts[i], gap, 100, &lx, &ly, &lw, &lh);
+        CHECK(lx == (gap - 1) / 2 && lw == 1 && ly == gap && lh == 100 - 2 * gap, "tier %d line x %d y %d w %d h %d", i, lx, ly, lw, lh);
+    }
+    mui_aa_balance_line(th.token, 13, 8, 10, &lx, &ly, &lw, &lh);
+    CHECK(ly == 0 && lh == 10, "box shorter than two insets: no inset (y %d h %d)", ly, lh);
+    mui_aa_balance_line(th.token, 13, 8, 0, &lx, &ly, &lw, &lh);
+    CHECK(lh == 0, "empty box: no line height");
+    mui_aa_balance_rgb(th.token, &box, &line);
+    CHECK(box == th.token[SEL_GUI_TOKEN_BACKGROUND] && box == 0x121214u, "box is BACKGROUND 121214");
+    CHECK(line == th.token[SEL_GUI_TOKEN_DIVIDER] && line == 0x2C2C34u, "line is DIVIDER 2C2C34");
+    CHECK(mui_aa_balance_calls() > before, "balance helpers did not run");
+}
+
+/* I667l mui-balance-source: no stock Balance left in mui_ui.c, both dividers come from one AABalance constructor, the class is freed at
+ * close, draws through the shared helpers, never calls the super class for the draw, and holds no colour literal or pen code. */
+static void test_balance_source(void) {
+    char* ui = slurp(UI_SOURCE);
+    char* cls = slurp(AABALANCE_SOURCE);
+    char* cm = slurp(MUI_CMAKE);
+    CHECK(ui != NULL && cls != NULL && cm != NULL, "sources readable");
+    if (ui == NULL || cls == NULL || cm == NULL) {
+        return;
+    }
+    CHECK(count_of(ui, "BalanceObject") == 0 && count_of(ui, "MUIC_Balance") == 0, "stock Balance left in mui_ui.c");
+    CHECK(count_of(ui, "mui_aabalance_new()") == 2, "AABalance constructor calls in mui_ui.c: %d", count_of(ui, "mui_aabalance_new()"));
+    CHECK(count_of(ui, "mui_aabalance_class_free()") == 1, "class not freed at close");
+    CHECK(strstr(cls, "mui_aa_balance_width(") != NULL && strstr(cls, "mui_aa_balance_line(") != NULL && strstr(cls, "mui_aa_balance_rgb(") != NULL,
+          "class does not run the shared balance helpers");
+    CHECK(strstr(cls, "MUIC_Balance") != NULL && strstr(cls, "MUIV_Frame_None") != NULL, "class is not a frameless Balance subclass");
+    CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "0x1") == NULL && strstr(cls, "0x2") == NULL, "class holds no pen code or colour literal of its own");
+    CHECK(strstr(cm, "mui_aabalance_class.c") != NULL, "class not in the build");
+    free(ui);
+    free(cls);
+    free(cm);
+}
+
 /* I667f mui-slider-geom: sizes per tier, colours per state, fill width and pointer -> value, progress fill, and the update paint plan
  * (I667f2): op 0 erases the full box, then track and fill, no knob. The sentinel proves the shared maths ran. */
 static void test_slider_geom(void) {
@@ -811,6 +858,10 @@ int main(int argc, char** argv) {
         test_tabs();
     } else if (!strcmp(t, "tabs-source")) {
         test_tabs_source();
+    } else if (!strcmp(t, "balance-geom")) {
+        test_balance_geom();
+    } else if (!strcmp(t, "balance-source")) {
+        test_balance_source();
     } else if (!strcmp(t, "slider-geom")) {
         test_slider_geom();
     } else if (!strcmp(t, "btn-align")) {

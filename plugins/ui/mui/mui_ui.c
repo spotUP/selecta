@@ -43,6 +43,7 @@ struct Library* MUIMasterBase;
 #include "mui_aabtn_class.h"
 #include "mui_aapanel_class.h"
 #include "mui_aatabs_class.h"
+#include "mui_aabalance_class.h"
 #include "mui_aaslider_class.h"
 #include "mui_aacycle_class.h"
 #include "mui_aalist_class.h"
@@ -1901,9 +1902,9 @@ static void* mui_open(const sel_ui_open_args* a) {
                 Child, s->slot[MUI_SLOT_SUGGESTION] = mui_aatext("Window is narrow: try the mini layout", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0, 1),
                 Child, HGroup,
                     Child, s->slot[MUI_SLOT_SIDEBAR] = mui_sidebar_group(),
-                    Child, s->balance[0] = BalanceObject, End,
+                    Child, s->balance[0] = mui_aabalance_new(),
                     Child, s->slot[MUI_SLOT_MAIN] = mui_main_group(s),
-                    Child, s->balance[1] = BalanceObject, End,
+                    Child, s->balance[1] = mui_aabalance_new(),
                     Child, s->slot[MUI_SLOT_DETAIL] = mui_detail_group(s),
                 End,
                 Child, s->slot[MUI_SLOT_PLAYER] = mui_player_group(s),
@@ -2048,6 +2049,7 @@ static void mui_close(void* state) {
         mui_aatext_class_free();
         mui_aapanel_class_free();
         mui_aatabs_class_free();
+        mui_aabalance_class_free();
         mui_aaslider_class_free();
         mui_aacycle_class_free();
         mui_aalist_class_free(); /* I667i: also frees the AAScroller class */

@@ -231,6 +231,15 @@ void mui_aa_tabs_line(int font_px, int x, int y, int w, int h, int* lx, int* ly,
 void mui_aa_tabs_rgb(const uint32_t* token, uint32_t* line, uint32_t* idle_text, uint32_t* active_text);
 uint32_t mui_aa_tabs_calls(void);
 
+/* I667l (design 3.10, AABalance): the pane divider is the panel gap itself. Box width = SPACING token (tier S, font_px 0: half), one pixel
+ * DIVIDER line centred in it, inset by the same gap top and bottom. Box colour BACKGROUND. Tested on the host (mui-balance-geom). */
+int mui_aa_balance_width(const uint32_t* token, int font_px);
+/* Line rectangle inside a box of box_w x box_h (origin 0,0); inset is the gap of that tier; a box shorter than two insets gets inset 0 (clamp). */
+void mui_aa_balance_line(const uint32_t* token, int font_px, int box_w, int box_h, int* lx, int* ly, int* lw, int* lh);
+/* Box colour BACKGROUND, line colour DIVIDER. Any out pointer may be NULL. */
+void mui_aa_balance_rgb(const uint32_t* token, uint32_t* box, uint32_t* line);
+uint32_t mui_aa_balance_calls(void);
+
 #ifdef __cplusplus
 }
 #endif
