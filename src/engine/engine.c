@@ -349,6 +349,7 @@ struct sel_engine {
     uint32_t render_calls;
     SEL_THREAD_FIELDS
     uint32_t error_slot;
+    int open_failed; /* 1 right after an OPEN whose song failed: the PLAY that follows it must not start the queue (I695e) */
     int open_status; /* HTTP status of the last failed URL read in read_song, 0 when none (I195g) */
     char error_detail[8][SEL_ERROR_DETAIL_MAX];
     uint32_t log_slot;
@@ -2249,7 +2250,7 @@ static void cmd_OPEN(sel_engine* e, const sel_message* m) {
         return;
     }
     e->q_playing = 0;
-    begin_song(e, SEL_BEGIN_OPEN, m->args[0].v.s, SEL_SUBSONG_DEFAULT, 0);
+    e->open_failed = !begin_song(e, SEL_BEGIN_OPEN, m->args[0].v.s, SEL_SUBSONG_DEFAULT, 0);
 }
 
 /* Starts the open song's file again in the idle slot: SUBSONG (n) or
@@ -2501,6 +2502,12 @@ static void queue_finish(sel_engine* e) {
 
 static void cmd_PLAY(sel_engine* e, const sel_message* m) {
     (void)m;
+    if (e->open_failed) {
+        /* The PLAY of an OPEN+PLAY pair (desk_play_path) whose OPEN failed and reported its error: starting the queue
+         * here would open a song nobody asked for, or the same failing one a second time (I695e). */
+        e->open_failed = 0;
+        return;
+    }
     if (e->q_playing == 0 && e->queue.count > 0 && (e->cur == SEL_SLOT_NONE || e->song_over)) {
         uint32_t idx;
         if (!random_on(e) && e->q_hint >= e->queue.count) {
@@ -6406,6 +6413,9 @@ static void cmd_not_implemented(sel_engine* e, const sel_message* m) {
 }
 
 static void dispatch(sel_engine* e, const sel_message* m) {
+    if (m->id != SEL_CMD_PLAY) {
+        e->open_failed = 0; /* only the command right after a failed OPEN is the half of its pair */
+    }
     switch ((sel_cmd_id)m->id) {
 #define SEL_CASE(id)                                                                          \
     case SEL_CMD_##id:                                                                        \
