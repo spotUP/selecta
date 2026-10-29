@@ -155,6 +155,10 @@ void mui_aa_field_metrics(int font_px, mui_aa_field_t* out);
 /* Paint plan, painted in order, box-relative: op 0 the outline colour over the whole box (rounded), op 1 the face inset by the outline.
  * Returns the op count (MUI_AA_FIELD_OPS). */
 #define MUI_AA_FIELD_OPS 2
+/* Field face and outline tokens (I667h2): the face is one step lighter than the SURFACE panels the fields sit on, as the
+ * desktop search field is lighter than its bar; the outline is TRACK so the edge reads on AGA too. */
+#define MUI_AA_FIELD_FACE SEL_GUI_TOKEN_SURFACE_RAISED
+#define MUI_AA_FIELD_LINE SEL_GUI_TOKEN_TRACK
 int mui_aa_field_plan(const uint32_t* token, const mui_aa_field_t* m, int focus, mui_aa_check_op_t* out);
 /* Field height for a content (text) height ch: the AAButton height, taller when the text needs it. */
 int mui_aa_field_height(const mui_aa_field_t* m, int ch);

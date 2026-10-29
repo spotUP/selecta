@@ -142,10 +142,12 @@ RTG and TC; on AGA within the 12-bit-to-8-bit rounding of the exact SA_Colors32 
 - Rewriting String editing is out of scope. AAField is a MUIC_Group subclass holding one stock MUIC_String with
   `MUIA_Frame` MUIV_Frame_None and the field background spec; AAField Draw paints the rounded field face and outline
   before DoSuperMethod. Text inside the gadget stays the MUI prefs font and pens (limit, section 4).
-- Tokens: face SURFACE 1E1E24, outline DIVIDER 2C2C34, focus outline FOCUS_RING 93C5FD, placeholder TEXT_MUTED.
+- Tokens: face SURFACE_RAISED 2A2A32, outline TRACK 3A3A44, focus outline FOCUS_RING 93C5FD, placeholder TEXT_MUTED.
+  (I667h2, Johan 2026-10-29 rig 2: "its hard to see the text fields, their color is very similiar to the bg color".
+  The first build used face SURFACE 1E1E24, the same colour as the SURFACE panels the fields sit on.)
 - Sizes: height as AAButton, inner pad 8, radius 6 (S 4).
 - Host test: `mui-theme` extended: field role face and outline tokens.
-- Rig: search field face 1E1E24, outline 2C2C34.
+- Rig: search field face 2A2A32, outline 3A3A44.
 
 ### 3.5 AAScroller
 

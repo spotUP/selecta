@@ -458,7 +458,7 @@ static void test_cycle_source(void) {
     free(cm);
 }
 
-/* I667h mui-field-plan: AAField maths. Face SURFACE 1E1E24, outline DIVIDER 2C2C34, FOCUS_RING 93C5FD while active, radius 6 (tier S 4),
+/* I667h mui-field-plan: AAField maths. Face SURFACE_RAISED 2A2A32 (I667h2: Johan, SURFACE matched the panel), outline TRACK 3A3A44, FOCUS_RING 93C5FD while active, radius 6 (tier S 4),
  * height as AAButton, pad 8, the text height widens the field, and every call counts on the sentinel the class reads. */
 static void test_field_plan(void) {
     txt_theme th;
@@ -473,10 +473,10 @@ static void test_field_plan(void) {
     CHECK(m.height == b.height && m.radius == 6 && m.pad_x == 8 && m.outline == 1, "tier M metrics: h %d r %d pad %d", m.height, m.radius, m.pad_x);
     CHECK(s.radius == 4 && s.pad_x == 8 && s.pad_x > s.radius, "tier S radius 4, pad 8 clears it");
     CHECK(mui_aa_field_plan(th.token, &m, 0, ops) == MUI_AA_FIELD_OPS, "op count");
-    CHECK(ops[0].rgb == 0x2C2C34u && ops[0].inset == 0 && ops[0].radius == 6, "outline DIVIDER 2C2C34: %06X", (unsigned)ops[0].rgb);
-    CHECK(ops[1].rgb == 0x1E1E24u && ops[1].inset == 1 && ops[1].radius == 5, "face SURFACE 1E1E24 inside the outline: %06X", (unsigned)ops[1].rgb);
+    CHECK(ops[0].rgb == 0x3A3A44u && ops[0].inset == 0 && ops[0].radius == 6, "outline TRACK 3A3A44: %06X", (unsigned)ops[0].rgb);
+    CHECK(ops[1].rgb == 0x2A2A32u && ops[1].inset == 1 && ops[1].radius == 5, "face SURFACE_RAISED 2A2A32 inside the outline: %06X", (unsigned)ops[1].rgb);
     mui_aa_field_plan(th.token, &m, 1, ops);
-    CHECK(ops[0].rgb == 0x93C5FDu && ops[1].rgb == 0x1E1E24u, "focus outline FOCUS_RING 93C5FD, face unchanged: %06X", (unsigned)ops[0].rgb);
+    CHECK(ops[0].rgb == 0x93C5FDu && ops[1].rgb == 0x2A2A32u, "focus outline FOCUS_RING 93C5FD, face unchanged: %06X", (unsigned)ops[0].rgb);
     CHECK(mui_aa_field_height(&m, 10) == m.height && mui_aa_field_height(&m, 40) == 40 + 2 * (m.pad_y + m.outline), "height grows only when the text needs it");
     CHECK(mui_aa_field_calls() == before + 6, "sentinel counts the maths calls");
 }
