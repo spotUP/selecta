@@ -1,0 +1,6 @@
+{
+  global:
+    sel_plugin_entry;
+  local:
+    *;
+};
