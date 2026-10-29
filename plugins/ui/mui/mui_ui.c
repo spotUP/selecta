@@ -41,6 +41,7 @@
 #include <proto/muimaster.h>
 struct Library* MUIMasterBase;
 #include "mui_aabtn_class.h"
+#include "map/mui_aa.h"
 #include "mui_canvas_class.h"
 #include "mui_listview_class.h"
 #define SEL_MAKE_ID(a, b, c, d) (((ULONG)(a) << 24) | ((ULONG)(b) << 16) | ((ULONG)(c) << 8) | (ULONG)(d))
@@ -102,9 +103,6 @@ typedef struct mui_state {
     Object* balance[2];             /* sidebar|main and main|detail */
     mui_layout_map_t lay;
     Object* canvas;                 /* MUI-P5-1 Selecta_Canvas, NULL when MUI refused the class */
-    Object* aabtn_play;               /* I665: the flat antialiased Play button, NULL when the look is off */
-    Object* btn_txt[MUI_BTN_COUNT];  /* I651: the label Text inside each transport button group */
-    Object* btn_pages[MUI_BTN_COUNT]; /* I651: icon pages (play/pause), NULL for single-icon buttons */
     Object* btn[MUI_BTN_COUNT];     /* MUI-P2-5 transport buttons */
     const char* btn_label[MUI_BTN_COUNT];
     Object* seek;
@@ -557,97 +555,31 @@ static void mui_theme_init(void) {
     }
 }
 
-/* I651: Bodychunk / Bitmap tags (MUI 3.8 libraries/mui.h carries them; guarded for older NDK copies). */
-#ifndef MUIA_Bodychunk_Body
-#define MUIA_Bodychunk_Body 0x8042ca67UL
-#define MUIA_Bodychunk_Compression 0x8042de5fUL
-#define MUIA_Bodychunk_Depth 0x8042c392UL
-#define MUIA_Bodychunk_Masking 0x80423b0eUL
-#define MUIA_Bitmap_Height 0x80421560UL
-#define MUIA_Bitmap_SourceColors 0x80425360UL
-#define MUIA_Bitmap_Transparent 0x80422805UL
-#define MUIA_Bitmap_UseFriend 0x804239d8UL
-#define MUIA_Bitmap_Width 0x8042eb3aUL
-#endif
-
-/* I651: the icon image of a button, a Bodychunk built from the build-time body. The palette is fixed at creation (theme
- * face and ink) and MUI remaps the bitmap once at layout; nothing is drawn per frame. Pen 0 is transparent so the button
- * face shows through. NULL when the icon is missing: the button then keeps its label only. */
-static ULONG g_icon_pal[12];
-static int g_icon_pal_set;
-
-static Object* mui_icon_object(int icon) {
-    const uint8_t* body = mui_icon_body(icon);
-    if (body == NULL) {
-        return NULL;
-    }
-    if (!g_icon_pal_set) {
-        txt_theme th;
-        uint32_t pal[12];
-        int i;
-        txt_theme_default(&th);
-        mui_icon_palette(th.token, g_th[MUI_TH_BUTTON].on, pal);
-        for (i = 0; i < 12; i++) {
-            g_icon_pal[i] = pal[i];
-        }
-        g_icon_pal_set = 1;
-    }
-    return MUI_NewObject((char*)MUIC_Bodychunk, MUIA_FixWidth, MUI_ICON_PX, MUIA_FixHeight, MUI_ICON_PX, MUIA_Bitmap_Width, MUI_ICON_PX,
-                         MUIA_Bitmap_Height, MUI_ICON_PX, MUIA_Bodychunk_Depth, 2, MUIA_Bodychunk_Body, (ULONG)body, MUIA_Bodychunk_Compression, 0,
-                         MUIA_Bodychunk_Masking, 2, MUIA_Bitmap_Transparent, 0, MUIA_Bitmap_SourceColors, (ULONG)g_icon_pal, MUIA_Bitmap_UseFriend, TRUE,
-                         TAG_DONE);
-}
-
-/* A button: a group (frame, background, press handling) holding the icon and the label text. alt_key names a second icon
- * shown on page 2 of a page-mode group (play/pause); *txt_out receives the label Text object so a later set() can change
- * it, *pages_out the page group (NULL without alt_key). weight 100 is the MUI default (equal shares of the row); 0 sizes
- * the button to its contents. Padding and icon size come from mui_icons.h. */
-static Object* mui_make_button_i(const char* label, const char* icon_key, const char* alt_key, LONG id, LONG weight, int icon_only, Object** txt_out, Object** pages_out) {
-    Object* img = mui_icon_object(mui_icon_id(icon_key));
-    Object* alt = alt_key != NULL ? mui_icon_object(mui_icon_id(alt_key)) : NULL;
-    Object* pages = NULL;
-    /* I656: an icon-only button (dense rows) has no label text so its row fits the smallest screen; the label stays as the
-     * ShortHelp. Without an icon it keeps the label. */
-    Object* txt = icon_only && img != NULL ? NULL : MUI_NewObject((char*)MUIC_Text, MUIA_Font, MUIV_Font_Button, MUIA_Text_Contents, (ULONG)label, MUIA_Text_HiCharIdx, MUI_NOMARK,
-                                MUIA_Text_PreParse, (ULONG)g_pre_c, TAG_DONE);
-    Object* o = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_Group_HorizSpacing, MUI_BTN_ICON_GAP, MUIA_Weight, (ULONG)weight,
-                              TH_TAGS(MUI_TH_BUTTON, MUIV_Frame_Button) InnerSpacing(MUI_BTN_PAD_X, MUI_BTN_PAD_Y), MUIA_ShortHelp, (ULONG)label,
-                              MUIA_InputMode, MUIV_InputMode_RelVerify, TH_BG_OR(MUI_TH_BUTTON, MUII_ButtonBack) TAG_DONE);
-    if (o == NULL || (txt == NULL && !(icon_only && img != NULL))) {
-        return o;
-    }
-    if (img != NULL && alt != NULL) {
-        pages = MUI_NewObject((char*)MUIC_Group, MUIA_Group_PageMode, TRUE, MUIA_Group_Child, img, MUIA_Group_Child, alt, TAG_DONE);
-        DoMethod(o, OM_ADDMEMBER, pages != NULL ? pages : img);
-    } else if (img != NULL) {
-        unsigned sp = mui_button_spacers(icon_only, 1);
-        if (sp != 0) {
-            DoMethod(o, OM_ADDMEMBER, HSpace(0));
-        }
-        DoMethod(o, OM_ADDMEMBER, img);
-        if (sp != 0) {
-            DoMethod(o, OM_ADDMEMBER, HSpace(0));
-        }
-    }
-    if (txt != NULL) {
-        DoMethod(o, OM_ADDMEMBER, txt);
-    }
-    DoMethod(o, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
-    if (txt_out != NULL) {
-        *txt_out = txt;
-    }
-    if (pages_out != NULL) {
-        *pages_out = pages;
-    }
-    return o;
+/* I667b (design 2026-10-28-mui-custom-classes.md section 3.1): the one button constructor. Every Selecta button (transport,
+ * extras, doors, toolbar, crumbs) is a Selecta_AAButton (mui_aabtn_class.c): flat rounded face in the role and state token
+ * colour, baked Lucide icon, antialiased caption. alt_key names a second icon shown after mui_aabtn_set_alt (play/pause).
+ * icon_only buttons (dense rows) draw no caption so their row fits the smallest screen; the label stays the ShortHelp.
+ * weight 100 shares the row, 0 sizes the button to its contents. Sizes come from mui_aa_metrics. */
+static Object* mui_make_button_i(const char* label, const char* widest, const char* icon_key, const char* alt_key, LONG id, LONG weight, int icon_only, int role) {
+    mui_aabtn_spec sp;
+    sp.caption = label;
+    sp.widest = widest;
+    sp.help = NULL;
+    sp.icon = mui_icon_id(icon_key);
+    sp.alt_icon = alt_key != NULL ? mui_icon_id(alt_key) : -1;
+    sp.icon_only = icon_only;
+    sp.role = role;
+    sp.id = id;
+    sp.weight = weight;
+    return mui_aabtn_new(&sp);
 }
 
 static Object* mui_make_button_w(const char* label, const char* icon_key, LONG id, LONG weight) {
-    return mui_make_button_i(label, icon_key, NULL, id, weight, 0, NULL, NULL);
+    return mui_make_button_i(label, label, icon_key, NULL, id, weight, 0, MUI_AA_ROLE_GHOST);
 }
 
 static Object* mui_make_button_icon(const char* label, const char* icon_key, LONG id) {
-    return mui_make_button_i(label, icon_key, NULL, id, 100, 1, NULL, NULL);
+    return mui_make_button_i(label, label, icon_key, NULL, id, 100, 1, MUI_AA_ROLE_NORMAL);
 }
 
 static Object* mui_make_button(const char* label, const char* icon_key, LONG id) {
@@ -714,21 +646,8 @@ static Object* mui_player_group(mui_state* s) {
     row1b = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE); /* I656: Repeat and Random, their state labels are long */
     for (i = 0; row1 != NULL && row1b != NULL && i < MUI_BTN_COUNT; i++) {
         s->btn_label[i] = mui_transport_label(i, &zero);
-        s->btn[i] = mui_make_button_i(s->btn_label[i], mui_transport_action(i, &zero), i == MUI_BTN_PLAY ? "pause" : NULL, CTL_BTN_BASE + (LONG)i, 100, 0,
-                                      &s->btn_txt[i], &s->btn_pages[i]);
-        if (i == MUI_BTN_PLAY && g_th[MUI_TH_BUTTON].on) {
-            /* I665 spike: the Play button alone gets the flat rounded antialiased look, beside the old buttons. */
-            Object* aa = mui_aabtn_new(s->btn_label[i], "Pause", g_th[MUI_TH_BUTTON].look.bg_rgb, g_text_rgb, CTL_BTN_BASE + (LONG)i);
-            if (aa != NULL) {
-                if (s->btn[i] != NULL) {
-                    MUI_DisposeObject(s->btn[i]);
-                }
-                s->btn[i] = aa;
-                s->btn_txt[i] = NULL;
-                s->btn_pages[i] = NULL;
-                s->aabtn_play = aa;
-            }
-        }
+        s->btn[i] = mui_make_button_i(s->btn_label[i], mui_transport_widest(i), mui_transport_action(i, &zero), i == MUI_BTN_PLAY ? "pause" : NULL,
+                                      CTL_BTN_BASE + (LONG)i, 100, 0, i == MUI_BTN_PLAY ? MUI_AA_ROLE_ACCENT : MUI_AA_ROLE_NORMAL);
         if (s->btn[i] != NULL) {
             DoMethod(i < MUI_TRANSPORT_ROW1 ? row1 : row1b, OM_ADDMEMBER, s->btn[i]);
         }
@@ -1147,14 +1066,10 @@ static void mui_refresh(mui_state* s) {
         const char* label = mui_transport_label(i, f);
         if (label != NULL && label != s->btn_label[i]) {
             s->btn_label[i] = label;
-            if (i == MUI_BTN_PLAY && s->aabtn_play != NULL) {
-                mui_aabtn_set_caption(s->aabtn_play, label);
-            } else {
-                set(s->btn_txt[i], MUIA_Text_Contents, (ULONG)label);
-            }
-            if (s->btn_pages[i] != NULL) {
+            if (s->btn[i] != NULL) {
                 const char* act = mui_transport_action(i, f);
-                set(s->btn_pages[i], MUIA_Group_ActivePage, act != NULL && strcmp(act, "pause") == 0 ? 1 : 0);
+                mui_aabtn_set_caption(s->btn[i], label);
+                mui_aabtn_set_alt(s->btn[i], i == MUI_BTN_PLAY && act != NULL && strcmp(act, "pause") == 0);
             }
         }
     }

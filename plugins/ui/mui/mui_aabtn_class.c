@@ -1,7 +1,9 @@
-/* Selecta_AAButton (I665 spike, rebuilt on mui_aa_draw in I667a). MUI 3.8: MUI_CreateCustomClass on Area, same dispatcher
- * pattern as mui_canvas_class.c. Draw: the super class fills the parent background (so the corners show the panel), then
- * one flat rounded fill in the state colour (mui_aa_state_rgb), then the caption through aa_text (TC, palette ramp or plain
- * backend, see mui_aa_draw.c). No bevel pens, no shine, no shadow. */
+/* Selecta_AAButton (I665 spike, rebuilt on mui_aa_draw in I667a, rolled out to every button in I667b). MUI 3.8:
+ * MUI_CreateCustomClass on Area, same dispatcher pattern as mui_canvas_class.c. Draw: the super class fills the parent
+ * background (so the corners show the panel), then one flat rounded fill in the role and state colour (mui_aa_button_rgb),
+ * the baked Lucide icon drawn as pen runs in a four step ramp from face to caption colour, then the caption through aa_text
+ * (TC, palette ramp or plain backend, see mui_aa_draw.c). No bevel pens, no shine, no shadow. Press tracking stays with MUI
+ * (RelVerify and MUIA_Selected, notification on MUIA_Pressed), hover is a mouse move handler. */
 #include "mui_aabtn_class.h"
 
 #include <stdint.h>
@@ -9,70 +11,134 @@
 
 #include <clib/alib_protos.h>
 #include <clib/muimaster_protos.h>
+#include <intuition/intuition.h>
 #include <proto/exec.h>
 #include <proto/graphics.h>
 #include <proto/intuition.h>
 #include <proto/muimaster.h>
 #include <proto/utility.h>
 
+#include "map/mui_icons.h"
 #include "mui_aa_draw.h"
 
 extern struct Library* MUIMasterBase;
 
-#define PAD_X 14
-#define PAD_Y 6
-#define RADIUS 6
-
 typedef struct aabtn_data {
     char caption[48], widest[48];
-    uint32_t face, text;
+    int icon[2], alt, icon_only, role, hover, backend, minw, minh;
+    mui_aa_metrics_t m;
     aa_ctx aa;
-    int backend, minw, minh;
+    struct MUI_EventHandlerNode ehn;
 } aabtn_data;
 
 static struct MUI_CustomClass* g_class;
+static uint32_t g_made;
+
+static int aabtn_state(Object* obj, const aabtn_data* d) {
+    ULONG sel = 0, dis = 0;
+    GetAttr(MUIA_Selected, obj, &sel);
+    GetAttr(MUIA_Disabled, obj, &dis);
+    return dis ? MUI_AA_DISABLED : sel ? MUI_AA_PRESSED : d->hover ? MUI_AA_HOVER : MUI_AA_NORMAL;
+}
+
+static int aabtn_cur_icon(const aabtn_data* d) {
+    return d->icon[d->alt] >= 0 ? d->icon[d->alt] : d->icon[0];
+}
 
 static ULONG aabtn_setup(struct IClass* cl, Object* obj, Msg msg) {
     aabtn_data* d = INST_DATA(cl, obj);
-    int tw;
+    uint32_t face, text;
+    int tw = 0, st;
     if (!DoSuperMethodA(cl, obj, msg)) {
         return FALSE;
     }
     aa_setup(obj, &d->aa, NULL, 0);
-    aa_pen(&d->aa, mui_aa_state_rgb(d->aa.tok, d->face, MUI_AA_NORMAL));
-    aa_pen(&d->aa, mui_aa_state_rgb(d->aa.tok, d->face, MUI_AA_PRESSED));
-    aa_pen(&d->aa, d->text);
-    tw = aa_text_width(&d->aa, obj, d->widest);
-    d->minw = tw;
-    d->minh = aa_text_height(&d->aa, obj);
+    mui_aa_metrics(d->aa.font_px, &d->m);
+    for (st = MUI_AA_NORMAL; st <= MUI_AA_PRESSED; st++) {
+        mui_aa_button_rgb(d->aa.tok, d->role, st, &face, &text);
+        aa_pen(&d->aa, face);
+    }
+    aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]);
+    if (!d->icon_only) {
+        tw = aa_text_width(&d->aa, obj, d->widest);
+    }
+    d->minw = 2 * d->m.pad_x + (aabtn_cur_icon(d) >= 0 ? d->m.icon_px : 0) + (tw > 0 ? (aabtn_cur_icon(d) >= 0 ? d->m.icon_gap : 0) + tw : 0);
+    d->minh = d->m.height;
+    if (!d->icon_only && aa_text_height(&d->aa, obj) + 2 * d->m.pad_y > d->minh) {
+        d->minh = aa_text_height(&d->aa, obj) + 2 * d->m.pad_y;
+    }
+    d->ehn.ehn_Priority = 0;
+    d->ehn.ehn_Flags = 0;
+    d->ehn.ehn_Object = obj;
+    d->ehn.ehn_Class = cl;
+    d->ehn.ehn_Events = IDCMP_MOUSEMOVE;
+    DoMethod(_win(obj), MUIM_Window_AddEventHandler, (ULONG)&d->ehn);
     return TRUE;
 }
 
 static ULONG aabtn_cleanup(struct IClass* cl, Object* obj, Msg msg) {
     aabtn_data* d = INST_DATA(cl, obj);
+    DoMethod(_win(obj), MUIM_Window_RemEventHandler, (ULONG)&d->ehn);
+    d->hover = 0;
     aa_cleanup(&d->aa);
     return DoSuperMethodA(cl, obj, msg);
 }
 
 static ULONG aabtn_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMinMax* msg) {
     aabtn_data* d = INST_DATA(cl, obj);
-    int w = d->minw + 2 * PAD_X, h = d->minh + 2 * PAD_Y;
     DoSuperMethodA(cl, obj, (Msg)msg);
-    msg->MinMaxInfo->MinWidth += w;
-    msg->MinMaxInfo->DefWidth += w;
+    msg->MinMaxInfo->MinWidth += d->minw;
+    msg->MinMaxInfo->DefWidth += d->minw;
     msg->MinMaxInfo->MaxWidth = MUI_MAXMAX;
-    msg->MinMaxInfo->MinHeight += h;
-    msg->MinMaxInfo->DefHeight += h;
-    msg->MinMaxInfo->MaxHeight += h;
+    msg->MinMaxInfo->MinHeight += d->minh;
+    msg->MinMaxInfo->DefHeight += d->minh;
+    msg->MinMaxInfo->MaxHeight += d->minh;
     return 0;
+}
+
+/* The baked icon (mui_icon_body_px square, 2 planes, rows interleaved, pen 0 transparent) scaled to px by nearest neighbour,
+ * drawn as horizontal runs of one ramp pen from the face colour to the caption colour. */
+static void aabtn_icon(aabtn_data* d, struct RastPort* rp, int icon, int x, int y, int px, uint32_t face, uint32_t ink) {
+    const uint8_t* body = mui_icon_body(icon);
+    int bp = (int)mui_icon_body_px, rb = ((bp + 15) / 16) * 2, dy, dx, run0, run_pen;
+    uint32_t col[4];
+    LONG pen[4];
+    int i;
+    if (body == NULL || px <= 0) {
+        return;
+    }
+    for (i = 1; i < 4; i++) {
+        col[i] = mui_aa_ramp_rgb(ink, face, 4, i);
+        pen[i] = aa_pen(&d->aa, col[i]);
+    }
+    for (dy = 0; dy < px; dy++) {
+        const uint8_t* row = body + (size_t)(dy * bp / px) * (size_t)rb * 2u;
+        run0 = 0;
+        run_pen = 0;
+        for (dx = 0; dx <= px; dx++) {
+            int p = 0;
+            if (dx < px) {
+                int sx = dx * bp / px;
+                p = ((row[sx >> 3] >> (7 - (sx & 7))) & 1) | (((row[rb + (sx >> 3)] >> (7 - (sx & 7))) & 1) << 1);
+            }
+            if (dx == px || p != run_pen) {
+                if (run_pen != 0 && pen[run_pen] >= 0) {
+                    SetAPen(rp, (ULONG)pen[run_pen]);
+                    RectFill(rp, x + run0, y + dy, x + dx - 1, y + dy);
+                }
+                run0 = dx;
+                run_pen = p;
+            }
+        }
+    }
 }
 
 static ULONG aabtn_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     aabtn_data* d = INST_DATA(cl, obj);
     struct RastPort* rp;
-    ULONG sel = 0;
-    int l, t, w, h, tw, th, state;
-    uint32_t face;
+    ULONG active = 0;
+    int l, t, w, h, tw = 0, th = 0, state, icon = aabtn_cur_icon(d), cw, x;
+    uint32_t face, text;
     DoSuperMethodA(cl, obj, (Msg)msg);
     if (!(msg->flags & (MADF_DRAWOBJECT | MADF_DRAWUPDATE))) {
         return 0;
@@ -82,14 +148,41 @@ static ULONG aabtn_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     t = _mtop(obj);
     w = _mwidth(obj);
     h = _mheight(obj);
-    GetAttr(MUIA_Selected, obj, &sel);
-    state = sel ? MUI_AA_PRESSED : MUI_AA_NORMAL;
-    face = mui_aa_state_rgb(d->aa.tok, d->face, state);
-    aa_round_fill(rp, l, t, w, h, RADIUS, aa_pen(&d->aa, face));
-    tw = aa_text_width(&d->aa, obj, d->caption);
-    th = aa_text_height(&d->aa, obj);
-    aa_text(&d->aa, obj, rp, l + (w - tw) / 2, t + (h - th) / 2, d->caption, d->text, face);
+    state = aabtn_state(obj, d);
+    mui_aa_button_rgb(d->aa.tok, d->role, state, &face, &text);
+    aa_round_fill(rp, l, t, w, h, d->m.radius, aa_pen(&d->aa, face));
+    if (!d->icon_only) {
+        tw = aa_text_width(&d->aa, obj, d->caption);
+        th = aa_text_height(&d->aa, obj);
+    }
+    cw = (icon >= 0 ? d->m.icon_px : 0) + (icon >= 0 && tw > 0 ? d->m.icon_gap : 0) + tw;
+    x = l + (w - cw) / 2;
+    if (icon >= 0) {
+        aabtn_icon(d, rp, icon, x, t + (h - d->m.icon_px) / 2, d->m.icon_px, face, text);
+        x += d->m.icon_px + d->m.icon_gap;
+    }
+    if (tw > 0) {
+        aa_text(&d->aa, obj, rp, x, t + (h - th) / 2, d->caption, text, face);
+    }
+    if (_win(obj) != NULL) {
+        GetAttr(MUIA_Window_ActiveObject, _win(obj), &active);
+        if ((Object*)active == obj) {
+            aa_round_frame(rp, l, t, w, h, d->m.radius, aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]));
+        }
+    }
     d->backend = d->aa.backend + 1;
+    return 0;
+}
+
+static ULONG aabtn_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEvent* msg) {
+    aabtn_data* d = INST_DATA(cl, obj);
+    if (msg->imsg != NULL && msg->imsg->Class == IDCMP_MOUSEMOVE) {
+        int in = msg->imsg->MouseX >= _left(obj) && msg->imsg->MouseX <= _right(obj) && msg->imsg->MouseY >= _top(obj) && msg->imsg->MouseY <= _bottom(obj);
+        if (in != d->hover) {
+            d->hover = in;
+            MUI_Redraw(obj, MADF_DRAWOBJECT);
+        }
+    }
     return 0;
 }
 
@@ -110,11 +203,13 @@ static ULONG __attribute__((used)) aabtn_dispatch_c(struct IClass* cl, Object* o
         return aabtn_askminmax(cl, obj, (struct MUIP_AskMinMax*)msg);
     case MUIM_Draw:
         return aabtn_draw(cl, obj, (struct MUIP_Draw*)msg);
+    case MUIM_HandleEvent:
+        return aabtn_handle(cl, obj, (struct MUIP_HandleEvent*)msg);
     }
     return DoSuperMethodA(cl, obj, msg);
 }
 
-Object* mui_aabtn_new(const char* caption, const char* widest, uint32_t face, uint32_t text, LONG id) {
+Object* mui_aabtn_new(const mui_aabtn_spec* sp) {
     Object* o;
     aabtn_data* d;
     if (g_class == NULL) {
@@ -123,17 +218,24 @@ Object* mui_aabtn_new(const char* caption, const char* widest, uint32_t face, ui
     if (g_class == NULL) {
         return NULL;
     }
-    o = NewObject(g_class->mcc_Class, NULL, MUIA_Frame, MUIV_Frame_None, MUIA_InputMode, MUIV_InputMode_RelVerify, MUIA_Weight, 100,
-                  MUIA_ShortHelp, (ULONG)caption, TAG_DONE);
+    o = NewObject(g_class->mcc_Class, NULL, MUIA_Frame, MUIV_Frame_None, MUIA_InputMode, MUIV_InputMode_RelVerify, MUIA_Weight, (ULONG)sp->weight,
+                  MUIA_CycleChain, TRUE, MUIA_ShortHelp, (ULONG)(sp->help != NULL ? sp->help : sp->caption), TAG_DONE);
     if (o != NULL) {
         d = INST_DATA(g_class->mcc_Class, o);
-        strncpy(d->caption, caption, sizeof d->caption - 1);
-        strncpy(d->widest, widest, sizeof d->widest - 1);
-        d->face = face;
-        d->text = text;
-        DoMethod(o, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)id);
+        strncpy(d->caption, sp->caption, sizeof d->caption - 1);
+        strncpy(d->widest, sp->widest != NULL ? sp->widest : sp->caption, sizeof d->widest - 1);
+        d->icon[0] = sp->icon;
+        d->icon[1] = sp->alt_icon;
+        d->icon_only = sp->icon_only && sp->icon >= 0;
+        d->role = sp->role;
+        DoMethod(o, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)sp->id);
+        g_made++;
     }
     return o;
+}
+
+uint32_t mui_aabtn_made(void) {
+    return g_made;
 }
 
 void mui_aabtn_set_caption(Object* obj, const char* caption) {
@@ -142,6 +244,15 @@ void mui_aabtn_set_caption(Object* obj, const char* caption) {
         return;
     }
     strncpy(d->caption, caption, sizeof d->caption - 1);
+    MUI_Redraw(obj, MADF_DRAWOBJECT);
+}
+
+void mui_aabtn_set_alt(Object* obj, int alt) {
+    aabtn_data* d = INST_DATA(g_class->mcc_Class, obj);
+    if (d->alt == (alt != 0)) {
+        return;
+    }
+    d->alt = alt != 0;
     MUI_Redraw(obj, MADF_DRAWOBJECT);
 }
 

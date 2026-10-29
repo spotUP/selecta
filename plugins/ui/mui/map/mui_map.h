@@ -85,6 +85,8 @@ enum { MUI_BTN_PREV = 0, MUI_BTN_PLAY, MUI_BTN_NEXT, MUI_BTN_STOP, MUI_BTN_REPEA
 const char* mui_transport_action(uint32_t button, const sel_uim_frame* f);
 /* Button label: the action's label for this frame. */
 const char* mui_transport_label(uint32_t button, const sel_uim_frame* f);
+/* I667b: longest label over every state of a transport button (sizes the AAButton). */
+const char* mui_transport_widest(uint32_t button);
 
 /* The lines the sliders send, the very lines the desktop bars send (desktop_ui.c: SEEK <ms>, VOLUME <0..100>). The seek
  * line needs the song length: returns 0 (no line) when duration_ms is 0, else 1. Values clamp to the slider ranges. */

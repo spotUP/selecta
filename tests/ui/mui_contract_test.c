@@ -6,8 +6,10 @@
 #include <selecta/uimodel.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
+#include "mui_aa.h"
 #include "mui_icons.h"
 #include "mui_map.h"
 #include "mui_theme.h"
@@ -257,6 +259,9 @@ static void test_theme(void) {
     CHECK(strstr(src, "mui_theme_readable(text, g_th[i]") == NULL, "mui_ui.c gates roles one by one against the TEXTPEN colour");
     for (role = 0; role < MUI_TH_COUNT; role++) {
         char key[64];
+        if (role == MUI_TH_BUTTON) {
+            continue; /* exemption: buttons are AAButton objects that draw from mui_aa_button_rgb, no stock frame role (design 3.1) */
+        }
         snprintf(key, sizeof key, "TH_TAGS(%s,", names[role]);
         CHECK(strstr(src, key) != NULL, "mui_ui.c never builds role %s through TH_TAGS", names[role]);
     }
@@ -1066,8 +1071,47 @@ static void test_icon_button_rows(void) {
     CHECK(mui_extra_row_width() <= MUI_MIN_SCREEN_W, "extras row needs %u px", (unsigned)mui_extra_row_width());
     /* I656b: icon-only buttons must stretch (spacers around the fixed image) or the root group's max width caps the window. */
     CHECK(mui_button_spacers(1, 1) == 2u && mui_button_spacers(0, 1) == 0u && mui_button_spacers(1, 0) == 0u, "icon-only button has no stretch spacers");
-    CHECK(strstr(src, "mui_button_spacers(icon_only, 1)") != NULL && strstr(src, "HSpace(0)") != NULL, "mui_ui.c does not add the spacers");
-    CHECK(strstr(src, "mui_make_button_icon(") != NULL && strstr(src, "icon_only && img != NULL ? NULL") != NULL, "dense rows are not icon-only in mui_ui.c");
+    /* I667b: the AAButton class stretches itself (MaxWidth MUI_MAXMAX) so the spacer children are gone. */
+    CHECK(strstr(src, "mui_make_button_icon(") != NULL && strstr(src, "icon_only, int role") != NULL, "dense rows are not icon-only in mui_ui.c");
+}
+
+/* I667b wired: every button the builder makes goes through the one AAButton constructor. The Amiga half cannot run on the host,
+ * so the proof is the structure that produces the count: the five call-site families (transport, extras, doors, toolbar,
+ * crumbs) reach mui_make_button_i through the wrappers, mui_make_button_i makes the object with mui_aabtn_new only (no stock
+ * Group button, no Bodychunk), and the family sizes add up to the 36 buttons the design lists. The rig reads mui_aabtn_made(). */
+static const char* fn_body(const char* src, const char* head, char* out, size_t cap) {
+    const char* a = strstr(src, head);
+    const char* e;
+    size_t n;
+    if (a == NULL) {
+        return NULL;
+    }
+    e = strstr(a, "\n}\n");
+    n = e != NULL ? (size_t)(e - a) : strlen(a);
+    n = n < cap - 1 ? n : cap - 1;
+    memcpy(out, a, n);
+    out[n] = 0;
+    return out;
+}
+
+static void test_aabtn_wired(const char* src) {
+    char body[4000];
+    const char* wrappers[] = {"static Object* mui_make_button_w(", "static Object* mui_make_button_icon(", "static Object* mui_make_button("};
+    unsigned crumbs = 0, total, k;
+    const char* c = strstr(src, "#define MUI_CRUMB_MAX ");
+    if (c != NULL) {
+        crumbs = (unsigned)strtoul(c + strlen("#define MUI_CRUMB_MAX "), NULL, 10);
+    }
+    CHECK(fn_body(src, "static Object* mui_make_button_i(", body, sizeof body) != NULL && strstr(body, "mui_aabtn_new(&sp)") != NULL &&
+              strstr(body, "MUIC_Group") == NULL && strstr(body, "MUIC_Text") == NULL && strstr(body, "MUIC_Bodychunk") == NULL,
+          "mui_make_button_i does not build through the AAButton class alone");
+    for (k = 0; k < 3; k++) {
+        CHECK(fn_body(src, wrappers[k], body, sizeof body) != NULL && strstr(body, "mui_make_button_") != NULL, "wrapper %s skips mui_make_button_i", wrappers[k]);
+    }
+    CHECK(strstr(src, "MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_Group_HorizSpacing, MUI_BTN_ICON_GAP") == NULL, "mui_ui.c still builds a stock group button");
+    CHECK(strstr(src, "mui_aabtn_new(") != NULL && strstr(src, "mui_aabtn_set_caption(s->btn[i], label)") != NULL, "transport labels do not reach the class");
+    total = MUI_BTN_COUNT + MUI_EXTRA_COUNT + SEL_UIM_DOOR_COUNT + MUI_TOOL_BTNS + crumbs;
+    CHECK(crumbs == 6u && total == 36u, "button families add up to %u (crumbs %u), design lists 36", total, crumbs);
 }
 
 /* I651: every MUI button is built with an icon. The keys below are the real button sources (transport actions for both play
@@ -1124,12 +1168,47 @@ static void test_icon_buttons(void) {
     n = fread(src, 1, sizeof src - 1, f);
     fclose(f);
     src[n] = 0;
-    CHECK(strstr(src, "MUIC_Bodychunk") != NULL && strstr(src, "mui_icon_palette(") != NULL && strstr(src, "MUI_BTN_PAD_X") != NULL,
-          "mui_ui.c builds no icon image");
+    CHECK(strstr(src, "MUIC_Bodychunk") == NULL && strstr(src, "mui_aabtn_new(&sp)") != NULL && strstr(src, "sp.icon = mui_icon_id(icon_key)") != NULL,
+          "mui_ui.c builds the icon image outside the AAButton class");
     CHECK(strstr(src, "mui_make_button(mui_door_label(i), sel_uim_door_at(i)->page,") != NULL &&
               strstr(src, "mui_make_button_icon(mui_tool_labels[i], mui_tool_labels[i],") != NULL && strstr(src, "mui_make_button_w(s->crumb_lbl[k], \"crumb\",") != NULL &&
-              strstr(src, "mui_make_button_i(s->btn_label[i], mui_transport_action(") != NULL && strstr(src, "mui_make_button_icon(mui_extra_label(i), mui_extra_action(i),") != NULL,
+              strstr(src, "mui_make_button_i(s->btn_label[i], mui_transport_widest(i), mui_transport_action(") != NULL && strstr(src, "mui_make_button_icon(mui_extra_label(i), mui_extra_action(i),") != NULL,
           "a button call site passes no icon key");
+    test_aabtn_wired(src);
+}
+
+/* I667b mui-aabtn-tokens: face and caption of every role in every state are theme tokens (design section 3.1), picked by the
+ * shared maths: the sentinel rises once per call, so a class that bypassed it would leave the count behind. */
+static void test_aabtn_tokens(void) {
+    txt_theme th;
+    const uint32_t* t;
+    uint32_t face, text, calls = mui_aa_state_calls();
+    int role, st;
+    txt_theme_default(&th);
+    t = th.token;
+    for (st = MUI_AA_NORMAL; st <= MUI_AA_SELECTED; st++) {
+        uint32_t want_face = st == MUI_AA_HOVER ? t[SEL_GUI_TOKEN_SURFACE_HOVER]
+                             : (st == MUI_AA_PRESSED || st == MUI_AA_SELECTED) ? t[SEL_GUI_TOKEN_SURFACE_PRESSED]
+                                                                               : t[SEL_GUI_TOKEN_SURFACE_RAISED];
+        mui_aa_button_rgb(t, MUI_AA_ROLE_NORMAL, st, &face, &text);
+        CHECK(face == want_face, "normal role state %d face %06X want %06X", st, (unsigned)face, (unsigned)want_face);
+        CHECK(text == (st == MUI_AA_DISABLED ? t[SEL_GUI_TOKEN_TEXT_DISABLED] : t[SEL_GUI_TOKEN_TEXT]), "normal role state %d caption %06X", st, (unsigned)text);
+        mui_aa_button_rgb(t, MUI_AA_ROLE_ACCENT, st, &face, &text);
+        CHECK(text == (st == MUI_AA_DISABLED ? t[SEL_GUI_TOKEN_TEXT_DISABLED] : t[SEL_GUI_TOKEN_ACCENT_TEXT]), "accent role state %d caption %06X", st, (unsigned)text);
+        CHECK(st == MUI_AA_PRESSED || st == MUI_AA_SELECTED ? face != t[SEL_GUI_TOKEN_ACCENT] : face == t[SEL_GUI_TOKEN_ACCENT], "accent role state %d face %06X", st, (unsigned)face);
+        mui_aa_button_rgb(t, MUI_AA_ROLE_GHOST, st, &face, &text);
+        CHECK(st != MUI_AA_NORMAL || face == t[SEL_GUI_TOKEN_SURFACE], "ghost rests on the panel face %06X", (unsigned)face);
+        CHECK(st != MUI_AA_SELECTED || face == t[SEL_GUI_TOKEN_SURFACE_RAISED], "selected ghost is raised, face %06X", (unsigned)face);
+    }
+    /* The accent pair (ACCENT_TEXT on ACCENT) is a theme choice that may miss the gate; aa_text then falls back to TEXTPEN (design 5). */
+    for (role = MUI_AA_ROLE_NORMAL; role <= MUI_AA_ROLE_GHOST; role++) {
+        if (role == MUI_AA_ROLE_ACCENT) {
+            continue;
+        }
+        mui_aa_button_rgb(t, role, MUI_AA_NORMAL, &face, &text);
+        CHECK(mui_theme_readable(text, face), "role %d caption %06X unreadable on %06X", role, (unsigned)text, (unsigned)face);
+    }
+    CHECK(mui_aa_state_calls() > calls, "state sentinel did not move");
 }
 
 int main(int argc, char** argv) {
@@ -1213,6 +1292,8 @@ int main(int argc, char** argv) {
     } else if (strcmp(argv[1], "states") == 0) {
         test_states();
         test_view_empty();
+    } else if (strcmp(argv[1], "aabtn-tokens") == 0) {
+        test_aabtn_tokens();
     } else if (strcmp(argv[1], "icon-buttons") == 0) {
         test_icon_buttons();
     } else if (strcmp(argv[1], "icon-rows") == 0) {

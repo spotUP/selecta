@@ -122,8 +122,8 @@ static void test_state(void) {
     draw = slurp(AADRAW_SOURCE);
     CHECK(cls != NULL && draw != NULL, "class sources readable");
     if (cls != NULL && draw != NULL) {
-        CHECK(strstr(cls, "mui_aa_state_rgb(") != NULL && strstr(cls, "aa_text(") != NULL && strstr(cls, "aa_round_fill(") != NULL,
-              "class draws through mui_aa_state_rgb and aa_*");
+        CHECK(strstr(cls, "mui_aa_button_rgb(") != NULL && strstr(cls, "aa_text(") != NULL && strstr(cls, "aa_round_fill(") != NULL,
+              "class draws through mui_aa_button_rgb and aa_*");
         CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "TT_") == NULL, "class holds no pen or ttengine code of its own");
         CHECK(strstr(draw, "mui_aa_ramp_pens(") != NULL && strstr(draw, "mui_aa_ramp_slot(") != NULL &&
                   strstr(draw, "mui_theme_readable(") != NULL && strstr(draw, "ReleasePen") != NULL,

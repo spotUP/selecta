@@ -40,6 +40,29 @@ const char* mui_transport_label(uint32_t button, const sel_uim_frame* f) {
     return NULL;
 }
 
+/* I667b: the longest label a transport button shows over play, repeat and random states: the minimum width of its class. */
+const char* mui_transport_widest(uint32_t button) {
+    sel_uim_frame f;
+    const char* best = "";
+    uint32_t play, rep, rnd;
+    memset(&f, 0, sizeof f);
+    for (play = 0; play < 2u; play++) {
+        for (rep = 0; rep < 3u; rep++) {
+            for (rnd = 0; rnd < 2u; rnd++) {
+                const char* l;
+                f.play = play ? SEL_PLAYING : SEL_STOPPED;
+                f.repeat_mode = rep;
+                f.random_on = rnd;
+                l = mui_transport_label(button, &f);
+                if (l != NULL && strlen(l) > strlen(best)) {
+                    best = l;
+                }
+            }
+        }
+    }
+    return best;
+}
+
 uint32_t mui_seek_line(uint32_t q16, uint32_t duration_ms, char* out, size_t cap) {
     if (q16 > MUI_SEEK_MAX) {
         q16 = MUI_SEEK_MAX;
