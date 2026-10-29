@@ -79,16 +79,19 @@ static ULONG aafield_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMi
 
 static ULONG aafield_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     aafield_data* d = INST_DATA(cl, obj);
+    /* The Group super fills the padding around the inner String with the parent background, so the face and outline go on after
+     * it, around the String's box, which the super has drawn by then. */
+    ULONG r = DoSuperMethodA(cl, obj, (Msg)msg);
     if (msg->flags & MADF_DRAWOBJECT) {
         mui_aa_check_op_t ops[MUI_AA_FIELD_OPS];
         struct RastPort* rp = _rp(obj);
         int n = mui_aa_field_plan(d->aa.tok, &d->m, aafield_focus(obj, d), ops), k;
         for (k = 0; k < n; k++) {
-            aa_round_fill(rp, _mleft(obj) + ops[k].inset, _mtop(obj) + ops[k].inset, _mwidth(obj) - 2 * ops[k].inset, _mheight(obj) - 2 * ops[k].inset, ops[k].radius,
-                          aa_pen(&d->aa, ops[k].rgb));
+            aa_round_fill_hole(rp, _left(obj) + ops[k].inset, _top(obj) + ops[k].inset, _width(obj) - 2 * ops[k].inset, _height(obj) - 2 * ops[k].inset,
+                               ops[k].radius, aa_pen(&d->aa, ops[k].rgb), _left(d->str), _top(d->str), _width(d->str), _height(d->str));
         }
     }
-    return DoSuperMethodA(cl, obj, (Msg)msg);
+    return r;
 }
 
 /* MUIA_String_Contents is the field's contents: set goes to the inner string, get reads it. Everything else is the group's. */

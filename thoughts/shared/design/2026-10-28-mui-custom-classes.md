@@ -140,8 +140,13 @@ RTG and TC; on AGA within the 12-bit-to-8-bit rounding of the exact SA_Colors32 
 ### 3.4 AAField (string)
 
 - Rewriting String editing is out of scope. AAField is a MUIC_Group subclass holding one stock MUIC_String with
-  `MUIA_Frame` MUIV_Frame_None and the field background spec; AAField Draw paints the rounded field face and outline
-  before DoSuperMethod. Text inside the gadget stays the MUI prefs font and pens (limit, section 4).
+  `MUIA_Frame` MUIV_Frame_None and the field background spec; AAField Draw calls DoSuperMethod first, then, when
+  MADF_DRAWOBJECT is set, paints the rounded field face and outline around the inner String's box (aa_round_fill_hole).
+  Text inside the gadget stays the MUI prefs font and pens (limit, section 4).
+- Paint after super (I667h3, rig 2 2026-10-29): MUI fills MUIP_Draw flags inside the Area super call, and a Group super
+  fills the gaps between its children (inner padding included) with the parent background. Anything a Group subclass
+  paints before DoSuperMethod is skipped or painted over; Johan saw faint or invisible fields. Host test
+  `mui-field-draw-flags` checks every AA class reads the draw flags only after the super call.
 - Tokens: face SURFACE_RAISED 2A2A32, outline TRACK 3A3A44, focus outline FOCUS_RING 93C5FD, placeholder TEXT_MUTED.
   (I667h2, Johan 2026-10-29 rig 2: "its hard to see the text fields, their color is very similiar to the bg color".
   The first build used face SURFACE 1E1E24, the same colour as the SURFACE panels the fields sit on.)
@@ -187,8 +192,9 @@ RTG and TC; on AGA within the 12-bit-to-8-bit rounding of the exact SA_Colors32 
 
 ### 3.8 AAPanel (rounded panel groups)
 
-- Superclass MUIC_Group. Attribute `AAG_Role` (panel, surface, raised). Draw paints the rounded face with `aa_round_fill`
-  over the parent background, then DoSuperMethod draws children. Replaces TH PANEL groups and the 64x64 art frame.
+- Superclass MUIC_Group. Attribute `AAG_Role` (panel, surface, raised). DoSuperMethod draws the face (group background)
+  and children first; then Draw paints only the corner wedges outside the rounded outline in the parent background
+  (`aa_round_corners`), for the same reason as 3.4 (paint after super). Replaces TH PANEL groups and the 64x64 art frame.
 - Tokens: panel PANEL 141418, surface SURFACE 1E1E24, window behind BACKGROUND 121214, header strip HEADER_TINT 2B2350.
 - Sizes: radius RADIUS_LARGE 8 (S 4), inner spacing SPACING 8, outer gap 8.
 - Host test: `mui-theme` extended: panel roles map to the tokens.

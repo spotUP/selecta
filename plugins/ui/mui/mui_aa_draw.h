@@ -38,6 +38,11 @@ void aa_cleanup(aa_ctx* c);
 LONG aa_pen(aa_ctx* c, uint32_t rgb);
 /* Rows of RectFill with the insets of mui_aa_round_inset; radius 0 is one RectFill. */
 void aa_round_fill(struct RastPort* rp, int x, int y, int w, int h, int radius, LONG pen);
+/* aa_round_fill that leaves the hole rectangle (hx, hy, hw, hh) untouched: for a Group subclass that paints after its super call
+ * around a child the super already drew. */
+void aa_round_fill_hole(struct RastPort* rp, int x, int y, int w, int h, int radius, LONG pen, int hx, int hy, int hw, int hh);
+/* Only the four corner wedges outside the rounded shape, in pen: rounds a box whose square face its background already filled. */
+void aa_round_corners(struct RastPort* rp, int x, int y, int w, int h, int radius, LONG pen);
 /* One pixel rounded outline, same inset maths. */
 void aa_round_frame(struct RastPort* rp, int x, int y, int w, int h, int radius, LONG pen);
 /* Caption pixel size. */

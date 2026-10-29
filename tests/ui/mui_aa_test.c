@@ -249,7 +249,7 @@ static void test_panel_source(void) {
     CHECK(count_of(ui, "MUIA_Frame, MUIV_Frame_Group") == 0, "plain art frame left in mui_ui.c");
     CHECK(count_of(ui, "mui_aapanel(") == 6, "panel constructor sites: %d (definition + 5)", count_of(ui, "mui_aapanel("));
     CHECK(count_of(ui, "mui_aapanel_new(") == 1, "one AAPanel constructor call: %d", count_of(ui, "mui_aapanel_new("));
-    CHECK(strstr(cls, "mui_aa_panel_rgb(") != NULL && strstr(cls, "mui_aa_panel_radius(") != NULL && strstr(cls, "aa_round_fill(") != NULL,
+    CHECK(strstr(cls, "mui_aa_panel_rgb(") != NULL && strstr(cls, "mui_aa_panel_radius(") != NULL && strstr(cls, "aa_round_corners(") != NULL,
           "class does not draw through the shared panel helpers");
     CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "0x1") == NULL, "class holds no pen code or colour literal of its own");
     CHECK(strstr(cm, "mui_aapanel_class.c") != NULL, "class not in the build");
@@ -497,7 +497,7 @@ static void test_field_source(void) {
     CHECK(count_of(ui, "mui_make_string(") == 4, "string constructor sites: %d (definition + 3)", count_of(ui, "mui_make_string("));
     CHECK(count_of(ui, "mui_aafield_new(") == 1, "one AAField constructor call: %d", count_of(ui, "mui_aafield_new("));
     CHECK(count_of(ui, "mui_aafield_class_free(") == 1, "class freed in mui_close");
-    CHECK(strstr(cls, "mui_aa_field_plan(") != NULL && strstr(cls, "mui_aa_field_height(") != NULL && strstr(cls, "aa_round_fill(") != NULL,
+    CHECK(strstr(cls, "mui_aa_field_plan(") != NULL && strstr(cls, "mui_aa_field_height(") != NULL && strstr(cls, "aa_round_fill_hole(") != NULL,
           "class does not draw through the shared field helpers");
     CHECK(strstr(cls, "MUIV_Frame_None") != NULL && strstr(cls, "MUIV_Frame_String") == NULL, "inner string must have no stock frame");
     CHECK(strstr(cls, "ObtainBestPenA") == NULL && strstr(cls, "0x1") == NULL, "class holds no pen code or colour literal of its own");
@@ -507,6 +507,50 @@ static void test_field_source(void) {
     free(cm);
 }
 
+
+/* Field and panel faces paint (Johan rig 2 2026-10-29: the search and command fields showed only the window background).
+ * MUI fills MUIP_Draw.flags only inside the Area super call, and a Group super fills the gaps between its children with the
+ * background, so anything painted before DoSuperMethodA is either skipped or painted over. Invariant, per *_draw function of every
+ * AA class: no msg->flags test before the super call. The Group subclasses paint around their children: AAField around the inner
+ * String (aa_round_fill_hole), AAPanel only its corners (aa_round_corners). */
+static void check_draw_order(const char* path) {
+    char* src = slurp(path);
+    const char *p, *end, *flags, *super;
+    int draws = 0;
+    CHECK(src != NULL, "source readable: %s", path);
+    if (src == NULL) {
+        return;
+    }
+    for (p = strstr(src, "_draw(struct IClass*"); p != NULL; p = strstr(end, "_draw(struct IClass*")) {
+        end = strstr(p, "\n}\n");
+        if (end == NULL) {
+            break;
+        }
+        draws++;
+        flags = strstr(p, "msg->flags");
+        super = strstr(p, "DoSuperMethodA");
+        CHECK(flags == NULL || flags > end || (super != NULL && super < flags), "%s: msg->flags tested before DoSuperMethodA", path);
+    }
+    CHECK(draws >= 1, "%s: no draw function found", path);
+    free(src);
+}
+
+static void test_field_draw_flags(void) {
+    char* fld = slurp(AAFIELD_SOURCE);
+    char* pnl = slurp(AAPANEL_SOURCE);
+    check_draw_order(AABTN_SOURCE);
+    check_draw_order(AACYCLE_SOURCE);
+    check_draw_order(AAFIELD_SOURCE);
+    check_draw_order(AALIST_SOURCE);
+    check_draw_order(AAPANEL_SOURCE);
+    check_draw_order(AASCROLLER_SOURCE);
+    check_draw_order(AASLIDER_SOURCE);
+    check_draw_order(AATEXT_SOURCE);
+    CHECK(fld != NULL && strstr(fld, "aa_round_fill_hole(") != NULL && strstr(fld, "_width(d->str)") != NULL, "AAField does not paint around the inner String");
+    CHECK(pnl != NULL && strstr(pnl, "aa_round_corners(") != NULL, "AAPanel does not round its corners after the super");
+    free(fld);
+    free(pnl);
+}
 
 /* I667i mui-scroller-geom (design 3.5): thumb geometry, colour tokens, widths and the sentinel. */
 static void test_scroller_geom(void) {
@@ -656,6 +700,8 @@ int main(int argc, char** argv) {
         test_field_plan();
     } else if (!strcmp(t, "field-source")) {
         test_field_source();
+    } else if (!strcmp(t, "field-draw-flags")) {
+        test_field_draw_flags();
     } else if (!strcmp(t, "scroller-geom")) {
         test_scroller_geom();
     } else if (!strcmp(t, "list-rows")) {

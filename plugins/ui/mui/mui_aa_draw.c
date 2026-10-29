@@ -195,6 +195,39 @@ void aa_round_fill(struct RastPort* rp, int x, int y, int w, int h, int radius, 
     }
 }
 
+void aa_round_fill_hole(struct RastPort* rp, int x, int y, int w, int h, int radius, LONG pen, int hx, int hy, int hw, int hh) {
+    int row;
+    SetAPen(rp, pen);
+    for (row = 0; row < h; row++) {
+        int in = radius > 0 ? mui_aa_round_inset(w, h, radius, row) : 0, l = x + in, r = x + w - 1 - in, py = y + row;
+        if (py < hy || py >= hy + hh) {
+            RectFill(rp, l, py, r, py);
+            continue;
+        }
+        if (l < hx) {
+            RectFill(rp, l, py, hx - 1 < r ? hx - 1 : r, py);
+        }
+        if (r >= hx + hw) {
+            RectFill(rp, l > hx + hw ? l : hx + hw, py, r, py);
+        }
+    }
+}
+
+void aa_round_corners(struct RastPort* rp, int x, int y, int w, int h, int radius, LONG pen) {
+    int row;
+    if (radius <= 0) {
+        return;
+    }
+    SetAPen(rp, pen);
+    for (row = 0; row < h; row++) {
+        int in = mui_aa_round_inset(w, h, radius, row);
+        if (in > 0) {
+            RectFill(rp, x, y + row, x + in - 1, y + row);
+            RectFill(rp, x + w - in, y + row, x + w - 1, y + row);
+        }
+    }
+}
+
 void aa_round_frame(struct RastPort* rp, int x, int y, int w, int h, int radius, LONG pen) {
     int row;
     SetAPen(rp, pen);
