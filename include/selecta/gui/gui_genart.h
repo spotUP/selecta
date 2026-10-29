@@ -39,6 +39,9 @@ enum {
 
 /* The family of a file extension without the dot, any case; SEL_GUI_FAMILY_MUSIC when unknown. */
 uint32_t sel_gui_platform_of_ext(const char* ext);
+/* The last extension of a file name without the dot, original case ("x.Mod" gives "Mod"); NULL without one. The one
+ * extension extractor of the desktop UI: the family resolver and the format column both use it. */
+const char* sel_gui_path_ext(const char* name);
 /* The family of a file name: its last extension ("x.mod"), else its Amiga prefix, the part before the first dot
  * ("mod.x"; the extension table plus the explicit UADE prefix list), case-insensitively. Music when neither is known. */
 uint32_t sel_gui_platform_of_name(const char* name);

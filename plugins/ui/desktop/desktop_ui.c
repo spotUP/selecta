@@ -304,7 +304,8 @@ typedef struct desk {
     uint32_t lib_held_n, lib_held_px_max; /* I549 sentinels: presents of held-button scrollbar moves, and the most pixels one repainted */
     uint32_t lib_off_page;   /* Library page draws while another page is current (sentinel, must stay 0: I274) */
     uint32_t np_draws;       /* Now Playing panel draws (sentinel) */
-    uint32_t np_genart;      /* genart_draw runs by the Now Playing panel: one per draw (DUI-P4-7) */
+    uint32_t np_genart;      /* platform cover draws by the Now Playing panel: one per draw (DUI-P4-7, I691b) */
+    uint32_t pc_np, pc_bar, pc_page, pc_tile0, pc_draws; /* I691b: family + 1 of the last platform cover per song site, 0 = real art won; draws = all fallback draws */
     uint32_t cover_np, cover_bar, cover_side; /* I692: real covers (art_tile) drawn by the Now Playing panel and page, the player bar, the sidebar rows */
     sel_gui_rect np_title;      /* the Now Playing title and artist lines, w 0 = not drawn: a song row of the song menu (I372) */
     sel_gui_rect np_like, np_rate[5]; /* click targets of the like button and the five rating marks */
@@ -1462,18 +1463,31 @@ static void draw_detail(desk* d) {
     sel_gui_dirty_add(d->canvas, body);
 }
 
+/* The lower case family id of a pc_* slot (family + 1), "none" when real art won. */
+static const char* pc_name(uint32_t slot) {
+    return slot == 0u ? "none" : sel_gui_platform_id(slot - 1u);
+}
+
+/* The song fallback (I691b): the platform cover of the family of `path`, drawn where a song has no real art. `slot` receives
+ * family + 1 for the dump line `platform_covers`; draws counts every call, the sentinel of the fallback branch. */
+static void song_platform_cover(desk* d, sel_gui_rect ar, const char* path, const char* title, uint32_t* slot) {
+    uint32_t family = sel_gui_platform_of_name(path);
+    sel_gui_cover_draw(d->canvas, ar, family, sel_gui_str_hash(title), d->theme.token, desk_font(d, 1, 14));
+    *slot = family + 1u;
+    d->pc_draws++;
+}
+
 /* The home view (DUI-P2-6): one tile per queue entry, its album artwork (DUI-P2-4) or else generated art of its
  * format (DUI-P2-5), and the title wrapped under it. The queue is the tile source. */
 /* The format of queue entry i: its file extension, "" without one. */
 static void queue_format(const sel_state* st, uint32_t i, char* out, size_t cap) {
     const char* path = st->queue_text + st->queue[i].path_offset;
-    const char* dot = strrchr(path, '.');
-    const char* slash = strrchr(path, '/');
-    if (dot == NULL || (slash != NULL && dot < slash) || strlen(dot + 1) >= cap) {
+    const char* ext = sel_gui_path_ext(path);
+    if (ext == NULL || strlen(ext) >= cap) {
         out[0] = '\0';
         return;
     }
-    strcpy(out, dot + 1);
+    strcpy(out, ext);
 }
 
 /* 64-bit FNV-1a over the pixels of r. */
@@ -3242,18 +3256,10 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
             d->shelf_page_tiles += on_page ? 1u : 0u; /* I617: the grid counts every tile it lays out, drawn or scrolled off */
             sel_gui_rect ar = rect_of(t.x + pad, t.y + pad, t.w - 2 * pad, t.w - 2 * pad);
             int hovered = d->hover_tile > 0 && (uint32_t)d->hover_tile - 1u == flat;
-            const char* dot = r->key != NULL ? strrchr(r->key, '.') : NULL;
             const uint32_t* art;
-            char format[16];
-            size_t fi = 0;
             if (t.x + t.w <= mn.x || t.x >= mn.x + mn.w) {
                 continue;
             }
-            while (!r->album && !r->composer && dot != NULL && dot[1 + fi] != '\0' && fi + 1u < sizeof format) {
-                format[fi] = dot[1 + fi];
-                fi++;
-            }
-            format[fi] = '\0';
             if (hovered) { /* I600: the idle card has no fill (the Home tint shows through, no dark frame on AGA); the hover fades one in */
                 sel_gui_round_rect(d->canvas, t, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]),
                                    desk_mix(panel, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]), (uint32_t)hv));
@@ -3272,7 +3278,12 @@ static void draw_shelves(desk* d, sel_gui_rect mn) {
                 d->art_probe_fill = sel_gui_pixel(d->canvas, ar.x, ar.y - 1); /* the card or the tint just above the art, before it is drawn over */
                 sel_gui_set_region(d->canvas, SEL_GUI_RGN_UI);
             } else {
-                sel_gui_genart_draw(d->canvas, ar, r->album || r->composer ? "album" : format, sel_gui_str_hash(r->text));
+                if (r->album || r->composer) { /* the album and person covers switch in I691d */
+                    sel_gui_genart_draw(d->canvas, ar, "album", sel_gui_str_hash(r->text));
+                } else {
+                    uint32_t slot;
+                    song_platform_cover(d, ar, r->key, r->text, &slot);
+                }
             }
             draw_text(d, rect_of(ar.x, ar.y + ar.h + lpx(d, HOME_TILE_TEXT_GAP), ar.w, lpx(d, HOME_TITLE_H)), r->text, 1, 14,
                       ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
@@ -6368,6 +6379,8 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "nowplaying title %d %d like %d artist %u\n", (int)d->np_title.y, (int)d->np_title.h, (int)d->np_like.y,
                  (unsigned)(d->np_text_artist[0] != '\0'));
     o = dump_put(d, o, "cover_tiles np=%u bar=%u side=%u\n", (unsigned)d->cover_np, (unsigned)d->cover_bar, (unsigned)d->cover_side);
+    o = dump_put(d, o, "platform_covers np=%s bar=%s page=%s tile0=%s draws=%u\n", pc_name(d->pc_np), pc_name(d->pc_bar), pc_name(d->pc_page),
+                 pc_name(d->pc_tile0), (unsigned)d->pc_draws);
     o = dump_put(d, o, "nowplaying keys end %d value %d\n",(int)d->np_key_end, (int)d->np_val_x);
     for (uint32_t tg = 0; tg <= SONG_PLAYLIST_TARGETS; tg += SONG_PLAYLIST_TARGETS) { /* I448: first and last drop target, then the rail */
         sel_gui_rect tr = songs_target_rect(d, tg);
@@ -8140,6 +8153,7 @@ static void draw_home_content(desk* d) {
         char format[16];
         int hovered = d->hover_tile > 0 && (uint32_t)d->hover_tile - 1u == i;
         uint32_t panel = ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]);
+        uint32_t pc_slot = 0; /* I691b: family + 1 of the platform cover this tile drew, 0 = real art */
         queue_title(st, i, name, sizeof name);
         queue_format(st, i, format, sizeof format);
         sel_gui_fill_rect(d->canvas, t, panel); /* the corners blend with the panel, not with the last frame's card */
@@ -8161,9 +8175,10 @@ static void draw_home_content(desk* d) {
             sel_gui_set_region(d->canvas, SEL_GUI_RGN_UI);
         } else {
             /* No cover: the generated art of the song's format and chip (gui_genart.h). */
-            sel_gui_genart_draw(d->canvas, ar, format, sel_gui_str_hash(name));
+            song_platform_cover(d, ar, st->queue_text + st->queue[i].path_offset, name, &pc_slot);
         }
         if (i == 0u) {
+            d->pc_tile0 = pc_slot;
             d->art_tile_hash = rect_hash(d->canvas, ar);
         }
         draw_text(d, rect_of(ar.x, ar.y + ar.h + lpx(d, HOME_TILE_TEXT_GAP), ar.w, lpx(d, HOME_TITLE_H)), name, 1, 14,
@@ -9797,8 +9812,9 @@ static void draw_player_left(desk* d) {
     sel_gui_fill_rect(d->canvas, all, ARGB(d->theme.token[SEL_GUI_TOKEN_FRAME]));
     if (cover_draw(d, ar, sel_engine_state(d->engine)->song.path, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]))) { /* I692 */
         d->cover_bar++;
+        d->pc_bar = 0;
     } else {
-        sel_gui_genart_draw(d->canvas, ar, f->format, sel_gui_str_hash(f->title));
+        song_platform_cover(d, ar, sel_engine_state(d->engine)->song.path, f->title, &d->pc_bar);
     }
     d->home_parts |= HP_PLAYER_ART;
     draw_text(d, rect_of(box.x, box.y + lpx(d, 10), box.w, lpx(d, 18)), f->title, 1, 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
@@ -9886,8 +9902,9 @@ static void draw_nowplaying(desk* d) {
     d->np_panel = pn;
     if (cover_draw(d, ar, st->song.path, 0)) { /* I692: the full-bleed cover; np_art_average below reads the pixels it drew */
         d->cover_np++;
+        d->pc_np = 0;
     } else {
-        sel_gui_genart_draw(d->canvas, ar, f->format, sel_gui_str_hash(f->title));
+        song_platform_cover(d, ar, st->song.path, f->title, &d->pc_np);
         d->np_genart++;
     }
     /* The header tint is the artwork's own average colour blended into the header token, fading to the panel colour. The
@@ -10071,8 +10088,9 @@ static void draw_nowplaypage(desk* d) {
     ar = rect_of(mn.x + mg, mn.y + lpx(d, page_y(d, 64)), side, side);
     if (cover_draw(d, ar, st->song.path, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_LARGE]))) { /* I692 */
         d->cover_np++;
+        d->pc_page = 0;
     } else {
-        sel_gui_genart_draw(d->canvas, ar, f->format, sel_gui_str_hash(f->title));
+        song_platform_cover(d, ar, st->song.path, f->title, &d->pc_page);
     }
     x = ar.x + ar.w + mg;
     y = ar.y;

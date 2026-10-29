@@ -131,14 +131,11 @@ uint32_t sel_gui_platform_of_ext(const char* ext) {
     return row >= 0 ? k_chips[row].family : SEL_GUI_FAMILY_MUSIC;
 }
 
-uint32_t sel_gui_platform_of_name(const char* name) {
-    const char *base, *p, *dot = NULL, *first = NULL;
-    char f[16], pre[16];
-    size_t n;
-    int row;
+const char* sel_gui_path_ext(const char* name) {
+    const char *base, *p, *dot = NULL;
 
     if (name == NULL) {
-        return SEL_GUI_FAMILY_MUSIC;
+        return NULL;
     }
     base = name;
     for (p = name; *p != '\0'; p++) { /* the file part of a path ('/' or the Amiga ':') */
@@ -149,15 +146,33 @@ uint32_t sel_gui_platform_of_name(const char* name) {
     for (p = base; *p != '\0'; p++) {
         if (*p == '.') {
             dot = p;
-            if (first == NULL) {
-                first = p;
-            }
         }
     }
+    return dot != NULL ? dot + 1 : NULL;
+}
+
+uint32_t sel_gui_platform_of_name(const char* name) {
+    const char *base, *p, *dot, *first = NULL;
+    char f[16], pre[16];
+    size_t n;
+    int row;
+
+    dot = sel_gui_path_ext(name);
     if (dot == NULL) {
         return SEL_GUI_FAMILY_MUSIC;
     }
-    lower(f, dot + 1, sizeof f); /* the last extension */
+    base = name;
+    for (p = name; *p != '\0'; p++) {
+        if (*p == '/' || *p == ':') {
+            base = p + 1;
+        }
+    }
+    for (p = base; *p != '\0' && first == NULL; p++) {
+        if (*p == '.') {
+            first = p;
+        }
+    }
+    lower(f, dot, sizeof f); /* the last extension */
     row = ext_row(f);
     if (row >= 0) {
         return k_chips[row].family;
