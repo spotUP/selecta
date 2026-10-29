@@ -222,6 +222,32 @@ detail (mui_ui.c window build, `s->balance[0..1]`) draw the MUI prefs 3D bar.
 AACheck (4 pref rows) is built inside 3.1 as AAButton role `toggle`: 16 px rounded box as the desktop d_checkbox
 (I667b-3): radius RADIUS_SMALL, corners SURFACE, off face SURFACE with a TEXT_MUTED outline, on face ACCENT with an ACCENT_TEXT tick.
 
+### 3.11 Icon size follows the text size (I667m)
+
+Johan 2026-10-29 (Amiga rig 2): "the icon vs text sizes in the mui ui are off the icons looks big and the texts small
+compare to the mac ui".
+
+- Cause (measured): `mui_aa_metrics` (map/mui_aa.c) sets `icon_px` to 24 on every tier except S (16), while
+  `mui_aa_font_px` gives 13 px text on a 600-row screen. Icon:text is 1.85. The desktop UI draws 16-20 px icons next to
+  13-14 px text (desktop_ui.c: draw_widget 16, draw_nav_arrows 18, tl_draw 18, draw_topbar 20, draw_transport 20;
+  draw_text px counts: 13 x36, 14 x35, 12 x23). Desktop icon:text is about 1.4.
+- Rule: `icon_px` comes from the tier, in one table in `mui_aa_metrics`: S 12 (font 8), M 18 (font 13), L 20 (font 15),
+  XL 24 (font 17). The button height formula stays `max(font, icon) + 2 * pad_y`, so M buttons shrink from 36 to 30.
+- Icon bodies: `aabtn_icon` resamples the 24 px body by nearest neighbour; 24 to 18 drops rows and columns and breaks
+  1 px Lucide strokes. Bake one body set per tier size instead: `tools/gui_iconbake.c` emits bodies for 12, 16, 18, 20
+  and 24 px (`mui_icon_body(icon, px)`, about 25 KB for the whole set), and `aabtn_icon` picks the exact size. Resampling
+  stays only as the fallback for a size with no body. `MUI_ICON_PX` in map/mui_icons.h and its users in map/mui_screen.c
+  and map/mui_icons.c take the tier size from `mui_aa_metrics` instead of the constant; the contract check
+  `mui_icon_body_px == MUI_ICON_PX` becomes "a body exists for every tier icon size".
+- AACheck `check_px` and the AASlider knob stay as they are (they follow the font already).
+- Text: 13 px on 600 rows is already a larger share of the screen than 13-14 px in the Mac window, so the text size
+  stays. Johan's "texts small" is the ratio. The rig look decides; if text still reads small next to 18 px icons, the
+  next step is M font 14, not bigger icons.
+- Host test `mui-icon-ratio`: for each tier, icon_px / font_px is between 1.3 and 1.5 (S excepted: 12 / 8), and
+  `mui_icon_body(icon, icon_px)` is not NULL for every icon id. Sentinel: the bodies drawn count by size, so a test sees
+  the 18 px body used on tier M.
+- Rig 2: toolbar and transport icons 18 px tall at 13 px text; Johan look.
+
 ## 4. Screen limits
 
 AGA (depth 4, 16 pens, SELECTA screen from I666):
