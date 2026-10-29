@@ -8897,7 +8897,8 @@ static void draw_nowplaying(desk* d) {
     }
     d->np_rating = rating;
     d->np_inset_l = d->np_like.x - pn.x;
-    d->np_inset_r = pn.x + pn.w - (d->np_title.x + d->np_title.w);
+    /* I619: the add button, when drawn, is the title row's right-most content; the title stops short of it. */
+    d->np_inset_r = pn.x + pn.w - (d->np_add.w > 0 ? d->np_add.x + d->np_add.w : d->np_title.x + d->np_title.w);
     d->np_liked = liked;
     sel_gui_icon_draw(d->canvas, &d->icons, SEL_GUI_ICON_HEART, d->np_like, ic, row_ink(d, d->np_like, liked ? accent : muted));
     for (k = 0; k < 5u; k++) {
