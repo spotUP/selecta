@@ -71,7 +71,7 @@ function(centre_of outx outy rect)
 endfunction()
 
 # 1. every door, clicked from the Home frame
-set(door_pages home search library playlists queue nowplaying songinfo)
+set(door_pages home search folders playlists queue nowplaying songinfo)
 nav_run(h0 home "wait 100\n")
 expect_eq("Home frame page before any click" "${h0_page}" "home")
 expect_eq("no click yet" "${h0_clicks}" 0)
@@ -96,7 +96,7 @@ expect_eq("walk ends at Song Info" "${w_page}" "songinfo")
 expect_eq("walk counted four clicks" "${w_clicks}" 4)
 
 # 3. the page keys of the text UI's table
-foreach(spec "H:home" "l:library" "f:playlists" "i:songinfo" "v:viz" "t:tracker")
+foreach(spec "H:home" "l:folders" "f:playlists" "i:songinfo" "v:viz" "t:tracker")
   string(REPLACE ":" ";" pair "${spec}")
   list(GET pair 0 k)
   list(GET pair 1 pg)
@@ -106,7 +106,7 @@ foreach(spec "H:home" "l:library" "f:playlists" "i:songinfo" "v:viz" "t:tracker"
 endforeach()
 
 # 4. --view lands on the page name a door reaches (the same desk_page_goto, so the same page and history)
-foreach(pg queue playlists library songinfo nowplaying)
+foreach(pg queue playlists folders songinfo nowplaying)
   nav_run(v${pg} ${pg} "wait 100\n")
   expect_eq("--view ${pg}" "${v${pg}_page}" "${pg}")
 endforeach()
@@ -151,7 +151,7 @@ nav_run(sh home "wait 100\ntopbar 1\nwait 100\nkey /\nwait 100\ndoor 4\nwait 100
 expect_eq("leaving Search by a door" "${sh_page}" "queue")
 expect_eq("only the Queue door is lit after leaving Search by a door (bit 4)" "${sh_lit}" "16")
 nav_run(sk home "wait 100\nkey /\nwait 100\nkey Escape\nwait 100\nkey l\nwait 100\n")
-expect_eq("leaving Search by a page key" "${sk_page}" "library")
+expect_eq("leaving Search by a page key" "${sk_page}" "folders")
 nav_run(sl home "wait 100\ntopbar 1\nwait 100\nkey /\nwait 100\nkey Escape\nwait 100\nkey l\nwait 100\n")
 # The labelled sidebar has no Library door row (I673: the Your Library header is the door and shows the page state), so no door bit is lit.
 expect_eq("no door row is lit on the labelled sidebar after a page key leaves Search" "${sl_lit}" "0")
@@ -322,5 +322,5 @@ function(expect_home_chip label want_page)
 endfunction()
 expect_home_chip("All" search)
 expect_home_chip("Songs" songs)
-expect_home_chip("Composers" library)
+expect_home_chip("Folders" folders)
 expect_home_chip("Playlists" playlists)
