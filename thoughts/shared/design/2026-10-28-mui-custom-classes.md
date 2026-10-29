@@ -200,8 +200,8 @@ RTG and TC; on AGA within the 12-bit-to-8-bit rounding of the exact SA_Colors32 
 - Host test: `mui-tabs`: active index set by click and by keys.
 - Rig: active underline 3B82F6.
 
-AACheck (4 pref rows) is built inside 3.1 as AAButton role `toggle`: 16 px rounded box, off face SURFACE_RAISED with
-DIVIDER outline, on face ACCENT with a TEXT check icon.
+AACheck (4 pref rows) is built inside 3.1 as AAButton role `toggle`: 16 px rounded box as the desktop d_checkbox
+(I667b-3): radius RADIUS_SMALL, corners SURFACE, off face SURFACE with a TEXT_MUTED outline, on face ACCENT with an ACCENT_TEXT tick.
 
 ## 4. Screen limits
 
