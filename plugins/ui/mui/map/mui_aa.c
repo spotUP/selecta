@@ -269,12 +269,11 @@ void mui_aa_slider_metrics(int font_px, mui_aa_slider_t* out) {
     g_slider_calls++;
     out->track_h = font_px <= 0 ? 2 : 4;
     out->radius = out->track_h / 2;
-    out->knob = font_px <= 0 ? 8 : font_px < 15 ? 12 : font_px < 17 ? 14 : 16;
     out->min_w = 80;
-    out->height = out->knob + 4;
+    out->height = font_px <= 0 ? 12 : font_px < 15 ? 16 : font_px < 17 ? 18 : 20; /* hit height; only the track and fill are drawn */
 }
 
-void mui_aa_slider_rgb(const uint32_t* token, int state, uint32_t* track, uint32_t* fill, uint32_t* knob) {
+void mui_aa_slider_rgb(const uint32_t* token, int state, uint32_t* track, uint32_t* fill) {
     g_slider_calls++;
     if (track != NULL) {
         *track = token[SEL_GUI_TOKEN_TRACK];
@@ -282,30 +281,59 @@ void mui_aa_slider_rgb(const uint32_t* token, int state, uint32_t* track, uint32
     if (fill != NULL) {
         *fill = state == MUI_AA_DISABLED ? token[SEL_GUI_TOKEN_TEXT_DISABLED] : token[SEL_GUI_TOKEN_ACCENT];
     }
-    if (knob != NULL) {
-        *knob = state == MUI_AA_DISABLED ? token[SEL_GUI_TOKEN_TEXT_DISABLED] : state == MUI_AA_HOVER ? token[SEL_GUI_TOKEN_HOVER_LIGHT] : token[SEL_GUI_TOKEN_TEXT];
-    }
 }
 
-int mui_aa_slider_knob_x(const mui_aa_slider_t* m, int w, long value, long lo, long hi) {
-    long travel = w - m->knob, span = hi - lo;
+int mui_aa_slider_fill_w(int w, long value, long lo, long hi) {
+    long span = hi - lo;
     g_slider_calls++;
-    if (travel <= 0 || span <= 0) {
+    if (span <= 0 || w <= 0 || value <= lo) {
         return 0;
     }
-    value = value < lo ? lo : value > hi ? hi : value;
-    return (int)(((value - lo) * travel + span / 2) / span);
+    return value >= hi ? w : (int)(((long)w * (value - lo) + span / 2) / span);
 }
 
-long mui_aa_slider_value_at(const mui_aa_slider_t* m, int w, int x, long lo, long hi) {
-    long travel = w - m->knob, span = hi - lo, p = (long)x - m->knob / 2, v;
+long mui_aa_slider_value_at(int w, int x, long lo, long hi) {
+    long span = hi - lo, v;
     g_slider_calls++;
-    if (travel <= 0 || span <= 0) {
+    if (w <= 0 || span <= 0 || x <= 0) {
         return lo;
     }
-    p = p < 0 ? 0 : p > travel ? travel : p;
-    v = lo + (p * span + travel / 2) / travel;
+    if (x >= w) {
+        return hi;
+    }
+    v = lo + ((long)x * span + w / 2) / w;
     return v > hi ? hi : v;
+}
+
+int mui_aa_slider_plan(const uint32_t* token, const mui_aa_slider_t* m, int state, int w, int h, long value, long lo, long hi, mui_aa_slider_op_t* out) {
+    int n = 0, ty = (h - m->track_h) / 2;
+    uint32_t track, fill;
+    int fw = mui_aa_slider_fill_w(w, value, lo, hi);
+    mui_aa_slider_rgb(token, state, &track, &fill);
+    out[n].kind = MUI_AA_SLIDER_ERASE;
+    out[n].x = 0;
+    out[n].y = 0;
+    out[n].w = w;
+    out[n].h = h;
+    out[n].radius = 0;
+    out[n++].rgb = 0;
+    out[n].kind = MUI_AA_SLIDER_TRACK;
+    out[n].x = 0;
+    out[n].y = ty;
+    out[n].w = w;
+    out[n].h = m->track_h;
+    out[n].radius = m->radius;
+    out[n++].rgb = track;
+    if (fw > 0) {
+        out[n].kind = MUI_AA_SLIDER_FILL;
+        out[n].x = 0;
+        out[n].y = ty;
+        out[n].w = fw;
+        out[n].h = m->track_h;
+        out[n].radius = m->radius;
+        out[n++].rgb = fill;
+    }
+    return n;
 }
 
 int mui_aa_progress_fill_w(int w, long value, long max) {

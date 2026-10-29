@@ -115,14 +115,14 @@ RTG and TC; on AGA within the 12-bit-to-8-bit rounding of the exact SA_Colors32 
 ### 3.2 AASlider and AAProgress (slider, seek, gauge)
 
 - AASlider: superclass MUIC_Numeric (keeps MUIA_Numeric_Value/Min/Max, MUIM_Numeric_Increase/Decrease keys and existing
-  notifications). Overrides Setup/Cleanup, AskMinMax, Draw, HandleEvent (click on track jumps, drag on knob).
+  notifications). Overrides Setup/Cleanup, AskMinMax, Draw, HandleEvent (click on track jumps, drag anywhere on the track).
 - AAProgress: superclass MUIC_Area, attributes `AAP_Value`, `AAP_Max`, read only (gauge row of I663).
-- Tokens: track TRACK 3A3A44, filled part ACCENT 3B82F6, knob TEXT C8C8D0 (hover HOVER_LIGHT E4E4EA), disabled fill
-  TEXT_DISABLED.
-- Sizes: track height 4 (S 2), radius 2, knob diameter 12 / 14 / 16 (S 8) drawn with `aa_round_fill` at radius d/2, min
-  width 80, height = knob + 4.
-- Host test: `mui-slider-geom`: value to knob x and x to value round trip for min, max, mid at each tier.
-- Rig: volume track 3A3A44, fill 3B82F6, knob C8C8D0.
+- Tokens: track TRACK 3A3A44, filled part ACCENT 3B82F6, disabled fill TEXT_DISABLED. No knob (owner decision
+  2026-10-29): only the track and the fill are drawn, like the Mac desktop seek bar.
+- Sizes: track height 4 (S 2), radius 2 drawn with `aa_round_fill`, min width 80, hit height 12 / 16 / 18 / 20 (S 12). An update draw (MADF_DRAWUPDATE)
+  first erases the full box with MUIM_DrawBackground (plan op 0), else earlier fills stay visible.
+- Host test: `mui-slider-geom`: fill width and x to value for min, max, mid; update plan starts with the full-box erase and has no knob op.
+- Rig: volume track 3A3A44, fill 3B82F6, no knob.
 
 ### 3.3 AACycle and popup
 
