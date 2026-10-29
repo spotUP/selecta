@@ -1,3 +1,23 @@
+# I667n rig 2 recheck, build/amiga selecta rebuilt on main 13598ec8 (host fixes 90c3bd19)
+
+Method: rig 2 (purpose "musicplayer-55: I667n MUI flat-look recheck"), SelectaMUI with meme.mod (virgill-that_meme_again.mod) queued, clicks on
+volume slider middle, Play, search field; `ami.py shot`, PIL colour counts per uitree box. RTG pass first (rig booted RTG), then `rig.py aga`.
+Screenshots (scratchpad): .../7b6e9b73-f7a9-4810-b8de-0f5891b82b93/scratchpad/rtg_full.png (800x600), aga_full.png (640x512), rtg_fields.png.
+
+| Item | AGA | RTG |
+|---|---|---|
+| 1 Balance box 121214 + 2C2C34 line | PASS: box (169,3,8x376) 121214 2648 px, 2C2C34 360 px | PASS: box (204,3,8x467) 121214 3285 px, 2C2C34 451 px |
+| 2 AAField no dark inner rectangle | FAIL: 121214 rectangle remains | FAIL: 121214 rectangle remains |
+| 3 Volume 3A3A44 track beside fill | PASS: (545,397,83x16) 3A3A44 168 px, 3B82F6 160, 1E1E24 1000 | PASS: (682,488,106x16) 3A3A44 212 px, 3B82F6 208, 1E1E24 1276 |
+| 4 Play glyph E4E4EA (RTG only) | n/a: C8C8D0 68 px by design | FAIL: C8C8D0 68 px; E4E4EA 0 px on whole screen |
+
+Item 2 detail: field face 2A2A32 (RTG face x226..787 y11..44). Dark rectangle RGB 121214 = exactly the String gadget box from uitree
+(custom and string gadgets share one box): AGA search 199,20 199x11 (2123 of 2189 px, rest 1E1E24 66 px = cursor), command 420,20 200x11
+(2200/2200); RTG search 234,22 262x8 (2032 px, rest EDEDEB cursor 64 px), command 518,22 262x8 (2096/2096). Row 25 AGA: x192-198 2A2A32,
+x199-200 1E1E24 (cursor), x201..397 121214, x398.. 2A2A32. So it matches the String gadget's own frame/box (not the AAField face, which is
+2A2A32 around it); explicit MUIA_Background from 90c3bd19 did not change the String gadget interior. Not fixed (measure only).
+Also: the volume row in item 3 was clicked at mid; Play glyph also 93C5FD 88 px (focus ring) in both modes.
+
 
 ## Root causes (I667n follow-up, host-proven, rig recheck pending)
 
