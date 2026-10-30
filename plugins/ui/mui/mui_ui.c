@@ -641,9 +641,9 @@ static Object* mui_make_check(const char* label, int on, LONG id) {
 }
 
 /* I667d (design 3.7): the one text constructor. Every Selecta text line is a Selecta_AAText (mui_aatext_class.c): antialiased in the
- * tone colour (normal TEXT, muted TEXT_MUTED, title TEXT at font + 4 px), aligned and cut with "..." at the width. framed = the
- * status look (panel background and text frame, MUI_TH_STATUS); the tone of a label comes from mui_pens_label_tone. */
-static Object* mui_aatext_sized(const char* contents, const char* widest, int tone, int align, int framed, int hidden) {
+ * tone colour (normal TEXT, muted TEXT_MUTED, title TEXT at font + 4 px), aligned and cut with "..." at the width. Labels carry no
+ * frame and no field box (I740, like the Mac footer: muted text on the window); the tone of a label comes from mui_pens_label_tone. */
+static Object* mui_aatext_sized(const char* contents, const char* widest, int tone, int align, int hidden) {
     mui_aatext_spec sp;
     sp.contents = contents;
     sp.widest = widest;
@@ -651,20 +651,19 @@ static Object* mui_aatext_sized(const char* contents, const char* widest, int to
     sp.tone = tone;
     sp.align = align;
     sp.ellipsis = 1;
-    sp.face = framed; /* I667o: the status look is the AAField face with its paddings, not a square MUI frame */
     sp.frame = (ULONG)MUIV_Frame_None;
     sp.background = 0UL;
     sp.hidden = hidden;
     return mui_aatext_new(&sp);
 }
 
-static Object* mui_aatext(const char* contents, int tone, int align, int framed, int hidden) {
-    return mui_aatext_sized(contents, NULL, tone, align, framed, hidden);
+static Object* mui_aatext(const char* contents, int tone, int align, int hidden) {
+    return mui_aatext_sized(contents, NULL, tone, align, hidden);
 }
 
 static Object* mui_make_text(mui_state* s, uint32_t attr, const char* initial, mui_label label) {
     snprintf(s->txt_buf[attr], sizeof s->txt_buf[attr], "%s", initial);
-    s->txt[attr] = mui_aatext_sized(s->txt_buf[attr], mui_attr_fixwidth(attr), mui_pens_label_tone(label), MUI_AA_ALIGN_LEFT, 1, 0);
+    s->txt[attr] = mui_aatext_sized(s->txt_buf[attr], mui_attr_fixwidth(attr), mui_pens_label_tone(label), MUI_AA_ALIGN_LEFT, 0);
     return s->txt[attr];
 }
 
@@ -873,7 +872,7 @@ static Object* mui_tool_group(mui_state* s) {
     s->cyc_rating = mui_make_cycle(p4_rating_entries, 0, CTL_P4_BASE + P4_RATING);
     s->cyc_subsong = mui_make_cycle(p4_subsong_entries, 0, CTL_P4_BASE + P4_SUBSONG);
     snprintf(s->status_buf, sizeof s->status_buf, "Ready");
-    s->status = mui_aatext(s->status_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1, 0);
+    s->status = mui_aatext(s->status_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0);
     if ((!g_screen_rtg && s->str_search == NULL) || s->str_cmd == NULL || s->cyc_rating == NULL || s->cyc_subsong == NULL || s->status == NULL) {
         return NULL;
     }
@@ -958,7 +957,7 @@ static Object* mui_main_group(mui_state* s) {
     mui_main_cols_fill(s->col_bp, &s->main_cols);
     g_list_hook.h_Entry = (__typeof__(g_list_hook.h_Entry))(void (*)(void))HookEntry;
     g_list_hook.h_SubEntry = (__typeof__(g_list_hook.h_SubEntry))(void (*)(void))mui_list_display;
-    s->crumb = mui_aatext(" ", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0, 1);
+    s->crumb = mui_aatext(" ", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1);
     {
         mui_aalist_spec sp;
         Object* lg;
@@ -992,7 +991,7 @@ static Object* mui_main_group(mui_state* s) {
     }
     DoMethod(g, OM_ADDMEMBER, s->crumb);
     s->crumb_row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_ShowMe, FALSE, TAG_DONE);
-    s->state_txt = mui_aatext(" ", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0, 1);
+    s->state_txt = mui_aatext(" ", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1);
     if (s->crumb_row == NULL || s->state_txt == NULL) {
         return NULL;
     }
@@ -1030,7 +1029,7 @@ static Object* mui_main_group(mui_state* s) {
  * signature of the shown values changes. */
 static Object* mui_np_text(char* buf, size_t cap, const char* init, mui_label label) {
     snprintf(buf, cap, "%s", init);
-    return mui_aatext(buf, mui_pens_label_tone(label), MUI_AA_ALIGN_LEFT, 0, 0);
+    return mui_aatext(buf, mui_pens_label_tone(label), MUI_AA_ALIGN_LEFT, 0);
 }
 
 static Object* mui_detail_group(mui_state* s) {
@@ -1094,7 +1093,7 @@ static Object* mui_detail_group(mui_state* s) {
             if (lyr_view != NULL) {
                 DoMethod(page_lyr, OM_ADDMEMBER, lyr_view);
             }
-            DoMethod(page_lyr, OM_ADDMEMBER, mui_aatext("Next in Queue", mui_pens_label_tone(MUI_LBL_SECTION), MUI_AA_ALIGN_CENTRE, 0, 0));
+            DoMethod(page_lyr, OM_ADDMEMBER, mui_aatext("Next in Queue", mui_pens_label_tone(MUI_LBL_SECTION), MUI_AA_ALIGN_CENTRE, 0));
             for (i = 0; i < 3; i++) {
                 s->np_up[i] = mui_np_text(s->np_up_buf[i], sizeof s->np_up_buf[i], " ", MUI_LBL_UPCOMING);
                 DoMethod(page_lyr, OM_ADDMEMBER, s->np_up[i]);
@@ -1680,7 +1679,7 @@ static void mui_settings_open(mui_state* s) {
                 continue;
             }
             s->set_ctl[i] = g;
-            DoMethod(grid, OM_ADDMEMBER, mui_aatext(r->label, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_RIGHT, 0, 0));
+            DoMethod(grid, OM_ADDMEMBER, mui_aatext(r->label, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_RIGHT, 0));
             DoMethod(grid, OM_ADDMEMBER, g);
         }
         s->set_win = MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, (ULONG) "Selecta Settings", MUIA_Window_ID, 0x53455453UL,
@@ -2040,7 +2039,7 @@ static void* mui_open(const sel_ui_open_args* a) {
             MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Centered, MUIA_Window_Menustrip, (ULONG)strip,
             WindowContents, s->root = VGroup, TH_TAGS(MUI_TH_WINDOW, MUI_FRAME_NONE)
                 Child, s->slot[MUI_SLOT_TOPBAR] = mui_topbar_group(s),
-                Child, s->slot[MUI_SLOT_SUGGESTION] = mui_aatext("Window is narrow: try the mini layout", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0, 1),
+                Child, s->slot[MUI_SLOT_SUGGESTION] = mui_aatext("Window is narrow: try the mini layout", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1),
                 Child, HGroup,
                     Child, s->slot[MUI_SLOT_SIDEBAR] = mui_sidebar_group(g_screen_rtg),
                     Child, s->balance[0] = mui_aabalance_new(),
