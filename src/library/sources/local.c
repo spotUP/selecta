@@ -78,6 +78,7 @@ static int flush_rows(scan_state* s) {
     b.rows = s->rows;
     b.count = s->row_n;
     b.now = s->cfg->now;
+    b.new_day = 0;
     memset(&reply, 0, sizeof reply);
     if (!sel_library_request(s->cfg->lib, SEL_LIB_REQ_SCAN_BATCH, &b, &reply) || reply.args[1].v.i != 0) {
         s->failed = 1;

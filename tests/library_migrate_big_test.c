@@ -72,6 +72,7 @@ static int make_v12(const sel_host* host, const char* path) {
         ok = sqlite3_exec(lib->db, sql, NULL, NULL, NULL) == SQLITE_OK;
     }
     ok = ok && sqlite3_exec(lib->db,
+                      "DROP INDEX songs_source_format; DROP INDEX songs_source_artist; DROP TABLE source_new;"
                       "DROP INDEX songs_artist_added; DROP INDEX songs_album; CREATE INDEX songs_album ON songs(album);"
                       "PRAGMA user_version=12;",
                       NULL, NULL, NULL) == SQLITE_OK;
@@ -93,8 +94,8 @@ static void migrate_on(const sel_host* host, const char* master, const char* nam
     snprintf(what, sizeof what, "%s: v12 file opens (migrates to v13)", name);
     check(lib != NULL, what);
     if (lib != NULL) {
-        snprintf(what, sizeof what, "%s: user_version is 13", name);
-        check(scalar(lib->db, "PRAGMA user_version") == 13, what);
+        snprintf(what, sizeof what, "%s: user_version is current", name);
+        check(scalar(lib->db, "PRAGMA user_version") == SEL_LIB_SCHEMA_VERSION, what);
         snprintf(what, sizeof what, "%s: songs_artist_added exists", name);
         check(scalar(lib->db, "SELECT count(*) FROM sqlite_master WHERE name='songs_artist_added'") == 1, what);
         snprintf(what, sizeof what, "%s: songs_album covers artist and added", name);

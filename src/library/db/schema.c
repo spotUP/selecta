@@ -243,9 +243,18 @@ static const char SCHEMA_V13[] =
     "CREATE INDEX songs_album ON songs(album, artist, added);"
     "CREATE INDEX songs_artist_added ON songs(artist, added);";
 
+/* I790: the source page drill (design doc 9b "Source page drill"). songs_source_format serves the Formats level and the artists of one
+ * format, songs_source_artist the A-Z artist level (without it a temp B-tree, 250 ms on 516k songs). source_new(source, day, n) is written
+ * by the sync itself after the first sync of a source (day = epoch day, n = songs inserted); the New level reads it, so New needs no index
+ * on songs and no trigger (I577 heap budget). */
+static const char SCHEMA_V14[] =
+    "CREATE INDEX IF NOT EXISTS songs_source_format ON songs(source, format, artist, size);"
+    "CREATE INDEX IF NOT EXISTS songs_source_artist ON songs(source, artist, format, size);"
+    "CREATE TABLE IF NOT EXISTS source_new(source TEXT NOT NULL, day INTEGER NOT NULL, n INTEGER NOT NULL, PRIMARY KEY(source, day)) WITHOUT ROWID;";
+
 static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
                                            SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11,
-                                           SCHEMA_V12, SCHEMA_V13};
+                                           SCHEMA_V12, SCHEMA_V13, SCHEMA_V14};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 

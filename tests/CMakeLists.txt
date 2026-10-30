@@ -2081,6 +2081,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_migrate_big_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-migrate-big COMMAND library_migrate_big_test ${CMAKE_CURRENT_BINARY_DIR})
   set_tests_properties(library-migrate-big PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_migrate_big_ok")
+  # I790: every level of the source page drill on 600k songs stays inside its window and under 200 ms.
+  add_executable(library_source_drill_test library_source_drill_test.c)
+  target_include_directories(library_source_drill_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_source_drill_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-source-drill COMMAND library_source_drill_test ${CMAKE_CURRENT_BINARY_DIR})
+  set_tests_properties(library-source-drill PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_source_drill_ok")
   # I296: a scan writes the author tag into song_composers; the songdb sync overrides it.
   add_executable(library_scan_composers_test library_scan_composers_test.c)
   target_include_directories(library_scan_composers_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
