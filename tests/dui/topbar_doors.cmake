@@ -57,7 +57,7 @@ if(def_door2w GREATER 0)
   message(FATAL_ERROR "Your Library has no sidebar row, the header is the door (door 2 width ${def_door2w})")
 endif()
 run(dead library 1280x800 "" "door 0\ndoor 1\nwait 100\n")
-expect_eq("a click where Home used to be does nothing" "${dead_page}" "library")
+expect_eq("a click where Home used to be does nothing" "${dead_page}" "folders")
 
 # 2. the top bar still reaches Home and Search
 run(home library 1280x800 "" "topbar 0\nwait 100\n")

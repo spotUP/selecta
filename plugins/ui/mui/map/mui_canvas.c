@@ -4,7 +4,26 @@
 #include <selecta/gui/gui_genart.h>
 #include <selecta/gui/gui_image.h>
 
+#include <selecta/platform.h>
+#include <selecta/uimodel/tokens.h>
+
 #include <stdlib.h>
+
+/* The platform cover of a tile or art object (I691e): the family of the format extension, drawn in the default theme's cover
+ * tokens (the MUI canvas carries no theme of its own). No word: the MUI covers are tile sized. */
+static void mui_platform_cover(sel_gui_canvas* c, sel_gui_rect r, const char* format, const char* title) {
+    static uint32_t tokens[SEL_GUI_TOKEN_COUNT];
+    static int ready;
+
+    if (!ready) {
+        int t;
+        for (t = 0; t < (int)SEL_GUI_TOKEN_COUNT; t++) {
+            tokens[t] = sel_gui_token_default((sel_gui_token)t);
+        }
+        ready = 1;
+    }
+    sel_gui_cover_draw(c, r, sel_platform_of_ext(format), sel_gui_str_hash(title != NULL ? title : ""), tokens, NULL);
+}
 
 int mui_canvas_fit(mui_canvas* m, sel_gui_rect obj) {
     if (obj.w <= 0 || obj.h <= 0) {
@@ -74,8 +93,7 @@ uint32_t mui_canvas_draw_grid(mui_canvas* m, const mui_grid_style* s, const mui_
         if (px != NULL) {
             sel_gui_blit_image(&m->c, ar, px, s->edge, s->edge, s->edge, 0);
         } else {
-            sel_gui_genart_draw(&m->c, ar, tiles[i].format != NULL ? tiles[i].format : "album",
-                                sel_gui_str_hash(tiles[i].title != NULL ? tiles[i].title : ""));
+            mui_platform_cover(&m->c, ar, tiles[i].format, tiles[i].title);
         }
         sel_gui_dirty_add(&m->c, t);
         drawn++;
@@ -85,7 +103,7 @@ uint32_t mui_canvas_draw_grid(mui_canvas* m, const mui_grid_style* s, const mui_
 }
 
 mui_art_path mui_art_path_for(int screen_is_rtg) {
-    return screen_is_rtg ? MUI_ART_DATATYPE : MUI_ART_GENART;
+    return screen_is_rtg ? MUI_ART_DATATYPE : MUI_ART_COVER;
 }
 
 mui_art_path mui_canvas_draw_art(mui_canvas* m, sel_gui_rect r, mui_art_path want, const uint32_t* src, int32_t sw,
@@ -99,6 +117,6 @@ mui_art_path mui_canvas_draw_art(mui_canvas* m, sel_gui_rect r, mui_art_path wan
             return MUI_ART_DATATYPE;
         }
     }
-    sel_gui_genart_draw(&m->c, r, format != NULL ? format : "album", sel_gui_str_hash(title != NULL ? title : ""));
-    return MUI_ART_GENART;
+    mui_platform_cover(&m->c, r, format, title);
+    return MUI_ART_COVER;
 }

@@ -1,3 +1,4 @@
 # Integer-only drawing code for the desktop UI (plan 2.5, 2.11): no float or double under src/gui.
 add_library(selecta_gui STATIC draw/gui_draw.c text/gui_text.c image/gui_image.c image/gui_genart.c image/gui_quant.c image/gui_bitart.c draw/gui_dither.c widgets/gui_widget.c widgets/gui_icon_pack.c anim/gui_anim.c input/gui_input.c)
+target_link_libraries(selecta_gui PUBLIC selecta_platform) # I691c2: the platform family table
 target_include_directories(selecta_gui PUBLIC "${PROJECT_SOURCE_DIR}/include")

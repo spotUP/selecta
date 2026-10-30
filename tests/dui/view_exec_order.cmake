@@ -22,7 +22,7 @@ set(setup "")
 foreach(p 1.mod 2.mod 3.xm 4.it 5.sid)
   list(APPEND setup --exec "QUEUE_ADD \"fixture/${p}\"")
 endforeach()
-list(APPEND setup --exec "VIEW_SOURCE queue" --exec "VIEW_WINDOW 8" --exec "VIEW_STYLE coverflow" --exec "COMPOSERS_SHOW")
+list(APPEND setup --exec "VIEW_STYLE regular" --exec "VIEW_SOURCE queue" --exec "VIEW_WINDOW 8" --exec "VIEW_STYLE coverflow" --exec "COMPOSERS_SHOW")
 
 function(centre_of tag script)
   file(REMOVE_RECURSE "${WORK}/cfg")

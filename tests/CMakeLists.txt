@@ -195,6 +195,9 @@ endif()
 
 add_subdirectory(m0)
 add_subdirectory(nuade_ab)
+if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(fixtures/plugin_dyn)
+endif()
 add_subdirectory(thread)
 
 # T5 negative path: a second tree with a broken descriptor must fail lint.
@@ -455,9 +458,9 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-descriptor COMMAND mui_test "${CMAKE_CURRENT_BINARY_DIR}")
   add_test(NAME mui-stat-tag COMMAND mui_test "${CMAKE_CURRENT_BINARY_DIR}")
   set_tests_properties(mui-descriptor mui-stat-tag PROPERTIES TIMEOUT 30 LABELS mui)
-  add_executable(mui_contract_test ui/mui_contract_test.c "${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c")
-  target_include_directories(mui_contract_test PRIVATE "${PROJECT_SOURCE_DIR}/plugins/ui/mui/map")
-  target_compile_definitions(mui_contract_test PRIVATE SEL_PLUGIN_ENTRY=sel_plugin_entry_mui_test SEL_PLUGIN_KIND_BUILD=5 "MUI_UI_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c\"")
+  add_executable(mui_contract_test ui/mui_contract_test.c "${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c" "${PROJECT_SOURCE_DIR}/plugins/scripting/arexx/arexx_core.c")
+  target_include_directories(mui_contract_test PRIVATE "${PROJECT_SOURCE_DIR}/plugins/ui/mui/map" "${PROJECT_SOURCE_DIR}/plugins/scripting/arexx")
+  target_compile_definitions(mui_contract_test PRIVATE SEL_PLUGIN_ENTRY=sel_plugin_entry_mui_test SEL_PLUGIN_KIND_BUILD=5 "MUI_UI_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c\"" "MUI_DIR=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui\"")
   target_link_libraries(mui_contract_test PRIVATE selecta_registry mui_map)
   add_test(NAME mui-wait-contract COMMAND mui_contract_test wait)
   add_test(NAME mui-registry COMMAND mui_contract_test registry)
@@ -474,15 +477,20 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-style-menu COMMAND mui_contract_test style-menu)
   add_test(NAME mui-theme COMMAND mui_contract_test theme)
   add_test(NAME mui-pens COMMAND mui_contract_test pens)
+  add_test(NAME mui-theme-file COMMAND mui_contract_test theme-file "${CMAKE_CURRENT_BINARY_DIR}")
+  add_test(NAME mui-theme-live COMMAND mui_contract_test theme-live "${CMAKE_CURRENT_BINARY_DIR}")
+  add_test(NAME mui-theme-live-repaint COMMAND mui_contract_test theme-live-repaint "${CMAKE_CURRENT_BINARY_DIR}")
   add_test(NAME mui-icon-buttons COMMAND mui_contract_test icon-buttons)
   add_test(NAME mui-aabtn-tokens COMMAND mui_contract_test aabtn-tokens)
   add_test(NAME mui-aacheck COMMAND mui_contract_test aacheck)
   add_test(NAME mui-newplaylist COMMAND mui_contract_test newplaylist)
   add_test(NAME mui-icon-rows COMMAND mui_contract_test icon-rows)
   add_test(NAME mui-screen-plan COMMAND mui_contract_test screen-plan)
+  add_test(NAME mui-screen-rtg-flag COMMAND mui_contract_test screen-rtg-flag)
   add_test(NAME mui-window-borderless COMMAND mui_contract_test window-borderless)
   add_test(NAME mui-menu-dispatch COMMAND mui_contract_test menu-dispatch)
   add_test(NAME mui-weights COMMAND mui_contract_test weights)
+  add_test(NAME mui-topbar COMMAND mui_contract_test topbar)
   add_test(NAME mui-relayout COMMAND mui_contract_test relayout)
   add_test(NAME mui-transport-map COMMAND mui_contract_test transport)
   add_test(NAME mui-seek-row COMMAND mui_contract_test seek-row)
@@ -494,6 +502,7 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-columns COMMAND mui_contract_test columns)
   add_test(NAME mui-style-mask COMMAND mui_contract_test style-mask)
   add_test(NAME mui-list-pending COMMAND mui_contract_test list-pending)
+  add_test(NAME mui-list-dbl-row COMMAND mui_contract_test list-dbl-row)
   add_test(NAME mui-list-backends COMMAND mui_contract_test list-backends)
   add_test(NAME mui-home COMMAND mui_contract_test home)
   # MUI-P8 parity rows: one executable, one ctest per item (plan section P8).
@@ -518,7 +527,7 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-help COMMAND mui_contract_test help)
   add_executable(mui_canvas_test ui/mui_canvas_test.c)
   target_link_libraries(mui_canvas_test PRIVATE mui_map selecta_gui)
-  target_compile_definitions(mui_canvas_test PRIVATE MUI_GRID_GOLDEN="a6d8f6ba455c0370")
+  target_compile_definitions(mui_canvas_test PRIVATE MUI_GRID_GOLDEN="5efcd0fa0f18a188")
   add_test(NAME mui-canvas-geom COMMAND mui_canvas_test geom)
   add_test(NAME mui-grid COMMAND mui_canvas_test grid)
   add_test(NAME mui-art-path COMMAND mui_canvas_test art-path)
@@ -526,12 +535,12 @@ if(NOT SEL_AMIGA)
   add_executable(mui_aa_test ui/mui_aa_test.c)
   target_include_directories(mui_aa_test PRIVATE "${PROJECT_SOURCE_DIR}/plugins/ui/mui/map")
   target_link_libraries(mui_aa_test PRIVATE mui_map selecta_uimodel)
-  target_compile_definitions(mui_aa_test PRIVATE "AABTN_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aabtn_class.c\"" "AADRAW_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aa_draw.c\"" "UI_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c\"" "AATEXT_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aatext_class.c\"" "AAPANEL_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aapanel_class.c\"" "AASLIDER_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aaslider_class.c\"" "AACYCLE_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aacycle_class.c\"" "AAFIELD_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aafield_class.c\"" "MUI_CMAKE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/CMakeLists.txt\"")
+  target_compile_definitions(mui_aa_test PRIVATE "AABTN_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aabtn_class.c\"" "AADRAW_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aa_draw.c\"" "UI_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_ui.c\"" "AATEXT_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aatext_class.c\"" "AAPANEL_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aapanel_class.c\"" "AATABS_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aatabs_class.c\"" "AABALANCE_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aabalance_class.c\"" "AASLIDER_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aaslider_class.c\"" "AACYCLE_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aacycle_class.c\"" "AALIST_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aalist_class.c\"" "LISTVIEW_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_listview_class.c\"" "AASCROLLER_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aascroller_class.c\"" "AAFIELD_SOURCE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/mui_aafield_class.c\"" "MUI_CMAKE=\"${PROJECT_SOURCE_DIR}/plugins/ui/mui/CMakeLists.txt\"")
   foreach(t round ramp state tokens check)
     add_test(NAME mui-aa-${t} COMMAND mui_aa_test ${t})
     set_tests_properties(mui-aa-${t} PROPERTIES TIMEOUT 30 LABELS mui)
   endforeach()
-  foreach(t text-fit text-maxw text-tone text-source panel-source slider-geom slider-source btn-align transport-icons cycle-step cycle-source field-plan field-source)
+  foreach(t icon-ratio text-fit text-maxw text-tone text-source panel-source tabs tabs-source balance-geom balance-source slider-geom slider-source btn-align transport-icons cycle-step cycle-source field-plan field-source field-draw-flags scroller-geom list-rows list-cols list-source i667n i667n-root)
     add_test(NAME mui-${t} COMMAND mui_aa_test ${t})
     set_tests_properties(mui-${t} PROPERTIES TIMEOUT 30 LABELS mui)
   endforeach()
@@ -540,7 +549,8 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-viz-surface COMMAND mui_viz_test surface)
   add_test(NAME mui-budget COMMAND mui_viz_test budget)
   add_test(NAME mui-copper-tint COMMAND mui_viz_test copper)
-  set_tests_properties(mui-viz-surface mui-budget mui-copper-tint PROPERTIES TIMEOUT 30 LABELS mui)
+  add_test(NAME mui-viz-set COMMAND mui_viz_test set)
+  set_tests_properties(mui-viz-surface mui-budget mui-copper-tint mui-viz-set PROPERTIES TIMEOUT 30 LABELS mui)
   add_executable(gui_dither_test ui/gui_dither_test.c)
   target_link_libraries(gui_dither_test PRIVATE selecta_gui)
   target_compile_definitions(gui_dither_test PRIVATE GRADIENT_GOLDEN=0x6b25f44c8d897ac0ull COVER_GOLDEN=0x5feee6196fcf1ca2ull)
@@ -561,7 +571,9 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-states COMMAND mui_contract_test states)
   add_test(NAME mui-tracker COMMAND mui_contract_test tracker)
   add_test(NAME mui-toolrows COMMAND mui_contract_test toolrows)
-  set_tests_properties(mui-wait-contract mui-registry mui-open-failure mui-open-nomui mui-menu mui-style-menu mui-menu-dispatch mui-weights mui-relayout mui-theme mui-pens mui-icon-buttons mui-aabtn-tokens mui-aacheck mui-newplaylist mui-transport-map mui-dirty-map mui-keys mui-list-regular mui-list-tree mui-list-drill mui-list-pending mui-columns mui-style-mask mui-list-backends mui-home mui-doors mui-library mui-toast mui-help mui-search mui-queue mui-playlists mui-song-menu mui-like-rating mui-nowplaying mui-songinfo mui-settings mui-dialogs mui-cmdline mui-states mui-tracker mui-toolrows mui-drop mui-screen-plan mui-window-borderless PROPERTIES TIMEOUT 30 LABELS mui)
+  add_test(NAME mui-live-guard COMMAND mui_contract_test live-guard)
+  add_test(NAME mui-cycle-initial COMMAND mui_contract_test cycle-initial)
+  set_tests_properties(mui-wait-contract mui-registry mui-open-failure mui-open-nomui mui-menu mui-style-menu mui-menu-dispatch mui-weights mui-topbar mui-relayout mui-theme mui-theme-file mui-theme-live mui-theme-live-repaint mui-pens mui-icon-buttons mui-aabtn-tokens mui-aacheck mui-newplaylist mui-transport-map mui-dirty-map mui-keys mui-list-regular mui-list-tree mui-list-drill mui-list-pending mui-list-dbl-row mui-columns mui-style-mask mui-list-backends mui-home mui-doors mui-library mui-toast mui-help mui-search mui-queue mui-playlists mui-song-menu mui-like-rating mui-nowplaying mui-songinfo mui-settings mui-dialogs mui-cmdline mui-states mui-tracker mui-toolrows mui-drop mui-screen-plan mui-window-borderless PROPERTIES TIMEOUT 30 LABELS mui)
   set(_mui_has_ui 0)
   if(TARGET sel_plugin_mui_ui)
     set(_mui_has_ui 1)
@@ -589,6 +601,21 @@ if(NOT SEL_AMIGA)
       "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/m1/browse_play.screen"
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/browse_play"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/browse_play.cmake")
+
+  # I684c: the shell loop paces on the UI wait unless the open output's pump blocks. Reachability through the real shell
+  # (paula-shadow: 20 ms every turn, ahi-shadow: 0) and the rule itself, handover included.
+  foreach(pace paula-shadow:20 ahi-shadow:0)
+    string(REPLACE ":" ";" pace_parts "${pace}")
+    list(GET pace_parts 0 pace_out)
+    list(GET pace_parts 1 pace_ms)
+    add_test(NAME selecta-shell-pace-${pace_out}
+      COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DMOD=${SEL_MKMOD}"
+        "-DKEYS=${CMAKE_CURRENT_SOURCE_DIR}/m1/shell_pace.keys" "-DOUTPUT=${pace_out}"
+        "-DWANT_MIN=${pace_ms}" "-DWANT_MAX=${pace_ms}" -P "${CMAKE_CURRENT_SOURCE_DIR}/m1/shell_pace.cmake")
+  endforeach()
+  add_executable(shell_pace_unit m1/shell_pace_unit.c)
+  target_include_directories(shell_pace_unit PRIVATE ${PROJECT_SOURCE_DIR}/apps/common)
+  add_test(NAME shell-pace-unit COMMAND shell_pace_unit)
 
   # I563: an unregistered UI is a fatal start-up exit; it must go through the shared report (sel_startup_error),
   # whose count --stats prints, and carry the message. The Amiga requester half is the same call on the Amiga.
@@ -1293,6 +1320,15 @@ if(NOT SEL_AMIGA)
       -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
   set_tests_properties(rig-m4-mui-list PROPERTIES LABELS rig RESOURCE_LOCK rig
     SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
+  # I684 / MUI-P5-3 / MUI-P5-5: the Now Playing visualizer renders into the MUI window (vizframes > 0 in the ui_p4 exit stats).
+  # Run as UPTERM_RIG=<n> ctest -R rig-m4-mui-viz; needs SEL_MUI_SONG.
+  add_test(NAME rig-m4-mui-viz
+    COMMAND "${CMAKE_COMMAND}" -DTAG=M4MUIVIZ "-DRIG_DIR=${SEL_RIG_DIR}"
+      "-DSELECTA=${SEL_MUI_BUILD}/apps/selecta/selecta" "-DSONG=${SEL_MUI_SONG}"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/m2/rig-m4-mui-viz"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/amiga/run_rig.cmake")
+  set_tests_properties(rig-m4-mui-viz PROPERTIES LABELS rig RESOURCE_LOCK rig
+    SKIP_REGULAR_EXPRESSION "SKIPPED rig not running")
   # MUI-P5-6: an icon dragged from a Workbench drawer window onto the MUI window (AppWindow drop) and Edit > Copy Song Title
   # (clipboard.device). Needs a rig started with --no-dopus (plain Workbench) and SEL_MUI_SONG.
   add_test(NAME rig-m4-mui-drop
@@ -1674,6 +1710,11 @@ if(NOT SEL_AMIGA)
             ${CMAKE_CURRENT_SOURCE_DIR}/m3/local.manifest ${SEL_TESTMOD} ${SEL_TESTMOD})
   set_tests_properties(source-local PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_local_ok")
 
+  # I688: partial downloads (.part, .crdownload, .download, .partial) are not scanned.
+  add_test(NAME source-local-partial
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/source_local_partial.sh $<TARGET_FILE:selecta-cli> ${SEL_TESTMOD})
+  set_tests_properties(source-local-partial PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "source_local_partial_ok")
+
   # I276: library scan without --db fills the app's library.db in the config directory.
   add_test(NAME library-scan-default-db
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/scan_default_db.sh $<TARGET_FILE:selecta-cli> ${SEL_TESTMOD})
@@ -1777,6 +1818,16 @@ if(NOT SEL_AMIGA)
       -P "${SEL_NET_DIR}/cache_fetch.cmake")
   set_tests_properties(cache-fetch PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     DEPENDS mirrors-ranking TIMEOUT 60)
+endif()
+
+# I695b open-fail-toast: a failed play from search raises the toast with the engine's reason (404 from the fixture mirror).
+if(NOT SEL_AMIGA AND SELECTA_UI_DESKTOP)
+  add_test(NAME open-fail-toast
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${PROJECT_BINARY_DIR}/tests/open-fail-toast"
+      "-DNETWORK=${SEL_NET_WORK}" -P "${CMAKE_CURRENT_SOURCE_DIR}/dui/open_fail_toast.cmake")
+  file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/open-fail-toast.tmp")
+  set_tests_properties(open-fail-toast PROPERTIES LABELS open-fail-toast FIXTURES_REQUIRED net-fixture
+    RESOURCE_LOCK net-fixture TIMEOUT 120 ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/open-fail-toast.tmp")
 endif()
 
 # T75a cache-fetch-shell (row I166a): LIBRARY_FETCH through the selecta shell on the same library handle.
@@ -1938,6 +1989,15 @@ if(NOT SEL_AMIGA)
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "sndh_net_ok")
 endif()
 
+# Row I695d: a sndh tune with no loose file on the site comes out of the year zip (Range requests + inflate).
+if(NOT SEL_AMIGA)
+  add_test(NAME source-sndh-zip-member
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      "-DM3=${CMAKE_CURRENT_SOURCE_DIR}/m3" -P "${SEL_NET_DIR}/sndh_zip_member.cmake")
+  set_tests_properties(source-sndh-zip-member PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "sndh_zip_member_ok")
+endif()
+
 # Row I415: LIBRARY_SYNC zxart <url> over the zxart.ee fixture.
 if(NOT SEL_AMIGA)
   add_test(NAME source-zxart-net
@@ -2001,6 +2061,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_scan_composers_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-scan-composers COMMAND library_scan_composers_test)
   set_tests_properties(library-scan-composers PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_scan_composers_ok")
+  # I687: an album without an embedded cover still gets its albums row (trigger + migration backfill) and reaches the Albums list.
+  add_executable(library_album_rows_test library_album_rows_test.c)
+  target_include_directories(library_album_rows_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_album_rows_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-album-rows COMMAND library_album_rows_test)
+  set_tests_properties(library-album-rows PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_album_rows_ok")
   # I336: the library job thread runs the folder scan task off the caller's thread.
   add_executable(library_task_test library_task_test.c)
   target_include_directories(library_task_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
@@ -2243,12 +2309,20 @@ if(NOT SEL_AMIGA)
   target_link_libraries(songs_bulk_test PRIVATE selecta_library selecta_registry selecta_core)
   add_test(NAME engine-songs-bulk COMMAND songs_bulk_test "$<TARGET_FILE:gen_testmod>")
   set_tests_properties(engine-songs-bulk PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "songs_bulk_ok")
+  # I691c2: the library must not link the GUI (layering).
+  add_test(NAME library-no-gui-link COMMAND ${CMAKE_COMMAND} -DLIBRARY_CMAKE=${PROJECT_SOURCE_DIR}/src/library/CMakeLists.txt -P ${CMAKE_CURRENT_SOURCE_DIR}/library/no_gui_link.cmake)
+  set_tests_properties(library-no-gui-link PROPERTIES PASS_REGULAR_EXPRESSION "no_gui_link_ok")
   # I678a: the Your Library item list through the engine entry (library_items_calls sentinel): kinds, counts, mask, paging.
   add_executable(library_items_test engine/library_items_test.c)
   target_include_directories(library_items_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
   target_link_libraries(library_items_test PRIVATE selecta_library selecta_registry selecta_core)
   add_test(NAME engine-library-items COMMAND library_items_test)
   set_tests_properties(engine-library-items PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "library_items_ok")
+  add_executable(majority_format_test engine/majority_format_test.c)
+  target_include_directories(majority_format_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db ${PROJECT_SOURCE_DIR}/src/engine)
+  target_link_libraries(majority_format_test PRIVATE selecta_library selecta_registry selecta_core)
+  add_test(NAME engine-majority-format COMMAND majority_format_test)
+  set_tests_properties(engine-majority-format PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "majority_format_ok")
   add_executable(library_sync_dispatch_test engine/library_sync_dispatch_test.c)
   target_include_directories(library_sync_dispatch_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library)
   target_link_libraries(library_sync_dispatch_test PRIVATE selecta_library selecta_core)

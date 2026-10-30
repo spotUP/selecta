@@ -1,6 +1,14 @@
 /* mui-canvas-geom (MUI-P5-1), mui-grid (MUI-P5-2), mui-art-path (MUI-P5-4), plan 2026-10-25-amiga-mui.md.
- * Usage: mui_canvas_test geom|grid|art-path */
+ * Usage: mui_canvas_test geom|grid|art-path
+ *
+ * Reachability exemption (I691e, design thoughts/shared/research/2026-10-29-i691-platform-covers.md section 5): no live MUI
+ * site calls mui_canvas_draw_grid or mui_canvas_draw_art today (mui_canvas_set_grid has no caller), so these cases drive the
+ * platform cover through the canvas functions directly, not through the MUI top-level entry point. The MUI rig check happens
+ * with the MUI row that wires a grid. */
 #include <selecta/gui/gui_draw.h>
+#include <selecta/gui/gui_genart.h>
+#include <selecta/platform.h>
+#include <selecta/uimodel/tokens.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -89,6 +97,7 @@ static int test_grid(void) {
 static int test_art_path(void) {
     mui_canvas m;
     uint32_t src[16 * 16];
+    uint32_t tokens[SEL_GUI_TOKEN_COUNT];
     uint32_t i;
     memset(&m, 0, sizeof m);
     for (i = 0; i < 256; i++) {
@@ -96,14 +105,25 @@ static int test_art_path(void) {
     }
     mui_canvas_fit(&m, (sel_gui_rect){0, 0, 64, 64});
     CHECK(mui_art_path_for(1) == MUI_ART_DATATYPE, "RTG selects the datatype path");
-    CHECK(mui_art_path_for(0) == MUI_ART_GENART, "planar selects generated art");
+    CHECK(mui_art_path_for(0) == MUI_ART_COVER, "planar selects generated art");
     CHECK(mui_canvas_draw_art(&m, (sel_gui_rect){0, 0, 32, 32}, mui_art_path_for(1), src, 16, 16, "mod", "x") == MUI_ART_DATATYPE &&
               sel_gui_pixel(&m.c, 10, 10) == 0x2040C0u,
           "RTG art blits the scaled cover");
-    CHECK(mui_canvas_draw_art(&m, (sel_gui_rect){32, 32, 32, 32}, mui_art_path_for(0), src, 16, 16, "mod", "x") == MUI_ART_GENART &&
-              sel_gui_pixel(&m.c, 42, 42) != 0x2040C0u,
-          "planar ignores the cover and draws generated art");
-    CHECK(mui_canvas_draw_art(&m, (sel_gui_rect){0, 0, 32, 32}, MUI_ART_DATATYPE, NULL, 0, 0, "mod", "x") == MUI_ART_GENART,
+    CHECK(mui_canvas_draw_art(&m, (sel_gui_rect){32, 32, 32, 32}, mui_art_path_for(0), src, 16, 16, "mod", "x") == MUI_ART_COVER &&
+              sel_gui_pixel(&m.c, 42, 52) != 0x2040C0u,
+          "planar ignores the cover and draws the platform cover");
+    /* I691e, I691f: the field is a gradient ending in (bottom row)  the Amiga family tone the title "x" picks, in the default theme's tokens (not the grey placeholder). */
+    for (i = 0; i < SEL_GUI_TOKEN_COUNT; i++) {
+        tokens[i] = sel_gui_token_default((sel_gui_token)i);
+    }
+    CHECK((sel_gui_pixel(&m.c, 34, 63) & 0xFFFFFFu) ==
+              sel_gui_cover_tone(tokens, SEL_PLATFORM_FAMILY_AMIGA, sel_gui_cover_tone_of(sel_gui_str_hash("x"))),
+          "the cover of \"mod\" is the Amiga tone, got %06x", (unsigned)(sel_gui_pixel(&m.c, 34, 63) & 0xFFFFFFu));
+    mui_canvas_draw_art(&m, (sel_gui_rect){0, 0, 32, 32}, MUI_ART_COVER, NULL, 0, 0, "sid", "x");
+    CHECK((sel_gui_pixel(&m.c, 2, 31) & 0xFFFFFFu) ==
+              sel_gui_cover_tone(tokens, SEL_PLATFORM_FAMILY_COMMODORE_64, sel_gui_cover_tone_of(sel_gui_str_hash("x"))),
+          "the cover of \"sid\" is the Commodore 64 tone");
+    CHECK(mui_canvas_draw_art(&m, (sel_gui_rect){0, 0, 32, 32}, MUI_ART_DATATYPE, NULL, 0, 0, "mod", "x") == MUI_ART_COVER,
           "RTG without a decoded cover falls back to generated art");
     mui_canvas_release(&m);
     return failures;

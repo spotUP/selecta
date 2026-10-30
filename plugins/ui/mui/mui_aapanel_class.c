@@ -1,8 +1,8 @@
 /* Selecta_AAPanel (I667e, design section 3.8). MUI 3.8: MUI_CreateCustomClass on Group, same dispatcher pattern as
  * mui_aatext_class.c. The group carries the role colour as its MUIA_Background (children without a background of their own
- * inherit it) and MUIA_FillArea FALSE, so the super class never paints the square face. Draw: the window BACKGROUND over the whole
- * box (the corners), the rounded face through aa_round_fill (mui_aa_panel_rgb, mui_aa_panel_radius, held pens), then the super
- * class draws the children on top. No hardcoded colour, no ObtainBestPen. */
+ * inherit it). The Group super fills every gap between the children with that background, the square face included, so the class
+ * paints after the super: only the corner wedges outside mui_aa_panel_radius, in the window BACKGROUND, through aa_round_corners
+ * (held pen). No hardcoded colour, no ObtainBestPen. */
 #include "mui_aapanel_class.h"
 
 #include <stdint.h>
@@ -22,9 +22,8 @@
 extern struct Library* MUIMasterBase;
 
 typedef struct aapanel_data {
-    int role, radius;
+    int role;
     aa_ctx aa;
-    LONG face_pen, back_pen;
 } aapanel_data;
 
 static struct MUI_CustomClass* g_class;
@@ -37,9 +36,6 @@ static ULONG aapanel_setup(struct IClass* cl, Object* obj, Msg msg) {
         return FALSE;
     }
     aa_setup(obj, &d->aa, NULL, 0);
-    d->radius = mui_aa_panel_radius(d->aa.tok, d->aa.font_px);
-    d->face_pen = aa_pen(&d->aa, mui_aa_panel_rgb(d->aa.tok, d->role));
-    d->back_pen = aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_BACKGROUND]);
     return TRUE;
 }
 
@@ -51,13 +47,11 @@ static ULONG aapanel_cleanup(struct IClass* cl, Object* obj, Msg msg) {
 
 static ULONG aapanel_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     aapanel_data* d = INST_DATA(cl, obj);
+    ULONG r = DoSuperMethodA(cl, obj, (Msg)msg);
     if (msg->flags & MADF_DRAWOBJECT) {
-        struct RastPort* rp = _rp(obj);
-        SetAPen(rp, d->back_pen);
-        RectFill(rp, _mleft(obj), _mtop(obj), _mright(obj), _mbottom(obj));
-        aa_round_fill(rp, _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), d->radius, d->face_pen);
+        aa_round_corners(_rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), mui_aa_panel_radius(d->aa.tok, d->aa.font_px), aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_BACKGROUND])); /* I676c: read at draw, a live THEME changes both */
     }
-    return DoSuperMethodA(cl, obj, (Msg)msg);
+    return r;
 }
 
 static ULONG __attribute__((used)) aapanel_dispatch_c(struct IClass* cl, Object* obj, Msg msg);

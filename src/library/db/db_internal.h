@@ -98,6 +98,9 @@ void sel_library_search(sel_library* lib, sel_lib_job* job);
 void sel_library_save_view(sel_library* lib, sel_lib_job* job);
 void sel_library_import(sel_library* lib, sel_lib_job* job);
 int sel_library_register_regexp(sqlite3* db);
+/* I691c: the majority format of the songs behind one list item (SEL_LIB_ITEM_* kind and its key): the representative extension of the
+ * platform family holding most of its songs (sel_platform_family_tally), "" when it has none. Runs on the library thread. */
+void sel_db_majority_format(sqlite3* db, uint32_t kind, const char* key, char* out, size_t cap);
 
 /* scan.c: SEL_LIB_REQ_SCAN_BATCH. */
 void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_message* reply);
@@ -122,6 +125,15 @@ int sel_json_string(const char* json, const char* name, char* out, size_t cap);
 int sel_library_tag_composer(sqlite3* db, const char* key, const char* author); /* I296: scan's author tag row */
 int sel_library_songdb_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id);
 int sel_library_items_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id); /* I678a, items.c */
+/* I678j: the Home feed's item shelves (items.c): SEL_HOME_QUICK .. SEL_HOME_PLAYLISTS, `limit` rows each; returns the rows or a sqlite error code. */
+/* The item kind of a Home line that is a plain song (a stream or Modland play with no songs row), not a collection item. */
+enum { SEL_HOME_ITEM_SONG = 255 };
+enum { SEL_HOME_QUICK = 0, SEL_HOME_RECENT, SEL_HOME_ALBUMS, SEL_HOME_COMPOSERS, SEL_HOME_PLAYLISTS, SEL_HOME_SHELVES };
+/* The Home chips (design doc section 11): All, Music (neither tracker nor chip formats), Modules (tracker formats), Chiptunes. */
+/* Writes the SQL condition "song of the chip's format family" over `col` (a songs.format column expression) into out; "1" for All. */
+void sel_home_chip_sql(uint32_t chip, const char* col, char* out, size_t cap);
+typedef void (*sel_home_item_fn)(void* ctx, uint32_t kind, const char* key, const char* name, const char* sub);
+int sel_home_items(sqlite3* db, uint32_t shelf, uint32_t chip, uint32_t limit, sel_home_item_fn fn, void* ctx);
 int sel_library_collection_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id); /* I678f, items.c */
 int sel_library_songdb_resolve(sel_library* lib, const char* ukey, const char* path, const char* song_key,
                                sel_genre_stats* stats);

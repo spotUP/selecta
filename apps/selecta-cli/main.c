@@ -43,7 +43,7 @@ static int usage(FILE* to) {
           "  script <file> [--integration <id>] [--catalogue <tsv> [--db <path>]]  feed command lines to the engine, print events\n"
           "  send <verb> [args]         send one command line to a running selecta (exit 0 OK, 1 ERROR, 2 none running)\n"
           "  abi [voices]               print sel_host (or sel_voices) size and field offsets\n"
-          "  plugins [--lint]           list plugins; --lint counts bad descriptor tags\n"
+          "  plugins [--lint]           list plugins with origin (static or module path); --lint counts bad descriptor tags\n"
           "  plugins --machine <name> --stats  list what a fake machine runs (a500, a1200, a1200-fpu, a060)\n"
           "  plugins --formats <id>     list the formats (player ids) a plugin reports\n"
           "  play-null --rate <hz> --frames <n>  pump the null output, print counters\n"

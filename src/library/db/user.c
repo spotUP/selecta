@@ -3,11 +3,30 @@
  * One request, SEL_LIB_REQ_USER, runs on the worker like every other library request. */
 #include "db_internal.h"
 #include "folders.h"
+#include <selecta/gui/gui_genart.h>
+#include <selecta/library_item.h>
 #include "../source.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* The format of a play (I678j): the songs row's, else the lower-case extension of the key ("" when it has none or it is not 1..5 letters or digits). */
+static void play_format(const char* key, char* out, size_t cap) {
+    const char* dot = strrchr(key, '.');
+    size_t n, i;
+    out[0] = '\0';
+    if (dot == NULL || strchr(dot, '/') != NULL) return;
+    n = strlen(dot + 1);
+    if (n < 1 || n > 5 || n >= cap) return;
+    for (i = 0; i < n; i++) {
+        char c = dot[1 + i];
+        if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))) { out[0] = '\0'; return; }
+        out[i] = c;
+    }
+    out[n] = '\0';
+}
 
 static int user_exec(sqlite3* db, const char* sql, const sel_user_op* op, int shape) {
     sqlite3_stmt* st = NULL;
@@ -18,6 +37,11 @@ static int user_exec(sqlite3* db, const char* sql, const sel_user_op* op, int sh
         sqlite3_bind_int64(st, 2, op->at);
         sqlite3_bind_int(st, 3, op->skipped != 0);
         if (op->duration_ms > 0) sqlite3_bind_int(st, 4, op->duration_ms);
+        {
+            char fmt[8];
+            play_format(op->key, fmt, sizeof fmt);
+            if (fmt[0] != '\0') sqlite3_bind_text(st, 5, fmt, -1, SQLITE_TRANSIENT);
+        }
     } else if (shape == 2) { /* liked, kept */
         sqlite3_bind_int64(st, 2, op->at);
     } else if (shape == 3) { /* sticker set */
@@ -292,6 +316,10 @@ static int home_list(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t
     int rc = sqlite3_prepare_v2(db, sql, -1, &st, NULL);
     if (rc != SQLITE_OK) return rc;
     sqlite3_bind_int64(st, 1, op->at > 0 ? op->at : 10);
+    sqlite3_stmt* ids = NULL;
+    if (sqlite3_prepare_v2(db, "SELECT id FROM albums WHERE name = ?1 AND COALESCE(artist, '') = COALESCE(?2, '') ORDER BY id LIMIT 1", -1, &ids, NULL) != SQLITE_OK) {
+        ids = NULL; /* an old schema without albums: the tile keeps no id */
+    }
     while (sqlite3_step(st) == SQLITE_ROW) {
         const char* name = (const char*)sqlite3_column_text(st, 0);
         const char* artist = (const char*)sqlite3_column_text(st, 1);
@@ -311,19 +339,79 @@ static int home_list(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t
             }
             with_artist = alen > 0u;
         }
-        size_t at = (size_t)snprintf(line, sizeof line, "%s%s%s%.*s\t", album ? "@" : kind == 2 ? "&" : "", key != NULL ? key : "", with_artist ? "\x1f" : "",
-                                     (int)alen, with_artist ? artist : "");
+        char idtag[16] = "", fmt[16] = "", fmttag[24] = "", idkey[24] = "";
+        if (album && ids != NULL) { /* I678h2: the album tile carries albums.id after 0x1e so the UI opens the page by id, never by name */
+            sqlite3_reset(ids);
+            sqlite3_bind_text(ids, 1, key, -1, SQLITE_STATIC);
+            sqlite3_bind_text(ids, 2, artist, -1, SQLITE_STATIC);
+            if (sqlite3_step(ids) == SQLITE_ROW) {
+                snprintf(idtag, sizeof idtag, "\x1e%lld", (long long)sqlite3_column_int64(ids, 0));
+                snprintf(idkey, sizeof idkey, "%lld", (long long)sqlite3_column_int64(ids, 0));
+            }
+        }
+        /* I691c: an album or composer tile ends its key with 0x1d and the majority format of its songs (platform cover). */
+        if (album && idkey[0] != '\0') sel_db_majority_format(db, SEL_LIB_ITEM_ALBUM, idkey, fmt, sizeof fmt);
+        if (kind == 2) sel_db_majority_format(db, SEL_LIB_ITEM_COMPOSER, key != NULL ? key : "", fmt, sizeof fmt);
+        if (fmt[0] != '\0') snprintf(fmttag, sizeof fmttag, "\x1d%s", fmt);
+        size_t at = (size_t)snprintf(line, sizeof line, "%s%s%s%.*s%s%s\t", album ? "@" : kind == 2 ? "&" : "", key != NULL ? key : "", with_artist ? "\x1f" : "",
+                                     (int)alen, with_artist ? artist : "", idtag, fmttag);
         if (at >= sizeof line) at = sizeof line - 1u;
         /* I485: the entry text is the name alone; the artist travels in the key after 0x1f and the tile draws it on its own line. */
         snprintf(line + at, sizeof line - at, "%s", name);
         home_put(op, used, rows, "S", line);
     }
+    sqlite3_finalize(ids);
     sqlite3_finalize(st);
     return SQLITE_OK;
 }
 
+
+/* The chip of the home_text call in progress (the worker runs one request at a time). */
+static uint32_t home_chip_now;
+
+typedef struct home_item_sink {
+    const sel_user_op* op;
+    uint32_t* used;
+    int64_t* rows;
+} home_item_sink;
+
+/* One `I` line: `I #<kind>:<key>[\x1f<artist>]\t<name>`; the view parses it into a row with item_kind set. */
+static void home_item_line(void* ctx, uint32_t kind, const char* key, const char* name, const char* sub) {
+    home_item_sink* k = ctx;
+    char line[SEL_SONG_KEY_MAX + 2 + 256];
+    if (kind == SEL_HOME_ITEM_SONG) { /* a single-song card: the song line the song shelves use, key then tab then name */
+        snprintf(line, sizeof line, "%.*s\t%.200s", SEL_SONG_KEY_MAX - 1, key, name);
+        home_put(k->op, k->used, k->rows, "S", line);
+        return;
+    }
+    snprintf(line, sizeof line, "#%u:%.*s%s%.*s\t%.200s", (unsigned)kind, 90, key, sub[0] != '\0' ? "\x1f" : "", 90, sub, name);
+    home_put(k->op, k->used, k->rows, "S", line);
+}
+
+/* A heading and the item lines of one shelf; no rows: no heading (an empty shelf is not shown). Item shelves are counted by the
+ * caller through the `I` lines the view parser sees. */
+static int home_items(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t* rows, uint32_t shelf, const char* tag, const char* heading,
+                      uint32_t limit) {
+    home_item_sink k;
+    uint32_t mark = *used;
+    int64_t rmark = *rows;
+    int n;
+    k.op = op;
+    k.used = used;
+    k.rows = rows;
+    home_put(op, used, rows, tag, heading);
+    n = sel_home_items(db, shelf, home_chip_now, limit, home_item_line, &k);
+    if (n < 0) return n;
+    if (n == 0) { /* drop the heading just written */
+        *used = mark;
+        *rows = rmark;
+        op->out[mark] = '\0';
+    }
+    return SQLITE_OK;
+}
+
 #define HOME_FILL_FROM \
-    " FROM songs WHERE key NOT IN (SELECT key FROM history) AND added < CAST(strftime('%s', 'now') AS INTEGER) - 604800"
+    " FROM songs WHERE key NOT IN (SELECT key FROM history) AND added < CAST(strftime('%%s', 'now') AS INTEGER) - 604800"
 
 /* I191: the home view text. */
 static int home_text(sqlite3* db, const sel_user_op* op, int64_t* rows) {
@@ -333,51 +421,57 @@ static int home_text(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     long fresh = 0;
     int fill;
     char tagged[80];
+    char fam_s[600], fam_n[600], q[2600];
+
+    home_chip_now = op->chip < SEL_HOME_CHIPS ? op->chip : SEL_HOME_CHIP_ALL;
+    sel_home_chip_sql(home_chip_now, "s.format", fam_s, sizeof fam_s); /* songs aliased s */
+    sel_home_chip_sql(home_chip_now, "format", fam_n, sizeof fam_n);   /* songs unaliased */
 
     op->out[0] = '\0';
     *rows = 0;
-    /* I478: Quick picks leads Home: the most recent distinct albums from the play history, at most 8 (two rows of four).
-     * Playlists carry no play history, so they never appear here. No played album: no heading, no grid. */
-    rc = sqlite3_prepare_v2(db, "SELECT EXISTS(SELECT 1 FROM history h JOIN songs s ON s.key = h.key WHERE s.album IS NOT NULL AND s.album <> '')", -1, &st, NULL);
+    /* I678j: Quick access leads Home (design doc section 11): up to 8 items, Liked Songs pinned first, then the newest by the Recents
+     * order across all kinds (sel_home_items, the sidebar's source). */
+    rc = home_items(db, op, &used, rows, SEL_HOME_QUICK, "Q", "Quick access", 8);
     if (rc != SQLITE_OK) return rc;
-    fill = sqlite3_step(st) == SQLITE_ROW && sqlite3_column_int(st, 0) != 0;
-    sqlite3_finalize(st);
-    st = NULL;
-    if (fill) {
-        home_put(op, &used, rows, "Q", "Quick picks");
-        rc = home_list(db, op, &used, rows,
-                       "SELECT s.album, s.artist, s.album, 1 FROM history h JOIN songs s ON s.key = h.key"
-                       " WHERE s.album IS NOT NULL AND s.album <> ''"
-                       " GROUP BY s.album, COALESCE(s.artist, '') ORDER BY MAX(h.played_at) DESC, s.album LIMIT MIN(?1, 8)");
+    /* The shelves follow design doc section 11: Recently Played (items), Jump Back In, Your Albums, Your Composers, Your Playlists,
+     * New This Week, More Like <artist>. The chip filters every shelf but Quick access. */
+    {
+        uint32_t lim = op->at > 0 ? (uint32_t)op->at : 10u;
+        rc = home_items(db, op, &used, rows, SEL_HOME_RECENT, "H", "Recently Played", lim);
         if (rc != SQLITE_OK) return rc;
     }
-    /* I555: a history row of a library song (key "local:<path>", sel_song_key_of) that left the library is not listed; keys
-     * of any other source (streams, Modland, HippoPlayer, ASMA, radio) have no songs row and still show. */
-    home_put(op, &used, rows, "H", "Recently played");
-    rc = home_list(db, op, &used, rows,
-                   "SELECT COALESCE(s.name, h.key), s.artist, h.key, 0 FROM (SELECT key, MAX(played_at) AS last FROM history GROUP BY key) h"
-                   " LEFT JOIN songs s ON s.key = h.key WHERE s.key IS NOT NULL OR substr(h.key, 1, 6) <> 'local:'"
-                   " ORDER BY h.last DESC, h.key LIMIT ?1");
-    if (rc != SQLITE_OK) return rc;
     /* I311: Jump back in lists every song with a skipped play and no finished play: as its album when the song has
      * one (one entry per album), as the song itself otherwise. */
-    home_put(op, &used, rows, "H", "Jump back in");
-    rc = home_list(db, op, &used, rows,
+    home_put(op, &used, rows, "H", "Jump Back In");
+    snprintf(q, sizeof q,
                    "SELECT CASE WHEN a THEN album ELSE COALESCE(name, key) END, artist, CASE WHEN a THEN album ELSE key END, a,"
                    " MAX(last) AS recent FROM ("
                    "SELECT h.key AS key, s.name AS name, s.artist AS artist, s.album AS album,"
                    " (s.album IS NOT NULL AND s.album <> '') AS a, MAX(h.played_at) AS last"
                    " FROM history h LEFT JOIN songs s ON s.key = h.key WHERE h.skipped = 1"
-                   " AND (s.key IS NOT NULL OR substr(h.key, 1, 6) <> 'local:')"
+                   " AND (s.key IS NOT NULL OR substr(h.key, 1, 6) <> 'local:') AND (%s)"
                    " AND NOT EXISTS (SELECT 1 FROM history f WHERE f.key = h.key AND f.skipped = 0) GROUP BY h.key)"
-                   " GROUP BY CASE WHEN a THEN album || char(31) || COALESCE(artist, '') ELSE key END ORDER BY recent DESC, 3, 2 LIMIT ?1");
+                   " GROUP BY CASE WHEN a THEN album || char(31) || COALESCE(artist, '') ELSE key END ORDER BY recent DESC, 3, 2 LIMIT ?1",
+             fam_s);
+    rc = home_list(db, op, &used, rows, q);
     if (rc != SQLITE_OK) return rc;
+    {
+        uint32_t lim = op->at > 0 ? (uint32_t)op->at : 10u;
+        rc = home_items(db, op, &used, rows, SEL_HOME_ALBUMS, "H", "Your Albums", lim);
+        if (rc != SQLITE_OK) return rc;
+        rc = home_items(db, op, &used, rows, SEL_HOME_COMPOSERS, "H", "Your Composers", lim);
+        if (rc != SQLITE_OK) return rc;
+        rc = home_items(db, op, &used, rows, SEL_HOME_PLAYLISTS, "H", "Your Playlists", lim);
+        if (rc != SQLITE_OK) return rc;
+    }
     /* I311: New this week lists the songs added to the library in the last 7 days, newest first, then the Modland
      * count line when one is stored. */
-    home_put(op, &used, rows, "H", "New this week");
-    rc = home_list(db, op, &used, rows,
-                   "SELECT COALESCE(name, key), artist, key, 0 FROM songs WHERE added >= CAST(strftime('%s', 'now') AS INTEGER) - 604800"
-                   " ORDER BY added DESC, key LIMIT ?1");
+    home_put(op, &used, rows, "H", "New This Week");
+    snprintf(q, sizeof q,
+             "SELECT COALESCE(name, key), artist, key, 0 FROM songs WHERE added >= CAST(strftime('%%s', 'now') AS INTEGER) - 604800"
+             " AND (%s) ORDER BY added DESC, key LIMIT ?1",
+             fam_n);
+    rc = home_list(db, op, &used, rows, q);
     if (rc != SQLITE_OK) return rc;
     rc = sqlite3_prepare_v2(db, "SELECT value FROM meta WHERE key = 'modland.new_this_week'", -1, &st, NULL);
     if (rc != SQLITE_OK) return rc;
@@ -390,29 +484,68 @@ static int home_text(sqlite3* db, const sel_user_op* op, int64_t* rows) {
         snprintf(tagged, sizeof tagged, "%ld %ld new songs on Modland", fresh, fresh);
         home_put(op, &used, rows, "C", tagged);
     }
+    /* More Like <artist>: the artist of the most recent play that has a genre, and the songs of other artists in that genre (the similar-songs
+     * rule of similar.c: genre match, case-insensitive, an empty genre never matches). No such song: no heading, so no empty shelf. */
+    {
+        char heading[160], artist[96];
+        snprintf(q, sizeof q,
+                 "SELECT s.artist, lower(s.genre) FROM history h JOIN songs s ON s.key = h.key WHERE COALESCE(s.artist, '') <> ''"
+                 " AND COALESCE(s.genre, '') <> '' ORDER BY h.played_at DESC, h.key LIMIT 1");
+        rc = sqlite3_prepare_v2(db, q, -1, &st, NULL);
+        if (rc != SQLITE_OK) return rc;
+        fill = 0;
+        artist[0] = '\0';
+        if (sqlite3_step(st) == SQLITE_ROW) {
+            snprintf(artist, sizeof artist, "%s", (const char*)sqlite3_column_text(st, 0));
+            snprintf(heading, sizeof heading, "More Like %s", artist);
+            snprintf(q, sizeof q,
+                     "SELECT COALESCE(name, key), artist, key, 0 FROM songs WHERE lower(genre) = ?2 AND artist IS NOT ?3 AND (%s)"
+                     " ORDER BY added DESC, key LIMIT ?1",
+                     fam_n);
+            fill = 1;
+        }
+        if (fill) {
+            sqlite3_stmt* ml = NULL;
+            uint32_t mark = used;
+            int64_t rmark = *rows;
+            home_put(op, &used, rows, "H", heading);
+            rc = sqlite3_prepare_v2(db, q, -1, &ml, NULL);
+            if (rc == SQLITE_OK) {
+                int64_t before = *rows;
+                sqlite3_bind_int64(ml, 1, op->at > 0 ? op->at : 10);
+                sqlite3_bind_text(ml, 2, (const char*)sqlite3_column_text(st, 1), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(ml, 3, artist, -1, SQLITE_TRANSIENT);
+                while (sqlite3_step(ml) == SQLITE_ROW) {
+                    char line[SEL_SONG_KEY_MAX + 2 + 256];
+                    const char* ar = (const char*)sqlite3_column_text(ml, 1);
+                    snprintf(line, sizeof line, "%s%s%s\t%s", (const char*)sqlite3_column_text(ml, 2), ar != NULL && ar[0] != '\0' ? "\x1f" : "",
+                             ar != NULL ? ar : "", (const char*)sqlite3_column_text(ml, 0));
+                    home_put(op, &used, rows, "S", line);
+                }
+                sqlite3_finalize(ml);
+                if (*rows == before) { /* no row: drop the heading */
+                    used = mark;
+                    *rows = rmark;
+                    op->out[mark] = '\0';
+                }
+            }
+        }
+        sqlite3_finalize(st);
+        st = NULL;
+        if (rc != SQLITE_OK) return rc;
+    }
     /* I370 (DUI-P4-2): a small library leaves the shelves above nearly empty, so the library fills Home: the newest
      * songs that were never played and are not on New this week, under their own heading. No such song: no heading, so no empty shelf. */
-    rc = sqlite3_prepare_v2(db, "SELECT EXISTS(SELECT 1" HOME_FILL_FROM ")", -1, &st, NULL);
+    snprintf(q, sizeof q, "SELECT EXISTS(SELECT 1" HOME_FILL_FROM " AND (%s))", fam_n);
+    rc = sqlite3_prepare_v2(db, q, -1, &st, NULL);
     if (rc != SQLITE_OK) return rc;
     fill = sqlite3_step(st) == SQLITE_ROW && sqlite3_column_int(st, 0) != 0;
     sqlite3_finalize(st);
     st = NULL;
     if (fill) {
         home_put(op, &used, rows, "H", "From your library");
-        rc = home_list(db, op, &used, rows,
-                       "SELECT COALESCE(name, key), artist, key, 0" HOME_FILL_FROM
-                       " ORDER BY added DESC, key LIMIT ?1");
-        if (rc != SQLITE_OK) return rc;
-    }
-    /* I479: Your composers lists the composers with the most songs, key = canon, name = display. No composer: no heading, no empty shelf. */
-    rc = sqlite3_prepare_v2(db, "SELECT EXISTS(SELECT 1 FROM song_composers)", -1, &st, NULL);
-    if (rc != SQLITE_OK) return rc;
-    fill = sqlite3_step(st) == SQLITE_ROW && sqlite3_column_int(st, 0) != 0;
-    sqlite3_finalize(st);
-    if (fill) {
-        home_put(op, &used, rows, "H", "Your composers");
-        rc = home_list(db, op, &used, rows,
-                       "SELECT display, NULL, canon, 2 FROM composers ORDER BY songs DESC, canon LIMIT ?1");
+        snprintf(q, sizeof q, "SELECT COALESCE(name, key), artist, key, 0" HOME_FILL_FROM " AND (%s) ORDER BY added DESC, key LIMIT ?1", fam_n);
+        rc = home_list(db, op, &used, rows, q);
         if (rc != SQLITE_OK) return rc;
     }
     return SQLITE_OK;
@@ -484,7 +617,8 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
             sqlite3_finalize(st);
         }
     } else if (op->op == SEL_USER_HISTORY) {
-        rc = user_exec(lib->db, "INSERT INTO history(key, played_at, skipped, duration_ms) VALUES(?1, ?2, ?3, ?4)", op, 1);
+        rc = user_exec(lib->db, "INSERT INTO history(key, played_at, skipped, duration_ms, format)"
+                         " VALUES(?1, ?2, ?3, ?4, COALESCE((SELECT format FROM songs WHERE key = ?1), ?5))", op, 1);
     } else if (op->op == SEL_USER_LIKE) {
         rc = user_exec(lib->db, "INSERT OR REPLACE INTO liked(key, at) VALUES(?1, ?2)", op, 2);
     } else if (op->op == SEL_USER_UNLIKE) {

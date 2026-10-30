@@ -281,6 +281,8 @@ struct sel_engine {
     uint32_t cue_sets, cue_gotos, sticker_ops; /* sentinels of I175 / I176 */
     uint32_t analyse_jobs, analyse_speed, analyse_gated; /* I187 sentinels: jobs stored, x real time, R128 (not fallback) */
     int32_t analyse_lufs_cdb, analyse_gain_cdb, analyse_peak_cdb;
+    uint32_t home_item_shelves;                /* I678j sentinel: item shelves the home text carried */
+    uint32_t home_chip;                        /* Home format chip: SEL_HOME_CHIP_* (I678j) */
     uint32_t home_rows;                        /* entries the home view source shows (I191 sentinel) */
     uint32_t folder_view_rows;                 /* rows the folders view source built (I179 sentinel) */
     uint32_t import_runs, import_added, import_missing; /* PLAYLIST_IMPORT sentinel and last result (I652c) */
@@ -347,6 +349,7 @@ struct sel_engine {
     uint32_t render_calls;
     SEL_THREAD_FIELDS
     uint32_t error_slot;
+    int open_failed; /* 1 right after an OPEN whose song failed: the PLAY that follows it must not start the queue (I695e) */
     int open_status; /* HTTP status of the last failed URL read in read_song, 0 when none (I195g) */
     char error_detail[8][SEL_ERROR_DETAIL_MAX];
     uint32_t log_slot;
@@ -1611,6 +1614,7 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
         uint32_t files = 0;
         sel_companion_rules(e->registry_count, e->registry_get, rules, sizeof rules);
         if (sel_library_fetch(e->lib, path, rules, cached, sizeof cached, &files) <= 0) {
+            e->open_status = sel_library_fetch_status(e->lib); /* I695b: the 404 of a file the mirror does not serve */
             return NULL;
         }
         path = cached;
@@ -2246,7 +2250,7 @@ static void cmd_OPEN(sel_engine* e, const sel_message* m) {
         return;
     }
     e->q_playing = 0;
-    begin_song(e, SEL_BEGIN_OPEN, m->args[0].v.s, SEL_SUBSONG_DEFAULT, 0);
+    e->open_failed = !begin_song(e, SEL_BEGIN_OPEN, m->args[0].v.s, SEL_SUBSONG_DEFAULT, 0);
 }
 
 /* Starts the open song's file again in the idle slot: SUBSONG (n) or
@@ -2498,6 +2502,12 @@ static void queue_finish(sel_engine* e) {
 
 static void cmd_PLAY(sel_engine* e, const sel_message* m) {
     (void)m;
+    if (e->open_failed) {
+        /* The PLAY of an OPEN+PLAY pair (desk_play_path) whose OPEN failed and reported its error: starting the queue
+         * here would open a song nobody asked for, or the same failing one a second time (I695e). */
+        e->open_failed = 0;
+        return;
+    }
     if (e->q_playing == 0 && e->queue.count > 0 && (e->cur == SEL_SLOT_NONE || e->song_over)) {
         uint32_t idx;
         if (!random_on(e) && e->q_hint >= e->queue.count) {
@@ -4497,10 +4507,22 @@ static void home_reload(sel_engine* e) {
         return;
     }
     text[0] = '\0';
-    if (e->lib != NULL && !sel_library_home(e->lib, 10, text, SEL_VIEW_HOME_TEXT_MAX, &lines)) {
+    if (e->lib != NULL && !sel_library_home_chip(e->lib, e->home_chip, 10, text, SEL_VIEW_HOME_TEXT_MAX, &lines)) {
         text[0] = '\0';
     }
     e->home_rows += sel_view_set_home(&e->view, text);
+    /* I678j sentinel: item shelves sent (a run of "S #<kind>:" lines under one heading). */
+    {
+        const char* l = text;
+        int prev_item = 0;
+        while (*l != '\0') {
+            int item = l[0] == 'S' && l[1] == ' ' && l[2] == '#' && l[3] >= '0' && l[3] <= '9' && l[4] == ':';
+            if (item && !prev_item) e->home_item_shelves++;
+            prev_item = item;
+            while (*l != '\0' && *l != '\n') l++;
+            if (*l == '\n') l++;
+        }
+    }
 }
 
 /* DUI-P4-6: the search source. The last library search grouped by type (Songs, Albums, Artists) as heading rows
@@ -5137,6 +5159,7 @@ static void coll_shelf_row(void* ctx, const char* const* f) { /* id, name, artis
     snprintf(r->artist, sizeof r->artist, "%s", f[2]);
     r->year = (uint32_t)strtoul(f[3], NULL, 10);
     r->songs = (uint32_t)strtoul(f[4], NULL, 10);
+    snprintf(r->format, sizeof r->format, "%s", f[5]);
 }
 
 static void coll_build_page(sel_engine* e, uint32_t kind, const char* key) {
@@ -5171,6 +5194,12 @@ static void coll_build_page(sel_engine* e, uint32_t kind, const char* key) {
         pg->year = head.year;
     } else if (kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) { /* the most used spelling is the display name */
         snprintf(pg->title, sizeof pg->title, "%s", pg->shelf_n[3] > 0u ? pg->shelf[3][0].name : key);
+    } else if (kind == (uint32_t)SEL_LIB_ITEM_LIKED) { /* I678g: the pinned rows and a source page have a fixed or keyed title */
+        snprintf(pg->title, sizeof pg->title, "Liked Songs");
+    } else if (kind == (uint32_t)SEL_LIB_ITEM_RECENT) {
+        snprintf(pg->title, sizeof pg->title, "Recently Played");
+    } else if (kind == (uint32_t)SEL_LIB_ITEM_LOCAL) {
+        snprintf(pg->title, sizeof pg->title, "Local Files");
     } else {
         snprintf(pg->title, sizeof pg->title, "%s", key);
     }
@@ -5186,22 +5215,25 @@ static void coll_build_page(sel_engine* e, uint32_t kind, const char* key) {
 }
 
 /* I678e: a collection page was opened. The engine records which one and feeds Recents exactly as LIBRARY_TOUCH does, so every UI shares the
- * order and the page open is one command. I678f: for an album, artist or composer it also builds the page (songs, header, shelves) and
+ * order and the page open is one command. I678f/I678g: for every kind but a playlist it also builds the page (songs, header, shelves) and
  * publishes it as state.collection; the UI only reads that. */
 static void cmd_COLLECTION_OPEN(sel_engine* e, const sel_message* m) {
     int rc;
     uint32_t kind = (uint32_t)m->args[0].v.u;
     if (!folder_ready(e, "COLLECTION_OPEN")) return;
-    rc = sel_library_touch(e->lib, kind, m->args[1].v.s, (int64_t)time(NULL));
-    if (rc != SEL_FOLDER_OK) {
-        folder_report(e, rc, "COLLECTION_OPEN");
-        return;
+    int restore = m->argc > 2 && m->args[2].v.u != 0u; /* I678h2: Back / Forward rebuild the page they return to; that is not an open, Recents stays as it is */
+    if (!restore && kind != (uint32_t)SEL_LIB_ITEM_LIKED && kind != (uint32_t)SEL_LIB_ITEM_RECENT && kind != (uint32_t)SEL_LIB_ITEM_LOCAL) { /* the pinned rows stay out of Recents */
+        rc = sel_library_touch(e->lib, kind, m->args[1].v.s, (int64_t)time(NULL));
+        if (rc != SEL_FOLDER_OK) {
+            folder_report(e, rc, "COLLECTION_OPEN");
+            return;
+        }
+        e->lib_touch_calls++;
     }
-    e->lib_touch_calls++;
-    e->collection_opens++;
+    if (!restore) e->collection_opens++;
     e->collection_kind = kind;
     snprintf(e->collection_key, sizeof e->collection_key, "%s", m->args[1].v.s);
-    if (kind >= (uint32_t)SEL_LIB_ITEM_ALBUM && kind <= (uint32_t)SEL_LIB_ITEM_COMPOSER) coll_build_page(e, kind, e->collection_key);
+    if (kind < (uint32_t)SEL_LIB_ITEM_KINDS && kind != (uint32_t)SEL_LIB_ITEM_PLAYLIST) coll_build_page(e, kind, e->collection_key);
 }
 
 static void cmd_PLAYLIST_DEL(sel_engine* e, const sel_message* m) {
@@ -5557,6 +5589,15 @@ static void cmd_VIEW_SOURCE(sel_engine* e, const sel_message* m) {
     sel_view_src s;
     uint32_t i;
 
+    if (strncmp(what, "home:", 5) == 0) { /* "home:<chip>" selects the Home format chip: all, music, modules, chiptunes */
+        static const char* const chip_name[SEL_HOME_CHIPS] = {"all", "music", "modules", "chiptunes"};
+        uint32_t c;
+        e->home_chip = SEL_HOME_CHIP_ALL;
+        for (c = 0; c < SEL_HOME_CHIPS; c++) {
+            if (strcmp(what + 5, chip_name[c]) == 0) e->home_chip = c;
+        }
+        what = "home";
+    }
     if (strcmp(what, "playlist") == 0) {
         what = "queue"; /* the playlist being played is the queue; playlist folders arrive with I19x */
     }
@@ -5675,6 +5716,7 @@ uint32_t sel_engine_library_items(sel_engine* e, uint32_t kind_mask, uint32_t of
         o->opened = rows[i].opened;
         o->art_id = rows[i].art_id;
         o->pinned = rows[i].pinned;
+        snprintf(o->format, sizeof o->format, "%s", rows[i].format);
         if (rows[i].kind == SEL_LIB_ITEM_SOURCE) {
             source_name_ctx c;
             c.id = rows[i].key;
@@ -5703,6 +5745,10 @@ int sel_engine_song_title(sel_engine* e, const char* ref, char* out, size_t cap)
 
 int sel_engine_song_group(sel_engine* e, const char* ref, char* out, size_t cap) {
     return e->lib != NULL && sel_library_song_group(e->lib, ref, out, cap);
+}
+
+int sel_engine_song_meta(sel_engine* e, const char* ref, char* out, size_t cap) {
+    return e->lib != NULL && sel_library_song_meta(e->lib, ref, out, cap);
 }
 
 int sel_engine_view_row_path(sel_engine* e, uint32_t row, char* out, size_t cap) {
@@ -6367,6 +6413,9 @@ static void cmd_not_implemented(sel_engine* e, const sel_message* m) {
 }
 
 static void dispatch(sel_engine* e, const sel_message* m) {
+    if (m->id != SEL_CMD_PLAY) {
+        e->open_failed = 0; /* only the command right after a failed OPEN is the half of its pair */
+    }
     switch ((sel_cmd_id)m->id) {
 #define SEL_CASE(id)                                                                          \
     case SEL_CMD_##id:                                                                        \
@@ -7049,6 +7098,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     }
     out->radio_min_ahead = e->radio_min_ahead;
     out->home_rows = e->home_rows;
+    out->home_item_shelves = e->home_item_shelves;
     out->folder_view_rows = e->folder_view_rows;
     out->panel_loads = e->panel_loads;
     out->stats_queries = e->stats_queries;

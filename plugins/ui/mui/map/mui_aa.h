@@ -26,7 +26,9 @@ uint32_t mui_aa_pressed_rgb(uint32_t face);
  * Colours come from the token array (txt_theme.token), never from literals here. */
 enum { MUI_AA_NORMAL, MUI_AA_HOVER, MUI_AA_PRESSED, MUI_AA_DISABLED, MUI_AA_SELECTED };
 /* TOGGLE (I667b-2, AACheck): checkbox box; off = SURFACE face (desktop checkbox), on (state SELECTED) = ACCENT face, ink ACCENT_TEXT. */
-enum { MUI_AA_ROLE_NORMAL, MUI_AA_ROLE_ACCENT, MUI_AA_ROLE_GHOST, MUI_AA_ROLE_TOGGLE };
+/* TAB (I667j, AATabs): a tab caption on the PANEL, TEXT_MUTED idle, TEXT while its tab is active (state SELECTED); the face never changes
+ * but for the hover token. */
+enum { MUI_AA_ROLE_NORMAL, MUI_AA_ROLE_ACCENT, MUI_AA_ROLE_GHOST, MUI_AA_ROLE_TOGGLE, MUI_AA_ROLE_TAB };
 /* Screen tiers by rows (section 3): S 640x256 and 320x256, M up to 600 rows, L up to 800, XL above. */
 enum { MUI_AA_TIER_S, MUI_AA_TIER_M, MUI_AA_TIER_L, MUI_AA_TIER_XL };
 /* Coverage ramp kinds (section 4): AGA four held token pens, RTG eight blended pens, TC none (ttengine blends). */
@@ -155,11 +157,94 @@ void mui_aa_field_metrics(int font_px, mui_aa_field_t* out);
 /* Paint plan, painted in order, box-relative: op 0 the outline colour over the whole box (rounded), op 1 the face inset by the outline.
  * Returns the op count (MUI_AA_FIELD_OPS). */
 #define MUI_AA_FIELD_OPS 2
+/* Field face and outline tokens (I667h2): the face is one step lighter than the SURFACE panels the fields sit on, as the
+ * desktop search field is lighter than its bar; the outline is TRACK so the edge reads on AGA too. */
+#define MUI_AA_FIELD_FACE SEL_GUI_TOKEN_SURFACE_RAISED
+#define MUI_AA_FIELD_LINE SEL_GUI_TOKEN_TRACK
 int mui_aa_field_plan(const uint32_t* token, const mui_aa_field_t* m, int focus, mui_aa_check_op_t* out);
+/* I667n: background of the inner String gadget in a focus state: the face of the plan (op 1). MUI 3.8 String fills its box with the
+ * gadget's StringExtend background pen (Pens[1], ActivePens[1] when active), not with MUIA_Background, so the class sets that pen. */
+uint32_t mui_aa_field_string_bg(const uint32_t* token, int focus);
+/* I667n: the gadget MUIA_Gadget_Gadget hands back carries a StringInfo with the pens: a classic GTYP_STRGADGET, or the
+ * GTYP_CUSTOMGADGET (strgclass) MUI 3.8 String really makes (rig 2: GadgetType 0005). */
+int mui_aa_field_string_gadget(unsigned gadget_type);
 /* Field height for a content (text) height ch: the AAButton height, taller when the text needs it. */
 int mui_aa_field_height(const mui_aa_field_t* m, int ch);
+/* Top edge of the text line (height ch) inside a field of height h: the room above and below the line is equal, so the group
+ * centres the inner string with one flexible VSpace(0) on each side (I667h4). */
+int mui_aa_field_text_top(const mui_aa_field_t* m, int h, int ch);
 /* Calls of the field maths above: the sentinel that the class (and not a copy) runs it. */
 uint32_t mui_aa_field_calls(void);
+
+/* I667i (design 3.5, AAScroller): the flat thumb-only scroll bar. Width 10 (tier S 6), thumb radius 4 (S 2), thumb minimum 20 high, track
+ * SURFACE (the list face), thumb TRACK, SURFACE_PRESSED while hovered or dragged. No arrow buttons. Tested on the host (mui-scroller-geom). */
+typedef struct mui_aa_scroller_t {
+    int width, radius, min_thumb;
+} mui_aa_scroller_t;
+void mui_aa_scroller_metrics(int font_px, mui_aa_scroller_t* out);
+void mui_aa_scroller_rgb(const uint32_t* token, int state, uint32_t* track, uint32_t* thumb);
+/* Thumb top and height inside a track of height h for the first visible entry; both 0 and a 0 return when everything fits. The thumb
+ * is at least min_thumb (at most h); first is clamped to [0, entries - visible]. */
+int mui_aa_scroller_geom(const mui_aa_scroller_t* m, int h, long first, long visible, long entries, int* thumb_y, int* thumb_h);
+/* First entry for a pointer at track y while the thumb is held grab pixels below its top; clamped to the ends. */
+long mui_aa_scroller_first_at(const mui_aa_scroller_t* m, int h, int grab, int y, long visible, long entries);
+uint32_t mui_aa_scroller_calls(void);
+
+/* I667i (design 3.6, AAList; popup look 3.3): row model maths of the virtual list. Row height font + 8 (tier S 10), left pad 10, a vertical pad
+ * of 4 (S 2) inside the face above the first and below the last row, column gap 8. Rows: SURFACE, hover SURFACE_HOVER, selected
+ * SURFACE_PRESSED, playing title ACCENT. Tested on the host (mui-list-rows). */
+typedef struct mui_aa_list_t {
+    int row_h, pad_x, pad_y, gap, scroller_w, radius;
+} mui_aa_list_t;
+enum { MUI_AA_LIST_KEY_UP, MUI_AA_LIST_KEY_DOWN, MUI_AA_LIST_KEY_PAGEUP, MUI_AA_LIST_KEY_PAGEDOWN, MUI_AA_LIST_KEY_HOME, MUI_AA_LIST_KEY_END };
+void mui_aa_list_metrics(int font_px, mui_aa_list_t* out);
+/* Whole rows that fit a list face of height h (after the vertical pads). */
+int mui_aa_list_visible(const mui_aa_list_t* m, int h);
+long mui_aa_list_clamp_first(long first, long visible, long count);
+/* Active row clamped into [0, count - 1]; -1 for an empty list. */
+long mui_aa_list_clamp_active(long active, long count);
+/* Active row after a key (MUI_AA_LIST_KEY_*), clamped (no wrap); an empty list gives -1, no active row starts at the first or last. */
+long mui_aa_list_move(long active, long count, long visible, int key);
+/* First row after scrolling just enough to show the active row. */
+long mui_aa_list_scroll_to(long first, long visible, long count, long active);
+/* Row under a pointer at list-relative y (-1 on the pads or past the last row). */
+long mui_aa_list_row_at(const mui_aa_list_t* m, int y, long first, long count);
+/* Row face (MUI_AA_NORMAL, _HOVER, _SELECTED) and text colour (ACCENT when playing). Any out pointer may be NULL. */
+void mui_aa_list_row_rgb(const uint32_t* token, int row_state, int playing, uint32_t* face, uint32_t* text);
+uint32_t mui_aa_list_calls(void);
+/* Left edge (list-relative x) of the text of column col (0-based) when column k is w[k] wide: pad_x for column 0, then each column adds its
+ * width, the gap on both sides of the divider and the 1 px divider. w may be NULL for column 0. Johan 2026-10-29: text sat 5 px from the frame
+ * and from the dividers; the target is pad_x at the edge and gap (8) on each side of a divider, header row included. */
+int mui_aa_list_col_x(const mui_aa_list_t* m, int col, const int* w);
+/* MUIA_List_Format DELTA of a column followed by a divider (BAR): MUI centres the BAR in the delta, so gap on each side needs 2 * gap. */
+int mui_aa_list_delta(const mui_aa_list_t* m);
+/* I667i2: column widths of a multi-column list face of width total. Column k with weight[k] > 0 shares what is left after the fixed columns
+ * (fixed[k] px each, weight 0) and the dividers (2 * gap + 1 each) and both pads, by weight; out[k] is its ink width (never negative). */
+void mui_aa_list_col_widths(const mui_aa_list_t* m, int total, int n, const int* weight, const int* fixed, int* out);
+/* Height of the title row (the column header): row_h when the list has one, else 0. */
+int mui_aa_list_title_h(const mui_aa_list_t* m, int has_title);
+/* Secondary column text (TEXT_MUTED, also the header text) and the header divider / column divider colour (DIVIDER). Any out pointer may be NULL. */
+void mui_aa_list_header_rgb(const uint32_t* token, uint32_t* muted, uint32_t* divider);
+
+/* I667j (design 3.9, AATabs): a row of tab captions with a 2 px ACCENT underline under the active one. Tested on the host (mui-tabs). */
+#define MUI_AA_TABS_LINE_PX 2
+/* Index after a click on tab i (out of range gives -1: no change) and after a key (Left 0x4F -1, Right 0x4E +1, clamped, no wrap; n <= 0 gives 0). */
+int mui_aa_tabs_click(int i, int n);
+int mui_aa_tabs_key(int code, int active, int n);
+/* Underline rectangle for the active tab whose box is (x, y, w, h): full tab width, MUI_AA_TABS_LINE_PX high (tier S, font_px 0: 1), at the bottom edge. */
+void mui_aa_tabs_line(int font_px, int x, int y, int w, int h, int* lx, int* ly, int* lw, int* lh);
+/* Underline ACCENT; caption colour idle TEXT_MUTED, active TEXT. Any out pointer may be NULL. */
+void mui_aa_tabs_rgb(const uint32_t* token, uint32_t* line, uint32_t* idle_text, uint32_t* active_text);
+uint32_t mui_aa_tabs_calls(void);
+
+/* I667l (design 3.10, AABalance): the pane divider is the panel gap itself. Box width = SPACING token (tier S, font_px 0: half), one pixel
+ * DIVIDER line centred in it, inset by the same gap top and bottom. Box colour BACKGROUND. Tested on the host (mui-balance-geom). */
+int mui_aa_balance_width(const uint32_t* token, int font_px);
+/* Line rectangle inside a box of box_w x box_h (origin 0,0); inset is the gap of that tier; a box shorter than two insets gets inset 0 (clamp). */
+void mui_aa_balance_line(const uint32_t* token, int font_px, int box_w, int box_h, int* lx, int* ly, int* lw, int* lh);
+/* Box colour BACKGROUND, line colour DIVIDER. Any out pointer may be NULL. */
+void mui_aa_balance_rgb(const uint32_t* token, uint32_t* box, uint32_t* line);
+uint32_t mui_aa_balance_calls(void);
 
 #ifdef __cplusplus
 }

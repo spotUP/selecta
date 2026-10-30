@@ -1,3 +1,7 @@
+# Platform families (I691c2): the extension -> family table and the majority tally, no dependencies. Linked by
+# selecta_library and selecta_gui so neither depends on the other.
+add_library(selecta_platform STATIC platform/platform.c)
+target_include_directories(selecta_platform PUBLIC ${PROJECT_SOURCE_DIR}/include)
 add_library(selecta_core STATIC
   core/version.c
   core/tag.c

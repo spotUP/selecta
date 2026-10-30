@@ -56,12 +56,17 @@ static void mui_libs_close(void) {
 }
 #include "mui_aabtn_class.h"
 #include "mui_aapanel_class.h"
+#include "mui_aatabs_class.h"
+#include "mui_aabalance_class.h"
 #include "mui_aaslider_class.h"
 #include "mui_aacycle_class.h"
+#include "mui_aalist_class.h"
 #include "mui_aafield_class.h"
 #include "mui_aatext_class.h"
+#include "mui_aa_draw.h"
 #include "map/mui_aa.h"
 #include "mui_canvas_class.h"
+#include "mui_vizarea_class.h"
 #include "mui_listview_class.h"
 #define SEL_MAKE_ID(a, b, c, d) (((ULONG)(a) << 24) | ((ULONG)(b) << 16) | ((ULONG)(c) << 8) | (ULONG)(d))
 
@@ -90,10 +95,10 @@ typedef struct mui_cells {
 #define MUI_CRUMB_MAX 6u
 enum { P4_SEARCH, P4_CMD, P4_LIKE, P4_RATING, P4_SUBSONG, P4_QREMOVE, P4_QCLEAR, P4_QUP, P4_QDOWN, P4_POPEN, P4_PRENAME, P4_PDELETE,
        P4_CLEARLIB, P4_PNEW, P4_HELP, P4_HOME, P4_TOAST, P4_CRUMB, P4_STATE, P4_SETTINGS, P4_SONGMENU, P4_NP, P4_SONGINFO, P4_PREF, P4_TRACKER,
-       P4_COUNT };
+       P4_VIZPICK, P4_VIZFRAMES, P4_COUNT };
 static const char* const p4_name[P4_COUNT] = {"search", "cmd", "like", "rating", "subsong", "qremove", "qclear", "qup", "qdown",
                                               "popen", "prename", "pdelete", "clearlib", "pnew", "help", "home", "toast", "crumb", "state", "settings",
-                                              "songmenu", "np", "songinfo", "pref", "tracker"};
+                                              "songmenu", "np", "songinfo", "pref", "tracker", "vizpick", "vizframes"};
 #define MUI_PREF_MAX 12u   /* MUI-P4-10: most Settings rows (sel_uim_pref_row_count) */
 #define MUI_INFO_MAX 24u   /* MUI-P4-9: most song info rows */
 #define MUI_TRK_ROWS 16u   /* MUI-P4-16: pattern rows shown */
@@ -108,7 +113,7 @@ typedef struct mui_state {
     uint32_t row_plays;      /* list rows activated by double click (MUI-P3-1): stat row_plays */
     uint32_t drops;          /* AppWindow arguments sent to the engine (MUI-P5-6): stat drops */
     sel_tag stats[8];
-    char p4_stat[400];       /* MUI-P4: the sentinel printed as ui_p4: how often each P4 gadget sent its line */
+    char p4_stat[480];       /* MUI-P4: the sentinel printed as ui_p4: how often each P4 gadget sent its line */
     uint32_t p4[P4_COUNT];
     sel_uim uim;             /* the frame model the controls are driven from (MUI-P2-6) */
     char list_stat[480];     /* the list sentinel printed as ui_list: back end, style, columns, rows (native List only) */
@@ -118,7 +123,7 @@ typedef struct mui_state {
     struct timerequest* treq;       /* NULL when timer.device failed: the wait then falls back to Delay(1) */
     Object* win;
     Object* root;                   /* window contents: its MUIA_Width drives the breakpoint (MUI-P2-2) */
-    Object* slot[MUI_SLOT_COUNT];   /* the five layout regions, created once, shown or hidden */
+    Object* slot[MUI_SLOT_COUNT];   /* the five layout regions and the top bar, created once, shown or hidden */
     Object* balance[2];             /* sidebar|main and main|detail */
     mui_layout_map_t lay;
     Object* canvas;                 /* MUI-P5-1 Selecta_Canvas, NULL when MUI refused the class */
@@ -134,8 +139,9 @@ typedef struct mui_state {
     mui_list_entry entries[MUI_ROWS_MAX];
     const char* entry_ptr[MUI_ROWS_MAX + 1];
     mui_cells cell[MUI_ROWS_MAX];   /* MUI-P3-4: the List entries; the display hook reads the cells from them */
-    char col_fmt_th[96];            /* I660: col_fmt with the text pen preparse per column (what MUI gets) */
-    char col_fmt[48];               /* MUIA_List_Format of the shown column set (mui_columns_format) */
+    mui_aalist_cols main_cols;       /* I667i2: weights and fixed-width samples of the shown columns */
+    char lyric_line[256];            /* I667i2: the lyrics line handed to the lyrics AAList */
+    char col_fmt[128];               /* the shown column set as MUI format text (mui_columns_format), the rig read-back */
     uint32_t col_bp;                /* the breakpoint col_fmt was built for */
     Object* str_search;             /* MUI-P4-3 */
     Object* str_cmd;                /* MUI-P4-13 */
@@ -154,6 +160,10 @@ typedef struct mui_state {
     Object* np_title;               /* MUI-P4-8 Now Playing group in the detail slot */
     Object* np_artist;
     Object* np_album;
+    Object* viz_area;               /* I684: the Now Playing visualizer (Selecta_VizArea) and its plugin picker */
+    Object* cyc_viz;
+    mui_vizset vizset;
+    mui_find_plugin_fn find_plugin;
     Object* np_lyrics;
     Object* np_up[3];
     char np_buf[3][112];
@@ -185,8 +195,23 @@ typedef struct mui_state {
 } mui_state;
 
 static mui_state g_state;
-static sel_tag g_hooks[9];
+static sel_tag g_hooks[10];
 static sel_tag g_desc[5];
+
+#define MUI_THEME_ENV_PATH "ENV:Selecta/theme"
+
+/* I676b/I676c: SEL_UI_THEME hook, called by the ARexx command THEME. 0: the file is valid, remembered for the next open and applied
+ * to the open UI now (mui_theme_live_now: palette and AA classes repaint in place, no window close or open). Non-zero: refused,
+ * nothing changed. */
+static char g_theme_arg[256]; /* the launch --theme path, kept so a live THEME resolves the same way the open did */
+static int mui_theme_live_now(void);
+static int mui_theme_hook(void* state, const char* path) {
+    (void)state;
+    if (mui_theme_request(MUI_THEME_ENV_PATH, path) != 0) {
+        return -1;
+    }
+    return mui_theme_live_now();
+}
 
 static void put_tag(sel_tag* t, uint32_t tag, uintptr_t value) {
     t->tag = tag;
@@ -348,6 +373,7 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_VOLUME 0x2101L
 #define CTL_LIST_DBL 0x2110L
 #define CTL_LIST_SEL 0x2111L
+#define CTL_TOPBAR_BROWSE 0x2800L /* I615d: the top bar Browse button */
 #define CTL_DOOR_BASE 0x2200L /* MUI-P4-0: one button per sidebar door */
 #define MUI_DOOR_MAX 8u
 #define CTL_CRUMB_BASE 0x2400L /* MUI-P4-2: one button per breadcrumb piece */
@@ -365,7 +391,7 @@ static struct {
     mui_theme_look look;
     int on;
 } g_th[MUI_TH_COUNT];
-static uint32_t g_tokens[SEL_GUI_TOKEN_COUNT]; /* I667e: the theme tokens, for the panel faces */
+static const uint32_t* g_tokens; /* I667e: the theme tokens for the panel faces; = mui_theme_tokens(), set in mui_theme_init */
 static uint32_t g_text_rgb; /* I665: the TEXT token, caption colour of the flat button */
 
 #define TH_TAGS(role, frame_off) \
@@ -383,6 +409,7 @@ static uint32_t g_text_rgb; /* I665: the TEXT token, caption colour of the flat 
 static struct Screen* g_scr;
 static mui_pens_plan g_plan;
 static LONG g_pen_held[MUI_PEN_TOTAL];
+static int g_screen_rtg; /* I684b: the Workbench mode is a foreign (RTG) one; the own screen keeps that kind, planar stays planar */
 
 static void mui_screen_close(void) {
     int i;
@@ -415,20 +442,22 @@ static void mui_screen_open(const uint32_t* tokens) {
     for (i = 0; i < MUI_PEN_TOTAL; i++) {
         g_pen_held[i] = -1;
     }
-    if (!mui_pens_plan_for(tokens, &g_plan)) {
-        return;
-    }
     wb = LockPubScreen(NULL);
     if (wb != NULL) {
         mode = GetVPModeID(&wb->ViewPort);
         wb_w = (ULONG)wb->Width;
         wb_h = (ULONG)wb->Height;
         memset(&di, 0, sizeof di);
-        if (mode != (ULONG)INVALID_ID && GetDisplayInfoData(NULL, (UBYTE*)&di, sizeof di, DTAG_DISP, mode) > 0 &&
-            (di.PropertyFlags & DIPF_IS_FOREIGN) != 0) {
-            foreign = 1; /* RTG mode */
-        }
+        /* I667n: uaegfx (Picasso96) modes leave DIPF_IS_FOREIGN clear, so the planar 16-pen plan ran on RTG; the bitmap decides too. */
+        foreign = mui_screen_is_rtg(mode != (ULONG)INVALID_ID && GetDisplayInfoData(NULL, (UBYTE*)&di, sizeof di, DTAG_DISP, mode) > 0 &&
+                                        (di.PropertyFlags & DIPF_IS_FOREIGN) != 0,
+                                    (GetBitMapAttr(wb->RastPort.BitMap, BMA_FLAGS) & BMF_STANDARD) != 0,
+                                    (uint32_t)GetBitMapAttr(wb->RastPort.BitMap, BMA_DEPTH));
         UnlockPubScreen(NULL, wb);
+    }
+    g_screen_rtg = foreign;
+    if (!mui_pens_plan_for(tokens, &g_plan)) {
+        return;
     }
     /* I671: MUI 3.8 refuses a window taller than its screen, and the layout is taller than a 640x256 AGA Workbench. The plan
      * (map/mui_screen.c) keeps the Workbench mode when the layout fits and takes its interlaced variant (height doubled) when
@@ -476,43 +505,13 @@ static void mui_close_on_request(Object* win) {
     DoMethod(win, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, MUIV_Notify_Self, 3, MUIM_Set, MUIA_Window_Open, FALSE);
 }
 
-/* I660: PreParse pen escape of the List columns (MUIC_List, outside the AAText inventory); every text line is an AAText (I667d). */
-static char g_pre[4];
-static char g_list_fmt1[8]; /* one-column list format carrying the pen preparse ("P=" + pen), empty when off */
-
-/* col_fmt (comma separated column specs) with "P=<pen escape> " in front of each column, so list text uses the look pen. */
-static void mui_col_format_themed(const char* in, char* out, size_t cap) {
-    size_t used = 0;
-    if (g_pre[0] == '\0') {
-        snprintf(out, cap, "%s", in);
-        return;
-    }
-    out[0] = '\0';
-    for (;;) {
-        const char* comma = strchr(in, ',');
-        size_t len = comma != NULL ? (size_t)(comma - in) : strlen(in);
-        int put = snprintf(out + used, cap - used, "P=%s %.*s%s", g_pre, (int)len, in, comma != NULL ? "," : "");
-        if (put < 0 || (size_t)put >= cap - used) {
-            out[used] = '\0';
-            return;
-        }
-        used += (size_t)put;
-        if (comma == NULL) {
-            return;
-        }
-        in = comma + 1;
-    }
-}
-
-/* Reads the colours of the screen DrawInfo pens and decides the look once for all roles. */
-static void mui_theme_init(void) {
-    txt_theme th;
+/* Reads the colours of the screen DrawInfo pens and decides the look once for all roles. Runs at window open and again for a live
+ * THEME (I676c): the same decision from the tokens in force, the screen already open. */
+static void mui_theme_decide(const uint32_t* token) {
     uint32_t pen_rgb[8] = {0, 0, 0, 0, 0, 0, 0, 0};
     int pen;
     struct Screen* scr;
     int i;
-    txt_theme_default(&th);
-    mui_screen_open(th.token);
     scr = LockPubScreen(g_scr != NULL ? (CONST_STRPTR)MUI_PUB_NAME : NULL);
     if (scr != NULL) {
         struct DrawInfo* dri = GetScreenDrawInfo(scr);
@@ -530,18 +529,58 @@ static void mui_theme_init(void) {
      * screen pens only; ESC plus a pen digit in PreParse picks one. No readable pen: every role stays off and the user's
      * MUI look is untouched. Otherwise all roles are on together and all text uses that pen. The string gadget (FIELD)
      * cannot take pen escapes, so it keeps the user's MUI look. */
-    pen = mui_theme_pick_pen(pen_rgb, 8, th.token);
-    g_text_rgb = th.token[SEL_GUI_TOKEN_TEXT];
-    memcpy(g_tokens, th.token, sizeof g_tokens);
+    pen = mui_theme_pick_pen(pen_rgb, 8, token);
+    g_text_rgb = token[SEL_GUI_TOKEN_TEXT];
+    mui_theme_tokens_set(token);
+    g_tokens = mui_theme_tokens();
     for (i = 0; i < MUI_TH_COUNT; i++) {
-        g_th[i].on = mui_theme_look_for((mui_theme_role)i, th.token, &g_th[i].look) && pen >= 0 && i != MUI_TH_FIELD;
+        g_th[i].on = mui_theme_look_for((mui_theme_role)i, token, &g_th[i].look) && pen >= 0 && i != MUI_TH_FIELD;
     }
-    /* The look off keeps the alignment escapes the labels always had. */
-    g_pre[0] = g_list_fmt1[0] = 0;
-    if (pen >= 0) {
-        sprintf(g_pre, "\033%d", pen);
-        sprintf(g_list_fmt1, "P=%s", g_pre);
+}
+
+static void mui_theme_init(const sel_ui_open_args* a) {
+    txt_theme th;
+    int i;
+    const char* theme_arg = NULL;
+    /* I676: ENV:Selecta/theme (Amarchy writes it), then --theme <file> over it, before any pen is allocated. */
+    for (i = 0; a != NULL && i + 1 < a->argc; i++) {
+        if (strcmp(a->argv[i], "--theme") == 0) {
+            theme_arg = a->argv[i + 1];
+        }
     }
+    snprintf(g_theme_arg, sizeof g_theme_arg, "%s", theme_arg != NULL ? theme_arg : "");
+    mui_theme_resolve(&th, MUI_THEME_ENV_PATH, theme_arg); /* I676b: a THEME request made earlier wins over --theme */
+    mui_screen_open(th.token);
+    mui_theme_decide(th.token);
+}
+
+/* I676c: the live THEME. Same palette slots, new colours: the held pens of the own screen are re-loaded in place (SetRGB32), so
+ * everything MUI and the stock objects drew with them follows; the AA classes then re-obtain their pens from the stored tokens
+ * and redraw (aa_retheme_all). Pen numbers, the window tree, the lists and their rows are untouched: nothing is closed or opened. */
+static void mui_live_palette(void* ctx, const uint32_t* tokens) {
+    int i;
+    (void)ctx;
+    if (g_scr != NULL && mui_pens_plan_for(tokens, &g_plan)) {
+        for (i = 0; i < MUI_PEN_TOTAL; i++) {
+            if (g_pen_held[i] >= 0) {
+                SetRGB32(&g_scr->ViewPort, (ULONG)g_pen_held[i], g_plan.rgb32[i][0], g_plan.rgb32[i][1], g_plan.rgb32[i][2]);
+            }
+        }
+    }
+    mui_theme_decide(tokens);
+}
+
+static void mui_live_classes(void* ctx) {
+    (void)ctx;
+    aa_retheme_all();
+}
+
+static int mui_theme_live_now(void) {
+    mui_theme_live_ops ops;
+    ops.palette = mui_live_palette;
+    ops.classes = mui_live_classes;
+    ops.ctx = NULL;
+    return mui_theme_apply_live(&ops, MUI_THEME_ENV_PATH, g_theme_arg[0] != '\0' ? g_theme_arg : NULL);
 }
 
 /* I667b (design 2026-10-28-mui-custom-classes.md section 3.1): the one button constructor. Every Selecta button (transport,
@@ -648,11 +687,15 @@ static Object* mui_aapanel(int role, int fixed_px) {
 }
 
 /* MUI-P4-0: the sidebar slot content, one button per door of the shared uimodel table (mui_door_label). */
-static Object* mui_sidebar_group(void) {
+static Object* mui_sidebar_group(int top_bar) {
     Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
     uint32_t i;
     for (i = 0; g != NULL && i < mui_door_count() && i < MUI_DOOR_MAX; i++) {
-        Object* b = mui_make_button_left(mui_door_label(i), sel_uim_door_at(i)->page, CTL_DOOR_BASE + (LONG)i);
+        Object* b;
+        if (!sel_uim_door_shown(i, top_bar)) { /* I615d (design 8.4): the top bar owns Home and Search */
+            continue;
+        }
+        b = mui_make_button_left(mui_door_label(i), sel_uim_door_at(i)->page, CTL_DOOR_BASE + (LONG)i);
         if (b != NULL) {
             DoMethod(g, OM_ADDMEMBER, b);
         }
@@ -722,7 +765,7 @@ static Object* mui_player_group(mui_state* s) {
 }
 
 /* MUI-P3-4: the List's display hook. The entry is the row's cell array; a NULL entry asks for the column titles
- * (MUIA_List_Title TRUE). The columns shown are mui_columns_for(breakpoint): the rest are hidden by width. */
+ * (title row on). The columns shown are mui_columns_for(breakpoint): the rest are hidden by width. */
 static struct Hook g_list_hook;
 static uint32_t g_list_hook_calls;
 static ULONG mui_list_display(struct Hook* hook, char** array, mui_cells* cells) {
@@ -755,22 +798,48 @@ static void mui_list_header(char* out, size_t cap) {
 }
 
 /* MUI-P3-1: the 3.8 Listview with its plain List (the back end mui_list_backend_pick gives without NList). */
-static Object* mui_make_string(LONG id) {
+static Object* mui_make_string(LONG id, int max_w) {
     /* I667h (design 3.4): every string gadget is a Selecta_AAField (mui_aafield_class.c). */
     mui_aafield_spec sp;
     sp.tokens = g_tokens;
     sp.maxlen = 159;
     sp.id = id;
+    sp.max_w = max_w;
     return mui_aafield_new(&sp);
 }
 
-static Object* mui_make_cycle(const char* const* entries, LONG id) {
+/* I684a: the initial entry goes in at OM_NEW. Setting the active entry before the object is in the application tree fires the
+ * MUIV_Notify_Application notification with no global info yet; MUI then reads the application through a NULL pointer and
+ * the Amiga crashed at start whenever the saved visualizer (or a settings cycle) was not the first entry. */
+static Object* mui_make_cycle(const char* const* entries, LONG active, LONG id) {
     /* I667g (design 3.3): every cycle is a Selecta_AACycle (mui_aacycle_class.c). */
     mui_aacycle_spec sp;
     sp.entries = entries;
-    sp.active = 0;
+    sp.active = active;
     sp.id = id;
     return mui_aacycle_new(&sp);
+}
+
+/* I615d (design 8.3): the window-wide top bar of the DEFAULT tier, centred like topbar_compute: Home (round icon button), the search field
+ * and Browse joined to its right end by a 1 px divider. Built only on an RTG screen; on the bitmap tier the slot is an empty hidden group
+ * (the search field then stays in the tool row). One search String and one control id (CTL_P4_BASE + P4_SEARCH) either way. */
+static Object* mui_topbar_group(mui_state* s) {
+    static char div_spec[40];
+    Object* g = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    if (g == NULL || !g_screen_rtg) {
+        return g;
+    }
+    s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH, (int)SEL_UIM_TOPBAR_FIELD_MAX);
+    mui_theme_bg_spec(g_tokens[SEL_GUI_TOKEN_DIVIDER], div_spec, sizeof div_spec);
+    DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    DoMethod(g, OM_ADDMEMBER, mui_make_button_i("Home", "Home", "home", NULL, CTL_DOOR_BASE + 0, 0, 1, MUI_AA_ROLE_NORMAL));
+    if (s->str_search != NULL) {
+        DoMethod(g, OM_ADDMEMBER, s->str_search);
+    }
+    DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, MUIA_FixWidth, 1, MUIA_Background, (ULONG)div_spec, TAG_DONE));
+    DoMethod(g, OM_ADDMEMBER, mui_make_button_i("Browse", "Browse", "library", NULL, CTL_TOPBAR_BROWSE, 0, 1, MUI_AA_ROLE_NORMAL));
+    DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    return g;
 }
 
 /* MUI-P4: the tool rows above the list: search and command line Strings, the like button, the rating and subsong Cycles,
@@ -784,16 +853,20 @@ static Object* mui_tool_group(mui_state* s) {
     if (g == NULL || r1 == NULL || r2 == NULL || r3 == NULL) {
         return NULL;
     }
-    s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH);
-    s->str_cmd = mui_make_string(CTL_P4_BASE + P4_CMD);
-    s->cyc_rating = mui_make_cycle(p4_rating_entries, CTL_P4_BASE + P4_RATING);
-    s->cyc_subsong = mui_make_cycle(p4_subsong_entries, CTL_P4_BASE + P4_SUBSONG);
+    if (!g_screen_rtg) { /* I615d: on the DEFAULT tier the search field lives in the top bar */
+        s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH, 0);
+    }
+    s->str_cmd = mui_make_string(CTL_P4_BASE + P4_CMD, 0);
+    s->cyc_rating = mui_make_cycle(p4_rating_entries, 0, CTL_P4_BASE + P4_RATING);
+    s->cyc_subsong = mui_make_cycle(p4_subsong_entries, 0, CTL_P4_BASE + P4_SUBSONG);
     snprintf(s->status_buf, sizeof s->status_buf, "Ready");
     s->status = mui_aatext(s->status_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1, 0);
-    if (s->str_search == NULL || s->str_cmd == NULL || s->cyc_rating == NULL || s->cyc_subsong == NULL || s->status == NULL) {
+    if ((!g_screen_rtg && s->str_search == NULL) || s->str_cmd == NULL || s->cyc_rating == NULL || s->cyc_subsong == NULL || s->status == NULL) {
         return NULL;
     }
-    DoMethod(r1, OM_ADDMEMBER, s->str_search);
+    if (!g_screen_rtg) {
+        DoMethod(r1, OM_ADDMEMBER, s->str_search);
+    }
     DoMethod(r1, OM_ADDMEMBER, s->str_cmd);
     for (i = 0; i < MUI_TOOL_BTNS; i++) {
         /* New Playlist is the accent button of the row (design 3.1); the others are plain icon buttons. */
@@ -813,26 +886,89 @@ static Object* mui_tool_group(mui_state* s) {
     return g;
 }
 
+/* I667i2: the main list's columns (weights and fixed-width samples) for a breakpoint. */
+static void mui_main_cols_fill(uint32_t bp, mui_aalist_cols* out) {
+    static const char* const sample[MUI_COL_COUNT] = {NULL, NULL, NULL, "00:00:00", "Format"};
+    uint8_t cols[MUI_COL_COUNT];
+    uint32_t k, n;
+    memset(out, 0, sizeof *out);
+    n = mui_columns_for(bp, cols);
+    out->n = (int)mui_columns_weights(bp, out->weight);
+    for (k = 0; k < n && k < MUI_AALIST_COLS; k++) {
+        out->sample[k] = sample[cols[k]];
+    }
+}
+
+/* I667i2: the AAList cell callback of the main list; the display hook stays the one source of the texts (row -1: the column titles). */
+static const char* mui_main_cell(void* ctx, long row, int col) {
+    mui_state* s = (mui_state*)ctx;
+    char* arr[MUI_COL_COUNT];
+    uint32_t k;
+    if (col < 0 || col >= MUI_COL_COUNT || (row >= 0 && s->entry_ptr[row] == NULL)) {
+        return "";
+    }
+    for (k = 0; k < MUI_COL_COUNT; k++) {
+        arr[k] = (char*)"";
+    }
+    (void)mui_list_display(&g_list_hook, arr, row < 0 ? NULL : (mui_cells*)s->entry_ptr[row]);
+    return arr[col];
+}
+
+/* I667i2: one row per string of a NULL-terminated pointer array (info, tracks, help). */
+static const char* mui_ptr_row(void* ctx, long row) {
+    return ((const char* const*)ctx)[row];
+}
+
+/* I667i2: the lyrics row callback: line row of np_lyric_buf. */
+static const char* mui_lyric_row(void* ctx, long row) {
+    mui_state* s = (mui_state*)ctx;
+    mui_text_line(s->np_lyric_buf, (uint32_t)row, s->lyric_line, sizeof s->lyric_line);
+    return s->lyric_line;
+}
+
+/* One AAList (list and flat AAScroller) over a string array; *list_out is the list object. */
+static Object* mui_string_aalist(void* ctx, long count, int rows, Object** list_out) {
+    mui_aalist_spec sp;
+    memset(&sp, 0, sizeof sp);
+    sp.count = count;
+    sp.active = -1;
+    sp.row = mui_ptr_row;
+    sp.ctx = ctx;
+    sp.max_rows = rows;
+    return mui_aalist_new(&sp, list_out);
+}
+
 static Object* mui_main_group(mui_state* s) {
     Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
     s->col_bp = SEL_UIM_BP_COUNT;
     mui_columns_format(s->col_bp, s->col_fmt, sizeof s->col_fmt);
-    mui_col_format_themed(s->col_fmt, s->col_fmt_th, sizeof s->col_fmt_th);
+    mui_main_cols_fill(s->col_bp, &s->main_cols);
     g_list_hook.h_Entry = (__typeof__(g_list_hook.h_Entry))(void (*)(void))HookEntry;
     g_list_hook.h_SubEntry = (__typeof__(g_list_hook.h_SubEntry))(void (*)(void))mui_list_display;
     s->crumb = mui_aatext(" ", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0, 1);
-    s->list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_List_DisplayHook, (ULONG)&g_list_hook,
-                            MUIA_List_Format, (ULONG)s->col_fmt_th, MUIA_List_Title, TRUE, TAG_DONE);
-    if (g == NULL || s->list == NULL || s->crumb == NULL) {
-        return NULL;
+    {
+        mui_aalist_spec sp;
+        Object* lg;
+        memset(&sp, 0, sizeof sp);
+        sp.active = -1;
+        sp.cell = mui_main_cell;
+        sp.ctx = s;
+        sp.cols = &s->main_cols;
+        sp.title = 1;
+        sp.double_pick = 1;
+        sp.max_rows = 12;
+        lg = mui_aalist_new(&sp, &s->list); /* I667i2: AAList with columns, title row and the display hook (design 3.6) */
+        if (g == NULL || lg == NULL || s->list == NULL || s->crumb == NULL) {
+            return NULL;
+        }
+        s->listview = mui_listview_new(lg, (ULONG)CTL_SM_BASE, (ULONG)SEL_UIM_SONG_MENU_ITEMS); /* Selecta_Listview: Amiga-1..5 over the list (I558) */
     }
-    s->listview = mui_listview_new(s->list, (ULONG)CTL_SM_BASE, (ULONG)SEL_UIM_SONG_MENU_ITEMS); /* Selecta_Listview: Amiga-1..5 over the list (I558) */
     if (s->listview == NULL) {
         return NULL;
     }
     set(s->listview, MUIA_ContextMenu, (ULONG)mui_song_context_menu()); /* MUI-P4-6: right mouse button */
-    DoMethod(s->listview, MUIM_Notify, MUIA_Listview_DoubleClick, TRUE, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_DBL);
-    DoMethod(s->list, MUIM_Notify, MUIA_List_Active, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_SEL);
+    DoMethod(s->list, MUIM_Notify, AAL_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_DBL);
+    DoMethod(s->list, MUIM_Notify, AAL_Active, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_LIST_SEL);
     s->list_active_set = -1;
     {
         Object* tools = mui_tool_group(s);
@@ -866,7 +1002,7 @@ static Object* mui_main_group(mui_state* s) {
     /* MUI-P5-1: the canvas object sits beside the list, hidden until the style switch (MUI-P3-5) shows it. */
     {
         static const mui_grid_style grid = {0xFF101010u, 0xFF303030u, 0xFFFFA000u, 96, 8, 8};
-        s->canvas = mui_canvas_new(&grid, 1);
+        s->canvas = mui_canvas_new(&grid, g_screen_rtg);
         if (s->canvas != NULL) {
             DoMethod(g, OM_ADDMEMBER, s->canvas);
         }
@@ -887,8 +1023,9 @@ static Object* mui_np_text(char* buf, size_t cap, const char* init, mui_label la
 static Object* mui_detail_group(mui_state* s) {
     Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
     Object* art = mui_aapanel(MUI_AA_PANEL_RAISED, 64);
-    Object* lyr_list = MUI_NewObject((char*)MUIC_Floattext, MUIA_Floattext_Text, (ULONG)s->np_lyric_buf, TAG_DONE);
     Object* lyr_view;
+    Object* info_g;
+    Object* trk_g;
     uint32_t i;
     if (g == NULL) {
         return NULL;
@@ -897,10 +1034,20 @@ static Object* mui_detail_group(mui_state* s) {
     s->np_title = mui_np_text(s->np_buf[0], sizeof s->np_buf[0], " ", MUI_LBL_TITLE);
     s->np_artist = mui_np_text(s->np_buf[1], sizeof s->np_buf[1], " ", MUI_LBL_ARTIST);
     s->np_album = mui_np_text(s->np_buf[2], sizeof s->np_buf[2], " ", MUI_LBL_ALBUM);
-    s->np_lyrics = lyr_list;
-    lyr_view = lyr_list != NULL ? MUI_NewObject((char*)MUIC_Listview, MUIA_Listview_List, (ULONG)lyr_list, TAG_DONE) : NULL;
-    s->info_list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_List_Format, (ULONG)g_list_fmt1, TAG_DONE);
-    s->trk_list = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_List_Format, (ULONG)g_list_fmt1, TAG_DONE);
+    {
+        mui_aalist_spec sp;
+        memset(&sp, 0, sizeof sp);
+        sp.active = -1;
+        sp.row = mui_lyric_row;
+        sp.ctx = s;
+        sp.max_rows = 3;
+        sp.no_select = 1; /* lyrics: one column, no selection, wheel only (design 3.6) */
+        lyr_view = mui_aalist_new(&sp, &s->np_lyrics);
+    }
+    s->info_ptr[0] = NULL;
+    s->trk_ptr[0] = NULL;
+    info_g = mui_string_aalist(s->info_ptr, 0, 6, &s->info_list);
+    trk_g = mui_string_aalist(s->trk_ptr, 0, 8, &s->trk_list);
     s->trk_group = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
     if (art != NULL) {
         DoMethod(art, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE)); /* a group needs one child */
@@ -909,20 +1056,54 @@ static Object* mui_detail_group(mui_state* s) {
     DoMethod(g, OM_ADDMEMBER, s->np_title);
     DoMethod(g, OM_ADDMEMBER, s->np_artist);
     DoMethod(g, OM_ADDMEMBER, s->np_album);
-    if (lyr_view != NULL) {
-        DoMethod(g, OM_ADDMEMBER, lyr_view);
+    if (s->vizset.n > 0u) {
+        s->cyc_viz = mui_make_cycle(s->vizset.name_, (LONG)s->vizset.sel, CTL_P4_BASE + P4_VIZPICK);
+        s->viz_area = mui_vizarea_new(&s->vizset, g_tokens, g_screen_rtg);
+        if (s->cyc_viz != NULL && s->viz_area != NULL) {
+            DoMethod(g, OM_ADDMEMBER, s->viz_area);
+            DoMethod(g, OM_ADDMEMBER, s->cyc_viz);
+        }
     }
-    DoMethod(g, OM_ADDMEMBER, mui_aatext("Next in Queue", mui_pens_label_tone(MUI_LBL_SECTION), MUI_AA_ALIGN_CENTRE, 0, 0));
-    for (i = 0; i < 3; i++) {
-        s->np_up[i] = mui_np_text(s->np_up_buf[i], sizeof s->np_up_buf[i], " ", MUI_LBL_UPCOMING);
-        DoMethod(g, OM_ADDMEMBER, s->np_up[i]);
-    }
-    if (s->info_list != NULL) {
-        DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Listview, MUIA_Listview_List, (ULONG)s->info_list, TAG_DONE));
-    }
-    if (s->trk_group != NULL && s->trk_list != NULL) {
-        DoMethod(s->trk_group, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Listview, MUIA_Listview_List, (ULONG)s->trk_list, TAG_DONE));
-        DoMethod(g, OM_ADDMEMBER, s->trk_group);
+    /* I667j (design 3.9): the detail tabs. Lyrics (with the upcoming queue), Info and Tracks are the pages of one page Group, switched
+     * by an AATabs strip (a notification from AATab_Active to MUIA_Group_ActivePage), instead of one tall stack. */
+    {
+        static const char* const tab_names[] = {"Lyrics", "Info", "Tracks", NULL};
+        mui_aatabs_spec ts;
+        Object* tabs;
+        Object* pages = MUI_NewObject((char*)MUIC_Group, MUIA_Group_PageMode, (ULONG)TRUE, TAG_DONE);
+        Object* page_lyr = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+        Object* page_info = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+        Object* page_trk = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+        ts.captions = tab_names;
+        ts.active = 0;
+        tabs = mui_aatabs_new(&ts);
+        if (pages != NULL && page_lyr != NULL && page_info != NULL && page_trk != NULL && tabs != NULL) {
+            if (lyr_view != NULL) {
+                DoMethod(page_lyr, OM_ADDMEMBER, lyr_view);
+            }
+            DoMethod(page_lyr, OM_ADDMEMBER, mui_aatext("Next in Queue", mui_pens_label_tone(MUI_LBL_SECTION), MUI_AA_ALIGN_CENTRE, 0, 0));
+            for (i = 0; i < 3; i++) {
+                s->np_up[i] = mui_np_text(s->np_up_buf[i], sizeof s->np_up_buf[i], " ", MUI_LBL_UPCOMING);
+                DoMethod(page_lyr, OM_ADDMEMBER, s->np_up[i]);
+            }
+            if (info_g != NULL) {
+                DoMethod(page_info, OM_ADDMEMBER, info_g);
+            } else {
+                DoMethod(page_info, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+            }
+            if (s->trk_group != NULL && trk_g != NULL) {
+                DoMethod(s->trk_group, OM_ADDMEMBER, trk_g);
+                DoMethod(page_trk, OM_ADDMEMBER, s->trk_group);
+            } else {
+                DoMethod(page_trk, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+            }
+            DoMethod(pages, OM_ADDMEMBER, page_lyr);
+            DoMethod(pages, OM_ADDMEMBER, page_info);
+            DoMethod(pages, OM_ADDMEMBER, page_trk);
+            DoMethod(tabs, MUIM_Notify, AATab_Active, MUIV_EveryTime, pages, 3, MUIM_Set, MUIA_Group_ActivePage, MUIV_TriggerValue);
+            DoMethod(g, OM_ADDMEMBER, tabs);
+            DoMethod(g, OM_ADDMEMBER, pages);
+        }
     }
     return g;
 }
@@ -998,7 +1179,7 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
     } else {
         s->np_lyric_buf[0] = '\0';
     }
-    set(s->np_lyrics, MUIA_Floattext_Text, (ULONG)s->np_lyric_buf);
+    set(s->np_lyrics, AAL_Count, (ULONG)mui_text_lines(s->np_lyric_buf));
     /* Next in queue: the three entries after the playing one. */
     n = 0;
     for (i = 0; i < st->queue_count && st->queue != NULL; i++) {
@@ -1018,7 +1199,6 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
     /* Song information: one "Label: value" row per meta tag the song carries, then the subsong line. */
     if (s->info_list != NULL) {
         uint32_t tag, rows = 0;
-        DoMethod(s->info_list, MUIM_List_Clear);
         for (tag = SEL_META_TITLE; so->path != NULL && sel_tag_name(tag) != NULL && rows < MUI_INFO_MAX - 1u; tag++) {
             sel_tag_type ty;
             char lab[48], val[96];
@@ -1045,15 +1225,15 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
             rows++;
         }
         s->info_ptr[rows] = NULL;
+        set(s->info_list, AAL_Count, (ULONG)rows);
         if (rows > 0u) {
-            DoMethod(s->info_list, MUIM_List_Insert, (ULONG)s->info_ptr, (LONG)rows, MUIV_List_Insert_Bottom);
             s->p4[P4_SONGINFO]++;
         }
     }
     /* Tracker pattern rows, only when the engine answered with pattern data. */
     if (s->trk_list != NULL) {
         uint32_t rows = 0;
-        DoMethod(s->trk_list, MUIM_List_Clear);
+        s->trk_ptr[0] = NULL;
         if (pv != NULL && pv->valid != 0u) {
             uint32_t ch = pv->channels < MUI_TRK_CHANNELS ? pv->channels : MUI_TRK_CHANNELS;
             for (i = 0; i < pv->row_n && rows < MUI_TRK_ROWS; i++) {
@@ -1071,11 +1251,11 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
                 rows++;
             }
             s->trk_ptr[rows] = NULL;
-            DoMethod(s->trk_list, MUIM_List_Insert, (ULONG)s->trk_ptr, (LONG)rows, MUIV_List_Insert_Bottom);
             if (rows > 0u) {
                 s->p4[P4_TRACKER]++;
             }
         }
+        set(s->trk_list, AAL_Count, (ULONG)rows);
         set(s->trk_group, MUIA_ShowMe, rows > 0u ? TRUE : FALSE);
     }
 }
@@ -1094,6 +1274,12 @@ static void mui_refresh(mui_state* s) {
         s->p4[P4_TOAST]++;
     }
     s->uim.dirty |= sel_uim_update(&s->uim, st);
+    if (s->viz_area != NULL) { /* I684: one visualizer step per wait turn, on the newest engine frame */
+        sel_uim_budget vb;
+        if (sel_uim_budget_for(&vb, "rgba32") && mui_vizarea_step(s->viz_area, st->viz, &vb, mui_now_ms())) {
+            s->p4[P4_VIZFRAMES] = mui_vizarea_frames(s->viz_area);
+        }
+    }
     attrs = mui_dirty_attrs(sel_uim_take_dirty(&s->uim));
     f = &s->uim.frame;
     for (a = 0; a < MUI_ATTR_COUNT; a++) {
@@ -1135,8 +1321,8 @@ static void mui_refresh(mui_state* s) {
         if (s->lay.breakpoint != s->col_bp && s->lay.breakpoint < SEL_UIM_BP_COUNT) { /* MUI-P3-4: another column set */
             s->col_bp = s->lay.breakpoint;
             mui_columns_format(s->col_bp, s->col_fmt, sizeof s->col_fmt);
-            mui_col_format_themed(s->col_fmt, s->col_fmt_th, sizeof s->col_fmt_th);
-            set(s->list, MUIA_List_Format, (ULONG)s->col_fmt_th);
+            mui_main_cols_fill(s->col_bp, &s->main_cols);
+            set(s->list, AAL_Columns, (ULONG)&s->main_cols);
         }
         {
             uint32_t drill = v->style == SEL_VIEW_STYLE_DRILLDOWN; /* MUI-P3-3: the breadcrumb line, drilldown only */
@@ -1201,6 +1387,7 @@ static void mui_refresh(mui_state* s) {
             sig = (sig ^ 0xffu) * 16777619u;
         }
         if (sig != s->list_sig) {
+            long playing = -1; /* the row whose title draws in ACCENT */
             s->list_sig = sig;
             for (i = 0; i < n; i++) {
                 snprintf(s->cell[i].title, sizeof s->cell[i].title, "%s", s->entries[i].text);
@@ -1213,17 +1400,14 @@ static void mui_refresh(mui_state* s) {
                     }
                     mui_row_extra_fill(st, &v->rows[i], grp, &s->cell[i].extra);
                 }
+                if (v->rows[i].kind == SEL_ROW_QUEUE && st->song.queue_id != 0u && v->rows[i].id == st->song.queue_id) {
+                    playing = (long)i;
+                }
                 s->entry_ptr[i] = (const char*)&s->cell[i];
             }
             s->entry_ptr[n] = NULL;
-            set(s->list, MUIA_List_Quiet, TRUE);
-            DoMethod(s->list, MUIM_List_Clear);
-            if (n > 0) {
-                DoMethod(s->list, MUIM_List_Insert, (ULONG)s->entry_ptr, (LONG)n, MUIV_List_Insert_Bottom);
-            }
             s->list_active_set = active;
-            set(s->list, MUIA_List_Active, active < 0 ? (LONG)MUIV_List_Active_Off : (LONG)active);
-            set(s->list, MUIA_List_Quiet, FALSE);
+            SetAttrs(s->list, AAL_Count, (ULONG)n, AAL_Playing, (ULONG)playing, AAL_Active, (ULONG)(active < 0 ? -1L : (long)active), TAG_DONE);
         }
         /* The sentinel the exit stats print (ui_list): which back end, style and column set the List runs, and how often its display hook ran. */
         {
@@ -1354,7 +1538,7 @@ static void mui_p4_note(mui_state* s, uint32_t which, const char* line) {
 /* MUI-P4-14: the Help window, one List row per action table row (mui_help_row). Built once, then only opened. */
 static void mui_help_open(mui_state* s) {
     uint32_t i, n = mui_help_count();
-    Object* lst;
+    Object *lst, *lst_g;
     if (s->help_win == NULL) {
         if (n > MUI_HELP_MAX) {
             n = MUI_HELP_MAX;
@@ -1364,18 +1548,17 @@ static void mui_help_open(mui_state* s) {
             s->help_ptr[i] = s->help_buf[i];
         }
         s->help_ptr[n] = NULL;
-        lst = MUI_NewObject((char*)MUIC_List, TH_TAGS(MUI_TH_LIST, MUIV_Frame_InputList) MUIA_List_Format, (ULONG)g_list_fmt1, TAG_DONE);
-        if (lst == NULL) {
+        lst_g = mui_string_aalist(s->help_ptr, (long)n, 16, &lst);
+        if (lst_g == NULL || lst == NULL) {
             return;
         }
         s->help_win = MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, (ULONG) "Selecta Help", MUIA_Window_ID, 0x48454C50UL,
-                                    MUIA_Window_RootObject, (ULONG)MUI_NewObject((char*)MUIC_Listview, MUIA_Listview_List, (ULONG)lst, TAG_DONE), TAG_DONE);
+                                    MUIA_Window_RootObject, (ULONG)lst_g, TAG_DONE);
         if (s->help_win == NULL) {
             return;
         }
         DoMethod(s->app, OM_ADDMEMBER, s->help_win);
         mui_close_on_request(s->help_win);
-        DoMethod(lst, MUIM_List_Insert, (ULONG)s->help_ptr, (LONG)n, MUIV_List_Insert_Bottom);
     }
     set(s->help_win, MUIA_Window_Open, TRUE);
 }
@@ -1450,10 +1633,7 @@ static Object* mui_pref_gadget(mui_state* s, uint32_t i, const sel_uim_pref_row*
                 break;
             }
         }
-        o = mui_make_cycle(s->set_entry[i], id);
-        if (o != NULL && act < n) {
-            set(o, AAC_Active, (ULONG)act);
-        }
+        o = mui_make_cycle(s->set_entry[i], act < n ? (LONG)act : 0, id);
     } else if (r->ui == (uint32_t)SEL_UIM_PREF_CHECK) {
         o = mui_make_check(r->label, cur[0] == '1', id);
     } else if (r->ui == (uint32_t)SEL_UIM_PREF_SLIDER) {
@@ -1461,7 +1641,7 @@ static Object* mui_pref_gadget(mui_state* s, uint32_t i, const sel_uim_pref_row*
         sscanf(r->choices, "%ld,%ld", &lo, &hi);
         o = mui_make_slider(lo, hi, cur[0] != '\0' ? strtol(cur, NULL, 10) : lo, id);
     } else {
-        o = mui_make_string(id);
+        o = mui_make_string(id, 0);
         if (o != NULL) {
             set(o, MUIA_String_Contents, (ULONG)cur);
         }
@@ -1564,6 +1744,16 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
             mui_p4_note(s, which, line);
         }
         break;
+    case P4_VIZPICK:
+        GetAttr(AAC_Active, s->cyc_viz, &act);
+        if ((uint32_t)act < s->vizset.n) {
+            s->vizset.sel = (uint32_t)act;
+            s->vizset.seq = 0u; /* draw the new plugin on the very next frame */
+            if (mui_vizset_line(&s->vizset) != NULL && mui_engine_line(s, mui_vizset_line(&s->vizset))) {
+                mui_p4_note(s, which, mui_vizset_line(&s->vizset));
+            }
+        }
+        break;
     case P4_SUBSONG:
         GetAttr(AAC_Active, s->cyc_subsong, &act);
         if (mui_subsong_cycle_line((uint32_t)act, s->uim.frame.subsong_count, line, sizeof line) && mui_engine_line(s, line)) {
@@ -1646,6 +1836,11 @@ static void mui_control_fire(mui_state* s, LONG id) {
         if (mui_action_fire(mui_extra_action((uint32_t)(id - CTL_EXTRA_BASE)), mui_p8_send, s)) {
             s->transport_hits++;
         }
+    } else if (id == CTL_TOPBAR_BROWSE) {
+        uint32_t k; /* I615d: what the rich top bar Browse slice sends (desk_page_load PG_BROWSE) */
+        for (k = 0; k < MUI_TOPBAR_BROWSE_LINES; k++) {
+            mui_engine_line(s, mui_topbar_browse_lines[k]);
+        }
     } else if (id >= CTL_DOOR_BASE && id < CTL_DOOR_BASE + (LONG)MUI_DOOR_MAX) {
         mui_engine_line(s, mui_door_line((uint32_t)(id - CTL_DOOR_BASE))); /* the page switch: the engine moves the main view's source */
     } else if (id >= CTL_CRUMB_BASE && id < CTL_CRUMB_BASE + (LONG)MUI_CRUMB_MAX) {
@@ -1686,7 +1881,12 @@ static void mui_control_fire(mui_state* s, LONG id) {
         s->vol_set = v;
     } else if (id == CTL_LIST_SEL || id == CTL_LIST_DBL) {
         const sel_view_state* view = sel_engine_state(s->engine)->view;
-        GetAttr(MUIA_List_Active, s->list, (ULONG*)&v);
+        GetAttr(AAL_Active, s->list, (ULONG*)&v);
+        if (id == CTL_LIST_DBL) {
+            long picked = -1;
+            GetAttr(AAL_Picked, s->list, (ULONG*)&picked);
+            v = mui_list_dbl_row((int32_t)picked, (int32_t)v);
+        }
         if (view == NULL || v < 0 || (id == CTL_LIST_SEL && v == s->list_active_set)) {
             return;
         }
@@ -1732,7 +1932,8 @@ static void mui_apply_layout(mui_state* s) {
     for (i = 0; i < MUI_SLOT_COUNT; i++) {
         set(s->slot[i], MUIA_ShowMe, s->lay.show[i] ? TRUE : FALSE);
         set(s->slot[i], MUIA_HorizWeight, s->lay.weight_w[i] > 0 ? s->lay.weight_w[i] : 1);
-        set(s->slot[i], MUIA_VertWeight, s->lay.weight_h[i] > 0 ? s->lay.weight_h[i] : 1);
+        /* I615d (design 8.2): the top bar takes the height of its children (VertWeight 0), the body the rest. */
+        set(s->slot[i], MUIA_VertWeight, i == MUI_SLOT_TOPBAR ? 0 : s->lay.weight_h[i] > 0 ? s->lay.weight_h[i] : 1);
     }
     set(s->balance[0], MUIA_ShowMe, s->lay.balance_sidebar_main ? TRUE : FALSE);
     set(s->balance[1], MUIA_ShowMe, s->lay.balance_main_detail ? TRUE : FALSE);
@@ -1750,7 +1951,7 @@ static void mui_layout_for_screen(mui_state* s) {
             UnlockPubScreen(NULL, scr);
         }
     }
-    mui_layout_map(&s->lay, w, h);
+    mui_layout_map(&s->lay, w, h, g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP);
     mui_apply_layout(s);
 }
 
@@ -1767,7 +1968,7 @@ static void mui_check_resize(mui_state* s) {
     if (w == 0 || (w == s->lay.width && h == s->lay.height)) {
         return;
     }
-    if (mui_layout_relayout(&s->lay, (uint32_t)w, (uint32_t)h, &flips)) {
+    if (mui_layout_relayout(&s->lay, (uint32_t)w, (uint32_t)h, g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP, &flips)) {
         mui_apply_layout(s);
     }
 }
@@ -1783,6 +1984,7 @@ static void* mui_open(const sel_ui_open_args* a) {
     Object* strip;
     mui_window_attrs_t wattr;
     s->engine = a != NULL ? a->engine : NULL;
+    s->find_plugin = a != NULL ? a->find_plugin : NULL;
     MUIMasterBase = OpenLibrary((CONST_STRPTR)MUIMASTER_NAME, 19);
     if (MUIMasterBase == NULL) {
         mui_report(MUI_FAIL_NO_LIBRARY, "");
@@ -1794,7 +1996,12 @@ static void* mui_open(const sel_ui_open_args* a) {
         mui_report(MUI_FAIL_NO_LIBRARY, "(graphics.library)");
         return NULL;
     }
-    mui_theme_init();
+    mui_theme_init(a);
+    {   /* I684: the viz plugins the desktop lists, the initial one from the same ui.desktop.viz pref */
+        const sel_host* vh = s->engine != NULL ? sel_engine_plugin_host(s->engine) : NULL;
+        const char* pref = vh != NULL && vh->config_get != NULL ? vh->config_get(vh, "ui.desktop.viz", "") : "";
+        (void)mui_vizset_load(&s->vizset, s->find_plugin, pref);
+    }
     strip = mui_menu_strip();
     sel_uim_init(&s->uim);
     /* I675 (D-M4-3): borderless backdrop window on the own screen, normal borders on Workbench (g_scr == NULL). The borderless
@@ -1815,12 +2022,13 @@ static void* mui_open(const sel_ui_open_args* a) {
             MUIA_Window_Width, MUIV_Window_Width_Screen(100), MUIA_Window_Height, MUIV_Window_Height_Screen(100),
             MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Centered, MUIA_Window_Menustrip, (ULONG)strip,
             WindowContents, s->root = VGroup, TH_TAGS(MUI_TH_WINDOW, MUI_FRAME_NONE)
+                Child, s->slot[MUI_SLOT_TOPBAR] = mui_topbar_group(s),
                 Child, s->slot[MUI_SLOT_SUGGESTION] = mui_aatext("Window is narrow: try the mini layout", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0, 1),
                 Child, HGroup,
-                    Child, s->slot[MUI_SLOT_SIDEBAR] = mui_sidebar_group(),
-                    Child, s->balance[0] = BalanceObject, End,
+                    Child, s->slot[MUI_SLOT_SIDEBAR] = mui_sidebar_group(g_screen_rtg),
+                    Child, s->balance[0] = mui_aabalance_new(),
                     Child, s->slot[MUI_SLOT_MAIN] = mui_main_group(s),
-                    Child, s->balance[1] = BalanceObject, End,
+                    Child, s->balance[1] = mui_aabalance_new(),
                     Child, s->slot[MUI_SLOT_DETAIL] = mui_detail_group(s),
                 End,
                 Child, s->slot[MUI_SLOT_PLAYER] = mui_player_group(s),
@@ -1959,10 +2167,14 @@ static void mui_close(void* state) {
         s->win = NULL;
         s->canvas = NULL;
         mui_canvas_class_free();
+        mui_vizarea_class_free();
         mui_aatext_class_free();
         mui_aapanel_class_free();
+        mui_aatabs_class_free();
+        mui_aabalance_class_free();
         mui_aaslider_class_free();
         mui_aacycle_class_free();
+        mui_aalist_class_free(); /* I667i: also frees the AAScroller class */
         mui_aafield_class_free();
         mui_aabtn_class_free();
         mui_listview_class_free();
@@ -2004,6 +2216,22 @@ static void* mui_open(const sel_ui_open_args* a) {
     (void)a;
     mui_report(mui_present() ? MUI_FAIL_NO_WINDOW : MUI_FAIL_NO_LIBRARY, "");
     return NULL; /* the host has no MUI: the shell keeps its current UI */
+}
+
+/* Host: no screen, no AA classes; the live THEME runs the same apply path with nothing to repaint (the contract test counts it). */
+static void mui_live_none(void* ctx, const uint32_t* tokens) {
+    (void)ctx;
+    (void)tokens;
+}
+static void mui_live_none_classes(void* ctx) {
+    (void)ctx;
+}
+static int mui_theme_live_now(void) {
+    mui_theme_live_ops ops;
+    ops.palette = mui_live_none;
+    ops.classes = mui_live_none_classes;
+    ops.ctx = NULL;
+    return mui_theme_apply_live(&ops, MUI_THEME_ENV_PATH, g_theme_arg[0] != '\0' ? g_theme_arg : NULL);
 }
 
 static int mui_wait(void* state, uint32_t timeout_ms) {
@@ -2064,7 +2292,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     /* MUI 3.8 absent: still registered so an explicit --ui mui reaches mui_open and its requester, but not listed
      * or auto-picked (MUI-P1-6, Johan 2026-10-27). */
     put_tag(&g_hooks[6], SEL_UI_PRESENT, (uintptr_t)(mui_present() != 0));
-    put_tag(&g_hooks[7], SEL_TAG_END, 0);
+    put_tag(&g_hooks[7], SEL_UI_THEME, SEL_TAG_FN(mui_theme_hook));
+    put_tag(&g_hooks[8], SEL_TAG_END, 0);
 
     put_tag(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_UI);
     put_tag(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "mui");

@@ -56,8 +56,8 @@ enum {
     SEL_COMPOSER_LIST,  /* DUI-P4-3: every composer (by display name, Unknown composer last) streamed through `row` in one request: canon, display, song count (decimal); reply [2] = row count (I528) */
     SEL_FORMAT_LIST,    /* I615c: every song format with its song count (most songs first) streamed through `row`: format, song count (decimal); reply [2] = row count */
     SEL_SOURCE_SONGS,   /* DUI-P4-3: songs rows of source id `key`: `out` = decimal count NUL, reply [0] = 1 */
-    SEL_LIBRARY_ITEMS,  /* I678a: the Your Library list of the kinds in `mask`, rows [offset, offset + limit) streamed through `row`: kind, key, name, sub, songs, added, last played, art id, pinned (decimal text); reply [2] = total row count */
-    SEL_COLLECTION      /* I678f: one list of the collection page of item kind `offset`, key `key`: shelf `mask` (SEL_COLL_*) streamed through `row`: key, name, artist, year, number (decimal text); reply [2] = row count */
+    SEL_LIBRARY_ITEMS,  /* I678a: the Your Library list of the kinds in `mask`, rows [offset, offset + limit) streamed through `row`: kind, key, name, sub, songs, added, last played, art id, pinned, opened, majority format (I691c; decimal text except the last); reply [2] = total row count */
+    SEL_COLLECTION      /* I678f: one list of the collection page of item kind `offset`, key `key`: shelf `mask` (SEL_COLL_*) streamed through `row`: key, name, artist, year, number, majority format (I691c; decimal text except the last); reply [2] = row count */
 };
 /* One albums/artwork operation (SEL_LIB_REQ_ART, DUI-P2-4). Reply INT [0]: SEL_ART_FIND the id of the albums row the song belongs to (0: none),
  * SEL_ART_GET the blob size (0: none; `data` holds min(size, cap) bytes), SEL_ART_PUT 1 when stored,
@@ -137,6 +137,7 @@ enum {
     SEL_USER_LIBRARY_CLEAR,     /* DUI-P4-18 (Q16): drops every catalogue row and every playlist, folder, rating, note and other per-song user row; settings stay; reply [2] = songs removed */
     SEL_USER_SONG_TITLE,        /* DUI-P4-18: value = song key or path; out = its catalogue title; reply [2] = 1 when it has one */
     SEL_USER_SONG_GROUP,        /* I258: value = song key or path; out = its album, else its source; reply [2] = 1 when the song is catalogued */
+    SEL_USER_SONG_META,         /* I678h3: value = song key or path; out = "artist\0album\0album id\0composer canon\0" (empty strings when absent); reply [2] = 1 when the song is catalogued */
     SEL_USER_FOLDER_COUNTS,/* I178: reply [2..5] = folders, playlists in folders, playlists, playlist entries */
     SEL_USER_FOLDER_PLAYLISTS, /* I178: at = folder id (0 = all); out = "id\0name\0" pairs then "\0"; reply [2] = playlists */
     SEL_USER_PLAYLIST_KEYS,/* I178: at = playlist id; out = song keys, each NUL terminated, then "\0"; reply [2] = keys */
@@ -161,6 +162,9 @@ enum { SEL_RATING_LOCAL = 0, SEL_RATING_QUEUE = 1, SEL_RATING_SERVER = 2 };
 /* Why a folder op was refused: reply [0] = 0, [1] = SQLITE_CONSTRAINT, [2] = one of these. */
 enum { SEL_FOLDER_OK = 0, SEL_FOLDER_ERR_NO_FOLDER = 1, SEL_FOLDER_ERR_CYCLE = 2, SEL_FOLDER_ERR_NOT_EMPTY = 3,
        SEL_FOLDER_ERR_NO_PLAYLIST = 4, SEL_FOLDER_ERR_FAILED = 5 };
+/* I678j: the Home format chips. */
+enum { SEL_HOME_CHIP_ALL = 0, SEL_HOME_CHIP_MUSIC, SEL_HOME_CHIP_MODULES, SEL_HOME_CHIP_CHIPTUNES, SEL_HOME_CHIPS };
+
 typedef struct sel_user_op {
     uint32_t op;       /* SEL_USER_* */
     const char* key;   /* song key */
@@ -172,6 +176,7 @@ typedef struct sel_user_op {
     int32_t duration_ms; /* HISTORY: 0 = unknown */
     char* out;           /* STICKER_GET: value, "" when absent */
     uint32_t out_cap;
+    uint32_t chip;       /* HOME: the Home chip (SEL_HOME_CHIP_*, I678j) */
 } sel_user_op;
 
 /* One meta key/value (text). set != 0 stores `value`; set == 0 reads into `value` (capacity `cap`, "" when the
@@ -278,11 +283,11 @@ enum {
 };
 
 /* Schema version this build writes (PRAGMA user_version after migration). */
-#define SEL_LIB_SCHEMA_VERSION 8
+#define SEL_LIB_SCHEMA_VERSION 12
 
 /* Heap bytes for SQLite on a machine: the scaling table of D-M3-2 over fast + chip RAM
- * (<= 4 MiB: 512 KiB, <= 16 MiB: 2 MiB, <= 128 MiB: 8 MiB, above: 32 MiB). This is the ceiling:
- * sel_library_open halves it until the host grants one block, down to 512 KiB (sel_library_heap_size
+ * (<= 4 MiB: 544 KiB (512 KiB + 32 KiB, I687c), <= 16 MiB: 2 MiB, <= 128 MiB: 8 MiB, above: 32 MiB). This is the ceiling:
+ * sel_library_open halves it until the host grants one block, down to 544 KiB (sel_library_heap_size
  * reports what it got). */
 uint32_t sel_library_heap_bytes(const sel_tag* machine);
 
@@ -319,6 +324,7 @@ int sel_library_run(sel_library* lib, uint32_t req, sel_lib_job* job);
  * song and the companions `rules` name (sel_companion_rules) land in the handle's file cache. 1 with
  * the cache path in `out` and the files delivered in `files`; 0 on failure; -1 when every mirror
  * delivered a body whose md5 differs. */
+int sel_library_fetch_status(sel_library* lib); /* HTTP status of the last failed sel_library_fetch, 0 when none (I695b) */
 int sel_library_fetch(sel_library* lib, const char* spec, const char* rules, char* out, size_t cap, uint32_t* files);
 /* Cache counters; 0 when the handle served no fetch. */
 struct sel_cache_stats;
@@ -414,6 +420,8 @@ int sel_library_song_total(sel_library* lib, uint32_t* total);
 int sel_library_song_title(sel_library* lib, const char* ref, char* out, size_t cap);
 /* I258: the group a song sits under in the Queue page: its album, else its source; 1 when the song is catalogued, else 0 and out empty. */
 int sel_library_song_group(sel_library* lib, const char* ref, char* out, size_t cap);
+/* I678h3: the artist, album, album id (decimal, "" when the album is not in the albums table) and first composer canon of one song, each NUL terminated, so a track row links to the pages the db row names; 1 when catalogued. */
+int sel_library_song_meta(sel_library* lib, const char* ref, char* out, size_t cap);
 int sel_library_playlist_add(sel_library* lib, const char* name, uint32_t folder, const char* keys_nl, uint32_t* out_id);
 int sel_library_folder_counts(sel_library* lib, uint32_t* folders, uint32_t* in_folders, uint32_t* playlists, uint32_t* entries);
 /* Fills `out` per the SEL_USER_FOLDER_PLAYLISTS / PLAYLIST_KEYS / FOLDER_TREE formats; *count = rows found. */
@@ -424,6 +432,7 @@ int sel_library_folder_tree(sel_library* lib, char* out, uint32_t cap, uint32_t*
  * and no finished play of it) and New this week (the modland changelog count stored by the sync), at most `limit`
  * entries per list section. Lines: `H <heading>`, `S <entry>`, `C <count> <entry>`. 1 on success. */
 int sel_library_home(sel_library* lib, uint32_t limit, char* out, uint32_t cap, uint32_t* lines);
+int sel_library_home_chip(sel_library* lib, uint32_t chip, uint32_t limit, char* out, uint32_t cap, uint32_t* lines); /* I678j: filtered by a Home chip */
 int sel_library_user_counts(sel_library* lib, uint32_t* history, uint32_t* flags, uint32_t* notes, uint32_t* pending_push);
 /* Marks song key `key` in table "kept" or "liked" (seeding and tests). 1 on success. */
 int sel_library_mark(sel_library* lib, const char* table, const char* key);

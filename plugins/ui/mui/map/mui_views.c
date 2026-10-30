@@ -239,6 +239,10 @@ const char* mui_door_label(uint32_t i) {
     return d != NULL ? d->label : NULL;
 }
 
+/* I615d (design 8.3): the lines the MUI top bar sends. Home is the Home door's line; Browse is what the rich top bar Browse slice
+ * sends (desktop_ui.c desk_page_load, PG_BROWSE: the formats and composers catalog and the sources). */
+const char* const mui_topbar_browse_lines[MUI_TOPBAR_BROWSE_LINES] = {"FORMATS_SHOW", "COMPOSERS_SHOW", "SOURCES"};
+
 const char* mui_door_line(uint32_t i) {
     static const struct {
         const char* page;

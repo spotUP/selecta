@@ -130,6 +130,16 @@ static ULONG aatext_set(struct IClass* cl, Object* obj, struct opSet* msg) {
     return DoSuperMethodA(cl, obj, (Msg)msg);
 }
 
+/* AAT_Contents readable: the shown text (a pointer into the object). The rig's wasabid uitree reads it to list the status texts (I716b). */
+static ULONG aatext_get(struct IClass* cl, Object* obj, struct opGet* msg) {
+    aatext_data* d = INST_DATA(cl, obj);
+    if (msg->opg_AttrID == AAT_Contents) {
+        *msg->opg_Storage = (ULONG)(uintptr_t)d->text;
+        return TRUE;
+    }
+    return DoSuperMethodA(cl, obj, (Msg)msg);
+}
+
 static ULONG __attribute__((used)) aatext_dispatch_c(struct IClass* cl, Object* obj, Msg msg);
 
 extern ULONG aatext_dispatch(void);
@@ -149,6 +159,8 @@ static ULONG __attribute__((used)) aatext_dispatch_c(struct IClass* cl, Object* 
         return aatext_draw(cl, obj, (struct MUIP_Draw*)msg);
     case OM_SET:
         return aatext_set(cl, obj, (struct opSet*)msg);
+    case OM_GET:
+        return aatext_get(cl, obj, (struct opGet*)msg);
     }
     return DoSuperMethodA(cl, obj, msg);
 }

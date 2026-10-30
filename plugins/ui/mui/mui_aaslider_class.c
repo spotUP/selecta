@@ -121,7 +121,7 @@ static ULONG aaslider_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg
             aa_round_fill(rp, l + ops[i].x, t + ops[i].y, ops[i].w, ops[i].h, ops[i].radius, aa_pen(&d->aa, ops[i].rgb));
         }
     }
-    if (_win(obj) != NULL) {
+    if (aa_live(obj)) {
         GetAttr(MUIA_Window_ActiveObject, _win(obj), &active);
         if ((Object*)active == obj) {
             aa_round_frame(rp, l, t + (h - d->m.track_h) / 2, w, d->m.track_h, d->m.radius, aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]));
@@ -276,7 +276,7 @@ static ULONG aaprogress_set(struct IClass* cl, Object* obj, struct opSet* msg) {
         d->value = (long)tv->ti_Data;
         changed = 1;
     }
-    if (changed && _win(obj) != NULL) {
+    if (changed && aa_live(obj)) {
         MUI_Redraw(obj, MADF_DRAWOBJECT);
     }
     return DoSuperMethodA(cl, obj, (Msg)msg);

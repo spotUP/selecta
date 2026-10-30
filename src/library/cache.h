@@ -46,6 +46,8 @@ typedef struct sel_cache_stats {
     unsigned smart_requests;   /* smart download requests finished (I169) */
     unsigned smart_fetches;    /* of those, songs downloaded (not already cached) */
     unsigned smart_skipped;    /* requests dropped because the cache was at its budget */
+    unsigned zip_members;      /* songs the mirrors lacked, taken from the source's zip by Range request (I695d sentinel) */
+    unsigned zip_requests;     /* HTTP requests those zip fetches sent */
 } sel_cache_stats;
 
 /* The state of a download that stopped at its time budget (I168b): the partial body stays in `<file>.part` and the
@@ -72,6 +74,7 @@ typedef struct sel_cache {
     unsigned slice_ms;      /* > 0: a fetch returns SEL_CACHE_PENDING after about this many milliseconds of body, and a
                              * stalled attempt after SEL_CACHE_SLICE_STALL_MS; one mirror per call (I168b) */
     sel_cache_slice slice;
+    int last_status;        /* HTTP status of the last failed fetch (404 for a file the mirror does not serve), 0 when none (I695b) */
     volatile int* cancel;   /* non-NULL: a download stops at its next body chunk once *cancel is set (I168a) */
 } sel_cache;
 

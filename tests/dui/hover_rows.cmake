@@ -4,6 +4,10 @@
 # a live run (SELECTA_SDL_TEST_LIVE=1, SELECTA_SDL_TEST_TIMED pushes a motion onto that row at 500 ms and a quit at 1500 ms)
 # must then report: hover_box equals the row, `hover_ink=` new weight 65536 (the fade ended on the full ink), and
 # `paints=0` (hover_fill_of, the background blend, never ran: a hovered row has no background).
+# SKIPPED (I678i): the subject, hover on Library page Composers rows, is retired. Composer rows live in the sidebar mixed list (section 10); a hover test for those rows has no ledger row yet, and the Browse Folders tree rows are not in the pointer hit-test list.
+message(STATUS "hover_rows: SKIPPED, the subject, hover on Library page Composers rows, is retired. Composer rows live in the sidebar mixed list (section 10); a hover test for those rows has no ledger row yet, and the Browse Folders tree rows are not in the pointer hit-test list.")
+return()
+
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")

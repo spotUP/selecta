@@ -2,8 +2,14 @@
 #include <selecta/output.h>
 #include <selecta/registry.h>
 
+#include <selecta/engine.h>
+
 #include <stdio.h>
 #include <string.h>
+
+#ifdef SEL_HAVE_LOADER
+#include "loader.h"
+#endif
 
 /* Generated into the build tree by cmake/selecta_registry.cmake. */
 extern const sel_plugin_entry_fn sel_registry_entries[];
@@ -15,6 +21,43 @@ static const sel_host* g_host;
 static const sel_tag* g_desc[SEL_REGISTRY_MAX];
 static uint32_t g_count;
 static sel_registry_stats g_stats;
+
+/* Dynamic entries (plugin loader, I427a): added by a loader before init, walked after the static array. */
+#define SEL_DYN_MAX 32
+#define SEL_ORIGIN_MAX 512
+static struct {
+    sel_plugin_entry_fn fn;
+    char origin[SEL_ORIGIN_MAX];
+} g_dyn[SEL_DYN_MAX];
+static uint32_t g_dyn_count;
+static uint32_t g_load_rejected; /* rejects a loader reported before init; they persist for the process */
+static const char* g_origin[SEL_REGISTRY_MAX];
+#ifdef SEL_HAVE_LOADER
+static int g_scanned;
+#endif
+
+int sel_registry_add_entry(sel_plugin_entry_fn fn, const char* origin) {
+    if (fn == NULL || g_dyn_count >= SEL_DYN_MAX) {
+        return 0;
+    }
+    g_dyn[g_dyn_count].fn = fn;
+    snprintf(g_dyn[g_dyn_count].origin, sizeof g_dyn[g_dyn_count].origin, "%s", origin != NULL ? origin : "?");
+    g_dyn_count++;
+    return 1;
+}
+
+static void reject_line(const char* path, const char* reason) {
+    char msg[SEL_ORIGIN_MAX + 96];
+    snprintf(msg, sizeof msg, "plugin module %s rejected: %s", path, reason);
+    if (g_host != NULL) {
+        g_host->log(g_host, SEL_LOG_WARN, msg);
+    }
+}
+
+void sel_registry_note_rejected(const char* path, const char* reason) {
+    g_load_rejected++;
+    reject_line(path, reason);
+}
 
 /* Machine CPU as the number a plugin declares in SEL_RP_MIN_CPU (68020 = 68020). */
 static uint32_t cpu_number(uintptr_t cpu) {
@@ -71,22 +114,78 @@ static int fits(const sel_tag* d, const sel_tag* machine) {
     return ok;
 }
 
+/* A descriptor a host can use: a known kind and a plugin id. */
+static int descriptor_ok(const sel_tag* d) {
+    uintptr_t kind = sel_tag_find(d, SEL_PLUGIN_KIND, 0);
+    const char* id = (const char*)sel_tag_find(d, SEL_PLUGIN_ID, 0);
+    return kind >= SEL_PLUGIN_KIND_REPLAYER && kind <= SEL_PLUGIN_KIND_SCRIPTING && id != NULL && id[0] != '\0';
+}
+
+static void keep(const sel_tag* d, const char* origin, const sel_tag* machine) {
+    g_stats.total++;
+    if (!fits(d, machine)) {
+        g_stats.filtered++;
+    } else if (g_count < SEL_REGISTRY_MAX) {
+        g_origin[g_count] = origin;
+        g_desc[g_count++] = d;
+    }
+}
+
 uint32_t sel_registry_init_machine(const sel_host* host, const sel_tag* machine) {
-    uint32_t i;
+    uint32_t i, j;
+    const char* seen[SEL_REGISTRY_MAX + SEL_DYN_MAX];
+    uint32_t seen_n = 0;
     g_host = host;
+#ifdef SEL_HAVE_LOADER
+    if (!g_scanned) {
+        g_scanned = 1;
+        sel_loader_scan();
+    }
+#endif
     g_count = 0;
     memset(&g_stats, 0, sizeof g_stats);
+    g_stats.dyn_rejected = g_load_rejected;
     for (i = 0; i < sel_registry_entry_count; i++) {
         const sel_tag* d = sel_registry_entries[i](SEL_API_VERSION);
         if (!d) {
             continue;
         }
-        g_stats.total++;
-        if (!fits(d, machine)) {
-            g_stats.filtered++;
-        } else if (g_count < SEL_REGISTRY_MAX) {
-            g_desc[g_count++] = d;
+        if (seen_n < SEL_REGISTRY_MAX) {
+            seen[seen_n++] = (const char*)sel_tag_find(d, SEL_PLUGIN_ID, (uintptr_t) "");
         }
+        keep(d, "static", machine);
+    }
+    for (i = 0; i < g_dyn_count; i++) {
+        const sel_tag* d = g_dyn[i].fn(SEL_API_VERSION);
+        const char* id;
+        int dup = 0;
+        if (d == NULL) {
+            g_stats.dyn_rejected++;
+            reject_line(g_dyn[i].origin, "entry returned NULL for this API version");
+            continue;
+        }
+        if (!descriptor_ok(d)) {
+            g_stats.dyn_rejected++;
+            reject_line(g_dyn[i].origin, "malformed descriptor (kind or id missing)");
+            continue;
+        }
+        id = (const char*)sel_tag_find(d, SEL_PLUGIN_ID, 0);
+        for (j = 0; j < seen_n; j++) {
+            if (strcmp(seen[j], id) == 0) {
+                dup = 1;
+                break;
+            }
+        }
+        if (dup) {
+            char why[SEL_ORIGIN_MAX];
+            snprintf(why, sizeof why, "duplicate plugin id %.64s (first registration wins)", id);
+            g_stats.dyn_rejected++;
+            reject_line(g_dyn[i].origin, why);
+            continue;
+        }
+        seen[seen_n++] = id;
+        g_stats.dyn_loaded++;
+        keep(d, g_dyn[i].origin, machine);
     }
     return g_count;
 }
@@ -131,6 +230,10 @@ const sel_tag* sel_registry_format_owner(const char* format) {
         }
     }
     return best;
+}
+
+const char* sel_registry_origin(uint32_t index) {
+    return index < g_count ? g_origin[index] : NULL;
 }
 
 uint32_t sel_registry_count(void) {

@@ -28,13 +28,10 @@ if("${list}" MATCHES "\ncomposer 1 ")
   message(FATAL_ERROR "more than one composer group for untagged songs:\n${list}")
 endif()
 
-# The group is a row like any other: a click on it drills in to its 3 songs.
-if(NOT "${list}" MATCHES "row 0 ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)\n")
-  message(FATAL_ERROR "no row rectangle in the library dump:\n${list}")
-endif()
-math(EXPR cx "${CMAKE_MATCH_1} + 10")
-math(EXPR cy "${CMAKE_MATCH_2} + 8")
-unk_run(drilled "wait 1\nmove ${cx} ${cy}\nclick ${cx} ${cy}\nwait 1\n")
+# The group opens its composer page like any composer: through its tile on the Browse page (I678i: the Library page is retired).
+unk_run(browse "wait 1\nexec LIBRARY_SCAN ${WORK}/songs\nwait 4\ntopbar 2\nwait 3\n")
+dui_browse_composer_input(open_input "wait 1\nexec LIBRARY_SCAN ${WORK}/songs\nwait 4\n" "${browse}")
+unk_run(drilled "${open_input}")
 if(NOT "${drilled}" MATCHES "collection kind=composer [^\n]* of=3 ")
-  message(FATAL_ERROR "click on the Unknown composer row did not open its composer page with 3 songs:\n${drilled}")
+  message(FATAL_ERROR "the Unknown composer tile did not open its composer page with 3 songs:\n${drilled}")
 endif()

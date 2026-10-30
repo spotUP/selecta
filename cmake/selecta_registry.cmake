@@ -27,6 +27,12 @@ function(sel_make_registry target list_file_name)
     "${PROJECT_SOURCE_DIR}/src/engine/registry.c"
     "${_sel_list_file}")
   target_link_libraries(${target} PUBLIC selecta_core)
+  # Runtime plugin modules (I427a): desktop builds only; the 68k and web builds keep the static registry.
+  if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+    target_sources(${target} PRIVATE "${PROJECT_SOURCE_DIR}/src/engine/loader_dl.c")
+    target_compile_definitions(${target} PRIVATE SEL_HAVE_LOADER)
+    target_link_libraries(${target} PUBLIC ${CMAKE_DL_LIBS})
+  endif()
   foreach(_p IN LISTS _sel_plugins)
     target_link_libraries(${target} PUBLIC sel_plugin_${_p})
   endforeach()

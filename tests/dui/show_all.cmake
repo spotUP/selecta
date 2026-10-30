@@ -94,7 +94,7 @@ expect_eq("Forward shows shelf 0" "${fwd_tiles}" "${fwd_shelf0}")
 
 # 4. Some counts of Down land on a heading: those runs end on the Shelf page with the click counted, the others stay on Home.
 set(opened 0)
-foreach(downs RANGE 1 14)
+foreach(downs RANGE 1 28) # I678j: the quick grid and five shelves put the headings at 10, 15, 20 and 26 downs
   string(REPEAT "key down\nwait 50\n" ${downs} walk)
   sa_run(kb "wait 100\n${walk}key enter\nwait 100\n")
   if("${kb_page}" STREQUAL "shelf")

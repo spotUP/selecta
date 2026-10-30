@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "mui_aa.h"
 #include "mui_map.h"
 
 static const mui_list_backend k_nlist = {"nlist", 1, 1};
@@ -36,6 +37,13 @@ int32_t mui_list_pending_resolve(mui_list_pending* p, int32_t snapshot_active) {
     }
     p->armed = 0;
     return snapshot_active;
+}
+
+uint32_t mui_list_dbl_row_calls;
+
+int32_t mui_list_dbl_row(int32_t picked, int32_t active) {
+    mui_list_dbl_row_calls++;
+    return picked >= 0 ? picked : active;
 }
 
 uint32_t mui_list_build(const mui_list_backend* be, mui_list_entry* out, uint32_t cap, const sel_view_state* v, int32_t* active) {
@@ -107,22 +115,41 @@ uint32_t mui_columns_for(uint32_t breakpoint, uint8_t out[MUI_COL_COUNT]) {
 
 /* I637: the plain List sizes a column without W= to its widest cell (W=-1), so short names left the columns packed at the
  * left edge ("collapsed"). Title, Artist and Album carry weights and share the width the fixed Length / Format cells leave. */
-static const char* const k_col_weight[MUI_COL_COUNT] = {"W=40", "W=25", "W=25", "", ""};
+static const int k_col_weight[MUI_COL_COUNT] = {40, 25, 25, 0, 0};
 
 void mui_columns_format(uint32_t breakpoint, char* out, size_t cap) {
     uint8_t cols[MUI_COL_COUNT];
     uint32_t i, n = mui_columns_for(breakpoint, cols);
     size_t used = 0;
+    mui_aa_list_t lm;
+    mui_aa_list_metrics(13, &lm); /* I667i: 8 px between a divider and the text on each side (design 3.6) */
     out[0] = '\0';
     for (i = 0; i < n; i++) {
-        const char* w = k_col_weight[cols[i]];
-        int put = snprintf(out + used, cap - used, "%s%s%s%s", w, w[0] != '\0' && i + 1u < n ? " " : "", i + 1u < n ? "BAR" : "", i + 1u < n ? "," : "");
+        int w = k_col_weight[cols[i]];
+        int last = i + 1u == n;
+        int put;
+        char ws[16];
+        snprintf(ws, sizeof ws, "W=%d", w);
+        if (last) {
+            put = snprintf(out + used, cap - used, "%s", w > 0 ? ws : "");
+        } else {
+            put = snprintf(out + used, cap - used, "%s%sDELTA=%d BAR,", w > 0 ? ws : "", w > 0 ? " " : "", mui_aa_list_delta(&lm));
+        }
         if (put < 0 || (size_t)put >= cap - used) {
             out[used] = '\0';
             return;
         }
         used += (size_t)put;
     }
+}
+
+uint32_t mui_columns_weights(uint32_t breakpoint, int weight_out[MUI_COL_COUNT]) {
+    uint8_t cols[MUI_COL_COUNT];
+    uint32_t i, n = mui_columns_for(breakpoint, cols);
+    for (i = 0; i < n; i++) {
+        weight_out[i] = k_col_weight[cols[i]];
+    }
+    return n;
 }
 
 const char* mui_row_cell(const sel_view_row* r, uint32_t column) {
@@ -163,4 +190,38 @@ void mui_row_extra_fill(const sel_state* st, const sel_view_row* r, const char* 
         snprintf(out->album, sizeof out->album, "%s", album);
     }
     sel_uim_clock(out->length, sizeof out->length, playing ? st->song.duration_ms : 0u, playing && st->song.duration_ms != 0u);
+}
+
+uint32_t mui_text_lines(const char* text) {
+    uint32_t n = 1, k;
+    if (text == NULL || text[0] == '\0') {
+        return 0;
+    }
+    for (k = 0; text[k] != '\0'; k++) {
+        n += text[k] == '\n';
+    }
+    return text[k - 1] == '\n' ? n - 1 : n;
+}
+
+void mui_text_line(const char* text, uint32_t row, char* out, size_t cap) {
+    uint32_t r = 0;
+    size_t len = 0;
+    out[0] = '\0';
+    if (text == NULL) {
+        return;
+    }
+    for (; r < row; text++) {
+        if (*text == '\0') {
+            return;
+        }
+        r += *text == '\n';
+    }
+    while (text[len] != '\0' && text[len] != '\n') {
+        len++;
+    }
+    if (len >= cap) {
+        len = cap - 1;
+    }
+    memcpy(out, text, len);
+    out[len] = '\0';
 }

@@ -111,17 +111,24 @@ static ULONG aabtn_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMinM
     return 0;
 }
 
-/* The baked icon (mui_icon_body_px square, 2 planes, rows interleaved, pen 0 transparent) scaled to px by nearest neighbour,
- * drawn as horizontal runs of one ramp pen from the face colour to the caption colour. */
+/* The baked icon body of exactly px (2 planes, rows interleaved, pen 0 transparent; I667m); a px with no body falls back to the
+ * largest body scaled by nearest neighbour. Drawn
+ * as horizontal runs of one ramp pen from the face colour to the caption colour. */
 static void aabtn_icon(aabtn_data* d, struct RastPort* rp, int icon, int x, int y, int px, uint32_t face, uint32_t ink) {
-    const uint8_t* body = mui_icon_body(icon);
-    int bp = (int)mui_icon_body_px, rb = ((bp + 15) / 16) * 2, dy, dx, run0, run_pen;
+    int bp = px;
+    const uint8_t* body = mui_icon_body(icon, px);
+    int rb, dy, dx, run0, run_pen;
     uint32_t col[4];
     LONG pen[4];
     int i;
+    if (body == NULL && mui_icon_size_count > 0) {
+        bp = (int)mui_icon_sizes[mui_icon_size_count - 1];
+        body = mui_icon_body(icon, bp);
+    }
     if (body == NULL || px <= 0) {
         return;
     }
+    rb = ((bp + 15) / 16) * 2;
     for (i = 1; i < 4; i++) {
         col[i] = mui_aa_ramp_rgb(ink, face, 4, i);
         pen[i] = aa_pen(&d->aa, col[i]);
@@ -176,7 +183,7 @@ static ULONG aabtn_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
         if (state == MUI_AA_SELECTED) {
             aabtn_icon(d, rp, icon, bx + 2, by + 2, cp - 4, face, text);
         }
-        if (_win(obj) != NULL) {
+        if (aa_live(obj)) {
             GetAttr(MUIA_Window_ActiveObject, _win(obj), &active);
             if ((Object*)active == obj) {
                 aa_round_frame(rp, bx, by, cp, cp, ops[n - 1].inset > 0 ? ops[n - 1].radius + ops[n - 1].inset : ops[n - 1].radius, aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]));
@@ -199,7 +206,7 @@ static ULONG aabtn_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     if (tw > 0) {
         aa_text(&d->aa, obj, rp, x, t + (h - th) / 2, d->caption, text, face);
     }
-    if (_win(obj) != NULL) {
+    if (aa_live(obj)) {
         GetAttr(MUIA_Window_ActiveObject, _win(obj), &active);
         if ((Object*)active == obj) {
             aa_round_frame(rp, l, t, w, h, d->m.radius, aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]));
@@ -300,7 +307,9 @@ void mui_aabtn_set_on(Object* obj, int on) {
         return;
     }
     d->on = on != 0;
-    MUI_Redraw(obj, MADF_DRAWOBJECT);
+    if (aa_live(obj)) { /* AATabs sets the lit state while it builds, before any window exists (I684a) */
+        MUI_Redraw(obj, MADF_DRAWOBJECT);
+    }
 }
 
 void mui_aabtn_set_alt(Object* obj, int alt) {

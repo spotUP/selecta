@@ -2,6 +2,7 @@
  * `songs` inside one transaction. Runs on the worker, which owns the connection. Re-scanning a path
  * updates its rows in place (the song key is unique), so a scan is idempotent. */
 #include "db_internal.h"
+#include "schema.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -34,6 +35,10 @@ static void bind_positive(sqlite3_stmt* st, int i, sqlite3_int64 v) {
 void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_message* reply) {
     sqlite3_stmt* sf = NULL;
     sqlite3_stmt* ss = NULL;
+    sqlite3_stmt* so = NULL; /* the song's album and artist before the upsert (I687b) */
+    sqlite3_stmt* sd = NULL; /* drops the artwork of the album a retag emptied */
+    sqlite3_stmt* sd2 = NULL; /* then the albums row itself (second statement of SEL_SQL_ALBUM_DROP) */
+    const char* drop_tail = NULL;
     int rc;
     int written = 0;
     uint32_t i;
@@ -46,8 +51,15 @@ void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_messa
     if (rc == SQLITE_OK) {
         rc = sqlite3_prepare_v2(lib->db, SQL_SONG, -1, &ss, NULL);
     }
+    if (rc == SQLITE_OK) {
+        rc = sqlite3_prepare_v2(lib->db, "SELECT album, artist FROM songs WHERE key=?1", -1, &so, NULL);
+    }
+
     for (i = 0; rc == SQLITE_OK && i < b->count; i++) {
         const sel_scan_row* r = &b->rows[i];
+        char old_album[512];
+        char old_artist[512];
+        int had_album = 0;
 
         snprintf(key, sizeof key, "%s:%s", r->source, r->path);
         sqlite3_reset(sf);
@@ -62,6 +74,15 @@ void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_messa
         if (rc != SQLITE_DONE) {
             break;
         }
+        sqlite3_reset(so);
+        sqlite3_bind_text(so, 1, key, -1, SQLITE_STATIC);
+        if (sqlite3_step(so) == SQLITE_ROW && sqlite3_column_type(so, 0) == SQLITE_TEXT) {
+            snprintf(old_album, sizeof old_album, "%s", (const char*)sqlite3_column_text(so, 0));
+            snprintf(old_artist, sizeof old_artist, "%s",
+                     sqlite3_column_type(so, 1) == SQLITE_TEXT ? (const char*)sqlite3_column_text(so, 1) : "");
+            had_album = 1;
+        }
+        sqlite3_reset(so);
         sqlite3_reset(ss);
         sqlite3_bind_text(ss, 1, key, -1, SQLITE_STATIC);
         sqlite3_bind_text(ss, 2, r->source, -1, SQLITE_STATIC);
@@ -79,6 +100,35 @@ void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_messa
         if (rc != SQLITE_DONE) {
             break;
         }
+        if (had_album && (strcmp(old_album, r->album ? r->album : "") != 0 ||
+                          strcmp(old_artist, r->artist ? r->artist : "") != 0)) {
+            /* The song moved off its album (a retag): drop the albums row it emptied, with its artwork. The drop statements are
+             * large (repeated subqueries), so they are prepared on first use only: a first scan never needs them and must still
+             * fit the 512 KB heap of the 2 MB tier (I577). */
+            if (sd == NULL) {
+                rc = sqlite3_prepare_v2(lib->db, SEL_SQL_ALBUM_DROP, -1, &sd, &drop_tail);
+                if (rc == SQLITE_OK) {
+                    rc = sqlite3_prepare_v2(lib->db, drop_tail, -1, &sd2, NULL);
+                }
+                if (rc != SQLITE_OK) {
+                    break;
+                }
+            }
+            sqlite3_reset(sd);
+            sqlite3_bind_text(sd, 1, old_album, -1, SQLITE_STATIC);
+            sqlite3_bind_text(sd, 2, old_artist, -1, SQLITE_STATIC);
+            rc = sqlite3_step(sd);
+            if (rc != SQLITE_DONE) {
+                break;
+            }
+            sqlite3_reset(sd2);
+            sqlite3_bind_text(sd2, 1, old_album, -1, SQLITE_STATIC);
+            sqlite3_bind_text(sd2, 2, old_artist, -1, SQLITE_STATIC);
+            rc = sqlite3_step(sd2);
+            if (rc != SQLITE_DONE) {
+                break;
+            }
+        }
         rc = sel_library_tag_composer(lib->db, key, r->artist);
         if (rc != SQLITE_OK) {
             break;
@@ -87,6 +137,9 @@ void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_messa
     }
     sqlite3_finalize(sf);
     sqlite3_finalize(ss);
+    sqlite3_finalize(so);
+    sqlite3_finalize(sd);
+    sqlite3_finalize(sd2);
     if (rc == SQLITE_OK) {
         rc = sqlite3_exec(lib->db, "COMMIT", NULL, NULL, NULL);
     } else {

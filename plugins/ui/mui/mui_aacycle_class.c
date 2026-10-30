@@ -16,6 +16,7 @@
 #include <proto/utility.h>
 
 #include "mui_aa_draw.h"
+#include "mui_aalist_class.h"
 
 extern struct Library* MUIMasterBase;
 
@@ -42,7 +43,7 @@ static void aacycle_drop_popup(Object* obj, aacycle_data* d) {
     if (d->popup == NULL) {
         return;
     }
-    if (_win(obj) != NULL) {
+    if (aa_live(obj)) {
         GetAttr(MUIA_ApplicationObject, _win(obj), (ULONG*)&app);
     }
     set(d->popup, MUIA_Window_Open, FALSE);
@@ -138,7 +139,7 @@ static ULONG aacycle_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
         mui_aa_cycle_chevron_row(&d->m, r, &rx, &rw);
         aa_round_fill(rp, cx + rx, cy + r, rw, 1, 0, aa_pen(&d->aa, chev));
     }
-    if (_win(obj) != NULL) {
+    if (aa_live(obj)) {
         GetAttr(MUIA_Window_ActiveObject, _win(obj), &active);
         if ((Object*)active == obj) {
             aa_round_frame(rp, l + 1, t + 1, w - 2, h - 2, d->m.radius, aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]));
@@ -147,8 +148,15 @@ static ULONG aacycle_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
     return 0;
 }
 
+/* Row callback of the popup AAList: the entry text. */
+static const char* aacycle_row(void* ctx, long row) {
+    aacycle_data* d = (aacycle_data*)ctx;
+    return row >= 0 && row < d->n ? d->entries[row] : "";
+}
+
 static void aacycle_open_popup(Object* obj, aacycle_data* d) {
-    Object *app = NULL, *list;
+    Object *app = NULL, *list = NULL, *group;
+    mui_aalist_spec spec;
     struct Window* win = _window(obj);
     if (win == NULL || d->n <= 0 || d->popup != NULL) {
         return;
@@ -157,8 +165,13 @@ static void aacycle_open_popup(Object* obj, aacycle_data* d) {
     if (app == NULL) {
         return;
     }
-    list = MUI_NewObject((char*)MUIC_List, MUIA_List_SourceArray, (ULONG)d->entries, MUIA_List_Active, (ULONG)d->active, TAG_DONE);
-    if (list == NULL) {
+    spec.count = d->n;
+    spec.active = d->active;
+    spec.row = aacycle_row;
+    spec.ctx = d;
+    spec.max_rows = 12;
+    group = mui_aalist_new(&spec, &list); /* I667i: the AAList look (padding, row spacing, flat scroller) instead of the stock List */
+    if (group == NULL) {
         return;
     }
     /* The popup opens on the cycle's own screen; without MUIA_Window_Screen MUI opens it on the default public screen and brings
@@ -166,18 +179,19 @@ static void aacycle_open_popup(Object* obj, aacycle_data* d) {
     d->popup = MUI_NewObject((char*)MUIC_Window, MUIA_Window_Screen, (ULONG)_screen(obj), MUIA_Window_Borderless, TRUE, MUIA_Window_DragBar, FALSE, MUIA_Window_CloseGadget, FALSE,
                              MUIA_Window_SizeGadget, FALSE, MUIA_Window_DepthGadget, FALSE, MUIA_Window_LeftEdge, (ULONG)(win->LeftEdge + _left(obj)),
                              MUIA_Window_TopEdge, (ULONG)(win->TopEdge + _bottom(obj) + 1), MUIA_Window_Width, (ULONG)_width(obj),
-                             MUIA_Window_RootObject, (ULONG)list, TAG_DONE);
+                             MUIA_Window_RootObject, (ULONG)group, TAG_DONE);
     if (d->popup == NULL) {
-        MUI_DisposeObject(list);
+        MUI_DisposeObject(group);
         return;
     }
     d->list = list;
     DoMethod(app, OM_ADDMEMBER, (ULONG)d->popup);
     /* A pick sets AAC_Active on the cycle and closes the popup; the active row set above fired before these notifications exist. */
-    DoMethod(list, MUIM_Notify, MUIA_List_Active, MUIV_EveryTime, obj, 3, MUIM_Set, AAC_Active, MUIV_TriggerValue);
-    DoMethod(list, MUIM_Notify, MUIA_List_Active, MUIV_EveryTime, d->popup, 3, MUIM_Set, MUIA_Window_Open, FALSE);
+    DoMethod(list, MUIM_Notify, AAL_Picked, MUIV_EveryTime, obj, 3, MUIM_Set, AAC_Active, MUIV_TriggerValue);
+    DoMethod(list, MUIM_Notify, AAL_Picked, MUIV_EveryTime, d->popup, 3, MUIM_Set, MUIA_Window_Open, FALSE);
     DoMethod(d->popup, MUIM_Notify, MUIA_Window_Activate, FALSE, d->popup, 3, MUIM_Set, MUIA_Window_Open, FALSE);
     set(d->popup, MUIA_Window_Open, TRUE);
+    set(d->popup, MUIA_Window_ActiveObject, (ULONG)list); /* keys go to the list */
 }
 
 static ULONG aacycle_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEvent* msg) {
@@ -213,7 +227,7 @@ static ULONG aacycle_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEv
         }
         return 0;
     }
-    if (im->Class == IDCMP_RAWKEY && !dis && _win(obj) != NULL) {
+    if (im->Class == IDCMP_RAWKEY && !dis && aa_live(obj)) {
         GetAttr(MUIA_Window_ActiveObject, _win(obj), &act);
         if ((Object*)act == obj && (im->Code == 0x4C || im->Code == 0x4D)) { /* cursor up, cursor down */
             set(obj, AAC_Active, (ULONG)mui_aa_cycle_step(d->active, d->n, im->Code == 0x4C ? -1 : 1));
@@ -245,7 +259,7 @@ static ULONG aacycle_set(struct IClass* cl, Object* obj, struct opSet* msg) {
     struct TagItem* ta = FindTagItem(AAC_Active, msg->ops_AttrList);
     if (ta != NULL && mui_aa_cycle_valid((int)ta->ti_Data, d->n) && (int)ta->ti_Data != d->active) {
         d->active = (int)ta->ti_Data;
-        if (_win(obj) != NULL) {
+        if (aa_live(obj)) {
             MUI_Redraw(obj, MADF_DRAWOBJECT);
         }
     }

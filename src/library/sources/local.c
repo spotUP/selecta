@@ -374,6 +374,31 @@ static void push_dir(scan_state* s, const char* path) {
     copy_text(s->stack[s->stack_n++], SEL_BROWSE_PATH_MAX, path);
 }
 
+/* I688: an unfinished browser download (song.mp3.part, .crdownload, .download, .partial; any case) is not a song yet. */
+static int is_partial_download(const char* name) {
+    static const char* const ext[] = {".part", ".crdownload", ".download", ".partial"};
+    size_t n = strlen(name), i, k;
+
+    for (i = 0; i < sizeof ext / sizeof ext[0]; i++) {
+        size_t e = strlen(ext[i]);
+
+        if (n < e) {
+            continue;
+        }
+        for (k = 0; k < e; k++) {
+            char c = name[n - e + k];
+
+            if ((c >= 'A' && c <= 'Z' ? (char)(c + 32) : c) != ext[i][k]) {
+                break;
+            }
+        }
+        if (k == e) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void scan_dir(scan_state* s, const char* dir) {
     uint32_t i;
     char full[SEL_BROWSE_PATH_MAX];
@@ -397,6 +422,8 @@ static void scan_dir(scan_state* s, const char* dir) {
             if (!s->flat) {
                 push_dir(s, full);
             }
+        } else if (is_partial_download(name)) {
+            continue;
         } else if (s->count_only) {
             s->total++;
         } else {

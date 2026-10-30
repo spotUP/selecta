@@ -92,7 +92,7 @@ int main(void) {
         "INSERT INTO songs(key, source, path, name, artist, album, added) VALUES"
         "('local:a.mod','local','a.mod','a','Ann','Alb1',100),('local:b.mod','local','b.mod','b','Ann','Alb1',200),"
         "('local:c.mod','local','c.mod','c','Bob','Alb2',300),('modland:d.mod','modland','d.mod','d','Bob',NULL,400);"
-        "INSERT INTO albums(name, artist) VALUES('Alb1','Ann'),('Alb2','Bob'),('Alb3','Cy');"
+        "INSERT INTO albums(name, artist) VALUES('Alb3','Cy');" /* Alb1 and Alb2 come from the songs (I687) */
         "INSERT INTO song_composers(song_key, canon, display) VALUES('local:a.mod','x','X'),('local:b.mod','x','X'),"
         "('local:c.mod','y','Y');"
         "INSERT INTO playlists(name) VALUES('Mix'),('Chill');"

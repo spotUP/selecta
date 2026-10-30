@@ -5,6 +5,7 @@
 #include "md5.h"
 #include "net/net.h"
 #include "source.h"
+#include "zip_member.h"
 
 #include <selecta/engine.h>
 #include <selecta/machine.h>
@@ -75,6 +76,31 @@ static int make_parent(const char* file) {
     memcpy(dir, file, n);
     dir[n] = '\0';
     return sel_config_mkdir(dir);
+}
+
+/* A failed fetch leaves no empty folders behind (I695a): removes the now empty directories above `file`, one per
+ * folder level of `path`, never the source's own folder. remove() takes empty directories only, so a folder that
+ * holds another song stays. */
+static void drop_empty_parents(const char* file, const char* path) {
+    char dir[SEL_CACHE_PATH_MAX];
+    const char* p;
+    size_t n = strlen(file);
+
+    if (n >= sizeof dir) {
+        return;
+    }
+    memcpy(dir, file, n + 1u);
+    for (p = path; (p = strchr(p, '/')) != NULL; p++) {
+        char* slash = strrchr(dir, '/');
+
+        if (slash == NULL) {
+            return;
+        }
+        *slash = '\0';
+        if (remove(dir) != 0) {
+            return;
+        }
+    }
 }
 
 static int file_exists(const char* path) {
@@ -153,6 +179,42 @@ static sel_mirror_set* set_for(sel_cache* c, const char* source) {
     return &c->sets[c->set_count++];
 }
 
+/* A song the mirrors do not serve but the source's yearly zip lists (I695d, sndh): the sync left the zip's URL in
+ * <cache>/sync/<source>/<source>.zipurl and its central directory in <source>.cd; the member comes by Range request. */
+static int zip_fallback(sel_cache* c, const char* source, const char* path, const char* out, const char* part) {
+    char file[SEL_CACHE_PATH_MAX], url[SEL_CACHE_PATH_MAX], name[SEL_ZIP_NAME_MAX];
+    sel_zip_member m;
+    FILE* f;
+    size_t n;
+    int ok;
+
+    if (strcmp(source, "sndh") != 0 || snprintf(file, sizeof file, "%s/sync/%s/%s.zipurl", c->dir, source, source) >= (int)sizeof file ||
+        (f = fopen(file, "rb")) == NULL) {
+        return 0;
+    }
+    n = fread(url, 1, sizeof url - 1u, f);
+    fclose(f);
+    url[n] = '\0';
+    while (n > 0 && (url[n - 1u] == '\n' || url[n - 1u] == '\r')) {
+        url[--n] = '\0';
+    }
+    while (*path == '/') {
+        path++;
+    }
+    if (n == 0 || snprintf(name, sizeof name, "sndh_lf/%s", path) >= (int)sizeof name ||
+        snprintf(file, sizeof file, "%s/sync/%s/%s.cd", c->dir, source, source) >= (int)sizeof file ||
+        !sel_zip_member_find(file, name, &m)) {
+        return 0;
+    }
+    ok = sel_zip_member_fetch(url, &m, part, &c->stats.zip_requests) && rename(part, out) == 0;
+    if (!ok) {
+        remove(part);
+        return 0;
+    }
+    c->stats.zip_members++;
+    return 1;
+}
+
 sel_cache_result sel_cache_fetch(sel_cache* c, const char* source, const char* path, const char* md5, char* out,
                                  size_t cap) {
     char part[SEL_CACHE_PATH_MAX + 8];
@@ -208,6 +270,7 @@ sel_cache_result sel_cache_fetch(sel_cache* c, const char* source, const char* p
     ok = sel_mirrors_fetch_opts(set, path, &o, on_body, on_restart, on_verify, &s, &res);
     c->stats.mirror_tries += res.tries;
     c->stats.md5_mismatches += res.rejected;
+    c->last_status = ok ? 0 : res.status;
     if (s.f != NULL) {
         fclose(s.f);
     }
@@ -235,6 +298,11 @@ sel_cache_result sel_cache_fetch(sel_cache* c, const char* source, const char* p
     c->slice.fails = 0;
     c->slice.active = 0;
     remove(part);
+    if (res.rejected == 0 && !(c->cancel != NULL && *c->cancel) && zip_fallback(c, source, path, out, part)) {
+        c->stats.fetches++;
+        return SEL_CACHE_OK;
+    }
+    drop_empty_parents(out, path);
     return res.rejected > 0 ? SEL_CACHE_MD5 : SEL_CACHE_FAILED;
 }
 

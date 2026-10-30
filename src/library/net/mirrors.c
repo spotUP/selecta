@@ -159,6 +159,7 @@ typedef struct attempt {
     void* rctx;
     const sel_http_res* hr;      /* final status, readable once the body flows */
     int checked;                 /* the resume answer was looked at */
+    int status;                  /* HTTP status of this attempt, 0 when no response came (ftp or a refused connect) */
 } attempt;
 
 static int on_body(void* c, const void* data, size_t len) {
@@ -207,6 +208,7 @@ static int try_one(const char* url, attempt* a, const sel_mirror_opts* o) {
     } else {
         sel_http_req req;
         sel_http_res hr;
+        int ok;
         memset(&req, 0, sizeof req);
         memset(&hr, 0, sizeof hr);
         req.url = url;
@@ -223,7 +225,9 @@ static int try_one(const char* url, attempt* a, const sel_mirror_opts* o) {
             req.range_to = -1;
         }
         a->hr = &hr;
-        return sel_http_request(&req, on_body, a, &hr) == SEL_HTTP_OK && hr.status >= 200 && hr.status < 300;
+        ok = sel_http_request(&req, on_body, a, &hr) == SEL_HTTP_OK;
+        a->status = hr.status;
+        return ok && hr.status >= 200 && hr.status < 300;
     }
 }
 
@@ -257,6 +261,7 @@ int sel_mirrors_fetch_opts(sel_mirror_set* s, const char* path, const sel_mirror
         a.rctx = ctx;
         a.hr = NULL;
         a.checked = 0;
+        a.status = 0;
         res->tries++;
         if (try_one(res->url, &a, o) && (verify == NULL || verify(ctx) || (res->rejected++, 0))) {
             if (a.ttfb > 0) {
@@ -271,6 +276,7 @@ int sel_mirrors_fetch_opts(sel_mirror_set* s, const char* path, const sel_mirror
         if (o != NULL && o->yielded != NULL && *o->yielded) {
             break; /* the sink stopped on purpose: not a failure of the mirror */
         }
+        res->status = a.status;
         s->failures[i]++;
     }
     res->retries = res->tries > 0 ? res->tries - 1u : 0u;

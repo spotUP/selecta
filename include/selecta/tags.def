@@ -109,6 +109,7 @@ SEL_TAG(OUT, STAT_AHI_RATE,     0x201D, INT) /* ahi outputs: sample rate in Hz *
 SEL_TAG(OUT, RATE_FOR,          0x201E, PTR) /* uint32_t (*)(const sel_tag* machine): the rate the output prefers on that machine; absent = 44100 */
 SEL_TAG(OUT, STAT_AHI_DECODE_MS, 0x201F, INT) /* ahi outputs: milliseconds spent pulling PCM from the source (decode and mix) */
 SEL_TAG(OUT, STAT_AHI_WAIT_MS,  0x2020, INT) /* ahi outputs: milliseconds blocked waiting for ahi.device to free a buffer */
+SEL_TAG(OUT, UNPACED,           0x2021, INT) /* 1 = OUT_PUMP never blocks (Paula): the shell paces its turns on the UI wait (I684c). Absent = the pump paces itself */
 
 /* DSP plugin rows (design doc section 5, include/selecta/dsp.h). */
 SEL_TAG(DSP, NAME,             0x3000, STR)
@@ -136,6 +137,9 @@ SEL_TAG(UI, STATS,             0x5008, PTR)
 /* MUI-P1-6: 0 when the UI is registered but its system library is absent. The tag missing means present. UI lists and
  * the default UI pick skip a UI with 0; an explicit --ui still opens it, and its open reports why it cannot. */
 SEL_TAG(UI, PRESENT,              0x506E, INT)
+/* I676b: optional hook int (*)(void* state, const char* path): re-read the theme file (path, or NULL for the ENV file) and say 0 when it
+ * was valid and the UI will show it after the shell reopens it, non-zero when it was refused. The ARexx command THEME calls it. */
+SEL_TAG(UI, THEME,                0x506F, PTR)
 /* VIEW_CHANGED / VIEW_ROWS: where the view window stands. */
 SEL_TAG(UI, ROW_COUNT,         0x5009, INT)
 SEL_TAG(UI, CURSOR,            0x500A, INT)

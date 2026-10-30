@@ -37,8 +37,8 @@ endif()
 if(NOT out MATCHES "home_rows=([0-9]+)")
   message(FATAL_ERROR "no home_rows= sentinel in:\n${out}")
 endif()
-if(NOT CMAKE_MATCH_1 EQUAL 0)
-  message(FATAL_ERROR "home_rows=${CMAKE_MATCH_1} with ${stale} stale history keys and no songs, want 0")
+if(NOT CMAKE_MATCH_1 EQUAL 1) # I678j: the pinned Liked Songs tile of Quick access is always the one row
+  message(FATAL_ERROR "home_rows=${CMAKE_MATCH_1} with ${stale} stale history keys and no songs, want 1 (Liked Songs)")
 endif()
 # Streams and other sources (no songs row, key is not local:<path>) still show: one finished play, one skip.
 set(ins "INSERT INTO history(key, played_at, duration_ms, skipped) VALUES ('modland:Protracker/Jester/test.mod', 1700000000, 1000, 0), ('http://example.org/radio', 1700000100, 500, 1); SELECT COUNT(*) FROM history;")

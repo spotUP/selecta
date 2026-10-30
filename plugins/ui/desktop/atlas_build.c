@@ -1,6 +1,11 @@
 /* Atlas builder (DUI-P2-3); see atlas_build.h. */
 #include "atlas_build.h"
 
+/* Only tinfl is used; the zlib-name shims in miniz.h are unused statics (-Werror). selecta_archive sets this for the
+   real build; the SDK check target has no such link, so the file states it itself (I720). */
+#ifndef MINIZ_NO_ZLIB_COMPATIBLE_NAMES
+#define MINIZ_NO_ZLIB_COMPATIBLE_NAMES
+#endif
 #include <miniz.h>
 
 #ifdef __clang__

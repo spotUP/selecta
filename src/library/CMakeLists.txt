@@ -25,14 +25,14 @@ target_include_directories(selecta_library PUBLIC ${PROJECT_SOURCE_DIR}/include 
 add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/sqlite ${CMAKE_BINARY_DIR}/third_party/sqlite)
 target_sources(selecta_library PRIVATE db/amiga_vfs.c db/db.c db/index.c db/schema.c db/worker.c db/search.c db/scan.c db/user.c db/folders.c db/fetch.c db/rating_push.c db/vote_push.c db/lyrics_fetch.c db/job.c db/genre.c db/art.c db/songdb.c db/items.c db/similar.c db/duplicates.c devilbox_loudness.c devilbox_lyrics.c stream_open.c record_name.c songlen.c meta_utf8.c radio.c composer.c xxh32.c lyrics.c query.c regex.c share.c)
 target_include_directories(selecta_library PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/db)
-target_link_libraries(selecta_library PUBLIC selecta_sqlite)
+target_link_libraries(selecta_library PUBLIC selecta_sqlite selecta_platform) # I691c2: the platform family table lives in selecta_platform, never in the GUI
 if(SEL_AMIGA)
   target_compile_definitions(selecta_library PRIVATE SEL_LIBRARY_NO_THREAD)
 endif()
 
 # Network (plan 2026-10-25-m3-library.md Phase 3, D-M3-4): the socket table with the guard and host
 # map (one file per OS under src/core/) and the HTTP/1.1 client on top of it.
-target_sources(selecta_library PRIVATE ${SEL_NET_SOURCE} net/netpolicy.c net/http.c net/tls.c net/ftp.c net/mirrors.c net/devilbox.c md5.c cache.c)
+target_sources(selecta_library PRIVATE ${SEL_NET_SOURCE} net/netpolicy.c net/http.c net/tls.c net/ftp.c net/mirrors.c net/devilbox.c md5.c cache.c zip_member.c)
 if(SEL_AMIGA)
   # Plain HTTP and FTP on the Amiga (D-M3-4): no TLS library, tls.c compiles its stubs.
   target_compile_definitions(selecta_library PRIVATE SEL_NO_TLS)

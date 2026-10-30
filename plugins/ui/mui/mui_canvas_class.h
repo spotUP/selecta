@@ -16,6 +16,8 @@ Object* mui_canvas_new(const mui_grid_style* style, int screen_is_rtg);
 void mui_canvas_set_grid(Object* obj, const mui_tile* tiles, uint32_t n, uint32_t cursor, mui_art_fn art, void* art_ctx);
 /* Grid frames drawn by this object (the rig sentinel). */
 uint32_t mui_canvas_draws(Object* obj);
+/* Writes w x h 0xAARRGGBB words to the rastport at (dx, dy) through Picasso96 (the viz area shares it). */
+void mui_canvas_push(struct Library* p96, const uint32_t* px, int32_t w, int32_t h, struct RastPort* rp, int32_t dx, int32_t dy);
 /* Deletes the class; call after the application object is disposed. */
 void mui_canvas_class_free(void);
 

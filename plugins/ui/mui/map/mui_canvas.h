@@ -24,14 +24,14 @@ void mui_canvas_release(mui_canvas* m);
 /* The clip the class installs on the window RastPort before the blit: the object rectangle in window coordinates. */
 sel_gui_rect mui_canvas_window_clip(const mui_canvas* m);
 
-/* One grid tile: the title seeds the generated art, art_id keys the art cache (0 = no cover). */
+/* One grid tile: the title seeds the cover tone, art_id keys the art cache (0 = no cover). */
 typedef struct mui_tile {
     const char* title;
-    const char* format; /* file extension for the generated art; NULL = "album" */
+    const char* format; /* file extension; its platform family colours the cover (NULL = Music) */
     int64_t art_id;
 } mui_tile;
 
-/* Cover lookup: tile-edge square words of the cover with `art_id`, NULL on a miss (the tile then shows generated art).
+/* Cover lookup: tile-edge square words of the cover with `art_id`, NULL on a miss (the tile then shows the platform cover).
  * Backed by sel_gui_art_cache_get in the class (MUI-P5-2). */
 typedef const uint32_t* (*mui_art_fn)(void* ctx, int64_t art_id);
 
@@ -44,17 +44,17 @@ typedef struct mui_grid_style {
 uint32_t mui_grid_cols(const mui_grid_style* s, int32_t width);
 /* Rectangle of tile i (canvas coordinates) and of its cover. */
 sel_gui_rect mui_grid_tile_rect(const mui_grid_style* s, int32_t width, uint32_t i);
-/* Draws the tiles into the canvas: background, then per tile a card, the cover from `art` or the generated art, and the
+/* Draws the tiles into the canvas: background, then per tile a card, the cover from `art` or the platform cover, and the
  * selection outline on `cursor`. Returns the tiles drawn (those that fit the canvas height). */
 uint32_t mui_canvas_draw_grid(mui_canvas* m, const mui_grid_style* s, const mui_tile* tiles, uint32_t n, uint32_t cursor,
                               mui_art_fn art, void* art_ctx);
 
 /* Artwork path (MUI-P5-4): RTG screens decode the cover through picture.datatype and scale it with
- * sel_gui_image_scale; planar screens show the generated art. */
-typedef enum mui_art_path { MUI_ART_GENART = 0, MUI_ART_DATATYPE = 1 } mui_art_path;
+ * sel_gui_image_scale; planar screens show the platform cover. */
+typedef enum mui_art_path { MUI_ART_COVER = 0, MUI_ART_DATATYPE = 1 } mui_art_path;
 mui_art_path mui_art_path_for(int screen_is_rtg);
-/* Draws one cover into `r` by path: DATATYPE scales the decoded words `src` (sw x sh) to r and blits them, GENART (or a
- * NULL src) draws the generated tile. Returns the path actually used. */
+/* Draws one cover into `r` by path: DATATYPE scales the decoded words `src` (sw x sh) to r and blits them, COVER (or a
+ * NULL src) draws the platform cover. Returns the path actually used. */
 mui_art_path mui_canvas_draw_art(mui_canvas* m, sel_gui_rect r, mui_art_path want, const uint32_t* src, int32_t sw,
                                  int32_t sh, const char* format, const char* title);
 
