@@ -8,6 +8,7 @@
 
 #include <selecta/engine.h>
 #include <selecta/uimodel.h>
+#include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/panels.h>
 #include <selecta/uimodel/sources.h>
 
@@ -170,6 +171,8 @@ int32_t mui_list_pending_resolve(mui_list_pending* p, int32_t snapshot_active);
  * List cursor (active) can be moved by a list refresh between the click and the app loop handling it, so the clicked
  * row wins and the cursor is only the fallback. */
 int32_t mui_list_dbl_row(int32_t picked, int32_t active);
+/* I724: ENV:Selecta/MUIDblRace value (read once at open) -> knob on: any text but empty or "0". */
+int mui_list_dbl_race_on(const char* value);
 extern uint32_t mui_list_dbl_row_calls; /* sentinel: how often the decision ran */
 /* Tree style: the engine line a click on a node row sends (VIEW_EXPAND/VIEW_COLLAPSE <node id>); "" for a non-node. */
 void mui_list_toggle_line(const sel_view_row* r, char* out, size_t cap);
@@ -216,6 +219,36 @@ const char* mui_door_line(uint32_t i);
 /* I615d: the top bar Browse button's engine lines (the rich UI's PG_BROWSE page load). Home sends mui_door_line(0). */
 #define MUI_TOPBAR_BROWSE_LINES 3u
 extern const char* const mui_topbar_browse_lines[MUI_TOPBAR_BROWSE_LINES];
+
+/* I792 (drift doc 2026-10-30-mui-mac-drift section 4): how the MUI shows page `page` of the shared page table (uimodel/pages.h). Every page
+ * has exactly one entry: a MUI_PAGE_MAIN_VIEW (the main list view, switched by an engine line), a MUI_PAGE_GROUP (the MUI's own page group)
+ * or a MUI_PAGE_EXEMPT carrying the written reason it has no slot. kind MUI_PAGE_GAP with no reason is a page nobody mapped: the route
+ * loop in tests/ui/mui_contract_test.c fails on it. NULL past SEL_UIM_PG_COUNT. */
+enum { MUI_PAGE_GAP = 0, MUI_PAGE_MAIN_VIEW, MUI_PAGE_GROUP, MUI_PAGE_EXEMPT };
+typedef struct mui_page_slot_t {
+    uint32_t kind;
+    const char* exempt; /* MUI_PAGE_EXEMPT: why the page has no MUI slot (and the ledger row that closes it) */
+} mui_page_slot_t;
+const mui_page_slot_t* mui_page_slot(uint32_t page);
+
+/* I735: the panes of the MUI main slot. MUI_PANE_LIST is the song list every engine-line page (Home, Search, Library, ...) shows; the
+ * Visualizer and Pattern pages are own panes, reached from the Mac UI's keys (txt_bindings default: v -> @viz, t -> @pattern; the
+ * View menu items carry the same shortcuts) and shown in the main slot at every width. `opens` counts the openings per pane. */
+enum { MUI_PANE_LIST = 0, MUI_PANE_VIZ, MUI_PANE_TRACKER, MUI_PANE_COUNT };
+typedef struct mui_mainpane {
+    uint32_t pane;
+    uint32_t opens[MUI_PANE_COUNT];
+} mui_mainpane;
+uint32_t mui_pane_of_page(uint32_t page);       /* the pane page `page` shows in; MUI_PANE_LIST for a page the list shows */
+uint32_t mui_pane_page(uint32_t pane);          /* the shared-table page a pane shows (SEL_UIM_PG_*) */
+uint32_t mui_pane_of_action(const char* act);   /* "@viz" -> MUI_PANE_VIZ, "@pattern" -> MUI_PANE_TRACKER; MUI_PANE_COUNT otherwise */
+const char* mui_pane_title(uint32_t pane);      /* the View menu item title, NULL for the list */
+char mui_pane_shortcut(uint32_t pane);          /* the Mac UI's key for the page, '\0' when none */
+/* The page entry: shows the pane of `page`, counts the opening, returns the pane. Any other page (a door or the top bar) goes back
+ * to the list through the same call. */
+uint32_t mui_pane_open(mui_mainpane* mp, uint32_t page);
+/* A key press (txt_key code and mods) as the Mac UI's default table reads it: opens the page it names. MUI_PANE_COUNT when the key opens none. */
+uint32_t mui_pane_key(mui_mainpane* mp, uint32_t code, uint32_t mods);
 
 /* MUI-P4-2: Library breadcrumbs. Pieces of a browse path split on "/" and the AmigaDOS ":" (the volume keeps its colon);
  * `end` is the length of the path up to and including the piece, so a click on a crumb opens path[0..end). Returns the
@@ -444,5 +477,40 @@ typedef struct mui_remember {
 typedef const char* (*mui_pref_get_fn)(void* ctx, const char* key);
 uint32_t mui_remember_close(const mui_remember* r, mui_send_fn send, void* ctx);
 uint32_t mui_remember_open(mui_remember* r, mui_pref_get_fn get, void* ctx); /* returns how many of the four items were found */
+
+/* I793 (drift doc S3 to S9): the Your Library sidebar model, built from the uimodel texts and the engine's library items. The MUI
+ * sidebar (mui_ui.c mui_sidebar_group) builds its objects from this and nothing else; mui_sidebar_builds() is the sentinel. */
+#define MUI_SIDEBAR_DOORS 8u
+#define MUI_SIDEBAR_ROWS 16u
+typedef struct mui_sidebar_in {
+    int top_bar;     /* the screen tier has the top bar (the doors Home and Search leave) */
+    uint32_t chip;   /* 0 All, 1..SEL_UIM_SIDE_CHIPS a kind chip */
+    uint32_t by_you_only; /* the By You sub-chip of Playlists */
+    uint32_t wide;   /* Expand is on */
+    int bitmap;      /* the bitmap tier */
+    const char* filter;
+    const sel_engine_library_item* items;
+    uint32_t item_n;
+} mui_sidebar_in;
+typedef struct mui_sidebar_row {
+    char mark[4], title[96], subtitle[96], type[16];
+    uint32_t kind, id;
+} mui_sidebar_row;
+typedef struct mui_sidebar_model {
+    uint32_t door[MUI_SIDEBAR_DOORS], door_n; /* indexes of the shown doors in the uimodel door table */
+    char title[24], create[24], expand[24];   /* the header: Your Library, Create Playlist, Expand/Collapse Library */
+    char chip[SEL_UIM_SIDE_CHIPS][16];
+    int chip_shown[SEL_UIM_SIDE_CHIPS];
+    uint32_t chip_selected;
+    int chip_clear, by_you;
+    mui_sidebar_row row[MUI_SIDEBAR_ROWS];
+    uint32_t row_n, cols;
+    int wide;
+    char empty[32];                           /* "" when no empty state shows */
+    int card;
+    char card_title[40], card_body[48], card_button[24];
+} mui_sidebar_model;
+void mui_sidebar_build(const mui_sidebar_in* in, mui_sidebar_model* out);
+uint32_t mui_sidebar_builds(void);
 
 #endif

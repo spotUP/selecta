@@ -147,6 +147,14 @@ enum {
 #define SEL_UIM_TOPBAR_BUTTON 40u  /* the round Home button and the field height */
 #define SEL_UIM_TOPBAR_FIELD_MAX 480u
 
+/* I733: empty-field hint text, one source for the desktop and the MUI UI. */
+#define SEL_UIM_SEARCH_FACETS 4u
+extern const char* const sel_uim_search_facets[SEL_UIM_SEARCH_FACETS]; /* All, Songs, Albums, Artists */
+#define SEL_UIM_CMD_HINT "Type a command"
+/* Search field hint: with a top bar "What do you want to play?", else "Search" plus the chip names after the leading All chip, lowercased
+ * ("Search songs, albums, artists"). */
+void sel_uim_search_hint(int topbar, const char* const* chips, uint32_t n, char* out, size_t cap);
+
 typedef struct sel_uim_region {
     const char* name;
     int32_t x, y;

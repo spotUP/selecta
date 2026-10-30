@@ -13,6 +13,7 @@
  * thread as its consumer, these two have the audio thread on one end. */
 #include <selecta/uimodel/browse.h>
 #include <selecta/engine.h>
+#include <selecta/platform.h>
 #include <selecta/machine.h>
 
 #include <selecta/plugin.h>
@@ -39,6 +40,10 @@
 #include "export/export.h"
 #include "prefs.h"
 #include "view.h"
+#if !defined(__amigaos__) && !defined(AMIGA)
+#include <pthread.h>
+#define SEL_LI_THREAD 1
+#endif
 #include "db.h"
 #include "composer.h"
 #include "meta_utf8.h"
@@ -49,6 +54,7 @@
 #include "share.h"
 #include "stream_open.h"
 #include "net/net.h"
+#include "archive/archive.h"
 #if !defined(SEL_NO_ANALYSE)
 #include "loudness.h"
 #endif
@@ -172,6 +178,7 @@
 #define SEL_RING_SWAP 1u
 #define SEL_RING_RETURN 2u
 #define SEL_DEFERRED_PATH_MAX 1024u
+#define SEL_ARCHIVE_MEMBER_NAME_MAX 128u
 #define SEL_ERROR_DETAIL_MAX 64
 #define SEL_LOG_LINE_MAX 96
 /* RESULT lines (COMMANDS, EVENTS, TAGTYPES, STATUS) are copied into a per-engine arena that lives until the event queue
@@ -400,6 +407,8 @@ struct sel_engine {
     uint32_t songs_opened;  /* OPEN-kind song starts that succeeded (not seeks, restarts, subsongs) */
     uint32_t dup_redirects; /* reads that took the best source of the same md5 (D-M3-14, I184) */
     char dup_played[SEL_DEFERRED_PATH_MAX]; /* key of the last best source read */
+    uint32_t archive_unpacks;    /* OPENs whose file was an archive and played the module inside (I405 sentinel) */
+    char archive_member[SEL_ARCHIVE_MEMBER_NAME_MAX]; /* name of the member the last unpack played */
     char deferred_path[SEL_DEFERRED_PATH_MAX];
     char subsong_path[SEL_DEFERRED_PATH_MAX];
     sel_queue queue;
@@ -475,7 +484,17 @@ struct sel_engine {
     uint32_t collection_opens;                /* COLLECTION_OPEN commands applied (I678e) */
     uint32_t collection_kind;                 /* the collection page last opened: its kind (SEL_LIB_ITEM_*) */
     char collection_key[128];                 /* and its library key */
+    uint32_t rating_pending_cache;            /* I782: the last rating_pending count a stats read got from a free library */
     uint32_t library_items_calls;             /* sel_engine_library_items calls that reached the library (I678a) */
+    /* I787: the one async Your Library read. li_state 0 idle, 1 running, 2 result ready (written with __atomic ops; the
+     * thread publishes the rows before it stores 2). */
+    int li_state;
+    uint32_t li_mask, li_max, li_n, li_total;
+    sel_engine_library_item* li_rows;
+#if defined(SEL_LI_THREAD)
+    pthread_t li_thread;
+#endif
+    uint32_t drill_rows;                      /* I790: source drill rows emitted by the library over all pages built */
     uint32_t collection_queries;              /* collection page lists that reached the library (I678f) */
     sel_collection_page coll;                 /* the page COLLECTION_OPEN built (I678f), published as state.collection */
     char* coll_rows;                          /* its song block, heap */
@@ -2077,6 +2096,57 @@ static void report_open_failed(sel_engine* e, const char* detail) {
     }
 }
 
+#define SEL_ARCHIVE_MEMBER_MAX (16u * 1024u * 1024u) /* largest member an archived module may be */
+
+typedef struct unpack_ctx {
+    sel_engine* e;
+    uint8_t* module; /* host copy of the member found, NULL: none yet */
+    size_t module_size;
+} unpack_ctx;
+
+/* The first member some replayer takes becomes the module (I405: Aminet songs are LHA archives). */
+static int on_archive_member(void* vctx, const char* name, const uint8_t* data, size_t size) {
+    unpack_ctx* u = vctx;
+    uint8_t* copy;
+
+    if (size == 0 || find_replayer(u->e, data, size, name) == NULL) {
+        return 1;
+    }
+    copy = u->e->host->mem_alloc(u->e->host, size + 1u, SEL_MEM_FAST);
+    if (copy == NULL) {
+        return 0;
+    }
+    memcpy(copy, data, size);
+    copy[size] = 0;
+    u->module = copy;
+    u->module_size = size;
+    snprintf(u->e->archive_member, sizeof u->e->archive_member, "%s", name);
+    return 0;
+}
+
+/* `data` is the file read for OPEN. When it is a folder archive (LHA, zip) holding a member some replayer takes, replaces
+ * it with that member (the old buffer is freed) and returns the member's replayer; otherwise leaves `data` alone and
+ * returns NULL. */
+static const sel_tag* unpack_archived_module(sel_engine* e, uint8_t** data, size_t* size) {
+    unpack_ctx u;
+    int kind = sel_archive_kind(*data, *size);
+
+    if (kind == SEL_ARCHIVE_NONE || !sel_archive_is_folder(kind)) {
+        return NULL;
+    }
+    memset(&u, 0, sizeof u);
+    u.e = e;
+    sel_archive_each(e->host, kind, *data, *size, SEL_ARCHIVE_MEMBER_MAX, on_archive_member, &u);
+    if (u.module == NULL) {
+        return NULL;
+    }
+    e->host->mem_free(e->host, *data);
+    *data = u.module;
+    *size = u.module_size;
+    e->archive_unpacks++;
+    return find_replayer(e, u.module, u.module_size, e->archive_member);
+}
+
 /* Prepares the idle slot `idx` with the song at `path` (all allocation, file
  * read, RP_OPEN and RP_START happen here) and publishes it through the swap
  * ring. On failure the slot stays free and the error is reported. */
@@ -2130,6 +2200,14 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
             return 0;
         }
         hooks = find_replayer(e, data, size, path);
+    }
+    if (live == NULL && fs == NULL) {
+        /* I405: a folder archive (LHA, zip) holding a module plays that module. Tried before the replayer that claimed
+         * the archive itself: the YM probe takes every LHA (a .ym is LH5-packed), and a .mod inside would fail there. */
+        const sel_tag* inner = unpack_archived_module(e, &data, &size);
+        if (inner != NULL) {
+            hooks = inner;
+        }
     }
     if (hooks == NULL) {
         drop_song(e, data, live, fs);
@@ -3608,6 +3686,22 @@ void sel_engine_scan_progress(const sel_engine* e, sel_scan_progress* out) {
     } while ((a & 1u) != 0u || a != e->scan_seq);
 }
 
+void sel_engine_sync_progress(const sel_engine* e, sel_sync_progress* out) {
+    memset(out, 0, sizeof *out);
+    out->active = (uint32_t)(e->sync_running != 0);
+    if (out->active) {
+        out->rows = e->sync_ctx.rows_done;
+        snprintf(out->source, sizeof out->source, "%s", e->sync_id);
+    }
+    out->queued = (uint32_t)e->sync_next_n;
+}
+
+void sel_engine_sync_cancel(sel_engine* e) {
+    if (e->sync_running) {
+        sel_library_task_cancel_request(e->lib);
+    }
+}
+
 int sel_engine_scan_busy(const sel_engine* e) {
     return e->scan_running || e->sync_running; /* the scan and the sync share the one library task slot (I527) */
 }
@@ -4653,6 +4747,57 @@ static int search_distinct_album_add(const sel_engine* e, uint32_t* table, uint3
     return 0;
 }
 
+/* I807: which result rows the Songs group lists. The result is sorted by key, so its source prefixes come in key order
+ * (asma, hippo, hvsc, ..., local, modland, ...); the first SEARCH_GROUP_ROWS rows alone were all of the first sources
+ * and a big source later in key order (modland) never showed. The listed rows are taken round-robin over the sources
+ * with hits, each source in key order, and returned in result order. Returns how many rows were chosen. */
+enum { SEARCH_SOURCES = 16 };
+
+static int search_same_source(const char* a, const char* b) {
+    size_t i = 0;
+    while (a[i] != '\0' && a[i] != ':' && a[i] == b[i]) {
+        i++;
+    }
+    return (a[i] == ':' || a[i] == '\0') && (b[i] == ':' || b[i] == '\0');
+}
+
+static uint32_t search_pick_songs(const sel_engine* e, uint32_t* pick) {
+    uint32_t first[SEARCH_SOURCES], next[SEARCH_SOURCES], ns = 0, n = 0, i, s, j;
+    int more = 1;
+    for (i = 0; i < e->res_count && ns < SEARCH_SOURCES; i++) {
+        const char* key = sel_engine_result_key(e, i);
+        for (s = 0; s < ns && !search_same_source(sel_engine_result_key(e, first[s]), key); s++) {
+        }
+        if (s == ns) {
+            first[ns] = next[ns] = i;
+            ns++;
+        }
+    }
+    while (n < SEARCH_GROUP_ROWS && more) {
+        more = 0;
+        for (s = 0; s < ns && n < SEARCH_GROUP_ROWS; s++) {
+            const char* src = sel_engine_result_key(e, first[s]);
+            for (i = next[s]; i < e->res_count && !search_same_source(src, sel_engine_result_key(e, i)); i++) {
+            }
+            if (i >= e->res_count) {
+                next[s] = e->res_count;
+                continue;
+            }
+            pick[n++] = i;
+            next[s] = i + 1u;
+            more = 1;
+        }
+    }
+    for (i = 1; i < n; i++) { /* result order */
+        uint32_t v = pick[i];
+        for (j = i; j > 0 && pick[j - 1u] > v; j--) {
+            pick[j] = pick[j - 1u];
+        }
+        pick[j] = v;
+    }
+    return n;
+}
+
 static void search_reload(sel_engine* e) {
     char* text = e->view.htext;
     uint32_t albums[2u * SEARCH_DISTINCT_MAX], artists[2u * SEARCH_DISTINCT_MAX];
@@ -4660,9 +4805,11 @@ static void search_reload(sel_engine* e) {
     size_t cap = SEL_VIEW_HOME_TEXT_MAX, o = 0;
     char alb[SEL_VIEW_HOME_TEXT_MAX / 8], art[SEL_VIEW_HOME_TEXT_MAX / 8];
     size_t la = 0, lr = 0;
+    uint32_t pick[SEARCH_GROUP_ROWS], n_pick, at_pick = 0;
     if (text == NULL) {
         return;
     }
+    n_pick = search_pick_songs(e, pick);
     for (i = 0; i < 2u * SEARCH_DISTINCT_MAX; i++) {
         albums[i] = artists[i] = UINT32_MAX;
     }
@@ -4680,7 +4827,9 @@ static void search_reload(sel_engine* e) {
             album += strlen(album) + 1u;           /* duration */
             album += strlen(album) + 1u;           /* album */
         }
-        if (i < SEARCH_GROUP_ROWS && key != NULL && o + strlen(key) + strlen(name) + strlen(artist) + 8u < cap / 2u) {
+        int listed = at_pick < n_pick && pick[at_pick] == i;
+        at_pick += (uint32_t)listed;
+        if (listed && key != NULL && o + strlen(key) + strlen(name) + strlen(artist) + 8u < cap / 2u) {
             o += (size_t)snprintf(text + o, cap - o, "S %s\t%s  %s\n", key, name, artist);
         }
         if (album[0] != '\0' && search_distinct_album_add(e, albums, &n_album, i, artist, album) && listed_album < SEARCH_GROUP_ROWS &&
@@ -5266,6 +5415,156 @@ static void coll_shelf_row(void* ctx, const char* const* f) { /* id, name, artis
     snprintf(r->format, sizeof r->format, "%s", f[5]);
 }
 
+/* ---- I790: the source page drill (design doc 2026-10-22-architecture-design.md section 9b "Source page drill") ----
+ * A source never builds its whole song list: the page is one windowed level (SEL_DRILL_WINDOW rows at most) of the drill. */
+enum { DRILL_FORMATS_MAX = 512 };
+
+typedef struct drill_formats {
+    char name[DRILL_FORMATS_MAX][40];
+    unsigned long count[DRILL_FORMATS_MAX];
+    uint32_t family[DRILL_FORMATS_MAX];
+    uint32_t n;
+} drill_formats;
+
+static void drill_group_row(void* ctx, const char* const* f) { /* name, count, size, "", "" */
+    coll_build* b = (coll_build*)ctx;
+    const char* parts[3];
+    parts[0] = f[0];
+    parts[1] = f[1];
+    parts[2] = f[2];
+    composer_put(&b->rows, parts, 3);
+    b->n++;
+}
+
+static void drill_format_row(void* ctx, const char* const* f) {
+    drill_formats* d = (drill_formats*)ctx;
+    if (d->n >= (uint32_t)DRILL_FORMATS_MAX) return;
+    snprintf(d->name[d->n], sizeof d->name[d->n], "%s", f[0]);
+    d->count[d->n] = strtoul(f[1], NULL, 10);
+    d->n++;
+}
+
+static void drill_sample_row(void* ctx, const char* const* f) {
+    uint32_t* family = (uint32_t*)ctx;
+    *family = sel_platform_of_name(f[0]);
+}
+
+/* One drill level from the library; every row it emits counts in the sentinels. */
+static int drill_query(sel_engine* e, const char* source, uint32_t level, const char* a, const char* b, uint32_t skip,
+                       sel_collection_row_fn fn, void* ctx) {
+    int n = sel_library_source_drill(e->lib, source, level, a, b, skip, (uint32_t)SEL_DRILL_WINDOW, fn, ctx);
+    if (n >= 0) {
+        e->collection_queries++;
+        e->drill_rows += (uint32_t)n;
+        e->coll.drill_rows += (uint32_t)n;
+    }
+    return n;
+}
+
+/* The Platforms fold: the format list (a few dozen rows) folded by family in C, one sample path per format row. */
+static void drill_formats_load(sel_engine* e, const char* source, drill_formats* d) {
+    uint32_t i;
+    memset(d, 0, sizeof *d);
+    drill_query(e, source, SEL_DRILL_FORMATS, "", "", 0u, drill_format_row, d);
+    for (i = 0; i < d->n; i++) {
+        d->family[i] = (uint32_t)SEL_PLATFORM_FAMILY_MUSIC;
+        drill_query(e, source, SEL_DRILL_FORMAT_SAMPLE, d->name[i], "", 0u, drill_sample_row, &d->family[i]);
+    }
+}
+
+static void drill_put_group(coll_build* b, const char* name, unsigned long count) {
+    char num[24];
+    const char* parts[3];
+    snprintf(num, sizeof num, "%lu", count);
+    parts[0] = name;
+    parts[1] = num;
+    parts[2] = "";
+    composer_put(&b->rows, parts, 3);
+    b->n++;
+}
+
+static void drill_count_row(void* ctx, const char* const* f) {
+    (void)f;
+    (*(unsigned long*)ctx)++;
+}
+
+/* key = source [US kind [US a [US b]]] [RS skip]. Builds the level into b and pg->drill. */
+static void drill_build(sel_engine* e, const char* key, coll_build* b) {
+    sel_collection_page* pg = &e->coll;
+    char buf[sizeof pg->key];
+    char* part[4] = {NULL, NULL, NULL, NULL};
+    char* c;
+    uint32_t skip = 0u, i, f;
+    int np = 1;
+    const char* source;
+    const char* kind;
+
+    snprintf(buf, sizeof buf, "%s", key);
+    c = strchr(buf, 0x1e);
+    if (c != NULL) {
+        *c++ = '\0';
+        skip = (uint32_t)strtoul(c, NULL, 10);
+    }
+    part[0] = buf;
+    for (c = buf; np < 4 && (c = strchr(c, 0x1f)) != NULL; np++) {
+        *c++ = '\0';
+        part[np] = c;
+    }
+    source = part[0];
+    kind = part[1] != NULL ? part[1] : "";
+    if (part[1] != NULL) snprintf(pg->drill_path, sizeof pg->drill_path, "%s%s%s%s%s", part[1], part[2] ? "\x1f" : "", part[2] ? part[2] : "", part[3] ? "\x1f" : "", part[3] ? part[3] : "");
+    snprintf(pg->key, sizeof pg->key, "%s", source);
+    pg->drill = (uint32_t)SEL_DRILL_PAGE_GROUPS;
+    if (strcmp(kind, "formats") == 0) {
+        drill_query(e, source, SEL_DRILL_FORMATS, "", "", skip, drill_group_row, b);
+    } else if (strcmp(kind, "format") == 0 && part[2] != NULL && part[3] == NULL) {
+        drill_query(e, source, SEL_DRILL_FORMAT_ARTISTS, part[2], "", skip, drill_group_row, b);
+    } else if (strcmp(kind, "format") == 0 && part[3] != NULL) {
+        pg->drill = (uint32_t)SEL_DRILL_PAGE_SONGS;
+        drill_query(e, source, SEL_DRILL_FORMAT_SONGS, part[2], part[3], skip, coll_song_row, b);
+    } else if (strcmp(kind, "artists") == 0) {
+        drill_query(e, source, SEL_DRILL_ARTISTS, "", "", skip, drill_group_row, b);
+    } else if (strcmp(kind, "artist") == 0 && part[2] != NULL) {
+        pg->drill = (uint32_t)SEL_DRILL_PAGE_SONGS;
+        drill_query(e, source, SEL_DRILL_ARTIST_SONGS, part[2], "", skip, coll_song_row, b);
+    } else if (strcmp(kind, "new") == 0) {
+        drill_query(e, source, SEL_DRILL_NEW, "", "", skip, drill_group_row, b);
+    } else if (strcmp(kind, "platforms") == 0 || strcmp(kind, "platform") == 0) {
+        drill_formats d;
+        unsigned long per[SEL_PLATFORM_FAMILY_COUNT];
+        memset(per, 0, sizeof per);
+        drill_formats_load(e, source, &d);
+        for (i = 0; i < d.n; i++) per[d.family[i]] += d.count[i];
+        if (strcmp(kind, "platforms") == 0) {
+            for (f = 0; f < (uint32_t)SEL_PLATFORM_FAMILY_COUNT; f++) {
+                if (per[f] > 0ul) drill_put_group(b, sel_platform_id(f), per[f]);
+            }
+        } else {
+            for (i = 0; i < d.n; i++) {
+                if (part[2] != NULL && strcmp(sel_platform_id(d.family[i]), part[2]) == 0) drill_put_group(b, d.name[i], d.count[i]);
+            }
+        }
+    } else { /* the first level: Formats, Platforms, Artists, New with their counts (artists: unknown, counting 600k songs is not free) */
+        drill_formats d;
+        unsigned long days = 0ul, formats, platforms = 0ul, per[SEL_PLATFORM_FAMILY_COUNT];
+        pg->drill = (uint32_t)SEL_DRILL_PAGE_ROOT;
+        memset(per, 0, sizeof per);
+        drill_formats_load(e, source, &d);
+        formats = d.n;
+        for (i = 0; i < d.n; i++) per[d.family[i]]++;
+        for (f = 0; f < (uint32_t)SEL_PLATFORM_FAMILY_COUNT; f++) platforms += per[f] > 0ul;
+        drill_query(e, source, SEL_DRILL_NEW, "", "", 0u, drill_count_row, &days);
+        drill_put_group(b, "formats", formats);
+        drill_put_group(b, "platforms", platforms);
+        {
+            const char* parts[3] = {"artists", "", ""};
+            composer_put(&b->rows, parts, 3);
+            b->n++;
+        }
+        drill_put_group(b, "new", days);
+    }
+}
+
 static void coll_build_page(sel_engine* e, uint32_t kind, const char* key) {
     sel_collection_page* pg = &e->coll;
     coll_build b;
@@ -5307,7 +5606,10 @@ static void coll_build_page(sel_engine* e, uint32_t kind, const char* key) {
     } else {
         snprintf(pg->title, sizeof pg->title, "%s", key);
     }
-    if (kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) {
+    if (kind == (uint32_t)SEL_LIB_ITEM_SOURCE) { /* I790: a source is a drill level, never its whole song list */
+        drill_build(e, key, &b);
+        snprintf(pg->title, sizeof pg->title, "%s", pg->key);
+    } else if (kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) {
         if (sel_library_composer_page(e->lib, key, coll_composer_row, &b) >= 0) e->collection_queries++;
     } else if (sel_library_collection(e->lib, kind, key, SEL_COLL_SONGS, coll_song_row, &b) >= 0) {
         e->collection_queries++;
@@ -5327,7 +5629,12 @@ static void cmd_COLLECTION_OPEN(sel_engine* e, const sel_message* m) {
     if (!folder_ready(e, "COLLECTION_OPEN")) return;
     int restore = m->argc > 2 && m->args[2].v.u != 0u; /* I678h2: Back / Forward rebuild the page they return to; that is not an open, Recents stays as it is */
     if (!restore && kind != (uint32_t)SEL_LIB_ITEM_LIKED && kind != (uint32_t)SEL_LIB_ITEM_RECENT && kind != (uint32_t)SEL_LIB_ITEM_LOCAL) { /* the pinned rows stay out of Recents */
-        rc = sel_library_touch(e->lib, kind, m->args[1].v.s, (int64_t)time(NULL));
+        char touch[128]; /* a source key carries its drill path after the id (I790); Recents keeps the source */
+        char* us;
+        snprintf(touch, sizeof touch, "%s", m->args[1].v.s);
+        us = kind == (uint32_t)SEL_LIB_ITEM_SOURCE ? strpbrk(touch, "\x1f\x1e") : NULL;
+        if (us != NULL) *us = '\0';
+        rc = sel_library_touch(e->lib, kind, touch, (int64_t)time(NULL));
         if (rc != SEL_FOLDER_OK) {
             folder_report(e, rc, "COLLECTION_OPEN");
             return;
@@ -5915,6 +6222,58 @@ uint32_t sel_engine_library_items(sel_engine* e, uint32_t kind_mask, uint32_t of
     return n;
 }
 
+/* ---- I787: the async Your Library read (the sidebar never waits on a category query) ---- */
+#if defined(SEL_LI_THREAD)
+static void* library_items_job(void* arg) {
+    sel_engine* e = (sel_engine*)arg;
+
+    e->li_n = sel_engine_library_items(e, e->li_mask, 0u, e->li_rows, e->li_max, &e->li_total);
+    __atomic_store_n(&e->li_state, 2, __ATOMIC_RELEASE);
+    return NULL;
+}
+#endif
+
+int sel_engine_library_items_post(sel_engine* e, uint32_t kind_mask, uint32_t max) {
+    if (e->lib == NULL || max == 0u || __atomic_load_n(&e->li_state, __ATOMIC_ACQUIRE) != 0) return 0;
+    e->li_rows = (sel_engine_library_item*)malloc((size_t)max * sizeof *e->li_rows);
+    if (e->li_rows == NULL) return 0;
+    e->li_mask = kind_mask;
+    e->li_max = max;
+    e->li_n = 0u;
+    e->li_total = 0u;
+#if defined(SEL_LI_THREAD)
+    __atomic_store_n(&e->li_state, 1, __ATOMIC_RELEASE);
+    if (pthread_create(&e->li_thread, NULL, library_items_job, e) == 0) return 1;
+#endif
+    /* No thread (Amiga, or creation failed): answer in this call, the caller takes it at once. */
+    e->li_n = sel_engine_library_items(e, kind_mask, 0u, e->li_rows, max, &e->li_total);
+    __atomic_store_n(&e->li_state, 2, __ATOMIC_RELEASE);
+    return 1;
+}
+
+int sel_engine_library_items_busy(sel_engine* e) {
+    return __atomic_load_n(&e->li_state, __ATOMIC_ACQUIRE) != 0;
+}
+
+int sel_engine_library_items_take(sel_engine* e, uint32_t* kind_mask, sel_engine_library_item* out, uint32_t max, uint32_t* n,
+                                  uint32_t* total) {
+    uint32_t got;
+
+    if (__atomic_load_n(&e->li_state, __ATOMIC_ACQUIRE) != 2) return 0;
+#if defined(SEL_LI_THREAD)
+    (void)pthread_join(e->li_thread, NULL);
+#endif
+    got = e->li_n < max ? e->li_n : max;
+    if (out != NULL) memcpy(out, e->li_rows, (size_t)got * sizeof *out);
+    if (kind_mask != NULL) *kind_mask = e->li_mask;
+    if (n != NULL) *n = got;
+    if (total != NULL) *total = e->li_total;
+    free(e->li_rows);
+    e->li_rows = NULL;
+    __atomic_store_n(&e->li_state, 0, __ATOMIC_RELEASE);
+    return 1;
+}
+
 /* ---- I678f: the lists of the album, artist and composer pages (design doc section 8) ---- */
 uint32_t sel_engine_library_playlist_keys(sel_engine* e, uint32_t id, char* out, uint32_t cap) {
     uint32_t n = 0;
@@ -5932,6 +6291,19 @@ int sel_engine_song_group(sel_engine* e, const char* ref, char* out, size_t cap)
 
 int sel_engine_song_meta(sel_engine* e, const char* ref, char* out, size_t cap) {
     return e->lib != NULL && sel_library_song_meta(e->lib, ref, out, cap);
+}
+
+int sel_engine_song_briefs(sel_engine* e, const char* keys, char* out, size_t cap, uint32_t* done) {
+    if (done != NULL) *done = 0;
+    return e->lib != NULL && sel_library_song_briefs(e->lib, keys, out, cap, done);
+}
+
+int sel_engine_lib_nowait(int on) {
+    return sel_library_nowait(on);
+}
+
+uint32_t sel_engine_lib_deferred(void) {
+    return sel_library_deferred();
 }
 
 int sel_engine_view_row_path(sel_engine* e, uint32_t row, char* out, size_t cap) {
@@ -6749,6 +7121,12 @@ void sel_engine_destroy(sel_engine* e) {
     if (e) {
         SEL_THREAD_NOT_AUDIO(e);
         uint32_t i;
+        if (__atomic_load_n(&e->li_state, __ATOMIC_ACQUIRE) != 0) { /* I787: end the in-flight sidebar read */
+#if defined(SEL_LI_THREAD)
+            (void)pthread_join(e->li_thread, NULL);
+#endif
+            free(e->li_rows);
+        }
         if (e->scan_running || e->sync_running) {
             sel_library_task_cancel(e->lib); /* the scan task uses this engine; end it first (I336) */
         }
@@ -7222,6 +7600,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->hw_starts = e->hw_starts;
     out->dup_redirects = e->dup_redirects;
     out->dup_played = e->dup_played;
+    out->archive_unpacks = e->archive_unpacks;
+    out->archive_member = e->archive_member;
     if (e->lib != NULL) {
         sel_hash_stats hs;
 
@@ -7266,6 +7646,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->lib_touch_calls = e->lib_touch_calls;
     out->collection_opens = e->collection_opens;
     out->collection_queries = e->collection_queries;
+    out->drill_rows = e->drill_rows;
     out->evt_dropped = e->evt_dropped;
     out->radio_appends = e->radio_appends;
     out->net_cancels = e->net_cancels;
@@ -7278,8 +7659,15 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
         char none[4];
         uint32_t rows = 0;
 
-        if (sel_library_rating_pending(e->lib, none, sizeof none, &rows)) out->rating_pending = rows;
+        /* I782: stats are read every frame; this never waits. A busy library keeps the last count (the pushes and sync that keep it busy
+         * are what changes it, and the next free frame reads it again). */
+        int was = sel_library_nowait(1);
+        sel_engine* w = (sel_engine*)e; /* the cache is not engine state a caller can see */
+        if (sel_library_rating_pending(e->lib, none, sizeof none, &rows)) w->rating_pending_cache = rows;
+        sel_library_nowait(was);
+        out->rating_pending = e->rating_pending_cache;
     }
+    out->lib_deferred = sel_library_deferred();
     out->radio_min_ahead = e->radio_min_ahead;
     out->home_rows = e->home_rows;
     out->home_item_shelves = e->home_item_shelves;

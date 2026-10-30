@@ -1,12 +1,12 @@
 # dui-sync-banner (I527, rewritten for I602): the sync-on-launch dialog, driven from the desktop UI's real entry point.
 # -DSELECTA -DWORK -DGOLDEN -DSDL_BUILT. There is no inline banner: the Library list starts directly under the tabs. A modal
 # dialog ("nag N" rows, "nagdlg opens X", one "nagrow" per due source, "nagsync" / "naglater" / "nagnever" buttons) opens once
-# per launch on the first Library visit when a source is due, and never at start on Home. The test checks:
+# per launch on any page (I786) as soon as a source is due. The test checks:
 #   1. the list starts at the same y with the dialog open and after it closed, and no row of a banner is left,
-#   2. started on Home the dialog does not open ("nagdlg opens 0"); the first Library visit opens it once,
+#   2. started on Home the dialog opens once ("nagdlg opens 1"), Not now closes it, other pages do not reopen it,
 #   3. "Sync now" syncs the ticked sources only (testsrc song count becomes 3, an unticked source stays unsynced),
 #   4. "Not now" closes the dialog and snoozes the rows,
-#   5. "Never" switches the ticked sources off for good (Sources tab enabled flag 0 after a restart on the same config and
+#   5. "Never" switches the ticked sources off for good (source dump enabled flag 0 after a restart on the same config and
 #      database); the unticked source still prompts at the restart,
 #   6. (I582) a failed sync of a ticked source leaves it due: the next launch asks again for it alone.
 # Every click uses the rectangles the stats dump prints. The config directory is kept between runs where a run is the
@@ -79,7 +79,7 @@ function(untick_tokens out text keep_key t0)
   set(${out} "${tokens}" PARENT_SCOPE)
   set(${out}_t ${t} PARENT_SCOPE)
 endfunction()
-set(want_keys modland hvsc hippo asma keygenmusic sndh zxart testsrc)
+set(want_keys modland hvsc hippo asma keygenmusic sndh zxart archiveorg jamendo radiobrowser testsrc)
 
 # Launch on the Library: the dialog lists every enabled remote source that was never synced, all ticked.
 # Mouse moves give the loop frames, so the engine pumps and the SOURCES reply asked for at launch lands before the dump.
@@ -88,7 +88,7 @@ if(NOT o0 MATCHES "nag ([0-9]+) syncs 0\n" OR CMAKE_MATCH_1 LESS 1)
   message(FATAL_ERROR "no sync dialog at launch although remote sources were never synced:\n${o0}")
 endif()
 if(NOT o0 MATCHES "nagdlg opens 1 done 1\n")
-  message(FATAL_ERROR "the dialog must open exactly once on the first Library visit:\n${o0}")
+  message(FATAL_ERROR "the dialog must open exactly once per launch:\n${o0}")
 endif()
 foreach(k ${want_keys})
   if(NOT o0 MATCHES "nagrow [0-9]+ ${k}\\|1 ")
@@ -143,57 +143,49 @@ set(list_open ${CMAKE_MATCH_1})
 string(REGEX MATCH "tab 0 (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+)\n" _t "${o0}")
 math(EXPR tab_bottom "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4}")
 set(tab_y ${CMAKE_MATCH_2})
-# 1. No banner rows: the list starts one small gap under the tab row, not a banner (>= 100 px) lower.
+# 1. No banner rows: the list starts under the tab row, the gaps and the search/Sort by row (I611, 36 px logical, so at most
+#    24 + 36 here at scale 1), not a banner (>= 100 px) lower.
 math(EXPR gap "${list_open} - ${tab_bottom}")
-if(gap LESS 0 OR gap GREATER 24)
+if(gap LESS 0 OR gap GREATER 60)
   message(FATAL_ERROR "the Library list does not start directly under the tabs (tab bottom ${tab_bottom}, list start ${list_open}):\n${o0}")
 endif()
 
-# 2. A launch on Home never opens the dialog although sources are due.
+# 2. A launch on Home opens the dialog once (I786); Not now closes it; Library and Home visits do not reopen it.
 click_run(h0 "m5,5@200 m6,6@400 q@800" VIEW home)
-if(NOT h0 MATCHES "nagdlg opens 0 done 0\n" OR NOT h0 MATCHES "nag 0 syncs 0\n")
-  message(FATAL_ERROR "the dialog opened at start on Home:\n${h0}")
+if(NOT h0 MATCHES "nagdlg opens 1 done 1\n" OR NOT h0 MATCHES "nag ([0-9]+) syncs 0\n" OR CMAKE_MATCH_1 LESS 1)
+  message(FATAL_ERROR "the dialog did not open at start on Home:\n${h0}")
 endif()
-# The first Library visit from Home opens it once; Not now closes it; Home and Library again do not open it a second time.
 rect_center(libdoor "${h0}" "sidehdr title") # I673: the Your Library header is the Library door
 rect_center(homedoor "${h0}" "door 0")
-rect_center(later "${o0}" "naglater")
-click_at(d1 ${libdoor_x} ${libdoor_y} 300)
-click_at(lc ${later_x} ${later_y} 800)
-click_at(d0 ${homedoor_x} ${homedoor_y} 1300)
-click_at(d2 ${libdoor_x} ${libdoor_y} 1800)
-click_run(h1 "${d1} ${lc} ${d0} ${d2} q@2600" VIEW home)
+rect_center(later "${h0}" "naglater")
+click_at(lc ${later_x} ${later_y} 300)
+click_at(d1 ${libdoor_x} ${libdoor_y} 900)
+click_at(d0 ${homedoor_x} ${homedoor_y} 1400)
+click_at(d2 ${libdoor_x} ${libdoor_y} 1900)
+click_run(h1 "${lc} ${d1} ${d0} ${d2} q@2700" VIEW home)
 if(NOT h1 MATCHES "nagdlg opens 1 done 1\n" OR NOT h1 MATCHES "nag 0 syncs 0\n")
-  message(FATAL_ERROR "the Library visit from Home must open the dialog once, Not now close it and a second visit not reopen it:\n${h1}")
+  message(FATAL_ERROR "started on Home the dialog must open once, Not now close it and page visits not reopen it:\n${h1}")
 endif()
 if(NOT h1 MATCHES "liststart ${list_open}\n")
   message(FATAL_ERROR "the list start moved after the dialog closed (was ${list_open}):\n${h1}")
 endif()
 
 # 3. Sync now: untick everything but testsrc, press Sync now. Only the ticked source is synced.
-untick_tokens(un "${o0}" testsrc 300)
+untick_tokens(un "${o0}" testsrc 900)
 rect_center(sync "${o0}" "nagsync")
 click_at(sc ${sync_x} ${sync_y} ${un_t})
 math(EXPR tq "${un_t} + 1500")
-click_run(a "${un} ${sc} q@${tq}")
+click_run(a "m5,5@200 m6,6@400 ${un} ${sc} q@${tq}")
 if(NOT a MATCHES "nag 0 syncs 1\n")
   message(FATAL_ERROR "Sync now was not sent for exactly the one ticked source, or the dialog stayed:\n${a}")
 endif()
-# The Sources page (tab 5) shows what the sync did.
-click_run(p0 "m5,5@200 m6,6@400 q@600" KEEP)
-string(REGEX MATCH "tab 5 (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+)\n" _t "${p0}")
-if(_t STREQUAL "")
-  message(FATAL_ERROR "no tab 5 line in the stats:\n${p0}")
-endif()
-math(EXPR tx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
-math(EXPR ty "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
-click_at(tc ${tx} ${ty} 500)
+# The per-source dump lines ("source N key|kind|name|enabled|songs", I786a) show what the sync did.
 # Next launch on the same config: the ticked source is synced, the unticked ones are snoozed, so no dialog blocks the tab.
-click_run(c "m5,5@200 ${tc} m5,5@900 m6,6@1200 m7,7@1500 q@1800" KEEP)
-if(NOT c MATCHES "source [0-9] testsrc\\|remote\\|[^|]+\\|1\\|3\n")
+click_run(c "m5,5@200 m5,5@900 m6,6@1200 m7,7@1500 q@1800" KEEP)
+if(NOT c MATCHES "source [0-9]+ testsrc\\|remote\\|[^|]+\\|1\\|3\n")
   message(FATAL_ERROR "the testsrc sync did not run (its song count is not 3):\n${c}")
 endif()
-if(c MATCHES "source [0-9] modland\\|remote\\|[^|]+\\|1\\|[1-9]")
+if(c MATCHES "source [0-9]+ modland\\|remote\\|[^|]+\\|1\\|[1-9]")
   message(FATAL_ERROR "an unticked source was synced:\n${c}")
 endif()
 
@@ -232,17 +224,16 @@ foreach(k modland hvsc hippo asma keygenmusic sndh zxart)
     message(FATAL_ERROR "after Never the source '${k}' still prompts:\n${n2}")
   endif()
 endforeach()
-# The Sources tab shows them switched off (enabled 0) and testsrc still on.
+# The source dump lines show them switched off (enabled 0) and testsrc still on.
 rect_center(later_n "${n2}" "naglater")
 click_at(ln ${later_n_x} ${later_n_y} 300)
-click_at(tn ${tx} ${ty} 800)
-click_run(n3 "m5,5@100 ${ln} ${tn} m5,5@1300 q@1600" KEEP)
+click_run(n3 "m5,5@100 ${ln} m5,5@1300 q@1600" KEEP)
 foreach(k modland hvsc hippo asma keygenmusic sndh zxart)
-  if(NOT n3 MATCHES "source [0-9] ${k}\\|remote\\|[^|]+\\|0\\|")
-    message(FATAL_ERROR "after Never the source '${k}' is not switched off on the Sources tab:\n${n3}")
+  if(NOT n3 MATCHES "source [0-9]+ ${k}\\|remote\\|[^|]+\\|0\\|")
+    message(FATAL_ERROR "after Never the source '${k}' is not switched off in the source dump:\n${n3}")
   endif()
 endforeach()
-if(NOT n3 MATCHES "source [0-9] testsrc\\|remote\\|[^|]+\\|1\\|")
+if(NOT n3 MATCHES "source [0-9]+ testsrc\\|remote\\|[^|]+\\|1\\|")
   message(FATAL_ERROR "after Never the unticked source was switched off too:\n${n3}")
 endif()
 
@@ -252,7 +243,7 @@ set(db "${WORK}/library2.db")
 load_db("${db}" init2)
 set(ENV{SELECTA_TESTSRC_FAIL} 1)
 click_run(f0 "m5,5@200 m6,6@400 m7,7@600 q@800")
-untick_tokens(fu "${f0}" testsrc 300)
+untick_tokens(fu "${f0}" testsrc 900)
 rect_center(fsync "${f0}" "nagsync")
 click_at(fsc ${fsync_x} ${fsync_y} ${fu_t})
 math(EXPR ftq "${fu_t} + 2500")

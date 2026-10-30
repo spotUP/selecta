@@ -2,6 +2,8 @@
 #include "mui_map.h"
 
 #include <selecta/uimodel/doors.h>
+#include <selecta/uimodel/keybind.h>
+#include <selecta/uimodel/pages.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -243,18 +245,100 @@ const char* mui_door_label(uint32_t i) {
  * sends (desktop_ui.c desk_page_load, PG_BROWSE: the formats and composers catalog and the sources). */
 const char* const mui_topbar_browse_lines[MUI_TOPBAR_BROWSE_LINES] = {"FORMATS_SHOW", "COMPOSERS_SHOW", "SOURCES"};
 
+/* I792: one entry per page of the shared page table. The designated initialisers are sized by SEL_UIM_PG_COUNT, so a page added to
+ * uimodel/pages.h without an entry here is a zero entry (MUI_PAGE_GAP) and the route loop in mui_contract_test goes red. */
+static const mui_page_slot_t g_page_slots[SEL_UIM_PG_COUNT] = {
+    [SEL_UIM_PG_HOME] = {MUI_PAGE_MAIN_VIEW, NULL},
+    [SEL_UIM_PG_SEARCH] = {MUI_PAGE_MAIN_VIEW, NULL},
+    [SEL_UIM_PG_FOLDERS] = {MUI_PAGE_MAIN_VIEW, NULL},
+    [SEL_UIM_PG_PLAYLISTS] = {MUI_PAGE_MAIN_VIEW, NULL},
+    [SEL_UIM_PG_QUEUE] = {MUI_PAGE_MAIN_VIEW, NULL},
+    [SEL_UIM_PG_NOWPLAYING] = {MUI_PAGE_GROUP, NULL},
+    [SEL_UIM_PG_SONGS] = {MUI_PAGE_EXEMPT, "the MUI main list shows the songs of whatever source is open; no separate Songs page (drift doc section 5)"},
+    [SEL_UIM_PG_SONGINFO] = {MUI_PAGE_GROUP, NULL},
+    [SEL_UIM_PG_VIZ] = {MUI_PAGE_MAIN_VIEW, NULL},     /* I735: the main-area Visualizer pane (mui_pane_open), reached by the @viz key and the View menu */
+    [SEL_UIM_PG_TRACKER] = {MUI_PAGE_MAIN_VIEW, NULL}, /* I735: the main-area Pattern pane, @pattern */
+    [SEL_UIM_PG_SHELF] = {MUI_PAGE_EXEMPT, "Show all on a Home shelf has no MUI handler yet (drift doc section 5)"},
+    [SEL_UIM_PG_BROWSE] = {MUI_PAGE_MAIN_VIEW, NULL}, /* the top bar Browse button sends mui_topbar_browse_lines */
+    [SEL_UIM_PG_COLLECTION] = {MUI_PAGE_EXEMPT, "an album, artist or playlist page has no MUI handler yet; the main list shows the playlist source (drift doc section 5)"}};
+
+const mui_page_slot_t* mui_page_slot(uint32_t page) {
+    return page < (uint32_t)SEL_UIM_PG_COUNT ? &g_page_slots[page] : (const mui_page_slot_t*)0;
+}
+
 const char* mui_door_line(uint32_t i) {
-    static const struct {
-        const char* page;
-        const char* line;
-    } k_line[] = {{"home", "VIEW_SOURCE home"},          {"search", "VIEW_SOURCE search"},     {"library", "VIEW_SHOW browse"},
-                  {"playlists", "VIEW_SOURCE folders"},  {"queue", "VIEW_SHOW queue"}};
-    const sel_uim_door* d = sel_uim_door_at(i);
-    uint32_t k;
-    for (k = 0; d != NULL && k < sizeof k_line / sizeof k_line[0]; k++) {
-        if (strcmp(k_line[k].page, d->page) == 0) {
-            return k_line[k].line;
+    const sel_uim_door* d = sel_uim_door_at(i); /* I791: the line lives in the shared door table, so a page rename cannot orphan it */
+    return d != NULL ? d->line : NULL;
+}
+
+/* I735: the main-area panes. The Mac UI opens PG_VIZ and PG_TRACKER from the text UI page keys (txt_bindings default "v" -> @viz,
+ * "t" -> @pattern; desktop_ui.c k_page_keys). The MUI opens the same pages from the same keys, as View menu shortcuts and through
+ * mui_pane_key, in the main slot (so at every width: the detail slot is hidden under 1100 px). */
+static const struct {
+    uint32_t page;
+    const char* action;
+    const char* title;
+} k_panes[MUI_PANE_COUNT] = {{SEL_UIM_PG_HOME, NULL, "List"},
+                             {SEL_UIM_PG_VIZ, "@viz", "Visualizer Page"},
+                             {SEL_UIM_PG_TRACKER, "@pattern", "Pattern Page"}};
+
+uint32_t mui_pane_of_page(uint32_t page) {
+    uint32_t p;
+    for (p = 1; p < MUI_PANE_COUNT; p++) {
+        if (k_panes[p].page == page) {
+            return p;
         }
     }
-    return NULL;
+    return MUI_PANE_LIST;
+}
+
+uint32_t mui_pane_page(uint32_t pane) {
+    return pane < MUI_PANE_COUNT ? k_panes[pane].page : (uint32_t)SEL_UIM_PG_HOME;
+}
+
+uint32_t mui_pane_of_action(const char* act) {
+    uint32_t p;
+    for (p = 1; act != NULL && p < MUI_PANE_COUNT; p++) {
+        if (strcmp(k_panes[p].action, act) == 0) {
+            return p;
+        }
+    }
+    return MUI_PANE_COUNT;
+}
+
+const char* mui_pane_title(uint32_t pane) {
+    return pane > MUI_PANE_LIST && pane < MUI_PANE_COUNT ? k_panes[pane].title : NULL;
+}
+
+char mui_pane_shortcut(uint32_t pane) {
+    txt_bindings def;
+    char key[24];
+    if (pane == MUI_PANE_LIST || pane >= MUI_PANE_COUNT) {
+        return '\0';
+    }
+    txt_bindings_default(&def);
+    return txt_bindings_key_for(&def, k_panes[pane].action, key, sizeof key) != NULL && key[1] == '\0' ? key[0] : '\0';
+}
+
+uint32_t mui_pane_open(mui_mainpane* mp, uint32_t page) {
+    uint32_t pane = mui_pane_of_page(page);
+    if (mp == NULL) {
+        return MUI_PANE_LIST;
+    }
+    mp->pane = pane;
+    mp->opens[pane]++;
+    return pane;
+}
+
+uint32_t mui_pane_key(mui_mainpane* mp, uint32_t code, uint32_t mods) {
+    txt_bindings def;
+    const char* act;
+    uint32_t pane;
+    txt_bindings_default(&def);
+    act = txt_bindings_lookup(&def, TXT_CTX_LIST, code, mods);
+    pane = mui_pane_of_action(act);
+    if (pane == MUI_PANE_COUNT) {
+        return MUI_PANE_COUNT;
+    }
+    return mui_pane_open(mp, k_panes[pane].page);
 }

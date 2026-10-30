@@ -52,7 +52,7 @@ typedef struct sel_search_sink {
 } sel_search_sink;
 
 typedef struct sel_source {
-    const char* id; /* "modland", "hvsc", "asma", "sndh", "zxart", "keygenmusic", "local", "hippo", "radio" */
+    const char* id; /* "modland", "hvsc", "asma", "aminet", "sndh", "zxart", "keygenmusic", "local", "hippo", "radio" */
     const char* name;
     const char* home;
     const char* about;

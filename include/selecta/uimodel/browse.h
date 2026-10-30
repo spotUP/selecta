@@ -66,6 +66,32 @@ const char* sel_uim_library_item_mark(uint32_t kind, int pinned);
 /* I678d: "5 minutes ago", "2 days ago" for the Date Added and Played columns; "-" when `then` is 0 or not an epoch time. */
 uint32_t sel_uim_relative_time(int64_t now, uint32_t then, char* out, uint32_t cap);
 
+/* I793: the Your Library sidebar texts and chips, one table for the desktop UI (side_lib_draw) and the MUI sidebar
+ * (map/mui_sidebar.c). The chips are the kinds a library lists in Spotify's order (I610); each hands the library call a kind mask
+ * (I678b). */
+#define SEL_UIM_SIDE_CHIPS 6u
+const char* sel_uim_side_chip_name(uint32_t i); /* "Playlists", "Albums", "Artists", "Composers", "Sources", "Local Files"; NULL past the count */
+uint32_t sel_uim_side_chip_mask(uint32_t i);    /* the SEL_LIB_ITEM_BIT mask of chip i, 0 past the count */
+typedef enum sel_uim_side_text {
+    SEL_UIM_SIDE_TITLE = 0,  /* "Your Library" */
+    SEL_UIM_SIDE_CREATE,     /* the plus button: "Create Playlist" */
+    SEL_UIM_SIDE_EXPAND,     /* "Expand Library" */
+    SEL_UIM_SIDE_COLLAPSE,   /* "Collapse Library" */
+    SEL_UIM_SIDE_CHIP_ALL,   /* "All" */
+    SEL_UIM_SIDE_CHIP_BYYOU, /* the second-level chip of Playlists */
+    SEL_UIM_SIDE_EMPTY_KIND, /* a chip of a kind without rows */
+    SEL_UIM_SIDE_EMPTY_NONE, /* the bitmap tier with no playlist */
+    SEL_UIM_SIDE_CARD_TITLE,
+    SEL_UIM_SIDE_CARD_BODY,
+    SEL_UIM_SIDE_CARD_BUTTON,
+    SEL_UIM_SIDE_TEXTS
+} sel_uim_side_text;
+const char* sel_uim_side_text_get(sel_uim_side_text id);
+/* The empty state under the list: `chip` is 0 for All, 1..6 for a chip; `n` the rows listed; `bitmap` the bitmap tier. NULL when none is shown. */
+const char* sel_uim_side_empty(uint32_t chip, uint32_t n, int bitmap);
+/* I627, I678d: whether the "Create your first playlist" card shows: chip All or Playlists, no filter, no playlist row in the list, not the bitmap tier. */
+int sel_uim_side_card_shown(uint32_t chip, int filtered, uint32_t playlist_rows, int bitmap);
+
 #ifdef __cplusplus
 }
 #endif

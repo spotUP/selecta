@@ -345,6 +345,45 @@ int mui_aa_slider_plan(const uint32_t* token, const mui_aa_slider_t* m, int stat
     return n;
 }
 
+/* I739: the partial draw of a value change. Same pills as the full plan, no erase of the box: the pixels that stay track or stay fill are
+ * never cleared, so the bar does not blink on each tick. Nothing to paint (0 ops) when the fill width did not change. */
+static uint32_t g_slider_partial;
+
+uint32_t mui_aa_slider_partial_count(void) {
+    return g_slider_partial;
+}
+
+int mui_aa_slider_update_plan(const uint32_t* token, const mui_aa_slider_t* m, int state, int w, int h, int prev_fw, long value, long lo, long hi,
+                              mui_aa_slider_op_t* out) {
+    int n = 0, ty = (h - m->track_h) / 2;
+    uint32_t track, fill;
+    int fw = mui_aa_slider_fill_w(w, value, lo, hi);
+    if (fw == prev_fw) {
+        return 0;
+    }
+    mui_aa_slider_rgb(token, state, &track, &fill);
+    g_slider_partial++;
+    if (fw < prev_fw) { /* the fill shrank: the track shows again where it was */
+        out[n].kind = MUI_AA_SLIDER_TRACK;
+        out[n].x = 0;
+        out[n].y = ty;
+        out[n].w = w;
+        out[n].h = m->track_h;
+        out[n].radius = m->radius;
+        out[n++].rgb = track;
+    }
+    if (fw > 0) {
+        out[n].kind = MUI_AA_SLIDER_FILL;
+        out[n].x = 0;
+        out[n].y = ty;
+        out[n].w = fw;
+        out[n].h = m->track_h;
+        out[n].radius = m->radius;
+        out[n++].rgb = fill;
+    }
+    return n;
+}
+
 int mui_aa_progress_fill_w(int w, long value, long max) {
     g_slider_calls++;
     if (max <= 0 || w <= 0 || value <= 0) {
@@ -422,6 +461,21 @@ int mui_aa_text_maxw(int fixed, int defw) {
 }
 
 static uint32_t g_field_calls;
+
+static uint32_t g_field_placeholders;
+
+int mui_aa_field_placeholder(const uint32_t* token, const char* contents, int focus, uint32_t* rgb) {
+    if (focus || (contents != NULL && contents[0] != '\0')) {
+        return 0;
+    }
+    *rgb = token[SEL_GUI_TOKEN_TEXT_MUTED];
+    g_field_placeholders++;
+    return 1;
+}
+
+uint32_t mui_aa_field_placeholders(void) {
+    return g_field_placeholders;
+}
 
 uint32_t mui_aa_field_calls(void) {
     return g_field_calls;

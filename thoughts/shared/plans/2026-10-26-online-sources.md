@@ -179,7 +179,7 @@ platform library); "mirror route" means the devilbox proxy (`devilbox.uprough.ne
 cannot do TLS or parse HTML.
 
 ### 5.1 aminet (I405) - listing source
-- Fetch: `INDEX` (about 1 MB; filter to the module dirs while streaming, never hold it whole on a 68020), file via `<dir>/<name>`; cache the filtered index in the catalogue (`LIBRARY_SYNC`), archives in the file cache and unpacked with `archive.c`.
+- Fetch: `INDEX` (7.25 MB, 85712 lines, about 20900 under mods/, measured 2026-10-30 (I405); filter to the module dirs while streaming, never hold it whole on a 68020), file via `<dir>/<name>`; cache the filtered index in the catalogue (`LIBRARY_SYNC`), archives in the file cache and unpacked with `archive.c`.
 - Amiga: fits. Filtered rows are a few thousand; stream parse in a small buffer. Mirror route: a devilbox `/api/aminet/list` returning the filtered rows if TLS is the blocker (UNVERIFIED need).
 - Test: `selecta` top level, `source add aminet`, sync against fixture `tests/net/fixtures/aminet.net/INDEX` (first N lines, real), then play one `.lha` module from a fixture archive; sentinel = the aminet parser call counter. Parser unit tests: `tests/library/aminet_index_test.c`.
 

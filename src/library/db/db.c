@@ -16,8 +16,10 @@ static uint32_t g_heap_allocs;
 
 /* The smallest tier of the D-M3-2 table (machines up to 4 MiB): 512 KiB plus 32 KiB (I687c). The songs(album) index of
  * SCHEMA_V11 is one more page of the schema, and with it `library scan` into the 512 KiB heap ran out of memsys5 blocks
- * (SQLITE_NOMEM, peak 311040 of 327680 bytes of the heap part). The extra 32 KiB gives the heap part 20 KiB more. */
-#define HEAP_SMALL_BYTES (544u * 1024u)
+ * (SQLITE_NOMEM, peak 311040 of 327680 bytes of the heap part). The extra 32 KiB gives the heap part 20 KiB more. 
+ * I790 (D-M3-2): the V14 indexes songs_source_format and songs_source_artist plus the source_new table pushed the :memory:
+ * scan past 544 KiB again (SQLITE_NOMEM in sel_library_scan_batch, peak ~333 KB); another 32 KiB makes the tier 576 KiB. */
+#define HEAP_SMALL_BYTES (576u * 1024u)
 
 /* Lookaside of the small tier: 32400 bytes, just under the 32 KiB memsys5 block (the default asks 48000 -> 64 KiB). */
 #define LOOKASIDE_SMALL_SLOT 1200
@@ -57,6 +59,7 @@ const char* sel_library_sqlite_version(void) {
  * memsys5 heap; the page cache of the main database is capped at the slot count so it recycles slots
  * instead of overflowing into memsys5. */
 static uint32_t g_page_slots;
+static uint32_t g_soft_limit; /* nearlyFull threshold of the memsys5 heap part (I787a), applied after sqlite3_initialize */
 
 static uint32_t page_slot_bytes(void) {
     int hdr = 0;
@@ -69,6 +72,7 @@ static uint32_t page_slot_bytes(void) {
 static int heap_configure(void* block, uint32_t bytes) {
     uint32_t slot = page_slot_bytes();
     uint32_t slots = bytes / 8u * 3u / slot;
+    uint32_t heap_bytes;
     char* heap = (char*)block + (size_t)slot * slots;
 
     g_page_slots = slots;
@@ -84,7 +88,22 @@ static int heap_configure(void* block, uint32_t bytes) {
     if (sqlite3_config(SQLITE_CONFIG_PAGECACHE, block, (int)slot, (int)slots) != SQLITE_OK) {
         return 0;
     }
-    return sqlite3_config(SQLITE_CONFIG_HEAP, heap, (int)(bytes - slot * slots), 32) == SQLITE_OK;
+    heap_bytes = bytes - slot * slots;
+    if (sqlite3_config(SQLITE_CONFIG_HEAP, heap, (int)heap_bytes, 32) != SQLITE_OK) {
+        return 0;
+    }
+    /* I787a: the sorter (CREATE INDEX, GROUP BY / ORDER BY without an index) budgeted from the page cache size
+     * (cache_size * page size = the 3/8 page-slot part) but allocates from this memsys5 heap part, and its single-buffer
+     * mode grows by doubling realloc (8 MiB + 16 MiB alive at once): SQLITE_NOMEM on the 594k-song v13 migration. Use the
+     * per-record list mode instead (SMALL_MALLOC), which flushes a sorted run to a temp file when
+     * sqlite3HeapNearlyFull() is true and the run exceeds PMASZ pages, and make nearlyFull trip at half the heap part
+     * (soft limit, set after sqlite3_initialize in heap_acquire): memsys5 rounds every request up to a power of two (up to
+     * 2x waste), so half the part is the most that can be requested before the real heap can run dry. A run stays
+     * small: PMASZ is a sixteenth of the heap part in pages, at least 1. */
+    sqlite3_config(SQLITE_CONFIG_SMALL_MALLOC, 1);
+    sqlite3_config(SQLITE_CONFIG_PMASZ, (unsigned)(heap_bytes / 16u / PAGE_BYTES > 0 ? heap_bytes / 16u / PAGE_BYTES : 1u));
+    g_soft_limit = heap_bytes / 2u;
+    return 1;
 }
 
 /* The table size is a ceiling, not a demand: memsys5 needs one contiguous block, and on an Amiga
@@ -109,6 +128,11 @@ static int heap_acquire(const sel_host* host, uint32_t bytes) {
             g_heap = NULL;
             return 0;
         }
+    }
+    if (g_heap_users == 0) {
+        /* The soft limit lives in mem0, which sqlite3_shutdown clears, so it is set on every first acquire. */
+        sqlite3_initialize();
+        sqlite3_soft_heap_limit64((sqlite3_int64)g_soft_limit);
     }
     sel_library_vfs_init();
     g_heap_users++;
@@ -150,7 +174,7 @@ sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint
     lib->heap_allocs = g_heap_allocs;
     if (sqlite3_open_v2(path, &lib->db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_URI, NULL) !=
             SQLITE_OK ||
-        !set_cache_size(lib->db) || !sel_schema_migrate(lib->db) || !sel_library_register_regexp(lib->db)) {
+        !set_cache_size(lib->db) || !sel_schema_migrate(lib->db, host) || !sel_library_register_regexp(lib->db)) {
         goto fail;
     }
     sqlite3_snprintf((int)sizeof sql, sql, "INSERT OR REPLACE INTO meta(key, value) VALUES('account', '%u')", account);
@@ -659,6 +683,21 @@ int sel_library_song_meta(sel_library* lib, const char* ref, char* out, size_t c
     op.out = out;
     op.out_cap = (uint32_t)cap;
     return folder_call(lib, &op, &found) == SEL_FOLDER_OK && found == 1u;
+}
+
+int sel_library_song_briefs(sel_library* lib, const char* keys, char* out, size_t cap, uint32_t* done) {
+    sel_user_op op;
+    uint32_t n = 0;
+    if (out == NULL || cap < 2u || keys == NULL) return 0;
+    out[0] = '\0';
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_SONG_BRIEFS;
+    op.value = keys;
+    op.out = out;
+    op.out_cap = (uint32_t)cap;
+    if (folder_call(lib, &op, &n) != SEL_FOLDER_OK) return 0;
+    if (done != NULL) *done = n;
+    return 1;
 }
 
 int sel_library_song_group(sel_library* lib, const char* ref, char* out, size_t cap) {

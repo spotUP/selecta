@@ -6,7 +6,7 @@
 # band was plain panel. A copper pen is a per-scanline colour, so gradients on disjoint rows can share one pen and the
 # covers of one shelf row share the row's key (the I510 decision). Rendered at 640x256 ydiv 2 INDEX8 with the copper on
 # (--copper 4, what the aga backend enables), the "copper" stats lines must show:
-#  1. the three generated covers of the shelf row have three different colour pairs, and a copper pen shows one colour per
+#  1. (I691f: covers are flat cover-slot fills now, no copper gradient) no cover dithers: miss=0 and keys=1 below.
 #     scanline: the first cover rides the row's key, the other two dither in their own colours (miss=2). The quick-access
 #     grid above the shelves (design section 11) is a second cover row with its own key, so keys = background + 2 rows. A cover
 #     that reused the first one's key would show cover 1's colours (Johan's decision 1); miss=0 here means that bug;
@@ -43,8 +43,10 @@ endif()
 set(keys ${CMAKE_MATCH_1})
 set(miss ${CMAKE_MATCH_2})
 message(STATUS "copper keys=${keys} miss=${miss} changes=${CMAKE_MATCH_3}")
-if(NOT miss EQUAL 2)
-  message(FATAL_ERROR "expected 2 dithered covers on the shelf row (miss=2), got keys=${keys} miss=${miss}:\n${shot}")
+# I691f (platform covers, c811a524 + 906536c3): on an INDEX8 canvas a cover is a flat fill from the 32 cover slots, no gradient, so no cover takes a
+# copper pen or dithers. The copper carries the background bar only: keys=1, miss=0.
+if(NOT miss EQUAL 0)
+  message(FATAL_ERROR "expected no dithered copper gradient (miss=0, covers are flat cover-slot fills), got keys=${keys} miss=${miss}:\n${shot}")
 endif()
 string(REGEX MATCHALL "copper_key [0-9]+ -?[0-9]+ [0-9]+ -?[0-9]+ [0-9]+" lines "${shot}")
 set(bg "")
@@ -67,25 +69,13 @@ endforeach()
 if(bg STREQUAL "")
   message(FATAL_ERROR "no copper key spans the Home page (the background is not a copper bar):\n${shot}")
 endif()
-list(LENGTH rows nrows)
-set(urows ${rows})
-list(REMOVE_DUPLICATES urows)
-list(LENGTH urows nurows)
-list(REMOVE_DUPLICATES cover_pens)
-list(LENGTH cover_pens npens)
 string(REGEX MATCHALL "\nshelf [0-9]+ tile [0-9]+ " tiles "${shot}")
 list(LENGTH tiles ntiles)
-message(STATUS "background ${bg}; cover rows ${rows}; cover pens ${cover_pens}; shelf tiles ${ntiles}")
-if(nrows LESS 2 OR ntiles LESS 3)
-  message(FATAL_ERROR "the fixture drew ${ntiles} shelf tiles and ${nrows} cover keys: too few to test the copper covers:\n${shot}")
+message(STATUS "background ${bg}; shelf tiles ${ntiles}")
+list(LENGTH rows nrows)
+if(ntiles LESS 3)
+  message(FATAL_ERROR "the fixture drew ${ntiles} shelf tiles: too few to test that covers leave the copper alone:\n${shot}")
 endif()
-if(NOT nrows EQUAL nurows)
-  message(FATAL_ERROR "covers on one row hold separate copper keys (${rows}): the row should share one line colour")
-endif()
-if(NOT npens EQUAL 1)
-  message(FATAL_ERROR "the cover rows ride ${npens} pens (${cover_pens}): disjoint rows should share one")
-endif()
-math(EXPR want_keys "${nrows} + 1")
-if(NOT keys EQUAL want_keys)
-  message(FATAL_ERROR "expected the background key plus one key per cover row (keys=${want_keys}), got keys=${keys}:\n${shot}")
+if(NOT nrows EQUAL 0 OR NOT keys EQUAL 1)
+  message(FATAL_ERROR "covers must not hold copper keys (I691f flat cover slots); expected only the background key, got keys=${keys} cover keys ${rows}:\n${shot}")
 endif()

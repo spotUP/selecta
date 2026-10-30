@@ -250,6 +250,7 @@ endfunction()
 expect_pinned(liked 0 "Liked Songs" liked Playlist 1 0 0 "SELECT COUNT(*) FROM liked" "local:fixture/12.mod")
 expect_pinned(recent 1 "Recently Played" recent Playlist 1 1 0 "SELECT COUNT(DISTINCT h.key) FROM history h JOIN songs s ON s.key=h.key" "local:fixture/1.mod")
 expect_pinned(local 2 "Local Files" local Source 1 0 0 "SELECT COUNT(*) FROM songs WHERE source='local'" "local:fixture/1.mod")
-expect_pinned(src 7 "HVSC" source Source 0 0 1 "SELECT COUNT(*) FROM songs WHERE source='hvsc'" "hvsc:a.sid")
+# I790: a source page opens its drill (formats, platforms, artists, new), never its song list: no song rows, no first song
+expect_pinned(src 7 "HVSC" source Source 0 0 1 "SELECT 0" "")
 kh_field(status "${pg}" status)
 expect_eq("the registered remote source status" "${status}" "Remote, never synced")

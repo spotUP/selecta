@@ -27,7 +27,19 @@ enum {
     SEL_COLL_APPEARS,   /* artist page "Appears On": albums of other artists that hold a song by the artist */
     SEL_COLL_MORE,      /* album page "More by": the other albums of the album's artist */
     SEL_COLL_SPELLINGS, /* composer page "Spellings": display, "", "", 0, songs written under that spelling */
-    SEL_COLL_HEAD       /* album page header: the album's own row (id, name, artist, year, songs) */
+    SEL_COLL_HEAD,      /* album page header: the album's own row (id, name, artist, year, songs) */
+    SEL_COLL_DRILL      /* I790: one level of a source page (SEL_DRILL_*), key = source US level US a US b; row: name, count, size ('' unknown), "", "" for a group level, song key, name, artist, album, 0 for a song level; windowed by op.at (skip) and op.after (limit) */
+};
+
+/* The levels of a source page drill (design doc 2026-10-22-architecture-design.md section 9b). */
+enum {
+    SEL_DRILL_FORMATS = 0, /* every format of the source: name, songs, SUM(size) */
+    SEL_DRILL_FORMAT_ARTISTS, /* artists of format a */
+    SEL_DRILL_FORMAT_SONGS,   /* songs of artist b in format a */
+    SEL_DRILL_ARTISTS,        /* every artist of the source, A-Z */
+    SEL_DRILL_ARTIST_SONGS,   /* songs of artist a */
+    SEL_DRILL_NEW,            /* source_new: day, songs added that day, newest day first */
+    SEL_DRILL_FORMAT_SAMPLE   /* one song path of format a (the Platforms fold resolves its family from it) */
 };
 
 /* One row of the list. `key` is the stable id a click routes on (playlist id, album id, artist name, composer canon, source id,

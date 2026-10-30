@@ -92,6 +92,48 @@ def serve(c):
         time.sleep(0.2)
         c.close()
         return
+    if target.startswith(("/advancedsearch.php", "/metadata/")):  # I725d: Internet Archive (recorded-style answers)
+        cc = "http://creativecommons.org/licenses/by/4.0/"
+        docs = [("ia_cc_one", "Fixture Album", "Artist-One", cc),
+                ("ia_pd", "Old Tunes", "Artist-Two", "http://creativecommons.org/publicdomain/zero/1.0/"),
+                ("ia_none", "No Licence", "Artist Three", ""),
+                ("ia_other", "Other Licence", "Artist Four", "http://example.com/license"),
+                ("ia_nomp3", "Flac Only", "Artist Five", cc)]
+        ua = [l for l in req.split("\r\n") if l.startswith("user-agent:")]
+        with open(port_file + ".requests", "a") as rq:
+            rq.write("ia_ua=%s\n" % (ua[0].split(":", 1)[1].strip() if ua else "none"))
+        status = "200 OK"
+        extra = ""
+        if target.startswith("/advancedsearch.php"):
+            with open(port_file + ".requests", "a") as rq:
+                rq.write("ia_search=1\n")
+            body = json.dumps({"responseHeader": {"status": 0}, "response": {"numFound": len(docs), "start": 0, "docs": [
+                dict([("identifier", i), ("title", t), ("creator", [a] if i == "ia_pd" else a)] + ([("licenseurl", l)] if l else []))
+                for i, t, a, l in docs]}}).encode()
+        else:
+            ident = target.split("/metadata/")[1].split("?")[0]
+            with open(port_file + ".requests") as rf:
+                seen = rf.read()
+            with open(port_file + ".requests", "a") as rq:
+                rq.write("ia_meta=%s\n" % ident)
+                if ident == "ia_cc_one" and "ia_429" not in seen:
+                    rq.write("ia_429=%f\n" % time.time())
+                    status = "429 Too Many Requests"
+                    extra = "Retry-After: 1\r\n"
+            if status.startswith("200"):
+                with open(port_file + ".requests", "a") as rq:
+                    rq.write("ia_meta_ok=%s %f\n" % (ident, time.time()))
+            files = {"ia_cc_one": [("cover.png", "PNG", ""), ("01 alpha.mp3", "VBR MP3", "Alpha-Song"),
+                                   ("02 beta.mp3", "VBR MP3", "Beta-Song"), ("01 alpha.ogg", "Ogg Vorbis", "Alpha-Song")],
+                     "ia_pd": [("old/tune_one.mp3", "VBR MP3", "")],
+                     "ia_nomp3": [("a.flac", "Flac", "A"), ("a.png", "PNG", "")]}.get(ident, [])
+            body = json.dumps({"files": [{"name": n, "format": f, "title": t, "source": "derivative"} for n, f, t in files],
+                               "metadata": {"identifier": ident}}).encode() if status.startswith("200") else b"slow down"
+        c.sendall(("HTTP/1.1 %s\r\nContent-Type: application/json\r\n%sContent-Length: %d\r\nConnection: close\r\n\r\n"
+                   % (status, extra, len(body))).encode() + body)
+        time.sleep(0.2)
+        c.close()
+        return
     if target.startswith("/v3.0/tracks/"):  # I725e: the Jamendo API (recorded-style answer, 3 tracks, one without audio)
         live = "http://icy.test/live"
         want = target.split("&id=")[1].split("&")[0] if "&id=" in target else ""

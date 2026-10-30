@@ -20,6 +20,19 @@ function(dui_run outvar)
   set(${outvar}_err "${err}" PARENT_SCOPE)
 endfunction()
 
+# I678m: Your Library lists every registered source but local, synced or not. dui_registered_sources(<out var> <stdout of a
+# --stats run>) returns that count, read from the registry through the launch SOURCES reply (sources_listed counts local too).
+function(dui_registered_sources outvar out)
+  if(NOT "${out}" MATCHES "sources_listed=([0-9]+) ")
+    message(FATAL_ERROR "no sources_listed line in:\n${out}")
+  endif()
+  if(CMAKE_MATCH_1 LESS 2)
+    message(FATAL_ERROR "the launch SOURCES listed ${CMAKE_MATCH_1} sources, the registry holds local and modland at least")
+  endif()
+  math(EXPR n "${CMAKE_MATCH_1} - 1")
+  set(${outvar} "${n}" PARENT_SCOPE)
+endfunction()
+
 function(dui_stat outvar out ui key)
   # The key must start a field: "dirty_pixels" must not match the tail of "page_dirty_pixels=" (greedy [^\n]* took the last).
   if(NOT "${out}" MATCHES "ui_stats id=${ui} ([^\n]* )?${key}=([0-9a-f]+)")

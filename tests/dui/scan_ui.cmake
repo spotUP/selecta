@@ -74,7 +74,7 @@ set(scanr "${CMAKE_MATCH_1};${CMAKE_MATCH_2};${CMAKE_MATCH_3};${CMAKE_MATCH_4}")
 if(NOT "${added}" MATCHES "scan probed [1-9][0-9]* files 3 scans 1")
   message(FATAL_ERROR "the folder was not scanned once:\n${added}")
 endif()
-if(NOT "${added}" MATCHES "toasts=1 toast_on=1")
+if(NOT "${added}" MATCHES "toasts=1 [^\n]*toast_on=1") # I695b put open_fail fields between the two counters
   message(FATAL_ERROR "no 'Added 3 songs' toast is up:\n${added}")
 endif()
 rects_apart("${toast}" "${addr}" "toast vs Add Folder")
