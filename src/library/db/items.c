@@ -9,6 +9,7 @@
 #include "db_internal.h"
 
 #include "../composer.h"
+#include "../source.h"
 
 #include <selecta/platform.h>
 #include <selecta/library_item.h>
@@ -48,11 +49,13 @@
     " UNION ALL SELECT 6,'" SEL_COMPOSER_UNKNOWN_CANON "','" SEL_COMPOSER_UNKNOWN_DISPLAY "','',n,0,0,0,0,'~',1," \
     "IFNULL((SELECT at FROM opened WHERE kind=6 AND id='" SEL_COMPOSER_UNKNOWN_CANON "'),0)" \
     " FROM composer_unknown WHERE n>0"
-/* Sources: the Local Files pinned row already stands for source 'local'. */
+/* Sources: every registered source (the reg helper table), with 0 songs too, so a source that never synced can be opened and
+ * synced (I678m), plus a source that still owns songs after its plugin went. The Local Files pinned row stands for 'local'. */
 #define PART_SOURCE \
-    "SELECT 7,s.source,s.source,'',s.n,0,IFNULL(ls.t,0),0,0,s.source,0," \
-    "IFNULL((SELECT at FROM opened WHERE kind=7 AND id=s.source),0) FROM source_songs s LEFT JOIN ls ON ls.source=s.source" \
-    " WHERE s.source<>'local' AND s.n>0"
+    "SELECT 7,r.id,r.id,'',IFNULL(s.n,0),0,IFNULL(ls.t,0),0,0,r.id,0," \
+    "IFNULL((SELECT at FROM opened WHERE kind=7 AND id=r.id),0) FROM" \
+    " (SELECT id FROM reg UNION SELECT source FROM source_songs WHERE n>0) r" \
+    " LEFT JOIN source_songs s ON s.source=r.id LEFT JOIN ls ON ls.source=r.id WHERE r.id<>'local'"
 
 static const char* const k_part[SEL_LIB_ITEM_KINDS] = {PART_LIKED, PART_RECENT, PART_LOCAL,    PART_PLAYLIST,
                                                        PART_ALBUM, PART_ARTIST, PART_COMPOSER, PART_SOURCE};
@@ -71,7 +74,9 @@ static const char* const k_part[SEL_LIB_ITEM_KINDS] = {PART_LIKED, PART_RECENT, 
 #define CTE_LS \
     "ls AS (SELECT s.source AS source, MAX(h.played_at) AS t FROM history h JOIN songs s ON s.key=h.key GROUP BY s.source)"
 
-#define CTE_COUNT 6u
+/* reg (bit 6) is not a constant: put_reg writes the registered source ids. */
+#define CTE_COUNT 7u
+#define CTE_REG 6u
 
 static size_t put(char* sql, size_t cap, size_t n, const char* text) {
     size_t len = strlen(text);
@@ -81,11 +86,30 @@ static size_t put(char* sql, size_t cap, size_t n, const char* text) {
     return n + len;
 }
 
+/* The reg helper table: one row per registered source id. Reads the registry only; the caller half registered it. */
+static size_t put_reg(char* sql, size_t cap, size_t n) {
+    uint32_t i, count = sel_source_count();
+
+    n = put(sql, cap, n, "reg(id) AS (SELECT 'local'");
+    for (i = 0; i < count && n < cap; i++) {
+        const sel_source* src = sel_source_get(i);
+
+        if (src == NULL) continue;
+        n = put(sql, cap, n, " UNION ALL SELECT ");
+        if (n < cap) {
+            sqlite3_snprintf((int)(cap - n), sql + n, "%Q", src->id);
+            n += strlen(sql + n);
+            if (n + 1u >= cap) n = cap;
+        }
+    }
+    return put(sql, cap, n, ")");
+}
+
 /* Builds the statement for `mask`; 0 when it does not fit or the mask names no kind. */
 static int build_sql(uint32_t mask, char* sql, size_t cap) {
-    static const char* const cte[CTE_COUNT] = {CTE_SA, CTE_LA, CTE_SR, CTE_LR, CTE_LC, CTE_LS};
-    /* bit i = cte[i]: albums read sa+la, artists sr+lr, composers lc, sources ls. */
-    static const uint32_t need[SEL_LIB_ITEM_KINDS] = {0, 0, 0, 0, 0x03u, 0x0Cu, 0x10u, 0x20u};
+    static const char* const cte[CTE_COUNT] = {CTE_SA, CTE_LA, CTE_SR, CTE_LR, CTE_LC, CTE_LS, NULL};
+    /* bit i = cte[i]: albums read sa+la, artists sr+lr, composers lc, sources ls+reg. */
+    static const uint32_t need[SEL_LIB_ITEM_KINDS] = {0, 0, 0, 0, 0x03u, 0x0Cu, 0x10u, 0x60u};
     uint32_t k, with = 0, parts = 0, i;
     size_t n = 0;
     int first = 1;
@@ -102,7 +126,7 @@ static int build_sql(uint32_t mask, char* sql, size_t cap) {
             if (!(with & (1u << i))) continue;
             if (!first) n = put(sql, cap, n, ",");
             first = 0;
-            n = put(sql, cap, n, cte[i]);
+            n = i == CTE_REG ? put_reg(sql, cap, n) : put(sql, cap, n, cte[i]);
         }
         n = put(sql, cap, n, " ");
     }
@@ -250,6 +274,7 @@ int sel_library_items(sel_library* lib, uint32_t kind_mask, uint32_t offset, sel
     k.out = out;
     k.n = 0;
     k.max = max;
+    sel_source_register_builtin(); /* the worker's reg table reads the registry; register on this thread first */
     memset(&op, 0, sizeof op);
     op.op = SEL_LIBRARY_ITEMS;
     op.mask = kind_mask;
