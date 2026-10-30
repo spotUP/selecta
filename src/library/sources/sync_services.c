@@ -4,6 +4,7 @@
 
 #include "../cache.h"
 #include "../local.h"
+#include "../net/backoff.h"
 #include "../net/http.h"
 #include "sync_net.h"
 #include "sync_util.h"
@@ -70,6 +71,11 @@ static int mem_sink_write(void* ctx, const void* data, size_t len) {
     return 1;
 }
 
+static void mem_sink_rewind(void* ctx) {
+    ((mem_sink*)ctx)->got = 0;
+}
+
+/* 429 handling is shared (net/backoff.c): up to 3 retries, each after the server's Retry-After (clamped). */
 static int net_request_ex(const sel_host* host, const char* url, const char* user_agent, const char* const* headers,
                           void* buf, uint32_t cap, uint32_t* got, uint32_t* requests) {
     sel_http_req req;
@@ -85,7 +91,7 @@ static int net_request_ex(const sel_host* host, const char* url, const char* use
     req.url = url;
     req.user_agent = user_agent;
     req.headers = headers;
-    (void)sel_http_request(&req, mem_sink_write, &m, &res);
+    (void)sel_http_request_retry(&req, mem_sink_write, &m, &res, 3u, mem_sink_rewind, NULL);
     if (got != NULL) {
         *got = m.got;
     }

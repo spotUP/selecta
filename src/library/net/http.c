@@ -283,6 +283,7 @@ typedef struct resp_head {
     unsigned icy_metaint;
     char content_type[40];
     char location[URL_CAP];
+    unsigned long retry_after_s; /* Retry-After in whole seconds; HTTP-date form is not parsed (0) */
 } resp_head;
 
 static int header_is(const char* line, const char* name) {
@@ -327,6 +328,12 @@ static int parse_head(char* h, resp_head* r) {
                 n++;
             }
             r->content_type[n] = '\0';
+        } else if (header_is(line, "retry-after:")) {
+            const char* v = line + 12;
+            while (*v == ' ') {
+                v++;
+            }
+            r->retry_after_s = (*v >= '0' && *v <= '9') ? strtoul(v, NULL, 10) : 0ul;
         } else if (header_is(line, "transfer-encoding:")) {
             const char* v = line + 18;
             while (*v == ' ') {
@@ -503,6 +510,7 @@ static sel_http_err exchange(const sel_http_req* req, const char* method, const 
     res->status = head.status;
     res->content_length = head.chunked ? -1 : head.content_length;
     res->icy_metaint = head.icy_metaint;
+    res->retry_after_s = head.retry_after_s;
     memcpy(res->content_type, head.content_type, sizeof res->content_type);
     if (head.status >= 300 && head.status < 400 && head.status != 304 && head.location[0] != '\0') {
         if (!resolve_location(u, head.location, redirect_to, redirect_cap)) {
