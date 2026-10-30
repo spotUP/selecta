@@ -184,6 +184,26 @@ def serve(c):
         time.sleep(0.2)
         c.close()
         return
+    if target.startswith("/api/query"):  # I725g: the ccMixter query API (recorded-style answer, 4 uploads)
+        live = "https://ccmixter.org/live"  # the plugin sends a ccmixter.org download through its base
+        ups = [(101, "Alpha-Mix", "artist_one", "https://creativecommons.org/licenses/by-nc/4.0/", [("cover.png", live), ("alpha.mp3", live)]),
+               (102, "Beta-Mix", "artist_two", "http://creativecommons.org/licenses/nc-sampling+/1.0/", [("beta.mp3", live)]),
+               (103, "Other-Licence", "artist_three", "http://example.com/license", [("c.mp3", live)]),
+               (104, "Wav-Only", "artist_four", "http://creativecommons.org/licenses/by/3.0/", [("d.wav", live)])]
+        ua = [l for l in req.split("\r\n") if l.startswith("user-agent:")]
+        want = target.split("ids=")[1].split("&")[0] if "ids=" in target else ""
+        with open(port_file + ".requests", "a") as rq:
+            rq.write("cc_ua=%s\n" % (ua[0].split(":", 1)[1].strip() if ua else "none"))
+            rq.write("cc_ids=%s\n" % want if want else "cc_query=1\n")
+        body = json.dumps([{"upload_id": i, "upload_name": t, "upload_extra": {"usertags": "a,b", "edpicks": {"x": {"review": "{ \"q\" }"}}},
+                            "user_name": u, "license_url": l, "license_name": "x", "qrank": 12,
+                            "files": [{"file_id": 7, "file_name": n, "file_format_info": {"ps": "4:35"}, "download_url": d,
+                                       "file_filesize": " (8.77MB)"} for n, d in fs]}
+                           for i, t, u, l, fs in ups if not want or str(i) == want]).encode()
+        c.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % len(body) + body)
+        time.sleep(0.2)
+        c.close()
+        return
     if target.startswith("/v3.0/tracks/"):  # I725e: the Jamendo API (recorded-style answer, 3 tracks, one without audio)
         live = "http://icy.test/live"
         want = target.split("&id=")[1].split("&")[0] if "&id=" in target else ""

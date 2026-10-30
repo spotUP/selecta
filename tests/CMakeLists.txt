@@ -2485,6 +2485,14 @@ if(NOT SEL_AMIGA)
   set_tests_properties(podcast PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 90 PASS_REGULAR_EXPRESSION "podcast_ok")
 
+  # I725g: the ccMixter source: one query per sync, per-upload licence shown, User-Agent, streamed playback.
+  add_test(NAME ccmixter
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
+            "-DMP3=${PROJECT_SOURCE_DIR}/tests/m3/stream/sine.mp3" "-DICY=${SEL_NET_DIR}/icy_server.py"
+            -P "${SEL_NET_DIR}/ccmixter.cmake")
+  set_tests_properties(ccmixter PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 90 PASS_REGULAR_EXPRESSION "ccmixter_ok")
+
   # T94 record part (I196, F36): `selecta-cli record` writes the served bytes to disk; STOP (SIGTERM) and the time
   # limit end a stalled stream with a valid file.
   add_test(NAME stream-record
