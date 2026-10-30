@@ -2,6 +2,7 @@
 #ifndef SELECTA_LIBRARY_SCHEMA_H
 #define SELECTA_LIBRARY_SCHEMA_H
 
+#include <selecta/host.h>
 #include <sqlite3.h>
 
 /* PRAGMA user_version, or -1 on error. */
@@ -9,7 +10,8 @@ int sel_schema_version(sqlite3* db);
 
 /* Deletes the albums row (and its artwork) for album ?1, artist ?2 when no song is left in it (a retag moved the last one away). */
 extern const char SEL_SQL_ALBUM_DROP[];
-/* Applies every missing migration; 1 on success, 0 on failure or a DB newer than this build. */
-int sel_schema_migrate(sqlite3* db);
+/* Applies every missing migration; 1 on success, 0 on failure or a DB newer than this build. A failure is logged through
+ * host->log (stderr when host or its log is NULL) with the failing version and sqlite3_errmsg (I787a). */
+int sel_schema_migrate(sqlite3* db, const sel_host* host);
 
 #endif

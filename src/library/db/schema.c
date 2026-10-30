@@ -6,6 +6,7 @@
 
 #include <sqlite3.h>
 #include <stddef.h>
+#include <stdio.h>
 
 static const char SCHEMA_V1[] =
     "CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT) WITHOUT ROWID;"
@@ -260,7 +261,19 @@ int sel_schema_version(sqlite3* db) {
     return v;
 }
 
-int sel_schema_migrate(sqlite3* db) {
+static void migrate_failed(sqlite3* db, const sel_host* host, int version, const char* step) {
+    char msg[160];
+
+    snprintf(msg, sizeof msg, "library schema migration to v%d failed at %s: %s (code %d)", version, step, sqlite3_errmsg(db),
+             sqlite3_extended_errcode(db));
+    if (host != NULL && host->log != NULL) {
+        host->log(host, SEL_LOG_ERROR, msg);
+    } else {
+        fprintf(stderr, "[ERROR] %s\n", msg);
+    }
+}
+
+static int migrate_steps(sqlite3* db, const sel_host* host) {
     int v = sel_schema_version(db);
     char pragma[40];
     int i;
@@ -270,18 +283,33 @@ int sel_schema_migrate(sqlite3* db) {
     }
     for (i = v; i < MIGRATION_COUNT; i++) {
         if (sqlite3_exec(db, "BEGIN", NULL, NULL, NULL) != SQLITE_OK) {
+            migrate_failed(db, host, i + 1, "BEGIN");
             return 0;
         }
         if (sqlite3_exec(db, g_migrations[i], NULL, NULL, NULL) != SQLITE_OK) {
+            migrate_failed(db, host, i + 1, "statements");
             sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
             return 0;
         }
         sqlite3_snprintf((int)sizeof pragma, pragma, "PRAGMA user_version=%d", i + 1);
         if (sqlite3_exec(db, pragma, NULL, NULL, NULL) != SQLITE_OK ||
             sqlite3_exec(db, "COMMIT", NULL, NULL, NULL) != SQLITE_OK) {
+            migrate_failed(db, host, i + 1, "COMMIT");
             sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
             return 0;
         }
     }
     return 1;
+}
+
+/* A migration can sort the whole catalogue (CREATE INDEX on songs). The library keeps temporary storage in memory
+ * (SQLITE_TEMP_STORE=2), where the sorter never spills and 594 520 songs outgrow every heap tier (SQLITE_NOMEM, I787a).
+ * Temp files for the migration only; the sorter writes a run to one whenever the heap nears its soft limit (db.c). */
+int sel_schema_migrate(sqlite3* db, const sel_host* host) {
+    int ok;
+
+    sqlite3_exec(db, "PRAGMA temp_store=FILE", NULL, NULL, NULL);
+    ok = migrate_steps(db, host);
+    sqlite3_exec(db, "PRAGMA temp_store=DEFAULT", NULL, NULL, NULL);
+    return ok;
 }

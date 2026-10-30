@@ -83,7 +83,7 @@ int sel_library_export_index(sel_library* lib, const char* source, const char* o
     remove(out_path);
     if (sqlite3_open_v2(out_path, &fresh, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL) !=
             SQLITE_OK ||
-        !sel_schema_migrate(fresh)) {
+        !sel_schema_migrate(fresh, lib->host)) {
         sqlite3_close(fresh);
         return 0;
     }
