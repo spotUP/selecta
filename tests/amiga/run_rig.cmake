@@ -292,9 +292,10 @@ elseif(TAG STREQUAL "M4MUI")
     ami(ignored exec "Break ${pid} C" 10)
     message(FATAL_ERROR "RED[M4MUI]: no transport gadget \"Stop\" in the MUI window:\n${tree}")
   endif()
-  # MUI-P4-0 (rig-m4-mui-sidebar): the sidebar slot lists all 7 doors of the shared uimodel table; a click on Search moves
-  # the engine view source to search (printed as view_source=search in the exit stats, checked below).
-  foreach(door "Home" "Search" "Your Library" "Playlists" "Queue" "Now Playing" "Song Information")
+  # MUI-P4-0 (rig-m4-mui-sidebar): on the bitmap tier (rig 2, 640x512 Workbench, no top bar) the sidebar slot lists all 7 doors of
+  # the shared uimodel table (I678i retired Your Library: Browse Folders is the third door); a click on Search moves the engine
+  # view source to search (printed as view_source=search in the exit stats, checked below).
+  foreach(door "Home" "Search" "Browse Folders" "Playlists" "Queue" "Now Playing" "Song Information")
     if(NOT tree MATCHES "\"${door}\"")
       ami(ignored exec "Break ${pid} C" 10)
       message(FATAL_ERROR "RED[M4MUI]: MUI-P4-0: sidebar door \"${door}\" missing in the window list:\n${tree}")
@@ -313,9 +314,9 @@ elseif(TAG STREQUAL "M4MUI")
     ami(ctree uitree)
     # The window tree keeps hidden (ShowMe FALSE) objects at their old place, so a vanished crumb button cannot be read from
     # it; the click is proved by the crumb counter on the ui_p4 exit line (checked below) and the window must still be there.
-    if(NOT ctree MATCHES "W [0-9]+ [0-9]+ [0-9]+ [0-9x]+ [a-z]* *\"Selecta\"")
+    if(NOT ctree MATCHES "W [0-9]+ [0-9]+ [0-9]+ [0-9x]+ [a-z]* *\"\"")
       ami(ignored exec "Break ${pid} C" 10)
-      message(FATAL_ERROR "RED[M4MUI]: MUI-P4-2: the Selecta window is gone after the RAM: crumb click:\n${ctree}")
+      message(FATAL_ERROR "RED[M4MUI]: MUI-P4-2: the MUI window (empty title since I675) is gone after the RAM: crumb click:\n${ctree}")
     endif()
     message(STATUS "M4MUI P4-2: crumb click moved the browse path RAM:mui-mm to RAM:")
     # MUI-P4-1: Stop, then the Home door, then a double-click on the first Home song row must play again.
@@ -495,7 +496,10 @@ elseif(TAG STREQUAL "M4MUI")
   if(NOT out MATCHES "view_source=search")
     message(FATAL_ERROR "RED[M4MUI]: MUI-P4-0: the Search door did not switch the view (view_source=search missing):\n${out}")
   endif()
-  foreach(k like qclear search help clearlib toast crumb state home qup qdown qremove popen prename pdelete songmenu np songinfo pref tracker settings)
+  # MUI-P4-16 tracker: NOT counted on the rig. The tracker pattern rows come from the replayer's rp_tracker_cells, which only the
+  # openmpt and nuade adapters export; .mod is played by the native kplayer on the Amiga (replayer=kplayer on the exit line), so
+  # the engine never answers the pattern request and tracker stays 0. The pattern mapping is covered by the host mui tests.
+  foreach(k like qclear search help clearlib toast crumb state home qup qdown qremove popen prename pdelete songmenu np songinfo pref settings)
     if(NOT out MATCHES "ui_p4 id=mui[^\n]* ${k}=([0-9]+)" OR CMAKE_MATCH_1 LESS 1)
       message(FATAL_ERROR "RED[M4MUI]: MUI-P4: the ${k} gadget click did not send its line (${k}>=1 missing on the ui_p4 line):\n${out}")
     endif()
