@@ -2,9 +2,9 @@
  * A path is the server filename (`LMan_SID_Chip_Club.prg`); the song key is `hippo:<filename>` and the URL is
  * `https://hippoplayer.se/playlist/<filename>`. Entries are playlists, not tunes. */
 #include "../source.h"
+#include "hippo_net.h"
 #include "hippo_sync.h"
 #include "sync_host.h"
-#include "hippo_sync.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -65,14 +65,22 @@ static int parse(const char* path, char* scratch, size_t n, sel_tag* out) {
     return 1;
 }
 
-/* LIBRARY_SYNC dispatch (I517): hippo reads a directory of fetched lists and .prg files. */
+/* LIBRARY_SYNC dispatch (I517): a URL fetches both lists first (I718), anything else reads a directory of fetched
+ * lists and .prg files. */
 static int hippo_sync_host(const sel_host* host, const char* arg, int64_t now, sel_tag* stats, uint32_t cap) {
     sel_hippo_sync_stats st;
     int ok;
 
     (void)now;
     memset(&st, 0, sizeof st);
-    ok = sel_hippo_sync(sel_sync_cfg(host), arg, &st);
+    if (strncmp(arg, "http://", 7) == 0 || strncmp(arg, "https://", 8) == 0) {
+        sel_hippo_net_stats nt;
+
+        ok = sel_hippo_net_sync(host, arg, &st, &nt);
+        sel_sync_stat(stats, cap, SEL_SYNC_NET_REQUESTS, nt.http_requests);
+    } else {
+        ok = sel_hippo_sync(sel_sync_cfg(host), arg, &st);
+    }
     sel_sync_stat(stats, cap, SEL_SYNC_LISTING_ROWS, st.lists);
     sel_sync_stat(stats, cap, SEL_SYNC_SKIPPED_ROWS, st.skipped);
     sel_sync_stat(stats, cap, SEL_SYNC_LISTS, st.lists);

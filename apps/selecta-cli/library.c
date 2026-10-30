@@ -848,7 +848,7 @@ static int library_sync(int argc, char** argv) {
         }
     }
     if (src == NULL || dir == NULL) {
-        fputs("usage: selecta-cli library sync [--db <path>] [--now <epoch>] [--dump] modland|hvsc|hippo|asma|sndh|zxart|keygenmusic <dir> | modland|hvsc|asma|sndh|zxart|keygenmusic <http(s) url>\n", stderr);
+        fputs("usage: selecta-cli library sync [--db <path>] [--now <epoch>] [--dump] modland|hvsc|hippo|asma|sndh|zxart|keygenmusic <dir> | modland|hvsc|hippo|asma|sndh|zxart|keygenmusic <http(s) url>\n", stderr);
         return 2;
     }
     memset(&sink, 0, sizeof sink);
@@ -888,6 +888,9 @@ static int library_sync(int argc, char** argv) {
                (unsigned)info.hippo_lists, (unsigned)info.skipped_rows, (unsigned)info.prg_files,
                (unsigned)info.prg_entries, (unsigned)info.prg_dividers, (unsigned)info.prg_stealth,
                (unsigned)info.prg_subsongs, st.args[SEL_LIB_STAT_SONGS].v.i);
+        if (info.net_requests > 0) {
+            printf("net_requests=%u\n", (unsigned)info.net_requests);
+        }
     } else if (strcmp(src, "asma") == 0 || strcmp(src, "sndh") == 0 || strcmp(src, "zxart") == 0 || strcmp(src, "keygenmusic") == 0) {
         printf("listing_rows=%u skipped_rows=%u db_songs=%d\n", (unsigned)info.listing_rows,
                (unsigned)info.skipped_rows, st.args[SEL_LIB_STAT_SONGS].v.i);

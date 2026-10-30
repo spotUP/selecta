@@ -31,7 +31,7 @@ typedef struct builtin {
 
 static const builtin BUILTIN[] = {
     {"modland", "http://ftp.amigascne.org/mirrors/ftp.modland.com/pub/modules/,ftp://ftp.modland.com/pub/modules/"},
-    {"hvsc", "https://hvsc.c64.org/download/"},
+    {"hvsc", "https://hvsc.de/download/"},
     {"asma", "https://asma.atari.org/asma/"},
     {"sndh", "https://sndh.atari.org/sndh/sndh_lf/"},
     {"keygenmusic", "https://keygenmusic.tk/kgm/"},

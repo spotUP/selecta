@@ -1980,6 +1980,15 @@ if(NOT SEL_AMIGA)
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "hvsc_net_ok")
 endif()
 
+# I718: LIBRARY_SYNC hippo <url> fetches both lists over the hippoplayer.se fixture; HTML 200 pages are refused.
+if(NOT SEL_AMIGA)
+  add_test(NAME source-hippo-net
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      -P "${SEL_NET_DIR}/hippo_net.cmake")
+  set_tests_properties(source-hippo-net PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "hippo_net_ok")
+endif()
+
 # Row I414: LIBRARY_SYNC sndh <url> over the sndh.atari.org fixture.
 if(NOT SEL_AMIGA)
   add_test(NAME source-sndh-net

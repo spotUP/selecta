@@ -6,7 +6,7 @@ file(READ "${WORK}/port" port)
 string(STRIP "${port}" port)
 set(fx "http://127.0.0.1:${port}")
 set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
-set(ENV{SELECTA_NET_MAP} "hvsc.c64.org=${fx},fixture.test=${fx}")
+set(ENV{SELECTA_NET_MAP} "hvsc.c64.org=${fx},hvsc.html.test=${fx},fixture.test=${fx}")
 set(cache "${WORK}/t73n-cache")
 file(REMOVE_RECURSE "${cache}")
 set(ENV{SELECTA_CACHE_DIR} "${cache}")
@@ -55,6 +55,30 @@ file(SIZE "${docs}/STIL.txt" stil_size)
 if(want_rows LESS 1 OR want_lengths LESS 1 OR want_stil LESS 1)
   message(FATAL_ERROR "T73 net: fixture is empty (rows=${want_rows} lengths=${want_lengths} stil=${want_stil})")
 endif()
+
+# I718: a mirror that answers 200 with an HTML page (what hvsc.c64.org's site root did) must not leave that page
+# under Songlengths.md5 / STIL.txt: no file is kept and the sync reports failure (sync_failed), zero rows.
+set(bad_cache "${WORK}/t73n-badcache")
+file(REMOVE_RECURSE "${bad_cache}")
+set(ENV{SELECTA_CACHE_DIR} "${bad_cache}")
+set(bad_db "${WORK}/t73n-bad.db")
+file(REMOVE "${bad_db}")
+execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/reset --method POST OUTPUT_VARIABLE o)
+execute_process(COMMAND "${CLI}" library sync --db "${bad_db}" --now 1792756800 hvsc http://hvsc.html.test/download
+  OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
+set(raw "${o}${e}")
+file(GLOB_RECURSE kept "${bad_cache}/*Songlengths.md5" "${bad_cache}/*STIL.txt")
+if(NOT "${kept}" STREQUAL "")
+  message(FATAL_ERROR "T73 net (I718): HTML 200 page kept as a data file: ${kept}
+${raw}")
+endif()
+if(NOT raw MATCHES "sync_failed")
+  message(FATAL_ERROR "T73 net (I718): HTML 200 page did not fail the sync
+${raw}")
+endif()
+counter(v db_songs)
+expect("rejected sync db_songs" "${v}" 0)
+set(ENV{SELECTA_CACHE_DIR} "${cache}")
 
 execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/reset --method POST OUTPUT_VARIABLE o)
 execute_process(COMMAND "${CLI}" library sync --db "${db}" --now 1792756800 --dump hvsc http://hvsc.c64.org/download
