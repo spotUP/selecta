@@ -82,6 +82,7 @@ SEL_PREF(SCROBBLE_LASTFM_SESSION, "scrobble.lastfm_session", "",                
 #endif
 /* Search source of the search field (MUI-P8-8): Library, Web or Demozoo (src/uimodel/sources.c). */
 SEL_PREF(SEARCH_SOURCE,           "search.source",           "Library",                           SEL_PREF_PLAIN)
+SEL_PREF(SEARCH_LAST_SOURCE,      "search.last_source",      "",                                  SEL_PREF_PLAIN)
 /* MUI state kept on close (MUI-P8-11, src/uimodel/panels.c): window geometry "x,y,w,h", the open panes bit mask and the
  * browse view. Empty: the MUI defaults. The visualiser is ui.desktop.viz, shared with the desktop UI. */
 SEL_PREF(UI_MUI_GEOMETRY,         "ui.mui.geometry",         "",                                  SEL_PREF_PLAIN)

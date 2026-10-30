@@ -35,6 +35,7 @@ static const builtin BUILTIN[] = {
     {"asma", "https://asma.atari.org/asma/"},
     {"sndh", "https://sndh.atari.org/sndh/sndh_lf/"},
     {"keygenmusic", "https://keygenmusic.tk/kgm/"},
+    {"modulespl", "https://www.modules.pl/modules/"},
 };
 
 static int add_base(sel_mirror_set* s, const char* base, size_t n) {

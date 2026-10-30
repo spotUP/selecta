@@ -45,6 +45,12 @@ typedef struct sel_source_playlist {
     uint32_t count;
 } sel_source_playlist;
 
+/* Receiver of search hits (I406). `row` returns 0 to stop the search early. */
+typedef struct sel_search_sink {
+    void* ctx;
+    int (*row)(void* ctx, const char* path, const char* title, const char* artist, const char* format);
+} sel_search_sink;
+
 typedef struct sel_source {
     const char* id; /* "modland", "hvsc", "asma", "sndh", "zxart", "keygenmusic", "local", "hippo", "radio" */
     const char* name;
@@ -70,12 +76,17 @@ typedef struct sel_source {
      * (sel_live, ICY title), written to `out`. May tell the service the station was played (radio-browser click
      * count). 1 resolved, 0 when it cannot be played. NULL for every other source. */
     int (*play_url)(const sel_host* host, const char* path, char* out, size_t n);
+    /* SOURCE_SEARCH (D-OS-3, I406): search the live service for `query`. Each hit goes to out->row(ctx, path, title,
+     * artist, format) (path is the key part after "<id>:"). Returns the number of hits, or -1 when the service
+     * cannot be reached. NULL for a source without a search. */
+    int (*search)(const sel_host* host, const char* query, sel_search_sink* out);
 } sel_source;
 enum {
     SEL_SOURCE_REMOTE = 1u,        /* songs live off the machine: fetched through the cache */
     SEL_SOURCE_SYNCS = 2u,         /* has a sync */
     SEL_SOURCE_NEW_THIS_WEEK = 4u, /* the sync reports SEL_SYNC_NEW_THIS_WEEK; the engine persists it */
-    SEL_SOURCE_STREAMS = 8u        /* songs are live streams: never cached, played from play_url (I725c) */
+    SEL_SOURCE_STREAMS = 8u,       /* songs are live streams: never cached, played from play_url (I725c) */
+    SEL_SOURCE_ZIPPED = 16u        /* each song file is a zip around one module; the engine unpacks it after the fetch (I406) */
 };
 
 /* Sync on launch (I527): 1 when a source last synced at `synced` (unix time, 0 never) is due for the sync offer at `now`.

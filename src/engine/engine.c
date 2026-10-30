@@ -134,6 +134,7 @@
     X(LIBRARY_FETCH)                                                                          \
     X(LIBRARY_SCAN)                                                                           \
     X(LIBRARY_SYNC)                                                                           \
+    X(SOURCE_SEARCH)                                                                          \
     X(SOURCES)                                                                                \
     X(LIKE)                                                                                   \
     X(FLAG)                                                                                   \
@@ -179,6 +180,11 @@
 #define SEL_RESULT_LINE_MAX 255u
 #define SEL_SYNC_QUEUE SEL_SOURCE_MAX /* LIBRARY_SYNCs waiting behind the running sync or scan (I527): one per source,
                                        * so the sync-all banner never loses a source to sync_busy */
+#define SEL_SEARCH_HITS 120
+#define SEL_SEARCH_KEY_MAX 256
+#define SEL_SEARCH_TEXT_MAX 160
+#define SEL_SEARCH_ARTIST_MAX 96
+#define SEL_SEARCH_FORMAT_MAX 16
 #define SEL_SCAN_QUEUE 8u /* LIBRARY_SCAN roots waiting behind the running scan (I506) */
 
 /* Events coalesced inside a batch: the latest value wins, emitted at END. */
@@ -449,9 +455,19 @@ struct sel_engine {
         int64_t now;
     } sync_next[SEL_SYNC_QUEUE];
     uint32_t sync_next_n;
+    uint32_t search_n;
     uint32_t lib_slot;
     sel_tag lib_tags[4][4];                  /* LIBRARY_RESULT tags, a ring like error_detail */
     char lib_path[4][SEL_BROWSE_PATH_MAX];
+    struct {                                 /* SOURCE_SEARCH hits (I406): stable until the next search, events point here */
+        char key[SEL_SEARCH_KEY_MAX];
+        char title[SEL_SEARCH_TEXT_MAX];
+        char artist[SEL_SEARCH_ARTIST_MAX];
+        char format[SEL_SEARCH_FORMAT_MAX];
+        sel_tag tags[7];
+    } search_hit[SEL_SEARCH_HITS];
+    char search_source[SEL_SOURCE_ID_MAX];
+    sel_tag search_done_tags[4];
     uint32_t st_slot;                         /* STICKER answers: ring of 8, like lib_tags */
     sel_tag st_tags[8][5];
     uint32_t sources_listed;                  /* SOURCES rows answered (DUI-P4-3) */
@@ -1637,6 +1653,19 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
         if (sel_library_fetch(e->lib, path, rules, cached, sizeof cached, &files) <= 0) {
             e->open_status = sel_library_fetch_status(e->lib); /* I695b: the 404 of a file the mirror does not serve */
             return NULL;
+        }
+        {
+            /* I406: a zip-wrapped source (Modules.pl) delivers a zip around one module; unpack it in the cache. */
+            sel_sync_ctx zctx;
+            sel_host zhost;
+
+            memset(&zctx, 0, sizeof zctx);
+            zctx.scfg.host = e->host;
+            zctx.scfg.lib = e->lib;
+            sel_sync_host_bind(&zhost, e->host, &zctx);
+            if (sel_source_unzip(&zhost, path, cached) < 0) {
+                return NULL;
+            }
         }
         path = cached;
     }
@@ -5455,6 +5484,85 @@ static void sync_start_next(sel_engine* e) {
 /* LIBRARY_SYNC <source> <arg> [now]: runs the source's own `sync` (I517) on the library job thread (I527); the engine
  * knows no source by name. The shell loop never waits for it: sync_collect answers once the task ended. A LIBRARY_SYNC
  * while a scan or another sync runs waits in sync_next; only a full queue answers ERROR sync_busy. */
+/* SOURCE_SEARCH <source> <query> (D-OS-3, row I406): asks the source's own search (its `search` hook, a site query, not
+ * the local library) and answers one LIBRARY_RESULT per hit (SRC_KIND search; SRC_PATH is the song key `source:path`,
+ * playable with OPEN), then one with SRC_KIND search_done and SRC_COUNT. The source is remembered as the pref
+ * search.last_source. Runs on the command thread, like LIBRARY_FETCH. */
+static int search_row(void* ctx, const char* path, const char* title, const char* artist, const char* format) {
+    sel_engine* e = ctx;
+    uint32_t i = e->search_n;
+    sel_tag* t;
+
+    if (i >= SEL_SEARCH_HITS) {
+        return 0;
+    }
+    snprintf(e->search_hit[i].key, sizeof e->search_hit[i].key, "%s:%s", e->search_source, path);
+    snprintf(e->search_hit[i].title, sizeof e->search_hit[i].title, "%s", title);
+    snprintf(e->search_hit[i].artist, sizeof e->search_hit[i].artist, "%s", artist);
+    snprintf(e->search_hit[i].format, sizeof e->search_hit[i].format, "%s", format);
+    t = e->search_hit[i].tags;
+    t[0].tag = SEL_SRC_KEY;
+    t[0].value = (uintptr_t)e->search_source;
+    t[1].tag = SEL_SRC_KIND;
+    t[1].value = (uintptr_t)"search";
+    t[2].tag = SEL_SRC_PATH;
+    t[2].value = (uintptr_t)e->search_hit[i].key;
+    t[3].tag = SEL_SRC_NAME;
+    t[3].value = (uintptr_t)e->search_hit[i].title;
+    t[4].tag = SEL_SRC_ARTIST;
+    t[4].value = (uintptr_t)e->search_hit[i].artist;
+    t[5].tag = SEL_SRC_FORMAT;
+    t[5].value = (uintptr_t)e->search_hit[i].format;
+    t[6].tag = SEL_TAG_END;
+    t[6].value = 0;
+    e->search_n++;
+    return 1;
+}
+
+static void cmd_SOURCE_SEARCH(sel_engine* e, const sel_message* m) {
+    sel_sync_ctx sctx;
+    sel_host shost;
+    sel_search_sink sink;
+    sel_message r;
+    uint32_t i;
+    int rc;
+
+    snprintf(e->search_source, sizeof e->search_source, "%s", m->args[0].v.s);
+    e->search_n = 0;
+    memset(&sctx, 0, sizeof sctx);
+    sctx.scfg.host = e->host;
+    sctx.scfg.lib = e->lib;
+    sel_sync_host_bind(&shost, e->host, &sctx);
+    sink.ctx = e;
+    sink.row = search_row;
+    rc = sel_source_search(&shost, e->search_source, m->args[1].v.s, &sink);
+    if (rc < 0) {
+        sel_engine_report_error(e, sel_source_find(e->search_source) == NULL ? "unknown_source" : "search_failed",
+                                m->args[0].v.s);
+        return;
+    }
+    for (i = 0; i < e->search_n; i++) {
+        evt_init(&r, SEL_EVT_LIBRARY_RESULT);
+        evt_tags(&r, e->search_hit[i].tags);
+        emit(e, &r);
+    }
+    e->search_done_tags[0].tag = SEL_SRC_KEY;
+    e->search_done_tags[0].value = (uintptr_t)e->search_source;
+    e->search_done_tags[1].tag = SEL_SRC_KIND;
+    e->search_done_tags[1].value = (uintptr_t)"search_done";
+    e->search_done_tags[2].tag = SEL_SRC_COUNT;
+    e->search_done_tags[2].value = e->search_n;
+    e->search_done_tags[3].tag = SEL_TAG_END;
+    e->search_done_tags[3].value = 0;
+    evt_init(&r, SEL_EVT_LIBRARY_RESULT);
+    evt_tags(&r, e->search_done_tags);
+    emit(e, &r);
+    (void)sel_prefs_set(&e->prefs, "search.last_source", e->search_source);
+    if (e->config_dir[0] != '\0') {
+        (void)sel_prefs_save(&e->prefs, e->config_dir);
+    }
+}
+
 static void cmd_LIBRARY_SYNC(sel_engine* e, const sel_message* m) {
     const sel_source* src;
     int64_t now;
