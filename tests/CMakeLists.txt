@@ -1991,6 +1991,15 @@ if(NOT SEL_AMIGA)
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "hippo_net_ok")
 endif()
 
+# Row I405: LIBRARY_SYNC aminet <url> over the aminet.net fixture, then play one archived module (reachability).
+if(NOT SEL_AMIGA)
+  add_test(NAME source-aminet-net
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      -P "${SEL_NET_DIR}/aminet_net.cmake")
+  set_tests_properties(source-aminet-net PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "aminet_net_ok")
+endif()
+
 # Row I414: LIBRARY_SYNC sndh <url> over the sndh.atari.org fixture.
 if(NOT SEL_AMIGA)
   add_test(NAME source-sndh-net
@@ -2124,6 +2133,17 @@ if(NOT SEL_AMIGA)
   add_test(NAME asma-unit COMMAND asma_unit_test)
   set_tests_properties(asma-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "asma_unit_ok")
 
+  # I405: the aminet INDEX line parser and source descriptor, on the recorded INDEX fixture.
+  add_executable(aminet_unit_test aminet_unit_test.c)
+  target_sources(aminet_unit_test PRIVATE
+    ${PROJECT_SOURCE_DIR}/plugins/sources/aminet/aminet.c ${PROJECT_SOURCE_DIR}/plugins/sources/aminet/aminet_sync.c
+    ${PROJECT_SOURCE_DIR}/plugins/sources/aminet/aminet_net.c)
+  target_include_directories(aminet_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/sources/aminet)
+  target_compile_definitions(aminet_unit_test PRIVATE
+    SEL_AMINET_INDEX="${PROJECT_SOURCE_DIR}/tests/net/fixtures/aminet.net/INDEX")
+  target_link_libraries(aminet_unit_test PRIVATE selecta_shared_source selecta_shared_archive selecta_core)
+  add_test(NAME aminet-unit COMMAND aminet_unit_test)
+  set_tests_properties(aminet-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "aminet_unit_ok")
   # I414: the sndh directory reader, download page parser and source descriptor, on the recorded fixtures.
   add_executable(sndh_unit_test sndh_unit_test.c)
   target_sources(sndh_unit_test PRIVATE

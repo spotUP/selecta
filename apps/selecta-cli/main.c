@@ -462,6 +462,10 @@ static void script_directive(sel_engine* e, const char* line) {
         sel_engine_stats es;
         sel_engine_stats_get(e, &es);
         printf("DUP redirects=%u played=%s\n", (unsigned)es.dup_redirects, es.dup_played);
+    } else if (strcmp(line, "@archive_stats") == 0) {
+        sel_engine_stats es;
+        sel_engine_stats_get(e, &es);
+        printf("ARCHIVE unpacks=%u member=%s\n", (unsigned)es.archive_unpacks, es.archive_member);
     } else if (strcmp(line, "@hash_stats") == 0) {
         sel_engine_stats es;
         sel_engine_stats_get(e, &es);
