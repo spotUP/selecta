@@ -158,6 +158,7 @@ static int hvsc_sync_host(const sel_host* host, const char* arg, int64_t now, se
 static const sel_source g_hvsc = {
     "hvsc", "HVSC", "https://hvsc.de/download/", "High Voltage SID Collection, served through Modland.", g_tags,
     NULL, sel_hvsc_parse, NULL, url_of, path_in, NULL, NULL, hvsc_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL, NULL,
+    NULL, /* search (I406) */
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

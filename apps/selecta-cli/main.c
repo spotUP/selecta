@@ -335,6 +335,7 @@ static void print_event(void* ctx, const sel_message* evt) {
  *   @share_stats        SHARE links_parsed=N links_made=N songs_opened=N (T84)
  *   @stream_stats       STREAM stream_reads=N stream_bytes=N (T94: OPEN of a URL or pipe path, I195)
  *   @stream_source      STREAMSOURCE resolves=N (I725c: songs of a streams source, radio-browser, resolved to a station URL)
+ *   @source_search      SOURCESEARCH runs=N (I406: SOURCE_SEARCH commands that reached a source's search hook)
  *   @stream_list        STREAMLIST resolves=N adds=N (I725a: .pls/.m3u URLs resolved to a stream, STREAM_ADD URLs saved)
  *   @stream_live        STREAMLIVE opens=N audio_bytes=N audio_done=0|1 received=N record_taps=N record_files=N (I195b: bytes downloaded when
  *                       the first audio frame played, and whether the download had finished by then)
@@ -500,6 +501,8 @@ static void script_directive(sel_engine* e, const char* line) {
         sel_engine_stats es;
         sel_engine_stats_get(e, &es);
         printf("STREAMLIST resolves=%u adds=%u\n", (unsigned)sel_stream_resolves(), (unsigned)es.stream_adds);
+    } else if (strcmp(line, "@source_search") == 0) {
+        printf("SOURCESEARCH runs=%u\n", (unsigned)sel_source_search_runs());
     } else if (strcmp(line, "@stream_source") == 0) {
         printf("STREAMSOURCE resolves=%u\n", (unsigned)sel_source_stream_resolves());
     } else if (strcmp(line, "@stream_live") == 0) {

@@ -1,0 +1,1418 @@
+<head>
+ <title>:: modules.pl :: Search Results</title>
+
+ <meta name="description" content="A place 100% dedicated to tracked music. 24/7 Internet radio, huge database of modules, musicians, productions, software, events and articles. Also, discussion forum, competitions, charts and more! :)">
+ <meta name="keywords" content="module, modules, tracked, music, trackers, tracker, amiga, commodore, c64, fasttracker, protracker, digibooster, impulsetracker, screamtracker, renoise, radio, chip, chiptune, 8bit"> 
+
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+ <meta http-equiv="cache-control" content="no-cache, must-revalidate">
+ <meta http-equic="pragma" content="no-cache">
+ <link rel="shortcut icon" href="gfx/favicon.ico">
+ <link href="templates/default/default.css?749698803" type="text/css" rel="stylesheet">
+ <link href='https://fonts.googleapis.com/css?family=Roboto:700,400' rel='stylesheet' type='text/css'>
+ <link href="includes/modfm.css" type="text/css" rel="stylesheet">
+
+ <link rel="alternate" type="application/rss+xml" title="Newest modules" href="rss/modules.xml">
+ <link rel="alternate" type="application/rss+xml" title="Recent updates" href="rss/updates.xml">
+
+ <link href='https://fonts.googleapis.com/css?family=Roboto:400,700' rel='stylesheet' type='text/css'>
+ <link href='https://fonts.googleapis.com/css?family=Open+Sans:400,700' rel='stylesheet' type='text/css'>
+
+ <script type="text/javascript" src="includes/swfobject.js?82"></script>
+ <script src="includes/tw-sack.js?82"></script>
+ <script src="includes/functions.js?82"></script> 
+ <script src="includes/modplayer.js?82"></script> 
+ <script type="text/javascript" src="includes/jquery.min.js"></script>
+
+ <meta property="og:image" content="https://modules.pl/gfx/fb.jpg" />
+
+
+</head>
+
+<body>
+
+<div id="fb-root"></div>
+<script>(function(d, s, id) {
+  var js, fjs = d.getElementsByTagName(s)[0];
+  if (d.getElementById(id)) return;
+  js = d.createElement(s); js.id = id;
+  js.src = "//connect.facebook.net/en_EN/sdk.js#xfbml=1&appId=130536220430602&version=v2.3";
+  fjs.parentNode.insertBefore(js, fjs);
+}(document, 'script', 'facebook-jssdk'));</script>
+
+ <table align="center" class="table-main" id="site-content">
+  <tr>
+   <td colspan="3" class="td-logo">
+         <table class="tab" cellspacing="0" cellpadding="0">
+      <tr>
+       <td width="100" valign="bottom" style="padding: 4px;">
+
+       </td>
+       <td align="center" valign="top"><a href="?id=main"><img src="templates/default/images/logo.png" border="0"></a></td>
+       <td align="right" width="100" valign="bottom" style="padding: 4px;">
+         <form style="margin-bottom: 0px;" method="post" name="lay" onchange="lay.submit();"><select name='layout'><option value='2' >Coffee<option value='3' >Winter<option value='4' >Metal<option value='6' >Music<option value='7' >Protracker<option value='8' >Default</select></form>
+       </td>
+      </tr>
+     </table>
+   </td>
+  </tr>
+  <tr>
+   <td class="table-main-left">
+
+    <table class="table-box">
+ <tr>
+  <td class="section-bar pad center">
+   <span class="section-title">Main Menu</span>
+  </td>
+ </tr>
+</table>
+
+<table class="table-box-in border-right">
+ <tr>
+  <td class="table-box-in">
+
+   <table class="section-table">
+    <tr align="left">
+     <td>
+
+<span class="menu-section">&#187 General</span>
+<ul class="menu-items2">
+
+<a href="?id=main">
+ <div class="menu-icon"><img src="gfx/icon-main.png" border="0"></div>
+ <div class="menu-link">Main Page</div>
+</a>
+<a href="?id=modules">
+ <div class="menu-icon"><img src="gfx/icon-mods.png" border="0"></div>
+ <div class="menu-link">Modules</div>
+</a>
+<a href="?id=artists">
+ <div class="menu-icon"><img src="gfx/icon-auth.png" border="0"></div>
+ <div class="menu-link">Authors</div>
+</a>
+<a href="?id=productions">
+ <div class="menu-icon"><img src="gfx/icon-prods.png" border="0"></div>
+ <div class="menu-link">Productions</div>
+</a>
+<a href="?id=events">
+ <div class="menu-icon"><img src="gfx/icon-events.png" border="0"></div>
+ <div class="menu-link">Events</div>
+</a>
+<a href="?id=forum">
+ <div class="menu-icon"><img src="gfx/icon-forum.png" border="0"></div>
+ <div class="menu-link">Forum</div>
+</a>
+<a href="?id=articles"">
+ <div class="menu-icon"><img src="gfx/icon-arts.png" border="0"></div>
+ <div class="menu-link">Articles</div>
+</a>
+<a href="?id=software">
+ <div class="menu-icon"><img src="gfx/icon-soft.png" border="0"></div>
+ <div class="menu-link">Software</div>
+</a>
+<a href="?id=users">
+ <div class="menu-icon"><img src="gfx/icon-user.png" border="0"></div>
+ <div class="menu-link">Users</div>
+</a>
+<a href="?id=faq">
+ <div class="menu-icon"><img src="gfx/icon-faq.png" border="0"></div>
+ <div class="menu-link">FAQ</div>
+</a>
+<a href="?id=support">
+ <div class="menu-icon"><img src="gfx/icon-support.png" border="0"></div>
+ <div class="menu-link">Support</div>
+</a>
+</ul>
+
+<span class="menu-section">&#187 ModFM</span>
+<ul class="menu-items2">
+
+<a href="http://radio.modules.pl:8500/listen.pls">
+ <div class="menu-icon"><img src="gfx/icon-listen.png" border="0"></div>
+ <div class="menu-link">Listen now!</div>
+</a>
+<a href="?id=playlist">
+ <div class="menu-icon"><img src="gfx/icon-playlist.png" border="0"></div>
+ <div class="menu-link">Playlist</div>
+</a>
+<a href="?id=fmqueue">
+ <div class="menu-icon"><img src="gfx/icon-queue.png" border="0"></div>
+ <div class="menu-link">Upcoming Tunes</div>
+</a>
+<a href="?id=playlist_history">
+ <div class="menu-icon"><img src="gfx/icon-history.png" border="0"></div>
+ <div class="menu-link">Playlist History</div>
+</a>
+</ul>
+
+     </td>
+    </tr>
+   </table>
+  </td>
+ </tr>
+</table><table class="table-box">
+ <tr>
+  <td class="section-bar pad center">
+   <span class="section-title">Recently updated topics</span>
+  </td>
+ </tr>
+</table>
+
+<table class="table-box-in border-right">
+ <tr>
+  <td class="table-box-in">
+   <table class="section-table">
+    <tr align="left">
+     <td>
+
+<ul class="menu-items">
+<a href="index.php?id=topic&tid=429&page=1" title="Written by: Kokos">
+<div style="float: left;"><img src="gfx/flags/pl-min.gif" style="margin-top:3px;" border="0"></div>
+<div style="margin-left: 16px;">Odszedł Xtense <span class="small">[7]</span></div>
+</a><a href="index.php?id=topic&tid=427&page=1" title="Written by: quasi">
+<div style="float: left;"><img src="gfx/flags/uk-min.gif" style="margin-top:3px;" border="0"></div>
+<div style="margin-left: 16px;">There aren't two genders <span class="small">[3]</span></div>
+</a><a href="index.php?id=topic&tid=428&page=1" title="Written by: PazuR">
+<div style="float: left;"><img src="gfx/flags/uk-min.gif" style="margin-top:3px;" border="0"></div>
+<div style="margin-left: 16px;">Glenn Keller (AMIGA/PAULA chip designer) newest inteview <span class="small">[1]</span></div>
+</a><a href="index.php?id=topic&tid=426&page=1" title="Written by: melomonster">
+<div style="float: left;"><img src="gfx/flags/pl-min.gif" style="margin-top:3px;" border="0"></div>
+<div style="margin-left: 16px;">Jaka to melodia <span class="small">[1]</span></div>
+</a><a href="index.php?id=topic&tid=425&page=1" title="Written by: muflonpl">
+<div style="float: left;"><img src="gfx/flags/pl-min.gif" style="margin-top:3px;" border="0"></div>
+<div style="margin-left: 16px;">Wódka  <span class="small">[1]</span></div>
+</a><a href="index.php?id=topic&tid=406&page=3" title="Written by: lis6502">
+<div style="float: left;"><img src="gfx/flags/pl-min.gif" style="margin-top:3px;" border="0"></div>
+<div style="margin-left: 16px;">Anomalie modułowe, czyli największy, najmniejszy, najdłuższy... <span class="small">[24]</span></div>
+</a><a href="index.php?id=topic&tid=424&page=1" title="Written by: lis6502">
+<div style="float: left;"><img src="gfx/flags/pl-min.gif" style="margin-top:3px;" border="0"></div>
+<div style="margin-left: 16px;">Więc ja też szukam - joanna i sybilla <span class="small">[5]</span></div>
+</a><a href="index.php?id=topic&tid=420&page=1" title="Written by: spacedrone808">
+<div style="float: left;"><img src="gfx/flags/uk-min.gif" style="margin-top:3px;" border="0"></div>
+<div style="margin-left: 16px;">BEST TRACKER MODS EVER! <span class="small">[5]</span></div>
+</a><a href="index.php?id=topic&tid=423&page=1" title="Written by: Laffik of Dreamolers">
+<div style="float: left;"><img src="gfx/flags/pl-min.gif" style="margin-top:3px;" border="0"></div>
+<div style="margin-left: 16px;">Aktualizacja danych "authors" <span class="small">[4]</span></div>
+</a><a href="index.php?id=topic&tid=414&page=2" title="Written by: Carmazine">
+<div style="float: left;"><img src="gfx/flags/pl-min.gif" style="margin-top:3px;" border="0"></div>
+<div style="margin-left: 16px;">Chippy - The Last Voyage <span class="small">[11]</span></div>
+</a></ul>
+
+     </td>
+    </tr>
+   </table>
+  </td>
+ </tr>
+</table><table class="table-box">
+ <tr>
+  <td class="section-bar pad center">
+   <span class="section-title">Recent comments</span>
+  </td>
+ </tr>
+</table>
+
+<table class="table-box-in border-right">
+ <tr>
+  <td class="table-box-in">
+   <table class="section-table">
+    <tr align="left">
+     <td>
+
+      <ul class="menu-items">
+      <a href="index.php?id=module&mod=9774&page=1" title="Written by: lamb">
+<div style="float: left;"><img src="gfx/new_post.png" style="margin-bottom:-4px;" border="0"></div>
+<div style="margin-left: 20px;">Time Flies <span class="small">[2]</span></div>
+</a><a href="index.php?id=module&mod=9779&page=1" title="Written by: AceMan">
+<div style="float: left;"><img src="gfx/new_post.png" style="margin-bottom:-4px;" border="0"></div>
+<div style="margin-left: 20px;">Atarized <span class="small">[1]</span></div>
+</a><a href="index.php?id=module&mod=9780&page=1" title="Written by: AceMan">
+<div style="float: left;"><img src="gfx/new_post.png" style="margin-bottom:-4px;" border="0"></div>
+<div style="margin-left: 20px;">Virtualism <span class="small">[1]</span></div>
+</a><a href="index.php?id=module&mod=9678&page=1" title="Written by: Jakim">
+<div style="float: left;"><img src="gfx/new_post.png" style="margin-bottom:-4px;" border="0"></div>
+<div style="margin-left: 20px;">Addactive <span class="small">[1]</span></div>
+</a><a href="index.php?id=module&mod=9692&page=1" title="Written by: Jakim">
+<div style="float: left;"><img src="gfx/new_post.png" style="margin-bottom:-4px;" border="0"></div>
+<div style="margin-left: 20px;">ARP2011021902 <span class="small">[2]</span></div>
+</a><a href="index.php?id=module&mod=8921&page=1" title="Written by: Jakim">
+<div style="float: left;"><img src="gfx/new_post.png" style="margin-bottom:-4px;" border="0"></div>
+<div style="margin-left: 20px;">## Crimple ## <span class="small">[1]</span></div>
+</a><a href="index.php?id=module&mod=9772&page=1" title="Written by: AceMan">
+<div style="float: left;"><img src="gfx/new_post.png" style="margin-bottom:-4px;" border="0"></div>
+<div style="margin-left: 20px;">Rastereye <span class="small">[1]</span></div>
+</a><a href="index.php?id=module&mod=9765&page=1" title="Written by: AceMan">
+<div style="float: left;"><img src="gfx/new_post.png" style="margin-bottom:-4px;" border="0"></div>
+<div style="margin-left: 20px;">Coming in heavy <span class="small">[1]</span></div>
+</a><a href="index.php?id=module&mod=952&page=1" title="Written by: Carmazine">
+<div style="float: left;"><img src="gfx/new_post.png" style="margin-bottom:-4px;" border="0"></div>
+<div style="margin-left: 20px;">Me and my kaikal <span class="small">[3]</span></div>
+</a><a href="index.php?id=module&mod=2503&page=2" title="Written by: cubix">
+<div style="float: left;"><img src="gfx/new_post.png" style="margin-bottom:-4px;" border="0"></div>
+<div style="margin-left: 20px;">Electric city <span class="small">[14]</span></div>
+</a>      </ul>
+      <div align="right" style="margin-top: 8px; margin-bottom: 4px; margin-left: 6px;"><span class="small"><a href="?id=comments">&#187 Read more</a></span></div>
+
+     </td>
+    </tr>
+   </table>
+  </td>
+ </tr>
+</table>
+<table class="table-box">
+ <tr>
+  <td class="section-bar pad center">
+   <span class="section-title">Oneliner</span>
+  </td>
+ </tr>
+</table>
+
+<table class="table-box-in border-right">
+ <tr>
+  <td class="table-box-in">
+   <table class="section-table">
+
+    
+    <tr>
+     <td id="lines">
+      <table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td>
+<table cellpadding="2" class="tab row" nowrap>
+ <tr>
+  <td>
+   <img src="gfx/flags/zz.gif" style="margin-bottom:-2px;" border="0" title="Unknown">
+   <a href="?id=profile&uid=2419" target="_parent"><span class="oneliner-username">Neurine</span></a>
+  </td>
+ </tr>
+ <tr>
+  <td colspan="1">
+   Is the PHP vulnerability patched up here?  </td>
+ </tr>
+ <tr>
+  <td align="right" nowrap>
+   <span class="small">[24.10.2026 11:09]</span>
+  </td>
+ </tr>
+</table><table cellpadding="2" class="tab row" nowrap>
+ <tr>
+  <td>
+   <img src="gfx/flags/pl.gif" style="margin-bottom:-2px;" border="0" title="Poland">
+   <a href="?id=profile&uid=31" target="_parent"><span class="oneliner-username">Carmazine</span></a>
+  </td>
+ </tr>
+ <tr>
+  <td colspan="1">
+   Nasza lokalna kontrybucja do rozwoju sztucznej inteligencji :) Aż się boję zapytać co o mnie wie.  </td>
+ </tr>
+ <tr>
+  <td align="right" nowrap>
+   <span class="small">[23.10.2026 21:04]</span>
+  </td>
+ </tr>
+</table><table cellpadding="2" class="tab row" nowrap>
+ <tr>
+  <td>
+   <img src="gfx/flags/pl.gif" style="margin-bottom:-2px;" border="0" title="Poland">
+   <a href="?id=profile&uid=1947" target="_parent"><span class="oneliner-username">brojez</span></a>
+  </td>
+ </tr>
+ <tr>
+  <td colspan="1">
+   28x bot z USA - czyli to na tym te 'ameryckie' bazy polegają ;)  </td>
+ </tr>
+ <tr>
+  <td align="right" nowrap>
+   <span class="small">[23.10.2026 10:33]</span>
+  </td>
+ </tr>
+</table><table cellpadding="2" class="tab row" nowrap>
+ <tr>
+  <td>
+   <img src="gfx/flags/pl.gif" style="margin-bottom:-2px;" border="0" title="Poland">
+   <a href="?id=profile&uid=1947" target="_parent"><span class="oneliner-username">brojez</span></a>
+  </td>
+ </tr>
+ <tr>
+  <td colspan="1">
+   Gorzej... To pole minowe :D  </td>
+ </tr>
+ <tr>
+  <td align="right" nowrap>
+   <span class="small">[23.10.2026 10:28]</span>
+  </td>
+ </tr>
+</table><table cellpadding="2" class="tab row" nowrap>
+ <tr>
+  <td>
+   <img src="gfx/flags/zz.gif" style="margin-bottom:-2px;" border="0" title="Unknown">
+   <a href="?id=profile&uid=938" target="_parent"><span class="oneliner-username">Morden</span></a>
+  </td>
+ </tr>
+ <tr>
+  <td colspan="1">
+   Lol ... Myślałem że to pole szukania.  </td>
+ </tr>
+ <tr>
+  <td align="right" nowrap>
+   <span class="small">[28.07.2026 12:00]</span>
+  </td>
+ </tr>
+</table><table cellpadding="2" class="tab row" nowrap>
+ <tr>
+  <td>
+   <img src="gfx/flags/zz.gif" style="margin-bottom:-2px;" border="0" title="Unknown">
+   <a href="?id=profile&uid=938" target="_parent"><span class="oneliner-username">Morden</span></a>
+  </td>
+ </tr>
+ <tr>
+  <td colspan="1">
+   Shockl/ave  </td>
+ </tr>
+ <tr>
+  <td align="right" nowrap>
+   <span class="small">[28.07.2026 12:00]</span>
+  </td>
+ </tr>
+</table><table cellpadding="2" class="tab row" nowrap>
+ <tr>
+  <td>
+   <img src="gfx/flags/pl.gif" style="margin-bottom:-2px;" border="0" title="Poland">
+   <a href="?id=profile&uid=25" target="_parent"><span class="oneliner-username">cactoos</span></a>
+  </td>
+ </tr>
+ <tr>
+  <td colspan="1">
+   <a href='https://wisetracker.netlify.app/' target=_blank>[link]</a>  </td>
+ </tr>
+ <tr>
+  <td align="right" nowrap>
+   <span class="small">[15.06.2026 20:26]</span>
+  </td>
+ </tr>
+</table><table cellpadding="2" class="tab row" nowrap>
+ <tr>
+  <td>
+   <img src="gfx/flags/pl.gif" style="margin-bottom:-2px;" border="0" title="Poland">
+   <a href="?id=profile&uid=31" target="_parent"><span class="oneliner-username">Carmazine</span></a>
+  </td>
+ </tr>
+ <tr>
+  <td colspan="1">
+   <a href='https://github.com/MartinGalway/C64_music' target=_blank>[link]</a>  </td>
+ </tr>
+ <tr>
+  <td align="right" nowrap>
+   <span class="small">[25.04.2026 15:46]</span>
+  </td>
+ </tr>
+</table><table cellpadding="2" class="tab row" nowrap>
+ <tr>
+  <td>
+   <img src="gfx/flags/pl.gif" style="margin-bottom:-2px;" border="0" title="Poland">
+   <a href="?id=profile&uid=2" target="_parent"><span class="oneliner-username">AceMan</span></a>
+  </td>
+ </tr>
+ <tr>
+  <td colspan="1">
+   może jesteś botem :)  </td>
+ </tr>
+ <tr>
+  <td align="right" nowrap>
+   <span class="small">[10.11.2025 10:51]</span>
+  </td>
+ </tr>
+</table><table cellpadding="2" class="tab row" nowrap>
+ <tr>
+  <td>
+   <img src="gfx/flags/pl.gif" style="margin-bottom:-2px;" border="0" title="Poland">
+   <a href="?id=profile&uid=821" target="_parent"><span class="oneliner-username">Maniac</span></a>
+  </td>
+ </tr>
+ <tr>
+  <td colspan="1">
+   Nie wiem co się stało, to od czasu jak te booty były na stronie to straciłem dostęp do serwisu  </td>
+ </tr>
+ <tr>
+  <td align="right" nowrap>
+   <span class="small">[30.10.2025 17:38]</span>
+  </td>
+ </tr>
+</table><table cellpadding="2" class="tab row" nowrap>
+ <tr>
+  <td>
+   <img src="gfx/flags/pl.gif" style="margin-bottom:-2px;" border="0" title="Poland">
+   <a href="?id=profile&uid=821" target="_parent"><span class="oneliner-username">Maniac</span></a>
+  </td>
+ </tr>
+ <tr>
+  <td colspan="1">
+   Na ikompie z Win 10 czy starym telefonie nie ma problemu.  </td>
+ </tr>
+ <tr>
+  <td align="right" nowrap>
+   <span class="small">[30.10.2025 17:37]</span>
+  </td>
+ </tr>
+</table><table cellpadding="2" class="tab row" nowrap>
+ <tr>
+  <td>
+   <img src="gfx/flags/pl.gif" style="margin-bottom:-2px;" border="0" title="Poland">
+   <a href="?id=profile&uid=821" target="_parent"><span class="oneliner-username">Maniac</span></a>
+  </td>
+ </tr>
+ <tr>
+  <td colspan="1">
+   Chcąc wejść na stronę wyskakuje komunikat "Acces denied (403)"...  </td>
+ </tr>
+ <tr>
+  <td align="right" nowrap>
+   <span class="small">[30.10.2025 17:37]</span>
+  </td>
+ </tr>
+</table><table cellpadding="2" class="tab row" nowrap>
+ <tr>
+  <td>
+   <img src="gfx/flags/pl.gif" style="margin-bottom:-2px;" border="0" title="Poland">
+   <a href="?id=profile&uid=821" target="_parent"><span class="oneliner-username">Maniac</span></a>
+  </td>
+ </tr>
+ <tr>
+  <td colspan="1">
+   @AceMan : Nie wiem co się stało ale na moim kompie z Windows 7 nie mam dostępu do strony modules.pl  </td>
+ </tr>
+ <tr>
+  <td align="right" nowrap>
+   <span class="small">[30.10.2025 17:36]</span>
+  </td>
+ </tr>
+</table><table cellpadding="2" class="tab row" nowrap>
+ <tr>
+  <td>
+   <img src="gfx/flags/pl.gif" style="margin-bottom:-2px;" border="0" title="Poland">
+   <a href="?id=profile&uid=2" target="_parent"><span class="oneliner-username">AceMan</span></a>
+  </td>
+ </tr>
+ <tr>
+  <td colspan="1">
+   Jakieś boty, próbuję to wyciąć  </td>
+ </tr>
+ <tr>
+  <td align="right" nowrap>
+   <span class="small">[08.10.2025 08:53]</span>
+  </td>
+ </tr>
+</table><table cellpadding="2" class="tab row" nowrap>
+ <tr>
+  <td>
+   <img src="gfx/flags/pl.gif" style="margin-bottom:-2px;" border="0" title="Poland">
+   <a href="?id=profile&uid=821" target="_parent"><span class="oneliner-username">Maniac</span></a>
+  </td>
+ </tr>
+ <tr>
+  <td colspan="1">
+   Turcja, Wietnam, Brazylia  </td>
+ </tr>
+ <tr>
+  <td align="right" nowrap>
+   <span class="small">[07.10.2025 16:41]</span>
+  </td>
+ </tr>
+</table><table cellpadding="2" class="tab row" nowrap>
+ <tr>
+  <td>
+   <img src="gfx/flags/pl.gif" style="margin-bottom:-2px;" border="0" title="Poland">
+   <a href="?id=profile&uid=821" target="_parent"><span class="oneliner-username">Maniac</span></a>
+  </td>
+ </tr>
+ <tr>
+  <td colspan="1">
+   co to za nalot obcokrajowców, już któryś dzień...  </td>
+ </tr>
+ <tr>
+  <td align="right" nowrap>
+   <span class="small">[07.10.2025 16:29]</span>
+  </td>
+ </tr>
+</table><table cellpadding="2" class="tab row" nowrap>
+ <tr>
+  <td>
+   <img src="gfx/flags/pl.gif" style="margin-bottom:-2px;" border="0" title="Poland">
+   <a href="?id=profile&uid=2384" target="_parent"><span class="oneliner-username">Disturbed</span></a>
+  </td>
+ </tr>
+ <tr>
+  <td colspan="1">
+   dzień dobry AceMan dlaczego nie chce mi odpalić ProTracker 3.0 ona powinno otwarzać  </td>
+ </tr>
+ <tr>
+  <td align="right" nowrap>
+   <span class="small">[28.08.2025 04:37]</span>
+  </td>
+ </tr>
+</table><table cellpadding="2" class="tab row" nowrap>
+ <tr>
+  <td>
+   <img src="gfx/flags/pl.gif" style="margin-bottom:-2px;" border="0" title="Poland">
+   <a href="?id=profile&uid=821" target="_parent"><span class="oneliner-username">Maniac</span></a>
+  </td>
+ </tr>
+ <tr>
+  <td colspan="1">
+   poza tym autor to Per Almered z grupy Excellence in Art (XIA)  </td>
+ </tr>
+ <tr>
+  <td align="right" nowrap>
+   <span class="small">[09.07.2025 10:43]</span>
+  </td>
+ </tr>
+</table><table cellpadding="2" class="tab row" nowrap>
+ <tr>
+  <td>
+   <img src="gfx/flags/pl.gif" style="margin-bottom:-2px;" border="0" title="Poland">
+   <a href="?id=profile&uid=821" target="_parent"><span class="oneliner-username">Maniac</span></a>
+  </td>
+ </tr>
+ <tr>
+  <td colspan="1">
+   Xia "U 2 me R everything" jest rate 3.83 i puste pole, brak pliku  </td>
+ </tr>
+ <tr>
+  <td align="right" nowrap>
+   <span class="small">[09.07.2025 10:37]</span>
+  </td>
+ </tr>
+</table><table cellpadding="2" class="tab row" nowrap>
+ <tr>
+  <td>
+   <img src="gfx/flags/pl.gif" style="margin-bottom:-2px;" border="0" title="Poland">
+   <a href="?id=profile&uid=821" target="_parent"><span class="oneliner-username">Maniac</span></a>
+  </td>
+ </tr>
+ <tr>
+  <td colspan="1">
+   znikł z bazy, niby jest 1 zak autora ale faktycznie go nie ma  </td>
+ </tr>
+ <tr>
+  <td align="right" nowrap>
+   <span class="small">[16.06.2025 22:09]</span>
+  </td>
+ </tr>
+</table></td></tr></table>     </td>
+    </tr>
+    <tr>
+     <td align="right" class="row pad">
+     <a href="?id=history" class="small">&#187 History</a>
+     </td>
+    </tr>
+
+   </table>
+  </td>
+ </tr>
+</table>
+   </td>
+   <td class="table-main-middle">
+
+    <table class="tab">
+ <tr>
+  <td class="section-bar pad center">
+   <span class="section-title">
+    SEARCH RESULTS   </span>
+  </td>
+ </tr>
+</table><table class="tab spac border">
+ <tr>
+  <td class="tab">
+      <div class="row-big" style="text-align: center;"><br><br>142 module(s) met your search criteria:<br><br><br></div>   <table class="tab" cellpadding="2">
+   <tr valign="middle">
+
+ <td align="center" class="row">
+  <span class="format-small" style="color: yellow">mod</span>
+ </td>
+
+ <td align="center" class="row">
+  <a  href='?id=modules&aid=1100'>Sixtus</a> </td>
+
+ <td class="row">
+  <table class="tab">
+   <tr>
+    <td><a class="module" href="?id=module&mod=5601">-- Only chip --</a></td>
+<!--
+    <td width="30"></td>
+    <td width="30"></td>
+!-->
+   </tr>
+  </table>
+ </td>
+
+<!--
+ <td align="center" class="row" nowrap>
+  <table cellpadding="0" cellspacing="4">
+   <tr>
+    <td></td>
+    <td><a><img src="gfx/play.png" border="0"></a></td>
+    <td></td>
+   </tr>
+  </table>
+ </td>
+!-->
+
+ <td align="right" class="row" width="30" nowrap>
+  <table cellspacing="0" cellpadding="0" border="0">
+   <tr>
+    <td align="right">
+     <a class="module" href="dl.php?mid=5601"><img src="gfx/download-search.png" border="0"></a>
+    </td>
+    <td align="right" width="100" style="padding-right: 2px;" nowrap>
+     <span class="small">Downloads: 781</span>
+    </td>
+   </tr>
+  </table>
+ </td>
+
+ <td class="row" nowrap align="center">
+  <img src='gfx/play.png' border='0' style='cursor: pointer;' title='Play me!' onclick='modPlayer("../modules/sixtus/Sixtus_-_--_Only_chip_--.zip", "Sixtus - -- Only chip --", "1")'> </td>
+
+</tr><tr valign="middle">
+
+ <td align="center" class="row">
+  <span class="format-small" style="color: steelblue">mt2</span>
+ </td>
+
+ <td align="center" class="row">
+  <a  href='?id=modules&aid=949'>Chippy</a> & <a  href='?id=modules&aid=1208'>Emu</a> </td>
+
+ <td class="row">
+  <table class="tab">
+   <tr>
+    <td><a class="module" href="?id=module&mod=6173">2HD</a></td>
+<!--
+    <td width="30"></td>
+    <td width="30"></td>
+!-->
+   </tr>
+  </table>
+ </td>
+
+<!--
+ <td align="center" class="row" nowrap>
+  <table cellpadding="0" cellspacing="4">
+   <tr>
+    <td></td>
+    <td><a><img src="gfx/play.png" border="0"></a></td>
+    <td></td>
+   </tr>
+  </table>
+ </td>
+!-->
+
+ <td align="right" class="row" width="30" nowrap>
+  <table cellspacing="0" cellpadding="0" border="0">
+   <tr>
+    <td align="right">
+     <a class="module" href="dl.php?mid=6173"><img src="gfx/download-search.png" border="0"></a>
+    </td>
+    <td align="right" width="100" style="padding-right: 2px;" nowrap>
+     <span class="small">Downloads: 713</span>
+    </td>
+   </tr>
+  </table>
+ </td>
+
+ <td class="row" nowrap align="center">
+  <img src='gfx/play-disabled.png' title='Unsupported file format :('> </td>
+
+</tr><tr valign="middle">
+
+ <td align="center" class="row">
+  <span class="format-small" style="color: white">xm</span>
+ </td>
+
+ <td align="center" class="row">
+  <a  href='?id=modules&aid=318'>Arachno</a> </td>
+
+ <td class="row">
+  <table class="tab">
+   <tr>
+    <td><a class="module" href="?id=module&mod=3661">Chip 'o hoy</a></td>
+<!--
+    <td width="30"></td>
+    <td width="30"></td>
+!-->
+   </tr>
+  </table>
+ </td>
+
+<!--
+ <td align="center" class="row" nowrap>
+  <table cellpadding="0" cellspacing="4">
+   <tr>
+    <td></td>
+    <td><a><img src="gfx/play.png" border="0"></a></td>
+    <td></td>
+   </tr>
+  </table>
+ </td>
+!-->
+
+ <td align="right" class="row" width="30" nowrap>
+  <table cellspacing="0" cellpadding="0" border="0">
+   <tr>
+    <td align="right">
+     <a class="module" href="dl.php?mid=3661"><img src="gfx/download-search.png" border="0"></a>
+    </td>
+    <td align="right" width="100" style="padding-right: 2px;" nowrap>
+     <span class="small">Downloads: 774</span>
+    </td>
+   </tr>
+  </table>
+ </td>
+
+ <td class="row" nowrap align="center">
+  <img src='gfx/play.png' border='0' style='cursor: pointer;' title='Play me!' onclick='modPlayer("../modules/arachno/Arachno_-_Chip_&#39;o_hoy.zip", "Arachno - Chip &#39;o hoy", "2")'> </td>
+
+</tr><tr valign="middle">
+
+ <td align="center" class="row">
+  <span class="format-small" style="color: yellow">mod</span>
+ </td>
+
+ <td align="center" class="row">
+  <a  href='?id=modules&aid=35'>Dan</a> & <a  href='?id=modules&aid=3'>Scorpik</a> </td>
+
+ <td class="row">
+  <table class="tab">
+   <tr>
+    <td><a class="module" href="?id=module&mod=1956">Chip-chop</a></td>
+<!--
+    <td width="30"></td>
+    <td width="30"><img src='gfx/inradio-out.png' align='right' title='This tune fell down from ModFM playlist' border='0'></td>
+!-->
+   </tr>
+  </table>
+ </td>
+
+<!--
+ <td align="center" class="row" nowrap>
+  <table cellpadding="0" cellspacing="4">
+   <tr>
+    <td></td>
+    <td><a><img src="gfx/play.png" border="0"></a></td>
+    <td></td>
+   </tr>
+  </table>
+ </td>
+!-->
+
+ <td align="right" class="row" width="30" nowrap>
+  <table cellspacing="0" cellpadding="0" border="0">
+   <tr>
+    <td align="right">
+     <a class="module" href="dl.php?mid=1956"><img src="gfx/download-search.png" border="0"></a>
+    </td>
+    <td align="right" width="100" style="padding-right: 2px;" nowrap>
+     <span class="small">Downloads: 1364</span>
+    </td>
+   </tr>
+  </table>
+ </td>
+
+ <td class="row" nowrap align="center">
+  <img src='gfx/play.png' border='0' style='cursor: pointer;' title='Play me!' onclick='modPlayer("../modules/cooperation/Dan_&_Scorpik_-_Chip-chop.zip", "Dan & Scorpik - Chip-chop", "1")'> </td>
+
+</tr><table class="table-box">
+ <tr>
+  <td class="section-bar pad center">
+   <span class="section-title">Log in</span>
+  </td>
+ </tr>
+</table>
+
+<table class="table-box-in border-right">
+ <tr>
+  <td class="table-box-in">
+
+   <table class="section-table">
+    <tr>
+     <td class="center">
+     <br>
+
+  
+  <form method="post" action="index.php?id=main">
+  <b>LOGIN:</b><br>
+  <input class="input" name="log_login" size="15" maxlength="20"><br><br>
+  <b>PASSWORD:</b><br>
+  <input class="input" name="log_password" size="15" maxlength="30" type="password"><br><br>
+  <input class="input" type="checkbox" name="permanent" value="1"> Remember for 1 year<br><br>
+  <input class="input" name="log_submit" type="submit" value="Log in">
+  </form>
+
+<ul class="menu-items">
+<a href="?id=register">Registration</a>
+<a href="?id=recover_pass">Recover password</a>
+</ul>
+
+     </td>
+    </tr>
+   </table>
+  </td>
+ </tr>
+</table><table class="table-box">
+ <tr>
+  <td class="section-bar pad center">
+   <span class="section-title">Logged users</span>
+  </td>
+ </tr>
+</table>
+
+<table class="table-box-in border-right">
+ <tr>
+  <td class="table-box-in">
+   <table class="section-table">
+    <tr align="left">
+     <td id="logged">
+
+      <table class="tab">
+ <tr>
+  <td>
+   <ul class="menu-items">
+    <span class="logged-none">None</span>   </ul>
+  </td>
+ </tr><tr>
+ <td style="padding: 2px;">
+  <br>Guests (58):
+ </td>
+</tr>
+<tr>
+ <td width="100">
+  <img src='gfx/flags/fr.gif' title='France' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/us.gif' title='USA' style='padding: 1px;'><img src='gfx/flags/br.gif' title='Brazil' style='padding: 1px;'><img src='gfx/flags/es.gif' title='Spain' style='padding: 1px;'><img src='gfx/flags/se.gif' title='Sweden' style='padding: 1px;'><img src='gfx/flags/bd.gif' title='Bangladesh' style='padding: 1px;'><img src='gfx/flags/hk.gif' title='Hong Kong' style='padding: 1px;'><img src='gfx/flags/ph.gif' title='Philippines' style='padding: 1px;'><img src='gfx/flags/za.gif' title='South Africa' style='padding: 1px;'> </td>
+</tr>      </table>
+
+     </td>
+    </tr> 
+   </table>
+
+  </td>
+ </tr>
+</table><table class="table-box">
+ <tr>
+  <td class="section-bar pad center">
+   <span class="section-title">Quick Search</span>
+  </td>
+ </tr>
+</table>
+
+<table class="table-box-in border-right">
+ <tr>
+  <td class="table-box-in">
+   <table class="section-table">
+    <tr>
+     <td class="center">
+
+      <form method="get">
+      <table align="center" style="margin-top: 8px;">
+       <tr>
+         <td align="right" width="20" style="padding-right: 6px;">
+          <img src="gfx/icon-search.png">
+         </td>
+         <td align="center">
+
+           <input type="hidden" name="id" value="search">
+           <input name="q" size="15"></input>
+
+         </td>
+         <td width="20" style="padding-left: 6px;">&nbsp</td>
+       </tr>
+      </table>
+      </form>
+
+     </td>
+    </tr>
+   </table>
+  </td>
+ </tr>
+</table><table class="table-box">
+ <tr>
+  <td class="section-bar pad center">
+   <span class="section-title">TOP 10</span>
+  </td>
+</tr>
+</table>
+
+<table class="table-box-in border-right">
+ <tr>
+  <td class="table-box-in">
+   <table class="section-table">
+    <tr>
+     <td>
+
+      <ul class="menu-items">
+      <a href="?id=module&mod=2452" title="Score: 4.95">
+
+<div class="format-div">
+ <span class="format-small" style="color: white">xm</span>
+</div>
+
+<div style="margin-left: 28px;" align="left">Ancient Stories</div>
+
+</a><a href="?id=module&mod=165" title="Score: 4.84">
+
+<div class="format-div">
+ <span class="format-small" style="color: white">xm</span>
+</div>
+
+<div style="margin-left: 28px;" align="left">Sofa surfin'</div>
+
+</a><a href="?id=module&mod=1751" title="Score: 4.82">
+
+<div class="format-div">
+ <span class="format-small" style="color: yellow">mod</span>
+</div>
+
+<div style="margin-left: 28px;" align="left">## Reassurance ##</div>
+
+</a><a href="?id=module&mod=717" title="Score: 4.79">
+
+<div class="format-div">
+ <span class="format-small" style="color: white">xm</span>
+</div>
+
+<div style="margin-left: 28px;" align="left">Her Spirits Rise_</div>
+
+</a><a href="?id=module&mod=506" title="Score: 4.78">
+
+<div class="format-div">
+ <span class="format-small" style="color: white">mod</span>
+</div>
+
+<div style="margin-left: 28px;" align="left">## Reprove ##</div>
+
+</a><a href="?id=module&mod=2487" title="Score: 4.77">
+
+<div class="format-div">
+ <span class="format-small" style="color: white">xm</span>
+</div>
+
+<div style="margin-left: 28px;" align="left">Astaris</div>
+
+</a><a href="?id=module&mod=1022" title="Score: 4.76">
+
+<div class="format-div">
+ <span class="format-small" style="color: cyan">it</span>
+</div>
+
+<div style="margin-left: 28px;" align="left">Dance Of The Goblins</div>
+
+</a><a href="?id=module&mod=161" title="Score: 4.76">
+
+<div class="format-div">
+ <span class="format-small" style="color: white">xm</span>
+</div>
+
+<div style="margin-left: 28px;" align="left">Dead flower (rev.2)</div>
+
+</a><a href="?id=module&mod=5879" title="Score: 4.71">
+
+<div class="format-div">
+ <span class="format-small" style="color: red">xrns</span>
+</div>
+
+<div style="margin-left: 28px;" align="left">Unreachable</div>
+
+</a><a href="?id=module&mod=2503" title="Score: 4.7">
+
+<div class="format-div">
+ <span class="format-small" style="color: silver">ahx</span>
+</div>
+
+<div style="margin-left: 28px;" align="left">Electric city</div>
+
+</a>      </ul>
+
+      <div align="right" style="margin-top: 8px; margin-bottom: 4px; margin-left: 6px;"><span class="small"><a href="?id=modules&mode=top">&#187 Full list</a></span></div>
+
+     </td>
+    </tr>
+   </table>
+  </td>
+ </tr>
+</table>
+<table class="table-box">
+ <tr>
+  <td class="section-bar pad center">
+   <span class="section-title">Top Downloads</span>
+  </td>
+</tr>
+</table>
+
+<table class="table-box-in border-right">
+ <tr>
+  <td class="table-box-in">
+   <table class="section-table">
+    <tr>
+     <td>
+
+<ul class="menu-items">
+<a href="?id=module&mod=1352" title="Downloads: 20056">
+
+<div class="format-div">
+ <span class="format-small" style="color: yellow">mod</span>
+</div>
+
+<div style="margin-left: 28px;" align="left">Space Debris</div>
+
+</a>
+<a href="?id=module&mod=1751" title="Downloads: 6357">
+
+<div class="format-div">
+ <span class="format-small" style="color: yellow">mod</span>
+</div>
+
+<div style="margin-left: 28px;" align="left">## Reassurance ##</div>
+
+</a>
+<a href="?id=module&mod=2452" title="Downloads: 6240">
+
+<div class="format-div">
+ <span class="format-small" style="color: white">xm</span>
+</div>
+
+<div style="margin-left: 28px;" align="left">Ancient Stories</div>
+
+</a>
+<a href="?id=module&mod=161" title="Downloads: 5509">
+
+<div class="format-div">
+ <span class="format-small" style="color: white">xm</span>
+</div>
+
+<div style="margin-left: 28px;" align="left">Dead flower (rev.2)</div>
+
+</a>
+<a href="?id=module&mod=165" title="Downloads: 5419">
+
+<div class="format-div">
+ <span class="format-small" style="color: white">xm</span>
+</div>
+
+<div style="margin-left: 28px;" align="left">Sofa surfin'</div>
+
+</a>
+<a href="?id=module&mod=2487" title="Downloads: 5195">
+
+<div class="format-div">
+ <span class="format-small" style="color: white">xm</span>
+</div>
+
+<div style="margin-left: 28px;" align="left">Astaris</div>
+
+</a>
+<a href="?id=module&mod=951" title="Downloads: 5027">
+
+<div class="format-div">
+ <span class="format-small" style="color: yellow">mod</span>
+</div>
+
+<div style="margin-left: 28px;" align="left">Acidjazzed evening</div>
+
+</a>
+<a href="?id=module&mod=822" title="Downloads: 4658">
+
+<div class="format-div">
+ <span class="format-small" style="color: white">xm</span>
+</div>
+
+<div style="margin-left: 28px;" align="left">In your arms</div>
+
+</a>
+<a href="?id=module&mod=3848" title="Downloads: 4311">
+
+<div class="format-div">
+ <span class="format-small" style="color: yellow">mod</span>
+</div>
+
+<div style="margin-left: 28px;" align="left">! aCiD dEViATiON !</div>
+
+</a>
+<a href="?id=module&mod=2441" title="Downloads: 4132">
+
+<div class="format-div">
+ <span class="format-small" style="color: white">xm</span>
+</div>
+
+<div style="margin-left: 28px;" align="left">Among the stars</div>
+
+</a>
+</ul>
+
+     </td>
+    </tr>
+   </table>
+  </td>
+ </tr>
+</table>
+<table class="table-box">
+ <tr>
+  <td class="section-bar pad center">
+   <span class="section-title">Recently Rated</span>
+  </td>
+</tr>
+</table>
+
+<table class="table-box-in border-right">
+ <tr>
+  <td class="table-box-in">
+   <table class="section-table">
+    <tr>
+     <td>
+
+      <table cellpadding="3" cellspacing="0" border="0">
+      <tr>
+ <td>
+  <a href="?id=profile&uid=2">AceMan</a> rated  <a href="?id=module&mod=9791">Fireflow</a>
+
+ </td>
+ <td>
+
+  <img src="gfx/star-5.png" border="0">
+
+ </td>
+</tr><tr>
+ <td>
+  <a href="?id=profile&uid=2">AceMan</a> rated  <a href="?id=module&mod=9790">Elektra Park Avenue</a>
+
+ </td>
+ <td>
+
+  <img src="gfx/star-4.png" border="0">
+
+ </td>
+</tr><tr>
+ <td>
+  <a href="?id=profile&uid=2">AceMan</a> rated  <a href="?id=module&mod=9787">Pulse of Paris</a>
+
+ </td>
+ <td>
+
+  <img src="gfx/star-5.png" border="0">
+
+ </td>
+</tr><tr>
+ <td>
+  <a href="?id=profile&uid=2">AceMan</a> rated  <a href="?id=module&mod=9788">Crescent.</a>
+
+ </td>
+ <td>
+
+  <img src="gfx/star-4.png" border="0">
+
+ </td>
+</tr><tr>
+ <td>
+  <a href="?id=profile&uid=269">Mystra</a> rated  <a href="?id=module&mod=9778">Lupus Animus</a>
+
+ </td>
+ <td>
+
+  <img src="gfx/star-4.png" border="0">
+
+ </td>
+</tr><tr>
+ <td>
+  <a href="?id=profile&uid=269">Mystra</a> rated  <a href="?id=module&mod=9777">TotoAfrica!</a>
+
+ </td>
+ <td>
+
+  <img src="gfx/star-5.png" border="0">
+
+ </td>
+</tr><tr>
+ <td>
+  <a href="?id=profile&uid=2127">pator</a> rated  <a href="?id=module&mod=9774">Time Flies</a>
+
+ </td>
+ <td>
+
+  <img src="gfx/star-6.png" border="0">
+
+ </td>
+</tr><tr>
+ <td>
+  <a href="?id=profile&uid=19">lamb</a> rated  <a href="?id=module&mod=9774">Time Flies</a>
+
+ </td>
+ <td>
+
+  <img src="gfx/star-6.png" border="0">
+
+ </td>
+</tr><tr>
+ <td>
+  <a href="?id=profile&uid=33">Jakim</a> rated  <a href="?id=module&mod=9776">The Cycle</a>
+
+ </td>
+ <td>
+
+  <img src="gfx/star-5.png" border="0">
+
+ </td>
+</tr><tr>
+ <td>
+  <a href="?id=profile&uid=33">Jakim</a> rated  <a href="?id=module&mod=9775">Balls on Fire</a>
+
+ </td>
+ <td>
+
+  <img src="gfx/star-4.png" border="0">
+
+ </td>
+</tr>      </table>
+
+     </td>
+    </tr>
+   </table>
+  </td>
+ </tr>
+</table>
+<table class="table-box">
+ <tr>
+  <td class="section-bar pad center">
+   <span class="section-title">Recently added links</span>
+  </td>
+</tr>
+</table>
+
+<table class="table-box-in border-right">
+ <tr>
+  <td class="table-box-in">
+   <table class="section-table">
+    <tr>
+     <td>
+
+      <table cellpadding="3" cellspacing="0" border="0">
+      <tr>
+ <td valign="top" align="right">
+  <span class="small">[ <a href="index.php?id=module&mod=9712">Petty Business (Night)</a> ]</span><br>
+  &#8627; <a class="small" href="https://juicycube.net/files/mp3/AceMan%20-%20Petty%20Business%20(Night).mp3" target="_blank">Mp3</a>
+ </td>
+</tr><tr>
+ <td valign="top" align="right">
+  <span class="small">[ <a href="index.php?id=module&mod=9711">Petty Business</a> ]</span><br>
+  &#8627; <a class="small" href="https://juicycube.net/files/mp3/AceMan%20-%20Petty%20Business.mp3" target="_blank">Mp3</a>
+ </td>
+</tr><tr>
+ <td valign="top" align="right">
+  <span class="small">[ <a href="index.php?id=module&mod=9670">Rainkissed Memory</a> ]</span><br>
+  &#8627; <a class="small" href="https://www.youtube.com/watch?v=-X24Ox9LpB8" target="_blank">YouTube</a>
+ </td>
+</tr><tr>
+ <td valign="top" align="right">
+  <span class="small">[ <a href="index.php?id=module&mod=9661">OPM - We come in peace</a> ]</span><br>
+  &#8627; <a class="small" href="https://soundcloud.com/mlfatr/opm-we-come-in-peace" target="_blank">Track @ Soundcloud</a>
+ </td>
+</tr><tr>
+ <td valign="top" align="right">
+  <span class="small">[ <a href="index.php?id=module&mod=9648">Bizarre Compression</a> ]</span><br>
+  &#8627; <a class="small" href="https://github.com/JakimPL/AudioTokenizer" target="_blank">Code of the algorithm</a>
+ </td>
+</tr><tr>
+ <td valign="top" align="right">
+  <span class="small">[ <a href="index.php?id=module&mod=4684">Celtic waves...</a> ]</span><br>
+  &#8627; <a class="small" href="https://www.youtube.com/watch?v=1XM8ReW9NvA" target="_blank">Original tune</a>
+ </td>
+</tr><tr>
+ <td valign="top" align="right">
+  <span class="small">[ <a href="index.php?id=module&mod=9566">Czaroziele</a> ]</span><br>
+  &#8627; <a class="small" href="https://www.youtube.com/watch?v=dEscze1ONAQ" target="_blank">YouTube</a>
+ </td>
+</tr>      </table>
+
+     </td>
+    </tr>
+   </table>
+  </td>
+ </tr>
+</table>
+<table class="table-box">
+ <tr>
+  <td class="section-bar pad center">
+   <span class="section-title">Stats</span>
+  </td>
+ </tr>
+</table>
+
+<table class="table-box-in border-right">
+ <tr>
+  <td class="table-box-in">
+   <table class="section-table">
+    <tr>
+     <td>
+
+      <table width="100%">
+       <tr><td align="right" width="30%">Modules:</td><td>9344</td></tr>
+       <tr><td align="right">Users:</td><td>844</td></tr>
+       <tr><td align="right">Downloads:</td><td>7443509</td></tr>
+       <tr><td align="right">Votes:</td><td>54219</td></tr>
+       <tr><td align="right">Comments:</td><td>13480</td></tr>
+       <tr><td align="right">Topics:</td><td>326</td></tr>
+       <tr><td align="right">Posts:</td><td>4995</td></tr>
+       <tr><td align="right">Articles:</td><td>41</td></tr>
+      </table>
+
+     </td>
+    </tr>
+   </table>
+  </td>
+ </tr>
+</table>
+<table class="table-box">
+ <tr>
+  <td class="section-bar pad center">
+   <span class="section-title">Fanpage</span>
+  </td>
+ </tr>
+</table>
+
+<table class="table-box-in border-right">
+ <tr>
+  <td class="section-table">
+
+   <table border="0">
+    <tr>
+     <td class="pad" style="width: 80px;">
+      <b>ModFM</b>
+      <a href="https://www.facebook.com/ModFMRadio/"><img style="width: 80px; height: 80px;" src="gfx/modfm.png"></a>
+     </td>
+     <td class="pad">
+      <div class="fb-like"  data-href="https://www.facebook.com/ModFMRadio" data-width="150" data-layout="box_count" data-action="like" data-show-faces="true" data-share="true"></div>
+     </td>
+    </tr>
+   </table>
+
+  </td>
+ </tr>
+</table>
+
+   </td>
+  </tr>
+  <tr>
+   <td colspan="3" class="tab">
+    <table class="tab border-footer" border="0">
+     <tr>
+      <td align="center" valign="bottom" class="row footer">
+       &#169 Copyright by modules.pl 2004-2026<br>All rights reserved<br><br>
+      </td>
+     </tr>
+    </table>
+   </td>
+  </tr>
+ </table>
+
+<script type="text/javascript">
+  var gaJsHost = (("https:" == document.location.protocol) ? "https://ssl." : "https://www.");
+  document.write(unescape("%3Cscript src='" + gaJsHost + "google-analytics.com/ga.js' type='text/javascript'%3E%3C/script%3E"));
+
+  var pageTracker = _gat._getTracker("UA-1785095-3");
+  pageTracker._initData();
+  pageTracker._trackPageview();
+</script>
+
+</body>

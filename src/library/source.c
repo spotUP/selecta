@@ -1,6 +1,8 @@
 /* Source registry and song keys (plan Phase 4, I157; design doc 9.1). */
 #include "source.h"
 
+#include "archive/archive.h"
+
 #include <selecta/plugin.h>
 
 #include <stdio.h>
@@ -225,4 +227,107 @@ int sel_source_stream_url(const sel_host* host, const char* key, char* out, size
     }
     g_stream_resolves++;
     return sel_source_find(id)->play_url(host, colon + 1, out, n) ? 1 : -1;
+}
+
+static uint32_t g_search_runs;
+
+uint32_t sel_source_search_runs(void) {
+    return g_search_runs;
+}
+
+int sel_source_search(const sel_host* host, const char* id, const char* query, sel_search_sink* out) {
+    const sel_source* src;
+
+    if (id == NULL || query == NULL || out == NULL || out->row == NULL) {
+        return -1;
+    }
+    sel_source_register_builtin();
+    src = sel_source_find(id);
+    if (src == NULL || src->search == NULL) {
+        return -1;
+    }
+    g_search_runs++;
+    return src->search(host, query, out);
+}
+
+typedef struct unzip_member {
+    const sel_host* host;
+    uint8_t* data;
+    size_t size;
+    int members;
+} unzip_member;
+
+static int keep_member(void* ctx, const char* name, const uint8_t* data, size_t size) {
+    unzip_member* u = (unzip_member*)ctx;
+
+    (void)name;
+    if (++u->members == 1 && size > 0) {
+        u->data = u->host->mem_alloc(u->host, size, SEL_MEM_FAST);
+        if (u->data != NULL) {
+            memcpy(u->data, data, size);
+            u->size = size;
+        }
+    }
+    return 1;
+}
+
+int sel_source_unzip(const sel_host* host, const char* key, const char* file) {
+    char id[SEL_SOURCE_ID_MAX];
+    const char* colon = key != NULL ? strchr(key, ':') : NULL;
+    size_t len = colon != NULL ? (size_t)(colon - key) : 0;
+    const sel_source* src;
+    FILE* f;
+    long fsz;
+    uint8_t* zip;
+    unzip_member u;
+    char tmp[1100];
+    int result = 0;
+
+    if (len == 0 || len >= sizeof id || file == NULL) {
+        return 0;
+    }
+    memcpy(id, key, len);
+    id[len] = '\0';
+    sel_source_register_builtin();
+    src = sel_source_find(id);
+    if (src == NULL || (src->flags & SEL_SOURCE_ZIPPED) == 0 || (f = fopen(file, "rb")) == NULL) {
+        return 0;
+    }
+    if (fseek(f, 0, SEEK_END) != 0 || (fsz = ftell(f)) <= 0 || fseek(f, 0, SEEK_SET) != 0 ||
+        (zip = host->mem_alloc(host, (size_t)fsz, SEL_MEM_FAST)) == NULL) {
+        fclose(f);
+        return 0;
+    }
+    if (fread(zip, 1, (size_t)fsz, f) != (size_t)fsz) {
+        fclose(f);
+        host->mem_free(host, zip);
+        return 0;
+    }
+    fclose(f);
+    memset(&u, 0, sizeof u);
+    u.host = host;
+    if (sel_archive_kind(zip, (size_t)fsz) == SEL_ARCHIVE_ZIP &&
+        sel_archive_each(host, SEL_ARCHIVE_ZIP, zip, (size_t)fsz, 32u * 1024u * 1024u, keep_member, &u) >= 0 &&
+        u.members == 1 && u.data != NULL) {
+        FILE* o;
+        int wrote = 0;
+
+        snprintf(tmp, sizeof tmp, "%s.unzip", file);
+        o = fopen(tmp, "wb");
+        if (o != NULL) {
+            wrote = fwrite(u.data, 1, u.size, o) == u.size;
+            wrote = fclose(o) == 0 && wrote;
+        }
+        if (wrote && rename(tmp, file) == 0) {
+            result = 1;
+        } else {
+            remove(tmp);
+            result = -1;
+        }
+    }
+    if (u.data != NULL) {
+        host->mem_free(host, u.data);
+    }
+    host->mem_free(host, zip);
+    return result;
 }

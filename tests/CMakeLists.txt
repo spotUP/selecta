@@ -918,6 +918,15 @@ add_executable(composer_test library/composer_test.c "${PROJECT_SOURCE_DIR}/src/
 target_include_directories(composer_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/include)
 add_test(NAME composer-unit COMMAND composer_test)
 
+# I406: the Modules.pl search page parser over the recorded response.
+add_executable(modulespl_parse_test library/modulespl_parse_test.c
+  "${PROJECT_SOURCE_DIR}/plugins/sources/modulespl/modulespl_parse.c")
+target_include_directories(modulespl_parse_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/sources/modulespl)
+target_compile_definitions(modulespl_parse_test PRIVATE
+  SEL_MODULESPL_FIX="${PROJECT_SOURCE_DIR}/tests/net/fixtures/www.modules.pl/search_chip.html")
+add_test(NAME modulespl-parse COMMAND modulespl_parse_test)
+set_tests_properties(modulespl-parse PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "modulespl_parse_ok")
+
 # I437: embedded cover readers (ID3v2 APIC, FLAC PICTURE).
 add_executable(cover_tag_test library/cover_tag_test.c)
 add_test(NAME cover-tag-unit COMMAND cover_tag_test)
@@ -2016,6 +2025,15 @@ if(NOT SEL_AMIGA)
       -P "${SEL_NET_DIR}/zxart_net.cmake")
   set_tests_properties(source-zxart-net PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "zxart_net_ok")
+endif()
+
+# Row I406: SOURCE_SEARCH modulespl chip over the www.modules.pl fixture, then OPEN + PLAY a result (a zip around one mod).
+if(NOT SEL_AMIGA)
+  add_test(NAME source-modulespl-net
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      -P "${SEL_NET_DIR}/modulespl.cmake")
+  set_tests_properties(source-modulespl-net PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "modulespl_net_ok")
 endif()
 
 # Row I416: LIBRARY_SYNC keygenmusic <url> over the keygenmusic.tk fixture.
