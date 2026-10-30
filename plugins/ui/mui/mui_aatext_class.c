@@ -26,6 +26,8 @@ extern struct Library* MUIMasterBase;
 typedef struct aatext_data {
     char text[AAT_CAP], widest[AAT_CAP];
     int tone, align, ellipsis, fixed, shown, minw, minh, defw;
+    int face; /* I667o: the rounded field look (outline + face) with the AAField paddings */
+    mui_aa_field_t m;
     aa_ctx aa;
     Object* self;
 } aatext_data;
@@ -56,6 +58,15 @@ static ULONG aatext_setup(struct IClass* cl, Object* obj, Msg msg) {
     aa_set_font_px(&d->aa, mui_aa_tone_font_px(d->tone, d->aa.font_px));
     aa_pen(&d->aa, d->aa.tok[mui_aa_tone_token(d->tone)]);
     aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_PANEL]);
+    if (d->face) {
+        mui_aa_check_op_t ops[MUI_AA_FIELD_OPS];
+        int n;
+        mui_aa_field_metrics(d->aa.font_px, &d->m);
+        n = mui_aa_field_plan(d->aa.tok, &d->m, 0, ops);
+        while (n-- > 0) {
+            aa_pen(&d->aa, ops[n].rgb);
+        }
+    }
     dots = aa_text_width(&d->aa, obj, "...");
     d->defw = aa_text_width(&d->aa, obj, d->widest);
     d->minw = d->ellipsis ? (dots < d->defw ? dots : d->defw) : d->defw;
@@ -83,6 +94,15 @@ static ULONG aatext_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMin
     msg->MinMaxInfo->MinHeight += d->minh;
     msg->MinMaxInfo->DefHeight += d->minh;
     msg->MinMaxInfo->MaxHeight += d->minh;
+    if (d->face) { /* the super class added the inner paddings; the face is never lower than the field height */
+        int h = mui_aa_field_height(&d->m, d->minh);
+        int add = h - (d->minh + 2 * (d->m.pad_y + d->m.outline));
+        if (add > 0) {
+            msg->MinMaxInfo->MinHeight += add;
+            msg->MinMaxInfo->DefHeight += add;
+            msg->MinMaxInfo->MaxHeight += add;
+        }
+    }
     return 0;
 }
 
@@ -91,7 +111,19 @@ static ULONG aatext_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
     char fit[AAT_CAP];
     const char* shown = d->text;
     int w, h, tw, th;
+    uint32_t bg = d->aa.tok[SEL_GUI_TOKEN_PANEL];
     DoSuperMethodA(cl, obj, (Msg)msg);
+    if (d->face && (msg->flags & MADF_DRAWOBJECT)) {
+        mui_aa_check_op_t ops[MUI_AA_FIELD_OPS];
+        int n = mui_aa_field_plan(d->aa.tok, &d->m, 0, ops), k;
+        for (k = 0; k < n; k++) {
+            aa_round_fill(_rp(obj), _left(obj) + ops[k].inset, _top(obj) + ops[k].inset, _width(obj) - 2 * ops[k].inset, _height(obj) - 2 * ops[k].inset,
+                          ops[k].radius, aa_pen(&d->aa, ops[k].rgb));
+        }
+        bg = d->aa.tok[MUI_AA_FIELD_FACE];
+    } else if (d->face) {
+        bg = d->aa.tok[MUI_AA_FIELD_FACE];
+    }
     if (!(msg->flags & (MADF_DRAWOBJECT | MADF_DRAWUPDATE)) || d->text[0] == '\0') {
         return 0;
     }
@@ -104,8 +136,7 @@ static ULONG aatext_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) 
         tw = aa_text_width(&d->aa, obj, fit);
     }
     th = aa_text_height(&d->aa, obj);
-    aa_text(&d->aa, obj, _rp(obj), _mleft(obj) + mui_aa_align_x(d->align, w, tw), _mtop(obj) + (h - th) / 2, shown, d->aa.tok[mui_aa_tone_token(d->tone)],
-            d->aa.tok[SEL_GUI_TOKEN_PANEL]);
+    aa_text(&d->aa, obj, _rp(obj), _mleft(obj) + mui_aa_align_x(d->align, w, tw), _mtop(obj) + (h - th) / 2, shown, d->aa.tok[mui_aa_tone_token(d->tone)], bg);
     return 0;
 }
 
@@ -168,14 +199,19 @@ static ULONG __attribute__((used)) aatext_dispatch_c(struct IClass* cl, Object* 
 Object* mui_aatext_new(const mui_aatext_spec* sp) {
     Object* o;
     aatext_data* d;
+    mui_aa_field_t m;
     if (g_class == NULL) {
         g_class = MUI_CreateCustomClass(NULL, (char*)MUIC_Area, NULL, sizeof(aatext_data), (APTR)(uintptr_t)aatext_dispatch);
     }
     if (g_class == NULL) {
         return NULL;
     }
-    o = NewObject(g_class->mcc_Class, NULL, MUIA_Frame, sp->frame, sp->background != 0 ? (ULONG)MUIA_Background : (ULONG)TAG_IGNORE, sp->background,
-                  MUIA_ShowMe, (ULONG)(sp->hidden ? FALSE : TRUE), TAG_DONE);
+    mui_aa_field_metrics(0, &m); /* the paddings are the same on every tier (I667o) */
+    o = NewObject(g_class->mcc_Class, NULL, MUIA_Frame, sp->face ? (ULONG)MUIV_Frame_None : sp->frame,
+                  sp->background != 0 && !sp->face ? (ULONG)MUIA_Background : (ULONG)TAG_IGNORE, sp->background,
+                  sp->face ? (ULONG)MUIA_InnerLeft : (ULONG)TAG_IGNORE, (ULONG)m.pad_x, sp->face ? (ULONG)MUIA_InnerRight : (ULONG)TAG_IGNORE, (ULONG)m.pad_x,
+                  sp->face ? (ULONG)MUIA_InnerTop : (ULONG)TAG_IGNORE, (ULONG)(m.pad_y + m.outline), sp->face ? (ULONG)MUIA_InnerBottom : (ULONG)TAG_IGNORE,
+                  (ULONG)(m.pad_y + m.outline), MUIA_ShowMe, (ULONG)(sp->hidden ? FALSE : TRUE), TAG_DONE);
     if (o != NULL) {
         d = INST_DATA(g_class->mcc_Class, o);
         strncpy(d->text, sp->contents, sizeof d->text - 1);
@@ -184,6 +220,8 @@ Object* mui_aatext_new(const mui_aatext_spec* sp) {
         d->align = sp->align;
         d->ellipsis = sp->ellipsis;
         d->fixed = sp->fixed;
+        d->face = sp->face;
+        d->m = m;
         g_made++;
     }
     return o;

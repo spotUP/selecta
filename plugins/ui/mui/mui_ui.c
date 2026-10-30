@@ -650,8 +650,9 @@ static Object* mui_aatext_sized(const char* contents, const char* widest, int to
     sp.tone = tone;
     sp.align = align;
     sp.ellipsis = 1;
-    sp.frame = framed ? (g_th[MUI_TH_STATUS].on ? (ULONG)g_th[MUI_TH_STATUS].look.frame : (ULONG)MUIV_Frame_Text) : (ULONG)MUIV_Frame_None;
-    sp.background = framed && g_th[MUI_TH_STATUS].on ? (ULONG)g_th[MUI_TH_STATUS].look.background : 0UL;
+    sp.face = framed; /* I667o: the status look is the AAField face with its paddings, not a square MUI frame */
+    sp.frame = (ULONG)MUIV_Frame_None;
+    sp.background = 0UL;
     sp.hidden = hidden;
     return mui_aatext_new(&sp);
 }

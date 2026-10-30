@@ -473,6 +473,7 @@ if(NOT SEL_AMIGA)
     "-DSONG=${SEL_TESTMOD}" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/mui-song-arg"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/ui/mui_song_arg.cmake")
   set_tests_properties(mui-song-arg PROPERTIES TIMEOUT 120 LABELS mui)
+  add_test(NAME mui-status-face COMMAND mui_contract_test status-face)
   add_test(NAME mui-menu COMMAND mui_contract_test menu)
   add_test(NAME mui-style-menu COMMAND mui_contract_test style-menu)
   add_test(NAME mui-theme COMMAND mui_contract_test theme)
