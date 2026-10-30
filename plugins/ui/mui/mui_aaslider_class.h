@@ -15,6 +15,7 @@
 
 typedef struct mui_aaslider_spec {
     long lo, hi, value;
+    long fix_w; /* fixed width in pixels; 0 = takes the free width of its row (I717: the volume slider is fixed, the seek slider flexes) */
     long id; /* MUIM_Application_ReturnID on every value change; 0 = no notification */
 } mui_aaslider_spec;
 

@@ -204,7 +204,7 @@ Object* mui_aaslider_new(const mui_aaslider_spec* sp) {
         return NULL;
     }
     o = NewObject(g_slider_class->mcc_Class, NULL, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Numeric_Min, (ULONG)sp->lo, MUIA_Numeric_Max, (ULONG)sp->hi,
-                  MUIA_Numeric_Value, (ULONG)sp->value, MUIA_CycleChain, (ULONG)TRUE, TAG_DONE);
+                  MUIA_Numeric_Value, (ULONG)sp->value, MUIA_CycleChain, (ULONG)TRUE, sp->fix_w > 0 ? MUIA_FixWidth : TAG_IGNORE, (ULONG)sp->fix_w, TAG_DONE);
     if (o != NULL) {
         if (sp->id != 0) {
             DoMethod(o, MUIM_Notify, MUIA_Numeric_Value, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)sp->id);
