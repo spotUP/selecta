@@ -566,8 +566,8 @@ static void test_theme(void) {
             continue;
         }
         if (role == MUI_TH_STATUS) {
-            /* exemption (I667o, design 3.7): status lines are AAText objects with the AAField face; mui-status-face proves it */
-            CHECK(strstr(src, "sp.face = framed") != NULL, "mui_aatext does not give framed texts the AAField face");
+            /* exemption (I740, design 3.7): status lines are plain AAText labels with no frame and no field box; mui-status-face proves it */
+            CHECK(strstr(src, "sp.face") == NULL && strstr(src, "framed") == NULL, "mui_aatext still has a framed or face look");
             continue;
         }
         snprintf(key, sizeof key, "TH_TAGS(%s,", names[role]);
@@ -738,7 +738,7 @@ static void test_open_no_suggestion(void) {
     while (f != NULL && fgets(line, sizeof line, f) != NULL) {
         if (strstr(line, "slot[MUI_SLOT_SUGGESTION] = mui_aatext(") != NULL) {
             found = 1;
-            CHECK(strstr(line, "MUI_AA_ALIGN_LEFT, 0, 1)") != NULL, "suggestion object is created hidden");
+            CHECK(strstr(line, "MUI_AA_ALIGN_LEFT, 1)") != NULL, "suggestion object is created hidden");
         }
     }
     CHECK(found, "suggestion object creation found");
@@ -1818,8 +1818,9 @@ static void test_aalist_getrow(void) {
  * the application through a NULL pointer, and rig 2 crashed at every start whose saved visualizer was not the first. The
  * settings cycles had the same shape. The initial entry must go in at OM_NEW (mui_make_cycle's active argument): mui_ui.c may
  * not set AAC_Active at all; only the user's pick changes it. */
-/* I667o: the transport clock/remaining/length boxes and the four status-row fields are AAText objects with the rounded AAField face and
- * paddings, not a square MUI frame. Source contract: the constructor sets face, drops the frame; the class draws the field plan. */
+/* I740: the transport clock/remaining/length texts and the four status-row labels are plain AAText: no MUI frame, no field face or
+ * outline (it made them look like text inputs; the Mac footer draws muted text on the window). Source contract; red when a
+ * face/framed path comes back into the constructor or the class. */
 static void test_status_face(void) {
     static char cls_buf[100000];
     char path[512];
@@ -1838,9 +1839,10 @@ static void test_status_face(void) {
         return;
     }
     ctor = strstr(src, "static Object* mui_aatext_sized(");
-    CHECK(ctor != NULL && strstr(ctor, "sp.face = framed") != NULL && strstr(ctor, "MUI_TH_STATUS") == NULL, "mui_aatext_sized does not give framed texts the face (or still takes the square role frame)");
-    CHECK(strstr(cls, "mui_aa_field_plan(") != NULL && strstr(cls, "aa_round_fill(") != NULL && strstr(cls, "MUIA_InnerLeft") != NULL && strstr(cls, "MUIA_InnerTop") != NULL,
-          "AAText draws no rounded field face with inner paddings");
+    CHECK(ctor != NULL && strstr(ctor, "sp.frame = (ULONG)MUIV_Frame_None") != NULL && strstr(ctor, "sp.background = 0UL") != NULL, "mui_aatext_sized does not build frameless, backgroundless texts");
+    CHECK(strstr(src, "sp.face") == NULL && strstr(src, "framed") == NULL && strstr(src, "MUI_TH_STATUS") == NULL, "mui_ui.c still gives texts a face or framed look");
+    CHECK(strstr(cls, "mui_aa_field_plan(") == NULL && strstr(cls, "aa_round_fill(") == NULL && strstr(cls, "MUIA_InnerLeft") == NULL && strstr(cls, "d->face") == NULL,
+          "AAText still draws a field face or inner paddings");
     grp = strstr(src, "static Object* mui_player_group(");
     end = grp != NULL ? strstr(grp, "MUI-P3-4") : NULL;
     CHECK(grp != NULL && end != NULL, "mui_player_group not found");
