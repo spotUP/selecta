@@ -1716,6 +1716,14 @@ if(NOT SEL_AMIGA)
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/view_query"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/view_query.cmake")
   set_tests_properties(view-library-source PROPERTIES LABELS m3)
+
+  # I807: the Songs group of the search view lists every source with hits (a later source in key order was cut by the 16 row cap).
+  add_test(NAME search-songs-every-source
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/search_sources.tsv"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/search_sources"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/search_sources.cmake")
+  set_tests_properties(search-songs-every-source PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "search_sources ok")
 endif()
 
 # M3 Phase 4 (plan 2026-10-25-m3-library.md): T71 source-local (scan part), T72 source-modland-key (I157, I158).

@@ -4655,6 +4655,57 @@ static int search_distinct_album_add(const sel_engine* e, uint32_t* table, uint3
     return 0;
 }
 
+/* I807: which result rows the Songs group lists. The result is sorted by key, so its source prefixes come in key order
+ * (asma, hippo, hvsc, ..., local, modland, ...); the first SEARCH_GROUP_ROWS rows alone were all of the first sources
+ * and a big source later in key order (modland) never showed. The listed rows are taken round-robin over the sources
+ * with hits, each source in key order, and returned in result order. Returns how many rows were chosen. */
+enum { SEARCH_SOURCES = 16 };
+
+static int search_same_source(const char* a, const char* b) {
+    size_t i = 0;
+    while (a[i] != '\0' && a[i] != ':' && a[i] == b[i]) {
+        i++;
+    }
+    return (a[i] == ':' || a[i] == '\0') && (b[i] == ':' || b[i] == '\0');
+}
+
+static uint32_t search_pick_songs(const sel_engine* e, uint32_t* pick) {
+    uint32_t first[SEARCH_SOURCES], next[SEARCH_SOURCES], ns = 0, n = 0, i, s, j;
+    int more = 1;
+    for (i = 0; i < e->res_count && ns < SEARCH_SOURCES; i++) {
+        const char* key = sel_engine_result_key(e, i);
+        for (s = 0; s < ns && !search_same_source(sel_engine_result_key(e, first[s]), key); s++) {
+        }
+        if (s == ns) {
+            first[ns] = next[ns] = i;
+            ns++;
+        }
+    }
+    while (n < SEARCH_GROUP_ROWS && more) {
+        more = 0;
+        for (s = 0; s < ns && n < SEARCH_GROUP_ROWS; s++) {
+            const char* src = sel_engine_result_key(e, first[s]);
+            for (i = next[s]; i < e->res_count && !search_same_source(src, sel_engine_result_key(e, i)); i++) {
+            }
+            if (i >= e->res_count) {
+                next[s] = e->res_count;
+                continue;
+            }
+            pick[n++] = i;
+            next[s] = i + 1u;
+            more = 1;
+        }
+    }
+    for (i = 1; i < n; i++) { /* result order */
+        uint32_t v = pick[i];
+        for (j = i; j > 0 && pick[j - 1u] > v; j--) {
+            pick[j] = pick[j - 1u];
+        }
+        pick[j] = v;
+    }
+    return n;
+}
+
 static void search_reload(sel_engine* e) {
     char* text = e->view.htext;
     uint32_t albums[2u * SEARCH_DISTINCT_MAX], artists[2u * SEARCH_DISTINCT_MAX];
@@ -4662,9 +4713,11 @@ static void search_reload(sel_engine* e) {
     size_t cap = SEL_VIEW_HOME_TEXT_MAX, o = 0;
     char alb[SEL_VIEW_HOME_TEXT_MAX / 8], art[SEL_VIEW_HOME_TEXT_MAX / 8];
     size_t la = 0, lr = 0;
+    uint32_t pick[SEARCH_GROUP_ROWS], n_pick, at_pick = 0;
     if (text == NULL) {
         return;
     }
+    n_pick = search_pick_songs(e, pick);
     for (i = 0; i < 2u * SEARCH_DISTINCT_MAX; i++) {
         albums[i] = artists[i] = UINT32_MAX;
     }
@@ -4682,7 +4735,9 @@ static void search_reload(sel_engine* e) {
             album += strlen(album) + 1u;           /* duration */
             album += strlen(album) + 1u;           /* album */
         }
-        if (i < SEARCH_GROUP_ROWS && key != NULL && o + strlen(key) + strlen(name) + strlen(artist) + 8u < cap / 2u) {
+        int listed = at_pick < n_pick && pick[at_pick] == i;
+        at_pick += (uint32_t)listed;
+        if (listed && key != NULL && o + strlen(key) + strlen(name) + strlen(artist) + 8u < cap / 2u) {
             o += (size_t)snprintf(text + o, cap - o, "S %s\t%s  %s\n", key, name, artist);
         }
         if (album[0] != '\0' && search_distinct_album_add(e, albums, &n_album, i, artist, album) && listed_album < SEARCH_GROUP_ROWS &&
