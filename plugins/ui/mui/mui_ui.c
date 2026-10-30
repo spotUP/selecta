@@ -2099,13 +2099,16 @@ static void* mui_open(const sel_ui_open_args* a) {
 
 /* I724: the I716 race made deterministic. A list refresh between the click and its handling resets AAL_Active to the engine cursor;
  * with the knob on, do exactly that before the handler runs: move the engine cursor to the first window row and push a refresh with the
- * list signature forced stale. A handler that reads AAL_Active then acts on that row (".."), one that reads AAL_Picked does not. */
+ * list signature forced stale. A handler that reads AAL_Active then acts on that row (".."), one that reads AAL_Picked does not.
+ * The single click armed list_pending (base = the row shown before the click); a refresh that sees the base snapshot restores the
+ * clicked row, which would mask the race. The real race happens after the snapshot caught up and disarmed the guard, so disarm it here. */
 static void mui_dbl_race_inject(mui_state* s) {
     const sel_view_state* view = sel_engine_state(s->engine)->view;
     char line[48];
     if (view == NULL) {
         return;
     }
+    mui_list_pending_clear(&s->list_pending);
     snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)view->window_start);
     mui_engine_line(s, line);
     s->list_sig = ~s->list_sig;
