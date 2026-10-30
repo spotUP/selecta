@@ -423,6 +423,21 @@ int mui_aa_text_maxw(int fixed, int defw) {
 
 static uint32_t g_field_calls;
 
+static uint32_t g_field_placeholders;
+
+int mui_aa_field_placeholder(const uint32_t* token, const char* contents, int focus, uint32_t* rgb) {
+    if (focus || (contents != NULL && contents[0] != '\0')) {
+        return 0;
+    }
+    *rgb = token[SEL_GUI_TOKEN_TEXT_MUTED];
+    g_field_placeholders++;
+    return 1;
+}
+
+uint32_t mui_aa_field_placeholders(void) {
+    return g_field_placeholders;
+}
+
 uint32_t mui_aa_field_calls(void) {
     return g_field_calls;
 }
