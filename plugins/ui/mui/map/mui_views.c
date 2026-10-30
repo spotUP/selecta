@@ -2,6 +2,7 @@
 #include "mui_map.h"
 
 #include <selecta/uimodel/doors.h>
+#include <selecta/uimodel/pages.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -242,6 +243,27 @@ const char* mui_door_label(uint32_t i) {
 /* I615d (design 8.3): the lines the MUI top bar sends. Home is the Home door's line; Browse is what the rich top bar Browse slice
  * sends (desktop_ui.c desk_page_load, PG_BROWSE: the formats and composers catalog and the sources). */
 const char* const mui_topbar_browse_lines[MUI_TOPBAR_BROWSE_LINES] = {"FORMATS_SHOW", "COMPOSERS_SHOW", "SOURCES"};
+
+/* I792: one entry per page of the shared page table. The designated initialisers are sized by SEL_UIM_PG_COUNT, so a page added to
+ * uimodel/pages.h without an entry here is a zero entry (MUI_PAGE_GAP) and the route loop in mui_contract_test goes red. */
+static const mui_page_slot_t g_page_slots[SEL_UIM_PG_COUNT] = {
+    [SEL_UIM_PG_HOME] = {MUI_PAGE_MAIN_VIEW, NULL},
+    [SEL_UIM_PG_SEARCH] = {MUI_PAGE_MAIN_VIEW, NULL},
+    [SEL_UIM_PG_FOLDERS] = {MUI_PAGE_MAIN_VIEW, NULL},
+    [SEL_UIM_PG_PLAYLISTS] = {MUI_PAGE_MAIN_VIEW, NULL},
+    [SEL_UIM_PG_QUEUE] = {MUI_PAGE_MAIN_VIEW, NULL},
+    [SEL_UIM_PG_NOWPLAYING] = {MUI_PAGE_GROUP, NULL},
+    [SEL_UIM_PG_SONGS] = {MUI_PAGE_EXEMPT, "the MUI main list shows the songs of whatever source is open; no separate Songs page (drift doc section 5)"},
+    [SEL_UIM_PG_SONGINFO] = {MUI_PAGE_GROUP, NULL},
+    [SEL_UIM_PG_VIZ] = {MUI_PAGE_EXEMPT, "I735: the visualizer lives only inside the Now Playing detail group, no own page yet"},
+    [SEL_UIM_PG_TRACKER] = {MUI_PAGE_EXEMPT, "I735: the tracker pattern rows live only inside the Now Playing detail group, no own page yet"},
+    [SEL_UIM_PG_SHELF] = {MUI_PAGE_EXEMPT, "Show all on a Home shelf has no MUI handler yet (drift doc section 5)"},
+    [SEL_UIM_PG_BROWSE] = {MUI_PAGE_MAIN_VIEW, NULL}, /* the top bar Browse button sends mui_topbar_browse_lines */
+    [SEL_UIM_PG_COLLECTION] = {MUI_PAGE_EXEMPT, "an album, artist or playlist page has no MUI handler yet; the main list shows the playlist source (drift doc section 5)"}};
+
+const mui_page_slot_t* mui_page_slot(uint32_t page) {
+    return page < (uint32_t)SEL_UIM_PG_COUNT ? &g_page_slots[page] : (const mui_page_slot_t*)0;
+}
 
 const char* mui_door_line(uint32_t i) {
     const sel_uim_door* d = sel_uim_door_at(i); /* I791: the line lives in the shared door table, so a page rename cannot orphan it */

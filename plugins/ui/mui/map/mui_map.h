@@ -219,6 +219,17 @@ const char* mui_door_line(uint32_t i);
 #define MUI_TOPBAR_BROWSE_LINES 3u
 extern const char* const mui_topbar_browse_lines[MUI_TOPBAR_BROWSE_LINES];
 
+/* I792 (drift doc 2026-10-30-mui-mac-drift section 4): how the MUI shows page `page` of the shared page table (uimodel/pages.h). Every page
+ * has exactly one entry: a MUI_PAGE_MAIN_VIEW (the main list view, switched by an engine line), a MUI_PAGE_GROUP (the MUI's own page group)
+ * or a MUI_PAGE_EXEMPT carrying the written reason it has no slot. kind MUI_PAGE_GAP with no reason is a page nobody mapped: the route
+ * loop in tests/ui/mui_contract_test.c fails on it. NULL past SEL_UIM_PG_COUNT. */
+enum { MUI_PAGE_GAP = 0, MUI_PAGE_MAIN_VIEW, MUI_PAGE_GROUP, MUI_PAGE_EXEMPT };
+typedef struct mui_page_slot_t {
+    uint32_t kind;
+    const char* exempt; /* MUI_PAGE_EXEMPT: why the page has no MUI slot (and the ledger row that closes it) */
+} mui_page_slot_t;
+const mui_page_slot_t* mui_page_slot(uint32_t page);
+
 /* MUI-P4-2: Library breadcrumbs. Pieces of a browse path split on "/" and the AmigaDOS ":" (the volume keeps its colon);
  * `end` is the length of the path up to and including the piece, so a click on a crumb opens path[0..end). Returns the
  * piece count even above cap. The last piece equals the engine's browse_leaf. */
