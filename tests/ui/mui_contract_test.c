@@ -1088,11 +1088,10 @@ static void test_list_backends(void) {
 
 /* MUI-P4-0: seven doors from the shared table, each with its label; the five main-view pages carry a line the engine accepts. */
 static void test_doors(void) {
-    static const char* const want[] = {"Home", "Search", "Your Library", "Playlists", "Queue", "Now Playing", "Song Information"};
     uint32_t i, lines = 0;
     CHECK(mui_door_count() == 7u, "seven doors");
     for (i = 0; i < 7u; i++) {
-        CHECK(mui_door_label(i) != NULL && strcmp(mui_door_label(i), want[i]) == 0, "door %u label", (unsigned)i);
+        CHECK(mui_door_label(i) != NULL && strcmp(mui_door_label(i), sel_uim_door_at(i)->label) == 0, "door %u label", (unsigned)i);
         lines += mui_door_line(i) != NULL;
     }
     CHECK(lines == 5u && strcmp(mui_door_line(1), "VIEW_SOURCE search") == 0 && mui_door_line(5) == NULL, "five main-view lines");

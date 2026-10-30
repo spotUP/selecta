@@ -16,6 +16,7 @@ typedef struct sel_uim_door {
     const char* label; /* the full English row label */
     const char* page;  /* the page name: home, search, folders, playlists, queue, nowplaying, songinfo */
     const char* shorter; /* I537: the label drawn when the full one does not fit the rail (NULL: none) */
+    const char* line;    /* I791: the engine line the page switch sends (the desktop --view source); NULL: an in-window page with no line */
     uint32_t topbar;     /* I615a: 1 when the window-wide top bar (layout topbar) owns this page: the sidebar then omits the row */
 } sel_uim_door;
 

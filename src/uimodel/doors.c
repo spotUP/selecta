@@ -4,9 +4,13 @@
 #include <selecta/uimodel/doors.h>
 
 static const sel_uim_door g_doors[SEL_UIM_DOOR_COUNT] = {
-    {"Home", "home", NULL, 1u},   {"Search", "search", NULL, 1u},         {"Browse Folders", "folders", "Folders", 0u},
-    {"Playlists", "playlists", NULL, 0u}, {"Queue", "queue", NULL, 0u}, {"Now Playing", "nowplaying", NULL, 0u},
-    {"Song Information", "songinfo", "Song Info", 0u}};
+    {"Home", "home", NULL, "VIEW_SOURCE home", 1u},
+    {"Search", "search", NULL, "VIEW_SOURCE search", 1u},
+    {"Browse Folders", "folders", "Folders", "VIEW_SHOW browse", 0u},
+    {"Playlists", "playlists", NULL, "VIEW_SOURCE folders", 0u},
+    {"Queue", "queue", NULL, "VIEW_SHOW queue", 0u},
+    {"Now Playing", "nowplaying", NULL, NULL, 0u},
+    {"Song Information", "songinfo", "Song Info", NULL, 0u}};
 
 const sel_uim_door* sel_uim_door_at(uint32_t i) {
     return i < SEL_UIM_DOOR_COUNT ? &g_doors[i] : (const sel_uim_door*)0;

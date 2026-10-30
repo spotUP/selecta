@@ -244,17 +244,6 @@ const char* mui_door_label(uint32_t i) {
 const char* const mui_topbar_browse_lines[MUI_TOPBAR_BROWSE_LINES] = {"FORMATS_SHOW", "COMPOSERS_SHOW", "SOURCES"};
 
 const char* mui_door_line(uint32_t i) {
-    static const struct {
-        const char* page;
-        const char* line;
-    } k_line[] = {{"home", "VIEW_SOURCE home"},          {"search", "VIEW_SOURCE search"},     {"library", "VIEW_SHOW browse"},
-                  {"playlists", "VIEW_SOURCE folders"},  {"queue", "VIEW_SHOW queue"}};
-    const sel_uim_door* d = sel_uim_door_at(i);
-    uint32_t k;
-    for (k = 0; d != NULL && k < sizeof k_line / sizeof k_line[0]; k++) {
-        if (strcmp(k_line[k].page, d->page) == 0) {
-            return k_line[k].line;
-        }
-    }
-    return NULL;
+    const sel_uim_door* d = sel_uim_door_at(i); /* I791: the line lives in the shared door table, so a page rename cannot orphan it */
+    return d != NULL ? d->line : NULL;
 }
