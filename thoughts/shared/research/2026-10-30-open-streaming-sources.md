@@ -35,7 +35,7 @@ named per source; anything not read is marked UNVERIFIED. Not legal advice: lice
 | 1 | I725a generic stream (Icecast/Shoutcast URL) | any | none | n/a, user picks URL | MP3/Ogg/AAC | per station | MP3/Ogg after I199 |
 | 2 | radio-browser.info | 62,253 stations (verified) | none, UA | yes, free | station's own | yes (verified) | MP3 stations |
 | 3 | Internet Archive audio | 14.2 M audio items, 1.98 M with CC licence URL (verified) | none | yes, UA + 429 | MP3 VBR, Ogg, FLAC | yes (verified) | MP3/Ogg derivative |
-| 4 | SomaFM | 51 channels (verified) | none | no clause found | MP3 128, AAC 128/64/32 | yes (verified) | MP3 128 |
+| 4 | SomaFM | 51 channels (verified) | none | FORBIDS third-party clients (ToS 2026-09-04, verified) | MP3 128, AAC 128/64/32 | yes (verified) | MP3 128 |
 | 5 | Demoscene radio (Nectarine, SceneSat) | 2+ stations | none | public streams | MP3 192, AAC 48, Opus | yes (verified) | MP3 192 heavy |
 | 6 | Jamendo | vendor claim 600k+ tracks (UNVERIFIED) | client_id | yes, non-commercial only, no caching | MP3 96, VBR, Ogg, FLAC | timed out (UNVERIFIED) | mp31 96k if HTTP |
 | 7 | Podcast RSS + Podcast Index | millions of feeds | free key+secret, UA | yes (open RSS) | MP3 mostly | per host | MP3 if not https |
@@ -78,6 +78,7 @@ Musopen: `musopen.org/api/` returned 404, no public API found (UNVERIFIED beyond
   redirect to https UNVERIFIED. Tracker modules also live in collections (same source can list them).
 
 ### SomaFM
+- OUT (I725b dropped 2026-10-30): ToS https://somafm.com/contact/tos.html (updated 2026-09-04): "We can't grant permission for third-party SomaFM clients or applications, even noncommercial ones." Logos, descriptions and playlists are copyrighted; re-posting now-playing info is against their terms. A user may still paste a SomaFM .pls URL into the generic stream list (I725a).
 - `https://somafm.com/channels.json` verified: 51 channels, each with `playlists[]` (`.pls` url, format mp3/aac/aacp,
   quality). Plain HTTP works (verified); Icecast KH `http://ice1.somafm.com/groovesalad-128-mp3` returns `audio/mpeg`.
 - Terms: no third-party clause found. FAQ https://somafm.com/about/faq.html lists 128k MP3, 128k AAC, 64 and 32 kbit
