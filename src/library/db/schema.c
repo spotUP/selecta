@@ -233,9 +233,18 @@ static const char SCHEMA_V12[] =
     "UPDATE history SET format = " V12_EXT " WHERE format IS NULL AND instr(key, '.') > 0"
     " AND length(" V12_EXT ") BETWEEN 1 AND 5 AND " V12_EXT " NOT GLOB '*[^a-z0-9]*';";
 
+/* I787: the Library Albums and Artists lists aggregate over every song (COUNT, MAX(added) per album and per artist). On 594 520 songs
+ * the table scan took 9 to 11 s. Covering indexes turn each into one index scan (about 90 ms warm): songs_album gains artist and added
+ * (same name and same leading column, so the v10 delete trigger and the scan's album lookups still use it) and songs_artist_added
+ * serves the artist list. No trigger or maintained table: the Amiga heap budget (I577) allows no more triggers on songs. */
+static const char SCHEMA_V13[] =
+    "DROP INDEX songs_album;"
+    "CREATE INDEX songs_album ON songs(album, artist, added);"
+    "CREATE INDEX songs_artist_added ON songs(artist, added);";
+
 static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
                                            SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11,
-                                           SCHEMA_V12};
+                                           SCHEMA_V12, SCHEMA_V13};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 

@@ -7,6 +7,8 @@
  * Reused, not reinvented: the maintained tables composers (v7) and source_songs (v8) for their counts, the genre op streaming path
  * (sel_genre_call buffers the rows on the worker and replays them on the caller's thread), history.key and playlist_entries keys. */
 #include "db_internal.h"
+#include <stdlib.h>
+#include <unistd.h>
 
 #include "../composer.h"
 #include "../source.h"
@@ -38,10 +40,10 @@
     "IFNULL((SELECT at FROM opened WHERE kind=4 AND id=CAST(a.id AS TEXT)),0) FROM albums a LEFT JOIN sa ON sa.al IS a.name AND sa.ar IS a.artist" \
     " LEFT JOIN la ON la.al IS a.name AND la.ar IS a.artist"
 #define PART_ARTIST \
-    "SELECT 5,r.name,r.name,'',IFNULL(sr.n,0),IFNULL(sr.ad,0),IFNULL(lr.t,0),0,0,r.name,0," \
+    "SELECT 5,r.name,r.name,'',r.n,r.ad,IFNULL(lr.t,0),0,0,r.name,0," \
     "IFNULL((SELECT at FROM opened WHERE kind=5 AND id=r.name),0) FROM" \
-    " (SELECT artist AS name FROM songs WHERE artist<>'' UNION SELECT artist FROM albums WHERE artist<>'') r" \
-    " LEFT JOIN sr ON sr.ar=r.name LEFT JOIN lr ON lr.ar=r.name"
+    " (SELECT ar AS name,n,ad FROM sr UNION ALL SELECT artist,0,0 FROM albums WHERE artist<>'' AND artist NOT IN (SELECT ar FROM sr)) r" \
+    " LEFT JOIN lr ON lr.ar=r.name"
 /* Composers: the maintained table plus the Unknown composer group, like SEL_COMPOSER_LIST. */
 #define PART_COMPOSER \
     "SELECT 6,c.canon,c.display,'',c.songs,0,IFNULL(lc.t,0),0,0,c.display,0," \
@@ -60,19 +62,22 @@
 static const char* const k_part[SEL_LIB_ITEM_KINDS] = {PART_LIKED, PART_RECENT, PART_LOCAL,    PART_PLAYLIST,
                                                        PART_ALBUM, PART_ARTIST, PART_COMPOSER, PART_SOURCE};
 
-/* Helper tables the parts join (a CTE nobody reads costs nothing). */
+/* Helper tables the parts join (a CTE nobody reads costs nothing). I787: the history joins are CROSS JOINs, which fixes the loop
+ * order: history (a few thousand rows) drives and songs is probed by its unique key. Left to the planner it walked the whole songs
+ * table through songs_artist_added and probed history per song (10 s on 594 520 songs). The sa and sr aggregates read the covering
+ * indexes songs_album and songs_artist_added (schema v13): one index scan, no table lookups. */
 #define CTE_SA "sa AS (SELECT album AS al, artist AS ar, COUNT(*) AS n, MAX(added) AS ad FROM songs GROUP BY album, artist)"
 #define CTE_LA \
-    "la AS (SELECT s.album AS al, s.artist AS ar, MAX(h.played_at) AS t FROM history h JOIN songs s ON s.key=h.key" \
+    "la AS (SELECT s.album AS al, s.artist AS ar, MAX(h.played_at) AS t FROM history h CROSS JOIN songs s ON s.key=h.key" \
     " GROUP BY s.album, s.artist)"
 #define CTE_SR "sr AS (SELECT artist AS ar, COUNT(*) AS n, MAX(added) AS ad FROM songs WHERE artist<>'' GROUP BY artist)"
 #define CTE_LR \
-    "lr AS (SELECT s.artist AS ar, MAX(h.played_at) AS t FROM history h JOIN songs s ON s.key=h.key WHERE s.artist<>''" \
+    "lr AS (SELECT s.artist AS ar, MAX(h.played_at) AS t FROM history h CROSS JOIN songs s ON s.key=h.key WHERE s.artist<>''" \
     " GROUP BY s.artist)"
 #define CTE_LC \
-    "lc AS (SELECT c.canon AS canon, MAX(h.played_at) AS t FROM history h JOIN song_composers c ON c.song_key=h.key GROUP BY c.canon)"
+    "lc AS (SELECT c.canon AS canon, MAX(h.played_at) AS t FROM history h CROSS JOIN song_composers c ON c.song_key=h.key GROUP BY c.canon)"
 #define CTE_LS \
-    "ls AS (SELECT s.source AS source, MAX(h.played_at) AS t FROM history h JOIN songs s ON s.key=h.key GROUP BY s.source)"
+    "ls AS (SELECT s.source AS source, MAX(h.played_at) AS t FROM history h CROSS JOIN songs s ON s.key=h.key GROUP BY s.source)"
 
 /* reg (bit 6) is not a constant: put_reg writes the registered source ids. */
 #define CTE_COUNT 7u
@@ -154,10 +159,10 @@ static const char* format_sql(uint32_t kind) {
     case SEL_LIB_ITEM_ALBUM:
         return "SELECT s.path FROM songs s JOIN albums a ON a.id=CAST(?1 AS INTEGER) AND s.album IS a.name AND s.artist IS a.artist";
     case SEL_LIB_ITEM_ARTIST: return "SELECT path FROM songs WHERE artist=?1";
-    case SEL_LIB_ITEM_COMPOSER:
-        return "SELECT s.path FROM songs s WHERE CASE WHEN ?1='" SEL_COMPOSER_UNKNOWN_CANON "' THEN NOT EXISTS"
+    case SEL_LIB_ITEM_COMPOSER: /* I787: two branches; a CASE in one WHERE made every composer scan the whole songs table (600 000 rows each) */
+        return "SELECT s.path FROM songs s WHERE ?1='" SEL_COMPOSER_UNKNOWN_CANON "' AND NOT EXISTS"
                " (SELECT 1 FROM song_composers c WHERE c.song_key=s.key)"
-               " ELSE s.key IN (SELECT song_key FROM song_composers WHERE canon=?1) END";
+               " UNION ALL SELECT s.path FROM song_composers c JOIN songs s ON s.key=c.song_key WHERE c.canon=?1 AND ?1<>'" SEL_COMPOSER_UNKNOWN_CANON "'";
     case SEL_LIB_ITEM_PLAYLIST:
         return "SELECT s.path FROM playlist_entries e JOIN songs s ON s.key=e.key WHERE e.playlist_id=CAST(?1 AS INTEGER)";
     case SEL_LIB_ITEM_LIKED: return "SELECT s.path FROM songs s JOIN liked l ON l.key=s.key";
@@ -218,6 +223,13 @@ int sel_library_items_op(sel_library* lib, const sel_genre_op* op, int* found, i
     *found = 0;
     *id = 0;
     if (op->row == NULL || !build_sql(op->mask, sql, sizeof sql)) return SQLITE_MISUSE;
+#if !defined(__amigaos__) && !defined(AMIGA)
+    {   /* I787 test knob: a slow query for the dui test that proves the frame does not wait on it */
+        const char* slow = getenv("SELECTA_LIB_ITEMS_SLOW_MS");
+
+        if (slow != NULL && atoi(slow) > 0) usleep((useconds_t)atoi(slow) * 1000u);
+    }
+#endif
     rc = sqlite3_prepare_v2(lib->db, sql, -1, &st, NULL);
     if (rc != SQLITE_OK) return rc;
     while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
@@ -440,8 +452,8 @@ int sel_library_collection(sel_library* lib, uint32_t kind, const char* key, uin
  * section 5. HOME_FIN counts finished plays only and HOME_FIN_LAST is the time of the last one: Recently Played and Your Albums use
  * these (Johan 2026-10-29; an album with only skipped plays stays on Jump Back In). */
 #define HOME_HIST(agg, cond) \
-    "(CASE k WHEN 4 THEN (SELECT " agg " FROM history h JOIN songs s ON s.key=h.key WHERE s.album IS nm AND s.artist IS NULLIF(sub,'')" cond ")" \
-    " WHEN 6 THEN (SELECT " agg " FROM history h JOIN song_composers c ON c.song_key=h.key WHERE c.canon=ik" cond ")" \
+    "(CASE k WHEN 4 THEN (SELECT " agg " FROM history h CROSS JOIN songs s ON s.key=h.key WHERE s.album IS nm AND s.artist IS NULLIF(sub,'')" cond ")" \
+    " WHEN 6 THEN (SELECT " agg " FROM history h CROSS JOIN song_composers c ON c.song_key=h.key WHERE c.canon=ik" cond ")" \
     " WHEN 3 THEN (SELECT " agg " FROM history h JOIN playlist_entries e ON e.key=h.key WHERE e.playlist_id=CAST(ik AS INTEGER)" cond ")" \
     " ELSE 0 END)"
 #define HOME_PLAYS HOME_HIST("COUNT(*)", "")

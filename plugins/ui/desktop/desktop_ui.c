@@ -406,6 +406,7 @@ typedef struct desk {
     uint32_t side_n, side_stale, side_draws, side_rows, side_opens, side_empty_draws, side_create_clicks; /* items held, reload wanted, frames drawn, rows drawn in the last one, rows opened */
     uint32_t side_touch_seen;   /* I678c: lib_touch_calls last seen; a change reloads the list */
     uint32_t side_item_calls; /* I678b: mixed-list reads */
+    uint32_t side_loaded, side_inflight, side_post_mask, side_posts, side_takes, side_flight_frames, side_flight_frames_seen; /* I787: async list read: in flight, its mask, posts, takes, frames drawn while in flight (sentinels) */
     uint32_t side_open_n, side_open_tries; /* I646: the sidebar count a just created playlist brings the list to (0 = none pending), frames waited */
     uint32_t shelf_open;                                   /* I617: the 1-based shelf the Shelf page shows in full, 0 when none */
     int32_t shelf_back_y_q16;                              /* I617: the Home scroll kept while the Shelf page is open */
@@ -6902,6 +6903,8 @@ static const char* library_dump_build(desk* d) {
             o = dump_put(d, o, "smenu %d %d %d %d\n", (int)m0.x, (int)m0.y, (int)m0.w, (int)(m0.h * song_menu_n(d)));
             o = dump_put(d, o, "smenu_pl step=%d playlists=%u sidebar_rows=%u\n", d->sm_step, (unsigned)d->sm_pl_n, (unsigned)d->side_n);
         }
+        o = dump_put(d, o, "sidelib_async posts=%u takes=%u inflight=%u flight_frames=%u\n", (unsigned)d->side_posts, (unsigned)d->side_takes,
+                     (unsigned)d->side_inflight, (unsigned)d->side_flight_frames);
         o = dump_put(d, o, "sidelib draws=%u rows=%u items=%u opens=%u y=%d max=%d item_calls=%u lib_touch_calls=%u\n", (unsigned)d->side_draws, (unsigned)d->side_rows,
                      (unsigned)d->side_n, (unsigned)d->side_opens, (int)d->side_y_q16, (int)side_lib_max_q16(d), (unsigned)d->side_item_calls,
                      (unsigned)lib_touch_calls(d));
@@ -9375,7 +9378,7 @@ static uint32_t side_pinned_n(const desk* d) {
 static int32_t side_card_h(const desk* d) {
     uint32_t i;
     int32_t rh, ch = lpx(d, 128);
-    if (side_chips_h(d) == 0 || desk_bitmap_text(d) || d->side_chip > 1u || d->lf_text[0] != '\0' || d->side_open_n != 0u || side_lib_view_rect(d).h <= 0) {
+    if (side_chips_h(d) == 0 || !d->side_loaded || desk_bitmap_text(d) || d->side_chip > 1u || d->lf_text[0] != '\0' || d->side_open_n != 0u || side_lib_view_rect(d).h <= 0) {
         return 0;
     }
     for (i = 0; i < d->side_n; i++) {
@@ -9420,22 +9423,76 @@ static uint32_t lib_touch_calls(desk* d) {
     return ts.lib_touch_calls;
 }
 
-static void side_lib_reload(desk* d) {
-    uint32_t def0 = sel_engine_lib_deferred(), got;
-    int was;
-    /* I782: the sidebar list is a cached model. The read never waits for the library (a sync keeps it busy): when it is refused the list on
-     * screen stays and side_stale asks again next frame. */
-    lsort_prefs_load(d); /* read once, at the first reload */
-    was = sel_engine_lib_nowait(1);
-    /* I678b: the chip is a kind mask the library applies; a pending Create Playlist reads playlists only (it waits for the new one). */
-    got = sel_engine_library_items(d->engine, d->side_open_n != 0u ? SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST)
-                                                                   : d->side_chip != 0u ? side_chip_mask[d->side_chip - 1u] : SEL_LIB_ITEM_ALL,
-                                   0u, d->side_items, SIDE_LIB_MAX, NULL);
-    sel_engine_lib_nowait(was);
-    if (sel_engine_lib_deferred() != def0) {
+/* I787: the kind mask the sidebar list wants now. I678b: the chip is a kind mask the library applies; a pending Create Playlist reads
+ * playlists only (it waits for the new one). */
+static uint32_t side_lib_want(const desk* d) {
+    return d->side_open_n != 0u ? SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST)
+                                : d->side_chip != 0u ? side_chip_mask[d->side_chip - 1u] : SEL_LIB_ITEM_ALL;
+}
+
+static void side_lib_apply(desk* d, uint32_t got);
+
+/* I787: takes the finished read, if there is one. The list on screen stays until then. A result for a mask nobody wants any more
+ * (the chip moved on) is dropped and the list is read again. Returns 1 when a list was applied. */
+static int side_lib_take(desk* d) {
+    uint32_t m = 0u, got = 0u;
+    int fresh;
+
+    if (!d->side_inflight) {
+        return 0;
+    }
+    fresh = d->side_post_mask == side_lib_want(d);
+    if (!sel_engine_library_items_take(d->engine, &m, fresh ? d->side_items : NULL, SIDE_LIB_MAX, &got, NULL)) {
+        return 0;
+    }
+    d->side_inflight = 0u;
+    d->side_takes++;
+    if (!fresh) {
         d->side_stale = 1u;
+        return 0;
+    }
+    side_lib_apply(d, got);
+    return 1;
+}
+
+/* I787: the sidebar list is a cached model and the read runs off the drawing thread (a category query on a big library takes seconds).
+ * The frame posts the read and returns; the old list stays on screen and desk_side_follow takes the result on a later turn. A change
+ * while the read is in flight leaves side_stale set, so the list is read again after the take. */
+static void side_lib_reload(desk* d) {
+    lsort_prefs_load(d); /* read once, at the first reload */
+    if (d->side_inflight) {
         return;
     }
+    d->side_post_mask = side_lib_want(d);
+    if (!sel_engine_library_items_post(d->engine, d->side_post_mask, SIDE_LIB_MAX)) {
+        d->side_n = 0u; /* no library */
+        d->side_loaded = 1u;
+        d->side_stale = 0u;
+        return;
+    }
+    d->side_stale = 0u;
+    d->side_inflight = 1u;
+    d->side_posts++;
+    d->side_flight_frames_seen = d->frames;
+    (void)side_lib_take(d); /* a build without threads has the answer already */
+}
+
+/* Each turn of the loop: a finished read is applied and the window redrawn. Counts the frames that were drawn while a read was in flight. */
+static void desk_side_follow(desk* d) {
+    if (!d->side_inflight) {
+        return;
+    }
+    if (d->frames != d->side_flight_frames_seen) {
+        d->side_flight_frames_seen = d->frames;
+        d->side_flight_frames++;
+    }
+    if (side_lib_take(d) || d->side_stale) {
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    }
+}
+
+static void side_lib_apply(desk* d, uint32_t got) {
+    d->side_loaded = 1u; /* the empty-state card waits for the first list: an empty list before it is not an empty library */
     d->side_n = got;
     if (d->side_sub == 1u && d->side_chip == 1u && d->side_open_n == 0u) { /* I678d: By You keeps the playlists you made */
         uint32_t a, b = 0u;
@@ -9447,7 +9504,6 @@ static void side_lib_reload(desk* d) {
         d->side_n = b;
     }
     d->side_item_calls++;
-    d->side_stale = 0u;
     d->side_filters++; /* I610: filter passes run */
     if (d->side_open_n != 0u) { /* I646: Create playlist asked to open the new playlist once the engine has made it */
         if (d->page != PG_COLLECTION || ++d->side_open_tries > 300u) {
@@ -9718,7 +9774,7 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
             d->side_stale = 1u;
         }
     }
-    if (d->side_stale) { /* the saved playlists changed: read them again */
+    if (d->side_stale && !d->side_inflight) { /* the saved playlists changed: read them again */
         side_lib_reload(d);
     }
     if (labels) {
@@ -10608,6 +10664,33 @@ static void desk_side_step(desk* d) {
 
 /* Moves the UI clock ms forward the way the live loop would: 16 ms steps while a tween runs, otherwise one jump to the
  * next visible-clock second boundary (the idle block). Draws a frame per step that has a reason. */
+/* I787: a scripted run (virtual clock) has no wall time to wait for the library worker, so the end of a `wait` settles the sidebar
+ * list: the in-flight read is awaited, applied and drawn, and a read it made stale is posted again. Live runs never block. */
+static void desk_side_settle(desk* d) {
+    unsigned round;
+
+    for (round = 0u; round < 8u && !d->live && (d->side_inflight || d->side_stale); round++) {
+        unsigned spins = 0u;
+
+        if (!d->side_inflight) {
+            side_lib_reload(d);
+        }
+        while (d->side_inflight && spins++ < 60000u) { /* at most 60 s */
+            struct timespec ts = {0, 1000000L};
+
+            (void)side_lib_take(d);
+            if (!d->side_inflight) {
+                break;
+            }
+            nanosleep(&ts, NULL);
+        }
+        d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        if (!desk_present(d)) {
+            desk_event_frame(d, 1);
+        }
+    }
+}
+
 static void desk_advance(desk* d, uint32_t ms) {
     uint32_t end = d->now_ms + ms;
     while (d->now_ms < end) {
@@ -10650,6 +10733,7 @@ static void desk_advance(desk* d, uint32_t ms) {
             desk_event_frame(d, 1);
         }
     }
+    desk_side_settle(d);
 }
 
 /* Focus stops (DUI-P3-3): the layout regions in order, then the search field. */
@@ -13594,6 +13678,7 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
     desk_library_follow(d);
     desk_playlist_job_follow(d);
     desk_sync_follow(d);
+    desk_side_follow(d);
     if (!d->nag_asked) { /* sync on launch (I527): the engine marks remote sources never synced or stale in its SOURCES rows; asked on the first turn, when the engine answers UI events */
         d->nag_asked = 1;
         d->src_wait = 1;
