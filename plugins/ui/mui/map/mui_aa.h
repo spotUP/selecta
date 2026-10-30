@@ -122,6 +122,11 @@ typedef struct mui_aa_slider_op_t {
 } mui_aa_slider_op_t;
 #define MUI_AA_SLIDER_OPS 3
 int mui_aa_slider_plan(const uint32_t* token, const mui_aa_slider_t* m, int state, int w, int h, long value, long lo, long hi, mui_aa_slider_op_t* out);
+/* I739: partial-draw plan of a value change (no erase): fill only when it grew, track then fill when it shrank, 0 ops when the fill width
+ * equals prev_fw (prev_fw < 0: never drawn, so always paints both). mui_aa_slider_partial_count counts the non-empty plans. */
+int mui_aa_slider_update_plan(const uint32_t* token, const mui_aa_slider_t* m, int state, int w, int h, int prev_fw, long value, long lo, long hi,
+                              mui_aa_slider_op_t* out);
+uint32_t mui_aa_slider_partial_count(void);
 /* AAProgress: filled pixels of a bar of width w for value of max (clamped, max <= 0 gives 0). */
 int mui_aa_progress_fill_w(int w, long value, long max);
 /* Calls of the slider/progress maths above: the sentinel that the classes (and not a copy) run it. */
