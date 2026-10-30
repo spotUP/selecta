@@ -16,6 +16,7 @@
 #include "map/mui_pens.h"
 #include "map/mui_icons.h"
 #include <selecta/uimodel/doors.h>
+#include <selecta/uimodel/pages.h>
 #include <selecta/uimodel/theme.h>
 #include <selecta/tags.h>
 
@@ -163,6 +164,11 @@ typedef struct mui_state {
     Object* np_album;
     Object* viz_area;               /* I684: the Now Playing visualizer (Selecta_VizArea) and its plugin picker */
     Object* cyc_viz;
+    mui_mainpane pane;              /* I735: the main-slot pane shown (list, Visualizer page, Pattern page) and its opening counters */
+    Object* main_pages;             /* the main slot: a page group of the list, the Visualizer page and the Pattern page */
+    Object* viz_page_area;          /* the Visualizer page: its own Selecta_VizArea over the same vizset (stepped only while shown) */
+    Object* cyc_viz_page;
+    Object* trk_page_list;          /* the Pattern page rows, over the same trk_ptr as the detail tab */
     mui_vizset vizset;
     mui_find_plugin_fn find_plugin;
     Object* np_lyrics;
@@ -231,6 +237,7 @@ static const uint32_t g_tool_which[MUI_TOOL_BTNS] = {P4_LIKE, P4_QREMOVE, P4_QCL
 #define CTL_SM_BASE 0x2500L /* MUI-P4-6: Song menu items, CTL_SM_BASE + item */
 #define CTL_PREF_BASE 0x2600L /* MUI-P4-10: Settings gadgets, CTL_PREF_BASE + pref row */
 #define CTL_CLIP_COPY 0x2120L /* Edit > Copy Song Title (MUI-P5-6), outside the MENU_ID_BASE + row range */
+#define CTL_PANE_BASE 0x2130L /* I735: View > Visualizer Page, Pattern Page: CTL_PANE_BASE + mui_pane (MUI_PANE_VIZ, MUI_PANE_TRACKER) */
 static mui_menu_item g_menu[MENU_MAX];
 static char g_menu_sc[MENU_MAX][2];
 static uint32_t g_menu_n;
@@ -338,6 +345,24 @@ static Object* mui_menu_strip(void) {
             DoMethod(edit, OM_ADDMEMBER, copy);
             DoMethod(copy, MUIM_Notify, MUIA_Menuitem_Trigger, MUIV_EveryTime, MUIV_Notify_Application, 2,
                      MUIM_Application_ReturnID, (ULONG)CTL_CLIP_COPY);
+        }
+    }
+    {
+        /* I735: the Visualizer and Pattern pages open from View, with the Mac UI's keys (mui_pane_shortcut) as shortcuts. */
+        static char pane_sc[MUI_PANE_COUNT][2];
+        Object* view = menu_child(strip, 1, "View", NULL, t_name, t_obj, &nt, "View");
+        uint32_t p;
+        for (p = MUI_PANE_LIST + 1u; view != NULL && p < MUI_PANE_COUNT; p++) {
+            Object* pi;
+            pane_sc[p][0] = mui_pane_shortcut(p);
+            pane_sc[p][1] = '\0';
+            pi = MUI_NewObject((char*)MUIC_Menuitem, MUIA_Menuitem_Title, (ULONG)mui_pane_title(p), MUIA_Menuitem_Shortcut,
+                               (ULONG)(pane_sc[p][0] != '\0' ? pane_sc[p] : NULL), TAG_DONE);
+            if (pi != NULL) {
+                DoMethod(view, OM_ADDMEMBER, pi);
+                DoMethod(pi, MUIM_Notify, MUIA_Menuitem_Trigger, MUIV_EveryTime, MUIV_Notify_Application, 2,
+                         MUIM_Application_ReturnID, (ULONG)(CTL_PANE_BASE + (LONG)p));
+            }
         }
     }
     {
@@ -1124,6 +1149,45 @@ static Object* mui_detail_group(mui_state* s) {
     return g;
 }
 
+/* I735: the main slot as a page group (MUI 3.8 Group_PageMode): page MUI_PANE_LIST is the song list group, MUI_PANE_VIZ the Visualizer
+ * page, MUI_PANE_TRACKER the Pattern page. The Visualizer page reuses Selecta_VizArea (its own instance over the same vizset, so the
+ * detail strip and the page both draw the one plugin) with the plugin picker; the Pattern page is an AAList over the rows
+ * mui_detail_refresh fills for the detail tab. Both pages sit in the main slot, which mui_layout_map shows at every width. */
+static Object* mui_main_pages(mui_state* s) {
+    Object* list_g = mui_main_group(s);
+    Object* pages = MUI_NewObject((char*)MUIC_Group, MUIA_Group_PageMode, (ULONG)TRUE, TAG_DONE);
+    Object* viz_g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+    Object* trk_g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+    Object* rows = mui_string_aalist(s->trk_ptr, 0, 16, &s->trk_page_list);
+    if (list_g == NULL || pages == NULL || viz_g == NULL || trk_g == NULL) {
+        return list_g;
+    }
+    if (s->vizset.n > 0u) {
+        s->cyc_viz_page = mui_make_cycle(s->vizset.name_, (LONG)s->vizset.sel, CTL_P4_BASE + P4_VIZPICK);
+        s->viz_page_area = mui_vizarea_new(&s->vizset, g_tokens, g_screen_rtg);
+    }
+    if (s->cyc_viz_page != NULL && s->viz_page_area != NULL) {
+        DoMethod(viz_g, OM_ADDMEMBER, s->viz_page_area);
+        DoMethod(viz_g, OM_ADDMEMBER, s->cyc_viz_page);
+    } else {
+        DoMethod(viz_g, OM_ADDMEMBER, mui_aatext("No visualizer plugin is loaded", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1));
+    }
+    DoMethod(trk_g, OM_ADDMEMBER, rows != NULL ? rows : MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    DoMethod(pages, OM_ADDMEMBER, list_g);
+    DoMethod(pages, OM_ADDMEMBER, viz_g);
+    DoMethod(pages, OM_ADDMEMBER, trk_g);
+    s->main_pages = pages;
+    return pages;
+}
+
+/* The page entry: shows the pane of `page` (mui_pane_open counts it), whatever opened it (the Mac UI's key, the View menu item). */
+static void mui_pane_show(mui_state* s, uint32_t page) {
+    uint32_t pane = mui_pane_open(&s->pane, page);
+    if (s->main_pages != NULL) {
+        set(s->main_pages, MUIA_Group_ActivePage, (ULONG)pane);
+    }
+}
+
 static const char* mui_base_name(const char* path) {
     const char* b = path, *p;
     for (p = path; *p != '\0'; p++) {
@@ -1272,6 +1336,9 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
             }
         }
         set(s->trk_list, AAL_Count, (ULONG)rows);
+        if (s->trk_page_list != NULL) { /* I735: the Pattern page shows the same rows */
+            set(s->trk_page_list, AAL_Count, (ULONG)rows);
+        }
         set(s->trk_group, MUIA_ShowMe, rows > 0u ? TRUE : FALSE);
     }
 }
@@ -1292,8 +1359,14 @@ static void mui_refresh(mui_state* s) {
     s->uim.dirty |= sel_uim_update(&s->uim, st);
     if (s->viz_area != NULL) { /* I684: one visualizer step per wait turn, on the newest engine frame */
         sel_uim_budget vb;
-        if (sel_uim_budget_for(&vb, "rgba32") && mui_vizarea_step(s->viz_area, st->viz, &vb, mui_now_ms())) {
-            s->p4[P4_VIZFRAMES] = mui_vizarea_frames(s->viz_area);
+        if (sel_uim_budget_for(&vb, "rgba32")) {
+            int stepped = mui_vizarea_step(s->viz_area, st->viz, &vb, mui_now_ms()) != 0;
+            if (s->viz_page_area != NULL && s->pane.pane == MUI_PANE_VIZ) { /* I735: the Visualizer page draws only while shown */
+                stepped |= mui_vizarea_step(s->viz_page_area, st->viz, &vb, mui_now_ms()) != 0;
+            }
+            if (stepped) {
+                s->p4[P4_VIZFRAMES] = mui_vizarea_frames(s->viz_area) + (s->viz_page_area != NULL ? mui_vizarea_frames(s->viz_page_area) : 0u);
+            }
         }
     }
     attrs = mui_dirty_attrs(sel_uim_take_dirty(&s->uim));
@@ -1762,8 +1835,15 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
         break;
     case P4_VIZPICK:
         GetAttr(AAC_Active, s->cyc_viz, &act);
+        if (s->cyc_viz_page != NULL && (uint32_t)act == s->vizset.sel) { /* I735: the page picker fired when the strip one did not move */
+            GetAttr(AAC_Active, s->cyc_viz_page, &act);
+        }
         if ((uint32_t)act < s->vizset.n) {
             s->vizset.sel = (uint32_t)act;
+            set(s->cyc_viz, AAC_Active, act); /* both pickers show the plugin the engine runs */
+            if (s->cyc_viz_page != NULL) {
+                set(s->cyc_viz_page, AAC_Active, act);
+            }
             s->vizset.seq = 0u; /* draw the new plugin on the very next frame */
             if (mui_vizset_line(&s->vizset) != NULL && mui_engine_line(s, mui_vizset_line(&s->vizset))) {
                 mui_p4_note(s, which, mui_vizset_line(&s->vizset));
@@ -1852,14 +1932,18 @@ static void mui_control_fire(mui_state* s, LONG id) {
         if (mui_action_fire(mui_extra_action((uint32_t)(id - CTL_EXTRA_BASE)), mui_p8_send, s)) {
             s->transport_hits++;
         }
+    } else if (id > CTL_PANE_BASE + (LONG)MUI_PANE_LIST && id < CTL_PANE_BASE + (LONG)MUI_PANE_COUNT) {
+        mui_pane_show(s, mui_pane_page((uint32_t)(id - CTL_PANE_BASE))); /* I735: View > Visualizer Page / Pattern Page */
     } else if (id == CTL_TOPBAR_BROWSE) {
         uint32_t k; /* I615d: what the rich top bar Browse slice sends (desk_page_load PG_BROWSE) */
+        mui_pane_show(s, SEL_UIM_PG_HOME); /* a list source: back to the list pane */
         for (k = 0; k < MUI_TOPBAR_BROWSE_LINES; k++) {
             mui_engine_line(s, mui_topbar_browse_lines[k]);
         }
     } else if (id >= CTL_DOOR_BASE && id < CTL_DOOR_BASE + (LONG)MUI_DOOR_MAX) {
         const char* dl = mui_door_line((uint32_t)(id - CTL_DOOR_BASE)); /* the page switch: the engine moves the main view's source */
         if (dl != NULL) { /* NULL: an in-window page (Now Playing, Song Information); mui-doors checks every main-view door has a line */
+            mui_pane_show(s, SEL_UIM_PG_HOME); /* the engine moves the list's source: the list pane shows it */
             mui_engine_line(s, dl);
         }
     } else if (id >= CTL_CRUMB_BASE && id < CTL_CRUMB_BASE + (LONG)MUI_CRUMB_MAX) {
@@ -2050,7 +2134,7 @@ static void* mui_open(const sel_ui_open_args* a) {
                 Child, HGroup,
                     Child, s->slot[MUI_SLOT_SIDEBAR] = mui_sidebar_group(g_screen_rtg),
                     Child, s->balance[0] = mui_aabalance_new(),
-                    Child, s->slot[MUI_SLOT_MAIN] = mui_main_group(s),
+                    Child, s->slot[MUI_SLOT_MAIN] = mui_main_pages(s),
                     Child, s->balance[1] = mui_aabalance_new(),
                     Child, s->slot[MUI_SLOT_DETAIL] = mui_detail_group(s),
                 End,
