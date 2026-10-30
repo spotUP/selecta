@@ -34,12 +34,26 @@
 #include <utility/hooks.h>
 #include <proto/exec.h>
 #include <proto/intuition.h>
-#include <proto/graphics.h>
+#include "mui_gfxbase.h"
 #include <graphics/displayinfo.h>
 #include <graphics/view.h>
 #include <intuition/screens.h>
 #include <proto/muimaster.h>
 struct Library* MUIMasterBase;
+/* I719: graphics.library, opened by mui_open (see mui_gfxbase.h); the base symbol is renamed so libnix does not
+ * auto-open it at program start. */
+struct GfxBase* GfxBase;
+
+static void mui_libs_close(void) {
+    if (GfxBase != NULL) {
+        CloseLibrary((struct Library*)GfxBase);
+        GfxBase = NULL;
+    }
+    if (MUIMasterBase != NULL) {
+        CloseLibrary(MUIMasterBase);
+        MUIMasterBase = NULL;
+    }
+}
 #include "mui_aabtn_class.h"
 #include "mui_aapanel_class.h"
 #include "mui_aatabs_class.h"
@@ -1976,6 +1990,12 @@ static void* mui_open(const sel_ui_open_args* a) {
         mui_report(MUI_FAIL_NO_LIBRARY, "");
         return NULL;
     }
+    GfxBase = (struct GfxBase*)OpenLibrary((CONST_STRPTR) "graphics.library", 37);
+    if (GfxBase == NULL) {
+        mui_libs_close();
+        mui_report(MUI_FAIL_NO_LIBRARY, "(graphics.library)");
+        return NULL;
+    }
     mui_theme_init(a);
     {   /* I684: the viz plugins the desktop lists, the initial one from the same ui.desktop.viz pref */
         const sel_host* vh = s->engine != NULL ? sel_engine_plugin_host(s->engine) : NULL;
@@ -2018,8 +2038,7 @@ static void* mui_open(const sel_ui_open_args* a) {
             MUI_DisposeObject(strip);
         }
         mui_screen_close();
-        CloseLibrary(MUIMasterBase);
-        MUIMasterBase = NULL;
+        mui_libs_close();
         mui_report(MUI_FAIL_NO_WINDOW, "(MUI could not create the objects)");
         return NULL;
     }
@@ -2055,8 +2074,7 @@ static void* mui_open(const sel_ui_open_args* a) {
         s->app = NULL;
         s->win = NULL;
         mui_screen_close();
-        CloseLibrary(MUIMasterBase);
-        MUIMasterBase = NULL;
+        mui_libs_close();
         mui_report(MUI_FAIL_NO_WINDOW, why);
         return NULL;
     }
@@ -2164,8 +2182,7 @@ static void mui_close(void* state) {
     mui_timer_close(s);
     if (MUIMasterBase != NULL) {
         mui_screen_close();
-        CloseLibrary(MUIMasterBase);
-        MUIMasterBase = NULL;
+        mui_libs_close();
     }
 }
 

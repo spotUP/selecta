@@ -10,7 +10,7 @@
 #include <clib/muimaster_protos.h>
 #include <intuition/intuition.h>
 #include <proto/exec.h>
-#include <proto/graphics.h>
+#include "mui_gfxbase.h"
 #include <proto/intuition.h>
 #include <proto/muimaster.h>
 #include <proto/utility.h>
