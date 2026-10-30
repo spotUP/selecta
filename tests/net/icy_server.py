@@ -92,6 +92,23 @@ def serve(c):
         time.sleep(0.2)
         c.close()
         return
+    if target.startswith("/v3.0/tracks/"):  # I725e: the Jamendo API (recorded-style answer, 3 tracks, one without audio)
+        live = "http://icy.test/live"
+        want = target.split("&id=")[1].split("&")[0] if "&id=" in target else ""
+        tracks = [("1001", "Alpha-Song", "Artist-One", live), ("1002", "Beta-Song", "Artist-Two", live),
+                  ("1003", "No-Audio", "Artist-Three", "")]
+        with open(port_file + ".requests", "a") as rq:
+            rq.write("jam_play=%s\n" % want if want else "jam_tracks=1\n")
+            rq.write("jam_client=%s\n" % target.split("client_id=")[1].split("&")[0])
+        body = json.dumps({"headers": {"status": "success", "code": 0, "results_count": len(tracks)},
+                           "results": [{"id": i, "name": n, "duration": 180, "artist_id": "9", "artist_name": a,
+                                        "album_name": "Fixture", "license_ccurl": "http://creativecommons.org/licenses/by-nc-sa/3.0/",
+                                        "position": 1, "audio": u, "shareurl": "https://www.jamendo.com/track/" + i}
+                                       for i, n, a, u in tracks if not want or i == want]}).encode()
+        c.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % len(body) + body)
+        time.sleep(0.2)
+        c.close()
+        return
     if req.split(" ")[1].endswith((".pls", ".m3u")):  # I725a: a playlist URL that names the stream below
         with open(port_file + ".requests", "a") as rq:
             rq.write("playlist=1\n")

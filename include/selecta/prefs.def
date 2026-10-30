@@ -70,6 +70,9 @@ SEL_PREF(LIBRARY_SYNC_NOTICE_AT,  "library.sync_notice_at",  "0",               
 SEL_PREF(LIBRARY_SYNC_SNOOZED,    "library.sync_snoozed",    "",                                SEL_PREF_PLAIN)
 SEL_PREF(LIBRARY_SMART_VIEW, "library.smart_playlist", "smart",                                   SEL_PREF_PLAIN)
 SEL_PREF(LIBRARY_SMART_TOP,  "library.smart_top",  "3",                                           SEL_PREF_PLAIN)
+/* I725e: client id of your own Jamendo app (https://devportal.jamendo.com/). Empty: the jamendo source falls back to
+ * SELECTA_JAMENDO_CLIENT_ID in the environment, and without either it is disabled. */
+SEL_PREF(SOURCES_JAMENDO_CLIENT_ID, "sources.jamendo_client_id", "",                              SEL_PREF_PLAIN)
 #ifndef __amigaos__
 /* last.fm scrobbler (I177, I177b; plugins/integrations/lastfm): API key, shared secret and the session key that
  * `selecta-cli lastfm login` stores. Empty: the plugin falls back to SELECTA_LASTFM_* in the environment. */
