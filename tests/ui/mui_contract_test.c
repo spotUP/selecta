@@ -18,6 +18,7 @@
 #include "arexx.h"
 
 #include <selecta/uimodel/doors.h>
+#include <selecta/uimodel/keys.h>
 #include <selecta/uimodel/pages.h>
 #include <selecta/uimodel/route.h>
 #include <selecta/uimodel/theme.h>
@@ -1133,6 +1134,49 @@ static void mui_route_targets(void) {
     }
 }
 
+/* I735: the Visualizer and Pattern pages are main-area panes. The page entry (mui_pane_key, the Mac UI's default key table) opens each
+ * as a main view; the `opens` counter proves the entry ran; the detail slot that held them before is hidden under 1100 px while the
+ * main slot is not. */
+static void test_panes(void) {
+    static mui_menu_item items[512];
+    mui_mainpane mp;
+    mui_layout_map_t lm;
+    uint32_t i, n, door_pg, width;
+    const uint32_t pages[2] = {SEL_UIM_PG_VIZ, SEL_UIM_PG_TRACKER};
+    const uint32_t panes[2] = {MUI_PANE_VIZ, MUI_PANE_TRACKER};
+    const char keys[2] = {'v', 't'};
+    memset(&mp, 0, sizeof mp);
+    for (i = 0; i < 2; i++) {
+        const mui_page_slot_t* ps = mui_page_slot(pages[i]);
+        CHECK(ps != NULL && ps->kind == MUI_PAGE_MAIN_VIEW && ps->exempt == NULL, "page '%s' is not a main view without exemption", sel_uim_page_at(pages[i])->name);
+        CHECK(mui_pane_shortcut(panes[i]) == keys[i], "pane %u shortcut is '%c', the Mac key is '%c'", (unsigned)panes[i], mui_pane_shortcut(panes[i]), keys[i]);
+        CHECK(mui_pane_title(panes[i]) != NULL, "pane %u has no menu title", (unsigned)panes[i]);
+        CHECK(mui_pane_key(&mp, (uint32_t)keys[i], 0u) == panes[i] && mp.pane == panes[i], "key '%c' does not open pane %u", keys[i], (unsigned)panes[i]);
+        CHECK(mp.opens[panes[i]] == 1u, "pane %u entry ran %u times, not once", (unsigned)panes[i], (unsigned)mp.opens[panes[i]]);
+        CHECK(mui_pane_open(&mp, pages[i]) == panes[i] && mp.opens[panes[i]] == 2u, "page entry for pane %u did not count", (unsigned)panes[i]);
+    }
+    /* a door page (the list) and a key that opens no page */
+    door_pg = sel_uim_page_by_name(sel_uim_door_at(0)->page);
+    CHECK(mui_pane_open(&mp, door_pg) == MUI_PANE_LIST && mp.pane == MUI_PANE_LIST && mp.opens[MUI_PANE_LIST] == 1u, "a door does not return to the list pane");
+    CHECK(mui_pane_page(MUI_PANE_VIZ) == (uint32_t)SEL_UIM_PG_VIZ && mui_pane_page(MUI_PANE_TRACKER) == (uint32_t)SEL_UIM_PG_TRACKER && mui_pane_page(MUI_PANE_LIST) == (uint32_t)SEL_UIM_PG_HOME, "pane to page map");
+    mp.pane = MUI_PANE_VIZ;
+    CHECK(mui_pane_key(&mp, (uint32_t)'j', 0u) == MUI_PANE_COUNT && mp.pane == MUI_PANE_VIZ, "an unrelated key moved the pane");
+    CHECK(mui_pane_key(&mp, (uint32_t)'v', TXT_MOD_CTRL) == MUI_PANE_COUNT, "Ctrl+V opened a page");
+    CHECK(mui_pane_of_action("@viz") == MUI_PANE_VIZ && mui_pane_of_action("@pattern") == MUI_PANE_TRACKER && mui_pane_of_action("@home") == MUI_PANE_COUNT && mui_pane_of_action(NULL) == MUI_PANE_COUNT, "action to pane map");
+    /* the menu shortcuts of the other items leave 'v' and 't' to the panes */
+    n = mui_menu_build_for(items, 512, mui_style_mask(0));
+    for (i = 0; i < n && i < 512u; i++) {
+        char c = items[i].shortcut;
+        CHECK(c == '\0' || (c != 'v' && c != 't' && c != 'V' && c != 'T'), "menu item '%s' takes the pane shortcut %c", items[i].item, c);
+    }
+    /* every width: main slot shown, detail slot hidden below 1100 px (where the panes used to be unreachable) */
+    for (width = 320; width <= 1920; width += 160) {
+        mui_layout_map(&lm, width, 720, SEL_UIM_TIER_DEFAULT);
+        CHECK(lm.show[MUI_SLOT_MAIN] != 0u, "main slot hidden at width %u", (unsigned)width);
+        CHECK(width >= 1100u || lm.show[MUI_SLOT_DETAIL] == 0u, "detail slot shown at width %u", (unsigned)width);
+    }
+}
+
 /* MUI-P4-0: seven doors from the shared table, each with its label; the five main-view pages carry a line the engine accepts. */
 static void test_doors(void) {
     uint32_t i, lines = 0;
@@ -2038,6 +2082,8 @@ int main(int argc, char** argv) {
         test_doors();
     } else if (strcmp(argv[1], "home") == 0) {
         test_home();
+    } else if (strcmp(argv[1], "panes") == 0) {
+        test_panes();
     } else if (strcmp(argv[1], "library") == 0) {
         test_library();
     } else if (strcmp(argv[1], "toast") == 0) {
