@@ -3,6 +3,7 @@
 
 #include "net/http.h"
 #include "net/net.h"
+#include "playlist/playlist.h"
 #include "record_name.h"
 
 #include <selecta/tags.h>
@@ -93,6 +94,72 @@ static int read_pipe(sbuf* b, const char* cmd) {
     return pclose(f) == 0 && ok;
 }
 #endif
+
+static uint32_t g_resolves;
+
+uint32_t sel_stream_resolves(void) {
+    return g_resolves;
+}
+
+/* True when the URL's path (before any ? or #) ends in `ext` (lower case, with the dot), case-insensitively. */
+static int url_path_ends(const char* url, const char* ext) {
+    size_t n = strcspn(url, "?#"), m = strlen(ext), i;
+    if (n < m) {
+        return 0;
+    }
+    for (i = 0; i < m; i++) {
+        char c = url[n - m + i];
+        if (c >= 'A' && c <= 'Z') {
+            c = (char)(c - 'A' + 'a');
+        }
+        if (c != ext[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int sel_stream_resolve(const sel_host* host, const char* url, char* out, size_t cap) {
+    enum { MAX_ENTRIES = 64 };
+    sel_pl_entry entries[MAX_ENTRIES];
+    sel_playlist pl;
+    size_t size = 0;
+    uint32_t i;
+    uint8_t* data;
+    char* text;
+    int found = -1;
+
+    if (!sel_stream_is_url(url) || !(url_path_ends(url, ".pls") || url_path_ends(url, ".m3u"))) {
+        return 0;
+    }
+    data = sel_stream_read(host, url, &size);
+    if (data == NULL) {
+        return -1;
+    }
+    text = (char*)host->mem_alloc(host, size + 16u, SEL_MEM_FAST);
+    if (text != NULL) {
+        sel_playlist_init(&pl, entries, MAX_ENTRIES, text, (uint32_t)size + 16u);
+        if (sel_playlist_read(sel_playlist_format_from_name(url_path_ends(url, ".pls") ? "x.pls" : "x.m3u"),
+                              (const char*)data, size, &pl, NULL, NULL) == SEL_PL_OK) {
+            for (i = 0; i < pl.count; i++) {
+                const char* key;
+                if (pl.entries[i].kind == SEL_PL_DIVIDER) {
+                    continue;
+                }
+                key = sel_playlist_str(&pl, pl.entries[i].key);
+                if (sel_stream_is_url(key) && strlen(key) < cap) {
+                    memcpy(out, key, strlen(key) + 1u);
+                    found = 1;
+                    g_resolves++;
+                    break;
+                }
+            }
+        }
+        host->mem_free(host, text);
+    }
+    host->mem_free(host, data);
+    return found;
+}
 
 uint8_t* sel_stream_read(const sel_host* host, const char* path, size_t* size) {
     sbuf b;

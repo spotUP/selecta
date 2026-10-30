@@ -139,7 +139,7 @@
     X(FLAG)                                                                                   \
     X(NOTE)                                                                                   \
     X(RATE) X(VOTE) X(ANALYSE) X(CUE_SET) X(CUE_GOTO) X(SHARE) X(RADIO) X(STICKER_SET) X(STICKER_GET) X(STICKER_DEL) X(STICKER_LIST) \
-    X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(PLAYLIST_ADD_SONG) X(PLAYLIST_IMPORT) X(PLAYLIST_ADD_FOLDER) X(PLAYLIST_REMOVE_SONG) X(PLAYLIST_PLAY) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_TOUCH) X(COLLECTION_OPEN) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
+    X(FOLDER_ADD) X(FOLDER_MOVE) X(FOLDER_DEL) X(PLAYLIST_MOVE) X(PLAYLIST_CREATE) X(STREAM_ADD) X(PLAYLIST_ADD_SONG) X(PLAYLIST_IMPORT) X(PLAYLIST_ADD_FOLDER) X(PLAYLIST_REMOVE_SONG) X(PLAYLIST_PLAY) X(PLAYLIST_RENAME) X(PLAYLIST_DEL) X(LIBRARY_TOUCH) X(COLLECTION_OPEN) X(LIBRARY_REMOVE) X(LIBRARY_CLEAR) \
     X(SONGS_RANGES) X(SONGS_PLAY) X(SONGS_PLAY_NEXT) X(SONGS_QUEUE_ADD) X(SONGS_PLAYLIST_ADD) X(SONGS_REMOVE) \
     X(STATS_SHOW) X(STATS_HIDE) X(COMPOSERS_SHOW) X(FORMATS_SHOW) X(COMPOSERS_HIDE) X(COMPOSERS_VIEW) \
     X(KEEP)                                                                                   \
@@ -286,6 +286,7 @@ struct sel_engine {
     uint32_t home_rows;                        /* entries the home view source shows (I191 sentinel) */
     uint32_t folder_view_rows;                 /* rows the folders view source built (I179 sentinel) */
     uint32_t import_runs, import_added, import_missing; /* PLAYLIST_IMPORT sentinel and last result (I652c) */
+    uint32_t stream_adds;                      /* STREAM_ADD URLs saved (I725a) */
     uint32_t pl_fail_runs, pl_fail_reason;     /* last failed PLAYLIST_IMPORT / PLAYLIST_ADD_FOLDER: counter and SEL_PLFAIL_* (I652e) */
     uint32_t songs_runs, songs_done, songs_stale, songs_skipped; /* SONGS_* sentinel, songs handled by the last verb, stale refusals (I632b) */
     char* songs_ranges;                        /* SONGS_RANGES staging: ranges text for the next SONGS_* verb, heap, NULL none */
@@ -1602,6 +1603,7 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
     e->open_status = 0;
     char cached[SEL_BROWSE_PATH_MAX];
     char best[SEL_BROWSE_PATH_MAX];
+    char resolved[SEL_BROWSE_PATH_MAX];
     /* D-M3-14 (I184): a library song with twins of the same md5 plays its best source. */
     if (e->lib != NULL && sel_library_best_source(e->lib, path, best, sizeof best) && strcmp(best, path) != 0) {
         snprintf(e->dup_played, sizeof e->dup_played, "%s", best);
@@ -1618,6 +1620,17 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
             return NULL;
         }
         path = cached;
+    }
+    if (sel_stream_is_url(path)) {
+        /* I725a: a .pls / .m3u URL names the real stream; play the first http(s) entry it lists. */
+        int rr = sel_stream_resolve(e->host, path, resolved, sizeof resolved);
+        if (rr < 0) {
+            e->open_status = sel_stream_status();
+            return NULL;
+        }
+        if (rr > 0) {
+            path = resolved;
+        }
     }
     if (live != NULL && sel_stream_is_url(path)) {
         /* I195b: start the download and hand back only its head; the rest plays while it arrives. */
@@ -4994,6 +5007,49 @@ static void cmd_PLAYLIST_CREATE(sel_engine* e, const sel_message* m) {
     sticker_answer(e, "playlist", m->args[0].v.s, text, id);
 }
 
+/* STREAM_ADD url (I725a): saves a stream URL (a .pls / .m3u playlist URL stays as typed and is resolved when it plays)
+ * in the saved playlist named "Streams", created on first use; a URL already in it is not added twice. The saved list
+ * is an ordinary playlist, so it shows in Your Library, plays through PLAYLIST_PLAY and survives a restart. */
+static void cmd_STREAM_ADD(sel_engine* e, const sel_message* m) {
+    static const char list_name[] = "Streams";
+    const char* url = m->args[0].v.s;
+    sel_library_item* items;
+    uint32_t id = 0, n, i;
+    int rc;
+    if (!folder_ready(e, "STREAM_ADD")) return;
+    if (!sel_stream_is_url(url)) {
+        sel_engine_report_error(e, "range", "STREAM_ADD");
+        return;
+    }
+    items = (sel_library_item*)e->host->mem_alloc(e->host, 256u * sizeof *items, SEL_MEM_FAST);
+    if (items == NULL) {
+        sel_engine_report_error(e, "out_of_memory", "STREAM_ADD");
+        return;
+    }
+    n = (uint32_t)sel_library_items(e->lib, SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST), 0u, items, 256u, NULL);
+    for (i = 0; i < n; i++) {
+        if (strcmp(items[i].name, list_name) == 0) {
+            id = (uint32_t)strtoul(items[i].key, NULL, 10);
+            break;
+        }
+    }
+    e->host->mem_free(e->host, items);
+    if (id == 0u) {
+        rc = sel_library_playlist_add(e->lib, list_name, 0u, "", &id);
+        if (rc != SEL_FOLDER_OK) {
+            folder_report(e, rc, "STREAM_ADD");
+            return;
+        }
+    }
+    rc = sel_library_playlist_add_song(e->lib, id, url);
+    if (rc != SEL_FOLDER_OK) {
+        folder_report(e, rc, "STREAM_ADD");
+        return;
+    }
+    e->stream_adds++;
+    folders_reload(e);
+}
+
 /* PLAYLIST_ADD_SONG id path (I241): appends one song to a saved playlist. */
 static void cmd_PLAYLIST_ADD_SONG(sel_engine* e, const sel_message* m) {
     int rc;
@@ -7068,6 +7124,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->import_added = e->import_added;
     out->addf_runs = e->addf_runs;
     out->addf_added = e->addf_added;
+    out->stream_adds = e->stream_adds;
     out->pl_fail_runs = e->pl_fail_runs;
     out->pl_fail_reason = e->pl_fail_reason;
     out->songs_runs = e->songs_runs;

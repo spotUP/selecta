@@ -65,6 +65,17 @@ with open(port_file, "w") as f:
 def serve(c):
     req = c.recv(4096).decode("latin-1").lower()
     icy = "icy-metadata: 1" in req
+    if req.split(" ")[1].endswith((".pls", ".m3u")):  # I725a: a playlist URL that names the stream below
+        with open(port_file + ".requests", "a") as rq:
+            rq.write("playlist=1\n")
+        if req.split(" ")[1].endswith(".pls"):
+            body = b"[playlist]\nNumberOfEntries=2\nFile1=http://icy.test/live\nTitle1=Test\nFile2=http://other.test/x\nVersion=2\n"
+        else:
+            body = b"#EXTM3U\nhttp://icy.test/live\n"
+        c.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: audio/x-scpls\r\nConnection: close\r\n\r\n" + body)
+        time.sleep(0.2)
+        c.close()
+        return
     with open(port_file + ".requests", "a") as rq:
         rq.write("icy=%d\n" % (1 if icy else 0))
     if icy:

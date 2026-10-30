@@ -11283,6 +11283,15 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
         if (ev->code == 27u) {
             d->search_pending = 0; /* Escape leaves without a search */
             d->focus = 0;
+        } else if (ev->code == 13u && (strncmp(d->query, "http://", 7u) == 0 || strncmp(d->query, "https://", 8u) == 0)) {
+            /* I725a: a typed or pasted stream URL (a stream, or a .pls / .m3u list of streams) is saved to the
+             * "Streams" playlist and played; the ICY title reaches the now-playing bar through the engine. */
+            desk_send_path(d, "STREAM_ADD", d->query);
+            desk_play_path(d, d->query);
+            d->qlen = 0u;
+            d->query[0] = '\0';
+            desk_search_fire(d); /* empty query: leaves the search view and repaints */
+            d->focus = 0;
         } else if (ev->code == 13u) { /* Enter searches at once, unless the debounce already sent this query */
             if (d->search_pending) {
                 desk_search_fire(d);
