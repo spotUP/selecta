@@ -8,6 +8,7 @@
 
 #include <selecta/engine.h>
 #include <selecta/uimodel.h>
+#include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/panels.h>
 #include <selecta/uimodel/sources.h>
 
@@ -444,5 +445,40 @@ typedef struct mui_remember {
 typedef const char* (*mui_pref_get_fn)(void* ctx, const char* key);
 uint32_t mui_remember_close(const mui_remember* r, mui_send_fn send, void* ctx);
 uint32_t mui_remember_open(mui_remember* r, mui_pref_get_fn get, void* ctx); /* returns how many of the four items were found */
+
+/* I793 (drift doc S3 to S9): the Your Library sidebar model, built from the uimodel texts and the engine's library items. The MUI
+ * sidebar (mui_ui.c mui_sidebar_group) builds its objects from this and nothing else; mui_sidebar_builds() is the sentinel. */
+#define MUI_SIDEBAR_DOORS 8u
+#define MUI_SIDEBAR_ROWS 16u
+typedef struct mui_sidebar_in {
+    int top_bar;     /* the screen tier has the top bar (the doors Home and Search leave) */
+    uint32_t chip;   /* 0 All, 1..SEL_UIM_SIDE_CHIPS a kind chip */
+    uint32_t by_you_only; /* the By You sub-chip of Playlists */
+    uint32_t wide;   /* Expand is on */
+    int bitmap;      /* the bitmap tier */
+    const char* filter;
+    const sel_engine_library_item* items;
+    uint32_t item_n;
+} mui_sidebar_in;
+typedef struct mui_sidebar_row {
+    char mark[4], title[96], subtitle[96], type[16];
+    uint32_t kind, id;
+} mui_sidebar_row;
+typedef struct mui_sidebar_model {
+    uint32_t door[MUI_SIDEBAR_DOORS], door_n; /* indexes of the shown doors in the uimodel door table */
+    char title[24], create[24], expand[24];   /* the header: Your Library, Create Playlist, Expand/Collapse Library */
+    char chip[SEL_UIM_SIDE_CHIPS][16];
+    int chip_shown[SEL_UIM_SIDE_CHIPS];
+    uint32_t chip_selected;
+    int chip_clear, by_you;
+    mui_sidebar_row row[MUI_SIDEBAR_ROWS];
+    uint32_t row_n, cols;
+    int wide;
+    char empty[32];                           /* "" when no empty state shows */
+    int card;
+    char card_title[40], card_body[48], card_button[24];
+} mui_sidebar_model;
+void mui_sidebar_build(const mui_sidebar_in* in, mui_sidebar_model* out);
+uint32_t mui_sidebar_builds(void);
 
 #endif

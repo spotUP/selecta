@@ -17,6 +17,7 @@
 #include "mui_pens.h"
 #include "arexx.h"
 
+#include <selecta/library_item.h>
 #include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/theme.h>
 
@@ -688,7 +689,7 @@ static void test_topbar(void) {
     }
     src[n] = 0;
     CHECK(strstr(src, "g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP") != NULL && strstr(src, "s->slot[MUI_SLOT_TOPBAR] = mui_topbar_group(s)") != NULL &&
-              strstr(src, "sel_uim_door_shown(i, top_bar)") != NULL, "mui_ui.c passes the screen tier, builds the top bar slot and filters the doors");
+              strstr(src, "mui_sidebar_group(s, g_screen_rtg)") != NULL && strstr(src, "in.top_bar = top_bar;") != NULL, "mui_ui.c passes the screen tier, builds the top bar slot and filters the doors through the sidebar model");
 }
 
 /* mui-relayout (MUI-P2-2): the shown set per breakpoint; the slot count is fixed, and sel_uim_breakpoint_for_tier (bitmap tier, I674: 640 keeps a rail) decides. */
@@ -1106,6 +1107,73 @@ static void test_doors(void) {
         lines += (uint32_t)sel_uim_door_shown(i, 0);
     }
     CHECK(lines == 7u, "seven doors on the bitmap tier");
+}
+
+/* I793 (drift doc S3 to S9): the MUI Your Library sidebar has the Mac sidebar's parts: header, chips, item rows, empty state and
+ * create card, with Browse Folders hidden through the uimodel. The sentinel mui_sidebar_builds() proves the model ran, and the
+ * mui_ui.c sidebar group is checked to build from it. */
+static char* ui_source(void);
+static void test_sidebar(void) {
+    sel_engine_library_item it[3];
+    mui_sidebar_in in;
+    mui_sidebar_model m;
+    uint32_t i, builds = mui_sidebar_builds();
+    int folders = 0;
+    const char* src = ui_source();
+    memset(it, 0, sizeof it);
+    memset(&in, 0, sizeof in);
+    it[0].kind = SEL_LIB_ITEM_LIKED; it[0].pinned = 1; snprintf(it[0].name, sizeof it[0].name, "Liked Songs"); it[0].songs = 12;
+    it[1].kind = SEL_LIB_ITEM_PLAYLIST; it[1].id = 7; snprintf(it[1].name, sizeof it[1].name, "Road"); snprintf(it[1].sub, sizeof it[1].sub, "You");
+    snprintf(it[1].creator, sizeof it[1].creator, "You"); it[1].songs = 3;
+    it[2].kind = SEL_LIB_ITEM_ALBUM; snprintf(it[2].name, sizeof it[2].name, "Chip Tunes"); snprintf(it[2].sub, sizeof it[2].sub, "Virgill"); it[2].songs = 9;
+    in.items = it; in.item_n = 3; in.filter = "";
+    /* header (S4) and the doors (S3): Browse Folders is gone, the shared rule says so for the desktop too */
+    mui_sidebar_build(&in, &m);
+    CHECK(mui_sidebar_builds() == builds + 1u, "sentinel %u", (unsigned)mui_sidebar_builds());
+    CHECK(strcmp(m.title, "Your Library") == 0 && strcmp(m.create, "Create Playlist") == 0 && strcmp(m.expand, "Expand Library") == 0, "header '%s' '%s' '%s'", m.title, m.create, m.expand);
+    for (i = 0; i < m.door_n; i++) {
+        folders += strcmp(sel_uim_door_at(m.door[i])->page, "folders") == 0;
+    }
+    CHECK(m.door_n == 6u && folders == 0 && !sel_uim_door_shown_lib(2, 0, 1) && sel_uim_door_shown_lib(2, 0, 0), "doors %u folders %d", (unsigned)m.door_n, folders);
+    /* chips (S5): the six kinds, all shown while none is selected; a selected chip hides the others and offers the clear X */
+    CHECK(strcmp(m.chip[0], "Playlists") == 0 && strcmp(m.chip[5], "Local Files") == 0 && m.chip_shown[0] && m.chip_shown[5] && !m.chip_clear, "chips");
+    /* rows (S6): the Mac subtitle formatter, kind mark, and the Expand columns (S7) */
+    CHECK(m.row_n == 3u && strcmp(m.row[0].title, "Liked Songs") == 0 && strcmp(m.row[0].subtitle, "Playlist \xe2\x80\xa2 12 songs") == 0 && strcmp(m.row[2].subtitle, "Album \xe2\x80\xa2 Virgill") == 0,
+          "rows %u '%s' '%s'", (unsigned)m.row_n, m.row[0].subtitle, m.row[2].subtitle);
+    CHECK(m.cols == 1u && strcmp(m.row[1].type, "Playlist") == 0 && strcmp(m.row[2].mark, "A") == 0, "mark/type");
+    in.wide = 1;
+    mui_sidebar_build(&in, &m);
+    CHECK(m.cols == 4u && strcmp(m.expand, "Collapse Library") == 0, "expanded: %u columns '%s'", (unsigned)m.cols, m.expand);
+    in.wide = 0;
+    /* a chip filters by kind and hides the other chips; a kind without rows shows the empty text (S8) */
+    in.chip = 2; /* Albums */
+    mui_sidebar_build(&in, &m);
+    CHECK(m.row_n == 1u && strcmp(m.row[0].title, "Chip Tunes") == 0 && m.chip_shown[1] && !m.chip_shown[0] && m.chip_clear && m.empty[0] == '\0' && !m.card, "album chip");
+    in.chip = 3; /* Artists: none in the list */
+    mui_sidebar_build(&in, &m);
+    CHECK(m.row_n == 0u && strcmp(m.empty, "Nothing here yet.") == 0, "empty '%s'", m.empty);
+    /* the create card (S9): only without a playlist row, on All or Playlists, no filter */
+    in.chip = 0; in.item_n = 1;
+    mui_sidebar_build(&in, &m);
+    CHECK(m.card && strcmp(m.card_title, "Create your first playlist") == 0 && strcmp(m.card_button, "Create playlist") == 0 && m.row_n == 1u, "card");
+    in.item_n = 3;
+    mui_sidebar_build(&in, &m);
+    CHECK(!m.card, "a playlist exists: no card");
+    in.filter = "Chip";
+    in.item_n = 1;
+    mui_sidebar_build(&in, &m);
+    CHECK(!m.card, "a filter hides the card");
+    /* the MUI path: mui_sidebar_group builds its objects from the model, and the buttons route to the shared actions */
+    CHECK(src != NULL, "read mui_ui.c");
+    if (src != NULL) {
+        const char* g = strstr(src, "static Object* mui_sidebar_group(");
+        const char* end = g != NULL ? strstr(g, "\n}\n") : NULL;
+        char body[6000];
+        snprintf(body, sizeof body, "%.*s", g != NULL && end != NULL ? (int)(end - g < 5990 ? end - g : 5990) : 0, g != NULL ? g : "");
+        CHECK(strstr(body, "mui_sidebar_build(") != NULL && strstr(body, "m.title") != NULL && strstr(body, "m.chip") != NULL && strstr(body, "m.row") != NULL &&
+              strstr(body, "m.empty") != NULL && strstr(body, "m.card") != NULL && strstr(body, "m.door") != NULL, "mui_sidebar_group does not build from the model");
+        CHECK(strstr(src, "mui_viewbtn_fire(1,") != NULL && strstr(src, "CTL_SIDE_BASE") != NULL, "sidebar buttons are not routed");
+    }
 }
 
 static void test_home(void) {
@@ -1981,6 +2049,8 @@ int main(int argc, char** argv) {
         test_topbar();
     } else if (strcmp(argv[1], "doors") == 0) {
         test_doors();
+    } else if (strcmp(argv[1], "sidebar") == 0) {
+        test_sidebar();
     } else if (strcmp(argv[1], "home") == 0) {
         test_home();
     } else if (strcmp(argv[1], "library") == 0) {

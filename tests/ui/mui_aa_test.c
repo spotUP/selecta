@@ -223,7 +223,7 @@ static void test_text_source(void) {
     CHECK(count_of(ui, "MUIC_Text") == 0, "MUIC_Text left in mui_ui.c: %d", count_of(ui, "MUIC_Text"));
     CHECK(count_of(ui, "TextObject") == 0, "TextObject left in mui_ui.c: %d", count_of(ui, "TextObject"));
     CHECK(count_of(ui, "MUIA_Text_Contents") == 0 && count_of(ui, "MUIA_Text_PreParse") == 0, "Text attribute left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aatext(") == 8, "text constructor sites: %d (definition + 7; the eighth goes through mui_aatext_sized)", count_of(ui, "mui_aatext("));
+    CHECK(count_of(ui, "mui_aatext(") == 9, "text constructor sites: %d (definition + 7 + the sidebar line helper mui_side_text; the eighth goes through mui_aatext_sized)", count_of(ui, "mui_aatext("));
     CHECK(count_of(ui, "mui_aatext_sized(") == 3 && count_of(ui, "mui_attr_fixwidth(") == 1, "time labels sized through mui_attr_fixwidth");
     CHECK(strstr(cls, "mui_aa_text_maxw(d->fixed, d->defw)") != NULL, "class max width not decided by mui_aa_text_maxw");
     CHECK(count_of(ui, "mui_aatext_new(") == 1, "one AAText constructor call: %d", count_of(ui, "mui_aatext_new("));
@@ -431,7 +431,7 @@ static void test_btn_align(void) {
     CHECK(ui != NULL && cls != NULL, "sources readable");
     if (ui != NULL && cls != NULL) {
         CHECK(strstr(cls, "mui_aa_btn_content_x(") != NULL && strstr(cls, "(w - cw) / 2") == NULL, "class centres by hand instead of the shared helper");
-        CHECK(count_of(ui, "mui_make_button_left(") == 2, "door buttons built left aligned: %d sites (definition + door row)", count_of(ui, "mui_make_button_left("));
+        CHECK(count_of(ui, "mui_make_button_left(") == 3, "left aligned buttons: %d sites (definition + door row + the sidebar helper mui_side_button)", count_of(ui, "mui_make_button_left("));
         CHECK(count_of(ui, "sp.align = align;") == 2 && count_of(ui, "sp.align = MUI_AA_ALIGN_CENTRE;") == 1, "every button spec sets align");
         /* Johan rig 2 2026-10-29: the "> PROGDIR:" breadcrumb text ran past its button. The width was measured once at setup from the
          * blank first caption; a fit button (NULL widest) now re-measures at every layout from the caption it was last given. */

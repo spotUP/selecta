@@ -26,6 +26,10 @@ const sel_uim_door* sel_uim_door_at(uint32_t i);
  * shows (the bitmap tier, the mini layout, the MUI sidebar). */
 int sel_uim_door_shown(uint32_t i, int top_bar);
 
+/* I673, I793 (S3): as sel_uim_door_shown, and a UI whose sidebar has the "Your Library" header (library_header != 0) also drops Browse
+ * Folders, because the header opens that page. The desktop passes whether the rail is wide enough for labels; the MUI sidebar always has the header. */
+int sel_uim_door_shown_lib(uint32_t i, int top_bar, int library_header);
+
 /* I615a: the row slot of door i in the sidebar: the shown doors before it. A hidden door has no slot (returns 0). */
 uint32_t sel_uim_door_slot(uint32_t i, int top_bar);
 

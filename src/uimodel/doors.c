@@ -1,6 +1,7 @@
 /* The sidebar door table (MUI-P4-0): Spotify's Home, Search and Browse Folders (the Library page retired, I678i), then Playlists, Queue, Now Playing and Song
  * Information. Read by the desktop UI (plugins/ui/desktop) and the MUI sidebar (plugins/ui/mui). */
 #include <stddef.h>
+#include <string.h>
 #include <selecta/uimodel/doors.h>
 
 static const sel_uim_door g_doors[SEL_UIM_DOOR_COUNT] = {
@@ -14,6 +15,10 @@ const sel_uim_door* sel_uim_door_at(uint32_t i) {
 
 int sel_uim_door_shown(uint32_t i, int top_bar) {
     return i < SEL_UIM_DOOR_COUNT && !(top_bar && g_doors[i].topbar);
+}
+
+int sel_uim_door_shown_lib(uint32_t i, int top_bar, int library_header) {
+    return sel_uim_door_shown(i, top_bar) && !(library_header && strcmp(g_doors[i].page, "folders") == 0);
 }
 
 uint32_t sel_uim_door_slot(uint32_t i, int top_bar) {

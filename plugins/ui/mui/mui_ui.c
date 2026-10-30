@@ -18,6 +18,7 @@
 #include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/theme.h>
 #include <selecta/tags.h>
+#include <selecta/library_item.h>
 
 #if defined(__amigaos__) || defined(AMIGA)
 #define SEL_MUI_NATIVE 1
@@ -376,6 +377,8 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_TOPBAR_BROWSE 0x2800L /* I615d: the top bar Browse button */
 #define CTL_DOOR_BASE 0x2200L /* MUI-P4-0: one button per sidebar door */
 #define MUI_DOOR_MAX 8u
+#define CTL_SIDE_BASE 0x2900L /* I793: the Your Library sidebar presses, CTL_SIDE_BASE + MUI_SIDE_* */
+enum { MUI_SIDE_TITLE = 0, MUI_SIDE_CREATE, MUI_SIDE_EXPAND, MUI_SIDE_CARD, MUI_SIDE_CHIP, MUI_SIDE_COUNT = MUI_SIDE_CHIP + 6 };
 #define CTL_CRUMB_BASE 0x2400L /* MUI-P4-2: one button per breadcrumb piece */
 #define CTL_P4_BASE 0x2300L /* MUI-P4: CTL_P4_BASE + P4_* */
 static const char* const p4_rating_entries[] = {"None", "1 star", "2 stars", "3 stars", "4 stars", "5 stars", NULL};
@@ -690,23 +693,74 @@ static Object* mui_aapanel(int role, int fixed_px) {
     return mui_aapanel_new(&sp);
 }
 
-/* MUI-P4-0: the sidebar slot content, one button per door of the shared uimodel table (mui_door_label). */
-static Object* mui_sidebar_group(int top_bar) {
+/* I793 (drift doc S3 to S9): the sidebar slot content. Everything shown comes from mui_sidebar_build (map/mui_sidebar.c): the doors
+ * (Browse Folders left out, the header opens that page), the Your Library header with Create Playlist and Expand, the kind chips,
+ * the item rows, the empty state and the Create your first playlist card. CTL_SIDE_BASE + MUI_SIDE_* routes the presses. */
+static void mui_side_add(Object* g, Object* o) {
+    if (o != NULL) {
+        DoMethod(g, OM_ADDMEMBER, o);
+    }
+}
+
+/* One left aligned sidebar line (a text of the sidebar model) and one left aligned button; each is one construction site. */
+static void mui_side_text(Object* g, const char* text, int tone) {
+    mui_side_add(g, mui_aatext(text, tone, MUI_AA_ALIGN_LEFT, 0, 0));
+}
+
+static void mui_side_button(Object* g, const char* label, LONG id) {
+    mui_side_add(g, mui_make_button_left(label, NULL, id));
+}
+
+static Object* mui_sidebar_group(mui_state* s, int top_bar) {
     Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
-    uint32_t i;
-    for (i = 0; g != NULL && i < mui_door_count() && i < MUI_DOOR_MAX; i++) {
-        Object* b;
-        if (!sel_uim_door_shown(i, top_bar)) { /* I615d (design 8.4): the top bar owns Home and Search */
-            continue;
-        }
-        b = mui_make_button_left(mui_door_label(i), sel_uim_door_at(i)->page, CTL_DOOR_BASE + (LONG)i);
-        if (b != NULL) {
-            DoMethod(g, OM_ADDMEMBER, b);
+    sel_engine_library_item items[MUI_SIDEBAR_ROWS];
+    mui_sidebar_in in;
+    mui_sidebar_model m;
+    Object* hd;
+    uint32_t i, k;
+    if (g == NULL) {
+        return NULL;
+    }
+    memset(&in, 0, sizeof in);
+    in.top_bar = top_bar;
+    in.bitmap = 0;
+    in.filter = "";
+    in.item_n = s != NULL && s->engine != NULL ? sel_engine_library_items(s->engine, SEL_LIB_ITEM_ALL, 0, items, MUI_SIDEBAR_ROWS, NULL) : 0u;
+    in.items = items;
+    mui_sidebar_build(&in, &m);
+    for (k = 0; k < m.door_n; k++) { /* S3 */
+        i = m.door[k];
+        mui_side_add(g, mui_make_button_left(mui_door_label(i), sel_uim_door_at(i)->page, CTL_DOOR_BASE + (LONG)i));
+    }
+    hd = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE); /* S4: title, Create Playlist, Expand */
+    if (hd != NULL) {
+        Object* t = mui_make_button_ex(m.title, m.title, "library", NULL, CTL_SIDE_BASE + MUI_SIDE_TITLE, 100, 0, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_LEFT);
+        Object* c = mui_make_button_ex(m.create, m.create, "New Playlist", NULL, CTL_SIDE_BASE + MUI_SIDE_CREATE, 0, 1, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_CENTRE);
+        Object* x = mui_make_button_ex(m.expand, m.expand, "crumb", NULL, CTL_SIDE_BASE + MUI_SIDE_EXPAND, 0, 1, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_CENTRE);
+        if (t != NULL) { DoMethod(hd, OM_ADDMEMBER, t); }
+        if (c != NULL) { DoMethod(hd, OM_ADDMEMBER, c); }
+        if (x != NULL) { DoMethod(hd, OM_ADDMEMBER, x); }
+        DoMethod(g, OM_ADDMEMBER, hd);
+    }
+    for (i = 0; i < SEL_UIM_SIDE_CHIPS; i++) { /* S5 */
+        if (m.chip_shown[i]) {
+            mui_side_button(g, m.chip[i], CTL_SIDE_BASE + MUI_SIDE_CHIP + (LONG)i);
         }
     }
-    if (g != NULL) {
-        DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    for (i = 0; i < m.row_n; i++) { /* S6: mark, title, subtitle */
+        char line[200];
+        snprintf(line, sizeof line, "%s  %s  %s", m.row[i].mark, m.row[i].title, m.row[i].subtitle);
+        mui_side_text(g, line, MUI_AA_TONE_NORMAL);
     }
+    if (m.empty[0] != '\0') { /* S8 */
+        mui_side_text(g, m.empty, MUI_AA_TONE_MUTED);
+    }
+    if (m.card) { /* S9 */
+        mui_side_text(g, m.card_title, MUI_AA_TONE_TITLE);
+        mui_side_text(g, m.card_body, MUI_AA_TONE_MUTED);
+        mui_side_button(g, m.card_button, CTL_SIDE_BASE + MUI_SIDE_CARD);
+    }
+    DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
     return g;
 }
 
@@ -1845,6 +1899,13 @@ static void mui_control_fire(mui_state* s, LONG id) {
         for (k = 0; k < MUI_TOPBAR_BROWSE_LINES; k++) {
             mui_engine_line(s, mui_topbar_browse_lines[k]);
         }
+    } else if (id >= CTL_SIDE_BASE && id < CTL_SIDE_BASE + (LONG)MUI_SIDE_COUNT) {
+        LONG k = id - CTL_SIDE_BASE;
+        if (k == MUI_SIDE_CREATE || k == MUI_SIDE_CARD) {
+            mui_viewbtn_fire(1, "", 0, mui_p8_send, s); /* S4, S9: PLAYLIST_CREATE, as the Playlists page New button */
+        } else if (k != MUI_SIDE_EXPAND) {
+            mui_engine_line(s, mui_door_line(3)); /* the header and the kind chips open the playlists page (I673) */
+        }
     } else if (id >= CTL_DOOR_BASE && id < CTL_DOOR_BASE + (LONG)MUI_DOOR_MAX) {
         mui_engine_line(s, mui_door_line((uint32_t)(id - CTL_DOOR_BASE))); /* the page switch: the engine moves the main view's source */
     } else if (id >= CTL_CRUMB_BASE && id < CTL_CRUMB_BASE + (LONG)MUI_CRUMB_MAX) {
@@ -2029,7 +2090,7 @@ static void* mui_open(const sel_ui_open_args* a) {
                 Child, s->slot[MUI_SLOT_TOPBAR] = mui_topbar_group(s),
                 Child, s->slot[MUI_SLOT_SUGGESTION] = mui_aatext("Window is narrow: try the mini layout", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0, 1),
                 Child, HGroup,
-                    Child, s->slot[MUI_SLOT_SIDEBAR] = mui_sidebar_group(g_screen_rtg),
+                    Child, s->slot[MUI_SLOT_SIDEBAR] = mui_sidebar_group(s, g_screen_rtg),
                     Child, s->balance[0] = mui_aabalance_new(),
                     Child, s->slot[MUI_SLOT_MAIN] = mui_main_group(s),
                     Child, s->balance[1] = mui_aabalance_new(),
