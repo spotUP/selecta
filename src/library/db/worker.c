@@ -86,6 +86,11 @@ static void* worker_main(void* arg) {
 
 int sel_worker_start(sel_library* lib) {
     lib->running = 1;
+    /* I790: g_nowait is a __thread variable. On macOS dyld allocates a thread's TLV block lazily at its first access, which
+     * would be the opening thread's first sel_library_request, inside the SEL_ALLOC_FREEZE window after library start
+     * (the freeze contract: no allocation once the library runs). Touch it here, on the thread that opens the library, so
+     * the block is allocated at start. */
+    (void)*(volatile int*)&g_nowait;
     if (!sel_spsc_init(&lib->requests, lib->host, QUEUE_SLOTS) || !sel_spsc_init(&lib->results, lib->host, QUEUE_SLOTS)) {
         return 0;
     }
