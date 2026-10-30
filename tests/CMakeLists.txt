@@ -2081,6 +2081,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_scan_composers_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-scan-composers COMMAND library_scan_composers_test)
   set_tests_properties(library-scan-composers PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_scan_composers_ok")
+  # I787: every Your Library category read answers in under 200 ms warm on a 600 000-song library.
+  add_executable(library_items_budget_test library_items_budget_test.c)
+  target_include_directories(library_items_budget_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_items_budget_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-items-budget COMMAND library_items_budget_test)
+  set_tests_properties(library-items-budget PROPERTIES LABELS m3 TIMEOUT 300 PASS_REGULAR_EXPRESSION "library_items_budget_ok")
   # I687: an album without an embedded cover still gets its albums row (trigger + migration backfill) and reaches the Albums list.
   add_executable(library_album_rows_test library_album_rows_test.c)
   target_include_directories(library_album_rows_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)

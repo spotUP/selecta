@@ -133,7 +133,7 @@ int main(void) {
     check(scalar(db, "SELECT COUNT(*) FROM artwork w JOIN albums a ON a.id=w.album_id WHERE a.name='ANThology'") == 0, "artwork removed with the album");
 
     /* Migration: an old v9 database (no trigger, no history.format) with tagged songs gets its albums backfilled. */
-    sql(db, "DROP TRIGGER songs_album_ai;DROP TRIGGER songs_album_au;DROP TRIGGER songs_album_ad;DROP INDEX songs_album;"
+    sql(db, "DROP TRIGGER songs_album_ai;DROP TRIGGER songs_album_au;DROP TRIGGER songs_album_ad;DROP INDEX songs_album; DROP INDEX songs_artist_added;"
             "ALTER TABLE history DROP COLUMN format;PRAGMA user_version=9;"
             "DELETE FROM albums;"
             "INSERT INTO songs(key, source, path, name, artist, album) VALUES('local:m1','local','m1','m','Moe','Old'),"
