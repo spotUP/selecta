@@ -1851,10 +1851,8 @@ static void mui_control_fire(mui_state* s, LONG id) {
         }
     } else if (id >= CTL_DOOR_BASE && id < CTL_DOOR_BASE + (LONG)MUI_DOOR_MAX) {
         const char* dl = mui_door_line((uint32_t)(id - CTL_DOOR_BASE)); /* the page switch: the engine moves the main view's source */
-        if (dl != NULL) {
+        if (dl != NULL) { /* NULL: an in-window page (Now Playing, Song Information); mui-doors checks every main-view door has a line */
             mui_engine_line(s, dl);
-        } else {
-            fprintf(stderr, "selecta mui: door %s sends no engine line (in-window page)\n", sel_uim_door_at((uint32_t)(id - CTL_DOOR_BASE))->page); /* I791 */
         }
     } else if (id >= CTL_CRUMB_BASE && id < CTL_CRUMB_BASE + (LONG)MUI_CRUMB_MAX) {
         /* MUI-P4-2: a crumb opens the browse path up to and including that piece. */
