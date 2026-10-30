@@ -61,7 +61,7 @@ int sel_cli_fetch(int argc, char** argv) {
     memset(&req, 0, sizeof req);
     sink.out = NULL;
     if (argc < 1 || argv[0][0] == '-') {
-        fputs("usage: selecta-cli fetch <url> [--method M] [--range a-b] [--header 'N: v'] [--data file] [--out file]\n"
+        fputs("usage: selecta-cli fetch <url> [--method M] [--range a-b] [--header 'N: v'] [--user-agent s] [--data file] [--out file]\n"
               "                    [--connect-ms n] [--first-byte-ms n] [--total-ms n]\n",
               stderr);
         return 2;
@@ -83,6 +83,8 @@ int sel_cli_fetch(int argc, char** argv) {
             req.range_to = *dash == '-' && dash[1] != '\0' ? (long)strtoul(dash + 1, NULL, 10) : -1;
         } else if (strcmp(a, "--header") == 0 && nh < FETCH_MAX_HEADERS) {
             headers[nh++] = v;
+        } else if (strcmp(a, "--user-agent") == 0) {
+            req.user_agent = v;
         } else if (strcmp(a, "--data") == 0) {
             body = read_file(v, &req.body_len);
             if (body == NULL) {

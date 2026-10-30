@@ -33,6 +33,10 @@ typedef struct sel_net {
      * SEL_NET_CONTENT_REJECTED. Any other status is returned as get_file returns it. A NULL `check` is get_file. */
     int (*get_file_checked)(const sel_host* host, const char* url, const char* path, sel_net_check check,
                             uint32_t* requests, unsigned long* bytes);
+    /* Like `request`, with the caller's own User-Agent (NULL keeps the default "Selecta/<version> (+URL)") and
+     * extra "Name: value" request headers (NULL-terminated array, or NULL). Appended last (I725p). */
+    int (*request_ex)(const sel_host* host, const char* url, const char* user_agent, const char* const* headers,
+                      void* buf, uint32_t cap, uint32_t* got, uint32_t* requests);
 } sel_net;
 
 SEL_EXTERN_C_END

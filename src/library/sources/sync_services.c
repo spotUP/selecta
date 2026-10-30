@@ -70,8 +70,8 @@ static int mem_sink_write(void* ctx, const void* data, size_t len) {
     return 1;
 }
 
-static int net_request(const sel_host* host, const char* url, void* buf, uint32_t cap, uint32_t* got,
-                       uint32_t* requests) {
+static int net_request_ex(const sel_host* host, const char* url, const char* user_agent, const char* const* headers,
+                          void* buf, uint32_t cap, uint32_t* got, uint32_t* requests) {
     sel_http_req req;
     sel_http_res res;
     mem_sink m;
@@ -83,6 +83,8 @@ static int net_request(const sel_host* host, const char* url, void* buf, uint32_
     m.cap = cap;
     m.got = 0;
     req.url = url;
+    req.user_agent = user_agent;
+    req.headers = headers;
     (void)sel_http_request(&req, mem_sink_write, &m, &res);
     if (got != NULL) {
         *got = m.got;
@@ -93,8 +95,13 @@ static int net_request(const sel_host* host, const char* url, void* buf, uint32_
     return res.status;
 }
 
-static const sel_net g_net = {net_get_file, net_get_range, net_head_length, net_pause, net_request,
-                               net_get_file_checked};
+static int net_request(const sel_host* host, const char* url, void* buf, uint32_t cap, uint32_t* got,
+                       uint32_t* requests) {
+    return net_request_ex(host, url, NULL, NULL, buf, cap, got, requests);
+}
+
+static const sel_net g_net = {net_get_file,         net_get_range, net_head_length, net_pause, net_request,
+                              net_get_file_checked, net_request_ex};
 
 static const sel_net* host_net(const sel_host* host) {
     (void)host;
