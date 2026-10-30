@@ -116,8 +116,15 @@ static sel_sync_ctx* ctx_of(const sel_host* host) {
 
 static int cat_flush(sel_sync_ctx* c) {
     sel_cat_batch* b = c->batch;
+    int ok;
 
-    return sel_sync_flush_scan(&c->scfg, b->rows, &b->count, &b->batches, &b->failed) && (b->used = 0, 1);
+    if (sel_library_task_cancelled(c->scfg.lib)) { /* I782: Cancel in the UI ends the sync at its next batch */
+        b->failed = 1;
+        return 0;
+    }
+    ok = sel_sync_flush_scan(&c->scfg, b->rows, &b->count, &b->batches, &b->failed) && (b->used = 0, 1);
+    c->rows_done = b->count;
+    return ok;
 }
 
 static int cat_begin(const sel_host* host, const char* source_id) {

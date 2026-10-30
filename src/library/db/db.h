@@ -138,6 +138,7 @@ enum {
     SEL_USER_SONG_TITLE,        /* DUI-P4-18: value = song key or path; out = its catalogue title; reply [2] = 1 when it has one */
     SEL_USER_SONG_GROUP,        /* I258: value = song key or path; out = its album, else its source; reply [2] = 1 when the song is catalogued */
     SEL_USER_SONG_META,         /* I678h3: value = song key or path; out = "artist\0album\0album id\0composer canon\0" (empty strings when absent); reply [2] = 1 when the song is catalogued */
+    SEL_USER_SONG_BRIEFS,       /* I782: value = song keys, each NUL terminated, then "\0"; out = per key "title\0artist\0album\0album id\0"; reply [2] = songs written */
     SEL_USER_FOLDER_COUNTS,/* I178: reply [2..5] = folders, playlists in folders, playlists, playlist entries */
     SEL_USER_FOLDER_PLAYLISTS, /* I178: at = folder id (0 = all); out = "id\0name\0" pairs then "\0"; reply [2] = playlists */
     SEL_USER_PLAYLIST_KEYS,/* I178: at = playlist id; out = song keys, each NUL terminated, then "\0"; reply [2] = keys */
@@ -422,6 +423,12 @@ int sel_library_song_title(sel_library* lib, const char* ref, char* out, size_t 
 int sel_library_song_group(sel_library* lib, const char* ref, char* out, size_t cap);
 /* I678h3: the artist, album, album id (decimal, "" when the album is not in the albums table) and first composer canon of one song, each NUL terminated, so a track row links to the pages the db row names; 1 when catalogued. */
 int sel_library_song_meta(sel_library* lib, const char* ref, char* out, size_t cap);
+/* I782: title, artist, album and album id of many songs in one request (see SEL_USER_SONG_BRIEFS); *done = songs written. 1 on success. */
+int sel_library_song_briefs(sel_library* lib, const char* keys, char* out, size_t cap, uint32_t* done);
+/* I782: the calling thread's requests never wait. With `on`, sel_library_request takes the call lock only if it is free and otherwise fails
+ * at once (counted in sel_library_deferred), so a draw path never queues behind a sync. Returns the previous setting. */
+int sel_library_nowait(int on);
+uint32_t sel_library_deferred(void);
 int sel_library_playlist_add(sel_library* lib, const char* name, uint32_t folder, const char* keys_nl, uint32_t* out_id);
 int sel_library_folder_counts(sel_library* lib, uint32_t* folders, uint32_t* in_folders, uint32_t* playlists, uint32_t* entries);
 /* Fills `out` per the SEL_USER_FOLDER_PLAYLISTS / PLAYLIST_KEYS / FOLDER_TREE formats; *count = rows found. */
@@ -476,6 +483,8 @@ int sel_library_task_start(sel_library* lib, void (*fn)(void* ctx), void* ctx);
 int sel_library_task_take(sel_library* lib);
 int sel_library_task_cancelled(sel_library* lib);
 void sel_library_task_cancel(sel_library* lib);
+/* I782: asks a running task to stop and returns at once (the UI thread must not wait); no-op when none runs. */
+void sel_library_task_cancel_request(sel_library* lib);
 int sel_library_hash_poll(sel_library* lib);
 /* I184b: counters of the md5 pass. files = files hashed, chunks = file reads (builds without threads read one
  * chunk of at most SEL_HASH_CHUNK bytes per _poll; with threads one per file), tick_max = most bytes one _poll read. */

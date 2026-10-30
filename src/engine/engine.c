@@ -459,6 +459,7 @@ struct sel_engine {
     uint32_t collection_opens;                /* COLLECTION_OPEN commands applied (I678e) */
     uint32_t collection_kind;                 /* the collection page last opened: its kind (SEL_LIB_ITEM_*) */
     char collection_key[128];                 /* and its library key */
+    uint32_t rating_pending_cache;            /* I782: the last rating_pending count a stats read got from a free library */
     uint32_t library_items_calls;             /* sel_engine_library_items calls that reached the library (I678a) */
     uint32_t collection_queries;              /* collection page lists that reached the library (I678f) */
     sel_collection_page coll;                 /* the page COLLECTION_OPEN built (I678f), published as state.collection */
@@ -3579,6 +3580,22 @@ void sel_engine_scan_progress(const sel_engine* e, sel_scan_progress* out) {
     } while ((a & 1u) != 0u || a != e->scan_seq);
 }
 
+void sel_engine_sync_progress(const sel_engine* e, sel_sync_progress* out) {
+    memset(out, 0, sizeof *out);
+    out->active = (uint32_t)(e->sync_running != 0);
+    if (out->active) {
+        out->rows = e->sync_ctx.rows_done;
+        snprintf(out->source, sizeof out->source, "%s", e->sync_id);
+    }
+    out->queued = (uint32_t)e->sync_next_n;
+}
+
+void sel_engine_sync_cancel(sel_engine* e) {
+    if (e->sync_running) {
+        sel_library_task_cancel_request(e->lib);
+    }
+}
+
 int sel_engine_scan_busy(const sel_engine* e) {
     return e->scan_running || e->sync_running; /* the scan and the sync share the one library task slot (I527) */
 }
@@ -5826,6 +5843,19 @@ int sel_engine_song_meta(sel_engine* e, const char* ref, char* out, size_t cap) 
     return e->lib != NULL && sel_library_song_meta(e->lib, ref, out, cap);
 }
 
+int sel_engine_song_briefs(sel_engine* e, const char* keys, char* out, size_t cap, uint32_t* done) {
+    if (done != NULL) *done = 0;
+    return e->lib != NULL && sel_library_song_briefs(e->lib, keys, out, cap, done);
+}
+
+int sel_engine_lib_nowait(int on) {
+    return sel_library_nowait(on);
+}
+
+uint32_t sel_engine_lib_deferred(void) {
+    return sel_library_deferred();
+}
+
 int sel_engine_view_row_path(sel_engine* e, uint32_t row, char* out, size_t cap) {
     const sel_view_state* v = &e->view.pub;
     const sel_queue* q = v->source == SEL_VIEW_QUERY ? &e->qview : &e->queue;
@@ -7170,8 +7200,15 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
         char none[4];
         uint32_t rows = 0;
 
-        if (sel_library_rating_pending(e->lib, none, sizeof none, &rows)) out->rating_pending = rows;
+        /* I782: stats are read every frame; this never waits. A busy library keeps the last count (the pushes and sync that keep it busy
+         * are what changes it, and the next free frame reads it again). */
+        int was = sel_library_nowait(1);
+        sel_engine* w = (sel_engine*)e; /* the cache is not engine state a caller can see */
+        if (sel_library_rating_pending(e->lib, none, sizeof none, &rows)) w->rating_pending_cache = rows;
+        sel_library_nowait(was);
+        out->rating_pending = e->rating_pending_cache;
     }
+    out->lib_deferred = sel_library_deferred();
     out->radio_min_ahead = e->radio_min_ahead;
     out->home_rows = e->home_rows;
     out->home_item_shelves = e->home_item_shelves;

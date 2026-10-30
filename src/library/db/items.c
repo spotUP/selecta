@@ -162,6 +162,28 @@ void sel_db_majority_format(sqlite3* db, uint32_t kind, const char* key, char* o
     sel_platform_family_tally_format(&t, out, cap);
 }
 
+void sel_db_majority_format_cached(sel_library* lib, uint32_t kind, const char* key, char* out, size_t cap) {
+    const char* k = key != NULL ? key : "";
+    int64_t stamp = (int64_t)sqlite3_total_changes64(lib->db) + 1;
+    uint32_t h = kind * 2654435761u;
+    sel_fmt_cache* c;
+    size_t i;
+
+    if (strlen(k) >= SEL_FMT_CACHE_KEY || cap < sizeof c->fmt) {
+        sel_db_majority_format(lib->db, kind, key, out, cap);
+        return;
+    }
+    for (i = 0; k[i] != '\0'; i++) h = h * 31u + (unsigned char)k[i];
+    c = &lib->fmt_cache[h % SEL_FMT_CACHE_SLOTS];
+    if (c->stamp != stamp || c->kind != kind || strcmp(c->key, k) != 0) {
+        sel_db_majority_format(lib->db, kind, k, c->fmt, sizeof c->fmt);
+        c->stamp = stamp;
+        c->kind = kind;
+        strcpy(c->key, k);
+    }
+    strcpy(out, c->fmt);
+}
+
 int sel_library_items_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id) {
     char sql[4096];
     sqlite3_stmt* st = NULL;
@@ -197,7 +219,7 @@ int sel_library_items_op(sel_library* lib, const sel_genre_op* op, int* found, i
             f[7] = art;
             f[8] = pinned;
             f[9] = opened;
-            sel_db_majority_format(lib->db, (uint32_t)sqlite3_column_int(st, 0), text(st, 1), fmt, sizeof fmt);
+            sel_db_majority_format_cached(lib, (uint32_t)sqlite3_column_int(st, 0), text(st, 1), fmt, sizeof fmt);
             f[10] = fmt;
             emitted++;
             (void)op->row(op->row_ctx, f);
@@ -339,7 +361,7 @@ int sel_library_collection_op(sel_library* lib, const sel_genre_op* op, int* fou
         f[3] = op->mask == SEL_COLL_SONGS ? text(st, 3) : year;
         f[4] = number;
         if (op->mask == SEL_COLL_ALBUMS || op->mask == SEL_COLL_APPEARS || op->mask == SEL_COLL_MORE || op->mask == SEL_COLL_HEAD) {
-            sel_db_majority_format(lib->db, SEL_LIB_ITEM_ALBUM, f[0], fmt, sizeof fmt); /* I691c: f[0] is the album id */
+            sel_db_majority_format_cached(lib, SEL_LIB_ITEM_ALBUM, f[0], fmt, sizeof fmt); /* I691c: f[0] is the album id */
         }
         f[5] = fmt;
         total++;

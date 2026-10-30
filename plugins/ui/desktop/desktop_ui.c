@@ -514,6 +514,8 @@ typedef struct desk {
     uint32_t toasts;         /* toasts shown */
     uint32_t open_fail_toasts; /* I695b sentinel: failed opens (any play, not only a drop) that raised their toast */
     char open_fail_text[96]; /* I695b: the text of the last one */
+    sel_sync_progress sync_ui; /* I782: the running sync as the last frame drew it; the card shows while active */
+    uint32_t sync_ui_draws, sync_ui_shown, sync_ui_cancels; /* test sentinels: cards drawn, times it appeared, Cancel clicks */
     int toast_on;            /* 1 while a toast is on screen */
     int toast_out;           /* 1 while the toast fades out (toast_until is then the end of the fade) */
     uint32_t toast_until;    /* UI clock when the toast goes away */
@@ -4356,12 +4358,30 @@ static const char* pls_key(const desk* d, uint32_t i) {
     return d->pls_buf + d->pls_off[i];
 }
 
+static void pls_reload_run(desk* d);
+
+/* I782: the page model is read from the library off the draw's critical path: no request waits for the library (a sync or a job holds it
+ * for long), a busy library keeps the old model on screen and pls_stale asks again next frame. */
 static void pls_reload(desk* d) {
+    int was = sel_engine_lib_nowait(1);
+    pls_reload_run(d);
+    sel_engine_lib_nowait(was);
+}
+
+static void pls_reload_run(desk* d) {
     enum { CAP = 262144 };
     char* buf = (char*)malloc(CAP);
-    uint32_t n, i;
+    uint32_t n = 0, i, def0 = sel_engine_lib_deferred();
     const char* k;
     d->pls_stale = 0u;
+    if (buf != NULL && d->col_kind == 0u) { /* keys first: a busy library leaves the page as it is */
+        n = sel_engine_library_playlist_keys(d->engine, d->pls_id, buf, CAP);
+        if (sel_engine_lib_deferred() != def0) {
+            free(buf);
+            d->pls_stale = 1u;
+            return;
+        }
+    }
     d->pls_ver++;
     pls_free(d);
     if (buf == NULL) {
@@ -4410,8 +4430,6 @@ static void pls_reload(desk* d) {
                 memcpy(d->col_shelf[sh], pg->shelf[sh], sizeof d->col_shelf[sh]);
             }
         }
-    } else {
-        n = sel_engine_library_playlist_keys(d->engine, d->pls_id, buf, CAP);
     }
     d->pls_off = (uint32_t*)malloc((n + 1u) * sizeof *d->pls_off);
     d->pls_title = (char(*)[96])malloc((n + 1u) * sizeof *d->pls_title);
@@ -4427,21 +4445,34 @@ static void pls_reload(desk* d) {
         return;
     }
     d->pls_buf = buf;
-    for (i = 0, k = buf; i < n && *k != '\0'; i++, k += strlen(k) + 1u) {
-        d->pls_off[i] = (uint32_t)(k - buf);
-        if (!sel_engine_song_title(d->engine, k, d->pls_title[i], sizeof d->pls_title[i])) {
-            snprintf(d->pls_title[i], sizeof d->pls_title[i], "%s", path_base(k));
+    {   /* I782: titles, artists, albums and album ids of every song in ONE request (was two blocked round trips per song) */
+        uint32_t got = 0, j = 0;
+        size_t bcap = (size_t)n * 448u + 16u;
+        char* briefs = (char*)malloc(bcap);
+        const char* r = briefs;
+        int have = briefs != NULL && n > 0u && sel_engine_song_briefs(d->engine, buf, briefs, bcap, &got);
+        if (n > 0u && !have) {
+            d->pls_stale = 1u; /* busy library: the rows show file names now and fill in next frame */
         }
-        {   /* I678h3: artist, album, album id, composer canon of the db row; the links route on these, never on UI name matching */
-            char m[SEL_COMPOSER_MAX + 224];
-            if (sel_engine_song_meta(d->engine, k, m, sizeof m)) {
-                const char* alb = m + strlen(m) + 1u;
+        for (i = 0, k = buf; i < n && *k != '\0'; i++, k += strlen(k) + 1u) {
+            d->pls_off[i] = (uint32_t)(k - buf);
+            if (have && j < got && r[0] != '\0') {
+                snprintf(d->pls_title[i], sizeof d->pls_title[i], "%s", r);
+            } else {
+                snprintf(d->pls_title[i], sizeof d->pls_title[i], "%s", path_base(k));
+            }
+            if (have && j < got) { /* I678h3: artist, album, album id; the links route on these, never on UI name matching */
+                const char* art = r + strlen(r) + 1u;
+                const char* alb = art + strlen(art) + 1u;
                 const char* aid = alb + strlen(alb) + 1u;
-                snprintf(d->pls_meta[i].artist, sizeof d->pls_meta[i].artist, "%s", m);
+                snprintf(d->pls_meta[i].artist, sizeof d->pls_meta[i].artist, "%s", art);
                 snprintf(d->pls_meta[i].album, sizeof d->pls_meta[i].album, "%s", alb);
                 d->pls_meta[i].album_id = (uint32_t)strtoul(aid, NULL, 10);
+                r = aid + strlen(aid) + 1u;
+                j++;
             }
         }
+        free(briefs);
     }
     d->pls_n = i;
     {   /* I691d (Q3): the page's cover is the majority family of its songs, like an album's */
@@ -6391,6 +6422,8 @@ static size_t dump_put(desk* d, size_t o, const char* fmt, ...) {
 }
 
 /* Writes "composer I canon|display|songs", "row I x y w h" (the click rectangle), "drill display|songs" and "stat label|value" lines into library_dump. */
+static sel_gui_rect sync_cancel_rect(desk* d);
+
 static const char* library_dump_build(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     size_t o = 0;
@@ -6883,6 +6916,13 @@ static const char* library_dump_build(desk* d) {
         o = dump_put(d, o, "sidelib draws=%u rows=%u items=%u opens=%u y=%d max=%d item_calls=%u lib_touch_calls=%u\n", (unsigned)d->side_draws, (unsigned)d->side_rows,
                      (unsigned)d->side_n, (unsigned)d->side_opens, (int)d->side_y_q16, (int)side_lib_max_q16(d), (unsigned)d->side_item_calls,
                      (unsigned)lib_touch_calls(d));
+        o = dump_put(d, o, "sync_ui active=%u rows=%u queued=%u source=%s shown=%u draws=%u cancels=%u lib_deferred=%u\n", (unsigned)d->sync_ui.active,
+                     (unsigned)d->sync_ui.rows, (unsigned)d->sync_ui.queued, d->sync_ui.source, (unsigned)d->sync_ui_shown, (unsigned)d->sync_ui_draws,
+                     (unsigned)d->sync_ui_cancels, (unsigned)sel_engine_lib_deferred());
+        {
+            sel_gui_rect sc = sync_cancel_rect(d);
+            o = dump_put(d, o, "synccancel %d %d %d %d\n", (int)sc.x, (int)sc.y, (int)sc.w, (int)sc.h);
+        }
         {
             sel_gui_rect th = topbar_part(d, TOPBAR_HOME), tf = topbar_part(d, TOPBAR_FIELD), tb = topbar_part(d, TOPBAR_BROWSE);
             o = dump_put(d, o, "sidebar_doors drawn=%u\n", (unsigned)d->doors_drawn);
@@ -9392,11 +9432,22 @@ static uint32_t lib_touch_calls(desk* d) {
 }
 
 static void side_lib_reload(desk* d) {
-    lsort_prefs_load(d);
+    uint32_t def0 = sel_engine_lib_deferred(), got;
+    int was;
+    /* I782: the sidebar list is a cached model. The read never waits for the library (a sync keeps it busy): when it is refused the list on
+     * screen stays and side_stale asks again next frame. */
+    lsort_prefs_load(d); /* read once, at the first reload */
+    was = sel_engine_lib_nowait(1);
     /* I678b: the chip is a kind mask the library applies; a pending Create Playlist reads playlists only (it waits for the new one). */
-    d->side_n = sel_engine_library_items(d->engine, d->side_open_n != 0u ? SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST)
-                                                                         : d->side_chip != 0u ? side_chip_mask[d->side_chip - 1u] : SEL_LIB_ITEM_ALL,
-                                         0u, d->side_items, SIDE_LIB_MAX, NULL);
+    got = sel_engine_library_items(d->engine, d->side_open_n != 0u ? SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST)
+                                                                   : d->side_chip != 0u ? side_chip_mask[d->side_chip - 1u] : SEL_LIB_ITEM_ALL,
+                                   0u, d->side_items, SIDE_LIB_MAX, NULL);
+    sel_engine_lib_nowait(was);
+    if (sel_engine_lib_deferred() != def0) {
+        d->side_stale = 1u;
+        return;
+    }
+    d->side_n = got;
     if (d->side_sub == 1u && d->side_chip == 1u && d->side_open_n == 0u) { /* I678d: By You keeps the playlists you made */
         uint32_t a, b = 0u;
         for (a = 0u; a < d->side_n; a++) {
@@ -10756,6 +10807,59 @@ static sel_gui_rect toast_rect(desk* d) {
     return rect_of(d->canvas->w - lpx(d, 320 + 16), cvh(d) - lpx(d, 40 + 16), lpx(d, 320), lpx(d, 40));
 }
 
+/* I782: the sync card sits in the bottom right corner above the toast: phase, songs stored, queued syncs and Cancel. */
+static sel_gui_rect sync_card_rect(desk* d) {
+    return rect_of(d->canvas->w - lpx(d, 360 + 16), cvh(d) - lpx(d, 40 + 16 + 56 + 8), lpx(d, 360), lpx(d, 56));
+}
+
+static sel_gui_rect sync_cancel_rect(desk* d) {
+    sel_gui_rect c = sync_card_rect(d);
+    return rect_of(c.x + c.w - lpx(d, 88), c.y + lpx(d, 12), lpx(d, 76), c.h - lpx(d, 24));
+}
+
+static void sync_card_text(const sel_sync_progress* sp, char* out, size_t cap) {
+    if (sp->rows == 0u) {
+        snprintf(out, cap, "Fetching %s", sp->source);
+    } else if (sp->queued > 0u) {
+        snprintf(out, cap, "Importing %s: %u songs, %u more waiting", sp->source, (unsigned)sp->rows, (unsigned)sp->queued);
+    } else {
+        snprintf(out, cap, "Importing %s: %u songs", sp->source, (unsigned)sp->rows);
+    }
+}
+
+static void sync_card_draw(desk* d) {
+    sel_gui_rect b = sync_card_rect(d);
+    char line[128];
+    if (!d->sync_ui.active) {
+        return;
+    }
+    sync_card_text(&d->sync_ui, line, sizeof line);
+    sel_gui_round_rect(d->canvas, b, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+    draw_text(d, rect_of(b.x + lpx(d, 16), b.y, b.w - lpx(d, 112), b.h), line, 0, 13, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    draw_button(d, sync_cancel_rect(d), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Cancel", 13, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+    sel_gui_dirty_add(d->canvas, b);
+    d->sync_ui_draws++;
+}
+
+/* I782: follows the engine's sync: a change of the running sync (start, songs stored, end) repaints the card area. It reads two
+ * counters under no lock and never asks the library, so it cannot wait on the sync. Returns 1 when a repaint is due. */
+static int desk_sync_follow(desk* d) {
+    sel_sync_progress sp;
+    int changed;
+    sel_engine_sync_progress(d->engine, &sp);
+    changed = sp.active != d->sync_ui.active || sp.rows != d->sync_ui.rows || sp.queued != d->sync_ui.queued
+        || strcmp(sp.source, d->sync_ui.source) != 0;
+    if (!changed) {
+        return 0;
+    }
+    if (sp.active && !d->sync_ui.active) {
+        d->sync_ui_shown++;
+    }
+    d->sync_ui = sp;
+    overlay_refresh(d); /* a full frame, so a card that ends leaves no pixels behind */
+    return 1;
+}
+
 static void desk_draw_overlay(desk* d) {
     uint32_t tx = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), mu = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     int32_t rad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]);
@@ -10805,6 +10909,7 @@ static void desk_draw_overlay(desk* d) {
             sel_gui_dirty_add(d->canvas, s);
         }
     }
+    sync_card_draw(d);
     if (d->toast_on) {
         int32_t q = sel_gui_tween_value(&d->tl, ANIM_KEY_TOAST, 65536); /* 0 hidden .. 65536 shown */
         uint32_t fill, ink;
@@ -11656,6 +11761,11 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
     }
     if (d->overlay != OV_NONE) { /* a click with an overlay open picks a palette row or closes it */
         return ev->kind == SEL_GUI_IN_CLICK ? overlay_click(d, ev) : 0;
+    }
+    if (d->sync_ui.active && ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u && in_rect(sync_cancel_rect(d), ev->x, ev->y)) {
+        sel_engine_sync_cancel(d->engine); /* I782: the sync stops at its next batch; the card goes when the engine reports it ended */
+        d->sync_ui_cancels++;
+        return 1;
     }
     if (song_menu_pointer(d, ev)) {
         return 1;
@@ -13494,6 +13604,7 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
     }
     desk_library_follow(d);
     desk_playlist_job_follow(d);
+    desk_sync_follow(d);
     if (!d->nag_asked) { /* sync on launch (I527): the engine marks remote sources never synced or stale in its SOURCES rows; asked on the first turn, when the engine answers UI events */
         d->nag_asked = 1;
         d->src_wait = 1;
