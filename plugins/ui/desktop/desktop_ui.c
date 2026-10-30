@@ -10662,6 +10662,17 @@ static void desk_side_step(desk* d) {
     d->uim.dirty |= SEL_UIM_DIRTY_ALL;
 }
 
+/* A headless turn that waits for a worker thread (scan, I787 sidebar read) gives it the core for 1 ms instead of spinning. Amiga has
+ * no such thread (the work ran on the caller's task), so there is nothing to wait for. */
+static void desk_nap(void) {
+#if defined(__unix__) || defined(__APPLE__)
+    struct timespec ts;
+    ts.tv_sec = 0;
+    ts.tv_nsec = 1000000L;
+    nanosleep(&ts, NULL);
+#endif
+}
+
 /* Moves the UI clock ms forward the way the live loop would: 16 ms steps while a tween runs, otherwise one jump to the
  * next visible-clock second boundary (the idle block). Draws a frame per step that has a reason. */
 /* I787: a scripted run (virtual clock) has no wall time to wait for the library worker, so the end of a `wait` settles the sidebar
@@ -10676,13 +10687,11 @@ static void desk_side_settle(desk* d) {
             side_lib_reload(d);
         }
         while (d->side_inflight && spins++ < 60000u) { /* at most 60 s */
-            struct timespec ts = {0, 1000000L};
-
             (void)side_lib_take(d);
             if (!d->side_inflight) {
                 break;
             }
-            nanosleep(&ts, NULL);
+            desk_nap();
         }
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
         if (!desk_present(d)) {
@@ -12330,16 +12339,6 @@ static int desk_scan_sync(desk* d) {
     return shown;
 }
 
-/* A headless turn that waits for a running scan gives the scan thread the core for a moment instead of spinning. */
-static void desk_scan_nap(void) {
-#if defined(__unix__) || defined(__APPLE__)
-    struct timespec ts;
-    ts.tv_sec = 0;
-    ts.tv_nsec = 1000000L;
-    nanosleep(&ts, NULL);
-#endif
-}
-
 /* I652c: Import playlist file. The native file dialog (a test answers with --dialog-answer) hands back a path that arrives as a
  * drop; with imp_wait set that drop goes to PLAYLIST_IMPORT for the open playlist instead of playing. */
 static int desk_pls_import(desk* d, const char* path) {
@@ -13807,7 +13806,7 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
     }
     if (!d->live && (d->scan_pending || desk_scan_active(d))) { /* I336: the scan runs on a job thread; a scripted or headless run keeps turning (and drawing the
                                         * progress) until its LIBRARY_RESULT arrives, so the script's next line sees the finished scan */
-        desk_scan_nap();
+        desk_nap();
         d->turn_why[2]++;
         return 1;
     }
