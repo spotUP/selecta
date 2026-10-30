@@ -434,6 +434,13 @@ target_link_libraries(format_test PRIVATE selecta_registry)
 target_include_directories(format_test PRIVATE ${PROJECT_SOURCE_DIR}/src/engine)
 add_test(NAME title-format COMMAND format_test)
 
+# I786a: library.sync_snoozed with 11 sources (> 128 chars) survives set, save and load; SEL_PREF_VALUE_MAX is the exact limit.
+add_executable(prefs_value_max_test engine/prefs_value_max_test.c)
+target_link_libraries(prefs_value_max_test PRIVATE selecta_registry)
+target_include_directories(prefs_value_max_test PRIVATE ${PROJECT_SOURCE_DIR}/src/engine)
+add_test(NAME prefs-value-max COMMAND prefs_value_max_test)
+set_tests_properties(prefs-value-max PROPERTIES PASS_REGULAR_EXPRESSION "prefs_value_max_ok")
+
 # T25: text UI cell grid, key parser, theme tokens and POSIX terminal device
 # (plugins/ui/text). Desktop only: the Amiga text UI runs in UP-Term in M2.
 if(NOT SEL_AMIGA)
