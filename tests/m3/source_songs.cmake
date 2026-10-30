@@ -30,7 +30,7 @@ if(NOT rc EQUAL 0)
   message(FATAL_ERROR "analyse failed rc=${rc}\n${a}${ae}")
 endif()
 sql("${db}" "PRAGMA user_version;" ver)
-expect_eq("schema version" "${ver}" "13")
+expect_eq("schema version" "${ver}" "14")
 
 # Part 1.
 sql("${db}" "INSERT INTO songs(key, source, path) VALUES('modland:a', 'modland', 'a'), ('modland:b', 'modland', 'b'),
@@ -52,7 +52,7 @@ if(NOT rc EQUAL 0)
   message(FATAL_ERROR "userdata (migration open) failed rc=${rc}\n${o}${e}")
 endif()
 sql("${db}" "PRAGMA user_version;" ver)
-expect_eq("migrated schema version" "${ver}" "13")
+expect_eq("migrated schema version" "${ver}" "14")
 # I687c: the V11 migration of an older file creates the songs(album) index on the album column.
 sql("${db}" "SELECT group_concat(name || ':' || tbl_name, ' ') FROM sqlite_master WHERE type = 'index' AND name = 'songs_album';" idx)
 expect_eq("songs(album) index after migration" "${idx}" "songs_album:songs")
