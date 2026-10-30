@@ -435,6 +435,7 @@ typedef struct sel_engine_stats {
     uint32_t import_added;        /* songs the last PLAYLIST_IMPORT appended */
     uint32_t addf_runs;           /* PLAYLIST_ADD_FOLDER scans finished and appended (I652d sentinel) */
     uint32_t addf_added;          /* songs the last PLAYLIST_ADD_FOLDER appended */
+    uint32_t stream_adds;         /* STREAM_ADD URLs saved to the Streams playlist (I725a sentinel) */
     uint32_t pl_fail_runs;        /* PLAYLIST_IMPORT / PLAYLIST_ADD_FOLDER runs that failed (I652e) */
     uint32_t pl_fail_reason;      /* SEL_PLFAIL_* of the last failed run */
     uint32_t songs_runs;          /* SONGS_* bulk verbs that ran (I632b sentinel) */

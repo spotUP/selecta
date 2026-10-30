@@ -2291,6 +2291,14 @@ if(NOT SEL_AMIGA)
   set_tests_properties(stream-icy PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 90 PASS_REGULAR_EXPRESSION "stream_icy_ok")
 
+  # I725a: a saved stream list (STREAM_ADD) and a .pls / .m3u URL resolved to the stream, ICY title shown.
+  add_test(NAME stream-list
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
+            "-DMP3=${PROJECT_SOURCE_DIR}/tests/m3/stream/sine.mp3" "-DICY=${SEL_NET_DIR}/icy_server.py"
+            "-DSQLITE3=${SEL_SQLITE3}" -P "${SEL_NET_DIR}/stream_list.cmake")
+  set_tests_properties(stream-list PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 90 PASS_REGULAR_EXPRESSION "stream_list_ok")
+
   # T94 record part (I196, F36): `selecta-cli record` writes the served bytes to disk; STOP (SIGTERM) and the time
   # limit end a stalled stream with a valid file.
   add_test(NAME stream-record

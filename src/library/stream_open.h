@@ -21,6 +21,13 @@ int sel_stream_status(void); /* HTTP status of the last sel_stream_read, 0 when 
 uint32_t sel_stream_bytes(void);  /* bytes delivered by the last successful read */
 uint32_t sel_stream_reads(void);  /* successful reads */
 
+/* Playlist URLs (I725a): an http(s) URL whose path ends in .pls or .m3u names a list of stream URLs, not audio. It is
+ * fetched through the same client as every other URL, parsed by the playlist codecs (playlist/), and the first
+ * http(s) entry becomes `out`. Returns 1 resolved, 0 when `url` is no playlist URL (out untouched), -1 when the
+ * list could not be fetched or holds no http(s) entry. */
+int sel_stream_resolve(const sel_host* host, const char* url, char* out, size_t cap);
+uint32_t sel_stream_resolves(void); /* playlist URLs resolved (sentinel, I725a) */
+
 /* Live streams (I195b): an http(s) URL played while it downloads. A download thread feeds a bounded byte ring
  * (SEL_STREAM_RING bytes, so an endless radio stream holds no more than that); the reader never blocks except in
  * the pump-side waits below. The thread honours sel_net_set_cancel through its own stop flag, so sel_live_close

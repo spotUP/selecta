@@ -20,6 +20,7 @@
 
 /* transport */
 SEL_CMD(OPEN, "s", "transport", "path", "Open")
+SEL_CMD(STREAM_ADD, "s", "playlists", "url", "Save Stream URL")
 SEL_CMD(PLAY, "", "transport", "", "Play")
 SEL_CMD(PAUSE, "", "transport", "", "Pause")
 SEL_CMD(PAUSE_PLAYBACK, "s", "transport", "mode", "Pause Playback")
