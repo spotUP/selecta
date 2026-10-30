@@ -42,6 +42,8 @@ int sel_source_is_stream(const char* id);
  * sel_source_stream_resolves() (sentinel). */
 int sel_source_stream_url(const sel_host* host, const char* key, char* out, size_t n);
 uint32_t sel_source_stream_resolves(void);
+/* I725f: 1 when `key` is a song of a streams source flagged SEL_SOURCE_SEEKABLE (its URL answers Range requests). */
+int sel_source_key_seekable(const char* key);
 int sel_song_key_split(const char* key, char* source, size_t source_n, char* path, size_t path_n);
 
 /* Modland format table (design doc 9.1: one table maps a format name to a replayer across sources). */

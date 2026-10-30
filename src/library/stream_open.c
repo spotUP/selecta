@@ -238,6 +238,13 @@ void sel_live_note_audio(sel_live* s) {
 void sel_live_close(sel_live* s) {
     (void)s;
 }
+sel_live* sel_live_open_seekable(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start) {
+    (void)host;
+    (void)url;
+    (void)gen;
+    (void)start;
+    return NULL;
+}
 sel_live* sel_live_open_record(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start,
                                const char* path, unsigned long limit) {
     (void)host;
@@ -322,6 +329,8 @@ struct sel_live {
     unsigned gen_start;
     pthread_t thread;
     int started;
+    int seekable;                   /* I725f: the server answers Range; view.total is its Content-Length, view.seek works */
+    unsigned long from;             /* first byte this download asked for (0: from the start, no Range header) */
     sel_byte_stream view;
 };
 
@@ -505,6 +514,9 @@ static int ring_sink(void* ctx, const void* data, size_t len) {
     if (s->res != NULL && (s->res->status < 200 || s->res->status >= 300)) {
         return 0; /* I195e: an error page never reaches the ring or the record file; the request ends as sink_aborted */
     }
+    if (s->from > 0u && s->res != NULL && s->res->status != 206) {
+        return 0; /* I725f: a server that ignored the Range header would play the wrong bytes after a seek */
+    }
     if (!s->icy_started) {
         sink_start(s);
     }
@@ -565,7 +577,12 @@ static void* download(void* arg) {
     memset(&req, 0, sizeof req);
     memset(&res, 0, sizeof res);
     req.url = s->url;
-    req.headers = icy_headers;
+    req.headers = s->seekable ? NULL : icy_headers;
+    if (s->from > 0u) {
+        req.has_range = 1;
+        req.range_from = s->from;
+        req.range_to = -1;
+    }
     req.total_ms = SEL_STREAM_FOREVER;
     s->res = &res;
     ok = sel_http_request(&req, ring_sink, s, &res) == SEL_HTTP_OK && res.status >= 200 && res.status < 300;
@@ -616,8 +633,70 @@ static int view_ended(void* ctx) {
     return is_ended((sel_live*)ctx);
 }
 
+static int head_sink(void* ctx, const void* data, size_t len) {
+    (void)ctx;
+    (void)data;
+    (void)len;
+    return 1;
+}
+
+/* I725f: the byte length of `url` by a HEAD request (redirects followed); 0 when the server gives none. */
+static unsigned long head_length(const char* url) {
+    sel_http_req req;
+    sel_http_res res;
+    memset(&req, 0, sizeof req);
+    memset(&res, 0, sizeof res);
+    req.method = "HEAD";
+    req.url = url;
+    if (sel_http_request(&req, head_sink, NULL, &res) != SEL_HTTP_OK || res.status < 200 || res.status >= 300 ||
+        res.content_length <= 0) {
+        return 0;
+    }
+    return (unsigned long)res.content_length;
+}
+
+/* I725f: seek by a new Range request from `pos`. Command thread only (the replayer is not rendering yet): the running
+ * download is cancelled and joined, the ring starts empty, and the call returns once the new response delivered a first
+ * window or ended, so the replayer's next read_wait sees the bytes at `pos`. */
+static int view_seek(void* ctx, uint64_t pos) {
+    sel_live* s = (sel_live*)ctx;
+    size_t want;
+    if (pos > s->view.total) {
+        return 0;
+    }
+    st_store(&s->stop, 1u);
+    if (s->started) {
+        pthread_join(s->thread, NULL);
+        s->started = 0;
+    }
+    st_store(&s->rd, 0u);
+    st_store(&s->wr, 0u);
+    st_store(&s->eof, 0u);
+    st_store(&s->failed, 0u);
+    st_store(&s->status, 0u);
+    st_store(&s->stop, 0u);
+    s->from = (unsigned long)pos;
+    s->icy_started = 0;
+    if (pos >= s->view.total) {
+        st_store(&s->eof, 1u);
+        return 1;
+    }
+    if (pthread_create(&s->thread, NULL, download, s) != 0) {
+        return 0;
+    }
+    s->started = 1;
+    want = s->view.total - pos < SEL_STREAM_HEAD ? (size_t)(s->view.total - pos) : SEL_STREAM_HEAD;
+    while ((size_t)(ld(&s->wr) - ld(&s->rd)) < want && ld(&s->eof) == 0u) {
+        if (cancelled(s)) {
+            return 0;
+        }
+        usleep(1000);
+    }
+    return ld(&s->failed) == 0u;
+}
+
 static sel_live* live_open(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start,
-                           const char* rec_path, unsigned long rec_limit, const char* rec_dir) {
+                           const char* rec_path, unsigned long rec_limit, const char* rec_dir, int seekable) {
     sel_live* s = (sel_live*)host->mem_alloc(host, sizeof *s, SEL_MEM_FAST);
     size_t n = strlen(url) + 1u;
     if (s == NULL) {
@@ -634,6 +713,15 @@ static sel_live* live_open(const sel_host* host, const char* url, const volatile
         return NULL;
     }
     memcpy(s->url, url, n);
+    if (seekable) {
+        unsigned long len = head_length(url);
+        if (len == 0u) {
+            sel_live_close(s);
+            return NULL; /* no length: the caller falls back to the plain, unseekable stream */
+        }
+        s->seekable = 1;
+        s->view.total = len;
+    }
     if (rec_dir != NULL) {
         if (strlen(rec_dir) >= sizeof s->rec_dir) {
             sel_live_close(s);
@@ -653,8 +741,8 @@ static sel_live* live_open(const sel_host* host, const char* url, const volatile
     s->view.read = view_read;
     s->view.read_wait = view_read_wait;
     s->view.ended = view_ended;
-    s->view.total = 0;
-    s->view.seek = NULL;
+    s->view.seek = s->seekable ? view_seek : NULL;
+    s->view.network = s->seekable;
     if (pthread_create(&s->thread, NULL, download, s) != 0) {
         sel_live_close(s);
         return NULL;
@@ -665,17 +753,21 @@ static sel_live* live_open(const sel_host* host, const char* url, const volatile
 }
 
 sel_live* sel_live_open(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start) {
-    return live_open(host, url, gen, start, NULL, 0, NULL);
+    return live_open(host, url, gen, start, NULL, 0, NULL, 0);
+}
+
+sel_live* sel_live_open_seekable(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start) {
+    return live_open(host, url, gen, start, NULL, 0, NULL, 1);
 }
 
 sel_live* sel_live_open_record(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start,
                                const char* path, unsigned long limit) {
-    return live_open(host, url, gen, start, path, limit, NULL);
+    return live_open(host, url, gen, start, path, limit, NULL, 0);
 }
 
 sel_live* sel_live_open_record_dir(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start,
                                    const char* dir) {
-    return live_open(host, url, gen, start, NULL, 0, dir);
+    return live_open(host, url, gen, start, NULL, 0, dir, 0);
 }
 
 int sel_live_title(const sel_live* s, char* dst, size_t cap) {

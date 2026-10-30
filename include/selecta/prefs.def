@@ -73,6 +73,10 @@ SEL_PREF(LIBRARY_SMART_TOP,  "library.smart_top",  "3",                         
 /* I725e: client id of your own Jamendo app (https://devportal.jamendo.com/). Empty: the jamendo source falls back to
  * SELECTA_JAMENDO_CLIENT_ID in the environment, and without either it is disabled. */
 SEL_PREF(SOURCES_JAMENDO_CLIENT_ID, "sources.jamendo_client_id", "",                              SEL_PREF_PLAIN)
+/* I725f: Podcast Index search key and secret (free, https://api.podcastindex.org/). Empty: the podcast source falls back to
+ * SELECTA_PODCAST_INDEX_KEY / SELECTA_PODCAST_INDEX_SECRET; without them only subscribing by feed URL works. */
+SEL_PREF(SOURCES_PODCAST_INDEX_KEY,    "sources.podcast_index_key",    "",                          SEL_PREF_PLAIN)
+SEL_PREF(SOURCES_PODCAST_INDEX_SECRET, "sources.podcast_index_secret", "",                          SEL_PREF_PLAIN)
 #ifndef __amigaos__
 /* last.fm scrobbler (I177, I177b; plugins/integrations/lastfm): API key, shared secret and the session key that
  * `selecta-cli lastfm login` stores. Empty: the plugin falls back to SELECTA_LASTFM_* in the environment. */

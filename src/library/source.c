@@ -210,6 +210,19 @@ uint32_t sel_source_stream_resolves(void) {
     return g_stream_resolves;
 }
 
+int sel_source_key_seekable(const char* key) {
+    char id[SEL_SOURCE_ID_MAX];
+    const char* colon = key != NULL ? strchr(key, ':') : NULL;
+    size_t len = colon != NULL ? (size_t)(colon - key) : 0;
+
+    if (len == 0 || len >= sizeof id || colon[1] == '/' || colon[1] == '\0') {
+        return 0;
+    }
+    memcpy(id, key, len);
+    id[len] = '\0';
+    return sel_source_is_stream(id) && (sel_source_find(id)->flags & SEL_SOURCE_SEEKABLE) != 0;
+}
+
 int sel_source_stream_url(const sel_host* host, const char* key, char* out, size_t n) {
     char id[SEL_SOURCE_ID_MAX];
     const char* colon = key != NULL ? strchr(key, ':') : NULL;

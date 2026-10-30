@@ -134,6 +134,56 @@ def serve(c):
         time.sleep(0.2)
         c.close()
         return
+    if target.startswith(("/pod/", "/api/1.0/search/byterm")):  # I725f: podcast RSS feed, Podcast Index search, Range audio
+        ua = [l for l in req.split("\r\n") if l.startswith("user-agent:")]
+        uas = ua[0].split(":", 1)[1].strip() if ua else "none"
+        hdrs = {l.split(":", 1)[0]: l.split(":", 1)[1].strip() for l in req.split("\r\n")[1:] if ":" in l}
+        method = req.split(" ")[0]
+        ctype, status, extra = "application/json", "200 OK", ""
+        with open(port_file + ".requests", "a") as rq:
+            rq.write("pod_ua=%s\n" % uas)
+        if target.startswith("/api/1.0/search/byterm"):
+            with open(port_file + ".requests", "a") as rq:
+                rq.write("pod_search=%s key=%s date=%s auth=%d\n" % (target.split("q=")[1], hdrs.get("x-auth-key", ""),
+                                                                    hdrs.get("x-auth-date", ""), len(hdrs.get("authorization", ""))))
+                rq.write("pod_auth=%s\n" % hdrs.get("authorization", ""))
+            body = json.dumps({"status": "true", "feeds": [{"id": 1, "title": "Fixture Show", "url": "http://pod.test/pod/feed.xml"}],
+                               "count": 1}).encode()
+        elif target.startswith("/pod/feed.xml"):
+            with open(port_file + ".requests", "a") as rq:
+                rq.write("pod_feed=1\n")
+            ctype = "application/rss+xml"
+            items = [("Episode-One", "Mon, 01 Jan 2024 10:00:00 +0000", "00:00:03", "http://icy.test/pod/ep1.mp3"),
+                     ("Fish &amp; Chips", "Tue, 02 Jan 2024 10:00:00 +0000", "180", "http://icy.test/pod/ep2.mp3?x=1&amp;y=2"),
+                     ("<![CDATA[Cdata Three]]>", "Wed, 03 Jan 2024 10:00:00 +0000", "1:00", "http://icy.test/pod/ep3.mp3")]
+            xml = ('<?xml version="1.0"?><rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel>'
+                   '<title>Fixture-Show</title><itunes:image href="http://icy.test/pod/cover.jpg"/>')
+            for t, d, du, u in items:
+                xml += ("<item><title>%s</title><pubDate>%s</pubDate><itunes:duration>%s</itunes:duration>"
+                        '<enclosure url="%s" length="1" type="audio/mpeg"/></item>' % (t, d, du, u))
+            xml += "<item><title>No Enclosure</title></item></channel></rss>"
+            body = xml.encode()
+        else:
+            ctype = "audio/mpeg"
+            pod = one * 40
+            body = pod
+            rng = hdrs.get("range", "")
+            if rng.startswith("bytes="):
+                frm = int(rng[6:].split("-")[0])
+                with open(port_file + ".requests", "a") as rq:
+                    rq.write("pod_range=%d\n" % frm)
+                status = "206 Partial Content"
+                extra = "Content-Range: bytes %d-%d/%d\r\n" % (frm, len(pod) - 1, len(pod))
+                body = pod[frm:]
+            else:
+                with open(port_file + ".requests", "a") as rq:
+                    rq.write("pod_full=%s\n" % method)
+            extra += "Accept-Ranges: bytes\r\n"
+        c.sendall(("HTTP/1.1 %s\r\nContent-Type: %s\r\n%sContent-Length: %d\r\nConnection: close\r\n\r\n"
+                   % (status, ctype, extra, len(body))).encode() + (b"" if method == "head" else body))
+        time.sleep(0.2)
+        c.close()
+        return
     if target.startswith("/v3.0/tracks/"):  # I725e: the Jamendo API (recorded-style answer, 3 tracks, one without audio)
         live = "http://icy.test/live"
         want = target.split("&id=")[1].split("&")[0] if "&id=" in target else ""

@@ -2326,6 +2326,14 @@ if(NOT SEL_AMIGA)
   set_tests_properties(archiveorg PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 90 PASS_REGULAR_EXPRESSION "archiveorg_ok")
 
+  # I725f: the podcast source: RSS parse, Podcast Index search auth, Range playback and seek, User-Agent.
+  add_test(NAME podcast
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
+            "-DMP3=${PROJECT_SOURCE_DIR}/tests/m3/stream/sine.mp3" "-DICY=${SEL_NET_DIR}/icy_server.py"
+            -P "${SEL_NET_DIR}/podcast.cmake")
+  set_tests_properties(podcast PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 90 PASS_REGULAR_EXPRESSION "podcast_ok")
+
   # T94 record part (I196, F36): `selecta-cli record` writes the served bytes to disk; STOP (SIGTERM) and the time
   # limit end a stalled stream with a valid file.
   add_test(NAME stream-record
