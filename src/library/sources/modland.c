@@ -86,7 +86,24 @@ static int path_in(const char* url, char* path, size_t n) {
     return strncmp(path, MODULES, sizeof MODULES - 1u) == 0;
 }
 
-/* pub/modules/<format>/<artist>/<file>: copies format, artist and the file name (without extension)
+/* Top-level formats whose first folder is a tool or subformat, not an artist (I809). Measured on the full Modland
+ * listing (516226 rows): exactly "Ad Lib" (Creative Music File, AdLib Tracker 2, Apogee...), "Spectrum" (Pro Tracker 3,
+ * ST Song Compiler...) and "Video Game Music" (Sega Megadrive, BBC Micro...) put a tool folder before the artist; every
+ * other deep format (Nintendo SPC, MoonBlaster...) is <format>/<artist>/<game>/<file>. */
+static const char* const TOOL_FORMATS[] = {"Ad Lib", "Spectrum", "Video Game Music"};
+
+static int has_tool_folder(const char* fmt, size_t len) {
+    unsigned i;
+
+    for (i = 0; i < sizeof TOOL_FORMATS / sizeof TOOL_FORMATS[0]; i++) {
+        if (strlen(TOOL_FORMATS[i]) == len && memcmp(TOOL_FORMATS[i], fmt, len) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* pub/modules/<format>/<artist>/<file> (or <format>/<tool>/<artist>/<file> for TOOL_FORMATS): copies format, artist and the file name (without extension)
  * into scratch. */
 static int parse(const char* path, char* scratch, size_t n, sel_tag* out) {
     const char* fmt;
@@ -111,6 +128,14 @@ static int parse(const char* path, char* scratch, size_t n, sel_tag* out) {
     slash = strchr(artist, '/');
     if (slash == NULL) {
         return 0;
+    }
+    if (has_tool_folder(fmt, (size_t)(artist - 1 - fmt))) {
+        const char* deeper = strchr(slash + 1, '/');
+
+        if (deeper != NULL) {
+            artist = slash + 1;
+            slash = deeper;
+        }
     }
     file = strrchr(path, '/') + 1;
     if (file[0] == '\0') {

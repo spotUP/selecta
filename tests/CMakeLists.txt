@@ -1673,6 +1673,11 @@ if(NOT SEL_AMIGA)
   add_test(NAME key-remote COMMAND key_remote_test)
   set_tests_properties(key-remote PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "key_remote_ok")
 
+  add_executable(modland_parse_test m3/modland_parse_test.c)
+  target_link_libraries(modland_parse_test PRIVATE selecta_core)
+  add_test(NAME modland-parse COMMAND modland_parse_test)
+  set_tests_properties(modland-parse PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "modland_parse_ok")
+
   add_test(NAME home-view
     COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>" "-DSELECTA=$<TARGET_FILE:selecta>"
       "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue_keys.tsv"
