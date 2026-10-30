@@ -1048,6 +1048,17 @@ static void test_list_dbl_row(void) {
     CHECK(mui_list_dbl_row(-1, 3) == 3, "nothing picked: the cursor row");
     CHECK(mui_list_dbl_row(0, 0) == 0, "row 0 picked stays row 0");
     CHECK(mui_list_dbl_row_calls == c0 + 4, "the decision ran %u times, expected 4", (unsigned)(mui_list_dbl_row_calls - c0));
+    /* I724: the knob. Off by default; on, the race (cursor reset to row 0 by a refresh) is injected and the clicked row still wins. */
+    CHECK(!mui_list_dbl_race_on(NULL) && !mui_list_dbl_race_on("") && !mui_list_dbl_race_on("0") && mui_list_dbl_race_on("1") &&
+              mui_list_dbl_race_on("on"),
+          "MUIDblRace knob: unset, empty and 0 are off, anything else is on");
+    CHECK(mui_list_dbl_row(4, 0) == 4, "knob path: the refresh reset the List cursor to row 0 (..), the picked row 4 is still the one that plays");
+    dbl = strstr(src, "mui_dbl_race_inject((mui_state*)ctx);");
+    CHECK(dbl != NULL && strstr(dbl, "mui_control_fire((mui_state*)ctx, id);") == dbl + strlen("mui_dbl_race_inject((mui_state*)ctx);\n        }\n        "),
+          "the injection sits directly before mui_control_fire for CTL_LIST_DBL");
+    CHECK(strstr(src, "GetVar((CONST_STRPTR)\"Selecta/MUIDblRace\"") != NULL && strstr(src, "\"dbl_race_injected\"") != NULL &&
+              strstr(src, "s->p4[P4_DBLRACE]++") != NULL,
+          "the knob is read once at open and the sentinel dbl_race_injected is counted");
     dbl = strstr(src, "if (id == CTL_LIST_DBL) {");
     CHECK(dbl != NULL && strstr(dbl, "GetAttr(AAL_Picked, s->list") != NULL && strstr(dbl, "mui_list_dbl_row(") != NULL &&
               strstr(dbl, "mui_list_dbl_row(") < strstr(dbl, "VIEW_ACTIVATE"),

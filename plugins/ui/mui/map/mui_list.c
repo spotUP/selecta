@@ -39,6 +39,10 @@ int32_t mui_list_pending_resolve(mui_list_pending* p, int32_t snapshot_active) {
     return snapshot_active;
 }
 
+int mui_list_dbl_race_on(const char* value) {
+    return value != NULL && value[0] != '\0' && !(value[0] == '0' && value[1] == '\0');
+}
+
 uint32_t mui_list_dbl_row_calls;
 
 int32_t mui_list_dbl_row(int32_t picked, int32_t active) {
