@@ -18,8 +18,8 @@ static inline int sel_sync_request(const sel_local_scan_config* cfg, uint32_t re
 
 /* Writes the `*n` queued rows as one SEL_LIB_REQ_SCAN_BATCH and resets `*n`. Counts the batch in `*batches`;
  * a rejected batch sets `*failed` and returns 0. Nothing queued is a success. */
-static inline int sel_sync_flush_scan(const sel_local_scan_config* cfg, sel_scan_row* rows, uint32_t* n,
-                                      uint32_t* batches, int* failed) {
+static inline int sel_sync_flush_scan_new(const sel_local_scan_config* cfg, sel_scan_row* rows, uint32_t* n,
+                                          uint32_t* batches, int* failed, int64_t new_day) {
     sel_scan_batch b;
 
     if (*n == 0) {
@@ -28,6 +28,7 @@ static inline int sel_sync_flush_scan(const sel_local_scan_config* cfg, sel_scan
     b.rows = rows;
     b.count = *n;
     b.now = cfg->now;
+    b.new_day = new_day;
     *n = 0;
     if (!sel_sync_request(cfg, SEL_LIB_REQ_SCAN_BATCH, &b)) {
         *failed = 1;
@@ -35,6 +36,12 @@ static inline int sel_sync_flush_scan(const sel_local_scan_config* cfg, sel_scan
     }
     (*batches)++;
     return 1;
+}
+
+/* The same, recording no New rows (I790: a first import and every source but a later modland sync). */
+static inline int sel_sync_flush_scan(const sel_local_scan_config* cfg, sel_scan_row* rows, uint32_t* n,
+                                      uint32_t* batches, int* failed) {
+    return sel_sync_flush_scan_new(cfg, rows, n, batches, failed, 0);
 }
 
 #endif

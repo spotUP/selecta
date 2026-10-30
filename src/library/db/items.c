@@ -369,7 +369,80 @@ static const char* collection_sql(uint32_t kind, uint32_t shelf) {
     }
 }
 
+/* I790: one level of a source page. Every statement filters on `source` and an index of schema v14 (songs_source_format,
+ * songs_source_artist) and ends in LIMIT/OFFSET, so no query loads a whole source. SUM(size) is NULL until I801 fills sizes. */
+#define DRILL_SONG "SELECT s.key,IFNULL(s.name,''),IFNULL(s.artist,''),IFNULL(s.album,''),0 FROM songs s"
+static const char* drill_sql(uint32_t level) {
+    switch (level) {
+    case SEL_DRILL_FORMATS: return "SELECT IFNULL(format,''),COUNT(*),SUM(size),'','' FROM songs WHERE source=?1 GROUP BY format ORDER BY 2 DESC LIMIT ?5 OFFSET ?4";
+    case SEL_DRILL_FORMAT_ARTISTS:
+        return "SELECT IFNULL(artist,''),COUNT(*),SUM(size),'','' FROM songs WHERE source=?1 AND format IS NULLIF(?2,'') GROUP BY artist"
+               " ORDER BY artist COLLATE NOCASE LIMIT ?5 OFFSET ?4";
+    case SEL_DRILL_FORMAT_SONGS:
+        return DRILL_SONG " WHERE s.source=?1 AND s.format IS NULLIF(?2,'') AND s.artist IS NULLIF(?3,'') ORDER BY s.name COLLATE NOCASE, s.id LIMIT ?5 OFFSET ?4";
+    case SEL_DRILL_ARTISTS:
+        return "SELECT IFNULL(artist,''),COUNT(*),SUM(size),'','' FROM songs WHERE source=?1 GROUP BY artist ORDER BY artist LIMIT ?5 OFFSET ?4"; /* index order: a NOCASE sort needs a temp B-tree of every artist (435 ms on 30k artists) */
+    case SEL_DRILL_ARTIST_SONGS:
+        return DRILL_SONG " WHERE s.source=?1 AND s.artist IS NULLIF(?2,'') ORDER BY s.name COLLATE NOCASE, s.id LIMIT ?5 OFFSET ?4";
+    case SEL_DRILL_FORMAT_SAMPLE: /* one path of the format, for the family fold: a single index seek */
+        return "SELECT IFNULL(path,''),1,NULL,'','' FROM songs WHERE source=?1 AND format IS NULLIF(?2,'') LIMIT 1";
+    case SEL_DRILL_NEW:
+        return "SELECT day,n,NULL,'','' FROM source_new WHERE source=?1 ORDER BY day DESC LIMIT ?5 OFFSET ?4";
+    default: return NULL;
+    }
+}
+
+/* key = source US level US a US b (US = 0x1f). Streams the window rows; *id = rows emitted (the sentinel the tests assert). */
+static int drill_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id) {
+    char buf[1200];
+    char* part[4] = {NULL, NULL, NULL, NULL};
+    char* c;
+    sqlite3_stmt* st = NULL;
+    uint32_t level;
+    const char* sql;
+    int i, rc;
+    int64_t total = 0;
+
+    snprintf(buf, sizeof buf, "%s", op->key);
+    part[0] = buf;
+    for (i = 1, c = buf; i < 4 && (c = strchr(c, 0x1f)) != NULL; i++) {
+        *c++ = '\0';
+        part[i] = c;
+    }
+    level = part[1] != NULL ? (uint32_t)strtoul(part[1], NULL, 10) : 99u;
+    sql = drill_sql(level);
+    *found = 1;
+    if (sql == NULL) return SQLITE_OK;
+    rc = sqlite3_prepare_v2(lib->db, sql, -1, &st, NULL);
+    if (rc != SQLITE_OK) return rc;
+    sqlite3_bind_text(st, 1, part[0], -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 2, part[2] != NULL ? part[2] : "", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 3, part[3] != NULL ? part[3] : "", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(st, 4, (sqlite3_int64)op->at);
+    sqlite3_bind_int64(st, 5, op->after > 0 ? (sqlite3_int64)op->after : 1000);
+    while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
+        char count[24], size[24];
+        const char* f[6];
+
+        num(count, sizeof count, st, 1);
+        if (level == SEL_DRILL_FORMAT_SONGS || level == SEL_DRILL_ARTIST_SONGS) {
+            f[0] = text(st, 0); f[1] = text(st, 1); f[2] = text(st, 2); f[3] = text(st, 3); f[4] = count; /* count column is 0 here */
+        } else {
+            if (sqlite3_column_type(st, 2) == SQLITE_NULL) size[0] = '\0'; else num(size, sizeof size, st, 2);
+            f[0] = text(st, 0); f[1] = count; f[2] = size; f[3] = ""; f[4] = "";
+        }
+        f[5] = "";
+        total++;
+        (void)op->row(op->row_ctx, f);
+    }
+    sqlite3_finalize(st);
+    if (rc != SQLITE_DONE) return rc;
+    *id = total;
+    return SQLITE_OK;
+}
+
 int sel_library_collection_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id) {
+    if (op->mask == SEL_COLL_DRILL && op->row != NULL && op->key != NULL) return drill_op(lib, op, found, id);
     const char* sql = collection_sql(op->offset, op->mask);
     sqlite3_stmt* st = NULL;
     int64_t total = 0;
@@ -421,6 +494,30 @@ static int collection_row(void* ctx, const char* const* f) {
 
     k->fn(k->ctx, f);
     return 0;
+}
+
+int sel_library_source_drill(sel_library* lib, const char* source, uint32_t level, const char* a, const char* b, uint32_t skip,
+                             uint32_t limit, sel_collection_row_fn fn, void* ctx) {
+    collection_sink k;
+    sel_genre_op op;
+    char key[1200];
+    int64_t rows = 0;
+
+    if (lib == NULL || source == NULL || fn == NULL) return -1;
+    snprintf(key, sizeof key, "%s\x1f%u\x1f%s\x1f%s", source, (unsigned)level, a != NULL ? a : "", b != NULL ? b : "");
+    k.fn = fn;
+    k.ctx = ctx;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_COLLECTION;
+    op.key = key;
+    op.offset = SEL_LIB_ITEM_SOURCE;
+    op.mask = SEL_COLL_DRILL;
+    op.at = skip;
+    op.after = limit;
+    op.row = collection_row;
+    op.row_ctx = &k;
+    if (sel_genre_call(lib, &op, &rows) < 0) return -1;
+    return (int)rows;
 }
 
 int sel_library_collection(sel_library* lib, uint32_t kind, const char* key, uint32_t shelf, sel_collection_row_fn fn, void* ctx) {

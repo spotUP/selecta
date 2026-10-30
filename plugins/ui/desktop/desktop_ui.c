@@ -5,6 +5,7 @@
 #include <selecta/plugin.h>
 #include <selecta/engine.h>
 #include <selecta/library_item.h>
+#include <selecta/platform.h>
 #include <selecta/ui.h>
 #include <selecta/uimodel.h>
 
@@ -336,6 +337,14 @@ typedef struct desk {
     int songs;               /* --view songs: the queue as a sortable list with a header row (DUI-P3-2) */
     uint16_t order[512];     /* display order of the list: queue indices */
     uint32_t order_n;
+    uint32_t drl_page;       /* I790: SEL_DRILL_PAGE_* of the open source page, 0 when it is not a drill */
+    uint32_t drl_n;          /* I790: rows of the open drill group level (never above SEL_DRILL_WINDOW) */
+    uint32_t drl_skip;       /* I790: rows skipped before this window (Previous / Next step it by SEL_DRILL_WINDOW) */
+    char (*drl_name)[96];    /* I790: group row names, drl_n of them */
+    char (*drl_count)[16];   /* I790: group row counts as text ('' unknown) */
+    char drl_path[160];      /* I790: the page's drill path, kind US a US b, '' at the first level */
+    sel_gui_rect drl_crumb[4]; /* I790: click rectangles of the breadcrumb segments */
+    uint32_t drl_crumb_n;
     int32_t col_focus;       /* I678f2: keyboard focus slot (index into pls_ord) of a collection page's song rows, -1 until a list key is pressed */
     int32_t row_focus;       /* keyboard focus row of the songs list (display index), -1 until a list key is pressed (DUI-P3-3, I423) */
     int kb_list;             /* 1 once a list key moved the Library view cursor: its row then draws as the focus row */
@@ -4324,6 +4333,12 @@ static int col_wordmark(const desk* d) {
 enum { COL_MAX_SONGS = 8192, COL_SHELF_MAX = 24 };
 
 static void pls_free(desk* d) {
+    free(d->drl_name);
+    free(d->drl_count);
+    d->drl_name = NULL;
+    d->drl_count = NULL;
+    d->drl_n = 0u;
+    d->drl_page = 0u;
     free(d->col_av);
     d->col_av = NULL;
     d->col_av_w = 0;
@@ -4386,21 +4401,39 @@ static void pls_reload_run(desk* d) {
         } else {
             const char* r;
             size_t len = 0;
-            for (r = pg->rows, i = 0; i < pg->songs && *r != '\0'; i++) {
+            uint32_t ns = pg->songs;
+            d->drl_page = pg->drill;
+            snprintf(d->drl_path, sizeof d->drl_path, "%s", pg->drill_path);
+            if (pg->drill == (uint32_t)SEL_DRILL_PAGE_ROOT || pg->drill == (uint32_t)SEL_DRILL_PAGE_GROUPS) { /* I790: rows of name, count, size; no songs yet */
+                d->drl_name = (char(*)[96])calloc(pg->songs + 1u, sizeof *d->drl_name);
+                d->drl_count = (char(*)[16])calloc(pg->songs + 1u, sizeof *d->drl_count);
+                if (d->drl_name != NULL && d->drl_count != NULL) {
+                    for (r = pg->rows, i = 0; i < pg->songs && *r != '\0'; i++) {
+                        snprintf(d->drl_name[i], sizeof d->drl_name[i], "%s", r);
+                        r += strlen(r) + 1u;
+                        snprintf(d->drl_count[i], sizeof d->drl_count[i], "%s", r);
+                        r += strlen(r) + 1u;
+                        r += strlen(r) + 1u;
+                        d->drl_n = i + 1u;
+                    }
+                }
+                ns = 0u;
+            }
+            for (r = pg->rows, i = 0; i < ns && *r != '\0'; i++) {
                 len += strlen(r) + 1u;
                 r += strlen(r) + 1u;
                 r += strlen(r) + 1u;
             }
             free(buf);
             buf = (char*)malloc(len + 2u);
-            d->col_plays = (uint32_t*)calloc(pg->songs + 1u, sizeof *d->col_plays);
+            d->col_plays = (uint32_t*)calloc(ns + 1u, sizeof *d->col_plays);
             if (buf == NULL || d->col_plays == NULL) {
                 free(buf);
                 free(d->col_plays);
                 d->col_plays = NULL;
                 return;
             }
-            for (r = pg->rows, k = buf, len = 0, i = 0; i < pg->songs && *r != '\0'; i++) {
+            for (r = pg->rows, k = buf, len = 0, i = 0; i < ns && *r != '\0'; i++) {
                 size_t kl = strlen(r) + 1u;
                 memcpy(buf + len, r, kl);
                 len += kl;
@@ -4697,12 +4730,18 @@ static int32_t col_shelf_slot(const desk* d, uint32_t sh) {
     return -1;
 }
 
+/* I790: the drill rows of the open source page: the group rows plus a Previous row after a skip and a Next row when the window is full. */
+static uint32_t drl_rows(const desk* d) {
+    return d->drl_n == 0u ? 0u : d->drl_n + (d->drl_skip > 0u ? 1u : 0u) + (d->drl_n >= (uint32_t)SEL_DRILL_WINDOW ? 1u : 0u);
+}
+
 static uint32_t col_rows(const desk* d) {
     int32_t end = (int32_t)col_song_rows(d) + (col_show_more(d) ? 1 : 0);
     uint32_t i;
     if (d->col_kind == 0u) {
         return d->pls_vn;
     }
+    end += (int32_t)drl_rows(d);
     for (i = 0; i < 4u; i++) {
         end += d->col_shelf_n[i] == 0u ? 0 : (i == 3u ? 2 : COL_SHELF_SLOTS);
     }
@@ -4771,6 +4810,119 @@ static void col_kind_open(desk* d, uint32_t kind, const char* key, const char* n
     pls_reload(d);
     d->pl_sel_kind = 0u;
     d->pl_sel_id = 0u;
+}
+
+/* I790: split the drill path at the unit separators; returns the part count. */
+static uint32_t drl_split(const char* path, char (*part)[96]) {
+    uint32_t n = 0u;
+    const char* p = path;
+    while (*p != '\0' && n < 3u) {
+        size_t len = strcspn(p, "\x1f");
+        snprintf(part[n], 96, "%.*s", (int)(len < 95u ? len : 95u), p);
+        n++;
+        p += len;
+        if (*p == '\x1f') {
+            p++;
+        }
+    }
+    return n;
+}
+
+/* The readable label of one drill row: root names capitalised, platform ids as their family label. */
+static void drl_label(const desk* d, const char* name, char* out, size_t cap) {
+    uint32_t f;
+    char part[3][96];
+    uint32_t np = drl_split(d->drl_path, part);
+    snprintf(out, cap, "%s", name);
+    if (d->drl_page == (uint32_t)SEL_DRILL_PAGE_ROOT) {
+        out[0] = (char)(out[0] >= 'a' && out[0] <= 'z' ? out[0] - 32 : out[0]);
+        return;
+    }
+    if (np > 0u && strcmp(part[0], "platforms") == 0) {
+        for (f = 0u; f < (uint32_t)SEL_PLATFORM_FAMILY_COUNT; f++) {
+            if (strcmp(sel_platform_id(f), name) == 0) {
+                snprintf(out, cap, "%s", sel_platform_label(f));
+                return;
+            }
+        }
+    }
+}
+
+/* Open one drill level of the open source: the same page, a deeper key; Recents stays untouched. */
+static void drl_open(desk* d, const char* path, uint32_t skip) {
+    const sel_collection_page* pg = sel_engine_state(d->engine)->collection;
+    char key[320], open[420];
+    size_t n;
+    snprintf(key, sizeof key, "%s%s%s", d->col_key, path[0] != '\0' ? "\x1f" : "", path);
+    if (skip > 0u) {
+        n = strlen(key);
+        snprintf(key + n, sizeof key - n, "\x1e%u", (unsigned)skip);
+    }
+    d->col_open_serial = pg != NULL ? pg->serial : 0u;
+    d->pls_scroll = 0u;
+    d->drl_skip = skip;
+    desk_quoted_request(open, sizeof open, "COLLECTION_OPEN 7", key);
+    n = strlen(open);
+    snprintf(open + n, sizeof open - n, " 1");
+    desk_send(d, open);
+    pls_reload(d);
+    d->repaint = 1;
+}
+
+/* The path one click on drill row `name` opens, or "" when the row is a leaf for now. */
+static int drl_child(const desk* d, const char* name, char* out, size_t cap) {
+    char part[3][96];
+    uint32_t np = drl_split(d->drl_path, part);
+    out[0] = '\0';
+    if (d->drl_page == (uint32_t)SEL_DRILL_PAGE_ROOT) {
+        snprintf(out, cap, "%s", name);
+    } else if (np == 1u && strcmp(part[0], "formats") == 0) {
+        snprintf(out, cap, "format\x1f%s", name);
+    } else if (np == 1u && strcmp(part[0], "artists") == 0) {
+        snprintf(out, cap, "artist\x1f%s", name);
+    } else if (np == 1u && strcmp(part[0], "platforms") == 0) {
+        snprintf(out, cap, "platform\x1f%s", name);
+    } else if (np == 2u && strcmp(part[0], "platform") == 0) {
+        snprintf(out, cap, "format\x1f%s", name);
+    } else if (np == 2u && strcmp(part[0], "format") == 0) {
+        snprintf(out, cap, "format\x1f%s\x1f%s", part[1], name);
+    }
+    return out[0] != '\0';
+}
+
+/* The crumbs of the drill path: label and the path a click reopens. Source, kind, then up to two more levels. */
+static uint32_t drl_crumbs(const desk* d, char (*label)[96], char (*path)[160]) {
+    char part[3][96];
+    uint32_t np = drl_split(d->drl_path, part), n = 0u, k;
+    snprintf(label[0], 96, "%s", d->pls_name);
+    path[0][0] = '\0';
+    n = 1u;
+    if (np == 0u) {
+        return n;
+    }
+    snprintf(label[1], 96, "%s", strcmp(part[0], "format") == 0 || strcmp(part[0], "formats") == 0 ? "Formats"
+                                 : strcmp(part[0], "artist") == 0 || strcmp(part[0], "artists") == 0 ? "Artists"
+                                 : strcmp(part[0], "platform") == 0 || strcmp(part[0], "platforms") == 0 ? "Platforms" : "New");
+    snprintf(path[1], 160, "%s", strcmp(part[0], "format") == 0 ? "formats" : strcmp(part[0], "artist") == 0 ? "artists" : strcmp(part[0], "platform") == 0 ? "platforms" : part[0]);
+    n = 2u;
+    for (k = 1u; k < np; k++) {
+        char tmp[96];
+        uint32_t f;
+        snprintf(tmp, sizeof tmp, "%s", part[k]);
+        for (f = 0u; strcmp(part[0], "platform") == 0 && k == 1u && f < (uint32_t)SEL_PLATFORM_FAMILY_COUNT; f++) {
+            if (strcmp(sel_platform_id(f), part[k]) == 0) {
+                snprintf(tmp, sizeof tmp, "%s", sel_platform_label(f));
+            }
+        }
+        snprintf(label[n], 96, "%s", tmp);
+        if (k == 1u) {
+            snprintf(path[n], 160, "%s\x1f%s", part[0], part[1]);
+        } else {
+            snprintf(path[n], 160, "%s\x1f%s\x1f%s", part[0], part[1], part[2]);
+        }
+        n++;
+    }
+    return n;
 }
 
 static void col_draw_shelves(desk* d, sel_gui_rect mn, uint32_t text, uint32_t muted) {
@@ -5230,7 +5382,25 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
         d->col_artist = rect_of(tx, ty, aw, lpx(d, 20));
         draw_text(d, d->col_artist, d->col_sub, 0, 13, text);
         draw_text(d, rect_of(tx + aw, ty, pb.w * 4, lpx(d, 20)), count + an, 0, 13, muted);
+    } else if (d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE && d->drl_page != 0u) { /* I790: the drill path as crumbs, each one a way back up */
+        char cl[4][96];
+        char cp[4][160];
+        uint32_t ci, cn = drl_crumbs(d, cl, cp);
+        const sel_gui_atlas* at = desk_font(d, 0, 13);
+        int32_t cx = tx, cy = cv.y + lpx(d, 24) + lpx(d, page_title_h(d));
+        d->drl_crumb_n = cn;
+        for (ci = 0u; ci < cn; ci++) {
+            int32_t cw = at != NULL ? sel_gui_text_width(at, cl[ci], strlen(cl[ci])) : 0;
+            d->drl_crumb[ci] = rect_of(cx, cy, cw, lpx(d, 20));
+            draw_text(d, d->drl_crumb[ci], cl[ci], 0, 13, ci + 1u == cn ? muted : text);
+            if (ci + 1u < cn) {
+                link_hover_mark(d, d->drl_crumb[ci], 3u, text);
+                draw_text(d, rect_of(cx + cw + lpx(d, 6), cy, lpx(d, 12), lpx(d, 20)), ">", 0, 13, muted);
+                cx += cw + lpx(d, 24);
+            }
+        }
     } else {
+        d->drl_crumb_n = 0u;
         draw_text(d, rect_of(tx, cv.y + lpx(d, 24) + lpx(d, page_title_h(d)), pb.w * 4, lpx(d, 20)), count, 0, 13, muted);
     }
     if (d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE) { /* I678g */
@@ -5306,6 +5476,31 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
             snprintf(pl, sizeof pl, "%u plays", (unsigned)d->col_plays[i]);
             draw_text(d, rect_of(r.x + r.w - lpx(d, 120), r.y, lpx(d, 108), r.h), pl, 0, 13, muted);
         }
+    }
+    for (slot = 0; d->drl_n > 0u && d->pls_scroll + slot < drl_rows(d) && pls_row_visible(d, mn, slot); slot++) { /* I790: the drill level rows */
+        uint32_t v = d->pls_scroll + slot, di = v - (d->drl_skip > 0u ? 1u : 0u);
+        sel_gui_rect r = pls_row_rect(d, mn, slot);
+        uint32_t fill = list_row_fill(d, r, 0);
+        char lab[96], cnt[40];
+        if (fill != 0u) {
+            sel_gui_round_rect(d->canvas, r, rad, fill);
+        }
+        if (d->drl_skip > 0u && v == 0u) {
+            draw_text(d, rect_of(r.x + lpx(d, 12), r.y, r.w - lpx(d, 24), r.h), "Previous", 1, 14, accent);
+            continue;
+        }
+        if (di >= d->drl_n) {
+            draw_text(d, rect_of(r.x + lpx(d, 12), r.y, r.w - lpx(d, 24), r.h), "Next", 1, 14, accent);
+            continue;
+        }
+        drl_label(d, d->drl_name[di], lab, sizeof lab);
+        if (d->drl_count[di][0] == '\0') {
+            cnt[0] = '\0';
+        } else {
+            snprintf(cnt, sizeof cnt, d->drl_page == (uint32_t)SEL_DRILL_PAGE_ROOT ? "%s" : "%s songs", d->drl_count[di]);
+        }
+        draw_text(d, rect_of(r.x + lpx(d, 12), r.y, r.w - lpx(d, 200), r.h), lab, 0, 14, row_ink(d, r, text));
+        draw_text(d, rect_of(r.x + r.w - lpx(d, 168), r.y, lpx(d, 156), r.h), cnt, 0, 13, muted);
     }
     if (d->col_kind != 0u) {
         col_draw_shelves(d, mn, text, muted);
@@ -5522,6 +5717,33 @@ static int pls_pointer(desk* d, const sel_gui_input* ev) {
         snprintf(line, sizeof line, "PLAYLIST_PLAY %u", (unsigned)d->pls_id);
         d->repaint = 1;
         return desk_send(d, line);
+    }
+    if (d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE && d->drl_page != 0u) { /* I790: a crumb goes back up, a drill row goes down */
+        uint32_t ci;
+        char cl[4][96];
+        char cp[4][160];
+        uint32_t cn = drl_crumbs(d, cl, cp);
+        for (ci = 0u; ci + 1u < cn && ci < d->drl_crumb_n; ci++) {
+            if (in_rect(d->drl_crumb[ci], ev->x, ev->y)) {
+                drl_open(d, cp[ci], 0u);
+                return 1;
+            }
+        }
+        for (slot = 0; d->drl_n > 0u && d->pls_scroll + slot < drl_rows(d) && pls_row_visible(d, mn, slot); slot++) {
+            uint32_t v = d->pls_scroll + slot, di = v - (d->drl_skip > 0u ? 1u : 0u);
+            char child[200];
+            if (!in_rect(pls_row_rect(d, mn, slot), ev->x, ev->y)) {
+                continue;
+            }
+            if (d->drl_skip > 0u && v == 0u) {
+                drl_open(d, d->drl_path, d->drl_skip > (uint32_t)SEL_DRILL_WINDOW ? d->drl_skip - (uint32_t)SEL_DRILL_WINDOW : 0u);
+            } else if (di >= d->drl_n) {
+                drl_open(d, d->drl_path, d->drl_skip + (uint32_t)SEL_DRILL_WINDOW);
+            } else if (drl_child(d, d->drl_name[di], child, sizeof child)) {
+                drl_open(d, child, 0u);
+            }
+            return 1;
+        }
     }
     for (slot = 0; d->pls_scroll + slot < col_song_rows(d) && pls_row_visible(d, mn, slot); slot++) {
         sel_gui_rect row = pls_row_rect(d, mn, slot), la, lb;
@@ -6710,6 +6932,23 @@ static const char* library_dump_build(desk* d) {
                                  d->col_kind == (uint32_t)SEL_LIB_ITEM_RECENT, d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE, d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE ? khst : "",
                                  (int)stg.x, (int)stg.y, (int)stg.w, (int)stg.h, (int)ssy.x, (int)ssy.y, (int)ssy.w, (int)ssy.h,
                                  d->pls_n > 0u && d->pls_ord != NULL ? pls_key(d, d->pls_ord[0]) : "");
+                }
+                if (d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE) { /* I790: the drill level, its row and crumb geometry, and the rows-built sentinel */
+                    sel_gui_rect dr0 = pls_row_rect(d, pmn, 0u), dr1 = pls_row_rect(d, pmn, 1u);
+                    char dl[96];
+                    uint32_t dk;
+                    if (d->drl_n > 0u) {
+                        drl_label(d, d->drl_name[0], dl, sizeof dl);
+                    } else {
+                        dl[0] = '\0';
+                    }
+                    o = dump_put(d, o, "drill page=%u rows=%u skip=%u path=[%s] window=%u built=%u crumbs=%u first=[%s] row0=%d,%d,%d,%d row1=%d,%d,%d,%d",
+                                 (unsigned)d->drl_page, (unsigned)d->drl_n, (unsigned)d->drl_skip, d->drl_path, (unsigned)SEL_DRILL_WINDOW, (unsigned)cst.drill_rows,
+                                 (unsigned)d->drl_crumb_n, dl, (int)dr0.x, (int)dr0.y, (int)dr0.w, (int)dr0.h, (int)dr1.x, (int)dr1.y, (int)dr1.w, (int)dr1.h);
+                    for (dk = 0u; dk < d->drl_crumb_n && dk < 4u; dk++) {
+                        o = dump_put(d, o, " crumb%u=%d,%d,%d,%d", (unsigned)dk, (int)d->drl_crumb[dk].x, (int)d->drl_crumb[dk].y, (int)d->drl_crumb[dk].w, (int)d->drl_crumb[dk].h);
+                    }
+                    o = dump_put(d, o, "\n");
                 }
             }
         }

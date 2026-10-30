@@ -118,6 +118,7 @@ int main(void) {
         batch.rows = &row;
         batch.count = 1;
         batch.now = 1;
+        batch.new_day = 0;
         sel_library_scan_batch(lib, &batch, &sreply);
         check(sreply.args[1].v.i == SQLITE_OK, "retag scan batch ok");
     }

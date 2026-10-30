@@ -227,6 +227,8 @@ typedef struct sel_scan_batch {
     const sel_scan_row* rows;
     uint32_t count;
     int64_t now; /* epoch seconds stored in songs.added */
+    int64_t new_day; /* I790: not 0 = epoch day; the batch adds its songs not yet in the catalogue to
+                      * source_new(source, new_day), the New level of the source page. 0 = record nothing */
 } sel_scan_batch;
 
 /* Rows to delete again (a changelog's deleted: and moved: entries): `count` paths of one source. */
@@ -284,7 +286,7 @@ enum {
 };
 
 /* Schema version this build writes (PRAGMA user_version after migration). */
-#define SEL_LIB_SCHEMA_VERSION 13
+#define SEL_LIB_SCHEMA_VERSION 14
 
 /* Heap bytes for SQLite on a machine: the scaling table of D-M3-2 over fast + chip RAM
  * (<= 4 MiB: 544 KiB (512 KiB + 32 KiB, I687c), <= 16 MiB: 2 MiB, <= 128 MiB: 8 MiB, above: 32 MiB). This is the ceiling:
@@ -563,6 +565,10 @@ int sel_library_items(sel_library* lib, uint32_t kind_mask, uint32_t offset, sel
  * only during the call. Returns the rows, -1 on a library error. */
 typedef void (*sel_collection_row_fn)(void* ctx, const char* const* f);
 int sel_library_collection(sel_library* lib, uint32_t kind, const char* key, uint32_t shelf, sel_collection_row_fn fn, void* ctx);
+/* I790: one windowed level of a source page (SEL_DRILL_*): rows [skip, skip+limit) of the level for `source` (a, b the level's format/artist
+ * arguments). Returns the rows emitted, -1 on error. Never reads a whole source. */
+int sel_library_source_drill(sel_library* lib, const char* source, uint32_t level, const char* a, const char* b, uint32_t skip,
+                             uint32_t limit, sel_collection_row_fn fn, void* ctx);
 
 /* Every song format of the catalogue with its song count (I615c), most songs first: calls `fn(ctx, format, songs)` each. Returns the
  * number of formats, or -1 without a library. */

@@ -80,6 +80,7 @@ static void long_artist(const sel_host* host) {
     b.rows = &row;
     b.count = 1;
     b.now = 1;
+    b.new_day = 0;
     check(sel_library_request(lib, SEL_LIB_REQ_SCAN_BATCH, &b, &reply) && reply.args[1].v.i == 0, "i486 scan");
     check(sel_library_history_add(lib, key, 100, 1), "i486 history add");
     check(sel_library_home(lib, 10, v.htext, SEL_VIEW_HOME_TEXT_MAX, &lines), "i486 home text");
@@ -127,6 +128,7 @@ static void album_id(const sel_host* host) {
     b.rows = &row;
     b.count = 1;
     b.now = 1;
+    b.new_day = 0;
     check(sel_library_request(lib, SEL_LIB_REQ_SCAN_BATCH, &b, &reply) && reply.args[1].v.i == 0, "i678h2 scan");
     memset(&art, 0, sizeof art);
     art.op = SEL_ART_STORE;
@@ -196,6 +198,7 @@ int main(void) {
         b2.rows = rows2;
         b2.count = 2;
         b2.now = 1;
+        b2.new_day = 0;
         check(sel_library_request(lib, SEL_LIB_REQ_SCAN_BATCH, &b2, &reply2) && reply2.args[1].v.i == 0, "scan both songs");
     }
     check(sel_library_history_add(lib, key, 100, 1), "history add 300");
