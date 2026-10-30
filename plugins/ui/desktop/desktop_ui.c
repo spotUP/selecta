@@ -572,6 +572,7 @@ static uint32_t desk_toast_wait(const desk* d);
 static void desk_toast(desk* d, const char* text);
 static int desk_add_folder(desk* d);
 static sel_gui_rect toast_rect(desk* d);
+static sel_gui_rect sync_card_rect(desk* d);
 static int desk_toast_tick(desk* d);
 static int overlay_refresh(desk* d);
 
@@ -1204,9 +1205,11 @@ static sel_gui_rect vol_bar_rect(const desk* d) {
  * sidebar hover fade, the queue widget) must end with this pass or it paints over the part of them it overlaps. */
 static void song_menu_draw(desk* d);
 static void dlg_draw(desk* d);
+static void desk_draw_notices(desk* d);
 static void desk_draw_window_overlays(desk* d) {
     song_menu_draw(d);
     dlg_draw(d);
+    desk_draw_notices(d); /* I806: the sync card and the toast stay in front of whatever region a partial repaint just drew */
 }
 
 static void draw_widget(desk* d, uint32_t bit) {
@@ -7156,6 +7159,11 @@ static const char* library_dump_build(desk* d) {
         {
             sel_gui_rect sc = sync_cancel_rect(d);
             o = dump_put(d, o, "synccancel %d %d %d %d\n", (int)sc.x, (int)sc.y, (int)sc.w, (int)sc.h);
+            /* I806: the canvas pixel left of the card text and the colour the card paints there; equal while the card is up. */
+            sel_gui_rect cr = sync_card_rect(d);
+            o = dump_put(d, o, "sync_card_px active=%u rgb=%06x card=%06x\n", (unsigned)d->sync_ui.active,
+                         (unsigned)(sel_gui_pixel(d->canvas, cr.x + lpx(d, 4), cr.y + cr.h / 2) & 0xFFFFFFu),
+                         (unsigned)(ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]) & 0xFFFFFFu));
         }
         {
             sel_gui_rect th = topbar_part(d, TOPBAR_HOME), tf = topbar_part(d, TOPBAR_FIELD), tb = topbar_part(d, TOPBAR_BROWSE);
@@ -11206,6 +11214,14 @@ static void desk_draw_overlay(desk* d) {
             sel_gui_dirty_add(d->canvas, s);
         }
     }
+    desk_draw_notices(d); /* the full frame ends with the notices on top of the palette and the command line too */
+}
+
+/* I806: the notices float above every region and the other overlays: the sync card, then the toast. Called at the end of every
+ * region repaint (desk_draw_window_overlays) and again after the palette or command line. */
+static void desk_draw_notices(desk* d) {
+    int32_t rad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]);
+    sel_gui_rect b;
     sync_card_draw(d);
     if (d->toast_on) {
         int32_t q = sel_gui_tween_value(&d->tl, ANIM_KEY_TOAST, 65536); /* 0 hidden .. 65536 shown */
