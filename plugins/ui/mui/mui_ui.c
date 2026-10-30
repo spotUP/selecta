@@ -356,7 +356,11 @@ static int mui_engine_line(mui_state* s, const char* line) {
     static char ring[16][512];
     static uint32_t next;
     char* pool = ring[next++ % 16u];
-    return line != NULL && s->engine != NULL && sel_engine_send_line(s->engine, line, pool, sizeof ring[0]) == SEL_CODEC_OK;
+    int ok = line != NULL && s->engine != NULL && sel_engine_send_line(s->engine, line, pool, sizeof ring[0]) == SEL_CODEC_OK;
+    if (line != NULL && !ok) {
+        fprintf(stderr, "selecta mui: engine refused line \"%s\"\n", line); /* I791: a refused line is not silent */
+    }
+    return ok;
 }
 
 /* A fired Menuitem: the same line the desktop sends for the action id (MUI-P2-4). */
@@ -1854,7 +1858,10 @@ static void mui_control_fire(mui_state* s, LONG id) {
             mui_engine_line(s, mui_topbar_browse_lines[k]);
         }
     } else if (id >= CTL_DOOR_BASE && id < CTL_DOOR_BASE + (LONG)MUI_DOOR_MAX) {
-        mui_engine_line(s, mui_door_line((uint32_t)(id - CTL_DOOR_BASE))); /* the page switch: the engine moves the main view's source */
+        const char* dl = mui_door_line((uint32_t)(id - CTL_DOOR_BASE)); /* the page switch: the engine moves the main view's source */
+        if (dl != NULL) { /* NULL: an in-window page (Now Playing, Song Information); mui-doors checks every main-view door has a line */
+            mui_engine_line(s, dl);
+        }
     } else if (id >= CTL_CRUMB_BASE && id < CTL_CRUMB_BASE + (LONG)MUI_CRUMB_MAX) {
         /* MUI-P4-2: a crumb opens the browse path up to and including that piece. */
         const sel_view_state* view = sel_engine_state(s->engine)->view;
