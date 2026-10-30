@@ -95,10 +95,10 @@ typedef struct mui_cells {
 #define MUI_CRUMB_MAX 6u
 enum { P4_SEARCH, P4_CMD, P4_LIKE, P4_RATING, P4_SUBSONG, P4_QREMOVE, P4_QCLEAR, P4_QUP, P4_QDOWN, P4_POPEN, P4_PRENAME, P4_PDELETE,
        P4_CLEARLIB, P4_PNEW, P4_HELP, P4_HOME, P4_TOAST, P4_CRUMB, P4_STATE, P4_SETTINGS, P4_SONGMENU, P4_NP, P4_SONGINFO, P4_PREF, P4_TRACKER,
-       P4_VIZPICK, P4_VIZFRAMES, P4_COUNT };
+       P4_VIZPICK, P4_VIZFRAMES, P4_DBLRACE, P4_COUNT };
 static const char* const p4_name[P4_COUNT] = {"search", "cmd", "like", "rating", "subsong", "qremove", "qclear", "qup", "qdown",
                                               "popen", "prename", "pdelete", "clearlib", "pnew", "help", "home", "toast", "crumb", "state", "settings",
-                                              "songmenu", "np", "songinfo", "pref", "tracker", "vizpick", "vizframes"};
+                                              "songmenu", "np", "songinfo", "pref", "tracker", "vizpick", "vizframes", "dbl_race_injected"};
 #define MUI_PREF_MAX 12u   /* MUI-P4-10: most Settings rows (sel_uim_pref_row_count) */
 #define MUI_INFO_MAX 24u   /* MUI-P4-9: most song info rows */
 #define MUI_TRK_ROWS 16u   /* MUI-P4-16: pattern rows shown */
@@ -111,6 +111,7 @@ typedef struct mui_state {
     sel_engine* engine;
     uint32_t transport_hits; /* transport buttons and sliders that sent their line (MUI-P2-5): stat transport_hits */
     uint32_t row_plays;      /* list rows activated by double click (MUI-P3-1): stat row_plays */
+    int dbl_race;            /* I724: ENV:Selecta/MUIDblRace was set at open: every double click first gets a forced list refresh (rig knob) */
     uint32_t drops;          /* AppWindow arguments sent to the engine (MUI-P5-6): stat drops */
     sel_tag stats[8];
     char p4_stat[480];       /* MUI-P4: the sentinel printed as ui_p4: how often each P4 gadget sent its line */
@@ -1989,6 +1990,10 @@ static void* mui_open(const sel_ui_open_args* a) {
     mui_window_attrs_t wattr;
     s->engine = a != NULL ? a->engine : NULL;
     s->find_plugin = a != NULL ? a->find_plugin : NULL;
+    {
+        char knob[8];
+        s->dbl_race = GetVar((CONST_STRPTR)"Selecta/MUIDblRace", (STRPTR)knob, sizeof knob, 0) >= 0 && mui_list_dbl_race_on(knob);
+    }
     MUIMasterBase = OpenLibrary((CONST_STRPTR)MUIMASTER_NAME, 19);
     if (MUIMasterBase == NULL) {
         mui_report(MUI_FAIL_NO_LIBRARY, "");
@@ -2092,6 +2097,19 @@ static void* mui_open(const sel_ui_open_args* a) {
     return s;
 }
 
+/* I724: the I716 race made deterministic. A list refresh between the click and its handling resets AAL_Active to the engine cursor
+ * row (mui_refresh: SetAttrs AAL_Active). With the knob on, do exactly that SetAttrs before the handler runs, to the first window row
+ * (".." in the rig step). A handler that reads AAL_Active then acts on that row, one that reads AAL_Picked does not.
+ * Not done through VIEW_CURSOR + mui_refresh: sel_engine_send_line only queues the line, the engine applies it in its next pump
+ * (host loop), so the refresh in the same call still saw the old cursor and left AAL_Active on the clicked row (round 7 probe:
+ * AAL_Active 6 before and after, AAL_Picked 6). The click-pending guard is disarmed as the real race happens after it caught up. */
+static void mui_dbl_race_inject(mui_state* s) {
+    mui_list_pending_clear(&s->list_pending);
+    s->list_active_set = 0;
+    SetAttrs(s->list, AAL_Active, (ULONG)0, TAG_DONE);
+    s->p4[P4_DBLRACE]++;
+}
+
 static int mui_io_new_input(void* ctx, uint32_t* sigs) {
     ULONG got = 0;
     LONG id = (LONG)DoMethod(((mui_state*)ctx)->app, MUIM_Application_NewInput, &got);
@@ -2100,6 +2118,9 @@ static int mui_io_new_input(void* ctx, uint32_t* sigs) {
     if (id >= MENU_ID_BASE && id < MENU_ID_BASE + (LONG)g_menu_n) {
         mui_menu_fire((mui_state*)ctx, (uint32_t)(id - MENU_ID_BASE));
     } else if (id >= CTL_BTN_BASE) {
+        if (id == CTL_LIST_DBL && ((mui_state*)ctx)->dbl_race) {
+            mui_dbl_race_inject((mui_state*)ctx);
+        }
         mui_control_fire((mui_state*)ctx, id);
     }
     mui_refresh((mui_state*)ctx);

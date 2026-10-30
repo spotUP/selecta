@@ -170,6 +170,8 @@ int32_t mui_list_pending_resolve(mui_list_pending* p, int32_t snapshot_active);
  * List cursor (active) can be moved by a list refresh between the click and the app loop handling it, so the clicked
  * row wins and the cursor is only the fallback. */
 int32_t mui_list_dbl_row(int32_t picked, int32_t active);
+/* I724: ENV:Selecta/MUIDblRace value (read once at open) -> knob on: any text but empty or "0". */
+int mui_list_dbl_race_on(const char* value);
 extern uint32_t mui_list_dbl_row_calls; /* sentinel: how often the decision ran */
 /* Tree style: the engine line a click on a node row sends (VIEW_EXPAND/VIEW_COLLAPSE <node id>); "" for a non-node. */
 void mui_list_toggle_line(const sel_view_row* r, char* out, size_t cap);
