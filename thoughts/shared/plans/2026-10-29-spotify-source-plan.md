@@ -45,6 +45,13 @@ or I654c lands first builds the shared hooks, the other reuses them.
    flow, merge status not shown). Maintainer kingosticks, 17 Aug 2026: Spotify "only closed off access to their private
    endpoints we were using for playback purposes". go-librespot: no 2026 release found (unverified, GitHub releases
    page did not render). Whether go-librespot plays today is **unknown**; row I654a measures it.
+   **Correction 2026-10-30 (gh release list devgianlu/go-librespot):** go-librespot shipped nine releases after the
+   10 Aug break: v0.9.0 (2026-08-16) to v0.10.5 (2026-10-16). Notes include the device authorization flow (v0.9.1),
+   AudioToolbox output selected by default on macOS (v0.10.0), "report why playback failed on the events API"
+   (v0.10.2), login5 retries and spclient collection/playlist writes (v0.10.3), macOS Now Playing and media keys
+   (v0.10.4). librespot issue #1737 is still open and librespot's last release is v0.8.0 (2025-11-10), so
+   go-librespot no longer tracks librespot's state. No release note says "playback restored" in those words; I654a
+   still decides. No macOS binary is published (Linux and Windows assets only): the gate builds it with Go.
 3. **Measured 68060 decode speed exists now** (`thoughts/shared/reports/m3-I212b-060-timing-report.md`, real A1200
    68060 with 192 MB fast RAM): stb_vorbis decodes at real-time factor about 17.5 (17 times too slow), minimp3 about
    14.5. Tremor (integer Vorbis, what cspot uses) is not measured on 68k by anyone we found.
