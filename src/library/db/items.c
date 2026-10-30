@@ -381,9 +381,11 @@ static const char* drill_sql(uint32_t level) {
     case SEL_DRILL_FORMAT_SONGS:
         return DRILL_SONG " WHERE s.source=?1 AND s.format IS NULLIF(?2,'') AND s.artist IS NULLIF(?3,'') ORDER BY s.name COLLATE NOCASE, s.id LIMIT ?5 OFFSET ?4";
     case SEL_DRILL_ARTISTS:
-        return "SELECT IFNULL(artist,''),COUNT(*),SUM(size),'','' FROM songs WHERE source=?1 GROUP BY artist ORDER BY artist COLLATE NOCASE LIMIT ?5 OFFSET ?4";
+        return "SELECT IFNULL(artist,''),COUNT(*),SUM(size),'','' FROM songs WHERE source=?1 GROUP BY artist ORDER BY artist LIMIT ?5 OFFSET ?4"; /* index order: a NOCASE sort needs a temp B-tree of every artist (435 ms on 30k artists) */
     case SEL_DRILL_ARTIST_SONGS:
         return DRILL_SONG " WHERE s.source=?1 AND s.artist IS NULLIF(?2,'') ORDER BY s.name COLLATE NOCASE, s.id LIMIT ?5 OFFSET ?4";
+    case SEL_DRILL_FORMAT_SAMPLE: /* one path of the format, for the family fold: a single index seek */
+        return "SELECT IFNULL(path,''),1,NULL,'','' FROM songs WHERE source=?1 AND format IS NULLIF(?2,'') LIMIT 1";
     case SEL_DRILL_NEW:
         return "SELECT day,n,NULL,'','' FROM source_new WHERE source=?1 ORDER BY day DESC LIMIT ?5 OFFSET ?4";
     default: return NULL;

@@ -173,8 +173,22 @@ enum { SEL_COLLECTION_SHELVES = 4, SEL_COLLECTION_SHELF_MAX = 24 };
  * composer, source, Liked Songs, Recently Played or Local Files (I678g), published in sel_state.collection. The UI only reads it. `serial` counts builds; `rows` is "key\0plays\0" per song in page
  * order (an album in scan order, an artist most played first, a composer in library order with plays 0), then "\0". Shelves, index =
  * SEL_COLL_* - 1: Albums, Appears On, More by, Spellings; shelf_total counts the whole shelf, shelf the first SEL_COLLECTION_SHELF_MAX. */
+/* I790 (design doc 2026-10-22-architecture-design.md section 9b "Source page drill"): a source page is a drill, never the whole song list.
+ * COLLECTION_OPEN of a SOURCE takes key = source [US kind [US a [US b]]] [RS skip] (US 0x1f, RS 0x1e): kind is formats, format a,
+ * format a artist b, artists, artist a, platforms, platform a (family id), new; no kind is the first level. */
+enum {
+    SEL_DRILL_PAGE_NONE = 0, /* not a drill page */
+    SEL_DRILL_PAGE_ROOT,     /* the first level: rows name, count, size (Formats, Platforms, Artists, New) */
+    SEL_DRILL_PAGE_GROUPS,   /* rows name, count, size triples (formats, artists, platforms, days) */
+    SEL_DRILL_PAGE_SONGS,    /* the usual key, plays rows */
+    SEL_DRILL_WINDOW = 200   /* the most rows one drill page holds */
+};
+
 typedef struct sel_collection_page {
     uint32_t serial;
+    uint32_t drill;       /* SEL_DRILL_PAGE_* */
+    uint32_t drill_rows;  /* rows the drill queries emitted for this page (the I790 sentinel; never above SEL_DRILL_WINDOW per level) */
+    char drill_path[160]; /* the drill part of the key, "" for the first level */
     uint32_t kind; /* SEL_LIB_ITEM_* */
     char key[128];
     char title[96];  /* album name, artist name, composer display name */
@@ -460,6 +474,7 @@ typedef struct sel_engine_stats {
     uint32_t sources_listed;      /* SOURCES rows the engine queued for the UI (I546 sentinel) */
     uint32_t lib_touch_calls;   /* LIBRARY_TOUCH commands applied (I678c sentinel: Recents order has a written opened time) */
     uint32_t collection_opens;  /* COLLECTION_OPEN commands applied (I678e sentinel: a collection page was opened through the engine) */
+    uint32_t drill_rows;        /* I790 sentinel: source drill rows emitted by the library over all pages built */
     uint32_t collection_queries; /* I678f sentinel: collection page lists (songs or shelf) that reached the library */
     uint32_t lib_deferred;        /* I782 sentinel: library requests refused because the library was busy and the caller asked not to wait */
     uint32_t library_items_calls; /* sel_engine_library_items calls that reached the library (I678a sentinel) */
