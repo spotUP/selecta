@@ -1,9 +1,9 @@
 # dui-sync-banner (I527, rewritten for I602): the sync-on-launch dialog, driven from the desktop UI's real entry point.
 # -DSELECTA -DWORK -DGOLDEN -DSDL_BUILT. There is no inline banner: the Library list starts directly under the tabs. A modal
 # dialog ("nag N" rows, "nagdlg opens X", one "nagrow" per due source, "nagsync" / "naglater" / "nagnever" buttons) opens once
-# per launch on the first Library visit when a source is due, and never at start on Home. The test checks:
+# per launch on any page (I786) as soon as a source is due. The test checks:
 #   1. the list starts at the same y with the dialog open and after it closed, and no row of a banner is left,
-#   2. started on Home the dialog does not open ("nagdlg opens 0"); the first Library visit opens it once,
+#   2. started on Home the dialog opens once ("nagdlg opens 1"), Not now closes it, other pages do not reopen it,
 #   3. "Sync now" syncs the ticked sources only (testsrc song count becomes 3, an unticked source stays unsynced),
 #   4. "Not now" closes the dialog and snoozes the rows,
 #   5. "Never" switches the ticked sources off for good (Sources tab enabled flag 0 after a restart on the same config and
@@ -79,7 +79,7 @@ function(untick_tokens out text keep_key t0)
   set(${out} "${tokens}" PARENT_SCOPE)
   set(${out}_t ${t} PARENT_SCOPE)
 endfunction()
-set(want_keys modland hvsc hippo asma keygenmusic sndh zxart testsrc)
+set(want_keys modland hvsc hippo asma keygenmusic sndh zxart archiveorg jamendo radiobrowser testsrc)
 
 # Launch on the Library: the dialog lists every enabled remote source that was never synced, all ticked.
 # Mouse moves give the loop frames, so the engine pumps and the SOURCES reply asked for at launch lands before the dump.
@@ -88,7 +88,7 @@ if(NOT o0 MATCHES "nag ([0-9]+) syncs 0\n" OR CMAKE_MATCH_1 LESS 1)
   message(FATAL_ERROR "no sync dialog at launch although remote sources were never synced:\n${o0}")
 endif()
 if(NOT o0 MATCHES "nagdlg opens 1 done 1\n")
-  message(FATAL_ERROR "the dialog must open exactly once on the first Library visit:\n${o0}")
+  message(FATAL_ERROR "the dialog must open exactly once per launch:\n${o0}")
 endif()
 foreach(k ${want_keys})
   if(NOT o0 MATCHES "nagrow [0-9]+ ${k}\\|1 ")
@@ -150,33 +150,32 @@ if(gap LESS 0 OR gap GREATER 60)
   message(FATAL_ERROR "the Library list does not start directly under the tabs (tab bottom ${tab_bottom}, list start ${list_open}):\n${o0}")
 endif()
 
-# 2. A launch on Home never opens the dialog although sources are due.
+# 2. A launch on Home opens the dialog once (I786); Not now closes it; Library and Home visits do not reopen it.
 click_run(h0 "m5,5@200 m6,6@400 q@800" VIEW home)
-if(NOT h0 MATCHES "nagdlg opens 0 done 0\n" OR NOT h0 MATCHES "nag 0 syncs 0\n")
-  message(FATAL_ERROR "the dialog opened at start on Home:\n${h0}")
+if(NOT h0 MATCHES "nagdlg opens 1 done 1\n" OR NOT h0 MATCHES "nag ([0-9]+) syncs 0\n" OR CMAKE_MATCH_1 LESS 1)
+  message(FATAL_ERROR "the dialog did not open at start on Home:\n${h0}")
 endif()
-# The first Library visit from Home opens it once; Not now closes it; Home and Library again do not open it a second time.
 rect_center(libdoor "${h0}" "sidehdr title") # I673: the Your Library header is the Library door
 rect_center(homedoor "${h0}" "door 0")
-rect_center(later "${o0}" "naglater")
-click_at(d1 ${libdoor_x} ${libdoor_y} 300)
-click_at(lc ${later_x} ${later_y} 800)
-click_at(d0 ${homedoor_x} ${homedoor_y} 1300)
-click_at(d2 ${libdoor_x} ${libdoor_y} 1800)
-click_run(h1 "${d1} ${lc} ${d0} ${d2} q@2600" VIEW home)
+rect_center(later "${h0}" "naglater")
+click_at(lc ${later_x} ${later_y} 300)
+click_at(d1 ${libdoor_x} ${libdoor_y} 900)
+click_at(d0 ${homedoor_x} ${homedoor_y} 1400)
+click_at(d2 ${libdoor_x} ${libdoor_y} 1900)
+click_run(h1 "${lc} ${d1} ${d0} ${d2} q@2700" VIEW home)
 if(NOT h1 MATCHES "nagdlg opens 1 done 1\n" OR NOT h1 MATCHES "nag 0 syncs 0\n")
-  message(FATAL_ERROR "the Library visit from Home must open the dialog once, Not now close it and a second visit not reopen it:\n${h1}")
+  message(FATAL_ERROR "started on Home the dialog must open once, Not now close it and page visits not reopen it:\n${h1}")
 endif()
 if(NOT h1 MATCHES "liststart ${list_open}\n")
   message(FATAL_ERROR "the list start moved after the dialog closed (was ${list_open}):\n${h1}")
 endif()
 
 # 3. Sync now: untick everything but testsrc, press Sync now. Only the ticked source is synced.
-untick_tokens(un "${o0}" testsrc 300)
+untick_tokens(un "${o0}" testsrc 900)
 rect_center(sync "${o0}" "nagsync")
 click_at(sc ${sync_x} ${sync_y} ${un_t})
 math(EXPR tq "${un_t} + 1500")
-click_run(a "${un} ${sc} q@${tq}")
+click_run(a "m5,5@200 m6,6@400 ${un} ${sc} q@${tq}")
 if(NOT a MATCHES "nag 0 syncs 1\n")
   message(FATAL_ERROR "Sync now was not sent for exactly the one ticked source, or the dialog stayed:\n${a}")
 endif()
@@ -253,7 +252,7 @@ set(db "${WORK}/library2.db")
 load_db("${db}" init2)
 set(ENV{SELECTA_TESTSRC_FAIL} 1)
 click_run(f0 "m5,5@200 m6,6@400 m7,7@600 q@800")
-untick_tokens(fu "${f0}" testsrc 300)
+untick_tokens(fu "${f0}" testsrc 900)
 rect_center(fsync "${f0}" "nagsync")
 click_at(fsc ${fsync_x} ${fsync_y} ${fu_t})
 math(EXPR ftq "${fu_t} + 2500")

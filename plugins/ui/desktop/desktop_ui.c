@@ -13610,8 +13610,8 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
         d->src_wait = 1;
         desk_send(d, "SOURCES");
     }
-    if (!d->nag_done && !d->dlg_open && d->page == PG_FOLDERS && !d->src_wait && d->frames > 0u &&
-        nag_count(d) > 0u) { /* I602: the sync offer opens once per launch, on the first Library visit with a due source */
+    if (!d->nag_done && !d->dlg_open && !d->src_wait && d->frames > 0u &&
+        nag_count(d) > 0u) { /* I786: the sync offer opens once per launch, on any page, as soon as a source is due */
         nagdlg_open(d);
     }
     if (d->textsheet) { /* the text sheet is one frame, drawn on the first turn */
