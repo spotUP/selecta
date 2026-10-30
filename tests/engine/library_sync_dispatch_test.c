@@ -60,7 +60,7 @@ static int test_sync(const sel_host* host, const char* arg, int64_t now, sel_tag
 
 static const sel_source g_src = {
     "i517test", "I517 test", "", "Counts its sync calls.", NULL,
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, test_sync, SEL_SOURCE_SYNCS, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, test_sync, SEL_SOURCE_SYNCS, NULL, NULL,
 };
 
 static unsigned g_results, g_errors;

@@ -636,7 +636,7 @@ static int local_url(const char* path, char* out, size_t n) {
 
 static const sel_source g_local = {
     "local", "Local files", "", "Folders on this machine.", g_tags,
-    NULL, NULL, NULL, local_url, local_url, NULL, NULL, NULL, 0, NULL,
+    NULL, NULL, NULL, local_url, local_url, NULL, NULL, NULL, 0, NULL, NULL,
 };
 
 const sel_source* sel_source_local(void) {

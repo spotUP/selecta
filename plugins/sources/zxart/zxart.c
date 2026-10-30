@@ -120,7 +120,7 @@ static int zxart_sync_host(const sel_host* host, const char* arg, int64_t now, s
 
 static const sel_source g_zxart = {
     "zxart", "ZX-Art", "https://zxart.ee/", "ZX Spectrum music: AY trackers, beeper and digital, from zxart.ee.",
-    g_tags, NULL, parse, NULL, url_of, path_in, NULL, NULL, zxart_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL,
+    g_tags, NULL, parse, NULL, url_of, path_in, NULL, NULL, zxart_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL, NULL,
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

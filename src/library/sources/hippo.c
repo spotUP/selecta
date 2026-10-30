@@ -94,7 +94,7 @@ static int hippo_sync_host(const sel_host* host, const char* arg, int64_t now, s
 
 static const sel_source g_hippo = {
     "hippo", "HippoPlayer", "https://hippoplayer.se/", "Shared HippoPlayer playlists (.prg).", g_tags,
-    NULL, parse, NULL, url_of, path_in, NULL, NULL, hippo_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL,
+    NULL, parse, NULL, url_of, path_in, NULL, NULL, hippo_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL, NULL,
 };
 
 const sel_source* sel_source_hippo(void) {

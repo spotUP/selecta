@@ -66,11 +66,16 @@ typedef struct sel_source {
     int (*sync)(const sel_host* host, const char* arg, int64_t now, sel_tag* stats, uint32_t stats_cap);
     uint32_t flags;           /* SEL_SOURCE_REMOTE, SEL_SOURCE_SYNCS, SEL_SOURCE_NEW_THIS_WEEK */
     const char* sync_default; /* default URL for the Sources page Sync button; NULL when none */
+    /* SEL_SOURCE_STREAMS only (I725c): the live stream URL a song of this source plays through the one stream path
+     * (sel_live, ICY title), written to `out`. May tell the service the station was played (radio-browser click
+     * count). 1 resolved, 0 when it cannot be played. NULL for every other source. */
+    int (*play_url)(const sel_host* host, const char* path, char* out, size_t n);
 } sel_source;
 enum {
     SEL_SOURCE_REMOTE = 1u,        /* songs live off the machine: fetched through the cache */
     SEL_SOURCE_SYNCS = 2u,         /* has a sync */
-    SEL_SOURCE_NEW_THIS_WEEK = 4u  /* the sync reports SEL_SYNC_NEW_THIS_WEEK; the engine persists it */
+    SEL_SOURCE_NEW_THIS_WEEK = 4u, /* the sync reports SEL_SYNC_NEW_THIS_WEEK; the engine persists it */
+    SEL_SOURCE_STREAMS = 8u        /* songs are live streams: never cached, played from play_url (I725c) */
 };
 
 /* Sync on launch (I527): 1 when a source last synced at `synced` (unix time, 0 never) is due for the sync offer at `now`.

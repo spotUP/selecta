@@ -52,7 +52,7 @@ static int testsrc_sync(const sel_host* host, const char* arg, int64_t now, sel_
 
 static const sel_source g_testsrc = {
     "testsrc", "Test Source", "https://example.invalid/", "Reachability probe for source plugins.", NULL,
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, testsrc_sync, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, testsrc_sync, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL, NULL,
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

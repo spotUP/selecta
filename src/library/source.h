@@ -35,6 +35,13 @@ int sel_song_key(const char* source, const char* path, char* out, size_t n);
 /* 1 when `id` is a registered source whose songs live off the machine (every source but "local" and "radio").
  * The one place cache.c and devilbox.c ask, so a new source needs no string literal elsewhere (I211b). */
 int sel_source_is_remote(const char* id);
+/* I725c: 1 when the source's songs are live streams (SEL_SOURCE_STREAMS), played from its play_url, never cached. */
+int sel_source_is_stream(const char* id);
+/* I725c: the stream URL of a song key `<id>:<path>` of a streams source, written to out. 1 resolved, 0 the key is
+ * not a song of a streams source (out untouched), -1 the source could not resolve it. Counts calls in
+ * sel_source_stream_resolves() (sentinel). */
+int sel_source_stream_url(const sel_host* host, const char* key, char* out, size_t n);
+uint32_t sel_source_stream_resolves(void);
 int sel_song_key_split(const char* key, char* source, size_t source_n, char* path, size_t path_n);
 
 /* Modland format table (design doc 9.1: one table maps a format name to a replayer across sources). */

@@ -1610,6 +1610,25 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
         e->dup_redirects++;
         path = best;
     }
+    {
+        /* I725c: a song of a streams source (radio-browser) plays its station URL through the stream path below. */
+        sel_sync_ctx sctx;
+        sel_host shost;
+        int sr;
+
+        memset(&sctx, 0, sizeof sctx);
+        sctx.scfg.host = e->host;
+        sctx.scfg.lib = e->lib;
+        sel_sync_host_bind(&shost, e->host, &sctx); /* the source's play_url asks the host's net and cache folder */
+        sr = sel_source_stream_url(&shost, path, resolved, sizeof resolved);
+        if (sr < 0) {
+            e->open_status = 0;
+            return NULL;
+        }
+        if (sr > 0) {
+            path = resolved;
+        }
+    }
     if (e->lib != NULL && sel_cache_is_remote(path)) {
         /* Remote key: the file cache serves it (a hit when the prefetch got there first), I168. */
         char rules[512];
