@@ -2099,10 +2099,10 @@ static void* mui_open(const sel_ui_open_args* a) {
 
 /* I724: the I716 race made deterministic. A list refresh between the click and its handling resets AAL_Active to the engine cursor
  * row (mui_refresh: SetAttrs AAL_Active). With the knob on, do exactly that SetAttrs before the handler runs, to the first window row
- * (".." in the rig step). A handler that reads AAL_Active then acts on that row, one that reads AAL_Picked does not.
+ * (".." in the rig step). A handler that reads AAL_Active then acts on that row, one that reads the picked row does not.
  * Not done through VIEW_CURSOR + mui_refresh: sel_engine_send_line only queues the line, the engine applies it in its next pump
  * (host loop), so the refresh in the same call still saw the old cursor and left AAL_Active on the clicked row (round 7 probe:
- * AAL_Active 6 before and after, AAL_Picked 6). The click-pending guard is disarmed as the real race happens after it caught up. */
+ * AAL_Active 6 before and after, picked row 6). The click-pending guard is disarmed as the real race happens after it caught up. */
 static void mui_dbl_race_inject(mui_state* s) {
     mui_list_pending_clear(&s->list_pending);
     s->list_active_set = 0;
