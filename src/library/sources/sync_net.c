@@ -3,6 +3,8 @@
 
 #include "../net/http.h"
 
+#include <selecta/net.h>
+
 #include <stdio.h>
 #if defined(__unix__) || defined(__APPLE__)
 #include <time.h>
@@ -54,6 +56,17 @@ static int get_file(const char* url, const char* path, int has_range, unsigned l
 /* GETs `url` into `path`. Returns the HTTP status (0 on a transport failure). Any result but 200 removes the file. */
 int sel_sync_net_get_file(const char* url, const char* path, uint32_t* requests, unsigned long* bytes) {
     return get_file(url, path, 0, 0, -1, 200, requests, bytes);
+}
+
+int sel_sync_net_get_file_checked(const char* url, const char* path, int (*check)(const char* path),
+                                  uint32_t* requests, unsigned long* bytes) {
+    int status = get_file(url, path, 0, 0, -1, 200, requests, bytes);
+
+    if (status == 200 && check != NULL && !check(path)) {
+        remove(path);
+        return SEL_NET_CONTENT_REJECTED;
+    }
+    return status;
 }
 
 int sel_sync_net_get_range(const char* url, const char* path, unsigned long from, unsigned long to,

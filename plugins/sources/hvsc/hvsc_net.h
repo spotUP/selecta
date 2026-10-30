@@ -2,8 +2,9 @@
  * `<base>/C64Music/DOCUMENTS/Songlengths.md5` and `<base>/C64Music/DOCUMENTS/STIL.txt` through the HTTP client
  * into `<cache dir>/sync/hvsc`, derives hvsc_listing.txt from the `; /PATH` comment lines of Songlengths.md5
  * (HVSC publishes no separate file listing), then runs the file based sync of hvsc_sync.h on that directory.
- * Verified host: base `https://hvsc.c64.org/download` (HTTP 200 for both files, 2026-10-23); the
- * `hvsc` entry of the mirror list in net/mirrors.c carries the same base. */
+ * Base `https://hvsc.de/download/` (hvsc.c64.org/download redirects there; the c64.org site root answers 200
+ * with an HTML page, which the content checks refuse and delete, I718); the `hvsc` entry of the mirror list in
+ * net/mirrors.c and the source's home carry the same base. */
 #ifndef SELECTA_PLUGINS_SOURCES_HVSC_NET_H
 #define SELECTA_PLUGINS_SOURCES_HVSC_NET_H
 

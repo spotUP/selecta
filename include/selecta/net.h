@@ -8,6 +8,13 @@
 
 SEL_EXTERN_C_BEGIN
 
+/* Content check for sel_net.get_file_checked: gets the downloaded file's path, returns 1 to keep it, 0 to reject. */
+typedef int (*sel_net_check)(const char* path);
+
+/* Returned by get_file_checked when the server answered 200 but the check refused the body (an HTML error page
+ * saved under a data file's name, I718). The file is removed. */
+#define SEL_NET_CONTENT_REJECTED (-2)
+
 typedef struct sel_net {
     /* GETs `url` into `path`. Returns the HTTP status (0 on a transport failure); anything but 200 removes the file.
      * `*requests` gains the requests made (redirects count), `*bytes` is the body size. */
@@ -22,6 +29,10 @@ typedef struct sel_net {
     /* One GET into the caller's buffer, for sources that page through an API. Returns the status (0: transport
      * failure); `*got` is the body bytes stored (at most `cap`), truncated when the body is longer. */
     int (*request)(const sel_host* host, const char* url, void* buf, uint32_t cap, uint32_t* got, uint32_t* requests);
+    /* get_file, then `check(path)` on a 200 body: a refused body removes the file and the call returns
+     * SEL_NET_CONTENT_REJECTED. Any other status is returned as get_file returns it. A NULL `check` is get_file. */
+    int (*get_file_checked)(const sel_host* host, const char* url, const char* path, sel_net_check check,
+                            uint32_t* requests, unsigned long* bytes);
 } sel_net;
 
 SEL_EXTERN_C_END

@@ -35,6 +35,12 @@ static int net_get_file(const sel_host* host, const char* url, const char* path,
     return sel_sync_net_get_file(url, path, requests, bytes);
 }
 
+static int net_get_file_checked(const sel_host* host, const char* url, const char* path, sel_net_check check,
+                                uint32_t* requests, unsigned long* bytes) {
+    (void)host;
+    return sel_sync_net_get_file_checked(url, path, check, requests, bytes);
+}
+
 static int net_get_range(const sel_host* host, const char* url, const char* path, unsigned long from,
                          unsigned long to, uint32_t* requests, unsigned long* bytes) {
     (void)host;
@@ -87,7 +93,8 @@ static int net_request(const sel_host* host, const char* url, void* buf, uint32_
     return res.status;
 }
 
-static const sel_net g_net = {net_get_file, net_get_range, net_head_length, net_pause, net_request};
+static const sel_net g_net = {net_get_file, net_get_range, net_head_length, net_pause, net_request,
+                               net_get_file_checked};
 
 static const sel_net* host_net(const sel_host* host) {
     (void)host;

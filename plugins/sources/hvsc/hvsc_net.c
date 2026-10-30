@@ -12,6 +12,45 @@
 #define LINE_BYTES 2400u
 #define PATH_BYTES 1100u
 
+/* Songlengths.md5 starts with "[Database]" and carries `; /PATH` lines. A mirror's HTML page (200) has neither. */
+static int songlengths_ok(const char* path) {
+    FILE* in = fopen(path, "rb");
+    char line[LINE_BYTES];
+    int head = 0, paths = 0;
+
+    if (in == NULL) {
+        return 0;
+    }
+    if (fgets(line, sizeof line, in) != NULL) {
+        head = strncmp(line, "[Database]", 10) == 0;
+    }
+    while (head && !paths && fgets(line, sizeof line, in) != NULL) {
+        paths = line[0] == ';' && line[1] == ' ' && line[2] == '/';
+    }
+    fclose(in);
+    return head && paths;
+}
+
+/* STIL.txt opens with a '#' comment banner naming "STIL" and carries `/PATH` entry lines. */
+static int stil_ok(const char* path) {
+    FILE* in = fopen(path, "rb");
+    char line[LINE_BYTES];
+    int banner = 0, entries = 0, n = 0;
+
+    if (in == NULL) {
+        return 0;
+    }
+    while (!entries && n++ < 100000 && fgets(line, sizeof line, in) != NULL) {
+        if (line[0] == '#' && strstr(line, "STIL") != NULL) {
+            banner = 1;
+        } else if (line[0] == '/') {
+            entries = 1;
+        }
+    }
+    fclose(in);
+    return banner && entries;
+}
+
 /* Writes the `; /PATH` lines of Songlengths.md5 as `/PATH` lines: the catalogue listing. Returns the count, or
  * -1 when a file cannot be opened or written. */
 static int64_t derive_listing(const char* songlengths, const char* listing) {
@@ -72,12 +111,12 @@ int sel_hvsc_net_sync(const sel_host* host, const char* base, sel_hvsc_sync_stat
         return 0;
     }
     snprintf(url, sizeof url, "%.*s" SEL_HVSC_DOC_DIR SEL_HVSC_SONGLENGTHS, (int)n, base);
-    if (net_svc->get_file(host, url, songlengths, &net->http_requests, &got) != 200) {
+    if (net_svc->get_file_checked(host, url, songlengths, songlengths_ok, &net->http_requests, &got) != 200) {
         return 0;
     }
     net->songlengths_bytes = (uint32_t)got;
     snprintf(url, sizeof url, "%.*s" SEL_HVSC_DOC_DIR SEL_HVSC_STIL, (int)n, base);
-    if (net_svc->get_file(host, url, stil, &net->http_requests, &got) != 200) {
+    if (net_svc->get_file_checked(host, url, stil, stil_ok, &net->http_requests, &got) != 200) {
         return 0;
     }
     net->stil_bytes = (uint32_t)got;
