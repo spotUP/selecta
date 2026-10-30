@@ -35,5 +35,5 @@ Spotify was dropped at the I654a gate (DRM). Johan 2026-10-30: "we dont want to 
 6. I725e: Jamendo source (client_id, search/browse, mp31 stream, credit + backlink, no cache).
 7. I725f: podcast source (RSS parser, Podcast Index search, Range playback).
 8. I725g: ccMixter source (query API, per-upload licence).
-9. I725h: AAC and Opus decoders.
+9. I725j: decoder survey per codec (Vorbis, Opus, AAC, FLAC) for 68k and Mac, measured on rig 2, licence checked (Johan 2026-10-30: same effort as MP3 in I212). Then I725h: AAC and Opus decoders from the survey picks.
 10. I725i: Amiga HTTPS probe and decision; gates HTTPS-only sources on Amiga.
