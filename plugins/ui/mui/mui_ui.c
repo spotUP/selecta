@@ -2097,22 +2097,16 @@ static void* mui_open(const sel_ui_open_args* a) {
     return s;
 }
 
-/* I724: the I716 race made deterministic. A list refresh between the click and its handling resets AAL_Active to the engine cursor;
- * with the knob on, do exactly that before the handler runs: move the engine cursor to the first window row and push a refresh with the
- * list signature forced stale. A handler that reads AAL_Active then acts on that row (".."), one that reads AAL_Picked does not.
- * The single click armed list_pending (base = the row shown before the click); a refresh that sees the base snapshot restores the
- * clicked row, which would mask the race. The real race happens after the snapshot caught up and disarmed the guard, so disarm it here. */
+/* I724: the I716 race made deterministic. A list refresh between the click and its handling resets AAL_Active to the engine cursor
+ * row (mui_refresh: SetAttrs AAL_Active). With the knob on, do exactly that SetAttrs before the handler runs, to the first window row
+ * (".." in the rig step). A handler that reads AAL_Active then acts on that row, one that reads AAL_Picked does not.
+ * Not done through VIEW_CURSOR + mui_refresh: sel_engine_send_line only queues the line, the engine applies it in its next pump
+ * (host loop), so the refresh in the same call still saw the old cursor and left AAL_Active on the clicked row (round 7 probe:
+ * AAL_Active 6 before and after, AAL_Picked 6). The click-pending guard is disarmed as the real race happens after it caught up. */
 static void mui_dbl_race_inject(mui_state* s) {
-    const sel_view_state* view = sel_engine_state(s->engine)->view;
-    char line[48];
-    if (view == NULL) {
-        return;
-    }
     mui_list_pending_clear(&s->list_pending);
-    snprintf(line, sizeof line, "VIEW_CURSOR %u", (unsigned)view->window_start);
-    mui_engine_line(s, line);
-    s->list_sig = ~s->list_sig;
-    mui_refresh(s);
+    s->list_active_set = 0;
+    SetAttrs(s->list, AAL_Active, (ULONG)0, TAG_DONE);
     s->p4[P4_DBLRACE]++;
 }
 
