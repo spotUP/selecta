@@ -2075,6 +2075,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_heap_fallback_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-opens-on-fragmented-ram COMMAND library_heap_fallback_test)
   set_tests_properties(library-opens-on-fragmented-ram PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_heap_fallback_ok")
+  # I787a: a v12 file with 40k songs migrates to v13 through sel_library_open on the small and 2 MiB heap tiers.
+  add_executable(library_migrate_big_test library_migrate_big_test.c)
+  target_include_directories(library_migrate_big_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_migrate_big_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-migrate-big COMMAND library_migrate_big_test ${CMAKE_CURRENT_BINARY_DIR})
+  set_tests_properties(library-migrate-big PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_migrate_big_ok")
   # I296: a scan writes the author tag into song_composers; the songdb sync overrides it.
   add_executable(library_scan_composers_test library_scan_composers_test.c)
   target_include_directories(library_scan_composers_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
