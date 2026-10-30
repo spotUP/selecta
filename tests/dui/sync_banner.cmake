@@ -6,7 +6,7 @@
 #   2. started on Home the dialog opens once ("nagdlg opens 1"), Not now closes it, other pages do not reopen it,
 #   3. "Sync now" syncs the ticked sources only (testsrc song count becomes 3, an unticked source stays unsynced),
 #   4. "Not now" closes the dialog and snoozes the rows,
-#   5. "Never" switches the ticked sources off for good (Sources tab enabled flag 0 after a restart on the same config and
+#   5. "Never" switches the ticked sources off for good (source dump enabled flag 0 after a restart on the same config and
 #      database); the unticked source still prompts at the restart,
 #   6. (I582) a failed sync of a ticked source leaves it due: the next launch asks again for it alone.
 # Every click uses the rectangles the stats dump prints. The config directory is kept between runs where a run is the
@@ -179,21 +179,13 @@ click_run(a "m5,5@200 m6,6@400 ${un} ${sc} q@${tq}")
 if(NOT a MATCHES "nag 0 syncs 1\n")
   message(FATAL_ERROR "Sync now was not sent for exactly the one ticked source, or the dialog stayed:\n${a}")
 endif()
-# The Sources page (tab 5) shows what the sync did.
-click_run(p0 "m5,5@200 m6,6@400 q@600" KEEP)
-string(REGEX MATCH "tab 5 (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+)\n" _t "${p0}")
-if(_t STREQUAL "")
-  message(FATAL_ERROR "no tab 5 line in the stats:\n${p0}")
-endif()
-math(EXPR tx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
-math(EXPR ty "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
-click_at(tc ${tx} ${ty} 500)
+# The per-source dump lines ("source N key|kind|name|enabled|songs", I786a) show what the sync did.
 # Next launch on the same config: the ticked source is synced, the unticked ones are snoozed, so no dialog blocks the tab.
-click_run(c "m5,5@200 ${tc} m5,5@900 m6,6@1200 m7,7@1500 q@1800" KEEP)
-if(NOT c MATCHES "source [0-9] testsrc\\|remote\\|[^|]+\\|1\\|3\n")
+click_run(c "m5,5@200 m5,5@900 m6,6@1200 m7,7@1500 q@1800" KEEP)
+if(NOT c MATCHES "source [0-9]+ testsrc\\|remote\\|[^|]+\\|1\\|3\n")
   message(FATAL_ERROR "the testsrc sync did not run (its song count is not 3):\n${c}")
 endif()
-if(c MATCHES "source [0-9] modland\\|remote\\|[^|]+\\|1\\|[1-9]")
+if(c MATCHES "source [0-9]+ modland\\|remote\\|[^|]+\\|1\\|[1-9]")
   message(FATAL_ERROR "an unticked source was synced:\n${c}")
 endif()
 
@@ -232,17 +224,16 @@ foreach(k modland hvsc hippo asma keygenmusic sndh zxart)
     message(FATAL_ERROR "after Never the source '${k}' still prompts:\n${n2}")
   endif()
 endforeach()
-# The Sources tab shows them switched off (enabled 0) and testsrc still on.
+# The source dump lines show them switched off (enabled 0) and testsrc still on.
 rect_center(later_n "${n2}" "naglater")
 click_at(ln ${later_n_x} ${later_n_y} 300)
-click_at(tn ${tx} ${ty} 800)
-click_run(n3 "m5,5@100 ${ln} ${tn} m5,5@1300 q@1600" KEEP)
+click_run(n3 "m5,5@100 ${ln} m5,5@1300 q@1600" KEEP)
 foreach(k modland hvsc hippo asma keygenmusic sndh zxart)
-  if(NOT n3 MATCHES "source [0-9] ${k}\\|remote\\|[^|]+\\|0\\|")
-    message(FATAL_ERROR "after Never the source '${k}' is not switched off on the Sources tab:\n${n3}")
+  if(NOT n3 MATCHES "source [0-9]+ ${k}\\|remote\\|[^|]+\\|0\\|")
+    message(FATAL_ERROR "after Never the source '${k}' is not switched off in the source dump:\n${n3}")
   endif()
 endforeach()
-if(NOT n3 MATCHES "source [0-9] testsrc\\|remote\\|[^|]+\\|1\\|")
+if(NOT n3 MATCHES "source [0-9]+ testsrc\\|remote\\|[^|]+\\|1\\|")
   message(FATAL_ERROR "after Never the unticked source was switched off too:\n${n3}")
 endif()
 

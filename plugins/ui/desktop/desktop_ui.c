@@ -6446,6 +6446,10 @@ static const char* library_dump_build(desk* d) {
         sel_gui_rect tr = lib_tab_rect(d, panel_rect(d, "main"), i);
         o = dump_put(d, o, "tab %u %d %d %d %d\n", (unsigned)i, (int)tr.x, (int)tr.y, (int)tr.w, (int)tr.h);
     }
+    o = dump_put(d, o, "sources %u\n", (unsigned)d->src_n); /* I786a: per-source state (key|kind|name|enabled|songs) for the sync checks; the Sources tab that carried it is gone (I678) */
+    for (i = 0; i < d->src_n; i++) {
+        o = dump_put(d, o, "source %u %s|%s|%s|%d|%u\n", (unsigned)i, d->src[i].key, d->src[i].kind, d->src[i].name, d->src[i].enabled, (unsigned)d->src[i].count);
+    }
     {
         uint32_t k, n = d->nagdlg_n, idx;
         sel_gui_rect pm = panel_rect(d, "main");
@@ -7629,7 +7633,7 @@ static void sync_row_done(desk* d, int row, int failed) {
 /* Stores the per-source snooze (library.sync_snoozed, I582) of the banner rows left unticked at Sync: "id:days" for them and
  * for every source the engine already reported a snooze for, then asks SOURCES. The global notice stays untouched. */
 static void nag_snooze(desk* d, uint32_t unticked) {
-    char line[160], csv[128];
+    char line[480], csv[440]; /* 16 sources of "key:days" must fit (desk_send ring slot is 512); 128 dropped the tail with 11 snoozed (I786a) */
     size_t n = 0;
     uint32_t k;
     csv[0] = '\0';
