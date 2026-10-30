@@ -470,6 +470,49 @@ static void test_transport_icons(void) {
     free(ui);
 }
 
+/* I739 mui-slider-partial: the song position bar must not blink. Drive 200 position ticks through the plan the class paints per tick and
+ * count: exactly one partial draw per real fill change, none when the value (fill width) is unchanged, and no op ever erases the box. The
+ * class source must route value-only draws through the update plan. */
+static void test_slider_partial(void) {
+    txt_theme th;
+    mui_aa_slider_t m;
+    mui_aa_slider_op_t ops[MUI_AA_SLIDER_OPS];
+    int w = 200, h = 16, prev = -1, tick, n, changes = 0, paints = 0, erases = 0;
+    uint32_t before = mui_aa_slider_partial_count();
+    char* cls = slurp(AASLIDER_SOURCE);
+    CHECK(cls != NULL, "cannot read the slider class");
+    txt_theme_default(&th);
+    mui_aa_slider_metrics(13, &m);
+    for (tick = 0; tick < 200; tick++) {
+        long v = tick / 2; /* two ticks per value step: every second tick repeats the value */
+        int fw = mui_aa_slider_fill_w(w, v, 0, 100);
+        int i;
+        if (prev >= 0 && fw != prev) {
+            changes++;
+        }
+        n = mui_aa_slider_update_plan(th.token, &m, MUI_AA_NORMAL, w, h, prev, v, 0, 100, ops);
+        if (prev >= 0 && fw == prev) {
+            CHECK(n == 0, "tick %d: unchanged value painted %d ops", tick, n);
+        }
+        if (n > 0 && prev >= 0) {
+            paints++;
+        }
+        for (i = 0; i < n; i++) {
+            erases += ops[i].kind == MUI_AA_SLIDER_ERASE;
+        }
+        prev = fw;
+    }
+    CHECK(paints == changes && changes > 90, "partial draws %d vs real changes %d", paints, changes);
+    CHECK(erases == 0, "box erase in a partial draw: %d", erases);
+    CHECK(mui_aa_slider_partial_count() - before == (uint32_t)paints + 1, "sentinel: partial plans counted %u", (unsigned)(mui_aa_slider_partial_count() - before));
+    n = mui_aa_slider_update_plan(th.token, &m, MUI_AA_NORMAL, w, h, 200, 20, 0, 100, ops); /* fill shrank 200 -> 40: track, then fill */
+    CHECK(n == 2 && ops[0].kind == MUI_AA_SLIDER_TRACK && ops[1].kind == MUI_AA_SLIDER_FILL && ops[1].w == 40, "shrink: track then fill");
+    n = mui_aa_slider_update_plan(th.token, &m, MUI_AA_NORMAL, w, h, 40, 30, 0, 100, ops); /* grew: fill only */
+    CHECK(n == 1 && ops[0].kind == MUI_AA_SLIDER_FILL && ops[0].w == 60, "grow: fill only");
+    CHECK(cls != NULL && strstr(cls, "mui_aa_slider_update_plan(") != NULL && strstr(cls, "MADF_DRAWOBJECT") != NULL, "class does not use the partial plan for value-only draws");
+    free(cls);
+}
+
 /* I667f mui-slider-source: the MUI UI builds every slider through AASlider: no MUIC_Slider, gauge or prop left, the helper definition
  * plus three calls (volume, seek, settings) = 4 "mui_make_slider(" spellings, one AASlider constructor call. */
 static void test_slider_source(void) {
@@ -973,6 +1016,8 @@ int main(int argc, char** argv) {
         test_balance_geom();
     } else if (!strcmp(t, "balance-source")) {
         test_balance_source();
+    } else if (!strcmp(t, "slider-partial")) {
+        test_slider_partial();
     } else if (!strcmp(t, "slider-geom")) {
         test_slider_geom();
     } else if (!strcmp(t, "btn-align")) {
