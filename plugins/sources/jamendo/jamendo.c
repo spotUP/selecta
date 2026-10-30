@@ -33,6 +33,7 @@
 #include <selecta/source.h>
 #include "source/descriptor.h"
 #include "source/json_scan.h"
+#include "source/license_name.h"
 #include "source/sync_stat.h"
 
 #include <ctype.h>
@@ -166,34 +167,6 @@ static void read_results(FILE* f, track_fn each, void* ctx) {
     }
 }
 
-/* "http://creativecommons.org/licenses/by-nc-sa/3.0/" -> "CC BY-NC-SA 3.0"; anything else -> "Creative Commons". */
-static void license_name(const char* url, char* out, size_t n) {
-    const char* p = strstr(url, "/licenses/");
-    char kind[24], ver[12];
-    size_t i = 0;
-
-    snprintf(out, n, "Creative Commons");
-    if (p == NULL) {
-        return;
-    }
-    p += 10;
-    while (*p != '\0' && *p != '/' && i + 1 < sizeof kind) {
-        kind[i++] = (char)toupper((unsigned char)*p++);
-    }
-    kind[i] = '\0';
-    ver[0] = '\0';
-    if (*p == '/') {
-        p++;
-        for (i = 0; *p != '\0' && *p != '/' && i + 1 < sizeof ver;) {
-            ver[i++] = *p++;
-        }
-        ver[i] = '\0';
-    }
-    if (kind[0] != '\0') {
-        snprintf(out, n, "CC %s%s%s", kind, ver[0] != '\0' ? " " : "", ver);
-    }
-}
-
 /* A key is `<id>/<artist>/<title>`: no '/', '|' or control byte inside a part. */
 static void clean_part(char* s) {
     for (; *s != '\0'; s++) {
@@ -232,7 +205,7 @@ static void add_track(void* ctx, track* t) {
     clean_part(t->name);
     clean_part(t->artist);
     snprintf(path, sizeof path, "%s/%s/%s", t->id, t->artist[0] != '\0' ? t->artist : "unknown", t->name);
-    license_name(t->license, lic, sizeof lic);
+    sel_license_name(t->license, lic, sizeof lic);
     snprintf(format, sizeof format, "Jamendo - %s", lic);
     memset(&song, 0, sizeof song);
     song.path = path;

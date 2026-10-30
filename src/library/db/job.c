@@ -159,6 +159,16 @@ int sel_library_task_cancelled(sel_library* lib) {
     return lib != NULL && (lib->task_cancel || lib->job_quit);
 }
 
+void sel_library_task_cancel_request(sel_library* lib) {
+    if (lib != NULL && lib->job_started) {
+        pthread_mutex_lock(&lib->job_lock);
+        if (lib->job_task || lib->job_task_busy) {
+            lib->task_cancel = 1;
+        }
+        pthread_mutex_unlock(&lib->job_lock);
+    }
+}
+
 void sel_library_task_cancel(sel_library* lib) {
     if (lib != NULL && lib->job_started) {
         pthread_mutex_lock(&lib->job_lock);
@@ -192,6 +202,10 @@ int sel_library_task_take(sel_library* lib) {
         lib->task_done = 0;
     }
     return r;
+}
+
+void sel_library_task_cancel_request(sel_library* lib) {
+    (void)lib; /* the task already ran inline */
 }
 
 int sel_library_task_cancelled(sel_library* lib) {

@@ -470,6 +470,49 @@ static void test_transport_icons(void) {
     free(ui);
 }
 
+/* I739 mui-slider-partial: the song position bar must not blink. Drive 200 position ticks through the plan the class paints per tick and
+ * count: exactly one partial draw per real fill change, none when the value (fill width) is unchanged, and no op ever erases the box. The
+ * class source must route value-only draws through the update plan. */
+static void test_slider_partial(void) {
+    txt_theme th;
+    mui_aa_slider_t m;
+    mui_aa_slider_op_t ops[MUI_AA_SLIDER_OPS];
+    int w = 200, h = 16, prev = -1, tick, n, changes = 0, paints = 0, erases = 0;
+    uint32_t before = mui_aa_slider_partial_count();
+    char* cls = slurp(AASLIDER_SOURCE);
+    CHECK(cls != NULL, "cannot read the slider class");
+    txt_theme_default(&th);
+    mui_aa_slider_metrics(13, &m);
+    for (tick = 0; tick < 200; tick++) {
+        long v = tick / 2; /* two ticks per value step: every second tick repeats the value */
+        int fw = mui_aa_slider_fill_w(w, v, 0, 100);
+        int i;
+        if (prev >= 0 && fw != prev) {
+            changes++;
+        }
+        n = mui_aa_slider_update_plan(th.token, &m, MUI_AA_NORMAL, w, h, prev, v, 0, 100, ops);
+        if (prev >= 0 && fw == prev) {
+            CHECK(n == 0, "tick %d: unchanged value painted %d ops", tick, n);
+        }
+        if (n > 0 && prev >= 0) {
+            paints++;
+        }
+        for (i = 0; i < n; i++) {
+            erases += ops[i].kind == MUI_AA_SLIDER_ERASE;
+        }
+        prev = fw;
+    }
+    CHECK(paints == changes && changes > 90, "partial draws %d vs real changes %d", paints, changes);
+    CHECK(erases == 0, "box erase in a partial draw: %d", erases);
+    CHECK(mui_aa_slider_partial_count() - before == (uint32_t)paints + 1, "sentinel: partial plans counted %u", (unsigned)(mui_aa_slider_partial_count() - before));
+    n = mui_aa_slider_update_plan(th.token, &m, MUI_AA_NORMAL, w, h, 200, 20, 0, 100, ops); /* fill shrank 200 -> 40: track, then fill */
+    CHECK(n == 2 && ops[0].kind == MUI_AA_SLIDER_TRACK && ops[1].kind == MUI_AA_SLIDER_FILL && ops[1].w == 40, "shrink: track then fill");
+    n = mui_aa_slider_update_plan(th.token, &m, MUI_AA_NORMAL, w, h, 40, 30, 0, 100, ops); /* grew: fill only */
+    CHECK(n == 1 && ops[0].kind == MUI_AA_SLIDER_FILL && ops[0].w == 60, "grow: fill only");
+    CHECK(cls != NULL && strstr(cls, "mui_aa_slider_update_plan(") != NULL && strstr(cls, "MADF_DRAWOBJECT") != NULL, "class does not use the partial plan for value-only draws");
+    free(cls);
+}
+
 /* I667f mui-slider-source: the MUI UI builds every slider through AASlider: no MUIC_Slider, gauge or prop left, the helper definition
  * plus three calls (volume, seek, settings) = 4 "mui_make_slider(" spellings, one AASlider constructor call. */
 static void test_slider_source(void) {
@@ -749,6 +792,43 @@ static void test_field_draw_flags(void) {
     free(pnl);
 }
 
+/* I733 mui-aa-field-placeholder: (1) the shared hint function gives the top bar and the facet hints the desktop UI shows; (2) the
+ * placeholder plan is TEXT_MUTED for empty + unfocused only; (3) the AAField draw runs it after the super call and the sentinel counts it;
+ * (4) the spec carries the placeholder and every string site passes one (hint, command, pref label). */
+static void test_field_placeholder(void) {
+    txt_theme th;
+    char hint[64];
+    uint32_t rgb = 0, n0 = mui_aa_field_placeholders();
+    char* cls = slurp(AAFIELD_SOURCE);
+    char* ui = slurp(UI_SOURCE);
+    const char* draw;
+    const char* sup;
+    const char* ph;
+    txt_theme_default(&th);
+    sel_uim_search_hint(1, sel_uim_search_facets, SEL_UIM_SEARCH_FACETS, hint, sizeof hint);
+    CHECK(!strcmp(hint, "What do you want to play?"), "top bar hint: %s", hint);
+    sel_uim_search_hint(0, sel_uim_search_facets, SEL_UIM_SEARCH_FACETS, hint, sizeof hint);
+    CHECK(!strcmp(hint, "Search songs, albums, artists"), "facet hint: %s", hint);
+    CHECK(mui_aa_field_placeholder(th.token, "", 0, &rgb) == 1 && rgb == th.token[SEL_GUI_TOKEN_TEXT_MUTED], "empty unfocused: TEXT_MUTED %06X", (unsigned)rgb);
+    CHECK(mui_aa_field_placeholder(th.token, NULL, 0, &rgb) == 1, "NULL contents counts as empty");
+    CHECK(mui_aa_field_placeholder(th.token, "abc", 0, &rgb) == 0, "contents set: none");
+    CHECK(mui_aa_field_placeholder(th.token, "", 1, &rgb) == 0, "active object: none");
+    CHECK(mui_aa_field_placeholders() == n0 + 2u, "sentinel counts the painted placeholders: %u", (unsigned)(mui_aa_field_placeholders() - n0));
+    CHECK(cls != NULL && ui != NULL, "sources readable");
+    if (cls != NULL && ui != NULL) {
+        draw = strstr(cls, "static ULONG aafield_draw(");
+        sup = draw != NULL ? strstr(draw, "DoSuperMethodA(") : NULL;
+        ph = draw != NULL ? strstr(draw, "mui_aa_field_placeholder(") : NULL;
+        CHECK(sup != NULL && ph != NULL && sup < ph, "AAField draw paints the placeholder after the super call");
+        CHECK(ph != NULL && strstr(ph, "aa_text(") != NULL, "placeholder drawn through aa_text");
+        CHECK(strstr(cls, "MUIA_String_Contents, MUIV_EveryTime") != NULL, "repaint on contents change");
+        CHECK(count_of(ui, "sel_uim_search_hint(") == 1 && count_of(ui, "SEL_UIM_CMD_HINT") == 1 && count_of(ui, "r->label);") >= 1, "string sites pass hints");
+        CHECK(count_of(ui, "mui_make_string(") == 5, "string constructor sites: %d", count_of(ui, "mui_make_string("));
+    }
+    free(cls);
+    free(ui);
+}
+
 /* I667i mui-scroller-geom (design 3.5): thumb geometry, colour tokens, widths and the sentinel. */
 static void test_scroller_geom(void) {
     mui_aa_scroller_t m, ms;
@@ -973,6 +1053,8 @@ int main(int argc, char** argv) {
         test_balance_geom();
     } else if (!strcmp(t, "balance-source")) {
         test_balance_source();
+    } else if (!strcmp(t, "slider-partial")) {
+        test_slider_partial();
     } else if (!strcmp(t, "slider-geom")) {
         test_slider_geom();
     } else if (!strcmp(t, "btn-align")) {
@@ -993,6 +1075,8 @@ int main(int argc, char** argv) {
         test_field_plan();
     } else if (!strcmp(t, "field-source")) {
         test_field_source();
+    } else if (!strcmp(t, "field-placeholder")) {
+        test_field_placeholder();
     } else if (!strcmp(t, "field-draw-flags")) {
         test_field_draw_flags();
     } else if (!strcmp(t, "scroller-geom")) {

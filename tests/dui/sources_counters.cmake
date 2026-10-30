@@ -9,7 +9,7 @@ dui_run(out --db "${WORK}/library.db" --ui desktop --backend mem --view library 
 if(NOT out MATCHES "sources_listed=([0-9]+) evt_dropped=([0-9]+)")
   message(FATAL_ERROR "no sources_listed line:\n${out}")
 endif()
-# The launch asks SOURCES once (sync on launch): one row per registered source (9 on the host build: 8 builtin + the test plugin).
+# The launch asks SOURCES once (sync on launch): one row per registered source (12 on the host build: 11 builtin + the test plugin).
 if(NOT CMAKE_MATCH_1 GREATER 0)
   message(FATAL_ERROR "the UI's launch SOURCES queued no rows: sources_listed=${CMAKE_MATCH_1}")
 endif()

@@ -24,7 +24,7 @@ void mui_sidebar_build(const mui_sidebar_in* in, mui_sidebar_model* m) {
     memset(m, 0, sizeof *m);
     g_builds++;
     for (i = 0; i < SEL_UIM_DOOR_COUNT && m->door_n < MUI_SIDEBAR_DOORS; i++) { /* S3: the library header is always there on MUI */
-        if (sel_uim_door_shown_lib(i, in->top_bar, 1)) {
+        if (sel_uim_door_shown_in(i, in->top_bar, 1)) {
             m->door[m->door_n++] = i;
         }
     }

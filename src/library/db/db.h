@@ -138,6 +138,7 @@ enum {
     SEL_USER_SONG_TITLE,        /* DUI-P4-18: value = song key or path; out = its catalogue title; reply [2] = 1 when it has one */
     SEL_USER_SONG_GROUP,        /* I258: value = song key or path; out = its album, else its source; reply [2] = 1 when the song is catalogued */
     SEL_USER_SONG_META,         /* I678h3: value = song key or path; out = "artist\0album\0album id\0composer canon\0" (empty strings when absent); reply [2] = 1 when the song is catalogued */
+    SEL_USER_SONG_BRIEFS,       /* I782: value = song keys, each NUL terminated, then "\0"; out = per key "title\0artist\0album\0album id\0"; reply [2] = songs written */
     SEL_USER_FOLDER_COUNTS,/* I178: reply [2..5] = folders, playlists in folders, playlists, playlist entries */
     SEL_USER_FOLDER_PLAYLISTS, /* I178: at = folder id (0 = all); out = "id\0name\0" pairs then "\0"; reply [2] = playlists */
     SEL_USER_PLAYLIST_KEYS,/* I178: at = playlist id; out = song keys, each NUL terminated, then "\0"; reply [2] = keys */
@@ -226,6 +227,8 @@ typedef struct sel_scan_batch {
     const sel_scan_row* rows;
     uint32_t count;
     int64_t now; /* epoch seconds stored in songs.added */
+    int64_t new_day; /* I790: not 0 = epoch day; the batch adds its songs not yet in the catalogue to
+                      * source_new(source, new_day), the New level of the source page. 0 = record nothing */
 } sel_scan_batch;
 
 /* Rows to delete again (a changelog's deleted: and moved: entries): `count` paths of one source. */
@@ -283,7 +286,7 @@ enum {
 };
 
 /* Schema version this build writes (PRAGMA user_version after migration). */
-#define SEL_LIB_SCHEMA_VERSION 12
+#define SEL_LIB_SCHEMA_VERSION 14
 
 /* Heap bytes for SQLite on a machine: the scaling table of D-M3-2 over fast + chip RAM
  * (<= 4 MiB: 544 KiB (512 KiB + 32 KiB, I687c), <= 16 MiB: 2 MiB, <= 128 MiB: 8 MiB, above: 32 MiB). This is the ceiling:
@@ -422,6 +425,12 @@ int sel_library_song_title(sel_library* lib, const char* ref, char* out, size_t 
 int sel_library_song_group(sel_library* lib, const char* ref, char* out, size_t cap);
 /* I678h3: the artist, album, album id (decimal, "" when the album is not in the albums table) and first composer canon of one song, each NUL terminated, so a track row links to the pages the db row names; 1 when catalogued. */
 int sel_library_song_meta(sel_library* lib, const char* ref, char* out, size_t cap);
+/* I782: title, artist, album and album id of many songs in one request (see SEL_USER_SONG_BRIEFS); *done = songs written. 1 on success. */
+int sel_library_song_briefs(sel_library* lib, const char* keys, char* out, size_t cap, uint32_t* done);
+/* I782: the calling thread's requests never wait. With `on`, sel_library_request takes the call lock only if it is free and otherwise fails
+ * at once (counted in sel_library_deferred), so a draw path never queues behind a sync. Returns the previous setting. */
+int sel_library_nowait(int on);
+uint32_t sel_library_deferred(void);
 int sel_library_playlist_add(sel_library* lib, const char* name, uint32_t folder, const char* keys_nl, uint32_t* out_id);
 int sel_library_folder_counts(sel_library* lib, uint32_t* folders, uint32_t* in_folders, uint32_t* playlists, uint32_t* entries);
 /* Fills `out` per the SEL_USER_FOLDER_PLAYLISTS / PLAYLIST_KEYS / FOLDER_TREE formats; *count = rows found. */
@@ -476,6 +485,8 @@ int sel_library_task_start(sel_library* lib, void (*fn)(void* ctx), void* ctx);
 int sel_library_task_take(sel_library* lib);
 int sel_library_task_cancelled(sel_library* lib);
 void sel_library_task_cancel(sel_library* lib);
+/* I782: asks a running task to stop and returns at once (the UI thread must not wait); no-op when none runs. */
+void sel_library_task_cancel_request(sel_library* lib);
 int sel_library_hash_poll(sel_library* lib);
 /* I184b: counters of the md5 pass. files = files hashed, chunks = file reads (builds without threads read one
  * chunk of at most SEL_HASH_CHUNK bytes per _poll; with threads one per file), tick_max = most bytes one _poll read. */
@@ -554,6 +565,10 @@ int sel_library_items(sel_library* lib, uint32_t kind_mask, uint32_t offset, sel
  * only during the call. Returns the rows, -1 on a library error. */
 typedef void (*sel_collection_row_fn)(void* ctx, const char* const* f);
 int sel_library_collection(sel_library* lib, uint32_t kind, const char* key, uint32_t shelf, sel_collection_row_fn fn, void* ctx);
+/* I790: one windowed level of a source page (SEL_DRILL_*): rows [skip, skip+limit) of the level for `source` (a, b the level's format/artist
+ * arguments). Returns the rows emitted, -1 on error. Never reads a whole source. */
+int sel_library_source_drill(sel_library* lib, const char* source, uint32_t level, const char* a, const char* b, uint32_t skip,
+                             uint32_t limit, sel_collection_row_fn fn, void* ctx);
 
 /* Every song format of the catalogue with its song count (I615c), most songs first: calls `fn(ctx, format, songs)` each. Returns the
  * number of formats, or -1 without a library. */

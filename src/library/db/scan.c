@@ -41,6 +41,7 @@ void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_messa
     const char* drop_tail = NULL;
     int rc;
     int written = 0;
+    int64_t fresh = 0; /* I790: songs of this batch that were not in the catalogue yet */
     uint32_t i;
     char key[1200];
 
@@ -60,6 +61,7 @@ void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_messa
         char old_album[512];
         char old_artist[512];
         int had_album = 0;
+        int old_rc;
 
         snprintf(key, sizeof key, "%s:%s", r->source, r->path);
         sqlite3_reset(sf);
@@ -76,7 +78,11 @@ void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_messa
         }
         sqlite3_reset(so);
         sqlite3_bind_text(so, 1, key, -1, SQLITE_STATIC);
-        if (sqlite3_step(so) == SQLITE_ROW && sqlite3_column_type(so, 0) == SQLITE_TEXT) {
+        old_rc = sqlite3_step(so);
+        if (old_rc == SQLITE_DONE) {
+            fresh++;
+        }
+        if (old_rc == SQLITE_ROW && sqlite3_column_type(so, 0) == SQLITE_TEXT) {
             snprintf(old_album, sizeof old_album, "%s", (const char*)sqlite3_column_text(so, 0));
             snprintf(old_artist, sizeof old_artist, "%s",
                      sqlite3_column_type(so, 1) == SQLITE_TEXT ? (const char*)sqlite3_column_text(so, 1) : "");
@@ -140,6 +146,22 @@ void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_messa
     sqlite3_finalize(so);
     sqlite3_finalize(sd);
     sqlite3_finalize(sd2);
+    if (rc == SQLITE_OK && b->new_day > 0 && fresh > 0 && b->count > 0) {
+        /* I790: the New level of the source page reads one row per source and day */
+        sqlite3_stmt* sn = NULL;
+
+        rc = sqlite3_prepare_v2(lib->db,
+                                "INSERT INTO source_new(source, day, n) VALUES(?1, ?2, ?3)"
+                                " ON CONFLICT(source, day) DO UPDATE SET n=n+excluded.n",
+                                -1, &sn, NULL);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(sn, 1, b->rows[0].source, -1, SQLITE_STATIC);
+            sqlite3_bind_int64(sn, 2, b->new_day);
+            sqlite3_bind_int64(sn, 3, fresh);
+            rc = sqlite3_step(sn) == SQLITE_DONE ? SQLITE_OK : SQLITE_ERROR;
+        }
+        sqlite3_finalize(sn);
+    }
     if (rc == SQLITE_OK) {
         rc = sqlite3_exec(lib->db, "COMMIT", NULL, NULL, NULL);
     } else {

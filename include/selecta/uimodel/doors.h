@@ -16,6 +16,8 @@ typedef struct sel_uim_door {
     const char* label; /* the full English row label */
     const char* page;  /* the page name: home, search, folders, playlists, queue, nowplaying, songinfo */
     const char* shorter; /* I537: the label drawn when the full one does not fit the rail (NULL: none) */
+    const char* line;    /* I791: the engine line the page switch sends (the desktop --view source); NULL: an in-window page with no line */
+    uint32_t header;     /* I673: 1 when the labelled sidebar's "Your Library" header opens this page, so the row is left out there */
     uint32_t topbar;     /* I615a: 1 when the window-wide top bar (layout topbar) owns this page: the sidebar then omits the row */
 } sel_uim_door;
 
@@ -26,9 +28,9 @@ const sel_uim_door* sel_uim_door_at(uint32_t i);
  * shows (the bitmap tier, the mini layout, the MUI sidebar). */
 int sel_uim_door_shown(uint32_t i, int top_bar);
 
-/* I673, I793 (S3): as sel_uim_door_shown, and a UI whose sidebar has the "Your Library" header (library_header != 0) also drops Browse
- * Folders, because the header opens that page. The desktop passes whether the rail is wide enough for labels; the MUI sidebar always has the header. */
-int sel_uim_door_shown_lib(uint32_t i, int top_bar, int library_header);
+/* I673 (I792: moved here from desktop_ui.c desk_door_shown): sel_uim_door_shown plus the header rule; `labelled` is 1 when the sidebar is
+ * wide enough to carry the "Your Library" header (the icon-only rail has none and keeps the door). */
+int sel_uim_door_shown_in(uint32_t i, int top_bar, int labelled);
 
 /* I615a: the row slot of door i in the sidebar: the shown doors before it. A hidden door has no slot (returns 0). */
 uint32_t sel_uim_door_slot(uint32_t i, int top_bar);

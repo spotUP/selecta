@@ -171,6 +171,8 @@ int32_t mui_list_pending_resolve(mui_list_pending* p, int32_t snapshot_active);
  * List cursor (active) can be moved by a list refresh between the click and the app loop handling it, so the clicked
  * row wins and the cursor is only the fallback. */
 int32_t mui_list_dbl_row(int32_t picked, int32_t active);
+/* I724: ENV:Selecta/MUIDblRace value (read once at open) -> knob on: any text but empty or "0". */
+int mui_list_dbl_race_on(const char* value);
 extern uint32_t mui_list_dbl_row_calls; /* sentinel: how often the decision ran */
 /* Tree style: the engine line a click on a node row sends (VIEW_EXPAND/VIEW_COLLAPSE <node id>); "" for a non-node. */
 void mui_list_toggle_line(const sel_view_row* r, char* out, size_t cap);
@@ -217,6 +219,36 @@ const char* mui_door_line(uint32_t i);
 /* I615d: the top bar Browse button's engine lines (the rich UI's PG_BROWSE page load). Home sends mui_door_line(0). */
 #define MUI_TOPBAR_BROWSE_LINES 3u
 extern const char* const mui_topbar_browse_lines[MUI_TOPBAR_BROWSE_LINES];
+
+/* I792 (drift doc 2026-10-30-mui-mac-drift section 4): how the MUI shows page `page` of the shared page table (uimodel/pages.h). Every page
+ * has exactly one entry: a MUI_PAGE_MAIN_VIEW (the main list view, switched by an engine line), a MUI_PAGE_GROUP (the MUI's own page group)
+ * or a MUI_PAGE_EXEMPT carrying the written reason it has no slot. kind MUI_PAGE_GAP with no reason is a page nobody mapped: the route
+ * loop in tests/ui/mui_contract_test.c fails on it. NULL past SEL_UIM_PG_COUNT. */
+enum { MUI_PAGE_GAP = 0, MUI_PAGE_MAIN_VIEW, MUI_PAGE_GROUP, MUI_PAGE_EXEMPT };
+typedef struct mui_page_slot_t {
+    uint32_t kind;
+    const char* exempt; /* MUI_PAGE_EXEMPT: why the page has no MUI slot (and the ledger row that closes it) */
+} mui_page_slot_t;
+const mui_page_slot_t* mui_page_slot(uint32_t page);
+
+/* I735: the panes of the MUI main slot. MUI_PANE_LIST is the song list every engine-line page (Home, Search, Library, ...) shows; the
+ * Visualizer and Pattern pages are own panes, reached from the Mac UI's keys (txt_bindings default: v -> @viz, t -> @pattern; the
+ * View menu items carry the same shortcuts) and shown in the main slot at every width. `opens` counts the openings per pane. */
+enum { MUI_PANE_LIST = 0, MUI_PANE_VIZ, MUI_PANE_TRACKER, MUI_PANE_COUNT };
+typedef struct mui_mainpane {
+    uint32_t pane;
+    uint32_t opens[MUI_PANE_COUNT];
+} mui_mainpane;
+uint32_t mui_pane_of_page(uint32_t page);       /* the pane page `page` shows in; MUI_PANE_LIST for a page the list shows */
+uint32_t mui_pane_page(uint32_t pane);          /* the shared-table page a pane shows (SEL_UIM_PG_*) */
+uint32_t mui_pane_of_action(const char* act);   /* "@viz" -> MUI_PANE_VIZ, "@pattern" -> MUI_PANE_TRACKER; MUI_PANE_COUNT otherwise */
+const char* mui_pane_title(uint32_t pane);      /* the View menu item title, NULL for the list */
+char mui_pane_shortcut(uint32_t pane);          /* the Mac UI's key for the page, '\0' when none */
+/* The page entry: shows the pane of `page`, counts the opening, returns the pane. Any other page (a door or the top bar) goes back
+ * to the list through the same call. */
+uint32_t mui_pane_open(mui_mainpane* mp, uint32_t page);
+/* A key press (txt_key code and mods) as the Mac UI's default table reads it: opens the page it names. MUI_PANE_COUNT when the key opens none. */
+uint32_t mui_pane_key(mui_mainpane* mp, uint32_t code, uint32_t mods);
 
 /* MUI-P4-2: Library breadcrumbs. Pieces of a browse path split on "/" and the AmigaDOS ":" (the volume keeps its colon);
  * `end` is the length of the path up to and including the piece, so a click on a crumb opens path[0..end). Returns the

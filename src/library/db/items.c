@@ -7,8 +7,11 @@
  * Reused, not reinvented: the maintained tables composers (v7) and source_songs (v8) for their counts, the genre op streaming path
  * (sel_genre_call buffers the rows on the worker and replays them on the caller's thread), history.key and playlist_entries keys. */
 #include "db_internal.h"
+#include <stdlib.h>
+#include <unistd.h>
 
 #include "../composer.h"
+#include "../source.h"
 
 #include <selecta/platform.h>
 #include <selecta/library_item.h>
@@ -37,10 +40,10 @@
     "IFNULL((SELECT at FROM opened WHERE kind=4 AND id=CAST(a.id AS TEXT)),0) FROM albums a LEFT JOIN sa ON sa.al IS a.name AND sa.ar IS a.artist" \
     " LEFT JOIN la ON la.al IS a.name AND la.ar IS a.artist"
 #define PART_ARTIST \
-    "SELECT 5,r.name,r.name,'',IFNULL(sr.n,0),IFNULL(sr.ad,0),IFNULL(lr.t,0),0,0,r.name,0," \
+    "SELECT 5,r.name,r.name,'',r.n,r.ad,IFNULL(lr.t,0),0,0,r.name,0," \
     "IFNULL((SELECT at FROM opened WHERE kind=5 AND id=r.name),0) FROM" \
-    " (SELECT artist AS name FROM songs WHERE artist<>'' UNION SELECT artist FROM albums WHERE artist<>'') r" \
-    " LEFT JOIN sr ON sr.ar=r.name LEFT JOIN lr ON lr.ar=r.name"
+    " (SELECT ar AS name,n,ad FROM sr UNION ALL SELECT artist,0,0 FROM albums WHERE artist<>'' AND artist NOT IN (SELECT ar FROM sr)) r" \
+    " LEFT JOIN lr ON lr.ar=r.name"
 /* Composers: the maintained table plus the Unknown composer group, like SEL_COMPOSER_LIST. */
 #define PART_COMPOSER \
     "SELECT 6,c.canon,c.display,'',c.songs,0,IFNULL(lc.t,0),0,0,c.display,0," \
@@ -48,30 +51,37 @@
     " UNION ALL SELECT 6,'" SEL_COMPOSER_UNKNOWN_CANON "','" SEL_COMPOSER_UNKNOWN_DISPLAY "','',n,0,0,0,0,'~',1," \
     "IFNULL((SELECT at FROM opened WHERE kind=6 AND id='" SEL_COMPOSER_UNKNOWN_CANON "'),0)" \
     " FROM composer_unknown WHERE n>0"
-/* Sources: the Local Files pinned row already stands for source 'local'. */
+/* Sources: every registered source (the reg helper table), with 0 songs too, so a source that never synced can be opened and
+ * synced (I678m), plus a source that still owns songs after its plugin went. The Local Files pinned row stands for 'local'. */
 #define PART_SOURCE \
-    "SELECT 7,s.source,s.source,'',s.n,0,IFNULL(ls.t,0),0,0,s.source,0," \
-    "IFNULL((SELECT at FROM opened WHERE kind=7 AND id=s.source),0) FROM source_songs s LEFT JOIN ls ON ls.source=s.source" \
-    " WHERE s.source<>'local' AND s.n>0"
+    "SELECT 7,r.id,r.id,'',IFNULL(s.n,0),0,IFNULL(ls.t,0),0,0,r.id,0," \
+    "IFNULL((SELECT at FROM opened WHERE kind=7 AND id=r.id),0) FROM" \
+    " (SELECT id FROM reg UNION SELECT source FROM source_songs WHERE n>0) r" \
+    " LEFT JOIN source_songs s ON s.source=r.id LEFT JOIN ls ON ls.source=r.id WHERE r.id<>'local'"
 
 static const char* const k_part[SEL_LIB_ITEM_KINDS] = {PART_LIKED, PART_RECENT, PART_LOCAL,    PART_PLAYLIST,
                                                        PART_ALBUM, PART_ARTIST, PART_COMPOSER, PART_SOURCE};
 
-/* Helper tables the parts join (a CTE nobody reads costs nothing). */
+/* Helper tables the parts join (a CTE nobody reads costs nothing). I787: the history joins are CROSS JOINs, which fixes the loop
+ * order: history (a few thousand rows) drives and songs is probed by its unique key. Left to the planner it walked the whole songs
+ * table through songs_artist_added and probed history per song (10 s on 594 520 songs). The sa and sr aggregates read the covering
+ * indexes songs_album and songs_artist_added (schema v13): one index scan, no table lookups. */
 #define CTE_SA "sa AS (SELECT album AS al, artist AS ar, COUNT(*) AS n, MAX(added) AS ad FROM songs GROUP BY album, artist)"
 #define CTE_LA \
-    "la AS (SELECT s.album AS al, s.artist AS ar, MAX(h.played_at) AS t FROM history h JOIN songs s ON s.key=h.key" \
+    "la AS (SELECT s.album AS al, s.artist AS ar, MAX(h.played_at) AS t FROM history h CROSS JOIN songs s ON s.key=h.key" \
     " GROUP BY s.album, s.artist)"
 #define CTE_SR "sr AS (SELECT artist AS ar, COUNT(*) AS n, MAX(added) AS ad FROM songs WHERE artist<>'' GROUP BY artist)"
 #define CTE_LR \
-    "lr AS (SELECT s.artist AS ar, MAX(h.played_at) AS t FROM history h JOIN songs s ON s.key=h.key WHERE s.artist<>''" \
+    "lr AS (SELECT s.artist AS ar, MAX(h.played_at) AS t FROM history h CROSS JOIN songs s ON s.key=h.key WHERE s.artist<>''" \
     " GROUP BY s.artist)"
 #define CTE_LC \
-    "lc AS (SELECT c.canon AS canon, MAX(h.played_at) AS t FROM history h JOIN song_composers c ON c.song_key=h.key GROUP BY c.canon)"
+    "lc AS (SELECT c.canon AS canon, MAX(h.played_at) AS t FROM history h CROSS JOIN song_composers c ON c.song_key=h.key GROUP BY c.canon)"
 #define CTE_LS \
-    "ls AS (SELECT s.source AS source, MAX(h.played_at) AS t FROM history h JOIN songs s ON s.key=h.key GROUP BY s.source)"
+    "ls AS (SELECT s.source AS source, MAX(h.played_at) AS t FROM history h CROSS JOIN songs s ON s.key=h.key GROUP BY s.source)"
 
-#define CTE_COUNT 6u
+/* reg (bit 6) is not a constant: put_reg writes the registered source ids. */
+#define CTE_COUNT 7u
+#define CTE_REG 6u
 
 static size_t put(char* sql, size_t cap, size_t n, const char* text) {
     size_t len = strlen(text);
@@ -81,11 +91,30 @@ static size_t put(char* sql, size_t cap, size_t n, const char* text) {
     return n + len;
 }
 
+/* The reg helper table: one row per registered source id. Reads the registry only; the caller half registered it. */
+static size_t put_reg(char* sql, size_t cap, size_t n) {
+    uint32_t i, count = sel_source_count();
+
+    n = put(sql, cap, n, "reg(id) AS (SELECT 'local'");
+    for (i = 0; i < count && n < cap; i++) {
+        const sel_source* src = sel_source_get(i);
+
+        if (src == NULL) continue;
+        n = put(sql, cap, n, " UNION ALL SELECT ");
+        if (n < cap) {
+            sqlite3_snprintf((int)(cap - n), sql + n, "%Q", src->id);
+            n += strlen(sql + n);
+            if (n + 1u >= cap) n = cap;
+        }
+    }
+    return put(sql, cap, n, ")");
+}
+
 /* Builds the statement for `mask`; 0 when it does not fit or the mask names no kind. */
 static int build_sql(uint32_t mask, char* sql, size_t cap) {
-    static const char* const cte[CTE_COUNT] = {CTE_SA, CTE_LA, CTE_SR, CTE_LR, CTE_LC, CTE_LS};
-    /* bit i = cte[i]: albums read sa+la, artists sr+lr, composers lc, sources ls. */
-    static const uint32_t need[SEL_LIB_ITEM_KINDS] = {0, 0, 0, 0, 0x03u, 0x0Cu, 0x10u, 0x20u};
+    static const char* const cte[CTE_COUNT] = {CTE_SA, CTE_LA, CTE_SR, CTE_LR, CTE_LC, CTE_LS, NULL};
+    /* bit i = cte[i]: albums read sa+la, artists sr+lr, composers lc, sources ls+reg. */
+    static const uint32_t need[SEL_LIB_ITEM_KINDS] = {0, 0, 0, 0, 0x03u, 0x0Cu, 0x10u, 0x60u};
     uint32_t k, with = 0, parts = 0, i;
     size_t n = 0;
     int first = 1;
@@ -102,7 +131,7 @@ static int build_sql(uint32_t mask, char* sql, size_t cap) {
             if (!(with & (1u << i))) continue;
             if (!first) n = put(sql, cap, n, ",");
             first = 0;
-            n = put(sql, cap, n, cte[i]);
+            n = i == CTE_REG ? put_reg(sql, cap, n) : put(sql, cap, n, cte[i]);
         }
         n = put(sql, cap, n, " ");
     }
@@ -130,10 +159,10 @@ static const char* format_sql(uint32_t kind) {
     case SEL_LIB_ITEM_ALBUM:
         return "SELECT s.path FROM songs s JOIN albums a ON a.id=CAST(?1 AS INTEGER) AND s.album IS a.name AND s.artist IS a.artist";
     case SEL_LIB_ITEM_ARTIST: return "SELECT path FROM songs WHERE artist=?1";
-    case SEL_LIB_ITEM_COMPOSER:
-        return "SELECT s.path FROM songs s WHERE CASE WHEN ?1='" SEL_COMPOSER_UNKNOWN_CANON "' THEN NOT EXISTS"
+    case SEL_LIB_ITEM_COMPOSER: /* I787: two branches; a CASE in one WHERE made every composer scan the whole songs table (600 000 rows each) */
+        return "SELECT s.path FROM songs s WHERE ?1='" SEL_COMPOSER_UNKNOWN_CANON "' AND NOT EXISTS"
                " (SELECT 1 FROM song_composers c WHERE c.song_key=s.key)"
-               " ELSE s.key IN (SELECT song_key FROM song_composers WHERE canon=?1) END";
+               " UNION ALL SELECT s.path FROM song_composers c JOIN songs s ON s.key=c.song_key WHERE c.canon=?1 AND ?1<>'" SEL_COMPOSER_UNKNOWN_CANON "'";
     case SEL_LIB_ITEM_PLAYLIST:
         return "SELECT s.path FROM playlist_entries e JOIN songs s ON s.key=e.key WHERE e.playlist_id=CAST(?1 AS INTEGER)";
     case SEL_LIB_ITEM_LIKED: return "SELECT s.path FROM songs s JOIN liked l ON l.key=s.key";
@@ -162,6 +191,28 @@ void sel_db_majority_format(sqlite3* db, uint32_t kind, const char* key, char* o
     sel_platform_family_tally_format(&t, out, cap);
 }
 
+void sel_db_majority_format_cached(sel_library* lib, uint32_t kind, const char* key, char* out, size_t cap) {
+    const char* k = key != NULL ? key : "";
+    int64_t stamp = (int64_t)sqlite3_total_changes64(lib->db) + 1;
+    uint32_t h = kind * 2654435761u;
+    sel_fmt_cache* c;
+    size_t i;
+
+    if (strlen(k) >= SEL_FMT_CACHE_KEY || cap < sizeof c->fmt) {
+        sel_db_majority_format(lib->db, kind, key, out, cap);
+        return;
+    }
+    for (i = 0; k[i] != '\0'; i++) h = h * 31u + (unsigned char)k[i];
+    c = &lib->fmt_cache[h % SEL_FMT_CACHE_SLOTS];
+    if (c->stamp != stamp || c->kind != kind || strcmp(c->key, k) != 0) {
+        sel_db_majority_format(lib->db, kind, k, c->fmt, sizeof c->fmt);
+        c->stamp = stamp;
+        c->kind = kind;
+        strcpy(c->key, k);
+    }
+    strcpy(out, c->fmt);
+}
+
 int sel_library_items_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id) {
     char sql[4096];
     sqlite3_stmt* st = NULL;
@@ -172,6 +223,13 @@ int sel_library_items_op(sel_library* lib, const sel_genre_op* op, int* found, i
     *found = 0;
     *id = 0;
     if (op->row == NULL || !build_sql(op->mask, sql, sizeof sql)) return SQLITE_MISUSE;
+#if !defined(__amigaos__) && !defined(AMIGA)
+    {   /* I787 test knob: a slow query for the dui test that proves the frame does not wait on it */
+        const char* slow = getenv("SELECTA_LIB_ITEMS_SLOW_MS");
+
+        if (slow != NULL && atoi(slow) > 0) usleep((useconds_t)atoi(slow) * 1000u);
+    }
+#endif
     rc = sqlite3_prepare_v2(lib->db, sql, -1, &st, NULL);
     if (rc != SQLITE_OK) return rc;
     while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
@@ -197,7 +255,7 @@ int sel_library_items_op(sel_library* lib, const sel_genre_op* op, int* found, i
             f[7] = art;
             f[8] = pinned;
             f[9] = opened;
-            sel_db_majority_format(lib->db, (uint32_t)sqlite3_column_int(st, 0), text(st, 1), fmt, sizeof fmt);
+            sel_db_majority_format_cached(lib, (uint32_t)sqlite3_column_int(st, 0), text(st, 1), fmt, sizeof fmt);
             f[10] = fmt;
             emitted++;
             (void)op->row(op->row_ctx, f);
@@ -250,6 +308,7 @@ int sel_library_items(sel_library* lib, uint32_t kind_mask, uint32_t offset, sel
     k.out = out;
     k.n = 0;
     k.max = max;
+    sel_source_register_builtin(); /* the worker's reg table reads the registry; register on this thread first */
     memset(&op, 0, sizeof op);
     op.op = SEL_LIBRARY_ITEMS;
     op.mask = kind_mask;
@@ -310,7 +369,80 @@ static const char* collection_sql(uint32_t kind, uint32_t shelf) {
     }
 }
 
+/* I790: one level of a source page. Every statement filters on `source` and an index of schema v14 (songs_source_format,
+ * songs_source_artist) and ends in LIMIT/OFFSET, so no query loads a whole source. SUM(size) is NULL until I801 fills sizes. */
+#define DRILL_SONG "SELECT s.key,IFNULL(s.name,''),IFNULL(s.artist,''),IFNULL(s.album,''),0 FROM songs s"
+static const char* drill_sql(uint32_t level) {
+    switch (level) {
+    case SEL_DRILL_FORMATS: return "SELECT IFNULL(format,''),COUNT(*),SUM(size),'','' FROM songs WHERE source=?1 GROUP BY format ORDER BY 2 DESC LIMIT ?5 OFFSET ?4";
+    case SEL_DRILL_FORMAT_ARTISTS:
+        return "SELECT IFNULL(artist,''),COUNT(*),SUM(size),'','' FROM songs WHERE source=?1 AND format IS NULLIF(?2,'') GROUP BY artist"
+               " ORDER BY artist COLLATE NOCASE LIMIT ?5 OFFSET ?4";
+    case SEL_DRILL_FORMAT_SONGS:
+        return DRILL_SONG " WHERE s.source=?1 AND s.format IS NULLIF(?2,'') AND s.artist IS NULLIF(?3,'') ORDER BY s.name COLLATE NOCASE, s.id LIMIT ?5 OFFSET ?4";
+    case SEL_DRILL_ARTISTS:
+        return "SELECT IFNULL(artist,''),COUNT(*),SUM(size),'','' FROM songs WHERE source=?1 GROUP BY artist ORDER BY artist LIMIT ?5 OFFSET ?4"; /* index order: a NOCASE sort needs a temp B-tree of every artist (435 ms on 30k artists) */
+    case SEL_DRILL_ARTIST_SONGS:
+        return DRILL_SONG " WHERE s.source=?1 AND s.artist IS NULLIF(?2,'') ORDER BY s.name COLLATE NOCASE, s.id LIMIT ?5 OFFSET ?4";
+    case SEL_DRILL_FORMAT_SAMPLE: /* one path of the format, for the family fold: a single index seek */
+        return "SELECT IFNULL(path,''),1,NULL,'','' FROM songs WHERE source=?1 AND format IS NULLIF(?2,'') LIMIT 1";
+    case SEL_DRILL_NEW:
+        return "SELECT day,n,NULL,'','' FROM source_new WHERE source=?1 ORDER BY day DESC LIMIT ?5 OFFSET ?4";
+    default: return NULL;
+    }
+}
+
+/* key = source US level US a US b (US = 0x1f). Streams the window rows; *id = rows emitted (the sentinel the tests assert). */
+static int drill_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id) {
+    char buf[1200];
+    char* part[4] = {NULL, NULL, NULL, NULL};
+    char* c;
+    sqlite3_stmt* st = NULL;
+    uint32_t level;
+    const char* sql;
+    int i, rc;
+    int64_t total = 0;
+
+    snprintf(buf, sizeof buf, "%s", op->key);
+    part[0] = buf;
+    for (i = 1, c = buf; i < 4 && (c = strchr(c, 0x1f)) != NULL; i++) {
+        *c++ = '\0';
+        part[i] = c;
+    }
+    level = part[1] != NULL ? (uint32_t)strtoul(part[1], NULL, 10) : 99u;
+    sql = drill_sql(level);
+    *found = 1;
+    if (sql == NULL) return SQLITE_OK;
+    rc = sqlite3_prepare_v2(lib->db, sql, -1, &st, NULL);
+    if (rc != SQLITE_OK) return rc;
+    sqlite3_bind_text(st, 1, part[0], -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 2, part[2] != NULL ? part[2] : "", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 3, part[3] != NULL ? part[3] : "", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(st, 4, (sqlite3_int64)op->at);
+    sqlite3_bind_int64(st, 5, op->after > 0 ? (sqlite3_int64)op->after : 1000);
+    while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
+        char count[24], size[24];
+        const char* f[6];
+
+        num(count, sizeof count, st, 1);
+        if (level == SEL_DRILL_FORMAT_SONGS || level == SEL_DRILL_ARTIST_SONGS) {
+            f[0] = text(st, 0); f[1] = text(st, 1); f[2] = text(st, 2); f[3] = text(st, 3); f[4] = count; /* count column is 0 here */
+        } else {
+            if (sqlite3_column_type(st, 2) == SQLITE_NULL) size[0] = '\0'; else num(size, sizeof size, st, 2);
+            f[0] = text(st, 0); f[1] = count; f[2] = size; f[3] = ""; f[4] = "";
+        }
+        f[5] = "";
+        total++;
+        (void)op->row(op->row_ctx, f);
+    }
+    sqlite3_finalize(st);
+    if (rc != SQLITE_DONE) return rc;
+    *id = total;
+    return SQLITE_OK;
+}
+
 int sel_library_collection_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id) {
+    if (op->mask == SEL_COLL_DRILL && op->row != NULL && op->key != NULL) return drill_op(lib, op, found, id);
     const char* sql = collection_sql(op->offset, op->mask);
     sqlite3_stmt* st = NULL;
     int64_t total = 0;
@@ -339,7 +471,7 @@ int sel_library_collection_op(sel_library* lib, const sel_genre_op* op, int* fou
         f[3] = op->mask == SEL_COLL_SONGS ? text(st, 3) : year;
         f[4] = number;
         if (op->mask == SEL_COLL_ALBUMS || op->mask == SEL_COLL_APPEARS || op->mask == SEL_COLL_MORE || op->mask == SEL_COLL_HEAD) {
-            sel_db_majority_format(lib->db, SEL_LIB_ITEM_ALBUM, f[0], fmt, sizeof fmt); /* I691c: f[0] is the album id */
+            sel_db_majority_format_cached(lib, SEL_LIB_ITEM_ALBUM, f[0], fmt, sizeof fmt); /* I691c: f[0] is the album id */
         }
         f[5] = fmt;
         total++;
@@ -362,6 +494,30 @@ static int collection_row(void* ctx, const char* const* f) {
 
     k->fn(k->ctx, f);
     return 0;
+}
+
+int sel_library_source_drill(sel_library* lib, const char* source, uint32_t level, const char* a, const char* b, uint32_t skip,
+                             uint32_t limit, sel_collection_row_fn fn, void* ctx) {
+    collection_sink k;
+    sel_genre_op op;
+    char key[1200];
+    int64_t rows = 0;
+
+    if (lib == NULL || source == NULL || fn == NULL) return -1;
+    snprintf(key, sizeof key, "%s\x1f%u\x1f%s\x1f%s", source, (unsigned)level, a != NULL ? a : "", b != NULL ? b : "");
+    k.fn = fn;
+    k.ctx = ctx;
+    memset(&op, 0, sizeof op);
+    op.op = SEL_COLLECTION;
+    op.key = key;
+    op.offset = SEL_LIB_ITEM_SOURCE;
+    op.mask = SEL_COLL_DRILL;
+    op.at = skip;
+    op.after = limit;
+    op.row = collection_row;
+    op.row_ctx = &k;
+    if (sel_genre_call(lib, &op, &rows) < 0) return -1;
+    return (int)rows;
 }
 
 int sel_library_collection(sel_library* lib, uint32_t kind, const char* key, uint32_t shelf, sel_collection_row_fn fn, void* ctx) {
@@ -393,8 +549,8 @@ int sel_library_collection(sel_library* lib, uint32_t kind, const char* key, uin
  * section 5. HOME_FIN counts finished plays only and HOME_FIN_LAST is the time of the last one: Recently Played and Your Albums use
  * these (Johan 2026-10-29; an album with only skipped plays stays on Jump Back In). */
 #define HOME_HIST(agg, cond) \
-    "(CASE k WHEN 4 THEN (SELECT " agg " FROM history h JOIN songs s ON s.key=h.key WHERE s.album IS nm AND s.artist IS NULLIF(sub,'')" cond ")" \
-    " WHEN 6 THEN (SELECT " agg " FROM history h JOIN song_composers c ON c.song_key=h.key WHERE c.canon=ik" cond ")" \
+    "(CASE k WHEN 4 THEN (SELECT " agg " FROM history h CROSS JOIN songs s ON s.key=h.key WHERE s.album IS nm AND s.artist IS NULLIF(sub,'')" cond ")" \
+    " WHEN 6 THEN (SELECT " agg " FROM history h CROSS JOIN song_composers c ON c.song_key=h.key WHERE c.canon=ik" cond ")" \
     " WHEN 3 THEN (SELECT " agg " FROM history h JOIN playlist_entries e ON e.key=h.key WHERE e.playlist_id=CAST(ik AS INTEGER)" cond ")" \
     " ELSE 0 END)"
 #define HOME_PLAYS HOME_HIST("COUNT(*)", "")

@@ -28,6 +28,7 @@ typedef struct aafield_data {
     Object* str;
     mui_aa_field_t m;
     int max_w;
+    const char* placeholder;
     aa_ctx aa;
     int pens_logged; /* the old String pens went to stderr once (I667n evidence) */
 } aafield_data;
@@ -61,12 +62,14 @@ static ULONG aafield_setup(struct IClass* cl, Object* obj, Msg msg) {
         }
     }
     DoMethod(_win(obj), MUIM_Notify, MUIA_Window_ActiveObject, MUIV_EveryTime, (ULONG)obj, 1, AAF_Redraw);
+    DoMethod(d->str, MUIM_Notify, MUIA_String_Contents, MUIV_EveryTime, (ULONG)obj, 1, AAF_Redraw); /* I733: the placeholder shows and hides with the contents */
     return TRUE;
 }
 
 static ULONG aafield_cleanup(struct IClass* cl, Object* obj, Msg msg) {
     aafield_data* d = INST_DATA(cl, obj);
     DoMethod(_win(obj), MUIM_KillNotifyObj, MUIA_Window_ActiveObject, (ULONG)obj);
+    DoMethod(d->str, MUIM_KillNotifyObj, MUIA_String_Contents, (ULONG)obj);
     aa_cleanup(&d->aa);
     return DoSuperMethodA(cl, obj, msg);
 }
@@ -132,6 +135,15 @@ static ULONG aafield_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg)
         for (k = 0; k < n; k++) {
             aa_round_fill_hole(rp, _left(obj) + ops[k].inset, _top(obj) + ops[k].inset, _width(obj) - 2 * ops[k].inset, _height(obj) - 2 * ops[k].inset,
                                ops[k].radius, aa_pen(&d->aa, ops[k].rgb), _left(d->str), _top(d->str), _width(d->str), _height(d->str));
+        }
+    }
+    if ((msg->flags & MADF_DRAWOBJECT) && d->placeholder != NULL) { /* I733 (design 3.4): after the super, so it lands on the String's box */
+        ULONG cont = 0;
+        uint32_t rgb;
+        GetAttr(MUIA_String_Contents, d->str, &cont);
+        if (mui_aa_field_placeholder(d->aa.tok, (const char*)cont, aafield_focus(obj, d), &rgb)) {
+            int th = aa_text_height(&d->aa, obj);
+            aa_text(&d->aa, obj, _rp(obj), _left(d->str), _top(d->str) + (_height(d->str) - th) / 2, d->placeholder, rgb, d->aa.tok[MUI_AA_FIELD_FACE]);
         }
     }
     return r;
@@ -211,6 +223,7 @@ Object* mui_aafield_new(const mui_aafield_spec* sp) {
     }
     ((aafield_data*)INST_DATA(g_class->mcc_Class, o))->str = str;
     ((aafield_data*)INST_DATA(g_class->mcc_Class, o))->max_w = sp->max_w;
+    ((aafield_data*)INST_DATA(g_class->mcc_Class, o))->placeholder = sp->placeholder;
     if (sp->id != 0) {
         DoMethod(str, MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)sp->id);
     }
