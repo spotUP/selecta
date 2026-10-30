@@ -2,6 +2,7 @@
 #include "devilbox.h"
 
 #include "db_internal.h"
+#include "backoff.h"
 #include "http.h"
 #include "mirrors.h"
 #include "../source.h"
@@ -349,7 +350,7 @@ int sel_devilbox_vote(const char* token, const char* mkey, int r, unsigned* coun
     req.url = url;
     (void)sel_http_request(&req, text_sink, &b, &res);
     if (res.status == 400) return SEL_VOTE_BAD;
-    if (res.status == 429) return SEL_VOTE_RATE;
+    if (sel_http_rate_limited(&res)) return SEL_VOTE_RATE;
     if (res.status == 404) return SEL_VOTE_MISSING;
     if (res.status != 200 || sscanf(reply, "%u %u", &c, &y) != 2) return SEL_VOTE_RETRY;
     if (count != NULL) *count = c;
