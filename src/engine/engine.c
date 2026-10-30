@@ -54,6 +54,7 @@
 #include "share.h"
 #include "stream_open.h"
 #include "net/net.h"
+#include "archive/archive.h"
 #if !defined(SEL_NO_ANALYSE)
 #include "loudness.h"
 #endif
@@ -176,6 +177,7 @@
 #define SEL_RING_SWAP 1u
 #define SEL_RING_RETURN 2u
 #define SEL_DEFERRED_PATH_MAX 1024u
+#define SEL_ARCHIVE_MEMBER_NAME_MAX 128u
 #define SEL_ERROR_DETAIL_MAX 64
 #define SEL_LOG_LINE_MAX 96
 /* RESULT lines (COMMANDS, EVENTS, TAGTYPES, STATUS) are copied into a per-engine arena that lives until the event queue
@@ -399,6 +401,8 @@ struct sel_engine {
     uint32_t songs_opened;  /* OPEN-kind song starts that succeeded (not seeks, restarts, subsongs) */
     uint32_t dup_redirects; /* reads that took the best source of the same md5 (D-M3-14, I184) */
     char dup_played[SEL_DEFERRED_PATH_MAX]; /* key of the last best source read */
+    uint32_t archive_unpacks;    /* OPENs whose file was an archive and played the module inside (I405 sentinel) */
+    char archive_member[SEL_ARCHIVE_MEMBER_NAME_MAX]; /* name of the member the last unpack played */
     char deferred_path[SEL_DEFERRED_PATH_MAX];
     char subsong_path[SEL_DEFERRED_PATH_MAX];
     sel_queue queue;
@@ -2063,6 +2067,57 @@ static void report_open_failed(sel_engine* e, const char* detail) {
     }
 }
 
+#define SEL_ARCHIVE_MEMBER_MAX (16u * 1024u * 1024u) /* largest member an archived module may be */
+
+typedef struct unpack_ctx {
+    sel_engine* e;
+    uint8_t* module; /* host copy of the member found, NULL: none yet */
+    size_t module_size;
+} unpack_ctx;
+
+/* The first member some replayer takes becomes the module (I405: Aminet songs are LHA archives). */
+static int on_archive_member(void* vctx, const char* name, const uint8_t* data, size_t size) {
+    unpack_ctx* u = vctx;
+    uint8_t* copy;
+
+    if (size == 0 || find_replayer(u->e, data, size, name) == NULL) {
+        return 1;
+    }
+    copy = u->e->host->mem_alloc(u->e->host, size + 1u, SEL_MEM_FAST);
+    if (copy == NULL) {
+        return 0;
+    }
+    memcpy(copy, data, size);
+    copy[size] = 0;
+    u->module = copy;
+    u->module_size = size;
+    snprintf(u->e->archive_member, sizeof u->e->archive_member, "%s", name);
+    return 0;
+}
+
+/* `data` is the file read for OPEN. When it is a folder archive (LHA, zip) holding a member some replayer takes, replaces
+ * it with that member (the old buffer is freed) and returns the member's replayer; otherwise leaves `data` alone and
+ * returns NULL. */
+static const sel_tag* unpack_archived_module(sel_engine* e, uint8_t** data, size_t* size) {
+    unpack_ctx u;
+    int kind = sel_archive_kind(*data, *size);
+
+    if (kind == SEL_ARCHIVE_NONE || !sel_archive_is_folder(kind)) {
+        return NULL;
+    }
+    memset(&u, 0, sizeof u);
+    u.e = e;
+    sel_archive_each(e->host, kind, *data, *size, SEL_ARCHIVE_MEMBER_MAX, on_archive_member, &u);
+    if (u.module == NULL) {
+        return NULL;
+    }
+    e->host->mem_free(e->host, *data);
+    *data = u.module;
+    *size = u.module_size;
+    e->archive_unpacks++;
+    return find_replayer(e, u.module, u.module_size, e->archive_member);
+}
+
 /* Prepares the idle slot `idx` with the song at `path` (all allocation, file
  * read, RP_OPEN and RP_START happen here) and publishes it through the swap
  * ring. On failure the slot stays free and the error is reported. */
@@ -2116,6 +2171,14 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
             return 0;
         }
         hooks = find_replayer(e, data, size, path);
+    }
+    if (live == NULL && fs == NULL) {
+        /* I405: a folder archive (LHA, zip) holding a module plays that module. Tried before the replayer that claimed
+         * the archive itself: the YM probe takes every LHA (a .ym is LH5-packed), and a .mod inside would fail there. */
+        const sel_tag* inner = unpack_archived_module(e, &data, &size);
+        if (inner != NULL) {
+            hooks = inner;
+        }
     }
     if (hooks == NULL) {
         drop_song(e, data, live, fs);
@@ -7429,6 +7492,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->hw_starts = e->hw_starts;
     out->dup_redirects = e->dup_redirects;
     out->dup_played = e->dup_played;
+    out->archive_unpacks = e->archive_unpacks;
+    out->archive_member = e->archive_member;
     if (e->lib != NULL) {
         sel_hash_stats hs;
 
