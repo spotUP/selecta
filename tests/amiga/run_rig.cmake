@@ -41,6 +41,9 @@ function(ami out_var)
   if(NOT rc EQUAL 0)
     message(FATAL_ERROR "RED[${TAG}]: ami.py ${ARGN} exited ${rc}\n${out}${err}")
   endif()
+  # rig.py's pre-command gate prints "[REFRESH] rig N: ..." on stdout before the command's own output; it is a status line,
+  # not part of the record the caller parses (the screens hex record failed its ^ anchor on it).
+  string(REGEX REPLACE "(^|\n)\\[REFRESH\\][^\n]*\n?" "\\1" out "${out}")
   set(${out_var} "${out}${err}" PARENT_SCOPE)
 endfunction()
 
