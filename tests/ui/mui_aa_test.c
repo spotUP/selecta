@@ -749,6 +749,43 @@ static void test_field_draw_flags(void) {
     free(pnl);
 }
 
+/* I733 mui-aa-field-placeholder: (1) the shared hint function gives the top bar and the facet hints the desktop UI shows; (2) the
+ * placeholder plan is TEXT_MUTED for empty + unfocused only; (3) the AAField draw runs it after the super call and the sentinel counts it;
+ * (4) the spec carries the placeholder and every string site passes one (hint, command, pref label). */
+static void test_field_placeholder(void) {
+    txt_theme th;
+    char hint[64];
+    uint32_t rgb = 0, n0 = mui_aa_field_placeholders();
+    char* cls = slurp(AAFIELD_SOURCE);
+    char* ui = slurp(UI_SOURCE);
+    const char* draw;
+    const char* sup;
+    const char* ph;
+    txt_theme_default(&th);
+    sel_uim_search_hint(1, sel_uim_search_facets, SEL_UIM_SEARCH_FACETS, hint, sizeof hint);
+    CHECK(!strcmp(hint, "What do you want to play?"), "top bar hint: %s", hint);
+    sel_uim_search_hint(0, sel_uim_search_facets, SEL_UIM_SEARCH_FACETS, hint, sizeof hint);
+    CHECK(!strcmp(hint, "Search songs, albums, artists"), "facet hint: %s", hint);
+    CHECK(mui_aa_field_placeholder(th.token, "", 0, &rgb) == 1 && rgb == th.token[SEL_GUI_TOKEN_TEXT_MUTED], "empty unfocused: TEXT_MUTED %06X", (unsigned)rgb);
+    CHECK(mui_aa_field_placeholder(th.token, NULL, 0, &rgb) == 1, "NULL contents counts as empty");
+    CHECK(mui_aa_field_placeholder(th.token, "abc", 0, &rgb) == 0, "contents set: none");
+    CHECK(mui_aa_field_placeholder(th.token, "", 1, &rgb) == 0, "active object: none");
+    CHECK(mui_aa_field_placeholders() == n0 + 2u, "sentinel counts the painted placeholders: %u", (unsigned)(mui_aa_field_placeholders() - n0));
+    CHECK(cls != NULL && ui != NULL, "sources readable");
+    if (cls != NULL && ui != NULL) {
+        draw = strstr(cls, "static ULONG aafield_draw(");
+        sup = draw != NULL ? strstr(draw, "DoSuperMethodA(") : NULL;
+        ph = draw != NULL ? strstr(draw, "mui_aa_field_placeholder(") : NULL;
+        CHECK(sup != NULL && ph != NULL && sup < ph, "AAField draw paints the placeholder after the super call");
+        CHECK(ph != NULL && strstr(ph, "aa_text(") != NULL, "placeholder drawn through aa_text");
+        CHECK(strstr(cls, "MUIA_String_Contents, MUIV_EveryTime") != NULL, "repaint on contents change");
+        CHECK(count_of(ui, "sel_uim_search_hint(") == 1 && count_of(ui, "SEL_UIM_CMD_HINT") == 1 && count_of(ui, "r->label);") >= 1, "string sites pass hints");
+        CHECK(count_of(ui, "mui_make_string(") == 5, "string constructor sites: %d", count_of(ui, "mui_make_string("));
+    }
+    free(cls);
+    free(ui);
+}
+
 /* I667i mui-scroller-geom (design 3.5): thumb geometry, colour tokens, widths and the sentinel. */
 static void test_scroller_geom(void) {
     mui_aa_scroller_t m, ms;
@@ -993,6 +1030,8 @@ int main(int argc, char** argv) {
         test_field_plan();
     } else if (!strcmp(t, "field-source")) {
         test_field_source();
+    } else if (!strcmp(t, "field-placeholder")) {
+        test_field_placeholder();
     } else if (!strcmp(t, "field-draw-flags")) {
         test_field_draw_flags();
     } else if (!strcmp(t, "scroller-geom")) {

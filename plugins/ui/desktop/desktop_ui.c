@@ -1851,24 +1851,9 @@ static sel_gui_rect search_field_rect(const desk* d, sel_gui_rect mn) {
 
 /* The Home header (Main.dc.html): the tinted band at the top of the main panel, the search field with its icon, the
  * greeting, the filter chips and the section heading. */
-/* The empty-field hint, "Search songs, albums, artists": the chip names after the leading All chip, lowercased, so the
- * hint names what the page's own chips search (I366). */
+/* The empty-field hint comes from the shared model (sel_uim_search_hint, I733); the top bar field has one hint on every page. */
 static void search_hint(const desk* d, char* out, size_t cap, const char* const* chips, uint32_t n) {
-    size_t o;
-    if (topbar_shown(d)) { /* I615: the top bar field has one hint on every page */
-        snprintf(out, cap, "What do you want to play?");
-        return;
-    }
-    o = (size_t)snprintf(out, cap, "Search");
-    uint32_t k;
-    for (k = 1; k < n && o + 2u < cap; k++) {
-        const char* p = chips[k];
-        o += (size_t)snprintf(out + o, cap - o, "%s ", k == 1u ? "" : ",");
-        for (; *p != '\0' && o + 1u < cap; p++) {
-            out[o++] = (char)((*p >= 'A' && *p <= 'Z') ? *p + ('a' - 'A') : *p);
-        }
-        out[o] = '\0';
-    }
+    sel_uim_search_hint(topbar_shown(d), chips, n, out, cap);
 }
 
 static void desk_draw_query(desk* d, sel_gui_rect sr, const char* hint) {
@@ -7896,7 +7881,7 @@ static int library_click(desk* d, int32_t x, int32_t y) {
  * does the search (LIBRARY_SEARCH, the query language incl. `format:mod`); the debounce reuses the tooltip delay pattern
  * (a UI clock stamp, a wait hint for the idle block, a tick that fires once). */
 enum { SEARCH_DEBOUNCE_MS = 250, SEARCH_ROW_H = 32, SEARCH_FACETS = 4, SEARCH_WINDOW_ROWS = 64 };
-static const char* const search_facet_name[SEARCH_FACETS] = {"All", "Songs", "Albums", "Artists"};
+#define search_facet_name sel_uim_search_facets
 
 /* Sends the pending query to the engine as the text UI's library screen does; an empty query leaves the results. */
 static void desk_search_fire(desk* d) {

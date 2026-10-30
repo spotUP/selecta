@@ -801,14 +801,22 @@ static void mui_list_header(char* out, size_t cap) {
     }
 }
 
+/* I733: the search field hint, from the shared model; the top bar form on the RTG tier, else the facet form. */
+static const char* mui_search_hint(void) {
+    static char hint[48];
+    sel_uim_search_hint(g_screen_rtg, sel_uim_search_facets, SEL_UIM_SEARCH_FACETS, hint, sizeof hint);
+    return hint;
+}
+
 /* MUI-P3-1: the 3.8 Listview with its plain List (the back end mui_list_backend_pick gives without NList). */
-static Object* mui_make_string(LONG id, int max_w) {
+static Object* mui_make_string(LONG id, int max_w, const char* placeholder) {
     /* I667h (design 3.4): every string gadget is a Selecta_AAField (mui_aafield_class.c). */
     mui_aafield_spec sp;
     sp.tokens = g_tokens;
     sp.maxlen = 159;
     sp.id = id;
     sp.max_w = max_w;
+    sp.placeholder = placeholder;
     return mui_aafield_new(&sp);
 }
 
@@ -833,7 +841,7 @@ static Object* mui_topbar_group(mui_state* s) {
     if (g == NULL || !g_screen_rtg) {
         return g;
     }
-    s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH, (int)SEL_UIM_TOPBAR_FIELD_MAX);
+    s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH, (int)SEL_UIM_TOPBAR_FIELD_MAX, mui_search_hint());
     mui_theme_bg_spec(g_tokens[SEL_GUI_TOKEN_DIVIDER], div_spec, sizeof div_spec);
     DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
     DoMethod(g, OM_ADDMEMBER, mui_make_button_i("Home", "Home", "home", NULL, CTL_DOOR_BASE + 0, 0, 1, MUI_AA_ROLE_NORMAL));
@@ -858,9 +866,9 @@ static Object* mui_tool_group(mui_state* s) {
         return NULL;
     }
     if (!g_screen_rtg) { /* I615d: on the DEFAULT tier the search field lives in the top bar */
-        s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH, 0);
+        s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH, 0, mui_search_hint());
     }
-    s->str_cmd = mui_make_string(CTL_P4_BASE + P4_CMD, 0);
+    s->str_cmd = mui_make_string(CTL_P4_BASE + P4_CMD, 0, SEL_UIM_CMD_HINT);
     s->cyc_rating = mui_make_cycle(p4_rating_entries, 0, CTL_P4_BASE + P4_RATING);
     s->cyc_subsong = mui_make_cycle(p4_subsong_entries, 0, CTL_P4_BASE + P4_SUBSONG);
     snprintf(s->status_buf, sizeof s->status_buf, "Ready");
@@ -1645,7 +1653,7 @@ static Object* mui_pref_gadget(mui_state* s, uint32_t i, const sel_uim_pref_row*
         sscanf(r->choices, "%ld,%ld", &lo, &hi);
         o = mui_make_slider(lo, hi, cur[0] != '\0' ? strtol(cur, NULL, 10) : lo, id, 0);
     } else {
-        o = mui_make_string(id, 0);
+        o = mui_make_string(id, 0, r->label);
         if (o != NULL) {
             set(o, MUIA_String_Contents, (ULONG)cur);
         }
