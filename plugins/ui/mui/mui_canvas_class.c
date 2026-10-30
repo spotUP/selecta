@@ -14,7 +14,7 @@
 #include <inline/macros.h>
 #include "amiga/p96_write.h"
 #include <proto/exec.h>
-#include <proto/graphics.h>
+#include "mui_gfxbase.h"
 #include <proto/intuition.h>
 #include <proto/muimaster.h>
 
