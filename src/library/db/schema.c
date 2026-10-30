@@ -246,7 +246,7 @@ static const char SCHEMA_V13[] =
 /* I790: the source page drill (design doc 9b "Source page drill"). songs_source_format serves the Formats level and the artists of one
  * format, songs_source_artist the A-Z artist level (without it a temp B-tree, 250 ms on 516k songs). source_new(source, day, n) is written
  * by the sync itself after the first sync of a source (day = epoch day, n = songs inserted); the New level reads it, so New needs no index
- * on songs and no trigger (I577 heap budget). */
+ * on songs and no trigger (I577 heap budget). The two indexes grew the 2 MB tier heap by 32 KiB (db.c, D-M3-2). */
 static const char SCHEMA_V14[] =
     "CREATE INDEX IF NOT EXISTS songs_source_format ON songs(source, format, artist, size);"
     "CREATE INDEX IF NOT EXISTS songs_source_artist ON songs(source, artist, format, size);"
