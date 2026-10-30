@@ -2080,8 +2080,9 @@ static int on_archive_member(void* vctx, const char* name, const uint8_t* data, 
     return 0;
 }
 
-/* `data` is a file no replayer takes. When it is an archive holding a module, replaces it with that module (the old
- * buffer is freed) and returns the replayer; otherwise leaves `data` alone and returns NULL. */
+/* `data` is the file read for OPEN. When it is a folder archive (LHA, zip) holding a member some replayer takes, replaces
+ * it with that member (the old buffer is freed) and returns the member's replayer; otherwise leaves `data` alone and
+ * returns NULL. */
 static const sel_tag* unpack_archived_module(sel_engine* e, uint8_t** data, size_t* size) {
     unpack_ctx u;
     int kind = sel_archive_kind(*data, *size);
