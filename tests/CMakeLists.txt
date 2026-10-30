@@ -583,6 +583,8 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-live-guard COMMAND mui_contract_test live-guard)
   add_test(NAME mui-cycle-initial COMMAND mui_contract_test cycle-initial)
   set_tests_properties(mui-wait-contract mui-registry mui-open-failure mui-open-nomui mui-menu mui-style-menu mui-menu-dispatch mui-weights mui-topbar mui-relayout mui-theme mui-theme-file mui-theme-live mui-theme-live-repaint mui-pens mui-icon-buttons mui-aabtn-tokens mui-aacheck mui-newplaylist mui-transport-map mui-dirty-map mui-keys mui-list-regular mui-list-tree mui-list-drill mui-list-pending mui-list-dbl-row mui-columns mui-style-mask mui-list-backends mui-home mui-doors mui-library mui-toast mui-help mui-search mui-queue mui-playlists mui-song-menu mui-like-rating mui-nowplaying mui-songinfo mui-settings mui-dialogs mui-cmdline mui-states mui-tracker mui-toolrows mui-drop mui-screen-plan mui-window-borderless PROPERTIES TIMEOUT 30 LABELS mui)
+  # I792: the MUI-vs-Mac parity guard runs in the pre-push gate: nice -n 19 ctest --test-dir build/host -L push-gate
+  set_tests_properties(mui-weights mui-doors PROPERTIES LABELS "mui;push-gate")
   set(_mui_has_ui 0)
   if(TARGET sel_plugin_mui_ui)
     set(_mui_has_ui 1)

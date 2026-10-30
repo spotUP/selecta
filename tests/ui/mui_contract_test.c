@@ -18,6 +18,8 @@
 #include "arexx.h"
 
 #include <selecta/uimodel/doors.h>
+#include <selecta/uimodel/pages.h>
+#include <selecta/uimodel/route.h>
 #include <selecta/uimodel/theme.h>
 
 extern const sel_tag* sel_plugin_entry_mui_test(uint32_t host_api);
@@ -650,6 +652,15 @@ static void test_weights(void) {
             if (tiers[t] == SEL_UIM_TIER_BITMAP) {
                 CHECK(m.show[MUI_SLOT_TOPBAR] == 0, "bitmap tier width %u has no top bar", widths[i]);
             }
+            for (s = 0; s < 3; s++) { /* I792: a region the shared layout shows has a MUI slot shown, and one it hides has none */
+                static const char* const rn[3] = {"sidebar", "main", "detail"};
+                static const uint32_t rs[3] = {MUI_SLOT_SIDEBAR, MUI_SLOT_MAIN, MUI_SLOT_DETAIL};
+                uint32_t k, in_layout = 0;
+                for (k = 0; k < l.count; k++) {
+                    in_layout |= strcmp(l.regions[k].name, rn[s]) == 0 && l.regions[k].w > 0u;
+                }
+                CHECK(m.show[rs[s]] == in_layout, "tier %u width %u: layout shows %s %u, MUI slot shown %u", tiers[t], widths[i], rn[s], in_layout, m.show[rs[s]]);
+            }
             CHECK(m.balance_sidebar_main == (m.show[MUI_SLOT_SIDEBAR] && m.show[MUI_SLOT_MAIN]), "balance sidebar");
             CHECK(m.balance_main_detail == (widths[i] >= 1200), "balance detail at %u", widths[i]);
         }
@@ -1097,14 +1108,46 @@ static void test_list_backends(void) {
     CHECK(mui_list_backend_pick(1, 1)->sortable == 1 && mui_list_backend_pick(0, 0)->sortable == 0, "only NList sorts");
 }
 
+/* I792, the parity guard (drift doc 2026-10-30-mui-mac-drift section 4): every page of the shared page table has a MUI slot or a written
+ * exemption, and every page a route target can open is in the table. A page added to uimodel/pages.h with no entry in mui_page_slot is
+ * kind MUI_PAGE_GAP and fails here. */
+static void mui_route_targets(void) {
+    uint32_t pg, t, k;
+    for (pg = 0; pg < (uint32_t)SEL_UIM_PG_COUNT; pg++) {
+        const mui_page_slot_t* ps = mui_page_slot(pg);
+        CHECK(ps != NULL && (ps->kind == MUI_PAGE_MAIN_VIEW || ps->kind == MUI_PAGE_GROUP || (ps->kind == MUI_PAGE_EXEMPT && ps->exempt != NULL && ps->exempt[0] != '\0')),
+              "page '%s' has neither a MUI slot nor an exemption", sel_uim_page_at(pg)->name);
+        CHECK(sel_uim_page_of_route(sel_uim_page_route(pg)) == pg, "page '%s' route id does not round trip", sel_uim_page_at(pg)->name);
+    }
+    CHECK(mui_page_slot((uint32_t)SEL_UIM_PG_COUNT) == NULL, "past the page table");
+    for (t = 0; t < (uint32_t)SEL_ROUTE_TARGETS; t++) {
+        for (k = 0; k < (uint32_t)SEL_UIM_PG_COUNT; k++) {
+            sel_route r;
+            if (sel_route_resolve((sel_route_target)t, k, &r) && r.page != 0u) {
+                uint32_t id = sel_uim_page_of_route(r.page);
+                const mui_page_slot_t* ps = mui_page_slot(id);
+                CHECK(sel_uim_page_route(id) == r.page || (uint32_t)SEL_ROUTE_PAGE_OTHER_BASE + id == r.page, "route target %u item %u opens route page %u that is not in the page table", (unsigned)t, (unsigned)k, (unsigned)r.page);
+                CHECK(ps != NULL && ps->kind != MUI_PAGE_GAP, "route target %u item %u opens page '%s' with no MUI slot or exemption", (unsigned)t, (unsigned)k, sel_uim_page_at(id)->name);
+            }
+        }
+    }
+}
+
 /* MUI-P4-0: seven doors from the shared table, each with its label; the five main-view pages carry a line the engine accepts. */
 static void test_doors(void) {
     uint32_t i, lines = 0;
-    CHECK(mui_door_count() == 7u, "seven doors");
-    for (i = 0; i < 7u; i++) {
-        CHECK(mui_door_label(i) != NULL && strcmp(mui_door_label(i), sel_uim_door_at(i)->label) == 0, "door %u label", (unsigned)i);
+    CHECK(mui_door_count() == SEL_UIM_DOOR_COUNT, "%u doors", (unsigned)SEL_UIM_DOOR_COUNT);
+    for (i = 0; i < mui_door_count(); i++) {
+        const sel_uim_door* dr = sel_uim_door_at(i);
+        uint32_t pg = sel_uim_page_by_name(dr->page);
+        const mui_page_slot_t* ps = mui_page_slot(pg);
+        CHECK(mui_door_label(i) != NULL && strcmp(mui_door_label(i), dr->label) == 0, "door %u label", (unsigned)i);
+        CHECK(pg < (uint32_t)SEL_UIM_PG_COUNT && ps != NULL, "door %u page '%s' is not in the page table", (unsigned)i, dr->page);
+        /* I792: a door whose page the MUI shows in the main view needs the engine line; a group page or an exemption sends none */
+        CHECK(ps == NULL || ps->kind != MUI_PAGE_MAIN_VIEW || mui_door_line(i) != NULL, "door %u ('%s'): main-view page '%s' has no engine line", (unsigned)i, dr->label, dr->page);
         lines += mui_door_line(i) != NULL;
     }
+    mui_route_targets();
     CHECK(lines == 5u && strcmp(mui_door_line(1), "VIEW_SOURCE search") == 0 && mui_door_line(5) == NULL, "five main-view lines");
     CHECK(mui_door_label(7) == NULL && mui_door_line(7) == NULL, "past the table");
     /* I615d (design 8.4): with the top bar (DEFAULT tier) Home and Search leave the sidebar, the bitmap tier keeps all seven. */
