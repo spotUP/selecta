@@ -1425,6 +1425,8 @@ if(NOT SEL_AMIGA)
   if(SEL_PYTHON)
     add_test(NAME net-fixture-selftest COMMAND "${SEL_PYTHON}" -I "${SEL_NET_DIR}/fixture_server.py" selftest)
     set_tests_properties(net-fixture-selftest PROPERTIES LABELS m3)
+    # I736: the rig's row reader finds the untitled full-screen Selecta window through its screen title
+    add_test(NAME mui-list-rows-selftest COMMAND "${SEL_PYTHON}" -I "${PROJECT_SOURCE_DIR}/tests/amiga/mui_list_rows.py" --selftest)
   endif()
 
   # T67 (red until I152): the net guard. The mapped host must reach the fixture
