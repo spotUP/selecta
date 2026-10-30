@@ -2,7 +2,7 @@
 date: 2026-10-29
 topic: Spotify as a Selecta source (I654): login, playback backends, Amiga tier, song keys, playlists, terms, build rows
 tags: [plan, source, spotify, soloist, librespot, cspot, connect, m5]
-status: plan, not implemented; decisions D-SP-1..D-SP-6 answered by Johan 2026-10-29 (section 8a)
+status: dropped 2026-10-30 (gate I654a failed; Johan: no Spotify)
 rows: I654 in thoughts/spot/todos.md; build rows I654a-I654i proposed in section 7 (not yet in the ledger)
 ---
 
