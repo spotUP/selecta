@@ -1,0 +1,71 @@
+# I725c: the radio-browser directory source, driven through selecta-cli against a local fixture (no live network).
+#  1. `library sync radiobrowser` searches the fixture (two requests, MP3 and Ogg): 3 station rows, the AAC row skipped,
+#     net_requests=2 (sentinel that the plugin ran);
+#  2. OPEN radiobrowser:<uuid>/<name> + PLAY resolves the station through GET /json/url/<uuid> (the click ping, logged by the
+#     fixture as rb_click=<uuid>; sentinel STREAMSOURCE resolves>=1) and plays the stream it names through sel_live
+#     (STREAMLIVE opens>=1); the render is not silent.
+# -DCLI=<selecta-cli> -DWORK=<scratch dir> -DMP3=<tests/m3/stream/sine.mp3> -DICY=<icy_server.py>
+set(PORT "${WORK}/rb-port")
+set(DB "${WORK}/rb.db")
+file(REMOVE_RECURSE "${PORT}" "${PORT}.requests" "${DB}" "${WORK}/rb.raw" "${WORK}/rb-cache")
+execute_process(COMMAND sh -c "python3 -I '${ICY}' '${PORT}' '${MP3}' 40 >/dev/null 2>&1 &")
+foreach(i RANGE 50)
+  if(EXISTS "${PORT}")
+    file(READ "${PORT}" sp)
+    if(NOT sp STREQUAL "")
+      break()
+    endif()
+  endif()
+  execute_process(COMMAND sleep 0.1)
+endforeach()
+string(STRIP "${sp}" sp)
+if(sp STREQUAL "")
+  message(FATAL_ERROR "I725c: fixture server did not start")
+endif()
+set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
+set(ENV{SELECTA_NET_MAP} "icy.test=http://127.0.0.1:${sp},rb.test=http://127.0.0.1:${sp}")
+set(ENV{SELECTA_CACHE_DIR} "${WORK}/rb-cache")
+set(ENV{SELECTA_RADIO_BROWSER} "http://rb.test")
+
+execute_process(COMMAND "${CLI}" library sync --db "${DB}" --now 1000 --dump radiobrowser "http://rb.test?tag=demoscene"
+  OUTPUT_VARIABLE so ERROR_VARIABLE se RESULT_VARIABLE src TIMEOUT 30)
+if(NOT src EQUAL 0 OR NOT so MATCHES "listing_rows=3" OR NOT so MATCHES "skipped_rows=1" OR NOT so MATCHES "net_requests=2")
+  message(FATAL_ERROR "I725c: want 3 station rows, 1 skipped (AAC), 2 requests (rc=${src})\n${so}${se}")
+endif()
+if(NOT so MATCHES "radiobrowser_row=aaaa-1111/Alpha-Radio\\|Radio - MP3\\|" OR NOT so MATCHES "cccc-3333/Gamma-Ogg\\|Radio - Ogg")
+  message(FATAL_ERROR "I725c: the MP3 and Ogg station rows are not in the library\n${so}")
+endif()
+# The Sources page Sync button sends the source home (the web site): the source must turn it into the API pool name.
+execute_process(COMMAND "${CLI}" library sync --db "${DB}" --now 2000 radiobrowser "https://www.radio-browser.info/"
+  OUTPUT_VARIABLE ho ERROR_VARIABLE he RESULT_VARIABLE hrc TIMEOUT 30)
+if(NOT hrc EQUAL 0 OR NOT ho MATCHES "listing_rows=3")
+  message(FATAL_ERROR "I725c: the Sync button's home URL did not reach the API (rc=${hrc})\n${ho}${he}")
+endif()
+if(so MATCHES "dddd-4444")
+  message(FATAL_ERROR "I725c: the AAC station was added\n${so}")
+endif()
+
+file(WRITE "${WORK}/rb.sel"
+  "@dump ${WORK}/rb.raw\nOPEN radiobrowser:bbbb-2222/Beta-FM\nPLAY\n@render 22050\n@sleep 600\n@render 22050\n@stream_source\n@stream_live\nSTOP\n")
+execute_process(COMMAND "${CLI}" script "${WORK}/rb.sel" --db "${DB}" OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc TIMEOUT 25)
+if(NOT rc EQUAL 0 OR o MATCHES "ERROR" OR e MATCHES "ERROR")
+  message(FATAL_ERROR "I725c: script failed rc=${rc}\n${o}${e}")
+endif()
+if(NOT o MATCHES "STREAMSOURCE resolves=[1-9]")
+  message(FATAL_ERROR "I725c: the station was not resolved through the source\n${o}")
+endif()
+if(NOT o MATCHES "STREAMLIVE opens=[1-9]")
+  message(FATAL_ERROR "I725c: the resolved stream did not open through sel_live\n${o}")
+endif()
+file(READ "${PORT}.requests" rq)
+if(NOT rq MATCHES "rb_search=mp3" OR NOT rq MATCHES "rb_search=ogg")
+  message(FATAL_ERROR "I725c: the fixture saw no MP3 and Ogg search\n${rq}")
+endif()
+if(NOT rq MATCHES "rb_click=bbbb-2222" OR NOT rq MATCHES "icy=1")
+  message(FATAL_ERROR "I725c: no click ping for the played station, or no stream request\n${rq}")
+endif()
+file(READ "${WORK}/rb.raw" hex HEX)
+if(NOT hex MATCHES "[1-9a-f]")
+  message(FATAL_ERROR "I725c: the render is silent")
+endif()
+message(STATUS "radio_browser_ok")

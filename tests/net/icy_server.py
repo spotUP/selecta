@@ -5,7 +5,11 @@ chunk 8 -> 'Artist - Second Song', chunk 12 -> the same title again (no new song
 (length byte 0). 21 chunks, then the connection closes. A client that did not send the header gets the plain audio.
 The audio the decoder and the recorder must see (metadata removed) is written to <portfile>.all, and split at the
 title change to <portfile>.seg1 and <portfile>.seg2. The title changes after chunk 8 (audio byte 4096), mid-frame; the
-recorder cuts at the first MPEG frame start at or after it (I196d), so seg1 ends and seg2 starts on a whole frame."""
+recorder cuts at the first MPEG frame start at or after it (I196d), so seg1 ends and seg2 starts on a whole frame.
+I725c: it also answers the radio-browser API: /json/stations/search?...codec=mp3|ogg lists stations (the mp3 answer carries
+one AAC row the source must skip) and logs "rb_search=<codec>"; /json/url/<uuid> is the click, logs "rb_click=<uuid>"
+and names the stream http://icy.test/live."""
+import json
 import socket
 import sys
 import threading
@@ -65,6 +69,29 @@ with open(port_file, "w") as f:
 def serve(c):
     req = c.recv(4096).decode("latin-1").lower()
     icy = "icy-metadata: 1" in req
+    target = req.split(" ")[1]
+    if target.startswith("/json/"):  # I725c: the radio-browser API
+        live = "http://icy.test/live"
+        rows = {
+            "mp3": [("aaaa-1111", "Alpha-Radio", "MP3"), ("bbbb-2222", "Beta-FM", "MP3"), ("dddd-4444", "Delta-AAC", "AAC")],
+            "ogg": [("cccc-3333", "Gamma-Ogg", "OGG")],
+        }
+        if target.startswith("/json/stations/search"):
+            codec = target.split("codec=")[1].split("&")[0]
+            with open(port_file + ".requests", "a") as rq:
+                rq.write("rb_search=%s\n" % codec)
+            body = json.dumps([{"stationuuid": u, "name": n, "url": "http://icy.test/radio.pls", "url_resolved": live,
+                                "codec": k, "country": "Sweden", "tags": "demoscene,chip", "bitrate": 128}
+                               for u, n, k in rows[codec]]).encode()
+        else:
+            uuid = target.rsplit("/", 1)[1]
+            with open(port_file + ".requests", "a") as rq:
+                rq.write("rb_click=%s\n" % uuid)
+            body = json.dumps({"ok": True, "message": "retrieved station url", "stationuuid": uuid, "url": live}).encode()
+        c.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % len(body) + body)
+        time.sleep(0.2)
+        c.close()
+        return
     if req.split(" ")[1].endswith((".pls", ".m3u")):  # I725a: a playlist URL that names the stream below
         with open(port_file + ".requests", "a") as rq:
             rq.write("playlist=1\n")

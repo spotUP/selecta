@@ -185,7 +185,7 @@ static int modland_sync_host(const sel_host* host, const char* arg, int64_t now,
 
 static const sel_source g_modland = {
     "modland", "Modland", "https://modland.com/", "The largest tracker module archive.", g_tags,
-    NULL, parse, NULL, url_of, path_in, NULL, NULL, modland_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_NEW_THIS_WEEK, NULL,
+    NULL, parse, NULL, url_of, path_in, NULL, NULL, modland_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_NEW_THIS_WEEK, NULL, NULL,
 };
 
 const sel_source* sel_source_modland(void) {

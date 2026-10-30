@@ -192,3 +192,37 @@ int sel_source_is_remote(const char* id) {
     src = sel_source_find(id);
     return src != NULL && (src->flags & SEL_SOURCE_REMOTE) != 0;
 }
+
+int sel_source_is_stream(const char* id) {
+    const sel_source* src;
+
+    if (id == NULL) {
+        return 0;
+    }
+    sel_source_register_builtin();
+    src = sel_source_find(id);
+    return src != NULL && (src->flags & SEL_SOURCE_STREAMS) != 0 && src->play_url != NULL;
+}
+
+static uint32_t g_stream_resolves;
+
+uint32_t sel_source_stream_resolves(void) {
+    return g_stream_resolves;
+}
+
+int sel_source_stream_url(const sel_host* host, const char* key, char* out, size_t n) {
+    char id[SEL_SOURCE_ID_MAX];
+    const char* colon = key != NULL ? strchr(key, ':') : NULL;
+    size_t len = colon != NULL ? (size_t)(colon - key) : 0;
+
+    if (len == 0 || len >= sizeof id || colon[1] == '/' || colon[1] == '\0') {
+        return 0;
+    }
+    memcpy(id, key, len);
+    id[len] = '\0';
+    if (!sel_source_is_stream(id)) {
+        return 0;
+    }
+    g_stream_resolves++;
+    return sel_source_find(id)->play_url(host, colon + 1, out, n) ? 1 : -1;
+}

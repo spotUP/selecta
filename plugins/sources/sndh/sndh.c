@@ -95,7 +95,7 @@ static int sndh_sync_host(const sel_host* host, const char* arg, int64_t now, se
 
 static const sel_source g_sndh = {
     "sndh", "SNDH", "https://sndh.atari.org/", "Atari ST music: the YM2149 chip's SNDH archive.", g_tags,
-    NULL, sel_sndh_parse, NULL, url_of, path_in, NULL, NULL, sndh_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL,
+    NULL, sel_sndh_parse, NULL, url_of, path_in, NULL, NULL, sndh_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL, NULL,
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

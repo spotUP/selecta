@@ -539,7 +539,7 @@ int sel_cache_is_remote(const char* key) {
     }
     memcpy(id, key, n);
     id[n] = '\0';
-    return sel_source_is_remote(id);
+    return sel_source_is_remote(id) && !sel_source_is_stream(id); /* a live stream is never fetched into the cache (I725c) */
 }
 
 uint32_t sel_cache_budget(const sel_tag* machine) {
