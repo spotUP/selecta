@@ -20,6 +20,7 @@ typedef struct mui_aatext_spec {
     ULONG frame;          /* MUIA_Frame value, 0 = MUIV_Frame_None */
     ULONG background;     /* MUIA_Background value (spec string pointer), 0 = none */
     int fixed;            /* nonzero: never wider than the default width of widest (mui_aa_text_maxw) */
+    int face;             /* I667o: rounded field face (AAField outline, colours, paddings) instead of a MUI frame; frame and background are then unused */
     int hidden;           /* start with MUIA_ShowMe FALSE */
 } mui_aatext_spec;
 

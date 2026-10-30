@@ -566,8 +566,8 @@ static void test_theme(void) {
             continue;
         }
         if (role == MUI_TH_STATUS) {
-            /* exemption (I667d, design 3.7): status lines are AAText objects; mui_aatext reads the role look from g_th[MUI_TH_STATUS] */
-            CHECK(strstr(src, "g_th[MUI_TH_STATUS].look.frame") != NULL && strstr(src, "g_th[MUI_TH_STATUS].look.background") != NULL, "mui_aatext does not take the status frame and background from the role look");
+            /* exemption (I667o, design 3.7): status lines are AAText objects with the AAField face; mui-status-face proves it */
+            CHECK(strstr(src, "sp.face = framed") != NULL, "mui_aatext does not give framed texts the AAField face");
             continue;
         }
         snprintf(key, sizeof key, "TH_TAGS(%s,", names[role]);
@@ -1818,6 +1818,45 @@ static void test_aalist_getrow(void) {
  * the application through a NULL pointer, and rig 2 crashed at every start whose saved visualizer was not the first. The
  * settings cycles had the same shape. The initial entry must go in at OM_NEW (mui_make_cycle's active argument): mui_ui.c may
  * not set AAC_Active at all; only the user's pick changes it. */
+/* I667o: the transport clock/remaining/length boxes and the four status-row fields are AAText objects with the rounded AAField face and
+ * paddings, not a square MUI frame. Source contract: the constructor sets face, drops the frame; the class draws the field plan. */
+static void test_status_face(void) {
+    static char cls_buf[100000];
+    char path[512];
+    char *src = ui_source(), *cls = NULL, *ctor, *grp, *end;
+    FILE* cf;
+    snprintf(path, sizeof path, "%s/mui_aatext_class.c", MUI_DIR);
+    cf = fopen(path, "rb");
+    if (cf != NULL) {
+        size_t n = fread(cls_buf, 1, sizeof cls_buf - 1, cf);
+        fclose(cf);
+        cls_buf[n] = 0;
+        cls = cls_buf;
+    }
+    CHECK(src != NULL && cls != NULL, "cannot read mui_ui.c or mui_aatext_class.c");
+    if (src == NULL || cls == NULL) {
+        return;
+    }
+    ctor = strstr(src, "static Object* mui_aatext_sized(");
+    CHECK(ctor != NULL && strstr(ctor, "sp.face = framed") != NULL && strstr(ctor, "MUI_TH_STATUS") == NULL, "mui_aatext_sized does not give framed texts the face (or still takes the square role frame)");
+    CHECK(strstr(cls, "mui_aa_field_plan(") != NULL && strstr(cls, "aa_round_fill(") != NULL && strstr(cls, "MUIA_InnerLeft") != NULL && strstr(cls, "MUIA_InnerTop") != NULL,
+          "AAText draws no rounded field face with inner paddings");
+    grp = strstr(src, "static Object* mui_player_group(");
+    end = grp != NULL ? strstr(grp, "MUI-P3-4") : NULL;
+    CHECK(grp != NULL && end != NULL, "mui_player_group not found");
+    if (grp != NULL && end != NULL) {
+        const char* attrs[] = {"MUI_ATTR_CLOCK", "MUI_ATTR_REMAINING", "MUI_ATTR_LENGTH", "MUI_ATTR_TITLE", "MUI_ATTR_ARTIST", "MUI_ATTR_FORMAT", "MUI_ATTR_STATUS"};
+        size_t i;
+        for (i = 0; i < sizeof attrs / sizeof attrs[0]; i++) {
+            char key[96];
+            const char* at;
+            snprintf(key, sizeof key, "mui_make_text(s, %s,", attrs[i]);
+            at = strstr(grp, key);
+            CHECK(at != NULL && at < end, "player group has no %s text box", attrs[i]);
+        }
+    }
+}
+
 static void test_cycle_initial(void) {
     static char src[1000000];
     const char* line;
@@ -1973,6 +2012,8 @@ int main(int argc, char** argv) {
     } else if (strcmp(argv[1], "live-guard") == 0) {
         test_live_guard();
         test_aalist_getrow();
+    } else if (strcmp(argv[1], "status-face") == 0) {
+        test_status_face();
     } else if (strcmp(argv[1], "cycle-initial") == 0) {
         test_cycle_initial();
     } else if (strcmp(argv[1], "screen-rtg-flag") == 0) {
