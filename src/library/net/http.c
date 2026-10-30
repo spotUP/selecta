@@ -361,7 +361,8 @@ static int build_request(char* out, size_t cap, const sel_http_req* req, const c
         return -1;
     }
     n = (size_t)w;
-    w = snprintf(out + n, cap - n, "User-Agent: selecta\r\nAccept: */*\r\nConnection: close\r\n");
+    w = snprintf(out + n, cap - n, "User-Agent: %s\r\nAccept: */*\r\nConnection: close\r\n",
+                 req->user_agent != NULL && req->user_agent[0] != '\0' ? req->user_agent : SEL_HTTP_DEFAULT_UA);
     if (w < 0 || (size_t)w >= cap - n) {
         return -1;
     }

@@ -22,6 +22,10 @@ typedef struct sel_net {
     /* One GET into the caller's buffer, for sources that page through an API. Returns the status (0: transport
      * failure); `*got` is the body bytes stored (at most `cap`), truncated when the body is longer. */
     int (*request)(const sel_host* host, const char* url, void* buf, uint32_t cap, uint32_t* got, uint32_t* requests);
+    /* Like `request`, with the caller's own User-Agent (NULL keeps the default "Selecta/<version> (+URL)") and
+     * extra "Name: value" request headers (NULL-terminated array, or NULL). Appended last (I725p). */
+    int (*request_ex)(const sel_host* host, const char* url, const char* user_agent, const char* const* headers,
+                      void* buf, uint32_t cap, uint32_t* got, uint32_t* requests);
 } sel_net;
 
 SEL_EXTERN_C_END

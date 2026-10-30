@@ -9,6 +9,8 @@
 #ifndef SELECTA_LIBRARY_NET_HTTP_H
 #define SELECTA_LIBRARY_NET_HTTP_H
 
+#include <selecta/api.h>
+
 #include <stddef.h>
 
 #define SEL_HTTP_CONNECT_MS 3000u
@@ -40,6 +42,9 @@ typedef enum sel_http_err {
     SEL_HTTP_E_SINK /* the sink returned 0 */
 } sel_http_err;
 
+/* Identifies the client to services that refuse anonymous agents (radio-browser.info, Podcast Index). */
+#define SEL_HTTP_DEFAULT_UA "Selecta/" SEL_VERSION_STRING " (+https://github.com/spotUP/selecta)"
+
 typedef struct sel_http_req {
     const char* method;               /* "GET" when NULL */
     const char* url;                  /* http://host[:port]/path */
@@ -52,6 +57,7 @@ typedef struct sel_http_req {
     unsigned connect_ms;              /* 0 selects the default limits */
     unsigned first_byte_ms;
     unsigned total_ms;
+    const char* user_agent;           /* replaces the default "Selecta/<version> (+project URL)"; NULL keeps it (I725p) */
 } sel_http_req;
 
 typedef struct sel_http_res {
