@@ -280,6 +280,16 @@ typedef struct sel_scan_progress {
 } sel_scan_progress;
 void sel_engine_scan_progress(const sel_engine* e, sel_scan_progress* out);
 
+/* I782: the running LIBRARY_SYNC for the UI's sync indicator. `active` is 1 while a sync runs; `rows` counts songs stored so
+ * far (0 while the source still fetches: phase "Fetching", then "Importing"); `queued` counts syncs waiting behind it.
+ * Cancel asks the running sync to stop at its next batch and returns at once (the sync then reports sync_failed). */
+typedef struct sel_sync_progress {
+    uint32_t active, rows, queued;
+    char source[40];
+} sel_sync_progress;
+void sel_engine_sync_progress(const sel_engine* e, sel_sync_progress* out);
+void sel_engine_sync_cancel(sel_engine* e);
+
 /* Counters of the last LIBRARY_SYNC (I161; test sentinels: listing_rows > 0 proves the sync code ran). */
 typedef struct sel_sync_info {
     uint32_t listing_rows, skipped_rows, changelogs;
@@ -451,6 +461,7 @@ typedef struct sel_engine_stats {
     uint32_t lib_touch_calls;   /* LIBRARY_TOUCH commands applied (I678c sentinel: Recents order has a written opened time) */
     uint32_t collection_opens;  /* COLLECTION_OPEN commands applied (I678e sentinel: a collection page was opened through the engine) */
     uint32_t collection_queries; /* I678f sentinel: collection page lists (songs or shelf) that reached the library */
+    uint32_t lib_deferred;        /* I782 sentinel: library requests refused because the library was busy and the caller asked not to wait */
     uint32_t library_items_calls; /* sel_engine_library_items calls that reached the library (I678a sentinel) */
     uint32_t evt_dropped;         /* events dropped because the event queue was full (I546 sentinel) */
     uint32_t radio_appends;       /* songs RADIO appended to the queue (I186 sentinel) */
@@ -531,6 +542,14 @@ int sel_engine_song_title(sel_engine* e, const char* ref, char* out, size_t cap)
 int sel_engine_song_group(sel_engine* e, const char* ref, char* out, size_t cap);
 /* I678h3: the artist, album, album id (decimal) and first composer canon of the song at `ref` into out as four NUL terminated strings (empty when absent); 1 when catalogued. A track row links to those pages with them. */
 int sel_engine_song_meta(sel_engine* e, const char* ref, char* out, size_t cap);
+/* I782: title, artist, album and album id of many songs in ONE library request. keys = song keys, each NUL terminated, then "\0"; out gets,
+ * per key, "title\0artist\0album\0album id\0" (empty strings when absent); *done = songs written. 0 when the library is busy (see
+ * sel_engine_lib_nowait) or the request failed: the caller keeps what it has and asks again. */
+int sel_engine_song_briefs(sel_engine* e, const char* keys, char* out, size_t cap, uint32_t* done);
+/* I782: library requests of the calling thread fail at once instead of waiting behind a sync or another job (the draw path reads cached
+ * models and asks again next frame). Returns the previous setting. sel_engine_lib_deferred counts the requests refused this way. */
+int sel_engine_lib_nowait(int on);
+uint32_t sel_engine_lib_deferred(void);
 
 /* Fills `frames` stereo frames: the open song's mix while PLAYING, else
  * silence. Counts calls. Never allocates. */

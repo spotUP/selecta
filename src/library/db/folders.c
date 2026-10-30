@@ -319,6 +319,49 @@ static int song_meta(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     return SQLITE_OK;
 }
 
+/* I782: the catalogue rows of many songs in ONE request (value = song keys or paths, each NUL terminated, then "\0"). out holds, per key in
+ * order, "title\0artist\0album\0album id\0" (empty strings when absent); a song that does not fit stops the list. rows = songs written.
+ * The playlist page used to ask song_title and song_meta once per song, two blocked round trips each. */
+static int song_briefs(sqlite3* db, const sel_user_op* op, int64_t* rows) {
+    sqlite3_stmt* st;
+    const char* k;
+    uint32_t used = 0;
+    *rows = 0;
+    if (op->value == NULL || op->out == NULL || op->out_cap < 2u) return SQLITE_MISUSE;
+    op->out[0] = '\0';
+    st = prep(db, "SELECT COALESCE(s.name,''), COALESCE(s.artist,''), COALESCE(s.album,''),"
+                  " COALESCE((SELECT CAST(a.id AS TEXT) FROM albums a WHERE a.name = s.album AND a.artist IS s.artist ORDER BY a.id LIMIT 1),'')"
+                  " FROM songs s WHERE s.key = ?1");
+    if (st == NULL) return SQLITE_ERROR;
+    for (k = op->value; *k != '\0'; k += strlen(k) + 1u) {
+        char key[SEL_SONG_KEY_MAX];
+        const char* f[4] = {"", "", "", ""};
+        size_t need = 1u;
+        int i;
+        sqlite3_reset(st);
+        if (sel_song_key_of(k, key, sizeof key)) {
+            sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
+            if (sqlite3_step(st) == SQLITE_ROW) {
+                for (i = 0; i < 4; i++) {
+                    const char* t = (const char*)sqlite3_column_text(st, i);
+                    f[i] = t != NULL ? t : "";
+                }
+            }
+        }
+        for (i = 0; i < 4; i++) need += strlen(f[i]) + 1u;
+        if (used + need > op->out_cap) break;
+        for (i = 0; i < 4; i++) {
+            size_t n = strlen(f[i]) + 1u;
+            memcpy(op->out + used, f[i], n);
+            used += (uint32_t)n;
+        }
+        op->out[used] = '\0';
+        (*rows)++;
+    }
+    sqlite3_finalize(st);
+    return SQLITE_OK;
+}
+
 /* Appends `a` NUL `b` NUL to out; false when it does not fit (leaving room for the final empty string). */
 static int put_pair(char* out, uint32_t cap, uint32_t* used, const char* a, const char* b) {
     size_t la = strlen(a) + 1u, lb = b != NULL ? strlen(b) + 1u : 0u;
@@ -430,6 +473,7 @@ int sel_folder_exec(sqlite3* db, const sel_user_op* op, int64_t* rows, int32_t c
     case SEL_USER_SONG_TITLE: return song_title(db, op, rows);
     case SEL_USER_SONG_GROUP: return song_group(db, op, rows);
     case SEL_USER_SONG_META: return song_meta(db, op, rows);
+    case SEL_USER_SONG_BRIEFS: return song_briefs(db, op, rows);
     case SEL_USER_FOLDER_PLAYLISTS: return folder_playlists(db, op, rows);
     case SEL_USER_PLAYLIST_KEYS: return playlist_keys(db, op, rows);
     case SEL_USER_FOLDER_TREE: return folder_tree(db, op, rows);

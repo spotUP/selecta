@@ -661,6 +661,21 @@ int sel_library_song_meta(sel_library* lib, const char* ref, char* out, size_t c
     return folder_call(lib, &op, &found) == SEL_FOLDER_OK && found == 1u;
 }
 
+int sel_library_song_briefs(sel_library* lib, const char* keys, char* out, size_t cap, uint32_t* done) {
+    sel_user_op op;
+    uint32_t n = 0;
+    if (out == NULL || cap < 2u || keys == NULL) return 0;
+    out[0] = '\0';
+    memset(&op, 0, sizeof op);
+    op.op = SEL_USER_SONG_BRIEFS;
+    op.value = keys;
+    op.out = out;
+    op.out_cap = (uint32_t)cap;
+    if (folder_call(lib, &op, &n) != SEL_FOLDER_OK) return 0;
+    if (done != NULL) *done = n;
+    return 1;
+}
+
 int sel_library_song_group(sel_library* lib, const char* ref, char* out, size_t cap) {
     sel_user_op op;
     uint32_t found = 0;
