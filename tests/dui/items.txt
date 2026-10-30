@@ -26,7 +26,7 @@ DUI-P3-5 dui-anim
 DUI-P3-6 dui-tooltips
 DUI-P4-1 dui-frame
 DUI-P4-2 dui-home
-DUI-P4-3 dui-library
+DUI-P4-3 dui-library-retired
 DUI-P4-4 dui-styles
 DUI-P4-5 dui-grid-coverflow
 DUI-P4-6 dui-search

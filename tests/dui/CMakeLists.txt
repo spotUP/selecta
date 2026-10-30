@@ -3,7 +3,7 @@
 # replaces its red entry with the real test and removes its id from tests/ratchet/unimplemented.txt. Red entries also
 # carry label dui-red, so a run of the finished milestones (M3 finish line) can leave them out with -LE dui-red while
 # dui-ratchet keeps the red count honest.
-set(SEL_DUI_REAL dui-font-baked dui-ratchet dui-build-deps dui-uim-frame dui-ui-switch dui-ui-multi dui-mode-pref dui-lift-parity dui-actions dui-layout dui-breakpoints dui-parity-matrix dui-governor dui-tokens dui-draw dui-dirty dui-text dui-artwork dui-genart dui-golden-home dui-sdl dui-widgets dui-hidpi dui-anim dui-keys dui-mouse dui-tooltips dui-gestures dui-frame dui-home dui-library dui-styles dui-grid-coverflow dui-search dui-search-view-mode dui-browse-tiles dui-nowplaying dui-queue dui-playlists dui-songinfo dui-overlays dui-nav dui-viz dui-tracker dui-drop dui-m68k-nofloat dui-hover-live dui-hover-rows dui-hover-sidebar-ink dui-hover-instant dui-hover-nowplaying dui-hover-regions dui-library-reload dui-library-unknown-composer dui-song-menu dui-playlist-page dui-library-remove dui-aga-budget dui-library-style dui-coverflow-slide dui-stats-panel dui-topbar dui-show-all)
+set(SEL_DUI_REAL dui-font-baked dui-ratchet dui-build-deps dui-uim-frame dui-ui-switch dui-ui-multi dui-mode-pref dui-lift-parity dui-actions dui-layout dui-breakpoints dui-parity-matrix dui-governor dui-tokens dui-draw dui-dirty dui-text dui-artwork dui-genart dui-golden-home dui-sdl dui-widgets dui-hidpi dui-anim dui-keys dui-mouse dui-tooltips dui-gestures dui-frame dui-home dui-library-retired dui-styles dui-grid-coverflow dui-search dui-search-view-mode dui-browse-tiles dui-nowplaying dui-queue dui-playlists dui-songinfo dui-overlays dui-nav dui-viz dui-tracker dui-drop dui-m68k-nofloat dui-hover-live dui-hover-rows dui-hover-sidebar-ink dui-hover-instant dui-hover-nowplaying dui-hover-regions dui-library-reload dui-library-unknown-composer dui-song-menu dui-playlist-page dui-library-remove dui-aga-budget dui-library-style dui-coverflow-slide dui-stats-panel dui-topbar dui-show-all)
 
 add_test(NAME dui-ratchet
   COMMAND "${CMAKE_COMMAND}"
@@ -96,8 +96,10 @@ if(NOT SEL_AMIGA)
       set(tlabel window-raise)
     elseif(tname STREQUAL "dui-coverflow-slide") # I400: the cover flow glide, a case of DUI-P4-5 (dui-grid-coverflow)
       set(tlabel coverflow-slide)
-    elseif(tname STREQUAL "dui-library-retired") # I678i: the Library page retired; stands in for plan item DUI-P4-3
-      set(tlabel library)
+    elseif(tname STREQUAL "dui-library-retired") # I678i: the Library page retired; stands in for plan item DUI-P4-3, so it keeps the dui label
+      set(tlabel dui)
+    elseif(tname STREQUAL "dui-topbar" OR tname STREQUAL "dui-search-view-mode" OR tname STREQUAL "dui-browse-tiles" OR tname STREQUAL "dui-show-all" OR tname STREQUAL "dui-playlist-page" OR tname STREQUAL "dui-artwork-late-album" OR tname STREQUAL "dui-cover-tiles" OR tname STREQUAL "dui-platform-covers" OR tname STREQUAL "dui-home-shelves") # I615 I615b I615c I617 I633 I689 I692 I691b I678j: ledger rows, not plan items; their own label keeps dui-ratchet at one test per plan id
+      string(REPLACE "dui-" "" tlabel "${tname}")
     elseif(tname STREQUAL "dui-sync-banner") # I527: the sync-on-launch banner on the Library page, a case of DUI-P4-3 (dui-library)
       set(tlabel sync-banner)
     elseif(tname STREQUAL "keys-live") # I268: real SDL key events through desk_sdl_poll; not a plan item, so no dui label
