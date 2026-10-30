@@ -504,6 +504,7 @@ typedef struct desk {
     uint32_t nagdlg_n;       /* rows the sync offer dialog lists, and which src[] rows they are */
     uint32_t nagdlg_idx[16];
     uint32_t nagdlg_opens;   /* sentinel: sync offer dialogs opened */
+    uint32_t nagdlg_draws;   /* sentinel: sync offer dialog paints (I789: opened is not shown) */
     int src_wait;            /* a SOURCES request is out: its first row replaces the held rows */
     char src_syncing[40];    /* name of the source a Sync was sent for; the SOURCES reply that follows it toasts */
     int overlay;             /* the open overlay: OV_NONE, OV_PALETTE, OV_HELP or OV_CMDLINE (DUI-P4-13) */
@@ -2883,6 +2884,7 @@ static void nagdlg_open(desk* d) {
     d->dlg_opens++;
     d->nagdlg_opens++;
     d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL; /* I789: opened from the turn, not an event; a live turn presents only a dirty model */
 }
 
 /* Button 0 is Never, 1 Not now, 2 Sync now. */
@@ -2946,6 +2948,7 @@ static void nagdlg_draw(desk* d, sel_gui_rect p) {
     uint32_t k, tx = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), mu = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     int32_t m = lpx(d, 20), pad = lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_SPACING]);
     char title[96];
+    d->nagdlg_draws++;
     snprintf(title, sizeof title, "%u source%s not synced for a while", (unsigned)d->nagdlg_n, d->nagdlg_n == 1u ? "" : "s");
     sel_gui_text_wrap(d->canvas, head, rect_of(p.x + m, p.y + m, p.w - 2 * m, head->line_height), title, tx, 1, &d->text);
     for (k = 0; k < d->nagdlg_n; k++) {
@@ -6444,7 +6447,7 @@ static const char* library_dump_build(desk* d) {
             sel_gui_rect cb = dlg_button_rect(d, 1u);
             o = dump_put(d, o, "dlgconfirm %d %d %d %d\n", (int)cb.x, (int)cb.y, (int)cb.w, (int)cb.h);
         }
-        o = dump_put(d, o, "nagdlg opens %u done %d\nliststart %d\n", (unsigned)d->nagdlg_opens, d->nag_done, (int)(pm.y + lib_list_y(d)));
+        o = dump_put(d, o, "nagdlg opens %u done %d\nnagdlg draws %u\nliststart %d\n", (unsigned)d->nagdlg_opens, d->nag_done, (unsigned)d->nagdlg_draws, (int)(pm.y + lib_list_y(d)));
         if (d->dlg_open == DLG_SYNC) {
             sel_gui_rect sy = nagdlg_button_rect(d, 2u), lt = nagdlg_button_rect(d, 1u), nv = nagdlg_button_rect(d, 0u), pn = dlg_panel_rect(d);
             o = dump_put(d, o, "nagpanel %d %d %d %d\nnagsync %d %d %d %d\nnaglater %d %d %d %d\nnagnever %d %d %d %d\n", (int)pn.x, (int)pn.y, (int)pn.w, (int)pn.h,
