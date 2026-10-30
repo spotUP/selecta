@@ -667,9 +667,12 @@ static Object* mui_make_text(mui_state* s, uint32_t attr, const char* initial, m
     return s->txt[attr];
 }
 
+#define MUI_VOLUME_FIX_W 96 /* I717: the volume slider's fixed width in the transport row */
+
 /* I667f (design 3.2): the one slider constructor. Every Selecta slider (volume, seek, settings) is a Selecta_AASlider (mui_aaslider_class.c). */
-static Object* mui_make_slider(long lo, long hi, long value, LONG id) {
+static Object* mui_make_slider(long lo, long hi, long value, LONG id, long fix_w) {
     mui_aaslider_spec sp;
+    sp.fix_w = fix_w;
     sp.lo = lo;
     sp.hi = hi;
     sp.value = value;
@@ -741,19 +744,19 @@ static Object* mui_player_group(mui_state* s) {
             DoMethod(row1, OM_ADDMEMBER, s->btn[i]);
         }
     }
-    s->vol = mui_make_slider(0, MUI_VOLUME_MAX, 0, CTL_VOLUME);
-    s->seek = mui_make_slider(0, MUI_SEEK_MAX, 0, CTL_SEEK);
+    s->vol = mui_make_slider(0, MUI_VOLUME_MAX, 0, CTL_VOLUME, MUI_VOLUME_FIX_W);
+    s->seek = mui_make_slider(0, MUI_SEEK_MAX, 0, CTL_SEEK, 0);
     row2 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     row3 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     g = mui_aapanel(MUI_AA_PANEL_SURFACE, 0);
     if (row1 == NULL || row2 == NULL || row3 == NULL || g == NULL || s->vol == NULL || s->seek == NULL) {
         return NULL;
     }
-    DoMethod(row1, OM_ADDMEMBER, s->vol);
     DoMethod(row2, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_CLOCK, "0:00 ", MUI_LBL_CLOCK));
     DoMethod(row2, OM_ADDMEMBER, s->seek);
     DoMethod(row2, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_REMAINING, "-0:00", MUI_LBL_REMAINING));
     DoMethod(row2, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_LENGTH, "0:00 ", MUI_LBL_LENGTH));
+    DoMethod(row2, OM_ADDMEMBER, s->vol); /* I717: volume at the right end of the seek row, like the Mac player bar */
     DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_TITLE, "No song", MUI_LBL_TITLE));
     DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_ARTIST, "", MUI_LBL_ARTIST));
     DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_FORMAT, "        ", MUI_LBL_FORMAT));
@@ -1640,7 +1643,7 @@ static Object* mui_pref_gadget(mui_state* s, uint32_t i, const sel_uim_pref_row*
     } else if (r->ui == (uint32_t)SEL_UIM_PREF_SLIDER) {
         long lo = 0, hi = 100;
         sscanf(r->choices, "%ld,%ld", &lo, &hi);
-        o = mui_make_slider(lo, hi, cur[0] != '\0' ? strtol(cur, NULL, 10) : lo, id);
+        o = mui_make_slider(lo, hi, cur[0] != '\0' ? strtol(cur, NULL, 10) : lo, id, 0);
     } else {
         o = mui_make_string(id, 0);
         if (o != NULL) {

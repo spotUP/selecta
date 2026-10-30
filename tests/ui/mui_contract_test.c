@@ -1857,6 +1857,28 @@ static void test_status_face(void) {
     }
 }
 
+/* I717: the volume slider sits at the right end of the seek row (row2), after the length box, like the Mac player bar; it is fixed width. */
+static void test_volume_row(void) {
+    char *src = ui_source(), *grp, *end, *seek, *len, *vol;
+    CHECK(src != NULL, "cannot read mui_ui.c");
+    if (src == NULL) {
+        return;
+    }
+    grp = strstr(src, "static Object* mui_player_group(");
+    end = grp != NULL ? strstr(grp, "MUI-P3-4") : NULL;
+    CHECK(grp != NULL && end != NULL, "mui_player_group not found");
+    if (grp == NULL || end == NULL) {
+        return;
+    }
+    seek = strstr(grp, "DoMethod(row2, OM_ADDMEMBER, s->seek)");
+    len = strstr(grp, "MUI_ATTR_LENGTH");
+    vol = strstr(grp, "DoMethod(row2, OM_ADDMEMBER, s->vol)");
+    CHECK(seek != NULL && seek < end, "seek slider is not in the seek row");
+    CHECK(vol != NULL && vol < end && len != NULL && vol > len, "volume slider is not the last member of the seek row");
+    CHECK(strstr(grp, "DoMethod(row1, OM_ADDMEMBER, s->vol)") == NULL, "volume slider is still in the button row");
+    CHECK(strstr(grp, "CTL_VOLUME, MUI_VOLUME_FIX_W)") != NULL, "volume slider has no fixed width");
+}
+
 static void test_cycle_initial(void) {
     static char src[1000000];
     const char* line;
@@ -2014,6 +2036,8 @@ int main(int argc, char** argv) {
         test_aalist_getrow();
     } else if (strcmp(argv[1], "status-face") == 0) {
         test_status_face();
+    } else if (strcmp(argv[1], "volume-row") == 0) {
+        test_volume_row();
     } else if (strcmp(argv[1], "cycle-initial") == 0) {
         test_cycle_initial();
     } else if (strcmp(argv[1], "screen-rtg-flag") == 0) {
