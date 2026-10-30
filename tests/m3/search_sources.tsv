@@ -1,0 +1,26 @@
+# I807: 20 hvsc songs sort before 5 modland songs of the same artist
+hvsc:/H/sid00.sid	hvsc	/H/sid00.sid	sidtune00	Hubbard	sid	1986
+hvsc:/H/sid01.sid	hvsc	/H/sid01.sid	sidtune01	Hubbard	sid	1986
+hvsc:/H/sid02.sid	hvsc	/H/sid02.sid	sidtune02	Hubbard	sid	1986
+hvsc:/H/sid03.sid	hvsc	/H/sid03.sid	sidtune03	Hubbard	sid	1986
+hvsc:/H/sid04.sid	hvsc	/H/sid04.sid	sidtune04	Hubbard	sid	1986
+hvsc:/H/sid05.sid	hvsc	/H/sid05.sid	sidtune05	Hubbard	sid	1986
+hvsc:/H/sid06.sid	hvsc	/H/sid06.sid	sidtune06	Hubbard	sid	1986
+hvsc:/H/sid07.sid	hvsc	/H/sid07.sid	sidtune07	Hubbard	sid	1986
+hvsc:/H/sid08.sid	hvsc	/H/sid08.sid	sidtune08	Hubbard	sid	1986
+hvsc:/H/sid09.sid	hvsc	/H/sid09.sid	sidtune09	Hubbard	sid	1986
+hvsc:/H/sid10.sid	hvsc	/H/sid10.sid	sidtune10	Hubbard	sid	1986
+hvsc:/H/sid11.sid	hvsc	/H/sid11.sid	sidtune11	Hubbard	sid	1986
+hvsc:/H/sid12.sid	hvsc	/H/sid12.sid	sidtune12	Hubbard	sid	1986
+hvsc:/H/sid13.sid	hvsc	/H/sid13.sid	sidtune13	Hubbard	sid	1986
+hvsc:/H/sid14.sid	hvsc	/H/sid14.sid	sidtune14	Hubbard	sid	1986
+hvsc:/H/sid15.sid	hvsc	/H/sid15.sid	sidtune15	Hubbard	sid	1986
+hvsc:/H/sid16.sid	hvsc	/H/sid16.sid	sidtune16	Hubbard	sid	1986
+hvsc:/H/sid17.sid	hvsc	/H/sid17.sid	sidtune17	Hubbard	sid	1986
+hvsc:/H/sid18.sid	hvsc	/H/sid18.sid	sidtune18	Hubbard	sid	1986
+hvsc:/H/sid19.sid	hvsc	/H/sid19.sid	sidtune19	Hubbard	sid	1986
+modland:pub/modules/AHX/Hubbard/m0.ahx	modland	pub/modules/AHX/Hubbard/m0.ahx	modtune0	Hubbard	ahx	1995
+modland:pub/modules/AHX/Hubbard/m1.ahx	modland	pub/modules/AHX/Hubbard/m1.ahx	modtune1	Hubbard	ahx	1995
+modland:pub/modules/AHX/Hubbard/m2.ahx	modland	pub/modules/AHX/Hubbard/m2.ahx	modtune2	Hubbard	ahx	1995
+modland:pub/modules/AHX/Hubbard/m3.ahx	modland	pub/modules/AHX/Hubbard/m3.ahx	modtune3	Hubbard	ahx	1995
+modland:pub/modules/AHX/Hubbard/m4.ahx	modland	pub/modules/AHX/Hubbard/m4.ahx	modtune4	Hubbard	ahx	1995
