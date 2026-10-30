@@ -39,6 +39,10 @@
 #include "export/export.h"
 #include "prefs.h"
 #include "view.h"
+#if !defined(__amigaos__) && !defined(AMIGA)
+#include <pthread.h>
+#define SEL_LI_THREAD 1
+#endif
 #include "db.h"
 #include "composer.h"
 #include "meta_utf8.h"
@@ -461,6 +465,14 @@ struct sel_engine {
     char collection_key[128];                 /* and its library key */
     uint32_t rating_pending_cache;            /* I782: the last rating_pending count a stats read got from a free library */
     uint32_t library_items_calls;             /* sel_engine_library_items calls that reached the library (I678a) */
+    /* I787: the one async Your Library read. li_state 0 idle, 1 running, 2 result ready (written with __atomic ops; the
+     * thread publishes the rows before it stores 2). */
+    int li_state;
+    uint32_t li_mask, li_max, li_n, li_total;
+    sel_engine_library_item* li_rows;
+#if defined(SEL_LI_THREAD)
+    pthread_t li_thread;
+#endif
     uint32_t collection_queries;              /* collection page lists that reached the library (I678f) */
     sel_collection_page coll;                 /* the page COLLECTION_OPEN built (I678f), published as state.collection */
     char* coll_rows;                          /* its song block, heap */
@@ -5824,6 +5836,58 @@ uint32_t sel_engine_library_items(sel_engine* e, uint32_t kind_mask, uint32_t of
     return n;
 }
 
+/* ---- I787: the async Your Library read (the sidebar never waits on a category query) ---- */
+#if defined(SEL_LI_THREAD)
+static void* library_items_job(void* arg) {
+    sel_engine* e = (sel_engine*)arg;
+
+    e->li_n = sel_engine_library_items(e, e->li_mask, 0u, e->li_rows, e->li_max, &e->li_total);
+    __atomic_store_n(&e->li_state, 2, __ATOMIC_RELEASE);
+    return NULL;
+}
+#endif
+
+int sel_engine_library_items_post(sel_engine* e, uint32_t kind_mask, uint32_t max) {
+    if (e->lib == NULL || max == 0u || __atomic_load_n(&e->li_state, __ATOMIC_ACQUIRE) != 0) return 0;
+    e->li_rows = (sel_engine_library_item*)malloc((size_t)max * sizeof *e->li_rows);
+    if (e->li_rows == NULL) return 0;
+    e->li_mask = kind_mask;
+    e->li_max = max;
+    e->li_n = 0u;
+    e->li_total = 0u;
+#if defined(SEL_LI_THREAD)
+    __atomic_store_n(&e->li_state, 1, __ATOMIC_RELEASE);
+    if (pthread_create(&e->li_thread, NULL, library_items_job, e) == 0) return 1;
+#endif
+    /* No thread (Amiga, or creation failed): answer in this call, the caller takes it at once. */
+    e->li_n = sel_engine_library_items(e, kind_mask, 0u, e->li_rows, max, &e->li_total);
+    __atomic_store_n(&e->li_state, 2, __ATOMIC_RELEASE);
+    return 1;
+}
+
+int sel_engine_library_items_busy(sel_engine* e) {
+    return __atomic_load_n(&e->li_state, __ATOMIC_ACQUIRE) != 0;
+}
+
+int sel_engine_library_items_take(sel_engine* e, uint32_t* kind_mask, sel_engine_library_item* out, uint32_t max, uint32_t* n,
+                                  uint32_t* total) {
+    uint32_t got;
+
+    if (__atomic_load_n(&e->li_state, __ATOMIC_ACQUIRE) != 2) return 0;
+#if defined(SEL_LI_THREAD)
+    (void)pthread_join(e->li_thread, NULL);
+#endif
+    got = e->li_n < max ? e->li_n : max;
+    if (out != NULL) memcpy(out, e->li_rows, (size_t)got * sizeof *out);
+    if (kind_mask != NULL) *kind_mask = e->li_mask;
+    if (n != NULL) *n = got;
+    if (total != NULL) *total = e->li_total;
+    free(e->li_rows);
+    e->li_rows = NULL;
+    __atomic_store_n(&e->li_state, 0, __ATOMIC_RELEASE);
+    return 1;
+}
+
 /* ---- I678f: the lists of the album, artist and composer pages (design doc section 8) ---- */
 uint32_t sel_engine_library_playlist_keys(sel_engine* e, uint32_t id, char* out, uint32_t cap) {
     uint32_t n = 0;
@@ -6671,6 +6735,12 @@ void sel_engine_destroy(sel_engine* e) {
     if (e) {
         SEL_THREAD_NOT_AUDIO(e);
         uint32_t i;
+        if (__atomic_load_n(&e->li_state, __ATOMIC_ACQUIRE) != 0) { /* I787: end the in-flight sidebar read */
+#if defined(SEL_LI_THREAD)
+            (void)pthread_join(e->li_thread, NULL);
+#endif
+            free(e->li_rows);
+        }
         if (e->scan_running || e->sync_running) {
             sel_library_task_cancel(e->lib); /* the scan task uses this engine; end it first (I336) */
         }

@@ -534,6 +534,15 @@ typedef struct sel_engine_library_item {
  * is the row count of the whole list for paging. Source rows carry the registry display name. */
 uint32_t sel_engine_library_items(sel_engine* e, uint32_t kind_mask, uint32_t offset, sel_engine_library_item* out, uint32_t max,
                                   uint32_t* total);
+/* I787: the same list read off the calling thread. _post starts one read of `kind_mask` (rows from 0, at most `max`) and returns 1,
+ * or 0 when a read is already in flight or there is no library. _busy: 1 from a post until its result is taken. _take: when the
+ * result is ready, copies at most `max` rows to out, writes the mask it answered, the row count and the whole-list total, frees
+ * the job and returns 1; else returns 0 at once. out NULL discards the result. Without a thread (Amiga) _post answers in its own call. The draw path never
+ * waits: it posts, keeps the old list, and takes the result on a later frame. */
+int sel_engine_library_items_post(sel_engine* e, uint32_t kind_mask, uint32_t max);
+int sel_engine_library_items_busy(sel_engine* e);
+int sel_engine_library_items_take(sel_engine* e, uint32_t* kind_mask, sel_engine_library_item* out, uint32_t max, uint32_t* n,
+                                  uint32_t* total);
 /* I633: the song keys of saved playlist `id` in position order into out as "key\0key\0...\0\0"; returns how many. */
 uint32_t sel_engine_library_playlist_keys(sel_engine* e, uint32_t id, char* out, uint32_t cap);
 /* DUI-P4-18: the catalogue title of the song at `ref` (path or key) into out; 1 when it has one, else 0 (callers fall back to the file name). */
