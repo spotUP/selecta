@@ -143,9 +143,10 @@ set(list_open ${CMAKE_MATCH_1})
 string(REGEX MATCH "tab 0 (-?[0-9]+) (-?[0-9]+) (-?[0-9]+) (-?[0-9]+)\n" _t "${o0}")
 math(EXPR tab_bottom "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4}")
 set(tab_y ${CMAKE_MATCH_2})
-# 1. No banner rows: the list starts one small gap under the tab row, not a banner (>= 100 px) lower.
+# 1. No banner rows: the list starts under the tab row, the gaps and the search/Sort by row (I611, 36 px logical, so at most
+#    24 + 36 here at scale 1), not a banner (>= 100 px) lower.
 math(EXPR gap "${list_open} - ${tab_bottom}")
-if(gap LESS 0 OR gap GREATER 24)
+if(gap LESS 0 OR gap GREATER 60)
   message(FATAL_ERROR "the Library list does not start directly under the tabs (tab bottom ${tab_bottom}, list start ${list_open}):\n${o0}")
 endif()
 
