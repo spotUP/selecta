@@ -173,8 +173,22 @@ enum { SEL_COLLECTION_SHELVES = 4, SEL_COLLECTION_SHELF_MAX = 24 };
  * composer, source, Liked Songs, Recently Played or Local Files (I678g), published in sel_state.collection. The UI only reads it. `serial` counts builds; `rows` is "key\0plays\0" per song in page
  * order (an album in scan order, an artist most played first, a composer in library order with plays 0), then "\0". Shelves, index =
  * SEL_COLL_* - 1: Albums, Appears On, More by, Spellings; shelf_total counts the whole shelf, shelf the first SEL_COLLECTION_SHELF_MAX. */
+/* I790 (design doc 2026-10-22-architecture-design.md section 9b "Source page drill"): a source page is a drill, never the whole song list.
+ * COLLECTION_OPEN of a SOURCE takes key = source [US kind [US a [US b]]] [RS skip] (US 0x1f, RS 0x1e): kind is formats, format a,
+ * format a artist b, artists, artist a, platforms, platform a (family id), new; no kind is the first level. */
+enum {
+    SEL_DRILL_PAGE_NONE = 0, /* not a drill page */
+    SEL_DRILL_PAGE_ROOT,     /* the first level: rows name, count, size (Formats, Platforms, Artists, New) */
+    SEL_DRILL_PAGE_GROUPS,   /* rows name, count, size triples (formats, artists, platforms, days) */
+    SEL_DRILL_PAGE_SONGS,    /* the usual key, plays rows */
+    SEL_DRILL_WINDOW = 200   /* the most rows one drill page holds */
+};
+
 typedef struct sel_collection_page {
     uint32_t serial;
+    uint32_t drill;       /* SEL_DRILL_PAGE_* */
+    uint32_t drill_rows;  /* rows the drill queries emitted for this page (the I790 sentinel; never above SEL_DRILL_WINDOW per level) */
+    char drill_path[160]; /* the drill part of the key, "" for the first level */
     uint32_t kind; /* SEL_LIB_ITEM_* */
     char key[128];
     char title[96];  /* album name, artist name, composer display name */
@@ -279,6 +293,16 @@ typedef struct sel_scan_progress {
     char file[SEL_SCAN_FILE_MAX];
 } sel_scan_progress;
 void sel_engine_scan_progress(const sel_engine* e, sel_scan_progress* out);
+
+/* I782: the running LIBRARY_SYNC for the UI's sync indicator. `active` is 1 while a sync runs; `rows` counts songs stored so
+ * far (0 while the source still fetches: phase "Fetching", then "Importing"); `queued` counts syncs waiting behind it.
+ * Cancel asks the running sync to stop at its next batch and returns at once (the sync then reports sync_failed). */
+typedef struct sel_sync_progress {
+    uint32_t active, rows, queued;
+    char source[40];
+} sel_sync_progress;
+void sel_engine_sync_progress(const sel_engine* e, sel_sync_progress* out);
+void sel_engine_sync_cancel(sel_engine* e);
 
 /* Counters of the last LIBRARY_SYNC (I161; test sentinels: listing_rows > 0 proves the sync code ran). */
 typedef struct sel_sync_info {
@@ -408,6 +432,10 @@ typedef struct sel_engine_stats {
     uint32_t songs_opened;        /* songs started by OPEN or the queue (T19) */
     uint32_t dup_redirects;       /* OPENs that played another source of the same md5 than the one asked for (I184 sentinel) */
     const char* dup_played;       /* key of the file the last redirected OPEN read, "" when none (I184) */
+    uint32_t archive_unpacks;     /* OPENs that played the module inside an archive (I405 sentinel) */
+    uint32_t source_searches;    /* SOURCE_SEARCH runs started (STAT_SOURCE_SEARCHES, I406a) */
+    uint32_t search_worker_runs; /* of those, runs that executed off the command thread (I782) */
+    const char* archive_member;   /* name of the member the last such OPEN played, "" when none */
     uint32_t hash_files;          /* local files the idle md5 pass finished (I184b, sel_hash_stats) */
     uint32_t hash_chunks;         /* file reads of the pass: without threads one chunk per idle tick */
     uint32_t hash_tick_max;       /* most bytes one idle tick read (without threads <= SEL_HASH_CHUNK) */
@@ -450,7 +478,9 @@ typedef struct sel_engine_stats {
     uint32_t sources_listed;      /* SOURCES rows the engine queued for the UI (I546 sentinel) */
     uint32_t lib_touch_calls;   /* LIBRARY_TOUCH commands applied (I678c sentinel: Recents order has a written opened time) */
     uint32_t collection_opens;  /* COLLECTION_OPEN commands applied (I678e sentinel: a collection page was opened through the engine) */
+    uint32_t drill_rows;        /* I790 sentinel: source drill rows emitted by the library over all pages built */
     uint32_t collection_queries; /* I678f sentinel: collection page lists (songs or shelf) that reached the library */
+    uint32_t lib_deferred;        /* I782 sentinel: library requests refused because the library was busy and the caller asked not to wait */
     uint32_t library_items_calls; /* sel_engine_library_items calls that reached the library (I678a sentinel) */
     uint32_t evt_dropped;         /* events dropped because the event queue was full (I546 sentinel) */
     uint32_t radio_appends;       /* songs RADIO appended to the queue (I186 sentinel) */
@@ -523,6 +553,15 @@ typedef struct sel_engine_library_item {
  * is the row count of the whole list for paging. Source rows carry the registry display name. */
 uint32_t sel_engine_library_items(sel_engine* e, uint32_t kind_mask, uint32_t offset, sel_engine_library_item* out, uint32_t max,
                                   uint32_t* total);
+/* I787: the same list read off the calling thread. _post starts one read of `kind_mask` (rows from 0, at most `max`) and returns 1,
+ * or 0 when a read is already in flight or there is no library. _busy: 1 from a post until its result is taken. _take: when the
+ * result is ready, copies at most `max` rows to out, writes the mask it answered, the row count and the whole-list total, frees
+ * the job and returns 1; else returns 0 at once. out NULL discards the result. Without a thread (Amiga) _post answers in its own call. The draw path never
+ * waits: it posts, keeps the old list, and takes the result on a later frame. */
+int sel_engine_library_items_post(sel_engine* e, uint32_t kind_mask, uint32_t max);
+int sel_engine_library_items_busy(sel_engine* e);
+int sel_engine_library_items_take(sel_engine* e, uint32_t* kind_mask, sel_engine_library_item* out, uint32_t max, uint32_t* n,
+                                  uint32_t* total);
 /* I633: the song keys of saved playlist `id` in position order into out as "key\0key\0...\0\0"; returns how many. */
 uint32_t sel_engine_library_playlist_keys(sel_engine* e, uint32_t id, char* out, uint32_t cap);
 /* DUI-P4-18: the catalogue title of the song at `ref` (path or key) into out; 1 when it has one, else 0 (callers fall back to the file name). */
@@ -531,6 +570,14 @@ int sel_engine_song_title(sel_engine* e, const char* ref, char* out, size_t cap)
 int sel_engine_song_group(sel_engine* e, const char* ref, char* out, size_t cap);
 /* I678h3: the artist, album, album id (decimal) and first composer canon of the song at `ref` into out as four NUL terminated strings (empty when absent); 1 when catalogued. A track row links to those pages with them. */
 int sel_engine_song_meta(sel_engine* e, const char* ref, char* out, size_t cap);
+/* I782: title, artist, album and album id of many songs in ONE library request. keys = song keys, each NUL terminated, then "\0"; out gets,
+ * per key, "title\0artist\0album\0album id\0" (empty strings when absent); *done = songs written. 0 when the library is busy (see
+ * sel_engine_lib_nowait) or the request failed: the caller keeps what it has and asks again. */
+int sel_engine_song_briefs(sel_engine* e, const char* keys, char* out, size_t cap, uint32_t* done);
+/* I782: library requests of the calling thread fail at once instead of waiting behind a sync or another job (the draw path reads cached
+ * models and asks again next frame). Returns the previous setting. sel_engine_lib_deferred counts the requests refused this way. */
+int sel_engine_lib_nowait(int on);
+uint32_t sel_engine_lib_deferred(void);
 
 /* Fills `frames` stereo frames: the open song's mix while PLAYING, else
  * silence. Counts calls. Never allocates. */

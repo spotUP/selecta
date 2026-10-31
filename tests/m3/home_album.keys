@@ -1,6 +1,7 @@
-# T91 home-view (I191a): Enter on the Jump back in row (fifth row of the view: Quick access heading, two tiles and the Jump Back In heading above, I678j) opens that album in the query source.
+# T91 home-view (I191a): Enter on the Jump back in row (sixth row of the view: Quick access heading, three tiles (Liked Songs, the played artist, the played album) and the Jump Back In heading above, I678j) opens that album in the query source.
 H
 wait 300
+Down
 Down
 Down
 Down

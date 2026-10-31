@@ -29,6 +29,8 @@ else()
   set(SEL_BUILD_TESTS_DEFAULT ON)
 endif()
 option(SEL_BUILD_TESTS "Build and register the ctest suite" ${SEL_BUILD_TESTS_DEFAULT})
+# GPL-3 plugin modules (I427b): vendored GPL code builds only as loadable modules, never into the core binaries.
+option(SELECTA_GPL_PLUGINS "Build the GPL-3 plugin modules (sndh) as loadable libraries" OFF)
 option(SEL_TEST_BAD_PLUGIN "Compile a deliberately broken plugin descriptor (T5 negative path)" OFF)
 
 include(cmake/selecta_defs.cmake)

@@ -1,0 +1,14 @@
+{
+  "/?id=search&q=chip": {
+    "file": "search_chip.html",
+    "headers": {
+      "Content-Type": "text/html"
+    }
+  },
+  "/?id=search&q=many": {
+    "file": "search_many.html",
+    "headers": {
+      "Content-Type": "text/html"
+    }
+  }
+}

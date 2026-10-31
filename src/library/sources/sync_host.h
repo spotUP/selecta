@@ -14,6 +14,7 @@ struct sel_cat_batch;
 typedef struct sel_sync_ctx {
     sel_local_scan_config scfg;
     struct sel_cat_batch* batch; /* open catalogue batch, owned by sync_services.c */
+    volatile uint32_t rows_done; /* I782: songs the sync stored so far; the shell thread reads it for the progress display */
 } sel_sync_ctx;
 
 /* Fills `out` as `base` with ctx = `ctx` and the net and catalogue accessors set. The engine calls it per sync. */

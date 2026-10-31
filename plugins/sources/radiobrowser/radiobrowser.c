@@ -350,6 +350,7 @@ static const sel_source g_radiobrowser = {
     "Internet radio stations from the community directory radio-browser.info: search by name, tag or country.",
     g_tags, NULL, parse, NULL, url_of, NULL, NULL, NULL, rb_sync, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_STREAMS,
     DEFAULT_BASE "/", rb_play_url,
+    NULL, /* search (I406) */
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

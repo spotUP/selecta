@@ -78,6 +78,7 @@ static int flush_rows(scan_state* s) {
     b.rows = s->rows;
     b.count = s->row_n;
     b.now = s->cfg->now;
+    b.new_day = 0;
     memset(&reply, 0, sizeof reply);
     if (!sel_library_request(s->cfg->lib, SEL_LIB_REQ_SCAN_BATCH, &b, &reply) || reply.args[1].v.i != 0) {
         s->failed = 1;
@@ -637,6 +638,7 @@ static int local_url(const char* path, char* out, size_t n) {
 static const sel_source g_local = {
     "local", "Local files", "", "Folders on this machine.", g_tags,
     NULL, NULL, NULL, local_url, local_url, NULL, NULL, NULL, 0, NULL, NULL,
+    NULL, /* search (I406) */
 };
 
 const sel_source* sel_source_local(void) {

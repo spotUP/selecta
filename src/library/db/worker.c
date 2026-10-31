@@ -10,6 +10,19 @@
 enum { QUEUE_SLOTS = 16 };
 
 #if !defined(SEL_LIBRARY_NO_THREAD)
+static __thread int g_nowait;
+static uint32_t g_deferred;
+
+int sel_library_nowait(int on) {
+    int was = g_nowait;
+    g_nowait = on != 0;
+    return was;
+}
+
+uint32_t sel_library_deferred(void) {
+    return __atomic_load_n(&g_deferred, __ATOMIC_RELAXED);
+}
+
 static void call_enter(sel_library* lib) {
     pthread_mutex_lock(&lib->call_lock);
 }
@@ -73,6 +86,11 @@ static void* worker_main(void* arg) {
 
 int sel_worker_start(sel_library* lib) {
     lib->running = 1;
+    /* I790: g_nowait is a __thread variable. On macOS dyld allocates a thread's TLV block lazily at its first access, which
+     * would be the opening thread's first sel_library_request, inside the SEL_ALLOC_FREEZE window after library start
+     * (the freeze contract: no allocation once the library runs). Touch it here, on the thread that opens the library, so
+     * the block is allocated at start. */
+    (void)*(volatile int*)&g_nowait;
     if (!sel_spsc_init(&lib->requests, lib->host, QUEUE_SLOTS) || !sel_spsc_init(&lib->results, lib->host, QUEUE_SLOTS)) {
         return 0;
     }
@@ -114,7 +132,14 @@ int sel_library_request(sel_library* lib, uint32_t req, const void* payload, sel
         m.args[0].type = SEL_ARG_STR;
         m.args[0].v.s = (const char*)payload;
     }
-    call_enter(lib);
+    if (g_nowait) { /* I782: the call lock is held for a whole job and between a sync's requests; a draw never queues behind them */
+        if (pthread_mutex_trylock(&lib->call_lock) != 0) {
+            __atomic_fetch_add(&g_deferred, 1u, __ATOMIC_RELAXED);
+            return 0;
+        }
+    } else {
+        call_enter(lib);
+    }
     pthread_mutex_lock(&lib->lock);
     if (!sel_spsc_push(&lib->requests, &m)) {
         pthread_mutex_unlock(&lib->lock);
@@ -131,6 +156,15 @@ int sel_library_request(sel_library* lib, uint32_t req, const void* payload, sel
 }
 
 #else
+
+int sel_library_nowait(int on) {
+    (void)on;
+    return 0;
+}
+
+uint32_t sel_library_deferred(void) {
+    return 0u;
+}
 
 int sel_worker_start(sel_library* lib) {
     return sel_spsc_init(&lib->requests, lib->host, QUEUE_SLOTS) && sel_spsc_init(&lib->results, lib->host, QUEUE_SLOTS);

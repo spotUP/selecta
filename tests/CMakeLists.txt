@@ -197,6 +197,9 @@ add_subdirectory(m0)
 add_subdirectory(nuade_ab)
 if(NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(fixtures/plugin_dyn)
+  if(SELECTA_GPL_PLUGINS)
+    add_subdirectory(fixtures/sndh)
+  endif()
 endif()
 add_subdirectory(thread)
 
@@ -434,6 +437,13 @@ target_link_libraries(format_test PRIVATE selecta_registry)
 target_include_directories(format_test PRIVATE ${PROJECT_SOURCE_DIR}/src/engine)
 add_test(NAME title-format COMMAND format_test)
 
+# I786a: library.sync_snoozed with 11 sources (> 128 chars) survives set, save and load; SEL_PREF_VALUE_MAX is the exact limit.
+add_executable(prefs_value_max_test engine/prefs_value_max_test.c)
+target_link_libraries(prefs_value_max_test PRIVATE selecta_registry)
+target_include_directories(prefs_value_max_test PRIVATE ${PROJECT_SOURCE_DIR}/src/engine)
+add_test(NAME prefs-value-max COMMAND prefs_value_max_test)
+set_tests_properties(prefs-value-max PROPERTIES PASS_REGULAR_EXPRESSION "prefs_value_max_ok")
+
 # T25: text UI cell grid, key parser, theme tokens and POSIX terminal device
 # (plugins/ui/text). Desktop only: the Amiga text UI runs in UP-Term in M2.
 if(NOT SEL_AMIGA)
@@ -526,6 +536,8 @@ if(NOT SEL_AMIGA)
   set_tests_properties(mui-p8-queue-scope PROPERTIES TIMEOUT 30 LABELS mui)
   set_tests_properties(mui-p8-transport-extras mui-p8-voices-programs PROPERTIES TIMEOUT 30 LABELS mui)
   add_test(NAME mui-doors COMMAND mui_contract_test doors)
+  add_test(NAME mui-sidebar COMMAND mui_contract_test sidebar)
+  add_test(NAME mui-panes COMMAND mui_contract_test panes)
   add_test(NAME mui-library COMMAND mui_contract_test library)
   add_test(NAME mui-toast COMMAND mui_contract_test toast)
   add_test(NAME mui-help COMMAND mui_contract_test help)
@@ -544,7 +556,7 @@ if(NOT SEL_AMIGA)
     add_test(NAME mui-aa-${t} COMMAND mui_aa_test ${t})
     set_tests_properties(mui-aa-${t} PROPERTIES TIMEOUT 30 LABELS mui)
   endforeach()
-  foreach(t icon-ratio text-fit text-maxw text-tone text-source panel-source tabs tabs-source balance-geom balance-source slider-geom slider-source btn-align transport-icons cycle-step cycle-source field-plan field-source field-draw-flags scroller-geom list-rows list-cols list-source i667n i667n-root)
+  foreach(t icon-ratio text-fit text-maxw text-tone text-source panel-source tabs tabs-source balance-geom balance-source slider-geom slider-partial slider-source btn-align transport-icons cycle-step cycle-source field-plan field-source field-draw-flags field-placeholder scroller-geom list-rows list-cols list-source i667n i667n-root)
     add_test(NAME mui-${t} COMMAND mui_aa_test ${t})
     set_tests_properties(mui-${t} PROPERTIES TIMEOUT 30 LABELS mui)
   endforeach()
@@ -577,8 +589,9 @@ if(NOT SEL_AMIGA)
   add_test(NAME mui-toolrows COMMAND mui_contract_test toolrows)
   add_test(NAME mui-live-guard COMMAND mui_contract_test live-guard)
   add_test(NAME mui-cycle-initial COMMAND mui_contract_test cycle-initial)
-  set_tests_properties(mui-wait-contract mui-registry mui-open-failure mui-open-nomui mui-menu mui-style-menu mui-menu-dispatch mui-weights mui-topbar mui-route mui-route-reach mui-relayout mui-theme mui-theme-file mui-theme-live mui-theme-live-repaint mui-pens mui-icon-buttons mui-aabtn-tokens mui-aacheck mui-newplaylist mui-transport-map mui-dirty-map mui-keys mui-list-regular mui-list-tree mui-list-drill mui-list-pending mui-list-dbl-row mui-columns mui-style-mask mui-list-backends mui-home mui-doors mui-library mui-toast mui-help mui-search mui-queue mui-playlists mui-song-menu mui-like-rating mui-nowplaying mui-songinfo mui-settings mui-dialogs mui-cmdline mui-states mui-tracker mui-toolrows mui-drop mui-screen-plan mui-window-borderless PROPERTIES TIMEOUT 30 LABELS mui)
-  set(_mui_has_ui 0)
+  set_tests_properties(mui-wait-contract mui-registry mui-open-failure mui-open-nomui mui-menu mui-style-menu mui-menu-dispatch mui-weights mui-topbar mui-route mui-route-reach mui-relayout mui-theme mui-theme-file mui-theme-live mui-theme-live-repaint mui-pens mui-icon-buttons mui-aabtn-tokens mui-aacheck mui-newplaylist mui-transport-map mui-dirty-map mui-keys mui-list-regular mui-list-tree mui-list-drill mui-list-pending mui-list-dbl-row mui-columns mui-style-mask mui-list-backends mui-home mui-doors mui-sidebar mui-panes mui-library mui-toast mui-help mui-search mui-queue mui-playlists mui-song-menu mui-like-rating mui-nowplaying mui-songinfo mui-settings mui-dialogs mui-cmdline mui-states mui-tracker mui-toolrows mui-drop mui-screen-plan mui-window-borderless PROPERTIES TIMEOUT 30 LABELS mui)
+  # I792: the MUI-vs-Mac parity guard runs in the pre-push gate: nice -n 19 ctest --test-dir build/host -L push-gate
+  set_tests_properties(mui-weights mui-doors mui-panes PROPERTIES LABELS "mui;push-gate")  set(_mui_has_ui 0)
   if(TARGET sel_plugin_mui_ui)
     set(_mui_has_ui 1)
   endif()
@@ -919,6 +932,15 @@ endif()
 add_executable(composer_test library/composer_test.c "${PROJECT_SOURCE_DIR}/src/library/composer.c")
 target_include_directories(composer_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/include)
 add_test(NAME composer-unit COMMAND composer_test)
+
+# I406: the Modules.pl search page parser over the recorded response.
+add_executable(modulespl_parse_test library/modulespl_parse_test.c
+  "${PROJECT_SOURCE_DIR}/plugins/sources/modulespl/modulespl_parse.c")
+target_include_directories(modulespl_parse_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/sources/modulespl)
+target_compile_definitions(modulespl_parse_test PRIVATE
+  SEL_MODULESPL_FIX="${PROJECT_SOURCE_DIR}/tests/net/fixtures/www.modules.pl/search_chip.html")
+add_test(NAME modulespl-parse COMMAND modulespl_parse_test)
+set_tests_properties(modulespl-parse PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "modulespl_parse_ok")
 
 # I437: embedded cover readers (ID3v2 APIC, FLAC PICTURE).
 add_executable(cover_tag_test library/cover_tag_test.c)
@@ -1427,6 +1449,8 @@ if(NOT SEL_AMIGA)
   if(SEL_PYTHON)
     add_test(NAME net-fixture-selftest COMMAND "${SEL_PYTHON}" -I "${SEL_NET_DIR}/fixture_server.py" selftest)
     set_tests_properties(net-fixture-selftest PROPERTIES LABELS m3)
+    # I736: the rig's row reader finds the untitled full-screen Selecta window through its screen title
+    add_test(NAME mui-list-rows-selftest COMMAND "${SEL_PYTHON}" -I "${PROJECT_SOURCE_DIR}/tests/amiga/mui_list_rows.py" --selftest)
   endif()
 
   # T67 (red until I152): the net guard. The mapped host must reach the fixture
@@ -1662,6 +1686,11 @@ if(NOT SEL_AMIGA)
   add_test(NAME key-remote COMMAND key_remote_test)
   set_tests_properties(key-remote PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "key_remote_ok")
 
+  add_executable(modland_parse_test m3/modland_parse_test.c)
+  target_link_libraries(modland_parse_test PRIVATE selecta_core)
+  add_test(NAME modland-parse COMMAND modland_parse_test)
+  set_tests_properties(modland-parse PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "modland_parse_ok")
+
   add_test(NAME home-view
     COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:selecta-cli>" "-DSELECTA=$<TARGET_FILE:selecta>"
       "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue_keys.tsv"
@@ -1705,6 +1734,14 @@ if(NOT SEL_AMIGA)
       "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/view_query"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/view_query.cmake")
   set_tests_properties(view-library-source PROPERTIES LABELS m3)
+
+  # I807: the Songs group of the search view lists every source with hits (a later source in key order was cut by the 16 row cap).
+  add_test(NAME search-songs-every-source
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+      "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/search_sources.tsv"
+      "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/search_sources"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/m3/search_sources.cmake")
+  set_tests_properties(search-songs-every-source PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "search_sources ok")
 endif()
 
 # M3 Phase 4 (plan 2026-10-25-m3-library.md): T71 source-local (scan part), T72 source-modland-key (I157, I158).
@@ -1993,6 +2030,15 @@ if(NOT SEL_AMIGA)
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "hippo_net_ok")
 endif()
 
+# Row I405: LIBRARY_SYNC aminet <url> over the aminet.net fixture, then play one archived module (reachability).
+if(NOT SEL_AMIGA)
+  add_test(NAME source-aminet-net
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      -P "${SEL_NET_DIR}/aminet_net.cmake")
+  set_tests_properties(source-aminet-net PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "aminet_net_ok")
+endif()
+
 # Row I414: LIBRARY_SYNC sndh <url> over the sndh.atari.org fixture.
 if(NOT SEL_AMIGA)
   add_test(NAME source-sndh-net
@@ -2018,6 +2064,15 @@ if(NOT SEL_AMIGA)
       -P "${SEL_NET_DIR}/zxart_net.cmake")
   set_tests_properties(source-zxart-net PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 60 PASS_REGULAR_EXPRESSION "zxart_net_ok")
+endif()
+
+# Row I406: SOURCE_SEARCH modulespl chip over the www.modules.pl fixture, then OPEN + PLAY a result (a zip around one mod).
+if(NOT SEL_AMIGA)
+  add_test(NAME source-modulespl-net
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      -P "${SEL_NET_DIR}/modulespl.cmake")
+  set_tests_properties(source-modulespl-net PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60 PASS_REGULAR_EXPRESSION "modulespl_net_ok")
 endif()
 
 # Row I416: LIBRARY_SYNC keygenmusic <url> over the keygenmusic.tk fixture.
@@ -2068,12 +2123,30 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_heap_fallback_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-opens-on-fragmented-ram COMMAND library_heap_fallback_test)
   set_tests_properties(library-opens-on-fragmented-ram PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_heap_fallback_ok")
+  # I787a: a v12 file with 40k songs migrates to v13 through sel_library_open on the small and 2 MiB heap tiers.
+  add_executable(library_migrate_big_test library_migrate_big_test.c)
+  target_include_directories(library_migrate_big_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_migrate_big_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-migrate-big COMMAND library_migrate_big_test ${CMAKE_CURRENT_BINARY_DIR})
+  set_tests_properties(library-migrate-big PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_migrate_big_ok")
+  # I790: every level of the source page drill on 600k songs stays inside its window and under 200 ms.
+  add_executable(library_source_drill_test library_source_drill_test.c)
+  target_include_directories(library_source_drill_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_source_drill_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-source-drill COMMAND library_source_drill_test ${CMAKE_CURRENT_BINARY_DIR})
+  set_tests_properties(library-source-drill PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_source_drill_ok")
   # I296: a scan writes the author tag into song_composers; the songdb sync overrides it.
   add_executable(library_scan_composers_test library_scan_composers_test.c)
   target_include_directories(library_scan_composers_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
   target_link_libraries(library_scan_composers_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-scan-composers COMMAND library_scan_composers_test)
   set_tests_properties(library-scan-composers PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_scan_composers_ok")
+  # I787: every Your Library category read answers in under 200 ms warm on a 600 000-song library.
+  add_executable(library_items_budget_test library_items_budget_test.c)
+  target_include_directories(library_items_budget_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_items_budget_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-items-budget COMMAND library_items_budget_test)
+  set_tests_properties(library-items-budget PROPERTIES LABELS m3 TIMEOUT 300 PASS_REGULAR_EXPRESSION "library_items_budget_ok")
   # I687: an album without an embedded cover still gets its albums row (trigger + migration backfill) and reaches the Albums list.
   add_executable(library_album_rows_test library_album_rows_test.c)
   target_include_directories(library_album_rows_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
@@ -2126,6 +2199,17 @@ if(NOT SEL_AMIGA)
   add_test(NAME asma-unit COMMAND asma_unit_test)
   set_tests_properties(asma-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "asma_unit_ok")
 
+  # I405: the aminet INDEX line parser and source descriptor, on the recorded INDEX fixture.
+  add_executable(aminet_unit_test aminet_unit_test.c)
+  target_sources(aminet_unit_test PRIVATE
+    ${PROJECT_SOURCE_DIR}/plugins/sources/aminet/aminet.c ${PROJECT_SOURCE_DIR}/plugins/sources/aminet/aminet_sync.c
+    ${PROJECT_SOURCE_DIR}/plugins/sources/aminet/aminet_net.c)
+  target_include_directories(aminet_unit_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/sources/aminet)
+  target_compile_definitions(aminet_unit_test PRIVATE
+    SEL_AMINET_INDEX="${PROJECT_SOURCE_DIR}/tests/net/fixtures/aminet.net/INDEX")
+  target_link_libraries(aminet_unit_test PRIVATE selecta_shared_source selecta_shared_archive selecta_core)
+  add_test(NAME aminet-unit COMMAND aminet_unit_test)
+  set_tests_properties(aminet-unit PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "aminet_unit_ok")
   # I414: the sndh directory reader, download page parser and source descriptor, on the recorded fixtures.
   add_executable(sndh_unit_test sndh_unit_test.c)
   target_sources(sndh_unit_test PRIVATE
@@ -2318,6 +2402,14 @@ if(NOT SEL_AMIGA)
   set_tests_properties(jamendo PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     TIMEOUT 90 PASS_REGULAR_EXPRESSION "jamendo_ok")
 
+  # I725d: the Internet Archive source: licence filter, 429 / Retry-After back-off, User-Agent, streamed playback.
+  add_test(NAME archiveorg
+    COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DWORK=${SEL_NET_WORK}"
+            "-DMP3=${PROJECT_SOURCE_DIR}/tests/m3/stream/sine.mp3" "-DICY=${SEL_NET_DIR}/icy_server.py"
+            -P "${SEL_NET_DIR}/archiveorg.cmake")
+  set_tests_properties(archiveorg PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 90 PASS_REGULAR_EXPRESSION "archiveorg_ok")
+
   # T94 record part (I196, F36): `selecta-cli record` writes the served bytes to disk; STOP (SIGTERM) and the time
   # limit end a stalled stream with a valid file.
   add_test(NAME stream-record
@@ -2354,7 +2446,18 @@ if(NOT SEL_AMIGA)
   target_include_directories(library_items_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
   target_link_libraries(library_items_test PRIVATE selecta_library selecta_registry selecta_core)
   add_test(NAME engine-library-items COMMAND library_items_test)
+  add_executable(source_drill_engine_test engine/source_drill_engine_test.c)
+  target_include_directories(source_drill_engine_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(source_drill_engine_test PRIVATE selecta_library selecta_registry selecta_core)
+  add_test(NAME engine-source-drill COMMAND source_drill_engine_test)
+  set_tests_properties(engine-source-drill PROPERTIES PASS_REGULAR_EXPRESSION "source_drill_engine_ok")
   set_tests_properties(engine-library-items PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "library_items_ok")
+  # I782: a draw-path library request in nowait mode returns at once while the sync owns the library; briefs batch the playlist page.
+  add_executable(library_nowait_test engine/library_nowait_test.c)
+  target_include_directories(library_nowait_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_nowait_test PRIVATE selecta_library selecta_registry selecta_core)
+  add_test(NAME engine-library-nowait COMMAND library_nowait_test)
+  set_tests_properties(engine-library-nowait PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "library_nowait_ok")
   add_executable(majority_format_test engine/majority_format_test.c)
   target_include_directories(majority_format_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db ${PROJECT_SOURCE_DIR}/src/engine)
   target_link_libraries(majority_format_test PRIVATE selecta_library selecta_registry selecta_core)

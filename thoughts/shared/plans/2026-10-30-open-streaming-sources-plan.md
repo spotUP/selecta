@@ -8,7 +8,7 @@ research: thoughts/shared/research/2026-10-30-open-streaming-sources.md
 
 # Open streaming sources plan (I725)
 
-Spotify was dropped at the I654a gate (DRM). Johan 2026-10-30: "we dont want to swap in one other source we want to add as many as possible". This plan adds every open source without DRM that the research found legal for a third-party player.
+Spotify was dropped at the I654a gate (DRM). Re-checked 2026-10-30: upstream librespot v0.8.0 still fails with "audio key 0 1" (issue #1649); Johan kept it dropped, no plugin either. Johan 2026-10-30: "we dont want to swap in one other source we want to add as many as possible". This plan adds every open source without DRM that the research found legal for a third-party player.
 
 ## Decisions (Johan 2026-10-30, AskUserQuestion)
 

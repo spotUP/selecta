@@ -139,3 +139,38 @@ uint32_t sel_uim_relative_time(int64_t now, uint32_t then, char* out, uint32_t c
     }
     return w > 0 ? (uint32_t)w : 0u;
 }
+
+/* I793: the Your Library sidebar texts and chips (declared in browse.h). */
+static const char* const g_side_chip_name[SEL_UIM_SIDE_CHIPS] = {"Playlists", "Albums", "Artists", "Composers", "Sources", "Local Files"};
+static const uint32_t g_side_chip_mask[SEL_UIM_SIDE_CHIPS] = {
+    SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST), SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_ALBUM),  SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_ARTIST),
+    SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_COMPOSER), SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_SOURCE), SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_LOCAL)};
+static const char* const g_side_text[SEL_UIM_SIDE_TEXTS] = {
+    "Your Library", "Create Playlist", "Expand Library", "Collapse Library", "All", "By You", "Nothing here yet.", "No playlists yet.",
+    "Create your first playlist", "Name it, then add songs from your library", "Create playlist"};
+
+const char* sel_uim_side_chip_name(uint32_t i) {
+    return i < SEL_UIM_SIDE_CHIPS ? g_side_chip_name[i] : (const char*)0;
+}
+
+uint32_t sel_uim_side_chip_mask(uint32_t i) {
+    return i < SEL_UIM_SIDE_CHIPS ? g_side_chip_mask[i] : 0u;
+}
+
+const char* sel_uim_side_text_get(sel_uim_side_text id) {
+    return (unsigned)id < (unsigned)SEL_UIM_SIDE_TEXTS ? g_side_text[id] : (const char*)0;
+}
+
+const char* sel_uim_side_empty(uint32_t chip, uint32_t n, int bitmap) {
+    if (n != 0u) {
+        return (const char*)0;
+    }
+    if (chip > 1u) {
+        return g_side_text[SEL_UIM_SIDE_EMPTY_KIND];
+    }
+    return bitmap ? g_side_text[SEL_UIM_SIDE_EMPTY_NONE] : (const char*)0;
+}
+
+int sel_uim_side_card_shown(uint32_t chip, int filtered, uint32_t playlist_rows, int bitmap) {
+    return chip <= 1u && !filtered && playlist_rows == 0u && !bitmap;
+}

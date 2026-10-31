@@ -69,6 +69,7 @@ typedef struct sel_http_res {
     unsigned long elapsed_ms;
     unsigned icy_metaint;             /* Icy-MetaInt of the final response: a metadata block follows every this many
                                        * body bytes (I196a); 0 when the server sent none (request header Icy-MetaData: 1) */
+    unsigned long retry_after_s;      /* Retry-After header in seconds (I725d); 0 when absent or an HTTP-date */
     char content_type[40];            /* media type of the final response without parameters, lower case, or empty */
 } sel_http_res;
 

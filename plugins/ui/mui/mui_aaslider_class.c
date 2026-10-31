@@ -21,6 +21,7 @@ extern struct Library* MUIMasterBase;
 
 typedef struct aaslider_data {
     int hover, drag;
+    int drawn_fw, drawn_w, drawn_h, drawn_state; /* I739: what the last draw left on screen (drawn_fw < 0: nothing yet) */
     mui_aa_slider_t m;
     aa_ctx aa;
     struct MUI_EventHandlerNode ehn;
@@ -59,6 +60,7 @@ static ULONG aaslider_setup(struct IClass* cl, Object* obj, Msg msg) {
         return FALSE;
     }
     aa_setup(obj, &d->aa, NULL, 0);
+    d->drawn_fw = -1;
     mui_aa_slider_metrics(d->aa.font_px, &d->m);
     for (st = MUI_AA_NORMAL; st <= MUI_AA_DISABLED; st++) {
         mui_aa_slider_rgb(d->aa.tok, st, &track, &fill);
@@ -112,7 +114,19 @@ static ULONG aaslider_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg
     w = _mwidth(obj);
     h = _mheight(obj);
     aaslider_range(obj, &lo, &hi, &val);
-    n = mui_aa_slider_plan(d->aa.tok, &d->m, aaslider_state(obj, d), w, h, val, lo, hi, ops);
+    {
+        int st = aaslider_state(obj, d);
+        /* I739: a value change alone (MADF_DRAWUPDATE, same box and state) paints only the pills, never the box erase */
+        if (!(msg->flags & MADF_DRAWOBJECT) && d->drawn_fw >= 0 && d->drawn_w == w && d->drawn_h == h && d->drawn_state == st) {
+            n = mui_aa_slider_update_plan(d->aa.tok, &d->m, st, w, h, d->drawn_fw, val, lo, hi, ops);
+        } else {
+            n = mui_aa_slider_plan(d->aa.tok, &d->m, st, w, h, val, lo, hi, ops);
+        }
+        d->drawn_fw = mui_aa_slider_fill_w(w, val, lo, hi);
+        d->drawn_w = w;
+        d->drawn_h = h;
+        d->drawn_state = st;
+    }
     for (i = 0; i < n; i++) {
         if (ops[i].kind == MUI_AA_SLIDER_ERASE) {
             /* the parent background, as the super class paints it on a full draw */

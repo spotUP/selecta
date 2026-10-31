@@ -29,6 +29,7 @@ typedef struct sync_state {
     sel_scan_row* rows;
     uint32_t row_n;
     int failed;
+    int64_t new_day; /* I790: epoch day recorded as New for songs the batch adds; 0 on a first sync */
 } sync_state;
 
 static int is_hex(char c) {
@@ -76,7 +77,23 @@ static int full_path(const char* rel, char* out, size_t n) {
 }
 
 static int flush_rows(sync_state* s) {
-    return sel_sync_flush_scan(s->cfg, s->rows, &s->row_n, &s->st->batches, &s->failed);
+    return sel_sync_flush_scan_new(s->cfg, s->rows, &s->row_n, &s->st->batches, &s->failed, s->new_day);
+}
+
+/* True when the engine recorded a finished sync of modland before (meta "sync.modland", written by the engine
+ * after a successful run): only then are the songs a sync adds New (I790). A first import is the whole catalogue. */
+static int synced_before(const sel_local_scan_config* cfg) {
+    char text[24];
+    sel_meta_op op;
+    sel_message reply;
+
+    text[0] = '\0';
+    op.key = "sync.modland";
+    op.value = text;
+    op.cap = sizeof text;
+    op.set = 0;
+    memset(&reply, 0, sizeof reply);
+    return sel_library_request(cfg->lib, SEL_LIB_REQ_META, &op, &reply) && text[0] != '\0' && text[0] != '0';
 }
 
 /* Queues one row (tags from the source's parse); the caller flushes. */
@@ -310,6 +327,7 @@ int sel_modland_sync(const sel_local_scan_config* cfg, const char* dir, int64_t 
     memset(stats, 0, sizeof *stats);
     s.cfg = cfg;
     s.st = stats;
+    s.new_day = synced_before(cfg) ? today : 0;
     sel_source_register_builtin();
     s.src = sel_source_find("modland");
     s.text = host->mem_alloc(host, (size_t)SYNC_BATCH * sizeof *s.text, SEL_MEM_FAST);

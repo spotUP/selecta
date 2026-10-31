@@ -423,6 +423,21 @@ The engine owns one view model: an ordered, filtered, grouped projection of a pl
 
 Styles: **regular** (flat list, sortable columns; HippoPlayer, Eagleplayer, bbmp), **tree** (hierarchy by source / folder / format / artist / album, collapsible nodes, lazy children), **drilldown** (Miller columns, iTunes column browser, foobar2000 facets: source > format > artist > album > song, or genre > artist > song; each column filters the next), **cover flow** (artwork carousel over albums/releases; needs artwork and RTG or better), **grid** (artwork tiles, Spotify/Apple Music; RTG or better, glyph tiles in text), **compact** (now playing + next few). Grouping keys come from the library model: source, format, artist, album/release, genre, year, rating, folder. Smart playlists and the queue render in every style.
 
+**Source page drill (I790, Johan 2026-10-30, bbmp parity).** A source (modland, hvsc, ...) never opens as one list of its songs: on Johan's library modland alone is 516 219 songs, and `SEL_COLL_SONGS` for `SEL_LIB_ITEM_SOURCE` (items.c, `WHERE s.source=?1`, no LIMIT) loads every row into the engine and the UI. The source page opens on a drill, in place (Miller columns where the width allows, one column with a back step otherwise):
+
+- Level 1: Formats, Platforms, Artists, New, each with its song count. Chips is a later row (I802): Selecta has no per-song chip data yet.
+- Formats: one row per format of the source with count. Format then artists of that format, then songs of one artist + format.
+- Platforms: the format list folded by family in C (`sel_platform_of_name` on one sample path per format row, the I691 family table); no SQL per platform. Platform then formats then artists then songs.
+- Artists: A-Z artists of the source across formats with count; artist then songs (all formats).
+- New: songs a later sync added, by day, last 60 days (bbmp). The first import of a source is not new. The sync writes `source_new(source, day, n)` rows itself when it inserts songs after the first sync of that source; the drill reads that table, so New needs no index and no trigger (I577 Amiga heap budget). Empty after a first sync.
+- Sizes: shown at every level from SUM(size) once the sync stores file size (I801; on Johan's library `songs.size` is NULL for every row today). Until then counts only; the size column hides when the sum is NULL.
+
+Queries and indexes (schema v14, measured on a copy of Johan's library, modland 516 219 songs, warm): `songs_source_format(source, format, artist, size)` serves the format level (`GROUP BY format WHERE source=?`, 80 ms, was 2.5 s cold by table scan) and artists of a format (30 ms); `songs_source_artist(source, artist, format, size)` serves the A-Z artist level (250 ms with only the first index, temp B-tree; the second index makes it an index scan). Songs of one artist + format: 10 ms. Each index about 24 MB on that library. Every list level is windowed through the items.c offset/limit path (the I787 `op->offset`/`op->limit` streaming), and the engine and UI hold only the visible window plus a margin; `COL_MAX_SONGS` (desktop_ui.c) becomes the real cap or goes. No list query of the drill loads a whole source.
+
+Amiga tier: the big catalogues ship as the read-only prebuilt index (9.2), so v14 builds both indexes on the Mac when the index is made, not on the 68k. A writable Amiga library migrated to v14 builds them through the I787a temp-file spill; I787e (544 KiB tier NOMEM) and I787f (temp dir under T:) gate that tier. The Platforms fold runs in C over at most a few hundred format rows.
+
+Reachability (I790): a dui test opens the modland source on a 600k-song fixture through COLLECTION_OPEN, asserts the first level is the drill (Formats / Platforms / Artists / New, not songs), and asserts rows built stay under the window cap (sentinel: rows emitted by items.c); a host timing test keeps each level under 200 ms on the fixture.
+
 A UI declares the styles it draws (`SEL_UI_VIEW_STYLES`); the shell offers the intersection with what `sel_machine` supports. Text UI: regular, tree, drilldown always; grid and cover flow when the terminal reports sixel/kitty. GadTools: regular, tree, drilldown on planar; MUI adds grid and cover flow on RTG. SDL desktop UI: all styles.
 
 ## 9c. Playlist abstraction

@@ -738,7 +738,7 @@ static void library_dump_hvsc(const char* db_path) {
     sqlite3_finalize(st);
     sqlite3_close(db);
 }
-/* `--dump` for the flat-listing sources (asma, sndh, zxart, keygenmusic): `<id>_row=<path>|<format>|<artist>|<name>|<size>|<url>` per song. */
+/* `--dump` for the flat-listing sources (asma, sndh, zxart, keygenmusic, aminet): `<id>_row=<path>|<format>|<artist>|<name>|<size>|<url>` per song. */
 static void library_dump_flat(const char* db_path, const char* id) {
     sqlite3* db = NULL;
     sqlite3_stmt* st = NULL;
@@ -848,7 +848,7 @@ static int library_sync(int argc, char** argv) {
         }
     }
     if (src == NULL || dir == NULL) {
-        fputs("usage: selecta-cli library sync [--db <path>] [--now <epoch>] [--dump] modland|hvsc|hippo|asma|sndh|zxart|keygenmusic|radiobrowser|jamendo <dir> | modland|hvsc|hippo|asma|sndh|zxart|keygenmusic|radiobrowser|jamendo <http(s) url>\n", stderr);
+        fputs("usage: selecta-cli library sync [--db <path>] [--now <epoch>] [--dump] modland|hvsc|hippo|asma|sndh|zxart|keygenmusic|aminet|radiobrowser|jamendo|archiveorg <dir> | modland|hvsc|hippo|asma|sndh|zxart|keygenmusic|aminet|radiobrowser|jamendo <http(s) url>\n", stderr);
         return 2;
     }
     memset(&sink, 0, sizeof sink);
@@ -891,7 +891,7 @@ static int library_sync(int argc, char** argv) {
         if (info.net_requests > 0) {
             printf("net_requests=%u\n", (unsigned)info.net_requests);
         }
-    } else if (strcmp(src, "asma") == 0 || strcmp(src, "sndh") == 0 || strcmp(src, "zxart") == 0 || strcmp(src, "keygenmusic") == 0 || strcmp(src, "radiobrowser") == 0 || strcmp(src, "jamendo") == 0) {
+    } else if (strcmp(src, "asma") == 0 || strcmp(src, "sndh") == 0 || strcmp(src, "zxart") == 0 || strcmp(src, "keygenmusic") == 0 || strcmp(src, "aminet") == 0 || strcmp(src, "radiobrowser") == 0 || strcmp(src, "jamendo") == 0 || strcmp(src, "archiveorg") == 0) {
         printf("listing_rows=%u skipped_rows=%u db_songs=%d\n", (unsigned)info.listing_rows,
                (unsigned)info.skipped_rows, st.args[SEL_LIB_STAT_SONGS].v.i);
         if (info.net_requests > 0) {
@@ -927,7 +927,7 @@ static int library_sync(int argc, char** argv) {
             library_dump_hippo(db_path);
         } else if (strcmp(src, "hvsc") == 0) {
             library_dump_hvsc(db_path);
-        } else if (strcmp(src, "asma") == 0 || strcmp(src, "sndh") == 0 || strcmp(src, "zxart") == 0 || strcmp(src, "keygenmusic") == 0 || strcmp(src, "radiobrowser") == 0 || strcmp(src, "jamendo") == 0) {
+        } else if (strcmp(src, "asma") == 0 || strcmp(src, "sndh") == 0 || strcmp(src, "zxart") == 0 || strcmp(src, "keygenmusic") == 0 || strcmp(src, "aminet") == 0 || strcmp(src, "radiobrowser") == 0 || strcmp(src, "jamendo") == 0 || strcmp(src, "archiveorg") == 0) {
             library_dump_flat(db_path, src);
         } else {
             library_dump_modland(db_path);

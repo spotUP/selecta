@@ -15,6 +15,7 @@
 
 #include "db/db.h"
 #include "db/db_internal.h"
+#include "source.h"
 
 static int g_fail;
 
@@ -73,7 +74,7 @@ int main(void) {
     sel_engine_config cfg;
     sel_engine* e;
     sel_library* lib;
-    uint32_t n, total = 0, p, a, r, c, s, before, i;
+    uint32_t n, total = 0, p, a, r, c, s, w, before, i;
     const sel_engine_library_item* it;
 
     if (mkdtemp(dir) == NULL) return 2;
@@ -105,15 +106,18 @@ int main(void) {
     a = (uint32_t)scalar(lib, "SELECT COUNT(*) FROM albums");
     r = (uint32_t)scalar(lib, "SELECT COUNT(*) FROM (SELECT artist FROM songs WHERE artist<>'' UNION SELECT artist FROM albums WHERE artist<>'')");
     c = (uint32_t)scalar(lib, "SELECT COUNT(*) FROM composers") + (uint32_t)scalar(lib, "SELECT COUNT(*) FROM composer_unknown WHERE n>0");
-    s = (uint32_t)scalar(lib, "SELECT COUNT(*) FROM source_songs WHERE source<>'local' AND n>0");
-    CHECK(p == 2u && a == 3u && r == 3u && c == 3u && s == 1u); /* the fixture itself */
+    /* I678m: every registered source but local lists, a source with 0 songs too; the fixture's songs are all registered. */
+    sel_source_register_builtin();
+    s = sel_source_count() - 1u;
+    CHECK(p == 2u && a == 3u && r == 3u && c == 3u && s >= 2u); /* the fixture itself: modland plus hippo at least */
+    CHECK(scalar(lib, "SELECT COUNT(*) FROM source_songs WHERE source<>'local' AND n>0") == 1); /* only modland has songs */
+    w = 3u + p + a + r + c + s;
 
     /* No chip: the whole list. */
     before = calls(e);
     n = sel_engine_library_items(e, SEL_LIB_ITEM_ALL, 0, all, 64u, &total);
     CHECK(calls(e) == before + 1u); /* sentinel: the engine wrapper reached the library */
-    CHECK(total == 3u + p + a + r + c + s);
-    CHECK(total == 15u);
+    CHECK(total == w);
     CHECK(n == total);
     CHECK(all[0].kind == SEL_LIB_ITEM_LIKED && all[1].kind == SEL_LIB_ITEM_RECENT && all[2].kind == SEL_LIB_ITEM_LOCAL);
     CHECK(all[0].pinned && all[1].pinned && all[2].pinned && !all[3].pinned);
@@ -146,7 +150,17 @@ int main(void) {
     for (i = 0; i < n; i++) {
         if (all[i].kind == SEL_LIB_ITEM_SOURCE) it = &all[i];
     }
-    CHECK(it != NULL && it->songs == 1u && strcmp(it->key, "modland") == 0 && it->name[0] != '\0'); /* name = registry display name */
+    CHECK(it != NULL && it->name[0] != '\0'); /* name = registry display name */
+    it = NULL;
+    for (i = 0; i < n; i++) {
+        if (all[i].kind == SEL_LIB_ITEM_SOURCE && strcmp(all[i].key, "modland") == 0) it = &all[i];
+    }
+    CHECK(it != NULL && it->songs == 1u);
+    it = NULL;
+    for (i = 0; i < n; i++) {
+        if (all[i].kind == SEL_LIB_ITEM_SOURCE && strcmp(all[i].key, "hippo") == 0) it = &all[i];
+    }
+    CHECK(it != NULL && it->songs == 0u && strcmp(it->name, "hippo") != 0); /* I678m: never synced, still listed, display name */
     CHECK(find(all, n, SEL_LIB_ITEM_SOURCE, "local") == NULL); /* Local Files is the pinned row */
 
     /* Kind masks. */
@@ -159,15 +173,15 @@ int main(void) {
     CHECK(n == p + c && total == p + c);
     CHECK(sel_engine_library_items(e, 0u, 0, all, 64u, &total) == 0u && total == 0u); /* an empty mask names nothing */
 
-    /* Paging: a window of 4 rows from row 12 returns the last 3 of the full list, with the whole total. */
+    /* Paging: a window of 4 rows from row w-3 returns the last 3 of the full list, with the whole total. */
     n = sel_engine_library_items(e, SEL_LIB_ITEM_ALL, 0, all, 64u, &total);
-    CHECK(n == 15u);
-    n = sel_engine_library_items(e, SEL_LIB_ITEM_ALL, 12u, part, 4u, &total);
-    CHECK(n == 3u && total == 15u);
-    CHECK(strcmp(part[0].name, all[12].name) == 0 && part[0].kind == all[12].kind);
-    CHECK(strcmp(part[2].name, all[14].name) == 0);
+    CHECK(n == w);
+    n = sel_engine_library_items(e, SEL_LIB_ITEM_ALL, w - 3u, part, 4u, &total);
+    CHECK(n == 3u && total == w);
+    CHECK(strcmp(part[0].name, all[w - 3u].name) == 0 && part[0].kind == all[w - 3u].kind);
+    CHECK(strcmp(part[2].name, all[w - 1u].name) == 0);
     n = sel_engine_library_items(e, SEL_LIB_ITEM_ALL, 0, part, 5u, &total);
-    CHECK(n == 5u && total == 15u); /* the window is capped, the total is not */
+    CHECK(n == 5u && total == w); /* the window is capped, the total is not */
 
     /* I678c: LIBRARY_TOUCH through the protocol line writes the opened table; Recents data and Creator per kind come back with the rows. */
     {
@@ -177,33 +191,33 @@ int main(void) {
 
         sel_engine_stats_get(e, &st);
         CHECK(st.lib_touch_calls == 0u);
-        CHECK(sel_engine_library_items(e, SEL_LIB_ITEM_ALL, 0, all, 64u, &total) == 15u);
-        for (i = 0; i < 15u; i++) CHECK(all[i].opened == 0u); /* nothing opened yet */
-        alb = find(all, 15u, SEL_LIB_ITEM_ALBUM, "Alb2");
+        CHECK(sel_engine_library_items(e, SEL_LIB_ITEM_ALL, 0, all, 64u, &total) == w);
+        for (i = 0; i < w; i++) CHECK(all[i].opened == 0u); /* nothing opened yet */
+        alb = find(all, w, SEL_LIB_ITEM_ALBUM, "Alb2");
         CHECK(alb != NULL && strcmp(alb->creator, "Bob") == 0); /* an album's creator is its artist */
-        it = find(all, 15u, SEL_LIB_ITEM_ARTIST, "Cy");
+        it = find(all, w, SEL_LIB_ITEM_ARTIST, "Cy");
         CHECK(it != NULL && strcmp(it->creator, "Cy") == 0); /* an artist is their own creator */
-        it = find(all, 15u, SEL_LIB_ITEM_PLAYLIST, "Mix");
+        it = find(all, w, SEL_LIB_ITEM_PLAYLIST, "Mix");
         CHECK(it != NULL && strcmp(it->creator, "You") == 0);
         snprintf(line, sizeof line, "LIBRARY_TOUCH %u \"%s\"", (unsigned)SEL_LIB_ITEM_ALBUM, alb->key);
         CHECK(sel_engine_send_line(e, line, pool, sizeof pool) == 0);
         (void)sel_engine_pump(e, quiet, NULL);
         sel_engine_stats_get(e, &st);
         CHECK(st.lib_touch_calls == 1u); /* sentinel: the engine command ran and wrote */
-        CHECK(sel_engine_library_items(e, SEL_LIB_ITEM_ALL, 0, all, 64u, &total) == 15u);
-        alb = find(all, 15u, SEL_LIB_ITEM_ALBUM, "Alb2");
+        CHECK(sel_engine_library_items(e, SEL_LIB_ITEM_ALL, 0, all, 64u, &total) == w);
+        alb = find(all, w, SEL_LIB_ITEM_ALBUM, "Alb2");
         CHECK(alb != NULL && alb->opened > 1000000u); /* stamped with the clock */
-        it = find(all, 15u, SEL_LIB_ITEM_ALBUM, "Alb1");
+        it = find(all, w, SEL_LIB_ITEM_ALBUM, "Alb1");
         CHECK(it != NULL && it->opened == 0u && it->last_played == 600u); /* only the touched item moved */
         /* An artist key is its name, a composer key its canon; replacing keeps one row. */
         CHECK(sel_library_touch(lib, SEL_LIB_ITEM_ARTIST, "Cy", 900) == 0);
         CHECK(sel_library_touch(lib, SEL_LIB_ITEM_ARTIST, "Cy", 950) == 0);
         CHECK(sel_library_touch(lib, SEL_LIB_ITEM_COMPOSER, "y", 40) == 0);
         CHECK(scalar(lib, "SELECT COUNT(*) FROM opened") == 3);
-        CHECK(sel_engine_library_items(e, SEL_LIB_ITEM_ALL, 0, all, 64u, &total) == 15u);
-        it = find(all, 15u, SEL_LIB_ITEM_ARTIST, "Cy");
+        CHECK(sel_engine_library_items(e, SEL_LIB_ITEM_ALL, 0, all, 64u, &total) == w);
+        it = find(all, w, SEL_LIB_ITEM_ARTIST, "Cy");
         CHECK(it != NULL && it->opened == 950u);
-        it = find(all, 15u, SEL_LIB_ITEM_COMPOSER, "Y");
+        it = find(all, w, SEL_LIB_ITEM_COMPOSER, "Y");
         CHECK(it != NULL && it->opened == 40u);
     }
 
