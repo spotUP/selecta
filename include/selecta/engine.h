@@ -360,6 +360,12 @@ int sel_engine_send_line(sel_engine* e, const char* line, char* pool, size_t poo
  * number of events delivered. */
 uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx);
 
+/* I829: 1 while a posted library read (home, search, folders) or a retried SOURCES reply is still in flight. */
+int sel_engine_reads_pending(const sel_engine* e);
+/* I829: pumps until every posted library read has landed and been applied (or timeout_ms passes), returning the events delivered.
+ * For synchronous front ends (CLI, text UI, test drivers) that need the answer of a command now; the desktop pump never calls it. */
+uint32_t sel_engine_pump_reads(sel_engine* e, sel_event_sink sink, void* ctx, unsigned timeout_ms);
+
 const sel_state* sel_engine_state(const sel_engine* e);
 /* The host to hand to plugins outside playback (integrations, I177b): a copy of the engine's host whose
  * config_get answers a non-empty engine pref (include/selecta/prefs.def) first, then the real host. Valid until
@@ -457,6 +463,7 @@ typedef struct sel_engine_stats {
     uint32_t home_item_shelves;   /* I678j sentinel: Home item shelves (quick access, recents, albums, playlists) the engine sent */
     uint32_t home_rows;           /* entries the home view source built: plays + albums to resume + new this week (I191 sentinel) */
     uint32_t folder_view_rows;    /* rows the folders view source built from the library tree (I179 sentinel) */
+    uint32_t lib_reads_applied;   /* I829: posted library reads (home, search, folders) whose answer the pump applied */
     uint32_t stats_queries;       /* STATS_SHOW queries run against the stats views (I192 sentinel) */
     uint32_t panel_loads;         /* module info panel lookups made in the library (I185 sentinel) */
     uint32_t lyric_fetches;       /* DEViLBOX lyrics requests queued, none for a song with a .lrc or a message (I193 sentinel) */

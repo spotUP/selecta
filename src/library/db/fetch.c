@@ -359,7 +359,6 @@ unsigned sel_library_smart(sel_library* lib, const char* view, unsigned top, con
     char cand[SEL_SMART_MAX][160];
     char out[2048];
     unsigned n = 0;
-    sqlite3_stmt* st = NULL;
 
     if (lib == NULL || top == 0 || cache_get(lib) == NULL) {
         return 0;
@@ -384,15 +383,24 @@ unsigned sel_library_smart(sel_library* lib, const char* view, unsigned top, con
             }
         }
     }
-    if (sqlite3_prepare_v2(lib->db,
-                           "SELECT key FROM history WHERE skipped = 0 GROUP BY key ORDER BY COUNT(*) DESC, "
-                           "MAX(played_at) DESC, key LIMIT 32",
-                           -1, &st, NULL) == SQLITE_OK) {
-        while (n < top && sqlite3_step(st) == SQLITE_ROW) {
-            smart_add(lib, cand, &n, top, (const char*)sqlite3_column_text(st, 0));
+    { /* I829b: the most played keys come from the worker; this runs on the engine pump thread, never on the connection */
+        sel_user_op op;
+        sel_message reply;
+        const char* k;
+
+        memset(&op, 0, sizeof op);
+        memset(&reply, 0, sizeof reply);
+        op.op = SEL_USER_TOP_PLAYED;
+        op.at = 32;
+        op.out = out;
+        op.out_cap = sizeof out;
+        out[0] = '\0';
+        if (sel_library_request(lib, SEL_LIB_REQ_USER, &op, &reply) && reply.argc >= 3 && reply.args[0].v.i != 0) {
+            for (k = out; n < top && *k != '\0'; k += strlen(k) + 1u) {
+                smart_add(lib, cand, &n, top, k);
+            }
         }
     }
-    sqlite3_finalize(st);
     lib->sm_planned++;
     if (n != 0) {
         smart_enqueue(lib, cand, n, rules);
@@ -400,31 +408,30 @@ unsigned sel_library_smart(sel_library* lib, const char* view, unsigned top, con
     return n;
 }
 
+/* I829b: the trim runs on the engine pump thread (fetch on OPEN) and the CLI, so the kept/liked test is a worker request.
+ * A request that could not run (a nowait thread found the worker busy) counts as kept: the trim never deletes on doubt. */
 static int is_kept(void* ctx, const char* key) {
-    sqlite3_stmt* st = ctx;
-    int found;
+    sel_library* lib = ctx;
+    sel_user_op op;
+    sel_message reply;
 
-    sqlite3_reset(st);
-    sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
-    found = sqlite3_step(st) == SQLITE_ROW;
-    sqlite3_reset(st);
-    return found;
+    memset(&op, 0, sizeof op);
+    memset(&reply, 0, sizeof reply);
+    op.op = SEL_USER_KEPT_GET;
+    op.key = key;
+    if (!sel_library_request(lib, SEL_LIB_REQ_USER, &op, &reply) || reply.argc < 1 || reply.args[0].v.i == 0) return 1;
+    return reply.args[0].v.i == 2;
 }
 
 /* The one trim: budget 0 means the machine default; `protect` is the file just stored. */
 static unsigned library_trim_protect(sel_library* lib, uint32_t budget, const char* protect,
                                      sel_cache_trim_result* out) {
     sel_cache* c = cache_get(lib);
-    sqlite3_stmt* st = NULL;
 
     if (c == NULL) {
         return 0;
     }
-    sqlite3_prepare_v2(lib->db,
-                       "SELECT 1 FROM kept WHERE key = ?1 UNION ALL SELECT 1 FROM liked WHERE key = ?1 LIMIT 1", -1, &st,
-                       NULL);
-    sel_cache_trim(c, budget != 0 ? budget : lib->cache_budget, st != NULL ? is_kept : NULL, st, protect, lib->rules, out);
-    sqlite3_finalize(st);
+    sel_cache_trim(c, budget != 0 ? budget : lib->cache_budget, is_kept, lib, protect, lib->rules, out);
     return c->stats.trim_runs;
 }
 
@@ -441,21 +448,18 @@ void sel_library_set_budget(sel_library* lib, uint32_t budget) {
 }
 
 int sel_library_mark(sel_library* lib, const char* table, const char* key) {
-    sqlite3_stmt* st = NULL;
-    char sql[96];
-    int ok;
+    sel_user_op op;
+    sel_message reply;
 
     if (strcmp(table, "kept") != 0 && strcmp(table, "liked") != 0) {
         return 0;
     }
-    snprintf(sql, sizeof sql, "INSERT OR REPLACE INTO %s(key, at) VALUES(?1, 0)", table);
-    if (sqlite3_prepare_v2(lib->db, sql, -1, &st, NULL) != SQLITE_OK) {
-        return 0;
-    }
-    sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC);
-    ok = sqlite3_step(st) == SQLITE_DONE;
-    sqlite3_finalize(st);
-    return ok;
+    memset(&op, 0, sizeof op); /* I829b: the same KEEP / LIKE row writes as the user ops, on the worker */
+    memset(&reply, 0, sizeof reply);
+    op.op = strcmp(table, "kept") == 0 ? SEL_USER_KEEP : SEL_USER_LIKE;
+    op.key = key;
+    op.at = 0;
+    return sel_library_request(lib, SEL_LIB_REQ_USER, &op, &reply) && reply.argc >= 1 && reply.args[0].v.i != 0;
 }
 
 int sel_library_fetch_status(sel_library* lib) {

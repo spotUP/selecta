@@ -1907,6 +1907,16 @@ if(NOT SEL_AMIGA)
     DEPENDS cache-fetch TIMEOUT 60)
 endif()
 
+# I853 modland-builtin-mirror: a root-relative Modland song key fetches from the built-in mirror list (no doubled
+# pub/modules/ in the URL).
+if(NOT SEL_AMIGA)
+  add_test(NAME modland-builtin-mirror
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv" -P "${SEL_NET_DIR}/modland_builtin_mirror.cmake")
+  set_tests_properties(modland-builtin-mirror PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60)
+endif()
+
 # I94a (row I94 refinement, user decision Q24): the first loop of a non-looping song counts as the song's end,
 # so SONG_ENDED reports `end`; a song that loops by design (selecta-loop.mod, B01 jump) keeps `loop`.
 # Reachability: the script drives the engine dispatch; the nuade adapter turns the wrap to order 0 into ENDED.
@@ -2496,6 +2506,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_nowait_test PRIVATE selecta_library selecta_registry selecta_core)
   add_test(NAME engine-library-nowait COMMAND library_nowait_test)
   set_tests_properties(engine-library-nowait PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "library_nowait_ok")
+  # I829: the pump never waits on a busy library (search typing, Home chips, Sources/folders post their reads)
+  add_executable(library_ui_nowait_test engine/library_ui_nowait_test.c)
+  target_include_directories(library_ui_nowait_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_ui_nowait_test PRIVATE selecta_library selecta_registry selecta_core)
+  add_test(NAME engine-library-ui-nowait COMMAND library_ui_nowait_test)
+  set_tests_properties(engine-library-ui-nowait PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "library_ui_nowait_ok")
   # I406b: the pin ring (32 slots) drops the 33rd queued pin, rows are written with added 0, close drains the ring.
   add_executable(library_pin_test engine/library_pin_test.c)
   target_include_directories(library_pin_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
