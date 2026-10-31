@@ -79,7 +79,6 @@ function(untick_tokens out text keep_key t0)
   set(${out} "${tokens}" PARENT_SCOPE)
   set(${out}_t ${t} PARENT_SCOPE)
 endfunction()
-set(want_keys modland hvsc hippo asma keygenmusic sndh zxart archiveorg jamendo radiobrowser testsrc)
 
 # Launch on the Library: the dialog lists every enabled remote source that was never synced, all ticked.
 # Mouse moves give the loop frames, so the engine pumps and the SOURCES reply asked for at launch lands before the dump.
@@ -89,6 +88,17 @@ if(NOT o0 MATCHES "nag ([0-9]+) syncs 0\n" OR CMAKE_MATCH_1 LESS 1)
 endif()
 if(NOT o0 MATCHES "nagdlg opens 1 done 1\n")
   message(FATAL_ERROR "the dialog must open exactly once per launch:\n${o0}")
+endif()
+# The rows the dialog must list: every source the desktop marks syncable (I814), read from the dump rather than named
+# here, so a new sync source (Aminet, I405) joins the check instead of staying ticked.
+string(REGEX MATCHALL "source_sync [0-9]+ [^ ]+ due=[0-9]+ syncable=1\n" _syncable "${o0}")
+set(want_keys "")
+foreach(line ${_syncable})
+  string(REGEX REPLACE "source_sync [0-9]+ ([^ ]+) .*" "\\1" k "${line}")
+  list(APPEND want_keys "${k}")
+endforeach()
+if(NOT "testsrc" IN_LIST want_keys)
+  message(FATAL_ERROR "testsrc is not a syncable source row:\n${o0}")
 endif()
 foreach(k ${want_keys})
   if(NOT o0 MATCHES "nagrow [0-9]+ ${k}\\|1 ")
