@@ -156,7 +156,9 @@ enum {
     SEL_USER_UNLIKE,       /* I306: deletes the key from liked */
     SEL_USER_LIKE_GET,     /* I306: reply [0] = 2 when the key is liked */
     SEL_USER_LIKE_DONE,    /* I306: the push of the key's like is over: drops its pending row */
-    SEL_USER_LIKE_QUEUE    /* I306: queues the pending_push "like" row of the key (value = "token mkey r"), replacing an older one */
+    SEL_USER_LIKE_QUEUE,   /* I306: queues the pending_push "like" row of the key (value = "token mkey r"), replacing an older one */
+    SEL_USER_KEPT_GET,     /* I829b: reply [0] = 2 when the key is kept or liked (the cache trim's protect test) */
+    SEL_USER_TOP_PLAYED    /* I829b: at = max keys; out = the most played unskipped keys (most first), each NUL terminated, then "\0"; reply [2] = keys */
 };
 /* Where a rating came from (sel_user_op.to of SEL_USER_RATING_SET). */
 enum { SEL_RATING_LOCAL = 0, SEL_RATING_QUEUE = 1, SEL_RATING_SERVER = 2 };

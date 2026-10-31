@@ -6,6 +6,11 @@
 #include "db_internal.h"
 
 #include <string.h>
+#if !defined(SEL_LIBRARY_NO_THREAD) && !defined(NDEBUG)
+#include <execinfo.h>
+#include <stdlib.h>
+#include <unistd.h>
+#endif
 
 enum { QUEUE_SLOTS = 16 };
 
@@ -93,7 +98,9 @@ static void* worker_main(void* arg) {
             break;
         }
         memset(&reply, 0, sizeof reply);
+        __atomic_store_n(&lib->in_handle, 1, __ATOMIC_RELEASE);
         sel_library_handle(lib, &req, &reply);
+        __atomic_store_n(&lib->in_handle, 0, __ATOMIC_RELEASE);
         pthread_mutex_lock(&lib->lock);
         sel_spsc_push(&lib->results, &reply);
         pthread_cond_signal(&lib->wake_caller);
@@ -101,6 +108,25 @@ static void* worker_main(void* arg) {
     }
     return NULL;
 }
+
+#if !defined(NDEBUG)
+/* Design 2026-10-31-interactive-path.md 1.1: SQLite is built THREADSAFE=0, so once the worker runs only it may touch the
+ * connection. Debug builds check that at every statement prepare: a thread other than the worker that prepares a statement
+ * while the worker is inside a request is two threads in sqlite on one connection, and aborts here with that thread's stack.
+ * (Tests that seed rows on their own thread while the worker idles are not flagged.) */
+static int owner_check(void* arg, int code, const char* a, const char* b, const char* c, const char* d) {
+    sel_library* lib = arg;
+    void* frames[32];
+
+    (void)code, (void)a, (void)b, (void)c, (void)d;
+    if (__atomic_load_n(&lib->in_handle, __ATOMIC_ACQUIRE) && !pthread_equal(pthread_self(), lib->thread)) {
+        fprintf(stderr, "library_thread_violation: sqlite used off the library worker thread\n");
+        backtrace_symbols_fd(frames, backtrace(frames, 32), STDERR_FILENO);
+        abort();
+    }
+    return SQLITE_OK;
+}
+#endif
 
 int sel_worker_start(sel_library* lib) {
     lib->running = 1;
@@ -123,7 +149,11 @@ int sel_worker_start(sel_library* lib) {
     pthread_mutex_init(&lib->lock, NULL);
     pthread_cond_init(&lib->wake_worker, NULL);
     pthread_cond_init(&lib->wake_caller, NULL);
-    return pthread_create(&lib->thread, NULL, worker_main, lib) == 0;
+    if (pthread_create(&lib->thread, NULL, worker_main, lib) != 0) return 0;
+#if !defined(NDEBUG)
+    sqlite3_set_authorizer(lib->db, owner_check, lib);
+#endif
+    return 1;
 }
 
 void sel_worker_stop(sel_library* lib) {
