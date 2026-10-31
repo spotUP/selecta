@@ -102,7 +102,7 @@ static int aminet_sync_host(const sel_host* host, const char* arg, int64_t now, 
 static const sel_source g_aminet = {
     "aminet", "Aminet", "https://aminet.net/",
     "Amiga module archives from the Aminet mods directories; each LHA archive unpacks to a tracker module.", g_tags,
-    NULL, parse, NULL, url_of, path_in, NULL, NULL, aminet_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL, NULL,
+    NULL, parse, NULL, url_of, path_in, NULL, NULL, aminet_sync_host, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL, NULL, NULL,
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
