@@ -12377,14 +12377,16 @@ static int desk_pointer_view(desk* d, const sel_gui_input* ev) {
         d->nav_arrow_clicks++;
         return desk_page_walk(d, in_rect(d->nav_back, ev->x, ev->y) ? -1 : 1);
     }
+    if (ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u) { /* I828: a click anywhere else, the top bar included, takes the keyboard from the filter field */
+            if (d->lf_edit && side_tools_at(d, ev->x, ev->y) != 2 && tl_at(d, lib_tools_rect(d, region_rect(d, "main")), ev->x, ev->y) != 2) { /* I611: a click elsewhere takes the keyboard from the filter field */
+                d->lf_edit = 0;
+            }
+    }
     if (ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u && topbar_click(d, ev->x, ev->y)) { /* I615 */
         return 1;
     }
     if (ev->kind == SEL_GUI_IN_CLICK && ev->button == 0u) { /* a sidebar door opens its page */
         int32_t door = sidebar_door_at(d, ev->x, ev->y);
-        if (d->lf_edit && side_tools_at(d, ev->x, ev->y) != 2 && tl_at(d, lib_tools_rect(d, region_rect(d, "main")), ev->x, ev->y) != 2) { /* I611: a click elsewhere takes the keyboard from the filter field */
-            d->lf_edit = 0;
-        }
         if (door >= 0) {
             d->nav_clicks++;
             return desk_route_door(d, door_page((uint32_t)door));
