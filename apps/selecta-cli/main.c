@@ -510,8 +510,8 @@ static void script_directive(sel_engine* e, const char* line) {
     } else if (strcmp(line, "@source_search") == 0) {
         sel_engine_stats es;
         sel_engine_stats_get(e, &es);
-        printf("SOURCESEARCH runs=%u searches=%u worker=%u\n", (unsigned)sel_source_search_runs(), (unsigned)es.source_searches,
-               (unsigned)es.search_worker_runs);
+        printf("SOURCESEARCH runs=%u searches=%u worker=%u pins=%u pin_rows=%u\n", (unsigned)sel_source_search_runs(),
+               (unsigned)es.source_searches, (unsigned)es.search_worker_runs, (unsigned)es.source_pins, (unsigned)es.pin_rows);
     } else if (strcmp(line, "@stream_source") == 0) {
         printf("STREAMSOURCE resolves=%u\n", (unsigned)sel_source_stream_resolves());
     } else if (strcmp(line, "@stream_live") == 0) {

@@ -73,6 +73,8 @@ SEL_CMD(LIBRARY_FETCH, "s", "playlists", "url", "Fetch Into Library")
 SEL_CMD(LIBRARY_SCAN, "s", "playlists", "path", "Scan Library")
 SEL_CMD(LIBRARY_SYNC, "ssu?", "playlists", "source target [limit]", "Synchronise Library")
 SEL_CMD(SOURCE_SEARCH, "ss", "playlists", "source query", "Search Source")
+/* I406b: saves one hit of the last SOURCE_SEARCH (its song key `source:path`) into the library. Play, queue and playlist add pin the same way on their own. */
+SEL_CMD(SOURCE_PIN, "s", "playlists", "key", "Save to Library")
 /* DUI-P4-3 Sources tab: one LIBRARY_RESULT per registered source (SRC_KEY id, SRC_KIND, SRC_NAME, SRC_PATH home, SRC_ENABLED, SRC_COUNT songs, SRC_SEARCHABLE 1 when the source has a search hook and can be named in SOURCE_SEARCH, I406a) */
 SEL_CMD(SOURCES, "", "playlists", "", "List Sources")
 SEL_CMD(STATS_SHOW, "", "view", "", "Show Statistics")

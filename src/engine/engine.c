@@ -140,6 +140,7 @@
     X(LIBRARY_FETCH)                                                                          \
     X(LIBRARY_SCAN)                                                                           \
     X(LIBRARY_SYNC)                                                                           \
+    X(SOURCE_PIN)                                                                             \
     X(SOURCE_SEARCH)                                                                          \
     X(SOURCES)                                                                                \
     X(LIKE)                                                                                   \
@@ -488,6 +489,8 @@ struct sel_engine {
     char search_wait_query[SEL_SEARCH_QUERY_MAX];
     sel_sync_ctx search_ctx;
     uint32_t source_searches;      /* searches started (STAT_SOURCE_SEARCHES) */
+    uint32_t source_pins;          /* I406b: hits handed to the library (search_pin) */
+    uint32_t pin_rows_seen;        /* I406b: sel_library_pin_rows at the last pump pass; a change bumps library_changes */
     uint32_t search_worker_runs;   /* searches that ran on a thread other than the command thread */
 #if defined(SEL_LI_THREAD)
     pthread_t search_cmd_thread;
@@ -2385,11 +2388,39 @@ static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t s
 
 static int open_share_link(sel_engine* e, const char* text);
 
+/* I406b: pins `key` into the library when it is a hit of the finished search (key `source:path`). The hit is copied into
+ * the library's ring and written on the library job thread, so the command thread never waits (I782). Called by every
+ * action that commits to a hit: OPEN, queue insert, playlist add and SOURCE_PIN. A key that is no hit does nothing; while
+ * a search runs the table is being rewritten, so nothing is matched. Returns 1 when the key was a hit. */
+static int search_pin(sel_engine* e, const char* key) {
+    uint32_t i;
+
+    if (e->lib == NULL || e->search_running || key == NULL || e->search_source[0] == '\0') {
+        return 0;
+    }
+    for (i = 0; i < e->search_n && i < SEL_SEARCH_HITS; i++) {
+        if (strcmp(e->search_hit[i].key, key) == 0) {
+            sel_library_pin(e->lib, e->search_source, key + strlen(e->search_source) + 1u, e->search_hit[i].title,
+                            e->search_hit[i].artist, e->search_hit[i].format);
+            e->source_pins++;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void cmd_SOURCE_PIN(sel_engine* e, const sel_message* m) {
+    if (!search_pin(e, m->args[0].v.s)) {
+        sel_engine_report_error(e, "not_a_hit", "SOURCE_PIN");
+    }
+}
+
 static void cmd_OPEN(sel_engine* e, const sel_message* m) {
     if (sel_share_is_link(m->args[0].v.s)) {
         open_share_link(e, m->args[0].v.s);
         return;
     }
+    search_pin(e, m->args[0].v.s);
     e->q_playing = 0;
     e->open_failed = !begin_song(e, SEL_BEGIN_OPEN, m->args[0].v.s, SEL_SUBSONG_DEFAULT, 0);
 }
@@ -2949,6 +2980,7 @@ static void queue_insert(sel_engine* e, uint32_t at, const char* path, const cha
         sel_engine_report_error(e, "queue_full", who);
         return;
     }
+    search_pin(e, path);
     emit_queue_changed(e);
 }
 
@@ -5261,7 +5293,10 @@ static void cmd_PLAYLIST_ADD_SONG(sel_engine* e, const sel_message* m) {
     if (!folder_ready(e, "PLAYLIST_ADD_SONG")) return;
     rc = sel_library_playlist_add_song(e->lib, (uint32_t)m->args[0].v.u, m->args[1].v.s);
     if (rc != SEL_FOLDER_OK) folder_report(e, rc, "PLAYLIST_ADD_SONG");
-    else folders_reload(e);
+    else {
+        search_pin(e, m->args[1].v.s);
+        folders_reload(e);
+    }
 }
 
 /* PLAYLIST_IMPORT id path (I652c): parses an .m3u/.pls file with the playlist codecs and appends each song to saved playlist
@@ -7468,6 +7503,11 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
     scan_collect(e);
     sync_collect(e);
     search_collect(e);
+    if (e->lib != NULL && sel_library_pin_rows(e->lib) != e->pin_rows_seen) {
+        e->pin_rows_seen = sel_library_pin_rows(e->lib); /* I406b: pinned hits landed: open listings and the Sources count reload */
+        e->library_changes++;
+        e->state.library_serial = e->library_changes;
+    }
     timer_pump(e);
     reclaim_slots(e);
     if (e->deferred) {
@@ -7664,6 +7704,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->dup_played = e->dup_played;
     out->archive_unpacks = e->archive_unpacks;
     out->source_searches = e->source_searches;
+    out->source_pins = e->source_pins;
+    out->pin_rows = e->lib != NULL ? sel_library_pin_rows(e->lib) : 0;
     out->search_worker_runs = e->search_worker_runs;
     out->archive_member = e->archive_member;
     if (e->lib != NULL) {

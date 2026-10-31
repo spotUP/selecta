@@ -434,6 +434,8 @@ typedef struct sel_engine_stats {
     const char* dup_played;       /* key of the file the last redirected OPEN read, "" when none (I184) */
     uint32_t archive_unpacks;     /* OPENs that played the module inside an archive (I405 sentinel) */
     uint32_t source_searches;    /* SOURCE_SEARCH runs started (STAT_SOURCE_SEARCHES, I406a) */
+    uint32_t source_pins;        /* I406b: search hits handed to the library by play, queue, playlist add or SOURCE_PIN */
+    uint32_t pin_rows;           /* I406b: rows the library job thread wrote for those pins */
     uint32_t search_worker_runs; /* of those, runs that executed off the command thread (I782) */
     const char* archive_member;   /* name of the member the last such OPEN played, "" when none */
     uint32_t hash_files;          /* local files the idle md5 pass finished (I184b, sel_hash_stats) */
