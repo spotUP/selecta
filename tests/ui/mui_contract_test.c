@@ -78,7 +78,10 @@ static void test_wait(void) {
           (unsigned)s.mask_seen);
     s.id = 7;
     s.waits = 0;
-    CHECK(mui_wait_step(&io, &s, 20) == 1 && s.waits == 0, "a ReturnID is not 1 (handled)");
+    s.arrive = 0;
+    CHECK(mui_wait_step(&io, &s, 20) == 1, "a ReturnID is not 1 (handled)");
+    s.arrive = 0x1000u; /* I727: Break while every turn has a ReturnID waiting (MP3 playback) */
+    CHECK(mui_wait_step(&io, &s, 20) == -1, "break behind a ReturnID is not -1 (Break ignored during playback)");
     s.id = 0;
     s.arrive = 0x4000u;
     CHECK(mui_wait_step(&io, &s, 20) == 1, "engine wake is not 1");
