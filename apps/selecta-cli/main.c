@@ -846,7 +846,7 @@ static int cmd_script_file(FILE* f, int argc, char** argv) {
             continue;
         }
         sel_engine_send_line(e, line, pool, sizeof pool);
-        sel_engine_pump(e, print_event, NULL);
+        sel_engine_pump_reads(e, print_event, NULL, 60000u); /* I829: the script wants this line's answer now */
     }
     fclose(f);
     if (lib != NULL) {

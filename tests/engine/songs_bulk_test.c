@@ -39,7 +39,7 @@ static void run(sel_engine* eng, const char* line) {
         return;
     }
     sel_engine_send(eng, &m);
-    sel_engine_pump(eng, sink, NULL);
+    sel_engine_pump_reads(eng, sink, NULL, 60000u);
 }
 
 static sel_engine_stats stats(sel_engine* e) {

@@ -431,6 +431,12 @@ int sel_library_song_briefs(sel_library* lib, const char* keys, char* out, size_
  * at once (counted in sel_library_deferred), so a draw path never queues behind a sync. Returns the previous setting. */
 int sel_library_nowait(int on);
 uint32_t sel_library_deferred(void);
+/* I829 sentinel: mark the calling thread as the UI/command thread (returns the previous setting); sel_library_watched_waits counts
+ * every library request such a thread sent and waited on. The pump thread must keep it at 0. */
+int sel_library_watch(int on);
+uint32_t sel_library_watched_waits(void);
+/* I829: 1 while a job or another caller holds the library (a request now would wait or, in nowait mode, be deferred). */
+int sel_library_busy(sel_library* lib);
 int sel_library_playlist_add(sel_library* lib, const char* name, uint32_t folder, const char* keys_nl, uint32_t* out_id);
 int sel_library_folder_counts(sel_library* lib, uint32_t* folders, uint32_t* in_folders, uint32_t* playlists, uint32_t* entries);
 /* Fills `out` per the SEL_USER_FOLDER_PLAYLISTS / PLAYLIST_KEYS / FOLDER_TREE formats; *count = rows found. */
