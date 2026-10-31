@@ -744,7 +744,7 @@ int main(int argc, char** argv)
                     return 1;
                 }
             } else if (sel_engine_send_line(e, argv[a + 1], pool, sizeof pool) == SEL_CODEC_OK) {
-                sel_engine_pump(e, sink, ctx);
+                (void)sel_engine_pump_reads(e, sink, ctx, 60000u); /* I829: a --exec line is a script step: its posted read lands first */
                 sel_engine_scan_wait(e, sink, ctx); /* a --exec LIBRARY_SCAN finishes before the next option (I336) */
             }
         }
