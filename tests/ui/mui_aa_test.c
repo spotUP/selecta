@@ -239,7 +239,7 @@ static void test_text_source(void) {
 }
 
 /* I667e mui-panel-source: the MUI UI builds every panel through AAPanel, counted from the source: no TH PANEL group left, the helper
- * definition plus five calls (sidebar, player, main, detail, art frame) = 6 "mui_aapanel(" spellings, one AAPanel constructor call. */
+ * definition plus six calls (sidebar, player, player art frame, main, detail, art frame) = 7 "mui_aapanel(" spellings, one AAPanel constructor call. */
 static void test_panel_source(void) {
     char* ui = slurp(UI_SOURCE);
     char* cls = slurp(AAPANEL_SOURCE);
@@ -250,7 +250,7 @@ static void test_panel_source(void) {
     }
     CHECK(count_of(ui, "TH_TAGS(MUI_TH_PANEL") == 0, "TH PANEL group left in mui_ui.c: %d", count_of(ui, "TH_TAGS(MUI_TH_PANEL"));
     CHECK(count_of(ui, "MUIA_Frame, MUIV_Frame_Group") == 0, "plain art frame left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aapanel(") == 6, "panel constructor sites: %d (definition + 5)", count_of(ui, "mui_aapanel("));
+    CHECK(count_of(ui, "mui_aapanel(") == 7, "panel constructor sites: %d (definition + 6)", count_of(ui, "mui_aapanel("));
     CHECK(count_of(ui, "mui_aapanel_new(") == 1, "one AAPanel constructor call: %d", count_of(ui, "mui_aapanel_new("));
     CHECK(strstr(cls, "mui_aa_panel_rgb(") != NULL && strstr(cls, "mui_aa_panel_radius(") != NULL && strstr(cls, "aa_round_corners(") != NULL,
           "class does not draw through the shared panel helpers");

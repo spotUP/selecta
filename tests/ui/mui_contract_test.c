@@ -2026,7 +2026,8 @@ static void test_status_face(void) {
     }
 }
 
-/* I717: the volume slider sits at the right end of the seek row (row2), after the length box, like the Mac player bar; it is fixed width. */
+/* I717 (moved by I796): the volume slider is in the right column of the player bar, after the seek row's length box in source order, never in the
+ * transport row; it is fixed width. */
 static void test_volume_row(void) {
     char *src = ui_source(), *grp, *end, *seek, *len, *vol;
     CHECK(src != NULL, "cannot read mui_ui.c");
@@ -2041,11 +2042,68 @@ static void test_volume_row(void) {
     }
     seek = strstr(grp, "DoMethod(row2, OM_ADDMEMBER, s->seek)");
     len = strstr(grp, "MUI_ATTR_LENGTH");
-    vol = strstr(grp, "DoMethod(row2, OM_ADDMEMBER, s->vol)");
+    vol = strstr(grp, "DoMethod(row4, OM_ADDMEMBER, s->vol)");
     CHECK(seek != NULL && seek < end, "seek slider is not in the seek row");
-    CHECK(vol != NULL && vol < end && len != NULL && vol > len, "volume slider is not the last member of the seek row");
-    CHECK(strstr(grp, "DoMethod(row1, OM_ADDMEMBER, s->vol)") == NULL, "volume slider is still in the button row");
+    CHECK(vol != NULL && vol < end && len != NULL && vol > len, "volume slider is not in the right column");
+    CHECK(strstr(grp, "DoMethod(row1, OM_ADDMEMBER, s->vol)") == NULL, "volume slider is in the button row");
     CHECK(strstr(grp, "CTL_VOLUME, MUI_VOLUME_FIX_W)") != NULL, "volume slider has no fixed width");
+}
+
+/* I796 (drift B1-B4): ONE reachability test of the player bar. mui_ui.c builds it from the map layer (Mac transport order, Mac column weights,
+ * art frame, Like beside the title), and the icons it builds fire their commands: each transport action and Like go through mui_action_fire
+ * (the handler sentinel mui_action_fires() counts them). */
+static int bar_sent;
+static char bar_line[16][64];
+static int bar_send(void* ctx, const char* line) {
+    (void)ctx;
+    if (bar_sent < 16) {
+        snprintf(bar_line[bar_sent], sizeof bar_line[0], "%s", line);
+    }
+    bar_sent++;
+    return 1;
+}
+
+static void test_player_bar(void) {
+    static const uint32_t mac[MUI_BTN_COUNT] = {MUI_BTN_RANDOM, MUI_BTN_PREV, MUI_BTN_PLAY, MUI_BTN_NEXT, MUI_BTN_REPEAT, MUI_BTN_STOP};
+    char *src = ui_source(), *grp, *end, *ord, *tool, *tend;
+    sel_uim_frame f;
+    uint32_t k, base = mui_action_fires();
+    memset(&f, 0, sizeof f);
+    for (k = 0; k < MUI_BTN_COUNT; k++) {
+        const char* act;
+        CHECK(mui_player_transport_at(k) == mac[k], "transport position %u is button %u, want %u", (unsigned)k, (unsigned)mui_player_transport_at(k), (unsigned)mac[k]);
+        CHECK(mui_transport_icon_only(mui_player_transport_at(k)), "transport position %u is not an icon", (unsigned)k);
+        act = mui_transport_action(mui_player_transport_at(k), &f);
+        CHECK(act != NULL && mui_action_fire(act, bar_send, NULL) == 1u, "transport position %u (%s) does not fire", (unsigned)k, act != NULL ? act : "none");
+    }
+    CHECK(mui_action_fire("like", bar_send, NULL) == 1u, "Like does not fire");
+    CHECK(bar_sent == (int)MUI_BTN_COUNT + 1 && mui_action_fires() - base == MUI_BTN_COUNT + 1u, "sentinel %u sent %d", (unsigned)(mui_action_fires() - base), bar_sent);
+    CHECK(bar_sent > (int)MUI_BTN_COUNT && strcmp(bar_line[MUI_BTN_COUNT], mui_like_line()) == 0, "Like sends '%s'", bar_line[MUI_BTN_COUNT]);
+    CHECK(MUI_PLAYER_W_LEFT + MUI_PLAYER_W_CENTRE + MUI_PLAYER_W_RIGHT == 100 && MUI_PLAYER_W_CENTRE > MUI_PLAYER_W_LEFT, "column weights");
+    CHECK(src != NULL, "cannot read mui_ui.c");
+    if (src == NULL) {
+        return;
+    }
+    grp = strstr(src, "static Object* mui_player_group(");
+    end = grp != NULL ? strstr(grp, "MUI-P3-4") : NULL;
+    CHECK(grp != NULL && end != NULL, "mui_player_group not found");
+    if (grp == NULL || end == NULL) {
+        return;
+    }
+    ord = strstr(grp, "mui_player_transport_at(k)");
+    CHECK(ord != NULL && ord < end, "the transport row is not built in the Mac order of the map layer");
+    CHECK(strstr(grp, "mui_aapanel(MUI_AA_PANEL_RAISED, MUI_PLAYER_ART_PX)") != NULL, "no art frame in the player bar");
+    CHECK(strstr(grp, "MUIA_HorizWeight, MUI_PLAYER_W_LEFT") != NULL && strstr(grp, "MUIA_HorizWeight, MUI_PLAYER_W_CENTRE") != NULL &&
+              strstr(grp, "MUIA_HorizWeight, MUI_PLAYER_W_RIGHT") != NULL,
+          "the three columns do not take the map-layer weights");
+    CHECK(strstr(grp, "DoMethod(hbar, OM_ADDMEMBER, colL)") != NULL && strstr(grp, "DoMethod(hbar, OM_ADDMEMBER, colC)") != NULL &&
+              strstr(grp, "DoMethod(hbar, OM_ADDMEMBER, colR)") != NULL && strstr(grp, "DoMethod(g, OM_ADDMEMBER, hbar)") != NULL,
+          "the bar is not one HGroup of three columns");
+    CHECK(strstr(grp, "CTL_P4_BASE + P4_LIKE") != NULL && strstr(grp, "DoMethod(row3, OM_ADDMEMBER, like)") != NULL, "Like is not beside the title");
+    tool = strstr(src, "static Object* mui_tool_group(");
+    tend = tool != NULL ? strstr(tool, "I667i2") : NULL;
+    CHECK(tool != NULL && tend != NULL && strstr(tool, "g_tool_which[i] == P4_LIKE") != NULL && strstr(tool, "g_tool_which[i] == P4_LIKE") < tend,
+          "the tool rows still build Like");
 }
 
 static void test_cycle_initial(void) {
@@ -2353,6 +2411,8 @@ int main(int argc, char** argv) {
         test_aalist_getrow();
     } else if (strcmp(argv[1], "status-face") == 0) {
         test_status_face();
+    } else if (strcmp(argv[1], "player-bar") == 0) {
+        test_player_bar();
     } else if (strcmp(argv[1], "volume-row") == 0) {
         test_volume_row();
     } else if (strcmp(argv[1], "cycle-initial") == 0) {

@@ -92,6 +92,15 @@ const char* mui_transport_label(uint32_t button, const sel_uim_frame* f);
 const char* mui_transport_widest(uint32_t button);
 /* I667b5 (owner 2026-10-29): 1 when the transport button shows only its icon (all six, Stop too); the label is the tooltip. */
 int mui_transport_icon_only(uint32_t button);
+/* I796 (drift B3): the transport buttons left to right as the Mac player bar draws them (draw_transport: Shuffle, Previous, Play, Next,
+ * Repeat); Stop has no Mac button and follows Repeat. Position k in 0..MUI_BTN_COUNT-1 gives the MUI_BTN_* index. */
+uint32_t mui_player_transport_at(uint32_t k);
+/* I796 (drift B1, B2): the player bar's three columns. Weights follow the Mac's 300 px player-left of a 900 px bar; the art frame is the
+ * Mac's 56 px square. */
+#define MUI_PLAYER_W_LEFT 33
+#define MUI_PLAYER_W_CENTRE 47
+#define MUI_PLAYER_W_RIGHT 20
+#define MUI_PLAYER_ART_PX 56
 /* 1 when the button is lit: Repeat while repeating (all or one), Shuffle while shuffle is on; drawn as the SELECTED face because the icon
  * does not change with the state. */
 int mui_transport_on(uint32_t button, const sel_uim_frame* f);

@@ -859,14 +859,18 @@ static Object* mui_p8_extras_row(void) {
     return row;
 }
 
-/* The transport row and frame texts: three rows of one VGroup (the PLAYER slot content). */
+/* I796 (drift B1-B4, research 2026-10-30-mui-mac-drift.md): the player bar is the Mac's three columns in one HGroup. Left: the cover art
+ * frame and the title with the Like heart beside it, the artist under it (draw_player_left). Centre: the transport icons in the Mac order
+ * (mui_player_transport_at) above the seek row. Right: the volume slider, the album and speed extras, the format and the status.
+ * The column weights are MUI_PLAYER_W_* of the map layer. */
 static Object* mui_player_group(mui_state* s) {
     sel_uim_frame zero;
-    Object *row1, *row2, *row3, *g;
-    uint32_t i;
+    Object *row1, *row2, *row3, *row4, *row5, *g, *art, *hbar, *colL, *colC, *colR, *titles, *like;
+    uint32_t k;
     memset(&zero, 0, sizeof zero);
     row1 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
-    for (i = 0; row1 != NULL && i < MUI_BTN_COUNT; i++) {
+    for (k = 0; row1 != NULL && k < MUI_BTN_COUNT; k++) {
+        uint32_t i = mui_player_transport_at(k);
         s->btn_label[i] = mui_transport_label(i, &zero);
         s->btn[i] = mui_make_button_i(s->btn_label[i], mui_transport_widest(i), mui_transport_action(i, &zero), i == MUI_BTN_PLAY ? "pause" : NULL,
                                       CTL_BTN_BASE + (LONG)i, 100, mui_transport_icon_only(i), i == MUI_BTN_PLAY ? MUI_AA_ROLE_ACCENT : MUI_AA_ROLE_NORMAL);
@@ -878,23 +882,43 @@ static Object* mui_player_group(mui_state* s) {
     s->seek = mui_make_slider(0, MUI_SEEK_MAX, 0, CTL_SEEK, 0);
     row2 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     row3 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    row4 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    row5 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    art = mui_aapanel(MUI_AA_PANEL_RAISED, MUI_PLAYER_ART_PX);
+    like = mui_make_button_icon(mui_tool_labels[0], mui_tool_labels[0], CTL_P4_BASE + P4_LIKE);
+    titles = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+    colL = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_HorizWeight, MUI_PLAYER_W_LEFT, TAG_DONE);
+    colC = MUI_NewObject((char*)MUIC_Group, MUIA_HorizWeight, MUI_PLAYER_W_CENTRE, TAG_DONE);
+    colR = MUI_NewObject((char*)MUIC_Group, MUIA_HorizWeight, MUI_PLAYER_W_RIGHT, TAG_DONE);
+    hbar = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     g = mui_aapanel(MUI_AA_PANEL_SURFACE, 0);
-    if (row1 == NULL || row2 == NULL || row3 == NULL || g == NULL || s->vol == NULL || s->seek == NULL) {
+    if (row1 == NULL || row2 == NULL || row3 == NULL || row4 == NULL || row5 == NULL || g == NULL || s->vol == NULL || s->seek == NULL || art == NULL ||
+        like == NULL || titles == NULL || colL == NULL || colC == NULL || colR == NULL || hbar == NULL) {
         return NULL;
     }
+    DoMethod(art, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE)); /* a group needs one child; the cover itself is the Now Playing art */
     DoMethod(row2, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_CLOCK, "0:00 ", MUI_LBL_CLOCK));
     DoMethod(row2, OM_ADDMEMBER, s->seek);
     DoMethod(row2, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_REMAINING, "-0:00", MUI_LBL_REMAINING));
     DoMethod(row2, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_LENGTH, "0:00 ", MUI_LBL_LENGTH));
-    DoMethod(row2, OM_ADDMEMBER, s->vol); /* I717: volume at the right end of the seek row, like the Mac player bar */
     DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_TITLE, "No song", MUI_LBL_TITLE));
-    DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_ARTIST, "", MUI_LBL_ARTIST));
-    DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_FORMAT, "        ", MUI_LBL_FORMAT));
-    DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_STATUS, "Stopped", MUI_LBL_STATUS));
-    DoMethod(g, OM_ADDMEMBER, row1);
-    DoMethod(g, OM_ADDMEMBER, mui_p8_extras_row());
-    DoMethod(g, OM_ADDMEMBER, row2);
-    DoMethod(g, OM_ADDMEMBER, row3);
+    DoMethod(row3, OM_ADDMEMBER, like); /* B4: the heart beside the title */
+    DoMethod(titles, OM_ADDMEMBER, row3);
+    DoMethod(titles, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_ARTIST, "", MUI_LBL_ARTIST));
+    DoMethod(colL, OM_ADDMEMBER, art);
+    DoMethod(colL, OM_ADDMEMBER, titles);
+    DoMethod(colC, OM_ADDMEMBER, row1);
+    DoMethod(colC, OM_ADDMEMBER, row2);
+    DoMethod(row4, OM_ADDMEMBER, s->vol); /* I717: volume at the right end of the bar, like the Mac player bar */
+    DoMethod(row5, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_FORMAT, "        ", MUI_LBL_FORMAT));
+    DoMethod(row5, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_STATUS, "Stopped", MUI_LBL_STATUS));
+    DoMethod(colR, OM_ADDMEMBER, row4);
+    DoMethod(colR, OM_ADDMEMBER, mui_p8_extras_row());
+    DoMethod(colR, OM_ADDMEMBER, row5);
+    DoMethod(hbar, OM_ADDMEMBER, colL);
+    DoMethod(hbar, OM_ADDMEMBER, colC);
+    DoMethod(hbar, OM_ADDMEMBER, colR);
+    DoMethod(g, OM_ADDMEMBER, hbar);
     return g;
 }
 
@@ -1019,6 +1043,9 @@ static Object* mui_tool_group(mui_state* s) {
     }
     DoMethod(r1, OM_ADDMEMBER, s->str_cmd);
     for (i = 0; i < MUI_TOOL_BTNS; i++) {
+        if (g_tool_which[i] == P4_LIKE) {
+            continue; /* I796 B4: Like lives beside the title in the player bar */
+        }
         /* New Playlist is the accent button of the row (design 3.1); the others are plain icon buttons. */
         Object* b = g_tool_which[i] == P4_PNEW
                         ? mui_make_button_i(mui_tool_labels[i], mui_tool_labels[i], mui_tool_labels[i], NULL, CTL_P4_BASE + (LONG)g_tool_which[i], 100, 1, MUI_AA_ROLE_ACCENT)
