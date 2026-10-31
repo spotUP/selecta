@@ -367,9 +367,17 @@ static const sel_catalogue* host_catalogue(const sel_host* host) {
     return ctx_of(host)->scfg.lib != NULL ? &g_catalogue : NULL;
 }
 
+/* A source's settings (sources.jamendo_client_id) come from the host the sync was bound to, not from the bound copy
+ * (whose ctx is the sync context): base->config_get runs with base itself (I729). */
+static const char* host_config_get(const sel_host* host, const char* key, const char* def) {
+    const sel_host* base = ctx_of(host)->scfg.host;
+    return base != NULL && base->config_get != NULL ? base->config_get(base, key, def) : def;
+}
+
 void sel_sync_host_bind(sel_host* out, const sel_host* base, sel_sync_ctx* ctx) {
     *out = *base;
     out->ctx = ctx;
+    out->config_get = host_config_get;
     out->net = host_net;
     out->catalogue = host_catalogue;
 }
