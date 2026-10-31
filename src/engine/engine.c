@@ -7714,6 +7714,25 @@ static void hw_clock(sel_engine* e) {
     }
 }
 
+int sel_engine_reads_pending(const sel_engine* e) {
+    return !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || e->sources_retry ||
+           e->rd_search.again || e->rd_view[0] != '\0';
+}
+
+uint32_t sel_engine_pump_reads(sel_engine* e, sel_event_sink sink, void* ctx, unsigned timeout_ms) {
+    uint32_t n = sel_engine_pump(e, sink, ctx);
+    unsigned waited = 0;
+
+    while (sel_engine_reads_pending(e) && waited < timeout_ms) {
+        struct timespec ts = {0, 1000000L};
+
+        nanosleep(&ts, NULL);
+        waited++;
+        n += sel_engine_pump(e, sink, ctx);
+    }
+    return n;
+}
+
 uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
     sel_message m;
     uint32_t delivered = 0;

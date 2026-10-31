@@ -360,6 +360,12 @@ int sel_engine_send_line(sel_engine* e, const char* line, char* pool, size_t poo
  * number of events delivered. */
 uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx);
 
+/* I829: 1 while a posted library read (home, search, folders) or a retried SOURCES reply is still in flight. */
+int sel_engine_reads_pending(const sel_engine* e);
+/* I829: pumps until every posted library read has landed and been applied (or timeout_ms passes), returning the events delivered.
+ * For synchronous front ends (CLI, text UI, test drivers) that need the answer of a command now; the desktop pump never calls it. */
+uint32_t sel_engine_pump_reads(sel_engine* e, sel_event_sink sink, void* ctx, unsigned timeout_ms);
+
 const sel_state* sel_engine_state(const sel_engine* e);
 /* The host to hand to plugins outside playback (integrations, I177b): a copy of the engine's host whose
  * config_get answers a non-empty engine pref (include/selecta/prefs.def) first, then the real host. Valid until
