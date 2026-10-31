@@ -1907,6 +1907,16 @@ if(NOT SEL_AMIGA)
     DEPENDS cache-fetch TIMEOUT 60)
 endif()
 
+# I853 modland-builtin-mirror: a root-relative Modland song key fetches from the built-in mirror list (no doubled
+# pub/modules/ in the URL).
+if(NOT SEL_AMIGA)
+  add_test(NAME modland-builtin-mirror
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DWORK=${SEL_NET_WORK}" "-DFIXDIR=${SEL_NET_DIR}/fixtures"
+      "-DCAT=${CMAKE_CURRENT_SOURCE_DIR}/m3/catalogue.tsv" -P "${SEL_NET_DIR}/modland_builtin_mirror.cmake")
+  set_tests_properties(modland-builtin-mirror PROPERTIES LABELS m3 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    TIMEOUT 60)
+endif()
+
 # I94a (row I94 refinement, user decision Q24): the first loop of a non-looping song counts as the song's end,
 # so SONG_ENDED reports `end`; a song that loops by design (selecta-loop.mod, B01 jump) keeps `loop`.
 # Reachability: the script drives the engine dispatch; the nuade adapter turns the wrap to order 0 into ENDED.
