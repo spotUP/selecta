@@ -625,6 +625,8 @@ int sel_library_hash_local(sel_library* lib);
  * `song_key` itself when it is the best. A local best source comes back as its plain path, a remote one as its key
  * (the form read_song opens). 0 when the song has no md5 or is unknown. */
 int sel_library_best_source(sel_library* lib, const char* song_key, char* out, size_t cap);
+/* I847a: fills an open library with the deterministic perf catalogue of `songs` rows (testgen.c). 1 on success. */
+int sel_library_gen(sel_library* lib, uint32_t songs);
 
 uint32_t sel_library_account(const sel_library* lib);
 uint32_t sel_library_heap_size(const sel_library* lib);

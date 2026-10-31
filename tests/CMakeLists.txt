@@ -2596,3 +2596,6 @@ if(NOT SEL_AMIGA)
   add_custom_target(dui-songs ALL DEPENDS "${SEL_TESTMOD}" "${SEL_SHORTMOD}" "${SEL_LOOPMOD}")
 endif()
 add_subdirectory(dui)
+# I847a: the perf fixture generator and the bench command, run through selecta-cli at 5000 songs (the 600k run is manual, see the design doc section 4).
+add_test(NAME library-gen-bench COMMAND "${CMAKE_COMMAND}" "-DCLI=${SEL_CLI}" "-DDIR=${CMAKE_CURRENT_BINARY_DIR}" -P "${CMAKE_CURRENT_SOURCE_DIR}/library_gen_bench.cmake")
+set_tests_properties(library-gen-bench PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_gen_bench_ok")

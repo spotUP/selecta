@@ -1400,9 +1400,15 @@ int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "export-folder") == 0) {
         return sel_cli_library_export_folder(argc - 1, argv + 1);
     }
+    if (argc >= 1 && strcmp(argv[0], "gen") == 0) {
+        return sel_cli_library_gen(argc - 1, argv + 1);
+    }
+    if (argc >= 1 && strcmp(argv[0], "bench") == 0) {
+        return sel_cli_library_bench(argc - 1, argv + 1);
+    }
     if (argc >= 1 && strcmp(argv[0], "query") == 0) {
         return library_query(argc - 1, argv + 1);
     }
-    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--dump] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | sync [--db <path>] [--now <epoch>] [--dump] modland <dir or http(s) url> | meta [--db <path>] <key> | key <source> <path> | genre --db <path> | composer --db <path> <name> | similar --db <path> <key> | also-by --db <path> <key> | duplicates --db <path> | trim [--budget <n>] [--machine <name>] | query --explain <q> | export-folder --db <path> --dir <dir> [--folder <id>] [--format m3u] | stats [--machine <name>] [--db <path>]\n", stderr);
+    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--dump] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | sync [--db <path>] [--now <epoch>] [--dump] modland <dir or http(s) url> | meta [--db <path>] <key> | key <source> <path> | genre --db <path> | composer --db <path> <name> | similar --db <path> <key> | also-by --db <path> <key> | duplicates --db <path> | trim [--budget <n>] [--machine <name>] | query --explain <q> | export-folder --db <path> --dir <dir> [--folder <id>] [--format m3u] | stats [--machine <name>] [--db <path>] | gen [--songs <n>] --out <path> | bench --db <path> [--runs <n>]\n", stderr);
     return 2;
 }
