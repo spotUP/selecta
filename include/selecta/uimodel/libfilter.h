@@ -23,6 +23,11 @@ uint32_t sel_uim_lfilter_step(uint32_t filter, int dir);
 /* The filter pass: the rows of the kinds `filter` names, read from the library store (the store filters, not a UI loop). Returns the
  * rows written to out[0..max). *total, when not NULL, is the row count of the whole filtered list. */
 uint32_t sel_uim_lfilter_pass(sel_engine* e, uint32_t filter, sel_engine_library_item* out, uint32_t max, uint32_t* total);
+/* I669: chips or the single label. The kind chips show side by side only when they fit the sidebar; otherwise (and always on the
+ * bitmap tier) one label names the filter in force and the Previous and Next chevrons step it, and the label takes no click. Both UIs
+ * measure their chip widths in their own units and ask here. total is the chips' summed width with gaps, band the width they may use. */
+int32_t sel_uim_lfilter_chips_total(const int32_t* widths, uint32_t n, int32_t gap);
+int sel_uim_lfilter_chips_single(int bitmap, int32_t total, int32_t band);
 /* Passes run through sel_uim_lfilter_pass since start: the call-count sentinel the reachability tests read. */
 uint32_t sel_uim_lfilter_passes(void);
 

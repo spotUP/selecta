@@ -44,3 +44,14 @@ uint32_t sel_uim_lfilter_pass(sel_engine* e, uint32_t filter, sel_engine_library
 }
 
 uint32_t sel_uim_lfilter_passes(void) { return g_passes; }
+
+int32_t sel_uim_lfilter_chips_total(const int32_t* widths, uint32_t n, int32_t gap) {
+    int32_t t = 0;
+    uint32_t k;
+    for (k = 0; k < n; k++) {
+        t += widths[k] + (k != 0u ? gap : 0);
+    }
+    return t;
+}
+
+int sel_uim_lfilter_chips_single(int bitmap, int32_t total, int32_t band) { return bitmap || total > band; }

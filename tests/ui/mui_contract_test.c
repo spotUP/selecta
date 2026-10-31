@@ -1268,12 +1268,13 @@ static void test_sidebar(void) {
     /* the MUI path: mui_sidebar_group builds its objects from the model, and the buttons route to the shared actions */
     CHECK(src != NULL, "read mui_ui.c");
     if (src != NULL) {
-        const char* g = strstr(src, "static Object* mui_sidebar_group(");
-        const char* end = g != NULL ? strstr(g, "\n}\n") : NULL;
-        char body[6000];
-        snprintf(body, sizeof body, "%.*s", g != NULL && end != NULL ? (int)(end - g < 5990 ? end - g : 5990) : 0, g != NULL ? g : "");
-        CHECK(strstr(body, "mui_sidebar_build(") != NULL && strstr(body, "m.title") != NULL && strstr(body, "m.chip") != NULL && strstr(body, "m.row") != NULL &&
-              strstr(body, "m.empty") != NULL && strstr(body, "m.card") != NULL && strstr(body, "m.door") != NULL, "mui_sidebar_group does not build from the model");
+        const char* g = strstr(src, "static Object* mui_sidebar_dyn(const mui_sidebar_model* m) {");
+        const char* gs = g != NULL ? strstr(g, "static Object* mui_sidebar_group(") : NULL;
+        const char* end = gs != NULL ? strstr(gs, "\n}\n") : NULL;
+        char body[12000];
+        snprintf(body, sizeof body, "%.*s", g != NULL && end != NULL ? (int)(end - g < 11990 ? end - g : 11990) : 0, g != NULL ? g : "");
+        CHECK(strstr(body, "mui_sidebar_build(") != NULL && strstr(body, "m.title") != NULL && strstr(body, "m->chip") != NULL && strstr(body, "m->row") != NULL &&
+              strstr(body, "m->empty") != NULL && strstr(body, "m->card") != NULL && strstr(body, "m.door") != NULL, "mui_sidebar_group does not build from the model");
         CHECK(strstr(src, "mui_viewbtn_fire(1,") != NULL && strstr(src, "CTL_SIDE_BASE") != NULL, "sidebar buttons are not routed");
     }
 }
@@ -2077,11 +2078,54 @@ static void test_libfilter(void) {
     CHECK(sel_uim_lfilter_passes() == passes + SEL_UIM_LFILTERS + 2u, "the shared filter pass ran %u times, want %u",
           (unsigned)(sel_uim_lfilter_passes() - passes), (unsigned)(SEL_UIM_LFILTERS + 2u));
     CHECK(sel_uim_lfilter_mask(0) == SEL_LIB_ITEM_ALL && sel_uim_lfilter_mask(4) == SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_COMPOSER), "masks");
+    /* I669: one row list. The S6 rows are the model rows of the filter in force, so rows drawn == filtered rows, and a chip fit decision
+     * shared with the desktop picks chips or the single label. */
+    {
+        sel_engine_library_item it[4];
+        mui_sidebar_in in;
+        mui_sidebar_model m;
+        uint32_t k, sbuilds = mui_sidebar_builds(), nfilt = 0u;
+        memset(it, 0, sizeof it);
+        memset(&in, 0, sizeof in);
+        for (k = 0; k < 4u; k++) {
+            it[k].kind = k < 2u ? (uint32_t)SEL_LIB_ITEM_PLAYLIST : (uint32_t)SEL_LIB_ITEM_ALBUM;
+            snprintf(it[k].name, sizeof it[k].name, "row %u", (unsigned)k);
+        }
+        in.items = it;
+        in.item_n = 4u;
+        in.filter = "";
+        in.chip = 1u; /* Playlists */
+        in.chips_single = 1;
+        mui_sidebar_build(&in, &m);
+        for (k = 0; k < 4u; k++) {
+            nfilt += (sel_uim_lfilter_mask(1u) & SEL_LIB_ITEM_BIT(it[k].kind)) != 0u;
+        }
+        CHECK(m.row_n == nfilt && nfilt == 2u, "rows drawn %u, filtered model rows %u: the sidebar has a second list", (unsigned)m.row_n, (unsigned)nfilt);
+        CHECK(m.chip_single && strcmp(m.chip_label, "Playlists") == 0, "narrow sidebar: S5 is the label naming the filter, got '%s'", m.chip_label);
+        for (k = 0; k < SEL_UIM_SIDE_CHIPS; k++) {
+            CHECK(!m.chip_shown[k], "chip %u shows beside the single label", (unsigned)k);
+        }
+        in.chips_single = 0;
+        in.chip = 0u;
+        mui_sidebar_build(&in, &m);
+        CHECK(!m.chip_single && m.chip_shown[0] && m.chip_shown[5] && m.row_n == 4u, "wide sidebar: the six chips show over all %u rows", (unsigned)m.row_n);
+        CHECK(mui_sidebar_builds() == sbuilds + 2u, "the sidebar model did not run");
+        CHECK(sel_uim_lfilter_chips_single(1, 10, 1000) == 1 && sel_uim_lfilter_chips_single(0, 10, 1000) == 0 && sel_uim_lfilter_chips_single(0, 1001, 1000) == 1,
+              "shared chips-or-label decision");
+        CHECK(mui_sidebar_chips_single(0, 100u) == 1 && mui_sidebar_chips_single(0, 2000u) == 0 && mui_sidebar_chips_single(1, 2000u) == 1, "MUI width decision");
+    }
     CHECK(src != NULL, "read mui_ui.c");
     if (src != NULL) {
+        const char* g = strstr(src, "static Object* mui_sidebar_dyn(const mui_sidebar_model* m) {");
+        const char* gs = g != NULL ? strstr(g, "static Object* mui_sidebar_group(") : NULL;
+        const char* end = gs != NULL ? strstr(gs, "\n}\n") : NULL;
+        char body[12000];
+        snprintf(body, sizeof body, "%.*s", g != NULL && end != NULL ? (int)(end - g < 11990 ? end - g : 11990) : 0, g != NULL ? g : "");
         CHECK(strstr(src, "id == CTL_LIB_PREV || id == CTL_LIB_NEXT") != NULL && strstr(src, "mui_libfilter_press(s->lib_filter") != NULL,
               "mui_control_fire does not reach mui_libfilter_press");
         CHECK(strstr(src, "\"Previous Filter\"") != NULL && strstr(src, "\"Next Filter\"") != NULL, "the sidebar has no previous and next buttons");
+        CHECK(strstr(src, "lib_list") == NULL && strstr(src, "lib_ptr") == NULL && strstr(body, "sel_uim_lfilter_pass(") != NULL,
+              "I670's separate list is back, or the sidebar build skips the shared pass");
     }
 }
 

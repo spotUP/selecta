@@ -105,7 +105,6 @@ static const char* const p4_name[P4_COUNT] = {"search", "cmd", "like", "rating",
                                               "songmenu", "np", "songinfo", "pref", "tracker", "vizpick", "vizframes", "dbl_race_injected"};
 #define MUI_PREF_MAX 12u   /* MUI-P4-10: most Settings rows (sel_uim_pref_row_count) */
 #define MUI_INFO_MAX 24u   /* MUI-P4-9: most song info rows */
-#define MUI_LIB_ROWS 12u   /* I670: most library rows the sidebar list shows */
 #define MUI_TRK_ROWS 16u   /* MUI-P4-16: pattern rows shown */
 #define MUI_TRK_CHANNELS 4u /* MUI-P4-16: channel columns shown */
 
@@ -206,11 +205,10 @@ typedef struct mui_state {
     char np_up_buf[3][96];
     Object* info_list;              /* MUI-P4-9 song info rows */
     uint32_t lib_filter;            /* I670: the library filter in force (sel_uim_lfilter_*), 0 All */
-    Object* lib_label;              /* I670: the label naming it */
-    Object* lib_list;               /* I670: the filtered rows */
-    sel_engine_library_item lib_items[MUI_LIB_ROWS];
-    char lib_buf[MUI_LIB_ROWS][96];
-    const char* lib_ptr[MUI_LIB_ROWS + 1];
+    Object* side_dyn;               /* I669: the sidebar's S5 to S9 group, rebuilt from the model when the filter or the width moves */
+    int side_top_bar, side_single;  /* the top bar flag of the build; the chips-or-label decision the dyn group was built with */
+    sel_engine_library_item side_items[MUI_SIDEBAR_ROWS]; /* the rows the shared filter pass (sel_uim_lfilter_pass) returned for lib_filter */
+    uint32_t side_item_n;
     char info_buf[MUI_INFO_MAX][128];
     const char* info_ptr[MUI_INFO_MAX + 1];
     Object* trk_list;               /* MUI-P4-16 pattern rows, shown only when the engine answered with pattern data */
@@ -865,26 +863,80 @@ static void mui_side_text(Object* g, const char* text, int tone) {
 static void mui_side_button(Object* g, const char* label, LONG id) {
     mui_side_add(g, mui_make_button_left(label, NULL, id));
 }
-static void mui_lib_press(mui_state* s, int dir);
-static Object* mui_string_aalist(void* ctx, long count, int rows, Object** list_out);
+static void mui_lib_press(mui_state* s, int dir, int chip);
+static Object* mui_sidebar_dyn(const mui_sidebar_model* m);
+
+/* I669: the dynamic part of the sidebar, S5 to S9, built from the model alone. */
+static Object* mui_sidebar_dyn(const mui_sidebar_model* m) {
+    Object* d = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+    uint32_t i;
+    if (d == NULL) {
+        return NULL;
+    }
+    if (m->chip_single) { /* S5, chips do not fit: one label naming the filter in force between Previous and Next, the label takes no click (I669) */
+        Object* row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+        if (row != NULL) {
+            DoMethod(row, OM_ADDMEMBER, mui_make_button_icon("Previous Filter", "prev_album", CTL_LIB_PREV));
+            mui_side_add(row, mui_aatext(m->chip_label, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_CENTRE, 0));
+            DoMethod(row, OM_ADDMEMBER, mui_make_button_icon("Next Filter", "next_album", CTL_LIB_NEXT));
+            DoMethod(d, OM_ADDMEMBER, row);
+        }
+    } else { /* S5, chips fit: one row, a click toggles the filter */
+        Object* row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+        for (i = 0; row != NULL && i < SEL_UIM_SIDE_CHIPS; i++) {
+            if (m->chip_shown[i]) {
+                mui_side_button(row, m->chip[i], CTL_SIDE_BASE + MUI_SIDE_CHIP + (LONG)i);
+            }
+        }
+        mui_side_add(d, row);
+    }
+    for (i = 0; i < m->row_n; i++) { /* S6: mark, title, subtitle; the model rows are the filtered rows, the only row list */
+        char line[200];
+        snprintf(line, sizeof line, "%s  %s  %s", m->row[i].mark, m->row[i].title, m->row[i].subtitle);
+        mui_side_text(d, line, MUI_AA_TONE_NORMAL);
+    }
+    if (m->empty[0] != '\0') { /* S8 */
+        mui_side_text(d, m->empty, MUI_AA_TONE_MUTED);
+    }
+    if (m->card) { /* S9 */
+        mui_side_text(d, m->card_title, MUI_AA_TONE_TITLE);
+        mui_side_text(d, m->card_body, MUI_AA_TONE_MUTED);
+        mui_side_button(d, m->card_button, CTL_SIDE_BASE + MUI_SIDE_CARD);
+    }
+    DoMethod(d, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    return d;
+}
+
+/* The model of the sidebar for the filter in force: the rows are s->side_items, passed by sel_uim_lfilter_pass (mui_sidebar_fill). */
+static void mui_sidebar_model_for(mui_state* s, int top_bar, mui_sidebar_model* m) {
+    mui_sidebar_in in;
+    memset(&in, 0, sizeof in);
+    in.top_bar = top_bar;
+    in.bitmap = 0;
+    in.chip = s != NULL ? s->lib_filter : 0u;
+    in.chips_single = mui_sidebar_chips_single(!g_screen_rtg, s != NULL && s->lay.weight_w[MUI_SLOT_SIDEBAR] > 0u ? s->lay.weight_w[MUI_SLOT_SIDEBAR] : 0u);
+    in.filter = "";
+    in.item_n = s != NULL ? s->side_item_n : 0u;
+    in.items = s != NULL ? s->side_items : NULL;
+    mui_sidebar_build(&in, m);
+    if (s != NULL) {
+        s->side_single = m->chip_single;
+    }
+}
 
 static Object* mui_sidebar_group(mui_state* s, int top_bar) {
     Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
-    sel_engine_library_item items[MUI_SIDEBAR_ROWS];
-    mui_sidebar_in in;
     mui_sidebar_model m;
     Object* hd;
     uint32_t i, k;
     if (g == NULL) {
         return NULL;
     }
-    memset(&in, 0, sizeof in);
-    in.top_bar = top_bar;
-    in.bitmap = 0;
-    in.filter = "";
-    in.item_n = s != NULL && s->engine != NULL ? sel_engine_library_items(s->engine, SEL_LIB_ITEM_ALL, 0, items, MUI_SIDEBAR_ROWS, NULL) : 0u;
-    in.items = items;
-    mui_sidebar_build(&in, &m);
+    if (s != NULL) {
+        s->side_top_bar = top_bar;
+        s->side_item_n = sel_uim_lfilter_pass(s->engine, s->lib_filter, s->side_items, MUI_SIDEBAR_ROWS, NULL); /* the shared filter pass */
+    }
+    mui_sidebar_model_for(s, top_bar, &m);
     hd = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE); /* S1: the brand, an accent logo tile then the name (draw_sidebar) */
     if (hd != NULL) {
         if (m.brand_icon[0] != '\0') {
@@ -913,41 +965,10 @@ static Object* mui_sidebar_group(mui_state* s, int top_bar) {
         if (x != NULL) { DoMethod(hd, OM_ADDMEMBER, x); }
         DoMethod(g, OM_ADDMEMBER, hd);
     }
-    for (i = 0; i < SEL_UIM_SIDE_CHIPS; i++) { /* S5 */
-        if (m.chip_shown[i]) {
-            mui_side_button(g, m.chip[i], CTL_SIDE_BASE + MUI_SIDE_CHIP + (LONG)i);
-        }
+    if (s != NULL) {
+        s->side_dyn = mui_sidebar_dyn(&m);
+        mui_side_add(g, s->side_dyn);
     }
-    if (s != NULL) { /* I670: the library filter, a label between previous and next buttons, then the rows it lets through */
-        Object* row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
-        Object* lst;
-        s->lib_label = mui_aatext(sel_uim_lfilter_label(s->lib_filter), MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_CENTRE, 0);
-        if (row != NULL && s->lib_label != NULL) {
-            DoMethod(row, OM_ADDMEMBER, mui_make_button_icon("Previous Filter", "prev_album", CTL_LIB_PREV));
-            DoMethod(row, OM_ADDMEMBER, s->lib_label);
-            DoMethod(row, OM_ADDMEMBER, mui_make_button_icon("Next Filter", "next_album", CTL_LIB_NEXT));
-            DoMethod(g, OM_ADDMEMBER, row);
-        }
-        s->lib_ptr[0] = NULL;
-        lst = mui_string_aalist(s->lib_ptr, 0, 6, &s->lib_list);
-        if (lst != NULL) {
-            DoMethod(g, OM_ADDMEMBER, lst);
-        }
-    }
-    for (i = 0; i < m.row_n; i++) { /* S6: mark, title, subtitle */
-        char line[200];
-        snprintf(line, sizeof line, "%s  %s  %s", m.row[i].mark, m.row[i].title, m.row[i].subtitle);
-        mui_side_text(g, line, MUI_AA_TONE_NORMAL);
-    }
-    if (m.empty[0] != '\0') { /* S8 */
-        mui_side_text(g, m.empty, MUI_AA_TONE_MUTED);
-    }
-    if (m.card) { /* S9 */
-        mui_side_text(g, m.card_title, MUI_AA_TONE_TITLE);
-        mui_side_text(g, m.card_body, MUI_AA_TONE_MUTED);
-        mui_side_button(g, m.card_button, CTL_SIDE_BASE + MUI_SIDE_CARD);
-    }
-    DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
     return g;
 }
 
@@ -2642,23 +2663,39 @@ static void mui_tile_fire(mui_state* s, uint32_t k) {
     }
 }
 
-/* I670: a press of the sidebar library filter's previous or next button (dir 0 only reads the list). The step, the label and the
- * filter pass are the shared ones (mui_libfilter_press, uimodel/libfilter.h); this puts the result on the label and the list. */
-static void mui_lib_press(mui_state* s, int dir) {
+/* I669, I670: a press of a sidebar library filter control. dir -1 and +1 are the chevrons (mui_libfilter_press: the shared step and
+ * clamp), dir 0 with `chip` >= 0 is a click on kind chip `chip` (clicking the one in force clears to All). Both run the shared filter pass
+ * (sel_uim_lfilter_pass) into s->side_items and then rebuild S5 to S9 from the model: the model rows are the one row list. */
+static void mui_sidebar_refresh(mui_state* s) {
+    mui_sidebar_model m;
+    Object* g = s->slot[MUI_SLOT_SIDEBAR];
+    Object* fresh;
+    mui_sidebar_model_for(s, s->side_top_bar, &m);
+    fresh = mui_sidebar_dyn(&m);
+    if (g == NULL || fresh == NULL) {
+        return;
+    }
+    DoMethod(g, MUIM_Group_InitChange);
+    if (s->side_dyn != NULL) {
+        DoMethod(g, OM_REMMEMBER, s->side_dyn);
+        MUI_DisposeObject(s->side_dyn);
+    }
+    s->side_dyn = fresh;
+    DoMethod(g, OM_ADDMEMBER, fresh);
+    DoMethod(g, MUIM_Group_ExitChange);
+}
+
+static void mui_lib_press(mui_state* s, int dir, int chip) {
     char label[32];
-    uint32_t n = 0u, i;
-    s->lib_filter = mui_libfilter_press(s->lib_filter, dir, s->engine, s->lib_items, MUI_LIB_ROWS, &n, label, sizeof label);
-    for (i = 0u; i < n; i++) {
-        snprintf(s->lib_buf[i], sizeof s->lib_buf[i], "%s", s->lib_items[i].name);
-        s->lib_ptr[i] = s->lib_buf[i];
+    uint32_t n = 0u;
+    if (chip >= 0) {
+        uint32_t want = (uint32_t)chip + 1u == s->lib_filter ? 0u : (uint32_t)chip + 1u;
+        s->lib_filter = mui_libfilter_set(want, s->engine, s->side_items, MUI_SIDEBAR_ROWS, &n, label, sizeof label);
+    } else {
+        s->lib_filter = mui_libfilter_press(s->lib_filter, dir, s->engine, s->side_items, MUI_SIDEBAR_ROWS, &n, label, sizeof label);
     }
-    s->lib_ptr[n] = NULL;
-    if (s->lib_label != NULL) {
-        mui_aatext_set(s->lib_label, label);
-    }
-    if (s->lib_list != NULL) {
-        set(s->lib_list, AAL_Count, (ULONG)n);
-    }
+    s->side_item_n = n;
+    mui_sidebar_refresh(s);
 }
 
 static void mui_control_fire(mui_state* s, LONG id) {
@@ -2743,7 +2780,7 @@ static void mui_control_fire(mui_state* s, LONG id) {
         mui_aabtn_set_alt(s->np_btn, hidden != 0u);
         mui_set_tip(s, MUI_TS_NP, s->np_btn, MUI_TIP_NP_PANEL, 0, NULL, (int)hidden);
     } else if (id == CTL_LIB_PREV || id == CTL_LIB_NEXT) {
-        mui_lib_press(s, id == CTL_LIB_NEXT ? 1 : -1);
+        mui_lib_press(s, id == CTL_LIB_NEXT ? 1 : -1, -1);
     } else if (id == CTL_TOPBAR_BROWSE) {
         char joined[128]; /* I615d: what the rich top bar Browse slice sends (desk_page_load PG_BROWSE), kept as one history entry (I794) */
         mui_browse_key(joined, sizeof joined);
@@ -2753,6 +2790,8 @@ static void mui_control_fire(mui_state* s, LONG id) {
         LONG k = id - CTL_SIDE_BASE;
         if (k == MUI_SIDE_CREATE || k == MUI_SIDE_CARD) {
             mui_viewbtn_fire(1, "", 0, mui_p8_send, s); /* S4, S9: PLAYLIST_CREATE, as the Playlists page New button */
+        } else if (k >= MUI_SIDE_CHIP) {
+            mui_lib_press(s, 0, (int)(k - MUI_SIDE_CHIP)); /* I669: a click on a fitting chip toggles the filter */
         } else if (k != MUI_SIDE_EXPAND) {
             mui_engine_line(s, mui_door_line(3)); /* the header and the kind chips open the playlists page (I673) */
         }
@@ -2885,6 +2924,9 @@ static void mui_check_resize(mui_state* s) {
     if (mui_layout_relayout(&s->lay, (uint32_t)w, (uint32_t)h, g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP, &flips)) {
         mui_apply_layout(s);
     }
+    if (s->side_dyn != NULL && mui_sidebar_chips_single(!g_screen_rtg, s->lay.weight_w[MUI_SLOT_SIDEBAR]) != s->side_single) {
+        mui_sidebar_refresh(s); /* I669: the chips now fit, or no longer fit, the sidebar width */
+    }
 }
 
 /* MUI-P1-3: muimaster.library v19 (MUI 3.8), one Application with one Window. The sentinel counts after the window
@@ -3002,7 +3044,6 @@ static void* mui_open(const sel_ui_open_args* a) {
     s->lay.width = 0; /* mui_layout_for_screen applied the screen-size layout; the first resize check moves it to the real size */
     s->lay.breakpoint = SEL_UIM_BP_COUNT; /* no breakpoint yet: the first real size always applies */
     mui_check_resize(s);
-    mui_lib_press(s, 0); /* I670: the first read of the library list through the filter in force */
     mui_refresh(s);
     s->opens++;
     return s;

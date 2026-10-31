@@ -972,7 +972,7 @@ static void test_list_source(void) {
     CHECK(count_of(ui, "MUIC_List") == 0 && count_of(ui, "MUIC_Floattext") == 0 && count_of(ui, "MUIC_Listview") == 0, "stock list classes left in mui_ui.c: %d %d %d",
           count_of(ui, "MUIC_List"), count_of(ui, "MUIC_Floattext"), count_of(ui, "MUIC_Listview"));
     CHECK(count_of(ui, "MUIM_List_") == 0 && count_of(ui, "MUIA_List_") == 0 && count_of(ui, "mui_list_pad_x") == 0, "stock list calls left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aalist_new(") == 5 && count_of(ui, "mui_string_aalist(") == 7, "AAList builders: new %d, string %d", count_of(ui, "mui_aalist_new("), count_of(ui, "mui_string_aalist("));
+    CHECK(count_of(ui, "mui_aalist_new(") == 5 && count_of(ui, "mui_string_aalist(") == 5, "AAList builders: new %d, string %d", count_of(ui, "mui_aalist_new("), count_of(ui, "mui_string_aalist("));
     CHECK(count_of(ui, "sp.cols = &s->main_cols;") == 1 && count_of(ui, "sp.title = 1;") == 1 && count_of(ui, "sp.double_pick = 1;") == 3 && count_of(ui, "sp.no_select = 1;") == 1,          "main list columns, title row, double pick and lyrics no_select");
     CHECK(count_of(ui, "AAL_Columns") == 1 && count_of(ui, "AAL_Playing") == 1 && count_of(ui, "AAL_Picked") == 8, "columns %d, playing %d, picked %d", count_of(ui, "AAL_Columns"),
           count_of(ui, "AAL_Playing"), count_of(ui, "AAL_Picked"));

@@ -9655,12 +9655,12 @@ static int32_t side_chip_w(desk* d, uint32_t k) {
 }
 
 static int32_t side_chip_total(desk* d) {
-    int32_t t = 0;
+    int32_t w[SIDE_CHIPS];
     uint32_t k;
     for (k = 0; k < SIDE_CHIPS; k++) {
-        t += side_chip_w(d, k) + (k != 0u ? lpx(d, SIDE_CHIP_GAP) : 0);
+        w[k] = side_chip_w(d, k);
     }
-    return t;
+    return sel_uim_lfilter_chips_total(w, SIDE_CHIPS, lpx(d, SIDE_CHIP_GAP));
 }
 
 
@@ -9670,7 +9670,7 @@ static sel_gui_rect side_chip_band(desk* d, int* overflow) {
     sel_gui_rect r = side_chips_rect(d);
     int32_t pad = lpx(d, 12), cv = lpx(d, HOME_CHIP_H), gap = lpx(d, 4);
     sel_gui_rect b = rect_of(r.x + pad, r.y, r.w - 2 * pad, r.h);
-    *overflow = desk_bitmap_text(d) || side_chip_total(d) > b.w;
+    *overflow = sel_uim_lfilter_chips_single(desk_bitmap_text(d), side_chip_total(d), b.w); /* I669: the shared chips-or-label decision */
     if (!*overflow && side_chip_has_x(d)) { /* only the selected chip shows, right of the X */
         b = rect_of(b.x + cv + gap, b.y, b.w - (cv + gap), b.h);
     }
