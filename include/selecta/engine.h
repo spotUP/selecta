@@ -457,6 +457,7 @@ typedef struct sel_engine_stats {
     uint32_t home_item_shelves;   /* I678j sentinel: Home item shelves (quick access, recents, albums, playlists) the engine sent */
     uint32_t home_rows;           /* entries the home view source built: plays + albums to resume + new this week (I191 sentinel) */
     uint32_t folder_view_rows;    /* rows the folders view source built from the library tree (I179 sentinel) */
+    uint32_t lib_reads_applied;   /* I829: posted library reads (home, search, folders) whose answer the pump applied */
     uint32_t stats_queries;       /* STATS_SHOW queries run against the stats views (I192 sentinel) */
     uint32_t panel_loads;         /* module info panel lookups made in the library (I185 sentinel) */
     uint32_t lyric_fetches;       /* DEViLBOX lyrics requests queued, none for a song with a .lrc or a message (I193 sentinel) */
