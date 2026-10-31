@@ -23,6 +23,8 @@ void mui_sidebar_build(const mui_sidebar_in* in, mui_sidebar_model* m) {
     uint32_t i, k, mask, playlists = 0;
     memset(m, 0, sizeof *m);
     g_builds++;
+    put(m->brand, sizeof m->brand, "Selecta"); /* S1: the Mac draw_sidebar brand (accent tile with the play icon, then the name) */
+    put(m->brand_icon, sizeof m->brand_icon, in->bitmap ? "" : "play");
     for (i = 0; i < SEL_UIM_DOOR_COUNT && m->door_n < MUI_SIDEBAR_DOORS; i++) { /* S3: the library header is always there on MUI */
         if (sel_uim_door_shown_in(i, in->top_bar, 1)) {
             m->door[m->door_n++] = i;

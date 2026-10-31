@@ -25,6 +25,10 @@ int mui_route_door(mui_route* r, uint32_t door, const char* lines, mui_route_sen
 /* Back (dir < 0) and Forward (dir > 0). 1 when the page changed. */
 int mui_route_walk(mui_route* r, int dir, mui_route_send_fn send, void* ctx);
 int mui_route_can(const mui_route* r, int dir);
+/* I797 (S2): the sidebar door the history is on (the Mac draw_sidebar "here" test), -1 when no door row is current (a collection or shelf
+ * page). The history writes Home as the Home page and every other door as OTHER_BASE + door. mui_route_lit_calls() is the sentinel. */
+int mui_route_lit_door(const mui_route* r);
+uint32_t mui_route_lit_calls(void);
 
 /* The page the history is on. */
 const sel_route_entry* mui_route_cur(const mui_route* r);

@@ -5,6 +5,7 @@
 
 #include <selecta/library_item.h>
 
+#include <selecta/uimodel/doors.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -85,6 +86,22 @@ int mui_route_walk(mui_route* r, int dir, mui_route_send_fn send, void* ctx) {
     e = *w;
     enter(r, &e, 1, send, ctx);
     return 1;
+}
+
+static uint32_t g_lit_calls;
+
+uint32_t mui_route_lit_calls(void) { return g_lit_calls; }
+
+int mui_route_lit_door(const mui_route* r) {
+    const sel_route_entry* e = mui_route_cur(r);
+    g_lit_calls++;
+    if (e == NULL || e->page == (uint32_t)SEL_ROUTE_PAGE_HOME) { /* nothing entered yet: the window opens on Home */
+        return 0;
+    }
+    if (e->page >= (uint32_t)SEL_ROUTE_PAGE_OTHER_BASE && e->page < (uint32_t)SEL_ROUTE_PAGE_OTHER_BASE + SEL_UIM_DOOR_COUNT) {
+        return (int)(e->page - (uint32_t)SEL_ROUTE_PAGE_OTHER_BASE);
+    }
+    return -1;
 }
 
 int mui_route_can(const mui_route* r, int dir) { return sel_route_hist_can(&r->rh, dir); }
