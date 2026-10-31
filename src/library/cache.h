@@ -16,6 +16,7 @@
 #include "md5.h"
 #include "net/mirrors.h"
 
+#include <selecta/host.h>
 #include <selecta/tags.h>
 
 #include <stddef.h>
@@ -75,6 +76,8 @@ typedef struct sel_cache {
                              * stalled attempt after SEL_CACHE_SLICE_STALL_MS; one mirror per call (I168b) */
     sel_cache_slice slice;
     int last_status;        /* HTTP status of the last failed fetch (404 for a file the mirror does not serve), 0 when none (I695b) */
+    const sel_host* unzip_host; /* non-NULL: a freshly fetched file of a SEL_SOURCE_ZIPPED source is unpacked to its one
+                             * module member in place, here at fetch and prefetch, never when a song is read (I406a) */
     volatile int* cancel;   /* non-NULL: a download stops at its next body chunk once *cancel is set (I168a) */
 } sel_cache;
 

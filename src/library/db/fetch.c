@@ -12,6 +12,7 @@ static sel_cache* cache_get(sel_library* lib) {
         if (lib->cache != NULL) {
             memset(lib->cache, 0, sizeof *lib->cache);
             sel_cache_init(lib->cache, NULL, sel_net_amiga_route());
+            lib->cache->unzip_host = lib->host;
         }
     }
     return lib->cache;
@@ -146,6 +147,7 @@ static int thread_start(sel_library* lib) {
         memset(lib->pf_cache, 0, sizeof *lib->pf_cache);
         sel_cache_init(lib->pf_cache, lib->cache->dir, lib->cache->amiga_route);
         lib->pf_cache->part_tag = ".pf";
+        lib->pf_cache->unzip_host = lib->host;
         lib->pf_cache->cancel = &lib->pf_cancel;
     }
     return sel_job_start(lib);
