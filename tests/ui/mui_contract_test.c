@@ -1540,7 +1540,7 @@ static void test_toolrows(void) {
 /* Regression (I671): on a 640x256 AGA screen MUI refused the window (MUIA_Window_Open read back 0, requester "the MUI
  * window could not open") because the three-column layout was applied only after the open, with a fixed 1280x720 size,
  * so the open measured the sidebar and detail panels too. The open must apply the layout of the screen it opens on first,
- * and that layout must hide the sidebar and detail panels on the smallest screen. */
+ * and that layout is the bitmap tier one: since I674 the 640 wide screen keeps the icon rail (sidebar shown) and hides the detail panel. */
 static void test_layout_before_open(void) {
     static char src[400000];
     mui_layout_map_t m;
@@ -1552,7 +1552,7 @@ static void test_layout_before_open(void) {
     }
     src[n] = 0;
     mui_layout_map(&m, 640u, 256u, SEL_UIM_TIER_BITMAP);
-    CHECK(m.show[MUI_SLOT_MAIN] && m.show[MUI_SLOT_PLAYER] && !m.show[MUI_SLOT_SIDEBAR] && !m.show[MUI_SLOT_DETAIL],
+    CHECK(m.show[MUI_SLOT_MAIN] && m.show[MUI_SLOT_PLAYER] && m.show[MUI_SLOT_SIDEBAR] && !m.show[MUI_SLOT_DETAIL],
           "640x256 layout shows sidebar %u detail %u", (unsigned)m.show[MUI_SLOT_SIDEBAR], (unsigned)m.show[MUI_SLOT_DETAIL]);
     pick = strstr(src, "    mui_layout_for_screen(s);\n    set(s->win, MUIA_Window_Open, TRUE);");
     open_at = strstr(src, "set(s->win, MUIA_Window_Open, TRUE);");
