@@ -9,6 +9,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <selecta/replayer.h>
+
 typedef struct kp_walk_pos {
     uint8_t songpos; /* order index */
     uint8_t row;     /* pattern row, 0..63 */
@@ -33,10 +35,6 @@ typedef struct kp_tracker_info {
     uint32_t orders, patterns, rows, channels;
 } kp_tracker_info;
 
-typedef struct kp_cell {
-    uint8_t note, instrument, volume, effect, param;
-} kp_cell;
-
 /* Returns 1 and fills `out` when `order` is inside the order list, else 0. */
 int kp_tracker_info_get(const uint8_t* mod, size_t size, uint32_t order, kp_tracker_info* out);
 
@@ -44,6 +42,6 @@ int kp_tracker_info_get(const uint8_t* mod, size_t size, uint32_t order, kp_trac
  * a row outside the pattern or the data as an empty cell. Returns how many, 0 when `order` or `channel` is out of
  * range. */
 uint32_t kp_tracker_cells_get(const uint8_t* mod, size_t size, uint32_t order, uint32_t channel, uint32_t row_lo,
-                              uint32_t row_hi, kp_cell* out, uint32_t cap);
+                              uint32_t row_hi, sel_rp_cell* out, uint32_t cap);
 
 #endif

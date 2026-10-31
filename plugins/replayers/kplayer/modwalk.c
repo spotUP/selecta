@@ -193,7 +193,7 @@ int kp_tracker_info_get(const uint8_t* mod, size_t size, uint32_t order, kp_trac
 }
 
 uint32_t kp_tracker_cells_get(const uint8_t* mod, size_t size, uint32_t order, uint32_t channel, uint32_t row_lo,
-                              uint32_t row_hi, kp_cell* out, uint32_t cap) {
+                              uint32_t row_hi, sel_rp_cell* out, uint32_t cap) {
     kp_tracker_info info;
     uint32_t row, n = 0;
     if (out == NULL || channel >= MW_CHANNELS || !kp_tracker_info_get(mod, size, order, &info)) {

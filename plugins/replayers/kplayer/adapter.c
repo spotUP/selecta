@@ -297,8 +297,7 @@ static uint32_t rp_tracker_cells(void* state, uint32_t order, uint32_t channel, 
                                  sel_rp_cell* out, uint32_t cap) {
     kp_state* s = (kp_state*)state;
     sel_kplayer_tracker_calls++;
-    /* kp_cell and sel_rp_cell are the same five bytes in the same order. */
-    return kp_tracker_cells_get(s->source, s->source_size, order, channel, row_lo, row_hi, (kp_cell*)out, cap);
+    return kp_tracker_cells_get(s->source, s->source_size, order, channel, row_lo, row_hi, out, cap);
 }
 
 static void rp_hw_release(void* state) {
