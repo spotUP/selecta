@@ -11,6 +11,7 @@
 #include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/keybind.h>
 #include <selecta/uimodel/palette.h>
+#include <selecta/uimodel/libfilter.h>
 #include <selecta/uimodel/panels.h>
 #include <selecta/uimodel/sources.h>
 
@@ -463,6 +464,15 @@ uint32_t mui_libmode_fire(uint32_t i, uint32_t window_rows, mui_send_fn send, vo
 const char* mui_scope_label(uint32_t i);
 uint32_t mui_scope_fire(uint32_t i, mui_send_fn send, void* ctx);
 uint32_t mui_view_fires(void);
+
+/* I670 (design 2026-10-29-desktop-library-architecture.md section 4; MUI plan 2026-10-28-mui-custom-classes.md section 1, "library
+ * prev/next"): the sidebar library filter control. A previous (dir < 0) or next (dir > 0) press steps the filter in force through
+ * sel_uim_lfilter_step (the desktop chips' clamp), runs sel_uim_lfilter_pass (the desktop's filter pass) into out[0..max) and
+ * writes the label of the filter now in force. Returns the new filter and the rows read in *rows. mui_libfilter_presses() counts
+ * the presses. */
+uint32_t mui_libfilter_press(uint32_t filter, int dir, sel_engine* e, sel_engine_library_item* out, uint32_t max, uint32_t* rows,
+                             char* label, uint32_t cap);
+uint32_t mui_libfilter_presses(void);
 
 /* MUI-P8-5: the Playlists and Song info buttons; MUI-P8-12: tile size Slider steps; MUI-P8-14: Amiga runtime prefs. All read the
  * shared model (uimodel/viewcmds.h, uimodel/browse.h). Each fire returns how many lines were sent. */

@@ -105,6 +105,7 @@ static const char* const p4_name[P4_COUNT] = {"search", "cmd", "like", "rating",
                                               "songmenu", "np", "songinfo", "pref", "tracker", "vizpick", "vizframes", "dbl_race_injected"};
 #define MUI_PREF_MAX 12u   /* MUI-P4-10: most Settings rows (sel_uim_pref_row_count) */
 #define MUI_INFO_MAX 24u   /* MUI-P4-9: most song info rows */
+#define MUI_LIB_ROWS 12u   /* I670: most library rows the sidebar list shows */
 #define MUI_TRK_ROWS 16u   /* MUI-P4-16: pattern rows shown */
 #define MUI_TRK_CHANNELS 4u /* MUI-P4-16: channel columns shown */
 
@@ -204,6 +205,12 @@ typedef struct mui_state {
     char np_lyric_buf[1024];
     char np_up_buf[3][96];
     Object* info_list;              /* MUI-P4-9 song info rows */
+    uint32_t lib_filter;            /* I670: the library filter in force (sel_uim_lfilter_*), 0 All */
+    Object* lib_label;              /* I670: the label naming it */
+    Object* lib_list;               /* I670: the filtered rows */
+    sel_engine_library_item lib_items[MUI_LIB_ROWS];
+    char lib_buf[MUI_LIB_ROWS][96];
+    const char* lib_ptr[MUI_LIB_ROWS + 1];
     char info_buf[MUI_INFO_MAX][128];
     const char* info_ptr[MUI_INFO_MAX + 1];
     Object* trk_list;               /* MUI-P4-16 pattern rows, shown only when the engine answered with pattern data */
@@ -473,6 +480,8 @@ enum { MUI_SIDE_TITLE = 0, MUI_SIDE_CREATE, MUI_SIDE_EXPAND, MUI_SIDE_CARD, MUI_
 #define CTL_P4_BASE 0x2300L /* MUI-P4: CTL_P4_BASE + P4_* */
 static const char* const p4_rating_entries[] = {"None", "1 star", "2 stars", "3 stars", "4 stars", "5 stars", NULL};
 static const char* const p4_subsong_entries[] = {"Subsong 1", "Subsong 2", "Subsong 3", "Subsong 4", "Subsong 5", "Subsong 6", "Subsong 7", "Subsong 8", NULL};
+#define CTL_LIB_PREV 0x2810L /* I670: the sidebar library filter, previous and next */
+#define CTL_LIB_NEXT 0x2811L
 #define CTL_EXTRA_BASE 0x2700L /* MUI-P8-1: album and speed buttons of the transport area */
 
 
@@ -856,6 +865,8 @@ static void mui_side_text(Object* g, const char* text, int tone) {
 static void mui_side_button(Object* g, const char* label, LONG id) {
     mui_side_add(g, mui_make_button_left(label, NULL, id));
 }
+static void mui_lib_press(mui_state* s, int dir);
+static Object* mui_string_aalist(void* ctx, long count, int rows, Object** list_out);
 
 static Object* mui_sidebar_group(mui_state* s, int top_bar) {
     Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
@@ -905,6 +916,22 @@ static Object* mui_sidebar_group(mui_state* s, int top_bar) {
     for (i = 0; i < SEL_UIM_SIDE_CHIPS; i++) { /* S5 */
         if (m.chip_shown[i]) {
             mui_side_button(g, m.chip[i], CTL_SIDE_BASE + MUI_SIDE_CHIP + (LONG)i);
+        }
+    }
+    if (s != NULL) { /* I670: the library filter, a label between previous and next buttons, then the rows it lets through */
+        Object* row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+        Object* lst;
+        s->lib_label = mui_aatext(sel_uim_lfilter_label(s->lib_filter), MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_CENTRE, 0);
+        if (row != NULL && s->lib_label != NULL) {
+            DoMethod(row, OM_ADDMEMBER, mui_make_button_icon("Previous Filter", "prev_album", CTL_LIB_PREV));
+            DoMethod(row, OM_ADDMEMBER, s->lib_label);
+            DoMethod(row, OM_ADDMEMBER, mui_make_button_icon("Next Filter", "next_album", CTL_LIB_NEXT));
+            DoMethod(g, OM_ADDMEMBER, row);
+        }
+        s->lib_ptr[0] = NULL;
+        lst = mui_string_aalist(s->lib_ptr, 0, 6, &s->lib_list);
+        if (lst != NULL) {
+            DoMethod(g, OM_ADDMEMBER, lst);
         }
     }
     for (i = 0; i < m.row_n; i++) { /* S6: mark, title, subtitle */
@@ -2615,6 +2642,25 @@ static void mui_tile_fire(mui_state* s, uint32_t k) {
     }
 }
 
+/* I670: a press of the sidebar library filter's previous or next button (dir 0 only reads the list). The step, the label and the
+ * filter pass are the shared ones (mui_libfilter_press, uimodel/libfilter.h); this puts the result on the label and the list. */
+static void mui_lib_press(mui_state* s, int dir) {
+    char label[32];
+    uint32_t n = 0u, i;
+    s->lib_filter = mui_libfilter_press(s->lib_filter, dir, s->engine, s->lib_items, MUI_LIB_ROWS, &n, label, sizeof label);
+    for (i = 0u; i < n; i++) {
+        snprintf(s->lib_buf[i], sizeof s->lib_buf[i], "%s", s->lib_items[i].name);
+        s->lib_ptr[i] = s->lib_buf[i];
+    }
+    s->lib_ptr[n] = NULL;
+    if (s->lib_label != NULL) {
+        mui_aatext_set(s->lib_label, label);
+    }
+    if (s->lib_list != NULL) {
+        set(s->lib_list, AAL_Count, (ULONG)n);
+    }
+}
+
 static void mui_control_fire(mui_state* s, LONG id) {
     char line[64];
     LONG v = 0;
@@ -2696,6 +2742,8 @@ static void mui_control_fire(mui_state* s, LONG id) {
         mui_apply_layout(s);
         mui_aabtn_set_alt(s->np_btn, hidden != 0u);
         mui_set_tip(s, MUI_TS_NP, s->np_btn, MUI_TIP_NP_PANEL, 0, NULL, (int)hidden);
+    } else if (id == CTL_LIB_PREV || id == CTL_LIB_NEXT) {
+        mui_lib_press(s, id == CTL_LIB_NEXT ? 1 : -1);
     } else if (id == CTL_TOPBAR_BROWSE) {
         char joined[128]; /* I615d: what the rich top bar Browse slice sends (desk_page_load PG_BROWSE), kept as one history entry (I794) */
         mui_browse_key(joined, sizeof joined);
@@ -2954,6 +3002,7 @@ static void* mui_open(const sel_ui_open_args* a) {
     s->lay.width = 0; /* mui_layout_for_screen applied the screen-size layout; the first resize check moves it to the real size */
     s->lay.breakpoint = SEL_UIM_BP_COUNT; /* no breakpoint yet: the first real size always applies */
     mui_check_resize(s);
+    mui_lib_press(s, 0); /* I670: the first read of the library list through the filter in force */
     mui_refresh(s);
     s->opens++;
     return s;

@@ -2053,6 +2053,38 @@ static void test_newplaylist(void) {
     CHECK(mui_view_fires() == fires + 1u, "fire counter %u want %u", (unsigned)mui_view_fires(), (unsigned)(fires + 1u));
 }
 
+/* I670 mui-libfilter (design 2026-10-29 section 4): the sidebar library filter control. The press goes through mui_libfilter_press,
+ * the function mui_control_fire calls for CTL_LIB_PREV and CTL_LIB_NEXT; it steps with the desktop chips' clamp and runs the
+ * desktop's filter pass. The sentinel is sel_uim_lfilter_passes (one pass per press), so a press that skipped the shared pass fails. */
+static void test_libfilter(void) {
+    static const char* const want[SEL_UIM_LFILTERS] = {"All", "Playlists", "Albums", "Artists", "Composers", "Sources", "Local Files"};
+    sel_engine_library_item items[4];
+    char label[32];
+    uint32_t f = 0u, rows = 9u, i, passes = sel_uim_lfilter_passes(), presses = mui_libfilter_presses();
+    const char* src = ui_source();
+    CHECK(SEL_UIM_LFILTERS == 7u, "filter count %u", (unsigned)SEL_UIM_LFILTERS);
+    f = mui_libfilter_press(f, -1, NULL, items, 4, &rows, label, sizeof label);
+    CHECK(f == 0u && strcmp(label, "All") == 0 && rows == 0u, "previous at All stays: filter %u label '%s'", (unsigned)f, label);
+    for (i = 1u; i < SEL_UIM_LFILTERS; i++) {
+        f = mui_libfilter_press(f, 1, NULL, items, 4, &rows, label, sizeof label);
+        CHECK(f == i && strcmp(label, want[i]) == 0, "next press %u gives filter %u label '%s'", (unsigned)i, (unsigned)f, label);
+    }
+    f = mui_libfilter_press(f, 1, NULL, items, 4, &rows, label, sizeof label);
+    CHECK(f == SEL_UIM_LFILTERS - 1u && strcmp(label, "Local Files") == 0, "next at the last filter stays: %u '%s'", (unsigned)f, label);
+    f = mui_libfilter_press(f, -1, NULL, items, 4, &rows, label, sizeof label);
+    CHECK(f == SEL_UIM_LFILTERS - 2u && strcmp(label, "Sources") == 0, "previous steps back: %u '%s'", (unsigned)f, label);
+    CHECK(mui_libfilter_presses() == presses + SEL_UIM_LFILTERS + 2u, "press counter %u", (unsigned)(mui_libfilter_presses() - presses));
+    CHECK(sel_uim_lfilter_passes() == passes + SEL_UIM_LFILTERS + 2u, "the shared filter pass ran %u times, want %u",
+          (unsigned)(sel_uim_lfilter_passes() - passes), (unsigned)(SEL_UIM_LFILTERS + 2u));
+    CHECK(sel_uim_lfilter_mask(0) == SEL_LIB_ITEM_ALL && sel_uim_lfilter_mask(4) == SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_COMPOSER), "masks");
+    CHECK(src != NULL, "read mui_ui.c");
+    if (src != NULL) {
+        CHECK(strstr(src, "id == CTL_LIB_PREV || id == CTL_LIB_NEXT") != NULL && strstr(src, "mui_libfilter_press(s->lib_filter") != NULL,
+              "mui_control_fire does not reach mui_libfilter_press");
+        CHECK(strstr(src, "\"Previous Filter\"") != NULL && strstr(src, "\"Next Filter\"") != NULL, "the sidebar has no previous and next buttons");
+    }
+}
+
 /* Regression (I684a): Selecta_AACycle's OM_SET redrew when _win(obj) != NULL. Before the first MUIM_Setup the render info
  * is NULL, so _win(obj) reads address 0; on rig 2 that held garbage, the redraw ran on an object with no window and the
  * Amiga crashed at start (set AAC_Active on the visualizer cycle in mui_detail_group). Every class must ask aa_live(),
@@ -2662,6 +2694,8 @@ int main(int argc, char** argv) {
         test_view_empty();
     } else if (strcmp(argv[1], "aacheck") == 0) {
         test_aacheck();
+    } else if (strcmp(argv[1], "libfilter") == 0) {
+        test_libfilter();
     } else if (strcmp(argv[1], "newplaylist") == 0) {
         test_newplaylist();
     } else if (strcmp(argv[1], "aabtn-tokens") == 0) {

@@ -20,6 +20,7 @@
 #include <selecta/gui/gui_widget.h>
 #include <selecta/gui/gui_input.h>
 #include <selecta/uimodel/browse.h>
+#include <selecta/uimodel/libfilter.h>
 #include <selecta/uimodel/select.h>
 #include <selecta/uimodel/viewcmds.h>
 #include <selecta/uimodel/sources.h>
@@ -9632,11 +9633,8 @@ static const char* side_hdr_label(const desk* d, uint32_t which) {
 
 /* I610: the chip row under the header. The chips are the kinds a library lists, Spotify's order. On the bitmap tier one
  * cycle button takes the row. The icon-only sidebar has no row. */
-static const char* const side_chip_name[SIDE_CHIPS] = {"Playlists", "Albums", "Artists", "Composers", "Sources", "Local Files"};
-/* I678b: the kind mask each chip hands the library call (design 2026-10-29 section 4): the store filters, not a UI loop. */
-static const uint32_t side_chip_mask[SIDE_CHIPS] = {
-    SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST), SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_ALBUM),  SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_ARTIST),
-    SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_COMPOSER), SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_SOURCE), SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_LOCAL)};
+/* I670: names, kind masks, the clamp and the filter pass live in src/uimodel/libfilter.c, shared with the MUI control. side_chip is the filter index. */
+#define side_chip_name_at(k) sel_uim_lfilter_label((k) + 1u)
 
 static int32_t side_chips_h(const desk* d) {
     return region_rect(d, "sidebar").w > lpx(d, 120) ? lpx(d, HOME_CHIP_H + 8) : 0;
@@ -9653,7 +9651,7 @@ enum { SIDE_CHIP_PAD = 10, SIDE_CHIP_GAP = 6 };
 /* The chip's width: its label plus the side pads. */
 static int32_t side_chip_w(desk* d, uint32_t k) {
     const sel_gui_atlas* at = desk_font(d, 1, 13);
-    return (at != NULL ? sel_gui_text_width(at, side_chip_name[k], strlen(side_chip_name[k])) : 40) + 2 * lpx(d, SIDE_CHIP_PAD);
+    return (at != NULL ? sel_gui_text_width(at, side_chip_name_at(k), strlen(side_chip_name_at(k))) : 40) + 2 * lpx(d, SIDE_CHIP_PAD);
 }
 
 static int32_t side_chip_total(desk* d) {
@@ -9755,10 +9753,10 @@ static int32_t side_chip_at(desk* d, int32_t x, int32_t y) {
 /* A click on a chip: the chip in force again clears the filter, another one takes over. A chevron steps the filter one back or on, from All to the last chip, stopping at both ends (I669). */
 static void side_chip_click(desk* d, int32_t c) {
     if (c == SIDE_CHIPS) {
-        d->side_chip -= d->side_chip > 0u ? 1u : 0u;
+        d->side_chip = sel_uim_lfilter_step(d->side_chip, -1);
         d->side_chip_scrolls++;
     } else if (c == SIDE_CHIPS + 1) {
-        d->side_chip += d->side_chip < (uint32_t)SIDE_CHIPS ? 1u : 0u;
+        d->side_chip = sel_uim_lfilter_step(d->side_chip, 1);
         d->side_chip_scrolls++;
     } else if (c == SIDE_CHIPS + 2) { /* I678b: the X clears the chip */
         d->side_chip = 0u;
@@ -9941,8 +9939,7 @@ static uint32_t lib_touch_calls(desk* d) {
 /* I787: the kind mask the sidebar list wants now. I678b: the chip is a kind mask the library applies; a pending Create Playlist reads
  * playlists only (it waits for the new one). */
 static uint32_t side_lib_want(const desk* d) {
-    return d->side_open_n != 0u ? SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST)
-                                : d->side_chip != 0u ? side_chip_mask[d->side_chip - 1u] : SEL_LIB_ITEM_ALL;
+    return sel_uim_lfilter_mask(d->side_open_n != 0u ? 1u : d->side_chip); /* I670: the shared filter index to kind mask */
 }
 
 static void side_lib_apply(desk* d, uint32_t got);
@@ -10323,11 +10320,11 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
             if (d->side_chip == 1u && side_chip_has_x(d)) { /* I678d: room at the right end for the By You chip */
                 sr.w -= lpx(d, 64) + lpx(d, SIDE_CHIP_GAP);
             }
-            draw_chip(d, sr, d->side_chip == 0u ? "All" : side_chip_name[d->side_chip - 1u], d->side_chip != 0u, SEL_GUI_TOKEN_SURFACE_RAISED);
+            draw_chip(d, sr, d->side_chip == 0u ? "All" : side_chip_name_at(d->side_chip - 1u), d->side_chip != 0u, SEL_GUI_TOKEN_SURFACE_RAISED);
         } else {
             for (k = 0; k < SIDE_CHIPS; k++) {
                 if (side_chip_rect(d, k).w > 0) { /* I678b: a selected chip hides the others */
-                    draw_chip(d, side_chip_rect(d, k), side_chip_name[k], d->side_chip == k + 1u, SEL_GUI_TOKEN_SURFACE_RAISED);
+                    draw_chip(d, side_chip_rect(d, k), side_chip_name_at(k), d->side_chip == k + 1u, SEL_GUI_TOKEN_SURFACE_RAISED);
                 }
             }
         }
