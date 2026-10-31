@@ -155,6 +155,14 @@ void sel_uim_help_row(uint32_t i, char* out, size_t cap) {
     snprintf(out, cap, "%s  %s", a->menu, a->key[0] != '\0' ? a->key : "-");
 }
 
+const char* sel_uim_tip_like(int liked) {
+    return liked ? "Remove from Liked Songs" : "Add to Liked Songs";
+}
+
+const char* sel_uim_tip_np_panel(int hidden) {
+    return hidden ? "Show Now Playing Panel" : "Hide Now Playing Panel";
+}
+
 /* The tooltip text of an action: its tooltip field (the label when that is empty), then the default key in brackets
  * the Spotify way (returns the length the full text needs, like snprintf): "C-Right" becomes "(Ctrl+Right)", a single letter is upper case, "M-" is "Alt+", "S-" is "Shift+". */
 size_t sel_uim_action_tip_text(const sel_uim_action* a, char* out, size_t cap) {

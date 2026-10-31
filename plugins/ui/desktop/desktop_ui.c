@@ -11042,9 +11042,9 @@ static void desk_tip_tick(desk* d) {
     } else if (d->tip_btn > TIP_CTL_BASE) { /* I244: an action-bound control: the action's tooltip text */
         uint32_t c = (uint32_t)(d->tip_btn - TIP_CTL_BASE - 1);
         if (c == (uint32_t)CTL_NP_ADD) { /* I619: the add button reads Add to Liked Songs, or Remove when the song is liked already */
-            snprintf(d->tip_text, sizeof d->tip_text, "%s", d->np_liked ? "Remove from Liked Songs" : "Add to Liked Songs");
+            snprintf(d->tip_text, sizeof d->tip_text, "%s", sel_uim_tip_like(d->np_liked));
         } else if (c == (uint32_t)CTL_NP_PANEL) {
-            snprintf(d->tip_text, sizeof d->tip_text, "%s", d->detail_hidden ? "Show Now Playing Panel" : "Hide Now Playing Panel");
+            snprintf(d->tip_text, sizeof d->tip_text, "%s", sel_uim_tip_np_panel(d->detail_hidden));
         } else {
             a = desk_action_by_id(desk_ctl_action(d, c));
             if (a == NULL) {
@@ -11548,25 +11548,6 @@ static int desk_toast_tick(desk* d) {
     return 1;
 }
 
-/* A verb that needs an argument cannot run bare: its signature has no trailing '?' or '*' covering every letter. */
-static int verb_needs_args(const char* verb) {
-    uint32_t id;
-    const char* sig;
-    size_t n;
-    if (!sel_cmd_by_name(verb, &id)) {
-        return 0;
-    }
-    sig = sel_cmd_args(id);
-    n = strlen(sig);
-    if (n > 0u && sig[n - 1u] == '?') {
-        return n > 2u;
-    }
-    if (n > 0u && sig[n - 1u] == '*') {
-        return n > 1u;
-    }
-    return n > 0u;
-}
-
 static void overlay_close(desk* d) {
     d->overlay = OV_NONE;
     overlay_refresh(d);
@@ -11579,7 +11560,7 @@ static void palette_pick(desk* d) {
     if (verb == NULL) {
         return;
     }
-    if (verb_needs_args(verb)) {
+    if (txt_palette_verb_needs_args(verb)) {
         txt_cmdline_open(&d->cmd);
         snprintf(d->cmd.text, sizeof d->cmd.text, "%s ", verb);
         d->cmd.len = (uint32_t)strlen(d->cmd.text);

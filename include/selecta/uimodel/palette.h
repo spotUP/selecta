@@ -53,6 +53,10 @@ const char* txt_palette_picked(const txt_palette* p);
 /* "Playlists and library" for "playlists"; the area text itself when unknown. */
 const char* txt_palette_area_title(const char* area);
 
+/* I798: a verb that needs an argument cannot run bare (its signature has no trailing '?' or '*' covering every letter). Both
+ * UIs open their command line with the verb typed for such a verb. */
+int txt_palette_verb_needs_args(const char* verb);
+
 #ifdef __cplusplus
 }
 #endif
