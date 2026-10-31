@@ -17,7 +17,7 @@ file(READ "${NETWORK}/port" port)
 string(STRIP "${port}" port)
 set(fx "http://127.0.0.1:${port}")
 set(ENV{SELECTA_NET_ALLOW} "127.0.0.1")
-set(ENV{SELECTA_NET_MAP} "www.modules.pl=${fx},fixture.test=${fx}")
+set(ENV{SELECTA_NET_MAP} "www.modules.pl=${fx},radio.modules.pl=${fx},fixture.test=${fx}")
 set(ENV{SELECTA_MODULESPL_SITE} "http://www.modules.pl")
 unset(ENV{SELECTA_MIRROR})
 set(ENV{SELECTA_MIRRORS_MODULESPL} "http://www.modules.pl/modules/")
@@ -104,9 +104,17 @@ endif()
 
 # Pass 5: the radio row.
 file(REMOVE_RECURSE "${WORK}/cfg") # fresh config: the chips sit where pass 1 measured them
-so_run(radio "${typed}move ${rdx} ${rdy}\nclick ${rdx} ${rdy}\nwait 100\n")
+so_run(radio "${typed}move ${rdx} ${rdy}\nclick ${rdx} ${rdy}\nwait 1500\n")
 so_online(on "${radio}")
 list(GET on 6 rp)
 if(NOT rp EQUAL 1)
   message(FATAL_ERROR "a click on the Modules.pl Radio row must count radio_plays=1, got ${rp}:\n${radio}")
+endif()
+# I815: the click reaches the real stream open path (listen.pls -> radio.modules.pl:8500/; with ICY metadata, joined mid-stream).
+# The engine must open it: no open_failed toast, and the transport shows the stream playing.
+if(NOT radio MATCHES "open_fail_toasts=0 ")
+  message(FATAL_ERROR "the Modules.pl Radio stream failed to open (open_failed toast):\n${radio}")
+endif()
+if(NOT radio MATCHES "play_state=1")
+  message(FATAL_ERROR "the Modules.pl Radio stream must be playing after the click:\n${radio}")
 endif()

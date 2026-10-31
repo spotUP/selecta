@@ -129,7 +129,14 @@ static int open_live(mp3_state* s, const sel_song_source* src, mp3dec_frame_info
     s->data = s->win;
     s->pos = 0;
     mp3dec_init(&s->dec);
-    return s->size > 0u && mp3dec_decode_frame(&s->dec, s->win, (int)s->size, s->frame, fi) != 0;
+    if (s->size == 0u) {
+        return 0;
+    }
+    /* A live join lands mid-stream: the first frame refers to bit reservoir bytes this decoder never saw, so minimp3
+     * returns 0 samples for it while still reporting the frame (rate, channels). A frame found is enough to open;
+     * rp_start resets the decoder and the render loop skips sample-less frames (I815). */
+    mp3dec_decode_frame(&s->dec, s->win, (int)s->size, s->frame, fi);
+    return fi->frame_bytes > 0 && fi->hz > 0;
 }
 
 /* Stream mode: tops the window up from the ring without waiting; consumed bytes are squeezed out first. */
