@@ -17,7 +17,7 @@ static void* job_main(void* arg) {
     sel_net_set_cancel(&lib->job_quit, 0u); /* close ends a job stuck on a silent server within one poll slice (I173f) */
     pthread_mutex_lock(&lib->job_lock);
     for (;;) {
-        while (!lib->job_quit && !lib->job_rating && !lib->job_vote && !lib->job_lyric && !lib->job_hash && !lib->job_task &&
+        while (!lib->job_quit && !lib->job_rating && !lib->job_pin && !lib->job_vote && !lib->job_lyric && !lib->job_hash && !lib->job_task &&
                !sel_fetch_job_pending(lib)) {
             pthread_cond_wait(&lib->job_wake, &lib->job_lock);
         }
@@ -28,10 +28,22 @@ static void* job_main(void* arg) {
             lib->job_task = 0;
             lib->job_task_busy = 1;
             pthread_mutex_unlock(&lib->job_lock);
+            sel_net_set_cancel(&lib->task_cancel, 0u); /* I832: Cancel/quit ends the task's network wait, not just job_quit; the stop sets both */
             lib->task_fn(lib->task_ctx);
+            sel_net_set_cancel(&lib->job_quit, 0u);
             pthread_mutex_lock(&lib->job_lock);
             lib->job_task_busy = 0;
             lib->task_done = 1;
+            pthread_cond_broadcast(&lib->job_wake);
+            continue;
+        }
+        if (lib->job_pin) {
+            lib->job_pin = 0;
+            lib->job_pin_busy = 1;
+            pthread_mutex_unlock(&lib->job_lock);
+            sel_pin_job_run(lib);
+            pthread_mutex_lock(&lib->job_lock);
+            lib->job_pin_busy = 0;
             pthread_cond_broadcast(&lib->job_wake);
             continue;
         }
@@ -100,7 +112,7 @@ void sel_job_wake(sel_library* lib) {
 void sel_job_wait(sel_library* lib) {
     if (lib != NULL && lib->job_started) {
         pthread_mutex_lock(&lib->job_lock);
-        while (lib->job_task || lib->job_task_busy || lib->job_rating || lib->job_rating_busy || lib->job_vote || lib->job_vote_busy || lib->job_lyric || lib->job_lyric_busy || lib->job_hash || lib->job_hash_busy || sel_fetch_job_pending(lib) || lib->pf_busy) {
+        while (lib->job_task || lib->job_task_busy || lib->job_rating || lib->job_rating_busy || lib->job_pin || lib->job_pin_busy || lib->job_vote || lib->job_vote_busy || lib->job_lyric || lib->job_lyric_busy || lib->job_hash || lib->job_hash_busy || sel_fetch_job_pending(lib) || lib->pf_busy) {
             pthread_cond_wait(&lib->job_wake, &lib->job_lock);
         }
         pthread_mutex_unlock(&lib->job_lock);
@@ -159,6 +171,16 @@ int sel_library_task_cancelled(sel_library* lib) {
     return lib != NULL && (lib->task_cancel || lib->job_quit);
 }
 
+void sel_library_task_cancel_request(sel_library* lib) {
+    if (lib != NULL && lib->job_started) {
+        pthread_mutex_lock(&lib->job_lock);
+        if (lib->job_task || lib->job_task_busy) {
+            lib->task_cancel = 1;
+        }
+        pthread_mutex_unlock(&lib->job_lock);
+    }
+}
+
 void sel_library_task_cancel(sel_library* lib) {
     if (lib != NULL && lib->job_started) {
         pthread_mutex_lock(&lib->job_lock);
@@ -192,6 +214,10 @@ int sel_library_task_take(sel_library* lib) {
         lib->task_done = 0;
     }
     return r;
+}
+
+void sel_library_task_cancel_request(sel_library* lib) {
+    (void)lib; /* the task already ran inline */
 }
 
 int sel_library_task_cancelled(sel_library* lib) {

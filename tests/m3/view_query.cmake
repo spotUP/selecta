@@ -43,7 +43,7 @@ if(NOT screen STREQUAL golden)
 endif()
 message(STATUS "view_source=query cursor_key=${key_cycled}")
 
-# I151a: VIEW_SOURCE playlist (the queue) and home (I191: its own source with the three sections; the catalogue has no history) answer OK.
+# I151a: VIEW_SOURCE playlist (the queue) and home (I191: its own source; the catalogue has no history, so empty shelves are hidden and Quick access leads, I678j) answer OK.
 foreach(src IN ITEMS playlist home)
   execute_process(
     COMMAND "${SELECTA}" --output null --start-dir "${WORK}" --catalogue "${CAT}"
@@ -58,7 +58,7 @@ if(NOT out MATCHES "view_source=home")
   message(FATAL_ERROR "VIEW_SOURCE home did not land on the home source\n${out}")
 endif()
 file(READ "${WORK}/home.txt" home_screen)
-if(NOT home_screen MATCHES "Home" OR NOT home_screen MATCHES "Recently played")
+if(NOT home_screen MATCHES "Home" OR NOT home_screen MATCHES "Quick access")
   message(FATAL_ERROR "home view should show its sections\n${home_screen}")
 endif()
 file(READ "${WORK}/playlist.txt" pl_screen)

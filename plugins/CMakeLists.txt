@@ -74,6 +74,16 @@ if(NOT SEL_AMIGA)
   add_subdirectory(replayers/ym)
 endif()
 
+# SNDH via sc68 (I427b): GPL-3, loadable module only, opt-in.
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/sndh)
+endif()
+
+# SID via libsidplayfp (I434): GPL-2, loadable module only, opt-in, host only (Amiga SID is row I434a).
+if(SELECTA_GPL_PLUGINS AND NOT SEL_AMIGA AND NOT EMSCRIPTEN AND NOT WIN32)
+  add_subdirectory(replayers/sid)
+endif()
+
 # KPlayer v33 (HippoPlayer, MIT): ProTracker M.K. on Amiga, HW kind, drives Paula through the CIA timer (I219).
 if(SEL_AMIGA)
   add_subdirectory(replayers/kplayer)

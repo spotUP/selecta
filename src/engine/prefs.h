@@ -6,7 +6,7 @@
 
 #include <stdint.h>
 
-#define SEL_PREF_VALUE_MAX 400 /* library.sync_snoozed holds "key:days," for 16 sources (I789) */
+#define SEL_PREF_VALUE_MAX 512 /* library.sync_snoozed holds "id:days" for up to 16 sources (I786a); 128 rejected the set with 11 snoozed */
 
 typedef enum sel_pref_kind { SEL_PREF_PLAIN = 0, SEL_PREF_FORMAT } sel_pref_kind;
 

@@ -11,7 +11,8 @@ typedef struct null_out {
     void* pull_ctx;
     int16_t* buf;
     uint32_t frames;
-    sel_tag stats[2];
+    uint32_t peak; /* largest absolute sample pulled (STAT_PEAK) */
+    sel_tag stats[3];
 } null_out;
 
 static void* null_open(const sel_host* host, uint32_t rate, uint32_t channels) {
@@ -33,6 +34,7 @@ static void* null_open(const sel_host* host, uint32_t rate, uint32_t channels) {
     o->pull = NULL;
     o->pull_ctx = NULL;
     o->frames = 0;
+    o->peak = 0;
     return o;
 }
 
@@ -54,6 +56,7 @@ static void null_set_source(void* state, sel_pcm_pull fn, void* ctx) {
 static uint32_t null_pump(void* state, uint32_t frames) {
     null_out* o = (null_out*)state;
     uint32_t done = 0;
+    uint32_t i;
     if (o->pull == NULL) {
         return 0;
     }
@@ -67,6 +70,13 @@ static uint32_t null_pump(void* state, uint32_t frames) {
         if (got == 0) {
             break;
         }
+        for (i = 0; i < got * 2u; i++) {
+            int32_t v = o->buf[i];
+            uint32_t m = (uint32_t)(v < 0 ? -v : v);
+            if (m > o->peak) {
+                o->peak = m;
+            }
+        }
         done += got;
     }
     o->frames += done;
@@ -77,8 +87,10 @@ static const sel_tag* null_stats(void* state) {
     null_out* o = (null_out*)state;
     o->stats[0].tag = SEL_OUT_STAT_FRAMES;
     o->stats[0].value = o->frames;
-    o->stats[1].tag = SEL_TAG_END;
-    o->stats[1].value = 0;
+    o->stats[1].tag = SEL_OUT_STAT_PEAK;
+    o->stats[1].value = o->peak;
+    o->stats[2].tag = SEL_TAG_END;
+    o->stats[2].value = 0;
     return o->stats;
 }
 

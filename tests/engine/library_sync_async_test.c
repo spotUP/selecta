@@ -54,6 +54,7 @@ static int blocking_sync(const sel_host* host, const char* arg, int64_t now, sel
 static const sel_source g_src = {
     "i527block", "I527 blocking", "", "Blocks in sync until released.", NULL,
     NULL, NULL, NULL, NULL, NULL, NULL, NULL, blocking_sync, SEL_SOURCE_SYNCS, NULL, NULL,
+    NULL, /* search (I406) */
 };
 
 static unsigned g_results, g_errors, g_busy;

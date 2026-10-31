@@ -6,6 +6,7 @@
 
 #include <sqlite3.h>
 #include <stddef.h>
+#include <stdio.h>
 
 static const char SCHEMA_V1[] =
     "CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT) WITHOUT ROWID;"
@@ -233,9 +234,42 @@ static const char SCHEMA_V12[] =
     "UPDATE history SET format = " V12_EXT " WHERE format IS NULL AND instr(key, '.') > 0"
     " AND length(" V12_EXT ") BETWEEN 1 AND 5 AND " V12_EXT " NOT GLOB '*[^a-z0-9]*';";
 
+/* I787: the Library Albums and Artists lists aggregate over every song (COUNT, MAX(added) per album and per artist). On 594 520 songs
+ * the table scan took 9 to 11 s. Covering indexes turn each into one index scan (about 90 ms warm): songs_album gains artist and added
+ * (same name and same leading column, so the v10 delete trigger and the scan's album lookups still use it) and songs_artist_added
+ * serves the artist list. No trigger or maintained table: the Amiga heap budget (I577) allows no more triggers on songs. */
+static const char SCHEMA_V13[] =
+    "DROP INDEX songs_album;"
+    "CREATE INDEX songs_album ON songs(album, artist, added);"
+    "CREATE INDEX songs_artist_added ON songs(artist, added);";
+
+/* I790: the source page drill (design doc 9b "Source page drill"). songs_source_format serves the Formats level and the artists of one
+ * format, songs_source_artist the A-Z artist level (without it a temp B-tree, 250 ms on 516k songs). source_new(source, day, n) is written
+ * by the sync itself after the first sync of a source (day = epoch day, n = songs inserted); the New level reads it, so New needs no index
+ * on songs and no trigger (I577 heap budget). The two indexes grew the 2 MB tier heap by 32 KiB (db.c, D-M3-2). */
+static const char SCHEMA_V14[] =
+    "CREATE INDEX IF NOT EXISTS songs_source_format ON songs(source, format, artist, size);"
+    "CREATE INDEX IF NOT EXISTS songs_source_artist ON songs(source, artist, format, size);"
+    "CREATE TABLE IF NOT EXISTS source_new(source TEXT NOT NULL, day INTEGER NOT NULL, n INTEGER NOT NULL, PRIMARY KEY(source, day)) WITHOUT ROWID;";
+
+/* I838: the majority format of a list item (items.c sel_db_majority_format_cached) with the change key it was computed at. Before this the
+ * answer lived in a 128-slot memory cache stamped with sqlite3_total_changes64, so any write (a play, a pin, the browse cache) emptied
+ * it and the next Sources reply rescanned all 516 000 Modland paths on the library worker (seconds). No trigger (I577 heap budget). */
+static const char SCHEMA_V15[] =
+    "CREATE TABLE IF NOT EXISTS item_formats(kind INTEGER NOT NULL, key TEXT NOT NULL, stamp INTEGER NOT NULL, fmt TEXT NOT NULL,"
+    " PRIMARY KEY(kind, key)) WITHOUT ROWID;";
+
+/* I848a: double-clicking a song froze the UI for 5.9 s on 644k songs. OPEN asks SEL_BEST_SOURCE (duplicates.c op_best) for the twin sources
+ * of the song: "songs with this md5" had no index (full scan of songs) and hash_for_open's "key = ? OR (source = 'local' AND path = ?)"
+ * had no path index (the OR branch scanned every local row). songs_md5 is partial (md5 <> ''): most rows have no md5 yet, so it stays small,
+ * and the queries repeat `md5 <> ''` so the planner may use it. songs_source_path serves the path branch. */
+static const char SCHEMA_V16[] =
+    "CREATE INDEX IF NOT EXISTS songs_md5 ON songs(md5) WHERE md5 <> '';"
+    "CREATE INDEX IF NOT EXISTS songs_source_path ON songs(source, path);";
+
 static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
                                            SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11,
-                                           SCHEMA_V12};
+                                           SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 
@@ -251,7 +285,19 @@ int sel_schema_version(sqlite3* db) {
     return v;
 }
 
-int sel_schema_migrate(sqlite3* db) {
+static void migrate_failed(sqlite3* db, const sel_host* host, int version, const char* step) {
+    char msg[160];
+
+    snprintf(msg, sizeof msg, "library schema migration to v%d failed at %s: %s (code %d)", version, step, sqlite3_errmsg(db),
+             sqlite3_extended_errcode(db));
+    if (host != NULL && host->log != NULL) {
+        host->log(host, SEL_LOG_ERROR, msg);
+    } else {
+        fprintf(stderr, "[ERROR] %s\n", msg);
+    }
+}
+
+static int migrate_steps(sqlite3* db, const sel_host* host) {
     int v = sel_schema_version(db);
     char pragma[40];
     int i;
@@ -261,18 +307,33 @@ int sel_schema_migrate(sqlite3* db) {
     }
     for (i = v; i < MIGRATION_COUNT; i++) {
         if (sqlite3_exec(db, "BEGIN", NULL, NULL, NULL) != SQLITE_OK) {
+            migrate_failed(db, host, i + 1, "BEGIN");
             return 0;
         }
         if (sqlite3_exec(db, g_migrations[i], NULL, NULL, NULL) != SQLITE_OK) {
+            migrate_failed(db, host, i + 1, "statements");
             sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
             return 0;
         }
         sqlite3_snprintf((int)sizeof pragma, pragma, "PRAGMA user_version=%d", i + 1);
         if (sqlite3_exec(db, pragma, NULL, NULL, NULL) != SQLITE_OK ||
             sqlite3_exec(db, "COMMIT", NULL, NULL, NULL) != SQLITE_OK) {
+            migrate_failed(db, host, i + 1, "COMMIT");
             sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
             return 0;
         }
     }
     return 1;
+}
+
+/* A migration can sort the whole catalogue (CREATE INDEX on songs). The library keeps temporary storage in memory
+ * (SQLITE_TEMP_STORE=2), where the sorter never spills and 594 520 songs outgrow every heap tier (SQLITE_NOMEM, I787a).
+ * Temp files for the migration only; the sorter writes a run to one whenever the heap nears its soft limit (db.c). */
+int sel_schema_migrate(sqlite3* db, const sel_host* host) {
+    int ok;
+
+    sqlite3_exec(db, "PRAGMA temp_store=FILE", NULL, NULL, NULL);
+    ok = migrate_steps(db, host);
+    sqlite3_exec(db, "PRAGMA temp_store=DEFAULT", NULL, NULL, NULL);
+    return ok;
 }

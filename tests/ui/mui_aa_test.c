@@ -223,8 +223,7 @@ static void test_text_source(void) {
     CHECK(count_of(ui, "MUIC_Text") == 0, "MUIC_Text left in mui_ui.c: %d", count_of(ui, "MUIC_Text"));
     CHECK(count_of(ui, "TextObject") == 0, "TextObject left in mui_ui.c: %d", count_of(ui, "TextObject"));
     CHECK(count_of(ui, "MUIA_Text_Contents") == 0 && count_of(ui, "MUIA_Text_PreParse") == 0, "Text attribute left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aatext(") == 8, "text constructor sites: %d (definition + 7; the eighth goes through mui_aatext_sized)", count_of(ui, "mui_aatext("));
-    CHECK(count_of(ui, "mui_aatext_sized(") == 3 && count_of(ui, "mui_attr_fixwidth(") == 1, "time labels sized through mui_attr_fixwidth");
+    CHECK(count_of(ui, "mui_aatext(") == 15, "text constructor sites: %d (definition + the library filter label I670 + the dialog header title I730 + 7 + 2 collection page lines I794 + the Home shelf header I795 + the sidebar line helper mui_side_text + the Visualizer page empty note, I735; the eighth goes through mui_aatext_sized)", count_of(ui, "mui_aatext("));    CHECK(count_of(ui, "mui_aatext_sized(") == 3 && count_of(ui, "mui_attr_fixwidth(") == 1, "time labels sized through mui_attr_fixwidth");
     CHECK(strstr(cls, "mui_aa_text_maxw(d->fixed, d->defw)") != NULL, "class max width not decided by mui_aa_text_maxw");
     CHECK(count_of(ui, "mui_aatext_new(") == 1, "one AAText constructor call: %d", count_of(ui, "mui_aatext_new("));
     CHECK(strstr(cls, "mui_aa_text_fit(") != NULL && strstr(cls, "mui_aa_tone_token(") != NULL && strstr(cls, "mui_aa_tone_font_px(") != NULL && strstr(cls, "aa_text(") != NULL,
@@ -240,7 +239,7 @@ static void test_text_source(void) {
 }
 
 /* I667e mui-panel-source: the MUI UI builds every panel through AAPanel, counted from the source: no TH PANEL group left, the helper
- * definition plus five calls (sidebar, player, main, detail, art frame) = 6 "mui_aapanel(" spellings, one AAPanel constructor call. */
+ * definition plus six calls (sidebar, player, player art frame, main, detail, art frame) = 7 "mui_aapanel(" spellings, one AAPanel constructor call. */
 static void test_panel_source(void) {
     char* ui = slurp(UI_SOURCE);
     char* cls = slurp(AAPANEL_SOURCE);
@@ -251,7 +250,7 @@ static void test_panel_source(void) {
     }
     CHECK(count_of(ui, "TH_TAGS(MUI_TH_PANEL") == 0, "TH PANEL group left in mui_ui.c: %d", count_of(ui, "TH_TAGS(MUI_TH_PANEL"));
     CHECK(count_of(ui, "MUIA_Frame, MUIV_Frame_Group") == 0, "plain art frame left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aapanel(") == 6, "panel constructor sites: %d (definition + 5)", count_of(ui, "mui_aapanel("));
+    CHECK(count_of(ui, "mui_aapanel(") == 7, "panel constructor sites: %d (definition + 6)", count_of(ui, "mui_aapanel("));
     CHECK(count_of(ui, "mui_aapanel_new(") == 1, "one AAPanel constructor call: %d", count_of(ui, "mui_aapanel_new("));
     CHECK(strstr(cls, "mui_aa_panel_rgb(") != NULL && strstr(cls, "mui_aa_panel_radius(") != NULL && strstr(cls, "aa_round_corners(") != NULL,
           "class does not draw through the shared panel helpers");
@@ -431,8 +430,8 @@ static void test_btn_align(void) {
     CHECK(ui != NULL && cls != NULL, "sources readable");
     if (ui != NULL && cls != NULL) {
         CHECK(strstr(cls, "mui_aa_btn_content_x(") != NULL && strstr(cls, "(w - cw) / 2") == NULL, "class centres by hand instead of the shared helper");
-        CHECK(count_of(ui, "mui_make_button_left(") == 2, "door buttons built left aligned: %d sites (definition + door row)", count_of(ui, "mui_make_button_left("));
-        CHECK(count_of(ui, "sp.align = align;") == 2 && count_of(ui, "sp.align = MUI_AA_ALIGN_CENTRE;") == 1, "every button spec sets align");
+        CHECK(count_of(ui, "mui_make_button_left(") == 3, "left aligned buttons: %d sites (definition + door row + the sidebar helper mui_side_button)", count_of(ui, "mui_make_button_left("));
+        CHECK(count_of(ui, "sp.align = align;") == 2 && count_of(ui, "sp.align = MUI_AA_ALIGN_CENTRE;") == 2, "every button spec (checkbox + dialog close, I730) sets align");
         /* Johan rig 2 2026-10-29: the "> PROGDIR:" breadcrumb text ran past its button. The width was measured once at setup from the
          * blank first caption; a fit button (NULL widest) now re-measures at every layout from the caption it was last given. */
         CHECK(strstr(cls, "aabtn_measure(obj, d);") != NULL && count_of(cls, "aa_text_width(&d->aa, obj, d->widest)") == 1, "width not measured at layout");
@@ -468,6 +467,49 @@ static void test_transport_icons(void) {
         CHECK(strstr(ui, "mui_aabtn_set_on(") != NULL, "lit state not pushed to the buttons");
     }
     free(ui);
+}
+
+/* I739 mui-slider-partial: the song position bar must not blink. Drive 200 position ticks through the plan the class paints per tick and
+ * count: exactly one partial draw per real fill change, none when the value (fill width) is unchanged, and no op ever erases the box. The
+ * class source must route value-only draws through the update plan. */
+static void test_slider_partial(void) {
+    txt_theme th;
+    mui_aa_slider_t m;
+    mui_aa_slider_op_t ops[MUI_AA_SLIDER_OPS];
+    int w = 200, h = 16, prev = -1, tick, n, changes = 0, paints = 0, erases = 0;
+    uint32_t before = mui_aa_slider_partial_count();
+    char* cls = slurp(AASLIDER_SOURCE);
+    CHECK(cls != NULL, "cannot read the slider class");
+    txt_theme_default(&th);
+    mui_aa_slider_metrics(13, &m);
+    for (tick = 0; tick < 200; tick++) {
+        long v = tick / 2; /* two ticks per value step: every second tick repeats the value */
+        int fw = mui_aa_slider_fill_w(w, v, 0, 100);
+        int i;
+        if (prev >= 0 && fw != prev) {
+            changes++;
+        }
+        n = mui_aa_slider_update_plan(th.token, &m, MUI_AA_NORMAL, w, h, prev, v, 0, 100, ops);
+        if (prev >= 0 && fw == prev) {
+            CHECK(n == 0, "tick %d: unchanged value painted %d ops", tick, n);
+        }
+        if (n > 0 && prev >= 0) {
+            paints++;
+        }
+        for (i = 0; i < n; i++) {
+            erases += ops[i].kind == MUI_AA_SLIDER_ERASE;
+        }
+        prev = fw;
+    }
+    CHECK(paints == changes && changes > 90, "partial draws %d vs real changes %d", paints, changes);
+    CHECK(erases == 0, "box erase in a partial draw: %d", erases);
+    CHECK(mui_aa_slider_partial_count() - before == (uint32_t)paints + 1, "sentinel: partial plans counted %u", (unsigned)(mui_aa_slider_partial_count() - before));
+    n = mui_aa_slider_update_plan(th.token, &m, MUI_AA_NORMAL, w, h, 200, 20, 0, 100, ops); /* fill shrank 200 -> 40: track, then fill */
+    CHECK(n == 2 && ops[0].kind == MUI_AA_SLIDER_TRACK && ops[1].kind == MUI_AA_SLIDER_FILL && ops[1].w == 40, "shrink: track then fill");
+    n = mui_aa_slider_update_plan(th.token, &m, MUI_AA_NORMAL, w, h, 40, 30, 0, 100, ops); /* grew: fill only */
+    CHECK(n == 1 && ops[0].kind == MUI_AA_SLIDER_FILL && ops[0].w == 60, "grow: fill only");
+    CHECK(cls != NULL && strstr(cls, "mui_aa_slider_update_plan(") != NULL && strstr(cls, "MADF_DRAWOBJECT") != NULL, "class does not use the partial plan for value-only draws");
+    free(cls);
 }
 
 /* I667f mui-slider-source: the MUI UI builds every slider through AASlider: no MUIC_Slider, gauge or prop left, the helper definition
@@ -551,7 +593,7 @@ static void test_cycle_source(void) {
         return;
     }
     CHECK(count_of(ui, "MUIC_Cycle") == 0 && count_of(ui, "MUIA_Cycle_") == 0, "stock cycle left in mui_ui.c");
-    CHECK(count_of(ui, "mui_make_cycle(") == 5, "cycle constructor sites: %d (definition + 4)", count_of(ui, "mui_make_cycle("));
+    CHECK(count_of(ui, "mui_make_cycle(") == 6, "cycle constructor sites: %d (definition + 4 + the Visualizer page picker, I735)", count_of(ui, "mui_make_cycle("));
     CHECK(count_of(ui, "mui_aacycle_new(") == 1, "one AACycle constructor call: %d", count_of(ui, "mui_aacycle_new("));
     CHECK(count_of(ui, "mui_aacycle_class_free(") == 1, "class freed in mui_close");
     CHECK(strstr(cls, "mui_aa_cycle_rgb(") != NULL && strstr(cls, "mui_aa_cycle_step(") != NULL && strstr(cls, "mui_aa_cycle_chevron_row(") != NULL &&
@@ -679,7 +721,7 @@ static void test_field_plan(void) {
 }
 
 /* I667h mui-field-source: the MUI UI builds every string gadget through AAField, counted from the source: no stock MUIC_String left in
- * mui_ui.c, the helper definition plus the top bar site, the two tool-row sites and the settings site = 5 "mui_make_string(" spellings, one AAField
+ * mui_ui.c, the helper definition plus the top bar site, the two tool-row sites and the settings site = 6 "mui_make_string(" spellings (I798: plus the palette filter), one AAField
  * constructor call, the class freed, drawn through the shared helpers and in the build. */
 static void test_field_source(void) {
     char* ui = slurp(UI_SOURCE);
@@ -691,7 +733,7 @@ static void test_field_source(void) {
     }
     CHECK(count_of(ui, "MUIC_String") == 0, "stock string left in mui_ui.c: %d", count_of(ui, "MUIC_String"));
     CHECK(count_of(ui, "TH_TAGS(MUI_TH_FIELD") == 0, "stock string frame left in mui_ui.c");
-    CHECK(count_of(ui, "mui_make_string(") == 5, "string constructor sites: %d (definition + 4)", count_of(ui, "mui_make_string("));
+    CHECK(count_of(ui, "mui_make_string(") == 6, "string constructor sites: %d (definition + 5: top bar, command line, palette, tool rows, settings)", count_of(ui, "mui_make_string("));
     CHECK(count_of(ui, "mui_aafield_new(") == 1, "one AAField constructor call: %d", count_of(ui, "mui_aafield_new("));
     CHECK(count_of(ui, "mui_aafield_class_free(") == 1, "class freed in mui_close");
     CHECK(strstr(cls, "mui_aa_field_plan(") != NULL && strstr(cls, "mui_aa_field_height(") != NULL && strstr(cls, "aa_round_fill_hole(") != NULL,
@@ -747,6 +789,43 @@ static void test_field_draw_flags(void) {
     CHECK(pnl != NULL && strstr(pnl, "aa_round_corners(") != NULL, "AAPanel does not round its corners after the super");
     free(fld);
     free(pnl);
+}
+
+/* I733 mui-aa-field-placeholder: (1) the shared hint function gives the top bar and the facet hints the desktop UI shows; (2) the
+ * placeholder plan is TEXT_MUTED for empty + unfocused only; (3) the AAField draw runs it after the super call and the sentinel counts it;
+ * (4) the spec carries the placeholder and every string site passes one (hint, command, pref label). */
+static void test_field_placeholder(void) {
+    txt_theme th;
+    char hint[64];
+    uint32_t rgb = 0, n0 = mui_aa_field_placeholders();
+    char* cls = slurp(AAFIELD_SOURCE);
+    char* ui = slurp(UI_SOURCE);
+    const char* draw;
+    const char* sup;
+    const char* ph;
+    txt_theme_default(&th);
+    sel_uim_search_hint(1, sel_uim_search_facets, SEL_UIM_SEARCH_FACETS, hint, sizeof hint);
+    CHECK(!strcmp(hint, "What do you want to play?"), "top bar hint: %s", hint);
+    sel_uim_search_hint(0, sel_uim_search_facets, SEL_UIM_SEARCH_FACETS, hint, sizeof hint);
+    CHECK(!strcmp(hint, "Search songs, albums, artists"), "facet hint: %s", hint);
+    CHECK(mui_aa_field_placeholder(th.token, "", 0, &rgb) == 1 && rgb == th.token[SEL_GUI_TOKEN_TEXT_MUTED], "empty unfocused: TEXT_MUTED %06X", (unsigned)rgb);
+    CHECK(mui_aa_field_placeholder(th.token, NULL, 0, &rgb) == 1, "NULL contents counts as empty");
+    CHECK(mui_aa_field_placeholder(th.token, "abc", 0, &rgb) == 0, "contents set: none");
+    CHECK(mui_aa_field_placeholder(th.token, "", 1, &rgb) == 0, "active object: none");
+    CHECK(mui_aa_field_placeholders() == n0 + 2u, "sentinel counts the painted placeholders: %u", (unsigned)(mui_aa_field_placeholders() - n0));
+    CHECK(cls != NULL && ui != NULL, "sources readable");
+    if (cls != NULL && ui != NULL) {
+        draw = strstr(cls, "static ULONG aafield_draw(");
+        sup = draw != NULL ? strstr(draw, "DoSuperMethodA(") : NULL;
+        ph = draw != NULL ? strstr(draw, "mui_aa_field_placeholder(") : NULL;
+        CHECK(sup != NULL && ph != NULL && sup < ph, "AAField draw paints the placeholder after the super call");
+        CHECK(ph != NULL && strstr(ph, "aa_text(") != NULL, "placeholder drawn through aa_text");
+        CHECK(strstr(cls, "MUIA_String_Contents, MUIV_EveryTime") != NULL, "repaint on contents change");
+        CHECK(count_of(ui, "sel_uim_search_hint(") == 1 && count_of(ui, "SEL_UIM_CMD_HINT") == 1 && count_of(ui, "r->label);") >= 1, "string sites pass hints");
+        CHECK(count_of(ui, "mui_make_string(") == 6, "string constructor sites: %d", count_of(ui, "mui_make_string("));
+    }
+    free(cls);
+    free(ui);
 }
 
 /* I667i mui-scroller-geom (design 3.5): thumb geometry, colour tokens, widths and the sentinel. */
@@ -893,10 +972,9 @@ static void test_list_source(void) {
     CHECK(count_of(ui, "MUIC_List") == 0 && count_of(ui, "MUIC_Floattext") == 0 && count_of(ui, "MUIC_Listview") == 0, "stock list classes left in mui_ui.c: %d %d %d",
           count_of(ui, "MUIC_List"), count_of(ui, "MUIC_Floattext"), count_of(ui, "MUIC_Listview"));
     CHECK(count_of(ui, "MUIM_List_") == 0 && count_of(ui, "MUIA_List_") == 0 && count_of(ui, "mui_list_pad_x") == 0, "stock list calls left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aalist_new(") == 3 && count_of(ui, "mui_string_aalist(") == 4, "AAList builders: new %d, string %d", count_of(ui, "mui_aalist_new("), count_of(ui, "mui_string_aalist("));
-    CHECK(count_of(ui, "sp.cols = &s->main_cols;") == 1 && count_of(ui, "sp.title = 1;") == 1 && count_of(ui, "sp.double_pick = 1;") == 1 && count_of(ui, "sp.no_select = 1;") == 1,
-          "main list columns, title row, double pick and lyrics no_select");
-    CHECK(count_of(ui, "AAL_Columns") == 1 && count_of(ui, "AAL_Playing") == 1 && count_of(ui, "AAL_Picked") == 2, "columns %d, playing %d, picked %d", count_of(ui, "AAL_Columns"),
+    CHECK(count_of(ui, "mui_aalist_new(") == 5 && count_of(ui, "mui_string_aalist(") == 5, "AAList builders: new %d, string %d", count_of(ui, "mui_aalist_new("), count_of(ui, "mui_string_aalist("));
+    CHECK(count_of(ui, "sp.cols = &s->main_cols;") == 1 && count_of(ui, "sp.title = 1;") == 1 && count_of(ui, "sp.double_pick = 1;") == 3 && count_of(ui, "sp.no_select = 1;") == 1,          "main list columns, title row, double pick and lyrics no_select");
+    CHECK(count_of(ui, "AAL_Columns") == 1 && count_of(ui, "AAL_Playing") == 1 && count_of(ui, "AAL_Picked") == 8, "columns %d, playing %d, picked %d", count_of(ui, "AAL_Columns"),
           count_of(ui, "AAL_Playing"), count_of(ui, "AAL_Picked"));
     CHECK(count_of(ui, "mui_list_display(&g_list_hook") == 2 && strstr(ui, "static const char* mui_main_cell(") != NULL, "cells come from the display hook");
     CHECK(strstr(ui, "mui_text_lines(s->np_lyric_buf)") != NULL && strstr(ui, "mui_text_line(s->np_lyric_buf") != NULL, "lyrics rows from the pure line helpers");
@@ -973,6 +1051,8 @@ int main(int argc, char** argv) {
         test_balance_geom();
     } else if (!strcmp(t, "balance-source")) {
         test_balance_source();
+    } else if (!strcmp(t, "slider-partial")) {
+        test_slider_partial();
     } else if (!strcmp(t, "slider-geom")) {
         test_slider_geom();
     } else if (!strcmp(t, "btn-align")) {
@@ -993,6 +1073,8 @@ int main(int argc, char** argv) {
         test_field_plan();
     } else if (!strcmp(t, "field-source")) {
         test_field_source();
+    } else if (!strcmp(t, "field-placeholder")) {
+        test_field_placeholder();
     } else if (!strcmp(t, "field-draw-flags")) {
         test_field_draw_flags();
     } else if (!strcmp(t, "scroller-geom")) {

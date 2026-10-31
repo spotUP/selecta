@@ -9,6 +9,12 @@ int mui_wait_step(const mui_wait_io* io, void* ctx, uint32_t timeout_ms) {
         return -1;
     }
     if (id != 0) {
+        /* A turn that always has a ReturnID waiting (playing MP3: the UI keeps handing one back) never
+         * reaches the wait below, so a Ctrl-C was never read and Break was ignored (I727). Poll the break
+         * bit on this path too, without blocking. */
+        if ((io->wait(ctx, io->break_mask, 0) & io->break_mask) != 0) {
+            return -1;
+        }
         return 1;
     }
     got = io->wait(ctx, sigs | io->wake_mask | io->break_mask, timeout_ms);

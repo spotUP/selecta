@@ -30,6 +30,10 @@ SEL_PREF(OUTPUT_ID,          "output.id",          "",                          
 SEL_PREF(AUDIO_PRIORITY,     "audio.priority",     "30",                                          SEL_PREF_PLAIN)
 /* output buffer in frames; 0: scaled from the machine */
 SEL_PREF(OUTPUT_BUFFER,      "output.buffer",      "0",                                           SEL_PREF_PLAIN)
+/* paula14 output buffer in frames (64 to 8192); empty: the built-in length (I729) */
+SEL_PREF(PAULA14_BUFFER,     "paula14.buffer",     "",                                            SEL_PREF_PLAIN)
+/* wav output: the file to write; empty: the wav output does not open (I729) */
+SEL_PREF(WAV_PATH,           "wav.path",           "",                                            SEL_PREF_PLAIN)
 /* Amiga LED (power) filter: on, off */
 SEL_PREF(OUTPUT_LED,         "output.led",         "off",                                         SEL_PREF_PLAIN)
 /* per-replayer options, "plugin.key=value,..."; a replayer reads its declared SEL_RP_CONFIG keys at open (D-M2-8) */
@@ -82,6 +86,7 @@ SEL_PREF(SCROBBLE_LASTFM_SESSION, "scrobble.lastfm_session", "",                
 #endif
 /* Search source of the search field (MUI-P8-8): Library, Web or Demozoo (src/uimodel/sources.c). */
 SEL_PREF(SEARCH_SOURCE,           "search.source",           "Library",                           SEL_PREF_PLAIN)
+SEL_PREF(SEARCH_LAST_SOURCE,      "search.last_source",      "",                                  SEL_PREF_PLAIN)
 /* MUI state kept on close (MUI-P8-11, src/uimodel/panels.c): window geometry "x,y,w,h", the open panes bit mask and the
  * browse view. Empty: the MUI defaults. The visualiser is ui.desktop.viz, shared with the desktop UI. */
 SEL_PREF(UI_MUI_GEOMETRY,         "ui.mui.geometry",         "",                                  SEL_PREF_PLAIN)

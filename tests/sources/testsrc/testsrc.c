@@ -8,6 +8,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 unsigned sel_testsrc_sync_calls;
 
@@ -25,6 +26,9 @@ static int testsrc_sync(const sel_host* host, const char* arg, int64_t now, sel_
     }
     if (cat == NULL || !cat->begin(host, "testsrc")) {
         return 0;
+    }
+    if (getenv("SELECTA_TESTSRC_SLOW_MS") != NULL) { /* I782: the dui-sync-nowait test keeps the sync running while it clicks */
+        usleep((useconds_t)strtoul(getenv("SELECTA_TESTSRC_SLOW_MS"), NULL, 10) * 1000u);
     }
     for (i = 0; i < 3; i++) {
         char path[16];
@@ -53,6 +57,7 @@ static int testsrc_sync(const sel_host* host, const char* arg, int64_t now, sel_
 static const sel_source g_testsrc = {
     "testsrc", "Test Source", "https://example.invalid/", "Reachability probe for source plugins.", NULL,
     NULL, NULL, NULL, NULL, NULL, NULL, NULL, testsrc_sync, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS, NULL, NULL,
+    NULL, /* search (I406) */
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

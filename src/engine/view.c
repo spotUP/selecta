@@ -1,3 +1,4 @@
+#include <selecta/format_label.h>
 #include "view.h"
 
 #include <string.h>
@@ -454,6 +455,11 @@ static void fill_styled(sel_view* v, const sel_view_src* s) {
             r->artist = NULL;
             r->id = v->groups[g].id;
             r->text = v->groups[g].name;
+            if (key_seq[v->group_key][level_of(v)] == KEY_FORMAT) {
+                /* I819: the key stays the extension (drill value); the heading reads "Protracker (mod)" */
+                sel_format_label(v->groups[g].name, buf, SEL_FORMAT_LABEL_MAX);
+                r->text = buf;
+            }
             r->count = v->groups[g].count;
             r->expanded = tree && v->groups[g].expanded;
             in_group = SEL_QUEUE_NONE;
@@ -771,14 +777,15 @@ static uint32_t row_art(sel_view* v, const sel_view_src* s, uint32_t slot, uint3
 static void queue_row_text(char* out, const sel_view_src* s, uint32_t idx, const char* votes) {
     const char* path = sel_queue_path(s->queue, idx);
     const char* base = sel_browse_basename(path);
-    char ext[16];
+    char ext[16], label[SEL_FORMAT_LABEL_MAX], label_meta[SEL_FORMAT_LABEL_MAX];
     sel_format_values fv;
     memset(&fv, 0, sizeof fv);
     lower_ext(base, ext, sizeof ext);
+    sel_format_label(ext, label, sizeof label); /* I819: the format field reads "Protracker (mod)" */
     fv.field[SEL_FMT_TITLE] = base;
     fv.field[SEL_FMT_FILE] = base;
     fv.field[SEL_FMT_PATH] = path;
-    fv.field[SEL_FMT_FORMAT] = ext;
+    fv.field[SEL_FMT_FORMAT] = label;
     fv.field[SEL_FMT_VOTES] = votes;
     if (s->meta != NULL && idx < s->meta_rows && s->meta_off[idx] != UINT32_MAX) {
         const char* m = s->meta + s->meta_off[idx];
@@ -790,7 +797,8 @@ static void queue_row_text(char* out, const sel_view_src* s, uint32_t idx, const
         }
         fv.field[SEL_FMT_AUTHOR] = artist;
         if (format[0] != '\0') {
-            fv.field[SEL_FMT_FORMAT] = format;
+            sel_format_label(format, label_meta, sizeof label_meta);
+            fv.field[SEL_FMT_FORMAT] = label_meta;
         }
         fv.field[SEL_FMT_DURATION] = dur;
     }

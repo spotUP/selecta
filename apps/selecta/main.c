@@ -113,6 +113,13 @@ static void sink(void* ctx, const sel_message* evt) {
 
 static int g_mark_audio;
 static int g_marked; /* the output's pull thread is marked as the audio thread */
+/* I829: one engine pump per shell turn. A clockless run is deterministic (one UI turn per pump), so a posted library read (home, search,
+ * folders) lands before the next turn; a paced run never waits for the library (the pump posts and applies the answer on a later turn). */
+static void pump_turn(sel_engine* e, int clockless, sel_event_sink sink, void* ctx) {
+    if (clockless) (void)sel_engine_pump_reads(e, sink, ctx, 60000u);
+    else (void)sel_engine_pump(e, sink, ctx);
+}
+
 static volatile int g_pumping; /* the shell is inside so.pump: a pull now runs on the main thread, never the audio thread (I684c) */
 
 static uint32_t audio_pull(void* ctx, int16_t* stereo, uint32_t frames) {
@@ -568,7 +575,7 @@ int main(int argc, char** argv)
     rate = sel_registry_output_rate(oh, machine_tags);
     sel_engine_set_mix(e, rate, SHELL_RESAMPLER);
     sel_engine_set_output(e, oh);
-    out = out_open(host, rate, 2);
+    out = out_open(sel_engine_plugin_host(e), rate, 2); /* I729: the plugin host answers prefs.conf keys */
     if (out == NULL) {
         STARTUP_FAIL("no output device");
         sel_engine_destroy(e);
@@ -582,7 +589,7 @@ int main(int argc, char** argv)
     so.set_source = out_set_source;
     so.pump = out_pump;
     so.machine = machine_tags;
-    so.host = host;
+    so.host = sel_engine_plugin_host(e);
     so.engine = e;
     so.out = out;
     so.paced = sel_tag_find(oh, SEL_OUT_UNPACED, 0) == 0;
@@ -705,7 +712,7 @@ int main(int argc, char** argv)
         }
     }
     apply_option_words(e, argc, argv);
-    sel_engine_pump(e, sink, ctx);
+    pump_turn(e, clockless, sink, ctx);
     for (a = 1; a < argc; a++) { /* `selecta <share link>` opens the song, playlist or view the link names (I180) */
         if (sel_share_is_link(argv[a])) {
             char pool[1536];
@@ -737,7 +744,7 @@ int main(int argc, char** argv)
                     return 1;
                 }
             } else if (sel_engine_send_line(e, argv[a + 1], pool, sizeof pool) == SEL_CODEC_OK) {
-                sel_engine_pump(e, sink, ctx);
+                (void)sel_engine_pump_reads(e, sink, ctx, 60000u); /* I829: a --exec line is a script step: its posted read lands first */
                 sel_engine_scan_wait(e, sink, ctx); /* a --exec LIBRARY_SCAN finishes before the next option (I336) */
             }
         }
@@ -761,7 +768,7 @@ int main(int argc, char** argv)
                 r = wr;
             }
         }
-        sel_engine_pump(e, sink, ctx); /* a UI_SWITCH key sent during the wait is waiting in the engine */
+        pump_turn(e, clockless, sink, ctx); /* a UI_SWITCH key sent during the wait is waiting in the engine */
         {
             char want[16];
             if (sel_engine_take_ui_switch(e, want, sizeof want)) { /* the shell owns the UIs: switch between turns */
@@ -783,7 +790,7 @@ int main(int argc, char** argv)
             so.pump(so.out, so.rate * SHELL_TURN_MS / 1000u);
             g_pumping = 0;
         }
-        sel_engine_pump(e, sink, ctx);
+        pump_turn(e, clockless, sink, ctx);
         sel_int_session_poll(isess);
 #ifndef SEL_NO_CONTROL_SOCKET
         if (ctl_fd >= 0) {
@@ -806,6 +813,13 @@ int main(int argc, char** argv)
            est.replayer != NULL ? est.replayer : "none");
     printf("songs_opened=%u queue_version=%u\n", (unsigned)est.songs_opened,
            (unsigned)sel_engine_state(e)->queue_version);
+    if (has_stats) { /* I427b: what the open song's replayer rendered and what reached the output (null output: the peak sample) */
+        sel_out_stats_fn ostats = (sel_out_stats_fn)sel_tag_find(oh, SEL_OUT_STATS, 0);
+        const sel_tag* os = ostats != NULL && so.out != NULL ? ostats(so.out) : NULL;
+
+        printf("replayer_render_calls=%u rendered_frames=%u out_peak=%u\n", (unsigned)est.replayer_render_calls,
+               (unsigned)est.rendered_frames, os != NULL ? (unsigned)sel_tag_find(os, SEL_OUT_STAT_PEAK, 0) : 0u);
+    }
     if (has_stats) { /* the song the engine has open, for the mouse test (DUI-P3-2) */
         printf("song=%s\n", sel_engine_state(e)->song.path != NULL ? sel_engine_state(e)->song.path : "");
     }

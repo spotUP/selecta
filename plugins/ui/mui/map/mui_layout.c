@@ -65,12 +65,19 @@ uint32_t mui_transport_row_width(uint32_t row) {
 }
 
 void mui_layout_map(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier) {
+    mui_layout_map_panel(m, width, height, tier, 0u);
+}
+
+/* I798 (T2, R3): the same map with the Now Playing column dropped when `detail_hidden`, through the layout the Mac computes
+ * for its Hide Now Playing Panel (I619), so the main region takes the width on both. */
+void mui_layout_map_panel(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden) {
     sel_uim_layout l;
     uint32_t i, s;
     memset(m, 0, sizeof *m);
     /* I615d (design 8.1): the tier follows the screen as in the rich UI. A native planar screen is the bitmap tier (I674: a 640
      * wide window keeps a rail, no mini-layout suggestion, no top bar); an RTG screen is the default tier with the top bar. */
-    sel_uim_layout_compute_tier(&l, width, height, tier);
+    sel_uim_layout_compute_tier_panel(&l, width, height, tier, detail_hidden);
+    m->detail_hidden = detail_hidden != 0u;
     m->width = width;
     m->height = height;
     m->breakpoint = l.breakpoint;
@@ -93,10 +100,16 @@ void mui_layout_map(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32
     m->balance_main_detail = m->show[MUI_SLOT_MAIN] && m->show[MUI_SLOT_DETAIL];
 }
 
+/* I798: the Hide / Show Now Playing button is offered where the Mac offers it (np_toggle_rect): on the three column breakpoint
+ * with the top bar shown. */
+uint32_t mui_np_toggle_shown(const mui_layout_map_t* m) {
+    return m->show[MUI_SLOT_TOPBAR] && m->breakpoint == SEL_UIM_BP_THREE_COLUMN;
+}
+
 uint32_t mui_layout_relayout(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t* flips) {
     mui_layout_map_t next;
     uint32_t s, n = 0;
-    mui_layout_map(&next, width, height, tier);
+    mui_layout_map_panel(&next, width, height, tier, m->detail_hidden);
     if (next.breakpoint == m->breakpoint) {
         /* Same breakpoint: only the weights follow the new size, no object appears or disappears. */
         *m = next;

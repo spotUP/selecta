@@ -110,6 +110,7 @@ SEL_TAG(OUT, RATE_FOR,          0x201E, PTR) /* uint32_t (*)(const sel_tag* mach
 SEL_TAG(OUT, STAT_AHI_DECODE_MS, 0x201F, INT) /* ahi outputs: milliseconds spent pulling PCM from the source (decode and mix) */
 SEL_TAG(OUT, STAT_AHI_WAIT_MS,  0x2020, INT) /* ahi outputs: milliseconds blocked waiting for ahi.device to free a buffer */
 SEL_TAG(OUT, UNPACED,           0x2021, INT) /* 1 = OUT_PUMP never blocks (Paula): the shell paces its turns on the UI wait (I684c). Absent = the pump paces itself */
+SEL_TAG(OUT, STAT_PEAK,         0x2022, INT) /* null output: largest absolute sample value of every frame it pulled (a non-silence measure for the dui tests, I427b) */
 
 /* DSP plugin rows (design doc section 5, include/selecta/dsp.h). */
 SEL_TAG(DSP, NAME,             0x3000, STR)
@@ -381,6 +382,9 @@ SEL_TAG(SRC, DUE,              0x7019, INT)
 /* SOURCES rows (I582): unix time (whole days) the user snoozed this source's sync offer with the banner's Sync button while the
  * row was unticked (library.sync_snoozed); 0 none. The desktop writes the pref back from these, so it never reads prefs. */
 SEL_TAG(SRC, SNOOZED,          0x701a, INT)
+SEL_TAG(SRC, SEARCHABLE,       0x701b, INT)
+/* SOURCES rows (I814): 1 when the source has a sync hook (LIBRARY_SYNC can name it); a search-only source (Modules.pl) is never due and gets no Sync button. */
+SEL_TAG(SRC, SYNCABLE,         0x701c, INT)
 
 /* META STR values come from the song file. The host stores and draws UTF-8: a value that is valid UTF-8 is kept,
  * anything else is read as ISO-8859-1 (Amiga module text) and converted where it enters the host (I444,

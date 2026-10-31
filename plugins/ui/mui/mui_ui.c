@@ -15,9 +15,12 @@
 #include "map/mui_theme.h"
 #include "map/mui_pens.h"
 #include "map/mui_icons.h"
+#include "map/mui_route.h"
 #include <selecta/uimodel/doors.h>
+#include <selecta/uimodel/pages.h>
 #include <selecta/uimodel/theme.h>
 #include <selecta/tags.h>
+#include <selecta/library_item.h>
 
 #if defined(__amigaos__) || defined(AMIGA)
 #define SEL_MUI_NATIVE 1
@@ -64,6 +67,7 @@ static void mui_libs_close(void) {
 #include "mui_aafield_class.h"
 #include "mui_aatext_class.h"
 #include "mui_aa_draw.h"
+#include "mui_aatip.h"
 #include "map/mui_aa.h"
 #include "mui_canvas_class.h"
 #include "mui_vizarea_class.h"
@@ -95,14 +99,22 @@ typedef struct mui_cells {
 #define MUI_CRUMB_MAX 6u
 enum { P4_SEARCH, P4_CMD, P4_LIKE, P4_RATING, P4_SUBSONG, P4_QREMOVE, P4_QCLEAR, P4_QUP, P4_QDOWN, P4_POPEN, P4_PRENAME, P4_PDELETE,
        P4_CLEARLIB, P4_PNEW, P4_HELP, P4_HOME, P4_TOAST, P4_CRUMB, P4_STATE, P4_SETTINGS, P4_SONGMENU, P4_NP, P4_SONGINFO, P4_PREF, P4_TRACKER,
-       P4_VIZPICK, P4_VIZFRAMES, P4_COUNT };
+       P4_VIZPICK, P4_VIZFRAMES, P4_DBLRACE, P4_COUNT };
 static const char* const p4_name[P4_COUNT] = {"search", "cmd", "like", "rating", "subsong", "qremove", "qclear", "qup", "qdown",
                                               "popen", "prename", "pdelete", "clearlib", "pnew", "help", "home", "toast", "crumb", "state", "settings",
-                                              "songmenu", "np", "songinfo", "pref", "tracker", "vizpick", "vizframes"};
+                                              "songmenu", "np", "songinfo", "pref", "tracker", "vizpick", "vizframes", "dbl_race_injected"};
 #define MUI_PREF_MAX 12u   /* MUI-P4-10: most Settings rows (sel_uim_pref_row_count) */
 #define MUI_INFO_MAX 24u   /* MUI-P4-9: most song info rows */
 #define MUI_TRK_ROWS 16u   /* MUI-P4-16: pattern rows shown */
 #define MUI_TRK_CHANNELS 4u /* MUI-P4-16: channel columns shown */
+
+typedef struct mui_shelf_ctx { /* I795: the row callback of a shelf list finds its mui_state and slot here */
+    struct mui_state* s;
+    uint32_t slot;
+} mui_shelf_ctx;
+
+/* I798 (O3): one persistent ShortHelp buffer per tipped control. */
+enum { MUI_TS_BTN = 0, MUI_TS_DOOR = MUI_BTN_COUNT, MUI_TS_LIKE = MUI_TS_DOOR + MUI_SIDEBAR_DOORS, MUI_TS_NP, MUI_TS_SEARCH, MUI_TS_CMD, MUI_TS_PAL, MUI_TS_SEEK, MUI_TS_VOL, MUI_TS_COUNT };
 
 typedef struct mui_state {
     uint32_t opens; /* ui_open_mui sentinel (MUI-P1-5): windows opened */
@@ -111,6 +123,7 @@ typedef struct mui_state {
     sel_engine* engine;
     uint32_t transport_hits; /* transport buttons and sliders that sent their line (MUI-P2-5): stat transport_hits */
     uint32_t row_plays;      /* list rows activated by double click (MUI-P3-1): stat row_plays */
+    int dbl_race;            /* I724: ENV:Selecta/MUIDblRace was set at open: every double click first gets a forced list refresh (rig knob) */
     uint32_t drops;          /* AppWindow arguments sent to the engine (MUI-P5-6): stat drops */
     sel_tag stats[8];
     char p4_stat[480];       /* MUI-P4: the sentinel printed as ui_p4: how often each P4 gadget sent its line */
@@ -135,6 +148,22 @@ typedef struct mui_state {
     char txt_buf[MUI_ATTR_COUNT][112];
     LONG seek_set, vol_set;         /* values last written by set(): a notify with another value is the user */
     Object* listview;               /* MUI-P3-1 */
+    mui_route route;                /* I794: the shared route history (T1) and the handler that enters the pages (P2, P3) */
+    Object* door_btn[MUI_SIDEBAR_DOORS]; /* I797 (S2): the sidebar door buttons, lit from the route history in mui_route_sync */
+    mui_palette pal;                /* I798 (O1): the command palette model and its window */
+    Object *pal_win, *pal_str, *pal_list, *np_btn, *pal_btn;
+    char tip[MUI_TS_COUNT][96];     /* I798 (O3): the ShortHelp texts, kept alive for MUI */
+    Object* nav_back;               /* I794: top bar Back / Forward, disabled from the route history */
+    Object* nav_fwd;
+    Object* col_page;               /* I794 (P3): album, artist or composer page: header, meta line and the song AAList; replaces the main list while shown */
+    Object* col_list;
+    Object* col_artist;             /* the Artist link of an album page (META_ARTIST) */
+    Object* col_title;
+    Object* col_meta;
+    char col_title_buf[160];
+    char col_meta_buf[224];
+    uint32_t col_serial;            /* the collection serial the list shows */
+    int col_shown;                  /* 1 while col_page replaces the list */
     Object* list;
     mui_list_entry entries[MUI_ROWS_MAX];
     const char* entry_ptr[MUI_ROWS_MAX + 1];
@@ -162,6 +191,11 @@ typedef struct mui_state {
     Object* np_album;
     Object* viz_area;               /* I684: the Now Playing visualizer (Selecta_VizArea) and its plugin picker */
     Object* cyc_viz;
+    mui_mainpane pane;              /* I735: the main-slot pane shown (list, Visualizer page, Pattern page) and its opening counters */
+    Object* main_pages;             /* the main slot: a page group of the list, the Visualizer page and the Pattern page */
+    Object* viz_page_area;          /* the Visualizer page: its own Selecta_VizArea over the same vizset (stepped only while shown) */
+    Object* cyc_viz_page;
+    Object* trk_page_list;          /* the Pattern page rows, over the same trk_ptr as the detail tab */
     mui_vizset vizset;
     mui_find_plugin_fn find_plugin;
     Object* np_lyrics;
@@ -170,6 +204,11 @@ typedef struct mui_state {
     char np_lyric_buf[1024];
     char np_up_buf[3][96];
     Object* info_list;              /* MUI-P4-9 song info rows */
+    uint32_t lib_filter;            /* I670: the library filter in force (sel_uim_lfilter_*), 0 All */
+    Object* side_dyn;               /* I669: the sidebar's S5 to S9 group, rebuilt from the model when the filter or the width moves */
+    int side_top_bar, side_single;  /* the top bar flag of the build; the chips-or-label decision the dyn group was built with */
+    sel_engine_library_item side_items[MUI_SIDEBAR_ROWS]; /* the rows the shared filter pass (sel_uim_lfilter_pass) returned for lib_filter */
+    uint32_t side_item_n;
     char info_buf[MUI_INFO_MAX][128];
     const char* info_ptr[MUI_INFO_MAX + 1];
     Object* trk_list;               /* MUI-P4-16 pattern rows, shown only when the engine answered with pattern data */
@@ -191,6 +230,26 @@ typedef struct mui_state {
     uint32_t list_sig;
     LONG list_active_set;
     mui_list_pending list_pending;  /* the clicked row until the engine snapshot shows it */
+    Object* home_page;              /* I795 (P1): quick tile row and shelves; replaces the main list on Home and on a Show all page */
+    Object* quick_row;
+    Object* quick_btn[MUI_HOME_QUICK_MAX];
+    Object* shelf_grp[MUI_HOME_SHELF_MAX];
+    Object* shelf_head[MUI_HOME_SHELF_MAX];
+    Object* shelf_all[MUI_HOME_SHELF_MAX];
+    Object* shelf_list[MUI_HOME_SHELF_MAX];
+    char shelf_head_buf[MUI_HOME_SHELF_MAX][96];
+    mui_shelf_ctx shelf_ctx[MUI_HOME_SHELF_MAX];
+    uint32_t shelf_first[MUI_HOME_SHELF_MAX], shelf_id[MUI_HOME_SHELF_MAX]; /* window row of the first entry the slot lists, the shelf it shows */
+    mui_home_page home;
+    uint32_t home_sig;
+    Object* browse_page;            /* I795 (P4): the Browse tile grid */
+    Object* tile_btn[MUI_TILE_MAX];
+    mui_btile tile[MUI_TILE_MAX];
+    uint32_t tile_n, tile_sig;
+    Object* facet_row;              /* I795 (P5): the Search facet chips above the results */
+    Object* facet_btn[SEL_UIM_SEARCH_FACETS];
+    uint32_t search_facet;
+    int home_shown, browse_shown, facet_shown;
 #endif
 } mui_state;
 
@@ -230,6 +289,7 @@ static const uint32_t g_tool_which[MUI_TOOL_BTNS] = {P4_LIKE, P4_QREMOVE, P4_QCL
 #define CTL_SM_BASE 0x2500L /* MUI-P4-6: Song menu items, CTL_SM_BASE + item */
 #define CTL_PREF_BASE 0x2600L /* MUI-P4-10: Settings gadgets, CTL_PREF_BASE + pref row */
 #define CTL_CLIP_COPY 0x2120L /* Edit > Copy Song Title (MUI-P5-6), outside the MENU_ID_BASE + row range */
+#define CTL_PANE_BASE 0x2130L /* I735: View > Visualizer Page, Pattern Page: CTL_PANE_BASE + mui_pane (MUI_PANE_VIZ, MUI_PANE_TRACKER) */
 static mui_menu_item g_menu[MENU_MAX];
 static char g_menu_sc[MENU_MAX][2];
 static uint32_t g_menu_n;
@@ -340,6 +400,24 @@ static Object* mui_menu_strip(void) {
         }
     }
     {
+        /* I735: the Visualizer and Pattern pages open from View, with the Mac UI's keys (mui_pane_shortcut) as shortcuts. */
+        static char pane_sc[MUI_PANE_COUNT][2];
+        Object* view = menu_child(strip, 1, "View", NULL, t_name, t_obj, &nt, "View");
+        uint32_t p;
+        for (p = MUI_PANE_LIST + 1u; view != NULL && p < MUI_PANE_COUNT; p++) {
+            Object* pi;
+            pane_sc[p][0] = mui_pane_shortcut(p);
+            pane_sc[p][1] = '\0';
+            pi = MUI_NewObject((char*)MUIC_Menuitem, MUIA_Menuitem_Title, (ULONG)mui_pane_title(p), MUIA_Menuitem_Shortcut,
+                               (ULONG)(pane_sc[p][0] != '\0' ? pane_sc[p] : NULL), TAG_DONE);
+            if (pi != NULL) {
+                DoMethod(view, OM_ADDMEMBER, pi);
+                DoMethod(pi, MUIM_Notify, MUIA_Menuitem_Trigger, MUIV_EveryTime, MUIV_Notify_Application, 2,
+                         MUIM_Application_ReturnID, (ULONG)(CTL_PANE_BASE + (LONG)p));
+            }
+        }
+    }
+    {
         Object* song = menu_child(strip, 1, "Song", NULL, t_name, t_obj, &nt, "Song");
         if (song != NULL) {
             mui_song_menu_items(song, 0u);
@@ -355,7 +433,11 @@ static int mui_engine_line(mui_state* s, const char* line) {
     static char ring[16][512];
     static uint32_t next;
     char* pool = ring[next++ % 16u];
-    return line != NULL && s->engine != NULL && sel_engine_send_line(s->engine, line, pool, sizeof ring[0]) == SEL_CODEC_OK;
+    int ok = line != NULL && s->engine != NULL && sel_engine_send_line(s->engine, line, pool, sizeof ring[0]) == SEL_CODEC_OK;
+    if (line != NULL && !ok) {
+        fprintf(stderr, "selecta mui: engine refused line \"%s\"\n", line); /* I791: a refused line is not silent */
+    }
+    return ok;
 }
 
 /* A fired Menuitem: the same line the desktop sends for the action id (MUI-P2-4). */
@@ -373,13 +455,31 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_VOLUME 0x2101L
 #define CTL_LIST_DBL 0x2110L
 #define CTL_LIST_SEL 0x2111L
+#define CTL_NAV_BACK 0x2801L   /* I794: top bar Back */
+#define CTL_NAV_FWD 0x2802L    /* I794: top bar Forward */
+#define CTL_COL_LIST 0x2803L   /* I794: a song of the collection page was picked */
+#define CTL_COL_ARTIST 0x2804L /* I794: the Artist link of an album page */
+#define CTL_NP_TOGGLE 0x2805L  /* I798 (T2, R3): Hide / Show Now Playing at the right end of the top bar */
+#define CTL_PAL_BTN 0x2806L    /* I798 (O1): the Commands button opening the palette window */
+#define CTL_PAL_STR 0x2807L    /* the palette window's query String */
+#define CTL_PAL_LIST 0x2808L   /* the palette window's match list */
+#define CTL_DLG_CLOSE 0x2809L  /* I730: the close button of a dialog header (the window closes itself; the id is a no-op) */
 #define CTL_TOPBAR_BROWSE 0x2800L /* I615d: the top bar Browse button */
+#define CTL_QUICK_BASE 0x2A00L      /* I795 (P1): the Home quick tiles, CTL_QUICK_BASE + slot */
+#define CTL_SHELF_ALL_BASE 0x2A10L  /* I795 (P1): Show all of a shelf slot */
+#define CTL_SHELF_LIST_BASE 0x2A20L /* I795 (P1): a row of a shelf slot was picked */
+#define CTL_TILE_BASE 0x2A40L       /* I795 (P4): the Browse tiles, CTL_TILE_BASE + slot */
+#define CTL_FACET_BASE 0x2A80L      /* I795 (P5): the Search facet chips, CTL_FACET_BASE + facet */
 #define CTL_DOOR_BASE 0x2200L /* MUI-P4-0: one button per sidebar door */
 #define MUI_DOOR_MAX 8u
+#define CTL_SIDE_BASE 0x2900L /* I793: the Your Library sidebar presses, CTL_SIDE_BASE + MUI_SIDE_* */
+enum { MUI_SIDE_TITLE = 0, MUI_SIDE_CREATE, MUI_SIDE_EXPAND, MUI_SIDE_CARD, MUI_SIDE_CHIP, MUI_SIDE_COUNT = MUI_SIDE_CHIP + 6 };
 #define CTL_CRUMB_BASE 0x2400L /* MUI-P4-2: one button per breadcrumb piece */
 #define CTL_P4_BASE 0x2300L /* MUI-P4: CTL_P4_BASE + P4_* */
 static const char* const p4_rating_entries[] = {"None", "1 star", "2 stars", "3 stars", "4 stars", "5 stars", NULL};
 static const char* const p4_subsong_entries[] = {"Subsong 1", "Subsong 2", "Subsong 3", "Subsong 4", "Subsong 5", "Subsong 6", "Subsong 7", "Subsong 8", NULL};
+#define CTL_LIB_PREV 0x2810L /* I670: the sidebar library filter, previous and next */
+#define CTL_LIB_NEXT 0x2811L
 #define CTL_EXTRA_BASE 0x2700L /* MUI-P8-1: album and speed buttons of the transport area */
 
 
@@ -413,6 +513,7 @@ static int g_screen_rtg; /* I684b: the Workbench mode is a foreign (RTG) one; th
 
 static void mui_screen_close(void) {
     int i;
+    aatip_drop(NULL); /* I731: the tip window lives on the Selecta screen */
     if (g_scr == NULL) {
         return;
     }
@@ -640,9 +741,9 @@ static Object* mui_make_check(const char* label, int on, LONG id) {
 }
 
 /* I667d (design 3.7): the one text constructor. Every Selecta text line is a Selecta_AAText (mui_aatext_class.c): antialiased in the
- * tone colour (normal TEXT, muted TEXT_MUTED, title TEXT at font + 4 px), aligned and cut with "..." at the width. framed = the
- * status look (panel background and text frame, MUI_TH_STATUS); the tone of a label comes from mui_pens_label_tone. */
-static Object* mui_aatext_sized(const char* contents, const char* widest, int tone, int align, int framed, int hidden) {
+ * tone colour (normal TEXT, muted TEXT_MUTED, title TEXT at font + 4 px), aligned and cut with "..." at the width. Labels carry no
+ * frame and no field box (I740, like the Mac footer: muted text on the window); the tone of a label comes from mui_pens_label_tone. */
+static Object* mui_aatext_sized(const char* contents, const char* widest, int tone, int align, int hidden) {
     mui_aatext_spec sp;
     sp.contents = contents;
     sp.widest = widest;
@@ -650,20 +751,65 @@ static Object* mui_aatext_sized(const char* contents, const char* widest, int to
     sp.tone = tone;
     sp.align = align;
     sp.ellipsis = 1;
-    sp.face = framed; /* I667o: the status look is the AAField face with its paddings, not a square MUI frame */
     sp.frame = (ULONG)MUIV_Frame_None;
     sp.background = 0UL;
     sp.hidden = hidden;
     return mui_aatext_new(&sp);
 }
 
-static Object* mui_aatext(const char* contents, int tone, int align, int framed, int hidden) {
-    return mui_aatext_sized(contents, NULL, tone, align, framed, hidden);
+static Object* mui_aatext(const char* contents, int tone, int align, int hidden) {
+    return mui_aatext_sized(contents, NULL, tone, align, hidden);
+}
+
+/* I730: the one constructor of every dialog window (Settings, Help, the Commands palette). The attributes come from
+ * mui_dialog_attrs: on the own screen the window is borderless, untitled, centred and fixed, and the root gets our flat header
+ * row (title text + close button; the button takes Esc); on Workbench it keeps the normal borders and title. No per-dialog copy. */
+static Object* mui_dialog_window(const char* title, ULONG id, Object* root) {
+    mui_window_attrs_t da;
+    Object *win, *content = root;
+    mui_dialog_attrs(g_scr != NULL, &da);
+    if (da.header != 0u) {
+        mui_aabtn_spec sp;
+        Object *hdr, *close, *col;
+        sp.caption = "Close";
+        sp.widest = "Close";
+        sp.help = "Close (Esc)";
+        sp.icon = mui_icon_id("close");
+        sp.alt_icon = -1;
+        sp.icon_only = 1;
+        sp.role = MUI_AA_ROLE_GHOST;
+        sp.id = CTL_DLG_CLOSE;
+        sp.selected = 0;
+        sp.weight = 0;
+        sp.align = MUI_AA_ALIGN_CENTRE;
+        close = mui_aabtn_new_key(&sp, 27UL);
+        hdr = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+        col = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+        if (close == NULL || hdr == NULL || col == NULL) {
+            return NULL;
+        }
+        DoMethod(hdr, OM_ADDMEMBER, mui_aatext(title, MUI_AA_TONE_TITLE, MUI_AA_ALIGN_LEFT, 0));
+        DoMethod(hdr, OM_ADDMEMBER, close);
+        DoMethod(col, OM_ADDMEMBER, hdr);
+        DoMethod(col, OM_ADDMEMBER, root);
+        content = col;
+        win = MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, (ULONG)NULL, MUIA_Window_ID, id, MUIA_Window_Borderless, (ULONG)da.borderless,
+                            MUIA_Window_DragBar, (ULONG)da.dragbar, MUIA_Window_DepthGadget, (ULONG)da.depthgadget, MUIA_Window_SizeGadget, (ULONG)da.sizegadget,
+                            MUIA_Window_CloseGadget, (ULONG)da.closegadget, MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Centered,
+                            MUIA_Window_TopEdge, MUIV_Window_TopEdge_Centered, MUIA_Window_RootObject, (ULONG)content, TAG_DONE);
+        if (win != NULL) {
+            DoMethod(close, MUIM_Notify, MUIA_Pressed, FALSE, win, 3, MUIM_Set, MUIA_Window_Open, FALSE);
+        }
+        return win;
+    }
+    return MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, da.titled ? (ULONG)title : (ULONG)NULL, MUIA_Window_ID, id,
+                         MUIA_Window_Borderless, (ULONG)da.borderless, MUIA_Window_DragBar, (ULONG)da.dragbar, MUIA_Window_DepthGadget, (ULONG)da.depthgadget,
+                         MUIA_Window_SizeGadget, (ULONG)da.sizegadget, MUIA_Window_CloseGadget, (ULONG)da.closegadget, MUIA_Window_RootObject, (ULONG)content, TAG_DONE);
 }
 
 static Object* mui_make_text(mui_state* s, uint32_t attr, const char* initial, mui_label label) {
     snprintf(s->txt_buf[attr], sizeof s->txt_buf[attr], "%s", initial);
-    s->txt[attr] = mui_aatext_sized(s->txt_buf[attr], mui_attr_fixwidth(attr), mui_pens_label_tone(label), MUI_AA_ALIGN_LEFT, 1, 0);
+    s->txt[attr] = mui_aatext_sized(s->txt_buf[attr], mui_attr_fixwidth(attr), mui_pens_label_tone(label), MUI_AA_ALIGN_LEFT, 0);
     return s->txt[attr];
 }
 
@@ -680,6 +826,16 @@ static Object* mui_make_slider(long lo, long hi, long value, LONG id, long fix_w
     return mui_aaslider_new(&sp);
 }
 
+/* I798 (O3): give `obj` the ShortHelp from the one shared tip function (mui_tip) in the persistent buffer of `slot`. */
+static void mui_set_tip(mui_state* s, uint32_t slot, Object* obj, uint32_t kind, uint32_t index, const sel_uim_frame* f, int flag) {
+    if (s == NULL || obj == NULL || slot >= MUI_TS_COUNT) {
+        return;
+    }
+    if (mui_tip(kind, index, f, flag, s->tip[slot], sizeof s->tip[slot]) > 0u) {
+        SetAttrs(obj, MUIA_ShortHelp, (ULONG)s->tip[slot], TAG_DONE);
+    }
+}
+
 /* I667e (design 3.8): the one panel constructor. Every Selecta panel group is a Selecta_AAPanel (mui_aapanel_class.c): a rounded face in
  * the role token colour (panel, surface, raised) over the window background. fixed_px > 0 is the square art frame. */
 static Object* mui_aapanel(int role, int fixed_px) {
@@ -690,22 +846,128 @@ static Object* mui_aapanel(int role, int fixed_px) {
     return mui_aapanel_new(&sp);
 }
 
-/* MUI-P4-0: the sidebar slot content, one button per door of the shared uimodel table (mui_door_label). */
-static Object* mui_sidebar_group(int top_bar) {
-    Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
-    uint32_t i;
-    for (i = 0; g != NULL && i < mui_door_count() && i < MUI_DOOR_MAX; i++) {
-        Object* b;
-        if (!sel_uim_door_shown(i, top_bar)) { /* I615d (design 8.4): the top bar owns Home and Search */
-            continue;
-        }
-        b = mui_make_button_left(mui_door_label(i), sel_uim_door_at(i)->page, CTL_DOOR_BASE + (LONG)i);
-        if (b != NULL) {
-            DoMethod(g, OM_ADDMEMBER, b);
-        }
+/* I793 (drift doc S3 to S9): the sidebar slot content. Everything shown comes from mui_sidebar_build (map/mui_sidebar.c): the doors
+ * (Browse Folders left out, the header opens that page), the Your Library header with Create Playlist and Expand, the kind chips,
+ * the item rows, the empty state and the Create your first playlist card. CTL_SIDE_BASE + MUI_SIDE_* routes the presses. */
+static void mui_side_add(Object* g, Object* o) {
+    if (o != NULL) {
+        DoMethod(g, OM_ADDMEMBER, o);
     }
-    if (g != NULL) {
-        DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+}
+
+/* One left aligned sidebar line (a text of the sidebar model) and one left aligned button; each is one construction site. */
+static void mui_side_text(Object* g, const char* text, int tone) {
+    mui_side_add(g, mui_aatext(text, tone, MUI_AA_ALIGN_LEFT, 0));
+}
+
+static void mui_side_button(Object* g, const char* label, LONG id) {
+    mui_side_add(g, mui_make_button_left(label, NULL, id));
+}
+static void mui_lib_press(mui_state* s, int dir, int chip);
+static Object* mui_sidebar_dyn(const mui_sidebar_model* m);
+
+/* I669: the dynamic part of the sidebar, S5 to S9, built from the model alone. */
+static Object* mui_sidebar_dyn(const mui_sidebar_model* m) {
+    Object* d = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+    uint32_t i;
+    if (d == NULL) {
+        return NULL;
+    }
+    if (m->chip_single) { /* S5, chips do not fit: one label naming the filter in force between Previous and Next, the label takes no click (I669) */
+        Object* row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+        if (row != NULL) {
+            DoMethod(row, OM_ADDMEMBER, mui_make_button_icon(m->chip_left_name, m->chip_left_clear ? "close" : "prev_album", CTL_LIB_PREV));
+            mui_side_add(row, mui_aatext(m->chip_label, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_CENTRE, 0));
+            DoMethod(row, OM_ADDMEMBER, mui_make_button_icon("Next Filter", "next_album", CTL_LIB_NEXT));
+            DoMethod(d, OM_ADDMEMBER, row);
+        }
+    } else { /* S5, chips fit: one row, a click toggles the filter */
+        Object* row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+        for (i = 0; row != NULL && i < SEL_UIM_SIDE_CHIPS; i++) {
+            if (m->chip_shown[i]) {
+                mui_side_button(row, m->chip[i], CTL_SIDE_BASE + MUI_SIDE_CHIP + (LONG)i);
+            }
+        }
+        mui_side_add(d, row);
+    }
+    for (i = 0; i < m->row_n; i++) { /* S6: mark, title, subtitle; the model rows are the filtered rows, the only row list */
+        char line[200];
+        snprintf(line, sizeof line, "%s  %s  %s", m->row[i].mark, m->row[i].title, m->row[i].subtitle);
+        mui_side_text(d, line, MUI_AA_TONE_NORMAL);
+    }
+    if (m->empty[0] != '\0') { /* S8 */
+        mui_side_text(d, m->empty, MUI_AA_TONE_MUTED);
+    }
+    if (m->card) { /* S9 */
+        mui_side_text(d, m->card_title, MUI_AA_TONE_TITLE);
+        mui_side_text(d, m->card_body, MUI_AA_TONE_MUTED);
+        mui_side_button(d, m->card_button, CTL_SIDE_BASE + MUI_SIDE_CARD);
+    }
+    DoMethod(d, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    return d;
+}
+
+/* The model of the sidebar for the filter in force: the rows are s->side_items, passed by sel_uim_lfilter_pass (mui_sidebar_fill). */
+static void mui_sidebar_model_for(mui_state* s, int top_bar, mui_sidebar_model* m) {
+    mui_sidebar_in in;
+    memset(&in, 0, sizeof in);
+    in.top_bar = top_bar;
+    in.bitmap = 0;
+    in.chip = s != NULL ? s->lib_filter : 0u;
+    in.chips_single = mui_sidebar_chips_single(!g_screen_rtg, s != NULL && s->lay.weight_w[MUI_SLOT_SIDEBAR] > 0u ? s->lay.weight_w[MUI_SLOT_SIDEBAR] : 0u);
+    in.filter = "";
+    in.item_n = s != NULL ? s->side_item_n : 0u;
+    in.items = s != NULL ? s->side_items : NULL;
+    mui_sidebar_build(&in, m);
+    if (s != NULL) {
+        s->side_single = m->chip_single;
+    }
+}
+
+static Object* mui_sidebar_group(mui_state* s, int top_bar) {
+    Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
+    mui_sidebar_model m;
+    Object* hd;
+    uint32_t i, k;
+    if (g == NULL) {
+        return NULL;
+    }
+    if (s != NULL) {
+        s->side_top_bar = top_bar;
+        s->side_item_n = sel_uim_lfilter_pass(s->engine, s->lib_filter, s->side_items, MUI_SIDEBAR_ROWS, NULL); /* the shared filter pass */
+    }
+    mui_sidebar_model_for(s, top_bar, &m);
+    hd = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE); /* S1: the brand, an accent logo tile then the name (draw_sidebar) */
+    if (hd != NULL) {
+        if (m.brand_icon[0] != '\0') {
+            mui_side_add(hd, mui_make_button_i(m.brand, m.brand, m.brand_icon, NULL, 0, 0, 1, MUI_AA_ROLE_ACCENT)); /* id 0: not a control */
+        }
+        mui_side_text(hd, m.brand, MUI_AA_TONE_TITLE);
+        DoMethod(g, OM_ADDMEMBER, hd);
+    }
+    for (k = 0; k < m.door_n; k++) { /* S3 */
+        i = m.door[k];
+        Object* b = mui_make_button_left(mui_door_label(i), sel_uim_door_at(i)->page, CTL_DOOR_BASE + (LONG)i);
+        if (s != NULL && i < MUI_SIDEBAR_DOORS) {
+            s->door_btn[i] = b; /* S2: lit by mui_route_sync */
+            mui_set_tip(s, MUI_TS_DOOR + i, b, MUI_TIP_DOOR, i, NULL, 0);
+            SetAttrs(b, AATIP_A_Side, MUI_AA_TIP_RIGHT, TAG_DONE); /* I731: the sidebar door tip opens beside the door, not over the next one */
+        }
+        mui_side_add(g, b);
+    }
+    hd = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE); /* S4: title, Create Playlist, Expand */
+    if (hd != NULL) {
+        Object* t = mui_make_button_ex(m.title, m.title, "library", NULL, CTL_SIDE_BASE + MUI_SIDE_TITLE, 100, 0, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_LEFT);
+        Object* c = mui_make_button_ex(m.create, m.create, "New Playlist", NULL, CTL_SIDE_BASE + MUI_SIDE_CREATE, 0, 1, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_CENTRE);
+        Object* x = mui_make_button_ex(m.expand, m.expand, "crumb", NULL, CTL_SIDE_BASE + MUI_SIDE_EXPAND, 0, 1, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_CENTRE);
+        if (t != NULL) { DoMethod(hd, OM_ADDMEMBER, t); }
+        if (c != NULL) { DoMethod(hd, OM_ADDMEMBER, c); }
+        if (x != NULL) { DoMethod(hd, OM_ADDMEMBER, x); }
+        DoMethod(g, OM_ADDMEMBER, hd);
+    }
+    if (s != NULL) {
+        s->side_dyn = mui_sidebar_dyn(&m);
+        mui_side_add(g, s->side_dyn);
     }
     return g;
 }
@@ -729,18 +991,23 @@ static Object* mui_p8_extras_row(void) {
     return row;
 }
 
-/* The transport row and frame texts: three rows of one VGroup (the PLAYER slot content). */
+/* I796 (drift B1-B4, research 2026-10-30-mui-mac-drift.md): the player bar is the Mac's three columns in one HGroup. Left: the cover art
+ * frame and the title with the Like heart beside it, the artist under it (draw_player_left). Centre: the transport icons in the Mac order
+ * (mui_player_transport_at) above the seek row. Right: the volume slider, the album and speed extras, the format and the status.
+ * The column weights are MUI_PLAYER_W_* of the map layer. */
 static Object* mui_player_group(mui_state* s) {
     sel_uim_frame zero;
-    Object *row1, *row2, *row3, *g;
-    uint32_t i;
+    Object *row1, *row2, *row3, *row4, *row5, *g, *art, *hbar, *colL, *colC, *colR, *titles, *like;
+    uint32_t k;
     memset(&zero, 0, sizeof zero);
     row1 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
-    for (i = 0; row1 != NULL && i < MUI_BTN_COUNT; i++) {
+    for (k = 0; row1 != NULL && k < MUI_BTN_COUNT; k++) {
+        uint32_t i = mui_player_transport_at(k);
         s->btn_label[i] = mui_transport_label(i, &zero);
         s->btn[i] = mui_make_button_i(s->btn_label[i], mui_transport_widest(i), mui_transport_action(i, &zero), i == MUI_BTN_PLAY ? "pause" : NULL,
                                       CTL_BTN_BASE + (LONG)i, 100, mui_transport_icon_only(i), i == MUI_BTN_PLAY ? MUI_AA_ROLE_ACCENT : MUI_AA_ROLE_NORMAL);
         if (s->btn[i] != NULL) {
+            mui_set_tip(s, MUI_TS_BTN + i, s->btn[i], MUI_TIP_TRANSPORT, i, &zero, 0);
             DoMethod(row1, OM_ADDMEMBER, s->btn[i]);
         }
     }
@@ -748,23 +1015,46 @@ static Object* mui_player_group(mui_state* s) {
     s->seek = mui_make_slider(0, MUI_SEEK_MAX, 0, CTL_SEEK, 0);
     row2 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     row3 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    row4 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    row5 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    art = mui_aapanel(MUI_AA_PANEL_RAISED, MUI_PLAYER_ART_PX);
+    like = mui_make_button_icon(mui_tool_labels[0], mui_tool_labels[0], CTL_P4_BASE + P4_LIKE);
+    mui_set_tip(s, MUI_TS_LIKE, like, MUI_TIP_LIKE, 0, NULL, 0);
+    mui_set_tip(s, MUI_TS_SEEK, s->seek, MUI_TIP_SEEK, 0, NULL, 0);
+    mui_set_tip(s, MUI_TS_VOL, s->vol, MUI_TIP_VOLUME, 0, NULL, 0);
+    titles = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+    colL = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_HorizWeight, MUI_PLAYER_W_LEFT, TAG_DONE);
+    colC = MUI_NewObject((char*)MUIC_Group, MUIA_HorizWeight, MUI_PLAYER_W_CENTRE, TAG_DONE);
+    colR = MUI_NewObject((char*)MUIC_Group, MUIA_HorizWeight, MUI_PLAYER_W_RIGHT, TAG_DONE);
+    hbar = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     g = mui_aapanel(MUI_AA_PANEL_SURFACE, 0);
-    if (row1 == NULL || row2 == NULL || row3 == NULL || g == NULL || s->vol == NULL || s->seek == NULL) {
+    if (row1 == NULL || row2 == NULL || row3 == NULL || row4 == NULL || row5 == NULL || g == NULL || s->vol == NULL || s->seek == NULL || art == NULL ||
+        like == NULL || titles == NULL || colL == NULL || colC == NULL || colR == NULL || hbar == NULL) {
         return NULL;
     }
+    DoMethod(art, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE)); /* a group needs one child; the cover itself is the Now Playing art */
     DoMethod(row2, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_CLOCK, "0:00 ", MUI_LBL_CLOCK));
     DoMethod(row2, OM_ADDMEMBER, s->seek);
     DoMethod(row2, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_REMAINING, "-0:00", MUI_LBL_REMAINING));
     DoMethod(row2, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_LENGTH, "0:00 ", MUI_LBL_LENGTH));
-    DoMethod(row2, OM_ADDMEMBER, s->vol); /* I717: volume at the right end of the seek row, like the Mac player bar */
     DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_TITLE, "No song", MUI_LBL_TITLE));
-    DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_ARTIST, "", MUI_LBL_ARTIST));
-    DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_FORMAT, "        ", MUI_LBL_FORMAT));
-    DoMethod(row3, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_STATUS, "Stopped", MUI_LBL_STATUS));
-    DoMethod(g, OM_ADDMEMBER, row1);
-    DoMethod(g, OM_ADDMEMBER, mui_p8_extras_row());
-    DoMethod(g, OM_ADDMEMBER, row2);
-    DoMethod(g, OM_ADDMEMBER, row3);
+    DoMethod(row3, OM_ADDMEMBER, like); /* B4: the heart beside the title */
+    DoMethod(titles, OM_ADDMEMBER, row3);
+    DoMethod(titles, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_ARTIST, "", MUI_LBL_ARTIST));
+    DoMethod(colL, OM_ADDMEMBER, art);
+    DoMethod(colL, OM_ADDMEMBER, titles);
+    DoMethod(colC, OM_ADDMEMBER, row1);
+    DoMethod(colC, OM_ADDMEMBER, row2);
+    DoMethod(row4, OM_ADDMEMBER, s->vol); /* I717: volume at the right end of the bar, like the Mac player bar */
+    DoMethod(row5, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_FORMAT, "        ", MUI_LBL_FORMAT));
+    DoMethod(row5, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_STATUS, "Stopped", MUI_LBL_STATUS));
+    DoMethod(colR, OM_ADDMEMBER, row4);
+    DoMethod(colR, OM_ADDMEMBER, mui_p8_extras_row());
+    DoMethod(colR, OM_ADDMEMBER, row5);
+    DoMethod(hbar, OM_ADDMEMBER, colL);
+    DoMethod(hbar, OM_ADDMEMBER, colC);
+    DoMethod(hbar, OM_ADDMEMBER, colR);
+    DoMethod(g, OM_ADDMEMBER, hbar);
     return g;
 }
 
@@ -801,14 +1091,22 @@ static void mui_list_header(char* out, size_t cap) {
     }
 }
 
+/* I733: the search field hint, from the shared model; the top bar form on the RTG tier, else the facet form. */
+static const char* mui_search_hint(void) {
+    static char hint[48];
+    sel_uim_search_hint(g_screen_rtg, sel_uim_search_facets, SEL_UIM_SEARCH_FACETS, hint, sizeof hint);
+    return hint;
+}
+
 /* MUI-P3-1: the 3.8 Listview with its plain List (the back end mui_list_backend_pick gives without NList). */
-static Object* mui_make_string(LONG id, int max_w) {
+static Object* mui_make_string(LONG id, int max_w, const char* placeholder) {
     /* I667h (design 3.4): every string gadget is a Selecta_AAField (mui_aafield_class.c). */
     mui_aafield_spec sp;
     sp.tokens = g_tokens;
     sp.maxlen = 159;
     sp.id = id;
     sp.max_w = max_w;
+    sp.placeholder = placeholder;
     return mui_aafield_new(&sp);
 }
 
@@ -833,9 +1131,18 @@ static Object* mui_topbar_group(mui_state* s) {
     if (g == NULL || !g_screen_rtg) {
         return g;
     }
-    s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH, (int)SEL_UIM_TOPBAR_FIELD_MAX);
+    s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH, (int)SEL_UIM_TOPBAR_FIELD_MAX, mui_search_hint());
+    mui_set_tip(s, MUI_TS_SEARCH, s->str_search, MUI_TIP_SEARCH, 0, NULL, 0);
     mui_theme_bg_spec(g_tokens[SEL_GUI_TOKEN_DIVIDER], div_spec, sizeof div_spec);
     DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    s->nav_back = mui_make_button_i("Back", "Back", "nav_back", NULL, CTL_NAV_BACK, 0, 1, MUI_AA_ROLE_NORMAL); /* I794 (T1): ahead of Home */
+    s->nav_fwd = mui_make_button_i("Forward", "Forward", "nav_forward", NULL, CTL_NAV_FWD, 0, 1, MUI_AA_ROLE_NORMAL);
+    if (s->nav_back != NULL && s->nav_fwd != NULL) {
+        set(s->nav_back, MUIA_Disabled, TRUE);
+        set(s->nav_fwd, MUIA_Disabled, TRUE);
+        DoMethod(g, OM_ADDMEMBER, s->nav_back);
+        DoMethod(g, OM_ADDMEMBER, s->nav_fwd);
+    }
     DoMethod(g, OM_ADDMEMBER, mui_make_button_i("Home", "Home", "home", NULL, CTL_DOOR_BASE + 0, 0, 1, MUI_AA_ROLE_NORMAL));
     if (s->str_search != NULL) {
         DoMethod(g, OM_ADDMEMBER, s->str_search);
@@ -843,6 +1150,16 @@ static Object* mui_topbar_group(mui_state* s) {
     DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, MUIA_FixWidth, 1, MUIA_Background, (ULONG)div_spec, TAG_DONE));
     DoMethod(g, OM_ADDMEMBER, mui_make_button_i("Browse", "Browse", "library", NULL, CTL_TOPBAR_BROWSE, 0, 1, MUI_AA_ROLE_NORMAL));
     DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    s->pal_btn = mui_make_button_i("Commands", "Commands", "Help", NULL, CTL_PAL_BTN, 0, 1, MUI_AA_ROLE_NORMAL); /* I798 (O1) */
+    s->np_btn = mui_make_button_i(sel_uim_tip_np_panel(0), sel_uim_tip_np_panel(0), "nav_forward", "nav_back", CTL_NP_TOGGLE, 0, 1, MUI_AA_ROLE_NORMAL); /* I798 (T2, R3): the right end */
+    if (s->pal_btn != NULL) {
+        mui_set_tip(s, MUI_TS_PAL, s->pal_btn, MUI_TIP_PALETTE, 0, NULL, 0);
+        DoMethod(g, OM_ADDMEMBER, s->pal_btn);
+    }
+    if (s->np_btn != NULL) {
+        mui_set_tip(s, MUI_TS_NP, s->np_btn, MUI_TIP_NP_PANEL, 0, NULL, (int)s->lay.detail_hidden);
+        DoMethod(g, OM_ADDMEMBER, s->np_btn);
+    }
     return g;
 }
 
@@ -858,13 +1175,15 @@ static Object* mui_tool_group(mui_state* s) {
         return NULL;
     }
     if (!g_screen_rtg) { /* I615d: on the DEFAULT tier the search field lives in the top bar */
-        s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH, 0);
+        s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH, 0, mui_search_hint());
+        mui_set_tip(s, MUI_TS_SEARCH, s->str_search, MUI_TIP_SEARCH, 0, NULL, 0);
     }
-    s->str_cmd = mui_make_string(CTL_P4_BASE + P4_CMD, 0);
+    s->str_cmd = mui_make_string(CTL_P4_BASE + P4_CMD, 0, SEL_UIM_CMD_HINT);
+    mui_set_tip(s, MUI_TS_CMD, s->str_cmd, MUI_TIP_CMD, 0, NULL, 0);
     s->cyc_rating = mui_make_cycle(p4_rating_entries, 0, CTL_P4_BASE + P4_RATING);
     s->cyc_subsong = mui_make_cycle(p4_subsong_entries, 0, CTL_P4_BASE + P4_SUBSONG);
     snprintf(s->status_buf, sizeof s->status_buf, "Ready");
-    s->status = mui_aatext(s->status_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1, 0);
+    s->status = mui_aatext(s->status_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0);
     if ((!g_screen_rtg && s->str_search == NULL) || s->str_cmd == NULL || s->cyc_rating == NULL || s->cyc_subsong == NULL || s->status == NULL) {
         return NULL;
     }
@@ -873,6 +1192,9 @@ static Object* mui_tool_group(mui_state* s) {
     }
     DoMethod(r1, OM_ADDMEMBER, s->str_cmd);
     for (i = 0; i < MUI_TOOL_BTNS; i++) {
+        if (g_tool_which[i] == P4_LIKE) {
+            continue; /* I796 B4: Like lives beside the title in the player bar */
+        }
         /* New Playlist is the accent button of the row (design 3.1); the others are plain icon buttons. */
         Object* b = g_tool_which[i] == P4_PNEW
                         ? mui_make_button_i(mui_tool_labels[i], mui_tool_labels[i], mui_tool_labels[i], NULL, CTL_P4_BASE + (LONG)g_tool_which[i], 100, 1, MUI_AA_ROLE_ACCENT)
@@ -931,15 +1253,166 @@ static const char* mui_lyric_row(void* ctx, long row) {
 }
 
 /* One AAList (list and flat AAScroller) over a string array; *list_out is the list object. */
-static Object* mui_string_aalist(void* ctx, long count, int rows, Object** list_out) {
+static Object* mui_row_aalist(const char* (*row_fn)(void*, long), void* ctx, long count, int rows, Object** list_out) {
     mui_aalist_spec sp;
     memset(&sp, 0, sizeof sp);
     sp.count = count;
     sp.active = -1;
-    sp.row = mui_ptr_row;
+    sp.row = row_fn;
     sp.ctx = ctx;
     sp.max_rows = rows;
     return mui_aalist_new(&sp, list_out);
+}
+
+static Object* mui_string_aalist(void* ctx, long count, int rows, Object** list_out) {
+    return mui_row_aalist(mui_ptr_row, ctx, count, rows, list_out);
+}
+
+/* I794 (P3): row `row` of the collection page: the file name of the song's path (rows are "path\0plays\0" pairs). */
+static const char* mui_col_row(void* ctx, long row) {
+    mui_state* s = (mui_state*)ctx;
+    const sel_collection_page* pg = sel_engine_state(s->engine)->collection;
+    const char* r;
+    const char* base;
+    long i;
+    if (pg == NULL || pg->rows == NULL || row < 0 || (uint32_t)row >= pg->songs) {
+        return "";
+    }
+    for (r = pg->rows, i = 0; i < row && *r != '\0'; i++) {
+        r += strlen(r) + 1u;
+        r += strlen(r) + 1u;
+    }
+    base = strrchr(r, '/');
+    if (base == NULL) {
+        base = strrchr(r, ':');
+    }
+    return base != NULL ? base + 1 : r;
+}
+
+static int mui_route_send(void* ctx, const char* line) { return mui_engine_line((mui_state*)ctx, line); }
+
+static Object* mui_col_page_group(mui_state* s) {
+    mui_aalist_spec sp;
+    Object* lg;
+    Object* head = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    Object* g = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
+    snprintf(s->col_title_buf, sizeof s->col_title_buf, " ");
+    snprintf(s->col_meta_buf, sizeof s->col_meta_buf, " ");
+    s->col_title = mui_aatext(s->col_title_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1);
+    s->col_meta = mui_aatext(s->col_meta_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0);
+    s->col_artist = mui_make_button_w("Artist", "Artist", CTL_COL_ARTIST, 0);
+    memset(&sp, 0, sizeof sp);
+    sp.active = -1;
+    sp.row = mui_col_row;
+    sp.ctx = s;
+    sp.max_rows = 12;
+    sp.double_pick = 1;
+    lg = mui_aalist_new(&sp, &s->col_list);
+    if (g == NULL || head == NULL || s->col_title == NULL || s->col_meta == NULL || s->col_artist == NULL || lg == NULL || s->col_list == NULL) {
+        return NULL;
+    }
+    DoMethod(s->col_list, MUIM_Notify, AAL_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_COL_LIST);
+    DoMethod(head, OM_ADDMEMBER, s->col_title);
+    DoMethod(head, OM_ADDMEMBER, s->col_artist);
+    DoMethod(g, OM_ADDMEMBER, head);
+    DoMethod(g, OM_ADDMEMBER, s->col_meta);
+    DoMethod(g, OM_ADDMEMBER, lg);
+    return g;
+}
+
+/* I795 (P1): row `row` of a Home shelf list: the text of the engine view row the slot lists from (shelf_first). */
+static const char* mui_shelf_row(void* ctx, long row) {
+    mui_shelf_ctx* c = (mui_shelf_ctx*)ctx;
+    const sel_view_state* v = sel_engine_state(c->s->engine)->view;
+    uint32_t idx = c->s->shelf_first[c->slot] + (uint32_t)row;
+    if (v == NULL || v->rows == NULL || row < 0 || idx >= v->row_n || v->rows[idx].text == NULL) {
+        return "";
+    }
+    return v->rows[idx].text;
+}
+
+/* I795 (P1): the Home page group: the quick tile row, then up to MUI_HOME_SHELF_MAX shelves (header Text, Show all button, a short AAList).
+ * Hidden until mui_route_sync shows it; the slots fill from the view (mui_home_split). */
+static Object* mui_home_page_group(mui_state* s) {
+    Object* g = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
+    uint32_t k;
+    s->quick_row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    if (g == NULL || s->quick_row == NULL) {
+        return NULL;
+    }
+    for (k = 0; k < MUI_HOME_QUICK_MAX; k++) {
+        s->quick_btn[k] = mui_make_button_w(" ", "tile", CTL_QUICK_BASE + (LONG)k, 100);
+        if (s->quick_btn[k] == NULL) {
+            return NULL;
+        }
+        set(s->quick_btn[k], MUIA_ShowMe, FALSE);
+        DoMethod(s->quick_row, OM_ADDMEMBER, s->quick_btn[k]);
+    }
+    DoMethod(g, OM_ADDMEMBER, s->quick_row);
+    for (k = 0; k < MUI_HOME_SHELF_MAX; k++) {
+        mui_aalist_spec sp;
+        Object* lg;
+        Object* head = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+        s->shelf_grp[k] = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
+        snprintf(s->shelf_head_buf[k], sizeof s->shelf_head_buf[k], " ");
+        s->shelf_head[k] = mui_aatext(s->shelf_head_buf[k], MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0);
+        s->shelf_all[k] = mui_make_button_w("Show all", "tile", CTL_SHELF_ALL_BASE + (LONG)k, 0);
+        s->shelf_ctx[k].s = s;
+        s->shelf_ctx[k].slot = k;
+        memset(&sp, 0, sizeof sp);
+        sp.active = -1;
+        sp.row = mui_shelf_row;
+        sp.ctx = &s->shelf_ctx[k];
+        sp.max_rows = (int)MUI_HOME_SHELF_ROWS;
+        sp.double_pick = 1;
+        lg = mui_aalist_new(&sp, &s->shelf_list[k]);
+        if (s->shelf_grp[k] == NULL || head == NULL || s->shelf_head[k] == NULL || s->shelf_all[k] == NULL || lg == NULL || s->shelf_list[k] == NULL) {
+            return NULL;
+        }
+        DoMethod(s->shelf_list[k], MUIM_Notify, AAL_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)(CTL_SHELF_LIST_BASE + (LONG)k));
+        DoMethod(head, OM_ADDMEMBER, s->shelf_head[k]);
+        DoMethod(head, OM_ADDMEMBER, s->shelf_all[k]);
+        DoMethod(s->shelf_grp[k], OM_ADDMEMBER, head);
+        DoMethod(s->shelf_grp[k], OM_ADDMEMBER, lg);
+        DoMethod(g, OM_ADDMEMBER, s->shelf_grp[k]);
+    }
+    return g;
+}
+
+/* I795 (P4): the Browse page: the tiles of mui_browse_tiles in a two column grid (FORMATS_SHOW, COMPOSERS_SHOW, SOURCES). */
+static Object* mui_browse_page_group(mui_state* s) {
+    Object* g = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Columns, 2, MUIA_ShowMe, FALSE, TAG_DONE);
+    uint32_t k;
+    if (g == NULL) {
+        return NULL;
+    }
+    for (k = 0; k < MUI_TILE_MAX; k++) {
+        s->tile_btn[k] = mui_make_button_w(" ", "tile", CTL_TILE_BASE + (LONG)k, 100);
+        if (s->tile_btn[k] == NULL) {
+            return NULL;
+        }
+        set(s->tile_btn[k], MUIA_ShowMe, FALSE);
+        DoMethod(g, OM_ADDMEMBER, s->tile_btn[k]);
+    }
+    return g;
+}
+
+/* I795 (P5): the Search facet chips (sel_uim_search_facets: All, Songs, Albums, Artists), shown while the list's source is Search. */
+static Object* mui_facet_row_group(mui_state* s) {
+    uint32_t k;
+    s->facet_row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_ShowMe, FALSE, TAG_DONE);
+    if (s->facet_row == NULL) {
+        return NULL;
+    }
+    for (k = 0; k < SEL_UIM_SEARCH_FACETS; k++) {
+        s->facet_btn[k] = mui_make_button_ex(sel_uim_search_facets[k], sel_uim_search_facets[k], "tile", NULL, CTL_FACET_BASE + (LONG)k, 100, 0, MUI_AA_ROLE_TOGGLE, MUI_AA_ALIGN_CENTRE);
+        if (s->facet_btn[k] == NULL) {
+            return NULL;
+        }
+        DoMethod(s->facet_row, OM_ADDMEMBER, s->facet_btn[k]);
+    }
+    DoMethod(s->facet_row, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    return s->facet_row;
 }
 
 static Object* mui_main_group(mui_state* s) {
@@ -949,7 +1422,7 @@ static Object* mui_main_group(mui_state* s) {
     mui_main_cols_fill(s->col_bp, &s->main_cols);
     g_list_hook.h_Entry = (__typeof__(g_list_hook.h_Entry))(void (*)(void))HookEntry;
     g_list_hook.h_SubEntry = (__typeof__(g_list_hook.h_SubEntry))(void (*)(void))mui_list_display;
-    s->crumb = mui_aatext(" ", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0, 1);
+    s->crumb = mui_aatext(" ", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1);
     {
         mui_aalist_spec sp;
         Object* lg;
@@ -983,7 +1456,7 @@ static Object* mui_main_group(mui_state* s) {
     }
     DoMethod(g, OM_ADDMEMBER, s->crumb);
     s->crumb_row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_ShowMe, FALSE, TAG_DONE);
-    s->state_txt = mui_aatext(" ", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0, 1);
+    s->state_txt = mui_aatext(" ", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1);
     if (s->crumb_row == NULL || s->state_txt == NULL) {
         return NULL;
     }
@@ -1002,6 +1475,19 @@ static Object* mui_main_group(mui_state* s) {
     DoMethod(s->crumb_row, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
     DoMethod(g, OM_ADDMEMBER, s->crumb_row);
     DoMethod(g, OM_ADDMEMBER, s->state_txt);
+    s->col_page = mui_col_page_group(s);
+    if (s->col_page == NULL) {
+        return NULL;
+    }
+    DoMethod(g, OM_ADDMEMBER, s->col_page);
+    s->home_page = mui_home_page_group(s);
+    s->browse_page = mui_browse_page_group(s);
+    if (s->home_page == NULL || s->browse_page == NULL || mui_facet_row_group(s) == NULL) {
+        return NULL;
+    }
+    DoMethod(g, OM_ADDMEMBER, s->home_page);
+    DoMethod(g, OM_ADDMEMBER, s->browse_page);
+    DoMethod(g, OM_ADDMEMBER, s->facet_row);
     DoMethod(g, OM_ADDMEMBER, s->listview);
     /* MUI-P5-1: the canvas object sits beside the list, hidden until the style switch (MUI-P3-5) shows it. */
     {
@@ -1021,7 +1507,7 @@ static Object* mui_main_group(mui_state* s) {
  * signature of the shown values changes. */
 static Object* mui_np_text(char* buf, size_t cap, const char* init, mui_label label) {
     snprintf(buf, cap, "%s", init);
-    return mui_aatext(buf, mui_pens_label_tone(label), MUI_AA_ALIGN_LEFT, 0, 0);
+    return mui_aatext(buf, mui_pens_label_tone(label), MUI_AA_ALIGN_LEFT, 0);
 }
 
 static Object* mui_detail_group(mui_state* s) {
@@ -1085,7 +1571,7 @@ static Object* mui_detail_group(mui_state* s) {
             if (lyr_view != NULL) {
                 DoMethod(page_lyr, OM_ADDMEMBER, lyr_view);
             }
-            DoMethod(page_lyr, OM_ADDMEMBER, mui_aatext("Next in Queue", mui_pens_label_tone(MUI_LBL_SECTION), MUI_AA_ALIGN_CENTRE, 0, 0));
+            DoMethod(page_lyr, OM_ADDMEMBER, mui_aatext("Next in Queue", mui_pens_label_tone(MUI_LBL_SECTION), MUI_AA_ALIGN_CENTRE, 0));
             for (i = 0; i < 3; i++) {
                 s->np_up[i] = mui_np_text(s->np_up_buf[i], sizeof s->np_up_buf[i], " ", MUI_LBL_UPCOMING);
                 DoMethod(page_lyr, OM_ADDMEMBER, s->np_up[i]);
@@ -1110,6 +1596,45 @@ static Object* mui_detail_group(mui_state* s) {
         }
     }
     return g;
+}
+
+/* I735: the main slot as a page group (MUI 3.8 Group_PageMode): page MUI_PANE_LIST is the song list group, MUI_PANE_VIZ the Visualizer
+ * page, MUI_PANE_TRACKER the Pattern page. The Visualizer page reuses Selecta_VizArea (its own instance over the same vizset, so the
+ * detail strip and the page both draw the one plugin) with the plugin picker; the Pattern page is an AAList over the rows
+ * mui_detail_refresh fills for the detail tab. Both pages sit in the main slot, which mui_layout_map shows at every width. */
+static Object* mui_main_pages(mui_state* s) {
+    Object* list_g = mui_main_group(s);
+    Object* pages = MUI_NewObject((char*)MUIC_Group, MUIA_Group_PageMode, (ULONG)TRUE, TAG_DONE);
+    Object* viz_g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+    Object* trk_g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+    Object* rows = mui_string_aalist(s->trk_ptr, 0, 16, &s->trk_page_list);
+    if (list_g == NULL || pages == NULL || viz_g == NULL || trk_g == NULL) {
+        return list_g;
+    }
+    if (s->vizset.n > 0u) {
+        s->cyc_viz_page = mui_make_cycle(s->vizset.name_, (LONG)s->vizset.sel, CTL_P4_BASE + P4_VIZPICK);
+        s->viz_page_area = mui_vizarea_new(&s->vizset, g_tokens, g_screen_rtg);
+    }
+    if (s->cyc_viz_page != NULL && s->viz_page_area != NULL) {
+        DoMethod(viz_g, OM_ADDMEMBER, s->viz_page_area);
+        DoMethod(viz_g, OM_ADDMEMBER, s->cyc_viz_page);
+    } else {
+        DoMethod(viz_g, OM_ADDMEMBER, mui_aatext("No visualizer plugin is loaded", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1));
+    }
+    DoMethod(trk_g, OM_ADDMEMBER, rows != NULL ? rows : MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    DoMethod(pages, OM_ADDMEMBER, list_g);
+    DoMethod(pages, OM_ADDMEMBER, viz_g);
+    DoMethod(pages, OM_ADDMEMBER, trk_g);
+    s->main_pages = pages;
+    return pages;
+}
+
+/* The page entry: shows the pane of `page` (mui_pane_open counts it), whatever opened it (the Mac UI's key, the View menu item). */
+static void mui_pane_show(mui_state* s, uint32_t page) {
+    uint32_t pane = mui_pane_open(&s->pane, page);
+    if (s->main_pages != NULL) {
+        set(s->main_pages, MUIA_Group_ActivePage, (ULONG)pane);
+    }
 }
 
 static const char* mui_base_name(const char* path) {
@@ -1260,9 +1785,186 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
             }
         }
         set(s->trk_list, AAL_Count, (ULONG)rows);
+        if (s->trk_page_list != NULL) { /* I735: the Pattern page shows the same rows */
+            set(s->trk_page_list, AAL_Count, (ULONG)rows);
+        }
         set(s->trk_group, MUIA_ShowMe, rows > 0u ? TRUE : FALSE);
     }
 }
+
+/* I795: the joined engine lines of the top bar Browse button; also the history key of the Browse page. */
+static void mui_browse_key(char* out, size_t cap) {
+    uint32_t k;
+    out[0] = '\0';
+    for (k = 0; k < MUI_TOPBAR_BROWSE_LINES; k++) {
+        size_t n = strlen(out);
+        snprintf(out + n, cap - n, "%s%s", k > 0 ? ";" : "", mui_topbar_browse_lines[k]);
+    }
+}
+
+/* A cheap signature of the rows the Home page shows: when it is unchanged the controls keep their captions and counts. */
+static uint32_t mui_home_signature(const sel_view_state* v, const sel_route_entry* cur) {
+    uint32_t h = 2166136261u, k;
+    const char* p;
+    h = (h ^ (cur != NULL ? cur->id + 1u : 0u)) * 16777619u;
+    for (k = 0; k < v->row_n; k++) {
+        h = (h ^ (v->rows[k].kind + 1u)) * 16777619u;
+        for (p = v->rows[k].text != NULL ? v->rows[k].text : ""; *p != '\0'; p++) {
+            h = (h ^ (uint32_t)(unsigned char)*p) * 16777619u;
+        }
+    }
+    return h;
+}
+
+/* I795 (P1): fill the quick tiles and the shelf slots from the Home view. On a Show all page only the chosen shelf shows, with all its rows. */
+static void mui_home_fill(mui_state* s, const sel_view_state* v, const sel_route_entry* cur) {
+    uint32_t k, sig = mui_home_signature(v, cur);
+    int on_shelf = cur != NULL && cur->page == (uint32_t)SEL_ROUTE_PAGE_SHELF;
+    if (sig == s->home_sig) {
+        return;
+    }
+    s->home_sig = sig;
+    mui_home_split(v, &s->home);
+    set(s->quick_row, MUIA_ShowMe, !on_shelf && s->home.quick_n > 0u ? TRUE : FALSE);
+    for (k = 0; k < MUI_HOME_QUICK_MAX; k++) {
+        int on = !on_shelf && k < s->home.quick_n;
+        if (on) {
+            const char* text = v->rows[s->home.quick_first + k].text;
+            mui_aabtn_set_caption(s->quick_btn[k], text != NULL ? text : " ");
+        }
+        set(s->quick_btn[k], MUIA_ShowMe, on ? TRUE : FALSE);
+    }
+    for (k = 0; k < MUI_HOME_SHELF_MAX; k++) {
+        mui_shelf sh;
+        int on = 0;
+        memset(&sh, 0, sizeof sh);
+        if (on_shelf) {
+            on = k == 0u && mui_shelf_find(v, cur->id, &sh) != 0u;
+        } else if (k < s->home.shelf_n) {
+            sh = s->home.shelf[k];
+            sh.count = sh.count > MUI_HOME_SHELF_ROWS ? MUI_HOME_SHELF_ROWS : sh.count;
+            on = 1;
+        }
+        if (on) {
+            const char* text = v->rows[sh.heading].text;
+            s->shelf_first[k] = sh.first;
+            s->shelf_id[k] = sh.id;
+            snprintf(s->shelf_head_buf[k], sizeof s->shelf_head_buf[k], "%s", text != NULL ? text : " ");
+            mui_aatext_set(s->shelf_head[k], s->shelf_head_buf[k]);
+            SetAttrs(s->shelf_list[k], AAL_Count, (ULONG)sh.count, AAL_Active, (ULONG)-1L, TAG_DONE);
+        }
+        set(s->shelf_all[k], MUIA_ShowMe, on && !on_shelf ? TRUE : FALSE);
+        set(s->shelf_grp[k], MUIA_ShowMe, on ? TRUE : FALSE);
+    }
+}
+
+/* I795 (P4): the Browse tiles from the engine's format and composer lists. */
+static void mui_browse_fill(mui_state* s, const sel_state* st) {
+    uint32_t k, sig = (uint32_t)(st->formats != NULL) + 2u * (uint32_t)(st->composers != NULL);
+    mui_btile t[MUI_TILE_MAX];
+    uint32_t n = mui_browse_tiles(st, t, MUI_TILE_MAX);
+    for (k = 0; k < n; k++) {
+        sig = sig * 31u + t[k].count + (uint32_t)(unsigned char)t[k].label[0];
+    }
+    if (sig == s->tile_sig && n == s->tile_n) {
+        return;
+    }
+    s->tile_sig = sig;
+    s->tile_n = n;
+    memcpy(s->tile, t, sizeof s->tile);
+    for (k = 0; k < MUI_TILE_MAX; k++) {
+        if (k < n) {
+            char cap[160];
+            mui_tile_caption(&t[k], cap, sizeof cap);
+            mui_aabtn_set_caption(s->tile_btn[k], cap);
+        }
+        set(s->tile_btn[k], MUIA_ShowMe, k < n ? TRUE : FALSE);
+    }
+}
+
+/* The page that shows in the main panel: the collection page (P3), the Home page and Show all page (P1), the Browse tile page (P4), else
+ * the main list; and the Search facet chips (P5) above the list while its source is Search. */
+static void mui_pages_sync(mui_state* s, const sel_state* st, const sel_route_entry* cur, int col) {
+    const sel_view_state* v = st->view;
+    char key[128];
+    int home = 0, browse = 0, facet = 0;
+    if (v != NULL && v->source == SEL_VIEW_HOME && (cur == NULL || cur->page == (uint32_t)SEL_ROUTE_PAGE_HOME || cur->page == (uint32_t)SEL_ROUTE_PAGE_SHELF)) {
+        home = 1;
+    }
+    mui_browse_key(key, sizeof key);
+    if (cur != NULL && cur->page >= (uint32_t)SEL_ROUTE_PAGE_OTHER_BASE && strcmp(cur->key, key) == 0) {
+        browse = 1;
+    }
+    if (v != NULL && v->source == SEL_VIEW_SEARCH && !col) {
+        facet = 1;
+    }
+    if (home) {
+        mui_home_fill(s, v, cur);
+    }
+    if (browse) {
+        mui_browse_fill(s, st);
+    }
+    if (col != s->col_shown || home != s->home_shown || browse != s->browse_shown || facet != s->facet_shown) {
+        ULONG parent = 0;
+        uint32_t k;
+        s->col_shown = col;
+        s->home_shown = home;
+        s->browse_shown = browse;
+        s->facet_shown = facet;
+        GetAttr(MUIA_Parent, s->col_page, &parent);
+        if (parent != 0) {
+            DoMethod((Object*)parent, MUIM_Group_InitChange);
+        }
+        set(s->col_page, MUIA_ShowMe, col ? TRUE : FALSE);
+        set(s->home_page, MUIA_ShowMe, home ? TRUE : FALSE);
+        set(s->browse_page, MUIA_ShowMe, browse ? TRUE : FALSE);
+        set(s->facet_row, MUIA_ShowMe, facet ? TRUE : FALSE);
+        set(s->listview, MUIA_ShowMe, col || home || browse ? FALSE : TRUE);
+        for (k = 0; k < SEL_UIM_SEARCH_FACETS; k++) {
+            mui_aabtn_set_on(s->facet_btn[k], k == s->search_facet);
+        }
+        if (parent != 0) {
+            DoMethod((Object*)parent, MUIM_Group_ExitChange);
+        }
+    }
+}
+
+/* I794: the route history drives the top bar Back / Forward state and which of the two main views shows: the collection page (P3) when
+ * the history is on an album, artist or composer page the engine has built, else the main list (Home, Show all, doors). */
+static void mui_route_sync(mui_state* s, const sel_state* st) {
+    const sel_collection_page* pg = st->collection;
+    const sel_route_entry* cur = mui_route_cur(&s->route);
+    int col = cur != NULL && mui_route_on_collection(&s->route) && pg != NULL && pg->kind == cur->kind && strcmp(pg->key, cur->key) == 0;
+    int lit = mui_route_lit_door(&s->route); /* I797 (S2): the door of the current page takes the SELECTED face, the others none */
+    uint32_t dk;
+    for (dk = 0; dk < MUI_SIDEBAR_DOORS; dk++) {
+        if (s->door_btn[dk] != NULL) {
+            mui_aabtn_set_on(s->door_btn[dk], (int)dk == lit);
+        }
+    }
+    if (s->nav_back != NULL) {
+        set(s->nav_back, MUIA_Disabled, mui_route_can(&s->route, -1) ? FALSE : TRUE);
+        set(s->nav_fwd, MUIA_Disabled, mui_route_can(&s->route, 1) ? FALSE : TRUE);
+    }
+    if (col && pg->serial != s->col_serial) {
+        s->col_serial = pg->serial;
+        snprintf(s->col_title_buf, sizeof s->col_title_buf, "%s", pg->title);
+        snprintf(s->col_meta_buf, sizeof s->col_meta_buf, "%s%s%s%s%u songs", pg->sub, pg->sub[0] != '\0' ? " - " : "", pg->year != 0u ? "" : "",
+                 pg->year != 0u ? "" : "", (unsigned)pg->songs);
+        if (pg->year != 0u) {
+            size_t n = strlen(s->col_meta_buf);
+            snprintf(s->col_meta_buf + n, sizeof s->col_meta_buf - n, " - %u", (unsigned)pg->year);
+        }
+        mui_aatext_set(s->col_title, s->col_title_buf);
+        mui_aatext_set(s->col_meta, s->col_meta_buf);
+        set(s->col_artist, MUIA_ShowMe, pg->kind == (uint32_t)SEL_LIB_ITEM_ALBUM && pg->sub[0] != '\0' ? TRUE : FALSE);
+        SetAttrs(s->col_list, AAL_Count, (ULONG)pg->songs, AAL_Active, (ULONG)-1L, TAG_DONE);
+    }
+    mui_pages_sync(s, st, cur, col);
+}
+
+static void mui_palette_sync(mui_state* s);
+static void mui_apply_layout(mui_state* s);
 
 static void mui_refresh(mui_state* s) {
     const sel_state* st = sel_engine_state(s->engine);
@@ -1277,11 +1979,18 @@ static void mui_refresh(mui_state* s) {
         mui_aatext_set(s->status, s->status_buf);
         s->p4[P4_TOAST]++;
     }
+    mui_route_sync(s, st);
     s->uim.dirty |= sel_uim_update(&s->uim, st);
     if (s->viz_area != NULL) { /* I684: one visualizer step per wait turn, on the newest engine frame */
         sel_uim_budget vb;
-        if (sel_uim_budget_for(&vb, "rgba32") && mui_vizarea_step(s->viz_area, st->viz, &vb, mui_now_ms())) {
-            s->p4[P4_VIZFRAMES] = mui_vizarea_frames(s->viz_area);
+        if (sel_uim_budget_for(&vb, "rgba32")) {
+            int stepped = mui_vizarea_step(s->viz_area, st->viz, &vb, mui_now_ms()) != 0;
+            if (s->viz_page_area != NULL && s->pane.pane == MUI_PANE_VIZ) { /* I735: the Visualizer page draws only while shown */
+                stepped |= mui_vizarea_step(s->viz_page_area, st->viz, &vb, mui_now_ms()) != 0;
+            }
+            if (stepped) {
+                s->p4[P4_VIZFRAMES] = mui_vizarea_frames(s->viz_area) + (s->viz_page_area != NULL ? mui_vizarea_frames(s->viz_page_area) : 0u);
+            }
         }
     }
     attrs = mui_dirty_attrs(sel_uim_take_dirty(&s->uim));
@@ -1311,9 +2020,11 @@ static void mui_refresh(mui_state* s) {
                 mui_aabtn_set_caption(s->btn[i], label);
                 mui_aabtn_set_on(s->btn[i], mui_transport_on((uint32_t)i, f));
                 mui_aabtn_set_alt(s->btn[i], i == MUI_BTN_PLAY && act != NULL && strcmp(act, "pause") == 0);
+                mui_set_tip(s, MUI_TS_BTN + i, s->btn[i], MUI_TIP_TRANSPORT, i, f, 0); /* set_caption replaced the ShortHelp */
             }
         }
     }
+    mui_palette_sync(s);
     mui_detail_refresh(s, st);
     v = st->view;
     if (v != NULL) {
@@ -1556,8 +2267,7 @@ static void mui_help_open(mui_state* s) {
         if (lst_g == NULL || lst == NULL) {
             return;
         }
-        s->help_win = MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, (ULONG) "Selecta Help", MUIA_Window_ID, 0x48454C50UL,
-                                    MUIA_Window_RootObject, (ULONG)lst_g, TAG_DONE);
+        s->help_win = mui_dialog_window("Selecta Help", 0x48454C50UL, lst_g);
         if (s->help_win == NULL) {
             return;
         }
@@ -1569,6 +2279,64 @@ static void mui_help_open(mui_state* s) {
 
 static int mui_cmd_send(void* ctx, const char* line) {
     return mui_engine_line((mui_state*)ctx, line);
+}
+
+/* I798 (O1): the command palette window: a String over an AAList of the shared txt_palette matches (the Mac palette rows). */
+static void mui_palette_show(mui_state* s) {
+    mui_palette_open(&s->pal);
+    if (s->pal_win == NULL) {
+        Object *lst_g, *str_g;
+        lst_g = mui_row_aalist(mui_palette_row, &s->pal, (long)s->pal.count, 14, &s->pal_list);
+        s->pal_str = mui_make_string(CTL_PAL_STR, 0, "Search commands");
+        str_g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+        if (lst_g == NULL || s->pal_list == NULL || s->pal_str == NULL || str_g == NULL) {
+            return;
+        }
+        DoMethod(str_g, OM_ADDMEMBER, s->pal_str);
+        DoMethod(str_g, OM_ADDMEMBER, lst_g);
+        s->pal_win = mui_dialog_window("Selecta Command Palette", 0x50414C54UL, str_g);
+        if (s->pal_win == NULL) {
+            return;
+        }
+        DoMethod(s->app, OM_ADDMEMBER, s->pal_win);
+        mui_close_on_request(s->pal_win);
+        DoMethod(s->pal_list, MUIM_Notify, AAL_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_PAL_LIST);
+    } else {
+        set(s->pal_str, MUIA_String_Contents, (ULONG) "");
+        SetAttrs(s->pal_list, AAL_Count, (ULONG)s->pal.count, AAL_Active, (ULONG)0, TAG_DONE);
+    }
+    set(s->pal_win, MUIA_Window_Open, TRUE);
+    set(s->pal_win, MUIA_Window_ActiveObject, s->pal_str);
+}
+
+/* Live filter: the String text changed, so narrow the shared palette and redraw the list (called from mui_refresh). */
+static void mui_palette_sync(mui_state* s) {
+    ULONG text = 0, open = 0;
+    if (s->pal_win == NULL || s->pal_str == NULL || s->pal_list == NULL) {
+        return;
+    }
+    GetAttr(MUIA_Window_Open, s->pal_win, &open);
+    GetAttr(MUIA_String_Contents, s->pal_str, &text);
+    if (open != 0 && text != 0 && strcmp((const char*)text, s->pal.query) != 0) {
+        mui_palette_filter(&s->pal, (const char*)text);
+        SetAttrs(s->pal_list, AAL_Count, (ULONG)s->pal.count, AAL_Active, (ULONG)0, TAG_DONE);
+    }
+}
+
+/* Row `row` chosen (click or Enter): a bare verb runs, a verb with arguments fills the command line (the Mac palette_pick). */
+static void mui_palette_choose(mui_state* s, long row) {
+    char fill[64];
+    uint32_t r;
+    fill[0] = '\0';
+    r = mui_palette_pick(&s->pal, row, mui_cmd_send, s, fill, sizeof fill);
+    if (r == MUI_PAL_RUN || r == MUI_PAL_FILL) {
+        if (r == MUI_PAL_FILL) {
+            set(s->str_cmd, MUIA_String_Contents, (ULONG)fill);
+        }
+        snprintf(s->status_buf, sizeof s->status_buf, r == MUI_PAL_RUN ? "Command sent: %s" : "Command needs arguments: %s", s->pal.last_verb);
+        mui_toast_show(&s->toast, s->status_buf, 0, mui_now_ms());
+        set(s->pal_win, MUIA_Window_Open, FALSE);
+    }
 }
 
 /* MUI-P4-6: one Song menu item fired, on the song under the list cursor. The lines come from the shared mapping. */
@@ -1645,7 +2413,7 @@ static Object* mui_pref_gadget(mui_state* s, uint32_t i, const sel_uim_pref_row*
         sscanf(r->choices, "%ld,%ld", &lo, &hi);
         o = mui_make_slider(lo, hi, cur[0] != '\0' ? strtol(cur, NULL, 10) : lo, id, 0);
     } else {
-        o = mui_make_string(id, 0);
+        o = mui_make_string(id, 0, r->label);
         if (o != NULL) {
             set(o, MUIA_String_Contents, (ULONG)cur);
         }
@@ -1671,11 +2439,10 @@ static void mui_settings_open(mui_state* s) {
                 continue;
             }
             s->set_ctl[i] = g;
-            DoMethod(grid, OM_ADDMEMBER, mui_aatext(r->label, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_RIGHT, 0, 0));
+            DoMethod(grid, OM_ADDMEMBER, mui_aatext(r->label, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_RIGHT, 0));
             DoMethod(grid, OM_ADDMEMBER, g);
         }
-        s->set_win = MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, (ULONG) "Selecta Settings", MUIA_Window_ID, 0x53455453UL,
-                                   MUIA_Window_RootObject, (ULONG)grid, TAG_DONE);
+        s->set_win = mui_dialog_window("Selecta Settings", 0x53455453UL, grid);
         if (s->set_win == NULL) {
             return;
         }
@@ -1750,8 +2517,15 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
         break;
     case P4_VIZPICK:
         GetAttr(AAC_Active, s->cyc_viz, &act);
+        if (s->cyc_viz_page != NULL && (uint32_t)act == s->vizset.sel) { /* I735: the page picker fired when the strip one did not move */
+            GetAttr(AAC_Active, s->cyc_viz_page, &act);
+        }
         if ((uint32_t)act < s->vizset.n) {
             s->vizset.sel = (uint32_t)act;
+            set(s->cyc_viz, AAC_Active, act); /* both pickers show the plugin the engine runs */
+            if (s->cyc_viz_page != NULL) {
+                set(s->cyc_viz_page, AAC_Active, act);
+            }
             s->vizset.seq = 0u; /* draw the new plugin on the very next frame */
             if (mui_vizset_line(&s->vizset) != NULL && mui_engine_line(s, mui_vizset_line(&s->vizset))) {
                 mui_p4_note(s, which, mui_vizset_line(&s->vizset));
@@ -1829,6 +2603,101 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
     }
 }
 
+/* A Home row of the engine view is activated (list double click, quick tile, shelf entry): a shelf heading opens its Show all page, a
+ * library tile its collection page (I794), a song plays and an album opens (MUI-P4-1). 1 when it was one of those. */
+static int mui_home_row_fire(mui_state* s, const sel_view_state* view, uint32_t v) {
+    char hl[3][48];
+    const sel_view_row* row = &view->rows[v];
+    const char* text = row->text != NULL ? row->text : "";
+    if (row->kind == SEL_ROW_HEADING && !row->quick) { /* I794 (P2): a shelf heading opens its Show all page */
+        uint32_t shelf = 1, j;
+        for (j = 0; j < v; j++) {
+            if (view->rows[j].kind == SEL_ROW_HEADING && !view->rows[j].quick) {
+                shelf++;
+            }
+        }
+        if (mui_route_click(&s->route, SEL_ROUTE_SHOW_ALL, 0u, shelf, "", text, "", mui_route_send, s)) {
+            return 1;
+        }
+    }
+    if (row->item_kind != 0u && row->key != NULL) { /* I794 (P3): a library tile opens its collection page */
+        mui_list_pending_clear(&s->list_pending);
+        if (mui_route_click(&s->route, SEL_ROUTE_HOME_TILE, row->item_kind - 1u, 0u, row->key, text, "", mui_route_send, s)) {
+            s->p4[P4_HOME]++;
+            return 1;
+        }
+    }
+    if (mui_home_lines(view, v, hl) == 3) {
+        mui_list_pending_clear(&s->list_pending);
+        mui_engine_line(s, hl[0]);
+        mui_engine_line(s, hl[1]);
+        mui_engine_line(s, hl[2]);
+        s->p4[P4_HOME]++;
+        return 1;
+    }
+    return 0;
+}
+
+/* I795 (P4): a Browse tile. A composer opens its collection page (BROWSE_TILE); a format searches "format:<name>"; Sources lists the sources. */
+static void mui_tile_fire(mui_state* s, uint32_t k) {
+    const mui_btile* t;
+    if (k >= s->tile_n) {
+        return;
+    }
+    t = &s->tile[k];
+    if (t->kind == MUI_TILE_COMPOSER) {
+        mui_route_click(&s->route, SEL_ROUTE_BROWSE_TILE, (uint32_t)SEL_LIB_ITEM_COMPOSER, 0u, t->arg, t->label, "", mui_route_send, s);
+    } else if (t->kind == MUI_TILE_FORMAT) {
+        char q[120], lines[3][160], joined[512];
+        uint32_t n, i;
+        snprintf(q, sizeof q, "format:%s", t->arg);
+        n = mui_search_lines(q, lines);
+        joined[0] = '\0';
+        for (i = 0; i < n; i++) {
+            size_t len = strlen(joined);
+            snprintf(joined + len, sizeof joined - len, "%s%s", i > 0u ? ";" : "", lines[i]);
+        }
+        mui_route_door(&s->route, (uint32_t)MUI_DOOR_MAX + 2u, joined, mui_route_send, s);
+    } else {
+        mui_route_door(&s->route, (uint32_t)MUI_DOOR_MAX + 3u, "SOURCES", mui_route_send, s);
+    }
+}
+
+/* I669, I670: a press of a sidebar library filter control. dir -1 and +1 are the chevrons (mui_libfilter_press: the shared step and
+ * clamp), dir 0 with `chip` >= 0 is a click on kind chip `chip` (clicking the one in force clears to All). Both run the shared filter pass
+ * (sel_uim_lfilter_pass) into s->side_items and then rebuild S5 to S9 from the model: the model rows are the one row list. */
+static void mui_sidebar_refresh(mui_state* s) {
+    mui_sidebar_model m;
+    Object* g = s->slot[MUI_SLOT_SIDEBAR];
+    Object* fresh;
+    mui_sidebar_model_for(s, s->side_top_bar, &m);
+    fresh = mui_sidebar_dyn(&m);
+    if (g == NULL || fresh == NULL) {
+        return;
+    }
+    DoMethod(g, MUIM_Group_InitChange);
+    if (s->side_dyn != NULL) {
+        DoMethod(g, OM_REMMEMBER, s->side_dyn);
+        MUI_DisposeObject(s->side_dyn);
+    }
+    s->side_dyn = fresh;
+    DoMethod(g, OM_ADDMEMBER, fresh);
+    DoMethod(g, MUIM_Group_ExitChange);
+}
+
+static void mui_lib_press(mui_state* s, int dir, int chip) {
+    char label[32];
+    uint32_t n = 0u;
+    if (chip >= 0) {
+        uint32_t want = (uint32_t)chip + 1u == s->lib_filter ? 0u : (uint32_t)chip + 1u;
+        s->lib_filter = mui_libfilter_set(want, s->engine, s->side_items, MUI_SIDEBAR_ROWS, &n, label, sizeof label);
+    } else {
+        s->lib_filter = mui_libfilter_press(s->lib_filter, dir, s->engine, s->side_items, MUI_SIDEBAR_ROWS, &n, label, sizeof label);
+    }
+    s->side_item_n = n;
+    mui_sidebar_refresh(s);
+}
+
 static void mui_control_fire(mui_state* s, LONG id) {
     char line[64];
     LONG v = 0;
@@ -1840,13 +2709,98 @@ static void mui_control_fire(mui_state* s, LONG id) {
         if (mui_action_fire(mui_extra_action((uint32_t)(id - CTL_EXTRA_BASE)), mui_p8_send, s)) {
             s->transport_hits++;
         }
+    } else if (id == CTL_NAV_BACK || id == CTL_NAV_FWD) {
+        mui_route_walk(&s->route, id == CTL_NAV_BACK ? -1 : 1, mui_route_send, s); /* I794 (T1) */
+    } else if (id == CTL_COL_ARTIST) {
+        const sel_collection_page* pg = sel_engine_state(s->engine)->collection; /* META_ARTIST: the album page's artist link */
+        if (pg != NULL && pg->sub[0] != '\0') {
+            mui_route_click(&s->route, SEL_ROUTE_META_ARTIST, (uint32_t)SEL_LIB_ITEM_ARTIST, 0u, pg->sub, pg->sub, "", mui_route_send, s);
+        }
+    } else if (id == CTL_COL_LIST) {
+        const sel_collection_page* pg = sel_engine_state(s->engine)->collection;
+        long picked = -1;
+        GetAttr(AAL_Picked, s->col_list, (ULONG*)&picked);
+        if (pg != NULL && pg->rows != NULL && picked >= 0 && (uint32_t)picked < pg->songs) {
+            const char* r = pg->rows;
+            long i;
+            char pl[512];
+            for (i = 0; i < picked; i++) {
+                r += strlen(r) + 1u;
+                r += strlen(r) + 1u;
+            }
+            if (mui_path_line("OPEN", r, pl, sizeof pl) != 0u && mui_engine_line(s, pl) && mui_engine_line(s, "PLAY")) {
+                s->row_plays++;
+            }
+        }
+    } else if (id > CTL_PANE_BASE + (LONG)MUI_PANE_LIST && id < CTL_PANE_BASE + (LONG)MUI_PANE_COUNT) {
+        mui_pane_show(s, mui_pane_page((uint32_t)(id - CTL_PANE_BASE))); /* I735: View > Visualizer Page / Pattern Page */
+    } else if (id >= CTL_QUICK_BASE && id < CTL_QUICK_BASE + (LONG)MUI_HOME_QUICK_MAX) { /* I795 (P1): a Home quick tile */
+        const sel_view_state* view = sel_engine_state(s->engine)->view;
+        uint32_t idx = s->home.quick_first + (uint32_t)(id - CTL_QUICK_BASE);
+        if (view != NULL && idx < view->row_n) {
+            mui_home_row_fire(s, view, idx);
+        }
+    } else if (id >= CTL_SHELF_ALL_BASE && id < CTL_SHELF_ALL_BASE + (LONG)MUI_HOME_SHELF_MAX) { /* I795 (P1): Show all of a shelf */
+        LONG k = id - CTL_SHELF_ALL_BASE;
+        mui_route_click(&s->route, SEL_ROUTE_SHOW_ALL, 0u, s->shelf_id[k], "", s->shelf_head_buf[k], "", mui_route_send, s);
+    } else if (id >= CTL_SHELF_LIST_BASE && id < CTL_SHELF_LIST_BASE + (LONG)MUI_HOME_SHELF_MAX) { /* I795 (P1): an entry of a shelf */
+        const sel_view_state* view = sel_engine_state(s->engine)->view;
+        LONG k = id - CTL_SHELF_LIST_BASE;
+        long picked = -1;
+        GetAttr(AAL_Picked, s->shelf_list[k], (ULONG*)&picked);
+        if (view != NULL && picked >= 0 && s->shelf_first[k] + (uint32_t)picked < view->row_n) {
+            mui_home_row_fire(s, view, s->shelf_first[k] + (uint32_t)picked);
+        }
+    } else if (id >= CTL_TILE_BASE && id < CTL_TILE_BASE + (LONG)MUI_TILE_MAX) { /* I795 (P4): a Browse tile */
+        mui_tile_fire(s, (uint32_t)(id - CTL_TILE_BASE));
+    } else if (id >= CTL_FACET_BASE && id < CTL_FACET_BASE + (LONG)SEL_UIM_SEARCH_FACETS) { /* I795 (P5): a Search facet chip */
+        const sel_view_state* view = sel_engine_state(s->engine)->view;
+        char fl[40];
+        uint32_t k = (uint32_t)(id - CTL_FACET_BASE);
+        if (view != NULL && mui_search_facet_line(view, k, fl, sizeof fl) != 0u && mui_engine_line(s, fl)) {
+            s->search_facet = k;
+        }
+        for (k = 0; k < SEL_UIM_SEARCH_FACETS; k++) {
+            mui_aabtn_set_on(s->facet_btn[k], k == s->search_facet);
+        }
+    } else if (id == CTL_PAL_BTN) {
+        mui_palette_show(s);
+    } else if (id == CTL_PAL_LIST) {
+        ULONG picked = 0;
+        GetAttr(AAL_Picked, s->pal_list, &picked);
+        mui_palette_choose(s, (long)picked);
+    } else if (id == CTL_PAL_STR) {
+        ULONG active = 0;
+        mui_palette_sync(s);
+        GetAttr(AAL_Active, s->pal_list, &active);
+        mui_palette_choose(s, (long)active);
+    } else if (id == CTL_NP_TOGGLE) {
+        uint32_t hidden = mui_np_toggle(&s->lay);
+        mui_apply_layout(s);
+        mui_aabtn_set_alt(s->np_btn, hidden != 0u);
+        mui_set_tip(s, MUI_TS_NP, s->np_btn, MUI_TIP_NP_PANEL, 0, NULL, (int)hidden);
+    } else if (id == CTL_LIB_PREV || id == CTL_LIB_NEXT) {
+        mui_lib_press(s, id == CTL_LIB_NEXT ? 1 : -1, -1);
     } else if (id == CTL_TOPBAR_BROWSE) {
-        uint32_t k; /* I615d: what the rich top bar Browse slice sends (desk_page_load PG_BROWSE) */
-        for (k = 0; k < MUI_TOPBAR_BROWSE_LINES; k++) {
-            mui_engine_line(s, mui_topbar_browse_lines[k]);
+        char joined[128]; /* I615d: what the rich top bar Browse slice sends (desk_page_load PG_BROWSE), kept as one history entry (I794) */
+        mui_browse_key(joined, sizeof joined);
+        mui_pane_show(s, SEL_UIM_PG_HOME); /* a list source: back to the list pane */
+        mui_route_door(&s->route, (uint32_t)MUI_DOOR_MAX + 1u, joined, mui_route_send, s);
+    } else if (id >= CTL_SIDE_BASE && id < CTL_SIDE_BASE + (LONG)MUI_SIDE_COUNT) {
+        LONG k = id - CTL_SIDE_BASE;
+        if (k == MUI_SIDE_CREATE || k == MUI_SIDE_CARD) {
+            mui_viewbtn_fire(1, "", 0, mui_p8_send, s); /* S4, S9: PLAYLIST_CREATE, as the Playlists page New button */
+        } else if (k >= MUI_SIDE_CHIP) {
+            mui_lib_press(s, 0, (int)(k - MUI_SIDE_CHIP)); /* I669: a click on a fitting chip toggles the filter */
+        } else if (k != MUI_SIDE_EXPAND) {
+            mui_engine_line(s, mui_door_line(3)); /* the header and the kind chips open the playlists page (I673) */
         }
     } else if (id >= CTL_DOOR_BASE && id < CTL_DOOR_BASE + (LONG)MUI_DOOR_MAX) {
-        mui_engine_line(s, mui_door_line((uint32_t)(id - CTL_DOOR_BASE))); /* the page switch: the engine moves the main view's source */
+        const char* dl = mui_door_line((uint32_t)(id - CTL_DOOR_BASE)); /* the page switch: the history entry is the door's lines (I794) */
+        if (dl != NULL) { /* NULL: an in-window page (Now Playing, Song Information); mui-doors checks every main-view door has a line */
+            mui_pane_show(s, SEL_UIM_PG_HOME); /* the engine moves the list's source: the list pane shows it */
+            mui_route_door(&s->route, (uint32_t)(id - CTL_DOOR_BASE), dl, mui_route_send, s);
+        }
     } else if (id >= CTL_CRUMB_BASE && id < CTL_CRUMB_BASE + (LONG)MUI_CRUMB_MAX) {
         /* MUI-P4-2: a crumb opens the browse path up to and including that piece. */
         const sel_view_state* view = sel_engine_state(s->engine)->view;
@@ -1904,16 +2858,8 @@ static void mui_control_fire(mui_state* s, LONG id) {
             mui_engine_line(s, line);
             return;
         }
-        if (id == CTL_LIST_DBL && (uint32_t)v < view->row_n) {
-            char hl[3][48];
-            if (mui_home_lines(view, (uint32_t)v, hl) == 3) { /* MUI-P4-1: a Home row plays the song or opens the album */
-                mui_list_pending_clear(&s->list_pending);
-                mui_engine_line(s, hl[0]);
-                mui_engine_line(s, hl[1]);
-                mui_engine_line(s, hl[2]);
-                s->p4[P4_HOME]++;
-                return;
-            }
+        if (id == CTL_LIST_DBL && (uint32_t)v < view->row_n && mui_home_row_fire(s, view, (uint32_t)v)) {
+            return;
         }
         if (id == CTL_LIST_SEL) {
             int32_t shown = view->cursor >= view->window_start && view->cursor - view->window_start < view->window_rows
@@ -1939,6 +2885,9 @@ static void mui_apply_layout(mui_state* s) {
         /* I615d (design 8.2): the top bar takes the height of its children (VertWeight 0), the body the rest. */
         set(s->slot[i], MUIA_VertWeight, i == MUI_SLOT_TOPBAR ? 0 : s->lay.weight_h[i] > 0 ? s->lay.weight_h[i] : 1);
     }
+    if (s->np_btn != NULL) {
+        set(s->np_btn, MUIA_ShowMe, mui_np_toggle_shown(&s->lay) ? TRUE : FALSE); /* the panel exists only at three columns (Mac R3) */
+    }
     set(s->balance[0], MUIA_ShowMe, s->lay.balance_sidebar_main ? TRUE : FALSE);
     set(s->balance[1], MUIA_ShowMe, s->lay.balance_main_detail ? TRUE : FALSE);
 }
@@ -1955,7 +2904,7 @@ static void mui_layout_for_screen(mui_state* s) {
             UnlockPubScreen(NULL, scr);
         }
     }
-    mui_layout_map(&s->lay, w, h, g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP);
+    mui_layout_map_panel(&s->lay, w, h, g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP, s->lay.detail_hidden);
     mui_apply_layout(s);
 }
 
@@ -1975,6 +2924,9 @@ static void mui_check_resize(mui_state* s) {
     if (mui_layout_relayout(&s->lay, (uint32_t)w, (uint32_t)h, g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP, &flips)) {
         mui_apply_layout(s);
     }
+    if (s->side_dyn != NULL && mui_sidebar_chips_single(!g_screen_rtg, s->lay.weight_w[MUI_SLOT_SIDEBAR]) != s->side_single) {
+        mui_sidebar_refresh(s); /* I669: the chips now fit, or no longer fit, the sidebar width */
+    }
 }
 
 /* MUI-P1-3: muimaster.library v19 (MUI 3.8), one Application with one Window. The sentinel counts after the window
@@ -1988,7 +2940,12 @@ static void* mui_open(const sel_ui_open_args* a) {
     Object* strip;
     mui_window_attrs_t wattr;
     s->engine = a != NULL ? a->engine : NULL;
+    mui_route_init(&s->route);
     s->find_plugin = a != NULL ? a->find_plugin : NULL;
+    {
+        char knob[8];
+        s->dbl_race = GetVar((CONST_STRPTR)"Selecta/MUIDblRace", (STRPTR)knob, sizeof knob, 0) >= 0 && mui_list_dbl_race_on(knob);
+    }
     MUIMasterBase = OpenLibrary((CONST_STRPTR)MUIMASTER_NAME, 19);
     if (MUIMasterBase == NULL) {
         mui_report(MUI_FAIL_NO_LIBRARY, "");
@@ -2027,11 +2984,11 @@ static void* mui_open(const sel_ui_open_args* a) {
             MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Centered, MUIA_Window_Menustrip, (ULONG)strip,
             WindowContents, s->root = VGroup, TH_TAGS(MUI_TH_WINDOW, MUI_FRAME_NONE)
                 Child, s->slot[MUI_SLOT_TOPBAR] = mui_topbar_group(s),
-                Child, s->slot[MUI_SLOT_SUGGESTION] = mui_aatext("Window is narrow: try the mini layout", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0, 1),
+                Child, s->slot[MUI_SLOT_SUGGESTION] = mui_aatext("Window is narrow: try the mini layout", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1),
                 Child, HGroup,
-                    Child, s->slot[MUI_SLOT_SIDEBAR] = mui_sidebar_group(g_screen_rtg),
+                    Child, s->slot[MUI_SLOT_SIDEBAR] = mui_sidebar_group(s, g_screen_rtg),
                     Child, s->balance[0] = mui_aabalance_new(),
-                    Child, s->slot[MUI_SLOT_MAIN] = mui_main_group(s),
+                    Child, s->slot[MUI_SLOT_MAIN] = mui_main_pages(s),
                     Child, s->balance[1] = mui_aabalance_new(),
                     Child, s->slot[MUI_SLOT_DETAIL] = mui_detail_group(s),
                 End,
@@ -2092,6 +3049,19 @@ static void* mui_open(const sel_ui_open_args* a) {
     return s;
 }
 
+/* I724: the I716 race made deterministic. A list refresh between the click and its handling resets AAL_Active to the engine cursor
+ * row (mui_refresh: SetAttrs AAL_Active). With the knob on, do exactly that SetAttrs before the handler runs, to the first window row
+ * (".." in the rig step). A handler that reads AAL_Active then acts on that row, one that reads the picked row does not.
+ * Not done through VIEW_CURSOR + mui_refresh: sel_engine_send_line only queues the line, the engine applies it in its next pump
+ * (host loop), so the refresh in the same call still saw the old cursor and left AAL_Active on the clicked row (round 7 probe:
+ * AAL_Active 6 before and after, picked row 6). The click-pending guard is disarmed as the real race happens after it caught up. */
+static void mui_dbl_race_inject(mui_state* s) {
+    mui_list_pending_clear(&s->list_pending);
+    s->list_active_set = 0;
+    SetAttrs(s->list, AAL_Active, (ULONG)0, TAG_DONE);
+    s->p4[P4_DBLRACE]++;
+}
+
 static int mui_io_new_input(void* ctx, uint32_t* sigs) {
     ULONG got = 0;
     LONG id = (LONG)DoMethod(((mui_state*)ctx)->app, MUIM_Application_NewInput, &got);
@@ -2100,6 +3070,9 @@ static int mui_io_new_input(void* ctx, uint32_t* sigs) {
     if (id >= MENU_ID_BASE && id < MENU_ID_BASE + (LONG)g_menu_n) {
         mui_menu_fire((mui_state*)ctx, (uint32_t)(id - MENU_ID_BASE));
     } else if (id >= CTL_BTN_BASE) {
+        if (id == CTL_LIST_DBL && ((mui_state*)ctx)->dbl_race) {
+            mui_dbl_race_inject((mui_state*)ctx);
+        }
         mui_control_fire((mui_state*)ctx, id);
     }
     mui_refresh((mui_state*)ctx);

@@ -277,6 +277,15 @@ sel_cache_result sel_cache_fetch(sel_cache* c, const char* source, const char* p
     if (ok && rename(part, out) == 0) {
         c->slice.active = 0;
         c->slice.fails = 0;
+        if (c->unzip_host != NULL) {
+            char key[SEL_CACHE_PATH_MAX + 32];
+
+            snprintf(key, sizeof key, "%s:%s", source, path);
+            if (sel_source_unzip(c->unzip_host, key, out) < 0) {
+                remove(out);
+                return SEL_CACHE_FAILED;
+            }
+        }
         c->stats.fetches++;
         return SEL_CACHE_OK;
     }

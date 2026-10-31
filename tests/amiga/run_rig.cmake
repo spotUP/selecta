@@ -41,6 +41,9 @@ function(ami out_var)
   if(NOT rc EQUAL 0)
     message(FATAL_ERROR "RED[${TAG}]: ami.py ${ARGN} exited ${rc}\n${out}${err}")
   endif()
+  # rig.py's pre-command gate prints "[REFRESH] rig N: ..." on stdout before the command's own output; it is a status line,
+  # not part of the record the caller parses (the screens hex record failed its ^ anchor on it).
+  string(REGEX REPLACE "(^|\n)\\[REFRESH\\][^\n]*\n?" "\\1" out "${out}")
   set(${out_var} "${out}${err}" PARENT_SCOPE)
 endfunction()
 
@@ -198,6 +201,13 @@ elseif(TAG STREQUAL "M4MUI")
     file(WRITE "${WORK}/mui.script" "Stack 200000\n${P} --ui mui --stats >RAM:mui-out.txt\n")
   endif()
   ami(ignored exec "Delete >NIL: RAM:mui-out.txt ${P} QUIET" 10)
+  if(song_ok)
+    # I724: the I716 race made deterministic. ENV:Selecta/MUIDblRace (read once at open) makes the MUI view move the engine cursor to
+    # row 0 ("..") and force a list refresh between the double-click and its handling, so AAL_Active is always reset to ".." when the
+    # handler runs; only a handler that acts on the picked (clicked) row plays the song.
+    ami(ignored exec "MakeDir >NIL: ENV:Selecta" 10)
+    ami(ignored exec "SetEnv Selecta/MUIDblRace 1" 10)
+  endif()
   ami(ignored put "${SELECTA}" "${P}")
   ami(ignored put "${WORK}/mui.script" "RAM:mui.script")
   ami(ignored exec "Run >NIL: Execute RAM:mui.script" 10)
@@ -490,16 +500,22 @@ elseif(TAG STREQUAL "M4MUI")
   if(NOT out MATCHES "ui_stats id=mui[^\n]* menus=([0-9]+)" OR CMAKE_MATCH_1 LESS 1)
     message(FATAL_ERROR "RED[M4MUI]: the Menustrip item did not send its action line (menus>=1 missing on the ui_stats id=mui line):\n${out}")
   endif()
+  if(song_ok)
+    ami(ignored exec "Delete >NIL: ENV:Selecta/MUIDblRace QUIET" 10)
+    if(NOT out MATCHES "ui_p4[^\n]* dbl_race_injected=([0-9]+)" OR CMAKE_MATCH_1 LESS 1)
+      message(FATAL_ERROR "RED[M4MUI]: I724: dbl_race_injected>=1 missing on the ui_p4 line (the knob ENV:Selecta/MUIDblRace never ran):\n${out}")
+    endif()
+    message(STATUS "M4MUI I724: dbl_race_injected=${CMAKE_MATCH_1}")
+  endif()
   if(NOT out MATCHES "ui_stats id=mui[^\n]* transport_hits=([0-9]+)" OR CMAKE_MATCH_1 LESS 1)
     message(FATAL_ERROR "RED[M4MUI]: the Stop button click did not send its action line (transport_hits>=1 missing on the ui_stats id=mui line):\n${out}")
   endif()
   if(NOT out MATCHES "view_source=search")
     message(FATAL_ERROR "RED[M4MUI]: MUI-P4-0: the Search door did not switch the view (view_source=search missing):\n${out}")
   endif()
-  # MUI-P4-16 tracker: NOT counted on the rig. The tracker pattern rows come from the replayer's rp_tracker_cells, which only the
-  # openmpt and nuade adapters export; .mod is played by the native kplayer on the Amiga (replayer=kplayer on the exit line), so
-  # the engine never answers the pattern request and tracker stays 0. The pattern mapping is covered by the host mui tests.
-  foreach(k like qclear search help clearlib toast crumb state home qup qdown qremove popen prename pdelete songmenu np songinfo pref settings)
+  # MUI-P4-16 tracker: counted again (I732). .mod is played by the native kplayer on the Amiga (replayer=kplayer on the exit
+  # line), which now exports rp_tracker_info / rp_tracker_cells itself from the module bytes, so the pattern request is answered.
+  foreach(k like qclear search help clearlib toast crumb state home qup qdown qremove popen prename pdelete songmenu np songinfo pref tracker settings)
     if(NOT out MATCHES "ui_p4 id=mui[^\n]* ${k}=([0-9]+)" OR CMAKE_MATCH_1 LESS 1)
       message(FATAL_ERROR "RED[M4MUI]: MUI-P4: the ${k} gadget click did not send its line (${k}>=1 missing on the ui_p4 line):\n${out}")
     endif()

@@ -23,18 +23,22 @@ const char* sel_devilbox_base(void) {
     return dev != NULL && dev[0] != '\0' ? dev : DEVILBOX_DEFAULT;
 }
 
-/* Built-in lists (research 2026-10-25-m3-external-endpoints.md). HTTP mirrors first, FTP last. */
+/* Built-in lists (research 2026-10-25-m3-external-endpoints.md). HTTP mirrors first, FTP last. Each base is the root
+ * the source's song paths are relative to: Modland keys are `pub/modules/<format>/...` (sources/modland.c), so its
+ * bases are Modland roots, never .../pub/modules/ (I853). */
 typedef struct builtin {
     const char* source;
     const char* bases;
 } builtin;
 
 static const builtin BUILTIN[] = {
-    {"modland", "http://ftp.amigascne.org/mirrors/ftp.modland.com/pub/modules/,ftp://ftp.modland.com/pub/modules/"},
+    {"modland", "http://ftp.amigascne.org/mirrors/ftp.modland.com/,ftp://ftp.modland.com/"},
     {"hvsc", "https://hvsc.de/download/"},
     {"asma", "https://asma.atari.org/asma/"},
     {"sndh", "https://sndh.atari.org/sndh/sndh_lf/"},
     {"keygenmusic", "https://keygenmusic.tk/kgm/"},
+    {"modulespl", "https://www.modules.pl/modules/"},
+    {"aminet", "https://aminet.net/"},
 };
 
 static int add_base(sel_mirror_set* s, const char* base, size_t n) {

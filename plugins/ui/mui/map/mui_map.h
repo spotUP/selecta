@@ -8,6 +8,10 @@
 
 #include <selecta/engine.h>
 #include <selecta/uimodel.h>
+#include <selecta/uimodel/browse.h>
+#include <selecta/uimodel/keybind.h>
+#include <selecta/uimodel/palette.h>
+#include <selecta/uimodel/libfilter.h>
 #include <selecta/uimodel/panels.h>
 #include <selecta/uimodel/sources.h>
 
@@ -69,9 +73,14 @@ typedef struct mui_layout_map_t {
     uint32_t weight_w[MUI_SLOT_COUNT];
     uint32_t weight_h[MUI_SLOT_COUNT];
     uint8_t balance_sidebar_main, balance_main_detail; /* Balance object between two shown panels */
+    uint8_t detail_hidden; /* I798: the Now Playing column is hidden by the top bar toggle (Mac I619 detail_hidden) */
 } mui_layout_map_t;
 /* I615d: `tier` is SEL_UIM_TIER_DEFAULT on an RTG screen (top bar slot shown), SEL_UIM_TIER_BITMAP on a native planar screen. */
 void mui_layout_map(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier);
+/* I798 (T2, R3): as mui_layout_map with the Now Playing column hidden when `detail_hidden`; relayout keeps the flag. */
+void mui_layout_map_panel(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden);
+/* I798: 1 when the Hide / Show Now Playing button exists (three column breakpoint, top bar shown), as the Mac np_toggle_rect. */
+uint32_t mui_np_toggle_shown(const mui_layout_map_t* m);
 /* Recompute for a new window size. Returns 1 when the breakpoint changed (the caller re-applies ShowMe, *flips counts
  * the slots whose visibility changed), 0 when only weights move. */
 uint32_t mui_layout_relayout(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t* flips);
@@ -91,6 +100,15 @@ const char* mui_transport_label(uint32_t button, const sel_uim_frame* f);
 const char* mui_transport_widest(uint32_t button);
 /* I667b5 (owner 2026-10-29): 1 when the transport button shows only its icon (all six, Stop too); the label is the tooltip. */
 int mui_transport_icon_only(uint32_t button);
+/* I796 (drift B3): the transport buttons left to right as the Mac player bar draws them (draw_transport: Shuffle, Previous, Play, Next,
+ * Repeat); Stop has no Mac button and follows Repeat. Position k in 0..MUI_BTN_COUNT-1 gives the MUI_BTN_* index. */
+uint32_t mui_player_transport_at(uint32_t k);
+/* I796 (drift B1, B2): the player bar's three columns. Weights follow the Mac's 300 px player-left of a 900 px bar; the art frame is the
+ * Mac's 56 px square. */
+#define MUI_PLAYER_W_LEFT 33
+#define MUI_PLAYER_W_CENTRE 47
+#define MUI_PLAYER_W_RIGHT 20
+#define MUI_PLAYER_ART_PX 56
 /* 1 when the button is lit: Repeat while repeating (all or one), Shuffle while shuffle is on; drawn as the SELECTED face because the icon
  * does not change with the state. */
 int mui_transport_on(uint32_t button, const sel_uim_frame* f);
@@ -170,6 +188,8 @@ int32_t mui_list_pending_resolve(mui_list_pending* p, int32_t snapshot_active);
  * List cursor (active) can be moved by a list refresh between the click and the app loop handling it, so the clicked
  * row wins and the cursor is only the fallback. */
 int32_t mui_list_dbl_row(int32_t picked, int32_t active);
+/* I724: ENV:Selecta/MUIDblRace value (read once at open) -> knob on: any text but empty or "0". */
+int mui_list_dbl_race_on(const char* value);
 extern uint32_t mui_list_dbl_row_calls; /* sentinel: how often the decision ran */
 /* Tree style: the engine line a click on a node row sends (VIEW_EXPAND/VIEW_COLLAPSE <node id>); "" for a non-node. */
 void mui_list_toggle_line(const sel_view_row* r, char* out, size_t cap);
@@ -196,7 +216,7 @@ const char* mui_row_cell(const sel_view_row* r, uint32_t column);
 typedef struct mui_row_extra {
     char album[64];
     char length[16];
-    char format[16];
+    char format[40]; /* the I819 format label, SEL_FORMAT_LABEL_MAX */
 } mui_row_extra;
 void mui_row_extra_fill(const sel_state* st, const sel_view_row* r, const char* album, mui_row_extra* out);
 
@@ -207,6 +227,40 @@ mui_home_kind mui_home_kind_of(const sel_view_row* r);
  * desktop shelf tile does); returns 3, or 0 for a row that is not a Home entry. */
 uint32_t mui_home_lines(const sel_view_state* v, uint32_t row, char lines[3][48]);
 
+/* I795 (drift doc P1): the Home page model. The quick-pick rows are the SEL_ROW_HOME rows after the quick heading (at most six), each
+ * shelf is a heading plus the SEL_ROW_HOME rows after it. `shelf_id` counts every shelf heading (1-based, the id Show all routes with),
+ * also those past the MUI_HOME_SHELF_MAX slots. */
+#define MUI_HOME_QUICK_MAX 6u
+#define MUI_HOME_SHELF_MAX 4u
+#define MUI_HOME_SHELF_ROWS 5u /* rows of a shelf the Home page lists; Show all has the rest */
+typedef struct mui_shelf {
+    uint32_t heading, first, count, id; /* window row of the heading, of its first entry, entries under it, 1-based shelf id */
+} mui_shelf;
+typedef struct mui_home_page {
+    uint32_t quick_first, quick_n;
+    mui_shelf shelf[MUI_HOME_SHELF_MAX];
+    uint32_t shelf_n, shelf_id;
+} mui_home_page;
+void mui_home_split(const sel_view_state* v, mui_home_page* out);
+/* The shelf with 1-based id `id` (any shelf, past the slots too), all its entries counted. 1 when found. */
+uint32_t mui_shelf_find(const sel_view_state* v, uint32_t id, mui_shelf* out);
+
+/* I795 (P4): the Browse tiles, from the FORMATS_SHOW and COMPOSERS_SHOW answers in the engine state, then one Sources tile. */
+#define MUI_BROWSE_FORMATS 8u
+#define MUI_BROWSE_COMPOSERS 8u
+#define MUI_TILE_MAX (MUI_BROWSE_FORMATS + MUI_BROWSE_COMPOSERS + 1u)
+enum { MUI_TILE_FORMAT = 0, MUI_TILE_COMPOSER = 1, MUI_TILE_SOURCES = 2 };
+typedef struct mui_btile {
+    uint32_t kind, count;
+    char label[48], arg[96];
+} mui_btile;
+uint32_t mui_browse_tiles(const sel_state* st, mui_btile* out, uint32_t cap);
+void mui_tile_caption(const mui_btile* t, char* out, size_t cap);
+
+/* I795 (P5): the engine line a Search facet chip sends: VIEW_CURSOR on the heading of that group of results (facet 0, All: the top).
+ * Returns 1 when `out` holds a line, 0 when the results have no such group. The names are sel_uim_search_facets. */
+uint32_t mui_search_facet_line(const sel_view_state* v, uint32_t facet, char* out, size_t cap);
+
 /* MUI-P4-0: the sidebar doors, built from the shared uimodel door table (include/selecta/uimodel/doors.h). The label is the
  * table's; the line is the engine line that switches the main view to the door's page, NULL for a page the MUI shows in
  * another slot (Now Playing and Song Information are the player and detail slots, not a main view). */
@@ -216,6 +270,36 @@ const char* mui_door_line(uint32_t i);
 /* I615d: the top bar Browse button's engine lines (the rich UI's PG_BROWSE page load). Home sends mui_door_line(0). */
 #define MUI_TOPBAR_BROWSE_LINES 3u
 extern const char* const mui_topbar_browse_lines[MUI_TOPBAR_BROWSE_LINES];
+
+/* I792 (drift doc 2026-10-30-mui-mac-drift section 4): how the MUI shows page `page` of the shared page table (uimodel/pages.h). Every page
+ * has exactly one entry: a MUI_PAGE_MAIN_VIEW (the main list view, switched by an engine line), a MUI_PAGE_GROUP (the MUI's own page group)
+ * or a MUI_PAGE_EXEMPT carrying the written reason it has no slot. kind MUI_PAGE_GAP with no reason is a page nobody mapped: the route
+ * loop in tests/ui/mui_contract_test.c fails on it. NULL past SEL_UIM_PG_COUNT. */
+enum { MUI_PAGE_GAP = 0, MUI_PAGE_MAIN_VIEW, MUI_PAGE_GROUP, MUI_PAGE_EXEMPT };
+typedef struct mui_page_slot_t {
+    uint32_t kind;
+    const char* exempt; /* MUI_PAGE_EXEMPT: why the page has no MUI slot (and the ledger row that closes it) */
+} mui_page_slot_t;
+const mui_page_slot_t* mui_page_slot(uint32_t page);
+
+/* I735: the panes of the MUI main slot. MUI_PANE_LIST is the song list every engine-line page (Home, Search, Library, ...) shows; the
+ * Visualizer and Pattern pages are own panes, reached from the Mac UI's keys (txt_bindings default: v -> @viz, t -> @pattern; the
+ * View menu items carry the same shortcuts) and shown in the main slot at every width. `opens` counts the openings per pane. */
+enum { MUI_PANE_LIST = 0, MUI_PANE_VIZ, MUI_PANE_TRACKER, MUI_PANE_COUNT };
+typedef struct mui_mainpane {
+    uint32_t pane;
+    uint32_t opens[MUI_PANE_COUNT];
+} mui_mainpane;
+uint32_t mui_pane_of_page(uint32_t page);       /* the pane page `page` shows in; MUI_PANE_LIST for a page the list shows */
+uint32_t mui_pane_page(uint32_t pane);          /* the shared-table page a pane shows (SEL_UIM_PG_*) */
+uint32_t mui_pane_of_action(const char* act);   /* "@viz" -> MUI_PANE_VIZ, "@pattern" -> MUI_PANE_TRACKER; MUI_PANE_COUNT otherwise */
+const char* mui_pane_title(uint32_t pane);      /* the View menu item title, NULL for the list */
+char mui_pane_shortcut(uint32_t pane);          /* the Mac UI's key for the page, '\0' when none */
+/* The page entry: shows the pane of `page`, counts the opening, returns the pane. Any other page (a door or the top bar) goes back
+ * to the list through the same call. */
+uint32_t mui_pane_open(mui_mainpane* mp, uint32_t page);
+/* A key press (txt_key code and mods) as the Mac UI's default table reads it: opens the page it names. MUI_PANE_COUNT when the key opens none. */
+uint32_t mui_pane_key(mui_mainpane* mp, uint32_t code, uint32_t mods);
 
 /* MUI-P4-2: Library breadcrumbs. Pieces of a browse path split on "/" and the AmigaDOS ":" (the volume keeps its colon);
  * `end` is the length of the path up to and including the piece, so a click on a crumb opens path[0..end). Returns the
@@ -334,9 +418,17 @@ int mui_screen_is_rtg(int dipf_foreign, int bm_standard, uint32_t bm_depth);
  * mui_window_attrs_calls counts the calls (sentinel: mui_open must reach it). */
 typedef struct mui_window_attrs_t {
     uint8_t borderless, backdrop, dragbar, depthgadget, sizegadget, closegadget, titled;
+    uint8_t header; /* I730: 1 = the window draws its own flat header row (title + close button); dialogs on the own screen only */
 } mui_window_attrs_t;
 void mui_window_attrs(int own_screen, mui_window_attrs_t* out);
 uint32_t mui_window_attrs_calls(void);
+/* I730: the attributes of every dialog window (Settings, Help, the Commands palette). One path for all of them. On the own
+ * SELECTA screen: borderless, untitled (Intuition would add a title bar to a titled borderless window), no drag bar, depth, size
+ * or close gadget, not a backdrop (it floats centred over the main window), header = 1 (our own title row with a close button,
+ * Esc closes). On Workbench (compact mode): normal borders and title, no own header. Built on mui_window_attrs.
+ * mui_dialog_attrs_calls counts the calls (sentinel: every dialog must reach it). */
+void mui_dialog_attrs(int own_screen, mui_window_attrs_t* out);
+uint32_t mui_dialog_attrs_calls(void);
 /* MUI-P8 (plan 2026-10-25-amiga-mui.md section P8): parity rows the first MUI pass left out. Every action here is fired by
  * its shared action-table id (mui_menu_line), the same line the desktop sends; nothing keeps a second list. */
 /* Fires the table line of action `id` through send; returns 1 when the line was sent. mui_action_fires() is the call-count
@@ -372,6 +464,17 @@ uint32_t mui_libmode_fire(uint32_t i, uint32_t window_rows, mui_send_fn send, vo
 const char* mui_scope_label(uint32_t i);
 uint32_t mui_scope_fire(uint32_t i, mui_send_fn send, void* ctx);
 uint32_t mui_view_fires(void);
+
+/* I670 (design 2026-10-29-desktop-library-architecture.md section 4; MUI plan 2026-10-28-mui-custom-classes.md section 1, "library
+ * prev/next"): the sidebar library filter control. A previous (dir < 0) or next (dir > 0) press steps the filter in force through
+ * sel_uim_lfilter_step (the desktop chips' clamp), runs sel_uim_lfilter_pass (the desktop's filter pass) into out[0..max) and
+ * writes the label of the filter now in force. Returns the new filter and the rows read in *rows. mui_libfilter_presses() counts
+ * the presses. */
+uint32_t mui_libfilter_press(uint32_t filter, int dir, sel_engine* e, sel_engine_library_item* out, uint32_t max, uint32_t* rows,
+                             char* label, uint32_t cap);
+/* The same pass for a chip click: filter `filter` is taken as is (a clamped index, mui_libfilter_press steps then calls this). */
+uint32_t mui_libfilter_set(uint32_t filter, sel_engine* e, sel_engine_library_item* out, uint32_t max, uint32_t* rows, char* label, uint32_t cap);
+uint32_t mui_libfilter_presses(void);
 
 /* MUI-P8-5: the Playlists and Song info buttons; MUI-P8-12: tile size Slider steps; MUI-P8-14: Amiga runtime prefs. All read the
  * shared model (uimodel/viewcmds.h, uimodel/browse.h). Each fire returns how many lines were sent. */
@@ -432,6 +535,35 @@ uint32_t mui_tooltip_door(uint32_t i, char* out, uint32_t cap);
 uint32_t mui_tooltip_hover(const char* tip, char* status, uint32_t cap);
 uint32_t mui_tooltip_hovers(void);
 
+/* I798 (O1): the command palette window model. The rows are the shared txt_palette (the Mac's command table, the default key
+ * bindings); `row[i]` is the text of match i. mui_palette_filter narrows to the query, mui_palette_pick runs the verb through
+ * `send` or, when the verb needs arguments, writes "verb " to `fill` for the command line (the Mac palette_pick). */
+typedef struct mui_palette {
+    txt_bindings binds;
+    txt_palette pal;
+    char row[SEL_CMD_COUNT][96];
+    char query[TXT_PAL_QUERY];
+    char last_verb[48];
+    uint32_t count;
+    uint32_t opens, runs, fills; /* sentinels */
+} mui_palette;
+enum { MUI_PAL_NONE = 0, MUI_PAL_RUN, MUI_PAL_FILL, MUI_PAL_REJECTED };
+void mui_palette_open(mui_palette* p);
+void mui_palette_filter(mui_palette* p, const char* query);
+const char* mui_palette_row(void* ctx, long row);
+uint32_t mui_palette_pick(mui_palette* p, long row, mui_send_fn send, void* ctx, char* fill, uint32_t cap);
+
+/* I798 (O3): the one tooltip text function the MUI controls read. Transport and doors go through the P8-10 mapping (action tip
+ * with key hint, door label); the like and Now Playing panel texts are the Mac's (sel_uim_tip_*). mui_tip_calls is the sentinel. */
+enum { MUI_TIP_TRANSPORT = 0, MUI_TIP_DOOR, MUI_TIP_LIKE, MUI_TIP_NP_PANEL, MUI_TIP_SEARCH, MUI_TIP_CMD, MUI_TIP_PALETTE, MUI_TIP_SEEK, MUI_TIP_VOLUME };
+uint32_t mui_tip(uint32_t kind, uint32_t index, const sel_uim_frame* f, int flag, char* out, uint32_t cap);
+uint32_t mui_tip_calls(void);
+
+/* I798 (T2, R3): flip the Now Playing column of the window layout (Mac I619 detail_hidden); returns the new hidden flag.
+ * mui_np_toggles counts the flips. */
+uint32_t mui_np_toggle(mui_layout_map_t* m);
+uint32_t mui_np_toggles(void);
+
 /* MUI-P8-11: remembered state. close stores geometry, open panes, visualiser and browse view as PREF_SET lines through `send`;
  * open reads them back through `get` (the pref value of a key, NULL when unset). */
 typedef struct mui_remember {
@@ -444,5 +576,48 @@ typedef struct mui_remember {
 typedef const char* (*mui_pref_get_fn)(void* ctx, const char* key);
 uint32_t mui_remember_close(const mui_remember* r, mui_send_fn send, void* ctx);
 uint32_t mui_remember_open(mui_remember* r, mui_pref_get_fn get, void* ctx); /* returns how many of the four items were found */
+
+/* I793 (drift doc S3 to S9): the Your Library sidebar model, built from the uimodel texts and the engine's library items. The MUI
+ * sidebar (mui_ui.c mui_sidebar_group) builds its objects from this and nothing else; mui_sidebar_builds() is the sentinel. */
+#define MUI_SIDEBAR_DOORS 8u
+#define MUI_SIDEBAR_ROWS 16u
+typedef struct mui_sidebar_in {
+    int top_bar;     /* the screen tier has the top bar (the doors Home and Search leave) */
+    uint32_t chip;   /* 0 All, 1..SEL_UIM_SIDE_CHIPS a kind chip */
+    uint32_t by_you_only; /* the By You sub-chip of Playlists */
+    uint32_t wide;   /* Expand is on */
+    int bitmap;      /* the bitmap tier */
+    int chips_single; /* I669: the chips do not fit the sidebar, S5 is the one label with the chevrons (mui_sidebar_chips_single) */
+    const char* filter;
+    const sel_engine_library_item* items;
+    uint32_t item_n;
+} mui_sidebar_in;
+typedef struct mui_sidebar_row {
+    char mark[4], title[96], subtitle[96], type[16];
+    uint32_t kind, id;
+} mui_sidebar_row;
+typedef struct mui_sidebar_model {
+    char brand[16], brand_icon[8];            /* I797 (S1): the "Selecta" title and the logo icon key; the icon is "" on the bitmap tier (text only) */
+    uint32_t door[MUI_SIDEBAR_DOORS], door_n; /* indexes of the shown doors in the uimodel door table */
+    char title[24], create[24], expand[24];   /* the header: Your Library, Create Playlist, Expand/Collapse Library */
+    char chip[SEL_UIM_SIDE_CHIPS][16];
+    int chip_shown[SEL_UIM_SIDE_CHIPS];
+    uint32_t chip_selected;
+    int chip_clear, by_you;
+    int chip_single;                          /* I669: S5 is one label (chip_label) between chevrons; chip_shown is all 0 */
+    char chip_left_name[20];                  /* I831: "Previous Filter" or, with a filter in force, "Clear Filter" (sel_uim_lfilter_left_name) */
+    int chip_left_clear;                      /* I831: the left button of the label control is the x (sel_uim_lfilter_left_clears) */
+    char chip_label[16];                      /* the name of the filter in force (sel_uim_lfilter_label) */
+    mui_sidebar_row row[MUI_SIDEBAR_ROWS];
+    uint32_t row_n, cols;
+    int wide;
+    char empty[32];                           /* "" when no empty state shows */
+    int card;
+    char card_title[40], card_body[48], card_button[24];
+} mui_sidebar_model;
+void mui_sidebar_build(const mui_sidebar_in* in, mui_sidebar_model* out);
+/* I669: 1 when the kind chips do not fit a sidebar `sidebar_px` wide (or on the bitmap tier); the decision is sel_uim_lfilter_chips_single. */
+int mui_sidebar_chips_single(int bitmap, uint32_t sidebar_px);
+uint32_t mui_sidebar_builds(void);
 
 #endif

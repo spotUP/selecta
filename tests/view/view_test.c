@@ -382,7 +382,8 @@ static void test_tree(void) {
 
     run("VIEW_GROUP format");
     CHECK(strcmp(view()->group, "format") == 0 && view()->row_count == 3u, "format groups %u", view()->row_count);
-    CHECK(strcmp(row_text(0), "mod") == 0 && strcmp(row_text(1), "s3m") == 0 && strcmp(row_text(2), "xm") == 0,
+    CHECK(strcmp(row_text(0), "Protracker (mod)") == 0 && strcmp(row_text(1), "Scream Tracker 3 (s3m)") == 0 &&
+              strcmp(row_text(2), "Fasttracker 2 (xm)") == 0,
           "format nodes '%s' '%s' '%s'", row_text(0), row_text(1), row_text(2));
     run("VIEW_DRILL 0 mod");
     CHECK(view()->row_count == 3u && is_node(0) && strcmp(row_text(2), "/m/c") == 0, "format > folder: %u rows", view()->row_count);

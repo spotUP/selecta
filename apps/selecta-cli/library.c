@@ -206,7 +206,7 @@ static int library_search(int argc, char** argv) {
     snprintf(line, sizeof line, "LIBRARY_SEARCH %s", text);
     t0 = sel_host_default()->clock_ms(sel_host_default());
     sel_engine_send_line(e, line, pool, sizeof pool);
-    sel_engine_pump(e, on_search_event, &sink);
+    sel_engine_pump_reads(e, on_search_event, &sink, 60000u);
     t0 = sel_host_default()->clock_ms(sel_host_default()) - t0;
     if (!sink.failed) {
         for (i = 0; i < sink.count; i++) {
@@ -738,7 +738,7 @@ static void library_dump_hvsc(const char* db_path) {
     sqlite3_finalize(st);
     sqlite3_close(db);
 }
-/* `--dump` for the flat-listing sources (asma, sndh, zxart, keygenmusic): `<id>_row=<path>|<format>|<artist>|<name>|<size>|<url>` per song. */
+/* `--dump` for the flat-listing sources (asma, sndh, zxart, keygenmusic, aminet): `<id>_row=<path>|<format>|<artist>|<name>|<size>|<url>` per song. */
 static void library_dump_flat(const char* db_path, const char* id) {
     sqlite3* db = NULL;
     sqlite3_stmt* st = NULL;
@@ -848,7 +848,7 @@ static int library_sync(int argc, char** argv) {
         }
     }
     if (src == NULL || dir == NULL) {
-        fputs("usage: selecta-cli library sync [--db <path>] [--now <epoch>] [--dump] modland|hvsc|hippo|asma|sndh|zxart|keygenmusic|radiobrowser|jamendo <dir> | modland|hvsc|hippo|asma|sndh|zxart|keygenmusic|radiobrowser|jamendo <http(s) url>\n", stderr);
+        fputs("usage: selecta-cli library sync [--db <path>] [--now <epoch>] [--dump] modland|hvsc|hippo|asma|sndh|zxart|keygenmusic|aminet|radiobrowser|jamendo|archiveorg <dir> | modland|hvsc|hippo|asma|sndh|zxart|keygenmusic|aminet|radiobrowser|jamendo <http(s) url>\n", stderr);
         return 2;
     }
     memset(&sink, 0, sizeof sink);
@@ -891,7 +891,7 @@ static int library_sync(int argc, char** argv) {
         if (info.net_requests > 0) {
             printf("net_requests=%u\n", (unsigned)info.net_requests);
         }
-    } else if (strcmp(src, "asma") == 0 || strcmp(src, "sndh") == 0 || strcmp(src, "zxart") == 0 || strcmp(src, "keygenmusic") == 0 || strcmp(src, "radiobrowser") == 0 || strcmp(src, "jamendo") == 0) {
+    } else if (strcmp(src, "asma") == 0 || strcmp(src, "sndh") == 0 || strcmp(src, "zxart") == 0 || strcmp(src, "keygenmusic") == 0 || strcmp(src, "aminet") == 0 || strcmp(src, "radiobrowser") == 0 || strcmp(src, "jamendo") == 0 || strcmp(src, "archiveorg") == 0) {
         printf("listing_rows=%u skipped_rows=%u db_songs=%d\n", (unsigned)info.listing_rows,
                (unsigned)info.skipped_rows, st.args[SEL_LIB_STAT_SONGS].v.i);
         if (info.net_requests > 0) {
@@ -927,7 +927,7 @@ static int library_sync(int argc, char** argv) {
             library_dump_hippo(db_path);
         } else if (strcmp(src, "hvsc") == 0) {
             library_dump_hvsc(db_path);
-        } else if (strcmp(src, "asma") == 0 || strcmp(src, "sndh") == 0 || strcmp(src, "zxart") == 0 || strcmp(src, "keygenmusic") == 0 || strcmp(src, "radiobrowser") == 0 || strcmp(src, "jamendo") == 0) {
+        } else if (strcmp(src, "asma") == 0 || strcmp(src, "sndh") == 0 || strcmp(src, "zxart") == 0 || strcmp(src, "keygenmusic") == 0 || strcmp(src, "aminet") == 0 || strcmp(src, "radiobrowser") == 0 || strcmp(src, "jamendo") == 0 || strcmp(src, "archiveorg") == 0) {
             library_dump_flat(db_path, src);
         } else {
             library_dump_modland(db_path);
@@ -1400,9 +1400,15 @@ int sel_cli_library(int argc, char** argv) {
     if (argc >= 1 && strcmp(argv[0], "export-folder") == 0) {
         return sel_cli_library_export_folder(argc - 1, argv + 1);
     }
+    if (argc >= 1 && strcmp(argv[0], "gen") == 0) {
+        return sel_cli_library_gen(argc - 1, argv + 1);
+    }
+    if (argc >= 1 && strcmp(argv[0], "bench") == 0) {
+        return sel_cli_library_bench(argc - 1, argv + 1);
+    }
     if (argc >= 1 && strcmp(argv[0], "query") == 0) {
         return library_query(argc - 1, argv + 1);
     }
-    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--dump] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | sync [--db <path>] [--now <epoch>] [--dump] modland <dir or http(s) url> | meta [--db <path>] <key> | key <source> <path> | genre --db <path> | composer --db <path> <name> | similar --db <path> <key> | also-by --db <path> <key> | duplicates --db <path> | trim [--budget <n>] [--machine <name>] | query --explain <q> | export-folder --db <path> --dir <dir> [--folder <id>] [--format m3u] | stats [--machine <name>] [--db <path>]\n", stderr);
+    fputs("usage: selecta-cli library browse <dir> | search --catalogue <tsv> <q> | scan [--db <path>] [--dump] [--watch <ms>|--poll <ms>] <dir> | rescan [--db <path>] <dir>... | sync [--db <path>] [--now <epoch>] [--dump] modland <dir or http(s) url> | meta [--db <path>] <key> | key <source> <path> | genre --db <path> | composer --db <path> <name> | similar --db <path> <key> | also-by --db <path> <key> | duplicates --db <path> | trim [--budget <n>] [--machine <name>] | query --explain <q> | export-folder --db <path> --dir <dir> [--folder <id>] [--format m3u] | stats [--machine <name>] [--db <path>] | gen [--songs <n>] --out <path> | bench --db <path> [--runs <n>]\n", stderr);
     return 2;
 }

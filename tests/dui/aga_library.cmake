@@ -1,6 +1,6 @@
 # dui-aga-library (I678k; design 2026-10-29-desktop-library-architecture.md section 12): the Your Library sidebar and the collection page
 # on the Amiga bitmap tier (--canvas 640x256 --ydiv 2), through the real desktop UI entry. -DSELECTA -DSONGS -DWORK
-# Fixture fixture_sidebar_mixed.sql: all 15, Playlists 2, Albums 3, Artists 3, Composers 3, Sources 1, Local Files 1 (the Mac counts).
+# Fixture fixture_sidebar_mixed.sql: all 14 + registered sources (15 before I678m), Playlists 2, Albums 3, Artists 3, Composers 3, Sources = registered sources, Local Files 1 (the Mac counts).
 # 1. Key K steps the chip (All, Playlists, Albums, Artists, Composers, Sources, Local Files, All): `sidelib items` equals the Mac count
 #    at every step and the sentinel `sidechips cycles` grows by one per press.
 # 2. The rows carry a one-letter kind mark (`sidechips marks` > 0) and the view is Compact list only (`sidelib_density view=0`).
@@ -48,14 +48,17 @@ set(common --ui desktop --backend mem --view home --clock fixed --stats --db "${
 file(WRITE "${WORK}/idle.txt" "wait 100\n")
 dui_run(c0 ${common} --input "${WORK}/idle.txt")
 items_of("${c0}")
-expect_eq("all items" "${got_items}" "15")
+# I678m: the fixture's 15 items hold one synced source; every other registered source lists with 0 songs (same derivation as sidebar_chips.cmake).
+dui_registered_sources(nsrc "${c0}")
+math(EXPR all_items "14 + ${nsrc}")
+expect_eq("all items" "${got_items}" "${all_items}")
 field_of(density "${c0}" "sidelib_density view=([0-9]+) " "sidelib_density line")
 expect_eq("the bitmap tier offers the Compact list only" "${density}" "0")
 field_of(marks "${c0}" "sidechips [^\n]* marks=([0-9]+)" "marks")
 if(marks LESS 1)
   message(FATAL_ERROR "no kind mark was drawn on the bitmap tier:\n${c0}")
 endif()
-set(counts "2;3;3;3;1;1;15")
+set(counts "2;3;3;3;${nsrc};1;${all_items}")
 set(keys "")
 set(prev_cycles 0)
 foreach(k RANGE 0 6)
