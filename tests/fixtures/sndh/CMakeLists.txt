@@ -17,3 +17,14 @@ add_test(NAME sndh-render-missing
     -P "${CMAKE_CURRENT_SOURCE_DIR}/render.cmake")
 add_test(NAME sndh-nm
   COMMAND "${CMAKE_COMMAND}" "-DBINS=$<TARGET_FILE:selecta-cli>|$<TARGET_FILE:selecta>" -P "${CMAKE_CURRENT_SOURCE_DIR}/nm.cmake")
+
+# I427b part 2, the desktop reachability test: a SNDH dropped on the desktop UI (the real open path) plays through the
+# sc68 module (replayer=sc68, RP_RENDER calls, a non-silent null output) and, with the module absent, raises
+# the no-player toast. Label sndh-open, not dui: dui-ratchet counts dui tests.
+if(TARGET selecta)
+  add_test(NAME sndh-open
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSONG=${SEL_SNDH_SONG}" "-DMODDIR=${SEL_SNDH_MODDIR}"
+      "-DEMPTY=${SEL_SNDH_EMPTY}" "-DWORK=${CMAKE_BINARY_DIR}/tests/sndh-open"
+      -P "${PROJECT_SOURCE_DIR}/tests/dui/sndh_open.cmake")
+  set_tests_properties(sndh-open PROPERTIES LABELS sndh-open TIMEOUT 120)
+endif()

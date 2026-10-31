@@ -806,6 +806,13 @@ int main(int argc, char** argv)
            est.replayer != NULL ? est.replayer : "none");
     printf("songs_opened=%u queue_version=%u\n", (unsigned)est.songs_opened,
            (unsigned)sel_engine_state(e)->queue_version);
+    if (has_stats) { /* I427b: what the open song's replayer rendered and what reached the output (null output: the peak sample) */
+        sel_out_stats_fn ostats = (sel_out_stats_fn)sel_tag_find(oh, SEL_OUT_STATS, 0);
+        const sel_tag* os = ostats != NULL && so.out != NULL ? ostats(so.out) : NULL;
+
+        printf("replayer_render_calls=%u rendered_frames=%u out_peak=%u\n", (unsigned)est.replayer_render_calls,
+               (unsigned)est.rendered_frames, os != NULL ? (unsigned)sel_tag_find(os, SEL_OUT_STAT_PEAK, 0) : 0u);
+    }
     if (has_stats) { /* the song the engine has open, for the mouse test (DUI-P3-2) */
         printf("song=%s\n", sel_engine_state(e)->song.path != NULL ? sel_engine_state(e)->song.path : "");
     }
