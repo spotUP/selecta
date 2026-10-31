@@ -487,6 +487,10 @@ if(NOT SEL_AMIGA)
     "-DSONG=${SEL_TESTMOD}" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/mui-song-arg"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/ui/mui_song_arg.cmake")
   set_tests_properties(mui-song-arg PROPERTIES TIMEOUT 120 LABELS mui)
+  add_test(NAME mui-exec-queue COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+    "-DSONG=${SEL_TESTMOD}" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/mui-exec-queue"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/ui/mui_exec_queue.cmake")
+  set_tests_properties(mui-exec-queue PROPERTIES TIMEOUT 120 LABELS mui)
   add_test(NAME mui-status-face COMMAND mui_contract_test status-face)
   add_test(NAME mui-volume-row COMMAND mui_contract_test volume-row)
   add_test(NAME mui-player-bar COMMAND mui_contract_test player-bar)
