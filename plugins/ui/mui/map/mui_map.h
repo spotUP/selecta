@@ -196,7 +196,7 @@ const char* mui_row_cell(const sel_view_row* r, uint32_t column);
 typedef struct mui_row_extra {
     char album[64];
     char length[16];
-    char format[16];
+    char format[40]; /* the I819 format label, SEL_FORMAT_LABEL_MAX */
 } mui_row_extra;
 void mui_row_extra_fill(const sel_state* st, const sel_view_row* r, const char* album, mui_row_extra* out);
 

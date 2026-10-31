@@ -3,4 +3,4 @@
 # lifted out of plugins/ui/text (DUI-P1-5).
 add_library(selecta_uimodel STATIC uimodel.c actions.c layout.c display.c keys.c keybind.c cmdline.c palette.c style.c theme.c budget.c tokens.c features.c doors.c fkeys.c browse.c viewcmds.c sources.c panels.c select.c route.c)
 target_include_directories(selecta_uimodel PUBLIC "${PROJECT_SOURCE_DIR}/include")
-target_link_libraries(selecta_uimodel PUBLIC selecta_core)
+target_link_libraries(selecta_uimodel PUBLIC selecta_core selecta_formats)

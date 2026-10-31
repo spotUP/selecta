@@ -3,7 +3,10 @@
  * registry (sel_registry_format_owner), not stored here. */
 #include "source.h"
 
+#include <selecta/format_label.h>
+
 #include <ctype.h>
+#include <stdio.h>
 #include <string.h>
 
 static const sel_format_entry g_formats[] = {
@@ -101,4 +104,33 @@ const sel_format_entry* sel_format_by_ext(const char* ext) {
         }
     }
     return NULL;
+}
+
+size_t sel_format_label(const char* raw, char* out, size_t cap) {
+    const sel_format_entry* e;
+    int n;
+
+    if (cap == 0u) {
+        return 0u;
+    }
+    out[0] = '\0';
+    if (raw == NULL || raw[0] == '\0') {
+        return 0u;
+    }
+    e = sel_format_by_name(raw);
+    if (e == NULL) {
+        e = sel_format_by_ext(raw);
+    }
+    if (e == NULL) {
+        n = snprintf(out, cap, "%s", raw);
+    } else if (e->ext[0] == '\0') {
+        n = snprintf(out, cap, "%s", e->name);
+    } else {
+        n = snprintf(out, cap, "%s (%s)", e->name, e->ext);
+    }
+    if (n < 0) {
+        out[0] = '\0';
+        return 0u;
+    }
+    return (size_t)n < cap ? (size_t)n : cap - 1u;
 }

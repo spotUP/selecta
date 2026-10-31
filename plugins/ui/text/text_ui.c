@@ -4,6 +4,7 @@
  * file (--keys) so a test drives the whole UI with no terminal; --screen-dump
  * writes the last frame as UTF-8 text. --frame-dump appends every flushed frame's terminal bytes, so a
  * test sees exactly what the console is sent (row I218d2). */
+#include <selecta/format_label.h>
 #include <selecta/engine.h>
 #include <selecta/host.h>
 #include <selecta/plugin.h>
@@ -606,15 +607,16 @@ static void tui_header(tui* u, const sel_state* s) {
     char buf[256], pos[16], dur[16];
     const char* title = (const char*)sel_tag_find(s->song.meta, SEL_META_TITLE, 0);
     const char* author = (const char*)sel_tag_find(s->song.meta, SEL_META_AUTHOR, 0);
-    const char* format = (const char*)sel_tag_find(s->song.meta, SEL_META_FORMAT, 0);
+    char format[SEL_FORMAT_LABEL_MAX];
     txt_style hs = tui_style(u, TXT_ROLE_HEADER);
+    sel_format_label((const char*)sel_tag_find(s->song.meta, SEL_META_FORMAT, 0), format, sizeof format); /* I819 */
     txt_grid_fill(&u->grid, 0, 0, u->grid.cols, 1, ' ', hs);
     snprintf(buf, sizeof buf, "%s  %s  %s", sel_uim_play_word(s->play), title != NULL && title[0] ? title : "-",
              author != NULL ? author : "");
     txt_grid_text(&u->grid, 1, 0, buf, u->grid.cols - 1u, hs);
     sel_uim_clock(pos, sizeof pos, s->song.position_ms, s->song.path != NULL);
     sel_uim_clock(dur, sizeof dur, s->song.duration_ms, s->song.duration_ms != 0);
-    snprintf(buf, sizeof buf, "%s  Subsong %u/%u  %s / %s  Volume %d", format != NULL && format[0] ? format : "-",
+    snprintf(buf, sizeof buf, "%s  Subsong %u/%u  %s / %s  Volume %d", format[0] ? format : "-",
              (unsigned)(s->song.path != NULL ? s->song.subsong + 1u : 0u), (unsigned)s->song.subsong_count, pos, dur,
              (int)s->volume);
     sel_uim_stage_status(buf, sizeof buf, s);
