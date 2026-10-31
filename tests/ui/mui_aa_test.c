@@ -721,7 +721,7 @@ static void test_field_plan(void) {
 }
 
 /* I667h mui-field-source: the MUI UI builds every string gadget through AAField, counted from the source: no stock MUIC_String left in
- * mui_ui.c, the helper definition plus the top bar site, the two tool-row sites and the settings site = 5 "mui_make_string(" spellings, one AAField
+ * mui_ui.c, the helper definition plus the top bar site, the two tool-row sites and the settings site = 6 "mui_make_string(" spellings (I798: plus the palette filter), one AAField
  * constructor call, the class freed, drawn through the shared helpers and in the build. */
 static void test_field_source(void) {
     char* ui = slurp(UI_SOURCE);
@@ -733,7 +733,7 @@ static void test_field_source(void) {
     }
     CHECK(count_of(ui, "MUIC_String") == 0, "stock string left in mui_ui.c: %d", count_of(ui, "MUIC_String"));
     CHECK(count_of(ui, "TH_TAGS(MUI_TH_FIELD") == 0, "stock string frame left in mui_ui.c");
-    CHECK(count_of(ui, "mui_make_string(") == 5, "string constructor sites: %d (definition + 4)", count_of(ui, "mui_make_string("));
+    CHECK(count_of(ui, "mui_make_string(") == 6, "string constructor sites: %d (definition + 5: top bar, command line, palette, tool rows, settings)", count_of(ui, "mui_make_string("));
     CHECK(count_of(ui, "mui_aafield_new(") == 1, "one AAField constructor call: %d", count_of(ui, "mui_aafield_new("));
     CHECK(count_of(ui, "mui_aafield_class_free(") == 1, "class freed in mui_close");
     CHECK(strstr(cls, "mui_aa_field_plan(") != NULL && strstr(cls, "mui_aa_field_height(") != NULL && strstr(cls, "aa_round_fill_hole(") != NULL,
@@ -822,7 +822,7 @@ static void test_field_placeholder(void) {
         CHECK(ph != NULL && strstr(ph, "aa_text(") != NULL, "placeholder drawn through aa_text");
         CHECK(strstr(cls, "MUIA_String_Contents, MUIV_EveryTime") != NULL, "repaint on contents change");
         CHECK(count_of(ui, "sel_uim_search_hint(") == 1 && count_of(ui, "SEL_UIM_CMD_HINT") == 1 && count_of(ui, "r->label);") >= 1, "string sites pass hints");
-        CHECK(count_of(ui, "mui_make_string(") == 5, "string constructor sites: %d", count_of(ui, "mui_make_string("));
+        CHECK(count_of(ui, "mui_make_string(") == 6, "string constructor sites: %d", count_of(ui, "mui_make_string("));
     }
     free(cls);
     free(ui);
@@ -974,7 +974,7 @@ static void test_list_source(void) {
     CHECK(count_of(ui, "MUIM_List_") == 0 && count_of(ui, "MUIA_List_") == 0 && count_of(ui, "mui_list_pad_x") == 0, "stock list calls left in mui_ui.c");
     CHECK(count_of(ui, "mui_aalist_new(") == 5 && count_of(ui, "mui_string_aalist(") == 5, "AAList builders: new %d, string %d", count_of(ui, "mui_aalist_new("), count_of(ui, "mui_string_aalist("));
     CHECK(count_of(ui, "sp.cols = &s->main_cols;") == 1 && count_of(ui, "sp.title = 1;") == 1 && count_of(ui, "sp.double_pick = 1;") == 3 && count_of(ui, "sp.no_select = 1;") == 1,          "main list columns, title row, double pick and lyrics no_select");
-    CHECK(count_of(ui, "AAL_Columns") == 1 && count_of(ui, "AAL_Playing") == 1 && count_of(ui, "AAL_Picked") == 6, "columns %d, playing %d, picked %d", count_of(ui, "AAL_Columns"),
+    CHECK(count_of(ui, "AAL_Columns") == 1 && count_of(ui, "AAL_Playing") == 1 && count_of(ui, "AAL_Picked") == 8, "columns %d, playing %d, picked %d", count_of(ui, "AAL_Columns"),
           count_of(ui, "AAL_Playing"), count_of(ui, "AAL_Picked"));
     CHECK(count_of(ui, "mui_list_display(&g_list_hook") == 2 && strstr(ui, "static const char* mui_main_cell(") != NULL, "cells come from the display hook");
     CHECK(strstr(ui, "mui_text_lines(s->np_lyric_buf)") != NULL && strstr(ui, "mui_text_line(s->np_lyric_buf") != NULL, "lyrics rows from the pure line helpers");

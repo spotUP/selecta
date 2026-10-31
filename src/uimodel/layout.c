@@ -124,6 +124,11 @@ void sel_uim_layout_compute_expand(sel_uim_layout* l, uint32_t width, uint32_t h
     sel_uim_layout_compute_panel(l, width, height, tier, rail_w, bar_height, expand, 0u);
 }
 
+/* I798: a tier's layout with the default bar and no rail, `detail_hidden` as in compute_panel (the MUI window's Now Playing toggle). */
+void sel_uim_layout_compute_tier_panel(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden) {
+    sel_uim_layout_compute_panel(l, width, height, tier, 0u, BAR_H, 0u, detail_hidden);
+}
+
 /* I619: as compute_expand; a non-zero `detail_hidden` drops the Now Playing column of the three column breakpoint, the main
  * region taking its width. */
 void sel_uim_layout_compute_panel(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t rail_w,

@@ -9,6 +9,8 @@
 #include <selecta/engine.h>
 #include <selecta/uimodel.h>
 #include <selecta/uimodel/browse.h>
+#include <selecta/uimodel/keybind.h>
+#include <selecta/uimodel/palette.h>
 #include <selecta/uimodel/panels.h>
 #include <selecta/uimodel/sources.h>
 
@@ -70,9 +72,14 @@ typedef struct mui_layout_map_t {
     uint32_t weight_w[MUI_SLOT_COUNT];
     uint32_t weight_h[MUI_SLOT_COUNT];
     uint8_t balance_sidebar_main, balance_main_detail; /* Balance object between two shown panels */
+    uint8_t detail_hidden; /* I798: the Now Playing column is hidden by the top bar toggle (Mac I619 detail_hidden) */
 } mui_layout_map_t;
 /* I615d: `tier` is SEL_UIM_TIER_DEFAULT on an RTG screen (top bar slot shown), SEL_UIM_TIER_BITMAP on a native planar screen. */
 void mui_layout_map(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier);
+/* I798 (T2, R3): as mui_layout_map with the Now Playing column hidden when `detail_hidden`; relayout keeps the flag. */
+void mui_layout_map_panel(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden);
+/* I798: 1 when the Hide / Show Now Playing button exists (three column breakpoint, top bar shown), as the Mac np_toggle_rect. */
+uint32_t mui_np_toggle_shown(const mui_layout_map_t* m);
 /* Recompute for a new window size. Returns 1 when the breakpoint changed (the caller re-applies ShowMe, *flips counts
  * the slots whose visibility changed), 0 when only weights move. */
 uint32_t mui_layout_relayout(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t* flips);
@@ -507,6 +514,35 @@ uint32_t mui_tooltip_transport(uint32_t button, const sel_uim_frame* f, char* ou
 uint32_t mui_tooltip_door(uint32_t i, char* out, uint32_t cap);
 uint32_t mui_tooltip_hover(const char* tip, char* status, uint32_t cap);
 uint32_t mui_tooltip_hovers(void);
+
+/* I798 (O1): the command palette window model. The rows are the shared txt_palette (the Mac's command table, the default key
+ * bindings); `row[i]` is the text of match i. mui_palette_filter narrows to the query, mui_palette_pick runs the verb through
+ * `send` or, when the verb needs arguments, writes "verb " to `fill` for the command line (the Mac palette_pick). */
+typedef struct mui_palette {
+    txt_bindings binds;
+    txt_palette pal;
+    char row[SEL_CMD_COUNT][96];
+    char query[TXT_PAL_QUERY];
+    char last_verb[48];
+    uint32_t count;
+    uint32_t opens, runs, fills; /* sentinels */
+} mui_palette;
+enum { MUI_PAL_NONE = 0, MUI_PAL_RUN, MUI_PAL_FILL, MUI_PAL_REJECTED };
+void mui_palette_open(mui_palette* p);
+void mui_palette_filter(mui_palette* p, const char* query);
+const char* mui_palette_row(void* ctx, long row);
+uint32_t mui_palette_pick(mui_palette* p, long row, mui_send_fn send, void* ctx, char* fill, uint32_t cap);
+
+/* I798 (O3): the one tooltip text function the MUI controls read. Transport and doors go through the P8-10 mapping (action tip
+ * with key hint, door label); the like and Now Playing panel texts are the Mac's (sel_uim_tip_*). mui_tip_calls is the sentinel. */
+enum { MUI_TIP_TRANSPORT = 0, MUI_TIP_DOOR, MUI_TIP_LIKE, MUI_TIP_NP_PANEL, MUI_TIP_SEARCH, MUI_TIP_CMD, MUI_TIP_PALETTE, MUI_TIP_SEEK, MUI_TIP_VOLUME };
+uint32_t mui_tip(uint32_t kind, uint32_t index, const sel_uim_frame* f, int flag, char* out, uint32_t cap);
+uint32_t mui_tip_calls(void);
+
+/* I798 (T2, R3): flip the Now Playing column of the window layout (Mac I619 detail_hidden); returns the new hidden flag.
+ * mui_np_toggles counts the flips. */
+uint32_t mui_np_toggle(mui_layout_map_t* m);
+uint32_t mui_np_toggles(void);
 
 /* MUI-P8-11: remembered state. close stores geometry, open panes, visualiser and browse view as PREF_SET lines through `send`;
  * open reads them back through `get` (the pref value of a key, NULL when unset). */

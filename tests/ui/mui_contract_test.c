@@ -2206,6 +2206,95 @@ static void test_sidebar_icons(void) {
 }
 
 
+static int pal_send_n;
+static char pal_send_last[64];
+static int pal_send(void* ctx, const char* line) {
+    (void)ctx;
+    pal_send_n++;
+    snprintf(pal_send_last, sizeof pal_send_last, "%s", line);
+    return 1;
+}
+
+/* I798 (drift doc O1, O3, T2, R3): the command palette rows are the Mac's shared table and a pick runs a bare verb or fills the
+ * command line; every tooltip text comes from mui_tip (the Mac's sel_uim_tip_* strings and the action tip); Hide / Show Now Playing
+ * flips the detail slot of the layout like the Mac's detail_hidden. The wiring checks read mui_ui.c. */
+static void test_overlays(void) {
+    static mui_palette pal;
+    mui_layout_map_t m;
+    char fill[64], tip[96];
+    sel_uim_frame fr;
+    uint32_t i, r, before_tip = mui_tip_calls(), before_np = mui_np_toggles(), main_w, bare = 0, args = 0, all;
+    char* src = ui_source();
+    memset(&fr, 0, sizeof fr);
+    mui_palette_open(&pal);
+    all = pal.count;
+    CHECK(all > 0u && all == pal.pal.count && pal.opens >= 1u, "palette rows %u, shared %u", (unsigned)all, (unsigned)pal.pal.count);
+    CHECK(strcmp(mui_palette_row(&pal, 0), pal.row[0]) == 0 && mui_palette_row(&pal, (long)pal.count)[0] == '\0', "row callback");
+    mui_palette_filter(&pal, "pause");
+    CHECK(pal.count > 0u && pal.count <= all, "a query narrows %u of %u", (unsigned)pal.count, (unsigned)all);
+    mui_palette_filter(&pal, "");
+    for (i = 0; i < pal.count && (bare == 0u || args == 0u); i++) {
+        const char* verb = pal.pal.items[i].name;
+        fill[0] = '\0';
+        pal_send_n = 0;
+        r = mui_palette_pick(&pal, (long)i, pal_send, NULL, fill, sizeof fill);
+        if (verb == NULL) {
+            continue;
+        }
+        if (txt_palette_verb_needs_args(verb)) {
+            CHECK(r == MUI_PAL_FILL && pal_send_n == 0 && strncmp(fill, verb, strlen(verb)) == 0 && fill[strlen(verb)] == ' ', "verb '%s' fills '%s' (r %u)", verb, fill, (unsigned)r);
+            args++;
+        } else {
+            CHECK(r == MUI_PAL_RUN && pal_send_n == 1 && strcmp(pal_send_last, verb) == 0, "verb '%s' sent '%s' (r %u)", verb, pal_send_last, (unsigned)r);
+            bare++;
+        }
+    }
+    CHECK(bare > 0u && args > 0u && pal.runs >= bare && pal.fills >= args, "sentinels runs %u fills %u", (unsigned)pal.runs, (unsigned)pal.fills);
+    CHECK(mui_palette_pick(&pal, -1, pal_send, NULL, fill, sizeof fill) == MUI_PAL_NONE, "a row outside the list picks nothing");
+
+    CHECK(mui_tip(MUI_TIP_LIKE, 0, NULL, 0, tip, sizeof tip) > 0u && strcmp(tip, sel_uim_tip_like(0)) == 0, "like tip '%s'", tip);
+    CHECK(mui_tip(MUI_TIP_LIKE, 0, NULL, 1, tip, sizeof tip) > 0u && strcmp(tip, sel_uim_tip_like(1)) == 0, "liked tip '%s'", tip);
+    CHECK(mui_tip(MUI_TIP_NP_PANEL, 0, NULL, 1, tip, sizeof tip) > 0u && strcmp(tip, sel_uim_tip_np_panel(1)) == 0, "np tip '%s'", tip);
+    CHECK(mui_tip(MUI_TIP_NP_PANEL, 0, NULL, 0, tip, sizeof tip) > 0u && strcmp(tip, sel_uim_tip_np_panel(0)) == 0, "np tip '%s'", tip);
+    for (i = 0; i < MUI_BTN_COUNT; i++) {
+        CHECK(mui_tip(MUI_TIP_TRANSPORT, i, &fr, 0, tip, sizeof tip) > 0u, "transport button %u has no tip", (unsigned)i);
+    }
+    CHECK(mui_tip(MUI_TIP_DOOR, 1, NULL, 0, tip, sizeof tip) > 0u, "door 1 has no tip");
+    CHECK(mui_tip(MUI_TIP_PALETTE, 0, NULL, 0, tip, sizeof tip) > 0u && mui_tip(MUI_TIP_SEEK, 0, NULL, 0, tip, sizeof tip) > 0u &&
+              mui_tip(MUI_TIP_VOLUME, 0, NULL, 0, tip, sizeof tip) > 0u && mui_tip(MUI_TIP_SEARCH, 0, NULL, 0, tip, sizeof tip) > 0u &&
+              mui_tip(MUI_TIP_CMD, 0, NULL, 0, tip, sizeof tip) > 0u,
+          "a control tip is empty");
+    CHECK(mui_tip_calls() - before_tip >= 14u, "sentinel: %u tip calls", (unsigned)(mui_tip_calls() - before_tip));
+
+    memset(&m, 0, sizeof m);
+    mui_layout_map(&m, 1400u, 800u, SEL_UIM_TIER_DEFAULT);
+    CHECK(mui_np_toggle_shown(&m) && m.show[MUI_SLOT_DETAIL] && !m.detail_hidden, "three columns show the detail slot and the toggle");
+    main_w = m.weight_w[MUI_SLOT_MAIN];
+    CHECK(mui_np_toggle(&m) == 1u && !m.show[MUI_SLOT_DETAIL] && m.weight_w[MUI_SLOT_MAIN] > main_w, "hidden drops the detail slot and widens main");
+    mui_layout_relayout(&m, 1500u, 800u, SEL_UIM_TIER_DEFAULT, NULL);
+    CHECK(m.detail_hidden && !m.show[MUI_SLOT_DETAIL] && mui_np_toggle_shown(&m), "a resize keeps the panel hidden and the button shown");
+    CHECK(mui_np_toggle(&m) == 0u && m.show[MUI_SLOT_DETAIL], "toggle shows the panel again");
+    CHECK(mui_np_toggles() - before_np == 2u, "sentinel: %u flips", (unsigned)(mui_np_toggles() - before_np));
+    mui_layout_map(&m, 1000u, 800u, SEL_UIM_TIER_DEFAULT);
+    CHECK(!mui_np_toggle_shown(&m), "two columns have no panel to hide");
+    mui_layout_map(&m, 1400u, 800u, SEL_UIM_TIER_BITMAP);
+    CHECK(!mui_np_toggle_shown(&m), "the bitmap tier has no top bar button");
+
+    CHECK(src != NULL, "cannot read mui_ui.c");
+    if (src == NULL) {
+        return;
+    }
+    CHECK(strstr(src, "mui_tip(kind, index, f, flag,") != NULL && strstr(src, "MUIA_ShortHelp") != NULL && strstr(src, "MUI_TIP_DOOR,") != NULL &&
+              strstr(src, "MUI_TIP_TRANSPORT,") != NULL && strstr(src, "MUI_TIP_LIKE,") != NULL && strstr(src, "MUI_TIP_SEEK,") != NULL,
+          "tooltips are not set from mui_tip");
+    CHECK(strstr(src, "CTL_NP_TOGGLE") != NULL && strstr(src, "mui_np_toggle(&s->lay)") != NULL && strstr(src, "mui_layout_map_panel(&s->lay") != NULL &&
+              strstr(src, "mui_np_toggle_shown(&s->lay)") != NULL,
+          "the Now Playing toggle is not wired");
+    CHECK(strstr(src, "CTL_PAL_BTN") != NULL && strstr(src, "mui_palette_open(&s->pal)") != NULL && strstr(src, "mui_palette_filter(&s->pal,") != NULL &&
+              strstr(src, "mui_palette_pick(&s->pal,") != NULL && strstr(src, "mui_palette_sync(s)") != NULL,
+          "the command palette is not wired");
+}
+
 /* I794 behaviour (drift doc T1, P2, P3): each route target enters its page with the lines the desktop UI sends, Back and Forward restore
  * without touching Recents (" 1"), the door keeps its lines as the history entry, and Back and Forward are enabled from the history. */
 static void test_route(void) {
@@ -2460,6 +2549,8 @@ int main(int argc, char** argv) {
         test_player_bar();
     } else if (strcmp(argv[1], "sidebar-icons") == 0) {
         test_sidebar_icons();
+    } else if (strcmp(argv[1], "overlays") == 0) {
+        test_overlays();
     } else if (strcmp(argv[1], "volume-row") == 0) {
         test_volume_row();
     } else if (strcmp(argv[1], "cycle-initial") == 0) {

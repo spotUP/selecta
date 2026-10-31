@@ -199,6 +199,12 @@ void sel_uim_layout_compute_expand(sel_uim_layout* l, uint32_t width, uint32_t h
 /* I619: as compute_expand; a non-zero `detail_hidden` removes the "detail" region of the three column breakpoint. */
 void sel_uim_layout_compute_panel(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t rail_w,
                                   uint32_t bar_height, uint32_t expand, uint32_t detail_hidden);
+/* I798: compute_panel with the default bar and no rail. */
+void sel_uim_layout_compute_tier_panel(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden);
+/* I798: tooltip texts both UIs share for the controls that are not table actions: the Now Playing add button and the top bar
+ * Hide / Show Now Playing button. */
+const char* sel_uim_tip_like(int liked);
+const char* sel_uim_tip_np_panel(int hidden);
 /* I668: the sidebar `side` wide mid-tween; the main region takes the rest. */
 void sel_uim_layout_set_side_width(sel_uim_layout* l, uint32_t side);
 int sel_uim_layout_check(const sel_uim_layout* l, char* msg, size_t cap);

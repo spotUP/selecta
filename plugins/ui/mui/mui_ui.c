@@ -112,6 +112,9 @@ typedef struct mui_shelf_ctx { /* I795: the row callback of a shelf list finds i
     uint32_t slot;
 } mui_shelf_ctx;
 
+/* I798 (O3): one persistent ShortHelp buffer per tipped control. */
+enum { MUI_TS_BTN = 0, MUI_TS_DOOR = MUI_BTN_COUNT, MUI_TS_LIKE = MUI_TS_DOOR + MUI_SIDEBAR_DOORS, MUI_TS_NP, MUI_TS_SEARCH, MUI_TS_CMD, MUI_TS_PAL, MUI_TS_SEEK, MUI_TS_VOL, MUI_TS_COUNT };
+
 typedef struct mui_state {
     uint32_t opens; /* ui_open_mui sentinel (MUI-P1-5): windows opened */
     uint32_t wake_mask; /* engine wake signal (MUI-P1-7), 0 where there is none */
@@ -146,6 +149,9 @@ typedef struct mui_state {
     Object* listview;               /* MUI-P3-1 */
     mui_route route;                /* I794: the shared route history (T1) and the handler that enters the pages (P2, P3) */
     Object* door_btn[MUI_SIDEBAR_DOORS]; /* I797 (S2): the sidebar door buttons, lit from the route history in mui_route_sync */
+    mui_palette pal;                /* I798 (O1): the command palette model and its window */
+    Object *pal_win, *pal_str, *pal_list, *np_btn, *pal_btn;
+    char tip[MUI_TS_COUNT][96];     /* I798 (O3): the ShortHelp texts, kept alive for MUI */
     Object* nav_back;               /* I794: top bar Back / Forward, disabled from the route history */
     Object* nav_fwd;
     Object* col_page;               /* I794 (P3): album, artist or composer page: header, meta line and the song AAList; replaces the main list while shown */
@@ -447,6 +453,10 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_NAV_FWD 0x2802L    /* I794: top bar Forward */
 #define CTL_COL_LIST 0x2803L   /* I794: a song of the collection page was picked */
 #define CTL_COL_ARTIST 0x2804L /* I794: the Artist link of an album page */
+#define CTL_NP_TOGGLE 0x2805L  /* I798 (T2, R3): Hide / Show Now Playing at the right end of the top bar */
+#define CTL_PAL_BTN 0x2806L    /* I798 (O1): the Commands button opening the palette window */
+#define CTL_PAL_STR 0x2807L    /* the palette window's query String */
+#define CTL_PAL_LIST 0x2808L   /* the palette window's match list */
 #define CTL_TOPBAR_BROWSE 0x2800L /* I615d: the top bar Browse button */
 #define CTL_QUICK_BASE 0x2A00L      /* I795 (P1): the Home quick tiles, CTL_QUICK_BASE + slot */
 #define CTL_SHELF_ALL_BASE 0x2A10L  /* I795 (P1): Show all of a shelf slot */
@@ -760,6 +770,16 @@ static Object* mui_make_slider(long lo, long hi, long value, LONG id, long fix_w
     return mui_aaslider_new(&sp);
 }
 
+/* I798 (O3): give `obj` the ShortHelp from the one shared tip function (mui_tip) in the persistent buffer of `slot`. */
+static void mui_set_tip(mui_state* s, uint32_t slot, Object* obj, uint32_t kind, uint32_t index, const sel_uim_frame* f, int flag) {
+    if (s == NULL || obj == NULL || slot >= MUI_TS_COUNT) {
+        return;
+    }
+    if (mui_tip(kind, index, f, flag, s->tip[slot], sizeof s->tip[slot]) > 0u) {
+        SetAttrs(obj, MUIA_ShortHelp, (ULONG)s->tip[slot], TAG_DONE);
+    }
+}
+
 /* I667e (design 3.8): the one panel constructor. Every Selecta panel group is a Selecta_AAPanel (mui_aapanel_class.c): a rounded face in
  * the role token colour (panel, surface, raised) over the window background. fixed_px > 0 is the square art frame. */
 static Object* mui_aapanel(int role, int fixed_px) {
@@ -818,6 +838,7 @@ static Object* mui_sidebar_group(mui_state* s, int top_bar) {
         Object* b = mui_make_button_left(mui_door_label(i), sel_uim_door_at(i)->page, CTL_DOOR_BASE + (LONG)i);
         if (s != NULL && i < MUI_SIDEBAR_DOORS) {
             s->door_btn[i] = b; /* S2: lit by mui_route_sync */
+            mui_set_tip(s, MUI_TS_DOOR + i, b, MUI_TIP_DOOR, i, NULL, 0);
         }
         mui_side_add(g, b);
     }
@@ -888,6 +909,7 @@ static Object* mui_player_group(mui_state* s) {
         s->btn[i] = mui_make_button_i(s->btn_label[i], mui_transport_widest(i), mui_transport_action(i, &zero), i == MUI_BTN_PLAY ? "pause" : NULL,
                                       CTL_BTN_BASE + (LONG)i, 100, mui_transport_icon_only(i), i == MUI_BTN_PLAY ? MUI_AA_ROLE_ACCENT : MUI_AA_ROLE_NORMAL);
         if (s->btn[i] != NULL) {
+            mui_set_tip(s, MUI_TS_BTN + i, s->btn[i], MUI_TIP_TRANSPORT, i, &zero, 0);
             DoMethod(row1, OM_ADDMEMBER, s->btn[i]);
         }
     }
@@ -899,6 +921,9 @@ static Object* mui_player_group(mui_state* s) {
     row5 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     art = mui_aapanel(MUI_AA_PANEL_RAISED, MUI_PLAYER_ART_PX);
     like = mui_make_button_icon(mui_tool_labels[0], mui_tool_labels[0], CTL_P4_BASE + P4_LIKE);
+    mui_set_tip(s, MUI_TS_LIKE, like, MUI_TIP_LIKE, 0, NULL, 0);
+    mui_set_tip(s, MUI_TS_SEEK, s->seek, MUI_TIP_SEEK, 0, NULL, 0);
+    mui_set_tip(s, MUI_TS_VOL, s->vol, MUI_TIP_VOLUME, 0, NULL, 0);
     titles = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
     colL = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_HorizWeight, MUI_PLAYER_W_LEFT, TAG_DONE);
     colC = MUI_NewObject((char*)MUIC_Group, MUIA_HorizWeight, MUI_PLAYER_W_CENTRE, TAG_DONE);
@@ -1009,6 +1034,7 @@ static Object* mui_topbar_group(mui_state* s) {
         return g;
     }
     s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH, (int)SEL_UIM_TOPBAR_FIELD_MAX, mui_search_hint());
+    mui_set_tip(s, MUI_TS_SEARCH, s->str_search, MUI_TIP_SEARCH, 0, NULL, 0);
     mui_theme_bg_spec(g_tokens[SEL_GUI_TOKEN_DIVIDER], div_spec, sizeof div_spec);
     DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
     s->nav_back = mui_make_button_i("Back", "Back", "nav_back", NULL, CTL_NAV_BACK, 0, 1, MUI_AA_ROLE_NORMAL); /* I794 (T1): ahead of Home */
@@ -1026,6 +1052,16 @@ static Object* mui_topbar_group(mui_state* s) {
     DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, MUIA_FixWidth, 1, MUIA_Background, (ULONG)div_spec, TAG_DONE));
     DoMethod(g, OM_ADDMEMBER, mui_make_button_i("Browse", "Browse", "library", NULL, CTL_TOPBAR_BROWSE, 0, 1, MUI_AA_ROLE_NORMAL));
     DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    s->pal_btn = mui_make_button_i("Commands", "Commands", "Help", NULL, CTL_PAL_BTN, 0, 1, MUI_AA_ROLE_NORMAL); /* I798 (O1) */
+    s->np_btn = mui_make_button_i(sel_uim_tip_np_panel(0), sel_uim_tip_np_panel(0), "nav_forward", "nav_back", CTL_NP_TOGGLE, 0, 1, MUI_AA_ROLE_NORMAL); /* I798 (T2, R3): the right end */
+    if (s->pal_btn != NULL) {
+        mui_set_tip(s, MUI_TS_PAL, s->pal_btn, MUI_TIP_PALETTE, 0, NULL, 0);
+        DoMethod(g, OM_ADDMEMBER, s->pal_btn);
+    }
+    if (s->np_btn != NULL) {
+        mui_set_tip(s, MUI_TS_NP, s->np_btn, MUI_TIP_NP_PANEL, 0, NULL, (int)s->lay.detail_hidden);
+        DoMethod(g, OM_ADDMEMBER, s->np_btn);
+    }
     return g;
 }
 
@@ -1042,8 +1078,10 @@ static Object* mui_tool_group(mui_state* s) {
     }
     if (!g_screen_rtg) { /* I615d: on the DEFAULT tier the search field lives in the top bar */
         s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH, 0, mui_search_hint());
+        mui_set_tip(s, MUI_TS_SEARCH, s->str_search, MUI_TIP_SEARCH, 0, NULL, 0);
     }
     s->str_cmd = mui_make_string(CTL_P4_BASE + P4_CMD, 0, SEL_UIM_CMD_HINT);
+    mui_set_tip(s, MUI_TS_CMD, s->str_cmd, MUI_TIP_CMD, 0, NULL, 0);
     s->cyc_rating = mui_make_cycle(p4_rating_entries, 0, CTL_P4_BASE + P4_RATING);
     s->cyc_subsong = mui_make_cycle(p4_subsong_entries, 0, CTL_P4_BASE + P4_SUBSONG);
     snprintf(s->status_buf, sizeof s->status_buf, "Ready");
@@ -1117,15 +1155,19 @@ static const char* mui_lyric_row(void* ctx, long row) {
 }
 
 /* One AAList (list and flat AAScroller) over a string array; *list_out is the list object. */
-static Object* mui_string_aalist(void* ctx, long count, int rows, Object** list_out) {
+static Object* mui_row_aalist(const char* (*row_fn)(void*, long), void* ctx, long count, int rows, Object** list_out) {
     mui_aalist_spec sp;
     memset(&sp, 0, sizeof sp);
     sp.count = count;
     sp.active = -1;
-    sp.row = mui_ptr_row;
+    sp.row = row_fn;
     sp.ctx = ctx;
     sp.max_rows = rows;
     return mui_aalist_new(&sp, list_out);
+}
+
+static Object* mui_string_aalist(void* ctx, long count, int rows, Object** list_out) {
+    return mui_row_aalist(mui_ptr_row, ctx, count, rows, list_out);
 }
 
 /* I794 (P3): row `row` of the collection page: the file name of the song's path (rows are "path\0plays\0" pairs). */
@@ -1823,6 +1865,9 @@ static void mui_route_sync(mui_state* s, const sel_state* st) {
     mui_pages_sync(s, st, cur, col);
 }
 
+static void mui_palette_sync(mui_state* s);
+static void mui_apply_layout(mui_state* s);
+
 static void mui_refresh(mui_state* s) {
     const sel_state* st = sel_engine_state(s->engine);
     const sel_uim_frame* f;
@@ -1877,9 +1922,11 @@ static void mui_refresh(mui_state* s) {
                 mui_aabtn_set_caption(s->btn[i], label);
                 mui_aabtn_set_on(s->btn[i], mui_transport_on((uint32_t)i, f));
                 mui_aabtn_set_alt(s->btn[i], i == MUI_BTN_PLAY && act != NULL && strcmp(act, "pause") == 0);
+                mui_set_tip(s, MUI_TS_BTN + i, s->btn[i], MUI_TIP_TRANSPORT, i, f, 0); /* set_caption replaced the ShortHelp */
             }
         }
     }
+    mui_palette_sync(s);
     mui_detail_refresh(s, st);
     v = st->view;
     if (v != NULL) {
@@ -2135,6 +2182,65 @@ static void mui_help_open(mui_state* s) {
 
 static int mui_cmd_send(void* ctx, const char* line) {
     return mui_engine_line((mui_state*)ctx, line);
+}
+
+/* I798 (O1): the command palette window: a String over an AAList of the shared txt_palette matches (the Mac palette rows). */
+static void mui_palette_show(mui_state* s) {
+    mui_palette_open(&s->pal);
+    if (s->pal_win == NULL) {
+        Object *lst_g, *str_g;
+        lst_g = mui_row_aalist(mui_palette_row, &s->pal, (long)s->pal.count, 14, &s->pal_list);
+        s->pal_str = mui_make_string(CTL_PAL_STR, 0, "Search commands");
+        str_g = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+        if (lst_g == NULL || s->pal_list == NULL || s->pal_str == NULL || str_g == NULL) {
+            return;
+        }
+        DoMethod(str_g, OM_ADDMEMBER, s->pal_str);
+        DoMethod(str_g, OM_ADDMEMBER, lst_g);
+        s->pal_win = MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, (ULONG) "Selecta Command Palette", MUIA_Window_ID, 0x50414C54UL,
+                                   MUIA_Window_RootObject, (ULONG)str_g, TAG_DONE);
+        if (s->pal_win == NULL) {
+            return;
+        }
+        DoMethod(s->app, OM_ADDMEMBER, s->pal_win);
+        mui_close_on_request(s->pal_win);
+        DoMethod(s->pal_list, MUIM_Notify, AAL_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_PAL_LIST);
+    } else {
+        set(s->pal_str, MUIA_String_Contents, (ULONG) "");
+        SetAttrs(s->pal_list, AAL_Count, (ULONG)s->pal.count, AAL_Active, (ULONG)0, TAG_DONE);
+    }
+    set(s->pal_win, MUIA_Window_Open, TRUE);
+    set(s->pal_win, MUIA_Window_ActiveObject, s->pal_str);
+}
+
+/* Live filter: the String text changed, so narrow the shared palette and redraw the list (called from mui_refresh). */
+static void mui_palette_sync(mui_state* s) {
+    ULONG text = 0, open = 0;
+    if (s->pal_win == NULL || s->pal_str == NULL || s->pal_list == NULL) {
+        return;
+    }
+    GetAttr(MUIA_Window_Open, s->pal_win, &open);
+    GetAttr(MUIA_String_Contents, s->pal_str, &text);
+    if (open != 0 && text != 0 && strcmp((const char*)text, s->pal.query) != 0) {
+        mui_palette_filter(&s->pal, (const char*)text);
+        SetAttrs(s->pal_list, AAL_Count, (ULONG)s->pal.count, AAL_Active, (ULONG)0, TAG_DONE);
+    }
+}
+
+/* Row `row` chosen (click or Enter): a bare verb runs, a verb with arguments fills the command line (the Mac palette_pick). */
+static void mui_palette_choose(mui_state* s, long row) {
+    char fill[64];
+    uint32_t r;
+    fill[0] = '\0';
+    r = mui_palette_pick(&s->pal, row, mui_cmd_send, s, fill, sizeof fill);
+    if (r == MUI_PAL_RUN || r == MUI_PAL_FILL) {
+        if (r == MUI_PAL_FILL) {
+            set(s->str_cmd, MUIA_String_Contents, (ULONG)fill);
+        }
+        snprintf(s->status_buf, sizeof s->status_buf, r == MUI_PAL_RUN ? "Command sent: %s" : "Command needs arguments: %s", s->pal.last_verb);
+        mui_toast_show(&s->toast, s->status_buf, 0, mui_now_ms());
+        set(s->pal_win, MUIA_Window_Open, FALSE);
+    }
 }
 
 /* MUI-P4-6: one Song menu item fired, on the song under the list cursor. The lines come from the shared mapping. */
@@ -2527,6 +2633,22 @@ static void mui_control_fire(mui_state* s, LONG id) {
         for (k = 0; k < SEL_UIM_SEARCH_FACETS; k++) {
             mui_aabtn_set_on(s->facet_btn[k], k == s->search_facet);
         }
+    } else if (id == CTL_PAL_BTN) {
+        mui_palette_show(s);
+    } else if (id == CTL_PAL_LIST) {
+        ULONG picked = 0;
+        GetAttr(AAL_Picked, s->pal_list, &picked);
+        mui_palette_choose(s, (long)picked);
+    } else if (id == CTL_PAL_STR) {
+        ULONG active = 0;
+        mui_palette_sync(s);
+        GetAttr(AAL_Active, s->pal_list, &active);
+        mui_palette_choose(s, (long)active);
+    } else if (id == CTL_NP_TOGGLE) {
+        uint32_t hidden = mui_np_toggle(&s->lay);
+        mui_apply_layout(s);
+        mui_aabtn_set_alt(s->np_btn, hidden != 0u);
+        mui_set_tip(s, MUI_TS_NP, s->np_btn, MUI_TIP_NP_PANEL, 0, NULL, (int)hidden);
     } else if (id == CTL_TOPBAR_BROWSE) {
         char joined[128]; /* I615d: what the rich top bar Browse slice sends (desk_page_load PG_BROWSE), kept as one history entry (I794) */
         mui_browse_key(joined, sizeof joined);
@@ -2629,6 +2751,9 @@ static void mui_apply_layout(mui_state* s) {
         /* I615d (design 8.2): the top bar takes the height of its children (VertWeight 0), the body the rest. */
         set(s->slot[i], MUIA_VertWeight, i == MUI_SLOT_TOPBAR ? 0 : s->lay.weight_h[i] > 0 ? s->lay.weight_h[i] : 1);
     }
+    if (s->np_btn != NULL) {
+        set(s->np_btn, MUIA_ShowMe, mui_np_toggle_shown(&s->lay) ? TRUE : FALSE); /* the panel exists only at three columns (Mac R3) */
+    }
     set(s->balance[0], MUIA_ShowMe, s->lay.balance_sidebar_main ? TRUE : FALSE);
     set(s->balance[1], MUIA_ShowMe, s->lay.balance_main_detail ? TRUE : FALSE);
 }
@@ -2645,7 +2770,7 @@ static void mui_layout_for_screen(mui_state* s) {
             UnlockPubScreen(NULL, scr);
         }
     }
-    mui_layout_map(&s->lay, w, h, g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP);
+    mui_layout_map_panel(&s->lay, w, h, g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP, s->lay.detail_hidden);
     mui_apply_layout(s);
 }
 
