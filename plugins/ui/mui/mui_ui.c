@@ -876,7 +876,7 @@ static Object* mui_sidebar_dyn(const mui_sidebar_model* m) {
     if (m->chip_single) { /* S5, chips do not fit: one label naming the filter in force between Previous and Next, the label takes no click (I669) */
         Object* row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
         if (row != NULL) {
-            DoMethod(row, OM_ADDMEMBER, mui_make_button_icon("Previous Filter", "prev_album", CTL_LIB_PREV));
+            DoMethod(row, OM_ADDMEMBER, mui_make_button_icon(m->chip_left_name, m->chip_left_clear ? "close" : "prev_album", CTL_LIB_PREV));
             mui_side_add(row, mui_aatext(m->chip_label, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_CENTRE, 0));
             DoMethod(row, OM_ADDMEMBER, mui_make_button_icon("Next Filter", "next_album", CTL_LIB_NEXT));
             DoMethod(d, OM_ADDMEMBER, row);

@@ -605,6 +605,8 @@ typedef struct mui_sidebar_model {
     uint32_t chip_selected;
     int chip_clear, by_you;
     int chip_single;                          /* I669: S5 is one label (chip_label) between chevrons; chip_shown is all 0 */
+    char chip_left_name[20];                  /* I831: "Previous Filter" or, with a filter in force, "Clear Filter" (sel_uim_lfilter_left_name) */
+    int chip_left_clear;                      /* I831: the left button of the label control is the x (sel_uim_lfilter_left_clears) */
     char chip_label[16];                      /* the name of the filter in force (sel_uim_lfilter_label) */
     mui_sidebar_row row[MUI_SIDEBAR_ROWS];
     uint32_t row_n, cols;

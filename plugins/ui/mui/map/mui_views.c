@@ -349,7 +349,7 @@ static uint32_t g_libfilter_presses;
 uint32_t mui_libfilter_press(uint32_t filter, int dir, sel_engine* e, sel_engine_library_item* out, uint32_t max, uint32_t* rows, char* label,
                              uint32_t cap) {
     g_libfilter_presses++;
-    return mui_libfilter_set(sel_uim_lfilter_step(filter, dir), e, out, max, rows, label, cap);
+    return mui_libfilter_set(sel_uim_lfilter_single_step(filter, dir), e, out, max, rows, label, cap);
 }
 
 uint32_t mui_libfilter_set(uint32_t filter, sel_engine* e, sel_engine_library_item* out, uint32_t max, uint32_t* rows, char* label, uint32_t cap) {

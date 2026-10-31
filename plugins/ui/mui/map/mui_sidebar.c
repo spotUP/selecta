@@ -44,6 +44,8 @@ void mui_sidebar_build(const mui_sidebar_in* in, mui_sidebar_model* m) {
     put(m->create, sizeof m->create, sel_uim_side_text_get(SEL_UIM_SIDE_CREATE));
     put(m->expand, sizeof m->expand, sel_uim_side_text_get(in->wide ? SEL_UIM_SIDE_COLLAPSE : SEL_UIM_SIDE_EXPAND));
     m->chip_single = in->chips_single != 0;
+    m->chip_left_clear = sel_uim_lfilter_left_clears(in->chip);
+    put(m->chip_left_name, sizeof m->chip_left_name, sel_uim_lfilter_left_name(in->chip));
     put(m->chip_label, sizeof m->chip_label, sel_uim_lfilter_label(in->chip));
     for (k = 0; k < SEL_UIM_SIDE_CHIPS; k++) { /* S5: a selected chip hides the others; the single label hides them all */
         m->chip_shown[k] = !m->chip_single && (in->chip == 0u || in->chip == k + 1u);

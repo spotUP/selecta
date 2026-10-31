@@ -1138,6 +1138,7 @@ static void side_view_pick(desk* d, uint32_t view);
 static void side_chip_click(desk* d, int32_t c);
 static int side_chip_single(desk* d);
 static int side_chip_has_x(desk* d);
+static int side_chip_left_clear(desk* d);
 static int side_lib_open_item(const desk* d, uint32_t i);
 static sel_gui_rect side_chip_rect(desk* d, uint32_t k);
 static int32_t side_chips_h(const desk* d);
@@ -7256,7 +7257,7 @@ static const char* library_dump_build(desk* d) {
                      (unsigned)d->side_chip_scrolls, side_chip_single(d), (unsigned)d->side_chip_cycles, (unsigned)d->side_marks);
         {
             sel_gui_rect xr = side_chip_chevron(d, 0);
-            o = dump_put(d, o, "sidechip_x %d %d %d %d %d\n", side_chip_has_x(d), (int)xr.x, (int)xr.y, (int)xr.w, (int)xr.h);
+            o = dump_put(d, o, "sidechip_x %d %d %d %d %d\n", side_chip_left_clear(d), (int)xr.x, (int)xr.y, (int)xr.w, (int)xr.h);
         }
         for (k = 0; k < d->side_n && k < 64u; k++) {
             if (side_lib_open_item(d, k)) {
@@ -9685,6 +9686,11 @@ static int side_chip_has_x(desk* d) {
     return d->side_chip != 0u && !desk_bitmap_text(d);
 }
 
+/* I831: whether the left button of the row is the x; the shared rule (sel_uim_lfilter_left_clears) also covers the label mode on the bitmap tier. */
+static int side_chip_left_clear(desk* d) {
+    return sel_uim_lfilter_left_clears(d->side_chip);
+}
+
 static sel_gui_rect side_chip_chevron(desk* d, int right) {
     sel_gui_rect r = side_chips_rect(d);
     int32_t pad = lpx(d, 12), cv = lpx(d, HOME_CHIP_H);
@@ -9727,7 +9733,7 @@ static int32_t side_chip_at(desk* d, int32_t x, int32_t y) {
         return -1;
     }
     b = side_chip_band(d, &ov);
-    if (side_chip_has_x(d) && in_rect(side_chip_chevron(d, 0), x, y)) {
+    if (side_chip_left_clear(d) && in_rect(side_chip_chevron(d, 0), x, y)) {
         return SIDE_CHIPS + 2; /* I678b: the clear button */
     }
     if (ov) {
@@ -10335,7 +10341,7 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
             d->side_sub_btn = rect_of(side_chip_single(d) ? pr.x + pr.w - lpx(d, 64) : pr.x + pr.w + lpx(d, SIDE_CHIP_GAP), pr.y, lpx(d, 64), pr.h);
             draw_chip(d, d->side_sub_btn, "By You", d->side_sub == 1u, SEL_GUI_TOKEN_SURFACE_RAISED);
         }
-        if (side_chip_has_x(d)) { /* I678b: the round clear button left of the selected chip */
+        if (side_chip_left_clear(d)) { /* I678b: the round clear button left of the selected chip; I831: also the label mode */
             sel_gui_rect xr = side_chip_chevron(d, 0);
             hover_reg(d, xr);
             sel_gui_round_rect(d->canvas, xr, xr.h / 2, hover_fill_of(d, xr, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED])));
@@ -10343,7 +10349,7 @@ static void side_lib_draw(desk* d, sel_gui_rect sb) {
                               ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
         }
         if (ov) {
-            for (k = side_chip_has_x(d) ? 1u : 0u; k < 2u; k++) {
+            for (k = side_chip_left_clear(d) ? 1u : 0u; k < 2u; k++) {
                 sel_gui_rect cv = side_chip_chevron(d, (int)k);
                 int can = k == 0u ? d->side_chip > 0u : d->side_chip < (uint32_t)SIDE_CHIPS;
                 hover_reg(d, cv);

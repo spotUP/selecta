@@ -907,6 +907,11 @@ if(NOT SEL_AMIGA)
   target_link_libraries(uim_library_subtitle_test PRIVATE selecta_uimodel selecta_core)
   add_test(NAME uim-library-subtitle COMMAND uim_library_subtitle_test)
   set_tests_properties(uim-library-subtitle PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_library_subtitle_ok")
+  # I831: the left button of the label control (Previous Filter or Clear Filter).
+  add_executable(uim_libfilter_left_test uimodel/libfilter_left_test.c)
+  target_link_libraries(uim_libfilter_left_test PRIVATE selecta_uimodel selecta_core)
+  add_test(NAME uim-libfilter-left COMMAND uim_libfilter_left_test)
+  set_tests_properties(uim-libfilter-left PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "uim_libfilter_left_ok")
   # I611: Your Library sort comparators and the text filter.
   add_executable(uim_lsort_test uimodel/lsort_test.c)
   target_link_libraries(uim_lsort_test PRIVATE selecta_uimodel selecta_core)
