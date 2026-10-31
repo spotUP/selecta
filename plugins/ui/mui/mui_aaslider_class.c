@@ -3,6 +3,7 @@
  * no colour literal, no ObtainBestPen. The slider paints track and fill (no knob) after erasing its box to the parent background. */
 #include "mui_aaslider_class.h"
 
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -16,6 +17,7 @@
 #include <proto/utility.h>
 
 #include "mui_aa_draw.h"
+#include "mui_aatip.h"
 
 extern struct Library* MUIMasterBase;
 
@@ -25,6 +27,7 @@ typedef struct aaslider_data {
     mui_aa_slider_t m;
     aa_ctx aa;
     struct MUI_EventHandlerNode ehn;
+    aatip_slot tip; /* I731 */
 } aaslider_data;
 
 typedef struct aaprogress_data {
@@ -72,7 +75,7 @@ static ULONG aaslider_setup(struct IClass* cl, Object* obj, Msg msg) {
     d->ehn.ehn_Flags = 0;
     d->ehn.ehn_Object = obj;
     d->ehn.ehn_Class = cl;
-    d->ehn.ehn_Events = IDCMP_MOUSEMOVE | IDCMP_MOUSEBUTTONS;
+    d->ehn.ehn_Events = IDCMP_MOUSEMOVE | IDCMP_MOUSEBUTTONS | IDCMP_INACTIVEWINDOW;
     DoMethod(_win(obj), MUIM_Window_AddEventHandler, (ULONG)&d->ehn);
     return TRUE;
 }
@@ -81,6 +84,8 @@ static ULONG aaslider_cleanup(struct IClass* cl, Object* obj, Msg msg) {
     aaslider_data* d = INST_DATA(cl, obj);
     DoMethod(_win(obj), MUIM_Window_RemEventHandler, (ULONG)&d->ehn);
     d->hover = d->drag = 0;
+    d->tip.in = 0;
+    aatip_drop(obj);
     aa_cleanup(&d->aa);
     return DoSuperMethodA(cl, obj, msg);
 }
@@ -157,12 +162,20 @@ static ULONG aaslider_handle(struct IClass* cl, Object* obj, struct MUIP_HandleE
     aaslider_data* d = INST_DATA(cl, obj);
     struct IntuiMessage* im = msg->imsg;
     ULONG dis = 0;
+    if (im != NULL && im->Class == IDCMP_INACTIVEWINDOW) {
+        aatip_event(obj, &d->tip, im, 0);
+        return 0;
+    }
     if (im == NULL || (im->Class != IDCMP_MOUSEMOVE && im->Class != IDCMP_MOUSEBUTTONS)) {
         return DoSuperMethodA(cl, obj, (Msg)msg);
     }
     GetAttr(MUIA_Disabled, obj, &dis);
+    if (im->Class == IDCMP_MOUSEBUTTONS) {
+        aatip_event(obj, &d->tip, im, 0);
+    }
     if (im->Class == IDCMP_MOUSEMOVE) {
         int in = im->MouseX >= _left(obj) && im->MouseX <= _right(obj) && im->MouseY >= _top(obj) && im->MouseY <= _bottom(obj);
+        aatip_event(obj, &d->tip, im, in);
         if (d->drag && !dis) {
             aaslider_move_to(obj, im->MouseX);
         }
@@ -195,6 +208,21 @@ __asm__(".text\n.even\n.globl _aaslider_dispatch\n_aaslider_dispatch:\n"
 
 static ULONG __attribute__((used)) aaslider_dispatch_c(struct IClass* cl, Object* obj, Msg msg) {
     switch (msg->MethodID) {
+    case OM_NEW:
+    case OM_SET:
+        return aatip_super_set(cl, obj, (struct opSet*)msg, offsetof(aaslider_data, tip));
+    case OM_GET:
+        if (aatip_get((struct opGet*)msg, &((aaslider_data*)INST_DATA(cl, obj))->tip)) {
+            return TRUE;
+        }
+        break;
+    case AATIP_M_FIRE: {
+        aaslider_data* d = INST_DATA(cl, obj);
+        return aatip_fire(obj, &d->aa, &d->tip);
+    }
+    case MUIM_Hide:
+        aatip_drop(obj);
+        break;
     case MUIM_Setup:
         return aaslider_setup(cl, obj, msg);
     case MUIM_Cleanup:

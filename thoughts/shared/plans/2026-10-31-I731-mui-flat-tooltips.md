@@ -13,14 +13,14 @@ frame), drawn with the shared mui_aa_draw (I667a), on MUI 3.8 only.
 
 Checklist (tick in the ledger row I731, report n of 8):
 
-- [ ] T1 map/mui_aatip.c pure plan, place and state step + sentinel (section 2.1)
-- [ ] T2 mui_aatip.c / .h Amiga module: tip window, timer, draw (section 2.2)
-- [ ] T3 AABtn routes MUIA_ShortHelp and hover through aatip (section 2.3)
-- [ ] T4 AASlider routes MUIA_ShortHelp and hover through aatip (section 2.3)
-- [ ] T5 AAField routes MUIA_ShortHelp and hover through aatip (section 2.3)
-- [ ] T6 mui_ui.c: door tips prefer the right side, retheme and close hide the tip (section 2.4)
-- [ ] T7 host test mui-tooltip-flat, red when reverted (section 6)
-- [ ] T8 Amiga build clean, rig 2 look by Johan AGA + RTG (section 7)
+- [x] T1 map/mui_aatip.c pure plan, place and state step + sentinel (section 2.1)
+- [x] T2 mui_aatip.c / .h Amiga module: tip window, timer, draw (section 2.2)
+- [x] T3 AABtn routes MUIA_ShortHelp and hover through aatip (section 2.3)
+- [x] T4 AASlider routes MUIA_ShortHelp and hover through aatip (section 2.3)
+- [x] T5 AAField routes MUIA_ShortHelp and hover through aatip (section 2.3)
+- [x] T6 mui_ui.c: door tips prefer the right side, retheme and close hide the tip (section 2.4)
+- [x] T7 host test mui-tooltip-flat, red when reverted (section 6)
+- [x] T8 (build clean part only; the rig 2 look is still Johan's) Amiga build clean, rig 2 look by Johan AGA + RTG (section 7)
 
 ## 1. Chosen path and why
 
@@ -284,3 +284,14 @@ Workbench (compact mode, either tier): step 1 again; the tip is flat and borderl
   Workbench the PLAIN tier shows a flat card in the nearest pens only; same limit as the controls today.
 - R7 Opening and closing an Intuition window per tip costs a layer operation on 68020; one at a time, after a 600 ms rest,
   so no visible cost expected. Measure on the AGA rig if Johan sees lag.
+
+## 9. As built
+
+- T1: plugins/ui/mui/map/mui_aatip.c (plan :14, place :37, step :72, sentinel mui_aa_tip_calls :10); declarations in map/mui_aa.h (tip block near :258).
+- T2: plugins/ui/mui/mui_aatip.c / .h. aatip_super_set :30, aatip_event :135, aatip_fire :173 (disarms first, needs WFLG_WINDOWACTIVE), aatip_drop :111. One stderr line "selecta mui: tip shown side= w= h= backend=" on the first show.
+- T3: mui_aabtn_class.c: aatip_drop in cleanup :84, aatip_event :228/:235, OM_NEW/OM_SET via aatip_super_set :251, AATIP_M_FIRE :259, drop on Hide :262.
+- T4: mui_aaslider_class.c: same hooks (:88, :166-:178, :213, :221, :224). Deviation: the handler asks for IDCMP_INACTIVEWINDOW but not RAWKEY, so a key press does not mute a slider tip. Check on the rig.
+- T5: mui_aafield_class.c: new event handler in setup/cleanup (:85), aafield_handle :181, set :174/:207, fire :214, Hide :217.
+- T6: mui_ui.c: aatip_drop(NULL) at the start of mui_screen_close :509; mui_aa_draw.c aa_retheme_all drops first :374; door tip gets AATIP_A_Side = MUI_AA_TIP_RIGHT.
+- T7: tests/ui/mui_contract_test.c test_tooltip_flat (argv tooltip-flat), tests/CMakeLists.txt mui-tooltip-flat. Red proof: with the aatip_drop line removed from aa_retheme_all the test fails ("aa_retheme_all does not drop an open tip"); restored, it passes.
+- T8: build/amiga full build rc 0, 0 warnings; build/host full build rc 0. ctest ^mui: only the known reds remain (mui-icon-buttons, mui-icon-rows, mui-help, mui-grid, mui-cycle-initial); mui-dialog-windows, mui-aa-state, mui-open-nomui pass. No AGA build dir exists; the MUI plugin is one target. Unverified until the rig: drawn pixels, timer node behaviour, Workbench vs own screen.

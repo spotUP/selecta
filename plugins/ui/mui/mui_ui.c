@@ -67,6 +67,7 @@ static void mui_libs_close(void) {
 #include "mui_aafield_class.h"
 #include "mui_aatext_class.h"
 #include "mui_aa_draw.h"
+#include "mui_aatip.h"
 #include "map/mui_aa.h"
 #include "mui_canvas_class.h"
 #include "mui_vizarea_class.h"
@@ -505,6 +506,7 @@ static int g_screen_rtg; /* I684b: the Workbench mode is a foreign (RTG) one; th
 
 static void mui_screen_close(void) {
     int i;
+    aatip_drop(NULL); /* I731: the tip window lives on the Selecta screen */
     if (g_scr == NULL) {
         return;
     }
@@ -886,6 +888,7 @@ static Object* mui_sidebar_group(mui_state* s, int top_bar) {
         if (s != NULL && i < MUI_SIDEBAR_DOORS) {
             s->door_btn[i] = b; /* S2: lit by mui_route_sync */
             mui_set_tip(s, MUI_TS_DOOR + i, b, MUI_TIP_DOOR, i, NULL, 0);
+            SetAttrs(b, AATIP_A_Side, MUI_AA_TIP_RIGHT, TAG_DONE); /* I731: the sidebar door tip opens beside the door, not over the next one */
         }
         mui_side_add(g, b);
     }

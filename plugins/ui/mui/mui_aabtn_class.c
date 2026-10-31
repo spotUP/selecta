@@ -6,6 +6,7 @@
  * (RelVerify and MUIA_Selected, notification on MUIA_Pressed), hover is a mouse move handler. */
 #include "mui_aabtn_class.h"
 
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -20,6 +21,7 @@
 
 #include "map/mui_icons.h"
 #include "mui_aa_draw.h"
+#include "mui_aatip.h"
 
 extern struct Library* MUIMasterBase;
 
@@ -29,6 +31,7 @@ typedef struct aabtn_data {
     mui_aa_metrics_t m;
     aa_ctx aa;
     struct MUI_EventHandlerNode ehn;
+    aatip_slot tip; /* I731: flat tooltip text, side and hover edge */
 } aabtn_data;
 
 static struct MUI_CustomClass* g_class;
@@ -68,7 +71,7 @@ static ULONG aabtn_setup(struct IClass* cl, Object* obj, Msg msg) {
     d->ehn.ehn_Flags = 0;
     d->ehn.ehn_Object = obj;
     d->ehn.ehn_Class = cl;
-    d->ehn.ehn_Events = IDCMP_MOUSEMOVE;
+    d->ehn.ehn_Events = IDCMP_MOUSEMOVE | IDCMP_MOUSEBUTTONS | IDCMP_RAWKEY | IDCMP_INACTIVEWINDOW;
     DoMethod(_win(obj), MUIM_Window_AddEventHandler, (ULONG)&d->ehn);
     return TRUE;
 }
@@ -77,6 +80,8 @@ static ULONG aabtn_cleanup(struct IClass* cl, Object* obj, Msg msg) {
     aabtn_data* d = INST_DATA(cl, obj);
     DoMethod(_win(obj), MUIM_Window_RemEventHandler, (ULONG)&d->ehn);
     d->hover = 0;
+    d->tip.in = 0;
+    aatip_drop(obj);
     aa_cleanup(&d->aa);
     return DoSuperMethodA(cl, obj, msg);
 }
@@ -220,10 +225,14 @@ static ULONG aabtn_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEven
     aabtn_data* d = INST_DATA(cl, obj);
     if (msg->imsg != NULL && msg->imsg->Class == IDCMP_MOUSEMOVE) {
         int in = msg->imsg->MouseX >= _left(obj) && msg->imsg->MouseX <= _right(obj) && msg->imsg->MouseY >= _top(obj) && msg->imsg->MouseY <= _bottom(obj);
+        aatip_event(obj, &d->tip, msg->imsg, in);
         if (in != d->hover) {
             d->hover = in;
             MUI_Redraw(obj, MADF_DRAWOBJECT);
         }
+    }
+    if (msg->imsg != NULL && msg->imsg->Class != IDCMP_MOUSEMOVE) {
+        aatip_event(obj, &d->tip, msg->imsg, 0);
     }
     return 0;
 }
@@ -237,6 +246,21 @@ __asm__(".text\n.even\n.globl _aabtn_dispatch\n_aabtn_dispatch:\n"
 
 static ULONG __attribute__((used)) aabtn_dispatch_c(struct IClass* cl, Object* obj, Msg msg) {
     switch (msg->MethodID) {
+    case OM_NEW:
+    case OM_SET:
+        return aatip_super_set(cl, obj, (struct opSet*)msg, offsetof(aabtn_data, tip));
+    case OM_GET:
+        if (aatip_get((struct opGet*)msg, &((aabtn_data*)INST_DATA(cl, obj))->tip)) {
+            return TRUE;
+        }
+        break;
+    case AATIP_M_FIRE: {
+        aabtn_data* d = INST_DATA(cl, obj);
+        return aatip_fire(obj, &d->aa, &d->tip);
+    }
+    case MUIM_Hide:
+        aatip_drop(obj);
+        break;
     case MUIM_Setup:
         return aabtn_setup(cl, obj, msg);
     case MUIM_Cleanup:
