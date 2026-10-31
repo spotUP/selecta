@@ -3,6 +3,7 @@
  * because the header opens that page), the header with Create Playlist and Expand, the kind chips, the item rows, the empty
  * state and the Create your first playlist card. Every text comes from uimodel/browse.h, every door from uimodel/doors.h. */
 #include "mui_map.h"
+#include "mui_icons.h"
 #include <selecta/library_item.h>
 #include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/doors.h>
@@ -19,6 +20,15 @@ static void put(char* dst, size_t cap, const char* src) {
     snprintf(dst, cap, "%s", src != NULL ? src : "");
 }
 
+int mui_sidebar_chips_single(int bitmap, uint32_t sidebar_px) {
+    int32_t w[SEL_UIM_SIDE_CHIPS];
+    uint32_t k;
+    for (k = 0; k < SEL_UIM_SIDE_CHIPS; k++) {
+        w[k] = (int32_t)mui_button_width(sel_uim_side_chip_name(k), 0);
+    }
+    return sel_uim_lfilter_chips_single(bitmap, sel_uim_lfilter_chips_total(w, SEL_UIM_SIDE_CHIPS, 4), (int32_t)sidebar_px - 2 * MUI_BTN_PAD_X);
+}
+
 void mui_sidebar_build(const mui_sidebar_in* in, mui_sidebar_model* m) {
     uint32_t i, k, mask, playlists = 0;
     memset(m, 0, sizeof *m);
@@ -33,14 +43,16 @@ void mui_sidebar_build(const mui_sidebar_in* in, mui_sidebar_model* m) {
     put(m->title, sizeof m->title, sel_uim_side_text_get(SEL_UIM_SIDE_TITLE)); /* S4 */
     put(m->create, sizeof m->create, sel_uim_side_text_get(SEL_UIM_SIDE_CREATE));
     put(m->expand, sizeof m->expand, sel_uim_side_text_get(in->wide ? SEL_UIM_SIDE_COLLAPSE : SEL_UIM_SIDE_EXPAND));
-    for (k = 0; k < SEL_UIM_SIDE_CHIPS; k++) { /* S5: a selected chip hides the others */
-        m->chip_shown[k] = in->chip == 0u || in->chip == k + 1u;
+    m->chip_single = in->chips_single != 0;
+    put(m->chip_label, sizeof m->chip_label, sel_uim_lfilter_label(in->chip));
+    for (k = 0; k < SEL_UIM_SIDE_CHIPS; k++) { /* S5: a selected chip hides the others; the single label hides them all */
+        m->chip_shown[k] = !m->chip_single && (in->chip == 0u || in->chip == k + 1u);
         put(m->chip[k], sizeof m->chip[k], sel_uim_side_chip_name(k));
     }
     m->chip_selected = in->chip;
     m->chip_clear = in->chip != 0u;
     m->by_you = in->chip == 1u;
-    mask = in->chip != 0u ? sel_uim_side_chip_mask(in->chip - 1u) : SEL_LIB_ITEM_ALL;
+    mask = sel_uim_lfilter_mask(in->chip);
     for (i = 0; i < in->item_n; i++) { /* S6: the same filter and kind mask as side_lib_reload */
         const sel_engine_library_item* it = &in->items[i];
         mui_sidebar_row* r;

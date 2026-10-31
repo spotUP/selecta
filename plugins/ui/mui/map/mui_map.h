@@ -11,6 +11,7 @@
 #include <selecta/uimodel/browse.h>
 #include <selecta/uimodel/keybind.h>
 #include <selecta/uimodel/palette.h>
+#include <selecta/uimodel/libfilter.h>
 #include <selecta/uimodel/panels.h>
 #include <selecta/uimodel/sources.h>
 
@@ -464,6 +465,17 @@ const char* mui_scope_label(uint32_t i);
 uint32_t mui_scope_fire(uint32_t i, mui_send_fn send, void* ctx);
 uint32_t mui_view_fires(void);
 
+/* I670 (design 2026-10-29-desktop-library-architecture.md section 4; MUI plan 2026-10-28-mui-custom-classes.md section 1, "library
+ * prev/next"): the sidebar library filter control. A previous (dir < 0) or next (dir > 0) press steps the filter in force through
+ * sel_uim_lfilter_step (the desktop chips' clamp), runs sel_uim_lfilter_pass (the desktop's filter pass) into out[0..max) and
+ * writes the label of the filter now in force. Returns the new filter and the rows read in *rows. mui_libfilter_presses() counts
+ * the presses. */
+uint32_t mui_libfilter_press(uint32_t filter, int dir, sel_engine* e, sel_engine_library_item* out, uint32_t max, uint32_t* rows,
+                             char* label, uint32_t cap);
+/* The same pass for a chip click: filter `filter` is taken as is (a clamped index, mui_libfilter_press steps then calls this). */
+uint32_t mui_libfilter_set(uint32_t filter, sel_engine* e, sel_engine_library_item* out, uint32_t max, uint32_t* rows, char* label, uint32_t cap);
+uint32_t mui_libfilter_presses(void);
+
 /* MUI-P8-5: the Playlists and Song info buttons; MUI-P8-12: tile size Slider steps; MUI-P8-14: Amiga runtime prefs. All read the
  * shared model (uimodel/viewcmds.h, uimodel/browse.h). Each fire returns how many lines were sent. */
 #define MUI_VIEWBTN_COUNT 5u
@@ -575,6 +587,7 @@ typedef struct mui_sidebar_in {
     uint32_t by_you_only; /* the By You sub-chip of Playlists */
     uint32_t wide;   /* Expand is on */
     int bitmap;      /* the bitmap tier */
+    int chips_single; /* I669: the chips do not fit the sidebar, S5 is the one label with the chevrons (mui_sidebar_chips_single) */
     const char* filter;
     const sel_engine_library_item* items;
     uint32_t item_n;
@@ -591,6 +604,8 @@ typedef struct mui_sidebar_model {
     int chip_shown[SEL_UIM_SIDE_CHIPS];
     uint32_t chip_selected;
     int chip_clear, by_you;
+    int chip_single;                          /* I669: S5 is one label (chip_label) between chevrons; chip_shown is all 0 */
+    char chip_label[16];                      /* the name of the filter in force (sel_uim_lfilter_label) */
     mui_sidebar_row row[MUI_SIDEBAR_ROWS];
     uint32_t row_n, cols;
     int wide;
@@ -599,6 +614,8 @@ typedef struct mui_sidebar_model {
     char card_title[40], card_body[48], card_button[24];
 } mui_sidebar_model;
 void mui_sidebar_build(const mui_sidebar_in* in, mui_sidebar_model* out);
+/* I669: 1 when the kind chips do not fit a sidebar `sidebar_px` wide (or on the bitmap tier); the decision is sel_uim_lfilter_chips_single. */
+int mui_sidebar_chips_single(int bitmap, uint32_t sidebar_px);
 uint32_t mui_sidebar_builds(void);
 
 #endif
