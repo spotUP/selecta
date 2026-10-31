@@ -140,7 +140,7 @@ if(NOT SEL_AMIGA)
       set(tlabel sync-card-front)
     elseif(tname STREQUAL "dui-sync-offer-idle") # I789: the sync offer paints in an idle live window; ledger row, not a plan item
       set(tlabel sync-offer-idle)
-    elseif(tname STREQUAL "dui-sync-nowait")# I782: the sync card and Cancel while a slowed sync runs; ledger row, not a plan item
+    elseif(tname STREQUAL "dui-sync-nowait") # I782: the sync card and Cancel while a slowed sync runs; ledger row, not a plan item
       set(tlabel sync-nowait)
     elseif(tname STREQUAL "dui-source-drill") # I790: the source page opens its drill level by level, rows built stay in the window; ledger row, not a plan item
       set(tlabel source-drill)
