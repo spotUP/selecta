@@ -568,7 +568,7 @@ int main(int argc, char** argv)
     rate = sel_registry_output_rate(oh, machine_tags);
     sel_engine_set_mix(e, rate, SHELL_RESAMPLER);
     sel_engine_set_output(e, oh);
-    out = out_open(host, rate, 2);
+    out = out_open(sel_engine_plugin_host(e), rate, 2); /* I729: the plugin host answers prefs.conf keys */
     if (out == NULL) {
         STARTUP_FAIL("no output device");
         sel_engine_destroy(e);
@@ -582,7 +582,7 @@ int main(int argc, char** argv)
     so.set_source = out_set_source;
     so.pump = out_pump;
     so.machine = machine_tags;
-    so.host = host;
+    so.host = sel_engine_plugin_host(e);
     so.engine = e;
     so.out = out;
     so.paced = sel_tag_find(oh, SEL_OUT_UNPACED, 0) == 0;

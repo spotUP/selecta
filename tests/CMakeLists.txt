@@ -409,6 +409,10 @@ if(SEL_HAVE_MPRIS)
   target_compile_definitions(default_integration_test PRIVATE SEL_HAVE_MPRIS=1)
 endif()
 add_test(NAME default-integration-unit COMMAND default_integration_test)
+# I729: a prefs.conf key (wav.path) reaches the output plugin through the shell host (host->config_get).
+add_test(NAME shell-config-get COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>"
+  "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/shell-config-get" -P "${CMAKE_CURRENT_SOURCE_DIR}/host/shell_config_get.cmake")
+set_tests_properties(shell-config-get PROPERTIES TIMEOUT 120)
 
 # T24: browse listing and view model through the engine command queue and
 # snapshot. The temp tree is created inside the generated songs directory.

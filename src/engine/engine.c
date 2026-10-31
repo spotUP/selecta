@@ -1617,9 +1617,9 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
         int sr;
 
         memset(&sctx, 0, sizeof sctx);
-        sctx.scfg.host = e->host;
+        sctx.scfg.host = &e->pl_host;
         sctx.scfg.lib = e->lib;
-        sel_sync_host_bind(&shost, e->host, &sctx); /* the source's play_url asks the host's net and cache folder */
+        sel_sync_host_bind(&shost, &e->pl_host, &sctx); /* the source's play_url asks the host's net and cache folder */
         sr = sel_source_stream_url(&shost, path, resolved, sizeof resolved);
         if (sr < 0) {
             e->open_status = 0;
@@ -5403,7 +5403,7 @@ static void sync_task(void* ctx) {
     sel_engine* e = ctx;
     sel_host host;
 
-    sel_sync_host_bind(&host, e->host, &e->sync_ctx);
+    sel_sync_host_bind(&host, &e->pl_host, &e->sync_ctx);
     e->sync_ok = e->sync_src->sync(&host, e->sync_arg, e->sync_now, e->sync_stats, SEL_SYNC_STATS_MAX);
     sel_sync_ctx_release(&e->sync_ctx);
 }
@@ -5420,7 +5420,7 @@ static void sync_start(sel_engine* e, const char* id, const char* arg, int64_t n
     snprintf(e->sync_arg, sizeof e->sync_arg, "%s", arg);
     e->sync_now = now;
     memset(&e->sync_ctx, 0, sizeof e->sync_ctx);
-    e->sync_ctx.scfg.host = e->host;
+    e->sync_ctx.scfg.host = &e->pl_host;
     e->sync_ctx.scfg.lib = e->lib;
     e->sync_ctx.scfg.registry_count = e->registry_count;
     e->sync_ctx.scfg.registry_get = e->registry_get;

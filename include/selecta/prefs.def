@@ -30,6 +30,10 @@ SEL_PREF(OUTPUT_ID,          "output.id",          "",                          
 SEL_PREF(AUDIO_PRIORITY,     "audio.priority",     "30",                                          SEL_PREF_PLAIN)
 /* output buffer in frames; 0: scaled from the machine */
 SEL_PREF(OUTPUT_BUFFER,      "output.buffer",      "0",                                           SEL_PREF_PLAIN)
+/* paula14 output buffer in frames (64 to 8192); empty: the built-in length (I729) */
+SEL_PREF(PAULA14_BUFFER,     "paula14.buffer",     "",                                            SEL_PREF_PLAIN)
+/* wav output: the file to write; empty: the wav output does not open (I729) */
+SEL_PREF(WAV_PATH,           "wav.path",           "",                                            SEL_PREF_PLAIN)
 /* Amiga LED (power) filter: on, off */
 SEL_PREF(OUTPUT_LED,         "output.led",         "off",                                         SEL_PREF_PLAIN)
 /* per-replayer options, "plugin.key=value,..."; a replayer reads its declared SEL_RP_CONFIG keys at open (D-M2-8) */
