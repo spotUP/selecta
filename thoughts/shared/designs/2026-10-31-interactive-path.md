@@ -2,7 +2,7 @@
 date: 2026-10-31
 topic: Interactive path - library threads, query shape and budgets (I847)
 tags: [library, sqlite, performance, search, threads, amiga, modland]
-status: proposed
+status: accepted
 supersedes: I846 (library list query speed; folds into I847g)
 related: I829 (UI posts library requests and returns), I845 (dirty rects + cover cache), I844 (online search pending state), I838 (stored item_formats, schema 15)
 ---
@@ -53,7 +53,7 @@ What the interactive reader may run: queries whose cost is O(page) or O(log n) p
 
 ### 1.2 Query shape (both platforms)
 
-- **Search:** one FTS query per keystroke, first page only (200 rows), in FTS order (rank or rowid, D2), `LIMIT 201` to know "more". Further pages continue from the last rank/rowid, never re-sort all hits. The total count runs on the background reader afterwards and is capped ("2000+"), as bbmp does. Full prefix index on desktop (`prefix='2 3 4'` or plain `"word"*`); the 3-letter re-tokenize trick stays only on the 512 KiB heap tier.
+- **Search:** one FTS query per keystroke, first page only (200 rows), in FTS order (rank or rowid, D2), `LIMIT 201` to know "more". Further pages continue from the last rank/rowid, never re-sort all hits. The total count runs on the background reader afterwards and is capped ("2000+"), as bbmp does. Desktop matches substrings through an FTS5 trigram index (D1); a query under 3 characters falls back to the word-prefix index. Amiga keeps word prefix; the 3-letter re-tokenize trick stays only on the 512 KiB heap tier.
 - **Lists (Library All, Artists, Albums):** stored aggregate tables (`artists`, `albums` with song counts and sort keys), maintained by the writer per chunk, same pattern as I838 `item_formats`. Pages read by `WHERE sort_key > :after ORDER BY sort_key LIMIT :rows` on an index.
 - **Chips:** stored `format_family` column on songs with index `(source, format_family, sort_key)`. The chip filter becomes an index range, not `lower(...) IN (...)`.
 - **Home:** a `home_shelves` snapshot table rebuilt by the background side after history or likes change (debounced 2 s). First paint reads the snapshot only.
@@ -136,11 +136,13 @@ Each row is one sonnet agent, builds and runs its own tests (affected subset onl
 | I847i | Cache and mmap sizing per reader, warm-up of FTS and aggregate pages at start on the background reader | cold-start `home_first_paint_ms` and first search within budget |
 | I847j | Contention reachability test: drive search, list switch, source page, play and like through engine commands while a full sync runs | all `*_during_sync_ms` within budget + 20 % |
 | I847k | Amiga library as its own Exec process with the same queues; chunked writes 30 ms | rig: UI stays responsive (frame log) during a Modland sync; bench on rig |
-| I847l | Amiga Modland remote search through UHC endpoint with local fallback (only if D3 = recommended) | rig: "purple" shows rows within 1500 ms; offline falls back to local |
+| I847l | Amiga Modland remote search through UHC endpoint with local fallback (D3 accepted) | rig: "purple" shows rows within 1500 ms; offline falls back to local |
 
 I844 (Modules.pl pending state) stays its own row and uses the I847e pending hook.
 
-## 6. Decisions for Johan
+## 6. Decisions (answered by Johan 2026-10-31)
+
+Answers: D1 substring on Mac (FTS5 trigram; under 3 characters falls back to word prefix), word prefix on Amiga. D2 to D8 as recommended below.
 
 | ID | Question | Recommended | Trade-off |
 |----|----------|-------------|-----------|
