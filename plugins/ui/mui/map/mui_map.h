@@ -540,6 +540,7 @@ typedef struct mui_sidebar_row {
     uint32_t kind, id;
 } mui_sidebar_row;
 typedef struct mui_sidebar_model {
+    char brand[16], brand_icon[8];            /* I797 (S1): the "Selecta" title and the logo icon key; the icon is "" on the bitmap tier (text only) */
     uint32_t door[MUI_SIDEBAR_DOORS], door_n; /* indexes of the shown doors in the uimodel door table */
     char title[24], create[24], expand[24];   /* the header: Your Library, Create Playlist, Expand/Collapse Library */
     char chip[SEL_UIM_SIDE_CHIPS][16];

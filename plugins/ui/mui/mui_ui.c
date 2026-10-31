@@ -145,6 +145,7 @@ typedef struct mui_state {
     LONG seek_set, vol_set;         /* values last written by set(): a notify with another value is the user */
     Object* listview;               /* MUI-P3-1 */
     mui_route route;                /* I794: the shared route history (T1) and the handler that enters the pages (P2, P3) */
+    Object* door_btn[MUI_SIDEBAR_DOORS]; /* I797 (S2): the sidebar door buttons, lit from the route history in mui_route_sync */
     Object* nav_back;               /* I794: top bar Back / Forward, disabled from the route history */
     Object* nav_fwd;
     Object* col_page;               /* I794 (P3): album, artist or composer page: header, meta line and the song AAList; replaces the main list while shown */
@@ -804,9 +805,21 @@ static Object* mui_sidebar_group(mui_state* s, int top_bar) {
     in.item_n = s != NULL && s->engine != NULL ? sel_engine_library_items(s->engine, SEL_LIB_ITEM_ALL, 0, items, MUI_SIDEBAR_ROWS, NULL) : 0u;
     in.items = items;
     mui_sidebar_build(&in, &m);
+    hd = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE); /* S1: the brand, an accent logo tile then the name (draw_sidebar) */
+    if (hd != NULL) {
+        if (m.brand_icon[0] != '\0') {
+            mui_side_add(hd, mui_make_button_i(m.brand, m.brand, m.brand_icon, NULL, 0, 0, 1, MUI_AA_ROLE_ACCENT)); /* id 0: not a control */
+        }
+        mui_side_text(hd, m.brand, MUI_AA_TONE_TITLE);
+        DoMethod(g, OM_ADDMEMBER, hd);
+    }
     for (k = 0; k < m.door_n; k++) { /* S3 */
         i = m.door[k];
-        mui_side_add(g, mui_make_button_left(mui_door_label(i), sel_uim_door_at(i)->page, CTL_DOOR_BASE + (LONG)i));
+        Object* b = mui_make_button_left(mui_door_label(i), sel_uim_door_at(i)->page, CTL_DOOR_BASE + (LONG)i);
+        if (s != NULL && i < MUI_SIDEBAR_DOORS) {
+            s->door_btn[i] = b; /* S2: lit by mui_route_sync */
+        }
+        mui_side_add(g, b);
     }
     hd = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE); /* S4: title, Create Playlist, Expand */
     if (hd != NULL) {
@@ -1782,6 +1795,13 @@ static void mui_route_sync(mui_state* s, const sel_state* st) {
     const sel_collection_page* pg = st->collection;
     const sel_route_entry* cur = mui_route_cur(&s->route);
     int col = cur != NULL && mui_route_on_collection(&s->route) && pg != NULL && pg->kind == cur->kind && strcmp(pg->key, cur->key) == 0;
+    int lit = mui_route_lit_door(&s->route); /* I797 (S2): the door of the current page takes the SELECTED face, the others none */
+    uint32_t dk;
+    for (dk = 0; dk < MUI_SIDEBAR_DOORS; dk++) {
+        if (s->door_btn[dk] != NULL) {
+            mui_aabtn_set_on(s->door_btn[dk], (int)dk == lit);
+        }
+    }
     if (s->nav_back != NULL) {
         set(s->nav_back, MUIA_Disabled, mui_route_can(&s->route, -1) ? FALSE : TRUE);
         set(s->nav_fwd, MUIA_Disabled, mui_route_can(&s->route, 1) ? FALSE : TRUE);

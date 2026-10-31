@@ -2161,6 +2161,51 @@ static int route_rec(void* ctx, const char* line) {
     return 1;
 }
 
+/* I797 (drift doc S1, S2): the sidebar brand and the door icons with the selected state. One reachability test: the model carries the brand,
+ * every shown door has an icon, a door press through the route handler moves the lit door (sentinel mui_route_lit_calls), and mui_ui.c builds
+ * the brand and lights the door buttons from it. */
+static void test_sidebar_icons(void) {
+    mui_sidebar_in in;
+    mui_sidebar_model m;
+    mui_route r;
+    route_log l;
+    char* src = ui_source();
+    uint32_t k, lit0 = mui_route_lit_calls();
+    memset(&in, 0, sizeof in);
+    memset(&l, 0, sizeof l);
+    mui_route_init(&r);
+    mui_sidebar_build(&in, &m);
+    CHECK(strcmp(m.brand, "Selecta") == 0 && mui_icon_id(m.brand_icon) >= 0, "brand '%s' icon '%s'", m.brand, m.brand_icon);
+    in.bitmap = 1;
+    mui_sidebar_build(&in, &m);
+    CHECK(strcmp(m.brand, "Selecta") == 0 && m.brand_icon[0] == '\0', "the bitmap tier keeps the text and drops the logo");
+    in.bitmap = 0;
+    mui_sidebar_build(&in, &m);
+    CHECK(mui_route_lit_door(&r) == 0, "a fresh window is on Home");
+    for (k = 1; k < m.door_n; k++) {
+        const char* dl = mui_door_line(m.door[k]);
+        CHECK(mui_icon_id(sel_uim_door_at(m.door[k])->page) >= 0, "door %u has no icon", (unsigned)m.door[k]);
+        if (dl != NULL) {
+            mui_route_door(&r, m.door[k], dl, route_rec, &l);
+            CHECK(mui_route_lit_door(&r) == (int)m.door[k], "door %u pressed, lit door %d", (unsigned)m.door[k], mui_route_lit_door(&r));
+        }
+    }
+    mui_route_door(&r, 0u, "VIEW_SOURCE home", route_rec, &l);
+    CHECK(mui_route_lit_door(&r) == 0, "Home lights the Home door again");
+    mui_route_click(&r, SEL_ROUTE_SHOW_ALL, 0u, 1u, "", "Shelf", "", route_rec, &l);
+    CHECK(mui_route_lit_door(&r) == -1, "a shelf page lights no door");
+    CHECK(mui_route_lit_calls() - lit0 >= m.door_n, "sentinel: %u", (unsigned)(mui_route_lit_calls() - lit0));
+    CHECK(src != NULL, "cannot read mui_ui.c");
+    if (src == NULL) {
+        return;
+    }
+    CHECK(strstr(src, "m.brand_icon[0]") != NULL && strstr(src, "mui_side_text(hd, m.brand,") != NULL, "mui_sidebar_group does not build the brand from the model");
+    CHECK(strstr(src, "s->door_btn[i] = b") != NULL && strstr(src, "mui_aabtn_set_on(s->door_btn[dk], (int)dk == lit)") != NULL &&
+              strstr(src, "mui_route_lit_door(&s->route)") != NULL,
+          "the door buttons are not lit from the route history");
+}
+
+
 /* I794 behaviour (drift doc T1, P2, P3): each route target enters its page with the lines the desktop UI sends, Back and Forward restore
  * without touching Recents (" 1"), the door keeps its lines as the history entry, and Back and Forward are enabled from the history. */
 static void test_route(void) {
@@ -2413,6 +2458,8 @@ int main(int argc, char** argv) {
         test_status_face();
     } else if (strcmp(argv[1], "player-bar") == 0) {
         test_player_bar();
+    } else if (strcmp(argv[1], "sidebar-icons") == 0) {
+        test_sidebar_icons();
     } else if (strcmp(argv[1], "volume-row") == 0) {
         test_volume_row();
     } else if (strcmp(argv[1], "cycle-initial") == 0) {
