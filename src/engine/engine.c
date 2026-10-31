@@ -2551,6 +2551,10 @@ static void cmd_PLAY(sel_engine* e, const sel_message* m) {
         }
         return;
     }
+    if (e->cur == SEL_SLOT_NONE) { /* I726: nothing is open and nothing is queued; Playing with no song is a lie (label "Playing", clock "--:--") */
+        sel_engine_report_error(e, "no_song", "PLAY");
+        return;
+    }
     set_play(e, SEL_PLAYING);
 }
 
