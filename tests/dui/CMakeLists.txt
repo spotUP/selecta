@@ -158,6 +158,14 @@ if(NOT SEL_AMIGA)
   set_tests_properties(dui-search-online PROPERTIES LABELS search-online TIMEOUT 120 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/dui-search-online.tmp")
   file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/dui-search-online.tmp")
+  # I817: the same search on the live SDL loop: the answer is drawn with no input after Enter.
+  add_test(NAME dui-search-online-live
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSDL_BUILT=${SELECTA_UI_DESKTOP}"
+      "-DWORK=${PROJECT_BINARY_DIR}/tests/dui-search-online-live" "-DNETWORK=${SEL_NET_WORK}"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/search_online_live.cmake")
+  set_tests_properties(dui-search-online-live PROPERTIES LABELS search-online TIMEOUT 120 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/dui-search-online-live.tmp")
+  file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/dui-search-online-live.tmp")
 endif()
 
 # DUI-P1-5: the lift out of plugins/ui/text, counted from the archives with nm.
