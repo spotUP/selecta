@@ -54,7 +54,8 @@ static int get_file(const char* url, const char* path, int has_range, unsigned l
     return err == SEL_HTTP_OK ? res.status : 0;
 }
 
-/* GETs `url` into `path`. Returns the HTTP status (0 on a transport failure). Any result but 200 removes the file. */
+/* GETs `url` into `path` with a first-byte limit (0: the client default). Returns the HTTP status (0 on a transport
+ * failure). Any result but 200 removes the file. */
 int sel_sync_net_get_file_wait(const char* url, const char* path, unsigned first_byte_ms, uint32_t* requests,
                                unsigned long* bytes) {
     return get_file(url, path, 0, 0, -1, 200, first_byte_ms, requests, bytes);
