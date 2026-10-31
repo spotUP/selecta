@@ -122,6 +122,18 @@ void sel_db_majority_format_cached(sqlite3* db, uint32_t kind, const char* key, 
 void sel_db_majority_format(sqlite3* db, uint32_t kind, const char* key, char* out, size_t cap);
 unsigned long sel_db_majority_scans(void);
 
+/* I848a: the two lookups every OPEN makes on the main thread's behalf (duplicates.c). Shared so the plan test reads the exact SQL. Both must be
+ * index SEARCHes (schema v16: songs_md5 is partial on md5 <> '', so the query repeats that term; songs_source_path serves the path branch). */
+#define SEL_OPEN_LOOKUP_SQL \
+    "SELECT key, path, source = 'local', COALESCE(md5, ''), COALESCE(size, 0) FROM songs" \
+    " WHERE key = ?1 OR (source = 'local' AND path = ?1) LIMIT 1"
+/* Rank of a source in the D-M3-14 order, lower is better. */
+#define SEL_SOURCE_RANK_SQL \
+    "CASE source WHEN 'local' THEN 0 WHEN 'modland' THEN 3 WHEN 'hvsc' THEN 4 WHEN 'hippo' THEN 5 ELSE 6 END"
+#define SEL_BEST_SOURCE_SQL \
+    "SELECT key FROM songs WHERE md5 <> '' AND md5 = (SELECT md5 FROM songs WHERE key = ?1)" \
+    " ORDER BY " SEL_SOURCE_RANK_SQL ", id LIMIT 1"
+
 /* scan.c: SEL_LIB_REQ_SCAN_BATCH. */
 void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_message* reply);
 void sel_library_remove(sel_library* lib, const sel_remove_batch* b, sel_message* reply);

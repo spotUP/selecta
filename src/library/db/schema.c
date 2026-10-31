@@ -259,9 +259,17 @@ static const char SCHEMA_V15[] =
     "CREATE TABLE IF NOT EXISTS item_formats(kind INTEGER NOT NULL, key TEXT NOT NULL, stamp INTEGER NOT NULL, fmt TEXT NOT NULL,"
     " PRIMARY KEY(kind, key)) WITHOUT ROWID;";
 
+/* I848a: double-clicking a song froze the UI for 5.9 s on 644k songs. OPEN asks SEL_BEST_SOURCE (duplicates.c op_best) for the twin sources
+ * of the song: "songs with this md5" had no index (full scan of songs) and hash_for_open's "key = ? OR (source = 'local' AND path = ?)"
+ * had no path index (the OR branch scanned every local row). songs_md5 is partial (md5 <> ''): most rows have no md5 yet, so it stays small,
+ * and the queries repeat `md5 <> ''` so the planner may use it. songs_source_path serves the path branch. */
+static const char SCHEMA_V16[] =
+    "CREATE INDEX IF NOT EXISTS songs_md5 ON songs(md5) WHERE md5 <> '';"
+    "CREATE INDEX IF NOT EXISTS songs_source_path ON songs(source, path);";
+
 static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
                                            SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11,
-                                           SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15};
+                                           SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 
