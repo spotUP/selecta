@@ -28,7 +28,9 @@ static void* job_main(void* arg) {
             lib->job_task = 0;
             lib->job_task_busy = 1;
             pthread_mutex_unlock(&lib->job_lock);
+            sel_net_set_cancel(&lib->task_cancel, 0u); /* I832: Cancel/quit ends the task's network wait, not just job_quit; the stop sets both */
             lib->task_fn(lib->task_ctx);
+            sel_net_set_cancel(&lib->job_quit, 0u);
             pthread_mutex_lock(&lib->job_lock);
             lib->job_task_busy = 0;
             lib->task_done = 1;
