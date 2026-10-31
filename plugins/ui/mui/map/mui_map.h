@@ -417,9 +417,17 @@ int mui_screen_is_rtg(int dipf_foreign, int bm_standard, uint32_t bm_depth);
  * mui_window_attrs_calls counts the calls (sentinel: mui_open must reach it). */
 typedef struct mui_window_attrs_t {
     uint8_t borderless, backdrop, dragbar, depthgadget, sizegadget, closegadget, titled;
+    uint8_t header; /* I730: 1 = the window draws its own flat header row (title + close button); dialogs on the own screen only */
 } mui_window_attrs_t;
 void mui_window_attrs(int own_screen, mui_window_attrs_t* out);
 uint32_t mui_window_attrs_calls(void);
+/* I730: the attributes of every dialog window (Settings, Help, the Commands palette). One path for all of them. On the own
+ * SELECTA screen: borderless, untitled (Intuition would add a title bar to a titled borderless window), no drag bar, depth, size
+ * or close gadget, not a backdrop (it floats centred over the main window), header = 1 (our own title row with a close button,
+ * Esc closes). On Workbench (compact mode): normal borders and title, no own header. Built on mui_window_attrs.
+ * mui_dialog_attrs_calls counts the calls (sentinel: every dialog must reach it). */
+void mui_dialog_attrs(int own_screen, mui_window_attrs_t* out);
+uint32_t mui_dialog_attrs_calls(void);
 /* MUI-P8 (plan 2026-10-25-amiga-mui.md section P8): parity rows the first MUI pass left out. Every action here is fired by
  * its shared action-table id (mui_menu_line), the same line the desktop sends; nothing keeps a second list. */
 /* Fires the table line of action `id` through send; returns 1 when the line was sent. mui_action_fires() is the call-count

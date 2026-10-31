@@ -457,6 +457,7 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_PAL_BTN 0x2806L    /* I798 (O1): the Commands button opening the palette window */
 #define CTL_PAL_STR 0x2807L    /* the palette window's query String */
 #define CTL_PAL_LIST 0x2808L   /* the palette window's match list */
+#define CTL_DLG_CLOSE 0x2809L  /* I730: the close button of a dialog header (the window closes itself; the id is a no-op) */
 #define CTL_TOPBAR_BROWSE 0x2800L /* I615d: the top bar Browse button */
 #define CTL_QUICK_BASE 0x2A00L      /* I795 (P1): the Home quick tiles, CTL_QUICK_BASE + slot */
 #define CTL_SHELF_ALL_BASE 0x2A10L  /* I795 (P1): Show all of a shelf slot */
@@ -749,6 +750,52 @@ static Object* mui_aatext_sized(const char* contents, const char* widest, int to
 
 static Object* mui_aatext(const char* contents, int tone, int align, int hidden) {
     return mui_aatext_sized(contents, NULL, tone, align, hidden);
+}
+
+/* I730: the one constructor of every dialog window (Settings, Help, the Commands palette). The attributes come from
+ * mui_dialog_attrs: on the own screen the window is borderless, untitled, centred and fixed, and the root gets our flat header
+ * row (title text + close button; the button takes Esc); on Workbench it keeps the normal borders and title. No per-dialog copy. */
+static Object* mui_dialog_window(const char* title, ULONG id, Object* root) {
+    mui_window_attrs_t da;
+    Object *win, *content = root;
+    mui_dialog_attrs(g_scr != NULL, &da);
+    if (da.header != 0u) {
+        mui_aabtn_spec sp;
+        Object *hdr, *close, *col;
+        sp.caption = "Close";
+        sp.widest = "Close";
+        sp.help = "Close (Esc)";
+        sp.icon = mui_icon_id("close");
+        sp.alt_icon = -1;
+        sp.icon_only = 1;
+        sp.role = MUI_AA_ROLE_GHOST;
+        sp.id = CTL_DLG_CLOSE;
+        sp.selected = 0;
+        sp.weight = 0;
+        sp.align = MUI_AA_ALIGN_CENTRE;
+        close = mui_aabtn_new_key(&sp, 27UL);
+        hdr = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+        col = MUI_NewObject((char*)MUIC_Group, TAG_DONE);
+        if (close == NULL || hdr == NULL || col == NULL) {
+            return NULL;
+        }
+        DoMethod(hdr, OM_ADDMEMBER, mui_aatext(title, MUI_AA_TONE_TITLE, MUI_AA_ALIGN_LEFT, 0));
+        DoMethod(hdr, OM_ADDMEMBER, close);
+        DoMethod(col, OM_ADDMEMBER, hdr);
+        DoMethod(col, OM_ADDMEMBER, root);
+        content = col;
+        win = MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, (ULONG)NULL, MUIA_Window_ID, id, MUIA_Window_Borderless, (ULONG)da.borderless,
+                            MUIA_Window_DragBar, (ULONG)da.dragbar, MUIA_Window_DepthGadget, (ULONG)da.depthgadget, MUIA_Window_SizeGadget, (ULONG)da.sizegadget,
+                            MUIA_Window_CloseGadget, (ULONG)da.closegadget, MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Centered,
+                            MUIA_Window_TopEdge, MUIV_Window_TopEdge_Centered, MUIA_Window_RootObject, (ULONG)content, TAG_DONE);
+        if (win != NULL) {
+            DoMethod(close, MUIM_Notify, MUIA_Pressed, FALSE, win, 3, MUIM_Set, MUIA_Window_Open, FALSE);
+        }
+        return win;
+    }
+    return MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, da.titled ? (ULONG)title : (ULONG)NULL, MUIA_Window_ID, id,
+                         MUIA_Window_Borderless, (ULONG)da.borderless, MUIA_Window_DragBar, (ULONG)da.dragbar, MUIA_Window_DepthGadget, (ULONG)da.depthgadget,
+                         MUIA_Window_SizeGadget, (ULONG)da.sizegadget, MUIA_Window_CloseGadget, (ULONG)da.closegadget, MUIA_Window_RootObject, (ULONG)content, TAG_DONE);
 }
 
 static Object* mui_make_text(mui_state* s, uint32_t attr, const char* initial, mui_label label) {
@@ -2169,8 +2216,7 @@ static void mui_help_open(mui_state* s) {
         if (lst_g == NULL || lst == NULL) {
             return;
         }
-        s->help_win = MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, (ULONG) "Selecta Help", MUIA_Window_ID, 0x48454C50UL,
-                                    MUIA_Window_RootObject, (ULONG)lst_g, TAG_DONE);
+        s->help_win = mui_dialog_window("Selecta Help", 0x48454C50UL, lst_g);
         if (s->help_win == NULL) {
             return;
         }
@@ -2197,8 +2243,7 @@ static void mui_palette_show(mui_state* s) {
         }
         DoMethod(str_g, OM_ADDMEMBER, s->pal_str);
         DoMethod(str_g, OM_ADDMEMBER, lst_g);
-        s->pal_win = MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, (ULONG) "Selecta Command Palette", MUIA_Window_ID, 0x50414C54UL,
-                                   MUIA_Window_RootObject, (ULONG)str_g, TAG_DONE);
+        s->pal_win = mui_dialog_window("Selecta Command Palette", 0x50414C54UL, str_g);
         if (s->pal_win == NULL) {
             return;
         }
@@ -2346,8 +2391,7 @@ static void mui_settings_open(mui_state* s) {
             DoMethod(grid, OM_ADDMEMBER, mui_aatext(r->label, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_RIGHT, 0));
             DoMethod(grid, OM_ADDMEMBER, g);
         }
-        s->set_win = MUI_NewObject((char*)MUIC_Window, TH_SCR MUIA_Window_Title, (ULONG) "Selecta Settings", MUIA_Window_ID, 0x53455453UL,
-                                   MUIA_Window_RootObject, (ULONG)grid, TAG_DONE);
+        s->set_win = mui_dialog_window("Selecta Settings", 0x53455453UL, grid);
         if (s->set_win == NULL) {
             return;
         }

@@ -1635,6 +1635,56 @@ static void test_window_borderless(void) {
     CHECK(strstr(src, "SA_ShowTitle, FALSE") != NULL, "the SELECTA screen shows its title bar over the backdrop window");
 }
 
+/* I730: every dialog window (Settings, Help, the Commands palette) takes the one shared attribute path. Behaviour: on the own
+ * screen borderless, untitled, no gadgets, not a backdrop, own header row; on Workbench the normal borders. Structure: each
+ * `<name>_win` that is a dialog is built by mui_dialog_window (which calls mui_dialog_attrs), and no other code creates a MUIC_Window
+ * object except the main window (WindowObject, I675) and the cycle popup (mui_aacycle_class.c, not a dialog). A dialog that builds
+ * its own MUIC_Window bypasses the path and turns this red. */
+static void test_dialog_windows(void) {
+    mui_window_attrs_t a;
+    uint32_t before = mui_dialog_attrs_calls();
+    static char src[400000];
+    FILE* f = fopen(MUI_UI_SOURCE, "rb");
+    size_t n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    const char *fn, *end, *p;
+    uint32_t windows = 0, via_helper = 0;
+    static const char* const dialogs[] = {"s->help_win = mui_dialog_window(", "s->pal_win = mui_dialog_window(", "s->set_win = mui_dialog_window("};
+    size_t i;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    mui_dialog_attrs(1, &a);
+    CHECK(a.borderless == 1 && a.backdrop == 0 && a.dragbar == 0 && a.depthgadget == 0 && a.sizegadget == 0 && a.closegadget == 0 && a.titled == 0 && a.header == 1,
+          "own screen dialog is not borderless, untitled, gadget-free with its own header");
+    mui_dialog_attrs(0, &a);
+    CHECK(a.borderless == 0 && a.backdrop == 0 && a.dragbar == 1 && a.depthgadget == 1 && a.sizegadget == 1 && a.closegadget == 1 && a.titled == 1 && a.header == 0,
+          "Workbench dialog lost its normal borders");
+    CHECK(mui_dialog_attrs_calls() == before + 2u, "dialog attrs sentinel %u", (unsigned)mui_dialog_attrs_calls());
+    mui_window_attrs(1, &a);
+    CHECK(a.header == 0 && a.backdrop == 1, "the main window must keep backdrop and no header");
+    fn = strstr(src, "static Object* mui_dialog_window(");
+    CHECK(fn != NULL, "mui_dialog_window is gone");
+    end = fn != NULL ? strstr(fn, "\n}\n") : NULL;
+    CHECK(end != NULL && strstr(fn, "mui_dialog_attrs(g_scr != NULL, &da)") != NULL && strstr(fn, "mui_dialog_attrs(g_scr != NULL, &da)") < end,
+          "mui_dialog_window does not take its attributes from mui_dialog_attrs by own screen");
+    CHECK(end != NULL && strstr(fn, "mui_aabtn_new_key(&sp, 27UL)") != NULL && strstr(fn, "mui_aabtn_new_key(&sp, 27UL)") < end, "the dialog close button does not take Esc");
+    CHECK(end != NULL && strstr(fn, "MUIA_Window_Borderless, (ULONG)da.borderless") != NULL && strstr(fn, "MUIA_Window_CloseGadget, (ULONG)da.closegadget") != NULL,
+          "mui_dialog_window does not apply the attributes");
+    CHECK(end != NULL && strstr(fn, "MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Centered") != NULL, "dialogs are not centred");
+    for (i = 0; i < sizeof dialogs / sizeof dialogs[0]; i++) {
+        CHECK(strstr(src, dialogs[i]) != NULL, "dialog not built by mui_dialog_window: %s", dialogs[i]);
+    }
+    for (p = src; (p = strstr(p, "MUIC_Window")) != NULL; p++) {
+        windows++;
+        if (fn != NULL && end != NULL && p > fn && p < end) {
+            via_helper++;
+        }
+    }
+    CHECK(windows == via_helper, "%u MUIC_Window objects outside mui_dialog_window: a dialog bypasses the shared path", (unsigned)(windows - via_helper));
+    CHECK(strstr(src, "_win = MUI_NewObject(") == NULL, "a secondary window is built outside mui_dialog_window");
+}
+
 /* Regression (I656): with the I651 icons every button grew by 24 + 6 + 20 px, the tool row 2 reached ~860 px and MUI refused to
  * open the window (MUIA_Window_Open read back 0 on rig 3). Each button row's summed minimum width, from the constants and the
  * label tables mui_ui.c builds from, must fit the smallest supported screen (640 px, plan P6-2). The rows must also be built
@@ -2549,6 +2599,8 @@ int main(int argc, char** argv) {
         test_player_bar();
     } else if (strcmp(argv[1], "sidebar-icons") == 0) {
         test_sidebar_icons();
+    } else if (strcmp(argv[1], "dialog-windows") == 0) {
+        test_dialog_windows();
     } else if (strcmp(argv[1], "overlays") == 0) {
         test_overlays();
     } else if (strcmp(argv[1], "volume-row") == 0) {

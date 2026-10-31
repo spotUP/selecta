@@ -223,7 +223,7 @@ static void test_text_source(void) {
     CHECK(count_of(ui, "MUIC_Text") == 0, "MUIC_Text left in mui_ui.c: %d", count_of(ui, "MUIC_Text"));
     CHECK(count_of(ui, "TextObject") == 0, "TextObject left in mui_ui.c: %d", count_of(ui, "TextObject"));
     CHECK(count_of(ui, "MUIA_Text_Contents") == 0 && count_of(ui, "MUIA_Text_PreParse") == 0, "Text attribute left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aatext(") == 13, "text constructor sites: %d (definition + 7 + 2 collection page lines I794 + the Home shelf header I795 + the sidebar line helper mui_side_text + the Visualizer page empty note, I735; the eighth goes through mui_aatext_sized)", count_of(ui, "mui_aatext("));    CHECK(count_of(ui, "mui_aatext_sized(") == 3 && count_of(ui, "mui_attr_fixwidth(") == 1, "time labels sized through mui_attr_fixwidth");
+    CHECK(count_of(ui, "mui_aatext(") == 14, "text constructor sites: %d (definition + the dialog header title I730 + 7 + 2 collection page lines I794 + the Home shelf header I795 + the sidebar line helper mui_side_text + the Visualizer page empty note, I735; the eighth goes through mui_aatext_sized)", count_of(ui, "mui_aatext("));    CHECK(count_of(ui, "mui_aatext_sized(") == 3 && count_of(ui, "mui_attr_fixwidth(") == 1, "time labels sized through mui_attr_fixwidth");
     CHECK(strstr(cls, "mui_aa_text_maxw(d->fixed, d->defw)") != NULL, "class max width not decided by mui_aa_text_maxw");
     CHECK(count_of(ui, "mui_aatext_new(") == 1, "one AAText constructor call: %d", count_of(ui, "mui_aatext_new("));
     CHECK(strstr(cls, "mui_aa_text_fit(") != NULL && strstr(cls, "mui_aa_tone_token(") != NULL && strstr(cls, "mui_aa_tone_font_px(") != NULL && strstr(cls, "aa_text(") != NULL,
@@ -431,7 +431,7 @@ static void test_btn_align(void) {
     if (ui != NULL && cls != NULL) {
         CHECK(strstr(cls, "mui_aa_btn_content_x(") != NULL && strstr(cls, "(w - cw) / 2") == NULL, "class centres by hand instead of the shared helper");
         CHECK(count_of(ui, "mui_make_button_left(") == 3, "left aligned buttons: %d sites (definition + door row + the sidebar helper mui_side_button)", count_of(ui, "mui_make_button_left("));
-        CHECK(count_of(ui, "sp.align = align;") == 2 && count_of(ui, "sp.align = MUI_AA_ALIGN_CENTRE;") == 1, "every button spec sets align");
+        CHECK(count_of(ui, "sp.align = align;") == 2 && count_of(ui, "sp.align = MUI_AA_ALIGN_CENTRE;") == 2, "every button spec (checkbox + dialog close, I730) sets align");
         /* Johan rig 2 2026-10-29: the "> PROGDIR:" breadcrumb text ran past its button. The width was measured once at setup from the
          * blank first caption; a fit button (NULL widest) now re-measures at every layout from the caption it was last given. */
         CHECK(strstr(cls, "aabtn_measure(obj, d);") != NULL && count_of(cls, "aa_text_width(&d->aa, obj, d->widest)") == 1, "width not measured at layout");

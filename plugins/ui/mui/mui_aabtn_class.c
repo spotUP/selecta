@@ -252,6 +252,10 @@ static ULONG __attribute__((used)) aabtn_dispatch_c(struct IClass* cl, Object* o
 }
 
 Object* mui_aabtn_new(const mui_aabtn_spec* sp) {
+    return mui_aabtn_new_key(sp, 0);
+}
+
+Object* mui_aabtn_new_key(const mui_aabtn_spec* sp, ULONG key) {
     Object* o;
     aabtn_data* d;
     if (g_class == NULL) {
@@ -262,7 +266,8 @@ Object* mui_aabtn_new(const mui_aabtn_spec* sp) {
     }
     o = NewObject(g_class->mcc_Class, NULL, MUIA_Frame, MUIV_Frame_None, MUIA_InputMode,
                   sp->role == MUI_AA_ROLE_TOGGLE ? MUIV_InputMode_Toggle : MUIV_InputMode_RelVerify, MUIA_Selected, (ULONG)(sp->selected ? TRUE : FALSE), MUIA_Weight, (ULONG)sp->weight,
-                  MUIA_CycleChain, TRUE, MUIA_ShortHelp, (ULONG)(sp->help != NULL ? sp->help : sp->caption), TAG_DONE);
+                  MUIA_CycleChain, TRUE, MUIA_ShortHelp, (ULONG)(sp->help != NULL ? sp->help : sp->caption),
+                  key != 0 ? (ULONG)MUIA_ControlChar : (ULONG)TAG_IGNORE, key, TAG_DONE);
     if (o != NULL) {
         d = INST_DATA(g_class->mcc_Class, o);
         strncpy(d->caption, sp->caption, sizeof d->caption - 1);

@@ -66,10 +66,27 @@ void mui_window_attrs(int own_screen, mui_window_attrs_t* out) {
         return;
     }
     g_attr_calls++;
+    out->header = 0u;
     out->borderless = out->backdrop = (uint8_t)(own_screen != 0);
     out->dragbar = out->depthgadget = out->sizegadget = out->closegadget = out->titled = (uint8_t)(own_screen == 0);
 }
 
 uint32_t mui_window_attrs_calls(void) {
     return g_attr_calls;
+}
+
+static uint32_t g_dialog_calls;
+
+void mui_dialog_attrs(int own_screen, mui_window_attrs_t* out) {
+    if (out == NULL) {
+        return;
+    }
+    g_dialog_calls++;
+    mui_window_attrs(own_screen, out);
+    out->backdrop = 0u; /* a dialog floats over the main window */
+    out->header = (uint8_t)(own_screen != 0);
+}
+
+uint32_t mui_dialog_attrs_calls(void) {
+    return g_dialog_calls;
 }
