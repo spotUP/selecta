@@ -42,6 +42,11 @@ typedef struct sel_live sel_live;
 /* Starts the download. `gen`/`start` (the engine's cancel generation) end the head wait below when a newer
  * STOP or OPEN arrives. NULL when streaming is not available or the thread did not start. */
 sel_live* sel_live_open(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start);
+/* Seekable stream (I725f): like sel_live_open for a server that answers HTTP Range. A HEAD request gives the byte
+ * length (the view's `total`); the view's `seek` cancels the running download and starts a new one with
+ * `Range: bytes=<pos>-`, returning once the first window of the new response arrived. NULL when the server gives no
+ * length or the thread did not start; the caller then falls back to sel_live_open. */
+sel_live* sel_live_open_seekable(const sel_host* host, const char* url, const volatile unsigned* gen, unsigned start);
 /* Waits until `want` bytes arrived or the stream ended, then copies up to `want` of the first bytes WITHOUT
  * consuming them (*n = how many). Returns 0 when the download failed before any byte or the wait was cancelled. */
 int sel_live_head(sel_live* s, uint8_t* dst, size_t want, size_t* n);

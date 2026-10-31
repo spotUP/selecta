@@ -50,6 +50,8 @@ uint32_t sel_source_search_runs(void);
  * in place by that member. 1 unpacked, 0 nothing to do (other source, not a zip, several members; the file is
  * untouched, so a second call after a cache hit is harmless), -1 the file could not be rewritten. */
 int sel_source_unzip(const sel_host* host, const char* key, const char* file);
+/* I725f: 1 when `key` is a song of a streams source flagged SEL_SOURCE_SEEKABLE (its URL answers Range requests). */
+int sel_source_key_seekable(const char* key);
 int sel_song_key_split(const char* key, char* source, size_t source_n, char* path, size_t path_n);
 
 /* Modland format table (design doc 9.1: one table maps a format name to a replayer across sources). */

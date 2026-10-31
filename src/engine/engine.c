@@ -1690,6 +1690,7 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
     char cached[SEL_BROWSE_PATH_MAX];
     char best[SEL_BROWSE_PATH_MAX];
     char resolved[SEL_BROWSE_PATH_MAX];
+    int seekable = 0; /* I725f: the song's source answers HTTP Range (podcast): the stream gets a length and seek */
     /* D-M3-14 (I184): a library song with twins of the same md5 plays its best source. */
     if (e->lib != NULL && sel_library_best_source(e->lib, path, best, sizeof best) && strcmp(best, path) != 0) {
         snprintf(e->dup_played, sizeof e->dup_played, "%s", best);
@@ -1702,6 +1703,7 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
         sel_host shost;
         int sr;
 
+        seekable = sel_source_key_seekable(path);
         memset(&sctx, 0, sizeof sctx);
         sctx.scfg.host = &e->pl_host;
         sctx.scfg.lib = e->lib;
@@ -1742,8 +1744,14 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
         /* I196b/I196c: with OPTION record_to (a directory) set, the same single request also feeds the record sink (F36):
          * a new file per OPEN and per ICY title change. */
         const char* rec = e->state.options[SEL_OPT_RECORD_TO];
-        sel_live* st = rec[0] != '\0' ? sel_live_open_record_dir(e->host, path, &e->cancel_gen, e->cancel_served, rec)
-                                       : sel_live_open(e->host, path, &e->cancel_gen, e->cancel_served);
+        sel_live* st = NULL;
+        if (seekable && rec[0] == '\0') {
+            st = sel_live_open_seekable(e->host, path, &e->cancel_gen, e->cancel_served);
+        }
+        if (st == NULL) {
+            st = rec[0] != '\0' ? sel_live_open_record_dir(e->host, path, &e->cancel_gen, e->cancel_served, rec)
+                                : sel_live_open(e->host, path, &e->cancel_gen, e->cancel_served);
+        }
         if (st != NULL) {
             uint8_t head[SEL_STREAM_HEAD];
             size_t n = 0;

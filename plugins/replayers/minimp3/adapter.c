@@ -29,6 +29,7 @@ typedef struct mp3_state {
     uint32_t hz;
     int channels;
     uint32_t total_frames; /* source frames, from the header walk */
+    uint32_t kbps;         /* first frame's bitrate: a network stream seeks by it (I725f) */
     uint32_t rate;
     sel_stream_pcm pcm;
     int16_t frame[MINIMP3_MAX_SAMPLES_PER_FRAME];
@@ -178,6 +179,7 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
         }
         s->hz = (uint32_t)fi.hz;
         s->channels = fi.channels;
+        s->kbps = (uint32_t)fi.bitrate_kbps;
         if (file_mode(s) && fi.bitrate_kbps > 0 && s->in->total > s->start_off) {
             /* No frame walk (it would read the whole file): length from the audio bytes and the first frame's
              * bitrate. Exact for constant bitrate, an estimate for variable bitrate. */
@@ -310,6 +312,21 @@ static void discard_to(mp3_state* s, uint64_t from, uint64_t target) {
     }
 }
 
+/* Network seek (I725f): the byte offset comes from the first frame's bitrate (exact for constant bitrate, close for
+ * variable), the stream re-requests from there (Range), and the decoder resynchronises on the next frame header. A header
+ * walk from the file start would download the whole prefix. */
+static int seek_network(mp3_state* s, uint32_t ms) {
+    uint64_t off = s->start_off + (uint64_t)ms * (uint64_t)s->kbps / 8u;
+    if (s->in->total > 0u && off >= s->in->total) {
+        off = s->in->total;
+    }
+    file_goto(s, off);
+    s->left = 0;
+    mp3dec_init(&s->dec);
+    sel_stream_pcm_reset(&s->pcm, pull, s, s->hz, s->rate);
+    return 1;
+}
+
 /* File mode seek: the same header walk, through the window, then back two frames in the file. */
 static int seek_file(mp3_state* s, uint32_t ms) {
     uint64_t target = (uint64_t)ms * s->hz / 1000u, at = 0, from = 0, from1 = 0;
@@ -350,6 +367,9 @@ static int seek_file(mp3_state* s, uint32_t ms) {
 static int rp_seek(void* state, uint32_t ms) {
     mp3_state* s = (mp3_state*)state;
     if (s->in != NULL) {
+        if (file_mode(s) && s->in->network && s->kbps > 0u) {
+            return seek_network(s, ms);
+        }
         return file_mode(s) ? seek_file(s, ms) : 0; /* no seek in a live stream */
     }
     uint64_t target = (uint64_t)ms * s->hz / 1000u, at = 0, from = 0, from1 = 0;

@@ -86,7 +86,8 @@ enum {
     SEL_SOURCE_SYNCS = 2u,         /* has a sync */
     SEL_SOURCE_NEW_THIS_WEEK = 4u, /* the sync reports SEL_SYNC_NEW_THIS_WEEK; the engine persists it */
     SEL_SOURCE_STREAMS = 8u,       /* songs are live streams: never cached, played from play_url (I725c) */
-    SEL_SOURCE_ZIPPED = 16u        /* each song file is a zip around one module; the engine unpacks it after the fetch (I406) */
+    SEL_SOURCE_ZIPPED = 16u,       /* each song file is a zip around one module; the engine unpacks it after the fetch (I406) */
+    SEL_SOURCE_SEEKABLE = 32u      /* with STREAMS: the play_url answers HTTP Range, so a seek re-requests from the byte (I725f) */
 };
 
 /* Sync on launch (I527): 1 when a source last synced at `synced` (unix time, 0 never) is due for the sync offer at `now`.

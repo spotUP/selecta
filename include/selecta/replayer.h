@@ -33,6 +33,9 @@ typedef struct sel_byte_stream {
      * success. Only for the command thread (RP_OPEN, RP_SEEK), the same rule as read_wait. */
     uint64_t total;
     int (*seek)(void* ctx, uint64_t pos);
+    /* 1 when the bytes come over the network (I725f, HTTP Range): a seek is one new request, but reading is only as
+     * fast as the link, so a replayer must not walk the file from the start to find a position. 0 for a local file. */
+    int network;
 } sel_byte_stream;
 
 /* The whole song in memory. `data` stays valid until RP_CLOSE returns. With `stream` set (SEL_RP_STREAMING
