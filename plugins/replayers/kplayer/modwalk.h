@@ -26,4 +26,24 @@ int kp_walk_find(const uint8_t* mod, size_t size, uint32_t ms, kp_walk_pos* out)
  * back onto itself). Returns 1 and sets *length_ms, or 0 when the module is malformed or never ends. */
 int kp_walk_length(const uint8_t* mod, size_t size, uint32_t* length_ms);
 
+/* I732: the pattern layout and cells of an unconverted M.K. / M!K! / FLT4 module, for the engine's tracker view
+ * (RP_TRACKER_INFO / RP_TRACKER_CELLS). Same cell semantics as the nuade and openmpt adapters: note on libopenmpt's
+ * scale (0 = none, C-0 = 1, so period 428 = 61), instrument 0 = none, effect and param as stored, no volume column. */
+typedef struct kp_tracker_info {
+    uint32_t orders, patterns, rows, channels;
+} kp_tracker_info;
+
+typedef struct kp_cell {
+    uint8_t note, instrument, volume, effect, param;
+} kp_cell;
+
+/* Returns 1 and fills `out` when `order` is inside the order list, else 0. */
+int kp_tracker_info_get(const uint8_t* mod, size_t size, uint32_t order, kp_tracker_info* out);
+
+/* Writes the cells of `channel` for rows row_lo .. row_hi - 1 of the pattern at `order` into `out` (at most `cap`),
+ * a row outside the pattern or the data as an empty cell. Returns how many, 0 when `order` or `channel` is out of
+ * range. */
+uint32_t kp_tracker_cells_get(const uint8_t* mod, size_t size, uint32_t order, uint32_t channel, uint32_t row_lo,
+                              uint32_t row_hi, kp_cell* out, uint32_t cap);
+
 #endif

@@ -138,3 +138,78 @@ int kp_walk_find(const uint8_t* mod, size_t size, uint32_t ms, kp_walk_pos* out)
 int kp_walk_length(const uint8_t* mod, size_t size, uint32_t* length_ms) {
     return length_ms != NULL && walk(mod, size, 0, NULL, length_ms);
 }
+
+/* ---- I732: tracker cells ---- */
+
+enum {
+    MW_ROWS = 64,
+    MW_CHANNELS = 4,
+    MW_PERIODS = 36,
+    MW_FIRST_NOTE = 49 /* period 856 = C-1 in ProTracker = C-4 on libopenmpt's scale */
+};
+
+/* ProTracker finetune 0 periods, C-1 .. B-3. */
+static const uint16_t mw_period[MW_PERIODS] = {856, 808, 762, 720, 678, 640, 604, 570, 538, 508, 480, 453,
+                                               428, 404, 381, 360, 339, 320, 302, 285, 269, 254, 240, 226,
+                                               214, 202, 190, 180, 170, 160, 151, 143, 135, 127, 120, 113};
+
+static uint8_t note_of_period(uint32_t period) {
+    uint32_t i, best = 0, best_d = 0xffffu;
+    if (period == 0u) {
+        return 0;
+    }
+    for (i = 0; i < MW_PERIODS; i++) { /* nearest, so a finetuned period lands on its note */
+        uint32_t d = period > mw_period[i] ? period - mw_period[i] : mw_period[i] - period;
+        if (d < best_d) {
+            best_d = d;
+            best = i;
+        }
+    }
+    return (uint8_t)(MW_FIRST_NOTE + best);
+}
+
+int kp_tracker_info_get(const uint8_t* mod, size_t size, uint32_t order, kp_tracker_info* out) {
+    uint32_t length, i, top = 0;
+    if (mod == NULL || out == NULL || size < MW_PATTERNS_AT) {
+        return 0;
+    }
+    length = mod[MW_LENGTH_AT];
+    if (length > 128u) {
+        length = 128u;
+    }
+    if (order >= length) {
+        return 0;
+    }
+    for (i = 0; i < 128u; i++) { /* the pattern count is the highest pattern in the whole table, as every tracker counts */
+        if (mod[MW_ORDERS_AT + i] > top) {
+            top = mod[MW_ORDERS_AT + i];
+        }
+    }
+    out->orders = length;
+    out->patterns = top + 1u;
+    out->rows = MW_ROWS;
+    out->channels = MW_CHANNELS;
+    return 1;
+}
+
+uint32_t kp_tracker_cells_get(const uint8_t* mod, size_t size, uint32_t order, uint32_t channel, uint32_t row_lo,
+                              uint32_t row_hi, kp_cell* out, uint32_t cap) {
+    kp_tracker_info info;
+    uint32_t row, n = 0;
+    if (out == NULL || channel >= MW_CHANNELS || !kp_tracker_info_get(mod, size, order, &info)) {
+        return 0;
+    }
+    for (row = row_lo; row < row_hi && n < cap; row++, n++) {
+        size_t at = MW_PATTERNS_AT + (size_t)mod[MW_ORDERS_AT + order] * MW_PATTERN_BYTES +
+                    (size_t)row * MW_ROW_BYTES + (size_t)channel * 4u;
+        out[n].note = out[n].instrument = out[n].volume = out[n].effect = out[n].param = 0;
+        if (row < MW_ROWS && at + 4u <= size) {
+            const uint8_t* c = mod + at;
+            out[n].note = note_of_period(((uint32_t)(c[0] & 0x0fu) << 8) | c[1]);
+            out[n].instrument = (uint8_t)((c[0] & 0xf0u) | (c[2] >> 4));
+            out[n].effect = c[2] & 0x0fu;
+            out[n].param = c[3];
+        }
+    }
+    return n;
+}
