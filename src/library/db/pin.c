@@ -37,6 +37,7 @@ static void pin_write(sel_library* lib, const sel_pin_slot* q, unsigned n) {
         rows[i].album = "";
         rows[i].md5 = "";
     }
+    memset(&b, 0, sizeof b); /* new_day = 0: a pin records no New-level entry */
     b.rows = rows;
     b.count = n;
     b.now = 0; /* added = 0: a pin is the user's own pick, never "New" (Q4) */

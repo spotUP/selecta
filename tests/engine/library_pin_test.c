@@ -94,6 +94,8 @@ int main(void) {
     CHECK(count(db, "SELECT COUNT(*) FROM songs WHERE source='modulespl'") == 36);
     CHECK(count(db, "SELECT COUNT(*) FROM songs WHERE source='modulespl' AND added=0") == 36);
     CHECK(count(db, "SELECT COUNT(*) FROM songs WHERE source='modulespl' AND format='Protracker'") == 36);
+    /* A pin is the user's pick, not news from the source: the batch records no New-level entry (new_day = 0). */
+    CHECK(count(db, "SELECT COUNT(*) FROM source_new") == 0);
 
     if (g_fail == 0) printf("library_pin_ok\n");
     return g_fail != 0;
