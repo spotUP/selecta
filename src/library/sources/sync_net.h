@@ -7,6 +7,9 @@
 
 /* GETs `url` into `path` through the HTTP client. Returns the HTTP status (0 on a transport failure); any result
  * but 200 removes the file. `*requests` gains the requests made (redirects count), `*bytes` is the body size. */
+/* sel_sync_net_get_file with a first-byte limit in ms (0: the client default). */
+int sel_sync_net_get_file_wait(const char* url, const char* path, unsigned first_byte_ms, uint32_t* requests,
+                               unsigned long* bytes);
 int sel_sync_net_get_file(const char* url, const char* path, uint32_t* requests, unsigned long* bytes);
 
 /* sel_sync_net_get_file, then `check(path)` on a 200 body (1 keeps it). A refused body removes the file and the call

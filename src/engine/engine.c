@@ -514,7 +514,7 @@ struct sel_engine {
     sel_collection_page coll;                 /* the page COLLECTION_OPEN built (I678f), published as state.collection */
     char* coll_rows;                          /* its song block, heap */
     uint32_t evt_dropped;                     /* events emit() could not queue because evt_q was full (I546) */
-    sel_tag src_tags[16][11];                  /* one SOURCES row per registered source (registry holds 16) */
+    sel_tag src_tags[16][12];                  /* one SOURCES row per registered source (registry holds 16) */
     char st_key[8][SEL_DEFERRED_PATH_MAX];
     char st_name[8][128];
     char st_value[8][SEL_STICKER_VALUE_MAX];
@@ -4378,7 +4378,7 @@ static void sources_row(void* ctx, const char* id, const char* name, const char*
     t[7].tag = SEL_SRC_DUE; /* I527: only a remote, enabled source of an open library is offered a sync */
     snoozed = sel_source_snooze_at(e->prefs.value[SEL_PREF_LIBRARY_SYNC_SNOOZED], id); /* I582: per source, beside the global Not now */
     notice = strtoll(e->prefs.value[SEL_PREF_LIBRARY_SYNC_NOTICE_AT], NULL, 10);
-    t[7].value = (remote && enabled && e->lib != NULL &&
+    t[7].value = (remote && enabled && sel_source_find(id) != NULL && sel_source_find(id)->sync != NULL && /* I814: no sync hook, nothing to offer */ e->lib != NULL &&
                   sel_source_sync_due(synced, snoozed > notice ? snoozed : notice, (int64_t)time(NULL),
                                       (uint32_t)strtoul(e->prefs.value[SEL_PREF_LIBRARY_SYNC_STALE_DAYS], NULL, 10)))
                      ? 1u : 0u;
@@ -4386,8 +4386,10 @@ static void sources_row(void* ctx, const char* id, const char* name, const char*
     t[8].value = (uintptr_t)snoozed;
     t[9].tag = SEL_SRC_SEARCHABLE; /* I406a: a source with a search hook can be named in SOURCE_SEARCH */
     t[9].value = sel_source_find(id) != NULL && sel_source_find(id)->search != NULL ? 1u : 0u;
-    t[10].tag = SEL_TAG_END;
-    t[10].value = 0;
+    t[10].tag = SEL_SRC_SYNCABLE; /* I814: the desktop draws Sync only for a source with a sync hook */
+    t[10].value = sel_source_find(id) != NULL && sel_source_find(id)->sync != NULL ? 1u : 0u;
+    t[11].tag = SEL_TAG_END;
+    t[11].value = 0;
     evt_init(&r, SEL_EVT_LIBRARY_RESULT);
     evt_tags(&r, t);
     emit(e, &r);

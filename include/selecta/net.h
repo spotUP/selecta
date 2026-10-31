@@ -37,6 +37,10 @@ typedef struct sel_net {
      * extra "Name: value" request headers (NULL-terminated array, or NULL). Appended last (I725p). */
     int (*request_ex)(const sel_host* host, const char* url, const char* user_agent, const char* const* headers,
                       void* buf, uint32_t cap, uint32_t* got, uint32_t* requests);
+    /* get_file with the wait for the first reply byte raised to `first_byte_ms` (0: the default, 3000 ms), for a
+     * server that is slow to start answering a search (www.modules.pl: 10-11 s, I816). Appended last. */
+    int (*get_file_wait)(const sel_host* host, const char* url, const char* path, uint32_t first_byte_ms,
+                         uint32_t* requests, unsigned long* bytes);
 } sel_net;
 
 SEL_EXTERN_C_END
