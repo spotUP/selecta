@@ -131,9 +131,9 @@ int main(void) {
         clock_gettime(CLOCK_MONOTONIC, &t0);
         sel_db_majority_format(lib->db, SEL_LIB_ITEM_SOURCE, "big", raw, sizeof raw);
         scan_ms = ms_since(&t0);
-        sel_db_majority_format_cached(lib, SEL_LIB_ITEM_SOURCE, "big", c1, sizeof c1);
+        sel_db_majority_format_cached(lib->db, SEL_LIB_ITEM_SOURCE, "big", c1, sizeof c1);
         clock_gettime(CLOCK_MONOTONIC, &t0);
-        sel_db_majority_format_cached(lib, SEL_LIB_ITEM_SOURCE, "big", c2, sizeof c2);
+        sel_db_majority_format_cached(lib->db, SEL_LIB_ITEM_SOURCE, "big", c2, sizeof c2);
         hit_ms = ms_since(&t0);
         printf("majority_format 60000 songs: scan %ld ms, cached hit %ld ms\n", scan_ms, hit_ms);
         CHECK(strcmp(raw, c1) == 0 && strcmp(c1, c2) == 0 && raw[0] != '\0');
@@ -143,7 +143,7 @@ int main(void) {
                            "INSERT INTO songs(key, source, path, name, artist, added) SELECT 'big2:'||i,'big','e/'||i||'.sid','t'||i,'X',1 FROM n;",
                            NULL, NULL, NULL) == SQLITE_OK);
         sel_db_majority_format(lib->db, SEL_LIB_ITEM_SOURCE, "big", raw, sizeof raw);
-        sel_db_majority_format_cached(lib, SEL_LIB_ITEM_SOURCE, "big", c3, sizeof c3);
+        sel_db_majority_format_cached(lib->db, SEL_LIB_ITEM_SOURCE, "big", c3, sizeof c3);
         CHECK(strcmp(raw, c3) == 0 && strcmp(c1, c3) != 0); /* the change flipped the majority; the cache followed */
     }
 

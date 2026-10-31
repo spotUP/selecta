@@ -252,9 +252,16 @@ static const char SCHEMA_V14[] =
     "CREATE INDEX IF NOT EXISTS songs_source_artist ON songs(source, artist, format, size);"
     "CREATE TABLE IF NOT EXISTS source_new(source TEXT NOT NULL, day INTEGER NOT NULL, n INTEGER NOT NULL, PRIMARY KEY(source, day)) WITHOUT ROWID;";
 
+/* I838: the majority format of a list item (items.c sel_db_majority_format_cached) with the change key it was computed at. Before this the
+ * answer lived in a 128-slot memory cache stamped with sqlite3_total_changes64, so any write (a play, a pin, the browse cache) emptied
+ * it and the next Sources reply rescanned all 516 000 Modland paths on the library worker (seconds). No trigger (I577 heap budget). */
+static const char SCHEMA_V15[] =
+    "CREATE TABLE IF NOT EXISTS item_formats(kind INTEGER NOT NULL, key TEXT NOT NULL, stamp INTEGER NOT NULL, fmt TEXT NOT NULL,"
+    " PRIMARY KEY(kind, key)) WITHOUT ROWID;";
+
 static const char* const g_migrations[] = {SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
                                            SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11,
-                                           SCHEMA_V12, SCHEMA_V13, SCHEMA_V14};
+                                           SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15};
 
 #define MIGRATION_COUNT ((int)(sizeof g_migrations / sizeof g_migrations[0]))
 
