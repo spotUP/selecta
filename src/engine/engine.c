@@ -42,6 +42,7 @@
 #include "view.h"
 #if !defined(__amigaos__) && !defined(AMIGA)
 #include <pthread.h>
+#include <sched.h>
 #define SEL_LI_THREAD 1
 #endif
 #include "db.h"
@@ -275,6 +276,22 @@ typedef struct sel_slot {
     sel_leveler lev;           /* audio thread writes; the command thread reads it once the slot is returned */
 } sel_slot;
 
+/* I829: one library read the command thread posts instead of waiting on (home, search, folders). The same post-and-take
+ * life as the I787 Your Library read: state 0 idle, 1 running, 2 answer ready (written with __atomic ops; the thread
+ * publishes its answer before it stores 2). A post while one runs sets `again`: the pump starts one more read with the
+ * newest request when the running one lands, so typing never queues a read per keystroke. */
+typedef struct sel_lib_read {
+    int state;
+    int again;
+    void (*run)(sel_engine* e);
+    sel_engine* e;
+#if defined(SEL_LI_THREAD)
+    pthread_t th;
+#endif
+} sel_lib_read;
+
+enum { SEL_RD_QUERY_MAX = 512, SEL_RD_FOLDERS_MAX = 4096 };
+
 struct sel_engine {
     const sel_host* host;
     sel_host rp_host;               /* copy of host whose config_get answers per-replayer options (I134) */
@@ -300,6 +317,7 @@ struct sel_engine {
     uint32_t home_chip;                        /* Home format chip: SEL_HOME_CHIP_* (I678j) */
     uint32_t home_rows;                        /* entries the home view source shows (I191 sentinel) */
     uint32_t folder_view_rows;                 /* rows the folders view source built (I179 sentinel) */
+    uint32_t lib_reads_applied;                /* I829: posted library reads the pump applied */
     uint32_t import_runs, import_added, import_missing; /* PLAYLIST_IMPORT sentinel and last result (I652c) */
     uint32_t stream_adds;                      /* STREAM_ADD URLs saved (I725a) */
     uint32_t pl_fail_runs, pl_fail_reason;     /* last failed PLAYLIST_IMPORT / PLAYLIST_ADD_FOLDER: counter and SEL_PLFAIL_* (I652e) */
@@ -513,6 +531,21 @@ struct sel_engine {
     pthread_t li_thread;
 #endif
     uint32_t drill_rows;                      /* I790: source drill rows emitted by the library over all pages built */
+    /* I829: the posted reads of the command path. Each thread reads only its rd_* request fields (written by the pump
+     * before the post) and writes only its rd_* answer fields; the pump applies the answer in lib_reads_collect. */
+    sel_lib_read rd_home, rd_search, rd_folders;
+    uint32_t rd_home_chip, rd_home_lines;
+    char* rd_home_text;                       /* SEL_VIEW_HOME_TEXT_MAX bytes */
+    char rd_q[SEL_RD_QUERY_MAX];              /* the query the search thread runs */
+    char rd_q_next[SEL_RD_QUERY_MAX];         /* the newest LIBRARY_SEARCH, run when the one in flight lands */
+    sel_lib_job rd_job;
+    int rd_search_ok;
+    char* rd_res_text;                        /* the search thread's result buffers, swapped with res_text/res_meta on take */
+    char* rd_res_meta;
+    char rd_view[8];                          /* "search" or "query": a VIEW_SOURCE waiting for the search answer */
+    char rd_fold_text[SEL_RD_FOLDERS_MAX];
+    uint32_t rd_fold_lines;
+    int sources_retry;                        /* I829: a SOURCES reply met a busy library; send it again once it is free */
     uint32_t collection_queries;              /* collection page lists that reached the library (I678f) */
     sel_collection_page coll;                 /* the page COLLECTION_OPEN built (I678f), published as state.collection */
     char* coll_rows;                          /* its song block, heap */
@@ -3542,7 +3575,95 @@ static void report_library_error(sel_engine* e, const char* code, const char* wh
     sel_engine_report_error(e, slot, who);
 }
 
-/* Runs `text` on the library worker into res_text. 1 on success; on failure the ERROR event is raised. */
+/* ---- I829: posted library reads (the command thread never waits on the library worker) ---- */
+#if defined(SEL_LI_THREAD)
+static void* lib_read_main(void* arg) {
+    sel_lib_read* r = (sel_lib_read*)arg;
+
+    r->run(r->e);
+    __atomic_store_n(&r->state, 2, __ATOMIC_RELEASE);
+    return NULL;
+}
+#endif
+
+/* Starts `run` unless a read of this kind is in flight (then marks `again`). Without a thread (Amiga, or creation failed) the read
+ * runs in this call and the pump takes it on its next pass. */
+static void lib_read_post(sel_engine* e, sel_lib_read* r, void (*run)(sel_engine* e)) {
+    if (__atomic_load_n(&r->state, __ATOMIC_ACQUIRE) != 0) {
+        r->again = 1;
+        return;
+    }
+    r->again = 0;
+    r->e = e;
+    r->run = run;
+#if defined(SEL_LI_THREAD)
+    __atomic_store_n(&r->state, 1, __ATOMIC_RELEASE);
+    if (pthread_create(&r->th, NULL, lib_read_main, r) == 0) return;
+#endif
+    run(e);
+    __atomic_store_n(&r->state, 2, __ATOMIC_RELEASE);
+}
+
+static int lib_read_idle(const sel_lib_read* r) {
+    return __atomic_load_n(&r->state, __ATOMIC_ACQUIRE) == 0;
+}
+
+/* 1 when the read landed: its answer fields are the pump's until the next post. */
+static int lib_read_take(sel_lib_read* r) {
+    if (__atomic_load_n(&r->state, __ATOMIC_ACQUIRE) != 2) return 0;
+#if defined(SEL_LI_THREAD)
+    (void)pthread_join(r->th, NULL);
+#endif
+    __atomic_store_n(&r->state, 0, __ATOMIC_RELEASE);
+    return 1;
+}
+
+/* engine destroy: waits for a read in flight (it uses the library, which closes after the engine). */
+static void lib_read_end(sel_lib_read* r) {
+#if defined(SEL_LI_THREAD)
+    while (__atomic_load_n(&r->state, __ATOMIC_ACQUIRE) == 1) {
+        sched_yield();
+    }
+#endif
+    (void)lib_read_take(r);
+}
+
+static void search_job_init(sel_engine* e, sel_lib_job* job, const char* text, char* out, char* meta) {
+    memset(job, 0, sizeof *job);
+    job->text = text;
+    job->now = (long long)time(NULL);
+    job->out = out;
+    job->out_cap = e->queue.text_bytes;
+    job->scan_max = e->queue.capacity; /* a per-row scan returns at most as many keys as the queue holds (I198e) */
+    job->meta = meta;
+    job->meta_cap = e->queue.text_bytes;
+}
+
+/* Takes a finished search job (ran: sel_library_run succeeded) into res_count; on failure the ERROR event is raised. */
+static int search_finish(sel_engine* e, const sel_lib_job* job, int ran, const char* who, uint32_t* fts) {
+    if (!ran) {
+        sel_engine_report_error(e, "library_failed", who);
+        return 0;
+    }
+    e->searches++;
+    e->fts_queries += job->used_fts;
+    if (job->error[0] != '\0') {
+        report_library_error(e, job->error, who);
+        return 0;
+    }
+    if (job->truncated) {
+        char n[16];
+        snprintf(n, sizeof n, "%u", (unsigned)job->truncated);
+        emit_log(e, "result_truncated", n);
+    }
+    e->res_count = job->count;
+    e->res_meta_used = job->meta_used;
+    *fts = job->used_fts;
+    return 1;
+}
+
+/* Runs `text` on the library worker into res_text and waits. 1 on success; on failure the ERROR event is raised. Only for
+ * commands that act on the result in the same turn (QUEUE_ADD_QUERY, PLAY_QUERY, VIEW_ACTIVATE); LIBRARY_SEARCH posts. */
 static int run_search(sel_engine* e, const char* text, const char* who, uint32_t* fts) {
     sel_lib_job job;
 
@@ -3551,33 +3672,15 @@ static int run_search(sel_engine* e, const char* text, const char* who, uint32_t
         sel_engine_report_error(e, "no_library", who);
         return 0;
     }
-    memset(&job, 0, sizeof job);
-    job.text = text;
-    job.now = (long long)time(NULL);
-    job.out = e->res_text;
-    job.out_cap = e->queue.text_bytes;
-    job.scan_max = e->queue.capacity; /* a per-row scan returns at most as many keys as the queue holds (I198e) */
-    job.meta = e->res_meta;
-    job.meta_cap = e->queue.text_bytes;
-    if (!sel_library_run(e->lib, SEL_LIB_REQ_SEARCH, &job)) {
-        sel_engine_report_error(e, "library_failed", who);
-        return 0;
-    }
-    e->searches++;
-    e->fts_queries += job.used_fts;
-    if (job.error[0] != '\0') {
-        report_library_error(e, job.error, who);
-        return 0;
-    }
-    if (job.truncated) {
-        char n[16];
-        snprintf(n, sizeof n, "%u", (unsigned)job.truncated);
-        emit_log(e, "result_truncated", n);
-    }
-    e->res_count = job.count;
-    e->res_meta_used = job.meta_used;
-    *fts = job.used_fts;
-    return 1;
+    search_job_init(e, &job, text, e->res_text, e->res_meta);
+    return search_finish(e, &job, sel_library_run(e->lib, SEL_LIB_REQ_SEARCH, &job), who, fts);
+}
+
+/* The search thread: rd_q into its own buffers (rd_res_*, or res_* without a thread, where nothing else runs meanwhile). */
+static void search_read_run(sel_engine* e) {
+    search_job_init(e, &e->rd_job, e->rd_q, e->rd_res_text != NULL ? e->rd_res_text : e->res_text,
+                    e->rd_res_meta != NULL ? e->rd_res_meta : e->res_meta);
+    e->rd_search_ok = sel_library_run(e->lib, SEL_LIB_REQ_SEARCH, &e->rd_job);
 }
 
 const char* sel_engine_result_key(const sel_engine* e, uint32_t i) {
@@ -3591,18 +3694,14 @@ const char* sel_engine_result_key(const sel_engine* e, uint32_t i) {
     return p;
 }
 
-static void cmd_LIBRARY_SEARCH(sel_engine* e, const sel_message* m) {
-    uint32_t fts = 0;
+static void emit_search_result(sel_engine* e, const char* text, uint32_t fts) {
     sel_message ev;
     uint32_t slot;
     sel_tag* t;
 
-    if (!run_search(e, m->args[0].v.s, "LIBRARY_SEARCH", &fts)) {
-        return;
-    }
     slot = e->lib_slot++ & 3u;
     t = e->lib_tags[slot];
-    snprintf(e->lib_path[slot], sizeof e->lib_path[slot], "%s", m->args[0].v.s);
+    snprintf(e->lib_path[slot], sizeof e->lib_path[slot], "%s", text);
     t[0].tag = SEL_SRC_PATH;
     t[0].value = (uintptr_t)e->lib_path[slot];
     t[1].tag = SEL_SRC_COUNT;
@@ -3614,6 +3713,19 @@ static void cmd_LIBRARY_SEARCH(sel_engine* e, const sel_message* m) {
     evt_init(&ev, SEL_EVT_LIBRARY_RESULT);
     evt_tags(&ev, t);
     emit(e, &ev);
+}
+
+/* I829: LIBRARY_SEARCH posts the query and returns; the answer arrives as LIBRARY_RESULT from lib_reads_collect. A query typed
+ * while one runs replaces the waiting one, so a burst of keystrokes costs at most one more read. */
+static void cmd_LIBRARY_SEARCH(sel_engine* e, const sel_message* m) {
+    if (e->lib == NULL) {
+        e->res_count = 0;
+        sel_engine_report_error(e, "no_library", "LIBRARY_SEARCH");
+        return;
+    }
+    copy_str(e->rd_q_next, sizeof e->rd_q_next, m->args[0].v.s);
+    if (lib_read_idle(&e->rd_search)) copy_str(e->rd_q, sizeof e->rd_q, e->rd_q_next);
+    lib_read_post(e, &e->rd_search, search_read_run);
 }
 
 static void cmd_QUEUE_ADD_QUERY(sel_engine* e, const sel_message* m) {
@@ -4434,10 +4546,14 @@ static void sources_row(void* ctx, const char* id, const char* name, const char*
 
 static void cmd_SOURCES(sel_engine* e, const sel_message* m) {
     sources_fill f;
+    uint32_t d0 = sel_library_deferred();
+    int was = sel_library_nowait(1); /* I829: the per-source song counts and sync times never wait on a busy library */
     (void)m;
     f.e = e;
     f.n = 0;
     (void)sel_source_each(sources_row, &f);
+    sel_library_nowait(was);
+    e->sources_retry = sel_library_deferred() != d0; /* rows went out without counts: lib_reads_collect sends them again */
 }
 
 static int sticker_ready(sel_engine* e, const char* who) {
@@ -4688,27 +4804,55 @@ static int folder_ready(sel_engine* e, const char* who) {
  * selected and after every folder command that changed the tree, so the text UI sees the tree only through
  * the view model. */
 static void folders_reload(sel_engine* e) {
-    char tree[4096];
+    char tree[SEL_RD_FOLDERS_MAX];
     uint32_t lines = 0;
     tree[0] = '\0';
     if (e->lib != NULL && sel_library_folder_tree(e->lib, tree, sizeof tree, &lines) != SEL_FOLDER_OK) {
         tree[0] = '\0';
     }
+    if (!lib_read_idle(&e->rd_folders)) e->rd_folders.again = 1; /* a read posted before this edit may land stale: read once more */
     e->folder_view_rows += sel_view_set_folders(&e->view, tree);
+}
+
+/* I829: VIEW_SOURCE folders posts the tree read; folder edits still reload in their own turn (folders_reload). */
+static void folders_read_run(sel_engine* e) {
+    e->rd_fold_text[0] = '\0';
+    e->rd_fold_lines = 0;
+    if (sel_library_folder_tree(e->lib, e->rd_fold_text, sizeof e->rd_fold_text, &e->rd_fold_lines) != SEL_FOLDER_OK) {
+        e->rd_fold_text[0] = '\0';
+    }
 }
 
 /* I191: rebuilds the rows of the home view source (recently played, jump back in, new this week) from the
  * library. Without a library the home view is empty. */
+static void home_read_run(sel_engine* e) {
+    e->rd_home_text[0] = '\0';
+    e->rd_home_lines = 0;
+    if (!sel_library_home_chip(e->lib, e->rd_home_chip, 10, e->rd_home_text, SEL_VIEW_HOME_TEXT_MAX, &e->rd_home_lines)) {
+        e->rd_home_text[0] = '\0';
+    }
+}
+
+static void home_apply(sel_engine* e, const char* from);
+
+/* I829: posts the home read (the answer lands in home_apply through lib_reads_collect); without a library the view empties now. */
 static void home_reload(sel_engine* e) {
-    char* text = e->view.htext;
-    uint32_t lines = 0;
-    if (text == NULL) {
+    if (e->view.htext == NULL || e->rd_home_text == NULL) {
         return;
     }
-    text[0] = '\0';
-    if (e->lib != NULL && !sel_library_home_chip(e->lib, e->home_chip, 10, text, SEL_VIEW_HOME_TEXT_MAX, &lines)) {
-        text[0] = '\0';
+    if (e->lib == NULL) {
+        home_apply(e, "");
+        return;
     }
+    if (lib_read_idle(&e->rd_home)) e->rd_home_chip = e->home_chip;
+    lib_read_post(e, &e->rd_home, home_read_run);
+}
+
+/* The home text `from` becomes the home view source's rows. */
+static void home_apply(sel_engine* e, const char* from) {
+    char* text = e->view.htext;
+
+    copy_str(text, SEL_VIEW_HOME_TEXT_MAX, from);
     e->home_rows += sel_view_set_home(&e->view, text);
     /* I678j sentinel: item shelves sent (a run of "S #<kind>:" lines under one heading). */
     {
@@ -6174,7 +6318,7 @@ static void snapshot_meta(sel_engine* e) {
 
 /* VIEW_SOURCE query lists the rows of the last library search; queue and browse switch back.
  * The query list is a snapshot, so later searches do not move a view that is showing it. */
-static void cmd_VIEW_SOURCE(sel_engine* e, const sel_message* m) {
+static void view_source_apply(sel_engine* e, const sel_message* m) {
     const char* what = m->args[0].v.s;
     sel_view_src s;
     uint32_t i;
@@ -6211,7 +6355,7 @@ static void cmd_VIEW_SOURCE(sel_engine* e, const sel_message* m) {
             sel_engine_report_error(e, "no_library", "VIEW_SOURCE");
             return;
         }
-        folders_reload(e);
+        lib_read_post(e, &e->rd_folders, folders_read_run);
     } else if (strcmp(what, "queue") != 0 && strcmp(what, "browse") != 0) {
         sel_engine_report_error(e, "unsupported", "VIEW_SOURCE");
         return;
@@ -6230,6 +6374,75 @@ static void cmd_VIEW_SOURCE(sel_engine* e, const sel_message* m) {
     view_src(e, &s);
     sel_view_refresh(&e->view, &s);
     e->view.force_changed = 1;
+}
+
+/* I829: VIEW_SOURCE search|query after a LIBRARY_SEARCH that has not landed waits for its answer (lib_reads_collect shows it). */
+static void cmd_VIEW_SOURCE(sel_engine* e, const sel_message* m) {
+    const char* what = m->args[0].v.s;
+
+    if ((strcmp(what, "search") == 0 || strcmp(what, "query") == 0) &&
+        (!lib_read_idle(&e->rd_search) || e->rd_search.again)) {
+        copy_str(e->rd_view, sizeof e->rd_view, what);
+        return;
+    }
+    view_source_apply(e, m);
+}
+
+/* A landed read's rows changed: rebuild the window when the view shows that source. */
+static void view_reread(sel_engine* e, uint32_t source) {
+    sel_view_src s;
+
+    if (!e->view.active || e->view.pub.source != source) return;
+    view_src(e, &s);
+    sel_view_refresh(&e->view, &s);
+    e->view.force_changed = 1;
+}
+
+/* Pump side of the posted reads (I829): applies each landed answer, then starts the read that waited behind it. */
+static void lib_reads_collect(sel_engine* e) {
+    if (lib_read_take(&e->rd_home)) {
+        e->lib_reads_applied++;
+        home_apply(e, e->rd_home_text);
+        view_reread(e, SEL_VIEW_HOME);
+        if (e->rd_home.again) home_reload(e);
+    }
+    if (lib_read_take(&e->rd_search)) {
+        uint32_t fts = 0;
+        int more = e->rd_search.again;
+
+        e->lib_reads_applied++;
+        e->res_count = 0;
+        if (e->rd_res_text != NULL) { /* the answer becomes the result list; the old list is the next read's buffer */
+            char* t = e->res_text;
+            e->res_text = e->rd_res_text;
+            e->rd_res_text = t;
+            t = e->res_meta;
+            e->res_meta = e->rd_res_meta;
+            e->rd_res_meta = t;
+        }
+        if (search_finish(e, &e->rd_job, e->rd_search_ok, "LIBRARY_SEARCH", &fts)) emit_search_result(e, e->rd_q, fts);
+        if (more) {
+            copy_str(e->rd_q, sizeof e->rd_q, e->rd_q_next);
+            lib_read_post(e, &e->rd_search, search_read_run);
+        } else if (e->rd_view[0] != '\0') {
+            char what[sizeof e->rd_view];
+            sel_message q;
+
+            copy_str(what, sizeof what, e->rd_view);
+            e->rd_view[0] = '\0';
+            memset(&q, 0, sizeof q);
+            q.argc = 1;
+            q.args[0].v.s = what;
+            view_source_apply(e, &q);
+        }
+    }
+    if (e->sources_retry && !sel_library_busy(e->lib)) cmd_SOURCES(e, NULL);
+    if (lib_read_take(&e->rd_folders)) {
+        e->lib_reads_applied++;
+        e->folder_view_rows += sel_view_set_folders(&e->view, e->rd_fold_text);
+        view_reread(e, SEL_VIEW_FOLDERS);
+        if (e->rd_folders.again) lib_read_post(e, &e->rd_folders, folders_read_run);
+    }
 }
 
 const char* sel_view_source_label(uint32_t source) {
@@ -7003,7 +7216,7 @@ static void cmd_VIEW_ACTIVATE(sel_engine* e, const sel_message* m) {
             memset(&q, 0, sizeof q);
             q.argc = 1;
             q.args[0].v.s = "query";
-            cmd_VIEW_SOURCE(e, &q);
+            view_source_apply(e, &q); /* the result is this turn's run_search, not a posted one */
         } else {
             uint32_t before = e->queue.count;
             queue_insert(e, before, r->key, "VIEW_ACTIVATE");
@@ -7200,6 +7413,11 @@ sel_engine* sel_engine_create(const sel_host* host, const sel_engine_config* cfg
         (e->pl_file = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
         (e->res_text = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
         (e->res_meta = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
+#if defined(SEL_LI_THREAD)
+        (e->rd_res_text = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
+        (e->rd_res_meta = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
+#endif
+        (e->rd_home_text = host->mem_alloc(host, SEL_VIEW_HOME_TEXT_MAX, SEL_MEM_FAST)) == NULL ||
         (e->qmeta = host->mem_alloc(host, (size_t)queue_text + 16u, SEL_MEM_FAST)) == NULL ||
         (e->qmeta_off = host->mem_alloc(host, (size_t)queue_cap * sizeof *e->qmeta_off, SEL_MEM_FAST)) == NULL ||
         !sel_browse_init(&e->browse, host, cfg && cfg->browse_entries ? cfg->browse_entries : queue_cap,
@@ -7227,6 +7445,12 @@ void sel_engine_destroy(sel_engine* e) {
 #endif
             free(e->li_rows);
         }
+        lib_read_end(&e->rd_home); /* I829: the posted reads use the library */
+        lib_read_end(&e->rd_search);
+        lib_read_end(&e->rd_folders);
+        if (e->rd_res_text) e->host->mem_free(e->host, e->rd_res_text);
+        if (e->rd_res_meta) e->host->mem_free(e->host, e->rd_res_meta);
+        if (e->rd_home_text) e->host->mem_free(e->host, e->rd_home_text);
         if (e->scan_running || e->sync_running || e->search_running) {
             sel_library_task_cancel(e->lib); /* the scan task uses this engine; end it first (I336) */
         }
@@ -7407,9 +7631,15 @@ static void refresh_snapshot(sel_engine* e) {
     e->state.panel_serial = e->panel_loads;
     e->state.library_serial = e->library_changes;
     if (e->lib != NULL && e->songs_counted_at != e->library_changes + 1u) {
-        uint32_t total = 0;
-        e->songs_counted_at = e->library_changes + 1u;
-        e->state.library_songs = sel_library_song_total(e->lib, &total) == SEL_FOLDER_OK ? total : 0u;
+        uint32_t total = 0, d0 = sel_library_deferred();
+        int was = sel_library_nowait(1); /* I829: a busy library leaves the old count; the next pump asks again */
+        int rc = sel_library_song_total(e->lib, &total);
+
+        sel_library_nowait(was);
+        if (sel_library_deferred() == d0) {
+            e->songs_counted_at = e->library_changes + 1u;
+            e->state.library_songs = rc == SEL_FOLDER_OK ? total : 0u;
+        }
     }
     if (sl == NULL || sl->rp_state == NULL) {
         e->lyr_for[0] = '\0';
@@ -7507,6 +7737,7 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
     scan_collect(e);
     sync_collect(e);
     search_collect(e);
+    lib_reads_collect(e);
     if (e->lib != NULL && sel_library_pin_rows(e->lib) != e->pin_rows_seen) {
         e->pin_rows_seen = sel_library_pin_rows(e->lib); /* I406b: pinned hits landed: open listings and the Sources count reload */
         e->library_changes++;
@@ -7708,6 +7939,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->dup_played = e->dup_played;
     out->archive_unpacks = e->archive_unpacks;
     out->source_searches = e->source_searches;
+    out->lib_reads_applied = e->lib_reads_applied;
     out->source_pins = e->source_pins;
     out->pin_rows = e->lib != NULL ? sel_library_pin_rows(e->lib) : 0;
     out->search_worker_runs = e->search_worker_runs;

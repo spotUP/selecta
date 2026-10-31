@@ -12,6 +12,8 @@ enum { QUEUE_SLOTS = 16 };
 #if !defined(SEL_LIBRARY_NO_THREAD)
 static __thread int g_nowait;
 static uint32_t g_deferred;
+static __thread int g_watch;     /* I829: this thread is the UI/command thread: every request it makes is counted */
+static uint32_t g_watched_waits; /* requests a watched thread made that waited on the worker (sentinel: must stay 0) */
 
 int sel_library_nowait(int on) {
     int was = g_nowait;
@@ -19,8 +21,24 @@ int sel_library_nowait(int on) {
     return was;
 }
 
+int sel_library_watch(int on) {
+    int was = g_watch;
+    g_watch = on != 0;
+    return was;
+}
+
+uint32_t sel_library_watched_waits(void) {
+    return __atomic_load_n(&g_watched_waits, __ATOMIC_RELAXED);
+}
+
 uint32_t sel_library_deferred(void) {
     return __atomic_load_n(&g_deferred, __ATOMIC_RELAXED);
+}
+
+int sel_library_busy(sel_library* lib) {
+    if (pthread_mutex_trylock(&lib->call_lock) != 0) return 1;
+    pthread_mutex_unlock(&lib->call_lock);
+    return 0;
 }
 
 static void call_enter(sel_library* lib) {
@@ -91,6 +109,7 @@ int sel_worker_start(sel_library* lib) {
      * (the freeze contract: no allocation once the library runs). Touch it here, on the thread that opens the library, so
      * the block is allocated at start. */
     (void)*(volatile int*)&g_nowait;
+    (void)*(volatile int*)&g_watch;
     if (!sel_spsc_init(&lib->requests, lib->host, QUEUE_SLOTS) || !sel_spsc_init(&lib->results, lib->host, QUEUE_SLOTS)) {
         return 0;
     }
@@ -140,6 +159,9 @@ int sel_library_request(sel_library* lib, uint32_t req, const void* payload, sel
     } else {
         call_enter(lib);
     }
+    /* I829: a watched thread is about to wait. A nowait request that got the call lock is not counted: with the lock free the
+     * worker has no other request, so the reply is one statement away. */
+    if (g_watch && !g_nowait) __atomic_fetch_add(&g_watched_waits, 1u, __ATOMIC_RELAXED);
     pthread_mutex_lock(&lib->lock);
     if (!sel_spsc_push(&lib->requests, &m)) {
         pthread_mutex_unlock(&lib->lock);
@@ -164,6 +186,21 @@ int sel_library_nowait(int on) {
 
 uint32_t sel_library_deferred(void) {
     return 0u;
+}
+
+/* Without a worker thread every request runs inline: there is no other thread to wait on. */
+int sel_library_watch(int on) {
+    (void)on;
+    return 0;
+}
+
+uint32_t sel_library_watched_waits(void) {
+    return 0u;
+}
+
+int sel_library_busy(sel_library* lib) {
+    (void)lib;
+    return 0;
 }
 
 int sel_worker_start(sel_library* lib) {
