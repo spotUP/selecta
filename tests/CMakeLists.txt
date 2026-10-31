@@ -2167,6 +2167,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_source_drill_test PRIVATE selecta_library selecta_core)
   add_test(NAME library-source-drill COMMAND library_source_drill_test ${CMAKE_CURRENT_BINARY_DIR})
   set_tests_properties(library-source-drill PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_source_drill_ok")
+  # I848a: the OPEN lookups (best source by md5, key/path) are index searches on a 300k-song catalogue, so a double-click never scans songs.
+  add_executable(library_best_source_plan_test library_best_source_plan_test.c)
+  target_include_directories(library_best_source_plan_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_best_source_plan_test PRIVATE selecta_library selecta_core)
+  add_test(NAME library-best-source-plan COMMAND library_best_source_plan_test ${CMAKE_CURRENT_BINARY_DIR})
+  set_tests_properties(library-best-source-plan PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "library_best_source_plan_ok")
   # I296: a scan writes the author tag into song_composers; the songdb sync overrides it.
   add_executable(library_scan_composers_test library_scan_composers_test.c)
   target_include_directories(library_scan_composers_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library/db)
