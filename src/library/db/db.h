@@ -471,6 +471,16 @@ void sel_library_prefetch_stop(sel_library* lib);
  * runs inline. _wait returns once the thread is idle (test hook, T79); _stop is called by sel_library_close. */
 void sel_library_rating_push(sel_library* lib);
 
+/* I406b: pins one online search hit into the library (source, path, title, artist; `format` is the site's own string and
+ * is mapped to a library format name, unknown ones stay as they are). The row is copied into a ring and written by the
+ * library job thread as one SEL_LIB_REQ_SCAN_BATCH (added = 0, so it is not "New"; no md5, no size); the caller never
+ * waits (I782). A full ring drops the row. Builds without threads write it inline. Pinning a key again upserts it.
+ * _rows counts rows written, _dropped rows lost. sel_library_close drains the ring. */
+void sel_library_pin(sel_library* lib, const char* source, const char* path, const char* title, const char* artist,
+                     const char* format);
+uint32_t sel_library_pin_rows(sel_library* lib);
+uint32_t sel_library_pin_dropped(sel_library* lib);
+
 /* I184a: fills songs.md5 of local files in the background, so OPEN of a remote copy finds its local twin (D-M3-14)
  * without a `library duplicates` run. The scan only stats files; hashing there would make it many times slower on a
  * 68020. _kick queues one pass over every unhashed local song (threads: the library job thread, one file at a time,

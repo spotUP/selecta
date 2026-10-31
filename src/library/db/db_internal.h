@@ -18,6 +18,16 @@
 
 #define SEL_SMART_MAX 8u
 
+/* I406b: pinned search hits waiting for the job thread (pin.c). Buffers are sized like the engine's search_hit. */
+enum { SEL_PIN_MAX = 32, SEL_PIN_PATH = 256, SEL_PIN_TEXT = 160, SEL_PIN_ARTIST = 96, SEL_PIN_FORMAT = 32, SEL_PIN_SOURCE = 24 };
+typedef struct sel_pin_slot {
+    char source[SEL_PIN_SOURCE];
+    char path[SEL_PIN_PATH];
+    char title[SEL_PIN_TEXT];
+    char artist[SEL_PIN_ARTIST];
+    char format[SEL_PIN_FORMAT];
+} sel_pin_slot;
+
 /* I782: sel_db_majority_format walks every song path of the item (a whole source for Local and each source row), so a list page paid a
  * scan per visible row per call. The result only changes when the database does: a slot holds the answer with the connection's change counter. */
 enum { SEL_FMT_CACHE_SLOTS = 128, SEL_FMT_CACHE_KEY = 48 };
@@ -68,6 +78,8 @@ struct sel_library {
     void (*task_fn)(void* ctx); /* I336: the queued caller task (job.c) */
     void* task_ctx;
     volatile int task_cancel;
+    volatile unsigned pin_rows;    /* I406b: rows written by pin batches (sel_library_pin_rows) */
+    volatile unsigned pin_dropped; /* I406b: pins lost to a full ring */
     unsigned task_done;      /* a task ended and _task_take has not collected it */
 #if defined(SEL_LIBRARY_NO_THREAD)
     char pf_cur[160];        /* the request the poll is working on across ticks (I168b); "" = none */
@@ -89,6 +101,9 @@ struct sel_library {
     unsigned job_started, job_quit;
     unsigned pf_busy;        /* a prefetch / smart job is running */
     unsigned pf_busy_smart;  /* the running request is a smart download (a prefetch request cancels it) */
+    unsigned job_pin, job_pin_busy;       /* I406b: pinned search hits queued in pin_q, and a drain running (pin.c) */
+    sel_pin_slot pin_q[SEL_PIN_MAX];
+    unsigned pin_n;
     unsigned job_rating, job_rating_busy; /* rating flush: one coalesced pending job, and one running (rating_push.c) */
     pthread_mutex_t call_lock; /* recursive: one caller at a time owns job and the reply queue (engine, push thread) */
     pthread_t thread;
@@ -185,6 +200,7 @@ void sel_job_stop(sel_library* lib);
 int sel_fetch_job_pending(sel_library* lib);  /* job_lock held */
 void sel_fetch_job_run(sel_library* lib);     /* job_lock held on entry and exit; drops it around the transfer */
 #endif
+void sel_pin_job_run(sel_library* lib);       /* I406b: writes the queued pinned hits as one SCAN_BATCH (no lock held) */
 void sel_rating_job_run(sel_library* lib);    /* sends every pending rating (no lock held) */
 
 #endif

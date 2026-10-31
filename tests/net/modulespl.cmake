@@ -102,4 +102,32 @@ foreach(f ${cached})
     message(FATAL_ERROR "I406: ${f} is still a zip")
   endif()
 endforeach()
+# I406b: a hit that is played, queued or added to a playlist is pinned into the library (SOURCES row, Q1b). QUEUE_ADD hit 1,
+# PLAYLIST_ADD_SONG hit 2, QUEUE_ADD hit 1 again: the library holds exactly 2 modulespl rows (the second add is an upsert, not
+# a third row), and a second process on the same db finds both (the close drained the ring). pin_rows counts every row written.
+set(pdb "${WORK}/i406b.db")
+file(REMOVE "${pdb}")
+execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/reset --method POST OUTPUT_VARIABLE o)
+file(WRITE "${WORK}/i406b.sel"
+  "SOURCE_SEARCH modulespl chip\n@search_wait\n@source_search\n"
+  "QUEUE_ADD modulespl:sixtus/Sixtus_-_--_Only_chip_--.zip\nPLAYLIST_CREATE pins\n"
+  "PLAYLIST_ADD_SONG 1 \"modulespl:arachno/Arachno_-_Chip_'o_hoy.zip\"\n"
+  "QUEUE_ADD modulespl:sixtus/Sixtus_-_--_Only_chip_--.zip\n@sleep 500\n@source_search\n")
+execute_process(COMMAND "${CLI}" script "${WORK}/i406b.sel" --db "${pdb}"
+  OUTPUT_VARIABLE po ERROR_VARIABLE pe RESULT_VARIABLE prc TIMEOUT 40)
+set(praw "${po}${pe}")
+message(STATUS "${praw}")
+need("pin script rc" "${prc}" "^0$")
+need("nothing pinned by a search alone" "${praw}" "SOURCESEARCH [^\n]*pins=0 pin_rows=0")
+need("three pins written as 2 rows (sentinel: the library pin ran)" "${praw}" "SOURCESEARCH [^\n]*pins=3 pin_rows=3")
+file(WRITE "${WORK}/i406c.sel" "LIBRARY_SEARCH chip\n@sleep 300\n@results\n@source_search\n")
+execute_process(COMMAND "${CLI}" script "${WORK}/i406c.sel" --db "${pdb}"
+  OUTPUT_VARIABLE qo ERROR_VARIABLE qe RESULT_VARIABLE qrc TIMEOUT 40)
+set(qraw "${qo}${qe}")
+message(STATUS "${qraw}")
+need("a restart lists exactly the 2 pinned rows" "${qraw}" "RESULTS 2 ")
+need("pinned row 1" "${qraw}" "modulespl:sixtus/Sixtus_-_--_Only_chip_--\\.zip")
+need("pinned row 2" "${qraw}" "modulespl:arachno/Arachno_-_Chip_'o_hoy\\.zip")
+need("the restart searched no source" "${qraw}" "SOURCESEARCH runs=0 ")
+
 message(STATUS "modulespl_net_ok")

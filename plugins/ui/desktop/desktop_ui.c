@@ -104,6 +104,7 @@ typedef struct song_ref {
     uint32_t list_id;      /* I632d: which list of that kind (page, playlist id, drilldown) */
     uint32_t list_version; /* I632d: the list's version: a sort, filter, search or page change makes a new one */
     uint32_t list_index;   /* I632d: the row's position in the whole list (not in the window), the selection model's row number */
+    int online;            /* I406b: an online search hit (path = the engine's `<source>:<path>` key): the last item saves it to the library */
 } song_ref;
 
 /* Rows a frame registers (song_row_reg): the Queue page lists the rows that fit (at most ~30 at 1080p), the Library lists hold
@@ -334,7 +335,7 @@ typedef struct desk {
     int scope_read;          /* 1 once the pref was read */
     uint32_t on_waits;       /* I406a: headless naps spent waiting for the online search answer */
     uint32_t on_state;       /* online search: 0 none, 1 waiting for the answer, 2 answered */
-    uint32_t on_n, on_count, on_searches, on_drawn, on_plays, on_radio_plays; /* rows kept, the engine's hit count, SOURCE_SEARCH lines sent, rows drawn, hits played, radio entries played */
+    uint32_t on_n, on_count, on_searches, on_drawn, on_plays, on_radio_plays, on_saves; /* rows kept, the engine's hit count, SOURCE_SEARCH lines sent, rows drawn, hits played, radio entries played */
     struct { char key[128], title[72], artist[40], format[12]; sel_gui_rect rect; int drawn; } on_row[120]; /* the SOURCE_SEARCH hits (the engine caps at 120) */
     sel_gui_rect on_radio_rect;  /* the source's radio entry row of the last frame; w == 0 when none */
     uint32_t search_groups[3], search_drawn;  /* group counts read from the drawn headings, rows drawn in the last search frame */
@@ -2587,6 +2588,9 @@ static const char* song_menu_label(const desk* d, int32_t k) {
     if (k == SONG_MENU_ITEMS) {
         return "Remove from Playlist";
     }
+    if (k == 4 && d->sm_ref.online) {
+        return "Save to Library";
+    }
     return sel_uim_song_menu_label((uint32_t)k, d->sm_ref.removable != 0);
 }
 
@@ -3215,6 +3219,10 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
                 d->repaint = 1;
                 d->uim.dirty |= SEL_UIM_DIRTY_ALL;
                 desk_toast(d, "Removed from playlist");
+            } else if (k == 4 && d->sm_ref.online) { /* I406b: Save to Library pins the hit without playing it */
+                desk_send_path(d, "SOURCE_PIN", d->sm_ref.path);
+                d->on_saves++;
+                desk_toast(d, "Saved to Library");
             } else if (k == 3) {
                 d->sm_pl_n = sel_engine_library_items(d->engine, SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_PLAYLIST), 0u, d->sm_pls, 8u, NULL); /* I631: every saved playlist, unfiltered by the sidebar chip, filter field or sort */
                 d->sm_step = 1;
@@ -3259,6 +3267,19 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
     }
     if (!in_rect(mn, ev->x, ev->y) && !in_rect(d->np_title, ev->x, ev->y)) {
         return 0;
+    }
+    if (ev->button == 1u && d->page == SEL_UIM_PG_SEARCH && d->scope[0] != '\0') { /* I406b: right-click on an online hit opens the song menu */
+        for (i = 0; i < d->on_n; i++) {
+            if (d->on_row[i].drawn && in_rect(d->on_row[i].rect, ev->x, ev->y)) {
+                song_ref ref;
+                memset(&ref, 0, sizeof ref);
+                snprintf(ref.path, sizeof ref.path, "%s", d->on_row[i].key);
+                ref.online = 1;
+                song_menu_open(d, ev->x, ev->y, &ref);
+                draw_home(d);
+                return 1;
+            }
+        }
     }
     for (i = 0; i < d->sm_n; i++) {
         const song_row* e = &d->sm_rows[i];
@@ -6845,8 +6866,13 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "scan_mid %u\n", (unsigned)d->scan_mid);
     o = dump_put(d, o, "search draws %u rows %u query %s\n",
                           (unsigned)d->search_draws, (unsigned)d->search_rows, d->query);
-    o = dump_put(d, o, "online scope=%s searches=%u rows=%u drawn=%u state=%u plays=%u radio_plays=%u\n", d->scope[0] != '\0' ? d->scope : "-",
-                 (unsigned)d->on_searches, (unsigned)d->on_n, (unsigned)d->on_drawn, (unsigned)d->on_state, (unsigned)d->on_plays, (unsigned)d->on_radio_plays);
+    o = dump_put(d, o, "online scope=%s searches=%u rows=%u drawn=%u state=%u plays=%u radio_plays=%u saves=%u\n", d->scope[0] != '\0' ? d->scope : "-",
+                 (unsigned)d->on_searches, (unsigned)d->on_n, (unsigned)d->on_drawn, (unsigned)d->on_state, (unsigned)d->on_plays, (unsigned)d->on_radio_plays, (unsigned)d->on_saves);
+    {
+        sel_engine_stats pes; /* I406b: the engine's pin counters: the sentinel that the library pin path ran */
+        sel_engine_stats_get(d->engine, &pes);
+        o = dump_put(d, o, "online_pin pins=%u pin_rows=%u\n", (unsigned)pes.source_pins, (unsigned)pes.pin_rows);
+    }
     {
         uint32_t oi;
         for (oi = 0; oi < online_scope_count(d); oi++) {
