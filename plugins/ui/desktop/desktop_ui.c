@@ -14351,6 +14351,9 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
         if (viz_visible(d) != 0 && wait_ms > 20u) { /* a visualizer on screen: one frame per engine block */
             wait_ms = 20u;
         }
+        if (d->side_inflight && wait_ms > 20u) { /* I825: the sidebar list read runs in the library worker and nothing wakes this poll when it ends; waiting for the next second boundary left the old list on screen until an event came */
+            wait_ms = 20u;
+        }
         if (desk_timers_wait(d) > 0u && desk_timers_wait(d) < wait_ms) {
             wait_ms = desk_timers_wait(d);
         }
