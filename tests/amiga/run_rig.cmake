@@ -513,10 +513,9 @@ elseif(TAG STREQUAL "M4MUI")
   if(NOT out MATCHES "view_source=search")
     message(FATAL_ERROR "RED[M4MUI]: MUI-P4-0: the Search door did not switch the view (view_source=search missing):\n${out}")
   endif()
-  # MUI-P4-16 tracker: NOT counted on the rig. The tracker pattern rows come from the replayer's rp_tracker_cells, which only the
-  # openmpt and nuade adapters export; .mod is played by the native kplayer on the Amiga (replayer=kplayer on the exit line), so
-  # the engine never answers the pattern request and tracker stays 0. The pattern mapping is covered by the host mui tests.
-  foreach(k like qclear search help clearlib toast crumb state home qup qdown qremove popen prename pdelete songmenu np songinfo pref settings)
+  # MUI-P4-16 tracker: counted again (I732). .mod is played by the native kplayer on the Amiga (replayer=kplayer on the exit
+  # line), which now exports rp_tracker_info / rp_tracker_cells itself from the module bytes, so the pattern request is answered.
+  foreach(k like qclear search help clearlib toast crumb state home qup qdown qremove popen prename pdelete songmenu np songinfo pref tracker settings)
     if(NOT out MATCHES "ui_p4 id=mui[^\n]* ${k}=([0-9]+)" OR CMAKE_MATCH_1 LESS 1)
       message(FATAL_ERROR "RED[M4MUI]: MUI-P4: the ${k} gadget click did not send its line (${k}>=1 missing on the ui_p4 line):\n${out}")
     endif()

@@ -60,6 +60,16 @@ static kp_state* g_owner;
 
 /* Calls one jump table entry with the replayer's register contract (d0-d2, a0, a1 in; d0 out). */
 static int32_t kp_call(uint32_t entry, uint32_t d0, uint32_t d1, uint32_t d2, void* a0, void* a1) {
+#ifndef __m68k__
+    /* Host build (tests/engine/kplayer_tracker_test.c): there is no 68k replayer to call; report success. */
+    (void)entry;
+    (void)d0;
+    (void)d1;
+    (void)d2;
+    (void)a0;
+    (void)a1;
+    return 0;
+#else
     register uint32_t r_d0 __asm__("d0") = d0;
     register uint32_t r_d1 __asm__("d1") = d1;
     register uint32_t r_d2 __asm__("d2") = d2;
@@ -73,6 +83,7 @@ static int32_t kp_call(uint32_t entry, uint32_t d0, uint32_t d1, uint32_t d2, vo
                      :
                      : "memory", "cc");
     return (int32_t)r_d0;
+#endif
 }
 
 static int has_magic(const uint8_t* data, size_t size) {
@@ -263,11 +274,37 @@ static int rp_position(void* state, sel_rp_position* out) {
     return 1;
 }
 
+/* RP_TRACKER_INFO / RP_TRACKER_CELLS (I732): the pattern data come from the unconverted song data (`source`), through
+ * the walker's decoder, so the tracker view fills under the native player like under openmpt and nuade. The calls
+ * counter is the sentinel that the hook ran (tests/engine/kplayer_tracker_test.c). */
+uint32_t sel_kplayer_tracker_calls;
+
+static int rp_tracker_info(void* state, uint32_t order, sel_rp_tracker_info* out) {
+    kp_state* s = (kp_state*)state;
+    kp_tracker_info info;
+    sel_kplayer_tracker_calls++;
+    if (!kp_tracker_info_get(s->source, s->source_size, order, &info)) {
+        return 0;
+    }
+    out->orders = info.orders;
+    out->patterns = info.patterns;
+    out->rows = info.rows;
+    out->channels = info.channels;
+    return 1;
+}
+
+static uint32_t rp_tracker_cells(void* state, uint32_t order, uint32_t channel, uint32_t row_lo, uint32_t row_hi,
+                                 sel_rp_cell* out, uint32_t cap) {
+    kp_state* s = (kp_state*)state;
+    sel_kplayer_tracker_calls++;
+    return kp_tracker_cells_get(s->source, s->source_size, order, channel, row_lo, row_hi, out, cap);
+}
+
 static void rp_hw_release(void* state) {
     stop((kp_state*)state);
 }
 
-static sel_tag g_hooks[17];
+static sel_tag g_hooks[19];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -295,7 +332,9 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[13], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
     set(&g_hooks[14], SEL_RP_POSITION, SEL_TAG_FN(rp_position));
     set(&g_hooks[15], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
-    set(&g_hooks[16], SEL_TAG_END, 0);
+    set(&g_hooks[16], SEL_RP_TRACKER_INFO, SEL_TAG_FN(rp_tracker_info));
+    set(&g_hooks[17], SEL_RP_TRACKER_CELLS, SEL_TAG_FN(rp_tracker_cells));
+    set(&g_hooks[18], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "kplayer");
