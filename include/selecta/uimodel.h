@@ -23,7 +23,7 @@ enum {
 typedef struct sel_uim_frame {
     char title[96];
     char artist[64];
-    char format[24];
+    char format[40]; /* the I819 format label, SEL_FORMAT_LABEL_MAX */
     char clock[16];     /* elapsed, "m:ss" */
     char remaining[16]; /* "-m:ss", empty when the duration is unknown */
     char length[16];    /* song length, "m:ss", empty when the duration is unknown */

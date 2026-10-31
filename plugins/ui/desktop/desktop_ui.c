@@ -5,6 +5,7 @@
 #include <selecta/plugin.h>
 #include <selecta/engine.h>
 #include <selecta/library_item.h>
+#include <selecta/format_label.h>
 #include <selecta/platform.h>
 #include <selecta/ui.h>
 #include <selecta/uimodel.h>
@@ -1562,15 +1563,11 @@ static void song_platform_cover(desk* d, sel_gui_rect ar, const char* path, cons
 
 /* The home view (DUI-P2-6): one tile per queue entry, its album artwork (DUI-P2-4) or else generated art of its
  * format (DUI-P2-5), and the title wrapped under it. The queue is the tile source. */
-/* The format of queue entry i: its file extension, "" without one. */
+/* The format label of queue entry i (I819): the long name with the file extension in parentheses, "" without an extension. */
 static void queue_format(const sel_state* st, uint32_t i, char* out, size_t cap) {
     const char* path = st->queue_text + st->queue[i].path_offset;
     const char* ext = sel_platform_path_ext(path);
-    if (ext == NULL || strlen(ext) >= cap) {
-        out[0] = '\0';
-        return;
-    }
-    strcpy(out, ext);
+    sel_format_label(ext, out, cap);
 }
 
 /* 64-bit FNV-1a over the pixels of r. */
@@ -1784,7 +1781,7 @@ static void draw_songs(desk* d) {
     }
     for (i = 0; i < d->order_n; i++) {
         sel_gui_rect r = songs_row_rect(d, i);
-        char name[256], format[16];
+        char name[256], format[SEL_FORMAT_LABEL_MAX];
         uint32_t q = d->order[i], rink, fill;
         if (r.y >= mn.y + mn.h) {
             break;
@@ -3562,7 +3559,7 @@ static sel_gui_rect src_sync_rect(desk* d, sel_gui_rect r);
 enum { BROWSE_MAX = 48, BROWSE_FORMATS = 24, BROWSE_COMPOSERS = 6, BROWSE_SOURCES = 6, BROWSE_TILE_H = 88, BROWSE_TILE_MIN_W = 200, BROWSE_HEAD_H = 40, BROWSE_PALETTE = 5 };
 typedef struct browse_tile {
     uint32_t kind; /* 0 format, 1 composer, 2 source, 3 the Browse Folders tile (I678i) */
-    char label[48], arg[96];
+    char label[SEL_FORMAT_LABEL_MAX + 8], arg[96];
     uint32_t count;
 } browse_tile;
 
@@ -3575,7 +3572,7 @@ static uint32_t browse_tiles(const desk* d, browse_tile* out, uint32_t cap) {
             const char* cnt = lib_next(p);
             out[n].kind = 0u;
             out[n].count = (uint32_t)strtoul(cnt, NULL, 10);
-            snprintf(out[n].label, sizeof out[n].label, "%s", p);
+            sel_format_label(p, out[n].label, sizeof out[n].label); /* I819: "Protracker (mod)"; the query arg stays the raw value */
             snprintf(out[n].arg, sizeof out[n].arg, "%s", p);
             for (k = 0; out[n].arg[k] != '\0'; k++) { /* the query values are lower case */
                 out[n].arg[k] = (char)tolower((unsigned char)out[n].arg[k]);
@@ -8810,7 +8807,7 @@ static void draw_home_content(desk* d) {
         sel_gui_rect t = tile_rect(d, i);
         sel_gui_rect ar = rect_of(t.x + pad, t.y + pad, t.w - 2 * pad, t.w - 2 * pad);
         const uint32_t* art;
-        char format[16];
+        char format[SEL_FORMAT_LABEL_MAX];
         int hovered = d->hover_tile > 0 && (uint32_t)d->hover_tile - 1u == i;
         uint32_t panel = ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]);
         uint32_t pc_slot = 0; /* I691b: family + 1 of the platform cover this tile drew, 0 = real art */
