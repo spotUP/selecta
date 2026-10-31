@@ -750,7 +750,7 @@ static void mui_side_add(Object* g, Object* o) {
 
 /* One left aligned sidebar line (a text of the sidebar model) and one left aligned button; each is one construction site. */
 static void mui_side_text(Object* g, const char* text, int tone) {
-    mui_side_add(g, mui_aatext(text, tone, MUI_AA_ALIGN_LEFT, 0, 0));
+    mui_side_add(g, mui_aatext(text, tone, MUI_AA_ALIGN_LEFT, 0));
 }
 
 static void mui_side_button(Object* g, const char* label, LONG id) {
@@ -1088,8 +1088,8 @@ static Object* mui_col_page_group(mui_state* s) {
     Object* g = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
     snprintf(s->col_title_buf, sizeof s->col_title_buf, " ");
     snprintf(s->col_meta_buf, sizeof s->col_meta_buf, " ");
-    s->col_title = mui_aatext(s->col_title_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1, 0);
-    s->col_meta = mui_aatext(s->col_meta_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0, 1);
+    s->col_title = mui_aatext(s->col_title_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1);
+    s->col_meta = mui_aatext(s->col_meta_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0);
     s->col_artist = mui_make_button_w("Artist", "Artist", CTL_COL_ARTIST, 0);
     memset(&sp, 0, sizeof sp);
     sp.active = -1;
