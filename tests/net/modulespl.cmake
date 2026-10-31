@@ -29,10 +29,30 @@ endfunction()
 
 execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/reset --method POST OUTPUT_VARIABLE o)
 
+# I406a: the zip is unpacked when LIBRARY_FETCH stores it (cache fetch), before any OPEN or song read.
+set(fcache "${WORK}/i406f-cache")
+file(REMOVE_RECURSE "${fcache}")
+set(ENV{SELECTA_CACHE_DIR} "${fcache}")
+file(WRITE "${WORK}/i406f.sel" "LIBRARY_FETCH modulespl:sixtus/Sixtus_-_--_Only_chip_--.zip\n")
+execute_process(COMMAND "${CLI}" script "${WORK}/i406f.sel" --db "${WORK}/i406f.db"
+  OUTPUT_VARIABLE fo ERROR_VARIABLE fe RESULT_VARIABLE frc TIMEOUT 40)
+file(GLOB_RECURSE fcached "${fcache}/files/modulespl/*")
+if(NOT fcached)
+  message(FATAL_ERROR "I406a: LIBRARY_FETCH stored nothing\n${fo}${fe}")
+endif()
+foreach(f ${fcached})
+  file(READ "${f}" fhead LIMIT 2 HEX)
+  if(fhead STREQUAL "504b")
+    message(FATAL_ERROR "I406a: ${f} is still a zip after LIBRARY_FETCH (unzip belongs to the fetch)")
+  endif()
+endforeach()
+set(ENV{SELECTA_CACHE_DIR} "${cache}")
+execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/reset --method POST OUTPUT_VARIABLE o)
+
 file(WRITE "${WORK}/i406.sel"
-  "SOURCE_SEARCH modulespl chip\n@source_search\nPREF_GET search.last_source\n"
+  "SOURCE_SEARCH modulespl chip\n@search_wait\n@source_search\nPREF_GET search.last_source\n"
   "@dump ${WORK}/i406.raw\nOPEN modulespl:sixtus/Sixtus_-_--_Only_chip_--.zip\nPLAY\n@render 22050\n@sleep 600\n@render 22050\nSTOP\n"
-  "SOURCE_SEARCH nosuchsource chip\n")
+  "SOURCE_SEARCH nosuchsource chip\n@search_wait\nSOURCE_SEARCH modulespl many\n@search_wait\n@source_search\n")
 execute_process(COMMAND "${CLI}" script "${WORK}/i406.sel" --db "${db}"
   OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc TIMEOUT 40)
 set(raw "${o}${e}")
@@ -52,6 +72,15 @@ endif()
 need("done event with the row count" "${raw}" "search_done[^\n]*3")
 need("remembered source" "${raw}" "search.last_source[^\n]*modulespl")
 need("unknown source is an error" "${raw}" "unknown_source")
+# I406a: the search ran on the library job thread, not the command thread (I782), and was counted (STAT_SOURCE_SEARCHES).
+need("worker-thread sentinel" "${raw}" "SOURCESEARCH runs=[1-9][0-9]* searches=[1-9][0-9]* worker=[1-9]")
+# I406a (D-YT-4): 150 recorded hits arrive capped at 120 result rows plus one done event with the count 120.
+string(REGEX MATCHALL "Many_[0-9][0-9][0-9]\\.zip" many "${raw}")
+list(LENGTH many manyn)
+if(NOT manyn EQUAL 120)
+  message(FATAL_ERROR "I406a: ${manyn} result rows for 150 hits, want 120")
+endif()
+need("done event with the capped count" "${raw}" "search_done[^\n]*120")
 
 execute_process(COMMAND "${CLI}" fetch http://fixture.test/__fixture/log --out "${WORK}/i406-log.json" OUTPUT_VARIABLE lo)
 file(READ "${WORK}/i406-log.json" log)
