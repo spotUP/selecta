@@ -81,7 +81,7 @@ Net effect on the existing decision D11 ("native outranks nuade on Amiga for eve
 
 - D1: (a) port HippoPlayer's DeliTracker host. UpRough is the binary set and arena data, not the host.
 - D2: (a) nuade first where M1 passes; HippoPlayer native is the fallback. D11 is reversed for the overlap formats, subject to M1.
-- D4: (a) KPlayer on Paula, nuade `protracker4` on AHI/paula14 until M2.
+- D4: (a) KPlayer on Paula, nuade `protracker4` on AHI/paula14 until M2. Checked on Johan's question "doesnt kplayer support ahi for mods already?": no. `p_protracker` flags (puu016.s:38080) carry no `pf_ahi`, and the format check skips KPlayer when `ahi_use` is set or `ptmix` = 2 (puu016.s:33981-33984), so HippoPlayer plays MOD on AHI through PS3M (`p_multi`, which has `pf_ahi`). In Selecta KPlayer is `SEL_RP_KIND_HW` (adapter.c:321): it writes Paula itself, and `--output ahi` only hands Paula over to it. PS3M stays the M2 comparison for AHI.
 - D5: (a) PS3M on 68020+ for S3M.
 - D3 and D6: open. They wait for the I872 follow-up (per-Eagleplayer AHI verdict and the nuade AHI/Paula effort estimate are not yet in this doc).
 
