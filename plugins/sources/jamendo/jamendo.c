@@ -419,6 +419,7 @@ static const sel_source g_jamendo = {
     "Creative Commons music streamed from Jamendo (non-commercial use; needs your own free API client id).",
     g_tags, NULL, parse, NULL, url_of, NULL, NULL, NULL, jm_sync, SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_STREAMS,
     SITE_HOME, jm_play_url,
+    NULL, /* search (I406) */
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

@@ -72,6 +72,7 @@ SEL_CMD(LIBRARY_SEARCH, "s", "playlists", "query", "Search Library")
 SEL_CMD(LIBRARY_FETCH, "s", "playlists", "url", "Fetch Into Library")
 SEL_CMD(LIBRARY_SCAN, "s", "playlists", "path", "Scan Library")
 SEL_CMD(LIBRARY_SYNC, "ssu?", "playlists", "source target [limit]", "Synchronise Library")
+SEL_CMD(SOURCE_SEARCH, "ss", "playlists", "source query", "Search Source")
 /* DUI-P4-3 Sources tab: one LIBRARY_RESULT per registered source (SRC_KEY id, SRC_KIND, SRC_NAME, SRC_PATH home, SRC_ENABLED, SRC_COUNT songs) */
 SEL_CMD(SOURCES, "", "playlists", "", "List Sources")
 SEL_CMD(STATS_SHOW, "", "view", "", "Show Statistics")

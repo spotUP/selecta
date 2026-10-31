@@ -433,6 +433,8 @@ typedef struct sel_engine_stats {
     uint32_t dup_redirects;       /* OPENs that played another source of the same md5 than the one asked for (I184 sentinel) */
     const char* dup_played;       /* key of the file the last redirected OPEN read, "" when none (I184) */
     uint32_t archive_unpacks;     /* OPENs that played the module inside an archive (I405 sentinel) */
+    uint32_t source_searches;    /* SOURCE_SEARCH runs started (STAT_SOURCE_SEARCHES, I406a) */
+    uint32_t search_worker_runs; /* of those, runs that executed off the command thread (I782) */
     const char* archive_member;   /* name of the member the last such OPEN played, "" when none */
     uint32_t hash_files;          /* local files the idle md5 pass finished (I184b, sel_hash_stats) */
     uint32_t hash_chunks;         /* file reads of the pass: without threads one chunk per idle tick */
