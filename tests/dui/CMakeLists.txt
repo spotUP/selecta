@@ -149,6 +149,17 @@ if(NOT SEL_AMIGA)
   endforeach()
 endif()
 
+# dui-search-online (I406a): the Search page's Modules.pl scope, row click, remembered scope and radio row, against the net fixture.
+if(NOT SEL_AMIGA)
+  add_test(NAME dui-search-online
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSONGS=${PROJECT_BINARY_DIR}/tests/songs"
+      "-DWORK=${PROJECT_BINARY_DIR}/tests/dui-search-online" "-DNETWORK=${SEL_NET_WORK}"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/search_online.cmake")
+  set_tests_properties(dui-search-online PROPERTIES LABELS search-online TIMEOUT 120 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
+    ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/dui-search-online.tmp")
+  file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/dui-search-online.tmp")
+endif()
+
 # DUI-P1-5: the lift out of plugins/ui/text, counted from the archives with nm.
 if(NOT SEL_AMIGA)
   find_program(SEL_NM nm)
