@@ -26,7 +26,7 @@ static int file_sink(void* ctx, const void* data, size_t len) {
 /* GETs `url` into `path`, optionally one Range. `want` is the status that counts as success (200 for a whole file,
  * 206 for a range: a server that answers a range with 200 would send the whole file, which is refused). */
 static int get_file(const char* url, const char* path, int has_range, unsigned long from, long to, int want,
-                    uint32_t* requests, unsigned long* bytes) {
+                    unsigned first_byte_ms, uint32_t* requests, unsigned long* bytes) {
     sel_http_req req;
     sel_http_res res;
     net_ctx c;
@@ -43,6 +43,7 @@ static int get_file(const char* url, const char* path, int has_range, unsigned l
     req.has_range = has_range;
     req.range_from = from;
     req.range_to = to;
+    req.first_byte_ms = first_byte_ms; /* 0: the client default */
     err = sel_http_request(&req, file_sink, &c, &res);
     *requests += res.requests;
     fclose(c.f);
@@ -53,14 +54,20 @@ static int get_file(const char* url, const char* path, int has_range, unsigned l
     return err == SEL_HTTP_OK ? res.status : 0;
 }
 
-/* GETs `url` into `path`. Returns the HTTP status (0 on a transport failure). Any result but 200 removes the file. */
+/* GETs `url` into `path` with a first-byte limit (0: the client default). Returns the HTTP status (0 on a transport
+ * failure). Any result but 200 removes the file. */
+int sel_sync_net_get_file_wait(const char* url, const char* path, unsigned first_byte_ms, uint32_t* requests,
+                               unsigned long* bytes) {
+    return get_file(url, path, 0, 0, -1, 200, first_byte_ms, requests, bytes);
+}
+
 int sel_sync_net_get_file(const char* url, const char* path, uint32_t* requests, unsigned long* bytes) {
-    return get_file(url, path, 0, 0, -1, 200, requests, bytes);
+    return sel_sync_net_get_file_wait(url, path, 0, requests, bytes);
 }
 
 int sel_sync_net_get_file_checked(const char* url, const char* path, int (*check)(const char* path),
                                   uint32_t* requests, unsigned long* bytes) {
-    int status = get_file(url, path, 0, 0, -1, 200, requests, bytes);
+    int status = get_file(url, path, 0, 0, -1, 200, 0, requests, bytes);
 
     if (status == 200 && check != NULL && !check(path)) {
         remove(path);
@@ -71,7 +78,7 @@ int sel_sync_net_get_file_checked(const char* url, const char* path, int (*check
 
 int sel_sync_net_get_range(const char* url, const char* path, unsigned long from, unsigned long to,
                            uint32_t* requests, unsigned long* bytes) {
-    return get_file(url, path, 1, from, (long)to, 206, requests, bytes);
+    return get_file(url, path, 1, from, (long)to, 206, 0, requests, bytes);
 }
 
 static int null_sink(void* ctx, const void* data, size_t len) {

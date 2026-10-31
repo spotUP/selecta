@@ -1,0 +1,2 @@
+libsidplayfp v3.1.2 (GPL-2) and libresidfp master 1.3.x (GPL-2), unmodified except: Makefile.am/utils/usbsid/exsid/sidlite removed;
+config.h, sidplayfp/sidversion.h, residfp/sidversion.h, siddefs-fp.h, psiddrv.bin, sidplayer1.bin, sidplayer2.bin hand-generated (xa + od as Makefile.am does).

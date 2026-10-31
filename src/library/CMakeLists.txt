@@ -23,7 +23,7 @@ target_include_directories(selecta_library PUBLIC ${PROJECT_SOURCE_DIR}/include 
 # SQLite, schema v1 with migrations, the memsys5 heap and the worker with its SPSC queues. The
 # Amiga build runs requests on the caller's task until the library subtask (Phase 12).
 add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/sqlite ${CMAKE_BINARY_DIR}/third_party/sqlite)
-target_sources(selecta_library PRIVATE db/amiga_vfs.c db/db.c db/index.c db/schema.c db/worker.c db/search.c db/scan.c db/user.c db/folders.c db/fetch.c db/rating_push.c db/vote_push.c db/lyrics_fetch.c db/job.c db/genre.c db/art.c db/songdb.c db/items.c db/similar.c db/duplicates.c devilbox_loudness.c devilbox_lyrics.c stream_open.c record_name.c songlen.c meta_utf8.c radio.c composer.c xxh32.c lyrics.c query.c regex.c share.c)
+target_sources(selecta_library PRIVATE db/amiga_vfs.c db/db.c db/index.c db/schema.c db/worker.c db/search.c db/scan.c db/user.c db/folders.c db/fetch.c db/rating_push.c db/pin.c db/vote_push.c db/lyrics_fetch.c db/job.c db/genre.c db/art.c db/songdb.c db/items.c db/similar.c db/duplicates.c db/testgen.c devilbox_loudness.c devilbox_lyrics.c stream_open.c record_name.c songlen.c meta_utf8.c radio.c composer.c xxh32.c lyrics.c query.c regex.c share.c)
 target_include_directories(selecta_library PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/db)
 target_link_libraries(selecta_library PUBLIC selecta_sqlite selecta_platform) # I691c2: the platform family table lives in selecta_platform, never in the GUI
 if(SEL_AMIGA)
@@ -46,7 +46,12 @@ endif()
 
 # Sources (plan Phase 4, I157, I158): the sel_source interface and registry, song keys, the Modland
 # format table and the local source (scan over sel_browse).
-target_sources(selecta_library PRIVATE source.c formats_table.c sources/local.c sources/modland.c sources/modland_sync.c sources/modland_net.c sources/sync_net.c sources/sync_services.c sources/hippo.c sources/hippo_net.c sources/hippo_sync.c sources/hippo_prg.c sources/hippo_publish.c ${SEL_WATCH_SOURCE})
+# I819: the format table and its one display label (sel_format_label) are their own small library so the UI model links them
+# without the database.
+add_library(selecta_formats STATIC formats_table.c)
+target_include_directories(selecta_formats PUBLIC ${PROJECT_SOURCE_DIR}/include PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(selecta_library PUBLIC selecta_formats)
+target_sources(selecta_library PRIVATE source.c sources/local.c sources/modland.c sources/modland_sync.c sources/modland_net.c sources/sync_net.c sources/sync_services.c sources/hippo.c sources/hippo_net.c sources/hippo_sync.c sources/hippo_prg.c sources/hippo_publish.c ${SEL_WATCH_SOURCE})
 if(APPLE)
   target_link_libraries(selecta_library PUBLIC "-framework CoreServices")
 endif()

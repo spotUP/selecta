@@ -9,6 +9,10 @@
  * but 200 removes the file. `*requests` gains the requests made (redirects count), `*bytes` is the body size. */
 int sel_sync_net_get_file(const char* url, const char* path, uint32_t* requests, unsigned long* bytes);
 
+/* sel_sync_net_get_file with a first-byte limit in ms (0: the client default, I816). */
+int sel_sync_net_get_file_wait(const char* url, const char* path, unsigned first_byte_ms, uint32_t* requests,
+                               unsigned long* bytes);
+
 /* sel_sync_net_get_file, then `check(path)` on a 200 body (1 keeps it). A refused body removes the file and the call
  * returns SEL_NET_CONTENT_REJECTED (-2): a mirror that answers 200 with an HTML error page must not leave it behind
  * under a data file's name (I718). A NULL `check` keeps every 200. */

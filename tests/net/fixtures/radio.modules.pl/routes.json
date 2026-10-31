@@ -1,0 +1,16 @@
+{
+  "/listen.pls": {
+    "file": "listen.pls",
+    "headers": {"Content-Type": "audio/x-scpls"}
+  },
+  "/;": {
+    "file": "live.mp3",
+    "headers": {
+      "Content-Type": "audio/mpeg",
+      "icy-name": "ModFM",
+      "icy-br": "128",
+      "icy-sr": "44100",
+      "icy-metaint": "16384"
+    }
+  }
+}

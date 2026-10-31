@@ -16,10 +16,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Rank of a source in the D-M3-14 order, lower is better. */
-#define SEL_SOURCE_RANK_SQL \
-    "CASE source WHEN 'local' THEN 0 WHEN 'modland' THEN 3 WHEN 'hvsc' THEN 4 WHEN 'hippo' THEN 5 ELSE 6 END"
-
 static int pack(const sel_genre_op* op, const char* const* f, int n) {
     size_t total = 0;
     int i;
@@ -163,8 +159,7 @@ static int hash_for_open(sqlite3* db, const char* key) {
     int64_t id = 0;
     int rc = sqlite3_prepare_v2(
         db,
-        "SELECT key, path, source = 'local', COALESCE(md5, ''), COALESCE(size, 0) FROM songs"
-        " WHERE key = ?1 OR (source = 'local' AND path = ?1) LIMIT 1",
+        SEL_OPEN_LOOKUP_SQL,
         -1, &st, NULL);
 
     if (rc != SQLITE_OK) return rc;
@@ -225,8 +220,7 @@ static int op_best(sqlite3* db, const sel_genre_op* op, int64_t* id) {
     sqlite3_stmt* st = NULL;
     int rc = sqlite3_prepare_v2(
         db,
-        "SELECT key FROM songs WHERE COALESCE(md5, '') <> '' AND md5 = (SELECT md5 FROM songs WHERE key = ?1)"
-        " ORDER BY " SEL_SOURCE_RANK_SQL ", id LIMIT 1",
+        SEL_BEST_SOURCE_SQL,
         -1, &st, NULL);
 
     *id = 0;

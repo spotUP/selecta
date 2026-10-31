@@ -96,6 +96,7 @@ static void scan(sel_library* lib, const char* path, const char* artist) {
     b.rows = &row;
     b.count = 1;
     b.now = 1;
+    b.new_day = 0;
     check(sel_library_request(lib, SEL_LIB_REQ_SCAN_BATCH, &b, &reply) && reply.args[1].v.i == 0, "scan batch");
 }
 

@@ -6,10 +6,46 @@
 #include "db_internal.h"
 
 #include <string.h>
+#if !defined(SEL_LIBRARY_NO_THREAD) && !defined(NDEBUG)
+#include <execinfo.h>
+#include <stdlib.h>
+#include <unistd.h>
+#endif
 
 enum { QUEUE_SLOTS = 16 };
 
 #if !defined(SEL_LIBRARY_NO_THREAD)
+static __thread int g_nowait;
+static uint32_t g_deferred;
+static __thread int g_watch;     /* I829: this thread is the UI/command thread: every request it makes is counted */
+static uint32_t g_watched_waits; /* requests a watched thread made that waited on the worker (sentinel: must stay 0) */
+
+int sel_library_nowait(int on) {
+    int was = g_nowait;
+    g_nowait = on != 0;
+    return was;
+}
+
+int sel_library_watch(int on) {
+    int was = g_watch;
+    g_watch = on != 0;
+    return was;
+}
+
+uint32_t sel_library_watched_waits(void) {
+    return __atomic_load_n(&g_watched_waits, __ATOMIC_RELAXED);
+}
+
+uint32_t sel_library_deferred(void) {
+    return __atomic_load_n(&g_deferred, __ATOMIC_RELAXED);
+}
+
+int sel_library_busy(sel_library* lib) {
+    if (pthread_mutex_trylock(&lib->call_lock) != 0) return 1;
+    pthread_mutex_unlock(&lib->call_lock);
+    return 0;
+}
+
 static void call_enter(sel_library* lib) {
     pthread_mutex_lock(&lib->call_lock);
 }
@@ -62,7 +98,9 @@ static void* worker_main(void* arg) {
             break;
         }
         memset(&reply, 0, sizeof reply);
+        __atomic_store_n(&lib->in_handle, 1, __ATOMIC_RELEASE);
         sel_library_handle(lib, &req, &reply);
+        __atomic_store_n(&lib->in_handle, 0, __ATOMIC_RELEASE);
         pthread_mutex_lock(&lib->lock);
         sel_spsc_push(&lib->results, &reply);
         pthread_cond_signal(&lib->wake_caller);
@@ -71,8 +109,33 @@ static void* worker_main(void* arg) {
     return NULL;
 }
 
+#if !defined(NDEBUG)
+/* Design 2026-10-31-interactive-path.md 1.1: SQLite is built THREADSAFE=0, so once the worker runs only it may touch the
+ * connection. Debug builds check that at every statement prepare: a thread other than the worker that prepares a statement
+ * while the worker is inside a request is two threads in sqlite on one connection, and aborts here with that thread's stack.
+ * (Tests that seed rows on their own thread while the worker idles are not flagged.) */
+static int owner_check(void* arg, int code, const char* a, const char* b, const char* c, const char* d) {
+    sel_library* lib = arg;
+    void* frames[32];
+
+    (void)code, (void)a, (void)b, (void)c, (void)d;
+    if (__atomic_load_n(&lib->in_handle, __ATOMIC_ACQUIRE) && !pthread_equal(pthread_self(), lib->thread)) {
+        fprintf(stderr, "library_thread_violation: sqlite used off the library worker thread\n");
+        backtrace_symbols_fd(frames, backtrace(frames, 32), STDERR_FILENO);
+        abort();
+    }
+    return SQLITE_OK;
+}
+#endif
+
 int sel_worker_start(sel_library* lib) {
     lib->running = 1;
+    /* I790: g_nowait is a __thread variable. On macOS dyld allocates a thread's TLV block lazily at its first access, which
+     * would be the opening thread's first sel_library_request, inside the SEL_ALLOC_FREEZE window after library start
+     * (the freeze contract: no allocation once the library runs). Touch it here, on the thread that opens the library, so
+     * the block is allocated at start. */
+    (void)*(volatile int*)&g_nowait;
+    (void)*(volatile int*)&g_watch;
     if (!sel_spsc_init(&lib->requests, lib->host, QUEUE_SLOTS) || !sel_spsc_init(&lib->results, lib->host, QUEUE_SLOTS)) {
         return 0;
     }
@@ -86,7 +149,11 @@ int sel_worker_start(sel_library* lib) {
     pthread_mutex_init(&lib->lock, NULL);
     pthread_cond_init(&lib->wake_worker, NULL);
     pthread_cond_init(&lib->wake_caller, NULL);
-    return pthread_create(&lib->thread, NULL, worker_main, lib) == 0;
+    if (pthread_create(&lib->thread, NULL, worker_main, lib) != 0) return 0;
+#if !defined(NDEBUG)
+    sqlite3_set_authorizer(lib->db, owner_check, lib);
+#endif
+    return 1;
 }
 
 void sel_worker_stop(sel_library* lib) {
@@ -114,7 +181,17 @@ int sel_library_request(sel_library* lib, uint32_t req, const void* payload, sel
         m.args[0].type = SEL_ARG_STR;
         m.args[0].v.s = (const char*)payload;
     }
-    call_enter(lib);
+    if (g_nowait) { /* I782: the call lock is held for a whole job and between a sync's requests; a draw never queues behind them */
+        if (pthread_mutex_trylock(&lib->call_lock) != 0) {
+            __atomic_fetch_add(&g_deferred, 1u, __ATOMIC_RELAXED);
+            return 0;
+        }
+    } else {
+        call_enter(lib);
+    }
+    /* I829: a watched thread is about to wait. A nowait request that got the call lock is not counted: with the lock free the
+     * worker has no other request, so the reply is one statement away. */
+    if (g_watch && !g_nowait) __atomic_fetch_add(&g_watched_waits, 1u, __ATOMIC_RELAXED);
     pthread_mutex_lock(&lib->lock);
     if (!sel_spsc_push(&lib->requests, &m)) {
         pthread_mutex_unlock(&lib->lock);
@@ -131,6 +208,30 @@ int sel_library_request(sel_library* lib, uint32_t req, const void* payload, sel
 }
 
 #else
+
+int sel_library_nowait(int on) {
+    (void)on;
+    return 0;
+}
+
+uint32_t sel_library_deferred(void) {
+    return 0u;
+}
+
+/* Without a worker thread every request runs inline: there is no other thread to wait on. */
+int sel_library_watch(int on) {
+    (void)on;
+    return 0;
+}
+
+uint32_t sel_library_watched_waits(void) {
+    return 0u;
+}
+
+int sel_library_busy(sel_library* lib) {
+    (void)lib;
+    return 0;
+}
 
 int sel_worker_start(sel_library* lib) {
     return sel_spsc_init(&lib->requests, lib->host, QUEUE_SLOTS) && sel_spsc_init(&lib->results, lib->host, QUEUE_SLOTS);

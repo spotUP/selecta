@@ -376,6 +376,9 @@ set(edb "${WORK}/empty.db")
 dui_run(einit --db "${edb}" --ui desktop --backend mem --view home --canvas 700x600 --clock fixed)
 function(empty_run outvar input)
   file(REMOVE_RECURSE "${WORK}/cfg2")
+  # I527: a fresh config dir has the sync offer on and its dialog covers the Browse files click point. Same switch-off dui_run writes.
+  file(MAKE_DIRECTORY "${WORK}/cfg2")
+  file(WRITE "${WORK}/cfg2/prefs.conf" "library.sync_stale_days=0\n")
   file(WRITE "${WORK}/in2.txt" "${input}")
   execute_process(COMMAND "${SELECTA}" --output null --size 80x25 --config-dir "${WORK}/cfg2" --db "${edb}" --ui desktop
     --backend mem --view home --canvas 700x600 --clock fixed --stats --input "${WORK}/in2.txt"

@@ -67,6 +67,11 @@ int mui_transport_icon_only(uint32_t button) {
     return button < MUI_BTN_COUNT;
 }
 
+uint32_t mui_player_transport_at(uint32_t k) {
+    static const uint8_t order[MUI_BTN_COUNT] = {MUI_BTN_RANDOM, MUI_BTN_PREV, MUI_BTN_PLAY, MUI_BTN_NEXT, MUI_BTN_REPEAT, MUI_BTN_STOP};
+    return k < MUI_BTN_COUNT ? order[k] : MUI_BTN_COUNT;
+}
+
 int mui_transport_on(uint32_t button, const sel_uim_frame* f) {
     return button == MUI_BTN_REPEAT ? f->repeat_mode != 0 : button == MUI_BTN_RANDOM ? f->random_on != 0 : 0;
 }

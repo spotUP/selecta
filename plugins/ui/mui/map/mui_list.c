@@ -1,6 +1,8 @@
 /* MUI list models from sel_view_state (plan 2026-10-25-amiga-mui.md MUI-P3-1..4, P3-7). Pure C. */
 #include <selecta/uimodel.h>
 
+#include <selecta/format_label.h>
+
 #include <stdio.h>
 #include <string.h>
 
@@ -37,6 +39,10 @@ int32_t mui_list_pending_resolve(mui_list_pending* p, int32_t snapshot_active) {
     }
     p->armed = 0;
     return snapshot_active;
+}
+
+int mui_list_dbl_race_on(const char* value) {
+    return value != NULL && value[0] != '\0' && !(value[0] == '0' && value[1] == '\0');
 }
 
 uint32_t mui_list_dbl_row_calls;
@@ -183,8 +189,8 @@ void mui_row_extra_fill(const sel_state* st, const sel_view_row* r, const char* 
     if (slash == NULL) {
         slash = strrchr(path, ':');
     }
-    if (dot != NULL && (slash == NULL || dot > slash) && strlen(dot + 1) < sizeof out->format) {
-        strcpy(out->format, dot + 1);
+    if (dot != NULL && (slash == NULL || dot > slash)) {
+        sel_format_label(dot + 1, out->format, sizeof out->format); /* I819 */
     }
     if (album != NULL) {
         snprintf(out->album, sizeof out->album, "%s", album);

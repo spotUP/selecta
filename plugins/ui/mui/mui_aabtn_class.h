@@ -24,6 +24,8 @@ typedef struct mui_aabtn_spec {
 } mui_aabtn_spec;
 
 Object* mui_aabtn_new(const mui_aabtn_spec* spec);
+/* I730: the same button with a MUIA_ControlChar key (0 = none); a dialog close button takes 27 (Esc). */
+Object* mui_aabtn_new_key(const mui_aabtn_spec* spec, ULONG key);
 /* New caption (state labels); redraws. */
 void mui_aabtn_set_caption(Object* obj, const char* caption);
 /* Which of the spec's two icons is shown (0 icon, 1 alt_icon); redraws. */

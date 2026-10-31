@@ -335,6 +335,9 @@ static void print_event(void* ctx, const sel_message* evt) {
  *   @share_stats        SHARE links_parsed=N links_made=N songs_opened=N (T84)
  *   @stream_stats       STREAM stream_reads=N stream_bytes=N (T94: OPEN of a URL or pipe path, I195)
  *   @stream_source      STREAMSOURCE resolves=N (I725c: songs of a streams source, radio-browser, resolved to a station URL)
+ *   @source_search      SOURCESEARCH runs=N searches=N worker=N (I406: searches that reached a source's hook; I406a: searches started
+ *                       by the engine and how many ran off the command thread)
+ *   @search_wait        pumps until the SOURCE_SEARCH worker ended and its LIBRARY_RESULT rows went out (I406a)
  *   @stream_list        STREAMLIST resolves=N adds=N (I725a: .pls/.m3u URLs resolved to a stream, STREAM_ADD URLs saved)
  *   @stream_live        STREAMLIVE opens=N audio_bytes=N audio_done=0|1 received=N record_taps=N record_files=N (I195b: bytes downloaded when
  *                       the first audio frame played, and whether the download had finished by then)
@@ -462,6 +465,10 @@ static void script_directive(sel_engine* e, const char* line) {
         sel_engine_stats es;
         sel_engine_stats_get(e, &es);
         printf("DUP redirects=%u played=%s\n", (unsigned)es.dup_redirects, es.dup_played);
+    } else if (strcmp(line, "@archive_stats") == 0) {
+        sel_engine_stats es;
+        sel_engine_stats_get(e, &es);
+        printf("ARCHIVE unpacks=%u member=%s\n", (unsigned)es.archive_unpacks, es.archive_member);
     } else if (strcmp(line, "@hash_stats") == 0) {
         sel_engine_stats es;
         sel_engine_stats_get(e, &es);
@@ -500,6 +507,11 @@ static void script_directive(sel_engine* e, const char* line) {
         sel_engine_stats es;
         sel_engine_stats_get(e, &es);
         printf("STREAMLIST resolves=%u adds=%u\n", (unsigned)sel_stream_resolves(), (unsigned)es.stream_adds);
+    } else if (strcmp(line, "@source_search") == 0) {
+        sel_engine_stats es;
+        sel_engine_stats_get(e, &es);
+        printf("SOURCESEARCH runs=%u searches=%u worker=%u pins=%u pin_rows=%u\n", (unsigned)sel_source_search_runs(),
+               (unsigned)es.source_searches, (unsigned)es.search_worker_runs, (unsigned)es.source_pins, (unsigned)es.pin_rows);
     } else if (strcmp(line, "@stream_source") == 0) {
         printf("STREAMSOURCE resolves=%u\n", (unsigned)sel_source_stream_resolves());
     } else if (strcmp(line, "@stream_live") == 0) {
@@ -725,6 +737,10 @@ static int cmd_script_file(FILE* f, int argc, char** argv) {
             for (k = 0; k < n; k++) sel_engine_pump(e, print_event, NULL);
             continue;
         }
+        if (strcmp(line, "@search_wait") == 0) {
+            sel_engine_scan_wait(e, print_event, NULL); /* the SOURCE_SEARCH worker ends and its rows are printed (I406a) */
+            continue;
+        }
         if (strcmp(line, "@prefetch_wait") == 0) {
             sel_library_prefetch_wait(lib); /* test hook: no prefetch or smart download runs after this */
             continue;
@@ -830,7 +846,7 @@ static int cmd_script_file(FILE* f, int argc, char** argv) {
             continue;
         }
         sel_engine_send_line(e, line, pool, sizeof pool);
-        sel_engine_pump(e, print_event, NULL);
+        sel_engine_pump_reads(e, print_event, NULL, 60000u); /* I829: the script wants this line's answer now */
     }
     fclose(f);
     if (lib != NULL) {

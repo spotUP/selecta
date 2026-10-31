@@ -36,6 +36,12 @@ static int net_get_file(const sel_host* host, const char* url, const char* path,
     return sel_sync_net_get_file(url, path, requests, bytes);
 }
 
+static int net_get_file_wait(const sel_host* host, const char* url, const char* path, uint32_t first_byte_ms,
+                             uint32_t* requests, unsigned long* bytes) {
+    (void)host;
+    return sel_sync_net_get_file_wait(url, path, (unsigned)first_byte_ms, requests, bytes);
+}
+
 static int net_get_file_checked(const sel_host* host, const char* url, const char* path, sel_net_check check,
                                 uint32_t* requests, unsigned long* bytes) {
     (void)host;
@@ -107,7 +113,7 @@ static int net_request(const sel_host* host, const char* url, void* buf, uint32_
 }
 
 static const sel_net g_net = {net_get_file,         net_get_range, net_head_length, net_pause, net_request,
-                              net_get_file_checked, net_request_ex};
+                              net_get_file_checked, net_request_ex, net_get_file_wait};
 
 static const sel_net* host_net(const sel_host* host) {
     (void)host;
@@ -122,8 +128,15 @@ static sel_sync_ctx* ctx_of(const sel_host* host) {
 
 static int cat_flush(sel_sync_ctx* c) {
     sel_cat_batch* b = c->batch;
+    int ok;
 
-    return sel_sync_flush_scan(&c->scfg, b->rows, &b->count, &b->batches, &b->failed) && (b->used = 0, 1);
+    if (sel_library_task_cancelled(c->scfg.lib)) { /* I782: Cancel in the UI ends the sync at its next batch */
+        b->failed = 1;
+        return 0;
+    }
+    ok = sel_sync_flush_scan(&c->scfg, b->rows, &b->count, &b->batches, &b->failed) && (b->used = 0, 1);
+    c->rows_done = b->count;
+    return ok;
 }
 
 static int cat_begin(const sel_host* host, const char* source_id) {
@@ -354,9 +367,17 @@ static const sel_catalogue* host_catalogue(const sel_host* host) {
     return ctx_of(host)->scfg.lib != NULL ? &g_catalogue : NULL;
 }
 
+/* A source's settings (sources.jamendo_client_id) come from the host the sync was bound to, not from the bound copy
+ * (whose ctx is the sync context): base->config_get runs with base itself (I729). */
+static const char* host_config_get(const sel_host* host, const char* key, const char* def) {
+    const sel_host* base = ctx_of(host)->scfg.host;
+    return base != NULL && base->config_get != NULL ? base->config_get(base, key, def) : def;
+}
+
 void sel_sync_host_bind(sel_host* out, const sel_host* base, sel_sync_ctx* ctx) {
     *out = *base;
     out->ctx = ctx;
+    out->config_get = host_config_get;
     out->net = host_net;
     out->catalogue = host_catalogue;
 }

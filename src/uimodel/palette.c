@@ -154,3 +154,21 @@ txt_pal_result txt_palette_key(txt_palette* p, uint32_t code, uint32_t mods) {
 const char* txt_palette_picked(const txt_palette* p) {
     return p->cursor < p->count ? p->items[p->cursor].name : NULL;
 }
+
+int txt_palette_verb_needs_args(const char* verb) {
+    uint32_t id;
+    const char* sig;
+    size_t n;
+    if (!sel_cmd_by_name(verb, &id)) {
+        return 0;
+    }
+    sig = sel_cmd_args(id);
+    n = strlen(sig);
+    if (n > 0u && sig[n - 1u] == '?') {
+        return n > 2u;
+    }
+    if (n > 0u && sig[n - 1u] == '*') {
+        return n > 1u;
+    }
+    return n > 0u;
+}

@@ -42,6 +42,14 @@ int sel_source_is_stream(const char* id);
  * sel_source_stream_resolves() (sentinel). */
 int sel_source_stream_url(const sel_host* host, const char* key, char* out, size_t n);
 uint32_t sel_source_stream_resolves(void);
+/* I406 (D-OS-3): runs source `id`'s search (query to sink). Returns the hits delivered, -1 when the source is unknown,
+ * has no search or the service cannot be reached. Counts calls in sel_source_search_runs() (sentinel). */
+int sel_source_search(const sel_host* host, const char* id, const char* query, sel_search_sink* out);
+uint32_t sel_source_search_runs(void);
+/* I406: a song file of a SEL_SOURCE_ZIPPED source (song key `<id>:<path>`) that still is a one-member zip is replaced
+ * in place by that member. 1 unpacked, 0 nothing to do (other source, not a zip, several members; the file is
+ * untouched, so a second call after a cache hit is harmless), -1 the file could not be rewritten. */
+int sel_source_unzip(const sel_host* host, const char* key, const char* file);
 /* I725f: 1 when `key` is a song of a streams source flagged SEL_SOURCE_SEEKABLE (its URL answers Range requests). */
 int sel_source_key_seekable(const char* key);
 int sel_song_key_split(const char* key, char* source, size_t source_n, char* path, size_t path_n);

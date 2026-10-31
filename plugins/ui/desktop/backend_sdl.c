@@ -93,7 +93,7 @@ static void push_test_events(const char* list) {
 
 /* Test hook: SELECTA_SDL_TEST_TIMED is a space separated list of events pushed from an SDL timer thread while the live
  * loop waits in poll: `m<x>,<y>@<ms>` a mouse motion, `d<btn>,<x>,<y>@<ms>` a mouse button down, `u<btn>,<x>,<y>@<ms>` a button up (1 left, 3 right; a C or G after d/u, `dC1,..`, holds Control or Command),
- * `w<dx>,<dy>@<ms>` a wheel notch, `q@<ms>` a quit, <ms> after open. SELECTA_SDL_TEST_LIVE=1 makes the
+ * `w<dx>,<dy>@<ms>` a wheel notch, `k<keycode hex>@<ms>` a key down, `t<text>@<ms>` typed text, `q@<ms>` a quit, <ms> after open. SELECTA_SDL_TEST_LIVE=1 makes the
  * dummy driver count as a live display, so a test runs the real live loop (I341). */
 typedef struct {
     SDL_Event ev; /* first: the timer parameter is the event */
@@ -148,6 +148,14 @@ static void push_timed_events(const char* list) {
             ev->wheel.y = y;
         } else if (tok[0] == 'q' && sscanf(tok + 1, "@%u", &ms) == 1) {
             ev->type = SDL_EVENT_QUIT;
+        } else if (tok[0] == 'k' && sscanf(tok + 1, "%x@%u", &btn, &ms) == 2) { /* a key down: SDL keycode in hex */
+            ev->type = SDL_EVENT_KEY_DOWN;
+            ev->key.down = true;
+            ev->key.key = (SDL_Keycode)btn;
+        } else if (tok[0] == 't' && strrchr(tok, '@') != NULL && sscanf(strrchr(tok, '@'), "@%u", &ms) == 1) { /* typed text */
+            *strrchr(tok, '@') = '\0';
+            ev->type = SDL_EVENT_TEXT_INPUT;
+            ev->text.text = SDL_strdup(tok + 1);
         } else {
             continue;
         }

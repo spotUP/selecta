@@ -112,7 +112,7 @@ static const struct {
     {"ANALYSE", CTX},        {"CUE_SET", CTX},        {"CUE_GOTO", CTX},        {"SHARE", ARG},
     {"RADIO", ARG},          {"STICKER_SET", PROTO},  {"STICKER_GET", PROTO},   {"STICKER_DEL", PROTO},
     {"FOLDER_ADD", ARG},     {"FOLDER_MOVE", CTX},    {"FOLDER_DEL", CTX},      {"PLAYLIST_MOVE", CTX},
-    {"PLAYLIST_CREATE", ARG}, {"STREAM_ADD", ARG}, {"PLAYLIST_ADD_SONG", CTX}, {"PLAYLIST_IMPORT", CTX}, {"PLAYLIST_ADD_FOLDER", CTX}, {"PLAYLIST_REMOVE_SONG", CTX}, {"PLAYLIST_PLAY", CTX}, {"PLAYLIST_RENAME", ARG}, {"PLAYLIST_DEL", CTX}, {"LIBRARY_TOUCH", CTX}, {"COLLECTION_OPEN", CTX}, {"LIBRARY_REMOVE", CTX}, {"LIBRARY_CLEAR", CTX}, {"SONGS_RANGES", CTX}, {"SONGS_PLAY", CTX}, {"SONGS_PLAY_NEXT", CTX}, {"SONGS_QUEUE_ADD", CTX}, {"SONGS_PLAYLIST_ADD", CTX}, {"SONGS_REMOVE", CTX}, {"STICKER_LIST", PROTO}, {"PREF_GET", PROTO},     
+    {"PLAYLIST_CREATE", ARG}, {"STREAM_ADD", ARG}, {"SOURCE_SEARCH", ARG}, {"SOURCE_PIN", CTX}, {"PLAYLIST_ADD_SONG", CTX}, {"PLAYLIST_IMPORT", CTX}, {"PLAYLIST_ADD_FOLDER", CTX}, {"PLAYLIST_REMOVE_SONG", CTX}, {"PLAYLIST_PLAY", CTX}, {"PLAYLIST_RENAME", ARG}, {"PLAYLIST_DEL", CTX}, {"LIBRARY_TOUCH", CTX}, {"COLLECTION_OPEN", CTX}, {"LIBRARY_REMOVE", CTX}, {"LIBRARY_CLEAR", CTX}, {"SONGS_RANGES", CTX}, {"SONGS_PLAY", CTX}, {"SONGS_PLAY_NEXT", CTX}, {"SONGS_QUEUE_ADD", CTX}, {"SONGS_PLAYLIST_ADD", CTX}, {"SONGS_REMOVE", CTX}, {"STICKER_LIST", PROTO}, {"PREF_GET", PROTO},     
     {"VIEW_SHOW", CTX},      {"VIEW_SAVE", ARG},       {"VIEW_SOURCE", CTX},
     {"VIEW_WINDOW", PROTO},  {"VIEW_GROUP", CTX},     {"VIEW_EXPAND", CTX},     {"VIEW_COLLAPSE", CTX},
     {"VIEW_DRILL", CTX},     {"MIX_STEREO_WIDTH", ARG}, {"DSP", ARG},           {"BEGIN", PROTO},
@@ -153,6 +153,14 @@ void sel_uim_help_row(uint32_t i, char* out, size_t cap) {
         return;
     }
     snprintf(out, cap, "%s  %s", a->menu, a->key[0] != '\0' ? a->key : "-");
+}
+
+const char* sel_uim_tip_like(int liked) {
+    return liked ? "Remove from Liked Songs" : "Add to Liked Songs";
+}
+
+const char* sel_uim_tip_np_panel(int hidden) {
+    return hidden ? "Show Now Playing Panel" : "Hide Now Playing Panel";
 }
 
 /* The tooltip text of an action: its tooltip field (the label when that is empty), then the default key in brackets

@@ -187,6 +187,9 @@ RTG and TC; on AGA within the 12-bit-to-8-bit rounding of the exact SA_Colors32 
 - Superclass MUIC_Area. Attributes `AAT_Contents` (settable, redraw only on change), `AAT_Tone` (normal TEXT, muted
   TEXT_MUTED, title: f + 4 px), `AAT_Align`, `AAT_Ellipsis` (cut with "..." at the width). Replaces every MUIC_Text in
   the inventory; pen escapes from `g_pre` are dropped (tone attribute instead).
+- No field face (I740, 8573f472): AAText never draws the AAField outline, fill or paddings. The footer and status labels
+  (clock, remaining, length, title, artist, format, status line) are muted text on the window, like the Mac footer. The
+  I667o face path and the `framed` constructor argument are gone; host test `mui-status-face` proves no face path exists.
 - Host test: `mui-text-fit`: ellipsis cut on a fixed advance table (host side uses `mui_button_width` metrics).
 - Rig: title text peak C8C8D0 on panel 141418.
 

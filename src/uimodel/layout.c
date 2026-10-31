@@ -124,6 +124,11 @@ void sel_uim_layout_compute_expand(sel_uim_layout* l, uint32_t width, uint32_t h
     sel_uim_layout_compute_panel(l, width, height, tier, rail_w, bar_height, expand, 0u);
 }
 
+/* I798: a tier's layout with the default bar and no rail, `detail_hidden` as in compute_panel (the MUI window's Now Playing toggle). */
+void sel_uim_layout_compute_tier_panel(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden) {
+    sel_uim_layout_compute_panel(l, width, height, tier, 0u, BAR_H, 0u, detail_hidden);
+}
+
 /* I619: as compute_expand; a non-zero `detail_hidden` drops the Now Playing column of the three column breakpoint, the main
  * region taking its width. */
 void sel_uim_layout_compute_panel(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t rail_w,
@@ -227,4 +232,27 @@ int sel_uim_hit(const sel_uim_layout* l, int32_t x, int32_t y) {
         }
     }
     return -1;
+}
+
+const char* const sel_uim_search_facets[SEL_UIM_SEARCH_FACETS] = {"All", "Songs", "Albums", "Artists"};
+
+void sel_uim_search_hint(int topbar, const char* const* chips, uint32_t n, char* out, size_t cap) {
+    size_t o;
+    uint32_t k;
+    if (cap == 0u) {
+        return;
+    }
+    if (topbar) { /* I615: the top bar field has one hint on every page */
+        snprintf(out, cap, "What do you want to play?");
+        return;
+    }
+    o = (size_t)snprintf(out, cap, "Search");
+    for (k = 1; k < n && o + 2u < cap; k++) {
+        const char* p = chips[k];
+        o += (size_t)snprintf(out + o, cap - o, "%s ", k == 1u ? "" : ",");
+        for (; *p != '\0' && o + 1u < cap; p++) {
+            out[o++] = (char)((*p >= 'A' && *p <= 'Z') ? *p + ('a' - 'A') : *p);
+        }
+        out[o] = '\0';
+    }
 }

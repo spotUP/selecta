@@ -18,6 +18,17 @@
 
 #define SEL_SMART_MAX 8u
 
+/* I406b: pinned search hits waiting for the job thread (pin.c). Buffers are sized like the engine's search_hit. */
+enum { SEL_PIN_MAX = 32, SEL_PIN_PATH = 256, SEL_PIN_TEXT = 160, SEL_PIN_ARTIST = 96, SEL_PIN_FORMAT = 32, SEL_PIN_SOURCE = 24 };
+typedef struct sel_pin_slot {
+    char source[SEL_PIN_SOURCE];
+    char path[SEL_PIN_PATH];
+    char title[SEL_PIN_TEXT];
+    char artist[SEL_PIN_ARTIST];
+    char format[SEL_PIN_FORMAT];
+} sel_pin_slot;
+
+
 struct sel_library {
     const sel_host* host;
     uint32_t account;
@@ -56,7 +67,9 @@ struct sel_library {
     uint32_t hash_files, hash_chunks, hash_tick_max; /* sel_hash_stats (I184b) */
     void (*task_fn)(void* ctx); /* I336: the queued caller task (job.c) */
     void* task_ctx;
-    volatile int task_cancel;
+    volatile unsigned task_cancel; /* also the net cancel generation while the task runs (I832), so a cancel ends its network wait */
+    volatile unsigned pin_rows;    /* I406b: rows written by pin batches (sel_library_pin_rows) */
+    volatile unsigned pin_dropped; /* I406b: pins lost to a full ring */
     unsigned task_done;      /* a task ended and _task_take has not collected it */
 #if defined(SEL_LIBRARY_NO_THREAD)
     char pf_cur[160];        /* the request the poll is working on across ticks (I168b); "" = none */
@@ -78,6 +91,9 @@ struct sel_library {
     unsigned job_started, job_quit;
     unsigned pf_busy;        /* a prefetch / smart job is running */
     unsigned pf_busy_smart;  /* the running request is a smart download (a prefetch request cancels it) */
+    unsigned job_pin, job_pin_busy;       /* I406b: pinned search hits queued in pin_q, and a drain running (pin.c) */
+    sel_pin_slot pin_q[SEL_PIN_MAX];
+    unsigned pin_n;
     unsigned job_rating, job_rating_busy; /* rating flush: one coalesced pending job, and one running (rating_push.c) */
     pthread_mutex_t call_lock; /* recursive: one caller at a time owns job and the reply queue (engine, push thread) */
     pthread_t thread;
@@ -85,6 +101,7 @@ struct sel_library {
     pthread_cond_t wake_worker;
     pthread_cond_t wake_caller;
     int running;
+    int in_handle; /* the worker is inside sel_library_handle (debug owner_check in worker.c) */
 #else
     FILE* hash_file;         /* the file the idle md5 pass is reading, one chunk per poll (I184b); NULL = none */
     sel_md5 hash_md5;
@@ -100,7 +117,23 @@ void sel_library_import(sel_library* lib, sel_lib_job* job);
 int sel_library_register_regexp(sqlite3* db);
 /* I691c: the majority format of the songs behind one list item (SEL_LIB_ITEM_* kind and its key): the representative extension of the
  * platform family holding most of its songs (sel_platform_family_tally), "" when it has none. Runs on the library thread. */
+/* I838: _cached answers from item_formats (schema v15) while the item's change key (items.c stamp_sql) holds, so a list reply scans no
+ * songs and an unrelated write keeps the answer; on a miss it scans and stores. sel_db_majority_scans counts the scans (test sentinel). */
+void sel_db_majority_format_cached(sqlite3* db, uint32_t kind, const char* key, char* out, size_t cap);
 void sel_db_majority_format(sqlite3* db, uint32_t kind, const char* key, char* out, size_t cap);
+unsigned long sel_db_majority_scans(void);
+
+/* I848a: the two lookups every OPEN makes on the main thread's behalf (duplicates.c). Shared so the plan test reads the exact SQL. Both must be
+ * index SEARCHes (schema v16: songs_md5 is partial on md5 <> '', so the query repeats that term; songs_source_path serves the path branch). */
+#define SEL_OPEN_LOOKUP_SQL \
+    "SELECT key, path, source = 'local', COALESCE(md5, ''), COALESCE(size, 0) FROM songs" \
+    " WHERE key = ?1 OR (source = 'local' AND path = ?1) LIMIT 1"
+/* Rank of a source in the D-M3-14 order, lower is better. */
+#define SEL_SOURCE_RANK_SQL \
+    "CASE source WHEN 'local' THEN 0 WHEN 'modland' THEN 3 WHEN 'hvsc' THEN 4 WHEN 'hippo' THEN 5 ELSE 6 END"
+#define SEL_BEST_SOURCE_SQL \
+    "SELECT key FROM songs WHERE md5 <> '' AND md5 = (SELECT md5 FROM songs WHERE key = ?1)" \
+    " ORDER BY " SEL_SOURCE_RANK_SQL ", id LIMIT 1"
 
 /* scan.c: SEL_LIB_REQ_SCAN_BATCH. */
 void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_message* reply);
@@ -173,6 +206,7 @@ void sel_job_stop(sel_library* lib);
 int sel_fetch_job_pending(sel_library* lib);  /* job_lock held */
 void sel_fetch_job_run(sel_library* lib);     /* job_lock held on entry and exit; drops it around the transfer */
 #endif
+void sel_pin_job_run(sel_library* lib);       /* I406b: writes the queued pinned hits as one SCAN_BATCH (no lock held) */
 void sel_rating_job_run(sel_library* lib);    /* sends every pending rating (no lock held) */
 
 #endif

@@ -11,13 +11,19 @@
 
 #include "mui_aa.h"
 #include "mui_icons.h"
+#include "mui_route.h"
+#include <selecta/library_item.h>
 #include "mui_map.h"
 #include "mui_aa.h"
 #include "mui_theme.h"
 #include "mui_pens.h"
 #include "arexx.h"
 
+#include <selecta/library_item.h>
 #include <selecta/uimodel/doors.h>
+#include <selecta/uimodel/keys.h>
+#include <selecta/uimodel/pages.h>
+#include <selecta/uimodel/route.h>
 #include <selecta/uimodel/theme.h>
 
 extern const sel_tag* sel_plugin_entry_mui_test(uint32_t host_api);
@@ -72,7 +78,10 @@ static void test_wait(void) {
           (unsigned)s.mask_seen);
     s.id = 7;
     s.waits = 0;
-    CHECK(mui_wait_step(&io, &s, 20) == 1 && s.waits == 0, "a ReturnID is not 1 (handled)");
+    s.arrive = 0;
+    CHECK(mui_wait_step(&io, &s, 20) == 1, "a ReturnID is not 1 (handled)");
+    s.arrive = 0x1000u; /* I727: Break while every turn has a ReturnID waiting (MP3 playback) */
+    CHECK(mui_wait_step(&io, &s, 20) == -1, "break behind a ReturnID is not -1 (Break ignored during playback)");
     s.id = 0;
     s.arrive = 0x4000u;
     CHECK(mui_wait_step(&io, &s, 20) == 1, "engine wake is not 1");
@@ -566,8 +575,8 @@ static void test_theme(void) {
             continue;
         }
         if (role == MUI_TH_STATUS) {
-            /* exemption (I667o, design 3.7): status lines are AAText objects with the AAField face; mui-status-face proves it */
-            CHECK(strstr(src, "sp.face = framed") != NULL, "mui_aatext does not give framed texts the AAField face");
+            /* exemption (I740, design 3.7): status lines are plain AAText labels with no frame and no field box; mui-status-face proves it */
+            CHECK(strstr(src, "sp.face") == NULL && strstr(src, "framed") == NULL, "mui_aatext still has a framed or face look");
             continue;
         }
         snprintf(key, sizeof key, "TH_TAGS(%s,", names[role]);
@@ -650,6 +659,15 @@ static void test_weights(void) {
             if (tiers[t] == SEL_UIM_TIER_BITMAP) {
                 CHECK(m.show[MUI_SLOT_TOPBAR] == 0, "bitmap tier width %u has no top bar", widths[i]);
             }
+            for (s = 0; s < 3; s++) { /* I792: a region the shared layout shows has a MUI slot shown, and one it hides has none */
+                static const char* const rn[3] = {"sidebar", "main", "detail"};
+                static const uint32_t rs[3] = {MUI_SLOT_SIDEBAR, MUI_SLOT_MAIN, MUI_SLOT_DETAIL};
+                uint32_t k, in_layout = 0;
+                for (k = 0; k < l.count; k++) {
+                    in_layout |= strcmp(l.regions[k].name, rn[s]) == 0 && l.regions[k].w > 0u;
+                }
+                CHECK(m.show[rs[s]] == in_layout, "tier %u width %u: layout shows %s %u, MUI slot shown %u", tiers[t], widths[i], rn[s], in_layout, m.show[rs[s]]);
+            }
             CHECK(m.balance_sidebar_main == (m.show[MUI_SLOT_SIDEBAR] && m.show[MUI_SLOT_MAIN]), "balance sidebar");
             CHECK(m.balance_main_detail == (widths[i] >= 1200), "balance detail at %u", widths[i]);
         }
@@ -688,7 +706,7 @@ static void test_topbar(void) {
     }
     src[n] = 0;
     CHECK(strstr(src, "g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP") != NULL && strstr(src, "s->slot[MUI_SLOT_TOPBAR] = mui_topbar_group(s)") != NULL &&
-              strstr(src, "sel_uim_door_shown(i, top_bar)") != NULL, "mui_ui.c passes the screen tier, builds the top bar slot and filters the doors");
+              strstr(src, "mui_sidebar_group(s, g_screen_rtg)") != NULL && strstr(src, "in.top_bar = top_bar;") != NULL, "mui_ui.c passes the screen tier, builds the top bar slot and filters the doors through the sidebar model");
 }
 
 /* mui-relayout (MUI-P2-2): the shown set per breakpoint; the slot count is fixed, and sel_uim_breakpoint_for_tier (bitmap tier, I674: 640 keeps a rail) decides. */
@@ -738,7 +756,7 @@ static void test_open_no_suggestion(void) {
     while (f != NULL && fgets(line, sizeof line, f) != NULL) {
         if (strstr(line, "slot[MUI_SLOT_SUGGESTION] = mui_aatext(") != NULL) {
             found = 1;
-            CHECK(strstr(line, "MUI_AA_ALIGN_LEFT, 0, 1)") != NULL, "suggestion object is created hidden");
+            CHECK(strstr(line, "MUI_AA_ALIGN_LEFT, 1)") != NULL, "suggestion object is created hidden");
         }
     }
     CHECK(found, "suggestion object creation found");
@@ -985,7 +1003,7 @@ static void test_columns(void) {
     }
 }
 
-/* MUI-P3-4: the album, length and format cells come from the snapshot, not from the (title, artist) engine row. */
+/* MUI-P3-4 (I819: the format cell is the shared label, long name plus extension): the album, length and format cells come from the snapshot, not from the (title, artist) engine row. */
 static void test_row_cells(void) {
     static sel_state st;
     static const char arena[] = "RAM:mui-mm/meme.mod\0Work:other/x.xm";
@@ -1000,10 +1018,10 @@ static void test_row_cells(void) {
     st.song.queue_id = 5; st.song.duration_ms = 185000;
     r.kind = SEL_ROW_QUEUE; r.id = 5; r.text = "That Meme Again";
     mui_row_extra_fill(&st, &r, "Evoke", &x);
-    CHECK(strcmp(x.format, "mod") == 0 && strcmp(x.length, "03:05") == 0 && strcmp(x.album, "Evoke") == 0, "playing row: '%s' '%s' '%s'", x.format, x.length, x.album);
+    CHECK(strcmp(x.format, "Protracker (mod)") == 0 && strcmp(x.length, "03:05") == 0 && strcmp(x.album, "Evoke") == 0, "playing row: '%s' '%s' '%s'", x.format, x.length, x.album);
     r.id = 6;
     mui_row_extra_fill(&st, &r, NULL, &x);
-    CHECK(strcmp(x.format, "xm") == 0 && strcmp(x.length, "--:--") == 0 && x.album[0] == '\0', "queued row: '%s' '%s' '%s'", x.format, x.length, x.album);
+    CHECK(strcmp(x.format, "Fasttracker 2 (xm)") == 0 && strcmp(x.length, "--:--") == 0 && x.album[0] == '\0', "queued row: '%s' '%s' '%s'", x.format, x.length, x.album);
     r.kind = SEL_ROW_FILE; r.text = "dir.x/readme";
     mui_row_extra_fill(&st, &r, NULL, &x);
     CHECK(x.format[0] == '\0', "no extension after the last slash: '%s'", x.format);
@@ -1048,6 +1066,17 @@ static void test_list_dbl_row(void) {
     CHECK(mui_list_dbl_row(-1, 3) == 3, "nothing picked: the cursor row");
     CHECK(mui_list_dbl_row(0, 0) == 0, "row 0 picked stays row 0");
     CHECK(mui_list_dbl_row_calls == c0 + 4, "the decision ran %u times, expected 4", (unsigned)(mui_list_dbl_row_calls - c0));
+    /* I724: the knob. Off by default; on, the race (cursor reset to row 0 by a refresh) is injected and the clicked row still wins. */
+    CHECK(!mui_list_dbl_race_on(NULL) && !mui_list_dbl_race_on("") && !mui_list_dbl_race_on("0") && mui_list_dbl_race_on("1") &&
+              mui_list_dbl_race_on("on"),
+          "MUIDblRace knob: unset, empty and 0 are off, anything else is on");
+    CHECK(mui_list_dbl_row(4, 0) == 4, "knob path: the refresh reset the List cursor to row 0 (..), the picked row 4 is still the one that plays");
+    dbl = strstr(src, "mui_dbl_race_inject((mui_state*)ctx);");
+    CHECK(dbl != NULL && strstr(dbl, "mui_control_fire((mui_state*)ctx, id);") == dbl + strlen("mui_dbl_race_inject((mui_state*)ctx);\n        }\n        "),
+          "the injection sits directly before mui_control_fire for CTL_LIST_DBL");
+    CHECK(strstr(src, "GetVar((CONST_STRPTR)\"Selecta/MUIDblRace\"") != NULL && strstr(src, "\"dbl_race_injected\"") != NULL &&
+              strstr(src, "s->p4[P4_DBLRACE]++") != NULL,
+          "the knob is read once at open and the sentinel dbl_race_injected is counted");
     dbl = strstr(src, "if (id == CTL_LIST_DBL) {");
     CHECK(dbl != NULL && strstr(dbl, "GetAttr(AAL_Picked, s->list") != NULL && strstr(dbl, "mui_list_dbl_row(") != NULL &&
               strstr(dbl, "mui_list_dbl_row(") < strstr(dbl, "VIEW_ACTIVATE"),
@@ -1086,15 +1115,89 @@ static void test_list_backends(void) {
     CHECK(mui_list_backend_pick(1, 1)->sortable == 1 && mui_list_backend_pick(0, 0)->sortable == 0, "only NList sorts");
 }
 
+/* I792, the parity guard (drift doc 2026-10-30-mui-mac-drift section 4): every page of the shared page table has a MUI slot or a written
+ * exemption, and every page a route target can open is in the table. A page added to uimodel/pages.h with no entry in mui_page_slot is
+ * kind MUI_PAGE_GAP and fails here. */
+static void mui_route_targets(void) {
+    uint32_t pg, t, k;
+    for (pg = 0; pg < (uint32_t)SEL_UIM_PG_COUNT; pg++) {
+        const mui_page_slot_t* ps = mui_page_slot(pg);
+        CHECK(ps != NULL && (ps->kind == MUI_PAGE_MAIN_VIEW || ps->kind == MUI_PAGE_GROUP || (ps->kind == MUI_PAGE_EXEMPT && ps->exempt != NULL && ps->exempt[0] != '\0')),
+              "page '%s' has neither a MUI slot nor an exemption", sel_uim_page_at(pg)->name);
+        CHECK(sel_uim_page_of_route(sel_uim_page_route(pg)) == pg, "page '%s' route id does not round trip", sel_uim_page_at(pg)->name);
+    }
+    CHECK(mui_page_slot((uint32_t)SEL_UIM_PG_COUNT) == NULL, "past the page table");
+    for (t = 0; t < (uint32_t)SEL_ROUTE_TARGETS; t++) {
+        for (k = 0; k < (uint32_t)SEL_UIM_PG_COUNT; k++) {
+            sel_route r;
+            if (sel_route_resolve((sel_route_target)t, k, &r) && r.page != 0u) {
+                uint32_t id = sel_uim_page_of_route(r.page);
+                const mui_page_slot_t* ps = mui_page_slot(id);
+                CHECK(sel_uim_page_route(id) == r.page || (uint32_t)SEL_ROUTE_PAGE_OTHER_BASE + id == r.page, "route target %u item %u opens route page %u that is not in the page table", (unsigned)t, (unsigned)k, (unsigned)r.page);
+                CHECK(ps != NULL && ps->kind != MUI_PAGE_GAP, "route target %u item %u opens page '%s' with no MUI slot or exemption", (unsigned)t, (unsigned)k, sel_uim_page_at(id)->name);
+            }
+        }
+    }
+}
+
+/* I735: the Visualizer and Pattern pages are main-area panes. The page entry (mui_pane_key, the Mac UI's default key table) opens each
+ * as a main view; the `opens` counter proves the entry ran; the detail slot that held them before is hidden under 1100 px while the
+ * main slot is not. */
+static void test_panes(void) {
+    static mui_menu_item items[512];
+    mui_mainpane mp;
+    mui_layout_map_t lm;
+    uint32_t i, n, door_pg, width;
+    const uint32_t pages[2] = {SEL_UIM_PG_VIZ, SEL_UIM_PG_TRACKER};
+    const uint32_t panes[2] = {MUI_PANE_VIZ, MUI_PANE_TRACKER};
+    const char keys[2] = {'v', 't'};
+    memset(&mp, 0, sizeof mp);
+    for (i = 0; i < 2; i++) {
+        const mui_page_slot_t* ps = mui_page_slot(pages[i]);
+        CHECK(ps != NULL && ps->kind == MUI_PAGE_MAIN_VIEW && ps->exempt == NULL, "page '%s' is not a main view without exemption", sel_uim_page_at(pages[i])->name);
+        CHECK(mui_pane_shortcut(panes[i]) == keys[i], "pane %u shortcut is '%c', the Mac key is '%c'", (unsigned)panes[i], mui_pane_shortcut(panes[i]), keys[i]);
+        CHECK(mui_pane_title(panes[i]) != NULL, "pane %u has no menu title", (unsigned)panes[i]);
+        CHECK(mui_pane_key(&mp, (uint32_t)keys[i], 0u) == panes[i] && mp.pane == panes[i], "key '%c' does not open pane %u", keys[i], (unsigned)panes[i]);
+        CHECK(mp.opens[panes[i]] == 1u, "pane %u entry ran %u times, not once", (unsigned)panes[i], (unsigned)mp.opens[panes[i]]);
+        CHECK(mui_pane_open(&mp, pages[i]) == panes[i] && mp.opens[panes[i]] == 2u, "page entry for pane %u did not count", (unsigned)panes[i]);
+    }
+    /* a door page (the list) and a key that opens no page */
+    door_pg = sel_uim_page_by_name(sel_uim_door_at(0)->page);
+    CHECK(mui_pane_open(&mp, door_pg) == MUI_PANE_LIST && mp.pane == MUI_PANE_LIST && mp.opens[MUI_PANE_LIST] == 1u, "a door does not return to the list pane");
+    CHECK(mui_pane_page(MUI_PANE_VIZ) == (uint32_t)SEL_UIM_PG_VIZ && mui_pane_page(MUI_PANE_TRACKER) == (uint32_t)SEL_UIM_PG_TRACKER && mui_pane_page(MUI_PANE_LIST) == (uint32_t)SEL_UIM_PG_HOME, "pane to page map");
+    mp.pane = MUI_PANE_VIZ;
+    CHECK(mui_pane_key(&mp, (uint32_t)'j', 0u) == MUI_PANE_COUNT && mp.pane == MUI_PANE_VIZ, "an unrelated key moved the pane");
+    CHECK(mui_pane_key(&mp, (uint32_t)'v', TXT_MOD_CTRL) == MUI_PANE_COUNT, "Ctrl+V opened a page");
+    CHECK(mui_pane_of_action("@viz") == MUI_PANE_VIZ && mui_pane_of_action("@pattern") == MUI_PANE_TRACKER && mui_pane_of_action("@home") == MUI_PANE_COUNT && mui_pane_of_action(NULL) == MUI_PANE_COUNT, "action to pane map");
+    /* the menu shortcuts of the other items leave 'v' and 't' to the panes */
+    n = mui_menu_build_for(items, 512, mui_style_mask(0));
+    for (i = 0; i < n && i < 512u; i++) {
+        char c = items[i].shortcut;
+        CHECK(c == '\0' || (c != 'v' && c != 't' && c != 'V' && c != 'T'), "menu item '%s' takes the pane shortcut %c", items[i].item, c);
+    }
+    /* every width: main slot shown, detail slot hidden below 1100 px (where the panes used to be unreachable) */
+    for (width = 320; width <= 1920; width += 160) {
+        mui_layout_map(&lm, width, 720, SEL_UIM_TIER_DEFAULT);
+        CHECK(lm.show[MUI_SLOT_MAIN] != 0u, "main slot hidden at width %u", (unsigned)width);
+        CHECK(width >= 1100u || lm.show[MUI_SLOT_DETAIL] == 0u, "detail slot shown at width %u", (unsigned)width);
+    }
+}
+
 /* MUI-P4-0: seven doors from the shared table, each with its label; the five main-view pages carry a line the engine accepts. */
 static void test_doors(void) {
-    static const char* const want[] = {"Home", "Search", "Your Library", "Playlists", "Queue", "Now Playing", "Song Information"};
     uint32_t i, lines = 0;
-    CHECK(mui_door_count() == 7u, "seven doors");
-    for (i = 0; i < 7u; i++) {
-        CHECK(mui_door_label(i) != NULL && strcmp(mui_door_label(i), want[i]) == 0, "door %u label", (unsigned)i);
+    CHECK(mui_door_count() == SEL_UIM_DOOR_COUNT, "%u doors", (unsigned)SEL_UIM_DOOR_COUNT);
+    for (i = 0; i < mui_door_count(); i++) {
+        const sel_uim_door* dr = sel_uim_door_at(i);
+        uint32_t pg = sel_uim_page_by_name(dr->page);
+        const mui_page_slot_t* ps = mui_page_slot(pg);
+        CHECK(mui_door_label(i) != NULL && strcmp(mui_door_label(i), dr->label) == 0, "door %u label", (unsigned)i);
+        CHECK(pg < (uint32_t)SEL_UIM_PG_COUNT && ps != NULL, "door %u page '%s' is not in the page table", (unsigned)i, dr->page);
+        /* I792: a door whose page the MUI shows in the main view needs the engine line; a group page or an exemption sends none */
+        CHECK(ps == NULL || ps->kind != MUI_PAGE_MAIN_VIEW || mui_door_line(i) != NULL, "door %u ('%s'): main-view page '%s' has no engine line", (unsigned)i, dr->label, dr->page);
         lines += mui_door_line(i) != NULL;
     }
+    mui_route_targets();
     CHECK(lines == 5u && strcmp(mui_door_line(1), "VIEW_SOURCE search") == 0 && mui_door_line(5) == NULL, "five main-view lines");
     CHECK(mui_door_label(7) == NULL && mui_door_line(7) == NULL, "past the table");
     /* I615d (design 8.4): with the top bar (DEFAULT tier) Home and Search leave the sidebar, the bitmap tier keeps all seven. */
@@ -1106,6 +1209,74 @@ static void test_doors(void) {
         lines += (uint32_t)sel_uim_door_shown(i, 0);
     }
     CHECK(lines == 7u, "seven doors on the bitmap tier");
+}
+
+/* I793 (drift doc S3 to S9): the MUI Your Library sidebar has the Mac sidebar's parts: header, chips, item rows, empty state and
+ * create card, with Browse Folders hidden through the uimodel. The sentinel mui_sidebar_builds() proves the model ran, and the
+ * mui_ui.c sidebar group is checked to build from it. */
+static char* ui_source(void);
+static void test_sidebar(void) {
+    sel_engine_library_item it[3];
+    mui_sidebar_in in;
+    mui_sidebar_model m;
+    uint32_t i, builds = mui_sidebar_builds();
+    int folders = 0;
+    const char* src = ui_source();
+    memset(it, 0, sizeof it);
+    memset(&in, 0, sizeof in);
+    it[0].kind = SEL_LIB_ITEM_LIKED; it[0].pinned = 1; snprintf(it[0].name, sizeof it[0].name, "Liked Songs"); it[0].songs = 12;
+    it[1].kind = SEL_LIB_ITEM_PLAYLIST; it[1].id = 7; snprintf(it[1].name, sizeof it[1].name, "Road"); snprintf(it[1].sub, sizeof it[1].sub, "You");
+    snprintf(it[1].creator, sizeof it[1].creator, "You"); it[1].songs = 3;
+    it[2].kind = SEL_LIB_ITEM_ALBUM; snprintf(it[2].name, sizeof it[2].name, "Chip Tunes"); snprintf(it[2].sub, sizeof it[2].sub, "Virgill"); it[2].songs = 9;
+    in.items = it; in.item_n = 3; in.filter = "";
+    /* header (S4) and the doors (S3): Browse Folders is gone, the shared rule says so for the desktop too */
+    mui_sidebar_build(&in, &m);
+    CHECK(mui_sidebar_builds() == builds + 1u, "sentinel %u", (unsigned)mui_sidebar_builds());
+    CHECK(strcmp(m.title, "Your Library") == 0 && strcmp(m.create, "Create Playlist") == 0 && strcmp(m.expand, "Expand Library") == 0, "header '%s' '%s' '%s'", m.title, m.create, m.expand);
+    for (i = 0; i < m.door_n; i++) {
+        folders += strcmp(sel_uim_door_at(m.door[i])->page, "folders") == 0;
+    }
+    CHECK(m.door_n == 6u && folders == 0 && !sel_uim_door_shown_in(2, 0, 1) && sel_uim_door_shown_in(2, 0, 0), "doors %u folders %d", (unsigned)m.door_n, folders);
+    /* chips (S5): the six kinds, all shown while none is selected; a selected chip hides the others and offers the clear X */
+    CHECK(strcmp(m.chip[0], "Playlists") == 0 && strcmp(m.chip[5], "Local Files") == 0 && m.chip_shown[0] && m.chip_shown[5] && !m.chip_clear, "chips");
+    /* rows (S6): the Mac subtitle formatter, kind mark, and the Expand columns (S7) */
+    CHECK(m.row_n == 3u && strcmp(m.row[0].title, "Liked Songs") == 0 && strcmp(m.row[0].subtitle, "Playlist \xe2\x80\xa2 12 songs") == 0 && strcmp(m.row[2].subtitle, "Album \xe2\x80\xa2 Virgill") == 0,
+          "rows %u '%s' '%s'", (unsigned)m.row_n, m.row[0].subtitle, m.row[2].subtitle);
+    CHECK(m.cols == 1u && strcmp(m.row[1].type, "Playlist") == 0 && strcmp(m.row[2].mark, "A") == 0, "mark/type");
+    in.wide = 1;
+    mui_sidebar_build(&in, &m);
+    CHECK(m.cols == 4u && strcmp(m.expand, "Collapse Library") == 0, "expanded: %u columns '%s'", (unsigned)m.cols, m.expand);
+    in.wide = 0;
+    /* a chip filters by kind and hides the other chips; a kind without rows shows the empty text (S8) */
+    in.chip = 2; /* Albums */
+    mui_sidebar_build(&in, &m);
+    CHECK(m.row_n == 1u && strcmp(m.row[0].title, "Chip Tunes") == 0 && m.chip_shown[1] && !m.chip_shown[0] && m.chip_clear && m.empty[0] == '\0' && !m.card, "album chip");
+    in.chip = 3; /* Artists: none in the list */
+    mui_sidebar_build(&in, &m);
+    CHECK(m.row_n == 0u && strcmp(m.empty, "Nothing here yet.") == 0, "empty '%s'", m.empty);
+    /* the create card (S9): only without a playlist row, on All or Playlists, no filter */
+    in.chip = 0; in.item_n = 1;
+    mui_sidebar_build(&in, &m);
+    CHECK(m.card && strcmp(m.card_title, "Create your first playlist") == 0 && strcmp(m.card_button, "Create playlist") == 0 && m.row_n == 1u, "card");
+    in.item_n = 3;
+    mui_sidebar_build(&in, &m);
+    CHECK(!m.card, "a playlist exists: no card");
+    in.filter = "Chip";
+    in.item_n = 1;
+    mui_sidebar_build(&in, &m);
+    CHECK(!m.card, "a filter hides the card");
+    /* the MUI path: mui_sidebar_group builds its objects from the model, and the buttons route to the shared actions */
+    CHECK(src != NULL, "read mui_ui.c");
+    if (src != NULL) {
+        const char* g = strstr(src, "static Object* mui_sidebar_dyn(const mui_sidebar_model* m) {");
+        const char* gs = g != NULL ? strstr(g, "static Object* mui_sidebar_group(") : NULL;
+        const char* end = gs != NULL ? strstr(gs, "\n}\n") : NULL;
+        char body[12000];
+        snprintf(body, sizeof body, "%.*s", g != NULL && end != NULL ? (int)(end - g < 11990 ? end - g : 11990) : 0, g != NULL ? g : "");
+        CHECK(strstr(body, "mui_sidebar_build(") != NULL && strstr(body, "m.title") != NULL && strstr(body, "m->chip") != NULL && strstr(body, "m->row") != NULL &&
+              strstr(body, "m->empty") != NULL && strstr(body, "m->card") != NULL && strstr(body, "m.door") != NULL, "mui_sidebar_group does not build from the model");
+        CHECK(strstr(src, "mui_viewbtn_fire(1,") != NULL && strstr(src, "CTL_SIDE_BASE") != NULL, "sidebar buttons are not routed");
+    }
 }
 
 static void test_home(void) {
@@ -1369,7 +1540,7 @@ static void test_toolrows(void) {
 /* Regression (I671): on a 640x256 AGA screen MUI refused the window (MUIA_Window_Open read back 0, requester "the MUI
  * window could not open") because the three-column layout was applied only after the open, with a fixed 1280x720 size,
  * so the open measured the sidebar and detail panels too. The open must apply the layout of the screen it opens on first,
- * and that layout must hide the sidebar and detail panels on the smallest screen. */
+ * and that layout is the bitmap tier one: since I674 the 640 wide screen keeps the icon rail (sidebar shown) and hides the detail panel. */
 static void test_layout_before_open(void) {
     static char src[400000];
     mui_layout_map_t m;
@@ -1381,7 +1552,7 @@ static void test_layout_before_open(void) {
     }
     src[n] = 0;
     mui_layout_map(&m, 640u, 256u, SEL_UIM_TIER_BITMAP);
-    CHECK(m.show[MUI_SLOT_MAIN] && m.show[MUI_SLOT_PLAYER] && !m.show[MUI_SLOT_SIDEBAR] && !m.show[MUI_SLOT_DETAIL],
+    CHECK(m.show[MUI_SLOT_MAIN] && m.show[MUI_SLOT_PLAYER] && m.show[MUI_SLOT_SIDEBAR] && !m.show[MUI_SLOT_DETAIL],
           "640x256 layout shows sidebar %u detail %u", (unsigned)m.show[MUI_SLOT_SIDEBAR], (unsigned)m.show[MUI_SLOT_DETAIL]);
     pick = strstr(src, "    mui_layout_for_screen(s);\n    set(s->win, MUIA_Window_Open, TRUE);");
     open_at = strstr(src, "set(s->win, MUIA_Window_Open, TRUE);");
@@ -1466,6 +1637,142 @@ static void test_window_borderless(void) {
     CHECK(strstr(src, "MUIA_Window_Title, wattr.titled ? (ULONG) \"Selecta\" : (ULONG)NULL") != NULL,
           "the main window keeps its title (and Intuition's title bar) on the own screen");
     CHECK(strstr(src, "SA_ShowTitle, FALSE") != NULL, "the SELECTA screen shows its title bar over the backdrop window");
+}
+
+/* I730: every dialog window (Settings, Help, the Commands palette) takes the one shared attribute path. Behaviour: on the own
+ * screen borderless, untitled, no gadgets, not a backdrop, own header row; on Workbench the normal borders. Structure: each
+ * `<name>_win` that is a dialog is built by mui_dialog_window (which calls mui_dialog_attrs), and no other code creates a MUIC_Window
+ * object except the main window (WindowObject, I675) and the cycle popup (mui_aacycle_class.c, not a dialog). A dialog that builds
+ * its own MUIC_Window bypasses the path and turns this red. */
+static void test_dialog_windows(void) {
+    mui_window_attrs_t a;
+    uint32_t before = mui_dialog_attrs_calls();
+    static char src[400000];
+    FILE* f = fopen(MUI_UI_SOURCE, "rb");
+    size_t n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    const char *fn, *end, *p;
+    uint32_t windows = 0, via_helper = 0;
+    static const char* const dialogs[] = {"s->help_win = mui_dialog_window(", "s->pal_win = mui_dialog_window(", "s->set_win = mui_dialog_window("};
+    size_t i;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    mui_dialog_attrs(1, &a);
+    CHECK(a.borderless == 1 && a.backdrop == 0 && a.dragbar == 0 && a.depthgadget == 0 && a.sizegadget == 0 && a.closegadget == 0 && a.titled == 0 && a.header == 1,
+          "own screen dialog is not borderless, untitled, gadget-free with its own header");
+    mui_dialog_attrs(0, &a);
+    CHECK(a.borderless == 0 && a.backdrop == 0 && a.dragbar == 1 && a.depthgadget == 1 && a.sizegadget == 1 && a.closegadget == 1 && a.titled == 1 && a.header == 0,
+          "Workbench dialog lost its normal borders");
+    CHECK(mui_dialog_attrs_calls() == before + 2u, "dialog attrs sentinel %u", (unsigned)mui_dialog_attrs_calls());
+    mui_window_attrs(1, &a);
+    CHECK(a.header == 0 && a.backdrop == 1, "the main window must keep backdrop and no header");
+    fn = strstr(src, "static Object* mui_dialog_window(");
+    CHECK(fn != NULL, "mui_dialog_window is gone");
+    end = fn != NULL ? strstr(fn, "\n}\n") : NULL;
+    CHECK(end != NULL && strstr(fn, "mui_dialog_attrs(g_scr != NULL, &da)") != NULL && strstr(fn, "mui_dialog_attrs(g_scr != NULL, &da)") < end,
+          "mui_dialog_window does not take its attributes from mui_dialog_attrs by own screen");
+    CHECK(end != NULL && strstr(fn, "mui_aabtn_new_key(&sp, 27UL)") != NULL && strstr(fn, "mui_aabtn_new_key(&sp, 27UL)") < end, "the dialog close button does not take Esc");
+    CHECK(end != NULL && strstr(fn, "MUIA_Window_Borderless, (ULONG)da.borderless") != NULL && strstr(fn, "MUIA_Window_CloseGadget, (ULONG)da.closegadget") != NULL,
+          "mui_dialog_window does not apply the attributes");
+    CHECK(end != NULL && strstr(fn, "MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Centered") != NULL, "dialogs are not centred");
+    for (i = 0; i < sizeof dialogs / sizeof dialogs[0]; i++) {
+        CHECK(strstr(src, dialogs[i]) != NULL, "dialog not built by mui_dialog_window: %s", dialogs[i]);
+    }
+    for (p = src; (p = strstr(p, "MUIC_Window")) != NULL; p++) {
+        windows++;
+        if (fn != NULL && end != NULL && p > fn && p < end) {
+            via_helper++;
+        }
+    }
+    CHECK(windows == via_helper, "%u MUIC_Window objects outside mui_dialog_window: a dialog bypasses the shared path", (unsigned)(windows - via_helper));
+    CHECK(strstr(src, "_win = MUI_NewObject(") == NULL, "a secondary window is built outside mui_dialog_window");
+}
+
+/* I731 (plan 2026-10-31-I731-mui-flat-tooltips.md section 6): the flat tooltip. Plan numbers, placement and the hover state machine run on
+ * the host; the Amiga module is proven wired by its source text. The sentinel proves the case ran the real mui_aa_tip_plan. */
+static int tip_file(const char* name, char* buf, size_t cap) {
+    char path[600];
+    FILE* f;
+    size_t n;
+    snprintf(path, sizeof path, "%s/%s", MUI_DIR, name);
+    f = fopen(path, "rb");
+    if (f == NULL) {
+        buf[0] = 0;
+        return 0;
+    }
+    n = fread(buf, 1, cap - 1, f);
+    fclose(f);
+    buf[n] = 0;
+    return 1;
+}
+
+static void test_tooltip_flat(void) {
+    const uint32_t* tok = mui_theme_tokens();
+    uint32_t before = mui_aa_tip_calls();
+    mui_aa_tip_t p, s;
+    int x = 0, y = 0, act, st, side;
+    static char src[400000];
+    static const char* const classes[] = {"mui_aabtn_class.c", "mui_aaslider_class.c", "mui_aafield_class.c"};
+    static const char* const need[] = {"aatip_super_set(", "aatip_event(", "AATIP_M_FIRE", "aatip_drop("};
+    static const char* const tip_need[] = {"mui_aa_tip_plan(", "mui_aa_tip_place(", "mui_aa_tip_step(", "aa_round_fill(", "aa_text(", "WA_Borderless", "WA_Activate, FALSE", "MUIIHNF_TIMER"};
+    static const char* const tip_ban[] = {"MUIM_CreateBubble", "MUIA_Frame", "aa_round_frame("};
+    const char *fn, *end;
+    size_t k, j;
+
+    mui_aa_tip_plan(tok, 14, 80, 16, &p);
+    mui_aa_tip_plan(tok, 0, 80, 8, &s);
+    CHECK(mui_aa_tip_calls() == before + 2u, "tip plan sentinel %u", (unsigned)mui_aa_tip_calls());
+    CHECK(p.face == tok[SEL_GUI_TOKEN_SURFACE_PRESSED] && p.text == tok[SEL_GUI_TOKEN_TEXT] && p.corner == tok[SEL_GUI_TOKEN_SURFACE], "tip colours are not the desktop tokens");
+    CHECK(p.pad_x == (int)tok[SEL_GUI_TOKEN_SPACING] && p.w == 80 + 2 * p.pad_x && p.h == 16 + 2 * p.pad_y, "tip box size w=%d h=%d pad_x=%d", p.w, p.h, p.pad_x);
+    CHECK(p.radius == (tok[SEL_GUI_TOKEN_RADIUS_SMALL] < (uint32_t)(p.h / 2) ? (int)tok[SEL_GUI_TOKEN_RADIUS_SMALL] : p.h / 2), "tip radius %d", p.radius);
+    CHECK(s.pad_x == 6 && s.pad_y == 3 && s.radius == 4 && s.gap == 2, "tier S tip numbers %d/%d/%d/%d", s.pad_x, s.pad_y, s.radius, s.gap);
+
+    side = mui_aa_tip_place(300, 200, 40, 20, 80, 24, 800, 600, 4, MUI_AA_TIP_ABOVE, &x, &y);
+    CHECK(side == MUI_AA_TIP_ABOVE && x == 300 + (40 - 80) / 2 && y + 24 + 4 == 200, "above placement side=%d x=%d y=%d", side, x, y);
+    side = mui_aa_tip_place(300, 0, 40, 20, 80, 24, 800, 600, 4, MUI_AA_TIP_ABOVE, &x, &y);
+    CHECK(side == MUI_AA_TIP_BELOW && y == 24, "anchor at the top must flip below, side=%d y=%d", side, y);
+    side = mui_aa_tip_place(0, 100, 40, 20, 80, 24, 800, 600, 4, MUI_AA_TIP_RIGHT, &x, &y);
+    CHECK(side == MUI_AA_TIP_RIGHT && x == 44, "door tip beside the door, side=%d x=%d", side, x);
+    side = mui_aa_tip_place(780, 300, 20, 20, 80, 24, 800, 600, 4, MUI_AA_TIP_ABOVE, &x, &y);
+    CHECK(x == 800 - 80, "right edge clamp x=%d", x);
+
+    CHECK(MUI_AA_TIP_DELAY_MS == 600, "tip delay is not the desktop 600 ms");
+    act = 0;
+    st = mui_aa_tip_step(MUI_AA_TIP_IDLE, MUI_AA_TIP_EV_ENTER, &act);
+    CHECK(st == MUI_AA_TIP_PENDING && (act & MUI_AA_TIP_DO_ARM), "enter does not arm");
+    act = 0;
+    st = mui_aa_tip_step(st, MUI_AA_TIP_EV_TIMER, &act);
+    CHECK(st == MUI_AA_TIP_SHOWN && (act & MUI_AA_TIP_DO_SHOW), "timer does not show");
+    act = 0;
+    st = mui_aa_tip_step(st, MUI_AA_TIP_EV_PRESS, &act);
+    CHECK(st == MUI_AA_TIP_MUTED && (act & MUI_AA_TIP_DO_HIDE), "press does not mute and hide");
+    act = 0;
+    st = mui_aa_tip_step(st, MUI_AA_TIP_EV_ENTER, &act);
+    CHECK(st == MUI_AA_TIP_MUTED && !(act & MUI_AA_TIP_DO_ARM), "enter while muted must stay muted");
+    act = 0;
+    st = mui_aa_tip_step(st, MUI_AA_TIP_EV_LEAVE, &act);
+    CHECK(st == MUI_AA_TIP_IDLE, "leave does not reset");
+
+    CHECK(tip_file("mui_aatip.c", src, sizeof src), "mui_aatip.c is missing");
+    for (k = 0; k < sizeof tip_need / sizeof tip_need[0]; k++) {
+        CHECK(strstr(src, tip_need[k]) != NULL, "mui_aatip.c lacks %s", tip_need[k]);
+    }
+    for (k = 0; k < sizeof tip_ban / sizeof tip_ban[0]; k++) {
+        CHECK(strstr(src, tip_ban[k]) == NULL, "mui_aatip.c uses %s", tip_ban[k]);
+    }
+    for (j = 0; j < sizeof classes / sizeof classes[0]; j++) {
+        CHECK(tip_file(classes[j], src, sizeof src), "%s is missing", classes[j]);
+        for (k = 0; k < sizeof need / sizeof need[0]; k++) {
+            CHECK(strstr(src, need[k]) != NULL, "%s does not call %s", classes[j], need[k]);
+        }
+    }
+    CHECK(tip_file("mui_aa_draw.c", src, sizeof src), "mui_aa_draw.c is missing");
+    fn = strstr(src, "uint32_t aa_retheme_all(void) {");
+    end = fn != NULL ? strstr(fn, "\n}\n") : NULL;
+    CHECK(end != NULL && strstr(fn, "aatip_drop(NULL)") != NULL && strstr(fn, "aatip_drop(NULL)") < end, "aa_retheme_all does not drop an open tip");
+    CHECK(tip_file("mui_aabtn_class.c", src, sizeof src) && strstr(src, "MUIA_ShortHelp") != NULL, "AABtn must still take MUIA_ShortHelp");
+    CHECK(tip_file("mui_aalist_class.c", src, sizeof src) && strstr(src, "MUIA_ShortHelp") == NULL, "AAList passes MUIA_ShortHelp to MUI's own bubble");
 }
 
 /* Regression (I656): with the I651 icons every button grew by 24 + 6 + 20 px, the tool row 2 reached ~860 px and MUI refused to
@@ -1747,6 +2054,85 @@ static void test_newplaylist(void) {
     CHECK(mui_view_fires() == fires + 1u, "fire counter %u want %u", (unsigned)mui_view_fires(), (unsigned)(fires + 1u));
 }
 
+/* I670 mui-libfilter (design 2026-10-29 section 4): the sidebar library filter control. The press goes through mui_libfilter_press,
+ * the function mui_control_fire calls for CTL_LIB_PREV and CTL_LIB_NEXT; it steps with the desktop chips' clamp and runs the
+ * desktop's filter pass. The sentinel is sel_uim_lfilter_passes (one pass per press), so a press that skipped the shared pass fails. */
+static void test_libfilter(void) {
+    static const char* const want[SEL_UIM_LFILTERS] = {"All", "Playlists", "Albums", "Artists", "Composers", "Sources", "Local Files"};
+    sel_engine_library_item items[4];
+    char label[32];
+    uint32_t f = 0u, rows = 9u, i, passes = sel_uim_lfilter_passes(), presses = mui_libfilter_presses();
+    const char* src = ui_source();
+    CHECK(SEL_UIM_LFILTERS == 7u, "filter count %u", (unsigned)SEL_UIM_LFILTERS);
+    f = mui_libfilter_press(f, -1, NULL, items, 4, &rows, label, sizeof label);
+    CHECK(f == 0u && strcmp(label, "All") == 0 && rows == 0u, "previous at All stays: filter %u label '%s'", (unsigned)f, label);
+    for (i = 1u; i < SEL_UIM_LFILTERS; i++) {
+        f = mui_libfilter_press(f, 1, NULL, items, 4, &rows, label, sizeof label);
+        CHECK(f == i && strcmp(label, want[i]) == 0, "next press %u gives filter %u label '%s'", (unsigned)i, (unsigned)f, label);
+    }
+    f = mui_libfilter_press(f, 1, NULL, items, 4, &rows, label, sizeof label);
+    CHECK(f == SEL_UIM_LFILTERS - 1u && strcmp(label, "Local Files") == 0, "next at the last filter stays: %u '%s'", (unsigned)f, label);
+    f = mui_libfilter_press(f, -1, NULL, items, 4, &rows, label, sizeof label); /* I831: the left button is the x with a filter in force */
+    CHECK(f == 0u && strcmp(label, "All") == 0, "the left button with a filter in force clears to All: %u '%s'", (unsigned)f, label);
+    CHECK(mui_libfilter_presses() == presses + SEL_UIM_LFILTERS + 2u, "press counter %u", (unsigned)(mui_libfilter_presses() - presses));
+    CHECK(sel_uim_lfilter_passes() == passes + SEL_UIM_LFILTERS + 2u, "the shared filter pass ran %u times, want %u",
+          (unsigned)(sel_uim_lfilter_passes() - passes), (unsigned)(SEL_UIM_LFILTERS + 2u));
+    CHECK(sel_uim_lfilter_mask(0) == SEL_LIB_ITEM_ALL && sel_uim_lfilter_mask(4) == SEL_LIB_ITEM_BIT(SEL_LIB_ITEM_COMPOSER), "masks");
+    /* I669: one row list. The S6 rows are the model rows of the filter in force, so rows drawn == filtered rows, and a chip fit decision
+     * shared with the desktop picks chips or the single label. */
+    {
+        sel_engine_library_item it[4];
+        mui_sidebar_in in;
+        mui_sidebar_model m;
+        uint32_t k, sbuilds = mui_sidebar_builds(), nfilt = 0u;
+        memset(it, 0, sizeof it);
+        memset(&in, 0, sizeof in);
+        for (k = 0; k < 4u; k++) {
+            it[k].kind = k < 2u ? (uint32_t)SEL_LIB_ITEM_PLAYLIST : (uint32_t)SEL_LIB_ITEM_ALBUM;
+            snprintf(it[k].name, sizeof it[k].name, "row %u", (unsigned)k);
+        }
+        in.items = it;
+        in.item_n = 4u;
+        in.filter = "";
+        in.chip = 1u; /* Playlists */
+        in.chips_single = 1;
+        mui_sidebar_build(&in, &m);
+        for (k = 0; k < 4u; k++) {
+            nfilt += (sel_uim_lfilter_mask(1u) & SEL_LIB_ITEM_BIT(it[k].kind)) != 0u;
+        }
+        CHECK(m.row_n == nfilt && nfilt == 2u, "rows drawn %u, filtered model rows %u: the sidebar has a second list", (unsigned)m.row_n, (unsigned)nfilt);
+        CHECK(m.chip_left_clear && strcmp(m.chip_left_name, "Clear Filter") == 0, "label mode with Playlists in force: left button '%s'", m.chip_left_name); /* I831 */
+        CHECK(m.chip_single && strcmp(m.chip_label, "Playlists") == 0, "narrow sidebar: S5 is the label naming the filter, got '%s'", m.chip_label);
+        for (k = 0; k < SEL_UIM_SIDE_CHIPS; k++) {
+            CHECK(!m.chip_shown[k], "chip %u shows beside the single label", (unsigned)k);
+        }
+        in.chip = 0u; /* I831: All in force, label mode: Previous Filter */
+        mui_sidebar_build(&in, &m);
+        CHECK(!m.chip_left_clear && strcmp(m.chip_left_name, "Previous Filter") == 0, "label mode with All in force: left button '%s'", m.chip_left_name);
+        in.chips_single = 0;
+        mui_sidebar_build(&in, &m);
+        CHECK(!m.chip_single && m.chip_shown[0] && m.chip_shown[5] && m.row_n == 4u, "wide sidebar: the six chips show over all %u rows", (unsigned)m.row_n);
+        CHECK(mui_sidebar_builds() == sbuilds + 3u, "the sidebar model did not run");
+        CHECK(sel_uim_lfilter_chips_single(1, 10, 1000) == 1 && sel_uim_lfilter_chips_single(0, 10, 1000) == 0 && sel_uim_lfilter_chips_single(0, 1001, 1000) == 1,
+              "shared chips-or-label decision");
+        CHECK(mui_sidebar_chips_single(0, 100u) == 1 && mui_sidebar_chips_single(0, 2000u) == 0 && mui_sidebar_chips_single(1, 2000u) == 1, "MUI width decision");
+    }
+    CHECK(src != NULL, "read mui_ui.c");
+    if (src != NULL) {
+        const char* g = strstr(src, "static Object* mui_sidebar_dyn(const mui_sidebar_model* m) {");
+        const char* gs = g != NULL ? strstr(g, "static Object* mui_sidebar_group(") : NULL;
+        const char* end = gs != NULL ? strstr(gs, "\n}\n") : NULL;
+        char body[12000];
+        snprintf(body, sizeof body, "%.*s", g != NULL && end != NULL ? (int)(end - g < 11990 ? end - g : 11990) : 0, g != NULL ? g : "");
+        CHECK(strstr(src, "id == CTL_LIB_PREV || id == CTL_LIB_NEXT") != NULL && strstr(src, "mui_libfilter_press(s->lib_filter") != NULL,
+              "mui_control_fire does not reach mui_libfilter_press");
+        CHECK(strstr(src, "m->chip_left_name") != NULL && strstr(src, "m->chip_left_clear") != NULL && strstr(src, "\"Next Filter\"") != NULL,
+              "the sidebar left button does not come from the shared model");
+        CHECK(strstr(src, "lib_list") == NULL && strstr(src, "lib_ptr") == NULL && strstr(body, "sel_uim_lfilter_pass(") != NULL,
+              "I670's separate list is back, or the sidebar build skips the shared pass");
+    }
+}
+
 /* Regression (I684a): Selecta_AACycle's OM_SET redrew when _win(obj) != NULL. Before the first MUIM_Setup the render info
  * is NULL, so _win(obj) reads address 0; on rig 2 that held garbage, the redraw ran on an object with no window and the
  * Amiga crashed at start (set AAC_Active on the visualizer cycle in mui_detail_group). Every class must ask aa_live(),
@@ -1818,8 +2204,9 @@ static void test_aalist_getrow(void) {
  * the application through a NULL pointer, and rig 2 crashed at every start whose saved visualizer was not the first. The
  * settings cycles had the same shape. The initial entry must go in at OM_NEW (mui_make_cycle's active argument): mui_ui.c may
  * not set AAC_Active at all; only the user's pick changes it. */
-/* I667o: the transport clock/remaining/length boxes and the four status-row fields are AAText objects with the rounded AAField face and
- * paddings, not a square MUI frame. Source contract: the constructor sets face, drops the frame; the class draws the field plan. */
+/* I740: the transport clock/remaining/length texts and the four status-row labels are plain AAText: no MUI frame, no field face or
+ * outline (it made them look like text inputs; the Mac footer draws muted text on the window). Source contract; red when a
+ * face/framed path comes back into the constructor or the class. */
 static void test_status_face(void) {
     static char cls_buf[100000];
     char path[512];
@@ -1838,9 +2225,10 @@ static void test_status_face(void) {
         return;
     }
     ctor = strstr(src, "static Object* mui_aatext_sized(");
-    CHECK(ctor != NULL && strstr(ctor, "sp.face = framed") != NULL && strstr(ctor, "MUI_TH_STATUS") == NULL, "mui_aatext_sized does not give framed texts the face (or still takes the square role frame)");
-    CHECK(strstr(cls, "mui_aa_field_plan(") != NULL && strstr(cls, "aa_round_fill(") != NULL && strstr(cls, "MUIA_InnerLeft") != NULL && strstr(cls, "MUIA_InnerTop") != NULL,
-          "AAText draws no rounded field face with inner paddings");
+    CHECK(ctor != NULL && strstr(ctor, "sp.frame = (ULONG)MUIV_Frame_None") != NULL && strstr(ctor, "sp.background = 0UL") != NULL, "mui_aatext_sized does not build frameless, backgroundless texts");
+    CHECK(strstr(src, "sp.face") == NULL && strstr(src, "framed") == NULL && strstr(src, "MUI_TH_STATUS") == NULL, "mui_ui.c still gives texts a face or framed look");
+    CHECK(strstr(cls, "mui_aa_field_plan(") == NULL && strstr(cls, "aa_round_fill(") == NULL && strstr(cls, "MUIA_InnerLeft") == NULL && strstr(cls, "d->face") == NULL,
+          "AAText still draws a field face or inner paddings");
     grp = strstr(src, "static Object* mui_player_group(");
     end = grp != NULL ? strstr(grp, "MUI-P3-4") : NULL;
     CHECK(grp != NULL && end != NULL, "mui_player_group not found");
@@ -1857,7 +2245,8 @@ static void test_status_face(void) {
     }
 }
 
-/* I717: the volume slider sits at the right end of the seek row (row2), after the length box, like the Mac player bar; it is fixed width. */
+/* I717 (moved by I796): the volume slider is in the right column of the player bar, after the seek row's length box in source order, never in the
+ * transport row; it is fixed width. */
 static void test_volume_row(void) {
     char *src = ui_source(), *grp, *end, *seek, *len, *vol;
     CHECK(src != NULL, "cannot read mui_ui.c");
@@ -1872,11 +2261,68 @@ static void test_volume_row(void) {
     }
     seek = strstr(grp, "DoMethod(row2, OM_ADDMEMBER, s->seek)");
     len = strstr(grp, "MUI_ATTR_LENGTH");
-    vol = strstr(grp, "DoMethod(row2, OM_ADDMEMBER, s->vol)");
+    vol = strstr(grp, "DoMethod(row4, OM_ADDMEMBER, s->vol)");
     CHECK(seek != NULL && seek < end, "seek slider is not in the seek row");
-    CHECK(vol != NULL && vol < end && len != NULL && vol > len, "volume slider is not the last member of the seek row");
-    CHECK(strstr(grp, "DoMethod(row1, OM_ADDMEMBER, s->vol)") == NULL, "volume slider is still in the button row");
+    CHECK(vol != NULL && vol < end && len != NULL && vol > len, "volume slider is not in the right column");
+    CHECK(strstr(grp, "DoMethod(row1, OM_ADDMEMBER, s->vol)") == NULL, "volume slider is in the button row");
     CHECK(strstr(grp, "CTL_VOLUME, MUI_VOLUME_FIX_W)") != NULL, "volume slider has no fixed width");
+}
+
+/* I796 (drift B1-B4): ONE reachability test of the player bar. mui_ui.c builds it from the map layer (Mac transport order, Mac column weights,
+ * art frame, Like beside the title), and the icons it builds fire their commands: each transport action and Like go through mui_action_fire
+ * (the handler sentinel mui_action_fires() counts them). */
+static int bar_sent;
+static char bar_line[16][64];
+static int bar_send(void* ctx, const char* line) {
+    (void)ctx;
+    if (bar_sent < 16) {
+        snprintf(bar_line[bar_sent], sizeof bar_line[0], "%s", line);
+    }
+    bar_sent++;
+    return 1;
+}
+
+static void test_player_bar(void) {
+    static const uint32_t mac[MUI_BTN_COUNT] = {MUI_BTN_RANDOM, MUI_BTN_PREV, MUI_BTN_PLAY, MUI_BTN_NEXT, MUI_BTN_REPEAT, MUI_BTN_STOP};
+    char *src = ui_source(), *grp, *end, *ord, *tool, *tend;
+    sel_uim_frame f;
+    uint32_t k, base = mui_action_fires();
+    memset(&f, 0, sizeof f);
+    for (k = 0; k < MUI_BTN_COUNT; k++) {
+        const char* act;
+        CHECK(mui_player_transport_at(k) == mac[k], "transport position %u is button %u, want %u", (unsigned)k, (unsigned)mui_player_transport_at(k), (unsigned)mac[k]);
+        CHECK(mui_transport_icon_only(mui_player_transport_at(k)), "transport position %u is not an icon", (unsigned)k);
+        act = mui_transport_action(mui_player_transport_at(k), &f);
+        CHECK(act != NULL && mui_action_fire(act, bar_send, NULL) == 1u, "transport position %u (%s) does not fire", (unsigned)k, act != NULL ? act : "none");
+    }
+    CHECK(mui_action_fire("like", bar_send, NULL) == 1u, "Like does not fire");
+    CHECK(bar_sent == (int)MUI_BTN_COUNT + 1 && mui_action_fires() - base == MUI_BTN_COUNT + 1u, "sentinel %u sent %d", (unsigned)(mui_action_fires() - base), bar_sent);
+    CHECK(bar_sent > (int)MUI_BTN_COUNT && strcmp(bar_line[MUI_BTN_COUNT], mui_like_line()) == 0, "Like sends '%s'", bar_line[MUI_BTN_COUNT]);
+    CHECK(MUI_PLAYER_W_LEFT + MUI_PLAYER_W_CENTRE + MUI_PLAYER_W_RIGHT == 100 && MUI_PLAYER_W_CENTRE > MUI_PLAYER_W_LEFT, "column weights");
+    CHECK(src != NULL, "cannot read mui_ui.c");
+    if (src == NULL) {
+        return;
+    }
+    grp = strstr(src, "static Object* mui_player_group(");
+    end = grp != NULL ? strstr(grp, "MUI-P3-4") : NULL;
+    CHECK(grp != NULL && end != NULL, "mui_player_group not found");
+    if (grp == NULL || end == NULL) {
+        return;
+    }
+    ord = strstr(grp, "mui_player_transport_at(k)");
+    CHECK(ord != NULL && ord < end, "the transport row is not built in the Mac order of the map layer");
+    CHECK(strstr(grp, "mui_aapanel(MUI_AA_PANEL_RAISED, MUI_PLAYER_ART_PX)") != NULL, "no art frame in the player bar");
+    CHECK(strstr(grp, "MUIA_HorizWeight, MUI_PLAYER_W_LEFT") != NULL && strstr(grp, "MUIA_HorizWeight, MUI_PLAYER_W_CENTRE") != NULL &&
+              strstr(grp, "MUIA_HorizWeight, MUI_PLAYER_W_RIGHT") != NULL,
+          "the three columns do not take the map-layer weights");
+    CHECK(strstr(grp, "DoMethod(hbar, OM_ADDMEMBER, colL)") != NULL && strstr(grp, "DoMethod(hbar, OM_ADDMEMBER, colC)") != NULL &&
+              strstr(grp, "DoMethod(hbar, OM_ADDMEMBER, colR)") != NULL && strstr(grp, "DoMethod(g, OM_ADDMEMBER, hbar)") != NULL,
+          "the bar is not one HGroup of three columns");
+    CHECK(strstr(grp, "CTL_P4_BASE + P4_LIKE") != NULL && strstr(grp, "DoMethod(row3, OM_ADDMEMBER, like)") != NULL, "Like is not beside the title");
+    tool = strstr(src, "static Object* mui_tool_group(");
+    tend = tool != NULL ? strstr(tool, "I667i2") : NULL;
+    CHECK(tool != NULL && tend != NULL && strstr(tool, "g_tool_which[i] == P4_LIKE") != NULL && strstr(tool, "g_tool_which[i] == P4_LIKE") < tend,
+          "the tool rows still build Like");
 }
 
 static void test_cycle_initial(void) {
@@ -1917,6 +2363,278 @@ static void test_screen_rtg_flag(void) {
     CHECK(strstr(src, "mui_canvas_new(&grid, g_screen_rtg)") != NULL, "canvas does not get the screen RTG flag");
     CHECK(strstr(src, "mui_vizarea_new(&s->vizset, g_tokens, 1)") == NULL && strstr(src, "mui_canvas_new(&grid, 1)") == NULL,
           "a hardcoded RTG flag came back");
+}
+
+/* I794: the lines the route handler sends, recorded. */
+typedef struct route_log {
+    char line[16][160];
+    uint32_t n;
+} route_log;
+
+static int route_rec(void* ctx, const char* line) {
+    route_log* l = (route_log*)ctx;
+    if (l->n < 16u) {
+        snprintf(l->line[l->n], sizeof l->line[0], "%s", line);
+        l->n++;
+    }
+    return 1;
+}
+
+/* I797 (drift doc S1, S2): the sidebar brand and the door icons with the selected state. One reachability test: the model carries the brand,
+ * every shown door has an icon, a door press through the route handler moves the lit door (sentinel mui_route_lit_calls), and mui_ui.c builds
+ * the brand and lights the door buttons from it. */
+static void test_sidebar_icons(void) {
+    mui_sidebar_in in;
+    mui_sidebar_model m;
+    mui_route r;
+    route_log l;
+    char* src = ui_source();
+    uint32_t k, lit0 = mui_route_lit_calls();
+    memset(&in, 0, sizeof in);
+    memset(&l, 0, sizeof l);
+    mui_route_init(&r);
+    mui_sidebar_build(&in, &m);
+    CHECK(strcmp(m.brand, "Selecta") == 0 && mui_icon_id(m.brand_icon) >= 0, "brand '%s' icon '%s'", m.brand, m.brand_icon);
+    in.bitmap = 1;
+    mui_sidebar_build(&in, &m);
+    CHECK(strcmp(m.brand, "Selecta") == 0 && m.brand_icon[0] == '\0', "the bitmap tier keeps the text and drops the logo");
+    in.bitmap = 0;
+    mui_sidebar_build(&in, &m);
+    CHECK(mui_route_lit_door(&r) == 0, "a fresh window is on Home");
+    for (k = 1; k < m.door_n; k++) {
+        const char* dl = mui_door_line(m.door[k]);
+        CHECK(mui_icon_id(sel_uim_door_at(m.door[k])->page) >= 0, "door %u has no icon", (unsigned)m.door[k]);
+        if (dl != NULL) {
+            mui_route_door(&r, m.door[k], dl, route_rec, &l);
+            CHECK(mui_route_lit_door(&r) == (int)m.door[k], "door %u pressed, lit door %d", (unsigned)m.door[k], mui_route_lit_door(&r));
+        }
+    }
+    mui_route_door(&r, 0u, "VIEW_SOURCE home", route_rec, &l);
+    CHECK(mui_route_lit_door(&r) == 0, "Home lights the Home door again");
+    mui_route_click(&r, SEL_ROUTE_SHOW_ALL, 0u, 1u, "", "Shelf", "", route_rec, &l);
+    CHECK(mui_route_lit_door(&r) == -1, "a shelf page lights no door");
+    CHECK(mui_route_lit_calls() - lit0 >= m.door_n, "sentinel: %u", (unsigned)(mui_route_lit_calls() - lit0));
+    CHECK(src != NULL, "cannot read mui_ui.c");
+    if (src == NULL) {
+        return;
+    }
+    CHECK(strstr(src, "m.brand_icon[0]") != NULL && strstr(src, "mui_side_text(hd, m.brand,") != NULL, "mui_sidebar_group does not build the brand from the model");
+    CHECK(strstr(src, "s->door_btn[i] = b") != NULL && strstr(src, "mui_aabtn_set_on(s->door_btn[dk], (int)dk == lit)") != NULL &&
+              strstr(src, "mui_route_lit_door(&s->route)") != NULL,
+          "the door buttons are not lit from the route history");
+}
+
+
+static int pal_send_n;
+static char pal_send_last[64];
+static int pal_send(void* ctx, const char* line) {
+    (void)ctx;
+    pal_send_n++;
+    snprintf(pal_send_last, sizeof pal_send_last, "%s", line);
+    return 1;
+}
+
+/* I798 (drift doc O1, O3, T2, R3): the command palette rows are the Mac's shared table and a pick runs a bare verb or fills the
+ * command line; every tooltip text comes from mui_tip (the Mac's sel_uim_tip_* strings and the action tip); Hide / Show Now Playing
+ * flips the detail slot of the layout like the Mac's detail_hidden. The wiring checks read mui_ui.c. */
+static void test_overlays(void) {
+    static mui_palette pal;
+    mui_layout_map_t m;
+    char fill[64], tip[96];
+    sel_uim_frame fr;
+    uint32_t i, r, before_tip = mui_tip_calls(), before_np = mui_np_toggles(), main_w, bare = 0, args = 0, all;
+    char* src = ui_source();
+    memset(&fr, 0, sizeof fr);
+    mui_palette_open(&pal);
+    all = pal.count;
+    CHECK(all > 0u && all == pal.pal.count && pal.opens >= 1u, "palette rows %u, shared %u", (unsigned)all, (unsigned)pal.pal.count);
+    CHECK(strcmp(mui_palette_row(&pal, 0), pal.row[0]) == 0 && mui_palette_row(&pal, (long)pal.count)[0] == '\0', "row callback");
+    mui_palette_filter(&pal, "pause");
+    CHECK(pal.count > 0u && pal.count <= all, "a query narrows %u of %u", (unsigned)pal.count, (unsigned)all);
+    mui_palette_filter(&pal, "");
+    for (i = 0; i < pal.count && (bare == 0u || args == 0u); i++) {
+        const char* verb = pal.pal.items[i].name;
+        fill[0] = '\0';
+        pal_send_n = 0;
+        r = mui_palette_pick(&pal, (long)i, pal_send, NULL, fill, sizeof fill);
+        if (verb == NULL) {
+            continue;
+        }
+        if (txt_palette_verb_needs_args(verb)) {
+            CHECK(r == MUI_PAL_FILL && pal_send_n == 0 && strncmp(fill, verb, strlen(verb)) == 0 && fill[strlen(verb)] == ' ', "verb '%s' fills '%s' (r %u)", verb, fill, (unsigned)r);
+            args++;
+        } else {
+            CHECK(r == MUI_PAL_RUN && pal_send_n == 1 && strcmp(pal_send_last, verb) == 0, "verb '%s' sent '%s' (r %u)", verb, pal_send_last, (unsigned)r);
+            bare++;
+        }
+    }
+    CHECK(bare > 0u && args > 0u && pal.runs >= bare && pal.fills >= args, "sentinels runs %u fills %u", (unsigned)pal.runs, (unsigned)pal.fills);
+    CHECK(mui_palette_pick(&pal, -1, pal_send, NULL, fill, sizeof fill) == MUI_PAL_NONE, "a row outside the list picks nothing");
+
+    CHECK(mui_tip(MUI_TIP_LIKE, 0, NULL, 0, tip, sizeof tip) > 0u && strcmp(tip, sel_uim_tip_like(0)) == 0, "like tip '%s'", tip);
+    CHECK(mui_tip(MUI_TIP_LIKE, 0, NULL, 1, tip, sizeof tip) > 0u && strcmp(tip, sel_uim_tip_like(1)) == 0, "liked tip '%s'", tip);
+    CHECK(mui_tip(MUI_TIP_NP_PANEL, 0, NULL, 1, tip, sizeof tip) > 0u && strcmp(tip, sel_uim_tip_np_panel(1)) == 0, "np tip '%s'", tip);
+    CHECK(mui_tip(MUI_TIP_NP_PANEL, 0, NULL, 0, tip, sizeof tip) > 0u && strcmp(tip, sel_uim_tip_np_panel(0)) == 0, "np tip '%s'", tip);
+    for (i = 0; i < MUI_BTN_COUNT; i++) {
+        CHECK(mui_tip(MUI_TIP_TRANSPORT, i, &fr, 0, tip, sizeof tip) > 0u, "transport button %u has no tip", (unsigned)i);
+    }
+    CHECK(mui_tip(MUI_TIP_DOOR, 1, NULL, 0, tip, sizeof tip) > 0u, "door 1 has no tip");
+    CHECK(mui_tip(MUI_TIP_PALETTE, 0, NULL, 0, tip, sizeof tip) > 0u && mui_tip(MUI_TIP_SEEK, 0, NULL, 0, tip, sizeof tip) > 0u &&
+              mui_tip(MUI_TIP_VOLUME, 0, NULL, 0, tip, sizeof tip) > 0u && mui_tip(MUI_TIP_SEARCH, 0, NULL, 0, tip, sizeof tip) > 0u &&
+              mui_tip(MUI_TIP_CMD, 0, NULL, 0, tip, sizeof tip) > 0u,
+          "a control tip is empty");
+    CHECK(mui_tip_calls() - before_tip >= 14u, "sentinel: %u tip calls", (unsigned)(mui_tip_calls() - before_tip));
+
+    memset(&m, 0, sizeof m);
+    mui_layout_map(&m, 1400u, 800u, SEL_UIM_TIER_DEFAULT);
+    CHECK(mui_np_toggle_shown(&m) && m.show[MUI_SLOT_DETAIL] && !m.detail_hidden, "three columns show the detail slot and the toggle");
+    main_w = m.weight_w[MUI_SLOT_MAIN];
+    CHECK(mui_np_toggle(&m) == 1u && !m.show[MUI_SLOT_DETAIL] && m.weight_w[MUI_SLOT_MAIN] > main_w, "hidden drops the detail slot and widens main");
+    mui_layout_relayout(&m, 1500u, 800u, SEL_UIM_TIER_DEFAULT, NULL);
+    CHECK(m.detail_hidden && !m.show[MUI_SLOT_DETAIL] && mui_np_toggle_shown(&m), "a resize keeps the panel hidden and the button shown");
+    CHECK(mui_np_toggle(&m) == 0u && m.show[MUI_SLOT_DETAIL], "toggle shows the panel again");
+    CHECK(mui_np_toggles() - before_np == 2u, "sentinel: %u flips", (unsigned)(mui_np_toggles() - before_np));
+    mui_layout_map(&m, 1000u, 800u, SEL_UIM_TIER_DEFAULT);
+    CHECK(!mui_np_toggle_shown(&m), "two columns have no panel to hide");
+    mui_layout_map(&m, 1400u, 800u, SEL_UIM_TIER_BITMAP);
+    CHECK(!mui_np_toggle_shown(&m), "the bitmap tier has no top bar button");
+
+    CHECK(src != NULL, "cannot read mui_ui.c");
+    if (src == NULL) {
+        return;
+    }
+    CHECK(strstr(src, "mui_tip(kind, index, f, flag,") != NULL && strstr(src, "MUIA_ShortHelp") != NULL && strstr(src, "MUI_TIP_DOOR,") != NULL &&
+              strstr(src, "MUI_TIP_TRANSPORT,") != NULL && strstr(src, "MUI_TIP_LIKE,") != NULL && strstr(src, "MUI_TIP_SEEK,") != NULL,
+          "tooltips are not set from mui_tip");
+    CHECK(strstr(src, "CTL_NP_TOGGLE") != NULL && strstr(src, "mui_np_toggle(&s->lay)") != NULL && strstr(src, "mui_layout_map_panel(&s->lay") != NULL &&
+              strstr(src, "mui_np_toggle_shown(&s->lay)") != NULL,
+          "the Now Playing toggle is not wired");
+    CHECK(strstr(src, "CTL_PAL_BTN") != NULL && strstr(src, "mui_palette_open(&s->pal)") != NULL && strstr(src, "mui_palette_filter(&s->pal,") != NULL &&
+              strstr(src, "mui_palette_pick(&s->pal,") != NULL && strstr(src, "mui_palette_sync(s)") != NULL,
+          "the command palette is not wired");
+}
+
+/* I794 behaviour (drift doc T1, P2, P3): each route target enters its page with the lines the desktop UI sends, Back and Forward restore
+ * without touching Recents (" 1"), the door keeps its lines as the history entry, and Back and Forward are enabled from the history. */
+static void test_route(void) {
+    mui_route r;
+    route_log l;
+    memset(&l, 0, sizeof l);
+    mui_route_init(&r);
+    CHECK(!mui_route_can(&r, -1) && !mui_route_can(&r, 1), "a fresh history has neither Back nor Forward");
+    CHECK(mui_route_click(&r, SEL_ROUTE_SHOW_ALL, 0u, 2u, "", "Made for you", "", route_rec, &l) && mui_route_on_shelf(&r) && l.n == 1u &&
+              strcmp(l.line[0], "VIEW_SOURCE home") == 0, "SHOW_ALL opens the Shelf page and reads the Home source: %s", l.n > 0u ? l.line[0] : "(none)");
+    CHECK(mui_route_can(&r, -1) && !mui_route_can(&r, 1), "after one click Back is enabled, Forward is not");
+    l.n = 0;
+    CHECK(mui_route_click(&r, SEL_ROUTE_TRACK_ARTIST, (uint32_t)SEL_LIB_ITEM_ARTIST, 0u, "Jogeir", "Jogeir", "", route_rec, &l) && mui_route_on_collection(&r) &&
+              l.n == 1u && strstr(l.line[0], "COLLECTION_OPEN") == l.line[0] && strstr(l.line[0], "\"Jogeir\"") != NULL, "TRACK_ARTIST opens the artist page: %s", l.n > 0u ? l.line[0] : "(none)");
+    l.n = 0;
+    CHECK(mui_route_click(&r, SEL_ROUTE_TRACK_ALBUM, (uint32_t)SEL_LIB_ITEM_ALBUM, 0u, "Nexus", "Nexus", "Jogeir", route_rec, &l) && mui_route_on_collection(&r) &&
+              l.n == 1u && strstr(l.line[0], "\"Nexus\"") != NULL, "TRACK_ALBUM opens the album page");
+    l.n = 0;
+    CHECK(mui_route_click(&r, SEL_ROUTE_META_ARTIST, (uint32_t)SEL_LIB_ITEM_ARTIST, 0u, "Jogeir", "Jogeir", "", route_rec, &l) && l.n == 1u &&
+              strstr(l.line[0], "\"Jogeir\"") != NULL, "META_ARTIST opens the artist page");
+    l.n = 0;
+    CHECK(mui_route_click(&r, SEL_ROUTE_ALBUM_CARD, (uint32_t)SEL_LIB_ITEM_ALBUM, 0u, "Other", "Other", "", route_rec, &l) && l.n == 1u &&
+              strstr(l.line[0], "\"Other\"") != NULL, "ALBUM_CARD opens the album page");
+    l.n = 0;
+    CHECK(mui_route_walk(&r, -1, route_rec, &l) && l.n == 1u && strstr(l.line[0], "\"Jogeir\"") != NULL && l.line[0][strlen(l.line[0]) - 1u] == '1' &&
+              mui_route_can(&r, 1), "Back re-enters the previous collection with the restore flag and enables Forward: %s", l.n > 0u ? l.line[0] : "(none)");
+    l.n = 0;
+    CHECK(mui_route_walk(&r, 1, route_rec, &l) && l.n == 1u && strstr(l.line[0], "\"Other\"") != NULL && !mui_route_can(&r, 1), "Forward returns to the newest page");
+    l.n = 0;
+    CHECK(mui_route_door(&r, 5u, "FORMATS_SHOW;COMPOSERS_SHOW;SOURCES", route_rec, &l) && l.n == 3u && strcmp(l.line[1], "COMPOSERS_SHOW") == 0 &&
+              !mui_route_on_collection(&r), "a door page sends its lines one by one");
+    l.n = 0;
+    CHECK(mui_route_walk(&r, -1, route_rec, &l) && mui_route_on_collection(&r), "Back from a door page returns to the page before it");
+    mui_route_init(&r);
+    CHECK(!mui_route_walk(&r, -1, route_rec, &l) && r.entered == 0u, "Back with no history does nothing");
+}
+
+/* I794 reachability: the one test that drives the MUI's real click path. The control handler of mui_ui.c reaches the handler through the
+ * wiring grepped below; the handler is then driven the way the handler drives it (counter and sentinel), and Back returns to the previous
+ * page. Removing the wiring from mui_ui.c turns the source checks red. */
+static void test_route_reach(void) {
+    mui_route r;
+    route_log l;
+    char* src = ui_source();
+    memset(&l, 0, sizeof l);
+    mui_route_init(&r);
+    CHECK(src != NULL, "mui_ui.c source readable");
+    CHECK(strstr(src, "#include \"map/mui_route.h\"") != NULL && strstr(src, "mui_route_walk(&s->route, id == CTL_NAV_BACK ? -1 : 1") != NULL,
+          "Back and Forward are wired to the history walk");
+    CHECK(strstr(src, "\"nav_back\", NULL, CTL_NAV_BACK") != NULL && strstr(src, "mui_route_can(&s->route, -1)") != NULL, "Back button is built and enabled from the history");
+    CHECK(strstr(src, "mui_route_door(&s->route") != NULL && strstr(src, "mui_route_click(&s->route, SEL_ROUTE_SHOW_ALL") != NULL &&
+              strstr(src, "mui_route_click(&s->route, SEL_ROUTE_HOME_TILE") != NULL && strstr(src, "mui_route_click(&s->route, SEL_ROUTE_META_ARTIST") != NULL,
+          "doors, Show all, library tiles and the Artist link go through the route handler");
+    CHECK(strstr(src, "mui_col_page_group(s)") != NULL && strstr(src, "mui_route_sync(s, st)") != NULL, "the collection page is built and synced from the history");
+    CHECK(mui_route_click(&r, SEL_ROUTE_HOME_TILE, (uint32_t)SEL_LIB_ITEM_ALBUM, 0u, "Nexus", "Nexus", "", route_rec, &l) && r.rh.calls == 1u && r.entered == 1u,
+          "the handler ran: route calls %u, pages entered %u", (unsigned)r.rh.calls, (unsigned)r.entered);
+    CHECK(mui_route_on_collection(&r) && strstr(l.line[0], "COLLECTION_OPEN") == l.line[0], "the album page was entered through the engine line");
+    l.n = 0;
+    CHECK(mui_route_walk(&r, -1, route_rec, &l) && !mui_route_on_collection(&r) && r.entered == 2u && strcmp(l.line[0], "VIEW_SOURCE home") == 0 &&
+              !mui_route_can(&r, -1), "Back returned to Home and re-sent its source line");
+}
+
+/* I795 reachability (drift doc P1, P4, P5): the one test for Home shelves and quick tiles, Browse tiles and Search facet chips. The wiring of
+ * mui_ui.c is grepped (removing it turns this red); the page models are driven on a synthetic engine view, and the shelf, tile and facet
+ * clicks run through the route handler with the call counter and sentinel. */
+static void test_tiles_reach(void) {
+    static sel_view_row rows[12];
+    static sel_state st;
+    sel_view_state v;
+    mui_home_page hp;
+    mui_shelf sh;
+    mui_btile tiles[MUI_TILE_MAX];
+    char line[48];
+    mui_route r;
+    route_log l;
+    uint32_t n;
+    char* src = ui_source();
+    memset(&l, 0, sizeof l);
+    memset(rows, 0, sizeof rows);
+    memset(&v, 0, sizeof v);
+    memset(&st, 0, sizeof st);
+    mui_route_init(&r);
+    CHECK(src != NULL, "mui_ui.c source readable");
+    CHECK(strstr(src, "mui_home_split(") != NULL && strstr(src, "mui_shelf_find(") != NULL && strstr(src, "mui_home_fill(") != NULL, "Home quick row and shelves are built from the view");
+    CHECK(strstr(src, "mui_browse_tiles(") != NULL && strstr(src, "mui_tile_fire(s, (uint32_t)(id - CTL_TILE_BASE))") != NULL, "Browse tiles are built and fire");
+    CHECK(strstr(src, "mui_search_facet_line(") != NULL && strstr(src, "sel_uim_search_facets") != NULL && strstr(src, "CTL_FACET_BASE") != NULL, "Search facet chips are built and fire");
+    CHECK(strstr(src, "mui_route_click(&s->route, SEL_ROUTE_SHOW_ALL, 0u, s->shelf_id[k]") != NULL &&
+              strstr(src, "mui_route_click(&s->route, SEL_ROUTE_BROWSE_TILE") != NULL && strstr(src, "mui_home_row_fire(s, view, idx)") != NULL,
+          "Show all, composer tiles and quick tiles go through the route handler");
+    /* Home: heading quick + 2 tiles, shelf A + 3 rows, shelf B + 1 row */
+    rows[0].kind = SEL_ROW_HEADING; rows[0].quick = 1; rows[0].text = "Quick";
+    rows[1].kind = SEL_ROW_HOME; rows[2].kind = SEL_ROW_HOME;
+    rows[3].kind = SEL_ROW_HEADING; rows[3].text = "Made for you";
+    rows[4].kind = SEL_ROW_HOME; rows[5].kind = SEL_ROW_HOME; rows[6].kind = SEL_ROW_HOME;
+    rows[7].kind = SEL_ROW_HEADING; rows[7].text = "Recently played";
+    rows[8].kind = SEL_ROW_HOME;
+    v.rows = rows;
+    v.row_n = 9;
+    mui_home_split(&v, &hp);
+    CHECK(hp.quick_n == 2u && hp.quick_first == 1u && hp.shelf_n == 2u && hp.shelf[0].count == 3u && hp.shelf[0].first == 4u && hp.shelf[1].count == 1u &&
+              hp.shelf[1].id == 2u, "home split: quick %u, shelves %u, first shelf %u rows", (unsigned)hp.quick_n, (unsigned)hp.shelf_n, (unsigned)hp.shelf[0].count);
+    CHECK(mui_shelf_find(&v, 2u, &sh) == 1u && sh.first == 8u && sh.count == 1u && mui_shelf_find(&v, 3u, &sh) == 0u, "the Shelf page finds only the chosen shelf");
+    CHECK(mui_route_click(&r, SEL_ROUTE_SHOW_ALL, 0u, hp.shelf[1].id, "", "Recently played", "", route_rec, &l) && mui_route_on_shelf(&r) && r.rh.calls == 1u &&
+              r.entered == 1u, "Show all ran through the route handler: calls %u, entered %u", (unsigned)r.rh.calls, (unsigned)r.entered);
+    /* Browse tiles */
+    st.formats = "MOD\0" "12\0" "XM\0" "1\0";
+    st.composers = "jogeir\0" "Jogeir Liljedahl\0" "7\0";
+    n = mui_browse_tiles(&st, tiles, MUI_TILE_MAX);
+    CHECK(n == 4u && tiles[0].kind == MUI_TILE_FORMAT && strcmp(tiles[0].arg, "mod") == 0 && tiles[0].count == 12u && tiles[2].kind == MUI_TILE_COMPOSER &&
+              strcmp(tiles[2].arg, "jogeir") == 0 && strcmp(tiles[2].label, "Jogeir Liljedahl") == 0 && tiles[3].kind == MUI_TILE_SOURCES,
+          "browse tiles: %u tiles (2 formats, 1 composer, Sources)", (unsigned)n);
+    memset(&l, 0, sizeof l);
+    CHECK(mui_route_click(&r, SEL_ROUTE_BROWSE_TILE, (uint32_t)SEL_LIB_ITEM_COMPOSER, 0u, tiles[2].arg, tiles[2].label, "", route_rec, &l) && mui_route_on_collection(&r) &&
+              l.n == 1u && strstr(l.line[0], "COLLECTION_OPEN") == l.line[0] && r.rh.calls == 2u, "a composer tile opens its collection page: %s", l.n > 0u ? l.line[0] : "(none)");
+    /* Search facets */
+    rows[0].kind = SEL_ROW_HEADING; rows[0].quick = 0; rows[0].text = "Songs (4)";
+    rows[5].kind = SEL_ROW_HEADING; rows[5].text = "Albums (2)";
+    rows[8].kind = SEL_ROW_HEADING; rows[8].text = "Artists (1)";
+    v.window_start = 100;
+    CHECK(mui_search_facet_line(&v, 0u, line, sizeof line) == 1u && strcmp(line, "VIEW_CURSOR 0") == 0 && mui_search_facet_line(&v, 2u, line, sizeof line) == 1u &&
+              strcmp(line, "VIEW_CURSOR 105") == 0 && mui_search_facet_line(&v, SEL_UIM_SEARCH_FACETS, line, sizeof line) == 0u, "facet chips jump to their group heading: %s", line);
 }
 
 int main(int argc, char** argv) {
@@ -1979,10 +2697,20 @@ int main(int argc, char** argv) {
         test_list_backends();
     } else if (strcmp(argv[1], "topbar") == 0) {
         test_topbar();
+    } else if (strcmp(argv[1], "route") == 0) {
+        test_route();
+    } else if (strcmp(argv[1], "route-reach") == 0) {
+        test_route_reach();
+    } else if (strcmp(argv[1], "tiles-reach") == 0) {
+        test_tiles_reach();
     } else if (strcmp(argv[1], "doors") == 0) {
         test_doors();
+    } else if (strcmp(argv[1], "sidebar") == 0) {
+        test_sidebar();
     } else if (strcmp(argv[1], "home") == 0) {
         test_home();
+    } else if (strcmp(argv[1], "panes") == 0) {
+        test_panes();
     } else if (strcmp(argv[1], "library") == 0) {
         test_library();
     } else if (strcmp(argv[1], "toast") == 0) {
@@ -2014,6 +2742,8 @@ int main(int argc, char** argv) {
         test_view_empty();
     } else if (strcmp(argv[1], "aacheck") == 0) {
         test_aacheck();
+    } else if (strcmp(argv[1], "libfilter") == 0) {
+        test_libfilter();
     } else if (strcmp(argv[1], "newplaylist") == 0) {
         test_newplaylist();
     } else if (strcmp(argv[1], "aabtn-tokens") == 0) {
@@ -2036,6 +2766,16 @@ int main(int argc, char** argv) {
         test_aalist_getrow();
     } else if (strcmp(argv[1], "status-face") == 0) {
         test_status_face();
+    } else if (strcmp(argv[1], "player-bar") == 0) {
+        test_player_bar();
+    } else if (strcmp(argv[1], "sidebar-icons") == 0) {
+        test_sidebar_icons();
+    } else if (strcmp(argv[1], "tooltip-flat") == 0) {
+        test_tooltip_flat();
+    } else if (strcmp(argv[1], "dialog-windows") == 0) {
+        test_dialog_windows();
+    } else if (strcmp(argv[1], "overlays") == 0) {
+        test_overlays();
     } else if (strcmp(argv[1], "volume-row") == 0) {
         test_volume_row();
     } else if (strcmp(argv[1], "cycle-initial") == 0) {

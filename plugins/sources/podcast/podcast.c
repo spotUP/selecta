@@ -520,6 +520,7 @@ static const sel_source g_podcast = {
     "Podcast episodes from an RSS feed URL or Podcast Index search (search needs your own free key).",
     g_tags, NULL, parse, NULL, NULL, NULL, NULL, NULL, pc_sync,
     SEL_SOURCE_REMOTE | SEL_SOURCE_SYNCS | SEL_SOURCE_STREAMS | SEL_SOURCE_SEEKABLE, "https://podcastindex.org/", pc_play_url,
+    NULL, /* search (I406) */
 };
 
 const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {

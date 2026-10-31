@@ -23,7 +23,7 @@ enum {
 typedef struct sel_uim_frame {
     char title[96];
     char artist[64];
-    char format[24];
+    char format[40]; /* the I819 format label, SEL_FORMAT_LABEL_MAX */
     char clock[16];     /* elapsed, "m:ss" */
     char remaining[16]; /* "-m:ss", empty when the duration is unknown */
     char length[16];    /* song length, "m:ss", empty when the duration is unknown */
@@ -147,6 +147,14 @@ enum {
 #define SEL_UIM_TOPBAR_BUTTON 40u  /* the round Home button and the field height */
 #define SEL_UIM_TOPBAR_FIELD_MAX 480u
 
+/* I733: empty-field hint text, one source for the desktop and the MUI UI. */
+#define SEL_UIM_SEARCH_FACETS 4u
+extern const char* const sel_uim_search_facets[SEL_UIM_SEARCH_FACETS]; /* All, Songs, Albums, Artists */
+#define SEL_UIM_CMD_HINT "Type a command"
+/* Search field hint: with a top bar "What do you want to play?", else "Search" plus the chip names after the leading All chip, lowercased
+ * ("Search songs, albums, artists"). */
+void sel_uim_search_hint(int topbar, const char* const* chips, uint32_t n, char* out, size_t cap);
+
 typedef struct sel_uim_region {
     const char* name;
     int32_t x, y;
@@ -191,6 +199,12 @@ void sel_uim_layout_compute_expand(sel_uim_layout* l, uint32_t width, uint32_t h
 /* I619: as compute_expand; a non-zero `detail_hidden` removes the "detail" region of the three column breakpoint. */
 void sel_uim_layout_compute_panel(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t rail_w,
                                   uint32_t bar_height, uint32_t expand, uint32_t detail_hidden);
+/* I798: compute_panel with the default bar and no rail. */
+void sel_uim_layout_compute_tier_panel(sel_uim_layout* l, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden);
+/* I798: tooltip texts both UIs share for the controls that are not table actions: the Now Playing add button and the top bar
+ * Hide / Show Now Playing button. */
+const char* sel_uim_tip_like(int liked);
+const char* sel_uim_tip_np_panel(int hidden);
 /* I668: the sidebar `side` wide mid-tween; the main region takes the rest. */
 void sel_uim_layout_set_side_width(sel_uim_layout* l, uint32_t side);
 int sel_uim_layout_check(const sel_uim_layout* l, char* msg, size_t cap);
