@@ -631,6 +631,36 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
             found = sqlite3_step(st) == SQLITE_ROW;
             sqlite3_finalize(st);
         }
+    } else if (op->op == SEL_USER_KEPT_GET) {
+        sqlite3_stmt* st = NULL;
+        rc = sqlite3_prepare_v2(lib->db,
+                                "SELECT 1 FROM kept WHERE key = ?1 UNION ALL SELECT 1 FROM liked WHERE key = ?1 LIMIT 1", -1,
+                                &st, NULL);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
+            found = sqlite3_step(st) == SQLITE_ROW;
+            sqlite3_finalize(st);
+        }
+    } else if (op->op == SEL_USER_TOP_PLAYED && op->out != NULL && op->out_cap > 1) {
+        sqlite3_stmt* st = NULL;
+        uint32_t used = 0;
+        rc = sqlite3_prepare_v2(lib->db,
+                                "SELECT key FROM history WHERE skipped = 0 GROUP BY key ORDER BY COUNT(*) DESC, "
+                                "MAX(played_at) DESC, key LIMIT ?1",
+                                -1, &st, NULL);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_int64(st, 1, op->at);
+            while (sqlite3_step(st) == SQLITE_ROW) {
+                const char* k = (const char*)sqlite3_column_text(st, 0);
+                size_t len = k != NULL ? strlen(k) : 0;
+                if (len == 0 || used + len + 2u > op->out_cap) continue;
+                memcpy(op->out + used, k, len + 1u);
+                used += (uint32_t)len + 1u;
+                rows++;
+            }
+            sqlite3_finalize(st);
+        }
+        op->out[used] = '\0';
     } else if (op->op == SEL_USER_UNKEEP) {
         rc = user_exec(lib->db, "DELETE FROM kept WHERE key = ?1", op, 0);
     } else if (op->op == SEL_USER_KEEP) {

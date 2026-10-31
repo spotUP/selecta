@@ -206,7 +206,7 @@ static int library_search(int argc, char** argv) {
     snprintf(line, sizeof line, "LIBRARY_SEARCH %s", text);
     t0 = sel_host_default()->clock_ms(sel_host_default());
     sel_engine_send_line(e, line, pool, sizeof pool);
-    sel_engine_pump(e, on_search_event, &sink);
+    sel_engine_pump_reads(e, on_search_event, &sink, 60000u);
     t0 = sel_host_default()->clock_ms(sel_host_default()) - t0;
     if (!sink.failed) {
         for (i = 0; i < sink.count; i++) {

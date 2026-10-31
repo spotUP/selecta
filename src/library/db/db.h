@@ -156,7 +156,9 @@ enum {
     SEL_USER_UNLIKE,       /* I306: deletes the key from liked */
     SEL_USER_LIKE_GET,     /* I306: reply [0] = 2 when the key is liked */
     SEL_USER_LIKE_DONE,    /* I306: the push of the key's like is over: drops its pending row */
-    SEL_USER_LIKE_QUEUE    /* I306: queues the pending_push "like" row of the key (value = "token mkey r"), replacing an older one */
+    SEL_USER_LIKE_QUEUE,   /* I306: queues the pending_push "like" row of the key (value = "token mkey r"), replacing an older one */
+    SEL_USER_KEPT_GET,     /* I829b: reply [0] = 2 when the key is kept or liked (the cache trim's protect test) */
+    SEL_USER_TOP_PLAYED    /* I829b: at = max keys; out = the most played unskipped keys (most first), each NUL terminated, then "\0"; reply [2] = keys */
 };
 /* Where a rating came from (sel_user_op.to of SEL_USER_RATING_SET). */
 enum { SEL_RATING_LOCAL = 0, SEL_RATING_QUEUE = 1, SEL_RATING_SERVER = 2 };
@@ -431,6 +433,12 @@ int sel_library_song_briefs(sel_library* lib, const char* keys, char* out, size_
  * at once (counted in sel_library_deferred), so a draw path never queues behind a sync. Returns the previous setting. */
 int sel_library_nowait(int on);
 uint32_t sel_library_deferred(void);
+/* I829 sentinel: mark the calling thread as the UI/command thread (returns the previous setting); sel_library_watched_waits counts
+ * every library request such a thread sent and waited on. The pump thread must keep it at 0. */
+int sel_library_watch(int on);
+uint32_t sel_library_watched_waits(void);
+/* I829: 1 while a job or another caller holds the library (a request now would wait or, in nowait mode, be deferred). */
+int sel_library_busy(sel_library* lib);
 int sel_library_playlist_add(sel_library* lib, const char* name, uint32_t folder, const char* keys_nl, uint32_t* out_id);
 int sel_library_folder_counts(sel_library* lib, uint32_t* folders, uint32_t* in_folders, uint32_t* playlists, uint32_t* entries);
 /* Fills `out` per the SEL_USER_FOLDER_PLAYLISTS / PLAYLIST_KEYS / FOLDER_TREE formats; *count = rows found. */

@@ -101,6 +101,7 @@ struct sel_library {
     pthread_cond_t wake_worker;
     pthread_cond_t wake_caller;
     int running;
+    int in_handle; /* the worker is inside sel_library_handle (debug owner_check in worker.c) */
 #else
     FILE* hash_file;         /* the file the idle md5 pass is reading, one chunk per poll (I184b); NULL = none */
     sel_md5 hash_md5;
