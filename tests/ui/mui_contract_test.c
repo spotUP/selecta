@@ -2165,6 +2165,67 @@ static void test_route_reach(void) {
               !mui_route_can(&r, -1), "Back returned to Home and re-sent its source line");
 }
 
+/* I795 reachability (drift doc P1, P4, P5): the one test for Home shelves and quick tiles, Browse tiles and Search facet chips. The wiring of
+ * mui_ui.c is grepped (removing it turns this red); the page models are driven on a synthetic engine view, and the shelf, tile and facet
+ * clicks run through the route handler with the call counter and sentinel. */
+static void test_tiles_reach(void) {
+    static sel_view_row rows[12];
+    static sel_state st;
+    sel_view_state v;
+    mui_home_page hp;
+    mui_shelf sh;
+    mui_btile tiles[MUI_TILE_MAX];
+    char line[48];
+    mui_route r;
+    route_log l;
+    uint32_t n;
+    char* src = ui_source();
+    memset(&l, 0, sizeof l);
+    memset(rows, 0, sizeof rows);
+    memset(&v, 0, sizeof v);
+    memset(&st, 0, sizeof st);
+    mui_route_init(&r);
+    CHECK(src != NULL, "mui_ui.c source readable");
+    CHECK(strstr(src, "mui_home_split(") != NULL && strstr(src, "mui_shelf_find(") != NULL && strstr(src, "mui_home_fill(") != NULL, "Home quick row and shelves are built from the view");
+    CHECK(strstr(src, "mui_browse_tiles(") != NULL && strstr(src, "mui_tile_fire(s, (uint32_t)(id - CTL_TILE_BASE))") != NULL, "Browse tiles are built and fire");
+    CHECK(strstr(src, "mui_search_facet_line(") != NULL && strstr(src, "sel_uim_search_facets") != NULL && strstr(src, "CTL_FACET_BASE") != NULL, "Search facet chips are built and fire");
+    CHECK(strstr(src, "mui_route_click(&s->route, SEL_ROUTE_SHOW_ALL, 0u, s->shelf_id[k]") != NULL &&
+              strstr(src, "mui_route_click(&s->route, SEL_ROUTE_BROWSE_TILE") != NULL && strstr(src, "mui_home_row_fire(s, view, idx)") != NULL,
+          "Show all, composer tiles and quick tiles go through the route handler");
+    /* Home: heading quick + 2 tiles, shelf A + 3 rows, shelf B + 1 row */
+    rows[0].kind = SEL_ROW_HEADING; rows[0].quick = 1; rows[0].text = "Quick";
+    rows[1].kind = SEL_ROW_HOME; rows[2].kind = SEL_ROW_HOME;
+    rows[3].kind = SEL_ROW_HEADING; rows[3].text = "Made for you";
+    rows[4].kind = SEL_ROW_HOME; rows[5].kind = SEL_ROW_HOME; rows[6].kind = SEL_ROW_HOME;
+    rows[7].kind = SEL_ROW_HEADING; rows[7].text = "Recently played";
+    rows[8].kind = SEL_ROW_HOME;
+    v.rows = rows;
+    v.row_n = 9;
+    mui_home_split(&v, &hp);
+    CHECK(hp.quick_n == 2u && hp.quick_first == 1u && hp.shelf_n == 2u && hp.shelf[0].count == 3u && hp.shelf[0].first == 4u && hp.shelf[1].count == 1u &&
+              hp.shelf[1].id == 2u, "home split: quick %u, shelves %u, first shelf %u rows", (unsigned)hp.quick_n, (unsigned)hp.shelf_n, (unsigned)hp.shelf[0].count);
+    CHECK(mui_shelf_find(&v, 2u, &sh) == 1u && sh.first == 8u && sh.count == 1u && mui_shelf_find(&v, 3u, &sh) == 0u, "the Shelf page finds only the chosen shelf");
+    CHECK(mui_route_click(&r, SEL_ROUTE_SHOW_ALL, 0u, hp.shelf[1].id, "", "Recently played", "", route_rec, &l) && mui_route_on_shelf(&r) && r.rh.calls == 1u &&
+              r.entered == 1u, "Show all ran through the route handler: calls %u, entered %u", (unsigned)r.rh.calls, (unsigned)r.entered);
+    /* Browse tiles */
+    st.formats = "MOD\0" "12\0" "XM\0" "1\0";
+    st.composers = "jogeir\0" "Jogeir Liljedahl\0" "7\0";
+    n = mui_browse_tiles(&st, tiles, MUI_TILE_MAX);
+    CHECK(n == 4u && tiles[0].kind == MUI_TILE_FORMAT && strcmp(tiles[0].arg, "mod") == 0 && tiles[0].count == 12u && tiles[2].kind == MUI_TILE_COMPOSER &&
+              strcmp(tiles[2].arg, "jogeir") == 0 && strcmp(tiles[2].label, "Jogeir Liljedahl") == 0 && tiles[3].kind == MUI_TILE_SOURCES,
+          "browse tiles: %u tiles (2 formats, 1 composer, Sources)", (unsigned)n);
+    memset(&l, 0, sizeof l);
+    CHECK(mui_route_click(&r, SEL_ROUTE_BROWSE_TILE, (uint32_t)SEL_LIB_ITEM_COMPOSER, 0u, tiles[2].arg, tiles[2].label, "", route_rec, &l) && mui_route_on_collection(&r) &&
+              l.n == 1u && strstr(l.line[0], "COLLECTION_OPEN") == l.line[0] && r.rh.calls == 2u, "a composer tile opens its collection page: %s", l.n > 0u ? l.line[0] : "(none)");
+    /* Search facets */
+    rows[0].kind = SEL_ROW_HEADING; rows[0].quick = 0; rows[0].text = "Songs (4)";
+    rows[5].kind = SEL_ROW_HEADING; rows[5].text = "Albums (2)";
+    rows[8].kind = SEL_ROW_HEADING; rows[8].text = "Artists (1)";
+    v.window_start = 100;
+    CHECK(mui_search_facet_line(&v, 0u, line, sizeof line) == 1u && strcmp(line, "VIEW_CURSOR 0") == 0 && mui_search_facet_line(&v, 2u, line, sizeof line) == 1u &&
+              strcmp(line, "VIEW_CURSOR 105") == 0 && mui_search_facet_line(&v, SEL_UIM_SEARCH_FACETS, line, sizeof line) == 0u, "facet chips jump to their group heading: %s", line);
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -2229,6 +2290,8 @@ int main(int argc, char** argv) {
         test_route();
     } else if (strcmp(argv[1], "route-reach") == 0) {
         test_route_reach();
+    } else if (strcmp(argv[1], "tiles-reach") == 0) {
+        test_tiles_reach();
     } else if (strcmp(argv[1], "doors") == 0) {
         test_doors();
     } else if (strcmp(argv[1], "sidebar") == 0) {
