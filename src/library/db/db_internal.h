@@ -77,7 +77,7 @@ struct sel_library {
     uint32_t hash_files, hash_chunks, hash_tick_max; /* sel_hash_stats (I184b) */
     void (*task_fn)(void* ctx); /* I336: the queued caller task (job.c) */
     void* task_ctx;
-    volatile int task_cancel;
+    volatile unsigned task_cancel; /* also the net cancel generation while the task runs (I832), so a cancel ends its network wait */
     volatile unsigned pin_rows;    /* I406b: rows written by pin batches (sel_library_pin_rows) */
     volatile unsigned pin_dropped; /* I406b: pins lost to a full ring */
     unsigned task_done;      /* a task ended and _task_take has not collected it */
