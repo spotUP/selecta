@@ -1823,6 +1823,17 @@ if(NOT SEL_AMIGA)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/ym-decode)
   set_tests_properties(ym-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "ym_decode_ok")
 
+  # I434: a SID (C64) file plays through the render entry point (sid replayer, libsidplayfp). GPL module, opt-in.
+  if(SELECTA_GPL_PLUGINS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-decode)
+    add_test(NAME sid-decode
+      COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/sid_decode.sh $<TARGET_FILE:selecta-cli>
+              ${CMAKE_CURRENT_SOURCE_DIR}/m3/fixtures/sid_test.sid
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/m3/sid-decode)
+    set_tests_properties(sid-decode PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "sid_decode_ok"
+      ENVIRONMENT "SELECTA_PLUGIN_PATH=${CMAKE_BINARY_DIR}/modules")
+  endif()
+
   # I437: the scan stores the embedded cover of a tagged mp3 as a 200x200 artwork row.
   add_test(NAME library-embedded-cover
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/m3/embedded_cover.sh $<TARGET_FILE:selecta-cli>
