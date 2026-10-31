@@ -524,6 +524,8 @@ typedef struct desk {
     uint32_t nagdlg_idx[16];
     uint32_t nagdlg_opens;   /* sentinel: sync offer dialogs opened */
     uint32_t nagdlg_draws;   /* sentinel: sync offer dialog paints (I789: opened is not shown) */
+    uint32_t src_gen;        /* sentinel (I826): SOURCES rows that changed what the pages draw */
+    uint32_t src_painted;    /* sentinel (I826): src_gen at the last whole-canvas repaint; behind src_gen means the answer is on no screen yet */
     int src_wait;            /* a SOURCES request is out: its first row replaces the held rows */
     char src_syncing[40];    /* name of the source a Sync was sent for; the SOURCES reply that follows it toasts */
     int overlay;             /* the open overlay: OV_NONE, OV_PALETTE, OV_HELP or OV_CMDLINE (DUI-P4-13) */
@@ -7203,6 +7205,7 @@ static const char* library_dump_build(desk* d) {
             o = dump_put(d, o, "smenu %d %d %d %d\n", (int)m0.x, (int)m0.y, (int)m0.w, (int)(m0.h * song_menu_n(d)));
             o = dump_put(d, o, "smenu_pl step=%d playlists=%u sidebar_rows=%u\n", d->sm_step, (unsigned)d->sm_pl_n, (unsigned)d->side_n);
         }
+        o = dump_put(d, o, "srcpaint gen=%u painted=%u\n", (unsigned)d->src_gen, (unsigned)d->src_painted);
         o = dump_put(d, o, "sidelib_async posts=%u takes=%u inflight=%u flight_frames=%u\n", (unsigned)d->side_posts, (unsigned)d->side_takes,
                      (unsigned)d->side_inflight, (unsigned)d->side_flight_frames);
         o = dump_put(d, o, "sidelib draws=%u rows=%u items=%u opens=%u y=%d max=%d item_calls=%u lib_touch_calls=%u\n", (unsigned)d->side_draws, (unsigned)d->side_rows,
@@ -13316,6 +13319,7 @@ static int desk_present(desk* d) {
     d->pt_t0 = d->report ? desk_prof_clock(d) : 0u;
     if (d->frames == 0u || d->repaint) { /* the first frame and a resize paint the whole canvas */
         d->repaint = 0;
+        d->src_painted = d->src_gen;
         d->seek_fill = -1;
         d->vol_fill = -1;
         d->seek_length[0] = '\0';
@@ -14099,7 +14103,12 @@ static void desk_on_event(void* state, const sel_message* evt) {
             d->src[n].snooze = (int64_t)sel_tag_find(t, SEL_SRC_SNOOZED, 0);
             changed = memcmp(before, &d->src[n], sizeof before) != 0;
         }
-        d->repaint |= changed && d->page == SEL_UIM_PG_FOLDERS; /* only the Library page draws these rows (banner, Sources tab); a page change repaints on its own */
+        d->src_gen += changed ? 1u : 0u;
+        if (changed) { /* the repaint flag only widens a frame that is presented; the dirty bits make it one */
+            d->repaint = 1;
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        }
+        /* Browse (Sources tiles), a source page (status, Sync, switch) and the Library page all draw these rows, and the answer lands after the page switch has painted */
         src_row = 1;
     }
     if (evt->id == SEL_EVT_LIBRARY_RESULT && d->scan_pending && !src_row) { /* a LIBRARY_SCAN finished: tell the user and refresh what the Library page lists */
