@@ -2178,7 +2178,7 @@ if(NOT SEL_AMIGA)
   set_tests_properties(library-task-thread PROPERTIES LABELS "m3;library" PASS_REGULAR_EXPRESSION "library_task_ok")
   # I219g: the KPlayer timing walker behind the native .mod seek on Amiga (pure C, so the host runs it).
   add_executable(kplayer_modwalk_test kplayer_modwalk_test.c ${PROJECT_SOURCE_DIR}/plugins/replayers/kplayer/modwalk.c)
-  target_include_directories(kplayer_modwalk_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/replayers/kplayer)
+  target_include_directories(kplayer_modwalk_test PRIVATE ${PROJECT_SOURCE_DIR}/plugins/replayers/kplayer ${PROJECT_SOURCE_DIR}/include)
   add_test(NAME kplayer-modwalk COMMAND kplayer_modwalk_test)
   set_tests_properties(kplayer-modwalk PROPERTIES LABELS m3 PASS_REGULAR_EXPRESSION "kplayer_modwalk_ok")
   add_test(NAME devilbox-genre
