@@ -15,6 +15,7 @@
 #include "map/mui_theme.h"
 #include "map/mui_pens.h"
 #include "map/mui_icons.h"
+#include "map/mui_route.h"
 #include <selecta/uimodel/doors.h>
 #include <selecta/uimodel/theme.h>
 #include <selecta/tags.h>
@@ -135,6 +136,18 @@ typedef struct mui_state {
     char txt_buf[MUI_ATTR_COUNT][112];
     LONG seek_set, vol_set;         /* values last written by set(): a notify with another value is the user */
     Object* listview;               /* MUI-P3-1 */
+    mui_route route;                /* I794: the shared route history (T1) and the handler that enters the pages (P2, P3) */
+    Object* nav_back;               /* I794: top bar Back / Forward, disabled from the route history */
+    Object* nav_fwd;
+    Object* col_page;               /* I794 (P3): album, artist or composer page: header, meta line and the song AAList; replaces the main list while shown */
+    Object* col_list;
+    Object* col_artist;             /* the Artist link of an album page (META_ARTIST) */
+    Object* col_title;
+    Object* col_meta;
+    char col_title_buf[160];
+    char col_meta_buf[224];
+    uint32_t col_serial;            /* the collection serial the list shows */
+    int col_shown;                  /* 1 while col_page replaces the list */
     Object* list;
     mui_list_entry entries[MUI_ROWS_MAX];
     const char* entry_ptr[MUI_ROWS_MAX + 1];
@@ -373,6 +386,10 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_VOLUME 0x2101L
 #define CTL_LIST_DBL 0x2110L
 #define CTL_LIST_SEL 0x2111L
+#define CTL_NAV_BACK 0x2801L   /* I794: top bar Back */
+#define CTL_NAV_FWD 0x2802L    /* I794: top bar Forward */
+#define CTL_COL_LIST 0x2803L   /* I794: a song of the collection page was picked */
+#define CTL_COL_ARTIST 0x2804L /* I794: the Artist link of an album page */
 #define CTL_TOPBAR_BROWSE 0x2800L /* I615d: the top bar Browse button */
 #define CTL_DOOR_BASE 0x2200L /* MUI-P4-0: one button per sidebar door */
 #define MUI_DOOR_MAX 8u
@@ -836,6 +853,14 @@ static Object* mui_topbar_group(mui_state* s) {
     s->str_search = mui_make_string(CTL_P4_BASE + P4_SEARCH, (int)SEL_UIM_TOPBAR_FIELD_MAX);
     mui_theme_bg_spec(g_tokens[SEL_GUI_TOKEN_DIVIDER], div_spec, sizeof div_spec);
     DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    s->nav_back = mui_make_button_i("Back", "Back", "nav_back", NULL, CTL_NAV_BACK, 0, 1, MUI_AA_ROLE_NORMAL); /* I794 (T1): ahead of Home */
+    s->nav_fwd = mui_make_button_i("Forward", "Forward", "nav_forward", NULL, CTL_NAV_FWD, 0, 1, MUI_AA_ROLE_NORMAL);
+    if (s->nav_back != NULL && s->nav_fwd != NULL) {
+        set(s->nav_back, MUIA_Disabled, TRUE);
+        set(s->nav_fwd, MUIA_Disabled, TRUE);
+        DoMethod(g, OM_ADDMEMBER, s->nav_back);
+        DoMethod(g, OM_ADDMEMBER, s->nav_fwd);
+    }
     DoMethod(g, OM_ADDMEMBER, mui_make_button_i("Home", "Home", "home", NULL, CTL_DOOR_BASE + 0, 0, 1, MUI_AA_ROLE_NORMAL));
     if (s->str_search != NULL) {
         DoMethod(g, OM_ADDMEMBER, s->str_search);
@@ -942,6 +967,58 @@ static Object* mui_string_aalist(void* ctx, long count, int rows, Object** list_
     return mui_aalist_new(&sp, list_out);
 }
 
+/* I794 (P3): row `row` of the collection page: the file name of the song's path (rows are "path\0plays\0" pairs). */
+static const char* mui_col_row(void* ctx, long row) {
+    mui_state* s = (mui_state*)ctx;
+    const sel_collection_page* pg = sel_engine_state(s->engine)->collection;
+    const char* r;
+    const char* base;
+    long i;
+    if (pg == NULL || pg->rows == NULL || row < 0 || (uint32_t)row >= pg->songs) {
+        return "";
+    }
+    for (r = pg->rows, i = 0; i < row && *r != '\0'; i++) {
+        r += strlen(r) + 1u;
+        r += strlen(r) + 1u;
+    }
+    base = strrchr(r, '/');
+    if (base == NULL) {
+        base = strrchr(r, ':');
+    }
+    return base != NULL ? base + 1 : r;
+}
+
+static int mui_route_send(void* ctx, const char* line) { return mui_engine_line((mui_state*)ctx, line); }
+
+static Object* mui_col_page_group(mui_state* s) {
+    mui_aalist_spec sp;
+    Object* lg;
+    Object* head = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    Object* g = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
+    snprintf(s->col_title_buf, sizeof s->col_title_buf, " ");
+    snprintf(s->col_meta_buf, sizeof s->col_meta_buf, " ");
+    s->col_title = mui_aatext(s->col_title_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1, 0);
+    s->col_meta = mui_aatext(s->col_meta_buf, MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0, 1);
+    s->col_artist = mui_make_button_w("Artist", "Artist", CTL_COL_ARTIST, 0);
+    memset(&sp, 0, sizeof sp);
+    sp.active = -1;
+    sp.row = mui_col_row;
+    sp.ctx = s;
+    sp.max_rows = 12;
+    sp.double_pick = 1;
+    lg = mui_aalist_new(&sp, &s->col_list);
+    if (g == NULL || head == NULL || s->col_title == NULL || s->col_meta == NULL || s->col_artist == NULL || lg == NULL || s->col_list == NULL) {
+        return NULL;
+    }
+    DoMethod(s->col_list, MUIM_Notify, AAL_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)CTL_COL_LIST);
+    DoMethod(head, OM_ADDMEMBER, s->col_title);
+    DoMethod(head, OM_ADDMEMBER, s->col_artist);
+    DoMethod(g, OM_ADDMEMBER, head);
+    DoMethod(g, OM_ADDMEMBER, s->col_meta);
+    DoMethod(g, OM_ADDMEMBER, lg);
+    return g;
+}
+
 static Object* mui_main_group(mui_state* s) {
     Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
     s->col_bp = SEL_UIM_BP_COUNT;
@@ -1002,6 +1079,11 @@ static Object* mui_main_group(mui_state* s) {
     DoMethod(s->crumb_row, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
     DoMethod(g, OM_ADDMEMBER, s->crumb_row);
     DoMethod(g, OM_ADDMEMBER, s->state_txt);
+    s->col_page = mui_col_page_group(s);
+    if (s->col_page == NULL) {
+        return NULL;
+    }
+    DoMethod(g, OM_ADDMEMBER, s->col_page);
     DoMethod(g, OM_ADDMEMBER, s->listview);
     /* MUI-P5-1: the canvas object sits beside the list, hidden until the style switch (MUI-P3-5) shows it. */
     {
@@ -1264,6 +1346,45 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
     }
 }
 
+/* I794: the route history drives the top bar Back / Forward state and which of the two main views shows: the collection page (P3) when
+ * the history is on an album, artist or composer page the engine has built, else the main list (Home, Show all, doors). */
+static void mui_route_sync(mui_state* s, const sel_state* st) {
+    const sel_collection_page* pg = st->collection;
+    const sel_route_entry* cur = mui_route_cur(&s->route);
+    int col = cur != NULL && mui_route_on_collection(&s->route) && pg != NULL && pg->kind == cur->kind && strcmp(pg->key, cur->key) == 0;
+    if (s->nav_back != NULL) {
+        set(s->nav_back, MUIA_Disabled, mui_route_can(&s->route, -1) ? FALSE : TRUE);
+        set(s->nav_fwd, MUIA_Disabled, mui_route_can(&s->route, 1) ? FALSE : TRUE);
+    }
+    if (col && pg->serial != s->col_serial) {
+        s->col_serial = pg->serial;
+        snprintf(s->col_title_buf, sizeof s->col_title_buf, "%s", pg->title);
+        snprintf(s->col_meta_buf, sizeof s->col_meta_buf, "%s%s%s%s%u songs", pg->sub, pg->sub[0] != '\0' ? " - " : "", pg->year != 0u ? "" : "",
+                 pg->year != 0u ? "" : "", (unsigned)pg->songs);
+        if (pg->year != 0u) {
+            size_t n = strlen(s->col_meta_buf);
+            snprintf(s->col_meta_buf + n, sizeof s->col_meta_buf - n, " - %u", (unsigned)pg->year);
+        }
+        mui_aatext_set(s->col_title, s->col_title_buf);
+        mui_aatext_set(s->col_meta, s->col_meta_buf);
+        set(s->col_artist, MUIA_ShowMe, pg->kind == (uint32_t)SEL_LIB_ITEM_ALBUM && pg->sub[0] != '\0' ? TRUE : FALSE);
+        SetAttrs(s->col_list, AAL_Count, (ULONG)pg->songs, AAL_Active, (ULONG)-1L, TAG_DONE);
+    }
+    if (col != s->col_shown) {
+        ULONG parent = 0;
+        s->col_shown = col;
+        GetAttr(MUIA_Parent, s->col_page, &parent);
+        if (parent != 0) {
+            DoMethod((Object*)parent, MUIM_Group_InitChange);
+        }
+        set(s->col_page, MUIA_ShowMe, col ? TRUE : FALSE);
+        set(s->listview, MUIA_ShowMe, col ? FALSE : TRUE);
+        if (parent != 0) {
+            DoMethod((Object*)parent, MUIM_Group_ExitChange);
+        }
+    }
+}
+
 static void mui_refresh(mui_state* s) {
     const sel_state* st = sel_engine_state(s->engine);
     const sel_uim_frame* f;
@@ -1277,6 +1398,7 @@ static void mui_refresh(mui_state* s) {
         mui_aatext_set(s->status, s->status_buf);
         s->p4[P4_TOAST]++;
     }
+    mui_route_sync(s, st);
     s->uim.dirty |= sel_uim_update(&s->uim, st);
     if (s->viz_area != NULL) { /* I684: one visualizer step per wait turn, on the newest engine frame */
         sel_uim_budget vb;
@@ -1840,13 +1962,41 @@ static void mui_control_fire(mui_state* s, LONG id) {
         if (mui_action_fire(mui_extra_action((uint32_t)(id - CTL_EXTRA_BASE)), mui_p8_send, s)) {
             s->transport_hits++;
         }
-    } else if (id == CTL_TOPBAR_BROWSE) {
-        uint32_t k; /* I615d: what the rich top bar Browse slice sends (desk_page_load PG_BROWSE) */
-        for (k = 0; k < MUI_TOPBAR_BROWSE_LINES; k++) {
-            mui_engine_line(s, mui_topbar_browse_lines[k]);
+    } else if (id == CTL_NAV_BACK || id == CTL_NAV_FWD) {
+        mui_route_walk(&s->route, id == CTL_NAV_BACK ? -1 : 1, mui_route_send, s); /* I794 (T1) */
+    } else if (id == CTL_COL_ARTIST) {
+        const sel_collection_page* pg = sel_engine_state(s->engine)->collection; /* META_ARTIST: the album page's artist link */
+        if (pg != NULL && pg->sub[0] != '\0') {
+            mui_route_click(&s->route, SEL_ROUTE_META_ARTIST, (uint32_t)SEL_LIB_ITEM_ARTIST, 0u, pg->sub, pg->sub, "", mui_route_send, s);
         }
+    } else if (id == CTL_COL_LIST) {
+        const sel_collection_page* pg = sel_engine_state(s->engine)->collection;
+        long picked = -1;
+        GetAttr(AAL_Picked, s->col_list, (ULONG*)&picked);
+        if (pg != NULL && pg->rows != NULL && picked >= 0 && (uint32_t)picked < pg->songs) {
+            const char* r = pg->rows;
+            long i;
+            char pl[512];
+            for (i = 0; i < picked; i++) {
+                r += strlen(r) + 1u;
+                r += strlen(r) + 1u;
+            }
+            if (mui_path_line("OPEN", r, pl, sizeof pl) != 0u && mui_engine_line(s, pl) && mui_engine_line(s, "PLAY")) {
+                s->row_plays++;
+            }
+        }
+    } else if (id == CTL_TOPBAR_BROWSE) {
+        char joined[128]; /* I615d: what the rich top bar Browse slice sends (desk_page_load PG_BROWSE), kept as one history entry (I794) */
+        uint32_t k;
+        joined[0] = '\0';
+        for (k = 0; k < MUI_TOPBAR_BROWSE_LINES; k++) {
+            size_t n = strlen(joined);
+            snprintf(joined + n, sizeof joined - n, "%s%s", k > 0 ? ";" : "", mui_topbar_browse_lines[k]);
+        }
+        mui_route_door(&s->route, (uint32_t)MUI_DOOR_MAX + 1u, joined, mui_route_send, s);
     } else if (id >= CTL_DOOR_BASE && id < CTL_DOOR_BASE + (LONG)MUI_DOOR_MAX) {
-        mui_engine_line(s, mui_door_line((uint32_t)(id - CTL_DOOR_BASE))); /* the page switch: the engine moves the main view's source */
+        /* the page switch: the engine moves the main view's source; the door's lines are the history entry (I794) */
+        mui_route_door(&s->route, (uint32_t)(id - CTL_DOOR_BASE), mui_door_line((uint32_t)(id - CTL_DOOR_BASE)), mui_route_send, s);
     } else if (id >= CTL_CRUMB_BASE && id < CTL_CRUMB_BASE + (LONG)MUI_CRUMB_MAX) {
         /* MUI-P4-2: a crumb opens the browse path up to and including that piece. */
         const sel_view_state* view = sel_engine_state(s->engine)->view;
@@ -1906,6 +2056,25 @@ static void mui_control_fire(mui_state* s, LONG id) {
         }
         if (id == CTL_LIST_DBL && (uint32_t)v < view->row_n) {
             char hl[3][48];
+            if (view->rows[v].kind == SEL_ROW_HEADING && !view->rows[v].quick) { /* I794 (P2): a shelf heading opens its Show all page */
+                uint32_t shelf = 1, j;
+                for (j = 0; j < (uint32_t)v; j++) {
+                    if (view->rows[j].kind == SEL_ROW_HEADING && !view->rows[j].quick) {
+                        shelf++;
+                    }
+                }
+                if (mui_route_click(&s->route, SEL_ROUTE_SHOW_ALL, 0u, shelf, "", view->rows[v].text != NULL ? view->rows[v].text : "", "", mui_route_send, s)) {
+                    return;
+                }
+            }
+            if (view->rows[v].item_kind != 0u && view->rows[v].key != NULL) { /* I794 (P3): a library tile opens its collection page */
+                mui_list_pending_clear(&s->list_pending);
+                if (mui_route_click(&s->route, SEL_ROUTE_HOME_TILE, view->rows[v].item_kind - 1u, 0u, view->rows[v].key,
+                                    view->rows[v].text != NULL ? view->rows[v].text : "", "", mui_route_send, s)) {
+                    s->p4[P4_HOME]++;
+                    return;
+                }
+            }
             if (mui_home_lines(view, (uint32_t)v, hl) == 3) { /* MUI-P4-1: a Home row plays the song or opens the album */
                 mui_list_pending_clear(&s->list_pending);
                 mui_engine_line(s, hl[0]);
@@ -1988,6 +2157,7 @@ static void* mui_open(const sel_ui_open_args* a) {
     Object* strip;
     mui_window_attrs_t wattr;
     s->engine = a != NULL ? a->engine : NULL;
+    mui_route_init(&s->route);
     s->find_plugin = a != NULL ? a->find_plugin : NULL;
     MUIMasterBase = OpenLibrary((CONST_STRPTR)MUIMASTER_NAME, 19);
     if (MUIMasterBase == NULL) {

@@ -11,6 +11,8 @@
 
 #include "mui_aa.h"
 #include "mui_icons.h"
+#include "mui_route.h"
+#include <selecta/library_item.h>
 #include "mui_map.h"
 #include "mui_aa.h"
 #include "mui_theme.h"
@@ -1919,6 +1921,83 @@ static void test_screen_rtg_flag(void) {
           "a hardcoded RTG flag came back");
 }
 
+/* I794: the lines the route handler sends, recorded. */
+typedef struct route_log {
+    char line[16][160];
+    uint32_t n;
+} route_log;
+
+static int route_rec(void* ctx, const char* line) {
+    route_log* l = (route_log*)ctx;
+    if (l->n < 16u) {
+        snprintf(l->line[l->n], sizeof l->line[0], "%s", line);
+        l->n++;
+    }
+    return 1;
+}
+
+/* I794 behaviour (drift doc T1, P2, P3): each route target enters its page with the lines the desktop UI sends, Back and Forward restore
+ * without touching Recents (" 1"), the door keeps its lines as the history entry, and Back and Forward are enabled from the history. */
+static void test_route(void) {
+    mui_route r;
+    route_log l;
+    memset(&l, 0, sizeof l);
+    mui_route_init(&r);
+    CHECK(!mui_route_can(&r, -1) && !mui_route_can(&r, 1), "a fresh history has neither Back nor Forward");
+    CHECK(mui_route_click(&r, SEL_ROUTE_SHOW_ALL, 0u, 2u, "", "Made for you", "", route_rec, &l) && mui_route_on_shelf(&r) && l.n == 1u &&
+              strcmp(l.line[0], "VIEW_SOURCE home") == 0, "SHOW_ALL opens the Shelf page and reads the Home source: %s", l.n > 0u ? l.line[0] : "(none)");
+    CHECK(mui_route_can(&r, -1) && !mui_route_can(&r, 1), "after one click Back is enabled, Forward is not");
+    l.n = 0;
+    CHECK(mui_route_click(&r, SEL_ROUTE_TRACK_ARTIST, (uint32_t)SEL_LIB_ITEM_ARTIST, 0u, "Jogeir", "Jogeir", "", route_rec, &l) && mui_route_on_collection(&r) &&
+              l.n == 1u && strstr(l.line[0], "COLLECTION_OPEN") == l.line[0] && strstr(l.line[0], "\"Jogeir\"") != NULL, "TRACK_ARTIST opens the artist page: %s", l.n > 0u ? l.line[0] : "(none)");
+    l.n = 0;
+    CHECK(mui_route_click(&r, SEL_ROUTE_TRACK_ALBUM, (uint32_t)SEL_LIB_ITEM_ALBUM, 0u, "Nexus", "Nexus", "Jogeir", route_rec, &l) && mui_route_on_collection(&r) &&
+              l.n == 1u && strstr(l.line[0], "\"Nexus\"") != NULL, "TRACK_ALBUM opens the album page");
+    l.n = 0;
+    CHECK(mui_route_click(&r, SEL_ROUTE_META_ARTIST, (uint32_t)SEL_LIB_ITEM_ARTIST, 0u, "Jogeir", "Jogeir", "", route_rec, &l) && l.n == 1u &&
+              strstr(l.line[0], "\"Jogeir\"") != NULL, "META_ARTIST opens the artist page");
+    l.n = 0;
+    CHECK(mui_route_click(&r, SEL_ROUTE_ALBUM_CARD, (uint32_t)SEL_LIB_ITEM_ALBUM, 0u, "Other", "Other", "", route_rec, &l) && l.n == 1u &&
+              strstr(l.line[0], "\"Other\"") != NULL, "ALBUM_CARD opens the album page");
+    l.n = 0;
+    CHECK(mui_route_walk(&r, -1, route_rec, &l) && l.n == 1u && strstr(l.line[0], "\"Jogeir\"") != NULL && l.line[0][strlen(l.line[0]) - 1u] == '1' &&
+              mui_route_can(&r, 1), "Back re-enters the previous collection with the restore flag and enables Forward: %s", l.n > 0u ? l.line[0] : "(none)");
+    l.n = 0;
+    CHECK(mui_route_walk(&r, 1, route_rec, &l) && l.n == 1u && strstr(l.line[0], "\"Other\"") != NULL && !mui_route_can(&r, 1), "Forward returns to the newest page");
+    l.n = 0;
+    CHECK(mui_route_door(&r, 5u, "FORMATS_SHOW;COMPOSERS_SHOW;SOURCES", route_rec, &l) && l.n == 3u && strcmp(l.line[1], "COMPOSERS_SHOW") == 0 &&
+              !mui_route_on_collection(&r), "a door page sends its lines one by one");
+    l.n = 0;
+    CHECK(mui_route_walk(&r, -1, route_rec, &l) && mui_route_on_collection(&r), "Back from a door page returns to the page before it");
+    mui_route_init(&r);
+    CHECK(!mui_route_walk(&r, -1, route_rec, &l) && r.entered == 0u, "Back with no history does nothing");
+}
+
+/* I794 reachability: the one test that drives the MUI's real click path. The control handler of mui_ui.c reaches the handler through the
+ * wiring grepped below; the handler is then driven the way the handler drives it (counter and sentinel), and Back returns to the previous
+ * page. Removing the wiring from mui_ui.c turns the source checks red. */
+static void test_route_reach(void) {
+    mui_route r;
+    route_log l;
+    char* src = ui_source();
+    memset(&l, 0, sizeof l);
+    mui_route_init(&r);
+    CHECK(src != NULL, "mui_ui.c source readable");
+    CHECK(strstr(src, "#include \"map/mui_route.h\"") != NULL && strstr(src, "mui_route_walk(&s->route, id == CTL_NAV_BACK ? -1 : 1") != NULL,
+          "Back and Forward are wired to the history walk");
+    CHECK(strstr(src, "\"nav_back\", NULL, CTL_NAV_BACK") != NULL && strstr(src, "mui_route_can(&s->route, -1)") != NULL, "Back button is built and enabled from the history");
+    CHECK(strstr(src, "mui_route_door(&s->route") != NULL && strstr(src, "mui_route_click(&s->route, SEL_ROUTE_SHOW_ALL") != NULL &&
+              strstr(src, "mui_route_click(&s->route, SEL_ROUTE_HOME_TILE") != NULL && strstr(src, "mui_route_click(&s->route, SEL_ROUTE_META_ARTIST") != NULL,
+          "doors, Show all, library tiles and the Artist link go through the route handler");
+    CHECK(strstr(src, "mui_col_page_group(s)") != NULL && strstr(src, "mui_route_sync(s, st)") != NULL, "the collection page is built and synced from the history");
+    CHECK(mui_route_click(&r, SEL_ROUTE_HOME_TILE, (uint32_t)SEL_LIB_ITEM_ALBUM, 0u, "Nexus", "Nexus", "", route_rec, &l) && r.rh.calls == 1u && r.entered == 1u,
+          "the handler ran: route calls %u, pages entered %u", (unsigned)r.rh.calls, (unsigned)r.entered);
+    CHECK(mui_route_on_collection(&r) && strstr(l.line[0], "COLLECTION_OPEN") == l.line[0], "the album page was entered through the engine line");
+    l.n = 0;
+    CHECK(mui_route_walk(&r, -1, route_rec, &l) && !mui_route_on_collection(&r) && r.entered == 2u && strcmp(l.line[0], "VIEW_SOURCE home") == 0 &&
+              !mui_route_can(&r, -1), "Back returned to Home and re-sent its source line");
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -1979,6 +2058,10 @@ int main(int argc, char** argv) {
         test_list_backends();
     } else if (strcmp(argv[1], "topbar") == 0) {
         test_topbar();
+    } else if (strcmp(argv[1], "route") == 0) {
+        test_route();
+    } else if (strcmp(argv[1], "route-reach") == 0) {
+        test_route_reach();
     } else if (strcmp(argv[1], "doors") == 0) {
         test_doors();
     } else if (strcmp(argv[1], "home") == 0) {

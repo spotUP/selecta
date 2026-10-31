@@ -223,7 +223,7 @@ static void test_text_source(void) {
     CHECK(count_of(ui, "MUIC_Text") == 0, "MUIC_Text left in mui_ui.c: %d", count_of(ui, "MUIC_Text"));
     CHECK(count_of(ui, "TextObject") == 0, "TextObject left in mui_ui.c: %d", count_of(ui, "TextObject"));
     CHECK(count_of(ui, "MUIA_Text_Contents") == 0 && count_of(ui, "MUIA_Text_PreParse") == 0, "Text attribute left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aatext(") == 8, "text constructor sites: %d (definition + 7; the eighth goes through mui_aatext_sized)", count_of(ui, "mui_aatext("));
+    CHECK(count_of(ui, "mui_aatext(") == 10, "text constructor sites: %d (definition + 7 + 2 collection page lines I794; the eighth goes through mui_aatext_sized)", count_of(ui, "mui_aatext("));
     CHECK(count_of(ui, "mui_aatext_sized(") == 3 && count_of(ui, "mui_attr_fixwidth(") == 1, "time labels sized through mui_attr_fixwidth");
     CHECK(strstr(cls, "mui_aa_text_maxw(d->fixed, d->defw)") != NULL, "class max width not decided by mui_aa_text_maxw");
     CHECK(count_of(ui, "mui_aatext_new(") == 1, "one AAText constructor call: %d", count_of(ui, "mui_aatext_new("));
@@ -893,10 +893,10 @@ static void test_list_source(void) {
     CHECK(count_of(ui, "MUIC_List") == 0 && count_of(ui, "MUIC_Floattext") == 0 && count_of(ui, "MUIC_Listview") == 0, "stock list classes left in mui_ui.c: %d %d %d",
           count_of(ui, "MUIC_List"), count_of(ui, "MUIC_Floattext"), count_of(ui, "MUIC_Listview"));
     CHECK(count_of(ui, "MUIM_List_") == 0 && count_of(ui, "MUIA_List_") == 0 && count_of(ui, "mui_list_pad_x") == 0, "stock list calls left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aalist_new(") == 3 && count_of(ui, "mui_string_aalist(") == 4, "AAList builders: new %d, string %d", count_of(ui, "mui_aalist_new("), count_of(ui, "mui_string_aalist("));
-    CHECK(count_of(ui, "sp.cols = &s->main_cols;") == 1 && count_of(ui, "sp.title = 1;") == 1 && count_of(ui, "sp.double_pick = 1;") == 1 && count_of(ui, "sp.no_select = 1;") == 1,
+    CHECK(count_of(ui, "mui_aalist_new(") == 4 && count_of(ui, "mui_string_aalist(") == 4, "AAList builders: new %d, string %d", count_of(ui, "mui_aalist_new("), count_of(ui, "mui_string_aalist("));
+    CHECK(count_of(ui, "sp.cols = &s->main_cols;") == 1 && count_of(ui, "sp.title = 1;") == 1 && count_of(ui, "sp.double_pick = 1;") == 2 && count_of(ui, "sp.no_select = 1;") == 1,
           "main list columns, title row, double pick and lyrics no_select");
-    CHECK(count_of(ui, "AAL_Columns") == 1 && count_of(ui, "AAL_Playing") == 1 && count_of(ui, "AAL_Picked") == 2, "columns %d, playing %d, picked %d", count_of(ui, "AAL_Columns"),
+    CHECK(count_of(ui, "AAL_Columns") == 1 && count_of(ui, "AAL_Playing") == 1 && count_of(ui, "AAL_Picked") == 4, "columns %d, playing %d, picked %d", count_of(ui, "AAL_Columns"),
           count_of(ui, "AAL_Playing"), count_of(ui, "AAL_Picked"));
     CHECK(count_of(ui, "mui_list_display(&g_list_hook") == 2 && strstr(ui, "static const char* mui_main_cell(") != NULL, "cells come from the display hook");
     CHECK(strstr(ui, "mui_text_lines(s->np_lyric_buf)") != NULL && strstr(ui, "mui_text_line(s->np_lyric_buf") != NULL, "lyrics rows from the pure line helpers");
