@@ -1,5 +1,6 @@
 /* mui_aa_draw: see mui_aa_draw.h. The ttengine V6 calls come from the I665 spike (tags and LVOs from its Developer/include). */
 #include "mui_aa_draw.h"
+#include "mui_aatip.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -370,6 +371,7 @@ static void ctx_release_pens(aa_ctx* c) {
 uint32_t aa_retheme_all(void) {
     aa_ctx* c;
     uint32_t n = 0;
+    aatip_drop(NULL); /* I731: an open tip holds pens of the old palette */
     for (c = g_ctx_list; c != NULL; c = c->next) {
         ctx_release_pens(c);
         memcpy(c->tok, mui_theme_tokens(), sizeof c->tok);

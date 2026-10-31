@@ -3,6 +3,7 @@
  * MUIA_FillArea FALSE, so the corners keep the parent panel's face; the inner stock String keeps the MUI prefs font and pens. */
 #include "mui_aafield_class.h"
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -19,6 +20,7 @@
 
 #include "map/mui_theme.h"
 #include "mui_aa_draw.h"
+#include "mui_aatip.h"
 
 extern struct Library* MUIMasterBase;
 
@@ -31,6 +33,8 @@ typedef struct aafield_data {
     const char* placeholder;
     aa_ctx aa;
     int pens_logged; /* the old String pens went to stderr once (I667n evidence) */
+    struct MUI_EventHandlerNode ehn; /* I731: pointer and key events for the flat tooltip only; it never eats one */
+    aatip_slot tip;
 } aafield_data;
 
 static struct MUI_CustomClass* g_class;
@@ -63,6 +67,12 @@ static ULONG aafield_setup(struct IClass* cl, Object* obj, Msg msg) {
     }
     DoMethod(_win(obj), MUIM_Notify, MUIA_Window_ActiveObject, MUIV_EveryTime, (ULONG)obj, 1, AAF_Redraw);
     DoMethod(d->str, MUIM_Notify, MUIA_String_Contents, MUIV_EveryTime, (ULONG)obj, 1, AAF_Redraw); /* I733: the placeholder shows and hides with the contents */
+    d->ehn.ehn_Priority = 0;
+    d->ehn.ehn_Flags = 0;
+    d->ehn.ehn_Object = obj;
+    d->ehn.ehn_Class = cl;
+    d->ehn.ehn_Events = IDCMP_MOUSEMOVE | IDCMP_MOUSEBUTTONS | IDCMP_RAWKEY | IDCMP_INACTIVEWINDOW;
+    DoMethod(_win(obj), MUIM_Window_AddEventHandler, (ULONG)&d->ehn);
     return TRUE;
 }
 
@@ -70,6 +80,9 @@ static ULONG aafield_cleanup(struct IClass* cl, Object* obj, Msg msg) {
     aafield_data* d = INST_DATA(cl, obj);
     DoMethod(_win(obj), MUIM_KillNotifyObj, MUIA_Window_ActiveObject, (ULONG)obj);
     DoMethod(d->str, MUIM_KillNotifyObj, MUIA_String_Contents, (ULONG)obj);
+    DoMethod(_win(obj), MUIM_Window_RemEventHandler, (ULONG)&d->ehn);
+    d->tip.in = 0;
+    aatip_drop(obj);
     aa_cleanup(&d->aa);
     return DoSuperMethodA(cl, obj, msg);
 }
@@ -158,13 +171,25 @@ static ULONG aafield_set(struct IClass* cl, Object* obj, struct opSet* msg) {
             set(d->str, MUIA_String_Contents, tag->ti_Data);
         }
     }
-    return DoSuperMethodA(cl, obj, (Msg)msg);
+    return aatip_super_set(cl, obj, msg, offsetof(aafield_data, tip));
+}
+
+static ULONG aafield_handle(struct IClass* cl, Object* obj, struct MUIP_HandleEvent* msg) {
+    aafield_data* d = INST_DATA(cl, obj);
+    struct IntuiMessage* im = msg->imsg;
+    if (im != NULL) {
+        aatip_event(obj, &d->tip, im, im->MouseX >= _left(obj) && im->MouseX <= _right(obj) && im->MouseY >= _top(obj) && im->MouseY <= _bottom(obj));
+    }
+    return 0;
 }
 
 static ULONG aafield_get(struct IClass* cl, Object* obj, struct opGet* msg) {
     aafield_data* d = INST_DATA(cl, obj);
     if (msg->opg_AttrID == MUIA_String_Contents && d->str != NULL) {
         return GetAttr(MUIA_String_Contents, d->str, msg->opg_Storage);
+    }
+    if (aatip_get(msg, &d->tip)) {
+        return TRUE;
     }
     return DoSuperMethodA(cl, obj, (Msg)msg);
 }
@@ -178,10 +203,21 @@ __asm__(".text\n.even\n.globl _aafield_dispatch\n_aafield_dispatch:\n"
 
 static ULONG __attribute__((used)) aafield_dispatch_c(struct IClass* cl, Object* obj, Msg msg) {
     switch (msg->MethodID) {
+    case OM_NEW:
+        return aatip_super_set(cl, obj, (struct opSet*)msg, offsetof(aafield_data, tip));
     case OM_SET:
         return aafield_set(cl, obj, (struct opSet*)msg);
     case OM_GET:
         return aafield_get(cl, obj, (struct opGet*)msg);
+    case AATIP_M_FIRE: {
+        aafield_data* d = INST_DATA(cl, obj);
+        return aatip_fire(obj, &d->aa, &d->tip);
+    }
+    case MUIM_Hide:
+        aatip_drop(obj);
+        break;
+    case MUIM_HandleEvent:
+        return aafield_handle(cl, obj, (struct MUIP_HandleEvent*)msg);
     case MUIM_Setup:
         return aafield_setup(cl, obj, msg);
     case MUIM_Cleanup:

@@ -255,6 +255,28 @@ void mui_aa_balance_line(const uint32_t* token, int font_px, int box_w, int box_
 void mui_aa_balance_rgb(const uint32_t* token, uint32_t* box, uint32_t* line);
 uint32_t mui_aa_balance_calls(void);
 
+/* I731 (plan 2026-10-31-I731-mui-flat-tooltips.md section 2.1): the flat tooltip. Pure plan, placement and hover state; the Amiga module
+ * (../mui_aatip.c) draws and times. Tested on the host (mui-tooltip-flat). */
+enum { MUI_AA_TIP_ABOVE, MUI_AA_TIP_BELOW, MUI_AA_TIP_RIGHT, MUI_AA_TIP_LEFT };
+typedef struct mui_aa_tip_t {
+    int w, h, pad_x, pad_y, radius, gap;
+    uint32_t face, text, corner; /* 0xRRGGBB */
+} mui_aa_tip_t;
+/* Box size and colours: face = SURFACE_PRESSED, text = TEXT, corner = SURFACE (the panel colour the wedges outside the rounded box are
+ * painted with), radius = RADIUS_SMALL clamped to h / 2, pad_x = SPACING, pad_y = SPACING / 2 (tier S: font_px <= 0 -> pad_x 6, pad_y 3,
+ * radius 4), gap 4 (tier S 2). w = text_w + 2 * pad_x, h = text_h + 2 * pad_y. */
+void mui_aa_tip_plan(const uint32_t* token, int font_px, int text_w, int text_h, mui_aa_tip_t* out);
+/* Screen position of a w x h box next to the anchor rect (screen coordinates), side pref first; ABOVE that does not fit flips BELOW and back,
+ * RIGHT flips LEFT and back; the box is then clamped inside 0..scr_w-w, 0..scr_h-h. Returns the side used. */
+int mui_aa_tip_place(int ax, int ay, int aw, int ah, int w, int h, int scr_w, int scr_h, int gap, int pref, int* x, int* y);
+/* The hover state machine (plan section 4). */
+enum { MUI_AA_TIP_IDLE, MUI_AA_TIP_PENDING, MUI_AA_TIP_SHOWN, MUI_AA_TIP_MUTED };
+enum { MUI_AA_TIP_EV_ENTER, MUI_AA_TIP_EV_LEAVE, MUI_AA_TIP_EV_TIMER, MUI_AA_TIP_EV_PRESS, MUI_AA_TIP_EV_KEY, MUI_AA_TIP_EV_INACTIVE, MUI_AA_TIP_EV_GONE };
+enum { MUI_AA_TIP_DO_NONE = 0, MUI_AA_TIP_DO_ARM = 1, MUI_AA_TIP_DO_DISARM = 2, MUI_AA_TIP_DO_SHOW = 4, MUI_AA_TIP_DO_HIDE = 8 };
+int mui_aa_tip_step(int state, int ev, int* actions); /* returns the next state, ORs the actions into *actions */
+#define MUI_AA_TIP_DELAY_MS 600 /* desktop TIP_DELAY_MS */
+uint32_t mui_aa_tip_calls(void); /* sentinel: mui_aa_tip_plan calls */
+
 #ifdef __cplusplus
 }
 #endif

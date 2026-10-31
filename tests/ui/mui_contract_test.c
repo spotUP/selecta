@@ -1685,6 +1685,92 @@ static void test_dialog_windows(void) {
     CHECK(strstr(src, "_win = MUI_NewObject(") == NULL, "a secondary window is built outside mui_dialog_window");
 }
 
+/* I731 (plan 2026-10-31-I731-mui-flat-tooltips.md section 6): the flat tooltip. Plan numbers, placement and the hover state machine run on
+ * the host; the Amiga module is proven wired by its source text. The sentinel proves the case ran the real mui_aa_tip_plan. */
+static int tip_file(const char* name, char* buf, size_t cap) {
+    char path[600];
+    FILE* f;
+    size_t n;
+    snprintf(path, sizeof path, "%s/%s", MUI_DIR, name);
+    f = fopen(path, "rb");
+    if (f == NULL) {
+        buf[0] = 0;
+        return 0;
+    }
+    n = fread(buf, 1, cap - 1, f);
+    fclose(f);
+    buf[n] = 0;
+    return 1;
+}
+
+static void test_tooltip_flat(void) {
+    const uint32_t* tok = mui_theme_tokens();
+    uint32_t before = mui_aa_tip_calls();
+    mui_aa_tip_t p, s;
+    int x = 0, y = 0, act, st, side;
+    static char src[400000];
+    static const char* const classes[] = {"mui_aabtn_class.c", "mui_aaslider_class.c", "mui_aafield_class.c"};
+    static const char* const need[] = {"aatip_super_set(", "aatip_event(", "AATIP_M_FIRE", "aatip_drop("};
+    static const char* const tip_need[] = {"mui_aa_tip_plan(", "mui_aa_tip_place(", "mui_aa_tip_step(", "aa_round_fill(", "aa_text(", "WA_Borderless", "WA_Activate, FALSE", "MUIIHNF_TIMER"};
+    static const char* const tip_ban[] = {"MUIM_CreateBubble", "MUIA_Frame", "aa_round_frame("};
+    const char *fn, *end;
+    size_t k, j;
+
+    mui_aa_tip_plan(tok, 14, 80, 16, &p);
+    mui_aa_tip_plan(tok, 0, 80, 8, &s);
+    CHECK(mui_aa_tip_calls() == before + 2u, "tip plan sentinel %u", (unsigned)mui_aa_tip_calls());
+    CHECK(p.face == tok[SEL_GUI_TOKEN_SURFACE_PRESSED] && p.text == tok[SEL_GUI_TOKEN_TEXT] && p.corner == tok[SEL_GUI_TOKEN_SURFACE], "tip colours are not the desktop tokens");
+    CHECK(p.pad_x == (int)tok[SEL_GUI_TOKEN_SPACING] && p.w == 80 + 2 * p.pad_x && p.h == 16 + 2 * p.pad_y, "tip box size w=%d h=%d pad_x=%d", p.w, p.h, p.pad_x);
+    CHECK(p.radius == (tok[SEL_GUI_TOKEN_RADIUS_SMALL] < (uint32_t)(p.h / 2) ? (int)tok[SEL_GUI_TOKEN_RADIUS_SMALL] : p.h / 2), "tip radius %d", p.radius);
+    CHECK(s.pad_x == 6 && s.pad_y == 3 && s.radius == 4 && s.gap == 2, "tier S tip numbers %d/%d/%d/%d", s.pad_x, s.pad_y, s.radius, s.gap);
+
+    side = mui_aa_tip_place(300, 200, 40, 20, 80, 24, 800, 600, 4, MUI_AA_TIP_ABOVE, &x, &y);
+    CHECK(side == MUI_AA_TIP_ABOVE && x == 300 + (40 - 80) / 2 && y + 24 + 4 == 200, "above placement side=%d x=%d y=%d", side, x, y);
+    side = mui_aa_tip_place(300, 0, 40, 20, 80, 24, 800, 600, 4, MUI_AA_TIP_ABOVE, &x, &y);
+    CHECK(side == MUI_AA_TIP_BELOW && y == 24, "anchor at the top must flip below, side=%d y=%d", side, y);
+    side = mui_aa_tip_place(0, 100, 40, 20, 80, 24, 800, 600, 4, MUI_AA_TIP_RIGHT, &x, &y);
+    CHECK(side == MUI_AA_TIP_RIGHT && x == 44, "door tip beside the door, side=%d x=%d", side, x);
+    side = mui_aa_tip_place(780, 300, 20, 20, 80, 24, 800, 600, 4, MUI_AA_TIP_ABOVE, &x, &y);
+    CHECK(x == 800 - 80, "right edge clamp x=%d", x);
+
+    CHECK(MUI_AA_TIP_DELAY_MS == 600, "tip delay is not the desktop 600 ms");
+    act = 0;
+    st = mui_aa_tip_step(MUI_AA_TIP_IDLE, MUI_AA_TIP_EV_ENTER, &act);
+    CHECK(st == MUI_AA_TIP_PENDING && (act & MUI_AA_TIP_DO_ARM), "enter does not arm");
+    act = 0;
+    st = mui_aa_tip_step(st, MUI_AA_TIP_EV_TIMER, &act);
+    CHECK(st == MUI_AA_TIP_SHOWN && (act & MUI_AA_TIP_DO_SHOW), "timer does not show");
+    act = 0;
+    st = mui_aa_tip_step(st, MUI_AA_TIP_EV_PRESS, &act);
+    CHECK(st == MUI_AA_TIP_MUTED && (act & MUI_AA_TIP_DO_HIDE), "press does not mute and hide");
+    act = 0;
+    st = mui_aa_tip_step(st, MUI_AA_TIP_EV_ENTER, &act);
+    CHECK(st == MUI_AA_TIP_MUTED && !(act & MUI_AA_TIP_DO_ARM), "enter while muted must stay muted");
+    act = 0;
+    st = mui_aa_tip_step(st, MUI_AA_TIP_EV_LEAVE, &act);
+    CHECK(st == MUI_AA_TIP_IDLE, "leave does not reset");
+
+    CHECK(tip_file("mui_aatip.c", src, sizeof src), "mui_aatip.c is missing");
+    for (k = 0; k < sizeof tip_need / sizeof tip_need[0]; k++) {
+        CHECK(strstr(src, tip_need[k]) != NULL, "mui_aatip.c lacks %s", tip_need[k]);
+    }
+    for (k = 0; k < sizeof tip_ban / sizeof tip_ban[0]; k++) {
+        CHECK(strstr(src, tip_ban[k]) == NULL, "mui_aatip.c uses %s", tip_ban[k]);
+    }
+    for (j = 0; j < sizeof classes / sizeof classes[0]; j++) {
+        CHECK(tip_file(classes[j], src, sizeof src), "%s is missing", classes[j]);
+        for (k = 0; k < sizeof need / sizeof need[0]; k++) {
+            CHECK(strstr(src, need[k]) != NULL, "%s does not call %s", classes[j], need[k]);
+        }
+    }
+    CHECK(tip_file("mui_aa_draw.c", src, sizeof src), "mui_aa_draw.c is missing");
+    fn = strstr(src, "uint32_t aa_retheme_all(void) {");
+    end = fn != NULL ? strstr(fn, "\n}\n") : NULL;
+    CHECK(end != NULL && strstr(fn, "aatip_drop(NULL)") != NULL && strstr(fn, "aatip_drop(NULL)") < end, "aa_retheme_all does not drop an open tip");
+    CHECK(tip_file("mui_aabtn_class.c", src, sizeof src) && strstr(src, "MUIA_ShortHelp") != NULL, "AABtn must still take MUIA_ShortHelp");
+    CHECK(tip_file("mui_aalist_class.c", src, sizeof src) && strstr(src, "MUIA_ShortHelp") == NULL, "AAList passes MUIA_ShortHelp to MUI's own bubble");
+}
+
 /* Regression (I656): with the I651 icons every button grew by 24 + 6 + 20 px, the tool row 2 reached ~860 px and MUI refused to
  * open the window (MUIA_Window_Open read back 0 on rig 3). Each button row's summed minimum width, from the constants and the
  * label tables mui_ui.c builds from, must fit the smallest supported screen (640 px, plan P6-2). The rows must also be built
@@ -2599,6 +2685,8 @@ int main(int argc, char** argv) {
         test_player_bar();
     } else if (strcmp(argv[1], "sidebar-icons") == 0) {
         test_sidebar_icons();
+    } else if (strcmp(argv[1], "tooltip-flat") == 0) {
+        test_tooltip_flat();
     } else if (strcmp(argv[1], "dialog-windows") == 0) {
         test_dialog_windows();
     } else if (strcmp(argv[1], "overlays") == 0) {
