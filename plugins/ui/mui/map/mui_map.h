@@ -210,6 +210,40 @@ mui_home_kind mui_home_kind_of(const sel_view_row* r);
  * desktop shelf tile does); returns 3, or 0 for a row that is not a Home entry. */
 uint32_t mui_home_lines(const sel_view_state* v, uint32_t row, char lines[3][48]);
 
+/* I795 (drift doc P1): the Home page model. The quick-pick rows are the SEL_ROW_HOME rows after the quick heading (at most six), each
+ * shelf is a heading plus the SEL_ROW_HOME rows after it. `shelf_id` counts every shelf heading (1-based, the id Show all routes with),
+ * also those past the MUI_HOME_SHELF_MAX slots. */
+#define MUI_HOME_QUICK_MAX 6u
+#define MUI_HOME_SHELF_MAX 4u
+#define MUI_HOME_SHELF_ROWS 5u /* rows of a shelf the Home page lists; Show all has the rest */
+typedef struct mui_shelf {
+    uint32_t heading, first, count, id; /* window row of the heading, of its first entry, entries under it, 1-based shelf id */
+} mui_shelf;
+typedef struct mui_home_page {
+    uint32_t quick_first, quick_n;
+    mui_shelf shelf[MUI_HOME_SHELF_MAX];
+    uint32_t shelf_n, shelf_id;
+} mui_home_page;
+void mui_home_split(const sel_view_state* v, mui_home_page* out);
+/* The shelf with 1-based id `id` (any shelf, past the slots too), all its entries counted. 1 when found. */
+uint32_t mui_shelf_find(const sel_view_state* v, uint32_t id, mui_shelf* out);
+
+/* I795 (P4): the Browse tiles, from the FORMATS_SHOW and COMPOSERS_SHOW answers in the engine state, then one Sources tile. */
+#define MUI_BROWSE_FORMATS 8u
+#define MUI_BROWSE_COMPOSERS 8u
+#define MUI_TILE_MAX (MUI_BROWSE_FORMATS + MUI_BROWSE_COMPOSERS + 1u)
+enum { MUI_TILE_FORMAT = 0, MUI_TILE_COMPOSER = 1, MUI_TILE_SOURCES = 2 };
+typedef struct mui_btile {
+    uint32_t kind, count;
+    char label[48], arg[96];
+} mui_btile;
+uint32_t mui_browse_tiles(const sel_state* st, mui_btile* out, uint32_t cap);
+void mui_tile_caption(const mui_btile* t, char* out, size_t cap);
+
+/* I795 (P5): the engine line a Search facet chip sends: VIEW_CURSOR on the heading of that group of results (facet 0, All: the top).
+ * Returns 1 when `out` holds a line, 0 when the results have no such group. The names are sel_uim_search_facets. */
+uint32_t mui_search_facet_line(const sel_view_state* v, uint32_t facet, char* out, size_t cap);
+
 /* MUI-P4-0: the sidebar doors, built from the shared uimodel door table (include/selecta/uimodel/doors.h). The label is the
  * table's; the line is the engine line that switches the main view to the door's page, NULL for a page the MUI shows in
  * another slot (Now Playing and Song Information are the player and detail slots, not a main view). */

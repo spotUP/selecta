@@ -107,6 +107,11 @@ static const char* const p4_name[P4_COUNT] = {"search", "cmd", "like", "rating",
 #define MUI_TRK_ROWS 16u   /* MUI-P4-16: pattern rows shown */
 #define MUI_TRK_CHANNELS 4u /* MUI-P4-16: channel columns shown */
 
+typedef struct mui_shelf_ctx { /* I795: the row callback of a shelf list finds its mui_state and slot here */
+    struct mui_state* s;
+    uint32_t slot;
+} mui_shelf_ctx;
+
 typedef struct mui_state {
     uint32_t opens; /* ui_open_mui sentinel (MUI-P1-5): windows opened */
     uint32_t wake_mask; /* engine wake signal (MUI-P1-7), 0 where there is none */
@@ -212,6 +217,26 @@ typedef struct mui_state {
     uint32_t list_sig;
     LONG list_active_set;
     mui_list_pending list_pending;  /* the clicked row until the engine snapshot shows it */
+    Object* home_page;              /* I795 (P1): quick tile row and shelves; replaces the main list on Home and on a Show all page */
+    Object* quick_row;
+    Object* quick_btn[MUI_HOME_QUICK_MAX];
+    Object* shelf_grp[MUI_HOME_SHELF_MAX];
+    Object* shelf_head[MUI_HOME_SHELF_MAX];
+    Object* shelf_all[MUI_HOME_SHELF_MAX];
+    Object* shelf_list[MUI_HOME_SHELF_MAX];
+    char shelf_head_buf[MUI_HOME_SHELF_MAX][96];
+    mui_shelf_ctx shelf_ctx[MUI_HOME_SHELF_MAX];
+    uint32_t shelf_first[MUI_HOME_SHELF_MAX], shelf_id[MUI_HOME_SHELF_MAX]; /* window row of the first entry the slot lists, the shelf it shows */
+    mui_home_page home;
+    uint32_t home_sig;
+    Object* browse_page;            /* I795 (P4): the Browse tile grid */
+    Object* tile_btn[MUI_TILE_MAX];
+    mui_btile tile[MUI_TILE_MAX];
+    uint32_t tile_n, tile_sig;
+    Object* facet_row;              /* I795 (P5): the Search facet chips above the results */
+    Object* facet_btn[SEL_UIM_SEARCH_FACETS];
+    uint32_t search_facet;
+    int home_shown, browse_shown, facet_shown;
 #endif
 } mui_state;
 
@@ -422,6 +447,11 @@ static void mui_menu_fire(mui_state* s, uint32_t row) {
 #define CTL_COL_LIST 0x2803L   /* I794: a song of the collection page was picked */
 #define CTL_COL_ARTIST 0x2804L /* I794: the Artist link of an album page */
 #define CTL_TOPBAR_BROWSE 0x2800L /* I615d: the top bar Browse button */
+#define CTL_QUICK_BASE 0x2A00L      /* I795 (P1): the Home quick tiles, CTL_QUICK_BASE + slot */
+#define CTL_SHELF_ALL_BASE 0x2A10L  /* I795 (P1): Show all of a shelf slot */
+#define CTL_SHELF_LIST_BASE 0x2A20L /* I795 (P1): a row of a shelf slot was picked */
+#define CTL_TILE_BASE 0x2A40L       /* I795 (P4): the Browse tiles, CTL_TILE_BASE + slot */
+#define CTL_FACET_BASE 0x2A80L      /* I795 (P5): the Search facet chips, CTL_FACET_BASE + facet */
 #define CTL_DOOR_BASE 0x2200L /* MUI-P4-0: one button per sidebar door */
 #define MUI_DOOR_MAX 8u
 #define CTL_SIDE_BASE 0x2900L /* I793: the Your Library sidebar presses, CTL_SIDE_BASE + MUI_SIDE_* */
@@ -1110,6 +1140,101 @@ static Object* mui_col_page_group(mui_state* s) {
     return g;
 }
 
+/* I795 (P1): row `row` of a Home shelf list: the text of the engine view row the slot lists from (shelf_first). */
+static const char* mui_shelf_row(void* ctx, long row) {
+    mui_shelf_ctx* c = (mui_shelf_ctx*)ctx;
+    const sel_view_state* v = sel_engine_state(c->s->engine)->view;
+    uint32_t idx = c->s->shelf_first[c->slot] + (uint32_t)row;
+    if (v == NULL || v->rows == NULL || row < 0 || idx >= v->row_n || v->rows[idx].text == NULL) {
+        return "";
+    }
+    return v->rows[idx].text;
+}
+
+/* I795 (P1): the Home page group: the quick tile row, then up to MUI_HOME_SHELF_MAX shelves (header Text, Show all button, a short AAList).
+ * Hidden until mui_route_sync shows it; the slots fill from the view (mui_home_split). */
+static Object* mui_home_page_group(mui_state* s) {
+    Object* g = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
+    uint32_t k;
+    s->quick_row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+    if (g == NULL || s->quick_row == NULL) {
+        return NULL;
+    }
+    for (k = 0; k < MUI_HOME_QUICK_MAX; k++) {
+        s->quick_btn[k] = mui_make_button_w(" ", "tile", CTL_QUICK_BASE + (LONG)k, 100);
+        if (s->quick_btn[k] == NULL) {
+            return NULL;
+        }
+        set(s->quick_btn[k], MUIA_ShowMe, FALSE);
+        DoMethod(s->quick_row, OM_ADDMEMBER, s->quick_btn[k]);
+    }
+    DoMethod(g, OM_ADDMEMBER, s->quick_row);
+    for (k = 0; k < MUI_HOME_SHELF_MAX; k++) {
+        mui_aalist_spec sp;
+        Object* lg;
+        Object* head = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
+        s->shelf_grp[k] = MUI_NewObject((char*)MUIC_Group, MUIA_ShowMe, FALSE, TAG_DONE);
+        snprintf(s->shelf_head_buf[k], sizeof s->shelf_head_buf[k], " ");
+        s->shelf_head[k] = mui_aatext(s->shelf_head_buf[k], MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 0);
+        s->shelf_all[k] = mui_make_button_w("Show all", "tile", CTL_SHELF_ALL_BASE + (LONG)k, 0);
+        s->shelf_ctx[k].s = s;
+        s->shelf_ctx[k].slot = k;
+        memset(&sp, 0, sizeof sp);
+        sp.active = -1;
+        sp.row = mui_shelf_row;
+        sp.ctx = &s->shelf_ctx[k];
+        sp.max_rows = (int)MUI_HOME_SHELF_ROWS;
+        sp.double_pick = 1;
+        lg = mui_aalist_new(&sp, &s->shelf_list[k]);
+        if (s->shelf_grp[k] == NULL || head == NULL || s->shelf_head[k] == NULL || s->shelf_all[k] == NULL || lg == NULL || s->shelf_list[k] == NULL) {
+            return NULL;
+        }
+        DoMethod(s->shelf_list[k], MUIM_Notify, AAL_Picked, MUIV_EveryTime, MUIV_Notify_Application, 2, MUIM_Application_ReturnID, (ULONG)(CTL_SHELF_LIST_BASE + (LONG)k));
+        DoMethod(head, OM_ADDMEMBER, s->shelf_head[k]);
+        DoMethod(head, OM_ADDMEMBER, s->shelf_all[k]);
+        DoMethod(s->shelf_grp[k], OM_ADDMEMBER, head);
+        DoMethod(s->shelf_grp[k], OM_ADDMEMBER, lg);
+        DoMethod(g, OM_ADDMEMBER, s->shelf_grp[k]);
+    }
+    return g;
+}
+
+/* I795 (P4): the Browse page: the tiles of mui_browse_tiles in a two column grid (FORMATS_SHOW, COMPOSERS_SHOW, SOURCES). */
+static Object* mui_browse_page_group(mui_state* s) {
+    Object* g = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Columns, 2, MUIA_ShowMe, FALSE, TAG_DONE);
+    uint32_t k;
+    if (g == NULL) {
+        return NULL;
+    }
+    for (k = 0; k < MUI_TILE_MAX; k++) {
+        s->tile_btn[k] = mui_make_button_w(" ", "tile", CTL_TILE_BASE + (LONG)k, 100);
+        if (s->tile_btn[k] == NULL) {
+            return NULL;
+        }
+        set(s->tile_btn[k], MUIA_ShowMe, FALSE);
+        DoMethod(g, OM_ADDMEMBER, s->tile_btn[k]);
+    }
+    return g;
+}
+
+/* I795 (P5): the Search facet chips (sel_uim_search_facets: All, Songs, Albums, Artists), shown while the list's source is Search. */
+static Object* mui_facet_row_group(mui_state* s) {
+    uint32_t k;
+    s->facet_row = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, MUIA_ShowMe, FALSE, TAG_DONE);
+    if (s->facet_row == NULL) {
+        return NULL;
+    }
+    for (k = 0; k < SEL_UIM_SEARCH_FACETS; k++) {
+        s->facet_btn[k] = mui_make_button_ex(sel_uim_search_facets[k], sel_uim_search_facets[k], "tile", NULL, CTL_FACET_BASE + (LONG)k, 100, 0, MUI_AA_ROLE_TOGGLE, MUI_AA_ALIGN_CENTRE);
+        if (s->facet_btn[k] == NULL) {
+            return NULL;
+        }
+        DoMethod(s->facet_row, OM_ADDMEMBER, s->facet_btn[k]);
+    }
+    DoMethod(s->facet_row, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    return s->facet_row;
+}
+
 static Object* mui_main_group(mui_state* s) {
     Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
     s->col_bp = SEL_UIM_BP_COUNT;
@@ -1175,6 +1300,14 @@ static Object* mui_main_group(mui_state* s) {
         return NULL;
     }
     DoMethod(g, OM_ADDMEMBER, s->col_page);
+    s->home_page = mui_home_page_group(s);
+    s->browse_page = mui_browse_page_group(s);
+    if (s->home_page == NULL || s->browse_page == NULL || mui_facet_row_group(s) == NULL) {
+        return NULL;
+    }
+    DoMethod(g, OM_ADDMEMBER, s->home_page);
+    DoMethod(g, OM_ADDMEMBER, s->browse_page);
+    DoMethod(g, OM_ADDMEMBER, s->facet_row);
     DoMethod(g, OM_ADDMEMBER, s->listview);
     /* MUI-P5-1: the canvas object sits beside the list, hidden until the style switch (MUI-P3-5) shows it. */
     {
@@ -1479,6 +1612,143 @@ static void mui_detail_refresh(mui_state* s, const sel_state* st) {
     }
 }
 
+/* I795: the joined engine lines of the top bar Browse button; also the history key of the Browse page. */
+static void mui_browse_key(char* out, size_t cap) {
+    uint32_t k;
+    out[0] = '\0';
+    for (k = 0; k < MUI_TOPBAR_BROWSE_LINES; k++) {
+        size_t n = strlen(out);
+        snprintf(out + n, cap - n, "%s%s", k > 0 ? ";" : "", mui_topbar_browse_lines[k]);
+    }
+}
+
+/* A cheap signature of the rows the Home page shows: when it is unchanged the controls keep their captions and counts. */
+static uint32_t mui_home_signature(const sel_view_state* v, const sel_route_entry* cur) {
+    uint32_t h = 2166136261u, k;
+    const char* p;
+    h = (h ^ (cur != NULL ? cur->id + 1u : 0u)) * 16777619u;
+    for (k = 0; k < v->row_n; k++) {
+        h = (h ^ (v->rows[k].kind + 1u)) * 16777619u;
+        for (p = v->rows[k].text != NULL ? v->rows[k].text : ""; *p != '\0'; p++) {
+            h = (h ^ (uint32_t)(unsigned char)*p) * 16777619u;
+        }
+    }
+    return h;
+}
+
+/* I795 (P1): fill the quick tiles and the shelf slots from the Home view. On a Show all page only the chosen shelf shows, with all its rows. */
+static void mui_home_fill(mui_state* s, const sel_view_state* v, const sel_route_entry* cur) {
+    uint32_t k, sig = mui_home_signature(v, cur);
+    int on_shelf = cur != NULL && cur->page == (uint32_t)SEL_ROUTE_PAGE_SHELF;
+    if (sig == s->home_sig) {
+        return;
+    }
+    s->home_sig = sig;
+    mui_home_split(v, &s->home);
+    set(s->quick_row, MUIA_ShowMe, !on_shelf && s->home.quick_n > 0u ? TRUE : FALSE);
+    for (k = 0; k < MUI_HOME_QUICK_MAX; k++) {
+        int on = !on_shelf && k < s->home.quick_n;
+        if (on) {
+            const char* text = v->rows[s->home.quick_first + k].text;
+            mui_aabtn_set_caption(s->quick_btn[k], text != NULL ? text : " ");
+        }
+        set(s->quick_btn[k], MUIA_ShowMe, on ? TRUE : FALSE);
+    }
+    for (k = 0; k < MUI_HOME_SHELF_MAX; k++) {
+        mui_shelf sh;
+        int on = 0;
+        memset(&sh, 0, sizeof sh);
+        if (on_shelf) {
+            on = k == 0u && mui_shelf_find(v, cur->id, &sh) != 0u;
+        } else if (k < s->home.shelf_n) {
+            sh = s->home.shelf[k];
+            sh.count = sh.count > MUI_HOME_SHELF_ROWS ? MUI_HOME_SHELF_ROWS : sh.count;
+            on = 1;
+        }
+        if (on) {
+            const char* text = v->rows[sh.heading].text;
+            s->shelf_first[k] = sh.first;
+            s->shelf_id[k] = sh.id;
+            snprintf(s->shelf_head_buf[k], sizeof s->shelf_head_buf[k], "%s", text != NULL ? text : " ");
+            mui_aatext_set(s->shelf_head[k], s->shelf_head_buf[k]);
+            SetAttrs(s->shelf_list[k], AAL_Count, (ULONG)sh.count, AAL_Active, (ULONG)-1L, TAG_DONE);
+        }
+        set(s->shelf_all[k], MUIA_ShowMe, on && !on_shelf ? TRUE : FALSE);
+        set(s->shelf_grp[k], MUIA_ShowMe, on ? TRUE : FALSE);
+    }
+}
+
+/* I795 (P4): the Browse tiles from the engine's format and composer lists. */
+static void mui_browse_fill(mui_state* s, const sel_state* st) {
+    uint32_t k, sig = (uint32_t)(st->formats != NULL) + 2u * (uint32_t)(st->composers != NULL);
+    mui_btile t[MUI_TILE_MAX];
+    uint32_t n = mui_browse_tiles(st, t, MUI_TILE_MAX);
+    for (k = 0; k < n; k++) {
+        sig = sig * 31u + t[k].count + (uint32_t)(unsigned char)t[k].label[0];
+    }
+    if (sig == s->tile_sig && n == s->tile_n) {
+        return;
+    }
+    s->tile_sig = sig;
+    s->tile_n = n;
+    memcpy(s->tile, t, sizeof s->tile);
+    for (k = 0; k < MUI_TILE_MAX; k++) {
+        if (k < n) {
+            char cap[160];
+            mui_tile_caption(&t[k], cap, sizeof cap);
+            mui_aabtn_set_caption(s->tile_btn[k], cap);
+        }
+        set(s->tile_btn[k], MUIA_ShowMe, k < n ? TRUE : FALSE);
+    }
+}
+
+/* The page that shows in the main panel: the collection page (P3), the Home page and Show all page (P1), the Browse tile page (P4), else
+ * the main list; and the Search facet chips (P5) above the list while its source is Search. */
+static void mui_pages_sync(mui_state* s, const sel_state* st, const sel_route_entry* cur, int col) {
+    const sel_view_state* v = st->view;
+    char key[128];
+    int home = 0, browse = 0, facet = 0;
+    if (v != NULL && v->source == SEL_VIEW_HOME && (cur == NULL || cur->page == (uint32_t)SEL_ROUTE_PAGE_HOME || cur->page == (uint32_t)SEL_ROUTE_PAGE_SHELF)) {
+        home = 1;
+    }
+    mui_browse_key(key, sizeof key);
+    if (cur != NULL && cur->page >= (uint32_t)SEL_ROUTE_PAGE_OTHER_BASE && strcmp(cur->key, key) == 0) {
+        browse = 1;
+    }
+    if (v != NULL && v->source == SEL_VIEW_SEARCH && !col) {
+        facet = 1;
+    }
+    if (home) {
+        mui_home_fill(s, v, cur);
+    }
+    if (browse) {
+        mui_browse_fill(s, st);
+    }
+    if (col != s->col_shown || home != s->home_shown || browse != s->browse_shown || facet != s->facet_shown) {
+        ULONG parent = 0;
+        uint32_t k;
+        s->col_shown = col;
+        s->home_shown = home;
+        s->browse_shown = browse;
+        s->facet_shown = facet;
+        GetAttr(MUIA_Parent, s->col_page, &parent);
+        if (parent != 0) {
+            DoMethod((Object*)parent, MUIM_Group_InitChange);
+        }
+        set(s->col_page, MUIA_ShowMe, col ? TRUE : FALSE);
+        set(s->home_page, MUIA_ShowMe, home ? TRUE : FALSE);
+        set(s->browse_page, MUIA_ShowMe, browse ? TRUE : FALSE);
+        set(s->facet_row, MUIA_ShowMe, facet ? TRUE : FALSE);
+        set(s->listview, MUIA_ShowMe, col || home || browse ? FALSE : TRUE);
+        for (k = 0; k < SEL_UIM_SEARCH_FACETS; k++) {
+            mui_aabtn_set_on(s->facet_btn[k], k == s->search_facet);
+        }
+        if (parent != 0) {
+            DoMethod((Object*)parent, MUIM_Group_ExitChange);
+        }
+    }
+}
+
 /* I794: the route history drives the top bar Back / Forward state and which of the two main views shows: the collection page (P3) when
  * the history is on an album, artist or composer page the engine has built, else the main list (Home, Show all, doors). */
 static void mui_route_sync(mui_state* s, const sel_state* st) {
@@ -1503,19 +1773,7 @@ static void mui_route_sync(mui_state* s, const sel_state* st) {
         set(s->col_artist, MUIA_ShowMe, pg->kind == (uint32_t)SEL_LIB_ITEM_ALBUM && pg->sub[0] != '\0' ? TRUE : FALSE);
         SetAttrs(s->col_list, AAL_Count, (ULONG)pg->songs, AAL_Active, (ULONG)-1L, TAG_DONE);
     }
-    if (col != s->col_shown) {
-        ULONG parent = 0;
-        s->col_shown = col;
-        GetAttr(MUIA_Parent, s->col_page, &parent);
-        if (parent != 0) {
-            DoMethod((Object*)parent, MUIM_Group_InitChange);
-        }
-        set(s->col_page, MUIA_ShowMe, col ? TRUE : FALSE);
-        set(s->listview, MUIA_ShowMe, col ? FALSE : TRUE);
-        if (parent != 0) {
-            DoMethod((Object*)parent, MUIM_Group_ExitChange);
-        }
-    }
+    mui_pages_sync(s, st, cur, col);
 }
 
 static void mui_refresh(mui_state* s) {
@@ -2097,6 +2355,66 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
     }
 }
 
+/* A Home row of the engine view is activated (list double click, quick tile, shelf entry): a shelf heading opens its Show all page, a
+ * library tile its collection page (I794), a song plays and an album opens (MUI-P4-1). 1 when it was one of those. */
+static int mui_home_row_fire(mui_state* s, const sel_view_state* view, uint32_t v) {
+    char hl[3][48];
+    const sel_view_row* row = &view->rows[v];
+    const char* text = row->text != NULL ? row->text : "";
+    if (row->kind == SEL_ROW_HEADING && !row->quick) { /* I794 (P2): a shelf heading opens its Show all page */
+        uint32_t shelf = 1, j;
+        for (j = 0; j < v; j++) {
+            if (view->rows[j].kind == SEL_ROW_HEADING && !view->rows[j].quick) {
+                shelf++;
+            }
+        }
+        if (mui_route_click(&s->route, SEL_ROUTE_SHOW_ALL, 0u, shelf, "", text, "", mui_route_send, s)) {
+            return 1;
+        }
+    }
+    if (row->item_kind != 0u && row->key != NULL) { /* I794 (P3): a library tile opens its collection page */
+        mui_list_pending_clear(&s->list_pending);
+        if (mui_route_click(&s->route, SEL_ROUTE_HOME_TILE, row->item_kind - 1u, 0u, row->key, text, "", mui_route_send, s)) {
+            s->p4[P4_HOME]++;
+            return 1;
+        }
+    }
+    if (mui_home_lines(view, v, hl) == 3) {
+        mui_list_pending_clear(&s->list_pending);
+        mui_engine_line(s, hl[0]);
+        mui_engine_line(s, hl[1]);
+        mui_engine_line(s, hl[2]);
+        s->p4[P4_HOME]++;
+        return 1;
+    }
+    return 0;
+}
+
+/* I795 (P4): a Browse tile. A composer opens its collection page (BROWSE_TILE); a format searches "format:<name>"; Sources lists the sources. */
+static void mui_tile_fire(mui_state* s, uint32_t k) {
+    const mui_btile* t;
+    if (k >= s->tile_n) {
+        return;
+    }
+    t = &s->tile[k];
+    if (t->kind == MUI_TILE_COMPOSER) {
+        mui_route_click(&s->route, SEL_ROUTE_BROWSE_TILE, (uint32_t)SEL_LIB_ITEM_COMPOSER, 0u, t->arg, t->label, "", mui_route_send, s);
+    } else if (t->kind == MUI_TILE_FORMAT) {
+        char q[120], lines[3][160], joined[512];
+        uint32_t n, i;
+        snprintf(q, sizeof q, "format:%s", t->arg);
+        n = mui_search_lines(q, lines);
+        joined[0] = '\0';
+        for (i = 0; i < n; i++) {
+            size_t len = strlen(joined);
+            snprintf(joined + len, sizeof joined - len, "%s%s", i > 0u ? ";" : "", lines[i]);
+        }
+        mui_route_door(&s->route, (uint32_t)MUI_DOOR_MAX + 2u, joined, mui_route_send, s);
+    } else {
+        mui_route_door(&s->route, (uint32_t)MUI_DOOR_MAX + 3u, "SOURCES", mui_route_send, s);
+    }
+}
+
 static void mui_control_fire(mui_state* s, LONG id) {
     char line[64];
     LONG v = 0;
@@ -2133,14 +2451,38 @@ static void mui_control_fire(mui_state* s, LONG id) {
         }
     } else if (id > CTL_PANE_BASE + (LONG)MUI_PANE_LIST && id < CTL_PANE_BASE + (LONG)MUI_PANE_COUNT) {
         mui_pane_show(s, mui_pane_page((uint32_t)(id - CTL_PANE_BASE))); /* I735: View > Visualizer Page / Pattern Page */
+    } else if (id >= CTL_QUICK_BASE && id < CTL_QUICK_BASE + (LONG)MUI_HOME_QUICK_MAX) { /* I795 (P1): a Home quick tile */
+        const sel_view_state* view = sel_engine_state(s->engine)->view;
+        uint32_t idx = s->home.quick_first + (uint32_t)(id - CTL_QUICK_BASE);
+        if (view != NULL && idx < view->row_n) {
+            mui_home_row_fire(s, view, idx);
+        }
+    } else if (id >= CTL_SHELF_ALL_BASE && id < CTL_SHELF_ALL_BASE + (LONG)MUI_HOME_SHELF_MAX) { /* I795 (P1): Show all of a shelf */
+        LONG k = id - CTL_SHELF_ALL_BASE;
+        mui_route_click(&s->route, SEL_ROUTE_SHOW_ALL, 0u, s->shelf_id[k], "", s->shelf_head_buf[k], "", mui_route_send, s);
+    } else if (id >= CTL_SHELF_LIST_BASE && id < CTL_SHELF_LIST_BASE + (LONG)MUI_HOME_SHELF_MAX) { /* I795 (P1): an entry of a shelf */
+        const sel_view_state* view = sel_engine_state(s->engine)->view;
+        LONG k = id - CTL_SHELF_LIST_BASE;
+        long picked = -1;
+        GetAttr(AAL_Picked, s->shelf_list[k], (ULONG*)&picked);
+        if (view != NULL && picked >= 0 && s->shelf_first[k] + (uint32_t)picked < view->row_n) {
+            mui_home_row_fire(s, view, s->shelf_first[k] + (uint32_t)picked);
+        }
+    } else if (id >= CTL_TILE_BASE && id < CTL_TILE_BASE + (LONG)MUI_TILE_MAX) { /* I795 (P4): a Browse tile */
+        mui_tile_fire(s, (uint32_t)(id - CTL_TILE_BASE));
+    } else if (id >= CTL_FACET_BASE && id < CTL_FACET_BASE + (LONG)SEL_UIM_SEARCH_FACETS) { /* I795 (P5): a Search facet chip */
+        const sel_view_state* view = sel_engine_state(s->engine)->view;
+        char fl[40];
+        uint32_t k = (uint32_t)(id - CTL_FACET_BASE);
+        if (view != NULL && mui_search_facet_line(view, k, fl, sizeof fl) != 0u && mui_engine_line(s, fl)) {
+            s->search_facet = k;
+        }
+        for (k = 0; k < SEL_UIM_SEARCH_FACETS; k++) {
+            mui_aabtn_set_on(s->facet_btn[k], k == s->search_facet);
+        }
     } else if (id == CTL_TOPBAR_BROWSE) {
         char joined[128]; /* I615d: what the rich top bar Browse slice sends (desk_page_load PG_BROWSE), kept as one history entry (I794) */
-        uint32_t k;
-        joined[0] = '\0';
-        for (k = 0; k < MUI_TOPBAR_BROWSE_LINES; k++) {
-            size_t n = strlen(joined);
-            snprintf(joined + n, sizeof joined - n, "%s%s", k > 0 ? ";" : "", mui_topbar_browse_lines[k]);
-        }
+        mui_browse_key(joined, sizeof joined);
         mui_pane_show(s, SEL_UIM_PG_HOME); /* a list source: back to the list pane */
         mui_route_door(&s->route, (uint32_t)MUI_DOOR_MAX + 1u, joined, mui_route_send, s);
     } else if (id >= CTL_SIDE_BASE && id < CTL_SIDE_BASE + (LONG)MUI_SIDE_COUNT) {
@@ -2213,35 +2555,8 @@ static void mui_control_fire(mui_state* s, LONG id) {
             mui_engine_line(s, line);
             return;
         }
-        if (id == CTL_LIST_DBL && (uint32_t)v < view->row_n) {
-            char hl[3][48];
-            if (view->rows[v].kind == SEL_ROW_HEADING && !view->rows[v].quick) { /* I794 (P2): a shelf heading opens its Show all page */
-                uint32_t shelf = 1, j;
-                for (j = 0; j < (uint32_t)v; j++) {
-                    if (view->rows[j].kind == SEL_ROW_HEADING && !view->rows[j].quick) {
-                        shelf++;
-                    }
-                }
-                if (mui_route_click(&s->route, SEL_ROUTE_SHOW_ALL, 0u, shelf, "", view->rows[v].text != NULL ? view->rows[v].text : "", "", mui_route_send, s)) {
-                    return;
-                }
-            }
-            if (view->rows[v].item_kind != 0u && view->rows[v].key != NULL) { /* I794 (P3): a library tile opens its collection page */
-                mui_list_pending_clear(&s->list_pending);
-                if (mui_route_click(&s->route, SEL_ROUTE_HOME_TILE, view->rows[v].item_kind - 1u, 0u, view->rows[v].key,
-                                    view->rows[v].text != NULL ? view->rows[v].text : "", "", mui_route_send, s)) {
-                    s->p4[P4_HOME]++;
-                    return;
-                }
-            }
-            if (mui_home_lines(view, (uint32_t)v, hl) == 3) { /* MUI-P4-1: a Home row plays the song or opens the album */
-                mui_list_pending_clear(&s->list_pending);
-                mui_engine_line(s, hl[0]);
-                mui_engine_line(s, hl[1]);
-                mui_engine_line(s, hl[2]);
-                s->p4[P4_HOME]++;
-                return;
-            }
+        if (id == CTL_LIST_DBL && (uint32_t)v < view->row_n && mui_home_row_fire(s, view, (uint32_t)v)) {
+            return;
         }
         if (id == CTL_LIST_SEL) {
             int32_t shown = view->cursor >= view->window_start && view->cursor - view->window_start < view->window_rows
