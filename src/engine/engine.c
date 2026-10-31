@@ -514,7 +514,7 @@ struct sel_engine {
     sel_collection_page coll;                 /* the page COLLECTION_OPEN built (I678f), published as state.collection */
     char* coll_rows;                          /* its song block, heap */
     uint32_t evt_dropped;                     /* events emit() could not queue because evt_q was full (I546) */
-    sel_tag src_tags[16][10];                  /* one SOURCES row per registered source (registry holds 16) */
+    sel_tag src_tags[16][11];                  /* one SOURCES row per registered source (registry holds 16) */
     char st_key[8][SEL_DEFERRED_PATH_MAX];
     char st_name[8][128];
     char st_value[8][SEL_STICKER_VALUE_MAX];
@@ -4384,8 +4384,10 @@ static void sources_row(void* ctx, const char* id, const char* name, const char*
                      ? 1u : 0u;
     t[8].tag = SEL_SRC_SNOOZED;
     t[8].value = (uintptr_t)snoozed;
-    t[9].tag = SEL_TAG_END;
-    t[9].value = 0;
+    t[9].tag = SEL_SRC_SEARCHABLE; /* I406a: a source with a search hook can be named in SOURCE_SEARCH */
+    t[9].value = sel_source_find(id) != NULL && sel_source_find(id)->search != NULL ? 1u : 0u;
+    t[10].tag = SEL_TAG_END;
+    t[10].value = 0;
     evt_init(&r, SEL_EVT_LIBRARY_RESULT);
     evt_tags(&r, t);
     emit(e, &r);
