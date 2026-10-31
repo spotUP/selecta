@@ -28,15 +28,6 @@ typedef struct sel_pin_slot {
     char format[SEL_PIN_FORMAT];
 } sel_pin_slot;
 
-/* I782: sel_db_majority_format walks every song path of the item (a whole source for Local and each source row), so a list page paid a
- * scan per visible row per call. The result only changes when the database does: a slot holds the answer with the connection's change counter. */
-enum { SEL_FMT_CACHE_SLOTS = 128, SEL_FMT_CACHE_KEY = 48 };
-typedef struct sel_fmt_cache {
-    int64_t stamp; /* sqlite3_total_changes64 + 1 when computed; 0 = empty */
-    uint32_t kind;
-    char key[SEL_FMT_CACHE_KEY];
-    char fmt[16];
-} sel_fmt_cache;
 
 struct sel_library {
     const sel_host* host;
@@ -52,7 +43,6 @@ struct sel_library {
     char fts_long[SEL_QUERY_TEXT_MAX + 8]; /* long FTS words of the running search, space separated */
     sel_lib_job* job;  /* the job of the request in flight; set by sel_library_run */
     sel_query query;   /* compile scratch, used by the worker only */
-    sel_fmt_cache fmt_cache[SEL_FMT_CACHE_SLOTS]; /* I782: majority format per list item, valid while the database is unchanged; worker only */
     char view_text[16][256]; /* saved queries handed to the compiler during one compile */
     unsigned view_used;
     sel_cache* cache;        /* file cache of LIBRARY_FETCH, created on the first fetch (fetch.c) */
@@ -126,8 +116,11 @@ void sel_library_import(sel_library* lib, sel_lib_job* job);
 int sel_library_register_regexp(sqlite3* db);
 /* I691c: the majority format of the songs behind one list item (SEL_LIB_ITEM_* kind and its key): the representative extension of the
  * platform family holding most of its songs (sel_platform_family_tally), "" when it has none. Runs on the library thread. */
-void sel_db_majority_format_cached(sel_library* lib, uint32_t kind, const char* key, char* out, size_t cap);
+/* I838: _cached answers from item_formats (schema v15) while the item's change key (items.c stamp_sql) holds, so a list reply scans no
+ * songs and an unrelated write keeps the answer; on a miss it scans and stores. sel_db_majority_scans counts the scans (test sentinel). */
+void sel_db_majority_format_cached(sqlite3* db, uint32_t kind, const char* key, char* out, size_t cap);
 void sel_db_majority_format(sqlite3* db, uint32_t kind, const char* key, char* out, size_t cap);
+unsigned long sel_db_majority_scans(void);
 
 /* scan.c: SEL_LIB_REQ_SCAN_BATCH. */
 void sel_library_scan_batch(sel_library* lib, const sel_scan_batch* b, sel_message* reply);

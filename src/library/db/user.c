@@ -350,8 +350,8 @@ static int home_list(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t
             }
         }
         /* I691c: an album or composer tile ends its key with 0x1d and the majority format of its songs (platform cover). */
-        if (album && idkey[0] != '\0') sel_db_majority_format(db, SEL_LIB_ITEM_ALBUM, idkey, fmt, sizeof fmt);
-        if (kind == 2) sel_db_majority_format(db, SEL_LIB_ITEM_COMPOSER, key != NULL ? key : "", fmt, sizeof fmt);
+        if (album && idkey[0] != '\0') sel_db_majority_format_cached(db, SEL_LIB_ITEM_ALBUM, idkey, fmt, sizeof fmt);
+        if (kind == 2) sel_db_majority_format_cached(db, SEL_LIB_ITEM_COMPOSER, key != NULL ? key : "", fmt, sizeof fmt);
         if (fmt[0] != '\0') snprintf(fmttag, sizeof fmttag, "\x1d%s", fmt);
         size_t at = (size_t)snprintf(line, sizeof line, "%s%s%s%.*s%s%s\t", album ? "@" : kind == 2 ? "&" : "", key != NULL ? key : "", with_artist ? "\x1f" : "",
                                      (int)alen, with_artist ? artist : "", idtag, fmttag);

@@ -173,6 +173,10 @@ static const char* format_sql(uint32_t kind) {
     }
 }
 
+static unsigned long g_majority_scans; /* I838 sentinel: song scans run by sel_db_majority_format */
+
+unsigned long sel_db_majority_scans(void) { return g_majority_scans; }
+
 void sel_db_majority_format(sqlite3* db, uint32_t kind, const char* key, char* out, size_t cap) {
     const char* q = format_sql(kind);
     sqlite3_stmt* st = NULL;
@@ -180,6 +184,7 @@ void sel_db_majority_format(sqlite3* db, uint32_t kind, const char* key, char* o
 
     out[0] = '\0';
     if (q == NULL || sqlite3_prepare_v2(db, q, -1, &st, NULL) != SQLITE_OK) return;
+    g_majority_scans++;
     memset(&t, 0, sizeof t);
     sqlite3_bind_text(st, 1, key != NULL ? key : "", -1, SQLITE_TRANSIENT); /* a statement without ?1 ignores the range error */
     while (sqlite3_step(st) == SQLITE_ROW) {
@@ -191,26 +196,67 @@ void sel_db_majority_format(sqlite3* db, uint32_t kind, const char* key, char* o
     sel_platform_family_tally_format(&t, out, cap);
 }
 
-void sel_db_majority_format_cached(sel_library* lib, uint32_t kind, const char* key, char* out, size_t cap) {
-    const char* k = key != NULL ? key : "";
-    int64_t stamp = (int64_t)sqlite3_total_changes64(lib->db) + 1;
-    uint32_t h = kind * 2654435761u;
-    sel_fmt_cache* c;
-    size_t i;
+/* I838: the change key of one item's song set, from maintained tables and index seeks only (no songs scan, no new trigger: I577).
+ * A source (and Local) is keyed on its own source_songs count, so a write elsewhere (history, pin, opened, browse cache, another
+ * source's sync) keeps its answer. Album, artist and composer take the songs generation (highest songs id and total count: any insert
+ * or delete) plus the item's own song count (an index count or the composers row), so a retag that moves songs also moves the key.
+ * Playlist, Liked and Recent have no key: their sets are small, the scan is cheap and runs each time. */
+#define FMT_SONGS_GEN "((SELECT coalesce(max(id),0) FROM songs)*1000003+(SELECT coalesce(sum(n),0) FROM source_songs))*1009"
+static const char* stamp_sql(uint32_t kind) {
+    switch (kind) {
+    case SEL_LIB_ITEM_SOURCE: return "SELECT coalesce((SELECT n FROM source_songs WHERE source=?1),0)";
+    case SEL_LIB_ITEM_LOCAL: return "SELECT coalesce((SELECT n FROM source_songs WHERE source='local'),0)";
+    case SEL_LIB_ITEM_ARTIST: return "SELECT " FMT_SONGS_GEN "+(SELECT count(*) FROM songs WHERE artist=?1)";
+    case SEL_LIB_ITEM_COMPOSER: return "SELECT " FMT_SONGS_GEN "+coalesce((SELECT songs FROM composers WHERE canon=?1),0)";
+    case SEL_LIB_ITEM_ALBUM: return "SELECT " FMT_SONGS_GEN "+(SELECT count(*) FROM songs s JOIN albums a ON a.id=CAST(?1 AS INTEGER)"
+                                    " AND s.album=a.name AND s.artist IS a.artist)";
+    default: return NULL;
+    }
+}
 
-    if (strlen(k) >= SEL_FMT_CACHE_KEY || cap < sizeof c->fmt) {
-        sel_db_majority_format(lib->db, kind, key, out, cap);
+static int64_t fmt_stamp(sqlite3* db, const char* q, const char* key) {
+    sqlite3_stmt* st = NULL;
+    int64_t v = -1;
+
+    if (sqlite3_prepare_v2(db, q, -1, &st, NULL) != SQLITE_OK) return -1;
+    sqlite3_bind_text(st, 1, key, -1, SQLITE_STATIC); /* Local has no ?1: the range error is ignored */
+    if (sqlite3_step(st) == SQLITE_ROW) v = sqlite3_column_int64(st, 0);
+    sqlite3_finalize(st);
+    return v;
+}
+
+void sel_db_majority_format_cached(sqlite3* db, uint32_t kind, const char* key, char* out, size_t cap) {
+    const char* k = key != NULL ? key : "";
+    const char* q = stamp_sql(kind);
+    sqlite3_stmt* st = NULL;
+    int64_t stamp = q != NULL ? fmt_stamp(db, q, k) : -1;
+    int hit = 0;
+
+    if (stamp < 0) {
+        sel_db_majority_format(db, kind, k, out, cap);
         return;
     }
-    for (i = 0; k[i] != '\0'; i++) h = h * 31u + (unsigned char)k[i];
-    c = &lib->fmt_cache[h % SEL_FMT_CACHE_SLOTS];
-    if (c->stamp != stamp || c->kind != kind || strcmp(c->key, k) != 0) {
-        sel_db_majority_format(lib->db, kind, k, c->fmt, sizeof c->fmt);
-        c->stamp = stamp;
-        c->kind = kind;
-        strcpy(c->key, k);
+    if (sqlite3_prepare_v2(db, "SELECT fmt FROM item_formats WHERE kind=?1 AND key=?2 AND stamp=?3", -1, &st, NULL) == SQLITE_OK) {
+        sqlite3_bind_int(st, 1, (int)kind);
+        sqlite3_bind_text(st, 2, k, -1, SQLITE_STATIC);
+        sqlite3_bind_int64(st, 3, stamp);
+        if (sqlite3_step(st) == SQLITE_ROW) {
+            snprintf(out, cap, "%s", text(st, 0));
+            hit = 1;
+        }
+        sqlite3_finalize(st);
     }
-    strcpy(out, c->fmt);
+    if (hit) return;
+    sel_db_majority_format(db, kind, k, out, cap);
+    if (sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO item_formats(kind, key, stamp, fmt) VALUES(?1, ?2, ?3, ?4)", -1, &st, NULL) ==
+        SQLITE_OK) {
+        sqlite3_bind_int(st, 1, (int)kind);
+        sqlite3_bind_text(st, 2, k, -1, SQLITE_STATIC);
+        sqlite3_bind_int64(st, 3, stamp);
+        sqlite3_bind_text(st, 4, out, -1, SQLITE_STATIC);
+        (void)sqlite3_step(st); /* a busy or read-only database only loses the stored answer */
+        sqlite3_finalize(st);
+    }
 }
 
 int sel_library_items_op(sel_library* lib, const sel_genre_op* op, int* found, int64_t* id) {
@@ -255,7 +301,7 @@ int sel_library_items_op(sel_library* lib, const sel_genre_op* op, int* found, i
             f[7] = art;
             f[8] = pinned;
             f[9] = opened;
-            sel_db_majority_format_cached(lib, (uint32_t)sqlite3_column_int(st, 0), text(st, 1), fmt, sizeof fmt);
+            sel_db_majority_format_cached(lib->db, (uint32_t)sqlite3_column_int(st, 0), text(st, 1), fmt, sizeof fmt);
             f[10] = fmt;
             emitted++;
             (void)op->row(op->row_ctx, f);
@@ -471,7 +517,7 @@ int sel_library_collection_op(sel_library* lib, const sel_genre_op* op, int* fou
         f[3] = op->mask == SEL_COLL_SONGS ? text(st, 3) : year;
         f[4] = number;
         if (op->mask == SEL_COLL_ALBUMS || op->mask == SEL_COLL_APPEARS || op->mask == SEL_COLL_MORE || op->mask == SEL_COLL_HEAD) {
-            sel_db_majority_format_cached(lib, SEL_LIB_ITEM_ALBUM, f[0], fmt, sizeof fmt); /* I691c: f[0] is the album id */
+            sel_db_majority_format_cached(lib->db, SEL_LIB_ITEM_ALBUM, f[0], fmt, sizeof fmt); /* I691c: f[0] is the album id */
         }
         f[5] = fmt;
         total++;
