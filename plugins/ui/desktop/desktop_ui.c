@@ -132,6 +132,8 @@ typedef struct pls_meta_row {
     uint32_t album_id; /* the albums row of the song's album; 0 when the album is not in the table */
 } pls_meta_row;
 
+#define DESK_COVER_CACHE 12 /* I845: distinct covers on one screen (queue, shelves, grid) */
+
 typedef struct desk {
     sel_engine* engine;
     const sel_host* host;
@@ -220,6 +222,12 @@ typedef struct desk {
     uint32_t col_kind;       /* I678f: 0 = a playlist, else SEL_LIB_ITEM_ALBUM / ARTIST / COMPOSER / RECENT / LOCAL / SOURCE, or COL_LIKED for Liked Songs (whose engine kind is 0): the kind the collection page shows (pls_id is COL_KIND_ID then) */
     char col_sub[96];        /* the album's artist (the side item's sub) */
     uint32_t col_year;       /* the album's year (0 unknown) */
+    struct cover_ent { /* I845: LRU of generated platform covers, drawn by blit instead of regenerating the gradient every frame */
+        uint32_t* px;
+        int32_t w, h;
+        uint32_t family, title, label_px, tokens, stamp;
+    } cv_cache[DESK_COVER_CACHE];
+    uint32_t cv_stamp, cv_generated, cv_hits;
     uint32_t* col_av;        /* the artist / composer avatar: generated art of the name, rendered once and drawn through a circle mask (D6) */
     int32_t col_av_w;
     uint32_t col_av_hash;
@@ -1537,6 +1545,60 @@ static uint32_t pc_word(uint32_t slot) {
     return slot >> 8;
 }
 
+/* I845: the cover of `family` in `ar`, from the LRU when the same cover (family, title, size, label size, theme tokens) was
+ * drawn before. The gradient, mark and label cost a few hundred thousand pixel writes; a playing song redraws the now-playing
+ * cover on every dirty frame. Only the live RGBA32 canvas is cached (INDEX8 is a flat fill already; offscreen tiles cache
+ * themselves). cv_generated counts the misses, cv_hits the blits. */
+static void cover_cached_draw(desk* d, sel_gui_canvas* cv, sel_gui_rect ar, uint32_t family, uint32_t title,
+                              const sel_gui_atlas* word, uint32_t label_px) {
+    struct cover_ent* e = NULL;
+    uint32_t tk = 2166136261u;
+    uint32_t i, lru = 0u;
+    sel_gui_canvas tile;
+
+    if (cv != d->canvas || cv->format != SEL_GUI_RGBA32 || ar.w <= 0 || ar.h <= 0 || ar.x < 0 || ar.y < 0 || ar.x + ar.w > cv->w ||
+        ar.y + ar.h > cv->h) { /* a partly clipped cover would cache the clipped part: draw it directly */
+        sel_gui_cover_draw(cv, ar, family, title, d->theme.token, word);
+        return;
+    }
+    for (i = 0; i < (uint32_t)SEL_GUI_TOKEN_COUNT; i++) {
+        tk = (tk ^ d->theme.token[i]) * 16777619u;
+    }
+    for (i = 0; i < DESK_COVER_CACHE; i++) {
+        struct cover_ent* c = &d->cv_cache[i];
+        if (c->px != NULL && c->w == ar.w && c->h == ar.h && c->family == family && c->title == title && c->label_px == label_px &&
+            c->tokens == tk) {
+            e = c;
+            break;
+        }
+        if (d->cv_cache[lru].px != NULL && (c->px == NULL || c->stamp < d->cv_cache[lru].stamp)) {
+            lru = i; /* an empty slot first, else the oldest stamp */
+        }
+    }
+    if (e == NULL) {
+        e = &d->cv_cache[lru];
+        free(e->px);
+        e->px = (uint32_t*)calloc((size_t)ar.w * (size_t)ar.h, sizeof *e->px);
+        if (e->px == NULL) {
+            sel_gui_cover_draw(cv, ar, family, title, d->theme.token, word);
+            return;
+        }
+        sel_gui_canvas_init(&tile, SEL_GUI_RGBA32, ar.w, ar.h, e->px);
+        sel_gui_cover_draw(&tile, rect_of(0, 0, ar.w, ar.h), family, title, d->theme.token, word);
+        e->w = ar.w;
+        e->h = ar.h;
+        e->family = family;
+        e->title = title;
+        e->label_px = label_px;
+        e->tokens = tk;
+        d->cv_generated++;
+    } else {
+        d->cv_hits++;
+    }
+    e->stamp = ++d->cv_stamp;
+    sel_gui_blit_image(cv, ar, e->px, ar.w, ar.h, ar.w, 0);
+}
+
 /* The platform cover of `family` (I691b, I691d) on `cv`: the one drawing path of every fallback cover. `slot` receives family + 1
  * (plus the word px above the family byte) for the dump line `platform_covers`; draws counts every call, the sentinel of the
  * fallback branch. Covers under 64 logical px draw the field and mark only. */
@@ -1553,7 +1615,7 @@ static void family_platform_cover(desk* d, sel_gui_canvas* cv, sel_gui_rect ar, 
         }
         word = desk_font(d, 1, px);
     }
-    sel_gui_cover_draw(cv, ar, family, sel_gui_str_hash(title != NULL ? title : ""), d->theme.token, word);
+    cover_cached_draw(d, cv, ar, family, sel_gui_str_hash(title != NULL ? title : ""), word, (uint32_t)px);
     if (slot != NULL) {
         *slot = (family + 1u) | (word != NULL ? (uint32_t)px << 8 : 0u);
     }
@@ -6810,6 +6872,7 @@ static const char* library_dump_build(desk* d) {
     o = dump_put(d, o, "platform_covers np=%s bar=%s page=%s tile0=%s draws=%u shelf=%s grid=%s flow=%s side=%s header=%s\n", pc_name(d->pc_np), pc_name(d->pc_bar),
                  pc_name(d->pc_page), pc_name(d->pc_tile0), (unsigned)d->pc_draws, pc_name(d->pc_shelf), pc_name(d->pc_grid), pc_name(d->pc_flow),
                  pc_name(d->pc_side), pc_name(d->pc_header));
+    o = dump_put(d, o, "cover_cache generated=%u hits=%u\n", (unsigned)d->cv_generated, (unsigned)d->cv_hits);
     o = dump_put(d, o, "platform_cover_words np=%u bar=%u page=%u tile0=%u\n", (unsigned)pc_word(d->pc_np), (unsigned)pc_word(d->pc_bar),
                  (unsigned)pc_word(d->pc_page), (unsigned)pc_word(d->pc_tile0));
     o = dump_put(d, o, "nowplaying keys end %d value %d\n",(int)d->np_key_end, (int)d->np_val_x);
@@ -13489,6 +13552,10 @@ static void desk_close(void* state) {
     desk* d = (desk*)state;
     int i;
     if (d != NULL) {
+        for (i = 0; i < DESK_COVER_CACHE; i++) {
+            free(d->cv_cache[i].px);
+            d->cv_cache[i].px = NULL;
+        }
         if (d->report) {
             printf("desktop_ui closed frames=%u title=%s clock=%s status=%s\n", (unsigned)d->frames, d->uim.frame.title,
                    d->uim.frame.clock, d->uim.frame.status);
