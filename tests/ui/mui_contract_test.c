@@ -2072,8 +2072,8 @@ static void test_libfilter(void) {
     }
     f = mui_libfilter_press(f, 1, NULL, items, 4, &rows, label, sizeof label);
     CHECK(f == SEL_UIM_LFILTERS - 1u && strcmp(label, "Local Files") == 0, "next at the last filter stays: %u '%s'", (unsigned)f, label);
-    f = mui_libfilter_press(f, -1, NULL, items, 4, &rows, label, sizeof label);
-    CHECK(f == SEL_UIM_LFILTERS - 2u && strcmp(label, "Sources") == 0, "previous steps back: %u '%s'", (unsigned)f, label);
+    f = mui_libfilter_press(f, -1, NULL, items, 4, &rows, label, sizeof label); /* I831: the left button is the x with a filter in force */
+    CHECK(f == 0u && strcmp(label, "All") == 0, "the left button with a filter in force clears to All: %u '%s'", (unsigned)f, label);
     CHECK(mui_libfilter_presses() == presses + SEL_UIM_LFILTERS + 2u, "press counter %u", (unsigned)(mui_libfilter_presses() - presses));
     CHECK(sel_uim_lfilter_passes() == passes + SEL_UIM_LFILTERS + 2u, "the shared filter pass ran %u times, want %u",
           (unsigned)(sel_uim_lfilter_passes() - passes), (unsigned)(SEL_UIM_LFILTERS + 2u));
@@ -2101,15 +2101,18 @@ static void test_libfilter(void) {
             nfilt += (sel_uim_lfilter_mask(1u) & SEL_LIB_ITEM_BIT(it[k].kind)) != 0u;
         }
         CHECK(m.row_n == nfilt && nfilt == 2u, "rows drawn %u, filtered model rows %u: the sidebar has a second list", (unsigned)m.row_n, (unsigned)nfilt);
+        CHECK(m.chip_left_clear && strcmp(m.chip_left_name, "Clear Filter") == 0, "label mode with Playlists in force: left button '%s'", m.chip_left_name); /* I831 */
         CHECK(m.chip_single && strcmp(m.chip_label, "Playlists") == 0, "narrow sidebar: S5 is the label naming the filter, got '%s'", m.chip_label);
         for (k = 0; k < SEL_UIM_SIDE_CHIPS; k++) {
             CHECK(!m.chip_shown[k], "chip %u shows beside the single label", (unsigned)k);
         }
+        in.chip = 0u; /* I831: All in force, label mode: Previous Filter */
+        mui_sidebar_build(&in, &m);
+        CHECK(!m.chip_left_clear && strcmp(m.chip_left_name, "Previous Filter") == 0, "label mode with All in force: left button '%s'", m.chip_left_name);
         in.chips_single = 0;
-        in.chip = 0u;
         mui_sidebar_build(&in, &m);
         CHECK(!m.chip_single && m.chip_shown[0] && m.chip_shown[5] && m.row_n == 4u, "wide sidebar: the six chips show over all %u rows", (unsigned)m.row_n);
-        CHECK(mui_sidebar_builds() == sbuilds + 2u, "the sidebar model did not run");
+        CHECK(mui_sidebar_builds() == sbuilds + 3u, "the sidebar model did not run");
         CHECK(sel_uim_lfilter_chips_single(1, 10, 1000) == 1 && sel_uim_lfilter_chips_single(0, 10, 1000) == 0 && sel_uim_lfilter_chips_single(0, 1001, 1000) == 1,
               "shared chips-or-label decision");
         CHECK(mui_sidebar_chips_single(0, 100u) == 1 && mui_sidebar_chips_single(0, 2000u) == 0 && mui_sidebar_chips_single(1, 2000u) == 1, "MUI width decision");
@@ -2123,7 +2126,8 @@ static void test_libfilter(void) {
         snprintf(body, sizeof body, "%.*s", g != NULL && end != NULL ? (int)(end - g < 11990 ? end - g : 11990) : 0, g != NULL ? g : "");
         CHECK(strstr(src, "id == CTL_LIB_PREV || id == CTL_LIB_NEXT") != NULL && strstr(src, "mui_libfilter_press(s->lib_filter") != NULL,
               "mui_control_fire does not reach mui_libfilter_press");
-        CHECK(strstr(src, "\"Previous Filter\"") != NULL && strstr(src, "\"Next Filter\"") != NULL, "the sidebar has no previous and next buttons");
+        CHECK(strstr(src, "m->chip_left_name") != NULL && strstr(src, "m->chip_left_clear") != NULL && strstr(src, "\"Next Filter\"") != NULL,
+              "the sidebar left button does not come from the shared model");
         CHECK(strstr(src, "lib_list") == NULL && strstr(src, "lib_ptr") == NULL && strstr(body, "sel_uim_lfilter_pass(") != NULL,
               "I670's separate list is back, or the sidebar build skips the shared pass");
     }
