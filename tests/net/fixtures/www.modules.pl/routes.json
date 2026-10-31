@@ -1,6 +1,8 @@
 {
   "/?id=search&q=chip": {
     "file": "search_chip.html",
+    "delay_first_byte": 4,
+    "delay_first_byte": 4,
     "headers": {
       "Content-Type": "text/html"
     }

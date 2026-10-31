@@ -509,7 +509,7 @@ typedef struct desk {
     uint32_t flow_rec_n;
     char flow_snaps[2048];                        /* script `flowsnap` lines: the covers of the frame drawn so far, one line per snap (I400 test) */
     uint32_t lib_mode;       /* Library page mode: 0 composers, 1 tree, 2 column browser (DUI-P4-3 slices B, C; I678i retired files, history, sources) */
-    struct { char key[24], kind[12], name[40], path[96]; int enabled, searchable; uint32_t count; int64_t synced; int64_t snooze; int due; } src[16]; /* the SOURCES rows of the Sources tab (I265) */
+    struct { char key[24], kind[12], name[40], path[96]; int enabled, searchable, syncable; uint32_t count; int64_t synced; int64_t snooze; int due; } src[16]; /* the SOURCES rows of the Sources tab (I265) */
     uint32_t src_n;          /* rows held in src */
     uint32_t nag_off;        /* bit i set: the sync offer (I527) has source row i unchecked; all start checked */
     uint32_t sync_pending;   /* bit i set: a LIBRARY_SYNC for source row i is queued or running; cleared by its outcome (I582) */
@@ -5239,6 +5239,7 @@ static void col_round_art(desk* d, sel_gui_rect r) {
  * (src_toggle_send, src_sync_send). col_src_index is the registered source the page shows, d->src_n when the engine does not know it. */
 static int src_toggle_send(desk* d, uint32_t flip);
 static int src_remote(const desk* d, uint32_t i);
+static int src_syncable(const desk* d, uint32_t i);
 
 static uint32_t col_src_index(const desk* d) {
     uint32_t i;
@@ -5266,6 +5267,8 @@ static void col_src_status(const desk* d, uint32_t i, char* out, size_t cap) {
         snprintf(out, cap, "%s, switched off", src_remote(d, i) ? "Remote" : "Local");
     } else if (!src_remote(d, i)) {
         snprintf(out, cap, "Local, switched on");
+    } else if (!src_syncable(d, i)) {
+        snprintf(out, cap, "Remote, search only");
     } else if (d->src[i].synced > 0) {
         snprintf(out, cap, "Remote, last synced %lld days ago", (long long)((time(NULL) - d->src[i].synced) / 86400));
     } else {
@@ -5282,7 +5285,7 @@ static void draw_col_src(desk* d, sel_gui_rect mn, uint32_t muted) {
     draw_text(d, rect_of(tx, r.y, src_sync_rect(d, r).x - tx, r.h), line, 0, 13, muted);
     if (i < d->src_n) {
         int on = d->src[i].enabled;
-        if (src_remote(d, i) && on) {
+        if (src_syncable(d, i) && on) {
             draw_button(d, src_sync_rect(d, r), ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]), "Sync", 14, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
         }
         sel_gui_round_rect(d->canvas, tg, tg.h / 2, on ? ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]) : ARGB(d->theme.token[SEL_GUI_TOKEN_TRACK]));
@@ -5300,7 +5303,7 @@ static int col_src_click(desk* d, sel_gui_rect mn, int32_t x, int32_t y) {
     if (in_rect(src_toggle_rect(d, r), x, y)) {
         return src_toggle_send(d, i);
     }
-    if (src_remote(d, i) && d->src[i].enabled && in_rect(src_sync_rect(d, r), x, y)) {
+    if (src_syncable(d, i) && d->src[i].enabled && in_rect(src_sync_rect(d, r), x, y)) {
         src_sync_send(d, i);
         d->src_wait = 1;
         return desk_send(d, "SOURCES");
@@ -6672,6 +6675,7 @@ static const char* library_dump_build(desk* d) {
     }
     o = dump_put(d, o, "sources %u\n", (unsigned)d->src_n); /* I786a: per-source state (key|kind|name|enabled|songs) for the sync checks; the Sources tab that carried it is gone (I678) */
     for (i = 0; i < d->src_n; i++) {
+        o = dump_put(d, o, "source_sync %u %s due=%d syncable=%d\n", (unsigned)i, d->src[i].key, d->src[i].due, src_syncable(d, i)); /* I814 */
         o = dump_put(d, o, "source %u %s|%s|%s|%d|%u\n", (unsigned)i, d->src[i].key, d->src[i].kind, d->src[i].name, d->src[i].enabled, (unsigned)d->src[i].count);
     }
     {
@@ -6952,6 +6956,9 @@ static const char* library_dump_build(desk* d) {
                 {
                     char khst[64];
                     sel_gui_rect hrow = col_src_row(d, pmn), stg = src_toggle_rect(d, hrow), ssy = src_sync_rect(d, hrow);
+                    if (col_src_index(d) < d->src_n && !src_syncable(d, col_src_index(d))) {
+                        ssy = rect_of(0, 0, 0, 0); /* I814: no Sync button for this source */
+                    }
                     uint32_t si = col_src_index(d);
                     col_src_status(d, si, khst, sizeof khst);
                     o = dump_put(d, o, "kindhead wordmark=%d played=%d source=%d status=[%s] toggle=%d,%d,%d,%d sync=%d,%d,%d,%d first=[%s]\n", col_wordmark(d),
@@ -7831,6 +7838,11 @@ static sel_gui_rect src_sync_rect(desk* d, sel_gui_rect r) {
 
 static int src_remote(const desk* d, uint32_t i) {
     return strcmp(d->src[i].kind, "remote") == 0;
+}
+
+/* A remote source the engine can sync (I814): a search-only source has no Sync button and no sync status. */
+static int src_syncable(const desk* d, uint32_t i) {
+    return src_remote(d, i) && d->src[i].syncable;
 }
 
 /* Sends the switch-off list with source `flip` toggled and the `force_off` sources off (Never, I602), then asks SOURCES for the stored state. */
@@ -14071,6 +14083,7 @@ static void desk_on_event(void* state, const sel_message* evt) {
             snprintf(d->src[n].path, sizeof d->src[n].path, "%s", (const char*)sel_tag_find(t, SEL_SRC_PATH, (uintptr_t)""));
             d->src[n].enabled = sel_tag_find(t, SEL_SRC_ENABLED, 1) != 0;
             d->src[n].searchable = sel_tag_find(t, SEL_SRC_SEARCHABLE, 0) != 0;
+            d->src[n].syncable = sel_tag_find(t, SEL_SRC_SYNCABLE, 0) != 0;
             d->src[n].count = (uint32_t)sel_tag_find(t, SEL_SRC_COUNT, 0);
             d->src[n].synced = (int64_t)sel_tag_find(t, SEL_SRC_SYNCED, 0);
             d->src[n].due = sel_tag_find(t, SEL_SRC_DUE, 0) != 0;

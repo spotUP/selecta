@@ -5,7 +5,10 @@
 #     searches>=1 is the sentinel that the worker search ran);
 #  2. a click on the first row plays it: plays=1 and the engine's `song` is modulespl:<path>;
 #  3. the scope is remembered: a restart with the same config dir comes back with scope=modulespl (pref search.last_source);
-#  4. a click on the Modules.pl Radio row counts radio_plays=1.
+#  4. a click on the Modules.pl Radio row counts radio_plays=1;
+#  5. (I816) the fixture delays the first byte of the chip search by 4 s, past the client's 3 s default: rows=3 only
+#     arrives because the plugin asks for the longer first-byte wait;
+#  6. (I814) the modulespl SOURCES row is due=0 syncable=0.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -44,6 +47,11 @@ if(NOT "${base}" MATCHES "online_chip 1 (-?[0-9]+) (-?[0-9]+) ([0-9]+) ([0-9]+)\
 endif()
 math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
 math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+
+# I814: Modules.pl is search-only (no sync hook): its SOURCES row is never due and the desktop draws no Sync for it.
+if(NOT "${base}" MATCHES "source_sync [0-9]+ modulespl due=0 syncable=0\n")
+  message(FATAL_ERROR "I814: the modulespl SOURCES row must be due=0 syncable=0:\n${base}")
+endif()
 
 # Pass 2: pick the chip, type the query, wait for the answer.
 set(typed "wait 300\nmove ${cx} ${cy}\nclick ${cx} ${cy}\nwait 20\nkey c\nkey h\nkey i\nkey p\nkey enter\n")

@@ -21,6 +21,8 @@
 
 #define SITE_HOME "https://www.modules.pl/"
 #define PAGE_MAX (4u * 1024u * 1024u)
+/* www.modules.pl starts answering a search after 10-11 s; the client default of 3 s fails it (I816). */
+#define SEARCH_FIRST_BYTE_MS 30000u
 
 static const sel_tag g_tags[] = {
     {SEL_TAG_END, 0},
@@ -103,7 +105,7 @@ static int ms_search(const sel_host* host, const char* query, sel_search_sink* o
     }
     snprintf(path, sizeof path, "%s/search.html", dir);
     snprintf(url, sizeof url, "%s/?id=search&q=%s", site_base(), enc);
-    if (net->get_file(host, url, path, &rq, &got) != 200) {
+    if (net->get_file_wait(host, url, path, SEARCH_FIRST_BYTE_MS, &rq, &got) != 200) {
         remove(path);
         return -1;
     }
