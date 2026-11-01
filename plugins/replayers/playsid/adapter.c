@@ -39,7 +39,7 @@ typedef struct ps_state {
 static ps_state* g_owner;
 
 /* Sentinels (tests/engine/playsid_test.c): the adapter ran, per hook. */
-uint32_t sel_playsid_probes, sel_playsid_starts, sel_playsid_seeks, sel_playsid_ends, sel_playsid_viz_fills;
+uint32_t sel_playsid_probes, sel_playsid_starts, sel_playsid_seeks, sel_playsid_ends, sel_playsid_viz_fills, sel_playsid_perf_gates, sel_playsid_perf_measures, sel_playsid_perf_asks;
 
 static uint32_t be16(const uint8_t* p) {
     return ((uint32_t)p[0] << 8) | p[1];
@@ -173,6 +173,58 @@ static uint32_t vert_freq(const ps_state* s, uint32_t song1) {
     return (s->speed_mask >> (song1 & 31u)) & 1u ? 60u : 50u;
 }
 
+/* I434h: the reSID speed gate (HippoPlayer .performanceCheck). The library benchmark runs once per (oversample, internal
+ * filter, external filter) and the measured time is cached; the limit scales with the SID count, so a 3SID tune is
+ * judged against a third of the one-SID reference. Too slow: the host asks "Continue anyway / Stop" through
+ * SEL_HOSTQ_CONFIRM; a host without a dialog lets the song start. The answer Continue is cached per combination, so a
+ * tune is not asked about twice. Returns 1 = start, 0 = the user stopped. */
+#define PS_PERF_SLOTS 16u
+typedef struct ps_perf {
+    uint32_t key, measured, limit, accepted_sids; /* accepted_sids: bit n set = "continue" given for n SIDs */
+} ps_perf;
+static ps_perf g_perf[PS_PERF_SLOTS];
+static uint32_t g_perf_n;
+
+static int perf_gate(ps_state* s, uint32_t in_on, uint32_t ext_on) {
+    uint32_t key = (s->oversample << 8) | (in_on << 4) | ext_on, i, sids, limit;
+    ps_perf* p = NULL;
+    sel_tag ask, ans;
+    sel_playsid_perf_gates++;
+    for (i = 0; i < g_perf_n; i++) {
+        if (g_perf[i].key == key) {
+            p = &g_perf[i];
+        }
+    }
+    if (p == NULL) {
+        uint32_t one = 0;
+        uint32_t ms = s->ops->measure_resid(s->oversample, in_on, ext_on, &one);
+        sel_playsid_perf_measures++;
+        if (g_perf_n == PS_PERF_SLOTS) {
+            g_perf_n = 0;
+        }
+        p = &g_perf[g_perf_n++];
+        p->key = key;
+        p->measured = ms;
+        p->limit = one;
+        p->accepted_sids = 0;
+    }
+    sids = ps_sid_count(s->image, s->size);
+    limit = ps_perf_limit(p->limit, sids);
+    if (p->measured <= limit || (p->accepted_sids >> sids & 1u) != 0u) {
+        return 1;
+    }
+    sel_playsid_perf_asks++;
+    ask.tag = SEL_HOSTQ_CONFIRM;
+    ask.value = (uintptr_t) "Your Amiga could be too slow for this SID mode! Continue anyway, or Stop?";
+    ans.tag = SEL_TAG_END;
+    ans.value = 1;
+    if (s->host->query != NULL && s->host->query(s->host, &ask, &ans) && ans.tag == SEL_HOSTQ_CONFIRM && ans.value == 0) {
+        return 0;
+    }
+    p->accepted_sids |= 1u << sids;
+    return 1;
+}
+
 /* Order as in puu016.s: SetOperatingMode, SetAHIMode, AllocEmulResource, SetModule, SetVertFreq, StartSong. A subsong
  * change comes through here again: the song is stopped and the resource given back first. */
 static int rp_start(void* state, uint32_t subsong, uint32_t rate, const sel_voices* voices) {
@@ -191,6 +243,13 @@ static int rp_start(void* state, uint32_t subsong, uint32_t rate, const sel_voic
     if (ps_mode_is_resid(s->mode)) {
         s->oversample = ps_oversample_from_pref(cfg(s->host, "playsid.oversample", "normal"));
         s->ops->set_resid_mode(s->oversample);
+    }
+    if (ps_mode_is_resid(s->mode)) {
+        uint32_t in_on, ext_on;
+        ps_filter_from_pref(cfg(s->host, "playsid.filter", "internal"), &in_on, &ext_on);
+        if (!perf_gate(s, in_on, ext_on)) {
+            return 0;
+        }
     }
     if (s->ops->alloc_emul() != 0) {
         return 0;

@@ -432,6 +432,9 @@ SEL_TAG(MACHINE, TIER,         0x900A, INT)
 
 SEL_TAG(HOSTQ, API_VERSION,    0xA000, INT)
 SEL_TAG(HOSTQ, LOCAL_TIME,     0xA001, INT) /* milliseconds since local midnight */
+/* I434h: a plugin asks the user to confirm. Ask value = const char* text; answer value 1 = continue, 0 = stop. A host
+ * without a dialog returns 0 from query (no answer): the plugin continues. */
+SEL_TAG(HOSTQ, CONFIRM,        0xA002, INT)
 
 /* Mixer configuration. The resampler values (none, linear, cubic, sinc)
  * are enum constants in the mixer header, not tags. */

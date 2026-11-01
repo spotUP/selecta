@@ -73,8 +73,16 @@ static uint32_t st_getbuf(const int8_t* bufs[3], uint32_t* period) {
     bufs[2] = s_buf_sids > 2 ? s_wave[2] : NULL;
     return s_buf_sids ? s_buf_len : 0;
 }
+/* MeasureResidPerformance stub (I434h): s_meas_ms against the one-SID reference s_meas_ref */
+static uint32_t s_meas_ms = 10, s_meas_ref = 100, s_n_meas;
+static uint32_t st_measure(uint32_t o, uint32_t i, uint32_t e, uint32_t* limit) {
+    (void)o; (void)i; (void)e;
+    s_n_meas++;
+    *limit = s_meas_ref;
+    return s_meas_ms;
+}
 static const ps_ops s_ops = {st_open, st_close, st_alloc, st_free, st_setmodule, st_start, st_stop,
-                             st_pause, st_cont, st_fwd, st_hz, st_om, st_ahi, st_getom, st_filt, st_boost, st_over, st_getbuf};
+                             st_pause, st_cont, st_fwd, st_hz, st_om, st_ahi, st_getom, st_filt, st_boost, st_over, st_getbuf, st_measure};
 const ps_ops* ps_ops_get(void) { return &s_ops; }
 
 static const sel_tag* t_desc;
@@ -340,6 +348,89 @@ static void catalogue_length_test(const char* dir) {
     rmdir(dbdir);
 }
 
+/* I434h: the reSID CPU gate through the engine's PLAY. A host query stands in for the dialog (SEL_HOSTQ_CONFIRM). */
+static uint32_t g_asks, g_answer = 1;
+static int confirm_query(const sel_host* h, const sel_tag* ask, sel_tag* answer) {
+    if (ask != NULL && ask->tag == SEL_HOSTQ_CONFIRM) {
+        g_asks++;
+        answer->tag = SEL_HOSTQ_CONFIRM;
+        answer->value = g_answer;
+        return 1;
+    }
+    return sel_host_default()->query(h, ask, answer);
+}
+
+static void perf_gate_test(const char* dir) {
+    sel_host host = *sel_host_default();
+    sel_engine_config cfg;
+    char path[1200], line[1300];
+    uint32_t sids, gates0, asks0, meas0, starts0, subsong_flip = 0;
+    uint8_t h[0x7c + 16];
+    static const uint32_t limits[3] = {100, 50, 33}; /* reference 100: one SID, halved, divided by three */
+    FILE* f;
+    memset(&cfg, 0, sizeof cfg);
+    host.query = confirm_query;
+    cfg.registry_count = reg_count;
+    cfg.registry_get = reg_get;
+    s_installed = 1;
+    snprintf(path, sizeof path, "%s/perf.sid", dir);
+    for (sids = 1; sids <= 4; sids++) { /* 4 = one SID again, for the Stop case */
+        uint32_t n = sids > 3 ? 1u : sids;
+        write_psid(path, 2, 1, 0ul);
+        if (n > 1u) { /* v4 header with the SID2 (and SID3) addresses */
+            f = fopen(path, "rb");
+            CHECK(f != NULL);
+            if (f == NULL) return;
+            CHECK(fread(h, 1, sizeof h, f) == sizeof h);
+            fclose(f);
+            h[5] = 4; h[0x7a] = 0x42; h[0x7b] = n == 3 ? 0x43 : 0;
+            f = fopen(path, "wb");
+            fwrite(h, 1, sizeof h, f);
+            fclose(f);
+        }
+        eng = sel_engine_create(&host, &cfg);
+        CHECK(eng != NULL);
+        run("PREF_SET playsid.mode \"6581\"");
+        snprintf(line, sizeof line, "QUEUE_ADD %s", path);
+        run(line);
+        g_perf_n = 0;
+        s_meas_ref = 100;
+        gates0 = sel_playsid_perf_gates; asks0 = sel_playsid_perf_asks; meas0 = s_n_meas; starts0 = sel_playsid_starts;
+        if (sids <= 3) {
+            /* measured one above this SID count's limit: the dialog asks, Continue starts the song */
+            s_meas_ms = limits[n - 1] + 1u;
+            g_answer = 1;
+            run("PLAY");
+            CHECK(sel_playsid_perf_gates == gates0 + 1u); /* sentinel: the gate ran through the engine's PLAY */
+            CHECK(s_n_meas == meas0 + 1u && sel_playsid_perf_asks == asks0 + 1u);
+            CHECK(sel_playsid_starts == starts0 + 1u);
+            /* same combination, measured exactly at the limit would not ask: drop the cache and the acceptance */
+            g_perf_n = 0;
+            s_meas_ms = limits[n - 1];
+            asks0 = sel_playsid_perf_asks; gates0 = sel_playsid_perf_gates;
+            run(subsong_flip++ & 1u ? "SUBSONG 0" : "SUBSONG 1");
+            CHECK(sel_playsid_perf_gates == gates0 + 1u && sel_playsid_perf_asks == asks0);
+            /* the benchmark runs once per combination: the next start reuses the measurement */
+            meas0 = s_n_meas;
+            run(subsong_flip++ & 1u ? "SUBSONG 0" : "SUBSONG 1");
+            CHECK(sel_playsid_perf_gates == gates0 + 2u && s_n_meas == meas0);
+        } else {
+            /* Stop aborts the start: no StartSong, the song does not play */
+            int start0 = s_n_start;
+            s_meas_ms = 101;
+            g_answer = 0;
+            run("PLAY");
+            CHECK(sel_playsid_perf_gates == gates0 + 1u && sel_playsid_perf_asks == asks0 + 1u);
+            CHECK(s_n_start == start0 && sel_playsid_starts == starts0);
+            CHECK(sel_engine_state(eng)->play != SEL_PLAYING);
+        }
+        run("STOP");
+        sel_engine_destroy(eng);
+    }
+    g_answer = 1;
+    remove(path);
+}
+
 int main(int argc, char** argv) {
     sel_engine_config cfg;
     char line[1200], path[1024];
@@ -522,6 +613,7 @@ int main(int argc, char** argv) {
     remove(path);
     catalogue_length_test(argv[1]);
     viz_scope_test(argv[1]);
+    perf_gate_test(argv[1]);
     if (g_fail != 0) {
         printf("playsid: %d failures\n", g_fail);
         return 1;

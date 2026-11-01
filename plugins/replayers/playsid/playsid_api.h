@@ -42,6 +42,9 @@ typedef struct ps_ops {
     /* GetResidAudioBuffer (I434g): bufs[0..2] = a0/a1/a2 (per-SID signed 8-bit Paula buffers, a1 equals a0 for one SID,
      * a2 NULL below three SIDs), *period = d1; returns d0, the length in samples. */
     uint32_t (*get_resid_buffer)(const int8_t* bufs[3], uint32_t* period);
+    /* MeasureResidPerformance (I434h): d0 = oversample mode, d1 = internal filter, d2 = external filter; renders four
+     * frames and returns d0 = milliseconds taken, *limit = d1, the reference value for one SID. */
+    uint32_t (*measure_resid)(uint32_t oversample, uint32_t int_filter, uint32_t ext_filter, uint32_t* limit);
 } ps_ops;
 
 /* The Amiga build returns the LVO table (playsid_amiga.c); the host test defines its own stub. */
@@ -82,5 +85,9 @@ uint32_t ps_ahi_mode_for_output(const char* output_id, const char* ahi_pref);
 /* SID chips a PSID/RSID header asks for: 1 (mono, v1/v2 or no extra address), 2 (v3+, SID2 address set), 3 (v4+, SID2
  * and SID3 addresses set). `size` is the bytes available at `hdr`; a short or non-SID header counts as 1. */
 uint32_t ps_sid_count(const uint8_t* hdr, size_t size);
+
+/* I434h: the reference limit of MeasureResidPerformance for `sids` chips: one SID the library value, two SIDs half,
+ * three SIDs a third (HippoPlayer puu016.s). */
+uint32_t ps_perf_limit(uint32_t limit_one_sid, uint32_t sids);
 
 #endif

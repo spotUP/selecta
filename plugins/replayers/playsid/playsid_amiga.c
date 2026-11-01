@@ -24,6 +24,7 @@ enum {
     LVO_SETRESIDMODE = -150,
     LVO_SETRESIDFILTER = -168,
     LVO_GETRESIDBUFFER = -174,
+    LVO_MEASURERESID = -180,
     LVO_SETAHIMODE = -192,
     LVO_SETRESIDBOOST = -204
 };
@@ -112,6 +113,19 @@ static uint32_t a_resid_buffer(const int8_t* bufs[3], uint32_t* period) {
     *period = r_d1;
     return r_d0;
 }
+/* MeasureResidPerformance: d0 mode, d1 internal filter, d2 external filter; returns d0 ms, d1 reference */
+static uint32_t a_measure_resid(uint32_t over, uint32_t in_on, uint32_t ext_on, uint32_t* limit) {
+    register struct Library* r_a6 __asm__("a6") = g_base;
+    register uint32_t r_d0 __asm__("d0") = over;
+    register uint32_t r_d1 __asm__("d1") = in_on;
+    register uint32_t r_d2 __asm__("d2") = ext_on;
+    __asm__ volatile("jsr %c4(%%a6)"
+                     : "+d"(r_d0), "+d"(r_d1), "+d"(r_d2), "+a"(r_a6)
+                     : "i"(LVO_MEASURERESID)
+                     : "a0", "a1", "memory", "cc");
+    *limit = r_d1;
+    return r_d0;
+}
 static void a_resid_filter(uint32_t in_on, uint32_t ext_on) { lvo_residfilter(in_on, ext_on); }
 static void a_resid_boost(uint32_t boost) { (void)lvo_residboost(boost, 0, 0); }
 static void a_resid_mode(uint32_t over) { (void)lvo_residmode(over, 0, 0); }
@@ -119,7 +133,7 @@ static uint32_t a_getopmode(void) { return lvo_getopmode(0, 0, 0); }
 
 static const ps_ops g_ops = {a_open, a_close, a_alloc, a_free, a_set_module, a_start, a_stop,
                              a_pause, a_continue, a_forward, a_vert, a_opmode, a_ahi, a_getopmode,
-                             a_resid_filter, a_resid_boost, a_resid_mode, a_resid_buffer};
+                             a_resid_filter, a_resid_boost, a_resid_mode, a_resid_buffer, a_measure_resid};
 
 const ps_ops* ps_ops_get(void) {
     return &g_ops;
