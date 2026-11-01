@@ -185,6 +185,23 @@ void mui_aa_metrics(int font_px, mui_aa_metrics_t* out) {
     out->height = small ? out->font_px + 2 * out->pad_y : (out->font_px > out->icon_px ? out->font_px : out->icon_px) + 2 * out->pad_y;
     out->radius = small ? 4 : 6;
     out->check_px = small ? 12 : 16;
+    out->aspect_q8 = 256;
+}
+
+static uint32_t g_aspect_calls;
+
+int mui_pixel_aspect_q8(int res_x, int res_y) {
+    int q;
+    g_aspect_calls++;
+    if (res_x <= 0 || res_y <= 0) {
+        return 256;
+    }
+    q = (int)(((long)res_y * 256L + res_x / 2) / res_x);
+    return q < 256 ? 256 : q > 512 ? 512 : q;
+}
+
+uint32_t mui_pixel_aspect_calls(void) {
+    return g_aspect_calls;
 }
 
 int mui_aa_check_plan(const uint32_t* token, const mui_aa_metrics_t* m, int state, mui_aa_check_op_t* out) {

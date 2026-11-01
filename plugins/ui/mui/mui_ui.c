@@ -409,6 +409,7 @@ static uint32_t g_text_rgb; /* I665: the TEXT token, caption colour of the flat 
 static struct Screen* g_scr;
 static mui_pens_plan g_plan;
 static LONG g_pen_held[MUI_PEN_TOTAL];
+static int g_pixel_aspect_q8 = 256; /* I949a: pixel height over width x 256 of the opened screen mode, read once in mui_screen_open */
 static int g_screen_rtg; /* I684b: the Workbench mode is a foreign (RTG) one; the own screen keeps that kind, planar stays planar */
 
 static void mui_screen_close(void) {
@@ -473,6 +474,13 @@ static void mui_screen_open(const uint32_t* tokens) {
             (unsigned long)plan.mode, (unsigned long)plan.width, (unsigned long)plan.height, (unsigned long)plan.depth,
             (unsigned long)mui_layout_min_height(), (unsigned long)wb_h);
     mode = plan.mode;
+    /* I949a: the one aspect source; consumers (I949e) read g_pixel_aspect_q8 and never DisplayInfo. */
+    g_pixel_aspect_q8 = 256;
+    memset(&di, 0, sizeof di);
+    if (mode != (ULONG)INVALID_ID && GetDisplayInfoData(NULL, (UBYTE*)&di, sizeof di, DTAG_DISP, mode) > 0) {
+        g_pixel_aspect_q8 = mui_pixel_aspect_q8((int)di.Resolution.x, (int)di.Resolution.y);
+    }
+    fprintf(stderr, "selecta mui: pixel aspect %d/256 (resolution %dx%d)\n", g_pixel_aspect_q8, (int)di.Resolution.x, (int)di.Resolution.y);
     pal[0] = ((ULONG)MUI_PEN_TOTAL << 16) | 0u;
     for (i = 0; i < MUI_PEN_TOTAL; i++) {
         pal[1 + i * 3] = g_plan.rgb32[i][0];

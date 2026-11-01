@@ -1919,6 +1919,30 @@ static void test_screen_rtg_flag(void) {
           "a hardcoded RTG flag came back");
 }
 
+/* I949a: one pixel-aspect source. 640x256 PAL non-laced reports tall pixels (22x44 ticks, 512), laced and square modes about 1:1. */
+static void test_aa_aspect(void) {
+    static char src[400000];
+    FILE* f = fopen(MUI_UI_SOURCE, "rb");
+    size_t n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
+    const char* open_fn;
+    uint32_t before = mui_pixel_aspect_calls();
+    mui_aa_metrics_t m;
+    if (f != NULL) {
+        fclose(f);
+    }
+    src[n] = 0;
+    CHECK(mui_pixel_aspect_q8(22, 44) == 512, "640x256 PAL non-laced gives %d, want 512", mui_pixel_aspect_q8(22, 44));
+    CHECK(mui_pixel_aspect_q8(22, 22) == 256 && mui_pixel_aspect_q8(44, 44) == 256, "laced or square modes are not 256");
+    CHECK(mui_pixel_aspect_q8(44, 22) == 256 && mui_pixel_aspect_q8(1, 9) == 512 && mui_pixel_aspect_q8(0, 0) == 256, "clamp or zero case wrong");
+    CHECK(mui_pixel_aspect_calls() == before + 6u, "call sentinel %u", (unsigned)(mui_pixel_aspect_calls() - before));
+    mui_aa_metrics(0, &m);
+    CHECK(m.aspect_q8 == 256, "metrics aspect_q8 default is not square");
+    open_fn = strstr(src, "static void mui_screen_open(");
+    CHECK(open_fn != NULL && strstr(open_fn, "g_pixel_aspect_q8 = mui_pixel_aspect_q8((int)di.Resolution.x, (int)di.Resolution.y);") != NULL,
+          "mui_screen_open does not read the aspect from DisplayInfo.Resolution");
+    CHECK(open_fn != NULL && strstr(open_fn, "DTAG_DISP, mode) > 0) {\n        g_pixel_aspect_q8") != NULL, "the aspect read does not use the opened screen mode");
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return 2;
@@ -2040,6 +2064,8 @@ int main(int argc, char** argv) {
         test_volume_row();
     } else if (strcmp(argv[1], "cycle-initial") == 0) {
         test_cycle_initial();
+    } else if (strcmp(argv[1], "aa-aspect") == 0) {
+        test_aa_aspect();
     } else if (strcmp(argv[1], "screen-rtg-flag") == 0) {
         test_screen_rtg_flag();
     } else {
