@@ -6,8 +6,10 @@
 # (dui-direct-calls-async near its 300 s limit). Now side_stale follows a change of the saved-playlist signature (pl_hash).
 # Asserts on the mem scripted run that opens Browse, then the composer tile, with SELECTA_LIB_TEXT_SLOW_MS=300:
 #   1. sidebar reads posted (sidelib_async posts) <= 2: the start read and the one for the first saved-playlist signature. Before the
-#      fix every present turn posted one (3 to 8 seen); present turns are printed, not gated (see the I948 report, section Fix: the
-#      composer page also re-polls song_briefs every frame while the library worker is busy, a separate open item).
+#      fix every present turn posted one (3 to 8 seen).
+#   3. (I948a) present turns <= PRESENT_MAX with TEXT and ITEMS reads both slowed to 300 ms. Before I948a pls_reload_run polled
+#      sel_engine_song_briefs on the UI thread and set pls_stale while the library worker was busy, so the I633 block redrew every turn.
+#      Now song_briefs is a posted read (sel_engine_song_briefs_post/take); the page redraws when the answer arrives.
 #   2. sentinel: the composer page drew its song rows (plsong 1) and the sidebar list was read at least once (side_takes >= 1).
 include("${CMAKE_CURRENT_LIST_DIR}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -28,10 +30,12 @@ if(NOT "${g_browse}" MATCHES "browse tile ([0-9]+) 1 ")
 endif()
 set(tile ${CMAKE_MATCH_1})
 set(ENV{SELECTA_LIB_TEXT_SLOW_MS} 300)
+set(ENV{SELECTA_LIB_ITEMS_SLOW_MS} 300)
 string(TIMESTAMP t0 "%s")
 settle_run(g_comp "wait 3\ntopbar 2\nwait 3\nbrowse ${tile}\nwait 3\n")
 string(TIMESTAMP t1 "%s")
 unset(ENV{SELECTA_LIB_TEXT_SLOW_MS})
+unset(ENV{SELECTA_LIB_ITEMS_SLOW_MS})
 math(EXPR secs "${t1} - ${t0}")
 if(NOT "${g_comp}" MATCHES "plsong 1 [0-9]+ [0-9]+ [0-9]+ [0-9]+ ")
   message(FATAL_ERROR "sentinel: no song row on the composer page:\n${g_comp}")
@@ -54,4 +58,17 @@ if(takes LESS 1)
 endif()
 if(posts GREATER 2)
   message(FATAL_ERROR "the composer page re-read the sidebar every turn: side_posts=${posts} (want <= 2), present=${present}")
+endif()
+if(NOT "${g_comp}" MATCHES "briefs_async posts=([0-9]+) takes=([0-9]+)")
+  message(FATAL_ERROR "no briefs counters in:\n${g_comp}")
+endif()
+set(bposts ${CMAKE_MATCH_1})
+set(btakes ${CMAKE_MATCH_2})
+if(bposts LESS 1 OR btakes LESS 1)
+  message(FATAL_ERROR "sentinel: the song_briefs posted read never ran (briefs_async posts=${bposts} takes=${btakes})")
+endif()
+set(PRESENT_MAX 12)
+message(STATUS "composer page present turns=${present} (max ${PRESENT_MAX})")
+if(present GREATER PRESENT_MAX)
+  message(FATAL_ERROR "the composer page spun while the library was busy: present=${present} (want <= ${PRESENT_MAX})")
 endif()

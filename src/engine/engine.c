@@ -602,6 +602,17 @@ struct sel_engine {
 #if defined(SEL_LI_THREAD)
     pthread_t li_thread;
 #endif
+    /* I948a: the one async song_briefs read (the playlist and composer pages), same pattern as li_*. br_state 0 idle, 1 running,
+     * 2 result ready; the thread publishes br_out/br_done/br_ok before it stores 2. */
+    int br_state;
+    char* br_keys;
+    char* br_out;
+    size_t br_cap;
+    uint32_t br_done;
+    int br_ok;
+#if defined(SEL_LI_THREAD)
+    pthread_t br_thread;
+#endif
     uint32_t drill_rows;                      /* I790: source drill rows emitted by the library over all pages built */
     /* I829: the posted reads of the command path. Each thread reads only its rd_* request fields (written by the pump
      * before the post) and writes only its rd_* answer fields; the pump applies the answer in lib_reads_collect. */
@@ -7801,6 +7812,68 @@ int sel_engine_song_briefs(sel_engine* e, const char* keys, char* out, size_t ca
     return e->lib != NULL && sel_library_song_briefs(e->lib, keys, out, cap, done);
 }
 
+/* I948a: song_briefs as a posted read (the I787 items-slot pattern): the page posts the keys and takes the answer on a later turn, so a
+ * busy library never turns every frame into a re-poll. The thread waits for the library; the UI thread never does. */
+#if defined(SEL_LI_THREAD)
+static void* song_briefs_job(void* arg) {
+    sel_engine* e = (sel_engine*)arg;
+
+    e->br_ok = e->lib != NULL && sel_library_song_briefs(e->lib, e->br_keys, e->br_out, e->br_cap, &e->br_done);
+    __atomic_store_n(&e->br_state, 2, __ATOMIC_RELEASE);
+    return NULL;
+}
+#endif
+
+int sel_engine_song_briefs_post(sel_engine* e, const char* keys, size_t keys_len, size_t cap) {
+    if (e->lib == NULL || keys == NULL || cap == 0u || __atomic_load_n(&e->br_state, __ATOMIC_ACQUIRE) != 0) return 0;
+    e->br_keys = (char*)malloc(keys_len + 2u);
+    e->br_out = (char*)malloc(cap);
+    if (e->br_keys == NULL || e->br_out == NULL) {
+        free(e->br_keys);
+        free(e->br_out);
+        e->br_keys = NULL;
+        e->br_out = NULL;
+        return 0;
+    }
+    memcpy(e->br_keys, keys, keys_len);
+    e->br_keys[keys_len] = '\0';
+    e->br_keys[keys_len + 1u] = '\0';
+    e->br_cap = cap;
+    e->br_done = 0u;
+    e->br_ok = 0;
+#if defined(SEL_LI_THREAD)
+    __atomic_store_n(&e->br_state, 1, __ATOMIC_RELEASE);
+    if (pthread_create(&e->br_thread, NULL, song_briefs_job, e) == 0) return 1;
+#endif
+    /* No thread (Amiga, or creation failed): answer in this call, the caller takes it at once. */
+    e->br_ok = sel_library_song_briefs(e->lib, e->br_keys, e->br_out, e->br_cap, &e->br_done);
+    __atomic_store_n(&e->br_state, 2, __ATOMIC_RELEASE);
+    return 1;
+}
+
+int sel_engine_song_briefs_busy(sel_engine* e) {
+    return __atomic_load_n(&e->br_state, __ATOMIC_ACQUIRE) != 0;
+}
+
+int sel_engine_song_briefs_take(sel_engine* e, char* out, size_t cap, uint32_t* done, int* ok) {
+    size_t n;
+
+    if (__atomic_load_n(&e->br_state, __ATOMIC_ACQUIRE) != 2) return 0;
+#if defined(SEL_LI_THREAD)
+    (void)pthread_join(e->br_thread, NULL);
+#endif
+    n = e->br_cap < cap ? e->br_cap : cap;
+    if (out != NULL && e->br_ok) memcpy(out, e->br_out, n);
+    if (done != NULL) *done = e->br_done;
+    if (ok != NULL) *ok = e->br_ok;
+    free(e->br_keys);
+    free(e->br_out);
+    e->br_keys = NULL;
+    e->br_out = NULL;
+    __atomic_store_n(&e->br_state, 0, __ATOMIC_RELEASE);
+    return 1;
+}
+
 int sel_engine_lib_nowait(int on) {
     return sel_library_nowait(on);
 }
@@ -8634,6 +8707,13 @@ void sel_engine_destroy(sel_engine* e) {
             (void)pthread_join(e->li_thread, NULL);
 #endif
             free(e->li_rows);
+        }
+        if (__atomic_load_n(&e->br_state, __ATOMIC_ACQUIRE) != 0) { /* I948a: end the in-flight song_briefs read */
+#if defined(SEL_LI_THREAD)
+            (void)pthread_join(e->br_thread, NULL);
+#endif
+            free(e->br_keys);
+            free(e->br_out);
         }
         lib_read_end(&e->rd_wq); /* I906f: queued writes still run, their answers are dropped */
         wq_drain(e);

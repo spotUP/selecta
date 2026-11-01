@@ -612,6 +612,12 @@ int sel_engine_song_meta(sel_engine* e, const char* ref, char* out, size_t cap);
  * per key, "title\0artist\0album\0album id\0" (empty strings when absent); *done = songs written. 0 when the library is busy (see
  * sel_engine_lib_nowait) or the request failed: the caller keeps what it has and asks again. */
 int sel_engine_song_briefs(sel_engine* e, const char* keys, char* out, size_t cap, uint32_t* done);
+/* I948a: song_briefs as a posted read, one in flight at a time (the items-slot pattern). Post copies the keys (NUL separated rows,
+ * keys_len bytes without the final NUL); take copies the answer when it is ready (1) and tells whether the read ran (*ok) and how many
+ * songs it filled (*done). busy is 1 from post until take. */
+int sel_engine_song_briefs_post(sel_engine* e, const char* keys, size_t keys_len, size_t cap);
+int sel_engine_song_briefs_busy(sel_engine* e);
+int sel_engine_song_briefs_take(sel_engine* e, char* out, size_t cap, uint32_t* done, int* ok);
 /* I782: library requests of the calling thread fail at once instead of waiting behind a sync or another job (the draw path reads cached
  * models and asks again next frame). Returns the previous setting. sel_engine_lib_deferred counts the requests refused this way. */
 int sel_engine_lib_nowait(int on);
