@@ -71,6 +71,8 @@ if(NOT SEL_AMIGA)
     # Each test owns its default control socket path ($TMPDIR/selecta-<uid>.sock): two tests sharing
     # the per-user default collide under ctest -j ("selecta: already running"). TMPDIR, not
     # SELECTA_SOCKET, because SELECTA_SOCKET also forces the socket on and keeps --exec runs alive.
+    # I962: dui_require_sdl() (dui_run.cmake) prints SELECTA_SKIP on a build without the desktop UI (SELECTA_UI_DESKTOP=OFF, e.g. build/host): ctest reports Skipped, not Passed. SDL build dir: build/sdl (RULES.md ## Commands).
+    set_property(TEST ${tname} PROPERTY SKIP_REGULAR_EXPRESSION "SELECTA_SKIP")
     set(tmpdir "${PROJECT_BINARY_DIR}/tests/${tname}.tmp")
     file(MAKE_DIRECTORY "${tmpdir}")
     # dui-nav is ledger row I262, not a plan item: label nav, not dui or dui-extra: dui-ratchet counts tests whose label matches the regex dui against the plan ids.
@@ -190,6 +192,7 @@ if(NOT SEL_AMIGA)
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSDL_BUILT=${SELECTA_UI_DESKTOP}"
       "-DWORK=${PROJECT_BINARY_DIR}/tests/dui-search-online-quit" "-DNETWORK=${SEL_NET_WORK}"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/search_online_quit.cmake")
+  set_property(TEST dui-search-online-quit PROPERTY SKIP_REGULAR_EXPRESSION "SELECTA_SKIP") # I962
   set_tests_properties(dui-search-online-quit PROPERTIES LABELS search-online TIMEOUT 120 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/dui-search-online-quit.tmp")
   file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/dui-search-online-quit.tmp")
@@ -198,6 +201,7 @@ if(NOT SEL_AMIGA)
     COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSDL_BUILT=${SELECTA_UI_DESKTOP}"
       "-DWORK=${PROJECT_BINARY_DIR}/tests/dui-search-online-live" "-DNETWORK=${SEL_NET_WORK}"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/search_online_live.cmake")
+  set_property(TEST dui-search-online-live PROPERTY SKIP_REGULAR_EXPRESSION "SELECTA_SKIP") # I962
   set_tests_properties(dui-search-online-live PROPERTIES LABELS search-online TIMEOUT 120 FIXTURES_REQUIRED net-fixture RESOURCE_LOCK net-fixture
     ENVIRONMENT "TMPDIR=${PROJECT_BINARY_DIR}/tests/dui-search-online-live.tmp")
   file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tests/dui-search-online-live.tmp")
@@ -346,3 +350,4 @@ add_executable(dui_index8_blend_unit index8_blend_unit.c)
 target_link_libraries(dui_index8_blend_unit PRIVATE selecta_gui)
 add_test(NAME dui-index8-blend COMMAND dui_index8_blend_unit)
 set_tests_properties(dui-index8-blend PROPERTIES TIMEOUT 60)
+

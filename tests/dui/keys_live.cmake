@@ -37,9 +37,7 @@ if(NOT "${fc_out}" MATCHES "search draws [1-9][0-9]* rows [0-9]+ query mod\n")
   message(FATAL_ERROR "a click in the search field must focus it and keep the query 'm', so typing gives 'mod':\n${fc_out}")
 endif()
 
-if(NOT SDL_BUILT)
-  return()
-endif()
+dui_require_sdl()
 set(ENV{SDL_VIDEODRIVER} dummy)
 
 function(live_run tag events)
