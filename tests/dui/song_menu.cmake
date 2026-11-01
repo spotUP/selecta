@@ -135,7 +135,9 @@ math(EXPR wsx "${CMAKE_MATCH_1} + 20")
 math(EXPR wsy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
 math(EXPR wpx "${wsx} + 10")
 math(EXPR wpy "${wsy} + 3 * 24 + 12")
-sm_run(filtered "${mk}click ${fmx} ${fmy}\nwait 50\nkey z\nwait 50\n${wide_open}move ${wsx} ${wsy}\nrclick ${wsx} ${wsy}\nclick ${wpx} ${wpy}\nwait 1\n")
+# I902: the filter text must match no sidebar row of any kind. The sidebar lists sources too (I678b, I790), so the old single "z"
+#   matched the ZX-Art source row; "qzj" is a substring of no source, playlist or song name.
+sm_run(filtered "${mk}click ${fmx} ${fmy}\nwait 50\nkey q\nkey z\nkey j\nwait 50\n${wide_open}move ${wsx} ${wsy}\nrclick ${wsx} ${wsy}\nclick ${wpx} ${wpy}\nwait 1\n")
 if(NOT "${filtered}" MATCHES "smenu_pl step=([0-9]+) playlists=([0-9]+) sidebar_rows=([0-9]+)")
   message(FATAL_ERROR "the playlist step never opened:\n${filtered}")
 endif()
