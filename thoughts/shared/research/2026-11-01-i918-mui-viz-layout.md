@@ -132,3 +132,9 @@ Each step names files and the test that proves it. Host tests where possible; on
    redrawn after each frame (costs a dialog repaint per frame on 68k).
 3. Should the sync nag open on every fresh-db rig run? It covers the screen in every test; a `--no-sync-nag` or a
    seeded "synced" state for test dbs would keep rig shots clean.
+
+## Johan's decisions (2026-11-01)
+
+- The 17:06 "chaos, drawn on top" screenshot is the AGA desktop UI (`--ui desktop --backend aga`). Desktop overlay and viz pane fixes go first; MUI VizArea fixes follow as their own steps.
+- A modal dialog open over the visualizer does NOT pause it: the visualizer keeps animating and the dialog must be redrawn over it each frame (viz_tick must call desk_draw_window_overlays, or clip viz output to exclude the dialog rect). This overrides the design's recommended "pause" option.
+- The sync nag is suppressed for test databases (a test flag/env), so rig shots show the real layout; the nag keeps its own test case.
