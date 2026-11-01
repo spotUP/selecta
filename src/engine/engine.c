@@ -618,6 +618,11 @@ struct sel_engine {
     sel_art_ent art_cache[SEL_ART_CACHE], art_res[SEL_ART_BATCH];
     uint32_t art_head, art_epoch, art_job_epoch, art_want_n, art_job_n, art_want_len, art_want_more, art_reads;
     uint64_t art_want_key[SEL_ART_BATCH], art_job_key[SEL_ART_BATCH];
+    /* I936: the catalogue song count (COUNT over songs, seconds on a large cold db) is read on rd_total, never on the pump. rdt_at is
+     * library_changes + 1 when the read was posted; an answer for an older library state is published and the next pump asks again. */
+    sel_lib_read rd_total;
+    uint32_t rdt_total, rdt_at, total_reads;
+    int rdt_rc;
     char art_want[SEL_ART_BLK], art_job[SEL_ART_BLK];
     uint32_t evt_dropped;                     /* events emit() could not queue because evt_q was full (I546) */
     sel_tag src_tags[SEL_SOURCE_MAX][12];      /* one SOURCES row per registered source (the registry holds SEL_SOURCE_MAX) */
@@ -2105,6 +2110,12 @@ static void panel_post(sel_engine* e) {
         snprintf(e->rdp_path, sizeof e->rdp_path, "%s", e->rdp_next_path);
     }
     lib_read_post(e, &e->rd_panel, panel_run);
+}
+
+/* I936: the catalogue song count, read off the pump thread. */
+static void total_run(sel_engine* e) {
+    e->rdt_total = 0u;
+    e->rdt_rc = sel_library_song_total(e->lib, &e->rdt_total);
 }
 
 /* The pump takes the finished panel; an answer for a song that is no longer open (or whose panel was invalidated) is dropped. */
@@ -6827,6 +6838,12 @@ static void lib_reads_collect(sel_engine* e) {
         e->lib_reads_applied++;
         art_publish(e);
     }
+    if (lib_read_take(&e->rd_total)) {
+        e->lib_reads_applied++;
+        e->total_reads++;
+        e->songs_counted_at = e->rdt_at;
+        e->state.library_songs = e->rdt_rc == SEL_FOLDER_OK ? e->rdt_total : 0u;
+    }
     art_post(e);
     if (lib_read_take(&e->rd_stats)) {
         e->lib_reads_applied++;
@@ -7881,6 +7898,7 @@ void sel_engine_destroy(sel_engine* e) {
         e->rdc_next_touch_n = 0u;
         lib_read_end(&e->rd_panel);
         lib_read_end(&e->rd_art);
+        lib_read_end(&e->rd_total);
         composer_release(e->host, &e->rdc_blk);
         composer_release(e->host, &e->rd_fmt_blk);
         composer_release(e->host, &e->rd_comp_blk);
@@ -8066,16 +8084,9 @@ static void refresh_snapshot(sel_engine* e) {
     e->state.panel_rows = e->panel_rows;
     e->state.panel_serial = e->panel_loads;
     e->state.library_serial = e->library_changes;
-    if (e->lib != NULL && e->songs_counted_at != e->library_changes + 1u) {
-        uint32_t total = 0, d0 = sel_library_deferred();
-        int was = sel_library_nowait(1); /* I829: a busy library leaves the old count; the next pump asks again */
-        int rc = sel_library_song_total(e->lib, &total);
-
-        sel_library_nowait(was);
-        if (sel_library_deferred() == d0) {
-            e->songs_counted_at = e->library_changes + 1u;
-            e->state.library_songs = rc == SEL_FOLDER_OK ? total : 0u;
-        }
+    if (e->lib != NULL && e->songs_counted_at != e->library_changes + 1u && lib_read_idle(&e->rd_total)) {
+        e->rdt_at = e->library_changes + 1u; /* I936: posted; the old count stays until the read lands */
+        lib_read_post(e, &e->rd_total, total_run);
     }
     if (sl == NULL || sl->rp_state == NULL) {
         e->lyr_for[0] = '\0';
@@ -8172,7 +8183,7 @@ int sel_engine_sources_pending(const sel_engine* e) {
 }
 
 int sel_engine_reads_pending(const sel_engine* e) {
-    return !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) || !lib_read_idle(&e->rd_coll) || !lib_read_idle(&e->rd_panel) || !lib_read_idle(&e->rd_art) || e->art_want_n > 0u || e->rd_panel.again ||
+    return !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) || !lib_read_idle(&e->rd_coll) || !lib_read_idle(&e->rd_panel) || !lib_read_idle(&e->rd_art) || !lib_read_idle(&e->rd_total) || e->art_want_n > 0u || e->rd_panel.again ||
            e->rd_coll.again || e->rd_stats.again || e->rd_post_stats || e->rd_formats.again || e->rd_composers.again || e->sources_retry ||
            e->rd_search.again || e->rd_view[0] != '\0';
 }
@@ -8500,6 +8511,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->panel_loads = e->panel_loads;
     out->panel_reads = e->panel_reads;
     out->art_reads = e->art_reads;
+    out->total_reads = e->total_reads;
     out->stats_queries = e->stats_queries;
     out->lyric_fetches = e->lyr_fetches;
     out->library_searches = e->searches;
