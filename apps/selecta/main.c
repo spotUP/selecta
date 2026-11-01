@@ -849,6 +849,7 @@ int main(int argc, char** argv)
 
     ust = ui_stats_of(&g_uis[0]);
     sel_engine_stats_get(e, &est);
+    printf("lib_writes_done=%u\n", (unsigned)est.lib_writes_done); /* I906f: queued library writes that ran */
     printf("shell_wait_ms_min=%u shell_wait_ms_max=%u\n", (unsigned)(wait_ms_min == 0xFFFFFFFFu ? 0u : wait_ms_min), (unsigned)wait_ms_max); /* what the shell asked the UI to wait (I684c) */
     printf("ui_waits=%u flushes=%u keys=%u\n", (unsigned)waits, (unsigned)sel_tag_find(ust, SEL_UI_STAT_FLUSHES, 0),
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_KEYS, 0));

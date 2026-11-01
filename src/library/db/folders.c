@@ -146,6 +146,7 @@ static int playlist_exists(sqlite3* db, int64_t id) {
 /* at = playlist, value = one song key; appended after the last entry. */
 static int playlist_add_song(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     sqlite3_stmt* st;
+    sel_library_test_slow("SELECTA_LIB_WRITE_SLOW_MS");
     if (op->value == NULL || op->value[0] == '\0') return SQLITE_MISUSE;
     if (!playlist_exists(db, op->at)) return refuse(rows, SEL_FOLDER_ERR_NO_PLAYLIST);
     st = prep(db, "INSERT INTO playlist_entries(playlist_id, pos, key)"

@@ -121,13 +121,69 @@ int main(void) {
     for (;;) {
         sel_engine_pump(e, sink, NULL);
         sel_engine_stats_get(e, &s1);
-        if (s1.lib_reads_applied >= s0.lib_reads_applied + 2u) break;
+        if (s1.lib_reads_applied >= s0.lib_reads_applied + 2u && sel_engine_state(e)->stats != NULL) break; /* the stats answer may land after the others */
         if (ms_since(&t0) > 5000) break;
         usleep(2000);
     }
     printf("i906c after release: async reads applied %u\n", (unsigned)(s1.lib_reads_applied - s0.lib_reads_applied));
     CHECK(s1.lib_reads_applied >= s0.lib_reads_applied + 2u);
     CHECK(sel_engine_state(e)->stats != NULL); /* STATS_SHOW's answer landed through its slot */
+
+    /* I906f: the library writes the UI sends (like, rate, folder and playlist edits, stickers) are queued to the writer thread. Same fixture:
+     * the call lock is held, every write must return from its pump within the budget with no synchronous request, and after the release all
+     * of them land (stats.lib_writes_done is the sentinel that the queue ran, the like is read back from the library). */
+    {
+        static const char* const writes[] = {"LIKE local:a.mod",
+                                             "RATE 4 local:a.mod",
+                                             "FOLDER_ADD Rock",
+                                             "FOLDER_MOVE 1 0",
+                                             "FOLDER_DEL 99",
+                                             "PLAYLIST_MOVE 1 0",
+                                             "PLAYLIST_ADD_SONG 1 local:a.mod",
+                                             "PLAYLIST_REMOVE_SONG 1 1",
+                                             "PLAYLIST_RENAME 1 Mix",
+                                             "STICKER_SET local:a.mod mood happy",
+                                             "STICKER_DEL local:a.mod mood"};
+        const uint32_t n = (uint32_t)(sizeof writes / sizeof writes[0]);
+        sel_engine_stats w_before, w_after;
+
+        sel_engine_stats_get(e, &w_before);
+        g_held = 0;
+        pthread_create(&th, NULL, holder, lib);
+        while (!g_held) usleep(1000);
+        worst = 0;
+        for (i = 0; i < n; i++) {
+            w0 = sel_library_watched_waits();
+            CHECK(sel_engine_send_line(e, writes[i], pool, sizeof pool) == 0);
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            sel_engine_pump(e, sink, NULL);
+            pump_ms = ms_since(&t0);
+            w1 = sel_library_watched_waits();
+            if (pump_ms > worst) worst = pump_ms;
+            printf("i906f sample: '%s' pump %ld ms, library waits %u\n", writes[i], pump_ms, (unsigned)(w1 - w0));
+            if (pump_ms >= PUMP_BUDGET_MS || w1 != w0) {
+                printf("i906f FAIL: '%s' waited on the library\n", writes[i]);
+                g_fail++;
+            }
+        }
+        printf("i906f busy library: worst write pump %ld ms (budget %d)\n", worst, PUMP_BUDGET_MS);
+        sel_engine_stats_get(e, &w_after);
+        CHECK(w_after.lib_writes_done == w_before.lib_writes_done); /* nothing ran yet: the worker is blocked */
+        pthread_join(th, NULL);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (;;) {
+            sel_engine_pump(e, sink, NULL);
+            sel_engine_stats_get(e, &w_after);
+            if (w_after.lib_writes_done >= w_before.lib_writes_done + n) break;
+            if (ms_since(&t0) > 5000) break;
+            usleep(2000);
+        }
+        printf("i906f after release: queued writes done %u of %u\n", (unsigned)(w_after.lib_writes_done - w_before.lib_writes_done), (unsigned)n);
+        CHECK(w_after.lib_writes_done == w_before.lib_writes_done + n);
+        sel_library_watch(0);
+        CHECK(sel_library_liked(lib, "local:a.mod") == 1); /* the like landed in the library */
+        sel_library_watch(1);
+    }
     sel_library_watch(was);
 
     sel_engine_destroy(e);

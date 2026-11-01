@@ -620,6 +620,7 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
         rc = user_exec(lib->db, "INSERT INTO history(key, played_at, skipped, duration_ms, format)"
                          " VALUES(?1, ?2, ?3, ?4, COALESCE((SELECT format FROM songs WHERE key = ?1), ?5))", op, 1);
     } else if (op->op == SEL_USER_LIKE) {
+        sel_library_test_slow("SELECTA_LIB_WRITE_SLOW_MS"); /* I906f test knob: a library write on a busy worker */
         rc = user_exec(lib->db, "INSERT OR REPLACE INTO liked(key, at) VALUES(?1, ?2)", op, 2);
     } else if (op->op == SEL_USER_UNLIKE) {
         rc = user_exec(lib->db, "DELETE FROM liked WHERE key = ?1", op, 0);
@@ -794,6 +795,7 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
             }
         }
     } else if (op->op == SEL_USER_RATING_SET) {
+        sel_library_test_slow("SELECTA_LIB_WRITE_SLOW_MS");
         rc = rating_set(lib->db, op);
     } else if (op->op == SEL_USER_RATING_GET) {
         sqlite3_stmt* st = NULL;

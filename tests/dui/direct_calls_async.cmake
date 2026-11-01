@@ -235,6 +235,22 @@ if(NOT "${s5}" MATCHES "smenu_pl step=1 playlists=1 ")
 endif()
 message(STATUS "site5_ok turn_ms_max=${s5_turn} pl_posts=${s5_posts} pl_takes=${s5_takes}")
 
+# --- I906f write: picking the playlist `alpha` sends PLAYLIST_ADD_SONG, which the library write queue runs on the writer thread. The
+# write is slowed 300 ms (WRITE knob): the pump and the turn stay under 50 ms, no watched wait, and lib_writes_done proves the queued write ran.
+math(EXPR piy "${qy} + 12")
+sites_click(c6c 3300 1 "${qix},${piy}")
+sites_live(s6 "${c5a} ${c5b} ${c6c} q@6000" SOCK s6 KNOBS SELECTA_LIB_WRITE_SLOW_MS ARGS --db "${sites_db}" --view queue ${q5_exec})
+if(NOT "${s6}" MATCHES "ui_stats_pump id=desktop pump_ms_max=([0-9]+) lib_ui_guard_hits=([0-9]+) lib_ui_allowed_waits=([0-9]+) lib_ui_watched_waits=([0-9]+)")
+  message(FATAL_ERROR "site 6: no ui_stats_pump line in:\n${s6}")
+endif()
+if(CMAKE_MATCH_1 GREATER 49 OR CMAKE_MATCH_4 GREATER 0)
+  message(FATAL_ERROR "site 6: pump_ms_max=${CMAKE_MATCH_1} lib_ui_watched_waits=${CMAKE_MATCH_4}, want < 50 and 0 (a queued write ran on the UI thread):\n${s6}")
+endif()
+if(NOT "${s6}" MATCHES "lib_writes_done=([0-9]+)" OR CMAKE_MATCH_1 LESS 1)
+  message(FATAL_ERROR "site 6: the queued PLAYLIST_ADD_SONG write did not run (lib_writes_done missing or 0):\n${s6}")
+endif()
+message(STATUS "site6_ok turn_ms_max=${s6_turn} lib_writes_done=${CMAKE_MATCH_1}")
+
 # --- site 3: Clear dialog count (COUNT knob), on the Folders page. The first total count read has landed by 1.8 s.
 sites_mem(g_lib "${sites_db}" library "wait 3\n")
 sites_centre(clear_xy "${g_lib}" "dialog [^\n]*clear=")
