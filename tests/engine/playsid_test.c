@@ -81,8 +81,17 @@ static uint32_t st_measure(uint32_t o, uint32_t i, uint32_t e, uint32_t* limit) 
     *limit = s_meas_ref;
     return s_meas_ms;
 }
+/* ReadSidRegs stub (I434j): a known pattern per chip, counting calls */
+static uint8_t s_sid_regs[3][25], s_sid_env[3][3];
+static uint32_t s_n_readregs;
+static uint32_t st_readregs(uint8_t* regs, uint8_t* env, uint32_t chips) {
+    s_n_readregs++;
+    memcpy(regs, s_sid_regs, chips * 25u);
+    memcpy(env, s_sid_env, chips * 3u);
+    return chips;
+}
 static const ps_ops s_ops = {st_open, st_close, st_alloc, st_free, st_setmodule, st_start, st_stop,
-                             st_pause, st_cont, st_fwd, st_hz, st_om, st_ahi, st_getom, st_filt, st_boost, st_over, st_getbuf, st_measure};
+                             st_pause, st_cont, st_fwd, st_hz, st_om, st_ahi, st_getom, st_filt, st_boost, st_over, st_getbuf, st_measure, st_readregs};
 const ps_ops* ps_ops_get(void) { return &s_ops; }
 
 static const sel_tag* t_desc;
@@ -192,6 +201,95 @@ static void viz_scope_test(const char* dir) {
         }
     }
     s_buf_sids = 0;
+    remove(p);
+}
+
+/* I434j: HW-kind SID register feed. 1/2/3SID x classic/reSID, through the engine's viz frame: sid_chips = SID count,
+ * reg/env equal the stub bytes, the sentinel and the stub call count rise; Gate on then off glows 4,3,2,1,0; paused
+ * gives no chips and moves neither counter. */
+static void viz_sid_test(const char* dir) {
+    static const char* const modes[2] = {"6581", "normal"};
+    char p[1100], line[1200];
+    uint32_t sids, m, k, i;
+    snprintf(p, sizeof p, "%s/ps_vizsid.sid", dir);
+    for (sids = 1; sids <= 3; sids++) {
+        write_psid(p, 1, 1, 0);
+        {
+            FILE* f = fopen(p, "r+b");
+            uint8_t b;
+            CHECK(f != NULL);
+            if (f == NULL) return;
+            b = 4; fseek(f, 5, SEEK_SET); fwrite(&b, 1, 1, f);
+            b = sids > 1 ? 0x42 : 0; fseek(f, 0x7a, SEEK_SET); fwrite(&b, 1, 1, f);
+            b = sids > 2 ? 0x44 : 0; fseek(f, 0x7b, SEEK_SET); fwrite(&b, 1, 1, f);
+            fclose(f);
+        }
+        for (m = 0; m < 2; m++) {
+            sel_engine_config cfg;
+            const sel_viz_frame* vf;
+            uint32_t fills0, calls0, n;
+            uint8_t seq[16];
+            uint32_t nseq = 0, last_seq = 0;
+            memset(&cfg, 0, sizeof cfg);
+            cfg.registry_count = reg_count;
+            cfg.registry_get = reg_get;
+            s_installed = 1;
+            memset(s_sid_regs, 0, sizeof s_sid_regs);
+            for (k = 0; k < 3; k++) {
+                for (i = 0; i < 25; i++) s_sid_regs[k][i] = (uint8_t)(0x10 * (k + 1) + i);
+                s_sid_regs[k][4] = 0x41; /* voice 1: Gate + Pulse */
+                for (i = 0; i < 3; i++) s_sid_env[k][i] = (uint8_t)(10 * (k + 1) + i);
+            }
+            eng = sel_engine_create(sel_host_default(), &cfg);
+            CHECK(eng != NULL);
+            snprintf(line, sizeof line, "PREF_SET playsid.mode \"%s\"", modes[m]);
+            run(line);
+            snprintf(line, sizeof line, "QUEUE_ADD %s", p);
+            run(line);
+            run("PLAY");
+            fills0 = sel_playsid_reg_fills;
+            calls0 = s_n_readregs;
+            tick();
+            tick();
+            vf = sel_engine_state(eng)->viz;
+            CHECK(vf != NULL && vf->seq != 0u);
+            CHECK(vf->sid_chips == sids);
+            for (k = 0; k < sids; k++) {
+                CHECK(memcmp(vf->sid[k].reg, s_sid_regs[k], 25u) == 0);
+                CHECK(memcmp(vf->sid[k].env, s_sid_env[k], 3u) == 0);
+            }
+            CHECK(vf->sid[0].glow[0][0] == 0); /* Gate on */
+            CHECK(sel_playsid_reg_fills > fills0 && s_n_readregs > calls0); /* sentinel: the hook ran */
+            /* Gate off: glow 4,3,2,1,0 over the next frames */
+            s_sid_regs[0][4] = 0x40;
+            seq[nseq++] = vf->sid[0].glow[0][0];
+            last_seq = vf->seq;
+            for (n = 0; n < 60u && nseq < 16u; n++) {
+                static int16_t buf[441 * 2];
+                sel_engine_render(eng, buf, 441u);
+                sel_engine_pump(eng, NULL, NULL);
+                vf = sel_engine_state(eng)->viz;
+                if (vf->seq != last_seq) {
+                    last_seq = vf->seq;
+                    if (vf->sid[0].glow[0][0] != seq[nseq - 1]) seq[nseq++] = vf->sid[0].glow[0][0];
+                }
+            }
+            CHECK(nseq >= 6u && seq[0] == 0 && seq[1] == 4 && seq[2] == 3 && seq[3] == 2 && seq[4] == 1 && seq[5] == 0);
+            /* paused: no chips, neither counter moves */
+            run("PAUSE");
+            tick();
+            fills0 = sel_playsid_reg_fills;
+            calls0 = s_n_readregs;
+            tick();
+            tick();
+            vf = sel_engine_state(eng)->viz;
+            CHECK(vf->sid_chips == 0u);
+            CHECK(sel_playsid_reg_fills == fills0 && s_n_readregs == calls0);
+            run("STOP");
+            sel_engine_destroy(eng);
+            eng = NULL;
+        }
+    }
     remove(p);
 }
 
@@ -613,6 +711,7 @@ int main(int argc, char** argv) {
     remove(path);
     catalogue_length_test(argv[1]);
     viz_scope_test(argv[1]);
+    viz_sid_test(argv[1]);
     perf_gate_test(argv[1]);
     if (g_fail != 0) {
         printf("playsid: %d failures\n", g_fail);

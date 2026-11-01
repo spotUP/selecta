@@ -104,6 +104,32 @@ static void test_vu(void) {
     CHECK(level == 0 && n < 120, "decays to 0 in %u blocks", (unsigned)n);
 }
 
+/* I434j: afterglow of the SID register scope: on = 0, on-to-off = 4, then counts down to 0. */
+static void test_sid_glow(void) {
+    sel_viz_sid_chip a, b, c;
+    int i;
+    memset(&a, 0, sizeof a);
+    a.reg[4] = 0x01; /* voice 1 Gate */
+    a.reg[0x17] = 0x02; /* voice 2 routed to the filter */
+    a.reg[0x18] = 0x10; /* low pass */
+    sel_viz_sid_glow(&a, NULL, NULL);
+    CHECK(a.glow[0][0] == 0 && a.glow[1][8] == 0 && a.mode_glow[0] == 0, "on flags sit at 0");
+    memset(&b, 0, sizeof b);
+    sel_viz_sid_glow(&b, a.reg, &a);
+    CHECK(b.glow[0][0] == 4 && b.glow[1][8] == 4 && b.mode_glow[0] == 4, "on to off sets 4");
+    CHECK(b.glow[0][1] == 0 && b.mode_glow[1] == 0, "never-on flags stay 0");
+    for (i = 3; i >= 0; i--) {
+        memset(&c, 0, sizeof c);
+        sel_viz_sid_glow(&c, b.reg, &b);
+        CHECK(c.glow[0][0] == (uint8_t)i, "counts down: %d", (int)c.glow[0][0]);
+        b = c;
+    }
+    memset(&c, 0, sizeof c);
+    c.reg[4 + 14] = 0x80; /* voice 3 Noise */
+    sel_viz_sid_glow(&c, b.reg, &b);
+    CHECK(c.glow[2][7] == 0 && c.glow[0][0] == 0, "other flags independent");
+}
+
 static int argmax(const int16_t* b) {
     int i, best = 0;
     for (i = 1; i < (int)SEL_VIZ_BANDS; i++) {
@@ -139,6 +165,7 @@ int main(int argc, char** argv) {
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "phase") == 0) test_phase();
         else if (strcmp(argv[i], "vu") == 0) test_vu();
+        else if (strcmp(argv[i], "sidglow") == 0) test_sid_glow();
         else if (strcmp(argv[i], "spectrum") == 0) test_spectrum();
         else {
             printf("unknown mode %s\n", argv[i]);

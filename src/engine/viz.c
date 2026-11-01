@@ -75,6 +75,30 @@ int16_t sel_viz_vu_step(int16_t level, int16_t peak) {
     return (int16_t)(level > fall ? level - fall : 0);
 }
 
+/* Control-register bit b of voice v is flag [v][b]; flag [v][8] is the filter routing bit v of $17. */
+static uint32_t sid_flag(const uint8_t* reg, uint32_t v, uint32_t b) {
+    return b < 8u ? (uint32_t)((reg[4u + 7u * v] >> b) & 1u) : (uint32_t)((reg[0x17] >> v) & 1u);
+}
+
+static uint8_t glow_step(uint32_t was_on, uint32_t on, uint8_t counter) {
+    if (on) return 0;
+    if (was_on) return 4;
+    return counter > 0u ? (uint8_t)(counter - 1u) : 0;
+}
+
+void sel_viz_sid_glow(sel_viz_sid_chip* now, const uint8_t prev_reg[SEL_VIZ_SID_REGS], const sel_viz_sid_chip* prev) {
+    uint32_t v, b;
+    for (v = 0; v < 3u; v++) {
+        for (b = 0; b < 9u; b++) {
+            now->glow[v][b] = glow_step(prev_reg ? sid_flag(prev_reg, v, b) : 0u, sid_flag(now->reg, v, b),
+                                        prev ? prev->glow[v][b] : 0);
+        }
+        /* mode bits LP, BP, HP are $18 bits 4..6 */
+        now->mode_glow[v] = glow_step(prev_reg ? (uint32_t)((prev_reg[0x18] >> (4u + v)) & 1u) : 0u,
+                                      (uint32_t)((now->reg[0x18] >> (4u + v)) & 1u), prev ? prev->mode_glow[v] : 0);
+    }
+}
+
 int sel_viz_acquire(sel_viz_tap* t) {
     uint32_t old;
     if (!(t->middle & 4u)) return 0;

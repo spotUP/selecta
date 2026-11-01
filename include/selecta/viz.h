@@ -20,6 +20,15 @@ SEL_EXTERN_C_BEGIN
 #define SEL_VIZ_FFT_SIZE 256u
 #define SEL_VIZ_BLOCKS_PER_SECOND 50u /* one frame per 20 ms: rate / 50 audio frames */
 
+#define SEL_VIZ_SID_CHIPS 3u
+#define SEL_VIZ_SID_REGS 25u /* $D400-$D418 */
+typedef struct sel_viz_sid_chip {
+    uint8_t reg[SEL_VIZ_SID_REGS]; /* raw register mirror at block close */
+    uint8_t env[3];                /* envelope level per voice, 0..63 */
+    uint8_t glow[3][9];            /* per voice: control bits 0..7 (Gate..Noise), [8] = routed to filter; 0..4 */
+    uint8_t mode_glow[3];          /* LP, BP, HP; 0..4 */
+} sel_viz_sid_chip;
+
 typedef struct sel_viz_frame {
     uint32_t seq;            /* 0: no frame yet, else counts up by one per block */
     uint32_t rate;           /* output rate the block was mixed at */
@@ -30,6 +39,8 @@ typedef struct sel_viz_frame {
     uint32_t pitch_q8[SEL_VIZ_MAX_VOICES];   /* Hz in 24.8, 0 when the voice is idle */
     uint16_t instrument[SEL_VIZ_MAX_VOICES]; /* 0: the replayer does not report it */
     uint8_t note_on[SEL_VIZ_MAX_VOICES];     /* 1: a sample started during this block */
+    uint32_t sid_chips;                      /* 0: no register feed this block; 1..3 (I434j) */
+    sel_viz_sid_chip sid[SEL_VIZ_SID_CHIPS];
     int16_t scope[SEL_VIZ_MAX_VOICES][SEL_VIZ_SCOPE_FRAMES]; /* oldest first */
     int16_t pcm[SEL_VIZ_PCM_FRAMES * 2u];                    /* interleaved L/R, oldest first */
     int16_t band[SEL_VIZ_BANDS]; /* Q15, 43 Hz to 16 kHz log spaced (pump side) */
@@ -48,6 +59,7 @@ typedef struct sel_viz_tap {
     uint32_t pcm_head;        /* next write index of the ring, in frames */
     int16_t pcm[SEL_VIZ_PCM_FRAMES * 2u];
     int16_t vu[SEL_VIZ_MAX_VOICES];
+    sel_viz_sid_chip sid_state[SEL_VIZ_SID_CHIPS]; /* audio private: previous block, for the afterglow */
 } sel_viz_tap;
 
 void sel_viz_tap_init(sel_viz_tap* t);
@@ -67,6 +79,11 @@ void sel_viz_publish(sel_viz_tap* t);
 /* VU ballistics: instant attack, release `level -= level >> 3` (at least 1)
  * per block. */
 int16_t sel_viz_vu_step(int16_t level, int16_t peak);
+
+/* Afterglow of one chip, once per block (HippoPlayer .updateValue): a flag that is on sets its counter to 0; a flag
+ * that drops from on to off sets it to 4; an off flag counts its counter down to 0. `prev_reg` is the previous block's
+ * register mirror, `prev` its glow counters (NULL: all off). Fills now->glow and now->mode_glow from now->reg. */
+void sel_viz_sid_glow(sel_viz_sid_chip* now, const uint8_t prev_reg[SEL_VIZ_SID_REGS], const sel_viz_sid_chip* prev);
 
 /* Pump thread. Takes the newest published frame when there is one (returns 1
  * and makes it current). The current frame is valid until the next call. */

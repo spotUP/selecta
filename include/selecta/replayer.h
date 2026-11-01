@@ -139,6 +139,10 @@ typedef void (*sel_rp_hw_length_fn)(void* state, uint32_t ms);
  * int16 samples (the newest samples last, the rest zero). Returns the voices filled (0..max_voices), 0 when the replayer
  * has no wave to show (the scope then keeps its empty state). */
 typedef uint32_t (*sel_rp_viz_voices_fn)(void* state, int16_t* out, uint32_t stride, uint32_t max_voices);
+/* RP_VIZ_SID (I434j): optional, HW kind. SID register mirror for the register scope. The engine calls it on the audio
+ * thread once per 20 ms visualisation block while playing, with room for `max_chips` rows of SEL_VIZ_SID_REGS bytes in
+ * `regs` and 3 envelope levels per chip in `env`. Returns the chips filled (0..max_chips), 0 when there is no mirror. */
+typedef uint32_t (*sel_rp_viz_sid_fn)(void* state, uint8_t* regs, uint8_t* env, uint32_t max_chips);
 /* RP_SEEKABLE (I434e): optional. 1 = the song can be seeked (the default when the hook is absent), 0 = it cannot, so
  * RP_SEEK returns 0 for every target and the front ends grey the seek bar. Read on the pump thread. */
 typedef int (*sel_rp_seekable_fn)(void* state);

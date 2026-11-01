@@ -243,6 +243,7 @@ typedef struct sel_slot {
     sel_rp_seekable_fn rp_seekable;           /* optional: 0 = the song cannot be seeked (I434e) */
     sel_rp_hw_poll_fn rp_hw_poll;             /* optional, HW kind: song end flags (I219b) */
     sel_rp_hw_length_fn rp_hw_length;         /* optional, HW kind: catalogue length of the started subsong (I434f) */
+    sel_rp_viz_sid_fn rp_viz_sid;             /* optional, HW kind: SID register mirror (I434j) */
     sel_rp_viz_voices_fn rp_viz_voices;       /* optional, HW kind: fills the scope feed itself (I434g) */
     uint32_t applied_pause;                   /* audio side: pause state last handed to rp_hw_pause */
     uint32_t pos_order, pos_row, pos_pattern, pos_valid; /* audio side writes after each render */
@@ -2360,6 +2361,7 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     sl->rp_hw_poll = sl->hw ? (sel_rp_hw_poll_fn)sel_tag_find(hooks, SEL_RP_HW_POLL, 0) : NULL;
     sl->rp_seekable = (sel_rp_seekable_fn)sel_tag_find(hooks, SEL_RP_SEEKABLE, 0);
     sl->rp_hw_length = sl->hw ? (sel_rp_hw_length_fn)sel_tag_find(hooks, SEL_RP_HW_LENGTH, 0) : NULL;
+    sl->rp_viz_sid = sl->hw ? (sel_rp_viz_sid_fn)sel_tag_find(hooks, SEL_RP_VIZ_SID, 0) : NULL;
     sl->rp_viz_voices = sl->hw ? (sel_rp_viz_voices_fn)sel_tag_find(hooks, SEL_RP_VIZ_VOICES, 0) : NULL;
     sl->applied_pause = 0;
     if (kind != SEL_RP_KIND_VOICE) {
@@ -8178,6 +8180,27 @@ static void viz_close(sel_engine* e, sel_slot* sl) {
         count = hw_count;
     }
     f->voice_count = count;
+    if (sl != NULL && sl->hw && sl->rp_viz_sid != NULL && e->state.play == SEL_PLAYING) {
+        /* Register mirror (I434j): independent of the wave feed, classic mode has registers but no wave. */
+        uint8_t regs[SEL_VIZ_SID_CHIPS][SEL_VIZ_SID_REGS];
+        uint8_t env[SEL_VIZ_SID_CHIPS][3];
+        uint32_t chips;
+        memset(regs, 0, sizeof regs);
+        memset(env, 0, sizeof env);
+        chips = sl->rp_viz_sid(sl->rp_state, &regs[0][0], &env[0][0], SEL_VIZ_SID_CHIPS);
+        if (chips > SEL_VIZ_SID_CHIPS) chips = SEL_VIZ_SID_CHIPS;
+        for (k = 0; k < chips; k++) {
+            sel_viz_sid_chip* c = &f->sid[k];
+            memcpy(c->reg, regs[k], sizeof c->reg);
+            memcpy(c->env, env[k], sizeof c->env);
+            sel_viz_sid_glow(c, e->viz.sid_state[k].reg, &e->viz.sid_state[k]);
+            e->viz.sid_state[k] = *c;
+        }
+        f->sid_chips = chips;
+        if (chips == 0u) memset(e->viz.sid_state, 0, sizeof e->viz.sid_state);
+    } else {
+        memset(e->viz.sid_state, 0, sizeof e->viz.sid_state);
+    }
     for (k = 0; k < SEL_VIZ_MAX_VOICES; k++) {
         int16_t peak = 0;
         if (k < hw_count) {

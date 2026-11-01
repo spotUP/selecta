@@ -81,6 +81,8 @@ SEL_TAG(RP, HW_LENGTH,         0x1021, PTR)
 
 /* VIZ_VOICES (I434g): optional, HW kind. Fills up to three voices of the scope feed (sel_rp_viz_voices_fn). */
 SEL_TAG(RP, VIZ_VOICES,        0x1022, PTR)
+/* VIZ_SID (I434j): optional, HW kind. SID register mirror for the register scope (sel_rp_viz_sid_fn). */
+SEL_TAG(RP, VIZ_SID,           0x1023, PTR)
 
 SEL_TAG(OUT, NAME,             0x2000, STR)
 SEL_TAG(OUT, SINK,             0x2001, INT)

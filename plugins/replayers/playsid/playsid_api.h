@@ -45,6 +45,10 @@ typedef struct ps_ops {
     /* MeasureResidPerformance (I434h): d0 = oversample mode, d1 = internal filter, d2 = external filter; renders four
      * frames and returns d0 = milliseconds taken, *limit = d1, the reference value for one SID. */
     uint32_t (*measure_resid)(uint32_t oversample, uint32_t int_filter, uint32_t ext_filter, uint32_t* limit);
+    /* ReadSidRegs (I434j): copies C64Mem+$D400/$D420/$D440 (25 bytes each) into regs and the envelope words
+     * psb_Envelope1..9 (clamped to 63) into env, for up to `chips` chips; returns the chips copied, 0 when the library
+     * version is below PS_REGS_MIN_VERSION or there is no C64 memory. Private library offsets, see the design doc. */
+    uint32_t (*read_sid_regs)(uint8_t* regs, uint8_t* env, uint32_t chips);
 } ps_ops;
 
 /* The Amiga build returns the LVO table (playsid_amiga.c); the host test defines its own stub. */

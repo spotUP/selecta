@@ -4,6 +4,7 @@
 #include "playsid_api.h"
 
 #include <exec/libraries.h>
+#include <string.h>
 #include <proto/exec.h>
 
 static struct Library* g_base;
@@ -131,9 +132,33 @@ static void a_resid_boost(uint32_t boost) { (void)lvo_residboost(boost, 0, 0); }
 static void a_resid_mode(uint32_t over) { (void)lvo_residmode(over, 0, 0); }
 static uint32_t a_getopmode(void) { return lvo_getopmode(0, 0, 0); }
 
+/* ReadSidRegs (I434j): HippoPlayer's PatternScope reads these private playsid.library fields (puu016.s:40350-40380):
+ * psb_C64Mem at base+346, SID n registers at C64Mem+$D400+$20*n, psb_Envelope1..9 words at base+448+2*i. They exist only
+ * in the library build Hippo ships, so nothing is read below PS_REGS_MIN_VERSION. */
+#define PS_REGS_MIN_VERSION 1
+#define PS_OFF_C64MEM 346
+#define PS_OFF_ENVELOPE 448
+static uint32_t a_read_sid_regs(uint8_t* regs, uint8_t* env, uint32_t chips) {
+    const uint8_t* base = (const uint8_t*)g_base;
+    const uint8_t* mem;
+    uint32_t k, i;
+    if (g_base == NULL || g_base->lib_Version < PS_REGS_MIN_VERSION) return 0;
+    mem = *(const uint8_t* const*)(base + PS_OFF_C64MEM);
+    if (mem == NULL) return 0;
+    if (chips > 3u) chips = 3u;
+    for (k = 0; k < chips; k++) {
+        memcpy(regs + k * 25u, mem + 0xD400u + 0x20u * k, 25u);
+        for (i = 0; i < 3u; i++) {
+            uint16_t w = *(const uint16_t*)(base + PS_OFF_ENVELOPE + 2u * (3u * k + i));
+            env[k * 3u + i] = (uint8_t)(w > 63u ? 63u : w);
+        }
+    }
+    return chips;
+}
+
 static const ps_ops g_ops = {a_open, a_close, a_alloc, a_free, a_set_module, a_start, a_stop,
                              a_pause, a_continue, a_forward, a_vert, a_opmode, a_ahi, a_getopmode,
-                             a_resid_filter, a_resid_boost, a_resid_mode, a_resid_buffer, a_measure_resid};
+                             a_resid_filter, a_resid_boost, a_resid_mode, a_resid_buffer, a_measure_resid, a_read_sid_regs};
 
 const ps_ops* ps_ops_get(void) {
     return &g_ops;

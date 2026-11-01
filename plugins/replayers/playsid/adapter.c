@@ -39,7 +39,7 @@ typedef struct ps_state {
 static ps_state* g_owner;
 
 /* Sentinels (tests/engine/playsid_test.c): the adapter ran, per hook. */
-uint32_t sel_playsid_probes, sel_playsid_starts, sel_playsid_seeks, sel_playsid_ends, sel_playsid_viz_fills, sel_playsid_perf_gates, sel_playsid_perf_measures, sel_playsid_perf_asks;
+uint32_t sel_playsid_probes, sel_playsid_starts, sel_playsid_seeks, sel_playsid_ends, sel_playsid_viz_fills, sel_playsid_perf_gates, sel_playsid_perf_measures, sel_playsid_perf_asks, sel_playsid_reg_fills;
 
 static uint32_t be16(const uint8_t* p) {
     return ((uint32_t)p[0] << 8) | p[1];
@@ -328,6 +328,21 @@ static uint32_t rp_viz_voices(void* state, int16_t* out, uint32_t stride, uint32
     return sids;
 }
 
+/* Register feed (I434j): the library's C64 memory mirror, every operating mode (the 6502 emulation writes it in
+ * classic and reSID alike). The chip count is the SID count of the file. */
+static uint32_t rp_viz_sid(void* state, uint8_t* regs, uint8_t* env, uint32_t max_chips) {
+    ps_state* s = (ps_state*)state;
+    uint32_t chips;
+    if (!s->playing || s->paused) {
+        return 0;
+    }
+    chips = ps_sid_count(s->image, s->size);
+    if (chips > max_chips) chips = max_chips;
+    chips = s->ops->read_sid_regs(regs, env, chips);
+    if (chips > 0u) sel_playsid_reg_fills++;
+    return chips;
+}
+
 static void rp_hw_pause(void* state, uint32_t paused) {
     ps_state* s = (ps_state*)state;
     if (s->playing && paused != s->paused) {
@@ -373,7 +388,7 @@ static int rp_seek(void* state, uint32_t ms) {
     return 1;
 }
 
-static sel_tag g_hooks[19];
+static sel_tag g_hooks[20];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -403,7 +418,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[15], SEL_RP_HW_POLL, SEL_TAG_FN(rp_hw_poll));
     set(&g_hooks[16], SEL_RP_HW_LENGTH, SEL_TAG_FN(rp_hw_length));
     set(&g_hooks[17], SEL_RP_VIZ_VOICES, SEL_TAG_FN(rp_viz_voices));
-    set(&g_hooks[18], SEL_TAG_END, 0);
+    set(&g_hooks[18], SEL_RP_VIZ_SID, SEL_TAG_FN(rp_viz_sid));
+    set(&g_hooks[19], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "playsid");

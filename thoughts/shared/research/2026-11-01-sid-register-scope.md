@@ -173,3 +173,7 @@ Rig check text for I434j5 (Amiga, rig 2, `rig.py start --ram 256 --purpose "<ses
 
 1. Selector: SID PatternScope is its own entry in the visualiser selector (no automatic switch inside the later I890 PatternScope).
 2. Mac/host SID playback (libsidplayfp) also feeds `SEL_RP_VIZ_SID`, in a later row I434j6 after I434j5.
+
+## 6. I434j1 finding: where 2SID/3SID land (read from playsid.asm)
+
+2SID and 3SID registers land at `C64Mem + $D420` / `$D440`, as Hippo assumes, not at the header address. `getSid2Address` (asm:1042-1069) stores the header address in `psb_Sid2Address` only to build an MMU table (`MakeMMUTable2`, asm:4331-4345) that maps the I/O page at that address onto the `$D420` handler offsets (`$80+$20..`). The 6502 emulation then runs the `.D420` handler (asm:4810), which writes `(a0,$D420)` with `a0 = C64Mem`; the envelope latches use `$D420-$D404` the same way (asm:5102). `getSid3Address` (asm:1077) does the same for `$D440`. So `a_read_sid_regs` reads `C64Mem+$D400+$20*n` and never needs `psb_Sid2Address`. `PSIDLIB_VERSION` is 1 (playsid_libdefs.i:17), so `PS_REGS_MIN_VERSION` is 1. Still unverified on hardware: that the offsets 346 and 448 match the shipped library binary (Hippo's source says so; I434j5 rig check).
