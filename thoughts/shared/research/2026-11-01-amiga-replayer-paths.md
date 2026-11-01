@@ -263,3 +263,24 @@ As section 8. Summary rule: Hippo own where it is the only or the asm-with-contr
 
 - **D6:** ship every third-party binary (Eagleplayers, OctaMED player libraries, `mline.library`, UADE binaries) as a Selecta plugin. N9 changes from a licence gate to a record of each binary's origin and licence text, shipped with the plugin.
 - **D3:** open. Johan asked which players would need a port; the list went back to him.
+
+### 9.6 D3 evidence: portable players outside nuade (2026-11-01)
+
+Johan: "check the devilbox project it has c players for many of them nuade should have it too" and "openmpt covers many of them as well". A check of `~/Code/DEViLBOX` and `third_party/nuade` (file headers only; full table in the session scratchpad `d3-c-players.md`) shows the "no portable player" claim of sections 8 and 9.4 is wrong for 8 of the 15 D3 formats. The claim holds for nuade (only Rob Hubbard), not for DEViLBOX.
+
+| Format | Portable player | Size, licence |
+|---|---|---|
+| AHX / THX | `hively-wasm/common/hvl_replay.c` (HivelyTracker replayer) | 2272 lines C, BSD-style |
+| TFMX, all variants | `tfmx-wasm/lib/libtfmxaudiodecoder` | ~6200 lines C++, GPL-2+ (conflicts with nuade MIT; fine as a separate plugin under D6) |
+| Art of Noise 4/8 | `artofnoise-wasm/src/aon_player.c` | 2376 lines C, MIT |
+| PreTracker | `pretracker-wasm/src/pretracker/pretracker.c` | 3354 lines C, MIT |
+| Musicline | `third-party/musicline_playback-main/musicline/*.cpp` | 7533 lines C++, licence UNVERIFIED |
+| MaxTrax | `maxtrax-wasm/src/generated/maxtrax/maxtrax.c` | 10924 lines C transpiled from 68k, licence UNVERIFIED |
+| Hippel ST | `hippelst-wasm/src/hippelst_play.c` | 3786 lines C transpiled, licence UNVERIFIED |
+| Rob Hubbard 2 | `robhubbard-wasm/src/robhubbard_synth.c`; nuade has `robhubbard` and `robhubbardst` (MIT) | same variant UNVERIFIED |
+| OctaMED MMD0-3, DigiBooster 1 (and Pro) | libopenmpt loaders (`third_party/libopenmpt`, BSD, C++), inside OpenMPT's mixer, not a Paula-style replayer | desktop yes; Amiga only on the 060 tier at most (C++, float mixer), UNVERIFIED |
+| Quartet ST, ChipTracker, TCB Tracker, CustomMade | none; UADE only in DEViLBOX | |
+| StoneTracker | `stonetracker-wasm/src/st_machine.c` runs the original 68k binary in a mini machine: emulation, not a port | |
+| DeliTracker Custom | none by nature (the module is 68k code); see ledger I886 for a wrapper | |
+
+Consequence for D3: option (b) is no longer "large work from scratch" for AHX, AoN, PreTracker, TFMX, Musicline, MaxTrax and Hippel ST; it is a port of an existing replayer into a nuade-style tick player (voices out, so AHI, scopes and pattern data come for free). Licence checks (N9) come first for the four UNVERIFIED ones. D3 is re-asked with this evidence.
