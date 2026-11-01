@@ -682,6 +682,8 @@ static uint32_t desk_flush(desk* d) {
                     fprintf(stderr, " prof%u=%u", (unsigned)k, (unsigned)pk);
                 }
             }
+            fprintf(stderr, " page=%u colkind=%u colkey=[%.40s] pls_name=[%.40s] pls_n=%u pls_stale=%u", (unsigned)d->page, (unsigned)d->col_kind, d->col_key,
+                    d->pls_name, (unsigned)d->pls_n, (unsigned)d->pls_stale); /* I910b: what page this frame presented */
             fputc('\n', stderr);
         }
         uint32_t paint = t_flush - d->frame_t0, present = t_end - t_flush;
@@ -7040,6 +7042,8 @@ static const char* library_dump_build(desk* d) {
         uint32_t bn = browse_tiles(d, bt, BROWSE_MAX), bi;
         for (bi = 0; d->page == SEL_UIM_PG_BROWSE && bi < bn; bi++) {
             o = dump_put(d, o, "browse tile %u %u %s\n", (unsigned)bi, (unsigned)bt[bi].kind, bt[bi].label);
+            o = dump_put(d, o, "browserect %u %d %d %d %d\n", (unsigned)bi, (int)d->browse_rect[bi].x, (int)d->browse_rect[bi].y, (int)d->browse_rect[bi].w,
+                         (int)d->browse_rect[bi].h); /* I910b: live scripts click a tile by its rect */
         }
     }
     for (uint32_t j = 0; d->page == SEL_UIM_PG_SEARCH && j < d->sm_n && o + 400u < sizeof d->library_dump; j++) { /* I714: the song rows a script double-clicks */
