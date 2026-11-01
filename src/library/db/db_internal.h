@@ -43,6 +43,14 @@ typedef struct sel_pin_slot {
 } sel_pin_slot;
 
 
+/* I961c: per-source song counts and sync times as the writer last saw them (srcmirror.c). seq is odd while the writer rewrites it. */
+typedef struct sel_src_mirror {
+    unsigned seq;
+    uint32_t nsongs, nsync;
+    struct { char id[16]; int n; } songs[32];
+    struct { char id[16]; int64_t when; } sync[32];
+} sel_src_mirror;
+
 struct sel_library {
     const sel_host* host;
     uint32_t account;
@@ -85,6 +93,9 @@ struct sel_library {
     volatile unsigned pin_rows;    /* I406b: rows written by pin batches (sel_library_pin_rows) */
     volatile unsigned pin_dropped; /* I406b: pins lost to a full ring */
     volatile unsigned rating_pending_n; /* I958: pending 'rating' pushes; the writer of pending_push keeps it, a UI read never asks the worker */
+    sel_src_mirror src_mir;  /* I961c: written by the worker only */
+    unsigned mir_dirty_songs; /* the update hook saw a songs row change; worker only */
+    int mir_index;           /* has_index the songs part was computed for */
     unsigned task_done;      /* a task ended and _task_take has not collected it */
 #if defined(SEL_LIBRARY_NO_THREAD)
     char pf_cur[160];        /* the request the poll is working on across ticks (I168b); "" = none */

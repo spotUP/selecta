@@ -612,6 +612,15 @@ struct sel_engine {
 #if defined(SEL_LI_THREAD)
     pthread_t br_thread;
 #endif
+    /* I961c: the playlist page's key read as a posted read, same pattern as br_*: pk_state 0 idle, 1 running, 2 result ready. */
+    int pk_state;
+    uint32_t pk_id, pk_n;
+    char* pk_out;
+    size_t pk_cap;
+    int pk_ok;
+#if defined(SEL_LI_THREAD)
+    pthread_t pk_thread;
+#endif
     uint32_t drill_rows;                      /* I790: source drill rows emitted by the library over all pages built */
     /* I829: the posted reads of the command path. Each thread reads only its rd_* request fields (written by the pump
      * before the post) and writes only its rd_* answer fields; the pump applies the answer in lib_reads_collect. */
@@ -642,7 +651,6 @@ struct sel_engine {
     char rd_view[8];                          /* "search" or "query": a VIEW_SOURCE waiting for the search answer */
     char rd_fold_text[SEL_RD_FOLDERS_MAX];
     uint32_t rd_fold_lines;
-    int sources_retry;                        /* I829: a SOURCES reply met a busy library; send it again once it is free */
     uint32_t collection_queries;              /* collection page lists that reached the library (I678f) */
     sel_collection_page coll;                 /* the page COLLECTION_OPEN built (I678f), published as state.collection */
     char* coll_rows;                          /* its song block, heap */
@@ -4964,22 +4972,10 @@ static void sticker_answer(sel_engine* e, const char* key, const char* name, con
     emit(e, &r);
 }
 
-/* Last successful sync of source `id` (I527), kept in the library meta table under "sync.<id>": unix time, 0 never. */
+/* Last successful sync of source `id` (I527), kept in the library meta table under "sync.<id>": unix time, 0 never. Read from the
+ * writer-kept mirror (I961c): the command thread never asks the worker for it. */
 static int64_t sync_time_get(sel_engine* e, const char* id) {
-    char key[64], text[24];
-    sel_meta_op op;
-    sel_message reply;
-
-    if (e->lib == NULL) return 0;
-    snprintf(key, sizeof key, "sync.%s", id);
-    text[0] = '\0';
-    op.key = key;
-    op.value = text;
-    op.cap = sizeof text;
-    op.set = 0;
-    memset(&reply, 0, sizeof reply);
-    sel_library_request(e->lib, SEL_LIB_REQ_META, &op, &reply);
-    return (int64_t)strtoll(text, NULL, 10);
+    return e->lib != NULL ? sel_library_source_synced(e->lib, id) : 0;
 }
 
 static void sync_time_set(sel_engine* e, const char* id, int64_t when) {
@@ -5054,17 +5050,10 @@ static void sources_row(void* ctx, const char* id, const char* name, const char*
 
 static void cmd_SOURCES(sel_engine* e, const sel_message* m) {
     sources_fill f;
-    uint32_t d0 = sel_library_deferred();
-    const char* site;
-    int was = sel_library_nowait(1); /* I829: the per-source song counts and sync times never wait on a busy library */
     (void)m;
     f.e = e;
     f.n = 0;
-    site = sel_library_site("cmd_SOURCES");
-    (void)sel_source_each(sources_row, &f);
-    sel_library_site(site);
-    sel_library_nowait(was);
-    e->sources_retry = sel_library_deferred() != d0; /* rows went out without counts: lib_reads_collect sends them again */
+    (void)sel_source_each(sources_row, &f); /* I961c: song counts and sync times come from the library's mirror, no worker request */
 }
 
 static int sticker_ready(sel_engine* e, const char* who) {
@@ -7721,7 +7710,6 @@ static void lib_reads_collect(sel_engine* e) {
             view_source_apply(e, &q);
         }
     }
-    if (e->sources_retry && !sel_library_busy(e->lib)) cmd_SOURCES(e, NULL);
     if (e->cur != SEL_SLOT_NONE && e->slot[e->cur].cat_retry == e->slot[e->cur].subsong + 1u && !sel_library_busy(e->lib)) {
         hw_length_apply(e, &e->slot[e->cur]); /* I434f: the catalogue length that start_subsong could not wait for */
     }
@@ -7940,12 +7928,6 @@ int sel_engine_library_items_take(sel_engine* e, uint32_t* kind_mask, sel_engine
 }
 
 /* ---- I678f: the lists of the album, artist and composer pages (design doc section 8) ---- */
-uint32_t sel_engine_library_playlist_keys(sel_engine* e, uint32_t id, char* out, uint32_t cap) {
-    uint32_t n = 0;
-    if (e->lib == NULL || sel_library_playlist_keys(e->lib, id, out, cap, &n) != SEL_FOLDER_OK) return 0u;
-    return n;
-}
-
 int sel_engine_song_title(sel_engine* e, const char* ref, char* out, size_t cap) {
     return e->lib != NULL && sel_library_song_title(e->lib, ref, out, cap);
 }
@@ -8022,6 +8004,59 @@ int sel_engine_song_briefs_take(sel_engine* e, char* out, size_t cap, uint32_t* 
     e->br_keys = NULL;
     e->br_out = NULL;
     __atomic_store_n(&e->br_state, 0, __ATOMIC_RELEASE);
+    return 1;
+}
+
+/* I961c: the keys of playlist `id` as a posted read (the song_briefs pattern above): a worker thread waits for the library, the page
+ * posts, then takes the answer on a later turn. The UI thread never waits on the library for it. */
+static void playlist_keys_read(sel_engine* e) {
+    uint32_t n = 0;
+
+    e->pk_ok = e->lib != NULL && sel_library_playlist_keys(e->lib, e->pk_id, e->pk_out, (uint32_t)e->pk_cap, &n) == SEL_FOLDER_OK;
+    e->pk_n = e->pk_ok ? n : 0u;
+    __atomic_store_n(&e->pk_state, 2, __ATOMIC_RELEASE);
+}
+
+#if defined(SEL_LI_THREAD)
+static void* playlist_keys_job(void* arg) {
+    playlist_keys_read((sel_engine*)arg);
+    return NULL;
+}
+#endif
+
+int sel_engine_playlist_keys_post(sel_engine* e, uint32_t id, size_t cap) {
+    if (e->lib == NULL || cap < 2u || __atomic_load_n(&e->pk_state, __ATOMIC_ACQUIRE) != 0) return 0;
+    e->pk_out = (char*)malloc(cap);
+    if (e->pk_out == NULL) return 0;
+    e->pk_out[0] = '\0';
+    e->pk_id = id;
+    e->pk_cap = cap;
+    e->pk_n = 0u;
+    e->pk_ok = 0;
+#if defined(SEL_LI_THREAD)
+    __atomic_store_n(&e->pk_state, 1, __ATOMIC_RELEASE);
+    if (pthread_create(&e->pk_thread, NULL, playlist_keys_job, e) == 0) return 1;
+#endif
+    playlist_keys_read(e); /* no thread (Amiga, or creation failed): answered in this call */
+    return 1;
+}
+
+int sel_engine_playlist_keys_busy(sel_engine* e) {
+    return __atomic_load_n(&e->pk_state, __ATOMIC_ACQUIRE) != 0;
+}
+
+int sel_engine_playlist_keys_take(sel_engine* e, uint32_t* id, char* out, size_t cap, uint32_t* n, int* ok) {
+    if (__atomic_load_n(&e->pk_state, __ATOMIC_ACQUIRE) != 2) return 0;
+#if defined(SEL_LI_THREAD)
+    (void)pthread_join(e->pk_thread, NULL);
+#endif
+    if (id != NULL) *id = e->pk_id;
+    if (out != NULL && e->pk_ok) memcpy(out, e->pk_out, e->pk_cap < cap ? e->pk_cap : cap);
+    if (n != NULL) *n = e->pk_n;
+    if (ok != NULL) *ok = e->pk_ok;
+    free(e->pk_out);
+    e->pk_out = NULL;
+    __atomic_store_n(&e->pk_state, 0, __ATOMIC_RELEASE);
     return 1;
 }
 
@@ -9283,12 +9318,13 @@ void sel_engine_hw_step(sel_engine* e, uint32_t frames) {
 }
 
 int sel_engine_sources_pending(const sel_engine* e) {
-    return e->sources_retry;
+    (void)e; /* I961c: SOURCES reads the library mirror and is never sent short; the UI call stays */
+    return 0;
 }
 
 int sel_engine_reads_pending(const sel_engine* e) {
     return e->wq_head != e->wq_tail || !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) || !lib_read_idle(&e->rd_coll) || !lib_read_idle(&e->rd_panel) || !lib_read_idle(&e->rd_play) || !lib_read_idle(&e->rd_vote) || e->vw_n > 0u || (e->pm_wait && e->deferred) || (e->lib != NULL && e->cur != SEL_SLOT_NONE && e->slot[e->cur].rp_state != NULL && e->slot[e->cur].rp_state != e->panel_state) || !lib_read_idle(&e->rd_art) || !lib_read_idle(&e->rd_txt) || !lib_read_idle(&e->rd_grp) || (e->txt != NULL && e->txt->want_n > 0u) || !lib_read_idle(&e->rd_total) || e->art_want_n > 0u || e->rd_panel.again ||
-           e->rd_coll.again || e->rd_stats.again || e->rd_post_stats || e->rd_formats.again || e->rd_composers.again || e->sources_retry ||
+           e->rd_coll.again || e->rd_stats.again || e->rd_post_stats || e->rd_formats.again || e->rd_composers.again ||
            e->rd_search.again || e->rd_view[0] != '\0';
 }
 

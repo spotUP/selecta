@@ -55,7 +55,6 @@ enum {
     SEL_DUP_STORE,      /* I184b: store md5 `value` for local song key `key` (songs and files tables) */
     SEL_COMPOSER_LIST,  /* DUI-P4-3: every composer (by display name, Unknown composer last) streamed through `row` in one request: canon, display, song count (decimal); reply [2] = row count (I528) */
     SEL_FORMAT_LIST,    /* I615c: every song format with its song count (most songs first) streamed through `row`: format, song count (decimal); reply [2] = row count */
-    SEL_SOURCE_SONGS,   /* DUI-P4-3: songs rows of source id `key`: `out` = decimal count NUL, reply [0] = 1 */
     SEL_LIBRARY_ITEMS,  /* I678a: the Your Library list of the kinds in `mask`, rows [offset, offset + limit) streamed through `row`: kind, key, name, sub, songs, added, last played, art id, pinned, opened, majority format (I691c; decimal text except the last); reply [2] = total row count */
     SEL_COLLECTION      /* I678f: one list of the collection page of item kind `offset`, key `key`: shelf `mask` (SEL_COLL_*) streamed through `row`: key, name, artist, year, number, majority format (I691c; decimal text except the last); reply [2] = row count */
 };
@@ -615,6 +614,12 @@ typedef void (*sel_format_list_fn)(void* ctx, const char* format, uint32_t songs
 int sel_library_format_list(sel_library* lib, sel_format_list_fn fn, void* ctx);
 /* Songs rows of source id `source` (the SOURCES command, DUI-P4-3); -1 on a library error. */
 int sel_library_source_songs(sel_library* lib, const char* source);
+/* I961c: last sync of source `source` (unix time, 0 never; the meta row "sync.<id>"). Both this and the song count read the writer-kept mirror
+ * (srcmirror.c): a plain copy, never a worker request. */
+int64_t sel_library_source_synced(sel_library* lib, const char* source);
+/* Worker/open side of the mirror: recompute what a write dirtied. Called at the end of sel_library_handle and at open. */
+void sel_library_source_mirror_open(sel_library* lib);
+void sel_library_source_mirror_refresh(sel_library* lib);
 /* Switched-off sources (I265): `csv` is the library.sources_off pref, comma separated ids. A song whose key carries one
  * of those ids is skipped by sel_library_search and the radio pick; this is the one place that owns the filter. */
 void sel_library_set_sources_off(sel_library* lib, const char* csv);
