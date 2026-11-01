@@ -257,6 +257,7 @@ typedef struct desk {
     uint32_t* pls_ord;       /* I678e: the shown songs as indices into pls_off: the search filter, then the sort */
     uint32_t pls_vn, col_sort, col_color, col_top; /* shown songs, sort (0 custom order, 1 title), header cover colour and the band's top colour */
     int col_cover;           /* 1 when col_color came from the first song's cover */
+    int col_cover_wait;      /* I906c: the header cover is queued on the art worker; the header refreshes when it lands */
     int col_search;          /* 1 while the collection's search field has the keyboard */
     char col_q[64];
     size_t col_qlen;
@@ -349,6 +350,7 @@ typedef struct desk {
     char scope[24];          /* I406a: the search source in force: "" the library, else the id of an online source (SOURCE_SEARCH); the pref search.last_source */
     int scope_read;          /* 1 once the pref was read */
     uint32_t on_waits;       /* I406a: headless naps spent waiting for the online search answer */
+    uint32_t art_waits;      /* I906c: headless naps spent waiting for the background cover batches */
     uint32_t src_waits;      /* I889: headless naps spent waiting for the final SOURCES answer */
     uint32_t on_state;       /* online search: 0 none, 1 waiting for the answer, 2 answered */
     uint32_t on_n, on_count, on_searches, on_drawn, on_plays, on_radio_plays, on_saves; /* rows kept, the engine's hit count, SOURCE_SEARCH lines sent, rows drawn, hits played, radio entries played */
@@ -4716,9 +4718,11 @@ static void col_cover_refresh(desk* d) {
     uint32_t c = 0u;
     const char* key = d->pls_n > 0u ? pls_key(d, 0u) : NULL;
     d->col_cover = 0;
+    d->col_cover_wait = 0;
     if (key != NULL && d->art != NULL) {
-        art_load(d->art, &key, 1u);
+        art_load(d->art, &key, 1u); /* I906c: queued; desk_art_follow refreshes the header when the batch lands */
         d->col_cover = art_dominant(d->art, key, &c);
+        d->col_cover_wait = !d->col_cover && art_busy(d->art);
     }
     d->col_color = d->col_cover ? c : ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
     d->col_top = desk_mix(ARGB(d->theme.token[SEL_GUI_TOKEN_PANEL]), d->col_color, 40000);
@@ -13234,6 +13238,18 @@ static void desk_library_follow(desk* d) {
     d->lib_serial_seen = serial;
 }
 
+/* I906c: art_load only queues; a finished background batch is merged here, once per UI turn, and the surfaces that draw covers repaint. */
+static void desk_art_follow(desk* d) {
+    if (d->art == NULL || !art_pump(d->art)) {
+        return;
+    }
+    if (d->col_cover_wait) {
+        col_cover_refresh(d);
+    }
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+}
+
 static int desk_scan_sync(desk* d) {
     sel_scan_progress sp;
     int shown;
@@ -14615,6 +14631,7 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
         return -1; /* the Quit Selecta dialog was confirmed: end the loop as a closed window does (I623) */
     }
     desk_library_follow(d);
+    desk_art_follow(d);
     desk_playlist_job_follow(d);
     desk_sync_follow(d);
     desk_side_follow(d);
@@ -14760,6 +14777,13 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
     if (!d->live && d->on_state == 1u && d->on_waits < 20000u) { /* I406a: the online search runs on a library worker; a scripted or headless run keeps turning until its
                                         * search_done arrives (at most about 20 s), so the script's next line sees the answered search */
         d->on_waits++;
+        desk_nap();
+        d->turn_why[2]++;
+        return 1;
+    }
+    if (!d->live && d->art != NULL && art_busy(d->art) && d->art_waits < 20000u) { /* I906c: the cover batches run on a background thread; a scripted or headless run
+                                        * keeps turning until they landed (at most about 20 s), so the next line and the final frame see the covers */
+        d->art_waits++;
         desk_nap();
         d->turn_why[2]++;
         return 1;

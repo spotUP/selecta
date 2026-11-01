@@ -2,7 +2,7 @@
 # The shell marks its loop thread with sel_library_watch(1) once the library is open. Opening the Home page makes the pump send
 # library requests; every one that is not nowait is a guard hit (printed as library_ui_wait: on stderr, counted). Asserts:
 # 1. the ui_stats_pump line exists with a pump_ms_max number (the longest pump_turn is measured);
-# 2. lib_ui_guard_hits is above 0 and stderr carries a library_ui_wait: line with a backtrace (the guard saw the waits);
+# 2. lib_ui_guard_hits is 0 (I906c removed the art join, the Home run's last wait; a new wait fails here with its backtrace);
 # 3. the run still exits 0 in the default log mode (the guard prints and counts, it does not abort).
 # Release builds compile the guard out; this test then only checks pump_ms_max.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
@@ -30,10 +30,9 @@ if(NOT "${o}" MATCHES "ui_stats_pump id=desktop pump_ms_max=([0-9]+) lib_ui_guar
 endif()
 set(hits "${CMAKE_MATCH_2}")
 if(BUILD_TYPE STREQUAL "Debug")
-  if(hits EQUAL 0)
-    message(FATAL_ERROR "lib_ui_guard_hits is 0: the watched shell thread made library requests but the guard saw none")
-  endif()
-  if(NOT "${o_err}" MATCHES "library_ui_wait: ")
-    message(FATAL_ERROR "no library_ui_wait: line on stderr in:\n${o_err}")
+  # I906c: the art_load join was the one wait this Home run made; art now runs on a background batch, so the run makes no UI wait.
+  # The guard itself is proved by engine-library-ui-guard (it forces a wait); this run must stay at 0 so a new wait fails here.
+  if(NOT hits EQUAL 0)
+    message(FATAL_ERROR "lib_ui_guard_hits is ${hits}: the Home run made a library wait on the UI thread:\n${o_err}")
   endif()
 endif()

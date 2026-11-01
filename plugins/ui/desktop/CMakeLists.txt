@@ -105,6 +105,11 @@ if(NOT SEL_AMIGA)
   target_include_directories(dui_font_roles_unit PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop"
     "${PROJECT_SOURCE_DIR}/third_party/stb")
   target_link_libraries(dui_font_roles_unit PRIVATE m selecta_archive)
+  # dui-art-async (I906c): art_load returns at once, the batch runs on a thread and art_pump merges it.
+  add_executable(dui_art_async_unit "${PROJECT_SOURCE_DIR}/tests/dui/art_async_unit.c" art.c posix/art_thread.c stb_impl.c)
+  target_include_directories(dui_art_async_unit PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop"
+    "${PROJECT_SOURCE_DIR}/third_party/stb")
+  target_link_libraries(dui_art_async_unit PRIVATE m selecta_gui selecta_archive Threads::Threads)
   # dui-amiga-font (I526-P1): the bitmap .font reader against hand-decoded rows.
   add_executable(dui_amiga_font_unit "${PROJECT_SOURCE_DIR}/tests/dui/amiga_font_unit.c" amiga_font.c)
   target_include_directories(dui_amiga_font_unit PRIVATE "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/plugins/ui/desktop")

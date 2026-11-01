@@ -17,10 +17,16 @@ desk_art* art_open(const sel_ui_art* src);
 void art_close(desk_art* a);
 /* Resolves the albums of the songs at the queue paths `titles[0..n)` that are not resolved yet and loads their tile artwork on the worker
  * thread: from the thumb row when the library has one (no decode), else by decoding the cover and writing the
- * thumb row back. Returns when the worker is done, so the frame that follows is deterministic; the interactive
- * backend will poll instead (DUI-P2-7). */
+ * thumb row back. I906c: returns at once. The titles are copied and queued; a batch of at most 32 runs on a background thread that never
+ * touches the entry table or the cache, and art_pump (called once per UI turn) merges a finished batch. Until then art_tile has no tile. */
 void art_load(desk_art* a, const char* const* titles, uint32_t n);
-/* I692: 1 when art_load has resolved `title` already (or cannot hold it: table full, key too long), so a caller loads a single title only once. */
+/* I906c: merges a finished batch and starts the next one. Returns 1 when tiles arrived (the caller repaints), else 0. Never blocks. */
+int art_pump(desk_art* a);
+/* 1 while a batch runs or titles wait for one. */
+int art_busy(const desk_art* a);
+/* Batches merged since open (the sentinel that a background batch ran and landed). */
+uint32_t art_batches(const desk_art* a);
+/* I692: 1 when art_load has queued or resolved `title` already (or cannot hold it: table full, key too long), so a caller loads a single title only once. */
 int art_known(desk_art* a, const char* title);
 /* I689: drops the entries that resolved to no album and the failed-cover marks, so the next art_load looks them up again. Called when the
  * library changes: a lookup that missed before the scan created the albums row must not outlive it. Entries with a cover stay. */
@@ -41,5 +47,7 @@ uint32_t* desk_image_decode(const uint8_t* data, uint32_t len, int32_t* w, int32
  * could start (fn has run inline then). */
 void* art_thread_start(void (*fn)(void*), void* ctx);
 void art_thread_join(void* handle);
+/* I906c: 1 when fn has returned on the thread of `handle` (art_thread_join then returns at once); never blocks. */
+int art_thread_done(void* handle);
 
 #endif /* DESKTOP_ART_H */

@@ -546,6 +546,10 @@ struct sel_engine {
      * copies them into the request fields (rd_comp_*) only while the read is idle; the thread writes rd_fmt_blk / rd_comp_blk /
      * rd_comp_page_blk, which lib_reads_collect takes over. */
     sel_lib_read rd_formats, rd_composers;
+    /* I906c: STATS_SHOW posts its stats-view read; the thread fills rd_stats_buf / rd_stats_ok, lib_reads_collect publishes them while rd_stats_want holds. */
+    sel_lib_read rd_stats;
+    char rd_stats_buf[2048];
+    int rd_stats_ok, rd_stats_want, rd_post_stats;
     int rd_post_formats, rd_post_composers; /* commands asked for a read; lib_reads_flush starts it once the pump dispatched every command (an earlier command never meets the read as a busy library) */
     char* rd_fmt_blk;
     char* rd_comp_blk;
@@ -5144,19 +5148,23 @@ static void search_reload(sel_engine* e) {
 
 /* STATS_SHOW: reads the stats screen rows from the library (the stats_* SQL views, F24) and publishes them in
  * the state; STATS_HIDE closes the screen. The text UI only renders what the views returned. */
-static void cmd_STATS_SHOW(sel_engine* e, const sel_message* m) {
+static void stats_read_run(sel_engine* e) {
     uint32_t rows = 0;
+    e->rd_stats_buf[0] = '\0';
+    e->rd_stats_ok = sel_library_stats(e->lib, e->rd_stats_buf, sizeof e->rd_stats_buf, &rows);
+    if (!e->rd_stats_ok) e->rd_stats_buf[0] = '\0';
+}
+
+/* I906c: posts the stats read (started after the commands of this pump, lib_reads_flush); the screen opens once lib_reads_collect applies the
+ * answer, so the command thread never waits on a busy library. */
+static void cmd_STATS_SHOW(sel_engine* e, const sel_message* m) {
     (void)m;
     if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", "STATS_SHOW");
         return;
     }
-    e->stats_queries++;
-    e->stats[0] = '\0';
-    if (!sel_library_stats(e->lib, e->stats, sizeof e->stats, &rows)) {
-        e->stats[0] = '\0';
-    }
-    e->stats_open = 1;
+    e->rd_stats_want = 1;
+    e->rd_post_stats = 1;
 }
 
 /* A composer string block grows with the library: a fixed buffer cut a large library silently (I303), so the fill
@@ -5435,6 +5443,7 @@ static void cmd_COMPOSERS_HIDE(sel_engine* e, const sel_message* m) {
 
 static void cmd_STATS_HIDE(sel_engine* e, const sel_message* m) {
     (void)m;
+    e->rd_stats_want = 0; /* a read in flight lands unused */
     e->stats_open = 0;
 }
 
@@ -6522,6 +6531,10 @@ static void view_reread(sel_engine* e, uint32_t source) {
 /* I906b: starts the formats and composers reads the commands of this pump asked for, after the last command ran: a SOURCES command
  * behind them would meet the running read as a busy library and send its rows twice (a different frame on every run). */
 static void lib_reads_flush(sel_engine* e) {
+    if (e->rd_post_stats) {
+        e->rd_post_stats = 0;
+        lib_read_post(e, &e->rd_stats, stats_read_run);
+    }
     if (e->rd_post_formats) {
         e->rd_post_formats = 0;
         lib_read_post(e, &e->rd_formats, formats_read_run);
@@ -6573,6 +6586,15 @@ static void lib_reads_collect(sel_engine* e) {
     if (e->sources_retry && !sel_library_busy(e->lib)) cmd_SOURCES(e, NULL);
     if (e->cur != SEL_SLOT_NONE && e->slot[e->cur].cat_retry == e->slot[e->cur].subsong + 1u && !sel_library_busy(e->lib)) {
         hw_length_apply(e, &e->slot[e->cur]); /* I434f: the catalogue length that start_subsong could not wait for */
+    }
+    if (lib_read_take(&e->rd_stats)) {
+        e->lib_reads_applied++;
+        if (e->rd_stats_want) {
+            e->stats_queries++;
+            memcpy(e->stats, e->rd_stats_buf, sizeof e->stats);
+            e->stats_open = 1;
+        }
+        if (e->rd_stats.again) lib_read_post(e, &e->rd_stats, stats_read_run);
     }
     if (lib_read_take(&e->rd_formats)) {
         e->lib_reads_applied++;
@@ -7608,6 +7630,7 @@ void sel_engine_destroy(sel_engine* e) {
         lib_read_end(&e->rd_folders);
         lib_read_end(&e->rd_formats);
         lib_read_end(&e->rd_composers);
+        lib_read_end(&e->rd_stats);
         composer_release(e->host, &e->rd_fmt_blk);
         composer_release(e->host, &e->rd_comp_blk);
         composer_release(e->host, &e->rd_comp_page_blk);
@@ -7882,8 +7905,8 @@ int sel_engine_sources_pending(const sel_engine* e) {
 }
 
 int sel_engine_reads_pending(const sel_engine* e) {
-    return !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) ||
-           e->rd_formats.again || e->rd_composers.again || e->sources_retry ||
+    return !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) ||
+           e->rd_stats.again || e->rd_post_stats || e->rd_formats.again || e->rd_composers.again || e->sources_retry ||
            e->rd_search.again || e->rd_view[0] != '\0';
 }
 
