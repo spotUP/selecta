@@ -948,9 +948,9 @@ int main(int argc, char** argv)
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_BITMAP_HITS_MINI4, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_BITMAP_HITS_MINI6, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_BITMAP_HITS_MINI8, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_HEADLINE_HITS_18, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_HEADLINE_HITS_24, 0));
-            printf("ui_stats_pump id=%s pump_ms_max=%u lib_ui_guard_hits=%u lib_ui_allowed_waits=%u lib_ui_watched_waits=%u\n", g_uis[u].id,
+            printf("ui_stats_pump id=%s pump_ms_max=%u lib_ui_guard_hits=%u lib_ui_allowed_waits=%u lib_ui_watched_waits=%u lib_ui_wait_ms=%u\n", g_uis[u].id,
                    (unsigned)g_pump_ms_max, (unsigned)sel_library_ui_guard_hits(), (unsigned)sel_library_allowed_waits(),
-                   (unsigned)sel_library_watched_waits());
+                   (unsigned)sel_library_watched_waits(), (unsigned)sel_library_watched_wait_ms());
             {
                 static const char* const pcls[] = {"fill", "scrim", "round", "gradient", "line", "text", "mask", "image", "shadow", "icon", "genart", "dirty", "clip", "palette", "quant", "art"};
                 static const char* const ppt[] = {"canvas", "song", "sidebar", "main", "transport", "progress", "volume", "status", "focus", "tip", "overlay", "visual"};

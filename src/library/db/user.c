@@ -370,6 +370,7 @@ static int home_list(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_t
 static uint32_t home_chip_now;
 
 typedef struct home_item_sink {
+    sqlite3* db;
     const sel_user_op* op;
     uint32_t* used;
     int64_t* rows;
@@ -384,7 +385,14 @@ static void home_item_line(void* ctx, uint32_t kind, const char* key, const char
         home_put(k->op, k->used, k->rows, "S", line);
         return;
     }
-    snprintf(line, sizeof line, "#%u:%.*s%s%.*s\t%.200s", (unsigned)kind, 90, key, sub[0] != '\0' ? "\x1f" : "", 90, sub, name);
+    /* I691c/I947: an album, composer or playlist card ends its key with 0x1d and the majority format of its songs (platform cover), as the
+     * album and composer tiles of the song shelves do; the key is the item key (album id, canon, playlist id) the list builder uses. */
+    char fmt[16] = "";
+    if (kind == SEL_LIB_ITEM_ALBUM || kind == SEL_LIB_ITEM_COMPOSER || kind == SEL_LIB_ITEM_PLAYLIST) {
+        sel_db_majority_format_cached(k->db, kind, key, fmt, sizeof fmt);
+    }
+    snprintf(line, sizeof line, "#%u:%.*s%s%.*s%s%s\t%.200s", (unsigned)kind, 90, key, sub[0] != '\0' ? "\x1f" : "", 90, sub,
+             fmt[0] != '\0' ? "\x1d" : "", fmt, name);
     home_put(k->op, k->used, k->rows, "S", line);
 }
 
@@ -396,6 +404,7 @@ static int home_items(sqlite3* db, const sel_user_op* op, uint32_t* used, int64_
     uint32_t mark = *used;
     int64_t rmark = *rows;
     int n;
+    k.db = db;
     k.op = op;
     k.used = used;
     k.rows = rows;

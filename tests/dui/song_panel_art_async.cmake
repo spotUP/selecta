@@ -4,7 +4,7 @@
 # Before: refresh_snapshot ran sel_library_song_panel on the pump thread on every new song, and view_art_id/view_art_artist asked the
 # library (a watched wait) once per visible tile. Now both ride posted read slots (rd_panel, rd_art; the I910 pattern).
 # Driven through the desktop UI's live SDL loop. SELECTA_LIB_PANEL_SLOW_MS = 300 slows every panel read in the library worker. Asserts:
-# 1. pump_ms_max < 50: the pump never slept the 300 ms of a slowed read;
+# 1. lib_ui_wait_ms < 50 (I931): the UI thread never slept the 300 ms of a slowed read;
 # 2. lib_ui_watched_waits == 0 (I906g, I930): the play-start reads (best source, song config, genre, loudness) and the per-row vote counts ride posted reads;
 # 3. sentinels: view_reads panel_reads>=1 and art_reads>=1, play_reads play_meta_reads>=1 and vote_reads>=1: the posted paths ran and landed.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
@@ -62,8 +62,13 @@ if(NOT "${o}" MATCHES "ui_stats_pump id=desktop pump_ms_max=([0-9]+) lib_ui_guar
   message(FATAL_ERROR "no ui_stats_pump line in:\n${o}")
 endif()
 set(pump ${CMAKE_MATCH_1})
-if(pump GREATER 49)
-  message(FATAL_ERROR "pump_ms_max is ${pump}, want < 50:\n${o}")
+# I931/I946: the gate is the time the UI thread spent blocked in library requests (lib_ui_wait_ms), not the wall time of the pump: pump_ms_max=59
+# under load was the thread descheduled, with lib_ui_watched_waits 0 and lib_ui_wait_ms 0. A slowed read on the UI thread shows as >= 300.
+if(NOT "${o}" MATCHES "lib_ui_wait_ms=([0-9]+)")
+  message(FATAL_ERROR "no lib_ui_wait_ms in:\n${o}")
+endif()
+if(CMAKE_MATCH_1 GREATER 49)
+  message(FATAL_ERROR "lib_ui_wait_ms is ${CMAKE_MATCH_1}, want < 50 (pump_ms_max=${pump}):\n${o}")
 endif()
 if(NOT "${o}" MATCHES "view_reads panel_reads=([0-9]+) art_reads=([0-9]+)")
   message(FATAL_ERROR "no view_reads line in:\n${o}")

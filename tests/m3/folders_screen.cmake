@@ -20,8 +20,14 @@ execute_process(
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "selecta-cli exited ${rc}\nstdout:\n${out}\nstderr:\n${err}")
 endif()
+# I945: the run must not read the user's real config dir. A developer's prefs.conf (mix.stereo_width = 99 from a live app) put "Stereo
+# Width 99" on the status line. XDG_CONFIG_HOME points at a poisoned dir so a run that forgets --config-dir fails; the run passes
+# --config-dir to its own empty one.
+file(MAKE_DIRECTORY "${WORK}/xdg/selecta" "${WORK}/cfg")
+file(WRITE "${WORK}/xdg/selecta/prefs.conf" "mix.stereo_width = 99\n")
+set(ENV{XDG_CONFIG_HOME} "${WORK}/xdg")
 execute_process(
-  COMMAND "${SELECTA}" --output null --size 80x25 --start-dir "${CWD}" --db "${WORK}/f.db"
+  COMMAND "${SELECTA}" --output null --size 80x25 --start-dir "${CWD}" --db "${WORK}/f.db" --config-dir "${WORK}/cfg"
           --keys "${KEYS}" --screen-dump "${WORK}/f.txt"
   WORKING_DIRECTORY "${CWD}"
   OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
