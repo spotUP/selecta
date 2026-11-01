@@ -18,6 +18,37 @@ uint32_t ps_mode_from_pref(const char* value) {
     return PS_OM_NORMAL;
 }
 
+void ps_filter_from_pref(const char* value, uint32_t* internal_on, uint32_t* external_on) {
+    *internal_on = 1;
+    *external_on = 0;
+    if (value != NULL && strcmp(value, "internal+external") == 0) {
+        *external_on = 1;
+    } else if (value != NULL && strcmp(value, "off") == 0) {
+        *internal_on = 0;
+    }
+}
+
+/* Index of `value` in a 4-name list, 0 when absent. */
+static uint32_t pick4(const char* value, const char* const names[4]) {
+    uint32_t i;
+    for (i = 1; value != NULL && i < 4; i++) {
+        if (strcmp(value, names[i]) == 0) {
+            return i;
+        }
+    }
+    return 0;
+}
+
+uint32_t ps_boost_from_pref(const char* value) {
+    static const char* const names[4] = {"off", "2x", "3x", "4x"};
+    return pick4(value, names) + 1u;
+}
+
+uint32_t ps_oversample_from_pref(const char* value) {
+    static const char* const names[4] = {"normal", "2x", "3x", "4x"};
+    return pick4(value, names);
+}
+
 int ps_mode_is_resid(uint32_t om) {
     return om == PS_OM_RESID_6581 || om == PS_OM_RESID_8580 || om == PS_OM_RESID_AUTO;
 }

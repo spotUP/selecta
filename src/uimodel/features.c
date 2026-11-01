@@ -68,6 +68,9 @@ static const sel_uim_pref_row g_pref_rows[] = {
     {"library.prefetch", "Prefetch Next Song", SEL_UIM_PREF_CHECK, "off,on"},
     {"library.metered", "Metered Connection", SEL_UIM_PREF_CHECK, "off,on"},
     {"ui.desktop.overscan", "Fill Screen (Overscan)", SEL_UIM_PREF_CHECK, "off,on"},
+    {"playsid.filter", "reSID Filter", SEL_UIM_PREF_CYCLE, "internal,internal+external,off"},
+    {"playsid.boost", "reSID Boost", SEL_UIM_PREF_CYCLE, "off,2x,3x,4x"},
+    {"playsid.oversample", "reSID Oversampling", SEL_UIM_PREF_CYCLE, "normal,2x,3x,4x"},
     {"view.title_format", "Title Format", SEL_UIM_PREF_STRING, ""},
     {"view.status_format", "Status Format", SEL_UIM_PREF_STRING, ""},
 };

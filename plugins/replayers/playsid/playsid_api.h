@@ -36,6 +36,9 @@ typedef struct ps_ops {
     void (*set_operating_mode)(uint32_t om);     /* PS_OM_* */
     void (*set_ahi_mode)(uint32_t ahi_id);       /* 0 = Paula 14-bit */
     uint32_t (*get_operating_mode)(void);
+    void (*set_resid_filter)(uint32_t internal_on, uint32_t external_on); /* d0, d1 (I434c) */
+    void (*set_resid_boost)(uint32_t boost);     /* d0: 1 = off (0 and 1 are both no-ops), 2-4 = 2x-4x */
+    void (*set_resid_mode)(uint32_t oversample); /* d0: 0 = normal, 1-3 = 2x-4x */
 } ps_ops;
 
 /* The Amiga build returns the LVO table (playsid_amiga.c); the host test defines its own stub. */
@@ -44,6 +47,13 @@ const ps_ops* ps_ops_get(void);
 /* Pref value of "playsid.mode" (normal, 6581, 8580, auto, sidblaster, zorrosid, usbsid, trinity; anything else is
  * normal) to the SetOperatingMode argument. */
 uint32_t ps_mode_from_pref(const char* value);
+
+/* Pref values of "playsid.filter" (internal, internal+external, off; anything else is internal), "playsid.boost" (off,
+ * 2x, 3x, 4x; else off) and "playsid.oversample" (normal, 2x, 3x, 4x; else normal) to the library arguments. The
+ * boost result is already the SetRESIDBoost argument (pref index + 1). */
+void ps_filter_from_pref(const char* value, uint32_t* internal_on, uint32_t* external_on);
+uint32_t ps_boost_from_pref(const char* value);
+uint32_t ps_oversample_from_pref(const char* value);
 
 /* True for the modes the reSID engine renders (ForwardSong is skipped there, as in HippoPlayer). */
 int ps_mode_is_resid(uint32_t om);

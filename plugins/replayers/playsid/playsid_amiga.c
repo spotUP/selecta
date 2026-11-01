@@ -21,7 +21,10 @@ enum {
     LVO_SETVERTFREQ = -96,
     LVO_SETOPMODE = -138,
     LVO_GETOPMODE = -144,
-    LVO_SETAHIMODE = -192
+    LVO_SETRESIDMODE = -150,
+    LVO_SETRESIDFILTER = -168,
+    LVO_SETAHIMODE = -192,
+    LVO_SETRESIDBOOST = -204
 };
 
 /* One tiny function per library vector: the offset is an asm immediate, the call a plain jsr through A6.
@@ -51,6 +54,15 @@ PS_LVO_FN(lvo_vert, LVO_SETVERTFREQ)
 PS_LVO_FN(lvo_opmode, LVO_SETOPMODE)
 PS_LVO_FN(lvo_getopmode, LVO_GETOPMODE)
 PS_LVO_FN(lvo_ahi, LVO_SETAHIMODE)
+PS_LVO_FN(lvo_residmode, LVO_SETRESIDMODE)
+/* SetRESIDFilter takes d0 and d1 */
+static void lvo_residfilter(uint32_t d0v, uint32_t d1v) {
+    register struct Library* r_a6 __asm__("a6") = g_base;
+    register uint32_t r_d0 __asm__("d0") = d0v;
+    register uint32_t r_d1 __asm__("d1") = d1v;
+    __asm__ volatile("jsr %c3(%%a6)" : "+d"(r_d0), "+d"(r_d1), "+a"(r_a6) : "i"(LVO_SETRESIDFILTER) : "a0", "a1", "memory", "cc");
+}
+PS_LVO_FN(lvo_residboost, LVO_SETRESIDBOOST)
 
 static int a_open(void) {
     if (g_base == NULL) {
@@ -81,10 +93,14 @@ static void a_forward(void) { (void)lvo_forward(0, 0, 0); }
 static void a_vert(uint32_t hz) { (void)lvo_vert(hz, 0, 0); }
 static void a_opmode(uint32_t om) { (void)lvo_opmode(om, 0, 0); }
 static void a_ahi(uint32_t id) { (void)lvo_ahi(id, 0, 0); }
+static void a_resid_filter(uint32_t in_on, uint32_t ext_on) { lvo_residfilter(in_on, ext_on); }
+static void a_resid_boost(uint32_t boost) { (void)lvo_residboost(boost, 0, 0); }
+static void a_resid_mode(uint32_t over) { (void)lvo_residmode(over, 0, 0); }
 static uint32_t a_getopmode(void) { return lvo_getopmode(0, 0, 0); }
 
 static const ps_ops g_ops = {a_open, a_close, a_alloc, a_free, a_set_module, a_start, a_stop,
-                             a_pause, a_continue, a_forward, a_vert, a_opmode, a_ahi, a_getopmode};
+                             a_pause, a_continue, a_forward, a_vert, a_opmode, a_ahi, a_getopmode,
+                             a_resid_filter, a_resid_boost, a_resid_mode};
 
 const ps_ops* ps_ops_get(void) {
     return &g_ops;

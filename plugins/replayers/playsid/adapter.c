@@ -24,6 +24,7 @@ typedef struct ps_state {
     uint32_t subsongs, default_subsong, speed_mask;
     uint32_t mode;       /* PS_OM_* chosen at start */
     uint32_t ahi_mode;   /* SetAHIMode argument chosen at start */
+    uint32_t oversample; /* SetRESIDMode argument (reSID modes) */
     uint32_t playing;
     char title[PS_TEXT], author[PS_TEXT], release[PS_TEXT];
     sel_tag meta[6];
@@ -176,8 +177,18 @@ static int rp_start(void* state, uint32_t subsong, uint32_t rate, const sel_voic
     s->ahi_mode = ps_ahi_mode_for_output(cfg(s->host, "output.id", ""), cfg(s->host, "playsid.ahi_mode", ""));
     s->ops->set_operating_mode(s->mode);
     s->ops->set_ahi_mode(s->ahi_mode);
+    if (ps_mode_is_resid(s->mode)) {
+        s->oversample = ps_oversample_from_pref(cfg(s->host, "playsid.oversample", "normal"));
+        s->ops->set_resid_mode(s->oversample);
+    }
     if (s->ops->alloc_emul() != 0) {
         return 0;
+    }
+    if (ps_mode_is_resid(s->mode)) { /* filter and boost apply after AllocEmulResource, as in puu016.s */
+        uint32_t in_on, ext_on;
+        ps_filter_from_pref(cfg(s->host, "playsid.filter", "internal"), &in_on, &ext_on);
+        s->ops->set_resid_filter(in_on, ext_on);
+        s->ops->set_resid_boost(ps_boost_from_pref(cfg(s->host, "playsid.boost", "off")));
     }
     s->ops->set_module(s->image, s->image, (uint32_t)s->size);
     s->ops->set_vert_freq(vert_freq(s, song1));

@@ -107,3 +107,9 @@ SEL_PREF(AMIGA_GROUP_FILE,        "amiga.group_file",        "",                
  * the library uses when the output is ahi; Paula and paula14 outputs use the library's Paula 14-bit path */
 SEL_PREF(PLAYSID_MODE,            "playsid.mode",            "normal",                            SEL_PREF_PLAIN)
 SEL_PREF(PLAYSID_AHI_MODE,        "playsid.ahi_mode",        "",                                  SEL_PREF_PLAIN)
+/* reSID quality (I434c), only used in the reSID modes: playsid.filter internal, internal+external or off
+ * (SetRESIDFilter), playsid.boost off, 2x, 3x or 4x output gain (SetRESIDBoost), playsid.oversample normal, 2x, 3x or
+ * 4x (SetRESIDMode). Defaults are HippoPlayer's: internal filter, no boost, normal */
+SEL_PREF(PLAYSID_FILTER,          "playsid.filter",          "internal",                          SEL_PREF_PLAIN)
+SEL_PREF(PLAYSID_BOOST,           "playsid.boost",           "off",                               SEL_PREF_PLAIN)
+SEL_PREF(PLAYSID_OVERSAMPLE,      "playsid.oversample",      "normal",                            SEL_PREF_PLAIN)

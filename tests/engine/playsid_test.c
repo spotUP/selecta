@@ -27,6 +27,7 @@ static int g_fail;
 /* ---- stub of playsid.library ---- */
 static int s_installed = 1, s_open_refs;
 static int s_n_open, s_n_alloc, s_n_free, s_n_setmodule, s_n_start, s_n_stop, s_n_pause, s_n_cont, s_n_fwd;
+static uint32_t s_filt_in = 99, s_filt_ext = 99, s_boost = 99, s_over = 99, s_n_filt, s_n_boost, s_n_over;
 static uint32_t s_last_song, s_last_hz, s_last_om = 99, s_last_ahi = 99, s_last_len;
 static const void *s_last_hdr, *s_last_img;
 
@@ -48,9 +49,12 @@ static void st_fwd(void) { s_n_fwd++; }
 static void st_hz(uint32_t hz) { s_last_hz = hz; }
 static void st_om(uint32_t om) { s_last_om = om; }
 static void st_ahi(uint32_t id) { s_last_ahi = id; }
+static void st_filt(uint32_t i, uint32_t e) { s_n_filt++; s_filt_in = i; s_filt_ext = e; }
+static void st_boost(uint32_t b) { s_n_boost++; s_boost = b; }
+static void st_over(uint32_t o) { s_n_over++; s_over = o; }
 static uint32_t st_getom(void) { return s_last_om; }
 static const ps_ops s_ops = {st_open, st_close, st_alloc, st_free, st_setmodule, st_start, st_stop,
-                             st_pause, st_cont, st_fwd, st_hz, st_om, st_ahi, st_getom};
+                             st_pause, st_cont, st_fwd, st_hz, st_om, st_ahi, st_getom, st_filt, st_boost, st_over};
 const ps_ops* ps_ops_get(void) { return &s_ops; }
 
 static const sel_tag* t_desc;
@@ -90,6 +94,16 @@ static void write_psid(const char* path, unsigned subsongs, unsigned defsong, un
     fclose(f);
 }
 
+/* A new rp_start through the engine: SUBSONG reopens the file in the idle slot; the sentinel proves the adapter ran. */
+static void restart(void) {
+    static unsigned n;
+    uint32_t before = sel_playsid_starts;
+    char l[32];
+    snprintf(l, sizeof l, "SUBSONG %u", 1u + (n++ & 1u));
+    run(l);
+    CHECK(sel_playsid_starts == before + 1u);
+}
+
 int main(int argc, char** argv) {
     sel_engine_config cfg;
     char line[1200], path[1024];
@@ -103,6 +117,19 @@ int main(int argc, char** argv) {
     for (i = 0; i < 8; i++) CHECK(ps_mode_from_pref(names[i]) == i);
     CHECK(ps_mode_from_pref("bogus") == 0u && ps_mode_from_pref(NULL) == 0u && ps_mode_from_pref("") == 0u);
     CHECK(ps_mode_is_resid(1) && ps_mode_is_resid(2) && ps_mode_is_resid(3) && !ps_mode_is_resid(0) && !ps_mode_is_resid(4));
+    /* reSID quality prefs -> library arguments */
+    {
+        uint32_t a, b;
+        ps_filter_from_pref("internal", &a, &b); CHECK(a == 1u && b == 0u);
+        ps_filter_from_pref("internal+external", &a, &b); CHECK(a == 1u && b == 1u);
+        ps_filter_from_pref("off", &a, &b); CHECK(a == 0u && b == 0u);
+        ps_filter_from_pref("bogus", &a, &b); CHECK(a == 1u && b == 0u);
+        ps_filter_from_pref(NULL, &a, &b); CHECK(a == 1u && b == 0u);
+        CHECK(ps_boost_from_pref("off") == 1u && ps_boost_from_pref("2x") == 2u && ps_boost_from_pref("3x") == 3u &&
+              ps_boost_from_pref("4x") == 4u && ps_boost_from_pref("bogus") == 1u && ps_boost_from_pref(NULL) == 1u);
+        CHECK(ps_oversample_from_pref("normal") == 0u && ps_oversample_from_pref("2x") == 1u && ps_oversample_from_pref("3x") == 2u &&
+              ps_oversample_from_pref("4x") == 3u && ps_oversample_from_pref("bogus") == 0u && ps_oversample_from_pref(NULL) == 0u);
+    }
     /* output -> AHI mode */
     CHECK(ps_ahi_mode_for_output("ahi", "0x0002000B") == 0x0002000Bu);
     CHECK(ps_ahi_mode_for_output("ahi", "20003") == 0x20003u);
@@ -148,6 +175,8 @@ int main(int argc, char** argv) {
     CHECK(s_last_om == 0u && s_last_ahi == 0u);
     CHECK(s_last_hz == 50u);    /* speed word 0x2: bit 2 (Hippo's btst on the 1-based song number) is clear */
 
+    CHECK(s_n_filt == 0 && s_n_boost == 0 && s_n_over == 0); /* classic mode: no reSID call */
+
     run("PAUSE");
     CHECK(s_n_pause >= 1);
     run("PAUSE");
@@ -156,6 +185,39 @@ int main(int argc, char** argv) {
     run("SEEK 5000");
     CHECK(s_n_fwd == 1 && sel_playsid_seeks == 1u); /* classic mode: ForwardSong */
 
+    run("STOP");
+
+    /* reSID mode through the engine prefs: defaults first, then every value moves the logged argument */
+    run("PREF_SET playsid.mode \"6581\"");
+    restart();
+    CHECK(s_last_om == 1u && s_n_filt == 1 && s_n_boost == 1 && s_n_over == 1);
+    CHECK(s_filt_in == 1u && s_filt_ext == 0u && s_boost == 1u && s_over == 0u); /* Hippo defaults: internal, off, normal */
+    {
+        static const char* const filt[3] = {"internal", "internal+external", "off"};
+        static const uint32_t fin[3] = {1, 1, 0}, fext[3] = {0, 1, 0};
+        static const char* const lvl[4] = {"off", "2x", "3x", "4x"};
+        static const char* const ovl[4] = {"normal", "2x", "3x", "4x"};
+        for (i = 0; i < 3; i++) {
+            snprintf(line, sizeof line, "PREF_SET playsid.filter \"%s\"", filt[i]);
+            run(line);
+            restart();
+            CHECK(s_filt_in == fin[i] && s_filt_ext == fext[i]);
+        }
+        run("PREF_SET playsid.filter \"internal\"");
+        for (i = 0; i < 4; i++) {
+            snprintf(line, sizeof line, "PREF_SET playsid.boost \"%s\"", lvl[i]);
+            run(line);
+            restart();
+            CHECK(s_boost == i + 1u);
+        }
+        run("PREF_SET playsid.boost \"off\"");
+        for (i = 0; i < 4; i++) {
+            snprintf(line, sizeof line, "PREF_SET playsid.oversample \"%s\"", ovl[i]);
+            run(line);
+            restart();
+            CHECK(s_over == i);
+        }
+    }
     run("STOP");
 
     sel_engine_destroy(eng);
