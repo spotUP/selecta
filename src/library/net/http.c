@@ -293,7 +293,8 @@ static int header_is(const char* line, const char* name) {
 /* Total head size we will skim through before giving up (I917); kept lines are bounded separately. */
 #define HEAD_TOTAL_CAP (1024u * 1024u)
 
-static const char* const kept_headers[] = {"content-length:", "icy-metaint:", "content-type:", "transfer-encoding:", "location:"};
+/* Every header name parse_head reads; a line not listed here is dropped before parse_head sees it. */
+static const char* const kept_headers[] = {"content-length:", "icy-metaint:", "content-type:", "retry-after:", "transfer-encoding:", "location:"};
 
 static char* memmem_crlf(char* p, size_t n) {
     size_t i;
