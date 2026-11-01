@@ -592,7 +592,6 @@ struct sel_engine {
     uint32_t collection_opens;                /* COLLECTION_OPEN commands applied (I678e) */
     uint32_t collection_kind;                 /* the collection page last opened: its kind (SEL_LIB_ITEM_*) */
     char collection_key[128];                 /* and its library key */
-    uint32_t rating_pending_cache;            /* I782: the last rating_pending count a stats read got from a free library */
     uint32_t library_items_calls;             /* sel_engine_library_items calls that reached the library (I678a) */
     /* I787: the one async Your Library read. li_state 0 idle, 1 running, 2 result ready (written with __atomic ops; the
      * thread publishes the rows before it stores 2). */
@@ -9574,19 +9573,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->rating_pushes = sel_devilbox_pushes();
     out->rating_batches = sel_devilbox_batches();
     out->vote_posts = sel_devilbox_vote_posts();
-    out->rating_pending = 0;
-    if (e->lib != NULL) {
-        char none[4];
-        uint32_t rows = 0;
-
-        /* I782: stats are read every frame; this never waits. A busy library keeps the last count (the pushes and sync that keep it busy
-         * are what changes it, and the next free frame reads it again). */
-        int was = sel_library_nowait(1);
-        sel_engine* w = (sel_engine*)e; /* the cache is not engine state a caller can see */
-        if (sel_library_rating_pending(e->lib, none, sizeof none, &rows)) w->rating_pending_cache = rows;
-        sel_library_nowait(was);
-        out->rating_pending = e->rating_pending_cache;
-    }
+    out->rating_pending = sel_library_rating_pending_count(e->lib); /* I958: a load of the writer's counter; stats are read every frame and never ask the library */
     out->lib_deferred = sel_library_deferred();
     out->radio_min_ahead = e->radio_min_ahead;
     out->home_rows = e->home_rows;
