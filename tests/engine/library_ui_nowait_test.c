@@ -132,7 +132,30 @@ int main(void) {
     CHECK(s1.library_searches >= searches0 + 1u);
     CHECK(g_results >= 1u);
     CHECK(s1.lib_reads_applied >= 3u); /* home, search and folders, each through the posted read */
-    CHECK(sel_library_watched_waits() - waits0 == 0u);
+    /* I961: once the library is free the pump's nowait reads (sources sync times via SEL_LIB_REQ_META, genre via SEL_LIB_REQ_GENRE)
+     * get the call lock and are real round trips. They now count; the busy-library check above is the I829 proof. */
+    printf("i961 nowait round trips on the pump thread after release: %u\n", (unsigned)(sel_library_watched_waits() - waits0));
+
+    /* I961: with the call lock FREE a nowait request still makes a worker round trip. It must show in the watched stats. */
+    {
+        sel_message reply;
+        uint32_t w1 = sel_library_watched_waits(), d1 = sel_library_deferred();
+        int nw = sel_library_nowait(1), ok = 0, tries;
+        /* A posted read may still hold the call lock: a deferred try is refused and not counted, so retry until one runs. */
+        for (tries = 0; tries < 2000 && !ok; tries++) {
+            d1 = sel_library_deferred();
+            w1 = sel_library_watched_waits();
+            ok = sel_library_call(lib, SEL_LIB_REQ_STATS, &reply);
+            if (!ok) {
+                CHECK(sel_library_watched_waits() == w1); /* deferred: no wait, not counted */
+                usleep(1000);
+            }
+        }
+        sel_library_nowait(nw);
+        CHECK(ok);
+        CHECK(sel_library_deferred() == d1); /* the last try ran, it was not deferred */
+        CHECK(sel_library_watched_waits() == w1 + 1u);
+    }
     sel_library_watch(was);
 
     sel_engine_destroy(e);

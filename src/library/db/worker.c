@@ -223,7 +223,7 @@ void sel_worker_stop(sel_library* lib) {
 
 int sel_library_request(sel_library* lib, uint32_t req, const void* payload, sel_message* reply) {
     sel_message m;
-    uint32_t t0 = g_watch && !g_nowait ? lib->host->clock_ms(lib->host) : 0u;
+    uint32_t t0 = g_watch ? lib->host->clock_ms(lib->host) : 0u;
 
     memset(&m, 0, sizeof m);
     m.kind = SEL_MSG_CMD;
@@ -244,9 +244,9 @@ int sel_library_request(sel_library* lib, uint32_t req, const void* payload, sel
     } else {
         call_enter(lib);
     }
-    /* I829: a watched thread is about to wait. A nowait request that got the call lock is not counted: with the lock free the
-     * worker has no other request, so the reply is one statement away. */
-    if (g_watch && !g_nowait) SEL_COUNT_ADD(&g_watched_waits, 1u);
+    /* I829/I961: a watched thread is about to wait. A nowait request that got the call lock is a round trip too (the reply is one
+     * job away, not free): it counts, so the stats and the guards see the wait. A deferred one returned above and never waited. */
+    if (g_watch) SEL_COUNT_ADD(&g_watched_waits, 1u);
     pthread_mutex_lock(&lib->lock);
     if (!sel_spsc_push(&lib->requests, &m)) {
         pthread_mutex_unlock(&lib->lock);
@@ -259,7 +259,7 @@ int sel_library_request(sel_library* lib, uint32_t req, const void* payload, sel
     }
     pthread_mutex_unlock(&lib->lock);
     call_leave(lib);
-    if (g_watch && !g_nowait) SEL_COUNT_ADD(&g_watched_wait_ms, lib->host->clock_ms(lib->host) - t0);
+    if (g_watch) SEL_COUNT_ADD(&g_watched_wait_ms, lib->host->clock_ms(lib->host) - t0);
     return 1;
 }
 
