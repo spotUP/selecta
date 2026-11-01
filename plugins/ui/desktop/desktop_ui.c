@@ -378,6 +378,7 @@ typedef struct desk {
     uint32_t sort_col;       /* 0 title, 1 format */
     uint32_t sort_dir;       /* 0 queue order, 1 ascending, 2 descending */
     int sm_open;             /* the shared song menu is open (I305) */
+    int sm_lit;              /* I874: the menu item drawn highlighted by the last paint, -1 for none (dump line smenu_lit) */
     int stats_open;          /* the Library Statistics panel (More) is expanded over the grid (I455) */
     uint32_t stats_panel_draws, stats_panel_rows; /* panels painted, and the statistics rows in the last one */
     int dlg_open;            /* DUI-P4-18: the confirm dialog is up: 1 = Remove from Library, 2 = Clear Library, 3 = Quit Selecta */
@@ -2840,6 +2841,7 @@ static void song_menu_draw(desk* d) {
         return;
     }
     n = song_menu_n(d);
+    d->sm_lit = -1;
     sel_gui_clip_push(d->canvas, window_rect(d));
     {
         /* One raised panel with the overlay shadow; items are text on it, and only the item under the pointer takes the accent
@@ -2893,6 +2895,7 @@ static void song_menu_draw(desk* d) {
                 continue;
             }
             if (lit) {
+                d->sm_lit = k;
                 sel_gui_round_rect(d->canvas, rect_of(m.x + inset, m.y, m.w - 2 * inset, m.h),
                                    lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS_SMALL]),
                                    ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
@@ -7302,6 +7305,7 @@ static const char* library_dump_build(desk* d) {
         if (d->sm_open) { /* I649: the open menu's panel, in window coordinates */
             sel_gui_rect m0 = song_menu_item_rect(d, 0);
             o = dump_put(d, o, "smenu %d %d %d %d\n", (int)m0.x, (int)m0.y, (int)m0.w, (int)(m0.h * song_menu_n(d)));
+            o = dump_put(d, o, "smenu_lit %d\n", d->sm_lit);
             o = dump_put(d, o, "smenu_pl step=%d playlists=%u sidebar_rows=%u\n", d->sm_step, (unsigned)d->sm_pl_n, (unsigned)d->side_n);
         }
         o = dump_put(d, o, "srcpaint gen=%u painted=%u\n", (unsigned)d->src_gen, (unsigned)d->src_painted);
@@ -13006,7 +13010,17 @@ static int desk_pointer(desk* d, const sel_gui_input* ev) {
         hover = desk_hover_move(d, ev->x, ev->y);
     }
     tip = desk_tip_pointer(d, ev->kind == SEL_GUI_IN_MOVE ? ev->x : -1, ev->y);
-    return desk_pointer_view(d, ev) | tip | hover;
+    {
+        int was_open = d->sm_open, view = desk_pointer_view(d, ev);
+        if (ev->kind == SEL_GUI_IN_CLICK && d->sm_open && !was_open) {
+            /* I874: a menu that opens under a still pointer registered its item boxes while it drew, after the last motion chose
+             * the hovered box (the row). Choose it again so the item under the pointer is lit without a first move. */
+            d->ptr_x = ev->x;
+            d->ptr_y = ev->y;
+            hover |= desk_hover_move(d, ev->x, ev->y);
+        }
+        return view | tip | hover;
+    }
 }
 
 /* Touchpad events (DUI-P3-4). Wheel scrolls the songs list by Q16 logical pixels (negative dy scrolls down), clamped to

@@ -87,5 +87,5 @@ expect("${desc}" top_row 3)
 
 # 4. Hover and context menu.
 mouse_run(menu "move 600 166\nrclick 600 198\n")
-expect("${menu}" hovers 1)
+expect("${menu}" hovers 2) # the move, then the menu opening under the pointer picks its item (I874)
 expect("${menu}" menus 1)

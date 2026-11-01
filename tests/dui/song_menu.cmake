@@ -64,6 +64,24 @@ if(NOT open1 EQUAL 1 OR NOT items EQUAL 5 OR NOT opens1 EQUAL 1)
   message(FATAL_ERROR "right-click opened open=${open1} items=${items} opens=${opens1}, expected 1/5/1:\n${opened}")
 endif()
 
+# I874: the menu item under the pointer draws highlighted (the one hover path: hover_weight on the item box). The menu opens under
+# the pointer, so item 0 is lit straight after the right-click with no motion; moving over item 2 lights item 2 and not item 1.
+if(NOT "${opened}" MATCHES "smenu_lit (-?[0-9]+)\n")
+  message(FATAL_ERROR "no smenu_lit line in:\n${opened}")
+endif()
+expect_eq("lit item right after the right-click" "${CMAKE_MATCH_1}" 0)
+if(NOT "${opened}" MATCHES "smenu ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)\n")
+  message(FATAL_ERROR "no smenu line in:\n${opened}")
+endif()
+math(EXPR ih "${CMAKE_MATCH_4} / ${items}")
+math(EXPR hx "${CMAKE_MATCH_1} + 10")
+math(EXPR hy2 "${CMAKE_MATCH_2} + 2 * ${ih} + ${ih} / 2")
+sm_run(hov2 "${drill}move ${sx} ${sy}\nrclick ${sx} ${sy}\nmove ${hx} ${hy2}\nwait 1\n")
+if(NOT "${hov2}" MATCHES "smenu_lit (-?[0-9]+)\n")
+  message(FATAL_ERROR "no smenu_lit line in:\n${hov2}")
+endif()
+expect_eq("lit item with the pointer on item 2" "${CMAKE_MATCH_1}" 2)
+
 # Add to Queue is the third item: the engine queue grows by 1.
 math(EXPR qx "${sx} + 10")
 math(EXPR qy "${sy} + 2 * 24 + 12")
