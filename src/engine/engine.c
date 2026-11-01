@@ -4156,17 +4156,19 @@ static void cmd_LIBRARY_SEARCH(sel_engine* e, const sel_message* m) {
 
 static void cmd_QUEUE_ADD_QUERY(sel_engine* e, const sel_message* m) {
     uint32_t fts = 0, i;
+    const char* key;
 
     if (!run_search(e, m->args[0].v.s, "QUEUE_ADD_QUERY", &fts)) {
         return;
     }
-    for (i = 0; i < e->res_count; i++) {
-        queue_insert(e, e->queue.count, sel_engine_result_key(e, i), "QUEUE_ADD_QUERY");
+    for (i = 0, key = e->res_text; i < e->res_count; i++, key += strlen(key) + 1u) { /* I959: in-order walk, not O(n^2) result_key(i) */
+        queue_insert(e, e->queue.count, key, "QUEUE_ADD_QUERY");
     }
 }
 
 static void cmd_PLAY_QUERY(sel_engine* e, const sel_message* m) {
     uint32_t fts = 0, i;
+    const char* key;
 
     if (!run_search(e, m->args[0].v.s, "PLAY_QUERY", &fts)) {
         return;
@@ -4176,8 +4178,8 @@ static void cmd_PLAY_QUERY(sel_engine* e, const sel_message* m) {
     sel_queue_clear(&e->queue);
     e->q_playing = 0;
     e->q_hint = 0;
-    for (i = 0; i < e->res_count; i++) {
-        queue_insert(e, e->queue.count, sel_engine_result_key(e, i), "PLAY_QUERY");
+    for (i = 0, key = e->res_text; i < e->res_count; i++, key += strlen(key) + 1u) { /* I959: in-order walk */
+        queue_insert(e, e->queue.count, key, "PLAY_QUERY");
     }
     emit_queue_changed(e);
     if (e->queue.count > 0) {
@@ -5502,22 +5504,30 @@ static int search_same_source(const char* a, const char* b) {
 }
 
 static uint32_t search_pick_songs(const sel_engine* e, uint32_t* pick) {
-    uint32_t first[SEARCH_SOURCES], next[SEARCH_SOURCES], ns = 0, n = 0, i, s, j;
+    /* I959: keys are walked in order with pointers; sel_engine_result_key(e, i) rescans from the start of the result, so indexing every row
+     * was O(n^2) (62 s on the UI thread for a 200000 song source search). */
+    const char* first[SEARCH_SOURCES];
+    const char* nextp[SEARCH_SOURCES];
+    uint32_t next[SEARCH_SOURCES], ns = 0, n = 0, i, s, j;
+    const char* key = e->res_text;
     int more = 1;
-    for (i = 0; i < e->res_count && ns < SEARCH_SOURCES; i++) {
-        const char* key = sel_engine_result_key(e, i);
-        for (s = 0; s < ns && !search_same_source(sel_engine_result_key(e, first[s]), key); s++) {
+    for (i = 0; i < e->res_count && ns < SEARCH_SOURCES; i++, key += strlen(key) + 1u) {
+        for (s = 0; s < ns && !search_same_source(first[s], key); s++) {
         }
         if (s == ns) {
-            first[ns] = next[ns] = i;
+            first[ns] = key;
+            nextp[ns] = key;
+            next[ns] = i;
             ns++;
         }
     }
     while (n < SEARCH_GROUP_ROWS && more) {
         more = 0;
         for (s = 0; s < ns && n < SEARCH_GROUP_ROWS; s++) {
-            const char* src = sel_engine_result_key(e, first[s]);
-            for (i = next[s]; i < e->res_count && !search_same_source(src, sel_engine_result_key(e, i)); i++) {
+            const char* src = first[s];
+            const char* k = nextp[s];
+            for (i = next[s]; i < e->res_count && !search_same_source(src, k); i++) {
+                k += strlen(k) + 1u;
             }
             if (i >= e->res_count) {
                 next[s] = e->res_count;
@@ -5525,6 +5535,7 @@ static uint32_t search_pick_songs(const sel_engine* e, uint32_t* pick) {
             }
             pick[n++] = i;
             next[s] = i + 1u;
+            nextp[s] = k + strlen(k) + 1u;
             more = 1;
         }
     }
@@ -5546,6 +5557,7 @@ static void search_reload(sel_engine* e) {
     char alb[SEL_VIEW_HOME_TEXT_MAX / 8], art[SEL_VIEW_HOME_TEXT_MAX / 8];
     size_t la = 0, lr = 0;
     uint32_t pick[SEARCH_GROUP_ROWS], n_pick, at_pick = 0;
+    const char* key;
     if (text == NULL) {
         return;
     }
@@ -5555,11 +5567,10 @@ static void search_reload(sel_engine* e) {
     }
     alb[0] = art[0] = '\0';
     o += (size_t)snprintf(text + o, cap - o, "H Songs (%u)\n", (unsigned)e->res_count);
-    for (i = 0; i < e->res_count; i++) {
+    for (i = 0, key = e->res_text; i < e->res_count; i++, key += strlen(key) + 1u) { /* I959: in-order walk, not O(n^2) result_key(i) */
         const char* name = "";
         const char* artist = "";
         const char* album = "";
-        const char* key = sel_engine_result_key(e, i);
         if (i < e->qmeta_rows && e->qmeta_off[i] != UINT32_MAX) {
             name = e->qmeta + e->qmeta_off[i];
             artist = name + strlen(name) + 1u;
@@ -7585,9 +7596,10 @@ static void view_source_apply(sel_engine* e, const sel_message* m) {
     if (strcmp(what, "query") == 0) {
         sel_queue_clear(&e->qview);
         snapshot_meta(e);
-        for (i = 0; i < e->res_count; i++) {
+        const char* key = e->res_text; /* I959: walk the keys in order; sel_engine_result_key(e, i) rescans from the start, O(n^2) over 200k rows (62 s on the UI thread) */
+        for (i = 0; i < e->res_count; i++, key += strlen(key) + 1u) {
             uint32_t id;
-            if (!sel_queue_insert(&e->qview, SEL_QUEUE_NONE, sel_engine_result_key(e, i), &id)) {
+            if (!sel_queue_insert(&e->qview, SEL_QUEUE_NONE, key, &id)) {
                 sel_engine_report_error(e, "queue_full", "VIEW_SOURCE");
                 break;
             }
