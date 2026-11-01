@@ -174,18 +174,41 @@ int mui_aa_tier(int screen_rows) {
     return screen_rows <= 256 ? MUI_AA_TIER_S : screen_rows <= 600 ? MUI_AA_TIER_M : screen_rows <= 800 ? MUI_AA_TIER_L : MUI_AA_TIER_XL;
 }
 
-void mui_aa_metrics(int font_px, mui_aa_metrics_t* out) {
+static int g_screen_aspect = 256;
+
+void mui_aa_set_screen_aspect(int aspect_q8) {
+    g_screen_aspect = aspect_q8 < 256 ? 256 : aspect_q8 > 512 ? 512 : aspect_q8;
+}
+
+int mui_aa_screen_aspect(void) {
+    return g_screen_aspect;
+}
+
+int mui_aa_rows(int px, int aspect_q8) {
+    int a = aspect_q8 < 256 ? 256 : aspect_q8;
+    int r = (px * 256 + a / 2) / a;
+    return r < 1 ? 1 : r;
+}
+
+void mui_aa_metrics_aspect(int font_px, int aspect_q8, mui_aa_metrics_t* out) {
     int small = font_px <= 0;
+    int tight = small && aspect_q8 > 256; /* 640x256 PAL: tall pixels and 256 rows */
     out->font_px = small ? 8 : font_px;
-    out->pad_x = small ? 6 : 10;
-    out->pad_y = small ? 3 : 6;
+    out->pad_x = tight ? 4 : small ? 6 : 10;
+    out->pad_y = small ? mui_aa_rows(3, aspect_q8) : 6;
     /* I667m (design 3.11): the one icon table, by tier font: S 12, M 18, L 20, XL 24 (desktop icon:text about 1.4). */
     out->icon_px = small ? 12 : font_px <= 13 ? 18 : font_px <= 15 ? 20 : 24;
-    out->icon_gap = 6;
-    out->height = small ? out->font_px + 2 * out->pad_y : (out->font_px > out->icon_px ? out->font_px : out->icon_px) + 2 * out->pad_y;
+    out->icon_gap = tight ? 4 : 6;
+    out->icon_h = mui_aa_rows(out->icon_px, aspect_q8);
     out->radius = small ? 4 : 6;
     out->check_px = small ? 12 : 16;
-    out->aspect_q8 = 256;
+    out->check_h = mui_aa_rows(out->check_px, aspect_q8);
+    out->height = small ? out->font_px + 2 * out->pad_y : (out->font_px > out->icon_px ? out->font_px : out->icon_px) + 2 * out->pad_y;
+    out->aspect_q8 = aspect_q8 < 256 ? 256 : aspect_q8;
+}
+
+void mui_aa_metrics(int font_px, mui_aa_metrics_t* out) {
+    mui_aa_metrics_aspect(font_px, 256, out);
 }
 
 static uint32_t g_aspect_calls;
@@ -418,7 +441,7 @@ uint32_t mui_aa_cycle_calls(void) {
 void mui_aa_cycle_metrics(int font_px, mui_aa_cycle_t* out) {
     mui_aa_metrics_t b;
     g_cycle_calls++;
-    mui_aa_metrics(font_px, &b);
+    mui_aa_metrics_aspect(font_px, g_screen_aspect, &b);
     out->height = b.height;
     out->pad_x = b.pad_x;
     out->radius = b.radius;
@@ -501,7 +524,7 @@ uint32_t mui_aa_field_calls(void) {
 void mui_aa_field_metrics(int font_px, mui_aa_field_t* out) {
     mui_aa_metrics_t b;
     g_field_calls++;
-    mui_aa_metrics(font_px, &b);
+    mui_aa_metrics_aspect(font_px, g_screen_aspect, &b);
     out->height = b.height;
     out->radius = b.radius;
     out->pad_x = 8; /* same on every tier: the group's inner offsets are fixed at construction, before the screen tier is known */

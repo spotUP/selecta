@@ -578,6 +578,7 @@ static void mui_screen_open(const uint32_t* tokens) {
     if (mode != (ULONG)INVALID_ID && GetDisplayInfoData(NULL, (UBYTE*)&di, sizeof di, DTAG_DISP, mode) > 0) {
         g_pixel_aspect_q8 = mui_pixel_aspect_q8((int)di.Resolution.x, (int)di.Resolution.y);
     }
+    mui_aa_set_screen_aspect(g_pixel_aspect_q8);
     fprintf(stderr, "selecta mui: pixel aspect %d/256 (resolution %dx%d)\n", g_pixel_aspect_q8, (int)di.Resolution.x, (int)di.Resolution.y);
     pal[0] = ((ULONG)MUI_PEN_TOTAL << 16) | 0u;
     for (i = 0; i < MUI_PEN_TOTAL; i++) {

@@ -34,6 +34,7 @@ static void shot_make(shot* t, uint32_t w, uint32_t h) {
     t->s.fmt = SEL_PIX_INDEX8;
     t->s.pixels = t->px;
     t->s.palette = NULL;
+    t->s.pix_aspect_q8 = 0u;
 }
 
 static uint8_t at(const shot* t, int x, int y) { return t->px[(uint32_t)y * t->s.pitch + (uint32_t)x]; }
@@ -216,6 +217,48 @@ static void strip(void) {
     free(f);
 }
 
+/* I950 (closes the SID PatternScope \"very zoomed in characters\"): labels fit their columns and the glyph pixel is square on screen.
+ * Before: scale = rh / 7 with no width cap, one scale for both axes. */
+static int run_len(const shot* t, int x, int y, int dx, int dy, int lim) {
+    int n = 0;
+    while (n < lim && at(t, x + n * dx, y + n * dy) == ACCENT) {
+        n++;
+    }
+    return n;
+}
+
+static void glyph_aspect(void) {
+    shot t;
+    sel_viz_frame* f = frame_make(1u);
+    int x, y, ytop = -1, w, l;
+    uint32_t n;
+    /* Square pixels, tall cells (rh 28, cw 8): the heading "Voice1" owns columns 0..6 and "Flt" starts at column 7; the old scale 4 ran Voice1 to x 120. */
+    shot_make(&t, 320, 224);
+    n = draw(f, &t);
+    CHECK(n > 0u, "nothing drawn");
+    CHECK(count_in(&t, 72, 0, 104, 28, ACCENT) == 0u, "heading overruns into the next voice: %u accent pixels at x 72..104", (unsigned)count_in(&t, 72, 0, 104, 28, ACCENT));
+    free(t.px);
+    /* Tall pixels (aspect 512), rh 16, cw 16: a glyph pixel is 2 wide for 1 high; the row-1 label "Fr" starts with a full-height stem. */
+    shot_make(&t, 640, 128);
+    t.s.pix_aspect_q8 = 512u;
+    draw(f, &t);
+    for (y = 16; y < 32 && ytop < 0; y++) {
+        if (at(&t, 0, y) == ACCENT) {
+            ytop = y;
+        }
+    }
+    CHECK(ytop >= 0, "no Fr label found");
+    if (ytop >= 0) {
+        l = run_len(&t, 0, ytop, 0, 1, 16);
+        w = run_len(&t, 0, ytop, 1, 0, 16);
+        x = w / 4;
+        y = l / 6;
+        CHECK(x * 256 == y * 512 && x >= 1 && y >= 1, "glyph pixel %d wide x %d high, not square at aspect 512", x, y);
+    }
+    free(t.px);
+    free(f);
+}
+
 int main(int argc, char** argv) {
     const char* mode = argc > 1 ? argv[1] : "all";
     if (strcmp(mode, "all") == 0 || strcmp(mode, "labels") == 0) {
@@ -224,6 +267,7 @@ int main(int argc, char** argv) {
     if (strcmp(mode, "all") == 0 || strcmp(mode, "surface") == 0) {
         surface();
         label_threshold();
+        glyph_aspect();
         zero_chips();
         three_chips();
         strip();

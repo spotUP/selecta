@@ -47,11 +47,12 @@ static inline const uint8_t* vs_glyph_rows(char ch) {
     return NULL;
 }
 
-/* Draws `str` with its top left at (x, y), every glyph pixel `scale` x `scale`. A horizontal run of lit pixels, merged
- * downward through the rows that hold the same run, is one vs_rect. Returns the number of rects drawn. */
-static inline uint32_t vs_text(sel_surface* s, int32_t x, int32_t y, int32_t scale, const char* str, uint32_t px) {
+/* Draws `str` with its top left at (x, y), every glyph pixel `sx` wide and `sy` high (I950: sx = sy * aspect on a tall-pixel
+ * screen so the glyph looks square). A horizontal run of lit pixels, merged downward through the rows that hold the same run,
+ * is one vs_rect. Returns the number of rects drawn. */
+static inline uint32_t vs_text_xy(sel_surface* s, int32_t x, int32_t y, int32_t sx, int32_t sy, const char* str, uint32_t px) {
     uint32_t prims = 0;
-    for (; *str != '\0'; str++, x += VS_GLYPH_ADVANCE * scale) {
+    for (; *str != '\0'; str++, x += VS_GLYPH_ADVANCE * sx) {
         const uint8_t* g = vs_glyph_rows(*str);
         uint8_t loc[VS_GLYPH_H];
         int32_t r, c, d;
@@ -78,13 +79,36 @@ static inline uint32_t vs_text(sel_surface* s, int32_t x, int32_t y, int32_t sca
                     loc[r + down] = (uint8_t)(loc[r + down] & ~mask);
                     down++;
                 }
-                vs_rect(s, x + c * scale, y + r * scale, (end - c + 1) * scale, down * scale, px);
+                vs_rect(s, x + c * sx, y + r * sy, (end - c + 1) * sx, down * sy, px);
                 prims++;
                 c = end;
             }
         }
     }
     return prims;
+}
+
+/* Square glyph pixels: the original single-scale call. */
+static inline uint32_t vs_text(sel_surface* s, int32_t x, int32_t y, int32_t scale, const char* str, uint32_t px) {
+    return vs_text_xy(s, x, y, scale, scale, str, px);
+}
+
+/* Glyph pixel size for a cell grid (I950). Fits a glyph into `cell_rows` rows of the surface (a row is aspect_q8/256 wide) and
+ * into `max_w` columns, and keeps the glyph pixel a physical square: *sx = *sy * aspect_q8 / 256 (as near as integers allow).
+ * `rows_needed` is the cell height in glyph rows (VS_GLYPH_H plus the blank row). The pre-I950 code used cell_rows / 7 with no
+ * width cap and one scale for both axes, which on 640x256 (aspect 512) drew glyphs twice as tall as wide. */
+static inline void vs_glyph_scale(const sel_surface* surf, int32_t cell_rows, int32_t max_w, int32_t* sx, int32_t* sy) {
+    int32_t a = surf->pix_aspect_q8 < 256u ? 256 : (int32_t)surf->pix_aspect_q8;
+    int32_t sq = (cell_rows * a / 256) / (VS_GLYPH_H + 1); /* physical square edge the cell height allows */
+    int32_t y, x;
+    if (sq > max_w) {
+        sq = max_w;
+    }
+    y = sq * 256 / a;
+    y = y < 1 ? 1 : y;
+    x = y * a / 256;
+    *sx = x < 1 ? 1 : x;
+    *sy = y;
 }
 
 #endif /* SELECTA_SHARED_VIZ_GLYPHS_H */

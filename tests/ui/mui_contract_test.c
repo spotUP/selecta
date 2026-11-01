@@ -2832,6 +2832,30 @@ static void test_aa_aspect(void) {
     CHECK(mui_pixel_aspect_calls() == before + 6u, "call sentinel %u", (unsigned)(mui_pixel_aspect_calls() - before));
     mui_aa_metrics(0, &m);
     CHECK(m.aspect_q8 == 256, "metrics aspect_q8 default is not square");
+    {
+        /* I949e: consumers read the metrics. Tall pixels at the bitmap tier select the tight tier and count vertical sizes in rows. */
+        mui_aa_metrics_t sq, tall, m13;
+        char cls[65536];
+        FILE* cf = fopen(MUI_DIR "/mui_aabtn_class.c", "rb");
+        size_t cn = cf != NULL ? fread(cls, 1, sizeof cls - 1, cf) : 0;
+        if (cf != NULL) {
+            fclose(cf);
+        }
+        cls[cn] = 0;
+        mui_aa_metrics_aspect(0, 256, &sq);
+        mui_aa_metrics_aspect(0, 512, &tall);
+        mui_aa_metrics_aspect(13, 512, &m13);
+        CHECK(sq.pad_x == 6 && sq.pad_y == 3 && sq.height == 14 && sq.icon_h == 12 && sq.check_h == 12 && sq.icon_gap == 6, "square S metrics moved");
+        CHECK(tall.pad_x == 4 && tall.pad_y == 2 && tall.icon_gap == 4 && tall.height == 12, "tight tier: pad %d,%d gap %d height %d", tall.pad_x, tall.pad_y, tall.icon_gap, tall.height);
+        CHECK(tall.icon_px == 12 && tall.icon_h == 6 && tall.check_px == 12 && tall.check_h == 6 && tall.aspect_q8 == 512, "tall icon %dx%d check %dx%d", tall.icon_px, tall.icon_h, tall.check_px, tall.check_h);
+        CHECK(m13.pad_x == 10 && m13.icon_h == 9 && mui_aa_rows(1, 512) == 1 && mui_aa_rows(10, 512) == 5, "larger tiers only scale rows");
+        mui_aa_set_screen_aspect(512);
+        CHECK(mui_aa_screen_aspect() == 512, "screen aspect not stored");
+        mui_aa_set_screen_aspect(256);
+        CHECK(cn > 0 && strstr(cls, "mui_aa_metrics_aspect(d->aa.font_px, mui_aa_screen_aspect(), &d->m)") != NULL && strstr(cls, "d->m.check_h") != NULL && strstr(cls, "d->m.icon_h") != NULL,
+              "AAButton does not size icon and check from the aspect metrics");
+        CHECK(strstr(src, "mui_aa_set_screen_aspect(g_pixel_aspect_q8)") != NULL, "mui_screen_open does not publish the aspect");
+    }
     open_fn = strstr(src, "static void mui_screen_open(");
     CHECK(open_fn != NULL && strstr(open_fn, "g_pixel_aspect_q8 = mui_pixel_aspect_q8((int)di.Resolution.x, (int)di.Resolution.y);") != NULL,
           "mui_screen_open does not read the aspect from DisplayInfo.Resolution");

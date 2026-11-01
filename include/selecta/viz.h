@@ -117,6 +117,7 @@ typedef struct sel_surface {
     sel_pixfmt fmt;
     void* pixels;
     const uint32_t* palette; /* INDEX8: 0xAARRGGBB per index, NULL for RGBA32 */
+    uint32_t pix_aspect_q8;  /* pixel height over width x 256 of the display (512 on 640x256 PAL); 0 or 256 square. Text and round shapes divide their vertical size by it */
 } sel_surface;
 
 /* Pixel values for the plugin, already in the surface's format (palette index or 0xAARRGGBB). */

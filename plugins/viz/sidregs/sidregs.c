@@ -89,27 +89,29 @@ static uint32_t block(const grid* g, int32_t col, int32_t row, int on, uint32_t 
     return 1u;
 }
 
-static uint32_t label_at(const grid* g, int32_t col, int32_t row, int32_t scale, const char* text, uint32_t px) {
-    int32_t y = cell_y(g, row) + (g->rh - VS_GLYPH_H * scale) / 2;
-    return vs_text(g->s, cell_x(g, col), y, scale, text, px);
+static uint32_t label_at(const grid* g, int32_t col, int32_t row, int32_t sx, int32_t sy, const char* text, uint32_t px) {
+    int32_t y = cell_y(g, row) + (g->rh - VS_GLYPH_H * sy) / 2;
+    return vs_text_xy(g->s, cell_x(g, col), y, sx, sy, text, px);
 }
 
 /* Labels of one chip band; none on a small surface (rh < 6 or cw < 3). */
 static uint32_t labels(const grid* g, uint32_t chip, uint32_t px) {
-    int32_t scale = g->rh / 7 > 1 ? g->rh / 7 : 1;
+    int32_t sx, sy;
+    /* I950: the widest label ("Voice1", 6 glyphs) must stay inside its 7 columns, and the glyph pixel is square on screen. */
+    vs_glyph_scale(g->s, g->rh, (g->cw * 7) / (6 * VS_GLYPH_ADVANCE), &sx, &sy);
     uint32_t v, i, n = 0;
     if (g->rh < VS_GLYPH_H + 1 || g->cw < 3) { /* I918: a glyph needs its rows plus a blank row; at rh 6 the text touched the cells and was unreadable */
         return 0;
     }
     for (v = 0; v < 3; v++) {
         int32_t base = (int32_t)v * VOICE_COLS;
-        n += label_at(g, base, 0, scale, k_headings[chip * 3u + v], px);
+        n += label_at(g, base, 0, sx, sy, k_headings[chip * 3u + v], px);
         for (i = 0; i < sizeof k_voice_labels / sizeof k_voice_labels[0]; i++) {
-            n += label_at(g, base + k_voice_labels[i].col, k_voice_labels[i].row, scale, k_voice_labels[i].text, px);
+            n += label_at(g, base + k_voice_labels[i].col, k_voice_labels[i].row, sx, sy, k_voice_labels[i].text, px);
         }
     }
     for (i = 0; i < sizeof k_chip_labels / sizeof k_chip_labels[0]; i++) {
-        n += label_at(g, k_chip_labels[i].col, k_chip_labels[i].row, scale, k_chip_labels[i].text, px);
+        n += label_at(g, k_chip_labels[i].col, k_chip_labels[i].row, sx, sy, k_chip_labels[i].text, px);
     }
     return n;
 }
