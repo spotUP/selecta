@@ -25,5 +25,7 @@ Sites done: 1 of 10 (playlist_play). Sites that are not real UI-thread waits: 3 
 - tests/dui/playlists.cmake fails on the golden hash (got d311cba464f4ea6d, want ef91e727ce2cb2d3). The tested frame is the untouched page, so likely the pending golden rebless (I673), not this change. Unverified on main.
 - A selecta process (pid 20174, 49 min old, cwd /Users/spot/Code/MusicPlayer) is not mine.
 
+- dui-direct-calls-async timed out at 300 s in 4 of 5 runs here (1 pass, 112 s), also with the old code. Sampled hang: a pre-existing `sites_mem` geometry run (view home, browse tile, sites_in.txt) parked in `sel_ctl_serve` poll with the process still alive. Not caused by site 7 (it hangs before it), so the revert proof for site 7 stays open until this hang is fixed. Machine load average was 11-17 during the runs.
+
 ## Scratch
 build/ in the worktree (build/sdl). Logs in the session scratchpad (small).
