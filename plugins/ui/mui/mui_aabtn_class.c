@@ -123,15 +123,20 @@ static ULONG aabtn_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMinM
  * largest body scaled by nearest neighbour. Drawn
  * as horizontal runs of one ramp pen from the face colour to the caption colour. */
 static void aabtn_icon(aabtn_data* d, struct RastPort* rp, int icon, int x, int y, int px, int ph, uint32_t face, uint32_t ink) {
-    int bp = px;
-    const uint8_t* body = mui_icon_body(icon, px);
+    int bp = px, bh = ph;
+    const uint8_t* body = mui_icon_body_wh(icon, px, ph); /* I949e2: the exact px x ph set (the 16x8 body on tall pixels) first */
+    if (body == NULL) {
+        bh = px;
+        body = mui_icon_body(icon, px);
+    }
     int rb, dy, dx, run0, run_pen;
     uint32_t col[4];
     LONG pen[4];
     int i;
     if (body == NULL && mui_icon_size_count > 0) {
         bp = (int)mui_icon_sizes[mui_icon_size_count - 1];
-        body = mui_icon_body(icon, bp);
+        bh = bp;
+        body = mui_icon_body_wh(icon, bp, (int)mui_icon_heights[mui_icon_size_count - 1]);
     }
     if (body == NULL || px <= 0 || ph <= 0) {
         return;
@@ -142,7 +147,7 @@ static void aabtn_icon(aabtn_data* d, struct RastPort* rp, int icon, int x, int 
         pen[i] = aa_pen(&d->aa, col[i]);
     }
     for (dy = 0; dy < ph; dy++) { /* I949e: ph rows for a px wide icon: a square icon on tall pixels is px x ph */
-        const uint8_t* row = body + (size_t)(dy * bp / ph) * (size_t)rb * 2u;
+        const uint8_t* row = body + (size_t)(dy * bh / ph) * (size_t)rb * 2u;
         run0 = 0;
         run_pen = 0;
         for (dx = 0; dx <= px; dx++) {

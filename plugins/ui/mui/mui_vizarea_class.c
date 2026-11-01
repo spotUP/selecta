@@ -4,6 +4,8 @@
 #include "mui_vizarea_class.h"
 
 #include "mui_canvas_class.h"
+#include "map/mui_aa.h"
+#include "map/mui_map.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -78,15 +80,17 @@ static ULONG viza_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
 }
 
 static ULONG viza_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMinMax* msg) {
+    mui_vizarea_h_t vh;
     DoSuperMethodA(cl, obj, (Msg)msg);
+    mui_vizarea_heights(mui_aa_screen_aspect(), &vh); /* I949e2: heights are square-pixel lengths counted in rows */
     msg->MinMaxInfo->MinWidth += 32;
     msg->MinMaxInfo->DefWidth += 160;
     msg->MinMaxInfo->MaxWidth += MUI_MAXMAX;
-    msg->MinMaxInfo->MinHeight += 32;
-    msg->MinMaxInfo->DefHeight += 80;
+    msg->MinMaxInfo->MinHeight += vh.min_h;
+    msg->MinMaxInfo->DefHeight += vh.def_h;
     {
         viza_data* d = INST_DATA(cl, obj);
-        msg->MinMaxInfo->MaxHeight += d->tall ? MUI_MAXMAX : 160;
+        msg->MinMaxInfo->MaxHeight += d->tall ? MUI_MAXMAX : vh.cap_h;
     }
     return 0;
 }
