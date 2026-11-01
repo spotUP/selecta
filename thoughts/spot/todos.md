@@ -1342,5 +1342,6 @@ b6f2 | Johan 2026-10-25 (Mac): "the home page looks like it should be scrollable
 | I881 | Mac: the 3rd column of song lists in the main view is truncated although there is free space (Johan 2026-11-01). | open |
 | I882 | Mac: the spectrum visualizer flickers, and any tooltip drawn over a visualizer flickers every second frame (Johan 2026-11-01). | open |
 | I883 | Pre-existing on main (found during I880, fail with and without the I880 change): dui-search golden hash 978dd187ef726ed1 differs from b202084b8bf43e8e (tests/dui/search.cmake:147, rebless or a real drift); dui-search-online pass 3 click on the online row plays=0 (tests/dui/search_online.cmake:93). | open |
+| I884 | Mac: the "More by" row on the Crystal Castles artist/album view shows placeholder art instead of the album covers (Johan 2026-11-01). | open |
 
 - 2026-10-31 Johan decisions: the fresh-install sync offer on the first screen stays (intended). I731 flat Selecta tooltips accepted; MUI tooltip prefs not honoured.
