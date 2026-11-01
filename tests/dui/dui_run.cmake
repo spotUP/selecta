@@ -1,6 +1,15 @@
 # Shared helper of the real dui-* shell tests: run selecta and fail on a non-zero exit.
 #   dui_run(<out var> <args...>)  needs SELECTA and WORK; adds --output null --size 80x25 --config-dir <WORK>/cfg.
 #   dui_stat(<out var> <stdout> <ui id> <key>) reads key=value from the `ui_stats id=<ui id>` line.
+# I962: a test that needs the SDL desktop build reports SKIP (ctest SKIP_REGULAR_EXPRESSION in CMakeLists.txt), never a silent PASS.
+# A macro, so the return() leaves the calling test script.
+macro(dui_require_sdl)
+  if(NOT SDL_BUILT)
+    message("SELECTA_SKIP: needs the SDL desktop build (cmake -DSELECTA_UI_DESKTOP=ON, build dir build/sdl); not run on this build")
+    return()
+  endif()
+endmacro()
+
 function(dui_run outvar)
   file(MAKE_DIRECTORY "${WORK}")
   # I527: the sync-on-launch banner shifts the Library layout once the launch SOURCES reply arrives, and the fixtures hold
