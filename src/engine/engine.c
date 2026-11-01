@@ -5237,14 +5237,29 @@ static void cmd_STICKER_SET(sel_engine* e, const sel_message* m) {
     }
 }
 
+/* I906g: STICKER_GET and STICKER_LIST read on the job thread through the write queue (in order behind earlier sticker writes) and answer
+ * from the done callback on the pump; s[2] is a scratch region of the op's own buffer that the read thread fills. */
+enum { SEL_STICKER_LIST_BUF = 2048 };
+
+static void wq_sticker_get_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = sel_library_sticker_get(lib, op->s[0], op->s[1], (char*)op->s[2], SEL_STICKER_VALUE_MAX);
+}
+
+static void wq_sticker_get_done(sel_engine* e, sel_wq_op* op) {
+    if (!op->rc) sel_engine_report_error(e, "no_such_sticker", op->s[1]);
+    else sticker_answer(e, op->s[0], op->s[1], op->s[2], 1);
+}
+
 static void cmd_STICKER_GET(sel_engine* e, const sel_message* m) {
-    char value[SEL_STICKER_VALUE_MAX];
+    char scratch[SEL_STICKER_VALUE_MAX];
     char key[SEL_DEFERRED_PATH_MAX + 8];
     if (!sticker_ready(e, "STICKER_GET") || !sticker_key(e, m, "STICKER_GET", key, sizeof key)) return;
-    if (!sel_library_sticker_get(e->lib, key, m->args[1].v.s, value, sizeof value)) {
-        sel_engine_report_error(e, "no_such_sticker", m->args[1].v.s);
+    memset(scratch, 'x', sizeof scratch - 1u);
+    scratch[sizeof scratch - 1u] = '\0';
+    if (wq_new(e, wq_sticker_get_run, wq_sticker_get_done, key, m->args[1].v.s, scratch) == NULL) {
+        sel_engine_report_error(e, "library_busy", "STICKER_GET");
     } else {
-        sticker_answer(e, key, m->args[1].v.s, value, 1);
+        wq_submit(e);
     }
 }
 
@@ -5270,21 +5285,37 @@ static void cmd_STICKER_DEL(sel_engine* e, const sel_message* m) {
 
 /* STICKER_LIST key: one answer per sticker in name order (the first SEL_STICKER_ANSWERS of them); SRC_COUNT is
  * the number of stickers the key has. No stickers: no answer. */
-static void cmd_STICKER_LIST(sel_engine* e, const sel_message* m) {
-    char buf[2048];
-    char key[SEL_DEFERRED_PATH_MAX + 8];
-    uint32_t rows = 0, n = 0;
-    const char* p = buf;
-    if (!sticker_ready(e, "STICKER_LIST") || !sticker_key(e, m, "STICKER_LIST", key, sizeof key)) return;
-    if (!sel_library_sticker_list(e->lib, key, buf, sizeof buf, &rows)) {
+static void wq_sticker_list_run(sel_library* lib, sel_wq_op* op) {
+    uint32_t rows = 0;
+    ((char*)op->s[1])[0] = '\0';
+    op->rc = sel_library_sticker_list(lib, op->s[0], (char*)op->s[1], SEL_STICKER_LIST_BUF, &rows);
+    op->u1 = rows;
+}
+
+static void wq_sticker_list_done(sel_engine* e, sel_wq_op* op) {
+    const char* p = op->s[1];
+    uint32_t n = 0;
+    if (!op->rc) {
         sel_engine_report_error(e, "library_failed", "STICKER_LIST");
         return;
     }
     while (*p != '\0' && n < SEL_STICKER_ANSWERS) {
         const char* value = p + strlen(p) + 1;
-        sticker_answer(e, key, p, value, rows);
+        sticker_answer(e, op->s[0], p, value, op->u1);
         p = value + strlen(value) + 1;
         n++;
+    }
+}
+
+static void cmd_STICKER_LIST(sel_engine* e, const sel_message* m) {
+    static char scratch[SEL_STICKER_LIST_BUF]; /* only filler: wq_new copies it into the op's buffer */
+    char key[SEL_DEFERRED_PATH_MAX + 8];
+    if (!sticker_ready(e, "STICKER_LIST") || !sticker_key(e, m, "STICKER_LIST", key, sizeof key)) return;
+    if (scratch[0] == '\0') memset(scratch, 'x', sizeof scratch - 1u);
+    if (wq_new(e, wq_sticker_list_run, wq_sticker_list_done, key, scratch, NULL) == NULL) {
+        sel_engine_report_error(e, "library_busy", "STICKER_LIST");
+    } else {
+        wq_submit(e);
     }
 }
 

@@ -20,6 +20,7 @@ static __thread int g_nowait;
 static uint32_t g_deferred;
 static __thread int g_watch;     /* I829: this thread is the UI/command thread: every request it makes is counted */
 static uint32_t g_watched_waits; /* requests a watched thread made that waited on the worker (sentinel: must stay 0) */
+static uint32_t g_watched_wait_ms; /* I946: host clock ms the watched threads spent inside those requests (queue behind a job and the reply) */
 
 int sel_library_nowait(int on) {
     int was = g_nowait;
@@ -35,6 +36,10 @@ int sel_library_watch(int on) {
 
 uint32_t sel_library_watched_waits(void) {
     return SEL_COUNT_GET(&g_watched_waits);
+}
+
+uint32_t sel_library_watched_wait_ms(void) {
+    return SEL_COUNT_GET(&g_watched_wait_ms);
 }
 
 /* I906a: allow list for the debug UI-wait guard. A watched thread that must wait on the library wraps the call in
@@ -218,6 +223,7 @@ void sel_worker_stop(sel_library* lib) {
 
 int sel_library_request(sel_library* lib, uint32_t req, const void* payload, sel_message* reply) {
     sel_message m;
+    uint32_t t0 = g_watch && !g_nowait ? lib->host->clock_ms(lib->host) : 0u;
 
     memset(&m, 0, sizeof m);
     m.kind = SEL_MSG_CMD;
@@ -253,6 +259,7 @@ int sel_library_request(sel_library* lib, uint32_t req, const void* payload, sel
     }
     pthread_mutex_unlock(&lib->lock);
     call_leave(lib);
+    if (g_watch && !g_nowait) SEL_COUNT_ADD(&g_watched_wait_ms, lib->host->clock_ms(lib->host) - t0);
     return 1;
 }
 
@@ -274,6 +281,10 @@ int sel_library_watch(int on) {
 }
 
 uint32_t sel_library_watched_waits(void) {
+    return 0u;
+}
+
+uint32_t sel_library_watched_wait_ms(void) {
     return 0u;
 }
 
