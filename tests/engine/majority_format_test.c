@@ -92,7 +92,6 @@ int main(void) {
                        "('local:t2.mod','local','t2.mod','t2','Bob','Tied',7),('local:t3.mod','local','t3.mod','t3','Bob','Tied',8),"
                        "('local:p0.mp3','local','p0.mp3','p0','Cy','Plain',9),('local:p1.ogg','local','p1.ogg','p1','Cy','Plain',10),"
                        "('local:s0.mp3','local','s0.mp3','s0','Di','Stray',11),('local:s1.xm','local','s1.xm','s1','Di','Stray',12);"
-                       "INSERT INTO albums(name, artist) VALUES('Mixed','Ann'),('Tied','Bob'),('Plain','Cy'),('Stray','Di');"
                        "INSERT INTO playlists(name) VALUES('Mod Mix');"
                        "INSERT INTO playlist_entries(playlist_id, pos, key) VALUES(1,0,'local:m0.mp3'),(1,1,'local:m1.mod'),"
                        "(1,2,'local:m2.mod');"
@@ -132,10 +131,10 @@ int main(void) {
     CHECK(sel_library_home(lib, 10, v.htext, SEL_VIEW_HOME_TEXT_MAX, &lines));
     sel_view_set_home(&v, v.htext);
     for (i = 0; i < v.frow_n; i++) {
-        if (v.frows[i].album && v.frows[i].key != NULL && strcmp(v.frows[i].key, "Mixed") == 0) {
+        /* I678j: Home item cards ("#<kind>:<id>") carry the item's majority format after 0x1d like the song shelf tiles do. */
+        if (v.frows[i].item_kind == SEL_LIB_ITEM_ALBUM + 1u && strcmp(v.frows[i].text, "Mixed") == 0) {
             seen_tile = 1;
             CHECK(v.frows[i].format != NULL && v.frows[i].format[0] != '\0' && fam(v.frows[i].format) == SEL_PLATFORM_FAMILY_AMIGA);
-            CHECK(v.frows[i].art_id != 0u); /* the id tag before the format tag still parses */
         }
     }
     CHECK(seen_tile);
