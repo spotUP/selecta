@@ -12,6 +12,8 @@
  * the 0xRRGGBB theme tokens (SEL_GUI_TOKEN_*) the palette is built from, the same mapping the desktop strip uses. The set
  * must outlive the object. */
 Object* mui_vizarea_new(mui_vizset* set, const uint32_t* tokens, int screen_is_rtg);
+/* I918: lets the area grow to fill its group (the Visualizer page); call before the object is added to a group. */
+void mui_vizarea_set_tall(Object* obj);
 /* Runs one step on the newest engine frame (valid until the next pump): when the gate lets it, renders and redraws.
  * Returns 1 when a frame was drawn. A planar screen draws nothing (no Picasso96) and counts nothing. */
 int mui_vizarea_step(Object* obj, const sel_viz_frame* f, const sel_uim_budget* b, uint32_t now_ms);

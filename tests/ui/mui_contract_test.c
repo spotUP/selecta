@@ -2371,6 +2371,34 @@ static void test_screen_rtg_flag(void) {
           "a hardcoded RTG flag came back");
 }
 
+/* I918 step 5: the Visualizer page chooser is the tabs-or-cycle pair sized by sel_uim_viz_tabs_fit, only the shown area steps, the page
+ * area may grow tall, and an area without a frame paints the window background instead of keeping stale pixels. The fit rule itself is
+ * tested in test_libfilter; this proves the MUI code uses it (MUI cannot run on the host). */
+static void test_viz_chooser(void) {
+    static char ui[1000000];
+    static char area[100000];
+    FILE* f = fopen(MUI_UI_SOURCE, "rb");
+    size_t n = f != NULL ? fread(ui, 1, sizeof ui - 1, f) : 0;
+    const char* step;
+    if (f != NULL) {
+        fclose(f);
+    }
+    ui[n] = 0;
+    f = fopen(MUI_DIR "/mui_vizarea_class.c", "rb");
+    n = f != NULL ? fread(area, 1, sizeof area - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    area[n] = 0;
+    CHECK(strstr(ui, "sel_uim_viz_tabs_fit(") != NULL, "the chooser does not use the shared tabs-fit rule");
+    CHECK(strstr(ui, "mui_vizarea_set_tall(s->viz_page_area)") != NULL, "the page area is not tall");
+    step = strstr(ui, "s->pane.pane == MUI_PANE_VIZ ? s->viz_page_area : s->viz_area");
+    CHECK(step != NULL, "the wait turn does not pick the one shown area");
+    CHECK(strstr(ui, "mui_viz_chooser_update(s)") != NULL, "the chooser is never refreshed");
+    CHECK(strstr(area, "MUIM_DrawBackground") != NULL, "an area with no frame does not paint the background");
+    CHECK(strstr(area, "d->tall ? MUI_MAXMAX") != NULL, "the tall flag does not lift the height cap");
+}
+
 /* I794: the lines the route handler sends, recorded. */
 typedef struct route_log {
     char line[16][160];
@@ -2774,6 +2802,8 @@ int main(int argc, char** argv) {
         test_status_face();
     } else if (strcmp(argv[1], "player-bar") == 0) {
         test_player_bar();
+    } else if (strcmp(argv[1], "viz-chooser") == 0) {
+        test_viz_chooser();
     } else if (strcmp(argv[1], "sidebar-icons") == 0) {
         test_sidebar_icons();
     } else if (strcmp(argv[1], "tooltip-flat") == 0) {

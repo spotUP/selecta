@@ -27,6 +27,7 @@ typedef struct viza_data {
     uint32_t pw, ph; /* size px holds a rendered frame for, 0 when none */
     uint32_t cap;    /* words allocated */
     int rtg, shown;
+    int tall; /* I918: the Visualizer page area may grow to fill the page; the Now Playing strip keeps its cap */
     struct Library* p96;
 } viza_data;
 
@@ -63,8 +64,13 @@ static ULONG viza_dispose(struct IClass* cl, Object* obj, Msg msg) {
 static ULONG viza_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     viza_data* d = INST_DATA(cl, obj);
     DoSuperMethodA(cl, obj, (Msg)msg);
-    if ((msg->flags & MADF_DRAWOBJECT) == 0 || d->p96 == NULL || d->px == NULL || d->pw != (uint32_t)_mwidth(obj) ||
-        d->ph != (uint32_t)_mheight(obj)) {
+    if ((msg->flags & MADF_DRAWOBJECT) == 0) {
+        return 0;
+    }
+    if (d->p96 == NULL || d->px == NULL || d->pw != (uint32_t)_mwidth(obj) || d->ph != (uint32_t)_mheight(obj)) {
+        /* I918: no frame of this size yet (first show, a resize, a planar screen): paint the window background, so the area never
+         * keeps whatever was under it. The area has MUIA_FillArea FALSE because a frame covers every pixel and a fill per frame flickers. */
+        DoMethod(obj, MUIM_DrawBackground, _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), _mleft(obj), _mtop(obj), 0);
         return 0;
     }
     mui_canvas_push(d->p96, d->px, (int32_t)d->pw, (int32_t)d->ph, _rp(obj), _mleft(obj), _mtop(obj));
@@ -78,7 +84,10 @@ static ULONG viza_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMinMa
     msg->MinMaxInfo->MaxWidth += MUI_MAXMAX;
     msg->MinMaxInfo->MinHeight += 32;
     msg->MinMaxInfo->DefHeight += 80;
-    msg->MinMaxInfo->MaxHeight += 160;
+    {
+        viza_data* d = INST_DATA(cl, obj);
+        msg->MinMaxInfo->MaxHeight += d->tall ? MUI_MAXMAX : 160;
+    }
     return 0;
 }
 
@@ -174,6 +183,12 @@ int mui_vizarea_step(Object* obj, const sel_viz_frame* f, const sel_uim_budget* 
     d->ph = h;
     MUI_Redraw(obj, MADF_DRAWOBJECT);
     return 1;
+}
+
+void mui_vizarea_set_tall(Object* obj) {
+    if (obj != NULL) {
+        ((viza_data*)INST_DATA(g_class->mcc_Class, obj))->tall = 1;
+    }
 }
 
 uint32_t mui_vizarea_frames(Object* obj) {
