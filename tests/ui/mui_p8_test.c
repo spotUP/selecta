@@ -454,6 +454,11 @@ static void test_remember(void) {
     CHECK(mui_remember_open(&b, prefs_get, &prefs) == 4u, "open finds four items");
     CHECK(b.x == -20 && b.y == 15 && b.w == 640u && b.h == 256u, "geometry %d %d %u %u", (int)b.x, (int)b.y, (unsigned)b.w, (unsigned)b.h);
     CHECK(b.panes == 5u && strcmp(b.viz, "viz_scope") == 0 && strcmp(b.browse, "columns") == 0, "panes/viz/browse: %u %s %s", (unsigned)b.panes, b.viz, b.browse);
+    /* SID PatternScope (I434j4): the shared pref value round trips. */
+    memset(&prefs, 0, sizeof prefs);
+    snprintf(a.viz, sizeof a.viz, "viz_sidregs");
+    CHECK(mui_remember_close(&a, prefs_send, &prefs) == 4u, "close stores four items (sidregs)");
+    CHECK(mui_remember_open(&b, prefs_get, &prefs) == 4u && strcmp(b.viz, "viz_sidregs") == 0, "viz_sidregs round trip: %s", b.viz);
 }
 
 /* Every PREF_SET line a P8 mapping sends names a key of prefs.def, or the engine rejects it (I643). */

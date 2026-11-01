@@ -95,7 +95,7 @@ int mui_gate_due(mui_gate* g, uint32_t interval_ms, uint32_t now_ms) {
     return 1;
 }
 
-static const char* const k_viz_ids[MUI_VIZ_PLUGINS] = {"viz_scope", "viz_levels", "viz_spectrum"};
+static const char* const k_viz_ids[MUI_VIZ_PLUGINS] = {"viz_scope", "viz_levels", "viz_spectrum", "viz_sidregs"};
 
 uint32_t mui_vizset_load(mui_vizset* s, mui_find_plugin_fn find, const char* pref) {
     uint32_t i;

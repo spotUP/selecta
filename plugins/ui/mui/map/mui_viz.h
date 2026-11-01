@@ -50,7 +50,7 @@ typedef struct mui_gate {
 int mui_gate_due(mui_gate* g, uint32_t interval_ms, uint32_t now_ms);
 
 /* ---- Plugin set and tick (MUI-P5-3): what the Now Playing viz area shows ---- */
-#define MUI_VIZ_PLUGINS 3u
+#define MUI_VIZ_PLUGINS 4u
 typedef const sel_tag* (*mui_find_plugin_fn)(uint32_t kind, const char* id); /* sel_ui_open_args.find_plugin */
 typedef struct mui_vizset {
     const char* id[MUI_VIZ_PLUGINS];
@@ -61,7 +61,7 @@ typedef struct mui_vizset {
     mui_gate gate;       /* frame budget (MUI-P5-5) */
     uint32_t allowed;    /* ticks that allowed a render */
 } mui_vizset;
-/* Finds the viz plugins the desktop UI lists (scope, levels, spectrum: the ids of the View/Visualizer actions in the shared
+/* Finds the viz plugins the desktop UI lists (scope, levels, spectrum, SID PatternScope: the ids of the View/Visualizer actions in the shared
  * action table) with find_plugin(SEL_PLUGIN_KIND_VIZ, id), and selects `pref` (the ui.desktop.viz pref value, NULL or unknown =
  * first). Returns how many were found. */
 uint32_t mui_vizset_load(mui_vizset* s, mui_find_plugin_fn find, const char* pref);

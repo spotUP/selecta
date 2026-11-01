@@ -60,10 +60,19 @@ static int test_surface(void) {
 }
 
 /* Redraws allowed in one simulated second of 5 ms UI ticks. */
+/* Stands in for viz_sidregs: draws only while the block carries a register feed. */
+static uint32_t fake_sid_render(const sel_viz_frame* f, sel_surface* s, const sel_viz_colors* c) {
+    (void)s;
+    (void)c;
+    return f->sid_chips != 0u ? 1u : 0u;
+}
+
 static const sel_tag* fake_find(uint32_t kind, const char* id) {
     static const char* const nm = "Fake Scope";
     static const sel_tag hooks_a[] = {{SEL_VIZ_FRAME, (uintptr_t)fake_render}, {SEL_VIZ_NAME, (uintptr_t)"Fake Scope"}, {SEL_TAG_END, 0}};
     static const sel_tag hooks_b[] = {{SEL_VIZ_FRAME, (uintptr_t)fake_render}, {SEL_TAG_END, 0}};
+    static const sel_tag hooks_s[] = {{SEL_VIZ_FRAME, (uintptr_t)fake_sid_render}, {SEL_VIZ_NAME, (uintptr_t)"SID PatternScope"}, {SEL_TAG_END, 0}};
+    static const sel_tag dsid[] = {{SEL_PLUGIN_TAGS, (uintptr_t)hooks_s}, {SEL_TAG_END, 0}};
     static const sel_tag da[] = {{SEL_PLUGIN_TAGS, (uintptr_t)hooks_a}, {SEL_TAG_END, 0}};
     static const sel_tag db[] = {{SEL_PLUGIN_TAGS, (uintptr_t)hooks_b}, {SEL_TAG_END, 0}};
     (void)nm;
@@ -72,6 +81,9 @@ static const sel_tag* fake_find(uint32_t kind, const char* id) {
     }
     if (strcmp(id, "viz_scope") == 0) {
         return da;
+    }
+    if (strcmp(id, "viz_sidregs") == 0) {
+        return dsid;
     }
     return strcmp(id, "viz_spectrum") == 0 ? db : NULL; /* viz_levels missing: skipped */
 }
@@ -86,14 +98,14 @@ static int test_set(void) {
     memset(&v, 0, sizeof v);
     memset(&f, 0, sizeof f);
     CHECK(sel_uim_budget_for(&b, "rgba32"), "budget");
-    CHECK(mui_vizset_load(&s, fake_find, NULL) == 2u && s.n == 2u, "load found %u, want 2 (missing plugin skipped)", s.n);
-    CHECK(strcmp(s.name_[0], "Fake Scope") == 0 && strcmp(s.name_[1], "viz_spectrum") == 0 && s.name_[2] == NULL, "names");
+    CHECK(mui_vizset_load(&s, fake_find, NULL) == 3u && s.n == 3u, "load found %u, want 3 (missing plugin skipped)", s.n);
+    CHECK(strcmp(s.name_[0], "Fake Scope") == 0 && strcmp(s.name_[1], "viz_spectrum") == 0 && strcmp(s.name_[2], "SID PatternScope") == 0 && s.name_[3] == NULL, "names");
     CHECK(mui_vizset_select(&s, "viz_spectrum") == 1 && s.sel == 1u, "select by id");
     CHECK(mui_vizset_select(&s, "viz_levels") == -1 && s.sel == 1u, "unknown id keeps selection");
-    CHECK(mui_vizset_load(&s, fake_find, "viz_spectrum") == 2u && s.sel == 1u, "pref selects");
+    CHECK(mui_vizset_load(&s, fake_find, "viz_spectrum") == 3u && s.sel == 1u, "pref selects");
     CHECK(mui_vizset_line(&s) != NULL && strstr(mui_vizset_line(&s), "ui.desktop.viz viz_spectrum") != NULL, "pick line");
     CHECK(mui_vizset_load(&s, NULL, NULL) == 0u && mui_vizset_line(&s) == NULL, "no registry, no plugins");
-    CHECK(mui_vizset_load(&s, fake_find, NULL) == 2u, "reload");
+    CHECK(mui_vizset_load(&s, fake_find, NULL) == 3u, "reload");
     calls0 = fake_calls;
     f.seq = 0;
     CHECK(mui_vizset_step(&s, &v, &f, &b, 1000u, 6u, 2u, px) == 0 && fake_calls == calls0, "seq 0 rendered");
@@ -105,6 +117,16 @@ static int test_set(void) {
     f.seq = 2;
     CHECK(mui_vizset_step(&s, &v, &f, &b, 1010u, 6u, 2u, px) == 0 && fake_calls == calls0 + 1u, "budget did not gate (10 ms < 40 ms)");
     CHECK(mui_vizset_step(&s, &v, &f, &b, 1050u, 6u, 2u, px) == 1 && fake_calls == calls0 + 2u, "frame after the interval did not render");
+    /* SID PatternScope (I434j4): selectable by its id, draws only with a register feed. */
+    CHECK(mui_vizset_select(&s, "viz_sidregs") == 2 && s.sel == 2u, "select viz_sidregs");
+    CHECK(mui_vizset_line(&s) != NULL && strstr(mui_vizset_line(&s), "ui.desktop.viz viz_sidregs") != NULL, "sidregs pick line");
+    v.frames = 0;
+    f.seq = 3;
+    f.sid_chips = 0u;
+    CHECK(mui_vizset_step(&s, &v, &f, &b, 2000u, 6u, 2u, px) == 1 && v.frames == 0u, "no SID feed raised frames");
+    f.seq = 4;
+    f.sid_chips = 1u;
+    CHECK(mui_vizset_step(&s, &v, &f, &b, 2100u, 6u, 2u, px) == 1 && v.frames == 1u, "SID feed did not raise frames (%u)", v.frames);
     mui_viz_release(&v);
     return failures;
 }
