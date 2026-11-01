@@ -16,8 +16,12 @@ uint32_t mui_button_height(void) {
     return (uint32_t)mui_model_icon_px() + 2u * MUI_BTN_PAD_Y + MUI_BTN_FRAME;
 }
 
+uint32_t mui_layout_rows(uint32_t screen_h, int laced) {
+    return laced ? screen_h / 2u : screen_h;
+}
+
 uint32_t mui_open_ladder(uint32_t step, uint32_t screen_w, uint32_t screen_h, int laced, mui_open_step_t* out) {
-    uint32_t rows = laced ? screen_h / 2u : screen_h;
+    uint32_t rows = mui_layout_rows(screen_h, laced);
     g_ladder_calls++;
     if (out == NULL || step >= MUI_OPEN_STEPS) {
         return 0;

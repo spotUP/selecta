@@ -10,10 +10,14 @@
 #include <stdio.h>
 #include <string.h>
 
-static uint32_t g_builds;
+static uint32_t g_builds, g_rail_builds;
 
 uint32_t mui_sidebar_builds(void) {
     return g_builds;
+}
+
+uint32_t mui_sidebar_rail_builds(void) {
+    return g_rail_builds;
 }
 
 static void put(char* dst, size_t cap, const char* src) {
@@ -33,6 +37,19 @@ void mui_sidebar_build(const mui_sidebar_in* in, mui_sidebar_model* m) {
     uint32_t i, k, mask, playlists = 0;
     memset(m, 0, sizeof *m);
     g_builds++;
+    m->rail = in->rail != 0;
+    if (m->rail) {
+        /* I949c: the labelled door rail (uimodel SIDEBAR_RAIL_LABELLED): every door keeps its row, the Library door included (the
+         * icon-only/rail form has no "Your Library" header, sel_uim_door_shown_in labelled 0), and nothing else is built. The Library door
+         * opens the Library page, which carries the chips, rows, empty state and card (I673). */
+        g_rail_builds++;
+        for (i = 0; i < SEL_UIM_DOOR_COUNT && m->door_n < MUI_SIDEBAR_DOORS; i++) {
+            if (sel_uim_door_shown_in(i, in->top_bar, 0)) {
+                m->door[m->door_n++] = i;
+            }
+        }
+        return;
+    }
     put(m->brand, sizeof m->brand, "Selecta"); /* S1: the Mac draw_sidebar brand (accent tile with the play icon, then the name) */
     put(m->brand_icon, sizeof m->brand_icon, in->bitmap ? "" : "play");
     for (i = 0; i < SEL_UIM_DOOR_COUNT && m->door_n < MUI_SIDEBAR_DOORS; i++) { /* S3: the library header is always there on MUI */

@@ -73,8 +73,16 @@ typedef struct mui_layout_map_t {
     uint32_t weight_w[MUI_SLOT_COUNT];
     uint32_t weight_h[MUI_SLOT_COUNT];
     uint8_t balance_sidebar_main, balance_main_detail; /* Balance object between two shown panels */
+    uint8_t compact;       /* I949c: the compact class (mui_layout_compact): the sidebar is the labelled door rail */
     uint8_t detail_hidden; /* I798: the Now Playing column is hidden by the top bar toggle (Mac I619 detail_hidden) */
 } mui_layout_map_t;
+/* I949c: the compact class of a 640x256-class screen: the bitmap tier at the icon-sidebar breakpoint (width 600-699) and at most
+ * MUI_COMPACT_MAX_ROWS rows. Its sidebar is the labelled door rail uimodel asks for (SIDEBAR_RAIL_LABELLED, 160 px): doors only, no
+ * brand row, and the Your Library block lives on the Library page. mui_layout_map sets `compact` from this. */
+enum { MUI_COMPACT_MAX_ROWS = 300 };
+uint32_t mui_layout_compact(uint32_t width, uint32_t height, uint32_t tier);
+/* Layout rows of a screen: half of an interlaced screen's rows (a user-chosen laced screen uses the 256-row metrics, I949b). */
+uint32_t mui_layout_rows(uint32_t screen_h, int laced);
 /* I615d: `tier` is SEL_UIM_TIER_DEFAULT on an RTG screen (top bar slot shown), SEL_UIM_TIER_BITMAP on a native planar screen. */
 void mui_layout_map(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier);
 /* I798 (T2, R3): as mui_layout_map with the Now Playing column hidden when `detail_hidden`; relayout keeps the flag. */
@@ -583,12 +591,14 @@ uint32_t mui_remember_open(mui_remember* r, mui_pref_get_fn get, void* ctx); /* 
  * sidebar (mui_ui.c mui_sidebar_group) builds its objects from this and nothing else; mui_sidebar_builds() is the sentinel. */
 #define MUI_SIDEBAR_DOORS 8u
 #define MUI_SIDEBAR_ROWS 16u
+#define MUI_RAIL_SPACING 1 /* I949c: pixels between the rail doors */
 typedef struct mui_sidebar_in {
     int top_bar;     /* the screen tier has the top bar (the doors Home and Search leave) */
     uint32_t chip;   /* 0 All, 1..SEL_UIM_SIDE_CHIPS a kind chip */
     uint32_t by_you_only; /* the By You sub-chip of Playlists */
     uint32_t wide;   /* Expand is on */
     int bitmap;      /* the bitmap tier */
+    int rail;        /* I949c: the compact class rail: doors only (see mui_layout_compact) */
     int chips_single; /* I669: the chips do not fit the sidebar, S5 is the one label with the chevrons (mui_sidebar_chips_single) */
     const char* filter;
     const sel_engine_library_item* items;
@@ -614,6 +624,7 @@ typedef struct mui_sidebar_model {
     uint32_t row_n, cols;
     int wide;
     char empty[32];                           /* "" when no empty state shows */
+    int rail;                                 /* I949c: doors only; brand, header, chips, rows, empty state and card are all empty */
     int card;
     char card_title[40], card_body[48], card_button[24];
 } mui_sidebar_model;
@@ -621,5 +632,7 @@ void mui_sidebar_build(const mui_sidebar_in* in, mui_sidebar_model* out);
 /* I669: 1 when the kind chips do not fit a sidebar `sidebar_px` wide (or on the bitmap tier); the decision is sel_uim_lfilter_chips_single. */
 int mui_sidebar_chips_single(int bitmap, uint32_t sidebar_px);
 uint32_t mui_sidebar_builds(void);
+/* I949c: sentinel, the builds that took the rail path (no Your Library block). */
+uint32_t mui_sidebar_rail_builds(void);
 
 #endif

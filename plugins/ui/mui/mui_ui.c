@@ -208,6 +208,7 @@ typedef struct mui_state {
     char np_up_buf[3][96];
     Object* info_list;              /* MUI-P4-9 song info rows */
     uint32_t lib_filter;            /* I670: the library filter in force (sel_uim_lfilter_*), 0 All */
+    int side_rail;                  /* I949c: the sidebar is the compact door rail, side_dyn stays NULL */
     Object* side_dyn;               /* I669: the sidebar's S5 to S9 group, rebuilt from the model when the filter or the width moves */
     int side_top_bar, side_single;  /* the top bar flag of the build; the chips-or-label decision the dyn group was built with */
     sel_engine_library_item side_items[MUI_SIDEBAR_ROWS]; /* the rows the shared filter pass (sel_uim_lfilter_pass) returned for lib_filter */
@@ -842,6 +843,31 @@ static void mui_set_tip(mui_state* s, uint32_t slot, Object* obj, uint32_t kind,
 
 /* I667e (design 3.8): the one panel constructor. Every Selecta panel group is a Selecta_AAPanel (mui_aapanel_class.c): a rounded face in
  * the role token colour (panel, surface, raised) over the window background. fixed_px > 0 is the square art frame. */
+/* I671/I949b/I949c: the size of the screen the window opens on (the own SELECTA screen, else the default public screen) and whether
+ * it is a user-chosen interlaced mode. 1280x720 when no screen can be locked. */
+static void mui_screen_size(uint32_t* w, uint32_t* h, int* laced) {
+    struct Screen* scr = g_scr != NULL ? g_scr : LockPubScreen(NULL);
+    *w = 1280u;
+    *h = 720u;
+    *laced = 0;
+    if (scr != NULL) {
+        *w = (uint32_t)scr->Width;
+        *h = (uint32_t)scr->Height;
+        *laced = !g_screen_rtg && ((uint32_t)GetVPModeID(&scr->ViewPort) & MUI_MODE_LACE) != 0u;
+        if (scr != g_scr) {
+            UnlockPubScreen(NULL, scr);
+        }
+    }
+}
+
+/* I949c: the screen is the compact class (map/mui_layout.c mui_layout_compact): its sidebar is the door rail. */
+static int mui_screen_compact(void) {
+    uint32_t w, h;
+    int laced;
+    mui_screen_size(&w, &h, &laced);
+    return mui_layout_compact(w, mui_layout_rows(h, laced), g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP) != 0u;
+}
+
 static Object* mui_aapanel(int role, int fixed_px) {
     mui_aapanel_spec sp;
     sp.tokens = g_tokens;
@@ -917,6 +943,7 @@ static void mui_sidebar_model_for(mui_state* s, int top_bar, mui_sidebar_model* 
     memset(&in, 0, sizeof in);
     in.top_bar = top_bar;
     in.bitmap = 0;
+    in.rail = s != NULL && s->side_rail; /* I949c */
     in.chip = s != NULL ? s->lib_filter : 0u;
     in.chips_single = mui_sidebar_chips_single(!g_screen_rtg, s != NULL && s->lay.weight_w[MUI_SLOT_SIDEBAR] > 0u ? s->lay.weight_w[MUI_SLOT_SIDEBAR] : 0u);
     in.filter = "";
@@ -938,10 +965,14 @@ static Object* mui_sidebar_group(mui_state* s, int top_bar) {
     }
     if (s != NULL) {
         s->side_top_bar = top_bar;
-        s->side_item_n = sel_uim_lfilter_pass(s->engine, s->lib_filter, s->side_items, MUI_SIDEBAR_ROWS, NULL); /* the shared filter pass */
+        s->side_rail = mui_screen_compact(); /* I949c: the compact class builds the door rail, not the Your Library block */
+        s->side_item_n = s->side_rail ? 0u : sel_uim_lfilter_pass(s->engine, s->lib_filter, s->side_items, MUI_SIDEBAR_ROWS, NULL); /* the shared filter pass */
     }
     mui_sidebar_model_for(s, top_bar, &m);
-    hd = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE); /* S1: the brand, an accent logo tile then the name (draw_sidebar) */
+    if (m.rail) { /* I949c: the rail packs the doors one pixel apart (the Mac layout is the structure reference, not the spacing) */
+        SetAttrs(g, MUIA_Group_Spacing, MUI_RAIL_SPACING, TAG_DONE);
+    }
+    hd = m.rail ? NULL : MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE); /* S1: the brand, an accent logo tile then the name (draw_sidebar) */
     if (hd != NULL) {
         if (m.brand_icon[0] != '\0') {
             mui_side_add(hd, mui_make_button_i(m.brand, m.brand, m.brand_icon, NULL, 0, 0, 1, MUI_AA_ROLE_ACCENT)); /* id 0: not a control */
@@ -959,7 +990,7 @@ static Object* mui_sidebar_group(mui_state* s, int top_bar) {
         }
         mui_side_add(g, b);
     }
-    hd = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE); /* S4: title, Create Playlist, Expand */
+    hd = m.rail ? NULL : MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE); /* S4: title, Create Playlist, Expand */
     if (hd != NULL) {
         Object* t = mui_make_button_ex(m.title, m.title, "library", NULL, CTL_SIDE_BASE + MUI_SIDE_TITLE, 100, 0, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_LEFT);
         Object* c = mui_make_button_ex(m.create, m.create, "New Playlist", NULL, CTL_SIDE_BASE + MUI_SIDE_CREATE, 0, 1, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_CENTRE);
@@ -969,7 +1000,7 @@ static Object* mui_sidebar_group(mui_state* s, int top_bar) {
         if (x != NULL) { DoMethod(hd, OM_ADDMEMBER, x); }
         DoMethod(g, OM_ADDMEMBER, hd);
     }
-    if (s != NULL) {
+    if (s != NULL && !m.rail) {
         s->side_dyn = mui_sidebar_dyn(&m);
         mui_side_add(g, s->side_dyn);
     }
@@ -2719,6 +2750,9 @@ static void mui_sidebar_refresh(mui_state* s) {
     mui_sidebar_model m;
     Object* g = s->slot[MUI_SLOT_SIDEBAR];
     Object* fresh;
+    if (s->side_rail) {
+        return; /* I949c: the door rail has no Your Library block to refresh */
+    }
     mui_sidebar_model_for(s, s->side_top_bar, &m);
     fresh = mui_sidebar_dyn(&m);
     if (g == NULL || fresh == NULL) {
@@ -2945,18 +2979,10 @@ static void mui_apply_layout(mui_state* s) {
  * screen, else the default public screen) and the open ladder step (map/mui_screen.c). Returns 0 when the ladder has no
  * step left. A user-chosen interlaced screen is laid out with the 256-row metrics. */
 static uint32_t mui_layout_for_screen(mui_state* s, uint32_t step) {
-    struct Screen* scr = g_scr != NULL ? g_scr : LockPubScreen(NULL);
-    uint32_t w = 1280u, h = 720u;
-    int laced = 0;
+    uint32_t w, h;
+    int laced;
     mui_open_step_t st;
-    if (scr != NULL) {
-        w = (uint32_t)scr->Width;
-        h = (uint32_t)scr->Height;
-        laced = !g_screen_rtg && ((uint32_t)GetVPModeID(&scr->ViewPort) & MUI_MODE_LACE) != 0u;
-        if (scr != g_scr) {
-            UnlockPubScreen(NULL, scr);
-        }
-    }
+    mui_screen_size(&w, &h, &laced);
     if (!mui_open_ladder(step, w, h, laced, &st)) {
         return 0;
     }
