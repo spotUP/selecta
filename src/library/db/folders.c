@@ -172,6 +172,7 @@ static int playlist_remove_song(sqlite3* db, const sel_user_op* op, int64_t* row
 
 static int library_touch(sqlite3* db, const sel_user_op* op) {
     sqlite3_stmt* st;
+    sel_library_test_slow("SELECTA_LIB_WRITE_SLOW_MS"); /* I951 test knob: a library write on a busy worker */
     if (op->name == NULL || op->name[0] == '\0') return SQLITE_MISUSE;
     st = prep(db, "INSERT OR REPLACE INTO opened(kind, id, at) VALUES(?1, ?2, ?3)");
     if (st == NULL) return SQLITE_ERROR;
@@ -194,6 +195,7 @@ static int playlist_rename(sqlite3* db, const sel_user_op* op, int64_t* rows) {
 
 static int playlist_del(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     sqlite3_stmt* st;
+    sel_library_test_slow("SELECTA_LIB_WRITE_SLOW_MS"); /* I951 test knob: a library write on a busy worker */
     if (!playlist_exists(db, op->at)) return refuse(rows, SEL_FOLDER_ERR_NO_PLAYLIST);
     st = prep(db, "DELETE FROM playlist_entries WHERE playlist_id = ?1");
     if (st == NULL) return SQLITE_ERROR;
@@ -241,6 +243,7 @@ static int song_remove(sqlite3* db, const sel_user_op* op, int64_t* rows) {
  * keyed to those songs or built from them: playlists and their entries, folders, ratings, notes and the other per-song user
  * data. Settings (meta) stay. One transaction. */
 static int library_clear(sqlite3* db, int64_t* rows) {
+    sel_library_test_slow("SELECTA_LIB_WRITE_SLOW_MS"); /* I951 test knob: a library write on a busy worker */
     int64_t n = scalar(db, "SELECT COUNT(*) FROM songs", 0, 0);
     if (sqlite3_exec(db, "BEGIN;DELETE FROM artwork;DELETE FROM albums;DELETE FROM composers;DELETE FROM composer_spellings;DELETE FROM song_composers;"
                      "DELETE FROM files;DELETE FROM songs;UPDATE composer_unknown SET n = 0;"
