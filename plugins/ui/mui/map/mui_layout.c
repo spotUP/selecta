@@ -68,6 +68,13 @@ void mui_layout_map(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32
     mui_layout_map_panel(m, width, height, tier, 0u);
 }
 
+/* I949c: the compact class is a bitmap-tier screen of 600-699 columns and at most MUI_COMPACT_MAX_ROWS rows; there the sidebar is
+ * the labelled door rail. */
+uint32_t mui_layout_compact(uint32_t width, uint32_t height, uint32_t tier) {
+    return tier == SEL_UIM_TIER_BITMAP && sel_uim_breakpoint_for_tier(width, tier) == SEL_UIM_BP_ICON_SIDEBAR && width >= 600u && width < 700u &&
+           height <= (uint32_t)MUI_COMPACT_MAX_ROWS;
+}
+
 /* I798 (T2, R3): the same map with the Now Playing column dropped when `detail_hidden`, through the layout the Mac computes
  * for its Hide Now Playing Panel (I619), so the main region takes the width on both. */
 void mui_layout_map_panel(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden) {
@@ -82,6 +89,7 @@ void mui_layout_map_panel(mui_layout_map_t* m, uint32_t width, uint32_t height, 
     m->height = height;
     m->breakpoint = l.breakpoint;
     m->tier = tier;
+    m->compact = (uint8_t)mui_layout_compact(width, height, tier);
     /* I615d (design 8.2): the top bar is its own field of the layout, not a region. */
     m->show[MUI_SLOT_TOPBAR] = l.topbar.h > 0u;
     m->weight_w[MUI_SLOT_TOPBAR] = width;

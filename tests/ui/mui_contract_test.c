@@ -2435,6 +2435,48 @@ static void test_screen_rtg_flag(void) {
 /* I918 step 5: the Visualizer page chooser is the tabs-or-cycle pair sized by sel_uim_viz_tabs_fit, only the shown area steps, the page
  * area may grow tall, and an area without a frame paints the window background instead of keeping stale pixels. The fit rule itself is
  * tested in test_libfilter; this proves the MUI code uses it (MUI cannot run on the host). */
+/* I949c: the compact class (bitmap tier, width 600-699, at most 300 rows) maps SIDEBAR to the labelled door rail: the layout map flags
+ * the class and keeps the sidebar slot at the rail width, the sidebar model holds the doors only (no brand, header, chips, rows, empty
+ * state or card), and mui_ui.c builds no side_dyn group for it. The sentinel mui_sidebar_rail_builds() proves the rail path ran. */
+static void test_compact_rail(void) {
+    mui_layout_map_t m, big, tall, rtg;
+    mui_sidebar_in in;
+    mui_sidebar_model rail, full;
+    sel_engine_library_item it[2];
+    uint32_t i, rails = mui_sidebar_rail_builds(), builds = mui_sidebar_builds();
+    char* src = ui_source();
+    const char* grp = strstr(src, "static Object* mui_sidebar_group(");
+    mui_layout_map(&m, 640, 256, SEL_UIM_TIER_BITMAP);
+    mui_layout_map(&big, 700, 256, SEL_UIM_TIER_BITMAP);
+    mui_layout_map(&tall, 640, 512, SEL_UIM_TIER_BITMAP);
+    mui_layout_map(&rtg, 640, 256, SEL_UIM_TIER_DEFAULT);
+    CHECK(m.compact == 1 && m.breakpoint == SEL_UIM_BP_ICON_SIDEBAR && m.show[MUI_SLOT_SIDEBAR] && m.weight_w[MUI_SLOT_SIDEBAR] >= 160u,
+          "compact %d bp %u sidebar %u", (int)m.compact, (unsigned)m.breakpoint, (unsigned)m.weight_w[MUI_SLOT_SIDEBAR]);
+    CHECK(big.compact == 0 && tall.compact == 0 && rtg.compact == 0, "other classes %d %d %d", (int)big.compact, (int)tall.compact, (int)rtg.compact);
+    CHECK(mui_layout_compact(600, 300, SEL_UIM_TIER_BITMAP) == 1 && mui_layout_compact(599, 256, SEL_UIM_TIER_BITMAP) == 0 &&
+              mui_layout_compact(640, 301, SEL_UIM_TIER_BITMAP) == 0 && mui_layout_rows(512, 1) == 256u && mui_layout_rows(512, 0) == 512u,
+          "class edges");
+    memset(it, 0, sizeof it);
+    it[0].kind = SEL_LIB_ITEM_LIKED; snprintf(it[0].name, sizeof it[0].name, "Liked Songs");
+    it[1].kind = SEL_LIB_ITEM_PLAYLIST; snprintf(it[1].name, sizeof it[1].name, "Road");
+    memset(&in, 0, sizeof in);
+    in.items = it; in.item_n = 2; in.filter = ""; in.bitmap = 1; in.rail = 1;
+    mui_sidebar_build(&in, &rail);
+    in.rail = 0;
+    mui_sidebar_build(&in, &full);
+    CHECK(mui_sidebar_rail_builds() == rails + 1u && mui_sidebar_builds() == builds + 2u, "rail sentinel %u builds %u", (unsigned)mui_sidebar_rail_builds(), (unsigned)mui_sidebar_builds());
+    CHECK(rail.rail == 1 && rail.door_n == SEL_UIM_DOOR_COUNT && rail.door_n <= MUI_SIDEBAR_DOORS && rail.brand[0] == '\0' && rail.title[0] == '\0' &&
+              rail.create[0] == '\0' && rail.expand[0] == '\0' && rail.row_n == 0u && rail.empty[0] == '\0' && rail.card == 0,
+          "rail model: doors %u rows %u", (unsigned)rail.door_n, (unsigned)rail.row_n);
+    for (i = 0; i < SEL_UIM_SIDE_CHIPS; i++) {
+        CHECK(!rail.chip_shown[i], "rail chip %u shown", (unsigned)i);
+    }
+    CHECK(full.rail == 0 && full.row_n == 2u && full.title[0] != '\0' && full.door_n == 6u, "full model unchanged: rows %u doors %u", (unsigned)full.row_n, (unsigned)full.door_n);
+    CHECK(grp != NULL && strstr(grp, "s->side_rail = mui_screen_compact();") != NULL && strstr(grp, "if (s != NULL && !m.rail) {") != NULL &&
+              strstr(grp, "s->side_dyn = mui_sidebar_dyn(&m);") != NULL && strstr(grp, "MUIA_Group_Spacing, MUI_RAIL_SPACING") != NULL,
+          "mui_sidebar_group builds the rail without side_dyn");
+}
+
 static void test_viz_chooser(void) {
     static char ui[1000000];
     static char area[100000];
@@ -2889,6 +2931,8 @@ int main(int argc, char** argv) {
         test_player_bar();
     } else if (strcmp(argv[1], "viz-chooser") == 0) {
         test_viz_chooser();
+    } else if (strcmp(argv[1], "compact-rail") == 0) {
+        test_compact_rail();
     } else if (strcmp(argv[1], "sidebar-icons") == 0) {
         test_sidebar_icons();
     } else if (strcmp(argv[1], "tooltip-flat") == 0) {
