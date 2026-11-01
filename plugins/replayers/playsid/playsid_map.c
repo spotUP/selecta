@@ -77,3 +77,20 @@ uint32_t ps_ahi_mode_for_output(const char* output_id, const char* ahi_pref) {
     }
     return v;
 }
+
+uint32_t ps_sid_count(const uint8_t* hdr, size_t size) {
+    /* PSID/RSID header: version at 4 (BE16), SID2 base at 0x7a, SID3 base at 0x7b; both bytes are the high part of
+     * $Dxx0, 0 = absent. SID2 from v3 on, SID3 from v4 on (HippoPlayer .sidIsStereo / .sidIsThree). */
+    uint32_t version;
+    if (hdr == NULL || size < 0x7cu || (memcmp(hdr, "PSID", 4) != 0 && memcmp(hdr, "RSID", 4) != 0)) {
+        return 1u;
+    }
+    version = ((uint32_t)hdr[4] << 8) | hdr[5];
+    if (version >= 4u && hdr[0x7b] != 0u) {
+        return 3u;
+    }
+    if (version >= 3u && hdr[0x7a] != 0u) {
+        return 2u;
+    }
+    return 1u;
+}

@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <selecta/format_label.h>
 #include "../../plugins/replayers/playsid/adapter.c"
 
 static int g_fail;
@@ -136,6 +137,48 @@ int main(int argc, char** argv) {
     CHECK(ps_ahi_mode_for_output("ahi", "") == 0u && ps_ahi_mode_for_output("ahi", "zz") == 0u);
     CHECK(ps_ahi_mode_for_output("paula", "0x20003") == 0u && ps_ahi_mode_for_output("paula14", "0x20003") == 0u);
     CHECK(ps_ahi_mode_for_output("", "0x20003") == 0u && ps_ahi_mode_for_output(NULL, NULL) == 0u);
+
+    /* I434d: SID count from the first 0x7C header bytes of three real HVSC files (mono Commando v2, 2SID Sparkster
+     * Lakeside v3, 3SID Devils ReSIDence v4), then the label the UI shows for each (rp_open -> rp_metadata ->
+     * sel_format_label, the call uimodel makes). */
+    {
+        static const char* const files[3] = {"mono_Commando.hdr", "2sid_Sparkster_Lakeside.hdr", "3sid_Devils_ReSIDence.hdr"};
+        static const char* const want[3] = {"SID (sid)", "SID 2SID", "SID 3SID"};
+        uint8_t hb[0x7c];
+        uint32_t k;
+        t_desc = SEL_PLUGIN_ENTRY(1);
+        s_installed = 1;
+        for (k = 0; k < 3; k++) {
+            FILE* hf;
+            sel_song_source src;
+            sel_rp_info rinfo;
+            void* st;
+            char label[64], fpath[1100];
+            snprintf(fpath, sizeof fpath, "%s/%s", PLAYSID_FIXTURE_DIR, files[k]);
+            hf = fopen(fpath, "rb");
+            CHECK(hf != NULL && fread(hb, 1, sizeof hb, hf) == sizeof hb);
+            if (hf != NULL) fclose(hf);
+            CHECK(ps_sid_count(hb, sizeof hb) == k + 1u);
+            memset(&src, 0, sizeof src);
+            memset(&rinfo, 0, sizeof rinfo);
+            src.data = hb;
+            src.size = sizeof hb;
+            st = rp_open(&src, sel_host_default(), &rinfo);
+            CHECK(st != NULL);
+            if (st != NULL) {
+                sel_format_label((const char*)sel_tag_find(rp_metadata(st), SEL_META_FORMAT, 0), label, sizeof label);
+                CHECK(strcmp(label, want[k]) == 0);
+                rp_close(st);
+            }
+        }
+        CHECK(ps_sid_count(NULL, 0) == 1u && ps_sid_count(hb, 10) == 1u);
+        hb[5] = 3; hb[0x7b] = 0x44; /* v3 ignores a SID3 byte */
+        CHECK(ps_sid_count(hb, sizeof hb) == 2u);
+        hb[4] = 0; hb[5] = 2; hb[0x7a] = 0x42; /* v2 has no extra SIDs */
+        CHECK(ps_sid_count(hb, sizeof hb) == 1u);
+        s_installed = 0;
+        CHECK(s_open_refs == 0);
+    }
 
     /* library missing: the plugin steps aside, nothing is started */
     t_desc = SEL_PLUGIN_ENTRY(1);

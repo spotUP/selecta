@@ -27,6 +27,7 @@ typedef struct ps_state {
     uint32_t oversample; /* SetRESIDMode argument (reSID modes) */
     uint32_t playing;
     char title[PS_TEXT], author[PS_TEXT], release[PS_TEXT];
+    const char* format; /* info label: "SID", "SID 2SID", "SID 3SID" */
     sel_tag meta[6];
 } ps_state;
 
@@ -109,6 +110,10 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
         s->subsongs = 1u;
     }
     s->default_subsong = s->default_subsong > 0u && s->default_subsong <= s->subsongs ? s->default_subsong - 1u : 0u;
+    {
+        uint32_t chips = ps_sid_count(s->image, s->size);
+        s->format = chips == 3u ? "SID 3SID" : chips == 2u ? "SID 2SID" : "SID";
+    }
     copy_text(s->title, s->image + 22);
     copy_text(s->author, s->image + 54);
     copy_text(s->release, s->image + 86);
@@ -134,7 +139,7 @@ static const sel_tag* rp_metadata(void* state) {
         s->meta[n++].value = (uintptr_t)s->release;
     }
     s->meta[n].tag = SEL_META_FORMAT;
-    s->meta[n++].value = (uintptr_t) "SID";
+    s->meta[n++].value = (uintptr_t)s->format;
     s->meta[n].tag = SEL_META_SUBSONGS;
     s->meta[n++].value = (uintptr_t)s->subsongs;
     s->meta[n].tag = SEL_TAG_END;

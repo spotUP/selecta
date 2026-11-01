@@ -63,4 +63,8 @@ int ps_mode_is_resid(uint32_t om);
  * gives 0 (Paula 14-bit). One function so the per-format output pref (I888a) extends it in one place. */
 uint32_t ps_ahi_mode_for_output(const char* output_id, const char* ahi_pref);
 
+/* SID chips a PSID/RSID header asks for: 1 (mono, v1/v2 or no extra address), 2 (v3+, SID2 address set), 3 (v4+, SID2
+ * and SID3 addresses set). `size` is the bytes available at `hdr`; a short or non-SID header counts as 1. */
+uint32_t ps_sid_count(const uint8_t* hdr, size_t size);
+
 #endif
