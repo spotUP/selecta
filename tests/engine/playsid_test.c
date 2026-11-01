@@ -12,6 +12,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+
+#include <selecta/machine.h>
+
+#include "db/db.h"
+#include "song_key.h"
 
 #include <selecta/format_label.h>
 #include "../../plugins/replayers/playsid/adapter.c"
@@ -103,6 +109,96 @@ static void restart(void) {
     snprintf(l, sizeof l, "SUBSONG %u", 1u + (n++ & 1u));
     run(l);
     CHECK(sel_playsid_starts == before + 1u);
+}
+
+/* I434f: the catalogue length ends the song through rp_hw_poll. A fake host clock drives the adapter's play time. */
+static uint32_t g_clock;
+static uint32_t fake_clock(const sel_host* h) { (void)h; return g_clock; }
+extern uint32_t sel_engine_catalogue_lengths; /* sentinel in src/engine/engine.c: a lengths_ms entry was found */
+
+static void tick(void) {
+    static int16_t buf[441 * 2];
+    sel_engine_render(eng, buf, 441u);
+    sel_engine_pump(eng, NULL, NULL);
+    sel_engine_render(eng, buf, 441u);
+    sel_engine_pump(eng, NULL, NULL);
+}
+
+static void catalogue_length_test(const char* dir) {
+    sel_host host = *sel_host_default();
+    sel_engine_config cfg;
+    sel_library* lib;
+    char dbdir[1100], db[1200], pa[1200], pb[1200], key[1400], line[1500];
+    uint32_t cat0, ends0;
+    memset(&cfg, 0, sizeof cfg);
+    host.clock_ms = fake_clock;
+    snprintf(dbdir, sizeof dbdir, "%s/ps_lenXXXXXX", dir);
+    CHECK(mkdtemp(dbdir) != NULL);
+    snprintf(db, sizeof db, "%s/library.db", dbdir);
+    snprintf(pa, sizeof pa, "%s/len_a.sid", dbdir);
+    snprintf(pb, sizeof pb, "%s/len_b.sid", dbdir);
+    write_psid(pa, 3, 2, 0x2ul);
+    write_psid(pb, 3, 2, 0x2ul);
+    lib = sel_library_open(sel_host_default(), sel_machine_probe(sel_host_default()), 0, db); /* the library keeps real time */
+    CHECK(lib != NULL);
+    if (lib == NULL) return;
+    /* the HVSC sync's sticker for song A (three subsongs); song B has none */
+    CHECK(sel_song_key_of(pa, key, sizeof key));
+    CHECK(sel_library_sticker_set(lib, key, "lengths_ms", "3000,5000,7000"));
+    cfg.registry_count = reg_count;
+    cfg.registry_get = reg_get;
+    cfg.library = lib;
+    s_installed = 1;
+    eng = sel_engine_create(&host, &cfg);
+    CHECK(eng != NULL);
+    g_clock = 1000u;
+    snprintf(line, sizeof line, "QUEUE_ADD %s", pa);
+    run(line);
+    cat0 = sel_engine_catalogue_lengths;
+    ends0 = sel_playsid_ends;
+    run("PLAY"); /* default subsong 2: the second entry, 5000 ms */
+    CHECK(sel_engine_catalogue_lengths == cat0 + 1u); /* sentinel: the engine looked the length up */
+    CHECK(g_owner != NULL && g_owner->length_ms == 5000u);
+    g_clock = 1000u + 4000u;
+    tick();
+    CHECK(sel_playsid_ends == ends0 && sel_engine_state(eng)->play == SEL_PLAYING); /* 1 s early: still playing */
+    g_clock = 1000u + 5000u;
+    tick();
+    CHECK(sel_playsid_ends == ends0 + 1u); /* sentinel: rp_hw_poll reported the end */
+    CHECK(sel_engine_state(eng)->play == SEL_STOPPED); /* the tune ended at the HVSC length */
+    /* subsong 1 has its own entry, and a paused tune does not run out */
+    g_clock = 20000u;
+    run("PLAY");
+    run("SUBSONG 0");
+    CHECK(g_owner != NULL && g_owner->length_ms == 3000u);
+    run("PAUSE");
+    g_clock = 20000u + 10000u;
+    tick();
+    CHECK(sel_playsid_ends == ends0 + 1u); /* paused: the clock is held */
+    run("PAUSE");
+    g_clock = 30000u + 2000u;
+    tick();
+    CHECK(sel_playsid_ends == ends0 + 1u && sel_engine_state(eng)->play == SEL_PLAYING);
+    g_clock = 30000u + 3000u;
+    tick();
+    CHECK(sel_playsid_ends == ends0 + 2u && sel_engine_state(eng)->play == SEL_STOPPED);
+    /* no sticker: the adapter has no length and never ends the tune by itself */
+    run("QUEUE_CLEAR");
+    snprintf(line, sizeof line, "QUEUE_ADD %s", pb);
+    run(line);
+    run("PLAY");
+    CHECK(g_owner != NULL && g_owner->length_ms == 0u);
+    g_clock = 30000u + 3000u + 100000u;
+    tick();
+    CHECK(sel_playsid_ends == ends0 + 2u && sel_engine_state(eng)->play == SEL_PLAYING);
+    run("STOP");
+    sel_engine_destroy(eng);
+    eng = NULL;
+    sel_library_close(lib);
+    remove(pa);
+    remove(pb);
+    remove(db);
+    rmdir(dbdir);
 }
 
 int main(int argc, char** argv) {
@@ -285,6 +381,7 @@ int main(int argc, char** argv) {
     CHECK(g_owner == NULL && s_n_stop >= 1 && s_n_free >= 1); /* released by STOP or at the latest on close */
     CHECK(s_open_refs == 0); /* rp_close released the library */
     remove(path);
+    catalogue_length_test(argv[1]);
     if (g_fail != 0) {
         printf("playsid: %d failures\n", g_fail);
         return 1;

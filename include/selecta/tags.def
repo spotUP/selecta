@@ -75,6 +75,9 @@ SEL_TAG(RP, HW_POLL,           0x101F, PTR)
 /* SEEKABLE (I434e): optional. Returns 1 when SEEK works for the open song, 0 when it does not (sel_rp_seekable_fn).
  * The engine publishes it as sel_song_state.seekable and the UI model as no_seek, so the front ends grey the bar. */
 SEL_TAG(RP, SEEKABLE,          0x1020, PTR)
+/* HW_LENGTH (I434f): optional, HW kind. The engine calls it after every successful RP_START with the catalogue length
+ * of that subsong in milliseconds (0 = unknown), so the replayer can end the song through RP_HW_POLL (sel_rp_hw_length_fn). */
+SEL_TAG(RP, HW_LENGTH,         0x1021, PTR)
 
 SEL_TAG(OUT, NAME,             0x2000, STR)
 SEL_TAG(OUT, SINK,             0x2001, INT)

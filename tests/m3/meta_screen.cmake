@@ -24,6 +24,7 @@ endif()
 string(CONCAT seed_sql "PRAGMA trusted_schema = 1; "
   "UPDATE songs SET album = 'Hardcore Heroes', year = 1994, genre = 'Electronic - Techno' WHERE key = 'local:selecta-test.mod'; "
   "INSERT INTO stickers(key, name, value) VALUES('local:selecta-test.mod', 'stil.comment', 'Rob''s title tune for the Elite conversion'); "
+  "INSERT INTO stickers(key, name, value) VALUES('local:selecta-test.mod', 'stil.title', 'Elite Theme'), ('local:selecta-test.mod', 'stil.artist', 'Dave Lowe'); "
   "INSERT INTO song_composers(song_key, canon, display) VALUES('local:selecta-test.mod', 'lizardking', 'Lizardking'); "
   "INSERT INTO ratings(key, rating) VALUES('local:selecta-test.mod', 4); "
   "INSERT INTO history(key, played_at, skipped) VALUES('local:selecta-test.mod', 1, 0), ('local:selecta-test.mod', 2, 0), ('local:selecta-test.mod', 3, 1); "
@@ -57,8 +58,8 @@ function(check_golden dump golden)
 endfunction()
 
 run_panel(selecta-test.mod full.txt)
-if(NOT panel_out MATCHES "meta_panel panel_loads=1 meta_panel_rows=7")
-  message(FATAL_ERROR "full song: want 'meta_panel panel_loads=1 meta_panel_rows=7' in:\n${panel_out}")
+if(NOT panel_out MATCHES "meta_panel panel_loads=1 meta_panel_rows=9")
+  message(FATAL_ERROR "full song: want 'meta_panel panel_loads=1 meta_panel_rows=9' in:\n${panel_out}")
 endif()
 check_golden(full.txt "${GOLDEN}")
 

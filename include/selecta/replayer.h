@@ -130,6 +130,10 @@ typedef void (*sel_rp_hw_release_fn)(void* state);
 /* RP_HW_POLL (I219b): optional. Returns SEL_TICK_LOOPED / SEL_TICK_ENDED when the song wrapped or ended since the
  * last call, else 0. HW slots never tick, so this is their only way to end before max_song_ms. Audio thread. */
 typedef uint32_t (*sel_rp_hw_poll_fn)(void* state);
+/* RP_HW_LENGTH (I434f): optional, HW kind. Called by the engine after each successful RP_START with the catalogue
+ * length (stickers `lengths_ms` of the song key, one entry per subsong, from the HVSC sync) in milliseconds, 0 when
+ * the catalogue has none. The replayer answers SEL_TICK_ENDED from RP_HW_POLL once that much play time has passed. */
+typedef void (*sel_rp_hw_length_fn)(void* state, uint32_t ms);
 /* RP_SEEKABLE (I434e): optional. 1 = the song can be seeked (the default when the hook is absent), 0 = it cannot, so
  * RP_SEEK returns 0 for every target and the front ends grey the seek bar. Read on the pump thread. */
 typedef int (*sel_rp_seekable_fn)(void* state);

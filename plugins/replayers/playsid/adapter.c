@@ -26,6 +26,11 @@ typedef struct ps_state {
     uint32_t ahi_mode;   /* SetAHIMode argument chosen at start */
     uint32_t oversample; /* SetRESIDMode argument (reSID modes) */
     uint32_t playing;
+    uint32_t length_ms;  /* catalogue (HVSC) length of the started subsong, 0 = unknown (RP_HW_LENGTH) */
+    uint32_t run_ms;     /* play time accumulated before t_mark */
+    uint32_t t_mark;     /* host clock at the last start or resume */
+    uint32_t paused;
+    uint32_t ended;      /* RP_HW_POLL already answered SEL_TICK_ENDED for this start */
     char title[PS_TEXT], author[PS_TEXT], release[PS_TEXT];
     const char* format; /* info label: "SID", "SID 2SID", "SID 3SID" */
     sel_tag meta[6];
@@ -34,7 +39,7 @@ typedef struct ps_state {
 static ps_state* g_owner;
 
 /* Sentinels (tests/engine/playsid_test.c): the adapter ran, per hook. */
-uint32_t sel_playsid_probes, sel_playsid_starts, sel_playsid_seeks;
+uint32_t sel_playsid_probes, sel_playsid_starts, sel_playsid_seeks, sel_playsid_ends;
 
 static uint32_t be16(const uint8_t* p) {
     return ((uint32_t)p[0] << 8) | p[1];
@@ -203,13 +208,48 @@ static int rp_start(void* state, uint32_t subsong, uint32_t rate, const sel_voic
         return 0;
     }
     s->playing = 1;
+    s->length_ms = 0; /* the engine sets it through RP_HW_LENGTH right after this start */
+    s->run_ms = 0;
+    s->t_mark = s->host->clock_ms(s->host);
+    s->paused = 0;
+    s->ended = 0;
     g_owner = s;
     sel_playsid_starts++;
     return 1;
 }
 
+/* Play time of the running subsong: the library plays on its own clock, so the adapter counts host time and holds it
+ * while paused. */
+static uint32_t elapsed_ms(const ps_state* s) {
+    return s->paused ? s->run_ms : s->run_ms + (s->host->clock_ms(s->host) - s->t_mark);
+}
+
+static void rp_hw_length(void* state, uint32_t ms) {
+    ((ps_state*)state)->length_ms = ms;
+}
+
+/* The song ends when the catalogue length has passed; an unknown length (0) never ends it here, the engine's
+ * max_song_ms still does. */
+static uint32_t rp_hw_poll(void* state) {
+    ps_state* s = (ps_state*)state;
+    if (!s->playing || s->ended || s->length_ms == 0u || elapsed_ms(s) < s->length_ms) {
+        return 0;
+    }
+    s->ended = 1;
+    sel_playsid_ends++;
+    return SEL_TICK_ENDED;
+}
+
 static void rp_hw_pause(void* state, uint32_t paused) {
     ps_state* s = (ps_state*)state;
+    if (s->playing && paused != s->paused) {
+        if (paused) {
+            s->run_ms = elapsed_ms(s);
+        } else {
+            s->t_mark = s->host->clock_ms(s->host);
+        }
+        s->paused = paused;
+    }
     if (s->playing && g_owner == s) {
         if (paused) {
             s->ops->pause_song();
@@ -236,6 +276,8 @@ static int rp_seek(void* state, uint32_t ms) {
     if (!s->playing || g_owner != s || !ps_mode_seekable(s->mode)) {
         return 0;
     }
+    s->run_ms = ms; /* the engine restarted the subsong: the target is the new play time */
+    s->t_mark = s->host->clock_ms(s->host);
     for (n = ps_forward_steps(ms); n > 0u; n--) {
         s->ops->forward_song();
         sel_playsid_seeks++;
@@ -243,7 +285,7 @@ static int rp_seek(void* state, uint32_t ms) {
     return 1;
 }
 
-static sel_tag g_hooks[16];
+static sel_tag g_hooks[18];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -270,7 +312,9 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[12], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
     set(&g_hooks[13], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
     set(&g_hooks[14], SEL_RP_SEEKABLE, SEL_TAG_FN(rp_seekable));
-    set(&g_hooks[15], SEL_TAG_END, 0);
+    set(&g_hooks[15], SEL_RP_HW_POLL, SEL_TAG_FN(rp_hw_poll));
+    set(&g_hooks[16], SEL_RP_HW_LENGTH, SEL_TAG_FN(rp_hw_length));
+    set(&g_hooks[17], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "playsid");

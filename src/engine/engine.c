@@ -242,6 +242,7 @@ typedef struct sel_slot {
     sel_rp_hw_release_fn rp_hw_release;       /* optional, HW kind */
     sel_rp_seekable_fn rp_seekable;           /* optional: 0 = the song cannot be seeked (I434e) */
     sel_rp_hw_poll_fn rp_hw_poll;             /* optional, HW kind: song end flags (I219b) */
+    sel_rp_hw_length_fn rp_hw_length;         /* optional, HW kind: catalogue length of the started subsong (I434f) */
     uint32_t applied_pause;                   /* audio side: pause state last handed to rp_hw_pause */
     uint32_t pos_order, pos_row, pos_pattern, pos_valid; /* audio side writes after each render */
     sel_rp_render_fn rp_render; /* RENDER kind: the replayer mixes, rp_tick is NULL */
@@ -1597,6 +1598,27 @@ static void follow_route(sel_engine* e, uint32_t route) {
 }
 
 /* Fresh mixer and scheduler, then the replayer's start. */
+/* I434f: the catalogue length of `subsong` (0-based) in ms: entry `subsong` of the song's `lengths_ms` sticker, which the
+ * HVSC sync wrote from Songlengths.md5 (plugins/sources/hvsc). 0 when there is no library, sticker or entry. */
+uint32_t sel_engine_catalogue_lengths; /* sentinel: lookups that found a length (tests/engine/playsid_test.c) */
+static uint32_t catalogue_length_ms(sel_engine* e, const sel_slot* sl, uint32_t subsong) {
+    char key[SEL_DEFERRED_PATH_MAX + 8], v[SEL_STICKER_VALUE_MAX];
+    const char* p = v;
+    uint32_t ms;
+    if (e->lib == NULL || sl->path == NULL || !sel_song_key_of(sl->path, key, sizeof key) ||
+        !sel_library_sticker_get(e->lib, key, "lengths_ms", v, sizeof v)) {
+        return 0;
+    }
+    while (subsong-- > 0u) {
+        p = strchr(p, ',');
+        if (p == NULL) return 0;
+        p++;
+    }
+    ms = (uint32_t)strtoul(p, NULL, 10);
+    if (ms != 0u) sel_engine_catalogue_lengths++;
+    return ms;
+}
+
 static int start_subsong(sel_engine* e, sel_slot* sl, uint32_t subsong) {
     sl->rp_render_calls = 0;
     sl->rendered_frames = 0;
@@ -1623,6 +1645,7 @@ static int start_subsong(sel_engine* e, sel_slot* sl, uint32_t subsong) {
         rc = sl->rp_start(sl->rp_state, subsong, e->rate, NULL);
         if (rc) {
             e->hw_starts++;
+            if (sl->rp_hw_length != NULL) sl->rp_hw_length(sl->rp_state, catalogue_length_ms(e, sl, subsong));
         } else {
             handover_for(e, sl, SEL_ROUTE_MIXER); /* the hardware stays free: give the output back */
         }
@@ -2296,6 +2319,7 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     sl->rp_hw_release = sl->hw ? (sel_rp_hw_release_fn)sel_tag_find(hooks, SEL_RP_HW_RELEASE, 0) : NULL;
     sl->rp_hw_poll = sl->hw ? (sel_rp_hw_poll_fn)sel_tag_find(hooks, SEL_RP_HW_POLL, 0) : NULL;
     sl->rp_seekable = (sel_rp_seekable_fn)sel_tag_find(hooks, SEL_RP_SEEKABLE, 0);
+    sl->rp_hw_length = sl->hw ? (sel_rp_hw_length_fn)sel_tag_find(hooks, SEL_RP_HW_LENGTH, 0) : NULL;
     sl->applied_pause = 0;
     if (kind != SEL_RP_KIND_VOICE) {
         sl->rp_tick = NULL;

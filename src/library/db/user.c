@@ -712,7 +712,7 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
         }
     } else if (op->op == SEL_USER_PANEL && op->out != NULL && op->out_cap > 0) {
         /* I185: the catalogue rows of the module info panel, in display order; absent data adds no row. */
-        static const char* const labels[] = {"STIL note", "Composer", "Release", "Year", "Genre", "Rating", "Play count", "Liked"};
+        static const char* const labels[] = {"STIL note", "STIL title", "STIL author", "Composer", "Release", "Year", "Genre", "Rating", "Play count", "Liked"};
         sqlite3_stmt* st = NULL;
         uint32_t used = 0;
         op->out[0] = '\0';
@@ -720,6 +720,8 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
         rc = sqlite3_prepare_v2(
             lib->db,
             "SELECT (SELECT value FROM stickers WHERE key = ?1 AND name = 'stil.comment'),"
+            " (SELECT value FROM stickers WHERE key = ?1 AND name = 'stil.title'),"
+            " (SELECT value FROM stickers WHERE key = ?1 AND name = 'stil.artist')," /* I434f: the original tune's title and composer */
             " (SELECT group_concat(display, ', ') FROM (SELECT display FROM song_composers WHERE song_key = ?1"
             "  ORDER BY display)),"
             " s.album, s.year, s.genre, (SELECT rating FROM ratings WHERE key = ?1),"
@@ -731,7 +733,7 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
             sqlite3_bind_text(st, 1, op->key, -1, SQLITE_STATIC);
             if (sqlite3_step(st) == SQLITE_ROW) {
                 int c;
-                for (c = 0; c < 8; c++) {
+                for (c = 0; c < 10; c++) {
                     rows += (int64_t)panel_put(op->out, op->out_cap, &used, labels[c],
                                                (const char*)sqlite3_column_text(st, c));
                 }
