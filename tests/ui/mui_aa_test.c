@@ -1019,9 +1019,41 @@ static void test_icon_ratio(void) {
     CHECK(mui_icon_body(0, 18) != NULL && mui_icon_body_lookups(18) == before + 1, "sentinel: the 18 px body set is the one looked up on tier M");
 }
 
+/* I965: list, slider and scroller metrics read the screen aspect like button, cycle, field and panel; tight at 512, square values unchanged at 256. */
+static void test_tight_pad(void) {
+    mui_aa_list_t l;
+    mui_aa_slider_t s;
+    mui_aa_scroller_t sc;
+    mui_aa_metrics_t b;
+    uint32_t tok[SEL_GUI_TOKEN_COUNT] = {0};
+    int px, py;
+    tok[SEL_GUI_TOKEN_SPACING] = 8;
+    mui_aa_set_screen_aspect(256);
+    mui_aa_list_metrics(0, &l);
+    mui_aa_slider_metrics(0, &s);
+    mui_aa_scroller_metrics(0, &sc);
+    CHECK(l.pad_x == 6 && l.pad_y == 2 && l.gap == 6, "square list pad %d,%d gap %d", l.pad_x, l.pad_y, l.gap);
+    CHECK(s.height == 12 && s.track_h == 2, "square slider height %d track %d", s.height, s.track_h);
+    CHECK(sc.width == 6, "square scroller width %d", sc.width);
+    mui_aa_set_screen_aspect(512);
+    mui_aa_metrics_aspect(0, 512, &b);
+    mui_aa_list_metrics(0, &l);
+    mui_aa_slider_metrics(0, &s);
+    mui_aa_scroller_metrics(0, &sc);
+    CHECK(l.pad_x == b.pad_x && l.pad_x == 4, "tight list pad_x %d (button %d)", l.pad_x, b.pad_x);
+    CHECK(l.pad_y == 1 && l.gap == b.icon_gap && l.gap == 4, "tight list pad_y %d gap %d", l.pad_y, l.gap);
+    CHECK(s.height == 6 && s.track_h == 1, "tight slider height %d track %d", s.height, s.track_h);
+    CHECK(sc.width == 4, "tight scroller width %d", sc.width);
+    mui_aa_panel_pad(tok, 512, &px, &py);
+    CHECK(mui_aa_balance_width(tok, 0) == px, "balance width %d equals tight panel pad_x %d", mui_aa_balance_width(tok, 0), px);
+    mui_aa_set_screen_aspect(256);
+}
+
 int main(int argc, char** argv) {
     const char* t = argc > 1 ? argv[1] : "";
-    if (!strcmp(t, "icon-ratio")) {
+    if (!strcmp(t, "tight-pad")) {
+        test_tight_pad();
+    } else if (!strcmp(t, "icon-ratio")) {
         test_icon_ratio();
     } else if (!strcmp(t, "round")) {
         test_round();
