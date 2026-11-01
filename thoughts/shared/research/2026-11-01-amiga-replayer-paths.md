@@ -284,3 +284,9 @@ Johan: "check the devilbox project it has c players for many of them nuade shoul
 | DeliTracker Custom | none by nature (the module is 68k code); see ledger I886 for a wrapper | |
 
 Consequence for D3: option (b) is no longer "large work from scratch" for AHX, AoN, PreTracker, TFMX, Musicline, MaxTrax and Hippel ST; it is a port of an existing replayer into a nuade-style tick player (voices out, so AHI, scopes and pattern data come for free). Licence checks (N9) come first for the four UNVERIFIED ones. D3 is re-asked with this evidence.
+
+### 9.7 Johan's answers to the re-asked D3 and the Custom wrapper (2026-11-01)
+
+- **D3: port into tick players.** Each portable replayer of section 9.6 (AHX, Art of Noise, PreTracker, TFMX, Musicline, MaxTrax, Hippel ST; OctaMED and DigiBooster from the libopenmpt loaders) becomes a nuade-style tick player shipped as its own plugin, so AHI, scopes and pattern data work on Mac and Amiga. The N9 licence record comes first for Musicline, MaxTrax and Hippel ST.
+- **DeliTracker Custom on the Mac: "uade plays them".** Selecta has no UADE engine today (`third_party` has only nuade; `src/platform/platform.c` only knows UADE file prefixes). The Mac path is a UADE plugin (68k CPU plus Paula emulation; DEViLBOX's `uade-wasm` and `musashi-host` are the reference), which also covers Quartet ST, ChipTracker, TCB Tracker and CustomMade. UADE is GPL-2 and ships as a separate plugin (D6).
+- **DeliTracker Custom on the Amiga: AHI redirect in v1.** A virtual-Paula wrapper captures the module's `$dff0xx` writes into `sel_voices` (MMU write trap on 68030+, design by Opus); a 68020 without an MMU stays Paula only.
