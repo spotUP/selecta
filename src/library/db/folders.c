@@ -482,7 +482,9 @@ int sel_folder_exec(sqlite3* db, const sel_user_op* op, int64_t* rows, int32_t c
         return song_meta(db, op, rows);
     case SEL_USER_SONG_BRIEFS: return song_briefs(db, op, rows);
     case SEL_USER_FOLDER_PLAYLISTS: return folder_playlists(db, op, rows);
-    case SEL_USER_PLAYLIST_KEYS: return playlist_keys(db, op, rows);
+    case SEL_USER_PLAYLIST_KEYS:
+        sel_library_test_slow("SELECTA_LIB_KEYS_SLOW_MS"); /* I906g test knob: a slow playlist key read */
+        return playlist_keys(db, op, rows);
     case SEL_USER_FOLDER_TREE: return folder_tree(db, op, rows);
     case SEL_USER_FOLDER_COUNTS:
         counts[0] = (int32_t)scalar(db, "SELECT COUNT(*) FROM folders", 0, 0);

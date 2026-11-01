@@ -306,6 +306,7 @@ typedef struct sel_wq_op {
     void (*run)(sel_library* lib, struct sel_wq_op* op);
     void (*done)(sel_engine* e, struct sel_wq_op* op);
     char* buf;
+    void* res; /* I906g: the op's answer region (host memory), allocated on the pump at queue time, filled by run, freed after done */
     const char* s[3];
     int rc;
     int fin; /* written with __atomic ops: the thread stores 1 after run */
@@ -4015,6 +4016,13 @@ static void wq_drain(sel_engine* e) {
     }
 }
 
+static void wq_op_free(sel_engine* e, sel_wq_op* op) {
+    if (op->res != NULL) e->host->mem_free(e->host, op->res);
+    op->res = NULL;
+    e->host->mem_free(e->host, op->buf);
+    op->buf = NULL;
+}
+
 /* Pump side: runs the done callback of every finished op, in queue order. */
 static void wq_collect(sel_engine* e) {
     while (e->wq_head != e->wq_tail) {
@@ -4024,8 +4032,7 @@ static void wq_collect(sel_engine* e) {
         e->wq_head++;
         e->wq_writes++;
         if (op->done != NULL) op->done(e, op);
-        e->host->mem_free(e->host, op->buf);
-        op->buf = NULL;
+        wq_op_free(e, op);
     }
 }
 
@@ -6153,18 +6160,41 @@ static void cmd_PLAYLIST_REMOVE_SONG(sel_engine* e, const sel_message* m) {
 
 /* Appends the songs of a saved playlist to the queue and starts the first of them (VIEW_ACTIVATE on a playlist row,
  * PLAYLIST_PLAY). */
-static void playlist_play(sel_engine* e, uint32_t id, const char* why) {
-    uint32_t n = 0, before = e->queue.count;
+static void wq_playlist_play_run(sel_library* lib, sel_wq_op* op) {
+    char* keys = (char*)op->res; /* allocated on the pump at queue time */
+    uint32_t n = 0;
+
+    keys[0] = '\0';
+    op->rc = sel_library_playlist_keys(lib, op->u1, keys, PLAYLIST_KEYS_CAP, &n) == SEL_FOLDER_OK;
+}
+
+static void wq_playlist_play_done(sel_engine* e, sel_wq_op* op) {
+    uint32_t before = e->queue.count;
     const char* k;
-    char* keys;
+
+    if (!op->rc) return;
+    for (k = (const char*)op->res; *k != '\0'; k += strlen(k) + 1u) queue_insert(e, e->queue.count, k, op->s[0]);
+    if (e->queue.count > before) queue_start(e, before);
+}
+
+/* I906g: the key read runs on the writer thread; the queue insert and the start follow in the done callback. */
+static void playlist_play(sel_engine* e, uint32_t id, const char* why) {
+    sel_wq_op* op;
+
     if (e->lib == NULL) return;
-    keys = (char*)malloc(PLAYLIST_KEYS_CAP);
-    if (keys == NULL) return;
-    if (sel_library_playlist_keys(e->lib, id, keys, PLAYLIST_KEYS_CAP, &n) == SEL_FOLDER_OK) {
-        for (k = keys; *k != '\0'; k += strlen(k) + 1u) queue_insert(e, e->queue.count, k, why);
-        if (e->queue.count > before) queue_start(e, before);
+    op = wq_new(e, wq_playlist_play_run, wq_playlist_play_done, why, NULL, NULL);
+    if (op == NULL) {
+        sel_engine_report_error(e, "library_busy", why);
+        return;
     }
-    free(keys);
+    op->res = e->host->mem_alloc(e->host, PLAYLIST_KEYS_CAP, SEL_MEM_FAST);
+    if (op->res == NULL) {
+        e->host->mem_free(e->host, op->buf); /* not submitted: the slot is reused by the next wq_new */
+        sel_engine_report_error(e, "library_busy", why);
+        return;
+    }
+    op->u1 = id;
+    wq_submit(e);
 }
 
 static void cmd_PLAYLIST_PLAY(sel_engine* e, const sel_message* m) {
@@ -8608,7 +8638,7 @@ void sel_engine_destroy(sel_engine* e) {
         lib_read_end(&e->rd_wq); /* I906f: queued writes still run, their answers are dropped */
         wq_drain(e);
         while (e->wq_head != e->wq_tail) {
-            e->host->mem_free(e->host, e->wq[e->wq_head % SEL_WQ_N].buf);
+            wq_op_free(e, &e->wq[e->wq_head % SEL_WQ_N]);
             e->wq_head++;
         }
         lib_read_end(&e->rd_home); /* I829: the posted reads use the library */
