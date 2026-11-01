@@ -15,6 +15,7 @@
 #include "db/db.h"
 #include "db/db_internal.h"
 
+#if !defined(NDEBUG) && !defined(SEL_LIBRARY_NO_THREAD)
 enum { HOLD_MS = 200 };
 
 static int g_fail;
@@ -61,6 +62,7 @@ static int err_has(const char* path, const char* needle) {
     buf[n] = 0;
     return strstr(buf, needle) != NULL;
 }
+#endif
 
 int main(void) {
 #if defined(NDEBUG) || defined(SEL_LIBRARY_NO_THREAD)
