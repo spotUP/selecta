@@ -3,6 +3,7 @@
 
 #include "db_internal.h"
 #include "backoff.h"
+#include "../../core/count.h"
 #include "http.h"
 #include "mirrors.h"
 #include "../source.h"
@@ -19,14 +20,7 @@
 #define BODY_CAP 32768u
 
 static char g_dir[256];
-/* The push thread (rating_push.c, I173c) and the caller both count; builds without threads count plainly (no libatomic). */
-#if defined(SEL_LIBRARY_NO_THREAD)
-#define COUNT_ADD(p) (*(p) += 1u)
-#define COUNT_GET(p) (*(p))
-#else
-#define COUNT_ADD(p) __atomic_fetch_add((p), 1u, __ATOMIC_RELAXED)
-#define COUNT_GET(p) __atomic_load_n((p), __ATOMIC_RELAXED)
-#endif
+/* The push thread (rating_push.c, I173c) and the caller both count (SEL_COUNT_ADD, core/count.h). */
 static unsigned g_pushes;
 static unsigned g_batches;
 static unsigned g_vote_posts;
@@ -214,7 +208,7 @@ int sel_devilbox_rating_push(const char* key, int rating) {
     (void)sel_http_request(&req, text_sink, &b, &res);
     memset(auth, 0, sizeof auth);
     if (res.status == 200) {
-        COUNT_ADD(&g_pushes);
+        SEL_COUNT_ADD(&g_pushes, 1u);
         return 1;
     }
     return res.status == 400 ? -1 : 0;
@@ -291,7 +285,7 @@ unsigned sel_devilbox_ratings_read(const char* source, const char* const* paths,
         reply[0] = '\0';
         req.url = url;
         req.headers = headers[0] != NULL ? headers : NULL;
-        COUNT_ADD(&g_batches);
+        SEL_COUNT_ADD(&g_batches, 1u);
         (void)sel_http_request(&req, text_sink, &b, &res);
         if (res.status != 200) break;
         done++;
@@ -308,11 +302,11 @@ unsigned sel_devilbox_ratings_read(const char* source, const char* const* paths,
 }
 
 unsigned sel_devilbox_pushes(void) {
-    return COUNT_GET(&g_pushes);
+    return SEL_COUNT_GET(&g_pushes);
 }
 
 unsigned sel_devilbox_batches(void) {
-    return COUNT_GET(&g_batches);
+    return SEL_COUNT_GET(&g_batches);
 }
 
 static int is_hex(const char* s, size_t n) {
@@ -355,10 +349,10 @@ int sel_devilbox_vote(const char* token, const char* mkey, int r, unsigned* coun
     if (res.status != 200 || sscanf(reply, "%u %u", &c, &y) != 2) return SEL_VOTE_RETRY;
     if (count != NULL) *count = c;
     if (yours != NULL) *yours = y;
-    if (r >= 0) COUNT_ADD(&g_vote_posts);
+    if (r >= 0) SEL_COUNT_ADD(&g_vote_posts, 1u);
     return SEL_VOTE_OK;
 }
 
 unsigned sel_devilbox_vote_posts(void) {
-    return COUNT_GET(&g_vote_posts);
+    return SEL_COUNT_GET(&g_vote_posts);
 }
