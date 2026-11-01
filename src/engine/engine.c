@@ -299,11 +299,29 @@ typedef struct sel_lib_read {
 #endif
 } sel_lib_read;
 
+/* I906f: one library write the command thread queues instead of making. `run` is the library part (writer thread: library calls only,
+ * no engine state), `done` the rest of the old handler (pump thread: errors, reloads, answers). Strings are copied into `buf` at queue time,
+ * so the op owns everything the thread reads. */
+typedef struct sel_wq_op {
+    void (*run)(sel_library* lib, struct sel_wq_op* op);
+    void (*done)(sel_engine* e, struct sel_wq_op* op);
+    char* buf;
+    const char* s[3];
+    int rc;
+    int fin; /* written with __atomic ops: the thread stores 1 after run */
+    uint32_t id, u1, u2;
+    int64_t n1;
+} sel_wq_op;
+
+enum { SEL_WQ_N = 64 };
 enum { SEL_RD_QUERY_MAX = 512, SEL_RD_FOLDERS_MAX = 4096 };
 static void art_changed(sel_engine* e);
 static void txt_changed(sel_engine* e);
 static void lib_read_post(sel_engine* e, sel_lib_read* r, void (*run)(sel_engine* e));
 static int lib_read_idle(const sel_lib_read* r);
+static sel_wq_op* wq_new(sel_engine* e, void (*run)(sel_library*, sel_wq_op*), void (*done)(sel_engine*, sel_wq_op*), const char* s1,
+                        const char* s2, const char* s3);
+static void wq_submit(sel_engine* e);
 
 /* I906d: the artwork ids of a view's rows come from this cache, never from a library call on the pump. A miss is queued in art_want; the
  * rd_art read resolves the batch (id, then album artist) and the pump merges it and moves art_generation so the view re-reads. The key
@@ -651,6 +669,10 @@ struct sel_engine {
     /* I936: the catalogue song count (COUNT over songs, seconds on a large cold db) is read on rd_total, never on the pump. rdt_at is
      * library_changes + 1 when the read was posted; an answer for an older library state is published and the next pump asks again. */
     sel_lib_read rd_total;
+    /* I906f: the write queue. wq_tail is the pump's (queued), wq_run the thread's (executed), wq_head the pump's (done callbacks run). */
+    sel_lib_read rd_wq;
+    sel_wq_op wq[SEL_WQ_N];
+    uint32_t wq_head, wq_run, wq_tail, wq_writes;
     uint32_t rdt_total, rdt_at, total_reads, rdt_playlists;
     int rdt_rc;
     char art_want[SEL_ART_BLK], art_job[SEL_ART_BLK];
@@ -3843,6 +3865,74 @@ static void lib_read_end(sel_lib_read* r) {
     (void)lib_read_take(r);
 }
 
+/* I906f: queues a write (see sel_wq_op). NULL when the queue is full or out of memory: the caller reports "library_busy". The op becomes
+ * visible to the writer thread at wq_submit, so the caller can set id/u1/u2/n1 first. */
+static sel_wq_op* wq_new(sel_engine* e, void (*run)(sel_library*, sel_wq_op*), void (*done)(sel_engine*, sel_wq_op*), const char* s1,
+                        const char* s2, const char* s3) {
+    const char* in[3];
+    size_t len[3], total = 0;
+    sel_wq_op* op;
+    char* w;
+    int i;
+
+    if (e->wq_tail - e->wq_head >= SEL_WQ_N) return NULL;
+    in[0] = s1 != NULL ? s1 : "";
+    in[1] = s2 != NULL ? s2 : "";
+    in[2] = s3 != NULL ? s3 : "";
+    for (i = 0; i < 3; i++) {
+        len[i] = strlen(in[i]) + 1u;
+        total += len[i];
+    }
+    op = &e->wq[e->wq_tail % SEL_WQ_N];
+    memset(op, 0, sizeof *op);
+    op->buf = (char*)e->host->mem_alloc(e->host, total, SEL_MEM_FAST);
+    if (op->buf == NULL) return NULL;
+    for (w = op->buf, i = 0; i < 3; i++) {
+        memcpy(w, in[i], len[i]);
+        op->s[i] = w;
+        w += len[i];
+    }
+    op->run = run;
+    op->done = done;
+    return op;
+}
+
+/* The writer thread: runs the queued ops in order until none is left. */
+static void wq_drain(sel_engine* e) {
+    for (;;) {
+        uint32_t i = __atomic_load_n(&e->wq_run, __ATOMIC_RELAXED);
+        sel_wq_op* op;
+
+        if (i == __atomic_load_n(&e->wq_tail, __ATOMIC_ACQUIRE)) break;
+        op = &e->wq[i % SEL_WQ_N];
+        op->run(e->lib, op);
+        __atomic_store_n(&op->fin, 1, __ATOMIC_RELEASE);
+        __atomic_store_n(&e->wq_run, i + 1u, __ATOMIC_RELEASE);
+    }
+}
+
+/* Pump side: runs the done callback of every finished op, in queue order. */
+static void wq_collect(sel_engine* e) {
+    while (e->wq_head != e->wq_tail) {
+        sel_wq_op* op = &e->wq[e->wq_head % SEL_WQ_N];
+
+        if (!__atomic_load_n(&op->fin, __ATOMIC_ACQUIRE)) break;
+        e->wq_head++;
+        e->wq_writes++;
+        if (op->done != NULL) op->done(e, op);
+        e->host->mem_free(e->host, op->buf);
+        op->buf = NULL;
+    }
+}
+
+static void wq_submit(sel_engine* e) {
+    __atomic_store_n(&e->wq_tail, e->wq_tail + 1u, __ATOMIC_RELEASE);
+    lib_read_post(e, &e->rd_wq, wq_drain);
+#if !defined(SEL_LI_THREAD)
+    wq_collect(e); /* no writer thread: the op ran inside the post, the handler finishes as it always did */
+#endif
+}
+
 static void search_job_init(sel_engine* e, sel_lib_job* job, const char* text, char* out, char* meta) {
     memset(job, 0, sizeof *job);
     job->text = text;
@@ -4280,13 +4370,41 @@ static void persist_new_this_week(sel_engine* e, uint32_t count) {
  * <dir> (I161, I162; `modland` and `hvsc`). `now` (epoch seconds) fixes the clock of "new this week". The answer
  * is a LIBRARY_RESULT with the directory and the listing row count; the counters are in sync_info. */
 /* LIKE and KEEP mark the song being played in the library (I170). KEEP exempts it from the cache trim. */
-static void user_mark(sel_engine* e, const char* who, int (*mark)(sel_library*, const char*, int64_t)) {
+/* I906f: done callback shared by the folder and playlist writes: the old handler tail (report the failure, else reload the lists). s[2] is the command name. */
+static void folders_read_run(sel_engine* e);
+
+/* I906f: a finished folder or playlist write refreshes the lists through the folders read slot, never a library request on the pump. */
+static void folders_reload_posted(sel_engine* e) {
+    if (e->lib != NULL) lib_read_post(e, &e->rd_folders, folders_read_run);
+}
+
+static void wq_folder_done(sel_engine* e, sel_wq_op* op) {
+    if (op->rc != SEL_FOLDER_OK) folder_report(e, op->rc, op->s[2]);
+    else folders_reload_posted(e);
+}
+
+static void wq_mark_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = op->u1 ? sel_library_keep(lib, op->s[0], op->n1) : sel_library_unkeep(lib, op->s[0], op->n1);
+}
+
+static void wq_fail_done(sel_engine* e, sel_wq_op* op) {
+    if (!op->rc) sel_engine_report_error(e, "library_failed", op->s[1]);
+}
+
+/* I906f: KEEP on or off of the song being played, made on the writer thread. */
+static void user_mark(sel_engine* e, const char* who, int on) {
+    sel_wq_op* op;
+
     if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", who);
     } else if (e->hist_key[0] == '\0') {
         sel_engine_report_error(e, "no_song", who);
-    } else if (!mark(e->lib, e->hist_key, (int64_t)time(NULL))) {
-        sel_engine_report_error(e, "library_failed", who);
+    } else if ((op = wq_new(e, wq_mark_run, wq_fail_done, e->hist_key, who, NULL)) == NULL) {
+        sel_engine_report_error(e, "library_busy", who);
+    } else {
+        op->n1 = (int64_t)time(NULL);
+        op->u1 = (uint32_t)on;
+        wq_submit(e);
     }
 }
 
@@ -4330,19 +4448,33 @@ static void like_sync(sel_engine* e, const char* key, int r) {
 }
 
 /* LIKE [key]: toggles the like of the song `key`, the one being played without it (I306). */
+static void wq_like_run(sel_library* lib, sel_wq_op* op) {
+    op->u1 = (uint32_t)sel_library_liked(lib, op->s[0]);
+    op->rc = op->u1 ? sel_library_unlike(lib, op->s[0], op->n1) : sel_library_like(lib, op->s[0], op->n1);
+}
+
+static void wq_like_done(sel_engine* e, sel_wq_op* op) {
+    if (!op->rc) {
+        sel_engine_report_error(e, "library_failed", "LIKE");
+    } else {
+        panel_reload(e); /* the Now Playing heart reads the liked state from the panel (I306) */
+        like_sync(e, op->s[0], op->u1 ? 0 : 5);
+    }
+}
+
+/* I906f: the toggle runs on the writer thread; the heart reload and the vote sync follow in the done callback. */
 static void cmd_LIKE(sel_engine* e, const sel_message* m) {
     char key[SEL_SONG_KEY_MAX];
     if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", "LIKE");
     } else if (target_key(e, m, 0, "LIKE", key, sizeof key)) {
-        int64_t now = (int64_t)time(NULL);
-        int was = sel_library_liked(e->lib, key);
-        int ok = was ? sel_library_unlike(e->lib, key, now) : sel_library_like(e->lib, key, now);
-        if (!ok) {
-            sel_engine_report_error(e, "library_failed", "LIKE");
+        sel_wq_op* op = wq_new(e, wq_like_run, wq_like_done, key, NULL, NULL);
+
+        if (op == NULL) {
+            sel_engine_report_error(e, "library_busy", "LIKE");
         } else {
-            panel_reload(e); /* the Now Playing heart reads the liked state from the panel (I306) */
-            like_sync(e, key, was ? 0 : 5);
+            op->n1 = (int64_t)time(NULL);
+            wq_submit(e);
         }
     }
 }
@@ -4359,62 +4491,97 @@ static void cmd_KEEP(sel_engine* e, const sel_message* m) {
             return;
         }
     }
-    user_mark(e, "KEEP", on ? sel_library_keep : sel_library_unkeep);
+    user_mark(e, "KEEP", on);
 }
 
 /* FLAG wrong [note] | FLAG skip: flags the song being played (I171). `wrong` keeps the note for
  * sounds-wrong.txt; `skip` keeps the song out of the random order. */
+static void wq_flag_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = sel_library_flag(lib, op->s[0], op->s[1], op->u1 ? op->s[2] : NULL, NULL);
+}
+
+static void wq_flag_done(sel_engine* e, sel_wq_op* op) {
+    if (!op->rc) sel_engine_report_error(e, "library_failed", "FLAG");
+    else e->order_qver = 0xFFFFFFFFu; /* a skip flag changes the candidates: rebuild the order on next use */
+}
+
 static void cmd_FLAG(sel_engine* e, const sel_message* m) {
     const char* kind = m->args[0].v.s;
     int is_wrong = strcmp(kind, "wrong") == 0;
+    sel_wq_op* op;
     if (!is_wrong && strcmp(kind, "skip") != 0) {
         sel_engine_report_error(e, "range", "FLAG");
     } else if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", "FLAG");
     } else if (e->hist_key[0] == '\0') {
         sel_engine_report_error(e, "no_song", "FLAG");
-    } else if (!sel_library_flag(e->lib, e->hist_key, kind, is_wrong && m->argc > 1 ? m->args[1].v.s : NULL, NULL)) {
-        sel_engine_report_error(e, "library_failed", "FLAG");
+    } else if ((op = wq_new(e, wq_flag_run, wq_flag_done, e->hist_key, kind, is_wrong && m->argc > 1 ? m->args[1].v.s : "")) == NULL) {
+        sel_engine_report_error(e, "library_busy", "FLAG");
     } else {
-        e->order_qver = 0xFFFFFFFFu; /* a skip flag changes the candidates: rebuild the order on next use */
+        op->u1 = is_wrong && m->argc > 1;
+        wq_submit(e);
     }
 }
 
 /* NOTE [text]: keeps a note for the song being played (I172a); no text removes it. The library also queues the
  * note as a DEViLBOX comment (pending_push), which nothing sends yet. */
+static void wq_note_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = sel_library_note(lib, op->s[0], op->u1 ? op->s[1] : NULL);
+}
+
+static void wq_note_done(sel_engine* e, sel_wq_op* op) {
+    if (!op->rc) sel_engine_report_error(e, "library_failed", "NOTE");
+}
+
 static void cmd_NOTE(sel_engine* e, const sel_message* m) {
+    sel_wq_op* op;
     if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", "NOTE");
     } else if (e->hist_key[0] == '\0') {
         sel_engine_report_error(e, "no_song", "NOTE");
-    } else if (!sel_library_note(e->lib, e->hist_key, m->argc > 0 ? m->args[0].v.s : NULL)) {
-        sel_engine_report_error(e, "library_failed", "NOTE");
+    } else if ((op = wq_new(e, wq_note_run, wq_note_done, e->hist_key, m->argc > 0 ? m->args[0].v.s : "", NULL)) == NULL) {
+        sel_engine_report_error(e, "library_busy", "NOTE");
+    } else {
+        op->u1 = m->argc > 0;
+        wq_submit(e);
     }
 }
 
 /* RATE <0..5> [key]: rates the song `key`, the one being played without it (I173, I306). 0 removes the rating. A modland or hvsc song is also pushed to
  * DEViLBOX (PUT, DELETE for 0); when that cannot happen now the rating stays in the library as pending and goes
  * out on the next run. A local song is rated in the library only. */
+static void wq_rate_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = sel_library_rating_set(lib, op->s[0], (int)op->u1, op->u2 ? SEL_RATING_QUEUE : SEL_RATING_LOCAL);
+}
+
+static void wq_rate_done(sel_engine* e, sel_wq_op* op) {
+    if (!op->rc) {
+        sel_engine_report_error(e, "library_failed", "RATE");
+    } else {
+        panel_reload(e);
+        if (op->u2) sel_library_rating_push(e->lib); /* the HTTP push runs on the library side, not on this thread (I173c) */
+    }
+}
+
+/* I906f: the rating is written on the writer thread. */
 static void cmd_RATE(sel_engine* e, const sel_message* m) {
     uint32_t stars = m->args[0].v.u;
     char source[16];
     char key[SEL_SONG_KEY_MAX];
     const char* path;
-    int remote;
+    sel_wq_op* op;
 
     if (stars > 5u) {
         sel_engine_report_error(e, "range", "RATE");
     } else if (e->lib == NULL) {
         sel_engine_report_error(e, "no_library", "RATE");
     } else if (target_key(e, m, 1, "RATE", key, sizeof key)) {
-        remote = sel_devilbox_item(key, source, sizeof source, &path);
-        if (!sel_library_rating_set(e->lib, key, (int)stars, remote ? SEL_RATING_QUEUE : SEL_RATING_LOCAL)) {
-            sel_engine_report_error(e, "library_failed", "RATE");
+        if ((op = wq_new(e, wq_rate_run, wq_rate_done, key, NULL, NULL)) == NULL) {
+            sel_engine_report_error(e, "library_busy", "RATE");
         } else {
-            panel_reload(e);
-            if (remote) {
-                sel_library_rating_push(e->lib); /* the HTTP push runs on the library side, not on this thread (I173c) */
-            }
+            op->u1 = stars;
+            op->u2 = (uint32_t)sel_devilbox_item(key, source, sizeof source, &path);
+            wq_submit(e);
         }
     }
 }
@@ -4946,13 +5113,22 @@ static int sticker_key(sel_engine* e, const sel_message* m, const char* cmd, cha
     return 0;
 }
 
+static void wq_sticker_set_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = sel_library_sticker_set(lib, op->s[0], op->s[1], op->s[2]);
+}
+
+static void wq_sticker_set_done(sel_engine* e, sel_wq_op* op) {
+    if (op->rc) panel_reload(e);
+    else sel_engine_report_error(e, "library_failed", "STICKER_SET");
+}
+
 static void cmd_STICKER_SET(sel_engine* e, const sel_message* m) {
     char key[SEL_DEFERRED_PATH_MAX + 8];
     if (sticker_ready(e, "STICKER_SET") && sticker_key(e, m, "STICKER_SET", key, sizeof key)) {
-        if (sel_library_sticker_set(e->lib, key, m->args[1].v.s, m->args[2].v.s)) {
-            panel_reload(e);
+        if (wq_new(e, wq_sticker_set_run, wq_sticker_set_done, key, m->args[1].v.s, m->args[2].v.s) == NULL) {
+            sel_engine_report_error(e, "library_busy", "STICKER_SET");
         } else {
-            sel_engine_report_error(e, "library_failed", "STICKER_SET");
+            wq_submit(e);
         }
     }
 }
@@ -4968,13 +5144,22 @@ static void cmd_STICKER_GET(sel_engine* e, const sel_message* m) {
     }
 }
 
+static void wq_sticker_del_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = sel_library_sticker_del(lib, op->s[0], op->s[1]);
+}
+
+static void wq_sticker_del_done(sel_engine* e, sel_wq_op* op) {
+    if (op->rc) panel_reload(e);
+    else sel_engine_report_error(e, "no_such_sticker", op->s[1]);
+}
+
 static void cmd_STICKER_DEL(sel_engine* e, const sel_message* m) {
     char key[SEL_DEFERRED_PATH_MAX + 8];
     if (sticker_ready(e, "STICKER_DEL") && sticker_key(e, m, "STICKER_DEL", key, sizeof key)) {
-        if (sel_library_sticker_del(e->lib, key, m->args[1].v.s)) {
-            panel_reload(e);
+        if (wq_new(e, wq_sticker_del_run, wq_sticker_del_done, key, m->args[1].v.s, NULL) == NULL) {
+            sel_engine_report_error(e, "library_busy", "STICKER_DEL");
         } else {
-            sel_engine_report_error(e, "no_such_sticker", m->args[1].v.s);
+            wq_submit(e);
         }
     }
 }
@@ -5563,43 +5748,82 @@ static void cmd_STATS_HIDE(sel_engine* e, const sel_message* m) {
 }
 
 /* FOLDER_ADD name [parent]: creates the folder (parent 0 or absent = root); the answer carries the new id. */
-static void cmd_FOLDER_ADD(sel_engine* e, const sel_message* m) {
-    uint32_t id = 0;
-    int rc;
+static void wq_folder_add_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = sel_library_folder_add(lib, op->s[0], op->u1, &op->id);
+}
+
+static void wq_folder_add_done(sel_engine* e, sel_wq_op* op) {
     char text[16];
-    if (!folder_ready(e, "FOLDER_ADD")) return;
-    rc = sel_library_folder_add(e->lib, m->args[0].v.s, m->argc > 1 ? (uint32_t)m->args[1].v.u : 0u, &id);
-    if (rc != SEL_FOLDER_OK) {
-        folder_report(e, rc, "FOLDER_ADD");
+    if (op->rc != SEL_FOLDER_OK) {
+        folder_report(e, op->rc, "FOLDER_ADD");
         return;
     }
-    snprintf(text, sizeof text, "%u", (unsigned)id);
-    folders_reload(e);
-    sticker_answer(e, "folder", m->args[0].v.s, text, id);
+    snprintf(text, sizeof text, "%u", (unsigned)op->id);
+    folders_reload_posted(e);
+    sticker_answer(e, "folder", op->s[0], text, op->id);
+}
+
+/* I906f (all folder and playlist writes below): the library call runs on the writer thread, the report or reload in wq_folder_done. */
+static void cmd_FOLDER_ADD(sel_engine* e, const sel_message* m) {
+    sel_wq_op* op;
+    if (!folder_ready(e, "FOLDER_ADD")) return;
+    op = wq_new(e, wq_folder_add_run, wq_folder_add_done, m->args[0].v.s, NULL, NULL);
+    if (op == NULL) {
+        sel_engine_report_error(e, "library_busy", "FOLDER_ADD");
+        return;
+    }
+    op->u1 = m->argc > 1 ? (uint32_t)m->args[1].v.u : 0u;
+    wq_submit(e);
+}
+
+static void wq_folder_move_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = sel_library_folder_move(lib, op->u1, op->u2);
 }
 
 static void cmd_FOLDER_MOVE(sel_engine* e, const sel_message* m) {
-    int rc;
+    sel_wq_op* op;
     if (!folder_ready(e, "FOLDER_MOVE")) return;
-    rc = sel_library_folder_move(e->lib, (uint32_t)m->args[0].v.u, (uint32_t)m->args[1].v.u);
-    if (rc != SEL_FOLDER_OK) folder_report(e, rc, "FOLDER_MOVE");
-    else folders_reload(e);
+    op = wq_new(e, wq_folder_move_run, wq_folder_done, NULL, NULL, "FOLDER_MOVE");
+    if (op == NULL) {
+        sel_engine_report_error(e, "library_busy", "FOLDER_MOVE");
+        return;
+    }
+    op->u1 = (uint32_t)m->args[0].v.u;
+    op->u2 = (uint32_t)m->args[1].v.u;
+    wq_submit(e);
+}
+
+static void wq_folder_del_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = sel_library_folder_del(lib, op->u1);
 }
 
 static void cmd_FOLDER_DEL(sel_engine* e, const sel_message* m) {
-    int rc;
+    sel_wq_op* op;
     if (!folder_ready(e, "FOLDER_DEL")) return;
-    rc = sel_library_folder_del(e->lib, (uint32_t)m->args[0].v.u);
-    if (rc != SEL_FOLDER_OK) folder_report(e, rc, "FOLDER_DEL");
-    else folders_reload(e);
+    op = wq_new(e, wq_folder_del_run, wq_folder_done, NULL, NULL, "FOLDER_DEL");
+    if (op == NULL) {
+        sel_engine_report_error(e, "library_busy", "FOLDER_DEL");
+        return;
+    }
+    op->u1 = (uint32_t)m->args[0].v.u;
+    wq_submit(e);
+}
+
+static void wq_playlist_move_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = sel_library_playlist_move(lib, op->u1, op->u2);
 }
 
 static void cmd_PLAYLIST_MOVE(sel_engine* e, const sel_message* m) {
-    int rc;
+    sel_wq_op* op;
     if (!folder_ready(e, "PLAYLIST_MOVE")) return;
-    rc = sel_library_playlist_move(e->lib, (uint32_t)m->args[0].v.u, (uint32_t)m->args[1].v.u);
-    if (rc != SEL_FOLDER_OK) folder_report(e, rc, "PLAYLIST_MOVE");
-    else folders_reload(e);
+    op = wq_new(e, wq_playlist_move_run, wq_folder_done, NULL, NULL, "PLAYLIST_MOVE");
+    if (op == NULL) {
+        sel_engine_report_error(e, "library_busy", "PLAYLIST_MOVE");
+        return;
+    }
+    op->u1 = (uint32_t)m->args[0].v.u;
+    op->u2 = (uint32_t)m->args[1].v.u;
+    wq_submit(e);
 }
 
 /* PLAYLIST_CREATE name [folder] (I178a): saves the queue, in order, as a library DB playlist (folder 0 or absent
@@ -5681,15 +5905,29 @@ static void cmd_STREAM_ADD(sel_engine* e, const sel_message* m) {
 }
 
 /* PLAYLIST_ADD_SONG id path (I241): appends one song to a saved playlist. */
-static void cmd_PLAYLIST_ADD_SONG(sel_engine* e, const sel_message* m) {
-    int rc;
-    if (!folder_ready(e, "PLAYLIST_ADD_SONG")) return;
-    rc = sel_library_playlist_add_song(e->lib, (uint32_t)m->args[0].v.u, m->args[1].v.s);
-    if (rc != SEL_FOLDER_OK) folder_report(e, rc, "PLAYLIST_ADD_SONG");
-    else {
-        search_pin(e, m->args[1].v.s);
-        folders_reload(e);
+static void wq_playlist_add_song_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = sel_library_playlist_add_song(lib, op->u1, op->s[0]);
+}
+
+static void wq_playlist_add_song_done(sel_engine* e, sel_wq_op* op) {
+    if (op->rc != SEL_FOLDER_OK) {
+        folder_report(e, op->rc, "PLAYLIST_ADD_SONG");
+    } else {
+        search_pin(e, op->s[0]);
+        folders_reload_posted(e);
     }
+}
+
+static void cmd_PLAYLIST_ADD_SONG(sel_engine* e, const sel_message* m) {
+    sel_wq_op* op;
+    if (!folder_ready(e, "PLAYLIST_ADD_SONG")) return;
+    op = wq_new(e, wq_playlist_add_song_run, wq_playlist_add_song_done, m->args[1].v.s, NULL, NULL);
+    if (op == NULL) {
+        sel_engine_report_error(e, "library_busy", "PLAYLIST_ADD_SONG");
+        return;
+    }
+    op->u1 = (uint32_t)m->args[0].v.u;
+    wq_submit(e);
 }
 
 /* PLAYLIST_IMPORT id path (I652c): parses an .m3u/.pls file with the playlist codecs and appends each song to saved playlist
@@ -5761,12 +5999,21 @@ static void cmd_PLAYLIST_ADD_FOLDER(sel_engine* e, const sel_message* m) {
 #define PLAYLIST_KEYS_CAP 65536u
 
 /* PLAYLIST_REMOVE_SONG id index (I633): drops the entry at `index` (position order) from a saved playlist. */
+static void wq_playlist_remove_song_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = sel_library_playlist_remove_song(lib, op->u1, op->u2);
+}
+
 static void cmd_PLAYLIST_REMOVE_SONG(sel_engine* e, const sel_message* m) {
-    int rc;
+    sel_wq_op* op;
     if (!folder_ready(e, "PLAYLIST_REMOVE_SONG")) return;
-    rc = sel_library_playlist_remove_song(e->lib, (uint32_t)m->args[0].v.u, (uint32_t)m->args[1].v.u);
-    if (rc != SEL_FOLDER_OK) folder_report(e, rc, "PLAYLIST_REMOVE_SONG");
-    else folders_reload(e);
+    op = wq_new(e, wq_playlist_remove_song_run, wq_folder_done, NULL, NULL, "PLAYLIST_REMOVE_SONG");
+    if (op == NULL) {
+        sel_engine_report_error(e, "library_busy", "PLAYLIST_REMOVE_SONG");
+        return;
+    }
+    op->u1 = (uint32_t)m->args[0].v.u;
+    op->u2 = (uint32_t)m->args[1].v.u;
+    wq_submit(e);
 }
 
 /* Appends the songs of a saved playlist to the queue and starts the first of them (VIEW_ACTIVATE on a playlist row,
@@ -5789,12 +6036,20 @@ static void cmd_PLAYLIST_PLAY(sel_engine* e, const sel_message* m) {
     playlist_play(e, (uint32_t)m->args[0].v.u, "PLAYLIST_PLAY");
 }
 
+static void wq_playlist_rename_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = sel_library_playlist_rename(lib, op->u1, op->s[0]);
+}
+
 static void cmd_PLAYLIST_RENAME(sel_engine* e, const sel_message* m) {
-    int rc;
+    sel_wq_op* op;
     if (!folder_ready(e, "PLAYLIST_RENAME")) return;
-    rc = sel_library_playlist_rename(e->lib, (uint32_t)m->args[0].v.u, m->args[1].v.s);
-    if (rc != SEL_FOLDER_OK) folder_report(e, rc, "PLAYLIST_RENAME");
-    else folders_reload(e);
+    op = wq_new(e, wq_playlist_rename_run, wq_folder_done, m->args[1].v.s, NULL, "PLAYLIST_RENAME");
+    if (op == NULL) {
+        sel_engine_report_error(e, "library_busy", "PLAYLIST_RENAME");
+        return;
+    }
+    op->u1 = (uint32_t)m->args[0].v.u;
+    wq_submit(e);
 }
 
 /* I678c: the item page of Your Library row (kind, key) was opened; Recents orders by the newer of this and the last play, in every UI. */
@@ -7035,6 +7290,9 @@ static void lib_reads_flush(sel_engine* e) {
 
 /* Pump side of the posted reads (I829): applies each landed answer, then starts the read that waited behind it. */
 static void lib_reads_collect(sel_engine* e) {
+    wq_collect(e);
+    if (lib_read_take(&e->rd_wq) && e->wq_run != e->wq_tail) lib_read_post(e, &e->rd_wq, wq_drain);
+    wq_collect(e);
     if (lib_read_take(&e->rd_home)) {
         e->lib_reads_applied++;
         home_apply(e, e->rd_home_text);
@@ -8138,6 +8396,12 @@ void sel_engine_destroy(sel_engine* e) {
 #endif
             free(e->li_rows);
         }
+        lib_read_end(&e->rd_wq); /* I906f: queued writes still run, their answers are dropped */
+        wq_drain(e);
+        while (e->wq_head != e->wq_tail) {
+            e->host->mem_free(e->host, e->wq[e->wq_head % SEL_WQ_N].buf);
+            e->wq_head++;
+        }
         lib_read_end(&e->rd_home); /* I829: the posted reads use the library */
         lib_read_end(&e->rd_search);
         lib_read_end(&e->rd_folders);
@@ -8447,7 +8711,7 @@ int sel_engine_sources_pending(const sel_engine* e) {
 }
 
 int sel_engine_reads_pending(const sel_engine* e) {
-    return !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) || !lib_read_idle(&e->rd_coll) || !lib_read_idle(&e->rd_panel) || !lib_read_idle(&e->rd_art) || !lib_read_idle(&e->rd_txt) || !lib_read_idle(&e->rd_grp) || (e->txt != NULL && e->txt->want_n > 0u) || !lib_read_idle(&e->rd_total) || e->art_want_n > 0u || e->rd_panel.again ||
+    return e->wq_head != e->wq_tail || !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) || !lib_read_idle(&e->rd_coll) || !lib_read_idle(&e->rd_panel) || !lib_read_idle(&e->rd_art) || !lib_read_idle(&e->rd_txt) || !lib_read_idle(&e->rd_grp) || (e->txt != NULL && e->txt->want_n > 0u) || !lib_read_idle(&e->rd_total) || e->art_want_n > 0u || e->rd_panel.again ||
            e->rd_coll.again || e->rd_stats.again || e->rd_post_stats || e->rd_formats.again || e->rd_composers.again || e->sources_retry ||
            e->rd_search.again || e->rd_view[0] != '\0';
 }
@@ -8698,6 +8962,7 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->archive_unpacks = e->archive_unpacks;
     out->source_searches = e->source_searches;
     out->lib_reads_applied = e->lib_reads_applied;
+    out->lib_writes_done = e->wq_writes;
     out->source_pins = e->source_pins;
     out->pin_rows = e->lib != NULL ? sel_library_pin_rows(e->lib) : 0;
     out->search_worker_runs = e->search_worker_runs;
