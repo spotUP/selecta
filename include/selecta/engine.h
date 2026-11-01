@@ -592,7 +592,12 @@ int sel_engine_library_items_busy(sel_engine* e);
 int sel_engine_library_items_take(sel_engine* e, uint32_t* kind_mask, sel_engine_library_item* out, uint32_t max, uint32_t* n,
                                   uint32_t* total);
 /* I633: the song keys of saved playlist `id` in position order into out as "key\0key\0...\0\0"; returns how many. */
-uint32_t sel_engine_library_playlist_keys(sel_engine* e, uint32_t id, char* out, uint32_t cap);
+/* I961c: the song keys of playlist `id` as a posted read. _post starts it (0: slot busy, no library or no memory), _busy says a read is in
+ * flight or waiting to be taken, _take collects it once ready (returns 0 while running): *id the playlist it was read for, `out` the keys
+ * (NUL separated, then NUL), *n their count, *ok 0 on a library error. The UI thread never waits on the library for it. */
+int sel_engine_playlist_keys_post(sel_engine* e, uint32_t id, size_t cap);
+int sel_engine_playlist_keys_busy(sel_engine* e);
+int sel_engine_playlist_keys_take(sel_engine* e, uint32_t* id, char* out, size_t cap, uint32_t* n, int* ok);
 /* DUI-P4-18: the catalogue title of the song at `ref` (path or key) into out; 1 when it has one, else 0 (callers fall back to the file name). */
 /* I906e: cached song text for the desktop UI, never a library call on the caller. 1: text in out; 0: the song has none; -1: pending (the
  * read is queued; sel_engine_song_text_generation moves when it lands). Kinds: title, metadata (NUL separated). */

@@ -4483,7 +4483,7 @@ static const char* pl_button_label(uint32_t k) {
 
 /* ---- The playlist page (I633): the Playlists page shows one saved playlist as a Spotify-style page: cover, name, song count,
  * a Play button and the songs as shared song rows (song_row_reg, so the song menu, keyboard focus and drag work). The keys
- * come from the library (sel_engine_library_playlist_keys); nothing here reads SQL. ---- */
+ * come from the library (sel_engine_playlist_keys_post/_take); nothing here reads SQL. ---- */
 static void col_rebuild(desk* d);
 static void col_cover_refresh(desk* d);
 
@@ -4613,16 +4613,21 @@ static void pls_briefs_follow(desk* d) {
 static void pls_reload_run(desk* d) {
     enum { CAP = 262144 };
     char* buf = (char*)malloc(CAP);
-    uint32_t n = 0, i, def0 = sel_engine_lib_deferred();
+    uint32_t n = 0, i;
     const char* k;
     d->pls_stale = 0u;
     if (buf != NULL && d->col_kind == 0u) { /* keys first: a busy library leaves the page as it is */
-        n = sel_engine_library_playlist_keys(d->engine, d->pls_id, buf, CAP);
-        if (sel_engine_lib_deferred() != def0) {
+        uint32_t got_id = 0u;
+        int ok = 0;
+        if (!sel_engine_playlist_keys_take(d->engine, &got_id, buf, CAP, &n, &ok) || got_id != d->pls_id) {
+            if (!sel_engine_playlist_keys_busy(d->engine)) { /* I961c: the keys are a posted read; the answer of another page is dropped */
+                (void)sel_engine_playlist_keys_post(d->engine, d->pls_id, CAP);
+            }
             free(buf);
             d->pls_stale = 1u;
             return;
         }
+        if (!ok) n = 0u;
     }
     d->pls_ver++;
     pls_free(d);

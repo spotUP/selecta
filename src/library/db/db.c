@@ -179,6 +179,7 @@ sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint
     }
     sqlite3_snprintf((int)sizeof sql, sql, "INSERT OR REPLACE INTO meta(key, value) VALUES('account', '%u')", account);
     sel_user_rating_pending_refresh(lib);
+    sel_library_source_mirror_open(lib);
     if (sqlite3_exec(lib->db, sql, NULL, NULL, NULL) != SQLITE_OK || !sel_worker_start(lib)) {
         goto fail;
     }
@@ -278,7 +279,7 @@ static void handle_stats(sel_library* lib, sel_message* reply) {
     arg_int(reply, SEL_LIB_STAT_RC, rc);
 }
 
-void sel_library_handle(sel_library* lib, const sel_message* req, sel_message* reply) {
+static void handle_request(sel_library* lib, const sel_message* req, sel_message* reply) {
     lib->served++;
     if (req->id == SEL_LIB_REQ_STATS) {
         handle_stats(lib, reply);
@@ -312,6 +313,11 @@ void sel_library_handle(sel_library* lib, const sel_message* req, sel_message* r
     } else if (req->id == SEL_LIB_REQ_ART && req->argc == 1) {
         sel_library_art_op(lib, (const sel_art_op*)req->args[0].v.s, reply);
     }
+}
+
+void sel_library_handle(sel_library* lib, const sel_message* req, sel_message* reply) {
+    handle_request(lib, req, reply);
+    sel_library_source_mirror_refresh(lib); /* I961c: before the reply goes out, so the caller reads its own write */
 }
 
 static int user_call(sel_library* lib, const sel_user_op* op) {

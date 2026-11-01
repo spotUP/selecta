@@ -184,6 +184,33 @@ int main(void) {
         CHECK(rows == 1u);
         CHECK(calls_after == calls_before + 1u);
     }
+    /* I961c: SOURCES reads the writer-kept mirror. With the library FREE (the case I961 step 1 turned red) the command sends no worker
+     * request: the served counter and the watched waits do not move, yet the counts and the sync time are right, a write included. */
+    {
+        sel_message reply;
+        sel_meta_op op;
+        uint32_t served0, w0;
+        int64_t before;
+
+        usleep(100000); /* let the posted reads of the checks above finish */
+        op.key = "sync.local";
+        op.value = "1234567";
+        op.cap = 24;
+        op.set = 1;
+        memset(&reply, 0, sizeof reply);
+        CHECK(sel_library_request(lib, SEL_LIB_REQ_META, &op, &reply) != 0); /* the write goes through the worker */
+        served0 = lib->served;
+        w0 = sel_library_watched_waits();
+        before = sel_library_source_synced(lib, "local");
+        CHECK(before == 1234567); /* read-after-write, no request */
+        CHECK(sel_library_source_songs(lib, "local") == 2); /* the two songs seeded above, counted by the source_songs triggers */
+        CHECK(sel_engine_send_line(e, "SOURCES", pool, sizeof pool) == 0);
+        sel_engine_pump(e, sink, NULL);
+        printf("i961c SOURCES: worker requests %u, watched waits %u\n", (unsigned)(lib->served - served0),
+               (unsigned)(sel_library_watched_waits() - w0));
+        CHECK(lib->served == served0);
+        CHECK(sel_library_watched_waits() == w0);
+    }
     sel_library_watch(was);
 
     sel_engine_destroy(e);
