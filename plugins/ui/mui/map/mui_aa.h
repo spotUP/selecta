@@ -37,7 +37,8 @@ enum { MUI_AA_RAMP_AGA, MUI_AA_RAMP_RTG, MUI_AA_RAMP_TC };
 
 typedef struct mui_aa_metrics_t {
     int font_px, pad_x, pad_y, icon_px, icon_gap, height, radius, check_px; /* check_px: AACheck box edge (16, tier S 12) */
-    int aspect_q8; /* I949a: pixel height over width x 256; 256 square, 512 tall; consumers land in I949e */
+    int aspect_q8; /* I949a: pixel height over width x 256; 256 square, 512 tall */
+    int icon_h, check_h; /* I949e: icon and AACheck box height in ROWS: icon_px / check_px as a physical square, so half on a tall-pixel screen */
 } mui_aa_metrics_t;
 
 /* Face colour of a control in a state: normal = face, hover = SURFACE_HOVER, pressed and selected = SURFACE_PRESSED,
@@ -68,6 +69,14 @@ int mui_aa_font_px(int screen_rows, int screen_cols);
 int mui_aa_tier(int screen_rows);
 /* Control heights and paddings of one tier table for a font size from mui_aa_font_px. */
 void mui_aa_metrics(int font_px, mui_aa_metrics_t* out);
+/* I949e (design 2026-11-01-I949 section 4, answer 4): the same on a screen of pixel aspect aspect_q8. Square pixels give mui_aa_metrics.
+ * Tall pixels at the bitmap tier select the tight tier: pad_x 4, icon_gap 4, vertical sizes counted in rows (a row is aspect_q8/256 wide). */
+void mui_aa_metrics_aspect(int font_px, int aspect_q8, mui_aa_metrics_t* out);
+/* A length of px square pixels as rows on a screen of aspect_q8 (rounded, at least 1). The one place vertical sizes are scaled. */
+int mui_aa_rows(int px, int aspect_q8);
+/* The aspect of the open screen, set once by mui_screen_open and read by every class (none reads DisplayInfo). */
+void mui_aa_set_screen_aspect(int aspect_q8);
+int mui_aa_screen_aspect(void);
 /* I949a: pixel aspect (height over width, x 256) from DisplayInfo.Resolution (ticks per pixel): hires PAL non-laced 22x44 gives 512,
  * laced and RTG about 1:1 give 256; clamped to 256..512. mui_pixel_aspect_calls counts the calls (sentinel for mui_screen_open). */
 int mui_pixel_aspect_q8(int res_x, int res_y);

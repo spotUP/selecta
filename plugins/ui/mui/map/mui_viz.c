@@ -1,5 +1,6 @@
 /* Viz hosting and frame budget of the MUI UI (MUI-P5-3, MUI-P5-5); see mui_viz.h. */
 #include "mui_viz.h"
+#include "mui_aa.h"
 
 #include "mui_map.h"
 
@@ -42,6 +43,7 @@ int mui_viz_fit(mui_viz* v, uint32_t w, uint32_t h) {
     v->surf.fmt = SEL_PIX_INDEX8;
     v->surf.pixels = v->pixels;
     v->surf.palette = v->palette;
+    v->surf.pix_aspect_q8 = (uint32_t)mui_aa_screen_aspect(); /* I950: the viz plugin corrects its glyphs for tall pixels */
     return 1;
 }
 

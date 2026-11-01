@@ -59,7 +59,7 @@ static ULONG aabtn_setup(struct IClass* cl, Object* obj, Msg msg) {
         return FALSE;
     }
     aa_setup(obj, &d->aa, NULL, 0);
-    mui_aa_metrics(d->aa.font_px, &d->m);
+    mui_aa_metrics_aspect(d->aa.font_px, mui_aa_screen_aspect(), &d->m);
     for (st = MUI_AA_NORMAL; st <= MUI_AA_SELECTED; st++) {
         mui_aa_button_rgb(d->aa.tok, d->role, st, &face, &text);
         aa_pen(&d->aa, face);
@@ -95,11 +95,14 @@ static void aabtn_measure(Object* obj, aabtn_data* d) {
     }
     d->minw = 2 * d->m.pad_x + (aabtn_cur_icon(d) >= 0 ? d->m.icon_px : 0) + (tw > 0 ? (aabtn_cur_icon(d) >= 0 ? d->m.icon_gap : 0) + tw : 0);
     d->minh = d->m.height;
+    if (aabtn_cur_icon(d) >= 0 && d->m.icon_h + 2 * d->m.pad_y > d->minh) {
+        d->minh = d->m.icon_h + 2 * d->m.pad_y;
+    }
     if (!d->icon_only && aa_text_height(&d->aa, obj) + 2 * d->m.pad_y > d->minh) {
         d->minh = aa_text_height(&d->aa, obj) + 2 * d->m.pad_y;
     }
     if (d->role == MUI_AA_ROLE_TOGGLE) { /* AACheck: a fixed square box */
-        d->minw = d->minh = d->m.check_px;
+        d->minw = d->m.check_px, d->minh = d->m.check_h;
     }
 }
 
@@ -119,7 +122,7 @@ static ULONG aabtn_askminmax(struct IClass* cl, Object* obj, struct MUIP_AskMinM
 /* The baked icon body of exactly px (2 planes, rows interleaved, pen 0 transparent; I667m); a px with no body falls back to the
  * largest body scaled by nearest neighbour. Drawn
  * as horizontal runs of one ramp pen from the face colour to the caption colour. */
-static void aabtn_icon(aabtn_data* d, struct RastPort* rp, int icon, int x, int y, int px, uint32_t face, uint32_t ink) {
+static void aabtn_icon(aabtn_data* d, struct RastPort* rp, int icon, int x, int y, int px, int ph, uint32_t face, uint32_t ink) {
     int bp = px;
     const uint8_t* body = mui_icon_body(icon, px);
     int rb, dy, dx, run0, run_pen;
@@ -130,7 +133,7 @@ static void aabtn_icon(aabtn_data* d, struct RastPort* rp, int icon, int x, int 
         bp = (int)mui_icon_sizes[mui_icon_size_count - 1];
         body = mui_icon_body(icon, bp);
     }
-    if (body == NULL || px <= 0) {
+    if (body == NULL || px <= 0 || ph <= 0) {
         return;
     }
     rb = ((bp + 15) / 16) * 2;
@@ -138,8 +141,8 @@ static void aabtn_icon(aabtn_data* d, struct RastPort* rp, int icon, int x, int 
         col[i] = mui_aa_ramp_rgb(ink, face, 4, i);
         pen[i] = aa_pen(&d->aa, col[i]);
     }
-    for (dy = 0; dy < px; dy++) {
-        const uint8_t* row = body + (size_t)(dy * bp / px) * (size_t)rb * 2u;
+    for (dy = 0; dy < ph; dy++) { /* I949e: ph rows for a px wide icon: a square icon on tall pixels is px x ph */
+        const uint8_t* row = body + (size_t)(dy * bp / ph) * (size_t)rb * 2u;
         run0 = 0;
         run_pen = 0;
         for (dx = 0; dx <= px; dx++) {
@@ -179,19 +182,20 @@ static ULONG aabtn_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     mui_aa_button_rgb(d->aa.tok, d->role, state, &face, &text);
     if (d->role == MUI_AA_ROLE_TOGGLE) {
         /* AACheck: the paint plan (mui_aa_check_plan) draws corners, outline and face; the checked box is ACCENT with the ACCENT_TEXT check icon. */
-        int bx = l + (w - d->m.check_px) / 2, by = t + (h - d->m.check_px) / 2, cp = d->m.check_px;
+        int bx = l + (w - d->m.check_px) / 2, by = t + (h - d->m.check_h) / 2, cp = d->m.check_px, ch = d->m.check_h, asp = d->m.aspect_q8;
         mui_aa_check_op_t ops[MUI_AA_CHECK_OPS];
         int n = mui_aa_check_plan(d->aa.tok, &d->m, state, ops), k;
         for (k = 0; k < n; k++) {
-            aa_round_fill(rp, bx + ops[k].inset, by + ops[k].inset, cp - 2 * ops[k].inset, cp - 2 * ops[k].inset, ops[k].radius, aa_pen(&d->aa, ops[k].rgb));
+            int iv = ops[k].inset > 0 ? mui_aa_rows(ops[k].inset, asp) : 0; /* I949e: the inset is a physical length, fewer rows on tall pixels */
+            aa_round_fill(rp, bx + ops[k].inset, by + iv, cp - 2 * ops[k].inset, ch - 2 * iv, ops[k].radius, aa_pen(&d->aa, ops[k].rgb));
         }
         if (state == MUI_AA_SELECTED) {
-            aabtn_icon(d, rp, icon, bx + 2, by + 2, cp - 4, face, text);
+            aabtn_icon(d, rp, icon, bx + 2, by + mui_aa_rows(2, asp), cp - 4, ch - 2 * mui_aa_rows(2, asp), face, text);
         }
         if (aa_live(obj)) {
             GetAttr(MUIA_Window_ActiveObject, _win(obj), &active);
             if ((Object*)active == obj) {
-                aa_round_frame(rp, bx, by, cp, cp, ops[n - 1].inset > 0 ? ops[n - 1].radius + ops[n - 1].inset : ops[n - 1].radius, aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]));
+                aa_round_frame(rp, bx, by, cp, ch, ops[n - 1].inset > 0 ? ops[n - 1].radius + ops[n - 1].inset : ops[n - 1].radius, aa_pen(&d->aa, d->aa.tok[SEL_GUI_TOKEN_FOCUS_RING]));
             }
         }
         d->backend = d->aa.backend + 1;
@@ -205,7 +209,7 @@ static ULONG aabtn_draw(struct IClass* cl, Object* obj, struct MUIP_Draw* msg) {
     cw = (icon >= 0 ? d->m.icon_px : 0) + (icon >= 0 && tw > 0 ? d->m.icon_gap : 0) + tw;
     x = l + mui_aa_btn_content_x(d->align, w, cw, d->m.pad_x);
     if (icon >= 0) {
-        aabtn_icon(d, rp, icon, x, t + (h - d->m.icon_px) / 2, d->m.icon_px, face, text);
+        aabtn_icon(d, rp, icon, x, t + (h - d->m.icon_h) / 2, d->m.icon_px, d->m.icon_h, face, text);
         x += d->m.icon_px + d->m.icon_gap;
     }
     if (tw > 0) {

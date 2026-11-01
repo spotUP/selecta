@@ -6390,6 +6390,7 @@ static void viz_draw_area(desk* d, sel_gui_rect r, uint32_t idx) {
     s.fmt = SEL_PIX_RGBA32;
     s.pixels = d->viz_px;
     s.palette = NULL;
+    s.pix_aspect_q8 = 0u; /* square pixels */
     c.background = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]);
     c.grid = ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]);
     c.primary = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
