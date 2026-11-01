@@ -40,6 +40,13 @@ static const sel_collection_page* open_page(sel_engine* e, const char* key) {
     snprintf(line, sizeof line, "COLLECTION_OPEN %u \"%s\"", (unsigned)SEL_LIB_ITEM_SOURCE, key);
     CHECK(sel_engine_send_line(e, line, pool, sizeof pool) == 0);
     (void)sel_engine_pump(e, quiet, NULL);
+    { /* I910: the page is built by a posted read; pump until it lands (bounded, 5 s) */
+        int i;
+        for (i = 0; i < 5000 && sel_engine_reads_pending(e); i++) {
+            usleep(1000);
+            (void)sel_engine_pump(e, quiet, NULL);
+        }
+    }
     return sel_engine_state(e)->collection;
 }
 
