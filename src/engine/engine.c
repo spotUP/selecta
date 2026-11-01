@@ -580,6 +580,17 @@ struct sel_engine {
     char* rdc_blk;
     uint32_t rdc_kind, rdc_next_kind, coll_serial;
     char rdc_key[128], rdc_next_key[128];
+    /* I925: the Recents touches of the opens, written by the read before it builds the page (the touch waits on the library worker,
+     * which a cold home list holds for seconds). rdc_next_touch collects the opens the pump takes while a read is in flight; coll_post
+     * hands them to rdc_touch when the slot is idle, so none is lost. rdc_touch[i].rc is the read's answer, reported by the pump. */
+    struct {
+        uint32_t kind;
+        int rc;
+        int64_t when;
+        char key[128];
+    } rdc_touch[8], rdc_next_touch[8];
+    uint32_t rdc_touch_n, rdc_next_touch_n;
+    int rdc_page, rdc_next_page;              /* the read builds a page (0: a playlist open, the read only touches) */
     uint32_t evt_dropped;                     /* events emit() could not queue because evt_q was full (I546) */
     sel_tag src_tags[SEL_SOURCE_MAX][12];      /* one SOURCES row per registered source (the registry holds SEL_SOURCE_MAX) */
     char st_key[8][SEL_DEFERRED_PATH_MAX];
@@ -5905,6 +5916,8 @@ static void coll_build_run(sel_engine* e) {
     sel_engine_collection_row head;
     coll_shelf_sink hk;
 
+    for (sh = 0; sh < e->rdc_touch_n; sh++) e->rdc_touch[sh].rc = sel_library_touch(e->lib, e->rdc_touch[sh].kind, e->rdc_touch[sh].key, e->rdc_touch[sh].when);
+    if (!e->rdc_page) return;
     memset(&b, 0, sizeof b);
     b.rows.host = e->host;
     memset(pg, 0, sizeof *pg);
@@ -5939,8 +5952,15 @@ static void coll_build_run(sel_engine* e) {
         snprintf(pg->title, sizeof pg->title, "%s", key);
     }
     if (kind == (uint32_t)SEL_LIB_ITEM_SOURCE) { /* I790: a source is a drill level, never its whole song list */
+        char id[128]; /* I928: the header names the source ("Local files"), never its id; the key carries the drill path after the id */
+        const sel_source* src;
+        char* us;
         drill_build(e, key, &b);
-        snprintf(pg->title, sizeof pg->title, "%s", pg->key);
+        snprintf(id, sizeof id, "%s", key);
+        us = strpbrk(id, "\x1f\x1e");
+        if (us != NULL) *us = '\0';
+        src = sel_source_find(id);
+        snprintf(pg->title, sizeof pg->title, "%s", src != NULL && src->name != NULL ? src->name : id);
     } else if (kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) {
         if (sel_library_composer_page(e->lib, key, coll_composer_row, &b) >= 0) __atomic_fetch_add(&e->collection_queries, 1u, __ATOMIC_RELAXED);
     } else if (sel_library_collection(e->lib, kind, key, SEL_COLL_SONGS, coll_song_row, &b) >= 0) {
@@ -5954,6 +5974,15 @@ static void coll_build_run(sel_engine* e) {
 
 /* The pump takes the finished page: it becomes state.collection with the next serial. */
 static void coll_publish(sel_engine* e) {
+    uint32_t i;
+    int failed = SEL_FOLDER_OK;
+    for (i = 0; i < e->rdc_touch_n; i++) {
+        if (e->rdc_touch[i].rc == SEL_FOLDER_OK) e->lib_touch_calls++;
+        else if (failed == SEL_FOLDER_OK) failed = e->rdc_touch[i].rc;
+    }
+    e->rdc_touch_n = 0u;
+    if (failed != SEL_FOLDER_OK) folder_report(e, failed, "COLLECTION_OPEN");
+    if (!e->rdc_page) return;
     e->coll = e->rdc_pg;
     e->coll.serial = ++e->coll_serial;
     composer_release(e->host, &e->coll_rows);
@@ -5966,6 +5995,11 @@ static void coll_post(sel_engine* e) {
     if (lib_read_idle(&e->rd_coll)) {
         e->rdc_kind = e->rdc_next_kind;
         snprintf(e->rdc_key, sizeof e->rdc_key, "%s", e->rdc_next_key);
+        memcpy(e->rdc_touch, e->rdc_next_touch, sizeof e->rdc_touch);
+        e->rdc_touch_n = e->rdc_next_touch_n;
+        e->rdc_next_touch_n = 0u;
+        e->rdc_page = e->rdc_next_page;
+        e->rdc_next_page = 0;
     }
     lib_read_post(e, &e->rd_coll, coll_build_run);
 }
@@ -5974,22 +6008,17 @@ static void coll_post(sel_engine* e) {
  * order and the page open is one command. I678f/I678g: for every kind but a playlist it also builds the page (songs, header, shelves) and
  * publishes it as state.collection; the UI only reads that. */
 static void cmd_COLLECTION_OPEN(sel_engine* e, const sel_message* m) {
-    int rc;
     uint32_t kind = (uint32_t)m->args[0].v.u;
     if (!folder_ready(e, "COLLECTION_OPEN")) return;
     int restore = m->argc > 2 && m->args[2].v.u != 0u; /* I678h2: Back / Forward rebuild the page they return to; that is not an open, Recents stays as it is */
     if (!restore && kind != (uint32_t)SEL_LIB_ITEM_LIKED && kind != (uint32_t)SEL_LIB_ITEM_RECENT && kind != (uint32_t)SEL_LIB_ITEM_LOCAL) { /* the pinned rows stay out of Recents */
-        char touch[128]; /* a source key carries its drill path after the id (I790); Recents keeps the source */
-        char* us;
-        snprintf(touch, sizeof touch, "%s", m->args[1].v.s);
-        us = kind == (uint32_t)SEL_LIB_ITEM_SOURCE ? strpbrk(touch, "\x1f\x1e") : NULL;
+        uint32_t t = e->rdc_next_touch_n < 8u ? e->rdc_next_touch_n++ : 7u; /* a full list keeps the newest open in the last row */
+        char* us; /* a source key carries its drill path after the id (I790); Recents keeps the source */
+        e->rdc_next_touch[t].kind = kind;
+        e->rdc_next_touch[t].when = (int64_t)time(NULL);
+        snprintf(e->rdc_next_touch[t].key, sizeof e->rdc_next_touch[t].key, "%s", m->args[1].v.s);
+        us = kind == (uint32_t)SEL_LIB_ITEM_SOURCE ? strpbrk(e->rdc_next_touch[t].key, "\x1f\x1e") : NULL;
         if (us != NULL) *us = '\0';
-        rc = sel_library_touch(e->lib, kind, touch, (int64_t)time(NULL));
-        if (rc != SEL_FOLDER_OK) {
-            folder_report(e, rc, "COLLECTION_OPEN");
-            return;
-        }
-        e->lib_touch_calls++;
     }
     if (!restore) e->collection_opens++;
     e->collection_kind = kind;
@@ -5997,8 +6026,9 @@ static void cmd_COLLECTION_OPEN(sel_engine* e, const sel_message* m) {
     if (kind < (uint32_t)SEL_LIB_ITEM_KINDS && kind != (uint32_t)SEL_LIB_ITEM_PLAYLIST) {
         e->rdc_next_kind = kind; /* I910: the page is built by a posted read, never on this thread */
         snprintf(e->rdc_next_key, sizeof e->rdc_next_key, "%s", e->collection_key);
-        coll_post(e);
+        e->rdc_next_page = 1;
     }
+    if (e->rdc_next_page || e->rdc_next_touch_n > 0u) coll_post(e);
 }
 
 static void cmd_PLAYLIST_DEL(sel_engine* e, const sel_message* m) {

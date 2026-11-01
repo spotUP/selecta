@@ -253,6 +253,8 @@ typedef struct desk {
     uint32_t link_hover;     /* I690b: 1 artist or 2 album link of a track row is underlined under the pointer, 0 none (dump line pllink) */
     int32_t pls_playing; /* I690: the position of the playing song in the drawn collection page, -1 when none */
     uint32_t pls_want, pls_n, pls_stale, pls_scroll, pls_draws, pls_rows; /* songs, reload wanted, first row shown, frames drawn, rows in the last one */
+    int col_ready;           /* I910b: the open collection page holds the engine's page for its kind and key; until then the header shows no count */
+    char hdr_count[64];      /* I910b: the count line the header drew last (the per-frame trace) */
     uint32_t pls_family;     /* I691d: the majority family of the songs on the open page (an album, a person, a playlist), the header cover and the avatar */
     int pl_edit;             /* 1 while the name field has the keyboard */
     char pl_name[64];
@@ -682,8 +684,9 @@ static uint32_t desk_flush(desk* d) {
                     fprintf(stderr, " prof%u=%u", (unsigned)k, (unsigned)pk);
                 }
             }
-            fprintf(stderr, " page=%u colkind=%u colkey=[%.40s] pls_name=[%.40s] pls_n=%u pls_stale=%u", (unsigned)d->page, (unsigned)d->col_kind, d->col_key,
-                    d->pls_name, (unsigned)d->pls_n, (unsigned)d->pls_stale); /* I910b: what page this frame presented */
+            fprintf(stderr, " page=%u colkind=%u colkey=[%.40s] pls_name=[%.40s] pls_n=%u pls_stale=%u col_ready=%d hdr_count=[%s]", (unsigned)d->page,
+                    (unsigned)d->col_kind, d->col_key, d->pls_name, (unsigned)d->pls_n, (unsigned)d->pls_stale, d->col_ready,
+                    d->hdr_count); /* I910b: what page this frame presented */
             fputc('\n', stderr);
         }
         uint32_t paint = t_flush - d->frame_t0, present = t_end - t_flush;
@@ -4586,6 +4589,7 @@ static void pls_reload_run(desk* d) {
             }
             buf[len] = '\0';
             snprintf(d->pls_name, sizeof d->pls_name, "%s", pg->title);
+            d->col_ready = 1;
             snprintf(d->col_sub, sizeof d->col_sub, "%s", pg->sub);
             d->col_year = pg->year;
             for (sh = 0; sh < 4u; sh++) {
@@ -4927,6 +4931,7 @@ static void desk_quoted_request(char* line, size_t cap, const char* head, const 
 static void col_kind_open(desk* d, uint32_t kind, const char* key, const char* name, const char* sub, int restore) {
     pls_open(d, COL_KIND_ID, name);
     d->col_kind = col_ui_kind(kind);
+    d->col_ready = 0;
     d->col_popular = 5u;
     memset(d->col_shelf_n, 0, sizeof d->col_shelf_n);
     snprintf(d->col_key, sizeof d->col_key, "%s", key != NULL ? key : "");
@@ -5009,6 +5014,7 @@ static void drl_open(desk* d, const char* path, uint32_t skip) {
         snprintf(key + n, sizeof key - n, "\x1e%u", (unsigned)skip);
     }
     d->col_open_serial = pg != NULL ? pg->serial : 0u;
+    d->col_ready = 0;
     d->pls_scroll = 0u;
     d->drl_skip = skip;
     desk_quoted_request(open, sizeof open, "COLLECTION_OPEN 7", key);
@@ -5527,6 +5533,9 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
             snprintf(count, sizeof count, "%s, %u %s", d->col_sub, (unsigned)d->pls_n, d->pls_n == 1u ? "song" : "songs");
         }
     }
+    int crumbs = d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE && d->drl_page != 0u; /* I790: a drill page shows its path, no count */
+    if (d->col_kind != 0u && !d->col_ready) count[0] = '\0'; /* I910b: the page is still loading: no count, never "0 songs" */
+    snprintf(d->hdr_count, sizeof d->hdr_count, "%s", crumbs ? "" : count); /* the count line as drawn (the per-frame trace) */
     memset(&d->col_artist, 0, sizeof d->col_artist);
     if (d->col_kind == (uint32_t)SEL_LIB_ITEM_ALBUM && d->col_sub[0] != '\0') { /* I678h: the artist name is a link to the artist page */
         const sel_gui_atlas* at = desk_font(d, 0, 13);
@@ -5534,8 +5543,8 @@ static void draw_playlist_page(desk* d, sel_gui_rect mn) {
         int32_t aw = at != NULL ? sel_gui_text_width(at, d->col_sub, an) : 0, ty = cv.y + lpx(d, 24) + lpx(d, page_title_h(d));
         d->col_artist = rect_of(tx, ty, aw, lpx(d, 20));
         draw_text(d, d->col_artist, d->col_sub, 0, 13, text);
-        draw_text(d, rect_of(tx + aw, ty, pb.w * 4, lpx(d, 20)), count + an, 0, 13, muted);
-    } else if (d->col_kind == (uint32_t)SEL_LIB_ITEM_SOURCE && d->drl_page != 0u) { /* I790: the drill path as crumbs, each one a way back up */
+        draw_text(d, rect_of(tx + aw, ty, pb.w * 4, lpx(d, 20)), d->col_ready ? count + an : "", 0, 13, muted);
+    } else if (crumbs) { /* I790: the drill path as crumbs, each one a way back up */
         char cl[4][96];
         char cp[4][160];
         uint32_t ci, cn = drl_crumbs(d, cl, cp);

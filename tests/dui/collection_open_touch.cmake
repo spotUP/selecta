@@ -1,0 +1,107 @@
+# dui-collection-open-touch (I910b): opening a collection page never blocks the UI thread, never shows "0 songs" before the read lands, and the
+# source page title is the source name. -DSELECTA -DWORK -DSDL_BUILT
+# Bug (Johan, Mac, real library.db): Browse > Local files beachballed 9-11 s (cmd_COLLECTION_OPEN touched Recents synchronously on the pump
+# thread), the header read "0 songs" over an empty list until the read published, and the source page header read the raw key "local".
+# Path driven through the live SDL loop: sidebar Local Files row (slow LOCAL reads, SELECTA_LIB_COLLECTION_SLOW_MS=300), then the topbar Browse
+# icon, then the Local files tile while the worker is still busy. Asserts:
+# 1. lib_ui_watched_waits=0 and pump_ms_max < 50: the pump never waited on the library (the touch runs in the posted read);
+# 2. no frame line shows a "0 songs" header count (col_ready=0 draws no count until the matching page is copied in);
+# 3. the final page name is the source name "Local files", not the key "local";
+# 4. the drill rows land and lib_touch_calls > 0 (sentinel: the touch ran, on the worker, when the read landed).
+get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+include("${HERE}/dui_run.cmake")
+file(REMOVE_RECURSE "${WORK}")
+file(MAKE_DIRECTORY "${WORK}")
+if(NOT SDL_BUILT)
+  return()
+endif()
+set(ENV{SDL_VIDEODRIVER} dummy)
+find_program(SQLITE3 sqlite3)
+if(NOT SQLITE3)
+  message(FATAL_ERROR "dui-collection-open-touch needs the sqlite3 command line tool to load the fixture library")
+endif()
+set(db "${WORK}/lib.db")
+dui_run(init --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats --db "${db}")
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db}" INPUT_FILE "${HERE}/fixture_library.sql"
+  RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "loading the fixture failed: ${err}")
+endif()
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db}" "UPDATE songs SET key = 'local:' || path WHERE key LIKE 'fixture:%';"
+  RESULT_VARIABLE rc ERROR_VARIABLE err)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "keying the fixture songs failed: ${err}")
+endif()
+execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db}" "SELECT COUNT(*) FROM songs WHERE source = 'local';"
+  RESULT_VARIABLE rc OUTPUT_VARIABLE want ERROR_VARIABLE err)
+string(STRIP "${want}" want)
+file(WRITE "${WORK}/idle.txt" "wait 100\n")
+dui_run(c0 --ui desktop --backend mem --view home --clock fixed --stats --db "${db}" --canvas 1280x800 --input "${WORK}/idle.txt")
+if(NOT "${c0}" MATCHES "sidelib_row [0-9]+ ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+) pinned=[01] open=[01] kind=2 ")
+  message(FATAL_ERROR "no Local Files sidebar row in:\n${c0}")
+endif()
+math(EXPR cx "${CMAKE_MATCH_1} + ${CMAKE_MATCH_3} / 2")
+math(EXPR cy "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+
+# Browse tile rect for the Local files tile (first tile): needs the Browse page drawn.
+file(WRITE "${WORK}/browse.txt" "wait 100\ntopbar 2\nwait 600\n")
+dui_run(c1 --ui desktop --backend mem --view home --clock fixed --stats --db "${db}" --canvas 1280x800 --input "${WORK}/browse.txt")
+if(NOT "${c1}" MATCHES "browse tile ([0-9]+) 2 Local files\nbrowserect [0-9]+ ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+)\n")
+  message(FATAL_ERROR "no Local files browse tile rect in:\n${c1}")
+endif()
+math(EXPR tx "${CMAKE_MATCH_2} + ${CMAKE_MATCH_4} / 2")
+math(EXPR ty "${CMAKE_MATCH_3} + ${CMAKE_MATCH_5} / 2")
+set(bx 884)
+set(by 28)
+set(ENV{SELECTA_SDL_TEST_LIVE} 1)
+set(ENV{SELECTA_SOCKET} "/tmp/selecta-dui-coll-open-touch.sock")
+set(ENV{SELECTA_LIB_COLLECTION_SLOW_MS} 300)
+set(ENV{SELECTA_LIB_UI_GUARD} "log")
+file(REMOVE_RECURSE "${WORK}/cfg")
+file(MAKE_DIRECTORY "${WORK}/cfg")
+file(WRITE "${WORK}/cfg/prefs.conf" "library.sync_stale_days=0\n")
+set(ENV{SELECTA_SDL_TEST_TIMED} "m${cx},${cy}@1500 d1,${cx},${cy}@1550 u1,${cx},${cy}@1600 m${bx},${by}@2200 d1,${bx},${by}@2250 u1,${bx},${by}@2300 m${tx},${ty}@3200 d1,${tx},${ty}@3250 u1,${tx},${ty}@3300 q@10000")
+# no --output null: the live SDL loop is the one that must not wait on posted reads.
+execute_process(COMMAND "${SELECTA}" --config-dir "${WORK}/cfg" --db "${db}" --ui desktop --backend sdl --view home --canvas 1280x800 --clock fixed --stats
+  OUTPUT_VARIABLE o ERROR_VARIABLE e RESULT_VARIABLE rc)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "selecta exited ${rc}\nstdout:\n${o}\nstderr:\n${e}")
+endif()
+if(NOT "${o}" MATCHES "ui_stats_pump id=desktop pump_ms_max=([0-9]+) lib_ui_guard_hits=([0-9]+) lib_ui_allowed_waits=([0-9]+) lib_ui_watched_waits=([0-9]+)")
+  message(FATAL_ERROR "no ui_stats_pump line in:\n${o}")
+endif()
+set(pump ${CMAKE_MATCH_1})
+set(watched ${CMAKE_MATCH_4})
+if(NOT watched EQUAL 0)
+  message(FATAL_ERROR "the pump waited ${watched} time(s) on library reads while the collection opened:\n${o}")
+endif()
+if(pump GREATER 49)
+  message(FATAL_ERROR "pump_ms_max is ${pump}, want < 50:\n${o}")
+endif()
+if(NOT "${e}" MATCHES "col_ready=[01] hdr_count=\\[[^]]*\\]")
+  message(FATAL_ERROR "no frame line with hdr_count in stderr (the trace is gone):\n${e}")
+endif()
+# Every frame line before the matching page landed (col_ready=0) must draw no count; "0 songs" with col_ready=1 would be a real, landed page.
+if("${e}" MATCHES "col_ready=0 hdr_count=\\[[^]]+\\]")
+  message(FATAL_ERROR "a frame drew a header count while the page was still loading (col_ready=0): ${CMAKE_MATCH_0}")
+endif()
+string(REGEX MATCHALL "pls_name=\\[[^]]*\\]" names "${e}")
+list(GET names -1 lastname)
+if(NOT lastname STREQUAL "pls_name=[Local files]")
+  message(FATAL_ERROR "final page name is ${lastname}, want pls_name=[Local files]")
+endif()
+# The Local files source page lands its drill rows (its song count is 0 by design: shown=0 of=0, the rows are the drill level).
+if(NOT "${o}" MATCHES "collection kind=source [^\n]*shown=0 of=0" OR NOT "${o}" MATCHES "\ndrill page=1 rows=([0-9]+)" OR CMAKE_MATCH_1 EQUAL 0)
+  message(FATAL_ERROR "the Local files source page did not land its drill rows:\n${o}")
+endif()
+# Johan's "0 songs": no frame at all may draw it on this path (a drill page shows crumbs, not a count).
+if("${e}" MATCHES "hdr_count=\\[0 songs\\]")
+  message(FATAL_ERROR "a frame drew the header count \"0 songs\"")
+endif()
+if(NOT "${e}" MATCHES "col_ready=1 ")
+  message(FATAL_ERROR "no frame ever drew col_ready=1: the matching page never copied in")
+endif()
+if(NOT "${o}" MATCHES "lib_touch_calls=([0-9]+)" OR CMAKE_MATCH_1 EQUAL 0)
+  message(FATAL_ERROR "lib_touch_calls sentinel is 0: the Recents touch never ran:\n${o}")
+endif()
+message(STATUS "dui-collection-open-touch ok (pump_ms_max=${pump} songs=${want})")
