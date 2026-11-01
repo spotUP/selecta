@@ -37,6 +37,7 @@ enum { MUI_AA_RAMP_AGA, MUI_AA_RAMP_RTG, MUI_AA_RAMP_TC };
 
 typedef struct mui_aa_metrics_t {
     int font_px, pad_x, pad_y, icon_px, icon_gap, height, radius, check_px; /* check_px: AACheck box edge (16, tier S 12) */
+    int aspect_q8; /* I949a: pixel height over width x 256; 256 square, 512 tall; consumers land in I949e */
 } mui_aa_metrics_t;
 
 /* Face colour of a control in a state: normal = face, hover = SURFACE_HOVER, pressed and selected = SURFACE_PRESSED,
@@ -67,6 +68,10 @@ int mui_aa_font_px(int screen_rows, int screen_cols);
 int mui_aa_tier(int screen_rows);
 /* Control heights and paddings of one tier table for a font size from mui_aa_font_px. */
 void mui_aa_metrics(int font_px, mui_aa_metrics_t* out);
+/* I949a: pixel aspect (height over width, x 256) from DisplayInfo.Resolution (ticks per pixel): hires PAL non-laced 22x44 gives 512,
+ * laced and RTG about 1:1 give 256; clamped to 256..512. mui_pixel_aspect_calls counts the calls (sentinel for mui_screen_open). */
+int mui_pixel_aspect_q8(int res_x, int res_y);
+uint32_t mui_pixel_aspect_calls(void);
 
 /* I667d (design 3.7, AAText): text tones, alignment and the ellipsis cut. Pure maths, tested on the host. */
 enum { MUI_AA_TONE_NORMAL, MUI_AA_TONE_MUTED, MUI_AA_TONE_TITLE };
