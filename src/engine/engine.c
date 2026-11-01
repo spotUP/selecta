@@ -1769,6 +1769,7 @@ static void catalogue_length_read(sel_engine* e, sel_slot* sl) {
     const char* p = v;
     uint32_t sub = sl->subsong, d0, ms = 0;
     int was, got;
+    const char* site;
     if (sl->cat_sub == sub + 1u) return;
     sl->cat_retry = 0;
     if (e->lib == NULL || sl->path == NULL || !sel_song_key_of(sl->path, key, sizeof key)) {
@@ -1778,7 +1779,9 @@ static void catalogue_length_read(sel_engine* e, sel_slot* sl) {
     }
     d0 = sel_library_deferred();
     was = sel_library_nowait(1);
+    site = sel_library_site("catalogue_length_read");
     got = sel_library_sticker_get(e->lib, key, "lengths_ms", v, sizeof v);
+    sel_library_site(site);
     sel_library_nowait(was);
     if (sel_library_deferred() != d0) { /* busy library: no answer yet, the pump asks again */
         sl->cat_retry = sub + 1u;
@@ -5052,11 +5055,14 @@ static void sources_row(void* ctx, const char* id, const char* name, const char*
 static void cmd_SOURCES(sel_engine* e, const sel_message* m) {
     sources_fill f;
     uint32_t d0 = sel_library_deferred();
+    const char* site;
     int was = sel_library_nowait(1); /* I829: the per-source song counts and sync times never wait on a busy library */
     (void)m;
     f.e = e;
     f.n = 0;
+    site = sel_library_site("cmd_SOURCES");
     (void)sel_source_each(sources_row, &f);
+    sel_library_site(site);
     sel_library_nowait(was);
     e->sources_retry = sel_library_deferred() != d0; /* rows went out without counts: lib_reads_collect sends them again */
 }
@@ -8021,6 +8027,10 @@ int sel_engine_song_briefs_take(sel_engine* e, char* out, size_t cap, uint32_t* 
 
 int sel_engine_lib_nowait(int on) {
     return sel_library_nowait(on);
+}
+
+const char* sel_engine_lib_site(const char* tag) {
+    return sel_library_site(tag);
 }
 
 uint32_t sel_engine_lib_deferred(void) {

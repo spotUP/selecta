@@ -952,6 +952,13 @@ int main(int argc, char** argv)
             printf("ui_stats_pump id=%s pump_ms_max=%u lib_ui_guard_hits=%u lib_ui_allowed_waits=%u lib_ui_watched_waits=%u lib_ui_wait_ms=%u\n", g_uis[u].id,
                    (unsigned)g_pump_ms_max, (unsigned)sel_library_ui_guard_hits(), (unsigned)sel_library_allowed_waits(),
                    (unsigned)sel_library_watched_waits(), (unsigned)sel_library_watched_wait_ms());
+            { /* I961: per call site (tag, request id) of those watched waits */
+                const char* site;
+                uint32_t si, sreq, scalls, sms;
+                for (si = 0; sel_library_site_stat(si, &site, &sreq, &scalls, &sms); si++) {
+                    printf("ui_lib_site id=%s site=%s req=%u calls=%u ms=%u\n", g_uis[u].id, site, (unsigned)sreq, (unsigned)scalls, (unsigned)sms);
+                }
+            }
             {
                 static const char* const pcls[] = {"fill", "scrim", "round", "gradient", "line", "text", "mask", "image", "shadow", "icon", "genart", "dirty", "clip", "palette", "quant", "art"};
                 static const char* const ppt[] = {"canvas", "song", "sidebar", "main", "transport", "progress", "volume", "status", "focus", "tip", "overlay", "visual"};

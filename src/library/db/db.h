@@ -440,6 +440,11 @@ uint32_t sel_library_watched_waits(void);
 /* I946: host clock ms the watched threads spent blocked in library requests (call lock queue plus reply). Unlike a turn's wall time it does not
  * grow when the machine is loaded and the UI thread is merely descheduled, so a test gates on it to prove no slowed read ran on the UI thread. */
 uint32_t sel_library_watched_wait_ms(void);
+/* I961: tag the calling thread's next requests with a call-site name (returns the previous tag; NULL clears it). Every counted watched wait
+ * adds one call and its ms to the (tag, request id) row; untagged calls land under "untagged". sel_library_site_stat reads row `index`
+ * (0 at the end). The tag must be a string literal (stored by pointer). */
+const char* sel_library_site(const char* tag);
+int sel_library_site_stat(uint32_t index, const char** site, uint32_t* req, uint32_t* calls, uint32_t* ms);
 /* I906a: allow list of the debug UI-wait guard (SELECTA_LIB_UI_GUARD=log|abort, debug builds only). A watched thread that must wait on the
  * library wraps the call in sel_library_ui_allow(1) ... sel_library_ui_allow(prev) and says why; returns the previous setting.
  * sel_library_allowed_waits counts waits inside such windows, sel_library_ui_guard_hits waits outside nowait and outside the allow list.

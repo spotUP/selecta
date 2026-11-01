@@ -4534,7 +4534,9 @@ static void pls_reload_run(desk* d);
  * for long), a busy library keeps the old model on screen and pls_stale asks again next frame. */
 static void pls_reload(desk* d) {
     int was = sel_engine_lib_nowait(1);
+    const char* site = sel_engine_lib_site("pls_reload");
     pls_reload_run(d);
+    sel_engine_lib_site(site);
     sel_engine_lib_nowait(was);
 }
 
