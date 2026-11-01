@@ -89,6 +89,12 @@ if(SEL_AMIGA)
   add_subdirectory(replayers/kplayer)
 endif()
 
+# Native playsid.library player (I434b): PSID/RSID through LIBS:playsid.library (not bundled), HW kind, Amiga only.
+# Host builds keep libsidplayfp above.
+if(SEL_AMIGA)
+  add_subdirectory(replayers/playsid)
+endif()
+
 # libopenmpt is C++17 and desktop only (plan M1.1, no 68k build of it).
 if(NOT SEL_AMIGA)
   add_subdirectory(replayers/openmpt)

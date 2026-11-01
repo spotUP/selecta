@@ -1941,6 +1941,10 @@ static const char* rp_config_get(const sel_host* h, const char* key, const char*
         have = 1;
     }
     if (have) return e->rp_value;
+    {   /* a set engine pref the replayer names by its key (playsid.mode, output.id) beats the real host (I434b) */
+        int id = sel_prefs_find(key);
+        if (id >= 0 && e->prefs.value[id][0] != '\0') return e->prefs.value[id];
+    }
     return e->host->config_get != NULL ? e->host->config_get(e->host, key, def) : def;
 }
 

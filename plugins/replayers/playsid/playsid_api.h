@@ -1,0 +1,56 @@
+/* playsid.library access layer (I434b). The adapter never calls the library directly: it goes through this table so
+ * the host test can substitute a stub (the library exists only on the Amiga, as LIBS:playsid.library, and is not
+ * bundled: its licence is unresolved, see thoughts/shared/research/2026-11-01-playsid-inventory.md section 4).
+ * Register contracts are those of HippoPlayer-68k puu016.s and playsid.library/playsid.asm. */
+#ifndef SELECTA_PLAYSID_API_H
+#define SELECTA_PLAYSID_API_H
+
+#include <stdint.h>
+#include <stddef.h>
+
+/* Operating modes (playsid.library/playsidbase.i OM_*). */
+enum {
+    PS_OM_NORMAL = 0,
+    PS_OM_RESID_6581 = 1,
+    PS_OM_RESID_8580 = 2,
+    PS_OM_RESID_AUTO = 3,
+    PS_OM_SIDBLASTER_USB = 4,
+    PS_OM_ZORROSID = 5,
+    PS_OM_USBSID_PICO = 6,
+    PS_OM_TRINITY = 7,
+    PS_OM_COUNT = 8
+};
+
+typedef struct ps_ops {
+    int (*open)(void);   /* OpenLibrary("playsid.library"); 1 = open (reference counted), 0 = not installed */
+    void (*close)(void); /* drops one reference */
+    int32_t (*alloc_emul)(void);   /* AllocEmulResource: 0 = ok */
+    void (*free_emul)(void);
+    void (*set_module)(const void* header, const void* image, uint32_t length); /* a0, a1, d0 */
+    int32_t (*start_song)(uint32_t song1);      /* d0 = 1-based subsong; returns error code */
+    void (*stop_song)(void);
+    void (*pause_song)(void);
+    void (*continue_song)(void);
+    void (*forward_song)(void);
+    void (*set_vert_freq)(uint32_t hz);          /* 50 PAL, 60 NTSC */
+    void (*set_operating_mode)(uint32_t om);     /* PS_OM_* */
+    void (*set_ahi_mode)(uint32_t ahi_id);       /* 0 = Paula 14-bit */
+    uint32_t (*get_operating_mode)(void);
+} ps_ops;
+
+/* The Amiga build returns the LVO table (playsid_amiga.c); the host test defines its own stub. */
+const ps_ops* ps_ops_get(void);
+
+/* Pref value of "playsid.mode" (normal, 6581, 8580, auto, sidblaster, zorrosid, usbsid, trinity; anything else is
+ * normal) to the SetOperatingMode argument. */
+uint32_t ps_mode_from_pref(const char* value);
+
+/* True for the modes the reSID engine renders (ForwardSong is skipped there, as in HippoPlayer). */
+int ps_mode_is_resid(uint32_t om);
+
+/* Maps the system output ("output.id": ahi, paula, paula14, "" = default) onto the library's SetAHIMode argument:
+ * AHI output gives the AHI mode id parsed from `ahi_pref` ("playsid.ahi_mode", hex, optional 0x), every other output
+ * gives 0 (Paula 14-bit). One function so the per-format output pref (I888a) extends it in one place. */
+uint32_t ps_ahi_mode_for_output(const char* output_id, const char* ahi_pref);
+
+#endif

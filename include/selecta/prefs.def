@@ -102,3 +102,8 @@ SEL_PREF(UI_MUI_BROWSE_VIEW,      "ui.mui.browse_view",      "",                
 SEL_PREF(AMIGA_HOTKEYS,           "amiga.hotkeys",           "1",                                 SEL_PREF_PLAIN)
 SEL_PREF(AMIGA_TASK_PRIORITY,     "amiga.task_priority",     "0",                                 SEL_PREF_PLAIN)
 SEL_PREF(AMIGA_GROUP_FILE,        "amiga.group_file",        "",                                  SEL_PREF_PLAIN)
+/* Native playsid.library player (I434b), Amiga: operating mode normal, 6581, 8580, auto, sidblaster, zorrosid, usbsid or
+ * trinity (SetOperatingMode 0-7); the last four need the matching hardware. playsid.ahi_mode is the AHI mode id (hex)
+ * the library uses when the output is ahi; Paula and paula14 outputs use the library's Paula 14-bit path */
+SEL_PREF(PLAYSID_MODE,            "playsid.mode",            "normal",                            SEL_PREF_PLAIN)
+SEL_PREF(PLAYSID_AHI_MODE,        "playsid.ahi_mode",        "",                                  SEL_PREF_PLAIN)
