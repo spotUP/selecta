@@ -132,6 +132,7 @@ typedef struct pls_meta_row {
     uint32_t album_id; /* the albums row of the song's album; 0 when the album is not in the table */
 } pls_meta_row;
 
+#define DESK_VIZ_MAX 4u /* I434j3: the visualizer plugins the desktop lists: scope, levels, spectrum, SID PatternScope */
 #define DESK_COVER_CACHE 12 /* I845: distinct covers on one screen (queue, shelves, grid) */
 
 typedef struct desk {
@@ -562,9 +563,9 @@ typedef struct desk {
     char toast_text[160];
     char last_verb[64];      /* the line the palette or the command line sent last */
     const sel_tag* (*find_plugin)(uint32_t kind, const char* id); /* registry lookup the app hands over (DUI-P4-11) */
-    sel_viz_render_fn viz_fn[3]; /* the viz plugins found at open: scope, levels, spectrum */
-    const char* viz_id[3];
-    const char* viz_name[3];
+    sel_viz_render_fn viz_fn[DESK_VIZ_MAX]; /* the viz plugins found at open: scope, levels, spectrum, sid registers */
+    const char* viz_id[DESK_VIZ_MAX];
+    const char* viz_name[DESK_VIZ_MAX];
     uint32_t viz_n, viz_sel;     /* plugins found, index of the one the Now Playing strip and the visual layout draw */
     uint32_t* viz_px;            /* RGBA32 target the plugins render into */
     uint32_t viz_cap;            /* pixels viz_px holds */
@@ -577,8 +578,8 @@ typedef struct desk {
     uint32_t viz_song_ms;        /* song position at the newest frame drawn */
     int viz_page;                /* --view viz: the main region shows the Visualizer page */
     sel_gui_rect np_viz;         /* the strip Now Playing gave the visualizer, w 0 = none */
-    sel_gui_rect viz_pane[3];    /* the panes of the Visualizer page */
-    sel_gui_rect viz_btn[2][3];  /* the visualizer switch buttons: [0] under the Now Playing strip, [1] on the Visualizer page; w 0 = not drawn */
+    sel_gui_rect viz_pane[DESK_VIZ_MAX];    /* the panes of the Visualizer page */
+    sel_gui_rect viz_btn[2][DESK_VIZ_MAX];  /* the visualizer switch buttons: [0] under the Now Playing strip, [1] on the Visualizer page; w 0 = not drawn */
     uint32_t viz_clicks;         /* switch button clicks that fired an action (sentinel) */
 } desk;
 
@@ -6218,11 +6219,11 @@ static int32_t si_max_q16(desk* d) {
  * The viz plugins (scope, levels, spectrum) render the engine's newest frame into an RGBA32 target the desktop owns; the
  * desktop blits it. Three places show it: the strip in Now Playing, the Visualizer page (one pane per plugin) and the
  * visual layout (full canvas with the signal path). viz_tick draws once per new engine frame. */
-#define VIZ_MAX 3u
+#define VIZ_MAX DESK_VIZ_MAX
 enum { VIZ_NONE = 0, VIZ_STRIP = 1, VIZ_PAGE = 2, VIZ_VISUAL = 3 };
 
 static void viz_load(desk* d) {
-    static const char* const ids[VIZ_MAX] = {"viz_scope", "viz_levels", "viz_spectrum"};
+    static const char* const ids[VIZ_MAX] = {"viz_scope", "viz_levels", "viz_spectrum", "viz_sidregs"};
     uint32_t i;
     d->viz_n = 0u;
     for (i = 0; d->find_plugin != NULL && i < VIZ_MAX; i++) {
@@ -6299,7 +6300,13 @@ static void viz_draw_area(desk* d, sel_gui_rect r, uint32_t idx) {
     c.primary = ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]);
     c.secondary = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
     c.accent = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]);
-    d->viz_prims = d->viz_fn[idx](st->viz, &s, &c);
+    {
+        /* The Visualizer page draws every pane; the count belongs to the selected plugin, not to the last pane drawn. */
+        uint32_t prims = d->viz_fn[idx](st->viz, &s, &c);
+        if (idx == d->viz_sel) {
+            d->viz_prims = prims;
+        }
+    }
     sel_gui_blit_image(d->canvas, r, d->viz_px, r.w, r.h, r.w, 0);
     sel_gui_dirty_add(d->canvas, r);
 }
@@ -6350,7 +6357,7 @@ static void draw_visual(desk* d) {
 static void viz_switch_draw(desk* d, uint32_t slot, sel_gui_rect r) {
     uint32_t k;
     int32_t gap = lpx(d, 4), w;
-    for (k = 0; k < 3u; k++) {
+    for (k = 0; k < VIZ_MAX; k++) {
         d->viz_btn[slot][k] = rect_of(0, 0, 0, 0);
     }
     if (d->viz_n == 0u || r.w <= 0 || r.h <= 0) {
@@ -6373,7 +6380,7 @@ static int32_t viz_switch_at(const desk* d, int32_t x, int32_t y) {
     for (s = 0; s < 2u; s++) {
         for (k = 0; k < d->viz_n; k++) {
             if (d->viz_btn[s][k].w > 0 && in_rect(d->viz_btn[s][k], x, y)) {
-                return (int32_t)(s * 3u + k);
+                return (int32_t)(s * VIZ_MAX + k);
             }
         }
     }
@@ -6383,7 +6390,7 @@ static int32_t viz_switch_at(const desk* d, int32_t x, int32_t y) {
 /* A click on a switch button runs the plugin's row of the action table (the line the View/Visualizer menu and its key
  * run); the action id equals the plugin id. */
 static int viz_switch_click(desk* d, int32_t hit) {
-    const sel_uim_action* a = desk_action_by_id(d->viz_id[(uint32_t)hit % 3u]);
+    const sel_uim_action* a = desk_action_by_id(d->viz_id[(uint32_t)hit % VIZ_MAX]);
     if (a == NULL || !desk_send(d, a->line)) {
         return 0;
     }
@@ -6406,7 +6413,7 @@ static void viz_panes_draw(desk* d) {
 static void draw_vizpage(desk* d) {
     sel_gui_rect mn = draw_panel(d, "main");
     int32_t mg = lpx(d, HOME_MARGIN), top = mn.y + lpx(d, page_y(d, 64)), gap = lpx(d, 28);
-    int32_t ph = (mn.h - lpx(d, page_y(d, 64)) - lpx(d, 40) - 3 * gap) / 3;
+    int32_t ph = (mn.h - lpx(d, page_y(d, 64)) - lpx(d, 40) - (int32_t)VIZ_MAX * gap) / (int32_t)VIZ_MAX;
     uint32_t k;
     sel_gui_clip_push(d->canvas, mn);
     draw_text(d, rect_of(mn.x + mg, mn.y + lpx(d, 16), mn.w - 2 * mg, lpx(d, page_title_h(d))), "Visualizer", 1, 32,
@@ -6756,7 +6763,7 @@ static const char* lib_kind_name(uint32_t kind) {
 }
 
 /* I244: the action-bound controls besides the transport row (see desk_ctl_rect). */
-enum { CTL_VIZ_N = 6, CTL_LIKE = 6, CTL_NP_ADD = 7, CTL_NP_PANEL = 8, CTL_COUNT = 9 }; /* I619: the add button and the panel toggle */
+enum { CTL_VIZ_N = 2 * DESK_VIZ_MAX, CTL_LIKE = CTL_VIZ_N, CTL_NP_ADD = CTL_VIZ_N + 1, CTL_NP_PANEL = CTL_VIZ_N + 2, CTL_COUNT = CTL_VIZ_N + 3 }; /* I619: the add button and the panel toggle */
 #define TIP_CTL_BASE ((int32_t)(TRANSPORT_COUNT + DOOR_COUNT + LIB_STYLES))
 static sel_gui_rect desk_ctl_rect(const desk* d, uint32_t c); /* defined with the tooltip tracker */
 static const char* desk_ctl_action(const desk* d, uint32_t c);
@@ -11347,7 +11354,7 @@ static sel_gui_rect desk_ctl_rect(const desk* d, uint32_t c) {
     if (c == (uint32_t)CTL_NP_PANEL) {
         return np_toggle_rect(d);
     }
-    return c % 3u < d->viz_n ? d->viz_btn[c / 3u][c % 3u] : rect_of(0, 0, 0, 0);
+    return c % VIZ_MAX < d->viz_n ? d->viz_btn[c / VIZ_MAX][c % VIZ_MAX] : rect_of(0, 0, 0, 0);
 }
 
 static const char* desk_ctl_action(const desk* d, uint32_t c) {
@@ -11357,7 +11364,7 @@ static const char* desk_ctl_action(const desk* d, uint32_t c) {
     if (c == (uint32_t)CTL_NP_PANEL) {
         return "np_panel";
     }
-    return c == (uint32_t)CTL_LIKE ? "like" : d->viz_id[c % 3u];
+    return c == (uint32_t)CTL_LIKE ? "like" : d->viz_id[c % VIZ_MAX];
 }
 
 /* Tooltip index (1-based within the control block, 0 = none) of the control under a canvas point. */
@@ -13596,7 +13603,7 @@ static int desk_replay_input(desk* d) {
             ck.y = r.y + r.h / 2;
             opened |= desk_route_input(d, &ck);
             pointer_sent = d->sends != sent;
-        } else if (sscanf(line, "viz %u", &n) == 1 && n < 3u) { /* a click on the centre of visualizer switch button n (the page's, else the strip's) */
+        } else if (sscanf(line, "viz %u", &n) == 1 && n < VIZ_MAX) { /* a click on the centre of visualizer switch button n (the page's, else the strip's) */
             sel_gui_rect r = d->viz_btn[d->viz_btn[1][n].w > 0 ? 1 : 0][n];
             sel_gui_input ck;
             memset(&ck, 0, sizeof ck);

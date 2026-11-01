@@ -3,7 +3,7 @@
 # 1. Now Playing with the scope plugin: `viz frames` (sentinel) grows at least 25 per second of song time, the plugin that
 #    rendered is viz_scope, the plugin printed a primitive count, and the strip exists.
 # 2. The layout id is 0 by default, 3 after Visual Layout (C-4), 0 again after Full Layout (C-1); the visual layout drew.
-# 3. The Visualizer page (--view viz, and the "v" key) draws one pane per plugin (3) and the signal path text.
+# 3. The Visualizer page (--view viz, and the "v" key) draws one pane per plugin (4) and the signal path text.
 # 4. The levels and spectrum plugins are selectable (ui.desktop.viz) and render too.
 # 5. The on-screen switch (I280): `viz N` clicks switch button N through the pointer path; the click runs the action table line.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
@@ -11,12 +11,13 @@ include("${HERE}/dui_run.cmake")
 set(fx "${HERE}/../m3/lyrics")
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
+set(viz_song "${fx}/ambient.mod")
 
 function(viz_run tag view script)
   file(REMOVE_RECURSE "${WORK}/cfg" "${WORK}/${tag}.db")
   file(WRITE "${WORK}/${tag}.txt" "${script}")
   dui_run(o --db "${WORK}/${tag}.db" --ui desktop --backend mem --view ${view} --canvas 1280x800 --clock fixed --stats
-    --exec "OPEN ${fx}/ambient.mod" --ticks 12 --input "${WORK}/${tag}.txt" ${ARGN})
+    --exec "OPEN ${viz_song}" --ticks 12 --input "${WORK}/${tag}.txt" ${ARGN})
   if(NOT "${o}" MATCHES "viz frames ([0-9]+) song_ms ([0-9]+) plugin ([a-z_]+) plugins ([0-9]+) layout ([0-9]+) panes ([0-9]+) sigpath ([0-9]+) prims ([0-9]+) visual ([0-9]+) strip ([0-9]+)")
     message(FATAL_ERROR "no viz sentinel in:\n${o}")
   endif()
@@ -36,8 +37,8 @@ endfunction()
 
 # 1. Frame rate on Now Playing, scope selected.
 viz_run(np home "wait 300\nkey ctrl+5\nwait 100\n")
-if(NOT np_plugins EQUAL 3)
-  message(FATAL_ERROR "expected 3 viz plugins found by the desktop, got ${np_plugins}")
+if(NOT np_plugins EQUAL 4)
+  message(FATAL_ERROR "expected 4 viz plugins found by the desktop, got ${np_plugins}")
 endif()
 if(NOT np_plugin STREQUAL "viz_scope")
   message(FATAL_ERROR "the scope plugin was not the one drawing: ${np_plugin}")
@@ -81,14 +82,14 @@ endif()
 
 # 3. The Visualizer page: --view viz and the "v" key.
 viz_run(pg viz "wait 100\n")
-if(NOT pg_panes EQUAL 3 OR pg_sigpath EQUAL 0 OR pg_frames EQUAL 0)
+if(NOT pg_panes EQUAL 4 OR pg_sigpath EQUAL 0 OR pg_frames EQUAL 0)
   message(FATAL_ERROR "Visualizer page: ${pg_panes} panes, ${pg_sigpath} signal paths, ${pg_frames} frames")
 endif()
 if(NOT "${pg_out}" MATCHES "Signal Path" AND NOT pg_sigpath GREATER 0)
   message(FATAL_ERROR "no signal path on the Visualizer page")
 endif()
 viz_run(key home "wait 100\nkey v\nwait 100\n")
-if(NOT key_panes EQUAL 3)
+if(NOT key_panes EQUAL 4)
   message(FATAL_ERROR "the v key did not open the Visualizer page (${key_panes} panes)")
 endif()
 
@@ -122,4 +123,39 @@ foreach(where home viz)
     message(FATAL_ERROR "${where}: two switch clicks gave ${CMAKE_MATCH_1} clicks and plugin ${sw2_${where}_plugin}, want 2 and viz_spectrum")
   endif()
 endforeach()
-message(STATUS "dui-viz ok: ${np_frames} frames in ${np_ms} ms, layout 0/3/0, 3 panes")
+# 6. SID PatternScope (I434j3): a HW replayer fixture (tests/fixtures/plugin_sidfeed) answers the register feed like the
+#    playsid adapter; the plugin must be selectable in INDEX8 and RGBA32, count frames and draw primitives. Without a feed
+#    (ambient.mod) it draws none.
+viz_run(nosid home "wait 100\nkey ctrl+8\nwait 100\n")
+if(NOT nosid_plugin STREQUAL "viz_sidregs" OR NOT nosid_prims EQUAL 0)
+  message(FATAL_ERROR "SID PatternScope without a SID tune: plugin ${nosid_plugin}, ${nosid_prims} primitives, want viz_sidregs and 0")
+endif()
+file(WRITE "${WORK}/feed.selsid" "SELSID fixture")
+set(ENV{SELECTA_PLUGIN_PATH} "${SID_MODULES}")
+set(viz_song "${WORK}/feed.selsid")
+set(sid_i8 --canvas 640x512 --format index8)
+foreach(fmt rgba32 index8)
+  if(fmt STREQUAL "index8")
+    viz_run(sid_${fmt} home "wait 300\nkey ctrl+8\nwait 200\n" ${sid_i8})
+  else()
+    viz_run(sid_${fmt} home "wait 300\nkey ctrl+8\nwait 200\n")
+  endif()
+  if(NOT sid_${fmt}_plugin STREQUAL "viz_sidregs")
+    message(FATAL_ERROR "${fmt}: the SID PatternScope was not the one drawing: ${sid_${fmt}_plugin}")
+  endif()
+  if(sid_${fmt}_frames EQUAL 0 OR sid_${fmt}_prims EQUAL 0)
+    message(FATAL_ERROR "${fmt}: SID PatternScope drew ${sid_${fmt}_frames} frames with ${sid_${fmt}_prims} primitives (feed missing?)\n${sid_${fmt}_out}")
+  endif()
+  if(NOT sid_${fmt}_plugins EQUAL 4)
+    message(FATAL_ERROR "${fmt}: ${sid_${fmt}_plugins} viz plugins, want 4")
+  endif()
+endforeach()
+viz_run(sid_pg viz "wait 300\n" ${sid_i8})
+if(NOT sid_pg_panes EQUAL 4)
+  message(FATAL_ERROR "Visualizer page with the SID feed: ${sid_pg_panes} panes, want 4")
+endif()
+viz_run(sid_sw home "wait 300\nviz 3\nwait 200\n")
+if(NOT sid_sw_plugin STREQUAL "viz_sidregs" OR sid_sw_prims EQUAL 0)
+  message(FATAL_ERROR "switch click 3 gave plugin ${sid_sw_plugin} with ${sid_sw_prims} primitives, want viz_sidregs")
+endif()
+message(STATUS "dui-viz ok: ${np_frames} frames in ${np_ms} ms, layout 0/3/0, 4 panes, SID PatternScope fed")
