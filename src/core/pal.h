@@ -14,4 +14,9 @@ int sel_pal_set_task_priority(int pri);
 void sel_pal_publish_begin(void);
 void sel_pal_publish_end(void);
 
+/* Puts the calling task to sleep for at least `ms` milliseconds and returns
+ * the milliseconds it slept: the desktop sleeps `ms`, the Amiga rounds up to
+ * whole DOS ticks (20 ms) and returns that. ms 0 sleeps nothing. */
+unsigned sel_pal_sleep_ms(unsigned ms);
+
 #endif

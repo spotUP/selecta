@@ -40,6 +40,7 @@
 #include "export/export.h"
 #include "prefs.h"
 #include "view.h"
+#include "../core/pal.h"
 #if !defined(__amigaos__) && !defined(AMIGA)
 #include <pthread.h>
 #include <sched.h>
@@ -7732,10 +7733,7 @@ uint32_t sel_engine_pump_reads(sel_engine* e, sel_event_sink sink, void* ctx, un
     unsigned waited = 0;
 
     while (sel_engine_reads_pending(e) && waited < timeout_ms) {
-        struct timespec ts = {0, 1000000L};
-
-        nanosleep(&ts, NULL);
-        waited++;
+        waited += sel_pal_sleep_ms(1u);
         n += sel_engine_pump(e, sink, ctx);
     }
     return n;

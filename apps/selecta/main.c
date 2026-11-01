@@ -115,9 +115,9 @@ static int g_mark_audio;
 static int g_marked; /* the output's pull thread is marked as the audio thread */
 /* I829: one engine pump per shell turn. A clockless run is deterministic (one UI turn per pump), so a posted library read (home, search,
  * folders) lands before the next turn; a paced run never waits for the library (the pump posts and applies the answer on a later turn). */
-static void pump_turn(sel_engine* e, int clockless, sel_event_sink sink, void* ctx) {
-    if (clockless) (void)sel_engine_pump_reads(e, sink, ctx, 60000u);
-    else (void)sel_engine_pump(e, sink, ctx);
+static void pump_turn(sel_engine* e, int clockless, sel_event_sink on_event, void* ctx) {
+    if (clockless) (void)sel_engine_pump_reads(e, on_event, ctx, 60000u);
+    else (void)sel_engine_pump(e, on_event, ctx);
 }
 
 static volatile int g_pumping; /* the shell is inside so.pump: a pull now runs on the main thread, never the audio thread (I684c) */
