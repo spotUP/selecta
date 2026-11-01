@@ -323,10 +323,11 @@ uint32_t mui_aa_slider_calls(void) {
 
 void mui_aa_slider_metrics(int font_px, mui_aa_slider_t* out) {
     g_slider_calls++;
-    out->track_h = font_px <= 0 ? 2 : 4;
+    /* I965: vertical sizes count in rows (mui_aa_rows) at the screen aspect, so a 2x-tall pixel counts as two; square (256): unchanged. */
+    out->track_h = font_px <= 0 ? mui_aa_rows(2, g_screen_aspect) : 4;
     out->radius = out->track_h / 2;
     out->min_w = 80;
-    out->height = font_px <= 0 ? 12 : font_px < 15 ? 16 : font_px < 17 ? 18 : 20; /* hit height; only the track and fill are drawn */
+    out->height = font_px <= 0 ? mui_aa_rows(12, g_screen_aspect) : font_px < 15 ? 16 : font_px < 17 ? 18 : 20; /* hit height; only the track and fill are drawn */
 }
 
 void mui_aa_slider_rgb(const uint32_t* token, int state, uint32_t* track, uint32_t* fill) {
@@ -584,7 +585,7 @@ uint32_t mui_aa_list_calls(void) {
 
 void mui_aa_scroller_metrics(int font_px, mui_aa_scroller_t* out) {
     g_scroller_calls++;
-    out->width = font_px <= 0 ? 6 : 10;
+    out->width = font_px <= 0 ? (g_screen_aspect > 256 ? 4 : 6) : 10; /* I965: tight tier (tall pixels, small font) packs across */
     out->radius = font_px <= 0 ? 2 : 4;
     out->min_thumb = 20;
 }
@@ -644,12 +645,14 @@ long mui_aa_scroller_first_at(const mui_aa_scroller_t* m, int h, int thumb_h_gra
 
 void mui_aa_list_metrics(int font_px, mui_aa_list_t* out) {
     mui_aa_scroller_t s;
+    mui_aa_metrics_t b;
     g_list_calls++;
     mui_aa_scroller_metrics(font_px, &s);
+    mui_aa_metrics_aspect(font_px, g_screen_aspect, &b); /* I965: the pad and gap across come from the one metrics table (tight tier: 4) */
     out->row_h = font_px <= 0 ? 10 : font_px + 8;
-    out->pad_x = font_px <= 0 ? 6 : 10;
-    out->pad_y = font_px <= 0 ? 2 : 4; /* inside the list face above the first and below the last row (I667i: the cycle popup had none) */
-    out->gap = font_px <= 0 ? 6 : 8;
+    out->pad_x = font_px <= 0 ? b.pad_x : 10;
+    out->pad_y = font_px <= 0 ? mui_aa_rows(2, g_screen_aspect) : 4; /* inside the list face above the first and below the last row (I667i: the cycle popup had none) */
+    out->gap = font_px <= 0 ? b.icon_gap : 8;
     out->scroller_w = s.width;
     out->radius = font_px <= 0 ? 4 : 6;
 }
