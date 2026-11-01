@@ -1,5 +1,6 @@
 {
   "/plain": {"file": "data.bin"},
+  "/bighdr": {"file": "data.bin", "headers": {"X-JSON": "@pad:100000"}},
   "/chunked": {"file": "data.bin", "chunked": true},
   "/hop1": {"redirect": "/hop2"},
   "/hop2": {"redirect": "http://fixture.test/hop3"},

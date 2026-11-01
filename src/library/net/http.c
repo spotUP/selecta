@@ -290,6 +290,33 @@ static int header_is(const char* line, const char* name) {
     return ci_prefix(line, name);
 }
 
+/* Total head size we will skim through before giving up (I917); kept lines are bounded separately. */
+#define HEAD_TOTAL_CAP (1024u * 1024u)
+
+static const char* const kept_headers[] = {"content-length:", "icy-metaint:", "content-type:", "transfer-encoding:", "location:"};
+
+static char* memmem_crlf(char* p, size_t n) {
+    size_t i;
+    for (i = 0; i + 1 < n; i++) {
+        if (p[i] == '\r' && p[i + 1] == '\n') {
+            return p + i;
+        }
+    }
+    return NULL;
+}
+
+/* True for the header lines parse_head reads. line is not NUL-terminated: ll bytes. */
+static int wanted_header(const char* line, size_t ll) {
+    size_t i;
+    for (i = 0; i < sizeof kept_headers / sizeof kept_headers[0]; i++) {
+        size_t k = strlen(kept_headers[i]);
+        if (ll >= k && ci_prefix(line, kept_headers[i])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int parse_head(char* h, resp_head* r) {
     char* line = h;
     char* eol;
@@ -481,31 +508,73 @@ static sel_http_err exchange(const sel_http_req* req, const char* method, const 
         sel_stream_close(h);
         return n == SEL_NET_E_TIMEOUT ? SEL_HTTP_E_TOTAL_TIMEOUT : SEL_HTTP_E_IO;
     }
-    /* Read until the blank line that ends the head. */
-    for (;;) {
-        unsigned first = have == 0 ? fb_ms : 0u;
-        if (have + 1 >= sizeof hdr) {
+    /* Read the head as a stream (I917): lines are examined as they arrive; only the status line and the
+     * headers this client uses are kept, every other line (ccMixter sends a ~94 KB X-JSON) is dropped
+     * unstored. hdr only ever holds the unprocessed tail, then the body bytes that followed the head. */
+    {
+        char kept[HDR_CAP];
+        size_t kept_len = 0, head_total = 0;
+        int skipping = 0, first_line = 1, got_any = 0;
+        for (;;) {
+            char* eol;
+            while ((eol = memmem_crlf(hdr, have)) != NULL) {
+                size_t ll = (size_t)(eol - hdr);
+                head_total += ll + 2;
+                if (head_total > HEAD_TOTAL_CAP) {
+                    err = SEL_HTTP_E_PROTOCOL;
+                    goto done;
+                }
+                if (skipping) {
+                    skipping = 0;
+                } else if (ll == 0) {
+                    end = hdr; /* blank line: head complete */
+                    break;
+                } else if ((first_line || wanted_header(hdr, ll)) && kept_len + ll + 2 < sizeof kept) {
+                    memcpy(kept + kept_len, hdr, ll);
+                    memcpy(kept + kept_len + ll, "\r\n", 2);
+                    kept_len += ll + 2;
+                } else if (first_line) {
+                    err = SEL_HTTP_E_PROTOCOL;
+                    goto done;
+                }
+                first_line = 0;
+                memmove(hdr, eol + 2, have - (ll + 2));
+                have -= ll + 2;
+            }
+            if (end != NULL) {
+                break;
+            }
+            if (have + 1 >= sizeof hdr) { /* one line longer than the buffer */
+                if (first_line) {
+                    err = SEL_HTTP_E_PROTOCOL;
+                    goto done;
+                }
+                head_total += have - 1;
+                if (head_total > HEAD_TOTAL_CAP) {
+                    err = SEL_HTTP_E_PROTOCOL;
+                    goto done;
+                }
+                skipping = 1; /* keep the last byte: it may be the CR of the CRLF */
+                hdr[0] = hdr[have - 1];
+                have = 1;
+            }
+            n = recv_dl(h, hdr + have, sizeof hdr - 1 - have, clk, got_any ? 0u : fb_ms, &err);
+            if (n < 0) {
+                if (err == SEL_HTTP_OK) {
+                    err = n == SEL_NET_E_CLOSED ? SEL_HTTP_E_PROTOCOL : SEL_HTTP_E_IO;
+                }
+                goto done;
+            }
+            got_any = 1;
+            have += (size_t)n;
+        }
+        kept[kept_len] = '\0';
+        if (!parse_head(kept, &head)) {
             err = SEL_HTTP_E_PROTOCOL;
             goto done;
         }
-        n = recv_dl(h, hdr + have, sizeof hdr - 1 - have, clk, first, &err);
-        if (n < 0) {
-            if (err == SEL_HTTP_OK) {
-                err = n == SEL_NET_E_CLOSED ? SEL_HTTP_E_PROTOCOL : SEL_HTTP_E_IO;
-            }
-            goto done;
-        }
-        have += (size_t)n;
-        hdr[have] = '\0';
-        end = strstr(hdr, "\r\n\r\n");
-        if (end != NULL) {
-            break;
-        }
-    }
-    *end = '\0';
-    if (!parse_head(hdr, &head)) {
-        err = SEL_HTTP_E_PROTOCOL;
-        goto done;
+        memmove(hdr, hdr + 2, have - 2); /* body bytes already read start at hdr[0] */
+        have -= 2;
     }
     res->status = head.status;
     res->content_length = head.chunked ? -1 : head.content_length;
@@ -521,8 +590,8 @@ static sel_http_err exchange(const sel_http_req* req, const char* method, const 
     no_body = strcmp(method, "HEAD") == 0 || head.status == 204 || head.status == 304 || (head.status >= 100 && head.status < 200);
     b.chunked = head.chunked;
     if (!no_body) {
-        char* body = end + 4;
-        size_t got = have - (size_t)(body - hdr);
+        char* body = hdr;
+        size_t got = have;
         unsigned long want = head.chunked || head.content_length < 0 ? 0ul : (unsigned long)head.content_length;
         int bounded = !head.chunked && head.content_length >= 0;
         if (bounded && got > want) {

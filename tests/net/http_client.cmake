@@ -55,6 +55,13 @@ expect("chunked status" "${chunked_http_status}" 200)
 expect("chunked content_length" "${chunked_content_length}" -1)
 expect_body("chunked" chunked.bin)
 
+# 2b. A 100 KB header line (ccMixter X-JSON, I917) is skipped; the body still arrives whole.
+fetch(bighdr bighdr.bin http://fixture.test/bighdr)
+expect("bighdr status" "${bighdr_http_status}" 200)
+expect("bighdr error" "${bighdr_http_error}" ok)
+expect("bighdr length" "${bighdr_body_bytes}" 20000)
+expect_body("bighdr" bighdr.bin)
+
 # 3. Range bytes=0-1023 answers 206 with exactly 1024 bytes equal to the file prefix.
 fetch(range range.bin http://fixture.test/plain --range 0-1023)
 expect("range status" "${range_http_status}" 206)

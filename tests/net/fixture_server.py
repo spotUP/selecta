@@ -288,6 +288,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                      ".html": "text/html"}.get(os.path.splitext(fp)[1], ctype)
         headers = {"Content-Type": ctype}
         headers.update(route.get("headers", {}))
+        for k, v in list(headers.items()):  # "@pad:N" expands to N bytes: a giant header line (I917)
+            if isinstance(v, str) and v.startswith("@pad:"):
+                headers[k] = "x" * int(v[5:])
         status = route.get("status", 200)
         if route.get("delay_first_byte"):
             time.sleep(route["delay_first_byte"])
