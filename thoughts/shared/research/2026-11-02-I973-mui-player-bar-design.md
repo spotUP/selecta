@@ -207,3 +207,17 @@ F7 (art clip) has no build row until the rig log shows the cause; I973f collects
 - Q6: Heart beside the title: the Mac bar has none (it is on Now Playing). Drop it from the bar (Recommended) or keep it?
 - Q7: Art + title/artist in the bar: keep it whenever it fits (Recommended, I949 asked for it at 640x256) or hide it below
   900 px like the Mac?
+
+### 6a. Johan's answers (2026-11-02, AskUserQuestion)
+
+- Q1: screenshot taken at 640x256. The tree in it is the non-compact one, which `mui_player_group` builds only when
+  `mui_screen_compact()` returns 0, so the shot came from a pre-I949d build or a screen that was not 640x256. Not re-asked;
+  the I973 rig check at 640x256 confirms the compact switch.
+- Q2: drop Stop from the bar (menu and key keep it).
+- Q3: drop the remaining-time label and the status/format texts.
+- Q4: album and speed extras menu only, at RTG too.
+- Q5: add the subsong label with minus/plus buttons at the left, as on the Mac, shown when the song has subsongs.
+- Q6: drop the heart from the bar.
+- Q7: hide art and title/artist below 900 px, like the Mac.
+
+Build rows I973a-f follow these answers; where a row above still names a dropped element, the answer wins.
