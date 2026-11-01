@@ -100,3 +100,10 @@ Repo: `include/selecta/output.h` (pull model: output pulls interleaved s16 stere
 1. Mac AirPlay: accept system routing (AirPlay 2 and HomePod work, no protocol code) instead of an own sender?
 2. Which real receivers do you own (AirPort Express, Sonos, HomePod, Chromecast model)? That sets the test matrix.
 3. Amiga Cast TLS: AmiSSL (user installs it) or new TLS on DCTelnet primitives (I899)?
+
+## Decisions (Johan, 2026-11-01)
+
+- Mac AirPlay uses macOS system audio routing. Selecta writes no AirPlay sender for the Mac.
+- Test receivers: a HomePod and an Apple TV, both AirPlay 2. Whether either accepts the Amiga RAOP (AirPlay 1) sender is unverified and is the first thing row H measures.
+- No Chromecast device is available, so the Cast rows are tested against a local fixture receiver only.
+- The TLS layer for the Amiga Cast control link is chosen by the I899 comparison.
