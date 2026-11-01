@@ -4547,7 +4547,7 @@ static void pls_reload_run(desk* d) {
                 d->drl_name = (char(*)[96])calloc(pg->songs + 1u, sizeof *d->drl_name);
                 d->drl_count = (char(*)[16])calloc(pg->songs + 1u, sizeof *d->drl_count);
                 if (d->drl_name != NULL && d->drl_count != NULL) {
-                    for (r = pg->rows, i = 0; i < pg->songs && *r != '\0'; i++) {
+                    for (r = pg->rows, i = 0; i < pg->songs; i++) { /* I911: the count ends the list; an empty name is the group of songs with no artist */
                         snprintf(d->drl_name[i], sizeof d->drl_name[i], "%s", r);
                         r += strlen(r) + 1u;
                         snprintf(d->drl_count[i], sizeof d->drl_count[i], "%s", r);
@@ -4969,12 +4969,18 @@ static uint32_t drl_split(const char* path, char (*part)[96]) {
     return n;
 }
 
+#define DRL_UNKNOWN_ARTIST "Unknown artist"
+
 /* The readable label of one drill row: root names capitalised, platform ids as their family label. */
 static void drl_label(const desk* d, const char* name, char* out, size_t cap) {
     uint32_t f;
     char part[3][96];
     uint32_t np = drl_split(d->drl_path, part);
     snprintf(out, cap, "%s", name);
+    if (name[0] == '\0' && np > 0u && (strcmp(part[0], "artists") == 0 || (np == 2u && strcmp(part[0], "format") == 0))) { /* I911: songs with no artist come back as one group named '' */
+        snprintf(out, cap, "%s", DRL_UNKNOWN_ARTIST);
+        return;
+    }
     if (d->drl_page == (uint32_t)SEL_DRILL_PAGE_ROOT) {
         out[0] = (char)(out[0] >= 'a' && out[0] <= 'z' ? out[0] - 32 : out[0]);
         return;

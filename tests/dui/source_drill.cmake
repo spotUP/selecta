@@ -24,6 +24,10 @@ string(CONCAT seed
   "INSERT INTO songs(key, source, path, name, artist, album, format, added) "
   "SELECT 'hvsc:' || i, 'hvsc', '/h/' || i || '.mod', 'Song ' || i, 'Artist ' || (i % 1000), '', "
   "CASE i % 3 WHEN 0 THEN 'Protracker' WHEN 1 THEN 'Fasttracker 2' ELSE 'Impulsetracker' END, 1 FROM n")
+# I911: a fourth format whose five songs have no artist (artist NULL): it has the fewest files, so it is the last format row.
+string(CONCAT seed "${seed}; "
+  "INSERT INTO songs(key, source, path, name, artist, album, format, added) "
+  "SELECT 'hvsc:n' || i, 'hvsc', '/h/n' || i || '.chr', 'Noartist ' || i, NULL, '', 'Chrome', 1 FROM (SELECT 1 AS i UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5)")
 execute_process(COMMAND "${SQLITE3}" -cmd "PRAGMA trusted_schema=ON" "${db}" "${seed}" RESULT_VARIABLE rc ERROR_VARIABLE err)
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "seeding the drill source failed: ${err}")
@@ -105,7 +109,7 @@ dui_run(fmt ${common} --input "${WORK}/fmt.txt")
 drill_field(pg "${fmt}" page)
 expect_eq("the formats level is a group page" "${pg}" "2")
 drill_field(rows "${fmt}" rows)
-expect_eq("formats rows" "${rows}" "3")
+expect_eq("formats rows (three tracker formats and Chrome)" "${rows}" "4")
 drill_field(cr "${fmt}" crumbs)
 expect_eq("crumbs at the formats level (source, Formats)" "${cr}" "2")
 drill_center(crumb0 "${fmt}" crumb0)
@@ -135,3 +139,23 @@ fresh()
 dui_run(up ${common} --input "${WORK}/up.txt")
 drill_field(pg "${up}" page)
 expect_eq("the source crumb returns to the root level" "${pg}" "1")
+
+# 4. I911: the format whose songs have no artist lists its one group row, labelled, not an empty page. The fourth format row sits three row
+# pitches below the first.
+drill_center(fmt_row1 "${fmt}" row1)
+string(REPLACE " " ";" r0 "${row0}")
+string(REPLACE " " ";" r1 "${fmt_row1}")
+list(GET r0 0 x0)
+list(GET r0 1 y0)
+list(GET r1 1 y1)
+math(EXPR y3 "${y0} + 3 * (${y1} - ${y0})")
+file(WRITE "${WORK}/noart.txt" "${chip}click ${src_xy}\nwait 100\nclick ${row0}\nwait 100\nclick ${x0} ${y3}\nwait 100\n")
+fresh()
+dui_run(noart ${common} --input "${WORK}/noart.txt")
+drill_field(pg "${noart}" page)
+expect_eq("the artists of the no-artist format are a group page" "${pg}" "2")
+drill_field(rows "${noart}" rows)
+expect_eq("the no-artist format lists its group row (I911: it listed 0)" "${rows}" "1")
+if(NOT "${noart}" MATCHES "\ndrill [^\n]* first=\\[Unknown artist\\] ")
+  message(FATAL_ERROR "the group of songs with no artist is not labelled Unknown artist:\n${noart}")
+endif()
