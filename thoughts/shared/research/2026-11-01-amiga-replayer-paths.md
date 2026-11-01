@@ -258,3 +258,8 @@ As section 8. Summary rule: Hippo own where it is the only or the asm-with-contr
 - **D6. Third-party binaries to ship.**
   (a) **Recommended:** ship after a per-binary licence check, scoped by section 6 to what remains after nuade coverage: about 10 Eagleplayers plus the OctaMED player libraries and `mline.library` (N9). Decisive trade-off: a few days of licence reading keeps OctaMED (5134 songs), Musicline (817), Quartet ST (859), TFMX via EP fallback and DeliTracker Custom on the Amiga; without it they have no Amiga owner.
   (b) Ship only sources we hold (HippoPlayer MIT, nuade MIT): no licence risk, but OctaMED and Musicline drop entirely and the EP tail shrinks to nothing (DeliTracker Custom needs no binary but needs the host).
+
+### 9.5 Johan's answers (2026-11-01)
+
+- **D6:** ship every third-party binary (Eagleplayers, OctaMED player libraries, `mline.library`, UADE binaries) as a Selecta plugin. N9 changes from a licence gate to a record of each binary's origin and licence text, shipped with the plugin.
+- **D3:** open. Johan asked which players would need a port; the list went back to him.
