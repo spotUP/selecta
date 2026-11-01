@@ -333,7 +333,7 @@ typedef struct desk {
     uint32_t lib_searches;   /* LIBRARY_SEARCH lines sent for typed queries: STAT_LIBRARY_SEARCHES */
     uint32_t search_draws, search_rows;  /* search view frames drawn, result rows in the last one */
     int browse_filter;       /* I615c: the Search page shows a Browse tile's filter: its results draw as the tile grid whatever the view style */
-    uint32_t lib_tabs_drawn, library_remaps, browse_folders_opens; /* I678i: tab-row tabs drawn, --view library remaps, Browse Folders opened from its tile */
+    uint32_t lib_tabs_drawn, library_remaps, browse_folders_opens, browse_source_opens; /* I678i: tab-row tabs drawn, --view library remaps, Browse Folders opened from its tile */
     int32_t browse_y_q16;    /* I711: Browse page scroll offset in logical pixels, Q16, as queue_q16 */
     uint32_t browse_wheels;  /* I711 sentinel: wheel notches the Browse page scroll path took */
     uint32_t browse_draws, browse_opens, browse_n; /* I615c: Browse page frames drawn, tiles opened, tiles in the last frame */
@@ -4010,6 +4010,18 @@ static int lib_view_on(const desk* d, const sel_state* st) {
            st->view->style == (d->lib_mode == 1u ? (uint32_t)SEL_VIEW_STYLE_TREE : (uint32_t)SEL_VIEW_STYLE_DRILLDOWN);
 }
 
+/* I906b: a NUL-separated block (formats, composers) ends at an empty string; its bytes are part of what the page draws, and the engine
+ * now applies it on a later pump than the command, so the redraw check sees the answer land. */
+static uint32_t lib_block_hash(const char* p) {
+    uint32_t h = 2166136261u;
+    for (; p != NULL && *p != '\0'; p += strlen(p) + 1u) {
+        const char* q;
+        for (q = p; *q != '\0'; q++) h = (h ^ (uint8_t)*q) * 16777619u;
+        h = (h ^ 0xffu) * 16777619u;
+    }
+    return h;
+}
+
 static uint32_t lib_hash(const desk* d, const sel_state* st) {
     uint32_t h = d->lib_mode * 977u;
     if (lib_view_on(d, st)) {
@@ -4022,6 +4034,7 @@ static uint32_t lib_hash(const desk* d, const sel_state* st) {
     if (st->view != NULL) {
         h += st->view->style * 7919u + st->view->cursor * 131u + st->view->row_n * 17u; /* the grid and the cover flow redraw on a move */
     }
+    h += (st->formats != NULL ? lib_block_hash(st->formats) + 4u : 0u) + (st->composers != NULL ? lib_block_hash(st->composers) * 3u : 0u);
     return h + (st->composers != NULL ? 1u : 0u) + (st->stats != NULL ? 2u : 0u);
 }
 
@@ -6780,7 +6793,7 @@ static const char* library_dump_build(desk* d) {
         }
         p = lib_next(cnt);
     }
-    o = dump_put(d, o, "folders tabs_drawn=%u library_remaps=%u browse_folders_opens=%u\n", (unsigned)d->lib_tabs_drawn, (unsigned)d->library_remaps, (unsigned)d->browse_folders_opens);
+    o = dump_put(d, o, "folders tabs_drawn=%u library_remaps=%u browse_folders_opens=%u\nbrowse_source_opens=%u on_searches=%u\n", (unsigned)d->lib_tabs_drawn, (unsigned)d->library_remaps, (unsigned)d->browse_folders_opens, (unsigned)d->browse_source_opens, (unsigned)d->on_searches);
     o = dump_put(d, o, "mode %s\nscroll %d\nlibempty %s\n", sel_uim_libmode_name(d->lib_mode), (int)(d->lib_q16 >> 16), d->empty_text);
     for (i = 0; i < LIB_TABS; i++) {
         sel_gui_rect tr = lib_tab_rect(d, panel_rect(d, "main"), i);
@@ -8694,8 +8707,16 @@ static int browse_click(desk* d, int32_t x, int32_t y) {
             char canon[SEL_COMPOSER_MAX]; /* copied first: the page change replaces the catalog */
             snprintf(canon, sizeof canon, "%s", t[i].arg);
             desk_composer_open(d, canon, canon); /* I678f */
+        } else if (t[i].kind == 2u) {
+            /* I906b/I905: a source tile opens that source's own page, the target of the sidebar source row (Johan 2026-11-01). It never
+             * goes through the search scope, so a restored online scope (search.last_source) cannot turn it into a SOURCE_SEARCH. */
+            char key[SEL_COMPOSER_MAX], label[SEL_COMPOSER_MAX]; /* copied first: the page change replaces the catalog */
+            snprintf(key, sizeof key, "%s", t[i].arg);
+            snprintf(label, sizeof label, "%s", t[i].label);
+            d->browse_source_opens++;
+            desk_route(d, SEL_ROUTE_BROWSE_TILE, (uint32_t)SEL_LIB_ITEM_SOURCE, 0u, key, label, "");
         } else {
-            snprintf(d->query, sizeof d->query, "%s:%s", t[i].kind == 0u ? "format" : "source", t[i].arg);
+            snprintf(d->query, sizeof d->query, "format:%s", t[i].arg);
             d->qlen = strlen(d->query);
             d->search_facet = 0u;
             d->search_keep = 1;
@@ -14663,7 +14684,7 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
         return 1;
     }
     desk_scan_sync(d); /* I315: a running scan moves the Add Folder progress bar */
-    if (lib_hash(d, sel_engine_state(d->engine)) != d->library_sig && (sel_engine_state(d->engine)->composers != NULL || d->page == SEL_UIM_PG_FOLDERS)) { /* I390: the style chooser shows the style even on an empty library */
+    if (lib_hash(d, sel_engine_state(d->engine)) != d->library_sig && (sel_engine_state(d->engine)->composers != NULL || sel_engine_state(d->engine)->formats != NULL || d->page == SEL_UIM_PG_FOLDERS)) { /* I390: the style chooser shows the style even on an empty library */
         d->library_sig = lib_hash(d, sel_engine_state(d->engine)); /* the Library page changed: redraw */
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
     }

@@ -542,6 +542,17 @@ struct sel_engine {
     /* I829: the posted reads of the command path. Each thread reads only its rd_* request fields (written by the pump
      * before the post) and writes only its rd_* answer fields; the pump applies the answer in lib_reads_collect. */
     sel_lib_read rd_home, rd_search, rd_folders;
+    /* I906b: FORMATS_SHOW and COMPOSERS_SHOW post their whole-catalogue group queries. The pump writes rd_comp_next_* at any time and
+     * copies them into the request fields (rd_comp_*) only while the read is idle; the thread writes rd_fmt_blk / rd_comp_blk /
+     * rd_comp_page_blk, which lib_reads_collect takes over. */
+    sel_lib_read rd_formats, rd_composers;
+    int rd_post_formats, rd_post_composers; /* commands asked for a read; lib_reads_flush starts it once the pump dispatched every command (an earlier command never meets the read as a busy library) */
+    char* rd_fmt_blk;
+    char* rd_comp_blk;
+    char* rd_comp_page_blk;
+    char rd_comp_next_want[SEL_COMPOSER_MAX], rd_comp_want[SEL_COMPOSER_MAX];
+    char rd_comp_next_filter[64], rd_comp_filter[64];
+    uint32_t rd_comp_next_sort, rd_comp_sort;
     uint32_t rd_home_chip, rd_home_lines;
     char* rd_home_text;                       /* SEL_VIEW_HOME_TEXT_MAX bytes */
     char rd_q[SEL_RD_QUERY_MAX];              /* the query the search thread runs */
@@ -5277,18 +5288,19 @@ static void composer_sort_block(const sel_host* host, char** blk, uint32_t sort)
     host->mem_free(host, a);
 }
 
-/* The composer list under the COMPOSERS_VIEW filter and sort (all composers, library order, until one is set). */
-static void composers_fill_list(sel_engine* e) {
+/* The composer list under the COMPOSERS_VIEW filter and sort (all composers, library order, until one is set). Returns the block. */
+static char* composers_build_list(const sel_host* host, sel_library* lib, const char* filter, uint32_t sort) {
     composer_list_ctx c;
+    char* blk;
     memset(&c, 0, sizeof c);
-    c.fill.host = e->host;
-    c.filter = e->composer_filter;
-    if (sel_library_composer_list(e->lib, composer_list_row, &c) < 0) {
-        composer_release(e->host, &c.fill.buf);
+    c.fill.host = host;
+    c.filter = filter;
+    if (sel_library_composer_list(lib, composer_list_row, &c) < 0) {
+        composer_release(host, &c.fill.buf);
     }
-    composer_release(e->host, &e->composers);
-    e->composers = composer_take(&c.fill);
-    composer_sort_block(e->host, &e->composers, e->composer_sort);
+    blk = composer_take(&c.fill);
+    composer_sort_block(host, &blk, sort);
+    return blk;
 }
 
 static void composer_page_row(void* ctx, const char* key, const char* name, const char* disp) {
@@ -5310,39 +5322,36 @@ static void format_list_row(void* ctx, const char* format, uint32_t songs) {
     composer_put((composer_fill*)ctx, parts, 2);
 }
 
-/* FORMATS_SHOW (I615c): reads the song formats of the catalogue with their song counts into the state, the data of the Browse page's
- * Formats tiles. */
-static void cmd_FORMATS_SHOW(sel_engine* e, const sel_message* m) {
+/* I906b: the formats read, run by lib_read_post (a thread, or inline without one). Writes only rd_fmt_blk. */
+static void formats_read_run(sel_engine* e) {
     composer_fill f;
-    (void)m;
-    if (e->lib == NULL) {
-        sel_engine_report_error(e, "no_library", "FORMATS_SHOW");
-        return;
-    }
     memset(&f, 0, sizeof f);
     f.host = e->host;
     if (sel_library_format_list(e->lib, format_list_row, &f) < 0) {
         composer_release(e->host, &f.buf);
     }
-    composer_release(e->host, &e->formats);
-    e->formats = composer_take(&f);
+    e->rd_fmt_blk = composer_take(&f);
 }
 
-/* COMPOSERS_SHOW [name]: opens the Library page (DUI-P4-3): every composer with its song count, and with a name the
- * drilldown page of that composer (its songs and their count, from the library's composer page). */
-static void cmd_COMPOSERS_SHOW(sel_engine* e, const sel_message* m) {
-    composer_fill f;
-    char want[SEL_COMPOSER_MAX]; /* the argument may point into the blocks released below */
+/* FORMATS_SHOW (I615c): posts the read of the song formats of the catalogue with their song counts, the data of the Browse page's
+ * Formats tiles. The state carries them once lib_reads_collect applies the answer (I906b: the command thread never waits). */
+static void cmd_FORMATS_SHOW(sel_engine* e, const sel_message* m) {
+    (void)m;
     if (e->lib == NULL) {
-        sel_engine_report_error(e, "no_library", "COMPOSERS_SHOW");
+        sel_engine_report_error(e, "no_library", "FORMATS_SHOW");
         return;
     }
-    e->composer_queries++;
-    snprintf(want, sizeof want, "%s", m->argc > 0 ? m->args[0].v.s : "");
-    composer_release(e->host, &e->composer_page);
-    composers_fill_list(e);
-    if (want[0] != '\0') {
-        const char* name = want;
+    e->rd_post_formats = 1; /* started after the commands of this pump (lib_reads_flush) */
+}
+
+/* I906b: the composers read. Builds the list under the request filter and sort, and with a name the drilldown page of that composer
+ * (its songs and their count, from the library's composer page). Writes only rd_comp_blk and rd_comp_page_blk. */
+static void composers_read_run(sel_engine* e) {
+    composer_fill f;
+    const char* name = e->rd_comp_want;
+    e->rd_comp_blk = composers_build_list(e->host, e->lib, e->rd_comp_filter, e->rd_comp_sort);
+    e->rd_comp_page_blk = NULL;
+    if (name[0] != '\0') {
         char num[16], disp[SEL_COMPOSER_MAX];
         const char* parts[3];
         composer_fill p;
@@ -5352,7 +5361,7 @@ static void cmd_COMPOSERS_SHOW(sel_engine* e, const sel_message* m) {
         if (p.n > 0) {
             const char* r;
             snprintf(disp, sizeof disp, "%s", name);
-            for (r = e->composers; *r != '\0'; r += strlen(r) + 1u) { /* the library's own display text for this canon */
+            for (r = e->rd_comp_blk; *r != '\0'; r += strlen(r) + 1u) { /* the library's own display text for this canon */
                 const char* shown = r + strlen(r) + 1u;
                 if (strcmp(r, name) == 0) {
                     snprintf(disp, sizeof disp, "%s", shown);
@@ -5369,13 +5378,38 @@ static void cmd_COMPOSERS_SHOW(sel_engine* e, const sel_message* m) {
             composer_put(&f, parts, 3);
             if (f.buf != NULL && composer_reserve(&f, p.used)) {
                 memcpy(f.buf + f.used, p.buf, p.used + 1u);
-                e->composer_page = f.buf;
+                e->rd_comp_page_blk = f.buf;
             } else {
                 composer_release(e->host, &f.buf);
             }
         }
         composer_release(e->host, &p.buf);
     }
+}
+
+/* Starts the composers read with the newest request: the request fields change only while no read runs (the thread reads them). */
+static void composers_post(sel_engine* e) {
+    if (lib_read_idle(&e->rd_composers)) {
+        copy_str(e->rd_comp_want, sizeof e->rd_comp_want, e->rd_comp_next_want);
+        copy_str(e->rd_comp_filter, sizeof e->rd_comp_filter, e->rd_comp_next_filter);
+        e->rd_comp_sort = e->rd_comp_next_sort;
+    }
+    lib_read_post(e, &e->rd_composers, composers_read_run);
+}
+
+/* COMPOSERS_SHOW [name]: opens the Library page (DUI-P4-3): every composer with its song count, and with a name the
+ * drilldown page of that composer. Posts the read (I906b); the state carries the answer once lib_reads_collect applies it. */
+static void cmd_COMPOSERS_SHOW(sel_engine* e, const sel_message* m) {
+    if (e->lib == NULL) {
+        sel_engine_report_error(e, "no_library", "COMPOSERS_SHOW");
+        return;
+    }
+    e->composer_queries++;
+    copy_str(e->rd_comp_next_want, sizeof e->rd_comp_next_want, m->argc > 0 ? m->args[0].v.s : "");
+    copy_str(e->rd_comp_next_filter, sizeof e->rd_comp_next_filter, e->composer_filter);
+    e->rd_comp_next_sort = e->composer_sort;
+    composer_release(e->host, &e->composer_page);
+    e->rd_post_composers = 1;
     e->composers_open = 1;
 }
 
@@ -5388,7 +5422,9 @@ static void cmd_COMPOSERS_VIEW(sel_engine* e, const sel_message* m) {
     e->composer_views++;
     if (e->composers_open && e->lib != NULL) {
         e->composer_queries++;
-        composers_fill_list(e);
+        copy_str(e->rd_comp_next_filter, sizeof e->rd_comp_next_filter, e->composer_filter);
+        e->rd_comp_next_sort = e->composer_sort;
+        e->rd_post_composers = 1;
     }
 }
 
@@ -6483,6 +6519,19 @@ static void view_reread(sel_engine* e, uint32_t source) {
     e->view.force_changed = 1;
 }
 
+/* I906b: starts the formats and composers reads the commands of this pump asked for, after the last command ran: a SOURCES command
+ * behind them would meet the running read as a busy library and send its rows twice (a different frame on every run). */
+static void lib_reads_flush(sel_engine* e) {
+    if (e->rd_post_formats) {
+        e->rd_post_formats = 0;
+        lib_read_post(e, &e->rd_formats, formats_read_run);
+    }
+    if (e->rd_post_composers) {
+        e->rd_post_composers = 0;
+        composers_post(e);
+    }
+}
+
 /* Pump side of the posted reads (I829): applies each landed answer, then starts the read that waited behind it. */
 static void lib_reads_collect(sel_engine* e) {
     if (lib_read_take(&e->rd_home)) {
@@ -6524,6 +6573,27 @@ static void lib_reads_collect(sel_engine* e) {
     if (e->sources_retry && !sel_library_busy(e->lib)) cmd_SOURCES(e, NULL);
     if (e->cur != SEL_SLOT_NONE && e->slot[e->cur].cat_retry == e->slot[e->cur].subsong + 1u && !sel_library_busy(e->lib)) {
         hw_length_apply(e, &e->slot[e->cur]); /* I434f: the catalogue length that start_subsong could not wait for */
+    }
+    if (lib_read_take(&e->rd_formats)) {
+        e->lib_reads_applied++;
+        composer_release(e->host, &e->formats);
+        e->formats = e->rd_fmt_blk;
+        e->rd_fmt_blk = NULL;
+        if (e->rd_formats.again) lib_read_post(e, &e->rd_formats, formats_read_run);
+    }
+    if (lib_read_take(&e->rd_composers)) {
+        e->lib_reads_applied++;
+        composer_release(e->host, &e->composers);
+        e->composers = e->rd_comp_blk;
+        e->rd_comp_blk = NULL;
+        if (e->rd_comp_want[0] != '\0') {
+            composer_release(e->host, &e->composer_page);
+            e->composer_page = e->rd_comp_page_blk;
+        } else {
+            composer_release(e->host, &e->rd_comp_page_blk);
+        }
+        e->rd_comp_page_blk = NULL;
+        if (e->rd_composers.again) composers_post(e);
     }
     if (lib_read_take(&e->rd_folders)) {
         e->lib_reads_applied++;
@@ -7536,6 +7606,11 @@ void sel_engine_destroy(sel_engine* e) {
         lib_read_end(&e->rd_home); /* I829: the posted reads use the library */
         lib_read_end(&e->rd_search);
         lib_read_end(&e->rd_folders);
+        lib_read_end(&e->rd_formats);
+        lib_read_end(&e->rd_composers);
+        composer_release(e->host, &e->rd_fmt_blk);
+        composer_release(e->host, &e->rd_comp_blk);
+        composer_release(e->host, &e->rd_comp_page_blk);
         if (e->rd_res_text) e->host->mem_free(e->host, e->rd_res_text);
         if (e->rd_res_meta) e->host->mem_free(e->host, e->rd_res_meta);
         if (e->rd_home_text) e->host->mem_free(e->host, e->rd_home_text);
@@ -7807,7 +7882,8 @@ int sel_engine_sources_pending(const sel_engine* e) {
 }
 
 int sel_engine_reads_pending(const sel_engine* e) {
-    return !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || e->sources_retry ||
+    return !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) ||
+           e->rd_formats.again || e->rd_composers.again || e->sources_retry ||
            e->rd_search.again || e->rd_view[0] != '\0';
 }
 
@@ -7842,6 +7918,7 @@ uint32_t sel_engine_pump(sel_engine* e, sel_event_sink sink, void* ctx) {
             dispatch(e, &m);
         }
     }
+    lib_reads_flush(e);
     scan_collect(e);
     sync_collect(e);
     search_collect(e);
