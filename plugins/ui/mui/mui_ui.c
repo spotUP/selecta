@@ -43,6 +43,12 @@
 #include <graphics/view.h>
 #include <intuition/screens.h>
 #include <proto/muimaster.h>
+/* I972: diskfont.library loads the screen font; the base is renamed for the same reason as GfxBase (mui_gfxbase.h, I719):
+ * libnix would open it at program start in selecta-cli too. Opened and closed around the own screen only. */
+#define DiskfontBase sel_mui_DiskfontBase
+#include <graphics/text.h>
+#include <proto/diskfont.h>
+struct Library* DiskfontBase;
 struct Library* MUIMasterBase;
 /* I719: graphics.library, opened by mui_open (see mui_gfxbase.h); the base symbol is renamed so libnix does not
  * auto-open it at program start. */
@@ -516,6 +522,48 @@ static LONG g_pen_held[MUI_PEN_TOTAL];
 static int g_pixel_aspect_q8 = 256; /* I949a: pixel height over width x 256 of the opened screen mode, read once in mui_screen_open */
 static int g_screen_rtg; /* I684b: the Workbench mode is a foreign (RTG) one; the own screen keeps that kind, planar stays planar */
 
+/* I972: the own screen's font follows the tier (mui_aa_screen_font). MUI's stock objects and the PLAIN AA backend (no
+ * ttengine or no Inter) draw in the screen font; without SA_Font they kept the 8 px Workbench font at 800x600. */
+static struct TextFont* g_scr_font;
+static struct TextAttr g_scr_font_attr;
+
+static void mui_screen_font_close(void) {
+    if (g_scr_font != NULL) {
+        CloseFont(g_scr_font);
+        g_scr_font = NULL;
+    }
+    if (DiskfontBase != NULL) {
+        CloseLibrary(DiskfontBase);
+        DiskfontBase = NULL;
+    }
+}
+
+/* Opens the tier font for a screen of rows x cols; NULL keeps the Workbench font (256-row tier, or the font is missing). */
+static struct TextAttr* mui_screen_font_open(int rows, int cols) {
+    mui_aa_screen_font_t f;
+    if (!mui_aa_screen_font(mui_aa_font_px(rows, cols), &f)) {
+        return NULL;
+    }
+    DiskfontBase = OpenLibrary((CONST_STRPTR) "diskfont.library", 36);
+    if (DiskfontBase == NULL) {
+        fprintf(stderr, "selecta mui: diskfont.library missing, screen keeps the Workbench font\n");
+        return NULL;
+    }
+    g_scr_font_attr.ta_Name = (STRPTR)f.name;
+    g_scr_font_attr.ta_YSize = (UWORD)f.ysize;
+    g_scr_font_attr.ta_Style = FS_NORMAL;
+    g_scr_font_attr.ta_Flags = 0;
+    g_scr_font = OpenDiskFont(&g_scr_font_attr);
+    if (g_scr_font == NULL) {
+        fprintf(stderr, "selecta mui: %s %d missing, screen keeps the Workbench font\n", f.name, f.ysize);
+        mui_screen_font_close();
+        return NULL;
+    }
+    g_scr_font_attr.ta_YSize = g_scr_font->tf_YSize; /* the size diskfont found */
+    fprintf(stderr, "selecta mui: screen font %s %d\n", f.name, (int)g_scr_font->tf_YSize);
+    return &g_scr_font_attr;
+}
+
 static void mui_screen_close(void) {
     int i;
     aatip_drop(NULL); /* I731: the tip window lives on the Selecta screen */
@@ -532,8 +580,11 @@ static void mui_screen_close(void) {
     if (!CloseScreen(g_scr)) {
         PubScreenStatus(g_scr, 0); /* visitor windows still open: leave the screen public rather than pull it away */
         fprintf(stderr, "selecta mui: screen %s still has visitor windows, left open\n", MUI_PUB_NAME);
+        g_scr = NULL;
+        return; /* the screen still uses g_scr_font: keep it and diskfont open */
     }
     g_scr = NULL;
+    mui_screen_font_close();
 }
 
 static void mui_screen_open(const uint32_t* tokens) {
@@ -543,6 +594,7 @@ static void mui_screen_open(const uint32_t* tokens) {
     ULONG wb_w = 0, wb_h = 0;
     int foreign = 0;
     mui_screen_plan_t plan;
+    struct TextAttr* font;
     ULONG pal[2 + MUI_PEN_TOTAL * 3];
     int i;
     for (i = 0; i < MUI_PEN_TOTAL; i++) {
@@ -587,11 +639,13 @@ static void mui_screen_open(const uint32_t* tokens) {
         pal[3 + i * 3] = g_plan.rgb32[i][2];
     }
     pal[1 + MUI_PEN_TOTAL * 3] = 0;
+    font = mui_screen_font_open((int)plan.height, (int)plan.width);
     g_scr = OpenScreenTags(NULL, SA_DisplayID, mode, SA_Overscan, OSCAN_TEXT, SA_Depth, (ULONG)plan.depth, SA_Colors32, (ULONG)pal, SA_Pens,
                            (ULONG)g_plan.dri_pens, SA_SharePens, TRUE, SA_PubName, (ULONG)MUI_PUB_NAME, SA_Title, (ULONG) "Selecta",
-                           SA_ShowTitle, FALSE, SA_Type, PUBLICSCREEN, TAG_DONE);
+                           SA_ShowTitle, FALSE, SA_Type, PUBLICSCREEN, font != NULL ? SA_Font : TAG_IGNORE, (ULONG)font, TAG_DONE);
     if (g_scr == NULL) {
         fprintf(stderr, "selecta mui: own screen did not open, using the Workbench screen\n");
+        mui_screen_font_close();
         return;
     }
     for (i = 0; i < MUI_PEN_TOTAL; i++) {
