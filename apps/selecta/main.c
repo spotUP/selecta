@@ -73,6 +73,34 @@ static void sel_trace(const sel_host* h, const char* phase) {
         fprintf(stderr, "trace t_ms=%u %s\n", (unsigned)h->clock_ms(h), phase);
     }
 }
+#if defined(__amigaos__) || defined(AMIGA)
+#include <proto/dos.h>
+#include <dos/dosextens.h>
+static int g_load_probe_data = 1; /* initialised data hunk probe */
+static int g_load_probe_bss; /* bss hunk probe */
+/* I434j5: log where this binary was loaded (each SegList hunk start and size, plus one code, data and bss symbol), so a crash
+ * PC from the reset-loop log can be mapped with m68k nm/objdump on the build. */
+static void sel_trace_load_address(void) {
+    struct CommandLineInterface* cli = Cli();
+    unsigned n = 0;
+    if (!g_trace) {
+        return;
+    }
+    fprintf(stderr, "load code_sym=0x%08lX data_sym=0x%08lX bss_sym=0x%08lX\n", (unsigned long)&sel_trace_load_address,
+            (unsigned long)(void*)&g_load_probe_data, (unsigned long)(void*)&g_load_probe_bss);
+    if (cli != NULL && cli->cli_Module != 0) {
+        BPTR seg = cli->cli_Module;
+        while (seg != 0 && n < 64) {
+            ULONG* p = (ULONG*)BADDR(seg);
+            fprintf(stderr, "load hunk %u start=0x%08lX size=%lu\n", n, (unsigned long)(p + 1), (unsigned long)(p[-1] - 8));
+            seg = (BPTR)p[0];
+            n++;
+        }
+    }
+}
+#else
+static void sel_trace_load_address(void) {}
+#endif
 /* Every fatal start-up exit reports through sel_startup_error (stderr, plus a requester on the Amiga without a
  * console, I563); --stats prints the report count so a test can prove the shared path ran. */
 #define STARTUP_FAIL(...)                                                                                          \
@@ -497,6 +525,7 @@ int main(int argc, char** argv)
         }
     }
     sel_trace(host, "main begin");
+    sel_trace_load_address();
     sel_registry_init_machine(host, machine_tags);
     sel_trace(host, "registry init done");
     out_id = option(argc, argv, "--output", sel_registry_default_output(machine_tags));
