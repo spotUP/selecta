@@ -1,0 +1,57 @@
+# dui-composer-settle (I948): opening the composer page (a page whose view source is SEL_VIEW_FOLDERS) settles in a bounded number of
+# desk_wait turns. -DSELECTA -DWORK -DSONGS
+# Before: desk_wait set side_stale on every turn while the view source was SEL_VIEW_FOLDERS (I608), so each turn posted a new sidebar
+# read, took it on the next turn, redrew, and posted again. The scripted run ended only when timing let a turn pass with the read still
+# in flight; with SELECTA_LIB_TEXT_SLOW_MS=300 on a niced machine that was hundreds of present turns and tens of seconds
+# (dui-direct-calls-async near its 300 s limit). Now side_stale follows a change of the saved-playlist signature (pl_hash).
+# Asserts on the mem scripted run that opens Browse, then the composer tile, with SELECTA_LIB_TEXT_SLOW_MS=300:
+#   1. sidebar reads posted (sidelib_async posts) <= 2: the start read and the one for the first saved-playlist signature. Before the
+#      fix every present turn posted one (3 to 8 seen); present turns are printed, not gated (see the I948 report, section Fix: the
+#      composer page also re-polls song_briefs every frame while the library worker is busy, a separate open item).
+#   2. sentinel: the composer page drew its song rows (plsong 1) and the sidebar list was read at least once (side_takes >= 1).
+include("${CMAKE_CURRENT_LIST_DIR}/dui_run.cmake")
+file(REMOVE_RECURSE "${WORK}")
+file(MAKE_DIRECTORY "${WORK}/songs")
+foreach(n a b c)
+  file(COPY_FILE "${SONGS}/selecta-test.mod" "${WORK}/songs/${n}.mod")
+endforeach()
+set(db "${WORK}/settle.db")
+function(settle_run outvar input)
+  file(WRITE "${WORK}/in.txt" "${input}")
+  dui_run(o --db "${db}" --ui desktop --backend mem --view home --canvas 1280x800 --clock fixed --stats --input "${WORK}/in.txt")
+  set(${outvar} "${o}" PARENT_SCOPE)
+endfunction()
+settle_run(ignore "wait 1\nexec LIBRARY_SCAN ${WORK}/songs\nwait 4\nexec PLAYLIST_CREATE alpha\nwait 2\n")
+settle_run(g_browse "wait 3\ntopbar 2\nwait 3\n")
+if(NOT "${g_browse}" MATCHES "browse tile ([0-9]+) 1 ")
+  message(FATAL_ERROR "no composer tile on the Browse page:\n${g_browse}")
+endif()
+set(tile ${CMAKE_MATCH_1})
+set(ENV{SELECTA_LIB_TEXT_SLOW_MS} 300)
+string(TIMESTAMP t0 "%s")
+settle_run(g_comp "wait 3\ntopbar 2\nwait 3\nbrowse ${tile}\nwait 3\n")
+string(TIMESTAMP t1 "%s")
+unset(ENV{SELECTA_LIB_TEXT_SLOW_MS})
+math(EXPR secs "${t1} - ${t0}")
+if(NOT "${g_comp}" MATCHES "plsong 1 [0-9]+ [0-9]+ [0-9]+ [0-9]+ ")
+  message(FATAL_ERROR "sentinel: no song row on the composer page:\n${g_comp}")
+endif()
+if(NOT "${g_comp}" MATCHES "turns idle=[0-9]+ present=([0-9]+) ")
+  message(FATAL_ERROR "no turns line in:\n${g_comp}")
+endif()
+set(present ${CMAKE_MATCH_1})
+if(NOT "${g_comp}" MATCHES "sidelib_async posts=([0-9]+) ")
+  message(FATAL_ERROR "no side_posts in:\n${g_comp}")
+endif()
+set(posts ${CMAKE_MATCH_1})
+if(NOT "${g_comp}" MATCHES "sidelib_async posts=[0-9]+ takes=([0-9]+) ")
+  message(FATAL_ERROR "no side_takes in:\n${g_comp}")
+endif()
+set(takes ${CMAKE_MATCH_1})
+message(STATUS "composer page: present=${present} side_posts=${posts} side_takes=${takes} wall=${secs}s")
+if(takes LESS 1)
+  message(FATAL_ERROR "sentinel: the sidebar list was never read (side_takes=0)")
+endif()
+if(posts GREATER 2)
+  message(FATAL_ERROR "the composer page re-read the sidebar every turn: side_posts=${posts} (want <= 2), present=${present}")
+endif()

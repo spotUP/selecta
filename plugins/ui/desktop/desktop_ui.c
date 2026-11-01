@@ -499,6 +499,7 @@ typedef struct desk {
     int32_t home_y_q16;      /* vertical scroll of the whole Home content in logical pixels, Q16 (I247) */
     uint32_t tile_queued;    /* tiles sent to the engine as queue next through the tile menu */
     uint32_t home_sig;       /* source and row count of the last HOME window drawn: a change redraws */
+    uint32_t side_pl_sig, side_pl_sig_set; /* I948: pl_hash of the saved playlists the sidebar list last followed */
     char home_dump[6144];    /* shelves as text for the stats */
     uint32_t art_ms_max;     /* I377: longest single art_load on the UI thread, host clock ms */
     uint32_t turn_ms_max;    /* I377: longest turn of desk_wait without its poll wait, host clock ms */
@@ -10507,7 +10508,9 @@ static void desk_side_follow(desk* d) {
         d->side_flight_frames_seen = d->frames;
         d->side_flight_frames++;
     }
-    if (side_lib_take(d) || d->side_stale) {
+    /* I948: a stale list redraws only once its reload can be posted (the read in flight was taken or dropped). Redrawing while the
+     * read is still in flight changes nothing and spun one present turn per loop turn for as long as the read took. */
+    if (side_lib_take(d) || (d->side_stale && !d->side_inflight)) {
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
     }
 }
@@ -14906,7 +14909,14 @@ static int desk_wait_turn(desk* d, uint32_t timeout_ms) {
             sig = 0x20000u + pl_hash(hv);
         }
         if (hv->source == SEL_VIEW_FOLDERS) { /* I608: the sidebar list follows the saved playlists */
-            d->side_stale = 1u;
+            /* I948: only when they change. Set on every turn, each turn posted a sidebar read and drew again while it was in flight
+             * (desk_side_follow), so a page with this source never went quiet while the read waited behind slow library work. */
+            uint32_t psig = pl_hash(hv);
+            if (!d->side_pl_sig_set || psig != d->side_pl_sig) {
+                d->side_pl_sig = psig;
+                d->side_pl_sig_set = 1u;
+                d->side_stale = 1u;
+            }
         }
         if (sig != d->home_sig) {
             d->home_sig = sig;
