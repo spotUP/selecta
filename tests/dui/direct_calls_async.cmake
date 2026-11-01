@@ -318,3 +318,12 @@ if(CMAKE_MATCH_1 LESS 1 OR CMAKE_MATCH_1 GREATER 4)
   message(FATAL_ERROR "site 6: group_reads=${CMAKE_MATCH_1} for a settled ${s6_queue} entry queue, want 1..4 (not one per frame):\n${s6}")
 endif()
 message(STATUS "site6_ok turn_ms_max=${s6_turn} queue=${s6_queue} group_reads=${CMAKE_MATCH_1}")
+
+# --- I906g PLAYLIST_PLAY: the key read is a posted write-queue op; the queue fills from its done callback, the UI thread never waits.
+sites_mem(ignore "${sites_db}" home "wait 1\nexec PLAYLIST_ADD_SONG 1 local:${WORK}/songs/a.mod\nwait 2\n")
+sites_live(s7 "q@4000" SOCK s7 KNOBS SELECTA_LIB_KEYS_SLOW_MS ARGS --output null --db "${sites_db}" --view queue --exec "PLAYLIST_PLAY 1")
+sites_field(s7_queue "${s7}" overlay queue)
+if(s7_queue LESS 1)
+  message(FATAL_ERROR "site 7 PLAYLIST_PLAY: the queue is empty, the posted key read never delivered:\n${s7}")
+endif()
+message(STATUS "site7_ok wait_ms=${s7_turn} queue=${s7_queue}")
