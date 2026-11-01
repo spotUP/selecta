@@ -132,3 +132,12 @@ Hardware modes (SIDBlaster, ZorroSID, USBSID-Pico, Trinity) cannot be proven on 
 - Q5: Does the catalogue hold per-subsong lengths from Songlengths.md5 (`subtunes` is a count; check `stil.<n>` and length tags in `hvsc.c`)? If not, I434f first extends the hvsc sync, not the plugin.
 - Q6: Register-based PSID PatternScope: port later or never? Selecta has no such viz kind.
 - Q7: Hardware modes cannot be rig-verified (no SIDBlaster/ZorroSID/USBSID-Pico/Trinity on the rig); accept mapping-only proof?
+
+## Answers (Johan 2026-11-01)
+
+- Q1 bundle: no. Load `playsid.library` from `LIBS:` when the user has it installed; when absent, fall through to the next SID owner. I434i is closed by this answer.
+- Q2 output: map Selecta's choice onto the library. The per-format `amiga.format_output` pref (I888a), else the system output, selects the library's own AHI mode or Paula 14-bit. Selecta effects do not apply to SID audio on this path.
+- Q3 RewindSong: not added (HippoPlayer parity; Hippo never calls it). Default chosen, not asked.
+- Q6 register PatternScope: port it as a new viz kind on MUI, AGA and RTG (row I434j).
+- Q7 hardware modes (SIDBlaster, ZorroSID, USBSID-Pico, Trinity): implement them fully; Johan tests them on his real A1200. A host test proves each pref value reaches `SetOperatingMode`; the A1200 check is the done gate for the hardware he owns.
+- Q4 (master volume to HW-kind) and Q5 (per-subsong lengths) are answered from the code by the build rows.
