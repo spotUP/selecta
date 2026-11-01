@@ -381,31 +381,33 @@ uint32_t mui_tool_row_width(uint32_t row);
 uint32_t mui_transport_row_width(uint32_t row);
 uint32_t mui_extra_row_width(void);
 
-/* I671: height model and screen plan (map/mui_screen.c). MUI 3.8 refuses a window whose minimum height does not fit the
- * screen; the model sums the rows of the mini layout from the builder constants, and the plan picks the screen mode the own
- * SELECTA screen opens in: the Workbench mode, or its interlaced variant (height doubled) when the Workbench is a native
- * mode too short for the model. Row heights in pixels for the topaz 8 font: framed string, framed text, slider knob row,
- * group spacing between children, window title bar plus borders; MUI_LIST_MIN_ROWS entries below the list title. */
-enum { MUI_FONT_H = 8, MUI_STRING_H = 14, MUI_TEXT_FRAMED_H = 12, MUI_SLIDER_H = 12, MUI_GROUP_SPACING = 4, MUI_WIN_CHROME_H = 24, MUI_LIST_MIN_ROWS = 2 };
-/* The LACE bit of a graphics.library mode id, and the id LockPubScreen failure leaves (INVALID_ID). */
+/* I671/I949b: screen plan and open ladder (map/mui_screen.c). MUI 3.8 refuses a window whose minimum size does not fit the
+ * screen (MUIA_Window_Open reads back 0); MUI itself is the measurement, so no height model lives here. The plan keeps the
+ * Workbench mode (Selecta never picks an interlaced screen on its own) and sets the depth. */
 #define MUI_MODE_LACE 0x00000004u
 #define MUI_INVALID_MODE 0xFFFFFFFFu
 /* Height of one icon button: icon, vertical padding, frame. */
 uint32_t mui_button_height(void);
-/* Minimum window height of the mini layout (the breakpoint a 640 px wide screen gets). */
-uint32_t mui_layout_min_height(void);
 typedef struct mui_screen_plan_t {
     uint32_t mode;          /* SA_DisplayID for the own screen */
     uint32_t width, height; /* expected screen size */
     uint32_t depth;         /* 8 on a foreign (RTG) mode, 4 on a native one */
-    uint8_t laced;          /* 1 when the plan added the LACE bit */
 } mui_screen_plan_t;
-/* Plans the own screen from the Workbench mode and size, its DIPF_IS_FOREIGN flag, and the height the layout needs. Returns 1
- * when it chose the laced variant, 0 when the Workbench mode is kept. mui_screen_plans / mui_screen_laced count the calls
- * and the laced picks (sentinels). */
-uint32_t mui_screen_plan(uint32_t wb_mode, uint32_t wb_w, uint32_t wb_h, int foreign, uint32_t need_h, mui_screen_plan_t* out);
+/* Plans the own screen from the Workbench mode and size and its DIPF_IS_FOREIGN flag. Always returns 0 (mode kept).
+ * mui_screen_plans counts the calls (sentinel). */
+uint32_t mui_screen_plan(uint32_t wb_mode, uint32_t wb_w, uint32_t wb_h, int foreign, mui_screen_plan_t* out);
 uint32_t mui_screen_plans(void);
-uint32_t mui_screen_laced(void);
+/* I949b open ladder: the layout reference size to try at each step after a refused MUIA_Window_Open. Step 0 is the layout of
+ * the screen itself, step 1 the most compact class (width MUI_COMPACT_W, below the 600 px rail breakpoint). laced = the screen
+ * is a user-chosen interlaced mode: the layout uses the 256-row metrics (half the rows). Returns 1 with the layout to apply and
+ * retry, 0 when no step is left (the caller reports MUI_FAIL_NO_WINDOW). mui_open_ladder_calls counts the calls (sentinel). */
+enum { MUI_OPEN_STEPS = 2, MUI_COMPACT_W = 599 };
+typedef struct mui_open_step_t {
+    uint32_t step;
+    uint32_t layout_w, layout_h;
+} mui_open_step_t;
+uint32_t mui_open_ladder(uint32_t step, uint32_t screen_w, uint32_t screen_h, int laced, mui_open_step_t* out);
+uint32_t mui_open_ladder_calls(void);
 /* I667n: the Workbench mode is RTG. Picasso96 (uaegfx) modes do not set DIPF_IS_FOREIGN, so the Workbench bitmap decides too: an
  * RTG bitmap is not BMF_STANDARD (planar), and a planar one is never deeper than 8. Inputs are the DisplayInfo flag test, the
  * BMA_FLAGS BMF_STANDARD test and BMA_DEPTH. */

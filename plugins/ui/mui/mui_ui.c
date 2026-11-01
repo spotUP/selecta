@@ -567,16 +567,9 @@ static void mui_screen_open(const uint32_t* tokens) {
     /* I671: MUI 3.8 refuses a window taller than its screen, and the layout is taller than a 640x256 AGA Workbench. The plan
      * (map/mui_screen.c) keeps the Workbench mode when the layout fits and takes its interlaced variant (height doubled) when
      * it does not; a laced mode the chipset cannot show keeps the Workbench mode and the window failure says why. */
-    mui_screen_plan((uint32_t)mode, (uint32_t)wb_w, (uint32_t)wb_h, foreign, mui_layout_min_height(), &plan);
-    if (plan.laced && ModeNotAvailable(plan.mode) != 0) {
-        fprintf(stderr, "selecta mui: laced mode %08lx not available, keeping the Workbench mode\n", (unsigned long)plan.mode);
-        plan.mode = mode;
-        plan.height = wb_h;
-        plan.laced = 0;
-    }
-    fprintf(stderr, "selecta mui: screen plan mode %08lx %lux%lu depth %lu (layout needs %lu px high, Workbench is %lu)\n",
-            (unsigned long)plan.mode, (unsigned long)plan.width, (unsigned long)plan.height, (unsigned long)plan.depth,
-            (unsigned long)mui_layout_min_height(), (unsigned long)wb_h);
+    mui_screen_plan((uint32_t)mode, (uint32_t)wb_w, (uint32_t)wb_h, foreign, &plan);
+    fprintf(stderr, "selecta mui: screen plan mode %08lx %lux%lu depth %lu\n", (unsigned long)plan.mode, (unsigned long)plan.width,
+            (unsigned long)plan.height, (unsigned long)plan.depth);
     mode = plan.mode;
     /* I949a: the one aspect source; consumers (I949e) read g_pixel_aspect_q8 and never DisplayInfo. */
     g_pixel_aspect_q8 = 256;
@@ -2948,20 +2941,29 @@ static void mui_apply_layout(mui_state* s) {
     set(s->balance[1], MUIA_ShowMe, s->lay.balance_main_detail ? TRUE : FALSE);
 }
 
-/* I671: the layout for the full screen the window asks for (D-M4-3), from the screen it opens on: the own SELECTA screen,
- * else the default public screen. */
-static void mui_layout_for_screen(mui_state* s) {
+/* I671/I949b: the layout for the full screen the window asks for (D-M4-3), from the screen it opens on (the own SELECTA
+ * screen, else the default public screen) and the open ladder step (map/mui_screen.c). Returns 0 when the ladder has no
+ * step left. A user-chosen interlaced screen is laid out with the 256-row metrics. */
+static uint32_t mui_layout_for_screen(mui_state* s, uint32_t step) {
     struct Screen* scr = g_scr != NULL ? g_scr : LockPubScreen(NULL);
     uint32_t w = 1280u, h = 720u;
+    int laced = 0;
+    mui_open_step_t st;
     if (scr != NULL) {
         w = (uint32_t)scr->Width;
         h = (uint32_t)scr->Height;
+        laced = !g_screen_rtg && ((uint32_t)GetVPModeID(&scr->ViewPort) & MUI_MODE_LACE) != 0u;
         if (scr != g_scr) {
             UnlockPubScreen(NULL, scr);
         }
     }
-    mui_layout_map_panel(&s->lay, w, h, g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP, s->lay.detail_hidden);
+    if (!mui_open_ladder(step, w, h, laced, &st)) {
+        return 0;
+    }
+    mui_layout_map_panel(&s->lay, st.layout_w, st.layout_h, g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP,
+                         s->lay.detail_hidden);
     mui_apply_layout(s);
+    return 1;
 }
 
 /* The window size changed: recompute, and re-apply only when the breakpoint moved (weights are user-adjustable
@@ -2993,6 +2995,7 @@ static void mui_timer_close(mui_state* s);
 static void* mui_open(const sel_ui_open_args* a) {
     mui_state* s = &g_state;
     ULONG open = 0;
+    uint32_t step;
     Object* strip;
     mui_window_attrs_t wattr;
     s->engine = a != NULL ? a->engine : NULL;
@@ -3069,18 +3072,24 @@ static void* mui_open(const sel_ui_open_args* a) {
      * minimum height (seven 24 px sidebar doors plus the player rows) exceeds a 640x256 AGA screen, and MUI 3.8 refuses
      * a window whose minimum does not fit (MUIA_Window_Open stays 0). Applying the 1280x720 layout only after the open
      * never got that far. */
-    mui_layout_for_screen(s);
-    set(s->win, MUIA_Window_Open, TRUE);
-    GetAttr(MUIA_Window_Open, s->win, &open); /* MUI opens the window inside the set; 0 here means it failed */
-    {
-        /* I671 measurement: the minimum the root group asked for (MUIM_AskMinMax ran inside the open attempt, the values
-         * stay in the object after a refusal) next to the screen it had to fit. --log on the rig records both lines. */
-        struct Screen* scr = g_scr != NULL ? g_scr : LockPubScreen(NULL);
-        fprintf(stderr, "selecta mui: window minimum %ldx%ld, screen %dx%d, open %lu\n", (long)_minwidth(s->root),
-                (long)_minheight(s->root), scr != NULL ? (int)scr->Width : 0, scr != NULL ? (int)scr->Height : 0,
-                (unsigned long)open);
-        if (scr != NULL && scr != g_scr) {
-            UnlockPubScreen(NULL, scr);
+    /* I949b open ladder: the same window object is opened again after each refusal with the next more compact layout
+     * (rig 2 proved MUI 3.8 reopens after ShowMe changes); the failure is reported only after the last step is refused. */
+    for (step = 0; mui_layout_for_screen(s, step); step++) {
+        set(s->win, MUIA_Window_Open, TRUE);
+        GetAttr(MUIA_Window_Open, s->win, &open); /* MUI opens the window inside the set; 0 here means it failed */
+        {
+            /* I671 measurement: the minimum the root group asked for (MUIM_AskMinMax ran inside the open attempt, the values
+             * stay in the object after a refusal) next to the screen it had to fit. --log on the rig records one line per step. */
+            struct Screen* scr = g_scr != NULL ? g_scr : LockPubScreen(NULL);
+            fprintf(stderr, "selecta mui: ladder step %lu window minimum %ldx%ld, screen %dx%d, open %lu\n", (unsigned long)step,
+                    (long)_minwidth(s->root), (long)_minheight(s->root), scr != NULL ? (int)scr->Width : 0,
+                    scr != NULL ? (int)scr->Height : 0, (unsigned long)open);
+            if (scr != NULL && scr != g_scr) {
+                UnlockPubScreen(NULL, scr);
+            }
+        }
+        if (open) {
+            break;
         }
     }
     if (!open) {

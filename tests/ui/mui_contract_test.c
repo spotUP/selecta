@@ -1554,45 +1554,106 @@ static void test_layout_before_open(void) {
     mui_layout_map(&m, 640u, 256u, SEL_UIM_TIER_BITMAP);
     CHECK(m.show[MUI_SLOT_MAIN] && m.show[MUI_SLOT_PLAYER] && m.show[MUI_SLOT_SIDEBAR] && !m.show[MUI_SLOT_DETAIL],
           "640x256 layout shows sidebar %u detail %u", (unsigned)m.show[MUI_SLOT_SIDEBAR], (unsigned)m.show[MUI_SLOT_DETAIL]);
-    pick = strstr(src, "    mui_layout_for_screen(s);\n    set(s->win, MUIA_Window_Open, TRUE);");
+    pick = strstr(src, "mui_layout_for_screen(s, step)");
     open_at = strstr(src, "set(s->win, MUIA_Window_Open, TRUE);");
     CHECK(pick != NULL && open_at != NULL && pick < open_at, "mui_open does not apply the screen layout before MUIA_Window_Open");
     CHECK(strstr(src, "mui_layout_map(&s->lay, 1280, 720)") == NULL, "mui_open still applies a fixed 1280x720 layout");
 }
 
-/* Regression (I671): on rig 2 (AGA, Workbench PAL hires 640x256, mode 0x29000) MUI 3.8 refused the window (MUIA_Window_Open
- * read back 0): the mini layout is taller than the screen. The height model must say so (taller than 256, within 512), the
- * plan must open the own screen in the laced variant of a native mode that is too short (height doubled, mode | LACE), keep
- * a laced or tall enough mode, keep an RTG mode at depth 8, and mui_screen_open must apply the plan (sentinel wiring). */
+/* I949b: the open ladder replaces the height model and the lacing plan. MUI 3.8 refuses a window whose minimum does not fit
+ * (MUIA_Window_Open reads back 0); the open attempt is the measurement. A refused first open steps to the next more compact
+ * layout and opens the SAME window again (rig-proven), MUI_FAIL_NO_WINDOW comes only after the last step is refused, no lace
+ * step is ever chosen automatically, and a user-chosen laced screen is laid out with the 256-row metrics. */
+static uint32_t ladder_run(uint32_t sw, uint32_t sh, int laced, uint32_t accept_step, uint32_t* tries, mui_layout_map_t* last) {
+    mui_open_step_t st;
+    uint32_t step, opened = 0;
+    *tries = 0;
+    for (step = 0; mui_open_ladder(step, sw, sh, laced, &st); step++) {
+        (*tries)++;
+        mui_layout_map(last, st.layout_w, st.layout_h, SEL_UIM_TIER_BITMAP);
+        if (step == accept_step) {
+            opened = 1;
+            break;
+        }
+    }
+    return opened;
+}
+
 static void test_screen_plan(void) {
     mui_screen_plan_t p;
-    uint32_t need = mui_layout_min_height();
-    uint32_t before = mui_screen_plans();
-    static char src[400000];
+    mui_layout_map_t m;
+    mui_open_step_t st;
+    uint32_t before = mui_screen_plans(), lbefore = mui_open_ladder_calls(), tries;
+    static char src[400000], scr_src[40000], hdr_src[100000];
     FILE* f = fopen(MUI_UI_SOURCE, "rb");
     size_t n = f != NULL ? fread(src, 1, sizeof src - 1, f) : 0;
     if (f != NULL) {
         fclose(f);
     }
     src[n] = 0;
+    f = fopen(MUI_DIR "/map/mui_screen.c", "rb");
+    n = f != NULL ? fread(scr_src, 1, sizeof scr_src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    scr_src[n] = 0;
+    f = fopen(MUI_DIR "/map/mui_map.h", "rb");
+    n = f != NULL ? fread(hdr_src, 1, sizeof hdr_src - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    hdr_src[n] = 0;
     CHECK(mui_button_height() == (uint32_t)mui_model_icon_px() + 2u * MUI_BTN_PAD_Y + MUI_BTN_FRAME, "button height %u", (unsigned)mui_button_height());
-    CHECK(need > 256u && need <= 512u, "mini layout minimum height %u must be taller than 256 and fit 512", (unsigned)need);
-    CHECK(mui_screen_plan(0x29000u, 640u, 256u, 0, need, &p) == 1 && p.laced && p.mode == 0x29004u && p.width == 640u &&
-              p.height == 512u && p.depth == 4u,
-          "AGA 640x256 plan: laced %u mode %08x %ux%u depth %u", (unsigned)p.laced, (unsigned)p.mode, (unsigned)p.width,
-          (unsigned)p.height, (unsigned)p.depth);
-    CHECK(mui_screen_plan(0x29004u, 640u, 512u, 0, need, &p) == 0 && !p.laced && p.mode == 0x29004u && p.height == 512u,
-          "laced 640x512 plan changed: mode %08x height %u", (unsigned)p.mode, (unsigned)p.height);
-    CHECK(mui_screen_plan(0x29000u, 640u, 256u, 0, 200u, &p) == 0 && p.mode == 0x29000u, "a fitting layout still laces");
-    CHECK(mui_screen_plan(0x50041303u, 800u, 600u, 1, need, &p) == 0 && !p.laced && p.depth == 8u && p.mode == 0x50041303u,
-          "RTG 800x600 plan: laced %u depth %u", (unsigned)p.laced, (unsigned)p.depth);
-    CHECK(mui_screen_plan(MUI_INVALID_MODE, 0u, 0u, 0, need, &p) == 0 && p.mode == MUI_INVALID_MODE, "invalid mode laced");
-    CHECK(mui_screen_plans() == before + 5u && mui_screen_laced() >= 1u, "plan sentinels %u %u", (unsigned)mui_screen_plans(),
-          (unsigned)mui_screen_laced());
+    /* The plan keeps the Workbench mode: never an automatic lace step, whatever the height. */
+    CHECK(mui_screen_plan(0x29000u, 640u, 256u, 0, &p) == 0 && p.mode == 0x29000u && p.width == 640u && p.height == 256u && p.depth == 4u,
+          "AGA 640x256 plan: mode %08x %ux%u depth %u", (unsigned)p.mode, (unsigned)p.width, (unsigned)p.height, (unsigned)p.depth);
+    CHECK(mui_screen_plan(0x29004u, 640u, 512u, 0, &p) == 0 && p.mode == 0x29004u && p.height == 512u, "user-chosen laced 640x512 plan changed: mode %08x height %u",
+          (unsigned)p.mode, (unsigned)p.height);
+    CHECK(mui_screen_plan(0x50041303u, 800u, 600u, 1, &p) == 0 && p.depth == 8u && p.mode == 0x50041303u, "RTG 800x600 plan depth %u", (unsigned)p.depth);
+    CHECK(mui_screen_plan(MUI_INVALID_MODE, 0u, 0u, 0, &p) == 0 && p.mode == MUI_INVALID_MODE, "invalid mode changed");
+    CHECK(mui_screen_plans() == before + 4u, "plan sentinel %u", (unsigned)mui_screen_plans());
+    /* Ladder steps: the screen layout first, then the compact class (a narrower layout reference), then no step. */
+    CHECK(mui_open_ladder(0, 640u, 256u, 0, &st) == 1 && st.layout_w == 640u && st.layout_h == 256u && st.step == 0u, "step 0 layout %ux%u",
+          (unsigned)st.layout_w, (unsigned)st.layout_h);
+    CHECK(mui_open_ladder(1, 640u, 256u, 0, &st) == 1 && st.layout_w == MUI_COMPACT_W && st.layout_h == 256u && st.step == 1u, "step 1 layout %ux%u",
+          (unsigned)st.layout_w, (unsigned)st.layout_h);
+    CHECK(mui_open_ladder(2, 640u, 256u, 0, &st) == 0, "a third ladder step exists");
+    CHECK(mui_open_ladder(1, 320u, 256u, 0, &st) == 0, "a screen already narrower than the compact class got a pointless retry step");
+    /* Refused first open steps to the compact layout, then opens. */
+    {
+        mui_layout_map_t full;
+        mui_layout_map(&full, 640u, 256u, SEL_UIM_TIER_BITMAP);
+        CHECK(ladder_run(640u, 256u, 0, 1u, &tries, &m) == 1 && tries == 2u && m.width == MUI_COMPACT_W && m.breakpoint == SEL_UIM_BP_MINI_SUGGESTION &&
+                  full.breakpoint != m.breakpoint,
+              "refused first open: tries %u compact width %u breakpoint %u (full %u)", (unsigned)tries, (unsigned)m.width, (unsigned)m.breakpoint,
+              (unsigned)full.breakpoint);
+    }
+    CHECK(ladder_run(640u, 256u, 0, 0u, &tries, &m) == 1 && tries == 1u && m.width == 640u, "first open accepted: tries %u", (unsigned)tries);
+    /* All refused: the ladder runs out after two tries, which is where mui_open reports MUI_FAIL_NO_WINDOW. */
+    CHECK(ladder_run(640u, 256u, 0, 99u, &tries, &m) == 0 && tries == (uint32_t)MUI_OPEN_STEPS, "all refused: tries %u", (unsigned)tries);
+    /* User-chosen laced 640x512: the layout uses the 256-row metrics, the same as the plain 640x256 screen, and no lace step. */
+    CHECK(mui_open_ladder(0, 640u, 512u, 1, &st) == 1 && st.layout_h == 256u && st.layout_w == 640u, "laced 640x512 layout %ux%u",
+          (unsigned)st.layout_w, (unsigned)st.layout_h);
+    CHECK(ladder_run(640u, 512u, 1, 0u, &tries, &m) == 1 && tries == 1u && m.height == 256u, "laced screen opens with 256-row metrics: height %u",
+          (unsigned)m.height);
+    CHECK(mui_open_ladder_calls() > lbefore + 8u, "ladder sentinel %u", (unsigned)mui_open_ladder_calls());
+    /* The model is gone from the sources and the header. */
+    CHECK(strstr(scr_src, "mui_layout_min_height") == NULL && strstr(src, "mui_layout_min_height") == NULL && strstr(scr_src, "MUI_WIN_CHROME_H") == NULL &&
+              strstr(src, "MUI_WIN_CHROME_H") == NULL && strstr(hdr_src, "MUI_WIN_CHROME_H") == NULL &&
+              strstr(hdr_src, "mui_layout_min_height") == NULL && strstr(scr_src, "MUI_LIST_MIN_ROWS") == NULL && strstr(scr_src, "MODE_LACE") == NULL &&
+              strstr(src, "plan.laced") == NULL && strstr(src, "ModeNotAvailable(plan.mode)") == NULL,
+          "the height model, MUI_WIN_CHROME_H or an automatic lace step is still in the sources");
+    /* Wiring: mui_open loops the ladder on the same window, reports only after the last step. */
+    {
+        const char* loop = strstr(src, "for (step = 0; mui_layout_for_screen(s, step); step++) {");
+        const char* openset = loop != NULL ? strstr(loop, "set(s->win, MUIA_Window_Open, TRUE);") : NULL;
+        const char* fail = loop != NULL ? strstr(loop, "if (!open) {") : NULL;
+        CHECK(loop != NULL && openset != NULL && fail != NULL && openset < fail && strstr(src, "mui_open_ladder(step, w, h, laced, &st)") != NULL,
+              "mui_open does not drive the open ladder on one window");
+    }
     CHECK(strstr(src, "mui_screen_plan((uint32_t)mode") != NULL && strstr(src, "SA_DisplayID, mode") != NULL &&
               strstr(src, "mode = plan.mode;") != NULL && strstr(src, "SA_Depth, (ULONG)plan.depth") != NULL,
           "mui_screen_open does not open the own screen from mui_screen_plan");
-    CHECK(strstr(src, "ModeNotAvailable(plan.mode)") != NULL, "mui_screen_open does not check the laced mode is available");
     /* I667n: rig 2 uaegfx Workbench 0x50041303 800x600x24 has DIPF_IS_FOREIGN clear; the depth-4 plan held all 16 pens on RTG. */
     CHECK(mui_screen_is_rtg(0, 0, 24u) && mui_screen_is_rtg(0, 1, 16u) && mui_screen_is_rtg(1, 1, 8u) && mui_screen_is_rtg(0, 0, 8u) &&
               !mui_screen_is_rtg(0, 1, 8u) && !mui_screen_is_rtg(0, 1, 4u),
