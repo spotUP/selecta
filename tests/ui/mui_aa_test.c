@@ -1065,6 +1065,20 @@ static void test_screen_font(void) {
     CHECK(ui != NULL && strstr(ui, "mui_aa_screen_font(mui_aa_font_px(") != NULL && strstr(ui, "SA_Font : TAG_IGNORE, (ULONG)font") != NULL &&
               strstr(ui, "OpenDiskFont(") != NULL,
           "mui_screen_open opens the tier font and passes it to OpenScreenTags");
+    /* I972c: MUI ignores the screen font; the window roots carry MUIA_Font = the tier TextFont, kept open until the screen closes. */
+    CHECK(ui != NULL && strstr(ui, "WindowContents, s->root = VGroup, TH_FONT TH_TAGS(") != NULL,
+          "the main window root group gets the tier font (TH_FONT)");
+    CHECK(ui != NULL && strstr(ui, "col = MUI_NewObject((char*)MUIC_Group, TH_FONT TAG_DONE)") != NULL,
+          "the dialog window root column gets the tier font");
+    CHECK(ui != NULL && strstr(ui, "g_scr_font == NULL) {\n        return (ULONG)TAG_IGNORE;") != NULL &&
+              strstr(ui, "g_font_applied++;\n    return (ULONG)MUIA_Font;") != NULL,
+          "no tier font: TAG_IGNORE; with one: MUIA_Font and the applied count moves");
+    CHECK(ui != NULL && strstr(ui, "tier font on %d window roots") != NULL, "the sentinel line reports the applied count");
+    {
+        const char* dispose = ui != NULL ? strstr(ui, "MUI_DisposeObject(s->app); /* closes the window") : NULL;
+        const char* close_scr = dispose != NULL ? strstr(dispose, "mui_screen_close();") : NULL;
+        CHECK(close_scr != NULL && close_scr - dispose < 800, "the font closes (mui_screen_close) only after the app is disposed");
+    }
     free(ui);
 }
 
