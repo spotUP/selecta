@@ -114,6 +114,7 @@ static int playlist_add(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     int64_t id;
     int64_t pos = 0;
     const char* p = op->value;
+    sel_library_test_slow("SELECTA_LIB_WRITE_SLOW_MS"); /* I948b test knob: a playlist create on a busy worker */
     if (op->name == NULL || op->name[0] == '\0') return SQLITE_MISUSE;
     if (!folder_exists(db, op->at)) return refuse(rows, SEL_FOLDER_ERR_NO_FOLDER);
     st = prep(db, "INSERT INTO playlists(name, folder_id) VALUES(?1, ?2)");

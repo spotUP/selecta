@@ -271,7 +271,9 @@ message(STATUS "site3_ok turn_ms_max=${s3_turn} playlists=${s3_pl}")
 # --- site 4: New playlist count (COUNT knob). The header plus creates "Playlist <n+1>" from the engine's count.
 sites_centre(plus_xy "${g_lib}" "sidehdr plus [^\n]*rect ")
 sites_click(c4a 1800 1 "${plus_xy}")
-sites_live(s4 "${c4a} q@4000" SOCK s4 KNOBS SELECTA_LIB_COUNT_SLOW_MS ARGS --db "${sites_db}" --view library)
+# I948b: the create is a library write too. WRITE_SLOW_MS makes it a 300 ms statement, so a create made on the UI thread fails the wait
+# bound on every run (before the fix it waited only when the worker happened to be busy: a flake).
+sites_live(s4 "${c4a} q@4000" SOCK s4 KNOBS SELECTA_LIB_COUNT_SLOW_MS SELECTA_LIB_WRITE_SLOW_MS ARGS --db "${sites_db}" --view library)
 sites_field(s4_clicks "${s4}" sidehdr plus_clicks)
 sites_expect("site 4: the header plus was clicked once" "${s4_clicks}" 1)
 message(STATUS "site4_ok turn_ms_max=${s4_turn} plus_clicks=${s4_clicks}")
