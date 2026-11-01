@@ -41,6 +41,7 @@
 #include "prefs.h"
 #include "view.h"
 #include "../core/pal.h"
+#include "../core/count.h"
 #if !defined(__amigaos__) && !defined(AMIGA)
 #include <pthread.h>
 #include <sched.h>
@@ -5784,8 +5785,8 @@ static int drill_query(sel_engine* e, const char* source, uint32_t level, const 
                        sel_collection_row_fn fn, void* ctx) {
     int n = sel_library_source_drill(e->lib, source, level, a, b, skip, (uint32_t)SEL_DRILL_WINDOW, fn, ctx);
     if (n >= 0) {
-        __atomic_fetch_add(&e->collection_queries, 1u, __ATOMIC_RELAXED);
-        __atomic_fetch_add(&e->drill_rows, (uint32_t)n, __ATOMIC_RELAXED);
+        SEL_COUNT_ADD(&e->collection_queries, 1u);
+        SEL_COUNT_ADD(&e->drill_rows, (uint32_t)n);
         e->coll_target->drill_rows += (uint32_t)n;
     }
     return n;
@@ -5915,7 +5916,7 @@ static void coll_build_run(sel_engine* e) {
         coll_shelf_sink k;
         memset(&k, 0, sizeof k);
         k.out = pg->shelf[sh];
-        if (sel_library_collection(e->lib, kind, key, sh + 1u, coll_shelf_row, &k) >= 0) __atomic_fetch_add(&e->collection_queries, 1u, __ATOMIC_RELAXED);
+        if (sel_library_collection(e->lib, kind, key, sh + 1u, coll_shelf_row, &k) >= 0) SEL_COUNT_ADD(&e->collection_queries, 1u);
         pg->shelf_n[sh] = k.n;
         pg->shelf_total[sh] = k.total;
     }
@@ -5923,7 +5924,7 @@ static void coll_build_run(sel_engine* e) {
     hk.out = &head;
     hk.n = hk.total = 0u;
     if (kind == (uint32_t)SEL_LIB_ITEM_ALBUM) {
-        if (sel_library_collection(e->lib, kind, key, SEL_COLL_HEAD, coll_shelf_row, &hk) >= 0) __atomic_fetch_add(&e->collection_queries, 1u, __ATOMIC_RELAXED);
+        if (sel_library_collection(e->lib, kind, key, SEL_COLL_HEAD, coll_shelf_row, &hk) >= 0) SEL_COUNT_ADD(&e->collection_queries, 1u);
         snprintf(pg->title, sizeof pg->title, "%s", head.name);
         snprintf(pg->sub, sizeof pg->sub, "%s", head.artist);
         pg->year = head.year;
@@ -5942,9 +5943,9 @@ static void coll_build_run(sel_engine* e) {
         drill_build(e, key, &b);
         snprintf(pg->title, sizeof pg->title, "%s", pg->key);
     } else if (kind == (uint32_t)SEL_LIB_ITEM_COMPOSER) {
-        if (sel_library_composer_page(e->lib, key, coll_composer_row, &b) >= 0) __atomic_fetch_add(&e->collection_queries, 1u, __ATOMIC_RELAXED);
+        if (sel_library_composer_page(e->lib, key, coll_composer_row, &b) >= 0) SEL_COUNT_ADD(&e->collection_queries, 1u);
     } else if (sel_library_collection(e->lib, kind, key, SEL_COLL_SONGS, coll_song_row, &b) >= 0) {
-        __atomic_fetch_add(&e->collection_queries, 1u, __ATOMIC_RELAXED);
+        SEL_COUNT_ADD(&e->collection_queries, 1u);
     }
     composer_release(e->host, &e->rdc_blk);
     e->rdc_blk = composer_take(&b.rows);

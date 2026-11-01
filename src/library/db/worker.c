@@ -4,6 +4,7 @@
  * allocates nothing. Without threads (Amiga until Phase 12) the request runs
  * on the caller's task through the same handler and queues. */
 #include "db_internal.h"
+#include "../../core/count.h"
 
 #include <string.h>
 #if !defined(SEL_LIBRARY_NO_THREAD) && !defined(NDEBUG)
@@ -33,7 +34,7 @@ int sel_library_watch(int on) {
 }
 
 uint32_t sel_library_watched_waits(void) {
-    return __atomic_load_n(&g_watched_waits, __ATOMIC_RELAXED);
+    return SEL_COUNT_GET(&g_watched_waits);
 }
 
 /* I906a: allow list for the debug UI-wait guard. A watched thread that must wait on the library wraps the call in
@@ -49,11 +50,11 @@ int sel_library_ui_allow(int on) {
 }
 
 uint32_t sel_library_allowed_waits(void) {
-    return __atomic_load_n(&g_allowed_waits, __ATOMIC_RELAXED);
+    return SEL_COUNT_GET(&g_allowed_waits);
 }
 
 uint32_t sel_library_ui_guard_hits(void) {
-    return __atomic_load_n(&g_guard_hits, __ATOMIC_RELAXED);
+    return SEL_COUNT_GET(&g_guard_hits);
 }
 
 #if !defined(NDEBUG)
@@ -65,10 +66,10 @@ void sel_library_ui_wait_check(const char* what, uint32_t id) {
 
     if (!g_watch || g_nowait) return;
     if (g_allow) {
-        __atomic_fetch_add(&g_allowed_waits, 1u, __ATOMIC_RELAXED);
+        SEL_COUNT_ADD(&g_allowed_waits, 1u);
         return;
     }
-    __atomic_fetch_add(&g_guard_hits, 1u, __ATOMIC_RELAXED);
+    SEL_COUNT_ADD(&g_guard_hits, 1u);
     if (id != 0xFFFFFFFFu) {
         fprintf(stderr, "library_ui_wait: %s=%u\n", what, (unsigned)id);
     } else {
@@ -81,7 +82,7 @@ void sel_library_ui_wait_check(const char* what, uint32_t id) {
 #endif
 
 uint32_t sel_library_deferred(void) {
-    return __atomic_load_n(&g_deferred, __ATOMIC_RELAXED);
+    return SEL_COUNT_GET(&g_deferred);
 }
 
 int sel_library_busy(sel_library* lib) {
@@ -231,7 +232,7 @@ int sel_library_request(sel_library* lib, uint32_t req, const void* payload, sel
 #endif
     if (g_nowait) { /* I782: the call lock is held for a whole job and between a sync's requests; a draw never queues behind them */
         if (pthread_mutex_trylock(&lib->call_lock) != 0) {
-            __atomic_fetch_add(&g_deferred, 1u, __ATOMIC_RELAXED);
+            SEL_COUNT_ADD(&g_deferred, 1u);
             return 0;
         }
     } else {
@@ -239,7 +240,7 @@ int sel_library_request(sel_library* lib, uint32_t req, const void* payload, sel
     }
     /* I829: a watched thread is about to wait. A nowait request that got the call lock is not counted: with the lock free the
      * worker has no other request, so the reply is one statement away. */
-    if (g_watch && !g_nowait) __atomic_fetch_add(&g_watched_waits, 1u, __ATOMIC_RELAXED);
+    if (g_watch && !g_nowait) SEL_COUNT_ADD(&g_watched_waits, 1u);
     pthread_mutex_lock(&lib->lock);
     if (!sel_spsc_push(&lib->requests, &m)) {
         pthread_mutex_unlock(&lib->lock);
