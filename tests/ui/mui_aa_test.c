@@ -250,7 +250,7 @@ static void test_panel_source(void) {
     }
     CHECK(count_of(ui, "TH_TAGS(MUI_TH_PANEL") == 0, "TH PANEL group left in mui_ui.c: %d", count_of(ui, "TH_TAGS(MUI_TH_PANEL"));
     CHECK(count_of(ui, "MUIA_Frame, MUIV_Frame_Group") == 0, "plain art frame left in mui_ui.c");
-    CHECK(count_of(ui, "mui_aapanel(") == 7, "panel constructor sites: %d (definition + 6)", count_of(ui, "mui_aapanel("));
+    CHECK(count_of(ui, "mui_aapanel(") == 6, "panel constructor sites: %d (definition + 5; the player art frame goes through mui_aapanel_wh, I949d)", count_of(ui, "mui_aapanel("));
     CHECK(count_of(ui, "mui_aapanel_new(") == 1, "one AAPanel constructor call: %d", count_of(ui, "mui_aapanel_new("));
     CHECK(strstr(cls, "mui_aa_panel_rgb(") != NULL && strstr(cls, "mui_aa_panel_radius(") != NULL && strstr(cls, "aa_round_corners(") != NULL,
           "class does not draw through the shared panel helpers");

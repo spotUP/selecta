@@ -868,12 +868,18 @@ static int mui_screen_compact(void) {
     return mui_layout_compact(w, mui_layout_rows(h, laced), g_screen_rtg ? SEL_UIM_TIER_DEFAULT : SEL_UIM_TIER_BITMAP) != 0u;
 }
 
-static Object* mui_aapanel(int role, int fixed_px) {
+/* fixed_h 0: the fixed frame is square; I949d: the compact player's art frame has its own height (tall pixels). */
+static Object* mui_aapanel_wh(int role, int fixed_px, int fixed_h) {
     mui_aapanel_spec sp;
     sp.tokens = g_tokens;
     sp.role = role;
     sp.fixed_px = fixed_px;
+    sp.fixed_h = fixed_h;
     return mui_aapanel_new(&sp);
+}
+
+static Object* mui_aapanel(int role, int fixed_px) {
+    return mui_aapanel_wh(role, fixed_px, 0);
 }
 
 /* I793 (drift doc S3 to S9): the sidebar slot content. Everything shown comes from mui_sidebar_build (map/mui_sidebar.c): the doors
@@ -1033,8 +1039,10 @@ static Object* mui_p8_extras_row(void) {
 static Object* mui_player_group(mui_state* s) {
     sel_uim_frame zero;
     Object *row1, *row2, *row3, *row4, *row5, *g, *art, *hbar, *colL, *colC, *colR, *titles, *like;
+    mui_player_band_t band;
     uint32_t k;
     memset(&zero, 0, sizeof zero);
+    mui_player_band(&band, mui_screen_compact() ? 1u : 0u, g_pixel_aspect_q8); /* I949d: the compact class is ONE band, extras in the menu */
     row1 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     for (k = 0; row1 != NULL && k < MUI_BTN_COUNT; k++) {
         uint32_t i = mui_player_transport_at(k);
@@ -1051,8 +1059,8 @@ static Object* mui_player_group(mui_state* s) {
     row2 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     row3 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
     row4 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
-    row5 = MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE);
-    art = mui_aapanel(MUI_AA_PANEL_RAISED, MUI_PLAYER_ART_PX);
+    row5 = band.extras ? MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE) : row4; /* the compact band has no separate status row */
+    art = mui_aapanel_wh(MUI_AA_PANEL_RAISED, (int)band.art_w, (int)band.art_h);
     like = mui_make_button_icon(mui_tool_labels[0], mui_tool_labels[0], CTL_P4_BASE + P4_LIKE);
     mui_set_tip(s, MUI_TS_LIKE, like, MUI_TIP_LIKE, 0, NULL, 0);
     mui_set_tip(s, MUI_TS_SEEK, s->seek, MUI_TIP_SEEK, 0, NULL, 0);
@@ -1081,11 +1089,13 @@ static Object* mui_player_group(mui_state* s) {
     DoMethod(colC, OM_ADDMEMBER, row1);
     DoMethod(colC, OM_ADDMEMBER, row2);
     DoMethod(row4, OM_ADDMEMBER, s->vol); /* I717: volume at the right end of the bar, like the Mac player bar */
-    DoMethod(row5, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_FORMAT, "        ", MUI_LBL_FORMAT));
+    DoMethod(row5, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_FORMAT, "        ", MUI_LBL_FORMAT)); /* compact: row5 is row4, volume, format, status on one row */
     DoMethod(row5, OM_ADDMEMBER, mui_make_text(s, MUI_ATTR_STATUS, "Stopped", MUI_LBL_STATUS));
     DoMethod(colR, OM_ADDMEMBER, row4);
-    DoMethod(colR, OM_ADDMEMBER, mui_p8_extras_row());
-    DoMethod(colR, OM_ADDMEMBER, row5);
+    if (band.extras) {
+        DoMethod(colR, OM_ADDMEMBER, mui_p8_extras_row());
+        DoMethod(colR, OM_ADDMEMBER, row5);
+    }
     DoMethod(hbar, OM_ADDMEMBER, colL);
     DoMethod(hbar, OM_ADDMEMBER, colC);
     DoMethod(hbar, OM_ADDMEMBER, colR);

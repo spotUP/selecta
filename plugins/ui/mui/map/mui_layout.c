@@ -75,6 +75,28 @@ uint32_t mui_layout_compact(uint32_t width, uint32_t height, uint32_t tier) {
            height <= (uint32_t)MUI_COMPACT_MAX_ROWS;
 }
 
+static uint32_t g_player_compact_builds;
+uint32_t mui_player_band_compact_builds(void) { return g_player_compact_builds; }
+
+void mui_player_band(mui_player_band_t* out, uint32_t compact, int aspect_q8) {
+    uint32_t a = aspect_q8 > 0 ? (uint32_t)aspect_q8 : 256u;
+    memset(out, 0, sizeof *out);
+    out->band_n = 1;
+    out->art_w = (uint32_t)MUI_PLAYER_ART_PX;
+    out->art_h = (uint32_t)MUI_PLAYER_ART_PX;
+    if (compact) {
+        g_player_compact_builds++;
+        out->compact = 1;
+        out->art_h = (out->art_w * 256u + a / 2u) / a; /* square on screen: a tall pixel counts as its aspect in rows */
+        out->right_rows = 1;
+        out->height = out->art_h + 2u * (uint32_t)MUI_PLAYER_COMPACT_PAD;
+        return;
+    }
+    out->extras = 1;
+    out->right_rows = 3;
+    out->height = out->art_h + 2u * (uint32_t)MUI_PLAYER_COMPACT_PAD;
+}
+
 /* I798 (T2, R3): the same map with the Now Playing column dropped when `detail_hidden`, through the layout the Mac computes
  * for its Hide Now Playing Panel (I619), so the main region takes the width on both. */
 void mui_layout_map_panel(mui_layout_map_t* m, uint32_t width, uint32_t height, uint32_t tier, uint32_t detail_hidden) {

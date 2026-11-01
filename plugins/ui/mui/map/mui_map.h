@@ -81,6 +81,22 @@ typedef struct mui_layout_map_t {
  * brand row, and the Your Library block lives on the Library page. mui_layout_map sets `compact` from this. */
 enum { MUI_COMPACT_MAX_ROWS = 300 };
 uint32_t mui_layout_compact(uint32_t width, uint32_t height, uint32_t tier);
+/* I949d: the player band of the compact class: ONE band at most MUI_PLAYER_COMPACT_MAX_H px high. Left the art (MUI_PLAYER_ART_PX wide, the
+ * height from the pixel aspect so it is square on screen: 28 rows at aspect 512) with title and artist; centre the transport row and the
+ * seek row; right the volume and the format/status on ONE row. Album and speed leave the band: they are menu items only (the action
+ * table rows next_album .. tempo_down, listed by mui_menu_build), no overflow button. A non-compact class keeps the Mac's three columns. */
+enum { MUI_PLAYER_COMPACT_MAX_H = 36, MUI_PLAYER_COMPACT_PAD = 4 };
+typedef struct mui_player_band_t {
+    uint8_t compact;      /* 1 = the one-band form */
+    uint8_t band_n;       /* bands: 1 compact; 1 also for the regular bar (it is one HGroup) */
+    uint8_t extras;       /* 1 = the album and speed buttons are children of the band */
+    uint8_t right_rows;   /* rows in the right column: 1 compact (volume + format + status), 3 regular */
+    uint32_t art_w, art_h;
+    uint32_t height;      /* the band height budget in px: art height plus 2 x pad */
+} mui_player_band_t;
+void mui_player_band(mui_player_band_t* out, uint32_t compact, int aspect_q8);
+/* Sentinel: compact bands built since start. */
+uint32_t mui_player_band_compact_builds(void);
 /* Layout rows of a screen: half of an interlaced screen's rows (a user-chosen laced screen uses the 256-row metrics, I949b). */
 uint32_t mui_layout_rows(uint32_t screen_h, int laced);
 /* I615d: `tier` is SEL_UIM_TIER_DEFAULT on an RTG screen (top bar slot shown), SEL_UIM_TIER_BITMAP on a native planar screen. */

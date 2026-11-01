@@ -90,7 +90,7 @@ Object* mui_aapanel_new(const mui_aapanel_spec* sp) {
     o = NewObject(g_class->mcc_Class, NULL, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Background, (ULONG)g_bg_spec[sp->role], MUIA_FillArea, (ULONG)FALSE,
                   MUIA_Group_Spacing, (ULONG)pad, MUIA_InnerLeft, (ULONG)pad, MUIA_InnerRight, (ULONG)pad, MUIA_InnerTop, (ULONG)pad,
                   MUIA_InnerBottom, (ULONG)pad, sp->fixed_px > 0 ? (ULONG)MUIA_FixWidth : (ULONG)TAG_IGNORE, (ULONG)sp->fixed_px,
-                  sp->fixed_px > 0 ? (ULONG)MUIA_FixHeight : (ULONG)TAG_IGNORE, (ULONG)sp->fixed_px, TAG_DONE);
+                  sp->fixed_px > 0 ? (ULONG)MUIA_FixHeight : (ULONG)TAG_IGNORE, (ULONG)(sp->fixed_h > 0 ? sp->fixed_h : sp->fixed_px), TAG_DONE);
     if (o != NULL) {
         aapanel_data* d = INST_DATA(g_class->mcc_Class, o);
         d->role = sp->role;
