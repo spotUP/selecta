@@ -79,6 +79,9 @@ SEL_TAG(RP, SEEKABLE,          0x1020, PTR)
  * of that subsong in milliseconds (0 = unknown), so the replayer can end the song through RP_HW_POLL (sel_rp_hw_length_fn). */
 SEL_TAG(RP, HW_LENGTH,         0x1021, PTR)
 
+/* VIZ_VOICES (I434g): optional, HW kind. Fills up to three voices of the scope feed (sel_rp_viz_voices_fn). */
+SEL_TAG(RP, VIZ_VOICES,        0x1022, PTR)
+
 SEL_TAG(OUT, NAME,             0x2000, STR)
 SEL_TAG(OUT, SINK,             0x2001, INT)
 SEL_TAG(OUT, RATES,            0x2002, STR)

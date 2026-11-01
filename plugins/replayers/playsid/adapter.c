@@ -39,7 +39,7 @@ typedef struct ps_state {
 static ps_state* g_owner;
 
 /* Sentinels (tests/engine/playsid_test.c): the adapter ran, per hook. */
-uint32_t sel_playsid_probes, sel_playsid_starts, sel_playsid_seeks, sel_playsid_ends;
+uint32_t sel_playsid_probes, sel_playsid_starts, sel_playsid_seeks, sel_playsid_ends, sel_playsid_viz_fills;
 
 static uint32_t be16(const uint8_t* p) {
     return ((uint32_t)p[0] << 8) | p[1];
@@ -240,6 +240,35 @@ static uint32_t rp_hw_poll(void* state) {
     return SEL_TICK_ENDED;
 }
 
+/* Scope feed (I434g): the reSID modes render into per-SID signed 8-bit buffers that GetResidAudioBuffer exposes; the
+ * newest samples go last into each voice row, scaled to 16 bit. Classic mode has no buffer: 0 voices, the scope stays
+ * in its empty state. The voice count is the SID count of the file. */
+static uint32_t rp_viz_voices(void* state, int16_t* out, uint32_t stride, uint32_t max_voices) {
+    ps_state* s = (ps_state*)state;
+    const int8_t* bufs[3] = {NULL, NULL, NULL};
+    uint32_t period = 0, len, k, i, n, sids;
+    if (!s->playing || s->paused || !ps_mode_is_resid(s->mode)) {
+        return 0;
+    }
+    len = s->ops->get_resid_buffer(bufs, &period);
+    sids = ps_sid_count(s->image, s->size);
+    if (sids > max_voices) sids = max_voices;
+    if (len == 0u || bufs[0] == NULL) {
+        return 0;
+    }
+    n = len < stride ? len : stride;
+    for (k = 0; k < sids; k++) {
+        const int8_t* b = bufs[k] != NULL ? bufs[k] : bufs[0];
+        int16_t* row = out + (size_t)k * stride;
+        memset(row, 0, (size_t)(stride - n) * sizeof *row);
+        for (i = 0; i < n; i++) {
+            row[stride - n + i] = (int16_t)((int32_t)b[len - n + i] * 256);
+        }
+    }
+    sel_playsid_viz_fills++;
+    return sids;
+}
+
 static void rp_hw_pause(void* state, uint32_t paused) {
     ps_state* s = (ps_state*)state;
     if (s->playing && paused != s->paused) {
@@ -285,7 +314,7 @@ static int rp_seek(void* state, uint32_t ms) {
     return 1;
 }
 
-static sel_tag g_hooks[18];
+static sel_tag g_hooks[19];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -314,7 +343,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[14], SEL_RP_SEEKABLE, SEL_TAG_FN(rp_seekable));
     set(&g_hooks[15], SEL_RP_HW_POLL, SEL_TAG_FN(rp_hw_poll));
     set(&g_hooks[16], SEL_RP_HW_LENGTH, SEL_TAG_FN(rp_hw_length));
-    set(&g_hooks[17], SEL_TAG_END, 0);
+    set(&g_hooks[17], SEL_RP_VIZ_VOICES, SEL_TAG_FN(rp_viz_voices));
+    set(&g_hooks[18], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "playsid");

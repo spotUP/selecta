@@ -243,6 +243,7 @@ typedef struct sel_slot {
     sel_rp_seekable_fn rp_seekable;           /* optional: 0 = the song cannot be seeked (I434e) */
     sel_rp_hw_poll_fn rp_hw_poll;             /* optional, HW kind: song end flags (I219b) */
     sel_rp_hw_length_fn rp_hw_length;         /* optional, HW kind: catalogue length of the started subsong (I434f) */
+    sel_rp_viz_voices_fn rp_viz_voices;       /* optional, HW kind: fills the scope feed itself (I434g) */
     uint32_t applied_pause;                   /* audio side: pause state last handed to rp_hw_pause */
     uint32_t pos_order, pos_row, pos_pattern, pos_valid; /* audio side writes after each render */
     sel_rp_render_fn rp_render; /* RENDER kind: the replayer mixes, rp_tick is NULL */
@@ -2359,6 +2360,7 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     sl->rp_hw_poll = sl->hw ? (sel_rp_hw_poll_fn)sel_tag_find(hooks, SEL_RP_HW_POLL, 0) : NULL;
     sl->rp_seekable = (sel_rp_seekable_fn)sel_tag_find(hooks, SEL_RP_SEEKABLE, 0);
     sl->rp_hw_length = sl->hw ? (sel_rp_hw_length_fn)sel_tag_find(hooks, SEL_RP_HW_LENGTH, 0) : NULL;
+    sl->rp_viz_voices = sl->hw ? (sel_rp_viz_voices_fn)sel_tag_find(hooks, SEL_RP_VIZ_VOICES, 0) : NULL;
     sl->applied_pause = 0;
     if (kind != SEL_RP_KIND_VOICE) {
         sl->rp_tick = NULL;
@@ -8158,12 +8160,26 @@ static void viz_close(sel_engine* e, sel_slot* sl) {
     sel_viz_frame* f = sel_viz_begin(&e->viz, e->rate);
     sel_mixer* m = (sl != NULL && sl->rp_render == NULL) ? &sl->mixer : NULL;
     uint32_t count = m ? m->voice_count : 0;
+    uint32_t hw_count = 0;
     uint32_t k;
     if (count > SEL_VIZ_MAX_VOICES) count = SEL_VIZ_MAX_VOICES;
+    if (count == 0u && sl != NULL && sl->hw && sl->rp_viz_voices != NULL && e->state.play == SEL_PLAYING) {
+        /* HW kind: no mixer to tap; the replayer reports its own wave into the scope rows (I434g). */
+        hw_count = sl->rp_viz_voices(sl->rp_state, &f->scope[0][0], SEL_VIZ_SCOPE_FRAMES, 3u);
+        if (hw_count > 3u) hw_count = 3u;
+        count = hw_count;
+    }
     f->voice_count = count;
     for (k = 0; k < SEL_VIZ_MAX_VOICES; k++) {
         int16_t peak = 0;
-        if (k < count) {
+        if (k < hw_count) {
+            uint32_t i;
+            for (i = 0; i < SEL_VIZ_SCOPE_FRAMES; i++) {
+                int32_t a = f->scope[k][i];
+                if (a < 0) a = -a;
+                if (a > peak) peak = (int16_t)(a > 32767 ? 32767 : a);
+            }
+        } else if (k < count) {
             sel_mixer_voice* v = &m->voices[k];
             uint32_t head = m->viz_head & (SEL_MIXER_SCOPE - 1u);
             uint32_t first = SEL_MIXER_SCOPE - head;

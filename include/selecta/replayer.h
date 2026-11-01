@@ -134,6 +134,11 @@ typedef uint32_t (*sel_rp_hw_poll_fn)(void* state);
  * length (stickers `lengths_ms` of the song key, one entry per subsong, from the HVSC sync) in milliseconds, 0 when
  * the catalogue has none. The replayer answers SEL_TICK_ENDED from RP_HW_POLL once that much play time has passed. */
 typedef void (*sel_rp_hw_length_fn)(void* state, uint32_t ms);
+/* RP_VIZ_VOICES (I434g): optional, HW kind. The replayer's own scope feed, since a HW slot has no mixer to tap. The engine
+ * calls it on the audio thread once per 20 ms visualisation block with `out`, room for `max_voices` rows of `stride`
+ * int16 samples (the newest samples last, the rest zero). Returns the voices filled (0..max_voices), 0 when the replayer
+ * has no wave to show (the scope then keeps its empty state). */
+typedef uint32_t (*sel_rp_viz_voices_fn)(void* state, int16_t* out, uint32_t stride, uint32_t max_voices);
 /* RP_SEEKABLE (I434e): optional. 1 = the song can be seeked (the default when the hook is absent), 0 = it cannot, so
  * RP_SEEK returns 0 for every target and the front ends grey the seek bar. Read on the pump thread. */
 typedef int (*sel_rp_seekable_fn)(void* state);

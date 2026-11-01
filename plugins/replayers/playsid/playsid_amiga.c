@@ -23,6 +23,7 @@ enum {
     LVO_GETOPMODE = -144,
     LVO_SETRESIDMODE = -150,
     LVO_SETRESIDFILTER = -168,
+    LVO_GETRESIDBUFFER = -174,
     LVO_SETAHIMODE = -192,
     LVO_SETRESIDBOOST = -204
 };
@@ -93,6 +94,24 @@ static void a_forward(void) { (void)lvo_forward(0, 0, 0); }
 static void a_vert(uint32_t hz) { (void)lvo_vert(hz, 0, 0); }
 static void a_opmode(uint32_t om) { (void)lvo_opmode(om, 0, 0); }
 static void a_ahi(uint32_t id) { (void)lvo_ahi(id, 0, 0); }
+/* GetResidAudioBuffer returns d0 = length, d1 = period, a0/a1/a2 = buffers */
+static uint32_t a_resid_buffer(const int8_t* bufs[3], uint32_t* period) {
+    register struct Library* r_a6 __asm__("a6") = g_base;
+    register uint32_t r_d0 __asm__("d0");
+    register uint32_t r_d1 __asm__("d1");
+    register const int8_t* r_a0 __asm__("a0");
+    register const int8_t* r_a1 __asm__("a1");
+    register const int8_t* r_a2 __asm__("a2");
+    __asm__ volatile("jsr %c6(%%a6)"
+                     : "=d"(r_d0), "=d"(r_d1), "=a"(r_a0), "=a"(r_a1), "=a"(r_a2), "+a"(r_a6)
+                     : "i"(LVO_GETRESIDBUFFER)
+                     : "memory", "cc");
+    bufs[0] = r_a0;
+    bufs[1] = r_a1;
+    bufs[2] = r_a2;
+    *period = r_d1;
+    return r_d0;
+}
 static void a_resid_filter(uint32_t in_on, uint32_t ext_on) { lvo_residfilter(in_on, ext_on); }
 static void a_resid_boost(uint32_t boost) { (void)lvo_residboost(boost, 0, 0); }
 static void a_resid_mode(uint32_t over) { (void)lvo_residmode(over, 0, 0); }
@@ -100,7 +119,7 @@ static uint32_t a_getopmode(void) { return lvo_getopmode(0, 0, 0); }
 
 static const ps_ops g_ops = {a_open, a_close, a_alloc, a_free, a_set_module, a_start, a_stop,
                              a_pause, a_continue, a_forward, a_vert, a_opmode, a_ahi, a_getopmode,
-                             a_resid_filter, a_resid_boost, a_resid_mode};
+                             a_resid_filter, a_resid_boost, a_resid_mode, a_resid_buffer};
 
 const ps_ops* ps_ops_get(void) {
     return &g_ops;

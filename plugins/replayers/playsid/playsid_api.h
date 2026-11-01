@@ -39,6 +39,9 @@ typedef struct ps_ops {
     void (*set_resid_filter)(uint32_t internal_on, uint32_t external_on); /* d0, d1 (I434c) */
     void (*set_resid_boost)(uint32_t boost);     /* d0: 1 = off (0 and 1 are both no-ops), 2-4 = 2x-4x */
     void (*set_resid_mode)(uint32_t oversample); /* d0: 0 = normal, 1-3 = 2x-4x */
+    /* GetResidAudioBuffer (I434g): bufs[0..2] = a0/a1/a2 (per-SID signed 8-bit Paula buffers, a1 equals a0 for one SID,
+     * a2 NULL below three SIDs), *period = d1; returns d0, the length in samples. */
+    uint32_t (*get_resid_buffer)(const int8_t* bufs[3], uint32_t* period);
 } ps_ops;
 
 /* The Amiga build returns the LVO table (playsid_amiga.c); the host test defines its own stub. */

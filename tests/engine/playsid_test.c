@@ -62,8 +62,19 @@ static void st_filt(uint32_t i, uint32_t e) { s_n_filt++; s_filt_in = i; s_filt_
 static void st_boost(uint32_t b) { s_n_boost++; s_boost = b; }
 static void st_over(uint32_t o) { s_n_over++; s_over = o; }
 static uint32_t st_getom(void) { return s_last_om; }
+/* GetResidAudioBuffer stub: s_buf_sids SIDs (0 = no buffer), a different ramp per SID */
+static int8_t s_wave[3][1200];
+static uint32_t s_buf_sids, s_buf_len = 1200, s_n_getbuf;
+static uint32_t st_getbuf(const int8_t* bufs[3], uint32_t* period) {
+    s_n_getbuf++;
+    *period = 128;
+    bufs[0] = s_buf_sids ? s_wave[0] : NULL;
+    bufs[1] = s_buf_sids > 1 ? s_wave[1] : bufs[0];
+    bufs[2] = s_buf_sids > 2 ? s_wave[2] : NULL;
+    return s_buf_sids ? s_buf_len : 0;
+}
 static const ps_ops s_ops = {st_open, st_close, st_alloc, st_free, st_setmodule, st_start, st_stop,
-                             st_pause, st_cont, st_fwd, st_hz, st_om, st_ahi, st_getom, st_filt, st_boost, st_over};
+                             st_pause, st_cont, st_fwd, st_hz, st_om, st_ahi, st_getom, st_filt, st_boost, st_over, st_getbuf};
 const ps_ops* ps_ops_get(void) { return &s_ops; }
 
 static const sel_tag* t_desc;
@@ -111,6 +122,69 @@ static void restart(void) {
     snprintf(l, sizeof l, "SUBSONG %u", 1u + (n++ & 1u));
     run(l);
     CHECK(sel_playsid_starts == before + 1u);
+}
+
+/* I434g: HW-kind scope feed. A v4 PSID with `sids` chips (header bytes 0x7a / 0x7b), reSID mode, a stub buffer per SID:
+ * the engine's viz frame gets voice_count = SID count and the stub's samples in scope[k]; classic mode gets 0 voices. */
+static void tick(void);
+static void viz_scope_test(const char* dir) {
+    static const char* const modes[2] = {"6581", "normal"};
+    char p[1100], line[1200];
+    uint32_t sids, m, k, i;
+    snprintf(p, sizeof p, "%s/ps_viz.sid", dir);
+    for (k = 0; k < 3; k++) for (i = 0; i < 1200; i++) s_wave[k][i] = (int8_t)(((int)i % 50 - 25) * (int)(k + 1));
+    for (sids = 1; sids <= 3; sids++) {
+        write_psid(p, 1, 1, 0);
+        {
+            FILE* f = fopen(p, "r+b");
+            uint8_t b;
+            CHECK(f != NULL);
+            if (f == NULL) return;
+            b = 4; fseek(f, 5, SEEK_SET); fwrite(&b, 1, 1, f);
+            b = sids > 1 ? 0x42 : 0; fseek(f, 0x7a, SEEK_SET); fwrite(&b, 1, 1, f);
+            b = sids > 2 ? 0x44 : 0; fseek(f, 0x7b, SEEK_SET); fwrite(&b, 1, 1, f);
+            fclose(f);
+        }
+        for (m = 0; m < 2; m++) {
+            sel_engine_config cfg;
+            const sel_viz_frame* vf;
+            uint32_t fills0 = sel_playsid_viz_fills, calls0 = s_n_getbuf, nz = 0;
+            memset(&cfg, 0, sizeof cfg);
+            cfg.registry_count = reg_count;
+            cfg.registry_get = reg_get;
+            s_installed = 1;
+            s_buf_sids = sids;
+            eng = sel_engine_create(sel_host_default(), &cfg);
+            CHECK(eng != NULL);
+            snprintf(line, sizeof line, "PREF_SET playsid.mode \"%s\"", modes[m]);
+            run(line);
+            snprintf(line, sizeof line, "QUEUE_ADD %s", p);
+            run(line);
+            run("PLAY");
+            tick();
+            tick();
+            vf = sel_engine_state(eng)->viz;
+            CHECK(vf != NULL && vf->seq != 0u);
+            if (m == 0) { /* reSID: one voice per SID, the stub's samples scaled by 256, SIDs differ */
+                CHECK(vf->voice_count == sids);
+                for (k = 0; k < sids; k++) {
+                    for (i = 0; i < SEL_VIZ_SCOPE_FRAMES; i++) if (vf->scope[k][i] != 0) nz++;
+                    CHECK(vf->peak[k] == (int16_t)(25 * (int)(k + 1) * 256));
+                }
+                CHECK(nz > 0u);
+                if (sids > 1) CHECK(vf->scope[0][7] != vf->scope[1][7]);
+                CHECK(sel_playsid_viz_fills > fills0 && s_n_getbuf > calls0); /* sentinel: the hook ran */
+            } else { /* classic: no buffer, the library is not asked, the scope keeps its empty state */
+                CHECK(vf->voice_count == 0u && vf->scope[0][5] == 0);
+                CHECK(sel_playsid_viz_fills == fills0 && s_n_getbuf == calls0);
+            }
+            run("STOP");
+            sel_engine_destroy(eng);
+            eng = NULL;
+        }
+    }
+    s_buf_sids = 0;
+    remove(p);
 }
 
 /* I434f: the catalogue length ends the song through rp_hw_poll. A fake host clock drives the adapter's play time. */
@@ -447,6 +521,7 @@ int main(int argc, char** argv) {
     CHECK(s_open_refs == 0); /* rp_close released the library */
     remove(path);
     catalogue_length_test(argv[1]);
+    viz_scope_test(argv[1]);
     if (g_fail != 0) {
         printf("playsid: %d failures\n", g_fail);
         return 1;
