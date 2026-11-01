@@ -997,6 +997,12 @@ static Object* mui_sidebar_group(mui_state* s, int top_bar) {
         }
         mui_side_add(g, b);
     }
+    if (m.rail) {
+        /* I963: the doors have a bounded maximum height, and a horizontal MUI group takes the smallest maximum height of its
+         * children: without a stretchable child the rail capped the whole body row (and the window) at the doors' height,
+         * so the compact window stopped at 184 of 256 rows. The full sidebar ends in the same filler (mui_sidebar_dyn). */
+        DoMethod(g, OM_ADDMEMBER, MUI_NewObject((char*)MUIC_Rectangle, TAG_DONE));
+    }
     hd = m.rail ? NULL : MUI_NewObject((char*)MUIC_Group, MUIA_Group_Horiz, TRUE, TAG_DONE); /* S4: title, Create Playlist, Expand */
     if (hd != NULL) {
         Object* t = mui_make_button_ex(m.title, m.title, "library", NULL, CTL_SIDE_BASE + MUI_SIDE_TITLE, 100, 0, MUI_AA_ROLE_GHOST, MUI_AA_ALIGN_LEFT);
@@ -3118,9 +3124,26 @@ static void* mui_open(const sel_ui_open_args* a) {
             /* I671 measurement: the minimum the root group asked for (MUIM_AskMinMax ran inside the open attempt, the values
              * stay in the object after a refusal) next to the screen it had to fit. --log on the rig records one line per step. */
             struct Screen* scr = g_scr != NULL ? g_scr : LockPubScreen(NULL);
-            fprintf(stderr, "selecta mui: ladder step %lu window minimum %ldx%ld, screen %dx%d, open %lu\n", (unsigned long)step,
-                    (long)_minwidth(s->root), (long)_minheight(s->root), scr != NULL ? (int)scr->Width : 0,
-                    scr != NULL ? (int)scr->Height : 0, (unsigned long)open);
+            /* I963: the maximum heights next to it; a body panel whose maximum is bounded caps the window height. */
+            fprintf(stderr, "selecta mui: ladder step %lu window minimum %ldx%ld max height %ld (sidebar %ld main %ld detail %ld), screen %dx%d, open %lu\n",
+                    (unsigned long)step, (long)_minwidth(s->root), (long)_minheight(s->root), (long)_maxheight(s->root),
+                    (long)_maxheight(s->slot[MUI_SLOT_SIDEBAR]), (long)_maxheight(s->slot[MUI_SLOT_MAIN]), (long)_maxheight(s->slot[MUI_SLOT_DETAIL]),
+                    scr != NULL ? (int)scr->Width : 0, scr != NULL ? (int)scr->Height : 0, (unsigned long)open);
+            if (s->main_pages != NULL) {
+                /* I963 (Johan: sidebar clicks redraw slowly at 640x256): each main page's min/max height next to the slot height, so
+                 * a page whose minimum exceeds the slot (MUI relayouts on each switch) shows in the --log. */
+                struct List* kids = NULL;
+                Object* state;
+                Object* kid;
+                unsigned long pg = 0;
+                get(s->main_pages, MUIA_Group_ChildList, &kids);
+                state = kids != NULL ? (Object*)kids->lh_Head : NULL;
+                while (state != NULL && (kid = NextObject(&state)) != NULL) {
+                    fprintf(stderr, "selecta mui: ladder step %lu main page %lu min height %ld max height %ld, slot height %ld\n",
+                            (unsigned long)step, pg++, (long)_minheight(kid), (long)_maxheight(kid),
+                            open ? (long)_mheight(s->main_pages) : -1L);
+                }
+            }
             if (scr != NULL && scr != g_scr) {
                 UnlockPubScreen(NULL, scr);
             }

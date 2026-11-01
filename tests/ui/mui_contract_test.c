@@ -2468,6 +2468,16 @@ static void test_compact_rail(void) {
     CHECK(rail.rail == 1 && rail.door_n == SEL_UIM_DOOR_COUNT && rail.door_n <= MUI_SIDEBAR_DOORS && rail.brand[0] == '\0' && rail.title[0] == '\0' &&
               rail.create[0] == '\0' && rail.expand[0] == '\0' && rail.row_n == 0u && rail.empty[0] == '\0' && rail.card == 0,
           "rail model: doors %u rows %u", (unsigned)rail.door_n, (unsigned)rail.row_n);
+    {
+        /* I963: the rail column must end in a stretchable filler after the doors, or the HGroup body (and the compact
+         * window) is capped at the doors' maximum height: 184 of 256 rows on Johan's rig. */
+        const char* doors_end = grp != NULL ? strstr(grp, "mui_side_add(g, b);") : NULL;
+        const char* hd_line = doors_end != NULL ? strstr(doors_end, "hd = m.rail ? NULL") : NULL;
+        const char* fill = doors_end != NULL ? strstr(doors_end, "if (m.rail) {") : NULL;
+        const char* rect = fill != NULL ? strstr(fill, "MUIC_Rectangle") : NULL;
+        CHECK(hd_line != NULL && fill != NULL && fill < hd_line && rect != NULL && rect < hd_line,
+              "I963: rail branch adds a MUIC_Rectangle filler after the doors");
+    }
     for (i = 0; i < SEL_UIM_SIDE_CHIPS; i++) {
         CHECK(!rail.chip_shown[i], "rail chip %u shown", (unsigned)i);
     }
