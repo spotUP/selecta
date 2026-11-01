@@ -58,6 +58,19 @@ uint32_t ps_oversample_from_pref(const char* value);
 /* True for the modes the reSID engine renders (ForwardSong is skipped there, as in HippoPlayer). */
 int ps_mode_is_resid(uint32_t om);
 
+/* I434e: ForwardSong exists only in the classic engine (HippoPlayer skips it in every special mode), so only
+ * PS_OM_NORMAL is seekable. */
+int ps_mode_seekable(uint32_t om);
+
+/* Playback time one ForwardSong call skips. ASSUMPTION (unverified, the library source is not in the repo): 1 second;
+ * the rig run of I434e measures it and corrects this constant. */
+#define PS_FORWARD_STEP_MS 1000u
+/* ForwardSong calls that reach `target_ms` from the start of the subsong (the engine restarts the subsong, then seeks,
+ * so the current position is 0). Rounded to the nearest step, capped at PS_FORWARD_MAX_STEPS. RewindSong is not
+ * needed: a backward seek is a restart plus a shorter forward. */
+#define PS_FORWARD_MAX_STEPS 3600u
+uint32_t ps_forward_steps(uint32_t target_ms);
+
 /* Maps the system output ("output.id": ahi, paula, paula14, "" = default) onto the library's SetAHIMode argument:
  * AHI output gives the AHI mode id parsed from `ahi_pref` ("playsid.ahi_mode", hex, optional 0x), every other output
  * gives 0 (Paula 14-bit). One function so the per-format output pref (I888a) extends it in one place. */

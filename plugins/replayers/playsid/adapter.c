@@ -77,6 +77,10 @@ static void stop(ps_state* s) {
     s->playing = 0;
 }
 
+static const char* cfg(const sel_host* host, const char* key, const char* def) {
+    return host->config_get != NULL ? host->config_get(host, key, def) : def;
+}
+
 static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_info* info) {
     ps_state* s;
     const ps_ops* ops;
@@ -117,6 +121,7 @@ static void* rp_open(const sel_song_source* src, const sel_host* host, sel_rp_in
     copy_text(s->title, s->image + 22);
     copy_text(s->author, s->image + 54);
     copy_text(s->release, s->image + 86);
+    s->mode = ps_mode_from_pref(cfg(host, "playsid.mode", "normal")); /* so RP_SEEKABLE answers before the first start */
     info->voice_count = 0; /* the library owns the voices */
     info->subsong_count = s->subsongs;
     info->default_subsong = s->default_subsong;
@@ -156,10 +161,6 @@ static void rp_close(void* state) {
         host->mem_free(host, s->image);
         host->mem_free(host, s);
     }
-}
-
-static const char* cfg(const sel_host* host, const char* key, const char* def) {
-    return host->config_get != NULL ? host->config_get(host, key, def) : def;
 }
 
 /* Hippo (puu016.s .sanko) picks 50 or 60 Hz from the header speed word with btst on the 1-based song number. */
@@ -222,20 +223,27 @@ static void rp_hw_release(void* state) {
     stop((ps_state*)state);
 }
 
-/* Fast forward is the library's ForwardSong and only exists in classic mode (reSID and hardware modes return 0, the
- * engine falls back to restart-and-skip). Seek rules and UI greying are I434e. */
+/* Seeking exists only in classic mode (ps_mode_seekable); reSID and hardware modes answer 0 and RP_SEEKABLE 0, so the
+ * UI greys the bar. The engine restarts the subsong before RP_SEEK, so the target is that many ForwardSong calls from
+ * the start (ps_forward_steps). */
+static int rp_seekable(void* state) {
+    return ps_mode_seekable(((ps_state*)state)->mode);
+}
+
 static int rp_seek(void* state, uint32_t ms) {
     ps_state* s = (ps_state*)state;
-    (void)ms;
-    if (!s->playing || g_owner != s || s->mode != PS_OM_NORMAL) {
+    uint32_t n;
+    if (!s->playing || g_owner != s || !ps_mode_seekable(s->mode)) {
         return 0;
     }
-    s->ops->forward_song();
-    sel_playsid_seeks++;
+    for (n = ps_forward_steps(ms); n > 0u; n--) {
+        s->ops->forward_song();
+        sel_playsid_seeks++;
+    }
     return 1;
 }
 
-static sel_tag g_hooks[15];
+static sel_tag g_hooks[16];
 static sel_tag g_desc[5];
 
 static void set(sel_tag* t, uint32_t tag, uintptr_t value) {
@@ -261,7 +269,8 @@ const sel_tag* SEL_PLUGIN_ENTRY(uint32_t host_api) {
     set(&g_hooks[11], SEL_RP_PRIORITY, 20); /* above nuade and libsidplayfp (priority 0) */
     set(&g_hooks[12], SEL_RP_SEEK, SEL_TAG_FN(rp_seek));
     set(&g_hooks[13], SEL_RP_METADATA, SEL_TAG_FN(rp_metadata));
-    set(&g_hooks[14], SEL_TAG_END, 0);
+    set(&g_hooks[14], SEL_RP_SEEKABLE, SEL_TAG_FN(rp_seekable));
+    set(&g_hooks[15], SEL_TAG_END, 0);
 
     set(&g_desc[0], SEL_PLUGIN_KIND, SEL_PLUGIN_KIND_REPLAYER);
     set(&g_desc[1], SEL_PLUGIN_ID, (uintptr_t) "playsid");

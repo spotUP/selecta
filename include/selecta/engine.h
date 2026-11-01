@@ -132,6 +132,7 @@ typedef struct sel_song_state {
     uint32_t subsong, subsong_count;
     uint32_t duration_ms; /* 0 = unknown */
     uint32_t position_ms;
+    uint32_t seekable;           /* 0 when the replayer reports the song not seekable (RP_SEEKABLE, I434e); the bar greys */
     sel_rp_position pattern_pos; /* zeros when not reported */
     const sel_tag* meta;         /* SEL_META_* list, valid until next pump */
     const char* path;            /* NULL when no song is open; valid until next pump */

@@ -53,6 +53,15 @@ int ps_mode_is_resid(uint32_t om) {
     return om == PS_OM_RESID_6581 || om == PS_OM_RESID_8580 || om == PS_OM_RESID_AUTO;
 }
 
+int ps_mode_seekable(uint32_t om) {
+    return om == PS_OM_NORMAL;
+}
+
+uint32_t ps_forward_steps(uint32_t target_ms) {
+    uint32_t n = target_ms / PS_FORWARD_STEP_MS + (target_ms % PS_FORWARD_STEP_MS >= PS_FORWARD_STEP_MS / 2u ? 1u : 0u);
+    return n > PS_FORWARD_MAX_STEPS ? PS_FORWARD_MAX_STEPS : n;
+}
+
 uint32_t ps_ahi_mode_for_output(const char* output_id, const char* ahi_pref) {
     uint32_t v = 0;
     if (output_id == NULL || strcmp(output_id, "ahi") != 0 || ahi_pref == NULL) {

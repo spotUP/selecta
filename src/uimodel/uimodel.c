@@ -48,6 +48,7 @@ uint32_t sel_uim_update(sel_uim* uim, const sel_state* st) {
         n.progress_q16 = pos >= dur ? 65536u : (uint32_t)(((uint64_t)pos << 16) / dur);
     }
     n.play = st->play;
+    n.no_seek = st->song.path != NULL && !st->song.seekable; /* zero start state: seekable */
     n.queue_count = st->queue_count;
     n.queue_playing = st->queue_playing;
     for (i = 0; i < st->queue_count; i++) {
@@ -74,7 +75,7 @@ uint32_t sel_uim_update(sel_uim* uim, const sel_state* st) {
     if (n.queue_count != o->queue_count || n.queue_playing != o->queue_playing) {
         changed |= SEL_UIM_DIRTY_QUEUE;
     }
-    if (n.play != o->play || n.can_prev != o->can_prev || n.can_next != o->can_next ||
+    if (n.play != o->play || n.can_prev != o->can_prev || n.can_next != o->can_next || n.no_seek != o->no_seek ||
         n.subsong != o->subsong || n.subsong_count != o->subsong_count || n.repeat_mode != o->repeat_mode ||
         n.random_on != o->random_on) {
         changed |= SEL_UIM_DIRTY_TRANSPORT;

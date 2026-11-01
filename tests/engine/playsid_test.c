@@ -225,8 +225,18 @@ int main(int argc, char** argv) {
     run("PAUSE");
     CHECK(s_n_cont >= 1);
 
-    run("SEEK 5000");
-    CHECK(s_n_fwd == 1 && sel_playsid_seeks == 1u); /* classic mode: ForwardSong */
+    /* I434e: classic mode is seekable and the song says so through the state the UI model reads */
+    CHECK(sel_engine_state(eng)->song.seekable == 1u);
+    {
+        int fwd0 = s_n_fwd;
+        uint32_t seeks0 = sel_playsid_seeks;
+        run("SEEK 5000");
+        CHECK(s_n_fwd == fwd0 + 5 && sel_playsid_seeks == seeks0 + 5u); /* sentinel: 5 ForwardSong calls for 5 s */
+    }
+    CHECK(ps_forward_steps(0) == 0u && ps_forward_steps(499) == 0u && ps_forward_steps(500) == 1u &&
+          ps_forward_steps(1000) == 1u && ps_forward_steps(5000) == 5u && ps_forward_steps(0xFFFFFFFFu) == PS_FORWARD_MAX_STEPS);
+    CHECK(ps_mode_seekable(PS_OM_NORMAL) && !ps_mode_seekable(PS_OM_RESID_6581) && !ps_mode_seekable(PS_OM_RESID_8580) &&
+          !ps_mode_seekable(PS_OM_RESID_AUTO) && !ps_mode_seekable(PS_OM_TRINITY));
 
     run("STOP");
 
@@ -235,6 +245,14 @@ int main(int argc, char** argv) {
     restart();
     CHECK(s_last_om == 1u && s_n_filt == 1 && s_n_boost == 1 && s_n_over == 1);
     CHECK(s_filt_in == 1u && s_filt_ext == 0u && s_boost == 1u && s_over == 0u); /* Hippo defaults: internal, off, normal */
+    {   /* I434e: reSID mode is not seekable: RP_SEEK answers 0 (ForwardSong never called) and the state greys the bar */
+        int fwd0 = s_n_fwd;
+        uint32_t seeks0 = sel_playsid_seeks;
+        CHECK(sel_engine_state(eng)->song.seekable == 0u);
+        run("SEEK 5000");
+        CHECK(s_n_fwd == fwd0 && sel_playsid_seeks == seeks0);
+        CHECK(sel_engine_state(eng)->song.seekable == 0u);
+    }
     {
         static const char* const filt[3] = {"internal", "internal+external", "off"};
         static const uint32_t fin[3] = {1, 1, 0}, fext[3] = {0, 1, 0};

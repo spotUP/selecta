@@ -30,6 +30,7 @@ typedef struct sel_uim_frame {
     char status[96];
     sel_play_state play;
     uint32_t can_prev, can_next;
+    uint32_t no_seek; /* 1 greys the seek bar: the replayer reports the song not seekable (I434e) */
     uint32_t progress_q16; /* 0 .. 65536, 0 when the duration is unknown */
     uint32_t queue_count, queue_playing;
     int32_t volume;

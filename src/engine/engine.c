@@ -240,6 +240,7 @@ typedef struct sel_slot {
     uint32_t hw;                              /* 1: HW kind, the replayer drives the sound hardware (I219) */
     sel_rp_hw_pause_fn rp_hw_pause;           /* optional, HW kind */
     sel_rp_hw_release_fn rp_hw_release;       /* optional, HW kind */
+    sel_rp_seekable_fn rp_seekable;           /* optional: 0 = the song cannot be seeked (I434e) */
     sel_rp_hw_poll_fn rp_hw_poll;             /* optional, HW kind: song end flags (I219b) */
     uint32_t applied_pause;                   /* audio side: pause state last handed to rp_hw_pause */
     uint32_t pos_order, pos_row, pos_pattern, pos_valid; /* audio side writes after each render */
@@ -2294,6 +2295,7 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
     sl->rp_hw_pause = sl->hw ? (sel_rp_hw_pause_fn)sel_tag_find(hooks, SEL_RP_HW_PAUSE, 0) : NULL;
     sl->rp_hw_release = sl->hw ? (sel_rp_hw_release_fn)sel_tag_find(hooks, SEL_RP_HW_RELEASE, 0) : NULL;
     sl->rp_hw_poll = sl->hw ? (sel_rp_hw_poll_fn)sel_tag_find(hooks, SEL_RP_HW_POLL, 0) : NULL;
+    sl->rp_seekable = (sel_rp_seekable_fn)sel_tag_find(hooks, SEL_RP_SEEKABLE, 0);
     sl->applied_pause = 0;
     if (kind != SEL_RP_KIND_VOICE) {
         sl->rp_tick = NULL;
@@ -7665,6 +7667,7 @@ static void refresh_snapshot(sel_engine* e) {
         song->subsong = sl->subsong;
         song->subsong_count = sl->rp_info.subsong_count;
         song->position_ms = (uint32_t)((uint64_t)sl->song_frames * 1000u / e->rate);
+        song->seekable = sl->rp_seekable == NULL || sl->rp_seekable(sl->rp_state) ? 1u : 0u;
         song->meta = sl->rp_metadata ? sl->rp_metadata(sl->rp_state) : NULL;
         if (sl->stream != NULL && sel_live_title(sl->stream, e->icy_title, sizeof e->icy_title)) {
             /* I196a: an ICY stream's current StreamTitle shadows the decoder's title (first match wins). */

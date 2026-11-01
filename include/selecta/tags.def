@@ -72,6 +72,9 @@ SEL_TAG(RP, HW_RELEASE,        0x101E, PTR)
 /* HW_POLL (I219b): optional, HW kind. Called once per engine render chunk while the song plays; returns SEL_TICK_*
  * flags (sel_rp_hw_poll_fn), 0 when nothing happened. LOOPED and ENDED take the same end policy as a tick's flags. */
 SEL_TAG(RP, HW_POLL,           0x101F, PTR)
+/* SEEKABLE (I434e): optional. Returns 1 when SEEK works for the open song, 0 when it does not (sel_rp_seekable_fn).
+ * The engine publishes it as sel_song_state.seekable and the UI model as no_seek, so the front ends grey the bar. */
+SEL_TAG(RP, SEEKABLE,          0x1020, PTR)
 
 SEL_TAG(OUT, NAME,             0x2000, STR)
 SEL_TAG(OUT, SINK,             0x2001, INT)
