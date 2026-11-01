@@ -5980,13 +5980,28 @@ static void cmd_PLAYLIST_MOVE(sel_engine* e, const sel_message* m) {
 }
 
 /* PLAYLIST_CREATE name [folder] (I178a): saves the queue, in order, as a library DB playlist (folder 0 or absent
- * = root). Dividers are skipped; the answer carries the new id. PLAYLIST_SAVE keeps writing files. */
+ * = root). Dividers are skipped; the answer carries the new id. PLAYLIST_SAVE keeps writing files.
+ * I948b: the library write runs on the writer thread (wq_playlist_create_run) like every other folder write. Made inline it queued behind
+ * whatever the library worker was running (a slow count or title read) while the UI thread, which pumps the engine, waited. */
+static void wq_playlist_create_run(sel_library* lib, sel_wq_op* op) {
+    op->rc = sel_library_playlist_add(lib, op->s[0], op->u1, op->s[1], &op->id);
+}
+
+static void wq_playlist_create_done(sel_engine* e, sel_wq_op* op) {
+    char text[16];
+    if (op->rc != SEL_FOLDER_OK) {
+        folder_report(e, op->rc, "PLAYLIST_CREATE");
+        return;
+    }
+    snprintf(text, sizeof text, "%u", (unsigned)op->id);
+    folders_reload_posted(e);
+    sticker_answer(e, "playlist", op->s[0], text, op->id);
+}
+
 static void cmd_PLAYLIST_CREATE(sel_engine* e, const sel_message* m) {
-    uint32_t id = 0;
     uint32_t i;
     size_t used = 0, cap = e->queue.text_bytes + 16u;
-    int rc;
-    char text[16];
+    sel_wq_op* op;
     if (!folder_ready(e, "PLAYLIST_CREATE")) return;
     e->pl_text[0] = '\0';
     for (i = 0; i < e->queue.count; i++) {
@@ -6004,14 +6019,13 @@ static void cmd_PLAYLIST_CREATE(sel_engine* e, const sel_message* m) {
         used += len + 1u;
         e->pl_text[used] = '\0';
     }
-    rc = sel_library_playlist_add(e->lib, m->args[0].v.s, m->argc > 1 ? (uint32_t)m->args[1].v.u : 0u, e->pl_text, &id);
-    if (rc != SEL_FOLDER_OK) {
-        folder_report(e, rc, "PLAYLIST_CREATE");
+    op = wq_new(e, wq_playlist_create_run, wq_playlist_create_done, m->args[0].v.s, e->pl_text, NULL); /* copies the queue text */
+    if (op == NULL) {
+        sel_engine_report_error(e, "library_busy", "PLAYLIST_CREATE");
         return;
     }
-    snprintf(text, sizeof text, "%u", (unsigned)id);
-    folders_reload(e);
-    sticker_answer(e, "playlist", m->args[0].v.s, text, id);
+    op->u1 = m->argc > 1 ? (uint32_t)m->args[1].v.u : 0u;
+    wq_submit(e);
 }
 
 /* STREAM_ADD url (I725a): saves a stream URL (a .pls / .m3u playlist URL stays as typed and is resolved when it plays)
