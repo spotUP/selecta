@@ -225,6 +225,7 @@ typedef struct sel_state {
     uint32_t panel_rows;        /* rows in `panel` */
     uint32_t panel_serial;      /* I288: counts panel loads; a change means `panel` was read again (a rating or sticker write) */
     uint32_t library_serial;    /* I348: counts library changes (a scan, sync or fetch finished); a change means library listings are stale */
+    uint32_t library_playlists; /* I906e: saved playlists, counted with library_songs on the same posted read */
     uint32_t library_songs;     /* DUI-P4-18: songs in the catalogue, re-counted when library_serial changes (the Clear Library dialog names it) */
     const char* stats;          /* I192: the stats screen is open: "label\0value\0" pairs read from the stats SQL views, then "\0"; NULL: closed */
     const char* composers;      /* DUI-P4-3: the Library page is open: "canon\0display\0songs\0" per composer (decimal count), then "\0"; NULL: closed */
@@ -481,6 +482,7 @@ typedef struct sel_engine_stats {
     uint32_t panel_loads;         /* module info panel lookups made in the library (I185 sentinel) */
     uint32_t panel_reads;         /* panel reads that landed and were published (I906d sentinel) */
     uint32_t art_reads;           /* view artwork id batches that landed (I906d sentinel) */
+    uint32_t group_reads;         /* queue group reads that landed (I906e sentinel) */
     uint32_t text_reads;          /* song text batches (title, group, metadata) read off the pump that landed (I906e sentinel) */
     uint32_t total_reads;         /* catalogue song counts read off the pump that landed (I936 sentinel) */
     uint32_t lyric_fetches;       /* DEViLBOX lyrics requests queued, none for a song with a .lrc or a message (I193 sentinel) */
@@ -555,8 +557,6 @@ const char* sel_view_source_label(uint32_t source);
 const char* sel_engine_view_cursor_key(sel_engine* e);
 /* Path of the song on visible view row `row` (index into view.rows) written to out; 0 on a non-song row or a path that does not fit. */
 int sel_engine_view_row_path(sel_engine* e, uint32_t row, char* out, size_t cap);
-/* DUI-P4-18: playlists in the library now (the Clear Library dialog names the count it deletes); 0 without a library. */
-uint32_t sel_engine_library_playlists(sel_engine* e);
 /* I608: the sidebar Your Library list. One saved playlist: its id and display name. */
 typedef struct sel_engine_library_item {
     uint32_t id;
@@ -592,8 +592,12 @@ int sel_engine_library_items_take(sel_engine* e, uint32_t* kind_mask, sel_engine
 uint32_t sel_engine_library_playlist_keys(sel_engine* e, uint32_t id, char* out, uint32_t cap);
 /* DUI-P4-18: the catalogue title of the song at `ref` (path or key) into out; 1 when it has one, else 0 (callers fall back to the file name). */
 /* I906e: cached song text for the desktop UI, never a library call on the caller. 1: text in out; 0: the song has none; -1: pending (the
- * read is queued; sel_engine_song_text_generation moves when it lands). Kinds: title, album group, metadata (NUL separated). */
-enum { SEL_SONG_TEXT_TITLE = 0, SEL_SONG_TEXT_GROUP = 1, SEL_SONG_TEXT_META = 2, SEL_SONG_TEXT_KINDS = 3 };
+ * read is queued; sel_engine_song_text_generation moves when it lands). Kinds: title, metadata (NUL separated). */
+enum { SEL_SONG_TEXT_TITLE = 0, SEL_SONG_TEXT_META = 1, SEL_SONG_TEXT_KINDS = 2 };
+/* I906e: the Queue page album groups of the whole queue in one posted read keyed by `key` (the UI's queue hash). 1: ready, *pool holds the
+ * NUL separated names and (*name)[i] is the offset+1 of entry i's name, 0 for none; -1: pending (sel_engine_song_text_generation moves when it
+ * lands); 0: no library. The arrays belong to the engine until the next call. */
+int sel_engine_queue_groups(sel_engine* e, uint32_t key, const char** pool, const uint32_t** name);
 int sel_engine_song_text(sel_engine* e, uint32_t kind, const char* ref, char* out, size_t cap);
 uint32_t sel_engine_song_text_generation(const sel_engine* e);
 int sel_engine_song_title(sel_engine* e, const char* ref, char* out, size_t cap);
