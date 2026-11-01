@@ -33,6 +33,8 @@ uint32_t mui_button_width(const char* label, int icon_only);
 extern const uint8_t* const* const mui_icon_sets[];
 extern const uint32_t mui_icon_size_count;
 extern const uint32_t mui_icon_sizes[];
+/* Body height of each set: equal to its size (square) but for the 16x8 tight-tier set for tall pixels (I949e2). */
+extern const uint32_t mui_icon_heights[];
 extern const uint32_t mui_icon_body_count;
 
 /* Icon id (a sel_gui_icon value) for a button key: a transport or extra action id ("play", "pitch_up"), a sidebar door page
@@ -41,8 +43,13 @@ extern const uint32_t mui_icon_body_count;
 int mui_icon_id(const char* key);
 /* The Bodychunk body of an icon at px edge (px square, 2 planes, row interleaved), NULL for an id out of range. */
 const uint8_t* mui_icon_body(int icon, int px);
+/* The body of exactly w x h (mui_icon_sizes / mui_icon_heights), NULL when no set has that shape. mui_icon_body(icon, px) is w = h = px. */
+const uint8_t* mui_icon_body_wh(int icon, int w, int h);
+uint32_t mui_icon_body_lookups_wh(int w, int h);
 /* Icon edge the width and height models assume: the tier M size (mui_aa_metrics), the tier of the laced 640x512 screen. */
 int mui_model_icon_px(void);
+/* Its height in rows on the open screen (mui_aa_screen_aspect): equal to the edge on square pixels, half on a tall-pixel screen. */
+int mui_model_icon_h(void);
 /* I667m sentinel: mui_icon_body lookups that found a body of this size since start. */
 uint32_t mui_icon_body_lookups(int px);
 /* Number of successful mui_icon_id lookups since start (sentinel for the build path test). */

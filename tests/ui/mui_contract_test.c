@@ -2493,6 +2493,22 @@ static void test_compact_player(void) {
     CHECK(c.compact == 1 && c.band_n == 1 && c.extras == 0 && c.right_rows == 1 && c.art_w == 56u && c.art_h == 28u && c.height <= (uint32_t)MUI_PLAYER_COMPACT_MAX_H,
           "compact band: art %ux%u height %u extras %d", (unsigned)c.art_w, (unsigned)c.art_h, (unsigned)c.height, (int)c.extras);
     CHECK(tall.art_h == 56u, "square pixels give a square art, got %u", (unsigned)tall.art_h);
+    {
+        /* I949e2 item 6: transport row plus seek row plus the group gap fit inside the 36 px band less its padding, at the tight metrics. */
+        mui_aa_metrics_t tm, sqm;
+        mui_aa_slider_t sl;
+        uint32_t tok[SEL_GUI_TOKEN_COUNT] = {0};
+        int gx, gy, need;
+        tok[SEL_GUI_TOKEN_SPACING] = 8;
+        mui_aa_metrics_aspect(0, 512, &tm);
+        mui_aa_metrics_aspect(0, 256, &sqm);
+        mui_aa_slider_metrics(0, &sl);
+        mui_aa_panel_pad(tok, 512, &gx, &gy);
+        need = tm.height + sl.height + gy;
+        CHECK(need <= MUI_PLAYER_COMPACT_MAX_H - 2 * MUI_PLAYER_COMPACT_PAD && c.height <= (uint32_t)MUI_PLAYER_COMPACT_MAX_H,
+              "compact band: transport %d + seek %d + gap %d = %d of %d", tm.height, sl.height, gy, need, MUI_PLAYER_COMPACT_MAX_H - 2 * MUI_PLAYER_COMPACT_PAD);
+        CHECK(sqm.height == 14 && reg.height == 56u + 2u * MUI_PLAYER_COMPACT_PAD && tall.height == 56u + 2u * MUI_PLAYER_COMPACT_PAD, "square band heights moved");
+    }
     CHECK(reg.compact == 0 && reg.extras == 1 && reg.right_rows == 3 && reg.art_h == 56u, "regular band unchanged");
     n = mui_menu_build(items, 256);
     for (i = 0; i < sizeof want / sizeof want[0]; i++) {
@@ -2847,7 +2863,7 @@ static void test_aa_aspect(void) {
         mui_aa_metrics_aspect(13, 512, &m13);
         CHECK(sq.pad_x == 6 && sq.pad_y == 3 && sq.height == 14 && sq.icon_h == 12 && sq.check_h == 12 && sq.icon_gap == 6, "square S metrics moved");
         CHECK(tall.pad_x == 4 && tall.pad_y == 2 && tall.icon_gap == 4 && tall.height == 12, "tight tier: pad %d,%d gap %d height %d", tall.pad_x, tall.pad_y, tall.icon_gap, tall.height);
-        CHECK(tall.icon_px == 12 && tall.icon_h == 6 && tall.check_px == 12 && tall.check_h == 6 && tall.aspect_q8 == 512, "tall icon %dx%d check %dx%d", tall.icon_px, tall.icon_h, tall.check_px, tall.check_h);
+        CHECK(tall.icon_px == 16 && tall.icon_h == 8 && tall.check_px == 12 && tall.check_h == 6 && tall.aspect_q8 == 512, "tall icon %dx%d check %dx%d", tall.icon_px, tall.icon_h, tall.check_px, tall.check_h);
         CHECK(m13.pad_x == 10 && m13.icon_h == 9 && mui_aa_rows(1, 512) == 1 && mui_aa_rows(10, 512) == 5, "larger tiers only scale rows");
         mui_aa_set_screen_aspect(512);
         CHECK(mui_aa_screen_aspect() == 512, "screen aspect not stored");
@@ -2855,6 +2871,73 @@ static void test_aa_aspect(void) {
         CHECK(cn > 0 && strstr(cls, "mui_aa_metrics_aspect(d->aa.font_px, mui_aa_screen_aspect(), &d->m)") != NULL && strstr(cls, "d->m.check_h") != NULL && strstr(cls, "d->m.icon_h") != NULL,
               "AAButton does not size icon and check from the aspect metrics");
         CHECK(strstr(src, "mui_aa_set_screen_aspect(g_pixel_aspect_q8)") != NULL, "mui_screen_open does not publish the aspect");
+    {
+        /* I949e2: the tight tier. Items 1 to 5 each have the rule where it lives; the class and group sources prove the consumers call them. */
+        uint32_t tok[SEL_GUI_TOKEN_COUNT] = {0};
+        mui_vizarea_h_t vt, vs;
+        int px, py, sx, sy, hi = 0, found8 = 0, bh_before = (int)mui_button_height(), sq_h, tight_h;
+        uint32_t i, lk;
+        static char va[100000], ui2[1000000];
+        FILE* vf = fopen(MUI_DIR "/mui_vizarea_class.c", "rb");
+        size_t vn = vf != NULL ? fread(va, 1, sizeof va - 1, vf) : 0;
+        FILE* uf = fopen(MUI_UI_SOURCE, "rb");
+        size_t un = uf != NULL ? fread(ui2, 1, sizeof ui2 - 1, uf) : 0;
+        char pan[65536];
+        FILE* pf = fopen(MUI_DIR "/mui_aapanel_class.c", "rb");
+        size_t pn = pf != NULL ? fread(pan, 1, sizeof pan - 1, pf) : 0;
+        if (vf != NULL) fclose(vf);
+        if (uf != NULL) fclose(uf);
+        if (pf != NULL) fclose(pf);
+        va[vn] = 0;
+        ui2[un] = 0;
+        pan[pn] = 0;
+        tok[SEL_GUI_TOKEN_SPACING] = 8;
+        /* item 1: the 16x8 atlas is baked for every icon, is a separate set from 16x16, and the tight icon is looked up in it. */
+        for (i = 0; i < mui_icon_body_count; i++) {
+            hi += mui_icon_body_wh((int)i, 16, 8) != NULL;
+        }
+        for (i = 0; i < mui_icon_size_count; i++) {
+            found8 += mui_icon_heights[i] == 8u;
+        }
+        CHECK(hi == (int)mui_icon_body_count && found8 > 0 && mui_icon_body_wh(0, 16, 8) != mui_icon_body(0, 16),
+              "16x8 atlas: %d of %u icons, height rows %d", hi, (unsigned)mui_icon_body_count, found8);
+        lk = mui_icon_body_lookups_wh(16, 8);
+        CHECK(mui_icon_body_wh(0, 16, 8) != NULL && mui_icon_body_lookups_wh(16, 8) == lk + 1u, "sentinel: the 16x8 set is the one looked up");
+        {
+            mui_aa_metrics_t tt;
+            static char bcls[100000];
+            FILE* bf = fopen(MUI_DIR "/mui_aabtn_class.c", "rb");
+            size_t bn = bf != NULL ? fread(bcls, 1, sizeof bcls - 1, bf) : 0;
+            if (bf != NULL) fclose(bf);
+            bcls[bn] = 0;
+            mui_aa_metrics_aspect(0, 512, &tt);
+            CHECK(tt.icon_px == 16 && tt.icon_h == 8 && mui_icon_body_wh(0, tt.icon_px, tt.icon_h) != NULL, "the tight metrics name the 16x8 set");
+            CHECK(bn > 0 && strstr(bcls, "mui_icon_body_wh(icon, px, ph)") != NULL, "AAButton does not look up the 16x8 body");
+        }
+        /* item 2: art panels count their height in rows; square stays square. */
+        CHECK(mui_art_height(56, 512) == 28u && mui_art_height(64, 512) == 32u && mui_art_height(56, 256) == 56u && mui_art_height(64, 256) == 64u, "art heights %u %u", (unsigned)mui_art_height(56, 512), (unsigned)mui_art_height(64, 512));
+        CHECK(un > 0 && strstr(ui2, "mui_aapanel_wh(MUI_AA_PANEL_RAISED, MUI_DETAIL_ART_PX, (int)mui_art_height(MUI_DETAIL_ART_PX, mui_aa_screen_aspect()))") != NULL,
+              "the detail art does not use mui_art_height");
+        /* item 3: the visualizer minimum is rows. */
+        mui_vizarea_heights(512, &vt);
+        mui_vizarea_heights(256, &vs);
+        CHECK(vt.min_h == 16u && vt.def_h == 40u && vt.cap_h == 80u && vs.min_h == 32u && vs.def_h == 80u && vs.cap_h == 160u, "viz heights tight %u/%u/%u square %u/%u/%u", (unsigned)vt.min_h, (unsigned)vt.def_h,
+              (unsigned)vt.cap_h, (unsigned)vs.min_h, (unsigned)vs.def_h, (unsigned)vs.cap_h);
+        CHECK(vn > 0 && strstr(va, "mui_vizarea_heights(mui_aa_screen_aspect(), &vh)") != NULL && strstr(va, "MinHeight += vh.min_h") != NULL, "the vizarea does not take its heights from the aspect");
+        /* item 4: button height and model icon follow the screen aspect; square is the old formula. */
+        sq_h = (int)mui_button_height();
+        mui_aa_set_screen_aspect(512);
+        tight_h = (int)mui_button_height();
+        CHECK(mui_model_icon_px() == 16 && mui_model_icon_h() == 8 && tight_h == mui_model_icon_h() + 2 * mui_aa_rows(MUI_BTN_PAD_Y, 512) + mui_aa_rows(MUI_BTN_FRAME, 512) && tight_h < sq_h, "tight button %d icon %dx%d (square %d)",
+              tight_h, mui_model_icon_px(), mui_model_icon_h(), sq_h);
+        mui_aa_set_screen_aspect(256);
+        CHECK(sq_h == bh_before && mui_button_height() == (uint32_t)mui_model_icon_px() + 2u * MUI_BTN_PAD_Y + MUI_BTN_FRAME && mui_model_icon_h() == mui_model_icon_px(), "square button height moved");
+        /* item 5: group spacing packs on tall pixels, square unchanged. */
+        mui_aa_panel_pad(tok, 256, &sx, &sy);
+        mui_aa_panel_pad(tok, 512, &px, &py);
+        CHECK(sx == 8 && sy == 8 && px == 4 && py == 4, "panel pad square %d,%d tight %d,%d", sx, sy, px, py);
+        CHECK(pn > 0 && strstr(pan, "mui_aa_panel_pad(") != NULL && strstr(pan, "MUIA_Group_VertSpacing") != NULL, "the panel class does not take its spacing from the aspect");
+    }
     }
     open_fn = strstr(src, "static void mui_screen_open(");
     CHECK(open_fn != NULL && strstr(open_fn, "g_pixel_aspect_q8 = mui_pixel_aspect_q8((int)di.Resolution.x, (int)di.Resolution.y);") != NULL,

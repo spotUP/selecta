@@ -4,6 +4,7 @@
 
 #include <string.h>
 
+#include "mui_aa.h"
 #include "mui_icons.h"
 #include "mui_map.h"
 
@@ -78,16 +79,18 @@ uint32_t mui_layout_compact(uint32_t width, uint32_t height, uint32_t tier) {
 static uint32_t g_player_compact_builds;
 uint32_t mui_player_band_compact_builds(void) { return g_player_compact_builds; }
 
+uint32_t mui_art_height(uint32_t width, int aspect_q8) {
+    return (uint32_t)mui_aa_rows((int)width, aspect_q8 > 0 ? aspect_q8 : 256);
+}
+
 void mui_player_band(mui_player_band_t* out, uint32_t compact, int aspect_q8) {
-    uint32_t a = aspect_q8 > 0 ? (uint32_t)aspect_q8 : 256u;
     memset(out, 0, sizeof *out);
     out->band_n = 1;
     out->art_w = (uint32_t)MUI_PLAYER_ART_PX;
-    out->art_h = (uint32_t)MUI_PLAYER_ART_PX;
+    out->art_h = mui_art_height(out->art_w, aspect_q8); /* square on screen: a tall pixel counts as its aspect in rows */
     if (compact) {
         g_player_compact_builds++;
         out->compact = 1;
-        out->art_h = (out->art_w * 256u + a / 2u) / a; /* square on screen: a tall pixel counts as its aspect in rows */
         out->right_rows = 1;
         out->height = out->art_h + 2u * (uint32_t)MUI_PLAYER_COMPACT_PAD;
         return;

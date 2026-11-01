@@ -75,7 +75,7 @@ static ULONG __attribute__((used)) aapanel_dispatch_c(struct IClass* cl, Object*
 
 Object* mui_aapanel_new(const mui_aapanel_spec* sp) {
     Object* o;
-    int pad;
+    int pad, padv;
     if ((unsigned)sp->role >= MUI_AA_PANEL_ROLES) {
         return NULL;
     }
@@ -85,11 +85,15 @@ Object* mui_aapanel_new(const mui_aapanel_spec* sp) {
     if (g_class == NULL) {
         return NULL;
     }
-    pad = sp->fixed_px > 0 ? 0 : mui_aa_panel_spacing(sp->tokens);
+    pad = 0;
+    padv = 0;
+    if (sp->fixed_px <= 0) {
+        mui_aa_panel_pad(sp->tokens, mui_aa_screen_aspect(), &pad, &padv);
+    }
     mui_theme_bg_spec(mui_aa_panel_rgb(sp->tokens, sp->role), g_bg_spec[sp->role], sizeof g_bg_spec[sp->role]);
     o = NewObject(g_class->mcc_Class, NULL, MUIA_Frame, (ULONG)MUIV_Frame_None, MUIA_Background, (ULONG)g_bg_spec[sp->role], MUIA_FillArea, (ULONG)FALSE,
-                  MUIA_Group_Spacing, (ULONG)pad, MUIA_InnerLeft, (ULONG)pad, MUIA_InnerRight, (ULONG)pad, MUIA_InnerTop, (ULONG)pad,
-                  MUIA_InnerBottom, (ULONG)pad, sp->fixed_px > 0 ? (ULONG)MUIA_FixWidth : (ULONG)TAG_IGNORE, (ULONG)sp->fixed_px,
+                  MUIA_Group_HorizSpacing, (ULONG)pad, MUIA_Group_VertSpacing, (ULONG)padv, MUIA_InnerLeft, (ULONG)pad, MUIA_InnerRight, (ULONG)pad,
+                  MUIA_InnerTop, (ULONG)padv, MUIA_InnerBottom, (ULONG)padv, sp->fixed_px > 0 ? (ULONG)MUIA_FixWidth : (ULONG)TAG_IGNORE, (ULONG)sp->fixed_px,
                   sp->fixed_px > 0 ? (ULONG)MUIA_FixHeight : (ULONG)TAG_IGNORE, (ULONG)(sp->fixed_h > 0 ? sp->fixed_h : sp->fixed_px), TAG_DONE);
     if (o != NULL) {
         aapanel_data* d = INST_DATA(g_class->mcc_Class, o);

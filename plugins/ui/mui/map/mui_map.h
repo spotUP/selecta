@@ -95,6 +95,16 @@ typedef struct mui_player_band_t {
     uint32_t height;      /* the band height budget in px: art height plus 2 x pad */
 } mui_player_band_t;
 void mui_player_band(mui_player_band_t* out, uint32_t compact, int aspect_q8);
+/* I949e2: height of an art frame width px wide so it is square on screen: width x 256 / aspect (mui_aa_rows). The player art is
+ * MUI_PLAYER_ART_PX wide, the detail art MUI_DETAIL_ART_PX. 256 (square pixels) gives the width. */
+#define MUI_DETAIL_ART_PX 64
+uint32_t mui_art_height(uint32_t width, int aspect_q8);
+/* I949e2: the vizarea's vertical sizes in rows (the width minimum is pixels): minimum, default and the cap of a non-tall area, each a
+ * square-pixel length counted in rows of a screen of aspect_q8. */
+typedef struct mui_vizarea_h_t {
+    int min_h, def_h, cap_h;
+} mui_vizarea_h_t;
+void mui_vizarea_heights(int aspect_q8, mui_vizarea_h_t* out);
 /* Sentinel: compact bands built since start. */
 uint32_t mui_player_band_compact_builds(void);
 /* Layout rows of a screen: half of an interlaced screen's rows (a user-chosen laced screen uses the 256-row metrics, I949b). */

@@ -45,13 +45,13 @@ int mui_icon_id(const char* key) {
     return -1;
 }
 
-const uint8_t* mui_icon_body(int icon, int px) {
+const uint8_t* mui_icon_body_wh(int icon, int w, int h) {
     uint32_t z;
     if (icon < 0 || (uint32_t)icon >= mui_icon_body_count) {
         return (const uint8_t*)0;
     }
     for (z = 0; z < mui_icon_size_count; z++) {
-        if ((int)mui_icon_sizes[z] == px) {
+        if ((int)mui_icon_sizes[z] == w && (int)mui_icon_heights[z] == h) {
             g_lookups[z]++;
             return mui_icon_sets[z][icon];
         }
@@ -59,20 +59,41 @@ const uint8_t* mui_icon_body(int icon, int px) {
     return (const uint8_t*)0;
 }
 
-uint32_t mui_icon_body_lookups(int px) {
+const uint8_t* mui_icon_body(int icon, int px) {
+    return mui_icon_body_wh(icon, px, px);
+}
+
+uint32_t mui_icon_body_lookups_wh(int w, int h) {
     uint32_t z;
     for (z = 0; z < mui_icon_size_count; z++) {
-        if ((int)mui_icon_sizes[z] == px) {
+        if ((int)mui_icon_sizes[z] == w && (int)mui_icon_heights[z] == h) {
             return g_lookups[z];
         }
     }
     return 0;
 }
 
+uint32_t mui_icon_body_lookups(int px) {
+    return mui_icon_body_lookups_wh(px, px);
+}
+
+/* Font the width and height models assume: tier M (the laced 640x512 screen) on square pixels; on tall pixels the screen is
+ * 256 rows (640x256 PAL), so the model takes the small font and with it the tight tier (I949e2). */
+static void model_metrics(mui_aa_metrics_t* m) {
+    int asp = mui_aa_screen_aspect();
+    mui_aa_metrics_aspect(mui_aa_font_px(asp > 256 ? 256 : 512, 0), asp, m);
+}
+
 int mui_model_icon_px(void) {
     mui_aa_metrics_t m;
-    mui_aa_metrics(mui_aa_font_px(512, 0), &m);
+    model_metrics(&m);
     return m.icon_px;
+}
+
+int mui_model_icon_h(void) {
+    mui_aa_metrics_t m;
+    model_metrics(&m);
+    return m.icon_h;
 }
 
 uint32_t mui_icon_resolved(void) {

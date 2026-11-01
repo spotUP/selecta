@@ -1558,7 +1558,7 @@ static Object* mui_np_text(char* buf, size_t cap, const char* init, mui_label la
 
 static Object* mui_detail_group(mui_state* s) {
     Object* g = mui_aapanel(MUI_AA_PANEL_PANEL, 0);
-    Object* art = mui_aapanel(MUI_AA_PANEL_RAISED, 64);
+    Object* art = mui_aapanel_wh(MUI_AA_PANEL_RAISED, MUI_DETAIL_ART_PX, (int)mui_art_height(MUI_DETAIL_ART_PX, mui_aa_screen_aspect()));
     Object* lyr_view;
     Object* info_g;
     Object* trk_g;

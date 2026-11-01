@@ -7,13 +7,15 @@
  * the host tests the plan and the ladder, mui_ui.c applies them. */
 #include <string.h>
 
+#include "mui_aa.h"
 #include "mui_icons.h"
 #include "mui_map.h"
 
 static uint32_t g_plans, g_ladder_calls;
 
 uint32_t mui_button_height(void) {
-    return (uint32_t)mui_model_icon_px() + 2u * MUI_BTN_PAD_Y + MUI_BTN_FRAME;
+    int asp = mui_aa_screen_aspect(); /* I949e2: vertical sizes in rows; 256 (square) gives the old sum */
+    return (uint32_t)(mui_model_icon_h() + 2 * mui_aa_rows(MUI_BTN_PAD_Y, asp) + mui_aa_rows(MUI_BTN_FRAME, asp));
 }
 
 uint32_t mui_layout_rows(uint32_t screen_h, int laced) {

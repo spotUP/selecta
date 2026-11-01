@@ -197,9 +197,9 @@ void mui_aa_metrics_aspect(int font_px, int aspect_q8, mui_aa_metrics_t* out) {
     out->pad_x = tight ? 4 : small ? 6 : 10;
     out->pad_y = small ? mui_aa_rows(3, aspect_q8) : 6;
     /* I667m (design 3.11): the one icon table, by tier font: S 12, M 18, L 20, XL 24 (desktop icon:text about 1.4). */
-    out->icon_px = small ? 12 : font_px <= 13 ? 18 : font_px <= 15 ? 20 : 24;
+    out->icon_px = tight ? 16 : small ? 12 : font_px <= 13 ? 18 : font_px <= 15 ? 20 : 24; /* I949e2: tight tier = the baked 16x8 set */
     out->icon_gap = tight ? 4 : 6;
-    out->icon_h = mui_aa_rows(out->icon_px, aspect_q8);
+    out->icon_h = mui_aa_rows(out->icon_px, aspect_q8); /* tight: 16 -> 8, the 16x8 body */
     out->radius = small ? 4 : 6;
     out->check_px = small ? 12 : 16;
     out->check_h = mui_aa_rows(out->check_px, aspect_q8);
@@ -306,6 +306,13 @@ int mui_aa_panel_radius(const uint32_t* token, int font_px) {
 
 int mui_aa_panel_spacing(const uint32_t* token) {
     return (int)token[SEL_GUI_TOKEN_SPACING];
+}
+
+void mui_aa_panel_pad(const uint32_t* token, int aspect_q8, int* pad_x, int* pad_y) {
+    int sp = mui_aa_panel_spacing(token);
+    /* I949e2 (answer 4): on tall pixels the group spacing packs: half across, the same length counted in rows down. Square: unchanged. */
+    *pad_x = aspect_q8 > 256 ? sp / 2 : sp;
+    *pad_y = mui_aa_rows(sp, aspect_q8);
 }
 
 static uint32_t g_slider_calls;

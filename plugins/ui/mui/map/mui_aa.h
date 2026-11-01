@@ -112,6 +112,8 @@ int mui_aa_panel_token(int role);
 uint32_t mui_aa_panel_rgb(const uint32_t* token, int role);
 int mui_aa_panel_radius(const uint32_t* token, int font_px);
 int mui_aa_panel_spacing(const uint32_t* token);
+/* I949e2: group inner padding and spacing across (pad_x) and down (pad_y) for a screen of aspect_q8. 256 gives SPACING both ways. */
+void mui_aa_panel_pad(const uint32_t* token, int aspect_q8, int* pad_x, int* pad_y);
 
 /* I667f (design 3.2, AASlider and AAProgress): track height and radius per tier, the colours by state, and the value <-> pixel maths.
  * No knob (owner decision 2026-10-29): only the TRACK track and the ACCENT fill are drawn, like the Mac desktop seek bar. */

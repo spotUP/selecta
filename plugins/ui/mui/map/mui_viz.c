@@ -166,3 +166,9 @@ int mui_vizset_step(mui_vizset* s, mui_viz* v, const sel_viz_frame* f, const sel
     mui_viz_expand(v, dst);
     return 1;
 }
+
+void mui_vizarea_heights(int aspect_q8, mui_vizarea_h_t* out) {
+    out->min_h = mui_aa_rows(32, aspect_q8);
+    out->def_h = mui_aa_rows(80, aspect_q8);
+    out->cap_h = mui_aa_rows(160, aspect_q8);
+}
