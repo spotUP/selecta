@@ -36,6 +36,50 @@ uint32_t sel_library_watched_waits(void) {
     return __atomic_load_n(&g_watched_waits, __ATOMIC_RELAXED);
 }
 
+/* I906a: allow list for the debug UI-wait guard. A watched thread that must wait on the library wraps the call in
+ * sel_library_ui_allow(1)/(0) and names why in a comment; the goal is zero such sites. */
+static __thread int g_allow;
+static uint32_t g_allowed_waits; /* waits a watched thread made inside an allow window */
+static uint32_t g_guard_hits;    /* debug guard: waits a watched thread made outside nowait and outside the allow list */
+
+int sel_library_ui_allow(int on) {
+    int was = g_allow;
+    g_allow = on != 0;
+    return was;
+}
+
+uint32_t sel_library_allowed_waits(void) {
+    return __atomic_load_n(&g_allowed_waits, __ATOMIC_RELAXED);
+}
+
+uint32_t sel_library_ui_guard_hits(void) {
+    return __atomic_load_n(&g_guard_hits, __ATOMIC_RELAXED);
+}
+
+#if !defined(NDEBUG)
+/* I906a (design 2026-11-01-ui-thread-library-waits.md section 3): debug builds say where the UI thread waits on the library.
+ * `what` names the wait ("req", "art_join"). SELECTA_LIB_UI_GUARD=log (default) prints and counts, =abort also aborts. */
+void sel_library_ui_wait_check(const char* what, uint32_t id) {
+    void* frames[32];
+    const char* mode;
+
+    if (!g_watch || g_nowait) return;
+    if (g_allow) {
+        __atomic_fetch_add(&g_allowed_waits, 1u, __ATOMIC_RELAXED);
+        return;
+    }
+    __atomic_fetch_add(&g_guard_hits, 1u, __ATOMIC_RELAXED);
+    if (id != 0xFFFFFFFFu) {
+        fprintf(stderr, "library_ui_wait: %s=%u\n", what, (unsigned)id);
+    } else {
+        fprintf(stderr, "library_ui_wait: %s\n", what);
+    }
+    backtrace_symbols_fd(frames, backtrace(frames, 32), STDERR_FILENO);
+    mode = getenv("SELECTA_LIB_UI_GUARD");
+    if (mode != NULL && strcmp(mode, "abort") == 0) abort();
+}
+#endif
+
 uint32_t sel_library_deferred(void) {
     return __atomic_load_n(&g_deferred, __ATOMIC_RELAXED);
 }
@@ -136,6 +180,7 @@ int sel_worker_start(sel_library* lib) {
      * the block is allocated at start. */
     (void)*(volatile int*)&g_nowait;
     (void)*(volatile int*)&g_watch;
+    (void)*(volatile int*)&g_allow;
     if (!sel_spsc_init(&lib->requests, lib->host, QUEUE_SLOTS) || !sel_spsc_init(&lib->results, lib->host, QUEUE_SLOTS)) {
         return 0;
     }
@@ -181,6 +226,9 @@ int sel_library_request(sel_library* lib, uint32_t req, const void* payload, sel
         m.args[0].type = SEL_ARG_STR;
         m.args[0].v.s = (const char*)payload;
     }
+#if !defined(NDEBUG)
+    sel_library_ui_wait_check("req", req);
+#endif
     if (g_nowait) { /* I782: the call lock is held for a whole job and between a sync's requests; a draw never queues behind them */
         if (pthread_mutex_trylock(&lib->call_lock) != 0) {
             __atomic_fetch_add(&g_deferred, 1u, __ATOMIC_RELAXED);
@@ -225,6 +273,19 @@ int sel_library_watch(int on) {
 }
 
 uint32_t sel_library_watched_waits(void) {
+    return 0u;
+}
+
+int sel_library_ui_allow(int on) {
+    (void)on;
+    return 0;
+}
+
+uint32_t sel_library_allowed_waits(void) {
+    return 0u;
+}
+
+uint32_t sel_library_ui_guard_hits(void) {
     return 0u;
 }
 

@@ -210,3 +210,48 @@ no-op without threads.
 - Modland tile target (source page versus library-scope search) is Johan's decision.
 - Command counts in section 2 are from the call-line scan, not from the dispatch table; I906a's log mode gives the
   structural count.
+
+## 5. Log-mode site list (I906a)
+
+Source: the dui suite (`ctest -R '^dui-'`, Debug build/sdl, 158 tests) run once with `SELECTA_LIB_UI_GUARD=log`. The harness appended every run's stderr to one file
+(`SELECTA_LIB_UI_SITES_LOG=<file>`, tests/dui/dui_run.cmake). Counts are guard hits (a hit is a call, not a distinct page), taken from the
+`library_ui_wait:` backtraces. Total 4170 hits: 2354 `req=` (blocking library request) and 1816 `art_join` (art_load joins its decode thread).
+Some dui tests fail for reasons outside this row (golden hashes, token defaults); their runs still count. Hits are structural: a hit needs no slow
+worker, only a blocking call from the watched shell thread.
+
+Distinct sites, grouped by the UI-side function that makes the wait (chain read innermost first; the first name is the library wrapper):
+
+| Hits | Wait chain |
+| ---: | --- |
+| 1022 | art_load < load_tile_art < draw_home_content (thread join) |
+| 794 | art_load < load_tile_art < cover_draw (thread join) |
+| 378 | sel_genre_call < sel_library_collection < coll_build_page |
+| 204 | sel_genre_call < sel_library_composer_list < composers_fill_list |
+| 198 | sel_genre_call < sel_library_best_source < read_song |
+| 190 | user_call < sel_library_sticker_get < view_votes |
+| 180 | user_call_rows < sel_library_song_panel < refresh_snapshot |
+| 175 | sel_library_loudness_get_ex < loudness_slot < prepare_slot |
+| 159 | user_call_rows < sel_library_stats < cmd_STATS_SHOW |
+| 135 | user_call < sel_library_song_config_get < song_config_load |
+| 133 | art_call < prov_find < view_art_id |
+| 129 | art_call < sel_library_album_artist < view_art_artist |
+| 101 | folder_call < sel_library_touch < cmd_COLLECTION_OPEN |
+| 61 | folder_call < folder_text_call < sel_library_folder_tree |
+| 56 | sel_genre_call < sel_library_composer_page < coll_build_page |
+| 44 | sel_library_smart < smart_sync < prefetch_sync |
+| 38 | folder_call < sel_library_song_group < sel_engine_song_group |
+| 35 | folder_call < sel_library_playlist_add < cmd_PLAYLIST_CREATE |
+| 33 | sel_genre_call < sel_library_source_drill < drill_query |
+| 28 | sel_genre_call < sel_library_format_list < cmd_FORMATS_SHOW |
+| 14 | folder_call < sel_library_playlist_add_song < cmd_PLAYLIST_ADD_SONG |
+| 11 | folder_call < folder_text_call < sel_library_playlist_keys |
+| 6 | run_search < cmd_VIEW_ACTIVATE < dispatch |
+| 6 | folder_call < sel_library_song_title < sel_engine_song_title |
+| 3 | user_call < sel_library_rating_set < cmd_RATE |
+
+By first wrapper: art_load 1816, sel_genre_call 900, user_call_rows 341, user_call 334, folder_call 285, art_call 262, sel_library_loudness_get_ex 175,
+sel_library_smart 44, run_search 6, sel_library_folder_counts 4, sync_time_set 3.
+
+Reading against section 4: art_load (I906c) is 44 percent of all hits; coll_build_page / composers_fill_list / read_song / view_votes / refresh_snapshot /
+song_config_load are waits the rows I906b-I906i must each close or put on the allow list. Not in section 2's command count: `prepare_slot`
+(loudness), `prefetch_sync`, `sel_engine_song_group` and `sel_engine_song_title` appear only here. This list, not the section 2 call-line scan, is the structural count.

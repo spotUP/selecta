@@ -437,6 +437,16 @@ uint32_t sel_library_deferred(void);
  * every library request such a thread sent and waited on. The pump thread must keep it at 0. */
 int sel_library_watch(int on);
 uint32_t sel_library_watched_waits(void);
+/* I906a: allow list of the debug UI-wait guard (SELECTA_LIB_UI_GUARD=log|abort, debug builds only). A watched thread that must wait on the
+ * library wraps the call in sel_library_ui_allow(1) ... sel_library_ui_allow(prev) and says why; returns the previous setting.
+ * sel_library_allowed_waits counts waits inside such windows, sel_library_ui_guard_hits waits outside nowait and outside the allow list.
+ * sel_library_ui_wait_check is the guard itself (debug only; art.c calls it before joining its thread). */
+int sel_library_ui_allow(int on);
+uint32_t sel_library_allowed_waits(void);
+uint32_t sel_library_ui_guard_hits(void);
+#if !defined(NDEBUG) && !defined(SEL_LIBRARY_NO_THREAD)
+void sel_library_ui_wait_check(const char* what, uint32_t id); /* id 0xFFFFFFFF: none */
+#endif
 /* I829: 1 while a job or another caller holds the library (a request now would wait or, in nowait mode, be deferred). */
 int sel_library_busy(sel_library* lib);
 int sel_library_playlist_add(sel_library* lib, const char* name, uint32_t folder, const char* keys_nl, uint32_t* out_id);

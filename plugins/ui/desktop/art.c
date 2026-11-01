@@ -1,6 +1,8 @@
 /* Album artwork of the desktop UI (design doc 2.7, DUI-P2-4). See art.h. */
 #include "art.h"
 
+#include <selecta/engine.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -197,7 +199,11 @@ void art_load(desk_art* a, const char* const* titles, uint32_t n) {
     }
     a->titles = titles;
     a->n = n;
-    art_thread_join(art_thread_start(worker, a));
+    {
+        void* th = art_thread_start(worker, a);
+        if (th != NULL) sel_ui_wait_note("art_join"); /* I906a: joining the decode thread blocks the caller like a library wait */
+        art_thread_join(th);
+    }
 }
 
 const uint32_t* art_tile(desk_art* a, const char* title) {

@@ -2547,6 +2547,12 @@ if(NOT SEL_AMIGA)
   target_link_libraries(library_ui_nowait_test PRIVATE selecta_library selecta_registry selecta_core)
   add_test(NAME engine-library-ui-nowait COMMAND library_ui_nowait_test)
   set_tests_properties(engine-library-ui-nowait PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "library_ui_nowait_ok")
+  # I906a: the debug UI-wait guard prints and counts a watched thread's blocking library request.
+  add_executable(library_ui_guard_test engine/library_ui_guard_test.c)
+  target_include_directories(library_ui_guard_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)
+  target_link_libraries(library_ui_guard_test PRIVATE selecta_library selecta_registry selecta_core)
+  add_test(NAME engine-library-ui-guard COMMAND library_ui_guard_test)
+  set_tests_properties(engine-library-ui-guard PROPERTIES TIMEOUT 60 PASS_REGULAR_EXPRESSION "library_ui_guard_ok")
   # I406b: the pin ring (32 slots) drops the 33rd queued pin, rows are written with added 0, close drains the ring.
   add_executable(library_pin_test engine/library_pin_test.c)
   target_include_directories(library_pin_test PRIVATE ${PROJECT_SOURCE_DIR}/src/library ${PROJECT_SOURCE_DIR}/src/library/db)

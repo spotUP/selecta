@@ -115,9 +115,15 @@ static int g_mark_audio;
 static int g_marked; /* the output's pull thread is marked as the audio thread */
 /* I829: one engine pump per shell turn. A clockless run is deterministic (one UI turn per pump), so a posted library read (home, search,
  * folders) lands before the next turn; a paced run never waits for the library (the pump posts and applies the answer on a later turn). */
+static uint32_t g_pump_ms_max; /* I906a: longest pump_turn in host clock ms; sees library waits inside cmd_* handlers, which turn_ms_max (desk_wait only) does not */
 static void pump_turn(sel_engine* e, int clockless, sel_event_sink on_event, void* ctx) {
+    const sel_host* ph = sel_engine_plugin_host(e);
+    uint32_t t0 = ph->clock_ms(ph), dt;
+
     if (clockless) (void)sel_engine_pump_reads(e, on_event, ctx, 60000u);
     else (void)sel_engine_pump(e, on_event, ctx);
+    dt = ph->clock_ms(ph) - t0;
+    if (dt > g_pump_ms_max) g_pump_ms_max = dt;
 }
 
 static volatile int g_pumping; /* the shell is inside so.pump: a pull now runs on the main thread, never the audio thread (I684c) */
@@ -566,6 +572,7 @@ int main(int argc, char** argv)
         cfg.config_dir = cfgdir;
     }
     sel_trace(host, "library open done");
+    if (library != NULL) sel_library_watch(1); /* I906a: this thread runs every UI and the engine pump; a library wait here is a debug-guard hit */
     e = sel_engine_create(host, &cfg);
     sel_trace(host, "engine created");
     if (e == NULL) {
@@ -904,6 +911,9 @@ int main(int argc, char** argv)
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_BITMAP_HITS_MINI4, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_BITMAP_HITS_MINI6, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_BITMAP_HITS_MINI8, 0), (unsigned)sel_tag_find(us, SEL_UI_STAT_HEADLINE_HITS_18, 0),
                    (unsigned)sel_tag_find(us, SEL_UI_STAT_HEADLINE_HITS_24, 0));
+            printf("ui_stats_pump id=%s pump_ms_max=%u lib_ui_guard_hits=%u lib_ui_allowed_waits=%u lib_ui_watched_waits=%u\n", g_uis[u].id,
+                   (unsigned)g_pump_ms_max, (unsigned)sel_library_ui_guard_hits(), (unsigned)sel_library_allowed_waits(),
+                   (unsigned)sel_library_watched_waits());
             {
                 static const char* const pcls[] = {"fill", "scrim", "round", "gradient", "line", "text", "mask", "image", "shadow", "icon", "genart", "dirty", "clip", "palette", "quant", "art"};
                 static const char* const ppt[] = {"canvas", "song", "sidebar", "main", "transport", "progress", "volume", "status", "focus", "tip", "overlay", "visual"};

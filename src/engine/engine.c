@@ -7928,6 +7928,14 @@ const sel_host* sel_engine_plugin_host(const sel_engine* e) {
     return &e->pl_host;
 }
 
+void sel_ui_wait_note(const char* what) {
+#if !defined(NDEBUG) && !defined(SEL_LIBRARY_NO_THREAD)
+    sel_library_ui_wait_check(what, 0xFFFFFFFFu);
+#else
+    (void)what;
+#endif
+}
+
 void sel_engine_set_mix(sel_engine* e, uint32_t rate, uint32_t resampler) {
     if (rate) {
         e->rate = rate;

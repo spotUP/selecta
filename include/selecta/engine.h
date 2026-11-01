@@ -375,6 +375,10 @@ const sel_state* sel_engine_state(const sel_engine* e);
  * config_get answers a non-empty engine pref (include/selecta/prefs.def) first, then the real host. Valid until
  * sel_engine_destroy. */
 const sel_host* sel_engine_plugin_host(const sel_engine* e);
+/* I906a: a UI declares that the calling thread is about to block on something the library worker feeds (a thread join, a wait). In
+ * debug builds a thread marked as the UI thread (the shell marks it with the library watch) prints `library_ui_wait: <what>` with a
+ * backtrace and is counted, like a synchronous library request (SELECTA_LIB_UI_GUARD=log|abort). Release builds: no effect. */
+void sel_ui_wait_note(const char* what);
 const char* sel_play_state_name(sel_play_state s);
 const char* sel_option_name(sel_option_id id);
 
