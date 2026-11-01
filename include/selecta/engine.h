@@ -621,6 +621,8 @@ int sel_engine_song_briefs_take(sel_engine* e, char* out, size_t cap, uint32_t* 
 /* I782: library requests of the calling thread fail at once instead of waiting behind a sync or another job (the draw path reads cached
  * models and asks again next frame). Returns the previous setting. sel_engine_lib_deferred counts the requests refused this way. */
 int sel_engine_lib_nowait(int on);
+/* I961: names the call site of the next library requests for the watched-wait attribution (see sel_library_site); returns the previous tag. */
+const char* sel_engine_lib_site(const char* tag);
 uint32_t sel_engine_lib_deferred(void);
 
 /* Fills `frames` stereo frames: the open song's mix while PLAYING, else

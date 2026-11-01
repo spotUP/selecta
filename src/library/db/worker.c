@@ -22,6 +22,44 @@ static __thread int g_watch;     /* I829: this thread is the UI/command thread: 
 static uint32_t g_watched_waits; /* requests a watched thread made that waited on the worker (sentinel: must stay 0) */
 static uint32_t g_watched_wait_ms; /* I946: host clock ms the watched threads spent inside those requests (queue behind a job and the reply) */
 
+/* I961: per-call-site attribution of the watched waits above. A site tags a stretch of calls with sel_library_site(tag); each counted
+ * request adds one call and its ms to the (tag, request id) row. Only the watched thread writes (one thread), any thread may read. */
+enum { SITE_ROWS = 48 };
+static __thread const char* g_site;
+static struct { const char* site; uint32_t req, calls, ms; } g_site_row[SITE_ROWS];
+static uint32_t g_site_rows;
+
+const char* sel_library_site(const char* tag) {
+    const char* was = g_site;
+    g_site = tag;
+    return was;
+}
+
+static void site_add(uint32_t req, uint32_t ms) {
+    const char* tag = g_site != NULL ? g_site : "untagged";
+    uint32_t i, n = SEL_COUNT_GET(&g_site_rows);
+    for (i = 0; i < n; i++) {
+        if (g_site_row[i].req == req && (g_site_row[i].site == tag || strcmp(g_site_row[i].site, tag) == 0)) break;
+    }
+    if (i == n) {
+        if (n >= SITE_ROWS) return;
+        g_site_row[n].site = tag;
+        g_site_row[n].req = req;
+        SEL_COUNT_ADD(&g_site_rows, 1u);
+    }
+    SEL_COUNT_ADD(&g_site_row[i].calls, 1u);
+    SEL_COUNT_ADD(&g_site_row[i].ms, ms);
+}
+
+int sel_library_site_stat(uint32_t index, const char** site, uint32_t* req, uint32_t* calls, uint32_t* ms) {
+    if (index >= SEL_COUNT_GET(&g_site_rows)) return 0;
+    *site = g_site_row[index].site;
+    *req = g_site_row[index].req;
+    *calls = SEL_COUNT_GET(&g_site_row[index].calls);
+    *ms = SEL_COUNT_GET(&g_site_row[index].ms);
+    return 1;
+}
+
 int sel_library_nowait(int on) {
     int was = g_nowait;
     g_nowait = on != 0;
@@ -259,7 +297,11 @@ int sel_library_request(sel_library* lib, uint32_t req, const void* payload, sel
     }
     pthread_mutex_unlock(&lib->lock);
     call_leave(lib);
-    if (g_watch) SEL_COUNT_ADD(&g_watched_wait_ms, lib->host->clock_ms(lib->host) - t0);
+    if (g_watch) {
+        uint32_t ms = lib->host->clock_ms(lib->host) - t0;
+        SEL_COUNT_ADD(&g_watched_wait_ms, ms);
+        site_add(req, ms);
+    }
     return 1;
 }
 
@@ -277,6 +319,16 @@ uint32_t sel_library_deferred(void) {
 /* Without a worker thread every request runs inline: there is no other thread to wait on. */
 int sel_library_watch(int on) {
     (void)on;
+    return 0;
+}
+
+const char* sel_library_site(const char* tag) {
+    (void)tag;
+    return NULL;
+}
+
+int sel_library_site_stat(uint32_t index, const char** site, uint32_t* req, uint32_t* calls, uint32_t* ms) {
+    (void)index; (void)site; (void)req; (void)calls; (void)ms;
     return 0;
 }
 

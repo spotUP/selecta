@@ -156,6 +156,34 @@ int main(void) {
         CHECK(sel_library_deferred() == d1); /* the last try ran, it was not deferred */
         CHECK(sel_library_watched_waits() == w1 + 1u);
     }
+    /* I961 step 2: a tagged round trip lands in its own (site, request id) row. */
+    {
+        sel_message reply;
+        uint32_t si, calls_before = 0, calls_after = 0, ok = 0, tries, rows;
+        const char* site;
+        uint32_t req, calls, ms;
+        int nw = sel_library_nowait(1);
+        const char* prev = sel_library_site("i961_probe");
+        for (si = 0; sel_library_site_stat(si, &site, &req, &calls, &ms); si++) {
+            if (strcmp(site, "i961_probe") == 0 && req == SEL_LIB_REQ_STATS) calls_before = calls;
+        }
+        for (tries = 0; tries < 2000 && !ok; tries++) {
+            ok = (uint32_t)sel_library_call(lib, SEL_LIB_REQ_STATS, &reply);
+            if (!ok) usleep(1000);
+        }
+        sel_library_site(prev);
+        sel_library_nowait(nw);
+        CHECK(ok);
+        rows = 0;
+        for (si = 0; sel_library_site_stat(si, &site, &req, &calls, &ms); si++) {
+            if (strcmp(site, "i961_probe") == 0 && req == SEL_LIB_REQ_STATS) {
+                calls_after = calls;
+                rows++;
+            }
+        }
+        CHECK(rows == 1u);
+        CHECK(calls_after == calls_before + 1u);
+    }
     sel_library_watch(was);
 
     sel_engine_destroy(e);
