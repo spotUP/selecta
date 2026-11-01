@@ -25,6 +25,7 @@ typedef enum sel_uim_page_id {
     SEL_UIM_PG_SHELF,
     SEL_UIM_PG_BROWSE,
     SEL_UIM_PG_COLLECTION,
+    SEL_UIM_PG_SETTINGS, /* I799a: the Settings page, one row per sel_uim_pref_row */
     SEL_UIM_PG_COUNT
 } sel_uim_page_id;
 

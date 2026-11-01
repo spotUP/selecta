@@ -17,7 +17,8 @@ static const sel_uim_page g_pages[SEL_UIM_PG_COUNT] = {
     [SEL_UIM_PG_TRACKER] = {"tracker", 0u},
     [SEL_UIM_PG_SHELF] = {"shelf", SEL_ROUTE_PAGE_SHELF},
     [SEL_UIM_PG_BROWSE] = {"browse", 0u},
-    [SEL_UIM_PG_COLLECTION] = {"collection", SEL_ROUTE_PAGE_COLLECTION}};
+    [SEL_UIM_PG_COLLECTION] = {"collection", SEL_ROUTE_PAGE_COLLECTION},
+    [SEL_UIM_PG_SETTINGS] = {"settings", 0u}};
 
 const sel_uim_page* sel_uim_page_at(uint32_t id) {
     return id < (uint32_t)SEL_UIM_PG_COUNT ? &g_pages[id] : (const sel_uim_page*)0;

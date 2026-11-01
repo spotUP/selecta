@@ -3,7 +3,7 @@
 # replaces its red entry with the real test and removes its id from tests/ratchet/unimplemented.txt. Red entries also
 # carry label dui-red, so a run of the finished milestones (M3 finish line) can leave them out with -LE dui-red while
 # dui-ratchet keeps the red count honest.
-set(SEL_DUI_REAL dui-font-baked dui-ratchet dui-build-deps dui-uim-frame dui-ui-switch dui-ui-multi dui-mode-pref dui-lift-parity dui-actions dui-layout dui-breakpoints dui-parity-matrix dui-governor dui-tokens dui-draw dui-dirty dui-text dui-artwork dui-genart dui-golden-home dui-sdl dui-widgets dui-hidpi dui-anim dui-keys dui-mouse dui-tooltips dui-gestures dui-frame dui-home dui-library-retired dui-styles dui-grid-coverflow dui-search dui-search-view-mode dui-browse-tiles dui-nowplaying dui-queue dui-playlists dui-songinfo dui-overlays dui-nav dui-viz dui-tracker dui-drop dui-m68k-nofloat dui-hover-live dui-hover-rows dui-hover-sidebar-ink dui-hover-instant dui-hover-nowplaying dui-hover-regions dui-library-reload dui-library-unknown-composer dui-song-menu dui-playlist-page dui-library-remove dui-aga-budget dui-library-style dui-coverflow-slide dui-stats-panel dui-topbar dui-show-all)
+set(SEL_DUI_REAL dui-font-baked dui-ratchet dui-build-deps dui-uim-frame dui-ui-switch dui-ui-multi dui-mode-pref dui-lift-parity dui-actions dui-layout dui-breakpoints dui-parity-matrix dui-governor dui-tokens dui-draw dui-dirty dui-text dui-artwork dui-genart dui-golden-home dui-sdl dui-widgets dui-hidpi dui-anim dui-keys dui-mouse dui-tooltips dui-gestures dui-frame dui-home dui-library-retired dui-styles dui-grid-coverflow dui-search dui-search-view-mode dui-browse-tiles dui-nowplaying dui-queue dui-playlists dui-songinfo dui-overlays dui-nav dui-viz dui-tracker dui-drop dui-m68k-nofloat dui-hover-live dui-hover-rows dui-hover-sidebar-ink dui-hover-instant dui-hover-nowplaying dui-hover-regions dui-library-reload dui-library-unknown-composer dui-song-menu dui-playlist-page dui-library-remove dui-aga-budget dui-library-style dui-coverflow-slide dui-stats-panel dui-topbar dui-show-all dui-settings)
 
 add_test(NAME dui-ratchet
   COMMAND "${CMAKE_COMMAND}"
@@ -151,6 +151,14 @@ if(NOT SEL_AMIGA)
     endif()
     set_tests_properties(${tname} PROPERTIES LABELS ${tlabel} TIMEOUT 120 ENVIRONMENT "TMPDIR=${tmpdir}")
   endforeach()
+endif()
+
+# dui-settings (I799a): the Settings entry in the top bar, one drawn row per shared pref row, an enum click written to prefs.conf.
+if(NOT SEL_AMIGA)
+  add_test(NAME dui-settings
+    COMMAND "${CMAKE_COMMAND}" "-DSELECTA=$<TARGET_FILE:selecta>" "-DSONGS=${PROJECT_BINARY_DIR}/tests/songs"
+      "-DWORK=${PROJECT_BINARY_DIR}/tests/dui-settings" -P "${CMAKE_CURRENT_SOURCE_DIR}/settings.cmake")
+  set_tests_properties(dui-settings PROPERTIES LABELS settings TIMEOUT 120)
 endif()
 
 # dui-search-online (I406a): the Search page's Modules.pl scope, row click, remembered scope and radio row, against the net fixture.

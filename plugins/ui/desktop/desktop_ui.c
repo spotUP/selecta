@@ -337,6 +337,11 @@ typedef struct desk {
     int32_t browse_y_q16;    /* I711: Browse page scroll offset in logical pixels, Q16, as queue_q16 */
     uint32_t browse_wheels;  /* I711 sentinel: wheel notches the Browse page scroll path took */
     uint32_t browse_draws, browse_opens, browse_n; /* I615c: Browse page frames drawn, tiles opened, tiles in the last frame */
+    uint32_t set_draws, set_rows, set_sets, set_clicks, set_entry_clicks; /* I799a: Settings frames drawn, rows drawn in the last frame, PREF_SET lines sent, control clicks, top bar entry clicks */
+    int32_t set_y_q16;       /* I799a: Settings scroll offset in logical pixels, Q16 */
+    int32_t set_focus;       /* I799a: the string row being edited, -1 when none */
+    char set_buf[160];       /* I799a: the text of that row */
+    sel_gui_rect set_rect[24]; /* I799a: the control rect of every row of the last frame (hit test and the dump) */
     sel_gui_rect browse_rect[48];                  /* I615c: the tile rects of the last frame (hit test and the "browse" input verb) */
     uint32_t search_grid_draws, search_flow_draws; /* I615b: search frames drawn as the tile grid / the cover flow */
     uint32_t home_chip;      /* the Home format chip in force: 0 All, 1 Music, 2 Modules, 3 Chiptunes (I678j) */
@@ -583,6 +588,7 @@ static sel_gui_rect side_hdr_rect(const desk* d, uint32_t which);
 static sel_gui_rect side_hdr_title_rect(const desk* d);
 static int desk_set_density(desk* d, int32_t density);
 static int32_t desk_scale_for(const desk* d, int32_t w, int32_t h);
+static sel_gui_rect settings_entry_rect(desk* d);
 static int desk_present(desk* d);
 static int desk_event_frame(desk* d, int changed);
 static void desk_draw_focus(desk* d);
@@ -6967,6 +6973,17 @@ static const char* library_dump_build(desk* d) {
             o = dump_put(d, o, "online_row %u %d %d %d %d %s\n", (unsigned)oi, (int)d->on_row[oi].rect.x, (int)d->on_row[oi].rect.y, (int)d->on_row[oi].rect.w, (int)d->on_row[oi].rect.h, d->on_row[oi].key);
         }
     }
+    {
+        sel_gui_rect se = settings_entry_rect(d);
+        uint32_t si;
+        o = dump_put(d, o, "settings draws=%u rows=%u table=%u sets=%u clicks=%u entry_clicks=%u entry %d %d %d %d\n", (unsigned)d->set_draws, (unsigned)d->set_rows,
+                     (unsigned)sel_uim_pref_row_count(), (unsigned)d->set_sets, (unsigned)d->set_clicks, (unsigned)d->set_entry_clicks, (int)se.x, (int)se.y,
+                     (int)se.w, (int)se.h);
+        for (si = 0; d->page == SEL_UIM_PG_SETTINGS && si < d->set_rows && o + 200u < sizeof d->library_dump; si++) {
+            o = dump_put(d, o, "settings_row %u %d %d %d %d key=%s\n", (unsigned)si, (int)d->set_rect[si].x, (int)d->set_rect[si].y, (int)d->set_rect[si].w,
+                         (int)d->set_rect[si].h, sel_uim_pref_row_at(si)->key);
+        }
+    }
     o = dump_put(d, o, "browse draws=%u tiles=%u opens=%u filter=%d\n", (unsigned)d->browse_draws, (unsigned)d->browse_n, (unsigned)d->browse_opens, d->browse_filter);
     {
         /* the bottom tile in draw order: Folders draws first (I678i), so the array's last tile is not the bottom one */
@@ -8799,6 +8816,216 @@ static void draw_search(desk* d) {
     sel_gui_dirty_add(d->canvas, mn);
 }
 
+/* ---- Settings page (I799a, DUI-P4-14): one scrolling column, a heading, then one row per sel_uim_pref_row (the table MUI-P4-10's
+ * Settings window walks too): the label at the left, the control at the right. A cycle row is a button that steps to the next
+ * choice, a check row a switch, a slider row a bar, a string row a text field. Every change sends the same PREF_SET line the MUI
+ * window sends (sel_uim_pref_line), so the engine writes prefs.conf. ---- */
+enum { SET_ROW_H = 52, SET_CTL_W = 240, SET_HEAD_H = 56 };
+
+/* The nth choice of a cycle row's comma list, copied to out; returns the list length. */
+static uint32_t set_choice(const char* choices, uint32_t n, char* out, size_t cap) {
+    uint32_t i = 0, count = 1;
+    const char* p = choices;
+    out[0] = '\0';
+    for (; *p != '\0'; p++) {
+        count += *p == ',';
+    }
+    p = choices;
+    while (i < n && strchr(p, ',') != NULL) {
+        p = strchr(p, ',') + 1;
+        i++;
+    }
+    if (i == n) {
+        const char* e = strchr(p, ',');
+        size_t len = e != NULL ? (size_t)(e - p) : strlen(p);
+        len = len < cap - 1u ? len : cap - 1u;
+        memcpy(out, p, len);
+        out[len] = '\0';
+    }
+    return count;
+}
+
+/* The index of the choice equal to cur, 0 when none is. */
+static uint32_t set_choice_index(const char* choices, const char* cur) {
+    char c[48];
+    uint32_t n = set_choice(choices, 0u, c, sizeof c), i;
+    for (i = 0; i < n; i++) {
+        set_choice(choices, i, c, sizeof c);
+        if (strcmp(c, cur) == 0) {
+            return i;
+        }
+    }
+    return 0u;
+}
+
+/* A string pref that holds a credential is shown as dots, never as its text. */
+static int set_secret(const char* key) {
+    return strstr(key, "secret") != NULL || strstr(key, "token") != NULL || strstr(key, "password") != NULL || strstr(key, "client_id") != NULL;
+}
+
+static void set_send(desk* d, const sel_uim_pref_row* r, const char* val) {
+    char line[300];
+    sel_uim_pref_line(r->key, val, line, sizeof line);
+    desk_send(d, line);
+    d->set_sets++;
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+}
+
+static void set_commit(desk* d) {
+    const sel_uim_pref_row* r = d->set_focus >= 0 ? sel_uim_pref_row_at((uint32_t)d->set_focus) : NULL;
+    if (r != NULL) {
+        set_send(d, r, d->set_buf);
+    }
+    d->set_focus = -1;
+}
+
+static int32_t set_max_q16(const desk* d) {
+    sel_gui_rect mn = region_rect(d, "main");
+    int32_t over = lpx(d, 16 + SET_HEAD_H) + (int32_t)sel_uim_pref_row_count() * lpx(d, SET_ROW_H) + lpx(d, 16) - mn.h;
+    return over > 0 ? (int32_t)(((int64_t)over << 16) / (lpx(d, 1) > 0 ? lpx(d, 1) : 1)) : 0;
+}
+
+static void draw_settings(desk* d) {
+    sel_gui_rect mn = draw_panel(d, "main");
+    uint32_t n = sel_uim_pref_row_count(), i;
+    int32_t margin = lpx(d, LIB_MARGIN), rh = lpx(d, SET_ROW_H), cw = lpx(d, SET_CTL_W), y;
+    uint32_t text = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]), muted = ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT_MUTED]);
+    if (d->set_y_q16 > set_max_q16(d)) {
+        d->set_y_q16 = set_max_q16(d);
+    }
+    if (cw > (mn.w - 2 * margin) / 2) {
+        cw = (mn.w - 2 * margin) / 2;
+    }
+    y = mn.y + lpx(d, 16) - lpx_q16(d, d->set_y_q16);
+    sel_gui_clip_push(d->canvas, mn);
+    draw_text(d, rect_of(mn.x + margin, y, mn.w - 2 * margin, lpx(d, SET_HEAD_H)), "Settings", 1, 32, text);
+    y += lpx(d, SET_HEAD_H);
+    d->set_rows = 0u;
+    for (i = 0; i < n && i < 24u; i++) {
+        const sel_uim_pref_row* r = sel_uim_pref_row_at(i);
+        const char* cur = desk_pref(d, r->key, "");
+        sel_gui_rect row = rect_of(mn.x + margin, y, mn.w - 2 * margin, rh), c = rect_of(row.x + row.w - cw, y + (rh - lpx(d, 32)) / 2, cw, lpx(d, 32));
+        sel_gui_fill_rect(d->canvas, rect_of(row.x, y + rh - 1, row.w, 1), ARGB(d->theme.token[SEL_GUI_TOKEN_DIVIDER]));
+        draw_text(d, rect_of(row.x, y, row.w - cw - lpx(d, 16), rh), r->label, 0, 14, text);
+        if (r->ui == (uint32_t)SEL_UIM_PREF_CYCLE) {
+            char v[48];
+            set_choice(r->choices, set_choice_index(r->choices, cur), v, sizeof v);
+            draw_button(d, c, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]), v, 13, text);
+        } else if (r->ui == (uint32_t)SEL_UIM_PREF_CHECK) {
+            int on = cur[0] == '1';
+            int32_t tw = lpx(d, 44), th = lpx(d, 24), kn = th - lpx(d, 6);
+            c = rect_of(row.x + row.w - tw, y + (rh - th) / 2, tw, th);
+            hover_reg(d, c);
+            sel_gui_round_rect(d->canvas, c, th / 2, hover_fill_of(d, c, ARGB(d->theme.token[on ? SEL_GUI_TOKEN_ACCENT : SEL_GUI_TOKEN_SURFACE_RAISED])));
+            sel_gui_round_rect(d->canvas, rect_of(on ? c.x + tw - kn - lpx(d, 3) : c.x + lpx(d, 3), c.y + lpx(d, 3), kn, kn), kn / 2,
+                               ARGB(d->theme.token[on ? SEL_GUI_TOKEN_ACCENT_TEXT : SEL_GUI_TOKEN_TEXT]));
+        } else if (r->ui == (uint32_t)SEL_UIM_PREF_SLIDER) {
+            long lo = 0, hi = 100, v;
+            char num[16];
+            sel_gui_rect bar;
+            sscanf(r->choices, "%ld,%ld", &lo, &hi);
+            v = cur[0] != '\0' ? strtol(cur, NULL, 10) : lo;
+            v = v < lo ? lo : (v > hi ? hi : v);
+            snprintf(num, sizeof num, "%ld", v);
+            draw_text(d, rect_of(c.x, c.y, lpx(d, 48), c.h), num, 0, 13, muted);
+            bar = rect_of(c.x + lpx(d, 56), c.y + (c.h - lpx(d, 6)) / 2, c.w - lpx(d, 56), lpx(d, 6));
+            hover_reg(d, c);
+            sel_gui_round_rect(d->canvas, bar, bar.h / 2, ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE_RAISED]));
+            sel_gui_round_rect(d->canvas, rect_of(bar.x, bar.y, hi > lo ? (int32_t)((int64_t)bar.w * (v - lo) / (hi - lo)) : 0, bar.h), bar.h / 2,
+                               ARGB(d->theme.token[SEL_GUI_TOKEN_ACCENT]));
+        } else {
+            char shown[170];
+            const char* src = d->set_focus == (int32_t)i ? d->set_buf : cur;
+            size_t len = strlen(src), k;
+            if (set_secret(r->key)) {
+                for (k = 0; k < len && k + 2u < sizeof shown; k++) {
+                    shown[k] = '*';
+                }
+                shown[k] = '\0';
+            } else {
+                snprintf(shown, sizeof shown, "%s", src);
+            }
+            if (d->set_focus == (int32_t)i) {
+                size_t l = strlen(shown);
+                if (l + 2u < sizeof shown) {
+                    shown[l] = '_';
+                    shown[l + 1u] = '\0';
+                }
+            }
+            sel_gui_round_rect(d->canvas, c, lpx(d, (int32_t)d->theme.token[SEL_GUI_TOKEN_RADIUS]), ARGB(d->theme.token[SEL_GUI_TOKEN_SURFACE]));
+            draw_text(d, rect_of(c.x + lpx(d, 10), c.y, c.w - lpx(d, 20), c.h), shown, 0, 13, text);
+        }
+        d->set_rect[i] = c;
+        d->set_rows++;
+        y += rh;
+    }
+    d->set_draws++;
+    sel_gui_clip_pop(d->canvas);
+    sel_gui_dirty_add(d->canvas, mn);
+}
+
+static int settings_click(desk* d, int32_t x, int32_t y) {
+    uint32_t i, n = sel_uim_pref_row_count();
+    if (d->set_focus >= 0) { /* a click elsewhere ends the edit and keeps the text */
+        set_commit(d);
+    }
+    for (i = 0; i < n && i < d->set_rows; i++) {
+        const sel_uim_pref_row* r = sel_uim_pref_row_at(i);
+        sel_gui_rect c = d->set_rect[i];
+        char v[48];
+        if (!in_rect(c, x, y)) {
+            continue;
+        }
+        d->set_clicks++;
+        if (r->ui == (uint32_t)SEL_UIM_PREF_CYCLE) {
+            uint32_t count = set_choice(r->choices, 0u, v, sizeof v);
+            set_choice(r->choices, (set_choice_index(r->choices, desk_pref(d, r->key, "")) + 1u) % count, v, sizeof v);
+            set_send(d, r, v);
+        } else if (r->ui == (uint32_t)SEL_UIM_PREF_CHECK) {
+            set_send(d, r, desk_pref(d, r->key, "")[0] == '1' ? "0" : "1");
+        } else if (r->ui == (uint32_t)SEL_UIM_PREF_SLIDER) {
+            long lo = 0, hi = 100, nv;
+            int32_t bx = c.x + lpx(d, 56), bw = c.w - lpx(d, 56);
+            sscanf(r->choices, "%ld,%ld", &lo, &hi);
+            nv = bw > 0 ? lo + (long)((int64_t)(hi - lo) * (x < bx ? 0 : x - bx > bw ? bw : x - bx) / bw) : lo;
+            snprintf(v, sizeof v, "%ld", nv);
+            set_send(d, r, v);
+        } else {
+            snprintf(d->set_buf, sizeof d->set_buf, "%s", desk_pref(d, r->key, ""));
+            d->set_focus = (int32_t)i;
+            d->repaint = 1;
+            d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+/* The keyboard while a string row is edited: text appends, Backspace deletes, Enter sends PREF_SET, Escape drops the edit. */
+static int settings_key(desk* d, const sel_gui_input* ev) {
+    size_t len = strlen(d->set_buf);
+    if (ev->code == 13u) {
+        set_commit(d);
+    } else if (ev->code == 27u) {
+        d->set_focus = -1;
+    } else if (ev->code == 127u) {
+        if (len > 0u) {
+            d->set_buf[len - 1u] = '\0';
+        }
+    } else if (ev->code >= 32u && ev->code < 127u && ev->code != '"' && (ev->mods & (TXT_MOD_CTRL | TXT_MOD_ALT)) == 0u) {
+        if (len + 1u < sizeof d->set_buf) {
+            d->set_buf[len] = (char)ev->code;
+            d->set_buf[len + 1u] = '\0';
+        }
+    } else {
+        return 0;
+    }
+    d->repaint = 1;
+    d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+    return desk_present(d);
+}
+
 static void draw_home_content(desk* d) {
     const sel_state* st = sel_engine_state(d->engine);
     const char** akeys = NULL;
@@ -8808,6 +9035,10 @@ static void draw_home_content(desk* d) {
     hover_prune(d, region_rect(d, "main")); /* the main region lists its controls afresh: a page change leaves none behind */
     if (d->page == SEL_UIM_PG_BROWSE) {
         draw_browse(d);
+        return;
+    }
+    if (d->page == SEL_UIM_PG_SETTINGS) {
+        draw_settings(d);
         return;
     }
     if ((d->search_on && !(d->pl_page && d->pls_id != 0u)) || d->page == SEL_UIM_PG_SEARCH) { /* I652a: an open playlist keeps its page, its search shows inside it; the Search page always draws its own field and facet chips, also before a query */
@@ -9022,6 +9253,19 @@ static void tile_palette_raw(desk* d, const char* const* keys, uint32_t nk) {
     }
 }
 
+/* I799a: the Settings entry, a text button at the top bar's right end (left of the Now Playing toggle when the layout has it);
+ * empty without the bar or when it would run into the search field. */
+static sel_gui_rect settings_entry_rect(desk* d) {
+    sel_gui_rect hm = topbar_part(d, TOPBAR_HOME), br = topbar_part(d, TOPBAR_BROWSE), tg = np_toggle_rect(d);
+    const sel_gui_atlas* f = desk_font(d, 1, 13);
+    int32_t w = (f != NULL ? sel_gui_text_width(f, "Settings", 8) : 60) + 2 * lpx(d, 14);
+    int32_t right = tg.w > 0 ? tg.x - lpx(d, 8) : lpx(d, (int32_t)d->layout.width) - lpx(d, 16);
+    if (!topbar_shown(d) || right - w < br.x + br.w + lpx(d, 8)) {
+        return rect_of(0, 0, 0, 0);
+    }
+    return rect_of(right - w, hm.y, w, hm.h);
+}
+
 /* The main region with the running tweens on top: the hover fade of one tile (a light veil, full strength at rest)
  * and the view cross-fade (the new view fades in from the surface colour). At rest both are the plain view. */
 /* I615: the window-wide top bar: the round Home button, then the pill search field (magnifier, the typed query or the hint)
@@ -9060,6 +9304,13 @@ static void draw_topbar(desk* d) {
                               rect_of(tg.x + (tg.w - ic) / 2, tg.y + (tg.h - ic) / 2, ic, ic), ic, ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
         }
     }
+    {
+        sel_gui_rect se = settings_entry_rect(d);
+        if (se.w > 0) { /* I799a: Settings */
+            draw_button(d, se, ARGB(d->theme.token[d->page == SEL_UIM_PG_SETTINGS ? SEL_GUI_TOKEN_SURFACE_HOVER : SEL_GUI_TOKEN_SURFACE_RAISED]), "Settings", 13,
+                        ARGB(d->theme.token[SEL_GUI_TOKEN_TEXT]));
+        }
+    }
     sel_gui_dirty_add(d->canvas, bar);
     d->topbar_draws++;
 }
@@ -9076,6 +9327,11 @@ static int topbar_click(desk* d, int32_t x, int32_t y) {
         desk_relayout(d);
         d->repaint = 1;
         d->uim.dirty |= SEL_UIM_DIRTY_ALL;
+        return 1;
+    }
+    if (settings_entry_rect(d).w > 0 && in_rect(settings_entry_rect(d), x, y)) { /* I799a */
+        d->set_entry_clicks++;
+        desk_route_door(d, SEL_UIM_PG_SETTINGS);
         return 1;
     }
     if (in_rect(topbar_part(d, TOPBAR_HOME), x, y)) {
@@ -9176,6 +9432,8 @@ static void desk_page_flags(desk* d, desk_page pg) {
     if (pg != SEL_UIM_PG_SEARCH) {
         d->browse_filter = 0;
     }
+    d->set_focus = -1; /* I799a: no Settings string row is being edited */
+    d->set_y_q16 = 0;
     d->open_tile = 0;
     d->hist_n = 0u; /* the view history is per page */
 }
@@ -9407,6 +9665,9 @@ static int desk_click(desk* d, int32_t x, int32_t y) {
     uint32_t i;
     if (d->page == SEL_UIM_PG_BROWSE && in_rect(mn, x, y)) {
         return browse_click(d, x, y);
+    }
+    if (d->page == SEL_UIM_PG_SETTINGS && in_rect(mn, x, y)) {
+        return settings_click(d, x, y);
     }
     if (d->page == SEL_UIM_PG_SEARCH && in_rect(mn, x, y) && online_click(d, panel_rect(d, "main"), x, y)) { /* a scope chip, an online hit or the radio entry (I406a) */
         return 1;
@@ -12045,6 +12306,12 @@ static int desk_key(desk* d, const sel_gui_input* ev) {
     if (ev->code == TXT_KEY_F1 + 9u && (ev->mods & TXT_MOD_SHIFT) != 0u && song_menu_key(d)) {
         return 1;
     }
+    if (d->page == SEL_UIM_PG_SETTINGS && d->set_focus >= 0 && settings_key(d, ev)) { /* I799a */
+        return 1;
+    }
+    if (ev->code == ',' && (ev->mods & TXT_MOD_CTRL) != 0u) { /* I799a: Command+, (Ctrl+, elsewhere) opens Settings, as on every Mac app */
+        return desk_route_door(d, SEL_UIM_PG_SETTINGS);
+    }
     if (d->lf_edit) { /* I611: the Your Library filter field has the keyboard */
         return lf_key(d, ev);
     }
@@ -12774,6 +13041,13 @@ static int desk_gesture(desk* d, const sel_gui_input* ev) {
         }
         if (d->page == SEL_UIM_PG_FOLDERS && sel_engine_state(d->engine)->composers != NULL) {
             return lib_wheel(d, ev->dy);
+        }
+        if (d->page == SEL_UIM_PG_SETTINGS) { /* I799a: the Settings column scrolls when the rows overflow the panel */
+            int32_t max_q16 = set_max_q16(d);
+            int64_t v = (int64_t)d->set_y_q16 - (int64_t)ev->dy * SCROLL_NOTCH;
+            d->set_y_q16 = v < 0 ? 0 : (v > max_q16 ? max_q16 : (int32_t)v);
+            draw_home(d);
+            return 1;
         }
         if (d->page == SEL_UIM_PG_BROWSE) { /* I711: the Browse tiles scroll when they overflow the panel, as the Queue page does */
             int32_t max_q16 = browse_max_q16(d);
@@ -13939,6 +14213,7 @@ static void* desk_open(const sel_ui_open_args* a) {
         return NULL;
     }
     memset(d, 0, sizeof *d);
+    d->set_focus = -1; /* I799a */
     sel_uim_selset_init(&d->sel);
     d->side_stale = 1u; /* I608: the first sidebar draw reads the saved playlists */
     d->side_view = SEL_UIM_LVIEW_LIST; /* I611: the Your Library list keeps its two-line rows by default */
@@ -13975,7 +14250,7 @@ static void* desk_open(const sel_ui_open_args* a) {
         } else if ((d->view_pg = desk_page_named(d, view)) != SEL_UIM_PG_COUNT) { /* the pages the doors open: entered by desk_page_goto before the first frame (I266) */
             d->view_pending = 1;
         } else {
-            fprintf(stderr, "selecta: desktop view '%s' is not testcard, text, home, library (opens Browse Folders), folders, songs, queue, playlists, songinfo or widgets\n", view);
+            fprintf(stderr, "selecta: desktop view '%s' is not testcard, text, home, library (opens Browse Folders), folders, songs, queue, playlists, songinfo, widgets or settings\n", view);
             a->host->mem_free(a->host, d);
             return NULL;
         }
