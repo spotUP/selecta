@@ -4,8 +4,9 @@
 # Before: refresh_snapshot ran sel_library_song_panel on the pump thread on every new song, and view_art_id/view_art_artist asked the
 # library (a watched wait) once per visible tile. Now both ride posted read slots (rd_panel, rd_art; the I910 pattern).
 # Driven through the desktop UI's live SDL loop. SELECTA_LIB_PANEL_SLOW_MS = 300 slows every panel read in the library worker. Asserts:
-# 1. pump_ms_max < 50: the pump never slept the 300 ms of a slowed read (lib_ui_watched_waits is not 0 yet: the per-row vote lookups of view_votes still wait, row I906f; they are fast, unslowed);
-# 2. sentinels: view_reads panel_reads>=1 and art_reads>=1, the posted paths ran and landed.
+# 1. pump_ms_max < 50: the pump never slept the 300 ms of a slowed read;
+# 2. lib_ui_watched_waits == 0 (I906g, I930): the play-start reads (best source, song config, genre, loudness) and the per-row vote counts ride posted reads;
+# 3. sentinels: view_reads panel_reads>=1 and art_reads>=1, play_reads play_meta_reads>=1 and vote_reads>=1: the posted paths ran and landed.
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
@@ -29,13 +30,13 @@ endif()
 set(ENV{SELECTA_SDL_TEST_LIVE} 1)
 set(ENV{SELECTA_SOCKET} "/tmp/selecta-dui-panel-art.sock")
 set(ENV{SELECTA_LIB_PANEL_SLOW_MS} 300)
-# SELECTA_LIB_ART_SLOW_MS is not set: the desktop UI plugin still asks the library for art ids through its own provider (art.find, a watched wait
-# outside the engine view path), so a slowed art op would fail this test for a reason that is not I906d. The art id path is proved by its sentinel.
+set(ENV{SELECTA_LIB_ART_SLOW_MS} 300)
 set(ENV{SELECTA_LIB_UI_GUARD} "log")
 file(REMOVE_RECURSE "${WORK}/cfg")
 file(MAKE_DIRECTORY "${WORK}/cfg")
 file(WRITE "${WORK}/cfg/prefs.conf" "library.sync_stale_days=0\n")
-set(ENV{SELECTA_SDL_TEST_TIMED} "q@5000")
+# 9 s: the slowed art id batch (300 ms per id) holds the library worker ahead of the play-start read and the panel read.
+set(ENV{SELECTA_SDL_TEST_TIMED} "q@9000")
 # The song is opened by a control socket command 2 s into the live loop (an --exec OPEN runs at startup, before the measured loop). The
 # command runs on the UI thread, so the song panel read it triggers must not wait on the slowed worker (pump_ms_max counts control commands).
 # No --output null: that loop waits for posted reads and would inflate pump_ms_max; the live SDL loop is the one that must not wait.
@@ -72,4 +73,19 @@ if(CMAKE_MATCH_1 LESS 1)
 endif()
 if(CMAKE_MATCH_2 LESS 1)
   message(FATAL_ERROR "the posted art id read never ran (art_reads=${CMAKE_MATCH_2}):\n${o}")
+endif()
+if(NOT "${o}" MATCHES "ui_stats_pump id=desktop pump_ms_max=[0-9]+ lib_ui_guard_hits=[0-9]+ lib_ui_allowed_waits=[0-9]+ lib_ui_watched_waits=([0-9]+)")
+  message(FATAL_ERROR "no ui_stats_pump line in:\n${o}")
+endif()
+if(NOT CMAKE_MATCH_1 EQUAL 0)
+  message(FATAL_ERROR "the UI thread still made ${CMAKE_MATCH_1} watched library waits, want 0:\n${o}")
+endif()
+if(NOT "${o}" MATCHES "play_reads play_meta_reads=([0-9]+) vote_reads=([0-9]+)")
+  message(FATAL_ERROR "no play_reads line in:\n${o}")
+endif()
+if(CMAKE_MATCH_1 LESS 1)
+  message(FATAL_ERROR "the posted play-start read never ran (play_meta_reads=${CMAKE_MATCH_1}):\n${o}")
+endif()
+if(CMAKE_MATCH_2 LESS 1)
+  message(FATAL_ERROR "the posted vote count read never ran (vote_reads=${CMAKE_MATCH_2}):\n${o}")
 endif()

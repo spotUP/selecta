@@ -323,6 +323,20 @@ static sel_wq_op* wq_new(sel_engine* e, void (*run)(sel_library*, sel_wq_op*), v
                         const char* s2, const char* s3);
 static void wq_submit(sel_engine* e);
 
+/* I906g: what a song start reads from the library (best source, per-song config, stored loudness), filled by the rd_play read before the
+ * pump starts the song. A start that finds no entry posts the read and waits (play_meta_ready); read_song, song_config_load and
+ * loudness_slot take the entry's answers and fall back to a library call only for a path nobody asked for. */
+typedef struct sel_play_meta {
+    char path[SEL_DEFERRED_PATH_MAX];
+    char best[SEL_BROWSE_PATH_MAX];
+    char cfg[256];
+    int32_t cdb;
+    int has_best, loud_ok, provisional, valid;
+} sel_play_meta;
+#define SEL_PLAY_META_N 4u
+enum { SEL_VOTE_CACHE = 256, SEL_VOTE_BATCH = 64, SEL_VOTE_BLK = 8192 };
+static const sel_play_meta* play_meta_find(const sel_engine* e, const char* path);
+
 /* I906d: the artwork ids of a view's rows come from this cache, never from a library call on the pump. A miss is queued in art_want; the
  * rd_art read resolves the batch (id, then album artist) and the pump merges it and moves art_generation so the view re-reads. The key
  * is the 64 bit FNV-1a of the song path. */
@@ -643,6 +657,18 @@ struct sel_engine {
     /* I906d: the Now Playing panel of a newly opened song is read on rd_panel (design 2026-11-01-ui-thread-library-waits.md section 4). The
      * thread fills rdp_buf / rdp_rows for rdp_path; the pump publishes them when rdp_state is still the open song's state. */
     sel_lib_read rd_panel;
+    /* I906g: the song-start read (sel_play_meta). The thread reads pm_want into pm_job; lib_reads_collect files it in pm[]. */
+    sel_lib_read rd_play;
+    /* I906g: the vote counts of a view's rows (view_votes). A miss is queued in vw_*; the rd_vote read fills vj_*; the pump files them in the
+     * vc_* cache and moves votes_generation so the view asks again. vote_epoch drops an answer a vote write overtook. */
+    sel_lib_read rd_vote;
+    char vc_val[SEL_VOTE_CACHE][SEL_VIEW_VOTES_MAX], vw_blk[SEL_VOTE_BLK], vj_blk[SEL_VOTE_BLK], vj_val[SEL_VOTE_BATCH][SEL_VIEW_VOTES_MAX];
+    uint64_t vc_key[SEL_VOTE_CACHE], vw_hash[SEL_VOTE_BATCH], vj_hash[SEL_VOTE_BATCH];
+    uint8_t vc_state[SEL_VOTE_CACHE], vj_state[SEL_VOTE_BATCH]; /* 0 free, 1 asked: none stored, 2 stored */
+    uint32_t vc_head, vw_n, vw_len, vj_n, vote_epoch, vj_epoch, vote_reads;
+    sel_play_meta pm[4], pm_job;
+    char pm_want[SEL_DEFERRED_PATH_MAX];
+    uint32_t pm_next, pm_wait, play_meta_reads;
     char rdp_path[SEL_DEFERRED_PATH_MAX], rdp_next_path[SEL_DEFERRED_PATH_MAX];
     char rdp_buf[1024];
     uint32_t rdp_rows;
@@ -1878,7 +1904,10 @@ static uint8_t* read_song(sel_engine* e, const char* path, size_t* size, sel_liv
     char resolved[SEL_BROWSE_PATH_MAX];
     int seekable = 0; /* I725f: the song's source answers HTTP Range (podcast): the stream gets a length and seek */
     /* D-M3-14 (I184): a library song with twins of the same md5 plays its best source. */
-    if (e->lib != NULL && sel_library_best_source(e->lib, path, best, sizeof best) && strcmp(best, path) != 0) {
+    const sel_play_meta* pm = play_meta_find(e, path);
+    int got_best = pm != NULL ? pm->has_best && snprintf(best, sizeof best, "%s", pm->best) > 0
+                              : e->lib != NULL && sel_library_best_source(e->lib, path, best, sizeof best);
+    if (got_best && strcmp(best, path) != 0) {
         snprintf(e->dup_played, sizeof e->dup_played, "%s", best);
         e->dup_redirects++;
         path = best;
@@ -2143,8 +2172,11 @@ static const char* pl_config_get(const sel_host* h, const char* key, const char*
 
 /* The per-song override of `path` comes from the library DB (sticker rp.config, I170); no library: none. */
 static void song_config_load(sel_engine* e, const char* path) {
+    const sel_play_meta* pm = play_meta_find(e, path);
     e->rp_song_config[0] = '\0';
-    if (e->lib != NULL) {
+    if (pm != NULL) {
+        snprintf(e->rp_song_config, sizeof e->rp_song_config, "%s", pm->cfg);
+    } else if (e->lib != NULL) {
         sel_library_song_config_get(e->lib, path, e->rp_song_config, sizeof e->rp_song_config);
     }
 }
@@ -2230,11 +2262,20 @@ static void loudness_slot(sel_engine* e, sel_slot* sl, const char* path) {
         return;
     }
     song_key(path, key, sizeof key);
-    if (key[0] != '\0' && e->lib != NULL && sel_library_loudness_get_ex(e->lib, key, &cdb, &provisional)) {
-        sl->loud_source = provisional ? "provisional" : "stored";
-        sl->loud_active = 1;
-        sl->loud_gain_q16 = sel_gain_q16_from_cdb(cdb);
-        return;
+    {
+        const sel_play_meta* pm = play_meta_find(e, path);
+        int found = pm != NULL ? pm->loud_ok : key[0] != '\0' && e->lib != NULL && sel_library_loudness_get_ex(e->lib, key, &cdb, &provisional);
+        if (pm != NULL && found) {
+            cdb = pm->cdb;
+            provisional = pm->provisional;
+        }
+        if (key[0] == '\0') found = 0;
+        if (found) {
+            sl->loud_source = provisional ? "provisional" : "stored";
+            sl->loud_active = 1;
+            sl->loud_gain_q16 = sel_gain_q16_from_cdb(cdb);
+            return;
+        }
     }
     if (strcmp(mode, "auto") == 0) { /* no gain known: the adaptive leveler (I190) */
         sl->loud_source = "leveler";
@@ -2595,6 +2636,50 @@ static int prepare_slot(sel_engine* e, uint32_t idx, const char* path, uint32_t 
 
 static void cancel_next(sel_engine* e);
 
+static const sel_play_meta* play_meta_find(const sel_engine* e, const char* path) {
+    uint32_t i;
+    for (i = 0; path != NULL && i < SEL_PLAY_META_N; i++) {
+        if (e->pm[i].valid && strcmp(e->pm[i].path, path) == 0) return &e->pm[i];
+    }
+    return NULL;
+}
+
+/* I906g: runs on the read thread. */
+static void play_meta_run(sel_engine* e) {
+    sel_play_meta* m = &e->pm_job;
+    char key[SEL_DEFERRED_PATH_MAX + 8];
+    memset(m, 0, sizeof *m);
+    snprintf(m->path, sizeof m->path, "%s", e->pm_want);
+    m->has_best = sel_library_best_source(e->lib, m->path, m->best, sizeof m->best) != 0;
+    sel_library_song_config_get(e->lib, m->path, m->cfg, sizeof m->cfg);
+    song_key(m->path, key, sizeof key);
+    if (key[0] != '\0') m->loud_ok = sel_library_loudness_get_ex(e->lib, key, &m->cdb, &m->provisional) != 0;
+    m->valid = 1;
+}
+
+/* 1 when the start of `path` may run now. Otherwise posts the read (one at a time) and returns 0: the caller retries on the next pump. */
+static int play_meta_ready(sel_engine* e, const char* path) {
+    if (e->lib == NULL || play_meta_find(e, path) != NULL) return 1;
+    if (lib_read_idle(&e->rd_play) && strlen(path) < sizeof e->pm_want) {
+        snprintf(e->pm_want, sizeof e->pm_want, "%s", path);
+        lib_read_post(e, &e->rd_play, play_meta_run);
+    }
+    return 0;
+}
+
+static void play_meta_publish(sel_engine* e) {
+    e->pm[e->pm_next % SEL_PLAY_META_N] = e->pm_job;
+    e->pm_next++;
+    e->play_meta_reads++;
+}
+
+static void play_meta_drop(sel_engine* e, const char* path) {
+    uint32_t i;
+    for (i = 0; i < SEL_PLAY_META_N; i++) {
+        if (e->pm[i].valid && strcmp(e->pm[i].path, path) == 0) e->pm[i].valid = 0;
+    }
+}
+
 /* One song change (SEL_BEGIN_*). Both slots busy means the audio thread has
  * not yet returned the old one: the request waits for the next pump. Returns
  * 0 when the song could not be started (an ERROR was reported). */
@@ -2622,13 +2707,30 @@ static int begin_song(sel_engine* e, uint32_t kind, const char* path, uint32_t s
         e->song_over = 0;
         return 1;
     }
+    if (!play_meta_ready(e, path)) {
+        size_t n = strlen(path);
+        if (n >= SEL_DEFERRED_PATH_MAX) {
+            sel_engine_report_error(e, "open_failed", detail);
+            return 0;
+        }
+        memcpy(e->deferred_path, path, n + 1u); /* I906g: the start waits for its library read like it waits for a free slot */
+        e->deferred = kind;
+        e->deferred_subsong = subsong;
+        e->deferred_seek = seek_to;
+        e->song_over = 0;
+        e->pm_wait = 1;
+        return 1;
+    }
+    e->pm_wait = 0;
     e->deferred = 0;
     if (kind == SEL_BEGIN_OPEN) {
         song_config_load(e, path);
     }
     if (!prepare_slot(e, idx, path, subsong, kind == SEL_BEGIN_SEEK || kind == SEL_BEGIN_OPEN ? seek_to : 0, detail, 0)) {
+        play_meta_drop(e, path);
         return 0;
     }
+    play_meta_drop(e, path);
     e->cur = idx;
     e->song_over = 0;
     if (kind == SEL_BEGIN_OPEN) {
@@ -3157,6 +3259,7 @@ static void prepare_next(sel_engine* e) {
     if (e->nx_id == e->queue.entries[next].id && e->nx_qver == e->queue.version) {
         return; /* this attempt failed already */
     }
+    if (!play_meta_ready(e, sel_queue_path(&e->queue, next))) return; /* I906g: asked again on the next pump */
     e->nx_id = e->queue.entries[next].id;
     e->nx_qver = e->queue.version;
     if (prepare_slot(e, idx, sel_queue_path(&e->queue, next),
@@ -3164,6 +3267,7 @@ static void prepare_next(sel_engine* e) {
                      sel_queue_path(&e->queue, next), 1u)) {
         e->nx_slot = idx;
     }
+    play_meta_drop(e, sel_queue_path(&e->queue, next));
 }
 
 static void cmd_NEXT(sel_engine* e, const sel_message* m) {
@@ -6740,16 +6844,77 @@ static void cmd_LIBRARY_FETCH(sel_engine* e, const sel_message* m) {
 
 /* Row callback of the view (I174a): the stored vote count of a song key, as text. The count is the sticker "votes" of
  * the song key, the same per-song store as the sticker "vote" (the user's own choice). */
+static uint64_t art_key(const char* path);
+
+/* I906g: answers from the vote cache; a miss returns 0 and queues the key for the rd_vote read, which moves votes_generation when it lands. */
 static int view_votes(void* ctx, const char* path, char* out) {
     sel_engine* e = ctx;
-    char v[SEL_STICKER_VALUE_MAX];
-
     char key[SEL_DEFERRED_PATH_MAX + 8];
+    uint64_t h;
+    size_t len;
+    uint32_t i;
 
     song_key(path, key, sizeof key);
-    if (key[0] == '\0' || !sel_library_sticker_get(e->lib, key, "votes", v, sizeof v)) return 0;
-    snprintf(out, SEL_VIEW_VOTES_MAX, "%s", v);
-    return 1;
+    if (key[0] == '\0') return 0;
+    h = art_key(key);
+    for (i = 0; i < (uint32_t)SEL_VOTE_CACHE; i++) {
+        if (e->vc_state[i] != 0u && e->vc_key[i] == h) {
+            if (e->vc_state[i] != 2u) return 0;
+            snprintf(out, SEL_VIEW_VOTES_MAX, "%s", e->vc_val[i]);
+            return 1;
+        }
+    }
+    for (i = 0; i < e->vw_n; i++) {
+        if (e->vw_hash[i] == h) return 0;
+    }
+    len = strlen(key) + 1u;
+    if (e->vw_n >= (uint32_t)SEL_VOTE_BATCH || e->vw_len + len > (size_t)SEL_VOTE_BLK) return 0; /* the landing read moves the generation: asked again */
+    memcpy(e->vw_blk + e->vw_len, key, len);
+    e->vw_len += (uint32_t)len;
+    e->vw_hash[e->vw_n++] = h;
+    return 0;
+}
+
+/* Read thread. */
+static void vote_run(sel_engine* e) {
+    uint32_t i;
+    size_t off = 0u;
+    char v[SEL_STICKER_VALUE_MAX];
+
+    for (i = 0; i < e->vj_n; i++) {
+        const char* k = e->vj_blk + off;
+        off += strlen(k) + 1u;
+        e->vj_state[i] = 1u;
+        if (sel_library_sticker_get(e->lib, k, "votes", v, sizeof v)) {
+            snprintf(e->vj_val[i], SEL_VIEW_VOTES_MAX, "%s", v);
+            e->vj_state[i] = 2u;
+        }
+    }
+}
+
+static void vote_post(sel_engine* e) {
+    if (e->lib == NULL || e->vw_n == 0u || !lib_read_idle(&e->rd_vote)) return;
+    memcpy(e->vj_blk, e->vw_blk, e->vw_len);
+    memcpy(e->vj_hash, e->vw_hash, e->vw_n * sizeof e->vw_hash[0]);
+    e->vj_n = e->vw_n;
+    e->vj_epoch = e->vote_epoch;
+    e->vw_n = 0u;
+    e->vw_len = 0u;
+    lib_read_post(e, &e->rd_vote, vote_run);
+}
+
+static void vote_publish(sel_engine* e) {
+    uint32_t i;
+
+    e->vote_reads++;
+    if (e->vj_epoch != e->vote_epoch) return; /* a vote write overtook the read */
+    for (i = 0; i < e->vj_n; i++) {
+        uint32_t at = e->vc_head++ % (uint32_t)SEL_VOTE_CACHE;
+        e->vc_key[at] = e->vj_hash[i];
+        e->vc_state[at] = e->vj_state[i];
+        memcpy(e->vc_val[at], e->vj_val[i], SEL_VIEW_VOTES_MAX);
+    }
+    e->votes_generation++;
 }
 
 /* Pump thread: a finished vote request that carries a count is stored as the sticker "votes" of the song it was made
@@ -6765,7 +6930,11 @@ static void vote_store(sel_engine* e) {
         char text[SEL_VIEW_VOTES_MAX];
 
         snprintf(text, sizeof text, "%u", vr.count);
-        if (sel_library_sticker_set(e->lib, e->vote_song, "votes", text)) e->votes_generation++;
+        if (sel_library_sticker_set(e->lib, e->vote_song, "votes", text)) {
+            memset(e->vc_state, 0, sizeof e->vc_state); /* I906g: the stored counts are stale */
+            e->vote_epoch++;
+            e->votes_generation++;
+        }
     }
 }
 
@@ -7343,10 +7512,19 @@ static void lib_reads_collect(sel_engine* e) {
         panel_publish(e);
         if (e->rd_panel.again) panel_post(e);
     }
+    if (lib_read_take(&e->rd_play)) {
+        e->lib_reads_applied++;
+        play_meta_publish(e);
+    }
     if (lib_read_take(&e->rd_art)) {
         e->lib_reads_applied++;
         art_publish(e);
     }
+    if (lib_read_take(&e->rd_vote)) {
+        e->lib_reads_applied++;
+        vote_publish(e);
+    }
+    vote_post(e);
     if (lib_read_take(&e->rd_total)) {
         e->lib_reads_applied++;
         e->total_reads++;
@@ -8416,6 +8594,8 @@ void sel_engine_destroy(sel_engine* e) {
         }
         e->rdc_next_touch_n = 0u;
         lib_read_end(&e->rd_panel);
+        lib_read_end(&e->rd_play);
+        lib_read_end(&e->rd_vote);
         lib_read_end(&e->rd_art);
         lib_read_end(&e->rd_txt);
         lib_read_end(&e->rd_grp);
@@ -8711,7 +8891,7 @@ int sel_engine_sources_pending(const sel_engine* e) {
 }
 
 int sel_engine_reads_pending(const sel_engine* e) {
-    return e->wq_head != e->wq_tail || !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) || !lib_read_idle(&e->rd_coll) || !lib_read_idle(&e->rd_panel) || !lib_read_idle(&e->rd_art) || !lib_read_idle(&e->rd_txt) || !lib_read_idle(&e->rd_grp) || (e->txt != NULL && e->txt->want_n > 0u) || !lib_read_idle(&e->rd_total) || e->art_want_n > 0u || e->rd_panel.again ||
+    return e->wq_head != e->wq_tail || !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) || !lib_read_idle(&e->rd_coll) || !lib_read_idle(&e->rd_panel) || !lib_read_idle(&e->rd_play) || !lib_read_idle(&e->rd_vote) || e->vw_n > 0u || (e->pm_wait && e->deferred) || (e->lib != NULL && e->cur != SEL_SLOT_NONE && e->slot[e->cur].rp_state != NULL && e->slot[e->cur].rp_state != e->panel_state) || !lib_read_idle(&e->rd_art) || !lib_read_idle(&e->rd_txt) || !lib_read_idle(&e->rd_grp) || (e->txt != NULL && e->txt->want_n > 0u) || !lib_read_idle(&e->rd_total) || e->art_want_n > 0u || e->rd_panel.again ||
            e->rd_coll.again || e->rd_stats.again || e->rd_post_stats || e->rd_formats.again || e->rd_composers.again || e->sources_retry ||
            e->rd_search.again || e->rd_view[0] != '\0';
 }
@@ -9039,6 +9219,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->folder_view_rows = e->folder_view_rows;
     out->panel_loads = e->panel_loads;
     out->panel_reads = e->panel_reads;
+    out->play_meta_reads = e->play_meta_reads;
+    out->vote_reads = e->vote_reads;
     out->art_reads = e->art_reads;
     out->total_reads = e->total_reads;
     out->text_reads = e->txt_reads;
