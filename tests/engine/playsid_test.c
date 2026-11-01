@@ -99,6 +99,7 @@ static uint32_t reg_count(void) { return 1u; }
 static const sel_tag* reg_get(uint32_t i) { return i == 0u ? t_desc : NULL; }
 static sel_engine* eng;
 
+static int g_run_wait = 1;
 static void run(const char* line) {
     sel_message m;
     char pool[1536];
@@ -107,7 +108,11 @@ static void run(const char* line) {
         return;
     }
     sel_engine_send(eng, &m);
-    sel_engine_pump(eng, NULL, NULL);
+    if (g_run_wait) {
+        sel_engine_pump_reads(eng, NULL, NULL, 2000u); /* I906g: a song start waits for its posted library read */
+    } else {
+        sel_engine_pump(eng, NULL, NULL);
+    }
     {   /* the audio side applies pause and hands the hardware over; pull a block as an output would */
         static int16_t buf[441 * 2];
         sel_engine_render(eng, buf, 441u);
@@ -392,7 +397,7 @@ static void catalogue_length_test(const char* dir) {
     {
         pthread_t th;
         char pc[1200];
-        uint32_t d0, c0;
+        uint32_t c0;
         int was;
         snprintf(pc, sizeof pc, "%s/len_c.sid", dbdir);
         write_psid(pc, 2, 1, 0x2ul);
@@ -413,22 +418,22 @@ static void catalogue_length_test(const char* dir) {
         g_release = 0;
         pthread_create(&th, NULL, lock_holder, lib);
         while (!g_held) usleep(1000);
-        d0 = sel_library_deferred();
         c0 = sel_engine_catalogue_lengths;
-        /* Opening a song still makes other synchronous library calls (read_song best_source: I906 removes them), so the UI thread's
-         * no-wait mode (I829) stands in for the busy library around the command; the sticker read must then defer and retry. */
+        /* I906g: the song start reads its best source, config and loudness first (posted read, blocked behind the held library), so the
+         * whole start waits, like it waits for a free slot, and the retry after the release finds the length. */
+        g_run_wait = 0;
         was = sel_library_nowait(1);
         run("SUBSONG 1");
         sel_library_nowait(was);
-        tick(); /* the old slot is handed back, the deferred song starts */
-        CHECK(sel_library_deferred() != d0); /* the read was deferred, not waited on */
-        CHECK(g_owner != NULL && g_owner->length_ms == 0u && sel_engine_state(eng)->song.duration_ms == 0u);
+        g_run_wait = 1;
+        tick(); /* the old slot is handed back; the start still waits for its read */
         tick();
-        CHECK(g_owner->length_ms == 0u && sel_engine_catalogue_lengths == c0); /* still busy: nothing applied yet */
+        CHECK(sel_engine_catalogue_lengths == c0); /* still busy: the start has not run, nothing applied yet */
         g_release = 1;
         pthread_join(th, NULL);
         g_clock = 200000u + 6000u; /* already past the length when it arrives */
         ends0 = sel_playsid_ends;
+        sel_engine_pump_reads(eng, NULL, NULL, 2000u); /* the read lands, the waiting start runs on the next pump */
         tick();
         CHECK(sel_engine_catalogue_lengths == c0 + 1u); /* sentinel: the retry found the length */
         CHECK(g_owner != NULL && g_owner->length_ms == 4000u);

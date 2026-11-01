@@ -482,6 +482,8 @@ typedef struct sel_engine_stats {
     uint32_t stats_queries;       /* STATS_SHOW queries run against the stats views (I192 sentinel) */
     uint32_t panel_loads;         /* module info panel lookups made in the library (I185 sentinel) */
     uint32_t panel_reads;         /* panel reads that landed and were published (I906d sentinel) */
+    uint32_t vote_reads;          /* view vote count reads that landed (I906g sentinel) */
+    uint32_t play_meta_reads;     /* song-start reads (best source, config, loudness) that landed (I906g sentinel) */
     uint32_t art_reads;           /* view artwork id batches that landed (I906d sentinel) */
     uint32_t group_reads;         /* queue group reads that landed (I906e sentinel) */
     uint32_t text_reads;          /* song text batches (title, group, metadata) read off the pump that landed (I906e sentinel) */

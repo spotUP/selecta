@@ -184,6 +184,39 @@ int main(void) {
         CHECK(sel_library_liked(lib, "local:a.mod") == 1); /* the like landed in the library */
         sel_library_watch(1);
     }
+    /* I906g: the start of a song reads its best source, per-song config and loudness first. With the call lock held the OPEN must return from
+     * its pump within the budget with no synchronous request (the start waits, like it waits for a free slot); after the release the posted
+     * read lands (stats.play_meta_reads is the sentinel that it ran). */
+    {
+        sel_engine_stats g_before, g_after;
+
+        sel_engine_stats_get(e, &g_before);
+        g_held = 0;
+        pthread_create(&th, NULL, holder, lib);
+        while (!g_held) usleep(1000);
+        w0 = sel_library_watched_waits();
+        CHECK(sel_engine_send_line(e, "OPEN \"local:a.mod\"", pool, sizeof pool) == 0);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        sel_engine_pump(e, sink, NULL);
+        pump_ms = ms_since(&t0);
+        w1 = sel_library_watched_waits();
+        printf("i906g sample: OPEN pump %ld ms, library waits %u\n", pump_ms, (unsigned)(w1 - w0));
+        CHECK(pump_ms < PUMP_BUDGET_MS);
+        CHECK(w1 == w0);
+        sel_engine_stats_get(e, &g_after);
+        CHECK(g_after.play_meta_reads == g_before.play_meta_reads); /* nothing ran yet: the worker is blocked */
+        pthread_join(th, NULL);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (;;) {
+            sel_engine_pump(e, sink, NULL);
+            sel_engine_stats_get(e, &g_after);
+            if (g_after.play_meta_reads > g_before.play_meta_reads) break;
+            if (ms_since(&t0) > 5000) break;
+            usleep(2000);
+        }
+        printf("i906g after release: play_meta_reads %u\n", (unsigned)(g_after.play_meta_reads - g_before.play_meta_reads));
+        CHECK(g_after.play_meta_reads > g_before.play_meta_reads);
+    }
     sel_library_watch(was);
 
     sel_engine_destroy(e);
