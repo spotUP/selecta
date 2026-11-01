@@ -2115,6 +2115,12 @@ static void test_libfilter(void) {
         CHECK(mui_sidebar_builds() == sbuilds + 3u, "the sidebar model did not run");
         CHECK(sel_uim_lfilter_chips_single(1, 10, 1000) == 1 && sel_uim_lfilter_chips_single(0, 10, 1000) == 0 && sel_uim_lfilter_chips_single(0, 1001, 1000) == 1,
               "shared chips-or-label decision");
+        {
+            const int32_t vw[4] = {100, 60, 80, 90}; /* I918: 330 wide plus 3 gaps of 4 */
+            CHECK(sel_uim_viz_tabs_fit(vw, 4u, 4, 342) == 1 && sel_uim_viz_tabs_fit(vw, 4u, 4, 341) == 0 && sel_uim_viz_tabs_fit(vw, 1u, 4, 100) == 1 &&
+                      sel_uim_viz_tabs_fit(vw, 0u, 4, 100) == 0,
+                  "I918 viz tabs fit: exact fit tabs, one pixel short chooser, one label, none");
+        }
         CHECK(mui_sidebar_chips_single(0, 100u) == 1 && mui_sidebar_chips_single(0, 2000u) == 0 && mui_sidebar_chips_single(1, 2000u) == 1, "MUI width decision");
     }
     CHECK(src != NULL, "read mui_ui.c");
@@ -2363,6 +2369,34 @@ static void test_screen_rtg_flag(void) {
     CHECK(strstr(src, "mui_canvas_new(&grid, g_screen_rtg)") != NULL, "canvas does not get the screen RTG flag");
     CHECK(strstr(src, "mui_vizarea_new(&s->vizset, g_tokens, 1)") == NULL && strstr(src, "mui_canvas_new(&grid, 1)") == NULL,
           "a hardcoded RTG flag came back");
+}
+
+/* I918 step 5: the Visualizer page chooser is the tabs-or-cycle pair sized by sel_uim_viz_tabs_fit, only the shown area steps, the page
+ * area may grow tall, and an area without a frame paints the window background instead of keeping stale pixels. The fit rule itself is
+ * tested in test_libfilter; this proves the MUI code uses it (MUI cannot run on the host). */
+static void test_viz_chooser(void) {
+    static char ui[1000000];
+    static char area[100000];
+    FILE* f = fopen(MUI_UI_SOURCE, "rb");
+    size_t n = f != NULL ? fread(ui, 1, sizeof ui - 1, f) : 0;
+    const char* step;
+    if (f != NULL) {
+        fclose(f);
+    }
+    ui[n] = 0;
+    f = fopen(MUI_DIR "/mui_vizarea_class.c", "rb");
+    n = f != NULL ? fread(area, 1, sizeof area - 1, f) : 0;
+    if (f != NULL) {
+        fclose(f);
+    }
+    area[n] = 0;
+    CHECK(strstr(ui, "sel_uim_viz_tabs_fit(") != NULL, "the chooser does not use the shared tabs-fit rule");
+    CHECK(strstr(ui, "mui_vizarea_set_tall(s->viz_page_area)") != NULL, "the page area is not tall");
+    step = strstr(ui, "s->pane.pane == MUI_PANE_VIZ ? s->viz_page_area : s->viz_area");
+    CHECK(step != NULL, "the wait turn does not pick the one shown area");
+    CHECK(strstr(ui, "mui_viz_chooser_update(s)") != NULL, "the chooser is never refreshed");
+    CHECK(strstr(area, "MUIM_DrawBackground") != NULL, "an area with no frame does not paint the background");
+    CHECK(strstr(area, "d->tall ? MUI_MAXMAX") != NULL, "the tall flag does not lift the height cap");
 }
 
 /* I794: the lines the route handler sends, recorded. */
@@ -2768,6 +2802,8 @@ int main(int argc, char** argv) {
         test_status_face();
     } else if (strcmp(argv[1], "player-bar") == 0) {
         test_player_bar();
+    } else if (strcmp(argv[1], "viz-chooser") == 0) {
+        test_viz_chooser();
     } else if (strcmp(argv[1], "sidebar-icons") == 0) {
         test_sidebar_icons();
     } else if (strcmp(argv[1], "tooltip-flat") == 0) {

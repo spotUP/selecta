@@ -56,6 +56,10 @@ int32_t sel_uim_lfilter_chips_total(const int32_t* widths, uint32_t n, int32_t g
 
 int sel_uim_lfilter_chips_single(int bitmap, int32_t total, int32_t band) { return bitmap || total > band; }
 
+int sel_uim_viz_tabs_fit(const int32_t* label_w, uint32_t n, int32_t gap, int32_t avail) {
+    return n != 0u && sel_uim_lfilter_chips_total(label_w, n, gap) <= avail;
+}
+
 /* I831: the left button of the label control is the x (clear to All) once a filter is in force, else Previous (which stops at All). */
 int sel_uim_lfilter_left_clears(uint32_t filter) { return filter != 0u; }
 

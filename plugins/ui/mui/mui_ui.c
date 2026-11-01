@@ -17,6 +17,7 @@
 #include "map/mui_icons.h"
 #include "map/mui_route.h"
 #include <selecta/uimodel/doors.h>
+#include <selecta/uimodel/libfilter.h>
 #include <selecta/uimodel/pages.h>
 #include <selecta/uimodel/theme.h>
 #include <selecta/tags.h>
@@ -195,6 +196,8 @@ typedef struct mui_state {
     Object* main_pages;             /* the main slot: a page group of the list, the Visualizer page and the Pattern page */
     Object* viz_page_area;          /* the Visualizer page: its own Selecta_VizArea over the same vizset (stepped only while shown) */
     Object* cyc_viz_page;
+    Object* tabs_viz_page;          /* I918: the Visualizer page chooser as tabs (shown when every full name fits), else cyc_viz_page is shown */
+    int viz_tabs_on;                /* 1 tabs shown, 0 cycle shown, -1 not decided yet */
     Object* trk_page_list;          /* the Pattern page rows, over the same trk_ptr as the detail tab */
     mui_vizset vizset;
     mui_find_plugin_fn find_plugin;
@@ -1598,6 +1601,28 @@ static Object* mui_detail_group(mui_state* s) {
     return g;
 }
 
+/* I918: shows the tabs when every full plugin name fits the width of the page area (sel_uim_viz_tabs_fit, the rule the desktop UI uses),
+ * else the cycle. Measured with the window font; called each wait turn while the page is shown, acts only on a change. */
+static void mui_viz_chooser_update(mui_state* s) {
+    int32_t w[MUI_VIZ_PLUGINS];
+    uint32_t k;
+    int on;
+    if (s->tabs_viz_page == NULL || s->viz_page_area == NULL || _rp(s->viz_page_area) == NULL || _mwidth(s->viz_page_area) <= 0) {
+        return;
+    }
+    for (k = 0; k < s->vizset.n && k < MUI_VIZ_PLUGINS; k++) {
+        w[k] = (int32_t)TextLength(_rp(s->viz_page_area), (STRPTR)s->vizset.name_[k], (ULONG)strlen(s->vizset.name_[k])) + 24;
+    }
+    on = sel_uim_viz_tabs_fit(w, s->vizset.n, 4, (int32_t)_mwidth(s->viz_page_area));
+    if (on != s->viz_tabs_on) {
+        s->viz_tabs_on = on;
+        DoMethod(s->main_pages, MUIM_Group_InitChange);
+        set(s->tabs_viz_page, MUIA_ShowMe, (ULONG)on);
+        set(s->cyc_viz_page, MUIA_ShowMe, (ULONG)!on);
+        DoMethod(s->main_pages, MUIM_Group_ExitChange);
+    }
+}
+
 /* I735: the main slot as a page group (MUI 3.8 Group_PageMode): page MUI_PANE_LIST is the song list group, MUI_PANE_VIZ the Visualizer
  * page, MUI_PANE_TRACKER the Pattern page. The Visualizer page reuses Selecta_VizArea (its own instance over the same vizset, so the
  * detail strip and the page both draw the one plugin) with the plugin picker; the Pattern page is an AAList over the rows
@@ -1614,10 +1639,24 @@ static Object* mui_main_pages(mui_state* s) {
     if (s->vizset.n > 0u) {
         s->cyc_viz_page = mui_make_cycle(s->vizset.name_, (LONG)s->vizset.sel, CTL_P4_BASE + P4_VIZPICK);
         s->viz_page_area = mui_vizarea_new(&s->vizset, g_tokens, g_screen_rtg);
+        mui_vizarea_set_tall(s->viz_page_area);
     }
     if (s->cyc_viz_page != NULL && s->viz_page_area != NULL) {
-        DoMethod(viz_g, OM_ADDMEMBER, s->viz_page_area);
+        /* I918: one chooser above the one area. Tabs with the full names when they fit the page width, else the cycle; both exist and
+         * mui_viz_chooser_update shows the one the measured width allows. A tab click sets the cycle, whose notification is the one
+         * control id (P4_VIZPICK), so the pick runs the same handler either way. */
+        mui_aatabs_spec ts;
+        ts.captions = s->vizset.name_;
+        ts.active = (int)s->vizset.sel;
+        s->tabs_viz_page = s->vizset.n <= MUI_AATABS_MAX ? mui_aatabs_new(&ts) : NULL;
+        s->viz_tabs_on = -1;
+        if (s->tabs_viz_page != NULL) {
+            set(s->tabs_viz_page, MUIA_ShowMe, FALSE);
+            DoMethod(s->tabs_viz_page, MUIM_Notify, AATab_Active, MUIV_EveryTime, s->cyc_viz_page, 3, MUIM_Set, AAC_Active, MUIV_TriggerValue);
+            DoMethod(viz_g, OM_ADDMEMBER, s->tabs_viz_page);
+        }
         DoMethod(viz_g, OM_ADDMEMBER, s->cyc_viz_page);
+        DoMethod(viz_g, OM_ADDMEMBER, s->viz_page_area);
     } else {
         DoMethod(viz_g, OM_ADDMEMBER, mui_aatext("No visualizer plugin is loaded", MUI_AA_TONE_NORMAL, MUI_AA_ALIGN_LEFT, 1));
     }
@@ -1984,11 +2023,13 @@ static void mui_refresh(mui_state* s) {
     if (s->viz_area != NULL) { /* I684: one visualizer step per wait turn, on the newest engine frame */
         sel_uim_budget vb;
         if (sel_uim_budget_for(&vb, "rgba32")) {
-            int stepped = mui_vizarea_step(s->viz_area, st->viz, &vb, mui_now_ms()) != 0;
-            if (s->viz_page_area != NULL && s->pane.pane == MUI_PANE_VIZ) { /* I735: the Visualizer page draws only while shown */
-                stepped |= mui_vizarea_step(s->viz_page_area, st->viz, &vb, mui_now_ms()) != 0;
+            /* I918: only the area on screen steps, the page area while the Visualizer page is shown, else the strip. Both stepped on
+             * one turn shared one vizset tick, so the second never got a frame and the first drew behind the page. */
+            Object* shown = s->viz_page_area != NULL && s->pane.pane == MUI_PANE_VIZ ? s->viz_page_area : s->viz_area;
+            if (shown == s->viz_page_area) {
+                mui_viz_chooser_update(s);
             }
-            if (stepped) {
+            if (mui_vizarea_step(shown, st->viz, &vb, mui_now_ms()) != 0) {
                 s->p4[P4_VIZFRAMES] = mui_vizarea_frames(s->viz_area) + (s->viz_page_area != NULL ? mui_vizarea_frames(s->viz_page_area) : 0u);
             }
         }
@@ -2522,9 +2563,16 @@ static void mui_p4_fire(mui_state* s, uint32_t which) {
         }
         if ((uint32_t)act < s->vizset.n) {
             s->vizset.sel = (uint32_t)act;
-            set(s->cyc_viz, AAC_Active, act); /* both pickers show the plugin the engine runs */
+            set(s->cyc_viz, AAC_Active, act); /* every picker shows the plugin the engine runs */
             if (s->cyc_viz_page != NULL) {
                 set(s->cyc_viz_page, AAC_Active, act);
+            }
+            if (s->tabs_viz_page != NULL) {
+                ULONG ta = 0;
+                GetAttr(AATab_Active, s->tabs_viz_page, &ta);
+                if (ta != act) { /* only on a change: the tabs' own notification sets the cycle, which must not set the tabs back */
+                    set(s->tabs_viz_page, AATab_Active, act);
+                }
             }
             s->vizset.seq = 0u; /* draw the new plugin on the very next frame */
             if (mui_vizset_line(&s->vizset) != NULL && mui_engine_line(s, mui_vizset_line(&s->vizset))) {
