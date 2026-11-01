@@ -149,6 +149,13 @@ int main(void) {
 
     sel_engine_destroy(e);
     sel_library_close(lib);
+    /* the temp library dir goes with the run (it used to pile up in /tmp, 26 dirs and 780 MB by 2026-11-01) */
+    remove(db);
+    snprintf(out, sizeof out, "%s-wal", db);
+    remove(out);
+    snprintf(out, sizeof out, "%s-shm", db);
+    remove(out);
+    CHECK(rmdir(dir) == 0);
     if (g_fail == 0) printf("library_nowait_ok\n");
     return g_fail != 0;
 }
