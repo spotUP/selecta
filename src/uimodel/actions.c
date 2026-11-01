@@ -82,7 +82,7 @@ static const sel_uim_action k_actions[] = {
      "PREF_SET ui.desktop.viz viz_levels"},
     {"viz_spectrum", "Spectrum Visualizer", "Draw the song as frequency bands", "audio-lines",
      "View/Visualizer/Spectrum", "C-7", "PREF_SET ui.desktop.viz viz_spectrum"},
-    {"viz_sidregs", "Sound Chip PatternScope Visualizer", "Draw the SID chip registers of the playing tune", "cpu",
+    {"viz_sidregs", "SID PatternScope Visualizer", "Draw the SID chip registers of the playing tune", "cpu",
      "View/Visualizer/SID PatternScope", "C-8", "PREF_SET ui.desktop.viz viz_sidregs"},
     {"ui_text", "Switch to Text Interface", "Hand the session to the text interface", "terminal",
      "View/Switch to Text Interface", "C-t", "UI_SWITCH text"},

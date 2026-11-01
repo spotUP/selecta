@@ -20,7 +20,7 @@ if(NOT nhelp EQUAL count OR NOT nact EQUAL count OR count LESS 1)
   message(FATAL_ERROR "help rows ${nhelp}, action rows ${nact}, table count ${count}")
 endif()
 # Label lint: no all-capital token other than the allow list, no dotted abbreviation, no label of one short word.
-set(allow BPM Hz kHz dB URL)
+set(allow BPM Hz kHz dB URL SID) # SID: the C64 chip name (Commodore uses it as the name)
 foreach(a IN LISTS acts)
   if(NOT a MATCHES "label=(.*) icon=")
     message(FATAL_ERROR "no label in: ${a}")
