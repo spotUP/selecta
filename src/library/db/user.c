@@ -712,6 +712,7 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
         }
     } else if (op->op == SEL_USER_PANEL && op->out != NULL && op->out_cap > 0) {
         /* I185: the catalogue rows of the module info panel, in display order; absent data adds no row. */
+        sel_library_test_slow("SELECTA_LIB_PANEL_SLOW_MS"); /* I906d test knob: the song panel read on a busy worker */
         static const char* const labels[] = {"STIL note", "STIL title", "STIL author", "Composer", "Release", "Year", "Genre", "Rating", "Play count", "Liked"};
         sqlite3_stmt* st = NULL;
         uint32_t used = 0;

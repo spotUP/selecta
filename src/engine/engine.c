@@ -299,6 +299,19 @@ typedef struct sel_lib_read {
 } sel_lib_read;
 
 enum { SEL_RD_QUERY_MAX = 512, SEL_RD_FOLDERS_MAX = 4096 };
+static void art_changed(sel_engine* e);
+static void lib_read_post(sel_engine* e, sel_lib_read* r, void (*run)(sel_engine* e));
+static int lib_read_idle(const sel_lib_read* r);
+
+/* I906d: the artwork ids of a view's rows come from this cache, never from a library call on the pump. A miss is queued in art_want; the
+ * rd_art read resolves the batch (id, then album artist) and the pump merges it and moves art_generation so the view re-reads. The key
+ * is the 64 bit FNV-1a of the song path. */
+enum { SEL_ART_CACHE = 256, SEL_ART_BATCH = 64, SEL_ART_BLK = 16384 };
+typedef struct sel_art_ent {
+    uint64_t key;                  /* 0: free */
+    uint32_t album;                /* albums.id, 0 when the song has none */
+    char artist[SEL_VIEW_ARTIST_MAX];
+} sel_art_ent;
 
 struct sel_engine {
     const sel_host* host;
@@ -580,6 +593,20 @@ struct sel_engine {
     char* rdc_blk;
     uint32_t rdc_kind, rdc_next_kind, coll_serial;
     char rdc_key[128], rdc_next_key[128];
+    /* I906d: the Now Playing panel of a newly opened song is read on rd_panel (design 2026-11-01-ui-thread-library-waits.md section 4). The
+     * thread fills rdp_buf / rdp_rows for rdp_path; the pump publishes them when rdp_state is still the open song's state. */
+    sel_lib_read rd_panel;
+    char rdp_path[SEL_DEFERRED_PATH_MAX], rdp_next_path[SEL_DEFERRED_PATH_MAX];
+    char rdp_buf[1024];
+    uint32_t rdp_rows;
+    const void *rdp_state, *rdp_next_state;
+    uint32_t panel_reads;                      /* panel reads that landed and were published (I906d sentinel) */
+    /* I906d: view artwork ids on rd_art. art_want is filled by the view callback on the pump, copied to art_job when the read is posted. */
+    sel_lib_read rd_art;
+    sel_art_ent art_cache[SEL_ART_CACHE], art_res[SEL_ART_BATCH];
+    uint32_t art_head, art_epoch, art_job_epoch, art_want_n, art_job_n, art_want_len, art_want_more, art_reads;
+    uint64_t art_want_key[SEL_ART_BATCH], art_job_key[SEL_ART_BATCH];
+    char art_want[SEL_ART_BLK], art_job[SEL_ART_BLK];
     uint32_t evt_dropped;                     /* events emit() could not queue because evt_q was full (I546) */
     sel_tag src_tags[SEL_SOURCE_MAX][12];      /* one SOURCES row per registered source (the registry holds SEL_SOURCE_MAX) */
     char st_key[8][SEL_DEFERRED_PATH_MAX];
@@ -2051,6 +2078,30 @@ static void song_config_load(sel_engine* e, const char* path) {
     if (e->lib != NULL) {
         sel_library_song_config_get(e->lib, path, e->rp_song_config, sizeof e->rp_song_config);
     }
+}
+
+/* I906d: the catalogue rows of the open song, read off the pump thread. Runs on the read thread (inline without threads). */
+static void panel_run(sel_engine* e) {
+    e->rdp_rows = 0u;
+    e->rdp_buf[0] = '\0';
+    if (!sel_library_song_panel(e->lib, e->rdp_path, e->rdp_buf, sizeof e->rdp_buf, &e->rdp_rows)) e->rdp_rows = 0u;
+}
+
+static void panel_post(sel_engine* e) {
+    if (lib_read_idle(&e->rd_panel)) {
+        e->rdp_state = e->rdp_next_state;
+        snprintf(e->rdp_path, sizeof e->rdp_path, "%s", e->rdp_next_path);
+    }
+    lib_read_post(e, &e->rd_panel, panel_run);
+}
+
+/* The pump takes the finished panel; an answer for a song that is no longer open (or whose panel was invalidated) is dropped. */
+static void panel_publish(sel_engine* e) {
+    if (e->rdp_state != e->panel_state) return;
+    memcpy(e->panel, e->rdp_buf, sizeof e->panel);
+    e->panel_rows = e->rdp_rows;
+    e->panel_loads++;
+    e->panel_reads++;
 }
 
 /* A library write changed a field the Now Playing panel shows (rating, play count, a sticker): forget the loaded panel so
@@ -4130,7 +4181,7 @@ static void scan_collect(sel_engine* e) {
     }
     e->scan_running = 0;
     scan_progress_set(e, 0u, NULL, e->scan_done, e->scan_total);
-    e->art_generation++; /* a failed scan may still have stored albums */
+    art_changed(e); /* a failed scan may still have stored albums */
     e->scan_info.scanned_files = e->scan_stats.scanned_files;
     e->scan_info.skipped_files = e->scan_stats.skipped_files;
     e->scan_info.scan_batches = e->scan_stats.scan_batches;
@@ -6013,7 +6064,7 @@ static void cmd_PLAYLIST_DEL(sel_engine* e, const sel_message* m) {
 static void library_catalogue_changed(sel_engine* e) {
     e->library_changes++;
     e->state.library_serial = e->library_changes;
-    e->art_generation++;
+    art_changed(e);
 }
 
 /* DUI-P4-18: Remove from Library. The song leaves the catalogue; its audio file is never touched. */
@@ -6312,7 +6363,7 @@ static void sync_collect(sel_engine* e) {
         return;
     }
     e->sync_running = 0;
-    e->art_generation++; /* a failed sync may still have stored albums */
+    art_changed(e); /* a failed sync may still have stored albums */
     record_sync_stats(e, e->sync_stats);
     if (e->sync_ok) {
         sync_time_set(e, e->sync_id, e->sync_now);
@@ -6389,23 +6440,130 @@ static void vote_store(sel_engine* e) {
     }
 }
 
+static uint64_t art_key(const char* path) {
+    uint64_t h = 1469598103934665603ull;
+
+    for (; *path != '\0'; path++) {
+        h = (h ^ (uint8_t)*path) * 1099511628211ull;
+    }
+    return h != 0u ? h : 1u;
+}
+
+static sel_art_ent* art_find_key(sel_engine* e, uint64_t key) {
+    uint32_t i;
+
+    for (i = 0; i < (uint32_t)SEL_ART_CACHE; i++) {
+        if (e->art_cache[i].key == key) return &e->art_cache[i];
+    }
+    return NULL;
+}
+
+/* I906d: the albums or their artwork may have changed (scan, sync, catalogue change): every cached id is stale, a read in flight is dropped. */
+static void art_changed(sel_engine* e) {
+    e->art_generation++;
+    e->art_epoch++;
+    e->art_head = 0u;
+    memset(e->art_cache, 0, sizeof e->art_cache);
+}
+
 /* Row callback of the view (DUI-P4-4): the artwork id of a queue path, albums.id of its songs row's album, through the
- * same provider the UI's artwork worker uses; 0 when the song has no album. */
+ * same provider the UI's artwork worker uses; 0 when the song has no album. I906d: answers from the cache; a miss returns 0 and queues
+ * the path for the rd_art read, which moves art_generation when it lands so the view asks again. */
 static uint32_t view_art_id(void* ctx, const char* path) {
     sel_engine* e = ctx;
-    sel_ui_art art;
-    int64_t id;
+    uint64_t key = art_key(path);
+    sel_art_ent* c = art_find_key(e, key);
+    size_t len = strlen(path) + 1u;
+    uint32_t i, off = 0u;
 
-    memset(&art, 0, sizeof art);
-    sel_library_art_provider(e->lib, &art);
-    id = art.find != NULL ? art.find(art.ctx, path) : 0;
-    return id > 0 ? (uint32_t)id : 0u;
+    if (c != NULL) return c->album;
+    for (i = 0; i < e->art_want_n; i++) {
+        if (e->art_want_key[i] == key) return 0u;
+    }
+    if (e->art_want_n >= (uint32_t)SEL_ART_BATCH || e->art_want_len + len > (size_t)SEL_ART_BLK) {
+        e->art_want_more = 1u; /* the batch is full: the landing read moves art_generation and the view asks for the rest */
+        return 0u;
+    }
+    off = e->art_want_len;
+    memcpy(e->art_want + off, path, len);
+    e->art_want_len += (uint32_t)len;
+    e->art_want_key[e->art_want_n++] = key;
+    return 0u;
 }
 
 static int view_art_artist(void* ctx, uint32_t album, char* out, uint32_t cap) {
     sel_engine* e = ctx;
+    uint32_t i;
 
-    return sel_library_album_artist(e->lib, (int64_t)album, out, cap);
+    for (i = 0; i < (uint32_t)SEL_ART_CACHE; i++) {
+        if (e->art_cache[i].key != 0u && e->art_cache[i].album == album && e->art_cache[i].artist[0] != '\0') {
+            snprintf(out, cap, "%s", e->art_cache[i].artist);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Runs on the read thread (inline without threads): resolves the queued batch. */
+static void art_run(sel_engine* e) {
+    sel_ui_art art;
+    const char* p = e->art_job;
+    uint32_t i;
+
+    memset(&art, 0, sizeof art);
+    sel_library_art_provider(e->lib, &art);
+    for (i = 0; i < e->art_job_n; i++) {
+        sel_art_ent* r = &e->art_res[i];
+        int64_t id = art.find != NULL ? art.find(art.ctx, p) : 0;
+
+        memset(r, 0, sizeof *r);
+        r->key = e->art_job_key[i];
+        r->album = id > 0 ? (uint32_t)id : 0u;
+        if (r->album != 0u) (void)sel_library_album_artist(e->lib, (int64_t)r->album, r->artist, sizeof r->artist);
+        p += strlen(p) + 1u;
+    }
+}
+
+/* Pump: starts the read for the paths the view queued since the last one (skipping any that landed meanwhile). */
+static void art_post(sel_engine* e) {
+    uint32_t i;
+    size_t off = 0u;
+
+    if (e->lib == NULL || e->art_want_n == 0u || !lib_read_idle(&e->rd_art)) return;
+    e->art_job_n = 0u;
+    e->art_job_epoch = e->art_epoch;
+    {
+        size_t out = 0u;
+
+        off = 0u;
+        for (i = 0; i < e->art_want_n; i++) {
+            const char* p = e->art_want + off;
+            size_t len = strlen(p) + 1u;
+
+            if (art_find_key(e, e->art_want_key[i]) == NULL) {
+                memcpy(e->art_job + out, p, len);
+                out += len;
+                e->art_job_key[e->art_job_n++] = e->art_want_key[i];
+            }
+            off += len;
+        }
+    }
+    e->art_want_n = 0u;
+    e->art_want_len = 0u;
+    if (e->art_job_n == 0u) return;
+    lib_read_post(e, &e->rd_art, art_run);
+}
+
+/* Pump: merges a landed batch. A scan that changed the albums meanwhile (art_epoch) makes the answers stale: they are dropped. */
+static void art_publish(sel_engine* e) {
+    uint32_t i;
+
+    e->art_reads++;
+    if (e->art_job_epoch != e->art_epoch) return;
+    for (i = 0; i < e->art_job_n; i++) {
+        e->art_cache[e->art_head++ % (uint32_t)SEL_ART_CACHE] = e->art_res[i];
+    }
+    e->art_generation++; /* the view reads the ids again; every one of the batch is now a cache hit */
 }
 
 static void view_src(const sel_engine* e, sel_view_src* s) {
@@ -6629,6 +6787,16 @@ static void lib_reads_collect(sel_engine* e) {
         coll_publish(e);
         if (e->rd_coll.again) coll_post(e);
     }
+    if (lib_read_take(&e->rd_panel)) {
+        e->lib_reads_applied++;
+        panel_publish(e);
+        if (e->rd_panel.again) panel_post(e);
+    }
+    if (lib_read_take(&e->rd_art)) {
+        e->lib_reads_applied++;
+        art_publish(e);
+    }
+    art_post(e);
     if (lib_read_take(&e->rd_stats)) {
         e->lib_reads_applied++;
         if (e->rd_stats_want) {
@@ -7674,6 +7842,8 @@ void sel_engine_destroy(sel_engine* e) {
         lib_read_end(&e->rd_composers);
         lib_read_end(&e->rd_stats);
         lib_read_end(&e->rd_coll);
+        lib_read_end(&e->rd_panel);
+        lib_read_end(&e->rd_art);
         composer_release(e->host, &e->rdc_blk);
         composer_release(e->host, &e->rd_fmt_blk);
         composer_release(e->host, &e->rd_comp_blk);
@@ -7845,10 +8015,9 @@ static void refresh_snapshot(sel_engine* e) {
         e->panel_rows = 0;
         e->panel[0] = '\0';
         if (e->lib != NULL && sl->path != NULL) {
-            e->panel_loads++;
-            if (!sel_library_song_panel(e->lib, sl->path, e->panel, sizeof e->panel, &e->panel_rows)) {
-                e->panel_rows = 0;
-            }
+            e->rdp_next_state = sl->rp_state; /* I906d: a posted read, never a wait on this thread */
+            snprintf(e->rdp_next_path, sizeof e->rdp_next_path, "%s", sl->path);
+            panel_post(e);
         }
     }
     e->state.stats = e->stats_open ? e->stats : NULL;
@@ -7966,7 +8135,7 @@ int sel_engine_sources_pending(const sel_engine* e) {
 }
 
 int sel_engine_reads_pending(const sel_engine* e) {
-    return !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) || !lib_read_idle(&e->rd_coll) ||
+    return !lib_read_idle(&e->rd_home) || !lib_read_idle(&e->rd_search) || !lib_read_idle(&e->rd_folders) || !lib_read_idle(&e->rd_formats) || !lib_read_idle(&e->rd_composers) || !lib_read_idle(&e->rd_stats) || !lib_read_idle(&e->rd_coll) || !lib_read_idle(&e->rd_panel) || !lib_read_idle(&e->rd_art) || e->art_want_n > 0u || e->rd_panel.again ||
            e->rd_coll.again || e->rd_stats.again || e->rd_post_stats || e->rd_formats.again || e->rd_composers.again || e->sources_retry ||
            e->rd_search.again || e->rd_view[0] != '\0';
 }
@@ -8292,6 +8461,8 @@ void sel_engine_stats_get(const sel_engine* e, sel_engine_stats* out) {
     out->home_item_shelves = e->home_item_shelves;
     out->folder_view_rows = e->folder_view_rows;
     out->panel_loads = e->panel_loads;
+    out->panel_reads = e->panel_reads;
+    out->art_reads = e->art_reads;
     out->stats_queries = e->stats_queries;
     out->lyric_fetches = e->lyr_fetches;
     out->library_searches = e->searches;
