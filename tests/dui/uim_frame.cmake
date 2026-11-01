@@ -2,14 +2,19 @@
 #   -DSELECTA=<exe> -DSONGS=<dir with the generated .mod files> -DWORK=<dir>
 # Three songs, PLAY, NEXT; then one more NEXT adds exactly the song and queue widgets (dirty bits 1 and 2 only,
 # widget draws +1 or +2): play state, clock and volume widgets stay untouched.
+# The measured NEXT goes through the --input feeder after the launch SOURCES answer has landed: that answer repaints the
+# whole frame (I826) and must not be counted as the NEXT's change. --input also keeps the run off the control socket (I573).
 get_filename_component(HERE "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 include("${HERE}/dui_run.cmake")
 file(REMOVE_RECURSE "${WORK}")
 set(base --ui desktop --backend mem --stats
   --exec "QUEUE_ADD ${SONGS}/selecta-test.mod" --exec "QUEUE_ADD ${SONGS}/selecta-short.mod"
   --exec "QUEUE_ADD ${SONGS}/selecta-loop.mod" --exec "QUEUE_ADD ${SONGS}/selecta-test.mod" --exec PLAY --exec NEXT)
-dui_run(one ${base})
-dui_run(two ${base} --exec NEXT)
+file(MAKE_DIRECTORY "${WORK}")
+file(WRITE "${WORK}/one.txt" "wait 50\nwait 50\n")
+file(WRITE "${WORK}/two.txt" "wait 50\nexec NEXT\nwait 50\n")
+dui_run(one ${base} --input "${WORK}/one.txt")
+dui_run(two ${base} --input "${WORK}/two.txt")
 foreach(run one two)
   foreach(key frames widget_draws uim_updates uim_dirty)
     dui_stat(${run}_${key} "${${run}}" desktop ${key})
