@@ -472,9 +472,13 @@ int sel_folder_exec(sqlite3* db, const sel_user_op* op, int64_t* rows, int32_t c
         *rows = scalar(db, "SELECT COUNT(*) FROM songs", 0, 0);
         return *rows >= 0 ? SQLITE_OK : SQLITE_ERROR;
     case SEL_USER_LIBRARY_CLEAR: return library_clear(db, rows);
-    case SEL_USER_SONG_TITLE: return song_title(db, op, rows);
-    case SEL_USER_SONG_GROUP: return song_group(db, op, rows);
-    case SEL_USER_SONG_META: return song_meta(db, op, rows);
+    case SEL_USER_SONG_TITLE:
+    case SEL_USER_SONG_GROUP:
+    case SEL_USER_SONG_META:
+        sel_library_test_slow("SELECTA_LIB_TEXT_SLOW_MS"); /* I906e test knob: title, group and metadata reads on a busy worker */
+        if (op->op == SEL_USER_SONG_TITLE) return song_title(db, op, rows);
+        if (op->op == SEL_USER_SONG_GROUP) return song_group(db, op, rows);
+        return song_meta(db, op, rows);
     case SEL_USER_SONG_BRIEFS: return song_briefs(db, op, rows);
     case SEL_USER_FOLDER_PLAYLISTS: return folder_playlists(db, op, rows);
     case SEL_USER_PLAYLIST_KEYS: return playlist_keys(db, op, rows);

@@ -295,7 +295,7 @@ typedef struct desk {
     uint32_t qdrag_paints;                           /* frames that drew the lifted row and the insertion line */
     uint32_t queue_draws, queue_rows, queue_cmds; /* Queue page frames drawn (sentinel), rows in the last one, verbs it sent */
     struct {                 /* I258: the Queue page album groups, rebuilt when the queue changes */
-        uint32_t hash, count, headers, valid;
+        uint32_t hash, count, headers, valid, text_gen, pending; /* I906e: pending = a group lookup was still on the engine read */
         uint32_t* before;    /* count + 1 slots: group headers above entry i, so entry i sits on row i + before[i] */
         uint32_t* name;      /* count slots: 1 + pool offset of the header text drawn above entry i, 0 for none */
         char* pool;
@@ -2950,7 +2950,7 @@ static sel_gui_rect dlg_button_rect(const desk* d, uint32_t i) {
 static void dlg_open_remove(desk* d, const char* path) {
     snprintf(d->dlg_path, sizeof d->dlg_path, "%s", path);
     char title[256];
-    if (!sel_engine_song_title(d->engine, path, title, sizeof title)) {
+    if (sel_engine_song_text(d->engine, SEL_SONG_TEXT_TITLE, path, title, sizeof title) != 1) { /* I906e: cached; a miss falls back to the file name */
         snprintf(title, sizeof title, "%s", path_base(path));
     }
     sel_uim_remove_text(title, d->dlg_text, sizeof d->dlg_text);
@@ -3353,7 +3353,7 @@ static int song_menu_pointer(desk* d, const sel_gui_input* ev) {
                 {
                     /* I442: the toast names the song, not only the action. */
                     char title[128], text[160];
-                    if (!sel_engine_song_title(d->engine, d->sm_ref.path, title, sizeof title)) {
+                    if (sel_engine_song_text(d->engine, SEL_SONG_TEXT_TITLE, d->sm_ref.path, title, sizeof title) != 1) {
                         snprintf(title, sizeof title, "%s", path_base(d->sm_ref.path));
                     }
                     snprintf(text, sizeof text, "%s: %s", done[k], title);
@@ -4155,7 +4155,9 @@ static void queue_groups_sync(desk* d) {
     uint32_t h = queue_hash(st), i, n = st->queue_count, run = 0, cur = 0;
     int dividers = 0;
     char grp[160];
-    if (d->qg.valid && d->qg.hash == h && d->qg.count == n) {
+    uint32_t tg = sel_engine_song_text_generation(d->engine);
+    int pending = 0;
+    if (d->qg.valid && d->qg.hash == h && d->qg.count == n && (d->qg.text_gen == tg || !d->qg.pending)) {
         return;
     }
     if (d->qg.before == NULL || d->qg.count < n) { /* grow (never shrinks) */
@@ -4178,7 +4180,9 @@ static void queue_groups_sync(desk* d) {
         d->qg.name[i] = 0;
         grp[0] = '\0';
         if (!dividers && (st->queue[i].flags & SEL_QUEUE_FLAG_DIVIDER) == 0u) {
-            sel_engine_song_group(d->engine, st->queue_text + st->queue[i].path_offset, grp, sizeof grp);
+            if (sel_engine_song_text(d->engine, SEL_SONG_TEXT_GROUP, st->queue_text + st->queue[i].path_offset, grp, sizeof grp) < 0) {
+                pending = 1; /* I906e: resolved on the engine read; the cache is rebuilt when the text generation moves */
+            }
         }
         if (grp[0] == '\0') {
             run = 0;
@@ -4212,6 +4216,8 @@ static void queue_groups_sync(desk* d) {
     d->qg.before[n] = d->qg.headers;
     d->qg.hash = h;
     d->qg.count = n;
+    d->qg.text_gen = tg;
+    d->qg.pending = pending;
     d->qg.valid = 1;
 }
 
@@ -6079,12 +6085,18 @@ static void si_composer_load(desk* d, const sel_state* st) {
     char m[SEL_COMPOSER_MAX + 224];
     const char* p = m;
     size_t k;
+    int got;
     if (st->song.path == NULL || strcmp(d->si_composer_ref, st->song.path) == 0) {
+        return;
+    }
+    got = sel_engine_song_text(d->engine, SEL_SONG_TEXT_META, st->song.path, m, sizeof m); /* I906e: cached; -1 pending, asked again next frame */
+    if (got < 0) {
+        d->si_composer_key[0] = '\0';
         return;
     }
     snprintf(d->si_composer_ref, sizeof d->si_composer_ref, "%s", st->song.path);
     d->si_composer_key[0] = '\0';
-    if (sel_engine_song_meta(d->engine, st->song.path, m, sizeof m)) {
+    if (got == 1) {
         for (k = 0; k < 3u; k++) {
             p += strlen(p) + 1u;
         }

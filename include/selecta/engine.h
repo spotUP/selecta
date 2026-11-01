@@ -481,6 +481,7 @@ typedef struct sel_engine_stats {
     uint32_t panel_loads;         /* module info panel lookups made in the library (I185 sentinel) */
     uint32_t panel_reads;         /* panel reads that landed and were published (I906d sentinel) */
     uint32_t art_reads;           /* view artwork id batches that landed (I906d sentinel) */
+    uint32_t text_reads;          /* song text batches (title, group, metadata) read off the pump that landed (I906e sentinel) */
     uint32_t total_reads;         /* catalogue song counts read off the pump that landed (I936 sentinel) */
     uint32_t lyric_fetches;       /* DEViLBOX lyrics requests queued, none for a song with a .lrc or a message (I193 sentinel) */
     uint32_t folder_ops;          /* FOLDER_ADD/MOVE/DEL and PLAYLIST_MOVE run against the library (I178 sentinel) */
@@ -590,6 +591,11 @@ int sel_engine_library_items_take(sel_engine* e, uint32_t* kind_mask, sel_engine
 /* I633: the song keys of saved playlist `id` in position order into out as "key\0key\0...\0\0"; returns how many. */
 uint32_t sel_engine_library_playlist_keys(sel_engine* e, uint32_t id, char* out, uint32_t cap);
 /* DUI-P4-18: the catalogue title of the song at `ref` (path or key) into out; 1 when it has one, else 0 (callers fall back to the file name). */
+/* I906e: cached song text for the desktop UI, never a library call on the caller. 1: text in out; 0: the song has none; -1: pending (the
+ * read is queued; sel_engine_song_text_generation moves when it lands). Kinds: title, album group, metadata (NUL separated). */
+enum { SEL_SONG_TEXT_TITLE = 0, SEL_SONG_TEXT_GROUP = 1, SEL_SONG_TEXT_META = 2, SEL_SONG_TEXT_KINDS = 3 };
+int sel_engine_song_text(sel_engine* e, uint32_t kind, const char* ref, char* out, size_t cap);
+uint32_t sel_engine_song_text_generation(const sel_engine* e);
 int sel_engine_song_title(sel_engine* e, const char* ref, char* out, size_t cap);
 /* I258: the Queue page group of the song at `ref`: its album, else its source, into out; 1 when the song is catalogued, else 0 and out empty. */
 int sel_engine_song_group(sel_engine* e, const char* ref, char* out, size_t cap);

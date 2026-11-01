@@ -1002,7 +1002,7 @@ int main(int argc, char** argv)
     printf("splash_frames=%u\n", (unsigned)sel_tag_find(ust, SEL_UI_STAT_SPLASH_FRAMES, 0));
     printf("meta_panel panel_loads=%u meta_panel_rows=%u\n", (unsigned)est.panel_loads,
            (unsigned)sel_tag_find(ust, SEL_UI_STAT_META_PANEL_ROWS, 0));
-    printf("view_reads panel_reads=%u art_reads=%u total_reads=%u\n", (unsigned)est.panel_reads, (unsigned)est.art_reads, (unsigned)est.total_reads); /* I906d, I936 sentinels */
+    printf("view_reads panel_reads=%u art_reads=%u total_reads=%u text_reads=%u\n", (unsigned)est.panel_reads, (unsigned)est.art_reads, (unsigned)est.total_reads, (unsigned)est.text_reads); /* I906d, I936 sentinels */
 
     printf("engine_state pitch_cents=%d tempo_percent=%d mute_mask=%u mutes=%u\n", (int)sel_engine_state(e)->pitch_cents,
            (int)sel_engine_state(e)->tempo_percent, (unsigned)sel_engine_state(e)->mute_mask, (unsigned)est.mutes);
