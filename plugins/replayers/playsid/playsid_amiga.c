@@ -30,15 +30,22 @@ enum {
     LVO_SETRESIDBOOST = -204
 };
 
-/* One tiny function per library vector: the offset is an asm immediate, the call a plain jsr through A6.
- * A function (not a statement expression) keeps -pedantic quiet. */
+/* One tiny function per library vector: the offset is an asm immediate, the call a jsr through A6.
+ * A function (not a statement expression) keeps -pedantic quiet.
+ * The library does not keep the AmigaOS register contract: SetModule runs patchSong, which loads a2 (lea .data(pc),a2)
+ * and returns without restoring it (playsid.asm @SetModule / patchSong, present in the 1.9 binary). HippoPlayer's asm
+ * callers hold nothing in a2; compiled C does (rp_start keeps its state pointer there), so the next ops call jumped
+ * through library code and the machine reset (I434j5 run 14). Every vector call therefore saves d2-d7/a2-a5 itself,
+ * as the kplayer adapter does for its replay code. */
+#define PS_SAVE "movem.l %%d2-%%d7/%%a2-%%a5,-(%%sp)\n\t"
+#define PS_RESTORE "\n\tmovem.l (%%sp)+,%%d2-%%d7/%%a2-%%a5"
 #define PS_LVO_FN(fn, off)                                                                           \
     static uint32_t fn(uint32_t d0v, const void* a0v, const void* a1v) {                              \
         register struct Library* r_a6 __asm__("a6") = g_base;                                        \
         register uint32_t r_d0 __asm__("d0") = d0v;                                                  \
         register const void* r_a0 __asm__("a0") = a0v;                                               \
         register const void* r_a1 __asm__("a1") = a1v;                                               \
-        __asm__ volatile("jsr %c4(%%a6)"                                                             \
+        __asm__ volatile(PS_SAVE "jsr %c4(%%a6)" PS_RESTORE                                         \
                          : "+d"(r_d0), "+a"(r_a0), "+a"(r_a1), "+a"(r_a6)                            \
                          : "i"(off)                                                                  \
                          : "d1", "memory", "cc");                                                    \
@@ -63,7 +70,7 @@ static void lvo_residfilter(uint32_t d0v, uint32_t d1v) {
     register struct Library* r_a6 __asm__("a6") = g_base;
     register uint32_t r_d0 __asm__("d0") = d0v;
     register uint32_t r_d1 __asm__("d1") = d1v;
-    __asm__ volatile("jsr %c3(%%a6)" : "+d"(r_d0), "+d"(r_d1), "+a"(r_a6) : "i"(LVO_SETRESIDFILTER) : "a0", "a1", "memory", "cc");
+    __asm__ volatile(PS_SAVE "jsr %c3(%%a6)" PS_RESTORE : "+d"(r_d0), "+d"(r_d1), "+a"(r_a6) : "i"(LVO_SETRESIDFILTER) : "a0", "a1", "memory", "cc");
 }
 PS_LVO_FN(lvo_residboost, LVO_SETRESIDBOOST)
 
@@ -104,7 +111,7 @@ static uint32_t a_resid_buffer(const int8_t* bufs[3], uint32_t* period) {
     register const int8_t* r_a0 __asm__("a0");
     register const int8_t* r_a1 __asm__("a1");
     register const int8_t* r_a2 __asm__("a2");
-    __asm__ volatile("jsr %c6(%%a6)"
+    __asm__ volatile("movem.l %%d2-%%d7/%%a3-%%a5,-(%%sp)\n\tjsr %c6(%%a6)\n\tmovem.l (%%sp)+,%%d2-%%d7/%%a3-%%a5"
                      : "=d"(r_d0), "=d"(r_d1), "=a"(r_a0), "=a"(r_a1), "=a"(r_a2), "+a"(r_a6)
                      : "i"(LVO_GETRESIDBUFFER)
                      : "memory", "cc");
@@ -120,7 +127,7 @@ static uint32_t a_measure_resid(uint32_t over, uint32_t in_on, uint32_t ext_on, 
     register uint32_t r_d0 __asm__("d0") = over;
     register uint32_t r_d1 __asm__("d1") = in_on;
     register uint32_t r_d2 __asm__("d2") = ext_on;
-    __asm__ volatile("jsr %c4(%%a6)"
+    __asm__ volatile("movem.l %%d3-%%d7/%%a2-%%a5,-(%%sp)\n\tjsr %c4(%%a6)\n\tmovem.l (%%sp)+,%%d3-%%d7/%%a2-%%a5"
                      : "+d"(r_d0), "+d"(r_d1), "+d"(r_d2), "+a"(r_a6)
                      : "i"(LVO_MEASURERESID)
                      : "a0", "a1", "memory", "cc");
