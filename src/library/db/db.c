@@ -178,6 +178,7 @@ sel_library* sel_library_open(const sel_host* host, const sel_tag* machine, uint
         goto fail;
     }
     sqlite3_snprintf((int)sizeof sql, sql, "INSERT OR REPLACE INTO meta(key, value) VALUES('account', '%u')", account);
+    sel_user_rating_pending_refresh(lib);
     if (sqlite3_exec(lib->db, sql, NULL, NULL, NULL) != SQLITE_OK || !sel_worker_start(lib)) {
         goto fail;
     }

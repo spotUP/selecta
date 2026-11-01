@@ -500,6 +500,9 @@ void sel_library_rating_push(sel_library* lib);
 void sel_library_pin(sel_library* lib, const char* source, const char* path, const char* title, const char* artist,
                      const char* format);
 uint32_t sel_library_pin_rows(sel_library* lib);
+/* I958: pending 'rating' pushes (what sel_library_rating_pending reports as rows), kept by the library's writer; a plain load, never a
+ * request, so a per-frame UI read cannot wait on the worker. */
+uint32_t sel_library_rating_pending_count(sel_library* lib);
 uint32_t sel_library_pin_dropped(sel_library* lib);
 
 /* I184a: fills songs.md5 of local files in the background, so OPEN of a remote copy finds its local twin (D-M3-14)

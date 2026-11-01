@@ -105,9 +105,9 @@ int main(void) {
     CHECK(sel_engine_song_briefs(e, keys, out, sizeof out, &done) == 0);
     CHECK(ms_since(&t0) < 100); /* did not wait on the held lock */
     CHECK(sel_engine_lib_deferred() == d0 + 1u);
-    sel_engine_stats_get(e, &s); /* the per frame stats read asks for rating_pending under nowait: refused, cached value reported */
+    sel_engine_stats_get(e, &s); /* I958: the per frame stats read serves rating_pending from the writer's counter and sends no request at all */
     CHECK(s.rating_pending == 0u);
-    CHECK(sel_engine_lib_deferred() >= d0 + 2u);
+    CHECK(sel_engine_lib_deferred() == d0 + 1u); /* the stats read added no deferred request */
     sel_engine_lib_nowait(was);
     g_release = 1;
     pthread_join(th, NULL);

@@ -269,6 +269,23 @@ static int rating_set(sqlite3* db, const sel_user_op* op) {
     return rc;
 }
 
+/* I958: recounts the pending 'rating' pushes into lib->rating_pending_n. Called wherever a 'rating' row of pending_push is added or
+ * removed, and once at open, so sel_library_rating_pending_count is a plain load for the UI thread. */
+void sel_user_rating_pending_refresh(sel_library* lib) {
+    sqlite3_stmt* st = NULL;
+    unsigned n = 0;
+
+    if (sqlite3_prepare_v2(lib->db, "SELECT COUNT(*) FROM pending_push WHERE kind = 'rating'", -1, &st, NULL) == SQLITE_OK) {
+        if (sqlite3_step(st) == SQLITE_ROW) n = (unsigned)sqlite3_column_int(st, 0);
+        sqlite3_finalize(st);
+    }
+    __atomic_store_n(&lib->rating_pending_n, n, __ATOMIC_RELEASE);
+}
+
+uint32_t sel_library_rating_pending_count(sel_library* lib) {
+    return lib != NULL ? __atomic_load_n(&lib->rating_pending_n, __ATOMIC_ACQUIRE) : 0u;
+}
+
 /* RATING_PENDING: "key\0stars\0" pairs in push order that fit, then "\0"; rows = all pending ratings. */
 static int rating_pending(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     const char* kind = op->name != NULL ? op->name : "rating"; /* I306: "like" lists the likes */
@@ -276,6 +293,7 @@ static int rating_pending(sqlite3* db, const sel_user_op* op, int64_t* rows) {
     uint32_t used = 0;
     int rc;
 
+    sel_library_test_slow("SELECTA_LIB_PENDING_SLOW_MS"); /* I958 test knob: a slow pending read; the UI must not issue it */
     op->out[0] = '\0';
     *rows = 0;
     rc = sqlite3_prepare_v2(db, "SELECT key, COALESCE(payload, '0') FROM pending_push WHERE kind = ?1 ORDER BY id",
@@ -849,6 +867,7 @@ void sel_library_user(sel_library* lib, const sel_user_op* in, sel_message* repl
             sqlite3_finalize(st);
         }
     }
+    if (rc == SQLITE_OK && (op->op == SEL_USER_RATING_SET || op->op == SEL_USER_RATING_DONE)) sel_user_rating_pending_refresh(lib);
     memset(reply, 0, sizeof *reply);
     reply->kind = SEL_MSG_EVT;
     reply->id = SEL_LIB_REQ_USER;

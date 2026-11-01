@@ -84,6 +84,7 @@ struct sel_library {
     volatile unsigned task_cancel; /* also the net cancel generation while the task runs (I832), so a cancel ends its network wait */
     volatile unsigned pin_rows;    /* I406b: rows written by pin batches (sel_library_pin_rows) */
     volatile unsigned pin_dropped; /* I406b: pins lost to a full ring */
+    volatile unsigned rating_pending_n; /* I958: pending 'rating' pushes; the writer of pending_push keeps it, a UI read never asks the worker */
     unsigned task_done;      /* a task ended and _task_take has not collected it */
 #if defined(SEL_LIBRARY_NO_THREAD)
     char pf_cur[160];        /* the request the poll is working on across ticks (I168b); "" = none */
@@ -125,6 +126,7 @@ struct sel_library {
 
 /* db.c: the one request handler; runs on the worker (or the caller's task without threads). */
 void sel_library_handle(sel_library* lib, const sel_message* req, sel_message* reply);
+void sel_user_rating_pending_refresh(sel_library* lib); /* I958: recounts lib->rating_pending_n */
 void sel_library_search(sel_library* lib, sel_lib_job* job);
 void sel_library_save_view(sel_library* lib, sel_lib_job* job);
 void sel_library_import(sel_library* lib, sel_lib_job* job);
